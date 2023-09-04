@@ -669,9 +669,11 @@ func TestReservationFilterPlugin(t *testing.T) {
 }
 
 type fakeReservationScorePlugin struct {
-	name  string
-	score int64
-	err   error
+	name   string
+	scores map[string]int64
+	err    error
+
+	enableNormalization bool
 }
 
 func (f *fakeReservationScorePlugin) Name() string { return f.name }
@@ -681,7 +683,18 @@ func (f *fakeReservationScorePlugin) ScoreReservation(ctx context.Context, cycle
 	if f.err != nil {
 		status = framework.AsStatus(f.err)
 	}
-	return f.score, status
+	return f.scores[reservationInfo.GetName()], status
+}
+
+func (f *fakeReservationScorePlugin) ReservationScoreExtensions() ReservationScoreExtensions {
+	return f
+}
+
+func (f *fakeReservationScorePlugin) NormalizeReservationScore(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, scores ReservationScoreList) *framework.Status {
+	if f.enableNormalization {
+		return DefaultReservationNormalizeScore(MaxReservationScore, false, scores)
+	}
+	return nil
 }
 
 func TestReservationScorePlugin(t *testing.T) {
@@ -707,8 +720,18 @@ func TestReservationScorePlugin(t *testing.T) {
 				},
 			},
 			plugins: []*fakeReservationScorePlugin{
-				{name: "pl-1", score: 1},
-				{name: "pl-2", score: 2},
+				{
+					name: "pl-1", scores: map[string]int64{
+						"test-reservation-1": 1,
+						"test-reservation-2": 1,
+					},
+				},
+				{
+					name: "pl-2", scores: map[string]int64{
+						"test-reservation-1": 2,
+						"test-reservation-2": 2,
+					},
+				},
 			},
 			wantScores: PluginToReservationScores{
 				"pl-1": {
@@ -718,6 +741,50 @@ func TestReservationScorePlugin(t *testing.T) {
 				"pl-2": {
 					{Name: "test-reservation-1", Score: 2},
 					{Name: "test-reservation-2", Score: 2},
+				},
+			},
+			wantStatus: true,
+		},
+		{
+			name: "normalize score",
+			reservations: []*schedulingv1alpha1.Reservation{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-reservation-1",
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-reservation-2",
+					},
+				},
+			},
+			plugins: []*fakeReservationScorePlugin{
+				{
+					name: "pl-1",
+					scores: map[string]int64{
+						"test-reservation-1": 100,
+						"test-reservation-2": 200,
+					},
+					enableNormalization: true,
+				},
+				{
+					name: "pl-2",
+					scores: map[string]int64{
+						"test-reservation-1": 100,
+						"test-reservation-2": 50,
+					},
+					enableNormalization: true,
+				},
+			},
+			wantScores: PluginToReservationScores{
+				"pl-1": {
+					{Name: "test-reservation-1", Score: 50},
+					{Name: "test-reservation-2", Score: 100},
+				},
+				"pl-2": {
+					{Name: "test-reservation-1", Score: 100},
+					{Name: "test-reservation-2", Score: 50},
 				},
 			},
 			wantStatus: true,

@@ -27,6 +27,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
+	"k8s.io/utils/pointer"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
@@ -590,6 +591,11 @@ func TestScoreReservation(t *testing.T) {
 				apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
 			},
 		},
+		schedulingv1alpha1.RDMA: {
+			0: corev1.ResourceList{
+				apiext.ResourceRDMA: resource.MustParse("100"),
+			},
+		},
 	}
 
 	deviceUsed := func() map[schedulingv1alpha1.DeviceType]deviceResources {
@@ -615,6 +621,7 @@ func TestScoreReservation(t *testing.T) {
 		nodeDeviceCache    *nodeDeviceCache
 		nodeInfo           *framework.NodeInfo
 		wantScore          int64
+		wantNormalize      *int64
 		wantStatus         *framework.Status
 	}{
 		{
@@ -916,6 +923,42 @@ func TestScoreReservation(t *testing.T) {
 			wantScore:  50,
 			wantStatus: nil,
 		},
+		{
+			name: "score reservation with multi resources and MostAllocated",
+			podRequests: corev1.ResourceList{
+				apiext.ResourceGPUCore:        resource.MustParse("50"),
+				apiext.ResourceGPUMemoryRatio: resource.MustParse("50"),
+				apiext.ResourceRDMA:           resource.MustParse("20"),
+			},
+			reserved: apiext.DeviceAllocations{
+				schedulingv1alpha1.GPU: []*apiext.DeviceAllocation{
+					{
+						Minor: 0,
+						Resources: corev1.ResourceList{
+							apiext.ResourceGPUCore:        resource.MustParse("50"),
+							apiext.ResourceGPUMemoryRatio: resource.MustParse("50"),
+							apiext.ResourceGPUMemory:      resource.MustParse("8Gi"),
+						},
+					},
+				},
+			},
+			allocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyRestricted,
+			scoreStrategy:  schedulerconfig.MostAllocated,
+			nodeDeviceCache: &nodeDeviceCache{
+				nodeDeviceInfos: map[string]*nodeDevice{
+					"test-node": {
+						deviceTotal: deviceTotal,
+						deviceFree:  map[schedulingv1alpha1.DeviceType]deviceResources{},
+						deviceUsed:  map[schedulingv1alpha1.DeviceType]deviceResources{},
+						allocateSet: map[schedulingv1alpha1.DeviceType]map[types.NamespacedName]deviceResources{},
+					},
+				},
+			},
+			nodeInfo:      testNodeInfo,
+			wantScore:     200,
+			wantNormalize: pointer.Int64(100),
+			wantStatus:    nil,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -988,6 +1031,16 @@ func TestScoreReservation(t *testing.T) {
 			score, status := p.ScoreReservation(context.TODO(), cycleState, pod, rInfo, "test-node")
 			assert.Equal(t, tt.wantStatus, status)
 			assert.Equal(t, tt.wantScore, score)
+			if tt.wantNormalize != nil {
+				scoreList := frameworkext.ReservationScoreList{
+					{
+						Score: score,
+					},
+				}
+				status = p.ReservationScoreExtensions().NormalizeReservationScore(context.TODO(), cycleState, pod, scoreList)
+				assert.True(t, status.IsSuccess())
+				assert.Equal(t, *tt.wantNormalize, scoreList[0].Score)
+			}
 		})
 	}
 }

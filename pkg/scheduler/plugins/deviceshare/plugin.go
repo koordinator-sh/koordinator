@@ -62,11 +62,12 @@ var (
 	_ framework.ReservePlugin   = &Plugin{}
 	_ framework.PreBindPlugin   = &Plugin{}
 
-	_ frameworkext.ResizePodPlugin          = &Plugin{}
-	_ frameworkext.ReservationRestorePlugin = &Plugin{}
-	_ frameworkext.ReservationFilterPlugin  = &Plugin{}
-	_ frameworkext.ReservationScorePlugin   = &Plugin{}
-	_ frameworkext.ReservationPreBindPlugin = &Plugin{}
+	_ frameworkext.ResizePodPlugin            = &Plugin{}
+	_ frameworkext.ReservationRestorePlugin   = &Plugin{}
+	_ frameworkext.ReservationFilterPlugin    = &Plugin{}
+	_ frameworkext.ReservationScorePlugin     = &Plugin{}
+	_ frameworkext.ReservationScoreExtensions = &Plugin{}
+	_ frameworkext.ReservationPreBindPlugin   = &Plugin{}
 )
 
 type Plugin struct {
