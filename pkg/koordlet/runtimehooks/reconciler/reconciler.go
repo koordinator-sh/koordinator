@@ -31,10 +31,6 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
-const (
-	kubeQOSReconcileSeconds = 10
-)
-
 type ReconcilerLevel string
 
 const (
@@ -218,27 +214,30 @@ type Reconciler interface {
 	Run(stopCh <-chan struct{}) error
 }
 
-type Options struct {
-	StatesInformer statesinformer.StatesInformer
-	Executor       resourceexecutor.ResourceUpdateExecutor
+type Context struct {
+	StatesInformer    statesinformer.StatesInformer
+	Executor          resourceexecutor.ResourceUpdateExecutor
+	ReconcileInterval time.Duration
 }
 
-func NewReconciler(op Options) Reconciler {
+func NewReconciler(ctx Context) Reconciler {
 	r := &reconciler{
-		podUpdated: make(chan struct{}, 1),
-		executor:   op.Executor,
+		podUpdated:        make(chan struct{}, 1),
+		executor:          ctx.Executor,
+		reconcileInterval: ctx.ReconcileInterval,
 	}
 	// TODO register individual pod event
-	op.StatesInformer.RegisterCallbacks(statesinformer.RegisterTypeAllPods, "runtime-hooks-reconciler",
+	ctx.StatesInformer.RegisterCallbacks(statesinformer.RegisterTypeAllPods, "runtime-hooks-reconciler",
 		"Reconcile cgroup files if pod updated", r.podRefreshCallback)
 	return r
 }
 
 type reconciler struct {
-	podsMutex  sync.RWMutex
-	podsMeta   []*statesinformer.PodMeta
-	podUpdated chan struct{}
-	executor   resourceexecutor.ResourceUpdateExecutor
+	podsMutex         sync.RWMutex
+	podsMeta          []*statesinformer.PodMeta
+	podUpdated        chan struct{}
+	executor          resourceexecutor.ResourceUpdateExecutor
+	reconcileInterval time.Duration
 }
 
 func (c *reconciler) Run(stopCh <-chan struct{}) error {
@@ -248,11 +247,14 @@ func (c *reconciler) Run(stopCh <-chan struct{}) error {
 	return nil
 }
 
-func (c *reconciler) podRefreshCallback(t statesinformer.RegisterType, o interface{},
-	podsMeta []*statesinformer.PodMeta) {
+func (c *reconciler) podRefreshCallback(t statesinformer.RegisterType, o interface{}, target *statesinformer.CallbackTarget) {
+	if target == nil {
+		klog.Warningf("callback target is nil")
+		return
+	}
 	c.podsMutex.Lock()
 	defer c.podsMutex.Unlock()
-	c.podsMeta = podsMeta
+	c.podsMeta = target.Pods
 	if len(c.podUpdated) == 0 {
 		c.podUpdated <- struct{}{}
 	}
@@ -268,14 +270,13 @@ func (c *reconciler) getPodsMeta() []*statesinformer.PodMeta {
 
 func (c *reconciler) reconcileKubeQOSCgroup(stopCh <-chan struct{}) {
 	// TODO refactor kubeqos reconciler, inotify watch corresponding cgroup file and update only when receive modified event
-	duration := time.Duration(kubeQOSReconcileSeconds) * time.Second
-	timer := time.NewTimer(duration)
+	timer := time.NewTimer(c.reconcileInterval)
 	defer timer.Stop()
 	for {
 		select {
 		case <-timer.C:
 			doKubeQOSCgroup(c.executor)
-			timer.Reset(duration)
+			timer.Reset(c.reconcileInterval)
 		case <-stopCh:
 			klog.V(1).Infof("stop reconcile kube qos cgroup")
 		}

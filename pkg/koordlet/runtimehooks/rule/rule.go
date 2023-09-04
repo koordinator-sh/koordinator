@@ -37,7 +37,7 @@ type Rule struct {
 }
 
 type ParseRuleFn func(interface{}) (bool, error)
-type UpdateCbFn func(pods []*statesinformer.PodMeta) error
+type UpdateCbFn func(target *statesinformer.CallbackTarget) error
 type SysSupportFn func() bool
 
 var globalHookRules map[string]*Rule
@@ -56,9 +56,9 @@ func Register(name, description string, injectOpts ...InjectOption) *Rule {
 	return r
 }
 
-func (r *Rule) runUpdateCallbacks(pods []*statesinformer.PodMeta) {
+func (r *Rule) runUpdateCallbacks(target *statesinformer.CallbackTarget) {
 	for _, callbackFn := range r.callbacks {
-		if err := callbackFn(pods); err != nil {
+		if err := callbackFn(target); err != nil {
 			cbName := runtime.FuncForPC(reflect.ValueOf(callbackFn).Pointer()).Name()
 			klog.Warningf("executing %s callback function %s failed, error %v", r.name, cbName)
 		}
@@ -76,7 +76,7 @@ func find(name string) (*Rule, bool) {
 	return newRule, false
 }
 
-func UpdateRules(ruleType statesinformer.RegisterType, ruleObj interface{}, podsMeta []*statesinformer.PodMeta) {
+func UpdateRules(ruleType statesinformer.RegisterType, ruleObj interface{}, targets *statesinformer.CallbackTarget) {
 	klog.V(3).Infof("applying %v rules with new %v, detail: %v",
 		len(globalHookRules), ruleType.String(), util.DumpJSON(ruleObj))
 	for _, r := range globalHookRules {
@@ -96,8 +96,9 @@ func UpdateRules(ruleType statesinformer.RegisterType, ruleObj interface{}, pods
 			continue
 		}
 		if updated {
-			klog.V(3).Infof("rule %s is updated, run update callback for all %v pods", r.name, len(podsMeta))
-			r.runUpdateCallbacks(podsMeta)
+			klog.V(3).Infof("rule %s is updated, run update callback for all %v pods and %v host applications",
+				r.name, len(targets.Pods), len(targets.HostApplications))
+			r.runUpdateCallbacks(targets)
 		}
 	}
 }

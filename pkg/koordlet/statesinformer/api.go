@@ -51,13 +51,17 @@ func (r RegisterType) String() string {
 		return "RegisterTypeAllPods"
 	case RegisterTypeNodeTopology:
 		return "RegisterTypeNodeTopology"
-
 	default:
 		return "RegisterTypeUnknown"
 	}
 }
 
-type UpdateCbFn func(t RegisterType, obj interface{}, pods []*PodMeta)
+type CallbackTarget struct {
+	Pods             []*PodMeta
+	HostApplications []slov1alpha1.HostApplicationSpec
+}
+
+type UpdateCbFn func(t RegisterType, obj interface{}, target *CallbackTarget)
 type StatesInformer interface {
 	Run(stopCh <-chan struct{}) error
 	HasSynced() bool

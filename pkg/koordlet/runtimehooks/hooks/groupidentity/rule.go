@@ -17,6 +17,7 @@ limitations under the License.
 package groupidentity
 
 import (
+	"fmt"
 	"reflect"
 	"strconv"
 
@@ -27,6 +28,7 @@ import (
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/audit"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/protocol"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	koordletutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util"
 	sysutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
@@ -61,6 +63,13 @@ func (r *bvtRule) getPodBvtValue(podQoSClass ext.QoSClass, podKubeQOS corev1.Pod
 func (r *bvtRule) getKubeQOSDirBvtValue(kubeQOS corev1.PodQOSClass) int64 {
 	if bvtValue, exist := r.kubeQOSDirParams[kubeQOS]; exist {
 		return bvtValue
+	}
+	return *sloconfig.NoneCPUQOS().GroupIdentity
+}
+
+func (r *bvtRule) getHostQOSBvtValue(qosClass ext.QoSClass) int64 {
+	if val, exist := r.podQOSParams[qosClass]; exist {
+		return val
 	}
 	return *sloconfig.NoneCPUQOS().GroupIdentity
 }
@@ -120,7 +129,7 @@ func (b *bvtPlugin) parseRule(mergedNodeSLOIf interface{}) (bool, error) {
 	return updated, nil
 }
 
-func (b *bvtPlugin) ruleUpdateCb(pods []*statesinformer.PodMeta) error {
+func (b *bvtPlugin) ruleUpdateCb(target *statesinformer.CallbackTarget) error {
 	if !b.SystemSupported() {
 		klog.V(5).Infof("plugin %s is not supported by system", name)
 		return nil
@@ -143,7 +152,10 @@ func (b *bvtPlugin) ruleUpdateCb(pods []*statesinformer.PodMeta) error {
 			klog.Infof("update kube qos %v cpu bvt failed, dir %v, error %v", kubeQOS, kubeQOSCgroupPath, err)
 		}
 	}
-	for _, podMeta := range pods {
+	if target == nil {
+		return fmt.Errorf("callback target is nil")
+	}
+	for _, podMeta := range target.Pods {
 		podQOS := ext.GetPodQoSClassRaw(podMeta.Pod)
 		podKubeQOS := podMeta.Pod.Status.QOSClass
 		podBvt := r.getPodBvtValue(podQOS, podKubeQOS)
@@ -156,6 +168,15 @@ func (b *bvtPlugin) ruleUpdateCb(pods []*statesinformer.PodMeta) error {
 		if _, err := b.executor.Update(true, bvtUpdater); err != nil {
 			klog.Infof("update pod %s cpu bvt failed, dir %v, error %v",
 				util.GetPodKey(podMeta.Pod), podCgroupPath, err)
+		}
+	}
+	for _, hostApp := range target.HostApplications {
+		hostCtx := protocol.HooksProtocolBuilder.HostApp(&hostApp)
+		if err := b.SetHostAppBvtValue(hostCtx); err != nil {
+			klog.Warningf("set host application %v bvt value failed, error %v", hostApp.Name, err)
+		} else {
+			hostCtx.ReconcilerDone(b.executor)
+			klog.V(5).Infof("set host application %v bvt value finished", hostApp.Name)
 		}
 	}
 	return nil

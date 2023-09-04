@@ -26,21 +26,10 @@ import (
 )
 
 func (b *bvtPlugin) SetPodBvtValue(p protocol.HooksProtocol) error {
-	if !b.SystemSupported() {
-		klog.V(5).Infof("plugin %s is not supported by system", name)
-		return nil
-	}
-	r := b.getRule()
+	r := b.prepare()
 	if r == nil {
-		klog.V(5).Infof("hook plugin rule is nil, nothing to do for plugin %v", name)
 		return nil
 	}
-	err := b.initialize()
-	if err != nil {
-		klog.V(4).Infof("failed to initialize plugin %s, err: %s", name, err)
-		return nil
-	}
-
 	podCtx := p.(*protocol.PodContext)
 	req := podCtx.Request
 	podQOS := ext.GetQoSClassByAttrs(req.Labels, req.Annotations)
@@ -51,6 +40,30 @@ func (b *bvtPlugin) SetPodBvtValue(p protocol.HooksProtocol) error {
 }
 
 func (b *bvtPlugin) SetKubeQOSBvtValue(p protocol.HooksProtocol) error {
+	r := b.prepare()
+	if r == nil {
+		return nil
+	}
+	kubeQOSCtx := p.(*protocol.KubeQOSContext)
+	req := kubeQOSCtx.Request
+	bvtValue := r.getKubeQOSDirBvtValue(req.KubeQOSClass)
+	kubeQOSCtx.Response.Resources.CPUBvt = pointer.Int64(bvtValue)
+	return nil
+}
+
+func (b *bvtPlugin) SetHostAppBvtValue(p protocol.HooksProtocol) error {
+	r := b.prepare()
+	if r == nil {
+		return nil
+	}
+	hostQOSCtx := p.(*protocol.HostAppContext)
+	req := hostQOSCtx.Request
+	bvtValue := r.getHostQOSBvtValue(req.QOSClass)
+	hostQOSCtx.Response.Resources.CPUBvt = pointer.Int64(bvtValue)
+	return nil
+}
+
+func (b *bvtPlugin) prepare() *bvtRule {
 	if !b.SystemSupported() {
 		klog.V(5).Infof("plugin %s is not supported by system", name)
 		return nil
@@ -65,10 +78,5 @@ func (b *bvtPlugin) SetKubeQOSBvtValue(p protocol.HooksProtocol) error {
 		klog.V(4).Infof("failed to initialize plugin %s, err: %s", name, err)
 		return nil
 	}
-
-	kubeQOSCtx := p.(*protocol.KubeQOSContext)
-	req := kubeQOSCtx.Request
-	bvtValue := r.getKubeQOSDirBvtValue(req.KubeQOSClass)
-	kubeQOSCtx.Response.Resources.CPUBvt = pointer.Int64(bvtValue)
-	return nil
+	return r
 }

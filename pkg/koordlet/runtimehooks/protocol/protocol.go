@@ -21,6 +21,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 
+	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/audit"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
@@ -36,6 +37,7 @@ type hooksProtocolBuilder struct {
 	Pod       func(podMeta *statesinformer.PodMeta) HooksProtocol
 	Sandbox   func(podMeta *statesinformer.PodMeta) HooksProtocol
 	Container func(podMeta *statesinformer.PodMeta, containerName string) HooksProtocol
+	HostApp   func(hostAppSpec *slov1alpha1.HostApplicationSpec) HooksProtocol
 }
 
 var HooksProtocolBuilder = hooksProtocolBuilder{
@@ -57,6 +59,11 @@ var HooksProtocolBuilder = hooksProtocolBuilder{
 	Container: func(podMeta *statesinformer.PodMeta, containerName string) HooksProtocol {
 		c := &ContainerContext{}
 		c.FromReconciler(podMeta, containerName, false)
+		return c
+	},
+	HostApp: func(hostAppSpec *slov1alpha1.HostApplicationSpec) HooksProtocol {
+		c := &HostAppContext{}
+		c.FromReconciler(hostAppSpec)
 		return c
 	},
 }

@@ -17,6 +17,8 @@ limitations under the License.
 package cpuset
 
 import (
+	"path/filepath"
+	"reflect"
 	"testing"
 
 	topov1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
@@ -26,6 +28,7 @@ import (
 	"k8s.io/utils/pointer"
 
 	ext "github.com/koordinator-sh/koordinator/apis/extension"
+	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/protocol"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
@@ -525,7 +528,7 @@ func Test_cpusetPlugin_parseRule(t *testing.T) {
 	}
 }
 
-func Test_cpusetPlugin_ruleUpdateCb(t *testing.T) {
+func Test_cpusetPlugin_ruleUpdateCbForPods(t *testing.T) {
 	type testPod struct {
 		pod       *corev1.Pod
 		sandboxID string
@@ -667,7 +670,11 @@ func Test_cpusetPlugin_ruleUpdateCb(t *testing.T) {
 			for _, podMeta := range podUIDMetas {
 				podMetas = append(podMetas, podMeta)
 			}
-			if err := p.ruleUpdateCb(podMetas); (err != nil) != tt.wantErr {
+			target := &statesinformer.CallbackTarget{
+				Pods: podMetas,
+			}
+
+			if err := p.ruleUpdateCb(target); (err != nil) != tt.wantErr {
 				t.Errorf("ruleUpdateCb() error = %v, wantErr %v", err, tt.wantErr)
 			}
 
@@ -687,6 +694,211 @@ func Test_cpusetPlugin_ruleUpdateCb(t *testing.T) {
 				assert.Equal(t, tt.wants.sandboxCPUSet[string(podMeta.Pod.UID)], gotCPUSet,
 					"sandbox cpuset after callback should be equal")
 			}
+		})
+	}
+}
+
+func Test_cpusetRule_getHostAppCpuset(t *testing.T) {
+	type fields struct {
+		sharePools []ext.CPUSharedPool
+	}
+	type args struct {
+		hostAppReq *protocol.HostAppRequest
+	}
+	tests := []struct {
+		name    string
+		fields  fields
+		args    args
+		want    *string
+		wantErr bool
+	}{
+		{
+			name: "get nil result with nil request",
+			fields: fields{
+				sharePools: nil,
+			},
+			args: args{
+				hostAppReq: nil,
+			},
+			want:    nil,
+			wantErr: false,
+		},
+		{
+			name: "get nil result with bad request qos",
+			fields: fields{
+				sharePools: []ext.CPUSharedPool{
+					{
+						Socket: 0,
+						Node:   0,
+						CPUSet: "0-7",
+					},
+					{
+						Socket: 1,
+						Node:   0,
+						CPUSet: "8-15",
+					},
+				},
+			},
+			args: args{
+				hostAppReq: &protocol.HostAppRequest{
+					Name:         "test-app",
+					QOSClass:     ext.QoSLSR,
+					CgroupParent: "",
+				},
+			},
+			want:    nil,
+			wantErr: true,
+		},
+		{
+			name: "get cpuset result with ls qos request",
+			fields: fields{
+				sharePools: []ext.CPUSharedPool{
+					{
+						Socket: 0,
+						Node:   0,
+						CPUSet: "0-7",
+					},
+					{
+						Socket: 1,
+						Node:   0,
+						CPUSet: "8-15",
+					},
+				},
+			},
+			args: args{
+				hostAppReq: &protocol.HostAppRequest{
+					Name:         "test-app",
+					QOSClass:     ext.QoSLS,
+					CgroupParent: "",
+				},
+			},
+			want:    pointer.String("0-7,8-15"),
+			wantErr: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := &cpusetRule{
+				sharePools: tt.fields.sharePools,
+			}
+			got, err := r.getHostAppCpuset(tt.args.hostAppReq)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("getHostAppCpuset() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("getHostAppCpuset() got = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func Test_cpusetPlugin_ruleUpdateCbForHostApp(t *testing.T) {
+	type fields struct {
+		rule     *cpusetRule
+		executor resourceexecutor.ResourceUpdateExecutor
+	}
+	type args struct {
+		hostApp slov1alpha1.HostApplicationSpec
+	}
+	tests := []struct {
+		name       string
+		fields     fields
+		args       args
+		wantCPUSet string
+		wantErr    bool
+	}{
+		{
+			name: "set cpuset for host application",
+			fields: fields{
+				rule: &cpusetRule{
+					sharePools: []ext.CPUSharedPool{
+						{
+							Socket: 0,
+							Node:   0,
+							CPUSet: "0-7",
+						},
+						{
+							Socket: 1,
+							Node:   0,
+							CPUSet: "8-15",
+						},
+					},
+				},
+			},
+			args: args{
+				hostApp: slov1alpha1.HostApplicationSpec{
+					Name: "test-app",
+					QoS:  ext.QoSLS,
+					CgroupPath: &slov1alpha1.CgroupPath{
+						ParentDir:    "test-ls",
+						RelativePath: "test-app",
+					},
+				},
+			},
+			wantCPUSet: "0-7,8-15",
+			wantErr:    false,
+		},
+		{
+			name: "set empty cpuset for LSR host application",
+			fields: fields{
+				rule: &cpusetRule{
+					sharePools: []ext.CPUSharedPool{
+						{
+							Socket: 0,
+							Node:   0,
+							CPUSet: "0-7",
+						},
+						{
+							Socket: 1,
+							Node:   0,
+							CPUSet: "8-15",
+						},
+					},
+				},
+			},
+			args: args{
+				hostApp: slov1alpha1.HostApplicationSpec{
+					Name: "test-app",
+					QoS:  ext.QoSLSR,
+					CgroupPath: &slov1alpha1.CgroupPath{
+						ParentDir:    "test-ls",
+						RelativePath: "test-app",
+					},
+				},
+			},
+			wantCPUSet: "",
+			wantErr:    false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			testHelper := system.NewFileTestUtil(t)
+			testApp := tt.args.hostApp
+			if testApp.CgroupPath == nil ||
+				(testApp.CgroupPath.Base != "" && testApp.CgroupPath.Base != slov1alpha1.CgroupBaseTypeRoot) {
+				t.Errorf("only cgroup root dir is suupported")
+			}
+
+			cgroupDir := filepath.Join(testApp.CgroupPath.ParentDir, testApp.CgroupPath.RelativePath)
+			initCPUSet(cgroupDir, "", testHelper)
+			p := &cpusetPlugin{
+				rule:     tt.fields.rule,
+				executor: resourceexecutor.NewResourceUpdateExecutor(),
+			}
+			stop := make(chan struct{})
+			defer func() { close(stop) }()
+			p.executor.Run(stop)
+
+			target := &statesinformer.CallbackTarget{
+				HostApplications: []slov1alpha1.HostApplicationSpec{tt.args.hostApp},
+			}
+			if err := p.ruleUpdateCb(target); (err != nil) != tt.wantErr {
+				t.Errorf("ruleUpdateCb() error = %v, wantErr %v", err, tt.wantErr)
+			}
+
+			gotCPUSet := getCPUSet(cgroupDir, testHelper)
+			assert.Equal(t, tt.wantCPUSet, gotCPUSet)
 		})
 	}
 }
