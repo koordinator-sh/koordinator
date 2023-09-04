@@ -64,7 +64,10 @@ type GroupQuotaManager struct {
 
 	// profile used to associated profile.
 	// default GroupQuotaManager has no profile
-	profile *koordv1alpha1.ElasticQuotaProfile
+	profile     *koordv1alpha1.ElasticQuotaProfile
+	profileName string
+	// nodeSelector is equal the profile node selector
+	nodeSelector labels.Selector
 }
 
 func NewGroupQuotaManager(systemGroupMax, defaultGroupMax v1.ResourceList, nodeLister listerv1.NodeLister, profile *koordv1alpha1.ElasticQuotaProfile) *GroupQuotaManager {
@@ -79,6 +82,7 @@ func NewGroupQuotaManager(systemGroupMax, defaultGroupMax v1.ResourceList, nodeL
 		nodeResourceMap:                         make(map[string]v1.ResourceList),
 		nodeLister:                              nodeLister,
 		profile:                                 profile,
+		nodeSelector:                            labels.Everything(),
 	}
 	// only default GroupQuotaManager need system quota and deault quota.
 	if profile == nil {
@@ -86,7 +90,14 @@ func NewGroupQuotaManager(systemGroupMax, defaultGroupMax v1.ResourceList, nodeL
 		quotaManager.quotaInfoMap[extension.SystemQuotaName].setMaxQuotaNoLock(systemGroupMax)
 		quotaManager.quotaInfoMap[extension.DefaultQuotaName] = NewQuotaInfo(false, true, extension.DefaultQuotaName, extension.RootQuotaName)
 		quotaManager.quotaInfoMap[extension.DefaultQuotaName].setMaxQuotaNoLock(defaultGroupMax)
+	} else {
+		quotaManager.profileName = profile.Name
+		selector, err := metav1.LabelSelectorAsSelector(profile.Spec.NodeSelector)
+		if err == nil {
+			quotaManager.nodeSelector = selector
+		}
 	}
+
 	quotaManager.quotaInfoMap[extension.RootQuotaName] = NewQuotaInfo(true, false, extension.RootQuotaName, "")
 	quotaManager.runtimeQuotaCalculatorMap[extension.RootQuotaName] = NewRuntimeQuotaCalculator(extension.RootQuotaName)
 	quotaManager.setScaleMinQuotaEnabled(true)
@@ -793,17 +804,54 @@ func (gqm *GroupQuotaManager) OnNodeAdd(node *v1.Node) {
 	gqm.nodeResourceMapLock.Lock()
 	defer gqm.nodeResourceMapLock.Unlock()
 
+	match := true
+	if gqm.profile != nil {
+		if !gqm.nodeSelector.Matches(labels.Set(node.Labels)) {
+			match = false
+		}
+	}
+
+	if !match {
+		old, ok := gqm.nodeResourceMap[node.Name]
+		if ok {
+			delta := quotav1.Subtract(v1.ResourceList{}, old)
+			gqm.UpdateClusterTotalResource(delta)
+			delete(gqm.nodeResourceMap, node.Name)
+		}
+		return
+	}
+
 	if _, ok := gqm.nodeResourceMap[node.Name]; ok {
 		return
 	}
+
 	gqm.nodeResourceMap[node.Name] = node.Status.Allocatable.DeepCopy()
 	gqm.UpdateClusterTotalResource(node.Status.Allocatable)
-	klog.V(5).Infof("OnNodeAddFunc success %v", node.Name)
+	klog.V(5).Infof("OnNodeAddFunc success %v, profile: %v", node.Name, gqm.profileName)
 }
 
 func (gqm *GroupQuotaManager) OnNodeUpdate(oldNode, newNode *v1.Node) {
 	gqm.nodeResourceMapLock.Lock()
 	defer gqm.nodeResourceMapLock.Unlock()
+
+	match := true
+	if gqm.profile != nil {
+		if !gqm.nodeSelector.Matches(labels.Set(newNode.Labels)) {
+			match = false
+		}
+	}
+
+	if !match {
+		// The node match nodeSelector, remove the node resource
+		old, exist := gqm.nodeResourceMap[newNode.Name]
+		if exist {
+			delta := quotav1.Subtract(v1.ResourceList{}, old)
+			gqm.UpdateClusterTotalResource(delta)
+			delete(gqm.nodeResourceMap, newNode.Name)
+			klog.V(5).Infof("OnNodeUpdateFunc success, clean resource :%v [%v], profile", newNode.Name, delta, gqm.profileName)
+		}
+		return
+	}
 
 	if _, exist := gqm.nodeResourceMap[newNode.Name]; !exist {
 		gqm.nodeResourceMap[newNode.Name] = newNode.Status.Allocatable.DeepCopy()
@@ -819,7 +867,7 @@ func (gqm *GroupQuotaManager) OnNodeUpdate(oldNode, newNode *v1.Node) {
 
 	deltaNodeAllocatable := quotav1.Subtract(newNodeAllocatable, oldNodeAllocatable)
 	gqm.UpdateClusterTotalResource(deltaNodeAllocatable)
-	klog.V(5).Infof("OnNodeUpdateFunc success:%v [%v]", newNode.Name, newNodeAllocatable)
+	klog.V(5).Infof("OnNodeUpdateFunc success, add resource :%v [%v], profile: %v", newNode.Name, newNodeAllocatable, gqm.profileName)
 }
 
 func (gqm *GroupQuotaManager) OnNodeDelete(node *v1.Node) {
@@ -833,20 +881,11 @@ func (gqm *GroupQuotaManager) OnNodeDelete(node *v1.Node) {
 	delta := quotav1.Subtract(v1.ResourceList{}, node.Status.Allocatable)
 	gqm.UpdateClusterTotalResource(delta)
 	delete(gqm.nodeResourceMap, node.Name)
-	klog.V(5).Infof("OnNodeDeleteFunc success:%v [%v]", node.Name, delta)
+	klog.V(5).Infof("OnNodeDeleteFunc success:%v [%v], profile: %v", node.Name, delta, gqm.profileName)
 }
 
 func (gqm *GroupQuotaManager) ResyncNodes() {
-	selector := labels.Everything()
-	if gqm.profile != nil {
-		var err error
-		selector, err = metav1.LabelSelectorAsSelector(gqm.profile.Spec.NodeSelector)
-		if err != nil {
-			klog.Errorf("ResyncNodes failed, err: %v", err)
-			return
-		}
-	}
-	nodes, err := gqm.nodeLister.List(selector)
+	nodes, err := gqm.nodeLister.List(gqm.nodeSelector)
 	if err != nil {
 		klog.Errorf("failed to list nodes for ResyncNodes")
 		return
@@ -877,6 +916,10 @@ func (gqm *GroupQuotaManager) ResyncNodes() {
 
 func (gqm *GroupQuotaManager) SetElasticQuotaProfile(profile *koordv1alpha1.ElasticQuotaProfile) {
 	gqm.profile = profile
+	selector, err := metav1.LabelSelectorAsSelector(profile.Spec.NodeSelector)
+	if err == nil {
+		gqm.nodeSelector = selector
+	}
 }
 
 func (gqm *GroupQuotaManager) resetRootQuotaUsedAndRequest() {
