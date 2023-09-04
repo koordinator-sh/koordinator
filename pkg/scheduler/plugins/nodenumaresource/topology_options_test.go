@@ -103,8 +103,8 @@ func TestTopologyOptionsManager(t *testing.T) {
 	assert.NotNil(t, topologyOptionsManager)
 
 	extendHandle := &frameworkHandleExtender{
-		ExtendedHandle: suit.Extender,
-		Clientset:      suit.NRTClientset,
+		FrameworkExtender: suit.Extender,
+		Clientset:         suit.NRTClientset,
 	}
 	nrtInformerFactory, err := initNRTInformerFactory(extendHandle)
 	assert.NoError(t, err)

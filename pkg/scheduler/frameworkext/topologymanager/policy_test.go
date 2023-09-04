@@ -42,7 +42,7 @@ func (m *mockNUMATopologyHintProvider) GetPodTopologyHints(ctx context.Context, 
 	return m.th, nil
 }
 
-func (m *mockNUMATopologyHintProvider) Allocate(ctx context.Context, cycleState *framework.CycleState, affinity NUMATopologyHint, pod *corev1.Pod, nodeName string, assume bool) *framework.Status {
+func (m *mockNUMATopologyHintProvider) Allocate(ctx context.Context, cycleState *framework.CycleState, affinity NUMATopologyHint, pod *corev1.Pod, nodeName string) *framework.Status {
 	return nil
 }
 

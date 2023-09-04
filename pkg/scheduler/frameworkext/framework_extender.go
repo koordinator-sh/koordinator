@@ -415,8 +415,8 @@ func (ext *frameworkExtenderImpl) ForgetPod(pod *corev1.Pod) error {
 	return nil
 }
 
-func (ext *frameworkExtenderImpl) RunNUMATopologyManagerAllocate(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string, numaNodes []int, policyType apiext.NUMATopologyPolicy, assume bool) *framework.Status {
-	return ext.topologyManager.Allocate(ctx, cycleState, pod, nodeName, numaNodes, policyType, assume)
+func (ext *frameworkExtenderImpl) RunNUMATopologyManagerAdmit(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string, numaNodes []int, policyType apiext.NUMATopologyPolicy) *framework.Status {
+	return ext.topologyManager.Admit(ctx, cycleState, pod, nodeName, numaNodes, policyType)
 }
 
 func (ext *frameworkExtenderImpl) GetNUMATopologyHintProvider() []topologymanager.NUMATopologyHintProvider {
