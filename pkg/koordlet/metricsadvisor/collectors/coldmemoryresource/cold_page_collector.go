@@ -34,7 +34,7 @@ func New(opt *framework.Options) framework.Collector {
 	// check whether support kidled cold page info collector
 	if system.IsKidledStart() {
 		return &kidledcoldPageCollector{
-			collectInterval: opt.Config.CollectResUsedInterval,
+			collectInterval: system.GetKidledScanPeriodInSeconds(),
 			cgroupReader:    opt.CgroupReader,
 			statesInformer:  opt.StatesInformer,
 			// TODO(BUPT-wxq): implement podFilter for the VM-based pods and containers

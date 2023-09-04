@@ -136,9 +136,8 @@ func Test_collectNodeColdPageInfo(t *testing.T) {
 	helper.SetResourcesSupported(true, system.MemoryIdlePageStats)
 	helper.WriteCgroupFileContents("", system.MemoryIdlePageStats, idleInfoContentStr)
 	helper.WriteProcSubFileContents(system.ProcMemInfoName, meminfo)
-	opt := framework.NewDefaultConfig()
 	c := &kidledcoldPageCollector{
-		collectInterval: opt.CollectResUsedInterval,
+		collectInterval: system.GetKidledScanPeriodInSeconds(),
 		cgroupReader:    resourceexecutor.NewCgroupReader(),
 		statesInformer:  statesInformer,
 		podFilter:       framework.DefaultPodFilter,

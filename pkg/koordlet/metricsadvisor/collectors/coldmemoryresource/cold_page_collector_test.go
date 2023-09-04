@@ -69,7 +69,7 @@ func Test_NewColdPageCollector(t *testing.T) {
 			name: "support kidled cold page collector",
 			args: args{contcontentKidledScanPeriodInSecondsent: "120", contentKidledUseHierarchy: "1"},
 			want: &kidledcoldPageCollector{
-				collectInterval: opt.Config.CollectResUsedInterval,
+				collectInterval: system.GetKidledScanPeriodInSeconds(),
 				cgroupReader:    opt.CgroupReader,
 				statesInformer:  opt.StatesInformer,
 				podFilter:       framework.DefaultPodFilter,

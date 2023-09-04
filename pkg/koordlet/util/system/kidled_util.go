@@ -22,13 +22,15 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"time"
 
 	"go.uber.org/atomic"
 	"k8s.io/klog/v2"
 )
 
 var (
-	isSupportColdMemory *atomic.Bool = atomic.NewBool(false)
+	isSupportColdMemory *atomic.Bool     = atomic.NewBool(false)
+	scanPeriodInSeconds *atomic.Duration = atomic.NewDuration(0)
 )
 
 type ColdPageInfoByKidled struct {
@@ -152,7 +154,7 @@ func IsKidledStart() bool {
 		klog.V(4).Infof("value of the scan_period_in_seconds is 0, kidled doesn't start ")
 		return isSupportColdMemory.Load()
 	}
-
+	scanPeriodInSeconds.Store(time.Duration(value))
 	isSupport, str = KidledUseHierarchy.IsSupported("")
 	if !isSupport {
 		klog.V(4).Infof("file use_hierarchy is not exist ", str)
@@ -176,4 +178,8 @@ func IsKidledStart() bool {
 
 func GetIsSupportColdMemory() bool {
 	return isSupportColdMemory.Load()
+}
+
+func GetKidledScanPeriodInSeconds() time.Duration {
+	return scanPeriodInSeconds.Load()
 }
