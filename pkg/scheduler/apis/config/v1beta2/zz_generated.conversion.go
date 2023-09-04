@@ -30,6 +30,7 @@ import (
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	conversion "k8s.io/apimachinery/pkg/conversion"
 	runtime "k8s.io/apimachinery/pkg/runtime"
+	configv1beta2 "k8s.io/kube-scheduler/config/v1beta2"
 	apisconfig "k8s.io/kubernetes/pkg/scheduler/apis/config"
 )
 
@@ -351,7 +352,7 @@ func Convert_v1beta2_ScoringStrategy_To_config_ScoringStrategy(in *ScoringStrate
 
 func autoConvert_config_ScoringStrategy_To_v1beta2_ScoringStrategy(in *config.ScoringStrategy, out *ScoringStrategy, s conversion.Scope) error {
 	out.Type = ScoringStrategyType(in.Type)
-	out.Resources = *(*[]apisconfig.ResourceSpec)(unsafe.Pointer(&in.Resources))
+	out.Resources = *(*[]configv1beta2.ResourceSpec)(unsafe.Pointer(&in.Resources))
 	return nil
 }
 
