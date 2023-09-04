@@ -816,6 +816,7 @@ func TestPlugin_Score(t *testing.T) {
 			}
 
 			suit := newPluginTestSuit(t, nodes)
+			suit.nodeNUMAResourceArgs.ScoringStrategy.Type = schedulingconfig.MostAllocated
 			p, err := suit.proxyNew(suit.nodeNUMAResourceArgs, suit.Handle)
 			assert.NotNil(t, p)
 			assert.Nil(t, err)

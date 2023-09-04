@@ -19,7 +19,7 @@ package v1beta2
 import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	schedconfig "k8s.io/kubernetes/pkg/scheduler/apis/config"
+	schedconfigv1beta2 "k8s.io/kube-scheduler/config/v1beta2"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 )
@@ -89,7 +89,7 @@ type ScoringStrategy struct {
 
 	// Resources a list of pairs <resource, weight> to be considered while scoring
 	// allowed weights start from 1.
-	Resources []schedconfig.ResourceSpec `json:"resources,omitempty"`
+	Resources []schedconfigv1beta2.ResourceSpec `json:"resources,omitempty"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
