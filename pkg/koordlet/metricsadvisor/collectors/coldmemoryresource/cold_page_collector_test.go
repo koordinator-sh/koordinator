@@ -56,8 +56,8 @@ func Test_NewColdPageCollector(t *testing.T) {
 		MetricCache:    metricCache,
 	}
 	type args struct {
-		contcontentKidledScanPeriodInSecondsent string
-		contentKidledUseHierarchy               string
+		contentKidledScanPeriodInSeconds string
+		contentKidledUseHierarchy        string
 	}
 	tests := []struct {
 		name       string
@@ -67,9 +67,9 @@ func Test_NewColdPageCollector(t *testing.T) {
 	}{
 		{
 			name: "support kidled cold page collector",
-			args: args{contcontentKidledScanPeriodInSecondsent: "120", contentKidledUseHierarchy: "1"},
+			args: args{contentKidledScanPeriodInSeconds: "120", contentKidledUseHierarchy: "1"},
 			want: &kidledcoldPageCollector{
-				collectInterval: system.GetKidledScanPeriodInSeconds(),
+				collectInterval: time.Duration(120),
 				cgroupReader:    opt.CgroupReader,
 				statesInformer:  opt.StatesInformer,
 				podFilter:       framework.DefaultPodFilter,
@@ -81,14 +81,14 @@ func Test_NewColdPageCollector(t *testing.T) {
 		},
 		{
 			name:       "don't support cold page collector and return nonCollector",
-			args:       args{contcontentKidledScanPeriodInSecondsent: "0", contentKidledUseHierarchy: "-1"},
+			args:       args{contentKidledScanPeriodInSeconds: "0", contentKidledUseHierarchy: "-1"},
 			want:       &nonColdPageCollector{},
 			wantEnable: false,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			helper.WriteFileContents(system.KidledScanPeriodInSeconds.Path(""), tt.args.contcontentKidledScanPeriodInSecondsent)
+			helper.WriteFileContents(system.KidledScanPeriodInSeconds.Path(""), tt.args.contentKidledScanPeriodInSeconds)
 			helper.WriteFileContents(system.KidledUseHierarchy.Path(""), tt.args.contentKidledUseHierarchy)
 			got := New(opt)
 			assert.Equal(t, tt.want, got)
