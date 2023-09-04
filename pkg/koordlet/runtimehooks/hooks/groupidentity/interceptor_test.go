@@ -273,7 +273,7 @@ func Test_bvtPlugin_SetPodBvtValue_Proxy(t *testing.T) {
 			assert.NoError(t, err)
 
 			if tt.want.bvtValue == nil {
-				assert.Nil(t, ctx.Response.Resources.CPUBvt, "bvt value should be nil")
+				assert.Nil(t, ctx.Response.Resources.CPUBvt, "bvt value should be nil, but got value")
 			} else {
 				assert.Equal(t, *tt.want.bvtValue, *ctx.Response.Resources.CPUBvt, "pod bvt in response should be equal")
 				gotBvt := getPodCPUBvt(tt.args.request.CgroupParent, testHelper)
@@ -481,6 +481,90 @@ func Test_bvtPlugin_SetKubeQOSBvtValue_Reconciler(t *testing.T) {
 				assert.Equal(t, *tt.want.bvtValue, *ctx.Response.Resources.CPUBvt, "kube qos bvt in response should be equal")
 				gotBvt := getPodCPUBvt(ctx.Request.CgroupParent, testHelper)
 				assert.Equal(t, *tt.want.bvtValue, gotBvt, "kube qos bvt should be equal")
+			}
+		})
+	}
+}
+
+func Test_bvtPlugin_SetHostAppBvtValue(t *testing.T) {
+	defaultRule := &bvtRule{
+		enable: true,
+		podQOSParams: map[ext.QoSClass]int64{
+			ext.QoSLSR: 2,
+			ext.QoSLS:  2,
+			ext.QoSBE:  -1,
+		},
+		kubeQOSDirParams: map[corev1.PodQOSClass]int64{
+			corev1.PodQOSGuaranteed: 0,
+			corev1.PodQOSBurstable:  2,
+			corev1.PodQOSBestEffort: -1,
+		},
+		kubeQOSPodParams: map[corev1.PodQOSClass]int64{
+			corev1.PodQOSGuaranteed: 2,
+			corev1.PodQOSBurstable:  2,
+			corev1.PodQOSBestEffort: -1,
+		},
+	}
+	type fields struct {
+		rule          *bvtRule
+		sysSupported  *bool
+		kernelEnabled *bool
+	}
+	type args struct {
+		qos ext.QoSClass
+	}
+	tests := []struct {
+		name    string
+		fields  fields
+		args    args
+		wantBvt *int64
+		wantErr bool
+	}{
+		{
+			name: "set bvt value for ls host application",
+			fields: fields{
+				rule:          defaultRule,
+				sysSupported:  pointer.Bool(true),
+				kernelEnabled: pointer.Bool(true),
+			},
+			args: args{
+				qos: ext.QoSLS,
+			},
+			wantBvt: pointer.Int64(2),
+			wantErr: false,
+		},
+		{
+			name: "set bvt value for none host application",
+			fields: fields{
+				rule:          defaultRule,
+				sysSupported:  pointer.Bool(true),
+				kernelEnabled: pointer.Bool(true),
+			},
+			args: args{
+				qos: ext.QoSNone,
+			},
+			wantBvt: pointer.Int64(0),
+			wantErr: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			b := &bvtPlugin{
+				rule:          tt.fields.rule,
+				sysSupported:  tt.fields.sysSupported,
+				kernelEnabled: tt.fields.kernelEnabled,
+			}
+
+			ctx := &protocol.HostAppContext{}
+			ctx.Request.QOSClass = tt.args.qos
+			if err := b.SetHostAppBvtValue(ctx); (err != nil) != tt.wantErr {
+				t.Errorf("SetHostAppBvtValue() error = %v, wantErr %v", err, tt.wantErr)
+			}
+
+			if tt.wantBvt == nil {
+				assert.Nil(t, ctx.Response.Resources.CPUBvt, "bvt value should be nil")
+			} else {
+				assert.Equal(t, *tt.wantBvt, *ctx.Response.Resources.CPUBvt, "host application qos bvt in response should be equal")
 			}
 		})
 	}

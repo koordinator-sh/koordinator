@@ -633,3 +633,120 @@ func TestUnsetContainerCPUQuota(t *testing.T) {
 		})
 	}
 }
+
+func Test_cpusetPlugin_SetHostAppCPUSet(t *testing.T) {
+	type fields struct {
+		rule *cpusetRule
+	}
+	type args struct {
+		proto protocol.HooksProtocol
+	}
+	tests := []struct {
+		name       string
+		fields     fields
+		args       args
+		wantCPUSet *string
+		wantErr    bool
+	}{
+		{
+			name: "set cpuset with bad protocol",
+			fields: fields{
+				rule: nil,
+			},
+			args: args{
+				proto: nil,
+			},
+			wantCPUSet: nil,
+			wantErr:    true,
+		},
+		{
+			name: "set cpuset with nil rule",
+			fields: fields{
+				rule: nil,
+			},
+			args: args{
+				proto: &protocol.HostAppContext{
+					Request: protocol.HostAppRequest{
+						Name:         "test-app",
+						QOSClass:     ext.QoSLS,
+						CgroupParent: "host-latency-sensitive/nginx/",
+					},
+				},
+			},
+			wantCPUSet: nil,
+			wantErr:    false,
+		},
+		{
+			name: "set cpuset with with lsr application",
+			fields: fields{
+				rule: &cpusetRule{
+					sharePools: []ext.CPUSharedPool{
+						{
+							Socket: 0,
+							Node:   0,
+							CPUSet: "0-7",
+						},
+						{
+							Socket: 1,
+							Node:   0,
+							CPUSet: "8-15",
+						},
+					},
+					systemQOSCPUSet: "0-3",
+				},
+			},
+			args: args{
+				proto: &protocol.HostAppContext{
+					Request: protocol.HostAppRequest{
+						Name:         "test-app",
+						QOSClass:     ext.QoSLSR,
+						CgroupParent: "host-latency-sensitive/nginx/",
+					},
+				},
+			},
+			wantCPUSet: nil,
+			wantErr:    true,
+		},
+		{
+			name: "set cpuset with with ls application",
+			fields: fields{
+				rule: &cpusetRule{
+					sharePools: []ext.CPUSharedPool{
+						{
+							Socket: 0,
+							Node:   0,
+							CPUSet: "0-7",
+						},
+						{
+							Socket: 1,
+							Node:   0,
+							CPUSet: "8-15",
+						},
+					},
+					systemQOSCPUSet: "0-3",
+				},
+			},
+			args: args{
+				proto: &protocol.HostAppContext{
+					Request: protocol.HostAppRequest{
+						Name:         "test-app",
+						QOSClass:     ext.QoSLS,
+						CgroupParent: "host-latency-sensitive/nginx/",
+					},
+				},
+			},
+			wantCPUSet: pointer.String("0-7,8-15"),
+			wantErr:    false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := &cpusetPlugin{
+				rule: tt.fields.rule,
+			}
+			if err := p.SetHostAppCPUSet(tt.args.proto); (err != nil) != tt.wantErr {
+				t.Errorf("SetHostAppCPUSet() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}

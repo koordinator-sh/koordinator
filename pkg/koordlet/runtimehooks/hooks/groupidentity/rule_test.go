@@ -17,6 +17,7 @@ limitations under the License.
 package groupidentity
 
 import (
+	"path/filepath"
 	"strconv"
 	"testing"
 
@@ -411,7 +412,7 @@ func Test_bvtPlugin_parseRule(t *testing.T) {
 	}
 }
 
-func Test_bvtPlugin_ruleUpdateCb(t *testing.T) {
+func Test_bvtPlugin_ruleUpdateCbForPods(t *testing.T) {
 	type fields struct {
 		rule *bvtRule
 	}
@@ -567,6 +568,9 @@ func Test_bvtPlugin_ruleUpdateCb(t *testing.T) {
 			initCPUBvt(pod.CgroupDir, 0, testHelper)
 			podList = append(podList, pod)
 		}
+		target := &statesinformer.CallbackTarget{
+			Pods: podList,
+		}
 		t.Run(tt.name, func(t *testing.T) {
 			b := &bvtPlugin{
 				rule:     tt.fields.rule,
@@ -576,7 +580,7 @@ func Test_bvtPlugin_ruleUpdateCb(t *testing.T) {
 			defer func() { close(stop) }()
 			b.executor.Run(stop)
 
-			if err := b.ruleUpdateCb(podList); (err != nil) != tt.wantErr {
+			if err := b.ruleUpdateCb(target); (err != nil) != tt.wantErr {
 				t.Errorf("ruleUpdateCb() error = %v, wantErr %v", err, tt.wantErr)
 			}
 			for kubeQoS, wantBvt := range tt.wantKubeDirVal {
@@ -590,6 +594,90 @@ func Test_bvtPlugin_ruleUpdateCb(t *testing.T) {
 				wantBvt := tt.wantPodVal[podName]
 				assert.Equal(t, gotBvt, wantBvt, "pod %s bvt value not equal", podName)
 			}
+		})
+	}
+}
+
+func Test_bvtPlugin_ruleUpdateCbForHostApp(t *testing.T) {
+	type fields struct {
+		rule *bvtRule
+	}
+	type args struct {
+		hostApp slov1alpha1.HostApplicationSpec
+	}
+	tests := []struct {
+		name    string
+		fields  fields
+		args    args
+		wantBvt int64
+		wantErr bool
+	}{
+		{
+			name: "set host application bvt",
+			fields: fields{
+				rule: &bvtRule{
+					podQOSParams: map[ext.QoSClass]int64{
+						ext.QoSLSR: 0,
+						ext.QoSLS:  2,
+						ext.QoSBE:  -1,
+					},
+					kubeQOSDirParams: map[corev1.PodQOSClass]int64{
+						corev1.PodQOSGuaranteed: 0,
+						corev1.PodQOSBurstable:  2,
+						corev1.PodQOSBestEffort: -1,
+					},
+					kubeQOSPodParams: map[corev1.PodQOSClass]int64{
+						corev1.PodQOSGuaranteed: 2,
+						corev1.PodQOSBurstable:  2,
+						corev1.PodQOSBestEffort: -1,
+					},
+				},
+			},
+			args: args{
+				hostApp: slov1alpha1.HostApplicationSpec{
+					Name: "test-app",
+					QoS:  ext.QoSLS,
+					CgroupPath: &slov1alpha1.CgroupPath{
+						ParentDir:    "test-ls",
+						RelativePath: "test-app",
+					},
+				},
+			},
+			wantBvt: 2,
+			wantErr: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			testHelper := system.NewFileTestUtil(t)
+			testApp := tt.args.hostApp
+			if testApp.CgroupPath == nil ||
+				(testApp.CgroupPath.Base != "" && testApp.CgroupPath.Base != slov1alpha1.CgroupBaseTypeRoot) {
+				t.Errorf("only cgroup root dir is suupported")
+			}
+
+			cgroupDir := filepath.Join(testApp.CgroupPath.ParentDir, testApp.CgroupPath.RelativePath)
+			initCPUBvt(cgroupDir, 0, testHelper)
+			b := &bvtPlugin{
+				rule:          tt.fields.rule,
+				sysSupported:  pointer.Bool(true),
+				kernelEnabled: pointer.Bool(true),
+				executor:      resourceexecutor.NewResourceUpdateExecutor(),
+			}
+			stop := make(chan struct{})
+			defer func() { close(stop) }()
+			b.executor.Run(stop)
+			target := &statesinformer.CallbackTarget{
+				HostApplications: []slov1alpha1.HostApplicationSpec{tt.args.hostApp},
+			}
+
+			if err := b.ruleUpdateCb(target); (err != nil) != tt.wantErr {
+				t.Errorf("ruleUpdateCb() error = %v, wantErr %v", err, tt.wantErr)
+			}
+
+			gotBvtStr := testHelper.ReadCgroupFileContents(cgroupDir, system.CPUBVTWarpNs)
+			gotBvt, _ := strconv.ParseInt(gotBvtStr, 10, 64)
+			assert.Equal(t, gotBvt, tt.wantBvt)
 		})
 	}
 }

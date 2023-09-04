@@ -94,6 +94,29 @@ func getSystemConfigSpec(node *corev1.Node, cfg *configuration.SystemCfg) (*slov
 	return cfg.ClusterStrategy.DeepCopy(), nil
 }
 
+func getHostApplicationConfig(node *corev1.Node, cfg *configuration.HostApplicationCfg) ([]slov1alpha1.HostApplicationSpec, error) {
+	nodeLabels := labels.Set(node.Labels)
+	for _, nodeCfg := range cfg.NodeConfigs {
+		selector, err := metav1.LabelSelectorAsSelector(nodeCfg.NodeSelector)
+		if err != nil {
+			klog.Errorf("failed to parse node selector %v for HostApplicationCfg, error: %v", nodeCfg.NodeSelector.String(), err)
+			continue
+		}
+		if selector.Matches(nodeLabels) {
+			out := make([]slov1alpha1.HostApplicationSpec, len(nodeCfg.Applications))
+			for i := range nodeCfg.Applications {
+				nodeCfg.Applications[i].DeepCopyInto(&out[i])
+			}
+			return out, nil
+		}
+	}
+	out := make([]slov1alpha1.HostApplicationSpec, len(cfg.Applications))
+	for i := range cfg.Applications {
+		cfg.Applications[i].DeepCopyInto(&out[i])
+	}
+	return out, nil
+}
+
 func calculateResourceThresholdCfgMerged(oldCfg configuration.ResourceThresholdCfg, configMap *corev1.ConfigMap) (configuration.ResourceThresholdCfg, error) {
 	cfgStr, ok := configMap.Data[configuration.ResourceThresholdConfigKey]
 	if !ok {
@@ -233,5 +256,19 @@ func calculateSystemConfigMerged(oldCfg configuration.SystemCfg, configMap *core
 
 	}
 
+	return mergedCfg, nil
+}
+
+func calculateHostAppConfigMerged(oldCfg configuration.HostApplicationCfg, configMap *corev1.ConfigMap) (configuration.HostApplicationCfg, error) {
+	cfgStr, ok := configMap.Data[configuration.HostApplicationConfigKey]
+	if !ok {
+		return configuration.HostApplicationCfg{}, nil
+	}
+
+	mergedCfg := configuration.HostApplicationCfg{}
+	if err := json.Unmarshal([]byte(cfgStr), &mergedCfg); err != nil {
+		klog.Warningf("failed to unmarshal config %s, error: %v", configuration.HostApplicationConfigKey, err)
+		return oldCfg, err
+	}
 	return mergedCfg, nil
 }

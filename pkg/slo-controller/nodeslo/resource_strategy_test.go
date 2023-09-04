@@ -18,6 +18,7 @@ package nodeslo
 
 import (
 	"encoding/json"
+	"reflect"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -26,6 +27,7 @@ import (
 	"k8s.io/utils/pointer"
 
 	"github.com/koordinator-sh/koordinator/apis/configuration"
+	ext "github.com/koordinator-sh/koordinator/apis/extension"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/util/sloconfig"
 )
@@ -1069,6 +1071,210 @@ func Test_calculateSystemConfigMerged(t *testing.T) {
 			got, gotErr := calculateSystemConfigMerged(oldSLOCfg.SystemCfgMerged, tt.args.configMap)
 			assert.Equal(t, tt.wantErr, gotErr != nil)
 			assert.Equal(t, tt.want, &got)
+		})
+	}
+}
+
+func Test_getHostApplicationConfig(t *testing.T) {
+	type args struct {
+		node *corev1.Node
+		cfg  *configuration.HostApplicationCfg
+	}
+	testHostApp := &configuration.HostApplicationCfg{
+		Applications: []slov1alpha1.HostApplicationSpec{
+			{
+				Name: "test-app-default",
+			},
+		},
+		NodeConfigs: []configuration.NodeHostApplicationCfg{
+			{
+				NodeCfgProfile: configuration.NodeCfgProfile{
+					NodeSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							"test-node-key": "test-node-value-A",
+						},
+					},
+				},
+				Applications: []slov1alpha1.HostApplicationSpec{
+					{
+						Name: "test-app-ls",
+						QoS:  ext.QoSLS,
+					},
+				},
+			},
+		},
+	}
+	testHostAppMultiNodes := &configuration.HostApplicationCfg{
+		Applications: []slov1alpha1.HostApplicationSpec{
+			{
+				Name: "test-app-default",
+			},
+		},
+		NodeConfigs: []configuration.NodeHostApplicationCfg{
+			{
+				NodeCfgProfile: configuration.NodeCfgProfile{
+					NodeSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							"test-node-key-A": "test-node-value-A",
+						},
+					},
+				},
+				Applications: []slov1alpha1.HostApplicationSpec{
+					{
+						Name: "test-app-ls",
+						QoS:  ext.QoSLS,
+					},
+				},
+			},
+			{
+				NodeCfgProfile: configuration.NodeCfgProfile{
+					NodeSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							"test-node-key-B": "test-node-value-B",
+						},
+					},
+				},
+				Applications: []slov1alpha1.HostApplicationSpec{
+					{
+						Name: "test-app-lsr",
+						QoS:  ext.QoSLSR,
+					},
+				},
+			},
+		},
+	}
+	tests := []struct {
+		name    string
+		args    args
+		want    []slov1alpha1.HostApplicationSpec
+		wantErr bool
+	}{
+		{
+			name: "invalid node, use cluster config",
+			args: args{
+				node: &corev1.Node{},
+				cfg:  testHostApp,
+			},
+			want:    testHostApp.Applications,
+			wantErr: false,
+		},
+		{
+			name: "use cluster config",
+			args: args{
+				node: &corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node",
+					},
+				},
+				cfg: testHostApp,
+			},
+			want:    testHostApp.Applications,
+			wantErr: false,
+		},
+		{
+			name: "use first matched node config",
+			args: args{
+				node: &corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node",
+						Labels: map[string]string{
+							"test-node-key-A": "test-node-value-A",
+							"test-node-key-B": "test-node-value-B",
+						},
+					},
+				},
+				cfg: testHostAppMultiNodes,
+			},
+			want:    testHostAppMultiNodes.NodeConfigs[0].Applications,
+			wantErr: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := getHostApplicationConfig(tt.args.node, tt.args.cfg)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("getHostApplicationConfig() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("getHostApplicationConfig() got = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func Test_calculateHostAppConfigMerged(t *testing.T) {
+	hostAppOrigin := configuration.HostApplicationCfg{
+		Applications: []slov1alpha1.HostApplicationSpec{
+			{
+				Name: "origin-host-app",
+				QoS:  ext.QoSLS,
+			},
+		},
+	}
+	hostAppNew := configuration.HostApplicationCfg{
+		Applications: []slov1alpha1.HostApplicationSpec{
+			{
+				Name: "new-host-app",
+				QoS:  ext.QoSLS,
+			},
+		},
+	}
+	hostAppNewBytes, _ := json.Marshal(&hostAppNew)
+	hostAppNewStr := string(hostAppNewBytes)
+	hostAppBadStr := "bad-string"
+	type args struct {
+		oldCfg    configuration.HostApplicationCfg
+		configMap *corev1.ConfigMap
+	}
+	tests := []struct {
+		name    string
+		args    args
+		want    configuration.HostApplicationCfg
+		wantErr bool
+	}{
+		{
+			name: "configmap key not exist, use empty",
+			args: args{
+				oldCfg:    hostAppOrigin,
+				configMap: &corev1.ConfigMap{Data: map[string]string{}},
+			},
+			want:    configuration.HostApplicationCfg{},
+			wantErr: false,
+		},
+		{
+			name: "bad configmap key, use old",
+			args: args{
+				oldCfg: hostAppOrigin,
+				configMap: &corev1.ConfigMap{Data: map[string]string{
+					configuration.HostApplicationConfigKey: hostAppBadStr,
+				}},
+			},
+			want:    hostAppOrigin,
+			wantErr: true,
+		},
+		{
+			name: "parse from new host application",
+			args: args{
+				oldCfg: hostAppOrigin,
+				configMap: &corev1.ConfigMap{Data: map[string]string{
+					configuration.HostApplicationConfigKey: hostAppNewStr,
+				}},
+			},
+			want:    hostAppNew,
+			wantErr: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := calculateHostAppConfigMerged(tt.args.oldCfg, tt.args.configMap)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("calculateHostAppConfigMerged() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("calculateHostAppConfigMerged() got = %v, want %v", got, tt.want)
+			}
 		})
 	}
 }
