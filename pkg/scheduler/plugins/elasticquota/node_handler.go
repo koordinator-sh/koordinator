@@ -32,6 +32,9 @@ func (g *Plugin) OnNodeAdd(obj interface{}) {
 	}
 
 	g.groupQuotaManager.OnNodeAdd(node)
+	for _, mgr := range g.GetProfileGroupQuotaManagers() {
+		mgr.OnNodeAdd(node)
+	}
 }
 
 func (g *Plugin) OnNodeUpdate(oldObj, newObj interface{}) {
@@ -48,6 +51,9 @@ func (g *Plugin) OnNodeUpdate(oldObj, newObj interface{}) {
 	}
 
 	g.groupQuotaManager.OnNodeUpdate(oldNode, newNode)
+	for _, mgr := range g.GetProfileGroupQuotaManagers() {
+		mgr.OnNodeUpdate(oldNode, newNode)
+	}
 }
 
 func (g *Plugin) OnNodeDelete(obj interface{}) {
@@ -58,4 +64,7 @@ func (g *Plugin) OnNodeDelete(obj interface{}) {
 	}
 
 	g.groupQuotaManager.OnNodeDelete(node)
+	for _, mgr := range g.GetProfileGroupQuotaManagers() {
+		mgr.OnNodeDelete(node)
+	}
 }

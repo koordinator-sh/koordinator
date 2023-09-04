@@ -25,6 +25,18 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/elasticquota/core"
 )
 
+func (g *Plugin) GetProfileGroupQuotaManagers() []*core.GroupQuotaManager {
+	g.quotaManagerLock.RLock()
+	defer g.quotaManagerLock.RUnlock()
+
+	managers := make([]*core.GroupQuotaManager, 0, len(g.profileGroupQuotaManagers))
+	for _, mgr := range g.profileGroupQuotaManagers {
+		managers = append(managers, mgr)
+	}
+
+	return managers
+}
+
 func (g *Plugin) GetGroupQuotaManager(profile string) *core.GroupQuotaManager {
 	g.quotaManagerLock.RLock()
 	defer g.quotaManagerLock.RUnlock()
