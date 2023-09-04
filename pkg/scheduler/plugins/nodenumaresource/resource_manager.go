@@ -25,6 +25,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/sets"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
@@ -186,18 +187,22 @@ func (c *resourceManager) allocateResourcesByHint(node *corev1.Node, pod *corev1
 	}
 
 	requests := options.requests.DeepCopy()
+	intersectionResources := sets.NewString()
 	var result []NUMANodeResource
 	for _, numaNodeID := range options.hint.NUMANodeAffinity.GetBits() {
-		available := totalAvailable[numaNodeID]
+		allocatable := totalAvailable[numaNodeID]
 		r := NUMANodeResource{
 			Node:      numaNodeID,
 			Resources: corev1.ResourceList{},
 		}
 		for resourceName, quantity := range requests {
-			var allocated resource.Quantity
-			available[resourceName], requests[resourceName], allocated = allocateRes(available[resourceName], quantity)
-			if !allocated.IsZero() {
-				r.Resources[resourceName] = allocated
+			if allocatableQuantity, ok := allocatable[resourceName]; ok {
+				intersectionResources.Insert(string(resourceName))
+				var allocated resource.Quantity
+				allocatable[resourceName], requests[resourceName], allocated = allocateRes(allocatableQuantity, quantity)
+				if !allocated.IsZero() {
+					r.Resources[resourceName] = allocated
+				}
 			}
 		}
 		if !quotav1.IsZero(r.Resources) {
@@ -207,10 +212,17 @@ func (c *resourceManager) allocateResourcesByHint(node *corev1.Node, pod *corev1
 			break
 		}
 	}
-	requests = quotav1.RemoveZeros(requests)
-	if len(requests) > 0 {
-		resourceNames := quotav1.ResourceNames(requests)
-		return nil, fmt.Errorf("insufficient resources: %v", resourceNames)
+
+	var insufficientResources []string
+	for resourceName, quantity := range requests {
+		if intersectionResources.Has(string(resourceName)) {
+			if !quantity.IsZero() {
+				insufficientResources = append(insufficientResources, string(resourceName))
+			}
+		}
+	}
+	if len(insufficientResources) > 0 {
+		return nil, fmt.Errorf("insufficient resources: %v", insufficientResources)
 	}
 	return result, nil
 }
@@ -286,6 +298,9 @@ func (c *resourceManager) allocateCPUSet(node *corev1.Node, pod *corev1.Pod, opt
 
 		result = result.Union(alignedCPUs)
 		numCPUsNeeded -= result.Size()
+		if numCPUsNeeded > 0 {
+			return empty, fmt.Errorf("not enough cpus available to satisfy request")
+		}
 	}
 
 	if numCPUsNeeded > 0 {
@@ -556,13 +571,15 @@ func generateResourceHints(numaNodes []int, podRequests corev1.ResourceList, tot
 			return
 		}
 
-		// set the minimum amount of NUMA nodes that can satisfy the container resources requests
+		// set the minimum amount of NUMA nodes that can satisfy the resources requests
 		if mask.Count() < minAffinitySize {
 			minAffinitySize = mask.Count()
 		}
 
-		// add the node mask as topology hint for all memory types
 		for resourceName := range podRequests {
+			if _, ok := available[resourceName]; !ok {
+				continue
+			}
 			if _, ok := hints[string(resourceName)]; !ok {
 				hints[string(resourceName)] = []topologymanager.NUMATopologyHint{}
 			}

@@ -21,7 +21,6 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/klog/v2"
-	"k8s.io/kubernetes/pkg/kubelet/util/format"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
@@ -60,7 +59,7 @@ func (m *topologyManager) Allocate(ctx context.Context, cycleState *framework.Cy
 	policy := createNUMATopologyPolicy(policyType, numaNodes)
 
 	bestHint, admit := m.calculateAffinity(ctx, cycleState, policy, pod, nodeName)
-	klog.V(5).Infof("Best TopologyHint for (pod: %v): %v", format.Pod(pod), bestHint)
+	klog.V(5).Infof("Best TopologyHint for (pod: %v): %v on node: %v", klog.KObj(pod), bestHint, nodeName)
 	if !admit {
 		return framework.NewStatus(framework.Unschedulable, "node(s) NUMA Topology affinity error")
 	}
@@ -87,7 +86,7 @@ func (m *topologyManager) accumulateProvidersHints(ctx context.Context, cycleSta
 		// Get the TopologyHints for a Pod from a provider.
 		hints, _ := provider.GetPodTopologyHints(ctx, cycleState, pod, nodeName)
 		providersHints = append(providersHints, hints)
-		klog.V(5).Infof("TopologyHints for pod '%v': %v", format.Pod(pod), hints)
+		klog.V(5).Infof("TopologyHints for pod '%v': %v on node: %v", klog.KObj(pod), hints, nodeName)
 	}
 	return providersHints
 }
