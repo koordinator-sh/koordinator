@@ -96,7 +96,7 @@ func filterProvidersHints(providersHints []map[string][]NUMATopologyHint) [][]NU
 	for _, hints := range providersHints {
 		// If hints is nil, insert a single, preferred any-numa hint into allProviderHints.
 		if len(hints) == 0 {
-			klog.Infof("[topologymanager] Hint Provider has no preference for NUMA affinity with any resource")
+			klog.V(5).Infof("[topologymanager] Hint Provider has no preference for NUMA affinity with any resource")
 			allProviderHints = append(allProviderHints, []NUMATopologyHint{{nil, true}})
 			continue
 		}
@@ -104,13 +104,13 @@ func filterProvidersHints(providersHints []map[string][]NUMATopologyHint) [][]NU
 		// Otherwise, accumulate the hints for each resource type into allProviderHints.
 		for resource := range hints {
 			if hints[resource] == nil {
-				klog.Infof("[topologymanager] Hint Provider has no preference for NUMA affinity with resource '%s'", resource)
+				klog.V(5).Infof("[topologymanager] Hint Provider has no preference for NUMA affinity with resource '%s'", resource)
 				allProviderHints = append(allProviderHints, []NUMATopologyHint{{nil, true}})
 				continue
 			}
 
 			if len(hints[resource]) == 0 {
-				klog.Infof("[topologymanager] Hint Provider has no possible NUMA affinities for resource '%s'", resource)
+				klog.V(5).Infof("[topologymanager] Hint Provider has no possible NUMA affinities for resource '%s'", resource)
 				allProviderHints = append(allProviderHints, []NUMATopologyHint{{nil, false}})
 				continue
 			}
