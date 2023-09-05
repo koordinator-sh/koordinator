@@ -48,6 +48,9 @@ func Test_NewColdPageCollector(t *testing.T) {
 	defer ctrl.Finish()
 	statesInformer := mock_statesinformer.NewMockStatesInformer(ctrl)
 	opt := &framework.Options{
+		Config: &framework.Config{
+			CollectResUsedInterval: 1 * time.Second,
+		},
 		CgroupReader:   resourceexecutor.NewCgroupReader(),
 		StatesInformer: statesInformer,
 		MetricCache:    metricCache,
