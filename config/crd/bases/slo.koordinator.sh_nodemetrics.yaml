@@ -87,6 +87,7 @@ spec:
                                 items:
                                   properties:
                                     health:
+                                      default: false
                                       description: Health indicates whether the device
                                         is normal
                                       type: boolean
@@ -198,6 +199,7 @@ spec:
                                 items:
                                   properties:
                                     health:
+                                      default: false
                                       description: Health indicates whether the device
                                         is normal
                                       type: boolean
@@ -302,6 +304,7 @@ spec:
                         items:
                           properties:
                             health:
+                              default: false
                               description: Health indicates whether the device is
                                 normal
                               type: boolean
@@ -404,6 +407,7 @@ spec:
                         items:
                           properties:
                             health:
+                              default: false
                               description: Health indicates whether the device is
                                 normal
                               type: boolean
@@ -518,6 +522,7 @@ spec:
                           items:
                             properties:
                               health:
+                                default: false
                                 description: Health indicates whether the device is
                                   normal
                                 type: boolean
@@ -625,6 +630,7 @@ spec:
                         items:
                           properties:
                             health:
+                              default: false
                               description: Health indicates whether the device is
                                 normal
                               type: boolean
