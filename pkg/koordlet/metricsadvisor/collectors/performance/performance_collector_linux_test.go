@@ -37,7 +37,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	mockstatesinformer "github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer/mockstatesinformer"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util"
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/perf"
+	perfgroup "github.com/koordinator-sh/koordinator/pkg/koordlet/util/perf_group"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 )
 
@@ -225,9 +225,9 @@ func Test_profilePerfOnSingleContainer(t *testing.T) {
 	}
 	tempDir := t.TempDir()
 	f, _ := os.OpenFile(tempDir, os.O_RDONLY, os.ModeDir)
-	perf.LibInit()
-	defer perf.LibFinalize()
-	perfCollector, _ := perf.NewPerfGroupCollector(f, []int{}, []string{"cycles", "instructions"}, syscall.Syscall6)
+	perfgroup.LibInit()
+	defer perfgroup.LibFinalize()
+	perfCollector, _ := perfgroup.NewPerfGroupCollector(f, []int{}, []string{"cycles", "instructions"}, syscall.Syscall6)
 
 	collector := New(&framework.Options{
 		Config:         framework.NewDefaultConfig(),

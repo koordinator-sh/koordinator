@@ -37,6 +37,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/perf"
+	perfgroup "github.com/koordinator-sh/koordinator/pkg/koordlet/util/perf_group"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 	tools "github.com/koordinator-sh/koordinator/pkg/util"
 )
@@ -86,14 +87,14 @@ func (p *performanceCollector) Run(stopCh <-chan struct{}) {
 	}
 	if p.EnabledPerf() {
 		if features.DefaultKoordletFeatureGate.Enabled(features.Libpfm4) {
-			perf.LibInit()
+			perfgroup.LibInit()
 			eventsMap := p.getLibpfm4EventMap()
 			// init perf buffer pool for different perf group collectors
-			perf.InitBufferPool(eventsMap)
+			perfgroup.InitBufferPool(eventsMap)
 
 			go func() {
 				<-stopCh
-				perf.LibFinalize()
+				perfgroup.LibFinalize()
 			}()
 		}
 
@@ -106,7 +107,7 @@ func (p *performanceCollector) Run(stopCh <-chan struct{}) {
 func (p *performanceCollector) getLibpfm4EventMap() map[int]struct{} {
 	eventsMap := make(map[int]struct{})
 	if features.DefaultKoordletFeatureGate.Enabled(features.CPICollector) {
-		eventsMap[len(perf.EventsMap[string(features.CPICollector)])] = struct{}{}
+		eventsMap[len(perfgroup.EventsMap[string(features.CPICollector)])] = struct{}{}
 	}
 	return eventsMap
 }
@@ -144,7 +145,7 @@ func (p *performanceCollector) collectContainerCPI() {
 	for containerStatus, parentPod := range containerStatusesMap {
 		go func(status *corev1.ContainerStatus, parent string) {
 			defer wg.Done()
-			collectorOnSingleContainer, err := p.getAndStartCollectorOnSingleContainer(parent, status, cpuNumber, perf.EventsMap["CPICollector"])
+			collectorOnSingleContainer, err := p.getAndStartCollectorOnSingleContainer(parent, status, cpuNumber, perfgroup.EventsMap["CPICollector"])
 			if err != nil {
 				return
 			}
