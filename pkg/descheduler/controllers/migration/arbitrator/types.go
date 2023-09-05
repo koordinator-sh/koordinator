@@ -18,17 +18,17 @@ package arbitrator
 
 import (
 	v1 "k8s.io/api/core/v1"
-	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"k8s.io/client-go/util/workqueue"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 
 	"github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 )
 
 type Arbitrator interface {
-	handler.EventHandler
-
-	Arbitrate(stopCh <-chan struct{})
+	Create(event.CreateEvent, workqueue.RateLimitingInterface)
+	Start(stopCh <-chan struct{})
 	Add(job *v1alpha1.PodMigrationJob)
-	WithSortFn(sort SortFn)
+	WithSortFn(sort SortFn) Arbitrator
 }
 
 // SortFn stably sorts PodMigrationJobs slice based on a certain strategy. Users

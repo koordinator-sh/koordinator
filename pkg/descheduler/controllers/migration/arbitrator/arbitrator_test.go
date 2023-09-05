@@ -31,6 +31,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/tools/events"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/utils/pointer"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -143,7 +144,7 @@ func TestFilter(t *testing.T) {
 		retryableMap    map[int]bool
 
 		expectWaitCollection map[int]bool
-		expectQueue          map[int]bool
+		expectPassedJobs     map[int]bool
 	}{
 		{
 			name:            "test-1",
@@ -152,7 +153,7 @@ func TestFilter(t *testing.T) {
 			retryableMap:    map[int]bool{3: true, 7: true},
 
 			expectWaitCollection: map[int]bool{3: true, 7: true},
-			expectQueue:          map[int]bool{0: true, 1: true, 4: true, 5: true, 6: true, 8: true, 9: true},
+			expectPassedJobs:     map[int]bool{0: true, 1: true, 4: true, 5: true, 6: true, 8: true, 9: true},
 		},
 		{
 			name:            "test-2",
@@ -161,7 +162,7 @@ func TestFilter(t *testing.T) {
 			retryableMap:    map[int]bool{3: true, 7: true},
 
 			expectWaitCollection: map[int]bool{7: true},
-			expectQueue:          map[int]bool{0: true, 1: true, 2: true, 4: true, 5: true, 6: true, 8: true, 9: true},
+			expectPassedJobs:     map[int]bool{0: true, 1: true, 2: true, 4: true, 5: true, 6: true, 8: true, 9: true},
 		},
 		{
 			name:            "test-3",
@@ -170,7 +171,7 @@ func TestFilter(t *testing.T) {
 			retryableMap:    map[int]bool{},
 
 			expectWaitCollection: map[int]bool{},
-			expectQueue:          map[int]bool{0: true, 1: true, 2: true, 3: true, 4: true, 5: true, 6: true, 7: true, 8: true, 9: true},
+			expectPassedJobs:     map[int]bool{0: true, 1: true, 2: true, 3: true, 4: true, 5: true, 6: true, 7: true, 8: true, 9: true},
 		},
 		{
 			name:            "test-4",
@@ -179,7 +180,7 @@ func TestFilter(t *testing.T) {
 			retryableMap:    map[int]bool{},
 
 			expectWaitCollection: map[int]bool{},
-			expectQueue:          map[int]bool{},
+			expectPassedJobs:     map[int]bool{},
 		},
 		{
 			name:            "test-5",
@@ -188,7 +189,7 @@ func TestFilter(t *testing.T) {
 			retryableMap:    map[int]bool{0: true, 1: true, 2: true, 3: true, 4: true},
 
 			expectWaitCollection: map[int]bool{0: true, 1: true, 2: true, 3: true, 4: true},
-			expectQueue:          map[int]bool{},
+			expectPassedJobs:     map[int]bool{},
 		},
 	}
 	for _, testCase := range testCases {
@@ -203,8 +204,7 @@ func TestFilter(t *testing.T) {
 			nonRetryablePods := map[*corev1.Pod]bool{}
 			var nonRetryableJobs []*v1alpha1.PodMigrationJob
 			retryablePods := map[*corev1.Pod]bool{}
-			var expectWorkQueueJob []*v1alpha1.PodMigrationJob
-			var expectWorkQueue []string
+			var expectPassedJobs []*v1alpha1.PodMigrationJob
 			collection := map[types.UID]*v1alpha1.PodMigrationJob{}
 			var expectWaitCollection []types.UID
 
@@ -224,15 +224,13 @@ func TestFilter(t *testing.T) {
 				if testCase.expectWaitCollection[i] {
 					expectWaitCollection = append(expectWaitCollection, jobs[i].UID)
 				}
-				if testCase.expectQueue[i] {
-					expectWorkQueueJob = append(expectWorkQueueJob, jobs[i])
-					expectWorkQueue = append(expectWorkQueue, jobs[i].Name)
+				if testCase.expectPassedJobs[i] {
+					expectPassedJobs = append(expectPassedJobs, jobs[i])
 				}
 				collection[jobs[i].UID] = jobs[i]
 			}
 			a := &arbitratorImpl{
 				waitingCollection: collection,
-				workQueue:         workqueue.NewRateLimitingQueue(&workqueue.BucketRateLimiter{Limiter: rate.NewLimiter(100, 100)}),
 				nonRetryablePodFilter: func(pod *corev1.Pod) bool {
 					return !nonRetryablePods[pod]
 				},
@@ -241,7 +239,7 @@ func TestFilter(t *testing.T) {
 				},
 				client:        fakeClient,
 				mu:            sync.Mutex{},
-				eventRecorder: fakeEventRecord{},
+				eventRecorder: &events.FakeRecorder{},
 				interval:      0,
 			}
 
@@ -253,18 +251,7 @@ func TestFilter(t *testing.T) {
 			}
 			assert.ElementsMatchf(t, actualWaitCollection, expectWaitCollection, "waitingCollection")
 
-			var actualWorkQueue []string
-			cnt := 0
-			for {
-				if cnt >= len(expectWorkQueueJob) {
-					break
-				}
-				item, _ := a.workQueue.Get()
-				actualWorkQueue = append(actualWorkQueue, item.(reconcile.Request).Name)
-				cnt++
-			}
-			assert.ElementsMatchf(t, actualWorkQueue, expectWorkQueue, "workQueue")
-
+			// check failed phase
 			for _, job := range nonRetryableJobs {
 				assert.Nil(t, fakeClient.Get(context.TODO(), types.NamespacedName{
 					Namespace: job.Namespace,
@@ -272,14 +259,81 @@ func TestFilter(t *testing.T) {
 				}, job))
 				assert.Equal(t, v1alpha1.PodMigrationJobFailed, job.Status.Phase)
 			}
-
-			for _, job := range expectWorkQueueJob {
+			// check annotations
+			for _, job := range expectPassedJobs {
 				assert.Nil(t, fakeClient.Get(context.TODO(), types.NamespacedName{
 					Namespace: job.Namespace,
 					Name:      job.Name,
 				}, job))
 				assert.Equal(t, "true", job.Annotations[AnnotationPassedArbitration])
 			}
+		})
+	}
+}
+
+func TestFilterOneJob(t *testing.T) {
+	testCases := []struct {
+		name         string
+		pod          *corev1.Pod
+		nonRetryable bool
+		retryable    bool
+		isFailed     bool
+		isPassed     bool
+	}{
+		{
+			"testCase1: pod nil",
+			nil,
+			false,
+			false,
+			false,
+			true,
+		},
+		{
+			"testCase2: nonRetryable:failed, retryable: passed",
+			&corev1.Pod{},
+			false,
+			true,
+			true,
+			false,
+		},
+		{
+			"testCase3: nonRetryable:passed, retryable: failed",
+			&corev1.Pod{},
+			true,
+			false,
+			false,
+			false,
+		},
+		{
+			"testCase4: nonRetryable:passed, retryable: passed",
+			&corev1.Pod{},
+			true,
+			true,
+			false,
+			true,
+		},
+		{
+			"testCase5: nonRetryable:failed, retryable: failed",
+			&corev1.Pod{},
+			false,
+			false,
+			true,
+			false,
+		},
+	}
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			arbitrator := arbitratorImpl{
+				nonRetryablePodFilter: func(pod *corev1.Pod) bool {
+					return testCase.nonRetryable
+				},
+				retryablePodFilter: func(pod *corev1.Pod) bool {
+					return testCase.retryable
+				},
+			}
+			isFailed, isPassed := arbitrator.filterOneJob(testCase.pod)
+			assert.Equal(t, testCase.isFailed, isFailed)
+			assert.Equal(t, testCase.isPassed, isPassed)
 		})
 	}
 }
@@ -299,7 +353,6 @@ func TestAdd(t *testing.T) {
 	fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
 	arbitrator := &arbitratorImpl{
 		waitingCollection: map[types.UID]*v1alpha1.PodMigrationJob{},
-		workQueue:         workqueue.NewRateLimitingQueue(&workqueue.BucketRateLimiter{Limiter: rate.NewLimiter(1, 1)}),
 		client:            fakeClient,
 	}
 
@@ -360,7 +413,6 @@ func TestRequeueJobIfRetryablePodFilterFailed(t *testing.T) {
 
 	a := &arbitratorImpl{
 		waitingCollection: map[types.UID]*v1alpha1.PodMigrationJob{job.UID: job},
-		workQueue:         workqueue.NewRateLimitingQueue(&workqueue.BucketRateLimiter{Limiter: rate.NewLimiter(100, 100)}),
 		sorts: []SortFn{func(jobs []*v1alpha1.PodMigrationJob, podOfJob map[*v1alpha1.PodMigrationJob]*corev1.Pod) []*v1alpha1.PodMigrationJob {
 			return jobs
 		}},
@@ -373,7 +425,7 @@ func TestRequeueJobIfRetryablePodFilterFailed(t *testing.T) {
 		},
 		client:        fakeClient,
 		mu:            sync.Mutex{},
-		eventRecorder: fakeEventRecord{},
+		eventRecorder: &events.FakeRecorder{},
 		interval:      0,
 	}
 
@@ -432,7 +484,6 @@ func TestAbortJobIfNonRetryablePodFilterFailed(t *testing.T) {
 
 	a := &arbitratorImpl{
 		waitingCollection: map[types.UID]*v1alpha1.PodMigrationJob{job.UID: job},
-		workQueue:         workqueue.NewRateLimitingQueue(&workqueue.BucketRateLimiter{Limiter: rate.NewLimiter(100, 100)}),
 		sorts: []SortFn{func(jobs []*v1alpha1.PodMigrationJob, podOfJob map[*v1alpha1.PodMigrationJob]*corev1.Pod) []*v1alpha1.PodMigrationJob {
 			return jobs
 		}},
@@ -445,7 +496,7 @@ func TestAbortJobIfNonRetryablePodFilterFailed(t *testing.T) {
 		},
 		client:        fakeClient,
 		mu:            sync.Mutex{},
-		eventRecorder: fakeEventRecord{},
+		eventRecorder: &events.FakeRecorder{},
 		interval:      0,
 	}
 
@@ -467,7 +518,7 @@ func TestDoOnceArbitrate(t *testing.T) {
 		order           map[int]int
 
 		expectWaitCollection map[int]bool
-		expectQueue          map[int]int
+		expectPassedJob      map[int]bool
 	}{
 		{
 			name:            "test-1",
@@ -477,7 +528,7 @@ func TestDoOnceArbitrate(t *testing.T) {
 			order:           map[int]int{0: 0, 1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 6, 7: 7, 8: 8, 9: 9},
 
 			expectWaitCollection: map[int]bool{3: true, 7: true},
-			expectQueue:          map[int]int{0: 1, 1: 2, 4: 3, 5: 4, 6: 5, 8: 6, 9: 7},
+			expectPassedJob:      map[int]bool{0: true, 1: true, 4: true, 5: true, 6: true, 8: true, 9: true},
 		},
 		{
 			name:            "test-2",
@@ -487,7 +538,7 @@ func TestDoOnceArbitrate(t *testing.T) {
 			order:           map[int]int{0: 9, 1: 8, 2: 7, 3: 6, 4: 5, 5: 4, 6: 3, 7: 2, 8: 1, 9: 0},
 
 			expectWaitCollection: map[int]bool{7: true},
-			expectQueue:          map[int]int{0: 8, 1: 7, 2: 6, 4: 5, 5: 4, 6: 3, 8: 2, 9: 1},
+			expectPassedJob:      map[int]bool{0: true, 1: true, 2: true, 4: true, 5: true, 6: true, 8: true, 9: true},
 		},
 		{
 			name:            "test-3",
@@ -496,7 +547,7 @@ func TestDoOnceArbitrate(t *testing.T) {
 			retryableMap:    map[int]bool{},
 
 			expectWaitCollection: map[int]bool{},
-			expectQueue:          map[int]int{},
+			expectPassedJob:      map[int]bool{},
 		},
 		{
 			name:            "test-4",
@@ -506,7 +557,7 @@ func TestDoOnceArbitrate(t *testing.T) {
 			order:           map[int]int{0: 0, 1: 3, 2: 1, 3: 4, 4: 2},
 
 			expectWaitCollection: map[int]bool{0: true, 1: true, 2: true, 3: true, 4: true},
-			expectQueue:          map[int]int{},
+			expectPassedJob:      map[int]bool{},
 		},
 		{
 			name:            "test-5",
@@ -516,7 +567,7 @@ func TestDoOnceArbitrate(t *testing.T) {
 			order:           map[int]int{0: 0, 1: 3, 2: 1, 3: 4, 4: 2},
 
 			expectWaitCollection: map[int]bool{2: true},
-			expectQueue:          map[int]int{0: 1, 1: 3, 3: 4, 4: 2},
+			expectPassedJob:      map[int]bool{0: true, 1: true, 3: true, 4: true},
 		},
 	}
 	for _, testCase := range testCases {
@@ -530,7 +581,7 @@ func TestDoOnceArbitrate(t *testing.T) {
 			podOfJob := map[*v1alpha1.PodMigrationJob]*corev1.Pod{}
 			nonRetryablePods := map[string]bool{}
 			retryablePods := map[string]bool{}
-			expectWorkQueue := map[string]int{}
+			var expectPassedJobs []*v1alpha1.PodMigrationJob
 			collection := map[types.UID]*v1alpha1.PodMigrationJob{}
 			var expectWaitCollection []types.UID
 			order := map[*v1alpha1.PodMigrationJob]int{}
@@ -550,15 +601,14 @@ func TestDoOnceArbitrate(t *testing.T) {
 				if testCase.expectWaitCollection[i] {
 					expectWaitCollection = append(expectWaitCollection, jobs[i].UID)
 				}
-				if v, ok := testCase.expectQueue[i]; ok {
-					expectWorkQueue[jobs[i].Name] = v
+				if testCase.expectPassedJob[i] {
+					expectPassedJobs = append(expectPassedJobs, jobs[i])
 				}
 				order[jobs[i]] = testCase.order[i]
 				collection[jobs[i].UID] = jobs[i]
 			}
 			a := &arbitratorImpl{
 				waitingCollection: collection,
-				workQueue:         workqueue.NewRateLimitingQueue(&workqueue.BucketRateLimiter{Limiter: rate.NewLimiter(100, 100)}),
 				nonRetryablePodFilter: func(pod *corev1.Pod) bool {
 					return !nonRetryablePods[pod.Name]
 				},
@@ -574,7 +624,7 @@ func TestDoOnceArbitrate(t *testing.T) {
 					}},
 				client:        fakeClient,
 				mu:            sync.Mutex{},
-				eventRecorder: fakeEventRecord{},
+				eventRecorder: &events.FakeRecorder{},
 				interval:      0,
 			}
 
@@ -586,17 +636,13 @@ func TestDoOnceArbitrate(t *testing.T) {
 			}
 			assert.ElementsMatchf(t, actualWaitCollection, expectWaitCollection, "waitingCollection")
 
-			actualWorkQueue := map[string]int{}
-			cnt := 0
-			for {
-				if cnt >= len(expectWorkQueue) {
-					break
-				}
-				cnt++
-				item, _ := a.workQueue.Get()
-				actualWorkQueue[item.(reconcile.Request).Name] = cnt
+			for _, job := range expectPassedJobs {
+				assert.Nil(t, fakeClient.Get(context.TODO(), types.NamespacedName{
+					Namespace: job.Namespace,
+					Name:      job.Name,
+				}, job))
+				assert.Equal(t, "true", job.Annotations[AnnotationPassedArbitration])
 			}
-			assert.Equal(t, expectWorkQueue, actualWorkQueue, "workQueue")
 		})
 	}
 }
@@ -609,7 +655,6 @@ func TestArbitrate(t *testing.T) {
 
 	a := &arbitratorImpl{
 		waitingCollection: map[types.UID]*v1alpha1.PodMigrationJob{},
-		workQueue:         workqueue.NewRateLimitingQueue(&workqueue.BucketRateLimiter{Limiter: rate.NewLimiter(100, 100)}),
 		nonRetryablePodFilter: func(pod *corev1.Pod) bool {
 			return true
 		},
@@ -622,12 +667,12 @@ func TestArbitrate(t *testing.T) {
 			}},
 		client:        fakeClient,
 		mu:            sync.Mutex{},
-		eventRecorder: fakeEventRecord{},
+		eventRecorder: &events.FakeRecorder{},
 		interval:      500,
 	}
 
-	ch := make(<-chan struct{})
-	go a.Arbitrate(ch)
+	ch := make(chan struct{})
+	go a.Start(ch)
 
 	for i := 0; i < 5; i++ {
 		pod := makePod("test-pod-"+strconv.Itoa(i), 0, extension.QoSNone, corev1.PodQOSBestEffort, time.Now())
@@ -636,9 +681,14 @@ func TestArbitrate(t *testing.T) {
 		assert.Nil(t, fakeClient.Create(context.TODO(), job))
 		a.Add(job)
 		time.Sleep(800 * time.Millisecond)
-		actualName, _ := a.workQueue.Get()
-		assert.Equal(t, job.Name, actualName.(reconcile.Request).Name)
+		assert.Nil(t, fakeClient.Get(context.TODO(), types.NamespacedName{
+			Namespace: job.Namespace,
+			Name:      job.Name,
+		}, job))
+
+		assert.Equal(t, "true", job.Annotations[AnnotationPassedArbitration])
 	}
+	ch <- struct{}{}
 }
 
 func TestUpdatePassedJob(t *testing.T) {
@@ -657,8 +707,7 @@ func TestUpdatePassedJob(t *testing.T) {
 		waitingCollection: map[types.UID]*v1alpha1.PodMigrationJob{job.UID: job},
 		client:            fakeClient,
 		mu:                sync.Mutex{},
-		eventRecorder:     fakeEventRecord{},
-		workQueue:         workqueue.NewRateLimitingQueue(&workqueue.BucketRateLimiter{Limiter: rate.NewLimiter(1, 1)}),
+		eventRecorder:     &events.FakeRecorder{},
 	}
 	arbitrator.updatePassedJob(job)
 
@@ -694,7 +743,7 @@ func TestUpdateFailedJob(t *testing.T) {
 		waitingCollection: map[types.UID]*v1alpha1.PodMigrationJob{job.UID: job},
 		client:            fakeClient,
 		mu:                sync.Mutex{},
-		eventRecorder:     fakeEventRecord{},
+		eventRecorder:     &events.FakeRecorder{},
 	}
 	arbitrator.updateFailedJob(job, pod)
 
@@ -726,7 +775,6 @@ func TestEventHandlerCreate(t *testing.T) {
 
 	arbitrator := &arbitratorImpl{
 		waitingCollection: map[types.UID]*v1alpha1.PodMigrationJob{},
-		workQueue:         nil,
 		client:            fakeClient,
 	}
 
@@ -736,7 +784,6 @@ func TestEventHandlerCreate(t *testing.T) {
 
 		arbitrator.Create(event.CreateEvent{Object: job}, queue)
 		expectedJobs = append(expectedJobs, job.Name)
-		assert.Equal(t, arbitrator.workQueue, queue)
 
 		var actualJobs []string
 		for _, v := range arbitrator.waitingCollection {
@@ -750,47 +797,6 @@ func TestEventHandlerCreate(t *testing.T) {
 
 	actualJob, _ := queue.Get()
 	assert.Equal(t, actualJob.(reconcile.Request).Name, nilJob.Name)
-}
-
-func TestEventHandler(t *testing.T) {
-	testCases := []string{"Update", "Delete", "Generic"}
-	for _, testCase := range testCases {
-		t.Run(testCase, func(t *testing.T) {
-			creationTime := time.Now()
-			migratingJobs := []*v1alpha1.PodMigrationJob{
-				makePodMigrationJob("test-job-1", creationTime, nil),
-				makePodMigrationJob("test-job-2", creationTime, nil),
-				makePodMigrationJob("test-job-3", creationTime, nil),
-				makePodMigrationJob("test-job-4", creationTime, nil),
-				makePodMigrationJob("test-job-5", creationTime, nil),
-			}
-			scheme := runtime.NewScheme()
-			_ = v1alpha1.AddToScheme(scheme)
-			_ = clientgoscheme.AddToScheme(scheme)
-			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
-
-			queue := workqueue.NewRateLimitingQueue(&workqueue.BucketRateLimiter{Limiter: rate.NewLimiter(1, 1)})
-
-			arbitrator := &arbitratorImpl{
-				waitingCollection: map[types.UID]*v1alpha1.PodMigrationJob{},
-				workQueue:         nil,
-				client:            fakeClient,
-			}
-			for _, job := range migratingJobs {
-				switch testCase {
-				case "Update":
-					arbitrator.Update(event.UpdateEvent{ObjectNew: job}, queue)
-				case "Delete":
-					arbitrator.Delete(event.DeleteEvent{Object: job}, queue)
-				case "Generic":
-					arbitrator.Generic(event.GenericEvent{Object: job}, queue)
-				}
-
-				actualJob, _ := queue.Get()
-				assert.Equal(t, actualJob.(reconcile.Request).Name, job.Name)
-			}
-		})
-	}
 }
 
 type podDecoratorFn func(pod *corev1.Pod)
@@ -850,9 +856,4 @@ func makePodMigrationJob(name string, creationTime time.Time, pod *corev1.Pod, d
 		decorator(job)
 	}
 	return job
-}
-
-type fakeEventRecord struct{}
-
-func (f fakeEventRecord) Eventf(regarding runtime.Object, related runtime.Object, eventtype, reason, action, note string, args ...interface{}) {
 }
