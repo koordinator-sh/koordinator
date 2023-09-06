@@ -17,14 +17,14 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 images:
   - name: descheduler
-    newName: registry.cn-hangzhou.aliyuncs.com/koordinator-sh/koord-descheduler
+    newName: ghcr.io/koordinator-sh/koord-descheduler
     newTag: latest
   - name: koordlet
-    newName: registry.cn-hangzhou.aliyuncs.com/koordinator-sh/koordlet
+    newName: ghcr.io/koordinator-sh/koordlet
     newTag: latest
   - name: manager
-    newName: registry.cn-hangzhou.aliyuncs.com/koordinator-sh/koord-manager
+    newName: ghcr.io/koordinator-sh/koord-manager
     newTag: latest
   - name: scheduler
-    newName: registry.cn-hangzhou.aliyuncs.com/koordinator-sh/koord-scheduler
+    newName: ghcr.io/koordinator-sh/koord-scheduler
     newTag: latest

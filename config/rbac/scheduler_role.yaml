@@ -29,6 +29,7 @@ rules:
   - watch
 - apiGroups:
   - config.koordinator.sh
+  - quota.koordinator.sh
   - slo.koordinator.sh
   - scheduling.koordinator.sh
   - topology.node.k8s.io

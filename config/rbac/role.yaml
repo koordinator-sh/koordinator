@@ -87,6 +87,26 @@ rules:
   - update
   - watch
 - apiGroups:
+  - quota.koordinator.sh
+  resources:
+  - elasticquotaprofiles
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - quota.koordinator.sh
+  resources:
+  - elasticquotaprofiles/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
   - scheduling.k8s.io
   resources:
   - priorityclasses
@@ -139,8 +159,12 @@ rules:
   resources:
   - elasticquotas
   verbs:
+  - create
+  - delete
   - get
   - list
+  - patch
+  - update
   - watch
 - apiGroups:
   - slo.koordinator.sh

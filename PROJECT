@@ -47,4 +47,11 @@ resources:
   kind: Reservation
   path: github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1
   version: v1alpha1
+- api:
+    crdVersion: v1
+  domain: koordinator.sh
+  group: quota
+  kind: ElasticQuotaProfile
+  path: github.com/koordinator-sh/koordinator/apis/quota/v1alpha1
+  version: v1alpha1
 version: "3"
