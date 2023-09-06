@@ -28,6 +28,7 @@ import (
 	"k8s.io/client-go/tools/events"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/klog/v2"
+	controllerruntime "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
@@ -44,6 +45,14 @@ const (
 
 var enqueueLog = klog.Background().WithName("eventHandler").WithName("arbitratorImpl")
 
+type Arbitrator interface {
+	Add(job *v1alpha1.PodMigrationJob)
+}
+
+// SortFn stably sorts PodMigrationJobs slice based on a certain strategy. Users
+// can implement different SortFn according to their needs.
+type SortFn func(jobs []*v1alpha1.PodMigrationJob, podOfJob map[*v1alpha1.PodMigrationJob]*corev1.Pod) []*v1alpha1.PodMigrationJob
+
 type arbitratorImpl struct {
 	waitingCollection map[types.UID]*v1alpha1.PodMigrationJob
 	interval          time.Duration
@@ -58,19 +67,25 @@ type arbitratorImpl struct {
 }
 
 // New creates an arbitratorImpl based on parameters.
-func New(args *config.ArbitrationArgs, c client.Client, eventRecorder events.EventRecorder, retryableFilter framework.FilterFunc, nonRetryableFilter framework.FilterFunc) Arbitrator {
-	return &arbitratorImpl{
+func New(args *config.ArbitrationArgs, options Options) (Arbitrator, error) {
+	arbitrator := &arbitratorImpl{
 		waitingCollection: map[types.UID]*v1alpha1.PodMigrationJob{},
 		interval:          args.Interval.Duration,
 
 		sorts:                 []SortFn{},
-		retryablePodFilter:    retryableFilter,
-		nonRetryablePodFilter: nonRetryableFilter,
+		retryablePodFilter:    options.RetryableFilter,
+		nonRetryablePodFilter: options.NonRetryableFilter,
 
-		client:        c,
-		eventRecorder: eventRecorder,
+		client:        options.Client,
+		eventRecorder: options.EventRecorder,
 		mu:            sync.Mutex{},
 	}
+
+	err := options.Manager.Add(arbitrator)
+	if err != nil {
+		return nil, err
+	}
+	return arbitrator, nil
 }
 
 // Add adds a PodMigrationJob to the waitingCollection of arbitratorImpl.
@@ -82,9 +97,10 @@ func (a *arbitratorImpl) Add(job *v1alpha1.PodMigrationJob) {
 }
 
 // Start starts the goroutine to arbitrate jobs periodically.
-func (a *arbitratorImpl) Start(stopCh <-chan struct{}) {
-	klog.Infof("Start Arbitrator Arbitrate Goroutine")
-	wait.Until(a.doOnceArbitrate, a.interval, stopCh)
+func (a *arbitratorImpl) Start(ctx context.Context) error {
+	klog.InfoS("Start Arbitrator Arbitrate Goroutine")
+	wait.Until(a.doOnceArbitrate, a.interval, ctx.Done())
+	return nil
 }
 
 // sort stably sorts jobs, outputs the sorted results and corresponding ranking map.
@@ -183,15 +199,30 @@ func (a *arbitratorImpl) updateFailedJob(job *v1alpha1.PodMigrationJob, pod *cor
 	a.mu.Unlock()
 }
 
-// Create override implements EventHandler.
-func (a *arbitratorImpl) Create(evt event.CreateEvent, q workqueue.RateLimitingInterface) {
+// arbitrationHandler implement handler.EventHandler
+type arbitrationHandler struct {
+	handler.EnqueueRequestForObject
+	c          client.Client
+	arbitrator Arbitrator
+}
+
+func NewHandler(arbitrator Arbitrator, c client.Client) handler.EventHandler {
+	return &arbitrationHandler{
+		EnqueueRequestForObject: handler.EnqueueRequestForObject{},
+		arbitrator:              arbitrator,
+		c:                       c,
+	}
+}
+
+// Create call Arbitrator.Create
+func (h *arbitrationHandler) Create(evt event.CreateEvent, q workqueue.RateLimitingInterface) {
 	if evt.Object == nil {
 		enqueueLog.Error(nil, "CreateEvent received with no metadata", "event", evt)
 		return
 	}
 	// get job
 	job := &v1alpha1.PodMigrationJob{}
-	err := a.client.Get(context.TODO(), types.NamespacedName{
+	err := h.c.Get(context.TODO(), types.NamespacedName{
 		Name:      evt.Object.GetName(),
 		Namespace: evt.Object.GetNamespace(),
 	}, job)
@@ -207,25 +238,15 @@ func (a *arbitratorImpl) Create(evt event.CreateEvent, q workqueue.RateLimitingI
 		}})
 		return
 	}
-	a.Add(job)
+	h.arbitrator.Add(job)
 }
 
-// arbitrationHandler implement handler.EventHandler
-type arbitrationHandler struct {
-	handler.EnqueueRequestForObject
-	arbitrator Arbitrator
-}
-
-func NewHandler(arbitrator Arbitrator) handler.EventHandler {
-	return &arbitrationHandler{
-		EnqueueRequestForObject: handler.EnqueueRequestForObject{},
-		arbitrator:              arbitrator,
-	}
-}
-
-// Create call Arbitrator.Create
-func (h *arbitrationHandler) Create(event event.CreateEvent, q workqueue.RateLimitingInterface) {
-	h.arbitrator.Create(event, q)
+type Options struct {
+	Client             client.Client
+	EventRecorder      events.EventRecorder
+	RetryableFilter    framework.FilterFunc
+	NonRetryableFilter framework.FilterFunc
+	Manager            controllerruntime.Manager
 }
 
 func getPodForJob(c client.Client, jobs []*v1alpha1.PodMigrationJob) map[*v1alpha1.PodMigrationJob]*corev1.Pod {
@@ -233,7 +254,7 @@ func getPodForJob(c client.Client, jobs []*v1alpha1.PodMigrationJob) map[*v1alph
 	for _, job := range jobs {
 		pod := &corev1.Pod{}
 		if job.Spec.PodRef == nil {
-			klog.V(4).Infof("the podRef of job %v is nil", job.Name)
+			klog.V(4).InfoS("the podRef is nil", "job", klog.KObj(job))
 			continue
 		}
 		nn := types.NamespacedName{
@@ -242,7 +263,7 @@ func getPodForJob(c client.Client, jobs []*v1alpha1.PodMigrationJob) map[*v1alph
 		}
 		err := c.Get(context.TODO(), nn, pod)
 		if err != nil {
-			klog.Errorf("failed to get Pod of PodMigrationJob %v, err: %v", nn, err)
+			klog.ErrorS(err, "failed to get Pod of PodMigrationJob", "PodMigrationJob", klog.KObj(job))
 			continue
 		}
 		podOfJob[job] = pod

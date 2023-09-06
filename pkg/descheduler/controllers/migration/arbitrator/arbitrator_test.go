@@ -553,8 +553,10 @@ func TestArbitrate(t *testing.T) {
 		interval:      500,
 	}
 
-	ch := make(chan struct{})
-	go a.Start(ch)
+	ctx, cancel := context.WithCancel(context.TODO())
+	go func() {
+		assert.Nil(t, a.Start(ctx))
+	}()
 
 	for i := 0; i < 5; i++ {
 		pod := makePod("test-pod-"+strconv.Itoa(i), 0, extension.QoSNone, corev1.PodQOSBestEffort, time.Now())
@@ -570,7 +572,7 @@ func TestArbitrate(t *testing.T) {
 
 		assert.Equal(t, "true", job.Annotations[AnnotationPassedArbitration])
 	}
-	ch <- struct{}{}
+	cancel()
 }
 
 func TestUpdatePassedJob(t *testing.T) {
@@ -659,12 +661,12 @@ func TestEventHandlerCreate(t *testing.T) {
 		waitingCollection: map[types.UID]*v1alpha1.PodMigrationJob{},
 		client:            fakeClient,
 	}
-
+	handler := NewHandler(arbitrator, fakeClient)
 	var expectedJobs []string
 	for _, job := range migratingJobs {
 		assert.Nil(t, fakeClient.Create(context.TODO(), job))
 
-		arbitrator.Create(event.CreateEvent{Object: job}, queue)
+		handler.Create(event.CreateEvent{Object: job}, queue)
 		expectedJobs = append(expectedJobs, job.Name)
 
 		var actualJobs []string
@@ -675,7 +677,7 @@ func TestEventHandlerCreate(t *testing.T) {
 	}
 	assert.Equal(t, 0, queue.Len())
 	nilJob := makePodMigrationJob("test-job-6", creationTime, nil)
-	arbitrator.Create(event.CreateEvent{Object: nilJob}, queue)
+	handler.Create(event.CreateEvent{Object: nilJob}, queue)
 
 	actualJob, _ := queue.Get()
 	assert.Equal(t, actualJob.(reconcile.Request).Name, nilJob.Name)
