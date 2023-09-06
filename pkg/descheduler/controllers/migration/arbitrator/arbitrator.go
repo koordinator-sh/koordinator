@@ -120,7 +120,7 @@ func (a *arbitratorImpl) updatePassedJob(job *v1alpha1.PodMigrationJob) {
 	job.Annotations[AnnotationPassedArbitration] = "true"
 	err := a.client.Update(context.TODO(), job)
 	if err != nil {
-		klog.Errorf("failed to update job %v, err: %v", fmt.Sprintf("%v/%v", job.Namespace, job.Name), err)
+		klog.ErrorS(err, "failed to update job", "job", klog.KObj(job))
 	} else {
 		// remove job from the waitingCollection
 		a.mu.Lock()
