@@ -36,11 +36,14 @@ const (
 	LabelAllowLentResource    = QuotaKoordinatorPrefix + "/allow-lent-resource"
 	LabelQuotaName            = QuotaKoordinatorPrefix + "/name"
 	LabelQuotaProfile         = QuotaKoordinatorPrefix + "/profile"
+	LabelQuotaIsRoot          = QuotaKoordinatorPrefix + "/is-root"
+	LabelQuotaTreeID          = QuotaKoordinatorPrefix + "/tree-id"
 	AnnotationSharedWeight    = QuotaKoordinatorPrefix + "/shared-weight"
 	AnnotationRuntime         = QuotaKoordinatorPrefix + "/runtime"
 	AnnotationRequest         = QuotaKoordinatorPrefix + "/request"
 	AnnotationChildRequest    = QuotaKoordinatorPrefix + "/child-request"
 	AnnotationResourceKeys    = QuotaKoordinatorPrefix + "/resource-keys"
+	AnnotationTotalResource   = QuotaKoordinatorPrefix + "/total-resource"
 	AnnotationQuotaNamespaces = QuotaKoordinatorPrefix + "/namespaces"
 )
 

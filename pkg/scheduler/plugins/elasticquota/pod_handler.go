@@ -29,9 +29,15 @@ func (g *Plugin) OnPodAdd(obj interface{}) {
 		return
 	}
 
-	quotaName := g.getPodAssociateQuotaName(pod)
-	g.groupQuotaManager.OnPodAdd(quotaName, pod)
-	klog.V(5).Infof("OnPodAddFunc %v.%v add success, quotaName:%v", pod.Namespace, pod.Name, quotaName)
+	quotaName, treeID := g.getPodAssociateQuotaNameAndTreeID(pod)
+
+	mgr := g.GetGroupQuotaManagerForTree(treeID)
+	if mgr != nil {
+		mgr.OnPodAdd(quotaName, pod)
+		klog.V(5).Infof("OnPodAddFunc %v.%v add success, quota: %v, tree: [%v]", pod.Namespace, pod.Name, quotaName, treeID)
+	} else {
+		klog.Warningf("OnPodAddFunc %v.%v add failed, quota: %v, quota manager not found: %v", pod.Namespace, pod.Name, quotaName, treeID)
+	}
 }
 
 func (g *Plugin) OnPodUpdate(oldObj, newObj interface{}) {
@@ -43,10 +49,34 @@ func (g *Plugin) OnPodUpdate(oldObj, newObj interface{}) {
 		return
 	}
 
-	oldQuotaName := g.getPodAssociateQuotaName(oldPod)
-	newQuotaName := g.getPodAssociateQuotaName(newPod)
-	g.groupQuotaManager.OnPodUpdate(newQuotaName, oldQuotaName, newPod, oldPod)
-	klog.V(5).Infof("OnPodUpdateFunc %v.%v update success, quotaName:%v", newPod.Namespace, newPod.Name, newQuotaName)
+	oldQuotaName, oldTree := g.getPodAssociateQuotaNameAndTreeID(oldPod)
+	newQuotaName, newTree := g.getPodAssociateQuotaNameAndTreeID(newPod)
+
+	if oldTree == newTree {
+		mgr := g.GetGroupQuotaManagerForTree(newTree)
+		if mgr != nil {
+			mgr.OnPodUpdate(newQuotaName, oldQuotaName, newPod, oldPod)
+			klog.V(5).Infof("OnPodUpdateFunc %v.%v update success, quota:%v, tree: [%v]", newPod.Namespace, newPod.Name, newQuotaName, newTree)
+		} else {
+			klog.Errorf("OnPodUpdateFunc %v.%v update failed, quota: %v, quota manager not found: %v", newPod.Namespace, newPod.Name, newQuotaName, newTree)
+		}
+		return
+	}
+
+	oldMgr := g.GetGroupQuotaManagerForTree(oldTree)
+	newMgr := g.GetGroupQuotaManagerForTree(newTree)
+	if oldMgr != nil {
+		oldMgr.OnPodDelete(oldQuotaName, oldPod)
+		klog.V(5).Infof("OnPodUpdateFunc %v.%v, delete success, quota: %v, tree: %v", oldPod.Namespace, oldPod.Name, oldQuotaName, oldTree)
+	} else {
+		klog.Errorf("OnPodUpdateFunc %v.%v delete failed, quota: %v, quota manager not found: %v", oldPod.Namespace, oldPod.Name, oldQuotaName, oldTree)
+	}
+	if newMgr != nil {
+		newMgr.OnPodAdd(newQuotaName, newPod)
+		klog.V(5).Infof("OnPodUpdateFunc %v.%v add success, quota: %v, tree: %v ", newPod.Namespace, newPod.Name, newQuotaName, newTree)
+	} else {
+		klog.Errorf("OnPodUpdateFunc %v.%v add failed, quota: %v, quota manager not found: %v", newPod.Namespace, newPod.Name, newQuotaName, newTree)
+	}
 }
 
 func (g *Plugin) OnPodDelete(obj interface{}) {
@@ -55,7 +85,13 @@ func (g *Plugin) OnPodDelete(obj interface{}) {
 		return
 	}
 
-	quotaName := g.getPodAssociateQuotaName(pod)
-	g.groupQuotaManager.OnPodDelete(quotaName, pod)
-	klog.V(5).Infof("OnPodDeleteFunc %v.%v delete success", pod.Namespace, pod.Name)
+	quotaName, treeID := g.getPodAssociateQuotaNameAndTreeID(pod)
+
+	mgr := g.GetGroupQuotaManagerForTree(treeID)
+	if mgr != nil {
+		mgr.OnPodDelete(quotaName, pod)
+		klog.V(5).Infof("OnPodDeleteFunc %v.%v delete success, quota: %v, tree: %v", pod.Namespace, pod.Name, quotaName, treeID)
+	} else {
+		klog.Errorf("OnPodDeleteFunc %v.%v delete failed, quota: %v, tree: %v", pod.Namespace, pod.Name, quotaName, treeID)
+	}
 }

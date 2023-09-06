@@ -26,7 +26,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
-	k8sfeature "k8s.io/apiserver/pkg/util/feature"
 	v1 "k8s.io/client-go/listers/core/v1"
 	policylisters "k8s.io/client-go/listers/policy/v1"
 	"k8s.io/client-go/tools/cache"
@@ -41,9 +40,6 @@ import (
 	"sigs.k8s.io/scheduler-plugins/pkg/generated/listers/scheduling/v1alpha1"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
-	koordversioned "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
-	quotalister "github.com/koordinator-sh/koordinator/pkg/client/listers/quota/v1alpha1"
-	koordfeatures "github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/validation"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
@@ -76,7 +72,6 @@ func (p *PostFilterState) Clone() framework.StateData {
 type Plugin struct {
 	handle            framework.Handle
 	client            versioned.Interface
-	koordClient       koordversioned.Interface
 	pluginArgs        *config.ElasticQuotaArgs
 	quotaLister       v1alpha1.ElasticQuotaLister
 	quotaInformer     cache.SharedIndexInformer
@@ -85,9 +80,14 @@ type Plugin struct {
 	nodeLister        v1.NodeLister
 	groupQuotaManager *core.GroupQuotaManager
 
-	quotaManagerLock          sync.RWMutex
-	profileGroupQuotaManagers map[string]*core.GroupQuotaManager
-	profileLister             quotalister.ElasticQuotaProfileLister
+	quotaManagerLock sync.RWMutex
+	// groupQuotaManagersForQuotaTree store the GroupQuotaManager of all quota trees. The key is the quota tree id
+	groupQuotaManagersForQuotaTree map[string]*core.GroupQuotaManager
+
+	quotaToTreeMapLock sync.RWMutex
+	// quotaToTreeMap store the relationship of quota and quota tree
+	// the key is the quota name, the value is the tree id
+	quotaToTreeMap map[string]string
 }
 
 var (
@@ -132,39 +132,24 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 		return nil, err
 	}
 
-	extendedHandle, ok := handle.(frameworkext.ExtendedHandle)
-	if !ok {
-		return nil, fmt.Errorf("want handle to be of type frameworkext.ExtendedHandle, got %T", handle)
-	}
-
-	koordClient := extendedHandle.KoordinatorClientSet()
-	koordSharedInformerFactory := extendedHandle.KoordinatorSharedInformerFactory()
-	profileInformer := koordSharedInformerFactory.Quota().V1alpha1().ElasticQuotaProfiles()
-
 	elasticQuota := &Plugin{
-		handle:                    handle,
-		client:                    client,
-		koordClient:               koordClient,
-		pluginArgs:                pluginArgs,
-		podLister:                 handle.SharedInformerFactory().Core().V1().Pods().Lister(),
-		quotaInformer:             informer,
-		quotaLister:               elasticQuotaInformer.Lister(),
-		pdbLister:                 getPDBLister(handle),
-		nodeLister:                handle.SharedInformerFactory().Core().V1().Nodes().Lister(),
-		profileLister:             profileInformer.Lister(),
-		profileGroupQuotaManagers: make(map[string]*core.GroupQuotaManager),
+		handle:                         handle,
+		client:                         client,
+		pluginArgs:                     pluginArgs,
+		podLister:                      handle.SharedInformerFactory().Core().V1().Pods().Lister(),
+		quotaInformer:                  informer,
+		quotaLister:                    elasticQuotaInformer.Lister(),
+		pdbLister:                      getPDBLister(handle),
+		nodeLister:                     handle.SharedInformerFactory().Core().V1().Nodes().Lister(),
+		groupQuotaManagersForQuotaTree: make(map[string]*core.GroupQuotaManager),
+		quotaToTreeMap:                 make(map[string]string),
 	}
-	elasticQuota.groupQuotaManager = core.NewGroupQuotaManager(pluginArgs.SystemQuotaGroupMax, pluginArgs.DefaultQuotaGroupMax, elasticQuota.nodeLister, nil)
+	elasticQuota.groupQuotaManager = core.NewGroupQuotaManager("", pluginArgs.SystemQuotaGroupMax, pluginArgs.DefaultQuotaGroupMax)
+
+	elasticQuota.quotaToTreeMap[extension.DefaultQuotaName] = ""
+	elasticQuota.quotaToTreeMap[extension.SystemQuotaName] = ""
 
 	ctx := context.TODO()
-
-	if k8sfeature.DefaultFeatureGate.Enabled(koordfeatures.MultiQuotaTree) {
-		frameworkexthelper.ForceSyncFromInformer(ctx.Done(), koordSharedInformerFactory, profileInformer.Informer(), cache.ResourceEventHandlerFuncs{
-			AddFunc:    elasticQuota.OnElasticQuotaProfileAdd,
-			UpdateFunc: elasticQuota.OnElasticQuotaProfileUpdate,
-			DeleteFunc: elasticQuota.OnElasticQuotaProfileDelete,
-		})
-	}
 
 	elasticQuota.createRootQuotaIfNotPresent()
 	elasticQuota.createSystemQuotaIfNotPresent()
@@ -202,7 +187,7 @@ func (g *Plugin) Start() {
 func (g *Plugin) NewControllers() ([]frameworkext.Controller, error) {
 	quotaOverUsedRevokeController := NewQuotaOverUsedRevokeController(g.handle.ClientSet(), g.pluginArgs.DelayEvictTime.Duration,
 		g.pluginArgs.RevokePodInterval.Duration, g.groupQuotaManager, *g.pluginArgs.MonitorAllQuotas)
-	elasticQuotaController := NewElasticQuotaController(g.client, g.quotaLister, g.groupQuotaManager)
+	elasticQuotaController := NewElasticQuotaController(g)
 	return []frameworkext.Controller{g, quotaOverUsedRevokeController, elasticQuotaController}, nil
 }
 
@@ -211,9 +196,13 @@ func (g *Plugin) Name() string {
 }
 
 func (g *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod) (*framework.PreFilterResult, *framework.Status) {
-	quotaName := g.getPodAssociateQuotaName(pod)
-	g.groupQuotaManager.RefreshRuntime(quotaName)
-	quotaInfo := g.groupQuotaManager.GetQuotaInfoByName(quotaName)
+	quotaName, treeID := g.getPodAssociateQuotaNameAndTreeID(pod)
+	mgr := g.GetGroupQuotaManagerForTree(treeID)
+	if mgr == nil {
+		return nil, framework.NewStatus(framework.Error, fmt.Sprintf("Could not find the specified ElasticQuotaManager for quota: %v, tree: %v", quotaName, treeID))
+	}
+	mgr.RefreshRuntime(quotaName)
+	quotaInfo := mgr.GetQuotaInfoByName(quotaName)
 	if quotaInfo == nil {
 		return nil, framework.NewStatus(framework.Error, fmt.Sprintf("Could not find the specified ElasticQuota"))
 	}
@@ -300,12 +289,23 @@ func (g *Plugin) PostFilter(ctx context.Context, state *framework.CycleState, po
 }
 
 func (g *Plugin) Reserve(ctx context.Context, state *framework.CycleState, p *corev1.Pod, nodeName string) *framework.Status {
-	quotaName := g.getPodAssociateQuotaName(p)
-	g.groupQuotaManager.ReservePod(quotaName, p)
+	quotaName, treeID := g.getPodAssociateQuotaNameAndTreeID(p)
+	mgr := g.GetGroupQuotaManagerForTree(treeID)
+	if mgr == nil {
+		klog.Errorf("failed reserve pod %v/%v, quota manager not found, quota: %v, tree: %v", p.Namespace, p.Name, quotaName, treeID)
+		return framework.NewStatus(framework.Error, fmt.Sprintf("quota manager not found, quota: %v, tree: %v", quotaName, treeID))
+	}
+
+	mgr.ReservePod(quotaName, p)
 	return framework.NewStatus(framework.Success, "")
 }
 
 func (g *Plugin) Unreserve(ctx context.Context, state *framework.CycleState, p *corev1.Pod, nodeName string) {
-	quotaName := g.getPodAssociateQuotaName(p)
-	g.groupQuotaManager.UnreservePod(quotaName, p)
+	quotaName, treeID := g.getPodAssociateQuotaNameAndTreeID(p)
+	mgr := g.GetGroupQuotaManagerForTree(treeID)
+	if mgr == nil {
+		klog.Errorf("failed unreserve pod %v/%v, quota manager not found, quota: %v, tree: %s", p.Namespace, p.Name, quotaName, treeID)
+		return
+	}
+	mgr.UnreservePod(quotaName, p)
 }

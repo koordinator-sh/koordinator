@@ -19,6 +19,7 @@ package elasticquota
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"time"
 
 	v1 "k8s.io/api/core/v1"
@@ -29,12 +30,9 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	"k8s.io/klog/v2"
-	schedclientset "sigs.k8s.io/scheduler-plugins/pkg/generated/clientset/versioned"
-	schedlister "sigs.k8s.io/scheduler-plugins/pkg/generated/listers/scheduling/v1alpha1"
 	"sigs.k8s.io/scheduler-plugins/pkg/util"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
-	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/elasticquota/core"
 	koordutil "github.com/koordinator-sh/koordinator/pkg/util"
 )
 
@@ -45,24 +43,17 @@ const (
 
 // Controller is a controller that update elastic quota crd
 type Controller struct {
-	// schedClient is a clientSet for SchedulingV1alpha1 API group
-	schedClient       schedclientset.Interface
-	eqLister          schedlister.ElasticQuotaLister
-	groupQuotaManager *core.GroupQuotaManager
+	plugin *Plugin
 }
 
 // NewElasticQuotaController returns a new *Controller
 func NewElasticQuotaController(
-	client schedclientset.Interface,
-	eqLister schedlister.ElasticQuotaLister,
-	groupQuotaManager *core.GroupQuotaManager,
+	plugin *Plugin,
 	newOpt ...func(ctrl *Controller),
 ) *Controller {
 	// set up elastic quota ctrl
 	ctrl := &Controller{
-		schedClient:       client,
-		eqLister:          eqLister,
-		groupQuotaManager: groupQuotaManager,
+		plugin: plugin,
 	}
 	for _, f := range newOpt {
 		f(ctrl)
@@ -90,7 +81,7 @@ func (ctrl *Controller) Run() {
 
 // syncHandler syncs elastic quotas with local and convert status.used/request/runtime
 func (ctrl *Controller) syncHandler() []error {
-	eqList, err := ctrl.eqLister.List(labels.Everything())
+	eqList, err := ctrl.plugin.quotaLister.List(labels.Everything())
 	if err != nil {
 		klog.V(3).ErrorS(err, "Unable to list elastic quota from store", "elasticQuota")
 		return []error{err}
@@ -99,7 +90,12 @@ func (ctrl *Controller) syncHandler() []error {
 
 	for _, eq := range eqList {
 		func() {
-			used, request, childRequest, runtime, err := ctrl.groupQuotaManager.GetQuotaInformationForSyncHandler(eq.Name)
+			mgr := ctrl.plugin.GetGroupQuotaManagerForQuota(eq.Name)
+			if mgr == nil {
+				errors = append(errors, fmt.Errorf("failed get quota manager for %v", eq.Name))
+				return
+			}
+			used, request, childRequest, runtime, err := mgr.GetQuotaInformationForSyncHandler(eq.Name)
 			if err != nil {
 				errors = append(errors, err)
 				return
@@ -166,7 +162,7 @@ func (ctrl *Controller) syncHandler() []error {
 				return
 			}
 			err = koordutil.RetryOnConflictOrTooManyRequests(func() error {
-				_, patchErr := ctrl.schedClient.SchedulingV1alpha1().ElasticQuotas(eq.Namespace).
+				_, patchErr := ctrl.plugin.client.SchedulingV1alpha1().ElasticQuotas(eq.Namespace).
 					Patch(context.TODO(), eq.Name, types.MergePatchType,
 						patch, metav1.PatchOptions{})
 				return patchErr

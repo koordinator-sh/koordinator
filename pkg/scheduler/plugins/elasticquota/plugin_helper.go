@@ -39,12 +39,31 @@ import (
 // group. If the plugin can't find the matched quota group, it will force the pod to associate with the "default-group".
 func (g *Plugin) getPodAssociateQuotaName(pod *v1.Pod) string {
 	quotaName := g.GetQuotaName(pod)
-	// can't get the quotaInfo by quotaName, let the pod belongs to DefaultQuotaGroup
-	if g.groupQuotaManager.GetQuotaInfoByName(quotaName) == nil {
-		quotaName = extension.DefaultQuotaName
-	}
 
-	return quotaName
+	g.quotaToTreeMapLock.RLock()
+	defer g.quotaToTreeMapLock.RUnlock()
+
+	_, ok := g.quotaToTreeMap[quotaName]
+	if ok {
+		return quotaName
+	}
+	return extension.DefaultQuotaName
+}
+
+// getPodAssociateQuotaNameAndTreeID will return the quota and tree related the pod
+// If pod's don't have the "quota-name" label, we will return the default quota and tree
+// If pod has a quota label which not exists, we will also return the default quota and tree
+func (g *Plugin) getPodAssociateQuotaNameAndTreeID(pod *v1.Pod) (string, string) {
+	quotaName := g.GetQuotaName(pod)
+
+	g.quotaToTreeMapLock.RLock()
+	defer g.quotaToTreeMapLock.RUnlock()
+
+	treeID, ok := g.quotaToTreeMap[quotaName]
+	if ok {
+		return quotaName, treeID
+	}
+	return extension.DefaultQuotaName, treeID
 }
 
 func (g *Plugin) GetQuotaName(pod *v1.Pod) string {
@@ -81,7 +100,7 @@ func (g *Plugin) migrateDefaultQuotaGroupsPod() {
 	defaultQuotaInfo := g.groupQuotaManager.GetQuotaInfoByName(extension.DefaultQuotaName)
 	for _, pod := range defaultQuotaInfo.GetPodCache() {
 		quotaName := g.getPodAssociateQuotaName(pod)
-		if quotaName != extension.DefaultQuotaName {
+		if quotaName != extension.DefaultQuotaName && g.groupQuotaManager.GetQuotaInfoByName(quotaName) != nil {
 			g.groupQuotaManager.MigratePod(pod, extension.DefaultQuotaName, quotaName)
 		}
 	}

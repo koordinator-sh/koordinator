@@ -17,16 +17,20 @@ limitations under the License.
 package elasticquota
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"reflect"
 	"sync"
 
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
+	utilclient "github.com/koordinator-sh/koordinator/pkg/util/client"
 )
 
 type quotaTopology struct {
@@ -165,6 +169,18 @@ func (qt *quotaTopology) ValidDeleteQuota(quota *v1alpha1.ElasticQuota) error {
 		}
 	} else {
 		return fmt.Errorf("BUG quotaMap and quotaTree information out of sync, losed :%v", quotaName)
+	}
+
+	podList := &corev1.PodList{}
+	opts := &client.ListOptions{
+		FieldSelector: fields.OneTermEqualSelector("label.quotaName", quota.Name),
+	}
+	err := qt.client.List(context.TODO(), podList, opts, utilclient.DisableDeepCopy)
+	if err != nil {
+		return fmt.Errorf("failed list pods for quota %v, err: %v", quota.Name, err)
+	}
+	if len(podList.Items) > 0 {
+		return fmt.Errorf("delete quota failed, quota%v has child pods", quotaName)
 	}
 
 	delete(qt.quotaHierarchyInfo[quotaInfo.ParentName], quotaName)

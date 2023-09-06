@@ -396,23 +396,42 @@ func TestPlugin_OnQuotaAdd(t *testing.T) {
 	assert.Nil(t, gqm.GetQuotaInfoByName("2"))
 }
 
+func (p *pluginTestSuit) AddQuotaWithTreeID(name string, parentName string, maxCpu, maxMem int64,
+	minCpu, minMem int64, scaleCpu, scaleMem int64, isParGroup bool, namespace, treeID string) *v1alpha1.ElasticQuota {
+	quota := CreateQuota2(name, parentName, maxCpu, maxMem, minCpu, minMem, scaleCpu, scaleMem, isParGroup, treeID)
+	p.client.SchedulingV1alpha1().ElasticQuotas(namespace).Create(context.TODO(), quota, metav1.CreateOptions{})
+	time.Sleep(100 * time.Millisecond)
+	return quota
+}
+
 func (p *pluginTestSuit) AddQuota(name string, parentName string, maxCpu, maxMem int64,
 	minCpu, minMem int64, scaleCpu, scaleMem int64, isParGroup bool, namespace string) *v1alpha1.ElasticQuota {
-	quota := CreateQuota2(name, parentName, maxCpu, maxMem, minCpu, minMem, scaleCpu, scaleMem, isParGroup)
+	quota := CreateQuota2(name, parentName, maxCpu, maxMem, minCpu, minMem, scaleCpu, scaleMem, isParGroup, "")
 	p.client.SchedulingV1alpha1().ElasticQuotas(namespace).Create(context.TODO(), quota, metav1.CreateOptions{})
 	time.Sleep(100 * time.Millisecond)
 	return quota
 }
 
 func (g *Plugin) addQuota(name string, parentName string, maxCpu, maxMem int64,
-	minCpu, minMem int64, scaleCpu, scaleMem int64, isParGroup bool, namespace string) *v1alpha1.ElasticQuota {
-	quota := CreateQuota2(name, parentName, maxCpu, maxMem, minCpu, minMem, scaleCpu, scaleMem, isParGroup)
+	minCpu, minMem int64, scaleCpu, scaleMem int64, isParGroup bool, namespace, tree string) *v1alpha1.ElasticQuota {
+	quota := CreateQuota2(name, parentName, maxCpu, maxMem, minCpu, minMem, scaleCpu, scaleMem, isParGroup, tree)
+	g.OnQuotaAdd(quota)
+	return quota
+}
+
+func (g *Plugin) addRootQuota(name string, parentName string, maxCpu, maxMem int64,
+	minCpu, minMem int64, scaleCpu, scaleMem int64, isParGroup bool, namespace, tree string) *v1alpha1.ElasticQuota {
+	quota := CreateQuota2(name, parentName, maxCpu, maxMem, minCpu, minMem, scaleCpu, scaleMem, isParGroup, tree)
+
+	quota.Labels[extension.LabelQuotaIsRoot] = "true"
+	quota.Annotations[extension.AnnotationTotalResource] = fmt.Sprintf("{\"cpu\":%v, \"memory\":\"%v\"}", minCpu, minMem)
+
 	g.OnQuotaAdd(quota)
 	return quota
 }
 
 func CreateQuota2(name string, parentName string, maxCpu, maxMem int64, minCpu, minMem int64,
-	scaleCpu, scaleMem int64, isParGroup bool) *v1alpha1.ElasticQuota {
+	scaleCpu, scaleMem int64, isParGroup bool, treeID string) *v1alpha1.ElasticQuota {
 	quota := &v1alpha1.ElasticQuota{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        name,
@@ -431,6 +450,10 @@ func CreateQuota2(name string, parentName string, maxCpu, maxMem int64, minCpu, 
 	} else {
 		quota.Labels[extension.LabelQuotaIsParent] = "false"
 	}
+	if treeID != "" {
+		quota.Labels[extension.LabelQuotaTreeID] = treeID
+	}
+
 	return quota
 }
 
@@ -440,16 +463,16 @@ func TestPlugin_OnQuotaUpdate(t *testing.T) {
 	assert.Nil(t, err)
 	plugin := p.(*Plugin)
 	gqm := plugin.groupQuotaManager
-	// test2 Max[96, 160]  Min[50,80] request[20,40]
+	// test2 Max[96, 160]  Min[100,160] request[20,40]
 	//   `-- test2-a Max[96, 160]  Min[50,80] request[20,40]
-	// test1 Max[96, 160]  Min[50,80] request[60,100]
+	// test1 Max[96, 160]  Min[100,160] request[60,100]
 	//   `-- test1-a Max[96, 160]  Min[50,80] request[60,100]
 	//         `-- a-123 Max[96, 160]  Min[50,80] request[60,100]
-	plugin.addQuota("test1", extension.RootQuotaName, 96, 160, 100, 160, 96, 160, true, "")
-	plugin.addQuota("test1-a", "test1", 96, 160, 50, 80, 96, 160, true, "")
-	changeQuota := plugin.addQuota("a-123", "test1-a", 96, 160, 50, 80, 96, 160, false, "")
-	plugin.addQuota("test2", extension.RootQuotaName, 96, 160, 100, 160, 96, 160, true, "")
-	mmQuota := plugin.addQuota("test2-a", "test2", 96, 160, 50, 80, 96, 160, false, "")
+	plugin.addQuota("test1", extension.RootQuotaName, 96, 160, 100, 160, 96, 160, true, "", "")
+	plugin.addQuota("test1-a", "test1", 96, 160, 50, 80, 96, 160, true, "", "")
+	changeQuota := plugin.addQuota("a-123", "test1-a", 96, 160, 50, 80, 96, 160, false, "", "")
+	plugin.addQuota("test2", extension.RootQuotaName, 96, 160, 100, 160, 96, 160, true, "", "")
+	mmQuota := plugin.addQuota("test2-a", "test2", 96, 160, 50, 80, 96, 160, false, "", "")
 	gqm.UpdateClusterTotalResource(createResourceList(96, 160))
 	request := createResourceList(60, 100)
 	pod := makePod2("pod", request)
@@ -517,8 +540,6 @@ func TestPlugin_OnQuotaUpdate(t *testing.T) {
 	assert.Equal(t, createResourceList(80, 140), quotaInfo.GetRequest())
 	assert.Equal(t, createResourceList(80, 140), quotaInfo.GetUsed())
 	assert.Equal(t, createResourceList(80, 140), quotaInfo.GetRuntime())
-	changeQuota.Name = extension.RootQuotaName
-	plugin.OnQuotaUpdate(oldQuota, changeQuota)
 	changeQuota.DeletionTimestamp = &metav1.Time{Time: time.Now()}
 	plugin.OnQuotaUpdate(oldQuota, changeQuota)
 	changeQuota.ResourceVersion = "3"
@@ -538,8 +559,8 @@ func TestPlugin_OnPodAdd_Update_Delete(t *testing.T) {
 	assert.Nil(t, err)
 	plugin := p.(*Plugin)
 	gqm := plugin.groupQuotaManager
-	plugin.addQuota("test1", extension.RootQuotaName, 96, 160, 100, 160, 96, 160, true, "")
-	plugin.addQuota("test2", extension.RootQuotaName, 96, 160, 100, 160, 96, 160, true, "")
+	plugin.addQuota("test1", extension.RootQuotaName, 96, 160, 100, 160, 96, 160, true, "", "")
+	plugin.addQuota("test2", extension.RootQuotaName, 96, 160, 100, 160, 96, 160, true, "", "")
 	pods := []*corev1.Pod{
 		defaultCreatePodWithQuotaName("1", "test1", 10, 10, 10),
 		defaultCreatePodWithQuotaName("2", "test1", 10, 10, 10),
@@ -1106,7 +1127,7 @@ func TestPlugin_migrateDefaultQuotaGroupsPod(t *testing.T) {
 	assert.Nil(t, err)
 	plugin := p.(*Plugin)
 	gqm := plugin.groupQuotaManager
-	plugin.addQuota("test2", extension.RootQuotaName, 96, 160, 100, 160, 96, 160, true, "")
+	plugin.addQuota("test2", extension.RootQuotaName, 96, 160, 100, 160, 96, 160, true, "", "")
 	pods := []*corev1.Pod{
 		defaultCreatePodWithQuotaName("1", "test1", 10, 10, 10),
 		defaultCreatePodWithQuotaName("2", "test1", 10, 10, 10),
@@ -1118,7 +1139,7 @@ func TestPlugin_migrateDefaultQuotaGroupsPod(t *testing.T) {
 	}
 	assert.Equal(t, gqm.GetQuotaInfoByName(extension.DefaultQuotaName).GetRequest(), createResourceList(40, 40))
 	assert.Equal(t, 4, len(gqm.GetQuotaInfoByName(extension.DefaultQuotaName).PodCache))
-	plugin.addQuota("test1", extension.RootQuotaName, 96, 160, 100, 160, 96, 160, true, "")
+	plugin.addQuota("test1", extension.RootQuotaName, 96, 160, 100, 160, 96, 160, true, "", "")
 	time.Sleep(100 * time.Millisecond)
 	go plugin.Start()
 	for i := 0; i < 10; i++ {

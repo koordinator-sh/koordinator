@@ -22,16 +22,12 @@ import (
 	"sync"
 
 	v1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/labels"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
-	listerv1 "k8s.io/client-go/listers/core/v1"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/api/v1/resource"
 	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
-	koordv1alpha1 "github.com/koordinator-sh/koordinator/apis/quota/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
@@ -58,19 +54,13 @@ type GroupQuotaManager struct {
 	// nodeResourceMapLock  used to lock the nodeResourceMapLock.
 	nodeResourceMapLock sync.Mutex
 	// nodeResourceMap store the nodes belong to the manager.
-	nodeResourceMap map[string]v1.ResourceList
-	// nodeLister used to list nodes.
-	nodeLister listerv1.NodeLister
+	nodeResourceMap map[string]struct{}
 
-	// profile used to associated profile.
-	// default GroupQuotaManager has no profile
-	profile     *koordv1alpha1.ElasticQuotaProfile
-	profileName string
-	// nodeSelector is equal the profile node selector
-	nodeSelector labels.Selector
+	// treeID is the quota tree id
+	treeID string
 }
 
-func NewGroupQuotaManager(systemGroupMax, defaultGroupMax v1.ResourceList, nodeLister listerv1.NodeLister, profile *koordv1alpha1.ElasticQuotaProfile) *GroupQuotaManager {
+func NewGroupQuotaManager(treeID string, systemGroupMax, defaultGroupMax v1.ResourceList) *GroupQuotaManager {
 	quotaManager := &GroupQuotaManager{
 		totalResourceExceptSystemAndDefaultUsed: v1.ResourceList{},
 		totalResource:                           v1.ResourceList{},
@@ -79,23 +69,15 @@ func NewGroupQuotaManager(systemGroupMax, defaultGroupMax v1.ResourceList, nodeL
 		runtimeQuotaCalculatorMap:               make(map[string]*RuntimeQuotaCalculator),
 		quotaTopoNodeMap:                        make(map[string]*QuotaTopoNode),
 		scaleMinQuotaManager:                    NewScaleMinQuotaManager(),
-		nodeResourceMap:                         make(map[string]v1.ResourceList),
-		nodeLister:                              nodeLister,
-		profile:                                 profile,
-		nodeSelector:                            labels.Everything(),
+		nodeResourceMap:                         make(map[string]struct{}),
+		treeID:                                  treeID,
 	}
 	// only default GroupQuotaManager need system quota and deault quota.
-	if profile == nil {
+	if treeID == "" {
 		quotaManager.quotaInfoMap[extension.SystemQuotaName] = NewQuotaInfo(false, true, extension.SystemQuotaName, extension.RootQuotaName)
 		quotaManager.quotaInfoMap[extension.SystemQuotaName].setMaxQuotaNoLock(systemGroupMax)
 		quotaManager.quotaInfoMap[extension.DefaultQuotaName] = NewQuotaInfo(false, true, extension.DefaultQuotaName, extension.RootQuotaName)
 		quotaManager.quotaInfoMap[extension.DefaultQuotaName].setMaxQuotaNoLock(defaultGroupMax)
-	} else {
-		quotaManager.profileName = profile.Name
-		selector, err := metav1.LabelSelectorAsSelector(profile.Spec.NodeSelector)
-		if err == nil {
-			quotaManager.nodeSelector = selector
-		}
 	}
 
 	quotaManager.quotaInfoMap[extension.RootQuotaName] = NewQuotaInfo(true, false, extension.RootQuotaName, "")
@@ -161,6 +143,21 @@ func (gqm *GroupQuotaManager) GetClusterTotalResource() v1.ResourceList {
 	defer gqm.hierarchyUpdateLock.RUnlock()
 
 	return gqm.totalResource.DeepCopy()
+}
+
+func (gqm *GroupQuotaManager) SetClusterTotalResource(total v1.ResourceList) {
+	gqm.hierarchyUpdateLock.RLock()
+	defer gqm.hierarchyUpdateLock.RUnlock()
+
+	gqm.totalResource = total
+	totalResNoSysOrDefault := total
+
+	diffRes := quotav1.Subtract(totalResNoSysOrDefault, gqm.totalResourceExceptSystemAndDefaultUsed)
+	if !quotav1.IsZero(diffRes) {
+		gqm.totalResourceExceptSystemAndDefaultUsed = totalResNoSysOrDefault.DeepCopy()
+		gqm.runtimeQuotaCalculatorMap[extension.RootQuotaName].setClusterTotalResource(totalResNoSysOrDefault)
+		klog.V(5).Infof("SetClusterTotalResource finish totalResourceExceptSystemAndDefaultUsed:%v", gqm.totalResourceExceptSystemAndDefaultUsed)
+	}
 }
 
 // updateGroupDeltaRequestNoLock no need lock gqm.lock
@@ -804,57 +801,21 @@ func (gqm *GroupQuotaManager) OnNodeAdd(node *v1.Node) {
 	gqm.nodeResourceMapLock.Lock()
 	defer gqm.nodeResourceMapLock.Unlock()
 
-	match := true
-	if gqm.profile != nil {
-		if !gqm.nodeSelector.Matches(labels.Set(node.Labels)) {
-			match = false
-		}
-	}
-
-	if !match {
-		old, ok := gqm.nodeResourceMap[node.Name]
-		if ok {
-			delta := quotav1.Subtract(v1.ResourceList{}, old)
-			gqm.UpdateClusterTotalResource(delta)
-			delete(gqm.nodeResourceMap, node.Name)
-		}
-		return
-	}
-
 	if _, ok := gqm.nodeResourceMap[node.Name]; ok {
 		return
 	}
 
-	gqm.nodeResourceMap[node.Name] = node.Status.Allocatable.DeepCopy()
+	gqm.nodeResourceMap[node.Name] = struct{}{}
 	gqm.UpdateClusterTotalResource(node.Status.Allocatable)
-	klog.V(5).Infof("OnNodeAddFunc success %v, profile: %v", node.Name, gqm.profileName)
+	klog.V(5).Infof("OnNodeAddFunc success %v", node.Name)
 }
 
 func (gqm *GroupQuotaManager) OnNodeUpdate(oldNode, newNode *v1.Node) {
 	gqm.nodeResourceMapLock.Lock()
 	defer gqm.nodeResourceMapLock.Unlock()
 
-	match := true
-	if gqm.profile != nil {
-		if !gqm.nodeSelector.Matches(labels.Set(newNode.Labels)) {
-			match = false
-		}
-	}
-
-	if !match {
-		// The node match nodeSelector, remove the node resource
-		old, exist := gqm.nodeResourceMap[newNode.Name]
-		if exist {
-			delta := quotav1.Subtract(v1.ResourceList{}, old)
-			gqm.UpdateClusterTotalResource(delta)
-			delete(gqm.nodeResourceMap, newNode.Name)
-			klog.V(5).Infof("OnNodeUpdateFunc success, clean resource :%v [%v], profile", newNode.Name, delta, gqm.profileName)
-		}
-		return
-	}
-
 	if _, exist := gqm.nodeResourceMap[newNode.Name]; !exist {
-		gqm.nodeResourceMap[newNode.Name] = newNode.Status.Allocatable.DeepCopy()
+		gqm.nodeResourceMap[newNode.Name] = struct{}{}
 		gqm.UpdateClusterTotalResource(newNode.Status.Allocatable)
 		return
 	}
@@ -867,7 +828,7 @@ func (gqm *GroupQuotaManager) OnNodeUpdate(oldNode, newNode *v1.Node) {
 
 	deltaNodeAllocatable := quotav1.Subtract(newNodeAllocatable, oldNodeAllocatable)
 	gqm.UpdateClusterTotalResource(deltaNodeAllocatable)
-	klog.V(5).Infof("OnNodeUpdateFunc success, add resource :%v [%v], profile: %v", newNode.Name, newNodeAllocatable, gqm.profileName)
+	klog.V(5).Infof("OnNodeUpdateFunc success, add resource :%v [%v]", newNode.Name, newNodeAllocatable)
 }
 
 func (gqm *GroupQuotaManager) OnNodeDelete(node *v1.Node) {
@@ -881,45 +842,11 @@ func (gqm *GroupQuotaManager) OnNodeDelete(node *v1.Node) {
 	delta := quotav1.Subtract(v1.ResourceList{}, node.Status.Allocatable)
 	gqm.UpdateClusterTotalResource(delta)
 	delete(gqm.nodeResourceMap, node.Name)
-	klog.V(5).Infof("OnNodeDeleteFunc success:%v [%v], profile: %v", node.Name, delta, gqm.profileName)
+	klog.V(5).Infof("OnNodeDeleteFunc success:%v [%v]", node.Name, delta)
 }
 
-func (gqm *GroupQuotaManager) ResyncNodes() {
-	nodes, err := gqm.nodeLister.List(gqm.nodeSelector)
-	if err != nil {
-		klog.Errorf("failed to list nodes for ResyncNodes")
-		return
-	}
-
-	gqm.nodeResourceMapLock.Lock()
-	defer gqm.nodeResourceMapLock.Unlock()
-
-	validNodes := make(map[string]struct{})
-	for _, node := range nodes {
-		validNodes[node.Name] = struct{}{}
-		_, exist := gqm.nodeResourceMap[node.Name]
-		if !exist {
-			gqm.nodeResourceMap[node.Name] = node.Status.Allocatable.DeepCopy()
-			gqm.UpdateClusterTotalResource(node.Status.Allocatable)
-		}
-	}
-
-	for nodeName, allocatable := range gqm.nodeResourceMap {
-		_, exist := validNodes[nodeName]
-		if !exist {
-			delta := quotav1.Subtract(v1.ResourceList{}, allocatable)
-			gqm.UpdateClusterTotalResource(delta)
-			delete(gqm.nodeResourceMap, nodeName)
-		}
-	}
-}
-
-func (gqm *GroupQuotaManager) SetElasticQuotaProfile(profile *koordv1alpha1.ElasticQuotaProfile) {
-	gqm.profile = profile
-	selector, err := metav1.LabelSelectorAsSelector(profile.Spec.NodeSelector)
-	if err == nil {
-		gqm.nodeSelector = selector
-	}
+func (gqm *GroupQuotaManager) GetTreeID() string {
+	return gqm.treeID
 }
 
 func (gqm *GroupQuotaManager) resetRootQuotaUsedAndRequest() {

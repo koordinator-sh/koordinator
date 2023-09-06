@@ -29,7 +29,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
-	"k8s.io/klog/v2"
 	testing2 "k8s.io/kubernetes/pkg/scheduler/testing"
 	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 
@@ -183,7 +182,7 @@ func TestController_Run(t *testing.T) {
 			plugin, err := suit.proxyNew(suit.elasticQuotaArgs, suit.Handle)
 			assert.Nil(t, err)
 			p := plugin.(*Plugin)
-			ctrl := NewElasticQuotaController(p.client, p.quotaLister, p.groupQuotaManager)
+			ctrl := NewElasticQuotaController(p)
 			for _, v := range c.elasticQuotas {
 				suit.client.SchedulingV1alpha1().ElasticQuotas(v.Namespace).Create(ctx, v, metav1.CreateOptions{})
 			}
@@ -212,7 +211,7 @@ func TestController_Run(t *testing.T) {
 				}
 			}
 			if err != nil {
-				klog.ErrorS(err, "Elastic Quota Test Failed\n")
+				t.Errorf("Elastic Quota Test Failed, err: %v", err)
 			}
 		})
 	}

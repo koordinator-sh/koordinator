@@ -475,6 +475,11 @@ func TestQuotaTopology_AnnotationNamespaces(t *testing.T) {
 
 func TestQuotaTopology_ValidDeleteQuota(t *testing.T) {
 	qt := newFakeQuotaTopology()
+
+	client := fake.NewClientBuilder().Build()
+	v1alpha1.AddToScheme(client.Scheme())
+	qt.client = client
+
 	quota := MakeQuota("temp").Max(MakeResourceList().CPU(120).Mem(1048576).Obj()).
 		Min(MakeResourceList().CPU(64).Mem(51200).Obj()).IsParent(true).Obj()
 	qt.fillQuotaDefaultInformation(quota)
@@ -505,6 +510,19 @@ func TestQuotaTopology_ValidDeleteQuota(t *testing.T) {
 	assert.Equal(t, 2, len(qt.quotaInfoMap))
 	assert.Equal(t, 3, len(qt.quotaHierarchyInfo))
 	assert.Equal(t, 1, len(qt.quotaHierarchyInfo["temp"]))
+
+	// add pod to quota sub-1
+	pod := MakePod("sub-1", "pod1").Obj()
+	err = qt.client.Create(context.TODO(), pod)
+	assert.Nil(t, err)
+
+	// forbidden delete quota with pods
+	err = qt.ValidDeleteQuota(sub1)
+	assert.True(t, err != nil)
+
+	// delete pod
+	err = qt.client.Delete(context.TODO(), pod)
+	assert.Nil(t, err)
 
 	err = qt.ValidDeleteQuota(sub1)
 	assert.True(t, err == nil)

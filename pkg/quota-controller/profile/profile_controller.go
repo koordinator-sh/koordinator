@@ -19,6 +19,8 @@ package profile
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"hash/fnv"
 	"math"
 	"reflect"
 	"strconv"
@@ -79,6 +81,21 @@ func (r *QuotaProfileReconciler) Reconcile(ctx context.Context, req ctrl.Request
 			return ctrl.Result{Requeue: true}, err
 		}
 		return ctrl.Result{}, nil
+	}
+
+	quotaTreeID := profile.Labels[extension.LabelQuotaTreeID]
+	if quotaTreeID == "" {
+		// generate quota tree id
+		quotaTreeID = hash(fmt.Sprintf("%s/%s", profile.Namespace, profile.Name))
+		if profile.Labels == nil {
+			profile.Labels = make(map[string]string)
+		}
+		profile.Labels[extension.LabelQuotaTreeID] = quotaTreeID
+		err := r.Client.Update(context.TODO(), profile)
+		if err != nil {
+			klog.Errorf("failed to update profile tree id: %v, error: %v", req.NamespacedName, err)
+			return ctrl.Result{Requeue: true}, err
+		}
 	}
 
 	selector, err := metav1.LabelSelectorAsSelector(profile.Spec.NodeSelector)
@@ -143,21 +160,40 @@ func (r *QuotaProfileReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		value := MultiplyQuantity(quantity, resourceName, ratio)
 
 		min[resourceName] = value
+		totalResource[resourceName] = value
 		max[resourceName] = *resource.NewQuantity(math.MaxInt64/5, resource.DecimalSI)
 	}
 
+	// update min and max
 	quota.Spec.Min = min
 	quota.Spec.Max = max
 
 	if quota.Labels == nil {
 		quota.Labels = make(map[string]string)
 	}
+	// update quota label
 	quota.Labels[extension.LabelQuotaProfile] = profile.Name
 	if profile.Spec.QuotaLabels != nil {
 		for k, v := range profile.Spec.QuotaLabels {
 			quota.Labels[k] = v
 		}
 	}
+	// update quota tree id
+	quota.Labels[extension.LabelQuotaTreeID] = quotaTreeID
+
+	// update quota root label
+	quota.Labels[extension.LabelQuotaIsRoot] = "true"
+
+	// update total resource
+	data, err := json.Marshal(totalResource)
+	if err != nil {
+		klog.Errorf("failed marshal total resources, err: %v", err)
+		return ctrl.Result{Requeue: true}, err
+	}
+	if quota.Annotations == nil {
+		quota.Annotations = make(map[string]string)
+	}
+	quota.Annotations[extension.AnnotationTotalResource] = string(data)
 
 	if !quotaExist {
 		err = r.Client.Create(context.TODO(), quota)
@@ -167,7 +203,7 @@ func (r *QuotaProfileReconciler) Reconcile(ctx context.Context, req ctrl.Request
 			return ctrl.Result{Requeue: true}, err
 		}
 	} else {
-		if !reflect.DeepEqual(quota.Labels, oldQuota.Labels) || !reflect.DeepEqual(quota.Spec, oldQuota.Spec) {
+		if !reflect.DeepEqual(quota.Labels, oldQuota.Labels) || !reflect.DeepEqual(quota.Annotations, oldQuota.Annotations) || !reflect.DeepEqual(quota.Spec, oldQuota.Spec) {
 			err = r.Client.Update(context.TODO(), quota)
 			if err != nil {
 				r.Recorder.Eventf(profile, "Warning", ReasonUpdateQuotaFailed, "failed to update quota, err: %s", err)
@@ -210,4 +246,10 @@ func MultiplyQuantity(value resource.Quantity, resName corev1.ResourceName, rati
 		q = *resource.NewQuantity(v, resource.DecimalSI)
 	}
 	return q
+}
+
+func hash(s string) string {
+	h := fnv.New64a()
+	h.Write([]byte(s))
+	return strconv.FormatUint(h.Sum64(), 10)
 }
