@@ -87,11 +87,6 @@ func (a *arbitratorImpl) Start(stopCh <-chan struct{}) {
 	wait.Until(a.doOnceArbitrate, a.interval, stopCh)
 }
 
-func (a *arbitratorImpl) WithSortFn(sort SortFn) Arbitrator {
-	a.sorts = append(a.sorts, sort)
-	return a
-}
-
 // sort stably sorts jobs, outputs the sorted results and corresponding ranking map.
 func (a *arbitratorImpl) sort(jobs []*v1alpha1.PodMigrationJob, podOfJob map[*v1alpha1.PodMigrationJob]*corev1.Pod) []*v1alpha1.PodMigrationJob {
 	for _, sortFn := range a.sorts {

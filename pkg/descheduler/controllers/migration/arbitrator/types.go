@@ -28,7 +28,6 @@ type Arbitrator interface {
 	Create(event.CreateEvent, workqueue.RateLimitingInterface)
 	Start(stopCh <-chan struct{})
 	Add(job *v1alpha1.PodMigrationJob)
-	WithSortFn(sort SortFn) Arbitrator
 }
 
 // SortFn stably sorts PodMigrationJobs slice based on a certain strategy. Users
