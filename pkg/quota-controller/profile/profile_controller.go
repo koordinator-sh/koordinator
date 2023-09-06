@@ -59,6 +59,11 @@ type QuotaProfileReconciler struct {
 	Recorder record.EventRecorder
 }
 
+// +kubebuilder:rbac:groups=core,resources=nodes,verbs=get;list;watch
+// +kubebuilder:rbac:groups=scheduling.sigs.k8s.io,resources=elasticquotas,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=quota.koordinator.sh,resources=elasticquotaprofiles,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=quota.koordinator.sh,resources=elasticquotaprofiles/status,verbs=get;update;patch
+
 func (r *QuotaProfileReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	// reconcile for 2 things:
 	//   1. ensuring the Quota exists if the QuotaProfile exists
