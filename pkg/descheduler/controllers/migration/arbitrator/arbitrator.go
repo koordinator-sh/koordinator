@@ -100,22 +100,8 @@ func (a *arbitratorImpl) sort(jobs []*v1alpha1.PodMigrationJob, podOfJob map[*v1
 	return jobs
 }
 
-// filter calls nonRetryablePodFilter and retryablePodFilter to filter operations on PodMigrationJobs.
-func (a *arbitratorImpl) filter(jobs []*v1alpha1.PodMigrationJob, podOfJob map[*v1alpha1.PodMigrationJob]*corev1.Pod) {
-	for _, job := range jobs {
-		pod := podOfJob[job]
-		isFailed, isPassed := a.filterOneJob(pod)
-		if isFailed {
-			a.updateFailedJob(job, pod)
-			continue
-		}
-		if isPassed {
-			a.updatePassedJob(job)
-		}
-	}
-}
-
-func (a *arbitratorImpl) filterOneJob(pod *corev1.Pod) (isFailed, isPassed bool) {
+// filter calls nonRetryablePodFilter and retryablePodFilter to filter one PodMigrationJob.
+func (a *arbitratorImpl) filter(pod *corev1.Pod) (isFailed, isPassed bool) {
 	if pod != nil {
 		if a.nonRetryablePodFilter != nil && !a.nonRetryablePodFilter(pod) {
 			isFailed = true
@@ -162,7 +148,17 @@ func (a *arbitratorImpl) doOnceArbitrate() {
 	jobs = a.sort(jobs, podOfJob)
 
 	// filter
-	a.filter(jobs, podOfJob)
+	for _, job := range jobs {
+		pod := podOfJob[job]
+		isFailed, isPassed := a.filter(pod)
+		if isFailed {
+			a.updateFailedJob(job, pod)
+			continue
+		}
+		if isPassed {
+			a.updatePassedJob(job)
+		}
+	}
 }
 
 // copyJobs copy jobs from waitingCollection

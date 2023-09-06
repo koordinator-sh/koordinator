@@ -138,141 +138,6 @@ func TestMultiSortFn(t *testing.T) {
 
 func TestFilter(t *testing.T) {
 	testCases := []struct {
-		name            string
-		jobNum          int
-		nonRetryableMap map[int]bool
-		retryableMap    map[int]bool
-
-		expectWaitCollection map[int]bool
-		expectPassedJobs     map[int]bool
-	}{
-		{
-			name:            "test-1",
-			jobNum:          10,
-			nonRetryableMap: map[int]bool{2: true},
-			retryableMap:    map[int]bool{3: true, 7: true},
-
-			expectWaitCollection: map[int]bool{3: true, 7: true},
-			expectPassedJobs:     map[int]bool{0: true, 1: true, 4: true, 5: true, 6: true, 8: true, 9: true},
-		},
-		{
-			name:            "test-2",
-			jobNum:          10,
-			nonRetryableMap: map[int]bool{3: true},
-			retryableMap:    map[int]bool{3: true, 7: true},
-
-			expectWaitCollection: map[int]bool{7: true},
-			expectPassedJobs:     map[int]bool{0: true, 1: true, 2: true, 4: true, 5: true, 6: true, 8: true, 9: true},
-		},
-		{
-			name:            "test-3",
-			jobNum:          10,
-			nonRetryableMap: map[int]bool{},
-			retryableMap:    map[int]bool{},
-
-			expectWaitCollection: map[int]bool{},
-			expectPassedJobs:     map[int]bool{0: true, 1: true, 2: true, 3: true, 4: true, 5: true, 6: true, 7: true, 8: true, 9: true},
-		},
-		{
-			name:            "test-4",
-			jobNum:          5,
-			nonRetryableMap: map[int]bool{0: true, 1: true, 2: true, 3: true, 4: true},
-			retryableMap:    map[int]bool{},
-
-			expectWaitCollection: map[int]bool{},
-			expectPassedJobs:     map[int]bool{},
-		},
-		{
-			name:            "test-5",
-			jobNum:          5,
-			nonRetryableMap: map[int]bool{},
-			retryableMap:    map[int]bool{0: true, 1: true, 2: true, 3: true, 4: true},
-
-			expectWaitCollection: map[int]bool{0: true, 1: true, 2: true, 3: true, 4: true},
-			expectPassedJobs:     map[int]bool{},
-		},
-	}
-	for _, testCase := range testCases {
-		t.Run(testCase.name, func(t *testing.T) {
-			scheme := runtime.NewScheme()
-			_ = v1alpha1.AddToScheme(scheme)
-			_ = clientgoscheme.AddToScheme(scheme)
-			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
-
-			jobs := make([]*v1alpha1.PodMigrationJob, testCase.jobNum)
-			podOfJob := map[*v1alpha1.PodMigrationJob]*corev1.Pod{}
-			nonRetryablePods := map[*corev1.Pod]bool{}
-			var nonRetryableJobs []*v1alpha1.PodMigrationJob
-			retryablePods := map[*corev1.Pod]bool{}
-			var expectPassedJobs []*v1alpha1.PodMigrationJob
-			collection := map[types.UID]*v1alpha1.PodMigrationJob{}
-			var expectWaitCollection []types.UID
-
-			for i := range jobs {
-				pod := makePod("test-pod-"+strconv.Itoa(i), 0, extension.QoSNone, corev1.PodQOSBestEffort, time.Now())
-				jobs[i] = makePodMigrationJob("test-job-"+strconv.Itoa(i), time.Now(), pod)
-				assert.Nil(t, fakeClient.Create(context.TODO(), pod))
-				assert.Nil(t, fakeClient.Create(context.TODO(), jobs[i]))
-				podOfJob[jobs[i]] = pod
-				if testCase.nonRetryableMap[i] {
-					nonRetryablePods[pod] = true
-					nonRetryableJobs = append(nonRetryableJobs, jobs[i])
-				}
-				if testCase.retryableMap[i] {
-					retryablePods[pod] = true
-				}
-				if testCase.expectWaitCollection[i] {
-					expectWaitCollection = append(expectWaitCollection, jobs[i].UID)
-				}
-				if testCase.expectPassedJobs[i] {
-					expectPassedJobs = append(expectPassedJobs, jobs[i])
-				}
-				collection[jobs[i].UID] = jobs[i]
-			}
-			a := &arbitratorImpl{
-				waitingCollection: collection,
-				nonRetryablePodFilter: func(pod *corev1.Pod) bool {
-					return !nonRetryablePods[pod]
-				},
-				retryablePodFilter: func(pod *corev1.Pod) bool {
-					return !retryablePods[pod]
-				},
-				client:        fakeClient,
-				mu:            sync.Mutex{},
-				eventRecorder: &events.FakeRecorder{},
-				interval:      0,
-			}
-
-			a.filter(jobs, podOfJob)
-
-			var actualWaitCollection []types.UID
-			for uid := range a.waitingCollection {
-				actualWaitCollection = append(actualWaitCollection, uid)
-			}
-			assert.ElementsMatchf(t, actualWaitCollection, expectWaitCollection, "waitingCollection")
-
-			// check failed phase
-			for _, job := range nonRetryableJobs {
-				assert.Nil(t, fakeClient.Get(context.TODO(), types.NamespacedName{
-					Namespace: job.Namespace,
-					Name:      job.Name,
-				}, job))
-				assert.Equal(t, v1alpha1.PodMigrationJobFailed, job.Status.Phase)
-			}
-			// check annotations
-			for _, job := range expectPassedJobs {
-				assert.Nil(t, fakeClient.Get(context.TODO(), types.NamespacedName{
-					Namespace: job.Namespace,
-					Name:      job.Name,
-				}, job))
-				assert.Equal(t, "true", job.Annotations[AnnotationPassedArbitration])
-			}
-		})
-	}
-}
-
-func TestFilterOneJob(t *testing.T) {
-	testCases := []struct {
 		name         string
 		pod          *corev1.Pod
 		nonRetryable bool
@@ -331,7 +196,7 @@ func TestFilterOneJob(t *testing.T) {
 					return testCase.retryable
 				},
 			}
-			isFailed, isPassed := arbitrator.filterOneJob(testCase.pod)
+			isFailed, isPassed := arbitrator.filter(testCase.pod)
 			assert.Equal(t, testCase.isFailed, isFailed)
 			assert.Equal(t, testCase.isPassed, isPassed)
 		})
@@ -519,6 +384,7 @@ func TestDoOnceArbitrate(t *testing.T) {
 
 		expectWaitCollection map[int]bool
 		expectPassedJob      map[int]bool
+		expectFailedJob      map[int]bool
 	}{
 		{
 			name:            "test-1",
@@ -529,6 +395,7 @@ func TestDoOnceArbitrate(t *testing.T) {
 
 			expectWaitCollection: map[int]bool{3: true, 7: true},
 			expectPassedJob:      map[int]bool{0: true, 1: true, 4: true, 5: true, 6: true, 8: true, 9: true},
+			expectFailedJob:      map[int]bool{2: true},
 		},
 		{
 			name:            "test-2",
@@ -539,6 +406,7 @@ func TestDoOnceArbitrate(t *testing.T) {
 
 			expectWaitCollection: map[int]bool{7: true},
 			expectPassedJob:      map[int]bool{0: true, 1: true, 2: true, 4: true, 5: true, 6: true, 8: true, 9: true},
+			expectFailedJob:      map[int]bool{3: true},
 		},
 		{
 			name:            "test-3",
@@ -548,6 +416,7 @@ func TestDoOnceArbitrate(t *testing.T) {
 
 			expectWaitCollection: map[int]bool{},
 			expectPassedJob:      map[int]bool{},
+			expectFailedJob:      map[int]bool{0: true, 1: true, 2: true, 3: true, 4: true},
 		},
 		{
 			name:            "test-4",
@@ -558,6 +427,7 @@ func TestDoOnceArbitrate(t *testing.T) {
 
 			expectWaitCollection: map[int]bool{0: true, 1: true, 2: true, 3: true, 4: true},
 			expectPassedJob:      map[int]bool{},
+			expectFailedJob:      map[int]bool{},
 		},
 		{
 			name:            "test-5",
@@ -568,6 +438,7 @@ func TestDoOnceArbitrate(t *testing.T) {
 
 			expectWaitCollection: map[int]bool{2: true},
 			expectPassedJob:      map[int]bool{0: true, 1: true, 3: true, 4: true},
+			expectFailedJob:      map[int]bool{},
 		},
 	}
 	for _, testCase := range testCases {
@@ -582,6 +453,7 @@ func TestDoOnceArbitrate(t *testing.T) {
 			nonRetryablePods := map[string]bool{}
 			retryablePods := map[string]bool{}
 			var expectPassedJobs []*v1alpha1.PodMigrationJob
+			var expectFailedJobs []*v1alpha1.PodMigrationJob
 			collection := map[types.UID]*v1alpha1.PodMigrationJob{}
 			var expectWaitCollection []types.UID
 			order := map[*v1alpha1.PodMigrationJob]int{}
@@ -603,6 +475,9 @@ func TestDoOnceArbitrate(t *testing.T) {
 				}
 				if testCase.expectPassedJob[i] {
 					expectPassedJobs = append(expectPassedJobs, jobs[i])
+				}
+				if testCase.expectFailedJob[i] {
+					expectFailedJobs = append(expectFailedJobs, jobs[i])
 				}
 				order[jobs[i]] = testCase.order[i]
 				collection[jobs[i].UID] = jobs[i]
@@ -642,6 +517,13 @@ func TestDoOnceArbitrate(t *testing.T) {
 					Name:      job.Name,
 				}, job))
 				assert.Equal(t, "true", job.Annotations[AnnotationPassedArbitration])
+			}
+			for _, job := range expectFailedJobs {
+				assert.Nil(t, fakeClient.Get(context.TODO(), types.NamespacedName{
+					Namespace: job.Namespace,
+					Name:      job.Name,
+				}, job))
+				assert.Equal(t, v1alpha1.PodMigrationJobFailed, job.Status.Phase)
 			}
 		})
 	}
