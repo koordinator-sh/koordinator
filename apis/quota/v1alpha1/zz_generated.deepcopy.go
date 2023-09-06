@@ -95,6 +95,11 @@ func (in *ElasticQuotaProfileSpec) DeepCopyInto(out *ElasticQuotaProfileSpec) {
 			(*out)[key] = val
 		}
 	}
+	if in.ResourceRatio != nil {
+		in, out := &in.ResourceRatio, &out.ResourceRatio
+		*out = new(string)
+		**out = **in
+	}
 	if in.NodeSelector != nil {
 		in, out := &in.NodeSelector, &out.NodeSelector
 		*out = new(v1.LabelSelector)

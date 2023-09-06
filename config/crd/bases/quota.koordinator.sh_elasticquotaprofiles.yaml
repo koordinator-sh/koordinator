@@ -87,6 +87,11 @@ spec:
               quotaName:
                 description: QuotaName defines the associated quota name of the profile.
                 type: string
+              resourceRatio:
+                description: ResourceRatio is a ratio, we will use it to fix the resource
+                  fragmentation problem. If the total resource is 100 and the resource
+                  ratio is 0.9, the allocable resource is 100*0.9=90
+                type: string
             required:
             - nodeSelector
             - quotaName
