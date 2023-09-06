@@ -160,11 +160,9 @@ func (a *arbitratorImpl) doOnceArbitrate() {
 func (a *arbitratorImpl) copyJobs() []*v1alpha1.PodMigrationJob {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	jobs := make([]*v1alpha1.PodMigrationJob, len(a.waitingCollection))
-	i := 0
+	jobs := make([]*v1alpha1.PodMigrationJob, 0, len(a.waitingCollection))
 	for _, job := range a.waitingCollection {
-		jobs[i] = job
-		i++
+		jobs = append(jobs, job)
 	}
 	return jobs
 }
