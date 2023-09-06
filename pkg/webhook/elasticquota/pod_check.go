@@ -63,23 +63,34 @@ func (qt *quotaTopology) getQuotaNameFromPodNoLock(pod *corev1.Pod) string {
 	return quotaLabelName
 }
 
-var GetQuotaName = func(pod *corev1.Pod, client client.Client) string {
+func GetQuotaName(pod *corev1.Pod, kubeClient client.Client) string {
 	quotaName := extension.GetQuotaName(pod)
 	if quotaName != "" {
 		return quotaName
 	}
 
 	eq := &v1alpha1.ElasticQuota{}
-	err := client.Get(context.TODO(), types.NamespacedName{Namespace: pod.Namespace, Name: pod.Namespace}, eq)
+	err := kubeClient.Get(context.TODO(), types.NamespacedName{Namespace: pod.Namespace, Name: pod.Namespace}, eq)
 	if err == nil {
 		return eq.Name
 	} else if !errors.IsNotFound(err) {
 		klog.Errorf("Failed to Get ElasticQuota %s, err: %v", pod.Namespace, err)
 	}
+
+	eqList := &v1alpha1.ElasticQuotaList{}
+	if err := kubeClient.List(context.TODO(), eqList, &client.ListOptions{
+		FieldSelector: fields.OneTermEqualSelector("annotation.namespaces", pod.Namespace),
+	}, utilclient.DisableDeepCopy); err != nil {
+		return extension.DefaultQuotaName
+	}
+	for _, quota := range eqList.Items {
+		return quota.Name
+	}
+
 	return extension.DefaultQuotaName
 }
 
-var ListQuotaBoundPods = func(kubeClient client.Client, quota *v1alpha1.ElasticQuota) (*corev1.PodList, error) {
+func ListQuotaBoundPods(kubeClient client.Client, quota *v1alpha1.ElasticQuota) (*corev1.PodList, error) {
 	podList := &corev1.PodList{}
 	if err := kubeClient.List(context.TODO(), podList, &client.ListOptions{
 		FieldSelector: fields.OneTermEqualSelector("label.quotaName", quota.Name),
@@ -98,5 +109,19 @@ var ListQuotaBoundPods = func(kubeClient client.Client, quota *v1alpha1.ElasticQ
 	if len(podList.Items) > 0 {
 		return podList, nil
 	}
+
+	namespaces := extension.GetAnnotationQuotaNamespaces(quota)
+	for _, namespace := range namespaces {
+		if err := kubeClient.List(context.TODO(), podList, &client.ListOptions{
+			Namespace: namespace,
+		}, utilclient.DisableDeepCopy); err != nil {
+			return nil, err
+		}
+
+		if len(podList.Items) > 0 {
+			return podList, nil
+		}
+	}
+
 	return nil, nil
 }

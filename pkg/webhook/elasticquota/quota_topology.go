@@ -33,6 +33,8 @@ type quotaTopology struct {
 	lock sync.Mutex
 	// quotaInfoMap stores all quota information
 	quotaInfoMap map[string]*QuotaInfo
+	// namespaceMap key: annotationNamespace, val: quotaName
+	namespaceToQuotaMap map[string]string
 	// quotaHierarchyInfo stores the quota's all children
 	quotaHierarchyInfo map[string]map[string]struct{}
 
@@ -41,9 +43,10 @@ type quotaTopology struct {
 
 func NewQuotaTopology(client client.Client) *quotaTopology {
 	topology := &quotaTopology{
-		quotaInfoMap:       make(map[string]*QuotaInfo),
-		quotaHierarchyInfo: make(map[string]map[string]struct{}),
-		client:             client,
+		quotaInfoMap:        make(map[string]*QuotaInfo),
+		quotaHierarchyInfo:  make(map[string]map[string]struct{}),
+		namespaceToQuotaMap: make(map[string]string),
+		client:              client,
 	}
 	topology.quotaHierarchyInfo[extension.RootQuotaName] = make(map[string]struct{})
 	return topology
@@ -61,6 +64,13 @@ func (qt *quotaTopology) ValidAddQuota(quota *v1alpha1.ElasticQuota) error {
 		return fmt.Errorf("AddQuota quota already exist:%v", quota.Name)
 	}
 
+	annotationNamespaces := extension.GetAnnotationQuotaNamespaces(quota)
+	for _, namespace := range annotationNamespaces {
+		if quotaName, exist := qt.namespaceToQuotaMap[namespace]; exist {
+			return fmt.Errorf("AddQuota quota %s's annotation namespace %s is already bound to quota %s", quota.Name, namespace, quotaName)
+		}
+	}
+
 	if err := qt.validateQuotaSelfItem(quota); err != nil {
 		return err
 	}
@@ -73,12 +83,15 @@ func (qt *quotaTopology) ValidAddQuota(quota *v1alpha1.ElasticQuota) error {
 	qt.quotaInfoMap[quotaInfo.Name] = quotaInfo
 	qt.quotaHierarchyInfo[quotaInfo.Name] = make(map[string]struct{})
 	qt.quotaHierarchyInfo[quotaInfo.ParentName][quotaInfo.Name] = struct{}{}
+	for _, namespace := range annotationNamespaces {
+		qt.namespaceToQuotaMap[namespace] = quota.Name
+	}
 	return nil
 }
 
 func (qt *quotaTopology) ValidUpdateQuota(oldQuota, newQuota *v1alpha1.ElasticQuota) error {
 	if newQuota == nil {
-		return fmt.Errorf("AddQuota param is nil")
+		return fmt.Errorf("UpdateQuota param is nil")
 	}
 
 	if oldQuota != nil && reflect.DeepEqual(quotaFieldsCopy(oldQuota), quotaFieldsCopy(newQuota)) {
@@ -94,9 +107,17 @@ func (qt *quotaTopology) ValidUpdateQuota(oldQuota, newQuota *v1alpha1.ElasticQu
 	qt.lock.Lock()
 	defer qt.lock.Unlock()
 
+	annotationNamespaces := extension.GetAnnotationQuotaNamespaces(newQuota)
+	for _, namespace := range annotationNamespaces {
+		if oldQuotaName, exist := qt.namespaceToQuotaMap[namespace]; exist && oldQuotaName != quotaName {
+			return fmt.Errorf("UpdadteQuota, quota %s update namespaces, but namespace %s is already bound to quota %s",
+				quotaName, namespace, oldQuotaName)
+		}
+	}
+
 	oldQuotaInfo, exist := qt.quotaInfoMap[quotaName]
 	if !exist {
-		return fmt.Errorf("quota not exist in quotaInfoMap:%v", quotaName)
+		return fmt.Errorf("UpdateQuota quota not exist in quotaInfoMap:%v", quotaName)
 	}
 
 	if err := qt.validateQuotaSelfItem(newQuota); err != nil {
@@ -112,6 +133,14 @@ func (qt *quotaTopology) ValidUpdateQuota(oldQuota, newQuota *v1alpha1.ElasticQu
 	if oldQuotaInfo.ParentName != newQuotaInfo.ParentName {
 		delete(qt.quotaHierarchyInfo[oldQuotaInfo.ParentName], oldQuotaInfo.Name)
 		qt.quotaHierarchyInfo[newQuotaInfo.ParentName][newQuotaInfo.Name] = struct{}{}
+	}
+
+	oldAnnotationNamespaces := extension.GetAnnotationQuotaNamespaces(oldQuota)
+	for _, namespace := range oldAnnotationNamespaces {
+		delete(qt.namespaceToQuotaMap, namespace)
+	}
+	for _, namespace := range annotationNamespaces {
+		qt.namespaceToQuotaMap[namespace] = quotaName
 	}
 	return nil
 }
@@ -141,6 +170,10 @@ func (qt *quotaTopology) ValidDeleteQuota(quota *v1alpha1.ElasticQuota) error {
 	delete(qt.quotaHierarchyInfo[quotaInfo.ParentName], quotaName)
 	delete(qt.quotaHierarchyInfo, quotaName)
 	delete(qt.quotaInfoMap, quotaName)
+	annotationNamespaces := extension.GetAnnotationQuotaNamespaces(quota)
+	for _, namespace := range annotationNamespaces {
+		delete(qt.namespaceToQuotaMap, namespace)
+	}
 	return nil
 }
 

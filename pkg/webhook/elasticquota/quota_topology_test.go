@@ -27,16 +27,19 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	testing2 "k8s.io/kubernetes/pkg/scheduler/testing"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
+	utilclient "github.com/koordinator-sh/koordinator/pkg/util/client"
 )
 
 func newFakeQuotaTopology() *quotaTopology {
 	qt := &quotaTopology{
-		quotaInfoMap:       make(map[string]*QuotaInfo),
-		quotaHierarchyInfo: make(map[string]map[string]struct{}),
+		quotaInfoMap:        make(map[string]*QuotaInfo),
+		quotaHierarchyInfo:  make(map[string]map[string]struct{}),
+		namespaceToQuotaMap: make(map[string]string),
 	}
 	qt.quotaHierarchyInfo[extension.RootQuotaName] = make(map[string]struct{})
 	return qt
@@ -314,7 +317,7 @@ func TestQuotaTopology_ValidUpdateQuota(t *testing.T) {
 	assert.NotNil(t, err)
 
 	quota.Annotations[extension.AnnotationSharedWeight] = fmt.Sprintf("{\"cpu\":%v, \"memory\":\"%v\"}", 96, 655360)
-	err = qt.ValidUpdateQuota(nil, quota)
+	err = qt.ValidUpdateQuota(oldQuotaCopy, quota)
 	assert.True(t, err == nil)
 
 	quota1 := MakeQuota("temp2").Max(MakeResourceList().CPU(120).Mem(1048576).Obj()).
@@ -333,8 +336,9 @@ func TestQuotaTopology_ValidUpdateQuota(t *testing.T) {
 	assert.Equal(t, 1, len(qt.quotaHierarchyInfo["temp"]))
 	assert.Equal(t, 0, len(qt.quotaHierarchyInfo["temp2"]))
 
+	oldSub1 := sub1.DeepCopy()
 	sub1.Labels[extension.LabelQuotaParent] = "temp2"
-	err = qt.ValidUpdateQuota(nil, sub1)
+	err = qt.ValidUpdateQuota(oldSub1, sub1)
 	assert.Nil(t, err)
 	assert.Equal(t, 3, len(qt.quotaInfoMap))
 	assert.Equal(t, 4, len(qt.quotaHierarchyInfo))
@@ -343,7 +347,7 @@ func TestQuotaTopology_ValidUpdateQuota(t *testing.T) {
 
 	sub1.Labels[extension.LabelQuotaParent] = "temp"
 	sub1.Spec.Min = MakeResourceList().CPU(121).Mem(1048576).Obj()
-	err = qt.ValidUpdateQuota(nil, sub1)
+	err = qt.ValidUpdateQuota(oldSub1, sub1)
 	assert.True(t, err != nil)
 	assert.Equal(t, 3, len(qt.quotaInfoMap))
 	assert.Equal(t, 4, len(qt.quotaHierarchyInfo))
@@ -351,8 +355,8 @@ func TestQuotaTopology_ValidUpdateQuota(t *testing.T) {
 	assert.Equal(t, 1, len(qt.quotaHierarchyInfo["temp2"]))
 
 	sub1.Name = "tmp"
-	err = qt.ValidUpdateQuota(nil, sub1)
-	assert.Equal(t, "quota not exist in quotaInfoMap:tmp", err.Error())
+	err = qt.ValidUpdateQuota(oldSub1, sub1)
+	assert.Equal(t, "UpdateQuota quota not exist in quotaInfoMap:tmp", err.Error())
 
 	sub1.Name = extension.RootQuotaName
 	err = qt.ValidUpdateQuota(nil, sub1)
@@ -382,11 +386,91 @@ func TestQuotaTopology_ValidUpdateQuota(t *testing.T) {
 
 	qt.client.Delete(context.TODO(), pod1)
 	pod2 := MakePod("sub-1", "pod2").Obj()
-	err = qt.client.Create(context.TODO(), pod2)
-	assert.Nil(t, err)
+	qt.client.Create(context.TODO(), pod2)
 
 	err = qt.ValidUpdateQuota(sub1, newSub1)
 	assert.Equal(t, fmt.Sprintf("quota has bound pods, isParent is forbidden to modify as true, quotaName: sub-1"), err.Error())
+
+	qt.client.Delete(context.TODO(), pod2)
+	pod3 := MakePod("sub-2", "pod3").Obj()
+	qt.client.Create(context.TODO(), pod3)
+
+	sub1.Annotations[extension.AnnotationQuotaNamespaces] = "[\"namespace1\",\"namespace2\"]"
+	err = qt.ValidUpdateQuota(sub1, newSub1)
+	assert.Equal(t, fmt.Sprintf("quota has bound pods, isParent is forbidden to modify as true, quotaName: sub-1"), err.Error())
+}
+
+func TestQuotaTopology_ListQuotaPods(t *testing.T) {
+	testCase := []struct {
+		name string
+		pod  *v1.Pod
+		eq   *v1alpha1.ElasticQuota
+		want bool
+	}{
+		{
+			name: "by label",
+			pod:  MakePod("sub-1", "pod1").Obj(),
+			eq:   MakeQuota("sub-1").IsParent(false).Obj(),
+		},
+	}
+	for _, tt := range testCase {
+		t.Run(tt.name, func(t *testing.T) {
+			kubeClient := fake.NewClientBuilder().Build()
+			v1alpha1.AddToScheme(kubeClient.Scheme())
+			qt := newFakeQuotaTopology()
+			qt.client = kubeClient
+			qt.client.Create(context.TODO(), tt.pod)
+			podList := &v1.PodList{}
+			kubeClient.List(context.TODO(), podList, &client.ListOptions{
+				Namespace: tt.eq.Name,
+			}, utilclient.DisableDeepCopy)
+			assert.Equal(t, len(podList.Items), 1)
+			kubeClient.List(context.TODO(), podList, &client.ListOptions{
+				Namespace: "sub-2",
+			}, utilclient.DisableDeepCopy)
+			assert.Equal(t, len(podList.Items), 0)
+		})
+	}
+}
+
+func TestQuotaTopology_AnnotationNamespaces(t *testing.T) {
+	quota := MakeQuota("temp").Annotations(map[string]string{extension.AnnotationQuotaNamespaces: "[\"test1\",\"test2\"]"}).Obj()
+	qt := newFakeQuotaTopology()
+	err := qt.ValidAddQuota(quota)
+	assert.Nil(t, err)
+	qt.lock.Lock()
+	assert.Equal(t, qt.namespaceToQuotaMap["test1"], "temp")
+	assert.Equal(t, qt.namespaceToQuotaMap["test2"], "temp")
+	qt.lock.Unlock()
+
+	newQuota := quota.DeepCopy()
+	newQuota.Name = "temp2"
+	err = qt.ValidAddQuota(newQuota)
+	assert.Equal(t, err, fmt.Errorf("AddQuota quota temp2's annotation namespace test1 is already bound to quota temp"))
+
+	newQuota.Name = "temp"
+	newQuota.Annotations[extension.AnnotationQuotaNamespaces] = "[\"test2\",\"test3\"]"
+	err = qt.ValidUpdateQuota(quota, newQuota)
+	assert.Nil(t, err)
+	qt.lock.Lock()
+	assert.Equal(t, qt.namespaceToQuotaMap["test2"], "temp")
+	assert.Equal(t, qt.namespaceToQuotaMap["test3"], "temp")
+	qt.lock.Unlock()
+
+	quota2 := quota.DeepCopy()
+	quota2.Name = "temp5"
+	quota2.Annotations[extension.AnnotationQuotaNamespaces] = ""
+	qt.ValidAddQuota(quota2)
+	newQuota2 := quota2.DeepCopy()
+	newQuota2.Annotations[extension.AnnotationQuotaNamespaces] = "[\"test2\"]"
+	err = qt.ValidUpdateQuota(quota, newQuota2)
+	assert.Equal(t, err, fmt.Errorf("UpdadteQuota, quota temp5 update namespaces, but namespace test2 is already bound to quota temp"))
+
+	err = qt.ValidDeleteQuota(newQuota)
+	assert.Nil(t, err)
+	qt.lock.Lock()
+	assert.Equal(t, len(qt.namespaceToQuotaMap), 0)
+	qt.lock.Unlock()
 }
 
 func TestQuotaTopology_ValidDeleteQuota(t *testing.T) {
