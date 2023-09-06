@@ -680,7 +680,7 @@ func TestPlugin_Score(t *testing.T) {
 			cpuTopology: buildCPUTopologyForTest(2, 1, 4, 2),
 			pod:         &corev1.Pod{},
 			want:        nil,
-			wantScore:   50,
+			wantScore:   25,
 		},
 		{
 			name: "score with satisfied node FullPCPUs",
@@ -695,7 +695,7 @@ func TestPlugin_Score(t *testing.T) {
 			cpuTopology: buildCPUTopologyForTest(2, 1, 4, 2),
 			pod:         &corev1.Pod{},
 			want:        nil,
-			wantScore:   100,
+			wantScore:   50,
 		},
 		{
 			name: "score with full empty node SpreadByPCPUs",
@@ -710,7 +710,7 @@ func TestPlugin_Score(t *testing.T) {
 			cpuTopology: buildCPUTopologyForTest(2, 1, 4, 2),
 			pod:         &corev1.Pod{},
 			want:        nil,
-			wantScore:   100,
+			wantScore:   25,
 		},
 		{
 			name: "score with exceed socket FullPCPUs",
@@ -725,7 +725,7 @@ func TestPlugin_Score(t *testing.T) {
 			cpuTopology: buildCPUTopologyForTest(2, 1, 4, 2),
 			pod:         &corev1.Pod{},
 			want:        nil,
-			wantScore:   0,
+			wantScore:   100,
 		},
 		{
 			name: "score with satisfied socket FullPCPUs",
@@ -740,7 +740,7 @@ func TestPlugin_Score(t *testing.T) {
 			cpuTopology: buildCPUTopologyForTest(2, 2, 4, 2),
 			pod:         &corev1.Pod{},
 			want:        nil,
-			wantScore:   33,
+			wantScore:   50,
 		},
 		{
 			name: "score with full empty socket SpreadByPCPUs",
@@ -755,7 +755,7 @@ func TestPlugin_Score(t *testing.T) {
 			cpuTopology: buildCPUTopologyForTest(2, 1, 4, 2),
 			pod:         &corev1.Pod{},
 			want:        nil,
-			wantScore:   100,
+			wantScore:   25,
 		},
 		{
 			name: "score with Node NUMA Allocate Strategy",
@@ -773,7 +773,7 @@ func TestPlugin_Score(t *testing.T) {
 			cpuTopology: buildCPUTopologyForTest(2, 1, 4, 2),
 			pod:         &corev1.Pod{},
 			want:        nil,
-			wantScore:   50,
+			wantScore:   12,
 		},
 		{
 			name: "score with Node CPU Bind Policy",
@@ -791,12 +791,15 @@ func TestPlugin_Score(t *testing.T) {
 			cpuTopology: buildCPUTopologyForTest(2, 1, 4, 2),
 			pod:         &corev1.Pod{},
 			want:        nil,
-			wantScore:   100,
+			wantScore:   50,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-
+			totalCPUs := 96
+			if tt.cpuTopology != nil {
+				totalCPUs = tt.cpuTopology.CPUDetails.CPUs().Size()
+			}
 			nodes := []*corev1.Node{
 				{
 					ObjectMeta: metav1.ObjectMeta{
@@ -805,7 +808,7 @@ func TestPlugin_Score(t *testing.T) {
 					},
 					Status: corev1.NodeStatus{
 						Allocatable: corev1.ResourceList{
-							corev1.ResourceCPU:    resource.MustParse("96"),
+							corev1.ResourceCPU:    *resource.NewMilliQuantity(int64(totalCPUs*1000), resource.DecimalSI),
 							corev1.ResourceMemory: resource.MustParse("512Gi"),
 						},
 					},

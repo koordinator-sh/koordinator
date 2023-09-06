@@ -33,6 +33,7 @@ import (
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	schedulingconfig "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/validation"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/topologymanager"
 	"github.com/koordinator-sh/koordinator/pkg/util/cpuset"
@@ -42,13 +43,6 @@ import (
 const (
 	Name     = "NodeNUMAResource"
 	stateKey = Name
-)
-
-const (
-	// socketScoreWeight controls the range of the final score when scoring according to the NUMA Socket dimension.
-	// the NUMA Socket dimension score formulas: nodeFinalScore = math.Log(numaSocketFinalScore) * socketScoreWeight
-	// use the prime number 7, we can get the range of the final score = [0, 32.23]
-	socketScoreWeight = 7
 )
 
 const (
@@ -76,6 +70,7 @@ type Plugin struct {
 	handle          framework.Handle
 	pluginArgs      *schedulingconfig.NodeNUMAResourceArgs
 	nrtLister       topologylister.NodeResourceTopologyLister
+	scorer          *resourceAllocationScorer
 	resourceManager ResourceManager
 
 	topologyOptionsManager TopologyOptionsManager
@@ -104,6 +99,17 @@ func NewWithOptions(args runtime.Object, handle framework.Handle, opts ...Option
 	pluginArgs, ok := args.(*schedulingconfig.NodeNUMAResourceArgs)
 	if !ok {
 		return nil, fmt.Errorf("want args to be of type NodeNUMAResourceArgs, got %T", args)
+	}
+	if err := validation.ValidateNodeNUMAResourceArgs(nil, pluginArgs); err != nil {
+		return nil, err
+	}
+	if pluginArgs.ScoringStrategy == nil {
+		return nil, fmt.Errorf("scoring strategy not specified")
+	}
+	strategy := pluginArgs.ScoringStrategy.Type
+	scorePlugin, exists := resourceStrategyTypeMap[strategy]
+	if !exists {
+		return nil, fmt.Errorf("scoring strategy %s is not supported", strategy)
 	}
 
 	options := &pluginOptions{}
@@ -135,6 +141,7 @@ func NewWithOptions(args runtime.Object, handle framework.Handle, opts ...Option
 		handle:                 handle,
 		pluginArgs:             pluginArgs,
 		nrtLister:              nrtLister,
+		scorer:                 scorePlugin(pluginArgs),
 		resourceManager:        options.resourceManager,
 		topologyOptionsManager: options.topologyOptionsManager,
 	}, nil
@@ -142,14 +149,6 @@ func NewWithOptions(args runtime.Object, handle framework.Handle, opts ...Option
 
 func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error) {
 	return NewWithOptions(args, handle)
-}
-
-func GetDefaultNUMAAllocateStrategy(pluginArgs *schedulingconfig.NodeNUMAResourceArgs) schedulingconfig.NUMAAllocateStrategy {
-	numaAllocateStrategy := schedulingconfig.NUMAMostAllocated
-	if pluginArgs != nil && pluginArgs.ScoringStrategy != nil && pluginArgs.ScoringStrategy.Type == schedulingconfig.LeastAllocated {
-		numaAllocateStrategy = schedulingconfig.NUMALeastAllocated
-	}
-	return numaAllocateStrategy
 }
 
 func (p *Plugin) Name() string { return Name }
@@ -240,15 +239,6 @@ func (p *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleState
 	return nil, nil
 }
 
-func AllowUseCPUSet(pod *corev1.Pod) bool {
-	if pod == nil {
-		return false
-	}
-	qosClass := extension.GetPodQoSClassRaw(pod)
-	priorityClass := extension.GetPodPriorityClassWithDefault(pod)
-	return (qosClass == extension.QoSLSE || qosClass == extension.QoSLSR) && priorityClass == extension.PriorityProd
-}
-
 func (p *Plugin) PreFilterExtensions() framework.PreFilterExtensions {
 	return nil
 }
@@ -288,32 +278,6 @@ func (p *Plugin) Filter(ctx context.Context, cycleState *framework.CycleState, p
 		return p.FilterByNUMANode(ctx, cycleState, pod, node.Name, policyType)
 	}
 
-	return nil
-}
-
-func (p *Plugin) Score(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) (int64, *framework.Status) {
-	state, status := getPreFilterState(cycleState)
-	if !status.IsSuccess() {
-		return 0, status
-	}
-	if !state.requestCPUBind {
-		return 0, nil
-	}
-
-	nodeInfo, err := p.handle.SnapshotSharedLister().NodeInfos().Get(nodeName)
-	if err != nil {
-		return 0, framework.NewStatus(framework.Error, fmt.Sprintf("getting node %q from Snapshot: %v", nodeName, err))
-	}
-	node := nodeInfo.Node()
-	resourceOptions, err := p.getResourceOptions(cycleState, state, node, pod, topologymanager.NUMATopologyHint{})
-	if err != nil {
-		return 0, nil
-	}
-	score := p.resourceManager.Score(node, pod, resourceOptions)
-	return score, nil
-}
-
-func (p *Plugin) ScoreExtensions() framework.ScoreExtensions {
 	return nil
 }
 
@@ -412,14 +376,6 @@ func (p *Plugin) preBindObject(ctx context.Context, cycleState *framework.CycleS
 		return framework.AsStatus(err)
 	}
 	return nil
-}
-
-func getNUMATopologyPolicy(nodeLabels map[string]string, kubeletTopologyManagerPolicy extension.NUMATopologyPolicy) extension.NUMATopologyPolicy {
-	policyType := extension.GetNodeNUMATopologyPolicy(nodeLabels)
-	if policyType != extension.NUMATopologyPolicyNone {
-		return policyType
-	}
-	return kubeletTopologyManagerPolicy
 }
 
 func (p *Plugin) getResourceOptions(cycleState *framework.CycleState, state *preFilterState, node *corev1.Node, pod *corev1.Pod, affinity topologymanager.NUMATopologyHint) (*ResourceOptions, error) {

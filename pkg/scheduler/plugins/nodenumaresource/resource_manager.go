@@ -19,7 +19,6 @@ package nodenumaresource
 import (
 	"errors"
 	"fmt"
-	"math"
 	"sync"
 
 	corev1 "k8s.io/api/core/v1"
@@ -30,7 +29,6 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
-	"github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingconfig "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/topologymanager"
 	"github.com/koordinator-sh/koordinator/pkg/util/bitmask"
@@ -40,7 +38,6 @@ import (
 type ResourceManager interface {
 	GetTopologyHints(node *corev1.Node, pod *corev1.Pod, options *ResourceOptions) (map[string][]topologymanager.NUMATopologyHint, error)
 	Allocate(node *corev1.Node, pod *corev1.Pod, options *ResourceOptions) (*PodAllocation, error)
-	Score(node *corev1.Node, pod *corev1.Pod, options *ResourceOptions) int64
 
 	Update(nodeName string, allocation *PodAllocation)
 	Release(nodeName string, podUID types.UID)
@@ -267,7 +264,7 @@ func (c *resourceManager) allocateCPUSet(node *corev1.Node, pod *corev1.Pod, opt
 	}
 
 	result := cpuset.CPUSet{}
-	numaAllocateStrategy := c.getNUMAAllocateStrategy(node)
+	numaAllocateStrategy := GetNUMAAllocateStrategy(node, c.numaAllocateStrategy)
 	numCPUsNeeded := options.numCPUsNeeded
 	if options.hint.NUMANodeAffinity != nil {
 		alignedCPUs := cpuset.NewCPUSet()
@@ -324,112 +321,6 @@ func (c *resourceManager) allocateCPUSet(node *corev1.Node, pod *corev1.Pod, opt
 	return result, err
 }
 
-func (c *resourceManager) Score(node *corev1.Node, pod *corev1.Pod, options *ResourceOptions) int64 {
-	topologyOptions := c.topologyManager.GetTopologyOptions(node.Name)
-	if topologyOptions.CPUTopology == nil || !topologyOptions.CPUTopology.IsValid() {
-		return 0
-	}
-
-	numaAllocateStrategy := c.getNUMAAllocateStrategy(node)
-	reservedCPUs := topologyOptions.ReservedCPUs
-
-	allocation := c.getOrCreateNodeAllocation(node.Name)
-	allocation.lock.RLock()
-	defer allocation.lock.RUnlock()
-
-	// TODO(joseph): should support score with preferredCPUs.
-
-	var (
-		cpuTopology        = topologyOptions.CPUTopology
-		numCPUsNeeded      = options.numCPUsNeeded
-		cpuBindPolicy      = options.cpuBindPolicy
-		cpuExclusivePolicy = options.cpuExclusivePolicy
-		preferredCPUs      = options.preferredCPUs
-	)
-	availableCPUs, allocated := allocation.getAvailableCPUs(cpuTopology, topologyOptions.MaxRefCount, reservedCPUs, preferredCPUs)
-	acc := newCPUAccumulator(
-		cpuTopology,
-		topologyOptions.MaxRefCount,
-		availableCPUs,
-		allocated,
-		numCPUsNeeded,
-		cpuExclusivePolicy,
-		numaAllocateStrategy,
-	)
-
-	var freeCPUs [][]int
-	if cpuBindPolicy == schedulingconfig.CPUBindPolicyFullPCPUs {
-		if numCPUsNeeded <= cpuTopology.CPUsPerNode() {
-			freeCPUs = acc.freeCoresInNode(true, true)
-		} else if numCPUsNeeded <= cpuTopology.CPUsPerSocket() {
-			freeCPUs = acc.freeCoresInSocket(true)
-		}
-	} else {
-		if numCPUsNeeded <= cpuTopology.CPUsPerNode() {
-			freeCPUs = acc.freeCPUsInNode(true)
-		} else if numCPUsNeeded <= cpuTopology.CPUsPerSocket() {
-			freeCPUs = acc.freeCPUsInSocket(true)
-		}
-	}
-
-	scoreFn := mostRequestedScore
-	if numaAllocateStrategy == schedulingconfig.NUMALeastAllocated {
-		scoreFn = leastRequestedScore
-	}
-
-	var maxScore int64
-	for _, cpus := range freeCPUs {
-		if len(cpus) < numCPUsNeeded {
-			continue
-		}
-
-		numaScore := scoreFn(int64(numCPUsNeeded), int64(len(cpus)))
-		if numaScore > maxScore {
-			maxScore = numaScore
-		}
-	}
-
-	// If the requested CPUs can be aligned according to NUMA Socket, it should be scored,
-	// but in order to avoid the situation where the number of CPUs in the NUMA Socket of
-	// some special models in the cluster is equal to the number of CPUs in the NUMA Node
-	// of other models, it is necessary to reduce the weight of the score of such machines.
-	if numCPUsNeeded > cpuTopology.CPUsPerNode() && numCPUsNeeded <= cpuTopology.CPUsPerSocket() {
-		maxScore = int64(math.Ceil(math.Log(float64(maxScore)) * socketScoreWeight))
-	}
-
-	return maxScore
-}
-
-// The used capacity is calculated on a scale of 0-MaxNodeScore (MaxNodeScore is
-// constant with value set to 100).
-// 0 being the lowest priority and 100 being the highest.
-// The more resources are used the higher the score is. This function
-// is almost a reversed version of leastRequestedScore.
-func mostRequestedScore(requested, capacity int64) int64 {
-	if capacity == 0 {
-		return 0
-	}
-	if requested > capacity {
-		return 0
-	}
-
-	return (requested * framework.MaxNodeScore) / capacity
-}
-
-// The unused capacity is calculated on a scale of 0-MaxNodeScore
-// 0 being the lowest priority and `MaxNodeScore` being the highest.
-// The more unused resources the higher the score is.
-func leastRequestedScore(requested, capacity int64) int64 {
-	if capacity == 0 {
-		return 0
-	}
-	if requested > capacity {
-		return 0
-	}
-
-	return ((capacity - requested) * framework.MaxNodeScore) / capacity
-}
-
 func (c *resourceManager) Update(nodeName string, allocation *PodAllocation) {
 	topologyOptions := c.topologyManager.GetTopologyOptions(nodeName)
 	if topologyOptions.CPUTopology == nil || !topologyOptions.CPUTopology.IsValid() {
@@ -456,14 +347,6 @@ func (c *resourceManager) GetAllocatedCPUSet(nodeName string, podUID types.UID) 
 	defer nodeAllocation.lock.RUnlock()
 
 	return nodeAllocation.getCPUs(podUID)
-}
-
-func (c *resourceManager) getNUMAAllocateStrategy(node *corev1.Node) schedulingconfig.NUMAAllocateStrategy {
-	numaAllocateStrategy := c.numaAllocateStrategy
-	if val := schedulingconfig.NUMAAllocateStrategy(node.Labels[extension.LabelNodeNUMAAllocateStrategy]); val != "" {
-		numaAllocateStrategy = val
-	}
-	return numaAllocateStrategy
 }
 
 func (c *resourceManager) GetAvailableCPUs(nodeName string, preferredCPUs cpuset.CPUSet) (availableCPUs cpuset.CPUSet, allocated CPUDetails, err error) {

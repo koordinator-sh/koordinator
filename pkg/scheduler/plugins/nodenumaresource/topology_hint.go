@@ -90,11 +90,11 @@ func (p *Plugin) allocateByHint(ctx context.Context, cycleState *framework.Cycle
 
 	resourceOptions, err := p.getResourceOptions(cycleState, state, node, pod, affinity)
 	if err != nil {
-		return nil, framework.AsStatus(err)
+		return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, err.Error())
 	}
 	result, err := p.resourceManager.Allocate(node, pod, resourceOptions)
 	if err != nil {
-		return nil, framework.AsStatus(err)
+		return nil, framework.NewStatus(framework.Unschedulable, err.Error())
 	}
 	if assume {
 		p.resourceManager.Update(nodeName, result)
