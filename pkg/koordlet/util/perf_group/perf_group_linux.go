@@ -36,13 +36,18 @@ import (
 )
 
 /*
-#cgo CFLAGS: -I/usr/include
+#cgo CFLAGS: -I/usr/local/include
 #cgo LDFLAGS: -lpfm
 #include <perfmon/pfmlib.h>
 #include <stdlib.h>
 #include <string.h>
 */
 import "C"
+
+const (
+	CYCLES       = "cycles"
+	INSTRUCTIONS = "instructions"
+)
 
 var (
 	initlibpfm    sync.Once
@@ -59,6 +64,19 @@ func InitBufferPool(eventsNums map[int]struct{}) {
 	for eventNum := range eventsNums {
 		BufPools[eventNum] = &sync.Pool{
 			New: func() interface{} {
+				// https://man7.org/linux/man-pages/man2/perf_event_open.2.html#Reading%20results
+				// 24 means the size of nr, time_enabled, time_running
+				// 16 means the size of value, id
+				// struct read_format {
+				//  u64 nr;            /* The number of events */
+				//  u64 time_enabled;  /* if PERF_FORMAT_TOTAL_TIME_ENABLED */
+				//  u64 time_running;  /* if PERF_FORMAT_TOTAL_TIME_RUNNING */
+				//  struct {
+				//      u64 value;     /* The value of the event */
+				//      u64 id;        /* if PERF_FORMAT_ID */
+				//      u64 lost;      /* if PERF_FORMAT_LOST */
+				//  } values[nr];
+				// };
 				pool := make([]byte, 24+eventNum*16)
 				return &pool
 			},
@@ -281,7 +299,7 @@ func GetContainerCyclesAndInstructionsGroup(collector *PerfGroupCollector) (floa
 	if err != nil {
 		return 0, 0, err
 	}
-	return resMap["cycles"], resMap["instructions"], nil
+	return resMap[CYCLES], resMap[INSTRUCTIONS], nil
 }
 
 func (c *PerfGroupCollector) cleanUp() error {

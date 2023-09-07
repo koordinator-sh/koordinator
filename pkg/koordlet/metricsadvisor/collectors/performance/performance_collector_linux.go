@@ -224,10 +224,7 @@ func (p *performanceCollector) profileCPIOnSingleContainer(status *corev1.Contai
 	cpiMetrics = append(cpiMetrics, cpiCycle, cpiInstruction)
 
 	if !features.DefaultKoordletFeatureGate.Enabled(features.Libpfm4) {
-		err1 := collectorOnSingleContainer.(*perf.PerfCollector).CleanUp()
-		if err1 != nil {
-			klog.Errorf("collectorOnSingleContainer cleanup err : %v", err1)
-		}
+		defer collectorOnSingleContainer.(*perf.PerfCollector).CleanUp()
 	}
 
 	metrics.RecordContainerCPI(status, pod, cycles, instructions)
