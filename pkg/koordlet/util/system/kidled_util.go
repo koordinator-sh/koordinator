@@ -142,7 +142,11 @@ func IsKidledStart() bool {
 		klog.V(4).Infof("file scan_period_in_seconds is not exist ", str)
 		return isSupportColdMemory.Load()
 	}
-	kidledScanPeriodInSecondsBytes, _ := os.ReadFile(KidledScanPeriodInSeconds.Path(""))
+	kidledScanPeriodInSecondsBytes, err := os.ReadFile(KidledScanPeriodInSeconds.Path(""))
+	if err != nil {
+		klog.V(4).Infof("scan_period_in_seconds file not exist")
+		return isSupportColdMemory.Load()
+	}
 	content := strings.Trim(string(kidledScanPeriodInSecondsBytes), "\n")
 	isValid, str := KidledScanPeriodInSeconds.IsValid(content)
 	if !isValid {
@@ -160,7 +164,11 @@ func IsKidledStart() bool {
 		klog.V(4).Infof("file use_hierarchy is not exist ", str)
 		return isSupportColdMemory.Load()
 	}
-	kidledUseHierarchyBytes, _ := os.ReadFile(KidledUseHierarchy.Path(""))
+	kidledUseHierarchyBytes, err := os.ReadFile(KidledUseHierarchy.Path(""))
+	if err != nil {
+		klog.V(4).Infof("use_hierarchy file not exist")
+		return isSupportColdMemory.Load()
+	}
 	content = strings.Trim(string(kidledUseHierarchyBytes), "\n")
 	isValid, str = KidledUseHierarchy.IsValid(content)
 	if !isValid {

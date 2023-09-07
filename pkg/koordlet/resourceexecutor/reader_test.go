@@ -1358,7 +1358,7 @@ func TestCgroupReader_ReadColdPageUsage(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			name: "v1 path exist",
+			name: "parse v1 value successfully",
 			fields: fields{
 				UseCgroupsV2: false,
 				MemoryIdlePageStatsValue: `# version: 1.0
@@ -1398,6 +1398,27 @@ func TestCgroupReader_ReadColdPageUsage(t *testing.T) {
 			},
 			want:    uint64(1363836928),
 			wantErr: false,
+		},
+		{
+			name: "parse v1 value failed",
+			fields: fields{
+				UseCgroupsV2:             false,
+				MemoryIdlePageStatsValue: `abc`,
+			},
+			args: args{
+				parentDir: "/kubepods.slice",
+			},
+			want:    0,
+			wantErr: true,
+		},
+		{
+			name:   "v1 path not exist",
+			fields: fields{},
+			args: args{
+				parentDir: "/kubepods.slice",
+			},
+			want:    0,
+			wantErr: true,
 		},
 	}
 	for _, tt := range tests {
