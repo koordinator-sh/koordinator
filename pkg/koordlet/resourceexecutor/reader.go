@@ -402,7 +402,7 @@ func (r *CgroupV2Reader) ReadPSI(parentDir string) (*PSIByResource, error) {
 	return psi, nil
 }
 func (r *CgroupV2Reader) ReadMemoryColdPageUsage(parentDir string) (uint64, error) {
-	resource, ok := sysutil.DefaultRegistry.Get(sysutil.CgroupVersionV1, sysutil.MemoryIdlePageStatsName)
+	resource, ok := sysutil.DefaultRegistry.Get(sysutil.CgroupVersionV2, sysutil.MemoryIdlePageStatsName)
 	if !ok {
 		return 0, ErrResourceNotRegistered
 	}
