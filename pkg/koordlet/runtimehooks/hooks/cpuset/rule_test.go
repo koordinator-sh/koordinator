@@ -26,6 +26,7 @@ import (
 	"k8s.io/utils/pointer"
 
 	ext "github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/protocol"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
@@ -38,10 +39,12 @@ func Test_cpusetRule_getContainerCPUSet(t *testing.T) {
 	type fields struct {
 		kubeletPoicy string
 		sharePools   []ext.CPUSharedPool
+		beSharePools []ext.CPUSharedPool
 	}
 	type args struct {
-		podAlloc     *ext.ResourceStatus
-		containerReq *protocol.ContainerRequest
+		podAlloc            *ext.ResourceStatus
+		containerReq        *protocol.ContainerRequest
+		beCPUManagerEnabled bool
 	}
 	tests := []struct {
 		name    string
@@ -74,6 +77,56 @@ func Test_cpusetRule_getContainerCPUSet(t *testing.T) {
 			},
 			want:    nil,
 			wantErr: true,
+		},
+		{
+			name: "get cpuset from annotation be share pool",
+			fields: fields{
+				sharePools: []ext.CPUSharedPool{
+					{
+						Socket: 0,
+						Node:   0,
+						CPUSet: "1-7",
+					},
+					{
+						Socket: 1,
+						Node:   1,
+						CPUSet: "9-15",
+					},
+				},
+				beSharePools: []ext.CPUSharedPool{
+					{
+						Socket: 0,
+						Node:   0,
+						CPUSet: "0-7",
+					},
+					{
+						Socket: 1,
+						Node:   1,
+						CPUSet: "8-15",
+					},
+				},
+			},
+			args: args{
+				containerReq: &protocol.ContainerRequest{
+					PodMeta:       protocol.PodMeta{},
+					ContainerMeta: protocol.ContainerMeta{},
+					PodLabels: map[string]string{
+						ext.LabelPodQoS: string(ext.QoSBE),
+					},
+					PodAnnotations: map[string]string{},
+					CgroupParent:   "burstable/test-pod/test-container",
+				},
+				podAlloc: &ext.ResourceStatus{
+					NUMANodeResources: []ext.NUMANodeResource{
+						{
+							Node: 0,
+						},
+					},
+				},
+				beCPUManagerEnabled: true,
+			},
+			want:    pointer.String("0-7"),
+			wantErr: false,
 		},
 		{
 			name: "get cpuset from annotation share pool",
@@ -233,12 +286,15 @@ func Test_cpusetRule_getContainerCPUSet(t *testing.T) {
 				kubeletPolicy: ext.KubeletCPUManagerPolicy{
 					Policy: tt.fields.kubeletPoicy,
 				},
-				sharePools: tt.fields.sharePools,
+				sharePools:   tt.fields.sharePools,
+				beSharePools: tt.fields.beSharePools,
 			}
 			if tt.args.podAlloc != nil {
 				podAllocJson := util.DumpJSON(tt.args.podAlloc)
 				tt.args.containerReq.PodAnnotations[ext.AnnotationResourceStatus] = podAllocJson
 			}
+			features.DefaultMutableKoordletFeatureGate.SetFromMap(
+				map[string]bool{string(features.BECPUManager): tt.args.beCPUManagerEnabled})
 			got, err := r.getContainerCPUSet(tt.args.containerReq)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("getCPUSet() error = %v, wantErr %v", err, tt.wantErr)

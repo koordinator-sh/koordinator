@@ -27,6 +27,7 @@ import (
 	"k8s.io/utils/pointer"
 
 	ext "github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/protocol"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util"
@@ -36,10 +37,12 @@ import (
 type cpusetRule struct {
 	kubeletPolicy   ext.KubeletCPUManagerPolicy
 	sharePools      []ext.CPUSharedPool
+	beSharePools    []ext.CPUSharedPool
 	systemQOSCPUSet string
 }
 
 func (r *cpusetRule) getContainerCPUSet(containerReq *protocol.ContainerRequest) (*string, error) {
+	// pod specifies QoS=BE and share pool id in annotations, use part be cpu share pool if BECPUManager enabled
 	// pod specifies share pool id in annotations, use part cpu share pool
 	// pod specifies QoS=SYSTEM in labels, use system qos resource if rule exist
 	// pod specifies QoS=LS in labels, use all share pool
@@ -56,19 +59,32 @@ func (r *cpusetRule) getContainerCPUSet(containerReq *protocol.ContainerRequest)
 		return nil, err
 	}
 
+	podQOSClass := ext.GetQoSClassByAttrs(podLabels, podAnnotations)
 	if len(podAlloc.NUMANodeResources) != 0 {
-		// LS pods which have specified cpu share pool
-		cpusetList := make([]string, 0, len(podAlloc.NUMANodeResources))
-		for _, numaNode := range podAlloc.NUMANodeResources {
-			for _, nodeSharePool := range r.sharePools {
-				if numaNode.Node == nodeSharePool.Node {
-					cpusetList = append(cpusetList, nodeSharePool.CPUSet)
+		getCPUFromSharePoolByAllocFn := func(sharePools []ext.CPUSharedPool, alloc *ext.ResourceStatus) string {
+			cpusetList := make([]string, 0, len(alloc.NUMANodeResources))
+			for _, numaNode := range alloc.NUMANodeResources {
+				for _, nodeSharePool := range sharePools {
+					if numaNode.Node == nodeSharePool.Node {
+						cpusetList = append(cpusetList, nodeSharePool.CPUSet)
+					}
 				}
 			}
+			return strings.Join(cpusetList, ",")
 		}
-		klog.V(6).Infof("get cpuset from specified cpushare pool for container %v/%v",
-			containerReq.PodMeta.String(), containerReq.ContainerMeta.Name)
-		return pointer.String(strings.Join(cpusetList, ",")), nil
+		if podQOSClass == ext.QoSBE && features.DefaultKoordletFeatureGate.Enabled(features.BECPUManager) {
+			// BE pods which have specified cpu share pool
+			cpuSetStr := getCPUFromSharePoolByAllocFn(r.beSharePools, podAlloc)
+			klog.V(6).Infof("get cpuset from specified be cpushare pool for container %v/%v",
+				containerReq.PodMeta.String(), containerReq.ContainerMeta.Name)
+			return pointer.String(cpuSetStr), nil
+		} else if podQOSClass != ext.QoSBE {
+			// LS pods which have specified cpu share pool
+			cpuSetStr := getCPUFromSharePoolByAllocFn(r.sharePools, podAlloc)
+			klog.V(6).Infof("get cpuset from specified cpushare pool for container %v/%v",
+				containerReq.PodMeta.String(), containerReq.ContainerMeta.Name)
+			return pointer.String(cpuSetStr), nil
+		}
 	}
 
 	allSharePoolCPUs := make([]string, 0, len(r.sharePools))
@@ -76,7 +92,6 @@ func (r *cpusetRule) getContainerCPUSet(containerReq *protocol.ContainerRequest)
 		allSharePoolCPUs = append(allSharePoolCPUs, nodeSharePool.CPUSet)
 	}
 
-	podQOSClass := ext.GetQoSClassByAttrs(podLabels, podAnnotations)
 	if podQOSClass == ext.QoSSystem && len(r.systemQOSCPUSet) > 0 {
 		klog.V(6).Infof("get cpuset from system qos rule for container %v/%v",
 			containerReq.PodMeta.String(), containerReq.ContainerMeta.Name)
@@ -120,6 +135,10 @@ func (p *cpusetPlugin) parseRule(nodeTopoIf interface{}) (bool, error) {
 	if err != nil {
 		return false, err
 	}
+	beCPUSharePools, err := ext.GetNodeBECPUSharePools(nodeTopo.Annotations)
+	if err != nil {
+		return false, err
+	}
 	cpuManagerPolicy, err := ext.GetKubeletCPUManagerPolicy(nodeTopo.Annotations)
 	if err != nil {
 		return false, err
@@ -141,6 +160,7 @@ func (p *cpusetPlugin) parseRule(nodeTopoIf interface{}) (bool, error) {
 	newRule := &cpusetRule{
 		kubeletPolicy:   *cpuManagerPolicy,
 		sharePools:      cpuSharePools,
+		beSharePools:    beCPUSharePools,
 		systemQOSCPUSet: systemQOSCPUSet,
 	}
 	updated := p.updateRule(newRule)

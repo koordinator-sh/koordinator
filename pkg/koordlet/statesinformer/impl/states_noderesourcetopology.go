@@ -350,24 +350,31 @@ func (s *nodeTopoInformer) calcNodeTopo() (*nodeTopologyStatus, error) {
 		return nil, fmt.Errorf("failed to marshal cpu topology of node, err: %v", err)
 	}
 
-	sharePools := s.calCPUSharePools(sharedPoolCPUs)
+	lsSharePools, beSharePools := s.calCPUSharePools(sharedPoolCPUs)
 	// remove cpus that already reserved by node.annotation.
 	if nodeAnnoReserved, err := cpuset.Parse(reserved.ReservedCPUs); err == nil {
-		sharePools = removeNodeReservedCPUs(sharePools, nodeAnnoReserved)
+		lsSharePools = removeNodeReservedCPUs(lsSharePools, nodeAnnoReserved)
+		beSharePools = removeNodeReservedCPUs(beSharePools, nodeAnnoReserved)
 	}
 
 	// remove cpus that exclusive for system qos from annotation
-	sharePools = removeSystemQOSCPUs(sharePools, systemQOSRes)
-	cpuSharePoolsJSON, err := json.Marshal(sharePools)
+	lsSharePools = removeSystemQOSCPUs(lsSharePools, systemQOSRes)
+	beSharePools = removeSystemQOSCPUs(beSharePools, systemQOSRes)
+	lsCPUSharePoolsJSON, err := json.Marshal(lsSharePools)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal cpushare pools of node, err: %v", err)
+	}
+	beCPUSharePoolsJSON, err := json.Marshal(beSharePools)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal be cpushare pools for node, err: %v", err)
 	}
 
 	annotations := map[string]string{
 		extension.AnnotationCPUBasicInfo:            string(cpuBasicInfoJSON),
 		extension.AnnotationNodeCPUTopology:         string(cpuTopologyJSON),
-		extension.AnnotationNodeCPUSharedPools:      string(cpuSharePoolsJSON),
+		extension.AnnotationNodeCPUSharedPools:      string(lsCPUSharePoolsJSON),
 		extension.AnnotationKubeletCPUManagerPolicy: string(cpuManagerPolicyJSON),
+		extension.AnnotationNodeBECPUSharedPools:    string(beCPUSharePoolsJSON),
 	}
 	if len(podAllocsJSON) != 0 {
 		annotations[extension.AnnotationNodeCPUAllocs] = string(podAllocsJSON)
@@ -537,43 +544,52 @@ func (s *nodeTopoInformer) reportNodeTopology() {
 
 	node := s.nodeInformer.GetNode()
 	err = util.RetryOnConflictOrTooManyRequests(func() error {
-		var nodeResourceTopology *v1alpha1.NodeResourceTopology
+		var curNodeResourceTopology *v1alpha1.NodeResourceTopology
 		if isReportEnabled {
-			nodeResourceTopology, err = s.nodeResourceTopologyLister.Get(node.Name)
+			curNodeResourceTopology, err = s.nodeResourceTopologyLister.Get(node.Name)
 			if err != nil {
 				klog.Errorf("failed to get node topology, node %s, err: %v", node.Name, err)
 				return err
 			}
-			nodeResourceTopology = nodeResourceTopology.DeepCopy() // avoid overwrite the cache
+			curNodeResourceTopology = curNodeResourceTopology.DeepCopy() // avoid overwrite the cache
 		} else {
-			nodeResourceTopology = newNodeTopo(node)
+			curNodeResourceTopology = newNodeTopo(node)
 		}
-
-		isNRTChanged, msg := nodeTopoResult.isChanged(nodeResourceTopology)
-		if !isNRTChanged {
-			klog.V(5).Infof("all good, no need to update node topology, node %s", node.Name)
-			return nil
-		}
-		klog.V(4).Infof("need to update node topology, node %s, reason: %s", node.Name, msg)
 
 		// update fields
-		nodeTopoResult.updateNRT(nodeResourceTopology)
+		newNodeResourceTopology := curNodeResourceTopology.DeepCopy()
+		nodeTopoResult.updateNRT(newNodeResourceTopology)
 
-		// do UPDATE
-		s.updateNodeTopo(nodeResourceTopology)
+		// TODO need to separate the local update and remote update
+		// do local update
+		if islocalNRTChanged, msg := nodeTopoResult.isChanged(s.GetNodeTopo()); islocalNRTChanged {
+			klog.V(4).Infof("need to update local node topology, node %s, reason: %s", node.Name, msg)
+			s.updateNodeTopo(newNodeResourceTopology)
+		} else {
+			klog.V(4).Infof("no need to update local node topology, node %s, reason: %s", node.Name, msg)
+		}
+
+		// do remote update
+		if isNRTChanged, msg := nodeTopoResult.isChanged(curNodeResourceTopology); !isNRTChanged {
+			klog.V(5).Infof("all good, no need to update node topology, node %s", node.Name)
+			return nil
+		} else {
+			klog.V(4).Infof("need to update node topology, node %s, reason: %s", node.Name, msg)
+		}
 
 		if !isReportEnabled {
 			klog.V(6).Infof("skip report node topology since reporting is disabled")
 			return nil
 		}
 
-		_, err = s.topologyClient.TopologyV1alpha1().NodeResourceTopologies().Update(context.TODO(), nodeResourceTopology, metav1.UpdateOptions{})
+		// do remote UPDATE
+		_, err = s.topologyClient.TopologyV1alpha1().NodeResourceTopologies().Update(context.TODO(), newNodeResourceTopology, metav1.UpdateOptions{})
 		if err != nil {
 			klog.Errorf("failed to report node topology, node %s, err: %v", node.Name, err)
 			return err
 		}
 
-		klog.V(6).Infof("update NodeResourceTopology successfully, %+v", nodeResourceTopology)
+		klog.V(6).Infof("update NodeResourceTopology successfully, %+v", newNodeResourceTopology)
 		return nil
 	})
 	if err != nil {
@@ -628,6 +644,7 @@ func isEqualNRTAnnotations(oldAnno, newAnno map[string]string) (bool, string) {
 		extension.AnnotationCPUBasicInfo,
 		extension.AnnotationKubeletCPUManagerPolicy,
 		extension.AnnotationNodeCPUSharedPools,
+		extension.AnnotationNodeBECPUSharedPools,
 		extension.AnnotationNodeCPUTopology,
 		extension.AnnotationNodeCPUAllocs,
 		extension.AnnotationNodeReservation,
@@ -661,7 +678,13 @@ func isEqualNRTAnnotations(oldAnno, newAnno map[string]string) (bool, string) {
 	return true, ""
 }
 
-func (s *nodeTopoInformer) calCPUSharePools(sharedPoolCPUs map[int32]*extension.CPUInfo) []extension.CPUSharedPool {
+func (s *nodeTopoInformer) calCPUSharePools(lsSharedPoolCPUs map[int32]*extension.CPUInfo) (lsSharePools []extension.CPUSharedPool, beSharePools []extension.CPUSharedPool) {
+	beSharedPoolCPUs := make(map[int32]*extension.CPUInfo)
+	for cpuID, cpuInfo := range lsSharedPoolCPUs {
+		newCPUInfo := *cpuInfo
+		beSharedPoolCPUs[cpuID] = &newCPUInfo
+	}
+
 	podMetas := s.podsInformer.GetAllPods()
 	for _, podMeta := range podMetas {
 		status, err := extension.GetResourceStatus(podMeta.Pod.Annotations)
@@ -679,19 +702,29 @@ func (s *nodeTopoInformer) calCPUSharePools(sharedPoolCPUs map[int32]*extension.
 			continue
 		}
 		for _, cpuID := range set.ToSliceNoSort() {
-			delete(sharedPoolCPUs, int32(cpuID))
+			delete(lsSharedPoolCPUs, int32(cpuID))
+		}
+		if extension.GetPodQoSClassRaw(podMeta.Pod) == extension.QoSLSE {
+			for _, cpuID := range set.ToSliceNoSort() {
+				delete(beSharedPoolCPUs, int32(cpuID))
+			}
 		}
 	}
 
+	lsSharePools = covertCPUsToSharePool(lsSharedPoolCPUs)
+	beSharePools = covertCPUsToSharePool(beSharedPoolCPUs)
+	return
+}
+
+func covertCPUsToSharePool(cpuIDMap map[int32]*extension.CPUInfo) (sharePools []extension.CPUSharedPool) {
 	// nodeID -> cpulist
 	nodeIDToCpus := make(map[int32][]int)
-	for cpuID, info := range sharedPoolCPUs {
+	for cpuID, info := range cpuIDMap {
 		if info != nil {
 			nodeIDToCpus[info.Node] = append(nodeIDToCpus[info.Node], int(cpuID))
 		}
 	}
 
-	var sharePools []extension.CPUSharedPool
 	for nodeID, cpus := range nodeIDToCpus {
 		if len(cpus) <= 0 {
 			continue
@@ -700,7 +733,7 @@ func (s *nodeTopoInformer) calCPUSharePools(sharedPoolCPUs map[int32]*extension.
 		sharePools = append(sharePools, extension.CPUSharedPool{
 			CPUSet: set.String(),
 			Node:   nodeID,
-			Socket: sharedPoolCPUs[int32(cpus[0])].Socket,
+			Socket: cpuIDMap[int32(cpus[0])].Socket,
 		})
 	}
 	sort.Slice(sharePools, func(i, j int) bool {
@@ -710,7 +743,7 @@ func (s *nodeTopoInformer) calCPUSharePools(sharedPoolCPUs map[int32]*extension.
 		jID := int(jPool.Socket)<<32 | int(jPool.Node)
 		return iID < jID
 	})
-	return sharePools
+	return
 }
 
 func (s *nodeTopoInformer) calCPUTopology() (*metriccache.NodeCPUInfo, *extension.CPUTopology, map[int32]*extension.CPUInfo, error) {

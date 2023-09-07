@@ -46,7 +46,10 @@ type cpusetPlugin struct {
 	executor    resourceexecutor.ResourceUpdateExecutor
 }
 
-var podQOSConditions = []string{string(apiext.QoSSystem), string(apiext.QoSLSE), string(apiext.QoSLSR)}
+var (
+	nonBEPodQOSConditions = []string{string(apiext.QoSSystem), string(apiext.QoSLSE), string(apiext.QoSLSR)}
+	bePodQOSConditions    = []string{string(apiext.QoSBE)}
+)
 
 func (p *cpusetPlugin) Register(op hooks.Options) {
 	klog.V(5).Infof("register hook %v", name)
@@ -58,12 +61,19 @@ func (p *cpusetPlugin) Register(op hooks.Options) {
 		rule.WithUpdateCallback(p.ruleUpdateCb))
 	reconciler.RegisterCgroupReconciler(reconciler.ContainerLevel, sysutil.CPUSet,
 		"set container cpuset and unset container cpu quota if needed",
-		p.SetContainerCPUSetAndUnsetCFS, reconciler.PodQOSFilter(), podQOSConditions...)
+		p.SetContainerCPUSetAndUnsetCFS, reconciler.PodQOSFilter(), nonBEPodQOSConditions...)
 	reconciler.RegisterCgroupReconciler(reconciler.SandboxLevel, sysutil.CPUSet,
 		"set sandbox container cpuset and unset container cpu quota if needed",
-		p.SetContainerCPUSetAndUnsetCFS, reconciler.PodQOSFilter(), podQOSConditions...)
+		p.SetContainerCPUSetAndUnsetCFS, reconciler.PodQOSFilter(), nonBEPodQOSConditions...)
 	reconciler.RegisterCgroupReconciler(reconciler.PodLevel, sysutil.CPUCFSQuota, "unset pod cpu quota if needed",
-		UnsetPodCPUQuota, reconciler.PodQOSFilter(), podQOSConditions...)
+		UnsetPodCPUQuota, reconciler.PodQOSFilter(), nonBEPodQOSConditions...)
+
+	reconciler.RegisterCgroupReconciler(reconciler.ContainerLevel, sysutil.CPUSet,
+		"set container cpuset for be pod is specified",
+		p.SetContainerCPUSet, reconciler.PodQOSFilter(), bePodQOSConditions...)
+	reconciler.RegisterCgroupReconciler(reconciler.SandboxLevel, sysutil.CPUSet,
+		"set sandbox container cpuset for be pod is specified",
+		p.SetContainerCPUSet, reconciler.PodQOSFilter(), bePodQOSConditions...)
 	p.executor = op.Executor
 }
 

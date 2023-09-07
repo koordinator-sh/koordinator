@@ -165,7 +165,7 @@ func RegisterCgroupReconciler(level ReconcilerLevel, cgroupFile system.Resource,
 		for _, condition := range conditions {
 			if _, ok := r.fn[condition]; ok {
 				klog.Fatalf("%v of level %v is already registered with condition %v by %v, cannot change by %v",
-					cgroupFile.ResourceType, level, condition, r.description, description)
+					cgroupFile.ResourceType(), level, condition, r.description, description)
 			}
 
 			r.fn[condition] = fn

@@ -33,6 +33,7 @@ import (
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	mockmetriccache "github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache/mockmetriccache"
 	maframework "github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor/framework"
@@ -87,14 +88,15 @@ func Test_cpuSuppress_suppressBECPU(t *testing.T) {
 		CPUUsed resource.Quantity
 	}
 	type args struct {
-		node            *corev1.Node
-		nodeCPUUsed     *resource.Quantity
-		podMetrics      []podMetricSample
-		podMetas        []*statesinformer.PodMeta
-		thresholdConfig *slov1alpha1.ResourceThresholdStrategy
-		nodeCPUSet      string
-		preBECPUSet     string
-		preBECFSQuota   int64
+		node                *corev1.Node
+		nodeCPUUsed         *resource.Quantity
+		podMetrics          []podMetricSample
+		podMetas            []*statesinformer.PodMeta
+		thresholdConfig     *slov1alpha1.ResourceThresholdStrategy
+		nodeCPUSet          string
+		preBECPUSet         string
+		preBECFSQuota       int64
+		beCPUManagerEnabled bool
 	}
 	tests := []struct {
 		name                     string
@@ -102,6 +104,8 @@ func Test_cpuSuppress_suppressBECPU(t *testing.T) {
 		wantBECFSQuota           int64
 		wantCFSQuotaPolicyStatus *suppressPolicyStatus
 		wantBECPUSet             string
+		wantBECPUSetOfContainer  map[string]string // key is container id
+		wantBECPUSetOfSandbox    map[string]string // key is pod name
 		wantCPUSetPolicyStatus   *suppressPolicyStatus
 	}{
 		{
@@ -124,6 +128,164 @@ func Test_cpuSuppress_suppressBECPU(t *testing.T) {
 			wantCFSQuotaPolicyStatus: nil,
 			wantBECPUSet:             "0-9",
 			wantCPUSetPolicyStatus:   nil,
+		},
+		{
+			name: "recover when be cpu manager enabled",
+			args: args{
+				node: &corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node0",
+					},
+					Status: corev1.NodeStatus{
+						Allocatable: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("16"),
+							corev1.ResourceMemory: resource.MustParse("40G"),
+						},
+						Capacity: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("16"),
+							corev1.ResourceMemory: resource.MustParse("40G"),
+						},
+					},
+				},
+				nodeCPUUsed: resource.NewQuantity(12, resource.DecimalSI),
+				podMetrics: []podMetricSample{
+					{UID: "ls-pod", CPUUsed: resource.MustParse("8")},
+					{UID: "be-pod", CPUUsed: resource.MustParse("2")},
+					{UID: "be-pod-numa", CPUUsed: resource.MustParse("1")},
+				},
+				podMetas: []*statesinformer.PodMeta{
+					{
+						Pod: &corev1.Pod{
+							ObjectMeta: metav1.ObjectMeta{
+								Name: "ls-pod",
+								UID:  "ls-pod",
+								Labels: map[string]string{
+									apiext.LabelPodQoS: string(apiext.QoSLS),
+								},
+							},
+							Spec: corev1.PodSpec{
+								NodeName: "test-node",
+								Containers: []corev1.Container{
+									{
+										Resources: corev1.ResourceRequirements{
+											Requests: corev1.ResourceList{
+												corev1.ResourceCPU:    resource.MustParse("10"),
+												corev1.ResourceMemory: resource.MustParse("20G"),
+											},
+											Limits: corev1.ResourceList{
+												corev1.ResourceCPU:    resource.MustParse("10"),
+												corev1.ResourceMemory: resource.MustParse("20G"),
+											},
+										},
+									},
+								},
+							},
+							Status: corev1.PodStatus{
+								Phase: corev1.PodRunning,
+								ContainerStatuses: []corev1.ContainerStatus{
+									{
+										ContainerID: "containerd://ls-pod-container",
+									},
+								},
+							},
+						},
+					},
+					{
+						Pod: &corev1.Pod{
+							ObjectMeta: metav1.ObjectMeta{
+								Name: "be-pod",
+								UID:  "be-pod",
+								Labels: map[string]string{
+									apiext.LabelPodQoS: string(apiext.QoSBE),
+								},
+							},
+							Spec: corev1.PodSpec{
+								NodeName: "test-node",
+								Containers: []corev1.Container{
+									{
+										Resources: corev1.ResourceRequirements{
+											Requests: corev1.ResourceList{
+												apiext.BatchCPU:    resource.MustParse("4"),
+												apiext.BatchMemory: resource.MustParse("6G"),
+											},
+											Limits: corev1.ResourceList{
+												apiext.BatchCPU:    resource.MustParse("4"),
+												apiext.BatchMemory: resource.MustParse("6G"),
+											},
+										},
+									},
+								},
+							},
+							Status: corev1.PodStatus{
+								Phase: corev1.PodRunning,
+								ContainerStatuses: []corev1.ContainerStatus{
+									{
+										ContainerID: "containerd://be-pod-container",
+									},
+								},
+							},
+						},
+					},
+					{
+						Pod: &corev1.Pod{
+							ObjectMeta: metav1.ObjectMeta{
+								Name: "be-pod-numa",
+								UID:  "be-pod-numa",
+								Labels: map[string]string{
+									apiext.LabelPodQoS: string(apiext.QoSBE),
+								},
+								Annotations: map[string]string{
+									apiext.AnnotationResourceStatus: "{\"numaNodeResources\":[{\"node\": 0}]}",
+								},
+							},
+							Spec: corev1.PodSpec{
+								NodeName: "test-node",
+								Containers: []corev1.Container{
+									{
+										Resources: corev1.ResourceRequirements{
+											Requests: corev1.ResourceList{
+												apiext.BatchCPU:    resource.MustParse("4"),
+												apiext.BatchMemory: resource.MustParse("6G"),
+											},
+											Limits: corev1.ResourceList{
+												apiext.BatchCPU:    resource.MustParse("4"),
+												apiext.BatchMemory: resource.MustParse("6G"),
+											},
+										},
+									},
+								},
+							},
+							Status: corev1.PodStatus{
+								Phase: corev1.PodRunning,
+								ContainerStatuses: []corev1.ContainerStatus{
+									{
+										ContainerID: "containerd://be-pod-numa-container",
+									},
+								},
+							},
+						},
+					},
+				},
+				nodeCPUSet:    "0-15",
+				preBECPUSet:   "1-9",
+				preBECFSQuota: 10 * system.DefaultCPUCFSPeriod,
+				thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{
+					Enable:                      pointer.Bool(true),
+					CPUSuppressPolicy:           slov1alpha1.CPUCfsQuotaPolicy,
+					CPUSuppressThresholdPercent: pointer.Int64(70),
+				},
+				beCPUManagerEnabled: true,
+			},
+			wantBECFSQuota:           -1,
+			wantCFSQuotaPolicyStatus: &policyRecovered,
+			wantBECPUSet:             "0-15",
+			wantBECPUSetOfContainer: map[string]string{
+				"containerd://be-pod-numa-container": "1-9",
+			},
+			wantBECPUSetOfSandbox: map[string]string{
+				"be-pod-numa": "1-9",
+			},
+			wantCPUSetPolicyStatus: &policyRecovered,
 		},
 		{
 			name: "suppress by cfsQuota calculate correctly for missing podMeta or transient metrics",
@@ -499,6 +661,7 @@ func Test_cpuSuppress_suppressBECPU(t *testing.T) {
 			wantCPUSetPolicyStatus:   &policyRecovered,
 		},
 	}
+	defaultSandboxContainerIDPrefix := "containerd://sandbox-"
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctl := gomock.NewController(t)
@@ -544,7 +707,20 @@ func Test_cpuSuppress_suppressBECPU(t *testing.T) {
 			for _, podMeta := range tt.args.podMetas {
 				podMeta.CgroupDir = koordletutil.GetPodCgroupParentDir(podMeta.Pod)
 				helper.WriteCgroupFileContents(podMeta.CgroupDir, system.CPUSet, tt.args.preBECPUSet)
+				for _, containerStat := range podMeta.Pod.Status.ContainerStatuses {
+					containerDir, err := koordletutil.GetContainerCgroupParentDir(podMeta.CgroupDir, &containerStat)
+					assert.NoError(t, err)
+					helper.WriteCgroupFileContents(containerDir, system.CPUSet, tt.args.preBECPUSet)
+				}
+				defaultSandboxContainerID := defaultSandboxContainerIDPrefix + podMeta.Pod.Name
+				sandboxContainerDir, err := koordletutil.GetContainerCgroupParentDirByID(podMeta.CgroupDir, defaultSandboxContainerID)
+				assert.NoError(t, err)
+				helper.WriteCgroupFileContents(sandboxContainerDir, system.CPUSet, tt.args.preBECPUSet)
 			}
+
+			assert.NoError(t, features.DefaultMutableKoordletFeatureGate.SetFromMap(map[string]bool{
+				string(features.BECPUManager):  tt.args.beCPUManagerEnabled,
+				string(features.BECPUSuppress): true}))
 
 			opt := &framework.Options{
 				StatesInformer:      si,
@@ -581,6 +757,27 @@ func Test_cpuSuppress_suppressBECPU(t *testing.T) {
 				if apiext.GetKubeQosClass(podMeta.Pod) == corev1.PodQOSBestEffort {
 					gotPodCPUSet := helper.ReadCgroupFileContents(podMeta.CgroupDir, system.CPUSet)
 					assert.Equal(t, tt.wantBECPUSet, gotPodCPUSet, "checkPodCPUSet", podMeta.CgroupDir)
+
+					for _, containerStat := range podMeta.Pod.Status.ContainerStatuses {
+						wantCPUSetContainer := tt.wantBECPUSet
+						if cpuset, exist := tt.wantBECPUSetOfContainer[containerStat.ContainerID]; exist {
+							wantCPUSetContainer = cpuset
+						}
+						sandboxContainerDir, err := koordletutil.GetContainerCgroupParentDir(podMeta.CgroupDir, &containerStat)
+						gotContainerCPUSet := helper.ReadCgroupFileContents(sandboxContainerDir, system.CPUSet)
+						assert.NoError(t, err)
+						assert.Equal(t, wantCPUSetContainer, gotContainerCPUSet, "checkPodCPUSet", sandboxContainerDir)
+					}
+
+					wantCPUSetSandbox := tt.wantBECPUSet
+					if cpuset, exist := tt.wantBECPUSetOfSandbox[podMeta.Pod.Name]; exist {
+						wantCPUSetSandbox = cpuset
+					}
+					defaultSandboxContainerID := defaultSandboxContainerIDPrefix + podMeta.Pod.Name
+					sandboxContainerDir, err := koordletutil.GetContainerCgroupParentDirByID(podMeta.CgroupDir, defaultSandboxContainerID)
+					assert.NoError(t, err)
+					gotSandboxCPUSet := helper.ReadCgroupFileContents(sandboxContainerDir, system.CPUSet)
+					assert.Equal(t, wantCPUSetSandbox, gotSandboxCPUSet, "checkPodCPUSet", sandboxContainerDir)
 				}
 			}
 		})
