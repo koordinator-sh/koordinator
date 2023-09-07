@@ -74,14 +74,12 @@ func TestPodSortFn(t *testing.T) {
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
 			creationTime := time.Now()
-			pods := make([]*corev1.Pod, 0, len(testCase.order))
 			jobs := make([]*v1alpha1.PodMigrationJob, 0, len(testCase.order))
 			podOfJob := map[*v1alpha1.PodMigrationJob]*corev1.Pod{}
 			podOrder := map[string]int{}
 			for i := 0; i < len(testCase.order); i++ {
 				pod := makePod("test-pod-"+strconv.Itoa(i), 0, extension.QoSNone, corev1.PodQOSBestEffort, creationTime)
 				job := makePodMigrationJob("test-job-"+strconv.Itoa(i), creationTime, pod)
-				pods = append(pods, pod)
 				jobs = append(jobs, job)
 				podOfJob[job] = pod
 				podOrder[pod.Name] = testCase.order[i]
@@ -193,8 +191,6 @@ func TestJobMigratingSortFn(t *testing.T) {
 			jobs := make([]*batchv1.Job, testCase.jobNum)
 			podMigrationJobs := make([]*v1alpha1.PodMigrationJob, 0, testCase.podMigrationJobNum)
 			podOfJob := map[*v1alpha1.PodMigrationJob]*corev1.Pod{}
-			runningPodMigrationJobs := make([]*v1alpha1.PodMigrationJob, 0, testCase.runningPodMigrationJobNum)
-			passedPendingPodMigrationJobs := make([]*v1alpha1.PodMigrationJob, 0, testCase.passedPendingPodMigrationJobNum)
 
 			// create jobs
 			for k := 0; k < testCase.jobNum; k++ {
@@ -263,7 +259,6 @@ func TestJobMigratingSortFn(t *testing.T) {
 				}
 				assert.Nil(t, fakeClient.Create(context.TODO(), pod))
 				assert.Nil(t, fakeClient.Create(context.TODO(), job))
-				runningPodMigrationJobs = append(runningPodMigrationJobs, job)
 			}
 
 			// create Passed Pending PodMigrationJobs
@@ -287,7 +282,6 @@ func TestJobMigratingSortFn(t *testing.T) {
 				}
 				assert.Nil(t, fakeClient.Create(context.TODO(), pod))
 				assert.Nil(t, fakeClient.Create(context.TODO(), job))
-				passedPendingPodMigrationJobs = append(passedPendingPodMigrationJobs, job)
 			}
 
 			sortFn := NewJobMigratingSortFn(fakeClient)
