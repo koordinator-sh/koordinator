@@ -185,8 +185,7 @@ func (g *Plugin) Start() {
 }
 
 func (g *Plugin) NewControllers() ([]frameworkext.Controller, error) {
-	quotaOverUsedRevokeController := NewQuotaOverUsedRevokeController(g.handle.ClientSet(), g.pluginArgs.DelayEvictTime.Duration,
-		g.pluginArgs.RevokePodInterval.Duration, g.groupQuotaManager, *g.pluginArgs.MonitorAllQuotas)
+	quotaOverUsedRevokeController := NewQuotaOverUsedRevokeController(g)
 	elasticQuotaController := NewElasticQuotaController(g)
 	return []frameworkext.Controller{g, quotaOverUsedRevokeController, elasticQuotaController}, nil
 }

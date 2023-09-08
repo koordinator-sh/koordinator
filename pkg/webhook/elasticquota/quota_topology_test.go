@@ -436,6 +436,10 @@ func TestQuotaTopology_ListQuotaPods(t *testing.T) {
 func TestQuotaTopology_AnnotationNamespaces(t *testing.T) {
 	quota := MakeQuota("temp").Annotations(map[string]string{extension.AnnotationQuotaNamespaces: "[\"test1\",\"test2\"]"}).Obj()
 	qt := newFakeQuotaTopology()
+	client := fake.NewClientBuilder().Build()
+	v1alpha1.AddToScheme(client.Scheme())
+	qt.client = client
+
 	err := qt.ValidAddQuota(quota)
 	assert.Nil(t, err)
 	qt.lock.Lock()

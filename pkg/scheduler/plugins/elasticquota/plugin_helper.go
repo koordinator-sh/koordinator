@@ -99,9 +99,21 @@ func (g *Plugin) GetQuotaName(pod *v1.Pod) string {
 func (g *Plugin) migrateDefaultQuotaGroupsPod() {
 	defaultQuotaInfo := g.groupQuotaManager.GetQuotaInfoByName(extension.DefaultQuotaName)
 	for _, pod := range defaultQuotaInfo.GetPodCache() {
-		quotaName := g.getPodAssociateQuotaName(pod)
-		if quotaName != extension.DefaultQuotaName && g.groupQuotaManager.GetQuotaInfoByName(quotaName) != nil {
-			g.groupQuotaManager.MigratePod(pod, extension.DefaultQuotaName, quotaName)
+		quotaName, treeID := g.getPodAssociateQuotaNameAndTreeID(pod)
+		if quotaName == extension.DefaultQuotaName {
+			continue
+		}
+		curMgr := g.GetGroupQuotaManagerForTree(treeID)
+		if curMgr == nil || curMgr.GetQuotaInfoByName(quotaName) == nil {
+			continue
+		}
+		if curMgr.GetTreeID() != "" {
+			// different tree.
+			g.groupQuotaManager.OnPodDelete(extension.DefaultQuotaName, pod)
+			curMgr.OnPodAdd(quotaName, pod)
+		} else {
+			// the same tree.
+			curMgr.MigratePod(pod, extension.DefaultQuotaName, quotaName)
 		}
 	}
 }
