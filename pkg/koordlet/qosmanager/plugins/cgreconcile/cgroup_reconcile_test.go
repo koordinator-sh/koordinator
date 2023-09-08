@@ -1304,10 +1304,10 @@ func assertCgroupResourceEqual(t *testing.T, expect, got []resourceexecutor.Reso
 		g, ok := got[i].(*resourceexecutor.CgroupResourceUpdater)
 		assert.Equal(t, true, ok, fmt.Sprintf("check for index %v", i))
 		// assert not support func arguments
-		e.SetUpdateFunc(nil, nil)
-		g.SetUpdateFunc(nil, nil)
+		e.WithUpdateFunc(nil).WithMergeUpdateFunc(nil)
+		g.WithUpdateFunc(nil).WithMergeUpdateFunc(nil)
 		// set expect eventhelper like reality
-		e.SeteventHelper(g.GeteventHelper())
+		e.SetEventHelper(g.GetEventHelper())
 		assert.Equal(t, e, g, fmt.Sprintf("check for index %v", i))
 	}
 }

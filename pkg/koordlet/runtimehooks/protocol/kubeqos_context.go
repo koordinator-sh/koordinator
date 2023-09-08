@@ -43,13 +43,15 @@ type KubeQOSContext struct {
 	Request  KubeQOSRequet
 	Response KubeQOSResponse
 	executor resourceexecutor.ResourceUpdateExecutor
+	updaters []resourceexecutor.ResourceUpdater
 }
 
 func (k *KubeQOSContext) FromReconciler(kubeQOS corev1.PodQOSClass) {
 	k.Request.FromReconciler(kubeQOS)
 }
 
-func (k *KubeQOSContext) ReconcilerDone(executor resourceexecutor.ResourceUpdateExecutor) {
+// ReconcilerProcess generate the resource updaters but not do the update until the Update() is called.
+func (k *KubeQOSContext) ReconcilerProcess(executor resourceexecutor.ResourceUpdateExecutor) {
 	if k.executor == nil {
 		k.executor = executor
 	}
@@ -57,20 +59,36 @@ func (k *KubeQOSContext) ReconcilerDone(executor resourceexecutor.ResourceUpdate
 	k.injectForExt()
 }
 
-func (p *KubeQOSContext) injectForOrigin() {
+func (k *KubeQOSContext) ReconcilerDone(executor resourceexecutor.ResourceUpdateExecutor) {
+	k.ReconcilerProcess(executor)
+	k.Update()
+}
+
+func (k *KubeQOSContext) GetUpdaters() []resourceexecutor.ResourceUpdater {
+	return k.updaters
+}
+
+func (k *KubeQOSContext) Update() {
+	k.executor.UpdateBatch(true, k.updaters...)
+	k.updaters = nil
+}
+
+func (k *KubeQOSContext) injectForOrigin() {
 	// TODO
 }
 
-func (p *KubeQOSContext) injectForExt() {
-	if p.Response.Resources.CPUBvt != nil {
-		eventHelper := audit.V(3).Group(string(p.Request.KubeQOSClass)).Reason("runtime-hooks").Message(
-			"set kubeqos bvt to %v", *p.Response.Resources.CPUBvt)
-		if err := injectCPUBvt(p.Request.CgroupParent, *p.Response.Resources.CPUBvt, eventHelper, p.executor); err != nil {
-			klog.Infof("set kubeqos %v bvt %v on cgroup parent %v failed, error %v", p.Request.KubeQOSClass,
-				*p.Response.Resources.CPUBvt, p.Request.CgroupParent, err)
+func (k *KubeQOSContext) injectForExt() {
+	if k.Response.Resources.CPUBvt != nil {
+		eventHelper := audit.V(3).Group(string(k.Request.KubeQOSClass)).Reason("runtime-hooks").Message(
+			"set kubeqos bvt to %v", *k.Response.Resources.CPUBvt)
+		updater, err := injectCPUBvt(k.Request.CgroupParent, *k.Response.Resources.CPUBvt, eventHelper, k.executor)
+		if err != nil {
+			klog.Infof("set kubeqos %v bvt %v on cgroup parent %v failed, error %v", k.Request.KubeQOSClass,
+				*k.Response.Resources.CPUBvt, k.Request.CgroupParent, err)
 		} else {
-			klog.V(5).Infof("set kubeqos %v bvt %v on cgroup parent %v", p.Request.KubeQOSClass,
-				*p.Response.Resources.CPUBvt, p.Request.CgroupParent)
+			k.updaters = append(k.updaters, updater)
+			klog.V(5).Infof("set kubeqos %v bvt %v on cgroup parent %v", k.Request.KubeQOSClass,
+				*k.Response.Resources.CPUBvt, k.Request.CgroupParent)
 		}
 	}
 }

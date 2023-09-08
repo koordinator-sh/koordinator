@@ -31,13 +31,18 @@ import (
 )
 
 const (
-	ProcStatName    = "stat"
-	ProcMemInfoName = "meminfo"
-	SysctlSubDir    = "sys"
+	ProcStatName          = "stat"
+	ProcMemInfoName       = "meminfo"
+	SysctlSubDir          = "sys"
+	ProcCPUInfoName       = "cpuinfo"
+	KernelCmdlineFileName = "cmdline"
 
 	KernelSchedGroupIdentityEnable = "kernel/sched_group_identity_enabled"
 
 	SysNUMASubDir = "bus/node/devices"
+
+	SysCPUSMTActiveSubPath       = "devices/system/cpu/smt/active"
+	SysIntelPStateNoTurboSubPath = "devices/system/cpu/intel_pstate/no_turbo"
 )
 
 var (
@@ -95,6 +100,18 @@ func GetSysNUMADir() string {
 
 func GetNUMAMemInfoPath(numaNodeSubDir string) string {
 	return filepath.Join(Conf.SysRootDir, SysNUMASubDir, numaNodeSubDir, ProcMemInfoName)
+}
+
+func GetCPUInfoPath() string {
+	return filepath.Join(Conf.ProcRootDir, ProcCPUInfoName)
+}
+
+func GetSysCPUSMTActivePath() string {
+	return filepath.Join(Conf.SysRootDir, SysCPUSMTActiveSubPath)
+}
+
+func GetSysIntelPStateNoTurboPath() string {
+	return filepath.Join(Conf.SysRootDir, SysIntelPStateNoTurboSubPath)
 }
 
 func GetProcSysFilePath(file string) string {

@@ -119,9 +119,11 @@ func TestPodContext_NriDone(t *testing.T) {
 		args   args
 	}{
 		{
-			name:   "nri done",
-			fields: fields{},
-			args:   args{},
+			name: "nri done",
+			fields: fields{
+				executor: resourceexecutor.NewTestResourceExecutor(),
+			},
+			args: args{},
 		},
 	}
 	for _, tt := range tests {
@@ -131,6 +133,9 @@ func TestPodContext_NriDone(t *testing.T) {
 				Response: tt.fields.Response,
 				executor: tt.fields.executor,
 			}
+			newStopCh := make(chan struct{})
+			defer close(newStopCh)
+			p.executor.Run(newStopCh)
 			p.NriDone(tt.args.executor)
 		})
 	}

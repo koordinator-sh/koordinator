@@ -271,3 +271,12 @@ func (e *ResourceUpdateExecutorImpl) isUpdateErrIgnored(err error) bool {
 	}
 	return false
 }
+
+// NewTestResourceExecutor returns a new ResourceUpdateExecutorImpl for testing usage.
+// NOTE: Please DO NOT use it except unittests.
+func NewTestResourceExecutor() ResourceUpdateExecutor {
+	return &ResourceUpdateExecutorImpl{
+		ResourceCache: cache.NewCacheDefault(),
+		Config:        NewDefaultConfig(),
+	}
+}

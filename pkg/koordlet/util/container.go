@@ -63,11 +63,7 @@ func GetContainerCgroupPerfPath(podParentDir string, c *corev1.ContainerStatus) 
 
 func GetContainerBaseCFSQuota(container *corev1.Container) int64 {
 	cpuMilliLimit := util.GetContainerMilliCPULimit(container)
-	if cpuMilliLimit <= 0 {
-		return -1
-	} else {
-		return cpuMilliLimit * system.CFSBasePeriodValue / 1000
-	}
+	return system.MilliCPUToQuota(cpuMilliLimit)
 }
 
 // ParseContainerID parse container ID from the container base path.

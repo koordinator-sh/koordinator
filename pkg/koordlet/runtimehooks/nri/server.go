@@ -174,7 +174,7 @@ func (p *NriServer) CreateContainer(pod *api.PodSandbox, container *api.Containe
 		}
 	}
 
-	adjust, _, err := containerCtx.NriDone()
+	adjust, _, err := containerCtx.NriDone(p.options.Executor)
 	if err != nil {
 		klog.Errorf("containerCtx nri done failed: %v", err)
 		return nil, nil, nil
@@ -197,7 +197,7 @@ func (p *NriServer) UpdateContainer(pod *api.PodSandbox, container *api.Containe
 		}
 	}
 
-	_, update, err := containerCtx.NriDone()
+	_, update, err := containerCtx.NriDone(p.options.Executor)
 	if err != nil {
 		klog.Errorf("containerCtx nri done failed: %v", err)
 		return nil, nil

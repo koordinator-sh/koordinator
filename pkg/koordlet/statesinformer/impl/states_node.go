@@ -34,6 +34,7 @@ import (
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 )
 
 const (
@@ -41,9 +42,10 @@ const (
 )
 
 type nodeInformer struct {
-	nodeInformer cache.SharedIndexInformer
-	nodeRWMutex  sync.RWMutex
-	node         *corev1.Node
+	nodeInformer   cache.SharedIndexInformer
+	nodeRWMutex    sync.RWMutex
+	node           *corev1.Node
+	callbackRunner *callbackRunner
 }
 
 func NewNodeInformer() *nodeInformer {
@@ -60,6 +62,8 @@ func (s *nodeInformer) GetNode() *corev1.Node {
 }
 
 func (s *nodeInformer) Setup(ctx *PluginOption, state *PluginState) {
+	s.callbackRunner = state.callbackRunner
+
 	s.nodeInformer = newNodeInformer(ctx.KubeClient, ctx.NodeName)
 	s.nodeInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
@@ -153,10 +157,33 @@ func (s *nodeInformer) syncNode(newNode *corev1.Node) {
 	klog.V(5).Infof("node update detail %v", newNode)
 	s.nodeRWMutex.Lock()
 	defer s.nodeRWMutex.Unlock()
+
+	if isNodeMetadataUpdated(s.node, newNode) {
+		klog.V(5).Info("node metadata changed, send NodeMetadata update callback")
+		s.callbackRunner.SendCallback(statesinformer.RegisterTypeNodeMetadata)
+	}
+
 	s.node = newNode.DeepCopy()
 
 	// also register node for metrics
 	recordNodeResourceMetrics(newNode)
+}
+
+func isNodeMetadataUpdated(oldNode, newNode *corev1.Node) bool {
+	if oldNode == nil && newNode == nil {
+		return false
+	}
+	if oldNode == nil || newNode == nil {
+		return true
+	}
+
+	if !reflect.DeepEqual(oldNode.ObjectMeta.Labels, newNode.ObjectMeta.Labels) {
+		return true
+	}
+	if !reflect.DeepEqual(oldNode.ObjectMeta.Annotations, newNode.ObjectMeta.Annotations) {
+		return true
+	}
+	return false
 }
 
 func recordNodeResourceMetrics(node *corev1.Node) {

@@ -25,10 +25,9 @@ import (
 )
 
 const (
-	DefaultCPUCFSPeriod    int64 = 100000
-	CPUShareKubeBEValue    int64 = 2
-	CPUShareUnitValue      int64 = 1024
-	CFSQuotaUnlimitedValue int64 = -1
+	DefaultCPUCFSPeriod int64 = 100000
+	CPUShareKubeBEValue int64 = 2
+	CPUShareUnitValue   int64 = 1024
 	// MemoryLimitUnlimitedValue denotes the unlimited value of cgroups-v1 memory.limit_in_bytes.
 	// It derives from linux PAGE_COUNTER_MAX and may be different according to the PAGE_SIZE (here we suppose `4k`).
 	// https://github.com/torvalds/linux/blob/ea4424be16887a37735d6550cfd0611528dbe5d9/mm/memcontrol.c#L5337
@@ -36,6 +35,8 @@ const (
 
 	// CgroupMaxSymbolStr only appears in cgroups-v2 files, we consider the value as MaxInt64
 	CgroupMaxSymbolStr string = "max"
+	// CgroupUnlimitedSymbolStr indicates value is unlimited. It appears in cfs_quota which regarded as max in comparison.
+	CgroupUnlimitedSymbolStr string = "-1"
 	// CgroupMaxValueStr math.MaxInt64; writing `memory.high` with this do the same as set as "max"
 	CgroupMaxValueStr string = "9223372036854775807"
 )
@@ -209,4 +210,28 @@ func GetRootCgroupSubfsDir(subfs string) string {
 		return filepath.Join(Conf.CgroupRootDir)
 	}
 	return filepath.Join(Conf.CgroupRootDir, subfs)
+}
+
+func MilliCPUToShares(milliCPURequest int64) int64 {
+	if milliCPURequest <= 0 {
+		return CPUSharesMinValue
+	}
+	cpuShares := milliCPURequest * CPUShareUnitValue / 1000
+	if cpuShares < CPUSharesMinValue {
+		cpuShares = CPUSharesMinValue
+	}
+	if cpuShares > CPUSharesMaxValue {
+		cpuShares = CPUSharesMaxValue
+	}
+	return cpuShares
+}
+
+func MilliCPUToQuota(milliCPULimit int64) int64 {
+	cfsQuota := milliCPULimit * CFSBasePeriodValue / 1000 // TBD: assert base cfs period not changed
+	if cfsQuota <= 0 {                                    // unlimited
+		cfsQuota = -1
+	} else if cfsQuota < CFSQuotaMinValue { // cfs_quota_us should be no less than 1000
+		cfsQuota = CFSQuotaMinValue
+	}
+	return cfsQuota
 }

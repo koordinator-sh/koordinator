@@ -278,6 +278,7 @@ var (
 	CPUAcctStatV2  = DefaultFactory.NewV2(CPUAcctStatName, CPUStatName)
 	CPUAcctUsageV2 = DefaultFactory.NewV2(CPUAcctUsageName, CPUStatName)
 	CPUBurstV2     = DefaultFactory.NewV2(CPUBurstName, CPUMaxBurstName).WithValidator(CPUMaxBurstValidator).WithCheckSupported(SupportedIfFileExistsInKubepods).WithCheckOnce(true)
+	CPUBVTWarpNsV2 = DefaultFactory.NewV2(CPUBVTWarpNsName, CPUBVTWarpNsName).WithValidator(CPUBvtWarpNsValidator).WithCheckSupported(SupportedIfFileExists)
 
 	CPUAcctCPUPressureV2    = DefaultFactory.NewV2(CPUAcctCPUPressureName, CPUAcctCPUPressureName).WithCheckSupported(SupportedIfFileExistsInKubepods).WithCheckOnce(true)
 	CPUAcctMemoryPressureV2 = DefaultFactory.NewV2(CPUAcctMemoryPressureName, CPUAcctMemoryPressureName).WithCheckSupported(SupportedIfFileExistsInKubepods).WithCheckOnce(true)
@@ -309,6 +310,7 @@ var (
 		CPUAcctStatV2,
 		CPUAcctUsageV2,
 		CPUBurstV2,
+		CPUBVTWarpNsV2,
 		CPUAcctCPUPressureV2,
 		CPUAcctMemoryPressureV2,
 		CPUAcctIOPressureV2,

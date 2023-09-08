@@ -339,7 +339,9 @@ func Test_podResourceCollector_Run(t *testing.T) {
 	})
 	collector := c.(*podResourceCollector)
 	collector.started = atomic.NewBool(true)
-	collector.Setup(&framework.Context{})
+	collector.Setup(&framework.Context{
+		State: framework.NewSharedState(),
+	})
 	assert.True(t, collector.Enabled())
 	assert.True(t, collector.Started())
 	assert.NotPanics(t, func() {

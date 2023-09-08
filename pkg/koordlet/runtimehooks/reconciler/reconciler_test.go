@@ -180,7 +180,11 @@ func Test_reconciler_reconcilePodCgroup(t *testing.T) {
 		c := &reconciler{
 			podsMeta:   []*statesinformer.PodMeta{test.fields.podsMeta},
 			podUpdated: make(chan struct{}, 1),
+			executor:   resourceexecutor.NewTestResourceExecutor(),
 		}
+		newStopCh := make(chan struct{})
+		defer close(newStopCh)
+		c.executor.Run(newStopCh)
 		c.podUpdated <- struct{}{}
 		c.reconcilePodCgroup(stopCh)
 		assert.Equal(t, test.wants.wantPods, podLevelOutput, "pod reconciler should be equal")

@@ -136,7 +136,10 @@ func NewRuntimeHook(si statesinformer.StatesInformer, cfg *Config) (RuntimeHook,
 		"Update hooks rule can run callbacks if NodeSLO spec update",
 		rule.UpdateRules)
 	si.RegisterCallbacks(statesinformer.RegisterTypeNodeTopology, "runtime-hooks-rule-node-topo",
-		"Update hooks rule if NodeTopology infor update",
+		"Update hooks rule if NodeTopology info update",
+		rule.UpdateRules)
+	si.RegisterCallbacks(statesinformer.RegisterTypeNodeMetadata, "runtime-hooks-rule-node-metadata",
+		"Update hooks rule if Node metadata update",
 		rule.UpdateRules)
 	if err := s.Setup(); err != nil {
 		return nil, fmt.Errorf("failed to setup runtime hook server, error %v", err)
