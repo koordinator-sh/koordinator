@@ -74,10 +74,12 @@ func New(args *config.ArbitrationArgs, options Options) (Arbitrator, error) {
 		interval:          args.Interval.Duration,
 
 		sorts: []SortFn{
-			NewJobCreateTimeSortFn(),
-			NewPodSortFn(sorter.PodSorter()),
-			NewJobGatherSortFn(),
-			NewJobMigratingSortFn(options.Client),
+			SortJobsByCreationTime(),
+			SortJobsByPod(func(pods []*corev1.Pod) {
+				sorter.PodSorter().Sort(pods)
+			}),
+			SortJobsByController(),
+			SortJobsByMigrationStatus(options.Client),
 		},
 		retryablePodFilter:    options.RetryableFilter,
 		nonRetryablePodFilter: options.NonRetryableFilter,

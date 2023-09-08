@@ -30,7 +30,6 @@ import (
 
 	v1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/fieldindex"
-	"github.com/koordinator-sh/koordinator/pkg/descheduler/utils/sorter"
 	utilclient "github.com/koordinator-sh/koordinator/pkg/util/client"
 )
 
@@ -38,8 +37,8 @@ const (
 	JobKind = "Job"
 )
 
-// NewPodSortFn sort a SortFn that sorts PodMigrationJobs by their Pods, including priority, QoS.
-func NewPodSortFn(sorter *sorter.MultiSorter) SortFn {
+// SortJobsByPod sort a SortFn that sorts PodMigrationJobs by their Pods, including priority, QoS.
+func SortJobsByPod(sorter func(pods []*corev1.Pod)) SortFn {
 	return func(jobs []*v1alpha1.PodMigrationJob, podOfJob map[*v1alpha1.PodMigrationJob]*corev1.Pod) []*v1alpha1.PodMigrationJob {
 		var pods []*corev1.Pod
 		jobOfPod := map[*corev1.Pod]*v1alpha1.PodMigrationJob{}
@@ -55,7 +54,7 @@ func NewPodSortFn(sorter *sorter.MultiSorter) SortFn {
 		}
 
 		// using PodSorter to sort
-		sorter.Sort(pods)
+		sorter(pods)
 
 		for i, pod := range pods {
 			rankOfJob[jobOfPod[pod]] = i
@@ -68,8 +67,8 @@ func NewPodSortFn(sorter *sorter.MultiSorter) SortFn {
 	}
 }
 
-// NewJobCreateTimeSortFn returns a SortFn that stably sorts PodMigrationJobs by create time.
-func NewJobCreateTimeSortFn() SortFn {
+// SortJobsByCreationTime returns a SortFn that stably sorts PodMigrationJobs by create time.
+func SortJobsByCreationTime() SortFn {
 	return func(jobs []*v1alpha1.PodMigrationJob, podOfJob map[*v1alpha1.PodMigrationJob]*corev1.Pod) []*v1alpha1.PodMigrationJob {
 		// calculate the time interval between the creation of migration job and the current for each job.
 		timeMap := map[*v1alpha1.PodMigrationJob]int64{}
@@ -84,8 +83,8 @@ func NewJobCreateTimeSortFn() SortFn {
 	}
 }
 
-// NewJobMigratingSortFn returns a SortFn that.
-func NewJobMigratingSortFn(c client.Client) SortFn {
+// SortJobsByMigrationStatus returns a SortFn that.
+func SortJobsByMigrationStatus(c client.Client) SortFn {
 	return func(podMigrationJobs []*v1alpha1.PodMigrationJob, podOfJob map[*v1alpha1.PodMigrationJob]*corev1.Pod) []*v1alpha1.PodMigrationJob {
 		// get owner of jobs
 		owners := map[types.UID]*metav1.OwnerReference{}
@@ -147,8 +146,8 @@ func NewJobMigratingSortFn(c client.Client) SortFn {
 	}
 }
 
-// NewJobGatherSortFn returns a SortFn that places PodMigrationJobs in the same job in adjacent positions.
-func NewJobGatherSortFn() SortFn {
+// SortJobsByController returns a SortFn that places PodMigrationJobs in the same job in adjacent positions.
+func SortJobsByController() SortFn {
 	return func(podMigrationJobs []*v1alpha1.PodMigrationJob, podOfJob map[*v1alpha1.PodMigrationJob]*corev1.Pod) []*v1alpha1.PodMigrationJob {
 		highestRankOfJob := map[types.UID]int{}
 		rankOfPodMigrationJobs := map[*v1alpha1.PodMigrationJob]int{}

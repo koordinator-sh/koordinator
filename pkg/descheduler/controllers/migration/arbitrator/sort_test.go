@@ -20,12 +20,12 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/hashicorp/nomad/api"
 	"github.com/stretchr/testify/assert"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -40,10 +40,9 @@ import (
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/fieldindex"
-	"github.com/koordinator-sh/koordinator/pkg/descheduler/utils/sorter"
 )
 
-func TestPodSortFn(t *testing.T) {
+func TestSortJobsByPod(t *testing.T) {
 	testCases := []struct {
 		name         string
 		order        []int
@@ -85,9 +84,12 @@ func TestPodSortFn(t *testing.T) {
 				podOrder[pod.Name] = testCase.order[i]
 			}
 
-			podSorter := NewPodSortFn(sorter.OrderedBy(func(p1, p2 *corev1.Pod) int {
-				return podOrder[p1.Name] - podOrder[p2.Name]
-			}))
+			podSorter := SortJobsByPod(
+				func(pods []*corev1.Pod) {
+					sort.Slice(pods, func(i, j int) bool {
+						return podOrder[pods[i].Name] < podOrder[pods[j].Name]
+					})
+				})
 			podSorter(jobs, podOfJob)
 			jobsOrder := make([]string, 0, len(jobs))
 			for _, v := range jobs {
@@ -98,39 +100,39 @@ func TestPodSortFn(t *testing.T) {
 	}
 }
 
-func TestJobCreateTimeSortFn(t *testing.T) {
+func TestSortJobsByCreationTime(t *testing.T) {
 	fakeJobs := []*v1alpha1.PodMigrationJob{
 		{
 			ObjectMeta: metav1.ObjectMeta{
 				CreationTimestamp: metav1.NewTime(time.Unix(222222, 0)),
-				Namespace:         api.DefaultNamespace,
+				Namespace:         "default",
 				Name:              "test-job-1"},
 		},
 		{
 			ObjectMeta: metav1.ObjectMeta{
 				CreationTimestamp: metav1.NewTime(time.Unix(222222222, 0)),
-				Namespace:         api.DefaultNamespace,
+				Namespace:         "default",
 				Name:              "test-job-2",
 			},
 		},
 		{
 			ObjectMeta: metav1.ObjectMeta{
 				CreationTimestamp: metav1.NewTime(time.Unix(111111111, 0)),
-				Namespace:         api.DefaultNamespace,
+				Namespace:         "default",
 				Name:              "test-job-3",
 			},
 		},
 		{
 			ObjectMeta: metav1.ObjectMeta{
 				CreationTimestamp: metav1.NewTime(time.Unix(11111, 0)),
-				Namespace:         api.DefaultNamespace,
+				Namespace:         "default",
 				Name:              "test-job-4",
 			},
 		},
 		{
 			ObjectMeta: metav1.ObjectMeta{
 				CreationTimestamp: metav1.NewTime(time.Unix(11111, 0)),
-				Namespace:         api.DefaultNamespace,
+				Namespace:         "default",
 				Name:              "test-job-5",
 			},
 		},
@@ -142,7 +144,7 @@ func TestJobCreateTimeSortFn(t *testing.T) {
 		fakeJobs[3]: 3,
 		fakeJobs[4]: 4,
 	}
-	fn := NewJobCreateTimeSortFn()
+	fn := SortJobsByCreationTime()
 	fakeJobs = fn(fakeJobs, nil)
 
 	for i, job := range fakeJobs {
@@ -150,7 +152,7 @@ func TestJobCreateTimeSortFn(t *testing.T) {
 	}
 }
 
-func TestJobMigratingSortFn(t *testing.T) {
+func TestSortJobsByMigrationStatus(t *testing.T) {
 	testCases := []struct {
 		name                            string
 		podMigrationJobNum              int
@@ -284,7 +286,7 @@ func TestJobMigratingSortFn(t *testing.T) {
 				assert.Nil(t, fakeClient.Create(context.TODO(), job))
 			}
 
-			sortFn := NewJobMigratingSortFn(fakeClient)
+			sortFn := SortJobsByMigrationStatus(fakeClient)
 			actualPodMigrationJobs := make([]*v1alpha1.PodMigrationJob, len(podMigrationJobs))
 			copy(actualPodMigrationJobs, podMigrationJobs)
 			sortFn(actualPodMigrationJobs, podOfJob)
@@ -300,7 +302,7 @@ func TestJobMigratingSortFn(t *testing.T) {
 	}
 }
 
-func TestJobGatherSortFn(t *testing.T) {
+func TestSortJobsByController(t *testing.T) {
 	testCases := []struct {
 		name               string
 		podMigrationJobNum int
@@ -381,7 +383,7 @@ func TestJobGatherSortFn(t *testing.T) {
 				podMigrationJobs = append(podMigrationJobs, job)
 			}
 
-			sortFn := NewJobGatherSortFn()
+			sortFn := SortJobsByController()
 			actualPodMigrationJobs := make([]*v1alpha1.PodMigrationJob, len(podMigrationJobs))
 			copy(actualPodMigrationJobs, podMigrationJobs)
 			sortFn(actualPodMigrationJobs, podOfJob)
