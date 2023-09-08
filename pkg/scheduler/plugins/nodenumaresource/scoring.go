@@ -56,6 +56,9 @@ func (p *Plugin) Score(ctx context.Context, cycleState *framework.CycleState, po
 	if !status.IsSuccess() {
 		return 0, status
 	}
+	if state.skip {
+		return 0, nil
+	}
 
 	nodeInfo, err := p.handle.SnapshotSharedLister().NodeInfos().Get(nodeName)
 	if err != nil {

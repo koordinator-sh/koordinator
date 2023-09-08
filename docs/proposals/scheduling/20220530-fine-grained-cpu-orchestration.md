@@ -11,7 +11,7 @@ reviewers:
 - "@stormgbs"
 - "@zwzhang0107"
 creation-date: 2022-05-30
-last-updated: 2023-08-28
+last-updated: 2023-09-08
 status: provisional
 
 ---
@@ -45,7 +45,7 @@ status: provisional
             - [Node CPU orchestration API](#node-cpu-orchestration-api)
                 - [CPU bind policy](#cpu-bind-policy)
                 - [NUMA allocate strategy](#numa-allocate-strategy)
-                - [NUMA topology alignment policy](#numa-topology-alignment-policy)
+                - [NUMA topology policy](#numa-topology-policy)
                 - [Example](#example)
             - [NodeResourceTopology CRD](#noderesourcetopology-crd)
                 - [CRD Scheme definition](#crd-scheme-definition)
@@ -180,11 +180,18 @@ The takeover logic will require koord-runtime-proxy to add new extension points,
 
 ##### Resource spec
 
-The annotation `scheduling.koordinator.sh/resource-spec` is a resource allocation API defined by Koordinator. The user specifies the desired CPU orchestration policy by setting the annotation. In the future, we can also extend and add resource types that need to be supported as needed. The scheme corresponding to the annotation value is defined as follows:
+The annotation `scheduling.koordinator.sh/resource-spec` is a resource allocation API defined by Koordinator. The user specifies the desired CPU orchestration policy by setting the annotation.
+
+- `requiredCPUBindPolicy` indicates that the CPU is allocated strictly according to the specified CPUBindPolicy, otherwise the scheduling fails; 
+- `preferredCPUBindPolicy` represents best-effort CPU bind policy, even if the final allocated CPU does not meet the policy requirements, the scheduling will be successful; 
+- `preferredCPUExclusivePolicy` represents best-effort CPU exclusive policy.
+
+ In the future, we can also extend and add resource types that need to be supported as needed. The scheme corresponding to the annotation value is defined as follows:
 
 ```go
 // ResourceSpec describes extra attributes of the compute resource requirements.
 type ResourceSpec struct {
+  RequiredCPUBindPolicy        CPUBindPolicy      `json:"requiredCPUBindPolicy,omitempty"`
   PreferredCPUBindPolicy       CPUBindPolicy      `json:"preferredCPUBindPolicy,omitempty"`
   PreferredCPUExclusivePolicy  CPUExclusivePolicy `json:"preferredCPUExclusivePolicy,omitempty"`
 }
@@ -246,7 +253,7 @@ type NUMANodeResource struct {
 ```
 
 - `CPUSet` represents the allocated CPUs. When LSE/LSR Pod requested, koord-scheduler will update the field. It is Linux CPU list formatted string. For more details, please refer to [doc](http://man7.org/linux/man-pages/man7/cpuset.7.html#FORMATS).
-- `NUMANodeResources` indicates that the Pod is constrained to run on the specified NUMA Node. If the Node has the label `node.koordinator.sh/numa-topology-alignment-policy` with `BestEffort/Restricted/SingleNUMANode`, koord-scheduler will find the best-fit NUMA Node for the Pod, and update the field. The koordlet binds the CPU Shared Pool of the corresponding NUMA Node according to the `Node` fields in the `NUMANodeResource`.
+- `NUMANodeResources` indicates that the Pod is constrained to run on the specified NUMA Node. If the Node has the label `node.koordinator.sh/numa-topology-policy` with `BestEffort/Restricted/SingleNUMANode`, koord-scheduler will find the best-fit NUMA Node for the Pod, and update the field. The koordlet binds the CPU Shared Pool of the corresponding NUMA Node according to the `Node` fields in the `NUMANodeResource`.
 
 ##### Example
 
@@ -300,18 +307,18 @@ If there is no `node.koordinator.sh/numa-allocate-strategy` in the node's label 
 
 If both `node.koordinator.sh/numa-allocate-strategy` and `kubelet.koordinator.sh/cpu-manager-policy` are defined, `node.koordinator.sh/numa-allocate-strategy` is used first.
 
-##### NUMA topology alignment policy
+##### NUMA topology policy
 
-The label `node.koordinator.sh/numa-topology-alignment-policy` represents that how to aligning resource allocation according to the NUMA topology. The policy semantic follow the K8s community. Equivalent to the field `TopologyPolicies` in `NodeResourceTopology`, and the topology policies `SingleNUMANodePodLevel` and `SingleNUMANodeContainerLevel` are mapping to `SingleNUMANode` policy. 
+The label `node.koordinator.sh/numa-topology-policy` represents that how to aligning resource allocation according to the NUMA topology. The policy semantic follow the K8s community. Equivalent to the field `TopologyPolicies` in `NodeResourceTopology`, and the topology policies `SingleNUMANodePodLevel` and `SingleNUMANodeContainerLevel` are mapping to `SingleNUMANode` policy. 
 
 - `None` is the default policy and does not perform any topology alignment.
 - `BestEffort` indicates that preferred select NUMA Node that is topology alignment, and if not, continue to allocate resources to Pods.
 - `Restricted` indicates that each resource requested by a Pod on the NUMA Node that is topology alignment, and if not, koord-scheduler will skip the node when scheduling.
 - `SingleNUMANode` indicates that all resources requested by a Pod must be on the same NUMA Node, and if not, koord-scheduler will skip the node when scheduling.
 
-If there is no `node.koordinator.sh/numa-topology-alignment-policy` in the node's label and `TopologyPolicies=None` in `NodeResourceTopology`, it will be executed according to the policy configured by the koord-scheduler.
+If there is no `node.koordinator.sh/numa-topology-policy` in the node's label and `TopologyPolicies=None` in `NodeResourceTopology`, it will be executed according to the policy configured by the koord-scheduler.
 
-If both `node.koordinator.sh/numa-topology-alignment-policy` in Node and `TopologyPolicies=None` in `NodeResourceTopology` are defined, `node.koordinator.sh/numa-topology-alignment-policy` is used first.
+If both `node.koordinator.sh/numa-topology-policy` in Node and `TopologyPolicies=None` in `NodeResourceTopology` are defined, `node.koordinator.sh/numa-topology-policy` is used first.
 
 ##### Example
 
@@ -323,7 +330,7 @@ kind: Node
 metadata:
   labels:
     node.koordinator.sh/cpu-bind-policy: "FullPCPUsOnly"
-    node.koordinator.sh/numa-topology-alignment-policy: "BestEffort"
+    node.koordinator.sh/numa-topology-policy: "BestEffort"
     node.koordinator.sh/numa-allocate-strategy: "MostAllocated"
   name: node-0
 spec:
@@ -607,14 +614,14 @@ The plugin extends the Filter/Score/Reserve/PreBind extension points. Filter the
    - Pod's K8s QoS **MUST BE** Guaranteed or Pod's Koordinator QoS **MUST BE** LSE/LSR
    - Pod's Request and Limit **MUST BE** equal 
    - Pod's CPU quantity **MUST BE** multiple of 1000
-- If the node has the label `node.koordinator.sh/numa-topology-alignment-policy` with value `Restricted/SingleNUMANode` or the field `TopologyPolicies` in `NodeResourceTopology` has the value `Restricted/SingleNUMANodePodLevel/SingleNUMANodeContainerLevel`, the plugin will find the statisfied NUMA Nodes by the policy, and if not, return Unschedulable. The algorithm borrows from [the proposal](https://github.com/kubernetes-sigs/scheduler-plugins/tree/master/kep/119-node-resource-topology-aware-scheduling).
+- If the node has the label `node.koordinator.sh/numa-topology-policy` with value `Restricted/SingleNUMANode` or the field `TopologyPolicies` in `NodeResourceTopology` has the value `Restricted/SingleNUMANodePodLevel/SingleNUMANodeContainerLevel`, the plugin will find the statisfied NUMA Nodes by the policy, and if not, return Unschedulable. The algorithm borrows from [the proposal](https://github.com/kubernetes-sigs/scheduler-plugins/tree/master/kep/119-node-resource-topology-aware-scheduling).
 
 #### Score phase
 
 1. Score 0 if there is no `NodeResourceTopology` for the node.
-2. Calculate the NUMA Node Topology score as **_A_** when the node has the label `node.koordinator.sh/numa-topology-alignment-policy` with value `BestEffort/Restricted/SingleNUMANode`. use the `ScoringStrategy` in plugin configuration to score each satisfied NUMA Node, and get the minimum score.
+2. Calculate the NUMA Node Topology score as **_A_** when the node has the label `node.koordinator.sh/numa-topology-policy` with value `BestEffort/Restricted/SingleNUMANode`. use the `ScoringStrategy` in plugin configuration to score each satisfied NUMA Node, and get the minimum score.
 3. Calculate the CPU allocation score as **_B_** for the LSE/LSR/K8s Guaranteed Pods with CPUBindPolicy and CPUExclusivePolicy:
-   1. find the best NUMA Node by the `node.koordinator.sh/numa-topology-alignment-policy`, and if the value is `None`, get the policy from plugin configuration.
+   1. find the best NUMA Node by the `node.koordinator.sh/numa-topology-policy`, and if the value is `None`, get the policy from plugin configuration.
    1. filter satisfied logical CPUs with `CPUBindPolicy` and `CPUExclusivePolicy` in above filtered NUMA Nodes.
    1. calculate the number of NUMA Nodes involved as `requested`
    1. use the `ScoringStrategy` in plugin configuration to score, the _capacity_ of `LeastAllocated` and `MostAllocated` is _total(NUMA Node)_ , e.g. the Node has 8 NUMA Node, current Pod request 4 logical CPUs that allocated in 2 NUMA Node in the node, so the `LeastAllocated` formulas is *score = (8-2) * 100 / 8.*
@@ -639,7 +646,7 @@ Update the annotation `scheduling.koordinator.sh/resource-status` of the Pod in 
 The algorithm MUST BE stable, that means when reallocating with same NUMA Topology, same allocated CPUs and same requirements, get same result.
 
 The following is an approximate brief algorithm logic:
-1. If the node has the label `node.koordinator.sh/numa-topology-alignment-policy` with value `BestEffort/Restricted/SingleNUMANode`, filter the best-fit NUMA Nodes.
+1. If the node has the label `node.koordinator.sh/numa-topology-policy` with value `BestEffort/Restricted/SingleNUMANode`, filter the best-fit NUMA Nodes.
 1. allocated from the best-fit NUMA Nodes
    1. if expect bind CPU with `CPUBindPolicyFullPCPUs` or current machine architecture is ARM, filter completely unallocated physical cores from NUMA Node by the NUMA allocate policy.
    1. failed to allocate if the topology alignment policy is `Restricted/SingleNUMANode` and has CPUs that are unallocated
@@ -713,3 +720,4 @@ type ScoringStrategy struct {
 - 2022-12-02: Clarify the mistakes in the original text and add QoS CPU orchestration picture
 - 2022-12-12: NodeCPUBindPolicy support SpreadByPCPUs
 - 2023-08-28: Update the ResourceStatus
+- 2023-09-08: Update the ResourceSpec

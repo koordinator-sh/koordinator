@@ -48,13 +48,14 @@ type ResourceManager interface {
 }
 
 type ResourceOptions struct {
-	numCPUsNeeded      int
-	requestCPUBind     bool
-	requests           corev1.ResourceList
-	cpuBindPolicy      schedulingconfig.CPUBindPolicy
-	cpuExclusivePolicy schedulingconfig.CPUExclusivePolicy
-	preferredCPUs      cpuset.CPUSet
-	hint               topologymanager.NUMATopologyHint
+	numCPUsNeeded         int
+	requestCPUBind        bool
+	requests              corev1.ResourceList
+	requiredCPUBindPolicy bool
+	cpuBindPolicy         schedulingconfig.CPUBindPolicy
+	cpuExclusivePolicy    schedulingconfig.CPUExclusivePolicy
+	preferredCPUs         cpuset.CPUSet
+	hint                  topologymanager.NUMATopologyHint
 }
 
 type resourceManager struct {
@@ -132,6 +133,10 @@ func (c *resourceManager) GetTopologyHints(node *corev1.Node, pod *corev1.Pod, o
 		availableCPUs, _, err := c.GetAvailableCPUs(node.Name, options.preferredCPUs)
 		if err != nil {
 			return nil, err
+		}
+		if options.requiredCPUBindPolicy {
+			cpuDetails := topologyOptions.CPUTopology.CPUDetails.KeepOnly(availableCPUs)
+			availableCPUs = filterAvailableCPUsByRequiredCPUBindPolicy(options.cpuBindPolicy, availableCPUs, cpuDetails, topologyOptions.CPUTopology.CPUsPerCore())
 		}
 		result := generateCPUSetHints(topologyOptions.CPUTopology, availableCPUs, options.preferredCPUs, options.numCPUsNeeded)
 		hints[string(corev1.ResourceCPU)] = result
@@ -263,6 +268,15 @@ func (c *resourceManager) allocateCPUSet(node *corev1.Node, pod *corev1.Pod, opt
 		return empty, err
 	}
 
+	if options.requiredCPUBindPolicy {
+		cpuDetails := topologyOptions.CPUTopology.CPUDetails.KeepOnly(availableCPUs)
+		availableCPUs = filterAvailableCPUsByRequiredCPUBindPolicy(options.cpuBindPolicy, availableCPUs, cpuDetails, topologyOptions.CPUTopology.CPUsPerCore())
+	}
+
+	if availableCPUs.IsEmpty() {
+		return empty, fmt.Errorf("insufficient CPUs to bind")
+	}
+
 	result := cpuset.CPUSet{}
 	numaAllocateStrategy := GetNUMAAllocateStrategy(node, c.numaAllocateStrategy)
 	numCPUsNeeded := options.numCPUsNeeded
@@ -318,6 +332,14 @@ func (c *resourceManager) allocateCPUSet(node *corev1.Node, pod *corev1.Pod, opt
 		}
 		result = result.Union(remainingCPUs)
 	}
+
+	if options.requiredCPUBindPolicy {
+		err = satisfiedRequiredCPUBindPolicy(options.cpuBindPolicy, result, topologyOptions.CPUTopology)
+		if err != nil {
+			return empty, err
+		}
+	}
+
 	return result, err
 }
 
@@ -482,4 +504,39 @@ func generateResourceHints(numaNodes []int, podRequests corev1.ResourceList, tot
 	}
 
 	return hints
+}
+
+func filterAvailableCPUsByRequiredCPUBindPolicy(policy schedulingconfig.CPUBindPolicy, availableCPUs cpuset.CPUSet, cpuDetails CPUDetails, cpusPerCore int) cpuset.CPUSet {
+	if policy == schedulingconfig.CPUBindPolicyFullPCPUs {
+		cpuDetails.KeepOnly(availableCPUs)
+		cpus := cpuDetails.CPUsInCores(cpuDetails.Cores().ToSliceNoSort()...)
+		if cpus.Size()%cpusPerCore != 0 {
+			return availableCPUs
+		}
+		return cpus
+	}
+	return availableCPUs
+}
+
+func satisfiedRequiredCPUBindPolicy(policy schedulingconfig.CPUBindPolicy, cpus cpuset.CPUSet, topology *CPUTopology) error {
+	satisfied := true
+	if policy == schedulingconfig.CPUBindPolicyFullPCPUs {
+		satisfied = determineFullPCPUs(cpus, topology.CPUDetails, topology.CPUsPerCore())
+	} else if policy == schedulingconfig.CPUBindPolicySpreadByPCPUs {
+		satisfied = determineSpreadByPCPUs(cpus, topology.CPUDetails)
+	}
+	if !satisfied {
+		return fmt.Errorf("insufficient CPUs to satisfy required cpu bind policy %s", policy)
+	}
+	return nil
+}
+
+func determineFullPCPUs(cpus cpuset.CPUSet, details CPUDetails, cpusPerCore int) bool {
+	details = details.KeepOnly(cpus)
+	return details.Cores().Size()*cpusPerCore == cpus.Size()
+}
+
+func determineSpreadByPCPUs(cpus cpuset.CPUSet, details CPUDetails) bool {
+	details = details.KeepOnly(cpus)
+	return details.Cores().Size() == cpus.Size()
 }
