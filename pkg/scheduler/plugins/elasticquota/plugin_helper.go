@@ -30,7 +30,6 @@ import (
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	schedulerv1alpha1 "sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
-	schedulinglisterv1alpha1 "sigs.k8s.io/scheduler-plugins/pkg/generated/listers/scheduling/v1alpha1"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/elasticquota/core"
@@ -39,7 +38,7 @@ import (
 // getPodAssociateQuotaName If pod's don't have the "quota-name" label, we will use the namespace to associate pod with quota
 // group. If the plugin can't find the matched quota group, it will force the pod to associate with the "default-group".
 func (g *Plugin) getPodAssociateQuotaName(pod *v1.Pod) string {
-	quotaName := GetQuotaName(pod, g.quotaLister)
+	quotaName := g.GetQuotaName(pod)
 	// can't get the quotaInfo by quotaName, let the pod belongs to DefaultQuotaGroup
 	if g.groupQuotaManager.GetQuotaInfoByName(quotaName) == nil {
 		quotaName = extension.DefaultQuotaName
@@ -48,17 +47,31 @@ func (g *Plugin) getPodAssociateQuotaName(pod *v1.Pod) string {
 	return quotaName
 }
 
-var GetQuotaName = func(pod *v1.Pod, quotaLister schedulinglisterv1alpha1.ElasticQuotaLister) string {
+func (g *Plugin) GetQuotaName(pod *v1.Pod) string {
 	quotaName := extension.GetQuotaName(pod)
 	if quotaName != "" {
 		return quotaName
 	}
-	eq, err := quotaLister.ElasticQuotas(pod.Namespace).Get(pod.Namespace)
+	eq, err := g.quotaLister.ElasticQuotas(pod.Namespace).Get(pod.Namespace)
 	if err == nil && eq != nil {
 		return eq.Name
 	} else if !errors.IsNotFound(err) {
 		klog.Errorf("Failed to Get ElasticQuota %s, err: %v", pod.Namespace, err)
 	}
+
+	eqList, err := g.quotaInformer.GetIndexer().ByIndex("annotation.namespaces", pod.Namespace)
+	if err != nil {
+		return extension.DefaultQuotaName
+	}
+
+	for _, quota := range eqList {
+		eq, ok := quota.(*schedulerv1alpha1.ElasticQuota)
+		if !ok {
+			continue
+		}
+		return eq.Name
+	}
+
 	return extension.DefaultQuotaName
 }
 

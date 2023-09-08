@@ -331,6 +331,7 @@ we will also add new annotation and labels to achieve our desired functionality.
 annotations:
   quota.scheduling.koordinator.sh/runtime: {cpu:4, memory: 8Gi}
   quota.scheduling.koordinator.sh/shared-weight: {cpu:4, memory: 8Gi}
+  quota.scheduling.koordinator.sh/namespaces: "[\"namespace1\",\"namespace2\"]"
 labels:
   quota.scheduling.koordinator.sh/is-parent: false
   quota.scheduling.koordinator.sh/parent-quota-name: "parent"
@@ -341,8 +342,8 @@ labels:
 - `quota.scheduling.koordinator.sh/parent-quota-name` is disposed by the user. It reflects the parent quota name. Default is root.
 - `quota.scheduling.koordinator.sh/shared-weight` is disposed by the user. It reflects the ability to share the "lent to" resource. Default equals to "max".
 - `quota.scheduling.koordinator.sh/allow-lent-resource` is disposed by the user. It reflects whether quota group allows lent unused "min" to others.
-
-Here is a example:
+- `quota.scheduling.koordinator.sh/namespaces` is disposed by the user in need. It reflects the pod in the namespaces are bound to the quota, namespaces of quota should be different. The namespaces' definition is list of string.
+Here is an example:
 ```yaml
 apiVersion: scheduling.sigs.k8s.io/v1alpha1
 kind: ElasticQuota
@@ -352,6 +353,7 @@ metadata:
   annotations:
     quota.scheduling.koordinator.sh/runtime: {cpu:4, memory: 8Gi}
     quota.scheduling.koordinator.sh/shared-weight: {cpu:4, memory: 8Gi}
+    quota.scheduling.koordinator.sh/namespaces: "[\"namespace1\",\"namespace2\"]"
   labels:
     quota.scheduling.koordinator.sh/is-parent: false
     quota.scheduling.koordinator.sh/parent-quota-name: "parent"

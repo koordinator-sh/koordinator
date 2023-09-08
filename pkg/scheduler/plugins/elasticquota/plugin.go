@@ -35,10 +35,12 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework/preemption"
 	"k8s.io/kubernetes/pkg/scheduler/metrics"
+	apiv1alpha1 "sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 	"sigs.k8s.io/scheduler-plugins/pkg/generated/clientset/versioned"
 	"sigs.k8s.io/scheduler-plugins/pkg/generated/informers/externalversions"
 	"sigs.k8s.io/scheduler-plugins/pkg/generated/listers/scheduling/v1alpha1"
 
+	"github.com/koordinator-sh/koordinator/apis/extension"
 	koordversioned "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
 	quotalister "github.com/koordinator-sh/koordinator/pkg/client/listers/quota/v1alpha1"
 	koordfeatures "github.com/koordinator-sh/koordinator/pkg/features"
@@ -77,6 +79,7 @@ type Plugin struct {
 	koordClient       koordversioned.Interface
 	pluginArgs        *config.ElasticQuotaArgs
 	quotaLister       v1alpha1.ElasticQuotaLister
+	quotaInformer     cache.SharedIndexInformer
 	podLister         v1.PodLister
 	pdbLister         policylisters.PodDisruptionBudgetLister
 	nodeLister        v1.NodeLister
@@ -113,6 +116,21 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 	scheSharedInformerFactory := externalversions.NewSharedInformerFactory(client, 0)
 	transformer.SetupElasticQuotaTransformers(scheSharedInformerFactory)
 	elasticQuotaInformer := scheSharedInformerFactory.Scheduling().V1alpha1().ElasticQuotas()
+	informer := elasticQuotaInformer.Informer()
+	if err := informer.AddIndexers(map[string]cache.IndexFunc{
+		"annotation.namespaces": func(obj interface{}) ([]string, error) {
+			eq, ok := obj.(*apiv1alpha1.ElasticQuota)
+			if !ok {
+				return []string{}, nil
+			}
+			if len(eq.Annotations) == 0 || eq.Annotations[extension.AnnotationQuotaNamespaces] == "" {
+				return []string{}, nil
+			}
+			return extension.GetAnnotationQuotaNamespaces(eq), nil
+		},
+	}); err != nil {
+		return nil, err
+	}
 
 	extendedHandle, ok := handle.(frameworkext.ExtendedHandle)
 	if !ok {
@@ -129,6 +147,7 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 		koordClient:               koordClient,
 		pluginArgs:                pluginArgs,
 		podLister:                 handle.SharedInformerFactory().Core().V1().Pods().Lister(),
+		quotaInformer:             informer,
 		quotaLister:               elasticQuotaInformer.Lister(),
 		pdbLister:                 getPDBLister(handle),
 		nodeLister:                handle.SharedInformerFactory().Core().V1().Nodes().Lister(),
@@ -150,7 +169,7 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 	elasticQuota.createRootQuotaIfNotPresent()
 	elasticQuota.createSystemQuotaIfNotPresent()
 	elasticQuota.createDefaultQuotaIfNotPresent()
-	frameworkexthelper.ForceSyncFromInformer(ctx.Done(), scheSharedInformerFactory, elasticQuotaInformer.Informer(), cache.ResourceEventHandlerFuncs{
+	frameworkexthelper.ForceSyncFromInformer(ctx.Done(), scheSharedInformerFactory, informer, cache.ResourceEventHandlerFuncs{
 		AddFunc:    elasticQuota.OnQuotaAdd,
 		UpdateFunc: elasticQuota.OnQuotaUpdate,
 		DeleteFunc: elasticQuota.OnQuotaDelete,

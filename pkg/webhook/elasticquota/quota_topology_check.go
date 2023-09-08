@@ -254,6 +254,9 @@ func quotaFieldsCopy(q *v1alpha1.ElasticQuota) v1alpha1.ElasticQuota {
 				extension.LabelQuotaParent:   q.Labels[extension.LabelQuotaParent],
 				extension.LabelQuotaIsParent: q.Labels[extension.LabelQuotaIsParent],
 			},
+			Annotations: map[string]string{
+				extension.AnnotationQuotaNamespaces: q.Annotations[extension.AnnotationQuotaNamespaces],
+			},
 		},
 		Spec: *q.Spec.DeepCopy(),
 	}

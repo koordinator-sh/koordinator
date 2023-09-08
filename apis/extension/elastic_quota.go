@@ -27,20 +27,21 @@ import (
 
 // RootQuotaName means quotaTree's root\head.
 const (
-	SystemQuotaName        = "koordinator-system-quota"
-	RootQuotaName          = "koordinator-root-quota"
-	DefaultQuotaName       = "koordinator-default-quota"
-	QuotaKoordinatorPrefix = "quota.scheduling.koordinator.sh"
-	LabelQuotaIsParent     = QuotaKoordinatorPrefix + "/is-parent"
-	LabelQuotaParent       = QuotaKoordinatorPrefix + "/parent"
-	LabelAllowLentResource = QuotaKoordinatorPrefix + "/allow-lent-resource"
-	LabelQuotaName         = QuotaKoordinatorPrefix + "/name"
-	LabelQuotaProfile      = QuotaKoordinatorPrefix + "/profile"
-	AnnotationSharedWeight = QuotaKoordinatorPrefix + "/shared-weight"
-	AnnotationRuntime      = QuotaKoordinatorPrefix + "/runtime"
-	AnnotationRequest      = QuotaKoordinatorPrefix + "/request"
-	AnnotationChildRequest = QuotaKoordinatorPrefix + "/child-request"
-	AnnotationResourceKeys = QuotaKoordinatorPrefix + "/resource-keys"
+	SystemQuotaName           = "koordinator-system-quota"
+	RootQuotaName             = "koordinator-root-quota"
+	DefaultQuotaName          = "koordinator-default-quota"
+	QuotaKoordinatorPrefix    = "quota.scheduling.koordinator.sh"
+	LabelQuotaIsParent        = QuotaKoordinatorPrefix + "/is-parent"
+	LabelQuotaParent          = QuotaKoordinatorPrefix + "/parent"
+	LabelAllowLentResource    = QuotaKoordinatorPrefix + "/allow-lent-resource"
+	LabelQuotaName            = QuotaKoordinatorPrefix + "/name"
+	LabelQuotaProfile         = QuotaKoordinatorPrefix + "/profile"
+	AnnotationSharedWeight    = QuotaKoordinatorPrefix + "/shared-weight"
+	AnnotationRuntime         = QuotaKoordinatorPrefix + "/runtime"
+	AnnotationRequest         = QuotaKoordinatorPrefix + "/request"
+	AnnotationChildRequest    = QuotaKoordinatorPrefix + "/child-request"
+	AnnotationResourceKeys    = QuotaKoordinatorPrefix + "/resource-keys"
+	AnnotationQuotaNamespaces = QuotaKoordinatorPrefix + "/namespaces"
 )
 
 func GetParentQuotaName(quota *v1alpha1.ElasticQuota) string {
@@ -82,4 +83,19 @@ func IsForbiddenModify(quota *v1alpha1.ElasticQuota) (bool, error) {
 
 var GetQuotaName = func(pod *corev1.Pod) string {
 	return pod.Labels[LabelQuotaName]
+}
+
+func GetAnnotationQuotaNamespaces(quota *v1alpha1.ElasticQuota) []string {
+	if quota.Annotations == nil {
+		return nil
+	}
+	if quota.Annotations[AnnotationQuotaNamespaces] == "" {
+		return nil
+	}
+
+	var namespaces []string
+	if err := json.Unmarshal([]byte(quota.Annotations[AnnotationQuotaNamespaces]), &namespaces); err != nil {
+		return nil
+	}
+	return namespaces
 }
