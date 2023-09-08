@@ -80,6 +80,7 @@ func (qt *quotaTopology) ValidAddQuota(quota *v1alpha1.ElasticQuota) error {
 	}
 
 	quotaInfo := NewQuotaInfoFromQuota(quota)
+
 	if err := qt.validateQuotaTopology(nil, quotaInfo, nil); err != nil {
 		return err
 	}
@@ -206,6 +207,19 @@ func (qt *quotaTopology) fillQuotaDefaultInformation(quota *v1alpha1.ElasticQuot
 		quota.Labels[extension.LabelQuotaParent] = extension.RootQuotaName
 		klog.V(5).Infof("fill quota %v parent as root", quota.Name)
 	}
+
+	// add tree id, if the parent has tree id
+	if quota.Labels[extension.LabelQuotaTreeID] == "" && quota.Labels[extension.LabelQuotaParent] != extension.RootQuotaName {
+		parentInfo := qt.quotaInfoMap[quota.Labels[extension.LabelQuotaParent]]
+		if parentInfo == nil {
+			return fmt.Errorf("fill quota %v failed, parent not exist", quota.Name)
+		}
+
+		if parentInfo.TreeID != "" {
+			quota.Labels[extension.LabelQuotaTreeID] = parentInfo.TreeID
+		}
+	}
+
 	maxQuota, err := json.Marshal(&quota.Spec.Max)
 	if err != nil {
 		return fmt.Errorf("fillDefaultQuotaInfo marshal quota max failed:%v", err)
@@ -214,6 +228,7 @@ func (qt *quotaTopology) fillQuotaDefaultInformation(quota *v1alpha1.ElasticQuot
 		quota.Annotations[extension.AnnotationSharedWeight] = string(maxQuota)
 		klog.V(5).Infof("fill quota %v sharedWeight as max", quota.Name)
 	}
+
 	return nil
 }
 

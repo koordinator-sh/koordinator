@@ -106,7 +106,7 @@ func TestQuotaTopology_basicItemCheck(t *testing.T) {
 
 func TestQuotaTopology_fillDefaultQuotaInfo(t *testing.T) {
 	qt := newFakeQuotaTopology()
-	quota := MakeQuota("temp2-bu1").Max(MakeResourceList().CPU(120).Mem(1048576).Obj()).Obj()
+	quota := MakeQuota("temp2").Max(MakeResourceList().CPU(120).Mem(1048576).Obj()).Obj()
 	quota.Labels = nil
 	quota.Annotations = nil
 	err := qt.fillQuotaDefaultInformation(quota)
@@ -115,10 +115,32 @@ func TestQuotaTopology_fillDefaultQuotaInfo(t *testing.T) {
 	maxQuota, _ := json.Marshal(quota.Spec.Max)
 	assert.Equal(t, string(maxQuota), quota.Annotations[extension.AnnotationSharedWeight])
 
+	qt.OnQuotaAdd(quota)
+
 	quota = MakeQuota("temp2-bu1").ParentName("temp2").Max(MakeResourceList().CPU(120).Mem(1048576).Obj()).Obj()
 	err = qt.fillQuotaDefaultInformation(quota)
 	assert.Nil(t, err)
 	assert.Equal(t, "temp2", quota.Labels[extension.LabelQuotaParent])
+	assert.Equal(t, string(maxQuota), quota.Annotations[extension.AnnotationSharedWeight])
+}
+
+func TestQuotaTopology_fillDefaultQuotaInfoWithTreeID(t *testing.T) {
+	qt := newFakeQuotaTopology()
+	quota := MakeQuota("temp2").Max(MakeResourceList().CPU(120).Mem(1048576).Obj()).TreeID("tree-1").Obj()
+	err := qt.fillQuotaDefaultInformation(quota)
+	assert.Nil(t, err)
+	assert.Equal(t, extension.RootQuotaName, quota.Labels[extension.LabelQuotaParent])
+	assert.Equal(t, "tree-1", quota.Labels[extension.LabelQuotaTreeID])
+	maxQuota, _ := json.Marshal(quota.Spec.Max)
+	assert.Equal(t, string(maxQuota), quota.Annotations[extension.AnnotationSharedWeight])
+
+	qt.OnQuotaAdd(quota)
+
+	quota = MakeQuota("temp2-bu1").ParentName("temp2").Max(MakeResourceList().CPU(120).Mem(1048576).Obj()).Obj()
+	err = qt.fillQuotaDefaultInformation(quota)
+	assert.Nil(t, err)
+	assert.Equal(t, "temp2", quota.Labels[extension.LabelQuotaParent])
+	assert.Equal(t, "tree-1", quota.Labels[extension.LabelQuotaTreeID])
 	assert.Equal(t, string(maxQuota), quota.Annotations[extension.AnnotationSharedWeight])
 }
 
@@ -194,6 +216,87 @@ func TestQuotaTopology_checkSubAndParentGroupMaxQuotaKeySame(t *testing.T) {
 			err := qt.checkSubAndParentGroupMaxQuotaKeySame(quotaInfo)
 			if (tt.err != nil && err == nil) || (tt.err == nil && err != nil) {
 				t.Errorf("error")
+			}
+		})
+	}
+}
+
+func TestQuotaTopology_checkTreeID(t *testing.T) {
+	tests := []struct {
+		name        string
+		parentQuota *v1alpha1.ElasticQuota
+		quota       *v1alpha1.ElasticQuota
+		childQuota  *v1alpha1.ElasticQuota
+		expectErr   bool
+	}{
+		{
+			name: "satisfy no tree id",
+			parentQuota: MakeQuota("parent").Max(MakeResourceList().CPU(10).Mem(20).Obj()).
+				Min(MakeResourceList().CPU(10).Mem(20).Obj()).IsParent(true).Obj(),
+			quota: MakeQuota("temp").ParentName("parent").Max(MakeResourceList().CPU(10).Mem(20).Obj()).
+				Min(MakeResourceList().CPU(10).Mem(20).Obj()).IsParent(true).Obj(),
+			childQuota: MakeQuota("child").ParentName("temp").Max(MakeResourceList().CPU(10).Mem(20).Obj()).
+				Min(MakeResourceList().CPU(10).Mem(20).Obj()).IsParent(false).Obj(),
+			expectErr: false,
+		},
+		{
+			name: "satisfy with tree id",
+			parentQuota: MakeQuota("parent").Max(MakeResourceList().CPU(10).Mem(20).Obj()).
+				Min(MakeResourceList().CPU(10).Mem(20).Obj()).IsParent(true).TreeID("tree-1").Obj(),
+			quota: MakeQuota("temp").ParentName("parent").Max(MakeResourceList().CPU(10).Mem(20).Obj()).
+				Min(MakeResourceList().CPU(10).Mem(20).Obj()).IsParent(true).TreeID("tree-1").Obj(),
+			childQuota: MakeQuota("child").ParentName("temp").Max(MakeResourceList().CPU(10).Mem(20).Obj()).
+				Min(MakeResourceList().CPU(10).Mem(20).Obj()).IsParent(false).TreeID("tree-1").Obj(),
+			expectErr: false,
+		},
+		{
+			name: "parent no tree id",
+			parentQuota: MakeQuota("parent").Max(MakeResourceList().CPU(10).Mem(20).Obj()).
+				Min(MakeResourceList().CPU(10).Mem(20).Obj()).IsParent(true).Obj(),
+			quota: MakeQuota("temp").ParentName("parent").Max(MakeResourceList().CPU(10).Mem(20).Obj()).
+				Min(MakeResourceList().CPU(10).Mem(20).Obj()).IsParent(true).TreeID("tree-1").Obj(),
+			childQuota: MakeQuota("child").ParentName("temp").Max(MakeResourceList().CPU(10).Mem(20).Obj()).
+				Min(MakeResourceList().CPU(10).Mem(20).Obj()).IsParent(false).TreeID("tree-1").Obj(),
+			expectErr: true,
+		},
+		{
+			name: "self no tree id",
+			parentQuota: MakeQuota("parent").Max(MakeResourceList().CPU(10).Mem(20).Obj()).
+				Min(MakeResourceList().CPU(10).Mem(20).Obj()).IsParent(true).TreeID("tree-1").Obj(),
+			quota: MakeQuota("temp").ParentName("parent").Max(MakeResourceList().CPU(10).Mem(20).Obj()).
+				Min(MakeResourceList().CPU(10).Mem(20).Obj()).IsParent(true).Obj(),
+			childQuota: MakeQuota("child").ParentName("temp").Max(MakeResourceList().CPU(10).Mem(20).Obj()).
+				Min(MakeResourceList().CPU(10).Mem(20).Obj()).IsParent(false).TreeID("tree-1").Obj(),
+			expectErr: true,
+		},
+		{
+			name: "child no tree id",
+			parentQuota: MakeQuota("parent").Max(MakeResourceList().CPU(10).Mem(20).Obj()).
+				Min(MakeResourceList().CPU(10).Mem(20).Obj()).IsParent(true).TreeID("tree-1").Obj(),
+			quota: MakeQuota("temp").ParentName("parent").Max(MakeResourceList().CPU(10).Mem(20).Obj()).
+				Min(MakeResourceList().CPU(10).Mem(20).Obj()).IsParent(true).TreeID("tree-1").Obj(),
+			childQuota: MakeQuota("child").ParentName("temp").Max(MakeResourceList().CPU(10).Mem(20).Obj()).
+				Min(MakeResourceList().CPU(10).Mem(20).Obj()).IsParent(false).Obj(),
+			expectErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			qt := newFakeQuotaTopology()
+			qt.OnQuotaAdd(tt.parentQuota)
+			qt.OnQuotaAdd(tt.quota)
+			qt.OnQuotaAdd(tt.childQuota)
+
+			quota := NewQuotaInfoFromQuota(tt.quota)
+			err := qt.checkTreeID(nil, quota)
+
+			if tt.expectErr && err == nil {
+				t.Errorf("expected error, but err is nil")
+			}
+
+			if !tt.expectErr && err != nil {
+				t.Errorf("expected no error, but got err: %v", err)
 			}
 		})
 	}
@@ -298,6 +401,19 @@ func TestQuotaTopology_ValidAddQuota(t *testing.T) {
 
 	err = qt.ValidAddQuota(nil)
 	assert.NotNil(t, err)
+
+	// add temp2 with tree id
+	quota2 := MakeQuota("temp2").Max(MakeResourceList().CPU(120).Mem(1048576).Obj()).
+		Min(MakeResourceList().CPU(64).Mem(51200).Obj()).IsParent(true).TreeID("tree-1").Obj()
+	qt.fillQuotaDefaultInformation(quota2)
+	err = qt.ValidAddQuota(quota2)
+	assert.Nil(t, err)
+
+	// child has no tree id
+	sub3 := MakeQuota("sub-3").ParentName("temp2").Max(MakeResourceList().CPU(120).Mem(1048576).Obj()).
+		Min(MakeResourceList().CPU(64).Mem(51200).Obj()).IsParent(true).Obj()
+	err = qt.ValidAddQuota(sub3)
+	assert.NotNil(t, err)
 }
 
 func TestQuotaTopology_ValidUpdateQuota(t *testing.T) {
@@ -398,6 +514,12 @@ func TestQuotaTopology_ValidUpdateQuota(t *testing.T) {
 	sub1.Annotations[extension.AnnotationQuotaNamespaces] = "[\"namespace1\",\"namespace2\"]"
 	err = qt.ValidUpdateQuota(sub1, newSub1)
 	assert.Equal(t, fmt.Sprintf("quota has bound pods, isParent is forbidden to modify as true, quotaName: sub-1"), err.Error())
+
+	// add tree id, reject
+	newSub1 = sub1.DeepCopy()
+	newSub1.Labels[extension.LabelQuotaTreeID] = "tree-1"
+	err = qt.ValidUpdateQuota(sub1, newSub1)
+	assert.Equal(t, fmt.Sprint("sub-1 tree id changed [] vs [tree-1]"), err.Error())
 }
 
 func TestQuotaTopology_ListQuotaPods(t *testing.T) {
@@ -761,6 +883,11 @@ func (q *quotaWrapper) Min(min v1.ResourceList) *quotaWrapper {
 
 func (q *quotaWrapper) Max(max v1.ResourceList) *quotaWrapper {
 	q.ElasticQuota.Spec.Max = max
+	return q
+}
+
+func (q *quotaWrapper) TreeID(tree string) *quotaWrapper {
+	q.ElasticQuota.Labels[extension.LabelQuotaTreeID] = tree
 	return q
 }
 

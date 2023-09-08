@@ -63,6 +63,10 @@ func IsAllowLentResource(quota *v1alpha1.ElasticQuota) bool {
 	return quota.Labels[LabelAllowLentResource] != "false"
 }
 
+func GetQuotaTreeID(quota *v1alpha1.ElasticQuota) string {
+	return quota.Labels[LabelQuotaTreeID]
+}
+
 func GetSharedWeight(quota *v1alpha1.ElasticQuota) corev1.ResourceList {
 	value, exist := quota.Annotations[AnnotationSharedWeight]
 	if exist {
