@@ -62,7 +62,7 @@ func Test_IsKidledStart(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			helper.WriteFileContents(KidledScanPeriodInSeconds.Path(""), tt.args.contcontentKidledScanPeriodInSecondsent)
 			helper.WriteFileContents(KidledUseHierarchy.Path(""), tt.args.contentKidledUseHierarchy)
-			got := IsKidledStart()
+			got := IsKidledSupport()
 			assert.Equal(t, tt.want, got)
 		})
 	}

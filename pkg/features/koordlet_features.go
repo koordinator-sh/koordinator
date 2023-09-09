@@ -127,6 +127,8 @@ const (
 	//
 	// BlkIOReconcile enables block I/O QoS feature of koordlet.
 	BlkIOReconcile featuregate.Feature = "BlkIOReconcile"
+
+	ColdPageCollector featuregate.Feature = "ColdPageCollector"
 )
 
 func init() {
@@ -154,6 +156,7 @@ var (
 		Libpfm4:                {Default: false, PreRelease: featuregate.Alpha},
 		PSICollector:           {Default: false, PreRelease: featuregate.Alpha},
 		BlkIOReconcile:         {Default: false, PreRelease: featuregate.Alpha},
+		ColdPageCollector:      {Default: false, PreRelease: featuregate.Alpha},
 	}
 )
 

@@ -18,19 +18,16 @@ package system
 
 import (
 	"fmt"
-	"os"
 	"reflect"
 	"strconv"
 	"strings"
-	"time"
 
 	"go.uber.org/atomic"
 	"k8s.io/klog/v2"
 )
 
 var (
-	isSupportColdMemory *atomic.Bool     = atomic.NewBool(false)
-	scanPeriodInSeconds *atomic.Duration = atomic.NewDuration(0)
+	IsSupportColdMemory *atomic.Bool = atomic.NewBool(false)
 )
 
 type ColdPageInfoByKidled struct {
@@ -134,60 +131,27 @@ func (i *ColdPageInfoByKidled) GetColdPageTotalBytes() uint64 {
 	return sum(i.Csei, i.Dsei, i.Cfei, i.Dfei, i.Csui, i.Dsui, i.Cfui, i.Dfui, i.Csea, i.Dsea, i.Cfea, i.Dfea, i.Csua, i.Dsua, i.Cfua, i.Dfua, i.Slab)
 }
 
-// check kidled and set var isSupportColdMemory
-func IsKidledStart() bool {
-	isSupportColdMemory.Store(false)
+// check kidled and set var isSupportColdSupport
+func IsKidledSupport() bool {
+	IsSupportColdMemory.Store(false)
 	isSupport, str := KidledScanPeriodInSeconds.IsSupported("")
 	if !isSupport {
 		klog.V(4).Infof("file scan_period_in_seconds is not exist ", str)
-		return isSupportColdMemory.Load()
+		return IsSupportColdMemory.Load()
 	}
-	kidledScanPeriodInSecondsBytes, err := os.ReadFile(KidledScanPeriodInSeconds.Path(""))
-	if err != nil {
-		klog.V(4).Infof("scan_period_in_seconds file not exist")
-		return isSupportColdMemory.Load()
-	}
-	content := strings.Trim(string(kidledScanPeriodInSecondsBytes), "\n")
-	isValid, str := KidledScanPeriodInSeconds.IsValid(content)
-	if !isValid {
-		klog.V(4).Infof("scan_period_in_seconds is invalid ", str)
-		return isSupportColdMemory.Load()
-	}
-	value, _ := strconv.Atoi(content)
-	if value == 0 {
-		klog.V(4).Infof("value of the scan_period_in_seconds is 0, kidled doesn't start ")
-		return isSupportColdMemory.Load()
-	}
-	scanPeriodInSeconds.Store(time.Duration(value))
 	isSupport, str = KidledUseHierarchy.IsSupported("")
 	if !isSupport {
 		klog.V(4).Infof("file use_hierarchy is not exist ", str)
-		return isSupportColdMemory.Load()
+		return IsSupportColdMemory.Load()
 	}
-	kidledUseHierarchyBytes, err := os.ReadFile(KidledUseHierarchy.Path(""))
-	if err != nil {
-		klog.V(4).Infof("use_hierarchy file not exist")
-		return isSupportColdMemory.Load()
-	}
-	content = strings.Trim(string(kidledUseHierarchyBytes), "\n")
-	isValid, str = KidledUseHierarchy.IsValid(content)
-	if !isValid {
-		klog.V(4).Infof("use_hierarchy is invalid ", str)
-		return isSupportColdMemory.Load()
-	}
-	value, _ = strconv.Atoi(content)
-	if value == 0 {
-		klog.V(4).Infof("value of use_hierarchy is 0, kidled doesn't apply hierarchy")
-		return isSupportColdMemory.Load()
-	}
-	isSupportColdMemory.Store(true)
-	return isSupportColdMemory.Load()
+	IsSupportColdMemory.Store(true)
+	return IsSupportColdMemory.Load()
 }
 
 func GetIsSupportColdMemory() bool {
-	return isSupportColdMemory.Load()
+	return IsSupportColdMemory.Load()
 }
 
-func GetKidledScanPeriodInSeconds() time.Duration {
-	return scanPeriodInSeconds.Load()
-}
+// func GetKidledScanPeriodInSeconds() time.Duration {
+// 	return scanPeriodInSeconds.Load()
+// }

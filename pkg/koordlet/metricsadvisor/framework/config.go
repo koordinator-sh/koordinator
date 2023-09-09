@@ -34,6 +34,7 @@ type Config struct {
 	CPICollectorInterval             time.Duration
 	PSICollectorInterval             time.Duration
 	CPICollectorTimeWindow           time.Duration
+	ColdPageCollectorInterval        time.Duration
 }
 
 func NewDefaultConfig() *Config {
@@ -45,6 +46,7 @@ func NewDefaultConfig() *Config {
 		CPICollectorInterval:             60 * time.Second,
 		PSICollectorInterval:             10 * time.Second,
 		CPICollectorTimeWindow:           10 * time.Second,
+		ColdPageCollectorInterval:        5 * time.Second,
 	}
 }
 
@@ -56,4 +58,5 @@ func (c *Config) InitFlags(fs *flag.FlagSet) {
 	fs.DurationVar(&c.CPICollectorInterval, "cpi-collector-interval", c.CPICollectorInterval, "Collect cpi interval. Non-zero values should contain a corresponding time unit (e.g. 1s, 2m, 3h).")
 	fs.DurationVar(&c.PSICollectorInterval, "psi-collector-interval", c.PSICollectorInterval, "Collect psi interval. Non-zero values should contain a corresponding time unit (e.g. 1s, 2m, 3h).")
 	fs.DurationVar(&c.CPICollectorTimeWindow, "collect-cpi-timewindow", c.CPICollectorTimeWindow, "Collect cpi time window. Non-zero values should contain a corresponding time unit (e.g. 1s, 2m, 3h).")
+	fs.DurationVar(&c.ColdPageCollectorInterval, "coldpage-collector-interval", c.PSICollectorInterval, "Collect cold page interval. Non-zero values should contain a corresponding time unit (e.g. 1s, 2m, 3h).")
 }

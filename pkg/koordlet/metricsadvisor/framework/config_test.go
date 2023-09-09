@@ -33,6 +33,7 @@ func Test_NewDefaultConfig(t *testing.T) {
 		CPICollectorInterval:             60 * time.Second,
 		PSICollectorInterval:             10 * time.Second,
 		CPICollectorTimeWindow:           10 * time.Second,
+		ColdPageCollectorInterval:        5 * time.Second,
 	}
 	defaultConfig := NewDefaultConfig()
 	assert.Equal(t, expectConfig, defaultConfig)
@@ -48,6 +49,7 @@ func Test_InitFlags(t *testing.T) {
 		"--cpi-collector-interval=90s",
 		"--psi-collector-interval=5s",
 		"--collect-cpi-timewindow=15s",
+		"--coldpage-collector-interval=15s",
 	}
 	fs := flag.NewFlagSet(cmdArgs[0], flag.ExitOnError)
 
@@ -59,6 +61,7 @@ func Test_InitFlags(t *testing.T) {
 		CPICollectorInterval             time.Duration
 		PSICollectorInterval             time.Duration
 		CPICollectorTimeWindow           time.Duration
+		ColdPageCollectorInterval        time.Duration
 	}
 	type args struct {
 		fs *flag.FlagSet
@@ -78,6 +81,7 @@ func Test_InitFlags(t *testing.T) {
 				CPICollectorInterval:             90 * time.Second,
 				PSICollectorInterval:             5 * time.Second,
 				CPICollectorTimeWindow:           15 * time.Second,
+				ColdPageCollectorInterval:        15 * time.Second,
 			},
 			args: args{fs: fs},
 		},

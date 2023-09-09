@@ -32,9 +32,9 @@ type nonColdPageCollector struct {
 
 func New(opt *framework.Options) framework.Collector {
 	// check whether support kidled cold page info collector
-	if system.IsKidledStart() {
+	if system.IsKidledSupport() {
 		return &kidledcoldPageCollector{
-			collectInterval: opt.Config.CollectResUsedInterval,
+			collectInterval: opt.Config.ColdPageCollectorInterval,
 			cgroupReader:    opt.CgroupReader,
 			statesInformer:  opt.StatesInformer,
 			// TODO(BUPT-wxq): implement podFilter for the VM-based pods and containers
