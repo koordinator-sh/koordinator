@@ -45,6 +45,7 @@ var (
 	// SetupPlugins implement the setup for node resource plugin.
 	setupPlugins = []framework.SetupPlugin{
 		&cpunormalization.Plugin{},
+		&batchresource.Plugin{},
 	}
 	// NodePreparePlugin implements node resource preparing for the calculated results.
 	nodePreparePlugins = []framework.NodePreparePlugin{

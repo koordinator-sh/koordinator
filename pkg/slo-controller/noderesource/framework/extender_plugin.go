@@ -74,6 +74,7 @@ func UnregisterSetupExtender(name string) {
 // NodePreparePlugin implements node resource preparing for the calculated results.
 // For example, assign extended resources in the node allocatable.
 // It is invoked each time the controller tries updating the latest NodeResource object with calculated results.
+// NOTE: The Execute should be idempotent since it can be called multiple times in one reconciliation.
 type NodePreparePlugin interface {
 	Plugin
 	Execute(strategy *configuration.ColocationStrategy, node *corev1.Node, nr *NodeResource) error

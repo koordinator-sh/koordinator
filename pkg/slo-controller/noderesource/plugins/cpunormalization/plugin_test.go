@@ -22,7 +22,6 @@ import (
 	topov1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -193,8 +192,6 @@ func TestPluginNeedSyncMeta(t *testing.T) {
 }
 
 func TestPluginExecute(t *testing.T) {
-	testQuantity := resource.MustParse("8000m")
-	testQuantity1 := resource.MustParse("9600m")
 	type args struct {
 		node *corev1.Node
 		nr   *framework.NodeResource
@@ -272,76 +269,6 @@ func TestPluginExecute(t *testing.T) {
 						"xxx": "yyy",
 						extension.AnnotationCPUNormalizationRatio: "1.20",
 					},
-				},
-			},
-		},
-		{
-			name: "prepare ratio and mutate batch cpu",
-			args: args{
-				node: &corev1.Node{
-					ObjectMeta: metav1.ObjectMeta{
-						Name: "test-node",
-					},
-				},
-				nr: &framework.NodeResource{
-					Resources: map[corev1.ResourceName]*resource.Quantity{
-						extension.BatchCPU: &testQuantity,
-					},
-					Annotations: map[string]string{
-						extension.AnnotationCPUNormalizationRatio: "1.20",
-					},
-				},
-			},
-			wantErr: false,
-			wantField: &corev1.Node{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-node",
-					Annotations: map[string]string{
-						extension.AnnotationCPUNormalizationRatio: "1.20",
-					},
-				},
-			},
-			wantField1: &framework.NodeResource{
-				Resources: map[corev1.ResourceName]*resource.Quantity{
-					extension.BatchCPU: &testQuantity1,
-				},
-				Annotations: map[string]string{
-					extension.AnnotationCPUNormalizationRatio: "1.20",
-				},
-			},
-		},
-		{
-			name: "prepare ratio but failed to mutate batch cpu",
-			args: args{
-				node: &corev1.Node{
-					ObjectMeta: metav1.ObjectMeta{
-						Name: "test-node",
-					},
-				},
-				nr: &framework.NodeResource{
-					Resources: map[corev1.ResourceName]*resource.Quantity{
-						extension.BatchCPU: &testQuantity,
-					},
-					Annotations: map[string]string{
-						extension.AnnotationCPUNormalizationRatio: "[}",
-					},
-				},
-			},
-			wantErr: true,
-			wantField: &corev1.Node{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-node",
-					Annotations: map[string]string{
-						extension.AnnotationCPUNormalizationRatio: "[}",
-					},
-				},
-			},
-			wantField1: &framework.NodeResource{
-				Resources: map[corev1.ResourceName]*resource.Quantity{
-					extension.BatchCPU: &testQuantity,
-				},
-				Annotations: map[string]string{
-					extension.AnnotationCPUNormalizationRatio: "[}",
 				},
 			},
 		},

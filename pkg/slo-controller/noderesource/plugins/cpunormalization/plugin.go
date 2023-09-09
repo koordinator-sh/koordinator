@@ -33,7 +33,6 @@ import (
 	"github.com/koordinator-sh/koordinator/apis/configuration"
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/noderesource/framework"
-	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
 const PluginName = "CPUNormalization"
@@ -46,10 +45,6 @@ const (
 	defaultMaxRatio  = 5.0
 	ratioDiffEpsilon = 0.01
 )
-
-var resourcesToAmplify = []corev1.ResourceName{
-	extension.BatchCPU,
-}
 
 var (
 	client     ctrlclient.Client
@@ -123,11 +118,6 @@ func (p *Plugin) Execute(_ *configuration.ColocationStrategy, node *corev1.Node,
 	}
 	node.Annotations[extension.AnnotationCPUNormalizationRatio] = ratioStr
 	klog.V(6).Infof("prepare node cpu normalization ratio to set, node %s, ratio %s", node.Name, ratioStr)
-
-	_, err := p.MutateNodeResource(nr, node)
-	if err != nil {
-		return fmt.Errorf("failed to mutate NodeResource, err: %w", err)
-	}
 
 	return nil
 }
@@ -205,35 +195,6 @@ func (p *Plugin) Calculate(_ *configuration.ColocationStrategy, node *corev1.Nod
 			},
 		},
 	}, nil
-}
-
-// MutateNodeResource mutates the NodeResource to amplify the other extended resources like batch-cpu.
-// TODO: Mutate NodeResource and merge into Node in the framework instead.
-func (p *Plugin) MutateNodeResource(nr *framework.NodeResource, node *corev1.Node) (bool, error) {
-	ratioStr, ok := nr.Annotations[extension.AnnotationCPUNormalizationRatio]
-	if !ok {
-		return false, nil
-	}
-	ratio, err := strconv.ParseFloat(ratioStr, 64)
-	if err != nil {
-		return false, fmt.Errorf("failed to parse ratio in NodeResource, err: %w", err)
-	}
-
-	// amplify batch cpu resources with the cpu normalization ratio
-	hasMutated := false
-	for _, resourceName := range resourcesToAmplify {
-		q, ok := nr.Resources[resourceName]
-		if !ok || q == nil {
-			continue
-		}
-
-		newQuantity := util.MultiplyMilliQuant(*q, ratio)
-		nr.Resources[resourceName] = &newQuantity
-		klog.V(5).Infof("mutate NodeResource %s for resource %s with new quantity %s, original %s",
-			node.Name, resourceName, newQuantity.String(), q.String())
-		hasMutated = true
-	}
-	return hasMutated, nil
 }
 
 func isCPUBasicInfoChanged(infoOld, infoNew *extension.CPUBasicInfo) (bool, string) {

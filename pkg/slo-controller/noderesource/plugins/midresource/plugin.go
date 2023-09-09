@@ -188,8 +188,8 @@ func prepareNodeForResource(node *corev1.Node, nr *framework.NodeResource, name 
 		delete(node.Status.Allocatable, name)
 	} else {
 		if _, ok := q.AsInt64(); !ok {
-			klog.V(2).InfoS("node mid resource's quantity is not int64 and will be rounded",
-				"resource", name, "original", *q)
+			klog.V(4).InfoS("node mid resource's quantity is not int64 and will be rounded",
+				"node", node.Name, "resource", name, "original", *q, "rounded", q.Value())
 			q.Set(q.Value())
 		}
 		node.Status.Capacity[name] = *q

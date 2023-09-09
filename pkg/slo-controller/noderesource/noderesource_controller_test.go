@@ -31,6 +31,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/utils/pointer"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	"github.com/koordinator-sh/koordinator/apis/configuration"
@@ -122,6 +123,9 @@ func Test_NodeResourceController_NodeMetricNotExist(t *testing.T) {
 
 	key := types.NamespacedName{Name: nodeName}
 	nodeReq := ctrl.Request{NamespacedName: key}
+
+	opt := framework.NewOption().WithClient(client).WithScheme(scheme).WithControllerBuilder(&builder.Builder{})
+	framework.RunSetupExtenders(opt)
 
 	result, err := r.Reconcile(ctx, nodeReq)
 	assert.NoError(t, err)

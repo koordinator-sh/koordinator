@@ -17,15 +17,25 @@ limitations under the License.
 package batchresource
 
 import (
+	"context"
+	"fmt"
 	"testing"
 	"time"
 
+	topov1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/clock"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/utils/pointer"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	"github.com/koordinator-sh/koordinator/apis/configuration"
 	"github.com/koordinator-sh/koordinator/apis/extension"
@@ -170,8 +180,811 @@ func genPodMetric(namespace string, name string, cpu string, memory string) *slo
 	}
 }
 
+func TestPlugin(t *testing.T) {
+	t.Run("test", func(t *testing.T) {
+		testScheme := runtime.NewScheme()
+		err := clientgoscheme.AddToScheme(testScheme)
+		assert.NoError(t, err)
+		err = slov1alpha1.AddToScheme(testScheme)
+		assert.NoError(t, err)
+		err = topov1alpha1.AddToScheme(testScheme)
+		assert.NoError(t, err)
+
+		defer testPluginCleanup()
+		p := &Plugin{}
+		assert.Equal(t, PluginName, p.Name())
+		testOpt := &framework.Option{
+			Scheme:   testScheme,
+			Client:   fake.NewClientBuilder().WithScheme(testScheme).Build(),
+			Builder:  &builder.Builder{},
+			Recorder: &record.FakeRecorder{},
+		}
+		err = p.Setup(testOpt)
+		assert.NoError(t, err)
+	})
+}
+
+func TestExecute(t *testing.T) {
+	testScheme := runtime.NewScheme()
+	err := clientgoscheme.AddToScheme(testScheme)
+	assert.NoError(t, err)
+	err = slov1alpha1.AddToScheme(testScheme)
+	assert.NoError(t, err)
+	err = topov1alpha1.AddToScheme(testScheme)
+	assert.NoError(t, err)
+	type fields struct {
+		client ctrlclient.Client
+	}
+	type args struct {
+		strategy *configuration.ColocationStrategy
+		node     *corev1.Node
+		nr       *framework.NodeResource
+	}
+	tests := []struct {
+		name      string
+		fields    fields
+		args      args
+		wantErr   bool
+		wantField *corev1.Node
+		checkFunc func(t *testing.T, client ctrlclient.Client)
+	}{
+		{
+			name: "update batch resources",
+			fields: fields{
+				client: fake.NewClientBuilder().WithScheme(testScheme).Build(),
+			},
+			args: args{
+				node: &corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node",
+					},
+					Status: corev1.NodeStatus{
+						Capacity: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("100"),
+							corev1.ResourceMemory: resource.MustParse("400Gi"),
+						},
+						Allocatable: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("100"),
+							corev1.ResourceMemory: resource.MustParse("380Gi"),
+						},
+					},
+				},
+				nr: &framework.NodeResource{
+					Resources: map[corev1.ResourceName]*resource.Quantity{
+						extension.BatchCPU:    resource.NewQuantity(50000, resource.DecimalSI),
+						extension.BatchMemory: resource.NewScaledQuantity(120, 9),
+					},
+				},
+			},
+			wantErr: false,
+			wantField: &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node",
+				},
+				Status: corev1.NodeStatus{
+					Capacity: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("100"),
+						corev1.ResourceMemory: resource.MustParse("400Gi"),
+						extension.BatchCPU:    *resource.NewQuantity(50000, resource.DecimalSI),
+						extension.BatchMemory: *resource.NewScaledQuantity(120, 9),
+					},
+					Allocatable: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("100"),
+						corev1.ResourceMemory: resource.MustParse("380Gi"),
+						extension.BatchCPU:    *resource.NewQuantity(50000, resource.DecimalSI),
+						extension.BatchMemory: *resource.NewScaledQuantity(120, 9),
+					},
+				},
+			},
+		},
+		{
+			name: "reset batch resources",
+			fields: fields{
+				client: fake.NewClientBuilder().WithScheme(testScheme).Build(),
+			},
+			args: args{
+				node: &corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node",
+					},
+					Status: corev1.NodeStatus{
+						Capacity: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("100"),
+							corev1.ResourceMemory: resource.MustParse("400Gi"),
+							extension.BatchCPU:    *resource.NewQuantity(50000, resource.DecimalSI),
+							extension.BatchMemory: *resource.NewScaledQuantity(120, 9),
+						},
+						Allocatable: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("100"),
+							corev1.ResourceMemory: resource.MustParse("380Gi"),
+							extension.BatchCPU:    *resource.NewQuantity(50000, resource.DecimalSI),
+							extension.BatchMemory: *resource.NewScaledQuantity(120, 9),
+						},
+					},
+				},
+				nr: &framework.NodeResource{
+					Resets: map[corev1.ResourceName]bool{
+						extension.BatchCPU:    true,
+						extension.BatchMemory: true,
+					},
+				},
+			},
+			wantErr: false,
+			wantField: &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node",
+				},
+				Status: corev1.NodeStatus{
+					Capacity: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("100"),
+						corev1.ResourceMemory: resource.MustParse("400Gi"),
+					},
+					Allocatable: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("100"),
+						corev1.ResourceMemory: resource.MustParse("380Gi"),
+					},
+				},
+			},
+		},
+		{
+			name: "add NUMA-level batch resources",
+			fields: fields{
+				client: fake.NewClientBuilder().WithScheme(testScheme).WithObjects(&topov1alpha1.NodeResourceTopology{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node",
+					},
+					Zones: topov1alpha1.ZoneList{
+						{
+							Name: util.GenNodeZoneName(0),
+							Type: util.NodeZoneType,
+							Resources: topov1alpha1.ResourceInfoList{
+								{
+									Name:        string(corev1.ResourceCPU),
+									Capacity:    resource.MustParse("50"),
+									Allocatable: resource.MustParse("50"),
+									Available:   resource.MustParse("50"),
+								},
+								{
+									Name:        string(corev1.ResourceMemory),
+									Capacity:    resource.MustParse("200Gi"),
+									Allocatable: resource.MustParse("200Gi"),
+									Available:   resource.MustParse("200Gi"),
+								},
+							},
+						},
+						{
+							Name: util.GenNodeZoneName(1),
+							Type: util.NodeZoneType,
+							Resources: topov1alpha1.ResourceInfoList{
+								{
+									Name:        string(corev1.ResourceCPU),
+									Capacity:    resource.MustParse("50"),
+									Allocatable: resource.MustParse("50"),
+									Available:   resource.MustParse("50"),
+								},
+								{
+									Name:        string(corev1.ResourceMemory),
+									Capacity:    resource.MustParse("180Gi"),
+									Allocatable: resource.MustParse("180Gi"),
+									Available:   resource.MustParse("180Gi"),
+								},
+							},
+						},
+					},
+				}).Build(),
+			},
+			args: args{
+				strategy: &configuration.ColocationStrategy{
+					ResourceDiffThreshold: pointer.Float64(0.1),
+				},
+				node: &corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node",
+					},
+					Status: corev1.NodeStatus{
+						Capacity: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("100"),
+							corev1.ResourceMemory: resource.MustParse("400Gi"),
+						},
+						Allocatable: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("100"),
+							corev1.ResourceMemory: resource.MustParse("380Gi"),
+						},
+					},
+				},
+				nr: &framework.NodeResource{
+					Resources: map[corev1.ResourceName]*resource.Quantity{
+						extension.BatchCPU:    resource.NewQuantity(50000, resource.DecimalSI),
+						extension.BatchMemory: resource.NewScaledQuantity(120, 9),
+					},
+					ZoneResources: map[string]corev1.ResourceList{
+						util.GenNodeZoneName(0): {
+							extension.BatchCPU:    resource.MustParse("25000"),
+							extension.BatchMemory: resource.MustParse("62G"),
+						},
+						util.GenNodeZoneName(1): {
+							extension.BatchCPU:    resource.MustParse("25000"),
+							extension.BatchMemory: resource.MustParse("58G"),
+						},
+					},
+				},
+			},
+			wantErr: false,
+			wantField: &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node",
+				},
+				Status: corev1.NodeStatus{
+					Capacity: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("100"),
+						corev1.ResourceMemory: resource.MustParse("400Gi"),
+						extension.BatchCPU:    *resource.NewQuantity(50000, resource.DecimalSI),
+						extension.BatchMemory: *resource.NewScaledQuantity(120, 9),
+					},
+					Allocatable: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("100"),
+						corev1.ResourceMemory: resource.MustParse("380Gi"),
+						extension.BatchCPU:    *resource.NewQuantity(50000, resource.DecimalSI),
+						extension.BatchMemory: *resource.NewScaledQuantity(120, 9),
+					},
+				},
+			},
+			checkFunc: func(t *testing.T, client ctrlclient.Client) {
+				nrt := &topov1alpha1.NodeResourceTopology{}
+				err := client.Get(context.TODO(), types.NamespacedName{Name: "test-node"}, nrt)
+				assert.NoError(t, err)
+				expectedNRT := &topov1alpha1.NodeResourceTopology{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node",
+					},
+					Zones: topov1alpha1.ZoneList{
+						{
+							Name: util.GenNodeZoneName(0),
+							Type: util.NodeZoneType,
+							Resources: topov1alpha1.ResourceInfoList{
+								{
+									Name:        string(corev1.ResourceCPU),
+									Capacity:    resource.MustParse("50"),
+									Allocatable: resource.MustParse("50"),
+									Available:   resource.MustParse("50"),
+								},
+								{
+									Name:        string(extension.BatchCPU),
+									Capacity:    resource.MustParse("25000"),
+									Allocatable: resource.MustParse("25000"),
+									Available:   resource.MustParse("25000"),
+								},
+								{
+									Name:        string(extension.BatchMemory),
+									Capacity:    resource.MustParse("62G"),
+									Allocatable: resource.MustParse("62G"),
+									Available:   resource.MustParse("62G"),
+								},
+								{
+									Name:        string(corev1.ResourceMemory),
+									Capacity:    resource.MustParse("200Gi"),
+									Allocatable: resource.MustParse("200Gi"),
+									Available:   resource.MustParse("200Gi"),
+								},
+							},
+						},
+						{
+							Name: util.GenNodeZoneName(1),
+							Type: util.NodeZoneType,
+							Resources: topov1alpha1.ResourceInfoList{
+								{
+									Name:        string(corev1.ResourceCPU),
+									Capacity:    resource.MustParse("50"),
+									Allocatable: resource.MustParse("50"),
+									Available:   resource.MustParse("50"),
+								},
+								{
+									Name:        string(extension.BatchCPU),
+									Capacity:    resource.MustParse("25000"),
+									Allocatable: resource.MustParse("25000"),
+									Available:   resource.MustParse("25000"),
+								},
+								{
+									Name:        string(extension.BatchMemory),
+									Capacity:    resource.MustParse("58G"),
+									Allocatable: resource.MustParse("58G"),
+									Available:   resource.MustParse("58G"),
+								},
+								{
+									Name:        string(corev1.ResourceMemory),
+									Capacity:    resource.MustParse("180Gi"),
+									Allocatable: resource.MustParse("180Gi"),
+									Available:   resource.MustParse("180Gi"),
+								},
+							},
+						},
+					},
+				}
+				assert.Equal(t, len(expectedNRT.Zones), len(nrt.Zones))
+				for i := range expectedNRT.Zones {
+					assert.Equal(t, expectedNRT.Zones[i].Name, nrt.Zones[i].Name, fmt.Sprintf("zone %v", i))
+					assert.Equal(t, len(expectedNRT.Zones[i].Resources), len(nrt.Zones[i].Resources), fmt.Sprintf("zone %v", i))
+					for j := range expectedNRT.Zones[i].Resources {
+						assert.Equal(t, expectedNRT.Zones[i].Resources[j].Capacity.Value(), nrt.Zones[i].Resources[j].Capacity.Value(), fmt.Sprintf("zone %v, resource %v", i, j))
+						assert.Equal(t, expectedNRT.Zones[i].Resources[j].Allocatable.Value(), nrt.Zones[i].Resources[j].Allocatable.Value(), fmt.Sprintf("zone %v, resource %v", i, j))
+						assert.Equal(t, expectedNRT.Zones[i].Resources[j].Available.Value(), nrt.Zones[i].Resources[j].Available.Value(), fmt.Sprintf("zone %v, resource %v", i, j))
+					}
+				}
+			},
+		},
+		{
+			name: "update NUMA-level batch resources",
+			fields: fields{
+				client: fake.NewClientBuilder().WithScheme(testScheme).WithObjects(&topov1alpha1.NodeResourceTopology{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node",
+					},
+					Zones: topov1alpha1.ZoneList{
+						{
+							Name: util.GenNodeZoneName(0),
+							Type: util.NodeZoneType,
+							Resources: topov1alpha1.ResourceInfoList{
+								{
+									Name:        string(corev1.ResourceCPU),
+									Capacity:    resource.MustParse("50"),
+									Allocatable: resource.MustParse("50"),
+									Available:   resource.MustParse("50"),
+								},
+								{
+									Name:        string(extension.BatchCPU),
+									Capacity:    resource.MustParse("25000"),
+									Allocatable: resource.MustParse("25000"),
+									Available:   resource.MustParse("25000"),
+								},
+								{
+									Name:        string(extension.BatchMemory),
+									Capacity:    resource.MustParse("62G"),
+									Allocatable: resource.MustParse("62G"),
+									Available:   resource.MustParse("62G"),
+								},
+								{
+									Name:        string(corev1.ResourceMemory),
+									Capacity:    resource.MustParse("200Gi"),
+									Allocatable: resource.MustParse("200Gi"),
+									Available:   resource.MustParse("200Gi"),
+								},
+							},
+						},
+						{
+							Name: util.GenNodeZoneName(1),
+							Type: util.NodeZoneType,
+							Resources: topov1alpha1.ResourceInfoList{
+								{
+									Name:        string(corev1.ResourceCPU),
+									Capacity:    resource.MustParse("50"),
+									Allocatable: resource.MustParse("50"),
+									Available:   resource.MustParse("50"),
+								},
+								{
+									Name:        string(extension.BatchCPU),
+									Capacity:    resource.MustParse("25000"),
+									Allocatable: resource.MustParse("25000"),
+									Available:   resource.MustParse("25000"),
+								},
+								{
+									Name:        string(extension.BatchMemory),
+									Capacity:    resource.MustParse("58G"),
+									Allocatable: resource.MustParse("58G"),
+									Available:   resource.MustParse("58G"),
+								},
+								{
+									Name:        string(corev1.ResourceMemory),
+									Capacity:    resource.MustParse("180Gi"),
+									Allocatable: resource.MustParse("180Gi"),
+									Available:   resource.MustParse("180Gi"),
+								},
+							},
+						},
+					},
+				}).Build(),
+			},
+			args: args{
+				strategy: &configuration.ColocationStrategy{
+					ResourceDiffThreshold: pointer.Float64(0.1),
+				},
+				node: &corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node",
+					},
+					Status: corev1.NodeStatus{
+						Capacity: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("100"),
+							corev1.ResourceMemory: resource.MustParse("400Gi"),
+							extension.BatchCPU:    *resource.NewQuantity(50000, resource.DecimalSI),
+							extension.BatchMemory: *resource.NewScaledQuantity(120, 9),
+						},
+						Allocatable: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("100"),
+							corev1.ResourceMemory: resource.MustParse("380Gi"),
+							extension.BatchCPU:    *resource.NewQuantity(50000, resource.DecimalSI),
+							extension.BatchMemory: *resource.NewScaledQuantity(120, 9),
+						},
+					},
+				},
+				nr: &framework.NodeResource{
+					Resources: map[corev1.ResourceName]*resource.Quantity{
+						extension.BatchCPU:    resource.NewQuantity(25000, resource.DecimalSI),
+						extension.BatchMemory: resource.NewScaledQuantity(50, 9),
+					},
+					ZoneResources: map[string]corev1.ResourceList{
+						util.GenNodeZoneName(0): {
+							extension.BatchCPU:    resource.MustParse("15000"),
+							extension.BatchMemory: resource.MustParse("30G"),
+						},
+						util.GenNodeZoneName(1): {
+							extension.BatchCPU:    resource.MustParse("10000"),
+							extension.BatchMemory: resource.MustParse("20G"),
+						},
+					},
+				},
+			},
+			wantErr: false,
+			wantField: &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node",
+				},
+				Status: corev1.NodeStatus{
+					Capacity: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("100"),
+						corev1.ResourceMemory: resource.MustParse("400Gi"),
+						extension.BatchCPU:    *resource.NewQuantity(25000, resource.DecimalSI),
+						extension.BatchMemory: *resource.NewScaledQuantity(50, 9),
+					},
+					Allocatable: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("100"),
+						corev1.ResourceMemory: resource.MustParse("380Gi"),
+						extension.BatchCPU:    *resource.NewQuantity(25000, resource.DecimalSI),
+						extension.BatchMemory: *resource.NewScaledQuantity(50, 9),
+					},
+				},
+			},
+			checkFunc: func(t *testing.T, client ctrlclient.Client) {
+				nrt := &topov1alpha1.NodeResourceTopology{}
+				err := client.Get(context.TODO(), types.NamespacedName{Name: "test-node"}, nrt)
+				assert.NoError(t, err)
+				expectedNRT := &topov1alpha1.NodeResourceTopology{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node",
+					},
+					Zones: topov1alpha1.ZoneList{
+						{
+							Name: util.GenNodeZoneName(0),
+							Type: util.NodeZoneType,
+							Resources: topov1alpha1.ResourceInfoList{
+								{
+									Name:        string(corev1.ResourceCPU),
+									Capacity:    resource.MustParse("50"),
+									Allocatable: resource.MustParse("50"),
+									Available:   resource.MustParse("50"),
+								},
+								{
+									Name:        string(extension.BatchCPU),
+									Capacity:    resource.MustParse("15000"),
+									Allocatable: resource.MustParse("15000"),
+									Available:   resource.MustParse("15000"),
+								},
+								{
+									Name:        string(extension.BatchMemory),
+									Capacity:    resource.MustParse("30G"),
+									Allocatable: resource.MustParse("30G"),
+									Available:   resource.MustParse("30G"),
+								},
+								{
+									Name:        string(corev1.ResourceMemory),
+									Capacity:    resource.MustParse("200Gi"),
+									Allocatable: resource.MustParse("200Gi"),
+									Available:   resource.MustParse("200Gi"),
+								},
+							},
+						},
+						{
+							Name: util.GenNodeZoneName(1),
+							Type: util.NodeZoneType,
+							Resources: topov1alpha1.ResourceInfoList{
+								{
+									Name:        string(corev1.ResourceCPU),
+									Capacity:    resource.MustParse("50"),
+									Allocatable: resource.MustParse("50"),
+									Available:   resource.MustParse("50"),
+								},
+								{
+									Name:        string(extension.BatchCPU),
+									Capacity:    resource.MustParse("10000"),
+									Allocatable: resource.MustParse("10000"),
+									Available:   resource.MustParse("10000"),
+								},
+								{
+									Name:        string(extension.BatchMemory),
+									Capacity:    resource.MustParse("20G"),
+									Allocatable: resource.MustParse("20G"),
+									Available:   resource.MustParse("20G"),
+								},
+								{
+									Name:        string(corev1.ResourceMemory),
+									Capacity:    resource.MustParse("180Gi"),
+									Allocatable: resource.MustParse("180Gi"),
+									Available:   resource.MustParse("180Gi"),
+								},
+							},
+						},
+					},
+				}
+				assert.Equal(t, len(expectedNRT.Zones), len(nrt.Zones))
+				for i := range expectedNRT.Zones {
+					assert.Equal(t, expectedNRT.Zones[i].Name, nrt.Zones[i].Name, fmt.Sprintf("zone %v", i))
+					assert.Equal(t, len(expectedNRT.Zones[i].Resources), len(nrt.Zones[i].Resources), fmt.Sprintf("zone %v", i))
+					for j := range expectedNRT.Zones[i].Resources {
+						assert.Equal(t, expectedNRT.Zones[i].Resources[j].Capacity.Value(), nrt.Zones[i].Resources[j].Capacity.Value(), fmt.Sprintf("zone %v, resource %v", i, j))
+						assert.Equal(t, expectedNRT.Zones[i].Resources[j].Allocatable.Value(), nrt.Zones[i].Resources[j].Allocatable.Value(), fmt.Sprintf("zone %v, resource %v", i, j))
+						assert.Equal(t, expectedNRT.Zones[i].Resources[j].Available.Value(), nrt.Zones[i].Resources[j].Available.Value(), fmt.Sprintf("zone %v, resource %v", i, j))
+					}
+				}
+			},
+		},
+		{
+			name: "update NUMA-level batch resources with cpu-normalization ratio",
+			fields: fields{
+				client: fake.NewClientBuilder().WithScheme(testScheme).WithObjects(&topov1alpha1.NodeResourceTopology{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node",
+					},
+					Zones: topov1alpha1.ZoneList{
+						{
+							Name: util.GenNodeZoneName(0),
+							Type: util.NodeZoneType,
+							Resources: topov1alpha1.ResourceInfoList{
+								{
+									Name:        string(corev1.ResourceCPU),
+									Capacity:    resource.MustParse("50"),
+									Allocatable: resource.MustParse("50"),
+									Available:   resource.MustParse("50"),
+								},
+								{
+									Name:        string(extension.BatchCPU),
+									Capacity:    resource.MustParse("25000"),
+									Allocatable: resource.MustParse("25000"),
+									Available:   resource.MustParse("25000"),
+								},
+								{
+									Name:        string(extension.BatchMemory),
+									Capacity:    resource.MustParse("62G"),
+									Allocatable: resource.MustParse("62G"),
+									Available:   resource.MustParse("62G"),
+								},
+								{
+									Name:        string(corev1.ResourceMemory),
+									Capacity:    resource.MustParse("200Gi"),
+									Allocatable: resource.MustParse("200Gi"),
+									Available:   resource.MustParse("200Gi"),
+								},
+							},
+						},
+						{
+							Name: util.GenNodeZoneName(1),
+							Type: util.NodeZoneType,
+							Resources: topov1alpha1.ResourceInfoList{
+								{
+									Name:        string(corev1.ResourceCPU),
+									Capacity:    resource.MustParse("50"),
+									Allocatable: resource.MustParse("50"),
+									Available:   resource.MustParse("50"),
+								},
+								{
+									Name:        string(extension.BatchCPU),
+									Capacity:    resource.MustParse("25000"),
+									Allocatable: resource.MustParse("25000"),
+									Available:   resource.MustParse("25000"),
+								},
+								{
+									Name:        string(extension.BatchMemory),
+									Capacity:    resource.MustParse("58G"),
+									Allocatable: resource.MustParse("58G"),
+									Available:   resource.MustParse("58G"),
+								},
+								{
+									Name:        string(corev1.ResourceMemory),
+									Capacity:    resource.MustParse("180Gi"),
+									Allocatable: resource.MustParse("180Gi"),
+									Available:   resource.MustParse("180Gi"),
+								},
+							},
+						},
+					},
+				}).Build(),
+			},
+			args: args{
+				strategy: &configuration.ColocationStrategy{
+					ResourceDiffThreshold: pointer.Float64(0.1),
+				},
+				node: &corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node",
+					},
+					Status: corev1.NodeStatus{
+						Capacity: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("100"),
+							corev1.ResourceMemory: resource.MustParse("400Gi"),
+							extension.BatchCPU:    *resource.NewQuantity(50000, resource.DecimalSI),
+							extension.BatchMemory: *resource.NewScaledQuantity(120, 9),
+						},
+						Allocatable: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("100"),
+							corev1.ResourceMemory: resource.MustParse("380Gi"),
+							extension.BatchCPU:    *resource.NewQuantity(50000, resource.DecimalSI),
+							extension.BatchMemory: *resource.NewScaledQuantity(120, 9),
+						},
+					},
+				},
+				nr: &framework.NodeResource{
+					Resources: map[corev1.ResourceName]*resource.Quantity{
+						extension.BatchCPU:    resource.NewQuantity(25000, resource.DecimalSI),
+						extension.BatchMemory: resource.NewScaledQuantity(50, 9),
+					},
+					ZoneResources: map[string]corev1.ResourceList{
+						util.GenNodeZoneName(0): {
+							extension.BatchCPU:    resource.MustParse("15000"),
+							extension.BatchMemory: resource.MustParse("30G"),
+						},
+						util.GenNodeZoneName(1): {
+							extension.BatchCPU:    resource.MustParse("10000"),
+							extension.BatchMemory: resource.MustParse("20G"),
+						},
+					},
+					Annotations: map[string]string{
+						extension.AnnotationCPUNormalizationRatio: "1.20",
+					},
+				},
+			},
+			wantErr: false,
+			wantField: &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node",
+				},
+				Status: corev1.NodeStatus{
+					Capacity: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("100"),
+						corev1.ResourceMemory: resource.MustParse("400Gi"),
+						extension.BatchCPU:    *resource.NewQuantity(30000, resource.DecimalSI),
+						extension.BatchMemory: *resource.NewScaledQuantity(50, 9),
+					},
+					Allocatable: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("100"),
+						corev1.ResourceMemory: resource.MustParse("380Gi"),
+						extension.BatchCPU:    *resource.NewQuantity(30000, resource.DecimalSI),
+						extension.BatchMemory: *resource.NewScaledQuantity(50, 9),
+					},
+				},
+			},
+			checkFunc: func(t *testing.T, client ctrlclient.Client) {
+				nrt := &topov1alpha1.NodeResourceTopology{}
+				err := client.Get(context.TODO(), types.NamespacedName{Name: "test-node"}, nrt)
+				assert.NoError(t, err)
+				expectedNRT := &topov1alpha1.NodeResourceTopology{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node",
+					},
+					Zones: topov1alpha1.ZoneList{
+						{
+							Name: util.GenNodeZoneName(0),
+							Type: util.NodeZoneType,
+							Resources: topov1alpha1.ResourceInfoList{
+								{
+									Name:        string(corev1.ResourceCPU),
+									Capacity:    resource.MustParse("50"),
+									Allocatable: resource.MustParse("50"),
+									Available:   resource.MustParse("50"),
+								},
+								{
+									Name:        string(extension.BatchCPU),
+									Capacity:    resource.MustParse("18000"),
+									Allocatable: resource.MustParse("18000"),
+									Available:   resource.MustParse("18000"),
+								},
+								{
+									Name:        string(extension.BatchMemory),
+									Capacity:    resource.MustParse("30G"),
+									Allocatable: resource.MustParse("30G"),
+									Available:   resource.MustParse("30G"),
+								},
+								{
+									Name:        string(corev1.ResourceMemory),
+									Capacity:    resource.MustParse("200Gi"),
+									Allocatable: resource.MustParse("200Gi"),
+									Available:   resource.MustParse("200Gi"),
+								},
+							},
+						},
+						{
+							Name: util.GenNodeZoneName(1),
+							Type: util.NodeZoneType,
+							Resources: topov1alpha1.ResourceInfoList{
+								{
+									Name:        string(corev1.ResourceCPU),
+									Capacity:    resource.MustParse("50"),
+									Allocatable: resource.MustParse("50"),
+									Available:   resource.MustParse("50"),
+								},
+								{
+									Name:        string(extension.BatchCPU),
+									Capacity:    resource.MustParse("12000"),
+									Allocatable: resource.MustParse("12000"),
+									Available:   resource.MustParse("12000"),
+								},
+								{
+									Name:        string(extension.BatchMemory),
+									Capacity:    resource.MustParse("20G"),
+									Allocatable: resource.MustParse("20G"),
+									Available:   resource.MustParse("20G"),
+								},
+								{
+									Name:        string(corev1.ResourceMemory),
+									Capacity:    resource.MustParse("180Gi"),
+									Allocatable: resource.MustParse("180Gi"),
+									Available:   resource.MustParse("180Gi"),
+								},
+							},
+						},
+					},
+				}
+				assert.Equal(t, len(expectedNRT.Zones), len(nrt.Zones))
+				for i := range expectedNRT.Zones {
+					assert.Equal(t, expectedNRT.Zones[i].Name, nrt.Zones[i].Name, fmt.Sprintf("zone %v", i))
+					assert.Equal(t, len(expectedNRT.Zones[i].Resources), len(nrt.Zones[i].Resources), fmt.Sprintf("zone %v", i))
+					for j := range expectedNRT.Zones[i].Resources {
+						assert.Equal(t, expectedNRT.Zones[i].Resources[j].Capacity.Value(), nrt.Zones[i].Resources[j].Capacity.Value(), fmt.Sprintf("zone %v, resource %v", i, j))
+						assert.Equal(t, expectedNRT.Zones[i].Resources[j].Allocatable.Value(), nrt.Zones[i].Resources[j].Allocatable.Value(), fmt.Sprintf("zone %v, resource %v", i, j))
+						assert.Equal(t, expectedNRT.Zones[i].Resources[j].Available.Value(), nrt.Zones[i].Resources[j].Available.Value(), fmt.Sprintf("zone %v, resource %v", i, j))
+					}
+				}
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			defer testPluginCleanup()
+			p := &Plugin{}
+			assert.Equal(t, PluginName, p.Name())
+			testOpt := &framework.Option{
+				Scheme:   testScheme,
+				Client:   fake.NewClientBuilder().WithScheme(testScheme).Build(),
+				Builder:  &builder.Builder{},
+				Recorder: &record.FakeRecorder{},
+			}
+			if tt.fields.client != nil {
+				testOpt.Client = tt.fields.client
+			}
+			err = p.Setup(testOpt)
+			assert.NoError(t, err)
+
+			gotErr := p.Execute(tt.args.strategy, tt.args.node, tt.args.nr)
+			assert.Equal(t, tt.wantErr, gotErr != nil, gotErr)
+			testingCorrectResourceList(t, &tt.wantField.Status.Capacity, &tt.args.node.Status.Capacity)
+			testingCorrectResourceList(t, &tt.wantField.Status.Allocatable, &tt.args.node.Status.Allocatable)
+			if tt.checkFunc != nil {
+				tt.checkFunc(t, testOpt.Client)
+			}
+		})
+	}
+}
+
 func TestPluginCalculate(t *testing.T) {
+	testScheme := runtime.NewScheme()
+	err := clientgoscheme.AddToScheme(testScheme)
+	assert.NoError(t, err)
+	err = slov1alpha1.AddToScheme(testScheme)
+	assert.NoError(t, err)
+	err = topov1alpha1.AddToScheme(testScheme)
+	assert.NoError(t, err)
 	memoryCalculateByReq := configuration.CalculateByPodRequest
+	type fields struct {
+		client  ctrlclient.Client
+		checkFn func(t *testing.T, client ctrlclient.Client)
+	}
 	type args struct {
 		strategy             *configuration.ColocationStrategy
 		node                 *corev1.Node
@@ -181,6 +994,7 @@ func TestPluginCalculate(t *testing.T) {
 	}
 	tests := []struct {
 		name    string
+		fields  fields
 		args    args
 		want    []framework.ResourceItem
 		wantErr bool
@@ -980,11 +1794,1074 @@ func TestPluginCalculate(t *testing.T) {
 			},
 			wantErr: false,
 		},
+		{
+			name: "calculate with pods QoS=LSE",
+			args: args{
+				strategy: &configuration.ColocationStrategy{
+					Enable:                        pointer.Bool(true),
+					CPUReclaimThresholdPercent:    pointer.Int64(65),
+					MemoryReclaimThresholdPercent: pointer.Int64(65),
+					DegradeTimeMinutes:            pointer.Int64(15),
+					UpdateTimeThresholdSeconds:    pointer.Int64(300),
+					ResourceDiffThreshold:         pointer.Float64(0.1),
+				},
+				node: &corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node1",
+					},
+					Status: makeNodeStat("100", "120G"),
+				},
+				podList: &corev1.PodList{
+					Items: []corev1.Pod{
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      "podProdLSE",
+								Namespace: "test",
+								Labels: map[string]string{
+									extension.LabelPodQoS: string(extension.QoSLSE),
+								},
+							},
+							Spec: corev1.PodSpec{
+								NodeName: "test-node1",
+								Containers: []corev1.Container{
+									{
+										Resources: makeResourceReq("10", "10G"),
+									},
+								},
+								// regarded as Prod by default
+							},
+							Status: corev1.PodStatus{
+								Phase: corev1.PodRunning,
+							},
+						},
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      "podProd1",
+								Namespace: "test",
+								// missing qos label
+							},
+							Spec: corev1.PodSpec{
+								NodeName: "test-node1",
+								Containers: []corev1.Container{
+									{
+										Resources: makeResourceReq("10", "10G"),
+									},
+								},
+								PriorityClassName: string(extension.PriorityProd),
+								Priority:          pointer.Int32(extension.PriorityProdValueMax),
+							},
+							Status: corev1.PodStatus{
+								Phase: corev1.PodRunning,
+							},
+						},
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      "podBatch",
+								Namespace: "test",
+								Labels: map[string]string{
+									extension.LabelPodQoS: string(extension.QoSBE),
+								},
+							},
+							Spec: corev1.PodSpec{
+								NodeName: "test-node1",
+								Containers: []corev1.Container{
+									{
+										Resources: makeResourceReq("10", "10G"),
+									},
+								},
+								// regarded as Batch by default
+							},
+							Status: corev1.PodStatus{
+								Phase: corev1.PodRunning,
+							},
+						},
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      "podMid",
+								Namespace: "test",
+								Labels: map[string]string{
+									extension.LabelPodQoS: string(extension.QoSBE),
+								},
+							},
+							Spec: corev1.PodSpec{
+								NodeName: "test-node1",
+								Containers: []corev1.Container{
+									{
+										Resources: makeResourceReq("10", "20G"),
+									}, {
+										Resources: makeResourceReq("10", "20G"),
+									},
+								},
+								PriorityClassName: string(extension.PriorityMid),
+								Priority:          pointer.Int32(extension.PriorityMidValueMin),
+							},
+							Status: corev1.PodStatus{
+								Phase: corev1.PodPending,
+							},
+						},
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      "podProd2",
+								Namespace: "test",
+								Labels:    map[string]string{},
+							},
+							Spec: corev1.PodSpec{
+								NodeName: "test-node1",
+								Containers: []corev1.Container{
+									{
+										Resources: makeResourceReq("10", "10G"),
+									},
+								},
+							},
+							Status: corev1.PodStatus{
+								Phase: corev1.PodSucceeded,
+							},
+						},
+					},
+				},
+				resourceMetrics: &framework.ResourceMetrics{
+					NodeMetric: &slov1alpha1.NodeMetric{
+						Status: slov1alpha1.NodeMetricStatus{
+							UpdateTime: &metav1.Time{Time: time.Now()},
+							NodeMetric: &slov1alpha1.NodeMetricInfo{
+								NodeUsage: slov1alpha1.ResourceMap{
+									ResourceList: makeResourceList("50", "55G"),
+								},
+								SystemUsage: slov1alpha1.ResourceMap{
+									ResourceList: corev1.ResourceList{
+										corev1.ResourceCPU:    resource.MustParse("7"),
+										corev1.ResourceMemory: resource.MustParse("12G"),
+									},
+								},
+							},
+							PodsMetric: []*slov1alpha1.PodMetricInfo{
+								genPodMetric("test", "podProdLSE", "5", "5G"),
+								genPodMetric("test", "podProd1", "6", "6G"),
+								genPodMetric("test", "podBatch", "10", "10G"),
+								genPodMetric("test", "podMid", "22", "22G"),
+							},
+						},
+					},
+				},
+			},
+			want: []framework.ResourceItem{
+				{
+					Name:     extension.BatchCPU,
+					Quantity: resource.NewQuantity(20000, resource.DecimalSI),
+					Message:  "batchAllocatable[CPU(Milli-Core)]:20000 = nodeAllocatable:100000 - nodeReservation:35000 - systemUsage:7000 - podHPUsed:38000",
+				},
+				{
+					Name:     extension.BatchMemory,
+					Quantity: resource.NewScaledQuantity(33, 9),
+					Message:  "batchAllocatable[Mem(GB)]:33 = nodeAllocatable:120 - nodeReservation:42 - systemUsage:12 - podHPUsed:33",
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "calculate with one NUMA-level resources",
+			fields: fields{
+				client: fake.NewClientBuilder().WithScheme(testScheme).WithObjects(&topov1alpha1.NodeResourceTopology{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node1",
+					},
+					TopologyPolicies: []string{string(topov1alpha1.None)},
+					Zones: topov1alpha1.ZoneList{
+						{
+							Name: util.GenNodeZoneName(0),
+							Type: util.NodeZoneType,
+							Resources: topov1alpha1.ResourceInfoList{
+								{
+									Name:        string(corev1.ResourceCPU),
+									Capacity:    resource.MustParse("100"),
+									Allocatable: resource.MustParse("100"),
+									Available:   resource.MustParse("100"),
+								},
+								{
+									Name:        string(corev1.ResourceMemory),
+									Capacity:    resource.MustParse("120G"),
+									Allocatable: resource.MustParse("120G"),
+									Available:   resource.MustParse("120G"),
+								},
+							},
+						},
+					},
+				}).Build(),
+			},
+			args: args{
+				strategy: &configuration.ColocationStrategy{
+					Enable:                        pointer.Bool(true),
+					CPUReclaimThresholdPercent:    pointer.Int64(65),
+					MemoryReclaimThresholdPercent: pointer.Int64(65),
+					DegradeTimeMinutes:            pointer.Int64(15),
+					UpdateTimeThresholdSeconds:    pointer.Int64(300),
+					ResourceDiffThreshold:         pointer.Float64(0.1),
+				},
+				node: &corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node1",
+					},
+					Status: makeNodeStat("100", "120G"),
+				},
+				podList: &corev1.PodList{
+					Items: []corev1.Pod{
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      "podProd",
+								Namespace: "test",
+								Labels: map[string]string{
+									extension.LabelPodQoS: string(extension.QoSLS),
+								},
+							},
+							Spec: corev1.PodSpec{
+								NodeName: "test-node1",
+								Containers: []corev1.Container{
+									{
+										Resources: makeResourceReq("10", "10G"),
+									},
+								},
+								// regarded as Prod by default
+							},
+							Status: corev1.PodStatus{
+								Phase: corev1.PodRunning,
+							},
+						},
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      "podProd1",
+								Namespace: "test",
+								// missing qos label
+							},
+							Spec: corev1.PodSpec{
+								NodeName: "test-node1",
+								Containers: []corev1.Container{
+									{
+										Resources: makeResourceReq("10", "10G"),
+									},
+								},
+								PriorityClassName: string(extension.PriorityProd),
+								Priority:          pointer.Int32(extension.PriorityProdValueMax),
+							},
+							Status: corev1.PodStatus{
+								Phase: corev1.PodRunning,
+							},
+						},
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      "podBatch",
+								Namespace: "test",
+								Labels: map[string]string{
+									extension.LabelPodQoS: string(extension.QoSBE),
+								},
+							},
+							Spec: corev1.PodSpec{
+								NodeName: "test-node1",
+								Containers: []corev1.Container{
+									{
+										Resources: makeResourceReq("10", "10G"),
+									},
+								},
+								// regarded as Batch by default
+							},
+							Status: corev1.PodStatus{
+								Phase: corev1.PodRunning,
+							},
+						},
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      "podMid",
+								Namespace: "test",
+								Labels: map[string]string{
+									extension.LabelPodQoS: string(extension.QoSBE),
+								},
+							},
+							Spec: corev1.PodSpec{
+								NodeName: "test-node1",
+								Containers: []corev1.Container{
+									{
+										Resources: makeResourceReq("10", "20G"),
+									}, {
+										Resources: makeResourceReq("10", "20G"),
+									},
+								},
+								PriorityClassName: string(extension.PriorityMid),
+								Priority:          pointer.Int32(extension.PriorityMidValueMin),
+							},
+							Status: corev1.PodStatus{
+								Phase: corev1.PodPending,
+							},
+						},
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      "podProd2",
+								Namespace: "test",
+								Labels:    map[string]string{},
+							},
+							Spec: corev1.PodSpec{
+								NodeName: "test-node1",
+								Containers: []corev1.Container{
+									{
+										Resources: makeResourceReq("10", "10G"),
+									},
+								},
+							},
+							Status: corev1.PodStatus{
+								Phase: corev1.PodSucceeded,
+							},
+						},
+					},
+				},
+				resourceMetrics: &framework.ResourceMetrics{
+					NodeMetric: &slov1alpha1.NodeMetric{
+						Status: slov1alpha1.NodeMetricStatus{
+							UpdateTime: &metav1.Time{Time: time.Now()},
+							NodeMetric: &slov1alpha1.NodeMetricInfo{
+								NodeUsage: slov1alpha1.ResourceMap{
+									ResourceList: makeResourceList("50", "55G"),
+								},
+								SystemUsage: slov1alpha1.ResourceMap{
+									ResourceList: corev1.ResourceList{
+										corev1.ResourceCPU:    resource.MustParse("7"),
+										corev1.ResourceMemory: resource.MustParse("12G"),
+									},
+								},
+							},
+							PodsMetric: []*slov1alpha1.PodMetricInfo{
+								genPodMetric("test", "podProd", "5", "5G"),
+								genPodMetric("test", "podProd1", "6", "6G"),
+								genPodMetric("test", "podBatch", "10", "10G"),
+								genPodMetric("test", "podMid", "22", "22G"),
+							},
+						},
+					},
+				},
+			},
+			want: []framework.ResourceItem{
+				{
+					Name:     extension.BatchCPU,
+					Quantity: resource.NewQuantity(25000, resource.DecimalSI),
+					Message:  "batchAllocatable[CPU(Milli-Core)]:25000 = nodeAllocatable:100000 - nodeReservation:35000 - systemUsage:7000 - podHPUsed:33000",
+					ZoneQuantity: map[string]resource.Quantity{
+						util.GenNodeZoneName(0): *resource.NewQuantity(25000, resource.DecimalSI),
+					},
+				},
+				{
+					Name:     extension.BatchMemory,
+					Quantity: resource.NewScaledQuantity(33, 9),
+					Message:  "batchAllocatable[Mem(GB)]:33 = nodeAllocatable:120 - nodeReservation:42 - systemUsage:12 - podHPUsed:33",
+					ZoneQuantity: map[string]resource.Quantity{
+						util.GenNodeZoneName(0): *resource.NewScaledQuantity(33, 9),
+					},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "calculate with multiple NUMA-level resources",
+			fields: fields{
+				client: fake.NewClientBuilder().WithScheme(testScheme).WithObjects(&topov1alpha1.NodeResourceTopology{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node1",
+					},
+					TopologyPolicies: []string{string(topov1alpha1.None)},
+					Zones: topov1alpha1.ZoneList{
+						{
+							Name: util.GenNodeZoneName(0),
+							Type: util.NodeZoneType,
+							Resources: topov1alpha1.ResourceInfoList{
+								{
+									Name:        string(corev1.ResourceCPU),
+									Capacity:    resource.MustParse("50"),
+									Allocatable: resource.MustParse("50"),
+									Available:   resource.MustParse("50"),
+								},
+								{
+									Name:        string(corev1.ResourceMemory),
+									Capacity:    resource.MustParse("62G"),
+									Allocatable: resource.MustParse("62G"),
+									Available:   resource.MustParse("62G"),
+								},
+							},
+						},
+						{
+							Name: util.GenNodeZoneName(1),
+							Type: util.NodeZoneType,
+							Resources: topov1alpha1.ResourceInfoList{
+								{
+									Name:        string(corev1.ResourceCPU),
+									Capacity:    resource.MustParse("50"),
+									Allocatable: resource.MustParse("50"),
+									Available:   resource.MustParse("50"),
+								},
+								{
+									Name:        string(corev1.ResourceMemory),
+									Capacity:    resource.MustParse("58G"),
+									Allocatable: resource.MustParse("58G"),
+									Available:   resource.MustParse("58G"),
+								},
+							},
+						},
+					},
+				}).Build(),
+			},
+			args: args{
+				strategy: &configuration.ColocationStrategy{
+					Enable:                        pointer.Bool(true),
+					CPUReclaimThresholdPercent:    pointer.Int64(65),
+					MemoryReclaimThresholdPercent: pointer.Int64(65),
+					DegradeTimeMinutes:            pointer.Int64(15),
+					UpdateTimeThresholdSeconds:    pointer.Int64(300),
+					ResourceDiffThreshold:         pointer.Float64(0.1),
+				},
+				node: &corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node1",
+					},
+					Status: makeNodeStat("100", "120G"),
+				},
+				podList: &corev1.PodList{
+					Items: []corev1.Pod{
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      "podProd",
+								Namespace: "test",
+								Labels: map[string]string{
+									extension.LabelPodQoS: string(extension.QoSLS),
+								},
+								Annotations: map[string]string{
+									extension.AnnotationResourceStatus: `{
+    "numaNodeResources": [
+        {
+            "node": 0
+        }
+    ]
+}`,
+								},
+							},
+							Spec: corev1.PodSpec{
+								NodeName: "test-node1",
+								Containers: []corev1.Container{
+									{
+										Resources: makeResourceReq("10", "10G"),
+									},
+								},
+								// regarded as Prod by default
+							},
+							Status: corev1.PodStatus{
+								Phase: corev1.PodRunning,
+							},
+						},
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      "podProd1",
+								Namespace: "test",
+								// missing qos label
+							},
+							Spec: corev1.PodSpec{
+								NodeName: "test-node1",
+								Containers: []corev1.Container{
+									{
+										Resources: makeResourceReq("10", "10G"),
+									},
+								},
+								PriorityClassName: string(extension.PriorityProd),
+								Priority:          pointer.Int32(extension.PriorityProdValueMax),
+							},
+							Status: corev1.PodStatus{
+								Phase: corev1.PodRunning,
+							},
+						},
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      "podBatch",
+								Namespace: "test",
+								Labels: map[string]string{
+									extension.LabelPodQoS: string(extension.QoSBE),
+								},
+							},
+							Spec: corev1.PodSpec{
+								NodeName: "test-node1",
+								Containers: []corev1.Container{
+									{
+										Resources: makeResourceReq("10", "10G"),
+									},
+								},
+								// regarded as Batch by default
+							},
+							Status: corev1.PodStatus{
+								Phase: corev1.PodRunning,
+							},
+						},
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      "podMid",
+								Namespace: "test",
+								Labels: map[string]string{
+									extension.LabelPodQoS: string(extension.QoSBE),
+								},
+							},
+							Spec: corev1.PodSpec{
+								NodeName: "test-node1",
+								Containers: []corev1.Container{
+									{
+										Resources: makeResourceReq("10", "20G"),
+									}, {
+										Resources: makeResourceReq("10", "20G"),
+									},
+								},
+								PriorityClassName: string(extension.PriorityMid),
+								Priority:          pointer.Int32(extension.PriorityMidValueMin),
+							},
+							Status: corev1.PodStatus{
+								Phase: corev1.PodPending,
+							},
+						},
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      "podProd2",
+								Namespace: "test",
+								Labels:    map[string]string{},
+							},
+							Spec: corev1.PodSpec{
+								NodeName: "test-node1",
+								Containers: []corev1.Container{
+									{
+										Resources: makeResourceReq("10", "10G"),
+									},
+								},
+							},
+							Status: corev1.PodStatus{
+								Phase: corev1.PodSucceeded,
+							},
+						},
+					},
+				},
+				resourceMetrics: &framework.ResourceMetrics{
+					NodeMetric: &slov1alpha1.NodeMetric{
+						Status: slov1alpha1.NodeMetricStatus{
+							UpdateTime: &metav1.Time{Time: time.Now()},
+							NodeMetric: &slov1alpha1.NodeMetricInfo{
+								NodeUsage: slov1alpha1.ResourceMap{
+									ResourceList: makeResourceList("50", "55G"),
+								},
+								SystemUsage: slov1alpha1.ResourceMap{
+									ResourceList: corev1.ResourceList{
+										corev1.ResourceCPU:    resource.MustParse("7"),
+										corev1.ResourceMemory: resource.MustParse("12G"),
+									},
+								},
+							},
+							PodsMetric: []*slov1alpha1.PodMetricInfo{
+								genPodMetric("test", "podProd", "5", "5G"),
+								genPodMetric("test", "podProd1", "6", "6G"),
+								genPodMetric("test", "podBatch", "10", "10G"),
+								genPodMetric("test", "podMid", "22", "22G"),
+							},
+						},
+					},
+				},
+			},
+			want: []framework.ResourceItem{
+				{
+					Name:     extension.BatchCPU,
+					Quantity: resource.NewQuantity(25000, resource.DecimalSI),
+					Message:  "batchAllocatable[CPU(Milli-Core)]:25000 = nodeAllocatable:100000 - nodeReservation:35000 - systemUsage:7000 - podHPUsed:33000",
+					ZoneQuantity: map[string]resource.Quantity{
+						util.GenNodeZoneName(0): *resource.NewQuantity(10000, resource.DecimalSI), // 50 - 17.5 - 3.5 - (14 + 5)
+						util.GenNodeZoneName(1): *resource.NewQuantity(15000, resource.DecimalSI), // 50 - 17.5 - 3.5 - 14
+					},
+				},
+				{
+					Name:     extension.BatchMemory,
+					Quantity: resource.NewScaledQuantity(33, 9),
+					Message:  "batchAllocatable[Mem(GB)]:33 = nodeAllocatable:120 - nodeReservation:42 - systemUsage:12 - podHPUsed:33",
+					ZoneQuantity: map[string]resource.Quantity{
+						util.GenNodeZoneName(0): *resource.NewScaledQuantity(15300, 6), // 62 - 21.7(62*0.35) - 6 - (14 + 5)
+						util.GenNodeZoneName(1): *resource.NewScaledQuantity(17700, 6), // 58 - 20.3(58*0.35) - 6 - 14
+					},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "calculate with memory not over-committed, LSE pods and NUMA-level resources",
+			fields: fields{
+				client: fake.NewClientBuilder().WithScheme(testScheme).WithObjects(&topov1alpha1.NodeResourceTopology{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node1",
+					},
+					TopologyPolicies: []string{string(topov1alpha1.None)},
+					Zones: topov1alpha1.ZoneList{
+						{
+							Name: util.GenNodeZoneName(0),
+							Type: util.NodeZoneType,
+							Resources: topov1alpha1.ResourceInfoList{
+								{
+									Name:        string(corev1.ResourceCPU),
+									Capacity:    resource.MustParse("50"),
+									Allocatable: resource.MustParse("50"),
+									Available:   resource.MustParse("50"),
+								},
+								{
+									Name:        string(corev1.ResourceMemory),
+									Capacity:    resource.MustParse("62G"),
+									Allocatable: resource.MustParse("62G"),
+									Available:   resource.MustParse("62G"),
+								},
+							},
+						},
+						{
+							Name: util.GenNodeZoneName(1),
+							Type: util.NodeZoneType,
+							Resources: topov1alpha1.ResourceInfoList{
+								{
+									Name:        string(corev1.ResourceCPU),
+									Capacity:    resource.MustParse("50"),
+									Allocatable: resource.MustParse("50"),
+									Available:   resource.MustParse("50"),
+								},
+								{
+									Name:        string(corev1.ResourceMemory),
+									Capacity:    resource.MustParse("58G"),
+									Allocatable: resource.MustParse("58G"),
+									Available:   resource.MustParse("58G"),
+								},
+							},
+						},
+					},
+				}).Build(),
+			},
+			args: args{
+				strategy: &configuration.ColocationStrategy{
+					Enable:                        pointer.Bool(true),
+					CPUReclaimThresholdPercent:    pointer.Int64(65),
+					MemoryReclaimThresholdPercent: pointer.Int64(65),
+					MemoryCalculatePolicy:         &memoryCalculateByReq,
+					DegradeTimeMinutes:            pointer.Int64(15),
+					UpdateTimeThresholdSeconds:    pointer.Int64(300),
+					ResourceDiffThreshold:         pointer.Float64(0.1),
+				},
+				node: &corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node1",
+					},
+					Status: makeNodeStat("100", "120G"),
+				},
+				podList: &corev1.PodList{
+					Items: []corev1.Pod{
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      "podProdLSE",
+								Namespace: "test",
+								Labels: map[string]string{
+									extension.LabelPodQoS: string(extension.QoSLSE),
+								},
+								Annotations: map[string]string{
+									extension.AnnotationResourceStatus: `{
+    "cpuset": "2-5,10-13",
+    "numaNodeResources": [
+        {
+            "node": 0
+        }
+    ]
+}`,
+								},
+							},
+							Spec: corev1.PodSpec{
+								NodeName: "test-node1",
+								Containers: []corev1.Container{
+									{
+										Resources: makeResourceReq("10", "10G"),
+									},
+								},
+								// regarded as Prod by default
+							},
+							Status: corev1.PodStatus{
+								Phase: corev1.PodRunning,
+							},
+						},
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      "podProd1",
+								Namespace: "test",
+								// missing qos label
+							},
+							Spec: corev1.PodSpec{
+								NodeName: "test-node1",
+								Containers: []corev1.Container{
+									{
+										Resources: makeResourceReq("10", "10G"),
+									},
+								},
+								PriorityClassName: string(extension.PriorityProd),
+								Priority:          pointer.Int32(extension.PriorityProdValueMax),
+							},
+							Status: corev1.PodStatus{
+								Phase: corev1.PodRunning,
+							},
+						},
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      "podBatch",
+								Namespace: "test",
+								Labels: map[string]string{
+									extension.LabelPodQoS: string(extension.QoSBE),
+								},
+							},
+							Spec: corev1.PodSpec{
+								NodeName: "test-node1",
+								Containers: []corev1.Container{
+									{
+										Resources: makeResourceReq("10", "10G"),
+									},
+								},
+								// regarded as Batch by default
+							},
+							Status: corev1.PodStatus{
+								Phase: corev1.PodRunning,
+							},
+						},
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      "podMid",
+								Namespace: "test",
+								Labels: map[string]string{
+									extension.LabelPodQoS: string(extension.QoSBE),
+								},
+							},
+							Spec: corev1.PodSpec{
+								NodeName: "test-node1",
+								Containers: []corev1.Container{
+									{
+										Resources: makeResourceReq("10", "20G"),
+									},
+									{
+										Resources: makeResourceReq("10", "20G"),
+									},
+								},
+								PriorityClassName: string(extension.PriorityMid),
+								Priority:          pointer.Int32(extension.PriorityMidValueMin),
+							},
+							Status: corev1.PodStatus{
+								Phase: corev1.PodPending,
+							},
+						},
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      "podProd2",
+								Namespace: "test",
+								Labels:    map[string]string{},
+							},
+							Spec: corev1.PodSpec{
+								NodeName: "test-node1",
+								Containers: []corev1.Container{
+									{
+										Resources: makeResourceReq("10", "10G"),
+									},
+								},
+							},
+							Status: corev1.PodStatus{
+								Phase: corev1.PodSucceeded,
+							},
+						},
+					},
+				},
+				resourceMetrics: &framework.ResourceMetrics{
+					NodeMetric: &slov1alpha1.NodeMetric{
+						Status: slov1alpha1.NodeMetricStatus{
+							UpdateTime: &metav1.Time{Time: time.Now()},
+							NodeMetric: &slov1alpha1.NodeMetricInfo{
+								NodeUsage: slov1alpha1.ResourceMap{
+									ResourceList: makeResourceList("50", "55G"),
+								},
+								SystemUsage: slov1alpha1.ResourceMap{
+									ResourceList: corev1.ResourceList{
+										corev1.ResourceCPU:    resource.MustParse("7"),
+										corev1.ResourceMemory: resource.MustParse("12G"),
+									},
+								},
+							},
+							PodsMetric: []*slov1alpha1.PodMetricInfo{
+								genPodMetric("test", "podProdLSE", "5", "5G"),
+								genPodMetric("test", "podProd1", "6", "6G"),
+								genPodMetric("test", "podBatch", "10", "10G"),
+								genPodMetric("test", "podMid", "22", "22G"),
+							},
+						},
+					},
+				},
+			},
+			want: []framework.ResourceItem{
+				{
+					Name:     extension.BatchCPU,
+					Quantity: resource.NewQuantity(20000, resource.DecimalSI),
+					Message:  "batchAllocatable[CPU(Milli-Core)]:20000 = nodeAllocatable:100000 - nodeReservation:35000 - systemUsage:7000 - podHPUsed:38000",
+					ZoneQuantity: map[string]resource.Quantity{
+						util.GenNodeZoneName(0): *resource.NewQuantity(5000, resource.DecimalSI),  // 50 - 17.5 - 3.5 - (14 + 10)
+						util.GenNodeZoneName(1): *resource.NewQuantity(15000, resource.DecimalSI), // 50 - 17.5 - 3.5 - 14
+					},
+				},
+				{
+					Name:     extension.BatchMemory,
+					Quantity: resource.NewScaledQuantity(18, 9),
+					Message:  "batchAllocatable[Mem(GB)]:18 = nodeAllocatable:120 - nodeReservation:42 - podHPRequest:60",
+					ZoneQuantity: map[string]resource.Quantity{
+						util.GenNodeZoneName(0): *resource.NewScaledQuantity(5300, 6),  // 62 - 21.7(62*0.35) - (25 + 10)
+						util.GenNodeZoneName(1): *resource.NewScaledQuantity(12700, 6), // 58 - 20.3(58*0.35) - 25
+					},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "calculate NUMA resources with memory not over-committed, missing metric LSE pod and dangling pod",
+			fields: fields{
+				client: fake.NewClientBuilder().WithScheme(testScheme).WithObjects(&topov1alpha1.NodeResourceTopology{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node1",
+					},
+					TopologyPolicies: []string{string(topov1alpha1.None)},
+					Zones: topov1alpha1.ZoneList{
+						{
+							Name: util.GenNodeZoneName(0),
+							Type: util.NodeZoneType,
+							Resources: topov1alpha1.ResourceInfoList{
+								{
+									Name:        string(corev1.ResourceCPU),
+									Capacity:    resource.MustParse("50"),
+									Allocatable: resource.MustParse("50"),
+									Available:   resource.MustParse("50"),
+								},
+								{
+									Name:        string(corev1.ResourceMemory),
+									Capacity:    resource.MustParse("62G"),
+									Allocatable: resource.MustParse("62G"),
+									Available:   resource.MustParse("62G"),
+								},
+							},
+						},
+						{
+							Name: util.GenNodeZoneName(1),
+							Type: util.NodeZoneType,
+							Resources: topov1alpha1.ResourceInfoList{
+								{
+									Name:        string(corev1.ResourceCPU),
+									Capacity:    resource.MustParse("50"),
+									Allocatable: resource.MustParse("50"),
+									Available:   resource.MustParse("50"),
+								},
+								{
+									Name:        string(corev1.ResourceMemory),
+									Capacity:    resource.MustParse("58G"),
+									Allocatable: resource.MustParse("58G"),
+									Available:   resource.MustParse("58G"),
+								},
+							},
+						},
+					},
+				}).Build(),
+			},
+			args: args{
+				strategy: &configuration.ColocationStrategy{
+					Enable:                        pointer.Bool(true),
+					CPUReclaimThresholdPercent:    pointer.Int64(65),
+					MemoryReclaimThresholdPercent: pointer.Int64(65),
+					MemoryCalculatePolicy:         &memoryCalculateByReq,
+					DegradeTimeMinutes:            pointer.Int64(15),
+					UpdateTimeThresholdSeconds:    pointer.Int64(300),
+					ResourceDiffThreshold:         pointer.Float64(0.1),
+				},
+				node: &corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node1",
+					},
+					Status: makeNodeStat("100", "120G"),
+				},
+				podList: &corev1.PodList{
+					Items: []corev1.Pod{
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      "podProdLSE",
+								Namespace: "test",
+								Labels: map[string]string{
+									extension.LabelPodQoS: string(extension.QoSLSE),
+								},
+								Annotations: map[string]string{
+									extension.AnnotationResourceStatus: `{
+    "cpuset": "2-5,10-13",
+    "numaNodeResources": [
+        {
+            "node": 0
+        }
+    ]
+}`,
+								},
+							},
+							Spec: corev1.PodSpec{
+								NodeName: "test-node1",
+								Containers: []corev1.Container{
+									{
+										Resources: makeResourceReq("10", "10G"),
+									},
+								},
+								// regarded as Prod by default
+							},
+							Status: corev1.PodStatus{
+								Phase: corev1.PodRunning,
+							},
+						},
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      "podProd1",
+								Namespace: "test",
+								// missing qos label
+							},
+							Spec: corev1.PodSpec{
+								NodeName: "test-node1",
+								Containers: []corev1.Container{
+									{
+										Resources: makeResourceReq("10", "10G"),
+									},
+								},
+								PriorityClassName: string(extension.PriorityProd),
+								Priority:          pointer.Int32(extension.PriorityProdValueMax),
+							},
+							Status: corev1.PodStatus{
+								Phase: corev1.PodRunning,
+							},
+						},
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      "podBatch",
+								Namespace: "test",
+								Labels: map[string]string{
+									extension.LabelPodQoS: string(extension.QoSBE),
+								},
+							},
+							Spec: corev1.PodSpec{
+								NodeName: "test-node1",
+								Containers: []corev1.Container{
+									{
+										Resources: makeResourceReq("10", "10G"),
+									},
+								},
+								// regarded as Batch by default
+							},
+							Status: corev1.PodStatus{
+								Phase: corev1.PodRunning,
+							},
+						},
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      "podMid",
+								Namespace: "test",
+								Labels: map[string]string{
+									extension.LabelPodQoS: string(extension.QoSBE),
+								},
+							},
+							Spec: corev1.PodSpec{
+								NodeName: "test-node1",
+								Containers: []corev1.Container{
+									{
+										Resources: makeResourceReq("10", "20G"),
+									},
+									{
+										Resources: makeResourceReq("10", "20G"),
+									},
+								},
+								PriorityClassName: string(extension.PriorityMid),
+								Priority:          pointer.Int32(extension.PriorityMidValueMin),
+							},
+							Status: corev1.PodStatus{
+								Phase: corev1.PodPending,
+							},
+						},
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      "podProd2",
+								Namespace: "test",
+								Labels:    map[string]string{},
+							},
+							Spec: corev1.PodSpec{
+								NodeName: "test-node1",
+								Containers: []corev1.Container{
+									{
+										Resources: makeResourceReq("10", "10G"),
+									},
+								},
+							},
+							Status: corev1.PodStatus{
+								Phase: corev1.PodSucceeded,
+							},
+						},
+					},
+				},
+				resourceMetrics: &framework.ResourceMetrics{
+					NodeMetric: &slov1alpha1.NodeMetric{
+						Status: slov1alpha1.NodeMetricStatus{
+							UpdateTime: &metav1.Time{Time: time.Now()},
+							NodeMetric: &slov1alpha1.NodeMetricInfo{
+								NodeUsage: slov1alpha1.ResourceMap{
+									ResourceList: makeResourceList("50", "55G"),
+								},
+								SystemUsage: slov1alpha1.ResourceMap{
+									ResourceList: corev1.ResourceList{
+										corev1.ResourceCPU:    resource.MustParse("7"),
+										corev1.ResourceMemory: resource.MustParse("12G"),
+									},
+								},
+							},
+							PodsMetric: []*slov1alpha1.PodMetricInfo{
+								genPodMetric("test", "podProd1", "6", "6G"),
+								genPodMetric("test", "podProd2", "2", "4G"), // dangling
+								genPodMetric("test", "podBatch", "10", "10G"),
+								genPodMetric("test", "podMid", "22", "22G"),
+							},
+						},
+					},
+				},
+			},
+			want: []framework.ResourceItem{
+				{
+					Name:     extension.BatchCPU,
+					Quantity: resource.NewQuantity(18000, resource.DecimalSI),
+					Message:  "batchAllocatable[CPU(Milli-Core)]:18000 = nodeAllocatable:100000 - nodeReservation:35000 - systemUsage:7000 - podHPUsed:40000",
+					ZoneQuantity: map[string]resource.Quantity{
+						util.GenNodeZoneName(0): *resource.NewQuantity(4000, resource.DecimalSI),  // 50 - 17.5 - 3.5 - (14 + 10 + 1)
+						util.GenNodeZoneName(1): *resource.NewQuantity(14000, resource.DecimalSI), // 50 - 17.5 - 3.5 - (14 + 1)
+					},
+				},
+				{
+					Name:     extension.BatchMemory,
+					Quantity: resource.NewScaledQuantity(18, 9),
+					Message:  "batchAllocatable[Mem(GB)]:18 = nodeAllocatable:120 - nodeReservation:42 - podHPRequest:60",
+					ZoneQuantity: map[string]resource.Quantity{
+						util.GenNodeZoneName(0): *resource.NewScaledQuantity(5300, 6),  // 62 - 21.7(62*0.35) - (25 + 10)
+						util.GenNodeZoneName(1): *resource.NewScaledQuantity(12700, 6), // 58 - 20.3(58*0.35) - 25
+					},
+				},
+			},
+			wantErr: false,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			defer testPluginCleanup()
 			p := &Plugin{}
+			assert.Equal(t, PluginName, p.Name())
+			testOpt := &framework.Option{
+				Scheme:   testScheme,
+				Client:   fake.NewClientBuilder().WithScheme(testScheme).Build(),
+				Builder:  &builder.Builder{},
+				Recorder: &record.FakeRecorder{},
+			}
+			if tt.fields.client != nil {
+				testOpt.Client = tt.fields.client
+			}
+			err = p.Setup(testOpt)
+			assert.NoError(t, err)
+
 			podList := tt.args.podList
 			if podList == nil {
 				podList = getTestPodList()
@@ -994,7 +2871,7 @@ func TestPluginCalculate(t *testing.T) {
 				resourceMetrics = getTestResourceMetrics()
 			}
 			got, gotErr := p.Calculate(tt.args.strategy, tt.args.node, podList, resourceMetrics)
-			assert.Equal(t, tt.wantErr, gotErr != nil)
+			assert.Equal(t, tt.wantErr, gotErr != nil, gotErr)
 			testingCorrectResourceItems(t, tt.want, got)
 		})
 	}
@@ -1121,116 +2998,43 @@ func TestPlugin_isDegradeNeeded(t *testing.T) {
 	}
 }
 
-func Test_getPodMetricUsage(t *testing.T) {
-	type args struct {
-		info *slov1alpha1.PodMetricInfo
-	}
-	tests := []struct {
-		name string
-		args args
-		want corev1.ResourceList
-	}{
-		{
-			name: "get correct scaled resource quantity",
-			args: args{
-				info: &slov1alpha1.PodMetricInfo{
-					PodUsage: slov1alpha1.ResourceMap{
-						ResourceList: corev1.ResourceList{
-							corev1.ResourceCPU:    resource.MustParse("4"),
-							corev1.ResourceMemory: resource.MustParse("10Gi"),
-							"unknown_resource":    resource.MustParse("1"),
-						},
-					},
-				},
-			},
-			want: makeResourceList("4", "10Gi"),
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := getPodMetricUsage(tt.args.info)
-			testingCorrectResourceList(t, &tt.want, &got)
-		})
-	}
-}
-
-func Test_getResourceListForCPUAndMemory(t *testing.T) {
-	type args struct {
-		rl corev1.ResourceList
-	}
-	tests := []struct {
-		name string
-		args args
-		want corev1.ResourceList
-	}{
-		{
-			name: "get correct scaled resource quantity",
-			args: args{
-				rl: corev1.ResourceList{
-					corev1.ResourceCPU:    resource.MustParse("40"),
-					corev1.ResourceMemory: resource.MustParse("80Gi"),
-					"unknown_resource":    resource.MustParse("10"),
-				},
-			},
-			want: makeResourceList("40", "80Gi"),
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := getResourceListForCPUAndMemory(tt.args.rl)
-			testingCorrectResourceList(t, &tt.want, &got)
-		})
-	}
-}
-
-func Test_getNodeReservation(t *testing.T) {
-	type args struct {
-		strategy *configuration.ColocationStrategy
-		node     *corev1.Node
-	}
-	tests := []struct {
-		name string
-		args args
-		want corev1.ResourceList
-	}{
-		{
-			name: "get correct reserved node resource quantity",
-			args: args{
-				strategy: &configuration.ColocationStrategy{
-					Enable:                        pointer.Bool(true),
-					CPUReclaimThresholdPercent:    pointer.Int64(65),
-					MemoryReclaimThresholdPercent: pointer.Int64(65),
-					DegradeTimeMinutes:            pointer.Int64(15),
-					UpdateTimeThresholdSeconds:    pointer.Int64(300),
-					ResourceDiffThreshold:         pointer.Float64(0.1),
-				},
-				node: &corev1.Node{
-					Status: makeNodeStat("100", "100Gi"),
-				},
-			},
-			want: makeResourceList("35", "35Gi"),
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := getNodeReservation(tt.args.strategy, tt.args.node)
-			testingCorrectResourceList(t, &tt.want, &got)
-		})
-	}
-}
-
 func testingCorrectResourceItems(t *testing.T, want, got []framework.ResourceItem) {
 	assert.Equal(t, len(want), len(got))
 	for i := range want {
 		qWant, qGot := want[i].Quantity, got[i].Quantity
 		want[i].Quantity, got[i].Quantity = nil, nil
+		var zoneQWant, zoneQGot map[string]resource.Quantity
+		if want[i].ZoneQuantity != nil {
+			zoneQWant, zoneQGot = want[i].ZoneQuantity, got[i].ZoneQuantity
+			want[i].ZoneQuantity, got[i].ZoneQuantity = nil, nil
+			assert.Equal(t, len(zoneQWant), len(zoneQGot))
+			for k := range zoneQWant {
+				zqWant, zqGot := zoneQWant[k], zoneQGot[k]
+				assert.Equal(t, (&zqWant).MilliValue(), (&zqGot).MilliValue(), fmt.Sprintf("item %v, zone %s", i, k))
+			}
+		}
 		assert.Equal(t, want[i], got[i], "equal fields for resource "+want[i].Name)
 		assert.Equal(t, qWant.MilliValue(), qGot.MilliValue(), "equal values for resource "+want[i].Name)
 		want[i].Quantity, got[i].Quantity = qWant, qGot
+		if zoneQWant != nil {
+			want[i].ZoneQuantity, got[i].ZoneQuantity = zoneQWant, zoneQGot
+		}
 	}
 }
 
 func testingCorrectResourceList(t *testing.T, want, got *corev1.ResourceList) {
 	assert.Equal(t, want.Cpu().MilliValue(), got.Cpu().MilliValue(), "should get correct cpu request")
 	assert.Equal(t, want.Memory().Value(), got.Memory().Value(), "should get correct memory request")
+	if _, ok := (*want)[extension.BatchCPU]; ok {
+		qWant, qGot := (*want)[extension.BatchCPU], (*got)[extension.BatchCPU]
+		assert.Equal(t, qWant.MilliValue(), qGot.MilliValue(), "should get correct batch-cpu")
+	}
+	if _, ok := (*want)[extension.BatchMemory]; ok {
+		qWant, qGot := (*want)[extension.BatchMemory], (*got)[extension.BatchMemory]
+		assert.Equal(t, qWant.Value(), qGot.Value(), "should get correct batch-memory")
+	}
+}
+
+func testPluginCleanup() {
+	client = nil
 }

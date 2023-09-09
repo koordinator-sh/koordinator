@@ -17,14 +17,22 @@ limitations under the License.
 package batchresource
 
 import (
+	"context"
 	"fmt"
 	"time"
 
+	topologyv1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/clock"
+	"k8s.io/apimachinery/pkg/util/sets"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/klog/v2"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	"github.com/koordinator-sh/koordinator/apis/configuration"
 	"github.com/koordinator-sh/koordinator/apis/extension"
@@ -36,14 +44,44 @@ import (
 
 const PluginName = "BatchResource"
 
-var ResourceNames = []corev1.ResourceName{extension.BatchCPU, extension.BatchMemory}
+var (
+	ResourceNames        = []corev1.ResourceName{extension.BatchCPU, extension.BatchMemory}
+	updateNRTResourceSet = sets.NewString(string(extension.BatchCPU), string(extension.BatchMemory))
+)
 
-var Clock clock.Clock = clock.RealClock{} // for testing
+var (
+	Clock          clock.Clock = clock.RealClock{} // for testing
+	client         ctrlclient.Client
+	nrtHandler     *NRTHandler
+	nrtSyncContext *framework.SyncContext
+)
 
+// Plugin does 2 things:
+// 1. calculate and update the extended resources of batch-cpu and batch-memory on the Node.
+// 2. calculate and update the zone resources of batch-cpu and batch-memory on the NodeResourceTopology.
 type Plugin struct{}
 
 func (p *Plugin) Name() string {
 	return PluginName
+}
+
+// +kubebuilder:rbac:groups=topology.node.k8s.io,resources=noderesourcetopologies,verbs=get;list;watch;create;update
+
+func (p *Plugin) Setup(opt *framework.Option) error {
+	client = opt.Client
+	nrtSyncContext = framework.NewSyncContext()
+
+	if err := topologyv1alpha1.AddToScheme(opt.Scheme); err != nil {
+		return fmt.Errorf("failed to add scheme for NodeResourceTopology, err: %w", err)
+	}
+	if err := topologyv1alpha1.AddToScheme(clientgoscheme.Scheme); err != nil {
+		return fmt.Errorf("failed to add client go scheme for NodeResourceTopology, err: %w", err)
+	}
+
+	nrtHandler = &NRTHandler{syncContext: nrtSyncContext}
+	opt.Builder = opt.Builder.Watches(&source.Kind{Type: &topologyv1alpha1.NodeResourceTopology{}}, nrtHandler)
+
+	return nil
 }
 
 func (p *Plugin) NeedSync(strategy *configuration.ColocationStrategy, oldNode, newNode *corev1.Node) (bool, string) {
@@ -62,9 +100,18 @@ func (p *Plugin) NeedSync(strategy *configuration.ColocationStrategy, oldNode, n
 }
 
 func (p *Plugin) Execute(strategy *configuration.ColocationStrategy, node *corev1.Node, nr *framework.NodeResource) error {
+	// prepare for node extended resources
 	for _, resourceName := range ResourceNames {
 		prepareNodeForResource(node, nr, resourceName)
 	}
+
+	// prepare for zone resources
+	// TODO: move the NRT update into framework
+	err := p.prepareForNodeResourceTopology(strategy, node, nr)
+	if err != nil {
+		return fmt.Errorf("failed to prepare for NRT, err: %w", err)
+	}
+
 	return nil
 }
 
@@ -99,6 +146,11 @@ func (p *Plugin) Calculate(strategy *configuration.ColocationStrategy, node *cor
 			"degrade node resource because of abnormal nodeMetric, reason: degradedByBatchResource"), nil
 	}
 
+	return p.calculate(strategy, node, podList, resourceMetrics)
+}
+
+func (p *Plugin) calculate(strategy *configuration.ColocationStrategy, node *corev1.Node, podList *corev1.PodList,
+	resourceMetrics *framework.ResourceMetrics) ([]framework.ResourceItem, error) {
 	// compute the requests and usages according to the pods' priority classes.
 	// HP means High-Priority (i.e. not Batch or Free) pods
 	podHPRequest := util.NewZeroResourceList()
@@ -129,17 +181,20 @@ func (p *Plugin) Calculate(strategy *configuration.ColocationStrategy, node *cor
 		}
 
 		// count the high-priority usage
-		priorityClass := extension.GetPodPriorityClassWithDefault(pod)
 		podRequest := util.GetPodRequest(pod, corev1.ResourceCPU, corev1.ResourceMemory)
-		isPodHighPriority := priorityClass != extension.PriorityBatch && priorityClass != extension.PriorityFree
-		if !isPodHighPriority {
+		if priority := extension.GetPodPriorityClassWithDefault(pod); priority == extension.PriorityBatch ||
+			priority == extension.PriorityFree { // ignore LP pods
 			continue
 		}
+
 		podHPRequest = quotav1.Add(podHPRequest, podRequest)
-		if hasMetric {
-			podHPUsed = quotav1.Add(podHPUsed, getPodMetricUsage(podMetric))
-		} else {
+		if !hasMetric {
 			podHPUsed = quotav1.Add(podHPUsed, podRequest)
+		} else if qos := extension.GetPodQoSClassWithDefault(pod); qos == extension.QoSLSE {
+			// NOTE: Currently qos=LSE pods does not reclaim CPU resource.
+			podHPUsed = quotav1.Add(podHPUsed, mixResourceListCPUAndMemory(podRequest, getPodMetricUsage(podMetric)))
+		} else {
+			podHPUsed = quotav1.Add(podHPUsed, getPodMetricUsage(podMetric))
 		}
 	}
 
@@ -150,64 +205,161 @@ func (p *Plugin) Calculate(strategy *configuration.ColocationStrategy, node *cor
 		"cpu", podUnknownPriorityUsed.Cpu().String(), "memory", podUnknownPriorityUsed.Memory().String())
 
 	nodeAllocatable := getNodeAllocatable(node)
-	nodeReservation := getNodeReservation(strategy, node)
+	nodeReservation := getNodeReservation(strategy, nodeAllocatable)
 
 	// System.Used = max(Node.Used - Pod(All).Used, Node.Anno.Reserved)
 	systemUsed := getResourceListForCPUAndMemory(nodeMetric.Status.NodeMetric.SystemUsage.ResourceList)
 	nodeAnnoReserved := util.GetNodeReservationFromAnnotation(node.Annotations)
 	systemUsed = quotav1.Max(systemUsed, nodeAnnoReserved)
 
-	batchAllocatable, cpuMsg, memMsg := calculateBatchResourceByPolicy(strategy, node, nodeAllocatable,
-		nodeReservation, systemUsed, podHPRequest, podHPUsed)
+	batchAllocatable, cpuMsg, memMsg := calculateBatchResourceByPolicy(strategy, nodeAllocatable, nodeReservation,
+		systemUsed, podHPRequest, podHPUsed)
 
 	metrics.RecordNodeExtendedResourceAllocatableInternal(node, string(extension.BatchCPU), metrics.UnitInteger, float64(batchAllocatable.Cpu().MilliValue())/1000)
 	metrics.RecordNodeExtendedResourceAllocatableInternal(node, string(extension.BatchMemory), metrics.UnitByte, float64(batchAllocatable.Memory().Value()))
 	klog.V(6).InfoS("calculate batch resource for node", "node", node.Name, "batch resource",
 		batchAllocatable, "cpu", cpuMsg, "memory", memMsg)
 
+	// calculate NUMA-level batch resources on NodeResourceTopology
+	batchZoneCPU, batchZoneMemory, err := p.calculateOnNUMALevel(strategy, node, podList, resourceMetrics)
+	if err != nil {
+		klog.ErrorS(err, "failed to calculate batch resource for NRT", "node", node.Name)
+	}
+
 	return []framework.ResourceItem{
 		{
-			Name:     extension.BatchCPU,
-			Quantity: resource.NewQuantity(batchAllocatable.Cpu().MilliValue(), resource.DecimalSI),
-			Message:  cpuMsg,
+			Name:         extension.BatchCPU,
+			Quantity:     resource.NewQuantity(batchAllocatable.Cpu().MilliValue(), resource.DecimalSI),
+			ZoneQuantity: batchZoneCPU,
+			Message:      cpuMsg,
 		},
 		{
-			Name:     extension.BatchMemory,
-			Quantity: batchAllocatable.Memory(),
-			Message:  memMsg,
+			Name:         extension.BatchMemory,
+			Quantity:     batchAllocatable.Memory(),
+			ZoneQuantity: batchZoneMemory,
+			Message:      memMsg,
 		},
 	}, nil
 }
 
-func calculateBatchResourceByPolicy(strategy *configuration.ColocationStrategy, node *corev1.Node,
-	nodeAllocatable, nodeReserve, systemUsed, podHPReq, podHPUsed corev1.ResourceList) (corev1.ResourceList, string, string) {
-	// Node(Batch).Alloc = Node.Total - Node.Reserved - System.Used - Pod(Prod/Mid).Used
-	batchAllocatableByUsage := quotav1.Max(quotav1.Subtract(quotav1.Subtract(quotav1.Subtract(
-		nodeAllocatable, nodeReserve), systemUsed), podHPUsed), util.NewZeroResourceList())
-
-	// Node(Batch).Alloc = Node.Total - Node.Reserved - Pod(Prod/Mid).Request
-	batchAllocatableByRequest := quotav1.Max(quotav1.Subtract(quotav1.Subtract(nodeAllocatable, nodeReserve),
-		podHPReq), util.NewZeroResourceList())
-
-	batchAllocatable := batchAllocatableByUsage
-	cpuMsg := fmt.Sprintf("batchAllocatable[CPU(Milli-Core)]:%v = nodeAllocatable:%v - nodeReservation:%v - systemUsage:%v - podHPUsed:%v",
-		batchAllocatable.Cpu().MilliValue(), nodeAllocatable.Cpu().MilliValue(), nodeReserve.Cpu().MilliValue(),
-		systemUsed.Cpu().MilliValue(), podHPUsed.Cpu().MilliValue())
-
-	var memMsg string
-	if strategy != nil && strategy.MemoryCalculatePolicy != nil && *strategy.MemoryCalculatePolicy == configuration.CalculateByPodRequest {
-		batchAllocatable[corev1.ResourceMemory] = *batchAllocatableByRequest.Memory()
-		memMsg = fmt.Sprintf("batchAllocatable[Mem(GB)]:%v = nodeAllocatable:%v - nodeReservation:%v - podHPRequest:%v",
-			batchAllocatable.Memory().ScaledValue(resource.Giga), nodeAllocatable.Memory().ScaledValue(resource.Giga),
-			nodeReserve.Memory().ScaledValue(resource.Giga), podHPReq.Memory().ScaledValue(resource.Giga))
-	} else { // use CalculatePolicy "usage" by default
-		memMsg = fmt.Sprintf("batchAllocatable[Mem(GB)]:%v = nodeAllocatable:%v - nodeReservation:%v - systemUsage:%v - podHPUsed:%v",
-			batchAllocatable.Memory().ScaledValue(resource.Giga), nodeAllocatable.Memory().ScaledValue(resource.Giga),
-			nodeReserve.Memory().ScaledValue(resource.Giga), systemUsed.Memory().ScaledValue(resource.Giga),
-			podHPUsed.Memory().ScaledValue(resource.Giga))
+func (p *Plugin) calculateOnNUMALevel(strategy *configuration.ColocationStrategy, node *corev1.Node, podList *corev1.PodList,
+	resourceMetrics *framework.ResourceMetrics) (map[string]resource.Quantity, map[string]resource.Quantity, error) {
+	nrt := &topologyv1alpha1.NodeResourceTopology{}
+	err := client.Get(context.TODO(), types.NamespacedName{Name: node.Name}, nrt)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			klog.V(6).Infof("skip calculate batch resources for NRT, NRT not found, node %s", node.Name)
+			return nil, nil, nil
+		}
+		return nil, nil, fmt.Errorf("failed to get NodeResourceTopology for batch resource, err: %w", err)
+	}
+	if !isNRTResourcesCreated(nrt) {
+		klog.V(5).Infof("abort to calculate batch resources for NRT, resources %v not found, node %s",
+			checkedNRTResourceSet.List(), node.Name)
+		return nil, nil, nil
 	}
 
-	return batchAllocatable, cpuMsg, memMsg
+	// separate zone resources
+	// assert the zone is mapped into NUMA levels
+	// FIXME: Since NUMA-level metrics are not reported, we use an approximation here:
+	//        node reservation, system usage and unknown pods usage are the same in each zones.
+	zoneNum := len(nrt.Zones)
+	zoneIdxMap := map[int]string{}
+	nodeMetric := resourceMetrics.NodeMetric
+	nodeZoneAllocatable := make([]corev1.ResourceList, zoneNum)
+	nodeZoneReserve := make([]corev1.ResourceList, zoneNum)
+	systemZoneUsed := make([]corev1.ResourceList, zoneNum)
+	podUnknownPriorityZoneUsed := make([]corev1.ResourceList, zoneNum)
+	podHPZoneRequested := make([]corev1.ResourceList, zoneNum)
+	podHPZoneUsed := make([]corev1.ResourceList, zoneNum)
+	batchZoneAllocatable := make([]corev1.ResourceList, zoneNum)
+
+	systemUsed := getResourceListForCPUAndMemory(nodeMetric.Status.NodeMetric.SystemUsage.ResourceList)
+	nodeAnnoReserved := util.GetNodeReservationFromAnnotation(node.Annotations)
+	systemUsed = quotav1.Max(systemUsed, nodeAnnoReserved)
+	for i, zone := range nrt.Zones {
+		zoneIdxMap[i] = zone.Name
+		nodeZoneAllocatable[i] = corev1.ResourceList{}
+		podUnknownPriorityZoneUsed[i] = util.NewZeroResourceList()
+		podHPZoneRequested[i] = util.NewZeroResourceList()
+		podHPZoneUsed[i] = util.NewZeroResourceList()
+		for _, resourceInfo := range zone.Resources {
+			if checkedNRTResourceSet.Has(resourceInfo.Name) {
+				nodeZoneAllocatable[i][corev1.ResourceName(resourceInfo.Name)] = resourceInfo.Allocatable.DeepCopy()
+			}
+		}
+		nodeZoneReserve[i] = getNodeReservation(strategy, nodeZoneAllocatable[i])
+		systemZoneUsed[i] = divideResourceList(systemUsed, float64(zoneNum))
+	}
+	podMetricMap := make(map[string]*slov1alpha1.PodMetricInfo)
+	podMetricInList := map[string]struct{}{}
+	for _, podMetric := range nodeMetric.Status.PodsMetric {
+		podMetricMap[util.GetPodMetricKey(podMetric)] = podMetric
+	}
+	for i := range podList.Items {
+		pod := &podList.Items[i]
+		if pod.Status.Phase != corev1.PodRunning && pod.Status.Phase != corev1.PodPending {
+			continue
+		}
+
+		// check if the pod has metrics
+		podKey := util.GetPodKey(pod)
+		podMetric, hasMetric := podMetricMap[podKey]
+		podRequest := util.GetPodRequest(pod, corev1.ResourceCPU, corev1.ResourceMemory)
+		var podUsage corev1.ResourceList
+		var podZoneRequests, podZoneUsages []corev1.ResourceList
+		if hasMetric {
+			podMetricInList[podKey] = struct{}{}
+			podUsage = getPodMetricUsage(podMetric)
+			podZoneRequests, podZoneUsages = getPodNUMARequestAndUsage(pod, podRequest, podUsage, zoneNum)
+		} else {
+			podUsage = podRequest
+			podZoneRequests, podZoneUsages = getPodNUMARequestAndUsage(pod, podRequest, podUsage, zoneNum)
+		}
+
+		// count the high-priority usage
+		if priority := extension.GetPodPriorityClassWithDefault(pod); priority == extension.PriorityBatch ||
+			priority == extension.PriorityFree {
+			continue
+		}
+
+		podHPZoneRequested = addZoneResourceList(podHPZoneRequested, podZoneRequests, zoneNum)
+		if !hasMetric {
+			podHPZoneUsed = addZoneResourceList(podHPZoneUsed, podZoneRequests, zoneNum)
+		} else if qos := extension.GetPodQoSClassWithDefault(pod); qos == extension.QoSLSE {
+			// NOTE: Currently qos=LSE pods does not reclaim CPU resource.
+			podHPZoneUsed = addZoneResourceList(podHPZoneUsed, minxZoneResourceListCPUAndMemory(podZoneRequests, podZoneUsages, zoneNum), zoneNum)
+		} else {
+			podHPZoneUsed = addZoneResourceList(podHPZoneUsed, podZoneUsages, zoneNum)
+		}
+	}
+
+	// For the pods reported with metrics but not shown in the current list, count them into the HP used.
+	for _, podMetric := range nodeMetric.Status.PodsMetric {
+		podKey := util.GetPodMetricKey(podMetric)
+		if _, ok := podMetricInList[podKey]; ok {
+			continue
+		}
+		podNUMAUsage := getPodUnknownNUMAUsage(getPodMetricUsage(podMetric), zoneNum)
+		podUnknownPriorityZoneUsed = addZoneResourceList(podUnknownPriorityZoneUsed, podNUMAUsage, zoneNum)
+	}
+	podHPZoneUsed = addZoneResourceList(podHPZoneUsed, podUnknownPriorityZoneUsed, zoneNum)
+
+	batchZoneCPU := map[string]resource.Quantity{}
+	batchZoneMemory := map[string]resource.Quantity{}
+	var cpuMsg, memMsg string
+	for i := range batchZoneAllocatable {
+		zoneName := zoneIdxMap[i]
+		batchZoneAllocatable[i], cpuMsg, memMsg = calculateBatchResourceByPolicy(strategy, nodeZoneAllocatable[i],
+			nodeZoneReserve[i], systemZoneUsed[i], podHPZoneRequested[i], podHPZoneUsed[i])
+		klog.V(6).InfoS("calculate batch resource in NUMA level", "node", node.Name, "zone", zoneName,
+			"batch resource", batchZoneAllocatable[i], "cpu", cpuMsg, "memory", memMsg)
+
+		batchZoneCPU[zoneName] = *resource.NewQuantity(batchZoneAllocatable[i].Cpu().MilliValue(), resource.DecimalSI)
+		batchZoneMemory[zoneName] = *batchZoneAllocatable[i].Memory()
+	}
+
+	return batchZoneCPU, batchZoneMemory, nil
 }
 
 func (p *Plugin) isDegradeNeeded(strategy *configuration.ColocationStrategy, nodeMetric *slov1alpha1.NodeMetric, node *corev1.Node) bool {
@@ -230,52 +382,74 @@ func (p *Plugin) degradeCalculate(node *corev1.Node, message string) []framework
 	return p.Reset(node, message)
 }
 
-func prepareNodeForResource(node *corev1.Node, nr *framework.NodeResource, name corev1.ResourceName) {
-	if nr.Resets[name] {
-		delete(node.Status.Capacity, name)
-		delete(node.Status.Allocatable, name)
-	} else if q := nr.Resources[name]; q == nil { // if the specified resource has no quantity
-		delete(node.Status.Capacity, name)
-		delete(node.Status.Allocatable, name)
-	} else {
-		// NOTE: extended resource would be validated as an integer, so it should be checked before the update
-		if _, ok := q.AsInt64(); !ok {
-			klog.V(2).InfoS("node resource's quantity is not int64 and will be rounded",
-				"resource", name, "original", *q)
-			q.Set(q.Value())
+func (p *Plugin) prepareForNodeResourceTopology(strategy *configuration.ColocationStrategy, node *corev1.Node,
+	nr *framework.NodeResource) error {
+	if len(nr.ZoneResources) <= 0 {
+		klog.V(6).Infof("skip prepare batch resources for NRT, Zone resources is not calculated, node %s", node.Name)
+		return nil
+	}
+
+	var nrt *topologyv1alpha1.NodeResourceTopology
+	err := util.RetryOnConflictOrTooManyRequests(func() error {
+		nrt = &topologyv1alpha1.NodeResourceTopology{}
+		err1 := client.Get(context.TODO(), types.NamespacedName{Name: node.Name}, nrt)
+		if err1 != nil {
+			if errors.IsNotFound(err1) {
+				klog.V(6).Infof("skip prepare batch resources for NRT, NRT not found, node %s", node.Name)
+				return nil
+			}
+			return err1
 		}
-		node.Status.Capacity[name] = *q
-		node.Status.Allocatable[name] = *q
+		if !isNRTResourcesCreated(nrt) {
+			klog.V(5).Infof("abort to prepare batch resources for NRT, resources %v not found, node %s",
+				checkedNRTResourceSet.List(), node.Name)
+			return nil
+		}
+
+		nrt = nrt.DeepCopy()
+		needUpdate := p.updateNRTIfNeeded(strategy, node, nrt, nr)
+		if !needUpdate {
+			klog.V(6).Infof("skip prepare batch resources for NRT, ZoneList not changed, node %s", node.Name)
+			return nil
+		}
+
+		return client.Update(context.TODO(), nrt)
+	})
+	if err != nil {
+		metrics.RecordNodeResourceReconcileCount(false, "updateNodeResourceTopology")
+		klog.V(4).InfoS("failed to update NodeResourceTopology for batch resources",
+			"node", node.Name, "err", err)
+		return err
 	}
+	nrtSyncContext.Store(util.GenerateNodeKey(&node.ObjectMeta), Clock.Now())
+	metrics.RecordNodeResourceReconcileCount(true, "updateNodeResourceTopology")
+	klog.V(6).InfoS("update NodeResourceTopology successfully for batch resources",
+		"node", node.Name, "NRT", nrt)
+
+	return nil
 }
 
-// getPodMetricUsage gets pod usage from the PodMetricInfo
-func getPodMetricUsage(info *slov1alpha1.PodMetricInfo) corev1.ResourceList {
-	return getResourceListForCPUAndMemory(info.PodUsage.ResourceList)
-}
-
-// getNodeAllocatable gets node allocatable and filters out non-CPU and non-Mem resources
-func getNodeAllocatable(node *corev1.Node) corev1.ResourceList {
-	return getResourceListForCPUAndMemory(node.Status.Allocatable)
-}
-
-// getNodeReservation gets node-level safe-guarding reservation with the node's allocatable
-func getNodeReservation(strategy *configuration.ColocationStrategy, node *corev1.Node) corev1.ResourceList {
-	nodeAllocatable := getNodeAllocatable(node)
-	cpuReserveQuant := util.MultiplyMilliQuant(nodeAllocatable[corev1.ResourceCPU], getReserveRatio(*strategy.CPUReclaimThresholdPercent))
-	memReserveQuant := util.MultiplyQuant(nodeAllocatable[corev1.ResourceMemory], getReserveRatio(*strategy.MemoryReclaimThresholdPercent))
-
-	return corev1.ResourceList{
-		corev1.ResourceCPU:    cpuReserveQuant,
-		corev1.ResourceMemory: memReserveQuant,
+func (p *Plugin) updateNRTIfNeeded(strategy *configuration.ColocationStrategy, node *corev1.Node,
+	nrt *topologyv1alpha1.NodeResourceTopology, nr *framework.NodeResource) bool {
+	resourceDiffChanged := updateNRTZoneListIfNeeded(node, nrt.Zones, nr, *strategy.ResourceDiffThreshold)
+	if resourceDiffChanged {
+		klog.V(4).InfoS("NRT batch resources diff threshold reached, need sync",
+			"node", node.Name, "diffThreshold", *strategy.ResourceDiffThreshold, "ZoneList", nrt.Zones)
+		return true
+	} else {
+		klog.V(6).InfoS("skip updating NRT batch resources, since it differs too little",
+			"node", node.Name, "ResourceDiffThreshold", *strategy.ResourceDiffThreshold)
 	}
-}
 
-func getResourceListForCPUAndMemory(rl corev1.ResourceList) corev1.ResourceList {
-	return quotav1.Mask(rl, []corev1.ResourceName{corev1.ResourceCPU, corev1.ResourceMemory})
-}
+	// update time gap is bigger than UpdateTimeThresholdSeconds
+	lastUpdatedTime, ok := nrtSyncContext.Load(util.GenerateNodeKey(&node.ObjectMeta))
+	if !ok || Clock.Since(lastUpdatedTime) > time.Duration(*strategy.UpdateTimeThresholdSeconds)*time.Second {
+		klog.V(4).InfoS("NRT batch resources expired, need sync", "node", node.Name)
+		return true
+	} else {
+		klog.V(6).InfoS("skip updating NRT batch resources, since it's updated recently",
+			"node", node.Name, "UpdateTimeThresholdSeconds", *strategy.UpdateTimeThresholdSeconds)
+	}
 
-// getReserveRatio returns resource reserved ratio
-func getReserveRatio(reclaimThreshold int64) float64 {
-	return float64(100-reclaimThreshold) / 100.0
+	return false
 }
