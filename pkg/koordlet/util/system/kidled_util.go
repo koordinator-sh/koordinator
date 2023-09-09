@@ -17,7 +17,9 @@ limitations under the License.
 package system
 
 import (
+	"bufio"
 	"fmt"
+	"os"
 	"reflect"
 	"strconv"
 	"strings"
@@ -27,7 +29,7 @@ import (
 )
 
 var (
-	IsSupportColdMemory *atomic.Bool = atomic.NewBool(false)
+	isSupportColdMemory *atomic.Bool = atomic.NewBool(false)
 )
 
 type ColdPageInfoByKidled struct {
@@ -54,6 +56,11 @@ type ColdPageInfoByKidled struct {
 	Cfua                []uint64 `json:"cfua"`
 	Dfua                []uint64 `json:"dfua"`
 	Slab                []uint64 `json:"slab"`
+}
+
+type KidledConfig struct {
+	ScanPeriodInseconds uint32
+	UseHierarchy        uint8
 }
 
 func ParseMemoryIdlePageStats(content string) (*ColdPageInfoByKidled, error) {
@@ -133,25 +140,51 @@ func (i *ColdPageInfoByKidled) GetColdPageTotalBytes() uint64 {
 
 // check kidled and set var isSupportColdSupport
 func IsKidledSupport() bool {
-	IsSupportColdMemory.Store(false)
+	isSupportColdMemory.Store(false)
 	isSupport, str := KidledScanPeriodInSeconds.IsSupported("")
 	if !isSupport {
-		klog.V(4).Infof("file scan_period_in_seconds is not exist ", str)
-		return IsSupportColdMemory.Load()
+		klog.V(4).Infof("file scan_period_in_seconds is not exist %s", str)
+		return isSupportColdMemory.Load()
 	}
 	isSupport, str = KidledUseHierarchy.IsSupported("")
 	if !isSupport {
-		klog.V(4).Infof("file use_hierarchy is not exist ", str)
-		return IsSupportColdMemory.Load()
+		klog.V(4).Infof("file use_hierarchy is not exist %s", str)
+		return isSupportColdMemory.Load()
 	}
-	IsSupportColdMemory.Store(true)
-	return IsSupportColdMemory.Load()
+	isSupportColdMemory.Store(true)
+	return isSupportColdMemory.Load()
 }
 
 func GetIsSupportColdMemory() bool {
-	return IsSupportColdMemory.Load()
+	return isSupportColdMemory.Load()
 }
 
-// func GetKidledScanPeriodInSeconds() time.Duration {
-// 	return scanPeriodInSeconds.Load()
-// }
+func SetKidledScanPeriodInSeconds(period uint32) {
+	path := KidledScanPeriodInSeconds.Path("")
+	klog.V(4).Infof("scan_period_in_seconds file path: %s", path)
+	file, err := os.OpenFile(path, os.O_WRONLY|os.O_TRUNC, 0666)
+	if err != nil {
+		klog.V(4).Infof("open scan_period_in_seconds file err: %s", err)
+	}
+	defer file.Close()
+	write := bufio.NewWriter(file)
+	write.WriteString(fmt.Sprintf("%d", period))
+	write.Flush()
+}
+func SetKidledUseHierarchy(useHierarchy uint8) {
+	path := KidledUseHierarchy.Path("")
+	file, err := os.OpenFile(path, os.O_WRONLY|os.O_TRUNC, 0666)
+	if err != nil {
+		klog.V(4).Infof("open use_hierarchy file err:", err)
+	}
+	defer file.Close()
+	write := bufio.NewWriter(file)
+	write.WriteString(fmt.Sprintf("%d", useHierarchy))
+	write.Flush()
+}
+func NewDefaultKidledConfig() *KidledConfig {
+	return &KidledConfig{
+		ScanPeriodInseconds: 5,
+		UseHierarchy:        1,
+	}
+}

@@ -33,7 +33,7 @@ func Test_NewDefaultConfig(t *testing.T) {
 		CPICollectorInterval:             60 * time.Second,
 		PSICollectorInterval:             10 * time.Second,
 		CPICollectorTimeWindow:           10 * time.Second,
-		ColdPageCollectorInterval:        5 * time.Second,
+		ColdPageCollectorInterval:        1 * time.Second,
 	}
 	defaultConfig := NewDefaultConfig()
 	assert.Equal(t, expectConfig, defaultConfig)
@@ -96,6 +96,7 @@ func Test_InitFlags(t *testing.T) {
 				CPICollectorInterval:             tt.fields.CPICollectorInterval,
 				PSICollectorInterval:             tt.fields.PSICollectorInterval,
 				CPICollectorTimeWindow:           tt.fields.CPICollectorTimeWindow,
+				ColdPageCollectorInterval:        tt.fields.ColdPageCollectorInterval,
 			}
 			c := NewDefaultConfig()
 			c.InitFlags(tt.args.fs)

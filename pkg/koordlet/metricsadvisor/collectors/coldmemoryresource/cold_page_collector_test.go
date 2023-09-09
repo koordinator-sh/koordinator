@@ -49,27 +49,42 @@ func Test_NewColdPageCollector(t *testing.T) {
 	statesInformer := mock_statesinformer.NewMockStatesInformer(ctrl)
 	opt := &framework.Options{
 		Config: &framework.Config{
-			CollectResUsedInterval: 1 * time.Second,
+			ColdPageCollectorInterval: 1 * time.Second,
 		},
 		CgroupReader:   resourceexecutor.NewCgroupReader(),
 		StatesInformer: statesInformer,
 		MetricCache:    metricCache,
 	}
-	type args struct {
-		contentKidledScanPeriodInSeconds string
-		contentKidledUseHierarchy        string
+	type fields struct {
+		SetSysUtil func(helper *system.FileTestUtil)
 	}
 	tests := []struct {
 		name       string
-		args       args
+		fields     fields
 		want       framework.Collector
 		wantEnable bool
 	}{
 		{
-			name: "support kidled cold page collector",
-			args: args{contentKidledScanPeriodInSeconds: "120", contentKidledUseHierarchy: "1"},
+			name:       "os doesn't support cold page collector and return nonCollector",
+			want:       &nonColdPageCollector{},
+			wantEnable: false,
+		},
+		{
+			name:       "os doesn't support cold page collector and return nonCollector",
+			want:       &nonColdPageCollector{},
+			wantEnable: false,
+		},
+		{
+			name: "os support kidled cold page collector",
+			fields: fields{
+				SetSysUtil: func(helper *system.FileTestUtil) {
+					system.Conf.SysRootDir = filepath.Join(helper.TempDir, system.Conf.SysRootDir)
+					helper.SetResourcesSupported(true, system.KidledScanPeriodInSeconds)
+					helper.SetResourcesSupported(true, system.KidledUseHierarchy)
+				},
+			},
 			want: &kidledcoldPageCollector{
-				collectInterval: time.Duration(120),
+				collectInterval: opt.Config.ColdPageCollectorInterval,
 				cgroupReader:    opt.CgroupReader,
 				statesInformer:  opt.StatesInformer,
 				podFilter:       framework.DefaultPodFilter,
@@ -77,19 +92,16 @@ func Test_NewColdPageCollector(t *testing.T) {
 				metricDB:        opt.MetricCache,
 				started:         atomic.NewBool(false),
 			},
-			wantEnable: true,
-		},
-		{
-			name:       "don't support cold page collector and return nonCollector",
-			args:       args{contentKidledScanPeriodInSeconds: "0", contentKidledUseHierarchy: "-1"},
-			want:       &nonColdPageCollector{},
 			wantEnable: false,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			helper.WriteFileContents(system.KidledScanPeriodInSeconds.Path(""), tt.args.contentKidledScanPeriodInSeconds)
-			helper.WriteFileContents(system.KidledUseHierarchy.Path(""), tt.args.contentKidledUseHierarchy)
+			helper := system.NewFileTestUtil(t)
+			defer helper.Cleanup()
+			if tt.fields.SetSysUtil != nil {
+				tt.fields.SetSysUtil(helper)
+			}
 			got := New(opt)
 			assert.Equal(t, tt.want, got)
 			assert.Equal(t, tt.wantEnable, got.Enabled())

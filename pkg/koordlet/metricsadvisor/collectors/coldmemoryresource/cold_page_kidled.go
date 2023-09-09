@@ -18,6 +18,7 @@ package coldmemoryresource
 
 import (
 	"fmt"
+	"path/filepath"
 	"time"
 
 	"go.uber.org/atomic"
@@ -25,13 +26,17 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/klog/v2"
 
+	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor/framework"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	koordletutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
+
+var dockerpath string = "/docker/c04692092520e8536f83e56ee46ce14d716793277d67f9287cd2f16680959c96/"
 
 type kidledcoldPageCollector struct {
 	collectInterval time.Duration
@@ -52,7 +57,15 @@ func (k *kidledcoldPageCollector) Started() bool {
 }
 
 func (k *kidledcoldPageCollector) Enabled() bool {
-	return true
+	kidledEnabled := features.DefaultKoordletFeatureGate.Enabled(features.ColdPageCollector)
+	if kidledEnabled {
+		// set scan_period_in_seconds and use_hierarchy
+		// start kidled
+		kidledConfig := system.NewDefaultKidledConfig()
+		system.SetKidledScanPeriodInSeconds(kidledConfig.ScanPeriodInseconds)
+		system.SetKidledUseHierarchy(kidledConfig.UseHierarchy)
+	}
+	return kidledEnabled
 }
 
 func (k *kidledcoldPageCollector) Setup(c1 *framework.Context) {}
@@ -132,6 +145,7 @@ func (k *kidledcoldPageCollector) collectPodsColdPageInfo() ([]metriccache.Metri
 		}
 		collectTime := time.Now()
 		podCgroupDir := meta.CgroupDir
+		podCgroupDir = filepath.Join(dockerpath, podCgroupDir)
 		podColdPageBytes, err := k.cgroupReader.ReadMemoryColdPageUsage(podCgroupDir)
 		if err != nil {
 			klog.Errorf("can not get cold page info from memory.idle_page_stats file for pod %s/%s", pod.Namespace, pod.Name)
@@ -190,6 +204,7 @@ func (k *kidledcoldPageCollector) collectContainersColdPageInfo(meta *statesinfo
 				containerKey, err)
 			continue
 		}
+		containerCgroupDir = filepath.Join(dockerpath, containerCgroupDir)
 		containerColdPageBytes, err := k.cgroupReader.ReadMemoryColdPageUsage(containerCgroupDir)
 		if err != nil {
 			klog.Errorf("can not get cold page info from memory.idle_page_stats file for container %s", containerKey)
