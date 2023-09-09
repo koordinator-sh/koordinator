@@ -25,7 +25,7 @@ set -e
 
 make kustomize
 KUSTOMIZE=$(pwd)/bin/kustomize
-(cd config/manager && "${KUSTOMIZE}" edit set image controller="${IMG}")
+(cd config/manager && "${KUSTOMIZE}" edit set image manager="${IMG}")
 "${KUSTOMIZE}" build config/default | sed -e 's/imagePullPolicy: Always/imagePullPolicy: IfNotPresent/g' > /tmp/koordinator-kustomization.yaml
 echo -e "resources:\n- manager.yaml" > config/manager/kustomization.yaml
 kubectl apply -f /tmp/koordinator-kustomization.yaml

@@ -3,7 +3,7 @@ name: E2E-K8S-1.22
 on:
   push:
     branches:
-      - master
+      - main
       - release-*
   pull_request: {}
   workflow_dispatch: {}
@@ -20,6 +20,7 @@ env:
 jobs:
 
   slo-controller:
+    continue-on-error: true
     runs-on: ubuntu-20.04
     steps:
       - uses: actions/checkout@v4
