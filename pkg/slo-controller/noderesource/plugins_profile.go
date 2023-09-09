@@ -19,6 +19,7 @@ package noderesource
 import (
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/noderesource/framework"
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/noderesource/plugins/batchresource"
+	"github.com/koordinator-sh/koordinator/pkg/slo-controller/noderesource/plugins/cpunormalization"
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/noderesource/plugins/midresource"
 )
 
@@ -28,6 +29,7 @@ func init() {
 	// set default plugins
 	addPluginOption(&midresource.Plugin{}, true)
 	addPluginOption(&batchresource.Plugin{}, true)
+	addPluginOption(&cpunormalization.Plugin{}, true)
 }
 
 func addPlugins(filter framework.FilterFn) {
@@ -41,9 +43,12 @@ func addPlugins(filter framework.FilterFn) {
 
 var (
 	// SetupPlugins implement the setup for node resource plugin.
-	setupPlugins = []framework.SetupPlugin{}
+	setupPlugins = []framework.SetupPlugin{
+		&cpunormalization.Plugin{},
+	}
 	// NodePreparePlugin implements node resource preparing for the calculated results.
 	nodePreparePlugins = []framework.NodePreparePlugin{
+		&cpunormalization.Plugin{}, // should be first
 		&midresource.Plugin{},
 		&batchresource.Plugin{},
 	}
@@ -53,9 +58,12 @@ var (
 		&batchresource.Plugin{},
 	}
 	// NodeMetaSyncPlugin implements the check of node meta updating.
-	nodeMetaSyncPlugins = []framework.NodeMetaSyncPlugin{}
+	nodeMetaSyncPlugins = []framework.NodeMetaSyncPlugin{
+		&cpunormalization.Plugin{},
+	}
 	// ResourceCalculatePlugin implements resource counting and overcommitment algorithms.
 	resourceCalculatePlugins = []framework.ResourceCalculatePlugin{
+		&cpunormalization.Plugin{},
 		&midresource.Plugin{},
 		&batchresource.Plugin{},
 	}

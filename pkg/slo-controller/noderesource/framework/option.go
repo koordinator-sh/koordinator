@@ -20,13 +20,16 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
 type Option struct {
 	Client   client.Client
 	Recorder record.EventRecorder
 	Scheme   *runtime.Scheme
+	Builder  *builder.Builder
 }
 
 func NewOption() *Option {
@@ -37,6 +40,11 @@ func (o *Option) WithManager(mgr ctrl.Manager) *Option {
 	o.Client = mgr.GetClient()
 	o.Recorder = mgr.GetEventRecorderFor("noderesource")
 	o.Scheme = mgr.GetScheme()
+	return o
+}
+
+func (o *Option) WithControllerBuilder(b *builder.Builder) *Option {
+	o.Builder = b
 	return o
 }
 
@@ -53,6 +61,10 @@ func (o *Option) WithRecorder(r record.EventRecorder) *Option {
 func (o *Option) WithScheme(s *runtime.Scheme) *Option {
 	o.Scheme = s
 	return o
+}
+
+func (o *Option) CompleteController(r reconcile.Reconciler) error {
+	return o.Builder.Complete(r)
 }
 
 type FilterFn func(string) bool

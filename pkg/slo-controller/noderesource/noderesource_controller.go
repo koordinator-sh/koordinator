@@ -168,10 +168,6 @@ func Add(mgr ctrl.Manager) error {
 	// init plugins for NodeResource
 	addPlugins(isPluginEnabled)
 
-	// setup plugins
-	opt := framework.NewOption().WithManager(mgr)
-	framework.RunSetupExtenders(opt)
-
 	reconciler := &NodeResourceReconciler{
 		Recorder:        mgr.GetEventRecorderFor("noderesource-controller"),
 		Client:          mgr.GetClient(),
@@ -184,13 +180,20 @@ func Add(mgr ctrl.Manager) error {
 }
 
 func (r *NodeResourceReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	handler := config.NewColocationHandlerForConfigMapEvent(r.Client, *sloconfig.NewDefaultColocationCfg(), r.Recorder)
-	r.cfgCache = handler
-	return ctrl.NewControllerManagedBy(mgr).
+	cfgHandler := config.NewColocationHandlerForConfigMapEvent(r.Client, *sloconfig.NewDefaultColocationCfg(), r.Recorder)
+	r.cfgCache = cfgHandler
+
+	builder := ctrl.NewControllerManagedBy(mgr).
+		Named(Name). // avoid conflict with others reconciling `Node`
 		For(&corev1.Node{}).
 		Watches(&source.Kind{Type: &slov1alpha1.NodeMetric{}}, &EnqueueRequestForNodeMetric{syncContext: r.NodeSyncContext}).
-		Watches(&source.Kind{Type: &schedulingv1alpha1.Device{}}, &EnqueueRequestForDevice{syncContext: r.GPUSyncContext}).
-		Watches(&source.Kind{Type: &corev1.ConfigMap{}}, handler).
-		Named(Name). // avoid conflict with others reconciling `Node`
-		Complete(r)
+		Watches(&source.Kind{Type: &corev1.ConfigMap{}}, cfgHandler).
+		Watches(&source.Kind{Type: &schedulingv1alpha1.Device{}}, &EnqueueRequestForDevice{syncContext: r.GPUSyncContext})
+
+	// setup plugins
+	// allow plugins to mutate controller via the builder
+	opt := framework.NewOption().WithManager(mgr).WithControllerBuilder(builder)
+	framework.RunSetupExtenders(opt)
+
+	return opt.CompleteController(r)
 }

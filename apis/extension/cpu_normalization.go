@@ -22,11 +22,16 @@ import (
 	"strconv"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/utils/pointer"
 )
 
 const (
-	// AnnotationCPUNormalizationRatio denotes the cpu-normalization ratio of the node.
+	// AnnotationCPUNormalizationRatio denotes the cpu normalization ratio of the node.
 	AnnotationCPUNormalizationRatio = NodeDomainPrefix + "/cpu-normalization-ratio"
+
+	// LabelCPUNormalizationEnabled indicates whether the cpu normalization is enabled on the node.
+	// If both the label and node-level CPUNormalizationStrategy is set, the label overrides the strategy.
+	LabelCPUNormalizationEnabled = NodeDomainPrefix + "/cpu-normalization-enabled"
 
 	// AnnotationCPUBasicInfo denotes the basic CPU info of the node.
 	AnnotationCPUBasicInfo = NodeDomainPrefix + "/cpu-basic-info"
@@ -68,6 +73,21 @@ func SetCPUNormalizationRatio(node *corev1.Node, ratio float64) bool {
 
 	node.Annotations[AnnotationCPUNormalizationRatio] = s
 	return true
+}
+
+func GetCPUNormalizationEnabled(node *corev1.Node) (*bool, error) {
+	if node.Labels == nil {
+		return nil, nil
+	}
+	s, ok := node.Labels[LabelCPUNormalizationEnabled]
+	if !ok {
+		return nil, nil
+	}
+	v, err := strconv.ParseBool(s)
+	if err != nil {
+		return nil, fmt.Errorf("parse cpu normalization enabled failed, err: %w", err)
+	}
+	return pointer.Bool(v), nil
 }
 
 // CPUBasicInfo describes the cpu basic features and status.
