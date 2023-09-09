@@ -294,5 +294,39 @@ func TestPlugin_OnRootQuotaAddAndUpdate(t *testing.T) {
 	plugin.OnQuotaUpdate(rootQuota, copy)
 
 	assert.True(t, quotav1.Equals(createResourceList(200, 400), gqmA.GetClusterTotalResource()))
+}
 
+func TestPlugin_HandlerQuotaWhenRoot(t *testing.T) {
+	nodes := []*corev1.Node{
+		defaultCreateNodeWithLabels("node1", map[string]string{"topology.kubernetes.io/zone": "cn-hangzhou-a"}),
+		defaultCreateNodeWithLabels("node2", map[string]string{"topology.kubernetes.io/zone": "cn-hangzhou-a"}),
+		defaultCreateNodeWithLabels("node3", map[string]string{"topology.kubernetes.io/zone": "cn-hangzhou-b"}),
+	}
+
+	defer utilfeature.SetFeatureGateDuringTest(t, k8sfeature.DefaultMutableFeatureGate, koordfeatures.MultiQuotaTree, true)()
+	suit := newPluginTestSuit(t, nil)
+	p, err := suit.proxyNew(suit.elasticQuotaArgs, suit.Handle)
+	assert.Nil(t, err)
+	plugin := p.(*Plugin)
+
+	for _, node := range nodes {
+		plugin.OnNodeAdd(node)
+	}
+
+	assert.True(t, quotav1.Equals(createResourceList(300, 3000), plugin.groupQuotaManager.GetClusterTotalResource()))
+
+	rootQuota := plugin.addRootQuota("cn-hangzhou-a", "", 200, 2000, 200, 2000, 200, 2000, true, "", "tree-cn-hangzhou-a")
+	gqmA := plugin.GetGroupQuotaManagerForTree("tree-cn-hangzhou-a")
+
+	assert.True(t, quotav1.Equals(createResourceList(200, 2000), gqmA.GetClusterTotalResource()))
+	assert.True(t, quotav1.Equals(createResourceList(100, 1000), plugin.groupQuotaManager.GetClusterTotalResource()))
+
+	copy := rootQuota.DeepCopy()
+	copy.ResourceVersion = "12"
+	copy.Annotations[extension.AnnotationTotalResource] = fmt.Sprintf("{\"cpu\":%v, \"memory\":\"%v\"}", 250, 2500)
+
+	plugin.OnQuotaUpdate(rootQuota, copy)
+
+	assert.True(t, quotav1.Equals(createResourceList(250, 2500), gqmA.GetClusterTotalResource()))
+	assert.True(t, quotav1.Equals(createResourceList(50, 500), plugin.groupQuotaManager.GetClusterTotalResource()))
 }

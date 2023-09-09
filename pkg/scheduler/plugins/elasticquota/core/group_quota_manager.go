@@ -98,7 +98,7 @@ func (gqm *GroupQuotaManager) UpdateClusterTotalResource(deltaRes v1.ResourceLis
 	gqm.hierarchyUpdateLock.Lock()
 	defer gqm.hierarchyUpdateLock.Unlock()
 
-	klog.V(5).Infof("UpdateClusterResource deltaRes:%v", deltaRes)
+	klog.V(5).Infof("UpdateClusterResource tree: %v deltaRes:%v", gqm.treeID, deltaRes)
 	defaultQuota := gqm.getQuotaInfoByNameNoLock(extension.DefaultQuotaName)
 	if defaultQuota != nil {
 		defaultQuota.lock.Lock()
@@ -134,7 +134,7 @@ func (gqm *GroupQuotaManager) updateClusterTotalResourceNoLock(deltaRes v1.Resou
 	if !quotav1.IsZero(diffRes) {
 		gqm.totalResourceExceptSystemAndDefaultUsed = totalResNoSysOrDefault.DeepCopy()
 		gqm.runtimeQuotaCalculatorMap[extension.RootQuotaName].setClusterTotalResource(totalResNoSysOrDefault)
-		klog.V(5).Infof("UpdateClusterResource finish totalResourceExceptSystemAndDefaultUsed:%v", gqm.totalResourceExceptSystemAndDefaultUsed)
+		klog.V(5).Infof("UpdateClusterResource tree: %v, finish totalResourceExceptSystemAndDefaultUsed:%v", gqm.treeID, gqm.totalResourceExceptSystemAndDefaultUsed)
 	}
 }
 
@@ -145,19 +145,17 @@ func (gqm *GroupQuotaManager) GetClusterTotalResource() v1.ResourceList {
 	return gqm.totalResource.DeepCopy()
 }
 
-func (gqm *GroupQuotaManager) SetClusterTotalResource(total v1.ResourceList) {
+func (gqm *GroupQuotaManager) SetTotalResourceForTree(total v1.ResourceList) v1.ResourceList {
 	gqm.hierarchyUpdateLock.RLock()
 	defer gqm.hierarchyUpdateLock.RUnlock()
 
-	gqm.totalResource = total
-	totalResNoSysOrDefault := total
-
-	diffRes := quotav1.Subtract(totalResNoSysOrDefault, gqm.totalResourceExceptSystemAndDefaultUsed)
-	if !quotav1.IsZero(diffRes) {
-		gqm.totalResourceExceptSystemAndDefaultUsed = totalResNoSysOrDefault.DeepCopy()
-		gqm.runtimeQuotaCalculatorMap[extension.RootQuotaName].setClusterTotalResource(totalResNoSysOrDefault)
-		klog.V(5).Infof("SetClusterTotalResource finish totalResourceExceptSystemAndDefaultUsed:%v", gqm.totalResourceExceptSystemAndDefaultUsed)
+	delta := quotav1.Subtract(total, gqm.totalResource)
+	if !quotav1.IsZero(delta) {
+		gqm.updateClusterTotalResourceNoLock(delta)
+		klog.V(5).Infof("SetTotalResourceForTree tree: %v, total:%v, totalResourceExceptSystemAndDefaultUsed:%v ", gqm.treeID, gqm.totalResource, gqm.totalResourceExceptSystemAndDefaultUsed)
 	}
+
+	return delta
 }
 
 // updateGroupDeltaRequestNoLock no need lock gqm.lock

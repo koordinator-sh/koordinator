@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 
 	corev1 "k8s.io/api/core/v1"
+	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	k8sfeature "k8s.io/apiserver/pkg/util/feature"
 	"k8s.io/klog/v2"
 	schedulerv1alpha1 "sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
@@ -241,7 +242,12 @@ func (g *Plugin) handlerQuotaWhenRoot(quota *schedulerv1alpha1.ElasticQuota, mgr
 
 	totalResource, ok := getTotalResource(quota)
 	if ok {
-		mgr.SetClusterTotalResource(totalResource)
+		delta := mgr.SetTotalResourceForTree(totalResource)
+		if !quotav1.IsZero(delta) {
+			// decrease the default GroupQuotaManager resource
+			deltaForDefault := quotav1.Subtract(corev1.ResourceList{}, delta)
+			g.groupQuotaManager.UpdateClusterTotalResource(deltaForDefault)
+		}
 	}
 }
 
