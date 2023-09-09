@@ -18,7 +18,6 @@ package coldmemoryresource
 
 import (
 	"fmt"
-	"path/filepath"
 	"time"
 
 	"go.uber.org/atomic"
@@ -36,7 +35,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
-var dockerpath string = "/docker/c04692092520e8536f83e56ee46ce14d716793277d67f9287cd2f16680959c96/"
+//var dockerpath string = "/docker/c04692092520e8536f83e56ee46ce14d716793277d67f9287cd2f16680959c96/"
 
 type kidledcoldPageCollector struct {
 	collectInterval time.Duration
@@ -145,7 +144,7 @@ func (k *kidledcoldPageCollector) collectPodsColdPageInfo() ([]metriccache.Metri
 		}
 		collectTime := time.Now()
 		podCgroupDir := meta.CgroupDir
-		podCgroupDir = filepath.Join(dockerpath, podCgroupDir)
+		//podCgroupDir = filepath.Join(dockerpath, podCgroupDir)
 		podColdPageBytes, err := k.cgroupReader.ReadMemoryColdPageUsage(podCgroupDir)
 		if err != nil {
 			klog.Errorf("can not get cold page info from memory.idle_page_stats file for pod %s/%s", pod.Namespace, pod.Name)
@@ -204,7 +203,7 @@ func (k *kidledcoldPageCollector) collectContainersColdPageInfo(meta *statesinfo
 				containerKey, err)
 			continue
 		}
-		containerCgroupDir = filepath.Join(dockerpath, containerCgroupDir)
+		//containerCgroupDir = filepath.Join(dockerpath, containerCgroupDir)
 		containerColdPageBytes, err := k.cgroupReader.ReadMemoryColdPageUsage(containerCgroupDir)
 		if err != nil {
 			klog.Errorf("can not get cold page info from memory.idle_page_stats file for container %s", containerKey)
