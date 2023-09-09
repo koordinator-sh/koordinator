@@ -194,10 +194,11 @@ func TestNew(t *testing.T) {
 
 func TestPlugin_PreFilter(t *testing.T) {
 	tests := []struct {
-		name      string
-		pod       *corev1.Pod
-		want      *framework.Status
-		wantState *preFilterState
+		name              string
+		pod               *corev1.Pod
+		defaultBindPolicy schedulingconfig.CPUBindPolicy
+		want              *framework.Status
+		wantState         *preFilterState
 	}{
 		{
 			name: "cpu set with LSR Prod Pod",
@@ -270,6 +271,79 @@ func TestPlugin_PreFilter(t *testing.T) {
 			},
 		},
 		{
+			name: "cpu set with LSR Prod Pod and required CPUBindPolicy",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						extension.LabelPodQoS: string(extension.QoSLSR),
+					},
+					Annotations: map[string]string{
+						extension.AnnotationResourceSpec: `{"requiredCPUBindPolicy": "FullPCPUs"}`,
+					},
+				},
+				Spec: corev1.PodSpec{
+					Priority: pointer.Int32(extension.PriorityProdValueMax),
+					Containers: []corev1.Container{
+						{
+							Name: "container-1",
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU: resource.MustParse("4"),
+								},
+							},
+						},
+					},
+				},
+			},
+			wantState: &preFilterState{
+				requestCPUBind: true,
+				requests: corev1.ResourceList{
+					corev1.ResourceCPU: resource.MustParse("4"),
+				},
+				resourceSpec:           &extension.ResourceSpec{RequiredCPUBindPolicy: extension.CPUBindPolicyFullPCPUs, PreferredCPUBindPolicy: extension.CPUBindPolicyDefault},
+				requiredCPUBindPolicy:  schedulingconfig.CPUBindPolicyFullPCPUs,
+				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs,
+				numCPUsNeeded:          4,
+			},
+		},
+		{
+			name: "cpu set with LSR Prod Pod and required CPUBindPolicy by default",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						extension.LabelPodQoS: string(extension.QoSLSR),
+					},
+					Annotations: map[string]string{
+						extension.AnnotationResourceSpec: `{"requiredCPUBindPolicy": "Default"}`,
+					},
+				},
+				Spec: corev1.PodSpec{
+					Priority: pointer.Int32(extension.PriorityProdValueMax),
+					Containers: []corev1.Container{
+						{
+							Name: "container-1",
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU: resource.MustParse("4"),
+								},
+							},
+						},
+					},
+				},
+			},
+			defaultBindPolicy: schedulingconfig.CPUBindPolicySpreadByPCPUs,
+			wantState: &preFilterState{
+				requestCPUBind: true,
+				requests: corev1.ResourceList{
+					corev1.ResourceCPU: resource.MustParse("4"),
+				},
+				resourceSpec:           &extension.ResourceSpec{RequiredCPUBindPolicy: extension.CPUBindPolicyDefault, PreferredCPUBindPolicy: extension.CPUBindPolicyDefault},
+				requiredCPUBindPolicy:  schedulingconfig.CPUBindPolicySpreadByPCPUs,
+				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicySpreadByPCPUs,
+				numCPUsNeeded:          4,
+			},
+		},
+		{
 			name: "cpu set with LSR Prod Pod but not specified CPUBindPolicy",
 			pod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
@@ -305,8 +379,7 @@ func TestPlugin_PreFilter(t *testing.T) {
 			name: "skip cpu share pod",
 			pod:  &corev1.Pod{},
 			wantState: &preFilterState{
-				requestCPUBind: false,
-				requests:       corev1.ResourceList{},
+				skip: true,
 			},
 		},
 		{
@@ -357,8 +430,7 @@ func TestPlugin_PreFilter(t *testing.T) {
 				},
 			},
 			wantState: &preFilterState{
-				requestCPUBind: false,
-				requests:       corev1.ResourceList{},
+				skip: true,
 			},
 		},
 		{
@@ -424,6 +496,9 @@ func TestPlugin_PreFilter(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			suit := newPluginTestSuit(t, nil)
+			if tt.defaultBindPolicy != "" {
+				suit.nodeNUMAResourceArgs.DefaultCPUBindPolicy = tt.defaultBindPolicy
+			}
 			p, err := suit.proxyNew(suit.nodeNUMAResourceArgs, suit.Handle)
 			assert.NotNil(t, p)
 			assert.Nil(t, err)

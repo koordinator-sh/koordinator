@@ -27,6 +27,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	resourceapi "k8s.io/kubernetes/pkg/api/v1/resource"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
@@ -162,9 +163,11 @@ func (p *Plugin) GetTopologyOptionsManager() TopologyOptionsManager {
 }
 
 type preFilterState struct {
-	requests                    corev1.ResourceList
+	skip                        bool
 	requestCPUBind              bool
+	requests                    corev1.ResourceList
 	resourceSpec                *extension.ResourceSpec
+	requiredCPUBindPolicy       schedulingconfig.CPUBindPolicy
 	preferredCPUBindPolicy      schedulingconfig.CPUBindPolicy
 	preferredCPUExclusivePolicy schedulingconfig.CPUExclusivePolicy
 	numCPUsNeeded               int
@@ -208,17 +211,31 @@ func (p *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleState
 	}
 
 	requests, _ := resourceapi.PodRequestsAndLimits(pod)
+	if quotav1.IsZero(requests) {
+		cycleState.Write(stateKey, &preFilterState{
+			skip: true,
+		})
+		return nil, nil
+	}
 	state := &preFilterState{
 		requestCPUBind: false,
 		requests:       requests,
 	}
 	if AllowUseCPUSet(pod) {
-		preferredCPUBindPolicy := schedulingconfig.CPUBindPolicy(resourceSpec.PreferredCPUBindPolicy)
-		if preferredCPUBindPolicy == "" || preferredCPUBindPolicy == schedulingconfig.CPUBindPolicyDefault {
-			preferredCPUBindPolicy = p.pluginArgs.DefaultCPUBindPolicy
+		cpuBindPolicy := schedulingconfig.CPUBindPolicy(resourceSpec.PreferredCPUBindPolicy)
+		if cpuBindPolicy == "" || cpuBindPolicy == schedulingconfig.CPUBindPolicyDefault {
+			cpuBindPolicy = p.pluginArgs.DefaultCPUBindPolicy
 		}
-		if preferredCPUBindPolicy == schedulingconfig.CPUBindPolicyFullPCPUs ||
-			preferredCPUBindPolicy == schedulingconfig.CPUBindPolicySpreadByPCPUs {
+		requiredCPUBindPolicy := schedulingconfig.CPUBindPolicy(resourceSpec.RequiredCPUBindPolicy)
+		if requiredCPUBindPolicy == schedulingconfig.CPUBindPolicyDefault {
+			requiredCPUBindPolicy = p.pluginArgs.DefaultCPUBindPolicy
+		}
+		if requiredCPUBindPolicy != "" {
+			cpuBindPolicy = requiredCPUBindPolicy
+		}
+
+		if cpuBindPolicy == schedulingconfig.CPUBindPolicyFullPCPUs ||
+			cpuBindPolicy == schedulingconfig.CPUBindPolicySpreadByPCPUs {
 			requestedCPU := requests.Cpu().MilliValue()
 			if requestedCPU%1000 != 0 {
 				return nil, framework.NewStatus(framework.Error, "the requested CPUs must be integer")
@@ -227,7 +244,8 @@ func (p *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleState
 			if requestedCPU > 0 {
 				state.requestCPUBind = true
 				state.resourceSpec = resourceSpec
-				state.preferredCPUBindPolicy = preferredCPUBindPolicy
+				state.requiredCPUBindPolicy = requiredCPUBindPolicy
+				state.preferredCPUBindPolicy = cpuBindPolicy
 				state.preferredCPUExclusivePolicy = resourceSpec.PreferredCPUExclusivePolicy
 				state.numCPUsNeeded = int(requestedCPU / 1000)
 			}
@@ -248,9 +266,14 @@ func (p *Plugin) Filter(ctx context.Context, cycleState *framework.CycleState, p
 	if !status.IsSuccess() {
 		return status
 	}
+	if state.skip {
+		return nil
+	}
 
 	node := nodeInfo.Node()
 	topologyOptions := p.topologyOptionsManager.GetTopologyOptions(node.Name)
+	policyType := getNUMATopologyPolicy(node.Labels, topologyOptions.NUMATopologyPolicy)
+
 	if state.requestCPUBind {
 		if topologyOptions.CPUTopology == nil {
 			return framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrNotFoundCPUTopology)
@@ -271,9 +294,19 @@ func (p *Plugin) Filter(ctx context.Context, cycleState *framework.CycleState, p
 				return framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrRequiredFullPCPUsPolicy)
 			}
 		}
+
+		if policyType == extension.NUMATopologyPolicyNone && state.requiredCPUBindPolicy != "" {
+			resourceOptions, err := p.getResourceOptions(cycleState, state, node, pod, topologymanager.NUMATopologyHint{})
+			if err != nil {
+				return framework.AsStatus(err)
+			}
+			_, err = p.resourceManager.Allocate(node, pod, resourceOptions)
+			if err != nil {
+				return framework.NewStatus(framework.Unschedulable, err.Error())
+			}
+		}
 	}
 
-	policyType := getNUMATopologyPolicy(node.Labels, topologyOptions.NUMATopologyPolicy)
 	if policyType != extension.NUMATopologyPolicyNone {
 		return p.FilterByNUMANode(ctx, cycleState, pod, node.Name, policyType)
 	}
@@ -285,6 +318,9 @@ func (p *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState, 
 	state, status := getPreFilterState(cycleState)
 	if !status.IsSuccess() {
 		return status
+	}
+	if state.skip {
+		return nil
 	}
 
 	nodeInfo, err := p.handle.SnapshotSharedLister().NodeInfos().Get(nodeName)
@@ -335,6 +371,9 @@ func (p *Plugin) Unreserve(ctx context.Context, cycleState *framework.CycleState
 	if !status.IsSuccess() {
 		return
 	}
+	if state.skip {
+		return
+	}
 	if state.allocation != nil {
 		p.resourceManager.Release(nodeName, pod.UID)
 	}
@@ -352,6 +391,9 @@ func (p *Plugin) preBindObject(ctx context.Context, cycleState *framework.CycleS
 	state, status := getPreFilterState(cycleState)
 	if !status.IsSuccess() {
 		return status
+	}
+	if state.skip {
+		return nil
 	}
 	if state.allocation == nil {
 		return nil
@@ -389,13 +431,14 @@ func (p *Plugin) getResourceOptions(cycleState *framework.CycleState, state *pre
 		return nil, err
 	}
 	options := &ResourceOptions{
-		requests:           state.requests,
-		numCPUsNeeded:      state.numCPUsNeeded,
-		requestCPUBind:     state.requestCPUBind,
-		cpuBindPolicy:      preferredCPUBindPolicy,
-		cpuExclusivePolicy: state.preferredCPUExclusivePolicy,
-		preferredCPUs:      reservationReservedCPUs,
-		hint:               affinity,
+		requests:              state.requests,
+		numCPUsNeeded:         state.numCPUsNeeded,
+		requestCPUBind:        state.requestCPUBind,
+		requiredCPUBindPolicy: state.requiredCPUBindPolicy != "",
+		cpuBindPolicy:         preferredCPUBindPolicy,
+		cpuExclusivePolicy:    state.preferredCPUExclusivePolicy,
+		preferredCPUs:         reservationReservedCPUs,
+		hint:                  affinity,
 	}
 	return options, nil
 }

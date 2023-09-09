@@ -155,6 +155,12 @@ func ValidateDeviceShareArgs(path *field.Path, args *config.DeviceShareArgs) err
 
 func ValidateNodeNUMAResourceArgs(path *field.Path, args *config.NodeNUMAResourceArgs) error {
 	var allErrs field.ErrorList
+	if args.DefaultCPUBindPolicy != "" &&
+		args.DefaultCPUBindPolicy != config.CPUBindPolicyFullPCPUs &&
+		args.DefaultCPUBindPolicy != config.CPUBindPolicySpreadByPCPUs {
+		allErrs = append(allErrs, field.Invalid(path.Child("defaultCPUBindPolicy"), args.DefaultCPUBindPolicy, "must specified CPU bind policy FullPCPUs or SpreadByPCPUs"))
+	}
+
 	if args.ScoringStrategy != nil {
 		allErrs = append(allErrs, validateResources(args.ScoringStrategy.Resources, path.Child("resources"))...)
 	}

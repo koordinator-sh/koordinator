@@ -55,6 +55,9 @@ const (
 
 // ResourceSpec describes extra attributes of the resource requirements.
 type ResourceSpec struct {
+	// RequiredCPUBindPolicy indicates that the CPU is allocated strictly
+	// according to the specified CPUBindPolicy, otherwise the scheduling fails
+	RequiredCPUBindPolicy CPUBindPolicy `json:"requiredCPUBindPolicy,omitempty"`
 	// PreferredCPUBindPolicy represents best-effort CPU bind policy.
 	PreferredCPUBindPolicy CPUBindPolicy `json:"preferredCPUBindPolicy,omitempty"`
 	// PreferredCPUExclusivePolicy represents best-effort CPU exclusive policy.
