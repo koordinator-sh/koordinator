@@ -62,6 +62,9 @@ func (p *Plugin) Name() string {
 	return PluginName
 }
 
+// +kubebuilder:rbac:groups=core,resources=nodes,verbs=get;list;watch
+// +kubebuilder:rbac:groups=topology.node.k8s.io,resources=noderesourcetopologies,verbs=get;list;watch;create;update;patch;delete
+
 func (p *Plugin) Setup(opt *framework.Option) error {
 	client = opt.Client
 
@@ -220,7 +223,7 @@ func (p *Plugin) MutateNodeResource(nr *framework.NodeResource, node *corev1.Nod
 	hasMutated := false
 	for _, resourceName := range resourcesToAmplify {
 		q, ok := nr.Resources[resourceName]
-		if !ok {
+		if !ok || q == nil {
 			continue
 		}
 
