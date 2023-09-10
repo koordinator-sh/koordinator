@@ -75,9 +75,7 @@ func New(args *config.ArbitrationArgs, options Options) (Arbitrator, error) {
 
 		sorts: []SortFn{
 			SortJobsByCreationTime(),
-			SortJobsByPod(func(pods []*corev1.Pod) {
-				sorter.PodSorter().Sort(pods)
-			}),
+			SortJobsByPod(sorter.PodSorter().Sort),
 			SortJobsByController(),
 			SortJobsByMigrationStatus(options.Client),
 		},

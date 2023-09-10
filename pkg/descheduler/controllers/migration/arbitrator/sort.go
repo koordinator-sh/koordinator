@@ -70,14 +70,8 @@ func SortJobsByPod(sorter func(pods []*corev1.Pod)) SortFn {
 // SortJobsByCreationTime returns a SortFn that stably sorts PodMigrationJobs by create time.
 func SortJobsByCreationTime() SortFn {
 	return func(jobs []*v1alpha1.PodMigrationJob, podOfJob map[*v1alpha1.PodMigrationJob]*corev1.Pod) []*v1alpha1.PodMigrationJob {
-		// calculate the time interval between the creation of migration job and the current for each job.
-		timeMap := map[*v1alpha1.PodMigrationJob]int64{}
-		for _, job := range jobs {
-			timeMap[job] = job.GetCreationTimestamp().Unix()
-		}
-		// perform stable sorting.
 		sort.SliceStable(jobs, func(i, j int) bool {
-			return timeMap[jobs[i]] > timeMap[jobs[j]]
+			return jobs[i].GetCreationTimestamp().Unix() > jobs[j].GetCreationTimestamp().Unix()
 		})
 		return jobs
 	}
