@@ -35,7 +35,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
-//var dockerpath string = "/docker/c04692092520e8536f83e56ee46ce14d716793277d67f9287cd2f16680959c96/"
+//var dockerpath string = "/docker/1a341d4b42efb6452415055ac3724eef1b2177912fd38a719823ae983f9324f7/"
 
 type kidledcoldPageCollector struct {
 	collectInterval time.Duration
@@ -61,8 +61,17 @@ func (k *kidledcoldPageCollector) Enabled() bool {
 		// set scan_period_in_seconds and use_hierarchy
 		// start kidled
 		kidledConfig := system.NewDefaultKidledConfig()
-		system.SetKidledScanPeriodInSeconds(kidledConfig.ScanPeriodInseconds)
-		system.SetKidledUseHierarchy(kidledConfig.UseHierarchy)
+		err := system.SetKidledScanPeriodInSeconds(kidledConfig.ScanPeriodInseconds)
+		if err != nil {
+			klog.V(4).Infof("cold page collector start kidled err:", err)
+			return false
+		}
+		err = system.SetKidledUseHierarchy(kidledConfig.UseHierarchy)
+		if err != nil {
+			klog.V(4).Infof("cold page collector start kidled err:", err)
+			return false
+		}
+		system.SetIsStartColdMemory(true)
 	}
 	return kidledEnabled
 }

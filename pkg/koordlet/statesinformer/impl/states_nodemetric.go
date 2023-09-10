@@ -449,7 +449,7 @@ func (r *nodeMetricInformer) collectNodeMetric(queryparam metriccache.QueryParam
 	var memAggregateResult metriccache.AggregateResult
 	memoryCollectPolicy := *r.getNodeMetricSpec().CollectPolicy.NodeMemoryCollectPolicy
 	// report usageMemoryWithHotPageCache
-	if memoryCollectPolicy == slov1alpha1.UsageWithHotPageCache && system.GetIsSupportColdMemory() {
+	if memoryCollectPolicy == slov1alpha1.UsageWithHotPageCache && system.GetIsStartColdMemory() {
 		memAggregateResult, err = doQuery(querier, metriccache.NodeMemoryWithHotPageUsageMetric, nil)
 		if err != nil {
 			return rl, 0, err
@@ -642,7 +642,7 @@ func (r *nodeMetricInformer) collectPodMetric(podMeta *statesinformer.PodMeta, q
 	}
 	var memAggregateResult metriccache.AggregateResult
 	memoryCollectPolicy := *r.getNodeMetricSpec().CollectPolicy.NodeMemoryCollectPolicy
-	if memoryCollectPolicy == slov1alpha1.UsageWithHotPageCache && system.GetIsSupportColdMemory() {
+	if memoryCollectPolicy == slov1alpha1.UsageWithHotPageCache && system.GetIsStartColdMemory() {
 		memAggregateResult, err = doQuery(querier, metriccache.PodMemoryWithHotPageUsageMetric, metriccache.MetricPropertiesFunc.Pod(podUID))
 		if err != nil {
 			return nil, err

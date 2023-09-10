@@ -30,6 +30,7 @@ import (
 
 var (
 	isSupportColdMemory *atomic.Bool = atomic.NewBool(false)
+	isStartColdMemory   *atomic.Bool = atomic.NewBool(false)
 )
 
 type ColdPageInfoByKidled struct {
@@ -159,28 +160,48 @@ func GetIsSupportColdMemory() bool {
 	return isSupportColdMemory.Load()
 }
 
-func SetKidledScanPeriodInSeconds(period uint32) {
+func SetIsSupportColdMemory(flag bool) {
+	isSupportColdMemory.Store(flag)
+}
+
+func GetIsStartColdMemory() bool {
+	return isStartColdMemory.Load()
+}
+
+func SetIsStartColdMemory(flag bool) {
+	isStartColdMemory.Store(flag)
+}
+
+func SetKidledScanPeriodInSeconds(period uint32) error {
 	path := KidledScanPeriodInSeconds.Path("")
 	klog.V(4).Infof("scan_period_in_seconds file path: %s", path)
 	file, err := os.OpenFile(path, os.O_WRONLY|os.O_TRUNC, 0666)
 	if err != nil {
-		klog.V(4).Infof("open scan_period_in_seconds file err: %s", err)
+		scanpath, _ := os.Stat(path)
+		klog.V(4).Infof("scanpath", scanpath.Mode().Perm())
+		rootdir, _ := os.Stat(GetSysRootDir())
+		klog.V(4).Infof("rootpath", rootdir.Mode().Perm())
+		klog.V(4).Infof("open scan_period_in_seconds file err: ", err)
+		return err
 	}
 	defer file.Close()
 	write := bufio.NewWriter(file)
 	write.WriteString(fmt.Sprintf("%d", period))
 	write.Flush()
+	return nil
 }
-func SetKidledUseHierarchy(useHierarchy uint8) {
+func SetKidledUseHierarchy(useHierarchy uint8) error {
 	path := KidledUseHierarchy.Path("")
 	file, err := os.OpenFile(path, os.O_WRONLY|os.O_TRUNC, 0666)
 	if err != nil {
-		klog.V(4).Infof("open use_hierarchy file err:", err)
+		klog.V(4).Infof("open use_hierarchy file err: ", err)
+		return err
 	}
 	defer file.Close()
 	write := bufio.NewWriter(file)
 	write.WriteString(fmt.Sprintf("%d", useHierarchy))
 	write.Flush()
+	return nil
 }
 func NewDefaultKidledConfig() *KidledConfig {
 	return &KidledConfig{
