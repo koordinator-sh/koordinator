@@ -57,8 +57,6 @@ import (
 
 const (
 	nodeTopoInformerName PluginName = "nodeTopoInformer"
-
-	NodeZoneType = "Node"
 )
 
 type nodeTopologyStatus struct {
@@ -100,8 +98,8 @@ func (n *nodeTopologyStatus) updateNRT(nrt *v1alpha1.NodeResourceTopology) {
 
 	nrt.TopologyPolicies = []string{string(n.TopologyPolicy)}
 
-	// TBD: merge with the existing
-	nrt.Zones = n.Zones
+	// trim useless zone name and merge with the existing zone list
+	nrt.Zones = util.MergeZoneList(nrt.Zones, n.Zones)
 }
 
 type nodeTopoInformer struct {
@@ -792,12 +790,8 @@ func (s *nodeTopoInformer) calTopologyZoneList(nodeCPUInfo *metriccache.NodeCPUI
 		return nil, fmt.Errorf("NUMA node number not matched")
 	}
 
-	zoneList := make(v1alpha1.ZoneList, nodeNum)
-	for i := range zoneList {
-		zone := &zoneList[i]
-		zone.Type = NodeZoneType
-		zone.Name = makeNodeZoneName(i)
-
+	zoneResourceList := map[string]corev1.ResourceList{}
+	for i := 0; i < nodeNum; i++ {
 		var cpuQuant resource.Quantity
 		cpuInfos, ok := nodeCPUInfo.TotalInfo.NodeToCPU[int32(i)]
 		if ok {
@@ -812,22 +806,13 @@ func (s *nodeTopoInformer) calTopologyZoneList(nodeCPUInfo *metriccache.NodeCPUI
 		} else {
 			memQuant = resource.MustParse("0")
 		}
-
-		zone.Resources = v1alpha1.ResourceInfoList{
-			{
-				Name:        string(corev1.ResourceCPU),
-				Capacity:    cpuQuant,
-				Allocatable: cpuQuant,
-				Available:   cpuQuant,
-			},
-			{
-				Name:        string(corev1.ResourceMemory),
-				Capacity:    memQuant,
-				Allocatable: memQuant,
-				Available:   memQuant,
-			},
+		zoneName := util.GenNodeZoneName(i)
+		zoneResourceList[zoneName] = corev1.ResourceList{
+			corev1.ResourceCPU:    cpuQuant,
+			corev1.ResourceMemory: memQuant,
 		}
 	}
+	zoneList := util.ZoneResourceListToZoneList(zoneResourceList)
 
 	return zoneList, nil
 }
@@ -865,7 +850,7 @@ func newNodeTopo(node *corev1.Node) *v1alpha1.NodeResourceTopology {
 		},
 		// fields are required
 		TopologyPolicies: []string{string(v1alpha1.None)},
-		Zones:            v1alpha1.ZoneList{v1alpha1.Zone{Name: "fake-name", Type: "fake-type"}},
+		Zones:            v1alpha1.ZoneList{},
 	}
 }
 
@@ -900,8 +885,4 @@ func getTopologyPolicy(topologyManagerPolicy string, topologyManagerScope string
 	}
 
 	return v1alpha1.None
-}
-
-func makeNodeZoneName(nodeID int) string {
-	return fmt.Sprintf("node-%d", nodeID)
 }
