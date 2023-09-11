@@ -34,6 +34,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/utils/pointer"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
@@ -152,7 +153,7 @@ func TestSortJobsByCreationTime(t *testing.T) {
 	}
 }
 
-func TestSortJobsByMigrationStatus(t *testing.T) {
+func TestSortJobsByMigratingNum(t *testing.T) {
 	testCases := []struct {
 		name                            string
 		podMigrationJobNum              int
@@ -180,6 +181,9 @@ func TestSortJobsByMigrationStatus(t *testing.T) {
 		{"test-5", 6, 2, 2, 2,
 			map[int]int{2: 0, 3: 1, 5: 0}, map[int]int{0: 1}, map[int]int{0: 0},
 			[]int{2, 3, 5, 0, 1, 4}},
+		{"test-6", 10, 5, 0, 2,
+			map[int]int{4: 0, 8: 0, 7: 1}, map[int]int{3: 0, 1: 1, 0: 1}, map[int]int{},
+			[]int{7, 4, 8, 0, 1, 2, 3, 5, 6, 9}},
 	}
 
 	for _, testCase := range testCases {
@@ -238,7 +242,7 @@ func TestSortJobsByMigrationStatus(t *testing.T) {
 			}
 
 			// create Running PodMigrationJobs
-			for k := 0; k < testCase.podMigrationJobNum; k++ {
+			for k := 0; k < testCase.runningPodMigrationJobNum; k++ {
 				pod := makePod("test-running-pod-"+strconv.Itoa(k), 0, extension.QoSNone, corev1.PodQOSBestEffort, creationTime)
 				job := makePodMigrationJob("test-running-migration-job-"+strconv.Itoa(k), creationTime, pod)
 
@@ -286,7 +290,7 @@ func TestSortJobsByMigrationStatus(t *testing.T) {
 				assert.Nil(t, fakeClient.Create(context.TODO(), job))
 			}
 
-			sortFn := SortJobsByMigrationStatus(fakeClient)
+			sortFn := SortJobsByMigratingNum(fakeClient)
 			actualPodMigrationJobs := make([]*v1alpha1.PodMigrationJob, len(podMigrationJobs))
 			copy(actualPodMigrationJobs, podMigrationJobs)
 			sortFn(actualPodMigrationJobs, podOfJob)
@@ -395,6 +399,96 @@ func TestSortJobsByController(t *testing.T) {
 				expected = append(expected, podMigrationJobs[testCase.expectIdx[i]].Name)
 			}
 			assert.Equal(t, expected, actual)
+		})
+	}
+}
+
+func TestGetMigratingJobNum(t *testing.T) {
+	testCases := []struct {
+		name                            string
+		podMigrationJobNum              int
+		runningPodMigrationJobNum       int
+		passedPendingPodMigrationJobNum int
+
+		expectNum int
+	}{
+		{"test-1", 3, 3, 3, 6},
+		{"test-2", 4, 0, 0, 0},
+		{"test-3", 1, 2, 3, 5},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			scheme := runtime.NewScheme()
+			_ = v1alpha1.AddToScheme(scheme)
+			_ = clientgoscheme.AddToScheme(scheme)
+			fakeClient := newFieldIndexFakeClient(fake.NewClientBuilder().WithScheme(scheme).Build())
+			creationTime := time.Now()
+
+			// create job
+			job := &batchv1.Job{
+				TypeMeta: metav1.TypeMeta{
+					Kind:       "Job",
+					APIVersion: "batch/v1",
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-job",
+					Namespace: "default",
+					UID:       types.UID("test-job"),
+				},
+			}
+			assert.Nil(t, fakeClient.Create(context.TODO(), job))
+
+			owner := []metav1.OwnerReference{
+				{
+					APIVersion:         job.APIVersion,
+					Kind:               job.Kind,
+					Name:               job.Name,
+					UID:                job.UID,
+					Controller:         pointer.Bool(true),
+					BlockOwnerDeletion: nil,
+				},
+			}
+			// create PodMigrationJobs
+			for k := 0; k < testCase.podMigrationJobNum; k++ {
+				pod := makePod("test-pod-"+strconv.Itoa(k), 0, extension.QoSNone, corev1.PodQOSBestEffort, creationTime, func(pod *corev1.Pod) {
+					pod.SetOwnerReferences(owner)
+				})
+				job := makePodMigrationJob("test-migration-job-"+strconv.Itoa(k), creationTime, pod)
+				job.Status = v1alpha1.PodMigrationJobStatus{
+					Phase: "",
+				}
+				assert.Nil(t, fakeClient.Create(context.TODO(), pod))
+				assert.Nil(t, fakeClient.Create(context.TODO(), job))
+			}
+
+			// create Running PodMigrationJobs
+			for k := 0; k < testCase.runningPodMigrationJobNum; k++ {
+				pod := makePod("test-running-pod-"+strconv.Itoa(k), 0, extension.QoSNone, corev1.PodQOSBestEffort, creationTime, func(pod *corev1.Pod) {
+					pod.SetOwnerReferences(owner)
+				})
+				job := makePodMigrationJob("test-running-migration-job-"+strconv.Itoa(k), creationTime, pod)
+
+				job.Status = v1alpha1.PodMigrationJobStatus{
+					Phase: v1alpha1.PodMigrationJobRunning,
+				}
+
+				assert.Nil(t, fakeClient.Create(context.TODO(), pod))
+				assert.Nil(t, fakeClient.Create(context.TODO(), job))
+			}
+
+			// create Passed Pending PodMigrationJobs
+			for k := 0; k < testCase.passedPendingPodMigrationJobNum; k++ {
+				pod := makePod("test-passed-pod-"+strconv.Itoa(k), 0, extension.QoSNone, corev1.PodQOSBestEffort, creationTime, func(pod *corev1.Pod) {
+					pod.SetOwnerReferences(owner)
+				})
+				job := makePodMigrationJob("test-passed-migration-job-"+strconv.Itoa(k), creationTime, pod)
+				job.Annotations = map[string]string{AnnotationPassedArbitration: "true"}
+
+				assert.Nil(t, fakeClient.Create(context.TODO(), pod))
+				assert.Nil(t, fakeClient.Create(context.TODO(), job))
+			}
+			assert.Equal(t, testCase.expectNum, getMigratingJobNum(fakeClient, job.UID))
 		})
 	}
 }

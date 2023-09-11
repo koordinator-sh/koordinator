@@ -77,7 +77,7 @@ func New(args *config.ArbitrationArgs, options Options) (Arbitrator, error) {
 			SortJobsByCreationTime(),
 			SortJobsByPod(sorter.PodSorter().Sort),
 			SortJobsByController(),
-			SortJobsByMigrationStatus(options.Client),
+			SortJobsByMigratingNum(options.Client),
 		},
 		retryablePodFilter:    options.RetryableFilter,
 		nonRetryablePodFilter: options.NonRetryableFilter,

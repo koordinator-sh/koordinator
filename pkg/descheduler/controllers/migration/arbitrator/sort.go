@@ -28,7 +28,7 @@ import (
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	v1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
+	"github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/fieldindex"
 	utilclient "github.com/koordinator-sh/koordinator/pkg/util/client"
 )
@@ -77,64 +77,28 @@ func SortJobsByCreationTime() SortFn {
 	}
 }
 
-// SortJobsByMigrationStatus returns a SortFn that.
-func SortJobsByMigrationStatus(c client.Client) SortFn {
+// SortJobsByMigratingNum returns a SortFn that stably sorts PodMigrationJobs the number of migrating PMJs in the same Job.
+func SortJobsByMigratingNum(c client.Client) SortFn {
 	return func(podMigrationJobs []*v1alpha1.PodMigrationJob, podOfJob map[*v1alpha1.PodMigrationJob]*corev1.Pod) []*v1alpha1.PodMigrationJob {
 		// get owner of jobs
-		owners := map[types.UID]*metav1.OwnerReference{}
+		rankOfPodMigrationJobs := map[*v1alpha1.PodMigrationJob]int{}
+		migratingJobNumOfOwners := map[types.UID]int{}
 		for _, job := range podMigrationJobs {
 			owner, ok := getJobControllerOfPod(podOfJob[job])
 			if !ok {
 				continue
 			}
-			owners[owner.UID] = owner
-		}
-
-		// get all migrating owners
-		migratingOwners := map[types.UID]bool{}
-		for uid := range owners {
-			opts := &client.ListOptions{FieldSelector: fields.OneTermEqualSelector(fieldindex.IndexPodByOwnerRefUID, string(uid))}
-			podList := &corev1.PodList{}
-			err := c.List(context.TODO(), podList, opts, utilclient.DisableDeepCopy)
-			if err != nil {
-				klog.ErrorS(err, "failed to list pods by IndexPodByOwnerRefUID", "OwnerRefUID", uid)
-				continue
-			}
-			for _, pod := range podList.Items {
-				opts = &client.ListOptions{FieldSelector: fields.OneTermEqualSelector(fieldindex.IndexJobByPodUID, string(pod.UID))}
-				jobList := &v1alpha1.PodMigrationJobList{}
-				err = c.List(context.TODO(), jobList, opts, utilclient.DisableDeepCopy)
-				if err != nil {
-					klog.ErrorS(err, "failed to list jobs by IndexJobByPodUID", "pod", klog.KObj(&pod))
-					continue
-				}
-				for _, job := range jobList.Items {
-					if isJobMigrating(&job) {
-						migratingOwners[uid] = true
-					}
-				}
-			}
-		}
-
-		rankOfPodMigrationJobs := map[*v1alpha1.PodMigrationJob]int{}
-		for i, job := range podMigrationJobs {
-			owner, ok := getJobControllerOfPod(podOfJob[job])
-			if !ok {
-				// pmj not belongs to any jobs
-				rankOfPodMigrationJobs[job] = i
-				continue
-			}
-			if _, ok = migratingOwners[owner.UID]; ok {
-				// pmj belongs to some migrating job
-				rankOfPodMigrationJobs[job] = -1
+			if num, ok := migratingJobNumOfOwners[owner.UID]; ok {
+				rankOfPodMigrationJobs[job] = num
 			} else {
-				// pmj not belongs to any migrating jobs
-				rankOfPodMigrationJobs[job] = i
+				num = getMigratingJobNum(c, owner.UID)
+				rankOfPodMigrationJobs[job] = num
+				migratingJobNumOfOwners[owner.UID] = num
 			}
 		}
 
 		sort.SliceStable(podMigrationJobs, func(i, j int) bool {
-			return rankOfPodMigrationJobs[podMigrationJobs[i]] < rankOfPodMigrationJobs[podMigrationJobs[j]]
+			return rankOfPodMigrationJobs[podMigrationJobs[i]] > rankOfPodMigrationJobs[podMigrationJobs[j]]
 		})
 		return podMigrationJobs
 	}
@@ -163,6 +127,32 @@ func SortJobsByController() SortFn {
 		})
 		return podMigrationJobs
 	}
+}
+
+func getMigratingJobNum(c client.Client, ownerUID types.UID) int {
+	opts := &client.ListOptions{FieldSelector: fields.OneTermEqualSelector(fieldindex.IndexPodByOwnerRefUID, string(ownerUID))}
+	podList := &corev1.PodList{}
+	err := c.List(context.TODO(), podList, opts, utilclient.DisableDeepCopy)
+	if err != nil {
+		klog.ErrorS(err, "failed to list pods by IndexPodByOwnerRefUID", "OwnerRefUID", ownerUID)
+		return 0
+	}
+	cnt := 0
+	for _, pod := range podList.Items {
+		opts = &client.ListOptions{FieldSelector: fields.OneTermEqualSelector(fieldindex.IndexJobByPodUID, string(pod.UID))}
+		jobList := &v1alpha1.PodMigrationJobList{}
+		err = c.List(context.TODO(), jobList, opts, utilclient.DisableDeepCopy)
+		if err != nil {
+			klog.ErrorS(err, "failed to list jobs by IndexJobByPodUID", "pod", klog.KObj(&pod))
+			continue
+		}
+		for _, job := range jobList.Items {
+			if isJobMigrating(&job) {
+				cnt++
+			}
+		}
+	}
+	return cnt
 }
 
 func getJobControllerOfPod(pod *corev1.Pod) (*metav1.OwnerReference, bool) {
