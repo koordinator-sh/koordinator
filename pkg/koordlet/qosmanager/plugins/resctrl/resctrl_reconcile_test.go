@@ -457,6 +457,44 @@ func Test_getPodCgroupNewTaskIds(t *testing.T) {
 			},
 			want: []int32{122454, 123111, 128912},
 		},
+		{
+			name: "successfully get task ids from the sandbox container",
+			fields: fields{
+				containerParentDir: "kubepods.slice/kubepods-besteffort.slice/kubepods-besteffort-podp0.slice/cri-containerd-abc.scope",
+				containerTasksStr:  "122450\n122454\n123111\n128912",
+				useCgroupsV2:       true,
+			},
+			args: args{
+				podMeta: &statesinformer.PodMeta{
+					Pod: &corev1.Pod{
+						ObjectMeta: metav1.ObjectMeta{
+							Name: "pod0",
+							UID:  "p0",
+						},
+						Spec: corev1.PodSpec{
+							Containers: []corev1.Container{
+								{
+									Name: "container0",
+								},
+							},
+						},
+						Status: corev1.PodStatus{
+							ContainerStatuses: []corev1.ContainerStatus{
+								{
+									Name:        "container0",
+									ContainerID: "containerd://c0",
+								},
+							},
+						},
+					},
+					CgroupDir: "kubepods.slice/kubepods-besteffort.slice/kubepods-besteffort-podp0.slice",
+				},
+				tasksMap: map[int32]struct{}{
+					122450: {},
+				},
+			},
+			want: []int32{122454, 123111, 128912},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -474,3 +474,596 @@ func TestZoneListTransform(t *testing.T) {
 		})
 	}
 }
+
+func TestIsZoneListResourceEqual(t *testing.T) {
+	type args struct {
+		a v1alpha1.ZoneList
+		b v1alpha1.ZoneList
+	}
+	tests := []struct {
+		name string
+		args args
+		want bool
+	}{
+		{
+			name: "objects are equal",
+			args: args{
+				a: v1alpha1.ZoneList{
+					{
+						Name: "node-0",
+						Resources: v1alpha1.ResourceInfoList{
+							{
+								Name:        string(corev1.ResourceCPU),
+								Allocatable: resource.MustParse("10"),
+							},
+							{
+								Name:        string(corev1.ResourceMemory),
+								Allocatable: resource.MustParse("20Gi"),
+							},
+							{
+								Name:        "other-resource",
+								Allocatable: resource.MustParse("1"),
+							},
+						},
+					},
+					{
+						Name: "node-1",
+						Resources: v1alpha1.ResourceInfoList{
+							{
+								Name:        string(corev1.ResourceCPU),
+								Allocatable: resource.MustParse("10"),
+							},
+							{
+								Name:        string(corev1.ResourceMemory),
+								Allocatable: resource.MustParse("20Gi"),
+							},
+							{
+								Name:        "other-resource",
+								Allocatable: resource.MustParse("1"),
+							},
+						},
+					},
+				},
+				b: v1alpha1.ZoneList{
+					{
+						Name: "node-0",
+						Resources: v1alpha1.ResourceInfoList{
+							{
+								Name:        string(corev1.ResourceCPU),
+								Allocatable: resource.MustParse("10"),
+							},
+							{
+								Name:        string(corev1.ResourceMemory),
+								Allocatable: resource.MustParse("20Gi"),
+							},
+							{
+								Name:        "other-resource",
+								Allocatable: resource.MustParse("1"),
+							},
+						},
+					},
+					{
+						Name: "node-1",
+						Resources: v1alpha1.ResourceInfoList{
+							{
+								Name:        string(corev1.ResourceCPU),
+								Allocatable: resource.MustParse("10"),
+							},
+							{
+								Name:        string(corev1.ResourceMemory),
+								Allocatable: resource.MustParse("20Gi"),
+							},
+							{
+								Name:        "other-resource",
+								Allocatable: resource.MustParse("1"),
+							},
+						},
+					},
+				},
+			},
+			want: true,
+		},
+		{
+			name: "resources unchanged",
+			args: args{
+				a: v1alpha1.ZoneList{
+					{
+						Name: "node-0",
+						Resources: v1alpha1.ResourceInfoList{
+							{
+								Name:        string(corev1.ResourceCPU),
+								Allocatable: resource.MustParse("10"),
+							},
+							{
+								Name:        string(corev1.ResourceMemory),
+								Allocatable: resource.MustParse("20Gi"),
+							},
+							{
+								Name:        "other-resource",
+								Allocatable: resource.MustParse("1"),
+							},
+						},
+					},
+					{
+						Name: "node-1",
+						Resources: v1alpha1.ResourceInfoList{
+							{
+								Name:        string(corev1.ResourceCPU),
+								Allocatable: resource.MustParse("10"),
+							},
+							{
+								Name:        string(corev1.ResourceMemory),
+								Allocatable: resource.MustParse("20Gi"),
+							},
+							{
+								Name:        "other-resource",
+								Allocatable: resource.MustParse("1"),
+							},
+						},
+					},
+				},
+				b: v1alpha1.ZoneList{
+					{
+						Name: "node-0",
+						Resources: v1alpha1.ResourceInfoList{
+							{
+								Name:        string(corev1.ResourceCPU),
+								Allocatable: resource.MustParse("10"),
+							},
+							{
+								Name:        string(corev1.ResourceMemory),
+								Allocatable: resource.MustParse("20Gi"),
+							},
+							{
+								Name:        "other-resource",
+								Allocatable: resource.MustParse("1"),
+							},
+						},
+					},
+					{
+						Name: "node-1",
+						Resources: v1alpha1.ResourceInfoList{
+							{
+								Name:        string(corev1.ResourceCPU),
+								Allocatable: resource.MustParse("10"),
+							},
+							{
+								Name:        string(corev1.ResourceMemory),
+								Allocatable: resource.MustParse("20Gi"),
+							},
+							{
+								Name:        "other-resource",
+								Allocatable: resource.MustParse("1"),
+							},
+						},
+					},
+				},
+			},
+			want: true,
+		},
+		{
+			name: "target resources added",
+			args: args{
+				a: v1alpha1.ZoneList{
+					{
+						Name: "node-0",
+						Resources: v1alpha1.ResourceInfoList{
+							{
+								Name:        string(corev1.ResourceCPU),
+								Allocatable: resource.MustParse("10"),
+							},
+							{
+								Name:        string(corev1.ResourceMemory),
+								Allocatable: resource.MustParse("20Gi"),
+							},
+							{
+								Name:        "other-resource",
+								Allocatable: resource.MustParse("1"),
+							},
+						},
+					},
+					{
+						Name: "node-1",
+						Resources: v1alpha1.ResourceInfoList{
+							{
+								Name:        string(corev1.ResourceCPU),
+								Allocatable: resource.MustParse("10"),
+							},
+							{
+								Name:        string(corev1.ResourceMemory),
+								Allocatable: resource.MustParse("20Gi"),
+							},
+							{
+								Name:        "other-resource",
+								Allocatable: resource.MustParse("1"),
+							},
+						},
+					},
+				},
+				b: v1alpha1.ZoneList{
+					{
+						Name: "node-0",
+						Resources: v1alpha1.ResourceInfoList{
+							{
+								Name:        "other-resource",
+								Allocatable: resource.MustParse("1"),
+							},
+						},
+					},
+					{
+						Name: "node-1",
+						Resources: v1alpha1.ResourceInfoList{
+							{
+								Name:        string(corev1.ResourceCPU),
+								Allocatable: resource.MustParse("10"),
+							},
+							{
+								Name:        string(corev1.ResourceMemory),
+								Allocatable: resource.MustParse("20Gi"),
+							},
+							{
+								Name:        "other-resource",
+								Allocatable: resource.MustParse("1"),
+							},
+						},
+					},
+				},
+			},
+			want: false,
+		},
+		{
+			name: "target resources removed",
+			args: args{
+				a: v1alpha1.ZoneList{
+					{
+						Name: "node-0",
+						Resources: v1alpha1.ResourceInfoList{
+							{
+								Name:        string(corev1.ResourceCPU),
+								Allocatable: resource.MustParse("10"),
+							},
+							{
+								Name:        string(corev1.ResourceMemory),
+								Allocatable: resource.MustParse("20Gi"),
+							},
+							{
+								Name:        "other-resource",
+								Allocatable: resource.MustParse("1"),
+							},
+						},
+					},
+					{
+						Name: "node-1",
+						Resources: v1alpha1.ResourceInfoList{
+							{
+								Name:        string(corev1.ResourceCPU),
+								Allocatable: resource.MustParse("10"),
+							},
+							{
+								Name:        string(corev1.ResourceMemory),
+								Allocatable: resource.MustParse("20Gi"),
+							},
+							{
+								Name:        "other-resource",
+								Allocatable: resource.MustParse("1"),
+							},
+						},
+					},
+				},
+				b: v1alpha1.ZoneList{
+					{
+						Name: "node-0",
+						Resources: v1alpha1.ResourceInfoList{
+							{
+								Name:        string(corev1.ResourceCPU),
+								Allocatable: resource.MustParse("10"),
+							},
+							{
+								Name:        string(corev1.ResourceMemory),
+								Allocatable: resource.MustParse("20Gi"),
+							},
+							{
+								Name:        "other-resource",
+								Allocatable: resource.MustParse("1"),
+							},
+						},
+					},
+					{
+						Name: "node-1",
+						Resources: v1alpha1.ResourceInfoList{
+							{
+								Name:        "other-resource",
+								Allocatable: resource.MustParse("1"),
+							},
+						},
+					},
+				},
+			},
+			want: false,
+		},
+		{
+			name: "target resources changed",
+			args: args{
+				a: v1alpha1.ZoneList{
+					{
+						Name: "node-0",
+						Resources: v1alpha1.ResourceInfoList{
+							{
+								Name:        string(corev1.ResourceCPU),
+								Allocatable: resource.MustParse("10"),
+							},
+							{
+								Name:        string(corev1.ResourceMemory),
+								Allocatable: resource.MustParse("20Gi"),
+							},
+							{
+								Name:        "other-resource",
+								Allocatable: resource.MustParse("1"),
+							},
+						},
+					},
+					{
+						Name: "node-1",
+						Resources: v1alpha1.ResourceInfoList{
+							{
+								Name:        string(corev1.ResourceCPU),
+								Allocatable: resource.MustParse("10"),
+							},
+							{
+								Name:        string(corev1.ResourceMemory),
+								Allocatable: resource.MustParse("20Gi"),
+							},
+							{
+								Name:        "other-resource",
+								Allocatable: resource.MustParse("1"),
+							},
+						},
+					},
+				},
+				b: v1alpha1.ZoneList{
+					{
+						Name: "node-0",
+						Resources: v1alpha1.ResourceInfoList{
+							{
+								Name:        string(corev1.ResourceCPU),
+								Allocatable: resource.MustParse("10"),
+							},
+							{
+								Name:        string(corev1.ResourceMemory),
+								Allocatable: resource.MustParse("20Gi"),
+							},
+							{
+								Name:        "other-resource",
+								Allocatable: resource.MustParse("1"),
+							},
+						},
+					},
+					{
+						Name: "node-1",
+						Resources: v1alpha1.ResourceInfoList{
+							{
+								Name:        string(corev1.ResourceCPU),
+								Allocatable: resource.MustParse("10"),
+							},
+							{
+								Name:        string(corev1.ResourceMemory),
+								Allocatable: resource.MustParse("15Gi"),
+							},
+							{
+								Name:        "other-resource",
+								Allocatable: resource.MustParse("1"),
+							},
+						},
+					},
+				},
+			},
+			want: false,
+		},
+		{
+			name: "zone with target resources added",
+			args: args{
+				a: v1alpha1.ZoneList{
+					{
+						Name: "node-0",
+						Resources: v1alpha1.ResourceInfoList{
+							{
+								Name:        string(corev1.ResourceCPU),
+								Allocatable: resource.MustParse("10"),
+							},
+							{
+								Name:        string(corev1.ResourceMemory),
+								Allocatable: resource.MustParse("20Gi"),
+							},
+							{
+								Name:        "other-resource",
+								Allocatable: resource.MustParse("1"),
+							},
+						},
+					},
+				},
+				b: v1alpha1.ZoneList{
+					{
+						Name: "node-0",
+						Resources: v1alpha1.ResourceInfoList{
+							{
+								Name:        string(corev1.ResourceCPU),
+								Allocatable: resource.MustParse("10"),
+							},
+							{
+								Name:        string(corev1.ResourceMemory),
+								Allocatable: resource.MustParse("20Gi"),
+							},
+							{
+								Name:        "other-resource",
+								Allocatable: resource.MustParse("1"),
+							},
+						},
+					},
+					{
+						Name: "node-1",
+						Resources: v1alpha1.ResourceInfoList{
+							{
+								Name:        string(corev1.ResourceCPU),
+								Allocatable: resource.MustParse("10"),
+							},
+							{
+								Name:        string(corev1.ResourceMemory),
+								Allocatable: resource.MustParse("20Gi"),
+							},
+							{
+								Name:        "other-resource",
+								Allocatable: resource.MustParse("1"),
+							},
+						},
+					},
+				},
+			},
+			want: false,
+		},
+		{
+			name: "zone with target resources removed",
+			args: args{
+				a: v1alpha1.ZoneList{
+					{
+						Name: "node-0",
+						Resources: v1alpha1.ResourceInfoList{
+							{
+								Name:        string(corev1.ResourceCPU),
+								Allocatable: resource.MustParse("10"),
+							},
+							{
+								Name:        string(corev1.ResourceMemory),
+								Allocatable: resource.MustParse("20Gi"),
+							},
+							{
+								Name:        "other-resource",
+								Allocatable: resource.MustParse("1"),
+							},
+						},
+					},
+					{
+						Name: "node-1",
+						Resources: v1alpha1.ResourceInfoList{
+							{
+								Name:        string(corev1.ResourceCPU),
+								Allocatable: resource.MustParse("10"),
+							},
+							{
+								Name:        string(corev1.ResourceMemory),
+								Allocatable: resource.MustParse("20Gi"),
+							},
+							{
+								Name:        "other-resource",
+								Allocatable: resource.MustParse("1"),
+							},
+						},
+					},
+				},
+				b: v1alpha1.ZoneList{
+					{
+						Name: "node-0",
+						Resources: v1alpha1.ResourceInfoList{
+							{
+								Name:        string(corev1.ResourceCPU),
+								Allocatable: resource.MustParse("10"),
+							},
+							{
+								Name:        string(corev1.ResourceMemory),
+								Allocatable: resource.MustParse("20Gi"),
+							},
+							{
+								Name:        "other-resource",
+								Allocatable: resource.MustParse("1"),
+							},
+						},
+					},
+				},
+			},
+			want: false,
+		},
+		{
+			name: "resources changed",
+			args: args{
+				a: v1alpha1.ZoneList{
+					{
+						Name: "node-0",
+						Resources: v1alpha1.ResourceInfoList{
+							{
+								Name:        string(corev1.ResourceCPU),
+								Allocatable: resource.MustParse("10"),
+							},
+							{
+								Name:        string(corev1.ResourceMemory),
+								Allocatable: resource.MustParse("20Gi"),
+							},
+							{
+								Name:        "other-resource",
+								Allocatable: resource.MustParse("1"),
+							},
+						},
+					},
+					{
+						Name: "node-1",
+						Resources: v1alpha1.ResourceInfoList{
+							{
+								Name:        string(corev1.ResourceCPU),
+								Allocatable: resource.MustParse("20"),
+							},
+							{
+								Name:        string(corev1.ResourceMemory),
+								Allocatable: resource.MustParse("20Gi"),
+							},
+							{
+								Name:        "other-resource",
+								Allocatable: resource.MustParse("1"),
+							},
+						},
+					},
+				},
+				b: v1alpha1.ZoneList{
+					{
+						Name: "node-0",
+						Resources: v1alpha1.ResourceInfoList{
+							{
+								Name:        string(corev1.ResourceCPU),
+								Allocatable: resource.MustParse("20"),
+							},
+							{
+								Name:        string(corev1.ResourceMemory),
+								Allocatable: resource.MustParse("20Gi"),
+							},
+							{
+								Name:        "other-resource",
+								Allocatable: resource.MustParse("1"),
+							},
+						},
+					},
+					{
+						Name: "node-1",
+						Resources: v1alpha1.ResourceInfoList{
+							{
+								Name:        string(corev1.ResourceCPU),
+								Allocatable: resource.MustParse("10"),
+							},
+							{
+								Name:        string(corev1.ResourceMemory),
+								Allocatable: resource.MustParse("20Gi"),
+							},
+							{
+								Name:        "other-resource",
+								Allocatable: resource.MustParse("1"),
+							},
+						},
+					},
+				},
+			},
+			want: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := IsZoneListResourceEqual(tt.args.a, tt.args.b)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}

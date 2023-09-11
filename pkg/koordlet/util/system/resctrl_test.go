@@ -175,19 +175,11 @@ func Test_CheckAndTryEnableResctrlCat(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			sysFSRootDir := t.TempDir()
-			resctrlDir := filepath.Join(sysFSRootDir, ResctrlDir)
-			l3CatDir := filepath.Join(resctrlDir, RdtInfoDir, L3CatDir)
-			err := os.MkdirAll(l3CatDir, 0700)
-			assert.NoError(t, err)
+			helper := NewFileTestUtil(t)
+			defer helper.Cleanup()
 
-			cbmPath := filepath.Join(l3CatDir, ResctrlCbmMaskName)
-			err = os.WriteFile(cbmPath, []byte(tt.fields.cbmStr), 0666)
-			assert.NoError(t, err)
-
-			Conf = &Config{
-				SysFSRootDir: sysFSRootDir,
-			}
+			cbmPath := ResctrlL3CbmMask.Path("")
+			helper.WriteFileContents(cbmPath, tt.fields.cbmStr)
 			if tt.fields.invalidPath {
 				Conf.SysFSRootDir = "invalidPath"
 			}
@@ -195,6 +187,70 @@ func Test_CheckAndTryEnableResctrlCat(t *testing.T) {
 			gotErr := CheckAndTryEnableResctrlCat()
 
 			assert.Equal(t, tt.wantErr, gotErr != nil)
+		})
+	}
+}
+
+func TestCheckResctrlSchemataValid(t *testing.T) {
+	type fields struct {
+		isSchemataExist bool
+		schemataStr     string
+	}
+	tests := []struct {
+		name    string
+		fields  fields
+		wantErr bool
+	}{
+		{
+			name:    "check failed when schemata dir not exist",
+			wantErr: true,
+		},
+		{
+			name: "check failed when schemata content is empty",
+			fields: fields{
+				isSchemataExist: true,
+				schemataStr:     ``,
+			},
+			wantErr: true,
+		},
+		{
+			name: "check failed when schemata content is missing L3 CAT",
+			fields: fields{
+				isSchemataExist: true,
+				schemataStr:     `MB:0=100;1=100`,
+			},
+			wantErr: true,
+		},
+		{
+			name: "check successfully when schemata content is valid",
+			fields: fields{
+				isSchemataExist: true,
+				schemataStr: `MB:0=100;1=100
+L3:0=fff;1=fff`,
+			},
+			wantErr: false,
+		},
+		{
+			name: "check successfully when schemata content is valid 1",
+			fields: fields{
+				isSchemataExist: true,
+				schemataStr: `    L3:0=ffff;1=ffff;2=ffff;3=ffff;4=ffff
+    MB:0=2048;1=2048;2=2048;3=2048;4=2048`,
+			},
+			wantErr: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			helper := NewFileTestUtil(t)
+			defer helper.Cleanup()
+			if tt.fields.isSchemataExist {
+				schemataPath := ResctrlSchemata.Path("")
+				helper.WriteFileContents(schemataPath, tt.fields.schemataStr)
+			}
+
+			gotErr := CheckResctrlSchemataValid()
+			assert.Equal(t, tt.wantErr, gotErr != nil, gotErr)
 		})
 	}
 }

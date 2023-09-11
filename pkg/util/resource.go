@@ -18,6 +18,7 @@ package util
 
 import (
 	"fmt"
+	"math"
 	"sort"
 
 	"github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
@@ -99,28 +100,25 @@ func IsResourceListEqualValue(a, b corev1.ResourceList) bool {
 
 // IsResourceDiff returns whether the new resource has big enough difference with the old one or not
 func IsResourceDiff(old, new corev1.ResourceList, resourceName corev1.ResourceName, diffThreshold float64) bool {
-	oldQuant := 0.0
 	oldResource, oldExist := old[resourceName]
-	if oldExist {
-		oldQuant = float64(oldResource.MilliValue())
-	}
-
-	newQuant := 0.0
 	newResource, newExist := new[resourceName]
-	if newExist {
-		newQuant = float64(newResource.MilliValue())
-	}
 
 	if oldExist != newExist {
 		return true
 	}
-
 	if !oldExist && !newExist {
 		return false
 	}
 
 	// not equal for both are zero
-	return newQuant > oldQuant*(1+diffThreshold) || newQuant < oldQuant*(1-diffThreshold)
+	return IsQuantityDiff(oldResource, newResource, diffThreshold)
+}
+
+func IsQuantityDiff(old, new resource.Quantity, diffThreshold float64) bool {
+	oldMilli := old.MilliValue()
+	newMilli := new.MilliValue()
+	// use multiplication and larger than in case the oldMilli is zero
+	return math.Abs((float64)(newMilli-oldMilli)) > (float64)(oldMilli)*diffThreshold
 }
 
 func QuantityPtr(q resource.Quantity) *resource.Quantity {
@@ -175,6 +173,20 @@ func ZoneResourceListToZoneList(zoneResourceList map[string]corev1.ResourceList)
 	return zoneList
 }
 
+func TrimDifferentZone(a, b v1alpha1.ZoneList) v1alpha1.ZoneList {
+	zoneResourcesA := ZoneListToZoneResourceList(a)
+	zoneResourcesB := ZoneListToZoneResourceList(b)
+
+	for zoneName := range zoneResourcesA {
+		_, ok := zoneResourcesB[zoneName]
+		if !ok {
+			delete(zoneResourcesA, zoneName)
+		}
+	}
+
+	return ZoneResourceListToZoneList(zoneResourcesA)
+}
+
 // MergeZoneList merges ZoneList b override ZoneList a.
 func MergeZoneList(a, b v1alpha1.ZoneList) v1alpha1.ZoneList {
 	zoneResourcesA := ZoneListToZoneResourceList(a)
@@ -192,4 +204,55 @@ func MergeZoneList(a, b v1alpha1.ZoneList) v1alpha1.ZoneList {
 	}
 
 	return ZoneResourceListToZoneList(zoneResourcesA)
+}
+
+func IsZoneListResourceEqual(a, b v1alpha1.ZoneList, resourceNames ...string) bool {
+	zoneResourcesA := ZoneListToZoneResourceList(a)
+	zoneResourcesB := ZoneListToZoneResourceList(b)
+
+	if len(zoneResourcesA) > len(zoneResourcesB) { // keep B as the larger one
+		zoneResourcesA, zoneResourcesB = zoneResourcesB, zoneResourcesA
+	}
+	for zoneKey, zoneB := range zoneResourcesB {
+		zoneBHasResources := len(zoneB) > 0
+		zoneA, ok := zoneResourcesA[zoneKey]
+		if !ok && zoneBHasResources { // different resource name
+			return false
+		}
+		if !ok { // both have no resource
+			continue
+		}
+
+		if len(zoneA) > len(zoneB) { // keep B as the larger one
+			zoneA, zoneB = zoneB, zoneA
+		}
+
+		if len(resourceNames) <= 0 { // if resourceNames not specified, compare each resources in zone B
+			for resourceName, quantityB := range zoneB {
+				quantityA, ok := zoneA[resourceName]
+				if !ok && quantityB.Value() > 0 { // current resource has different quantity
+					return false
+				}
+				if quantityA.Cmp(quantityB) != 0 {
+					return false
+				}
+			}
+		} else {
+			for _, resourceName := range resourceNames {
+				quantityA, okA := zoneA[corev1.ResourceName(resourceName)]
+				quantityB, okB := zoneB[corev1.ResourceName(resourceName)]
+				if !okA && !okB {
+					continue
+				}
+				if !okA || !okB {
+					return false
+				}
+				if quantityA.Cmp(quantityB) != 0 {
+					return false
+				}
+			}
+		}
+	}
+
+	return true
 }

@@ -47,8 +47,8 @@ type cpusetPlugin struct {
 }
 
 var (
-	nonBEPodQOSConditions = []string{string(apiext.QoSSystem), string(apiext.QoSLSE), string(apiext.QoSLSR)}
-	bePodQOSConditions    = []string{string(apiext.QoSBE)}
+	cpusetPodQOSConditions   = []string{string(apiext.QoSLSE), string(apiext.QoSLSR)}
+	cpusharePodQOSConditions = []string{string(apiext.QoSLS), string(apiext.QoSBE), string(apiext.QoSSystem), string(apiext.QoSNone)}
 )
 
 func (p *cpusetPlugin) Register(op hooks.Options) {
@@ -59,21 +59,24 @@ func (p *cpusetPlugin) Register(op hooks.Options) {
 	rule.Register(name, description,
 		rule.WithParseFunc(statesinformer.RegisterTypeNodeTopology, p.parseRule),
 		rule.WithUpdateCallback(p.ruleUpdateCb))
-	reconciler.RegisterCgroupReconciler(reconciler.ContainerLevel, sysutil.CPUSet,
-		"set container cpuset and unset container cpu quota if needed",
-		p.SetContainerCPUSetAndUnsetCFS, reconciler.PodQOSFilter(), nonBEPodQOSConditions...)
-	reconciler.RegisterCgroupReconciler(reconciler.SandboxLevel, sysutil.CPUSet,
-		"set sandbox container cpuset and unset container cpu quota if needed",
-		p.SetContainerCPUSetAndUnsetCFS, reconciler.PodQOSFilter(), nonBEPodQOSConditions...)
-	reconciler.RegisterCgroupReconciler(reconciler.PodLevel, sysutil.CPUCFSQuota, "unset pod cpu quota if needed",
-		UnsetPodCPUQuota, reconciler.PodQOSFilter(), nonBEPodQOSConditions...)
 
 	reconciler.RegisterCgroupReconciler(reconciler.ContainerLevel, sysutil.CPUSet,
-		"set container cpuset for be pod is specified",
-		p.SetContainerCPUSet, reconciler.PodQOSFilter(), bePodQOSConditions...)
+		"set container cpuset and unset container cpu quota if needed for cpuset pod",
+		p.SetContainerCPUSetAndUnsetCFS, reconciler.PodQOSFilter(), cpusetPodQOSConditions...)
 	reconciler.RegisterCgroupReconciler(reconciler.SandboxLevel, sysutil.CPUSet,
-		"set sandbox container cpuset for be pod is specified",
-		p.SetContainerCPUSet, reconciler.PodQOSFilter(), bePodQOSConditions...)
+		"set sandbox container cpuset and unset container cpu quota if needed for cpuset pod",
+		p.SetContainerCPUSetAndUnsetCFS, reconciler.PodQOSFilter(), cpusetPodQOSConditions...)
+	reconciler.RegisterCgroupReconciler(reconciler.PodLevel, sysutil.CPUCFSQuota,
+		"unset pod cpu quota if needed for cpuset pod", UnsetPodCPUQuota,
+		reconciler.PodQOSFilter(), cpusetPodQOSConditions...)
+
+	reconciler.RegisterCgroupReconciler(reconciler.ContainerLevel, sysutil.CPUSet,
+		"set container cpuset for cpushare pod is specified",
+		p.SetContainerCPUSet, reconciler.PodQOSFilter(), cpusharePodQOSConditions...)
+	reconciler.RegisterCgroupReconciler(reconciler.SandboxLevel, sysutil.CPUSet,
+		"set sandbox container cpuset for cpushare pod is specified",
+		p.SetContainerCPUSet, reconciler.PodQOSFilter(), cpusharePodQOSConditions...)
+
 	reconciler.RegisterHostAppReconciler(sysutil.CPUSet, "set host application cpuset",
 		p.SetHostAppCPUSet, &reconciler.ReconcilerOption{})
 	p.executor = op.Executor
