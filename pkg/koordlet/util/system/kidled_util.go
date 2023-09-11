@@ -20,7 +20,6 @@ import (
 	"bufio"
 	"fmt"
 	"os"
-	"os/user"
 	"reflect"
 	"strconv"
 	"strings"
@@ -175,15 +174,8 @@ func SetIsStartColdMemory(flag bool) {
 
 func SetKidledScanPeriodInSeconds(period uint32) error {
 	path := KidledScanPeriodInSeconds.Path("")
-	usr, _ := user.Current()
-	klog.V(4).Infof("usrname", usr.Username)
-	klog.V(4).Infof("groupname", usr.Name)
 	file, err := os.OpenFile(path, os.O_WRONLY|os.O_TRUNC, 0644)
 	if err != nil {
-		scanpath, _ := os.Stat(path)
-		klog.V(4).Infof("scanpath", scanpath.Mode().Perm())
-		rootdir, _ := os.Stat(GetSysRootDir())
-		klog.V(4).Infof("rootpath", rootdir.Mode().Perm())
 		return err
 	}
 	defer file.Close()
