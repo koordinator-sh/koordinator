@@ -156,7 +156,7 @@ var (
 		Libpfm4:                {Default: false, PreRelease: featuregate.Alpha},
 		PSICollector:           {Default: false, PreRelease: featuregate.Alpha},
 		BlkIOReconcile:         {Default: false, PreRelease: featuregate.Alpha},
-		ColdPageCollector:      {Default: false, PreRelease: featuregate.Alpha},
+		ColdPageCollector:      {Default: true, PreRelease: featuregate.Alpha},
 	}
 )
 
