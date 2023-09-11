@@ -43,6 +43,9 @@ const (
 	// AnnotationNodeCPUSharedPools describes the CPU Shared Pool defined by Koordinator.
 	// The shared pool is mainly used by Koordinator LS Pods or K8s Burstable Pods.
 	AnnotationNodeCPUSharedPools = NodeDomainPrefix + "/cpu-shared-pools"
+	// AnnotationNodeBECPUSharedPools describes the CPU Shared Pool defined by Koordinator.
+	// The shared pool is mainly used by Koordinator BE Pods or K8s Besteffort Pods.
+	AnnotationNodeBECPUSharedPools = NodeDomainPrefix + "/be-cpu-shared-pools"
 
 	// LabelNodeCPUBindPolicy constrains how to bind CPU logical CPUs when scheduling.
 	LabelNodeCPUBindPolicy = NodeDomainPrefix + "/cpu-bind-policy"
@@ -282,6 +285,19 @@ func GetNodeCPUSharePools(nodeTopoAnnotations map[string]string) ([]CPUSharedPoo
 		return nil, err
 	}
 	return cpuSharePools, nil
+}
+
+func GetNodeBECPUSharePools(nodeTopoAnnotations map[string]string) ([]CPUSharedPool, error) {
+	var beCPUSharePools []CPUSharedPool
+	data, ok := nodeTopoAnnotations[AnnotationNodeBECPUSharedPools]
+	if !ok {
+		return beCPUSharePools, nil
+	}
+	err := json.Unmarshal([]byte(data), &beCPUSharePools)
+	if err != nil {
+		return nil, err
+	}
+	return beCPUSharePools, nil
 }
 
 func GetKubeletCPUManagerPolicy(annotations map[string]string) (*KubeletCPUManagerPolicy, error) {

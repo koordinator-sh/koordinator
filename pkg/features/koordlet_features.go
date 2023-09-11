@@ -46,6 +46,13 @@ const (
 	BECPUSuppress featuregate.Feature = "BECPUSuppress"
 
 	// owner: @zwzhang0107 @saintube
+	// alpha: v1.4
+	//
+	// BECPUManager manages cpuset of best-effort pod, this feature cannot work with BECPUSuppress together
+	// TODO use BECPUManager to replace BECPUSuppress for advanced cpu management for be pods
+	BECPUManager featuregate.Feature = "BECPUManager"
+
+	// owner: @zwzhang0107 @saintube
 	// alpha: v0.4
 	//
 	// BECPUEvict evicts best-effort pod when they lack of resource.
@@ -128,6 +135,7 @@ var (
 		AuditEvents:            {Default: false, PreRelease: featuregate.Alpha},
 		AuditEventsHTTPHandler: {Default: false, PreRelease: featuregate.Alpha},
 		BECPUSuppress:          {Default: true, PreRelease: featuregate.Beta},
+		BECPUManager:           {Default: false, PreRelease: featuregate.Alpha},
 		BECPUEvict:             {Default: false, PreRelease: featuregate.Alpha},
 		BEMemoryEvict:          {Default: false, PreRelease: featuregate.Alpha},
 		CPUBurst:               {Default: true, PreRelease: featuregate.Beta},

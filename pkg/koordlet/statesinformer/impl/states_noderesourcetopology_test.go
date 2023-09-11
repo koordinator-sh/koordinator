@@ -436,8 +436,11 @@ func Test_reportNodeTopology(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "pod1",
 					Namespace: "ns1",
+					Labels: map[string]string{
+						extension.LabelPodQoS: string(extension.QoSLSR),
+					},
 					Annotations: map[string]string{
-						extension.AnnotationResourceStatus: `{"cpuset": "4-5" }`,
+						extension.AnnotationResourceStatus: `{"cpuset": "4" }`,
 					},
 				},
 			},
@@ -448,7 +451,20 @@ func Test_reportNodeTopology(t *testing.T) {
 					Name:      "pod2",
 					Namespace: "ns2",
 					Annotations: map[string]string{
+						extension.LabelPodQoS:              string(extension.QoSLSR),
 						extension.AnnotationResourceStatus: `{"cpuset": "3" }`,
+					},
+				},
+			},
+		},
+		"pod3-lse": {
+			Pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "pod2",
+					Namespace: "ns2",
+					Annotations: map[string]string{
+						extension.LabelPodQoS:              string(extension.QoSLSE),
+						extension.AnnotationResourceStatus: `{"cpuset": "5" }`,
 					},
 				},
 			},
@@ -458,6 +474,7 @@ func Test_reportNodeTopology(t *testing.T) {
 	mockMetricCache.EXPECT().Get(metriccache.NodeNUMAInfoKey).Return(mockNodeNUMAInfo, true).AnyTimes()
 
 	expectedCPUSharedPool := `[{"socket":0,"node":0,"cpuset":"0-2"},{"socket":1,"node":1,"cpuset":"6-7"}]`
+	expectedBECPUSharedPool := `[{"socket":0,"node":0,"cpuset":"0-2,3-4"},{"socket":1,"node":1,"cpuset":"6-7"}]`
 	expectedCPUTopology := `{"detail":[{"id":0,"core":0,"socket":0,"node":0},{"id":1,"core":0,"socket":0,"node":0},{"id":2,"core":1,"socket":0,"node":0},{"id":3,"core":1,"socket":0,"node":0},{"id":4,"core":2,"socket":1,"node":1},{"id":5,"core":2,"socket":1,"node":1},{"id":6,"core":3,"socket":1,"node":1},{"id":7,"core":3,"socket":1,"node":1}]}`
 	expectedCPUBasicInfoBytes, err := json.Marshal(mockNodeCPUInfo.BasicInfo)
 	assert.NoError(t, err)
@@ -512,6 +529,7 @@ func Test_reportNodeTopology(t *testing.T) {
 		expectedKubeletCPUManagerPolicy extension.KubeletCPUManagerPolicy
 		expectedCPUBasicInfo            string
 		expectedCPUSharedPool           string
+		expectedBECPUSharedPool         string
 		expectedCPUTopology             string
 		expectedNodeReservation         string
 		expectedSystemQOS               string
@@ -535,6 +553,7 @@ func Test_reportNodeTopology(t *testing.T) {
 			},
 			expectedCPUBasicInfo:     string(expectedCPUBasicInfoBytes),
 			expectedCPUSharedPool:    expectedCPUSharedPool,
+			expectedBECPUSharedPool:  expectedBECPUSharedPool,
 			expectedCPUTopology:      expectedCPUTopology,
 			expectedNodeReservation:  "{}",
 			expectedSystemQOS:        "{}",
@@ -722,6 +741,29 @@ func Test_nodeTopology_isChanged(t *testing.T) {
 			},
 			want:    true,
 			wantMsg: "metadata changed",
+		},
+		{
+			name: "be cpu share pool changed",
+			args: args{
+				oldTopo: &topologyv1alpha1.NodeResourceTopology{
+					ObjectMeta: metav1.ObjectMeta{
+						Annotations: map[string]string{
+							"node.koordinator.sh/be-cpu-shared-pools": "[{\"socket\":0,\"node\":0,\"cpuset\":\"0-25,52-77\"},{\"socket\":1,\"node\":1,\"cpuset\":\"26-51,78-103\"}]",
+						},
+					},
+					TopologyPolicies: []string{""},
+					Zones:            nil,
+				},
+				newTopoStatus: &nodeTopologyStatus{
+					Annotations: map[string]string{
+						"node.koordinator.sh/be-cpu-shared-pools": "[{\"socket\":0,\"node\":0,\"cpuset\":\"1-25,52-77\"},{\"socket\":1,\"node\":1,\"cpuset\":\"26-51,78-103\"}]",
+					},
+					TopologyPolicy: "",
+					Zones:          nil,
+				},
+			},
+			want:    true,
+			wantMsg: "annotations changed, key node.koordinator.sh/be-cpu-shared-pools",
 		},
 		{
 			name: "annotation is new",
