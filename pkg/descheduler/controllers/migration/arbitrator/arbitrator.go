@@ -37,6 +37,7 @@ import (
 	"github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/apis/config"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/framework"
+	"github.com/koordinator-sh/koordinator/pkg/descheduler/utils/sorter"
 )
 
 const (
@@ -72,7 +73,12 @@ func New(args *config.ArbitrationArgs, options Options) (Arbitrator, error) {
 		waitingCollection: map[types.UID]*v1alpha1.PodMigrationJob{},
 		interval:          args.Interval.Duration,
 
-		sorts:                 []SortFn{},
+		sorts: []SortFn{
+			SortJobsByCreationTime(),
+			SortJobsByPod(sorter.PodSorter().Sort),
+			SortJobsByController(),
+			SortJobsByMigratingNum(options.Client),
+		},
 		retryablePodFilter:    options.RetryableFilter,
 		nonRetryablePodFilter: options.NonRetryableFilter,
 
