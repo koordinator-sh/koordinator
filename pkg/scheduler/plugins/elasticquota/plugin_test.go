@@ -42,7 +42,6 @@ import (
 	kubefake "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/rest"
 	"k8s.io/klog/v2"
-	resourcehelper "k8s.io/kubernetes/pkg/api/v1/resource"
 	schedulerconfig "k8s.io/kubernetes/pkg/scheduler/apis/config"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultbinder"
@@ -744,7 +743,7 @@ func TestPlugin_PreFilter_CheckParent(t *testing.T) {
 			qi1.Lock()
 			qi1.CalculateInfo.Runtime = tt.parentRuntime.DeepCopy()
 			qi1.UnLock()
-			podRequests, _ := resourcehelper.PodRequestsAndLimits(tt.pod)
+			podRequests, _ := core.PodRequestsAndLimits(tt.pod)
 			status := *gp.checkQuotaRecursive(tt.quotaInfo.Name, []string{tt.quotaInfo.Name}, podRequests)
 			assert.Equal(t, tt.expectedStatus, status)
 		})

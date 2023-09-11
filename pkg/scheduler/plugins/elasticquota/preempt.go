@@ -31,11 +31,12 @@ import (
 	corev1helpers "k8s.io/component-helpers/scheduling/corev1"
 	"k8s.io/klog/v2"
 	extenderv1 "k8s.io/kube-scheduler/extender/v1"
-	"k8s.io/kubernetes/pkg/api/v1/resource"
 	"k8s.io/kubernetes/pkg/features"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework/preemption"
 	"k8s.io/kubernetes/pkg/scheduler/util"
+
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/elasticquota/core"
 )
 
 func (g *Plugin) GetOffsetAndNumCandidates(nodes int32) (int32, int32) {
@@ -168,7 +169,7 @@ func (g *Plugin) SelectVictimsOnNode(
 	violatingVictims, nonViolatingVictims := filterPodsWithPDBViolation(potentialVictims, pdbs)
 
 	postFilterState, _ := getPostFilterState(state)
-	podReq, _ := resource.PodRequestsAndLimits(pod)
+	podReq, _ := core.PodRequestsAndLimits(pod)
 
 	reprievePod := func(pi *framework.PodInfo) (bool, error) {
 		if err := addPod(pi); err != nil {

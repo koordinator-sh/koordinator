@@ -30,7 +30,6 @@ import (
 	policylisters "k8s.io/client-go/listers/policy/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
-	"k8s.io/kubernetes/pkg/api/v1/resource"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework/preemption"
 	"k8s.io/kubernetes/pkg/scheduler/metrics"
@@ -207,7 +206,7 @@ func (g *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleState
 	}
 	state := g.snapshotPostFilterState(quotaInfo, cycleState)
 
-	podRequest, _ := resource.PodRequestsAndLimits(pod)
+	podRequest, _ := core.PodRequestsAndLimits(pod)
 	used := quotav1.Add(podRequest, state.used)
 
 	if isLessEqual, exceedDimensions := quotav1.LessThanOrEqual(used, state.runtime); !isLessEqual {
@@ -240,7 +239,7 @@ func (g *Plugin) AddPod(ctx context.Context, state *framework.CycleState, podToS
 		return framework.NewStatus(framework.Error, err.Error())
 	}
 	if postFilterState.quotaInfo.IsPodExist(podInfoToAdd.Pod) {
-		podReq, _ := resource.PodRequestsAndLimits(podInfoToAdd.Pod)
+		podReq, _ := core.PodRequestsAndLimits(podInfoToAdd.Pod)
 		postFilterState.used = quotav1.Add(postFilterState.used, podReq)
 	}
 	return framework.NewStatus(framework.Success, "")
@@ -259,7 +258,7 @@ func (g *Plugin) RemovePod(ctx context.Context, state *framework.CycleState, pod
 		return framework.NewStatus(framework.Error, err.Error())
 	}
 	if postFilterState.quotaInfo.IsPodExist(podInfoToRemove.Pod) {
-		podReq, _ := resource.PodRequestsAndLimits(podInfoToRemove.Pod)
+		podReq, _ := core.PodRequestsAndLimits(podInfoToRemove.Pod)
 		postFilterState.used = quotav1.SubtractWithNonNegativeResult(postFilterState.used, podReq)
 	}
 	return framework.NewStatus(framework.Success, "")
