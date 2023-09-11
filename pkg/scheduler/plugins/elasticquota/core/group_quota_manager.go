@@ -389,9 +389,10 @@ func (gqm *GroupQuotaManager) UpdateQuota(quota *v1alpha1.ElasticQuota, isDelete
 		newQuotaInfo := NewQuotaInfoFromQuota(quota)
 		// update the local quotaInfo's crd
 		if localQuotaInfo, exist := gqm.quotaInfoMap[quotaName]; exist {
-			// if the quotaMeta doesn't change, only runtime/used/request change causes update,
+			// if the quotaMeta doesn't change, only runtime/used/request/min/max/sharedWeight change causes update,
 			// no need to call updateQuotaGroupConfigNoLock.
 			if !localQuotaInfo.isQuotaMetaChange(newQuotaInfo) {
+				gqm.updateQuotaInternalNoLock(newQuotaInfo, localQuotaInfo)
 				return nil
 			}
 			localQuotaInfo.updateQuotaInfoFromRemote(newQuotaInfo)
@@ -399,6 +400,8 @@ func (gqm *GroupQuotaManager) UpdateQuota(quota *v1alpha1.ElasticQuota, isDelete
 			gqm.quotaInfoMap[quotaName] = newQuotaInfo
 		}
 	}
+
+	klog.Infof("reset quota tree %v, for quota %v/%v updated", gqm.treeID, quota.Namespace, quota.Name)
 	gqm.updateQuotaGroupConfigNoLock()
 
 	return nil
@@ -415,7 +418,7 @@ func (gqm *GroupQuotaManager) updateQuotaGroupConfigNoLock() {
 func (gqm *GroupQuotaManager) buildSubParGroupTopoNoLock() {
 	// rebuild QuotaTopoNodeMap
 	gqm.quotaTopoNodeMap = make(map[string]*QuotaTopoNode)
-	rootNode := NewQuotaTopoNode(NewQuotaInfo(false, true, extension.RootQuotaName, extension.RootQuotaName))
+	rootNode := NewQuotaTopoNode(extension.RootQuotaName, NewQuotaInfo(false, true, extension.RootQuotaName, extension.RootQuotaName))
 	gqm.quotaTopoNodeMap[extension.RootQuotaName] = rootNode
 
 	// add node according to the quotaInfoMap
@@ -423,7 +426,7 @@ func (gqm *GroupQuotaManager) buildSubParGroupTopoNoLock() {
 		if quotaName == extension.SystemQuotaName || quotaName == extension.DefaultQuotaName {
 			continue
 		}
-		gqm.quotaTopoNodeMap[quotaName] = NewQuotaTopoNode(quotaInfo)
+		gqm.quotaTopoNodeMap[quotaName] = NewQuotaTopoNode(quotaName, quotaInfo)
 	}
 
 	// build tree according to the parGroupName
@@ -434,7 +437,7 @@ func (gqm *GroupQuotaManager) buildSubParGroupTopoNoLock() {
 		parQuotaTopoNode := gqm.quotaTopoNodeMap[topoNode.quotaInfo.ParentName]
 		// incase load child before its parent
 		if parQuotaTopoNode == nil {
-			parQuotaTopoNode = NewQuotaTopoNode(&QuotaInfo{
+			parQuotaTopoNode = NewQuotaTopoNode(topoNode.quotaInfo.ParentName, &QuotaInfo{
 				Name: topoNode.quotaInfo.ParentName,
 			})
 		}
@@ -888,6 +891,9 @@ func (gqm *GroupQuotaManager) recursiveUpdateGroupTreeWithDeltaAllocated(deltaAl
 		curQuotaInfo := curToAllParInfos[i]
 		oldGuaranteed := curQuotaInfo.CalculateInfo.Guaranteed
 		curQuotaInfo.addAllocatedQuotaNoLock(deltaAllocated)
+		if curQuotaInfo.Name == extension.RootQuotaName {
+			return
+		}
 
 		// update the guarantee.
 		guaranteed := curQuotaInfo.CalculateInfo.Allocated.DeepCopy()
@@ -914,4 +920,114 @@ func (gqm *GroupQuotaManager) recursiveUpdateGroupTreeWithDeltaAllocated(deltaAl
 
 		deltaAllocated = quotav1.Subtract(guaranteed, oldGuaranteed)
 	}
+}
+
+func (gqm *GroupQuotaManager) updateQuotaInternalNoLock(newQuotaInfo, oldQuotaInfo *QuotaInfo) {
+	// max changed
+	if !quotav1.Equals(newQuotaInfo.CalculateInfo.Max, oldQuotaInfo.CalculateInfo.Max) {
+		gqm.doUpdateOneGroupMaxQuotaNoLock(newQuotaInfo.Name, newQuotaInfo.CalculateInfo.Max)
+	}
+
+	// min changed
+	if !quotav1.Equals(newQuotaInfo.CalculateInfo.Min, oldQuotaInfo.CalculateInfo.Min) {
+		gqm.doUpdateOneGroupMinQuotaNoLock(newQuotaInfo.Name, newQuotaInfo.CalculateInfo.Min)
+	}
+
+	// sharedweight changed
+	if !quotav1.Equals(newQuotaInfo.CalculateInfo.SharedWeight, oldQuotaInfo.CalculateInfo.SharedWeight) {
+		gqm.doUpdateOneGroupSharedWeightNoLock(newQuotaInfo.Name, newQuotaInfo.CalculateInfo.SharedWeight)
+	}
+
+}
+
+func (gqm *GroupQuotaManager) doUpdateOneGroupMaxQuotaNoLock(quotaName string, newMax v1.ResourceList) {
+	curToAllParInfos := gqm.getCurToAllParentGroupQuotaInfoNoLock(quotaName)
+	quotaInfoLen := len(curToAllParInfos)
+	if quotaInfoLen <= 0 {
+		return
+	}
+
+	defer gqm.scopedLockForQuotaInfo(curToAllParInfos)()
+
+	curQuotaInfo := curToAllParInfos[0]
+	oldSubLimitReq := curQuotaInfo.getLimitRequestNoLock()
+	curQuotaInfo.setMaxNoLock(newMax)
+
+	if quotaInfoLen > 1 {
+		parentRuntimeCalculator := gqm.getRuntimeQuotaCalculatorByNameNoLock(curQuotaInfo.ParentName)
+		if parentRuntimeCalculator == nil {
+			klog.Errorf("runtimeQuotaCalculator not exist! quotaName:%v  parentName:%v", curQuotaInfo.Name, curQuotaInfo.ParentName)
+			return
+		}
+		parentRuntimeCalculator.updateOneGroupMaxQuota(curQuotaInfo)
+
+		newSubLimitReq := curQuotaInfo.getLimitRequestNoLock()
+		deltaRequest := quotav1.Subtract(newSubLimitReq, oldSubLimitReq)
+		gqm.recursiveUpdateGroupTreeWithDeltaRequest(deltaRequest, curToAllParInfos[1:])
+	}
+}
+
+func (gqm *GroupQuotaManager) doUpdateOneGroupMinQuotaNoLock(quotaName string, newMin v1.ResourceList) {
+	curToAllParInfos := gqm.getCurToAllParentGroupQuotaInfoNoLock(quotaName)
+	quotaInfoLen := len(curToAllParInfos)
+	if quotaInfoLen <= 0 {
+		return
+	}
+
+	defer gqm.scopedLockForQuotaInfo(curToAllParInfos)()
+
+	// Update quota info
+	curQuotaInfo := curToAllParInfos[0]
+	curQuotaInfo.setMinNoLock(newMin)
+	curQuotaInfo.setAutoScaleMinQuotaNoLock(newMin)
+	gqm.scaleMinQuotaManager.update(curQuotaInfo.ParentName, quotaName, newMin, gqm.scaleMinQuotaEnabled)
+
+	// Update request. If the quota not allow to lent resource, the new min will effect the request.
+	oldSubLimitReq := curQuotaInfo.getLimitRequestNoLock()
+	realRequest := curQuotaInfo.CalculateInfo.ChildRequest.DeepCopy()
+	if !curQuotaInfo.AllowLentResource {
+		realRequest = quotav1.Max(realRequest, curQuotaInfo.CalculateInfo.Min)
+	}
+	curQuotaInfo.CalculateInfo.Request = realRequest
+
+	if quotaInfoLen > 1 {
+		// update parent runtime calculator for min changed
+		parentRuntimeCalculator := gqm.getRuntimeQuotaCalculatorByNameNoLock(curQuotaInfo.ParentName)
+		if parentRuntimeCalculator == nil {
+			klog.Errorf("runtimeQuotaCalculator not exist! quotaName:%v  parentName:%v", curQuotaInfo.Name, curQuotaInfo.ParentName)
+			return
+		}
+		parentRuntimeCalculator.updateOneGroupMinQuota(curQuotaInfo)
+
+		newSubLimitReq := curQuotaInfo.getLimitRequestNoLock()
+		deltaRequest := quotav1.Subtract(newSubLimitReq, oldSubLimitReq)
+		gqm.recursiveUpdateGroupTreeWithDeltaRequest(deltaRequest, curToAllParInfos[1:])
+	}
+
+	// update the guarantee.
+	if utilfeature.DefaultFeatureGate.Enabled(features.ElasticQuotaGuaranteeUsage) {
+		oldGuaranteed := curQuotaInfo.CalculateInfo.Guaranteed
+		newGuaranteed := quotav1.Max(curQuotaInfo.CalculateInfo.Allocated, curQuotaInfo.CalculateInfo.Min)
+		curQuotaInfo.CalculateInfo.Guaranteed = newGuaranteed
+
+		if quotaInfoLen > 1 {
+			parentRuntimeCalculator := gqm.getRuntimeQuotaCalculatorByNameNoLock(curQuotaInfo.ParentName)
+			if parentRuntimeCalculator == nil {
+				klog.Errorf("runtimeQuotaCalculator not exist! quotaName:%v  parentName:%v", curQuotaInfo.Name, curQuotaInfo.ParentName)
+				return
+			}
+			if parentRuntimeCalculator.needUpdateOneGroupGuaranteed(curQuotaInfo) {
+				parentRuntimeCalculator.updateOneGroupGuaranteed(curQuotaInfo)
+			}
+			deltaAllocated := quotav1.Subtract(newGuaranteed, oldGuaranteed)
+			gqm.recursiveUpdateGroupTreeWithDeltaAllocated(deltaAllocated, curToAllParInfos[1:])
+		}
+	}
+}
+
+func (gqm *GroupQuotaManager) doUpdateOneGroupSharedWeightNoLock(quotaName string, newSharedWeight v1.ResourceList) {
+	quotaInfo := gqm.getQuotaInfoByNameNoLock(quotaName)
+	quotaInfo.setSharedWeightNoLock(newSharedWeight)
+
+	gqm.updateOneGroupSharedWeightNoLock(quotaInfo)
 }

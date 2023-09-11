@@ -1097,8 +1097,8 @@ func TestPlugin_Recover(t *testing.T) {
 		suit.Handle.ClientSet().CoreV1().Nodes().Create(context.TODO(), node, metav1.CreateOptions{})
 	}
 	time.Sleep(100 * time.Millisecond)
-	suit.AddQuota("test1", "test-parent", 100, 1000, 0, 0, 0, 0, false, "")
 	suit.AddQuota("test-parent", extension.RootQuotaName, 100, 1000, 0, 0, 0, 0, true, "")
+	suit.AddQuota("test1", "test-parent", 100, 1000, 0, 0, 0, 0, false, "")
 	time.Sleep(100 * time.Millisecond)
 	pods := []*corev1.Pod{
 		defaultCreatePodWithQuotaName("1", "test1", 10, 10, 10),
