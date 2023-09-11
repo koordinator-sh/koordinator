@@ -111,6 +111,7 @@ webhooks:
     operations:
     - CREATE
     - UPDATE
+    - DELETE
     resources:
     - elasticquotas
   sideEffects: None

@@ -20,7 +20,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
 
-// +kubebuilder:webhook:path=/validate-scheduling-sigs-k8s-io-v1alpha1-elasticquota,mutating=false,failurePolicy=fail,sideEffects=None,admissionReviewVersions=v1;v1beta1,groups=scheduling.sigs.k8s.io,resources=elasticquotas,verbs=create;update,versions=v1alpha1,name=velasticquota.koordinator.sh
+// +kubebuilder:webhook:path=/validate-scheduling-sigs-k8s-io-v1alpha1-elasticquota,mutating=false,failurePolicy=fail,sideEffects=None,admissionReviewVersions=v1;v1beta1,groups=scheduling.sigs.k8s.io,resources=elasticquotas,verbs=create;update;delete,versions=v1alpha1,name=velasticquota.koordinator.sh
 
 var (
 	// HandlerMap contains admission webhook handlers
