@@ -20,6 +20,7 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"os/user"
 	"reflect"
 	"strconv"
 	"strings"
@@ -174,14 +175,15 @@ func SetIsStartColdMemory(flag bool) {
 
 func SetKidledScanPeriodInSeconds(period uint32) error {
 	path := KidledScanPeriodInSeconds.Path("")
-	klog.V(4).Infof("scan_period_in_seconds file path: %s", path)
-	file, err := os.OpenFile(path, os.O_WRONLY|os.O_TRUNC, 0666)
+	usr, _ := user.Current()
+	klog.V(4).Infof("usrname", usr.Username)
+	klog.V(4).Infof("groupname", usr.Name)
+	file, err := os.OpenFile(path, os.O_WRONLY|os.O_TRUNC, 0644)
 	if err != nil {
 		scanpath, _ := os.Stat(path)
 		klog.V(4).Infof("scanpath", scanpath.Mode().Perm())
 		rootdir, _ := os.Stat(GetSysRootDir())
 		klog.V(4).Infof("rootpath", rootdir.Mode().Perm())
-		klog.V(4).Infof("open scan_period_in_seconds file err: ", err)
 		return err
 	}
 	defer file.Close()
@@ -192,9 +194,8 @@ func SetKidledScanPeriodInSeconds(period uint32) error {
 }
 func SetKidledUseHierarchy(useHierarchy uint8) error {
 	path := KidledUseHierarchy.Path("")
-	file, err := os.OpenFile(path, os.O_WRONLY|os.O_TRUNC, 0666)
+	file, err := os.OpenFile(path, os.O_WRONLY|os.O_TRUNC, 0644)
 	if err != nil {
-		klog.V(4).Infof("open use_hierarchy file err: ", err)
 		return err
 	}
 	defer file.Close()
