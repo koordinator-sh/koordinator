@@ -39,7 +39,7 @@ func TestEndpointsQueryQuotaInfo(t *testing.T) {
 	assert.Nil(t, err)
 
 	eq := p.(*Plugin)
-	quota := CreateQuota2("test1", "", 100, 100, 10, 10, 20, 20, false)
+	quota := CreateQuota2("test1", "", 100, 100, 10, 10, 20, 20, false, "")
 	eq.OnQuotaAdd(quota)
 
 	node := &corev1.Node{

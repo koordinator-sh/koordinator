@@ -18,6 +18,8 @@ package profile
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -45,6 +47,16 @@ func createResourceList(cpu, mem int64) corev1.ResourceList {
 	}
 }
 
+func createResourceListWithStorage(cpu, mem, storage int64) corev1.ResourceList {
+	return corev1.ResourceList{
+		// use NewMilliQuantity to calculate the runtimeQuota correctly in cpu dimension
+		// when the request is smaller than 1 core.
+		corev1.ResourceCPU:     *resource.NewMilliQuantity(cpu*1000, resource.DecimalSI),
+		corev1.ResourceMemory:  *resource.NewQuantity(mem, resource.BinarySI),
+		corev1.ResourceStorage: *resource.NewQuantity(storage, resource.BinarySI),
+	}
+}
+
 func defaultCreateNode(nodeName string, labels map[string]string, capacity corev1.ResourceList) *corev1.Node {
 	return &corev1.Node{
 		ObjectMeta: metav1.ObjectMeta{
@@ -64,19 +76,23 @@ func TestQuotaProfileReconciler_Reconciler_CreateQuota(t *testing.T) {
 	schedv1alpha1.AddToScheme(scheme)
 
 	nodes := []*corev1.Node{
-		defaultCreateNode("node1", map[string]string{"topology.kubernetes.io/zone": "cn-hangzhou-a"}, createResourceList(10, 1000)),
-		defaultCreateNode("node2", map[string]string{"topology.kubernetes.io/zone": "cn-hangzhou-a"}, createResourceList(10, 1000)),
-		defaultCreateNode("node3", map[string]string{"topology.kubernetes.io/zone": "cn-hangzhou-b"}, createResourceList(10, 1000)),
+		defaultCreateNode("node1", map[string]string{"topology.kubernetes.io/zone": "cn-hangzhou-a"}, createResourceListWithStorage(10, 1000, 1000)),
+		defaultCreateNode("node2", map[string]string{"topology.kubernetes.io/zone": "cn-hangzhou-a"}, createResourceListWithStorage(10, 1000, 1000)),
+		defaultCreateNode("node3", map[string]string{"topology.kubernetes.io/zone": "cn-hangzhou-b"}, createResourceListWithStorage(10, 1000, 1000)),
 	}
+
+	treeID1 := hash(fmt.Sprintf("%s/%s", "", "profile1"))
+	treeID2 := hash(fmt.Sprintf("%s/%s", "", "profile2"))
 
 	resourceRatio := "0.9"
 
 	tests := []struct {
-		name              string
-		profile           *quotav1alpha1.ElasticQuotaProfile
-		oriQuota          *schedv1alpha1.ElasticQuota
-		expectQuotaMin    corev1.ResourceList
-		expectQuotaLabels map[string]string
+		name                string
+		profile             *quotav1alpha1.ElasticQuotaProfile
+		oriQuota            *schedv1alpha1.ElasticQuota
+		expectQuotaMin      corev1.ResourceList
+		expectTotalResource corev1.ResourceList
+		expectQuotaLabels   map[string]string
 	}{
 		{
 			name: "cn-hangzhou-a profile",
@@ -91,9 +107,14 @@ func TestQuotaProfileReconciler_Reconciler_CreateQuota(t *testing.T) {
 					},
 				},
 			},
-			oriQuota:          nil,
-			expectQuotaMin:    createResourceList(20, 2000),
-			expectQuotaLabels: map[string]string{extension.LabelQuotaProfile: "profile1"},
+			oriQuota:            nil,
+			expectQuotaMin:      createResourceList(20, 2000),
+			expectTotalResource: createResourceListWithStorage(20, 2000, 2000),
+			expectQuotaLabels: map[string]string{
+				extension.LabelQuotaProfile: "profile1",
+				extension.LabelQuotaTreeID:  treeID1,
+				extension.LabelQuotaIsRoot:  "true",
+			},
 		},
 		{
 			name: "cn-hangzhou-b profile",
@@ -108,18 +129,23 @@ func TestQuotaProfileReconciler_Reconciler_CreateQuota(t *testing.T) {
 					},
 				},
 			},
-			oriQuota:          nil,
-			expectQuotaMin:    createResourceList(10, 1000),
-			expectQuotaLabels: map[string]string{extension.LabelQuotaProfile: "profile2"},
+			oriQuota:            nil,
+			expectQuotaMin:      createResourceList(10, 1000),
+			expectTotalResource: createResourceListWithStorage(10, 1000, 1000),
+			expectQuotaLabels: map[string]string{
+				extension.LabelQuotaProfile: "profile2",
+				extension.LabelQuotaTreeID:  treeID2,
+				extension.LabelQuotaIsRoot:  "true",
+			},
 		},
 		{
 			name: "more quota labels",
 			profile: &quotav1alpha1.ElasticQuotaProfile{
 				ObjectMeta: metav1.ObjectMeta{
-					Name: "profile3",
+					Name: "profile1",
 				},
 				Spec: quotav1alpha1.ElasticQuotaProfileSpec{
-					QuotaName: "profile3-root",
+					QuotaName: "profile1-root",
 					QuotaLabels: map[string]string{
 						"topology.kubernetes.io/zone": "cn-hangzhou-a",
 					},
@@ -128,18 +154,24 @@ func TestQuotaProfileReconciler_Reconciler_CreateQuota(t *testing.T) {
 					},
 				},
 			},
-			oriQuota:          nil,
-			expectQuotaMin:    createResourceList(20, 2000),
-			expectQuotaLabels: map[string]string{extension.LabelQuotaProfile: "profile3", "topology.kubernetes.io/zone": "cn-hangzhou-a"},
+			oriQuota:            nil,
+			expectQuotaMin:      createResourceList(20, 2000),
+			expectTotalResource: createResourceListWithStorage(20, 2000, 2000),
+			expectQuotaLabels: map[string]string{
+				extension.LabelQuotaProfile:   "profile1",
+				extension.LabelQuotaTreeID:    treeID1,
+				"topology.kubernetes.io/zone": "cn-hangzhou-a",
+				extension.LabelQuotaIsRoot:    "true",
+			},
 		},
 		{
 			name: "exist quota",
 			profile: &quotav1alpha1.ElasticQuotaProfile{
 				ObjectMeta: metav1.ObjectMeta{
-					Name: "profile4",
+					Name: "profile1",
 				},
 				Spec: quotav1alpha1.ElasticQuotaProfileSpec{
-					QuotaName: "profile4-root",
+					QuotaName: "profile1-root",
 					QuotaLabels: map[string]string{
 						"topology.kubernetes.io/zone": "cn-hangzhou-a",
 					},
@@ -150,15 +182,22 @@ func TestQuotaProfileReconciler_Reconciler_CreateQuota(t *testing.T) {
 			},
 			oriQuota: &schedv1alpha1.ElasticQuota{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:   "profile4-root",
+					Name:   "profile1-root",
 					Labels: map[string]string{"a": "a"},
 				},
 				Spec: schedv1alpha1.ElasticQuotaSpec{
 					Min: createResourceList(5, 50),
 				},
 			},
-			expectQuotaMin:    createResourceList(20, 2000),
-			expectQuotaLabels: map[string]string{extension.LabelQuotaProfile: "profile4", "topology.kubernetes.io/zone": "cn-hangzhou-a", "a": "a"},
+			expectQuotaMin:      createResourceList(20, 2000),
+			expectTotalResource: createResourceListWithStorage(20, 2000, 2000),
+			expectQuotaLabels: map[string]string{
+				extension.LabelQuotaProfile:   "profile1",
+				extension.LabelQuotaTreeID:    treeID1,
+				"topology.kubernetes.io/zone": "cn-hangzhou-a",
+				"a":                           "a",
+				extension.LabelQuotaIsRoot:    "true",
+			},
 		},
 		{
 			name: "has ratio",
@@ -174,9 +213,69 @@ func TestQuotaProfileReconciler_Reconciler_CreateQuota(t *testing.T) {
 					},
 				},
 			},
-			oriQuota:          nil,
-			expectQuotaMin:    createResourceList(18, 1800),
-			expectQuotaLabels: map[string]string{extension.LabelQuotaProfile: "profile1"},
+			oriQuota:            nil,
+			expectQuotaMin:      createResourceList(18, 1800),
+			expectTotalResource: createResourceListWithStorage(18, 1800, 2000),
+			expectQuotaLabels: map[string]string{
+				extension.LabelQuotaProfile: "profile1",
+				extension.LabelQuotaTreeID:  treeID1,
+				extension.LabelQuotaIsRoot:  "true",
+			},
+		},
+		{
+			name: "with tree id",
+			profile: &quotav1alpha1.ElasticQuotaProfile{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "profile1",
+					Labels: map[string]string{
+						extension.LabelQuotaTreeID: "tree1",
+					},
+				},
+				Spec: quotav1alpha1.ElasticQuotaProfileSpec{
+					QuotaName:     "profile1-root",
+					ResourceRatio: &resourceRatio,
+					NodeSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{"topology.kubernetes.io/zone": "cn-hangzhou-a"},
+					},
+				},
+			},
+			oriQuota:            nil,
+			expectQuotaMin:      createResourceList(18, 1800),
+			expectTotalResource: createResourceListWithStorage(18, 1800, 2000),
+			expectQuotaLabels: map[string]string{
+				extension.LabelQuotaProfile: "profile1",
+				extension.LabelQuotaTreeID:  "tree1",
+				extension.LabelQuotaIsRoot:  "true",
+			},
+		},
+		{
+			name: "with resource key",
+			profile: &quotav1alpha1.ElasticQuotaProfile{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "profile1",
+					Labels: map[string]string{
+						extension.LabelQuotaTreeID: "tree1",
+					},
+					Annotations: map[string]string{
+						extension.AnnotationResourceKeys: "[\"cpu\"]",
+					},
+				},
+				Spec: quotav1alpha1.ElasticQuotaProfileSpec{
+					QuotaName:     "profile1-root",
+					ResourceRatio: &resourceRatio,
+					NodeSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{"topology.kubernetes.io/zone": "cn-hangzhou-a"},
+					},
+				},
+			},
+			oriQuota:            nil,
+			expectQuotaMin:      corev1.ResourceList{corev1.ResourceCPU: *resource.NewMilliQuantity(18*1000, resource.DecimalSI)},
+			expectTotalResource: createResourceListWithStorage(18, 2000, 2000),
+			expectQuotaLabels: map[string]string{
+				extension.LabelQuotaProfile: "profile1",
+				extension.LabelQuotaTreeID:  "tree1",
+				extension.LabelQuotaIsRoot:  "true",
+			},
 		},
 	}
 
@@ -206,7 +305,13 @@ func TestQuotaProfileReconciler_Reconciler_CreateQuota(t *testing.T) {
 			quota := &schedv1alpha1.ElasticQuota{}
 			err = r.Client.Get(context.TODO(), types.NamespacedName{Namespace: tc.profile.Namespace, Name: tc.profile.Spec.QuotaName}, quota)
 			assert.NoError(t, err)
+
+			total := corev1.ResourceList{}
+			err = json.Unmarshal([]byte(quota.Annotations[extension.AnnotationTotalResource]), &total)
+			assert.NoError(t, err)
+
 			assert.True(t, quotav1.Equals(tc.expectQuotaMin, quota.Spec.Min))
+			assert.True(t, quotav1.Equals(tc.expectTotalResource, total))
 			assert.Equal(t, tc.expectQuotaLabels, quota.Labels)
 		})
 	}

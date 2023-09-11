@@ -17,16 +17,20 @@ limitations under the License.
 package elasticquota
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"reflect"
 	"sync"
 
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
+	utilclient "github.com/koordinator-sh/koordinator/pkg/util/client"
 )
 
 type quotaTopology struct {
@@ -76,6 +80,7 @@ func (qt *quotaTopology) ValidAddQuota(quota *v1alpha1.ElasticQuota) error {
 	}
 
 	quotaInfo := NewQuotaInfoFromQuota(quota)
+
 	if err := qt.validateQuotaTopology(nil, quotaInfo, nil); err != nil {
 		return err
 	}
@@ -167,6 +172,18 @@ func (qt *quotaTopology) ValidDeleteQuota(quota *v1alpha1.ElasticQuota) error {
 		return fmt.Errorf("BUG quotaMap and quotaTree information out of sync, losed :%v", quotaName)
 	}
 
+	podList := &corev1.PodList{}
+	opts := &client.ListOptions{
+		FieldSelector: fields.OneTermEqualSelector("label.quotaName", quota.Name),
+	}
+	err := qt.client.List(context.TODO(), podList, opts, utilclient.DisableDeepCopy)
+	if err != nil {
+		return fmt.Errorf("failed list pods for quota %v, err: %v", quota.Name, err)
+	}
+	if len(podList.Items) > 0 {
+		return fmt.Errorf("delete quota failed, quota%v has child pods", quotaName)
+	}
+
 	delete(qt.quotaHierarchyInfo[quotaInfo.ParentName], quotaName)
 	delete(qt.quotaHierarchyInfo, quotaName)
 	delete(qt.quotaInfoMap, quotaName)
@@ -190,6 +207,19 @@ func (qt *quotaTopology) fillQuotaDefaultInformation(quota *v1alpha1.ElasticQuot
 		quota.Labels[extension.LabelQuotaParent] = extension.RootQuotaName
 		klog.V(5).Infof("fill quota %v parent as root", quota.Name)
 	}
+
+	// add tree id, if the parent has tree id
+	if quota.Labels[extension.LabelQuotaTreeID] == "" && quota.Labels[extension.LabelQuotaParent] != extension.RootQuotaName {
+		parentInfo := qt.quotaInfoMap[quota.Labels[extension.LabelQuotaParent]]
+		if parentInfo == nil {
+			return fmt.Errorf("fill quota %v failed, parent not exist", quota.Name)
+		}
+
+		if parentInfo.TreeID != "" {
+			quota.Labels[extension.LabelQuotaTreeID] = parentInfo.TreeID
+		}
+	}
+
 	maxQuota, err := json.Marshal(&quota.Spec.Max)
 	if err != nil {
 		return fmt.Errorf("fillDefaultQuotaInfo marshal quota max failed:%v", err)
@@ -198,6 +228,7 @@ func (qt *quotaTopology) fillQuotaDefaultInformation(quota *v1alpha1.ElasticQuot
 		quota.Annotations[extension.AnnotationSharedWeight] = string(maxQuota)
 		klog.V(5).Infof("fill quota %v sharedWeight as max", quota.Name)
 	}
+
 	return nil
 }
 

@@ -69,7 +69,6 @@ func gvr(resource string) metav1.GroupVersionResource {
 func TestElasticQuotaValidatingHandler_Handle(t *testing.T) {
 	handler := makeTestHandler()
 	ctx := context.Background()
-
 	testCases := []struct {
 		name    string
 		request admission.Request
@@ -121,6 +120,70 @@ func TestElasticQuotaValidatingHandler_Handle(t *testing.T) {
 				},
 			},
 			allowed: true,
+		},
+		{
+			name: "elasticQuota add tree id",
+			request: admission.Request{
+				AdmissionRequest: admissionv1.AdmissionRequest{
+					Resource:  gvr("elasticquotas"),
+					Operation: admissionv1.Update,
+					Object: runtime.RawExtension{
+						Raw: []byte(`{"metadata":{"name":"quota1", "labels":{"quota.scheduling.koordinator.sh/tree-id":"tree-1"}}}`),
+					},
+					OldObject: runtime.RawExtension{
+						Raw: []byte(`{"metadata":{"name":"quota1"}}`),
+					},
+				},
+			},
+			allowed: false,
+			code:    http.StatusBadRequest,
+		},
+		{
+			name: "elasticQuota create with tree id",
+			request: admission.Request{
+				AdmissionRequest: admissionv1.AdmissionRequest{
+					Resource:  gvr("elasticquotas"),
+					Operation: admissionv1.Create,
+					Object: runtime.RawExtension{
+						Raw: []byte(`{"metadata":{"name":"quota2", "labels":{"quota.scheduling.koordinator.sh/tree-id":"tree-2"}}}`),
+					},
+				},
+			},
+			allowed: true,
+		},
+		{
+			name: "elasticQuota change tree id",
+			request: admission.Request{
+				AdmissionRequest: admissionv1.AdmissionRequest{
+					Resource:  gvr("elasticquotas"),
+					Operation: admissionv1.Update,
+					Object: runtime.RawExtension{
+						Raw: []byte(`{"metadata":{"name":"quota2", "labels":{"quota.scheduling.koordinator.sh/tree-id":"tree-1"}}}`),
+					},
+					OldObject: runtime.RawExtension{
+						Raw: []byte(`{"metadata":{"name":"quota2", "labels":{"quota.scheduling.koordinator.sh/tree-id":"tree-2"}}}`),
+					},
+				},
+			},
+			allowed: false,
+			code:    http.StatusBadRequest,
+		},
+		{
+			name: "elasticQuota remove tree id",
+			request: admission.Request{
+				AdmissionRequest: admissionv1.AdmissionRequest{
+					Resource:  gvr("elasticquotas"),
+					Operation: admissionv1.Update,
+					Object: runtime.RawExtension{
+						Raw: []byte(`{"metadata":{"name":"quota2"}}`),
+					},
+					OldObject: runtime.RawExtension{
+						Raw: []byte(`{"metadata":{"name":"quota2", "labels":{"quota.scheduling.koordinator.sh/tree-id":"tree-2"}}}`),
+					},
+				},
+			},
+			allowed: false,
+			code:    http.StatusBadRequest,
 		},
 	}
 	for _, tc := range testCases {

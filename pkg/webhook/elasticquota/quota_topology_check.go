@@ -59,6 +59,7 @@ func (qt *quotaTopology) validateQuotaSelfItem(quota *v1alpha1.ElasticQuota) err
 			return fmt.Errorf("%v min :%v > max,%v", quota.Name, quota.Spec.Min, quota.Spec.Max)
 		}
 	}
+
 	return nil
 }
 
@@ -67,6 +68,11 @@ func (qt *quotaTopology) validateQuotaTopology(oldQuotaInfo, quotaInfo *QuotaInf
 	if err := qt.checkIsParentChange(oldQuotaInfo, quotaInfo, oldQuota); err != nil {
 		return err
 	}
+
+	if err := qt.checkTreeID(oldQuotaInfo, quotaInfo); err != nil {
+		return err
+	}
+
 	// if the quotaInfo's parent is root and its IsParent is false, the following checks will be true, just return nil.
 	if quotaInfo.ParentName == extension.RootQuotaName && !quotaInfo.IsParent {
 		return nil
@@ -82,6 +88,38 @@ func (qt *quotaTopology) validateQuotaTopology(oldQuotaInfo, quotaInfo *QuotaInf
 
 	if err := qt.checkMinQuotaSum(quotaInfo); err != nil {
 		return err
+	}
+
+	return nil
+}
+
+func (qt *quotaTopology) checkTreeID(oldQuotaInfo, quotaInfo *QuotaInfo) error {
+	if oldQuotaInfo != nil {
+		if oldQuotaInfo.TreeID != quotaInfo.TreeID {
+			return fmt.Errorf("%v tree id changed [%v] vs [%v]", quotaInfo.Name, oldQuotaInfo.TreeID, quotaInfo.TreeID)
+		}
+	}
+
+	// check the parent tree id
+	if quotaInfo.ParentName != extension.RootQuotaName {
+		// checkParentQuotaInfo has check parent exist
+		parentInfo := qt.quotaInfoMap[quotaInfo.ParentName]
+		if parentInfo != nil && quotaInfo.TreeID != parentInfo.TreeID {
+			return fmt.Errorf("%v tree id is different from parent %v, [%v] vs [%v]", quotaInfo.Name, parentInfo.Name, quotaInfo.TreeID, parentInfo.TreeID)
+		}
+	}
+
+	// check the children tree id
+	children, exist := qt.quotaHierarchyInfo[quotaInfo.Name]
+	if !exist || len(children) == 0 {
+		return nil
+	}
+
+	for name := range children {
+		childInfo := qt.quotaInfoMap[name]
+		if childInfo != nil && childInfo.TreeID != quotaInfo.TreeID {
+			return fmt.Errorf("%v tree id is different from child %v, [%v] vs [%v]", quotaInfo.Name, childInfo.Name, quotaInfo.TreeID, childInfo.TreeID)
+		}
 	}
 
 	return nil
@@ -253,6 +291,7 @@ func quotaFieldsCopy(q *v1alpha1.ElasticQuota) v1alpha1.ElasticQuota {
 			Labels: map[string]string{
 				extension.LabelQuotaParent:   q.Labels[extension.LabelQuotaParent],
 				extension.LabelQuotaIsParent: q.Labels[extension.LabelQuotaIsParent],
+				extension.LabelQuotaTreeID:   q.Labels[extension.LabelQuotaTreeID],
 			},
 			Annotations: map[string]string{
 				extension.AnnotationQuotaNamespaces: q.Annotations[extension.AnnotationQuotaNamespaces],

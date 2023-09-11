@@ -36,11 +36,14 @@ const (
 	LabelAllowLentResource    = QuotaKoordinatorPrefix + "/allow-lent-resource"
 	LabelQuotaName            = QuotaKoordinatorPrefix + "/name"
 	LabelQuotaProfile         = QuotaKoordinatorPrefix + "/profile"
+	LabelQuotaIsRoot          = QuotaKoordinatorPrefix + "/is-root"
+	LabelQuotaTreeID          = QuotaKoordinatorPrefix + "/tree-id"
 	AnnotationSharedWeight    = QuotaKoordinatorPrefix + "/shared-weight"
 	AnnotationRuntime         = QuotaKoordinatorPrefix + "/runtime"
 	AnnotationRequest         = QuotaKoordinatorPrefix + "/request"
 	AnnotationChildRequest    = QuotaKoordinatorPrefix + "/child-request"
 	AnnotationResourceKeys    = QuotaKoordinatorPrefix + "/resource-keys"
+	AnnotationTotalResource   = QuotaKoordinatorPrefix + "/total-resource"
 	AnnotationQuotaNamespaces = QuotaKoordinatorPrefix + "/namespaces"
 )
 
@@ -58,6 +61,10 @@ func IsParentQuota(quota *v1alpha1.ElasticQuota) bool {
 
 func IsAllowLentResource(quota *v1alpha1.ElasticQuota) bool {
 	return quota.Labels[LabelAllowLentResource] != "false"
+}
+
+func GetQuotaTreeID(quota *v1alpha1.ElasticQuota) string {
+	return quota.Labels[LabelQuotaTreeID]
 }
 
 func GetSharedWeight(quota *v1alpha1.ElasticQuota) corev1.ResourceList {

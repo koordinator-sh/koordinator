@@ -38,8 +38,7 @@ func TestQuotaOverUsedGroupMonitor_Monitor(t *testing.T) {
 	gqm := pg.groupQuotaManager
 	gqm.UpdateClusterTotalResource(createResourceList(100, 1000))
 	gqm.RefreshRuntime("test1")
-	quotaOverUsedRevokeController := NewQuotaOverUsedRevokeController(pg.handle.ClientSet(), pg.pluginArgs.DelayEvictTime.Duration,
-		pg.pluginArgs.RevokePodInterval.Duration, pg.groupQuotaManager, *pg.pluginArgs.MonitorAllQuotas)
+	quotaOverUsedRevokeController := NewQuotaOverUsedRevokeController(pg)
 	quotaOverUsedRevokeController.syncQuota()
 	monitor := quotaOverUsedRevokeController.monitors["test1"]
 	var pod *corev1.Pod
@@ -105,8 +104,7 @@ func TestQuotaOverUsedRevokeController_GetToRevokePodList(t *testing.T) {
 	qi.Lock()
 	qi.CalculateInfo.Runtime = createResourceList(50, 0)
 	qi.UnLock()
-	con := NewQuotaOverUsedRevokeController(plugin.handle.ClientSet(), plugin.pluginArgs.DelayEvictTime.Duration,
-		plugin.pluginArgs.RevokePodInterval.Duration, plugin.groupQuotaManager, *plugin.pluginArgs.MonitorAllQuotas)
+	con := NewQuotaOverUsedRevokeController(plugin)
 	con.syncQuota()
 	quotaInfo := gqm.GetQuotaInfoByName("test1")
 	pod1 := defaultCreatePod("1", 10, 30, 0)
@@ -145,10 +143,13 @@ func TestQuotaOverUsedRevokeController_GetToMonitorQuotas(t *testing.T) {
 	suit := newPluginTestSuit(t, nil)
 	p, _ := suit.proxyNew(suit.elasticQuotaArgs, suit.Handle)
 	plugin := p.(*Plugin)
+	monitorAllQuotas := true
+	plugin.pluginArgs.DelayEvictTime.Duration = 0 * time.Second
+	plugin.pluginArgs.MonitorAllQuotas = &monitorAllQuotas
+
 	gqm := plugin.groupQuotaManager
 	gqm.UpdateClusterTotalResource(createResourceList(10850060000, 0))
-	cc := NewQuotaOverUsedRevokeController(plugin.handle.ClientSet(), 0*time.Second,
-		plugin.pluginArgs.RevokePodInterval.Duration, plugin.groupQuotaManager, true)
+	cc := NewQuotaOverUsedRevokeController(plugin)
 
 	suit.AddQuota("test1", extension.RootQuotaName, 4797411900, 0, 1085006000, 0, 4797411900, 0, true, "extended")
 	suit.AddQuota("test2", extension.RootQuotaName, 4797411900, 0, 1085006000, 0, 4797411900, 0, true, "extended")
