@@ -18,11 +18,13 @@ package frameworkext
 
 import "k8s.io/kubernetes/pkg/scheduler/framework"
 
-type ErrorHandler func(*framework.QueuedPodInfo, error) bool
+type PreErrorHandlerFilter func(*framework.QueuedPodInfo, error) bool
+type PostErrorHandlerFilter PreErrorHandlerFilter
 
 type errorHandlerDispatcher struct {
-	handlers       []ErrorHandler
-	defaultHandler func(*framework.QueuedPodInfo, error)
+	preHandlerFilters  []PreErrorHandlerFilter
+	postHandlerFilters []PostErrorHandlerFilter
+	defaultHandler     func(*framework.QueuedPodInfo, error)
 }
 
 func newErrorHandlerDispatcher() *errorHandlerDispatcher {
@@ -33,13 +35,26 @@ func (d *errorHandlerDispatcher) setDefaultHandler(handler func(*framework.Queue
 	d.defaultHandler = handler
 }
 
-func (d *errorHandlerDispatcher) RegisterErrorHandler(handler ErrorHandler) {
-	d.handlers = append(d.handlers, handler)
+func (d *errorHandlerDispatcher) RegisterErrorHandlerFilters(preFilter PreErrorHandlerFilter, postFilter PostErrorHandlerFilter) {
+	if preFilter != nil {
+		d.preHandlerFilters = append(d.preHandlerFilters, preFilter)
+	}
+	if postFilter != nil {
+		d.postHandlerFilters = append(d.postHandlerFilters, postFilter)
+	}
 }
 
 func (d *errorHandlerDispatcher) Error(podInfo *framework.QueuedPodInfo, err error) {
-	for _, handler := range d.handlers {
-		if handler(podInfo, err) {
+	defer func() {
+		for _, handlerFilter := range d.postHandlerFilters {
+			if handlerFilter(podInfo, err) {
+				return
+			}
+		}
+	}()
+
+	for _, handlerFilter := range d.preHandlerFilters {
+		if handlerFilter(podInfo, err) {
 			return
 		}
 	}

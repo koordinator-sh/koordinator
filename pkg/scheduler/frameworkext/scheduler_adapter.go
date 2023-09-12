@@ -43,6 +43,8 @@ type SchedulerCache interface {
 	InvalidNodeInfo(nodeName string) error
 }
 
+type PreEnqueueCheck func(pod *corev1.Pod) bool
+
 type SchedulingQueue interface {
 	Add(pod *corev1.Pod) error
 	Update(oldPod, newPod *corev1.Pod) error
@@ -51,7 +53,7 @@ type SchedulingQueue interface {
 	SchedulingCycle() int64
 	AssignedPodAdded(pod *corev1.Pod)
 	AssignedPodUpdated(pod *corev1.Pod)
-	MoveAllToActiveOrBackoffQueue(event framework.ClusterEvent)
+	MoveAllToActiveOrBackoffQueue(event framework.ClusterEvent, preCheck PreEnqueueCheck)
 }
 
 var _ Scheduler = &SchedulerAdapter{}
@@ -68,8 +70,13 @@ func (s *SchedulerAdapter) GetSchedulingQueue() SchedulingQueue {
 	return &queueAdapter{s.Scheduler}
 }
 
-func (s *SchedulerAdapter) MoveAllToActiveOrBackoffQueue(event framework.ClusterEvent) {
-	s.Scheduler.SchedulingQueue.MoveAllToActiveOrBackoffQueue(event, nil)
+func (s *SchedulerAdapter) MoveAllToActiveOrBackoffQueue(event framework.ClusterEvent, preCheck PreEnqueueCheck) {
+	s.Scheduler.SchedulingQueue.MoveAllToActiveOrBackoffQueue(event, func(pod *corev1.Pod) bool {
+		if preCheck != nil {
+			return preCheck(pod)
+		}
+		return false
+	})
 }
 
 var _ SchedulerCache = &cacheAdapter{}
@@ -158,8 +165,13 @@ func (q *queueAdapter) AssignedPodUpdated(pod *corev1.Pod) {
 	q.scheduler.SchedulingQueue.AssignedPodUpdated(pod)
 }
 
-func (q *queueAdapter) MoveAllToActiveOrBackoffQueue(event framework.ClusterEvent) {
-	q.scheduler.SchedulingQueue.MoveAllToActiveOrBackoffQueue(event, nil)
+func (q *queueAdapter) MoveAllToActiveOrBackoffQueue(event framework.ClusterEvent, preCheck PreEnqueueCheck) {
+	q.scheduler.SchedulingQueue.MoveAllToActiveOrBackoffQueue(event, func(pod *corev1.Pod) bool {
+		if preCheck != nil {
+			return preCheck(pod)
+		}
+		return false
+	})
 }
 
 var _ Scheduler = &FakeScheduler{}
@@ -285,6 +297,6 @@ func (f *FakeQueue) AssignedPodUpdated(pod *corev1.Pod) {
 	f.AssignedUpdatedPods[key] = pod
 }
 
-func (f *FakeQueue) MoveAllToActiveOrBackoffQueue(event framework.ClusterEvent) {
+func (f *FakeQueue) MoveAllToActiveOrBackoffQueue(event framework.ClusterEvent, preCheck PreEnqueueCheck) {
 
 }

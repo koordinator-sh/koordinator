@@ -33,22 +33,38 @@ func TestErrorHandlerDispatcher(t *testing.T) {
 	})
 
 	handler1Processed := false
-	dispatcher.RegisterErrorHandler(func(info *framework.QueuedPodInfo, err error) bool {
+	afterHandler1Processed := false
+
+	dispatcher.RegisterErrorHandlerFilters(func(info *framework.QueuedPodInfo, err error) bool {
 		if info.Pod.Name == "handler1" {
 			handler1Processed = true
+			return true
+		}
+		return false
+	}, func(info *framework.QueuedPodInfo, err error) bool {
+		if info.Pod.Name == "handler1" {
+			afterHandler1Processed = true
 			return true
 		}
 		return false
 	})
 
 	handler2Processed := false
-	dispatcher.RegisterErrorHandler(func(info *framework.QueuedPodInfo, err error) bool {
+	afterHandler2Processed := false
+	dispatcher.RegisterErrorHandlerFilters(func(info *framework.QueuedPodInfo, err error) bool {
 		if info.Pod.Name == "handler2" {
 			handler2Processed = true
 			return true
 		}
 		return false
+	}, func(info *framework.QueuedPodInfo, err error) bool {
+		if info.Pod.Name == "handler2" {
+			afterHandler2Processed = true
+			return true
+		}
+		return false
 	})
+
 	dispatcher.Error(&framework.QueuedPodInfo{
 		PodInfo: &framework.PodInfo{
 			Pod: &corev1.Pod{
@@ -71,9 +87,12 @@ func TestErrorHandlerDispatcher(t *testing.T) {
 		},
 	}, nil)
 	assert.False(t, handler1Processed)
+	assert.False(t, afterHandler1Processed)
 	assert.True(t, handler2Processed)
+	assert.True(t, afterHandler2Processed)
 	assert.False(t, enterDefaultHandler)
 	handler2Processed = false
+	afterHandler2Processed = false
 
 	dispatcher.Error(&framework.QueuedPodInfo{
 		PodInfo: &framework.PodInfo{
@@ -85,6 +104,8 @@ func TestErrorHandlerDispatcher(t *testing.T) {
 		},
 	}, nil)
 	assert.True(t, handler1Processed)
+	assert.True(t, afterHandler1Processed)
 	assert.False(t, handler2Processed)
+	assert.False(t, afterHandler2Processed)
 	assert.False(t, enterDefaultHandler)
 }

@@ -50,7 +50,7 @@ func MakeReservationErrorHandler(
 	schedAdapter frameworkext.Scheduler,
 	koordClientSet koordclientset.Interface,
 	koordSharedInformerFactory koordinatorinformers.SharedInformerFactory,
-) frameworkext.ErrorHandler {
+) frameworkext.PreErrorHandlerFilter {
 	reservationLister := koordSharedInformerFactory.Scheduling().V1alpha1().Reservations().Lister()
 	reservationErrorFn := makeReservationErrorFunc(schedAdapter, reservationLister)
 	return func(podInfo *framework.QueuedPodInfo, schedulingErr error) bool {
@@ -395,7 +395,7 @@ func deleteReservationFromSchedulerCache(sched frameworkext.Scheduler, obj inter
 			klog.V(4).InfoS("Successfully delete reservation from SchedulerCache", "reservation", klog.KObj(r))
 		}
 
-		sched.GetSchedulingQueue().MoveAllToActiveOrBackoffQueue(frameworkext.AssignedPodDelete)
+		sched.GetSchedulingQueue().MoveAllToActiveOrBackoffQueue(frameworkext.AssignedPodDelete, nil)
 	}
 }
 

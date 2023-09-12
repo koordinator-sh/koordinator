@@ -420,7 +420,7 @@ func Setup(ctx context.Context, opts *options.Options, outOfTreeRegistryOptions 
 		frameworkExtenderFactory.KoordinatorClientSet(),
 		frameworkExtenderFactory.KoordinatorSharedInformerFactory(),
 	)
-	frameworkExtenderFactory.RegisterErrorHandler(reservationErrorHandler)
+	frameworkExtenderFactory.RegisterErrorHandlerFilters(reservationErrorHandler, nil)
 
 	return &cc, sched, frameworkExtenderFactory, nil
 }

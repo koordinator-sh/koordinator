@@ -41,7 +41,10 @@ type ExtendedHandle interface {
 	Scheduler() Scheduler
 	KoordinatorClientSet() koordinatorclientset.Interface
 	KoordinatorSharedInformerFactory() koordinatorinformers.SharedInformerFactory
-	RegisterErrorHandler(handler ErrorHandler)
+	// RegisterErrorHandlerFilters supports registering custom PreErrorHandlerFilter and PostErrorHandlerFilter to intercept scheduling errors.
+	// If PreErrorHandlerFilter returns true, the k8s scheduler's default error handler and other handlers will not be called.
+	// After handling scheduling errors, will execute PostErrorHandlerFilter, and if return true, other custom handlers will not be called.
+	RegisterErrorHandlerFilters(preFilter PreErrorHandlerFilter, afterFilter PostErrorHandlerFilter)
 	RegisterForgetPodHandler(handler ForgetPodHandler)
 	ForgetPod(pod *corev1.Pod) error
 }
