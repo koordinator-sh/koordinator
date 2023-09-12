@@ -70,12 +70,7 @@ func Test_NewColdPageCollector(t *testing.T) {
 			wantEnable: false,
 		},
 		{
-			name:       "os doesn't support cold page collector and return nonCollector",
-			want:       &nonColdPageCollector{},
-			wantEnable: false,
-		},
-		{
-			name: "os support kidled cold page collector",
+			name: "os support kidled cold page collector but cold page collector feature gate false",
 			fields: fields{
 				SetSysUtil: func(helper *system.FileTestUtil) {
 					system.Conf.SysRootDir = filepath.Join(helper.TempDir, system.Conf.SysRootDir)

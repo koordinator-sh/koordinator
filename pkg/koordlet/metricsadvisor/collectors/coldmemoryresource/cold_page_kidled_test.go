@@ -137,7 +137,7 @@ func Test_collectNodeColdPageInfo(t *testing.T) {
 	helper.WriteCgroupFileContents("", system.MemoryIdlePageStats, idleInfoContentStr)
 	helper.WriteProcSubFileContents(system.ProcMemInfoName, meminfo)
 	c := &kidledcoldPageCollector{
-		collectInterval: 5 * time.Second,
+		collectInterval: 1 * time.Second,
 		cgroupReader:    resourceexecutor.NewCgroupReader(),
 		statesInformer:  statesInformer,
 		podFilter:       framework.DefaultPodFilter,
@@ -171,7 +171,7 @@ func Test_collectNodeColdPageInfo(t *testing.T) {
 	})
 }
 
-func Test_collectPodsColdPageInfo(t *testing.T) {
+func Test_collectPodColdPageInfo(t *testing.T) {
 	testNow := time.Now()
 	testContainerID := "containerd://123abc"
 	testPodMetaDir := "kubepods.slice/kubepods-podxxxxxxxx.slice"
@@ -372,7 +372,7 @@ func Test_collectPodsColdPageInfo(t *testing.T) {
 			statesInformer.EXPECT().GetAllPods().Return(tt.fields.getPodMetas).Times(1)
 			collector := New(&framework.Options{
 				Config: &framework.Config{
-					CollectResUsedInterval: 1 * time.Second,
+					ColdPageCollectorInterval: 1 * time.Second,
 				},
 				StatesInformer: statesInformer,
 				MetricCache:    metricCache,
