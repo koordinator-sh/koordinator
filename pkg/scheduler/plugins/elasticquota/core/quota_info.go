@@ -22,10 +22,12 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
+	utilfeature "k8s.io/apiserver/pkg/util/feature"
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/pkg/features"
 )
 
 type QuotaCalculateInfo struct {
@@ -49,6 +51,13 @@ type QuotaCalculateInfo struct {
 	SharedWeight v1.ResourceList
 	// Runtime is the current actual resource that can be used by the quota group
 	Runtime v1.ResourceList
+
+	// If the allocated is greater than min, the guaranteed resource is the allocated,
+	// else the guaranteed is the min.
+	Guaranteed v1.ResourceList
+	// Allocated is the allocated resource. It's the sum of children quota guarantee. If the quota is leaf, it's
+	// the sum of scheduled pods
+	Allocated v1.ResourceList
 }
 
 type QuotaInfo struct {
@@ -84,6 +93,8 @@ func NewQuotaInfo(isParent, allowLentResource bool, name, parentName string) *Qu
 			SharedWeight: v1.ResourceList{},
 			Runtime:      v1.ResourceList{},
 			ChildRequest: v1.ResourceList{},
+			Guaranteed:   v1.ResourceList{},
+			Allocated:    v1.ResourceList{},
 		},
 	}
 }
@@ -111,6 +122,8 @@ func (qi *QuotaInfo) DeepCopy() *QuotaInfo {
 			SharedWeight: qi.CalculateInfo.SharedWeight.DeepCopy(),
 			Runtime:      qi.CalculateInfo.Runtime.DeepCopy(),
 			ChildRequest: qi.CalculateInfo.ChildRequest.DeepCopy(),
+			Guaranteed:   qi.CalculateInfo.Guaranteed.DeepCopy(),
+			Allocated:    qi.CalculateInfo.Allocated.DeepCopy(),
 		},
 	}
 	for name, pod := range qi.PodCache {
@@ -198,10 +211,29 @@ func (qi *QuotaInfo) addChildRequestNonNegativeNoLock(delta v1.ResourceList) {
 	}
 }
 
+func (qi *QuotaInfo) GetGuaranteed() v1.ResourceList {
+	qi.lock.Lock()
+	defer qi.lock.Unlock()
+	return qi.CalculateInfo.Guaranteed.DeepCopy()
+}
+
+func (qi *QuotaInfo) GetAllocated() v1.ResourceList {
+	qi.lock.Lock()
+	defer qi.lock.Unlock()
+	return qi.CalculateInfo.Allocated.DeepCopy()
+}
+
 func (qi *QuotaInfo) addUsedNonNegativeNoLock(delta v1.ResourceList) {
 	qi.CalculateInfo.Used = quotav1.Add(qi.CalculateInfo.Used, delta)
 	for _, resName := range quotav1.IsNegative(qi.CalculateInfo.Used) {
 		qi.CalculateInfo.Used[resName] = createQuantity(0, resName)
+	}
+}
+
+func (qi *QuotaInfo) addAllocatedQuotaNoLock(delta v1.ResourceList) {
+	qi.CalculateInfo.Allocated = quotav1.Add(qi.CalculateInfo.Allocated, delta)
+	for _, resName := range quotav1.IsNegative(qi.CalculateInfo.Allocated) {
+		qi.CalculateInfo.Allocated[resName] = createQuantity(0, resName)
 	}
 }
 
@@ -256,6 +288,9 @@ func NewQuotaInfoFromQuota(quota *v1alpha1.ElasticQuota) *QuotaInfo {
 	parentName := extension.GetParentQuotaName(quota)
 
 	allowLentResource := extension.IsAllowLentResource(quota)
+	if utilfeature.DefaultFeatureGate.Enabled(features.ElasticQuotaGuaranteeUsage) {
+		allowLentResource = false
+	}
 
 	quotaInfo := NewQuotaInfo(isParent, allowLentResource, quota.Name, parentName)
 	quotaInfo.setMinQuotaNoLock(quota.Spec.Min)
@@ -275,6 +310,8 @@ func (qi *QuotaInfo) clearForResetNoLock() {
 	qi.CalculateInfo.Used = v1.ResourceList{}
 	qi.CalculateInfo.Runtime = v1.ResourceList{}
 	qi.CalculateInfo.ChildRequest = v1.ResourceList{}
+	qi.CalculateInfo.Guaranteed = v1.ResourceList{}
+	qi.CalculateInfo.Allocated = v1.ResourceList{}
 	qi.RuntimeVersion = 0
 }
 

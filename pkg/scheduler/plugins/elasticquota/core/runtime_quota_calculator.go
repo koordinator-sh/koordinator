@@ -31,16 +31,18 @@ type quotaNode struct {
 	sharedWeight      int64
 	min               int64
 	runtimeQuota      int64
+	guarantee         int64
 	allowLentResource bool
 }
 
-func NewQuotaNode(quotaName string, sharedWeight, request, min int64, allowLentResource bool) *quotaNode {
+func NewQuotaNode(quotaName string, sharedWeight, request, min, guarantee int64, allowLentResource bool) *quotaNode {
 	return &quotaNode{
 		quotaName:         quotaName,
 		request:           request,
 		sharedWeight:      sharedWeight,
 		min:               min,
 		runtimeQuota:      0,
+		guarantee:         guarantee,
 		allowLentResource: allowLentResource,
 	}
 }
@@ -56,9 +58,9 @@ func NewQuotaTree() *quotaTree {
 	}
 }
 
-func (qt *quotaTree) insert(groupName string, sharedWeight, request, min int64, allowLentResource bool) {
+func (qt *quotaTree) insert(groupName string, sharedWeight, request, min, guarantee int64, allowLentResource bool) {
 	if _, exist := qt.quotaNodes[groupName]; !exist {
-		qt.quotaNodes[groupName] = NewQuotaNode(groupName, sharedWeight, request, min, allowLentResource)
+		qt.quotaNodes[groupName] = NewQuotaNode(groupName, sharedWeight, request, min, guarantee, allowLentResource)
 	}
 }
 
@@ -86,6 +88,14 @@ func (qt *quotaTree) updateRequest(groupName string, request int64) {
 	}
 }
 
+func (qt *quotaTree) updateGuaranteed(groupName string, guarantee int64) {
+	if nodeValue, exist := qt.quotaNodes[groupName]; exist {
+		if nodeValue.guarantee != guarantee {
+			qt.quotaNodes[groupName].guarantee = guarantee
+		}
+	}
+}
+
 func (qt *quotaTree) find(groupName string) (bool, *quotaNode) {
 	if nodeValue, exist := qt.quotaNodes[groupName]; exist {
 		return exist, nodeValue
@@ -101,19 +111,24 @@ func (qt *quotaTree) redistribution(totalResource int64) {
 	totalSharedWeight := int64(0)
 	needAdjustQuotaNodes := make([]*quotaNode, 0)
 	for _, node := range qt.quotaNodes {
-		if node.request > node.min {
+		min := node.min
+		// if guarantee greater than min, min is guarantee.
+		if node.guarantee > min {
+			min = node.guarantee
+		}
+		if node.request > min {
 			// if a node's request > autoScaleMin, the node needs adjustQuota
 			// the node's runtime is autoScaleMin
 			needAdjustQuotaNodes = append(needAdjustQuotaNodes, node)
 			totalSharedWeight += node.sharedWeight
-			node.runtimeQuota = node.min
+			node.runtimeQuota = min
 		} else {
 			if node.allowLentResource {
 				node.runtimeQuota = node.request
 			} else {
 				// if node is not allowLentResource, even if the request is smaller
 				// than autoScaleMin, runtimeQuota is request.
-				node.runtimeQuota = node.min
+				node.runtimeQuota = min
 			}
 		}
 		toPartitionResource -= node.runtimeQuota
@@ -163,6 +178,7 @@ type RuntimeQuotaCalculator struct {
 	totalResource        v1.ResourceList              // the parentQuotaInfo's runtimeQuota or the clusterResource
 	lock                 sync.Mutex
 	treeName             string // the same as the parentQuotaInfo's Name
+	groupGuaranteed      quotaResMapType
 }
 
 func NewRuntimeQuotaCalculator(treeName string) *RuntimeQuotaCalculator {
@@ -170,6 +186,7 @@ func NewRuntimeQuotaCalculator(treeName string) *RuntimeQuotaCalculator {
 		globalRuntimeVersion: 1,
 		resourceKeys:         make(map[v1.ResourceName]struct{}),
 		groupReqLimit:        make(quotaResMapType),
+		groupGuaranteed:      make(quotaResMapType),
 		quotaTree:            make(quotaTreeMapType),
 		totalResource:        v1.ResourceList{},
 		treeName:             treeName,
@@ -229,8 +246,9 @@ func (qtw *RuntimeQuotaCalculator) updateOneGroupMaxQuota(quotaInfo *QuotaInfo) 
 		} else {
 			sharedWeightPerKey := *quotaInfo.CalculateInfo.SharedWeight.Name(resKey, resource.DecimalSI)
 			autoScaleMinQuotaPerKey := *quotaInfo.CalculateInfo.AutoScaleMin.Name(resKey, resource.DecimalSI)
+			guaranteePerKey := *quotaInfo.CalculateInfo.Guaranteed.Name(resKey, resource.DecimalSI)
 			qtw.quotaTree[resKey].insert(quotaInfo.Name, getQuantityValue(sharedWeightPerKey, resKey), getQuantityValue(reqLimitPerKey, resKey),
-				getQuantityValue(autoScaleMinQuotaPerKey, resKey), quotaInfo.AllowLentResource)
+				getQuantityValue(autoScaleMinQuotaPerKey, resKey), getQuantityValue(guaranteePerKey, resKey), quotaInfo.AllowLentResource)
 		}
 
 		// update reqLimitPerKey
@@ -259,8 +277,9 @@ func (qtw *RuntimeQuotaCalculator) updateOneGroupMinQuota(quotaInfo *QuotaInfo) 
 		} else {
 			sharedWeightPerKey := *quotaInfo.CalculateInfo.SharedWeight.Name(resKey, resource.DecimalSI)
 			reqLimitPerKey := *reqLimit.Name(resKey, resource.DecimalSI)
+			guaranteePerKey := *quotaInfo.CalculateInfo.Guaranteed.Name(resKey, resource.DecimalSI)
 			qtw.quotaTree[resKey].insert(quotaInfo.Name, getQuantityValue(sharedWeightPerKey, resKey), getQuantityValue(reqLimitPerKey, resKey),
-				getQuantityValue(newMinQuotaPerKey, resKey), quotaInfo.AllowLentResource)
+				getQuantityValue(newMinQuotaPerKey, resKey), getQuantityValue(guaranteePerKey, resKey), quotaInfo.AllowLentResource)
 		}
 	}
 
@@ -286,8 +305,9 @@ func (qtw *RuntimeQuotaCalculator) updateOneGroupSharedWeight(quotaInfo *QuotaIn
 		} else {
 			reqLimitPerKey := *reqLimit.Name(resKey, resource.DecimalSI)
 			minQuotaPerKey := *quotaInfo.CalculateInfo.AutoScaleMin.Name(resKey, resource.DecimalSI)
+			guaranteePerKey := *quotaInfo.CalculateInfo.Guaranteed.Name(resKey, resource.DecimalSI)
 			qtw.quotaTree[resKey].insert(quotaInfo.Name, getQuantityValue(newSharedWeightPerKey, resKey), getQuantityValue(reqLimitPerKey, resKey),
-				getQuantityValue(minQuotaPerKey, resKey), quotaInfo.AllowLentResource)
+				getQuantityValue(minQuotaPerKey, resKey), getQuantityValue(guaranteePerKey, resKey), quotaInfo.AllowLentResource)
 		}
 	}
 
@@ -333,8 +353,9 @@ func (qtw *RuntimeQuotaCalculator) updateOneGroupRequest(quotaInfo *QuotaInfo) {
 		} else {
 			sharedWeightPerKey := *quotaInfo.CalculateInfo.SharedWeight.Name(resKey, resource.DecimalSI)
 			minQuotaPerKey := *quotaInfo.CalculateInfo.AutoScaleMin.Name(resKey, resource.DecimalSI)
+			guaranteePerKey := *quotaInfo.CalculateInfo.Guaranteed.Name(resKey, resource.DecimalSI)
 			qtw.quotaTree[resKey].insert(quotaInfo.Name, getQuantityValue(sharedWeightPerKey, resKey), getQuantityValue(reqLimitPerKey, resKey),
-				getQuantityValue(minQuotaPerKey, resKey), quotaInfo.AllowLentResource)
+				getQuantityValue(minQuotaPerKey, resKey), getQuantityValue(guaranteePerKey, resKey), quotaInfo.AllowLentResource)
 		}
 
 		// update reqLimitPerKey
@@ -346,6 +367,64 @@ func (qtw *RuntimeQuotaCalculator) updateOneGroupRequest(quotaInfo *QuotaInfo) {
 	if klog.V(5).Enabled() {
 		qtw.logQuotaInfoNoLock("UpdateOneGroupRequest finish", quotaInfo)
 	}
+}
+
+func (qtw *RuntimeQuotaCalculator) needUpdateOneGroupGuaranteed(quotaInfo *QuotaInfo) bool {
+	qtw.lock.Lock()
+	defer qtw.lock.Unlock()
+
+	guarantee := qtw.getGroupGuaranteedNoLock(quotaInfo.Name)
+	newGuaranteed := quotaInfo.CalculateInfo.Guaranteed
+	for resKey := range qtw.resourceKeys {
+		oldGuaranteedPerKey := guarantee.Name(resKey, resource.DecimalSI)
+		newGuaranteedPerKey := *newGuaranteed.Name(resKey, resource.DecimalSI)
+		if !oldGuaranteedPerKey.Equal(newGuaranteedPerKey) {
+			return true
+		}
+	}
+	return false
+}
+
+// updateOneGroupGuaranteed the guarantee of one group change, need increase globalRuntimeVersion
+func (qtw *RuntimeQuotaCalculator) updateOneGroupGuaranteed(quotaInfo *QuotaInfo) {
+	qtw.lock.Lock()
+	defer qtw.lock.Unlock()
+
+	reqLimit := quotaInfo.getLimitRequestNoLock()
+	localGuaranteed := qtw.getGroupGuaranteedNoLock(quotaInfo.Name)
+	newGuaranteed := quotaInfo.CalculateInfo.Guaranteed
+	for resKey := range qtw.resourceKeys {
+		// update/insert quotaNode
+		guaranteePerKey := *newGuaranteed.Name(resKey, resource.DecimalSI)
+
+		if exist, _ := qtw.quotaTree[resKey].find(quotaInfo.Name); exist {
+			qtw.quotaTree[resKey].updateGuaranteed(quotaInfo.Name, getQuantityValue(guaranteePerKey, resKey))
+		} else {
+			reqLimitPerKey := *reqLimit.Name(resKey, resource.DecimalSI)
+			sharedWeightPerKey := *quotaInfo.CalculateInfo.SharedWeight.Name(resKey, resource.DecimalSI)
+			minQuotaPerKey := *quotaInfo.CalculateInfo.AutoScaleMin.Name(resKey, resource.DecimalSI)
+			qtw.quotaTree[resKey].insert(quotaInfo.Name, getQuantityValue(sharedWeightPerKey, resKey), getQuantityValue(reqLimitPerKey, resKey),
+				getQuantityValue(minQuotaPerKey, resKey), getQuantityValue(guaranteePerKey, resKey), quotaInfo.AllowLentResource)
+		}
+
+		// update guaranteePerKey
+		localGuaranteed[resKey] = guaranteePerKey
+	}
+
+	qtw.globalRuntimeVersion++
+
+	if klog.V(5).Enabled() {
+		qtw.logQuotaInfoNoLock("UpdateOneGroupGuaranteed finish", quotaInfo)
+	}
+}
+
+func (qtw *RuntimeQuotaCalculator) getGroupGuaranteedNoLock(quotaName string) v1.ResourceList {
+	res, exist := qtw.groupGuaranteed[quotaName]
+	if !exist {
+		res = v1.ResourceList{}
+		qtw.groupGuaranteed[quotaName] = res
+	}
+	return res
 }
 
 // setClusterTotalResource increase/decrease the totalResource of the RuntimeQuotaCalculator, the resource that can be "lent to" will
@@ -412,10 +491,10 @@ func (qtw *RuntimeQuotaCalculator) calculateRuntimeNoLock() {
 func (qtw *RuntimeQuotaCalculator) logQuotaInfoNoLock(verb string, quotaInfo *QuotaInfo) {
 	klog.Infof("%s\n"+
 		"quotaName:%v quotaParentName:%v IsParent:%v request:%v maxQuota:%v OriginalMinQuota:%v"+
-		"autoScaleMinQuota:%v  SharedWeight:%v runtime:%v used:%v treeName:%v totalResource:%v reqLimit:%v refreshedVersion:%v", verb,
+		"autoScaleMinQuota:%v  SharedWeight:%v runtime:%v used:%v guaranteed:%v allocated:%v treeName:%v totalResource:%v reqLimit:%v refreshedVersion:%v", verb,
 		quotaInfo.Name, quotaInfo.ParentName, quotaInfo.IsParent, quotaInfo.CalculateInfo.Request,
 		quotaInfo.CalculateInfo.Max, quotaInfo.CalculateInfo.Min, quotaInfo.CalculateInfo.AutoScaleMin, quotaInfo.CalculateInfo.SharedWeight,
-		quotaInfo.CalculateInfo.Runtime, quotaInfo.CalculateInfo.Used, qtw.treeName, qtw.totalResource, qtw.groupReqLimit,
+		quotaInfo.CalculateInfo.Runtime, quotaInfo.CalculateInfo.Used, quotaInfo.CalculateInfo.Guaranteed, quotaInfo.CalculateInfo.Allocated, qtw.treeName, qtw.totalResource, qtw.groupReqLimit,
 		qtw.globalRuntimeVersion)
 }
 

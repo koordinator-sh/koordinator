@@ -45,6 +45,8 @@ const (
 	AnnotationResourceKeys    = QuotaKoordinatorPrefix + "/resource-keys"
 	AnnotationTotalResource   = QuotaKoordinatorPrefix + "/total-resource"
 	AnnotationQuotaNamespaces = QuotaKoordinatorPrefix + "/namespaces"
+	AnnotationGuaranteed      = QuotaKoordinatorPrefix + "/guaranteed"
+	AnnotationAllocated       = QuotaKoordinatorPrefix + "/allocated"
 )
 
 func GetParentQuotaName(quota *v1alpha1.ElasticQuota) string {

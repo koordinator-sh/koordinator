@@ -53,6 +53,9 @@ const (
 
 	// ElasticQuotaIgnorePodOverhead ignore pod.spec.overhead when accounting pod requests
 	ElasticQuotaIgnorePodOverhead featuregate.Feature = "ElasticQuotaIgnorePodOverhead"
+
+	// ElasticQuotaGuaranteeUsage enable guarantee the quota usage
+	ElasticQuotaGuaranteeUsage featuregate.Feature = "ElasticQuotaGuaranteeUsage"
 )
 
 var defaultFeatureGates = map[featuregate.Feature]featuregate.FeatureSpec{
