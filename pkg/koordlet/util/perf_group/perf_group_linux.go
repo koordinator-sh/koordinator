@@ -157,7 +157,9 @@ func NewPerfGroupCollector(cgroupFile *os.File, cpus []int, events []string, sys
 	wg.Add(len(cpus))
 	attrMap := make(map[string]*unix.PerfEventAttr, len(events))
 	for i, event := range events {
-		if attr, e := createPerfConfig(event); e != nil {
+		attr, e := createPerfConfig(event)
+		defer C.free(unsafe.Pointer(attr))
+		if e != nil {
 			err = e
 			return nil, err
 		} else {
@@ -247,9 +249,6 @@ func NewPerfGroupCollector(cgroupFile *os.File, cpus []int, events []string, sys
 		}(cpu)
 	}
 	wg.Wait()
-	for _, attr := range attrMap {
-		C.free(unsafe.Pointer(attr))
-	}
 
 	// collect and statistic perf result
 	go func() {
