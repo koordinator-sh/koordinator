@@ -34,6 +34,7 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework/preemption"
 	"k8s.io/kubernetes/pkg/scheduler/metrics"
+	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling"
 	apiv1alpha1 "sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 	"sigs.k8s.io/scheduler-plugins/pkg/generated/clientset/versioned"
 	"sigs.k8s.io/scheduler-plugins/pkg/generated/informers/externalversions"
@@ -91,9 +92,10 @@ type Plugin struct {
 }
 
 var (
-	_ framework.PreFilterPlugin  = &Plugin{}
-	_ framework.PostFilterPlugin = &Plugin{}
-	_ framework.ReservePlugin    = &Plugin{}
+	_ framework.EnqueueExtensions = &Plugin{}
+	_ framework.PreFilterPlugin   = &Plugin{}
+	_ framework.PostFilterPlugin  = &Plugin{}
+	_ framework.ReservePlugin     = &Plugin{}
 )
 
 func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error) {
@@ -192,6 +194,16 @@ func (g *Plugin) NewControllers() ([]frameworkext.Controller, error) {
 
 func (g *Plugin) Name() string {
 	return Name
+}
+
+func (g *Plugin) EventsToRegister() []framework.ClusterEvent {
+	// To register a custom event, follow the naming convention at:
+	// https://git.k8s.io/kubernetes/pkg/scheduler/eventhandlers.go#L403-L410
+	eqGVK := fmt.Sprintf("elasticquotas.v1alpha1.%v", scheduling.GroupName)
+	return []framework.ClusterEvent{
+		{Resource: framework.Pod, ActionType: framework.Delete},
+		{Resource: framework.GVK(eqGVK), ActionType: framework.All},
+	}
 }
 
 func (g *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod) (*framework.PreFilterResult, *framework.Status) {
