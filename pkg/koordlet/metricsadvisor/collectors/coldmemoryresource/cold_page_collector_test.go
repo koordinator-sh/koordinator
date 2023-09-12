@@ -63,11 +63,13 @@ func Test_NewColdPageCollector(t *testing.T) {
 		fields     fields
 		want       framework.Collector
 		wantEnable bool
+		wantStart  bool
 	}{
 		{
 			name:       "os doesn't support cold page collector and return nonCollector",
 			want:       &nonColdPageCollector{},
 			wantEnable: false,
+			wantStart:  false,
 		},
 		{
 			name: "os support kidled cold page collector but cold page collector feature gate false",
@@ -88,6 +90,7 @@ func Test_NewColdPageCollector(t *testing.T) {
 				started:         atomic.NewBool(false),
 			},
 			wantEnable: false,
+			wantStart:  false,
 		},
 	}
 	for _, tt := range tests {

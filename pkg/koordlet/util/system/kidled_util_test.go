@@ -175,3 +175,31 @@ func Test_GetColdPageTotalBytes(t *testing.T) {
 	got := coldPageInfo.GetColdPageTotalBytes()
 	assert.Equal(t, uint64(1363836928), got)
 }
+
+func Test_SetKidledScanPeriodInSeconds(t *testing.T) {
+	helper := NewFileTestUtil(t)
+	defer helper.Cleanup()
+	Conf.SysRootDir = filepath.Join(helper.TempDir, Conf.SysRootDir)
+	path := KidledScanPeriodInSeconds.Path("")
+	helper.CreateFile(path)
+	SetKidledScanPeriodInSeconds(120)
+	s := helper.ReadFileContents(path)
+	assert.Equal(t, "120", s)
+
+}
+func Test_SetKidledUseHierarchy(t *testing.T) {
+	helper := NewFileTestUtil(t)
+	defer helper.Cleanup()
+	Conf.SysRootDir = filepath.Join(helper.TempDir, Conf.SysRootDir)
+	path := KidledUseHierarchy.Path("")
+	helper.CreateFile(path)
+	SetKidledUseHierarchy(1)
+	s := helper.ReadFileContents(path)
+	assert.Equal(t, "1", s)
+}
+
+func Test_NewDefaultKidledConfig(t *testing.T) {
+	config := NewDefaultKidledConfig()
+	assert.Equal(t, uint32(5), config.ScanPeriodInseconds)
+	assert.Equal(t, uint8(1), config.UseHierarchy)
+}
