@@ -1400,6 +1400,48 @@ func TestCgroupReader_ReadColdPageUsage(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name: "parse v2 value successfully",
+			fields: fields{
+				UseCgroupsV2: true,
+				MemoryIdlePageStatsValue: `# version: 1.0
+			# page_scans: 24
+			# slab_scans: 0
+			# scan_period_in_seconds: 120
+			# use_hierarchy: 1
+			# buckets: 1,2,5,15,30,60,120,240
+			#
+			#   _-----=> clean/dirty
+			#  / _----=> swap/file
+			# | / _---=> evict/unevict
+			# || / _--=> inactive/active
+			# ||| / _-=> slab
+			# |||| /
+			# |||||             [1,2)          [2,5)         [5,15)        [15,30)        [30,60)       [60,120)      [120,240)     [240,+inf)
+			  csei            2613248        4657152       18182144      293683200              0              0              0              0
+			  dsei            2568192        5140480       15306752       48648192              0              0              0              0
+			  cfei            2633728        4640768       66531328      340172800              0              0              0              0
+			  dfei                  0              0           4096              0              0              0              0              0
+			  csui                  0              0              0              0              0              0              0              0
+			  dsui                  0              0              0              0              0              0              0              0
+			  cfui                  0              0              0              0              0              0              0              0
+			  dfui                  0              0              0              0              0              0              0              0
+			  csea             765952        1044480        3784704       52834304              0              0              0              0
+			  dsea             286720         270336        1564672        5390336              0              0              0              0
+			  cfea            9273344       16609280      152109056      315121664              0              0              0              0
+			  dfea                  0              0              0              0              0              0              0              0
+			  csua                  0              0              0              0              0              0              0              0
+			  dsua                  0              0              0              0              0              0              0              0
+			  cfua                  0              0              0              0              0              0              0              0
+			  dfua                  0              0              0              0              0              0              0              0
+			  slab                  0              0              0              0              0              0              0              0`,
+			},
+			args: args{
+				parentDir: "/kubepods.slice",
+			},
+			want:    uint64(1363836928),
+			wantErr: false,
+		},
+		{
 			name: "parse v1 value failed",
 			fields: fields{
 				UseCgroupsV2:             false,

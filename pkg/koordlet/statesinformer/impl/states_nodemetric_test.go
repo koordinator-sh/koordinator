@@ -46,6 +46,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/prediction"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 )
 
 var _ listerv1alpha1.NodeMetricLister = &fakeNodeMetricLister{}
@@ -828,7 +829,8 @@ func Test_nodeMetricInformer_collectNodeMetric(t *testing.T) {
 	startTime := now.Add(-time.Second * 120)
 
 	type args struct {
-		queryparam metriccache.QueryParam
+		queryparam          metriccache.QueryParam
+		memoryCollectPolicy slov1alpha1.NodeMemoryCollectPolicy
 	}
 	type samples struct {
 		CPUUsed float64
@@ -842,9 +844,26 @@ func Test_nodeMetricInformer_collectNodeMetric(t *testing.T) {
 		want1   time.Duration
 	}{
 		{
-			name: "test-1",
+			name: "test-1 report usageWithoutPageCache",
 			args: args{
-				queryparam: metriccache.QueryParam{Start: &startTime, End: &now, Aggregate: metriccache.AggregationTypeAVG},
+				queryparam:          metriccache.QueryParam{Start: &startTime, End: &now, Aggregate: metriccache.AggregationTypeAVG},
+				memoryCollectPolicy: "usageWithoutPageCache",
+			},
+			samples: samples{
+				CPUUsed: 2,
+				MemUsed: 10 * 1024 * 1024 * 1024,
+			},
+			want: v1.ResourceList{
+				v1.ResourceCPU:    *resource.NewMilliQuantity(2000, resource.DecimalSI),
+				v1.ResourceMemory: *resource.NewQuantity(10*1024*1024*1024, resource.BinarySI),
+			},
+			want1: now.Sub(startTime),
+		},
+		{
+			name: "test-2 report usageWithHotPageCache",
+			args: args{
+				queryparam:          metriccache.QueryParam{Start: &startTime, End: &now, Aggregate: metriccache.AggregationTypeAVG},
+				memoryCollectPolicy: "usageWithHotPageCache",
 			},
 			samples: samples{
 				CPUUsed: 2,
@@ -859,6 +878,9 @@ func Test_nodeMetricInformer_collectNodeMetric(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			if tt.args.memoryCollectPolicy == slov1alpha1.UsageWithHotPageCache {
+				system.SetIsStartColdMemory(true)
+			}
 			mockMetricCache := mockmetriccache.NewMockMetricCache(ctrl)
 			mockResultFactory := mockmetriccache.NewMockAggregateResultFactory(ctrl)
 			metriccache.DefaultAggregateResultFactory = mockResultFactory
@@ -871,11 +893,15 @@ func Test_nodeMetricInformer_collectNodeMetric(t *testing.T) {
 			buildMockQueryResult(ctrl, mockQuerier, mockResultFactory, cpuQueryMeta, tt.samples.CPUUsed, duration)
 
 			memQueryMeta, err := metriccache.NodeMemoryUsageMetric.BuildQueryMeta(nil)
+			if tt.args.memoryCollectPolicy == slov1alpha1.UsageWithHotPageCache {
+				memQueryMeta, err = metriccache.NodeMemoryWithHotPageUsageMetric.BuildQueryMeta(nil)
+			}
 			assert.NoError(t, err)
 			buildMockQueryResult(ctrl, mockQuerier, mockResultFactory, memQueryMeta, tt.samples.MemUsed, duration)
 			r := &nodeMetricInformer{
 				metricCache: mockMetricCache,
 			}
+			r.getNodeMetricSpec().CollectPolicy.NodeMemoryCollectPolicy = &tt.args.memoryCollectPolicy
 			got, got1, err := r.collectNodeMetric(tt.args.queryparam)
 			assert.NoError(t, err)
 			assert.Equalf(t, tt.want, got, "collectNodeMetric(%v)", tt.args.queryparam)
