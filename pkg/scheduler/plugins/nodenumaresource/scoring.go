@@ -71,29 +71,27 @@ func (p *Plugin) Score(ctx context.Context, cycleState *framework.CycleState, po
 		return 0, nil
 	}
 
-	resourceOptions, err := p.getResourceOptions(cycleState, state, node, pod, topologymanager.NUMATopologyHint{})
-	if err != nil {
-		return 0, nil
-	}
-
 	policyType := getNUMATopologyPolicy(node.Labels, topologyOptions.NUMATopologyPolicy)
 	if policyType != extension.NUMATopologyPolicyNone {
 		store := topologymanager.GetStore(cycleState)
 		affinity := store.GetAffinity(nodeName)
-		podAllocation, status := p.allocateByHint(ctx, cycleState, affinity, pod, nodeName, false)
+		podAllocation, status := p.allocateByHint(ctx, cycleState, pod, nodeName, affinity, topologyOptions, false)
 		if !status.IsSuccess() {
 			return 0, nil
 		}
 
-		totalAllocatable, totalAllocated, allocatedCPUSets := p.calculateAllocatableRequestByNUMA(node.Name, resourceOptions.requests, podAllocation, topologyOptions)
+		totalAllocatable, totalAllocated, allocatedCPUSets := p.calculateAllocatableRequestByNUMA(node.Name, state.requests, podAllocation, topologyOptions)
 		if state.requestCPUBind {
-			// NOTE(joseph):
 			totalAllocated[corev1.ResourceCPU] = *resource.NewMilliQuantity(int64(allocatedCPUSets*1000), resource.DecimalSI)
 		}
 		return p.scorer.score(totalAllocated, totalAllocatable)
 	}
 
 	if state.requestCPUBind {
+		resourceOptions, err := p.getResourceOptions(cycleState, state, node, pod, topologymanager.NUMATopologyHint{}, topologyOptions)
+		if err != nil {
+			return 0, nil
+		}
 		podAllocation, err := p.resourceManager.Allocate(node, pod, resourceOptions)
 		if err != nil {
 			return 0, nil

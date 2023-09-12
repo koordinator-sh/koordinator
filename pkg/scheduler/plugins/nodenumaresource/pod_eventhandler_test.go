@@ -108,8 +108,8 @@ func TestPodEventHandler(t *testing.T) {
 				options.CPUTopology = cpuTopology
 			})
 			resourceManager := &resourceManager{
-				topologyManager:  topologyOptionsManager,
-				allocationStates: map[string]*NodeAllocation{},
+				topologyOptionsManager: topologyOptionsManager,
+				nodeAllocations:        map[string]*NodeAllocation{},
 			}
 			handler := &podEventHandler{
 				resourceManager: resourceManager,

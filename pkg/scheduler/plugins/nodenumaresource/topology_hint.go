@@ -27,11 +27,10 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/topologymanager"
 )
 
-func (p *Plugin) FilterByNUMANode(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string, policyType apiext.NUMATopologyPolicy) *framework.Status {
+func (p *Plugin) FilterByNUMANode(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string, policyType apiext.NUMATopologyPolicy, topologyOptions TopologyOptions) *framework.Status {
 	if policyType == apiext.NUMATopologyPolicyNone {
 		return nil
 	}
-	topologyOptions := p.topologyOptionsManager.GetTopologyOptions(nodeName)
 	numaNodes := topologyOptions.getNUMANodes()
 	if len(numaNodes) == 0 {
 		return framework.NewStatus(framework.UnschedulableAndUnresolvable, "node(s) missing NUMA resources")
@@ -39,13 +38,13 @@ func (p *Plugin) FilterByNUMANode(ctx context.Context, cycleState *framework.Cyc
 	return p.handle.(frameworkext.FrameworkExtender).RunNUMATopologyManagerAdmit(ctx, cycleState, pod, nodeName, numaNodes, policyType)
 }
 
-func (p *Plugin) ReserveByNUMANode(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string, policyType apiext.NUMATopologyPolicy) *framework.Status {
+func (p *Plugin) ReserveByNUMANode(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string, policyType apiext.NUMATopologyPolicy, topologyOptions TopologyOptions) *framework.Status {
 	if policyType == apiext.NUMATopologyPolicyNone {
 		return nil
 	}
 	store := topologymanager.GetStore(cycleState)
 	affinity := store.GetAffinity(nodeName)
-	_, status := p.allocateByHint(ctx, cycleState, affinity, pod, nodeName, true)
+	_, status := p.allocateByHint(ctx, cycleState, pod, nodeName, affinity, topologyOptions, true)
 	return status
 }
 
@@ -60,7 +59,8 @@ func (p *Plugin) GetPodTopologyHints(ctx context.Context, cycleState *framework.
 	}
 	node := nodeInfo.Node()
 
-	resourceOptions, err := p.getResourceOptions(cycleState, state, node, pod, topologymanager.NUMATopologyHint{})
+	topologyOptions := p.topologyOptionsManager.GetTopologyOptions(nodeName)
+	resourceOptions, err := p.getResourceOptions(cycleState, state, node, pod, topologymanager.NUMATopologyHint{}, topologyOptions)
 	if err != nil {
 		return nil, framework.AsStatus(err)
 	}
@@ -72,11 +72,12 @@ func (p *Plugin) GetPodTopologyHints(ctx context.Context, cycleState *framework.
 }
 
 func (p *Plugin) Allocate(ctx context.Context, cycleState *framework.CycleState, affinity topologymanager.NUMATopologyHint, pod *corev1.Pod, nodeName string) *framework.Status {
-	_, status := p.allocateByHint(ctx, cycleState, affinity, pod, nodeName, false)
+	topologyOptions := p.topologyOptionsManager.GetTopologyOptions(nodeName)
+	_, status := p.allocateByHint(ctx, cycleState, pod, nodeName, affinity, topologyOptions, false)
 	return status
 }
 
-func (p *Plugin) allocateByHint(ctx context.Context, cycleState *framework.CycleState, affinity topologymanager.NUMATopologyHint, pod *corev1.Pod, nodeName string, assume bool) (*PodAllocation, *framework.Status) {
+func (p *Plugin) allocateByHint(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string, affinity topologymanager.NUMATopologyHint, topologyOptions TopologyOptions, assume bool) (*PodAllocation, *framework.Status) {
 	state, status := getPreFilterState(cycleState)
 	if !status.IsSuccess() {
 		return nil, status
@@ -88,7 +89,7 @@ func (p *Plugin) allocateByHint(ctx context.Context, cycleState *framework.Cycle
 	}
 	node := nodeInfo.Node()
 
-	resourceOptions, err := p.getResourceOptions(cycleState, state, node, pod, affinity)
+	resourceOptions, err := p.getResourceOptions(cycleState, state, node, pod, affinity, topologyOptions)
 	if err != nil {
 		return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, err.Error())
 	}

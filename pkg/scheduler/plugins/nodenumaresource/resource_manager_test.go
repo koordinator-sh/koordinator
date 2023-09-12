@@ -358,6 +358,8 @@ func TestResourceManagerAllocate(t *testing.T) {
 					},
 				}
 			})
+			tt.options.topologyOptions = tom.GetTopologyOptions("test-node")
+
 			node := &corev1.Node{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-node",

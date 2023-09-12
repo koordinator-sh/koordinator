@@ -80,7 +80,7 @@ func dumpNodeAllocation(nodeAllocation *NodeAllocation, topologyOptions Topology
 		resp.AllocatedPods = podAllocations
 	}
 	resp.AvailableCPUs, resp.AllocatedCPUs = nodeAllocation.getAvailableCPUs(topologyOptions.CPUTopology, topologyOptions.MaxRefCount, topologyOptions.ReservedCPUs, cpuset.CPUSet{})
-	availableResources, allocatedResource := nodeAllocation.getAvailableNUMANodeResources(topologyOptions)
+	availableResources, allocatedResource := nodeAllocation.getAvailableNUMANodeResources(topologyOptions, nil)
 	for nodeID, v := range availableResources {
 		resp.RemainingNUMANodeResources = append(resp.RemainingNUMANodeResources, NUMANodeResource{
 			Node:      nodeID,

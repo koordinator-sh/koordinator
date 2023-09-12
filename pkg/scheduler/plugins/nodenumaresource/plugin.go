@@ -25,6 +25,7 @@ import (
 	nrtv1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
 	topologylister "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/listers/topology/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
@@ -176,8 +177,11 @@ type preFilterState struct {
 
 func (s *preFilterState) Clone() framework.StateData {
 	ns := &preFilterState{
+		skip:                        s.skip,
 		requestCPUBind:              s.requestCPUBind,
+		requests:                    s.requests,
 		resourceSpec:                s.resourceSpec,
+		requiredCPUBindPolicy:       s.requiredCPUBindPolicy,
 		preferredCPUBindPolicy:      s.preferredCPUBindPolicy,
 		preferredCPUExclusivePolicy: s.preferredCPUExclusivePolicy,
 		numCPUsNeeded:               s.numCPUsNeeded,
@@ -296,7 +300,7 @@ func (p *Plugin) Filter(ctx context.Context, cycleState *framework.CycleState, p
 		}
 
 		if policyType == extension.NUMATopologyPolicyNone && state.requiredCPUBindPolicy != "" {
-			resourceOptions, err := p.getResourceOptions(cycleState, state, node, pod, topologymanager.NUMATopologyHint{})
+			resourceOptions, err := p.getResourceOptions(cycleState, state, node, pod, topologymanager.NUMATopologyHint{}, topologyOptions)
 			if err != nil {
 				return framework.AsStatus(err)
 			}
@@ -308,7 +312,7 @@ func (p *Plugin) Filter(ctx context.Context, cycleState *framework.CycleState, p
 	}
 
 	if policyType != extension.NUMATopologyPolicyNone {
-		return p.FilterByNUMANode(ctx, cycleState, pod, node.Name, policyType)
+		return p.FilterByNUMANode(ctx, cycleState, pod, node.Name, policyType, topologyOptions)
 	}
 
 	return nil
@@ -340,7 +344,7 @@ func (p *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState, 
 
 	policyType := getNUMATopologyPolicy(node.Labels, topologyOptions.NUMATopologyPolicy)
 	if policyType != extension.NUMATopologyPolicyNone {
-		status := p.ReserveByNUMANode(ctx, cycleState, pod, nodeName, policyType)
+		status := p.ReserveByNUMANode(ctx, cycleState, pod, nodeName, policyType, topologyOptions)
 		if !status.IsSuccess() {
 			return status
 		}
@@ -352,7 +356,7 @@ func (p *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState, 
 		return nil
 	}
 
-	resourceOptions, err := p.getResourceOptions(cycleState, state, node, pod, topologymanager.NUMATopologyHint{})
+	resourceOptions, err := p.getResourceOptions(cycleState, state, node, pod, topologymanager.NUMATopologyHint{}, topologyOptions)
 	if err != nil {
 		return framework.AsStatus(err)
 	}
@@ -420,7 +424,7 @@ func (p *Plugin) preBindObject(ctx context.Context, cycleState *framework.CycleS
 	return nil
 }
 
-func (p *Plugin) getResourceOptions(cycleState *framework.CycleState, state *preFilterState, node *corev1.Node, pod *corev1.Pod, affinity topologymanager.NUMATopologyHint) (*ResourceOptions, error) {
+func (p *Plugin) getResourceOptions(cycleState *framework.CycleState, state *preFilterState, node *corev1.Node, pod *corev1.Pod, affinity topologymanager.NUMATopologyHint, topologyOptions TopologyOptions) (*ResourceOptions, error) {
 	preferredCPUBindPolicy, err := p.getPreferredCPUBindPolicy(node, state.preferredCPUBindPolicy)
 	if err != nil {
 		return nil, err
@@ -430,6 +434,17 @@ func (p *Plugin) getResourceOptions(cycleState *framework.CycleState, state *pre
 	if err != nil {
 		return nil, err
 	}
+	reusableResources := map[int]corev1.ResourceList{}
+	if reservationReservedCPUs.Size() > 0 {
+		reservedCPUs := topologyOptions.CPUTopology.CPUDetails.KeepOnly(reservationReservedCPUs)
+		for _, numaNode := range reservedCPUs.NUMANodes().ToSliceNoSort() {
+			cpu := reservedCPUs.CPUsInNUMANodes(numaNode).Size() * 1000
+			reusableResources[numaNode] = corev1.ResourceList{
+				corev1.ResourceCPU: *resource.NewMilliQuantity(int64(cpu), resource.DecimalSI),
+			}
+		}
+	}
+
 	options := &ResourceOptions{
 		requests:              state.requests,
 		numCPUsNeeded:         state.numCPUsNeeded,
@@ -438,7 +453,9 @@ func (p *Plugin) getResourceOptions(cycleState *framework.CycleState, state *pre
 		cpuBindPolicy:         preferredCPUBindPolicy,
 		cpuExclusivePolicy:    state.preferredCPUExclusivePolicy,
 		preferredCPUs:         reservationReservedCPUs,
+		reusableResources:     reusableResources,
 		hint:                  affinity,
+		topologyOptions:       topologyOptions,
 	}
 	return options, nil
 }

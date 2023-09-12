@@ -468,8 +468,7 @@ var _ = SIGDescribe("NodeNUMAResource", func() {
 			}))
 		})
 
-		// SingleNUMANode with 2 NUMA Nodes with LSR
-		framework.ConformanceIt("SingleNUMANode with 2 NUMA Nodes with LSR", func() {
+		framework.ConformanceIt("LSR pods apply most resources on Node which enables SingleNUMANode policy, failed to scheduling LS Pod", func() {
 			nrt := getSuitableNodeResourceTopology(nrtClient, 2)
 			node, err := f.ClientSet.CoreV1().Nodes().Get(context.TODO(), nrt.Name, metav1.GetOptions{})
 			framework.ExpectNoError(err, "unable to get node")
@@ -526,6 +525,126 @@ var _ = SIGDescribe("NodeNUMAResource", func() {
 				gomega.Expect(resourceStatus.CPUSet).Should(gomega.Not(gomega.BeEmpty()))
 			}
 			gomega.Expect(nodes.Len()).Should(gomega.Equal(2))
+
+			ginkgo.By("Create the third LS Pod allocates 30% resources of Node, expect it failed to schedule")
+			percent = intstr.FromString("30%")
+			cpu, _ = intstr.GetScaledValueFromIntOrPercent(&percent, int(cpuQuantity.MilliValue()), false)
+			memory, _ = intstr.GetScaledValueFromIntOrPercent(&percent, int(memoryQuantity.Value()), false)
+			requests = corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewMilliQuantity(int64(cpu), resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(int64(memory), resource.DecimalSI),
+			}
+			pod := createPausePod(f, pausePodConfig{
+				Name:      "must-be-failed-pod",
+				Namespace: f.Namespace.Name,
+				Labels: map[string]string{
+					extension.LabelPodQoS: string(extension.QoSLS),
+				},
+				PriorityClassName: string(extension.PriorityProd),
+				Resources: &corev1.ResourceRequirements{
+					Limits:   requests,
+					Requests: requests,
+				},
+				SchedulerName: "koord-scheduler",
+				NodeName:      node.Name,
+			})
+			ginkgo.By("Wait for Pod schedule failed")
+			framework.ExpectNoError(e2epod.WaitForPodCondition(f.ClientSet, pod.Namespace, pod.Name, "wait for pod schedule failed", 60*time.Second, func(pod *corev1.Pod) (bool, error) {
+				_, scheduledCondition := k8spodutil.GetPodCondition(&pod.Status, corev1.PodScheduled)
+				if scheduledCondition != nil && scheduledCondition.Status == corev1.ConditionFalse &&
+					strings.Contains(scheduledCondition.Message, "NUMA Topology affinity") {
+					return true, nil
+				}
+				return false, nil
+			}))
+		})
+
+		framework.ConformanceIt("LS pods apply most resources on Node which enables SingleNUMANode policy, failed to scheduling LSR Pod", func() {
+			nrt := getSuitableNodeResourceTopology(nrtClient, 2)
+			node, err := f.ClientSet.CoreV1().Nodes().Get(context.TODO(), nrt.Name, metav1.GetOptions{})
+			framework.ExpectNoError(err, "unable to get node")
+
+			ginkgo.By(fmt.Sprintf("Label node %s with %s=%s", node.Name, extension.LabelNUMATopologyPolicy, string(extension.NUMATopologyPolicySingleNUMANode)))
+			framework.AddOrUpdateLabelOnNode(f.ClientSet, node.Name, extension.LabelNUMATopologyPolicy, string(extension.NUMATopologyPolicySingleNUMANode))
+			targetNodeName = node.Name
+
+			ginkgo.By("Create two pods allocate 56% resources of Node, and every Pod allocates 28% resources per NUMA Node")
+			cpuQuantity := node.Status.Allocatable[corev1.ResourceCPU]
+			memoryQuantity := node.Status.Allocatable[corev1.ResourceMemory]
+			percent := intstr.FromString("28%")
+			cpu, _ := intstr.GetScaledValueFromIntOrPercent(&percent, int(cpuQuantity.MilliValue()), false)
+			memory, _ := intstr.GetScaledValueFromIntOrPercent(&percent, int(memoryQuantity.Value()), false)
+			requests := corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewMilliQuantity(int64(cpu), resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(int64(memory), resource.DecimalSI),
+			}
+			rsConfig := pauseRSConfig{
+				Replicas: int32(2),
+				PodConfig: pausePodConfig{
+					Name:      "request-resource-with-single-numa-pod",
+					Namespace: f.Namespace.Name,
+					Labels: map[string]string{
+						"test-app": "true",
+					},
+					Resources: &corev1.ResourceRequirements{
+						Limits:   requests,
+						Requests: requests,
+					},
+					SchedulerName: "koord-scheduler",
+					NodeName:      node.Name,
+				},
+			}
+			runPauseRS(f, rsConfig)
+
+			ginkgo.By("Check the two pods allocated in two NUMA Nodes")
+			podList, err := f.ClientSet.CoreV1().Pods(f.Namespace.Name).List(context.TODO(), metav1.ListOptions{})
+			framework.ExpectNoError(err)
+			nodes := sets.NewInt()
+			for i := range podList.Items {
+				pod := &podList.Items[i]
+				ginkgo.By(fmt.Sprintf("pod %q, resourceStatus: %s", pod.Name, pod.Annotations[extension.AnnotationResourceStatus]))
+				resourceStatus, err := extension.GetResourceStatus(pod.Annotations)
+				framework.ExpectNoError(err, "invalid resourceStatus")
+				gomega.Expect(len(resourceStatus.NUMANodeResources)).Should(gomega.Equal(1))
+				r := equality.Semantic.DeepEqual(resourceStatus.NUMANodeResources[0].Resources, requests)
+				gomega.Expect(r).Should(gomega.Equal(true))
+				gomega.Expect(false).Should(gomega.Equal(nodes.Has(int(resourceStatus.NUMANodeResources[0].Node))))
+				nodes.Insert(int(resourceStatus.NUMANodeResources[0].Node))
+			}
+			gomega.Expect(nodes.Len()).Should(gomega.Equal(2))
+
+			ginkgo.By("Create the third LSR Pod allocates 30% resources of Node, expect it failed to schedule")
+			percent = intstr.FromString("30%")
+			cpu, _ = intstr.GetScaledValueFromIntOrPercent(&percent, int(cpuQuantity.MilliValue()), false)
+			cpu -= cpu % 1000
+			memory, _ = intstr.GetScaledValueFromIntOrPercent(&percent, int(memoryQuantity.Value()), false)
+			requests = corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewMilliQuantity(int64(cpu), resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(int64(memory), resource.DecimalSI),
+			}
+			pod := createPausePod(f, pausePodConfig{
+				Name:      "must-be-failed-pod",
+				Namespace: f.Namespace.Name,
+				Labels: map[string]string{
+					extension.LabelPodQoS: string(extension.QoSLSR),
+				},
+				PriorityClassName: string(extension.PriorityProd),
+				Resources: &corev1.ResourceRequirements{
+					Limits:   requests,
+					Requests: requests,
+				},
+				SchedulerName: "koord-scheduler",
+				NodeName:      node.Name,
+			})
+			ginkgo.By("Wait for Pod schedule failed")
+			framework.ExpectNoError(e2epod.WaitForPodCondition(f.ClientSet, pod.Namespace, pod.Name, "wait for pod schedule failed", 60*time.Second, func(pod *corev1.Pod) (bool, error) {
+				_, scheduledCondition := k8spodutil.GetPodCondition(&pod.Status, corev1.PodScheduled)
+				if scheduledCondition != nil && scheduledCondition.Status == corev1.ConditionFalse &&
+					strings.Contains(scheduledCondition.Message, "NUMA Topology affinity") {
+					return true, nil
+				}
+				return false, nil
+			}))
 		})
 
 		// SingleNUMANode with 2 NUMA Nodes - resources crossover two NUMA Nodes

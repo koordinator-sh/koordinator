@@ -678,7 +678,7 @@ func TestPlugin_Filter(t *testing.T) {
 				})
 
 				cpuManager := plg.resourceManager.(*resourceManager)
-				cpuManager.allocationStates[tt.allocationState.nodeName] = tt.allocationState
+				cpuManager.nodeAllocations[tt.allocationState.nodeName] = tt.allocationState
 			}
 
 			suit.start()
@@ -908,7 +908,7 @@ func TestPlugin_Score(t *testing.T) {
 			}
 
 			cpuManager := plg.resourceManager.(*resourceManager)
-			cpuManager.allocationStates[allocateState.nodeName] = allocateState
+			cpuManager.nodeAllocations[allocateState.nodeName] = allocateState
 
 			suit.start()
 
@@ -1129,7 +1129,7 @@ func TestPlugin_Reserve(t *testing.T) {
 			}
 
 			cpuManager := plg.resourceManager.(*resourceManager)
-			cpuManager.allocationStates[nodeAllocation.nodeName] = nodeAllocation
+			cpuManager.nodeAllocations[nodeAllocation.nodeName] = nodeAllocation
 
 			suit.start()
 
@@ -1202,8 +1202,8 @@ func TestPlugin_Unreserve(t *testing.T) {
 	})
 	plg := &Plugin{
 		resourceManager: &resourceManager{
-			topologyManager:  topologyOptionsManager,
-			allocationStates: map[string]*NodeAllocation{},
+			topologyOptionsManager: topologyOptionsManager,
+			nodeAllocations:        map[string]*NodeAllocation{},
 		},
 	}
 	plg.resourceManager.Update("test-node-1", &PodAllocation{

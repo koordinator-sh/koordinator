@@ -150,15 +150,15 @@ func (n *NodeAllocation) getAvailableCPUs(cpuTopology *CPUTopology, maxRefCount 
 	return
 }
 
-func (n *NodeAllocation) getAvailableNUMANodeResources(topologyOptions TopologyOptions) (totalAvailable, totalAllocated map[int]corev1.ResourceList) {
+func (n *NodeAllocation) getAvailableNUMANodeResources(topologyOptions TopologyOptions, reusableResources map[int]corev1.ResourceList) (totalAvailable, totalAllocated map[int]corev1.ResourceList) {
 	totalAvailable = make(map[int]corev1.ResourceList)
 	totalAllocated = make(map[int]corev1.ResourceList)
 	for _, numaNodeRes := range topologyOptions.NUMANodeResources {
 		var allocatedRes corev1.ResourceList
 		allocated := n.allocatedResources[numaNodeRes.Node]
 		if allocated != nil {
-			allocatedRes = allocated.Resources
-			totalAllocated[numaNodeRes.Node] = allocatedRes.DeepCopy()
+			allocatedRes = quotav1.SubtractWithNonNegativeResult(allocated.Resources, reusableResources[numaNodeRes.Node])
+			totalAllocated[numaNodeRes.Node] = allocatedRes
 		}
 		totalAvailable[numaNodeRes.Node] = quotav1.SubtractWithNonNegativeResult(numaNodeRes.Resources, allocatedRes)
 	}
