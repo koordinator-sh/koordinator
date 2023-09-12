@@ -31,7 +31,6 @@ import (
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/klog/v2"
-	"k8s.io/kubernetes/pkg/api/v1/resource"
 	"k8s.io/kubernetes/pkg/scheduler/util"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
@@ -110,7 +109,7 @@ func (monitor *QuotaOverUsedGroupMonitor) getToRevokePodList(quotaName string) [
 		if shouldBreak, _ := quotav1.LessThanOrEqual(used, runtime); shouldBreak {
 			break
 		}
-		podReq, _ := resource.PodRequestsAndLimits(pod)
+		podReq, _ := core.PodRequestsAndLimits(pod)
 		used = quotav1.Subtract(used, podReq)
 		tryAssignBackPodCache = append(tryAssignBackPodCache, pod)
 	}
@@ -128,7 +127,7 @@ func (monitor *QuotaOverUsedGroupMonitor) getToRevokePodList(quotaName string) [
 	realRevokePodCache := make([]*v1.Pod, 0)
 	for index := len(tryAssignBackPodCache) - 1; index >= 0; index-- {
 		pod := tryAssignBackPodCache[index]
-		podRequest, _ := resource.PodRequestsAndLimits(pod)
+		podRequest, _ := core.PodRequestsAndLimits(pod)
 		used = quotav1.Add(used, podRequest)
 		if canAssignBack, _ := quotav1.LessThanOrEqual(used, runtime); !canAssignBack {
 			used = quotav1.Subtract(used, podRequest)

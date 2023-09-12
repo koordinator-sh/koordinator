@@ -24,7 +24,6 @@ import (
 	v1 "k8s.io/api/core/v1"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	"k8s.io/klog/v2"
-	"k8s.io/kubernetes/pkg/api/v1/resource"
 	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
@@ -564,13 +563,13 @@ func (gqm *GroupQuotaManager) GetAllQuotaNames() map[string]struct{} {
 func (gqm *GroupQuotaManager) updatePodRequestNoLock(quotaName string, oldPod, newPod *v1.Pod) {
 	var oldPodReq, newPodReq v1.ResourceList
 	if oldPod != nil {
-		oldPodReq, _ = resource.PodRequestsAndLimits(oldPod)
+		oldPodReq, _ = PodRequestsAndLimits(oldPod)
 	} else {
 		oldPodReq = make(v1.ResourceList)
 	}
 
 	if newPod != nil {
-		newPodReq, _ = resource.PodRequestsAndLimits(newPod)
+		newPodReq, _ = PodRequestsAndLimits(newPod)
 	} else {
 		newPodReq = make(v1.ResourceList)
 	}
@@ -595,13 +594,13 @@ func (gqm *GroupQuotaManager) updatePodUsedNoLock(quotaName string, oldPod, newP
 
 	var oldPodUsed, newPodUsed v1.ResourceList
 	if oldPod != nil {
-		oldPodUsed, _ = resource.PodRequestsAndLimits(oldPod)
+		oldPodUsed, _ = PodRequestsAndLimits(oldPod)
 	} else {
 		oldPodUsed = make(v1.ResourceList)
 	}
 
 	if newPod != nil {
-		newPodUsed, _ = resource.PodRequestsAndLimits(newPod)
+		newPodUsed, _ = PodRequestsAndLimits(newPod)
 	} else {
 		newPodUsed = make(v1.ResourceList)
 	}

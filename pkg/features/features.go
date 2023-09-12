@@ -50,6 +50,9 @@ const (
 
 	// MultiQuotaTree enables multi quota tree.
 	MultiQuotaTree featuregate.Feature = "MultiQuotaTree"
+
+	// ElasticQuotaIgnorePodOverhead ignore pod.spec.overhead when accounting pod requests
+	ElasticQuotaIgnorePodOverhead featuregate.Feature = "ElasticQuotaIgnorePodOverhead"
 )
 
 var defaultFeatureGates = map[featuregate.Feature]featuregate.FeatureSpec{
@@ -62,17 +65,16 @@ var defaultFeatureGates = map[featuregate.Feature]featuregate.FeatureSpec{
 	WebhookFramework:                       {Default: true, PreRelease: featuregate.Beta},
 	ColocationProfileSkipMutatingResources: {Default: false, PreRelease: featuregate.Alpha},
 	MultiQuotaTree:                         {Default: false, PreRelease: featuregate.Alpha},
+	ElasticQuotaIgnorePodOverhead:          {Default: false, PreRelease: featuregate.Alpha},
 }
 
 const (
 	DisablePVCReservation featuregate.Feature = "DisablePVCReservation"
 )
 
-var (
-	defaultDeschedulerFeatureGates = map[featuregate.Feature]featuregate.FeatureSpec{
-		DisablePVCReservation: {Default: false, PreRelease: featuregate.Beta},
-	}
-)
+var defaultDeschedulerFeatureGates = map[featuregate.Feature]featuregate.FeatureSpec{
+	DisablePVCReservation: {Default: false, PreRelease: featuregate.Beta},
+}
 
 func init() {
 	runtime.Must(utilfeature.DefaultMutableFeatureGate.Add(defaultFeatureGates))

@@ -23,7 +23,6 @@ import (
 	v1 "k8s.io/api/core/v1"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	"k8s.io/klog/v2"
-	resourcev1 "k8s.io/kubernetes/pkg/api/v1/resource"
 	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
@@ -424,7 +423,7 @@ type PodInfo struct {
 }
 
 func NewPodInfo(pod *v1.Pod) *PodInfo {
-	res, _ := resourcev1.PodRequestsAndLimits(pod)
+	res, _ := PodRequestsAndLimits(pod)
 	return &PodInfo{
 		pod:      pod,
 		resource: res,
