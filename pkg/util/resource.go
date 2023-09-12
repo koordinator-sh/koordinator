@@ -17,9 +17,17 @@ limitations under the License.
 package util
 
 import (
+	"fmt"
+	"sort"
+
+	"github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
+)
+
+const (
+	NodeZoneType = "Node"
 )
 
 func NewZeroResourceList() corev1.ResourceList {
@@ -117,4 +125,71 @@ func IsResourceDiff(old, new corev1.ResourceList, resourceName corev1.ResourceNa
 
 func QuantityPtr(q resource.Quantity) *resource.Quantity {
 	return &q
+}
+
+// GenNodeZoneName generates the zone name according to the NUMA node ID.
+func GenNodeZoneName(nodeID int) string {
+	return fmt.Sprintf("node-%d", nodeID)
+}
+
+// ZoneListToZoneResourceList transforms the zone list into a map from zone name to its resource list.
+// It supposes the capacity, allocatable, available of a ResourceInfo is the same.
+func ZoneListToZoneResourceList(zoneList v1alpha1.ZoneList) map[string]corev1.ResourceList {
+	zoneResourceList := map[string]corev1.ResourceList{}
+	for _, zone := range zoneList {
+		zoneResourceList[zone.Name] = corev1.ResourceList{}
+		for _, resourceInfo := range zone.Resources {
+			zoneResourceList[zone.Name][corev1.ResourceName(resourceInfo.Name)] = resourceInfo.Allocatable
+		}
+	}
+	return zoneResourceList
+}
+
+// ZoneResourceListToZoneList transforms the zone resource list into the zone list by the orders of the zone name and
+// the resource name.
+// It supposes the capacity, allocatable, available of a ResourceInfo is the same.
+func ZoneResourceListToZoneList(zoneResourceList map[string]corev1.ResourceList) v1alpha1.ZoneList {
+	zoneList := make(v1alpha1.ZoneList, len(zoneResourceList))
+	i := 0
+	for zoneName, resourceList := range zoneResourceList {
+		zoneList[i] = v1alpha1.Zone{
+			Name: zoneName,
+			Type: NodeZoneType,
+		}
+		for resourceName, quantity := range resourceList {
+			zoneList[i].Resources = append(zoneList[i].Resources, v1alpha1.ResourceInfo{
+				Name:        string(resourceName),
+				Capacity:    quantity,
+				Allocatable: quantity,
+				Available:   quantity,
+			})
+		}
+		sort.Slice(zoneList[i].Resources, func(p, q int) bool {
+			return zoneList[i].Resources[p].Name < zoneList[i].Resources[q].Name
+		})
+		i++
+	}
+	sort.Slice(zoneList, func(i, j int) bool {
+		return zoneList[i].Name < zoneList[j].Name
+	})
+	return zoneList
+}
+
+// MergeZoneList merges ZoneList b override ZoneList a.
+func MergeZoneList(a, b v1alpha1.ZoneList) v1alpha1.ZoneList {
+	zoneResourcesA := ZoneListToZoneResourceList(a)
+	zoneResourcesB := ZoneListToZoneResourceList(b)
+
+	for zoneName, resourceListB := range zoneResourcesB {
+		resourceListA, ok := zoneResourcesA[zoneName]
+		if !ok {
+			zoneResourcesA[zoneName] = resourceListB
+			continue
+		}
+		for resourceName, quantityB := range resourceListB {
+			resourceListA[resourceName] = quantityB
+		}
+	}
+
+	return ZoneResourceListToZoneList(zoneResourcesA)
 }

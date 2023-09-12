@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -368,6 +369,108 @@ func TestQuantityPtr(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			got := QuantityPtr(tt.arg)
 			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestZoneListTransform(t *testing.T) {
+	tests := []struct {
+		name string
+		arg  v1alpha1.ZoneList
+		want map[string]corev1.ResourceList
+	}{
+		{
+			name: "transform empty zone list",
+			arg:  v1alpha1.ZoneList{},
+			want: map[string]corev1.ResourceList{},
+		},
+		{
+			name: "transform a zone list with one zone",
+			arg: v1alpha1.ZoneList{
+				{
+					Name: "node-0",
+					Type: NodeZoneType,
+					Resources: v1alpha1.ResourceInfoList{
+						{
+							Name:        string(corev1.ResourceCPU),
+							Capacity:    resource.MustParse("10"),
+							Allocatable: resource.MustParse("10"),
+							Available:   resource.MustParse("10"),
+						},
+						{
+							Name:        string(corev1.ResourceMemory),
+							Capacity:    resource.MustParse("20Gi"),
+							Allocatable: resource.MustParse("20Gi"),
+							Available:   resource.MustParse("20Gi"),
+						},
+					},
+				},
+			},
+			want: map[string]corev1.ResourceList{
+				"node-0": {
+					corev1.ResourceCPU:    resource.MustParse("10"),
+					corev1.ResourceMemory: resource.MustParse("20Gi"),
+				},
+			},
+		},
+		{
+			name: "transform a zone list with multiple zones",
+			arg: v1alpha1.ZoneList{
+				{
+					Name: "node-0",
+					Type: NodeZoneType,
+					Resources: v1alpha1.ResourceInfoList{
+						{
+							Name:        string(corev1.ResourceCPU),
+							Capacity:    resource.MustParse("10"),
+							Allocatable: resource.MustParse("10"),
+							Available:   resource.MustParse("10"),
+						},
+						{
+							Name:        string(corev1.ResourceMemory),
+							Capacity:    resource.MustParse("20Gi"),
+							Allocatable: resource.MustParse("20Gi"),
+							Available:   resource.MustParse("20Gi"),
+						},
+					},
+				},
+				{
+					Name: "node-1",
+					Type: NodeZoneType,
+					Resources: v1alpha1.ResourceInfoList{
+						{
+							Name:        string(corev1.ResourceCPU),
+							Capacity:    resource.MustParse("10"),
+							Allocatable: resource.MustParse("10"),
+							Available:   resource.MustParse("10"),
+						},
+						{
+							Name:        string(corev1.ResourceMemory),
+							Capacity:    resource.MustParse("18Gi"),
+							Allocatable: resource.MustParse("18Gi"),
+							Available:   resource.MustParse("18Gi"),
+						},
+					},
+				},
+			},
+			want: map[string]corev1.ResourceList{
+				"node-0": {
+					corev1.ResourceCPU:    resource.MustParse("10"),
+					corev1.ResourceMemory: resource.MustParse("20Gi"),
+				},
+				"node-1": {
+					corev1.ResourceCPU:    resource.MustParse("10"),
+					corev1.ResourceMemory: resource.MustParse("18Gi"),
+				},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ZoneListToZoneResourceList(tt.arg)
+			assert.Equal(t, tt.want, got)
+			gotReverse := ZoneResourceListToZoneList(got)
+			assert.Equal(t, tt.arg, gotReverse)
 		})
 	}
 }

@@ -483,7 +483,7 @@ func Test_reportNodeTopology(t *testing.T) {
 	expectedZones := topologyv1alpha1.ZoneList{
 		{
 			Name: "node-0",
-			Type: NodeZoneType,
+			Type: util.NodeZoneType,
 			Resources: topologyv1alpha1.ResourceInfoList{
 				{
 					Name:        "cpu",
@@ -501,7 +501,7 @@ func Test_reportNodeTopology(t *testing.T) {
 		},
 		{
 			Name: "node-1",
-			Type: NodeZoneType,
+			Type: util.NodeZoneType,
 			Resources: topologyv1alpha1.ResourceInfoList{
 				{
 					Name:        "cpu",
@@ -518,12 +518,113 @@ func Test_reportNodeTopology(t *testing.T) {
 			},
 		},
 	}
+	oldZones := topologyv1alpha1.ZoneList{
+		{
+			Name: "node-0",
+			Type: util.NodeZoneType,
+			Resources: topologyv1alpha1.ResourceInfoList{
+				{
+					Name:        "cpu",
+					Capacity:    *resource.NewQuantity(2, resource.DecimalSI),
+					Allocatable: *resource.NewQuantity(2, resource.DecimalSI),
+					Available:   *resource.NewQuantity(2, resource.DecimalSI),
+				},
+				{
+					Name:        "gpu",
+					Capacity:    *resource.NewQuantity(1, resource.DecimalSI),
+					Allocatable: *resource.NewQuantity(1, resource.DecimalSI),
+					Available:   *resource.NewQuantity(1, resource.DecimalSI),
+				},
+				{
+					Name:        "memory",
+					Capacity:    *resource.NewQuantity(269755191296, resource.BinarySI),
+					Allocatable: *resource.NewQuantity(269755191296, resource.BinarySI),
+					Available:   *resource.NewQuantity(269755191296, resource.BinarySI),
+				},
+			},
+		},
+		{
+			Name: "node-1",
+			Type: util.NodeZoneType,
+			Resources: topologyv1alpha1.ResourceInfoList{
+				{
+					Name:        "cpu",
+					Capacity:    *resource.NewQuantity(2, resource.DecimalSI),
+					Allocatable: *resource.NewQuantity(2, resource.DecimalSI),
+					Available:   *resource.NewQuantity(2, resource.DecimalSI),
+				},
+				{
+					Name:        "gpu",
+					Capacity:    *resource.NewQuantity(1, resource.DecimalSI),
+					Allocatable: *resource.NewQuantity(1, resource.DecimalSI),
+					Available:   *resource.NewQuantity(1, resource.DecimalSI),
+				},
+				{
+					Name:        "memory",
+					Capacity:    *resource.NewQuantity(269754368000, resource.BinarySI),
+					Allocatable: *resource.NewQuantity(269754368000, resource.BinarySI),
+					Available:   *resource.NewQuantity(269754368000, resource.BinarySI),
+				},
+			},
+		},
+	}
+	mergedZones := topologyv1alpha1.ZoneList{
+		{
+			Name: "node-0",
+			Type: util.NodeZoneType,
+			Resources: topologyv1alpha1.ResourceInfoList{
+				{
+					Name:        "cpu",
+					Capacity:    *resource.NewQuantity(4, resource.DecimalSI),
+					Allocatable: *resource.NewQuantity(4, resource.DecimalSI),
+					Available:   *resource.NewQuantity(4, resource.DecimalSI),
+				},
+				{
+					Name:        "gpu",
+					Capacity:    *resource.NewQuantity(1, resource.DecimalSI),
+					Allocatable: *resource.NewQuantity(1, resource.DecimalSI),
+					Available:   *resource.NewQuantity(1, resource.DecimalSI),
+				},
+				{
+					Name:        "memory",
+					Capacity:    *resource.NewQuantity(269755191296, resource.BinarySI),
+					Allocatable: *resource.NewQuantity(269755191296, resource.BinarySI),
+					Available:   *resource.NewQuantity(269755191296, resource.BinarySI),
+				},
+			},
+		},
+		{
+			Name: "node-1",
+			Type: util.NodeZoneType,
+			Resources: topologyv1alpha1.ResourceInfoList{
+				{
+					Name:        "cpu",
+					Capacity:    *resource.NewQuantity(4, resource.DecimalSI),
+					Allocatable: *resource.NewQuantity(4, resource.DecimalSI),
+					Available:   *resource.NewQuantity(4, resource.DecimalSI),
+				},
+				{
+					Name:        "gpu",
+					Capacity:    *resource.NewQuantity(1, resource.DecimalSI),
+					Allocatable: *resource.NewQuantity(1, resource.DecimalSI),
+					Available:   *resource.NewQuantity(1, resource.DecimalSI),
+				},
+				{
+					Name:        "memory",
+					Capacity:    *resource.NewQuantity(269754368000, resource.BinarySI),
+					Allocatable: *resource.NewQuantity(269754368000, resource.BinarySI),
+					Available:   *resource.NewQuantity(269754368000, resource.BinarySI),
+				},
+			},
+		},
+	}
 
 	tests := []struct {
 		name                            string
 		config                          *Config
 		kubeletStub                     KubeletStub
 		disableCreateTopologyCRD        bool
+		oldZoneList                     *topologyv1alpha1.ZoneList
 		nodeReserved                    *extension.NodeReservation
 		systemQOSRes                    *extension.SystemQOSResource
 		expectedKubeletCPUManagerPolicy extension.KubeletCPUManagerPolicy
@@ -639,6 +740,31 @@ func Test_reportNodeTopology(t *testing.T) {
 			expectedTopologyPolicies: expectedTopologyPolices,
 			expectedZones:            expectedZones,
 		},
+		{
+			name:   "report topology and merge old zone list",
+			config: NewDefaultConfig(),
+			kubeletStub: &testKubeletStub{
+				config: &kubeletconfiginternal.KubeletConfiguration{
+					CPUManagerPolicy: "static",
+					KubeReserved: map[string]string{
+						"cpu": "2000m",
+					},
+				},
+			},
+			oldZoneList: &oldZones,
+			expectedKubeletCPUManagerPolicy: extension.KubeletCPUManagerPolicy{
+				Policy:       "static",
+				ReservedCPUs: "0-1",
+			},
+			expectedCPUBasicInfo:     string(expectedCPUBasicInfoBytes),
+			expectedCPUSharedPool:    expectedCPUSharedPool,
+			expectedBECPUSharedPool:  expectedBECPUSharedPool,
+			expectedCPUTopology:      expectedCPUTopology,
+			expectedNodeReservation:  "{}",
+			expectedSystemQOS:        "{}",
+			expectedTopologyPolicies: expectedTopologyPolices,
+			expectedZones:            mergedZones,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -686,7 +812,13 @@ func Test_reportNodeTopology(t *testing.T) {
 			_ = client.TopologyV1alpha1().NodeResourceTopologies().Delete(context.TODO(), topologyName, metav1.DeleteOptions{})
 			if !tt.disableCreateTopologyCRD {
 				topologyTest := newNodeTopo(testNode)
+				if tt.oldZoneList != nil {
+					topologyTest.Zones = *tt.oldZoneList
+				}
 				_, err = client.TopologyV1alpha1().NodeResourceTopologies().Create(context.TODO(), topologyTest, metav1.CreateOptions{})
+				r.nodeResourceTopologyLister = &fakeNodeResourceTopologyLister{
+					nodeResourceTopologys: topologyTest,
+				}
 			}
 			r.reportNodeTopology()
 
@@ -1111,7 +1243,7 @@ func Test_calTopologyZoneList(t *testing.T) {
 			want: topologyv1alpha1.ZoneList{
 				{
 					Name: "node-0",
-					Type: NodeZoneType,
+					Type: util.NodeZoneType,
 					Resources: topologyv1alpha1.ResourceInfoList{
 						{
 							Name:        "cpu",
@@ -1225,7 +1357,7 @@ func Test_calTopologyZoneList(t *testing.T) {
 			want: topologyv1alpha1.ZoneList{
 				{
 					Name: "node-0",
-					Type: NodeZoneType,
+					Type: util.NodeZoneType,
 					Resources: topologyv1alpha1.ResourceInfoList{
 						{
 							Name:        "cpu",
@@ -1243,7 +1375,7 @@ func Test_calTopologyZoneList(t *testing.T) {
 				},
 				{
 					Name: "node-1",
-					Type: NodeZoneType,
+					Type: util.NodeZoneType,
 					Resources: topologyv1alpha1.ResourceInfoList{
 						{
 							Name:        "cpu",
