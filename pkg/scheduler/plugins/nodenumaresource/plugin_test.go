@@ -43,11 +43,10 @@ import (
 	koordfake "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/fake"
 	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
 	schedulingconfig "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
+	_ "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/scheme"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/v1beta2"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	"github.com/koordinator-sh/koordinator/pkg/util/cpuset"
-
-	_ "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/scheme"
 )
 
 var _ framework.SharedLister = &testSharedLister{}
@@ -230,7 +229,6 @@ func TestPlugin_PreFilter(t *testing.T) {
 				requests: corev1.ResourceList{
 					corev1.ResourceCPU: resource.MustParse("4"),
 				},
-				resourceSpec:           &extension.ResourceSpec{PreferredCPUBindPolicy: extension.CPUBindPolicyFullPCPUs},
 				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs,
 				numCPUsNeeded:          4,
 			},
@@ -265,7 +263,6 @@ func TestPlugin_PreFilter(t *testing.T) {
 				requests: corev1.ResourceList{
 					corev1.ResourceCPU: resource.MustParse("4"),
 				},
-				resourceSpec:           &extension.ResourceSpec{PreferredCPUBindPolicy: extension.CPUBindPolicyFullPCPUs},
 				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs,
 				numCPUsNeeded:          4,
 			},
@@ -300,7 +297,6 @@ func TestPlugin_PreFilter(t *testing.T) {
 				requests: corev1.ResourceList{
 					corev1.ResourceCPU: resource.MustParse("4"),
 				},
-				resourceSpec:           &extension.ResourceSpec{RequiredCPUBindPolicy: extension.CPUBindPolicyFullPCPUs, PreferredCPUBindPolicy: extension.CPUBindPolicyDefault},
 				requiredCPUBindPolicy:  schedulingconfig.CPUBindPolicyFullPCPUs,
 				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs,
 				numCPUsNeeded:          4,
@@ -337,7 +333,6 @@ func TestPlugin_PreFilter(t *testing.T) {
 				requests: corev1.ResourceList{
 					corev1.ResourceCPU: resource.MustParse("4"),
 				},
-				resourceSpec:           &extension.ResourceSpec{RequiredCPUBindPolicy: extension.CPUBindPolicyDefault, PreferredCPUBindPolicy: extension.CPUBindPolicyDefault},
 				requiredCPUBindPolicy:  schedulingconfig.CPUBindPolicySpreadByPCPUs,
 				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicySpreadByPCPUs,
 				numCPUsNeeded:          4,
@@ -370,7 +365,6 @@ func TestPlugin_PreFilter(t *testing.T) {
 				requests: corev1.ResourceList{
 					corev1.ResourceCPU: resource.MustParse("4"),
 				},
-				resourceSpec:           &extension.ResourceSpec{PreferredCPUBindPolicy: extension.CPUBindPolicyDefault},
 				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs,
 				numCPUsNeeded:          4,
 			},
@@ -578,7 +572,6 @@ func TestPlugin_Filter(t *testing.T) {
 			},
 			state: &preFilterState{
 				requestCPUBind:         true,
-				resourceSpec:           &extension.ResourceSpec{},
 				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs,
 				numCPUsNeeded:          5,
 			},
@@ -588,13 +581,41 @@ func TestPlugin_Filter(t *testing.T) {
 			want:            framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrSMTAlignmentError),
 		},
 		{
-			name: "verify FullPCPUsOnly with RequiredFullPCPUsPolicy",
+			name: "verify required FullPCPUs SMTAlignmentError",
+			state: &preFilterState{
+				requestCPUBind:         true,
+				requiredCPUBindPolicy:  schedulingconfig.CPUBindPolicyFullPCPUs,
+				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs,
+				numCPUsNeeded:          5,
+			},
+			cpuTopology:     buildCPUTopologyForTest(2, 1, 4, 2),
+			allocationState: NewNodeAllocation("test-node-1"),
+			pod:             &corev1.Pod{},
+			want:            framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrSMTAlignmentError),
+		},
+		{
+			name: "verify FullPCPUsOnly with preferred SpreadByPCPUs",
 			nodeLabels: map[string]string{
 				extension.LabelNodeCPUBindPolicy: string(extension.NodeCPUBindPolicyFullPCPUsOnly),
 			},
 			state: &preFilterState{
 				requestCPUBind:         true,
-				resourceSpec:           &extension.ResourceSpec{},
+				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicySpreadByPCPUs,
+				numCPUsNeeded:          4,
+			},
+			cpuTopology:     buildCPUTopologyForTest(2, 1, 4, 2),
+			allocationState: NewNodeAllocation("test-node-1"),
+			pod:             &corev1.Pod{},
+			want:            framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrRequiredFullPCPUsPolicy),
+		},
+		{
+			name: "verify FullPCPUsOnly with required SpreadByPCPUs",
+			nodeLabels: map[string]string{
+				extension.LabelNodeCPUBindPolicy: string(extension.NodeCPUBindPolicyFullPCPUsOnly),
+			},
+			state: &preFilterState{
+				requestCPUBind:         true,
+				requiredCPUBindPolicy:  schedulingconfig.CPUBindPolicySpreadByPCPUs,
 				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicySpreadByPCPUs,
 				numCPUsNeeded:          4,
 			},
@@ -607,7 +628,6 @@ func TestPlugin_Filter(t *testing.T) {
 			name: "verify Kubelet FullPCPUsOnly with SMTAlignmentError",
 			state: &preFilterState{
 				requestCPUBind:         true,
-				resourceSpec:           &extension.ResourceSpec{},
 				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs,
 				numCPUsNeeded:          5,
 			},
@@ -626,7 +646,6 @@ func TestPlugin_Filter(t *testing.T) {
 			name: "verify Kubelet FullPCPUsOnly with RequiredFullPCPUsPolicy",
 			state: &preFilterState{
 				requestCPUBind:         true,
-				resourceSpec:           &extension.ResourceSpec{},
 				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicySpreadByPCPUs,
 				numCPUsNeeded:          4,
 			},
@@ -640,6 +659,18 @@ func TestPlugin_Filter(t *testing.T) {
 			},
 			pod:  &corev1.Pod{},
 			want: framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrRequiredFullPCPUsPolicy),
+		},
+		{
+			name: "verify required FullPCPUs with none NUMA topology policy",
+			state: &preFilterState{
+				requestCPUBind:         true,
+				requiredCPUBindPolicy:  schedulingconfig.CPUBindPolicyFullPCPUs,
+				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs,
+				numCPUsNeeded:          4,
+			},
+			cpuTopology:     buildCPUTopologyForTest(2, 1, 4, 2),
+			allocationState: NewNodeAllocation("test-node-1"),
+			pod:             &corev1.Pod{},
 		},
 	}
 	for _, tt := range tests {
@@ -745,10 +776,7 @@ func TestPlugin_Score(t *testing.T) {
 		{
 			name: "score with full empty node FullPCPUs",
 			state: &preFilterState{
-				requestCPUBind: true,
-				resourceSpec: &extension.ResourceSpec{
-					PreferredCPUBindPolicy: extension.CPUBindPolicyFullPCPUs,
-				},
+				requestCPUBind:         true,
 				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs,
 				numCPUsNeeded:          4,
 			},
@@ -761,9 +789,7 @@ func TestPlugin_Score(t *testing.T) {
 			name: "score with satisfied node FullPCPUs",
 			state: &preFilterState{
 				requestCPUBind: true,
-				resourceSpec: &extension.ResourceSpec{
-					PreferredCPUBindPolicy: extension.CPUBindPolicyFullPCPUs,
-				},
+
 				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs,
 				numCPUsNeeded:          8,
 			},
@@ -775,10 +801,7 @@ func TestPlugin_Score(t *testing.T) {
 		{
 			name: "score with full empty node SpreadByPCPUs",
 			state: &preFilterState{
-				requestCPUBind: true,
-				resourceSpec: &extension.ResourceSpec{
-					PreferredCPUBindPolicy: extension.CPUBindPolicySpreadByPCPUs,
-				},
+				requestCPUBind:         true,
 				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicySpreadByPCPUs,
 				numCPUsNeeded:          4,
 			},
@@ -790,10 +813,7 @@ func TestPlugin_Score(t *testing.T) {
 		{
 			name: "score with exceed socket FullPCPUs",
 			state: &preFilterState{
-				requestCPUBind: true,
-				resourceSpec: &extension.ResourceSpec{
-					PreferredCPUBindPolicy: extension.CPUBindPolicyFullPCPUs,
-				},
+				requestCPUBind:         true,
 				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs,
 				numCPUsNeeded:          16,
 			},
@@ -805,10 +825,7 @@ func TestPlugin_Score(t *testing.T) {
 		{
 			name: "score with satisfied socket FullPCPUs",
 			state: &preFilterState{
-				requestCPUBind: true,
-				resourceSpec: &extension.ResourceSpec{
-					PreferredCPUBindPolicy: extension.CPUBindPolicyFullPCPUs,
-				},
+				requestCPUBind:         true,
 				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs,
 				numCPUsNeeded:          16,
 			},
@@ -820,10 +837,7 @@ func TestPlugin_Score(t *testing.T) {
 		{
 			name: "score with full empty socket SpreadByPCPUs",
 			state: &preFilterState{
-				requestCPUBind: true,
-				resourceSpec: &extension.ResourceSpec{
-					PreferredCPUBindPolicy: extension.CPUBindPolicySpreadByPCPUs,
-				},
+				requestCPUBind:         true,
 				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicySpreadByPCPUs,
 				numCPUsNeeded:          4,
 			},
@@ -838,10 +852,7 @@ func TestPlugin_Score(t *testing.T) {
 				extension.LabelNodeNUMAAllocateStrategy: string(extension.NodeNUMAAllocateStrategyLeastAllocated),
 			},
 			state: &preFilterState{
-				requestCPUBind: true,
-				resourceSpec: &extension.ResourceSpec{
-					PreferredCPUBindPolicy: extension.CPUBindPolicySpreadByPCPUs,
-				},
+				requestCPUBind:         true,
 				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicySpreadByPCPUs,
 				numCPUsNeeded:          2,
 			},
@@ -856,10 +867,7 @@ func TestPlugin_Score(t *testing.T) {
 				extension.LabelNodeCPUBindPolicy: string(extension.NodeCPUBindPolicyFullPCPUsOnly),
 			},
 			state: &preFilterState{
-				requestCPUBind: true,
-				resourceSpec: &extension.ResourceSpec{
-					PreferredCPUBindPolicy: extension.CPUBindPolicySpreadByPCPUs,
-				},
+				requestCPUBind:         true,
 				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicySpreadByPCPUs,
 				numCPUsNeeded:          8,
 			},
@@ -979,11 +987,8 @@ func TestPlugin_Reserve(t *testing.T) {
 		{
 			name: "succeed with valid cpu topology",
 			state: &preFilterState{
-				requestCPUBind: true,
-				numCPUsNeeded:  4,
-				resourceSpec: &extension.ResourceSpec{
-					PreferredCPUBindPolicy: extension.CPUBindPolicyFullPCPUs,
-				},
+				requestCPUBind:         true,
+				numCPUsNeeded:          4,
 				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs,
 			},
 			cpuTopology: buildCPUTopologyForTest(2, 1, 4, 2),
@@ -997,11 +1002,8 @@ func TestPlugin_Reserve(t *testing.T) {
 				extension.LabelNodeCPUBindPolicy: string(extension.NodeCPUBindPolicySpreadByPCPUs),
 			},
 			state: &preFilterState{
-				requestCPUBind: true,
-				numCPUsNeeded:  4,
-				resourceSpec: &extension.ResourceSpec{
-					PreferredCPUBindPolicy: extension.CPUBindPolicyFullPCPUs,
-				},
+				requestCPUBind:         true,
+				numCPUsNeeded:          4,
 				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs,
 			},
 			cpuTopology: buildCPUTopologyForTest(2, 1, 4, 2),
@@ -1009,11 +1011,8 @@ func TestPlugin_Reserve(t *testing.T) {
 			want:        nil,
 			wantCPUSet:  cpuset.NewCPUSet(0, 2, 4, 6),
 			wantState: &preFilterState{
-				requestCPUBind: true,
-				numCPUsNeeded:  4,
-				resourceSpec: &extension.ResourceSpec{
-					PreferredCPUBindPolicy: extension.CPUBindPolicyFullPCPUs,
-				},
+				requestCPUBind:         true,
+				numCPUsNeeded:          4,
 				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicySpreadByPCPUs,
 			},
 		},
@@ -1022,9 +1021,6 @@ func TestPlugin_Reserve(t *testing.T) {
 			state: &preFilterState{
 				requestCPUBind: true,
 				numCPUsNeeded:  24,
-				resourceSpec: &extension.ResourceSpec{
-					PreferredCPUBindPolicy: extension.CPUBindPolicyFullPCPUs,
-				},
 			},
 			cpuTopology: buildCPUTopologyForTest(2, 1, 4, 2),
 			pod:         &corev1.Pod{},
@@ -1036,11 +1032,8 @@ func TestPlugin_Reserve(t *testing.T) {
 				extension.LabelNodeNUMAAllocateStrategy: string(extension.NodeNUMAAllocateStrategyLeastAllocated),
 			},
 			state: &preFilterState{
-				requestCPUBind: true,
-				numCPUsNeeded:  4,
-				resourceSpec: &extension.ResourceSpec{
-					PreferredCPUBindPolicy: extension.CPUBindPolicyFullPCPUs,
-				},
+				requestCPUBind:         true,
+				numCPUsNeeded:          4,
 				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs,
 			},
 			cpuTopology:   buildCPUTopologyForTest(2, 1, 8, 2),
@@ -1055,11 +1048,8 @@ func TestPlugin_Reserve(t *testing.T) {
 				extension.LabelNodeNUMAAllocateStrategy: string(extension.NodeNUMAAllocateStrategyMostAllocated),
 			},
 			state: &preFilterState{
-				requestCPUBind: true,
-				numCPUsNeeded:  4,
-				resourceSpec: &extension.ResourceSpec{
-					PreferredCPUBindPolicy: extension.CPUBindPolicyFullPCPUs,
-				},
+				requestCPUBind:         true,
+				numCPUsNeeded:          4,
 				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs,
 			},
 			cpuTopology:   buildCPUTopologyForTest(2, 1, 8, 2),
@@ -1071,11 +1061,8 @@ func TestPlugin_Reserve(t *testing.T) {
 		{
 			name: "succeed allocate from reservation reserved cpus",
 			state: &preFilterState{
-				requestCPUBind: true,
-				numCPUsNeeded:  4,
-				resourceSpec: &extension.ResourceSpec{
-					PreferredCPUBindPolicy: extension.CPUBindPolicyFullPCPUs,
-				},
+				requestCPUBind:         true,
+				numCPUsNeeded:          4,
 				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs,
 			},
 			reservedCPUs: map[types.UID]cpuset.CPUSet{
@@ -1179,9 +1166,6 @@ func TestPlugin_Unreserve(t *testing.T) {
 	state := &preFilterState{
 		requestCPUBind: true,
 		numCPUsNeeded:  24,
-		resourceSpec: &extension.ResourceSpec{
-			PreferredCPUBindPolicy: extension.CPUBindPolicyFullPCPUs,
-		},
 		allocation: &PodAllocation{
 			CPUSet: cpuset.NewCPUSet(0, 1, 2, 3),
 		},
@@ -1243,9 +1227,6 @@ func TestPlugin_PreBind(t *testing.T) {
 	state := &preFilterState{
 		requestCPUBind: true,
 		numCPUsNeeded:  4,
-		resourceSpec: &extension.ResourceSpec{
-			PreferredCPUBindPolicy: extension.CPUBindPolicyFullPCPUs,
-		},
 		allocation: &PodAllocation{
 			CPUSet: cpuset.NewCPUSet(0, 1, 2, 3),
 		},
@@ -1286,11 +1267,8 @@ func TestPlugin_PreBindWithCPUBindPolicyNone(t *testing.T) {
 	plg := p.(*Plugin)
 
 	state := &preFilterState{
-		requestCPUBind: true,
-		numCPUsNeeded:  4,
-		resourceSpec: &extension.ResourceSpec{
-			PreferredCPUBindPolicy: extension.CPUBindPolicyDefault,
-		},
+		requestCPUBind:         true,
+		numCPUsNeeded:          4,
 		preferredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs,
 		allocation: &PodAllocation{
 			CPUSet: cpuset.NewCPUSet(0, 1, 2, 3),
@@ -1340,9 +1318,6 @@ func TestPlugin_PreBindReservation(t *testing.T) {
 	state := &preFilterState{
 		requestCPUBind: true,
 		numCPUsNeeded:  4,
-		resourceSpec: &extension.ResourceSpec{
-			PreferredCPUBindPolicy: extension.CPUBindPolicyFullPCPUs,
-		},
 		allocation: &PodAllocation{
 			CPUSet: cpuset.NewCPUSet(0, 1, 2, 3),
 		},
@@ -1371,9 +1346,6 @@ func TestRestoreReservation(t *testing.T) {
 	state := &preFilterState{
 		requestCPUBind: true,
 		numCPUsNeeded:  4,
-		resourceSpec: &extension.ResourceSpec{
-			PreferredCPUBindPolicy: extension.CPUBindPolicyFullPCPUs,
-		},
 	}
 	cycleState.Write(stateKey, state)
 
@@ -1470,4 +1442,99 @@ func TestRestoreReservation(t *testing.T) {
 	nodeReservationState, status = pl.RestoreReservation(context.TODO(), cycleState, testPod, []*frameworkext.ReservationInfo{rInfo}, nil, nodeInfo)
 	assert.True(t, status.IsSuccess())
 	assert.Nil(t, nodeReservationState)
+}
+
+func Test_appendResourceSpecIfMissed(t *testing.T) {
+	tests := []struct {
+		name         string
+		resourceSpec *extension.ResourceSpec
+		state        *preFilterState
+		wantErr      bool
+		wantSpec     *extension.ResourceSpec
+	}{
+		{
+			name: "declared preferred cpu bind policy",
+			resourceSpec: &extension.ResourceSpec{
+				PreferredCPUBindPolicy: extension.CPUBindPolicySpreadByPCPUs,
+			},
+			state: &preFilterState{
+				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicySpreadByPCPUs,
+			},
+			wantSpec: &extension.ResourceSpec{
+				PreferredCPUBindPolicy: extension.CPUBindPolicySpreadByPCPUs,
+			},
+		},
+		{
+			name: "declared default preferred cpu bind policy",
+			resourceSpec: &extension.ResourceSpec{
+				PreferredCPUBindPolicy: extension.CPUBindPolicyDefault,
+			},
+			state: &preFilterState{
+				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicySpreadByPCPUs,
+			},
+			wantSpec: &extension.ResourceSpec{
+				PreferredCPUBindPolicy: extension.CPUBindPolicySpreadByPCPUs,
+			},
+		},
+		{
+			name: "declared required cpu bind policy",
+			resourceSpec: &extension.ResourceSpec{
+				RequiredCPUBindPolicy: extension.CPUBindPolicySpreadByPCPUs,
+			},
+			state: &preFilterState{
+				requiredCPUBindPolicy:  schedulingconfig.CPUBindPolicySpreadByPCPUs,
+				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicySpreadByPCPUs,
+			},
+			wantSpec: &extension.ResourceSpec{
+				RequiredCPUBindPolicy: extension.CPUBindPolicySpreadByPCPUs,
+			},
+		},
+		{
+			name: "declared required cpu bind policy and default preferred cpu bind policy",
+			resourceSpec: &extension.ResourceSpec{
+				RequiredCPUBindPolicy:  extension.CPUBindPolicySpreadByPCPUs,
+				PreferredCPUBindPolicy: extension.CPUBindPolicyDefault,
+			},
+			state: &preFilterState{
+				requiredCPUBindPolicy:  schedulingconfig.CPUBindPolicySpreadByPCPUs,
+				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicySpreadByPCPUs,
+			},
+			wantSpec: &extension.ResourceSpec{
+				RequiredCPUBindPolicy:  extension.CPUBindPolicySpreadByPCPUs,
+				PreferredCPUBindPolicy: extension.CPUBindPolicySpreadByPCPUs,
+			},
+		},
+		{
+			name: "declared required cpu bind policy and default preferred cpu bind policy and exclusive policy",
+			resourceSpec: &extension.ResourceSpec{
+				RequiredCPUBindPolicy:       extension.CPUBindPolicySpreadByPCPUs,
+				PreferredCPUBindPolicy:      extension.CPUBindPolicyDefault,
+				PreferredCPUExclusivePolicy: extension.CPUExclusivePolicyPCPULevel,
+			},
+			state: &preFilterState{
+				requiredCPUBindPolicy:  schedulingconfig.CPUBindPolicySpreadByPCPUs,
+				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicySpreadByPCPUs,
+			},
+			wantSpec: &extension.ResourceSpec{
+				RequiredCPUBindPolicy:       extension.CPUBindPolicySpreadByPCPUs,
+				PreferredCPUBindPolicy:      extension.CPUBindPolicySpreadByPCPUs,
+				PreferredCPUExclusivePolicy: extension.CPUExclusivePolicyPCPULevel,
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pod := &corev1.Pod{}
+			if tt.resourceSpec != nil {
+				assert.NoError(t, extension.SetResourceSpec(pod, tt.resourceSpec))
+			}
+			err := appendResourceSpecIfMissed(pod, tt.state)
+			if tt.wantErr != (err != nil) {
+				t.Errorf("appendResourceSpecIfMissed(%v, %v)", pod, tt.state)
+			}
+			resourceSpec, err := extension.GetResourceSpec(pod.Annotations)
+			assert.NoError(t, err)
+			assert.Equal(t, tt.wantSpec, resourceSpec)
+		})
+	}
 }

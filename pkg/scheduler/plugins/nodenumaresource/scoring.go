@@ -71,8 +71,8 @@ func (p *Plugin) Score(ctx context.Context, cycleState *framework.CycleState, po
 		return 0, nil
 	}
 
-	policyType := getNUMATopologyPolicy(node.Labels, topologyOptions.NUMATopologyPolicy)
-	if policyType != extension.NUMATopologyPolicyNone {
+	numaTopologyPolicy := getNUMATopologyPolicy(node.Labels, topologyOptions.NUMATopologyPolicy)
+	if numaTopologyPolicy != extension.NUMATopologyPolicyNone {
 		store := topologymanager.GetStore(cycleState)
 		affinity := store.GetAffinity(nodeName)
 		podAllocation, status := p.allocateByHint(ctx, cycleState, pod, nodeName, affinity, topologyOptions, false)
