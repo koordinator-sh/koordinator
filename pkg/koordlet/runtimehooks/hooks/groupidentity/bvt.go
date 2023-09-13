@@ -59,6 +59,8 @@ func (b *bvtPlugin) Register(op hooks.Options) {
 		b.SetPodBvtValue, reconciler.NoneFilter())
 	reconciler.RegisterCgroupReconciler(reconciler.KubeQOSLevel, sysutil.CPUBVTWarpNs, "reconcile kubeqos level cpu bvt value",
 		b.SetKubeQOSBvtValue, reconciler.NoneFilter())
+	reconciler.RegisterHostAppReconciler(sysutil.CPUBVTWarpNs, "reconcile host application cpu bvt value",
+		b.SetHostAppBvtValue, &reconciler.ReconcilerOption{})
 	b.executor = op.Executor
 }
 
