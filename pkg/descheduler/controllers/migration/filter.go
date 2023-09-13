@@ -35,6 +35,7 @@ import (
 
 	sev1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	deschedulerconfig "github.com/koordinator-sh/koordinator/pkg/descheduler/apis/config"
+	"github.com/koordinator-sh/koordinator/pkg/descheduler/controllers/migration/arbitrator"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/controllers/migration/util"
 	evictionsutil "github.com/koordinator-sh/koordinator/pkg/descheduler/evictions"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/fieldindex"
@@ -153,7 +154,7 @@ func (r *Reconciler) PreEvictionFilter(pod *corev1.Pod) bool {
 	return r.defaultFilterPlugin.PreEvictionFilter(pod)
 }
 
-func (r *Reconciler) forEachAvailableMigrationJobs(listOpts *client.ListOptions, handler func(job *sev1alpha1.PodMigrationJob) bool, expectPhases ...sev1alpha1.PodMigrationJobPhase) {
+func (r *Reconciler) forEachAvailableMigrationJobs(listOpts *client.ListOptions, handler func(job *sev1alpha1.PodMigrationJob) bool, expectedPhaseAndAnnotations ...PhaseAndAnnotation) {
 	jobList := &sev1alpha1.PodMigrationJobList{}
 	err := r.Client.List(context.TODO(), jobList, listOpts, utilclient.DisableDeepCopy)
 	if err != nil {
@@ -161,8 +162,11 @@ func (r *Reconciler) forEachAvailableMigrationJobs(listOpts *client.ListOptions,
 		return
 	}
 
-	if len(expectPhases) == 0 {
-		expectPhases = []sev1alpha1.PodMigrationJobPhase{sev1alpha1.PodMigrationJobPending, sev1alpha1.PodMigrationJobRunning}
+	if len(expectedPhaseAndAnnotations) == 0 {
+		expectedPhaseAndAnnotations = []PhaseAndAnnotation{
+			{sev1alpha1.PodMigrationJobRunning, nil},
+			{sev1alpha1.PodMigrationJobPending, nil},
+		}
 	}
 
 	for i := range jobList.Items {
@@ -172,8 +176,8 @@ func (r *Reconciler) forEachAvailableMigrationJobs(listOpts *client.ListOptions,
 			phase = sev1alpha1.PodMigrationJobPending
 		}
 		found := false
-		for _, v := range expectPhases {
-			if v == phase {
+		for _, v := range expectedPhaseAndAnnotations {
+			if v.phase == phase && isContain(job.Annotations, v.annotations) {
 				found = true
 				break
 			}
@@ -188,7 +192,7 @@ func (r *Reconciler) filterExistingPodMigrationJob(pod *corev1.Pod) bool {
 	return !r.existingPodMigrationJob(pod)
 }
 
-func (r *Reconciler) existingPodMigrationJob(pod *corev1.Pod, expectPhases ...sev1alpha1.PodMigrationJobPhase) bool {
+func (r *Reconciler) existingPodMigrationJob(pod *corev1.Pod, expectedPhaseAndAnnotations ...PhaseAndAnnotation) bool {
 	opts := &client.ListOptions{FieldSelector: fields.OneTermEqualSelector(fieldindex.IndexJobByPodUID, string(pod.UID))}
 	existing := false
 	r.forEachAvailableMigrationJobs(opts, func(job *sev1alpha1.PodMigrationJob) bool {
@@ -196,7 +200,7 @@ func (r *Reconciler) existingPodMigrationJob(pod *corev1.Pod, expectPhases ...se
 			existing = true
 		}
 		return !existing
-	}, expectPhases...)
+	}, expectedPhaseAndAnnotations...)
 
 	if !existing {
 		opts = &client.ListOptions{FieldSelector: fields.OneTermEqualSelector(fieldindex.IndexJobPodNamespacedName, fmt.Sprintf("%s/%s", pod.Namespace, pod.Name))}
@@ -205,7 +209,7 @@ func (r *Reconciler) existingPodMigrationJob(pod *corev1.Pod, expectPhases ...se
 				existing = true
 			}
 			return !existing
-		}, expectPhases...)
+		}, expectedPhaseAndAnnotations...)
 	}
 	return existing
 }
@@ -225,9 +229,14 @@ func (r *Reconciler) filterMaxMigratingPerNode(pod *corev1.Pod) bool {
 		return true
 	}
 
-	var expectPhases []sev1alpha1.PodMigrationJobPhase
+	var expectedPhaseAndAnnotations []PhaseAndAnnotation
 	if isPodPrepareMigrating(pod) {
-		expectPhases = append(expectPhases, sev1alpha1.PodMigrationJobRunning)
+		expectedPhaseAndAnnotations = []PhaseAndAnnotation{{sev1alpha1.PodMigrationJobRunning, nil}}
+	} else {
+		expectedPhaseAndAnnotations = []PhaseAndAnnotation{
+			{sev1alpha1.PodMigrationJobRunning, nil},
+			{sev1alpha1.PodMigrationJobPending, map[string]string{arbitrator.AnnotationPassedArbitration: "true"}},
+		}
 	}
 
 	count := 0
@@ -235,7 +244,7 @@ func (r *Reconciler) filterMaxMigratingPerNode(pod *corev1.Pod) bool {
 		v := &podList.Items[i]
 		if v.UID != pod.UID &&
 			v.Spec.NodeName == pod.Spec.NodeName &&
-			r.existingPodMigrationJob(v, expectPhases...) {
+			r.existingPodMigrationJob(v, expectedPhaseAndAnnotations...) {
 			count++
 		}
 	}
@@ -254,9 +263,14 @@ func (r *Reconciler) filterMaxMigratingPerNamespace(pod *corev1.Pod) bool {
 		return true
 	}
 
-	var expectPhases []sev1alpha1.PodMigrationJobPhase
+	var expectedPhaseAndAnnotations []PhaseAndAnnotation
 	if isPodPrepareMigrating(pod) {
-		expectPhases = append(expectPhases, sev1alpha1.PodMigrationJobRunning)
+		expectedPhaseAndAnnotations = []PhaseAndAnnotation{{sev1alpha1.PodMigrationJobRunning, nil}}
+	} else {
+		expectedPhaseAndAnnotations = []PhaseAndAnnotation{
+			{sev1alpha1.PodMigrationJobRunning, nil},
+			{sev1alpha1.PodMigrationJobPending, map[string]string{arbitrator.AnnotationPassedArbitration: "true"}},
+		}
 	}
 
 	opts := &client.ListOptions{FieldSelector: fields.OneTermEqualSelector(fieldindex.IndexJobByPodNamespace, pod.Namespace)}
@@ -266,7 +280,7 @@ func (r *Reconciler) filterMaxMigratingPerNamespace(pod *corev1.Pod) bool {
 			count++
 		}
 		return true
-	}, expectPhases...)
+	}, expectedPhaseAndAnnotations...)
 
 	maxMigratingPerNamespace := int(*r.args.MaxMigratingPerNamespace)
 	exceeded := count >= maxMigratingPerNamespace
@@ -296,9 +310,14 @@ func (r *Reconciler) filterMaxMigratingOrUnavailablePerWorkload(pod *corev1.Pod)
 		return false
 	}
 
-	var expectPhases []sev1alpha1.PodMigrationJobPhase
+	var expectedPhaseAndAnnotations []PhaseAndAnnotation
 	if isPodPrepareMigrating(pod) {
-		expectPhases = append(expectPhases, sev1alpha1.PodMigrationJobRunning)
+		expectedPhaseAndAnnotations = []PhaseAndAnnotation{{sev1alpha1.PodMigrationJobRunning, nil}}
+	} else {
+		expectedPhaseAndAnnotations = []PhaseAndAnnotation{
+			{sev1alpha1.PodMigrationJobRunning, nil},
+			{sev1alpha1.PodMigrationJobPending, map[string]string{arbitrator.AnnotationPassedArbitration: "true"}},
+		}
 	}
 
 	opts := &client.ListOptions{FieldSelector: fields.OneTermEqualSelector(fieldindex.IndexJobByPodNamespace, pod.Namespace)}
@@ -324,7 +343,7 @@ func (r *Reconciler) filterMaxMigratingOrUnavailablePerWorkload(pod *corev1.Pod)
 			}
 		}
 		return true
-	}, expectPhases...)
+	}, expectedPhaseAndAnnotations...)
 
 	if len(migratingPods) > 0 {
 		exceeded := len(migratingPods) >= maxMigrating
@@ -463,4 +482,29 @@ func (r *Reconciler) filterLimitedObject(pod *corev1.Pod) bool {
 		}
 	}
 	return true
+}
+
+func isContain(a map[string]string, b map[string]string) bool {
+	if b == nil {
+		return true
+	}
+	if a == nil {
+		if len(b) == 0 {
+			return true
+		} else {
+			return false
+		}
+	} else {
+		for k, v := range b {
+			if a[k] != v {
+				return false
+			}
+		}
+		return true
+	}
+}
+
+type PhaseAndAnnotation struct {
+	phase       sev1alpha1.PodMigrationJobPhase
+	annotations map[string]string
 }

@@ -39,11 +39,6 @@ func (r *Reconciler) Evict(ctx context.Context, pod *corev1.Pod, evictOptions fr
 		return true
 	}
 
-	if !r.Filter(pod) {
-		klog.Errorf("Pod %q cannot be evicted since failed to filter", klog.KObj(pod))
-		return false
-	}
-
 	err := CreatePodMigrationJob(ctx, pod, evictOptions, r.Client, r.args)
 	return err == nil
 }

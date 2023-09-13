@@ -43,6 +43,7 @@ import (
 	sev1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	deschedulerconfig "github.com/koordinator-sh/koordinator/pkg/descheduler/apis/config"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/apis/config/v1alpha2"
+	"github.com/koordinator-sh/koordinator/pkg/descheduler/controllers/migration/arbitrator"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/controllers/migration/controllerfinder"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/controllers/migration/reservation"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/controllers/migration/util"
@@ -1441,7 +1442,6 @@ func TestEvict(t *testing.T) {
 			Phase: corev1.PodRunning,
 		},
 	}
-	assert.True(t, reconciler.Filter(pod))
 
 	assert.True(t, reconciler.Evict(context.TODO(), pod, framework.EvictOptions{}))
 	var jobList sev1alpha1.PodMigrationJobList
@@ -1503,115 +1503,6 @@ func TestAbortJobIfReserveOnSameNode(t *testing.T) {
 	aborted, err := reconciler.abortJobIfReserveOnSameNode(context.TODO(), job, reservationObj)
 	assert.NoError(t, err)
 	assert.True(t, aborted)
-
-	assert.NoError(t, reconciler.Client.Get(context.TODO(), types.NamespacedName{Name: job.Name}, job))
-	assert.Equal(t, sev1alpha1.PodMigrationJobFailed, job.Status.Phase)
-	assert.Equal(t, sev1alpha1.PodMigrationJobReasonForbiddenMigratePod, job.Status.Reason)
-}
-
-func TestRequeueJobIfRetryablePodFilterFailed(t *testing.T) {
-	reconciler := newTestReconciler()
-	enter := false
-	reconciler.retryablePodFilter = func(pod *corev1.Pod) bool {
-		enter = true
-		assert.True(t, isPodPrepareMigrating(pod))
-		return false
-	}
-
-	job := &sev1alpha1.PodMigrationJob{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:              "test",
-			CreationTimestamp: metav1.Time{Time: time.Now()},
-		},
-		Spec: sev1alpha1.PodMigrationJobSpec{
-			PodRef: &corev1.ObjectReference{
-				Namespace: "default",
-				Name:      "test-pod",
-			},
-		},
-	}
-	assert.Nil(t, reconciler.Client.Create(context.TODO(), job))
-	pod := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: "default",
-			Name:      "test-pod",
-			OwnerReferences: []metav1.OwnerReference{
-				{
-					APIVersion: "apps/v1",
-					Controller: pointer.Bool(true),
-					Kind:       "StatefulSet",
-					Name:       "test",
-					UID:        "2f96233d-a6b9-4981-b594-7c90c987aed9",
-				},
-			},
-		},
-		Spec: corev1.PodSpec{
-			SchedulerName: "koord-scheduler",
-		},
-		Status: corev1.PodStatus{
-			Phase: corev1.PodRunning,
-		},
-	}
-	assert.Nil(t, reconciler.Client.Create(context.TODO(), pod))
-
-	result, err := reconciler.doMigrate(context.TODO(), job)
-	assert.True(t, enter)
-	assert.NoError(t, err)
-	assert.True(t, result.RequeueAfter != 0)
-	assert.NoError(t, reconciler.Client.Get(context.TODO(), types.NamespacedName{Name: job.Name}, job))
-	assert.Equal(t, sev1alpha1.PodMigrationJobPhase(""), job.Status.Phase)
-	assert.Equal(t, "", job.Status.Reason)
-}
-
-func TestAbortJobIfNonRetryablePodFilterFailed(t *testing.T) {
-	reconciler := newTestReconciler()
-	enter := false
-	reconciler.nonRetryablePodFilter = func(pod *corev1.Pod) bool {
-		enter = true
-		assert.True(t, isPodPrepareMigrating(pod))
-		return false
-	}
-
-	job := &sev1alpha1.PodMigrationJob{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:              "test",
-			CreationTimestamp: metav1.Time{Time: time.Now()},
-		},
-		Spec: sev1alpha1.PodMigrationJobSpec{
-			PodRef: &corev1.ObjectReference{
-				Namespace: "default",
-				Name:      "test-pod",
-			},
-		},
-	}
-	assert.Nil(t, reconciler.Client.Create(context.TODO(), job))
-	pod := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: "default",
-			Name:      "test-pod",
-			OwnerReferences: []metav1.OwnerReference{
-				{
-					APIVersion: "apps/v1",
-					Controller: pointer.Bool(true),
-					Kind:       "StatefulSet",
-					Name:       "test",
-					UID:        "2f96233d-a6b9-4981-b594-7c90c987aed9",
-				},
-			},
-		},
-		Spec: corev1.PodSpec{
-			SchedulerName: "koord-scheduler",
-		},
-		Status: corev1.PodStatus{
-			Phase: corev1.PodRunning,
-		},
-	}
-	assert.Nil(t, reconciler.Client.Create(context.TODO(), pod))
-
-	result, err := reconciler.doMigrate(context.TODO(), job)
-	assert.True(t, enter)
-	assert.NotNil(t, err)
-	assert.Equal(t, reconcile.Result{}, result)
 
 	assert.NoError(t, reconciler.Client.Get(context.TODO(), types.NamespacedName{Name: job.Name}, job))
 	assert.Equal(t, sev1alpha1.PodMigrationJobFailed, job.Status.Phase)
@@ -1760,6 +1651,7 @@ func TestFilterMaxMigratingPerNode(t *testing.T) {
 					ObjectMeta: metav1.ObjectMeta{
 						Name:              fmt.Sprintf("test-%d", i),
 						CreationTimestamp: metav1.Time{Time: time.Now()},
+						Annotations:       map[string]string{arbitrator.AnnotationPassedArbitration: "true"},
 					},
 					Spec: sev1alpha1.PodMigrationJobSpec{
 						PodRef: &corev1.ObjectReference{
@@ -1909,6 +1801,7 @@ func TestFilterMaxMigratingPerNamespace(t *testing.T) {
 					ObjectMeta: metav1.ObjectMeta{
 						Name:              fmt.Sprintf("test-%d", i),
 						CreationTimestamp: metav1.Time{Time: time.Now()},
+						Annotations:       map[string]string{arbitrator.AnnotationPassedArbitration: "true"},
 					},
 					Spec: sev1alpha1.PodMigrationJobSpec{
 						PodRef: &corev1.ObjectReference{
@@ -2096,6 +1989,7 @@ func TestFilterMaxMigratingPerWorkload(t *testing.T) {
 					ObjectMeta: metav1.ObjectMeta{
 						Name:              fmt.Sprintf("test-%d", i),
 						CreationTimestamp: metav1.Time{Time: time.Now()},
+						Annotations:       map[string]string{arbitrator.AnnotationPassedArbitration: "true"},
 					},
 					Spec: sev1alpha1.PodMigrationJobSpec{
 						PodRef: &corev1.ObjectReference{
@@ -2326,6 +2220,7 @@ func TestFilterMaxUnavailablePerWorkload(t *testing.T) {
 					ObjectMeta: metav1.ObjectMeta{
 						Name:              fmt.Sprintf("test-%d", i),
 						CreationTimestamp: metav1.Time{Time: time.Now()},
+						Annotations:       map[string]string{arbitrator.AnnotationPassedArbitration: "true"},
 					},
 					Spec: sev1alpha1.PodMigrationJobSpec{
 						PodRef: &corev1.ObjectReference{

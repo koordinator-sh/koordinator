@@ -47,13 +47,13 @@ import (
 	sev1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	deschedulerconfig "github.com/koordinator-sh/koordinator/pkg/descheduler/apis/config"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/apis/config/validation"
+	"github.com/koordinator-sh/koordinator/pkg/descheduler/controllers/migration/arbitrator"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/controllers/migration/controllerfinder"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/controllers/migration/evictor"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/controllers/migration/reservation"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/controllers/migration/util"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/controllers/names"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/controllers/options"
-	evictionsutil "github.com/koordinator-sh/koordinator/pkg/descheduler/evictions"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/framework"
 	utilclient "github.com/koordinator-sh/koordinator/pkg/util/client"
 )
@@ -108,7 +108,23 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 		return nil, err
 	}
 
-	if err = c.Watch(&source.Kind{Type: &sev1alpha1.PodMigrationJob{}}, &handler.EnqueueRequestForObject{}, &predicate.Funcs{
+	// New Arbitrator
+	var eventHandler handler.EventHandler = &handler.EnqueueRequestForObject{}
+	if controllerArgs.ArbitrationArgs.Enabled {
+		a, err := arbitrator.New(controllerArgs.ArbitrationArgs, arbitrator.Options{
+			Client:             r.Client,
+			EventRecorder:      r.eventRecorder,
+			RetryableFilter:    r.retryablePodFilter,
+			NonRetryableFilter: r.nonRetryablePodFilter,
+			Manager:            options.Manager,
+		})
+		if err != nil {
+			klog.ErrorS(err, "failed to New Arbitrator")
+		}
+		eventHandler = arbitrator.NewHandler(a, r.Client)
+	}
+
+	if err = c.Watch(&source.Kind{Type: &sev1alpha1.PodMigrationJob{}}, eventHandler, &predicate.Funcs{
 		DeleteFunc: func(event event.DeleteEvent) bool {
 			job := event.Object.(*sev1alpha1.PodMigrationJob)
 			r.assumedCache.delete(job)
@@ -421,18 +437,11 @@ func (r *Reconciler) preparePendingJob(ctx context.Context, job *sev1alpha1.PodM
 	}
 
 	markPodPrepareMigrating(pod)
-	if !evictionsutil.HaveEvictAnnotation(job) {
-		if aborted, err := r.abortJobIfNonRetryablePodFilterFailed(ctx, pod, job); aborted || err != nil {
-			if err == nil {
-				err = fmt.Errorf("abort job since failed to non-retryable Pod filter")
-			}
-			return reconcile.Result{}, err
-		}
-		if requeue, err := r.requeueJobIfRetryablePodFilterFailed(ctx, pod, job); requeue || err != nil {
-			return reconcile.Result{RequeueAfter: defaultRequeueAfter}, err
-		}
-	}
 
+	// delete passed arbitration annotation
+	if job.Annotations != nil {
+		delete(job.Annotations, arbitrator.AnnotationPassedArbitration)
+	}
 	job.Status.Phase = sev1alpha1.PodMigrationJobRunning
 	err = r.Client.Status().Update(ctx, job)
 	return reconcile.Result{}, err
@@ -485,42 +494,6 @@ func (r *Reconciler) abortJobIfTimeout(ctx context.Context, job *sev1alpha1.PodM
 		r.eventRecorder.Eventf(job, nil, corev1.EventTypeWarning, sev1alpha1.PodMigrationJobReasonTimeout, "Migrating", job.Status.Message)
 	}
 	return true, err
-}
-
-func (r *Reconciler) requeueJobIfRetryablePodFilterFailed(ctx context.Context, pod *corev1.Pod, job *sev1alpha1.PodMigrationJob) (bool, error) {
-	if r.retryablePodFilter == nil {
-		return false, nil
-	}
-
-	if pod != nil {
-		if !r.retryablePodFilter(pod) {
-			r.eventRecorder.Eventf(job, nil, corev1.EventTypeWarning, "Requeue", "Migrating", "Failed to retriable filter")
-			return true, nil
-		}
-	}
-
-	return false, nil
-}
-
-func (r *Reconciler) abortJobIfNonRetryablePodFilterFailed(ctx context.Context, pod *corev1.Pod, job *sev1alpha1.PodMigrationJob) (bool, error) {
-	if r.nonRetryablePodFilter == nil {
-		return false, nil
-	}
-
-	if pod != nil {
-		if !r.nonRetryablePodFilter(pod) {
-			job.Status.Phase = sev1alpha1.PodMigrationJobFailed
-			job.Status.Reason = sev1alpha1.PodMigrationJobReasonForbiddenMigratePod
-			job.Status.Message = fmt.Sprintf("Pod %q is forbidden to migrate because it does not meet the requirements", klog.KObj(pod))
-			err := r.Status().Update(ctx, job)
-			if err == nil {
-				r.eventRecorder.Eventf(job, nil, corev1.EventTypeWarning, sev1alpha1.PodMigrationJobReasonForbiddenMigratePod, "Migrating", job.Status.Message)
-			}
-			return true, err
-		}
-	}
-
-	return false, nil
 }
 
 func (r *Reconciler) abortJobByInvalidPodRef(ctx context.Context, job *sev1alpha1.PodMigrationJob) error {
