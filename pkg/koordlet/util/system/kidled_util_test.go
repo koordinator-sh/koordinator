@@ -198,6 +198,16 @@ func Test_SetKidledUseHierarchy(t *testing.T) {
 	assert.Equal(t, "1", s)
 }
 
+func Test_GetIsSupportColdMemory(t *testing.T) {
+	SetIsSupportColdMemory(false)
+	assert.Equal(t, false, GetIsStartColdMemory())
+}
+
+func Test_GetIsStartColdMemory(t *testing.T) {
+	SetIsStartColdMemory(false)
+	assert.Equal(t, false, GetIsStartColdMemory())
+}
+
 func Test_NewDefaultKidledConfig(t *testing.T) {
 	config := NewDefaultKidledConfig()
 	assert.Equal(t, uint32(5), config.ScanPeriodInseconds)
