@@ -200,7 +200,7 @@ func Test_SetKidledUseHierarchy(t *testing.T) {
 
 func Test_GetIsSupportColdMemory(t *testing.T) {
 	SetIsSupportColdMemory(false)
-	assert.Equal(t, false, GetIsStartColdMemory())
+	assert.Equal(t, false, GetIsSupportColdMemory())
 }
 
 func Test_GetIsStartColdMemory(t *testing.T) {

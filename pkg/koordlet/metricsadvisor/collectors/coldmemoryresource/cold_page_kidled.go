@@ -21,7 +21,6 @@ import (
 	"time"
 
 	"go.uber.org/atomic"
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/klog/v2"
 
@@ -165,12 +164,7 @@ func (k *kidledcoldPageCollector) collectPodsColdPageInfo() ([]metriccache.Metri
 
 		podMemUsageWithHotPageBytes, err := koordletutil.GetPodMemUsageWithHotPage(k.cgroupReader, podCgroupDir, podColdPageBytes)
 		if err != nil {
-			// higher verbosity for probably non-running pods
-			if pod.Status.Phase != corev1.PodRunning && pod.Status.Phase != corev1.PodPending {
-				klog.Warningf("failed to collect non-running pod usage for Memory err: %s pod: %s/%s", err, pod.Namespace, pod.Name)
-			} else {
-				klog.Warningf("failed to collect pod usage for Memory err: %s pod %s/%s", err, pod.Namespace, pod.Name)
-			}
+			klog.Warningf("failed to collect pod usage for Memory err: %s pod: %s/%s", err, pod.Namespace, pod.Name)
 			continue
 		}
 

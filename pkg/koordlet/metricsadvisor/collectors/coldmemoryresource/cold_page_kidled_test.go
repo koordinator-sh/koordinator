@@ -612,18 +612,15 @@ func Test_collectPodColdPageInfo(t *testing.T) {
 			statesInformer := mock_statesinformer.NewMockStatesInformer(ctrl)
 			statesInformer.EXPECT().HasSynced().Return(true).AnyTimes()
 			statesInformer.EXPECT().GetAllPods().Return(tt.fields.getPodMetas).Times(1)
-			collector := New(&framework.Options{
-				Config: &framework.Config{
-					ColdPageCollectorInterval: 1 * time.Second,
-				},
-				StatesInformer: statesInformer,
-				MetricCache:    metricCache,
-				CgroupReader:   resourceexecutor.NewCgroupReader(),
-				PodFilters: map[string]framework.PodFilter{
-					CollectorName: tt.fields.podFilterOption,
-				},
-			})
-			c := collector.(*kidledcoldPageCollector)
+			c := &kidledcoldPageCollector{
+				collectInterval: 1 * time.Second,
+				cgroupReader:    resourceexecutor.NewCgroupReader(),
+				statesInformer:  statesInformer,
+				podFilter:       framework.DefaultPodFilter,
+				appendableDB:    metricCache,
+				metricDB:        metricCache,
+				started:         atomic.NewBool(false),
+			}
 			assert.NotPanics(t, func() {
 				c.collectPodsColdPageInfo()
 			})
