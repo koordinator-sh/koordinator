@@ -401,20 +401,10 @@ func (r *CgroupV2Reader) ReadPSI(parentDir string) (*PSIByResource, error) {
 	}
 	return psi, nil
 }
+
+// cgroup v2 has not implemented yet
 func (r *CgroupV2Reader) ReadMemoryColdPageUsage(parentDir string) (uint64, error) {
-	resource, ok := sysutil.DefaultRegistry.Get(sysutil.CgroupVersionV2, sysutil.MemoryIdlePageStatsName)
-	if !ok {
-		return 0, ErrResourceNotRegistered
-	}
-	s, err := cgroupFileRead(parentDir, resource)
-	if err != nil {
-		return 0, err
-	}
-	v, err := sysutil.ParseMemoryIdlePageStats(s)
-	if err != nil {
-		return 0, err
-	}
-	return v.GetColdPageTotalBytes(), nil
+	return 0, ErrResourceNotRegistered
 }
 
 func NewCgroupReader() CgroupReader {
