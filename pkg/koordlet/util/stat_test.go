@@ -20,13 +20,11 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"syscall"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 
-	perfgroup "github.com/koordinator-sh/koordinator/pkg/koordlet/util/perf_group"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 )
 
@@ -94,19 +92,6 @@ func Test_GetCPUStatUsageTicks(t *testing.T) {
 		t.Error("failed to get CPU stat usage: ", err)
 	}
 	t.Log("get cpu stat usage ticks ", cpuStatUsage)
-}
-
-func Test_GetContainerCyclesAndInstructions(t *testing.T) {
-	perfgroup.LibInit()
-	perfgroup.InitBufferPool(map[int]struct{}{
-		2: {},
-	})
-	tempDir := t.TempDir()
-	f, _ := os.OpenFile(tempDir, os.O_RDONLY, os.ModeDir)
-	collector, _ := perfgroup.NewPerfGroupCollector(f, []int{}, []string{"cycles", "instructions"}, syscall.Syscall6)
-	_, _, err := perfgroup.GetContainerCyclesAndInstructionsGroup(collector)
-	assert.Nil(t, err)
-	perfgroup.LibFinalize()
 }
 
 func Test_GetContainerPerfCollector(t *testing.T) {

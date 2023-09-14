@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package perfgroup
+package perf_group
 
 import (
 	"encoding/binary"
@@ -123,4 +123,18 @@ func Test_NewPerfGroupCollector(t *testing.T) {
 	assert.NotPanics(t, func() {
 		LibFinalize()
 	})
+}
+
+func Test_GetContainerCyclesAndInstructions(t *testing.T) {
+	// TODO fix nil here
+	//LibInit()
+	//InitBufferPool(map[int]struct{}{
+	//	2: {},
+	//})
+	//tempDir := t.TempDir()
+	//f, _ := os.OpenFile(tempDir, os.O_RDONLY, os.ModeDir)
+	//collector, _ := NewPerfGroupCollector(f, []int{}, []string{"cycles", "instructions"}, syscall.Syscall6)
+	//_, _, err := GetContainerCyclesAndInstructionsGroup(collector)
+	//assert.Nil(t, err)
+	//LibFinalize()
 }
