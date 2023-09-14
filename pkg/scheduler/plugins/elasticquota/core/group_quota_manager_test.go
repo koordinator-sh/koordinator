@@ -1447,14 +1447,14 @@ func TestGroupQuotaManager_GetQuotaInformationForSyncHandlerWithUsageGuarantee(t
 	gqm.updateGroupDeltaRequestNoLock("1", createResourceList(100, 100))
 	gqm.RefreshRuntime("1")
 	gqm.updateGroupDeltaUsedNoLock("1", createResourceList(10, 10))
-	used, request, childRequest, runtime, guarantee, childGuarantee, err := gqm.GetQuotaInformationForSyncHandler("1")
+	used, request, childRequest, runtime, guaranteed, allocated, err := gqm.GetQuotaInformationForSyncHandler("1")
 	assert.Nil(t, err)
 	assert.Equal(t, used, createResourceList(10, 10))
 	assert.Equal(t, request, createResourceList(100, 100))
 	assert.Equal(t, childRequest, createResourceList(100, 100))
 	assert.Equal(t, runtime, createResourceList(100, 100))
-	assert.Equal(t, guarantee, createResourceList(10, 10))
-	assert.Equal(t, childGuarantee, createResourceList(10, 10))
+	assert.Equal(t, guaranteed, createResourceList(10, 10))
+	assert.Equal(t, allocated, createResourceList(10, 10))
 }
 
 func TestGetPodName(t *testing.T) {

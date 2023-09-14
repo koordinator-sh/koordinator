@@ -65,6 +65,10 @@ func IsAllowLentResource(quota *v1alpha1.ElasticQuota) bool {
 	return quota.Labels[LabelAllowLentResource] != "false"
 }
 
+func IsTreeRootQuota(quota *v1alpha1.ElasticQuota) bool {
+	return quota.Labels[LabelQuotaIsRoot] == "true"
+}
+
 func GetQuotaTreeID(quota *v1alpha1.ElasticQuota) string {
 	return quota.Labels[LabelQuotaTreeID]
 }
@@ -107,4 +111,24 @@ func GetAnnotationQuotaNamespaces(quota *v1alpha1.ElasticQuota) []string {
 		return nil
 	}
 	return namespaces
+}
+
+func GetGuaranteed(quota *v1alpha1.ElasticQuota) (corev1.ResourceList, error) {
+	guaranteed := corev1.ResourceList{}
+	if quota.Annotations[AnnotationGuaranteed] != "" {
+		if err := json.Unmarshal([]byte(quota.Annotations[AnnotationGuaranteed]), &guaranteed); err != nil {
+			return guaranteed, err
+		}
+	}
+	return guaranteed, nil
+}
+
+func GetAllocated(quota *v1alpha1.ElasticQuota) (corev1.ResourceList, error) {
+	allocated := corev1.ResourceList{}
+	if quota.Annotations[AnnotationAllocated] != "" {
+		if err := json.Unmarshal([]byte(quota.Annotations[AnnotationAllocated]), &allocated); err != nil {
+			return allocated, err
+		}
+	}
+	return allocated, nil
 }

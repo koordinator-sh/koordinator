@@ -32,7 +32,9 @@ import (
 	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
+	//"github.com/koordinator-sh/koordinator/pkg/features"
 	utilclient "github.com/koordinator-sh/koordinator/pkg/util/client"
+	//utilfeature "github.com/koordinator-sh/koordinator/pkg/util/feature"
 )
 
 func newFakeQuotaTopology() *quotaTopology {
@@ -154,7 +156,7 @@ func TestQuotaTopology_checkSubAndParentGroupMaxQuotaKeySame(t *testing.T) {
 		eraseSub bool
 	}{
 		{
-			name:  "same",
+			name:  "no tree",
 			quota: MakeQuota("temp").Max(MakeResourceList().CPU(120).Mem(1048576).Obj()).IsParent(true).Obj(),
 			subQuota: MakeQuota("temp-bu1").ParentName("temp").
 				Max(MakeResourceList().CPU(120).Mem(1048576).Obj()).IsParent(false).Obj(),
@@ -842,6 +844,68 @@ func TestQuotaTopology_checkParentQuotaInfoExist(t *testing.T) {
 	assert.Equal(t, fmt.Errorf("%v has parentName %v but not find parentInfo in quotaInfoMap", "", "temp"), err)
 }
 
+func TestQuotaTopology_checkGuaranteeForMin(t *testing.T) {
+	tests := []struct {
+		name         string
+		parentQuota  *v1alpha1.ElasticQuota
+		quota        *v1alpha1.ElasticQuota
+		siblingQuota *v1alpha1.ElasticQuota
+		expectErr    bool
+	}{
+		{
+			name: "normal",
+			parentQuota: MakeQuota("temp").Max(MakeResourceList().CPU(120).Mem(1048576).Obj()).
+				Min(MakeResourceList().CPU(10).Mem(51200).Obj()).IsParent(true).TreeID("tree1").IsRoot(true).Guaranteed(MakeResourceList().CPU(10).Mem(51200).Obj()).Obj(),
+			quota: MakeQuota("test1").ParentName("temp").Max(MakeResourceList().CPU(120).Mem(1048576).Obj()).
+				Min(MakeResourceList().CPU(5).Mem(25600).Obj()).TreeID("tree1").Guaranteed(MakeResourceList().CPU(6).Mem(35600).Obj()).Obj(),
+			siblingQuota: MakeQuota("test2").ParentName("temp").Max(MakeResourceList().CPU(120).Mem(1048576).Obj()).
+				Min(MakeResourceList().CPU(2).Mem(10000).Obj()).TreeID("tree1").Guaranteed(MakeResourceList().CPU(2).Mem(10000).Obj()).Obj(),
+			expectErr: false,
+		},
+		{
+			name: "not exceed guarantee",
+			parentQuota: MakeQuota("temp").Max(MakeResourceList().CPU(120).Mem(1048576).Obj()).
+				Min(MakeResourceList().CPU(10).Mem(51200).Obj()).IsParent(true).TreeID("tree1").IsRoot(true).Guaranteed(MakeResourceList().CPU(10).Mem(51200).Obj()).Obj(),
+			quota: MakeQuota("test1").ParentName("temp").Max(MakeResourceList().CPU(120).Mem(1048576).Obj()).
+				Min(MakeResourceList().CPU(7).Mem(25600).Obj()).TreeID("tree1").Guaranteed(MakeResourceList().CPU(6).Mem(35600).Obj()).Obj(),
+			siblingQuota: MakeQuota("test2").ParentName("temp").Max(MakeResourceList().CPU(120).Mem(1048576).Obj()).
+				Min(MakeResourceList().CPU(2).Mem(10000).Obj()).TreeID("tree1").Guaranteed(MakeResourceList().CPU(3).Mem(10000).Obj()).Obj(),
+			expectErr: false,
+		},
+		{
+			name: "exceed guarantee",
+			parentQuota: MakeQuota("temp").Max(MakeResourceList().CPU(120).Mem(1048576).Obj()).
+				Min(MakeResourceList().CPU(10).Mem(51200).Obj()).IsParent(true).TreeID("tree1").IsRoot(true).Guaranteed(MakeResourceList().CPU(10).Mem(51200).Obj()).Obj(),
+			quota: MakeQuota("test1").ParentName("temp").Max(MakeResourceList().CPU(120).Mem(1048576).Obj()).
+				Min(MakeResourceList().CPU(8).Mem(25600).Obj()).TreeID("tree1").Guaranteed(MakeResourceList().CPU(6).Mem(35600).Obj()).Obj(),
+			siblingQuota: MakeQuota("test2").ParentName("temp").Max(MakeResourceList().CPU(120).Mem(1048576).Obj()).
+				Min(MakeResourceList().CPU(2).Mem(10000).Obj()).TreeID("tree1").Guaranteed(MakeResourceList().CPU(3).Mem(10000).Obj()).Obj(),
+			expectErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			//defer utilfeature.SetFeatureGateDuringTest(t, utilfeature.DefaultMutableFeatureGate, features.ElasticQuotaGuaranteeUsage, true)()
+			qt := newFakeQuotaTopology()
+			qt.OnQuotaAdd(tt.parentQuota)
+			qt.OnQuotaAdd(tt.quota)
+			qt.OnQuotaAdd(tt.siblingQuota)
+
+			quota := NewQuotaInfoFromQuota(tt.quota)
+			err := qt.checkGuaranteedForMin(quota)
+
+			if tt.expectErr && err == nil {
+				t.Errorf("expected error, but err is nil")
+			}
+
+			if !tt.expectErr && err != nil {
+				t.Errorf("expected no error, but got err: %v", err)
+			}
+		})
+	}
+}
+
 type podWrapper struct{ *v1.Pod }
 
 func MakePod(namespace, name string) *podWrapper {
@@ -895,6 +959,21 @@ func (q *quotaWrapper) Max(max v1.ResourceList) *quotaWrapper {
 
 func (q *quotaWrapper) TreeID(tree string) *quotaWrapper {
 	q.ElasticQuota.Labels[extension.LabelQuotaTreeID] = tree
+	return q
+}
+
+func (q *quotaWrapper) Guaranteed(guaranteed v1.ResourceList) *quotaWrapper {
+	raw, err := json.Marshal(guaranteed)
+	if err == nil {
+		q.ElasticQuota.Annotations[extension.AnnotationGuaranteed] = string(raw)
+	}
+	return q
+}
+
+func (q *quotaWrapper) IsRoot(isRoot bool) *quotaWrapper {
+	if isRoot {
+		q.Labels[extension.LabelQuotaIsRoot] = "true"
+	}
 	return q
 }
 

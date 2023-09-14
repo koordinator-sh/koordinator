@@ -784,7 +784,7 @@ func (gqm *GroupQuotaManager) UnreservePod(quotaName string, p *v1.Pod) {
 	gqm.updatePodIsAssignedNoLock(quotaName, p, false)
 }
 
-func (gqm *GroupQuotaManager) GetQuotaInformationForSyncHandler(quotaName string) (used, request, childRequest, runtime, guarantee, childGuarantee v1.ResourceList, err error) {
+func (gqm *GroupQuotaManager) GetQuotaInformationForSyncHandler(quotaName string) (used, request, childRequest, runtime, guaranteed, allocated v1.ResourceList, err error) {
 	gqm.hierarchyUpdateLock.RLock()
 	defer gqm.hierarchyUpdateLock.RUnlock()
 

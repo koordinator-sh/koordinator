@@ -69,6 +69,7 @@ var defaultFeatureGates = map[featuregate.Feature]featuregate.FeatureSpec{
 	ColocationProfileSkipMutatingResources: {Default: false, PreRelease: featuregate.Alpha},
 	MultiQuotaTree:                         {Default: false, PreRelease: featuregate.Alpha},
 	ElasticQuotaIgnorePodOverhead:          {Default: false, PreRelease: featuregate.Alpha},
+	ElasticQuotaGuaranteeUsage:             {Default: false, PreRelease: featuregate.Alpha},
 }
 
 const (

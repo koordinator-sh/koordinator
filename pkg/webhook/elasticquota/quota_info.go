@@ -29,6 +29,7 @@ type QuotaInfo struct {
 	Name              string
 	ParentName        string
 	TreeID            string
+	IsTreeRoot        bool
 	CalculateInfo     QuotaCalculateInfo
 }
 
@@ -38,6 +39,9 @@ type QuotaCalculateInfo struct {
 	// The semantics of "min" is the quota group's guaranteed resources, if quota group's "request" less than or
 	// equal to "min", the quota group can obtain equivalent resources to the "request"
 	Min v1.ResourceList
+
+	Guaranteed v1.ResourceList
+	Allocated  v1.ResourceList
 }
 
 func NewQuotaInfo(isParent, allowLentResource bool, name, parentName string) *QuotaInfo {
@@ -47,8 +51,10 @@ func NewQuotaInfo(isParent, allowLentResource bool, name, parentName string) *Qu
 		IsParent:          isParent,
 		AllowLentResource: allowLentResource,
 		CalculateInfo: QuotaCalculateInfo{
-			Max: v1.ResourceList{},
-			Min: v1.ResourceList{},
+			Max:        v1.ResourceList{},
+			Min:        v1.ResourceList{},
+			Guaranteed: v1.ResourceList{},
+			Allocated:  v1.ResourceList{},
 		},
 	}
 }
@@ -63,6 +69,10 @@ func NewQuotaInfoFromQuota(quota *v1alpha1.ElasticQuota) *QuotaInfo {
 	quotaInfo.TreeID = extension.GetQuotaTreeID(quota)
 	quotaInfo.setMinQuotaNoLock(quota.Spec.Min)
 	quotaInfo.setMaxQuotaNoLock(quota.Spec.Max)
+	quotaInfo.IsTreeRoot = extension.IsTreeRootQuota(quota)
+	quotaInfo.CalculateInfo.Allocated, _ = extension.GetAllocated(quota)
+	quotaInfo.CalculateInfo.Guaranteed, _ = extension.GetGuaranteed(quota)
+
 	return quotaInfo
 }
 

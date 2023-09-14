@@ -120,18 +120,19 @@ func (ctrl *Controller) syncHandler() []error {
 					return
 				}
 			}
-			if eq.Annotations[extension.AnnotationGuaranteed] != "" {
-				if err := json.Unmarshal([]byte(eq.Annotations[extension.AnnotationGuaranteed]), &oriGuaranteed); err != nil {
-					errors = append(errors, err)
-					return
-				}
+
+			oriGuaranteed, err = extension.GetGuaranteed(eq)
+			if err != nil {
+				errors = append(errors, err)
+				return
 			}
-			if eq.Annotations[extension.AnnotationAllocated] != "" {
-				if err := json.Unmarshal([]byte(eq.Annotations[extension.AnnotationAllocated]), &oriAllocated); err != nil {
-					errors = append(errors, err)
-					return
-				}
+
+			oriAllocated, err = extension.GetAllocated(eq)
+			if err != nil {
+				errors = append(errors, err)
+				return
 			}
+
 			// Ignore this loop if the runtime/request/used doesn't change
 			if quotav1.Equals(quotav1.RemoveZeros(eq.Status.Used), quotav1.RemoveZeros(used)) &&
 				quotav1.Equals(quotav1.RemoveZeros(oriRuntime), quotav1.RemoveZeros(runtime)) &&
