@@ -107,7 +107,7 @@ func (r *resctrlReconcile) init(stopCh <-chan struct{}) {
 }
 
 func getPodResctrlGroup(pod *corev1.Pod) string {
-	podQoS := extension.GetPodQoSClassRaw(pod)
+	podQoS := extension.GetPodQoSClassWithDefault(pod)
 	switch podQoS {
 	case extension.QoSLSR:
 		return LSRResctrlGroup
@@ -141,28 +141,30 @@ func initCatResctrl() error {
 		return err
 	}
 	for _, group := range resctrlGroupList {
-		if err := initCatGroupIfNotExist(group); err != nil {
+		if updated, err := initCatGroupIfNotExist(group); err != nil {
 			klog.Errorf("init cat group dir %v failed, error %v", group, err)
+		} else if updated {
+			klog.V(4).Infof("create cat dir for group %v successfully", group)
 		} else {
-			klog.V(5).Infof("create cat dir for group %v successfully", group)
+			klog.V(6).Infof("cat dir for group %v is already created", group)
 		}
 	}
 	return nil
 }
 
-func initCatGroupIfNotExist(group string) error {
+func initCatGroupIfNotExist(group string) (bool, error) {
 	path := system.GetResctrlGroupRootDirPath(group)
 	_, err := os.Stat(path)
 	if err == nil {
-		return nil
+		return false, nil
 	} else if !os.IsNotExist(err) {
-		return fmt.Errorf("check dir %v for group %s but got unexpected err: %v", path, group, err)
+		return false, fmt.Errorf("check dir %v for group %s but got unexpected err: %v", path, group, err)
 	}
 	err = os.Mkdir(path, 0755)
 	if err != nil {
-		return fmt.Errorf("create dir %v failed for group %s, err: %v", path, group, err)
+		return false, fmt.Errorf("create dir %v failed for group %s, err: %v", path, group, err)
 	}
-	return nil
+	return true, nil
 }
 
 func calculateMbaPercentForGroup(group string, mbaPercentConfig *int64, cpuBasicInfo extension.CPUBasicInfo) string {
@@ -204,6 +206,30 @@ func calculateAMDMba(mbaPercent int64) string {
 	return strconv.FormatInt(int64(mbaLimitValue), 10)
 }
 
+func (r *resctrlReconcile) getContainerCgroupNewTaskIds(containerParentDir string, tasksMap map[int32]struct{}) ([]int32, error) {
+	ids, err := r.cgroupReader.ReadCPUTasks(containerParentDir)
+	if err != nil && resourceexecutor.IsCgroupDirErr(err) {
+		klog.V(5).Infof("failed to read container task ids whose cgroup path %s does not exists, err: %s",
+			containerParentDir, err)
+		return nil, nil
+	} else if err != nil {
+		return nil, fmt.Errorf("failed to read container task ids, err: %w", err)
+	}
+
+	if tasksMap == nil {
+		return ids, nil
+	}
+
+	// only append the non-mapped ids
+	var taskIDs []int32
+	for _, id := range ids {
+		if _, ok := tasksMap[id]; !ok {
+			taskIDs = append(taskIDs, id)
+		}
+	}
+	return taskIDs, nil
+}
+
 func (r *resctrlReconcile) getPodCgroupNewTaskIds(podMeta *statesinformer.PodMeta, tasksMap map[int32]struct{}) []int32 {
 	var taskIds []int32
 
@@ -228,24 +254,36 @@ func (r *resctrlReconcile) getPodCgroupNewTaskIds(podMeta *statesinformer.PodMet
 				pod.Namespace, pod.Name, container.Name, err)
 			continue
 		}
-		ids, err := r.cgroupReader.ReadCPUTasks(containerDir)
+
+		ids, err := r.getContainerCgroupNewTaskIds(containerDir, tasksMap)
 		if err != nil {
 			klog.Warningf("failed to get pod container cgroup task ids for container %s/%s/%s, err: %s",
 				pod.Namespace, pod.Name, container.Name, err)
 			continue
 		}
-
-		// only append the non-mapped ids
-		if tasksMap == nil {
-			taskIds = append(taskIds, ids...)
-			continue
-		}
-		for _, id := range ids {
-			if _, ok := tasksMap[id]; !ok {
-				taskIds = append(taskIds, id)
-			}
-		}
+		taskIds = append(taskIds, ids...)
 	}
+
+	// try retrieve task IDs from the sandbox container, especially for VM-based container runtime
+	sandboxID, err := koordletutil.GetPodSandboxContainerID(pod)
+	if err != nil {
+		klog.V(4).Infof("failed to get sandbox container ID for pod %s/%s, err: %s",
+			pod.Namespace, pod.Name, err)
+		return taskIds
+	}
+	sandboxContainerDir, err := koordletutil.GetContainerCgroupParentDirByID(podMeta.CgroupDir, sandboxID)
+	if err != nil {
+		klog.V(4).Infof("failed to get pod container cgroup path for sandbox container %s/%s/%s, err: %s",
+			pod.Namespace, pod.Name, sandboxID, err)
+		return taskIds
+	}
+	ids, err := r.getContainerCgroupNewTaskIds(sandboxContainerDir, tasksMap)
+	if err != nil {
+		klog.Warningf("failed to get pod container cgroup task ids for sandbox container %s/%s/%s, err: %s",
+			pod.Namespace, pod.Name, sandboxID, err)
+		return taskIds
+	}
+	taskIds = append(taskIds, ids...)
 
 	return taskIds
 }
@@ -275,9 +313,13 @@ func (r *resctrlReconcile) calculateAndApplyCatL3PolicyForGroup(group string, cb
 	if err != nil {
 		klog.Warningf("failed to write l3 cat policy on schemata for group %s, err: %s", group, err)
 		return err
+	} else if isUpdated {
+		klog.V(5).Infof("apply l3 cat policy for group %s finished, schemata %v, l3 number %v, isUpdated %v",
+			group, l3MaskValue, l3Num, isUpdated)
+	} else {
+		klog.V(6).Infof("apply l3 cat policy for group %s finished, schemata %v, l3 number %v, isUpdated %v",
+			group, l3MaskValue, l3Num, isUpdated)
 	}
-	klog.V(5).Infof("apply l3 cat policy for group %s finished, schemata %v, l3 number %v, isUpdated %v",
-		group, l3MaskValue, l3Num, isUpdated)
 
 	return nil
 }
@@ -301,9 +343,14 @@ func (r *resctrlReconcile) calculateAndApplyCatMbPolicyForGroup(group string, l3
 	if err != nil {
 		klog.Warningf("failed to write mba policy on schemata for group %s, err: %s", group, err)
 		return err
+	} else if isUpdated {
+		klog.V(5).Infof("apply mba policy for group %s finished, schemata %v, l3 number %v, isUpdated %v",
+			group, memBwPercent, l3Num, isUpdated)
+	} else {
+		klog.V(6).Infof("apply mba policy for group %s finished, schemata %v, l3 number %v, isUpdated %v",
+			group, memBwPercent, l3Num, isUpdated)
 	}
-	klog.V(5).Infof("apply mba policy for group %s finished, schemata %v, l3 number %v, isUpdated %v",
-		group, memBwPercent, l3Num, isUpdated)
+
 	return nil
 }
 
@@ -326,8 +373,11 @@ func (r *resctrlReconcile) calculateAndApplyCatL3GroupTasks(group string, taskId
 	if err != nil {
 		klog.Warningf("failed to write l3 cat policy on tasks for group %s, updated %v, err: %s", group, updated, err)
 		return err
+	} else if updated {
+		klog.V(5).Infof("apply l3 cat tasks for group %s finished, updated %v, len(taskIds) %v", group, updated, len(taskIds))
+	} else {
+		klog.V(6).Infof("apply l3 cat tasks for group %s finished, updated %v, len(taskIds) %v", group, updated, len(taskIds))
 	}
-	klog.V(5).Infof("apply l3 cat tasks for group %s finished, updated %v, len(taskIds) %v", group, updated, len(taskIds))
 
 	return nil
 }
@@ -462,7 +512,7 @@ func (r *resctrlReconcile) reconcile() {
 	}
 
 	if err := initCatResctrl(); err != nil {
-		klog.Warningf("resctrlReconcile failed, cannot initialize cat resctrl group, err: %s", err)
+		klog.V(4).Infof("resctrlReconcile failed, cannot initialize cat resctrl group, err: %s", err)
 		return
 	}
 	r.reconcileCatResctrlPolicy(nodeSLO.Spec.ResourceQOSStrategy)

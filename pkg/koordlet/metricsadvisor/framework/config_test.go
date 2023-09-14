@@ -26,12 +26,13 @@ import (
 
 func Test_NewDefaultConfig(t *testing.T) {
 	expectConfig := &Config{
-		CollectResUsedInterval:         1 * time.Second,
-		CollectNodeCPUInfoInterval:     60 * time.Second,
-		CollectNodeStorageInfoInterval: 1 * time.Second,
-		CPICollectorInterval:           60 * time.Second,
-		PSICollectorInterval:           10 * time.Second,
-		CPICollectorTimeWindow:         10 * time.Second,
+		CollectResUsedInterval:           1 * time.Second,
+		CollectSysMetricOutdatedInterval: 10 * time.Second,
+		CollectNodeCPUInfoInterval:       60 * time.Second,
+		CollectNodeStorageInfoInterval:   1 * time.Second,
+		CPICollectorInterval:             60 * time.Second,
+		PSICollectorInterval:             10 * time.Second,
+		CPICollectorTimeWindow:           10 * time.Second,
 	}
 	defaultConfig := NewDefaultConfig()
 	assert.Equal(t, expectConfig, defaultConfig)
@@ -41,6 +42,7 @@ func Test_InitFlags(t *testing.T) {
 	cmdArgs := []string{
 		"",
 		"--collect-res-used-interval=3s",
+		"--collect-sys-metric-outdated-interval=9s",
 		"--collect-node-cpu-info-interval=90s",
 		"--collect-node-storage-info-interval=4s",
 		"--cpi-collector-interval=90s",
@@ -50,12 +52,13 @@ func Test_InitFlags(t *testing.T) {
 	fs := flag.NewFlagSet(cmdArgs[0], flag.ExitOnError)
 
 	type fields struct {
-		CollectResUsedInterval         time.Duration
-		CollectNodeCPUInfoInterval     time.Duration
-		CollectNodeStorageInfoInterval time.Duration
-		CPICollectorInterval           time.Duration
-		PSICollectorInterval           time.Duration
-		CPICollectorTimeWindow         time.Duration
+		CollectResUsedInterval           time.Duration
+		CollectSysMetricOutdatedInterval time.Duration
+		CollectNodeCPUInfoInterval       time.Duration
+		CollectNodeStorageInfoInterval   time.Duration
+		CPICollectorInterval             time.Duration
+		PSICollectorInterval             time.Duration
+		CPICollectorTimeWindow           time.Duration
 	}
 	type args struct {
 		fs *flag.FlagSet
@@ -68,12 +71,13 @@ func Test_InitFlags(t *testing.T) {
 		{
 			name: "not default",
 			fields: fields{
-				CollectResUsedInterval:         3 * time.Second,
-				CollectNodeCPUInfoInterval:     90 * time.Second,
-				CollectNodeStorageInfoInterval: 4 * time.Second,
-				CPICollectorInterval:           90 * time.Second,
-				PSICollectorInterval:           5 * time.Second,
-				CPICollectorTimeWindow:         15 * time.Second,
+				CollectResUsedInterval:           3 * time.Second,
+				CollectSysMetricOutdatedInterval: 9 * time.Second,
+				CollectNodeCPUInfoInterval:       90 * time.Second,
+				CollectNodeStorageInfoInterval:   4 * time.Second,
+				CPICollectorInterval:             90 * time.Second,
+				PSICollectorInterval:             5 * time.Second,
+				CPICollectorTimeWindow:           15 * time.Second,
 			},
 			args: args{fs: fs},
 		},
@@ -81,16 +85,18 @@ func Test_InitFlags(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			raw := &Config{
-				CollectResUsedInterval:         tt.fields.CollectResUsedInterval,
-				CollectNodeCPUInfoInterval:     tt.fields.CollectNodeCPUInfoInterval,
-				CollectNodeStorageInfoInterval: tt.fields.CollectNodeStorageInfoInterval,
-				CPICollectorInterval:           tt.fields.CPICollectorInterval,
-				PSICollectorInterval:           tt.fields.PSICollectorInterval,
-				CPICollectorTimeWindow:         tt.fields.CPICollectorTimeWindow,
+				CollectResUsedInterval:           tt.fields.CollectResUsedInterval,
+				CollectSysMetricOutdatedInterval: tt.fields.CollectSysMetricOutdatedInterval,
+				CollectNodeCPUInfoInterval:       tt.fields.CollectNodeCPUInfoInterval,
+				CollectNodeStorageInfoInterval:   tt.fields.CollectNodeStorageInfoInterval,
+				CPICollectorInterval:             tt.fields.CPICollectorInterval,
+				PSICollectorInterval:             tt.fields.PSICollectorInterval,
+				CPICollectorTimeWindow:           tt.fields.CPICollectorTimeWindow,
 			}
 			c := NewDefaultConfig()
 			c.InitFlags(tt.args.fs)
-			tt.args.fs.Parse(cmdArgs[1:])
+			err := tt.args.fs.Parse(cmdArgs[1:])
+			assert.NoError(t, err)
 			assert.Equal(t, raw, c)
 		})
 	}

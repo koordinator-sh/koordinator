@@ -52,12 +52,40 @@ import (
 func Test_cpuEvict(t *testing.T) {}
 
 func Test_CPUEvict_calculateMilliRelease(t *testing.T) {
-
+	testNode := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-node",
+		},
+		Status: corev1.NodeStatus{
+			Capacity: map[corev1.ResourceName]resource.Quantity{
+				corev1.ResourceCPU:    resource.MustParse("60"),
+				corev1.ResourceMemory: resource.MustParse("120Gi"),
+				apiext.BatchCPU:       resource.MustParse("30000"),
+				apiext.BatchMemory:    resource.MustParse("50Gi"),
+			},
+			Allocatable: map[corev1.ResourceName]resource.Quantity{
+				corev1.ResourceCPU:    resource.MustParse("60"),
+				corev1.ResourceMemory: resource.MustParse("120Gi"),
+				apiext.BatchCPU:       resource.MustParse("30000"),
+				apiext.BatchMemory:    resource.MustParse("50Gi"),
+			},
+		},
+	}
+	testNode1 := testNode.DeepCopy()
+	testNode1.Status.Capacity[apiext.BatchCPU] = resource.MustParse("8000")
+	testNode1.Status.Allocatable[apiext.BatchCPU] = resource.MustParse("8000")
+	testNode2 := testNode.DeepCopy()
+	testNode2.Status.Capacity[apiext.BatchCPU] = resource.MustParse("0")
+	testNode2.Status.Allocatable[apiext.BatchCPU] = resource.MustParse("0")
 	thresholdConfig := sloconfig.DefaultResourceThresholdStrategy()
 	thresholdConfig.CPUEvictBESatisfactionUpperPercent = pointer.Int64(40)
 	thresholdConfig.CPUEvictBESatisfactionLowerPercent = pointer.Int64(30)
 	collectResUsedIntervalSeconds := int64(1)
 	windowSize := int64(60)
+	thresholdConfig1 := thresholdConfig.DeepCopy()
+	thresholdConfig1.CPUEvictBEUsageThresholdPercent = pointer.Int64(50)
+	thresholdConfig2 := thresholdConfig1.DeepCopy()
+	thresholdConfig2.CPUEvictPolicy = slov1alpha1.EvictByAllocatablePolicy
 
 	type queryResult struct {
 		count        int
@@ -71,6 +99,7 @@ func Test_CPUEvict_calculateMilliRelease(t *testing.T) {
 		thresholdConfig          *slov1alpha1.ResourceThresholdStrategy
 		avgMetricQueryResult     queryResult
 		currentMetricQueryResult queryResult
+		currentNode              *corev1.Node
 		expectRelease            int64
 	}
 
@@ -231,14 +260,9 @@ func Test_CPUEvict_calculateMilliRelease(t *testing.T) {
 			},
 			expectRelease: 7 * 1000,
 		},
-	}
-
-	thresholdConfig = thresholdConfig.DeepCopy()
-	thresholdConfig.CPUEvictBEUsageThresholdPercent = pointer.Int64(50)
-	tests = append(tests, []Test{
 		{
-			name:            fmt.Sprintf("test_BEUsageThresholdPercent_%d_avgMetricQueryResult_cpuUsage_not_enough", *thresholdConfig.CPUEvictBEUsageThresholdPercent),
-			thresholdConfig: thresholdConfig,
+			name:            fmt.Sprintf("test_BEUsageThresholdPercent_%d_avgMetricQueryResult_cpuUsage_not_enough", *thresholdConfig1.CPUEvictBEUsageThresholdPercent),
+			thresholdConfig: thresholdConfig1,
 			avgMetricQueryResult: queryResult{
 				count:        59,
 				cpuRealLimit: 20 * 1000,
@@ -247,8 +271,8 @@ func Test_CPUEvict_calculateMilliRelease(t *testing.T) {
 			expectRelease: 0,
 		},
 		{
-			name:            fmt.Sprintf("test_BEUsageThresholdPercent_%d_avgMetricQueryResult_need_release_but_currentMetricQueryResult_cpuUsage_not_enough", *thresholdConfig.CPUEvictBEUsageThresholdPercent),
-			thresholdConfig: thresholdConfig,
+			name:            fmt.Sprintf("test_BEUsageThresholdPercent_%d_avgMetricQueryResult_need_release_but_currentMetricQueryResult_cpuUsage_not_enough", *thresholdConfig1.CPUEvictBEUsageThresholdPercent),
+			thresholdConfig: thresholdConfig1,
 			avgMetricQueryResult: queryResult{
 				count:        59,
 				cpuRealLimit: 10 * 1000,
@@ -264,8 +288,8 @@ func Test_CPUEvict_calculateMilliRelease(t *testing.T) {
 			expectRelease: 0,
 		},
 		{
-			name:            fmt.Sprintf("test_BEUsageThresholdPercent_%d_avgRelease>currentRelease", *thresholdConfig.CPUEvictBEUsageThresholdPercent),
-			thresholdConfig: thresholdConfig,
+			name:            fmt.Sprintf("test_BEUsageThresholdPercent_%d_avgRelease>currentRelease", *thresholdConfig1.CPUEvictBEUsageThresholdPercent),
+			thresholdConfig: thresholdConfig1,
 			avgMetricQueryResult: queryResult{
 				count:        59,
 				cpuRealLimit: 10 * 1000,
@@ -280,7 +304,61 @@ func Test_CPUEvict_calculateMilliRelease(t *testing.T) {
 			},
 			expectRelease: 6 * 1000,
 		},
-	}...)
+		{
+			name:            fmt.Sprintf("test_BEUsageThresholdPercent_%d_avgMetricQueryResult_skip_release_when_allocatable_small_but_policy_by_reallimit", *thresholdConfig1.CPUEvictBEUsageThresholdPercent),
+			thresholdConfig: thresholdConfig1,
+			currentNode:     testNode1,
+			avgMetricQueryResult: queryResult{
+				count:        59,
+				cpuRealLimit: 10 * 1000,
+				cpuUsed:      6 * 1000,
+				cpuRequest:   50 * 1000,
+			},
+			currentMetricQueryResult: queryResult{
+				count:        1,
+				cpuRealLimit: 10 * 1000,
+				cpuUsed:      4 * 1000,
+				cpuRequest:   50 * 1000,
+			},
+			expectRelease: 0,
+		},
+		{
+			name:            fmt.Sprintf("test_BEUsageThresholdPercent_%d_avgMetricQueryResult_need_release_since_allocatable_is_small", *thresholdConfig1.CPUEvictBEUsageThresholdPercent),
+			thresholdConfig: thresholdConfig2,
+			currentNode:     testNode1,
+			avgMetricQueryResult: queryResult{
+				count:        59,
+				cpuRealLimit: 10 * 1000,
+				cpuUsed:      6 * 1000,
+				cpuRequest:   50 * 1000,
+			},
+			currentMetricQueryResult: queryResult{
+				count:        1,
+				cpuRealLimit: 10 * 1000,
+				cpuUsed:      4 * 1000,
+				cpuRequest:   50 * 1000,
+			},
+			expectRelease: 12 * 1000,
+		},
+		{
+			name:            fmt.Sprintf("test_BEUsageThresholdPercent_%d_avgMetricQueryResult_need_release_since_allocatable_is_zero", *thresholdConfig1.CPUEvictBEUsageThresholdPercent),
+			thresholdConfig: thresholdConfig2,
+			currentNode:     testNode2,
+			avgMetricQueryResult: queryResult{
+				count:        59,
+				cpuRealLimit: 10 * 1000,
+				cpuUsed:      6 * 1000,
+				cpuRequest:   50 * 1000,
+			},
+			currentMetricQueryResult: queryResult{
+				count:        1,
+				cpuRealLimit: 10 * 1000,
+				cpuUsed:      4 * 1000,
+				cpuRequest:   50 * 1000,
+			},
+			expectRelease: 20*1000 - defaultMinAllocatableBatchMilliCPU,
+		},
+	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -291,6 +369,12 @@ func Test_CPUEvict_calculateMilliRelease(t *testing.T) {
 			mockQuerier := mock_metriccache.NewMockQuerier(ctl)
 			mockMetricCache.EXPECT().Querier(gomock.Any(), gomock.Any()).Return(mockQuerier, nil).AnyTimes()
 			mockResultFactory := mock_metriccache.NewMockAggregateResultFactory(ctl)
+			mockStateInformer := mock_statesinformer.NewMockStatesInformer(ctl)
+			if tt.currentNode != nil {
+				mockStateInformer.EXPECT().GetNode().Return(tt.currentNode).AnyTimes()
+			} else {
+				mockStateInformer.EXPECT().GetNode().Return(testNode).AnyTimes()
+			}
 			metriccache.DefaultAggregateResultFactory = mockResultFactory
 			beUsage := metriccache.MetricPropertiesFunc.NodeBE(string(metriccache.BEResourceCPU), string(metriccache.BEResouceAllocationUsage))
 			beRequest := metriccache.MetricPropertiesFunc.NodeBE(string(metriccache.BEResourceCPU), string(metriccache.BEResouceAllocationRequest))
@@ -325,11 +409,12 @@ func Test_CPUEvict_calculateMilliRelease(t *testing.T) {
 				result.EXPECT().Value(metriccache.AggregationTypeLast).Return(tt.currentMetricQueryResult.cpuRealLimit, nil).Times(1)
 				result.EXPECT().Count().Return(tt.currentMetricQueryResult.count).Times(1)
 			}
-			cpuEvictor := cpuEvictor{
+			c := cpuEvictor{
+				statesInformer:        mockStateInformer,
 				metricCache:           mockMetricCache,
 				metricCollectInterval: time.Duration(collectResUsedIntervalSeconds) * time.Second,
 			}
-			gotRelease := cpuEvictor.calculateMilliRelease(tt.thresholdConfig, windowSize)
+			gotRelease := c.calculateMilliRelease(tt.thresholdConfig, windowSize)
 			assert.Equal(t, tt.expectRelease, gotRelease, "checkRelease")
 		})
 	}

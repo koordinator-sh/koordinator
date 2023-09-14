@@ -27,27 +27,30 @@ const (
 )
 
 type Config struct {
-	CollectResUsedInterval         time.Duration
-	CollectNodeCPUInfoInterval     time.Duration
-	CollectNodeStorageInfoInterval time.Duration
-	CPICollectorInterval           time.Duration
-	PSICollectorInterval           time.Duration
-	CPICollectorTimeWindow         time.Duration
+	CollectResUsedInterval           time.Duration
+	CollectSysMetricOutdatedInterval time.Duration
+	CollectNodeCPUInfoInterval       time.Duration
+	CollectNodeStorageInfoInterval   time.Duration
+	CPICollectorInterval             time.Duration
+	PSICollectorInterval             time.Duration
+	CPICollectorTimeWindow           time.Duration
 }
 
 func NewDefaultConfig() *Config {
 	return &Config{
-		CollectResUsedInterval:         1 * time.Second,
-		CollectNodeCPUInfoInterval:     60 * time.Second,
-		CollectNodeStorageInfoInterval: 1 * time.Second,
-		CPICollectorInterval:           60 * time.Second,
-		PSICollectorInterval:           10 * time.Second,
-		CPICollectorTimeWindow:         10 * time.Second,
+		CollectResUsedInterval:           1 * time.Second,
+		CollectSysMetricOutdatedInterval: 10 * time.Second,
+		CollectNodeCPUInfoInterval:       60 * time.Second,
+		CollectNodeStorageInfoInterval:   1 * time.Second,
+		CPICollectorInterval:             60 * time.Second,
+		PSICollectorInterval:             10 * time.Second,
+		CPICollectorTimeWindow:           10 * time.Second,
 	}
 }
 
 func (c *Config) InitFlags(fs *flag.FlagSet) {
 	fs.DurationVar(&c.CollectResUsedInterval, "collect-res-used-interval", c.CollectResUsedInterval, "Collect node/pod resource usage interval. Minimum interval is 1 second. Non-zero values should contain a corresponding time unit (e.g. 1s, 2m, 3h).")
+	fs.DurationVar(&c.CollectSysMetricOutdatedInterval, "collect-sys-metric-outdated-interval", c.CollectSysMetricOutdatedInterval, "Collecy system metrics outdated interval. Node or pods metrics whose timestamps are before the interval will be ignored.")
 	fs.DurationVar(&c.CollectNodeCPUInfoInterval, "collect-node-cpu-info-interval", c.CollectNodeCPUInfoInterval, "Collect node cpu info interval. Non-zero values should contain a corresponding time unit (e.g. 1s, 2m, 3h).")
 	fs.DurationVar(&c.CollectNodeStorageInfoInterval, "collect-node-storage-info-interval", c.CollectNodeStorageInfoInterval, "Collect node storage info interval. Non-zero values should contain a corresponding time unit (e.g. 1s, 2m, 3h).")
 	fs.DurationVar(&c.CPICollectorInterval, "cpi-collector-interval", c.CPICollectorInterval, "Collect cpi interval. Non-zero values should contain a corresponding time unit (e.g. 1s, 2m, 3h).")

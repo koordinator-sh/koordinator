@@ -62,7 +62,6 @@ func isCPUSupportResctrl() (bool, error) {
 		return false, err
 	}
 	klog.V(4).Infof("isResctrlAvailableByCpuInfo result, isCatFlagSet: %v, isMbaFlagSet: %v", isCatFlagSet, isMbaFlagSet)
-	isInit = true
 	return isCatFlagSet && isMbaFlagSet, nil
 }
 
@@ -77,8 +76,7 @@ func isKernelSupportResctrl() (bool, error) {
 		klog.Errorf("isResctrlAvailableByKernelCmd error: %v", err)
 		return false, err
 	}
-	klog.V(4).Infof("isResctrlAvailableByKernelCmd result,isCatFlagSet: %v,isMbaFlagSet: %v", isCatFlagSet, isMbaFlagSet)
-	isInit = true
+	klog.V(4).Infof("isResctrlAvailableByKernelCmd result, isCatFlagSet: %v, isMbaFlagSet: %v", isCatFlagSet, isMbaFlagSet)
 	return isCatFlagSet && isMbaFlagSet, nil
 }
 
@@ -90,12 +88,15 @@ func IsSupportResctrl() (bool, error) {
 		if err != nil {
 			return false, err
 		}
-		kernelSupport, err := isKernelSupportResctrl()
+		kernelCmdSupport, err := isKernelSupportResctrl()
 		if err != nil {
 			return false, err
 		}
+		// Kernel cmdline not set resctrl features does not ensure feature must be disabled.
+		klog.V(4).Infof("isResctrlAvailableByKernelCmd result, cpuSupport: %v, kernelSupport: %v",
+			cpuSupport, kernelCmdSupport)
+		isSupportResctrl = cpuSupport
 		isInit = true
-		isSupportResctrl = kernelSupport && cpuSupport
 	}
 	return isSupportResctrl, nil
 }
@@ -293,7 +294,41 @@ func (r *ResctrlSchemataRaw) Equal(a *ResctrlSchemataRaw) (bool, string) {
 	return true, ""
 }
 
+func (r *ResctrlSchemataRaw) Validate() (bool, string) {
+	if valid, msg := r.ValidateL3(); !valid {
+		return false, fmt.Sprintf("L3 CAT is invalid, msg: %s", msg)
+	}
+	if valid, msg := r.ValidateMB(); !valid {
+		return false, fmt.Sprintf("MBA is invalid, msg: %s", msg)
+	}
+	return true, ""
+}
+
+func (r *ResctrlSchemataRaw) ValidateL3() (bool, string) {
+	if r.L3Num <= 0 {
+		return false, "L3 number is zero"
+	}
+	if len(r.L3) <= 0 {
+		return false, "no L3 CAT info"
+	}
+	if r.L3Num != len(r.L3) {
+		return false, "unmatched L3 number and CAT infos"
+	}
+	return true, ""
+}
+
+func (r *ResctrlSchemataRaw) ValidateMB() (bool, string) {
+	if r.L3Num <= 0 {
+		return false, "L3 number is zero"
+	}
+	if len(r.MB) <= 0 {
+		return false, "no MBA info"
+	}
+	return true, ""
+}
+
 // ParseResctrlSchemata parses the resctrl schemata of given cgroup, and returns the l3_cat masks and mba masks.
+// Set l3Num=-1 to use the read L3 number from the schemata.
 // @content `L3:0=fff;1=fff\nMB:0=100;1=100\n` (may have additional lines (e.g. ARM MPAM))
 // @l3Num 2
 // @return { L3: ["fff", "fff"], MB: ["100", "100"] }, nil
@@ -321,9 +356,12 @@ func (r *ResctrlSchemataRaw) ParseResctrlSchemata(content string, l3Num int) err
 			klog.V(5).Infof("read resctrl schemata of %s aborted, mask not found", t.prefix)
 			continue
 		}
+		if l3Num == -1 {
+			l3Num = len(maskMap)
+		}
 		if len(maskMap) != l3Num {
-			return fmt.Errorf("read resctrl schemata failed, %s masks has invalid count %v",
-				t.prefix, len(maskMap))
+			return fmt.Errorf("read resctrl schemata failed, %s masks has invalid count %v, l3Num %v",
+				t.prefix, len(maskMap), l3Num)
 		}
 		for i := 0; i < l3Num; i++ {
 			mask, ok := maskMap[i]
@@ -381,6 +419,9 @@ func ReadResctrlSchemataRaw(schemataFile string, l3Num int) (*ResctrlSchemataRaw
 	err = schemataRaw.ParseResctrlSchemata(string(content), l3Num)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse l3 schemata, content %s, err: %v", string(content), err)
+	}
+	if l3Num == -1 {
+		schemataRaw.WithL3Num(len(schemataRaw.L3))
 	}
 
 	return schemataRaw, nil
@@ -469,6 +510,7 @@ func CheckAndTryEnableResctrlCat() error {
 	if err == nil {
 		return nil
 	}
+	klog.V(5).Infof("resctrl l3 cbm is not exit, err=%s, try to mount resctrl", err)
 	newMount, err := MountResctrlSubsystem()
 	if err != nil {
 		return err
@@ -496,6 +538,19 @@ func InitCatGroupIfNotExist(group string) error {
 	err = os.Mkdir(path, 0755)
 	if err != nil {
 		return fmt.Errorf("create dir %v failed for group %s, err: %v", path, group, err)
+	}
+	return nil
+}
+
+func CheckResctrlSchemataValid() error {
+	schemataPath := GetResctrlSchemataFilePath("")
+	schemataRaw, err := ReadResctrlSchemataRaw(schemataPath, -1)
+	if err != nil {
+		return fmt.Errorf("cannot read resctrl schemata, err: %s", err)
+	}
+	isValid, msg := schemataRaw.Validate()
+	if !isValid {
+		return fmt.Errorf("resctrl schemata is invalid, err: %s", msg)
 	}
 	return nil
 }

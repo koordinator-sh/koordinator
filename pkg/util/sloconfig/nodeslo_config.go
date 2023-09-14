@@ -54,6 +54,7 @@ func DefaultResourceThresholdStrategy() *slov1alpha1.ResourceThresholdStrategy {
 		CPUSuppressThresholdPercent: pointer.Int64(65),
 		CPUSuppressPolicy:           slov1alpha1.CPUSetPolicy,
 		MemoryEvictThresholdPercent: pointer.Int64(70),
+		CPUEvictPolicy:              slov1alpha1.EvictByRealLimitPolicy,
 	}
 }
 

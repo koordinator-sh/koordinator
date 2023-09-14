@@ -136,6 +136,10 @@ func getCPUTurboEnabled() (bool, error) {
 	// TODO: In the current version, only intel cpu is collected turbo status. The other vendors' interfaces are not
 	//       supported yet. We may check the frequency in the future.
 	turboDisabledPath := system.GetSysIntelPStateNoTurboPath()
+	if !system.FileExists(turboDisabledPath) {
+		klog.V(5).Infof("abort to read %s, file not exist", turboDisabledPath)
+		return false, nil
+	}
 	out, err := os.ReadFile(turboDisabledPath)
 	if err == nil {
 		disabled, err := strconv.Atoi(strings.TrimSpace(strings.Trim(string(out), "\n")))

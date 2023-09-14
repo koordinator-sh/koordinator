@@ -32,8 +32,6 @@ import (
 
 const (
 	CollectorName = "SystemResourceCollector"
-
-	metricOutdatedIntervalRatio = 3
 )
 
 var (
@@ -41,17 +39,19 @@ var (
 )
 
 type systemResourceCollector struct {
-	collectInterval time.Duration
-	started         *atomic.Bool
-	appendableDB    metriccache.Appendable
-	sharedState     *framework.SharedState
+	collectInterval  time.Duration
+	outdatedInterval time.Duration
+	started          *atomic.Bool
+	appendableDB     metriccache.Appendable
+	sharedState      *framework.SharedState
 }
 
 func New(opt *framework.Options) framework.Collector {
 	return &systemResourceCollector{
-		collectInterval: opt.Config.CollectResUsedInterval,
-		started:         atomic.NewBool(false),
-		appendableDB:    opt.MetricCache,
+		collectInterval:  opt.Config.CollectResUsedInterval,
+		outdatedInterval: opt.Config.CollectSysMetricOutdatedInterval,
+		started:          atomic.NewBool(false),
+		appendableDB:     opt.MetricCache,
 	}
 }
 
@@ -87,7 +87,7 @@ func (s *systemResourceCollector) collectSysResUsed() {
 	klog.V(6).Info("collectSysResUsed start")
 
 	// get node resource usage
-	validTime := timeNow().Add(-s.collectInterval * metricOutdatedIntervalRatio)
+	validTime := timeNow().Add(-s.outdatedInterval)
 	nodeCPU, nodeMemory := s.sharedState.GetNodeUsage()
 	if nodeCPU == nil || nodeMemory == nil {
 		klog.Warningf("node resource cpu %v or memory %v is empty during collect system usage", nodeCPU, nodeMemory)
@@ -107,9 +107,9 @@ func (s *systemResourceCollector) collectSysResUsed() {
 	}
 
 	// calculate system resource usage
+	collectTime := timeNow()
 	systemCPUUsage := util.MaxFloat64(nodeCPU.Value-podsCPUUsage, 0)
 	systemMemoryUsage := util.MaxFloat64(nodeMemory.Value-podsMemoryUsage, 0)
-	collectTime := nodeCPU.Timestamp
 	systemCPUMetric, err := metriccache.SystemCPUUsageMetric.GenerateSample(nil, collectTime, systemCPUUsage)
 	if err != nil {
 		klog.Warningf("generate system cpu metric failed, err %v", err)
@@ -137,7 +137,7 @@ func (s *systemResourceCollector) collectSysResUsed() {
 }
 
 func (s *systemResourceCollector) getAllPodsResourceUsage() (cpuCore float64, memory float64, err error) {
-	validTime := timeNow().Add(-s.collectInterval * metricOutdatedIntervalRatio)
+	validTime := timeNow().Add(-s.outdatedInterval)
 	podCPUByCollector, podMemoryByCollector := s.sharedState.GetPodsUsageByCollector()
 	if len(podCPUByCollector) == 0 || len(podMemoryByCollector) == 0 {
 		err = fmt.Errorf("pod resource cpu %v or memory %v is empty during collect system usage", podCPUByCollector, podMemoryByCollector)

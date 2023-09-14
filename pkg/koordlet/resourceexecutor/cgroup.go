@@ -126,7 +126,7 @@ func cgroupFileRead(cgroupTaskDir string, r sysutil.Resource) (string, error) {
 	}
 
 	filePath := r.Path(cgroupTaskDir)
-	klog.V(5).Infof("read %s", filePath)
+	klog.V(6).Infof("read %s", filePath)
 
 	data, err := os.ReadFile(filePath)
 	return strings.Trim(string(data), "\n"), err
@@ -153,7 +153,7 @@ func readCgroupAndParseInt64(parentDir string, r sysutil.Resource) (int64, error
 func readCgroupAndParseUint64(parentDir string, r sysutil.Resource) (uint64, error) {
 	s, err := cgroupFileRead(parentDir, r)
 	if err != nil {
-		return 0, fmt.Errorf("cannot read cgroup file, err: %v", err)
+		return 0, err
 	}
 
 	// "max" means unlimited
@@ -173,7 +173,7 @@ func readCgroupAndParseUint64(parentDir string, r sysutil.Resource) (uint64, err
 func readCgroupAndParseInt32Slice(parentDir string, r sysutil.Resource) ([]int32, error) {
 	s, err := cgroupFileRead(parentDir, r)
 	if err != nil {
-		return nil, fmt.Errorf("cannot read cgroup file, err: %v", err)
+		return nil, err
 	}
 
 	// content: "%d\n%d\n%d\n..."

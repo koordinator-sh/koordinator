@@ -1181,6 +1181,10 @@ spec:
                       then start to calculate the resources need to be released.
                     format: int64
                     type: integer
+                  cpuEvictPolicy:
+                    description: 'CPUEvictPolicy defines the policy for the BECPUEvict
+                      feature. Default: `evictByRealLimit`.'
+                    type: string
                   cpuEvictTimeWindowSeconds:
                     description: when avg(cpuusage) > CPUEvictThresholdPercent, will
                       start to evict pod by cpu, and avg(cpuusage) is calculated based

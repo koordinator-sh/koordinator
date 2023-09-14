@@ -73,7 +73,7 @@ func Test_systemResourceCollector_collectSysResUsed(t *testing.T) {
 			name: "node metric outdated",
 			fields: fields{
 				nodeUsage: &usageField{
-					ts:     timeNow().Add(-config.CollectResUsedInterval * metricOutdatedIntervalRatio * 2),
+					ts:     timeNow().Add(-config.CollectSysMetricOutdatedInterval * 2),
 					cpu:    1,
 					memory: 1024,
 				},
@@ -97,7 +97,7 @@ func Test_systemResourceCollector_collectSysResUsed(t *testing.T) {
 				},
 				podUsage: map[string]usageField{
 					"test-collector": {
-						ts:     timeNow().Add(-config.CollectResUsedInterval * metricOutdatedIntervalRatio * 2),
+						ts:     timeNow().Add(-config.CollectSysMetricOutdatedInterval * 2),
 						cpu:    0.5,
 						memory: 512,
 					},
@@ -185,7 +185,7 @@ func Test_systemResourceCollector_collectSysResUsed(t *testing.T) {
 			}
 			s.collectSysResUsed()
 
-			querier, err := metricCache.Querier(timeNow().Add(-s.collectInterval*metricOutdatedIntervalRatio), timeNow())
+			querier, err := metricCache.Querier(timeNow().Add(-s.outdatedInterval), timeNow())
 			assert.NoError(t, err)
 
 			cpuResult, err := testQuery(querier, metriccache.SystemCPUUsageMetric, nil)

@@ -44,6 +44,8 @@ const (
 	beCPUSatisfactionLowPercentMax   = 60
 	beCPUSatisfactionUpperPercentMax = 100
 	beCPUUsageThresholdPercent       = 90
+
+	defaultMinAllocatableBatchMilliCPU = 1
 )
 
 var _ framework.QOSStrategy = &cpuEvictor{}
@@ -142,6 +144,13 @@ func (c *cpuEvictor) calculateMilliRelease(thresholdConfig *slov1alpha1.Resource
 	// BECPULimit
 	avgBECPUMilliRealLimit, count03 := getBECPUMetric(metriccache.BEResouceAllocationRealLimit, querier, queryparam.Aggregate)
 
+	// CPU Satisfaction considers the allocatable when policy=evictByAllocatable.
+	avgBECPUMilliLimit := avgBECPUMilliRealLimit
+	beCPUMilliAllocatable := c.getBEMilliAllocatable()
+	if thresholdConfig.CPUEvictPolicy == slov1alpha1.EvictByAllocatablePolicy {
+		avgBECPUMilliLimit = beCPUMilliAllocatable
+	}
+
 	// get min count
 	count := minInt64(count01, count02, count03)
 
@@ -149,14 +158,16 @@ func (c *cpuEvictor) calculateMilliRelease(thresholdConfig *slov1alpha1.Resource
 		return 0
 	}
 
-	if !isBECPUUsageHighEnough(avgBECPUMilliUsage, avgBECPUMilliRequest, avgBECPUMilliRealLimit, thresholdConfig.CPUEvictBEUsageThresholdPercent) {
-		klog.Warningf("cpuEvict by ResourceSatisfaction skipped,current cpuUsage not Enough! metric(BECPUUsage, BECPURequest, BECPULimit): %s, %s, %s", avgBECPUMilliUsage, avgBECPUMilliRequest, avgBECPUMilliRealLimit)
+	if !isBECPUUsageHighEnough(avgBECPUMilliUsage, avgBECPUMilliLimit, thresholdConfig.CPUEvictBEUsageThresholdPercent) {
+		klog.V(5).Infof("cpuEvict by ResourceSatisfaction skipped, avg usage not enough, "+
+			"BEUsage:%v, BERequest:%v, BELimit:%v, BERealLimit:%v, BEAllocatable:%v",
+			avgBECPUMilliUsage, avgBECPUMilliRequest, avgBECPUMilliLimit, avgBECPUMilliRealLimit, beCPUMilliAllocatable)
 		return 0
 	}
 
-	milliRelease := calculateResourceMilliToRelease(avgBECPUMilliRequest, avgBECPUMilliRealLimit, thresholdConfig)
+	milliRelease := calculateResourceMilliToRelease(avgBECPUMilliRequest, avgBECPUMilliLimit, thresholdConfig)
 	if milliRelease <= 0 {
-		klog.Warningf("cpuEvict by ResourceSatisfaction skipped,releaseByAvg: %d", milliRelease)
+		klog.V(5).Infof("cpuEvict by ResourceSatisfaction skipped, releaseByAvg: %v", milliRelease)
 		return 0
 	}
 
@@ -174,19 +185,28 @@ func (c *cpuEvictor) calculateMilliRelease(thresholdConfig *slov1alpha1.Resource
 	// BECPULimit
 	currentBECPUMilliRealLimit, _ := getBECPUMetric(metriccache.BEResouceAllocationRealLimit, querier, queryparam.Aggregate)
 
-	if !isBECPUUsageHighEnough(currentBECPUMilliUsage, currentBECPUMilliRequest, currentBECPUMilliRealLimit, thresholdConfig.CPUEvictBEUsageThresholdPercent) {
-		klog.Warningf("cpuEvict by ResourceSatisfaction skipped,current cpuUsage not Enough! metric(BECPUUsage, BECPURequest, BECPULimit): %s, %s, %s", currentBECPUMilliUsage, currentBECPUMilliRequest, currentBECPUMilliRealLimit)
+	// CPU Satisfaction considers the allocatable when policy=evictByAllocatable.
+	currentBECPUMilliLimit := currentBECPUMilliRealLimit
+	if thresholdConfig.CPUEvictPolicy == slov1alpha1.EvictByAllocatablePolicy {
+		currentBECPUMilliLimit = beCPUMilliAllocatable
+	}
+
+	if !isBECPUUsageHighEnough(currentBECPUMilliUsage, currentBECPUMilliLimit, thresholdConfig.CPUEvictBEUsageThresholdPercent) {
+		klog.V(5).Infof("cpuEvict by ResourceSatisfaction skipped, current usage not enough, "+
+			"BEUsage:%v, BERequest:%v, BELimit:%v, BERealLimit:%v, BEAllocatable:%v",
+			currentBECPUMilliUsage, currentBECPUMilliRequest, currentBECPUMilliLimit, currentBECPUMilliRealLimit,
+			beCPUMilliAllocatable)
 		return 0
 	}
 
 	// Requests and limits do not change frequently.
 	// If the current request and limit are equal to the average request and limit within the window period, there is no need to recalculate.
-	if currentBECPUMilliUsage == avgBECPUMilliRequest && currentBECPUMilliRealLimit == avgBECPUMilliRealLimit {
+	if currentBECPUMilliRequest == avgBECPUMilliRequest && currentBECPUMilliLimit == avgBECPUMilliLimit {
 		return milliRelease
 	}
-	milliReleaseByCurrent := calculateResourceMilliToRelease(currentBECPUMilliRequest, currentBECPUMilliRealLimit, thresholdConfig)
+	milliReleaseByCurrent := calculateResourceMilliToRelease(currentBECPUMilliRequest, currentBECPUMilliLimit, thresholdConfig)
 	if milliReleaseByCurrent <= 0 {
-		klog.Warningf("cpuEvict by ResourceSatisfaction skipped,releaseByCurrent: %d", milliReleaseByCurrent)
+		klog.V(5).Infof("cpuEvict by ResourceSatisfaction skipped, releaseByCurrent: %v", milliReleaseByCurrent)
 		return 0
 	}
 
@@ -195,6 +215,12 @@ func (c *cpuEvictor) calculateMilliRelease(thresholdConfig *slov1alpha1.Resource
 		milliRelease = milliReleaseByCurrent
 	}
 
+	if milliRelease > 0 {
+		klog.V(4).Infof("cpuEvict by ResourceSatisfaction start to evict, milliRelease: %v,"+
+			"current status (BEUsage:%v, BERequest:%v, BELimit:%v, BERealLimit:%v, BEAllocatable:%v)",
+			currentBECPUMilliUsage, currentBECPUMilliRequest, currentBECPUMilliLimit, currentBECPUMilliRealLimit,
+			beCPUMilliAllocatable)
+	}
 	return milliRelease
 }
 
@@ -206,9 +232,10 @@ func isAvgQueryResultValid(windowSeconds, collectIntervalSeconds, count int64) b
 	return true
 }
 
-func isBECPUUsageHighEnough(beCPUMilliUsage, beCPUMilliRequest, beCPUMilliRealLimit float64, thresholdPercent *int64) bool {
-	if beCPUMilliRealLimit == 0 {
-		klog.Warningf("cpuEvict by ResourceSatisfaction skipped! CPURealLimit is zero!")
+func isBECPUUsageHighEnough(beCPUMilliUsage, beCPUMilliRealLimit float64, thresholdPercent *int64) bool {
+	if beCPUMilliRealLimit <= 0 {
+		klog.Warningf("cpuEvict by ResourceSatisfaction skipped! CPURealLimit %v is no larger than zero!",
+			beCPUMilliRealLimit)
 		return false
 	}
 	if beCPUMilliUsage < 1000 {
@@ -219,27 +246,29 @@ func isBECPUUsageHighEnough(beCPUMilliUsage, beCPUMilliRequest, beCPUMilliRealLi
 		thresholdPercent = pointer.Int64(beCPUUsageThresholdPercent)
 	}
 	if cpuUsage < float64(*thresholdPercent)/100 {
-		klog.Warningf("cpuEvict by ResourceSatisfaction skipped! cpuUsage(%.2f) and thresholdPercent %d!", cpuUsage, *thresholdPercent)
+		klog.V(5).Infof("cpuEvict by ResourceSatisfaction skipped! cpuUsage(%.2f) and thresholdPercent %d!", cpuUsage, *thresholdPercent)
 		return false
 	}
+
+	klog.V(4).Infof("cpuEvict by ResourceSatisfaction: cpuUsage(%.2f) >= thresholdPercent %d!", cpuUsage, *thresholdPercent)
 	return true
 }
 
 func calculateResourceMilliToRelease(beCPUMilliRequest, beCPUMilliRealLimit float64, thresholdConfig *slov1alpha1.ResourceThresholdStrategy) int64 {
-	if beCPUMilliRequest == 0 {
-		klog.Warningf("cpuEvict by ResourceSatisfaction skipped! be pods requests is zero!")
+	if beCPUMilliRequest <= 0 {
+		klog.V(5).Infof("cpuEvict by ResourceSatisfaction skipped! be pods requests is zero!")
 		return 0
 	}
 
 	satisfactionRate := beCPUMilliRealLimit / beCPUMilliRequest
 	if satisfactionRate > float64(*thresholdConfig.CPUEvictBESatisfactionLowerPercent)/100 {
-		klog.Warningf("cpuEvict by ResourceSatisfaction skipped! satisfactionRate(%.2f) and lowPercent(%f)", satisfactionRate, float64(*thresholdConfig.CPUEvictBESatisfactionLowerPercent))
+		klog.V(5).Infof("cpuEvict by ResourceSatisfaction skipped! satisfactionRate(%.2f) and lowPercent(%f)", satisfactionRate, float64(*thresholdConfig.CPUEvictBESatisfactionLowerPercent))
 		return 0
 	}
 
 	rateGap := float64(*thresholdConfig.CPUEvictBESatisfactionUpperPercent)/100 - satisfactionRate
 	if rateGap <= 0 {
-		klog.Warningf("cpuEvict by ResourceSatisfaction skipped! satisfactionRate(%.2f) > upperPercent(%f)", satisfactionRate, float64(*thresholdConfig.CPUEvictBESatisfactionUpperPercent))
+		klog.V(5).Infof("cpuEvict by ResourceSatisfaction skipped! satisfactionRate(%.2f) > upperPercent(%f)", satisfactionRate, float64(*thresholdConfig.CPUEvictBESatisfactionUpperPercent))
 		return 0
 	}
 
@@ -259,7 +288,8 @@ func (c *cpuEvictor) evictByResourceSatisfaction(node *corev1.Node, thresholdCon
 }
 
 func (c *cpuEvictor) killAndEvictBEPodsRelease(node *corev1.Node, bePodInfos []*podEvictCPUInfo, cpuNeedMilliRelease int64) {
-	message := fmt.Sprintf("killAndEvictBEPodsRelease for node(%s), need realase CPU : %d", node.Name, cpuNeedMilliRelease)
+	message := fmt.Sprintf("killAndEvictBEPodsRelease for node(%s), need release milli CPU: %v",
+		node.Name, cpuNeedMilliRelease)
 
 	cpuMilliReleased := int64(0)
 	var killedPods []*corev1.Pod
@@ -268,11 +298,13 @@ func (c *cpuEvictor) killAndEvictBEPodsRelease(node *corev1.Node, bePodInfos []*
 			break
 		}
 
-		podKillMsg := fmt.Sprintf("%s, kill pod : %s", message, bePod.pod.Name)
+		podKillMsg := fmt.Sprintf("%s, kill pod: %s", message, util.GetPodKey(bePod.pod))
 		helpers.KillContainers(bePod.pod, podKillMsg)
 
 		killedPods = append(killedPods, bePod.pod)
 		cpuMilliReleased = cpuMilliReleased + bePod.milliRequest
+
+		klog.V(5).Infof("cpuEvict pick pod %s/%s to evict", util.GetPodKey(bePod.pod))
 	}
 
 	c.evictor.EvictPodsIfNotEvicted(killedPods, node, resourceexecutor.EvictPodByBECPUSatisfaction, message)
@@ -280,7 +312,8 @@ func (c *cpuEvictor) killAndEvictBEPodsRelease(node *corev1.Node, bePodInfos []*
 	if len(killedPods) > 0 {
 		c.lastEvictTime = time.Now()
 	}
-	klog.V(5).Infof("killAndEvictBEPodsRelease finished!cpuNeedMilliRelease(%d) cpuMilliReleased(%d)", cpuNeedMilliRelease, cpuMilliReleased)
+	klog.V(5).Infof("killAndEvictBEPodsRelease finished! cpuNeedMilliRelease(%d) cpuMilliReleased(%d)",
+		cpuNeedMilliRelease, cpuMilliReleased)
 }
 
 func (c *cpuEvictor) getPodEvictInfoAndSort() []*podEvictCPUInfo {
@@ -324,6 +357,25 @@ func (c *cpuEvictor) getPodEvictInfoAndSort() []*podEvictCPUInfo {
 		return *bePodInfos[i].pod.Spec.Priority < *bePodInfos[j].pod.Spec.Priority
 	})
 	return bePodInfos
+}
+
+func (c *cpuEvictor) getBEMilliAllocatable() float64 {
+	node := c.statesInformer.GetNode()
+	if node == nil || node.Status.Allocatable == nil {
+		return -1
+	}
+
+	batchCPUQuant, ok := node.Status.Allocatable[apiext.BatchCPU]
+	if !ok || batchCPUQuant.Value() < 0 {
+		return -1
+	}
+	// The batch allocatable value can be set to zero when high-priority util is high, where we still need to calculate
+	// the satisfaction rate. Here we use a small allocatable for the BE utilization check.
+	if batchCPUQuant.IsZero() {
+		return defaultMinAllocatableBatchMilliCPU
+	}
+
+	return float64(batchCPUQuant.Value())
 }
 
 func isSatisfactionConfigValid(thresholdConfig *slov1alpha1.ResourceThresholdStrategy) bool {

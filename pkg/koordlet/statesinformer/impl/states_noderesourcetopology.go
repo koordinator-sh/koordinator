@@ -99,7 +99,7 @@ func (n *nodeTopologyStatus) updateNRT(nrt *v1alpha1.NodeResourceTopology) {
 	nrt.TopologyPolicies = []string{string(n.TopologyPolicy)}
 
 	// trim useless zone name and merge with the existing zone list
-	nrt.Zones = util.MergeZoneList(nrt.Zones, n.Zones)
+	nrt.Zones = util.MergeZoneList(util.TrimDifferentZone(nrt.Zones, n.Zones), n.Zones)
 }
 
 type nodeTopoInformer struct {
@@ -270,7 +270,7 @@ func (s *nodeTopoInformer) calcNodeTopo() (*nodeTopologyStatus, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to GetKubeletConfiguration, err: %v", err)
 		}
-		klog.V(5).Infof("kubelet args: %v", kubeletConfiguration)
+		klog.V(6).Infof("kubelet args: %+v", kubeletConfiguration)
 
 		// default policy is none
 		cpuManagerPolicy = extension.KubeletCPUManagerPolicy{
@@ -560,11 +560,16 @@ func (s *nodeTopoInformer) reportNodeTopology() {
 
 		// TODO need to separate the local update and remote update
 		// do local update
-		if islocalNRTChanged, msg := nodeTopoResult.isChanged(s.GetNodeTopo()); islocalNRTChanged {
+		if islocalNRTChanged, msg := nodeTopoResult.isChanged(s.GetNodeTopo()); !islocalNRTChanged {
+			klog.V(6).Infof("no need to update local node topology, node %s", node.Name)
+		} else {
 			klog.V(4).Infof("need to update local node topology, node %s, reason: %s", node.Name, msg)
 			s.updateNodeTopo(newNodeResourceTopology)
-		} else {
-			klog.V(4).Infof("no need to update local node topology, node %s, reason: %s", node.Name, msg)
+		}
+
+		if !isReportEnabled {
+			klog.V(6).Infof("skip report node topology since reporting is disabled")
+			return nil
 		}
 
 		// do remote update
@@ -574,13 +579,6 @@ func (s *nodeTopoInformer) reportNodeTopology() {
 		} else {
 			klog.V(4).Infof("need to update node topology, node %s, reason: %s", node.Name, msg)
 		}
-
-		if !isReportEnabled {
-			klog.V(6).Infof("skip report node topology since reporting is disabled")
-			return nil
-		}
-
-		// do remote UPDATE
 		_, err = s.topologyClient.TopologyV1alpha1().NodeResourceTopologies().Update(context.TODO(), newNodeResourceTopology, metav1.UpdateOptions{})
 		if err != nil {
 			klog.Errorf("failed to report node topology, node %s, err: %v", node.Name, err)
@@ -604,29 +602,17 @@ func isEqualNRTZones(oldZones, newZones v1alpha1.ZoneList) (bool, string) {
 		newZone := oldZones[i]
 		oldZone := newZones[i]
 
+		// Zone name and type are maintained by the agent, while the resources field can be updated by other components.
 		if newZone.Name != oldZone.Name {
 			return false, fmt.Sprintf("zone %v name", i)
 		}
 		if newZone.Type != oldZone.Type {
 			return false, fmt.Sprintf("zone %v type", i)
 		}
+	}
 
-		if len(newZone.Resources) != len(oldZone.Resources) {
-			return false, fmt.Sprintf("zone %v resources number", i)
-		}
-		for j := range newZone.Resources {
-			newRes := newZone.Resources[j]
-			oldRes := oldZone.Resources[j]
-			if newRes.Name != oldRes.Name {
-				return false, fmt.Sprintf("zone %v resource %v name", i, j)
-			}
-			if !newRes.Allocatable.Equal(oldRes.Allocatable) {
-				return false, fmt.Sprintf("zone %v resource %v allocatable", i, j)
-			}
-			if !newRes.Capacity.Equal(oldRes.Capacity) {
-				return false, fmt.Sprintf("zone %v resource %v capacity", i, j)
-			}
-		}
+	if !util.IsZoneListResourceEqual(oldZones, newZones, string(corev1.ResourceCPU), string(corev1.ResourceMemory)) {
+		return false, "resources"
 	}
 
 	return true, ""

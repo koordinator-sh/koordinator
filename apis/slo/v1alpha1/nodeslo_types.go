@@ -209,6 +209,13 @@ const (
 	CPUCfsQuotaPolicy CPUSuppressPolicy = "cfsQuota"
 )
 
+type CPUEvictPolicy string
+
+const (
+	EvictByRealLimitPolicy   CPUEvictPolicy = "evictByRealLimit"
+	EvictByAllocatablePolicy CPUEvictPolicy = "evictByAllocatable"
+)
+
 type ResourceThresholdStrategy struct {
 	// whether the strategy is enabled, default = false
 	Enable *bool `json:"enable,omitempty"`
@@ -241,6 +248,9 @@ type ResourceThresholdStrategy struct {
 	// when avg(cpuusage) > CPUEvictThresholdPercent, will start to evict pod by cpu,
 	// and avg(cpuusage) is calculated based on the most recent CPUEvictTimeWindowSeconds data
 	CPUEvictTimeWindowSeconds *int64 `json:"cpuEvictTimeWindowSeconds,omitempty" validate:"omitempty,gt=0"`
+	// CPUEvictPolicy defines the policy for the BECPUEvict feature.
+	// Default: `evictByRealLimit`.
+	CPUEvictPolicy CPUEvictPolicy `json:"cpuEvictPolicy,omitempty"`
 }
 
 // ResctrlQOSCfg stores node-level config of resctrl qos

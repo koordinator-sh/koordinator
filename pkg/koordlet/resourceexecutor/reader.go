@@ -101,7 +101,7 @@ func (r *CgroupV1Reader) ReadCPUSet(parentDir string) (*cpuset.CPUSet, error) {
 	}
 	s, err := cgroupFileRead(parentDir, resource)
 	if err != nil {
-		return nil, fmt.Errorf("cannot read cgroup file, err: %v", err)
+		return nil, err
 	}
 
 	v, err := cpuset.Parse(s)
@@ -126,7 +126,7 @@ func (r *CgroupV1Reader) ReadCPUStat(parentDir string) (*sysutil.CPUStatRaw, err
 	}
 	s, err := cgroupFileRead(parentDir, resource)
 	if err != nil {
-		return nil, fmt.Errorf("cannot read cgroup file, err: %v", err)
+		return nil, err
 	}
 	// content: "nr_periods 0\nnr_throttled 0\nthrottled_time 0\n..."
 	v, err := sysutil.ParseCPUStatRaw(s)
@@ -159,7 +159,7 @@ func (r *CgroupV1Reader) ReadMemoryStat(parentDir string) (*sysutil.MemoryStatRa
 	}
 	s, err := cgroupFileRead(parentDir, resource)
 	if err != nil {
-		return nil, fmt.Errorf("cannot read cgroup file, err: %v", err)
+		return nil, err
 	}
 	// content: `...total_inactive_anon $total_inactive_anon\ntotal_active_anon $total_active_anon\n
 	//           total_inactive_file $total_inactive_file\ntotal_active_file $total_active_file\n
@@ -178,7 +178,7 @@ func (r *CgroupV1Reader) ReadMemoryNumaStat(parentDir string) ([]sysutil.NumaMem
 	}
 	s, err := cgroupFileRead(parentDir, resource)
 	if err != nil {
-		return nil, fmt.Errorf("cannot read cgroup file, err: %v", err)
+		return nil, err
 	}
 	// `total=42227 N0=42184 N1=...\nfile=40094 N0=40126 N1=...\nanon=2133 N0=2058 N1=...\nunevictable=0 N0=0\n...`
 	// the unit is page
@@ -229,7 +229,7 @@ func (r *CgroupV2Reader) ReadCPUPeriod(parentDir string) (int64, error) {
 	}
 	s, err := cgroupFileRead(parentDir, resource)
 	if err != nil {
-		return -1, fmt.Errorf("cannot read cgroup file, err: %v", err)
+		return -1, err
 	}
 
 	// content: "max 100000", "100000 100000"
@@ -263,7 +263,7 @@ func (r *CgroupV2Reader) ReadCPUSet(parentDir string) (*cpuset.CPUSet, error) {
 	}
 	s, err := cgroupFileRead(parentDir, resource)
 	if err != nil {
-		return nil, fmt.Errorf("cannot read cgroup file, err: %v", err)
+		return nil, err
 	}
 
 	v, err := cpuset.Parse(s)
@@ -280,7 +280,7 @@ func (r *CgroupV2Reader) ReadCPUAcctUsage(parentDir string) (uint64, error) {
 	}
 	s, err := cgroupFileRead(parentDir, resource)
 	if err != nil {
-		return 0, fmt.Errorf("cannot read cgroup file, err: %v", err)
+		return 0, err
 	}
 	// content: "usage_usec 1000000\nuser_usec 800000\nsystem_usec 200000\n..."
 	v, err := sysutil.ParseCPUAcctUsageV2(s)
@@ -297,7 +297,7 @@ func (r *CgroupV2Reader) ReadCPUStat(parentDir string) (*sysutil.CPUStatRaw, err
 	}
 	s, err := cgroupFileRead(parentDir, resource)
 	if err != nil {
-		return nil, fmt.Errorf("cannot read cgroup file, err: %v", err)
+		return nil, err
 	}
 	// content: "...\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\n..."
 	v, err := sysutil.ParseCPUStatRawV2(s)
@@ -322,7 +322,7 @@ func (r *CgroupV2Reader) ReadMemoryStat(parentDir string) (*sysutil.MemoryStatRa
 	}
 	s, err := cgroupFileRead(parentDir, resource)
 	if err != nil {
-		return nil, fmt.Errorf("cannot read cgroup file, err: %v", err)
+		return nil, err
 	}
 	// content: `anon 0\nfile 0\nkernel_stack 0\n...inactive_anon 0\nactive_anon 0\n...`
 	v, err := sysutil.ParseMemoryStatRawV2(s)
@@ -339,7 +339,7 @@ func (r *CgroupV2Reader) ReadMemoryNumaStat(parentDir string) ([]sysutil.NumaMem
 	}
 	s, err := cgroupFileRead(parentDir, resource)
 	if err != nil {
-		return nil, fmt.Errorf("cannot read cgroup file, err: %v", err)
+		return nil, err
 	}
 	// `anon N0=193236992 N1=...\nfile N0=1367764992 N1=...`
 	// the unit is byte, 2Kbyte -> a page

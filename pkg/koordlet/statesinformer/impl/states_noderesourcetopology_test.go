@@ -618,6 +618,60 @@ func Test_reportNodeTopology(t *testing.T) {
 			},
 		},
 	}
+	oldZones1 := topologyv1alpha1.ZoneList{
+		{
+			Name: "fake-name",
+			Type: util.NodeZoneType,
+		},
+		{
+			Name: "node-0",
+			Type: util.NodeZoneType,
+			Resources: topologyv1alpha1.ResourceInfoList{
+				{
+					Name:        "cpu",
+					Capacity:    *resource.NewQuantity(2, resource.DecimalSI),
+					Allocatable: *resource.NewQuantity(2, resource.DecimalSI),
+					Available:   *resource.NewQuantity(2, resource.DecimalSI),
+				},
+				{
+					Name:        "gpu",
+					Capacity:    *resource.NewQuantity(1, resource.DecimalSI),
+					Allocatable: *resource.NewQuantity(1, resource.DecimalSI),
+					Available:   *resource.NewQuantity(1, resource.DecimalSI),
+				},
+				{
+					Name:        "memory",
+					Capacity:    *resource.NewQuantity(269755191296, resource.BinarySI),
+					Allocatable: *resource.NewQuantity(269755191296, resource.BinarySI),
+					Available:   *resource.NewQuantity(269755191296, resource.BinarySI),
+				},
+			},
+		},
+		{
+			Name: "node-1",
+			Type: util.NodeZoneType,
+			Resources: topologyv1alpha1.ResourceInfoList{
+				{
+					Name:        "cpu",
+					Capacity:    *resource.NewQuantity(2, resource.DecimalSI),
+					Allocatable: *resource.NewQuantity(2, resource.DecimalSI),
+					Available:   *resource.NewQuantity(2, resource.DecimalSI),
+				},
+				{
+					Name:        "gpu",
+					Capacity:    *resource.NewQuantity(1, resource.DecimalSI),
+					Allocatable: *resource.NewQuantity(1, resource.DecimalSI),
+					Available:   *resource.NewQuantity(1, resource.DecimalSI),
+				},
+				{
+					Name:        "memory",
+					Capacity:    *resource.NewQuantity(269754368000, resource.BinarySI),
+					Allocatable: *resource.NewQuantity(269754368000, resource.BinarySI),
+					Available:   *resource.NewQuantity(269754368000, resource.BinarySI),
+				},
+			},
+		},
+	}
 
 	tests := []struct {
 		name                            string
@@ -752,6 +806,31 @@ func Test_reportNodeTopology(t *testing.T) {
 				},
 			},
 			oldZoneList: &oldZones,
+			expectedKubeletCPUManagerPolicy: extension.KubeletCPUManagerPolicy{
+				Policy:       "static",
+				ReservedCPUs: "0-1",
+			},
+			expectedCPUBasicInfo:     string(expectedCPUBasicInfoBytes),
+			expectedCPUSharedPool:    expectedCPUSharedPool,
+			expectedBECPUSharedPool:  expectedBECPUSharedPool,
+			expectedCPUTopology:      expectedCPUTopology,
+			expectedNodeReservation:  "{}",
+			expectedSystemQOS:        "{}",
+			expectedTopologyPolicies: expectedTopologyPolices,
+			expectedZones:            mergedZones,
+		},
+		{
+			name:   "report topology and trim expired zone",
+			config: NewDefaultConfig(),
+			kubeletStub: &testKubeletStub{
+				config: &kubeletconfiginternal.KubeletConfiguration{
+					CPUManagerPolicy: "static",
+					KubeReserved: map[string]string{
+						"cpu": "2000m",
+					},
+				},
+			},
+			oldZoneList: &oldZones1,
 			expectedKubeletCPUManagerPolicy: extension.KubeletCPUManagerPolicy{
 				Policy:       "static",
 				ReservedCPUs: "0-1",

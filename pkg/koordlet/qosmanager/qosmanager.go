@@ -113,7 +113,7 @@ func (r *qosManager) Run(stopCh <-chan struct{}) error {
 	}
 
 	for name, strategy := range r.context.Strategies {
-		klog.V(4).Infof("reaady to start qos strategy %v", name)
+		klog.V(4).Infof("ready to start qos strategy %v", name)
 		if !strategy.Enabled() {
 			klog.V(4).Infof("qos strategy %v is not enabled, skip running", name)
 			continue
