@@ -5,8 +5,8 @@ on:
     branches:
       - main
       - release-*
-  pull_request: { }
-  workflow_dispatch: { }
+  pull_request: {}
+  workflow_dispatch: {}
 
 jobs:
   golangci-lint:
@@ -26,6 +26,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        os: [ubuntu-latest, macos-latest]
         include:
           - step: mod
             name: Check Go modules
@@ -49,7 +50,7 @@ jobs:
             name: Run Go test
             command: make fast-test
     name: unit-tests(${{ matrix.name }})
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v4
@@ -77,13 +78,13 @@ jobs:
           fail_ci_if_error: true
 
   build-and-push:
-    needs: [ golangci-lint, unit-tests ]
+    needs: [golangci-lint, unit-tests]
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        target: [ koordlet, koord-manager, koord-scheduler, koord-descheduler ]
+        target: [koordlet, koord-manager, koord-scheduler, koord-descheduler]
     env:
       GITHUB_REG: ghcr.io
       ALIYUN_BJ_REG: registry.cn-beijing.aliyuncs.com
