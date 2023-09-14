@@ -206,11 +206,11 @@ func (r *CgroupV1Reader) ReadMemoryColdPageUsage(parentDir string) (uint64, erro
 	}
 	s, err := cgroupFileRead(parentDir, resource)
 	if err != nil {
-		return 0, fmt.Errorf("cannot read cgroup file, err: %v", err)
+		return 0, err
 	}
 	v, err := sysutil.ParseMemoryIdlePageStats(s)
 	if err != nil {
-		return 0, fmt.Errorf("cannot parse cgroup value %s, err: %v", s, err)
+		return 0, err
 	}
 	return v.GetColdPageTotalBytes(), nil
 }
@@ -408,11 +408,11 @@ func (r *CgroupV2Reader) ReadMemoryColdPageUsage(parentDir string) (uint64, erro
 	}
 	s, err := cgroupFileRead(parentDir, resource)
 	if err != nil {
-		return 0, fmt.Errorf("cannot read cgroup file, err: %v", err)
+		return 0, err
 	}
 	v, err := sysutil.ParseMemoryIdlePageStats(s)
 	if err != nil {
-		return 0, fmt.Errorf("cannot parse cgroup value %s, err: %v", s, err)
+		return 0, err
 	}
 	return v.GetColdPageTotalBytes(), nil
 }

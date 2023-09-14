@@ -46,7 +46,7 @@ func NewDefaultConfig() *Config {
 		CPICollectorInterval:             60 * time.Second,
 		PSICollectorInterval:             10 * time.Second,
 		CPICollectorTimeWindow:           10 * time.Second,
-		ColdPageCollectorInterval:        1 * time.Second,
+		ColdPageCollectorInterval:        5 * time.Second,
 	}
 }
 

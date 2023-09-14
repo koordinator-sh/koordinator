@@ -54,8 +54,7 @@ func (k *kidledcoldPageCollector) Started() bool {
 }
 
 func (k *kidledcoldPageCollector) Enabled() bool {
-	kidledEnabled := features.DefaultKoordletFeatureGate.Enabled(features.ColdPageCollector)
-	if kidledEnabled {
+	if features.DefaultKoordletFeatureGate.Enabled(features.ColdPageCollector) {
 		// set scan_period_in_seconds and use_hierarchy
 		// start kidled
 		kidledConfig := system.NewDefaultKidledConfig()
@@ -71,7 +70,7 @@ func (k *kidledcoldPageCollector) Enabled() bool {
 		}
 		system.SetIsStartColdMemory(true)
 	}
-	return kidledEnabled
+	return true
 }
 
 func (k *kidledcoldPageCollector) Setup(c1 *framework.Context) {}
@@ -153,7 +152,7 @@ func (k *kidledcoldPageCollector) collectPodsColdPageInfo() ([]metriccache.Metri
 		podCgroupDir := meta.CgroupDir
 		podColdPageBytes, err := k.cgroupReader.ReadMemoryColdPageUsage(podCgroupDir)
 		if err != nil {
-			klog.Errorf("can not get cold page info from memory.idle_page_stats file for pod %s/%s", pod.Namespace, pod.Name)
+			klog.Warningf("can not get cold page info from memory.idle_page_stats file for pod %s/%s", pod.Namespace, pod.Name)
 			continue
 		}
 		podColdPageBytesValue := float64(podColdPageBytes)
@@ -167,9 +166,9 @@ func (k *kidledcoldPageCollector) collectPodsColdPageInfo() ([]metriccache.Metri
 		if err != nil {
 			// higher verbosity for probably non-running pods
 			if pod.Status.Phase != corev1.PodRunning && pod.Status.Phase != corev1.PodPending {
-				klog.Warningf("failed to collect non-running pod usage for Memory err: %s", err)
+				klog.Warningf("failed to collect non-running pod usage for Memory err: %s pod: %s/%s", err, pod.Namespace, pod.Name)
 			} else {
-				klog.Warningf("failed to collect pod usage for Memory err: %s", err)
+				klog.Warningf("failed to collect pod usage for Memory err: %s pod %s/%s", err, pod.Namespace, pod.Name)
 			}
 			continue
 		}
@@ -200,18 +199,18 @@ func (k *kidledcoldPageCollector) collectContainersColdPageInfo(meta *statesinfo
 		containerKey := fmt.Sprintf("%s/%s/%s", pod.Namespace, pod.Name, containerStat.Name)
 		collectTime := time.Now()
 		if len(containerStat.ContainerID) == 0 {
-			klog.Error("container %s id is empty, maybe not ready, skip this round", containerKey)
+			klog.Warningf("container %s id is empty, maybe not ready, skip this round", containerKey)
 			continue
 		}
 		containerCgroupDir, err := koordletutil.GetContainerCgroupParentDir(meta.CgroupDir, containerStat)
 		if err != nil {
-			klog.Error("failed to collect container usage for %s, cannot get container cgroup, err: %s",
+			klog.Warningf("failed to collect container usage for %s, cannot get container cgroup, err: %s",
 				containerKey, err)
 			continue
 		}
 		containerColdPageBytes, err := k.cgroupReader.ReadMemoryColdPageUsage(containerCgroupDir)
 		if err != nil {
-			klog.Errorf("can not get cold page info from memory.idle_page_stats file for container %s", containerKey)
+			klog.Warningf("can not get cold page info from memory.idle_page_stats file for container %s", containerKey)
 			continue
 		}
 		containerColdPageBytesValue := float64(containerColdPageBytes)

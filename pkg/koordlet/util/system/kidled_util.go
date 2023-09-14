@@ -33,6 +33,8 @@ var (
 	isStartColdMemory   *atomic.Bool = atomic.NewBool(false)
 )
 
+// the unit of Csei, Dsei, Cfei ... is byte
+// the detailed description can be seen in https://github.com/alibaba/cloud-kernel/blob/linux-next/Documentation/vm/kidled.rst
 type ColdPageInfoByKidled struct {
 	Version             string   `json:"version"`
 	PageScans           uint64   `json:"page_scans"`
