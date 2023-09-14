@@ -25,6 +25,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/perf"
+	perfgroup "github.com/koordinator-sh/koordinator/pkg/koordlet/util/perf_group"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 )
 
@@ -62,6 +63,23 @@ func GetCPUStatUsageTicks() (uint64, error) {
 	return readTotalCPUStat(statPath)
 }
 
+func GetContainerPerfGroupCollector(podCgroupDir string, c *corev1.ContainerStatus, number int32, events []string) (*perfgroup.PerfGroupCollector, error) {
+	cpus := make([]int, number)
+	for i := range cpus {
+		cpus[i] = i
+	}
+	// get file descriptor for cgroup mode perf_event_open
+	containerCgroupFile, err := getContainerCgroupFile(podCgroupDir, c)
+	if err != nil {
+		return nil, err
+	}
+	collector, err := perfgroup.GetAndStartPerfGroupCollectorOnContainer(containerCgroupFile, cpus, events)
+	if err != nil {
+		return nil, err
+	}
+	return collector, nil
+}
+
 func GetContainerPerfCollector(podCgroupDir string, c *corev1.ContainerStatus, number int32) (*perf.PerfCollector, error) {
 	cpus := make([]int, number)
 	for i := range cpus {
@@ -79,8 +97,12 @@ func GetContainerPerfCollector(podCgroupDir string, c *corev1.ContainerStatus, n
 	return collector, nil
 }
 
-func GetContainerCyclesAndInstructions(collector *perf.PerfCollector) (float64, float64, error) {
-	return perf.GetContainerCyclesAndInstructions(collector)
+func GetContainerCyclesAndInstructions(collector perf.Collector) (float64, float64, error) {
+	if pc, ok := collector.(*perfgroup.PerfGroupCollector); ok {
+		return perfgroup.GetContainerCyclesAndInstructionsGroup(pc)
+	} else {
+		return perf.GetContainerCyclesAndInstructions(collector.(*perf.PerfCollector))
+	}
 }
 
 func getContainerCgroupFile(podCgroupDir string, c *corev1.ContainerStatus) (*os.File, error) {

@@ -37,6 +37,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/perf"
+	perfgroup "github.com/koordinator-sh/koordinator/pkg/koordlet/util/perf_group"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 	tools "github.com/koordinator-sh/koordinator/pkg/util"
 )
@@ -66,7 +67,12 @@ func New(opt *framework.Options) framework.Collector {
 }
 
 func (p *performanceCollector) Enabled() bool {
+	// TODO: add tma analyze feature gate
 	return features.DefaultKoordletFeatureGate.Enabled(features.CPICollector) || features.DefaultKoordletFeatureGate.Enabled(features.PSICollector)
+}
+
+func (p *performanceCollector) EnabledPerf() bool {
+	return features.DefaultKoordletFeatureGate.Enabled(features.CPICollector)
 }
 
 func (p *performanceCollector) Setup(s *framework.Context) {}
@@ -79,9 +85,31 @@ func (p *performanceCollector) Run(stopCh <-chan struct{}) {
 	if features.DefaultKoordletFeatureGate.Enabled(features.PSICollector) {
 		p.collectPSI(stopCh)
 	}
-	if features.DefaultKoordletFeatureGate.Enabled(features.CPICollector) {
-		go wait.Until(p.collectContainerCPI, p.cpiCollectInterval, stopCh)
+	if p.EnabledPerf() {
+		if features.DefaultKoordletFeatureGate.Enabled(features.Libpfm4) {
+			perfgroup.LibInit()
+			eventsMap := p.getLibpfm4EventMap()
+			// init perf buffer pool for different perf group collectors
+			perfgroup.InitBufferPool(eventsMap)
+
+			go func() {
+				<-stopCh
+				perfgroup.LibFinalize()
+			}()
+		}
+
+		if features.DefaultKoordletFeatureGate.Enabled(features.CPICollector) {
+			go wait.Until(p.collectContainerCPI, p.cpiCollectInterval, stopCh)
+		}
 	}
+}
+
+func (p *performanceCollector) getLibpfm4EventMap() map[int]struct{} {
+	eventsMap := make(map[int]struct{})
+	if features.DefaultKoordletFeatureGate.Enabled(features.CPICollector) {
+		eventsMap[len(perfgroup.EventsMap[string(features.CPICollector)])] = struct{}{}
+	}
+	return eventsMap
 }
 
 func (p *performanceCollector) Started() bool {
@@ -111,13 +139,13 @@ func (p *performanceCollector) collectContainerCPI() {
 	}
 	nodeCPUInfo, ok := nodeCPUInfoRaw.(*metriccache.NodeCPUInfo)
 	if !ok {
-		klog.Fatalf("type error, expect %T， but got %T", metriccache.NodeCPUInfo{}, nodeCPUInfoRaw)
+		klog.Fatalf("type error, expect %T, but got %T", metriccache.NodeCPUInfo{}, nodeCPUInfoRaw)
 	}
 	cpuNumber := nodeCPUInfo.TotalInfo.NumberCPUs
 	for containerStatus, parentPod := range containerStatusesMap {
 		go func(status *corev1.ContainerStatus, parent string) {
 			defer wg.Done()
-			collectorOnSingleContainer, err := p.getAndStartCollectorOnSingleContainer(parent, status, cpuNumber)
+			collectorOnSingleContainer, err := p.getAndStartCollectorOnSingleContainer(parent, status, cpuNumber, perfgroup.EventsMap["CPICollector"])
 			if err != nil {
 				return
 			}
@@ -142,12 +170,7 @@ func (p *performanceCollector) collectContainerCPI() {
 			if !ok {
 				return
 			}
-			perfCollector, ok := oneCollector.(*perf.PerfCollector)
-			if !ok {
-				klog.Errorf("PerfCollector type convert failed")
-				return
-			}
-			metrics := p.profilePerfOnSingleContainer(status, perfCollector, pod)
+			metrics := p.profileCPIOnSingleContainer(status, oneCollector, pod)
 			mutex.Lock()
 			cpiMetrics = append(cpiMetrics, metrics...)
 			mutex.Unlock()
@@ -163,16 +186,25 @@ func (p *performanceCollector) collectContainerCPI() {
 		timeWindow, time.Now(), len(containerStatusesMap))
 }
 
-func (p *performanceCollector) getAndStartCollectorOnSingleContainer(podParentCgroupDir string, containerStatus *corev1.ContainerStatus, number int32) (*perf.PerfCollector, error) {
-	perfCollector, err := util.GetContainerPerfCollector(podParentCgroupDir, containerStatus, number)
-	if err != nil {
-		klog.Errorf("get and start container %s collector err: %v", containerStatus.Name, err)
-		return nil, err
+func (p *performanceCollector) getAndStartCollectorOnSingleContainer(podParentCgroupDir string, containerStatus *corev1.ContainerStatus, number int32, events []string) (perf.Collector, error) {
+	if features.DefaultKoordletFeatureGate.Enabled(features.Libpfm4) {
+		perfCollector, err := util.GetContainerPerfGroupCollector(podParentCgroupDir, containerStatus, number, events)
+		if err != nil {
+			klog.Errorf("get and start container %s collector err: %v", containerStatus.Name, err)
+			return nil, err
+		}
+		return perfCollector, nil
+	} else {
+		perfCollector, err := util.GetContainerPerfCollector(podParentCgroupDir, containerStatus, number)
+		if err != nil {
+			klog.Errorf("get and start container %s collector err: %v", containerStatus.Name, err)
+			return nil, err
+		}
+		return perfCollector, nil
 	}
-	return perfCollector, nil
 }
 
-func (p *performanceCollector) profilePerfOnSingleContainer(status *corev1.ContainerStatus, collectorOnSingleContainer *perf.PerfCollector, pod *corev1.Pod) []metriccache.MetricSample {
+func (p *performanceCollector) profileCPIOnSingleContainer(status *corev1.ContainerStatus, collectorOnSingleContainer perf.Collector, pod *corev1.Pod) []metriccache.MetricSample {
 	collectTime := time.Now()
 	cpiMetrics := make([]metriccache.MetricSample, 0)
 	cycles, instructions, err := util.GetContainerCyclesAndInstructions(collectorOnSingleContainer)
@@ -191,9 +223,8 @@ func (p *performanceCollector) profilePerfOnSingleContainer(status *corev1.Conta
 
 	cpiMetrics = append(cpiMetrics, cpiCycle, cpiInstruction)
 
-	err1 := collectorOnSingleContainer.CleanUp()
-	if err1 != nil {
-		klog.Errorf("collectorOnSingleContainer cleanup err : %v", err1)
+	if !features.DefaultKoordletFeatureGate.Enabled(features.Libpfm4) {
+		defer collectorOnSingleContainer.(*perf.PerfCollector).CleanUp()
 	}
 
 	metrics.RecordContainerCPI(status, pod, cycles, instructions)

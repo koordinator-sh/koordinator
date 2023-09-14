@@ -167,3 +167,5 @@ func (c *PerfCollector) CleanUp() error {
 	}
 	return nil
 }
+
+type Collector interface{}

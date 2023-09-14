@@ -17,6 +17,7 @@ jobs:
         with:
           cache: false
           go-version-file: go.mod
+      - run: sudo apt update && sudo apt install -y libpfm4 libpfm4-dev
       - uses: golangci/golangci-lint-action@v3
         with:
           version: v1.47.3
@@ -65,6 +66,7 @@ jobs:
             ${{ runner.os }}-ut-${{ matrix.step }}-
       - name: ${{ matrix.name }}
         run: |
+          sudo apt update && sudo apt install -y libpfm4 libpfm4-dev
           ${{ matrix.command }}
       - if: matrix.step == 'test'
         name: Upload coverage to Codecov

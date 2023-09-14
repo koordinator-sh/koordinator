@@ -20,12 +20,13 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"syscall"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/perf"
+	perfgroup "github.com/koordinator-sh/koordinator/pkg/koordlet/util/perf_group"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 )
 
@@ -96,11 +97,16 @@ func Test_GetCPUStatUsageTicks(t *testing.T) {
 }
 
 func Test_GetContainerCyclesAndInstructions(t *testing.T) {
+	perfgroup.LibInit()
+	perfgroup.InitBufferPool(map[int]struct{}{
+		2: {},
+	})
 	tempDir := t.TempDir()
 	f, _ := os.OpenFile(tempDir, os.O_RDONLY, os.ModeDir)
-	collector, _ := perf.NewPerfCollector(f, []int{})
-	_, _, err := GetContainerCyclesAndInstructions(collector)
+	collector, _ := perfgroup.NewPerfGroupCollector(f, []int{}, []string{"cycles", "instructions"}, syscall.Syscall6)
+	_, _, err := perfgroup.GetContainerCyclesAndInstructionsGroup(collector)
 	assert.Nil(t, err)
+	perfgroup.LibFinalize()
 }
 
 func Test_GetContainerPerfCollector(t *testing.T) {
@@ -109,7 +115,7 @@ func Test_GetContainerPerfCollector(t *testing.T) {
 		ContainerID: "containerd://test",
 	}
 	assert.NotPanics(t, func() {
-		_, err := GetContainerPerfCollector(tempDir, containerStatus, 1)
+		_, err := GetContainerPerfGroupCollector(tempDir, containerStatus, 1, []string{"cycles", "instructions"})
 		if err != nil {
 			return
 		}
@@ -117,6 +123,6 @@ func Test_GetContainerPerfCollector(t *testing.T) {
 	wrongContainerStatus := &corev1.ContainerStatus{
 		ContainerID: "wrong-container-status-test",
 	}
-	_, err := GetContainerPerfCollector(tempDir, wrongContainerStatus, 1)
+	_, err := GetContainerPerfGroupCollector(tempDir, wrongContainerStatus, 1, []string{"cycles", "instructions"})
 	assert.NotNil(t, err)
 }
