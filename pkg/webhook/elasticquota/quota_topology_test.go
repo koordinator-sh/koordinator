@@ -343,6 +343,13 @@ func TestQuotaTopology_checkMinQuotaSum(t *testing.T) {
 			eraseSub: true,
 			err:      fmt.Errorf("error"),
 		},
+		{
+			name:        "parent no resource",
+			parentQuota: MakeQuota("temp-no-min").IsParent(true).Obj(),
+			quota: MakeQuota("sub-1").ParentName("temp-no-min").Max(MakeResourceList().CPU(120).Mem(1048576).Obj()).
+				Min(MakeResourceList().CPU(19).Mem(51200).Obj()).IsParent(false).Obj(),
+			err: fmt.Errorf("error"),
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

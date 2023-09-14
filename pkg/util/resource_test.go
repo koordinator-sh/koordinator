@@ -1067,3 +1067,82 @@ func TestIsZoneListResourceEqual(t *testing.T) {
 		})
 	}
 }
+
+func TestLessThanOrEqualEnhanced(t *testing.T) {
+	tests := []struct {
+		name   string
+		a      corev1.ResourceList
+		b      corev1.ResourceList
+		expect bool
+	}{
+		{
+			name: "a = b",
+			a: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewQuantity(10, resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(1024, resource.BinarySI),
+			},
+			b: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewQuantity(10, resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(1024, resource.BinarySI),
+			},
+			expect: true,
+		},
+		{
+			name: "a < b",
+			a: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewQuantity(10, resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(1024, resource.BinarySI),
+			},
+			b: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewQuantity(20, resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(1024, resource.BinarySI),
+			},
+			expect: true,
+		},
+		{
+			name: "a > b",
+			a: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewQuantity(20, resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(1024, resource.BinarySI),
+			},
+			b: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewQuantity(10, resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(1024, resource.BinarySI),
+			},
+			expect: false,
+		},
+		{
+			name: "b not exist",
+			a: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewQuantity(10, resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(1024, resource.BinarySI),
+			},
+			b:      corev1.ResourceList{},
+			expect: false,
+		},
+		{
+			name: "a not exist",
+			a:    corev1.ResourceList{},
+			b: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewQuantity(10, resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(1024, resource.BinarySI),
+			},
+			expect: true,
+		},
+		{
+			name: "b is neg",
+			a:    corev1.ResourceList{},
+			b: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewQuantity(-10, resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(1024, resource.BinarySI),
+			},
+			expect: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.expect, LessThanOrEqualEnhanced(tt.a, tt.b))
+		})
+	}
+}
