@@ -26,6 +26,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        os: [ubuntu-latest, macos-latest]
         include:
           - step: mod
             name: Check Go modules
@@ -49,7 +50,7 @@ jobs:
             name: Run Go test
             command: make fast-test
     name: unit-tests(${{ matrix.name }})
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v4
@@ -71,6 +72,7 @@ jobs:
       - if: matrix.step == 'test'
         name: Upload coverage to Codecov
         uses: codecov/codecov-action@v3
+        if: matrix.os == 'ubuntu-latest'
         with:
           flags: unittests
           file: cover.out
