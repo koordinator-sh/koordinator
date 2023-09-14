@@ -55,25 +55,27 @@ type ResourceOptions struct {
 	cpuBindPolicy         schedulingconfig.CPUBindPolicy
 	cpuExclusivePolicy    schedulingconfig.CPUExclusivePolicy
 	preferredCPUs         cpuset.CPUSet
+	reusableResources     map[int]corev1.ResourceList
 	hint                  topologymanager.NUMATopologyHint
+	topologyOptions       TopologyOptions
 }
 
 type resourceManager struct {
-	numaAllocateStrategy schedulingconfig.NUMAAllocateStrategy
-	topologyManager      TopologyOptionsManager
-	lock                 sync.Mutex
-	allocationStates     map[string]*NodeAllocation
+	numaAllocateStrategy   schedulingconfig.NUMAAllocateStrategy
+	topologyOptionsManager TopologyOptionsManager
+	lock                   sync.Mutex
+	nodeAllocations        map[string]*NodeAllocation
 }
 
 func NewResourceManager(
 	handle framework.Handle,
 	defaultNUMAAllocateStrategy schedulingconfig.NUMAAllocateStrategy,
-	topologyManager TopologyOptionsManager,
+	topologyOptionsManager TopologyOptionsManager,
 ) ResourceManager {
 	manager := &resourceManager{
-		numaAllocateStrategy: defaultNUMAAllocateStrategy,
-		topologyManager:      topologyManager,
-		allocationStates:     map[string]*NodeAllocation{},
+		numaAllocateStrategy:   defaultNUMAAllocateStrategy,
+		topologyOptionsManager: topologyOptionsManager,
+		nodeAllocations:        map[string]*NodeAllocation{},
 	}
 	handle.SharedInformerFactory().Core().V1().Nodes().Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{DeleteFunc: manager.onNodeDelete})
 	return manager
@@ -99,49 +101,33 @@ func (c *resourceManager) onNodeDelete(obj interface{}) {
 	}
 	c.lock.Lock()
 	defer c.lock.Unlock()
-	delete(c.allocationStates, node.Name)
+	delete(c.nodeAllocations, node.Name)
 }
 
 func (c *resourceManager) getOrCreateNodeAllocation(nodeName string) *NodeAllocation {
 	c.lock.Lock()
 	defer c.lock.Unlock()
-	v := c.allocationStates[nodeName]
+	v := c.nodeAllocations[nodeName]
 	if v == nil {
 		v = NewNodeAllocation(nodeName)
-		c.allocationStates[nodeName] = v
+		c.nodeAllocations[nodeName] = v
 	}
 	return v
 }
 
 func (c *resourceManager) GetTopologyHints(node *corev1.Node, pod *corev1.Pod, options *ResourceOptions) (map[string][]topologymanager.NUMATopologyHint, error) {
-	topologyOptions := c.topologyManager.GetTopologyOptions(node.Name)
+	topologyOptions := c.topologyOptionsManager.GetTopologyOptions(node.Name)
 	if len(topologyOptions.NUMANodeResources) == 0 {
 		return nil, fmt.Errorf("insufficient resources on NUMA Node")
 	}
 
-	totalAvailable, _, err := c.getAvailableNUMANodeResources(node.Name)
+	totalAvailable, _, err := c.getAvailableNUMANodeResources(node.Name, options.reusableResources)
 	if err != nil {
 		return nil, err
 	}
 
 	hints := make(map[string][]topologymanager.NUMATopologyHint)
-	podRequests := options.requests.DeepCopy()
-	if options.requestCPUBind {
-		if topologyOptions.CPUTopology == nil || !topologyOptions.CPUTopology.IsValid() {
-			return nil, errors.New(ErrInvalidCPUTopology)
-		}
-		availableCPUs, _, err := c.GetAvailableCPUs(node.Name, options.preferredCPUs)
-		if err != nil {
-			return nil, err
-		}
-		if options.requiredCPUBindPolicy {
-			cpuDetails := topologyOptions.CPUTopology.CPUDetails.KeepOnly(availableCPUs)
-			availableCPUs = filterAvailableCPUsByRequiredCPUBindPolicy(options.cpuBindPolicy, availableCPUs, cpuDetails, topologyOptions.CPUTopology.CPUsPerCore())
-		}
-		result := generateCPUSetHints(topologyOptions.CPUTopology, availableCPUs, options.preferredCPUs, options.numCPUsNeeded)
-		hints[string(corev1.ResourceCPU)] = result
-		delete(podRequests, corev1.ResourceCPU)
-	}
+	podRequests := options.requests
 	nodes := make([]int, 0, len(topologyOptions.NUMANodeResources))
 	for _, v := range topologyOptions.NUMANodeResources {
 		nodes = append(nodes, v.Node)
@@ -178,12 +164,11 @@ func (c *resourceManager) Allocate(node *corev1.Node, pod *corev1.Pod, options *
 }
 
 func (c *resourceManager) allocateResourcesByHint(node *corev1.Node, pod *corev1.Pod, options *ResourceOptions) ([]NUMANodeResource, error) {
-	topologyOptions := c.topologyManager.GetTopologyOptions(node.Name)
-	if len(topologyOptions.NUMANodeResources) == 0 {
+	if len(options.topologyOptions.NUMANodeResources) == 0 {
 		return nil, fmt.Errorf("insufficient resources on NUMA Node")
 	}
 
-	totalAvailable, _, err := c.getAvailableNUMANodeResources(node.Name)
+	totalAvailable, _, err := c.getAvailableNUMANodeResources(node.Name, options.reusableResources)
 	if err != nil {
 		return nil, err
 	}
@@ -215,16 +200,16 @@ func (c *resourceManager) allocateResourcesByHint(node *corev1.Node, pod *corev1
 		}
 	}
 
-	var insufficientResources []string
+	var reasons []string
 	for resourceName, quantity := range requests {
 		if intersectionResources.Has(string(resourceName)) {
 			if !quantity.IsZero() {
-				insufficientResources = append(insufficientResources, string(resourceName))
+				reasons = append(reasons, fmt.Sprintf("Insufficient NUMA %s", resourceName))
 			}
 		}
 	}
-	if len(insufficientResources) > 0 {
-		return nil, fmt.Errorf("insufficient resources: %v", insufficientResources)
+	if len(reasons) > 0 {
+		return nil, framework.NewStatus(framework.Unschedulable, reasons...).AsError()
 	}
 	return result, nil
 }
@@ -252,40 +237,27 @@ func allocateRes(available, request resource.Quantity) (resource.Quantity, resou
 
 func (c *resourceManager) allocateCPUSet(node *corev1.Node, pod *corev1.Pod, options *ResourceOptions) (cpuset.CPUSet, error) {
 	empty := cpuset.CPUSet{}
-	// The Pod requires the CPU to be allocated according to CPUBindPolicy,
-	// but the current node does not have a NodeResourceTopology or a valid CPUTopology,
-	// so this error should be exposed to the user
-	topologyOptions := c.topologyManager.GetTopologyOptions(node.Name)
-	if topologyOptions.CPUTopology == nil {
-		return empty, errors.New(ErrNotFoundCPUTopology)
-	}
-	if !topologyOptions.CPUTopology.IsValid() {
-		return empty, errors.New(ErrInvalidCPUTopology)
-	}
-
 	availableCPUs, allocatedCPUs, err := c.GetAvailableCPUs(node.Name, options.preferredCPUs)
 	if err != nil {
 		return empty, err
 	}
 
+	topologyOptions := &options.topologyOptions
 	if options.requiredCPUBindPolicy {
 		cpuDetails := topologyOptions.CPUTopology.CPUDetails.KeepOnly(availableCPUs)
 		availableCPUs = filterAvailableCPUsByRequiredCPUBindPolicy(options.cpuBindPolicy, availableCPUs, cpuDetails, topologyOptions.CPUTopology.CPUsPerCore())
 	}
 
-	if availableCPUs.IsEmpty() {
-		return empty, fmt.Errorf("insufficient CPUs to bind")
+	if availableCPUs.Size() < options.numCPUsNeeded {
+		return empty, fmt.Errorf("not enough cpus available to satisfy request")
 	}
 
 	result := cpuset.CPUSet{}
 	numaAllocateStrategy := GetNUMAAllocateStrategy(node, c.numaAllocateStrategy)
 	numCPUsNeeded := options.numCPUsNeeded
 	if options.hint.NUMANodeAffinity != nil {
-		alignedCPUs := cpuset.NewCPUSet()
-		for _, numaNodeID := range options.hint.NUMANodeAffinity.GetBits() {
-			cpusInNUMANode := topologyOptions.CPUTopology.CPUDetails.CPUsInNUMANodes(numaNodeID)
-			alignedCPUs = alignedCPUs.Union(availableCPUs.Intersection(cpusInNUMANode))
-		}
+		cpusInNUMANode := topologyOptions.CPUTopology.CPUDetails.CPUsInNUMANodes(options.hint.NUMANodeAffinity.GetBits()...)
+		alignedCPUs := availableCPUs.Intersection(cpusInNUMANode)
 
 		numCPUs := alignedCPUs.Size()
 		if numCPUsNeeded < numCPUs {
@@ -344,7 +316,7 @@ func (c *resourceManager) allocateCPUSet(node *corev1.Node, pod *corev1.Pod, opt
 }
 
 func (c *resourceManager) Update(nodeName string, allocation *PodAllocation) {
-	topologyOptions := c.topologyManager.GetTopologyOptions(nodeName)
+	topologyOptions := c.topologyOptionsManager.GetTopologyOptions(nodeName)
 	if topologyOptions.CPUTopology == nil || !topologyOptions.CPUTopology.IsValid() {
 		return
 	}
@@ -372,7 +344,7 @@ func (c *resourceManager) GetAllocatedCPUSet(nodeName string, podUID types.UID) 
 }
 
 func (c *resourceManager) GetAvailableCPUs(nodeName string, preferredCPUs cpuset.CPUSet) (availableCPUs cpuset.CPUSet, allocated CPUDetails, err error) {
-	topologyOptions := c.topologyManager.GetTopologyOptions(nodeName)
+	topologyOptions := c.topologyOptionsManager.GetTopologyOptions(nodeName)
 	if topologyOptions.CPUTopology == nil {
 		return cpuset.NewCPUSet(), nil, errors.New(ErrNotFoundCPUTopology)
 	}
@@ -391,73 +363,13 @@ func (c *resourceManager) GetNodeAllocation(nodeName string) *NodeAllocation {
 	return c.getOrCreateNodeAllocation(nodeName)
 }
 
-func (c *resourceManager) getAvailableNUMANodeResources(nodeName string) (totalAvailable, totalAllocated map[int]corev1.ResourceList, err error) {
-	topologyOptions := c.topologyManager.GetTopologyOptions(nodeName)
+func (c *resourceManager) getAvailableNUMANodeResources(nodeName string, reusableResources map[int]corev1.ResourceList) (totalAvailable, totalAllocated map[int]corev1.ResourceList, err error) {
+	topologyOptions := c.topologyOptionsManager.GetTopologyOptions(nodeName)
 	nodeAllocation := c.getOrCreateNodeAllocation(nodeName)
 	nodeAllocation.lock.RLock()
 	defer nodeAllocation.lock.RUnlock()
-	totalAvailable, totalAllocated = nodeAllocation.getAvailableNUMANodeResources(topologyOptions)
+	totalAvailable, totalAllocated = nodeAllocation.getAvailableNUMANodeResources(topologyOptions, reusableResources)
 	return totalAvailable, totalAllocated, nil
-}
-
-func generateCPUSetHints(topology *CPUTopology, availableCPUs cpuset.CPUSet, reusableCPUs cpuset.CPUSet, request int) []topologymanager.NUMATopologyHint {
-	// Initialize minAffinitySize to include all NUMA Nodes.
-	numaNodes := topology.CPUDetails.NUMANodes().ToSlice()
-	minAffinitySize := len(numaNodes)
-
-	// Iterate through all combinations of numa nodes bitmask and build hints from them.
-	var hints []topologymanager.NUMATopologyHint
-	bitmask.IterateBitMasks(numaNodes, func(mask bitmask.BitMask) {
-		// First, update minAffinitySize for the current request size.
-		cpusInMask := topology.CPUDetails.CPUsInNUMANodes(mask.GetBits()...).Size()
-		if cpusInMask >= request && mask.Count() < minAffinitySize {
-			minAffinitySize = mask.Count()
-		}
-
-		// Then check to see if we have enough CPUs available on the current
-		// numa node bitmask to satisfy the CPU request.
-		numMatching := 0
-		for _, c := range reusableCPUs.ToSlice() {
-			// Disregard this mask if its NUMANode isn't part of it.
-			if !mask.IsSet(topology.CPUDetails[c].NodeID) {
-				return
-			}
-			numMatching++
-		}
-
-		// Finally, check to see if enough available CPUs remain on the current
-		// NUMA node combination to satisfy the CPU request.
-		for _, c := range availableCPUs.ToSlice() {
-			if mask.IsSet(topology.CPUDetails[c].NodeID) {
-				numMatching++
-			}
-		}
-
-		// If they don't, then move onto the next combination.
-		if numMatching < request {
-			return
-		}
-
-		// Otherwise, create a new hint from the numa node bitmask and add it to the
-		// list of hints.  We set all hint preferences to 'false' on the first
-		// pass through.
-		hints = append(hints, topologymanager.NUMATopologyHint{
-			NUMANodeAffinity: mask,
-			Preferred:        false,
-		})
-	})
-
-	// Loop back through all hints and update the 'Preferred' field based on
-	// counting the number of bits sets in the affinity mask and comparing it
-	// to the minAffinitySize. Only those with an equal number of bits set (and
-	// with a minimal set of numa nodes) will be considered preferred.
-	for i := range hints {
-		if hints[i].NUMANodeAffinity.Count() == minAffinitySize {
-			hints[i].Preferred = true
-		}
-	}
-
-	return hints
 }
 
 func generateResourceHints(numaNodes []int, podRequests corev1.ResourceList, totalAvailable map[int]corev1.ResourceList) map[string][]topologymanager.NUMATopologyHint {
