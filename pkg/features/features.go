@@ -56,6 +56,9 @@ const (
 
 	// ElasticQuotaGuaranteeUsage enable guarantee the quota usage
 	ElasticQuotaGuaranteeUsage featuregate.Feature = "ElasticQuotaGuaranteeUsage"
+
+	// DisableDefaultQuota disable default quota.
+	DisableDefaultQuota featuregate.Feature = "DisableDefaultQuota"
 )
 
 var defaultFeatureGates = map[featuregate.Feature]featuregate.FeatureSpec{
@@ -70,6 +73,7 @@ var defaultFeatureGates = map[featuregate.Feature]featuregate.FeatureSpec{
 	MultiQuotaTree:                         {Default: false, PreRelease: featuregate.Alpha},
 	ElasticQuotaIgnorePodOverhead:          {Default: false, PreRelease: featuregate.Alpha},
 	ElasticQuotaGuaranteeUsage:             {Default: false, PreRelease: featuregate.Alpha},
+	DisableDefaultQuota:                    {Default: false, PreRelease: featuregate.Alpha},
 }
 
 const (

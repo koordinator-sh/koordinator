@@ -56,6 +56,7 @@ const (
 )
 
 type PostFilterState struct {
+	skip      bool
 	quotaInfo *core.QuotaInfo
 	used      corev1.ResourceList
 	runtime   corev1.ResourceList
@@ -207,6 +208,11 @@ func (g *Plugin) EventsToRegister() []framework.ClusterEvent {
 
 func (g *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod) (*framework.PreFilterResult, *framework.Status) {
 	quotaName, treeID := g.getPodAssociateQuotaNameAndTreeID(pod)
+	if quotaName == "" {
+		g.skipPostFilterState(cycleState)
+		return nil, framework.NewStatus(framework.Success, "")
+	}
+
 	mgr := g.GetGroupQuotaManagerForTree(treeID)
 	if mgr == nil {
 		return nil, framework.NewStatus(framework.Error, fmt.Sprintf("Could not find the specified ElasticQuotaManager for quota: %v, tree: %v", quotaName, treeID))
@@ -250,6 +256,11 @@ func (g *Plugin) AddPod(ctx context.Context, state *framework.CycleState, podToS
 		klog.ErrorS(err, "Failed to read postFilterState from cycleState", "elasticQuotaSnapshotKey", postFilterState)
 		return framework.NewStatus(framework.Error, err.Error())
 	}
+
+	if postFilterState.skip {
+		return framework.NewStatus(framework.Success, "")
+	}
+
 	if postFilterState.quotaInfo.IsPodExist(podInfoToAdd.Pod) {
 		podReq, _ := core.PodRequestsAndLimits(podInfoToAdd.Pod)
 		postFilterState.used = quotav1.Add(postFilterState.used, podReq)
@@ -269,6 +280,11 @@ func (g *Plugin) RemovePod(ctx context.Context, state *framework.CycleState, pod
 		klog.ErrorS(err, "Failed to read postFilterState from cycleState", "elasticQuotaSnapshotKey", postFilterState)
 		return framework.NewStatus(framework.Error, err.Error())
 	}
+
+	if postFilterState.skip {
+		return framework.NewStatus(framework.Success, "")
+	}
+
 	if postFilterState.quotaInfo.IsPodExist(podInfoToRemove.Pod) {
 		podReq, _ := core.PodRequestsAndLimits(podInfoToRemove.Pod)
 		postFilterState.used = quotav1.SubtractWithNonNegativeResult(postFilterState.used, podReq)
@@ -300,6 +316,10 @@ func (g *Plugin) PostFilter(ctx context.Context, state *framework.CycleState, po
 
 func (g *Plugin) Reserve(ctx context.Context, state *framework.CycleState, p *corev1.Pod, nodeName string) *framework.Status {
 	quotaName, treeID := g.getPodAssociateQuotaNameAndTreeID(p)
+	if quotaName == "" {
+		return framework.NewStatus(framework.Success, "")
+	}
+
 	mgr := g.GetGroupQuotaManagerForTree(treeID)
 	if mgr == nil {
 		klog.Errorf("failed reserve pod %v/%v, quota manager not found, quota: %v, tree: %v", p.Namespace, p.Name, quotaName, treeID)
@@ -312,6 +332,10 @@ func (g *Plugin) Reserve(ctx context.Context, state *framework.CycleState, p *co
 
 func (g *Plugin) Unreserve(ctx context.Context, state *framework.CycleState, p *corev1.Pod, nodeName string) {
 	quotaName, treeID := g.getPodAssociateQuotaNameAndTreeID(p)
+	if quotaName == "" {
+		return
+	}
+
 	mgr := g.GetGroupQuotaManagerForTree(treeID)
 	if mgr == nil {
 		klog.Errorf("failed unreserve pod %v/%v, quota manager not found, quota: %v, tree: %s", p.Namespace, p.Name, quotaName, treeID)
