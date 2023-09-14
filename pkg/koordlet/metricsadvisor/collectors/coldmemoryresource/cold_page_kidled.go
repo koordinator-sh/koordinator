@@ -69,8 +69,9 @@ func (k *kidledcoldPageCollector) Enabled() bool {
 			return false
 		}
 		system.SetIsStartColdMemory(true)
+		return true
 	}
-	return true
+	return false
 }
 
 func (k *kidledcoldPageCollector) Setup(c1 *framework.Context) {}
