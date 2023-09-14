@@ -60,3 +60,5 @@ func (c *PerfCollector) collect() (result collectResult, err error) {
 func (c *PerfCollector) CleanUp() error {
 	return nil
 }
+
+type Collector interface{}
