@@ -159,8 +159,9 @@ func Test_collectColdPageInfo(t *testing.T) {
 		SetSysUtil            func(helper *system.FileTestUtil)
 	}
 	tests := []struct {
-		name   string
-		fields fields
+		name        string
+		fields      fields
+		wantstrated bool
 	}{
 		{
 			name: "success collect node, pod and container cold page info for cgroup v1",
@@ -196,6 +197,43 @@ func Test_collectColdPageInfo(t *testing.T) {
 					helper.WriteCgroupFileContents(testContainerParentDir, system.MemoryIdlePageStats, testMemoryIdlePageStatsContent)
 				},
 			},
+			wantstrated: true,
+		},
+		{
+			name: "states informer nil",
+			fields: fields{
+				podFilterOption: framework.DefaultPodFilter,
+				getPodMetas: []*statesinformer.PodMeta{
+					{
+						CgroupDir: testPodMetaDir,
+						Pod:       testPod,
+					},
+				},
+				initPodLastStat: func(lastState *gocache.Cache) {
+					lastState.Set(string(testPod.UID), framework.CPUStat{
+						CPUUsage:  0,
+						Timestamp: testNow.Add(-time.Second),
+					}, gocache.DefaultExpiration)
+				},
+				initContainerLastStat: func(lastState *gocache.Cache) {
+					lastState.Set(testContainerID, framework.CPUStat{
+						CPUUsage:  0,
+						Timestamp: testNow.Add(-time.Second),
+					}, gocache.DefaultExpiration)
+				},
+				SetSysUtil: func(helper *system.FileTestUtil) {
+					system.Conf.SysRootDir = filepath.Join(helper.TempDir, system.Conf.SysRootDir)
+					helper.WriteFileContents(system.KidledScanPeriodInSeconds.Path(""), `120`)
+					helper.WriteFileContents(system.KidledUseHierarchy.Path(""), `1`)
+					helper.SetResourcesSupported(true, system.MemoryIdlePageStats)
+					helper.WriteProcSubFileContents(system.ProcMemInfoName, meminfo)
+					helper.WriteCgroupFileContents(testPodParentDir, system.MemoryStat, testMemStat)
+					helper.WriteCgroupFileContents(testPodParentDir, system.MemoryIdlePageStats, testMemoryIdlePageStatsContent)
+					helper.WriteCgroupFileContents(testContainerParentDir, system.MemoryStat, testMemStat)
+					helper.WriteCgroupFileContents(testContainerParentDir, system.MemoryIdlePageStats, testMemoryIdlePageStatsContent)
+				},
+			},
+			wantstrated: false,
 		},
 	}
 	for _, tt := range tests {
@@ -218,23 +256,26 @@ func Test_collectColdPageInfo(t *testing.T) {
 				metricCache.Close()
 			}()
 			statesInformer := mock_statesinformer.NewMockStatesInformer(ctrl)
-			statesInformer.EXPECT().HasSynced().Return(true).AnyTimes()
-			statesInformer.EXPECT().GetAllPods().Return(tt.fields.getPodMetas).Times(1)
-			collector := New(&framework.Options{
-				Config: &framework.Config{
-					ColdPageCollectorInterval: 1 * time.Second,
-				},
-				StatesInformer: statesInformer,
-				MetricCache:    metricCache,
-				CgroupReader:   resourceexecutor.NewCgroupReader(),
-				PodFilters: map[string]framework.PodFilter{
-					CollectorName: tt.fields.podFilterOption,
-				},
-			})
-			c := collector.(*kidledcoldPageCollector)
+			if tt.name != "states informer nil" {
+				statesInformer.EXPECT().HasSynced().Return(true).AnyTimes()
+				statesInformer.EXPECT().GetAllPods().Return(tt.fields.getPodMetas).Times(1)
+			}
+			c := &kidledcoldPageCollector{
+				collectInterval: 1 * time.Second,
+				cgroupReader:    resourceexecutor.NewCgroupReader(),
+				statesInformer:  statesInformer,
+				podFilter:       framework.DefaultPodFilter,
+				appendableDB:    metricCache,
+				metricDB:        metricCache,
+				started:         atomic.NewBool(false),
+			}
+			if tt.name == "states informer nil" {
+				c.statesInformer = nil
+			}
 			assert.NotPanics(t, func() {
 				c.collectColdPageInfo()
 			})
+			assert.Equal(t, tt.wantstrated, c.Started())
 		})
 	}
 }
