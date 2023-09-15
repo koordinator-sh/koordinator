@@ -97,6 +97,26 @@ func Test_ParseMemoryIdlePageStats(t *testing.T) {
 	  cfua                  0              0              0              0              0              0              0              0
 	  dfua                  0              0              0              0              0              0              0              0
 	  slab                  0              0              0              0              0              0              0              0`
+	invalidIdleInfoContentStr1 := `# version: 1.0
+	  # page_scans: 24
+	  # slab_scans: 0
+	  # scan_period_in_seconds: 120
+	  # use_hierarchy: 1
+	  # buckets: 1,2,5,15,30,60,120,240
+	  #
+	  #   _-----=> clean/dirty
+	          0              0              0              0              0              0              0              0
+		cfui                  0              0              0              0              0              0              0              0
+		dfui                  0              0              0              0              0              0              0              0
+		csea             765952        1044480        3784704       52834304              0              0              0              0
+		dsea             286720         270336        1564672        5390336              0              0              0              0
+		cfea            9273344       16609280      152109056      315121664              0              0              0              0
+		dfea                  0              0              0              0              0              0              0              0
+		csua                  0              0              0              0              0              0              0              0
+		dsua                  0              0              0              0              0              0              0              0
+		cfua                  0              0              0              0              0              0              0              0
+		dfua                  0              0              0              0              0              0              0              0
+		slab                  0              0              0              0              0              0              0              0`
 	type args struct {
 		content string
 	}
@@ -107,8 +127,14 @@ func Test_ParseMemoryIdlePageStats(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			name:    "read illegal idle stat",
+			name:    "read illegal idle empty stat1",
 			args:    args{content: ""},
+			want:    nil,
+			wantErr: true,
+		},
+		{
+			name:    "read illegal idle empty stat2",
+			args:    args{content: invalidIdleInfoContentStr1},
 			want:    nil,
 			wantErr: true,
 		},
