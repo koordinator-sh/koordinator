@@ -145,6 +145,7 @@ func Test_bvtPlugin_parseRule(t *testing.T) {
 			wantRule: bvtRule{
 				enable: true,
 				podQOSParams: map[ext.QoSClass]int64{
+					ext.QoSLSE: 2,
 					ext.QoSLSR: 2,
 					ext.QoSLS:  2,
 					ext.QoSBE:  -1,
@@ -198,6 +199,7 @@ func Test_bvtPlugin_parseRule(t *testing.T) {
 			wantRule: bvtRule{
 				enable: true,
 				podQOSParams: map[ext.QoSClass]int64{
+					ext.QoSLSE: 0,
 					ext.QoSLSR: 0,
 					ext.QoSLS:  2,
 					ext.QoSBE:  -1,
@@ -251,6 +253,7 @@ func Test_bvtPlugin_parseRule(t *testing.T) {
 			wantRule: bvtRule{
 				enable: true,
 				podQOSParams: map[ext.QoSClass]int64{
+					ext.QoSLSE: 0,
 					ext.QoSLSR: 0,
 					ext.QoSLS:  0,
 					ext.QoSBE:  -1,
@@ -304,6 +307,7 @@ func Test_bvtPlugin_parseRule(t *testing.T) {
 			wantRule: bvtRule{
 				enable: false,
 				podQOSParams: map[ext.QoSClass]int64{
+					ext.QoSLSE: 0,
 					ext.QoSLSR: 0,
 					ext.QoSLS:  0,
 					ext.QoSBE:  0,
@@ -328,6 +332,7 @@ func Test_bvtPlugin_parseRule(t *testing.T) {
 				rule: &bvtRule{
 					enable: true,
 					podQOSParams: map[ext.QoSClass]int64{
+						ext.QoSLSE: 2,
 						ext.QoSLSR: 2,
 						ext.QoSLS:  2,
 						ext.QoSBE:  -1,
@@ -375,6 +380,7 @@ func Test_bvtPlugin_parseRule(t *testing.T) {
 			wantRule: bvtRule{
 				enable: true,
 				podQOSParams: map[ext.QoSClass]int64{
+					ext.QoSLSE: 2,
 					ext.QoSLSR: 2,
 					ext.QoSLS:  2,
 					ext.QoSBE:  -1,
@@ -407,7 +413,7 @@ func Test_bvtPlugin_parseRule(t *testing.T) {
 			if got != tt.want {
 				t.Errorf("parseRule() got = %v, want %v", got, tt.want)
 			}
-			assert.Equal(t, *b.getRule(), tt.wantRule, "parse bvt rule not equal")
+			assert.Equal(t, tt.wantRule, *b.getRule(), "parse bvt rule not equal")
 		})
 	}
 }
@@ -586,13 +592,13 @@ func Test_bvtPlugin_ruleUpdateCbForPods(t *testing.T) {
 			for kubeQoS, wantBvt := range tt.wantKubeDirVal {
 				gotBvtStr := testHelper.ReadCgroupFileContents(util.GetPodQoSRelativePath(kubeQoS), system.CPUBVTWarpNs)
 				gotBvt, _ := strconv.ParseInt(gotBvtStr, 10, 64)
-				assert.Equal(t, gotBvt, wantBvt, "qos %s bvt value not equal", kubeQoS)
+				assert.Equal(t, wantBvt, gotBvt, "qos %s bvt value not equal", kubeQoS)
 			}
 			for podName, pod := range tt.args.pods {
 				gotBvtStr := testHelper.ReadCgroupFileContents(pod.CgroupDir, system.CPUBVTWarpNs)
 				gotBvt, _ := strconv.ParseInt(gotBvtStr, 10, 64)
 				wantBvt := tt.wantPodVal[podName]
-				assert.Equal(t, gotBvt, wantBvt, "pod %s bvt value not equal", podName)
+				assert.Equal(t, wantBvt, gotBvt, "pod %s bvt value not equal", podName)
 			}
 		})
 	}
@@ -677,7 +683,7 @@ func Test_bvtPlugin_ruleUpdateCbForHostApp(t *testing.T) {
 
 			gotBvtStr := testHelper.ReadCgroupFileContents(cgroupDir, system.CPUBVTWarpNs)
 			gotBvt, _ := strconv.ParseInt(gotBvtStr, 10, 64)
-			assert.Equal(t, gotBvt, tt.wantBvt)
+			assert.Equal(t, tt.wantBvt, gotBvt)
 		})
 	}
 }

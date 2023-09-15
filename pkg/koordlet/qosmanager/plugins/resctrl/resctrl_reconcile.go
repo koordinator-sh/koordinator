@@ -109,6 +109,8 @@ func (r *resctrlReconcile) init(stopCh <-chan struct{}) {
 func getPodResctrlGroup(pod *corev1.Pod) string {
 	podQoS := extension.GetPodQoSClassWithDefault(pod)
 	switch podQoS {
+	case extension.QoSLSE:
+		return LSRResctrlGroup
 	case extension.QoSLSR:
 		return LSRResctrlGroup
 	case extension.QoSLS:
@@ -473,6 +475,7 @@ func (r *resctrlReconcile) reconcileResctrlGroups(qosStrategy *slov1alpha1.Resou
 		if group := getPodResctrlGroup(pod); group != UnknownResctrlGroup {
 			ids := r.getPodCgroupNewTaskIds(podMeta, curTaskMaps[group])
 			taskIds[group] = append(taskIds[group], ids...)
+			klog.V(6).Infof("pod %v apply to group %s with %v tasks", util.GetPodKey(pod), group, len(ids))
 		}
 	}
 
