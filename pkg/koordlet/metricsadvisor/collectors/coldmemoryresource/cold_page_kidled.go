@@ -54,7 +54,6 @@ func (k *kidledcoldPageCollector) Started() bool {
 
 func (k *kidledcoldPageCollector) Enabled() bool {
 	if features.DefaultKoordletFeatureGate.Enabled(features.ColdPageCollector) {
-		// set scan_period_in_seconds and use_hierarchy
 		// start kidled
 		kidledConfig := system.NewDefaultKidledConfig()
 		err := system.SetKidledScanPeriodInSeconds(kidledConfig.ScanPeriodInseconds)
