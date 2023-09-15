@@ -18,7 +18,6 @@ package nodenumaresource
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -167,7 +166,6 @@ type preFilterState struct {
 	skip                        bool
 	requestCPUBind              bool
 	requests                    corev1.ResourceList
-	resourceSpec                *extension.ResourceSpec
 	requiredCPUBindPolicy       schedulingconfig.CPUBindPolicy
 	preferredCPUBindPolicy      schedulingconfig.CPUBindPolicy
 	preferredCPUExclusivePolicy schedulingconfig.CPUExclusivePolicy
@@ -180,7 +178,6 @@ func (s *preFilterState) Clone() framework.StateData {
 		skip:                        s.skip,
 		requestCPUBind:              s.requestCPUBind,
 		requests:                    s.requests,
-		resourceSpec:                s.resourceSpec,
 		requiredCPUBindPolicy:       s.requiredCPUBindPolicy,
 		preferredCPUBindPolicy:      s.preferredCPUBindPolicy,
 		preferredCPUExclusivePolicy: s.preferredCPUExclusivePolicy,
@@ -247,7 +244,6 @@ func (p *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleState
 
 			if requestedCPU > 0 {
 				state.requestCPUBind = true
-				state.resourceSpec = resourceSpec
 				state.requiredCPUBindPolicy = requiredCPUBindPolicy
 				state.preferredCPUBindPolicy = cpuBindPolicy
 				state.preferredCPUExclusivePolicy = resourceSpec.PreferredCPUExclusivePolicy
@@ -276,7 +272,7 @@ func (p *Plugin) Filter(ctx context.Context, cycleState *framework.CycleState, p
 
 	node := nodeInfo.Node()
 	topologyOptions := p.topologyOptionsManager.GetTopologyOptions(node.Name)
-	policyType := getNUMATopologyPolicy(node.Labels, topologyOptions.NUMATopologyPolicy)
+	numaTopologyPolicy := getNUMATopologyPolicy(node.Labels, topologyOptions.NUMATopologyPolicy)
 
 	if state.requestCPUBind {
 		if topologyOptions.CPUTopology == nil {
@@ -289,17 +285,19 @@ func (p *Plugin) Filter(ctx context.Context, cycleState *framework.CycleState, p
 		if !topologyOptions.CPUTopology.IsValid() {
 			return framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrInvalidCPUTopology)
 		}
-		kubeletCPUPolicy := topologyOptions.Policy
-		if extension.GetNodeCPUBindPolicy(node.Labels, kubeletCPUPolicy) == extension.NodeCPUBindPolicyFullPCPUsOnly {
+		nodeRequiredFullPCPUsOnly := extension.GetNodeCPUBindPolicy(node.Labels, topologyOptions.Policy) == extension.NodeCPUBindPolicyFullPCPUsOnly
+		if nodeRequiredFullPCPUsOnly || state.requiredCPUBindPolicy == schedulingconfig.CPUBindPolicyFullPCPUs {
 			if state.numCPUsNeeded%topologyOptions.CPUTopology.CPUsPerCore() != 0 {
 				return framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrSMTAlignmentError)
 			}
-			if state.preferredCPUBindPolicy != schedulingconfig.CPUBindPolicyFullPCPUs {
+
+			if nodeRequiredFullPCPUsOnly &&
+				(state.requiredCPUBindPolicy != schedulingconfig.CPUBindPolicyFullPCPUs || state.preferredCPUBindPolicy != schedulingconfig.CPUBindPolicyFullPCPUs) {
 				return framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrRequiredFullPCPUsPolicy)
 			}
 		}
 
-		if policyType == extension.NUMATopologyPolicyNone && state.requiredCPUBindPolicy != "" {
+		if state.requiredCPUBindPolicy != "" && numaTopologyPolicy == extension.NUMATopologyPolicyNone {
 			resourceOptions, err := p.getResourceOptions(cycleState, state, node, pod, topologymanager.NUMATopologyHint{}, topologyOptions)
 			if err != nil {
 				return framework.AsStatus(err)
@@ -311,8 +309,8 @@ func (p *Plugin) Filter(ctx context.Context, cycleState *framework.CycleState, p
 		}
 	}
 
-	if policyType != extension.NUMATopologyPolicyNone {
-		return p.FilterByNUMANode(ctx, cycleState, pod, node.Name, policyType, topologyOptions)
+	if numaTopologyPolicy != extension.NUMATopologyPolicyNone {
+		return p.FilterByNUMANode(ctx, cycleState, pod, node.Name, numaTopologyPolicy, topologyOptions)
 	}
 
 	return nil
@@ -342,9 +340,9 @@ func (p *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState, 
 		}
 	}
 
-	policyType := getNUMATopologyPolicy(node.Labels, topologyOptions.NUMATopologyPolicy)
-	if policyType != extension.NUMATopologyPolicyNone {
-		status := p.ReserveByNUMANode(ctx, cycleState, pod, nodeName, policyType, topologyOptions)
+	numaTopologyPolicy := getNUMATopologyPolicy(node.Labels, topologyOptions.NUMATopologyPolicy)
+	if numaTopologyPolicy != extension.NUMATopologyPolicyNone {
+		status := p.ReserveByNUMANode(ctx, cycleState, pod, nodeName, numaTopologyPolicy, topologyOptions)
 		if !status.IsSuccess() {
 			return status
 		}
@@ -366,7 +364,6 @@ func (p *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState, 
 	}
 	p.resourceManager.Update(nodeName, result)
 	state.allocation = result
-	state.preferredCPUBindPolicy = resourceOptions.cpuBindPolicy
 	return nil
 }
 
@@ -484,26 +481,23 @@ func (p *Plugin) getReservationReservedCPUs(cycleState *framework.CycleState, po
 }
 
 func appendResourceSpecIfMissed(object metav1.Object, state *preFilterState) error {
-	annotations := object.GetAnnotations()
 	// Write back ResourceSpec annotation if LSR Pod hasn't specified CPUBindPolicy
-	preferredCPUBindPolicy := schedulingconfig.CPUBindPolicy(state.resourceSpec.PreferredCPUBindPolicy)
-	if preferredCPUBindPolicy == "" ||
-		preferredCPUBindPolicy == schedulingconfig.CPUBindPolicyDefault ||
-		preferredCPUBindPolicy != state.preferredCPUBindPolicy {
-		resourceSpec := &extension.ResourceSpec{
-			PreferredCPUBindPolicy: extension.CPUBindPolicy(state.preferredCPUBindPolicy),
-		}
-		resourceSpecData, err := json.Marshal(resourceSpec)
-		if err != nil {
-			return err
-		}
-		if annotations == nil {
-			annotations = make(map[string]string)
-		}
-		annotations[extension.AnnotationResourceSpec] = string(resourceSpecData)
-		object.SetAnnotations(annotations)
+	annotations := object.GetAnnotations()
+	resourceSpec, _ := extension.GetResourceSpec(annotations)
+	if resourceSpec.RequiredCPUBindPolicy != extension.CPUBindPolicy(state.requiredCPUBindPolicy) {
+		resourceSpec.RequiredCPUBindPolicy = extension.CPUBindPolicy(state.requiredCPUBindPolicy)
 	}
-	return nil
+
+	preferredCPUBindPolicy := schedulingconfig.CPUBindPolicy(resourceSpec.PreferredCPUBindPolicy)
+	if preferredCPUBindPolicy == "" || preferredCPUBindPolicy == schedulingconfig.CPUBindPolicyDefault {
+		if resourceSpec.RequiredCPUBindPolicy == "" {
+			preferredCPUBindPolicy = state.preferredCPUBindPolicy
+		} else if preferredCPUBindPolicy != "" {
+			preferredCPUBindPolicy = state.requiredCPUBindPolicy
+		}
+	}
+	resourceSpec.PreferredCPUBindPolicy = extension.CPUBindPolicy(preferredCPUBindPolicy)
+	return extension.SetResourceSpec(object, resourceSpec)
 }
 
 func (p *Plugin) getPreferredCPUBindPolicy(node *corev1.Node, preferredCPUBindPolicy schedulingconfig.CPUBindPolicy) (schedulingconfig.CPUBindPolicy, error) {

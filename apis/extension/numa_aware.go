@@ -189,9 +189,7 @@ type KubeletCPUManagerPolicy struct {
 
 // GetResourceSpec parses ResourceSpec from annotations
 func GetResourceSpec(annotations map[string]string) (*ResourceSpec, error) {
-	resourceSpec := &ResourceSpec{
-		PreferredCPUBindPolicy: CPUBindPolicyDefault,
-	}
+	resourceSpec := &ResourceSpec{}
 	data, ok := annotations[AnnotationResourceSpec]
 	if !ok {
 		return resourceSpec, nil
