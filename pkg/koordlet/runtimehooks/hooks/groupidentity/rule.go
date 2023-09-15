@@ -108,6 +108,7 @@ func (b *bvtPlugin) parseRule(mergedNodeSLOIf interface{}) (bool, error) {
 	newRule := &bvtRule{
 		enable: enable,
 		podQOSParams: map[ext.QoSClass]int64{
+			ext.QoSLSE: lsrValue,
 			ext.QoSLSR: lsrValue,
 			ext.QoSLS:  lsValue,
 			ext.QoSBE:  beValue,

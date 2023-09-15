@@ -1200,7 +1200,7 @@ func TestResctrlReconcile_reconcileCatResctrlPolicy(t *testing.T) {
 
 func TestResctrlReconcile_reconcileResctrlGroups(t *testing.T) {
 	// preparing
-	wantResctrlTaskStr := "122450122454123111128912"
+	wantResctrlBETaskStr := "122450122454123111128912"
 	testingContainerParentDir := "kubepods.slice/p0/cri-containerd-c0.scope"
 	testingContainerTasksStr := "122450\n122454\n123111\n128912"
 	testingBEResctrlTasksStr := "122450"
@@ -1232,13 +1232,47 @@ func TestResctrlReconcile_reconcileResctrlGroups(t *testing.T) {
 		},
 		CgroupDir: "kubepods.slice/p0",
 	}
+	wantResctrlLSRTaskStr := "4321432243234400"
+	testingContainer1ParentDir := "kubepods.slice/p1/cri-containerd-c1.scope"
+	testingContainer1TasksStr := "4321\n4322\n4323\n4400"
+	testingPodMetaLSE := &statesinformer.PodMeta{
+		Pod: &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "pod1",
+				UID:  "p1",
+				Labels: map[string]string{
+					extension.LabelPodQoS: string(extension.QoSLSE),
+				},
+			},
+			Spec: corev1.PodSpec{
+				Containers: []corev1.Container{
+					{
+						Name: "container1",
+					},
+				},
+			},
+			Status: corev1.PodStatus{
+				Phase: corev1.PodRunning,
+				ContainerStatuses: []corev1.ContainerStatus{
+					{
+						Name:        "container1",
+						ContainerID: "containerd://c1",
+					},
+				},
+			},
+		},
+		CgroupDir: "kubepods.slice/p1",
+	}
 	testQOSStrategy := sloconfig.DefaultResourceQOSStrategy()
 	testQOSStrategy.BEClass.ResctrlQOS.Enable = pointer.Bool(true)
+	testQOSStrategy.LSRClass.ResctrlQOS.Enable = pointer.Bool(true)
 
 	t.Run("test", func(t *testing.T) {
 		// initialization
 		ctrl := gomock.NewController(t)
 		defer ctrl.Finish()
+		helper := system.NewFileTestUtil(t)
+		defer helper.Cleanup()
 
 		statesInformer := mock_statesinformer.NewMockStatesInformer(ctrl)
 		opt := &framework.Options{
@@ -1250,28 +1284,28 @@ func TestResctrlReconcile_reconcileResctrlGroups(t *testing.T) {
 		r.init(stop)
 		defer func() { stop <- struct{}{} }()
 
-		statesInformer.EXPECT().GetAllPods().Return([]*statesinformer.PodMeta{testingPodMeta}).MaxTimes(2)
-
-		helper := system.NewFileTestUtil(t)
-
-		sysFSRootDirName := "reconcileResctrlGroups"
-		helper.MkDirAll(sysFSRootDirName)
-
-		system.Conf.SysFSRootDir = filepath.Join(helper.TempDir, sysFSRootDirName)
+		statesInformer.EXPECT().GetAllPods().Return([]*statesinformer.PodMeta{
+			testingPodMeta,
+			testingPodMetaLSE,
+		}).MaxTimes(2)
 
 		testingPrepareResctrlL3CatGroups(t, "", "")
 		testingPrepareContainerCgroupCPUTasks(t, helper, testingContainerParentDir, testingContainerTasksStr)
+		testingPrepareContainerCgroupCPUTasks(t, helper, testingContainer1ParentDir, testingContainer1TasksStr)
 
-		// run reconcileResctrlGroups for BE tasks not exist
+		// run reconcileResctrlGroups for BE & LSE tasks not exist
 		r.reconcileResctrlGroups(testQOSStrategy)
 
 		// check if the reconciliation is a success
-		out, err := os.ReadFile(filepath.Join(system.Conf.SysFSRootDir, system.ResctrlDir, BEResctrlGroup,
-			system.CPUTasksName))
+		out, err := os.ReadFile(system.ResctrlTasks.Path(BEResctrlGroup))
 		assert.NoError(t, err)
-		assert.Equal(t, wantResctrlTaskStr, string(out))
+		assert.Equal(t, wantResctrlBETaskStr, string(out))
 
-		beTasksPath := filepath.Join(system.Conf.SysFSRootDir, system.ResctrlDir, BEResctrlGroup, system.ResctrlTasksName)
+		out, err = os.ReadFile(system.ResctrlTasks.Path(LSRResctrlGroup))
+		assert.NoError(t, err)
+		assert.Equal(t, wantResctrlLSRTaskStr, string(out))
+
+		beTasksPath := filepath.Join(system.ResctrlTasks.Path(BEResctrlGroup))
 		err = os.WriteFile(beTasksPath, []byte(testingBEResctrlTasksStr), 0666)
 		assert.NoError(t, err)
 
@@ -1279,10 +1313,9 @@ func TestResctrlReconcile_reconcileResctrlGroups(t *testing.T) {
 		r.reconcileResctrlGroups(testQOSStrategy)
 
 		// check if the reconciliation is a success
-		out, err = os.ReadFile(filepath.Join(system.Conf.SysFSRootDir, system.ResctrlDir, BEResctrlGroup,
-			system.CPUTasksName))
+		out, err = os.ReadFile(system.ResctrlTasks.Path(BEResctrlGroup))
 		assert.NoError(t, err)
-		assert.Equal(t, wantResctrlTaskStr, string(out))
+		assert.Equal(t, wantResctrlBETaskStr, string(out))
 	})
 }
 

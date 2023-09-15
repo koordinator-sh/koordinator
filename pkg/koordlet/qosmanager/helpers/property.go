@@ -30,6 +30,9 @@ func GetPodResourceQoSByQoSClass(pod *corev1.Pod, strategy *slov1alpha1.Resource
 	var resourceQoS *slov1alpha1.ResourceQOS
 	podQoS := apiext.GetPodQoSClassWithDefault(pod)
 	switch podQoS {
+	case apiext.QoSLSE:
+		// currently LSE pods use the same strategy with LSR
+		resourceQoS = strategy.LSRClass
 	case apiext.QoSLSR:
 		resourceQoS = strategy.LSRClass
 	case apiext.QoSLS:
