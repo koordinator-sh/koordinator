@@ -41,8 +41,9 @@ type QuotaCalculateInfo struct {
 	AutoScaleMin v1.ResourceList
 	// All assigned pods used
 	Used v1.ResourceList
-	// If the quota is allow to lent resource, it's equal to childRequest
-	// else it's the max of min and childRequest
+	// All non-preemptible pods used
+	NonPreemptibleUsed v1.ResourceList
+	// All pods request
 	Request v1.ResourceList
 	// ChildRquest is the sum of child quota requests.
 	// If the quota is leaf, it's the sum of pods requests
@@ -85,16 +86,17 @@ func NewQuotaInfo(isParent, allowLentResource bool, name, parentName string) *Qu
 		RuntimeVersion:    0,
 		PodCache:          make(map[string]*PodInfo),
 		CalculateInfo: QuotaCalculateInfo{
-			Max:          v1.ResourceList{},
-			AutoScaleMin: v1.ResourceList{},
-			Min:          v1.ResourceList{},
-			Used:         v1.ResourceList{},
-			Request:      v1.ResourceList{},
-			SharedWeight: v1.ResourceList{},
-			Runtime:      v1.ResourceList{},
-			ChildRequest: v1.ResourceList{},
-			Guaranteed:   v1.ResourceList{},
-			Allocated:    v1.ResourceList{},
+			Max:                v1.ResourceList{},
+			AutoScaleMin:       v1.ResourceList{},
+			Min:                v1.ResourceList{},
+			Used:               v1.ResourceList{},
+			NonPreemptibleUsed: v1.ResourceList{},
+			Request:            v1.ResourceList{},
+			SharedWeight:       v1.ResourceList{},
+			Runtime:            v1.ResourceList{},
+			ChildRequest:       v1.ResourceList{},
+			Guaranteed:         v1.ResourceList{},
+			Allocated:          v1.ResourceList{},
 		},
 	}
 }
@@ -114,16 +116,17 @@ func (qi *QuotaInfo) DeepCopy() *QuotaInfo {
 		RuntimeVersion:    qi.RuntimeVersion,
 		PodCache:          make(map[string]*PodInfo),
 		CalculateInfo: QuotaCalculateInfo{
-			Max:          qi.CalculateInfo.Max.DeepCopy(),
-			AutoScaleMin: qi.CalculateInfo.AutoScaleMin.DeepCopy(),
-			Min:          qi.CalculateInfo.Min.DeepCopy(),
-			Used:         qi.CalculateInfo.Used.DeepCopy(),
-			Request:      qi.CalculateInfo.Request.DeepCopy(),
-			SharedWeight: qi.CalculateInfo.SharedWeight.DeepCopy(),
-			Runtime:      qi.CalculateInfo.Runtime.DeepCopy(),
-			ChildRequest: qi.CalculateInfo.ChildRequest.DeepCopy(),
-			Guaranteed:   qi.CalculateInfo.Guaranteed.DeepCopy(),
-			Allocated:    qi.CalculateInfo.Allocated.DeepCopy(),
+			Max:                qi.CalculateInfo.Max.DeepCopy(),
+			AutoScaleMin:       qi.CalculateInfo.AutoScaleMin.DeepCopy(),
+			Min:                qi.CalculateInfo.Min.DeepCopy(),
+			Used:               qi.CalculateInfo.Used.DeepCopy(),
+			NonPreemptibleUsed: qi.CalculateInfo.NonPreemptibleUsed.DeepCopy(),
+			Request:            qi.CalculateInfo.Request.DeepCopy(),
+			SharedWeight:       qi.CalculateInfo.SharedWeight.DeepCopy(),
+			Runtime:            qi.CalculateInfo.Runtime.DeepCopy(),
+			ChildRequest:       qi.CalculateInfo.ChildRequest.DeepCopy(),
+			Guaranteed:         qi.CalculateInfo.Guaranteed.DeepCopy(),
+			Allocated:          qi.CalculateInfo.Allocated.DeepCopy(),
 		},
 	}
 	for name, pod := range qi.PodCache {
@@ -146,6 +149,7 @@ func (qi *QuotaInfo) GetQuotaSummary() *QuotaInfoSummary {
 	quotaInfoSummary.Min = qi.CalculateInfo.Min.DeepCopy()
 	quotaInfoSummary.AutoScaleMin = qi.CalculateInfo.AutoScaleMin.DeepCopy()
 	quotaInfoSummary.Used = qi.CalculateInfo.Used.DeepCopy()
+	quotaInfoSummary.NonPreemptibleUsed = qi.CalculateInfo.NonPreemptibleUsed.DeepCopy()
 	quotaInfoSummary.Request = qi.CalculateInfo.Request.DeepCopy()
 	quotaInfoSummary.SharedWeight = qi.CalculateInfo.SharedWeight.DeepCopy()
 	quotaInfoSummary.Runtime = qi.CalculateInfo.Runtime.DeepCopy()
@@ -231,10 +235,14 @@ func (qi *QuotaInfo) GetAllocated() v1.ResourceList {
 	return qi.CalculateInfo.Allocated.DeepCopy()
 }
 
-func (qi *QuotaInfo) addUsedNonNegativeNoLock(delta v1.ResourceList) {
+func (qi *QuotaInfo) addUsedNonNegativeNoLock(delta, deltaNonPreemptibleUsed v1.ResourceList) {
 	qi.CalculateInfo.Used = quotav1.Add(qi.CalculateInfo.Used, delta)
+	qi.CalculateInfo.NonPreemptibleUsed = quotav1.Add(qi.CalculateInfo.NonPreemptibleUsed, deltaNonPreemptibleUsed)
 	for _, resName := range quotav1.IsNegative(qi.CalculateInfo.Used) {
 		qi.CalculateInfo.Used[resName] = createQuantity(0, resName)
+	}
+	for _, resName := range quotav1.IsNegative(qi.CalculateInfo.NonPreemptibleUsed) {
+		qi.CalculateInfo.NonPreemptibleUsed[resName] = createQuantity(0, resName)
 	}
 }
 
@@ -277,6 +285,12 @@ func (qi *QuotaInfo) GetUsed() v1.ResourceList {
 	qi.lock.Lock()
 	defer qi.lock.Unlock()
 	return qi.CalculateInfo.Used.DeepCopy()
+}
+
+func (qi *QuotaInfo) GetNonPreemptibleUsed() v1.ResourceList {
+	qi.lock.Lock()
+	defer qi.lock.Unlock()
+	return qi.CalculateInfo.NonPreemptibleUsed.DeepCopy()
 }
 
 func (qi *QuotaInfo) GetRuntime() v1.ResourceList {
@@ -322,6 +336,7 @@ func (qi *QuotaInfo) getMaskedRuntimeNoLock() v1.ResourceList {
 func (qi *QuotaInfo) clearForResetNoLock() {
 	qi.CalculateInfo.Request = v1.ResourceList{}
 	qi.CalculateInfo.Used = v1.ResourceList{}
+	qi.CalculateInfo.NonPreemptibleUsed = v1.ResourceList{}
 	qi.CalculateInfo.Runtime = v1.ResourceList{}
 	qi.CalculateInfo.ChildRequest = v1.ResourceList{}
 	qi.CalculateInfo.Guaranteed = v1.ResourceList{}

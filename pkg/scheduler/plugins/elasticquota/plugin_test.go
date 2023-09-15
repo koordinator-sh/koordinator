@@ -750,6 +750,123 @@ func TestPlugin_PreFilter_CheckParent(t *testing.T) {
 	}
 }
 
+func TestPlugin_Prefilter_QuotaNonPreempt(t *testing.T) {
+	test := []struct {
+		name           string
+		pod            *corev1.Pod
+		initPods       []*corev1.Pod
+		quotaInfos     []*v1alpha1.ElasticQuota
+		runtime        corev1.ResourceList
+		expectedStatus *framework.Status
+	}{
+		{
+			name: "default",
+			pod:  defaultCreatePodWithQuotaAndNonPreemptible("4", "test1", 1, 20, 20, true),
+			initPods: []*corev1.Pod{
+				defaultCreatePodWithQuotaName("1", "test1", 10, 50, 10),
+				defaultCreatePodWithQuotaName("2", "test1", 9, 10, 10),
+				defaultCreatePodWithQuotaName("3", "test1", 8, 10, 10),
+			},
+			quotaInfos: []*v1alpha1.ElasticQuota{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test1",
+						Labels: map[string]string{
+							extension.LabelQuotaParent: extension.DefaultQuotaName,
+						},
+					},
+					Spec: v1alpha1.ElasticQuotaSpec{
+						Max: MakeResourceList().CPU(90).Mem(80).Obj(),
+						Min: MakeResourceList().CPU(50).Mem(50).Obj(),
+					},
+				},
+			},
+			expectedStatus: framework.NewStatus(framework.Success, ""),
+		},
+		{
+			name: "non-preemptible pod used larger than min",
+			pod:  defaultCreatePodWithQuotaAndNonPreemptible("4", "test1", 1, 2, 2, true),
+			initPods: []*corev1.Pod{
+				defaultCreatePodWithQuotaAndNonPreemptible("1", "test1", 10, 2, 1, false),
+				defaultCreatePodWithQuotaAndNonPreemptible("2", "test1", 9, 2, 1, true),
+				defaultCreatePodWithQuotaAndNonPreemptible("3", "test1", 9, 2, 1, true),
+			},
+			quotaInfos: []*v1alpha1.ElasticQuota{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test1",
+						Labels: map[string]string{
+							extension.LabelQuotaParent: extension.DefaultQuotaName,
+						},
+					},
+					Spec: v1alpha1.ElasticQuotaSpec{
+						Max: MakeResourceList().CPU(10).Mem(8).Obj(),
+						Min: MakeResourceList().CPU(5).Mem(5).Obj(),
+					},
+				},
+			},
+			runtime: MakeResourceList().CPU(8).Mem(5).Obj(),
+			expectedStatus: framework.NewStatus(framework.Unschedulable,
+				fmt.Sprintf("Insufficient non-preemptible quotas, "+
+					"quotaName: %v, min: %v, nonPreemptibleUsed: %v, pod's request: %v, exceedDimensions: [cpu]",
+					"test1", printResourceList(MakeResourceList().CPU(5).Mem(5).Obj()),
+					printResourceList(MakeResourceList().CPU(4).Mem(2).Obj()), printResourceList(MakeResourceList().CPU(2).Mem(2).Obj()))),
+		},
+		{
+			name: "non-preemptible pod will not be evicted",
+			pod:  defaultCreatePodWithQuotaAndNonPreemptible("4", "test1", 10, 2, 1, true),
+			initPods: []*corev1.Pod{
+				defaultCreatePodWithQuotaAndNonPreemptible("1", "test1", 10, 2, 1, false),
+				defaultCreatePodWithQuotaAndNonPreemptible("2", "test1", 4, 2, 1, false),
+				defaultCreatePodWithQuotaAndNonPreemptible("3", "test1", 1, 2, 2, true),
+			},
+			quotaInfos: []*v1alpha1.ElasticQuota{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test1",
+						Labels: map[string]string{
+							extension.LabelQuotaParent: extension.DefaultQuotaName,
+						},
+					},
+					Spec: v1alpha1.ElasticQuotaSpec{
+						Max: MakeResourceList().CPU(10).Mem(8).Obj(),
+						Min: MakeResourceList().CPU(5).Mem(5).Obj(),
+					},
+				},
+			},
+			runtime: MakeResourceList().CPU(7).Mem(5).Obj(),
+			expectedStatus: framework.NewStatus(framework.Unschedulable,
+				fmt.Sprintf("Insufficient quotas, "+
+					"quotaName: %v, runtime: %v, used: %v, pod's request: %v, exceedDimensions: [cpu]",
+					"test1", printResourceList(MakeResourceList().CPU(7).Mem(5).Obj()),
+					printResourceList(MakeResourceList().CPU(6).Mem(4).Obj()), printResourceList(MakeResourceList().CPU(2).Mem(1).Obj()))),
+		},
+	}
+	for _, tt := range test {
+		t.Run(tt.name, func(t *testing.T) {
+			suit := newPluginTestSuit(t, nil)
+			p, _ := suit.proxyNew(suit.elasticQuotaArgs, suit.Handle)
+			gp := p.(*Plugin)
+			for _, qis := range tt.quotaInfos {
+				gp.OnQuotaAdd(qis)
+			}
+			for _, pod := range tt.initPods {
+				gp.OnPodAdd(pod)
+			}
+
+			qi := gp.groupQuotaManager.GetQuotaInfoByName("test1")
+			qi.Lock()
+			qi.CalculateInfo.Runtime = tt.runtime.DeepCopy()
+			qi.UnLock()
+			fmt.Println(len(qi.GetPodCache()))
+			state := framework.NewCycleState()
+			ctx := context.TODO()
+			_, status := gp.PreFilter(ctx, state, tt.pod)
+			assert.Equal(t, status, tt.expectedStatus)
+		})
+	}
+}
+
 func TestPlugin_Reserve(t *testing.T) {
 	test := []struct {
 		name         string
@@ -1163,6 +1280,17 @@ func defaultCreatePodWithQuotaNameAndVersion(name, quotaName, version string, pr
 func defaultCreatePodWithQuotaName(name, quotaName string, priority int32, cpu, mem int64) *corev1.Pod {
 	pod := defaultCreatePod(name, priority, cpu, mem)
 	pod.Labels[extension.LabelQuotaName] = quotaName
+	pod.UID = types.UID(name)
+	pod.Spec.NodeName = "test"
+	return pod
+}
+
+func defaultCreatePodWithQuotaAndNonPreemptible(name, quotaName string, priority int32, cpu, mem int64, nonPreempt bool) *corev1.Pod {
+	pod := defaultCreatePod(name, priority, cpu, mem)
+	pod.Labels[extension.LabelQuotaName] = quotaName
+	if nonPreempt {
+		pod.Labels[extension.LabelNonPreemptible] = "true"
+	}
 	pod.UID = types.UID(name)
 	pod.Spec.NodeName = "test"
 	return pod

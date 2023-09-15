@@ -32,14 +32,15 @@ type QuotaInfoSummary struct {
 	RuntimeVersion    int64  `json:"runtimeVersion"`
 	AllowLentResource bool   `json:"allowLentResource"`
 
-	Max          v1.ResourceList `json:"max"`
-	Min          v1.ResourceList `json:"min"`
-	AutoScaleMin v1.ResourceList `json:"autoScaleMin"`
-	Used         v1.ResourceList `json:"used"`
-	Request      v1.ResourceList `json:"request"`
-	SharedWeight v1.ResourceList `json:"sharedWeight"`
-	Runtime      v1.ResourceList `json:"runtime"`
-	ChildRequest v1.ResourceList `json:"childRequest"`
+	Max                v1.ResourceList `json:"max"`
+	Min                v1.ResourceList `json:"min"`
+	AutoScaleMin       v1.ResourceList `json:"autoScaleMin"`
+	Used               v1.ResourceList `json:"used"`
+	NonPreemptibleUsed v1.ResourceList `json:"nonPreemptibleUsed"`
+	Request            v1.ResourceList `json:"request"`
+	SharedWeight       v1.ResourceList `json:"sharedWeight"`
+	Runtime            v1.ResourceList `json:"runtime"`
+	ChildRequest       v1.ResourceList `json:"childRequest"`
 
 	PodCache map[string]*SimplePodInfo `json:"podCache"`
 }
