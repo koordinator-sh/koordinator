@@ -30,6 +30,7 @@ import (
 	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
 func (qt *quotaTopology) validateQuotaSelfItem(quota *v1alpha1.ElasticQuota) error {
@@ -204,7 +205,7 @@ func (qt *quotaTopology) checkMinQuotaSum(quotaInfo *QuotaInfo) error {
 		}
 
 		childMinSumIncludeSelf := quotav1.Add(childMinSumNotIncludeSelf, quotaInfo.CalculateInfo.Min)
-		if isLessEqual, _ := quotav1.LessThanOrEqual(childMinSumIncludeSelf, qt.quotaInfoMap[quotaInfo.ParentName].CalculateInfo.Min); !isLessEqual {
+		if !util.LessThanOrEqualEnhanced(childMinSumIncludeSelf, qt.quotaInfoMap[quotaInfo.ParentName].CalculateInfo.Min) {
 			return fmt.Errorf("checkMinQuotaSum allChildren SumMinQuota > parentMinQuota, parent: %v", quotaInfo.ParentName)
 		}
 	}
@@ -219,7 +220,7 @@ func (qt *quotaTopology) checkMinQuotaSum(quotaInfo *QuotaInfo) error {
 		return fmt.Errorf("checkMinQuotaSum failed:%v", err)
 	}
 
-	if isLessEqual, _ := quotav1.LessThanOrEqual(childMinSum, quotaInfo.CalculateInfo.Min); !isLessEqual {
+	if !util.LessThanOrEqualEnhanced(childMinSum, quotaInfo.CalculateInfo.Min) {
 		return fmt.Errorf("checkMinQuotaSum allChildrn SumMinQuota > MinQuota, parent: %v", quotaInfo.Name)
 	}
 
