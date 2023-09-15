@@ -93,6 +93,11 @@ DirectMap1G:    261095424 kB`
 			want:    uint64((263432804-254391744)<<10) - 100,
 			wantErr: false,
 		},
+		{
+			name:    "path not exit",
+			want:    uint64(0),
+			wantErr: true,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -136,6 +141,24 @@ total_unevictable 0
 			},
 			want:    uint64(209715200) - 100,
 			wantErr: false,
+		},
+		{
+			name: "read illegal podMemUsageWithHotPage",
+			fields: fields{
+				SetSysUtil: func(helper *system.FileTestUtil) {
+					helper.WriteCgroupFileContents(testPodParentDir, system.MemoryStat, `
+total_cache 104857600
+totalxxx_rss 104857600
+total_inactive_anon 104857600
+total_active_anon 0
+total_inactive_file 104857600
+total_active_file 0
+total_unevictable 0
+`)
+				},
+			},
+			want:    uint64(0),
+			wantErr: true,
 		},
 	}
 	for _, tt := range tests {
@@ -181,6 +204,24 @@ total_unevictable 0
 			},
 			want:    uint64(209715200) - 100,
 			wantErr: false,
+		},
+		{
+			name: "read illegal podMemUsageWithHotPage",
+			fields: fields{
+				SetSysUtil: func(helper *system.FileTestUtil) {
+					helper.WriteCgroupFileContents(testContainerParentDir, system.MemoryStat, `
+total_cache 104857600
+totalxxxx_rss 104857600
+total_inactive_anon 104857600
+total_active_anon 0
+total_inactive_file 104857600
+total_active_file 0
+total_unevictable 0
+`)
+				},
+			},
+			want:    uint64(0),
+			wantErr: true,
 		},
 	}
 	for _, tt := range tests {
