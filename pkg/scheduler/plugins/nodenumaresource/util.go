@@ -59,3 +59,28 @@ func getNUMATopologyPolicy(nodeLabels map[string]string, kubeletTopologyManagerP
 func skipTheNode(state *preFilterState, numaTopologyPolicy extension.NUMATopologyPolicy) bool {
 	return state.skip || (!state.requestCPUBind && numaTopologyPolicy == extension.NUMATopologyPolicyNone)
 }
+
+// amplifyNUMANodeResources amplifies the resources per NUMA Node.
+// NOTE(joseph): After the NodeResource controller supports amplifying by ratios, should remove the function.
+func amplifyNUMANodeResources(node *corev1.Node, topologyOptions *TopologyOptions) error {
+	if topologyOptions.AmplificationRatios != nil {
+		return nil
+	}
+	amplificationRatios, err := extension.GetNodeResourceAmplificationRatios(node.Annotations)
+	if err != nil {
+		return err
+	}
+	topologyOptions.AmplificationRatios = amplificationRatios
+
+	numaNodeResources := make([]NUMANodeResource, 0, len(topologyOptions.NUMANodeResources))
+	for _, v := range topologyOptions.NUMANodeResources {
+		numaNode := NUMANodeResource{
+			Node:      v.Node,
+			Resources: v.Resources.DeepCopy(),
+		}
+		extension.AmplifyResourceList(numaNode.Resources, amplificationRatios)
+		numaNodeResources = append(numaNodeResources, numaNode)
+	}
+	topologyOptions.NUMANodeResources = numaNodeResources
+	return nil
+}

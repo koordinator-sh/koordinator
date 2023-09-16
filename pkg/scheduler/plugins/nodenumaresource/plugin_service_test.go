@@ -20,11 +20,13 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"sort"
 	"testing"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/uuid"
 
@@ -34,13 +36,15 @@ import (
 )
 
 func TestEndpointsQueryNode(t *testing.T) {
-	suit := newPluginTestSuit(t, []*corev1.Node{
-		{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: "test-node-1",
-			},
+	node := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-node-1",
 		},
+	}
+	extension.SetNodeResourceAmplificationRatios(node, map[corev1.ResourceName]extension.Ratio{
+		corev1.ResourceCPU: 1.5,
 	})
+	suit := newPluginTestSuit(t, []*corev1.Node{node})
 	plugin, err := suit.proxyNew(suit.nodeNUMAResourceArgs, suit.Handle)
 	assert.NoError(t, err)
 	assert.NotNil(t, plugin)
@@ -60,6 +64,14 @@ func TestEndpointsQueryNode(t *testing.T) {
 			},
 		},
 	}
+	for i := 0; i < topologyOptions.CPUTopology.NumNodes; i++ {
+		topologyOptions.NUMANodeResources = append(topologyOptions.NUMANodeResources, NUMANodeResource{
+			Node: i,
+			Resources: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewQuantity(int64(topologyOptions.CPUTopology.CPUsPerNode()), resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(32*1024*1024*1024, resource.BinarySI),
+			}})
+	}
 	p.topologyOptionsManager.UpdateTopologyOptions("test-node-1", func(options *TopologyOptions) {
 		*options = topologyOptions
 	})
@@ -67,8 +79,16 @@ func TestEndpointsQueryNode(t *testing.T) {
 	podUID := uuid.NewUUID()
 	p.resourceManager.Update("test-node-1", &PodAllocation{
 		UID:                podUID,
-		CPUSet:             cpuset.MustParse("0,2,4,6"),
+		CPUSet:             cpuset.MustParse("2,3,4,5"),
 		CPUExclusivePolicy: schedulingconfig.CPUExclusivePolicyNone,
+		NUMANodeResources: []NUMANodeResource{
+			{
+				Node: 0,
+				Resources: corev1.ResourceList{
+					corev1.ResourceCPU: *resource.NewQuantity(4, resource.DecimalSI),
+				},
+			},
+		},
 	})
 
 	engine := gin.Default()
@@ -80,21 +100,61 @@ func TestEndpointsQueryNode(t *testing.T) {
 	response := &NodeResponse{}
 	err = json.NewDecoder(w.Result().Body).Decode(response)
 	assert.NoError(t, err)
+	sort.Slice(response.RemainingNUMANodeResources, func(i, j int) bool {
+		return response.RemainingNUMANodeResources[i].Node < response.RemainingNUMANodeResources[j].Node
+	})
+	sort.Slice(response.AllocatedNUMANodeResources, func(i, j int) bool {
+		return response.AllocatedNUMANodeResources[i].Node < response.AllocatedNUMANodeResources[j].Node
+	})
+
+	topologyOptions.NUMANodeResources = nil
+	for i := 0; i < topologyOptions.CPUTopology.NumNodes; i++ {
+		topologyOptions.NUMANodeResources = append(topologyOptions.NUMANodeResources, NUMANodeResource{
+			Node: i,
+			Resources: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("12"),
+				corev1.ResourceMemory: *resource.NewQuantity(32*1024*1024*1024, resource.BinarySI),
+			}})
+	}
+	topologyOptions.AmplificationRatios = map[corev1.ResourceName]extension.Ratio{
+		corev1.ResourceCPU: 1.5,
+	}
 
 	expectedResponse := &NodeResponse{
 		Name:            "test-node-1",
 		TopologyOptions: topologyOptions,
-		AvailableCPUs:   cpuset.MustParse("3,5,7-15"),
+		AvailableCPUs:   cpuset.MustParse("6-15"),
 		AllocatedCPUs:   CPUDetails{},
 		AllocatedPods: []PodAllocation{
 			{
 				UID:                podUID,
-				CPUSet:             cpuset.MustParse("0,2,4,6"),
+				CPUSet:             cpuset.MustParse("2,3,4,5"),
 				CPUExclusivePolicy: schedulingconfig.CPUExclusivePolicyNone,
+				NUMANodeResources: []NUMANodeResource{
+					{Node: 0, Resources: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("4")}},
+				},
+			},
+		},
+		AllocatedNUMANodeResources: []NUMANodeResource{
+			{Node: 0, Resources: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("6")}},
+		},
+		RemainingNUMANodeResources: []NUMANodeResource{
+			{
+				Node: 0,
+				Resources: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("6"),
+					corev1.ResourceMemory: *resource.NewQuantity(32*1024*1024*1024, resource.BinarySI),
+				},
+			},
+			{
+				Node: 1,
+				Resources: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("12"),
+					corev1.ResourceMemory: *resource.NewQuantity(32*1024*1024*1024, resource.BinarySI)},
 			},
 		},
 	}
-	for _, v := range []int{0, 2, 4, 6} {
+	for _, v := range []int{2, 3, 4, 5} {
 		cpuInfo := topologyOptions.CPUTopology.CPUDetails[v]
 		cpuInfo.RefCount++
 		cpuInfo.ExclusivePolicy = schedulingconfig.CPUExclusivePolicyNone

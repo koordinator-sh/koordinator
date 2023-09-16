@@ -53,6 +53,10 @@ func (p *Plugin) RegisterEndpoints(group *gin.RouterGroup) {
 			return
 		}
 		topologyOptions.NUMATopologyPolicy = getNUMATopologyPolicy(node.Labels, topologyOptions.NUMATopologyPolicy)
+		if err := amplifyNUMANodeResources(node, &topologyOptions); err != nil {
+			services.ResponseErrorMessage(c, http.StatusInternalServerError, "failed to amplify NUMANode Resources, err: %v", err)
+			return
+		}
 
 		nodeAllocation := p.resourceManager.GetNodeAllocation(nodeName)
 		if nodeAllocation == nil {

@@ -20,9 +20,11 @@ import (
 	"sync"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/types"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 
+	"github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingconfig "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	"github.com/koordinator-sh/koordinator/pkg/util/cpuset"
 )
@@ -153,11 +155,20 @@ func (n *NodeAllocation) getAvailableCPUs(cpuTopology *CPUTopology, maxRefCount 
 func (n *NodeAllocation) getAvailableNUMANodeResources(topologyOptions TopologyOptions, reusableResources map[int]corev1.ResourceList) (totalAvailable, totalAllocated map[int]corev1.ResourceList) {
 	totalAvailable = make(map[int]corev1.ResourceList)
 	totalAllocated = make(map[int]corev1.ResourceList)
+	cpuAmplificationRatio := topologyOptions.AmplificationRatios[corev1.ResourceCPU]
 	for _, numaNodeRes := range topologyOptions.NUMANodeResources {
 		var allocatedRes corev1.ResourceList
 		allocated := n.allocatedResources[numaNodeRes.Node]
 		if allocated != nil {
-			allocatedRes = quotav1.SubtractWithNonNegativeResult(allocated.Resources, reusableResources[numaNodeRes.Node])
+			allocatedRes = allocated.Resources
+			if cpuAmplificationRatio > 1 {
+				allocatedCPUSets := int64(n.allocatedCPUs.CPUsInNUMANodes(numaNodeRes.Node).Size() * 1000)
+				amplifiedCPUs := extension.Amplify(allocatedCPUSets, cpuAmplificationRatio)
+				quantity := allocatedRes[corev1.ResourceCPU]
+				allocatedRes = allocatedRes.DeepCopy()
+				allocatedRes[corev1.ResourceCPU] = *resource.NewMilliQuantity(quantity.MilliValue()-allocatedCPUSets+amplifiedCPUs, resource.DecimalSI)
+			}
+			allocatedRes = quotav1.SubtractWithNonNegativeResult(allocatedRes, reusableResources[numaNodeRes.Node])
 			totalAllocated[numaNodeRes.Node] = allocatedRes
 		}
 		totalAvailable[numaNodeRes.Node] = quotav1.SubtractWithNonNegativeResult(numaNodeRes.Resources, allocatedRes)
