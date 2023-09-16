@@ -910,6 +910,99 @@ func Test_nodeMetricInformer_collectNodeMetric(t *testing.T) {
 	}
 }
 
+func Test_nodeMetricInformer_collectPodMetric(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+	now := time.Now()
+	startTime := now.Add(-time.Second * 120)
+
+	type args struct {
+		queryparam          metriccache.QueryParam
+		memoryCollectPolicy slov1alpha1.NodeMemoryCollectPolicy
+		pod                 *statesinformer.PodMeta
+	}
+	type samples struct {
+		CPUUsed float64
+		MemUsed float64
+	}
+	tests := []struct {
+		name    string
+		args    args
+		samples samples
+	}{
+		{
+			name: "test-1 report usageWithoutPageCache",
+			args: args{
+				queryparam:          metriccache.QueryParam{Start: &startTime, End: &now, Aggregate: metriccache.AggregationTypeAVG},
+				memoryCollectPolicy: "usageWithoutPageCache",
+				pod: &statesinformer.PodMeta{
+					Pod: &v1.Pod{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "test-pod",
+							Namespace: "default",
+							UID:       "test-pod",
+						},
+					},
+				},
+			},
+			samples: samples{
+				CPUUsed: 2,
+				MemUsed: 10 * 1024 * 1024 * 1024,
+			},
+		},
+		{
+			name: "test-2 report usageWithHotPageCache",
+			args: args{
+				queryparam:          metriccache.QueryParam{Start: &startTime, End: &now, Aggregate: metriccache.AggregationTypeAVG},
+				memoryCollectPolicy: "usageWithHotPageCache",
+				pod: &statesinformer.PodMeta{
+					Pod: &v1.Pod{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "test-pod",
+							Namespace: "default",
+							UID:       "test-pod",
+						},
+					},
+				},
+			},
+			samples: samples{
+				CPUUsed: 2,
+				MemUsed: 10 * 1024 * 1024 * 1024,
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.args.memoryCollectPolicy == slov1alpha1.UsageWithHotPageCache {
+				system.SetIsStartColdMemory(true)
+			}
+			mockMetricCache := mockmetriccache.NewMockMetricCache(ctrl)
+			mockResultFactory := mockmetriccache.NewMockAggregateResultFactory(ctrl)
+			metriccache.DefaultAggregateResultFactory = mockResultFactory
+			mockQuerier := mockmetriccache.NewMockQuerier(ctrl)
+			mockMetricCache.EXPECT().Querier(gomock.Any(), gomock.Any()).Return(mockQuerier, nil).AnyTimes()
+
+			duration := tt.args.queryparam.End.Sub(*tt.args.queryparam.Start)
+			cpuQueryMeta, err := metriccache.PodCPUUsageMetric.BuildQueryMeta(metriccache.MetricPropertiesFunc.Pod(string(tt.args.pod.Pod.UID)))
+			assert.NoError(t, err)
+			buildMockQueryResult(ctrl, mockQuerier, mockResultFactory, cpuQueryMeta, tt.samples.CPUUsed, duration)
+
+			memQueryMeta, err := metriccache.PodMemUsageMetric.BuildQueryMeta(metriccache.MetricPropertiesFunc.Pod(string(tt.args.pod.Pod.UID)))
+			if tt.args.memoryCollectPolicy == slov1alpha1.UsageWithHotPageCache {
+				memQueryMeta, err = metriccache.PodMemoryWithHotPageUsageMetric.BuildQueryMeta(metriccache.MetricPropertiesFunc.Pod(string(tt.args.pod.Pod.UID)))
+			}
+			assert.NoError(t, err)
+			buildMockQueryResult(ctrl, mockQuerier, mockResultFactory, memQueryMeta, tt.samples.MemUsed, duration)
+			r := &nodeMetricInformer{
+				metricCache: mockMetricCache,
+			}
+			r.getNodeMetricSpec().CollectPolicy.NodeMemoryCollectPolicy = &tt.args.memoryCollectPolicy
+			_, err = r.collectPodMetric(tt.args.pod, tt.args.queryparam)
+			assert.NoError(t, err)
+		})
+	}
+}
+
 func buildMockQueryResult(ctrl *gomock.Controller, querier *mockmetriccache.MockQuerier, factory *mockmetriccache.MockAggregateResultFactory,
 	queryMeta metriccache.MetricMeta, value float64, duration time.Duration) {
 	result := mockmetriccache.NewMockAggregateResult(ctrl)
