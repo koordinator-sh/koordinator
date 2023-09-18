@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"go.uber.org/atomic"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/klog/v2"
 
@@ -151,7 +152,12 @@ func (k *kidledcoldPageCollector) collectPodsColdPageInfo() ([]metriccache.Metri
 		podCgroupDir := meta.CgroupDir
 		podColdPageBytes, err := k.cgroupReader.ReadMemoryColdPageUsage(podCgroupDir)
 		if err != nil {
-			klog.Warningf("can not get cold page info from memory.idle_page_stats file for pod %s/%s", pod.Namespace, pod.Name)
+			if pod.Status.Phase != corev1.PodRunning && pod.Status.Phase != corev1.PodPending {
+				klog.V(6).Infof("failed to collect non-running pod cold page usage for %s, cold page err: %s",
+					podKey, err)
+			} else {
+				klog.Warningf("can not get cold page info from memory.idle_page_stats file for pod %s/%s", pod.Namespace, pod.Name)
+			}
 			continue
 		}
 		podColdPageBytesValue := float64(podColdPageBytes)

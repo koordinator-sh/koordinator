@@ -17,6 +17,7 @@ limitations under the License.
 package system
 
 import (
+	"math"
 	"path"
 
 	"k8s.io/utils/pointer"
@@ -38,7 +39,7 @@ var (
 	MinFreeKbytesValidator             = &RangeValidator{min: 10 * 1024, max: 10 * 1024 * 1024}
 	WatermarkScaleFactorValidator      = &RangeValidator{min: 10, max: 400}
 	MemcgReapBackGroundValidator       = &RangeValidator{min: 0, max: 1}
-	KidledScanPeriodInSecondsValidator = &RangeValidator{min: 0, max: 4*1024*1024*1024 - 1}
+	KidledScanPeriodInSecondsValidator = &RangeValidator{min: 0, max: math.MaxInt64}
 	KidledUseHierarchyValidator        = &RangeValidator{min: 0, max: 1}
 )
 

@@ -17,7 +17,6 @@ limitations under the License.
 package system
 
 import (
-	"path"
 	"path/filepath"
 	"testing"
 
@@ -45,8 +44,8 @@ func Test_IsKidledSupport(t *testing.T) {
 			fields: fields{
 				SetSysUtil: func(helper *FileTestUtil) {
 					Conf.SysRootDir = filepath.Join(helper.TempDir, Conf.SysRootDir)
-					helper.CreateFile(path.Join(GetSysRootDir(), KidledRelativePath, KidledScanPeriodInSecondsFileName))
-					helper.CreateFile(path.Join(GetSysRootDir(), KidledRelativePath, KidledUseHierarchyFileFileName))
+					helper.CreateFile(filepath.Join(GetSysRootDir(), KidledRelativePath, KidledScanPeriodInSecondsFileName))
+					helper.CreateFile(filepath.Join(GetSysRootDir(), KidledRelativePath, KidledUseHierarchyFileFileName))
 				},
 			},
 			want: true,
