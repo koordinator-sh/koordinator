@@ -109,20 +109,17 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 	}
 
 	// New Arbitrator
-	var eventHandler handler.EventHandler = &handler.EnqueueRequestForObject{}
-	if controllerArgs.ArbitrationArgs.Enabled {
-		a, err := arbitrator.New(controllerArgs.ArbitrationArgs, arbitrator.Options{
-			Client:             r.Client,
-			EventRecorder:      r.eventRecorder,
-			RetryableFilter:    r.retryablePodFilter,
-			NonRetryableFilter: r.nonRetryablePodFilter,
-			Manager:            options.Manager,
-		})
-		if err != nil {
-			klog.ErrorS(err, "failed to New Arbitrator")
-		}
-		eventHandler = arbitrator.NewHandler(a, r.Client)
+	a, err := arbitrator.New(controllerArgs.ArbitrationArgs, arbitrator.Options{
+		Client:             r.Client,
+		EventRecorder:      r.eventRecorder,
+		RetryableFilter:    r.retryablePodFilter,
+		NonRetryableFilter: r.nonRetryablePodFilter,
+		Manager:            options.Manager,
+	})
+	if err != nil {
+		return nil, err
 	}
+	eventHandler := arbitrator.NewHandler(a, r.Client)
 
 	if err = c.Watch(&source.Kind{Type: &sev1alpha1.PodMigrationJob{}}, eventHandler, &predicate.Funcs{
 		DeleteFunc: func(event event.DeleteEvent) bool {
