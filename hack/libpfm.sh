@@ -26,6 +26,7 @@ elif [ -f /etc/debian_version ]; then
         sudo apt-get -y install bash build-essential cmake wget
 elif [ $(uname) == "Darwin" ]; then
     echo "skip macOS"
+    exit 0
 else
     echo "failed to install c++ build tools and wget, please install them manually."
     exit 1
