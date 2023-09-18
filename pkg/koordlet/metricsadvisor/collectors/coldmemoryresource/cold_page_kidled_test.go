@@ -54,6 +54,7 @@ func Test_kideldEnable(t *testing.T) {
 			name: "os doesn't support kidled and koordlet feature-gate doesn't support kidled",
 			fields: fields{
 				SetSysUtil: func(helper *system.FileTestUtil) {
+					system.SetIsStartColdMemory(false)
 					system.Conf.SysRootDir = filepath.Join(helper.TempDir, system.Conf.SysRootDir)
 				},
 				fg: map[string]bool{
@@ -67,6 +68,7 @@ func Test_kideldEnable(t *testing.T) {
 			name: "os doesn't support kidled and koordlet feature-gate supports kidled",
 			fields: fields{
 				SetSysUtil: func(helper *system.FileTestUtil) {
+					system.SetIsStartColdMemory(false)
 					system.Conf.SysRootDir = filepath.Join(helper.TempDir, system.Conf.SysRootDir)
 				},
 				fg: map[string]bool{
@@ -80,6 +82,7 @@ func Test_kideldEnable(t *testing.T) {
 			name: "os supports kidled and koordlet feature-gate doesn't support kidled",
 			fields: fields{
 				SetSysUtil: func(helper *system.FileTestUtil) {
+					system.SetIsStartColdMemory(false)
 					system.Conf.SysRootDir = filepath.Join(helper.TempDir, system.Conf.SysRootDir)
 					helper.CreateCgroupFile("", system.KidledScanPeriodInSeconds)
 					helper.CreateCgroupFile("", system.KidledUseHierarchy)
@@ -97,6 +100,7 @@ func Test_kideldEnable(t *testing.T) {
 			name: "os supports kidled and koordlet feature-gate supports kidled",
 			fields: fields{
 				SetSysUtil: func(helper *system.FileTestUtil) {
+					system.SetIsStartColdMemory(false)
 					system.Conf.SysRootDir = filepath.Join(helper.TempDir, system.Conf.SysRootDir)
 					helper.CreateCgroupFile("", system.KidledScanPeriodInSeconds)
 					helper.CreateCgroupFile("", system.KidledUseHierarchy)
