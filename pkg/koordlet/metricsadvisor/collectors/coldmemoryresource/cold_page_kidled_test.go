@@ -53,6 +53,9 @@ func Test_kideldEnable(t *testing.T) {
 		{
 			name: "os doesn't support kidled and koordlet feature-gate doesn't support kidled",
 			fields: fields{
+				SetSysUtil: func(helper *system.FileTestUtil) {
+					system.Conf.SysRootDir = filepath.Join(helper.TempDir, system.Conf.SysRootDir)
+				},
 				fg: map[string]bool{
 					string(features.ColdPageCollector): false,
 				},
@@ -63,6 +66,9 @@ func Test_kideldEnable(t *testing.T) {
 		{
 			name: "os doesn't support kidled and koordlet feature-gate supports kidled",
 			fields: fields{
+				SetSysUtil: func(helper *system.FileTestUtil) {
+					system.Conf.SysRootDir = filepath.Join(helper.TempDir, system.Conf.SysRootDir)
+				},
 				fg: map[string]bool{
 					string(features.ColdPageCollector): true,
 				},
