@@ -27,20 +27,22 @@ import (
 )
 
 type NodeResource struct {
-	Resources   map[corev1.ResourceName]*resource.Quantity `json:"resources,omitempty"`
-	Labels      map[string]string                          `json:"labels,omitempty"`
-	Annotations map[string]string                          `json:"annotations,omitempty"`
-	Messages    map[corev1.ResourceName]string             `json:"messages,omitempty"`
-	Resets      map[corev1.ResourceName]bool               `json:"resets,omitempty"`
+	Resources     map[corev1.ResourceName]*resource.Quantity `json:"resources,omitempty"`
+	ZoneResources map[string]corev1.ResourceList             `json:"zoneResources,omitempty"`
+	Labels        map[string]string                          `json:"labels,omitempty"`
+	Annotations   map[string]string                          `json:"annotations,omitempty"`
+	Messages      map[corev1.ResourceName]string             `json:"messages,omitempty"`
+	Resets        map[corev1.ResourceName]bool               `json:"resets,omitempty"`
 }
 
 func NewNodeResource(items ...ResourceItem) *NodeResource {
 	nr := &NodeResource{
-		Resources:   map[corev1.ResourceName]*resource.Quantity{},
-		Labels:      map[string]string{},
-		Annotations: map[string]string{},
-		Messages:    map[corev1.ResourceName]string{},
-		Resets:      map[corev1.ResourceName]bool{},
+		Resources:     map[corev1.ResourceName]*resource.Quantity{},
+		ZoneResources: map[string]corev1.ResourceList{},
+		Labels:        map[string]string{},
+		Annotations:   map[string]string{},
+		Messages:      map[corev1.ResourceName]string{},
+		Resets:        map[corev1.ResourceName]bool{},
 	}
 	if len(items) > 0 {
 		nr.Set(items...)
@@ -52,6 +54,12 @@ func (nr *NodeResource) Set(items ...ResourceItem) {
 	for _, item := range items {
 		nr.Resources[item.Name] = item.Quantity
 		nr.Resets[item.Name] = item.Reset
+		for zoneKey, zoneQ := range item.ZoneQuantity {
+			if _, ok := nr.ZoneResources[zoneKey]; !ok {
+				nr.ZoneResources[zoneKey] = corev1.ResourceList{}
+			}
+			nr.ZoneResources[zoneKey][item.Name] = zoneQ
+		}
 		for k, v := range item.Labels {
 			nr.Labels[k] = v
 		}
@@ -79,6 +87,12 @@ func (nr *NodeResource) Delete(items ...ResourceItem) {
 		delete(nr.Resources, item.Name)
 		delete(nr.Messages, item.Name)
 		delete(nr.Resets, item.Name)
+		for zoneKey := range item.ZoneQuantity {
+			if _, ok := nr.ZoneResources[zoneKey]; !ok {
+				continue
+			}
+			delete(nr.ZoneResources[zoneKey], item.Name)
+		}
 		for k := range item.Labels {
 			delete(nr.Labels, k)
 		}
@@ -93,12 +107,13 @@ func (nr *NodeResource) Get(name corev1.ResourceName) *resource.Quantity {
 }
 
 type ResourceItem struct {
-	Name        corev1.ResourceName `json:"name,omitempty"`
-	Quantity    *resource.Quantity  `json:"quantity,omitempty"`
-	Labels      map[string]string   `json:"labels,omitempty"`
-	Annotations map[string]string   `json:"annotations,omitempty"`
-	Message     string              `json:"message,omitempty"` // the message about the resource calculation
-	Reset       bool                `json:"reset,omitempty"`   // whether to reset the resource or not
+	Name         corev1.ResourceName          `json:"name,omitempty"`
+	Quantity     *resource.Quantity           `json:"quantity,omitempty"`
+	ZoneQuantity map[string]resource.Quantity `json:"zoneQuantity,omitempty"`
+	Labels       map[string]string            `json:"labels,omitempty"`
+	Annotations  map[string]string            `json:"annotations,omitempty"`
+	Message      string                       `json:"message,omitempty"` // the message about the resource calculation
+	Reset        bool                         `json:"reset,omitempty"`   // whether to reset the resource or not
 }
 
 type ResourceMetrics struct {
