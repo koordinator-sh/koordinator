@@ -30,7 +30,9 @@ import (
 	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/util"
+	utilfeature "github.com/koordinator-sh/koordinator/pkg/util/feature"
 )
 
 func (qt *quotaTopology) validateQuotaSelfItem(quota *v1alpha1.ElasticQuota) error {
@@ -89,6 +91,12 @@ func (qt *quotaTopology) validateQuotaTopology(oldQuotaInfo, quotaInfo *QuotaInf
 
 	if err := qt.checkMinQuotaSum(quotaInfo); err != nil {
 		return err
+	}
+
+	if utilfeature.DefaultFeatureGate.Enabled(features.ElasticQuotaGuaranteeUsage) {
+		if err := qt.checkGuaranteedForMin(quotaInfo); err != nil {
+			return fmt.Errorf("%v %v", err.Error(), quotaInfo.Name)
+		}
 	}
 
 	return nil
@@ -314,4 +322,59 @@ func checkQuotaKeySame(parent, child v1.ResourceList) bool {
 		}
 	}
 	return true
+}
+
+func (qt *quotaTopology) checkGuaranteedForMin(quotaInfo *QuotaInfo) error {
+	if quotaInfo.TreeID == "" {
+		return nil
+	}
+
+	// If the quota is tree root, allow it change the min.
+	if quotaInfo.IsTreeRoot {
+		return nil
+	}
+
+	// if the new min less than guaranteed. allow it.
+	if util.LessThanOrEqualEnhanced(quotaInfo.CalculateInfo.Min, quotaInfo.CalculateInfo.Guaranteed) {
+		return nil
+	}
+	newGuaranteed := quotav1.Max(quotaInfo.CalculateInfo.Min, quotaInfo.CalculateInfo.Guaranteed)
+
+	return qt.checkParentGuaranteed(newGuaranteed, quotaInfo.Name, quotaInfo.ParentName)
+}
+
+func (qt *quotaTopology) checkParentGuaranteed(newGuarantee v1.ResourceList, self, parentName string) error {
+	if parentName == extension.RootQuotaName {
+		return fmt.Errorf("tree root quota %v can't guarantee for min", self)
+	}
+
+	parentInfo, ok := qt.quotaInfoMap[parentName]
+	if !ok {
+		return fmt.Errorf("parent %v not found", parentName)
+	}
+
+	childQuotaList, ok := qt.quotaHierarchyInfo[parentName]
+	if !ok {
+		return fmt.Errorf("child quota list not found, parent: %v", parentName)
+	}
+
+	allChildGuaranteed := newGuarantee
+	for childName := range childQuotaList {
+		if childName == self {
+			continue
+		}
+
+		if quotaInfo, exist := qt.quotaInfoMap[childName]; exist {
+			allChildGuaranteed = quotav1.Add(allChildGuaranteed, quotaInfo.CalculateInfo.Guaranteed)
+		} else {
+			return fmt.Errorf("BUG quotaInfoMap and quotaTree information out of sync, losed :%v", childName)
+		}
+	}
+
+	newParentGuaranteed := quotav1.Max(parentInfo.CalculateInfo.Min, allChildGuaranteed)
+	if util.LessThanOrEqualEnhanced(newParentGuaranteed, parentInfo.CalculateInfo.Guaranteed) {
+		return nil
+	}
+
+	return qt.checkParentGuaranteed(newParentGuaranteed, parentInfo.Name, parentInfo.ParentName)
 }

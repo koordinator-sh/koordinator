@@ -28,11 +28,14 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
+	k8sfeature "k8s.io/apiserver/pkg/util/feature"
 	"k8s.io/klog/v2"
 	schetesting "k8s.io/kubernetes/pkg/scheduler/testing"
 	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/pkg/features"
+	utilfeature "github.com/koordinator-sh/koordinator/pkg/util/feature"
 )
 
 const (
@@ -1426,12 +1429,32 @@ func TestGroupQuotaManager_GetQuotaInformationForSyncHandler(t *testing.T) {
 	gqm.updateGroupDeltaRequestNoLock("1", createResourceList(100, 100))
 	gqm.RefreshRuntime("1")
 	gqm.updateGroupDeltaUsedNoLock("1", createResourceList(10, 10))
-	used, request, childRequest, runtime, err := gqm.GetQuotaInformationForSyncHandler("1")
+	used, request, childRequest, runtime, _, _, err := gqm.GetQuotaInformationForSyncHandler("1")
 	assert.Nil(t, err)
 	assert.Equal(t, used, createResourceList(10, 10))
 	assert.Equal(t, request, createResourceList(100, 100))
 	assert.Equal(t, childRequest, createResourceList(100, 100))
 	assert.Equal(t, runtime, createResourceList(100, 100))
+}
+
+func TestGroupQuotaManager_GetQuotaInformationForSyncHandlerWithUsageGuarantee(t *testing.T) {
+	defer utilfeature.SetFeatureGateDuringTest(t, k8sfeature.DefaultFeatureGate, features.ElasticQuotaGuaranteeUsage, true)()
+
+	gqm := NewGroupQuotaManagerForTest()
+	qi1 := createQuota("1", extension.RootQuotaName, 400, 400, 10, 10)
+	gqm.UpdateQuota(qi1, false)
+	gqm.UpdateClusterTotalResource(createResourceList(1000, 1000))
+	gqm.updateGroupDeltaRequestNoLock("1", createResourceList(100, 100))
+	gqm.RefreshRuntime("1")
+	gqm.updateGroupDeltaUsedNoLock("1", createResourceList(10, 10))
+	used, request, childRequest, runtime, guaranteed, allocated, err := gqm.GetQuotaInformationForSyncHandler("1")
+	assert.Nil(t, err)
+	assert.Equal(t, used, createResourceList(10, 10))
+	assert.Equal(t, request, createResourceList(100, 100))
+	assert.Equal(t, childRequest, createResourceList(100, 100))
+	assert.Equal(t, runtime, createResourceList(100, 100))
+	assert.Equal(t, guaranteed, createResourceList(10, 10))
+	assert.Equal(t, allocated, createResourceList(10, 10))
 }
 
 func TestGetPodName(t *testing.T) {
@@ -1652,4 +1675,83 @@ func TestGroupQuotaManager_RootQuotaRuntime(t *testing.T) {
 
 	// case: test root quota runtime
 	assert.Equal(t, gqm.RefreshRuntime(extension.RootQuotaName), gqm.totalResourceExceptSystemAndDefaultUsed.DeepCopy())
+}
+
+func TestGroupQuotaManager_OnPodUpdateUsedForGuarantee(t *testing.T) {
+	defer utilfeature.SetFeatureGateDuringTest(t, k8sfeature.DefaultFeatureGate, features.ElasticQuotaGuaranteeUsage, true)()
+	gqm := NewGroupQuotaManagerForTest()
+	gqm.scaleMinQuotaEnabled = true
+
+	gqm.UpdateClusterTotalResource(createResourceList(50, 50))
+
+	// quota1 Max[40, 40]  Min[20,20] request[0,0]
+	//   |-- quota2 Max[40, 40]  Min[10,10] request[0,0]
+	//   |-- quota3 Max[40, 40]  Min[5,5] request[0,0]
+	qi1 := createQuota("1", extension.RootQuotaName, 40, 40, 20, 20)
+	qi2 := createQuota("2", "1", 40, 40, 10, 10)
+	qi3 := createQuota("3", "1", 40, 40, 5, 5)
+	gqm.UpdateQuota(qi1, false)
+	gqm.UpdateQuota(qi2, false)
+	gqm.UpdateQuota(qi3, false)
+
+	// add pod1
+	pod1 := schetesting.MakePod().Name("1").Obj()
+	pod1.Spec.Containers = []v1.Container{
+		{
+			Resources: v1.ResourceRequirements{
+				Requests: createResourceList(5, 5),
+			},
+		},
+	}
+	pod1.Spec.NodeName = "node1"
+	gqm.OnPodAdd("2", pod1)
+	assert.Equal(t, createResourceList(5, 5), gqm.GetQuotaInfoByName("2").GetChildRequest())
+	assert.Equal(t, createResourceList(10, 10), gqm.GetQuotaInfoByName("2").GetRequest())
+	assert.Equal(t, createResourceList(5, 5), gqm.GetQuotaInfoByName("2").GetUsed())
+	assert.Equal(t, createResourceList(5, 5), gqm.GetQuotaInfoByName("2").GetAllocated())
+	assert.Equal(t, createResourceList(10, 10), gqm.GetQuotaInfoByName("2").GetGuaranteed())
+	// check parent info
+	// the parent should guarantee children min
+	assert.Equal(t, createResourceList(15, 15), gqm.GetQuotaInfoByName("1").GetAllocated())
+	assert.Equal(t, createResourceList(20, 20), gqm.GetQuotaInfoByName("1").GetGuaranteed())
+
+	// add pod2
+	pod2 := schetesting.MakePod().Name("2").Obj()
+	pod2.Spec.Containers = []v1.Container{
+		{
+			Resources: v1.ResourceRequirements{
+				Requests: createResourceList(10, 10),
+			},
+		},
+	}
+	pod2.Spec.NodeName = "node1"
+	gqm.OnPodAdd("2", pod2)
+	assert.Equal(t, createResourceList(15, 15), gqm.GetQuotaInfoByName("2").GetChildRequest())
+	assert.Equal(t, createResourceList(15, 15), gqm.GetQuotaInfoByName("2").GetRequest())
+	assert.Equal(t, createResourceList(15, 15), gqm.GetQuotaInfoByName("2").GetUsed())
+	assert.Equal(t, createResourceList(15, 15), gqm.GetQuotaInfoByName("2").GetAllocated())
+	assert.Equal(t, createResourceList(15, 15), gqm.GetQuotaInfoByName("2").GetGuaranteed())
+	// check parent info
+	assert.Equal(t, createResourceList(20, 20), gqm.GetQuotaInfoByName("1").GetAllocated())
+	assert.Equal(t, createResourceList(20, 20), gqm.GetQuotaInfoByName("1").GetGuaranteed())
+
+	// add pod3
+	pod3 := schetesting.MakePod().Name("3").Obj()
+	pod3.Spec.Containers = []v1.Container{
+		{
+			Resources: v1.ResourceRequirements{
+				Requests: createResourceList(10, 10),
+			},
+		},
+	}
+	pod3.Spec.NodeName = "node1"
+	gqm.OnPodAdd("2", pod3)
+	assert.Equal(t, createResourceList(25, 25), gqm.GetQuotaInfoByName("2").GetChildRequest())
+	assert.Equal(t, createResourceList(25, 25), gqm.GetQuotaInfoByName("2").GetRequest())
+	assert.Equal(t, createResourceList(25, 25), gqm.GetQuotaInfoByName("2").GetUsed())
+	assert.Equal(t, createResourceList(25, 25), gqm.GetQuotaInfoByName("2").GetAllocated())
+	assert.Equal(t, createResourceList(25, 25), gqm.GetQuotaInfoByName("2").GetGuaranteed())
+	// check parent info
+	assert.Equal(t, createResourceList(30, 30), gqm.GetQuotaInfoByName("1").GetAllocated())
+	assert.Equal(t, createResourceList(30, 30), gqm.GetQuotaInfoByName("1").GetGuaranteed())
 }

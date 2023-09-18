@@ -23,10 +23,12 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
+	utilfeature "k8s.io/apiserver/pkg/util/feature"
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
@@ -226,6 +228,17 @@ func (gqm *GroupQuotaManager) updateGroupDeltaUsedNoLock(quotaName string, delta
 	for i := 0; i < allQuotaInfoLen; i++ {
 		quotaInfo := curToAllParInfos[i]
 		quotaInfo.addUsedNonNegativeNoLock(delta)
+	}
+
+	if utilfeature.DefaultFeatureGate.Enabled(features.ElasticQuotaGuaranteeUsage) {
+		deltaAllocated := v1.ResourceList{}
+		for resKey := range gqm.resourceKeys {
+			q, ok := delta[resKey]
+			if ok {
+				deltaAllocated[resKey] = q
+			}
+		}
+		gqm.recursiveUpdateGroupTreeWithDeltaAllocated(deltaAllocated, curToAllParInfos)
 	}
 
 	// if systemQuotaGroup or DefaultQuotaGroup's used change, update cluster total resource.
@@ -771,17 +784,17 @@ func (gqm *GroupQuotaManager) UnreservePod(quotaName string, p *v1.Pod) {
 	gqm.updatePodIsAssignedNoLock(quotaName, p, false)
 }
 
-func (gqm *GroupQuotaManager) GetQuotaInformationForSyncHandler(quotaName string) (used, request, childRequest, runtime v1.ResourceList, err error) {
+func (gqm *GroupQuotaManager) GetQuotaInformationForSyncHandler(quotaName string) (used, request, childRequest, runtime, guaranteed, allocated v1.ResourceList, err error) {
 	gqm.hierarchyUpdateLock.RLock()
 	defer gqm.hierarchyUpdateLock.RUnlock()
 
 	quotaInfo := gqm.getQuotaInfoByNameNoLock(quotaName)
 	if quotaInfo == nil {
-		return nil, nil, nil, nil, fmt.Errorf("groupQuotaManager doesn't have this quota:%v", quotaName)
+		return nil, nil, nil, nil, nil, nil, fmt.Errorf("groupQuotaManager doesn't have this quota:%v", quotaName)
 	}
 
 	runtime = gqm.RefreshRuntimeNoLock(quotaName)
-	return quotaInfo.GetUsed(), quotaInfo.GetRequest(), quotaInfo.GetChildRequest(), runtime, nil
+	return quotaInfo.GetUsed(), quotaInfo.GetRequest(), quotaInfo.GetChildRequest(), runtime, quotaInfo.GetGuaranteed(), quotaInfo.GetAllocated(), nil
 }
 
 func getPodName(oldPod, newPod *v1.Pod) string {
@@ -868,4 +881,37 @@ func (gqm *GroupQuotaManager) resetRootQuotaUsedAndRequest() {
 
 	rootQuotaInfo.CalculateInfo.Used = used
 	rootQuotaInfo.CalculateInfo.Request = request
+}
+
+func (gqm *GroupQuotaManager) recursiveUpdateGroupTreeWithDeltaAllocated(deltaAllocated v1.ResourceList, curToAllParInfos []*QuotaInfo) {
+	for i := 0; i < len(curToAllParInfos); i++ {
+		curQuotaInfo := curToAllParInfos[i]
+		oldGuaranteed := curQuotaInfo.CalculateInfo.Guaranteed
+		curQuotaInfo.addAllocatedQuotaNoLock(deltaAllocated)
+
+		// update the guarantee.
+		guaranteed := curQuotaInfo.CalculateInfo.Allocated.DeepCopy()
+		for r, q := range curQuotaInfo.CalculateInfo.Min {
+			p, ok := guaranteed[r]
+			if !ok {
+				guaranteed[r] = q
+				continue
+			}
+			if q.Cmp(p) == 1 {
+				guaranteed[r] = q
+			}
+		}
+		curQuotaInfo.CalculateInfo.Guaranteed = guaranteed
+
+		directParRuntimeCalculatorPtr := gqm.getRuntimeQuotaCalculatorByNameNoLock(curQuotaInfo.ParentName)
+		if directParRuntimeCalculatorPtr == nil {
+			klog.Errorf("treeWrapper not exist! quotaName:%v  parentName:%v", curQuotaInfo.Name, curQuotaInfo.ParentName)
+			return
+		}
+		if directParRuntimeCalculatorPtr.needUpdateOneGroupGuaranteed(curQuotaInfo) {
+			directParRuntimeCalculatorPtr.updateOneGroupGuaranteed(curQuotaInfo)
+		}
+
+		deltaAllocated = quotav1.Subtract(guaranteed, oldGuaranteed)
+	}
 }
