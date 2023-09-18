@@ -277,10 +277,16 @@ func (qi *QuotaInfo) GetRuntime() v1.ResourceList {
 	return qi.CalculateInfo.Runtime.DeepCopy()
 }
 
-func (qi *QuotaInfo) getMax() v1.ResourceList {
+func (qi *QuotaInfo) GetMax() v1.ResourceList {
 	qi.lock.Lock()
 	defer qi.lock.Unlock()
 	return qi.CalculateInfo.Max.DeepCopy()
+}
+
+func (qi *QuotaInfo) GetMin() v1.ResourceList {
+	qi.lock.Lock()
+	defer qi.lock.Unlock()
+	return qi.CalculateInfo.Min.DeepCopy()
 }
 
 func NewQuotaInfoFromQuota(quota *v1alpha1.ElasticQuota) *QuotaInfo {

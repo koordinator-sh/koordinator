@@ -265,7 +265,7 @@ func (gqm *GroupQuotaManager) RefreshRuntimeNoLock(quotaName string) v1.Resource
 	}
 
 	if quotaName == extension.SystemQuotaName || quotaName == extension.DefaultQuotaName {
-		return quotaInfo.getMax()
+		return quotaInfo.GetMax()
 	}
 
 	curToAllParInfos := gqm.getCurToAllParentGroupQuotaInfoNoLock(quotaInfo.Name)
