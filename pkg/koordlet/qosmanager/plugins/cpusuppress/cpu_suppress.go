@@ -173,12 +173,13 @@ func (r *CPUSuppress) calculateBESuppressCPU(node *corev1.Node, nodeMetric float
 	systemUsed := corev1.ResourceList{
 		corev1.ResourceCPU: systemUsedCPU,
 	}
-	systemUsed = quotav1.Max(systemUsed, nodeAnnoReserved)
+	nodeKubeletReserved := util.GetNodeReservationFromKubelet(node)
+	systemUsed = quotav1.Max(quotav1.Max(systemUsed, nodeAnnoReserved), nodeKubeletReserved)
 	systemUsedCPU = systemUsed[corev1.ResourceCPU]
 
-	// suppress(BE) := node.Total * SLOPercent - pod(non-be).Used - max(system.Used, node.anno.reserved)
+	// suppress(BE) := node.Capacity * SLOPercent - pod(non-be).Used - max(system.Used, node.anno.reserved, node.kubelet.reserved)
 	// NOTE: valid milli-cpu values should not larger than 2^20, so there is no overflow during the calculation
-	nodeBESuppressCPU := resource.NewMilliQuantity(node.Status.Allocatable.Cpu().MilliValue()*beCPUUsedThreshold/100,
+	nodeBESuppressCPU := resource.NewMilliQuantity(node.Status.Capacity.Cpu().MilliValue()*beCPUUsedThreshold/100,
 		node.Status.Allocatable.Cpu().Format)
 	nodeBESuppressCPU.Sub(podNoneBEUsedCPU)
 	nodeBESuppressCPU.Sub(systemUsedCPU)

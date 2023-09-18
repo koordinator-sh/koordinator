@@ -25,6 +25,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 )
@@ -306,6 +307,100 @@ func TestTrimNodeAllocatableByNodeReservation(t *testing.T) {
 			got, gotTrimmed := TrimNodeAllocatableByNodeReservation(tt.node)
 			assert.True(t, equality.Semantic.DeepEqual(tt.expectedAllocatable, got))
 			assert.Equal(t, tt.expectedTrimmed, gotTrimmed)
+		})
+	}
+}
+
+func TestGetNodeReservationFromKubelet(t *testing.T) {
+	type args struct {
+		node *corev1.Node
+	}
+	tests := []struct {
+		name string
+		args args
+		want corev1.ResourceList
+	}{
+		{
+			name: "return empty with nil node",
+			args: args{
+				node: nil,
+			},
+			want: corev1.ResourceList{},
+		},
+		{
+			name: "get kubelet reserved resource",
+			args: args{
+				node: &corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node",
+					},
+					Status: corev1.NodeStatus{
+						Allocatable: corev1.ResourceList{
+							corev1.ResourceCPU:    *resource.NewQuantity(10, resource.DecimalSI),
+							corev1.ResourceMemory: *resource.NewQuantity(10*1024, resource.BinarySI),
+						},
+						Capacity: corev1.ResourceList{
+							corev1.ResourceCPU:    *resource.NewQuantity(12, resource.DecimalSI),
+							corev1.ResourceMemory: *resource.NewQuantity(12*1024, resource.BinarySI),
+						},
+					},
+				},
+			},
+			want: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewQuantity(2, resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(2*1024, resource.BinarySI),
+			},
+		},
+		{
+			name: "get zero kubelet reserved resource",
+			args: args{
+				node: &corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node",
+					},
+					Status: corev1.NodeStatus{
+						Allocatable: corev1.ResourceList{
+							corev1.ResourceCPU:    *resource.NewQuantity(10, resource.DecimalSI),
+							corev1.ResourceMemory: *resource.NewQuantity(10*1024, resource.BinarySI),
+						},
+						Capacity: corev1.ResourceList{
+							corev1.ResourceCPU:    *resource.NewQuantity(10, resource.DecimalSI),
+							corev1.ResourceMemory: *resource.NewQuantity(10*1024, resource.BinarySI),
+						},
+					},
+				},
+			},
+			want: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewQuantity(0, resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(0, resource.BinarySI),
+			},
+		},
+		{
+			name: "bad format with empty capacity",
+			args: args{
+				node: &corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node",
+					},
+					Status: corev1.NodeStatus{
+						Allocatable: corev1.ResourceList{
+							corev1.ResourceCPU:    *resource.NewQuantity(10, resource.DecimalSI),
+							corev1.ResourceMemory: *resource.NewQuantity(10*1024, resource.BinarySI),
+						},
+					},
+				},
+			},
+			want: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewQuantity(0, resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(0, resource.BinarySI),
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := GetNodeReservationFromKubelet(tt.args.node); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("GetNodeReservationFromKubelet() = %v, want %v", got, tt.want)
+			}
 		})
 	}
 }

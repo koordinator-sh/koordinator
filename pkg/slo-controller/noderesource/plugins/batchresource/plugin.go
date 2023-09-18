@@ -204,15 +204,16 @@ func (p *Plugin) calculate(strategy *configuration.ColocationStrategy, node *cor
 	klog.V(6).InfoS("batch resource got unknown priority pods used", "node", node.Name,
 		"cpu", podUnknownPriorityUsed.Cpu().String(), "memory", podUnknownPriorityUsed.Memory().String())
 
-	nodeAllocatable := getNodeAllocatable(node)
-	nodeReservation := getNodeReservation(strategy, nodeAllocatable)
+	nodeCapacity := getNodeCapacity(node)
+	nodeReservation := getNodeReservation(strategy, nodeCapacity)
 
-	// System.Used = max(Node.Used - Pod(All).Used, Node.Anno.Reserved)
 	systemUsed := getResourceListForCPUAndMemory(nodeMetric.Status.NodeMetric.SystemUsage.ResourceList)
+	// System.Reserved = Node.Anno.Reserved, Node.Kubelet.Reserved)
 	nodeAnnoReserved := util.GetNodeReservationFromAnnotation(node.Annotations)
-	systemUsed = quotav1.Max(systemUsed, nodeAnnoReserved)
+	nodeKubeletReserved := util.GetNodeReservationFromKubelet(node)
+	systemReserved := quotav1.Max(nodeKubeletReserved, nodeAnnoReserved)
 
-	batchAllocatable, cpuMsg, memMsg := calculateBatchResourceByPolicy(strategy, nodeAllocatable, nodeReservation,
+	batchAllocatable, cpuMsg, memMsg := calculateBatchResourceByPolicy(strategy, nodeCapacity, nodeReservation, systemReserved,
 		systemUsed, podHPRequest, podHPUsed)
 
 	metrics.RecordNodeExtendedResourceAllocatableInternal(node, string(extension.BatchCPU), metrics.UnitInteger, float64(batchAllocatable.Cpu().MilliValue())/1000)
@@ -269,6 +270,7 @@ func (p *Plugin) calculateOnNUMALevel(strategy *configuration.ColocationStrategy
 	nodeZoneAllocatable := make([]corev1.ResourceList, zoneNum)
 	nodeZoneReserve := make([]corev1.ResourceList, zoneNum)
 	systemZoneUsed := make([]corev1.ResourceList, zoneNum)
+	systemZoneReserved := make([]corev1.ResourceList, zoneNum)
 	podUnknownPriorityZoneUsed := make([]corev1.ResourceList, zoneNum)
 	podHPZoneRequested := make([]corev1.ResourceList, zoneNum)
 	podHPZoneUsed := make([]corev1.ResourceList, zoneNum)
@@ -276,7 +278,9 @@ func (p *Plugin) calculateOnNUMALevel(strategy *configuration.ColocationStrategy
 
 	systemUsed := getResourceListForCPUAndMemory(nodeMetric.Status.NodeMetric.SystemUsage.ResourceList)
 	nodeAnnoReserved := util.GetNodeReservationFromAnnotation(node.Annotations)
-	systemUsed = quotav1.Max(systemUsed, nodeAnnoReserved)
+	nodeKubeletReserved := util.GetNodeReservationFromKubelet(node)
+	systemReserved := quotav1.Max(nodeKubeletReserved, nodeAnnoReserved)
+
 	for i, zone := range nrt.Zones {
 		zoneIdxMap[i] = zone.Name
 		nodeZoneAllocatable[i] = corev1.ResourceList{}
@@ -290,6 +294,7 @@ func (p *Plugin) calculateOnNUMALevel(strategy *configuration.ColocationStrategy
 		}
 		nodeZoneReserve[i] = getNodeReservation(strategy, nodeZoneAllocatable[i])
 		systemZoneUsed[i] = divideResourceList(systemUsed, float64(zoneNum))
+		systemZoneReserved[i] = divideResourceList(systemReserved, float64(zoneNum))
 	}
 	podMetricMap := make(map[string]*slov1alpha1.PodMetricInfo)
 	podMetricInList := map[string]struct{}{}
@@ -351,7 +356,7 @@ func (p *Plugin) calculateOnNUMALevel(strategy *configuration.ColocationStrategy
 	for i := range batchZoneAllocatable {
 		zoneName := zoneIdxMap[i]
 		batchZoneAllocatable[i], cpuMsg, memMsg = calculateBatchResourceByPolicy(strategy, nodeZoneAllocatable[i],
-			nodeZoneReserve[i], systemZoneUsed[i], podHPZoneRequested[i], podHPZoneUsed[i])
+			nodeZoneReserve[i], systemZoneReserved[i], systemZoneUsed[i], podHPZoneRequested[i], podHPZoneUsed[i])
 		klog.V(6).InfoS("calculate batch resource in NUMA level", "node", node.Name, "zone", zoneName,
 			"batch resource", batchZoneAllocatable[i], "cpu", cpuMsg, "memory", memMsg)
 
