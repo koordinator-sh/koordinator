@@ -59,17 +59,13 @@ func Test_NewColdPageCollector(t *testing.T) {
 		SetSysUtil func(helper *system.FileTestUtil)
 	}
 	tests := []struct {
-		name       string
-		fields     fields
-		want       framework.Collector
-		wantEnable bool
-		wantStart  bool
+		name   string
+		fields fields
+		want   framework.Collector
 	}{
 		{
-			name:       "os doesn't support cold page collector and return nonCollector",
-			want:       &nonColdPageCollector{},
-			wantEnable: false,
-			wantStart:  false,
+			name: "os doesn't support cold page collector and return nonCollector",
+			want: &nonColdPageCollector{},
 		},
 		{
 			name: "os support kidled cold page collector but cold page collector feature gate false",
@@ -89,8 +85,6 @@ func Test_NewColdPageCollector(t *testing.T) {
 				metricDB:        opt.MetricCache,
 				started:         atomic.NewBool(false),
 			},
-			wantEnable: false,
-			wantStart:  false,
 		},
 	}
 	for _, tt := range tests {
@@ -102,7 +96,6 @@ func Test_NewColdPageCollector(t *testing.T) {
 			}
 			got := New(opt)
 			assert.Equal(t, tt.want, got)
-			assert.Equal(t, tt.wantEnable, got.Enabled())
 			assert.NotPanics(t, func() {
 				got.Setup(&framework.Context{})
 			})

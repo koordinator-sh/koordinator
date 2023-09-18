@@ -38,6 +38,70 @@ import (
 	mock_statesinformer "github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer/mockstatesinformer"
 )
 
+func Test_kideldEnable(t *testing.T) {
+	type fields struct {
+		SetSysUtil func(helper *system.FileTestUtil)
+	}
+	tests := []struct {
+		name        string
+		fields      fields
+		wantsupport bool
+		wantenable  bool
+	}{
+		{
+			name: "os supports kidled and koordlet feature-gate doesn't support",
+			fields: fields{
+				SetSysUtil: func(helper *system.FileTestUtil) {
+					system.Conf.SysRootDir = filepath.Join(helper.TempDir, system.Conf.SysRootDir)
+					helper.CreateCgroupFile("", system.KidledScanPeriodInSeconds)
+					helper.CreateCgroupFile("", system.KidledUseHierarchy)
+					helper.WriteFileContents(system.KidledScanPeriodInSeconds.Path(""), `120`)
+					helper.WriteFileContents(system.KidledUseHierarchy.Path(""), `1`)
+				},
+			},
+			wantsupport: true,
+			wantenable:  false,
+		},
+		{
+			name:        "os doesn't support kidled and koordlet feature-gate doesn't support",
+			wantsupport: false,
+			wantenable:  false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			helper := system.NewFileTestUtil(t)
+			defer helper.Cleanup()
+			if tt.fields.SetSysUtil != nil {
+				tt.fields.SetSysUtil(helper)
+			}
+
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+
+			metricCache, err := metriccache.NewMetricCache(&metriccache.Config{
+				TSDBPath:              t.TempDir(),
+				TSDBEnablePromMetrics: false,
+			})
+			assert.NoError(t, err)
+			defer func() {
+				metricCache.Close()
+			}()
+			statesInformer := mock_statesinformer.NewMockStatesInformer(ctrl)
+			collector := New(&framework.Options{
+				Config: &framework.Config{
+					ColdPageCollectorInterval: 1 * time.Second,
+				},
+				StatesInformer: statesInformer,
+				MetricCache:    metricCache,
+				CgroupReader:   resourceexecutor.NewCgroupReader(),
+			})
+			assert.Equal(t, tt.wantsupport, system.IsKidledSupport())
+			assert.Equal(t, tt.wantenable, collector.Enabled())
+		})
+	}
+}
+
 func Test_collectColdPageInfo(t *testing.T) {
 	testNow := time.Now()
 	testContainerID := "containerd://123abc"
