@@ -29,6 +29,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/klog/v2"
 
+	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
@@ -41,6 +42,7 @@ import (
 func Test_kideldEnable(t *testing.T) {
 	type fields struct {
 		SetSysUtil func(helper *system.FileTestUtil)
+		fg         map[string]bool
 	}
 	tests := []struct {
 		name        string
@@ -49,7 +51,27 @@ func Test_kideldEnable(t *testing.T) {
 		wantenable  bool
 	}{
 		{
-			name: "os supports kidled and koordlet feature-gate doesn't support",
+			name: "os doesn't support kidled and koordlet feature-gate doesn't support kidled",
+			fields: fields{
+				fg: map[string]bool{
+					string(features.ColdPageCollector): false,
+				},
+			},
+			wantsupport: false,
+			wantenable:  false,
+		},
+		{
+			name: "os doesn't support kidled and koordlet feature-gate supports kidled",
+			fields: fields{
+				fg: map[string]bool{
+					string(features.ColdPageCollector): true,
+				},
+			},
+			wantsupport: false,
+			wantenable:  false,
+		},
+		{
+			name: "os supports kidled and koordlet feature-gate doesn't support kidled",
 			fields: fields{
 				SetSysUtil: func(helper *system.FileTestUtil) {
 					system.Conf.SysRootDir = filepath.Join(helper.TempDir, system.Conf.SysRootDir)
@@ -58,24 +80,39 @@ func Test_kideldEnable(t *testing.T) {
 					helper.WriteFileContents(system.KidledScanPeriodInSeconds.Path(""), `120`)
 					helper.WriteFileContents(system.KidledUseHierarchy.Path(""), `1`)
 				},
+				fg: map[string]bool{
+					string(features.ColdPageCollector): false,
+				},
 			},
 			wantsupport: true,
 			wantenable:  false,
 		},
 		{
-			name:        "os doesn't support kidled and koordlet feature-gate doesn't support",
-			wantsupport: false,
-			wantenable:  false,
+			name: "os supports kidled and koordlet feature-gate supports kidled",
+			fields: fields{
+				SetSysUtil: func(helper *system.FileTestUtil) {
+					system.Conf.SysRootDir = filepath.Join(helper.TempDir, system.Conf.SysRootDir)
+					helper.CreateCgroupFile("", system.KidledScanPeriodInSeconds)
+					helper.CreateCgroupFile("", system.KidledUseHierarchy)
+					helper.WriteFileContents(system.KidledScanPeriodInSeconds.Path(""), `120`)
+					helper.WriteFileContents(system.KidledUseHierarchy.Path(""), `1`)
+				},
+				fg: map[string]bool{
+					string(features.ColdPageCollector): true,
+				},
+			},
+			wantsupport: true,
+			wantenable:  true,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			features.DefaultMutableKoordletFeatureGate.SetFromMap(tt.fields.fg)
 			helper := system.NewFileTestUtil(t)
 			defer helper.Cleanup()
 			if tt.fields.SetSysUtil != nil {
 				tt.fields.SetSysUtil(helper)
 			}
-
 			ctrl := gomock.NewController(t)
 			defer ctrl.Finish()
 
