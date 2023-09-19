@@ -17,7 +17,6 @@ limitations under the License.
 package coldmemoryresource
 
 import (
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -35,7 +34,6 @@ import (
 func Test_NewColdPageCollector(t *testing.T) {
 	helper := system.NewFileTestUtil(t)
 	defer helper.Cleanup()
-	system.Conf.SysRootDir = filepath.Join(helper.TempDir, system.Conf.SysRootDir)
 	metricCache, err := metriccache.NewMetricCache(&metriccache.Config{
 		TSDBPath:              t.TempDir(),
 		TSDBEnablePromMetrics: false,
@@ -71,7 +69,7 @@ func Test_NewColdPageCollector(t *testing.T) {
 			name: "os support kidled cold page collector but cold page collector feature gate false",
 			fields: fields{
 				SetSysUtil: func(helper *system.FileTestUtil) {
-					system.Conf.SysRootDir = filepath.Join(helper.TempDir, system.Conf.SysRootDir)
+
 					helper.SetResourcesSupported(true, system.KidledScanPeriodInSeconds)
 					helper.SetResourcesSupported(true, system.KidledUseHierarchy)
 				},

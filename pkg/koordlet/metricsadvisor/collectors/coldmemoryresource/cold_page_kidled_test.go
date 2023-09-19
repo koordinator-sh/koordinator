@@ -17,7 +17,6 @@ limitations under the License.
 package coldmemoryresource
 
 import (
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -54,7 +53,6 @@ func Test_kideldEnable(t *testing.T) {
 			name: "os doesn't support kidled and koordlet feature-gate doesn't support kidled",
 			fields: fields{
 				SetSysUtil: func(helper *system.FileTestUtil) {
-					system.Conf.SysRootDir = filepath.Join(helper.TempDir, system.Conf.SysRootDir)
 					helper.SetResourcesSupported(false, system.KidledScanPeriodInSeconds)
 					helper.SetResourcesSupported(false, system.KidledUseHierarchy)
 				},
@@ -69,7 +67,6 @@ func Test_kideldEnable(t *testing.T) {
 			name: "os doesn't support kidled and koordlet feature-gate supports kidled",
 			fields: fields{
 				SetSysUtil: func(helper *system.FileTestUtil) {
-					system.Conf.SysRootDir = filepath.Join(helper.TempDir, system.Conf.SysRootDir)
 					helper.SetResourcesSupported(false, system.KidledScanPeriodInSeconds)
 					helper.SetResourcesSupported(false, system.KidledUseHierarchy)
 				},
@@ -84,7 +81,6 @@ func Test_kideldEnable(t *testing.T) {
 			name: "os supports kidled and koordlet feature-gate doesn't support kidled",
 			fields: fields{
 				SetSysUtil: func(helper *system.FileTestUtil) {
-					system.Conf.SysRootDir = filepath.Join(helper.TempDir, system.Conf.SysRootDir)
 					helper.SetResourcesSupported(true, system.KidledScanPeriodInSeconds)
 					helper.SetResourcesSupported(true, system.KidledUseHierarchy)
 					helper.CreateCgroupFile("", system.KidledScanPeriodInSeconds)
@@ -103,7 +99,6 @@ func Test_kideldEnable(t *testing.T) {
 			name: "os supports kidled and koordlet feature-gate supports kidled",
 			fields: fields{
 				SetSysUtil: func(helper *system.FileTestUtil) {
-					system.Conf.SysRootDir = filepath.Join(helper.TempDir, system.Conf.SysRootDir)
 					helper.SetResourcesSupported(true, system.KidledScanPeriodInSeconds)
 					helper.SetResourcesSupported(true, system.KidledUseHierarchy)
 					helper.CreateCgroupFile("", system.KidledScanPeriodInSeconds)
@@ -301,7 +296,6 @@ func Test_collectColdPageInfo(t *testing.T) {
 					}, gocache.DefaultExpiration)
 				},
 				SetSysUtil: func(helper *system.FileTestUtil) {
-					system.Conf.SysRootDir = filepath.Join(helper.TempDir, system.Conf.SysRootDir)
 					helper.WriteFileContents(system.KidledScanPeriodInSeconds.Path(""), `120`)
 					helper.WriteFileContents(system.KidledUseHierarchy.Path(""), `1`)
 					helper.SetResourcesSupported(true, system.MemoryIdlePageStats)
@@ -337,7 +331,6 @@ func Test_collectColdPageInfo(t *testing.T) {
 					}, gocache.DefaultExpiration)
 				},
 				SetSysUtil: func(helper *system.FileTestUtil) {
-					system.Conf.SysRootDir = filepath.Join(helper.TempDir, system.Conf.SysRootDir)
 					helper.WriteFileContents(system.KidledScanPeriodInSeconds.Path(""), `120`)
 					helper.WriteFileContents(system.KidledUseHierarchy.Path(""), `1`)
 					helper.SetResourcesSupported(true, system.MemoryIdlePageStats)
@@ -648,7 +641,6 @@ func Test_collectPodColdPageInfo(t *testing.T) {
 					}, gocache.DefaultExpiration)
 				},
 				SetSysUtil: func(helper *system.FileTestUtil) {
-					system.Conf.SysRootDir = filepath.Join(helper.TempDir, system.Conf.SysRootDir)
 					helper.WriteFileContents(system.KidledScanPeriodInSeconds.Path(""), `120`)
 					helper.WriteFileContents(system.KidledUseHierarchy.Path(""), `1`)
 					helper.SetResourcesSupported(true, system.MemoryIdlePageStats)
@@ -689,7 +681,6 @@ func Test_collectPodColdPageInfo(t *testing.T) {
 					}, gocache.DefaultExpiration)
 				},
 				SetSysUtil: func(helper *system.FileTestUtil) {
-					system.Conf.SysRootDir = filepath.Join(helper.TempDir, system.Conf.SysRootDir)
 					helper.WriteFileContents(system.KidledScanPeriodInSeconds.Path(""), `120`)
 					helper.WriteFileContents(system.KidledUseHierarchy.Path(""), `1`)
 					helper.SetResourcesSupported(true, system.MemoryIdlePageStats)
