@@ -66,7 +66,7 @@ func Test_NewColdPageCollector(t *testing.T) {
 			want: &nonColdPageCollector{},
 		},
 		{
-			name: "os support kidled cold page collector but cold page collector feature gate false",
+			name: "os support kidled cold page collector but cold page collector feature-gate false",
 			fields: fields{
 				SetSysUtil: func(helper *system.FileTestUtil) {
 
