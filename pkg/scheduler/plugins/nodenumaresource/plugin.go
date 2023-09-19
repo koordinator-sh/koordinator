@@ -266,13 +266,14 @@ func (p *Plugin) Filter(ctx context.Context, cycleState *framework.CycleState, p
 	if !status.IsSuccess() {
 		return status
 	}
-	if state.skip {
-		return nil
-	}
 
 	node := nodeInfo.Node()
 	topologyOptions := p.topologyOptionsManager.GetTopologyOptions(node.Name)
 	numaTopologyPolicy := getNUMATopologyPolicy(node.Labels, topologyOptions.NUMATopologyPolicy)
+
+	if skipTheNode(state, numaTopologyPolicy) {
+		return nil
+	}
 
 	if state.requestCPUBind {
 		if topologyOptions.CPUTopology == nil {
@@ -321,9 +322,6 @@ func (p *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState, 
 	if !status.IsSuccess() {
 		return status
 	}
-	if state.skip {
-		return nil
-	}
 
 	nodeInfo, err := p.handle.SnapshotSharedLister().NodeInfos().Get(nodeName)
 	if err != nil {
@@ -331,6 +329,12 @@ func (p *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState, 
 	}
 	node := nodeInfo.Node()
 	topologyOptions := p.topologyOptionsManager.GetTopologyOptions(node.Name)
+	numaTopologyPolicy := getNUMATopologyPolicy(node.Labels, topologyOptions.NUMATopologyPolicy)
+
+	if skipTheNode(state, numaTopologyPolicy) {
+		return nil
+	}
+
 	if state.requestCPUBind {
 		if topologyOptions.CPUTopology == nil {
 			return framework.NewStatus(framework.Error, ErrNotFoundCPUTopology)
@@ -340,21 +344,9 @@ func (p *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState, 
 		}
 	}
 
-	numaTopologyPolicy := getNUMATopologyPolicy(node.Labels, topologyOptions.NUMATopologyPolicy)
-	if numaTopologyPolicy != extension.NUMATopologyPolicyNone {
-		status := p.ReserveByNUMANode(ctx, cycleState, pod, nodeName, numaTopologyPolicy, topologyOptions)
-		if !status.IsSuccess() {
-			return status
-		}
-		return nil
-	}
-
-	// Only request CPUs by bind policy and exclusive policy.
-	if !state.requestCPUBind {
-		return nil
-	}
-
-	resourceOptions, err := p.getResourceOptions(cycleState, state, node, pod, topologymanager.NUMATopologyHint{}, topologyOptions)
+	store := topologymanager.GetStore(cycleState)
+	affinity := store.GetAffinity(nodeName)
+	resourceOptions, err := p.getResourceOptions(cycleState, state, node, pod, affinity, topologyOptions)
 	if err != nil {
 		return framework.AsStatus(err)
 	}
@@ -370,9 +362,6 @@ func (p *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState, 
 func (p *Plugin) Unreserve(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) {
 	state, status := getPreFilterState(cycleState)
 	if !status.IsSuccess() {
-		return
-	}
-	if state.skip {
 		return
 	}
 	if state.allocation != nil {
@@ -392,9 +381,6 @@ func (p *Plugin) preBindObject(ctx context.Context, cycleState *framework.CycleS
 	state, status := getPreFilterState(cycleState)
 	if !status.IsSuccess() {
 		return status
-	}
-	if state.skip {
-		return nil
 	}
 	if state.allocation == nil {
 		return nil

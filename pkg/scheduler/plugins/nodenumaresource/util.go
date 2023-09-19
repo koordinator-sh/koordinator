@@ -55,3 +55,7 @@ func getNUMATopologyPolicy(nodeLabels map[string]string, kubeletTopologyManagerP
 	}
 	return kubeletTopologyManagerPolicy
 }
+
+func skipTheNode(state *preFilterState, numaTopologyPolicy extension.NUMATopologyPolicy) bool {
+	return state.skip || (!state.requestCPUBind && numaTopologyPolicy == extension.NUMATopologyPolicyNone)
+}

@@ -38,16 +38,6 @@ func (p *Plugin) FilterByNUMANode(ctx context.Context, cycleState *framework.Cyc
 	return p.handle.(frameworkext.FrameworkExtender).RunNUMATopologyManagerAdmit(ctx, cycleState, pod, nodeName, numaNodes, policyType)
 }
 
-func (p *Plugin) ReserveByNUMANode(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string, policyType apiext.NUMATopologyPolicy, topologyOptions TopologyOptions) *framework.Status {
-	if policyType == apiext.NUMATopologyPolicyNone {
-		return nil
-	}
-	store := topologymanager.GetStore(cycleState)
-	affinity := store.GetAffinity(nodeName)
-	_, status := p.allocateByHint(ctx, cycleState, pod, nodeName, affinity, topologyOptions, true)
-	return status
-}
-
 func (p *Plugin) GetPodTopologyHints(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) (map[string][]topologymanager.NUMATopologyHint, *framework.Status) {
 	state, status := getPreFilterState(cycleState)
 	if !status.IsSuccess() {
@@ -73,34 +63,24 @@ func (p *Plugin) GetPodTopologyHints(ctx context.Context, cycleState *framework.
 
 func (p *Plugin) Allocate(ctx context.Context, cycleState *framework.CycleState, affinity topologymanager.NUMATopologyHint, pod *corev1.Pod, nodeName string) *framework.Status {
 	topologyOptions := p.topologyOptionsManager.GetTopologyOptions(nodeName)
-	_, status := p.allocateByHint(ctx, cycleState, pod, nodeName, affinity, topologyOptions, false)
-	return status
-}
-
-func (p *Plugin) allocateByHint(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string, affinity topologymanager.NUMATopologyHint, topologyOptions TopologyOptions, assume bool) (*PodAllocation, *framework.Status) {
 	state, status := getPreFilterState(cycleState)
 	if !status.IsSuccess() {
-		return nil, status
+		return status
 	}
 
 	nodeInfo, err := p.handle.SnapshotSharedLister().NodeInfos().Get(nodeName)
 	if err != nil {
-		return nil, framework.AsStatus(err)
+		return framework.AsStatus(err)
 	}
 	node := nodeInfo.Node()
 
 	resourceOptions, err := p.getResourceOptions(cycleState, state, node, pod, affinity, topologyOptions)
 	if err != nil {
-		return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, err.Error())
+		return framework.NewStatus(framework.UnschedulableAndUnresolvable, err.Error())
 	}
-	result, err := p.resourceManager.Allocate(node, pod, resourceOptions)
+	_, err = p.resourceManager.Allocate(node, pod, resourceOptions)
 	if err != nil {
-		return nil, framework.NewStatus(framework.Unschedulable, err.Error())
+		return framework.NewStatus(framework.Unschedulable, err.Error())
 	}
-	if assume {
-		p.resourceManager.Update(nodeName, result)
-		state.allocation = result
-		state.preferredCPUBindPolicy = resourceOptions.cpuBindPolicy
-	}
-	return result, nil
+	return nil
 }
