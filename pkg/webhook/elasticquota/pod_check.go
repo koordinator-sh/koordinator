@@ -29,7 +29,9 @@ import (
 	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/pkg/features"
 	utilclient "github.com/koordinator-sh/koordinator/pkg/util/client"
+	utilfeature "github.com/koordinator-sh/koordinator/pkg/util/feature"
 )
 
 // TODO If the parentQuotaGroup submits pods, the runtime will be calculated incorrectly.
@@ -40,7 +42,7 @@ func (qt *quotaTopology) ValidateAddPod(pod *corev1.Pod) error {
 	defer qt.lock.Unlock()
 
 	quotaName := qt.getQuotaNameFromPodNoLock(pod)
-	if quotaName == extension.DefaultQuotaName {
+	if quotaName == "" || quotaName == extension.DefaultQuotaName {
 		return nil
 	}
 
@@ -65,6 +67,10 @@ func (qt *quotaTopology) getQuotaNameFromPodNoLock(pod *corev1.Pod) string {
 
 func GetQuotaName(pod *corev1.Pod, kubeClient client.Client) string {
 	quotaName := extension.GetQuotaName(pod)
+	if utilfeature.DefaultFeatureGate.Enabled(features.DisableDefaultQuota) {
+		return quotaName
+	}
+
 	if quotaName != "" {
 		return quotaName
 	}

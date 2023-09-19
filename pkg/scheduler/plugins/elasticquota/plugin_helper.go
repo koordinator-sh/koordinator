@@ -27,11 +27,13 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
+	k8sfeature "k8s.io/apiserver/pkg/util/feature"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	schedulerv1alpha1 "sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/elasticquota/core"
 )
 
@@ -39,6 +41,9 @@ import (
 // group. If the plugin can't find the matched quota group, it will force the pod to associate with the "default-group".
 func (g *Plugin) getPodAssociateQuotaName(pod *v1.Pod) string {
 	quotaName := g.GetQuotaName(pod)
+	if quotaName == "" {
+		return ""
+	}
 
 	g.quotaToTreeMapLock.RLock()
 	defer g.quotaToTreeMapLock.RUnlock()
@@ -46,6 +51,10 @@ func (g *Plugin) getPodAssociateQuotaName(pod *v1.Pod) string {
 	_, ok := g.quotaToTreeMap[quotaName]
 	if ok {
 		return quotaName
+	}
+
+	if k8sfeature.DefaultFeatureGate.Enabled(features.DisableDefaultQuota) {
+		return ""
 	}
 	return extension.DefaultQuotaName
 }
@@ -55,6 +64,9 @@ func (g *Plugin) getPodAssociateQuotaName(pod *v1.Pod) string {
 // If pod has a quota label which not exists, we will also return the default quota and tree
 func (g *Plugin) getPodAssociateQuotaNameAndTreeID(pod *v1.Pod) (string, string) {
 	quotaName := g.GetQuotaName(pod)
+	if quotaName == "" {
+		return "", ""
+	}
 
 	g.quotaToTreeMapLock.RLock()
 	defer g.quotaToTreeMapLock.RUnlock()
@@ -63,11 +75,19 @@ func (g *Plugin) getPodAssociateQuotaNameAndTreeID(pod *v1.Pod) (string, string)
 	if ok {
 		return quotaName, treeID
 	}
+
+	if k8sfeature.DefaultFeatureGate.Enabled(features.DisableDefaultQuota) {
+		return "", ""
+	}
 	return extension.DefaultQuotaName, treeID
 }
 
 func (g *Plugin) GetQuotaName(pod *v1.Pod) string {
 	quotaName := extension.GetQuotaName(pod)
+	if k8sfeature.DefaultFeatureGate.Enabled(features.DisableDefaultQuota) {
+		return quotaName
+	}
+
 	if quotaName != "" {
 		return quotaName
 	}
@@ -97,6 +117,10 @@ func (g *Plugin) GetQuotaName(pod *v1.Pod) string {
 // migrateDefaultQuotaGroupsPod traverse all the pods in DefaultQuotaGroup, if the pod's QuotaName is not DefaultQuotaName,
 // then erase the pod from DefaultQuotaGroup, Request. If the pod is Running, update Used.
 func (g *Plugin) migrateDefaultQuotaGroupsPod() {
+	if k8sfeature.DefaultFeatureGate.Enabled(features.DisableDefaultQuota) {
+		return
+	}
+
 	defaultQuotaInfo := g.groupQuotaManager.GetQuotaInfoByName(extension.DefaultQuotaName)
 	for _, pod := range defaultQuotaInfo.GetPodCache() {
 		quotaName, treeID := g.getPodAssociateQuotaNameAndTreeID(pod)
@@ -223,6 +247,13 @@ func (g *Plugin) snapshotPostFilterState(quotaInfo *core.QuotaInfo, state *frame
 	}
 	state.Write(postFilterKey, postFilterState)
 	return postFilterState
+}
+
+func (g *Plugin) skipPostFilterState(state *framework.CycleState) {
+	postFilterState := &PostFilterState{
+		skip: true,
+	}
+	state.Write(postFilterKey, postFilterState)
 }
 
 func getPostFilterState(cycleState *framework.CycleState) (*PostFilterState, error) {
