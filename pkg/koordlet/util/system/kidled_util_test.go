@@ -26,7 +26,6 @@ import (
 func Test_IsKidledSupport(t *testing.T) {
 	helper := NewFileTestUtil(t)
 	defer helper.Cleanup()
-	Conf.SysRootDir = filepath.Join(helper.TempDir, Conf.SysRootDir)
 	type fields struct {
 		SetSysUtil func(helper *FileTestUtil)
 	}
@@ -43,7 +42,6 @@ func Test_IsKidledSupport(t *testing.T) {
 			name: "os support kidled cold page info",
 			fields: fields{
 				SetSysUtil: func(helper *FileTestUtil) {
-					Conf.SysRootDir = filepath.Join(helper.TempDir, Conf.SysRootDir)
 					helper.CreateFile(filepath.Join(GetSysRootDir(), KidledRelativePath, KidledScanPeriodInSecondsFileName))
 					helper.CreateFile(filepath.Join(GetSysRootDir(), KidledRelativePath, KidledUseHierarchyFileFileName))
 				},
@@ -204,7 +202,6 @@ func Test_GetColdPageTotalBytes(t *testing.T) {
 func Test_SetKidledScanPeriodInSeconds(t *testing.T) {
 	helper := NewFileTestUtil(t)
 	defer helper.Cleanup()
-	Conf.SysRootDir = filepath.Join(helper.TempDir, Conf.SysRootDir)
 	path := KidledScanPeriodInSeconds.Path("")
 	helper.CreateFile(path)
 	SetKidledScanPeriodInSeconds(120)
@@ -215,7 +212,6 @@ func Test_SetKidledScanPeriodInSeconds(t *testing.T) {
 func Test_SetKidledUseHierarchy(t *testing.T) {
 	helper := NewFileTestUtil(t)
 	defer helper.Cleanup()
-	Conf.SysRootDir = filepath.Join(helper.TempDir, Conf.SysRootDir)
 	path := KidledUseHierarchy.Path("")
 	helper.CreateFile(path)
 	SetKidledUseHierarchy(1)
