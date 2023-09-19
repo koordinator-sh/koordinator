@@ -858,7 +858,6 @@ func TestPlugin_Prefilter_QuotaNonPreempt(t *testing.T) {
 			qi.Lock()
 			qi.CalculateInfo.Runtime = tt.runtime.DeepCopy()
 			qi.UnLock()
-			fmt.Println(len(qi.GetPodCache()))
 			state := framework.NewCycleState()
 			ctx := context.TODO()
 			_, status := gp.PreFilter(ctx, state, tt.pod)
@@ -1292,7 +1291,6 @@ func defaultCreatePodWithQuotaAndNonPreemptible(name, quotaName string, priority
 		pod.Labels[extension.LabelNonPreemptible] = "true"
 	}
 	pod.UID = types.UID(name)
-	pod.Spec.NodeName = "test"
 	return pod
 }
 
