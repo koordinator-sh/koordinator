@@ -35,34 +35,37 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
-func calculateBatchResourceByPolicy(strategy *configuration.ColocationStrategy, nodeAllocatable, nodeReserve,
+func calculateBatchResourceByPolicy(strategy *configuration.ColocationStrategy, nodeCapacity, nodeReserved, systemReserved,
 	systemUsed, podHPReq, podHPUsed corev1.ResourceList) (corev1.ResourceList, string, string) {
 	// Node(Batch).Alloc = Node.Total - Node.Reserved - System.Used - Pod(Prod/Mid).Used
+	// System.Used = max(Node.Used - Pod(All).Used, Node.Anno.Reserved, Node.Kubelet.Reserved)
+	systemUsed = quotav1.Max(systemUsed, systemReserved)
 	batchAllocatableByUsage := quotav1.Max(quotav1.Subtract(quotav1.Subtract(quotav1.Subtract(
-		nodeAllocatable, nodeReserve), systemUsed), podHPUsed), util.NewZeroResourceList())
+		nodeCapacity, nodeReserved), systemUsed), podHPUsed), util.NewZeroResourceList())
 
-	// Node(Batch).Alloc = Node.Total - Node.Reserved - Pod(Prod/Mid).Request
-	batchAllocatableByRequest := quotav1.Max(quotav1.Subtract(quotav1.Subtract(nodeAllocatable, nodeReserve),
-		podHPReq), util.NewZeroResourceList())
+	// Node(Batch).Alloc = Node.Total - Node.Reserved - System.Reserved - Pod(Prod/Mid).Request
+	// System.Reserved = max(Node.Anno.Reserved, Node.Kubelet.Reserved)
+	batchAllocatableByRequest := quotav1.Max(quotav1.Subtract(quotav1.Subtract(quotav1.Subtract(
+		nodeCapacity, nodeReserved), systemReserved), podHPReq), util.NewZeroResourceList())
 
 	batchAllocatable := batchAllocatableByUsage
-	cpuMsg := fmt.Sprintf("batchAllocatable[CPU(Milli-Core)]:%v = nodeAllocatable:%v - nodeReservation:%v - systemUsage:%v - podHPUsed:%v",
-		batchAllocatable.Cpu().MilliValue(), nodeAllocatable.Cpu().MilliValue(), nodeReserve.Cpu().MilliValue(),
+	cpuMsg := fmt.Sprintf("batchAllocatable[CPU(Milli-Core)]:%v = nodeCapacity:%v - nodeReservation:%v - systemUsageOrReserved:%v - podHPUsed:%v",
+		batchAllocatable.Cpu().MilliValue(), nodeCapacity.Cpu().MilliValue(), nodeReserved.Cpu().MilliValue(),
 		systemUsed.Cpu().MilliValue(), podHPUsed.Cpu().MilliValue())
 
 	var memMsg string
 	if strategy != nil && strategy.MemoryCalculatePolicy != nil && *strategy.MemoryCalculatePolicy == configuration.CalculateByPodRequest {
 		batchAllocatable[corev1.ResourceMemory] = *batchAllocatableByRequest.Memory()
-		memMsg = fmt.Sprintf("batchAllocatable[Mem(GB)]:%v = nodeAllocatable:%v - nodeReservation:%v - podHPRequest:%v",
-			batchAllocatable.Memory().ScaledValue(resource.Giga), nodeAllocatable.Memory().ScaledValue(resource.Giga),
-			nodeReserve.Memory().ScaledValue(resource.Giga), podHPReq.Memory().ScaledValue(resource.Giga))
+		memMsg = fmt.Sprintf("batchAllocatable[Mem(GB)]:%v = nodeCapacity:%v - nodeReservation:%v - systemReserved:%v - podHPRequest:%v",
+			batchAllocatable.Memory().ScaledValue(resource.Giga), nodeCapacity.Memory().ScaledValue(resource.Giga),
+			nodeReserved.Memory().ScaledValue(resource.Giga), systemReserved.Memory().ScaledValue(resource.Giga),
+			podHPReq.Memory().ScaledValue(resource.Giga))
 	} else { // use CalculatePolicy "usage" by default
-		memMsg = fmt.Sprintf("batchAllocatable[Mem(GB)]:%v = nodeAllocatable:%v - nodeReservation:%v - systemUsage:%v - podHPUsed:%v",
-			batchAllocatable.Memory().ScaledValue(resource.Giga), nodeAllocatable.Memory().ScaledValue(resource.Giga),
-			nodeReserve.Memory().ScaledValue(resource.Giga), systemUsed.Memory().ScaledValue(resource.Giga),
+		memMsg = fmt.Sprintf("batchAllocatable[Mem(GB)]:%v = nodeCapacity:%v - nodeReservation:%v - systemUsage:%v - podHPUsed:%v",
+			batchAllocatable.Memory().ScaledValue(resource.Giga), nodeCapacity.Memory().ScaledValue(resource.Giga),
+			nodeReserved.Memory().ScaledValue(resource.Giga), systemUsed.Memory().ScaledValue(resource.Giga),
 			podHPUsed.Memory().ScaledValue(resource.Giga))
 	}
-
 	return batchAllocatable, cpuMsg, memMsg
 }
 
@@ -166,9 +169,9 @@ func getPodUnknownNUMAUsage(podUsage corev1.ResourceList, numaNum int) []corev1.
 	return podNUMAUsage
 }
 
-// getNodeAllocatable gets node allocatable and filters out non-CPU and non-Mem resources
-func getNodeAllocatable(node *corev1.Node) corev1.ResourceList {
-	return getResourceListForCPUAndMemory(node.Status.Allocatable)
+// getNodeCapacity gets node capacity and filters out non-CPU and non-Mem resources
+func getNodeCapacity(node *corev1.Node) corev1.ResourceList {
+	return getResourceListForCPUAndMemory(node.Status.Capacity)
 }
 
 // getNodeReservation gets node-level safe-guarding reservation with the node's allocatable

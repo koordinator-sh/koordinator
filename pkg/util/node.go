@@ -58,6 +58,30 @@ func IsNodeAddressTypeSupported(addrType corev1.NodeAddressType) bool {
 	return false
 }
 
+func GetNodeReservationFromKubelet(node *corev1.Node) corev1.ResourceList {
+	if node == nil {
+		return corev1.ResourceList{}
+	}
+
+	capacity := corev1.ResourceList{}
+	if cpu, exist := node.Status.Capacity[corev1.ResourceCPU]; exist {
+		capacity[corev1.ResourceCPU] = cpu
+	}
+	if memory, exist := node.Status.Capacity[corev1.ResourceMemory]; exist {
+		capacity[corev1.ResourceMemory] = memory
+	}
+
+	allocatable := corev1.ResourceList{}
+	if cpu, exist := node.Status.Allocatable[corev1.ResourceCPU]; exist {
+		allocatable[corev1.ResourceCPU] = cpu
+	}
+	if memory, exist := node.Status.Allocatable[corev1.ResourceMemory]; exist {
+		allocatable[corev1.ResourceMemory] = memory
+	}
+
+	return quotav1.Max(quotav1.Subtract(capacity, allocatable), NewZeroResourceList())
+}
+
 func GetNodeReservationFromAnnotation(anno map[string]string) corev1.ResourceList {
 	reservation, err := apiext.GetNodeReservation(anno)
 	if err != nil {
