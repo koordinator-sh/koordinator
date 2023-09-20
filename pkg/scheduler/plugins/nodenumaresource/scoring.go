@@ -21,11 +21,11 @@ import (
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/klog/v2"
 	schedconfig "k8s.io/kubernetes/pkg/scheduler/apis/config"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
+	schedutil "k8s.io/kubernetes/pkg/scheduler/util"
 
-	"github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingconfig "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/topologymanager"
 	"github.com/koordinator-sh/koordinator/pkg/util"
@@ -56,97 +56,81 @@ func (p *Plugin) Score(ctx context.Context, cycleState *framework.CycleState, po
 	if !status.IsSuccess() {
 		return 0, status
 	}
-	if state.skip {
-		return 0, nil
-	}
 
 	nodeInfo, err := p.handle.SnapshotSharedLister().NodeInfos().Get(nodeName)
 	if err != nil {
 		return 0, framework.NewStatus(framework.Error, fmt.Sprintf("getting node %q from Snapshot: %v", nodeName, err))
 	}
 	node := nodeInfo.Node()
-
 	topologyOptions := p.topologyOptionsManager.GetTopologyOptions(node.Name)
+	numaTopologyPolicy := getNUMATopologyPolicy(node.Labels, topologyOptions.NUMATopologyPolicy)
+
+	if skipTheNode(state, numaTopologyPolicy) {
+		return 0, nil
+	}
+
 	if state.requestCPUBind && (topologyOptions.CPUTopology == nil || !topologyOptions.CPUTopology.IsValid()) {
 		return 0, nil
 	}
 
-	numaTopologyPolicy := getNUMATopologyPolicy(node.Labels, topologyOptions.NUMATopologyPolicy)
-	if numaTopologyPolicy != extension.NUMATopologyPolicyNone {
-		store := topologymanager.GetStore(cycleState)
-		affinity := store.GetAffinity(nodeName)
-		podAllocation, status := p.allocateByHint(ctx, cycleState, pod, nodeName, affinity, topologyOptions, false)
-		if !status.IsSuccess() {
-			return 0, nil
-		}
-
-		totalAllocatable, totalAllocated, allocatedCPUSets := p.calculateAllocatableRequestByNUMA(node.Name, state.requests, podAllocation, topologyOptions)
-		if state.requestCPUBind {
-			totalAllocated[corev1.ResourceCPU] = *resource.NewMilliQuantity(int64(allocatedCPUSets*1000), resource.DecimalSI)
-		}
-		return p.scorer.score(totalAllocated, totalAllocatable)
+	store := topologymanager.GetStore(cycleState)
+	affinity := store.GetAffinity(nodeName)
+	resourceOptions, err := p.getResourceOptions(cycleState, state, node, pod, affinity, topologyOptions)
+	if err != nil {
+		return 0, nil
+	}
+	podAllocation, err := p.resourceManager.Allocate(node, pod, resourceOptions)
+	if err != nil {
+		return 0, nil
 	}
 
-	if state.requestCPUBind {
-		resourceOptions, err := p.getResourceOptions(cycleState, state, node, pod, topologymanager.NUMATopologyHint{}, topologyOptions)
-		if err != nil {
-			return 0, nil
-		}
-		podAllocation, err := p.resourceManager.Allocate(node, pod, resourceOptions)
-		if err != nil {
-			return 0, nil
-		}
-		allocatedCPUSets := p.calculateRequestedCPUSets(nodeName, podAllocation)
-		allocated := corev1.ResourceList{
-			corev1.ResourceCPU: *resource.NewMilliQuantity(int64(allocatedCPUSets)*1000, resource.DecimalSI),
-		}
-		allocatable := corev1.ResourceList{
-			corev1.ResourceCPU: *resource.NewMilliQuantity(nodeInfo.Allocatable.MilliCPU, resource.DecimalSI),
-		}
-		return p.scorer.score(allocated, allocatable)
-	}
-
-	return 0, nil
+	allocatable, requested := p.calculateAllocatableAndRequested(node.Name, nodeInfo, podAllocation, resourceOptions)
+	return p.scorer.score(requested, allocatable, framework.NewResource(state.requests))
 }
 
-func (p *Plugin) calculateAllocatableRequestByNUMA(
+func (p *Plugin) calculateAllocatableAndRequested(
 	nodeName string,
-	requests corev1.ResourceList,
+	nodeInfo *framework.NodeInfo,
 	podAllocation *PodAllocation,
-	topologyOptions TopologyOptions,
-) (totalAllocatable, totalAllocated corev1.ResourceList, allocatedCPUSets int) {
+	resourceOptions *ResourceOptions,
+) (allocatable, requested *framework.Resource) {
 	nodeAllocation := p.resourceManager.GetNodeAllocation(nodeName)
 	nodeAllocation.lock.RLock()
 	defer nodeAllocation.lock.RUnlock()
 
-	totalAllocatable = corev1.ResourceList{}
-	totalAllocated = corev1.ResourceList{}
+	topologyOptions := resourceOptions.topologyOptions
 
-	var nodes []int
-	for _, v := range podAllocation.NUMANodeResources {
-		nodes = append(nodes, v.Node)
-		allocated := nodeAllocation.allocatedResources[v.Node]
-		if allocated != nil {
-			util.AddResourceList(totalAllocated, allocated.Resources)
-		}
-		for _, vv := range topologyOptions.NUMANodeResources {
-			if vv.Node == v.Node {
-				util.AddResourceList(totalAllocatable, vv.Resources)
-				break
+	if len(podAllocation.NUMANodeResources) > 0 {
+		totalAllocatable := corev1.ResourceList{}
+		totalRequested := corev1.ResourceList{}
+
+		_, allocatedByNode := nodeAllocation.getAvailableNUMANodeResources(topologyOptions, resourceOptions.reusableResources)
+		for _, v := range podAllocation.NUMANodeResources {
+			if allocated := allocatedByNode[v.Node]; len(allocated) > 0 {
+				util.AddResourceList(totalRequested, allocated)
+			}
+
+			for _, vv := range topologyOptions.NUMANodeResources {
+				if vv.Node == v.Node {
+					util.AddResourceList(totalAllocatable, vv.Resources)
+					break
+				}
 			}
 		}
+		allocatable = framework.NewResource(totalAllocatable)
+		requested = framework.NewResource(totalRequested)
+	} else {
+		allocatable = nodeInfo.Allocatable.Clone()
+		requested = nodeInfo.Requested.Clone()
 	}
-	util.AddResourceList(totalAllocated, requests)
-	allocatedCPUSets = podAllocation.CPUSet.Union(nodeAllocation.allocatedCPUs.CPUsInNUMANodes(nodes...)).Size()
+
+	if !podAllocation.CPUSet.IsEmpty() {
+		preferred := resourceOptions.preferredCPUs.Difference(podAllocation.CPUSet)
+		_, allocatedCPUSets := nodeAllocation.getAvailableCPUs(topologyOptions.CPUTopology, topologyOptions.MaxRefCount, topologyOptions.ReservedCPUs, preferred)
+		cpus := allocatedCPUSets.CPUs().Size()
+		requested.MilliCPU = int64(cpus * 1000)
+	}
 	return
-}
-
-func (p *Plugin) calculateRequestedCPUSets(nodeName string, podAllocation *PodAllocation) int {
-	nodeAllocation := p.resourceManager.GetNodeAllocation(nodeName)
-	nodeAllocation.lock.RLock()
-	defer nodeAllocation.lock.RUnlock()
-
-	return podAllocation.CPUSet.Union(nodeAllocation.allocatedCPUs.CPUs()).Size()
 }
 
 func (p *Plugin) ScoreExtensions() framework.ScoreExtensions {
@@ -170,7 +154,7 @@ type resourceAllocationScorer struct {
 type resourceToValueMap map[corev1.ResourceName]int64
 
 // score will use `scorer` function to calculate the score.
-func (r *resourceAllocationScorer) score(totalRequested, totalAllocatable corev1.ResourceList) (int64, *framework.Status) {
+func (r *resourceAllocationScorer) score(totalRequested, totalAllocatable, podRequests *framework.Resource) (int64, *framework.Status) {
 	if r.resourceToWeightMap == nil {
 		return 0, framework.NewStatus(framework.Error, "resources not found")
 	}
@@ -178,7 +162,7 @@ func (r *resourceAllocationScorer) score(totalRequested, totalAllocatable corev1
 	requested := make(resourceToValueMap)
 	allocatable := make(resourceToValueMap)
 	for resourceName := range r.resourceToWeightMap {
-		alloc, req := getResourceQuantity(totalAllocatable, resourceName), getResourceQuantity(totalRequested, resourceName)
+		alloc, req := calculateResourceAllocatableRequest(totalAllocatable, totalRequested, podRequests, resourceName)
 		if alloc != 0 {
 			// Only fill the extended resource entry when it's non-zero.
 			allocatable[resourceName], requested[resourceName] = alloc, req
@@ -188,17 +172,43 @@ func (r *resourceAllocationScorer) score(totalRequested, totalAllocatable corev1
 	return score, nil
 }
 
-func getResourceQuantity(m corev1.ResourceList, resourceName corev1.ResourceName) int64 {
-	quantity := m[resourceName]
-	if quantity.IsZero() {
-		return 0
+func calculateResourceAllocatableRequest(allocatable, requested, podRequests *framework.Resource, resourceName corev1.ResourceName) (int64, int64) {
+	podRequest := getResourceQuantity(podRequests, resourceName)
+	// If it's an extended resource, and the pod doesn't request it. We return (0, 0)
+	// as an implication to bypass scoring on this resource.
+	if podRequest == 0 && schedutil.IsScalarResourceName(resourceName) {
+		return 0, 0
 	}
 	switch resourceName {
 	case corev1.ResourceCPU:
-		return quantity.MilliValue()
+		return allocatable.MilliCPU, requested.MilliCPU + podRequest
+	case corev1.ResourceMemory:
+		return allocatable.Memory, requested.Memory + podRequest
+	case corev1.ResourceEphemeralStorage:
+		return allocatable.EphemeralStorage, requested.EphemeralStorage + podRequest
 	default:
-		return quantity.Value()
+		if _, exists := allocatable.ScalarResources[resourceName]; exists {
+			return allocatable.ScalarResources[resourceName], requested.ScalarResources[resourceName] + podRequest
+		}
 	}
+	klog.V(10).InfoS("Requested resource is omitted for node score calculation", "resourceName", resourceName)
+	return 0, 0
+}
+
+func getResourceQuantity(m *framework.Resource, resourceName corev1.ResourceName) int64 {
+	switch resourceName {
+	case corev1.ResourceCPU:
+		return m.MilliCPU
+	case corev1.ResourceMemory:
+		return m.Memory
+	case corev1.ResourceEphemeralStorage:
+		return m.EphemeralStorage
+	default:
+		if _, exists := m.ScalarResources[resourceName]; exists {
+			return m.ScalarResources[resourceName]
+		}
+	}
+	return 0
 }
 
 // resourcesToWeightMap make weightmap from resources spec

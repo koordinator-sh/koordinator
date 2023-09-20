@@ -18,22 +18,26 @@ package nodenumaresource
 
 import (
 	"context"
+	"reflect"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	apiresource "k8s.io/kubernetes/pkg/api/v1/resource"
 	"k8s.io/kubernetes/pkg/scheduler/apis/config"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
 
+	"github.com/koordinator-sh/koordinator/apis/extension"
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulerconfig "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
+	schedulingconfig "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	"github.com/koordinator-sh/koordinator/pkg/util/cpuset"
 )
 
-func TestScore(t *testing.T) {
+func TestNUMANodeScore(t *testing.T) {
 	tests := []struct {
 		name           string
 		nodes          []*corev1.Node
@@ -80,7 +84,7 @@ func TestScore(t *testing.T) {
 				},
 				{
 					Name:  "test-node-2",
-					Score: 0,
+					Score: 31,
 				},
 			},
 		},
@@ -355,6 +359,230 @@ func TestScore(t *testing.T) {
 				gotScores = append(gotScores, framework.NodeScore{Name: n.Name, Score: score})
 			}
 			assert.Equal(t, tt.expectedScores, gotScores)
+		})
+	}
+}
+
+func TestPlugin_Score(t *testing.T) {
+	tests := []struct {
+		name        string
+		nodeLabels  map[string]string
+		state       *preFilterState
+		pod         *corev1.Pod
+		cpuTopology *CPUTopology
+		want        *framework.Status
+		wantScore   int64
+	}{
+		{
+			name: "error with missing preFilterState",
+			pod:  &corev1.Pod{},
+			want: framework.AsStatus(framework.ErrNotFound),
+		},
+		{
+			name: "error with missing allocationState",
+			state: &preFilterState{
+				requestCPUBind: true,
+			},
+			pod:       &corev1.Pod{},
+			want:      nil,
+			wantScore: 0,
+		},
+		{
+			name: "error with invalid cpu topology",
+			state: &preFilterState{
+				requestCPUBind: true,
+			},
+			cpuTopology: &CPUTopology{},
+			pod:         &corev1.Pod{},
+			want:        nil,
+			wantScore:   0,
+		},
+		{
+			name: "succeed with skip",
+			state: &preFilterState{
+				requestCPUBind: false,
+			},
+			pod:       &corev1.Pod{},
+			want:      nil,
+			wantScore: 0,
+		},
+		{
+			name: "score with full empty node FullPCPUs",
+			state: &preFilterState{
+				requestCPUBind:         true,
+				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs,
+				numCPUsNeeded:          4,
+			},
+			cpuTopology: buildCPUTopologyForTest(2, 1, 4, 2),
+			pod:         &corev1.Pod{},
+			want:        nil,
+			wantScore:   25,
+		},
+		{
+			name: "score with satisfied node FullPCPUs",
+			state: &preFilterState{
+				requestCPUBind: true,
+
+				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs,
+				numCPUsNeeded:          8,
+			},
+			cpuTopology: buildCPUTopologyForTest(2, 1, 4, 2),
+			pod:         &corev1.Pod{},
+			want:        nil,
+			wantScore:   50,
+		},
+		{
+			name: "score with full empty node SpreadByPCPUs",
+			state: &preFilterState{
+				requestCPUBind:         true,
+				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicySpreadByPCPUs,
+				numCPUsNeeded:          4,
+			},
+			cpuTopology: buildCPUTopologyForTest(2, 1, 4, 2),
+			pod:         &corev1.Pod{},
+			want:        nil,
+			wantScore:   25,
+		},
+		{
+			name: "score with exceed socket FullPCPUs",
+			state: &preFilterState{
+				requestCPUBind:         true,
+				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs,
+				numCPUsNeeded:          16,
+			},
+			cpuTopology: buildCPUTopologyForTest(2, 1, 4, 2),
+			pod:         &corev1.Pod{},
+			want:        nil,
+			wantScore:   100,
+		},
+		{
+			name: "score with satisfied socket FullPCPUs",
+			state: &preFilterState{
+				requestCPUBind:         true,
+				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs,
+				numCPUsNeeded:          16,
+			},
+			cpuTopology: buildCPUTopologyForTest(2, 2, 4, 2),
+			pod:         &corev1.Pod{},
+			want:        nil,
+			wantScore:   50,
+		},
+		{
+			name: "score with full empty socket SpreadByPCPUs",
+			state: &preFilterState{
+				requestCPUBind:         true,
+				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicySpreadByPCPUs,
+				numCPUsNeeded:          4,
+			},
+			cpuTopology: buildCPUTopologyForTest(2, 1, 4, 2),
+			pod:         &corev1.Pod{},
+			want:        nil,
+			wantScore:   25,
+		},
+		{
+			name: "score with Node NUMA Allocate Strategy",
+			nodeLabels: map[string]string{
+				extension.LabelNodeNUMAAllocateStrategy: string(extension.NodeNUMAAllocateStrategyLeastAllocated),
+			},
+			state: &preFilterState{
+				requestCPUBind:         true,
+				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicySpreadByPCPUs,
+				numCPUsNeeded:          2,
+			},
+			cpuTopology: buildCPUTopologyForTest(2, 1, 4, 2),
+			pod:         &corev1.Pod{},
+			want:        nil,
+			wantScore:   12,
+		},
+		{
+			name: "score with Node CPU Bind Policy",
+			nodeLabels: map[string]string{
+				extension.LabelNodeCPUBindPolicy: string(extension.NodeCPUBindPolicyFullPCPUsOnly),
+			},
+			state: &preFilterState{
+				requestCPUBind:         true,
+				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicySpreadByPCPUs,
+				numCPUsNeeded:          8,
+			},
+			cpuTopology: buildCPUTopologyForTest(2, 1, 4, 2),
+			pod:         &corev1.Pod{},
+			want:        nil,
+			wantScore:   50,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			totalCPUs := 96
+			if tt.cpuTopology != nil {
+				totalCPUs = tt.cpuTopology.CPUDetails.CPUs().Size()
+			}
+			nodes := []*corev1.Node{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:   "test-node-1",
+						Labels: map[string]string{},
+					},
+					Status: corev1.NodeStatus{
+						Allocatable: corev1.ResourceList{
+							corev1.ResourceCPU:    *resource.NewMilliQuantity(int64(totalCPUs*1000), resource.DecimalSI),
+							corev1.ResourceMemory: resource.MustParse("512Gi"),
+						},
+					},
+				},
+			}
+			for k, v := range tt.nodeLabels {
+				nodes[0].Labels[k] = v
+			}
+
+			suit := newPluginTestSuit(t, nodes)
+			suit.nodeNUMAResourceArgs.ScoringStrategy = &schedulerconfig.ScoringStrategy{
+				Type: schedulingconfig.MostAllocated,
+				Resources: []config.ResourceSpec{
+					{
+						Name:   "cpu",
+						Weight: 1,
+					},
+				},
+			}
+			p, err := suit.proxyNew(suit.nodeNUMAResourceArgs, suit.Handle)
+			assert.NotNil(t, p)
+			assert.Nil(t, err)
+
+			plg := p.(*Plugin)
+			allocateState := NewNodeAllocation("test-node-1")
+			if tt.cpuTopology != nil {
+				plg.topologyOptionsManager.UpdateTopologyOptions(allocateState.nodeName, func(options *TopologyOptions) {
+					options.CPUTopology = tt.cpuTopology
+				})
+			}
+
+			cpuManager := plg.resourceManager.(*resourceManager)
+			cpuManager.nodeAllocations[allocateState.nodeName] = allocateState
+
+			suit.start()
+
+			cycleState := framework.NewCycleState()
+			if tt.state != nil {
+				if tt.state.numCPUsNeeded > 0 {
+					tt.state.requests = corev1.ResourceList{
+						corev1.ResourceCPU: *resource.NewMilliQuantity(int64(tt.state.numCPUsNeeded)*1000, resource.DecimalSI),
+					}
+				}
+				cycleState.Write(stateKey, tt.state)
+			}
+
+			nodeInfo, err := suit.Handle.SnapshotSharedLister().NodeInfos().Get("test-node-1")
+			assert.NoError(t, err)
+			assert.NotNil(t, nodeInfo)
+
+			gotScore, gotStatus := plg.Score(context.TODO(), cycleState, tt.pod, "test-node-1")
+			if !reflect.DeepEqual(gotStatus, tt.want) {
+				t.Errorf("Score() = %v, want %v", gotStatus, tt.want)
+			}
+			if !tt.want.IsSuccess() {
+				return
+			}
+			assert.Equal(t, tt.wantScore, gotScore)
 		})
 	}
 }
