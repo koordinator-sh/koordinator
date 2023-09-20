@@ -257,7 +257,7 @@ func TestDefaultEstimatorEstimateNode(t *testing.T) {
 		want corev1.ResourceList
 	}{
 		{
-			name: "estimate empty pod",
+			name: "estimate empty node",
 			node: &corev1.Node{
 				Status: corev1.NodeStatus{
 					Allocatable: corev1.ResourceList{
@@ -267,6 +267,46 @@ func TestDefaultEstimatorEstimateNode(t *testing.T) {
 			},
 			want: corev1.ResourceList{
 				corev1.ResourceCPU: resource.MustParse("32"),
+			},
+		},
+		{
+			name: "estimate node with original allocatable",
+			node: &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						extension.AnnotationNodeRawAllocatable: `{"cpu":28,"memory":"32Gi"}`,
+					},
+				},
+				Status: corev1.NodeStatus{
+					Allocatable: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("32"),
+						corev1.ResourceMemory: resource.MustParse("42Gi"),
+					},
+				},
+			},
+			want: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("28"),
+				corev1.ResourceMemory: resource.MustParse("32Gi"),
+			},
+		},
+		{
+			name: "estimate node with original allocatable and sames",
+			node: &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						extension.AnnotationNodeRawAllocatable: `{"cpu":32,"memory":"42Gi"}`,
+					},
+				},
+				Status: corev1.NodeStatus{
+					Allocatable: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("32"),
+						corev1.ResourceMemory: resource.MustParse("42Gi"),
+					},
+				},
+			},
+			want: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("32"),
+				corev1.ResourceMemory: resource.MustParse("42Gi"),
 			},
 		},
 	}
