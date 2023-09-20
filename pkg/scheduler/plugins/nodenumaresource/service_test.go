@@ -44,7 +44,7 @@ func TestEndpointsQueryNode(t *testing.T) {
 	extension.SetNodeResourceAmplificationRatios(node, map[corev1.ResourceName]extension.Ratio{
 		corev1.ResourceCPU: 1.5,
 	})
-	suit := newPluginTestSuit(t, []*corev1.Node{node})
+	suit := newPluginTestSuit(t, nil, []*corev1.Node{node})
 	plugin, err := suit.proxyNew(suit.nodeNUMAResourceArgs, suit.Handle)
 	assert.NoError(t, err)
 	assert.NotNil(t, plugin)

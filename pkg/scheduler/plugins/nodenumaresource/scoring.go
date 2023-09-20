@@ -67,7 +67,10 @@ func (p *Plugin) Score(ctx context.Context, cycleState *framework.CycleState, po
 	numaTopologyPolicy := getNUMATopologyPolicy(node.Labels, topologyOptions.NUMATopologyPolicy)
 
 	if skipTheNode(state, numaTopologyPolicy) {
-		return 0, nil
+		if state.skip {
+			return 0, nil
+		}
+		return p.scoreWithAmplifiedCPUs(cycleState, state, pod, nodeInfo, topologyOptions)
 	}
 
 	if state.requestCPUBind && (topologyOptions.CPUTopology == nil || !topologyOptions.CPUTopology.IsValid()) {
@@ -87,6 +90,37 @@ func (p *Plugin) Score(ctx context.Context, cycleState *framework.CycleState, po
 
 	allocatable, requested := p.calculateAllocatableAndRequested(node.Name, nodeInfo, podAllocation, resourceOptions)
 	return p.scorer.score(requested, allocatable, framework.NewResource(resourceOptions.requests))
+}
+
+func (p *Plugin) scoreWithAmplifiedCPUs(cycleState *framework.CycleState, state *preFilterState, pod *corev1.Pod, nodeInfo *framework.NodeInfo, topologyOptions TopologyOptions) (int64, *framework.Status) {
+	quantity := state.requests[corev1.ResourceCPU]
+	if quantity.IsZero() {
+		return 0, nil
+	}
+
+	node := nodeInfo.Node()
+	resourceOptions, err := p.getResourceOptions(cycleState, state, node, pod, topologymanager.NUMATopologyHint{}, topologyOptions)
+	if err != nil {
+		return 0, nil
+	}
+
+	cpuAmplificationRatio := resourceOptions.topologyOptions.AmplificationRatios[corev1.ResourceCPU]
+	if cpuAmplificationRatio <= 1 {
+		return p.scorer.score(nodeInfo.Requested, nodeInfo.Allocatable, framework.NewResource(resourceOptions.requests))
+	}
+
+	_, allocated, err := p.resourceManager.GetAvailableCPUs(node.Name, resourceOptions.preferredCPUs)
+	if err != nil {
+		if err.Error() != ErrNotFoundCPUTopology {
+			return 0, nil
+		}
+		return p.scorer.score(nodeInfo.Requested, nodeInfo.Allocatable, framework.NewResource(resourceOptions.requests))
+	}
+	allocatedMilliCPU := int64(allocated.CPUs().Size() * 1000)
+	requested := nodeInfo.Requested.Clone()
+	requested.MilliCPU -= allocatedMilliCPU
+	requested.MilliCPU += extension.Amplify(allocatedMilliCPU, cpuAmplificationRatio)
+	return p.scorer.score(requested, nodeInfo.Allocatable, framework.NewResource(resourceOptions.requests))
 }
 
 func (p *Plugin) calculateAllocatableAndRequested(
@@ -121,8 +155,11 @@ func (p *Plugin) calculateAllocatableAndRequested(
 		allocatable = framework.NewResource(totalAllocatable)
 		requested = framework.NewResource(totalRequested)
 	} else {
-		allocatable = nodeInfo.Allocatable.Clone()
-		requested = nodeInfo.Requested.Clone()
+		allocatable = nodeInfo.Allocatable
+		requested = nodeInfo.Requested
+		if !podAllocation.CPUSet.IsEmpty() {
+			requested = requested.Clone()
+		}
 	}
 
 	if !podAllocation.CPUSet.IsEmpty() {

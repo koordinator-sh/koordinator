@@ -44,7 +44,7 @@ func TestReserveByNUMANode(t *testing.T) {
 			},
 		},
 	}
-	suit := newPluginTestSuit(t, []*corev1.Node{node})
+	suit := newPluginTestSuit(t, nil, []*corev1.Node{node})
 
 	p, err := suit.proxyNew(suit.nodeNUMAResourceArgs, suit.Handle)
 	assert.NoError(t, err)
