@@ -413,23 +413,35 @@ func (p *Plugin) getResourceOptions(cycleState *framework.CycleState, state *pre
 		return nil, err
 	}
 
+	if err := amplifyNUMANodeResources(node, &topologyOptions); err != nil {
+		return nil, err
+	}
+
 	reservationReservedCPUs, err := p.getReservationReservedCPUs(cycleState, pod, node.Name)
 	if err != nil {
 		return nil, err
 	}
+	amplificationRatio := topologyOptions.AmplificationRatios[corev1.ResourceCPU]
 	reusableResources := map[int]corev1.ResourceList{}
 	if reservationReservedCPUs.Size() > 0 {
 		reservedCPUs := topologyOptions.CPUTopology.CPUDetails.KeepOnly(reservationReservedCPUs)
 		for _, numaNode := range reservedCPUs.NUMANodes().ToSliceNoSort() {
-			cpu := reservedCPUs.CPUsInNUMANodes(numaNode).Size() * 1000
+			cpu := extension.Amplify(int64(reservedCPUs.CPUsInNUMANodes(numaNode).Size()*1000), amplificationRatio)
 			reusableResources[numaNode] = corev1.ResourceList{
-				corev1.ResourceCPU: *resource.NewMilliQuantity(int64(cpu), resource.DecimalSI),
+				corev1.ResourceCPU: *resource.NewMilliQuantity(cpu, resource.DecimalSI),
 			}
 		}
 	}
 
+	requests := state.requests
+	if state.requestCPUBind && amplificationRatio > 1 {
+		requests = requests.DeepCopy()
+		extension.AmplifyResourceList(requests, topologyOptions.AmplificationRatios, corev1.ResourceCPU)
+	}
+
 	options := &ResourceOptions{
-		requests:              state.requests,
+		requests:              requests,
+		originalRequests:      state.requests,
 		numCPUsNeeded:         state.numCPUsNeeded,
 		requestCPUBind:        state.requestCPUBind,
 		requiredCPUBindPolicy: state.requiredCPUBindPolicy != "",

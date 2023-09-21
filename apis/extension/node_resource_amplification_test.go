@@ -28,19 +28,19 @@ import (
 func TestGetNodeResourceAmplificationRatios(t *testing.T) {
 	tests := []struct {
 		name    string
-		arg     *corev1.Node
+		node    *corev1.Node
 		want    map[corev1.ResourceName]Ratio
 		wantErr bool
 	}{
 		{
 			name:    "node has no annotation",
-			arg:     &corev1.Node{},
+			node:    &corev1.Node{},
 			want:    nil,
 			wantErr: false,
 		},
 		{
 			name: "node has no resource amplification ratio annotation",
-			arg: &corev1.Node{
+			node: &corev1.Node{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
 						"xxx": "yyy",
@@ -52,7 +52,7 @@ func TestGetNodeResourceAmplificationRatios(t *testing.T) {
 		},
 		{
 			name: "node has valid resource amplification ratio annotation",
-			arg: &corev1.Node{
+			node: &corev1.Node{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
 						"xxx":                                    "yyy",
@@ -65,7 +65,7 @@ func TestGetNodeResourceAmplificationRatios(t *testing.T) {
 		},
 		{
 			name: "node has invalid resource amplification ratio annotation",
-			arg: &corev1.Node{
+			node: &corev1.Node{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
 						"xxx":                                    "yyy",
@@ -79,7 +79,7 @@ func TestGetNodeResourceAmplificationRatios(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, gotErr := GetNodeResourceAmplificationRatios(tt.arg)
+			got, gotErr := GetNodeResourceAmplificationRatios(tt.node.Annotations)
 			assert.Equal(t, tt.want, got)
 			assert.Equal(t, tt.wantErr, gotErr != nil)
 		})

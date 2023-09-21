@@ -51,6 +51,7 @@ type ResourceOptions struct {
 	numCPUsNeeded         int
 	requestCPUBind        bool
 	requests              corev1.ResourceList
+	originalRequests      corev1.ResourceList
 	requiredCPUBindPolicy bool
 	cpuBindPolicy         schedulingconfig.CPUBindPolicy
 	cpuExclusivePolicy    schedulingconfig.CPUExclusivePolicy
@@ -116,23 +117,22 @@ func (c *resourceManager) getOrCreateNodeAllocation(nodeName string) *NodeAlloca
 }
 
 func (c *resourceManager) GetTopologyHints(node *corev1.Node, pod *corev1.Pod, options *ResourceOptions) (map[string][]topologymanager.NUMATopologyHint, error) {
-	topologyOptions := c.topologyOptionsManager.GetTopologyOptions(node.Name)
+	topologyOptions := options.topologyOptions
 	if len(topologyOptions.NUMANodeResources) == 0 {
 		return nil, fmt.Errorf("insufficient resources on NUMA Node")
 	}
 
-	totalAvailable, _, err := c.getAvailableNUMANodeResources(node.Name, options.reusableResources)
+	totalAvailable, _, err := c.getAvailableNUMANodeResources(node.Name, topologyOptions, options.reusableResources)
 	if err != nil {
 		return nil, err
 	}
 
-	hints := make(map[string][]topologymanager.NUMATopologyHint)
-	podRequests := options.requests
 	nodes := make([]int, 0, len(topologyOptions.NUMANodeResources))
 	for _, v := range topologyOptions.NUMANodeResources {
 		nodes = append(nodes, v.Node)
 	}
-	result := generateResourceHints(nodes, podRequests, totalAvailable)
+	result := generateResourceHints(nodes, options.requests, totalAvailable)
+	hints := make(map[string][]topologymanager.NUMATopologyHint)
 	for k, v := range result {
 		hints[k] = v
 	}
@@ -168,12 +168,18 @@ func (c *resourceManager) allocateResourcesByHint(node *corev1.Node, pod *corev1
 		return nil, fmt.Errorf("insufficient resources on NUMA Node")
 	}
 
-	totalAvailable, _, err := c.getAvailableNUMANodeResources(node.Name, options.reusableResources)
+	totalAvailable, _, err := c.getAvailableNUMANodeResources(node.Name, options.topologyOptions, options.reusableResources)
 	if err != nil {
 		return nil, err
 	}
 
-	requests := options.requests.DeepCopy()
+	var requests corev1.ResourceList
+	if options.requestCPUBind {
+		requests = options.originalRequests.DeepCopy()
+	} else {
+		requests = options.requests.DeepCopy()
+	}
+
 	intersectionResources := sets.NewString()
 	var result []NUMANodeResource
 	for _, numaNodeID := range options.hint.NUMANodeAffinity.GetBits() {
@@ -363,8 +369,7 @@ func (c *resourceManager) GetNodeAllocation(nodeName string) *NodeAllocation {
 	return c.getOrCreateNodeAllocation(nodeName)
 }
 
-func (c *resourceManager) getAvailableNUMANodeResources(nodeName string, reusableResources map[int]corev1.ResourceList) (totalAvailable, totalAllocated map[int]corev1.ResourceList, err error) {
-	topologyOptions := c.topologyOptionsManager.GetTopologyOptions(nodeName)
+func (c *resourceManager) getAvailableNUMANodeResources(nodeName string, topologyOptions TopologyOptions, reusableResources map[int]corev1.ResourceList) (totalAvailable, totalAllocated map[int]corev1.ResourceList, err error) {
 	nodeAllocation := c.getOrCreateNodeAllocation(nodeName)
 	nodeAllocation.lock.RLock()
 	defer nodeAllocation.lock.RUnlock()

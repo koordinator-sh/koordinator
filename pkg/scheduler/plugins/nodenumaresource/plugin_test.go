@@ -46,6 +46,7 @@ import (
 	_ "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/scheme"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/v1beta2"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/topologymanager"
 	"github.com/koordinator-sh/koordinator/pkg/util/cpuset"
 )
 
@@ -517,16 +518,15 @@ func TestPlugin_Filter(t *testing.T) {
 	tests := []struct {
 		name            string
 		nodeLabels      map[string]string
+		nodeAnnotations map[string]string
 		kubeletPolicy   *extension.KubeletCPUManagerPolicy
 		cpuTopology     *CPUTopology
 		state           *preFilterState
-		pod             *corev1.Pod
 		allocationState *NodeAllocation
 		want            *framework.Status
 	}{
 		{
 			name: "error with missing preFilterState",
-			pod:  &corev1.Pod{},
 			want: framework.AsStatus(framework.ErrNotFound),
 		},
 		{
@@ -534,7 +534,6 @@ func TestPlugin_Filter(t *testing.T) {
 			state: &preFilterState{
 				requestCPUBind: true,
 			},
-			pod:  &corev1.Pod{},
 			want: framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrNotFoundCPUTopology),
 		},
 		{
@@ -544,7 +543,6 @@ func TestPlugin_Filter(t *testing.T) {
 			},
 			cpuTopology:     &CPUTopology{},
 			allocationState: NewNodeAllocation("test-node-1"),
-			pod:             &corev1.Pod{},
 			want:            framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrInvalidCPUTopology),
 		},
 		{
@@ -554,7 +552,6 @@ func TestPlugin_Filter(t *testing.T) {
 			},
 			cpuTopology:     buildCPUTopologyForTest(2, 1, 4, 2),
 			allocationState: NewNodeAllocation("test-node-1"),
-			pod:             &corev1.Pod{},
 			want:            nil,
 		},
 		{
@@ -562,7 +559,6 @@ func TestPlugin_Filter(t *testing.T) {
 			state: &preFilterState{
 				requestCPUBind: false,
 			},
-			pod:  &corev1.Pod{},
 			want: nil,
 		},
 		{
@@ -577,7 +573,6 @@ func TestPlugin_Filter(t *testing.T) {
 			},
 			cpuTopology:     buildCPUTopologyForTest(2, 1, 4, 2),
 			allocationState: NewNodeAllocation("test-node-1"),
-			pod:             &corev1.Pod{},
 			want:            framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrSMTAlignmentError),
 		},
 		{
@@ -590,7 +585,6 @@ func TestPlugin_Filter(t *testing.T) {
 			},
 			cpuTopology:     buildCPUTopologyForTest(2, 1, 4, 2),
 			allocationState: NewNodeAllocation("test-node-1"),
-			pod:             &corev1.Pod{},
 			want:            framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrSMTAlignmentError),
 		},
 		{
@@ -605,7 +599,6 @@ func TestPlugin_Filter(t *testing.T) {
 			},
 			cpuTopology:     buildCPUTopologyForTest(2, 1, 4, 2),
 			allocationState: NewNodeAllocation("test-node-1"),
-			pod:             &corev1.Pod{},
 			want:            framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrRequiredFullPCPUsPolicy),
 		},
 		{
@@ -621,7 +614,6 @@ func TestPlugin_Filter(t *testing.T) {
 			},
 			cpuTopology:     buildCPUTopologyForTest(2, 1, 4, 2),
 			allocationState: NewNodeAllocation("test-node-1"),
-			pod:             &corev1.Pod{},
 			want:            framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrRequiredFullPCPUsPolicy),
 		},
 		{
@@ -639,7 +631,6 @@ func TestPlugin_Filter(t *testing.T) {
 					extension.KubeletCPUManagerPolicyFullPCPUsOnlyOption: "true",
 				},
 			},
-			pod:  &corev1.Pod{},
 			want: framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrSMTAlignmentError),
 		},
 		{
@@ -657,7 +648,6 @@ func TestPlugin_Filter(t *testing.T) {
 					extension.KubeletCPUManagerPolicyFullPCPUsOnlyOption: "true",
 				},
 			},
-			pod:  &corev1.Pod{},
 			want: framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrRequiredFullPCPUsPolicy),
 		},
 		{
@@ -670,7 +660,54 @@ func TestPlugin_Filter(t *testing.T) {
 			},
 			cpuTopology:     buildCPUTopologyForTest(2, 1, 4, 2),
 			allocationState: NewNodeAllocation("test-node-1"),
-			pod:             &corev1.Pod{},
+		},
+		{
+			name: "verify FullPCPUs with NUMA Topology Policy",
+			nodeLabels: map[string]string{
+				extension.LabelNUMATopologyPolicy: string(extension.NUMATopologyPolicySingleNUMANode),
+			},
+			state: &preFilterState{
+				requestCPUBind:         true,
+				requiredCPUBindPolicy:  schedulingconfig.CPUBindPolicyFullPCPUs,
+				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs,
+				numCPUsNeeded:          4,
+			},
+			cpuTopology:     buildCPUTopologyForTest(2, 1, 4, 2),
+			allocationState: NewNodeAllocation("test-node-1"),
+		},
+		{
+			name: "verify FullPCPUs with NUMA Topology Policy and amplification ratio",
+			nodeLabels: map[string]string{
+				extension.LabelNUMATopologyPolicy: string(extension.NUMATopologyPolicySingleNUMANode),
+			},
+			nodeAnnotations: map[string]string{
+				extension.AnnotationNodeResourceAmplificationRatio: `{"cpu": 1.5}`,
+			},
+			state: &preFilterState{
+				requestCPUBind:         true,
+				requiredCPUBindPolicy:  schedulingconfig.CPUBindPolicyFullPCPUs,
+				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs,
+				numCPUsNeeded:          4,
+			},
+			cpuTopology:     buildCPUTopologyForTest(2, 1, 4, 2),
+			allocationState: NewNodeAllocation("test-node-1"),
+		},
+		{
+			name: "verify FullPCPUs with None NUMA Topology Policy and amplification ratio",
+			nodeLabels: map[string]string{
+				extension.LabelNUMATopologyPolicy: string(extension.NUMATopologyPolicyNone),
+			},
+			nodeAnnotations: map[string]string{
+				extension.AnnotationNodeResourceAmplificationRatio: `{"cpu": 1.5}`,
+			},
+			state: &preFilterState{
+				requestCPUBind:         true,
+				requiredCPUBindPolicy:  schedulingconfig.CPUBindPolicyFullPCPUs,
+				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs,
+				numCPUsNeeded:          4,
+			},
+			cpuTopology:     buildCPUTopologyForTest(2, 1, 4, 2),
+			allocationState: NewNodeAllocation("test-node-1"),
 		},
 	}
 	for _, tt := range tests {
@@ -678,8 +715,9 @@ func TestPlugin_Filter(t *testing.T) {
 			nodes := []*corev1.Node{
 				{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:   "test-node-1",
-						Labels: map[string]string{},
+						Name:        "test-node-1",
+						Labels:      map[string]string{},
+						Annotations: map[string]string{},
 					},
 					Status: corev1.NodeStatus{
 						Allocatable: corev1.ResourceList{
@@ -691,6 +729,9 @@ func TestPlugin_Filter(t *testing.T) {
 			}
 			for k, v := range tt.nodeLabels {
 				nodes[0].Labels[k] = v
+			}
+			for k, v := range tt.nodeAnnotations {
+				nodes[0].Annotations[k] = v
 			}
 
 			suit := newPluginTestSuit(t, nodes)
@@ -704,26 +745,39 @@ func TestPlugin_Filter(t *testing.T) {
 					CPUTopology: tt.cpuTopology,
 					Policy:      tt.kubeletPolicy,
 				}
+				for i := 0; i < topologyOptions.CPUTopology.NumNodes; i++ {
+					topologyOptions.NUMANodeResources = append(topologyOptions.NUMANodeResources, NUMANodeResource{
+						Node: i,
+						Resources: corev1.ResourceList{
+							corev1.ResourceCPU:    *resource.NewQuantity(int64(topologyOptions.CPUTopology.CPUsPerNode()), resource.DecimalSI),
+							corev1.ResourceMemory: *resource.NewQuantity(32*1024*1024*1024, resource.BinarySI),
+						}})
+				}
 				plg.topologyOptionsManager.UpdateTopologyOptions(tt.allocationState.nodeName, func(options *TopologyOptions) {
 					*options = topologyOptions
 				})
 
-				cpuManager := plg.resourceManager.(*resourceManager)
-				cpuManager.nodeAllocations[tt.allocationState.nodeName] = tt.allocationState
+				manager := plg.resourceManager.(*resourceManager)
+				manager.nodeAllocations[tt.allocationState.nodeName] = tt.allocationState
 			}
 
 			suit.start()
 
 			cycleState := framework.NewCycleState()
 			if tt.state != nil {
+				if tt.state.numCPUsNeeded > 0 {
+					tt.state.requests = corev1.ResourceList{corev1.ResourceCPU: *resource.NewQuantity(int64(tt.state.numCPUsNeeded), resource.DecimalSI)}
+				}
 				cycleState.Write(stateKey, tt.state)
 			}
+			topologymanager.InitStore(cycleState)
 
 			nodeInfo, err := suit.Handle.SnapshotSharedLister().NodeInfos().Get("test-node-1")
 			assert.NoError(t, err)
 			assert.NotNil(t, nodeInfo)
 
-			if got := plg.Filter(context.TODO(), cycleState, tt.pod, nodeInfo); !reflect.DeepEqual(got, tt.want) {
+			pod := &corev1.Pod{}
+			if got := plg.Filter(context.TODO(), cycleState, pod, nodeInfo); !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("Filter() = %v, want %v", got, tt.want)
 			}
 		})

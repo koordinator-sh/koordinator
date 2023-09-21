@@ -20,9 +20,12 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/uuid"
 
+	"github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingconfig "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	"github.com/koordinator-sh/koordinator/pkg/util/cpuset"
 )
@@ -163,4 +166,138 @@ func Test_cpuAllocation_getAvailableCPUs_with_preferred_cpus(t *testing.T) {
 	availableCPUs, _ = allocationState.getAvailableCPUs(cpuTopology, 1, cpuset.NewCPUSet(), cpuset.NewCPUSet(1, 2))
 	expectAvailableCPUs = cpuset.MustParse("1-2,5-15")
 	assert.Equal(t, expectAvailableCPUs, availableCPUs)
+}
+
+func Test_getAvailableNUMANodeResources(t *testing.T) {
+	resources := corev1.ResourceList{
+		corev1.ResourceCPU:    resource.MustParse("16"),
+		corev1.ResourceMemory: resource.MustParse("32Gi"),
+	}
+	amplifiedResources := corev1.ResourceList{
+		corev1.ResourceCPU:    resource.MustParse("24"),
+		corev1.ResourceMemory: resource.MustParse("32Gi"),
+	}
+
+	tests := []struct {
+		name             string
+		allocation       *NodeAllocation
+		allocatedCPUSets int
+		topologyOptions  TopologyOptions
+		reusable         map[int]corev1.ResourceList
+		wantAvailable    map[int]corev1.ResourceList
+		wantAllocated    map[int]corev1.ResourceList
+	}{
+		{
+			name:       "normal node",
+			allocation: &NodeAllocation{},
+			topologyOptions: TopologyOptions{
+				CPUTopology: buildCPUTopologyForTest(2, 1, 8, 2),
+				MaxRefCount: 1,
+				NUMANodeResources: []NUMANodeResource{
+					{Node: 0, Resources: resources.DeepCopy()},
+					{Node: 1, Resources: resources.DeepCopy()},
+				},
+			},
+			wantAvailable: map[int]corev1.ResourceList{
+				0: resources.DeepCopy(),
+				1: resources.DeepCopy(),
+			},
+			wantAllocated: map[int]corev1.ResourceList{},
+		},
+		{
+			name:       "normal node with amplification ratios",
+			allocation: &NodeAllocation{},
+			topologyOptions: TopologyOptions{
+				CPUTopology: buildCPUTopologyForTest(2, 1, 8, 2),
+				MaxRefCount: 1,
+				NUMANodeResources: []NUMANodeResource{
+					{Node: 0, Resources: amplifiedResources.DeepCopy()},
+					{Node: 1, Resources: amplifiedResources.DeepCopy()},
+				},
+				AmplificationRatios: map[corev1.ResourceName]extension.Ratio{
+					corev1.ResourceCPU: 1.5,
+				},
+			},
+			wantAvailable: map[int]corev1.ResourceList{
+				0: amplifiedResources.DeepCopy(),
+				1: amplifiedResources.DeepCopy(),
+			},
+			wantAllocated: map[int]corev1.ResourceList{},
+		},
+		{
+			name: "normal node with amplification ratios and allocated CPUSets",
+			allocation: &NodeAllocation{
+				allocatedResources: map[int]*NUMANodeResource{
+					0: {Node: 0, Resources: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("4")}},
+				},
+			},
+			allocatedCPUSets: 4,
+			topologyOptions: TopologyOptions{
+				CPUTopology: buildCPUTopologyForTest(2, 1, 8, 2),
+				MaxRefCount: 1,
+				NUMANodeResources: []NUMANodeResource{
+					{Node: 0, Resources: amplifiedResources.DeepCopy()},
+					{Node: 1, Resources: amplifiedResources.DeepCopy()},
+				},
+				AmplificationRatios: map[corev1.ResourceName]extension.Ratio{
+					corev1.ResourceCPU: 1.5,
+				},
+			},
+			wantAvailable: map[int]corev1.ResourceList{
+				0: {
+					corev1.ResourceCPU:    *resource.NewMilliQuantity(18000, resource.DecimalSI),
+					corev1.ResourceMemory: resource.MustParse("32Gi"),
+				},
+				1: amplifiedResources.DeepCopy(),
+			},
+			wantAllocated: map[int]corev1.ResourceList{
+				0: {
+					corev1.ResourceCPU: *resource.NewMilliQuantity(6000, resource.DecimalSI),
+				},
+			},
+		},
+		{
+			name: "normal node with amplification ratios and allocated CPUSets and CPU Shares",
+			allocation: &NodeAllocation{
+				allocatedResources: map[int]*NUMANodeResource{
+					0: {Node: 0, Resources: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("8")}},
+				},
+			},
+			allocatedCPUSets: 4,
+			topologyOptions: TopologyOptions{
+				CPUTopology: buildCPUTopologyForTest(2, 1, 8, 2),
+				MaxRefCount: 1,
+				NUMANodeResources: []NUMANodeResource{
+					{Node: 0, Resources: amplifiedResources.DeepCopy()},
+					{Node: 1, Resources: amplifiedResources.DeepCopy()},
+				},
+				AmplificationRatios: map[corev1.ResourceName]extension.Ratio{
+					corev1.ResourceCPU: 1.5,
+				},
+			},
+			wantAvailable: map[int]corev1.ResourceList{
+				0: {
+					corev1.ResourceCPU:    *resource.NewMilliQuantity(14000, resource.DecimalSI),
+					corev1.ResourceMemory: resource.MustParse("32Gi"),
+				},
+				1: amplifiedResources.DeepCopy(),
+			},
+			wantAllocated: map[int]corev1.ResourceList{
+				0: {
+					corev1.ResourceCPU: *resource.NewMilliQuantity(10000, resource.DecimalSI),
+				},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.allocation.allocatedCPUs = CPUDetails{}
+			for i := 0; i < tt.allocatedCPUSets; i++ {
+				tt.allocation.allocatedCPUs[i] = tt.topologyOptions.CPUTopology.CPUDetails[i]
+			}
+			available, allocated := tt.allocation.getAvailableNUMANodeResources(tt.topologyOptions, tt.reusable)
+			assert.Equal(t, tt.wantAvailable, available)
+			assert.Equal(t, tt.wantAllocated, allocated)
+		})
+	}
 }

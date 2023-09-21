@@ -19,9 +19,11 @@ package extension
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"strconv"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 )
 
 const (
@@ -43,8 +45,8 @@ func (f Ratio) MarshalJSON() ([]byte, error) {
 }
 
 // GetNodeResourceAmplificationRatios gets the resource amplification ratios of the node.
-func GetNodeResourceAmplificationRatios(node *corev1.Node) (map[corev1.ResourceName]Ratio, error) {
-	s, ok := node.Annotations[AnnotationNodeResourceAmplificationRatio]
+func GetNodeResourceAmplificationRatios(annotations map[string]string) (map[corev1.ResourceName]Ratio, error) {
+	s, ok := annotations[AnnotationNodeResourceAmplificationRatio]
 	if !ok {
 		return nil, nil
 	}
@@ -60,7 +62,7 @@ func GetNodeResourceAmplificationRatios(node *corev1.Node) (map[corev1.ResourceN
 // GetNodeResourceAmplificationRatio gets the amplification ratio of a specific resource of the node.
 // It returns -1 without an error when the amplification ratio is not set for this resource.
 func GetNodeResourceAmplificationRatio(node *corev1.Node, resource corev1.ResourceName) (Ratio, error) {
-	ratios, err := GetNodeResourceAmplificationRatios(node)
+	ratios, err := GetNodeResourceAmplificationRatios(node.Annotations)
 	if err != nil {
 		return -1, err
 	}
@@ -87,7 +89,7 @@ func SetNodeResourceAmplificationRatios(node *corev1.Node, ratios map[corev1.Res
 // It returns true if the ratio changes.
 // NOTE: The ratio will be converted to string with the precision 2. e.g. 3.1415926 -> 3.14.
 func SetNodeResourceAmplificationRatio(node *corev1.Node, resource corev1.ResourceName, ratio Ratio) (bool, error) {
-	ratios, err := GetNodeResourceAmplificationRatios(node)
+	ratios, err := GetNodeResourceAmplificationRatios(node.Annotations)
 	if err != nil {
 		return false, err
 	}
@@ -150,4 +152,45 @@ func SetNodeRawAllocatable(node *corev1.Node, allocatable corev1.ResourceList) {
 		node.Annotations = map[string]string{}
 	}
 	node.Annotations[AnnotationNodeRawAllocatable] = string(s)
+}
+
+func AmplifyResourceList(requests corev1.ResourceList, amplificationRatios map[corev1.ResourceName]Ratio, resourceNames ...corev1.ResourceName) {
+	fn := func(resourceName corev1.ResourceName) {
+		ratio := amplificationRatios[resourceName]
+		if ratio <= 1 {
+			return
+		}
+		quantity := requests[resourceName]
+		if quantity.IsZero() {
+			return
+		}
+
+		if resourceName == corev1.ResourceCPU {
+			cpu := Amplify(quantity.MilliValue(), ratio)
+			requests[resourceName] = *resource.NewMilliQuantity(cpu, resource.DecimalSI)
+		} else if resourceName == corev1.ResourceMemory || resourceName == corev1.ResourceEphemeralStorage {
+			val := Amplify(quantity.Value(), ratio)
+			requests[resourceName] = *resource.NewQuantity(val, resource.BinarySI)
+		} else {
+			val := Amplify(quantity.Value(), ratio)
+			requests[resourceName] = *resource.NewQuantity(val, resource.DecimalSI)
+		}
+	}
+
+	if len(resourceNames) > 0 {
+		for _, name := range resourceNames {
+			fn(name)
+		}
+	} else {
+		for name := range requests {
+			fn(name)
+		}
+	}
+}
+
+func Amplify(origin int64, ratio Ratio) int64 {
+	if ratio <= 1 {
+		return origin
+	}
+	return int64(math.Ceil(float64(origin) * float64(ratio)))
 }

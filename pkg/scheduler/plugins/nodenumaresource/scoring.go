@@ -26,6 +26,7 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	schedutil "k8s.io/kubernetes/pkg/scheduler/util"
 
+	"github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingconfig "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/topologymanager"
 	"github.com/koordinator-sh/koordinator/pkg/util"
@@ -85,7 +86,7 @@ func (p *Plugin) Score(ctx context.Context, cycleState *framework.CycleState, po
 	}
 
 	allocatable, requested := p.calculateAllocatableAndRequested(node.Name, nodeInfo, podAllocation, resourceOptions)
-	return p.scorer.score(requested, allocatable, framework.NewResource(state.requests))
+	return p.scorer.score(requested, allocatable, framework.NewResource(resourceOptions.requests))
 }
 
 func (p *Plugin) calculateAllocatableAndRequested(
@@ -128,7 +129,7 @@ func (p *Plugin) calculateAllocatableAndRequested(
 		preferred := resourceOptions.preferredCPUs.Difference(podAllocation.CPUSet)
 		_, allocatedCPUSets := nodeAllocation.getAvailableCPUs(topologyOptions.CPUTopology, topologyOptions.MaxRefCount, topologyOptions.ReservedCPUs, preferred)
 		cpus := allocatedCPUSets.CPUs().Size()
-		requested.MilliCPU = int64(cpus * 1000)
+		requested.MilliCPU = extension.Amplify(int64(cpus*1000), topologyOptions.AmplificationRatios[corev1.ResourceCPU])
 	}
 	return
 }
