@@ -75,6 +75,14 @@ const (
 	ContainerMetricPSICPUFullSupported MetricKind = "container_psi_cpu_full_supported"
 	PodMetricPSI                       MetricKind = "pod_psi"
 	PodMetricPSICPUFullSupported       MetricKind = "pod_psi_cpu_full_supported"
+
+	//cold memory metrics
+	NodeMemoryWithHotPageUsage      MetricKind = "node_memory_with_hot_page_usage"
+	PodMemoryWithHotPageUsage       MetricKind = "pod_memory_with_hot_page_usage"
+	ContainerMemoryWithHotPageUsage MetricKind = "container_memory_with_hot_page_usage"
+	NodeMemoryColdPageSize          MetricKind = "node_memory_cold_page_size"
+	PodMemoryColdPageSize           MetricKind = "pod_memory_cold_page_size"
+	ContainerMemoryColdPageSize     MetricKind = "container_memory_cold_page_size"
 )
 
 // MetricProperty is the property of metric

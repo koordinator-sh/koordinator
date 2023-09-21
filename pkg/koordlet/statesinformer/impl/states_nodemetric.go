@@ -50,6 +50,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/prediction"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	koordletutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
@@ -69,9 +70,9 @@ const (
 )
 
 var (
-	scheme = runtime.NewScheme()
-
-	defaultNodeMetricSpec = slov1alpha1.NodeMetricSpec{
+	scheme                                                         = runtime.NewScheme()
+	defaultMemoryCollectPolicy slov1alpha1.NodeMemoryCollectPolicy = slov1alpha1.UsageWithoutPageCache
+	defaultNodeMetricSpec                                          = slov1alpha1.NodeMetricSpec{
 		CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
 			AggregateDurationSeconds: pointer.Int64(defaultAggregateDurationSeconds),
 			ReportIntervalSeconds:    pointer.Int64(defaultReportIntervalSeconds),
@@ -82,6 +83,7 @@ var (
 					{Duration: 30 * time.Minute},
 				},
 			},
+			NodeMemoryCollectPolicy: &defaultMemoryCollectPolicy,
 		},
 	}
 )
@@ -444,11 +446,20 @@ func (r *nodeMetricInformer) collectNodeMetric(queryparam metriccache.QueryParam
 		return rl, 0, err
 	}
 
-	memAggregateResult, err := doQuery(querier, metriccache.NodeMemoryUsageMetric, nil)
-	if err != nil {
-		return rl, 0, err
+	var memAggregateResult metriccache.AggregateResult
+	// report usageMemoryWithHotPageCache
+	if *r.getNodeMetricSpec().CollectPolicy.NodeMemoryCollectPolicy == slov1alpha1.UsageWithHotPageCache && system.GetIsStartColdMemory() {
+		memAggregateResult, err = doQuery(querier, metriccache.NodeMemoryWithHotPageUsageMetric, nil)
+		if err != nil {
+			return rl, 0, err
+		}
+	} else {
+		// degrade and apply default memory reporting policy: usageWithoutPageCache
+		memAggregateResult, err = doQuery(querier, metriccache.NodeMemoryUsageMetric, nil)
+		if err != nil {
+			return rl, 0, err
+		}
 	}
-
 	memUsed, err := memAggregateResult.Value(queryparam.Aggregate)
 	if err != nil {
 		return rl, 0, err
@@ -628,12 +639,18 @@ func (r *nodeMetricInformer) collectPodMetric(podMeta *statesinformer.PodMeta, q
 	if err != nil {
 		return nil, err
 	}
-
-	memAggregateResult, err := doQuery(querier, metriccache.PodMemUsageMetric, metriccache.MetricPropertiesFunc.Pod(podUID))
-	if err != nil {
-		return nil, err
+	var memAggregateResult metriccache.AggregateResult
+	if *r.getNodeMetricSpec().CollectPolicy.NodeMemoryCollectPolicy == slov1alpha1.UsageWithHotPageCache && system.GetIsStartColdMemory() {
+		memAggregateResult, err = doQuery(querier, metriccache.PodMemoryWithHotPageUsageMetric, metriccache.MetricPropertiesFunc.Pod(podUID))
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		memAggregateResult, err = doQuery(querier, metriccache.PodMemUsageMetric, metriccache.MetricPropertiesFunc.Pod(podUID))
+		if err != nil {
+			return nil, err
+		}
 	}
-
 	memUsed, err := memAggregateResult.Value(queryParam.Aggregate)
 	if err != nil {
 		return nil, err

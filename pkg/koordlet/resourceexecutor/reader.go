@@ -38,6 +38,7 @@ type CgroupReader interface {
 	ReadMemoryNumaStat(parentDir string) ([]sysutil.NumaMemoryPages, error)
 	ReadCPUTasks(parentDir string) ([]int32, error)
 	ReadPSI(parentDir string) (*PSIByResource, error)
+	ReadMemoryColdPageUsage(parentDir string) (uint64, error)
 }
 
 var _ CgroupReader = &CgroupV1Reader{}
@@ -196,6 +197,22 @@ func (r *CgroupV1Reader) ReadCPUTasks(parentDir string) ([]int32, error) {
 	}
 	// content: `7742\n10971\n11049\n11051...`
 	return readCgroupAndParseInt32Slice(parentDir, resource)
+}
+
+func (r *CgroupV1Reader) ReadMemoryColdPageUsage(parentDir string) (uint64, error) {
+	resource, ok := sysutil.DefaultRegistry.Get(sysutil.CgroupVersionV1, sysutil.MemoryIdlePageStatsName)
+	if !ok {
+		return 0, ErrResourceNotRegistered
+	}
+	s, err := cgroupFileRead(parentDir, resource)
+	if err != nil {
+		return 0, err
+	}
+	v, err := sysutil.ParseMemoryIdlePageStats(s)
+	if err != nil {
+		return 0, err
+	}
+	return v.GetColdPageTotalBytes(), nil
 }
 
 var _ CgroupReader = &CgroupV2Reader{}
@@ -383,6 +400,11 @@ func (r *CgroupV2Reader) ReadPSI(parentDir string) (*PSIByResource, error) {
 		return nil, err
 	}
 	return psi, nil
+}
+
+// cgroup v2 has not implemented yet
+func (r *CgroupV2Reader) ReadMemoryColdPageUsage(parentDir string) (uint64, error) {
+	return 0, ErrResourceNotRegistered
 }
 
 func NewCgroupReader() CgroupReader {
