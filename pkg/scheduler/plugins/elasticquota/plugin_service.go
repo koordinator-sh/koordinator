@@ -27,7 +27,7 @@ import (
 var _ services.APIServiceProvider = &Plugin{}
 
 func (g *Plugin) RegisterEndpoints(group *gin.RouterGroup) {
-	group.GET("/quota/:name", func(c *gin.Context) {
+	group.GET("/quotas/:name", func(c *gin.Context) {
 		quotaName := c.Param("name")
 		quotaSummary, exist := g.GetQuotaSummary(quotaName)
 		if !exist {
