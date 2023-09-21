@@ -42,6 +42,7 @@ import (
 	"github.com/koordinator-sh/koordinator/test/utils/image"
 
 	// test sources
+	_ "github.com/koordinator-sh/koordinator/test/e2e/quota"
 	_ "github.com/koordinator-sh/koordinator/test/e2e/scheduling"
 	_ "github.com/koordinator-sh/koordinator/test/e2e/slocontroller"
 )
