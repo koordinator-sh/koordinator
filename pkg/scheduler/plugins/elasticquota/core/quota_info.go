@@ -197,6 +197,14 @@ func (qi *QuotaInfo) getLimitRequestNoLock() v1.ResourceList {
 	return limitRequest
 }
 
+func (qi *QuotaInfo) setMaxNoLock(max v1.ResourceList) {
+	qi.CalculateInfo.Max = max.DeepCopy()
+}
+
+func (qi *QuotaInfo) setMinNoLock(min v1.ResourceList) {
+	qi.CalculateInfo.Min = min.DeepCopy()
+}
+
 func (qi *QuotaInfo) addRequestNonNegativeNoLock(delta v1.ResourceList) {
 	qi.CalculateInfo.Request = quotav1.Add(qi.CalculateInfo.Request, delta)
 	for _, resName := range quotav1.IsNegative(qi.CalculateInfo.Request) {
@@ -325,10 +333,7 @@ func (qi *QuotaInfo) isQuotaMetaChange(quotaInfo *QuotaInfo) bool {
 	qi.lock.Lock()
 	defer qi.lock.Unlock()
 
-	if !quotav1.Equals(qi.CalculateInfo.Max, quotaInfo.CalculateInfo.Max) ||
-		!quotav1.Equals(qi.CalculateInfo.Min, quotaInfo.CalculateInfo.Min) ||
-		!quotav1.Equals(qi.CalculateInfo.SharedWeight, quotaInfo.CalculateInfo.SharedWeight) ||
-		qi.AllowLentResource != quotaInfo.AllowLentResource ||
+	if qi.AllowLentResource != quotaInfo.AllowLentResource ||
 		qi.IsParent != quotaInfo.IsParent ||
 		qi.ParentName != quotaInfo.ParentName {
 		return true
@@ -439,9 +444,9 @@ type QuotaTopoNode struct {
 	childGroupQuotaInfos map[string]*QuotaTopoNode
 }
 
-func NewQuotaTopoNode(quotaInfo *QuotaInfo) *QuotaTopoNode {
+func NewQuotaTopoNode(name string, quotaInfo *QuotaInfo) *QuotaTopoNode {
 	return &QuotaTopoNode{
-		name:                 quotaInfo.Name,
+		name:                 name,
 		quotaInfo:            quotaInfo, // not deepCopy
 		childGroupQuotaInfos: make(map[string]*QuotaTopoNode),
 	}
