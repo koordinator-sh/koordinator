@@ -97,7 +97,7 @@ func TestEndpointsQueryQuotaInfo(t *testing.T) {
 		engine := gin.Default()
 		eq.RegisterEndpoints(engine.Group("/"))
 		w := httptest.NewRecorder()
-		req, _ := http.NewRequest("GET", "/quota/test1", nil)
+		req, _ := http.NewRequest("GET", "/quotas/test1", nil)
 		engine.ServeHTTP(w, req)
 		assert.Equal(t, http.StatusOK, w.Result().StatusCode)
 		quotaSummary := core.NewQuotaInfoSummary()
