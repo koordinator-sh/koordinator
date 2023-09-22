@@ -181,7 +181,7 @@ func (qt *quotaTopology) ValidDeleteQuota(quota *v1alpha1.ElasticQuota) error {
 		return fmt.Errorf("failed list pods for quota %v, err: %v", quota.Name, err)
 	}
 	if len(podList.Items) > 0 {
-		return fmt.Errorf("delete quota failed, quota%v has child pods", quotaName)
+		return fmt.Errorf("delete quota failed, quota %v has child pods", quotaName)
 	}
 
 	delete(qt.quotaHierarchyInfo[quotaInfo.ParentName], quotaName)

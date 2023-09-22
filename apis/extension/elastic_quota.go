@@ -132,3 +132,13 @@ func GetAllocated(quota *v1alpha1.ElasticQuota) (corev1.ResourceList, error) {
 	}
 	return allocated, nil
 }
+
+func GetRuntime(quota *v1alpha1.ElasticQuota) (corev1.ResourceList, error) {
+	runtime := corev1.ResourceList{}
+	if quota.Annotations[AnnotationRuntime] != "" {
+		if err := json.Unmarshal([]byte(quota.Annotations[AnnotationRuntime]), &runtime); err != nil {
+			return runtime, err
+		}
+	}
+	return runtime, nil
+}
