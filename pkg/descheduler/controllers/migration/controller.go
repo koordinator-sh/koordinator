@@ -23,8 +23,6 @@ import (
 	"sync"
 	"time"
 
-	gocache "github.com/patrickmn/go-cache"
-	"golang.org/x/time/rate"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
@@ -48,7 +46,6 @@ import (
 	deschedulerconfig "github.com/koordinator-sh/koordinator/pkg/descheduler/apis/config"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/apis/config/validation"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/controllers/migration/arbitrator"
-	"github.com/koordinator-sh/koordinator/pkg/descheduler/controllers/migration/controllerfinder"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/controllers/migration/evictor"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/controllers/migration/reservation"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/controllers/migration/util"
@@ -76,16 +73,11 @@ type Reconciler struct {
 	eventRecorder          events.EventRecorder
 	reservationInterpreter reservation.Interpreter
 	evictorInterpreter     evictor.Interpreter
-	controllerFinder       controllerfinder.Interface
-	nonRetryablePodFilter  framework.FilterFunc
-	retryablePodFilter     framework.FilterFunc
-	defaultFilterPlugin    framework.FilterPlugin
 	assumedCache           *assumedCache
 	clock                  clock.Clock
 
-	lock           sync.Mutex
-	objectLimiters map[types.UID]*rate.Limiter
-	limiterCache   *gocache.Cache
+	lock   sync.Mutex
+	filter arbitrator.MigrationFilter
 }
 
 func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error) {
@@ -108,20 +100,26 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 		return nil, err
 	}
 
+	// New filter
+	filter, arbitrationFilter, err := arbitrator.NewFilter(controllerArgs, handle)
+	if err != nil {
+		return nil, err
+	}
+	r.filter = filter
+
 	// New Arbitrator
 	a, err := arbitrator.New(controllerArgs.ArbitrationArgs, arbitrator.Options{
-		Client:             r.Client,
-		EventRecorder:      r.eventRecorder,
-		RetryableFilter:    r.retryablePodFilter,
-		NonRetryableFilter: r.nonRetryablePodFilter,
-		Manager:            options.Manager,
+		Client:        r.Client,
+		EventRecorder: r.eventRecorder,
+		Manager:       options.Manager,
+		Filter:        arbitrationFilter,
 	})
 	if err != nil {
 		return nil, err
 	}
-	eventHandler := arbitrator.NewHandler(a, r.Client)
+	arbitrationEventHandler := arbitrator.NewHandler(a, r.Client)
 
-	if err = c.Watch(&source.Kind{Type: &sev1alpha1.PodMigrationJob{}}, eventHandler, &predicate.Funcs{
+	if err = c.Watch(&source.Kind{Type: &sev1alpha1.PodMigrationJob{}}, arbitrationEventHandler, &predicate.Funcs{
 		DeleteFunc: func(event event.DeleteEvent) bool {
 			job := event.Object.(*sev1alpha1.PodMigrationJob)
 			r.assumedCache.delete(job)
@@ -147,7 +145,6 @@ func newReconciler(args *deschedulerconfig.MigrationControllerArgs, handle frame
 		return nil, err
 	}
 
-	controllerFinder, err := controllerfinder.New(manager)
 	if err != nil {
 		return nil, err
 	}
@@ -158,38 +155,14 @@ func newReconciler(args *deschedulerconfig.MigrationControllerArgs, handle frame
 		eventRecorder:          handle.EventRecorder(),
 		reservationInterpreter: reservationInterpreter,
 		evictorInterpreter:     evictorInterpreter,
-		controllerFinder:       controllerFinder,
 		assumedCache:           newAssumedCache(),
 		clock:                  clock.RealClock{},
 	}
-	if err := r.initFilters(args, handle); err != nil {
-		return nil, err
-	}
-	r.initObjectLimiters()
 
 	if err := manager.Add(r); err != nil {
 		return nil, err
 	}
 	return r, nil
-}
-
-func (r *Reconciler) initObjectLimiters() {
-	var trackExpiration time.Duration
-	for _, v := range r.args.ObjectLimiters {
-		if v.Duration.Duration > trackExpiration {
-			trackExpiration = v.Duration.Duration
-		}
-	}
-	if trackExpiration > 0 {
-		r.objectLimiters = make(map[types.UID]*rate.Limiter)
-		limiterExpiration := trackExpiration + trackExpiration/2
-		r.limiterCache = gocache.New(limiterExpiration, limiterExpiration)
-		r.limiterCache.OnEvicted(func(s string, _ interface{}) {
-			r.lock.Lock()
-			defer r.lock.Unlock()
-			delete(r.objectLimiters, types.UID(s))
-		})
-	}
 }
 
 func (r *Reconciler) Name() string {
@@ -418,7 +391,7 @@ func (r *Reconciler) doMigrate(ctx context.Context, job *sev1alpha1.PodMigration
 }
 
 func (r *Reconciler) preparePendingJob(ctx context.Context, job *sev1alpha1.PodMigrationJob) (reconcile.Result, error) {
-	changed, pod, err := r.preparePodRef(ctx, job)
+	changed, _, err := r.preparePodRef(ctx, job)
 	if err != nil {
 		return reconcile.Result{}, err
 	}
@@ -427,13 +400,6 @@ func (r *Reconciler) preparePendingJob(ctx context.Context, job *sev1alpha1.PodM
 			return reconcile.Result{}, err
 		}
 	}
-
-	if !r.reservationFilter(pod) {
-		err = fmt.Errorf("pod %q can not be migrated by ReservationFirst mode because pod.schedulerName is not support reservation", klog.KObj(pod))
-		return reconcile.Result{}, err
-	}
-
-	markPodPrepareMigrating(pod)
 
 	// delete passed arbitration annotation
 	if job.Annotations != nil {
@@ -753,7 +719,7 @@ func (r *Reconciler) evictPod(ctx context.Context, job *sev1alpha1.PodMigrationJ
 		r.eventRecorder.Eventf(job, nil, corev1.EventTypeWarning, sev1alpha1.PodMigrationJobReasonEvicting, "Migrating", "Failed evict Pod %q caused by %v", podNamespacedName, err)
 		return false, reconcile.Result{}, err
 	}
-	r.trackEvictedPod(pod)
+	r.filter.TrackEvictedPod(pod)
 
 	_, reason := evictor.GetEvictionTriggerAndReason(job.Annotations)
 	cond = &sev1alpha1.PodMigrationJobCondition{

@@ -40,6 +40,7 @@ import (
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/descheduler/framework"
 )
 
 func TestSingleSortFn(t *testing.T) {
@@ -189,11 +190,13 @@ func TestFilter(t *testing.T) {
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
 			arbitrator := arbitratorImpl{
-				nonRetryablePodFilter: func(pod *corev1.Pod) bool {
-					return testCase.nonRetryable
-				},
-				retryablePodFilter: func(pod *corev1.Pod) bool {
-					return testCase.retryable
+				arbitrationFilter: &fakeArbitrationFilter{
+					nonRetryablePodFilter: func(pod *corev1.Pod) bool {
+						return testCase.nonRetryable
+					},
+					retryablePodFilter: func(pod *corev1.Pod) bool {
+						return testCase.retryable
+					},
 				},
 			}
 			isFailed, isPassed := arbitrator.filter(testCase.pod)
@@ -281,12 +284,14 @@ func TestRequeueJobIfRetryablePodFilterFailed(t *testing.T) {
 		sorts: []SortFn{func(jobs []*v1alpha1.PodMigrationJob, podOfJob map[*v1alpha1.PodMigrationJob]*corev1.Pod) []*v1alpha1.PodMigrationJob {
 			return jobs
 		}},
-		nonRetryablePodFilter: func(pod *corev1.Pod) bool {
-			return true
-		},
-		retryablePodFilter: func(pod *corev1.Pod) bool {
-			enter = true
-			return false
+		arbitrationFilter: &fakeArbitrationFilter{
+			nonRetryablePodFilter: func(pod *corev1.Pod) bool {
+				return true
+			},
+			retryablePodFilter: func(pod *corev1.Pod) bool {
+				enter = true
+				return false
+			},
 		},
 		client:        fakeClient,
 		mu:            sync.Mutex{},
@@ -352,12 +357,14 @@ func TestAbortJobIfNonRetryablePodFilterFailed(t *testing.T) {
 		sorts: []SortFn{func(jobs []*v1alpha1.PodMigrationJob, podOfJob map[*v1alpha1.PodMigrationJob]*corev1.Pod) []*v1alpha1.PodMigrationJob {
 			return jobs
 		}},
-		nonRetryablePodFilter: func(pod *corev1.Pod) bool {
-			enter = true
-			return false
-		},
-		retryablePodFilter: func(pod *corev1.Pod) bool {
-			return true
+		arbitrationFilter: &fakeArbitrationFilter{
+			nonRetryablePodFilter: func(pod *corev1.Pod) bool {
+				enter = true
+				return false
+			},
+			retryablePodFilter: func(pod *corev1.Pod) bool {
+				return true
+			},
 		},
 		client:        fakeClient,
 		mu:            sync.Mutex{},
@@ -484,11 +491,13 @@ func TestDoOnceArbitrate(t *testing.T) {
 			}
 			a := &arbitratorImpl{
 				waitingCollection: collection,
-				nonRetryablePodFilter: func(pod *corev1.Pod) bool {
-					return !nonRetryablePods[pod.Name]
-				},
-				retryablePodFilter: func(pod *corev1.Pod) bool {
-					return !retryablePods[pod.Name]
+				arbitrationFilter: &fakeArbitrationFilter{
+					nonRetryablePodFilter: func(pod *corev1.Pod) bool {
+						return !nonRetryablePods[pod.Name]
+					},
+					retryablePodFilter: func(pod *corev1.Pod) bool {
+						return !retryablePods[pod.Name]
+					},
 				},
 				sorts: []SortFn{
 					func(jobs []*v1alpha1.PodMigrationJob, podOfJob map[*v1alpha1.PodMigrationJob]*corev1.Pod) []*v1alpha1.PodMigrationJob {
@@ -537,11 +546,13 @@ func TestArbitrate(t *testing.T) {
 
 	a := &arbitratorImpl{
 		waitingCollection: map[types.UID]*v1alpha1.PodMigrationJob{},
-		nonRetryablePodFilter: func(pod *corev1.Pod) bool {
-			return true
-		},
-		retryablePodFilter: func(pod *corev1.Pod) bool {
-			return true
+		arbitrationFilter: &fakeArbitrationFilter{
+			nonRetryablePodFilter: func(pod *corev1.Pod) bool {
+				return true
+			},
+			retryablePodFilter: func(pod *corev1.Pod) bool {
+				return true
+			},
 		},
 		sorts: []SortFn{
 			func(jobs []*v1alpha1.PodMigrationJob, podOfJob map[*v1alpha1.PodMigrationJob]*corev1.Pod) []*v1alpha1.PodMigrationJob {
@@ -740,4 +751,35 @@ func makePodMigrationJob(name string, creationTime time.Time, pod *corev1.Pod, d
 		decorator(job)
 	}
 	return job
+}
+
+type fakeControllerFinder struct {
+	pods     []*corev1.Pod
+	replicas int32
+	err      error
+}
+
+func (f *fakeControllerFinder) ListPodsByWorkloads(workloadUIDs []types.UID, ns string, labelSelector *metav1.LabelSelector, active bool) ([]*corev1.Pod, error) {
+	return f.pods, f.err
+}
+
+func (f *fakeControllerFinder) GetPodsForRef(ownerReference *metav1.OwnerReference, ns string, labelSelector *metav1.LabelSelector, active bool) ([]*corev1.Pod, int32, error) {
+	return f.pods, f.replicas, f.err
+}
+
+func (f *fakeControllerFinder) GetExpectedScaleForPod(pod *corev1.Pod) (int32, error) {
+	return f.replicas, f.err
+}
+
+type fakeArbitrationFilter struct {
+	nonRetryablePodFilter framework.FilterFunc
+	retryablePodFilter    framework.FilterFunc
+}
+
+func (f *fakeArbitrationFilter) NonRetryablePodFilter(pod *corev1.Pod) bool {
+	return f.nonRetryablePodFilter(pod)
+}
+
+func (f *fakeArbitrationFilter) RetryablePodFilter(pod *corev1.Pod) bool {
+	return f.retryablePodFilter(pod)
 }

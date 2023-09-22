@@ -36,7 +36,6 @@ import (
 
 	"github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/apis/config"
-	"github.com/koordinator-sh/koordinator/pkg/descheduler/framework"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/utils/sorter"
 )
 
@@ -58,9 +57,8 @@ type arbitratorImpl struct {
 	waitingCollection map[types.UID]*v1alpha1.PodMigrationJob
 	interval          time.Duration
 
-	sorts                 []SortFn
-	nonRetryablePodFilter framework.FilterFunc
-	retryablePodFilter    framework.FilterFunc
+	sorts             []SortFn
+	arbitrationFilter ArbitrationFilter
 
 	client        client.Client
 	eventRecorder events.EventRecorder
@@ -72,19 +70,16 @@ func New(args *config.ArbitrationArgs, options Options) (Arbitrator, error) {
 	arbitrator := &arbitratorImpl{
 		waitingCollection: map[types.UID]*v1alpha1.PodMigrationJob{},
 		interval:          args.Interval.Duration,
-
 		sorts: []SortFn{
 			SortJobsByCreationTime(),
 			SortJobsByPod(sorter.PodSorter().Sort),
 			SortJobsByController(),
 			SortJobsByMigratingNum(options.Client),
 		},
-		retryablePodFilter:    options.RetryableFilter,
-		nonRetryablePodFilter: options.NonRetryableFilter,
-
-		client:        options.Client,
-		eventRecorder: options.EventRecorder,
-		mu:            sync.Mutex{},
+		arbitrationFilter: options.Filter,
+		client:            options.Client,
+		eventRecorder:     options.EventRecorder,
+		mu:                sync.Mutex{},
 	}
 
 	err := options.Manager.Add(arbitrator)
@@ -120,11 +115,11 @@ func (a *arbitratorImpl) sort(jobs []*v1alpha1.PodMigrationJob, podOfJob map[*v1
 // filter calls nonRetryablePodFilter and retryablePodFilter to filter one PodMigrationJob.
 func (a *arbitratorImpl) filter(pod *corev1.Pod) (isFailed, isPassed bool) {
 	if pod != nil {
-		if a.nonRetryablePodFilter != nil && !a.nonRetryablePodFilter(pod) {
+		if a.arbitrationFilter != nil && !a.arbitrationFilter.NonRetryablePodFilter(pod) {
 			isFailed = true
 			return
 		}
-		if a.retryablePodFilter != nil && !a.retryablePodFilter(pod) {
+		if a.arbitrationFilter != nil && !a.arbitrationFilter.RetryablePodFilter(pod) {
 			isPassed = false
 			return
 		}
@@ -248,11 +243,10 @@ func (h *arbitrationHandler) Create(evt event.CreateEvent, q workqueue.RateLimit
 }
 
 type Options struct {
-	Client             client.Client
-	EventRecorder      events.EventRecorder
-	RetryableFilter    framework.FilterFunc
-	NonRetryableFilter framework.FilterFunc
-	Manager            controllerruntime.Manager
+	Client        client.Client
+	EventRecorder events.EventRecorder
+	Filter        ArbitrationFilter
+	Manager       controllerruntime.Manager
 }
 
 func getPodForJob(c client.Client, jobs []*v1alpha1.PodMigrationJob) map[*v1alpha1.PodMigrationJob]*corev1.Pod {
