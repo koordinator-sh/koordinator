@@ -85,7 +85,6 @@ func NewFilter(args *deschedulerconfig.MigrationControllerArgs, handle framework
 		client:           options.Manager.GetClient(),
 		args:             args,
 		controllerFinder: controllerFinder,
-		mu:               sync.Mutex{},
 		clock:            clock.RealClock{},
 	}
 	if err := f.initFilters(args, handle); err != nil {

@@ -20,7 +20,6 @@ import (
 	"context"
 	"fmt"
 	"strconv"
-	"sync"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -76,7 +75,6 @@ type Reconciler struct {
 	assumedCache           *assumedCache
 	clock                  clock.Clock
 
-	lock   sync.Mutex
 	filter arbitrator.MigrationFilter
 }
 
@@ -100,14 +98,12 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 		return nil, err
 	}
 
-	// New filter
 	filter, arbitrationFilter, err := arbitrator.NewFilter(controllerArgs, handle)
 	if err != nil {
 		return nil, err
 	}
 	r.filter = filter
 
-	// New Arbitrator
 	a, err := arbitrator.New(controllerArgs.ArbitrationArgs, arbitrator.Options{
 		Client:        r.Client,
 		EventRecorder: r.eventRecorder,
@@ -927,4 +923,13 @@ func (r *Reconciler) updateCondition(ctx context.Context, job *sev1alpha1.PodMig
 		return r.Client.Status().Update(ctx, job)
 	}
 	return nil
+}
+
+// Filter checks if a pod can be evicted
+func (r *Reconciler) Filter(pod *corev1.Pod) bool {
+	return r.filter.Filter(pod)
+}
+
+func (r *Reconciler) PreEvictionFilter(pod *corev1.Pod) bool {
+	return r.filter.PreEvictionFilter(pod)
 }
