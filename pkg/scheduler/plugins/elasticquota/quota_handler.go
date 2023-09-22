@@ -47,7 +47,7 @@ func (g *Plugin) OnQuotaAdd(obj interface{}) {
 	treeID := mgr.GetTreeID()
 	g.updateQuotaToTreeMap(quota.Name, treeID)
 
-	g.handlerQuotaWhenRoot(quota, mgr)
+	g.handlerQuotaWhenRoot(quota, mgr, false)
 
 	oldQuotaInfo := mgr.GetQuotaInfoByName(quota.Name)
 	if oldQuotaInfo != nil && quota.Name != extension.DefaultQuotaName && quota.Name != extension.SystemQuotaName {
@@ -76,7 +76,7 @@ func (g *Plugin) OnQuotaUpdate(oldObj, newObj interface{}) {
 	treeID := mgr.GetTreeID()
 	g.updateQuotaToTreeMap(newQuota.Name, treeID)
 
-	g.handlerQuotaWhenRoot(newQuota, mgr)
+	g.handlerQuotaWhenRoot(newQuota, mgr, false)
 
 	err := mgr.UpdateQuota(newQuota, false)
 	if err != nil {
@@ -106,7 +106,9 @@ func (g *Plugin) OnQuotaDelete(obj interface{}) {
 		klog.Errorf("OnQuotaDeleteFunc failed: %v.%v, tree: %v, err: %v", quota.Namespace, quota.Name, treeID, err)
 		return
 	}
-	// TODO: when quota is root. we should clean the manager
+
+	g.handlerQuotaWhenRoot(quota, mgr, true)
+
 	klog.V(5).Infof("OnQuotaDeleteFunc failed: %v.%v, tree: %v", quota.Namespace, quota.Name, treeID)
 
 }
@@ -234,7 +236,7 @@ func (g *Plugin) deleteQuotaToTreeMap(quota string) {
 }
 
 // handlerQuotaForRoot will update quota tree total resource when the quota is root quota and enable MultiQuotaTree
-func (g *Plugin) handlerQuotaWhenRoot(quota *schedulerv1alpha1.ElasticQuota, mgr *core.GroupQuotaManager) {
+func (g *Plugin) handlerQuotaWhenRoot(quota *schedulerv1alpha1.ElasticQuota, mgr *core.GroupQuotaManager, isDelete bool) {
 	if !k8sfeature.DefaultFeatureGate.Enabled(koordfeatures.MultiQuotaTree) ||
 		quota.Labels[extension.LabelQuotaIsRoot] != "true" || mgr.GetTreeID() == "" {
 		return
@@ -242,7 +244,14 @@ func (g *Plugin) handlerQuotaWhenRoot(quota *schedulerv1alpha1.ElasticQuota, mgr
 
 	totalResource, ok := getTotalResource(quota)
 	if ok {
-		delta := mgr.SetTotalResourceForTree(totalResource)
+		var delta corev1.ResourceList
+		if isDelete {
+			delta = quotav1.Subtract(corev1.ResourceList{}, totalResource)
+			delete(g.groupQuotaManagersForQuotaTree, mgr.GetTreeID())
+		} else {
+			delta = mgr.SetTotalResourceForTree(totalResource)
+		}
+
 		if !quotav1.IsZero(delta) {
 			// decrease the default GroupQuotaManager resource
 			deltaForDefault := quotav1.Subtract(corev1.ResourceList{}, delta)
