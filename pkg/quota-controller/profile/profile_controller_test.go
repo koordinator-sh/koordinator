@@ -215,7 +215,7 @@ func TestQuotaProfileReconciler_Reconciler_CreateQuota(t *testing.T) {
 			},
 			oriQuota:            nil,
 			expectQuotaMin:      createResourceList(18, 1800),
-			expectTotalResource: createResourceListWithStorage(18, 1800, 2000),
+			expectTotalResource: createResourceListWithStorage(18, 1800, 1800),
 			expectQuotaLabels: map[string]string{
 				extension.LabelQuotaProfile: "profile1",
 				extension.LabelQuotaTreeID:  treeID1,
@@ -241,7 +241,7 @@ func TestQuotaProfileReconciler_Reconciler_CreateQuota(t *testing.T) {
 			},
 			oriQuota:            nil,
 			expectQuotaMin:      createResourceList(18, 1800),
-			expectTotalResource: createResourceListWithStorage(18, 1800, 2000),
+			expectTotalResource: createResourceListWithStorage(18, 1800, 1800),
 			expectQuotaLabels: map[string]string{
 				extension.LabelQuotaProfile: "profile1",
 				extension.LabelQuotaTreeID:  "tree1",
@@ -270,7 +270,7 @@ func TestQuotaProfileReconciler_Reconciler_CreateQuota(t *testing.T) {
 			},
 			oriQuota:            nil,
 			expectQuotaMin:      corev1.ResourceList{corev1.ResourceCPU: *resource.NewMilliQuantity(18*1000, resource.DecimalSI)},
-			expectTotalResource: createResourceListWithStorage(18, 2000, 2000),
+			expectTotalResource: createResourceListWithStorage(18, 1800, 1800),
 			expectQuotaLabels: map[string]string{
 				extension.LabelQuotaProfile: "profile1",
 				extension.LabelQuotaTreeID:  "tree1",
