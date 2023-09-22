@@ -329,4 +329,7 @@ func TestPlugin_HandlerQuotaWhenRoot(t *testing.T) {
 
 	assert.True(t, quotav1.Equals(createResourceList(250, 2500), gqmA.GetClusterTotalResource()))
 	assert.True(t, quotav1.Equals(createResourceList(50, 500), plugin.groupQuotaManager.GetClusterTotalResource()))
+
+	plugin.OnQuotaDelete(copy)
+	assert.True(t, quotav1.Equals(createResourceList(300, 3000), plugin.groupQuotaManager.GetClusterTotalResource()))
 }
