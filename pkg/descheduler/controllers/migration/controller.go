@@ -401,10 +401,6 @@ func (r *Reconciler) preparePendingJob(ctx context.Context, job *sev1alpha1.PodM
 		}
 	}
 
-	// delete passed arbitration annotation
-	if job.Annotations != nil {
-		delete(job.Annotations, arbitrator.AnnotationPassedArbitration)
-	}
 	job.Status.Phase = sev1alpha1.PodMigrationJobRunning
 	err = r.Client.Status().Update(ctx, job)
 	return reconcile.Result{}, err
