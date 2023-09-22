@@ -98,22 +98,6 @@ func (r *QuotaProfileReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		}
 	}
 
-	selector, err := metav1.LabelSelectorAsSelector(profile.Spec.NodeSelector)
-	if err != nil {
-		klog.Errorf("failed to convert profile %v nodeSelector, error: %v", req.NamespacedName, err)
-		return ctrl.Result{Requeue: true, RequeueAfter: 10 * time.Second}, err
-	}
-	nodeList := &corev1.NodeList{}
-	if err := r.Client.List(context.TODO(), nodeList, &client.ListOptions{LabelSelector: selector}, utilclient.DisableDeepCopy); err != nil {
-		return ctrl.Result{Requeue: true}, err
-	}
-
-	// TODO: consider node status.
-	totalResource := corev1.ResourceList{}
-	for _, node := range nodeList.Items {
-		totalResource = quotav1.Add(totalResource, node.Status.Allocatable)
-	}
-
 	quotaExist := true
 	quota := &schedv1alpha1.ElasticQuota{}
 	err = r.Client.Get(context.TODO(), types.NamespacedName{Namespace: profile.Namespace, Name: profile.Spec.QuotaName}, quota)
@@ -132,13 +116,20 @@ func (r *QuotaProfileReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	}
 	oldQuota := quota.DeepCopy()
 
-	resourceKeys := []string{"cpu", "memory"}
-	raw, ok := profile.Annotations[extension.AnnotationResourceKeys]
-	if ok {
-		err := json.Unmarshal([]byte(raw), &resourceKeys)
-		if err != nil {
-			klog.Warningf("failed unmarshal quota.scheduling.koordinator.sh/resource-keys %v", raw)
-		}
+	selector, err := metav1.LabelSelectorAsSelector(profile.Spec.NodeSelector)
+	if err != nil {
+		klog.Errorf("failed to convert profile %v nodeSelector, error: %v", req.NamespacedName, err)
+		return ctrl.Result{Requeue: true, RequeueAfter: 10 * time.Second}, err
+	}
+	nodeList := &corev1.NodeList{}
+	if err := r.Client.List(context.TODO(), nodeList, &client.ListOptions{LabelSelector: selector}, utilclient.DisableDeepCopy); err != nil {
+		return ctrl.Result{Requeue: true}, err
+	}
+
+	// TODO: consider node status.
+	totalResource := corev1.ResourceList{}
+	for _, node := range nodeList.Items {
+		totalResource = quotav1.Add(totalResource, node.Status.Allocatable)
 	}
 
 	ratio := 1.0
@@ -149,18 +140,29 @@ func (r *QuotaProfileReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		}
 	}
 
+	for resourceName, quantity := range totalResource {
+		totalResource[resourceName] = MultiplyQuantity(quantity, resourceName, ratio)
+	}
+
+	resourceKeys := []string{"cpu", "memory"}
+	raw, ok := profile.Annotations[extension.AnnotationResourceKeys]
+	if ok {
+		err := json.Unmarshal([]byte(raw), &resourceKeys)
+		if err != nil {
+			klog.Warningf("failed unmarshal quota.scheduling.koordinator.sh/resource-keys %v", raw)
+		}
+	}
+
 	min := corev1.ResourceList{}
 	max := corev1.ResourceList{}
 	for _, key := range resourceKeys {
 		resourceName := corev1.ResourceName(key)
 		quantity, ok := totalResource[resourceName]
 		if !ok {
-			continue
+			quantity = *resource.NewQuantity(0, resource.DecimalSI)
 		}
-		value := MultiplyQuantity(quantity, resourceName, ratio)
 
-		min[resourceName] = value
-		totalResource[resourceName] = value
+		min[resourceName] = quantity
 		max[resourceName] = *resource.NewQuantity(math.MaxInt64/5, resource.DecimalSI)
 	}
 
@@ -200,7 +202,7 @@ func (r *QuotaProfileReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		if err != nil {
 			r.Recorder.Eventf(profile, "Warning", ReasonCreateQuotaFailed, "failed to create quota, err: %s", err)
 			klog.Errorf("failed create quota for profile %v, error: %v", req.NamespacedName, err)
-			return ctrl.Result{Requeue: true}, err
+			return ctrl.Result{RequeueAfter: 2 * time.Second}, nil
 		}
 	} else {
 		if !reflect.DeepEqual(quota.Labels, oldQuota.Labels) || !reflect.DeepEqual(quota.Annotations, oldQuota.Annotations) || !reflect.DeepEqual(quota.Spec, oldQuota.Spec) {
@@ -208,12 +210,12 @@ func (r *QuotaProfileReconciler) Reconcile(ctx context.Context, req ctrl.Request
 			if err != nil {
 				r.Recorder.Eventf(profile, "Warning", ReasonUpdateQuotaFailed, "failed to update quota, err: %s", err)
 				klog.Errorf("failed update quota for profile %v, error: %v", req.NamespacedName, err)
-				return ctrl.Result{Requeue: true}, err
+				return ctrl.Result{RequeueAfter: 2 * time.Second}, nil
 			}
 		}
 	}
 
-	return ctrl.Result{Requeue: true, RequeueAfter: 10 * time.Second}, nil
+	return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 }
 
 func Add(mgr ctrl.Manager) error {
