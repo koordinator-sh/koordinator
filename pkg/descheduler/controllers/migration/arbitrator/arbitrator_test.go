@@ -40,7 +40,6 @@ import (
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
-	"github.com/koordinator-sh/koordinator/pkg/descheduler/framework"
 )
 
 func TestSingleSortFn(t *testing.T) {
@@ -137,7 +136,7 @@ func TestMultiSortFn(t *testing.T) {
 	assert.Equal(t, expectedJobsOrder, jobsOrder)
 }
 
-func TestFilter(t *testing.T) {
+func TestFiltering(t *testing.T) {
 	testCases := []struct {
 		name         string
 		pod          *corev1.Pod
@@ -190,7 +189,7 @@ func TestFilter(t *testing.T) {
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
 			arbitrator := arbitratorImpl{
-				arbitrationFilter: &fakeArbitrationFilter{
+				filter: &filter{
 					nonRetryablePodFilter: func(pod *corev1.Pod) bool {
 						return testCase.nonRetryable
 					},
@@ -199,7 +198,7 @@ func TestFilter(t *testing.T) {
 					},
 				},
 			}
-			isFailed, isPassed := arbitrator.filter(testCase.pod)
+			isFailed, isPassed := arbitrator.filtering(testCase.pod)
 			assert.Equal(t, testCase.isFailed, isFailed)
 			assert.Equal(t, testCase.isPassed, isPassed)
 		})
@@ -284,7 +283,7 @@ func TestRequeueJobIfRetryablePodFilterFailed(t *testing.T) {
 		sorts: []SortFn{func(jobs []*v1alpha1.PodMigrationJob, podOfJob map[*v1alpha1.PodMigrationJob]*corev1.Pod) []*v1alpha1.PodMigrationJob {
 			return jobs
 		}},
-		arbitrationFilter: &fakeArbitrationFilter{
+		filter: &filter{
 			nonRetryablePodFilter: func(pod *corev1.Pod) bool {
 				return true
 			},
@@ -357,7 +356,7 @@ func TestAbortJobIfNonRetryablePodFilterFailed(t *testing.T) {
 		sorts: []SortFn{func(jobs []*v1alpha1.PodMigrationJob, podOfJob map[*v1alpha1.PodMigrationJob]*corev1.Pod) []*v1alpha1.PodMigrationJob {
 			return jobs
 		}},
-		arbitrationFilter: &fakeArbitrationFilter{
+		filter: &filter{
 			nonRetryablePodFilter: func(pod *corev1.Pod) bool {
 				enter = true
 				return false
@@ -491,7 +490,7 @@ func TestDoOnceArbitrate(t *testing.T) {
 			}
 			a := &arbitratorImpl{
 				waitingCollection: collection,
-				arbitrationFilter: &fakeArbitrationFilter{
+				filter: &filter{
 					nonRetryablePodFilter: func(pod *corev1.Pod) bool {
 						return !nonRetryablePods[pod.Name]
 					},
@@ -546,7 +545,7 @@ func TestArbitrate(t *testing.T) {
 
 	a := &arbitratorImpl{
 		waitingCollection: map[types.UID]*v1alpha1.PodMigrationJob{},
-		arbitrationFilter: &fakeArbitrationFilter{
+		filter: &filter{
 			nonRetryablePodFilter: func(pod *corev1.Pod) bool {
 				return true
 			},
@@ -769,17 +768,4 @@ func (f *fakeControllerFinder) GetPodsForRef(ownerReference *metav1.OwnerReferen
 
 func (f *fakeControllerFinder) GetExpectedScaleForPod(pod *corev1.Pod) (int32, error) {
 	return f.replicas, f.err
-}
-
-type fakeArbitrationFilter struct {
-	nonRetryablePodFilter framework.FilterFunc
-	retryablePodFilter    framework.FilterFunc
-}
-
-func (f *fakeArbitrationFilter) NonRetryablePodFilter(pod *corev1.Pod) bool {
-	return f.nonRetryablePodFilter(pod)
-}
-
-func (f *fakeArbitrationFilter) RetryablePodFilter(pod *corev1.Pod) bool {
-	return f.retryablePodFilter(pod)
 }

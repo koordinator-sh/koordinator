@@ -1063,7 +1063,7 @@ func TestFilterObjectLimiter(t *testing.T) {
 							*tt.evictedWorkload,
 						}
 					}
-					a.TrackEvictedPod(pod)
+					a.trackEvictedPod(pod)
 					if tt.sleepDuration > 0 {
 						time.Sleep(tt.sleepDuration)
 					}

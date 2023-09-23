@@ -36,6 +36,7 @@ import (
 
 	"github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/apis/config"
+	"github.com/koordinator-sh/koordinator/pkg/descheduler/framework"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/utils/sorter"
 )
 
@@ -45,7 +46,14 @@ const (
 
 var enqueueLog = klog.Background().WithName("eventHandler").WithName("arbitratorImpl")
 
+type MigrationFilter interface {
+	Filter(pod *corev1.Pod) bool
+	PreEvictionFilter(pod *corev1.Pod) bool
+	TrackEvictedPod(pod *corev1.Pod)
+}
+
 type Arbitrator interface {
+	MigrationFilter
 	Add(job *v1alpha1.PodMigrationJob)
 }
 
@@ -57,8 +65,8 @@ type arbitratorImpl struct {
 	waitingCollection map[types.UID]*v1alpha1.PodMigrationJob
 	interval          time.Duration
 
-	sorts             []SortFn
-	arbitrationFilter ArbitrationFilter
+	sorts  []SortFn
+	filter *filter
 
 	client        client.Client
 	eventRecorder events.EventRecorder
@@ -66,23 +74,28 @@ type arbitratorImpl struct {
 }
 
 // New creates an arbitratorImpl based on parameters.
-func New(args *config.ArbitrationArgs, options Options) (Arbitrator, error) {
+func New(args *config.MigrationControllerArgs, options Options) (Arbitrator, error) {
+	f, err := newFilter(args, options.Handle)
+	if err != nil {
+		return nil, err
+	}
+
 	arbitrator := &arbitratorImpl{
 		waitingCollection: map[types.UID]*v1alpha1.PodMigrationJob{},
-		interval:          args.Interval.Duration,
+		interval:          args.ArbitrationArgs.Interval.Duration,
 		sorts: []SortFn{
 			SortJobsByCreationTime(),
 			SortJobsByPod(sorter.PodSorter().Sort),
 			SortJobsByController(),
 			SortJobsByMigratingNum(options.Client),
 		},
-		arbitrationFilter: options.Filter,
-		client:            options.Client,
-		eventRecorder:     options.EventRecorder,
-		mu:                sync.Mutex{},
+		filter:        f,
+		client:        options.Client,
+		eventRecorder: options.EventRecorder,
+		mu:            sync.Mutex{},
 	}
 
-	err := options.Manager.Add(arbitrator)
+	err = options.Manager.Add(arbitrator)
 	if err != nil {
 		return nil, err
 	}
@@ -104,6 +117,33 @@ func (a *arbitratorImpl) Start(ctx context.Context) error {
 	return nil
 }
 
+// Filter checks if a pod can be evicted
+func (a *arbitratorImpl) Filter(pod *corev1.Pod) bool {
+	if !a.filter.filterExistingPodMigrationJob(pod) {
+		return false
+	}
+
+	if !a.filter.reservationFilter(pod) {
+		return false
+	}
+
+	if a.filter.nonRetryablePodFilter != nil && !a.filter.nonRetryablePodFilter(pod) {
+		return false
+	}
+	if a.filter.retryablePodFilter != nil && !a.filter.retryablePodFilter(pod) {
+		return false
+	}
+	return true
+}
+
+func (a *arbitratorImpl) PreEvictionFilter(pod *corev1.Pod) bool {
+	return a.filter.defaultFilterPlugin.PreEvictionFilter(pod)
+}
+
+func (a *arbitratorImpl) TrackEvictedPod(pod *corev1.Pod) {
+	a.filter.trackEvictedPod(pod)
+}
+
 // sort stably sorts jobs, outputs the sorted results and corresponding ranking map.
 func (a *arbitratorImpl) sort(jobs []*v1alpha1.PodMigrationJob, podOfJob map[*v1alpha1.PodMigrationJob]*corev1.Pod) []*v1alpha1.PodMigrationJob {
 	for _, sortFn := range a.sorts {
@@ -112,14 +152,14 @@ func (a *arbitratorImpl) sort(jobs []*v1alpha1.PodMigrationJob, podOfJob map[*v1
 	return jobs
 }
 
-// filter calls nonRetryablePodFilter and retryablePodFilter to filter one PodMigrationJob.
-func (a *arbitratorImpl) filter(pod *corev1.Pod) (isFailed, isPassed bool) {
+// filtering calls nonRetryablePodFilter and retryablePodFilter to filter one PodMigrationJob.
+func (a *arbitratorImpl) filtering(pod *corev1.Pod) (isFailed, isPassed bool) {
 	if pod != nil {
-		if a.arbitrationFilter != nil && !a.arbitrationFilter.NonRetryablePodFilter(pod) {
+		if a.filter.nonRetryablePodFilter != nil && !a.filter.nonRetryablePodFilter(pod) {
 			isFailed = true
 			return
 		}
-		if a.arbitrationFilter != nil && !a.arbitrationFilter.RetryablePodFilter(pod) {
+		if a.filter.retryablePodFilter != nil && !a.filter.retryablePodFilter(pod) {
 			isPassed = false
 			return
 		}
@@ -162,7 +202,7 @@ func (a *arbitratorImpl) doOnceArbitrate() {
 	// filter
 	for _, job := range jobs {
 		pod := podOfJob[job]
-		isFailed, isPassed := a.filter(pod)
+		isFailed, isPassed := a.filtering(pod)
 		if isFailed {
 			a.updateFailedJob(job, pod)
 			continue
@@ -245,8 +285,8 @@ func (h *arbitrationHandler) Create(evt event.CreateEvent, q workqueue.RateLimit
 type Options struct {
 	Client        client.Client
 	EventRecorder events.EventRecorder
-	Filter        ArbitrationFilter
 	Manager       controllerruntime.Manager
+	Handle        framework.Handle
 }
 
 func getPodForJob(c client.Client, jobs []*v1alpha1.PodMigrationJob) map[*v1alpha1.PodMigrationJob]*corev1.Pod {

@@ -75,7 +75,7 @@ type Reconciler struct {
 	assumedCache           *assumedCache
 	clock                  clock.Clock
 
-	filter arbitrator.MigrationFilter
+	arbitrator arbitrator.Arbitrator
 }
 
 func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error) {
@@ -98,21 +98,16 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 		return nil, err
 	}
 
-	filter, arbitrationFilter, err := arbitrator.NewFilter(controllerArgs, handle)
-	if err != nil {
-		return nil, err
-	}
-	r.filter = filter
-
-	a, err := arbitrator.New(controllerArgs.ArbitrationArgs, arbitrator.Options{
+	a, err := arbitrator.New(controllerArgs, arbitrator.Options{
 		Client:        r.Client,
 		EventRecorder: r.eventRecorder,
 		Manager:       options.Manager,
-		Filter:        arbitrationFilter,
+		Handle:        handle,
 	})
 	if err != nil {
 		return nil, err
 	}
+	r.arbitrator = a
 	arbitrationEventHandler := arbitrator.NewHandler(a, r.Client)
 
 	if err = c.Watch(&source.Kind{Type: &sev1alpha1.PodMigrationJob{}}, arbitrationEventHandler, &predicate.Funcs{
@@ -711,7 +706,7 @@ func (r *Reconciler) evictPod(ctx context.Context, job *sev1alpha1.PodMigrationJ
 		r.eventRecorder.Eventf(job, nil, corev1.EventTypeWarning, sev1alpha1.PodMigrationJobReasonEvicting, "Migrating", "Failed evict Pod %q caused by %v", podNamespacedName, err)
 		return false, reconcile.Result{}, err
 	}
-	r.filter.TrackEvictedPod(pod)
+	r.arbitrator.TrackEvictedPod(pod)
 
 	_, reason := evictor.GetEvictionTriggerAndReason(job.Annotations)
 	cond = &sev1alpha1.PodMigrationJobCondition{
@@ -927,9 +922,9 @@ func (r *Reconciler) updateCondition(ctx context.Context, job *sev1alpha1.PodMig
 
 // Filter checks if a pod can be evicted
 func (r *Reconciler) Filter(pod *corev1.Pod) bool {
-	return r.filter.Filter(pod)
+	return r.arbitrator.Filter(pod)
 }
 
 func (r *Reconciler) PreEvictionFilter(pod *corev1.Pod) bool {
-	return r.filter.PreEvictionFilter(pod)
+	return r.arbitrator.PreEvictionFilter(pod)
 }

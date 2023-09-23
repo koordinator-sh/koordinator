@@ -50,17 +50,6 @@ import (
 	utilclient "github.com/koordinator-sh/koordinator/pkg/util/client"
 )
 
-type MigrationFilter interface {
-	Filter(pod *corev1.Pod) bool
-	PreEvictionFilter(pod *corev1.Pod) bool
-	TrackEvictedPod(pod *corev1.Pod)
-}
-
-type ArbitrationFilter interface {
-	NonRetryablePodFilter(*corev1.Pod) bool
-	RetryablePodFilter(*corev1.Pod) bool
-}
-
 type filter struct {
 	client client.Client
 	mu     sync.Mutex
@@ -76,10 +65,10 @@ type filter struct {
 	controllerFinder controllerfinder.Interface
 }
 
-func NewFilter(args *deschedulerconfig.MigrationControllerArgs, handle framework.Handle) (MigrationFilter, ArbitrationFilter, error) {
+func newFilter(args *deschedulerconfig.MigrationControllerArgs, handle framework.Handle) (*filter, error) {
 	controllerFinder, err := controllerfinder.New(options.Manager)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	f := &filter{
 		client:           options.Manager.GetClient(),
@@ -88,10 +77,10 @@ func NewFilter(args *deschedulerconfig.MigrationControllerArgs, handle framework
 		clock:            clock.RealClock{},
 	}
 	if err := f.initFilters(args, handle); err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	f.initObjectLimiters()
-	return f, f, nil
+	return f, nil
 }
 
 func (f *filter) initFilters(args *deschedulerconfig.MigrationControllerArgs, handle framework.Handle) error {
@@ -150,33 +139,6 @@ func (f *filter) initFilters(args *deschedulerconfig.MigrationControllerArgs, ha
 	return nil
 }
 
-// Filter checks if a pod can be evicted
-func (f *filter) Filter(pod *corev1.Pod) bool {
-	if !f.filterExistingPodMigrationJob(pod) {
-		return false
-	}
-
-	if !f.reservationFilter(pod) {
-		return false
-	}
-
-	if f.nonRetryablePodFilter != nil && !f.nonRetryablePodFilter(pod) {
-		return false
-	}
-	if f.retryablePodFilter != nil && !f.retryablePodFilter(pod) {
-		return false
-	}
-	return true
-}
-
-func (f *filter) NonRetryablePodFilter(pod *corev1.Pod) bool {
-	return f.nonRetryablePodFilter(pod)
-}
-
-func (f *filter) RetryablePodFilter(pod *corev1.Pod) bool {
-	return f.retryablePodFilter(pod)
-}
-
 func (f *filter) reservationFilter(pod *corev1.Pod) bool {
 	if sev1alpha1.PodMigrationJobMode(f.args.DefaultJobMode) != sev1alpha1.PodMigrationJobModeReservationFirst {
 		return true
@@ -188,10 +150,6 @@ func (f *filter) reservationFilter(pod *corev1.Pod) bool {
 
 	klog.Errorf("Pod %q can not be migrated by ReservationFirst mode because pod.schedulerName=%s but scheduler of pmj controller assigned is %s", klog.KObj(pod), pod.Spec.SchedulerName, f.args.SchedulerNames)
 	return false
-}
-
-func (f *filter) PreEvictionFilter(pod *corev1.Pod) bool {
-	return f.defaultFilterPlugin.PreEvictionFilter(pod)
 }
 
 func (f *filter) forEachAvailableMigrationJobs(listOpts *client.ListOptions, handler func(job *sev1alpha1.PodMigrationJob) bool, expectedPhaseAndAnnotations ...PhaseAndAnnotation) {
@@ -446,7 +404,7 @@ func mergeUnavailableAndMigratingPods(unavailablePods, migratingPods map[types.N
 	}
 }
 
-func (f *filter) TrackEvictedPod(pod *corev1.Pod) {
+func (f *filter) trackEvictedPod(pod *corev1.Pod) {
 	if f.objectLimiters == nil || f.limiterCache == nil {
 		return
 	}

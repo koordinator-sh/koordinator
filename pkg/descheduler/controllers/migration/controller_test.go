@@ -108,7 +108,7 @@ func newTestReconciler() *Reconciler {
 	eventBroadcaster := record.NewBroadcaster()
 	recorder := eventBroadcaster.NewRecorder(scheme, corev1.EventSource{Component: Name})
 
-	filter := fakeMigrationFilter{
+	arbitrator := fakeArbitrator{
 		filter: func(pod *corev1.Pod) bool {
 			return true
 		},
@@ -127,7 +127,7 @@ func newTestReconciler() *Reconciler {
 		evictorInterpreter:     nil,
 		assumedCache:           newAssumedCache(),
 		clock:                  clock.RealClock{},
-		filter:                 &filter,
+		arbitrator:             &arbitrator,
 	}
 
 	return r
@@ -1539,7 +1539,7 @@ func TestFilter(t *testing.T) {
 				},
 			}
 
-			reconciler.filter = &fakeMigrationFilter{
+			reconciler.arbitrator = &fakeArbitrator{
 				filter: func(pod *corev1.Pod) bool {
 					enterFilter = true
 					return testCase.expected
@@ -1582,7 +1582,7 @@ func TestPreEvictionFilter(t *testing.T) {
 				},
 			}
 
-			reconciler.filter = &fakeMigrationFilter{
+			reconciler.arbitrator = &fakeArbitrator{
 				filter: func(pod *corev1.Pod) bool {
 					return true
 				},
@@ -1602,20 +1602,25 @@ func TestPreEvictionFilter(t *testing.T) {
 	}
 }
 
-type fakeMigrationFilter struct {
+type fakeArbitrator struct {
 	filter            framework.FilterFunc
 	preEvictionFilter framework.FilterFunc
 	trackEvictedPod   func(pod *corev1.Pod)
+	add               func(*sev1alpha1.PodMigrationJob)
 }
 
-func (f *fakeMigrationFilter) Filter(pod *corev1.Pod) bool {
+func (f *fakeArbitrator) Filter(pod *corev1.Pod) bool {
 	return f.filter(pod)
 }
 
-func (f *fakeMigrationFilter) PreEvictionFilter(pod *corev1.Pod) bool {
+func (f *fakeArbitrator) PreEvictionFilter(pod *corev1.Pod) bool {
 	return f.preEvictionFilter(pod)
 }
 
-func (f *fakeMigrationFilter) TrackEvictedPod(pod *corev1.Pod) {
+func (f *fakeArbitrator) TrackEvictedPod(pod *corev1.Pod) {
 	f.trackEvictedPod(pod)
+}
+
+func (f *fakeArbitrator) Add(job *sev1alpha1.PodMigrationJob) {
+	f.add(job)
 }
