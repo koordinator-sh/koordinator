@@ -497,6 +497,7 @@ func TestDoOnceArbitrate(t *testing.T) {
 					retryablePodFilter: func(pod *corev1.Pod) bool {
 						return !retryablePods[pod.Name]
 					},
+					arbitratedPodMigrationJobs: map[types.UID]bool{},
 				},
 				sorts: []SortFn{
 					func(jobs []*v1alpha1.PodMigrationJob, podOfJob map[*v1alpha1.PodMigrationJob]*corev1.Pod) []*v1alpha1.PodMigrationJob {
@@ -552,6 +553,7 @@ func TestArbitrate(t *testing.T) {
 			retryablePodFilter: func(pod *corev1.Pod) bool {
 				return true
 			},
+			arbitratedPodMigrationJobs: map[types.UID]bool{},
 		},
 		sorts: []SortFn{
 			func(jobs []*v1alpha1.PodMigrationJob, podOfJob map[*v1alpha1.PodMigrationJob]*corev1.Pod) []*v1alpha1.PodMigrationJob {
@@ -602,9 +604,13 @@ func TestUpdatePassedJob(t *testing.T) {
 		client:            fakeClient,
 		mu:                sync.Mutex{},
 		eventRecorder:     &events.FakeRecorder{},
+		filter: &filter{
+			arbitratedPodMigrationJobs: map[types.UID]bool{},
+		},
 	}
-	arbitrator.updatePassedJob(job)
+	assert.False(t, arbitrator.filter.checkJobPassedArbitration(job.UID))
 
+	arbitrator.updatePassedJob(job)
 	assert.Equal(t, 0, len(arbitrator.waitingCollection))
 
 	actualJob := &v1alpha1.PodMigrationJob{}
@@ -613,6 +619,7 @@ func TestUpdatePassedJob(t *testing.T) {
 		Name:      "test",
 	}, actualJob))
 	assert.Equal(t, map[string]string{AnnotationPassedArbitration: "true"}, actualJob.Annotations)
+	assert.True(t, arbitrator.filter.checkJobPassedArbitration(job.UID))
 }
 
 func TestUpdateFailedJob(t *testing.T) {

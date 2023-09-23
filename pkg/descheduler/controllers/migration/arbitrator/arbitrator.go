@@ -55,6 +55,7 @@ type MigrationFilter interface {
 type Arbitrator interface {
 	MigrationFilter
 	Add(job *v1alpha1.PodMigrationJob)
+	Delete(uid types.UID)
 }
 
 // SortFn stably sorts PodMigrationJobs slice based on a certain strategy. Users
@@ -110,6 +111,11 @@ func (a *arbitratorImpl) Add(job *v1alpha1.PodMigrationJob) {
 	a.waitingCollection[job.UID] = job.DeepCopy()
 }
 
+// Delete remove PodMigrationJob from local PassedArbitration Record map.
+func (a *arbitratorImpl) Delete(uid types.UID) {
+	a.filter.removeJobPassedArbitration(uid)
+}
+
 // Start starts the goroutine to arbitrate jobs periodically.
 func (a *arbitratorImpl) Start(ctx context.Context) error {
 	klog.InfoS("Start Arbitrator Arbitrate Goroutine")
@@ -124,13 +130,6 @@ func (a *arbitratorImpl) Filter(pod *corev1.Pod) bool {
 	}
 
 	if !a.filter.reservationFilter(pod) {
-		return false
-	}
-
-	if a.filter.nonRetryablePodFilter != nil && !a.filter.nonRetryablePodFilter(pod) {
-		return false
-	}
-	if a.filter.retryablePodFilter != nil && !a.filter.retryablePodFilter(pod) {
 		return false
 	}
 	return true
@@ -179,6 +178,7 @@ func (a *arbitratorImpl) updatePassedJob(job *v1alpha1.PodMigrationJob) {
 	if err != nil {
 		klog.ErrorS(err, "failed to update job", "job", klog.KObj(job))
 	} else {
+		a.filter.markJobPassedArbitration(job.UID)
 		// remove job from the waitingCollection
 		a.mu.Lock()
 		delete(a.waitingCollection, job.UID)
@@ -280,6 +280,19 @@ func (h *arbitrationHandler) Create(evt event.CreateEvent, q workqueue.RateLimit
 		return
 	}
 	h.arbitrator.Add(job)
+}
+
+// Delete implements EventHandler.
+func (h *arbitrationHandler) Delete(evt event.DeleteEvent, q workqueue.RateLimitingInterface) {
+	if evt.Object == nil {
+		enqueueLog.Error(nil, "DeleteEvent received with no metadata", "event", evt)
+		return
+	}
+	h.arbitrator.Delete(evt.Object.GetUID())
+	q.Add(reconcile.Request{NamespacedName: types.NamespacedName{
+		Name:      evt.Object.GetName(),
+		Namespace: evt.Object.GetNamespace(),
+	}})
 }
 
 type Options struct {

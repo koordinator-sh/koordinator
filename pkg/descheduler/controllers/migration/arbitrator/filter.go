@@ -52,7 +52,6 @@ import (
 
 type filter struct {
 	client client.Client
-	mu     sync.Mutex
 	clock  clock.RealClock
 
 	nonRetryablePodFilter framework.FilterFunc
@@ -60,9 +59,13 @@ type filter struct {
 	defaultFilterPlugin   framework.FilterPlugin
 
 	args             *deschedulerconfig.MigrationControllerArgs
+	controllerFinder controllerfinder.Interface
 	objectLimiters   map[types.UID]*rate.Limiter
 	limiterCache     *gocache.Cache
-	controllerFinder controllerfinder.Interface
+	limiterLock      sync.Mutex
+
+	arbitratedPodMigrationJobs map[types.UID]bool
+	arbitratedMapLock          sync.Mutex
 }
 
 func newFilter(args *deschedulerconfig.MigrationControllerArgs, handle framework.Handle) (*filter, error) {
@@ -71,10 +74,11 @@ func newFilter(args *deschedulerconfig.MigrationControllerArgs, handle framework
 		return nil, err
 	}
 	f := &filter{
-		client:           options.Manager.GetClient(),
-		args:             args,
-		controllerFinder: controllerFinder,
-		clock:            clock.RealClock{},
+		client:                     options.Manager.GetClient(),
+		args:                       args,
+		controllerFinder:           controllerFinder,
+		clock:                      clock.RealClock{},
+		arbitratedPodMigrationJobs: map[types.UID]bool{},
 	}
 	if err := f.initFilters(args, handle); err != nil {
 		return nil, err
@@ -112,10 +116,10 @@ func (f *filter) initFilters(args *deschedulerconfig.MigrationControllerArgs, ha
 
 	filterPlugin := defaultEvictor.(framework.FilterPlugin)
 	wrapFilterFuncs := podutil.WrapFilterFuncs(
+		f.reservationFilter,
 		util.FilterPodWithMaxEvictionCost,
 		filterPlugin.Filter,
 		f.filterExpectedReplicas,
-		f.reservationFilter,
 	)
 	podFilter, err := podutil.NewOptions().
 		WithFilter(wrapFilterFuncs).
@@ -175,7 +179,10 @@ func (f *filter) forEachAvailableMigrationJobs(listOpts *client.ListOptions, han
 		}
 		found := false
 		for _, v := range expectedPhaseAndAnnotations {
-			if v.phase == phase && isContain(job.Annotations, v.annotations) {
+			if f.checkExpectedPhaseAndAnnotation(&PhaseAndAnnotation{
+				phase:       phase,
+				annotations: job.Annotations,
+			}, &v, job.UID) {
 				found = true
 				break
 			}
@@ -430,8 +437,8 @@ func (f *filter) trackEvictedPod(pod *corev1.Pod) {
 		return
 	}
 
-	f.mu.Lock()
-	defer f.mu.Unlock()
+	f.limiterLock.Lock()
+	defer f.limiterLock.Unlock()
 
 	uid := ownerRef.UID
 	limit := rate.Limit(maxMigratingReplicas) / rate.Limit(objectLimiterArgs.Duration.Seconds())
@@ -458,8 +465,8 @@ func (f *filter) filterLimitedObject(pod *corev1.Pod) bool {
 		return true
 	}
 	if ownerRef := metav1.GetControllerOf(pod); ownerRef != nil {
-		f.mu.Lock()
-		defer f.mu.Unlock()
+		f.limiterLock.Lock()
+		defer f.limiterLock.Unlock()
 		if limiter := f.objectLimiters[ownerRef.UID]; limiter != nil {
 			if remainTokens := limiter.Tokens() - float64(1); remainTokens < 0 {
 				klog.Infof("Pod %q is filtered by workload %s/%s/%s is limited", klog.KObj(pod), ownerRef.Name, ownerRef.Kind, ownerRef.APIVersion)
@@ -482,11 +489,36 @@ func (f *filter) initObjectLimiters() {
 		limiterExpiration := trackExpiration + trackExpiration/2
 		f.limiterCache = gocache.New(limiterExpiration, limiterExpiration)
 		f.limiterCache.OnEvicted(func(s string, _ interface{}) {
-			f.mu.Lock()
-			defer f.mu.Unlock()
+			f.limiterLock.Lock()
+			defer f.limiterLock.Unlock()
 			delete(f.objectLimiters, types.UID(s))
 		})
 	}
+}
+
+func (f *filter) checkExpectedPhaseAndAnnotation(a *PhaseAndAnnotation, b *PhaseAndAnnotation, uid types.UID) bool {
+	if f.checkJobPassedArbitration(uid) {
+		a.annotations[AnnotationPassedArbitration] = "true"
+	}
+	return a.phase == b.phase && isContain(a.annotations, b.annotations)
+}
+
+func (f *filter) checkJobPassedArbitration(uid types.UID) bool {
+	f.arbitratedMapLock.Lock()
+	defer f.arbitratedMapLock.Unlock()
+	return f.arbitratedPodMigrationJobs[uid]
+}
+
+func (f *filter) markJobPassedArbitration(uid types.UID) {
+	f.arbitratedMapLock.Lock()
+	defer f.arbitratedMapLock.Unlock()
+	f.arbitratedPodMigrationJobs[uid] = true
+}
+
+func (f *filter) removeJobPassedArbitration(uid types.UID) {
+	f.arbitratedMapLock.Lock()
+	defer f.arbitratedMapLock.Unlock()
+	delete(f.arbitratedPodMigrationJobs, uid)
 }
 
 func isContain(a map[string]string, b map[string]string) bool {

@@ -1605,8 +1605,13 @@ func TestPreEvictionFilter(t *testing.T) {
 type fakeArbitrator struct {
 	filter            framework.FilterFunc
 	preEvictionFilter framework.FilterFunc
-	trackEvictedPod   func(pod *corev1.Pod)
+	trackEvictedPod   func(*corev1.Pod)
 	add               func(*sev1alpha1.PodMigrationJob)
+	delete            func(types.UID)
+}
+
+func (f *fakeArbitrator) Delete(uid types.UID) {
+	f.delete(uid)
 }
 
 func (f *fakeArbitrator) Filter(pod *corev1.Pod) bool {

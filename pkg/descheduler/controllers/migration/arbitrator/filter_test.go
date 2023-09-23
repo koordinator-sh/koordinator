@@ -26,6 +26,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -43,7 +44,7 @@ func TestFilterExistingMigrationJob(t *testing.T) {
 	_ = v1alpha1.AddToScheme(scheme)
 	_ = clientgoscheme.AddToScheme(scheme)
 	fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
-	a := filter{client: fakeClient, args: &config.MigrationControllerArgs{}}
+	a := filter{client: fakeClient, args: &config.MigrationControllerArgs{}, arbitratedPodMigrationJobs: map[types.UID]bool{}}
 
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
@@ -1073,4 +1074,24 @@ func TestFilterObjectLimiter(t *testing.T) {
 			assert.Equal(t, tt.want, got)
 		})
 	}
+}
+
+func TestArbitratedMap(t *testing.T) {
+	f := filter{
+		arbitratedPodMigrationJobs: map[types.UID]bool{},
+	}
+	job := &v1alpha1.PodMigrationJob{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "default",
+			Name:      "test-job",
+			UID:       uuid.NewUUID(),
+		},
+	}
+	assert.False(t, f.checkJobPassedArbitration(job.UID))
+
+	f.markJobPassedArbitration(job.UID)
+	assert.True(t, f.checkJobPassedArbitration(job.UID))
+
+	f.removeJobPassedArbitration(job.UID)
+	assert.False(t, f.checkJobPassedArbitration(job.UID))
 }
