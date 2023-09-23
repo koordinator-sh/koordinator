@@ -18,6 +18,7 @@ package nodenumaresource
 
 import (
 	"context"
+	"fmt"
 	"reflect"
 	"testing"
 
@@ -33,8 +34,14 @@ import (
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulerconfig "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
-	schedulingconfig "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	"github.com/koordinator-sh/koordinator/pkg/util/cpuset"
+)
+
+var (
+	defaultResources = []config.ResourceSpec{
+		{Name: string(corev1.ResourceCPU), Weight: 1},
+		{Name: string(corev1.ResourceMemory), Weight: 1},
+	}
 )
 
 func TestNUMANodeScore(t *testing.T) {
@@ -294,7 +301,7 @@ func TestNUMANodeScore(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			suit := newPluginTestSuit(t, tt.nodes)
+			suit := newPluginTestSuit(t, nil, tt.nodes)
 			if tt.strategy != nil {
 				suit.nodeNUMAResourceArgs.ScoringStrategy = tt.strategy
 			}
@@ -410,7 +417,7 @@ func TestPlugin_Score(t *testing.T) {
 			name: "score with full empty node FullPCPUs",
 			state: &preFilterState{
 				requestCPUBind:         true,
-				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs,
+				preferredCPUBindPolicy: schedulerconfig.CPUBindPolicyFullPCPUs,
 				numCPUsNeeded:          4,
 			},
 			cpuTopology: buildCPUTopologyForTest(2, 1, 4, 2),
@@ -423,7 +430,7 @@ func TestPlugin_Score(t *testing.T) {
 			state: &preFilterState{
 				requestCPUBind: true,
 
-				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs,
+				preferredCPUBindPolicy: schedulerconfig.CPUBindPolicyFullPCPUs,
 				numCPUsNeeded:          8,
 			},
 			cpuTopology: buildCPUTopologyForTest(2, 1, 4, 2),
@@ -435,7 +442,7 @@ func TestPlugin_Score(t *testing.T) {
 			name: "score with full empty node SpreadByPCPUs",
 			state: &preFilterState{
 				requestCPUBind:         true,
-				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicySpreadByPCPUs,
+				preferredCPUBindPolicy: schedulerconfig.CPUBindPolicySpreadByPCPUs,
 				numCPUsNeeded:          4,
 			},
 			cpuTopology: buildCPUTopologyForTest(2, 1, 4, 2),
@@ -447,7 +454,7 @@ func TestPlugin_Score(t *testing.T) {
 			name: "score with exceed socket FullPCPUs",
 			state: &preFilterState{
 				requestCPUBind:         true,
-				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs,
+				preferredCPUBindPolicy: schedulerconfig.CPUBindPolicyFullPCPUs,
 				numCPUsNeeded:          16,
 			},
 			cpuTopology: buildCPUTopologyForTest(2, 1, 4, 2),
@@ -459,7 +466,7 @@ func TestPlugin_Score(t *testing.T) {
 			name: "score with satisfied socket FullPCPUs",
 			state: &preFilterState{
 				requestCPUBind:         true,
-				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs,
+				preferredCPUBindPolicy: schedulerconfig.CPUBindPolicyFullPCPUs,
 				numCPUsNeeded:          16,
 			},
 			cpuTopology: buildCPUTopologyForTest(2, 2, 4, 2),
@@ -471,7 +478,7 @@ func TestPlugin_Score(t *testing.T) {
 			name: "score with full empty socket SpreadByPCPUs",
 			state: &preFilterState{
 				requestCPUBind:         true,
-				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicySpreadByPCPUs,
+				preferredCPUBindPolicy: schedulerconfig.CPUBindPolicySpreadByPCPUs,
 				numCPUsNeeded:          4,
 			},
 			cpuTopology: buildCPUTopologyForTest(2, 1, 4, 2),
@@ -486,7 +493,7 @@ func TestPlugin_Score(t *testing.T) {
 			},
 			state: &preFilterState{
 				requestCPUBind:         true,
-				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicySpreadByPCPUs,
+				preferredCPUBindPolicy: schedulerconfig.CPUBindPolicySpreadByPCPUs,
 				numCPUsNeeded:          2,
 			},
 			cpuTopology: buildCPUTopologyForTest(2, 1, 4, 2),
@@ -501,7 +508,7 @@ func TestPlugin_Score(t *testing.T) {
 			},
 			state: &preFilterState{
 				requestCPUBind:         true,
-				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicySpreadByPCPUs,
+				preferredCPUBindPolicy: schedulerconfig.CPUBindPolicySpreadByPCPUs,
 				numCPUsNeeded:          8,
 			},
 			cpuTopology: buildCPUTopologyForTest(2, 1, 4, 2),
@@ -534,9 +541,9 @@ func TestPlugin_Score(t *testing.T) {
 				nodes[0].Labels[k] = v
 			}
 
-			suit := newPluginTestSuit(t, nodes)
+			suit := newPluginTestSuit(t, nil, nodes)
 			suit.nodeNUMAResourceArgs.ScoringStrategy = &schedulerconfig.ScoringStrategy{
-				Type: schedulingconfig.MostAllocated,
+				Type: schedulerconfig.MostAllocated,
 				Resources: []config.ResourceSpec{
 					{
 						Name:   "cpu",
@@ -583,6 +590,263 @@ func TestPlugin_Score(t *testing.T) {
 				return
 			}
 			assert.Equal(t, tt.wantScore, gotScore)
+		})
+	}
+}
+
+func TestScoreWithAmplifiedCPUs(t *testing.T) {
+	tests := []struct {
+		name          string
+		args          schedulerconfig.NodeNUMAResourceArgs
+		requestedPod  *corev1.Pod
+		nodes         []*corev1.Node
+		existingPods  []*corev1.Pod
+		cpuTopologies map[string]*CPUTopology
+		nodeHasNRT    []string
+		nodeRatios    map[string]extension.Ratio
+		wantScoreList framework.NodeScoreList
+	}{
+		{
+			name:         "ScoringStrategy MostAllocated, no cpuset pod",
+			requestedPod: makePod(map[corev1.ResourceName]string{"cpu": "8", "memory": "16Gi"}, false),
+			nodes: []*corev1.Node{
+				makeNode("node1", map[corev1.ResourceName]string{"cpu": "32", "memory": "40Gi"}, 1.0),
+				makeNode("node2", map[corev1.ResourceName]string{"cpu": "64", "memory": "60Gi"}, 2.0),
+			},
+			nodeRatios:    map[string]apiext.Ratio{"node1": 1.0, "node2": 2.0},
+			wantScoreList: []framework.NodeScore{{Name: "node1", Score: 0}, {Name: "node2", Score: 0}},
+			args: schedulerconfig.NodeNUMAResourceArgs{
+				ScoringStrategy: &schedulerconfig.ScoringStrategy{
+					Type:      schedulerconfig.MostAllocated,
+					Resources: defaultResources,
+				},
+			},
+		},
+		{
+			name:         "ScoringStrategy MostAllocated, cpuset pods on node",
+			requestedPod: makePod(map[corev1.ResourceName]string{"cpu": "8", "memory": "16Gi"}, false),
+			nodes: []*corev1.Node{
+				makeNode("node1", map[corev1.ResourceName]string{"cpu": "32", "memory": "40Gi"}, 1.0),
+				makeNode("node2", map[corev1.ResourceName]string{"cpu": "64", "memory": "60Gi"}, 2.0),
+			},
+			nodeRatios: map[string]apiext.Ratio{"node1": 1.0, "node2": 2.0},
+			nodeHasNRT: []string{"node1", "node2"},
+			cpuTopologies: map[string]*CPUTopology{
+				"node1": buildCPUTopologyForTest(2, 1, 8, 2),
+				"node2": buildCPUTopologyForTest(2, 1, 8, 2),
+			},
+			existingPods: []*corev1.Pod{
+				makePodOnNode(map[corev1.ResourceName]string{"cpu": "20", "memory": "4Gi"}, "node1", true),
+				makePodOnNode(map[corev1.ResourceName]string{"cpu": "20", "memory": "4Gi"}, "node2", true),
+			},
+			wantScoreList: []framework.NodeScore{{Name: "node1", Score: 68}, {Name: "node2", Score: 54}},
+			args: schedulerconfig.NodeNUMAResourceArgs{
+				ScoringStrategy: &schedulerconfig.ScoringStrategy{
+					Type:      schedulerconfig.MostAllocated,
+					Resources: defaultResources,
+				},
+			},
+		},
+		{
+			name:         "ScoringStrategy MostAllocated, scheduling cpuset pod",
+			requestedPod: makePod(map[corev1.ResourceName]string{"cpu": "8", "memory": "16Gi"}, true),
+			nodes: []*corev1.Node{
+				makeNode("node1", map[corev1.ResourceName]string{"cpu": "32", "memory": "40Gi"}, 1.0),
+				makeNode("node2", map[corev1.ResourceName]string{"cpu": "64", "memory": "60Gi"}, 2.0),
+			},
+			nodeRatios: map[string]apiext.Ratio{"node1": 1.0, "node2": 2.0},
+			nodeHasNRT: []string{"node1", "node2"},
+			cpuTopologies: map[string]*CPUTopology{
+				"node1": buildCPUTopologyForTest(2, 1, 8, 2),
+				"node2": buildCPUTopologyForTest(2, 1, 8, 2),
+			},
+			existingPods: []*corev1.Pod{
+				makePodOnNode(map[corev1.ResourceName]string{"cpu": "20", "memory": "4Gi"}, "node1", false),
+				makePodOnNode(map[corev1.ResourceName]string{"cpu": "20", "memory": "4Gi"}, "node2", false),
+			},
+			wantScoreList: []framework.NodeScore{{Name: "node1", Score: 37}, {Name: "node2", Score: 29}},
+			args: schedulerconfig.NodeNUMAResourceArgs{
+				ScoringStrategy: &schedulerconfig.ScoringStrategy{
+					Type:      schedulerconfig.MostAllocated,
+					Resources: defaultResources,
+				},
+			},
+		},
+		{
+			name:         "ScoringStrategy MostAllocated, cpuset pods on node, scheduling cpuset pod",
+			requestedPod: makePod(map[corev1.ResourceName]string{"cpu": "8", "memory": "16Gi"}, true),
+			nodes: []*corev1.Node{
+				makeNode("node1", map[corev1.ResourceName]string{"cpu": "32", "memory": "40Gi"}, 1.0),
+				makeNode("node2", map[corev1.ResourceName]string{"cpu": "64", "memory": "60Gi"}, 2.0),
+			},
+			nodeRatios: map[string]apiext.Ratio{"node1": 1.0, "node2": 2.0},
+			nodeHasNRT: []string{"node1", "node2"},
+			cpuTopologies: map[string]*CPUTopology{
+				"node1": buildCPUTopologyForTest(2, 1, 8, 2),
+				"node2": buildCPUTopologyForTest(2, 1, 8, 2),
+			},
+			existingPods: []*corev1.Pod{
+				makePodOnNode(map[corev1.ResourceName]string{"cpu": "20", "memory": "4Gi"}, "node1", true),
+				makePodOnNode(map[corev1.ResourceName]string{"cpu": "20", "memory": "4Gi"}, "node2", true),
+			},
+			wantScoreList: []framework.NodeScore{{Name: "node1", Score: 68}, {Name: "node2", Score: 60}},
+			args: schedulerconfig.NodeNUMAResourceArgs{
+				ScoringStrategy: &schedulerconfig.ScoringStrategy{
+					Type:      schedulerconfig.MostAllocated,
+					Resources: defaultResources,
+				},
+			},
+		},
+		{
+			name:         "ScoringStrategy LeastAllocated, no cpuset pod",
+			requestedPod: makePod(map[corev1.ResourceName]string{"cpu": "8", "memory": "16Gi"}, false),
+			nodes: []*corev1.Node{
+				makeNode("node1", map[corev1.ResourceName]string{"cpu": "32", "memory": "40Gi"}, 1.0),
+				makeNode("node2", map[corev1.ResourceName]string{"cpu": "64", "memory": "60Gi"}, 2.0),
+			},
+			nodeRatios: map[string]apiext.Ratio{"node1": 1.0, "node2": 2.0},
+			existingPods: []*corev1.Pod{
+				makePodOnNode(map[corev1.ResourceName]string{"cpu": "20", "memory": "4Gi"}, "node1", false),
+				makePodOnNode(map[corev1.ResourceName]string{"cpu": "20", "memory": "4Gi"}, "node2", false),
+			},
+			wantScoreList: []framework.NodeScore{{Name: "node1", Score: 0}, {Name: "node2", Score: 0}},
+			args: schedulerconfig.NodeNUMAResourceArgs{
+				ScoringStrategy: &schedulerconfig.ScoringStrategy{
+					Type:      schedulerconfig.LeastAllocated,
+					Resources: defaultResources,
+				},
+			},
+		},
+		{
+			name:         "ScoringStrategy LeastAllocated, cpuset pods on node",
+			requestedPod: makePod(map[corev1.ResourceName]string{"cpu": "8", "memory": "16Gi"}, false),
+			nodes: []*corev1.Node{
+				makeNode("node1", map[corev1.ResourceName]string{"cpu": "32", "memory": "40Gi"}, 1.0),
+				makeNode("node2", map[corev1.ResourceName]string{"cpu": "64", "memory": "60Gi"}, 2.0),
+			},
+			nodeRatios: map[string]apiext.Ratio{"node1": 1.0, "node2": 2.0},
+			nodeHasNRT: []string{"node1", "node2"},
+			cpuTopologies: map[string]*CPUTopology{
+				"node1": buildCPUTopologyForTest(2, 1, 8, 2),
+				"node2": buildCPUTopologyForTest(2, 1, 8, 2),
+			},
+			existingPods: []*corev1.Pod{
+				makePodOnNode(map[corev1.ResourceName]string{"cpu": "20", "memory": "4Gi"}, "node1", true),
+				makePodOnNode(map[corev1.ResourceName]string{"cpu": "20", "memory": "4Gi"}, "node2", true),
+			},
+			wantScoreList: []framework.NodeScore{{Name: "node1", Score: 31}, {Name: "node2", Score: 45}},
+			args: schedulerconfig.NodeNUMAResourceArgs{
+				ScoringStrategy: &schedulerconfig.ScoringStrategy{
+					Type:      schedulerconfig.LeastAllocated,
+					Resources: defaultResources,
+				},
+			},
+		},
+		{
+			name:         "ScoringStrategy LeastAllocated, scheduling cpuset pod",
+			requestedPod: makePod(map[corev1.ResourceName]string{"cpu": "8", "memory": "16Gi"}, true),
+			nodes: []*corev1.Node{
+				makeNode("node1", map[corev1.ResourceName]string{"cpu": "32", "memory": "40Gi"}, 1.0),
+				makeNode("node2", map[corev1.ResourceName]string{"cpu": "64", "memory": "60Gi"}, 2.0),
+			},
+			nodeRatios: map[string]apiext.Ratio{"node1": 1.0, "node2": 2.0},
+			nodeHasNRT: []string{"node1", "node2"},
+			cpuTopologies: map[string]*CPUTopology{
+				"node1": buildCPUTopologyForTest(2, 1, 8, 2),
+				"node2": buildCPUTopologyForTest(2, 1, 8, 2),
+			},
+			existingPods: []*corev1.Pod{
+				makePodOnNode(map[corev1.ResourceName]string{"cpu": "20", "memory": "4Gi"}, "node1", false),
+				makePodOnNode(map[corev1.ResourceName]string{"cpu": "20", "memory": "4Gi"}, "node2", false),
+			},
+			wantScoreList: []framework.NodeScore{{Name: "node1", Score: 62}, {Name: "node2", Score: 70}},
+			args: schedulerconfig.NodeNUMAResourceArgs{
+				ScoringStrategy: &schedulerconfig.ScoringStrategy{
+					Type:      schedulerconfig.LeastAllocated,
+					Resources: defaultResources,
+				},
+			},
+		},
+		{
+			name:         "ScoringStrategy LeastAllocated, cpuset pods on node,scheduling cpuset pod",
+			requestedPod: makePod(map[corev1.ResourceName]string{"cpu": "8", "memory": "16Gi"}, true),
+			nodes: []*corev1.Node{
+				makeNode("node1", map[corev1.ResourceName]string{"cpu": "32", "memory": "40Gi"}, 1.0),
+				makeNode("node2", map[corev1.ResourceName]string{"cpu": "64", "memory": "60Gi"}, 2.0),
+			},
+			nodeRatios: map[string]apiext.Ratio{"node1": 1.0, "node2": 2.0},
+			nodeHasNRT: []string{"node1", "node2"},
+			cpuTopologies: map[string]*CPUTopology{
+				"node1": buildCPUTopologyForTest(2, 1, 8, 2),
+				"node2": buildCPUTopologyForTest(2, 1, 8, 2),
+			},
+			existingPods: []*corev1.Pod{
+				makePodOnNode(map[corev1.ResourceName]string{"cpu": "20", "memory": "4Gi"}, "node1", true),
+				makePodOnNode(map[corev1.ResourceName]string{"cpu": "20", "memory": "4Gi"}, "node2", true),
+			},
+			wantScoreList: []framework.NodeScore{{Name: "node1", Score: 31}, {Name: "node2", Score: 39}},
+			args: schedulerconfig.NodeNUMAResourceArgs{
+				ScoringStrategy: &schedulerconfig.ScoringStrategy{
+					Type:      schedulerconfig.LeastAllocated,
+					Resources: defaultResources,
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			suit := newPluginTestSuit(t, tt.existingPods, tt.nodes)
+			suit.nodeNUMAResourceArgs.ScoringStrategy = tt.args.ScoringStrategy
+			p, err := suit.proxyNew(suit.nodeNUMAResourceArgs, suit.Handle)
+			assert.NoError(t, err)
+			suit.start()
+
+			pl := p.(*Plugin)
+
+			for _, nodeName := range tt.nodeHasNRT {
+				cpuTopology := tt.cpuTopologies[nodeName]
+				if cpuTopology == nil {
+					continue
+				}
+				ratio := tt.nodeRatios[nodeName]
+				if ratio == 0 {
+					ratio = 1
+				}
+				topologyOptions := TopologyOptions{
+					CPUTopology: cpuTopology,
+				}
+				for i := 0; i < cpuTopology.NumNodes; i++ {
+					topologyOptions.NUMANodeResources = append(topologyOptions.NUMANodeResources, NUMANodeResource{
+						Node: i,
+						Resources: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse(fmt.Sprintf("%d", extension.Amplify(int64(cpuTopology.CPUsPerNode()), ratio))),
+							corev1.ResourceMemory: resource.MustParse("20Gi"),
+						}})
+				}
+				pl.topologyOptionsManager.UpdateTopologyOptions(nodeName, func(options *TopologyOptions) {
+					*options = topologyOptions
+				})
+			}
+
+			handler := &podEventHandler{resourceManager: pl.resourceManager}
+			for _, v := range tt.existingPods {
+				handler.OnAdd(v)
+			}
+
+			state := framework.NewCycleState()
+			_, status := pl.PreFilter(context.TODO(), state, tt.requestedPod)
+			assert.True(t, status.IsSuccess())
+
+			var gotScoreList framework.NodeScoreList
+			for _, n := range tt.nodes {
+				score, status := p.(framework.ScorePlugin).Score(context.TODO(), state, tt.requestedPod, n.Name)
+				if !status.IsSuccess() {
+					t.Errorf("unexpected error: %v", status)
+				}
+				gotScoreList = append(gotScoreList, framework.NodeScore{Name: n.Name, Score: score})
+			}
+			assert.Equal(t, tt.wantScoreList, gotScoreList)
 		})
 	}
 }

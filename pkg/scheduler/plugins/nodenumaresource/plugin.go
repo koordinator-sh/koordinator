@@ -47,10 +47,11 @@ const (
 )
 
 const (
-	ErrNotFoundCPUTopology     = "node(s) CPU Topology not found"
-	ErrInvalidCPUTopology      = "node(s) invalid CPU Topology"
-	ErrSMTAlignmentError       = "node(s) requested cpus not multiple cpus per core"
-	ErrRequiredFullPCPUsPolicy = "node(s) required FullPCPUs policy"
+	ErrNotFoundCPUTopology      = "node(s) CPU Topology not found"
+	ErrInvalidCPUTopology       = "node(s) invalid CPU Topology"
+	ErrSMTAlignmentError        = "node(s) requested cpus not multiple cpus per core"
+	ErrRequiredFullPCPUsPolicy  = "node(s) required FullPCPUs policy"
+	ErrInsufficientAmplifiedCPU = "Insufficient amplified cpu"
 )
 
 var (
@@ -267,6 +268,10 @@ func (p *Plugin) Filter(ctx context.Context, cycleState *framework.CycleState, p
 		return status
 	}
 
+	if status := p.filterAmplifiedCPUs(state, nodeInfo); !status.IsSuccess() {
+		return status
+	}
+
 	node := nodeInfo.Node()
 	topologyOptions := p.topologyOptionsManager.GetTopologyOptions(node.Name)
 	numaTopologyPolicy := getNUMATopologyPolicy(node.Labels, topologyOptions.NUMATopologyPolicy)
@@ -314,6 +319,46 @@ func (p *Plugin) Filter(ctx context.Context, cycleState *framework.CycleState, p
 		return p.FilterByNUMANode(ctx, cycleState, pod, node.Name, numaTopologyPolicy, topologyOptions)
 	}
 
+	return nil
+}
+
+func (p *Plugin) filterAmplifiedCPUs(state *preFilterState, nodeInfo *framework.NodeInfo) *framework.Status {
+	quantity := state.requests[corev1.ResourceCPU]
+	podRequestMilliCPU := quantity.MilliValue()
+	if podRequestMilliCPU == 0 {
+		return nil
+	}
+
+	node := nodeInfo.Node()
+	ratios, err := extension.GetNodeResourceAmplificationRatios(node.Annotations)
+	if err != nil {
+		return framework.NewStatus(framework.UnschedulableAndUnresolvable, "node(s) invalid amplification ratios")
+	}
+	cpuAmplificationRatio := ratios[corev1.ResourceCPU]
+	if cpuAmplificationRatio <= 1 {
+		return nil
+	}
+
+	if state.requestCPUBind {
+		podRequestMilliCPU = extension.Amplify(podRequestMilliCPU, cpuAmplificationRatio)
+	}
+
+	// TODO(joseph): Reservations and preemption should be considered here.
+	_, allocated, _ := p.resourceManager.GetAvailableCPUs(node.Name, cpuset.CPUSet{})
+	if err != nil {
+		if err.Error() != ErrNotFoundCPUTopology {
+			return framework.NewStatus(framework.UnschedulableAndUnresolvable, err.Error())
+		}
+	}
+	allocatedMilliCPU := int64(allocated.CPUs().Size() * 1000)
+	requestedMilliCPU := nodeInfo.Requested.MilliCPU
+	if requestedMilliCPU >= allocatedMilliCPU && allocatedMilliCPU > 0 {
+		requestedMilliCPU = requestedMilliCPU - allocatedMilliCPU
+		requestedMilliCPU += extension.Amplify(allocatedMilliCPU, cpuAmplificationRatio)
+	}
+	if podRequestMilliCPU > nodeInfo.Allocatable.MilliCPU-requestedMilliCPU {
+		return framework.NewStatus(framework.Unschedulable, ErrInsufficientAmplifiedCPU)
+	}
 	return nil
 }
 

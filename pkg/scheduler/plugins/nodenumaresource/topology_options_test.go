@@ -32,7 +32,7 @@ import (
 )
 
 func TestTopologyOptionsManager(t *testing.T) {
-	suit := newPluginTestSuit(t, nil)
+	suit := newPluginTestSuit(t, nil, nil)
 
 	expectCPUTopology := buildCPUTopologyForTest(2, 1, 4, 2)
 

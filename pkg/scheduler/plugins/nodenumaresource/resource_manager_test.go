@@ -478,7 +478,7 @@ func TestResourceManagerAllocate(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			suit := newPluginTestSuit(t, nil)
+			suit := newPluginTestSuit(t, nil, nil)
 			tom := NewTopologyOptionsManager()
 			tom.UpdateTopologyOptions("test-node", func(options *TopologyOptions) {
 				options.CPUTopology = buildCPUTopologyForTest(2, 1, 26, 2)
@@ -879,7 +879,7 @@ func TestResourceManagerGetTopologyHint(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			suit := newPluginTestSuit(t, nil)
+			suit := newPluginTestSuit(t, nil, nil)
 			tom := NewTopologyOptionsManager()
 			tom.UpdateTopologyOptions("test-node", func(options *TopologyOptions) {
 				options.CPUTopology = buildCPUTopologyForTest(2, 1, 26, 2)

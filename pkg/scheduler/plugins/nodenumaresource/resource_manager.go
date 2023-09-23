@@ -355,7 +355,7 @@ func (c *resourceManager) GetAvailableCPUs(nodeName string, preferredCPUs cpuset
 		return cpuset.NewCPUSet(), nil, errors.New(ErrNotFoundCPUTopology)
 	}
 	if !topologyOptions.CPUTopology.IsValid() {
-		return cpuset.NewCPUSet(), nil, fmt.Errorf("cpuTopology is invalid")
+		return cpuset.NewCPUSet(), nil, errors.New(ErrInvalidCPUTopology)
 	}
 
 	allocation := c.getOrCreateNodeAllocation(nodeName)
