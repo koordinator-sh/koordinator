@@ -154,7 +154,7 @@ func (c *resourceManager) Allocate(node *corev1.Node, pod *corev1.Pod, options *
 		allocation.NUMANodeResources = resources
 	}
 	if options.requestCPUBind {
-		cpus, err := c.allocateCPUSet(node, pod, options)
+		cpus, err := c.allocateCPUSet(node, pod, allocation.NUMANodeResources, options)
 		if err != nil {
 			return nil, err
 		}
@@ -241,7 +241,7 @@ func allocateRes(available, request resource.Quantity) (resource.Quantity, resou
 	}
 }
 
-func (c *resourceManager) allocateCPUSet(node *corev1.Node, pod *corev1.Pod, options *ResourceOptions) (cpuset.CPUSet, error) {
+func (c *resourceManager) allocateCPUSet(node *corev1.Node, pod *corev1.Pod, allocatedNUMANodes []NUMANodeResource, options *ResourceOptions) (cpuset.CPUSet, error) {
 	empty := cpuset.CPUSet{}
 	availableCPUs, allocatedCPUs, err := c.GetAvailableCPUs(node.Name, options.preferredCPUs)
 	if err != nil {
@@ -261,33 +261,37 @@ func (c *resourceManager) allocateCPUSet(node *corev1.Node, pod *corev1.Pod, opt
 	result := cpuset.CPUSet{}
 	numaAllocateStrategy := GetNUMAAllocateStrategy(node, c.numaAllocateStrategy)
 	numCPUsNeeded := options.numCPUsNeeded
-	if options.hint.NUMANodeAffinity != nil {
-		cpusInNUMANode := topologyOptions.CPUTopology.CPUDetails.CPUsInNUMANodes(options.hint.NUMANodeAffinity.GetBits()...)
-		alignedCPUs := availableCPUs.Intersection(cpusInNUMANode)
+	if len(allocatedNUMANodes) > 0 {
+		for _, numaNode := range allocatedNUMANodes {
+			cpusInNUMANode := topologyOptions.CPUTopology.CPUDetails.CPUsInNUMANodes(numaNode.Node)
+			availableCPUsInNUMANode := availableCPUs.Intersection(cpusInNUMANode)
 
-		numCPUs := alignedCPUs.Size()
-		if numCPUsNeeded < numCPUs {
-			numCPUs = numCPUsNeeded
+			numCPUs := availableCPUsInNUMANode.Size()
+			quantity := numaNode.Resources[corev1.ResourceCPU]
+			nodeNumCPUsNeeded := int(quantity.MilliValue() / 1000)
+			if nodeNumCPUsNeeded < numCPUs {
+				numCPUs = nodeNumCPUsNeeded
+			}
+
+			cpus, err := takePreferredCPUs(
+				topologyOptions.CPUTopology,
+				topologyOptions.MaxRefCount,
+				availableCPUsInNUMANode,
+				options.preferredCPUs,
+				allocatedCPUs,
+				numCPUs,
+				options.cpuBindPolicy,
+				options.cpuExclusivePolicy,
+				numaAllocateStrategy,
+			)
+			if err != nil {
+				return empty, err
+			}
+
+			result = result.Union(cpus)
 		}
-
-		alignedCPUs, err = takePreferredCPUs(
-			topologyOptions.CPUTopology,
-			topologyOptions.MaxRefCount,
-			alignedCPUs,
-			options.preferredCPUs,
-			allocatedCPUs,
-			numCPUs,
-			options.cpuBindPolicy,
-			options.cpuExclusivePolicy,
-			numaAllocateStrategy,
-		)
-		if err != nil {
-			return empty, err
-		}
-
-		result = result.Union(alignedCPUs)
 		numCPUsNeeded -= result.Size()
-		if numCPUsNeeded > 0 {
+		if numCPUsNeeded != 0 {
 			return empty, fmt.Errorf("not enough cpus available to satisfy request")
 		}
 	}
