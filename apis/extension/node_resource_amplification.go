@@ -44,7 +44,7 @@ func (f Ratio) MarshalJSON() ([]byte, error) {
 	return []byte(strconv.FormatFloat(float64(f), 'f', 2, 64)), nil
 }
 
-// GetNodeResourceAmplificationRatios gets the resource amplification ratios of the node.
+// GetNodeResourceAmplificationRatios gets the resource amplification ratios of node from annotations.
 func GetNodeResourceAmplificationRatios(annotations map[string]string) (map[corev1.ResourceName]Ratio, error) {
 	s, ok := annotations[AnnotationNodeResourceAmplificationRatio]
 	if !ok {
@@ -59,10 +59,10 @@ func GetNodeResourceAmplificationRatios(annotations map[string]string) (map[core
 	return ratios, nil
 }
 
-// GetNodeResourceAmplificationRatio gets the amplification ratio of a specific resource of the node.
+// GetNodeResourceAmplificationRatio gets the amplification ratio of a specific resource of node from annotations.
 // It returns -1 without an error when the amplification ratio is not set for this resource.
-func GetNodeResourceAmplificationRatio(node *corev1.Node, resource corev1.ResourceName) (Ratio, error) {
-	ratios, err := GetNodeResourceAmplificationRatios(node.Annotations)
+func GetNodeResourceAmplificationRatio(annotations map[string]string, resource corev1.ResourceName) (Ratio, error) {
+	ratios, err := GetNodeResourceAmplificationRatios(annotations)
 	if err != nil {
 		return -1, err
 	}
@@ -106,9 +106,9 @@ func SetNodeResourceAmplificationRatio(node *corev1.Node, resource corev1.Resour
 	return true, nil
 }
 
-// GetNodeRawCapacity gets the raw capacity of the node.
-func GetNodeRawCapacity(node *corev1.Node) (corev1.ResourceList, error) {
-	s, ok := node.Annotations[AnnotationNodeRawCapacity]
+// GetNodeRawCapacity gets the raw capacity of node from annotations.
+func GetNodeRawCapacity(annotations map[string]string) (corev1.ResourceList, error) {
+	s, ok := annotations[AnnotationNodeRawCapacity]
 	if !ok {
 		return nil, nil
 	}
@@ -130,9 +130,9 @@ func SetNodeRawCapacity(node *corev1.Node, capacity corev1.ResourceList) {
 	node.Annotations[AnnotationNodeRawCapacity] = string(s)
 }
 
-// GetNodeRawAllocatable gets the raw allocatable of the node.
-func GetNodeRawAllocatable(node *corev1.Node) (corev1.ResourceList, error) {
-	s, ok := node.Annotations[AnnotationNodeRawAllocatable]
+// GetNodeRawAllocatable gets the raw allocatable of node from annotations.
+func GetNodeRawAllocatable(annotations map[string]string) (corev1.ResourceList, error) {
+	s, ok := annotations[AnnotationNodeRawAllocatable]
 	if !ok {
 		return nil, nil
 	}
