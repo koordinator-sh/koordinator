@@ -93,19 +93,15 @@ func (p *Plugin) Score(ctx context.Context, cycleState *framework.CycleState, po
 }
 
 func (p *Plugin) scoreWithAmplifiedCPUs(cycleState *framework.CycleState, state *preFilterState, pod *corev1.Pod, nodeInfo *framework.NodeInfo, topologyOptions TopologyOptions) (int64, *framework.Status) {
-	quantity := state.requests[corev1.ResourceCPU]
-	if quantity.IsZero() {
-		return 0, nil
-	}
-
 	node := nodeInfo.Node()
 	resourceOptions, err := p.getResourceOptions(cycleState, state, node, pod, topologymanager.NUMATopologyHint{}, topologyOptions)
 	if err != nil {
 		return 0, nil
 	}
 
+	quantity := state.requests[corev1.ResourceCPU]
 	cpuAmplificationRatio := resourceOptions.topologyOptions.AmplificationRatios[corev1.ResourceCPU]
-	if cpuAmplificationRatio <= 1 {
+	if quantity.IsZero() || cpuAmplificationRatio <= 1 {
 		return p.scorer.score(nodeInfo.Requested, nodeInfo.Allocatable, framework.NewResource(resourceOptions.requests))
 	}
 
