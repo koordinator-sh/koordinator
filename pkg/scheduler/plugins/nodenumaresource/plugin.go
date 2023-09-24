@@ -47,11 +47,12 @@ const (
 )
 
 const (
-	ErrNotFoundCPUTopology      = "node(s) CPU Topology not found"
-	ErrInvalidCPUTopology       = "node(s) invalid CPU Topology"
-	ErrSMTAlignmentError        = "node(s) requested cpus not multiple cpus per core"
-	ErrRequiredFullPCPUsPolicy  = "node(s) required FullPCPUs policy"
-	ErrInsufficientAmplifiedCPU = "Insufficient amplified cpu"
+	ErrNotFoundCPUTopology          = "node(s) CPU Topology not found"
+	ErrInvalidCPUTopology           = "node(s) invalid CPU Topology"
+	ErrSMTAlignmentError            = "node(s) requested cpus not multiple cpus per core"
+	ErrRequiredFullPCPUsPolicy      = "node(s) required FullPCPUs policy"
+	ErrInvalidCPUAmplificationRatio = "node(s) invalid CPU amplification ratio"
+	ErrInsufficientAmplifiedCPU     = "Insufficient amplified cpu"
 )
 
 var (
@@ -330,11 +331,10 @@ func (p *Plugin) filterAmplifiedCPUs(state *preFilterState, nodeInfo *framework.
 	}
 
 	node := nodeInfo.Node()
-	ratios, err := extension.GetNodeResourceAmplificationRatios(node.Annotations)
+	cpuAmplificationRatio, err := extension.GetNodeResourceAmplificationRatio(node.Annotations, corev1.ResourceCPU)
 	if err != nil {
-		return framework.NewStatus(framework.UnschedulableAndUnresolvable, "node(s) invalid amplification ratios")
+		return framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrInvalidCPUAmplificationRatio)
 	}
-	cpuAmplificationRatio := ratios[corev1.ResourceCPU]
 	if cpuAmplificationRatio <= 1 {
 		return nil
 	}
