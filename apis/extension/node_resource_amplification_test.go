@@ -172,7 +172,7 @@ func TestGetNodeResourceAmplificationRatio(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, gotErr := GetNodeResourceAmplificationRatio(tt.args.node, tt.args.resource)
+			got, gotErr := GetNodeResourceAmplificationRatio(tt.args.node.Annotations, tt.args.resource)
 			assert.Equal(t, tt.want, got)
 			assert.Equal(t, tt.wantErr, gotErr != nil)
 		})
@@ -425,7 +425,7 @@ func TestGetNodeRawCapacity(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, gotErr := GetNodeRawCapacity(tt.arg)
+			got, gotErr := GetNodeRawCapacity(tt.arg.Annotations)
 			assert.Equal(t, tt.want, got)
 			assert.Equal(t, tt.wantErr, gotErr != nil)
 		})
@@ -545,7 +545,7 @@ func TestGetNodeRawAllocatable(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, gotErr := GetNodeRawAllocatable(tt.arg)
+			got, gotErr := GetNodeRawAllocatable(tt.arg.Annotations)
 			assert.Equal(t, tt.want, got)
 			assert.Equal(t, tt.wantErr, gotErr != nil)
 		})

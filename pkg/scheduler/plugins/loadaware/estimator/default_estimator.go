@@ -108,7 +108,7 @@ func estimatedUsedByResource(requests, limits corev1.ResourceList, resourceName 
 }
 
 func (e *DefaultEstimator) EstimateNode(node *corev1.Node) (corev1.ResourceList, error) {
-	rawAllocatable, err := extension.GetNodeRawAllocatable(node)
+	rawAllocatable, err := extension.GetNodeRawAllocatable(node.Annotations)
 	if err != nil {
 		return node.Status.Allocatable, nil
 	}
