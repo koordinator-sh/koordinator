@@ -285,7 +285,7 @@ func (r *CPUSuppress) suppressBECPU() {
 		features.DefaultKoordletFeatureGate.Enabled(features.BECPUManager) {
 		r.recoverCFSQuotaIfNeed()
 		r.recoverCPUSetForBECPUManager()
-		klog.V(4).Infof("suppressBECPU cannot work with BECPUManager together, suppress will be skipped, " +
+		klog.V(5).Infof("suppressBECPU cannot work with BECPUManager together, suppress will be skipped, " +
 			"recover cpuset on all level if be pod does not specified numa node, and let be cpu set hook handle the others")
 		return
 	} else if disabled {
@@ -446,7 +446,7 @@ func (r *CPUSuppress) adjustByCPUSet(cpusetQuantity *resource.Quantity, nodeCPUI
 // recover cpuset path as be share pool for the following dirs:
 // - besteffort dir
 // - besteffort/pod dir
-// - besteffort/pod/container if pod does not specified resource status(cpuset/numa node)
+// - besteffort/pod/container if pod does not specify resource status(cpuset/numa node)
 func (r *CPUSuppress) recoverCPUSetForBECPUManager() {
 	beCPUSet, err := r.calcBECPUSet()
 	if err != nil {
@@ -480,17 +480,19 @@ func (r *CPUSuppress) recoverCPUSetForBECPUManager() {
 		}
 		resourceStatus, err := apiext.GetResourceStatus(podMeta.Pod.Annotations)
 		if err != nil {
-			klog.Warningf("get resource status for pod %v/%v failed, error %v", podMeta.Pod.Namespace, podMeta.Pod.Name)
+			klog.Warningf("get resource status for pod %s failed, error %v", podMeta.Key())
 			continue
-
 		}
+
 		// no resource status or not specified
 		if resourceStatus == nil || (len(resourceStatus.CPUSet) == 0 && len(resourceStatus.NUMANodeResources) == 0) {
-			klog.V(6).Infof("skip empty resource status pod %v/%v during parse cpuset",
-				podMeta.Pod.Namespace, podMeta.Pod.Name)
+			klog.V(6).Infof("skip empty resource status pod %s during parse cpuset, resourceStatus %+v",
+				podMeta.Key(), resourceStatus)
 			continue
 		}
+
 		cgroupPathOfPodWithSpecifiedCPUSet = append(cgroupPathOfPodWithSpecifiedCPUSet, podMeta.CgroupDir)
+		klog.V(6).Infof("recoverCPUSet excludes pod %s since it specifies resource status", podMeta.Key())
 	}
 
 	// exclude cgroupPathOfPodWithSpecifiedCPUSet from cpusetPathOfAllBEContainer
@@ -513,7 +515,7 @@ func (r *CPUSuppress) recoverCPUSetForBECPUManager() {
 	cpusetToRecover = append(cpusetToRecover, cpusetPathOfContainerWithoutSpecified...)
 
 	cpusetStr := beCPUSet.String()
-	klog.V(6).Infof("recover bestEffort cpuset with be cpu manager, cpuset %v", cpusetStr)
+	klog.V(5).Infof("recover bestEffort cpuset with be cpu manager, cpuset %v", cpusetStr)
 	r.writeBECgroupsCPUSet(cpusetToRecover, cpusetStr, false)
 	r.suppressPolicyStatuses[string(slov1alpha1.CPUSetPolicy)] = policyRecovered
 }

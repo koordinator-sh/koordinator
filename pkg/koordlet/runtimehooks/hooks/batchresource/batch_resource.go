@@ -174,7 +174,8 @@ func (p *plugin) SetPodCFSQuota(proto protocol.HooksProtocol) error {
 	// if cfs quota is disabled, set as -1
 	if !isCFSQuotaEnabled {
 		podCtx.Response.Resources.CFSQuota = pointer.Int64(-1)
-		klog.V(5).Infof("try to unset pod-level cfs quota since it is disabled in rule of plugin %v", name)
+		klog.V(5).Infof("try to unset pod-level cfs quota since it is disabled in plugin %v rule, pod %s/%s",
+			name, podCtx.Request.PodMeta.Namespace, podCtx.Request.PodMeta.Name)
 		return nil
 	}
 
@@ -320,7 +321,9 @@ func (p *plugin) SetContainerCFSQuota(proto protocol.HooksProtocol) error {
 	// if cfs quota is disabled, set as -1
 	if !isCFSQuotaEnabled {
 		containerCtx.Response.Resources.CFSQuota = pointer.Int64(-1)
-		klog.V(5).Infof("try to unset container-level cfs quota since it is disabled in rule of plugin %v", name)
+		klog.V(5).Infof("try to unset container-level cfs quota since it is disabled in plugin %v rule, container %s/%s/%s",
+			name, containerCtx.Request.PodMeta.Namespace, containerCtx.Request.PodMeta.Name,
+			containerCtx.Request.ContainerMeta.Name)
 		return nil
 	}
 
@@ -336,7 +339,7 @@ func (p *plugin) SetContainerCFSQuota(proto protocol.HooksProtocol) error {
 	if cfsQuota > 0 && scaleRatio > 1.0 { // no support ratio in (0, 1) yet
 		originalCFSQuota := cfsQuota
 		cfsQuota = int64(math.Ceil(float64(originalCFSQuota) / scaleRatio))
-		klog.V(6).Infof("plugin %s adjusts BE pod %s/%s cfs quota from %d to %d",
+		klog.V(6).Infof("plugin %s adjusts BE container %s/%s/%s cfs quota from %d to %d",
 			name, containerCtx.Request.PodMeta.Namespace, containerCtx.Request.PodMeta.Name,
 			containerCtx.Request.ContainerMeta.Name, originalCFSQuota, cfsQuota)
 	}
