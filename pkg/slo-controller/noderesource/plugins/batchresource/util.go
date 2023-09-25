@@ -36,30 +36,51 @@ import (
 )
 
 func calculateBatchResourceByPolicy(strategy *configuration.ColocationStrategy, nodeCapacity, nodeReserved, systemReserved,
-	systemUsed, podHPReq, podHPUsed corev1.ResourceList) (corev1.ResourceList, string, string) {
-	// Node(Batch).Alloc = Node.Total - Node.Reserved - System.Used - Pod(Prod/Mid).Used
+	systemUsed, podHPReq, podHPUsed, podHPMaxUsedReq corev1.ResourceList) (corev1.ResourceList, string, string) {
+	// Node(Batch).Alloc[usage] := Node.Total - Node.Reserved - System.Used - sum(Pod(Prod/Mid).Used)
 	// System.Used = max(Node.Used - Pod(All).Used, Node.Anno.Reserved, Node.Kubelet.Reserved)
 	systemUsed = quotav1.Max(systemUsed, systemReserved)
 	batchAllocatableByUsage := quotav1.Max(quotav1.Subtract(quotav1.Subtract(quotav1.Subtract(
 		nodeCapacity, nodeReserved), systemUsed), podHPUsed), util.NewZeroResourceList())
 
-	// Node(Batch).Alloc = Node.Total - Node.Reserved - System.Reserved - Pod(Prod/Mid).Request
+	// Node(Batch).Alloc[request] := Node.Total - Node.Reserved - System.Reserved - sum(Pod(Prod/Mid).Request)
 	// System.Reserved = max(Node.Anno.Reserved, Node.Kubelet.Reserved)
 	batchAllocatableByRequest := quotav1.Max(quotav1.Subtract(quotav1.Subtract(quotav1.Subtract(
 		nodeCapacity, nodeReserved), systemReserved), podHPReq), util.NewZeroResourceList())
 
+	// Node(Batch).Alloc[maxUsageRequest] := Node.Total - Node.Reserved - System.Used - sum(max(Pod(Prod/Mid).Request, Pod(Prod/Mid).Used))
+	batchAllocatableByMaxUsageRequest := quotav1.Max(quotav1.Subtract(quotav1.Subtract(quotav1.Subtract(
+		nodeCapacity, nodeReserved), systemUsed), podHPMaxUsedReq), util.NewZeroResourceList())
+
 	batchAllocatable := batchAllocatableByUsage
-	cpuMsg := fmt.Sprintf("batchAllocatable[CPU(Milli-Core)]:%v = nodeCapacity:%v - nodeReservation:%v - systemUsageOrReserved:%v - podHPUsed:%v",
-		batchAllocatable.Cpu().MilliValue(), nodeCapacity.Cpu().MilliValue(), nodeReserved.Cpu().MilliValue(),
-		systemUsed.Cpu().MilliValue(), podHPUsed.Cpu().MilliValue())
+
+	var cpuMsg string
+	// batch cpu support policy "usage" and "maxUsageRequest"
+	if strategy != nil && strategy.CPUCalculatePolicy != nil && *strategy.CPUCalculatePolicy == configuration.CalculateByPodMaxUsageRequest {
+		batchAllocatable[corev1.ResourceCPU] = *batchAllocatableByMaxUsageRequest.Cpu()
+		cpuMsg = fmt.Sprintf("batchAllocatable[CPU(Milli-Core)]:%v = nodeCapacity:%v - nodeReservation:%v - systemUsageOrReserved:%v - podHPMaxUsedRequest:%v",
+			batchAllocatable.Cpu().MilliValue(), nodeCapacity.Cpu().MilliValue(), nodeReserved.Cpu().MilliValue(),
+			systemUsed.Cpu().MilliValue(), podHPMaxUsedReq.Cpu().MilliValue())
+	} else { // use CalculatePolicy "usage" by default
+		cpuMsg = fmt.Sprintf("batchAllocatable[CPU(Milli-Core)]:%v = nodeCapacity:%v - nodeReservation:%v - systemUsageOrReserved:%v - podHPUsed:%v",
+			batchAllocatable.Cpu().MilliValue(), nodeCapacity.Cpu().MilliValue(), nodeReserved.Cpu().MilliValue(),
+			systemUsed.Cpu().MilliValue(), podHPUsed.Cpu().MilliValue())
+	}
 
 	var memMsg string
+	// batch memory support policy "usage", "request" and "maxUsageRequest"
 	if strategy != nil && strategy.MemoryCalculatePolicy != nil && *strategy.MemoryCalculatePolicy == configuration.CalculateByPodRequest {
 		batchAllocatable[corev1.ResourceMemory] = *batchAllocatableByRequest.Memory()
 		memMsg = fmt.Sprintf("batchAllocatable[Mem(GB)]:%v = nodeCapacity:%v - nodeReservation:%v - systemReserved:%v - podHPRequest:%v",
 			batchAllocatable.Memory().ScaledValue(resource.Giga), nodeCapacity.Memory().ScaledValue(resource.Giga),
 			nodeReserved.Memory().ScaledValue(resource.Giga), systemReserved.Memory().ScaledValue(resource.Giga),
 			podHPReq.Memory().ScaledValue(resource.Giga))
+	} else if strategy != nil && strategy.MemoryCalculatePolicy != nil && *strategy.MemoryCalculatePolicy == configuration.CalculateByPodMaxUsageRequest {
+		batchAllocatable[corev1.ResourceMemory] = *batchAllocatableByMaxUsageRequest.Memory()
+		memMsg = fmt.Sprintf("batchAllocatable[Mem(GB)]:%v = nodeCapacity:%v - nodeReservation:%v - systemUsage:%v - podHPMaxUsedRequest:%v",
+			batchAllocatable.Memory().ScaledValue(resource.Giga), nodeCapacity.Memory().ScaledValue(resource.Giga),
+			nodeReserved.Memory().ScaledValue(resource.Giga), systemUsed.Memory().ScaledValue(resource.Giga),
+			podHPMaxUsedReq.Memory().ScaledValue(resource.Giga))
 	} else { // use CalculatePolicy "usage" by default
 		memMsg = fmt.Sprintf("batchAllocatable[Mem(GB)]:%v = nodeCapacity:%v - nodeReservation:%v - systemUsage:%v - podHPUsed:%v",
 			batchAllocatable.Memory().ScaledValue(resource.Giga), nodeCapacity.Memory().ScaledValue(resource.Giga),
@@ -196,13 +217,22 @@ func divideResourceList(rl corev1.ResourceList, divisor float64) corev1.Resource
 	return divided
 }
 
-func addZoneResourceList(a, b []corev1.ResourceList, zoneNum int) []corev1.ResourceList {
+func zoneResourceListHandler(a, b []corev1.ResourceList, zoneNum int,
+	handleFn func(a corev1.ResourceList, b corev1.ResourceList) corev1.ResourceList) []corev1.ResourceList {
 	// assert len(a) == len(b) == zoneNum
 	result := make([]corev1.ResourceList, zoneNum)
 	for i := 0; i < zoneNum; i++ {
-		result[i] = quotav1.Add(a[i], b[i])
+		result[i] = handleFn(a[i], b[i])
 	}
 	return result
+}
+
+func addZoneResourceList(a, b []corev1.ResourceList, zoneNum int) []corev1.ResourceList {
+	return zoneResourceListHandler(a, b, zoneNum, quotav1.Add)
+}
+
+func maxZoneResourceList(a, b []corev1.ResourceList, zoneNum int) []corev1.ResourceList {
+	return zoneResourceListHandler(a, b, zoneNum, quotav1.Max)
 }
 
 func getResourceListForCPUAndMemory(rl corev1.ResourceList) corev1.ResourceList {

@@ -73,6 +73,9 @@ func (r *NodeResourceReconciler) updateNodeResource(node *corev1.Node, nr *frame
 	nodeCopy := node.DeepCopy() // avoid overwriting the cache
 	strategy := sloconfig.GetNodeColocationStrategy(r.cfgCache.GetCfgCopy(), node)
 
+	// pre-update once
+	framework.RunNodePreUpdateExtenders(strategy, node, nr)
+
 	r.prepareNodeResource(strategy, nodeCopy, nr)
 	needSyncStatus, needSyncMeta := r.isNodeResourceSyncNeeded(strategy, node, nodeCopy)
 	if !needSyncStatus && !needSyncMeta {
@@ -189,12 +192,12 @@ func (r *NodeResourceReconciler) isNodeResourceSyncNeeded(strategy *configuratio
 		needSyncStatus = true
 	}
 
-	isNodeNeedSync := framework.RunNodeSyncExtenders(strategy, oldNode, newNode)
+	isNodeNeedSync := framework.RunNodeStatusCheckExtenders(strategy, oldNode, newNode)
 	if isNodeNeedSync {
 		needSyncStatus = isNodeNeedSync
 		klog.V(6).InfoS("need sync for node by extender", "node", newNode.Name)
 	}
-	isNodeMetaNeedSync := framework.RunNodeMetaSyncExtenders(strategy, oldNode, newNode)
+	isNodeMetaNeedSync := framework.RunNodeMetaCheckExtenders(strategy, oldNode, newNode)
 	if isNodeMetaNeedSync {
 		needSyncMeta = isNodeMetaNeedSync
 		klog.V(6).InfoS("need sync for node meta by extender", "node", newNode.Name)

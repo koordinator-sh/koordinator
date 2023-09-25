@@ -100,7 +100,7 @@ func (p *ColocationHandlerForConfigMapEvent) syncConfig(configMap *corev1.Config
 	err := json.Unmarshal([]byte(configStr), &newCfg)
 	if err != nil {
 		//if controller restart ,cache will unavailable, else use old cfg
-		klog.Errorf("syncConfig failed! parse colocation error then use old Cfg ,configmap %s/%s, err: %s",
+		klog.Errorf("syncConfig failed since parse colocation error, use old Cfg ,configmap %s/%s, err: %s",
 			sloconfig.ConfigNameSpace, sloconfig.SLOCtrlConfigMap, err)
 		p.recorder.Eventf(configMap, "Warning", ReasonColocationConfigUnmarshalFailed, "failed to unmarshal colocation config, err: %s", err)
 		p.cfgCache.errorStatus = true
@@ -115,7 +115,7 @@ func (p *ColocationHandlerForConfigMapEvent) syncConfig(configMap *corev1.Config
 
 	if !sloconfig.IsColocationStrategyValid(&newCfg.ColocationStrategy) {
 		//if controller restart ,cache will unavailable, else use old cfg
-		klog.Errorf("syncConfig failed!  invalid cluster config,%+v", newCfg.ColocationStrategy)
+		klog.Errorf("syncConfig failed since the cluster config is invalid, %+v", newCfg.ColocationStrategy)
 		p.cfgCache.errorStatus = true
 		return false
 	}
@@ -126,7 +126,7 @@ func (p *ColocationHandlerForConfigMapEvent) syncConfig(configMap *corev1.Config
 		mergedNodeStrategyInterface, _ := util.MergeCfg(clusterStrategyCopy, &nodeStrategy.ColocationStrategy)
 		newNodeStrategy := *mergedNodeStrategyInterface.(*configuration.ColocationStrategy)
 		if !sloconfig.IsColocationStrategyValid(&newNodeStrategy) {
-			klog.Errorf("syncConfig failed! invalid node config,then use clusterCfg,nodeCfg:%+v", nodeStrategy)
+			klog.Errorf("syncConfig failed since node config if invalid, use clusterCfg, nodeCfg:%+v", nodeStrategy)
 			newCfg.NodeConfigs[index].ColocationStrategy = *newCfg.ColocationStrategy.DeepCopy()
 		} else {
 			newCfg.NodeConfigs[index].ColocationStrategy = newNodeStrategy

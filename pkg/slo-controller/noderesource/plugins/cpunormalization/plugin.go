@@ -106,7 +106,7 @@ func (p *Plugin) NeedSyncMeta(_ *configuration.ColocationStrategy, oldNode, newN
 	return true, "ratio is different"
 }
 
-func (p *Plugin) Execute(_ *configuration.ColocationStrategy, node *corev1.Node, nr *framework.NodeResource) error {
+func (p *Plugin) Prepare(_ *configuration.ColocationStrategy, node *corev1.Node, nr *framework.NodeResource) error {
 	ratioStr, ok := nr.Annotations[extension.AnnotationCPUNormalizationRatio]
 	if !ok {
 		klog.V(6).Infof("skip for whose has no cpu normalization ratio to set, node %s", node.Name)

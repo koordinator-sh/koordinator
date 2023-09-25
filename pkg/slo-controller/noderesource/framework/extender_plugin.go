@@ -24,11 +24,20 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/metrics"
 )
 
+// The plugins called in the node resource initialization:
+// - Setup
+//
+// The plugins called order in the node resource reconcile loop:
+// - Calculate/Reset -> NodePreUpdate -> NodeUpdate(NodePrepare -> NodeStatusCheck,NodeMetaCheck)
+// The NodeUpdate stage can be called for multiple times with retries.
+//
+// For more info, please see the README.md.
 var (
 	globalSetupExtender             = NewRegistry("Setup")
+	globalNodePreUpdateExtender     = NewRegistry("NodePreUpdate")
 	globalNodePrepareExtender       = NewRegistry("NodePrepare")
-	globalNodeSyncExtender          = NewRegistry("NodeSync")
-	globalNodeMetaSyncExtender      = NewRegistry("NodeMetaSync")
+	globalNodeStatusCheckExtender   = NewRegistry("NodeStatusCheck")
+	globalNodeMetaCheckExtender     = NewRegistry("NodeMetaCheck")
 	globalResourceCalculateExtender = NewRegistry("ResourceCalculate")
 )
 
@@ -38,6 +47,8 @@ type Plugin interface {
 }
 
 // SetupPlugin implements setup for the plugin.
+// The framework exposes the kube ClientSet and controller builder to the plugins thus the plugins can set up their
+// necessary clients, add new watches and initialize their internal states.
 // The Setup of each plugin will be called before other extension stages and invoked only once.
 type SetupPlugin interface {
 	Plugin
@@ -71,13 +82,54 @@ func UnregisterSetupExtender(name string) {
 	globalSetupExtender.Unregister(name)
 }
 
+// NodePreUpdatePlugin implements preprocessing for the calculated results called before updating the Node.
+// There are mainly two use cases for this stage:
+// 1. A plugin may prepare and update some Objects like CRDs before updating the Node obj (NodePrepare and NodeXXXCheck).
+// 2. A plugin may need to mutate the internal NodeResource object before updating the Node object.
+// It differs from the NodePreparePlugin in that a NodePreUpdatePlugin will be invoked only once in one loop (so the
+// plugin should consider implement a retry login itself if needed), while the NodePreparePlugin is not expected to
+// update other objects or mutate the NodeResource.
+type NodePreUpdatePlugin interface {
+	Plugin
+	PreUpdate(strategy *configuration.ColocationStrategy, node *corev1.Node, nr *NodeResource) error
+}
+
+func RegisterNodePreUpdateExtender(filter FilterFn, plugins ...NodePreUpdatePlugin) {
+	ps := make([]Plugin, 0, len(plugins))
+	for i := range plugins {
+		if filter(plugins[i].Name()) {
+			ps = append(ps, plugins[i])
+		}
+	}
+	globalNodePreUpdateExtender.MustRegister(ps...)
+}
+
+func RunNodePreUpdateExtenders(strategy *configuration.ColocationStrategy, node *corev1.Node, nr *NodeResource) {
+	for _, p := range globalNodePreUpdateExtender.GetAll() {
+		plugin := p.(NodePreUpdatePlugin)
+		if err := plugin.PreUpdate(strategy, node, nr); err != nil {
+			metrics.RecordNodeResourceRunPluginStatus(plugin.Name(), false, "NodePreUpdate")
+			klog.ErrorS(err, "run node pre update plugin failed", "plugin", plugin.Name(),
+				"node", node.Name)
+		} else {
+			metrics.RecordNodeResourceRunPluginStatus(plugin.Name(), true, "NodePreUpdate")
+			klog.V(5).InfoS("run node pre update plugin successfully", "plugin", plugin.Name(),
+				"node", node.Name)
+		}
+	}
+}
+
+func UnregisterNodePreUpdateExtender(name string) {
+	globalNodePreUpdateExtender.Unregister(name)
+}
+
 // NodePreparePlugin implements node resource preparing for the calculated results.
 // For example, assign extended resources in the node allocatable.
 // It is invoked each time the controller tries updating the latest NodeResource object with calculated results.
-// NOTE: The Execute should be idempotent since it can be called multiple times in one reconciliation.
+// NOTE: The Prepare should be idempotent since it can be called multiple times in one reconciliation.
 type NodePreparePlugin interface {
 	Plugin
-	Execute(strategy *configuration.ColocationStrategy, node *corev1.Node, nr *NodeResource) error
+	Prepare(strategy *configuration.ColocationStrategy, node *corev1.Node, nr *NodeResource) error
 }
 
 func RegisterNodePrepareExtender(filter FilterFn, plugins ...NodePreparePlugin) {
@@ -93,7 +145,7 @@ func RegisterNodePrepareExtender(filter FilterFn, plugins ...NodePreparePlugin) 
 func RunNodePrepareExtenders(strategy *configuration.ColocationStrategy, node *corev1.Node, nr *NodeResource) {
 	for _, p := range globalNodePrepareExtender.GetAll() {
 		plugin := p.(NodePreparePlugin)
-		if err := plugin.Execute(strategy, node, nr); err != nil {
+		if err := plugin.Prepare(strategy, node, nr); err != nil {
 			metrics.RecordNodeResourceRunPluginStatus(plugin.Name(), false, "NodePrepare")
 			klog.ErrorS(err, "run node prepare plugin failed", "plugin", plugin.Name(),
 				"node", node.Name)
@@ -109,74 +161,74 @@ func UnregisterNodePrepareExtender(name string) {
 	globalNodePrepareExtender.Unregister(name)
 }
 
-// NodeSyncPlugin implements the check of resource updating.
+// NodeStatusCheckPlugin implements the check of resource updating.
 // For example, trigger an update if the values of the current is more than 10% different with the former.
-type NodeSyncPlugin interface {
+type NodeStatusCheckPlugin interface {
 	Plugin
 	NeedSync(strategy *configuration.ColocationStrategy, oldNode, newNode *corev1.Node) (bool, string)
 }
 
-func RegisterNodeSyncExtender(filter FilterFn, plugins ...NodeSyncPlugin) {
+func RegisterNodeStatusCheckExtender(filter FilterFn, plugins ...NodeStatusCheckPlugin) {
 	ps := make([]Plugin, 0, len(plugins))
 	for i := range plugins {
 		if filter(plugins[i].Name()) {
 			ps = append(ps, plugins[i])
 		}
 	}
-	globalNodeSyncExtender.MustRegister(ps...)
+	globalNodeStatusCheckExtender.MustRegister(ps...)
 }
 
-func UnregisterNodeSyncExtender(name string) {
-	globalNodeSyncExtender.Unregister(name)
+func UnregisterNodeStatusCheckExtender(name string) {
+	globalNodeStatusCheckExtender.Unregister(name)
 }
 
-func RunNodeSyncExtenders(strategy *configuration.ColocationStrategy, oldNode, newNode *corev1.Node) bool {
-	for _, p := range globalNodeSyncExtender.GetAll() {
-		plugin := p.(NodeSyncPlugin)
+func RunNodeStatusCheckExtenders(strategy *configuration.ColocationStrategy, oldNode, newNode *corev1.Node) bool {
+	for _, p := range globalNodeStatusCheckExtender.GetAll() {
+		plugin := p.(NodeStatusCheckPlugin)
 		needSync, msg := plugin.NeedSync(strategy, oldNode, newNode)
-		metrics.RecordNodeResourceRunPluginStatus(plugin.Name(), true, "NodeSync")
+		metrics.RecordNodeResourceRunPluginStatus(plugin.Name(), true, "NodeStatusCheck")
 		if needSync {
-			klog.V(4).InfoS("run node sync plugin, need sync", "plugin", plugin.Name(),
+			klog.V(4).InfoS("run node status check plugin, need sync", "plugin", plugin.Name(),
 				"node", newNode.Name, "message", msg)
 			return true
 		} else {
-			klog.V(6).InfoS("run node sync plugin, no need to sync", "plugin", plugin.Name(),
+			klog.V(6).InfoS("run node status check plugin, no need to sync", "plugin", plugin.Name(),
 				"node", newNode.Name)
 		}
 	}
 	return false
 }
 
-type NodeMetaSyncPlugin interface {
+type NodeMetaCheckPlugin interface {
 	Plugin
 	NeedSyncMeta(strategy *configuration.ColocationStrategy, oldNode, newNode *corev1.Node) (bool, string)
 }
 
-func RegisterNodeMetaSyncExtender(filter FilterFn, plugins ...NodeMetaSyncPlugin) {
+func RegisterNodeMetaCheckExtender(filter FilterFn, plugins ...NodeMetaCheckPlugin) {
 	ps := make([]Plugin, 0, len(plugins))
 	for i := range plugins {
 		if filter(plugins[i].Name()) {
 			ps = append(ps, plugins[i])
 		}
 	}
-	globalNodeMetaSyncExtender.MustRegister(ps...)
+	globalNodeMetaCheckExtender.MustRegister(ps...)
 }
 
-func UnregisterNodeMetaSyncExtender(name string) {
-	globalNodeMetaSyncExtender.Unregister(name)
+func UnregisterNodeMetaCheckExtender(name string) {
+	globalNodeMetaCheckExtender.Unregister(name)
 }
 
-func RunNodeMetaSyncExtenders(strategy *configuration.ColocationStrategy, oldNode, newNode *corev1.Node) bool {
-	for _, p := range globalNodeMetaSyncExtender.GetAll() {
-		plugin := p.(NodeMetaSyncPlugin)
+func RunNodeMetaCheckExtenders(strategy *configuration.ColocationStrategy, oldNode, newNode *corev1.Node) bool {
+	for _, p := range globalNodeMetaCheckExtender.GetAll() {
+		plugin := p.(NodeMetaCheckPlugin)
 		needSync, msg := plugin.NeedSyncMeta(strategy, oldNode, newNode)
-		metrics.RecordNodeResourceRunPluginStatus(plugin.Name(), true, "NodeSyncMeta")
+		metrics.RecordNodeResourceRunPluginStatus(plugin.Name(), true, "NodeStatusCheckMeta")
 		if needSync {
-			klog.V(4).InfoS("run node meta sync plugin, need sync", "plugin", plugin.Name(),
+			klog.V(4).InfoS("run node meta check plugin, need sync", "plugin", plugin.Name(),
 				"node", newNode.Name, "message", msg)
 			return true
 		} else {
-			klog.V(6).InfoS("run node meta sync plugin, no need to sync",
+			klog.V(6).InfoS("run node meta check plugin, no need to sync",
 				"plugin", plugin.Name(), "node", newNode.Name)
 		}
 	}

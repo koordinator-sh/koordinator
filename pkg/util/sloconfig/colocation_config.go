@@ -17,15 +17,20 @@ limitations under the License.
 package sloconfig
 
 import (
+	"encoding/json"
+	"fmt"
 	"reflect"
+	"strconv"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/klog/v2"
 	"k8s.io/utils/pointer"
 
 	"github.com/koordinator-sh/koordinator/apis/configuration"
+	"github.com/koordinator-sh/koordinator/apis/extension"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
@@ -42,8 +47,8 @@ func DefaultColocationCfg() configuration.ColocationCfg {
 }
 
 func DefaultColocationStrategy() configuration.ColocationStrategy {
-	calculatePolicy := configuration.CalculateByPodUsage
-	var defaultMemoryCollectPolicy slov1alpha1.NodeMemoryCollectPolicy = slov1alpha1.UsageWithoutPageCache
+	var cpuCalculatePolicy, memoryCalculatePolicy = configuration.CalculateByPodUsage, configuration.CalculateByPodUsage
+	var defaultMemoryCollectPolicy = slov1alpha1.UsageWithoutPageCache
 	cfg := configuration.ColocationStrategy{
 		Enable:                         pointer.Bool(false),
 		MetricAggregateDurationSeconds: pointer.Int64(300),
@@ -57,8 +62,9 @@ func DefaultColocationStrategy() configuration.ColocationStrategy {
 		},
 		MetricMemoryCollectPolicy:     &defaultMemoryCollectPolicy,
 		CPUReclaimThresholdPercent:    pointer.Int64(60),
+		CPUCalculatePolicy:            &cpuCalculatePolicy,
 		MemoryReclaimThresholdPercent: pointer.Int64(65),
-		MemoryCalculatePolicy:         &calculatePolicy,
+		MemoryCalculatePolicy:         &memoryCalculatePolicy,
 		DegradeTimeMinutes:            pointer.Int64(15),
 		UpdateTimeThresholdSeconds:    pointer.Int64(300),
 		ResourceDiffThreshold:         pointer.Float64(0.1),
@@ -116,5 +122,78 @@ func GetNodeColocationStrategy(cfg *configuration.ColocationCfg, node *corev1.No
 		break
 	}
 
+	// update strategy according to node metadata
+	UpdateColocationStrategyForNode(strategy, node)
+
 	return strategy
+}
+
+func UpdateColocationStrategyForNode(strategy *configuration.ColocationStrategy, node *corev1.Node) {
+	strategyOnNode, err := GetColocationStrategyOnNode(node)
+	if err != nil {
+		klog.V(5).Infof("failed to parse node colocation strategy for node %s, err: %s", node.Name, err)
+	} else if strategyOnNode != nil {
+		merged, _ := util.MergeCfg(strategy, strategyOnNode)
+		*strategy = *(merged.(*configuration.ColocationStrategy))
+		klog.V(6).Infof("node %s use merged colocation strategy from node annotations, merged: %+v",
+			node.Name, strategy)
+	}
+
+	cpuReclaimPercent := getNodeReclaimPercent(node, extension.LabelCPUReclaimRatio)
+	if cpuReclaimPercent != nil {
+		klog.V(6).Infof("node %s use cpu reclaim percent from node metadata, original: %+v, new: %v",
+			node.Name, strategy.CPUReclaimThresholdPercent, *cpuReclaimPercent)
+		strategy.CPUReclaimThresholdPercent = cpuReclaimPercent
+	}
+
+	memReclaimPercent := getNodeReclaimPercent(node, extension.LabelMemoryReclaimRatio)
+	if memReclaimPercent != nil {
+		klog.V(6).Infof("node %s use memory reclaim percent from node metadata, original: %+v, new: %v",
+			node.Name, strategy.MemoryReclaimThresholdPercent, *memReclaimPercent)
+		strategy.MemoryReclaimThresholdPercent = memReclaimPercent
+	}
+}
+
+// GetColocationStrategyOnNode gets the colocation strategy in the node annotations.
+func GetColocationStrategyOnNode(node *corev1.Node) (*configuration.ColocationStrategy, error) {
+	if node.Annotations == nil {
+		return nil, nil
+	}
+
+	s, ok := node.Annotations[extension.AnnotationNodeColocationStrategy]
+	if !ok {
+		return nil, nil
+	}
+
+	strategy := &configuration.ColocationStrategy{}
+	if err := json.Unmarshal([]byte(s), strategy); err != nil {
+		return nil, fmt.Errorf("parse node colocation strategy failed, err: %w", err)
+	}
+
+	return strategy, nil
+}
+
+func getNodeReclaimPercent(node *corev1.Node, key string) *int64 {
+	if node.Labels == nil {
+		return nil
+	}
+
+	s, ok := node.Labels[key]
+	if !ok {
+		return nil
+	}
+
+	v, err := strconv.ParseFloat(s, 64)
+	if err != nil {
+		klog.V(5).Infof("failed to parse reclaim ratio for node %s, key %s, err: %s",
+			node.Name, key, err)
+		return nil
+	}
+	if v < 0 {
+		klog.V(5).Infof("failed to validate reclaim ratio for node %s, key %s, ratio %v",
+			node.Name, key, v)
+		return nil
+	}
+
+	return pointer.Int64(int64(v * 100))
 }
