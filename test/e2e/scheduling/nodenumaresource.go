@@ -46,9 +46,10 @@ import (
 
 var _ = SIGDescribe("NodeNUMAResource", func() {
 	f := framework.NewDefaultFramework("nodenumaresource")
+	var koordSchedulerName string
 
 	ginkgo.BeforeEach(func() {
-
+		koordSchedulerName = framework.TestContext.KoordSchedulerName
 	})
 
 	framework.KoordinatorDescribe("NodeNUMAResource CPUBindPolicy", func() {
@@ -164,7 +165,7 @@ var _ = SIGDescribe("NodeNUMAResource", func() {
 					},
 				},
 				PriorityClassName: string(extension.PriorityProd),
-				SchedulerName:     "koord-scheduler",
+				SchedulerName:     koordSchedulerName,
 			})
 			framework.ExpectNoError(e2epod.WaitForPodRunningInNamespace(f.ClientSet, pod), "unable schedule the lowest priority pod")
 			expectPodBoundReservation(f.ClientSet, f.KoordinatorClientSet, pod.Namespace, pod.Name, reservation.Name)
@@ -248,7 +249,7 @@ var _ = SIGDescribe("NodeNUMAResource", func() {
 				},
 				NodeName:          reservation.Status.NodeName,
 				PriorityClassName: string(extension.PriorityProd),
-				SchedulerName:     "koord-scheduler",
+				SchedulerName:     koordSchedulerName,
 			})
 			framework.ExpectNoError(e2epod.WaitForPodRunningInNamespace(f.ClientSet, pod), "unable schedule the lowest priority pod")
 			expectPodBoundReservation(f.ClientSet, f.KoordinatorClientSet, pod.Namespace, pod.Name, reservation.Name)
@@ -416,7 +417,7 @@ var _ = SIGDescribe("NodeNUMAResource", func() {
 						Limits:   requests,
 						Requests: requests,
 					},
-					SchedulerName: "koord-scheduler",
+					SchedulerName: koordSchedulerName,
 					NodeName:      node.Name,
 				},
 			}
@@ -454,7 +455,7 @@ var _ = SIGDescribe("NodeNUMAResource", func() {
 					Limits:   requests,
 					Requests: requests,
 				},
-				SchedulerName: "koord-scheduler",
+				SchedulerName: koordSchedulerName,
 				NodeName:      node.Name,
 			})
 			ginkgo.By("Wait for Pod schedule failed")
@@ -502,7 +503,7 @@ var _ = SIGDescribe("NodeNUMAResource", func() {
 						Limits:   requests,
 						Requests: requests,
 					},
-					SchedulerName: "koord-scheduler",
+					SchedulerName: koordSchedulerName,
 					NodeName:      node.Name,
 				},
 			}
@@ -545,7 +546,7 @@ var _ = SIGDescribe("NodeNUMAResource", func() {
 					Limits:   requests,
 					Requests: requests,
 				},
-				SchedulerName: "koord-scheduler",
+				SchedulerName: koordSchedulerName,
 				NodeName:      node.Name,
 			})
 			ginkgo.By("Wait for Pod schedule failed")
@@ -590,7 +591,7 @@ var _ = SIGDescribe("NodeNUMAResource", func() {
 						Limits:   requests,
 						Requests: requests,
 					},
-					SchedulerName: "koord-scheduler",
+					SchedulerName: koordSchedulerName,
 					NodeName:      node.Name,
 				},
 			}
@@ -633,7 +634,7 @@ var _ = SIGDescribe("NodeNUMAResource", func() {
 					Limits:   requests,
 					Requests: requests,
 				},
-				SchedulerName: "koord-scheduler",
+				SchedulerName: koordSchedulerName,
 				NodeName:      node.Name,
 			})
 			ginkgo.By("Wait for Pod schedule failed")
@@ -674,7 +675,7 @@ var _ = SIGDescribe("NodeNUMAResource", func() {
 						Limits:   requests,
 						Requests: requests,
 					},
-					SchedulerName: "koord-scheduler",
+					SchedulerName: koordSchedulerName,
 					NodeName:      node.Name,
 				})
 			}
@@ -689,7 +690,7 @@ var _ = SIGDescribe("NodeNUMAResource", func() {
 						Limits:   requests,
 						Requests: requests,
 					},
-					SchedulerName: "koord-scheduler",
+					SchedulerName: koordSchedulerName,
 					NodeName:      node.Name,
 				})
 			}
@@ -711,7 +712,7 @@ var _ = SIGDescribe("NodeNUMAResource", func() {
 					Limits:   requests,
 					Requests: requests,
 				},
-				SchedulerName: "koord-scheduler",
+				SchedulerName: koordSchedulerName,
 				NodeName:      node.Name,
 			})
 			ginkgo.By("Wait for Pod schedule failed")
@@ -757,7 +758,7 @@ var _ = SIGDescribe("NodeNUMAResource", func() {
 						Limits:   requests,
 						Requests: requests,
 					},
-					SchedulerName: "koord-scheduler",
+					SchedulerName: koordSchedulerName,
 					NodeName:      node.Name,
 				},
 			}
@@ -794,7 +795,7 @@ var _ = SIGDescribe("NodeNUMAResource", func() {
 					Limits:   requests,
 					Requests: requests,
 				},
-				SchedulerName: "koord-scheduler",
+				SchedulerName: koordSchedulerName,
 				NodeName:      node.Name,
 			})
 			nodes = sets.NewInt()
@@ -836,7 +837,7 @@ var _ = SIGDescribe("NodeNUMAResource", func() {
 						Limits:   requests,
 						Requests: requests,
 					},
-					SchedulerName: "koord-scheduler",
+					SchedulerName: koordSchedulerName,
 					NodeName:      node.Name,
 				})
 			}
@@ -851,7 +852,7 @@ var _ = SIGDescribe("NodeNUMAResource", func() {
 						Limits:   requests,
 						Requests: requests,
 					},
-					SchedulerName: "koord-scheduler",
+					SchedulerName: koordSchedulerName,
 					NodeName:      node.Name,
 				})
 			}
@@ -873,7 +874,7 @@ var _ = SIGDescribe("NodeNUMAResource", func() {
 					Limits:   requests,
 					Requests: requests,
 				},
-				SchedulerName: "koord-scheduler",
+				SchedulerName: koordSchedulerName,
 				NodeName:      node.Name,
 			})
 			nodes := sets.NewInt()
@@ -920,7 +921,7 @@ var _ = SIGDescribe("NodeNUMAResource", func() {
 						Limits:   requests,
 						Requests: requests,
 					},
-					SchedulerName: "koord-scheduler",
+					SchedulerName: koordSchedulerName,
 					NodeName:      node.Name,
 				},
 			}
@@ -957,7 +958,7 @@ var _ = SIGDescribe("NodeNUMAResource", func() {
 					Limits:   requests,
 					Requests: requests,
 				},
-				SchedulerName: "koord-scheduler",
+				SchedulerName: koordSchedulerName,
 				NodeName:      node.Name,
 			})
 			nodes = sets.NewInt()

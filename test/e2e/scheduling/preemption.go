@@ -37,9 +37,11 @@ import (
 
 var _ = SIGDescribe("Preemption", func() {
 	f := framework.NewDefaultFramework("preemption")
+	var koordSchedulerName string
 
 	ginkgo.BeforeEach(func() {
 		framework.AllNodesReady(f.ClientSet, time.Minute)
+		koordSchedulerName = framework.TestContext.KoordSchedulerName
 	})
 
 	ginkgo.AfterEach(func() {
@@ -68,7 +70,7 @@ var _ = SIGDescribe("Preemption", func() {
 						apiext.ResourceGPU: resource.MustParse("100"),
 					},
 				},
-				SchedulerName: "koord-scheduler",
+				SchedulerName: koordSchedulerName,
 			})
 
 			ginkgo.By("Create low priority Pod requests all GPUs")
@@ -86,7 +88,7 @@ var _ = SIGDescribe("Preemption", func() {
 					},
 				},
 				NodeName:      nodeName,
-				SchedulerName: "koord-scheduler",
+				SchedulerName: koordSchedulerName,
 			})
 			framework.ExpectNoError(e2epod.WaitForPodRunningInNamespace(f.ClientSet, lowPriorityPod), "unable schedule the lowest priority pod")
 
@@ -102,7 +104,7 @@ var _ = SIGDescribe("Preemption", func() {
 					},
 				},
 				NodeName:          nodeName,
-				SchedulerName:     "koord-scheduler",
+				SchedulerName:     koordSchedulerName,
 				PriorityClassName: "system-cluster-critical",
 			})
 			framework.ExpectNoError(e2epod.WaitForPodRunningInNamespace(f.ClientSet, highPriorityPod), "unable preempt lowest priority pod")
@@ -119,7 +121,7 @@ var _ = SIGDescribe("Preemption", func() {
 						apiext.ResourceGPU: resource.MustParse("100"),
 					},
 				},
-				SchedulerName: "koord-scheduler",
+				SchedulerName: koordSchedulerName,
 			})
 			node, err := f.ClientSet.CoreV1().Nodes().Get(context.TODO(), nodeName, metav1.GetOptions{})
 			framework.ExpectNoError(err, fmt.Sprintf("unable to get node %v", nodeName))
@@ -169,7 +171,7 @@ var _ = SIGDescribe("Preemption", func() {
 					},
 				},
 				NodeName:      nodeName,
-				SchedulerName: "koord-scheduler",
+				SchedulerName: koordSchedulerName,
 			})
 			framework.ExpectNoError(e2epod.WaitForPodRunningInNamespace(f.ClientSet, lowPriorityPod), "unable schedule the lowest priority pod")
 			expectPodBoundReservation(f.ClientSet, f.KoordinatorClientSet, lowPriorityPod.Namespace, lowPriorityPod.Name, reservation.Name)
@@ -186,7 +188,7 @@ var _ = SIGDescribe("Preemption", func() {
 					},
 				},
 				NodeName:          nodeName,
-				SchedulerName:     "koord-scheduler",
+				SchedulerName:     koordSchedulerName,
 				PriorityClassName: "system-cluster-critical",
 			})
 			framework.ExpectNoError(e2epod.WaitForPodCondition(f.ClientSet, highPriorityPod.Namespace, highPriorityPod.Name, "wait for pod schedule failed", 60*time.Second, func(pod *corev1.Pod) (bool, error) {
@@ -210,7 +212,7 @@ var _ = SIGDescribe("Preemption", func() {
 						apiext.ResourceGPU: resource.MustParse("100"),
 					},
 				},
-				SchedulerName: "koord-scheduler",
+				SchedulerName: koordSchedulerName,
 			})
 			node, err := f.ClientSet.CoreV1().Nodes().Get(context.TODO(), nodeName, metav1.GetOptions{})
 			framework.ExpectNoError(err, fmt.Sprintf("unable to get node %v", nodeName))
@@ -260,7 +262,7 @@ var _ = SIGDescribe("Preemption", func() {
 					},
 				},
 				NodeName:      nodeName,
-				SchedulerName: "koord-scheduler",
+				SchedulerName: koordSchedulerName,
 			})
 			framework.ExpectNoError(e2epod.WaitForPodRunningInNamespace(f.ClientSet, lowPriorityPod), "unable schedule the lowest priority pod")
 			expectPodBoundReservation(f.ClientSet, f.KoordinatorClientSet, lowPriorityPod.Namespace, lowPriorityPod.Name, reservation.Name)
@@ -280,7 +282,7 @@ var _ = SIGDescribe("Preemption", func() {
 					},
 				},
 				NodeName:          nodeName,
-				SchedulerName:     "koord-scheduler",
+				SchedulerName:     koordSchedulerName,
 				PriorityClassName: "system-cluster-critical",
 			})
 			framework.ExpectNoError(e2epod.WaitForPodRunningInNamespace(f.ClientSet, highPriorityPod), "unable to preempt")
@@ -342,7 +344,7 @@ var _ = SIGDescribe("Preemption", func() {
 			nodeName := runPodAndGetNodeName(f, pausePodConfig{
 				Name:          "without-label",
 				Resources:     resourceRequirements,
-				SchedulerName: "koord-scheduler",
+				SchedulerName: koordSchedulerName,
 			})
 
 			ginkgo.By("Create low priority Pod requests all fakeResource")
@@ -351,7 +353,7 @@ var _ = SIGDescribe("Preemption", func() {
 				Name:          "low-priority-pod",
 				Resources:     resourceRequirements,
 				NodeName:      nodeName,
-				SchedulerName: "koord-scheduler",
+				SchedulerName: koordSchedulerName,
 			})
 			framework.ExpectNoError(e2epod.WaitForPodRunningInNamespace(f.ClientSet, lowPriorityPod), "unable schedule the lowest priority pod")
 
@@ -360,7 +362,7 @@ var _ = SIGDescribe("Preemption", func() {
 				Name:              "high-priority-pod",
 				Resources:         resourceRequirements,
 				NodeName:          nodeName,
-				SchedulerName:     "koord-scheduler",
+				SchedulerName:     koordSchedulerName,
 				PriorityClassName: "system-cluster-critical",
 			})
 			framework.ExpectNoError(e2epod.WaitForPodRunningInNamespace(f.ClientSet, highPriorityPod), "unable preempt lowest priority pod")
@@ -416,7 +418,7 @@ var _ = SIGDescribe("Preemption", func() {
 				},
 				Resources:     resourceRequirements,
 				NodeName:      testNodeName,
-				SchedulerName: "koord-scheduler",
+				SchedulerName: koordSchedulerName,
 			})
 			framework.ExpectNoError(e2epod.WaitForPodRunningInNamespace(f.ClientSet, lowPriorityPod), "unable schedule the lowest priority pod")
 			expectPodBoundReservation(f.ClientSet, f.KoordinatorClientSet, lowPriorityPod.Namespace, lowPriorityPod.Name, reservation.Name)
@@ -426,7 +428,7 @@ var _ = SIGDescribe("Preemption", func() {
 				Name:              "high-priority-pod",
 				Resources:         resourceRequirements,
 				NodeName:          testNodeName,
-				SchedulerName:     "koord-scheduler",
+				SchedulerName:     koordSchedulerName,
 				PriorityClassName: "system-cluster-critical",
 			})
 			framework.ExpectNoError(e2epod.WaitForPodCondition(f.ClientSet, highPriorityPod.Namespace, highPriorityPod.Name, "wait for pod schedule failed", 60*time.Second, func(pod *corev1.Pod) (bool, error) {
@@ -489,7 +491,7 @@ var _ = SIGDescribe("Preemption", func() {
 				},
 				Resources:     resourceRequirements,
 				NodeName:      testNodeName,
-				SchedulerName: "koord-scheduler",
+				SchedulerName: koordSchedulerName,
 			})
 			framework.ExpectNoError(e2epod.WaitForPodRunningInNamespace(f.ClientSet, lowPriorityPod), "unable schedule the lowest priority pod")
 			expectPodBoundReservation(f.ClientSet, f.KoordinatorClientSet, lowPriorityPod.Namespace, lowPriorityPod.Name, reservation.Name)
@@ -502,7 +504,7 @@ var _ = SIGDescribe("Preemption", func() {
 				},
 				Resources:         resourceRequirements,
 				NodeName:          testNodeName,
-				SchedulerName:     "koord-scheduler",
+				SchedulerName:     koordSchedulerName,
 				PriorityClassName: "system-cluster-critical",
 			})
 			framework.ExpectNoError(e2epod.WaitForPodRunningInNamespace(f.ClientSet, highPriorityPod), "unable to preempt")
@@ -560,7 +562,7 @@ var _ = SIGDescribe("Preemption", func() {
 				},
 				Resources:     resourceRequirements,
 				NodeName:      testNodeName,
-				SchedulerName: "koord-scheduler",
+				SchedulerName: koordSchedulerName,
 			})
 			framework.ExpectNoError(e2epod.WaitForPodRunningInNamespace(f.ClientSet, lowPriorityPod), "unable schedule the lowest priority pod")
 			expectPodBoundReservation(f.ClientSet, f.KoordinatorClientSet, lowPriorityPod.Namespace, lowPriorityPod.Name, reservation.Name)
@@ -573,7 +575,7 @@ var _ = SIGDescribe("Preemption", func() {
 				},
 				Resources:         resourceRequirements,
 				NodeName:          testNodeName,
-				SchedulerName:     "koord-scheduler",
+				SchedulerName:     koordSchedulerName,
 				PriorityClassName: "system-cluster-critical",
 			})
 			framework.ExpectNoError(e2epod.WaitForPodRunningInNamespace(f.ClientSet, highPriorityPod), "unable to preempt")

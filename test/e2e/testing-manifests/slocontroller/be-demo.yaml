@@ -1,0 +1,25 @@
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  labels:
+    app: e2e-test
+    koordinator.sh/qosClass: BE
+    name: be-demo
+  name: be-demo
+spec:
+  schedulerName: koord-scheduler
+  priorityClassName: koord-batch
+  containers:
+  - image: {{.BusyBoxImage}}
+    imagePullPolicy: IfNotPresent
+    name: pause
+    command: ["sleep", "2000000000000"]
+    resources:
+      limits:
+        kubernetes.io/batch-cpu: "500"
+        kubernetes.io/batch-memory: 1Gi
+      requests:
+        kubernetes.io/batch-cpu: "50"
+        kubernetes.io/batch-memory: 100Mi
+  restartPolicy: Never

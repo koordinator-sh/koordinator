@@ -48,7 +48,7 @@ spec:
             - --leader-election-namespace=koordinator-system
             - --config-namespace=koordinator-system
             - --v=4
-            - --feature-gates=AllAlpha=false,AllBeta=false
+            - --feature-gates=
             - --sync-period=0
           command:
             - /koord-manager

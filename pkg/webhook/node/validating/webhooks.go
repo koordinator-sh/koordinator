@@ -20,7 +20,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
 
-// +kubebuilder:webhook:path=/validate-node,mutating=false,failurePolicy=fail,sideEffects=None,groups="",resources=nodes,verbs=create;update,versions=v1,name=vnode.koordinator.sh,admissionReviewVersions=v1;v1beta1
+// +kubebuilder:webhook:path=/validate-node,mutating=false,failurePolicy=ignore,sideEffects=None,groups="",resources=nodes,verbs=create;update,versions=v1,name=vnode.koordinator.sh,admissionReviewVersions=v1;v1beta1
 
 var (
 	// HandlerMap contains admission webhook handlers

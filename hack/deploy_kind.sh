@@ -21,11 +21,24 @@ if [ -z "$IMG" ]; then
   exit 1
 fi
 
+K8S_VERSION=""
+if [ -z "$KUBERNETES_VERSION" ]; then
+  K8S_VERSION="latest"
+else
+  K8S_VERSION=$KUBERNETES_VERSION
+fi
+
 set -e
 
 make kustomize
 KUSTOMIZE=$(pwd)/bin/kustomize
 (cd config/manager && "${KUSTOMIZE}" edit set image manager="${IMG}")
-"${KUSTOMIZE}" build config/default | sed -e 's/imagePullPolicy: Always/imagePullPolicy: IfNotPresent/g' > /tmp/koordinator-kustomization.yaml
-echo -e "resources:\n- manager.yaml" > config/manager/kustomization.yaml
+
+if [[ "$K8S_VERSION" == "1.22" ]]; then
+  sed "s/feature-gates=/feature-gates=CompatibleCSIStorageCapacity=true/g" $(pwd)/config/manager/scheduler.yaml > /tmp/scheduler.yaml && mv /tmp/scheduler.yaml $(pwd)/config/manager/scheduler.yaml
+  $(pwd)/hack/kustomize.sh "${KUSTOMIZE}" | sed -e 's/imagePullPolicy: Always/imagePullPolicy: IfNotPresent/g' > /tmp/koordinator-kustomization.yaml
+else
+  $(pwd)/hack/kustomize.sh "${KUSTOMIZE}" | sed -e 's/imagePullPolicy: Always/imagePullPolicy: IfNotPresent/g' > /tmp/koordinator-kustomization.yaml
+fi
+
 kubectl apply -f /tmp/koordinator-kustomization.yaml
