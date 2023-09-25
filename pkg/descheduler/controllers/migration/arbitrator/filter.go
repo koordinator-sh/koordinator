@@ -1,5 +1,5 @@
 /*
-Copyright 2023 The Koordinator Authors.
+Copyright 2022 The Koordinator Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -181,7 +181,7 @@ func (f *filter) forEachAvailableMigrationJobs(listOpts *client.ListOptions, han
 		for _, v := range expectedPhaseAndAnnotations {
 			if f.checkExpectedPhaseAndAnnotation(&PhaseAndAnnotation{
 				phase:       phase,
-				annotations: job.Annotations,
+				annotations: map[string]string{},
 			}, &v, job.UID) {
 				found = true
 				break

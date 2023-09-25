@@ -1,5 +1,5 @@
 /*
-Copyright 2023 The Koordinator Authors.
+Copyright 2022 The Koordinator Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -153,7 +153,7 @@ func TestFilterMaxMigratingPerNode(t *testing.T) {
 			_ = v1alpha1.AddToScheme(scheme)
 			_ = clientgoscheme.AddToScheme(scheme)
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
-			a := filter{client: fakeClient, args: &config.MigrationControllerArgs{}}
+			a := filter{client: fakeClient, args: &config.MigrationControllerArgs{}, arbitratedPodMigrationJobs: map[types.UID]bool{}}
 			a.args.MaxMigratingPerNode = pointer.Int32(tt.maxMigrating)
 
 			var migratingPods []*corev1.Pod
@@ -180,6 +180,7 @@ func TestFilterMaxMigratingPerNode(t *testing.T) {
 						Name:              fmt.Sprintf("test-%d", i),
 						CreationTimestamp: metav1.Time{Time: time.Now()},
 						Annotations:       map[string]string{AnnotationPassedArbitration: "true"},
+						UID:               uuid.NewUUID(),
 					},
 					Spec: v1alpha1.PodMigrationJobSpec{
 						PodRef: &corev1.ObjectReference{
@@ -189,6 +190,7 @@ func TestFilterMaxMigratingPerNode(t *testing.T) {
 						},
 					},
 				}
+				a.markJobPassedArbitration(job.UID)
 				assert.Nil(t, a.client.Create(context.TODO(), job))
 			}
 
@@ -294,7 +296,7 @@ func TestFilterMaxMigratingPerNamespace(t *testing.T) {
 			_ = v1alpha1.AddToScheme(scheme)
 			_ = clientgoscheme.AddToScheme(scheme)
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
-			a := filter{client: fakeClient, args: &config.MigrationControllerArgs{}}
+			a := filter{client: fakeClient, args: &config.MigrationControllerArgs{}, arbitratedPodMigrationJobs: map[types.UID]bool{}}
 			a.args.MaxMigratingPerNamespace = pointer.Int32(tt.maxMigrating)
 
 			var migratingPods []*corev1.Pod
@@ -321,6 +323,7 @@ func TestFilterMaxMigratingPerNamespace(t *testing.T) {
 						Name:              fmt.Sprintf("test-%d", i),
 						CreationTimestamp: metav1.Time{Time: time.Now()},
 						Annotations:       map[string]string{AnnotationPassedArbitration: "true"},
+						UID:               uuid.NewUUID(),
 					},
 					Spec: v1alpha1.PodMigrationJobSpec{
 						PodRef: &corev1.ObjectReference{
@@ -330,6 +333,7 @@ func TestFilterMaxMigratingPerNamespace(t *testing.T) {
 						},
 					},
 				}
+				a.markJobPassedArbitration(job.UID)
 				assert.Nil(t, a.client.Create(context.TODO(), job))
 			}
 
@@ -464,7 +468,7 @@ func TestFilterMaxMigratingPerWorkload(t *testing.T) {
 			intOrString := intstr.FromInt(tt.maxMigrating)
 			maxUnavailable := intstr.FromInt(int(tt.totalReplicas - 1))
 
-			a := filter{client: fakeClient, args: &config.MigrationControllerArgs{}}
+			a := filter{client: fakeClient, args: &config.MigrationControllerArgs{}, arbitratedPodMigrationJobs: map[types.UID]bool{}}
 			a.args.MaxMigratingPerWorkload = &intOrString
 			a.args.MaxUnavailablePerWorkload = &maxUnavailable
 
@@ -508,6 +512,7 @@ func TestFilterMaxMigratingPerWorkload(t *testing.T) {
 						},
 					},
 				}
+				a.markJobPassedArbitration(job.UID)
 				assert.Nil(t, a.client.Create(context.TODO(), job))
 			}
 
@@ -666,7 +671,7 @@ func TestFilterMaxUnavailablePerWorkload(t *testing.T) {
 			_ = v1alpha1.AddToScheme(scheme)
 			_ = clientgoscheme.AddToScheme(scheme)
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
-			a := filter{client: fakeClient, args: &config.MigrationControllerArgs{}}
+			a := filter{client: fakeClient, args: &config.MigrationControllerArgs{}, arbitratedPodMigrationJobs: map[types.UID]bool{}}
 			a.args.MaxMigratingPerWorkload = &intOrString
 			a.args.MaxUnavailablePerWorkload = &maxUnavailable
 
@@ -730,6 +735,7 @@ func TestFilterMaxUnavailablePerWorkload(t *testing.T) {
 						},
 					},
 				}
+				a.markJobPassedArbitration(job.UID)
 				assert.Nil(t, a.client.Create(context.TODO(), job))
 			}
 

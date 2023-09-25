@@ -1610,8 +1610,8 @@ type fakeArbitrator struct {
 	delete            func(types.UID)
 }
 
-func (f *fakeArbitrator) Delete(uid types.UID) {
-	f.delete(uid)
+func (f *fakeArbitrator) DeletePodMigrationJob(job *sev1alpha1.PodMigrationJob) {
+	f.delete(job.UID)
 }
 
 func (f *fakeArbitrator) Filter(pod *corev1.Pod) bool {
@@ -1626,6 +1626,6 @@ func (f *fakeArbitrator) TrackEvictedPod(pod *corev1.Pod) {
 	f.trackEvictedPod(pod)
 }
 
-func (f *fakeArbitrator) Add(job *sev1alpha1.PodMigrationJob) {
+func (f *fakeArbitrator) AddPodMigrationJob(job *sev1alpha1.PodMigrationJob) {
 	f.add(job)
 }

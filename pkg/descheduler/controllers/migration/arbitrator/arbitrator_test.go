@@ -1,5 +1,5 @@
 /*
-Copyright 2023 The Koordinator Authors.
+Copyright 2022 The Koordinator Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -224,7 +224,7 @@ func TestAdd(t *testing.T) {
 	}
 
 	for _, job := range migratingJobs {
-		arbitrator.Add(job)
+		arbitrator.AddPodMigrationJob(job)
 	}
 
 	var actualJobs []string
@@ -575,7 +575,7 @@ func TestArbitrate(t *testing.T) {
 		job := makePodMigrationJob("test-job-"+strconv.Itoa(i), time.Now(), pod)
 		assert.Nil(t, fakeClient.Create(context.TODO(), pod))
 		assert.Nil(t, fakeClient.Create(context.TODO(), job))
-		a.Add(job)
+		a.AddPodMigrationJob(job)
 		time.Sleep(800 * time.Millisecond)
 		assert.Nil(t, fakeClient.Get(context.TODO(), types.NamespacedName{
 			Namespace: job.Namespace,
@@ -658,7 +658,7 @@ func TestUpdateFailedJob(t *testing.T) {
 	assert.Equal(t, v1alpha1.PodMigrationJobFailed, actualJob.Status.Phase)
 }
 
-func TestEventHandlerCreate(t *testing.T) {
+func TestEventHandler(t *testing.T) {
 	creationTime := time.Now()
 	migratingJobs := []*v1alpha1.PodMigrationJob{
 		makePodMigrationJob("test-job-1", creationTime, nil),
@@ -677,13 +677,21 @@ func TestEventHandlerCreate(t *testing.T) {
 	arbitrator := &arbitratorImpl{
 		waitingCollection: map[types.UID]*v1alpha1.PodMigrationJob{},
 		client:            fakeClient,
+		filter: &filter{
+			client:                     fakeClient,
+			arbitratedPodMigrationJobs: map[types.UID]bool{},
+		},
 	}
 	handler := NewHandler(arbitrator, fakeClient)
 	var expectedJobs []string
 	for _, job := range migratingJobs {
 		assert.Nil(t, fakeClient.Create(context.TODO(), job))
 
+		assert.False(t, arbitrator.filter.checkJobPassedArbitration(job.UID))
 		handler.Create(event.CreateEvent{Object: job}, queue)
+
+		arbitrator.filter.markJobPassedArbitration(job.UID)
+		assert.True(t, arbitrator.filter.checkJobPassedArbitration(job.UID))
 		expectedJobs = append(expectedJobs, job.Name)
 
 		var actualJobs []string
@@ -698,6 +706,20 @@ func TestEventHandlerCreate(t *testing.T) {
 
 	actualJob, _ := queue.Get()
 	assert.Equal(t, actualJob.(reconcile.Request).Name, nilJob.Name)
+
+	for _, job := range migratingJobs[:3] {
+		handler.Delete(event.DeleteEvent{Object: job}, queue)
+		assert.False(t, arbitrator.filter.checkJobPassedArbitration(job.UID))
+	}
+	migratingJobs[3].Status.Phase = v1alpha1.PodMigrationJobFailed
+	assert.Nil(t, fakeClient.Update(context.TODO(), migratingJobs[3]))
+	handler.Update(event.UpdateEvent{ObjectNew: migratingJobs[3]}, queue)
+	assert.False(t, arbitrator.filter.checkJobPassedArbitration(migratingJobs[3].UID))
+
+	migratingJobs[4].Status.Phase = v1alpha1.PodMigrationJobSucceeded
+	assert.Nil(t, fakeClient.Update(context.TODO(), migratingJobs[4]))
+	handler.Update(event.UpdateEvent{ObjectNew: migratingJobs[4]}, queue)
+	assert.False(t, arbitrator.filter.checkJobPassedArbitration(migratingJobs[4].UID))
 }
 
 type podDecoratorFn func(pod *corev1.Pod)

@@ -1,5 +1,5 @@
 /*
-Copyright 2023 The Koordinator Authors.
+Copyright 2022 The Koordinator Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -26,13 +26,9 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/tools/events"
-	"k8s.io/client-go/util/workqueue"
 	"k8s.io/klog/v2"
 	controllerruntime "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/event"
-	"sigs.k8s.io/controller-runtime/pkg/handler"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	"github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/apis/config"
@@ -54,8 +50,8 @@ type MigrationFilter interface {
 
 type Arbitrator interface {
 	MigrationFilter
-	Add(job *v1alpha1.PodMigrationJob)
-	Delete(uid types.UID)
+	AddPodMigrationJob(job *v1alpha1.PodMigrationJob)
+	DeletePodMigrationJob(job *v1alpha1.PodMigrationJob)
 }
 
 // SortFn stably sorts PodMigrationJobs slice based on a certain strategy. Users
@@ -103,17 +99,17 @@ func New(args *config.MigrationControllerArgs, options Options) (Arbitrator, err
 	return arbitrator, nil
 }
 
-// Add adds a PodMigrationJob to the waitingCollection of arbitratorImpl.
+// AddPodMigrationJob adds a PodMigrationJob to the waitingCollection of arbitratorImpl.
 // It is safe to be called concurrently by multiple goroutines.
-func (a *arbitratorImpl) Add(job *v1alpha1.PodMigrationJob) {
+func (a *arbitratorImpl) AddPodMigrationJob(job *v1alpha1.PodMigrationJob) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.waitingCollection[job.UID] = job.DeepCopy()
 }
 
-// Delete remove PodMigrationJob from local PassedArbitration Record map.
-func (a *arbitratorImpl) Delete(uid types.UID) {
-	a.filter.removeJobPassedArbitration(uid)
+// DeletePodMigrationJob remove PodMigrationJob from local PassedArbitration Record map.
+func (a *arbitratorImpl) DeletePodMigrationJob(job *v1alpha1.PodMigrationJob) {
+	a.filter.removeJobPassedArbitration(job.UID)
 }
 
 // Start starts the goroutine to arbitrate jobs periodically.
@@ -130,6 +126,13 @@ func (a *arbitratorImpl) Filter(pod *corev1.Pod) bool {
 	}
 
 	if !a.filter.reservationFilter(pod) {
+		return false
+	}
+
+	if a.filter.nonRetryablePodFilter != nil && !a.filter.nonRetryablePodFilter(pod) {
+		return false
+	}
+	if a.filter.retryablePodFilter != nil && !a.filter.retryablePodFilter(pod) {
 		return false
 	}
 	return true
@@ -238,61 +241,6 @@ func (a *arbitratorImpl) updateFailedJob(job *v1alpha1.PodMigrationJob, pod *cor
 	a.mu.Lock()
 	delete(a.waitingCollection, job.UID)
 	a.mu.Unlock()
-}
-
-// arbitrationHandler implement handler.EventHandler
-type arbitrationHandler struct {
-	handler.EnqueueRequestForObject
-	c          client.Client
-	arbitrator Arbitrator
-}
-
-func NewHandler(arbitrator Arbitrator, c client.Client) handler.EventHandler {
-	return &arbitrationHandler{
-		EnqueueRequestForObject: handler.EnqueueRequestForObject{},
-		arbitrator:              arbitrator,
-		c:                       c,
-	}
-}
-
-// Create call Arbitrator.Create
-func (h *arbitrationHandler) Create(evt event.CreateEvent, q workqueue.RateLimitingInterface) {
-	if evt.Object == nil {
-		enqueueLog.Error(nil, "CreateEvent received with no metadata", "event", evt)
-		return
-	}
-	// get job
-	job := &v1alpha1.PodMigrationJob{}
-	err := h.c.Get(context.TODO(), types.NamespacedName{
-		Name:      evt.Object.GetName(),
-		Namespace: evt.Object.GetNamespace(),
-	}, job)
-	if err != nil {
-		// if err, add job to the workQueue directly.
-		enqueueLog.Error(nil, "Fail to get PodMigrationJob", "PodMigrationJob", types.NamespacedName{
-			Name:      evt.Object.GetName(),
-			Namespace: evt.Object.GetNamespace(),
-		})
-		q.Add(reconcile.Request{NamespacedName: types.NamespacedName{
-			Name:      evt.Object.GetName(),
-			Namespace: evt.Object.GetNamespace(),
-		}})
-		return
-	}
-	h.arbitrator.Add(job)
-}
-
-// Delete implements EventHandler.
-func (h *arbitrationHandler) Delete(evt event.DeleteEvent, q workqueue.RateLimitingInterface) {
-	if evt.Object == nil {
-		enqueueLog.Error(nil, "DeleteEvent received with no metadata", "event", evt)
-		return
-	}
-	h.arbitrator.Delete(evt.Object.GetUID())
-	q.Add(reconcile.Request{NamespacedName: types.NamespacedName{
-		Name:      evt.Object.GetName(),
-		Namespace: evt.Object.GetNamespace(),
-	}})
 }
 
 type Options struct {
