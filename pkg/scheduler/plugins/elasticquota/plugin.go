@@ -209,7 +209,6 @@ func (g *Plugin) EventsToRegister() []framework.ClusterEvent {
 }
 
 func (g *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod) (*framework.PreFilterResult, *framework.Status) {
-	var nonPreemptibleUsed, addNonPreemptibleUsed = make(corev1.ResourceList), make(corev1.ResourceList)
 	quotaName, treeID := g.getPodAssociateQuotaNameAndTreeID(pod)
 	if quotaName == "" {
 		g.skipPostFilterState(cycleState)
@@ -229,21 +228,23 @@ func (g *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleState
 
 	podRequest, _ := core.PodRequestsAndLimits(pod)
 	used := quotav1.Add(podRequest, state.used)
-	if extension.IsPodNonPreemptible(pod) {
-		nonPreemptibleUsed = state.nonPreemptibleUsed
-		addNonPreemptibleUsed = quotav1.Add(podRequest, nonPreemptibleUsed)
-	}
 
 	if isLessEqual, exceedDimensions := quotav1.LessThanOrEqual(used, state.runtime); !isLessEqual {
 		return nil, framework.NewStatus(framework.Unschedulable, fmt.Sprintf("Insufficient quotas, "+
 			"quotaName: %v, runtime: %v, used: %v, pod's request: %v, exceedDimensions: %v",
 			quotaName, printResourceList(state.runtime), printResourceList(state.used), printResourceList(podRequest), exceedDimensions))
 	}
-	quotaMin := state.quotaInfo.CalculateInfo.Min
-	if isLessEqual, exceedDimensions := quotav1.LessThanOrEqual(addNonPreemptibleUsed, quotaMin); !isLessEqual {
-		return nil, framework.NewStatus(framework.Unschedulable, fmt.Sprintf("Insufficient non-preemptible quotas, "+
-			"quotaName: %v, min: %v, nonPreemptibleUsed: %v, pod's request: %v, exceedDimensions: %v",
-			quotaName, printResourceList(quotaMin), printResourceList(nonPreemptibleUsed), printResourceList(podRequest), exceedDimensions))
+
+	if extension.IsPodNonPreemptible(pod) {
+		quotaMin := state.quotaInfo.CalculateInfo.Min
+		nonPreemptibleUsed := state.nonPreemptibleUsed
+		addNonPreemptibleUsed := quotav1.Add(podRequest, nonPreemptibleUsed)
+
+		if isLessEqual, exceedDimensions := quotav1.LessThanOrEqual(addNonPreemptibleUsed, quotaMin); !isLessEqual {
+			return nil, framework.NewStatus(framework.Unschedulable, fmt.Sprintf("Insufficient non-preemptible quotas, "+
+				"quotaName: %v, min: %v, nonPreemptibleUsed: %v, pod's request: %v, exceedDimensions: %v",
+				quotaName, printResourceList(quotaMin), printResourceList(nonPreemptibleUsed), printResourceList(podRequest), exceedDimensions))
+		}
 	}
 
 	if *g.pluginArgs.EnableCheckParentQuota {

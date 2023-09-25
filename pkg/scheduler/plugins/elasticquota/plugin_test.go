@@ -1288,7 +1288,7 @@ func defaultCreatePodWithQuotaAndNonPreemptible(name, quotaName string, priority
 	pod := defaultCreatePod(name, priority, cpu, mem)
 	pod.Labels[extension.LabelQuotaName] = quotaName
 	if nonPreempt {
-		pod.Labels[extension.LabelNonPreemptible] = "true"
+		pod.Labels[extension.LabelPreemptible] = "false"
 	}
 	pod.UID = types.UID(name)
 	return pod
