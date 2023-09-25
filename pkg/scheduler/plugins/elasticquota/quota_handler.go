@@ -247,7 +247,9 @@ func (g *Plugin) handlerQuotaWhenRoot(quota *schedulerv1alpha1.ElasticQuota, mgr
 		var delta corev1.ResourceList
 		if isDelete {
 			delta = quotav1.Subtract(corev1.ResourceList{}, totalResource)
+			g.quotaManagerLock.Lock()
 			delete(g.groupQuotaManagersForQuotaTree, mgr.GetTreeID())
+			g.quotaManagerLock.Unlock()
 		} else {
 			delta = mgr.SetTotalResourceForTree(totalResource)
 		}
