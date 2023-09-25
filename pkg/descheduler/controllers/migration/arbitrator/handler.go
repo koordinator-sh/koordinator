@@ -33,15 +33,15 @@ import (
 // arbitrationHandler implement handler.EventHandler
 type arbitrationHandler struct {
 	handler.EnqueueRequestForObject
-	c          client.Client
+	client     client.Client
 	arbitrator Arbitrator
 }
 
-func NewHandler(arbitrator Arbitrator, c client.Client) handler.EventHandler {
+func NewHandler(arbitrator Arbitrator, client client.Client) handler.EventHandler {
 	return &arbitrationHandler{
 		EnqueueRequestForObject: handler.EnqueueRequestForObject{},
 		arbitrator:              arbitrator,
-		c:                       c,
+		client:                  client,
 	}
 }
 
@@ -53,7 +53,7 @@ func (h *arbitrationHandler) Create(evt event.CreateEvent, q workqueue.RateLimit
 	}
 	// get job
 	job := &v1alpha1.PodMigrationJob{}
-	err := h.c.Get(context.TODO(), types.NamespacedName{
+	err := h.client.Get(context.TODO(), types.NamespacedName{
 		Name:      evt.Object.GetName(),
 		Namespace: evt.Object.GetNamespace(),
 	}, job)
@@ -74,36 +74,28 @@ func (h *arbitrationHandler) Create(evt event.CreateEvent, q workqueue.RateLimit
 
 // Update implements EventHandler.
 func (h *arbitrationHandler) Update(evt event.UpdateEvent, q workqueue.RateLimitingInterface) {
-	updateArbitrationPodMigrationJob := func(name types.NamespacedName) {
-		job := &v1alpha1.PodMigrationJob{}
-		if err := h.c.Get(context.TODO(), name, job); err == nil {
-			if job.Status.Phase == v1alpha1.PodMigrationJobFailed ||
-				job.Status.Phase == v1alpha1.PodMigrationJobSucceeded ||
-				job.Status.Phase == v1alpha1.PodMigrationJobAborted {
-				h.arbitrator.DeletePodMigrationJob(job)
-			}
-		}
-	}
-
 	switch {
 	case evt.ObjectNew != nil:
 		q.Add(reconcile.Request{NamespacedName: types.NamespacedName{
 			Name:      evt.ObjectNew.GetName(),
 			Namespace: evt.ObjectNew.GetNamespace(),
 		}})
-		updateArbitrationPodMigrationJob(types.NamespacedName{
+		job := &v1alpha1.PodMigrationJob{}
+		if err := h.client.Get(context.TODO(), types.NamespacedName{
 			Name:      evt.ObjectNew.GetName(),
 			Namespace: evt.ObjectNew.GetNamespace(),
-		})
+		}, job); err == nil {
+			if job.Status.Phase == v1alpha1.PodMigrationJobFailed ||
+				job.Status.Phase == v1alpha1.PodMigrationJobSucceeded ||
+				job.Status.Phase == v1alpha1.PodMigrationJobAborted {
+				h.arbitrator.DeletePodMigrationJob(job)
+			}
+		}
 	case evt.ObjectOld != nil:
 		q.Add(reconcile.Request{NamespacedName: types.NamespacedName{
 			Name:      evt.ObjectOld.GetName(),
 			Namespace: evt.ObjectOld.GetNamespace(),
 		}})
-		updateArbitrationPodMigrationJob(types.NamespacedName{
-			Name:      evt.ObjectOld.GetName(),
-			Namespace: evt.ObjectOld.GetNamespace(),
-		})
 	default:
 		enqueueLog.Error(nil, "UpdateEvent received with no metadata", "event", evt)
 	}

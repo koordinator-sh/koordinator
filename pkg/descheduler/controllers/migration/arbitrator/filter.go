@@ -116,7 +116,6 @@ func (f *filter) initFilters(args *deschedulerconfig.MigrationControllerArgs, ha
 
 	filterPlugin := defaultEvictor.(framework.FilterPlugin)
 	wrapFilterFuncs := podutil.WrapFilterFuncs(
-		f.reservationFilter,
 		util.FilterPodWithMaxEvictionCost,
 		filterPlugin.Filter,
 		f.filterExpectedReplicas,
@@ -179,10 +178,7 @@ func (f *filter) forEachAvailableMigrationJobs(listOpts *client.ListOptions, han
 		}
 		found := false
 		for _, v := range expectedPhaseAndAnnotations {
-			if f.checkExpectedPhaseAndAnnotation(&PhaseAndAnnotation{
-				phase:       phase,
-				annotations: map[string]string{},
-			}, &v, job.UID) {
+			if phase == v.phase && f.checkAnnotation(v.annotations, job.UID) {
 				found = true
 				break
 			}
@@ -235,9 +231,11 @@ func (f *filter) filterMaxMigratingPerNode(pod *corev1.Pod) bool {
 	}
 
 	var expectedPhaseAndAnnotations []PhaseAndAnnotation
-	expectedPhaseAndAnnotations = []PhaseAndAnnotation{
-		{sev1alpha1.PodMigrationJobRunning, nil},
-		{sev1alpha1.PodMigrationJobPending, map[string]string{AnnotationPassedArbitration: "true"}},
+	if checkPodArbitrating(pod) {
+		expectedPhaseAndAnnotations = []PhaseAndAnnotation{
+			{sev1alpha1.PodMigrationJobRunning, nil},
+			{sev1alpha1.PodMigrationJobPending, map[string]string{AnnotationPassedArbitration: "true"}},
+		}
 	}
 
 	count := 0
@@ -265,9 +263,11 @@ func (f *filter) filterMaxMigratingPerNamespace(pod *corev1.Pod) bool {
 	}
 
 	var expectedPhaseAndAnnotations []PhaseAndAnnotation
-	expectedPhaseAndAnnotations = []PhaseAndAnnotation{
-		{sev1alpha1.PodMigrationJobRunning, nil},
-		{sev1alpha1.PodMigrationJobPending, map[string]string{AnnotationPassedArbitration: "true"}},
+	if checkPodArbitrating(pod) {
+		expectedPhaseAndAnnotations = []PhaseAndAnnotation{
+			{sev1alpha1.PodMigrationJobRunning, nil},
+			{sev1alpha1.PodMigrationJobPending, map[string]string{AnnotationPassedArbitration: "true"}},
+		}
 	}
 
 	opts := &client.ListOptions{FieldSelector: fields.OneTermEqualSelector(fieldindex.IndexJobByPodNamespace, pod.Namespace)}
@@ -308,11 +308,12 @@ func (f *filter) filterMaxMigratingOrUnavailablePerWorkload(pod *corev1.Pod) boo
 	}
 
 	var expectedPhaseAndAnnotations []PhaseAndAnnotation
-	expectedPhaseAndAnnotations = []PhaseAndAnnotation{
-		{sev1alpha1.PodMigrationJobRunning, nil},
-		{sev1alpha1.PodMigrationJobPending, map[string]string{AnnotationPassedArbitration: "true"}},
+	if checkPodArbitrating(pod) {
+		expectedPhaseAndAnnotations = []PhaseAndAnnotation{
+			{sev1alpha1.PodMigrationJobRunning, nil},
+			{sev1alpha1.PodMigrationJobPending, map[string]string{AnnotationPassedArbitration: "true"}},
+		}
 	}
-
 	opts := &client.ListOptions{FieldSelector: fields.OneTermEqualSelector(fieldindex.IndexJobByPodNamespace, pod.Namespace)}
 	migratingPods := map[types.NamespacedName]struct{}{}
 	f.forEachAvailableMigrationJobs(opts, func(job *sev1alpha1.PodMigrationJob) bool {
@@ -496,11 +497,11 @@ func (f *filter) initObjectLimiters() {
 	}
 }
 
-func (f *filter) checkExpectedPhaseAndAnnotation(a *PhaseAndAnnotation, b *PhaseAndAnnotation, uid types.UID) bool {
-	if f.checkJobPassedArbitration(uid) {
-		a.annotations[AnnotationPassedArbitration] = "true"
+func (f *filter) checkAnnotation(expectedAnnotation map[string]string, uid types.UID) bool {
+	if expectedAnnotation[AnnotationPassedArbitration] == "true" {
+		return f.checkJobPassedArbitration(uid)
 	}
-	return a.phase == b.phase && isContain(a.annotations, b.annotations)
+	return true
 }
 
 func (f *filter) checkJobPassedArbitration(uid types.UID) bool {
@@ -519,26 +520,6 @@ func (f *filter) removeJobPassedArbitration(uid types.UID) {
 	f.arbitratedMapLock.Lock()
 	defer f.arbitratedMapLock.Unlock()
 	delete(f.arbitratedPodMigrationJobs, uid)
-}
-
-func isContain(a map[string]string, b map[string]string) bool {
-	if b == nil {
-		return true
-	}
-	if a == nil {
-		if len(b) == 0 {
-			return true
-		} else {
-			return false
-		}
-	} else {
-		for k, v := range b {
-			if a[k] != v {
-				return false
-			}
-		}
-		return true
-	}
 }
 
 type PhaseAndAnnotation struct {

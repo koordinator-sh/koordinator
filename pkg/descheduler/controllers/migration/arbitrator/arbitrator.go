@@ -38,6 +38,7 @@ import (
 
 const (
 	AnnotationPassedArbitration = "descheduler.koordinator.sh/passed-arbitration"
+	AnnotationPodArbitrating    = "descheduler.koordinator.sh/pod-arbitrating"
 )
 
 var enqueueLog = klog.Background().WithName("eventHandler").WithName("arbitratorImpl")
@@ -99,7 +100,7 @@ func New(args *config.MigrationControllerArgs, options Options) (Arbitrator, err
 	return arbitrator, nil
 }
 
-// AddPodMigrationJob adds a PodMigrationJob to the waitingCollection of arbitratorImpl.
+// AddPodMigrationJob adds a PodMigrationJob waiting to be arbitrated to Arbitrator.
 // It is safe to be called concurrently by multiple goroutines.
 func (a *arbitratorImpl) AddPodMigrationJob(job *v1alpha1.PodMigrationJob) {
 	a.mu.Lock()
@@ -107,7 +108,8 @@ func (a *arbitratorImpl) AddPodMigrationJob(job *v1alpha1.PodMigrationJob) {
 	a.waitingCollection[job.UID] = job.DeepCopy()
 }
 
-// DeletePodMigrationJob remove PodMigrationJob from local PassedArbitration Record map.
+// DeletePodMigrationJob removes a deleted PodMigrationJob from Arbitrator.
+// It is safe to be called concurrently by multiple goroutines.
 func (a *arbitratorImpl) DeletePodMigrationJob(job *v1alpha1.PodMigrationJob) {
 	a.filter.removeJobPassedArbitration(job.UID)
 }
@@ -157,6 +159,7 @@ func (a *arbitratorImpl) sort(jobs []*v1alpha1.PodMigrationJob, podOfJob map[*v1
 // filtering calls nonRetryablePodFilter and retryablePodFilter to filter one PodMigrationJob.
 func (a *arbitratorImpl) filtering(pod *corev1.Pod) (isFailed, isPassed bool) {
 	if pod != nil {
+		markPodArbitrating(pod)
 		if a.filter.nonRetryablePodFilter != nil && !a.filter.nonRetryablePodFilter(pod) {
 			isFailed = true
 			return
@@ -270,4 +273,18 @@ func getPodForJob(c client.Client, jobs []*v1alpha1.PodMigrationJob) map[*v1alph
 		podOfJob[job] = pod
 	}
 	return podOfJob
+}
+
+func markPodArbitrating(pod *corev1.Pod) {
+	if pod.Annotations == nil {
+		pod.Annotations = map[string]string{}
+	}
+	pod.Annotations[AnnotationPodArbitrating] = "true"
+}
+
+func checkPodArbitrating(pod *corev1.Pod) bool {
+	if pod.Annotations == nil {
+		return false
+	}
+	return pod.Annotations[AnnotationPodArbitrating] == "true"
 }
