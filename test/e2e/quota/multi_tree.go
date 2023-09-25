@@ -117,6 +117,7 @@ var _ = SIGDescribe("multi-quota-tree", func() {
 			framework.Logf("root quota has tree id: %v, is root: %v", rootQuota1.Labels[extension.LabelQuotaTreeID], rootQuota1.Labels[extension.LabelQuotaIsRoot])
 
 			ginkgo.By("create child quota for root quota 1")
+			time.Sleep(2 * time.Second)
 			childQuota1 := &schedv1alpha1.ElasticQuota{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: f.Namespace.Name,
@@ -204,6 +205,7 @@ var _ = SIGDescribe("multi-quota-tree", func() {
 			framework.Logf("root quota 1 tree id: %v, root quota 2 tree id: %v", rootQuota1.Labels[extension.LabelQuotaTreeID], rootQuota2.Labels[extension.LabelQuotaTreeID])
 
 			ginkgo.By("create child quota for root quota 2")
+			time.Sleep(2 * time.Second)
 			childQuota2 := &schedv1alpha1.ElasticQuota{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: f.Namespace.Name,
@@ -272,6 +274,20 @@ var _ = SIGDescribe("multi-quota-tree", func() {
 			_, err = quotaClient.SchedulingV1alpha1().ElasticQuotas(f.Namespace.Name).Create(context.TODO(), childQuota3, metav1.CreateOptions{})
 			framework.ExpectError(err)
 			framework.Logf("create childQuota3 failed, err: %v", err)
+
+			ginkgo.By("clean profile/quotas")
+			err = f.KoordinatorClientSet.QuotaV1alpha1().ElasticQuotaProfiles(f.Namespace.Name).Delete(context.TODO(), profile1.Name, metav1.DeleteOptions{})
+			framework.ExpectNoError(err)
+			err = f.KoordinatorClientSet.QuotaV1alpha1().ElasticQuotaProfiles(f.Namespace.Name).Delete(context.TODO(), profile2.Name, metav1.DeleteOptions{})
+			framework.ExpectNoError(err)
+			err = quotaClient.SchedulingV1alpha1().ElasticQuotas(f.Namespace.Name).Delete(context.TODO(), childQuota1.Name, metav1.DeleteOptions{})
+			framework.ExpectNoError(err)
+			err = quotaClient.SchedulingV1alpha1().ElasticQuotas(f.Namespace.Name).Delete(context.TODO(), childQuota2.Name, metav1.DeleteOptions{})
+			framework.ExpectNoError(err)
+			err = quotaClient.SchedulingV1alpha1().ElasticQuotas(f.Namespace.Name).Delete(context.TODO(), profile1.Spec.QuotaName, metav1.DeleteOptions{})
+			framework.ExpectNoError(err)
+			err = quotaClient.SchedulingV1alpha1().ElasticQuotas(f.Namespace.Name).Delete(context.TODO(), profile2.Spec.QuotaName, metav1.DeleteOptions{})
+			framework.ExpectNoError(err)
 		})
 
 		framework.ConformanceIt("create profile with resource ratio", func() {
@@ -326,6 +342,12 @@ var _ = SIGDescribe("multi-quota-tree", func() {
 			gomega.Expect(quotav1.Equals(totalResource, rootQuota.Spec.Min)).Should(gomega.Equal(true))
 			framework.Logf("root quota  min is right")
 			framework.Logf("node %v resource: %v, root quota min: %v", nodeList.Items[0].Name, util.DumpJSON(nodeList.Items[0].Status.Allocatable), util.DumpJSON(rootQuota.Spec.Min))
+
+			ginkgo.By("clean profile/quotas")
+			err = f.KoordinatorClientSet.QuotaV1alpha1().ElasticQuotaProfiles(f.Namespace.Name).Delete(context.TODO(), profile.Name, metav1.DeleteOptions{})
+			framework.ExpectNoError(err)
+			err = quotaClient.SchedulingV1alpha1().ElasticQuotas(f.Namespace.Name).Delete(context.TODO(), profile.Spec.QuotaName, metav1.DeleteOptions{})
+			framework.ExpectNoError(err)
 		})
 
 		framework.ConformanceIt("root quota show resource usage", func() {
@@ -372,6 +394,7 @@ var _ = SIGDescribe("multi-quota-tree", func() {
 			framework.ExpectNoError(err)
 
 			ginkgo.By("create child quota")
+			time.Sleep(2 * time.Second)
 			childQuota := &schedv1alpha1.ElasticQuota{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: f.Namespace.Name,
@@ -415,7 +438,7 @@ var _ = SIGDescribe("multi-quota-tree", func() {
 			}
 
 			ginkgo.By("create pod with child quota")
-			pod := createQuotaE2ePod(f.Namespace.Name, fmt.Sprintf("%s-quota-test-pod-1", f.Namespace.Name), childQuota.Name, podRequests)
+			pod := createQuotaE2EPod(f.Namespace.Name, fmt.Sprintf("%s-quota-test-pod-1", f.Namespace.Name), childQuota.Name, podRequests)
 
 			f.PodClient().Create(pod)
 			gomega.Eventually(func() bool {
@@ -442,14 +465,20 @@ var _ = SIGDescribe("multi-quota-tree", func() {
 				return false
 			}, 60*time.Second, 1*time.Second).Should(gomega.Equal(true))
 
-			ginkgo.By("clean pod")
+			ginkgo.By("clean pod/profiles/quotas")
 			f.PodClient().DeleteSync(pod.Name, metav1.DeleteOptions{}, 5*time.Minute)
+			err = f.KoordinatorClientSet.QuotaV1alpha1().ElasticQuotaProfiles(f.Namespace.Name).Delete(context.TODO(), profile.Name, metav1.DeleteOptions{})
+			framework.ExpectNoError(err)
+			err = quotaClient.SchedulingV1alpha1().ElasticQuotas(f.Namespace.Name).Delete(context.TODO(), childQuota.Name, metav1.DeleteOptions{})
+			framework.ExpectNoError(err)
+			err = quotaClient.SchedulingV1alpha1().ElasticQuotas(f.Namespace.Name).Delete(context.TODO(), profile.Spec.QuotaName, metav1.DeleteOptions{})
+			framework.ExpectNoError(err)
 		})
 	})
 
 })
 
-func createQuotaE2ePod(namespace, name, quotaName string, requests corev1.ResourceList) *corev1.Pod {
+func createQuotaE2EPod(namespace, name, quotaName string, requests corev1.ResourceList) *corev1.Pod {
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
