@@ -36,7 +36,6 @@ import (
 	"k8s.io/utils/pointer"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/event"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
@@ -701,12 +700,6 @@ func TestEventHandler(t *testing.T) {
 		assert.ElementsMatch(t, actualJobs, expectedJobs)
 	}
 	assert.Equal(t, 0, queue.Len())
-	nilJob := makePodMigrationJob("test-job-6", creationTime, nil)
-	handler.Create(event.CreateEvent{Object: nilJob}, queue)
-
-	actualJob, _ := queue.Get()
-	assert.Equal(t, actualJob.(reconcile.Request).Name, nilJob.Name)
-
 	for _, job := range migratingJobs[:3] {
 		handler.Delete(event.DeleteEvent{Object: job}, queue)
 		assert.False(t, arbitrator.filter.checkJobPassedArbitration(job.UID))

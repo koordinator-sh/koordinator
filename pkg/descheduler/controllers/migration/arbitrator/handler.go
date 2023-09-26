@@ -17,9 +17,6 @@ limitations under the License.
 package arbitrator
 
 import (
-	"context"
-
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/workqueue"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -51,24 +48,7 @@ func (h *arbitrationHandler) Create(evt event.CreateEvent, q workqueue.RateLimit
 		enqueueLog.Error(nil, "CreateEvent received with no metadata", "event", evt)
 		return
 	}
-	// get job
-	job := &v1alpha1.PodMigrationJob{}
-	err := h.client.Get(context.TODO(), types.NamespacedName{
-		Name:      evt.Object.GetName(),
-		Namespace: evt.Object.GetNamespace(),
-	}, job)
-	if err != nil {
-		// if err, add job to the workQueue directly.
-		enqueueLog.Error(nil, "Fail to get PodMigrationJob", "PodMigrationJob", types.NamespacedName{
-			Name:      evt.Object.GetName(),
-			Namespace: evt.Object.GetNamespace(),
-		})
-		q.Add(reconcile.Request{NamespacedName: types.NamespacedName{
-			Name:      evt.Object.GetName(),
-			Namespace: evt.Object.GetNamespace(),
-		}})
-		return
-	}
+	job := evt.Object.(*v1alpha1.PodMigrationJob)
 	h.arbitrator.AddPodMigrationJob(job)
 }
 
@@ -80,16 +60,11 @@ func (h *arbitrationHandler) Update(evt event.UpdateEvent, q workqueue.RateLimit
 			Name:      evt.ObjectNew.GetName(),
 			Namespace: evt.ObjectNew.GetNamespace(),
 		}})
-		job := &v1alpha1.PodMigrationJob{}
-		if err := h.client.Get(context.TODO(), types.NamespacedName{
-			Name:      evt.ObjectNew.GetName(),
-			Namespace: evt.ObjectNew.GetNamespace(),
-		}, job); err == nil {
-			if job.Status.Phase == v1alpha1.PodMigrationJobFailed ||
-				job.Status.Phase == v1alpha1.PodMigrationJobSucceeded ||
-				job.Status.Phase == v1alpha1.PodMigrationJobAborted {
-				h.arbitrator.DeletePodMigrationJob(job)
-			}
+		job := evt.ObjectNew.(*v1alpha1.PodMigrationJob)
+		if job.Status.Phase == v1alpha1.PodMigrationJobFailed ||
+			job.Status.Phase == v1alpha1.PodMigrationJobSucceeded ||
+			job.Status.Phase == v1alpha1.PodMigrationJobAborted {
+			h.arbitrator.DeletePodMigrationJob(job)
 		}
 	case evt.ObjectOld != nil:
 		q.Add(reconcile.Request{NamespacedName: types.NamespacedName{
@@ -107,13 +82,9 @@ func (h *arbitrationHandler) Delete(evt event.DeleteEvent, q workqueue.RateLimit
 		enqueueLog.Error(nil, "DeleteEvent received with no metadata", "event", evt)
 		return
 	}
-	h.arbitrator.DeletePodMigrationJob(&v1alpha1.PodMigrationJob{
-		ObjectMeta: metav1.ObjectMeta{
-			UID: evt.Object.GetUID(),
-		},
-	})
 	q.Add(reconcile.Request{NamespacedName: types.NamespacedName{
 		Name:      evt.Object.GetName(),
 		Namespace: evt.Object.GetNamespace(),
 	}})
+	h.arbitrator.DeletePodMigrationJob(evt.Object.(*v1alpha1.PodMigrationJob))
 }

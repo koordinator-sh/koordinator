@@ -155,7 +155,7 @@ func (f *filter) reservationFilter(pod *corev1.Pod) bool {
 	return false
 }
 
-func (f *filter) forEachAvailableMigrationJobs(listOpts *client.ListOptions, handler func(job *sev1alpha1.PodMigrationJob) bool, expectedPhaseAndAnnotations ...PhaseAndAnnotation) {
+func (f *filter) forEachAvailableMigrationJobs(listOpts *client.ListOptions, handler func(job *sev1alpha1.PodMigrationJob) bool, expectedPhaseAndAnnotations ...expectedPhaseContext) {
 	jobList := &sev1alpha1.PodMigrationJobList{}
 	err := f.client.List(context.TODO(), jobList, listOpts, utilclient.DisableDeepCopy)
 	if err != nil {
@@ -164,9 +164,9 @@ func (f *filter) forEachAvailableMigrationJobs(listOpts *client.ListOptions, han
 	}
 
 	if len(expectedPhaseAndAnnotations) == 0 {
-		expectedPhaseAndAnnotations = []PhaseAndAnnotation{
-			{sev1alpha1.PodMigrationJobRunning, nil},
-			{sev1alpha1.PodMigrationJobPending, nil},
+		expectedPhaseAndAnnotations = []expectedPhaseContext{
+			{sev1alpha1.PodMigrationJobRunning, false},
+			{sev1alpha1.PodMigrationJobPending, false},
 		}
 	}
 
@@ -178,7 +178,7 @@ func (f *filter) forEachAvailableMigrationJobs(listOpts *client.ListOptions, han
 		}
 		found := false
 		for _, v := range expectedPhaseAndAnnotations {
-			if phase == v.phase && f.checkAnnotation(v.annotations, job.UID) {
+			if phase == v.expectedPhase && (!v.checkArbitration || f.checkJobPassedArbitration(job.UID)) {
 				found = true
 				break
 			}
@@ -193,7 +193,7 @@ func (f *filter) filterExistingPodMigrationJob(pod *corev1.Pod) bool {
 	return !f.existingPodMigrationJob(pod)
 }
 
-func (f *filter) existingPodMigrationJob(pod *corev1.Pod, expectedPhaseAndAnnotations ...PhaseAndAnnotation) bool {
+func (f *filter) existingPodMigrationJob(pod *corev1.Pod, expectedPhaseAndAnnotations ...expectedPhaseContext) bool {
 	opts := &client.ListOptions{FieldSelector: fields.OneTermEqualSelector(fieldindex.IndexJobByPodUID, string(pod.UID))}
 	existing := false
 	f.forEachAvailableMigrationJobs(opts, func(job *sev1alpha1.PodMigrationJob) bool {
@@ -230,11 +230,11 @@ func (f *filter) filterMaxMigratingPerNode(pod *corev1.Pod) bool {
 		return true
 	}
 
-	var expectedPhaseAndAnnotations []PhaseAndAnnotation
+	var expectedPhaseAndAnnotations []expectedPhaseContext
 	if checkPodArbitrating(pod) {
-		expectedPhaseAndAnnotations = []PhaseAndAnnotation{
-			{sev1alpha1.PodMigrationJobRunning, nil},
-			{sev1alpha1.PodMigrationJobPending, map[string]string{AnnotationPassedArbitration: "true"}},
+		expectedPhaseAndAnnotations = []expectedPhaseContext{
+			{sev1alpha1.PodMigrationJobRunning, false},
+			{sev1alpha1.PodMigrationJobPending, true},
 		}
 	}
 
@@ -262,11 +262,11 @@ func (f *filter) filterMaxMigratingPerNamespace(pod *corev1.Pod) bool {
 		return true
 	}
 
-	var expectedPhaseAndAnnotations []PhaseAndAnnotation
+	var expectedPhaseAndAnnotations []expectedPhaseContext
 	if checkPodArbitrating(pod) {
-		expectedPhaseAndAnnotations = []PhaseAndAnnotation{
-			{sev1alpha1.PodMigrationJobRunning, nil},
-			{sev1alpha1.PodMigrationJobPending, map[string]string{AnnotationPassedArbitration: "true"}},
+		expectedPhaseAndAnnotations = []expectedPhaseContext{
+			{sev1alpha1.PodMigrationJobRunning, false},
+			{sev1alpha1.PodMigrationJobPending, true},
 		}
 	}
 
@@ -307,11 +307,11 @@ func (f *filter) filterMaxMigratingOrUnavailablePerWorkload(pod *corev1.Pod) boo
 		return false
 	}
 
-	var expectedPhaseAndAnnotations []PhaseAndAnnotation
+	var expectedPhaseAndAnnotations []expectedPhaseContext
 	if checkPodArbitrating(pod) {
-		expectedPhaseAndAnnotations = []PhaseAndAnnotation{
-			{sev1alpha1.PodMigrationJobRunning, nil},
-			{sev1alpha1.PodMigrationJobPending, map[string]string{AnnotationPassedArbitration: "true"}},
+		expectedPhaseAndAnnotations = []expectedPhaseContext{
+			{sev1alpha1.PodMigrationJobRunning, false},
+			{sev1alpha1.PodMigrationJobPending, true},
 		}
 	}
 	opts := &client.ListOptions{FieldSelector: fields.OneTermEqualSelector(fieldindex.IndexJobByPodNamespace, pod.Namespace)}
@@ -497,13 +497,6 @@ func (f *filter) initObjectLimiters() {
 	}
 }
 
-func (f *filter) checkAnnotation(expectedAnnotation map[string]string, uid types.UID) bool {
-	if expectedAnnotation[AnnotationPassedArbitration] == "true" {
-		return f.checkJobPassedArbitration(uid)
-	}
-	return true
-}
-
 func (f *filter) checkJobPassedArbitration(uid types.UID) bool {
 	f.arbitratedMapLock.Lock()
 	defer f.arbitratedMapLock.Unlock()
@@ -522,7 +515,7 @@ func (f *filter) removeJobPassedArbitration(uid types.UID) {
 	delete(f.arbitratedPodMigrationJobs, uid)
 }
 
-type PhaseAndAnnotation struct {
-	phase       sev1alpha1.PodMigrationJobPhase
-	annotations map[string]string
+type expectedPhaseContext struct {
+	expectedPhase    sev1alpha1.PodMigrationJobPhase
+	checkArbitration bool
 }
