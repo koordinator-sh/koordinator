@@ -475,6 +475,63 @@ func TestResourceManagerAllocate(t *testing.T) {
 			want:    nil,
 			wantErr: true,
 		},
+		{
+			name: "allocate by numa hint on mixed cpuset/share node",
+			pod:  &corev1.Pod{},
+			options: &ResourceOptions{
+				numCPUsNeeded:         8,
+				requestCPUBind:        true,
+				requiredCPUBindPolicy: true,
+				cpuBindPolicy:         schedulingconfig.CPUBindPolicyFullPCPUs,
+				requests: corev1.ResourceList{
+					corev1.ResourceCPU: resource.MustParse("8"),
+				},
+				hint: topologymanager.NUMATopologyHint{
+					NUMANodeAffinity: func() bitmask.BitMask {
+						mask, _ := bitmask.NewBitMask(0, 1)
+						return mask
+					}(),
+				},
+			},
+			allocated: &PodAllocation{
+				UID:       "123456",
+				Name:      "test-xxx",
+				Namespace: "default",
+				CPUSet:    cpuset.MustParse("0-43,53-96"),
+				NUMANodeResources: []NUMANodeResource{
+					{
+						Node: 0,
+						Resources: corev1.ResourceList{
+							corev1.ResourceCPU: resource.MustParse("48"),
+						},
+					},
+					{
+						Node: 1,
+						Resources: corev1.ResourceList{
+							corev1.ResourceCPU: resource.MustParse("48"),
+						},
+					},
+				},
+			},
+			want: &PodAllocation{
+				CPUSet: cpuset.MustParse("44-47,98-101"),
+				NUMANodeResources: []NUMANodeResource{
+					{
+						Node: 0,
+						Resources: corev1.ResourceList{
+							corev1.ResourceCPU: *resource.NewQuantity(4, resource.DecimalSI),
+						},
+					},
+					{
+						Node: 1,
+						Resources: corev1.ResourceList{
+							corev1.ResourceCPU: *resource.NewQuantity(4, resource.DecimalSI),
+						},
+					},
+				},
+			},
+			wantErr: false,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
