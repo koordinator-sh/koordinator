@@ -66,36 +66,37 @@ func (qt *quotaTopology) validateQuotaSelfItem(quota *v1alpha1.ElasticQuota) err
 	return nil
 }
 
-// validateQuotaTopology checks the quotaInfo's topology with its parent and its children (when update calls the function).
-func (qt *quotaTopology) validateQuotaTopology(oldQuotaInfo, quotaInfo *QuotaInfo, oldQuota *v1alpha1.ElasticQuota) error {
-	if err := qt.checkIsParentChange(oldQuotaInfo, quotaInfo, oldQuota); err != nil {
+// validateQuotaTopology checks the quotaInfo's topology with its parent and its children.
+// oldQuotaInfo is null wben validate a new create request, and is the current quotaInfo when validate a update request.
+func (qt *quotaTopology) validateQuotaTopology(oldQuotaInfo, newQuotaInfo *QuotaInfo, oldNamespaces []string) error {
+	if err := qt.checkIsParentChange(oldQuotaInfo, newQuotaInfo, oldNamespaces); err != nil {
 		return err
 	}
 
-	if err := qt.checkTreeID(oldQuotaInfo, quotaInfo); err != nil {
+	if err := qt.checkTreeID(oldQuotaInfo, newQuotaInfo); err != nil {
 		return err
 	}
 
 	// if the quotaInfo's parent is root and its IsParent is false, the following checks will be true, just return nil.
-	if quotaInfo.ParentName == extension.RootQuotaName && !quotaInfo.IsParent {
+	if newQuotaInfo.ParentName == extension.RootQuotaName && !newQuotaInfo.IsParent {
 		return nil
 	}
 
-	if err := qt.checkParentQuotaInfo(quotaInfo.Name, quotaInfo.ParentName); err != nil {
+	if err := qt.checkParentQuotaInfo(newQuotaInfo.Name, newQuotaInfo.ParentName); err != nil {
 		return err
 	}
 
-	if err := qt.checkSubAndParentGroupMaxQuotaKeySame(quotaInfo); err != nil {
+	if err := qt.checkSubAndParentGroupMaxQuotaKeySame(newQuotaInfo); err != nil {
 		return err
 	}
 
-	if err := qt.checkMinQuotaSum(quotaInfo); err != nil {
+	if err := qt.checkMinQuotaValidate(newQuotaInfo); err != nil {
 		return err
 	}
 
 	if utilfeature.DefaultFeatureGate.Enabled(features.ElasticQuotaGuaranteeUsage) {
-		if err := qt.checkGuaranteedForMin(quotaInfo); err != nil {
-			return fmt.Errorf("%v %v", err.Error(), quotaInfo.Name)
+		if err := qt.checkGuaranteedForMin(newQuotaInfo); err != nil {
+			return fmt.Errorf("%v %v", err.Error(), newQuotaInfo.Name)
 		}
 	}
 
@@ -134,7 +135,7 @@ func (qt *quotaTopology) checkTreeID(oldQuotaInfo, quotaInfo *QuotaInfo) error {
 	return nil
 }
 
-func (qt *quotaTopology) checkIsParentChange(oldQuotaInfo, quotaInfo *QuotaInfo, oldQuota *v1alpha1.ElasticQuota) error {
+func (qt *quotaTopology) checkIsParentChange(oldQuotaInfo, quotaInfo *QuotaInfo, oldNamespaces []string) error {
 	// means create quota, no need check
 	if oldQuotaInfo == nil || oldQuotaInfo.IsParent == quotaInfo.IsParent {
 		return nil
@@ -145,11 +146,11 @@ func (qt *quotaTopology) checkIsParentChange(oldQuotaInfo, quotaInfo *QuotaInfo,
 	}
 
 	if quotaInfo.IsParent {
-		podList, err := ListQuotaBoundPods(qt.client, oldQuota)
+		hasPods, err := hasQuotaBoundedPods(qt.client, oldQuotaInfo.Name, oldNamespaces)
 		if err != nil {
 			return err
 		}
-		if len(podList.Items) > 0 {
+		if hasPods {
 			return fmt.Errorf("quota has bound pods, isParent is forbidden to modify as true, quotaName: %v", oldQuotaInfo.Name)
 		}
 	}
@@ -157,6 +158,7 @@ func (qt *quotaTopology) checkIsParentChange(oldQuotaInfo, quotaInfo *QuotaInfo,
 	return nil
 }
 
+// checkParentQuotaInfo check parent exist
 func (qt *quotaTopology) checkParentQuotaInfo(quotaName, parentName string) error {
 	if parentName != extension.RootQuotaName {
 		parentInfo, find := qt.quotaInfoMap[parentName]
@@ -197,39 +199,43 @@ func (qt *quotaTopology) checkSubAndParentGroupMaxQuotaKeySame(quotaInfo *QuotaI
 					quotaInfo.Name, name)
 			}
 		} else {
-			return fmt.Errorf("BUG quotaInfoMap and quotaTree information out of sync, losed :%v", name)
+			return fmt.Errorf("internal error: quotaInfoMap and quotaTree information out of sync, losed :%v", name)
 		}
 	}
 
 	return nil
 }
 
-// checkMinQuotaSum parent's minQuota should be larger or equal than the sum of allChildren's minQuota.
-func (qt *quotaTopology) checkMinQuotaSum(quotaInfo *QuotaInfo) error {
-	if quotaInfo.ParentName != extension.RootQuotaName {
-		childMinSumNotIncludeSelf, err := qt.getChildMinQuotaSumExceptSpecificChild(quotaInfo.ParentName, quotaInfo.Name)
+// checkMinQuotaValidate will do two checks:
+//  1. the sum of brothers' minquota should less than or equal to parentMinQuota.
+//  2. the sum of children's minquota should less than or equal to newQuotaMin.
+func (qt *quotaTopology) checkMinQuotaValidate(newQuotaInfo *QuotaInfo) error {
+	// check brothers' minquota sum
+	if newQuotaInfo.ParentName != extension.RootQuotaName {
+		childMinSumNotIncludeSelf, err := qt.getChildMinQuotaSumExceptSpecificChild(newQuotaInfo.ParentName, newQuotaInfo.Name)
 		if err != nil {
 			return fmt.Errorf("checkMinQuotaSum failed: %v", err)
 		}
 
-		childMinSumIncludeSelf := quotav1.Add(childMinSumNotIncludeSelf, quotaInfo.CalculateInfo.Min)
-		if !util.LessThanOrEqualEnhanced(childMinSumIncludeSelf, qt.quotaInfoMap[quotaInfo.ParentName].CalculateInfo.Min) {
-			return fmt.Errorf("checkMinQuotaSum allChildren SumMinQuota > parentMinQuota, parent: %v", quotaInfo.ParentName)
+		childMinSumIncludeSelf := quotav1.Add(childMinSumNotIncludeSelf, newQuotaInfo.CalculateInfo.Min)
+		if !util.LessThanOrEqualCompletely(childMinSumIncludeSelf, qt.quotaInfoMap[newQuotaInfo.ParentName].CalculateInfo.Min) {
+			return fmt.Errorf("checkMinQuotaSum all brothers' MinQuota > parent MinQuota, parent: %v", newQuotaInfo.ParentName)
 		}
 	}
 
-	children, exist := qt.quotaHierarchyInfo[quotaInfo.Name]
+	// check children's minquota sum
+	children, exist := qt.quotaHierarchyInfo[newQuotaInfo.Name]
 	if !exist || len(children) == 0 {
 		return nil
 	}
 
-	childMinSum, err := qt.getChildMinQuotaSumExceptSpecificChild(quotaInfo.Name, "")
+	childMinSum, err := qt.getChildMinQuotaSumExceptSpecificChild(newQuotaInfo.Name, "")
 	if err != nil {
 		return fmt.Errorf("checkMinQuotaSum failed:%v", err)
 	}
 
-	if !util.LessThanOrEqualEnhanced(childMinSum, quotaInfo.CalculateInfo.Min) {
-		return fmt.Errorf("checkMinQuotaSum allChildrn SumMinQuota > MinQuota, parent: %v", quotaInfo.Name)
+	if !util.LessThanOrEqualCompletely(childMinSum, newQuotaInfo.CalculateInfo.Min) {
+		return fmt.Errorf("checkMinQuotaSum all children's MinQuota > current MinQuota, current: %v", newQuotaInfo.Name)
 	}
 
 	return nil
@@ -241,12 +247,12 @@ func (qt *quotaTopology) getChildMinQuotaSumExceptSpecificChild(parentName, skip
 		return allChildQuotaSum, nil
 	}
 
-	childQuotaList, exist := qt.quotaHierarchyInfo[parentName]
+	children, exist := qt.quotaHierarchyInfo[parentName]
 	if !exist {
 		return nil, fmt.Errorf("not found child quota list, parent: %v", parentName)
 	}
 
-	for childName := range childQuotaList {
+	for childName := range children {
 		if childName == skipQuota {
 			continue
 		}
@@ -334,8 +340,8 @@ func (qt *quotaTopology) checkGuaranteedForMin(quotaInfo *QuotaInfo) error {
 		return nil
 	}
 
-	// if the new min less than guaranteed. allow it.
-	if util.LessThanOrEqualEnhanced(quotaInfo.CalculateInfo.Min, quotaInfo.CalculateInfo.Guaranteed) {
+	// if the new min less than guaranteed, which means that no more resource guarantee is needed, so it is allowed directly.
+	if util.LessThanOrEqualCompletely(quotaInfo.CalculateInfo.Min, quotaInfo.CalculateInfo.Guaranteed) {
 		return nil
 	}
 	newGuaranteed := quotav1.Max(quotaInfo.CalculateInfo.Min, quotaInfo.CalculateInfo.Guaranteed)
@@ -343,6 +349,10 @@ func (qt *quotaTopology) checkGuaranteedForMin(quotaInfo *QuotaInfo) error {
 	return qt.checkParentGuaranteed(newGuaranteed, quotaInfo.Name, quotaInfo.ParentName)
 }
 
+// Guaranteed resources are searched starting from the parent node of the current node until the root node of the tree.
+// We need to meet guaranteed resources at least at a certain level to guarantee the resources of the current node.
+// During the search process, there may be situations where min is not used up at the intermediate nodes.
+// Therefore, we need to recursively accumulate the guaranteed resources that need to be satisfied until the root node is reached.
 func (qt *quotaTopology) checkParentGuaranteed(newGuarantee v1.ResourceList, self, parentName string) error {
 	if parentName == extension.RootQuotaName {
 		return fmt.Errorf("tree root quota %v can't guarantee for min", self)
@@ -353,26 +363,26 @@ func (qt *quotaTopology) checkParentGuaranteed(newGuarantee v1.ResourceList, sel
 		return fmt.Errorf("parent %v not found", parentName)
 	}
 
-	childQuotaList, ok := qt.quotaHierarchyInfo[parentName]
+	children, ok := qt.quotaHierarchyInfo[parentName]
 	if !ok {
 		return fmt.Errorf("child quota list not found, parent: %v", parentName)
 	}
 
-	allChildGuaranteed := newGuarantee
-	for childName := range childQuotaList {
+	allChildrenGuaranteed := newGuarantee
+	for childName := range children {
 		if childName == self {
 			continue
 		}
 
 		if quotaInfo, exist := qt.quotaInfoMap[childName]; exist {
-			allChildGuaranteed = quotav1.Add(allChildGuaranteed, quotaInfo.CalculateInfo.Guaranteed)
+			allChildrenGuaranteed = quotav1.Add(allChildrenGuaranteed, quotaInfo.CalculateInfo.Guaranteed)
 		} else {
 			return fmt.Errorf("BUG quotaInfoMap and quotaTree information out of sync, losed :%v", childName)
 		}
 	}
 
-	newParentGuaranteed := quotav1.Max(parentInfo.CalculateInfo.Min, allChildGuaranteed)
-	if util.LessThanOrEqualEnhanced(newParentGuaranteed, parentInfo.CalculateInfo.Guaranteed) {
+	newParentGuaranteed := quotav1.Max(parentInfo.CalculateInfo.Min, allChildrenGuaranteed)
+	if util.LessThanOrEqualCompletely(newParentGuaranteed, parentInfo.CalculateInfo.Guaranteed) {
 		return nil
 	}
 
