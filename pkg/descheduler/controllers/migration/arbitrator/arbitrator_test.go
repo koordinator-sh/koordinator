@@ -1,5 +1,5 @@
 /*
-Copyright 2023 The Koordinator Authors.
+Copyright 2022 The Koordinator Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -36,7 +36,6 @@ import (
 	"k8s.io/utils/pointer"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/event"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
@@ -136,7 +135,7 @@ func TestMultiSortFn(t *testing.T) {
 	assert.Equal(t, expectedJobsOrder, jobsOrder)
 }
 
-func TestFilter(t *testing.T) {
+func TestFiltering(t *testing.T) {
 	testCases := []struct {
 		name         string
 		pod          *corev1.Pod
@@ -189,14 +188,16 @@ func TestFilter(t *testing.T) {
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
 			arbitrator := arbitratorImpl{
-				nonRetryablePodFilter: func(pod *corev1.Pod) bool {
-					return testCase.nonRetryable
-				},
-				retryablePodFilter: func(pod *corev1.Pod) bool {
-					return testCase.retryable
+				filter: &filter{
+					nonRetryablePodFilter: func(pod *corev1.Pod) bool {
+						return testCase.nonRetryable
+					},
+					retryablePodFilter: func(pod *corev1.Pod) bool {
+						return testCase.retryable
+					},
 				},
 			}
-			isFailed, isPassed := arbitrator.filter(testCase.pod)
+			isFailed, isPassed := arbitrator.filtering(testCase.pod)
 			assert.Equal(t, testCase.isFailed, isFailed)
 			assert.Equal(t, testCase.isPassed, isPassed)
 		})
@@ -222,7 +223,7 @@ func TestAdd(t *testing.T) {
 	}
 
 	for _, job := range migratingJobs {
-		arbitrator.Add(job)
+		arbitrator.AddPodMigrationJob(job)
 	}
 
 	var actualJobs []string
@@ -281,12 +282,14 @@ func TestRequeueJobIfRetryablePodFilterFailed(t *testing.T) {
 		sorts: []SortFn{func(jobs []*v1alpha1.PodMigrationJob, podOfJob map[*v1alpha1.PodMigrationJob]*corev1.Pod) []*v1alpha1.PodMigrationJob {
 			return jobs
 		}},
-		nonRetryablePodFilter: func(pod *corev1.Pod) bool {
-			return true
-		},
-		retryablePodFilter: func(pod *corev1.Pod) bool {
-			enter = true
-			return false
+		filter: &filter{
+			nonRetryablePodFilter: func(pod *corev1.Pod) bool {
+				return true
+			},
+			retryablePodFilter: func(pod *corev1.Pod) bool {
+				enter = true
+				return false
+			},
 		},
 		client:        fakeClient,
 		mu:            sync.Mutex{},
@@ -352,12 +355,14 @@ func TestAbortJobIfNonRetryablePodFilterFailed(t *testing.T) {
 		sorts: []SortFn{func(jobs []*v1alpha1.PodMigrationJob, podOfJob map[*v1alpha1.PodMigrationJob]*corev1.Pod) []*v1alpha1.PodMigrationJob {
 			return jobs
 		}},
-		nonRetryablePodFilter: func(pod *corev1.Pod) bool {
-			enter = true
-			return false
-		},
-		retryablePodFilter: func(pod *corev1.Pod) bool {
-			return true
+		filter: &filter{
+			nonRetryablePodFilter: func(pod *corev1.Pod) bool {
+				enter = true
+				return false
+			},
+			retryablePodFilter: func(pod *corev1.Pod) bool {
+				return true
+			},
 		},
 		client:        fakeClient,
 		mu:            sync.Mutex{},
@@ -484,11 +489,14 @@ func TestDoOnceArbitrate(t *testing.T) {
 			}
 			a := &arbitratorImpl{
 				waitingCollection: collection,
-				nonRetryablePodFilter: func(pod *corev1.Pod) bool {
-					return !nonRetryablePods[pod.Name]
-				},
-				retryablePodFilter: func(pod *corev1.Pod) bool {
-					return !retryablePods[pod.Name]
+				filter: &filter{
+					nonRetryablePodFilter: func(pod *corev1.Pod) bool {
+						return !nonRetryablePods[pod.Name]
+					},
+					retryablePodFilter: func(pod *corev1.Pod) bool {
+						return !retryablePods[pod.Name]
+					},
+					arbitratedPodMigrationJobs: map[types.UID]bool{},
 				},
 				sorts: []SortFn{
 					func(jobs []*v1alpha1.PodMigrationJob, podOfJob map[*v1alpha1.PodMigrationJob]*corev1.Pod) []*v1alpha1.PodMigrationJob {
@@ -537,11 +545,14 @@ func TestArbitrate(t *testing.T) {
 
 	a := &arbitratorImpl{
 		waitingCollection: map[types.UID]*v1alpha1.PodMigrationJob{},
-		nonRetryablePodFilter: func(pod *corev1.Pod) bool {
-			return true
-		},
-		retryablePodFilter: func(pod *corev1.Pod) bool {
-			return true
+		filter: &filter{
+			nonRetryablePodFilter: func(pod *corev1.Pod) bool {
+				return true
+			},
+			retryablePodFilter: func(pod *corev1.Pod) bool {
+				return true
+			},
+			arbitratedPodMigrationJobs: map[types.UID]bool{},
 		},
 		sorts: []SortFn{
 			func(jobs []*v1alpha1.PodMigrationJob, podOfJob map[*v1alpha1.PodMigrationJob]*corev1.Pod) []*v1alpha1.PodMigrationJob {
@@ -563,7 +574,7 @@ func TestArbitrate(t *testing.T) {
 		job := makePodMigrationJob("test-job-"+strconv.Itoa(i), time.Now(), pod)
 		assert.Nil(t, fakeClient.Create(context.TODO(), pod))
 		assert.Nil(t, fakeClient.Create(context.TODO(), job))
-		a.Add(job)
+		a.AddPodMigrationJob(job)
 		time.Sleep(800 * time.Millisecond)
 		assert.Nil(t, fakeClient.Get(context.TODO(), types.NamespacedName{
 			Namespace: job.Namespace,
@@ -592,9 +603,13 @@ func TestUpdatePassedJob(t *testing.T) {
 		client:            fakeClient,
 		mu:                sync.Mutex{},
 		eventRecorder:     &events.FakeRecorder{},
+		filter: &filter{
+			arbitratedPodMigrationJobs: map[types.UID]bool{},
+		},
 	}
-	arbitrator.updatePassedJob(job)
+	assert.False(t, arbitrator.filter.checkJobPassedArbitration(job.UID))
 
+	arbitrator.updatePassedJob(job)
 	assert.Equal(t, 0, len(arbitrator.waitingCollection))
 
 	actualJob := &v1alpha1.PodMigrationJob{}
@@ -603,6 +618,7 @@ func TestUpdatePassedJob(t *testing.T) {
 		Name:      "test",
 	}, actualJob))
 	assert.Equal(t, map[string]string{AnnotationPassedArbitration: "true"}, actualJob.Annotations)
+	assert.True(t, arbitrator.filter.checkJobPassedArbitration(job.UID))
 }
 
 func TestUpdateFailedJob(t *testing.T) {
@@ -641,7 +657,7 @@ func TestUpdateFailedJob(t *testing.T) {
 	assert.Equal(t, v1alpha1.PodMigrationJobFailed, actualJob.Status.Phase)
 }
 
-func TestEventHandlerCreate(t *testing.T) {
+func TestEventHandler(t *testing.T) {
 	creationTime := time.Now()
 	migratingJobs := []*v1alpha1.PodMigrationJob{
 		makePodMigrationJob("test-job-1", creationTime, nil),
@@ -660,13 +676,21 @@ func TestEventHandlerCreate(t *testing.T) {
 	arbitrator := &arbitratorImpl{
 		waitingCollection: map[types.UID]*v1alpha1.PodMigrationJob{},
 		client:            fakeClient,
+		filter: &filter{
+			client:                     fakeClient,
+			arbitratedPodMigrationJobs: map[types.UID]bool{},
+		},
 	}
 	handler := NewHandler(arbitrator, fakeClient)
 	var expectedJobs []string
 	for _, job := range migratingJobs {
 		assert.Nil(t, fakeClient.Create(context.TODO(), job))
 
+		assert.False(t, arbitrator.filter.checkJobPassedArbitration(job.UID))
 		handler.Create(event.CreateEvent{Object: job}, queue)
+
+		arbitrator.filter.markJobPassedArbitration(job.UID)
+		assert.True(t, arbitrator.filter.checkJobPassedArbitration(job.UID))
 		expectedJobs = append(expectedJobs, job.Name)
 
 		var actualJobs []string
@@ -676,11 +700,19 @@ func TestEventHandlerCreate(t *testing.T) {
 		assert.ElementsMatch(t, actualJobs, expectedJobs)
 	}
 	assert.Equal(t, 0, queue.Len())
-	nilJob := makePodMigrationJob("test-job-6", creationTime, nil)
-	handler.Create(event.CreateEvent{Object: nilJob}, queue)
+	for _, job := range migratingJobs[:3] {
+		handler.Delete(event.DeleteEvent{Object: job}, queue)
+		assert.False(t, arbitrator.filter.checkJobPassedArbitration(job.UID))
+	}
+	migratingJobs[3].Status.Phase = v1alpha1.PodMigrationJobFailed
+	assert.Nil(t, fakeClient.Update(context.TODO(), migratingJobs[3]))
+	handler.Update(event.UpdateEvent{ObjectNew: migratingJobs[3]}, queue)
+	assert.False(t, arbitrator.filter.checkJobPassedArbitration(migratingJobs[3].UID))
 
-	actualJob, _ := queue.Get()
-	assert.Equal(t, actualJob.(reconcile.Request).Name, nilJob.Name)
+	migratingJobs[4].Status.Phase = v1alpha1.PodMigrationJobSucceeded
+	assert.Nil(t, fakeClient.Update(context.TODO(), migratingJobs[4]))
+	handler.Update(event.UpdateEvent{ObjectNew: migratingJobs[4]}, queue)
+	assert.False(t, arbitrator.filter.checkJobPassedArbitration(migratingJobs[4].UID))
 }
 
 type podDecoratorFn func(pod *corev1.Pod)
@@ -740,4 +772,22 @@ func makePodMigrationJob(name string, creationTime time.Time, pod *corev1.Pod, d
 		decorator(job)
 	}
 	return job
+}
+
+type fakeControllerFinder struct {
+	pods     []*corev1.Pod
+	replicas int32
+	err      error
+}
+
+func (f *fakeControllerFinder) ListPodsByWorkloads(workloadUIDs []types.UID, ns string, labelSelector *metav1.LabelSelector, active bool) ([]*corev1.Pod, error) {
+	return f.pods, f.err
+}
+
+func (f *fakeControllerFinder) GetPodsForRef(ownerReference *metav1.OwnerReference, ns string, labelSelector *metav1.LabelSelector, active bool) ([]*corev1.Pod, int32, error) {
+	return f.pods, f.replicas, f.err
+}
+
+func (f *fakeControllerFinder) GetExpectedScaleForPod(pod *corev1.Pod) (int32, error) {
+	return f.replicas, f.err
 }
