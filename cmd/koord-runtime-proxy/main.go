@@ -35,8 +35,6 @@ func main() {
 		"koord-runtimeproxy service endpoint.")
 	flag.StringVar(&options.RemoteRuntimeServiceEndpoint, "remote-runtime-service-endpoint", options.DefaultContainerdRuntimeServiceEndpoint,
 		"backend runtime service endpoint.")
-	flag.StringVar(&options.RemoteImageServiceEndpoint, "remote-image-service-endpoint", options.DefaultContainerdImageServiceEndpoint,
-		"backend image service endpoint.")
 	flag.StringVar(&options.BackendRuntimeMode, "backend-runtime-mode", options.DefaultBackendRuntimeMode,
 		"backend container engine(Containerd|Docker).")
 	flag.StringVar(&options.RuntimeHookServerKey, "runtime-hook-server-key", options.DefaultHookServerKey,

@@ -41,8 +41,8 @@ mockgen -source pkg/koordlet/metriccache/metric_cache.go \
   -destination pkg/koordlet/metriccache/mockmetriccache/mock.go \
   -aux_files github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache=pkg/koordlet/metriccache/tsdb_storage.go,github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache=pkg/koordlet/metriccache/kv_storage.go \
   -copyright_file ${LICENSE_HEADER_PATH}
-mockgen -source vendor/k8s.io/cri-api/pkg/apis/runtime/v1alpha2/api.pb.go \
-  -destination pkg/runtime/handler/mockclient/mock.go \
-  -imports github.com/koordinator-sh/koordinator/vendor/k8s.io/cri-api/pkg/apis/runtime/v1alpha2=k8s.io/cri-api/pkg/apis/runtime/v1alpha2 \
+mockgen -source vendor/k8s.io/cri-api/pkg/apis/runtime/v1/api.pb.go \
+  -destination pkg/koordlet/util/runtime/handler/mockclient/mock.go \
+  -imports github.com/koordinator-sh/koordinator/vendor/k8s.io/cri-api/pkg/apis/runtime/v1=k8s.io/cri-api/pkg/apis/runtime/v1 \
   -copyright_file ${LICENSE_HEADER_PATH} \
   -package mock_client RuntimeServiceClient
