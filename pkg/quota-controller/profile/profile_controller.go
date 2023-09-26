@@ -54,6 +54,16 @@ const (
 	ReasonUpdateQuotaFailed = "UpdateQuotaFailed"
 )
 
+var resourceDecorators = []func(profile *v1alpha1.ElasticQuotaProfile, total corev1.ResourceList){
+	DecorateResourceByResourceRatio,
+}
+
+func decorateTotalResource(profile *v1alpha1.ElasticQuotaProfile, total corev1.ResourceList) {
+	for _, fn := range resourceDecorators {
+		fn(profile, total)
+	}
+}
+
 // QuotaProfileReconciler reconciles a QuotaProfile object
 type QuotaProfileReconciler struct {
 	client.Client
@@ -132,17 +142,7 @@ func (r *QuotaProfileReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		totalResource = quotav1.Add(totalResource, node.Status.Allocatable)
 	}
 
-	ratio := 1.0
-	if profile.Spec.ResourceRatio != nil {
-		val, err := strconv.ParseFloat(*profile.Spec.ResourceRatio, 64)
-		if err == nil && val > 0 && val <= 1.0 {
-			ratio = val
-		}
-	}
-
-	for resourceName, quantity := range totalResource {
-		totalResource[resourceName] = MultiplyQuantity(quantity, resourceName, ratio)
-	}
+	decorateTotalResource(profile, totalResource)
 
 	resourceKeys := []string{"cpu", "memory"}
 	raw, ok := profile.Annotations[extension.AnnotationResourceKeys]
@@ -163,7 +163,7 @@ func (r *QuotaProfileReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		}
 
 		min[resourceName] = quantity
-		max[resourceName] = *resource.NewQuantity(math.MaxInt64/5, resource.DecimalSI)
+		max[resourceName] = *resource.NewQuantity(math.MaxInt64/2000, resource.DecimalSI)
 	}
 
 	// update min and max
@@ -254,4 +254,20 @@ func hash(s string) string {
 	h := fnv.New64a()
 	h.Write([]byte(s))
 	return strconv.FormatUint(h.Sum64(), 10)
+}
+
+func DecorateResourceByResourceRatio(profile *v1alpha1.ElasticQuotaProfile, total corev1.ResourceList) {
+	if profile.Spec.ResourceRatio == nil {
+		return
+	}
+
+	ratio := 1.0
+	val, err := strconv.ParseFloat(*profile.Spec.ResourceRatio, 64)
+	if err == nil && val > 0 && val <= 1.0 {
+		ratio = val
+	}
+
+	for resourceName, quantity := range total {
+		total[resourceName] = MultiplyQuantity(quantity, resourceName, ratio)
+	}
 }
