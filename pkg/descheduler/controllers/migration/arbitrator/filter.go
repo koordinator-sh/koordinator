@@ -155,7 +155,7 @@ func (f *filter) reservationFilter(pod *corev1.Pod) bool {
 	return false
 }
 
-func (f *filter) forEachAvailableMigrationJobs(listOpts *client.ListOptions, handler func(job *sev1alpha1.PodMigrationJob) bool, expectedPhaseAndAnnotations ...expectedPhaseContext) {
+func (f *filter) forEachAvailableMigrationJobs(listOpts *client.ListOptions, handler func(job *sev1alpha1.PodMigrationJob) bool, expectedPhaseContexts ...phaseContext) {
 	jobList := &sev1alpha1.PodMigrationJobList{}
 	err := f.client.List(context.TODO(), jobList, listOpts, utilclient.DisableDeepCopy)
 	if err != nil {
@@ -163,10 +163,10 @@ func (f *filter) forEachAvailableMigrationJobs(listOpts *client.ListOptions, han
 		return
 	}
 
-	if len(expectedPhaseAndAnnotations) == 0 {
-		expectedPhaseAndAnnotations = []expectedPhaseContext{
-			{sev1alpha1.PodMigrationJobRunning, false},
-			{sev1alpha1.PodMigrationJobPending, false},
+	if len(expectedPhaseContexts) == 0 {
+		expectedPhaseContexts = []phaseContext{
+			{phase: sev1alpha1.PodMigrationJobRunning, checkArbitration: false},
+			{phase: sev1alpha1.PodMigrationJobPending, checkArbitration: false},
 		}
 	}
 
@@ -177,8 +177,8 @@ func (f *filter) forEachAvailableMigrationJobs(listOpts *client.ListOptions, han
 			phase = sev1alpha1.PodMigrationJobPending
 		}
 		found := false
-		for _, v := range expectedPhaseAndAnnotations {
-			if phase == v.expectedPhase && (!v.checkArbitration || f.checkJobPassedArbitration(job.UID)) {
+		for _, v := range expectedPhaseContexts {
+			if phase == v.phase && (!v.checkArbitration || f.checkJobPassedArbitration(job.UID)) {
 				found = true
 				break
 			}
@@ -193,7 +193,7 @@ func (f *filter) filterExistingPodMigrationJob(pod *corev1.Pod) bool {
 	return !f.existingPodMigrationJob(pod)
 }
 
-func (f *filter) existingPodMigrationJob(pod *corev1.Pod, expectedPhaseAndAnnotations ...expectedPhaseContext) bool {
+func (f *filter) existingPodMigrationJob(pod *corev1.Pod, expectedPhaseContexts ...phaseContext) bool {
 	opts := &client.ListOptions{FieldSelector: fields.OneTermEqualSelector(fieldindex.IndexJobByPodUID, string(pod.UID))}
 	existing := false
 	f.forEachAvailableMigrationJobs(opts, func(job *sev1alpha1.PodMigrationJob) bool {
@@ -201,7 +201,7 @@ func (f *filter) existingPodMigrationJob(pod *corev1.Pod, expectedPhaseAndAnnota
 			existing = true
 		}
 		return !existing
-	}, expectedPhaseAndAnnotations...)
+	}, expectedPhaseContexts...)
 
 	if !existing {
 		opts = &client.ListOptions{FieldSelector: fields.OneTermEqualSelector(fieldindex.IndexJobPodNamespacedName, fmt.Sprintf("%s/%s", pod.Namespace, pod.Name))}
@@ -210,7 +210,7 @@ func (f *filter) existingPodMigrationJob(pod *corev1.Pod, expectedPhaseAndAnnota
 				existing = true
 			}
 			return !existing
-		}, expectedPhaseAndAnnotations...)
+		}, expectedPhaseContexts...)
 	}
 	return existing
 }
@@ -230,11 +230,11 @@ func (f *filter) filterMaxMigratingPerNode(pod *corev1.Pod) bool {
 		return true
 	}
 
-	var expectedPhaseAndAnnotations []expectedPhaseContext
+	var expectedPhaseContexts []phaseContext
 	if checkPodArbitrating(pod) {
-		expectedPhaseAndAnnotations = []expectedPhaseContext{
-			{sev1alpha1.PodMigrationJobRunning, false},
-			{sev1alpha1.PodMigrationJobPending, true},
+		expectedPhaseContexts = []phaseContext{
+			{phase: sev1alpha1.PodMigrationJobRunning, checkArbitration: false},
+			{phase: sev1alpha1.PodMigrationJobPending, checkArbitration: true},
 		}
 	}
 
@@ -243,7 +243,7 @@ func (f *filter) filterMaxMigratingPerNode(pod *corev1.Pod) bool {
 		v := &podList.Items[i]
 		if v.UID != pod.UID &&
 			v.Spec.NodeName == pod.Spec.NodeName &&
-			f.existingPodMigrationJob(v, expectedPhaseAndAnnotations...) {
+			f.existingPodMigrationJob(v, expectedPhaseContexts...) {
 			count++
 		}
 	}
@@ -262,11 +262,11 @@ func (f *filter) filterMaxMigratingPerNamespace(pod *corev1.Pod) bool {
 		return true
 	}
 
-	var expectedPhaseAndAnnotations []expectedPhaseContext
+	var expectedPhaseContexts []phaseContext
 	if checkPodArbitrating(pod) {
-		expectedPhaseAndAnnotations = []expectedPhaseContext{
-			{sev1alpha1.PodMigrationJobRunning, false},
-			{sev1alpha1.PodMigrationJobPending, true},
+		expectedPhaseContexts = []phaseContext{
+			{phase: sev1alpha1.PodMigrationJobRunning, checkArbitration: false},
+			{phase: sev1alpha1.PodMigrationJobPending, checkArbitration: true},
 		}
 	}
 
@@ -277,7 +277,7 @@ func (f *filter) filterMaxMigratingPerNamespace(pod *corev1.Pod) bool {
 			count++
 		}
 		return true
-	}, expectedPhaseAndAnnotations...)
+	}, expectedPhaseContexts...)
 
 	maxMigratingPerNamespace := int(*f.args.MaxMigratingPerNamespace)
 	exceeded := count >= maxMigratingPerNamespace
@@ -307,11 +307,11 @@ func (f *filter) filterMaxMigratingOrUnavailablePerWorkload(pod *corev1.Pod) boo
 		return false
 	}
 
-	var expectedPhaseAndAnnotations []expectedPhaseContext
+	var expectedPhaseContext []phaseContext
 	if checkPodArbitrating(pod) {
-		expectedPhaseAndAnnotations = []expectedPhaseContext{
-			{sev1alpha1.PodMigrationJobRunning, false},
-			{sev1alpha1.PodMigrationJobPending, true},
+		expectedPhaseContext = []phaseContext{
+			{phase: sev1alpha1.PodMigrationJobRunning, checkArbitration: false},
+			{phase: sev1alpha1.PodMigrationJobPending, checkArbitration: true},
 		}
 	}
 	opts := &client.ListOptions{FieldSelector: fields.OneTermEqualSelector(fieldindex.IndexJobByPodNamespace, pod.Namespace)}
@@ -337,7 +337,7 @@ func (f *filter) filterMaxMigratingOrUnavailablePerWorkload(pod *corev1.Pod) boo
 			}
 		}
 		return true
-	}, expectedPhaseAndAnnotations...)
+	}, expectedPhaseContext...)
 
 	if len(migratingPods) > 0 {
 		exceeded := len(migratingPods) >= maxMigrating
@@ -515,7 +515,7 @@ func (f *filter) removeJobPassedArbitration(uid types.UID) {
 	delete(f.arbitratedPodMigrationJobs, uid)
 }
 
-type expectedPhaseContext struct {
-	expectedPhase    sev1alpha1.PodMigrationJobPhase
+type phaseContext struct {
+	phase            sev1alpha1.PodMigrationJobPhase
 	checkArbitration bool
 }
