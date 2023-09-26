@@ -330,6 +330,14 @@ func TestQuotaTopology_checkMinQuotaSum(t *testing.T) {
 			err: fmt.Errorf("error"),
 		},
 		{
+			name: "childQuotaInfo not satisfy",
+			quota: MakeQuota("temp").Max(MakeResourceList().CPU(120).Mem(1048576).Obj()).
+				Min(MakeResourceList().CPU(16).Mem(12800).Obj()).IsParent(false).Obj(),
+			subQuota: MakeQuota("sub-1").ParentName("temp").Max(MakeResourceList().CPU(120).Mem(12800).Obj()).
+				Min(MakeResourceList().CPU(16).Mem(12801).Obj()).IsParent(false).Obj(),
+			err: fmt.Errorf("error"),
+		},
+		{
 			name: "satisfy",
 			quota: MakeQuota("temp").Max(MakeResourceList().CPU(120).Mem(1048576).Obj()).
 				Min(MakeResourceList().CPU(19).Mem(51200).Obj()).IsParent(true).Obj(),
@@ -363,7 +371,7 @@ func TestQuotaTopology_checkMinQuotaSum(t *testing.T) {
 			if tt.eraseSub {
 				delete(qt.quotaInfoMap, tt.subQuota.Name)
 			}
-			err := qt.checkMinQuotaSum(quota)
+			err := qt.checkMinQuotaValidate(quota)
 			if (tt.err != nil && err == nil) || (tt.err == nil && err != nil) {
 				t.Errorf("error")
 			}

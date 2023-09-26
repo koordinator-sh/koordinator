@@ -1142,7 +1142,7 @@ func TestLessThanOrEqualEnhanced(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.expect, LessThanOrEqualEnhanced(tt.a, tt.b))
+			assert.Equal(t, tt.expect, LessThanOrEqualCompletely(tt.a, tt.b))
 		})
 	}
 }

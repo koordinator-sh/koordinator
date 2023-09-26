@@ -96,38 +96,38 @@ func GetQuotaName(pod *corev1.Pod, kubeClient client.Client) string {
 	return extension.DefaultQuotaName
 }
 
-func ListQuotaBoundPods(kubeClient client.Client, quota *v1alpha1.ElasticQuota) (*corev1.PodList, error) {
+// hasQuotaBoundedPods returns true if the quota has bounded pods.
+func hasQuotaBoundedPods(kubeClient client.Client, quotaName string, namespaces []string) (bool, error) {
 	podList := &corev1.PodList{}
 	if err := kubeClient.List(context.TODO(), podList, &client.ListOptions{
-		FieldSelector: fields.OneTermEqualSelector("label.quotaName", quota.Name),
+		FieldSelector: fields.OneTermEqualSelector("label.quotaName", quotaName),
 	}, utilclient.DisableDeepCopy); err != nil {
-		return nil, err
+		return false, err
 	}
 	if len(podList.Items) > 0 {
-		return podList, nil
+		return true, nil
 	}
 
 	if err := kubeClient.List(context.TODO(), podList, &client.ListOptions{
-		Namespace: quota.Name,
+		Namespace: quotaName,
 	}, utilclient.DisableDeepCopy); err != nil {
-		return nil, err
+		return false, err
 	}
 	if len(podList.Items) > 0 {
-		return podList, nil
+		return true, nil
 	}
 
-	namespaces := extension.GetAnnotationQuotaNamespaces(quota)
 	for _, namespace := range namespaces {
 		if err := kubeClient.List(context.TODO(), podList, &client.ListOptions{
 			Namespace: namespace,
 		}, utilclient.DisableDeepCopy); err != nil {
-			return nil, err
+			return false, err
 		}
 
 		if len(podList.Items) > 0 {
-			return podList, nil
+			return true, nil
 		}
 	}
 
-	return nil, nil
+	return false, nil
 }

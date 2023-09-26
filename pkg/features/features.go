@@ -55,6 +55,8 @@ const (
 	ElasticQuotaIgnorePodOverhead featuregate.Feature = "ElasticQuotaIgnorePodOverhead"
 
 	// ElasticQuotaGuaranteeUsage enable guarantee the quota usage
+	// In some specific scenarios, resources that have been allocated to users are considered
+	// to belong to the users and will not be preempted back.
 	ElasticQuotaGuaranteeUsage featuregate.Feature = "ElasticQuotaGuaranteeUsage"
 
 	// DisableDefaultQuota disable default quota.

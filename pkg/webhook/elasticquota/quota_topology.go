@@ -129,8 +129,9 @@ func (qt *quotaTopology) ValidUpdateQuota(oldQuota, newQuota *v1alpha1.ElasticQu
 		return err
 	}
 
+	oldAnnotationNamespaces := extension.GetAnnotationQuotaNamespaces(oldQuota)
 	newQuotaInfo := NewQuotaInfoFromQuota(newQuota)
-	if err := qt.validateQuotaTopology(oldQuotaInfo, newQuotaInfo, oldQuota); err != nil {
+	if err := qt.validateQuotaTopology(oldQuotaInfo, newQuotaInfo, oldAnnotationNamespaces); err != nil {
 		return err
 	}
 
@@ -140,7 +141,6 @@ func (qt *quotaTopology) ValidUpdateQuota(oldQuota, newQuota *v1alpha1.ElasticQu
 		qt.quotaHierarchyInfo[newQuotaInfo.ParentName][newQuotaInfo.Name] = struct{}{}
 	}
 
-	oldAnnotationNamespaces := extension.GetAnnotationQuotaNamespaces(oldQuota)
 	for _, namespace := range oldAnnotationNamespaces {
 		delete(qt.namespaceToQuotaMap, namespace)
 	}

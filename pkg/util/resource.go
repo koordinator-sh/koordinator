@@ -257,8 +257,8 @@ func IsZoneListResourceEqual(a, b v1alpha1.ZoneList, resourceNames ...string) bo
 	return true
 }
 
-// LessThanOrEqualEnhanced is different quotav1.LessThanOrEqual. It will compare non-exist value in b
-func LessThanOrEqualEnhanced(a corev1.ResourceList, b corev1.ResourceList) bool {
+// LessThanOrEqualCompletely is different quotav1.LessThanOrEqual. It will compare non-exist value in b
+func LessThanOrEqualCompletely(a corev1.ResourceList, b corev1.ResourceList) bool {
 	result := true
 	delta := quotav1.Subtract(a, b)
 	for _, value := range delta {
