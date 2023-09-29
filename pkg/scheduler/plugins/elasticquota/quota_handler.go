@@ -254,7 +254,7 @@ func (g *Plugin) handlerQuotaWhenRoot(quota *schedulerv1alpha1.ElasticQuota, mgr
 			delta = mgr.SetTotalResourceForTree(totalResource)
 		}
 
-		if !quotav1.IsZero(delta) {
+		if !quotav1.IsZero(delta) && quota.Labels[extension.LabelQuotaIgnoreDefaultTree] != "true" {
 			// decrease the default GroupQuotaManager resource
 			deltaForDefault := quotav1.Subtract(corev1.ResourceList{}, delta)
 			g.groupQuotaManager.UpdateClusterTotalResource(deltaForDefault)

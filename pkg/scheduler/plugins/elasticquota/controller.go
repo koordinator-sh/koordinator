@@ -30,6 +30,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	"k8s.io/klog/v2"
+	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 	"sigs.k8s.io/scheduler-plugins/pkg/util"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
@@ -40,6 +41,14 @@ const (
 	SyncHandlerCycle           = 1 * time.Second
 	ElasticQuotaControllerName = "QuotaCRDController"
 )
+
+var resourceDecorators = []func(quota *v1alpha1.ElasticQuota, resource v1.ResourceList){}
+
+func decorateResource(quota *v1alpha1.ElasticQuota, resource v1.ResourceList) {
+	for _, fn := range resourceDecorators {
+		fn(quota, resource)
+	}
+}
 
 // Controller is a controller that update elastic quota crd
 type Controller struct {
@@ -100,6 +109,15 @@ func (ctrl *Controller) syncHandler() []error {
 				errors = append(errors, err)
 				return
 			}
+
+			// decorate resources.
+			// It will convert unit or remove some resources which we don't want to expose.
+			decorateResource(eq, used)
+			decorateResource(eq, request)
+			decorateResource(eq, childRequest)
+			decorateResource(eq, runtime)
+			decorateResource(eq, guaranteed)
+			decorateResource(eq, allocated)
 
 			var oriRuntime, oriRequest, oriChildRequest, oriGuaranteed, oriAllocated v1.ResourceList
 			if eq.Annotations[extension.AnnotationRequest] != "" {
