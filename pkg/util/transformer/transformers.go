@@ -20,30 +20,58 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/informers"
-	"k8s.io/client-go/tools/cache"
+	toolscache "k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	koordinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
 )
 
-var transformers = map[schema.GroupVersionResource]cache.TransformFunc{
-	corev1.SchemeGroupVersion.WithResource("nodes"):               TransformNode,
-	corev1.SchemeGroupVersion.WithResource("pods"):                TransformPod,
-	schedulingv1alpha1.SchemeGroupVersion.WithResource("devices"): TransformDevice,
+type transformerDescriptor struct {
+	object      client.Object
+	gvr         schema.GroupVersionResource
+	transformer toolscache.TransformFunc
+}
+
+var transformers = []transformerDescriptor{
+	{
+		object:      &corev1.Node{},
+		gvr:         corev1.SchemeGroupVersion.WithResource("nodes"),
+		transformer: TransformNode,
+	},
+	{
+		object:      &corev1.Pod{},
+		gvr:         corev1.SchemeGroupVersion.WithResource("pods"),
+		transformer: TransformPod,
+	},
+	{
+		object:      &schedulingv1alpha1.Device{},
+		gvr:         schedulingv1alpha1.SchemeGroupVersion.WithResource("devices"),
+		transformer: TransformDevice,
+	},
 }
 
 func SetupTransformers(informerFactory informers.SharedInformerFactory, koordInformerFactory koordinformers.SharedInformerFactory) {
-	for resource, transformFn := range transformers {
-		informer, err := informerFactory.ForResource(resource)
+	for _, descriptor := range transformers {
+		informer, err := informerFactory.ForResource(descriptor.gvr)
 		if err != nil {
-			informer, err = koordInformerFactory.ForResource(resource)
+			informer, err = koordInformerFactory.ForResource(descriptor.gvr)
 			if err != nil {
-				klog.Fatalf("Failed to create informer for resource %v, err: %v", resource.String(), err)
+				klog.Fatalf("Failed to create informer for resource %v, err: %v", descriptor.gvr.String(), err)
 			}
 		}
-		if err := informer.Informer().SetTransform(transformFn); err != nil {
-			klog.Fatalf("Failed to SetTransform in informer, resource: %v, err: %v", resource, err)
+		if err := informer.Informer().SetTransform(descriptor.transformer); err != nil {
+			klog.Fatalf("Failed to SetTransform in informer, resource: %v, err: %v", descriptor.gvr, err)
 		}
 	}
+}
+
+func GetTransformByObject() cache.TransformByObject {
+	m := cache.TransformByObject{}
+	for _, descriptor := range transformers {
+		m[descriptor.object] = descriptor.transformer
+	}
+	return m
 }

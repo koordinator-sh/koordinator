@@ -31,6 +31,7 @@ import (
 	"k8s.io/klog/v2"
 	"k8s.io/klog/v2/klogr"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
 
 	"github.com/koordinator-sh/koordinator/cmd/koord-manager/extensions"
 	"github.com/koordinator-sh/koordinator/cmd/koord-manager/options"
@@ -41,6 +42,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/util/fieldindex"
 	_ "github.com/koordinator-sh/koordinator/pkg/util/metrics/leadership"
 	"github.com/koordinator-sh/koordinator/pkg/util/sloconfig"
+	"github.com/koordinator-sh/koordinator/pkg/util/transformer"
 	"github.com/koordinator-sh/koordinator/pkg/webhook"
 	// +kubebuilder:scaffold:imports
 )
@@ -122,6 +124,10 @@ func main() {
 		Namespace:                  namespace,
 		SyncPeriod:                 syncPeriod,
 		NewClient:                  utilclient.NewClient,
+		NewCache: func(config *rest.Config, opts cache.Options) (cache.Cache, error) {
+			opts.TransformByObject = transformer.GetTransformByObject()
+			return cache.New(config, opts)
+		},
 	})
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")
