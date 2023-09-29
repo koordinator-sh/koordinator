@@ -121,35 +121,16 @@ func forbidSpecialQoSClassAndPriorityClass(pod *corev1.Pod, qoSClass extension.Q
 }
 
 func validateResources(pod *corev1.Pod) field.ErrorList {
+	allErrs := field.ErrorList{}
 	qos := extension.GetPodQoSClassRaw(pod)
-	resourceValidator := NewRequestLimitValidator(pod)
-	switch qos {
-	case extension.QoSLSR:
-		// FIXME
-		// 1. CPU should be integer
-		// 2. Consider whether to cannel the restriction that memory must be equal
-		resourceValidator = resourceValidator.
-			ExpectRequestLimitMustEqual(corev1.ResourceCPU).
-			ExpectRequestLimitMustEqual(corev1.ResourceMemory).
-			ExpectPositive()
-	case extension.QoSLS:
-		switch extension.GetPodPriorityClassRaw(pod) {
-		case extension.PriorityProd:
-			resourceValidator = resourceValidator.
-				ExpectRequestNoMoreThanLimit(corev1.ResourceCPU).
-				ExpectRequestNoMoreThanLimit(corev1.ResourceMemory).
-				ExpectPositive()
-		case extension.PriorityBatch:
-			resourceValidator = resourceValidator.
-				ExpectRequestNoMoreThanLimit(extension.BatchCPU).
-				ExpectRequestNoMoreThanLimit(extension.BatchMemory).
-				ExpectPositive()
+	if qos == extension.QoSLSR || qos == extension.QoSLSE {
+		requests := util.GetPodRequest(pod)
+		cpu := requests[corev1.ResourceCPU]
+		if cpu.IsZero() {
+			allErrs = append(allErrs, field.Required(field.NewPath("pod.spec.containers[*].resources.requests"), "LSR Pod must declare the requested CPUs"))
+		} else if cpu.Value()*1000 != cpu.MilliValue() {
+			allErrs = append(allErrs, field.Invalid(field.NewPath("pod.spec.containers[*].resources.requests"), cpu.String(), "the requested CPUs of LSR Pod must be integer"))
 		}
-	case extension.QoSBE:
-		resourceValidator = resourceValidator.
-			ExpectRequestNoMoreThanLimit(extension.BatchCPU).
-			ExpectRequestNoMoreThanLimit(extension.BatchMemory).
-			ExpectPositive()
 	}
-	return resourceValidator.Validate()
+	return allErrs
 }
