@@ -92,14 +92,16 @@ func (gqm *GroupQuotaManager) setScaleMinQuotaEnabled(flag bool) {
 	defer gqm.hierarchyUpdateLock.Unlock()
 
 	gqm.scaleMinQuotaEnabled = flag
-	klog.V(5).Infof("Set ScaleMinQuotaEnabled, flag:%v", gqm.scaleMinQuotaEnabled)
+	klog.V(5).Infof("Set ScaleMinQuotaEnabled, flag: %v", gqm.scaleMinQuotaEnabled)
 }
 
 func (gqm *GroupQuotaManager) UpdateClusterTotalResource(deltaRes v1.ResourceList) {
 	gqm.hierarchyUpdateLock.Lock()
 	defer gqm.hierarchyUpdateLock.Unlock()
 
-	klog.V(5).Infof("UpdateClusterResource tree: %v deltaRes:%v", gqm.treeID, deltaRes)
+	if klog.V(5).Enabled() {
+		klog.Infof("UpdateClusterResource tree: %v deltaRes: %v", gqm.treeID, util.DumpJSON(deltaRes))
+	}
 	defaultQuota := gqm.getQuotaInfoByNameNoLock(extension.DefaultQuotaName)
 	if defaultQuota != nil {
 		defaultQuota.lock.Lock()
@@ -135,7 +137,9 @@ func (gqm *GroupQuotaManager) updateClusterTotalResourceNoLock(deltaRes v1.Resou
 	if !quotav1.IsZero(diffRes) {
 		gqm.totalResourceExceptSystemAndDefaultUsed = totalResNoSysOrDefault.DeepCopy()
 		gqm.runtimeQuotaCalculatorMap[extension.RootQuotaName].setClusterTotalResource(totalResNoSysOrDefault)
-		klog.V(5).Infof("UpdateClusterResource tree: %v, finish totalResourceExceptSystemAndDefaultUsed:%v", gqm.treeID, gqm.totalResourceExceptSystemAndDefaultUsed)
+		if klog.V(5).Enabled() {
+			klog.Infof("UpdateClusterResource tree: %v, finish totalResourceExceptSystemAndDefaultUsed: %v", gqm.treeID, util.DumpJSON(gqm.totalResourceExceptSystemAndDefaultUsed))
+		}
 	}
 }
 
@@ -153,7 +157,10 @@ func (gqm *GroupQuotaManager) SetTotalResourceForTree(total v1.ResourceList) v1.
 	delta := quotav1.Subtract(total, gqm.totalResource)
 	if !quotav1.IsZero(delta) {
 		gqm.updateClusterTotalResourceNoLock(delta)
-		klog.V(5).Infof("SetTotalResourceForTree tree: %v, total:%v, totalResourceExceptSystemAndDefaultUsed:%v ", gqm.treeID, gqm.totalResource, gqm.totalResourceExceptSystemAndDefaultUsed)
+		if klog.V(5).Enabled() {
+			klog.Infof("SetTotalResourceForTree tree: %v, total: %v, totalResourceExceptSystemAndDefaultUsed: %v", gqm.treeID,
+				util.DumpJSON(gqm.totalResource), util.DumpJSON(gqm.totalResourceExceptSystemAndDefaultUsed))
+		}
 	}
 
 	return delta
@@ -206,7 +213,7 @@ func (gqm *GroupQuotaManager) recursiveUpdateGroupTreeWithDeltaRequest(deltaReq 
 
 		directParRuntimeCalculatorPtr := gqm.getRuntimeQuotaCalculatorByNameNoLock(curQuotaInfo.ParentName)
 		if directParRuntimeCalculatorPtr == nil {
-			klog.Errorf("treeWrapper not exist! quotaName:%v  parentName:%v", curQuotaInfo.Name, curQuotaInfo.ParentName)
+			klog.Errorf("treeWrapper not exist! quotaName: %v, parentName: %v", curQuotaInfo.Name, curQuotaInfo.ParentName)
 			return
 		}
 		if directParRuntimeCalculatorPtr.needUpdateOneGroupRequest(curQuotaInfo) {
@@ -280,12 +287,12 @@ func (gqm *GroupQuotaManager) RefreshRuntimeNoLock(quotaName string) v1.Resource
 		}
 		parRuntimeQuotaCalculator := gqm.getRuntimeQuotaCalculatorByNameNoLock(quotaInfo.ParentName)
 		if parRuntimeQuotaCalculator == nil {
-			klog.Errorf("treeWrapper not exist! parentQuotaName:%v", quotaInfo.ParentName)
+			klog.Errorf("treeWrapper not exist! parentQuotaName: %v", quotaInfo.ParentName)
 			return nil
 		}
 		subTreeWrapper := gqm.getRuntimeQuotaCalculatorByNameNoLock(quotaInfo.Name)
 		if subTreeWrapper == nil {
-			klog.Errorf("treeWrapper not exist! parentQuotaName:%v", quotaInfo.Name)
+			klog.Errorf("treeWrapper not exist! parentQuotaName: %v", quotaInfo.Name)
 			return nil
 		}
 
@@ -401,7 +408,7 @@ func (gqm *GroupQuotaManager) UpdateQuota(quota *v1alpha1.ElasticQuota, isDelete
 		}
 	}
 
-	klog.Infof("reset quota tree %v, for quota %v/%v updated", gqm.treeID, quota.Namespace, quota.Name)
+	klog.Infof("reset quota tree %v, for quota %v updated", gqm.treeID, quota.Name)
 	gqm.updateQuotaGroupConfigNoLock()
 
 	return nil
@@ -603,7 +610,7 @@ func (gqm *GroupQuotaManager) updatePodUsedNoLock(quotaName string, oldPod, newP
 		return
 	}
 	if !quotaInfo.CheckPodIsAssigned(newPod) && !quotaInfo.CheckPodIsAssigned(oldPod) {
-		klog.V(5).Infof("updatePodUsed, isAssigned is false, quotaName:%v, podName:%v",
+		klog.V(5).Infof("updatePodUsed, isAssigned is false, quotaName: %v, podName: %v",
 			quotaName, getPodName(oldPod, newPod))
 		return
 	}
@@ -623,8 +630,10 @@ func (gqm *GroupQuotaManager) updatePodUsedNoLock(quotaName string, oldPod, newP
 
 	deltaUsed := quotav1.Subtract(newPodUsed, oldPodUsed)
 	if quotav1.IsZero(deltaUsed) {
-		klog.V(5).Infof("updatePodUsed, deltaUsedIsZero, quotaName:%v, podName:%v, podUsed:%v",
-			quotaName, getPodName(oldPod, newPod), newPodUsed)
+		if klog.V(5).Enabled() {
+			klog.Infof("updatePodUsed, deltaUsedIsZero, quotaName: %v, podName: %v, podUsed: %v",
+				quotaName, getPodName(oldPod, newPod), util.DumpJSON(newPodUsed))
+		}
 		return
 	}
 	gqm.updateGroupDeltaUsedNoLock(quotaName, deltaUsed)
@@ -676,7 +685,7 @@ func (gqm *GroupQuotaManager) MigratePod(pod *v1.Pod, out, in string) {
 	gqm.updatePodIsAssignedNoLock(in, pod, isAssigned)
 	gqm.updatePodRequestNoLock(in, nil, pod)
 	gqm.updatePodUsedNoLock(in, nil, pod)
-	klog.V(5).Infof("migrate pod :%v from quota:%v to quota:%v, podPhase:%v", pod.Name, out, in, pod.Status.Phase)
+	klog.V(5).Infof("migrate pod %v from quota %v to quota %v, podPhase: %v", pod.Name, out, in, pod.Status.Phase)
 }
 
 func (gqm *GroupQuotaManager) GetQuotaSummary(quotaName string) (*QuotaInfoSummary, bool) {
@@ -855,7 +864,7 @@ func (gqm *GroupQuotaManager) OnNodeDelete(node *v1.Node) {
 	delta := quotav1.Subtract(v1.ResourceList{}, node.Status.Allocatable)
 	gqm.UpdateClusterTotalResource(delta)
 	delete(gqm.nodeResourceMap, node.Name)
-	klog.V(5).Infof("OnNodeDeleteFunc success:%v [%v]", node.Name, delta)
+	klog.V(5).Infof("OnNodeDeleteFunc success: %v [%v]", node.Name, delta)
 }
 
 func (gqm *GroupQuotaManager) GetTreeID() string {
@@ -911,7 +920,7 @@ func (gqm *GroupQuotaManager) recursiveUpdateGroupTreeWithDeltaAllocated(deltaAl
 
 		directParRuntimeCalculatorPtr := gqm.getRuntimeQuotaCalculatorByNameNoLock(curQuotaInfo.ParentName)
 		if directParRuntimeCalculatorPtr == nil {
-			klog.Errorf("treeWrapper not exist! quotaName:%v  parentName:%v", curQuotaInfo.Name, curQuotaInfo.ParentName)
+			klog.Errorf("treeWrapper not exist! quotaName: %v, parentName: %v", curQuotaInfo.Name, curQuotaInfo.ParentName)
 			return
 		}
 		if directParRuntimeCalculatorPtr.needUpdateOneGroupGuaranteed(curQuotaInfo) {
@@ -956,7 +965,7 @@ func (gqm *GroupQuotaManager) doUpdateOneGroupMaxQuotaNoLock(quotaName string, n
 	if quotaInfoLen > 1 {
 		parentRuntimeCalculator := gqm.getRuntimeQuotaCalculatorByNameNoLock(curQuotaInfo.ParentName)
 		if parentRuntimeCalculator == nil {
-			klog.Errorf("runtimeQuotaCalculator not exist! quotaName:%v  parentName:%v", curQuotaInfo.Name, curQuotaInfo.ParentName)
+			klog.Errorf("runtimeQuotaCalculator not exist! quotaName: %v, parentName: %v", curQuotaInfo.Name, curQuotaInfo.ParentName)
 			return
 		}
 		parentRuntimeCalculator.updateOneGroupMaxQuota(curQuotaInfo)
@@ -994,7 +1003,7 @@ func (gqm *GroupQuotaManager) doUpdateOneGroupMinQuotaNoLock(quotaName string, n
 		// update parent runtime calculator for min changed
 		parentRuntimeCalculator := gqm.getRuntimeQuotaCalculatorByNameNoLock(curQuotaInfo.ParentName)
 		if parentRuntimeCalculator == nil {
-			klog.Errorf("runtimeQuotaCalculator not exist! quotaName:%v  parentName:%v", curQuotaInfo.Name, curQuotaInfo.ParentName)
+			klog.Errorf("runtimeQuotaCalculator not exist! quotaName: %v, parentName: %v", curQuotaInfo.Name, curQuotaInfo.ParentName)
 			return
 		}
 		parentRuntimeCalculator.updateOneGroupMinQuota(curQuotaInfo)
@@ -1013,7 +1022,7 @@ func (gqm *GroupQuotaManager) doUpdateOneGroupMinQuotaNoLock(quotaName string, n
 		if quotaInfoLen > 1 {
 			parentRuntimeCalculator := gqm.getRuntimeQuotaCalculatorByNameNoLock(curQuotaInfo.ParentName)
 			if parentRuntimeCalculator == nil {
-				klog.Errorf("runtimeQuotaCalculator not exist! quotaName:%v  parentName:%v", curQuotaInfo.Name, curQuotaInfo.ParentName)
+				klog.Errorf("runtimeQuotaCalculator not exist! quotaName: %v, parentName: %v", curQuotaInfo.Name, curQuotaInfo.ParentName)
 				return
 			}
 			if parentRuntimeCalculator.needUpdateOneGroupGuaranteed(curQuotaInfo) {

@@ -38,11 +38,11 @@ func (g *Plugin) OnQuotaAdd(obj interface{}) {
 	}
 
 	if quota.DeletionTimestamp != nil {
-		klog.Errorf("quota is deleting: %v.%v", quota.Namespace, quota.Name)
+		klog.Errorf("quota is deleting: %v", quota.Name)
 		return
 	}
 
-	klog.V(5).Infof("OnQuotaAddFunc add quota: %v.%v", quota.Namespace, quota.Name)
+	klog.V(5).Infof("OnQuotaAddFunc add quota: %v", quota.Name)
 	mgr := g.GetOrCreateGroupQuotaManagerForTree(quota.Labels[extension.LabelQuotaTreeID])
 	treeID := mgr.GetTreeID()
 	g.updateQuotaToTreeMap(quota.Name, treeID)
@@ -56,10 +56,10 @@ func (g *Plugin) OnQuotaAdd(obj interface{}) {
 
 	err := mgr.UpdateQuota(quota, false)
 	if err != nil {
-		klog.V(5).Infof("OnQuotaAddFunc failed: %v.%v, tree: %v, err: %v", quota.Namespace, quota.Name, treeID, err)
+		klog.V(5).Infof("OnQuotaAddFunc failed: %v, tree: %v, err: %v", quota.Name, treeID, err)
 		return
 	}
-	klog.V(5).Infof("OnQuotaAddFunc success: %v.%v, tree: %v", quota.Namespace, quota.Name, treeID)
+	klog.V(5).Infof("OnQuotaAddFunc success: %v, tree: %v", quota.Name, treeID)
 }
 
 func (g *Plugin) OnQuotaUpdate(oldObj, newObj interface{}) {
@@ -71,7 +71,7 @@ func (g *Plugin) OnQuotaUpdate(oldObj, newObj interface{}) {
 	}
 
 	// forbidden change quota tree.
-	klog.V(5).Infof("OnQuotaUpdateFunc update quota: %v.%v", newQuota.Namespace, newQuota.Name)
+	klog.V(5).Infof("OnQuotaUpdateFunc update quota: %v", newQuota.Name)
 	mgr := g.GetOrCreateGroupQuotaManagerForTree(newQuota.Labels[extension.LabelQuotaTreeID])
 	treeID := mgr.GetTreeID()
 	g.updateQuotaToTreeMap(newQuota.Name, treeID)
@@ -80,10 +80,10 @@ func (g *Plugin) OnQuotaUpdate(oldObj, newObj interface{}) {
 
 	err := mgr.UpdateQuota(newQuota, false)
 	if err != nil {
-		klog.V(5).Infof("OnQuotaUpdateFunc failed: %v.%v, tree: %v, err: %v", newQuota.Namespace, newQuota.Name, treeID, err)
+		klog.V(5).Infof("OnQuotaUpdateFunc failed: %v, tree: %v, err: %v", newQuota.Name, treeID, err)
 		return
 	}
-	klog.V(5).Infof("OnQuotaUpdateFunc success: %v.%v, tree: %v", newQuota.Namespace, newQuota.Name, treeID)
+	klog.V(5).Infof("OnQuotaUpdateFunc success: %v, tree: %v", newQuota.Name, treeID)
 }
 
 // OnQuotaDelete if a quotaGroup is deleted, the pods should migrate to defaultQuotaGroup.
@@ -94,7 +94,7 @@ func (g *Plugin) OnQuotaDelete(obj interface{}) {
 		return
 	}
 
-	klog.V(5).Infof("OnQuotaDeleteFunc delete quota:%+v", quota)
+	klog.V(5).Infof("OnQuotaDeleteFunc delete quota: %v", quota.Name)
 	g.deleteQuotaToTreeMap(quota.Name)
 	mgr := g.GetGroupQuotaManagerForTree(quota.Labels[extension.LabelQuotaTreeID])
 	if mgr == nil {
@@ -103,13 +103,13 @@ func (g *Plugin) OnQuotaDelete(obj interface{}) {
 	treeID := mgr.GetTreeID()
 	err := mgr.UpdateQuota(quota, true)
 	if err != nil {
-		klog.Errorf("OnQuotaDeleteFunc failed: %v.%v, tree: %v, err: %v", quota.Namespace, quota.Name, treeID, err)
+		klog.Errorf("OnQuotaDeleteFunc failed: %v, tree: %v, err: %v", quota.Name, treeID, err)
 		return
 	}
 
 	g.handlerQuotaWhenRoot(quota, mgr, true)
 
-	klog.V(5).Infof("OnQuotaDeleteFunc failed: %v.%v, tree: %v", quota.Namespace, quota.Name, treeID)
+	klog.V(5).Infof("OnQuotaDeleteFunc failed: %v, tree: %v", quota.Name, treeID)
 
 }
 
@@ -272,7 +272,7 @@ func getTotalResource(quota *schedulerv1alpha1.ElasticQuota) (corev1.ResourceLis
 
 	err := json.Unmarshal([]byte(raw), &total)
 	if err != nil {
-		klog.Errorf("failed unmarshal total resource for %v/%v, err: %v", quota.Namespace, quota.Name, err)
+		klog.Errorf("failed unmarshal total resource for %v, err: %v", quota.Name, err)
 		return total, false
 	}
 

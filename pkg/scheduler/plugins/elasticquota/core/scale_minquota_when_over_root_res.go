@@ -23,6 +23,8 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	"k8s.io/klog/v2"
+
+	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
 // ScaleMinQuotaManager The child nodes under each node will be divided into two categories, one allows
@@ -82,9 +84,12 @@ func (s *ScaleMinQuotaManager) update(parQuotaName, subQuotaName string, subMinQ
 		s.disableScaleSubsSumMinQuotaMap[parQuotaName] = quotav1.Add(s.disableScaleSubsSumMinQuotaMap[parQuotaName], subMinQuota)
 	}
 
-	klog.V(5).Infof("UpdateScaleMinQuota, quota:%v originalMinQuota change from :%v to %v,"+
-		"enableMinQuotaScale change from :%v to :%v", subQuotaName, s.originalMinQuotaMap[subQuotaName],
-		subMinQuota, s.quotaEnableMinQuotaScaleMap[subQuotaName], enableScaleMinQuota)
+	if klog.V(5).Enabled() {
+		klog.Infof("UpdateScaleMinQuota, quota: %v originalMinQuota change from %v to %v, "+
+			"enableMinQuotaScale change from %v to %v", subQuotaName,
+			util.DumpJSON(s.originalMinQuotaMap[subQuotaName]), util.DumpJSON(subMinQuota),
+			util.DumpJSON(s.quotaEnableMinQuotaScaleMap[subQuotaName]), util.DumpJSON(enableScaleMinQuota))
+	}
 
 	// step3: record the newMinQuota
 	s.originalMinQuotaMap[subQuotaName] = subMinQuota
@@ -146,7 +151,10 @@ func (s *ScaleMinQuotaManager) getScaledMinQuota(newTotalRes v1.ResourceList, pa
 			newMinQuota[resourceDimension] = createQuantity(newMinQuotaValue, resourceDimension)
 		}
 	}
-	klog.V(5).Infof("GetScaleMinQuota, parQuota: %v, subQuota: %v, needScaleDimensions: %v, totalRes: %v, newMinQuota:%v",
-		parQuotaName, subQuotaName, needScaleDimensions, newTotalRes, newMinQuota)
+
+	if klog.V(5).Enabled() {
+		klog.Infof("GetScaleMinQuota, parQuota: %v, subQuota: %v, needScaleDimensions: %v, totalRes: %v, newMinQuota: %v",
+			parQuotaName, subQuotaName, needScaleDimensions, util.DumpJSON(newTotalRes), util.DumpJSON(newMinQuota))
+	}
 	return true, newMinQuota
 }
