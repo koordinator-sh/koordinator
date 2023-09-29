@@ -22,6 +22,8 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/klog/v2"
+
+	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
 // quotaNode stores the corresponding quotaInfo's information in a specific resource dimension.
@@ -437,9 +439,10 @@ func (qtw *RuntimeQuotaCalculator) setClusterTotalResource(full v1.ResourceList)
 	qtw.totalResource = full.DeepCopy()
 	qtw.globalRuntimeVersion++
 
-	klog.V(5).Infof("UpdateClusterTotalResource"+
-		"treeName:%v oldTotalResource:%v newTotalResource:%v reqLimit:%v refreshedVersion:%v",
-		qtw.treeName, oldTotalRes, qtw.totalResource, qtw.groupReqLimit, qtw.globalRuntimeVersion)
+	if klog.V(5).Enabled() {
+		klog.Infof("setClusterTotalResource, treeName: %v, oldTotalResource: %v, newTotalResource: %v, reqLimit: %v, refreshedVersion: %v",
+			qtw.treeName, util.DumpJSON(oldTotalRes), util.DumpJSON(qtw.totalResource), util.DumpJSON(qtw.groupReqLimit), qtw.globalRuntimeVersion)
+	}
 }
 
 // updateOneGroupRuntimeQuota update the quotaInfo's runtimeQuota as the quotaNode's runtime.
@@ -489,13 +492,9 @@ func (qtw *RuntimeQuotaCalculator) calculateRuntimeNoLock() {
 }
 
 func (qtw *RuntimeQuotaCalculator) logQuotaInfoNoLock(verb string, quotaInfo *QuotaInfo) {
-	klog.Infof("%s\n"+
-		"quotaName:%v quotaParentName:%v IsParent:%v request:%v maxQuota:%v OriginalMinQuota:%v"+
-		"autoScaleMinQuota:%v  SharedWeight:%v runtime:%v used:%v guaranteed:%v allocated:%v treeName:%v totalResource:%v reqLimit:%v refreshedVersion:%v", verb,
-		quotaInfo.Name, quotaInfo.ParentName, quotaInfo.IsParent, quotaInfo.CalculateInfo.Request,
-		quotaInfo.CalculateInfo.Max, quotaInfo.CalculateInfo.Min, quotaInfo.CalculateInfo.AutoScaleMin, quotaInfo.CalculateInfo.SharedWeight,
-		quotaInfo.CalculateInfo.Runtime, quotaInfo.CalculateInfo.Used, quotaInfo.CalculateInfo.Guaranteed, quotaInfo.CalculateInfo.Allocated, qtw.treeName, qtw.totalResource, qtw.groupReqLimit,
-		qtw.globalRuntimeVersion)
+	klog.Infof("[%v] quotaName: %v, quotaParentName: %v, IsParent: %v, CalculateInfo: %v, treeName: %v, totalResource: %v, reqLimit: %v, refreshedVersion: %v",
+		verb, quotaInfo.Name, quotaInfo.ParentName, quotaInfo.IsParent, util.DumpJSON(quotaInfo.CalculateInfo),
+		qtw.treeName, util.DumpJSON(qtw.totalResource), util.DumpJSON(qtw.groupReqLimit), qtw.globalRuntimeVersion)
 }
 
 func getQuantityValue(res resource.Quantity, resName v1.ResourceName) int64 {

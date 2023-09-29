@@ -196,7 +196,7 @@ func (ctrl *Controller) syncHandler() []error {
 			newEQ.Annotations[extension.AnnotationAllocated] = string(allocatedBytes)
 			newEQ.Status.Used = used
 
-			klog.V(5).Infof("quota:%v, oldUsed:%v, newUsed:%v, oldRuntime:%v, newRuntime:%v, oldRequest:%v, newRequest:%v, oldChildRequest:%v, newChildRequest:%v, oldGuarantee:%v, newGuarantee:%v, oldAllocated:%, newAllocated:%v",
+			klog.V(5).Infof("quota: %v, oldUsed: %v, newUsed: %v, oldRuntime: %v, newRuntime: %v, oldRequest: %v, newRequest: %v, oldChildRequest: %v, newChildRequest: %v, oldGuarantee: %v, newGuarantee: %v, oldAllocated: %v, newAllocated: %v",
 				eq.Name, eq.Status.Used, used, eq.Annotations[extension.AnnotationRuntime], string(runtimeBytes),
 				eq.Annotations[extension.AnnotationRequest], string(requestBytes),
 				eq.Annotations[extension.AnnotationChildRequest], string(childRequestBytes),
