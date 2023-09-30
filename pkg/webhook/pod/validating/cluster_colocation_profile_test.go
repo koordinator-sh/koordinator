@@ -58,7 +58,6 @@ func TestClusterColocationProfileValidatingPod(t *testing.T) {
 		newPod      *corev1.Pod
 		wantAllowed bool
 		wantReason  string
-		filterFunc  ContainerFilterFunc
 		wantErr     bool
 	}{
 		{
@@ -251,6 +250,15 @@ func TestClusterColocationProfileValidatingPod(t *testing.T) {
 				},
 				Spec: corev1.PodSpec{
 					Priority: pointer.Int32(extension.PriorityProdValueMax),
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU: resource.MustParse("1"),
+								},
+							},
+						},
+					},
 				},
 			},
 			wantAllowed: true,
@@ -282,6 +290,15 @@ func TestClusterColocationProfileValidatingPod(t *testing.T) {
 				},
 				Spec: corev1.PodSpec{
 					Priority: pointer.Int32(extension.PriorityBatchValueMax),
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU: resource.MustParse("1"),
+								},
+							},
+						},
+					},
 				},
 			},
 			wantAllowed: false,
@@ -298,6 +315,15 @@ func TestClusterColocationProfileValidatingPod(t *testing.T) {
 				},
 				Spec: corev1.PodSpec{
 					Priority: pointer.Int32(extension.PriorityMidValueMax),
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU: resource.MustParse("1"),
+								},
+							},
+						},
+					},
 				},
 			},
 			wantAllowed: false,
@@ -314,6 +340,15 @@ func TestClusterColocationProfileValidatingPod(t *testing.T) {
 				},
 				Spec: corev1.PodSpec{
 					Priority: pointer.Int32(extension.PriorityFreeValueMax),
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU: resource.MustParse("1"),
+								},
+							},
+						},
+					},
 				},
 			},
 			wantAllowed: false,
@@ -349,414 +384,7 @@ func TestClusterColocationProfileValidatingPod(t *testing.T) {
 			wantAllowed: true,
 		},
 		{
-			name:      "forbidden resources - LSR And Prod: negative resource requirements",
-			operation: admissionv1.Create,
-			newPod: &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Labels: map[string]string{
-						extension.LabelPodQoS: string(extension.QoSLSR),
-					},
-				},
-				Spec: corev1.PodSpec{
-					Priority: pointer.Int32(extension.PriorityProdValueMax),
-					Containers: []corev1.Container{
-						{
-							Name: "test-container-a",
-							Resources: corev1.ResourceRequirements{
-								Limits: corev1.ResourceList{
-									corev1.ResourceCPU:    resource.MustParse("-1"),
-									corev1.ResourceMemory: resource.MustParse("-4Gi"),
-								},
-								Requests: corev1.ResourceList{
-									corev1.ResourceCPU:    resource.MustParse("-1"),
-									corev1.ResourceMemory: resource.MustParse("-4Gi"),
-								},
-							},
-						},
-					},
-				},
-			},
-			wantAllowed: false,
-			wantReason:  `[pod.spec.containers.test-container-a.resources.requests.cpu: Invalid value: "-1": quantity must be positive, pod.spec.containers.test-container-a.resources.requests.memory: Invalid value: "-4Gi": quantity must be positive, pod.spec.containers.test-container-a.resources.limits.cpu: Invalid value: "-1": quantity must be positive, pod.spec.containers.test-container-a.resources.limits.memory: Invalid value: "-4Gi": quantity must be positive]`,
-		},
-		{
-			name:      "forbidden resources - LSR And Prod: requests less than limits",
-			operation: admissionv1.Create,
-			newPod: &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Labels: map[string]string{
-						extension.LabelPodQoS: string(extension.QoSLSR),
-					},
-				},
-				Spec: corev1.PodSpec{
-					Priority: pointer.Int32(extension.PriorityProdValueMax),
-					Containers: []corev1.Container{
-						{
-							Name: "test-container-a",
-							Resources: corev1.ResourceRequirements{
-								Limits: corev1.ResourceList{
-									corev1.ResourceCPU:    resource.MustParse("2"),
-									corev1.ResourceMemory: resource.MustParse("8Gi"),
-								},
-								Requests: corev1.ResourceList{
-									corev1.ResourceCPU:    resource.MustParse("2"),
-									corev1.ResourceMemory: resource.MustParse("4Gi"),
-								},
-							},
-						},
-					},
-				},
-			},
-			wantAllowed: false,
-			wantReason:  `pod.spec.containers.test-container-a.resources: Forbidden: resource memory of container test-container-a: quantity of request and limit must be equal`,
-		},
-		{
-			name:      "forbidden resources - LSR And Prod: missing CPU/Memory",
-			operation: admissionv1.Create,
-			newPod: &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Labels: map[string]string{
-						extension.LabelPodQoS: string(extension.QoSLSR),
-					},
-				},
-				Spec: corev1.PodSpec{
-					Priority: pointer.Int32(extension.PriorityProdValueMax),
-					Containers: []corev1.Container{
-						{
-							Name: "test-container-a",
-							Resources: corev1.ResourceRequirements{
-								Limits: corev1.ResourceList{
-									corev1.ResourceCPU:    resource.MustParse("2"),
-									corev1.ResourceMemory: resource.MustParse("8Gi"),
-								},
-								Requests: corev1.ResourceList{},
-							},
-						},
-					},
-				},
-			},
-			wantAllowed: false,
-			wantReason:  `[pod.spec.containers.test-container-a.resources.requests.cpu: Not found: "null", pod.spec.containers.test-container-a.resources: Forbidden: resource cpu of container test-container-a: quantity of request and limit must be equal, pod.spec.containers.test-container-a.resources.requests.memory: Not found: "null", pod.spec.containers.test-container-a.resources: Forbidden: resource memory of container test-container-a: quantity of request and limit must be equal]`,
-		},
-		{
-			name:      "validate resources - LS And Prod: requests equals limits",
-			operation: admissionv1.Create,
-			newPod: &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Labels: map[string]string{
-						extension.LabelPodQoS: string(extension.QoSLS),
-					},
-				},
-				Spec: corev1.PodSpec{
-					Priority: pointer.Int32(extension.PriorityProdValueMax),
-					Containers: []corev1.Container{
-						{
-							Resources: corev1.ResourceRequirements{
-								Limits: corev1.ResourceList{
-									corev1.ResourceCPU:    resource.MustParse("1"),
-									corev1.ResourceMemory: resource.MustParse("4Gi"),
-								},
-								Requests: corev1.ResourceList{
-									corev1.ResourceCPU:    resource.MustParse("1"),
-									corev1.ResourceMemory: resource.MustParse("4Gi"),
-								},
-							},
-						},
-					},
-				},
-			},
-			wantAllowed: true,
-		},
-		{
-			name:      "validate resources - LS And Prod: request cpu less than limits",
-			operation: admissionv1.Create,
-			newPod: &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Labels: map[string]string{
-						extension.LabelPodQoS: string(extension.QoSLS),
-					},
-				},
-				Spec: corev1.PodSpec{
-					Priority: pointer.Int32(extension.PriorityProdValueMax),
-					Containers: []corev1.Container{
-						{
-							Resources: corev1.ResourceRequirements{
-								Limits: corev1.ResourceList{
-									corev1.ResourceCPU:    resource.MustParse("2"),
-									corev1.ResourceMemory: resource.MustParse("4Gi"),
-								},
-								Requests: corev1.ResourceList{
-									corev1.ResourceCPU:    resource.MustParse("1"),
-									corev1.ResourceMemory: resource.MustParse("4Gi"),
-								},
-							},
-						},
-					},
-				},
-			},
-			wantAllowed: true,
-		},
-		{
-			name:      "forbidden resources - LS And Prod: negative resource requirements",
-			operation: admissionv1.Create,
-			newPod: &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Labels: map[string]string{
-						extension.LabelPodQoS: string(extension.QoSLS),
-					},
-				},
-				Spec: corev1.PodSpec{
-					Priority: pointer.Int32(extension.PriorityProdValueMax),
-					Containers: []corev1.Container{
-						{
-							Name: "test-container-a",
-							Resources: corev1.ResourceRequirements{
-								Limits: corev1.ResourceList{
-									corev1.ResourceCPU:    resource.MustParse("-1"),
-									corev1.ResourceMemory: resource.MustParse("-4Gi"),
-								},
-								Requests: corev1.ResourceList{
-									corev1.ResourceCPU:    resource.MustParse("-1"),
-									corev1.ResourceMemory: resource.MustParse("-4Gi"),
-								},
-							},
-						},
-					},
-				},
-			},
-			wantAllowed: false,
-			wantReason:  `[pod.spec.containers.test-container-a.resources.requests.cpu: Invalid value: "-1": quantity must be positive, pod.spec.containers.test-container-a.resources.requests.memory: Invalid value: "-4Gi": quantity must be positive, pod.spec.containers.test-container-a.resources.limits.cpu: Invalid value: "-1": quantity must be positive, pod.spec.containers.test-container-a.resources.limits.memory: Invalid value: "-4Gi": quantity must be positive]`,
-		},
-		{
-			name:      "forbidden resources - LS And Batch: negative resource requirements",
-			operation: admissionv1.Create,
-			newPod: &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Labels: map[string]string{
-						extension.LabelPodQoS: string(extension.QoSBE),
-					},
-				},
-				Spec: corev1.PodSpec{
-					Priority: pointer.Int32(extension.PriorityBatchValueMin),
-					Containers: []corev1.Container{
-						{
-							Name: "test-container-a",
-							Resources: corev1.ResourceRequirements{
-								Limits: corev1.ResourceList{
-									extension.BatchCPU:    resource.MustParse("-1"),
-									extension.BatchMemory: resource.MustParse("-4Gi"),
-								},
-								Requests: corev1.ResourceList{
-									extension.BatchCPU:    resource.MustParse("-1"),
-									extension.BatchMemory: resource.MustParse("-4Gi"),
-								},
-							},
-						},
-					},
-				},
-			},
-			wantAllowed: false,
-			wantReason:  `[pod.spec.containers.test-container-a.resources.requests.kubernetes.io/batch-cpu: Invalid value: "-1": quantity must be positive, pod.spec.containers.test-container-a.resources.requests.kubernetes.io/batch-memory: Invalid value: "-4Gi": quantity must be positive, pod.spec.containers.test-container-a.resources.limits.kubernetes.io/batch-cpu: Invalid value: "-1": quantity must be positive, pod.spec.containers.test-container-a.resources.limits.kubernetes.io/batch-memory: Invalid value: "-4Gi": quantity must be positive]`,
-		},
-		{
-			//name:      "allow resources - LS And Prod: requests has cpu/memory and missing limits",
-			name:      "mark",
-			operation: admissionv1.Create,
-			newPod: &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Labels: map[string]string{
-						extension.LabelPodQoS: string(extension.QoSLS),
-					},
-				},
-				Spec: corev1.PodSpec{
-					Priority: pointer.Int32(extension.PriorityProdValueMax),
-					Containers: []corev1.Container{
-						{
-							Name: "test-container-a",
-							Resources: corev1.ResourceRequirements{
-								Limits: corev1.ResourceList{},
-								Requests: corev1.ResourceList{
-									corev1.ResourceCPU:    resource.MustParse("1"),
-									corev1.ResourceMemory: resource.MustParse("4Gi"),
-								},
-							},
-						},
-					},
-				},
-			},
-			wantAllowed: true,
-		},
-		{
-			name:      "allow resources - LS And Prod: missing requests but has limits",
-			operation: admissionv1.Create,
-			newPod: &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Labels: map[string]string{
-						extension.LabelPodQoS: string(extension.QoSLS),
-					},
-				},
-				Spec: corev1.PodSpec{
-					Priority: pointer.Int32(extension.PriorityProdValueMax),
-					Containers: []corev1.Container{
-						{
-							Name: "test-container-a",
-							Resources: corev1.ResourceRequirements{
-								Limits: corev1.ResourceList{
-									corev1.ResourceCPU:    resource.MustParse("1"),
-									corev1.ResourceMemory: resource.MustParse("4Gi"),
-								},
-								Requests: corev1.ResourceList{},
-							},
-						},
-					},
-				},
-			},
-			wantAllowed: true,
-		},
-		{
-			name:      "allow resources - LS And Batch: missing requests but has limits",
-			operation: admissionv1.Create,
-			newPod: &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Labels: map[string]string{
-						extension.LabelPodQoS: string(extension.QoSLS),
-					},
-				},
-				Spec: corev1.PodSpec{
-					Priority: pointer.Int32(extension.PriorityBatchValueMax),
-					Containers: []corev1.Container{
-						{
-							Name: "test-container-a",
-							Resources: corev1.ResourceRequirements{
-								Limits: corev1.ResourceList{
-									extension.BatchCPU:    resource.MustParse("1"),
-									extension.BatchMemory: resource.MustParse("4Gi"),
-								},
-								Requests: corev1.ResourceList{},
-							},
-						},
-					},
-				},
-			},
-			wantAllowed: true,
-		},
-		{
-			name:      "forbidden resources - BE And Batch: negative resource requirements",
-			operation: admissionv1.Create,
-			newPod: &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Labels: map[string]string{
-						extension.LabelPodQoS: string(extension.QoSBE),
-					},
-				},
-				Spec: corev1.PodSpec{
-					Priority: pointer.Int32(extension.PriorityBatchValueMin),
-					Containers: []corev1.Container{
-						{
-							Name: "test-container-a",
-							Resources: corev1.ResourceRequirements{
-								Limits: corev1.ResourceList{
-									extension.BatchCPU:    resource.MustParse("-1"),
-									extension.BatchMemory: resource.MustParse("-4Gi"),
-								},
-								Requests: corev1.ResourceList{
-									extension.BatchCPU:    resource.MustParse("-1"),
-									extension.BatchMemory: resource.MustParse("-4Gi"),
-								},
-							},
-						},
-					},
-				},
-			},
-			wantAllowed: false,
-			wantReason:  `[pod.spec.containers.test-container-a.resources.requests.kubernetes.io/batch-cpu: Invalid value: "-1": quantity must be positive, pod.spec.containers.test-container-a.resources.requests.kubernetes.io/batch-memory: Invalid value: "-4Gi": quantity must be positive, pod.spec.containers.test-container-a.resources.limits.kubernetes.io/batch-cpu: Invalid value: "-1": quantity must be positive, pod.spec.containers.test-container-a.resources.limits.kubernetes.io/batch-memory: Invalid value: "-4Gi": quantity must be positive]`,
-		},
-		{
-			name:      "allow resources - BE And Batch: requests has cpu/memory and missing limits",
-			operation: admissionv1.Create,
-			newPod: &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Labels: map[string]string{
-						extension.LabelPodQoS: string(extension.QoSBE),
-					},
-				},
-				Spec: corev1.PodSpec{
-					Priority: pointer.Int32(extension.PriorityBatchValueMin),
-					Containers: []corev1.Container{
-						{
-							Name: "test-container-a",
-							Resources: corev1.ResourceRequirements{
-								Limits: corev1.ResourceList{},
-								Requests: corev1.ResourceList{
-									extension.BatchCPU:    resource.MustParse("1"),
-									extension.BatchMemory: resource.MustParse("4Gi"),
-								},
-							},
-						},
-					},
-				},
-			},
-			wantAllowed: true,
-		},
-		{
-			name:      "allow resources - BE And Batch: limits has cpu/memory and missing requests",
-			operation: admissionv1.Create,
-			newPod: &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Labels: map[string]string{
-						extension.LabelPodQoS: string(extension.QoSBE),
-					},
-				},
-				Spec: corev1.PodSpec{
-					Priority: pointer.Int32(extension.PriorityBatchValueMin),
-					Containers: []corev1.Container{
-						{
-							Name: "test-container-a",
-							Resources: corev1.ResourceRequirements{
-								Limits: corev1.ResourceList{
-									extension.BatchCPU:    resource.MustParse("1"),
-									extension.BatchMemory: resource.MustParse("4Gi"),
-								},
-								Requests: corev1.ResourceList{},
-							},
-						},
-					},
-				},
-			},
-			wantAllowed: true,
-		},
-		{
-			name:      "validate resources - BE And Batch: request memory must equal limits and cpu less than limits",
-			operation: admissionv1.Create,
-			newPod: &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Labels: map[string]string{
-						extension.LabelPodQoS: string(extension.QoSBE),
-					},
-				},
-				Spec: corev1.PodSpec{
-					Priority: pointer.Int32(extension.PriorityBatchValueMin),
-					Containers: []corev1.Container{
-						{
-							Name: "test-container-a",
-							Resources: corev1.ResourceRequirements{
-								Limits: corev1.ResourceList{
-									extension.BatchCPU:    resource.MustParse("2"),
-									extension.BatchMemory: resource.MustParse("4Gi"),
-								},
-								Requests: corev1.ResourceList{
-									extension.BatchCPU:    resource.MustParse("1"),
-									extension.BatchMemory: resource.MustParse("4Gi"),
-								},
-							},
-						},
-					},
-				},
-			},
-			wantAllowed: true,
-		},
-		{
-			name:      "forbidden resources - LSR And Prod: zeroed resource requests but filtered",
+			name:      "forbidden resources - LSR And Prod: unset CPUs",
 			operation: admissionv1.Create,
 			newPod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
@@ -771,11 +399,9 @@ func TestClusterColocationProfileValidatingPod(t *testing.T) {
 							Name: "test-container-skip",
 							Resources: corev1.ResourceRequirements{
 								Limits: corev1.ResourceList{
-									corev1.ResourceCPU:    resource.MustParse("1"),
 									corev1.ResourceMemory: resource.MustParse("4Gi"),
 								},
 								Requests: corev1.ResourceList{
-									corev1.ResourceCPU:    resource.MustParse("0"),
 									corev1.ResourceMemory: resource.MustParse("0Gi"),
 								},
 							},
@@ -783,22 +409,44 @@ func TestClusterColocationProfileValidatingPod(t *testing.T) {
 					},
 				},
 			},
-			filterFunc: func(container *corev1.Container) bool {
-				if container.Name == "test-container-skip" {
-					return false
-				}
-				return true
+			wantAllowed: false,
+			wantReason:  `pod.spec.containers[*].resources.requests: Required value: LSR Pod must declare the requested CPUs`,
+		},
+		{
+			name:      "forbidden resources - LSR And Prod: non-integer CPUs",
+			operation: admissionv1.Create,
+			newPod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						extension.LabelPodQoS: string(extension.QoSLSR),
+					},
+				},
+				Spec: corev1.PodSpec{
+					Priority: pointer.Int32(extension.PriorityProdValueMax),
+					Containers: []corev1.Container{
+						{
+							Name: "test-container-skip",
+							Resources: corev1.ResourceRequirements{
+								Limits: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("100m"),
+									corev1.ResourceMemory: resource.MustParse("4Gi"),
+								},
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("100m"),
+									corev1.ResourceMemory: resource.MustParse("0Gi"),
+								},
+							},
+						},
+					},
+				},
 			},
-			wantAllowed: true,
+			wantAllowed: false,
+			wantReason:  `pod.spec.containers[*].resources.requests: Invalid value: "100m": the requested CPUs of LSR Pod must be integer`,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if tt.filterFunc != nil {
-				RegisterContainerFilterFunc(tt.filterFunc)
-				defer func() { containerFilterFns = nil }()
-			}
 			client := fake.NewClientBuilder().Build()
 			decoder, _ := admission.NewDecoder(scheme.Scheme)
 			h := &PodValidatingHandler{
