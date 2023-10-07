@@ -24,6 +24,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	schedulinglister "github.com/koordinator-sh/koordinator/pkg/client/listers/scheduling/v1alpha1"
@@ -232,20 +233,30 @@ func (cache *reservationCache) getReservationInfoByUID(uid types.UID) *framework
 	return nil
 }
 
-func (cache *reservationCache) listAvailableReservationInfosOnNode(nodeName string) []*frameworkext.ReservationInfo {
+func (cache *reservationCache) forEachAvailableReservationOnNode(nodeName string, fn func(rInfo *frameworkext.ReservationInfo) *framework.Status) *framework.Status {
 	cache.lock.RLock()
 	defer cache.lock.RUnlock()
 	rOnNode := cache.reservationsOnNode[nodeName]
 	if len(rOnNode) == 0 {
 		return nil
 	}
-	result := make([]*frameworkext.ReservationInfo, 0, len(rOnNode))
 	for uid := range rOnNode {
 		rInfo := cache.reservationInfos[uid]
 		if rInfo != nil && rInfo.IsAvailable() {
-			result = append(result, rInfo.Clone())
+			if status := fn(rInfo); !status.IsSuccess() {
+				return status
+			}
 		}
 	}
+	return nil
+}
+
+func (cache *reservationCache) listAvailableReservationInfosOnNode(nodeName string) []*frameworkext.ReservationInfo {
+	var result []*frameworkext.ReservationInfo
+	cache.forEachAvailableReservationOnNode(nodeName, func(rInfo *frameworkext.ReservationInfo) *framework.Status {
+		result = append(result, rInfo.Clone())
+		return nil
+	})
 	return result
 }
 

@@ -28,6 +28,7 @@ import (
 	resourceapi "k8s.io/kubernetes/pkg/api/v1/resource"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework/parallelize"
+	schedutil "k8s.io/kubernetes/pkg/scheduler/util"
 
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
@@ -72,7 +73,7 @@ func (pl *Plugin) prepareMatchReservationState(ctx context.Context, cycleState *
 	processNode := func(i int) {
 		nodeInfo, err := pl.handle.SnapshotSharedLister().NodeInfos().Get(allNodes[i])
 		if err != nil {
-			klog.Warningf("Failed to get NodeInfo of %s during reservation's BeforePreFilter, err: %v", allNodes[i], err)
+			klog.Warningf("Failed to get NodeInfo of %s during reservation's BeforePreFilter for pod: %v, err: %v", allNodes[i], klog.KObj(pod), err)
 			return
 		}
 		node := nodeInfo.Node()
@@ -81,39 +82,39 @@ func (pl *Plugin) prepareMatchReservationState(ctx context.Context, cycleState *
 			return
 		}
 
-		rOnNode := pl.reservationCache.listAvailableReservationInfosOnNode(node.Name)
-		if len(rOnNode) == 0 {
-			return
-		}
-
 		var unmatched, matched []*frameworkext.ReservationInfo
-		for _, rInfo := range rOnNode {
-			if !rInfo.IsAvailable() {
-				continue
+		status := pl.reservationCache.forEachAvailableReservationOnNode(node.Name, func(rInfo *frameworkext.ReservationInfo) *framework.Status {
+			if !rInfo.IsAvailable() || rInfo.ParseError != nil {
+				return nil
 			}
 
 			// In this case, the Controller has not yet updated the status of the Reservation to Succeeded,
 			// but in fact it can no longer be used for allocation. So it's better to skip first.
 			if rInfo.IsAllocateOnce() && len(rInfo.AssignedPods) > 0 {
-				continue
+				return nil
 			}
 
 			if !isReservedPod && !rInfo.IsUnschedulable() && matchReservation(pod, node, rInfo, reservationAffinity) {
-				matched = append(matched, rInfo)
+				matched = append(matched, rInfo.Clone())
 
 			} else if len(rInfo.AssignedPods) > 0 {
-				unmatched = append(unmatched, rInfo)
-				if !isReservedPod {
-					klog.V(6).InfoS("got reservation on node does not match the pod", "reservation", klog.KObj(rInfo), "pod", klog.KObj(pod))
-				}
+				unmatched = append(unmatched, rInfo.Clone())
 			}
+			return nil
+		})
+		if !status.IsSuccess() {
+			err = status.AsError()
+			klog.ErrorS(err, "Failed to forEach reservations on node", "pod", klog.KObj(pod), "node", node.Name)
+			errCh.SendErrorWithCancel(err, cancel)
+			return
 		}
+
 		if len(matched) == 0 && len(unmatched) == 0 {
 			return
 		}
 
 		if err := extender.Scheduler().GetCache().InvalidNodeInfo(node.Name); err != nil {
-			klog.ErrorS(err, "Failed to InvalidNodeInfo", "node", node.Name)
+			klog.ErrorS(err, "Failed to InvalidNodeInfo", "pod", klog.KObj(pod), "node", node.Name)
 			errCh.SendErrorWithCancel(err, cancel)
 			return
 		}
@@ -173,11 +174,11 @@ func (pl *Plugin) prepareMatchReservationState(ctx context.Context, cycleState *
 			}
 			allPluginToRestoreState[index-1] = pluginToRestoreState
 		}
-		klog.V(4).Infof("Pod %v has reservations on node %v, %d matched, %d unmatched", klog.KObj(pod), node.Name, len(matched), len(unmatched))
 	}
 	pl.handle.Parallelizer().Until(parallelCtx, len(allNodes), processNode)
 	err = errCh.ReceiveError()
 	if err != nil {
+		klog.ErrorS(err, "Failed to find matched or unmatched reservations", "pod", klog.KObj(pod))
 		return nil, false, err
 	}
 
@@ -229,8 +230,11 @@ func restoreMatchedReservation(nodeInfo *framework.NodeInfo, rInfo *frameworkext
 	// Retain ports that are not used by other Pods. These ports need to be erased from NodeInfo.UsedPorts,
 	// otherwise it may cause Pod port conflicts
 	allocatablePorts := util.CloneHostPorts(rInfo.AllocatablePorts)
-	util.RemoveHostPorts(allocatablePorts, rInfo.AllocatedPorts)
-	util.ResetHostPorts(reservePod, allocatablePorts)
+	if len(allocatablePorts) > 0 {
+		reservePod = reservePod.DeepCopy()
+		util.RemoveHostPorts(allocatablePorts, rInfo.AllocatedPorts)
+		util.ResetHostPorts(reservePod, allocatablePorts)
+	}
 
 	// When AllocateOnce is disabled, some resources may have been allocated,
 	// and an additional resource record will be accumulated at this time.
@@ -246,38 +250,90 @@ func restoreMatchedReservation(nodeInfo *framework.NodeInfo, rInfo *frameworkext
 }
 
 func restoreUnmatchedReservations(nodeInfo *framework.NodeInfo, rInfo *frameworkext.ReservationInfo) error {
+	// Here len(rInfo.AssignedPods) == 0 is always false because it was checked before.
+	if len(rInfo.AssignedPods) == 0 {
+		return nil
+	}
+
 	// Reservations and Pods that consume the Reservations are cumulative in resource accounting.
 	// For example, on a 32C machine, ReservationA reserves 8C, and then PodA uses ReservationA to allocate 4C,
 	// then the record on NodeInfo is that 12C is allocated. But in fact it should be calculated according to 8C,
 	// so we need to return some resources.
-	reservePod := rInfo.GetReservePod().DeepCopy()
-	if err := nodeInfo.RemovePod(reservePod); err != nil {
-		klog.Errorf("Failed to remove reserve pod %v from node %v, err: %v", klog.KObj(rInfo), nodeInfo.Node().Name, err)
-		return err
+	reservePod := rInfo.GetReservePod()
+	updateNodeInfoRequested(nodeInfo, reservePod, -1)
+	remainedResource := quotav1.SubtractWithNonNegativeResult(rInfo.Allocatable, rInfo.Allocated)
+	if !quotav1.IsZero(remainedResource) {
+		reservePod = &corev1.Pod{
+			Spec: corev1.PodSpec{
+				Containers: []corev1.Container{
+					{
+						Resources: corev1.ResourceRequirements{Requests: remainedResource},
+					},
+				},
+			},
+		}
+		updateNodeInfoRequested(nodeInfo, reservePod, 1)
 	}
-	occupyUnallocatedResources(rInfo, reservePod, nodeInfo)
 	return nil
 }
 
-func occupyUnallocatedResources(rInfo *frameworkext.ReservationInfo, reservePod *corev1.Pod, nodeInfo *framework.NodeInfo) {
-	if len(rInfo.AssignedPods) == 0 {
-		nodeInfo.AddPod(reservePod)
-	} else {
-		for i := range reservePod.Spec.Containers {
-			reservePod.Spec.Containers[i].Resources.Requests = corev1.ResourceList{}
-		}
-		remainedResource := quotav1.SubtractWithNonNegativeResult(rInfo.Allocatable, rInfo.Allocated)
-		if !quotav1.IsZero(remainedResource) {
-			reservePod.Spec.Containers = append(reservePod.Spec.Containers, corev1.Container{
-				Resources: corev1.ResourceRequirements{Requests: remainedResource},
-			})
-		}
-		nodeInfo.AddPod(reservePod)
+func updateNodeInfoRequested(n *framework.NodeInfo, pod *corev1.Pod, sign int64) {
+	res, non0CPU, non0Mem := calculateResource(pod)
+	n.Requested.MilliCPU += sign * res.MilliCPU
+	n.Requested.Memory += sign * res.Memory
+	n.Requested.EphemeralStorage += sign * res.EphemeralStorage
+	if n.Requested.ScalarResources == nil && len(res.ScalarResources) > 0 {
+		n.Requested.ScalarResources = map[corev1.ResourceName]int64{}
 	}
+	for rName, rQuant := range res.ScalarResources {
+		n.Requested.ScalarResources[rName] += sign * rQuant
+	}
+	n.NonZeroRequested.MilliCPU += sign * non0CPU
+	n.NonZeroRequested.Memory += sign * non0Mem
+}
+
+func max(a, b int64) int64 {
+	if a >= b {
+		return a
+	}
+	return b
+}
+
+// resourceRequest = max(sum(podSpec.Containers), podSpec.InitContainers) + overHead
+func calculateResource(pod *corev1.Pod) (res framework.Resource, non0CPU int64, non0Mem int64) {
+	resPtr := &res
+	for _, c := range pod.Spec.Containers {
+		resPtr.Add(c.Resources.Requests)
+		non0CPUReq, non0MemReq := schedutil.GetNonzeroRequests(&c.Resources.Requests)
+		non0CPU += non0CPUReq
+		non0Mem += non0MemReq
+		// No non-zero resources for GPUs or opaque resources.
+	}
+
+	for _, ic := range pod.Spec.InitContainers {
+		resPtr.SetMaxResource(ic.Resources.Requests)
+		non0CPUReq, non0MemReq := schedutil.GetNonzeroRequests(&ic.Resources.Requests)
+		non0CPU = max(non0CPU, non0CPUReq)
+		non0Mem = max(non0Mem, non0MemReq)
+	}
+
+	// If Overhead is being utilized, add to the total requests for the pod
+	if pod.Spec.Overhead != nil {
+		resPtr.Add(pod.Spec.Overhead)
+		if _, found := pod.Spec.Overhead[corev1.ResourceCPU]; found {
+			non0CPU += pod.Spec.Overhead.Cpu().MilliValue()
+		}
+
+		if _, found := pod.Spec.Overhead[corev1.ResourceMemory]; found {
+			non0Mem += pod.Spec.Overhead.Memory().Value()
+		}
+	}
+
+	return
 }
 
 func matchReservation(pod *corev1.Pod, node *corev1.Node, reservation *frameworkext.ReservationInfo, reservationAffinity *reservationutil.RequiredReservationAffinity) bool {
-	if !reservationutil.MatchReservationOwners(pod, reservation.GetPodOwners()) {
+	if !reservation.Match(pod) {
 		return false
 	}
 

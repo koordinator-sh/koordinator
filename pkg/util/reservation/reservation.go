@@ -24,6 +24,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/validation/field"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	"k8s.io/component-helpers/scheduling/corev1/nodeaffinity"
 	"k8s.io/klog/v2"
@@ -33,6 +34,7 @@ import (
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
 var (
@@ -352,16 +354,55 @@ func ReservePorts(r *schedulingv1alpha1.Reservation) framework.HostPortInfo {
 	return portInfo
 }
 
+type ReservationOwnerMatcher struct {
+	schedulingv1alpha1.ReservationOwner
+	Selector labels.Selector
+}
+
+func ParseReservationOwnerMatchers(owners []schedulingv1alpha1.ReservationOwner) ([]ReservationOwnerMatcher, error) {
+	if len(owners) == 0 {
+		return nil, nil
+	}
+	var errs field.ErrorList
+	ownerMatchers := make([]ReservationOwnerMatcher, 0, len(owners))
+	for i, v := range owners {
+		var selector labels.Selector
+		if v.LabelSelector != nil {
+			var err error
+			selector, err = util.GetFastLabelSelector(v.LabelSelector)
+			if err != nil {
+				errs = append(errs, field.Invalid(field.NewPath("owners").Index(i), v.LabelSelector, err.Error()))
+				continue
+			}
+		}
+		ownerMatchers = append(ownerMatchers, ReservationOwnerMatcher{
+			ReservationOwner: v,
+			Selector:         selector,
+		})
+	}
+	if len(errs) > 0 {
+		return nil, errs.ToAggregate()
+	}
+	return ownerMatchers, nil
+}
+
+func (m *ReservationOwnerMatcher) Match(pod *corev1.Pod) bool {
+	if MatchObjectRef(pod, m.Object) &&
+		MatchReservationControllerReference(pod, m.Controller) &&
+		(m.Selector == nil || m.Selector.Matches(labels.Set(pod.Labels))) {
+		return true
+	}
+	return false
+}
+
 // MatchReservationOwners checks if the scheduling pod matches the reservation's owner spec.
 // `reservation.spec.owners` defines the DNF (disjunctive normal form) of ObjectReference, ControllerReference
 // (extended), LabelSelector, which means multiple selectors are firstly ANDed and secondly ORed.
-func MatchReservationOwners(pod *corev1.Pod, owners []schedulingv1alpha1.ReservationOwner) bool {
+func MatchReservationOwners(pod *corev1.Pod, matchers []ReservationOwnerMatcher) bool {
 	// assert pod != nil && r != nil
 	// Owners == nil matches nothing, while Owners = [{}] matches everything
-	for _, owner := range owners {
-		if MatchObjectRef(pod, owner.Object) &&
-			MatchReservationControllerReference(pod, owner.Controller) &&
-			matchLabelSelector(pod, owner.LabelSelector) {
+	for _, m := range matchers {
+		if m.Match(pod) {
 			return true
 		}
 	}
@@ -398,17 +439,6 @@ func MatchReservationControllerReference(pod *corev1.Pod, controllerRef *schedul
 		}
 	}
 	return false
-}
-
-func matchLabelSelector(pod *corev1.Pod, labelSelector *metav1.LabelSelector) bool {
-	if labelSelector == nil {
-		return true
-	}
-	selector, err := metav1.LabelSelectorAsSelector(labelSelector)
-	if err != nil {
-		return false
-	}
-	return selector.Matches(labels.Set(pod.Labels))
 }
 
 type RequiredReservationAffinity struct {

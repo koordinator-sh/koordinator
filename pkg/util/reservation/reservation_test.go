@@ -253,7 +253,7 @@ func TestGetReservationSchedulerName(t *testing.T) {
 	}
 }
 
-func Test_matchReservationOwners(t *testing.T) {
+func TestMatchReservationOwners(t *testing.T) {
 	type args struct {
 		pod *corev1.Pod
 		r   *schedulingv1alpha1.Reservation
@@ -434,7 +434,9 @@ func Test_matchReservationOwners(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := MatchReservationOwners(tt.args.pod, tt.args.r.Spec.Owners)
+			matchers, err := ParseReservationOwnerMatchers(tt.args.r.Spec.Owners)
+			assert.NoError(t, err)
+			got := MatchReservationOwners(tt.args.pod, matchers)
 			assert.Equal(t, tt.want, got)
 		})
 	}

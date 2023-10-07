@@ -139,7 +139,7 @@ func TestRestoreReservation(t *testing.T) {
 	unmatchedReservation := &schedulingv1alpha1.Reservation{
 		ObjectMeta: metav1.ObjectMeta{
 			UID:  uuid.NewUUID(),
-			Name: "reservation4C8G",
+			Name: "reservation12C24G",
 		},
 		Spec: schedulingv1alpha1.ReservationSpec{
 			AllocateOnce: pointer.Bool(false),
@@ -163,7 +163,7 @@ func TestRestoreReservation(t *testing.T) {
 						{
 							Resources: corev1.ResourceRequirements{
 								Requests: corev1.ResourceList{
-									corev1.ResourceCPU:    resource.MustParse("12"),
+									corev1.ResourceCPU:    *resource.NewQuantity(12, resource.DecimalSI),
 									corev1.ResourceMemory: resource.MustParse("24Gi"),
 								},
 							},
@@ -183,7 +183,7 @@ func TestRestoreReservation(t *testing.T) {
 			Phase:    schedulingv1alpha1.ReservationAvailable,
 			NodeName: "test-node",
 			Allocatable: corev1.ResourceList{
-				corev1.ResourceCPU:    resource.MustParse("12"),
+				corev1.ResourceCPU:    *resource.NewQuantity(12, resource.DecimalSI),
 				corev1.ResourceMemory: resource.MustParse("24Gi"),
 			},
 		},
@@ -194,7 +194,7 @@ func TestRestoreReservation(t *testing.T) {
 	matchedReservation := &schedulingv1alpha1.Reservation{
 		ObjectMeta: metav1.ObjectMeta{
 			UID:  uuid.NewUUID(),
-			Name: "reservation2C4G",
+			Name: "reservation8C16G",
 		},
 		Spec: schedulingv1alpha1.ReservationSpec{
 			Owners: []schedulingv1alpha1.ReservationOwner{
@@ -253,29 +253,14 @@ func TestRestoreReservation(t *testing.T) {
 	}
 	pods = append(pods, reservationutil.NewReservePod(matchedReservation))
 
-	suit := newPluginTestSuitWith(t, pods, []*corev1.Node{node})
-	p, err := suit.pluginFactory()
-	assert.NoError(t, err)
-	pl := p.(*Plugin)
-
-	nodeInfo, err := suit.fw.SnapshotSharedLister().NodeInfos().Get(node.Name)
-	assert.NoError(t, err)
-	expectedRequestedResources := &framework.Resource{
-		MilliCPU: 32000,
-		Memory:   64 * 1024 * 1024 * 1024,
-	}
-	assert.Equal(t, expectedRequestedResources, nodeInfo.Requested)
-
-	pl.reservationCache.updateReservation(unmatchedReservation)
-	pl.reservationCache.updateReservation(matchedReservation)
-
-	pl.reservationCache.addPod(unmatchedReservation.UID, &corev1.Pod{
+	podAllocatedWithUnmatchedReservation := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			UID:       uuid.NewUUID(),
 			Name:      "unmatched-allocated-pod-1",
 			Namespace: "default",
 		},
 		Spec: corev1.PodSpec{
+			NodeName: node.Name,
 			Containers: []corev1.Container{
 				{
 					Resources: corev1.ResourceRequirements{
@@ -287,7 +272,26 @@ func TestRestoreReservation(t *testing.T) {
 				},
 			},
 		},
-	})
+	}
+	pods = append(pods, podAllocatedWithUnmatchedReservation)
+
+	suit := newPluginTestSuitWith(t, pods, []*corev1.Node{node})
+	p, err := suit.pluginFactory()
+	assert.NoError(t, err)
+	pl := p.(*Plugin)
+
+	nodeInfo, err := suit.fw.SnapshotSharedLister().NodeInfos().Get(node.Name)
+	assert.NoError(t, err)
+	expectedRequestedResources := &framework.Resource{
+		MilliCPU: 36000,
+		Memory:   72 * 1024 * 1024 * 1024,
+	}
+	assert.Equal(t, expectedRequestedResources, nodeInfo.Requested)
+
+	pl.reservationCache.updateReservation(unmatchedReservation)
+	pl.reservationCache.updateReservation(matchedReservation)
+
+	pl.reservationCache.addPod(unmatchedReservation.UID, podAllocatedWithUnmatchedReservation)
 
 	cycleState := framework.NewCycleState()
 	_, restored, status := pl.BeforePreFilter(context.TODO(), cycleState, &corev1.Pod{
@@ -311,8 +315,8 @@ func TestRestoreReservation(t *testing.T) {
 				nodeName: node.Name,
 				matched:  []*frameworkext.ReservationInfo{matchRInfo},
 				podRequested: &framework.Resource{
-					MilliCPU: 28000,
-					Memory:   60129542144,
+					MilliCPU: 32000,
+					Memory:   68719476736,
 				},
 				rAllocated: framework.NewResource(nil),
 			},
@@ -321,23 +325,21 @@ func TestRestoreReservation(t *testing.T) {
 	assert.Equal(t, expectedStat, getStateData(cycleState))
 
 	unmatchedReservePod := pods[2].DeepCopy()
-	unmatchedReservePod.Spec.Containers[0].Resources.Requests = corev1.ResourceList{}
-	unmatchedReservePod.Spec.Containers = append(unmatchedReservePod.Spec.Containers, corev1.Container{
-		Resources: corev1.ResourceRequirements{
-			Requests: corev1.ResourceList{
-				corev1.ResourceCPU:    resource.MustParse("8000m"),
-				corev1.ResourceMemory: resource.MustParse("16Gi"),
-			},
-		},
-	})
-	expectNodeInfo := framework.NewNodeInfo(pods[0], pods[1], unmatchedReservePod)
+	unmatchedReservePod.Spec.Containers[0].Resources.Requests = corev1.ResourceList{
+		corev1.ResourceCPU:    resource.MustParse("12"),
+		corev1.ResourceMemory: resource.MustParse("24Gi"),
+	}
+	expectNodeInfo := framework.NewNodeInfo(pods[0], pods[1], unmatchedReservePod, podAllocatedWithUnmatchedReservation)
 	expectNodeInfo.SetNode(node)
+	expectNodeInfo.Requested.MilliCPU -= 4000
+	expectNodeInfo.Requested.Memory -= 8 * 1024 * 1024 * 1024
+	expectNodeInfo.NonZeroRequested.MilliCPU -= 4000
+	expectNodeInfo.NonZeroRequested.Memory -= 8 * 1024 * 1024 * 1024
 	assert.Equal(t, expectNodeInfo.Requested, nodeInfo.Requested)
 	assert.Equal(t, expectNodeInfo.UsedPorts, nodeInfo.UsedPorts)
 	nodeInfo.Generation = 0
 	expectNodeInfo.Generation = 0
 	assert.True(t, equality.Semantic.DeepEqual(expectNodeInfo, nodeInfo))
-
 	status = pl.AfterPreFilter(context.TODO(), cycleState, &corev1.Pod{})
 	assert.True(t, status.IsSuccess())
 }

@@ -42,6 +42,8 @@ type ReservationInfo struct {
 	AllocatablePorts framework.HostPortInfo
 	AllocatedPorts   framework.HostPortInfo
 	AssignedPods     map[types.UID]*PodRequirement
+	OwnerMatchers    []reservationutil.ReservationOwnerMatcher
+	ParseError       error
 }
 
 type PodRequirement struct {
@@ -79,13 +81,20 @@ func NewReservationInfo(r *schedulingv1alpha1.Reservation) *ReservationInfo {
 	resourceNames := quotav1.ResourceNames(allocatable)
 	reservedPod := reservationutil.NewReservePod(r)
 
+	ownerMatchers, err := reservationutil.ParseReservationOwnerMatchers(r.Spec.Owners)
+	if err != nil {
+		klog.ErrorS(err, "Failed to parse reservation owner matchers", "reservation", klog.KObj(r))
+	}
+
 	return &ReservationInfo{
-		Reservation:      r.DeepCopy(),
+		Reservation:      r,
 		Pod:              reservedPod,
 		ResourceNames:    resourceNames,
 		Allocatable:      allocatable,
 		AllocatablePorts: util.RequestedHostPorts(reservedPod),
 		AssignedPods:     map[types.UID]*PodRequirement{},
+		OwnerMatchers:    ownerMatchers,
+		ParseError:       err,
 	}
 }
 
@@ -93,12 +102,26 @@ func NewReservationInfoFromPod(pod *corev1.Pod) *ReservationInfo {
 	allocatable, _ := resource.PodRequestsAndLimits(pod)
 	resourceNames := quotav1.ResourceNames(allocatable)
 
+	owners, err := apiext.GetReservationOwners(pod.Annotations)
+	if err != nil {
+		klog.ErrorS(err, "Invalid reservation owners annotation of Pod", "pod", klog.KObj(pod))
+	}
+	var ownerMatchers []reservationutil.ReservationOwnerMatcher
+	if owners != nil {
+		ownerMatchers, err = reservationutil.ParseReservationOwnerMatchers(owners)
+		if err != nil {
+			klog.ErrorS(err, "Failed to parse reservation owner matchers of pod", "pod", klog.KObj(pod))
+		}
+	}
+
 	return &ReservationInfo{
 		Pod:              pod,
 		ResourceNames:    resourceNames,
 		Allocatable:      allocatable,
 		AllocatablePorts: util.RequestedHostPorts(pod),
 		AssignedPods:     map[types.UID]*PodRequirement{},
+		OwnerMatchers:    ownerMatchers,
+		ParseError:       err,
 	}
 }
 
@@ -205,6 +228,13 @@ func (ri *ReservationInfo) GetPodOwners() []schedulingv1alpha1.ReservationOwner 
 	return nil
 }
 
+func (ri *ReservationInfo) Match(pod *corev1.Pod) bool {
+	if ri.ParseError != nil {
+		return false
+	}
+	return reservationutil.MatchReservationOwners(pod, ri.OwnerMatchers)
+}
+
 func (ri *ReservationInfo) IsAvailable() bool {
 	if ri.Reservation != nil {
 		return reservationutil.IsReservationAvailable(ri.Reservation)
@@ -230,30 +260,25 @@ func (ri *ReservationInfo) Clone() *ReservationInfo {
 		resourceNames = append(resourceNames, v)
 	}
 
-	pods := map[types.UID]*PodRequirement{}
+	assignedPods := make(map[types.UID]*PodRequirement, len(ri.AssignedPods))
 	for k, v := range ri.AssignedPods {
-		pods[k] = v.Clone()
-	}
-
-	var reservation *schedulingv1alpha1.Reservation
-	if ri.Reservation != nil {
-		reservation = ri.Reservation.DeepCopy()
+		assignedPods[k] = v
 	}
 
 	return &ReservationInfo{
-		Reservation:      reservation,
-		Pod:              ri.Pod.DeepCopy(),
+		Reservation:      ri.Reservation,
+		Pod:              ri.Pod,
 		ResourceNames:    resourceNames,
 		Allocatable:      ri.Allocatable.DeepCopy(),
 		Allocated:        ri.Allocated.DeepCopy(),
 		AllocatablePorts: util.CloneHostPorts(ri.AllocatablePorts),
 		AllocatedPorts:   util.CloneHostPorts(ri.AllocatedPorts),
-		AssignedPods:     pods,
+		AssignedPods:     assignedPods,
 	}
 }
 
 func (ri *ReservationInfo) UpdateReservation(r *schedulingv1alpha1.Reservation) {
-	ri.Reservation = r.DeepCopy()
+	ri.Reservation = r
 	ri.Pod = reservationutil.NewReservePod(r)
 	ri.Allocatable = reservationutil.ReservationRequests(r)
 	ri.AllocatablePorts = util.RequestedHostPorts(ri.Pod)
@@ -262,7 +287,7 @@ func (ri *ReservationInfo) UpdateReservation(r *schedulingv1alpha1.Reservation) 
 }
 
 func (ri *ReservationInfo) UpdatePod(pod *corev1.Pod) {
-	ri.Pod = pod.DeepCopy()
+	ri.Pod = pod
 	ri.Allocatable, _ = resource.PodRequestsAndLimits(pod)
 	ri.AllocatablePorts = util.RequestedHostPorts(pod)
 	ri.ResourceNames = quotav1.ResourceNames(ri.Allocatable)
