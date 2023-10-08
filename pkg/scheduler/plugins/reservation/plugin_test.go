@@ -120,7 +120,7 @@ type pluginTestSuit struct {
 	extenderFactory *frameworkext.FrameworkExtenderFactory
 }
 
-func newPluginTestSuitWith(t *testing.T, pods []*corev1.Pod, nodes []*corev1.Node) *pluginTestSuit {
+func newPluginTestSuitWith(t testing.TB, pods []*corev1.Pod, nodes []*corev1.Node) *pluginTestSuit {
 	var v1beta2args v1beta2.ReservationArgs
 	v1beta2.SetDefaults_ReservationArgs(&v1beta2args)
 	var reservationArgs config.ReservationArgs

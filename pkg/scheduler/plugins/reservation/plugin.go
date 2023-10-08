@@ -348,14 +348,17 @@ func (pl *Plugin) Filter(ctx context.Context, cycleState *framework.CycleState, 
 			allocatePolicy = schedulingv1alpha1.ReservationAllocatePolicyAligned
 		}
 
-		rInfos := pl.reservationCache.listAvailableReservationInfosOnNode(node.Name)
-		for _, v := range rInfos {
+		status := pl.reservationCache.forEachAvailableReservationOnNode(node.Name, func(rInfo *frameworkext.ReservationInfo) *framework.Status {
 			// ReservationAllocatePolicyDefault cannot coexist with other allocate policies
 			if (allocatePolicy == schedulingv1alpha1.ReservationAllocatePolicyDefault ||
-				v.GetAllocatePolicy() == schedulingv1alpha1.ReservationAllocatePolicyDefault) &&
-				allocatePolicy != v.GetAllocatePolicy() {
+				rInfo.GetAllocatePolicy() == schedulingv1alpha1.ReservationAllocatePolicyDefault) &&
+				allocatePolicy != rInfo.GetAllocatePolicy() {
 				return framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrReasonReservationAllocatePolicyConflict)
 			}
+			return nil
+		})
+		if !status.IsSuccess() {
+			return status
 		}
 	}
 
@@ -602,7 +605,7 @@ func (pl *Plugin) PreBind(ctx context.Context, cycleState *framework.CycleState,
 
 	state := getStateData(cycleState)
 	if state.assumed == nil {
-		klog.V(5).Infof("Skip the Reservation PreBind since no reservation allocated for the pod %d o node %s", klog.KObj(pod), nodeName)
+		klog.V(5).Infof("Skip the Reservation PreBind since no reservation allocated for the pod %s on node %s", klog.KObj(pod), nodeName)
 		return nil
 	}
 

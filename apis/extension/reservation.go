@@ -108,3 +108,17 @@ func GetReservationAffinity(annotations map[string]string) (*ReservationAffinity
 	}
 	return &affinity, nil
 }
+
+func SetReservationAffinity(obj metav1.Object, affinity *ReservationAffinity) error {
+	data, err := json.Marshal(affinity)
+	if err != nil {
+		return err
+	}
+	annotations := obj.GetAnnotations()
+	if annotations == nil {
+		annotations = map[string]string{}
+	}
+	annotations[AnnotationReservationAffinity] = string(data)
+	obj.SetAnnotations(annotations)
+	return nil
+}
