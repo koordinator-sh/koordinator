@@ -1,5 +1,11 @@
-FROM golang:1.18 as builder
+FROM --platform=$TARGETPLATFORM golang:1.18 as builder
 WORKDIR /go/src/github.com/koordinator-sh/koordinator
+
+ARG VERSION
+ARG TARGETARCH
+ENV VERSION $VERSION
+ENV GOOS linux
+ENV GOARCH $TARGETARCH
 
 COPY go.mod go.mod
 COPY go.sum go.sum
@@ -10,9 +16,9 @@ COPY apis/ apis/
 COPY cmd/ cmd/
 COPY pkg/ pkg/
 
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -a -o koord-scheduler cmd/koord-scheduler/main.go
+RUN CGO_ENABLED=0 go build -a -o koord-scheduler cmd/koord-scheduler/main.go
 
-FROM gcr.io/distroless/static:latest
+FROM --platform=$TARGETPLATFORM gcr.io/distroless/static:latest
 WORKDIR /
 COPY --from=builder /go/src/github.com/koordinator-sh/koordinator/koord-scheduler .
 ENTRYPOINT ["/koord-scheduler"]

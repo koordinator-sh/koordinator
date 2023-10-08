@@ -57,6 +57,7 @@ require (
 	k8s.io/kubernetes v1.24.15
 	k8s.io/utils v0.0.0-20221128185143-99ec85e7a448
 	sigs.k8s.io/controller-runtime v0.12.3
+	sigs.k8s.io/controller-runtime/tools/setup-envtest v0.0.0-20231005234617-5771399a8ce5
 	sigs.k8s.io/descheduler v0.26.0
 	sigs.k8s.io/scheduler-plugins v0.22.6
 	sigs.k8s.io/yaml v1.3.0
@@ -112,6 +113,7 @@ require (
 	github.com/go-kit/log v0.2.1 // indirect
 	github.com/go-logfmt/logfmt v0.5.1 // indirect
 	github.com/go-logr/logr v1.2.3 // indirect
+	github.com/go-logr/zapr v1.2.3 // indirect
 	github.com/go-openapi/jsonpointer v0.19.5 // indirect
 	github.com/go-openapi/jsonreference v0.20.0 // indirect
 	github.com/go-openapi/swag v0.21.1 // indirect
@@ -177,6 +179,7 @@ require (
 	github.com/rubiojr/go-vhd v0.0.0-20200706105327-02e210299021 // indirect
 	github.com/seccomp/libseccomp-golang v0.9.2-0.20220502022130-f33da4d89646 // indirect
 	github.com/sirupsen/logrus v1.8.1 // indirect
+	github.com/spf13/afero v1.6.0 // indirect
 	github.com/storageos/go-api v2.2.0+incompatible // indirect
 	github.com/stretchr/objx v0.5.0 // indirect
 	github.com/syndtr/gocapability v0.0.0-20200815063812-42c35b437635 // indirect
