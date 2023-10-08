@@ -28,6 +28,13 @@ export GOPATH
 SCRIPT_ROOT=$(dirname "${BASH_SOURCE[0]}")/..
 ROOT_PKG=github.com/koordinator-sh/koordinator
 
+if [ ! -d "${SCRIPT_ROOT}/vendor" ]; then
+  go mod vendor
+fi
+
+GO111MODULE="off"
+export GO111MODULE
+
 # code-generator does work with go.mod but makes assumptions about
 # the project living in `$GOPATH/src`. To work around this and support
 # any location; create a temporary directory, use this as an output
@@ -45,29 +52,40 @@ echo ">> Temporary output directory ${TEMP_DIR}"
 # --output-base    because this script should also be able to run inside the vendor dir of
 #                  k8s.io/kubernetes. The output-base is needed for the generators to output into the vendor dir
 #                  instead of the $GOPATH directly. For normal projects this can be dropped.
-$SCRIPT_ROOT/hack/generate-groups.sh "client,informer,lister" \
- github.com/koordinator-sh/koordinator/pkg/client github.com/koordinator-sh/koordinator/apis \
- "config:v1alpha1 slo:v1alpha1 scheduling:v1alpha1 quota:v1alpha1" \
- --output-base "${TEMP_DIR}" \
- --go-header-file hack/boilerplate/boilerplate.go.txt
 
-${SCRIPT_ROOT}/hack/generate-internal-groups.sh \
-  "deepcopy,conversion,defaulter" \
-  github.com/koordinator-sh/koordinator/pkg/scheduler/apis/generated \
-  github.com/koordinator-sh/koordinator/pkg/scheduler/apis \
-  github.com/koordinator-sh/koordinator/pkg/scheduler/apis \
-  "config:v1beta2" \
-  --output-base "${TEMP_DIR}" \
-  --go-header-file hack/boilerplate/boilerplate.go.txt
+crdGenerators=("client" "informer" "lister")
 
-${SCRIPT_ROOT}/hack/generate-internal-groups.sh \
-  "deepcopy,conversion,defaulter" \
-  github.com/koordinator-sh/koordinator/pkg/descheduler/apis/generated \
-  github.com/koordinator-sh/koordinator/pkg/descheduler/apis \
-  github.com/koordinator-sh/koordinator/pkg/descheduler/apis \
-  "config:v1alpha2" \
-  --output-base "${TEMP_DIR}" \
-  --go-header-file hack/boilerplate/boilerplate.go.txt
+for generator in "${crdGenerators[@]}"; do
+  $SCRIPT_ROOT/hack/generate-groups.sh "${generator}" \
+   github.com/koordinator-sh/koordinator/pkg/client github.com/koordinator-sh/koordinator/apis \
+   "config:v1alpha1 slo:v1alpha1 scheduling:v1alpha1 quota:v1alpha1" \
+   --output-base "${TEMP_DIR}" \
+   --go-header-file hack/boilerplate/boilerplate.go.txt &
+done
+
+configGenerators=("deepcopy" "conversion" "defaulter")
+
+for generator in "${configGenerators[@]}"; do
+  ${SCRIPT_ROOT}/hack/generate-internal-groups.sh \
+    "${generator}" \
+    github.com/koordinator-sh/koordinator/pkg/scheduler/apis \
+    github.com/koordinator-sh/koordinator/pkg/scheduler/apis \
+    github.com/koordinator-sh/koordinator/pkg/scheduler/apis \
+    "config:v1beta2" \
+    --output-base "${TEMP_DIR}" \
+    --go-header-file hack/boilerplate/boilerplate.go.txt &
+
+   ${SCRIPT_ROOT}/hack/generate-internal-groups.sh \
+     "${generator}" \
+     github.com/koordinator-sh/koordinator/pkg/descheduler/apis \
+     github.com/koordinator-sh/koordinator/pkg/descheduler/apis \
+     github.com/koordinator-sh/koordinator/pkg/descheduler/apis \
+     "config:v1alpha2" \
+     --output-base "${TEMP_DIR}" \
+     --go-header-file hack/boilerplate/boilerplate.go.txt &
+done
+
+wait
 
 # Copy everything back.
 cp -a "${TEMP_DIR}/${ROOT_PKG}/." "${SCRIPT_ROOT}/"
