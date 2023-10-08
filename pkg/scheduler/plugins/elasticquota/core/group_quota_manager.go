@@ -640,9 +640,10 @@ func (gqm *GroupQuotaManager) updatePodUsedNoLock(quotaName string, oldPod, newP
 	deltaUsed := quotav1.Subtract(newPodUsed, oldPodUsed)
 	deltaNonPreemptibleUsed := quotav1.Subtract(newNonPreemptibleUsed, oldNonPreemptibleUsed)
 	if quotav1.IsZero(deltaUsed) && quotav1.IsZero(deltaNonPreemptibleUsed) {
-		klog.V(5).Infof("updatePodUsed, deltaUsed and deltaNonPreemptibleUsed IsZero, quotaName:%v, podName:%v, podUsed:%v, podNonPreemptibleUsed:%v",
-			quotaName, getPodName(oldPod, newPod), newPodUsed, newNonPreemptibleUsed)
-		return
+		if klog.V(5).Enabled() {
+			klog.Infof("updatePodUsed, deltaUsedIsZero and deltaNonPreemptibleUsedIsZero, quotaName: %v, podName: %v, podUsed: %v, podNonPreemptibleUsed: %v",
+				quotaName, getPodName(oldPod, newPod), util.DumpJSON(newPodUsed), util.DumpJSON(newNonPreemptibleUsed))
+		}
 	}
 	gqm.updateGroupDeltaUsedNoLock(quotaName, deltaUsed, deltaNonPreemptibleUsed)
 }

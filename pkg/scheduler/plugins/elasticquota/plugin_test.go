@@ -756,31 +756,29 @@ func TestPlugin_Prefilter_QuotaNonPreempt(t *testing.T) {
 		pod            *corev1.Pod
 		initPods       []*corev1.Pod
 		quotaInfos     []*v1alpha1.ElasticQuota
-		runtime        corev1.ResourceList
+		totalResource  corev1.ResourceList
 		expectedStatus *framework.Status
 	}{
 		{
 			name: "default",
-			pod:  defaultCreatePodWithQuotaAndNonPreemptible("4", "test1", 1, 20, 20, true),
+			pod:  defaultCreatePodWithQuotaAndNonPreemptible("4", "test1", 1, 2, 2, true),
 			initPods: []*corev1.Pod{
-				defaultCreatePodWithQuotaName("1", "test1", 10, 50, 10),
-				defaultCreatePodWithQuotaName("2", "test1", 9, 10, 10),
-				defaultCreatePodWithQuotaName("3", "test1", 8, 10, 10),
+				defaultCreatePodWithQuotaAndNonPreemptible("1", "test1", 10, 2, 1, false),
+				defaultCreatePodWithQuotaAndNonPreemptible("2", "test1", 9, 1, 1, false),
+				defaultCreatePodWithQuotaAndNonPreemptible("3", "test1", 8, 1, 1, false),
 			},
 			quotaInfos: []*v1alpha1.ElasticQuota{
 				{
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "test1",
-						Labels: map[string]string{
-							extension.LabelQuotaParent: extension.DefaultQuotaName,
-						},
 					},
 					Spec: v1alpha1.ElasticQuotaSpec{
-						Max: MakeResourceList().CPU(90).Mem(80).Obj(),
-						Min: MakeResourceList().CPU(50).Mem(50).Obj(),
+						Max: MakeResourceList().CPU(10).Mem(10).Obj(),
+						Min: MakeResourceList().CPU(5).Mem(5).Obj(),
 					},
 				},
 			},
+			totalResource:  createResourceList(10, 10),
 			expectedStatus: framework.NewStatus(framework.Success, ""),
 		},
 		{
@@ -795,9 +793,6 @@ func TestPlugin_Prefilter_QuotaNonPreempt(t *testing.T) {
 				{
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "test1",
-						Labels: map[string]string{
-							extension.LabelQuotaParent: extension.DefaultQuotaName,
-						},
 					},
 					Spec: v1alpha1.ElasticQuotaSpec{
 						Max: MakeResourceList().CPU(10).Mem(8).Obj(),
@@ -805,7 +800,7 @@ func TestPlugin_Prefilter_QuotaNonPreempt(t *testing.T) {
 					},
 				},
 			},
-			runtime: MakeResourceList().CPU(8).Mem(5).Obj(),
+			totalResource: createResourceList(8, 5),
 			expectedStatus: framework.NewStatus(framework.Unschedulable,
 				fmt.Sprintf("Insufficient non-preemptible quotas, "+
 					"quotaName: %v, min: %v, nonPreemptibleUsed: %v, pod's request: %v, exceedDimensions: [cpu]",
@@ -824,9 +819,6 @@ func TestPlugin_Prefilter_QuotaNonPreempt(t *testing.T) {
 				{
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "test1",
-						Labels: map[string]string{
-							extension.LabelQuotaParent: extension.DefaultQuotaName,
-						},
 					},
 					Spec: v1alpha1.ElasticQuotaSpec{
 						Max: MakeResourceList().CPU(10).Mem(8).Obj(),
@@ -834,7 +826,7 @@ func TestPlugin_Prefilter_QuotaNonPreempt(t *testing.T) {
 					},
 				},
 			},
-			runtime: MakeResourceList().CPU(7).Mem(5).Obj(),
+			totalResource: createResourceList(7, 5),
 			expectedStatus: framework.NewStatus(framework.Unschedulable,
 				fmt.Sprintf("Insufficient quotas, "+
 					"quotaName: %v, runtime: %v, used: %v, pod's request: %v, exceedDimensions: [cpu]",
@@ -847,17 +839,17 @@ func TestPlugin_Prefilter_QuotaNonPreempt(t *testing.T) {
 			suit := newPluginTestSuit(t, nil)
 			p, _ := suit.proxyNew(suit.elasticQuotaArgs, suit.Handle)
 			gp := p.(*Plugin)
+			gp.groupQuotaManager.UpdateClusterTotalResource(tt.totalResource)
 			for _, qis := range tt.quotaInfos {
 				gp.OnQuotaAdd(qis)
 			}
+
 			for _, pod := range tt.initPods {
 				gp.OnPodAdd(pod)
 			}
+			tt.pod.Spec.NodeName = ""
+			gp.OnPodAdd(tt.pod)
 
-			qi := gp.groupQuotaManager.GetQuotaInfoByName("test1")
-			qi.Lock()
-			qi.CalculateInfo.Runtime = tt.runtime.DeepCopy()
-			qi.UnLock()
 			state := framework.NewCycleState()
 			ctx := context.TODO()
 			_, status := gp.PreFilter(ctx, state, tt.pod)
