@@ -145,6 +145,12 @@ func (cs *Coscheduling) Less(podInfo1, podInfo2 *framework.QueuedPodInfo) bool {
 		return !isgang1satisfied
 	}
 
+	childScheduleCycle1 := cs.pgMgr.GetChildScheduleCycle(podInfo1.Pod)
+	childScheduleCycle2 := cs.pgMgr.GetChildScheduleCycle(podInfo2.Pod)
+	if childScheduleCycle1 != childScheduleCycle2 {
+		return childScheduleCycle1 < childScheduleCycle2
+	}
+
 	creationTime1 := cs.pgMgr.GetCreatTime(podInfo1)
 	creationTime2 := cs.pgMgr.GetCreatTime(podInfo2)
 	if creationTime1.Equal(creationTime2) {

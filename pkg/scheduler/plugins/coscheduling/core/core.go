@@ -72,6 +72,7 @@ type Manager interface {
 	GetGangSummary(gangId string) (*GangSummary, bool)
 	GetGangSummaries() map[string]*GangSummary
 	IsGangMinSatisfied(*corev1.Pod) bool
+	GetChildScheduleCycle(*corev1.Pod) int
 }
 
 // PodGroupManager defines the scheduling operation called
@@ -533,4 +534,13 @@ func (pgMgr *PodGroupManager) GetGangSummaries() map[string]*GangSummary {
 	}
 
 	return result
+}
+
+func (pgMgr *PodGroupManager) GetChildScheduleCycle(pod *corev1.Pod) int {
+	gang := pgMgr.GetGangByPod(pod)
+	if gang == nil {
+		return 0
+	}
+
+	return gang.getChildScheduleCycle(pod)
 }

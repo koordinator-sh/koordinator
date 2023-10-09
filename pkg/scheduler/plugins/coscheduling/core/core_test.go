@@ -306,6 +306,9 @@ func TestPlugin_PreFilter(t *testing.T) {
 				assert.Equal(t, tt.expectedScheduleCycle, gang.getScheduleCycle())
 				assert.Equal(t, tt.expectedScheduleCycleValid, gang.isScheduleCycleValid())
 				assert.Equal(t, tt.expectedChildCycleMap, gang.ChildrenScheduleRoundMap)
+
+				assert.Equal(t, tt.expectedChildCycleMap[util.GetId(tt.pod.Namespace, tt.pod.Name)],
+					mgr.GetChildScheduleCycle(tt.pod))
 			}
 		})
 	}
