@@ -123,7 +123,7 @@ webhooks:
       name: webhook-service
       namespace: system
       path: /validate-node
-  failurePolicy: Fail
+  failurePolicy: Ignore
   name: vnode.koordinator.sh
   rules:
   - apiGroups:

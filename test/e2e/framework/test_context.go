@@ -53,24 +53,24 @@ const (
 // into the code which uses the settings.
 //
 // The recommendation for those settings is:
-// - They are stored in their own context structure or local
-//   variables.
-// - The standard `flag` package is used to register them.
-//   The flag name should follow the pattern <part1>.<part2>....<partn>
-//   where the prefix is unlikely to conflict with other tests or
-//   standard packages and each part is in lower camel case. For
-//   example, test/e2e/storage/csi/context.go could define
-//   storage.csi.numIterations.
-// - framework/config can be used to simplify the registration of
-//   multiple options with a single function call:
-//   var storageCSI {
-//       NumIterations `default:"1" usage:"number of iterations"`
-//   }
-//   _ config.AddOptions(&storageCSI, "storage.csi")
-// - The direct use Viper in tests is possible, but discouraged because
-//   it only works in test suites which use Viper (which is not
-//   required) and the supported options cannot be
-//   discovered by a test suite user.
+//   - They are stored in their own context structure or local
+//     variables.
+//   - The standard `flag` package is used to register them.
+//     The flag name should follow the pattern <part1>.<part2>....<partn>
+//     where the prefix is unlikely to conflict with other tests or
+//     standard packages and each part is in lower camel case. For
+//     example, test/e2e/storage/csi/context.go could define
+//     storage.csi.numIterations.
+//   - framework/config can be used to simplify the registration of
+//     multiple options with a single function call:
+//     var storageCSI {
+//     NumIterations `default:"1" usage:"number of iterations"`
+//     }
+//     _ config.AddOptions(&storageCSI, "storage.csi")
+//   - The direct use Viper in tests is possible, but discouraged because
+//     it only works in test suites which use Viper (which is not
+//     required) and the supported options cannot be
+//     discovered by a test suite user.
 //
 // Test suite authors can use framework/viper to make all command line
 // parameters also configurable via a configuration file.
@@ -193,6 +193,8 @@ type TestContextType struct {
 	KoordinatorComponentNamespace string
 	// SLOCtrlConfigMap is the name of the slo-controller configmap.
 	SLOCtrlConfigMap string
+	// KoordSchedulerName is the SchedulerName of the koord-scheduler.
+	KoordSchedulerName string
 }
 
 // NodeKillerConfig describes configuration of NodeKiller -- a utility to
@@ -335,6 +337,7 @@ func RegisterCommonFlags(flags *flag.FlagSet) {
 	// koordinator configs
 	flags.StringVar(&TestContext.KoordinatorComponentNamespace, "koordinator-component-namespace", "koordinator-system", "The namespace of the koordinator components deployed to.")
 	flags.StringVar(&TestContext.SLOCtrlConfigMap, "slo-config-name", "slo-controller-config", "The name of the slo-controller configmap.")
+	flags.StringVar(&TestContext.KoordSchedulerName, "koord-scheduler-name", "koord-scheduler", "The SchedulerName of the koord-scheduler.")
 }
 
 // RegisterClusterFlags registers flags specific to the cluster e2e test suite.

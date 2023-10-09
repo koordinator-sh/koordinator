@@ -26,6 +26,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clientset "k8s.io/client-go/kubernetes"
+	k8spodutil "k8s.io/kubernetes/pkg/api/v1/pod"
 
 	"github.com/koordinator-sh/koordinator/apis/configuration"
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
@@ -36,37 +37,37 @@ import (
 	e2enode "github.com/koordinator-sh/koordinator/test/e2e/framework/node"
 )
 
-var (
-	colocationEnabledConfigData = `{
+const colocationEnabledConfigData = `{
   "enable": true,
-  "cpuReclaimThresholdPercent": 60,
-  "memoryReclaimThresholdPercent": 65,
+  "cpuReclaimThresholdPercent": 80,
+  "memoryReclaimThresholdPercent": 80,
   "memoryCalculatePolicy": "usage"
 }`
 
-	cpuReclaimThresholdPercent    = 60
-	memoryReclaimThresholdPercent = 65
+var (
+	cpuReclaimThresholdPercent    = 80
+	memoryReclaimThresholdPercent = 80
 	maxNodeBatchCPUDiffPercent    = 10
 	maxNodeBatchMemoryDiffPercent = 5
 
-	minNodesBatchResourceAllocatableRatio = 0.8
+	minNodesBatchResourceAllocatableRatio = 0.7
 )
 
 var _ = SIGDescribe("BatchResource", func() {
 	var nodeList *corev1.NodeList
 	var c clientset.Interface
 	var koordClient koordinatorclientset.Interface
-	var koordNamespace, sloConfigName string
+	var koordNamespace, sloConfigName, koordSchedulerName string
 	var err error
 
 	f := framework.NewDefaultFramework("batchresource")
-	f.SkipNamespaceCreation = true
 
 	ginkgo.BeforeEach(func() {
 		c = f.ClientSet
 		koordClient = f.KoordinatorClientSet
 		koordNamespace = framework.TestContext.KoordinatorComponentNamespace
 		sloConfigName = framework.TestContext.SLOCtrlConfigMap
+		koordSchedulerName = framework.TestContext.KoordSchedulerName
 
 		framework.Logf("get some nodes which are ready and schedulable")
 		nodeList, err = e2enode.GetReadySchedulableNodes(c)
@@ -116,7 +117,7 @@ var _ = SIGDescribe("BatchResource", func() {
 					newConfigMap.Data[configuration.ColocationConfigKey] = colocationEnabledConfigData
 					newConfigMapUpdated, err := c.CoreV1().ConfigMaps(koordNamespace).Update(context.TODO(), newConfigMap, metav1.UpdateOptions{})
 					framework.ExpectNoError(err)
-					framework.Logf("update slo-controller-config successfully, data: %v", newConfigMapUpdated.Data)
+					framework.Logf("update slo-controller-config successfully, data: %+v", newConfigMapUpdated.Data)
 					configMap = newConfigMapUpdated
 				} else {
 					framework.Logf("colocation is already enabled in slo-controller-config, keep the same")
@@ -125,11 +126,14 @@ var _ = SIGDescribe("BatchResource", func() {
 				framework.Logf("slo-controller-config does not exist, need create")
 				newConfigMap, err := manifest.ConfigMapFromManifest("slocontroller/slo-controller-config.yaml")
 				framework.ExpectNoError(err)
+
 				newConfigMap.SetNamespace(koordNamespace)
 				newConfigMap.SetName(sloConfigName)
+				newConfigMap.Data[configuration.ColocationConfigKey] = colocationEnabledConfigData
+
 				newConfigMapCreated, err := c.CoreV1().ConfigMaps(koordNamespace).Create(context.TODO(), newConfigMap, metav1.CreateOptions{})
 				framework.ExpectNoError(err)
-				framework.Logf("create slo-controller-config successfully, data: %v", newConfigMapCreated.Data)
+				framework.Logf("create slo-controller-config successfully, data: %+v", newConfigMapCreated.Data)
 				configMap = newConfigMapCreated
 
 				defer rollbackSLOConfigObject(f, koordNamespace, sloConfigName)
@@ -149,15 +153,17 @@ var _ = SIGDescribe("BatchResource", func() {
 
 					// check node allocatable
 					isAllocatable, msg := isNodeBatchResourcesValid(node, nodeMetric)
-					if isAllocatable {
-						allocatableCount++
-					} else {
+					if !isAllocatable {
 						framework.Logf("node %s has no allocatable batch resource, msg: %s", node.Name, msg)
+						continue
 					}
+
+					allocatableCount++
 				}
 
 				if float64(allocatableCount) > float64(totalCount)*minNodesBatchResourceAllocatableRatio {
-					framework.Logf("finish checking node batch resources", totalCount, allocatableCount)
+					framework.Logf("finish checking node batch resources, total[%v], allocatable[%v]",
+						totalCount, allocatableCount)
 					return true
 				}
 
@@ -173,9 +179,52 @@ var _ = SIGDescribe("BatchResource", func() {
 			}, 180*time.Second, 5*time.Second).Should(gomega.Equal(true))
 
 			framework.Logf("check node batch resources finished, total[%v], allocatable[%v]", totalCount, allocatableCount)
+
+			framework.Logf("start to verify node batch resources scheduling")
+
+			ginkgo.By("Loading Pod from manifest")
+			pod, err := manifest.PodFromManifest("slocontroller/be-demo.yaml")
+			gomega.Expect(err).NotTo(gomega.HaveOccurred())
+			pod.Namespace = f.Namespace.Name
+			pod.Spec.SchedulerName = koordSchedulerName
+			gomega.Expect(len(pod.Spec.Containers)).Should(gomega.Equal(1))
+
+			ginkgo.By("Create a Batch Pod")
+			f.PodClient().Create(pod)
+			defer func() {
+				err = f.PodClient().Delete(context.TODO(), pod.Name, metav1.DeleteOptions{})
+				framework.ExpectNoError(err)
+			}()
+
+			ginkgo.By("Wait for Batch Pod Ready")
+			gomega.Eventually(func() bool {
+				p, err := f.PodClient().Get(context.TODO(), pod.Name, metav1.GetOptions{})
+				gomega.Expect(err).NotTo(gomega.HaveOccurred())
+				_, podReady := k8spodutil.GetPodCondition(&p.Status, corev1.PodReady)
+				_, containersReady := k8spodutil.GetPodCondition(&p.Status, corev1.ContainersReady)
+				framework.Logf("created batch pod %s/%s and got status: %+v", p.Namespace, p.Name, p.Status)
+
+				return podReady != nil && podReady.Status == corev1.ConditionTrue &&
+					containersReady != nil && containersReady.Status == corev1.ConditionTrue
+			}, 180*time.Second, 5*time.Second).Should(gomega.Equal(true))
 		})
 	})
 })
+
+func isNodeMetricValid(nodeMetric *slov1alpha1.NodeMetric) (bool, string) {
+	if nodeMetric == nil || nodeMetric.Status.NodeMetric == nil || nodeMetric.Status.NodeMetric.NodeUsage.ResourceList == nil {
+		return false, "node metric is incomplete"
+	}
+	_, ok := nodeMetric.Status.NodeMetric.NodeUsage.ResourceList[corev1.ResourceCPU]
+	if !ok {
+		return false, "cpu usage is missing"
+	}
+	_, ok = nodeMetric.Status.NodeMetric.NodeUsage.ResourceList[corev1.ResourceMemory]
+	if !ok {
+		return false, "memory usage is missing"
+	}
+	return true, ""
+}
 
 func isNodeBatchResourcesValid(node *corev1.Node, nodeMetric *slov1alpha1.NodeMetric) (bool, string) {
 	// validate the node
@@ -187,7 +236,8 @@ func isNodeBatchResourcesValid(node *corev1.Node, nodeMetric *slov1alpha1.NodeMe
 	if !ok {
 		return false, "batch cpu is missing"
 	}
-	if batchMilliCPU.Value() < 0 || batchMilliCPU.Value() > node.Status.Allocatable.Cpu().MilliValue() {
+	// batch cpu can be larger when cpu normalization ratio > 1.0
+	if batchMilliCPU.Value() < 0 {
 		return false, "batch cpu is illegal"
 	}
 	batchMemory, ok := node.Status.Allocatable[apiext.BatchMemory]
@@ -198,17 +248,11 @@ func isNodeBatchResourcesValid(node *corev1.Node, nodeMetric *slov1alpha1.NodeMe
 		return false, "batch memory is illegal"
 	}
 	// validate the node metric
-	if nodeMetric == nil || nodeMetric.Status.NodeMetric == nil || nodeMetric.Status.NodeMetric.NodeUsage.ResourceList == nil {
-		return false, "node metric is incomplete"
+	if isValid, msg := isNodeMetricValid(nodeMetric); !isValid {
+		return false, msg
 	}
-	cpuUsage, ok := nodeMetric.Status.NodeMetric.NodeUsage.ResourceList[corev1.ResourceCPU]
-	if !ok {
-		return false, "cpu usage is missing"
-	}
-	memoryUsage, ok := nodeMetric.Status.NodeMetric.NodeUsage.ResourceList[corev1.ResourceMemory]
-	if !ok {
-		return false, "memory usage is missing"
-	}
+	cpuUsage := nodeMetric.Status.NodeMetric.NodeUsage.ResourceList[corev1.ResourceCPU]
+	memoryUsage := nodeMetric.Status.NodeMetric.NodeUsage.ResourceList[corev1.ResourceMemory]
 	// roughly check the batch resource results:
 	// batch.total >= node.total - node.total * cpuReclaimRatio - nodeMetric.usage - node.total * maxDiffRatio
 	estimatedBatchMilliCPULower := node.Status.Allocatable.Cpu().MilliValue()*int64(100-cpuReclaimThresholdPercent-maxNodeBatchCPUDiffPercent)/100 - cpuUsage.MilliValue()
