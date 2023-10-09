@@ -4,9 +4,10 @@ authors:
   - "@zqzten"
 reviewers:
   - "@saintube"
+  - "@eahydra"
   - "@hormes"
 creation-date: 2023-08-11
-last-updated: 2023-08-29
+last-updated: 2023-10-08
 ---
 
 # Node Resource Amplification
@@ -32,7 +33,7 @@ last-updated: 2023-08-29
 
 ## Summary
 
-Introduce a mechanism to amplify the resources of Kubernetes Nodes **at API level**, which enables the node to meet higher pod CPU requests. This feature can then be utilized by other higher-level ones such as CPU normalization.
+Introduce a mechanism to amplify the resources of Kubernetes Nodes **at scheduling level**, which enables the node to meet higher pod CPU requests. This feature can then be utilized by other higher-level ones such as CPU normalization.
 
 ## Motivation
 
@@ -43,7 +44,8 @@ There are cases where users would like to amplify the resources of a node, for e
 
 ### Goals
 
-- Introduce a mechanism to amplify resources (capacity & allocatable) of Kubernetes Nodes at API level.
+- Introduce a mechanism to amplify resources (capacity & allocatable) of Kubernetes Nodes at scheduling level.
+- Make sure CPUSet Pods get raw CPUs it requested on scheduling.
 
 ### Non-Goals/Future Work
 
@@ -60,6 +62,8 @@ This has been covered in [motivation](#motivation).
 On k8s side, user (end user or other system) annotates the Node to specify its resource amplification ratio.
 
 On koord-manager side, the Node mutating webhook intercepts the Node status updating request from kubelet and modifies its `capacity` and `allocatable` according to the amplification ratio. It also records their raw values in annotations of the Node.
+
+On koord-scheduler side, the `NodeNUMAResource` scheduling plugin filters and scores Nodes with similar logic to the `NodeResourcesFit` plugin for those without NUMA topology policy, but with one difference: It amplifies the request of CPUSet Pods with the Node's CPU normalization ratio, as CPUSet Pods would get real physical CPUs requested so that their requests would occupy more CPU resources than what they specify on Nodes with allocatable CPU amplified. For example, a CPUSet Pod with CPU request 1 would occupy 1 physical CPU on a Node, if the Node's CPU amplification ratio is 2, the Pod would actually occupy 2 amplified CPUs (which are mapped to 1 physical CPU) on this Node. Similarly, for those with NUMA topology policy, the plugin filters and scores Nodes with the same special logic with those NUMA zone CPU resources amplified.
 
 ### API
 
@@ -80,9 +84,8 @@ To mitigate this risk, a Node validating webhook can be introduced to validate t
 
 #### Unexpected Resource Overcommitment
 
-Since the resource amplification only takes effect at API level, unexpected resource overcommitment may happen if this feature is not used carefully, for example:
+Since the resource amplification only takes effect at scheduling level, unexpected resource overcommitment may happen if this feature is not used carefully, for example:
 
-- A Node with 4 allocatable physical CPUs and CPU amplification 2 would claim 8 allocatable CPUs, if there's a CPUSet Pod with CPU request 4 on it, it would occupy all the physical CPUs of the Node. However, the scheduler can still schedule Pods with total CPU request <= 4 to this Node, and thus leads to unexpected CPU starvation.
-- A Node with 4 allocatable physical CPUs and CPU amplification 2 would claim 8 allocatable CPUs, if there's two CPUShare Pods with the same CPU request and limit 4 on this Node, user would suppose that there would be no CPU competition (because their total limits equal to the Node's allocatable CPU), however, each Pod would be given a CFS quota to use all the 4 physical CPUs of the Node actually, so if both Pods use CPU more than 2, there would be a CPU competition.
+A Node with 4 allocatable physical CPUs and CPU amplification 2 would claim 8 allocatable CPUs, if there's two CPUShare Pods with the same CPU request and limit 4 on this Node, user would suppose that there would be no CPU competition (because their total limits equal to the Node's allocatable CPU), however, each Pod would be given a CFS quota to use all the 4 physical CPUs of the Node actually, so if both Pods use CPU more than 2, there would be a CPU competition.
 
 To mitigate this risk, users should do amplification very carefully, and it is recommended to do amplification only on Nodes that are regularly idle. Another way is to utilize end-to-end resource-specific features such as CPU normalization which is covered in another individual proposal.
