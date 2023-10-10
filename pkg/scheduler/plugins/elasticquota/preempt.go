@@ -36,6 +36,7 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework/preemption"
 	"k8s.io/kubernetes/pkg/scheduler/util"
 
+	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/elasticquota/core"
 )
 
@@ -280,6 +281,9 @@ func getPDBLister(handle framework.Handle) policylisters.PodDisruptionBudgetList
 }
 
 func (g *Plugin) canPreempt(pod, victim *corev1.Pod) bool {
+	if extension.IsPodNonPreemptible(victim) {
+		return false
+	}
 	podPri := corev1helpers.PodPriority(pod)
 	vicPri := corev1helpers.PodPriority(victim)
 

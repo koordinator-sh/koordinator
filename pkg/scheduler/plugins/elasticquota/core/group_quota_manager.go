@@ -224,7 +224,7 @@ func (gqm *GroupQuotaManager) recursiveUpdateGroupTreeWithDeltaRequest(deltaReq 
 
 // updateGroupDeltaUsedNoLock updates the usedQuota of a node, it also updates all parent nodes
 // no need to lock gqm.hierarchyUpdateLock
-func (gqm *GroupQuotaManager) updateGroupDeltaUsedNoLock(quotaName string, delta v1.ResourceList) {
+func (gqm *GroupQuotaManager) updateGroupDeltaUsedNoLock(quotaName string, delta, deltaNonPreemptibleUsed v1.ResourceList) {
 	curToAllParInfos := gqm.getCurToAllParentGroupQuotaInfoNoLock(quotaName)
 	allQuotaInfoLen := len(curToAllParInfos)
 	if allQuotaInfoLen <= 0 {
@@ -234,7 +234,7 @@ func (gqm *GroupQuotaManager) updateGroupDeltaUsedNoLock(quotaName string, delta
 	defer gqm.scopedLockForQuotaInfo(curToAllParInfos)()
 	for i := 0; i < allQuotaInfoLen; i++ {
 		quotaInfo := curToAllParInfos[i]
-		quotaInfo.addUsedNonNegativeNoLock(delta)
+		quotaInfo.addUsedNonNegativeNoLock(delta, deltaNonPreemptibleUsed)
 	}
 
 	if utilfeature.DefaultFeatureGate.Enabled(features.ElasticQuotaGuaranteeUsage) {
@@ -472,7 +472,7 @@ func (gqm *GroupQuotaManager) buildSubParGroupTopoNoLock() {
 
 // ResetAllGroupQuotaNoLock no need to lock gqm.lock
 func (gqm *GroupQuotaManager) resetAllGroupQuotaNoLock() {
-	childRequestMap, childUsedMap := make(quotaResMapType), make(quotaResMapType)
+	childRequestMap, childNonPreemptibleUsedMap, childUsedMap := make(quotaResMapType), make(quotaResMapType), make(quotaResMapType)
 	for quotaName, topoNode := range gqm.quotaTopoNodeMap {
 		if quotaName == extension.RootQuotaName {
 			gqm.resetRootQuotaUsedAndRequest()
@@ -481,6 +481,7 @@ func (gqm *GroupQuotaManager) resetAllGroupQuotaNoLock() {
 		topoNode.quotaInfo.lock.Lock()
 		if !topoNode.quotaInfo.IsParent {
 			childRequestMap[quotaName] = topoNode.quotaInfo.CalculateInfo.ChildRequest.DeepCopy()
+			childNonPreemptibleUsedMap[quotaName] = topoNode.quotaInfo.CalculateInfo.NonPreemptibleUsed.DeepCopy()
 			childUsedMap[quotaName] = topoNode.quotaInfo.CalculateInfo.Used.DeepCopy()
 		}
 		topoNode.quotaInfo.clearForResetNoLock()
@@ -500,7 +501,7 @@ func (gqm *GroupQuotaManager) resetAllGroupQuotaNoLock() {
 	for quotaName, topoNode := range gqm.quotaTopoNodeMap {
 		if !topoNode.quotaInfo.IsParent {
 			gqm.updateGroupDeltaRequestNoLock(quotaName, childRequestMap[quotaName])
-			gqm.updateGroupDeltaUsedNoLock(quotaName, childUsedMap[quotaName])
+			gqm.updateGroupDeltaUsedNoLock(quotaName, childUsedMap[quotaName], childNonPreemptibleUsedMap[quotaName])
 		}
 	}
 }
@@ -615,28 +616,36 @@ func (gqm *GroupQuotaManager) updatePodUsedNoLock(quotaName string, oldPod, newP
 		return
 	}
 
-	var oldPodUsed, newPodUsed v1.ResourceList
+	var oldPodUsed, newPodUsed, oldNonPreemptibleUsed, newNonPreemptibleUsed v1.ResourceList
 	if oldPod != nil {
 		oldPodUsed, _ = PodRequestsAndLimits(oldPod)
+		if extension.IsPodNonPreemptible(oldPod) {
+			oldNonPreemptibleUsed = oldPodUsed
+		}
 	} else {
 		oldPodUsed = make(v1.ResourceList)
+		oldNonPreemptibleUsed = make(v1.ResourceList)
 	}
 
 	if newPod != nil {
 		newPodUsed, _ = PodRequestsAndLimits(newPod)
+		if extension.IsPodNonPreemptible(newPod) {
+			newNonPreemptibleUsed = newPodUsed
+		}
 	} else {
 		newPodUsed = make(v1.ResourceList)
+		newNonPreemptibleUsed = make(v1.ResourceList)
 	}
 
 	deltaUsed := quotav1.Subtract(newPodUsed, oldPodUsed)
-	if quotav1.IsZero(deltaUsed) {
+	deltaNonPreemptibleUsed := quotav1.Subtract(newNonPreemptibleUsed, oldNonPreemptibleUsed)
+	if quotav1.IsZero(deltaUsed) && quotav1.IsZero(deltaNonPreemptibleUsed) {
 		if klog.V(5).Enabled() {
-			klog.Infof("updatePodUsed, deltaUsedIsZero, quotaName: %v, podName: %v, podUsed: %v",
-				quotaName, getPodName(oldPod, newPod), util.DumpJSON(newPodUsed))
+			klog.Infof("updatePodUsed, deltaUsedIsZero and deltaNonPreemptibleUsedIsZero, quotaName: %v, podName: %v, podUsed: %v, podNonPreemptibleUsed: %v",
+				quotaName, getPodName(oldPod, newPod), util.DumpJSON(newPodUsed), util.DumpJSON(newNonPreemptibleUsed))
 		}
-		return
 	}
-	gqm.updateGroupDeltaUsedNoLock(quotaName, deltaUsed)
+	gqm.updateGroupDeltaUsedNoLock(quotaName, deltaUsed, deltaNonPreemptibleUsed)
 }
 
 func (gqm *GroupQuotaManager) updatePodCacheNoLock(quotaName string, pod *v1.Pod, isAdd bool) {
@@ -878,21 +887,25 @@ func (gqm *GroupQuotaManager) resetRootQuotaUsedAndRequest() {
 
 	used := v1.ResourceList{}
 	request := v1.ResourceList{}
+	nonPreemptUsed := v1.ResourceList{}
 
 	systemQuotaInfo := gqm.getQuotaInfoByNameNoLock(extension.SystemQuotaName)
 	if systemQuotaInfo != nil {
 		used = quotav1.Add(used, systemQuotaInfo.GetUsed())
 		request = quotav1.Add(request, systemQuotaInfo.GetRequest())
+		nonPreemptUsed = quotav1.Add(nonPreemptUsed, systemQuotaInfo.GetNonPreemptibleUsed())
 	}
 
 	defaultQuotaInfo := gqm.getQuotaInfoByNameNoLock(extension.DefaultQuotaName)
 	if defaultQuotaInfo != nil {
 		used = quotav1.Add(used, defaultQuotaInfo.GetUsed())
 		request = quotav1.Add(request, defaultQuotaInfo.GetRequest())
+		nonPreemptUsed = quotav1.Add(nonPreemptUsed, defaultQuotaInfo.GetNonPreemptibleUsed())
 	}
 
 	rootQuotaInfo.CalculateInfo.Used = used
 	rootQuotaInfo.CalculateInfo.Request = request
+	rootQuotaInfo.CalculateInfo.NonPreemptibleUsed = nonPreemptUsed
 }
 
 func (gqm *GroupQuotaManager) recursiveUpdateGroupTreeWithDeltaAllocated(deltaAllocated v1.ResourceList, curToAllParInfos []*QuotaInfo) {

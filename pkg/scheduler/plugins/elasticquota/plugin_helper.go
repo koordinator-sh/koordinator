@@ -241,9 +241,10 @@ func (g *Plugin) createRootQuotaIfNotPresent() {
 
 func (g *Plugin) snapshotPostFilterState(quotaInfo *core.QuotaInfo, state *framework.CycleState) *PostFilterState {
 	postFilterState := &PostFilterState{
-		quotaInfo: quotaInfo,
-		used:      quotaInfo.GetUsed(),
-		runtime:   quotaInfo.GetRuntime(),
+		quotaInfo:          quotaInfo,
+		used:               quotaInfo.GetUsed(),
+		nonPreemptibleUsed: quotaInfo.GetNonPreemptibleUsed(),
+		runtime:            quotaInfo.GetRuntime(),
 	}
 	state.Write(postFilterKey, postFilterState)
 	return postFilterState

@@ -107,10 +107,11 @@ func TestQuotaOverUsedRevokeController_GetToRevokePodList(t *testing.T) {
 	con := NewQuotaOverUsedRevokeController(plugin)
 	con.syncQuota()
 	quotaInfo := gqm.GetQuotaInfoByName("test1")
-	pod1 := defaultCreatePod("1", 10, 30, 0)
+	pod1 := defaultCreatePod("1", 10, 20, 0)
 	pod2 := defaultCreatePod("2", 9, 10, 1)
 	pod3 := defaultCreatePod("3", 8, 20, 0)
 	pod4 := defaultCreatePod("4", 7, 40, 0)
+	defaultCreatePodWithQuotaAndNonPreemptible("5", "test1", 1, 10, 0, true)
 	gqm.OnPodAdd("test1", pod1)
 	gqm.OnPodAdd("test1", pod2)
 	gqm.OnPodAdd("test1", pod3)
@@ -120,7 +121,7 @@ func TestQuotaOverUsedRevokeController_GetToRevokePodList(t *testing.T) {
 	if len(result) != 2 {
 		t.Errorf("error:%v", len(result))
 	}
-	if result[0].Name != "2" || result[1].Name != "4" {
+	if result[0].Name == "5" || result[0].Name != "2" || result[1].Name != "4" {
 		t.Errorf("error")
 	}
 	qi.Lock()

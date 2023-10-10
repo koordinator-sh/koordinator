@@ -56,17 +56,19 @@ const (
 )
 
 type PostFilterState struct {
-	skip      bool
-	quotaInfo *core.QuotaInfo
-	used      corev1.ResourceList
-	runtime   corev1.ResourceList
+	skip               bool
+	quotaInfo          *core.QuotaInfo
+	used               corev1.ResourceList
+	nonPreemptibleUsed corev1.ResourceList
+	runtime            corev1.ResourceList
 }
 
 func (p *PostFilterState) Clone() framework.StateData {
 	return &PostFilterState{
-		quotaInfo: p.quotaInfo,
-		used:      p.used.DeepCopy(),
-		runtime:   p.runtime.DeepCopy(),
+		quotaInfo:          p.quotaInfo,
+		used:               p.used.DeepCopy(),
+		nonPreemptibleUsed: p.nonPreemptibleUsed.DeepCopy(),
+		runtime:            p.runtime.DeepCopy(),
 	}
 }
 
@@ -231,6 +233,18 @@ func (g *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleState
 		return nil, framework.NewStatus(framework.Unschedulable, fmt.Sprintf("Insufficient quotas, "+
 			"quotaName: %v, runtime: %v, used: %v, pod's request: %v, exceedDimensions: %v",
 			quotaName, printResourceList(state.runtime), printResourceList(state.used), printResourceList(podRequest), exceedDimensions))
+	}
+
+	if extension.IsPodNonPreemptible(pod) {
+		quotaMin := state.quotaInfo.CalculateInfo.Min
+		nonPreemptibleUsed := state.nonPreemptibleUsed
+		addNonPreemptibleUsed := quotav1.Add(podRequest, nonPreemptibleUsed)
+
+		if isLessEqual, exceedDimensions := quotav1.LessThanOrEqual(addNonPreemptibleUsed, quotaMin); !isLessEqual {
+			return nil, framework.NewStatus(framework.Unschedulable, fmt.Sprintf("Insufficient non-preemptible quotas, "+
+				"quotaName: %v, min: %v, nonPreemptibleUsed: %v, pod's request: %v, exceedDimensions: %v",
+				quotaName, printResourceList(quotaMin), printResourceList(nonPreemptibleUsed), printResourceList(podRequest), exceedDimensions))
+		}
 	}
 
 	if *g.pluginArgs.EnableCheckParentQuota {

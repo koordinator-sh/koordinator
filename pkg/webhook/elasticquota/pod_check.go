@@ -54,6 +54,9 @@ func (qt *quotaTopology) ValidateAddPod(pod *corev1.Pod) error {
 }
 
 func (qt *quotaTopology) ValidateUpdatePod(oldPod, newPod *corev1.Pod) error {
+	if oldPod.Labels[extension.LabelPreemptible] != newPod.Labels[extension.LabelPreemptible] {
+		return fmt.Errorf("Preemptible label is forbidden modify now.")
+	}
 	return qt.ValidateAddPod(newPod)
 }
 

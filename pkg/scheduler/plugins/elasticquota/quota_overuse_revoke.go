@@ -111,6 +111,9 @@ func (monitor *QuotaOverUsedGroupMonitor) getToRevokePodList(quotaName string) [
 		if shouldBreak, _ := quotav1.LessThanOrEqual(used, runtime); shouldBreak {
 			break
 		}
+		if extension.IsPodNonPreemptible(pod) {
+			continue
+		}
 		podReq, _ := core.PodRequestsAndLimits(pod)
 		used = quotav1.Subtract(used, podReq)
 		tryAssignBackPodCache = append(tryAssignBackPodCache, pod)
