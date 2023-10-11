@@ -154,6 +154,8 @@ func (qi *QuotaInfo) GetQuotaSummary() *QuotaInfoSummary {
 	quotaInfoSummary.SharedWeight = qi.CalculateInfo.SharedWeight.DeepCopy()
 	quotaInfoSummary.Runtime = qi.CalculateInfo.Runtime.DeepCopy()
 	quotaInfoSummary.ChildRequest = qi.CalculateInfo.ChildRequest.DeepCopy()
+	quotaInfoSummary.Allocated = qi.CalculateInfo.Allocated.DeepCopy()
+	quotaInfoSummary.Guaranteed = qi.CalculateInfo.Guaranteed.DeepCopy()
 
 	for podName, podInfo := range qi.PodCache {
 		quotaInfoSummary.PodCache[podName] = &SimplePodInfo{

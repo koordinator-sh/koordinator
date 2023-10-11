@@ -41,6 +41,8 @@ type QuotaInfoSummary struct {
 	SharedWeight       v1.ResourceList `json:"sharedWeight"`
 	Runtime            v1.ResourceList `json:"runtime"`
 	ChildRequest       v1.ResourceList `json:"childRequest"`
+	Allocated          v1.ResourceList `json:"allocated"`
+	Guaranteed         v1.ResourceList `json:"guaranteed"`
 
 	PodCache map[string]*SimplePodInfo `json:"podCache"`
 }
