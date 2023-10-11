@@ -16,29 +16,28 @@
 # limitations under the License.
 #
 
-if [ -z "$IMG" ]; then
-  echo "no found IMG env"
-  exit 1
-fi
-
-K8S_VERSION=""
-if [ -z "$KUBERNETES_VERSION" ]; then
-  K8S_VERSION="latest"
-else
-  K8S_VERSION=$KUBERNETES_VERSION
-fi
-
 set -e
 
 make kustomize
 KUSTOMIZE=$(pwd)/bin/kustomize
-(cd config/manager && "${KUSTOMIZE}" edit set image manager="${IMG}")
 
-if [[ "$K8S_VERSION" == "1.22" ]]; then
-  sed "s/feature-gates=/feature-gates=CompatibleCSIStorageCapacity=true/g" $(pwd)/config/manager/scheduler.yaml > /tmp/scheduler.yaml && mv /tmp/scheduler.yaml $(pwd)/config/manager/scheduler.yaml
-  $(pwd)/hack/kustomize.sh "${KUSTOMIZE}" | sed -e 's/imagePullPolicy: Always/imagePullPolicy: IfNotPresent/g' > /tmp/koordinator-kustomization.yaml
-else
-  $(pwd)/hack/kustomize.sh "${KUSTOMIZE}" | sed -e 's/imagePullPolicy: Always/imagePullPolicy: IfNotPresent/g' > /tmp/koordinator-kustomization.yaml
+if [[ -n "$MANAGER_IMG" ]]; then
+  (cd config/manager && "${KUSTOMIZE}" edit set image manager="${MANAGER_IMG}")
 fi
+if [[ -n "$SCHEDULER_IMG" ]]; then
+  (cd config/manager && "${KUSTOMIZE}" edit set image scheduler="${SCHEDULER_IMG}")
+fi
+if [[ -n "$DESCHEDULER_IMG" ]]; then
+  (cd config/manager && "${KUSTOMIZE}" edit set image descheduler="${DESCHEDULER_IMG}")
+fi
+if [[ -n "$KOORDLET_IMG" ]]; then
+  (cd config/manager && "${KUSTOMIZE}" edit set image koordlet="${KOORDLET_IMG}")
+fi
+
+if [[ "$KUBERNETES_VERSION" == "1.22" ]]; then
+  sed "s/feature-gates=/feature-gates=CompatibleCSIStorageCapacity=true/g" $(pwd)/config/manager/scheduler.yaml > /tmp/scheduler.yaml && mv /tmp/scheduler.yaml $(pwd)/config/manager/scheduler.yaml
+fi
+
+$(pwd)/hack/kustomize.sh "${KUSTOMIZE}" | sed -e 's/imagePullPolicy: Always/imagePullPolicy: IfNotPresent/g' > /tmp/koordinator-kustomization.yaml
 
 kubectl apply -f /tmp/koordinator-kustomization.yaml
