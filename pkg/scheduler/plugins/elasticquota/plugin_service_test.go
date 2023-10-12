@@ -27,9 +27,12 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
+	k8sfeature "k8s.io/apiserver/pkg/util/feature"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
+	koordfeatures "github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/elasticquota/core"
+	utilfeature "github.com/koordinator-sh/koordinator/pkg/util/feature"
 )
 
 func TestEndpointsQueryQuotaInfo(t *testing.T) {
@@ -147,5 +150,31 @@ func TestEndpointsQueryQuotaInfo(t *testing.T) {
 		assert.Equal(t, len(quotaSummary.PodCache), 1)
 		assert.Equal(t, quotaSummary.PodCache[podToCreate.Namespace+"/"+podToCreate.Name].IsAssigned, true)
 		assert.True(t, quotav1.Equals(quotaSummary.PodCache[podToCreate.Namespace+"/"+podToCreate.Name].Resource, createResourceList(33, 33)))
+	}
+	{
+		defer utilfeature.SetFeatureGateDuringTest(t, k8sfeature.DefaultMutableFeatureGate, koordfeatures.MultiQuotaTree, true)()
+
+		// add root quota
+		eq.addRootQuota("tree1-root", "", 20, 20, 10, 10, 30, 30, false, "", "tree1")
+
+		engine := gin.Default()
+		eq.RegisterEndpoints(engine.Group("/"))
+		w := httptest.NewRecorder()
+		req, _ := http.NewRequest("GET", "/quotas?tree=tree1", nil)
+		engine.ServeHTTP(w, req)
+		assert.Equal(t, http.StatusOK, w.Result().StatusCode)
+		quotaSummaries := make(map[string]*core.QuotaInfoSummary)
+		err = json.Unmarshal([]byte(w.Body.String()), &quotaSummaries)
+		assert.NoError(t, err)
+
+		_, ok := quotaSummaries["test1"]
+		assert.False(t, ok)
+
+		quotaSummary, ok := quotaSummaries["tree1-root"]
+		assert.True(t, ok)
+		assert.True(t, quotav1.Equals(quotaSummary.Max, createResourceList(20, 20)))
+		assert.True(t, quotav1.Equals(quotaSummary.Min, createResourceList(10, 10)))
+		assert.True(t, quotav1.Equals(quotaSummary.AutoScaleMin, createResourceList(10, 10)))
+		assert.True(t, quotav1.Equals(quotaSummary.SharedWeight, createResourceList(30, 30)))
 	}
 }
