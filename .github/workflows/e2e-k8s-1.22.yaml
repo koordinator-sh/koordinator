@@ -39,9 +39,12 @@ jobs:
           version: ${{ env.KIND_VERSION }}
       - name: Build image
         run: |
-          export IMAGE="koordinator-sh/koord-manager:e2e-${GITHUB_RUN_ID}"
-          docker build --pull --no-cache . -t $IMAGE -f docker/koord-manager.dockerfile
-          kind load docker-image --name=${KIND_CLUSTER_NAME} $IMAGE || { echo >&2 "kind not installed or error loading image: $IMAGE"; exit 1; }
+          export MANAGER_IMAGE="koordinator-sh/koord-manager:e2e-${GITHUB_RUN_ID}"
+          docker build --pull . -t ${MANAGER_IMAGE} -f docker/koord-manager.dockerfile
+          export KOORDLET_IMAGE="koordinator-sh/koordlet:e2e-${GITHUB_RUN_ID}"
+          docker build --pull . -t ${KOORDLET_IMAGE} -f docker/koordlet.dockerfile
+          kind load docker-image --name=${KIND_CLUSTER_NAME} ${MANAGER_IMAGE} || { echo >&2 "kind not installed or error loading image: ${MANAGER_IMAGE}"; exit 1; }
+          kind load docker-image --name=${KIND_CLUSTER_NAME} ${KOORDLET_IMAGE} || { echo >&2 "kind not installed or error loading image: ${KOORDLET_IMAGE}"; exit 1; }
       - name: Check host environment
         run: |
           set -ex
@@ -55,7 +58,7 @@ jobs:
         run: |
           set -ex
           kubectl cluster-info
-          IMG=koordinator-sh/koord-manager:e2e-${GITHUB_RUN_ID} KUBERNETES_VERSION="1.22" ./hack/deploy_kind.sh
+          KUBERNETES_VERSION="1.22" MANAGER_IMG=koordinator-sh/koord-manager:e2e-${GITHUB_RUN_ID} KOORDLET_IMG=koordinator-sh/koordlet:e2e-${GITHUB_RUN_ID} ./hack/deploy_kind.sh
           NODES=$(kubectl get node | wc -l)
           for ((i=1;i<10;i++));
           do
