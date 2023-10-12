@@ -24,6 +24,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	apimachinerytypes "k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/klog/v2"
 )
 
 type forceSyncEventHandler struct {
@@ -64,6 +65,7 @@ func (h *forceSyncEventHandler) OnAdd(obj interface{}) {
 				return
 			}
 			delete(h.objects, objectUID)
+			klog.Warningf("Object %q has been updated multiple times in a short period of time", klog.KObj(objectMeta).String())
 		}
 	}
 	if h.handler != nil {
