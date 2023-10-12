@@ -295,6 +295,10 @@ func (ri *ReservationInfo) UpdatePod(pod *corev1.Pod) {
 }
 
 func (ri *ReservationInfo) AddAssignedPod(pod *corev1.Pod) {
+	if _, ok := ri.AssignedPods[pod.UID]; ok {
+		klog.Warningf("Repeatedly add assigned Pod %v in reservation %v, skip it.", klog.KObj(pod), klog.KObj(ri))
+		return
+	}
 	requirement := NewPodRequirement(pod)
 	ri.Allocated = quotav1.Add(ri.Allocated, quotav1.Mask(requirement.Requests, ri.ResourceNames))
 	ri.AllocatedPorts = util.AppendHostPorts(ri.AllocatedPorts, requirement.Ports)
