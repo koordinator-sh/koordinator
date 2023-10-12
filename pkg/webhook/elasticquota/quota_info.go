@@ -26,6 +26,7 @@ import (
 type QuotaInfo struct {
 	IsParent          bool
 	AllowLentResource bool
+	AllowForceUpdate  bool
 	Name              string
 	ParentName        string
 	TreeID            string
@@ -70,6 +71,7 @@ func NewQuotaInfoFromQuota(quota *v1alpha1.ElasticQuota) *QuotaInfo {
 	quotaInfo.setMinQuotaNoLock(quota.Spec.Min)
 	quotaInfo.setMaxQuotaNoLock(quota.Spec.Max)
 	quotaInfo.IsTreeRoot = extension.IsTreeRootQuota(quota)
+	quotaInfo.AllowForceUpdate = extension.IsAllowForceUpdate(quota)
 	quotaInfo.CalculateInfo.Allocated, _ = extension.GetAllocated(quota)
 	quotaInfo.CalculateInfo.Guaranteed, _ = extension.GetGuaranteed(quota)
 

@@ -40,6 +40,7 @@ const (
 	LabelQuotaTreeID            = QuotaKoordinatorPrefix + "/tree-id"
 	LabelQuotaIgnoreDefaultTree = QuotaKoordinatorPrefix + "/ignore-default-tree"
 	LabelPreemptible            = QuotaKoordinatorPrefix + "/preemptible"
+	LabelAllowForceUpdate       = QuotaKoordinatorPrefix + "/allow-force-update"
 	AnnotationSharedWeight      = QuotaKoordinatorPrefix + "/shared-weight"
 	AnnotationRuntime           = QuotaKoordinatorPrefix + "/runtime"
 	AnnotationRequest           = QuotaKoordinatorPrefix + "/request"
@@ -65,6 +66,10 @@ func IsParentQuota(quota *v1alpha1.ElasticQuota) bool {
 
 func IsAllowLentResource(quota *v1alpha1.ElasticQuota) bool {
 	return quota.Labels[LabelAllowLentResource] != "false"
+}
+
+func IsAllowForceUpdate(quota *v1alpha1.ElasticQuota) bool {
+	return quota.Labels[LabelAllowForceUpdate] == "true"
 }
 
 func IsTreeRootQuota(quota *v1alpha1.ElasticQuota) bool {
