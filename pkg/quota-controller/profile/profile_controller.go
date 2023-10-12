@@ -139,7 +139,7 @@ func (r *QuotaProfileReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	// TODO: consider node status.
 	totalResource := corev1.ResourceList{}
 	for _, node := range nodeList.Items {
-		totalResource = quotav1.Add(totalResource, node.Status.Allocatable)
+		totalResource = quotav1.Add(totalResource, GetNodeAllocatable(node))
 	}
 
 	decorateTotalResource(profile, totalResource)
