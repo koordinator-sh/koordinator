@@ -721,6 +721,7 @@ func (gqm *GroupQuotaManager) GetQuotaSummaries() map[string]*QuotaInfoSummary {
 		quotaSummary := quotaInfo.GetQuotaSummary()
 		runtime := gqm.RefreshRuntimeNoLock(quotaName)
 		quotaSummary.Runtime = runtime.DeepCopy()
+		quotaSummary.Tree = gqm.treeID
 		result[quotaName] = quotaSummary
 	}
 

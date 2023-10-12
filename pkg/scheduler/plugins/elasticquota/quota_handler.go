@@ -119,16 +119,25 @@ func (g *Plugin) GetQuotaSummary(quotaName string) (*core.QuotaInfoSummary, bool
 	return mgr.GetQuotaSummary(quotaName)
 }
 
-func (g *Plugin) GetQuotaSummaries() map[string]*core.QuotaInfoSummary {
-	summaries := g.groupQuotaManager.GetQuotaSummaries()
+func (g *Plugin) GetQuotaSummaries(tree string) map[string]*core.QuotaInfoSummary {
+	summaries := make(map[string]*core.QuotaInfoSummary)
 
 	managers := g.ListGroupQuotaManagersForQuotaTree()
 	for _, mgr := range managers {
+		if tree != "" && mgr.GetTreeID() != tree {
+			continue
+		}
 		for quotaName, summary := range mgr.GetQuotaSummaries() {
 			// quota tree root quota is virtual
 			if quotaName == extension.RootQuotaName {
 				continue
 			}
+			summaries[quotaName] = summary
+		}
+	}
+
+	if g.groupQuotaManager.GetTreeID() == tree {
+		for quotaName, summary := range g.groupQuotaManager.GetQuotaSummaries() {
 			summaries[quotaName] = summary
 		}
 	}

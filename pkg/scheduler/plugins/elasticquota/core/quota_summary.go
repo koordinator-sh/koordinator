@@ -31,6 +31,7 @@ type QuotaInfoSummary struct {
 	IsParent          bool   `json:"isParent"`
 	RuntimeVersion    int64  `json:"runtimeVersion"`
 	AllowLentResource bool   `json:"allowLentResource"`
+	Tree              string `json:"tree"`
 
 	Max                v1.ResourceList `json:"max"`
 	Min                v1.ResourceList `json:"min"`
