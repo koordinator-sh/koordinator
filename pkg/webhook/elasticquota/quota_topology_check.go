@@ -210,6 +210,15 @@ func (qt *quotaTopology) checkSubAndParentGroupMaxQuotaKeySame(quotaInfo *QuotaI
 //  1. the sum of brothers' minquota should less than or equal to parentMinQuota.
 //  2. the sum of children's minquota should less than or equal to newQuotaMin.
 func (qt *quotaTopology) checkMinQuotaValidate(newQuotaInfo *QuotaInfo) error {
+	if newQuotaInfo.AllowForceUpdate {
+		return nil
+	}
+
+	// If the quota is tree root, we don't check it's min
+	if newQuotaInfo.IsTreeRoot {
+		return nil
+	}
+
 	// check brothers' minquota sum
 	if newQuotaInfo.ParentName != extension.RootQuotaName {
 		childMinSumNotIncludeSelf, err := qt.getChildMinQuotaSumExceptSpecificChild(newQuotaInfo.ParentName, newQuotaInfo.Name)
@@ -331,6 +340,10 @@ func checkQuotaKeySame(parent, child v1.ResourceList) bool {
 }
 
 func (qt *quotaTopology) checkGuaranteedForMin(quotaInfo *QuotaInfo) error {
+	if quotaInfo.AllowForceUpdate {
+		return nil
+	}
+
 	if quotaInfo.TreeID == "" {
 		return nil
 	}
