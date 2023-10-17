@@ -31,8 +31,8 @@ var (
 
 	NodeResourcePriorityReclaimable = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Subsystem: KoordletSubsystem,
-		Name:      "node_priority_resource_allocatable",
-		Help:      "the node allocatable of different priority resources updated by koordinator",
+		Name:      "node_priority_resource_reclaimable",
+		Help:      "the node reclaimable of different priorities resources updated by koordinator",
 	}, []string{NodeKey, PriorityKey, ResourceKey, UnitKey})
 
 	ContainerResourceRequests = prometheus.NewGaugeVec(prometheus.GaugeOpts{
