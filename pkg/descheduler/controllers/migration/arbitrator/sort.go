@@ -18,7 +18,6 @@ package arbitrator
 
 import (
 	"context"
-	"math"
 	"sort"
 
 	corev1 "k8s.io/api/core/v1"
@@ -30,6 +29,7 @@ import (
 
 	"github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/fieldindex"
+	"github.com/koordinator-sh/koordinator/pkg/descheduler/utils/sorter"
 	utilclient "github.com/koordinator-sh/koordinator/pkg/util/client"
 )
 
@@ -37,53 +37,140 @@ const (
 	JobKind = "Job"
 )
 
-// SortJobsByPod sort a SortFn that sorts PodMigrationJobs by their Pods, including priority, QoS.
-func SortJobsByPod(sorter func(pods []*corev1.Pod)) SortFn {
-	return func(jobs []*v1alpha1.PodMigrationJob, podOfJob map[*v1alpha1.PodMigrationJob]*corev1.Pod) []*v1alpha1.PodMigrationJob {
-		var pods []*corev1.Pod
-		jobOfPod := map[*corev1.Pod]*v1alpha1.PodMigrationJob{}
-		rankOfJob := map[*v1alpha1.PodMigrationJob]int{}
-		for _, job := range jobs {
-			pod := podOfJob[job]
-			if pod == nil {
-				rankOfJob[job] = math.MinInt
-				continue
+// CompareFn compares p1 and p2 and returns:
+//
+//   -1 if p1 <  p2
+//    0 if p1 == p2
+//   +1 if p1 >  p2
+//
+
+// MultiSorter implements the Sort interface
+type MultiSorter struct {
+	ascending        bool
+	podMigrationJobs []*v1alpha1.PodMigrationJob
+	cmp              []CompareFn
+}
+
+// Sort sorts the podMigrationJobs according to the cmp functions passed to OrderedBy.
+func (ms *MultiSorter) Sort(podMigrationJobs []*v1alpha1.PodMigrationJob) {
+	ms.podMigrationJobs = podMigrationJobs
+	sort.Stable(ms)
+}
+
+// OrderedBy returns a Sorter sorted using the cmp functions, sorts in ascending order by default
+func OrderedBy(cmp ...CompareFn) *MultiSorter {
+	return &MultiSorter{
+		ascending: true,
+		cmp:       cmp,
+	}
+}
+
+func (ms *MultiSorter) Ascending() *MultiSorter {
+	ms.ascending = true
+	return ms
+}
+
+func (ms *MultiSorter) Descending() *MultiSorter {
+	ms.ascending = false
+	return ms
+}
+
+// Len is part of sort.Interface.
+func (ms *MultiSorter) Len() int {
+	return len(ms.podMigrationJobs)
+}
+
+// Swap is part of sort.Interface.
+func (ms *MultiSorter) Swap(i, j int) {
+	ms.podMigrationJobs[i], ms.podMigrationJobs[j] = ms.podMigrationJobs[j], ms.podMigrationJobs[i]
+}
+
+// Less is part of sort.Interface.
+func (ms *MultiSorter) Less(i, j int) bool {
+	p1, p2 := ms.podMigrationJobs[i], ms.podMigrationJobs[j]
+	var k int
+	for k = 0; k < len(ms.cmp)-1; k++ {
+		cmpResult := ms.cmp[k](p1, p2)
+		// p1 is less than p2
+		if cmpResult < 0 {
+			return ms.ascending
+		}
+		// p1 is greater than p2
+		if cmpResult > 0 {
+			return !ms.ascending
+		}
+	}
+	cmpResult := ms.cmp[k](p1, p2)
+	if cmpResult < 0 {
+		return ms.ascending
+	}
+	return !ms.ascending
+}
+
+// cmpBool compares booleans, placing true before false
+func cmpBool(a, b bool) int {
+	if a == b {
+		return 0
+	}
+	if !b {
+		return -1
+	}
+	return 1
+}
+
+func Reverse(cmp CompareFn) CompareFn {
+	return func(p1, p2 *v1alpha1.PodMigrationJob) int {
+		result := cmp(p1, p2)
+		if result > 0 {
+			return -1
+		}
+		if result < 0 {
+			return 1
+		}
+		return 0
+	}
+}
+
+// SortJobsByPod returns a SortFn that sorts PodMigrationJobs by their Pods, including priority, QoS.
+func SortJobsByPod(podSorters []sorter.CompareFn) SortFn {
+	return func(jobs []*v1alpha1.PodMigrationJob, podOfJob map[*v1alpha1.PodMigrationJob]*corev1.Pod) CompareFn {
+		return func(p1, p2 *v1alpha1.PodMigrationJob) int {
+			for _, podSorter := range podSorters {
+				cmpResult := podSorter(podOfJob[p1], podOfJob[p2])
+				if cmpResult < 0 {
+					return -1
+				}
+				if cmpResult > 0 {
+					return 1
+				}
 			}
-			pods = append(pods, pod)
-			jobOfPod[pod] = job
+			return 0
 		}
-
-		// using PodSorter to sort
-		sorter(pods)
-
-		for i, pod := range pods {
-			rankOfJob[jobOfPod[pod]] = i
-		}
-
-		sort.SliceStable(jobs, func(i, j int) bool {
-			return rankOfJob[jobs[i]] < rankOfJob[jobs[j]]
-		})
-		return jobs
 	}
 }
 
 // SortJobsByCreationTime returns a SortFn that stably sorts PodMigrationJobs by create time.
 func SortJobsByCreationTime() SortFn {
-	return func(jobs []*v1alpha1.PodMigrationJob, podOfJob map[*v1alpha1.PodMigrationJob]*corev1.Pod) []*v1alpha1.PodMigrationJob {
-		sort.SliceStable(jobs, func(i, j int) bool {
-			return jobs[i].GetCreationTimestamp().Unix() > jobs[j].GetCreationTimestamp().Unix()
-		})
-		return jobs
+	return func(jobs []*v1alpha1.PodMigrationJob, podOfJob map[*v1alpha1.PodMigrationJob]*corev1.Pod) CompareFn {
+		return func(p1, p2 *v1alpha1.PodMigrationJob) int {
+			if p1.CreationTimestamp.Equal(&p2.CreationTimestamp) {
+				return 0
+			}
+			if p1.CreationTimestamp.Before(&p2.CreationTimestamp) {
+				return 1
+			}
+			return -1
+		}
 	}
 }
 
 // SortJobsByMigratingNum returns a SortFn that stably sorts PodMigrationJobs the number of migrating PMJs in the same Job.
 func SortJobsByMigratingNum(c client.Client) SortFn {
-	return func(podMigrationJobs []*v1alpha1.PodMigrationJob, podOfJob map[*v1alpha1.PodMigrationJob]*corev1.Pod) []*v1alpha1.PodMigrationJob {
+	return func(jobs []*v1alpha1.PodMigrationJob, podOfJob map[*v1alpha1.PodMigrationJob]*corev1.Pod) CompareFn {
 		// get owner of jobs
 		rankOfPodMigrationJobs := map[*v1alpha1.PodMigrationJob]int{}
 		migratingJobNumOfOwners := map[types.UID]int{}
-		for _, job := range podMigrationJobs {
+		for _, job := range jobs {
 			owner, ok := getJobControllerOfPod(podOfJob[job])
 			if !ok {
 				continue
@@ -97,19 +184,24 @@ func SortJobsByMigratingNum(c client.Client) SortFn {
 			}
 		}
 
-		sort.SliceStable(podMigrationJobs, func(i, j int) bool {
-			return rankOfPodMigrationJobs[podMigrationJobs[i]] > rankOfPodMigrationJobs[podMigrationJobs[j]]
-		})
-		return podMigrationJobs
+		return func(p1, p2 *v1alpha1.PodMigrationJob) int {
+			if rankOfPodMigrationJobs[p1] > rankOfPodMigrationJobs[p2] {
+				return -1
+			}
+			if rankOfPodMigrationJobs[p1] < rankOfPodMigrationJobs[p2] {
+				return 0
+			}
+			return 0
+		}
 	}
 }
 
 // SortJobsByController returns a SortFn that places PodMigrationJobs in the same job in adjacent positions.
 func SortJobsByController() SortFn {
-	return func(podMigrationJobs []*v1alpha1.PodMigrationJob, podOfJob map[*v1alpha1.PodMigrationJob]*corev1.Pod) []*v1alpha1.PodMigrationJob {
+	return func(jobs []*v1alpha1.PodMigrationJob, podOfJob map[*v1alpha1.PodMigrationJob]*corev1.Pod) CompareFn {
 		highestRankOfJob := map[types.UID]int{}
 		rankOfPodMigrationJobs := map[*v1alpha1.PodMigrationJob]int{}
-		for i, job := range podMigrationJobs {
+		for i, job := range jobs {
 			owner, ok := getJobControllerOfPod(podOfJob[job])
 			if !ok {
 				rankOfPodMigrationJobs[job] = i
@@ -122,10 +214,16 @@ func SortJobsByController() SortFn {
 				rankOfPodMigrationJobs[job] = i
 			}
 		}
-		sort.SliceStable(podMigrationJobs, func(i, j int) bool {
-			return rankOfPodMigrationJobs[podMigrationJobs[i]] < rankOfPodMigrationJobs[podMigrationJobs[j]]
-		})
-		return podMigrationJobs
+
+		return func(p1, p2 *v1alpha1.PodMigrationJob) int {
+			if rankOfPodMigrationJobs[p1] < rankOfPodMigrationJobs[p2] {
+				return -1
+			}
+			if rankOfPodMigrationJobs[p1] > rankOfPodMigrationJobs[p2] {
+				return 1
+			}
+			return 0
+		}
 	}
 }
 

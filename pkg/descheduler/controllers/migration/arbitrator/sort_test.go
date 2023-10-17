@@ -20,7 +20,6 @@ import (
 	"context"
 	"fmt"
 	"reflect"
-	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -41,6 +40,7 @@ import (
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/fieldindex"
+	"github.com/koordinator-sh/koordinator/pkg/descheduler/utils/sorter"
 )
 
 func TestSortJobsByPod(t *testing.T) {
@@ -85,13 +85,19 @@ func TestSortJobsByPod(t *testing.T) {
 				podOrder[pod.Name] = testCase.order[i]
 			}
 
-			podSorter := SortJobsByPod(
-				func(pods []*corev1.Pod) {
-					sort.Slice(pods, func(i, j int) bool {
-						return podOrder[pods[i].Name] < podOrder[pods[j].Name]
-					})
-				})
-			podSorter(jobs, podOfJob)
+			fn := SortJobsByPod(
+				[]sorter.CompareFn{func(p1, p2 *corev1.Pod) int {
+					if podOrder[p1.Name] < podOrder[p2.Name] {
+						return -1
+					}
+					if podOrder[p1.Name] > podOrder[p2.Name] {
+						return 1
+					}
+					return 0
+				}})
+			compareFn := fn(jobs, podOfJob)
+			sorterFn := OrderedBy(compareFn)
+			sorterFn.Sort(jobs)
 			jobsOrder := make([]string, 0, len(jobs))
 			for _, v := range jobs {
 				jobsOrder = append(jobsOrder, v.Name)
@@ -146,8 +152,9 @@ func TestSortJobsByCreationTime(t *testing.T) {
 		fakeJobs[4]: 4,
 	}
 	fn := SortJobsByCreationTime()
-	fakeJobs = fn(fakeJobs, nil)
-
+	compareFn := fn(nil, nil)
+	sorterFn := OrderedBy(compareFn)
+	sorterFn.Sort(fakeJobs)
 	for i, job := range fakeJobs {
 		assert.Equal(t, fakeRanks[job], i)
 	}
@@ -290,10 +297,11 @@ func TestSortJobsByMigratingNum(t *testing.T) {
 				assert.Nil(t, fakeClient.Create(context.TODO(), job))
 			}
 
-			sortFn := SortJobsByMigratingNum(fakeClient)
+			fn := SortJobsByMigratingNum(fakeClient)
 			actualPodMigrationJobs := make([]*v1alpha1.PodMigrationJob, len(podMigrationJobs))
 			copy(actualPodMigrationJobs, podMigrationJobs)
-			sortFn(actualPodMigrationJobs, podOfJob)
+			sorterFn := OrderedBy(fn(actualPodMigrationJobs, podOfJob))
+			sorterFn.Sort(actualPodMigrationJobs)
 
 			actual := make([]string, 0, len(actualPodMigrationJobs))
 			expected := make([]string, 0, len(actualPodMigrationJobs))
@@ -387,10 +395,11 @@ func TestSortJobsByController(t *testing.T) {
 				podMigrationJobs = append(podMigrationJobs, job)
 			}
 
-			sortFn := SortJobsByController()
+			fn := SortJobsByController()
 			actualPodMigrationJobs := make([]*v1alpha1.PodMigrationJob, len(podMigrationJobs))
 			copy(actualPodMigrationJobs, podMigrationJobs)
-			sortFn(actualPodMigrationJobs, podOfJob)
+			sorterFn := OrderedBy(fn(actualPodMigrationJobs, podOfJob))
+			sorterFn.Sort(actualPodMigrationJobs)
 
 			actual := make([]string, 0, len(actualPodMigrationJobs))
 			expected := make([]string, 0, len(actualPodMigrationJobs))

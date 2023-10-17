@@ -55,9 +55,11 @@ type Arbitrator interface {
 	DeletePodMigrationJob(job *v1alpha1.PodMigrationJob)
 }
 
+type CompareFn func(p1, p2 *v1alpha1.PodMigrationJob) int
+
 // SortFn stably sorts PodMigrationJobs slice based on a certain strategy. Users
 // can implement different SortFn according to their needs.
-type SortFn func(jobs []*v1alpha1.PodMigrationJob, podOfJob map[*v1alpha1.PodMigrationJob]*corev1.Pod) []*v1alpha1.PodMigrationJob
+type SortFn func(jobs []*v1alpha1.PodMigrationJob, podOfJob map[*v1alpha1.PodMigrationJob]*corev1.Pod) CompareFn
 
 type arbitratorImpl struct {
 	waitingCollection map[types.UID]*v1alpha1.PodMigrationJob
@@ -83,7 +85,15 @@ func New(args *config.MigrationControllerArgs, options Options) (Arbitrator, err
 		interval:          args.ArbitrationArgs.Interval.Duration,
 		sorts: []SortFn{
 			SortJobsByCreationTime(),
-			SortJobsByPod(sorter.PodSorter().Sort),
+			SortJobsByPod([]sorter.CompareFn{
+				sorter.KoordinatorPriorityClass,
+				sorter.Priority,
+				sorter.KubernetesQoSClass,
+				sorter.KoordinatorQoSClass,
+				sorter.PodDeletionCost,
+				sorter.EvictionCost,
+				sorter.PodCreationTimestamp,
+			}),
 			SortJobsByController(),
 			SortJobsByMigratingNum(options.Client),
 		},
@@ -150,9 +160,12 @@ func (a *arbitratorImpl) TrackEvictedPod(pod *corev1.Pod) {
 
 // sort stably sorts jobs, outputs the sorted results and corresponding ranking map.
 func (a *arbitratorImpl) sort(jobs []*v1alpha1.PodMigrationJob, podOfJob map[*v1alpha1.PodMigrationJob]*corev1.Pod) []*v1alpha1.PodMigrationJob {
+	compareFns := make([]CompareFn, 0, len(a.sorts))
 	for _, sortFn := range a.sorts {
-		jobs = sortFn(jobs, podOfJob)
+		compareFns = append(compareFns, sortFn(jobs, podOfJob))
 	}
+	multiSorter := OrderedBy(compareFns...)
+	multiSorter.Sort(jobs)
 	return jobs
 }
 

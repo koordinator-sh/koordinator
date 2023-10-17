@@ -68,11 +68,16 @@ func TestSingleSortFn(t *testing.T) {
 	arbitrator := &arbitratorImpl{
 		waitingCollection: collection,
 		client:            fakeClient,
-		sorts: []SortFn{func(jobs []*v1alpha1.PodMigrationJob, podOfJob map[*v1alpha1.PodMigrationJob]*corev1.Pod) []*v1alpha1.PodMigrationJob {
-			sort.SliceStable(jobs, func(i, j int) bool {
-				return podOfJob[jobs[i]].Name < podOfJob[jobs[j]].Name
-			})
-			return jobs
+		sorts: []SortFn{func(jobs []*v1alpha1.PodMigrationJob, podOfJob map[*v1alpha1.PodMigrationJob]*corev1.Pod) CompareFn {
+			return func(p1, p2 *v1alpha1.PodMigrationJob) int {
+				if podOfJob[p1].Name < podOfJob[p2].Name {
+					return -1
+				}
+				if podOfJob[p1].Name > podOfJob[p2].Name {
+					return 1
+				}
+				return 0
+			}
 		}},
 	}
 	arbitrator.sort(jobs, podOfJob)
@@ -112,17 +117,27 @@ func TestMultiSortFn(t *testing.T) {
 		waitingCollection: collection,
 		client:            fakeClient,
 		sorts: []SortFn{
-			func(jobs []*v1alpha1.PodMigrationJob, podOfJob map[*v1alpha1.PodMigrationJob]*corev1.Pod) []*v1alpha1.PodMigrationJob {
-				sort.SliceStable(jobs, func(i, j int) bool {
-					return podOfJob[jobs[i]].Name < podOfJob[jobs[j]].Name
-				})
-				return jobs
+			func(jobs []*v1alpha1.PodMigrationJob, podOfJob map[*v1alpha1.PodMigrationJob]*corev1.Pod) CompareFn {
+				return func(p1, p2 *v1alpha1.PodMigrationJob) int {
+					if podOfJob[p1].Name[len(podOfJob[p1].Name)-1] < podOfJob[p2].Name[len(podOfJob[p2].Name)-1] {
+						return -1
+					}
+					if podOfJob[p1].Name[len(podOfJob[p1].Name)-1] > podOfJob[p2].Name[len(podOfJob[p2].Name)-1] {
+						return 1
+					}
+					return 0
+				}
 			},
-			func(jobs []*v1alpha1.PodMigrationJob, podOfJob map[*v1alpha1.PodMigrationJob]*corev1.Pod) []*v1alpha1.PodMigrationJob {
-				sort.SliceStable(jobs, func(i, j int) bool {
-					return podOfJob[jobs[i]].Name[len(podOfJob[jobs[i]].Name)-1] < podOfJob[jobs[j]].Name[len(podOfJob[jobs[j]].Name)-1]
-				})
-				return jobs
+			func(jobs []*v1alpha1.PodMigrationJob, podOfJob map[*v1alpha1.PodMigrationJob]*corev1.Pod) CompareFn {
+				return func(p1, p2 *v1alpha1.PodMigrationJob) int {
+					if podOfJob[p1].Name < podOfJob[p2].Name {
+						return -1
+					}
+					if podOfJob[p1].Name > podOfJob[p2].Name {
+						return 1
+					}
+					return 0
+				}
 			},
 		},
 	}
@@ -279,8 +294,10 @@ func TestRequeueJobIfRetryablePodFilterFailed(t *testing.T) {
 
 	a := &arbitratorImpl{
 		waitingCollection: map[types.UID]*v1alpha1.PodMigrationJob{job.UID: job},
-		sorts: []SortFn{func(jobs []*v1alpha1.PodMigrationJob, podOfJob map[*v1alpha1.PodMigrationJob]*corev1.Pod) []*v1alpha1.PodMigrationJob {
-			return jobs
+		sorts: []SortFn{func(jobs []*v1alpha1.PodMigrationJob, podOfJob map[*v1alpha1.PodMigrationJob]*corev1.Pod) CompareFn {
+			return func(p1, p2 *v1alpha1.PodMigrationJob) int {
+				return -1
+			}
 		}},
 		filter: &filter{
 			nonRetryablePodFilter: func(pod *corev1.Pod) bool {
@@ -352,8 +369,10 @@ func TestAbortJobIfNonRetryablePodFilterFailed(t *testing.T) {
 
 	a := &arbitratorImpl{
 		waitingCollection: map[types.UID]*v1alpha1.PodMigrationJob{job.UID: job},
-		sorts: []SortFn{func(jobs []*v1alpha1.PodMigrationJob, podOfJob map[*v1alpha1.PodMigrationJob]*corev1.Pod) []*v1alpha1.PodMigrationJob {
-			return jobs
+		sorts: []SortFn{func(jobs []*v1alpha1.PodMigrationJob, podOfJob map[*v1alpha1.PodMigrationJob]*corev1.Pod) CompareFn {
+			return func(p1, p2 *v1alpha1.PodMigrationJob) int {
+				return -1
+			}
 		}},
 		filter: &filter{
 			nonRetryablePodFilter: func(pod *corev1.Pod) bool {
@@ -499,11 +518,16 @@ func TestDoOnceArbitrate(t *testing.T) {
 					arbitratedPodMigrationJobs: map[types.UID]bool{},
 				},
 				sorts: []SortFn{
-					func(jobs []*v1alpha1.PodMigrationJob, podOfJob map[*v1alpha1.PodMigrationJob]*corev1.Pod) []*v1alpha1.PodMigrationJob {
-						sort.Slice(jobs, func(i, j int) bool {
-							return order[jobs[i]] < order[jobs[j]]
-						})
-						return jobs
+					func(jobs []*v1alpha1.PodMigrationJob, podOfJob map[*v1alpha1.PodMigrationJob]*corev1.Pod) CompareFn {
+						return func(p1, p2 *v1alpha1.PodMigrationJob) int {
+							if order[p1] < order[p2] {
+								return -1
+							}
+							if order[p1] > order[p2] {
+								return 1
+							}
+							return 0
+						}
 					}},
 				client:        fakeClient,
 				mu:            sync.Mutex{},
@@ -555,8 +579,10 @@ func TestArbitrate(t *testing.T) {
 			arbitratedPodMigrationJobs: map[types.UID]bool{},
 		},
 		sorts: []SortFn{
-			func(jobs []*v1alpha1.PodMigrationJob, podOfJob map[*v1alpha1.PodMigrationJob]*corev1.Pod) []*v1alpha1.PodMigrationJob {
-				return jobs
+			func(jobs []*v1alpha1.PodMigrationJob, podOfJob map[*v1alpha1.PodMigrationJob]*corev1.Pod) CompareFn {
+				return func(p1, p2 *v1alpha1.PodMigrationJob) int {
+					return -1
+				}
 			}},
 		client:        fakeClient,
 		mu:            sync.Mutex{},
