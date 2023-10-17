@@ -107,30 +107,6 @@ func (ms *MultiSorter) Less(i, j int) bool {
 	return !ms.ascending
 }
 
-// cmpBool compares booleans, placing true before false
-func cmpBool(a, b bool) int {
-	if a == b {
-		return 0
-	}
-	if !b {
-		return -1
-	}
-	return 1
-}
-
-func Reverse(cmp CompareFn) CompareFn {
-	return func(p1, p2 *v1alpha1.PodMigrationJob) int {
-		result := cmp(p1, p2)
-		if result > 0 {
-			return -1
-		}
-		if result < 0 {
-			return 1
-		}
-		return 0
-	}
-}
-
 // SortJobsByPod returns a SortFn that sorts PodMigrationJobs by their Pods, including priority, QoS.
 func SortJobsByPod(podSorters []sorter.CompareFn) SortFn {
 	return func(jobs []*v1alpha1.PodMigrationJob, podOfJob map[*v1alpha1.PodMigrationJob]*corev1.Pod) CompareFn {
