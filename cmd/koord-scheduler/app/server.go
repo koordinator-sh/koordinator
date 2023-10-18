@@ -64,6 +64,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/defaultprofile"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/eventhandlers"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/services"
+	"github.com/koordinator-sh/koordinator/pkg/util/asynclog"
 	utilroutes "github.com/koordinator-sh/koordinator/pkg/util/routes"
 	"github.com/koordinator-sh/koordinator/pkg/util/transformer"
 )
@@ -126,6 +127,9 @@ for cost reduction and efficiency enhancement.
 // runCommand runs the scheduler.
 func runCommand(cmd *cobra.Command, opts *options.Options, registryOptions ...Option) error {
 	verflag.PrintAndExitIfRequested()
+	if asynclog.EnableAsyncIfNeed() {
+		defer asynclog.FlushAndExit()
+	}
 
 	// Activate logging as soon as possible, after that
 	// show flags with the final logging configuration.
@@ -236,6 +240,7 @@ func Run(ctx context.Context, cc *schedulerserverconfig.CompletedConfig, sched *
 					// We lost the lock.
 					klog.ErrorS(nil, "Leaderelection lost")
 					klog.FlushAndExit(klog.ExitFlushTimeout, 1)
+					asynclog.FlushAndExit()
 				}
 			},
 		}
