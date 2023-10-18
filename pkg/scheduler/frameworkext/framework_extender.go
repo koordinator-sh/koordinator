@@ -304,12 +304,15 @@ func (ext *frameworkExtenderImpl) RunReservationExtensionPreRestoreReservation(c
 
 // RunReservationExtensionRestoreReservation restores the Reservation during PreFilter phase
 func (ext *frameworkExtenderImpl) RunReservationExtensionRestoreReservation(ctx context.Context, cycleState *framework.CycleState, podToSchedule *corev1.Pod, matched []*ReservationInfo, unmatched []*ReservationInfo, nodeInfo *framework.NodeInfo) (PluginToReservationRestoreStates, *framework.Status) {
-	pluginToRestoreState := PluginToReservationRestoreStates{}
+	var pluginToRestoreState PluginToReservationRestoreStates
 	for _, pl := range ext.reservationRestorePlugins {
 		state, status := pl.RestoreReservation(ctx, cycleState, podToSchedule, matched, unmatched, nodeInfo)
 		if !status.IsSuccess() {
 			klog.ErrorS(status.AsError(), "Failed running RestoreReservation on plugin", "plugin", pl.Name(), "pod", klog.KObj(podToSchedule))
 			return nil, status
+		}
+		if pluginToRestoreState == nil {
+			pluginToRestoreState = PluginToReservationRestoreStates{}
 		}
 		pluginToRestoreState[pl.Name()] = state
 	}

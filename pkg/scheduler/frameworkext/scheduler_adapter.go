@@ -17,6 +17,8 @@ limitations under the License.
 package frameworkext
 
 import (
+	"sync"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/uuid"
@@ -25,6 +27,20 @@ import (
 )
 
 var AssignedPodDelete = framework.ClusterEvent{Resource: framework.Pod, ActionType: framework.Delete, Label: "AssignedPodDelete"}
+
+var podPool = &sync.Pool{
+	New: func() interface{} {
+		uid := uuid.NewUUID()
+		pod := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      string(uid),
+				Namespace: "default",
+				UID:       uid,
+			},
+		}
+		return pod
+	},
+}
 
 // Scheduler exports scheduler internal cache and queue interface for testability.
 type Scheduler interface {
@@ -113,17 +129,10 @@ func (c *cacheAdapter) ForgetPod(pod *corev1.Pod) error {
 }
 
 func (c *cacheAdapter) InvalidNodeInfo(nodeName string) error {
-	uid := uuid.NewUUID()
-	pod := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      string(uid),
-			Namespace: "default",
-			UID:       uid,
-		},
-		Spec: corev1.PodSpec{
-			NodeName: nodeName,
-		},
-	}
+	val := podPool.Get()
+	defer podPool.Put(val)
+	pod := val.(*corev1.Pod)
+	pod.Spec.NodeName = nodeName
 	err := c.scheduler.Cache.AddPod(pod)
 	if err != nil {
 		return err
@@ -181,6 +190,8 @@ type FakeScheduler struct {
 	Pods       map[string]*corev1.Pod
 	AssumedPod map[string]*corev1.Pod
 	Queue      *FakeQueue
+	lock       sync.Mutex
+	NodeInfos  map[string]*framework.NodeInfo
 }
 
 func NewFakeScheduler() *FakeScheduler {
@@ -193,6 +204,7 @@ func NewFakeScheduler() *FakeScheduler {
 			AssignedPods:        map[string]*corev1.Pod{},
 			AssignedUpdatedPods: map[string]*corev1.Pod{},
 		},
+		NodeInfos: map[string]*framework.NodeInfo{},
 	}
 }
 
@@ -255,7 +267,20 @@ func (f *FakeScheduler) ForgetPod(pod *corev1.Pod) error {
 }
 
 func (f *FakeScheduler) InvalidNodeInfo(nodeName string) error {
-	return nil
+	val := podPool.Get()
+	defer podPool.Put(val)
+	pod := val.(*corev1.Pod)
+	pod.Spec.NodeName = nodeName
+
+	f.lock.Lock()
+	defer f.lock.Unlock()
+	nodeInfo := f.NodeInfos[nodeName]
+	if nodeInfo == nil {
+		nodeInfo = framework.NewNodeInfo()
+		f.NodeInfos[nodeName] = nodeInfo
+	}
+	nodeInfo.AddPod(pod)
+	return nodeInfo.RemovePod(pod)
 }
 
 func (f *FakeQueue) Add(pod *corev1.Pod) error {

@@ -39,7 +39,6 @@ func TransformDevice(obj interface{}) (interface{}, error) {
 		return obj, nil
 	}
 
-	device = device.DeepCopy()
 	for _, fn := range deviceTransformers {
 		fn(device)
 	}
