@@ -48,7 +48,6 @@ func TransformPod(obj interface{}) (interface{}, error) {
 		return obj, nil
 	}
 
-	pod = pod.DeepCopy()
 	for _, fn := range podTransformers {
 		fn(pod)
 	}

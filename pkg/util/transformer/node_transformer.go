@@ -49,7 +49,6 @@ func TransformNode(obj interface{}) (interface{}, error) {
 		return obj, nil
 	}
 
-	node = node.DeepCopy()
 	for _, fn := range nodeTransformers {
 		fn(node)
 	}
