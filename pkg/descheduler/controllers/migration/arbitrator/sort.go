@@ -142,7 +142,7 @@ func SortJobsByCreationTime() SortFn {
 
 // SortJobsByMigratingNum returns a SortFn that sorts PodMigrationJobs by the number of migrating PMJs in the same Job,
 // if equal, by the owner's uid.
-func SortJobsByMigratingNum(c client.Client) SortFn {
+func SortJobsByMigratingNum(c client.Client, isJobMigrating func(job *v1alpha1.PodMigrationJob) bool) SortFn {
 	return func(jobs []*v1alpha1.PodMigrationJob, podOfJob map[*v1alpha1.PodMigrationJob]*corev1.Pod) CompareFn {
 		// get owner of jobs
 		migratingPMJNum := map[*v1alpha1.PodMigrationJob]int{}
@@ -159,7 +159,7 @@ func SortJobsByMigratingNum(c client.Client) SortFn {
 			if num, ok := migratingPMJNumOfOwner[owner.UID]; ok {
 				migratingPMJNum[job] = num
 			} else {
-				num = getMigratingJobNum(c, owner.UID)
+				num = getMigratingJobNum(c, owner.UID, isJobMigrating)
 				migratingPMJNum[job] = num
 				migratingPMJNumOfOwner[owner.UID] = num
 			}
@@ -185,7 +185,7 @@ func SortJobsByMigratingNum(c client.Client) SortFn {
 	}
 }
 
-func getMigratingJobNum(c client.Client, ownerUID types.UID) int {
+func getMigratingJobNum(c client.Client, ownerUID types.UID, isJobMigrating func(job *v1alpha1.PodMigrationJob) bool) int {
 	opts := &client.ListOptions{FieldSelector: fields.OneTermEqualSelector(fieldindex.IndexPodByOwnerRefUID, string(ownerUID))}
 	podList := &corev1.PodList{}
 	err := c.List(context.TODO(), podList, opts, utilclient.DisableDeepCopy)
@@ -223,8 +223,4 @@ func getJobControllerOfPod(pod *corev1.Pod) (*metav1.OwnerReference, bool) {
 		return nil, false
 	}
 	return owner, true
-}
-
-func isJobMigrating(job *v1alpha1.PodMigrationJob) bool {
-	return job.Annotations[AnnotationPassedArbitration] == "true" || job.Status.Phase == v1alpha1.PodMigrationJobRunning
 }

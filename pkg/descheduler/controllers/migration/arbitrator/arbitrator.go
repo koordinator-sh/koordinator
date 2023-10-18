@@ -84,7 +84,10 @@ func New(args *config.MigrationControllerArgs, options Options) (Arbitrator, err
 		waitingCollection: map[types.UID]*v1alpha1.PodMigrationJob{},
 		interval:          args.ArbitrationArgs.Interval.Duration,
 		sorts: []SortFn{
-			SortJobsByMigratingNum(options.Client),
+			SortJobsByMigratingNum(options.Client, func(job *v1alpha1.PodMigrationJob) bool {
+				return job.Status.Phase == v1alpha1.PodMigrationJobRunning ||
+					(job.Status.Phase == v1alpha1.PodMigrationJobPending && f.checkJobPassedArbitration(job.UID))
+			}),
 			SortJobsByPod([]sorter.CompareFn{
 				sorter.KoordinatorPriorityClass,
 				sorter.Priority,

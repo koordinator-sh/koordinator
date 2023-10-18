@@ -303,7 +303,9 @@ func TestSortJobsByMigratingNum(t *testing.T) {
 				assert.Nil(t, fakeClient.Create(context.TODO(), job))
 			}
 
-			fn := SortJobsByMigratingNum(fakeClient)
+			fn := SortJobsByMigratingNum(fakeClient, func(job *v1alpha1.PodMigrationJob) bool {
+				return job.Status.Phase == v1alpha1.PodMigrationJobRunning || job.Annotations[AnnotationPassedArbitration] == "true"
+			})
 			actualPodMigrationJobs := make([]*v1alpha1.PodMigrationJob, len(podMigrationJobs))
 			copy(actualPodMigrationJobs, podMigrationJobs)
 			sorterFn := OrderedBy(fn(actualPodMigrationJobs, podOfJob))
@@ -405,7 +407,9 @@ func TestGetMigratingJobNum(t *testing.T) {
 				assert.Nil(t, fakeClient.Create(context.TODO(), pod))
 				assert.Nil(t, fakeClient.Create(context.TODO(), job))
 			}
-			assert.Equal(t, testCase.expectNum, getMigratingJobNum(fakeClient, job.UID))
+			assert.Equal(t, testCase.expectNum, getMigratingJobNum(fakeClient, job.UID, func(job *v1alpha1.PodMigrationJob) bool {
+				return job.Status.Phase == v1alpha1.PodMigrationJobRunning || job.Annotations[AnnotationPassedArbitration] == "true"
+			}))
 		})
 	}
 }
