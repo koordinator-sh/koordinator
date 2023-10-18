@@ -187,10 +187,16 @@ func TestSortJobsByMigratingNum(t *testing.T) {
 			[]int{2, 3, 4, 0, 1}},
 		{"test-5", 6, 2, 2, 2,
 			map[int]int{2: 0, 3: 1, 5: 0}, map[int]int{0: 1}, map[int]int{0: 0},
-			[]int{2, 3, 5, 0, 1, 4}},
+			[]int{2, 5, 3, 0, 1, 4}},
 		{"test-6", 10, 5, 0, 2,
 			map[int]int{4: 0, 8: 0, 7: 1}, map[int]int{3: 0, 1: 1, 0: 1}, map[int]int{},
 			[]int{7, 4, 8, 0, 1, 2, 3, 5, 6, 9}},
+		{"test-7", 6, 2, 2, 2,
+			map[int]int{2: 1, 3: 0, 4: 0, 5: 1}, map[int]int{0: 1}, map[int]int{0: 0},
+			[]int{3, 4, 2, 5, 0, 1}},
+		{"test-8", 10, 2, 2, 3,
+			map[int]int{2: 1, 3: 2, 4: 2, 5: 1, 8: 0}, map[int]int{0: 1, 1: 2}, map[int]int{0: 0},
+			[]int{8, 2, 5, 3, 4, 0, 1, 6, 7, 9}},
 	}
 
 	for _, testCase := range testCases {
@@ -298,104 +304,6 @@ func TestSortJobsByMigratingNum(t *testing.T) {
 			}
 
 			fn := SortJobsByMigratingNum(fakeClient)
-			actualPodMigrationJobs := make([]*v1alpha1.PodMigrationJob, len(podMigrationJobs))
-			copy(actualPodMigrationJobs, podMigrationJobs)
-			sorterFn := OrderedBy(fn(actualPodMigrationJobs, podOfJob))
-			sorterFn.Sort(actualPodMigrationJobs)
-
-			actual := make([]string, 0, len(actualPodMigrationJobs))
-			expected := make([]string, 0, len(actualPodMigrationJobs))
-			for i, job := range actualPodMigrationJobs {
-				actual = append(actual, job.Name)
-				expected = append(expected, podMigrationJobs[testCase.expectIdx[i]].Name)
-			}
-			assert.Equal(t, expected, actual)
-		})
-	}
-}
-
-func TestSortJobsByController(t *testing.T) {
-	testCases := []struct {
-		name               string
-		podMigrationJobNum int
-		jobNum             int
-
-		jobOfPodMigrationJob map[int]int
-		expectIdx            []int
-	}{
-		{"test-1", 10, 2,
-			map[int]int{4: 0, 8: 0},
-			[]int{0, 1, 2, 3, 4, 8, 5, 6, 7, 9}},
-		{"test-2", 10, 2,
-			map[int]int{},
-			[]int{0, 1, 2, 3, 4, 5, 6, 7, 8, 9}},
-		{"test-3", 10, 2,
-			map[int]int{3: 0, 8: 0, 1: 1, 9: 1},
-			[]int{0, 1, 9, 2, 3, 8, 4, 5, 6, 7}},
-		{"test-4", 5, 2,
-			map[int]int{2: 0, 3: 0, 4: 0},
-			[]int{0, 1, 2, 3, 4}},
-		{"test-5", 6, 3,
-			map[int]int{0: 0, 4: 1, 2: 2},
-			[]int{0, 1, 2, 3, 4, 5}},
-	}
-
-	for _, testCase := range testCases {
-		t.Run(testCase.name, func(t *testing.T) {
-			scheme := runtime.NewScheme()
-			_ = v1alpha1.AddToScheme(scheme)
-			_ = clientgoscheme.AddToScheme(scheme)
-			fakeClient := newFieldIndexFakeClient(fake.NewClientBuilder().WithScheme(scheme).Build())
-
-			creationTime := time.Now()
-			jobs := make([]*batchv1.Job, testCase.jobNum)
-			podMigrationJobs := make([]*v1alpha1.PodMigrationJob, 0, testCase.podMigrationJobNum)
-			podOfJob := map[*v1alpha1.PodMigrationJob]*corev1.Pod{}
-
-			// create jobs
-			for k := 0; k < testCase.jobNum; k++ {
-				job := &batchv1.Job{
-					TypeMeta: metav1.TypeMeta{
-						Kind:       "Job",
-						APIVersion: "batch/v1",
-					},
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      "test-job-" + strconv.Itoa(k),
-						Namespace: "default",
-						UID:       types.UID("test-job-" + strconv.Itoa(k)),
-					},
-				}
-				jobs[k] = job
-				assert.Nil(t, fakeClient.Create(context.TODO(), job))
-			}
-			// create PodMigrationJobs
-			for k := 0; k < testCase.podMigrationJobNum; k++ {
-				pod := makePod("test-pod-"+strconv.Itoa(k), 0, extension.QoSNone, corev1.PodQOSBestEffort, creationTime)
-				job := makePodMigrationJob("test-migration-job-"+strconv.Itoa(k), creationTime, pod)
-				job.Status = v1alpha1.PodMigrationJobStatus{
-					Phase: "",
-				}
-
-				if idx, ok := testCase.jobOfPodMigrationJob[k]; ok {
-					controller := true
-					pod.SetOwnerReferences([]metav1.OwnerReference{
-						{
-							APIVersion:         jobs[idx].APIVersion,
-							Kind:               jobs[idx].Kind,
-							Name:               jobs[idx].Name,
-							UID:                jobs[idx].UID,
-							Controller:         &controller,
-							BlockOwnerDeletion: nil,
-						},
-					})
-				}
-				assert.Nil(t, fakeClient.Create(context.TODO(), pod))
-				assert.Nil(t, fakeClient.Create(context.TODO(), job))
-				podOfJob[job] = pod
-				podMigrationJobs = append(podMigrationJobs, job)
-			}
-
-			fn := SortJobsByController()
 			actualPodMigrationJobs := make([]*v1alpha1.PodMigrationJob, len(podMigrationJobs))
 			copy(actualPodMigrationJobs, podMigrationJobs)
 			sorterFn := OrderedBy(fn(actualPodMigrationJobs, podOfJob))

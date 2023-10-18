@@ -125,7 +125,7 @@ func SortJobsByPod(podSorters []sorter.CompareFn) SortFn {
 	}
 }
 
-// SortJobsByCreationTime returns a SortFn that stably sorts PodMigrationJobs by create time.
+// SortJobsByCreationTime returns a SortFn that sorts PodMigrationJobs by create time.
 func SortJobsByCreationTime() SortFn {
 	return func(jobs []*v1alpha1.PodMigrationJob, podOfJob map[*v1alpha1.PodMigrationJob]*corev1.Pod) CompareFn {
 		return func(p1, p2 *v1alpha1.PodMigrationJob) int {
@@ -140,62 +140,44 @@ func SortJobsByCreationTime() SortFn {
 	}
 }
 
-// SortJobsByMigratingNum returns a SortFn that stably sorts PodMigrationJobs the number of migrating PMJs in the same Job.
+// SortJobsByMigratingNum returns a SortFn that sorts PodMigrationJobs by the number of migrating PMJs in the same Job,
+// if equal, by the owner's uid.
 func SortJobsByMigratingNum(c client.Client) SortFn {
 	return func(jobs []*v1alpha1.PodMigrationJob, podOfJob map[*v1alpha1.PodMigrationJob]*corev1.Pod) CompareFn {
 		// get owner of jobs
-		rankOfPodMigrationJobs := map[*v1alpha1.PodMigrationJob]int{}
-		migratingJobNumOfOwners := map[types.UID]int{}
+		migratingPMJNum := map[*v1alpha1.PodMigrationJob]int{}
+		migratingPMJNumOfOwner := map[types.UID]int{}
+		podMigrationJobOwner := map[*v1alpha1.PodMigrationJob]types.UID{}
+
 		for _, job := range jobs {
 			owner, ok := getJobControllerOfPod(podOfJob[job])
 			if !ok {
+				podMigrationJobOwner[job] = ""
 				continue
 			}
-			if num, ok := migratingJobNumOfOwners[owner.UID]; ok {
-				rankOfPodMigrationJobs[job] = num
+			podMigrationJobOwner[job] = owner.UID
+			if num, ok := migratingPMJNumOfOwner[owner.UID]; ok {
+				migratingPMJNum[job] = num
 			} else {
 				num = getMigratingJobNum(c, owner.UID)
-				rankOfPodMigrationJobs[job] = num
-				migratingJobNumOfOwners[owner.UID] = num
+				migratingPMJNum[job] = num
+				migratingPMJNumOfOwner[owner.UID] = num
 			}
 		}
 
 		return func(p1, p2 *v1alpha1.PodMigrationJob) int {
-			if rankOfPodMigrationJobs[p1] > rankOfPodMigrationJobs[p2] {
+			// sort by migrating PMJ num
+			if migratingPMJNum[p1] > migratingPMJNum[p2] {
 				return -1
 			}
-			if rankOfPodMigrationJobs[p1] < rankOfPodMigrationJobs[p2] {
-				return 0
+			if migratingPMJNum[p1] < migratingPMJNum[p2] {
+				return 1
 			}
-			return 0
-		}
-	}
-}
-
-// SortJobsByController returns a SortFn that places PodMigrationJobs in the same job in adjacent positions.
-func SortJobsByController() SortFn {
-	return func(jobs []*v1alpha1.PodMigrationJob, podOfJob map[*v1alpha1.PodMigrationJob]*corev1.Pod) CompareFn {
-		highestRankOfJob := map[types.UID]int{}
-		rankOfPodMigrationJobs := map[*v1alpha1.PodMigrationJob]int{}
-		for i, job := range jobs {
-			owner, ok := getJobControllerOfPod(podOfJob[job])
-			if !ok {
-				rankOfPodMigrationJobs[job] = i
-				continue
-			}
-			if rank, ok := highestRankOfJob[owner.UID]; ok {
-				rankOfPodMigrationJobs[job] = rank
-			} else {
-				highestRankOfJob[owner.UID] = i
-				rankOfPodMigrationJobs[job] = i
-			}
-		}
-
-		return func(p1, p2 *v1alpha1.PodMigrationJob) int {
-			if rankOfPodMigrationJobs[p1] < rankOfPodMigrationJobs[p2] {
+			// sort by PMJ owner uid
+			if podMigrationJobOwner[p1] < podMigrationJobOwner[p2] {
 				return -1
 			}
-			if rankOfPodMigrationJobs[p1] > rankOfPodMigrationJobs[p2] {
+			if podMigrationJobOwner[p1] > podMigrationJobOwner[p2] {
 				return 1
 			}
 			return 0

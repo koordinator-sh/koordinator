@@ -85,7 +85,6 @@ func New(args *config.MigrationControllerArgs, options Options) (Arbitrator, err
 		interval:          args.ArbitrationArgs.Interval.Duration,
 		sorts: []SortFn{
 			SortJobsByMigratingNum(options.Client),
-			SortJobsByController(),
 			SortJobsByPod([]sorter.CompareFn{
 				sorter.KoordinatorPriorityClass,
 				sorter.Priority,
