@@ -60,7 +60,7 @@ func (cm *ControllersMap) RegisterControllers(plugin framework.Plugin) {
 				continue
 			}
 			pluginControllers[controller.Name()] = controller
-			klog.Infof("register plugin:%v controller:%v", plugin.Name(), controller.Name())
+			klog.V(4).Infof("register plugin:%v controller:%v", plugin.Name(), controller.Name())
 		}
 		cm.controllers[plugin.Name()] = pluginControllers
 	}

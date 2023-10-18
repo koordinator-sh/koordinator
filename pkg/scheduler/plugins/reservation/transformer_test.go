@@ -27,6 +27,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/utils/pointer"
@@ -435,6 +436,322 @@ func Test_matchReservation(t *testing.T) {
 			assert.NoError(t, err)
 			rInfo := frameworkext.NewReservationInfo(tt.reservation)
 			got := matchReservation(tt.pod, &corev1.Node{}, rInfo, reservationAffinity)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestBeforePreFilterWithNodeAffinity(t *testing.T) {
+	node := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "node1",
+			Labels: map[string]string{
+				"test": "true",
+			},
+		},
+		Status: corev1.NodeStatus{
+			Allocatable: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("32"),
+				corev1.ResourceMemory: resource.MustParse("64Gi"),
+			},
+		},
+	}
+	matchedReservation := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{
+			UID:  uuid.NewUUID(),
+			Name: "reservation8C16G",
+		},
+		Spec: schedulingv1alpha1.ReservationSpec{
+			Owners: []schedulingv1alpha1.ReservationOwner{
+				{
+					LabelSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							"test-reservation": "true",
+						},
+					},
+				},
+			},
+			Template: &corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					Affinity: &corev1.Affinity{
+						PodAntiAffinity: &corev1.PodAntiAffinity{
+							RequiredDuringSchedulingIgnoredDuringExecution: []corev1.PodAffinityTerm{
+								{
+									LabelSelector: &metav1.LabelSelector{
+										MatchLabels: map[string]string{
+											"app": "test-app-3",
+										},
+									},
+									TopologyKey: corev1.LabelHostname,
+								},
+							},
+						},
+					},
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("8"),
+									corev1.ResourceMemory: resource.MustParse("16Gi"),
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		Status: schedulingv1alpha1.ReservationStatus{
+			Phase:    schedulingv1alpha1.ReservationAvailable,
+			NodeName: node.Name,
+			Allocatable: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("8"),
+				corev1.ResourceMemory: resource.MustParse("16Gi"),
+			},
+		},
+	}
+	var pods []*corev1.Pod
+	pods = append(pods, reservationutil.NewReservePod(matchedReservation))
+
+	tests := []struct {
+		name         string
+		nodeAffinity *corev1.NodeAffinity
+		wantRestored bool
+	}{
+		{
+			name:         "pod has no affinity",
+			nodeAffinity: nil,
+			wantRestored: true,
+		},
+		{
+			name: "pod has affinity with matchField",
+			nodeAffinity: &corev1.NodeAffinity{
+				RequiredDuringSchedulingIgnoredDuringExecution: &corev1.NodeSelector{
+					NodeSelectorTerms: []corev1.NodeSelectorTerm{
+						{
+							MatchFields: []corev1.NodeSelectorRequirement{
+								{
+									Key:      metav1.ObjectNameField,
+									Operator: corev1.NodeSelectorOpIn,
+									Values:   []string{"node1", "node2"},
+								},
+							},
+						},
+					},
+				},
+			},
+			wantRestored: true,
+		},
+		{
+			name: "pod has affinity with matchField but failed to match",
+			nodeAffinity: &corev1.NodeAffinity{
+				RequiredDuringSchedulingIgnoredDuringExecution: &corev1.NodeSelector{
+					NodeSelectorTerms: []corev1.NodeSelectorTerm{
+						{
+							MatchFields: []corev1.NodeSelectorRequirement{
+								{
+									Key:      metav1.ObjectNameField,
+									Operator: corev1.NodeSelectorOpIn,
+									Values:   []string{"node2"},
+								},
+							},
+						},
+					},
+				},
+			},
+			wantRestored: false,
+		},
+		{
+			name: "pod has affinity with matchExpressions",
+			nodeAffinity: &corev1.NodeAffinity{
+				RequiredDuringSchedulingIgnoredDuringExecution: &corev1.NodeSelector{
+					NodeSelectorTerms: []corev1.NodeSelectorTerm{
+						{
+							MatchExpressions: []corev1.NodeSelectorRequirement{
+								{
+									Key:      "test",
+									Operator: corev1.NodeSelectorOpIn,
+									Values:   []string{"true"},
+								},
+							},
+						},
+					},
+				},
+			},
+			wantRestored: true,
+		},
+		{
+			name: "pod has affinity with matchExpressions but failed to match",
+			nodeAffinity: &corev1.NodeAffinity{
+				RequiredDuringSchedulingIgnoredDuringExecution: &corev1.NodeSelector{
+					NodeSelectorTerms: []corev1.NodeSelectorTerm{
+						{
+							MatchExpressions: []corev1.NodeSelectorRequirement{
+								{
+									Key:      "test",
+									Operator: corev1.NodeSelectorOpIn,
+									Values:   []string{"false"},
+								},
+							},
+						},
+					},
+				},
+			},
+			wantRestored: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			suit := newPluginTestSuitWith(t, pods, []*corev1.Node{node})
+			p, err := suit.pluginFactory()
+			assert.NoError(t, err)
+			pl := p.(*Plugin)
+
+			pl.reservationCache.updateReservation(matchedReservation)
+
+			testPod := &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						"test-reservation": "true",
+					},
+				},
+				Spec: corev1.PodSpec{
+					Affinity: &corev1.Affinity{
+						NodeAffinity: tt.nodeAffinity,
+					},
+				},
+			}
+			cycleState := framework.NewCycleState()
+			_, restored, status := pl.BeforePreFilter(context.TODO(), cycleState, testPod)
+			assert.Equal(t, tt.wantRestored, restored)
+			assert.True(t, status.IsSuccess())
+		})
+	}
+}
+
+func Test_parseSpecificNodesFromAffinity(t *testing.T) {
+	tests := []struct {
+		name         string
+		nodeAffinity *corev1.NodeAffinity
+		want         sets.String
+		wantError    bool
+	}{
+		{
+			name: "no node affinity",
+		},
+		{
+			name: "use MatchExpressions to affinity nodes",
+			nodeAffinity: &corev1.NodeAffinity{
+				RequiredDuringSchedulingIgnoredDuringExecution: &corev1.NodeSelector{
+					NodeSelectorTerms: []corev1.NodeSelectorTerm{
+						{
+							MatchExpressions: []corev1.NodeSelectorRequirement{
+								{
+									Key:      corev1.LabelTopologyZone,
+									Operator: corev1.NodeSelectorOpIn,
+									Values:   []string{"az1"},
+								},
+							},
+						},
+					},
+				},
+			},
+			want:      nil,
+			wantError: false,
+		},
+		{
+			name: "has MatchExpressions and MatchFields - 1",
+			nodeAffinity: &corev1.NodeAffinity{
+				RequiredDuringSchedulingIgnoredDuringExecution: &corev1.NodeSelector{
+					NodeSelectorTerms: []corev1.NodeSelectorTerm{
+						{
+							MatchExpressions: []corev1.NodeSelectorRequirement{
+								{
+									Key:      corev1.LabelTopologyZone,
+									Operator: corev1.NodeSelectorOpIn,
+									Values:   []string{"az1"},
+								},
+							},
+							MatchFields: []corev1.NodeSelectorRequirement{
+								{
+									Key:      metav1.ObjectNameField,
+									Operator: corev1.NodeSelectorOpIn,
+									Values:   []string{"node1", "node2"},
+								},
+							},
+						},
+					},
+				},
+			},
+			want:      sets.NewString("node1", "node2"),
+			wantError: false,
+		},
+		{
+			name: "has MatchExpressions and MatchFields - 2",
+			nodeAffinity: &corev1.NodeAffinity{
+				RequiredDuringSchedulingIgnoredDuringExecution: &corev1.NodeSelector{
+					NodeSelectorTerms: []corev1.NodeSelectorTerm{
+						{
+							MatchExpressions: []corev1.NodeSelectorRequirement{
+								{
+									Key:      corev1.LabelTopologyZone,
+									Operator: corev1.NodeSelectorOpIn,
+									Values:   []string{"az1"},
+								},
+							},
+							MatchFields: []corev1.NodeSelectorRequirement{
+								{
+									Key:      metav1.ObjectNameField,
+									Operator: corev1.NodeSelectorOpIn,
+									Values:   []string{"node1", "node2"},
+								},
+							},
+						},
+						{
+							MatchExpressions: []corev1.NodeSelectorRequirement{
+								{
+									Key:      corev1.LabelTopologyZone,
+									Operator: corev1.NodeSelectorOpIn,
+									Values:   []string{"az2"},
+								},
+							},
+						},
+					},
+				},
+			},
+			want:      nil,
+			wantError: false,
+		},
+		{
+			name: "invalid MatchFields",
+			nodeAffinity: &corev1.NodeAffinity{
+				RequiredDuringSchedulingIgnoredDuringExecution: &corev1.NodeSelector{
+					NodeSelectorTerms: []corev1.NodeSelectorTerm{
+						{
+							MatchFields: []corev1.NodeSelectorRequirement{
+								{
+									Key:      metav1.ObjectNameField,
+									Operator: corev1.NodeSelectorOpIn,
+									Values:   []string{},
+								},
+							},
+						},
+					},
+				},
+			},
+			want:      nil,
+			wantError: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := parseSpecificNodesFromAffinity(&corev1.Pod{
+				Spec: corev1.PodSpec{
+					Affinity: &corev1.Affinity{
+						NodeAffinity: tt.nodeAffinity,
+					},
+				},
+			})
+			assert.Equal(t, tt.wantError, err != nil)
 			assert.Equal(t, tt.want, got)
 		})
 	}
