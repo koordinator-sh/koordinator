@@ -84,7 +84,8 @@ func New(args *config.MigrationControllerArgs, options Options) (Arbitrator, err
 		waitingCollection: map[types.UID]*v1alpha1.PodMigrationJob{},
 		interval:          args.ArbitrationArgs.Interval.Duration,
 		sorts: []SortFn{
-			SortJobsByCreationTime(),
+			SortJobsByMigratingNum(options.Client),
+			SortJobsByController(),
 			SortJobsByPod([]sorter.CompareFn{
 				sorter.KoordinatorPriorityClass,
 				sorter.Priority,
@@ -94,8 +95,7 @@ func New(args *config.MigrationControllerArgs, options Options) (Arbitrator, err
 				sorter.EvictionCost,
 				sorter.PodCreationTimestamp,
 			}),
-			SortJobsByController(),
-			SortJobsByMigratingNum(options.Client),
+			SortJobsByCreationTime(),
 		},
 		filter:        f,
 		client:        options.Client,
