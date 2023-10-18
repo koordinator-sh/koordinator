@@ -23,7 +23,9 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/sets"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
+	"k8s.io/component-helpers/scheduling/corev1/nodeaffinity"
 	"k8s.io/klog/v2"
 	resourceapi "k8s.io/kubernetes/pkg/api/v1/resource"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
@@ -37,20 +39,26 @@ import (
 )
 
 func (pl *Plugin) BeforePreFilter(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod) (*corev1.Pod, bool, *framework.Status) {
-	state, restored, err := pl.prepareMatchReservationState(ctx, cycleState, pod)
-	if err != nil {
-		return nil, false, framework.AsStatus(err)
+	state, restored, status := pl.prepareMatchReservationState(ctx, cycleState, pod)
+	if !status.IsSuccess() {
+		return nil, false, status
 	}
 	cycleState.Write(stateKey, state)
 	return pod, restored, nil
 }
 
-func (pl *Plugin) prepareMatchReservationState(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod) (*stateData, bool, error) {
+func (pl *Plugin) prepareMatchReservationState(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod) (*stateData, bool, *framework.Status) {
 	reservationAffinity, err := reservationutil.GetRequiredReservationAffinity(pod)
 	if err != nil {
 		klog.ErrorS(err, "Failed to parse reservation affinity", "pod", klog.KObj(pod))
-		return nil, false, err
+		return nil, false, framework.AsStatus(err)
 	}
+
+	specificNodes, status := parseSpecificNodesFromAffinity(pod)
+	if status != nil {
+		return nil, false, status
+	}
+	requiredNodeAffinity := nodeaffinity.GetRequiredNodeAffinity(pod)
 
 	var stateIndex int32
 	allNodes := pl.reservationCache.listAllNodes()
@@ -66,7 +74,7 @@ func (pl *Plugin) prepareMatchReservationState(ctx context.Context, cycleState *
 	if extender != nil {
 		status := extender.RunReservationExtensionPreRestoreReservation(ctx, cycleState, pod)
 		if !status.IsSuccess() {
-			return nil, false, status.AsError()
+			return nil, false, status
 		}
 	}
 
@@ -79,6 +87,14 @@ func (pl *Plugin) prepareMatchReservationState(ctx context.Context, cycleState *
 		node := nodeInfo.Node()
 		if node == nil {
 			klog.V(4).InfoS("BeforePreFilter failed to get node", "pod", klog.KObj(pod), "nodeInfo", nodeInfo)
+			return
+		}
+
+		if specificNodes.Len() > 0 {
+			if !specificNodes.Has(node.Name) {
+				return
+			}
+		} else if match, _ := requiredNodeAffinity.Match(node); !match {
 			return
 		}
 
@@ -179,7 +195,7 @@ func (pl *Plugin) prepareMatchReservationState(ctx context.Context, cycleState *
 	err = errCh.ReceiveError()
 	if err != nil {
 		klog.ErrorS(err, "Failed to find matched or unmatched reservations", "pod", klog.KObj(pod))
-		return nil, false, err
+		return nil, false, framework.AsStatus(err)
 	}
 
 	allNodeReservationStates = allNodeReservationStates[:stateIndex]
@@ -213,7 +229,7 @@ func (pl *Plugin) prepareMatchReservationState(ctx context.Context, cycleState *
 	if extender != nil {
 		status := extender.RunReservationExtensionFinalRestoreReservation(ctx, cycleState, pod, pluginToNodeReservationRestoreState)
 		if !status.IsSuccess() {
-			return nil, false, status.AsError()
+			return nil, false, status
 		}
 	}
 
@@ -356,4 +372,45 @@ func matchReservation(pod *corev1.Pod, node *corev1.Node, reservation *framework
 		return reservationAffinity.Match(fakeNode)
 	}
 	return true
+}
+
+func parseSpecificNodesFromAffinity(pod *corev1.Pod) (sets.String, *framework.Status) {
+	affinity := pod.Spec.Affinity
+	if affinity == nil ||
+		affinity.NodeAffinity == nil ||
+		affinity.NodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution == nil ||
+		len(affinity.NodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution.NodeSelectorTerms) == 0 {
+		return nil, nil
+	}
+
+	// Check if there is affinity to a specific node and return it.
+	terms := affinity.NodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution.NodeSelectorTerms
+	var nodeNames sets.String
+	for _, t := range terms {
+		var termNodeNames sets.String
+		for _, r := range t.MatchFields {
+			if r.Key == metav1.ObjectNameField && r.Operator == corev1.NodeSelectorOpIn {
+				// The requirements represent ANDed constraints, and so we need to
+				// find the intersection of nodes.
+				s := sets.NewString(r.Values...)
+				if termNodeNames == nil {
+					termNodeNames = s
+				} else {
+					termNodeNames = termNodeNames.Intersection(s)
+				}
+			}
+		}
+		if termNodeNames == nil {
+			// If this term has no node.Name field affinity,
+			// then all nodes are eligible because the terms are ORed.
+			return nil, nil
+		}
+		// If the set is empty, it means the terms had affinity to different
+		// sets of nodes, and since they are ANDed, then the pod will not match any node.
+		if len(termNodeNames) == 0 {
+			return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, "pod affinity terms conflict")
+		}
+		nodeNames = nodeNames.Union(termNodeNames)
+	}
+	return nodeNames, nil
 }
