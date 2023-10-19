@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"time"
 
 	v1 "k8s.io/api/core/v1"
@@ -77,6 +78,7 @@ func (ctrl *Controller) Name() string {
 
 func (ctrl *Controller) Start() {
 	go wait.Until(ctrl.Run, SyncHandlerCycle, context.TODO().Done())
+	go wait.Until(ctrl.MonitorQuotas, 10*time.Second, context.TODO().Done())
 	klog.Infof("start elasticQuota controller syncHandler")
 }
 
@@ -120,23 +122,23 @@ func (ctrl *Controller) syncHandler() []error {
 			decorateResource(eq, allocated)
 
 			var oriRuntime, oriRequest, oriChildRequest, oriGuaranteed, oriAllocated v1.ResourceList
-			if eq.Annotations[extension.AnnotationRequest] != "" {
-				if err := json.Unmarshal([]byte(eq.Annotations[extension.AnnotationRequest]), &oriRequest); err != nil {
-					errors = append(errors, err)
-					return
-				}
+
+			oriRequest, err = extension.GetRequest(eq)
+			if err != nil {
+				errors = append(errors, err)
+				return
 			}
-			if eq.Annotations[extension.AnnotationChildRequest] != "" {
-				if err := json.Unmarshal([]byte(eq.Annotations[extension.AnnotationChildRequest]), &oriChildRequest); err != nil {
-					errors = append(errors, err)
-					return
-				}
+
+			oriChildRequest, err = extension.GetChildRequest(eq)
+			if err != nil {
+				errors = append(errors, err)
+				return
 			}
-			if eq.Annotations[extension.AnnotationRuntime] != "" {
-				if err := json.Unmarshal([]byte(eq.Annotations[extension.AnnotationRuntime]), &oriRuntime); err != nil {
-					errors = append(errors, err)
-					return
-				}
+
+			oriRuntime, err = extension.GetRuntime(eq)
+			if err != nil {
+				errors = append(errors, err)
+				return
 			}
 
 			oriGuaranteed, err = extension.GetGuaranteed(eq)
@@ -221,4 +223,38 @@ func (ctrl *Controller) syncHandler() []error {
 		}()
 	}
 	return errors
+}
+
+func (ctrl *Controller) MonitorQuotas() {
+	eqList, err := ctrl.plugin.quotaLister.List(labels.Everything())
+	if err != nil {
+		klog.V(3).ErrorS(err, "Unable to list elastic quota from store", "elasticQuota")
+		return
+	}
+
+	for _, eq := range eqList {
+		quotaLabels := map[string]string{
+			"name":      eq.Name,
+			"tree":      extension.GetQuotaTreeID(eq),
+			"is_parent": strconv.FormatBool(extension.IsParentQuota(eq)),
+			"parent":    extension.GetParentQuotaName(eq),
+		}
+
+		sharedWeight := extension.GetSharedWeight(eq)
+		runtime, _ := extension.GetRuntime(eq)
+		request, _ := extension.GetRequest(eq)
+		childRequest, _ := extension.GetChildRequest(eq)
+		guaranteed, _ := extension.GetGuaranteed(eq)
+		allocated, _ := extension.GetAllocated(eq)
+
+		RecordMetricsByResourceList(ElasticQuotaSpecMetric, eq.Spec.Min, "min", quotaLabels)
+		RecordMetricsByResourceList(ElasticQuotaSpecMetric, eq.Spec.Max, "max", quotaLabels)
+		RecordMetricsByResourceList(ElasticQuotaSpecMetric, sharedWeight, "shared-weight", quotaLabels)
+		RecordMetricsByResourceList(ElasticQuotaStatusMetric, runtime, "runtime", quotaLabels)
+		RecordMetricsByResourceList(ElasticQuotaStatusMetric, eq.Status.Used, "used", quotaLabels)
+		RecordMetricsByResourceList(ElasticQuotaStatusMetric, request, "request", quotaLabels)
+		RecordMetricsByResourceList(ElasticQuotaStatusMetric, childRequest, "child-request", quotaLabels)
+		RecordMetricsByResourceList(ElasticQuotaStatusMetric, guaranteed, "guaranteed", quotaLabels)
+		RecordMetricsByResourceList(ElasticQuotaStatusMetric, allocated, "allocated", quotaLabels)
+	}
 }
