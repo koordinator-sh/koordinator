@@ -38,7 +38,7 @@ func (s *SetNodeAnnotation) Name() string {
 	return "SetNodeAnnotation"
 }
 
-func (s *SetNodeAnnotation) Execute(strategy *configuration.ColocationStrategy, node *corev1.Node, nr *NodeResource) error {
+func (s *SetNodeAnnotation) Prepare(_ *configuration.ColocationStrategy, node *corev1.Node, nr *NodeResource) error {
 	node.Annotations[testNodeAnnoKey] = testNodeAnnoVal
 	return nil
 }
@@ -80,9 +80,10 @@ func Test_RegisterAlreadyExistNodePrepareExtender(t *testing.T) {
 }
 
 var _ SetupPlugin = (*testNodeResourcePlugin)(nil)
+var _ NodePreUpdatePlugin = (*testNodeResourcePlugin)(nil)
 var _ NodePreparePlugin = (*testNodeResourcePlugin)(nil)
-var _ NodeSyncPlugin = (*testNodeResourcePlugin)(nil)
-var _ NodeMetaSyncPlugin = (*testNodeResourcePlugin)(nil)
+var _ NodeStatusCheckPlugin = (*testNodeResourcePlugin)(nil)
+var _ NodeMetaCheckPlugin = (*testNodeResourcePlugin)(nil)
 var _ ResourceCalculatePlugin = (*testNodeResourcePlugin)(nil)
 
 type testNodeResourcePlugin struct{}
@@ -95,7 +96,11 @@ func (p *testNodeResourcePlugin) Setup(opt *Option) error {
 	return nil
 }
 
-func (p *testNodeResourcePlugin) Execute(strategy *configuration.ColocationStrategy, node *corev1.Node, nr *NodeResource) error {
+func (p *testNodeResourcePlugin) PreUpdate(strategy *configuration.ColocationStrategy, node *corev1.Node, nr *NodeResource) error {
+	return nil
+}
+
+func (p *testNodeResourcePlugin) Prepare(strategy *configuration.ColocationStrategy, node *corev1.Node, nr *NodeResource) error {
 	return nil
 }
 
@@ -142,34 +147,50 @@ func TestSetupPlugin(t *testing.T) {
 	})
 }
 
-func TestNodeSyncPlugin(t *testing.T) {
-	t.Run("node sync extender", func(t *testing.T) {
+func TestNodePreUpdatePlugin(t *testing.T) {
+	t.Run("node pre update extender", func(t *testing.T) {
 		plugin := &testNodeResourcePlugin{}
-		startedSize := globalNodeSyncExtender.Size()
-		RegisterNodeSyncExtender(AllPass, plugin)
-		assert.Equal(t, startedSize+1, globalNodeSyncExtender.Size())
+		startedSize := globalNodePreUpdateExtender.Size()
+		RegisterNodePreUpdateExtender(AllPass, plugin)
+		assert.Equal(t, startedSize+1, globalNodePreUpdateExtender.Size())
 
-		RegisterNodeSyncExtender(AllPass, plugin)
-		assert.Equal(t, startedSize+1, globalNodeSyncExtender.Size(), "register duplicated")
+		RegisterNodePreUpdateExtender(AllPass, plugin)
+		assert.Equal(t, startedSize+1, globalNodePreUpdateExtender.Size(), "register duplicated")
 
 		assert.NotPanics(t, func() {
-			UnregisterNodeSyncExtender(plugin.Name())
+			UnregisterNodePreUpdateExtender(plugin.Name())
 		}, "unregistered")
 	})
 }
 
-func TestNodeMetaSyncPlugin(t *testing.T) {
+func TestNodeStatusCheckPlugin(t *testing.T) {
 	t.Run("node sync extender", func(t *testing.T) {
 		plugin := &testNodeResourcePlugin{}
-		startedSize := globalNodeMetaSyncExtender.Size()
-		RegisterNodeMetaSyncExtender(AllPass, plugin)
-		assert.Equal(t, startedSize+1, globalNodeMetaSyncExtender.Size())
+		startedSize := globalNodeStatusCheckExtender.Size()
+		RegisterNodeStatusCheckExtender(AllPass, plugin)
+		assert.Equal(t, startedSize+1, globalNodeStatusCheckExtender.Size())
 
-		RegisterNodeMetaSyncExtender(AllPass, plugin)
-		assert.Equal(t, startedSize+1, globalNodeMetaSyncExtender.Size(), "register duplicated")
+		RegisterNodeStatusCheckExtender(AllPass, plugin)
+		assert.Equal(t, startedSize+1, globalNodeStatusCheckExtender.Size(), "register duplicated")
 
 		assert.NotPanics(t, func() {
-			UnregisterNodeMetaSyncExtender(plugin.Name())
+			UnregisterNodeStatusCheckExtender(plugin.Name())
+		}, "unregistered")
+	})
+}
+
+func TestNodeMetaCheckPlugin(t *testing.T) {
+	t.Run("node sync extender", func(t *testing.T) {
+		plugin := &testNodeResourcePlugin{}
+		startedSize := globalNodeMetaCheckExtender.Size()
+		RegisterNodeMetaCheckExtender(AllPass, plugin)
+		assert.Equal(t, startedSize+1, globalNodeMetaCheckExtender.Size())
+
+		RegisterNodeMetaCheckExtender(AllPass, plugin)
+		assert.Equal(t, startedSize+1, globalNodeMetaCheckExtender.Size(), "register duplicated")
+
+		assert.NotPanics(t, func() {
+			UnregisterNodeMetaCheckExtender(plugin.Name())
 		}, "unregistered")
 	})
 }

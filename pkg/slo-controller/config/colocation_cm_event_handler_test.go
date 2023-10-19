@@ -38,7 +38,9 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 	oldCfg.MemoryReclaimThresholdPercent = pointer.Int64(40)
 	memoryCalcPolicyByUsage := configuration.CalculateByPodUsage
 	memoryCalcPolicyByRequest := configuration.CalculateByPodRequest
-	var defaultNodeMemoryCollectPolicy slov1alpha1.NodeMemoryCollectPolicy = slov1alpha1.UsageWithoutPageCache
+	cpuCalcPolicyByUsage := configuration.CalculateByPodUsage
+	cpuCalcPolicyNew := configuration.CalculatePolicy("")
+	var defaultNodeMemoryCollectPolicy = slov1alpha1.UsageWithoutPageCache
 
 	type fields struct {
 		config *colocationCfgCache
@@ -199,6 +201,7 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 						MetricReportIntervalSeconds:    pointer.Int64(20),
 						MetricAggregatePolicy:          sloconfig.DefaultColocationStrategy().MetricAggregatePolicy,
 						CPUReclaimThresholdPercent:     pointer.Int64(70),
+						CPUCalculatePolicy:             &cpuCalcPolicyByUsage,
 						MemoryReclaimThresholdPercent:  pointer.Int64(70),
 						MemoryCalculatePolicy:          &memoryCalcPolicyByUsage,
 						DegradeTimeMinutes:             pointer.Int64(15),
@@ -289,6 +292,7 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 						MetricReportIntervalSeconds:    pointer.Int64(20),
 						MetricAggregatePolicy:          sloconfig.DefaultColocationStrategy().MetricAggregatePolicy,
 						CPUReclaimThresholdPercent:     pointer.Int64(70),
+						CPUCalculatePolicy:             &cpuCalcPolicyByUsage,
 						MemoryReclaimThresholdPercent:  pointer.Int64(80),
 						MemoryCalculatePolicy:          &memoryCalcPolicyByUsage,
 						DegradeTimeMinutes:             pointer.Int64(5),
@@ -311,6 +315,7 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 								MetricReportIntervalSeconds:    pointer.Int64(20),
 								MetricAggregatePolicy:          sloconfig.DefaultColocationStrategy().MetricAggregatePolicy,
 								CPUReclaimThresholdPercent:     pointer.Int64(70),
+								CPUCalculatePolicy:             &cpuCalcPolicyByUsage,
 								MemoryReclaimThresholdPercent:  pointer.Int64(80),
 								MemoryCalculatePolicy:          &memoryCalcPolicyByUsage,
 								DegradeTimeMinutes:             pointer.Int64(5),
@@ -355,6 +360,7 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 						MetricReportIntervalSeconds:    pointer.Int64(20),
 						MetricAggregatePolicy:          sloconfig.DefaultColocationStrategy().MetricAggregatePolicy,
 						CPUReclaimThresholdPercent:     pointer.Int64(70),
+						CPUCalculatePolicy:             &cpuCalcPolicyByUsage,
 						MemoryReclaimThresholdPercent:  pointer.Int64(80),
 						MemoryCalculatePolicy:          &memoryCalcPolicyByUsage,
 						DegradeTimeMinutes:             pointer.Int64(5),
@@ -377,6 +383,7 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 						MetricReportIntervalSeconds:    pointer.Int64(60),
 						MetricAggregatePolicy:          sloconfig.DefaultColocationStrategy().MetricAggregatePolicy,
 						CPUReclaimThresholdPercent:     pointer.Int64(70),
+						CPUCalculatePolicy:             &cpuCalcPolicyByUsage,
 						MemoryReclaimThresholdPercent:  pointer.Int64(80),
 						MemoryCalculatePolicy:          &memoryCalcPolicyByUsage,
 						DegradeTimeMinutes:             pointer.Int64(5),
@@ -411,6 +418,7 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 						MetricReportIntervalSeconds:    pointer.Int64(60),
 						MetricAggregatePolicy:          sloconfig.DefaultColocationStrategy().MetricAggregatePolicy,
 						CPUReclaimThresholdPercent:     pointer.Int64(70),
+						CPUCalculatePolicy:             &cpuCalcPolicyByUsage,
 						MemoryReclaimThresholdPercent:  pointer.Int64(80),
 						MemoryCalculatePolicy:          &memoryCalcPolicyByUsage,
 						DegradeTimeMinutes:             pointer.Int64(5),
@@ -509,6 +517,7 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 						MetricReportIntervalSeconds:    pointer.Int64(20),
 						MetricAggregatePolicy:          sloconfig.DefaultColocationStrategy().MetricAggregatePolicy,
 						CPUReclaimThresholdPercent:     pointer.Int64(70),
+						CPUCalculatePolicy:             &cpuCalcPolicyByUsage,
 						MemoryReclaimThresholdPercent:  pointer.Int64(80),
 						MemoryCalculatePolicy:          &memoryCalcPolicyByUsage,
 						DegradeTimeMinutes:             pointer.Int64(5),
@@ -533,6 +542,7 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 								MetricReportIntervalSeconds:    pointer.Int64(20),
 								MetricAggregatePolicy:          sloconfig.DefaultColocationStrategy().MetricAggregatePolicy,
 								CPUReclaimThresholdPercent:     pointer.Int64(70),
+								CPUCalculatePolicy:             &cpuCalcPolicyByUsage,
 								MemoryReclaimThresholdPercent:  pointer.Int64(80),
 								MemoryCalculatePolicy:          &memoryCalcPolicyByUsage,
 								DegradeTimeMinutes:             pointer.Int64(5),
@@ -559,6 +569,7 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 						MetricReportIntervalSeconds:    pointer.Int64(60),
 						MetricAggregatePolicy:          sloconfig.DefaultColocationStrategy().MetricAggregatePolicy,
 						CPUReclaimThresholdPercent:     pointer.Int64(70),
+						CPUCalculatePolicy:             &cpuCalcPolicyByUsage,
 						MemoryReclaimThresholdPercent:  pointer.Int64(80),
 						MemoryCalculatePolicy:          &memoryCalcPolicyByUsage,
 						DegradeTimeMinutes:             pointer.Int64(5),
@@ -598,7 +609,7 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 						"\"cpuReclaimThresholdPercent\":70,\"memoryReclaimThresholdPercent\":80,\"memoryCalculatePolicy\":\"request\"," +
 						"\"updateTimeThresholdSeconds\":300," +
 						"\"degradeTimeMinutes\":5,\"resourceDiffThreshold\":0.1,\"nodeConfigs\":[{\"nodeSelector\":" +
-						"{\"matchLabels\":{\"xxx\":\"yyy\"}},\"name\":\"xxx-yyy\",\"enable\":true,\"cpuReclaimThresholdPercent\":60}]}",
+						"{\"matchLabels\":{\"xxx\":\"yyy\"}},\"name\":\"xxx-yyy\",\"enable\":true,\"cpuReclaimThresholdPercent\":60, \"cpuCalculatePolicy\": \"\"}]}",
 				},
 			}},
 			wantChanged: true,
@@ -610,6 +621,7 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 						MetricReportIntervalSeconds:    pointer.Int64(20),
 						MetricAggregatePolicy:          sloconfig.DefaultColocationStrategy().MetricAggregatePolicy,
 						CPUReclaimThresholdPercent:     pointer.Int64(70),
+						CPUCalculatePolicy:             &cpuCalcPolicyByUsage,
 						MemoryReclaimThresholdPercent:  pointer.Int64(80),
 						MemoryCalculatePolicy:          &memoryCalcPolicyByRequest,
 						DegradeTimeMinutes:             pointer.Int64(5),
@@ -640,6 +652,7 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 								MetricMemoryCollectPolicy:      &defaultNodeMemoryCollectPolicy,
 								//change
 								CPUReclaimThresholdPercent: pointer.Int64(60),
+								CPUCalculatePolicy:         &cpuCalcPolicyNew,
 							},
 						},
 					},
@@ -666,7 +679,8 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 func Test_IsCfgAvailable(t *testing.T) {
 	defaultConfig := sloconfig.DefaultColocationCfg()
 	memoryCalcPolicyByUsage := configuration.CalculateByPodUsage
-	var defaultNodeMemoryCollectPolicy slov1alpha1.NodeMemoryCollectPolicy = slov1alpha1.UsageWithoutPageCache
+	cpuCalcPolicyByUsage := configuration.CalculateByPodUsage
+	var defaultNodeMemoryCollectPolicy = slov1alpha1.UsageWithoutPageCache
 	type fields struct {
 		config    *colocationCfgCache
 		configMap *corev1.ConfigMap
@@ -736,6 +750,7 @@ func Test_IsCfgAvailable(t *testing.T) {
 					MetricAggregateDurationSeconds: pointer.Int64(60),
 					MetricAggregatePolicy:          sloconfig.DefaultColocationStrategy().MetricAggregatePolicy,
 					CPUReclaimThresholdPercent:     pointer.Int64(70),
+					CPUCalculatePolicy:             &cpuCalcPolicyByUsage,
 					MemoryReclaimThresholdPercent:  pointer.Int64(80),
 					MemoryCalculatePolicy:          &memoryCalcPolicyByUsage,
 					DegradeTimeMinutes:             pointer.Int64(5),

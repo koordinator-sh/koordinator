@@ -211,7 +211,681 @@ func TestPlugin(t *testing.T) {
 	})
 }
 
-func TestExecute(t *testing.T) {
+func TestPreUpdate(t *testing.T) {
+	testScheme := runtime.NewScheme()
+	err := clientgoscheme.AddToScheme(testScheme)
+	assert.NoError(t, err)
+	err = slov1alpha1.AddToScheme(testScheme)
+	assert.NoError(t, err)
+	err = topov1alpha1.AddToScheme(testScheme)
+	assert.NoError(t, err)
+	type fields struct {
+		client ctrlclient.Client
+	}
+	type args struct {
+		strategy *configuration.ColocationStrategy
+		node     *corev1.Node
+		nr       *framework.NodeResource
+	}
+	tests := []struct {
+		name      string
+		fields    fields
+		args      args
+		wantErr   bool
+		checkFunc func(t *testing.T, client ctrlclient.Client)
+	}{
+		{
+			name: "update batch resources",
+			fields: fields{
+				client: fake.NewClientBuilder().WithScheme(testScheme).Build(),
+			},
+			args: args{
+				node: &corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node",
+					},
+					Status: corev1.NodeStatus{
+						Capacity: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("100"),
+							corev1.ResourceMemory: resource.MustParse("400Gi"),
+						},
+						Allocatable: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("100"),
+							corev1.ResourceMemory: resource.MustParse("380Gi"),
+						},
+					},
+				},
+				nr: &framework.NodeResource{
+					Resources: map[corev1.ResourceName]*resource.Quantity{
+						extension.BatchCPU:    resource.NewQuantity(50000, resource.DecimalSI),
+						extension.BatchMemory: resource.NewScaledQuantity(120, 9),
+					},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "reset batch resources",
+			fields: fields{
+				client: fake.NewClientBuilder().WithScheme(testScheme).Build(),
+			},
+			args: args{
+				node: &corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node",
+					},
+					Status: corev1.NodeStatus{
+						Capacity: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("100"),
+							corev1.ResourceMemory: resource.MustParse("400Gi"),
+							extension.BatchCPU:    *resource.NewQuantity(50000, resource.DecimalSI),
+							extension.BatchMemory: *resource.NewScaledQuantity(120, 9),
+						},
+						Allocatable: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("100"),
+							corev1.ResourceMemory: resource.MustParse("380Gi"),
+							extension.BatchCPU:    *resource.NewQuantity(50000, resource.DecimalSI),
+							extension.BatchMemory: *resource.NewScaledQuantity(120, 9),
+						},
+					},
+				},
+				nr: &framework.NodeResource{
+					Resets: map[corev1.ResourceName]bool{
+						extension.BatchCPU:    true,
+						extension.BatchMemory: true,
+					},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "add NUMA-level batch resources",
+			fields: fields{
+				client: fake.NewClientBuilder().WithScheme(testScheme).WithObjects(&topov1alpha1.NodeResourceTopology{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node",
+					},
+					Zones: topov1alpha1.ZoneList{
+						{
+							Name: util.GenNodeZoneName(0),
+							Type: util.NodeZoneType,
+							Resources: topov1alpha1.ResourceInfoList{
+								{
+									Name:        string(corev1.ResourceCPU),
+									Capacity:    resource.MustParse("50"),
+									Allocatable: resource.MustParse("50"),
+									Available:   resource.MustParse("50"),
+								},
+								{
+									Name:        string(corev1.ResourceMemory),
+									Capacity:    resource.MustParse("200Gi"),
+									Allocatable: resource.MustParse("200Gi"),
+									Available:   resource.MustParse("200Gi"),
+								},
+							},
+						},
+						{
+							Name: util.GenNodeZoneName(1),
+							Type: util.NodeZoneType,
+							Resources: topov1alpha1.ResourceInfoList{
+								{
+									Name:        string(corev1.ResourceCPU),
+									Capacity:    resource.MustParse("50"),
+									Allocatable: resource.MustParse("50"),
+									Available:   resource.MustParse("50"),
+								},
+								{
+									Name:        string(corev1.ResourceMemory),
+									Capacity:    resource.MustParse("180Gi"),
+									Allocatable: resource.MustParse("180Gi"),
+									Available:   resource.MustParse("180Gi"),
+								},
+							},
+						},
+					},
+				}).Build(),
+			},
+			args: args{
+				strategy: &configuration.ColocationStrategy{
+					ResourceDiffThreshold: pointer.Float64(0.1),
+				},
+				node: &corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node",
+					},
+					Status: corev1.NodeStatus{
+						Capacity: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("100"),
+							corev1.ResourceMemory: resource.MustParse("400Gi"),
+						},
+						Allocatable: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("100"),
+							corev1.ResourceMemory: resource.MustParse("380Gi"),
+						},
+					},
+				},
+				nr: &framework.NodeResource{
+					Resources: map[corev1.ResourceName]*resource.Quantity{
+						extension.BatchCPU:    resource.NewQuantity(50000, resource.DecimalSI),
+						extension.BatchMemory: resource.NewScaledQuantity(120, 9),
+					},
+					ZoneResources: map[string]corev1.ResourceList{
+						util.GenNodeZoneName(0): {
+							extension.BatchCPU:    resource.MustParse("25000"),
+							extension.BatchMemory: resource.MustParse("62G"),
+						},
+						util.GenNodeZoneName(1): {
+							extension.BatchCPU:    resource.MustParse("25000"),
+							extension.BatchMemory: resource.MustParse("58G"),
+						},
+					},
+				},
+			},
+			wantErr: false,
+			checkFunc: func(t *testing.T, client ctrlclient.Client) {
+				nrt := &topov1alpha1.NodeResourceTopology{}
+				err := client.Get(context.TODO(), types.NamespacedName{Name: "test-node"}, nrt)
+				assert.NoError(t, err)
+				expectedNRT := &topov1alpha1.NodeResourceTopology{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node",
+					},
+					Zones: topov1alpha1.ZoneList{
+						{
+							Name: util.GenNodeZoneName(0),
+							Type: util.NodeZoneType,
+							Resources: topov1alpha1.ResourceInfoList{
+								{
+									Name:        string(corev1.ResourceCPU),
+									Capacity:    resource.MustParse("50"),
+									Allocatable: resource.MustParse("50"),
+									Available:   resource.MustParse("50"),
+								},
+								{
+									Name:        string(extension.BatchCPU),
+									Capacity:    resource.MustParse("25000"),
+									Allocatable: resource.MustParse("25000"),
+									Available:   resource.MustParse("25000"),
+								},
+								{
+									Name:        string(extension.BatchMemory),
+									Capacity:    resource.MustParse("62G"),
+									Allocatable: resource.MustParse("62G"),
+									Available:   resource.MustParse("62G"),
+								},
+								{
+									Name:        string(corev1.ResourceMemory),
+									Capacity:    resource.MustParse("200Gi"),
+									Allocatable: resource.MustParse("200Gi"),
+									Available:   resource.MustParse("200Gi"),
+								},
+							},
+						},
+						{
+							Name: util.GenNodeZoneName(1),
+							Type: util.NodeZoneType,
+							Resources: topov1alpha1.ResourceInfoList{
+								{
+									Name:        string(corev1.ResourceCPU),
+									Capacity:    resource.MustParse("50"),
+									Allocatable: resource.MustParse("50"),
+									Available:   resource.MustParse("50"),
+								},
+								{
+									Name:        string(extension.BatchCPU),
+									Capacity:    resource.MustParse("25000"),
+									Allocatable: resource.MustParse("25000"),
+									Available:   resource.MustParse("25000"),
+								},
+								{
+									Name:        string(extension.BatchMemory),
+									Capacity:    resource.MustParse("58G"),
+									Allocatable: resource.MustParse("58G"),
+									Available:   resource.MustParse("58G"),
+								},
+								{
+									Name:        string(corev1.ResourceMemory),
+									Capacity:    resource.MustParse("180Gi"),
+									Allocatable: resource.MustParse("180Gi"),
+									Available:   resource.MustParse("180Gi"),
+								},
+							},
+						},
+					},
+				}
+				assert.Equal(t, len(expectedNRT.Zones), len(nrt.Zones))
+				for i := range expectedNRT.Zones {
+					assert.Equal(t, expectedNRT.Zones[i].Name, nrt.Zones[i].Name, fmt.Sprintf("zone %v", i))
+					assert.Equal(t, len(expectedNRT.Zones[i].Resources), len(nrt.Zones[i].Resources), fmt.Sprintf("zone %v", i))
+					for j := range expectedNRT.Zones[i].Resources {
+						assert.Equal(t, expectedNRT.Zones[i].Resources[j].Capacity.Value(), nrt.Zones[i].Resources[j].Capacity.Value(), fmt.Sprintf("zone %v, resource %v", i, j))
+						assert.Equal(t, expectedNRT.Zones[i].Resources[j].Allocatable.Value(), nrt.Zones[i].Resources[j].Allocatable.Value(), fmt.Sprintf("zone %v, resource %v", i, j))
+						assert.Equal(t, expectedNRT.Zones[i].Resources[j].Available.Value(), nrt.Zones[i].Resources[j].Available.Value(), fmt.Sprintf("zone %v, resource %v", i, j))
+					}
+				}
+			},
+		},
+		{
+			name: "update NUMA-level batch resources",
+			fields: fields{
+				client: fake.NewClientBuilder().WithScheme(testScheme).WithObjects(&topov1alpha1.NodeResourceTopology{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node",
+					},
+					Zones: topov1alpha1.ZoneList{
+						{
+							Name: util.GenNodeZoneName(0),
+							Type: util.NodeZoneType,
+							Resources: topov1alpha1.ResourceInfoList{
+								{
+									Name:        string(corev1.ResourceCPU),
+									Capacity:    resource.MustParse("50"),
+									Allocatable: resource.MustParse("50"),
+									Available:   resource.MustParse("50"),
+								},
+								{
+									Name:        string(extension.BatchCPU),
+									Capacity:    resource.MustParse("25000"),
+									Allocatable: resource.MustParse("25000"),
+									Available:   resource.MustParse("25000"),
+								},
+								{
+									Name:        string(extension.BatchMemory),
+									Capacity:    resource.MustParse("62G"),
+									Allocatable: resource.MustParse("62G"),
+									Available:   resource.MustParse("62G"),
+								},
+								{
+									Name:        string(corev1.ResourceMemory),
+									Capacity:    resource.MustParse("200Gi"),
+									Allocatable: resource.MustParse("200Gi"),
+									Available:   resource.MustParse("200Gi"),
+								},
+							},
+						},
+						{
+							Name: util.GenNodeZoneName(1),
+							Type: util.NodeZoneType,
+							Resources: topov1alpha1.ResourceInfoList{
+								{
+									Name:        string(corev1.ResourceCPU),
+									Capacity:    resource.MustParse("50"),
+									Allocatable: resource.MustParse("50"),
+									Available:   resource.MustParse("50"),
+								},
+								{
+									Name:        string(extension.BatchCPU),
+									Capacity:    resource.MustParse("25000"),
+									Allocatable: resource.MustParse("25000"),
+									Available:   resource.MustParse("25000"),
+								},
+								{
+									Name:        string(extension.BatchMemory),
+									Capacity:    resource.MustParse("58G"),
+									Allocatable: resource.MustParse("58G"),
+									Available:   resource.MustParse("58G"),
+								},
+								{
+									Name:        string(corev1.ResourceMemory),
+									Capacity:    resource.MustParse("180Gi"),
+									Allocatable: resource.MustParse("180Gi"),
+									Available:   resource.MustParse("180Gi"),
+								},
+							},
+						},
+					},
+				}).Build(),
+			},
+			args: args{
+				strategy: &configuration.ColocationStrategy{
+					ResourceDiffThreshold: pointer.Float64(0.1),
+				},
+				node: &corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node",
+					},
+					Status: corev1.NodeStatus{
+						Capacity: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("100"),
+							corev1.ResourceMemory: resource.MustParse("400Gi"),
+							extension.BatchCPU:    *resource.NewQuantity(50000, resource.DecimalSI),
+							extension.BatchMemory: *resource.NewScaledQuantity(120, 9),
+						},
+						Allocatable: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("100"),
+							corev1.ResourceMemory: resource.MustParse("380Gi"),
+							extension.BatchCPU:    *resource.NewQuantity(50000, resource.DecimalSI),
+							extension.BatchMemory: *resource.NewScaledQuantity(120, 9),
+						},
+					},
+				},
+				nr: &framework.NodeResource{
+					Resources: map[corev1.ResourceName]*resource.Quantity{
+						extension.BatchCPU:    resource.NewQuantity(25000, resource.DecimalSI),
+						extension.BatchMemory: resource.NewScaledQuantity(50, 9),
+					},
+					ZoneResources: map[string]corev1.ResourceList{
+						util.GenNodeZoneName(0): {
+							extension.BatchCPU:    resource.MustParse("15000"),
+							extension.BatchMemory: resource.MustParse("30G"),
+						},
+						util.GenNodeZoneName(1): {
+							extension.BatchCPU:    resource.MustParse("10000"),
+							extension.BatchMemory: resource.MustParse("20G"),
+						},
+					},
+				},
+			},
+			wantErr: false,
+			checkFunc: func(t *testing.T, client ctrlclient.Client) {
+				nrt := &topov1alpha1.NodeResourceTopology{}
+				err := client.Get(context.TODO(), types.NamespacedName{Name: "test-node"}, nrt)
+				assert.NoError(t, err)
+				expectedNRT := &topov1alpha1.NodeResourceTopology{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node",
+					},
+					Zones: topov1alpha1.ZoneList{
+						{
+							Name: util.GenNodeZoneName(0),
+							Type: util.NodeZoneType,
+							Resources: topov1alpha1.ResourceInfoList{
+								{
+									Name:        string(corev1.ResourceCPU),
+									Capacity:    resource.MustParse("50"),
+									Allocatable: resource.MustParse("50"),
+									Available:   resource.MustParse("50"),
+								},
+								{
+									Name:        string(extension.BatchCPU),
+									Capacity:    resource.MustParse("15000"),
+									Allocatable: resource.MustParse("15000"),
+									Available:   resource.MustParse("15000"),
+								},
+								{
+									Name:        string(extension.BatchMemory),
+									Capacity:    resource.MustParse("30G"),
+									Allocatable: resource.MustParse("30G"),
+									Available:   resource.MustParse("30G"),
+								},
+								{
+									Name:        string(corev1.ResourceMemory),
+									Capacity:    resource.MustParse("200Gi"),
+									Allocatable: resource.MustParse("200Gi"),
+									Available:   resource.MustParse("200Gi"),
+								},
+							},
+						},
+						{
+							Name: util.GenNodeZoneName(1),
+							Type: util.NodeZoneType,
+							Resources: topov1alpha1.ResourceInfoList{
+								{
+									Name:        string(corev1.ResourceCPU),
+									Capacity:    resource.MustParse("50"),
+									Allocatable: resource.MustParse("50"),
+									Available:   resource.MustParse("50"),
+								},
+								{
+									Name:        string(extension.BatchCPU),
+									Capacity:    resource.MustParse("10000"),
+									Allocatable: resource.MustParse("10000"),
+									Available:   resource.MustParse("10000"),
+								},
+								{
+									Name:        string(extension.BatchMemory),
+									Capacity:    resource.MustParse("20G"),
+									Allocatable: resource.MustParse("20G"),
+									Available:   resource.MustParse("20G"),
+								},
+								{
+									Name:        string(corev1.ResourceMemory),
+									Capacity:    resource.MustParse("180Gi"),
+									Allocatable: resource.MustParse("180Gi"),
+									Available:   resource.MustParse("180Gi"),
+								},
+							},
+						},
+					},
+				}
+				assert.Equal(t, len(expectedNRT.Zones), len(nrt.Zones))
+				for i := range expectedNRT.Zones {
+					assert.Equal(t, expectedNRT.Zones[i].Name, nrt.Zones[i].Name, fmt.Sprintf("zone %v", i))
+					assert.Equal(t, len(expectedNRT.Zones[i].Resources), len(nrt.Zones[i].Resources), fmt.Sprintf("zone %v", i))
+					for j := range expectedNRT.Zones[i].Resources {
+						assert.Equal(t, expectedNRT.Zones[i].Resources[j].Capacity.Value(), nrt.Zones[i].Resources[j].Capacity.Value(), fmt.Sprintf("zone %v, resource %v", i, j))
+						assert.Equal(t, expectedNRT.Zones[i].Resources[j].Allocatable.Value(), nrt.Zones[i].Resources[j].Allocatable.Value(), fmt.Sprintf("zone %v, resource %v", i, j))
+						assert.Equal(t, expectedNRT.Zones[i].Resources[j].Available.Value(), nrt.Zones[i].Resources[j].Available.Value(), fmt.Sprintf("zone %v, resource %v", i, j))
+					}
+				}
+			},
+		},
+		{
+			name: "update NUMA-level batch resources with cpu-normalization ratio",
+			fields: fields{
+				client: fake.NewClientBuilder().WithScheme(testScheme).WithObjects(&topov1alpha1.NodeResourceTopology{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node",
+					},
+					Zones: topov1alpha1.ZoneList{
+						{
+							Name: util.GenNodeZoneName(0),
+							Type: util.NodeZoneType,
+							Resources: topov1alpha1.ResourceInfoList{
+								{
+									Name:        string(corev1.ResourceCPU),
+									Capacity:    resource.MustParse("50"),
+									Allocatable: resource.MustParse("50"),
+									Available:   resource.MustParse("50"),
+								},
+								{
+									Name:        string(extension.BatchCPU),
+									Capacity:    resource.MustParse("25000"),
+									Allocatable: resource.MustParse("25000"),
+									Available:   resource.MustParse("25000"),
+								},
+								{
+									Name:        string(extension.BatchMemory),
+									Capacity:    resource.MustParse("62G"),
+									Allocatable: resource.MustParse("62G"),
+									Available:   resource.MustParse("62G"),
+								},
+								{
+									Name:        string(corev1.ResourceMemory),
+									Capacity:    resource.MustParse("200Gi"),
+									Allocatable: resource.MustParse("200Gi"),
+									Available:   resource.MustParse("200Gi"),
+								},
+							},
+						},
+						{
+							Name: util.GenNodeZoneName(1),
+							Type: util.NodeZoneType,
+							Resources: topov1alpha1.ResourceInfoList{
+								{
+									Name:        string(corev1.ResourceCPU),
+									Capacity:    resource.MustParse("50"),
+									Allocatable: resource.MustParse("50"),
+									Available:   resource.MustParse("50"),
+								},
+								{
+									Name:        string(extension.BatchCPU),
+									Capacity:    resource.MustParse("25000"),
+									Allocatable: resource.MustParse("25000"),
+									Available:   resource.MustParse("25000"),
+								},
+								{
+									Name:        string(extension.BatchMemory),
+									Capacity:    resource.MustParse("58G"),
+									Allocatable: resource.MustParse("58G"),
+									Available:   resource.MustParse("58G"),
+								},
+								{
+									Name:        string(corev1.ResourceMemory),
+									Capacity:    resource.MustParse("180Gi"),
+									Allocatable: resource.MustParse("180Gi"),
+									Available:   resource.MustParse("180Gi"),
+								},
+							},
+						},
+					},
+				}).Build(),
+			},
+			args: args{
+				strategy: &configuration.ColocationStrategy{
+					ResourceDiffThreshold: pointer.Float64(0.1),
+				},
+				node: &corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node",
+					},
+					Status: corev1.NodeStatus{
+						Capacity: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("100"),
+							corev1.ResourceMemory: resource.MustParse("400Gi"),
+							extension.BatchCPU:    *resource.NewQuantity(50000, resource.DecimalSI),
+							extension.BatchMemory: *resource.NewScaledQuantity(120, 9),
+						},
+						Allocatable: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("100"),
+							corev1.ResourceMemory: resource.MustParse("380Gi"),
+							extension.BatchCPU:    *resource.NewQuantity(50000, resource.DecimalSI),
+							extension.BatchMemory: *resource.NewScaledQuantity(120, 9),
+						},
+					},
+				},
+				nr: &framework.NodeResource{
+					Resources: map[corev1.ResourceName]*resource.Quantity{
+						extension.BatchCPU:    resource.NewQuantity(25000, resource.DecimalSI),
+						extension.BatchMemory: resource.NewScaledQuantity(50, 9),
+					},
+					ZoneResources: map[string]corev1.ResourceList{
+						util.GenNodeZoneName(0): {
+							extension.BatchCPU:    resource.MustParse("15000"),
+							extension.BatchMemory: resource.MustParse("30G"),
+						},
+						util.GenNodeZoneName(1): {
+							extension.BatchCPU:    resource.MustParse("10000"),
+							extension.BatchMemory: resource.MustParse("20G"),
+						},
+					},
+					Annotations: map[string]string{
+						extension.AnnotationCPUNormalizationRatio: "1.20",
+					},
+				},
+			},
+			wantErr: false,
+			checkFunc: func(t *testing.T, client ctrlclient.Client) {
+				nrt := &topov1alpha1.NodeResourceTopology{}
+				err := client.Get(context.TODO(), types.NamespacedName{Name: "test-node"}, nrt)
+				assert.NoError(t, err)
+				expectedNRT := &topov1alpha1.NodeResourceTopology{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node",
+					},
+					Zones: topov1alpha1.ZoneList{
+						{
+							Name: util.GenNodeZoneName(0),
+							Type: util.NodeZoneType,
+							Resources: topov1alpha1.ResourceInfoList{
+								{
+									Name:        string(corev1.ResourceCPU),
+									Capacity:    resource.MustParse("50"),
+									Allocatable: resource.MustParse("50"),
+									Available:   resource.MustParse("50"),
+								},
+								{
+									Name:        string(extension.BatchCPU),
+									Capacity:    resource.MustParse("18000"),
+									Allocatable: resource.MustParse("18000"),
+									Available:   resource.MustParse("18000"),
+								},
+								{
+									Name:        string(extension.BatchMemory),
+									Capacity:    resource.MustParse("30G"),
+									Allocatable: resource.MustParse("30G"),
+									Available:   resource.MustParse("30G"),
+								},
+								{
+									Name:        string(corev1.ResourceMemory),
+									Capacity:    resource.MustParse("200Gi"),
+									Allocatable: resource.MustParse("200Gi"),
+									Available:   resource.MustParse("200Gi"),
+								},
+							},
+						},
+						{
+							Name: util.GenNodeZoneName(1),
+							Type: util.NodeZoneType,
+							Resources: topov1alpha1.ResourceInfoList{
+								{
+									Name:        string(corev1.ResourceCPU),
+									Capacity:    resource.MustParse("50"),
+									Allocatable: resource.MustParse("50"),
+									Available:   resource.MustParse("50"),
+								},
+								{
+									Name:        string(extension.BatchCPU),
+									Capacity:    resource.MustParse("12000"),
+									Allocatable: resource.MustParse("12000"),
+									Available:   resource.MustParse("12000"),
+								},
+								{
+									Name:        string(extension.BatchMemory),
+									Capacity:    resource.MustParse("20G"),
+									Allocatable: resource.MustParse("20G"),
+									Available:   resource.MustParse("20G"),
+								},
+								{
+									Name:        string(corev1.ResourceMemory),
+									Capacity:    resource.MustParse("180Gi"),
+									Allocatable: resource.MustParse("180Gi"),
+									Available:   resource.MustParse("180Gi"),
+								},
+							},
+						},
+					},
+				}
+				assert.Equal(t, len(expectedNRT.Zones), len(nrt.Zones))
+				for i := range expectedNRT.Zones {
+					assert.Equal(t, expectedNRT.Zones[i].Name, nrt.Zones[i].Name, fmt.Sprintf("zone %v", i))
+					assert.Equal(t, len(expectedNRT.Zones[i].Resources), len(nrt.Zones[i].Resources), fmt.Sprintf("zone %v", i))
+					for j := range expectedNRT.Zones[i].Resources {
+						assert.Equal(t, expectedNRT.Zones[i].Resources[j].Capacity.Value(), nrt.Zones[i].Resources[j].Capacity.Value(), fmt.Sprintf("zone %v, resource %v", i, j))
+						assert.Equal(t, expectedNRT.Zones[i].Resources[j].Allocatable.Value(), nrt.Zones[i].Resources[j].Allocatable.Value(), fmt.Sprintf("zone %v, resource %v", i, j))
+						assert.Equal(t, expectedNRT.Zones[i].Resources[j].Available.Value(), nrt.Zones[i].Resources[j].Available.Value(), fmt.Sprintf("zone %v, resource %v", i, j))
+					}
+				}
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			defer testPluginCleanup()
+			p := &Plugin{}
+			assert.Equal(t, PluginName, p.Name())
+			testOpt := &framework.Option{
+				Scheme:   testScheme,
+				Client:   fake.NewClientBuilder().WithScheme(testScheme).Build(),
+				Builder:  &builder.Builder{},
+				Recorder: &record.FakeRecorder{},
+			}
+			if tt.fields.client != nil {
+				testOpt.Client = tt.fields.client
+			}
+			err = p.Setup(testOpt)
+			assert.NoError(t, err)
+
+			gotErr := p.PreUpdate(tt.args.strategy, tt.args.node, tt.args.nr)
+			assert.Equal(t, tt.wantErr, gotErr != nil, gotErr)
+			if tt.checkFunc != nil {
+				tt.checkFunc(t, testOpt.Client)
+			}
+		})
+	}
+}
+
+func TestPrepare(t *testing.T) {
 	testScheme := runtime.NewScheme()
 	err := clientgoscheme.AddToScheme(testScheme)
 	assert.NoError(t, err)
@@ -233,7 +907,6 @@ func TestExecute(t *testing.T) {
 		args      args
 		wantErr   bool
 		wantField *corev1.Node
-		checkFunc func(t *testing.T, client ctrlclient.Client)
 	}{
 		{
 			name: "update batch resources",
@@ -436,88 +1109,6 @@ func TestExecute(t *testing.T) {
 					},
 				},
 			},
-			checkFunc: func(t *testing.T, client ctrlclient.Client) {
-				nrt := &topov1alpha1.NodeResourceTopology{}
-				err := client.Get(context.TODO(), types.NamespacedName{Name: "test-node"}, nrt)
-				assert.NoError(t, err)
-				expectedNRT := &topov1alpha1.NodeResourceTopology{
-					ObjectMeta: metav1.ObjectMeta{
-						Name: "test-node",
-					},
-					Zones: topov1alpha1.ZoneList{
-						{
-							Name: util.GenNodeZoneName(0),
-							Type: util.NodeZoneType,
-							Resources: topov1alpha1.ResourceInfoList{
-								{
-									Name:        string(corev1.ResourceCPU),
-									Capacity:    resource.MustParse("50"),
-									Allocatable: resource.MustParse("50"),
-									Available:   resource.MustParse("50"),
-								},
-								{
-									Name:        string(extension.BatchCPU),
-									Capacity:    resource.MustParse("25000"),
-									Allocatable: resource.MustParse("25000"),
-									Available:   resource.MustParse("25000"),
-								},
-								{
-									Name:        string(extension.BatchMemory),
-									Capacity:    resource.MustParse("62G"),
-									Allocatable: resource.MustParse("62G"),
-									Available:   resource.MustParse("62G"),
-								},
-								{
-									Name:        string(corev1.ResourceMemory),
-									Capacity:    resource.MustParse("200Gi"),
-									Allocatable: resource.MustParse("200Gi"),
-									Available:   resource.MustParse("200Gi"),
-								},
-							},
-						},
-						{
-							Name: util.GenNodeZoneName(1),
-							Type: util.NodeZoneType,
-							Resources: topov1alpha1.ResourceInfoList{
-								{
-									Name:        string(corev1.ResourceCPU),
-									Capacity:    resource.MustParse("50"),
-									Allocatable: resource.MustParse("50"),
-									Available:   resource.MustParse("50"),
-								},
-								{
-									Name:        string(extension.BatchCPU),
-									Capacity:    resource.MustParse("25000"),
-									Allocatable: resource.MustParse("25000"),
-									Available:   resource.MustParse("25000"),
-								},
-								{
-									Name:        string(extension.BatchMemory),
-									Capacity:    resource.MustParse("58G"),
-									Allocatable: resource.MustParse("58G"),
-									Available:   resource.MustParse("58G"),
-								},
-								{
-									Name:        string(corev1.ResourceMemory),
-									Capacity:    resource.MustParse("180Gi"),
-									Allocatable: resource.MustParse("180Gi"),
-									Available:   resource.MustParse("180Gi"),
-								},
-							},
-						},
-					},
-				}
-				assert.Equal(t, len(expectedNRT.Zones), len(nrt.Zones))
-				for i := range expectedNRT.Zones {
-					assert.Equal(t, expectedNRT.Zones[i].Name, nrt.Zones[i].Name, fmt.Sprintf("zone %v", i))
-					assert.Equal(t, len(expectedNRT.Zones[i].Resources), len(nrt.Zones[i].Resources), fmt.Sprintf("zone %v", i))
-					for j := range expectedNRT.Zones[i].Resources {
-						assert.Equal(t, expectedNRT.Zones[i].Resources[j].Capacity.Value(), nrt.Zones[i].Resources[j].Capacity.Value(), fmt.Sprintf("zone %v, resource %v", i, j))
-						assert.Equal(t, expectedNRT.Zones[i].Resources[j].Allocatable.Value(), nrt.Zones[i].Resources[j].Allocatable.Value(), fmt.Sprintf("zone %v, resource %v", i, j))
-						assert.Equal(t, expectedNRT.Zones[i].Resources[j].Available.Value(), nrt.Zones[i].Resources[j].Available.Value(), fmt.Sprintf("zone %v, resource %v", i, j))
-					}
-				}
-			},
 		},
 		{
 			name: "update NUMA-level batch resources",
@@ -649,88 +1240,6 @@ func TestExecute(t *testing.T) {
 						extension.BatchMemory: *resource.NewScaledQuantity(50, 9),
 					},
 				},
-			},
-			checkFunc: func(t *testing.T, client ctrlclient.Client) {
-				nrt := &topov1alpha1.NodeResourceTopology{}
-				err := client.Get(context.TODO(), types.NamespacedName{Name: "test-node"}, nrt)
-				assert.NoError(t, err)
-				expectedNRT := &topov1alpha1.NodeResourceTopology{
-					ObjectMeta: metav1.ObjectMeta{
-						Name: "test-node",
-					},
-					Zones: topov1alpha1.ZoneList{
-						{
-							Name: util.GenNodeZoneName(0),
-							Type: util.NodeZoneType,
-							Resources: topov1alpha1.ResourceInfoList{
-								{
-									Name:        string(corev1.ResourceCPU),
-									Capacity:    resource.MustParse("50"),
-									Allocatable: resource.MustParse("50"),
-									Available:   resource.MustParse("50"),
-								},
-								{
-									Name:        string(extension.BatchCPU),
-									Capacity:    resource.MustParse("15000"),
-									Allocatable: resource.MustParse("15000"),
-									Available:   resource.MustParse("15000"),
-								},
-								{
-									Name:        string(extension.BatchMemory),
-									Capacity:    resource.MustParse("30G"),
-									Allocatable: resource.MustParse("30G"),
-									Available:   resource.MustParse("30G"),
-								},
-								{
-									Name:        string(corev1.ResourceMemory),
-									Capacity:    resource.MustParse("200Gi"),
-									Allocatable: resource.MustParse("200Gi"),
-									Available:   resource.MustParse("200Gi"),
-								},
-							},
-						},
-						{
-							Name: util.GenNodeZoneName(1),
-							Type: util.NodeZoneType,
-							Resources: topov1alpha1.ResourceInfoList{
-								{
-									Name:        string(corev1.ResourceCPU),
-									Capacity:    resource.MustParse("50"),
-									Allocatable: resource.MustParse("50"),
-									Available:   resource.MustParse("50"),
-								},
-								{
-									Name:        string(extension.BatchCPU),
-									Capacity:    resource.MustParse("10000"),
-									Allocatable: resource.MustParse("10000"),
-									Available:   resource.MustParse("10000"),
-								},
-								{
-									Name:        string(extension.BatchMemory),
-									Capacity:    resource.MustParse("20G"),
-									Allocatable: resource.MustParse("20G"),
-									Available:   resource.MustParse("20G"),
-								},
-								{
-									Name:        string(corev1.ResourceMemory),
-									Capacity:    resource.MustParse("180Gi"),
-									Allocatable: resource.MustParse("180Gi"),
-									Available:   resource.MustParse("180Gi"),
-								},
-							},
-						},
-					},
-				}
-				assert.Equal(t, len(expectedNRT.Zones), len(nrt.Zones))
-				for i := range expectedNRT.Zones {
-					assert.Equal(t, expectedNRT.Zones[i].Name, nrt.Zones[i].Name, fmt.Sprintf("zone %v", i))
-					assert.Equal(t, len(expectedNRT.Zones[i].Resources), len(nrt.Zones[i].Resources), fmt.Sprintf("zone %v", i))
-					for j := range expectedNRT.Zones[i].Resources {
-						assert.Equal(t, expectedNRT.Zones[i].Resources[j].Capacity.Value(), nrt.Zones[i].Resources[j].Capacity.Value(), fmt.Sprintf("zone %v, resource %v", i, j))
-						assert.Equal(t, expectedNRT.Zones[i].Resources[j].Allocatable.Value(), nrt.Zones[i].Resources[j].Allocatable.Value(), fmt.Sprintf("zone %v, resource %v", i, j))
-						assert.Equal(t, expectedNRT.Zones[i].Resources[j].Available.Value(), nrt.Zones[i].Resources[j].Available.Value(), fmt.Sprintf("zone %v, resource %v", i, j))
-					}
-				}
 			},
 		},
 		{
@@ -867,88 +1376,6 @@ func TestExecute(t *testing.T) {
 					},
 				},
 			},
-			checkFunc: func(t *testing.T, client ctrlclient.Client) {
-				nrt := &topov1alpha1.NodeResourceTopology{}
-				err := client.Get(context.TODO(), types.NamespacedName{Name: "test-node"}, nrt)
-				assert.NoError(t, err)
-				expectedNRT := &topov1alpha1.NodeResourceTopology{
-					ObjectMeta: metav1.ObjectMeta{
-						Name: "test-node",
-					},
-					Zones: topov1alpha1.ZoneList{
-						{
-							Name: util.GenNodeZoneName(0),
-							Type: util.NodeZoneType,
-							Resources: topov1alpha1.ResourceInfoList{
-								{
-									Name:        string(corev1.ResourceCPU),
-									Capacity:    resource.MustParse("50"),
-									Allocatable: resource.MustParse("50"),
-									Available:   resource.MustParse("50"),
-								},
-								{
-									Name:        string(extension.BatchCPU),
-									Capacity:    resource.MustParse("18000"),
-									Allocatable: resource.MustParse("18000"),
-									Available:   resource.MustParse("18000"),
-								},
-								{
-									Name:        string(extension.BatchMemory),
-									Capacity:    resource.MustParse("30G"),
-									Allocatable: resource.MustParse("30G"),
-									Available:   resource.MustParse("30G"),
-								},
-								{
-									Name:        string(corev1.ResourceMemory),
-									Capacity:    resource.MustParse("200Gi"),
-									Allocatable: resource.MustParse("200Gi"),
-									Available:   resource.MustParse("200Gi"),
-								},
-							},
-						},
-						{
-							Name: util.GenNodeZoneName(1),
-							Type: util.NodeZoneType,
-							Resources: topov1alpha1.ResourceInfoList{
-								{
-									Name:        string(corev1.ResourceCPU),
-									Capacity:    resource.MustParse("50"),
-									Allocatable: resource.MustParse("50"),
-									Available:   resource.MustParse("50"),
-								},
-								{
-									Name:        string(extension.BatchCPU),
-									Capacity:    resource.MustParse("12000"),
-									Allocatable: resource.MustParse("12000"),
-									Available:   resource.MustParse("12000"),
-								},
-								{
-									Name:        string(extension.BatchMemory),
-									Capacity:    resource.MustParse("20G"),
-									Allocatable: resource.MustParse("20G"),
-									Available:   resource.MustParse("20G"),
-								},
-								{
-									Name:        string(corev1.ResourceMemory),
-									Capacity:    resource.MustParse("180Gi"),
-									Allocatable: resource.MustParse("180Gi"),
-									Available:   resource.MustParse("180Gi"),
-								},
-							},
-						},
-					},
-				}
-				assert.Equal(t, len(expectedNRT.Zones), len(nrt.Zones))
-				for i := range expectedNRT.Zones {
-					assert.Equal(t, expectedNRT.Zones[i].Name, nrt.Zones[i].Name, fmt.Sprintf("zone %v", i))
-					assert.Equal(t, len(expectedNRT.Zones[i].Resources), len(nrt.Zones[i].Resources), fmt.Sprintf("zone %v", i))
-					for j := range expectedNRT.Zones[i].Resources {
-						assert.Equal(t, expectedNRT.Zones[i].Resources[j].Capacity.Value(), nrt.Zones[i].Resources[j].Capacity.Value(), fmt.Sprintf("zone %v, resource %v", i, j))
-						assert.Equal(t, expectedNRT.Zones[i].Resources[j].Allocatable.Value(), nrt.Zones[i].Resources[j].Allocatable.Value(), fmt.Sprintf("zone %v, resource %v", i, j))
-						assert.Equal(t, expectedNRT.Zones[i].Resources[j].Available.Value(), nrt.Zones[i].Resources[j].Available.Value(), fmt.Sprintf("zone %v, resource %v", i, j))
-					}
-				}
-			},
 		},
 	}
 	for _, tt := range tests {
@@ -968,13 +1395,10 @@ func TestExecute(t *testing.T) {
 			err = p.Setup(testOpt)
 			assert.NoError(t, err)
 
-			gotErr := p.Execute(tt.args.strategy, tt.args.node, tt.args.nr)
+			gotErr := p.Prepare(tt.args.strategy, tt.args.node, tt.args.nr)
 			assert.Equal(t, tt.wantErr, gotErr != nil, gotErr)
 			testingCorrectResourceList(t, &tt.wantField.Status.Capacity, &tt.args.node.Status.Capacity)
 			testingCorrectResourceList(t, &tt.wantField.Status.Allocatable, &tt.args.node.Status.Allocatable)
-			if tt.checkFunc != nil {
-				tt.checkFunc(t, testOpt.Client)
-			}
 		})
 	}
 }
@@ -988,6 +1412,7 @@ func TestPluginCalculate(t *testing.T) {
 	err = topov1alpha1.AddToScheme(testScheme)
 	assert.NoError(t, err)
 	memoryCalculateByReq := configuration.CalculateByPodRequest
+	cpuCalculateByMaxUsageReq := configuration.CalculateByPodMaxUsageRequest
 	type fields struct {
 		client  ctrlclient.Client
 		checkFn func(t *testing.T, client ctrlclient.Client)
@@ -2927,6 +3352,82 @@ func TestPluginCalculate(t *testing.T) {
 						util.GenNodeZoneName(0): *resource.NewScaledQuantity(5300, 6),  // 62 - 21.7(62*0.35) - (25 + 10)
 						util.GenNodeZoneName(1): *resource.NewScaledQuantity(12700, 6), // 58 - 20.3(58*0.35) - 25
 					},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "calculate with cpu maxUsageRequest and memory request",
+			args: args{
+				strategy: &configuration.ColocationStrategy{
+					Enable:                        pointer.Bool(true),
+					DegradeTimeMinutes:            pointer.Int64(15),
+					UpdateTimeThresholdSeconds:    pointer.Int64(300),
+					ResourceDiffThreshold:         pointer.Float64(0.1),
+					CPUReclaimThresholdPercent:    pointer.Int64(70),
+					CPUCalculatePolicy:            &cpuCalculateByMaxUsageReq,
+					MemoryReclaimThresholdPercent: pointer.Int64(80),
+					MemoryCalculatePolicy:         &memoryCalculateByReq,
+				},
+				node: &corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node1",
+						Labels: map[string]string{
+							"cpu-calculate-by-request":    "true",
+							"memory-calculate-by-request": "true",
+						},
+					},
+					Status: makeNodeStat("100", "120G"),
+				},
+			},
+			want: []framework.ResourceItem{
+				{
+					Name:     extension.BatchCPU,
+					Quantity: resource.NewQuantity(21000, resource.DecimalSI),
+					Message:  "batchAllocatable[CPU(Milli-Core)]:21000 = nodeCapacity:100000 - nodeReservation:30000 - systemUsageOrReserved:7000 - podHPMaxUsedRequest:42000",
+				},
+				{
+					Name:     extension.BatchMemory,
+					Quantity: resource.NewScaledQuantity(36, 9),
+					Message:  "batchAllocatable[Mem(GB)]:36 = nodeCapacity:120 - nodeReservation:24 - systemReserved:0 - podHPRequest:60",
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "calculate with adjusted reclaim ratio",
+			args: args{
+				strategy: &configuration.ColocationStrategy{
+					Enable:                        pointer.Bool(true),
+					DegradeTimeMinutes:            pointer.Int64(15),
+					UpdateTimeThresholdSeconds:    pointer.Int64(300),
+					ResourceDiffThreshold:         pointer.Float64(0.1),
+					CPUReclaimThresholdPercent:    pointer.Int64(150),
+					CPUCalculatePolicy:            &cpuCalculateByMaxUsageReq,
+					MemoryReclaimThresholdPercent: pointer.Int64(120),
+					MemoryCalculatePolicy:         &memoryCalculateByReq,
+				},
+				node: &corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node1",
+						Labels: map[string]string{
+							"cpu-calculate-by-request":    "true",
+							"memory-calculate-by-request": "true",
+						},
+					},
+					Status: makeNodeStat("100", "120G"),
+				},
+			},
+			want: []framework.ResourceItem{
+				{
+					Name:     extension.BatchCPU,
+					Quantity: resource.NewQuantity(101000, resource.DecimalSI),
+					Message:  "batchAllocatable[CPU(Milli-Core)]:101000 = nodeCapacity:100000 - nodeReservation:-50000 - systemUsageOrReserved:7000 - podHPMaxUsedRequest:42000",
+				},
+				{
+					Name:     extension.BatchMemory,
+					Quantity: resource.NewScaledQuantity(84, 9),
+					Message:  "batchAllocatable[Mem(GB)]:84 = nodeCapacity:120 - nodeReservation:-24 - systemReserved:0 - podHPRequest:60",
 				},
 			},
 			wantErr: false,

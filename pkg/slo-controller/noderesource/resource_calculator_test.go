@@ -65,18 +65,18 @@ func (f *FakeCfgCache) IsErrorStatus() bool {
 	return f.errorStatus
 }
 
-var _ framework.NodeMetaSyncPlugin = (*fakeNodeMetaSyncPlugin)(nil)
+var _ framework.NodeMetaCheckPlugin = (*fakeNodeMetaCheckPlugin)(nil)
 
-type fakeNodeMetaSyncPlugin struct {
+type fakeNodeMetaCheckPlugin struct {
 	CheckLabels []string
 	AlwaysSync  bool
 }
 
-func (p *fakeNodeMetaSyncPlugin) Name() string {
-	return "fakeNodeMetaSyncPlugin"
+func (p *fakeNodeMetaCheckPlugin) Name() string {
+	return "fakeNodeMetaCheckPlugin"
 }
 
-func (p *fakeNodeMetaSyncPlugin) NeedSyncMeta(strategy *configuration.ColocationStrategy, oldNode, newNode *corev1.Node) (bool, string) {
+func (p *fakeNodeMetaCheckPlugin) NeedSyncMeta(strategy *configuration.ColocationStrategy, oldNode, newNode *corev1.Node) (bool, string) {
 	if p.AlwaysSync {
 		return true, "always sync"
 	}
@@ -1220,10 +1220,10 @@ func Test_updateNodeResource(t *testing.T) {
 		},
 	}
 	type fields struct {
-		Client                    client.Client
-		config                    *configuration.ColocationCfg
-		SyncContext               *framework.SyncContext
-		prepareNodeMetaSyncPlugin []framework.NodeMetaSyncPlugin
+		Client                     client.Client
+		config                     *configuration.ColocationCfg
+		SyncContext                *framework.SyncContext
+		prepareNodeMetaCheckPlugin []framework.NodeMetaCheckPlugin
 	}
 	type args struct {
 		oldNode *corev1.Node
@@ -1709,8 +1709,8 @@ func Test_updateNodeResource(t *testing.T) {
 				SyncContext: framework.NewSyncContext().WithContext(
 					map[string]time.Time{"/test-node0": time.Now()},
 				),
-				prepareNodeMetaSyncPlugin: []framework.NodeMetaSyncPlugin{
-					&fakeNodeMetaSyncPlugin{
+				prepareNodeMetaCheckPlugin: []framework.NodeMetaCheckPlugin{
+					&fakeNodeMetaCheckPlugin{
 						AlwaysSync: true,
 					},
 				},
@@ -1771,11 +1771,11 @@ func Test_updateNodeResource(t *testing.T) {
 				Clock:           clock.RealClock{},
 			}
 			oldNodeCopy := tt.args.oldNode.DeepCopy()
-			if len(tt.fields.prepareNodeMetaSyncPlugin) > 0 {
-				framework.RegisterNodeMetaSyncExtender(framework.AllPass, tt.fields.prepareNodeMetaSyncPlugin...)
+			if len(tt.fields.prepareNodeMetaCheckPlugin) > 0 {
+				framework.RegisterNodeMetaCheckExtender(framework.AllPass, tt.fields.prepareNodeMetaCheckPlugin...)
 				defer func() {
-					for _, p := range tt.fields.prepareNodeMetaSyncPlugin {
-						framework.UnregisterNodeMetaSyncExtender(p.Name())
+					for _, p := range tt.fields.prepareNodeMetaCheckPlugin {
+						framework.UnregisterNodeMetaCheckExtender(p.Name())
 					}
 				}()
 			}
@@ -1801,8 +1801,8 @@ func Test_updateNodeResource(t *testing.T) {
 
 func Test_isNodeResourceSyncNeeded(t *testing.T) {
 	type fields struct {
-		SyncContext               *framework.SyncContext
-		prepareNodeMetaSyncPlugin []framework.NodeMetaSyncPlugin
+		SyncContext                *framework.SyncContext
+		prepareNodeMetaCheckPlugin []framework.NodeMetaCheckPlugin
 	}
 	type args struct {
 		strategy *configuration.ColocationStrategy
@@ -2030,8 +2030,8 @@ func Test_isNodeResourceSyncNeeded(t *testing.T) {
 				SyncContext: framework.NewSyncContext().WithContext(
 					map[string]time.Time{"/test-node0": time.Now()},
 				),
-				prepareNodeMetaSyncPlugin: []framework.NodeMetaSyncPlugin{
-					&fakeNodeMetaSyncPlugin{
+				prepareNodeMetaCheckPlugin: []framework.NodeMetaCheckPlugin{
+					&fakeNodeMetaCheckPlugin{
 						CheckLabels: []string{"expect-to-change-label"},
 					},
 				},
@@ -2094,11 +2094,11 @@ func Test_isNodeResourceSyncNeeded(t *testing.T) {
 				NodeSyncContext: tt.fields.SyncContext,
 				Clock:           clock.RealClock{},
 			}
-			if len(tt.fields.prepareNodeMetaSyncPlugin) > 0 {
-				framework.RegisterNodeMetaSyncExtender(framework.AllPass, tt.fields.prepareNodeMetaSyncPlugin...)
+			if len(tt.fields.prepareNodeMetaCheckPlugin) > 0 {
+				framework.RegisterNodeMetaCheckExtender(framework.AllPass, tt.fields.prepareNodeMetaCheckPlugin...)
 				defer func() {
-					for _, p := range tt.fields.prepareNodeMetaSyncPlugin {
-						framework.UnregisterNodeMetaSyncExtender(p.Name())
+					for _, p := range tt.fields.prepareNodeMetaCheckPlugin {
+						framework.UnregisterNodeMetaCheckExtender(p.Name())
 					}
 				}()
 			}

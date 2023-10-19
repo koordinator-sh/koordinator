@@ -61,7 +61,7 @@ func (p *Plugin) NeedSync(strategy *configuration.ColocationStrategy, oldNode, n
 	return false, ""
 }
 
-func (p *Plugin) Execute(strategy *configuration.ColocationStrategy, node *corev1.Node, nr *framework.NodeResource) error {
+func (p *Plugin) Prepare(_ *configuration.ColocationStrategy, node *corev1.Node, nr *framework.NodeResource) error {
 	for _, resourceName := range ResourceNames {
 		prepareNodeForResource(node, nr, resourceName)
 	}

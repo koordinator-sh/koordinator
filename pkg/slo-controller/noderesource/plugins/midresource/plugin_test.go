@@ -102,7 +102,7 @@ func TestPluginNeedSync(t *testing.T) {
 	}
 }
 
-func TestPluginExecute(t *testing.T) {
+func TestPluginPrepare(t *testing.T) {
 	testNode := getTestNode(nil)
 	testWantNodeMidChange := getTestNode(corev1.ResourceList{
 		extension.MidCPU:    *resource.NewQuantity(30000, resource.DecimalSI),
@@ -158,7 +158,7 @@ func TestPluginExecute(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			p := &Plugin{}
-			gotErr := p.Execute(tt.args.strategy, tt.args.node, tt.args.nr)
+			gotErr := p.Prepare(tt.args.strategy, tt.args.node, tt.args.nr)
 			assert.Equal(t, tt.wantErr, gotErr != nil)
 			assert.Equal(t, tt.wantField, tt.args.node)
 		})

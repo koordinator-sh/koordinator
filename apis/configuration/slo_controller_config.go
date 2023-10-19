@@ -173,11 +173,29 @@ func (in *NodeExtensionStrategy) DeepCopy() *NodeExtensionStrategy {
 	return out
 }
 
+// CalculatePolicy defines the calculate policy for resource overcommitment.
+// Default is "usage".
 type CalculatePolicy string
 
 const (
-	CalculateByPodUsage   CalculatePolicy = "usage"
+	// CalculateByPodUsage is the calculate policy according to the pod resource usage.
+	// When the policy="usage", the low-priority (LP) resources are calculated according to the high-priority (HP) pods'
+	// usages, so LP pod can reclaim the requested but unused resources of the HP pods.
+	// It is the default policy where the resources are over-committed between priority bands.
+	CalculateByPodUsage CalculatePolicy = "usage"
+	// CalculateByPodRequest is the calculate policy according to the pod resource request.
+	// When the policy="request", the low-priority (LP) resources are calculated according to the high-priority (HP)
+	// pods' requests, so LP pod can allocate the unallocated resources of the HP pods but can NOT reclaim the
+	// requested but unused resources of the HP pods.
+	// It is the policy where the resources are NOT over-committed between priority bands.
 	CalculateByPodRequest CalculatePolicy = "request"
+	// CalculateByPodMaxUsageRequest is the calculate policy according to the maximum of the pod usage and request.
+	// When the policy="maxUsageRequest", the low-priority (LP) resources are calculated according to the sum of the
+	// high-priority (HP) pods' maximum of its usage and its request, so LP pod can allocate the resources both
+	// unallocated and unused by the HP pods.
+	// It is the conservative policy where the resources are NOT over-committed between priority bands while HP's usage
+	// is also protected from the overcommitment.
+	CalculateByPodMaxUsageRequest CalculatePolicy = "maxUsageRequest"
 )
 
 // +k8s:deepcopy-gen=true
@@ -215,12 +233,17 @@ type ColocationStrategy struct {
 	MetricAggregatePolicy          *slov1alpha1.AggregatePolicy         `json:"metricAggregatePolicy,omitempty"`
 	MetricMemoryCollectPolicy      *slov1alpha1.NodeMemoryCollectPolicy `json:"metricMemoryCollectPolicy,omitempty"`
 
-	CPUReclaimThresholdPercent    *int64           `json:"cpuReclaimThresholdPercent,omitempty" validate:"omitempty,min=0,max=100"`
+	CPUReclaimThresholdPercent *int64 `json:"cpuReclaimThresholdPercent,omitempty" validate:"omitempty,min=0,max=100"`
+	// CPUCalculatePolicy determines the calculation policy of the CPU resources for the Batch pods.
+	// Supported: "usage" (default), "maxUsageRequest".
+	CPUCalculatePolicy            *CalculatePolicy `json:"cpuCalculatePolicy,omitempty"`
 	MemoryReclaimThresholdPercent *int64           `json:"memoryReclaimThresholdPercent,omitempty" validate:"omitempty,min=0,max=100"`
-	MemoryCalculatePolicy         *CalculatePolicy `json:"memoryCalculatePolicy,omitempty"`
-	DegradeTimeMinutes            *int64           `json:"degradeTimeMinutes,omitempty" validate:"omitempty,min=1"`
-	UpdateTimeThresholdSeconds    *int64           `json:"updateTimeThresholdSeconds,omitempty" validate:"omitempty,min=1"`
-	ResourceDiffThreshold         *float64         `json:"resourceDiffThreshold,omitempty" validate:"omitempty,gt=0,max=1"`
+	// MemoryCalculatePolicy determines the calculation policy of the memory resources for the Batch pods.
+	// Supported: "usage" (default), "request", "maxUsageRequest".
+	MemoryCalculatePolicy      *CalculatePolicy `json:"memoryCalculatePolicy,omitempty"`
+	DegradeTimeMinutes         *int64           `json:"degradeTimeMinutes,omitempty" validate:"omitempty,min=1"`
+	UpdateTimeThresholdSeconds *int64           `json:"updateTimeThresholdSeconds,omitempty" validate:"omitempty,min=1"`
+	ResourceDiffThreshold      *float64         `json:"resourceDiffThreshold,omitempty" validate:"omitempty,gt=0,max=1"`
 
 	// MidCPUThresholdPercent defines the maximum percentage of the Mid-tier cpu resource dividing the node allocatable.
 	// MidCPUAllocatable <= NodeCPUAllocatable * MidCPUThresholdPercent / 100.

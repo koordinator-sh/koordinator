@@ -191,7 +191,7 @@ func TestPluginNeedSyncMeta(t *testing.T) {
 	}
 }
 
-func TestPluginExecute(t *testing.T) {
+func TestPluginPrepare(t *testing.T) {
 	type args struct {
 		node *corev1.Node
 		nr   *framework.NodeResource
@@ -276,7 +276,7 @@ func TestPluginExecute(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			p := &Plugin{}
-			gotErr := p.Execute(nil, tt.args.node, tt.args.nr)
+			gotErr := p.Prepare(nil, tt.args.node, tt.args.nr)
 			assert.Equal(t, tt.wantErr, gotErr != nil)
 			assert.Equal(t, tt.wantField, tt.args.node)
 			if tt.wantField1 != nil {

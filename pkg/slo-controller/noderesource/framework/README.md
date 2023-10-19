@@ -44,13 +44,27 @@ type ResourceItem struct {
 }
 ```
 
-- **Prepare**: It prepares the Node object with the calculated result `NodeResource`. Before the Preparing, it is
+- **PreUpdate**: It allows the plugin to preprocess for the calculated results called before updating the Node.
+For example, a plugin can prepare and update some Objects like CRDs before updating the Node. And the plugin also can
+mutate the internal NodeResource object according the fully calculated results.
+It differs from the Prepare stage since a NodePreUpdatePlugin will be invoked only once in one loop (so the plugin
+should consider implement a retry login itself if needed), while the NodePreparePlugin is not expected to update other
+objects or mutate the NodeResource.
+
+```go
+type NodePreUpdatePlugin interface {
+	Plugin
+	PreUpdate(strategy *ColocationStrategy, node *Node, nr *NodeResource) error
+}
+```
+
+- **Prepare**: It prepares the Node object with the calculated result `NodeResource`. Before the updating, it is
 invoked after the Calculate so to allow the plugin to retry when the client updates conflicts.
 
 ```go
 type NodePreparePlugin interface {
 	Plugin
-	Execute(strategy *ColocationStrategy, node *Node, nr *NodeResource) error
+	Prepare(strategy *ColocationStrategy, node *Node, nr *NodeResource) error
 }
 
 type NodeResource struct {
@@ -62,17 +76,17 @@ type NodeResource struct {
 }
 ```
 
-- **NeedSync**: It checks if the newly-prepared Node object should be synchronized to the kube-apiserver. To be more
-specific, there are two types of NeedSync plugins for different client update methods, where one can determine whether
-the node status should be updated and another determines whether node metadata should be updated.
+- **NodeCheck**: It checks if the newly-prepared Node object should be synchronized to the kube-apiserver. To be more
+specific, currently there are two types of NeedSync plugins for different client update methods, where one can determine
+whether the node status should be updated and another determines whether node metadata should be updated.
 
 ```go
-type NodeSyncPlugin interface {
+type NodeStatusCheckPlugin interface {
 	Plugin
 	NeedSync(strategy *ColocationStrategy, oldNode, newNode *Node) (bool, string)
 }
 
-type NodeMetaSyncPlugin interface {
+type NodeMetaCheckPlugin interface {
 	Plugin
 	NeedSyncMeta(strategy *ColocationStrategy, oldNode, newNode *Node) (bool, string)
 }
@@ -85,7 +99,11 @@ There is the workflow about how the node resource controller handles a dequeued 
 ## Example: Batch Resource Plugin
 
 The default `BatchResource` plugin is responsible for calculating and updating the Batch-tier resources.
-It implements the stages `Calculate`, `Reset`, `Prepare` and `NeedSync`:
+It implements the stages `Setup`, `Calculate`/`Reset`, `PreUpdate`, `Prepare` and `NodeStatusCheck`:
+
+**Setup**:
+
+In the initialization, the plugin sets the kube client, and add a watch for the NodeResourceTopology.
 
 **Calculate**:
 
@@ -98,12 +116,17 @@ batchAllocatable := nodeAllocatable * thresholdPercent - podUsage(HP) - systemUs
 
 Besides, the plugin implements the `Reset` method to clean up the Batch resources when the node colocation is disabled.
 
+**PreUpdate**:
+
+Before updating the Node obj, the plugin updates the zone-level Batch resources for the NRT (NodeResourceTopology)
+according to the calculated results from the `Calculate` stage.
+
 **Prepare**:
 
 The plugin sets the extended resources `kubernetes.io/batch-cpu`, `kubernetes.io/batch-memory` in the
-`node.status.allocatable` according to the calculated results from the `Calculate` or `Reset` stage.
+`node.status.allocatable` according to the calculated results from the `Calculate`/`Reset` stage.
 
-**NeedSync**:
+**NodeStatusCheck**:
 
 The plugin checks the extended resources `kubernetes.io/batch-cpu`, `kubernetes.io/batch-memory` of the prepared node
 and the old node. If the node's Batch resources have not been updated for too long or the calculated results changes
