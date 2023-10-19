@@ -49,6 +49,10 @@ const (
 	// NodeBE
 	NodeMetricBE MetricKind = "node_be"
 
+	PriorityMetricCPUUsage     MetricKind = "priority_cpu_usage"
+	PriorityMetricCPURealLimit MetricKind = "priority_cpu_real_limit"
+	PriorityMetricCPURequest   MetricKind = "priority_cpu_request"
+
 	PodMetricCPUUsage           MetricKind = "pod_cpu_usage"
 	PodMetricMemoryUsage        MetricKind = "pod_memory_usage"
 	PodMemoryWithPageCacheUsage MetricKind = "pod_memory_usage_with_page_cache"
