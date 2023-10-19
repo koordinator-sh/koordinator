@@ -64,18 +64,26 @@ func DefaultCPUQOS(qos apiext.QoSClass) *slov1alpha1.CPUQOS {
 	case apiext.QoSLSR:
 		cpuQOS = &slov1alpha1.CPUQOS{
 			GroupIdentity: pointer.Int64(2),
+			SchedIdle:     pointer.Int64(0),
+			CoreExpeller:  pointer.Bool(true),
 		}
 	case apiext.QoSLS:
 		cpuQOS = &slov1alpha1.CPUQOS{
 			GroupIdentity: pointer.Int64(2),
+			SchedIdle:     pointer.Int64(0),
+			CoreExpeller:  pointer.Bool(true),
 		}
 	case apiext.QoSBE:
 		cpuQOS = &slov1alpha1.CPUQOS{
 			GroupIdentity: pointer.Int64(-1),
+			SchedIdle:     pointer.Int64(1),
+			CoreExpeller:  pointer.Bool(false),
 		}
 	case apiext.QoSSystem:
 		cpuQOS = &slov1alpha1.CPUQOS{
 			GroupIdentity: pointer.Int64(0),
+			SchedIdle:     pointer.Int64(0),
+			CoreExpeller:  pointer.Bool(false),
 		}
 	default:
 		klog.Infof("cpu qos has no auto config for qos %s", qos)
@@ -184,8 +192,16 @@ func DefaultMemoryQOS(qos apiext.QoSClass) *slov1alpha1.MemoryQOS {
 	return memoryQOS
 }
 
+func DefaultResourceQOSPolicies() *slov1alpha1.ResourceQOSPolicies {
+	defaultCPUPolicy := slov1alpha1.CPUQOSPolicyGroupIdentity
+	return &slov1alpha1.ResourceQOSPolicies{
+		CPUPolicy: &defaultCPUPolicy,
+	}
+}
+
 func DefaultResourceQOSStrategy() *slov1alpha1.ResourceQOSStrategy {
 	return &slov1alpha1.ResourceQOSStrategy{
+		Policies: DefaultResourceQOSPolicies(),
 		LSRClass: &slov1alpha1.ResourceQOS{
 			CPUQOS: &slov1alpha1.CPUQOSCfg{
 				Enable: pointer.Bool(false),
@@ -265,6 +281,8 @@ func NoneResourceQOS(qos apiext.QoSClass) *slov1alpha1.ResourceQOS {
 func NoneCPUQOS() *slov1alpha1.CPUQOS {
 	return &slov1alpha1.CPUQOS{
 		GroupIdentity: pointer.Int64(0),
+		SchedIdle:     pointer.Int64(0),
+		CoreExpeller:  pointer.Bool(false),
 	}
 }
 
@@ -291,9 +309,17 @@ func NoneMemoryQOS() *slov1alpha1.MemoryQOS {
 	}
 }
 
+func NoneResourceQOSPolicies() *slov1alpha1.ResourceQOSPolicies {
+	noneCPUPolicy := slov1alpha1.CPUQOSPolicyGroupIdentity
+	return &slov1alpha1.ResourceQOSPolicies{
+		CPUPolicy: &noneCPUPolicy,
+	}
+}
+
 // NoneResourceQOSStrategy indicates the qos strategy with all qos
 func NoneResourceQOSStrategy() *slov1alpha1.ResourceQOSStrategy {
 	return &slov1alpha1.ResourceQOSStrategy{
+		Policies:    NoneResourceQOSPolicies(),
 		LSRClass:    NoneResourceQOS(apiext.QoSLSR),
 		LSClass:     NoneResourceQOS(apiext.QoSLS),
 		BEClass:     NoneResourceQOS(apiext.QoSBE),

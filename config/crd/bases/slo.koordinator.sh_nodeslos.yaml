@@ -176,12 +176,26 @@ spec:
                       cpuQOS:
                         description: CPUQOSCfg stores node-level config of cpu qos
                         properties:
+                          coreExpeller:
+                            description: 'whether pods of the QoS class can expel
+                              the cgroup idle pods at the SMT-level. default = false
+                              If set to true, pods of this QoS will use a dedicated
+                              core sched group for noise clean with the SchedIdle
+                              pods. NOTE: It takes effect if cpuPolicy = "coreSched".'
+                            type: boolean
                           enable:
                             description: Enable indicates whether the cpu qos is enabled.
                             type: boolean
                           groupIdentity:
-                            description: group identity value for pods, default =
-                              0
+                            description: 'group identity value for pods, default =
+                              0 NOTE: It takes effect if cpuPolicy = "groupIdentity".'
+                            format: int64
+                            type: integer
+                          schedIdle:
+                            description: 'cpu.idle value for pods, default = 0. `1`
+                              means using SCHED_IDLE. CGroup Idle (introduced since
+                              mainline Linux 5.15): https://lore.kernel.org/lkml/162971078674.25758.15464079371945307825.tip-bot2@tip-bot2/#r
+                              NOTE: It takes effect if cpuPolicy = "coreSched".'
                             format: int64
                             type: integer
                         type: object
@@ -387,12 +401,26 @@ spec:
                       cpuQOS:
                         description: CPUQOSCfg stores node-level config of cpu qos
                         properties:
+                          coreExpeller:
+                            description: 'whether pods of the QoS class can expel
+                              the cgroup idle pods at the SMT-level. default = false
+                              If set to true, pods of this QoS will use a dedicated
+                              core sched group for noise clean with the SchedIdle
+                              pods. NOTE: It takes effect if cpuPolicy = "coreSched".'
+                            type: boolean
                           enable:
                             description: Enable indicates whether the cpu qos is enabled.
                             type: boolean
                           groupIdentity:
-                            description: group identity value for pods, default =
-                              0
+                            description: 'group identity value for pods, default =
+                              0 NOTE: It takes effect if cpuPolicy = "groupIdentity".'
+                            format: int64
+                            type: integer
+                          schedIdle:
+                            description: 'cpu.idle value for pods, default = 0. `1`
+                              means using SCHED_IDLE. CGroup Idle (introduced since
+                              mainline Linux 5.15): https://lore.kernel.org/lkml/162971078674.25758.15464079371945307825.tip-bot2@tip-bot2/#r
+                              NOTE: It takes effect if cpuPolicy = "coreSched".'
                             format: int64
                             type: integer
                         type: object
@@ -598,12 +626,26 @@ spec:
                       cpuQOS:
                         description: CPUQOSCfg stores node-level config of cpu qos
                         properties:
+                          coreExpeller:
+                            description: 'whether pods of the QoS class can expel
+                              the cgroup idle pods at the SMT-level. default = false
+                              If set to true, pods of this QoS will use a dedicated
+                              core sched group for noise clean with the SchedIdle
+                              pods. NOTE: It takes effect if cpuPolicy = "coreSched".'
+                            type: boolean
                           enable:
                             description: Enable indicates whether the cpu qos is enabled.
                             type: boolean
                           groupIdentity:
-                            description: group identity value for pods, default =
-                              0
+                            description: 'group identity value for pods, default =
+                              0 NOTE: It takes effect if cpuPolicy = "groupIdentity".'
+                            format: int64
+                            type: integer
+                          schedIdle:
+                            description: 'cpu.idle value for pods, default = 0. `1`
+                              means using SCHED_IDLE. CGroup Idle (introduced since
+                              mainline Linux 5.15): https://lore.kernel.org/lkml/162971078674.25758.15464079371945307825.tip-bot2@tip-bot2/#r
+                              NOTE: It takes effect if cpuPolicy = "coreSched".'
                             format: int64
                             type: integer
                         type: object
@@ -809,12 +851,26 @@ spec:
                       cpuQOS:
                         description: CPUQOSCfg stores node-level config of cpu qos
                         properties:
+                          coreExpeller:
+                            description: 'whether pods of the QoS class can expel
+                              the cgroup idle pods at the SMT-level. default = false
+                              If set to true, pods of this QoS will use a dedicated
+                              core sched group for noise clean with the SchedIdle
+                              pods. NOTE: It takes effect if cpuPolicy = "coreSched".'
+                            type: boolean
                           enable:
                             description: Enable indicates whether the cpu qos is enabled.
                             type: boolean
                           groupIdentity:
-                            description: group identity value for pods, default =
-                              0
+                            description: 'group identity value for pods, default =
+                              0 NOTE: It takes effect if cpuPolicy = "groupIdentity".'
+                            format: int64
+                            type: integer
+                          schedIdle:
+                            description: 'cpu.idle value for pods, default = 0. `1`
+                              means using SCHED_IDLE. CGroup Idle (introduced since
+                              mainline Linux 5.15): https://lore.kernel.org/lkml/162971078674.25758.15464079371945307825.tip-bot2@tip-bot2/#r
+                              NOTE: It takes effect if cpuPolicy = "coreSched".'
                             format: int64
                             type: integer
                         type: object
@@ -948,6 +1004,13 @@ spec:
                             type: integer
                         type: object
                     type: object
+                  policies:
+                    description: Policies of pod QoS.
+                    properties:
+                      cpuPolicy:
+                        description: applied policy for the CPU QoS, default = "groupIdentity"
+                        type: string
+                    type: object
                   systemClass:
                     description: ResourceQOS for system pods
                     properties:
@@ -1020,12 +1083,26 @@ spec:
                       cpuQOS:
                         description: CPUQOSCfg stores node-level config of cpu qos
                         properties:
+                          coreExpeller:
+                            description: 'whether pods of the QoS class can expel
+                              the cgroup idle pods at the SMT-level. default = false
+                              If set to true, pods of this QoS will use a dedicated
+                              core sched group for noise clean with the SchedIdle
+                              pods. NOTE: It takes effect if cpuPolicy = "coreSched".'
+                            type: boolean
                           enable:
                             description: Enable indicates whether the cpu qos is enabled.
                             type: boolean
                           groupIdentity:
-                            description: group identity value for pods, default =
-                              0
+                            description: 'group identity value for pods, default =
+                              0 NOTE: It takes effect if cpuPolicy = "groupIdentity".'
+                            format: int64
+                            type: integer
+                          schedIdle:
+                            description: 'cpu.idle value for pods, default = 0. `1`
+                              means using SCHED_IDLE. CGroup Idle (introduced since
+                              mainline Linux 5.15): https://lore.kernel.org/lkml/162971078674.25758.15464079371945307825.tip-bot2@tip-bot2/#r
+                              NOTE: It takes effect if cpuPolicy = "coreSched".'
                             format: int64
                             type: integer
                         type: object
