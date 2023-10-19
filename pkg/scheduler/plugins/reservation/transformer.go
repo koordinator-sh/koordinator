@@ -129,6 +129,13 @@ func (pl *Plugin) prepareMatchReservationState(ctx context.Context, cycleState *
 			return
 		}
 
+		// The Pod declares a ReservationAffinity, which means that the Pod must reuse the Reservation resources,
+		// but there are no matching Reservations, which means that the node itself does not need to be processed.
+		// We can end early to avoid meaningless operations.
+		if reservationAffinity != nil && len(matched) == 0 {
+			return
+		}
+
 		if err := extender.Scheduler().GetCache().InvalidNodeInfo(node.Name); err != nil {
 			klog.ErrorS(err, "Failed to InvalidNodeInfo", "pod", klog.KObj(pod), "node", node.Name)
 			errCh.SendErrorWithCancel(err, cancel)
