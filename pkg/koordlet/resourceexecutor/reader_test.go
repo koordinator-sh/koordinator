@@ -1396,7 +1396,7 @@ func TestCgroupReader_ReadColdPageUsage(t *testing.T) {
 			args: args{
 				parentDir: "/kubepods.slice",
 			},
-			want:    uint64(1363836928),
+			want:    uint64(340172800),
 			wantErr: false,
 		},
 		{

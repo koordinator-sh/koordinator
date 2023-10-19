@@ -35,6 +35,7 @@ type Config struct {
 	PSICollectorInterval             time.Duration
 	CPICollectorTimeWindow           time.Duration
 	ColdPageCollectorInterval        time.Duration
+	EnablePageCacheCollector         bool
 }
 
 func NewDefaultConfig() *Config {
@@ -47,6 +48,7 @@ func NewDefaultConfig() *Config {
 		PSICollectorInterval:             10 * time.Second,
 		CPICollectorTimeWindow:           10 * time.Second,
 		ColdPageCollectorInterval:        5 * time.Second,
+		EnablePageCacheCollector:         false,
 	}
 }
 
@@ -58,5 +60,6 @@ func (c *Config) InitFlags(fs *flag.FlagSet) {
 	fs.DurationVar(&c.CPICollectorInterval, "cpi-collector-interval", c.CPICollectorInterval, "Collect cpi interval. Non-zero values should contain a corresponding time unit (e.g. 1s, 2m, 3h).")
 	fs.DurationVar(&c.PSICollectorInterval, "psi-collector-interval", c.PSICollectorInterval, "Collect psi interval. Non-zero values should contain a corresponding time unit (e.g. 1s, 2m, 3h).")
 	fs.DurationVar(&c.CPICollectorTimeWindow, "collect-cpi-timewindow", c.CPICollectorTimeWindow, "Collect cpi time window. Non-zero values should contain a corresponding time unit (e.g. 1s, 2m, 3h).")
-	fs.DurationVar(&c.ColdPageCollectorInterval, "coldpage-collector-interval", c.PSICollectorInterval, "Collect cold page interval. Non-zero values should contain a corresponding time unit (e.g. 1s, 2m, 3h).")
+	fs.DurationVar(&c.ColdPageCollectorInterval, "coldpage-collector-interval", c.ColdPageCollectorInterval, "Collect cold page interval. Non-zero values should contain a corresponding time unit (e.g. 1s, 2m, 3h).")
+	fs.BoolVar(&c.EnablePageCacheCollector, "enable-pagecache-collector", c.EnablePageCacheCollector, "Enable cache collector of node, pods and containers")
 }

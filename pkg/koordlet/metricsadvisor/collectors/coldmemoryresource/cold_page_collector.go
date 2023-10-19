@@ -33,6 +33,7 @@ type nonColdPageCollector struct {
 func New(opt *framework.Options) framework.Collector {
 	// check whether support kidled cold page info collector
 	if system.IsKidledSupport() {
+		kidledConfig := system.NewDefaultKidledConfig()
 		return &kidledcoldPageCollector{
 			collectInterval: opt.Config.ColdPageCollectorInterval,
 			cgroupReader:    opt.CgroupReader,
@@ -42,6 +43,7 @@ func New(opt *framework.Options) framework.Collector {
 			appendableDB: opt.MetricCache,
 			metricDB:     opt.MetricCache,
 			started:      atomic.NewBool(false),
+			coldBoundary: kidledConfig.KidledColdBoundary,
 		}
 	}
 	// TODO(BUPT-wxq): check kstaled cold page collector

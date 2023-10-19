@@ -24,7 +24,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 )
 
-func Test_GetNodeMemUsageWithHotPage(t *testing.T) {
+func Test_GetNodeMemUsageWithHotPageCache(t *testing.T) {
 	testMemInfo := `MemTotal:       263432804 kB
 MemFree:        254391744 kB
 MemAvailable:   256703236 kB
@@ -90,7 +90,7 @@ DirectMap1G:    261095424 kB`
 					helper.WriteProcSubFileContents(system.ProcMemInfoName, testMemInfo)
 				},
 			},
-			want:    uint64((263432804-254391744)<<10) - 100,
+			want:    uint64((263432804-256703236+2496524+2222452)<<10) - uint64(100),
 			wantErr: false,
 		},
 		{
@@ -106,14 +106,14 @@ DirectMap1G:    261095424 kB`
 			if tt.fields.SetSysUtil != nil {
 				tt.fields.SetSysUtil(helper)
 			}
-			got, err := GetNodeMemUsageWithHotPage(100)
+			got, err := GetNodeMemUsageWithHotPageCache(100)
 			assert.Equal(t, tt.wantErr, err != nil)
 			assert.Equal(t, tt.want, got)
 		})
 	}
 }
 
-func Test_GetPodMemUsageWithHotPage(t *testing.T) {
+func Test_GetPodMemUsageWithHotPageCache(t *testing.T) {
 	testPodParentDir := "/kubepods.slice/kubepods-podxxxxxxxx.slice"
 	type fields struct {
 		SetSysUtil func(helper *system.FileTestUtil)
@@ -132,14 +132,14 @@ func Test_GetPodMemUsageWithHotPage(t *testing.T) {
 total_cache 104857600
 total_rss 104857600
 total_inactive_anon 104857600
-total_active_anon 0
+total_active_anon 104857600
 total_inactive_file 104857600
 total_active_file 0
 total_unevictable 0
 `)
 				},
 			},
-			want:    uint64(209715200) - 100,
+			want:    uint64(104857600+104857600+104857600+0+0) - 100,
 			wantErr: false,
 		},
 		{
@@ -150,7 +150,7 @@ total_unevictable 0
 total_cache 104857600
 totalxxx_rss 104857600
 total_inactive_anon 104857600
-total_active_anon 0
+total_active_anon 104857600
 total_inactive_file 104857600
 total_active_file 0
 total_unevictable 0
@@ -169,14 +169,14 @@ total_unevictable 0
 				tt.fields.SetSysUtil(helper)
 			}
 			cgroupReader := resourceexecutor.NewCgroupReader()
-			got, err := GetPodMemUsageWithHotPage(cgroupReader, testPodParentDir, 100)
+			got, err := GetPodMemUsageWithHotPageCache(cgroupReader, testPodParentDir, 100)
 			assert.Equal(t, tt.wantErr, err != nil)
 			assert.Equal(t, tt.want, got)
 		})
 	}
 }
 
-func Test_GetContainerMemUsageWithHotPage(t *testing.T) {
+func Test_GetContainerMemUsageWithHotPageCache(t *testing.T) {
 	testContainerParentDir := "/kubepods.slice/kubepods-podxxxxxxxx.slice/cri-containerd-123abc.scope"
 	type fields struct {
 		SetSysUtil func(helper *system.FileTestUtil)
@@ -195,14 +195,14 @@ func Test_GetContainerMemUsageWithHotPage(t *testing.T) {
 total_cache 104857600
 total_rss 104857600
 total_inactive_anon 104857600
-total_active_anon 0
+total_active_anon 104857600
 total_inactive_file 104857600
 total_active_file 0
 total_unevictable 0
 `)
 				},
 			},
-			want:    uint64(209715200) - 100,
+			want:    uint64(104857600+104857600+104857600+0+0) - 100,
 			wantErr: false,
 		},
 		{
@@ -232,7 +232,7 @@ total_unevictable 0
 				tt.fields.SetSysUtil(helper)
 			}
 			cgroupReader := resourceexecutor.NewCgroupReader()
-			got, err := GetContainerMemUsageWithHotPage(cgroupReader, testContainerParentDir, 100)
+			got, err := GetContainerMemUsageWithHotPageCache(cgroupReader, testContainerParentDir, 100)
 			assert.Equal(t, tt.wantErr, err != nil)
 			assert.Equal(t, tt.want, got)
 		})

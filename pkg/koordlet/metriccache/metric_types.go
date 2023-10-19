@@ -36,11 +36,12 @@ const (
 type MetricKind string
 
 const (
-	NodeMetricCPUUsage     MetricKind = "node_cpu_usage"
-	NodeMetricMemoryUsage  MetricKind = "node_memory_usage"
-	NodeMetricGPUCoreUsage MetricKind = "node_gpu_core_usage"
-	NodeMetricGPUMemUsage  MetricKind = "node_gpu_memory_usage"
-	NodeMetricGPUMemTotal  MetricKind = "node_gpu_memory_total"
+	NodeMetricCPUUsage           MetricKind = "node_cpu_usage"
+	NodeMetricMemoryUsage        MetricKind = "node_memory_usage"
+	NodeMemoryWithPageCacheUsage MetricKind = "node_memory_usage_with_page_cache"
+	NodeMetricGPUCoreUsage       MetricKind = "node_gpu_core_usage"
+	NodeMetricGPUMemUsage        MetricKind = "node_gpu_memory_usage"
+	NodeMetricGPUMemTotal        MetricKind = "node_gpu_memory_total"
 
 	SysMetricCPUUsage    MetricKind = "sys_cpu_usage"
 	SysMetricMemoryUsage MetricKind = "sys_memory_usage"
@@ -52,16 +53,18 @@ const (
 	PriorityMetricCPURealLimit MetricKind = "priority_cpu_real_limit"
 	PriorityMetricCPURequest   MetricKind = "priority_cpu_request"
 
-	PodMetricCPUUsage     MetricKind = "pod_cpu_usage"
-	PodMetricMemoryUsage  MetricKind = "pod_memory_usage"
-	PodMetricGPUCoreUsage MetricKind = "pod_gpu_core_usage"
-	PodMetricGPUMemUsage  MetricKind = "pod_gpu_memory_usage"
+	PodMetricCPUUsage           MetricKind = "pod_cpu_usage"
+	PodMetricMemoryUsage        MetricKind = "pod_memory_usage"
+	PodMemoryWithPageCacheUsage MetricKind = "pod_memory_usage_with_page_cache"
+	PodMetricGPUCoreUsage       MetricKind = "pod_gpu_core_usage"
+	PodMetricGPUMemUsage        MetricKind = "pod_gpu_memory_usage"
 	// PodMetricGPUMemTotal       MetricKind = "pod_gpu_memory_total"
 
-	ContainerMetricCPUUsage     MetricKind = "container_cpu_usage"
-	ContainerMetricMemoryUsage  MetricKind = "container_memory_usage"
-	ContainerMetricGPUCoreUsage MetricKind = "container_gpu_core_usage"
-	ContainerMetricGPUMemUsage  MetricKind = "container_gpu_memory_usage"
+	ContainerMetricCPUUsage           MetricKind = "container_cpu_usage"
+	ContainerMetricMemoryUsage        MetricKind = "container_memory_usage"
+	ContainerMemoryWithPageCacheUsage MetricKind = "container_memory_usage_with_page_cache"
+	ContainerMetricGPUCoreUsage       MetricKind = "container_gpu_core_usage"
+	ContainerMetricGPUMemUsage        MetricKind = "container_gpu_memory_usage"
 	// ContainerMetricGPUMemTotal       MetricKind = "container_gpu_memory_total"
 
 	PodMetricCPUThrottled       MetricKind = "pod_cpu_throttled"

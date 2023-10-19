@@ -875,6 +875,22 @@ func Test_nodeMetricInformer_collectNodeMetric(t *testing.T) {
 			},
 			want1: now.Sub(startTime),
 		},
+		{
+			name: "test-3 report usageWithPageCache",
+			args: args{
+				queryparam:          metriccache.QueryParam{Start: &startTime, End: &now, Aggregate: metriccache.AggregationTypeAVG},
+				memoryCollectPolicy: "usageWithPageCache",
+			},
+			samples: samples{
+				CPUUsed: 2,
+				MemUsed: 10 * 1024 * 1024 * 1024,
+			},
+			want: v1.ResourceList{
+				v1.ResourceCPU:    *resource.NewMilliQuantity(2000, resource.DecimalSI),
+				v1.ResourceMemory: *resource.NewQuantity(10*1024*1024*1024, resource.BinarySI),
+			},
+			want1: now.Sub(startTime),
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -895,6 +911,8 @@ func Test_nodeMetricInformer_collectNodeMetric(t *testing.T) {
 			memQueryMeta, err := metriccache.NodeMemoryUsageMetric.BuildQueryMeta(nil)
 			if tt.args.memoryCollectPolicy == slov1alpha1.UsageWithHotPageCache {
 				memQueryMeta, err = metriccache.NodeMemoryWithHotPageUsageMetric.BuildQueryMeta(nil)
+			} else if tt.args.memoryCollectPolicy == slov1alpha1.UsageWithPageCache {
+				memQueryMeta, err = metriccache.NodeMemoryUsageWithPageCacheMetric.BuildQueryMeta(nil)
 			}
 			assert.NoError(t, err)
 			buildMockQueryResult(ctrl, mockQuerier, mockResultFactory, memQueryMeta, tt.samples.MemUsed, duration)
@@ -970,6 +988,26 @@ func Test_nodeMetricInformer_collectPodMetric(t *testing.T) {
 				MemUsed: 10 * 1024 * 1024 * 1024,
 			},
 		},
+		{
+			name: "test-3 report usageWithPageCache",
+			args: args{
+				queryparam:          metriccache.QueryParam{Start: &startTime, End: &now, Aggregate: metriccache.AggregationTypeAVG},
+				memoryCollectPolicy: "usageWithPageCache",
+				pod: &statesinformer.PodMeta{
+					Pod: &v1.Pod{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "test-pod",
+							Namespace: "default",
+							UID:       "test-pod",
+						},
+					},
+				},
+			},
+			samples: samples{
+				CPUUsed: 2,
+				MemUsed: 10 * 1024 * 1024 * 1024,
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -990,6 +1028,8 @@ func Test_nodeMetricInformer_collectPodMetric(t *testing.T) {
 			memQueryMeta, err := metriccache.PodMemUsageMetric.BuildQueryMeta(metriccache.MetricPropertiesFunc.Pod(string(tt.args.pod.Pod.UID)))
 			if tt.args.memoryCollectPolicy == slov1alpha1.UsageWithHotPageCache {
 				memQueryMeta, err = metriccache.PodMemoryWithHotPageUsageMetric.BuildQueryMeta(metriccache.MetricPropertiesFunc.Pod(string(tt.args.pod.Pod.UID)))
+			} else if tt.args.memoryCollectPolicy == slov1alpha1.UsageWithPageCache {
+				memQueryMeta, err = metriccache.PodMemoryUsageWithPageCacheMetric.BuildQueryMeta(metriccache.MetricPropertiesFunc.Pod(string(tt.args.pod.Pod.UID)))
 			}
 			assert.NoError(t, err)
 			buildMockQueryResult(ctrl, mockQuerier, mockResultFactory, memQueryMeta, tt.samples.MemUsed, duration)

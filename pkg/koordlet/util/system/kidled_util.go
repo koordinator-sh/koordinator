@@ -29,8 +29,12 @@ import (
 )
 
 var (
-	isSupportColdMemory *atomic.Bool = atomic.NewBool(false)
-	isStartColdMemory   *atomic.Bool = atomic.NewBool(false)
+	isSupportColdMemory              *atomic.Bool = atomic.NewBool(false)
+	isStartColdMemory                *atomic.Bool = atomic.NewBool(false)
+	kidledColdBoundary                            = defaultKidledColdBoundary
+	defaultKidledScanPeriodInseconds uint32       = 5
+	defaultKidledUseHierarchy        uint8        = 1
+	defaultKidledColdBoundary        int          = 3
 )
 
 // the unit of Csei, Dsei, Cfei ... is byte
@@ -64,6 +68,7 @@ type ColdPageInfoByKidled struct {
 type KidledConfig struct {
 	ScanPeriodInseconds uint32
 	UseHierarchy        uint8
+	KidledColdBoundary  int
 }
 
 func ParseMemoryIdlePageStats(content string) (*ColdPageInfoByKidled, error) {
@@ -128,17 +133,10 @@ func ParseMemoryIdlePageStats(content string) (*ColdPageInfoByKidled, error) {
 	return &info, nil
 }
 
+// boundary is the index of [1,2)  [2,5)  [5,15)  [15,30)  [30,60)  [60,120)  [120,240)  [240,+inf).
+// if boundary is equal to 3, it will compute sum([5*scan_period_scands,+inf)) of cold page cache
 func (i *ColdPageInfoByKidled) GetColdPageTotalBytes() uint64 {
-	sum := func(nums ...[]uint64) uint64 {
-		var total uint64
-		for _, v := range nums {
-			for _, num := range v {
-				total += num
-			}
-		}
-		return total
-	}
-	return sum(i.Csei, i.Dsei, i.Cfei, i.Dfei, i.Csui, i.Dsui, i.Cfui, i.Dfui, i.Csea, i.Dsea, i.Cfea, i.Dfea, i.Csua, i.Dsua, i.Cfua, i.Dfua, i.Slab)
+	return sum(i.Cfei, i.Dfei, i.Cfui, i.Dfui)
 }
 
 // check kidled and set var isSupportColdSupport
@@ -186,6 +184,7 @@ func SetKidledScanPeriodInSeconds(period uint32) error {
 	write.Flush()
 	return nil
 }
+
 func SetKidledUseHierarchy(useHierarchy uint8) error {
 	path := KidledUseHierarchy.Path("")
 	file, err := os.OpenFile(path, os.O_WRONLY|os.O_TRUNC, 0644)
@@ -198,9 +197,31 @@ func SetKidledUseHierarchy(useHierarchy uint8) error {
 	write.Flush()
 	return nil
 }
+
+func GetKidledColdBoundary() int {
+	return kidledColdBoundary
+}
+
+func SetKidledColdBoundary(boudary int) {
+	kidledColdBoundary = boudary
+}
+
 func NewDefaultKidledConfig() *KidledConfig {
 	return &KidledConfig{
-		ScanPeriodInseconds: 5,
-		UseHierarchy:        1,
+		ScanPeriodInseconds: defaultKidledScanPeriodInseconds,
+		UseHierarchy:        defaultKidledUseHierarchy,
+		KidledColdBoundary:  defaultKidledColdBoundary,
 	}
+}
+
+func sum(nums ...[]uint64) uint64 {
+	var total uint64
+	for _, v := range nums {
+		for i, num := range v {
+			if i >= int(kidledColdBoundary) {
+				total += num
+			}
+		}
+	}
+	return total
 }

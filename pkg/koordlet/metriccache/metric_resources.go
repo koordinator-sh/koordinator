@@ -20,28 +20,32 @@ var (
 	defaultMetricFactory = NewMetricFactory()
 
 	// define all kinds of MetricResource
-	NodeCPUUsageMetric     = defaultMetricFactory.New(NodeMetricCPUUsage)
-	NodeMemoryUsageMetric  = defaultMetricFactory.New(NodeMetricMemoryUsage)
-	NodeGPUCoreUsageMetric = defaultMetricFactory.New(NodeMetricGPUCoreUsage).withPropertySchema(MetricPropertyGPUMinor, MetricPropertyGPUDeviceUUID)
-	NodeGPUMemUsageMetric  = defaultMetricFactory.New(NodeMetricGPUMemUsage).withPropertySchema(MetricPropertyGPUMinor, MetricPropertyGPUDeviceUUID)
-	NodeGPUMemTotalMetric  = defaultMetricFactory.New(NodeMetricGPUMemTotal).withPropertySchema(MetricPropertyGPUMinor, MetricPropertyGPUDeviceUUID)
+	NodeCPUUsageMetric                 = defaultMetricFactory.New(NodeMetricCPUUsage)
+	NodeMemoryUsageMetric              = defaultMetricFactory.New(NodeMetricMemoryUsage)
+	NodeMemoryUsageWithPageCacheMetric = defaultMetricFactory.New(NodeMemoryWithPageCacheUsage)
+	NodeGPUCoreUsageMetric             = defaultMetricFactory.New(NodeMetricGPUCoreUsage).withPropertySchema(MetricPropertyGPUMinor, MetricPropertyGPUDeviceUUID)
+	NodeGPUMemUsageMetric              = defaultMetricFactory.New(NodeMetricGPUMemUsage).withPropertySchema(MetricPropertyGPUMinor, MetricPropertyGPUDeviceUUID)
+	NodeGPUMemTotalMetric              = defaultMetricFactory.New(NodeMetricGPUMemTotal).withPropertySchema(MetricPropertyGPUMinor, MetricPropertyGPUDeviceUUID)
 
 	// define system resource usage as independent metric, although this can be calculate by node-sum(pod), but the time series are
 	// unaligned across different type of metric, which makes it hard to aggregate.
 	SystemCPUUsageMetric    = defaultMetricFactory.New(SysMetricCPUUsage)
 	SystemMemoryUsageMetric = defaultMetricFactory.New(SysMetricMemoryUsage)
 
-	PodCPUUsageMetric     = defaultMetricFactory.New(PodMetricCPUUsage).withPropertySchema(MetricPropertyPodUID)
-	PodMemUsageMetric     = defaultMetricFactory.New(PodMetricMemoryUsage).withPropertySchema(MetricPropertyPodUID)
+	PodCPUUsageMetric                 = defaultMetricFactory.New(PodMetricCPUUsage).withPropertySchema(MetricPropertyPodUID)
+	PodMemUsageMetric                 = defaultMetricFactory.New(PodMetricMemoryUsage).withPropertySchema(MetricPropertyPodUID)
+	PodMemoryUsageWithPageCacheMetric = defaultMetricFactory.New(PodMemoryWithPageCacheUsage).withPropertySchema(MetricPropertyPodUID)
+
 	PodCPUThrottledMetric = defaultMetricFactory.New(PodMetricCPUThrottled).withPropertySchema(MetricPropertyPodUID)
 	PodGPUCoreUsageMetric = defaultMetricFactory.New(PodMetricGPUCoreUsage).withPropertySchema(MetricPropertyPodUID, MetricPropertyGPUMinor, MetricPropertyGPUDeviceUUID)
 	PodGPUMemUsageMetric  = defaultMetricFactory.New(PodMetricGPUMemUsage).withPropertySchema(MetricPropertyPodUID, MetricPropertyGPUMinor, MetricPropertyGPUDeviceUUID)
 
-	ContainerCPUUsageMetric     = defaultMetricFactory.New(ContainerMetricCPUUsage).withPropertySchema(MetricPropertyContainerID)
-	ContainerMemUsageMetric     = defaultMetricFactory.New(ContainerMetricMemoryUsage).withPropertySchema(MetricPropertyContainerID)
-	ContainerGPUCoreUsageMetric = defaultMetricFactory.New(ContainerMetricGPUCoreUsage).withPropertySchema(MetricPropertyContainerID, MetricPropertyGPUMinor, MetricPropertyGPUDeviceUUID)
-	ContainerGPUMemUsageMetric  = defaultMetricFactory.New(ContainerMetricGPUMemUsage).withPropertySchema(MetricPropertyContainerID, MetricPropertyGPUMinor, MetricPropertyGPUDeviceUUID)
-	ContainerCPUThrottledMetric = defaultMetricFactory.New(ContainerMetricCPUThrottled).withPropertySchema(MetricPropertyContainerID)
+	ContainerCPUUsageMetric                 = defaultMetricFactory.New(ContainerMetricCPUUsage).withPropertySchema(MetricPropertyContainerID)
+	ContainerMemUsageMetric                 = defaultMetricFactory.New(ContainerMetricMemoryUsage).withPropertySchema(MetricPropertyContainerID)
+	ContainerMemoryUsageWithPageCacheMetric = defaultMetricFactory.New(ContainerMemoryWithPageCacheUsage).withPropertySchema(MetricPropertyContainerID)
+	ContainerGPUCoreUsageMetric             = defaultMetricFactory.New(ContainerMetricGPUCoreUsage).withPropertySchema(MetricPropertyContainerID, MetricPropertyGPUMinor, MetricPropertyGPUDeviceUUID)
+	ContainerGPUMemUsageMetric              = defaultMetricFactory.New(ContainerMetricGPUMemUsage).withPropertySchema(MetricPropertyContainerID, MetricPropertyGPUMinor, MetricPropertyGPUDeviceUUID)
+	ContainerCPUThrottledMetric             = defaultMetricFactory.New(ContainerMetricCPUThrottled).withPropertySchema(MetricPropertyContainerID)
 	// cold memory metrics
 	NodeMemoryWithHotPageUsageMetric      = defaultMetricFactory.New(NodeMemoryWithHotPageUsage)
 	PodMemoryWithHotPageUsageMetric       = defaultMetricFactory.New(PodMemoryWithHotPageUsage).withPropertySchema(MetricPropertyPodUID)

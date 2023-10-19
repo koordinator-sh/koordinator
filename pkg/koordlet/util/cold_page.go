@@ -19,26 +19,26 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 )
 
-func GetNodeMemUsageWithHotPage(coldPageUsage uint64) (uint64, error) {
+func GetNodeMemUsageWithHotPageCache(coldPageUsageBytes uint64) (uint64, error) {
 	memInfo, err := GetMemInfo()
 	if err != nil {
 		return 0, err
 	}
-	return memInfo.MemTotal*1024 - memInfo.MemFree*1024 - coldPageUsage, nil
+	return memInfo.MemTotal*1024 - memInfo.MemAvailable*1024 + memInfo.ActiveFile*1024 + memInfo.InactiveFile*1024 - coldPageUsageBytes, nil
 }
 
-func GetPodMemUsageWithHotPage(cgroupReader resourceexecutor.CgroupReader, parentDir string, coldPageUsage uint64) (uint64, error) {
+func GetPodMemUsageWithHotPageCache(cgroupReader resourceexecutor.CgroupReader, parentDir string, coldPageUsageBytes uint64) (uint64, error) {
 	memStat, err := cgroupReader.ReadMemoryStat(parentDir)
 	if err != nil {
 		return 0, err
 	}
-	return uint64(memStat.Usage()) + uint64(memStat.ActiveFile+memStat.InactiveFile) - coldPageUsage, nil
+	return uint64(memStat.UsageWithPageCache()) - coldPageUsageBytes, nil
 }
 
-func GetContainerMemUsageWithHotPage(cgroupReader resourceexecutor.CgroupReader, parentDir string, coldPageUsage uint64) (uint64, error) {
+func GetContainerMemUsageWithHotPageCache(cgroupReader resourceexecutor.CgroupReader, parentDir string, coldPageUsageBytes uint64) (uint64, error) {
 	memStat, err := cgroupReader.ReadMemoryStat(parentDir)
 	if err != nil {
 		return 0, err
 	}
-	return uint64(memStat.Usage()) + uint64(memStat.ActiveFile+memStat.InactiveFile) - coldPageUsage, nil
+	return uint64(memStat.UsageWithPageCache()) - coldPageUsageBytes, nil
 }
