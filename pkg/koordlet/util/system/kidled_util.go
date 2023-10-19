@@ -136,7 +136,7 @@ func ParseMemoryIdlePageStats(content string) (*ColdPageInfoByKidled, error) {
 // boundary is the index of [1,2)  [2,5)  [5,15)  [15,30)  [30,60)  [60,120)  [120,240)  [240,+inf).
 // if boundary is equal to 3, it will compute sum([5*scan_period_scands,+inf)) of cold page cache
 func (i *ColdPageInfoByKidled) GetColdPageTotalBytes() uint64 {
-	return sum(i.Cfei, i.Dfei, i.Cfui, i.Dfui)
+	return sumUint64Slice(i.Cfei, i.Dfei, i.Cfui, i.Dfui)
 }
 
 // check kidled and set var isSupportColdSupport
@@ -214,13 +214,11 @@ func NewDefaultKidledConfig() *KidledConfig {
 	}
 }
 
-func sum(nums ...[]uint64) uint64 {
+func sumUint64Slice(nums ...[]uint64) uint64 {
 	var total uint64
 	for _, v := range nums {
-		for i, num := range v {
-			if i >= int(kidledColdBoundary) {
-				total += num
-			}
+		for i := kidledColdBoundary; i < len(v); i++ {
+			total = total + v[i]
 		}
 	}
 	return total
