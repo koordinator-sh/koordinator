@@ -153,3 +153,23 @@ func GetRuntime(quota *v1alpha1.ElasticQuota) (corev1.ResourceList, error) {
 	}
 	return runtime, nil
 }
+
+func GetRequest(quota *v1alpha1.ElasticQuota) (corev1.ResourceList, error) {
+	request := corev1.ResourceList{}
+	if quota.Annotations[AnnotationRequest] != "" {
+		if err := json.Unmarshal([]byte(quota.Annotations[AnnotationRequest]), &request); err != nil {
+			return request, err
+		}
+	}
+	return request, nil
+}
+
+func GetChildRequest(quota *v1alpha1.ElasticQuota) (corev1.ResourceList, error) {
+	request := corev1.ResourceList{}
+	if quota.Annotations[AnnotationChildRequest] != "" {
+		if err := json.Unmarshal([]byte(quota.Annotations[AnnotationChildRequest]), &request); err != nil {
+			return request, err
+		}
+	}
+	return request, nil
+}
