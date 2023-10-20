@@ -79,6 +79,15 @@ func New(args *config.MigrationControllerArgs, options Options) (Arbitrator, err
 	if err != nil {
 		return nil, err
 	}
+	comparators := []sorter.CompareFn{
+		sorter.KoordinatorPriorityClass,
+		sorter.Priority,
+		sorter.KubernetesQoSClass,
+		sorter.KoordinatorQoSClass,
+		sorter.PodDeletionCost,
+		sorter.EvictionCost,
+		sorter.PodCreationTimestamp,
+	}
 
 	arbitrator := &arbitratorImpl{
 		waitingCollection: map[types.UID]*v1alpha1.PodMigrationJob{},
@@ -88,14 +97,21 @@ func New(args *config.MigrationControllerArgs, options Options) (Arbitrator, err
 				return job.Status.Phase == v1alpha1.PodMigrationJobRunning ||
 					(job.Status.Phase == v1alpha1.PodMigrationJobPending && f.checkJobPassedArbitration(job.UID))
 			}),
-			SortJobsByPod([]sorter.CompareFn{
-				sorter.KoordinatorPriorityClass,
-				sorter.Priority,
-				sorter.KubernetesQoSClass,
-				sorter.KoordinatorQoSClass,
-				sorter.PodDeletionCost,
-				sorter.EvictionCost,
-				sorter.PodCreationTimestamp,
+			SortJobsByPod(func(p1, p2 *corev1.Pod) int {
+				var k int
+				for k = 0; k < len(comparators)-1; k++ {
+					cmpResult := comparators[k](p1, p2)
+					// p1 is less than p2
+					if cmpResult < 0 {
+						return -1
+					}
+					// p1 is greater than p2
+					if cmpResult > 0 {
+						return 1
+					}
+				}
+				cmpResult := comparators[k](p1, p2)
+				return cmpResult
 			}),
 			SortJobsByCreationTime(),
 		},

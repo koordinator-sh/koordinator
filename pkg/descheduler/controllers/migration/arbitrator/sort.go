@@ -29,7 +29,6 @@ import (
 
 	"github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/fieldindex"
-	"github.com/koordinator-sh/koordinator/pkg/descheduler/utils/sorter"
 	utilclient "github.com/koordinator-sh/koordinator/pkg/util/client"
 )
 
@@ -108,19 +107,10 @@ func (ms *MultiSorter) Less(i, j int) bool {
 }
 
 // SortJobsByPod returns a SortFn that sorts PodMigrationJobs by their Pods, including priority, QoS.
-func SortJobsByPod(podSorters []sorter.CompareFn) SortFn {
+func SortJobsByPod(sorter func(p1, p2 *corev1.Pod) int) SortFn {
 	return func(jobs []*v1alpha1.PodMigrationJob, podOfJob map[*v1alpha1.PodMigrationJob]*corev1.Pod) CompareFn {
 		return func(p1, p2 *v1alpha1.PodMigrationJob) int {
-			for _, podSorter := range podSorters {
-				cmpResult := podSorter(podOfJob[p1], podOfJob[p2])
-				if cmpResult < 0 {
-					return -1
-				}
-				if cmpResult > 0 {
-					return 1
-				}
-			}
-			return 0
+			return sorter(podOfJob[p1], podOfJob[p2])
 		}
 	}
 }

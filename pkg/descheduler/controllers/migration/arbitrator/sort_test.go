@@ -40,7 +40,6 @@ import (
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/fieldindex"
-	"github.com/koordinator-sh/koordinator/pkg/descheduler/utils/sorter"
 )
 
 func TestSortJobsByPod(t *testing.T) {
@@ -85,16 +84,15 @@ func TestSortJobsByPod(t *testing.T) {
 				podOrder[pod.Name] = testCase.order[i]
 			}
 
-			fn := SortJobsByPod(
-				[]sorter.CompareFn{func(p1, p2 *corev1.Pod) int {
-					if podOrder[p1.Name] < podOrder[p2.Name] {
-						return -1
-					}
-					if podOrder[p1.Name] > podOrder[p2.Name] {
-						return 1
-					}
-					return 0
-				}})
+			fn := SortJobsByPod(func(p1, p2 *corev1.Pod) int {
+				if podOrder[p1.Name] < podOrder[p2.Name] {
+					return -1
+				}
+				if podOrder[p1.Name] > podOrder[p2.Name] {
+					return 1
+				}
+				return 0
+			})
 			compareFn := fn(jobs, podOfJob)
 			sorterFn := OrderedBy(compareFn)
 			sorterFn.Sort(jobs)
