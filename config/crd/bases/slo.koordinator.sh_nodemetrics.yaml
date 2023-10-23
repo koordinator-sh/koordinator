@@ -126,14 +126,23 @@ spec:
                                         information about the device
                                       properties:
                                         busID:
+                                          description: BusID is the domain:bus:device.function
+                                            formatted identifier of PCI/PCIE device
                                           type: string
                                         nodeID:
+                                          description: NodeID is the ID of NUMA Node
+                                            to which the device belongs, it should
+                                            be unique across different CPU Sockets
                                           format: int32
                                           type: integer
                                         pcieID:
-                                          format: int32
-                                          type: integer
+                                          description: PCIEID is the ID of PCIE Switch
+                                            to which the device is connected, it should
+                                            be unique across difference NUMANodes
+                                          type: string
                                         socketID:
+                                          description: SocketID is the ID of CPU Socket
+                                            to which the device belongs
                                           format: int32
                                           type: integer
                                       required:
@@ -152,13 +161,26 @@ spec:
                                           labels:
                                             additionalProperties:
                                               type: string
+                                            description: Labels represents the Virtual
+                                              Function properties that can be used
+                                              to organize and categorize (scope and
+                                              select) objects
                                             type: object
                                           vfs:
+                                            description: VFs are the virtual function
+                                              devices which belong to the group
                                             items:
                                               properties:
                                                 busID:
+                                                  description: BusID is the domain:bus:device.function
+                                                    formatted identifier of PCI/PCIE
+                                                    virtual function device
                                                   type: string
                                                 minor:
+                                                  description: Minor represents the
+                                                    Minor number of VirtualFunction,
+                                                    starting from 0, used to identify
+                                                    virtual function.
                                                   format: int32
                                                   type: integer
                                               required:
@@ -238,14 +260,23 @@ spec:
                                         information about the device
                                       properties:
                                         busID:
+                                          description: BusID is the domain:bus:device.function
+                                            formatted identifier of PCI/PCIE device
                                           type: string
                                         nodeID:
+                                          description: NodeID is the ID of NUMA Node
+                                            to which the device belongs, it should
+                                            be unique across different CPU Sockets
                                           format: int32
                                           type: integer
                                         pcieID:
-                                          format: int32
-                                          type: integer
+                                          description: PCIEID is the ID of PCIE Switch
+                                            to which the device is connected, it should
+                                            be unique across difference NUMANodes
+                                          type: string
                                         socketID:
+                                          description: SocketID is the ID of CPU Socket
+                                            to which the device belongs
                                           format: int32
                                           type: integer
                                       required:
@@ -264,13 +295,26 @@ spec:
                                           labels:
                                             additionalProperties:
                                               type: string
+                                            description: Labels represents the Virtual
+                                              Function properties that can be used
+                                              to organize and categorize (scope and
+                                              select) objects
                                             type: object
                                           vfs:
+                                            description: VFs are the virtual function
+                                              devices which belong to the group
                                             items:
                                               properties:
                                                 busID:
+                                                  description: BusID is the domain:bus:device.function
+                                                    formatted identifier of PCI/PCIE
+                                                    virtual function device
                                                   type: string
                                                 minor:
+                                                  description: Minor represents the
+                                                    Minor number of VirtualFunction,
+                                                    starting from 0, used to identify
+                                                    virtual function.
                                                   format: int32
                                                   type: integer
                                               required:
@@ -343,14 +387,23 @@ spec:
                                 about the device
                               properties:
                                 busID:
+                                  description: BusID is the domain:bus:device.function
+                                    formatted identifier of PCI/PCIE device
                                   type: string
                                 nodeID:
+                                  description: NodeID is the ID of NUMA Node to which
+                                    the device belongs, it should be unique across
+                                    different CPU Sockets
                                   format: int32
                                   type: integer
                                 pcieID:
-                                  format: int32
-                                  type: integer
+                                  description: PCIEID is the ID of PCIE Switch to
+                                    which the device is connected, it should be unique
+                                    across difference NUMANodes
+                                  type: string
                                 socketID:
+                                  description: SocketID is the ID of CPU Socket to
+                                    which the device belongs
                                   format: int32
                                   type: integer
                               required:
@@ -369,13 +422,24 @@ spec:
                                   labels:
                                     additionalProperties:
                                       type: string
+                                    description: Labels represents the Virtual Function
+                                      properties that can be used to organize and
+                                      categorize (scope and select) objects
                                     type: object
                                   vfs:
+                                    description: VFs are the virtual function devices
+                                      which belong to the group
                                     items:
                                       properties:
                                         busID:
+                                          description: BusID is the domain:bus:device.function
+                                            formatted identifier of PCI/PCIE virtual
+                                            function device
                                           type: string
                                         minor:
+                                          description: Minor represents the Minor
+                                            number of VirtualFunction, starting from
+                                            0, used to identify virtual function.
                                           format: int32
                                           type: integer
                                       required:
@@ -446,14 +510,23 @@ spec:
                                 about the device
                               properties:
                                 busID:
+                                  description: BusID is the domain:bus:device.function
+                                    formatted identifier of PCI/PCIE device
                                   type: string
                                 nodeID:
+                                  description: NodeID is the ID of NUMA Node to which
+                                    the device belongs, it should be unique across
+                                    different CPU Sockets
                                   format: int32
                                   type: integer
                                 pcieID:
-                                  format: int32
-                                  type: integer
+                                  description: PCIEID is the ID of PCIE Switch to
+                                    which the device is connected, it should be unique
+                                    across difference NUMANodes
+                                  type: string
                                 socketID:
+                                  description: SocketID is the ID of CPU Socket to
+                                    which the device belongs
                                   format: int32
                                   type: integer
                               required:
@@ -472,13 +545,24 @@ spec:
                                   labels:
                                     additionalProperties:
                                       type: string
+                                    description: Labels represents the Virtual Function
+                                      properties that can be used to organize and
+                                      categorize (scope and select) objects
                                     type: object
                                   vfs:
+                                    description: VFs are the virtual function devices
+                                      which belong to the group
                                     items:
                                       properties:
                                         busID:
+                                          description: BusID is the domain:bus:device.function
+                                            formatted identifier of PCI/PCIE virtual
+                                            function device
                                           type: string
                                         minor:
+                                          description: Minor represents the Minor
+                                            number of VirtualFunction, starting from
+                                            0, used to identify virtual function.
                                           format: int32
                                           type: integer
                                       required:
@@ -561,14 +645,23 @@ spec:
                                   about the device
                                 properties:
                                   busID:
+                                    description: BusID is the domain:bus:device.function
+                                      formatted identifier of PCI/PCIE device
                                     type: string
                                   nodeID:
+                                    description: NodeID is the ID of NUMA Node to
+                                      which the device belongs, it should be unique
+                                      across different CPU Sockets
                                     format: int32
                                     type: integer
                                   pcieID:
-                                    format: int32
-                                    type: integer
+                                    description: PCIEID is the ID of PCIE Switch to
+                                      which the device is connected, it should be
+                                      unique across difference NUMANodes
+                                    type: string
                                   socketID:
+                                    description: SocketID is the ID of CPU Socket
+                                      to which the device belongs
                                     format: int32
                                     type: integer
                                 required:
@@ -587,13 +680,24 @@ spec:
                                     labels:
                                       additionalProperties:
                                         type: string
+                                      description: Labels represents the Virtual Function
+                                        properties that can be used to organize and
+                                        categorize (scope and select) objects
                                       type: object
                                     vfs:
+                                      description: VFs are the virtual function devices
+                                        which belong to the group
                                       items:
                                         properties:
                                           busID:
+                                            description: BusID is the domain:bus:device.function
+                                              formatted identifier of PCI/PCIE virtual
+                                              function device
                                             type: string
                                           minor:
+                                            description: Minor represents the Minor
+                                              number of VirtualFunction, starting
+                                              from 0, used to identify virtual function.
                                             format: int32
                                             type: integer
                                         required:
@@ -669,14 +773,23 @@ spec:
                                 about the device
                               properties:
                                 busID:
+                                  description: BusID is the domain:bus:device.function
+                                    formatted identifier of PCI/PCIE device
                                   type: string
                                 nodeID:
+                                  description: NodeID is the ID of NUMA Node to which
+                                    the device belongs, it should be unique across
+                                    different CPU Sockets
                                   format: int32
                                   type: integer
                                 pcieID:
-                                  format: int32
-                                  type: integer
+                                  description: PCIEID is the ID of PCIE Switch to
+                                    which the device is connected, it should be unique
+                                    across difference NUMANodes
+                                  type: string
                                 socketID:
+                                  description: SocketID is the ID of CPU Socket to
+                                    which the device belongs
                                   format: int32
                                   type: integer
                               required:
@@ -695,13 +808,24 @@ spec:
                                   labels:
                                     additionalProperties:
                                       type: string
+                                    description: Labels represents the Virtual Function
+                                      properties that can be used to organize and
+                                      categorize (scope and select) objects
                                     type: object
                                   vfs:
+                                    description: VFs are the virtual function devices
+                                      which belong to the group
                                     items:
                                       properties:
                                         busID:
+                                          description: BusID is the domain:bus:device.function
+                                            formatted identifier of PCI/PCIE virtual
+                                            function device
                                           type: string
                                         minor:
+                                          description: Minor represents the Minor
+                                            number of VirtualFunction, starting from
+                                            0, used to identify virtual function.
                                           format: int32
                                           type: integer
                                       required:
