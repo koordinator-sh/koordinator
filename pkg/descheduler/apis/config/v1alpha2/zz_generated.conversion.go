@@ -367,6 +367,7 @@ func autoConvert_v1alpha2_LowNodeLoadArgs_To_config_LowNodeLoadArgs(in *LowNodeL
 	if err := v1.Convert_Pointer_int32_To_int32(&in.NumberOfNodes, &out.NumberOfNodes, s); err != nil {
 		return err
 	}
+	out.NodeMetricExpirationSeconds = (*int64)(unsafe.Pointer(in.NodeMetricExpirationSeconds))
 	out.EvictableNamespaces = (*config.Namespaces)(unsafe.Pointer(in.EvictableNamespaces))
 	out.NodeSelector = (*v1.LabelSelector)(unsafe.Pointer(in.NodeSelector))
 	out.PodSelectors = *(*[]config.LowNodeLoadPodSelector)(unsafe.Pointer(&in.PodSelectors))
@@ -412,6 +413,7 @@ func autoConvert_config_LowNodeLoadArgs_To_v1alpha2_LowNodeLoadArgs(in *config.L
 	if err := v1.Convert_int32_To_Pointer_int32(&in.NumberOfNodes, &out.NumberOfNodes, s); err != nil {
 		return err
 	}
+	out.NodeMetricExpirationSeconds = (*int64)(unsafe.Pointer(in.NodeMetricExpirationSeconds))
 	out.EvictableNamespaces = (*Namespaces)(unsafe.Pointer(in.EvictableNamespaces))
 	out.NodeSelector = (*v1.LabelSelector)(unsafe.Pointer(in.NodeSelector))
 	out.PodSelectors = *(*[]LowNodeLoadPodSelector)(unsafe.Pointer(&in.PodSelectors))

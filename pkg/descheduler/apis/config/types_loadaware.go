@@ -40,6 +40,11 @@ type LowNodeLoadArgs struct {
 	// By default, NumberOfNodes is set to zero.
 	NumberOfNodes int32
 
+	// NodeMetricExpirationSeconds indicates the NodeMetric expiration in seconds.
+	// When NodeMetrics expired, the node is considered abnormal, and should not be considered by deschedule plugin.
+	// Default is 180 seconds.
+	NodeMetricExpirationSeconds *int64
+
 	// Naming this one differently since namespaces are still
 	// considered while considering resoures used by pods
 	// but then filtered out before eviction

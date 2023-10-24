@@ -164,7 +164,7 @@ func (pl *LowNodeLoad) processOneNodePool(ctx context.Context, nodePool *desched
 
 	lowThresholds, highThresholds := newThresholds(nodePool.UseDeviationThresholds, nodePool.LowThresholds, nodePool.HighThresholds)
 	resourceNames := getResourceNames(lowThresholds)
-	nodeUsages := getNodeUsage(nodes, resourceNames, pl.nodeMetricLister, pl.handle.GetPodsAssignedToNodeFunc())
+	nodeUsages := getNodeUsage(nodes, resourceNames, pl.nodeMetricLister, pl.handle.GetPodsAssignedToNodeFunc(), pl.args.NodeMetricExpirationSeconds)
 	nodeThresholds := getNodeThresholds(nodeUsages, lowThresholds, highThresholds, resourceNames, nodePool.UseDeviationThresholds)
 	lowNodes, sourceNodes := classifyNodes(nodeUsages, nodeThresholds, lowThresholdFilter, highThresholdFilter)
 

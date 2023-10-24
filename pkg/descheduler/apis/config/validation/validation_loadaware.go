@@ -30,6 +30,10 @@ func ValidateLowLoadUtilizationArgs(path *field.Path, args *deschedulerconfig.Lo
 		allErrs = append(allErrs, field.Invalid(path.Child("numberOfNodes"), args.NumberOfNodes, "must be greater than or equal to 0"))
 	}
 
+	if args.NodeMetricExpirationSeconds != nil && *args.NodeMetricExpirationSeconds <= 0 {
+		allErrs = append(allErrs, field.Invalid(field.NewPath("nodeMetricExpiredSeconds"), *args.NodeMetricExpirationSeconds, "nodeMetricExpiredSeconds should be a positive value"))
+	}
+
 	if args.EvictableNamespaces != nil && len(args.EvictableNamespaces.Include) > 0 && len(args.EvictableNamespaces.Exclude) > 0 {
 		allErrs = append(allErrs, field.Invalid(path.Child("evictableNamespaces"), args.EvictableNamespaces, "only one of Include/Exclude namespaces can be set"))
 	}
