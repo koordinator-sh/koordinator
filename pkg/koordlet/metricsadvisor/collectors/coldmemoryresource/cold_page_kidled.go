@@ -43,6 +43,7 @@ type kidledcoldPageCollector struct {
 	podFilter       framework.PodFilter
 	appendableDB    metriccache.Appendable
 	metricDB        metriccache.MetricCache
+	coldBoundary    int
 }
 
 func (k *kidledcoldPageCollector) Run(stopCh <-chan struct{}) {
@@ -68,6 +69,7 @@ func (k *kidledcoldPageCollector) Enabled() bool {
 			return false
 		}
 		system.SetIsStartColdMemory(true)
+		system.SetKidledColdBoundary(k.coldBoundary)
 		return true
 	}
 	return false
@@ -121,7 +123,7 @@ func (k *kidledcoldPageCollector) collectNodeColdPageInfo() ([]metriccache.Metri
 	}
 	coldPageMetrics = append(coldPageMetrics, nodeColdPageMetrics)
 
-	memUsageWithHotPageBytes, err := koordletutil.GetNodeMemUsageWithHotPage(nodeColdPageBytes)
+	memUsageWithHotPageBytes, err := koordletutil.GetNodeMemUsageWithHotPageCache(nodeColdPageBytes)
 	if err != nil {
 		return nil, err
 	}
@@ -167,7 +169,7 @@ func (k *kidledcoldPageCollector) collectPodsColdPageInfo() ([]metriccache.Metri
 		}
 		coldMetrics = append(coldMetrics, podColdPageMetrics)
 
-		podMemUsageWithHotPageBytes, err := koordletutil.GetPodMemUsageWithHotPage(k.cgroupReader, podCgroupDir, podColdPageBytes)
+		podMemUsageWithHotPageBytes, err := koordletutil.GetPodMemUsageWithHotPageCache(k.cgroupReader, podCgroupDir, podColdPageBytes)
 		if err != nil {
 			klog.Warningf("failed to collect pod usage for Memory err: %s pod: %s/%s", err, pod.Namespace, pod.Name)
 			continue
@@ -220,7 +222,7 @@ func (k *kidledcoldPageCollector) collectContainersColdPageInfo(meta *statesinfo
 		}
 		coldMetrics = append(coldMetrics, containerColdPageMetrics)
 
-		containerMemUsageWithHotPageBytes, err := koordletutil.GetContainerMemUsageWithHotPage(k.cgroupReader, containerCgroupDir, containerColdPageBytes)
+		containerMemUsageWithHotPageBytes, err := koordletutil.GetContainerMemUsageWithHotPageCache(k.cgroupReader, containerCgroupDir, containerColdPageBytes)
 		if err != nil {
 			return nil, err
 		}

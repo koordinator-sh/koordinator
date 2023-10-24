@@ -89,6 +89,12 @@ func (i *MemInfo) MemUsageBytes() uint64 {
 	return (i.MemTotal - i.MemAvailable) * 1024
 }
 
+// MemWithPageCacheUsageBytes returns the usage of mem with page cache bytes.
+func (i *MemInfo) MemUsageWithPageCache() uint64 {
+	// total - available
+	return (i.MemTotal - i.MemAvailable + i.ActiveFile + i.InactiveFile) * 1024
+}
+
 // readMemInfo reads and parses the meminfo from the given file.
 // If isNUMA=false, it parses each line without a prefix like "Node 0". Otherwise, it parses each line with the NUMA
 // node prefix like "Node 0".

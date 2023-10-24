@@ -485,6 +485,7 @@ func Test_collectNodeColdPageInfo(t *testing.T) {
 	helper.SetResourcesSupported(true, system.MemoryIdlePageStats)
 	helper.WriteCgroupFileContents("", system.MemoryIdlePageStats, idleInfoContentStr)
 	helper.WriteProcSubFileContents(system.ProcMemInfoName, meminfo)
+	kidledConfig := system.NewDefaultKidledConfig()
 	c := &kidledcoldPageCollector{
 		collectInterval: 5 * time.Second,
 		cgroupReader:    resourceexecutor.NewCgroupReader(),
@@ -493,6 +494,7 @@ func Test_collectNodeColdPageInfo(t *testing.T) {
 		appendableDB:    metricCache,
 		metricDB:        metricCache,
 		started:         atomic.NewBool(false),
+		coldBoundary:    kidledConfig.KidledColdBoundary,
 	}
 	testNow := time.Now()
 	metrics, err := c.collectNodeColdPageInfo()
@@ -509,8 +511,8 @@ func Test_collectNodeColdPageInfo(t *testing.T) {
 	}
 	assert.NoError(t, err)
 	got1, got2 := testGetNodeMetrics(t, c.metricDB, testNow, 5*time.Second)
-	assert.Equal(t, float64(18446744073419457000), got1)
-	assert.Equal(t, float64(1363836928), got2)
+	assert.Equal(t, float64(7.33569024e+08), got1)
+	assert.Equal(t, float64(3.401728e+08), got2)
 	// test collect failed
 	helper.WriteCgroupFileContents("", system.MemoryIdlePageStats, ``)
 	helper.WriteProcSubFileContents(system.ProcMemInfoName, ``)

@@ -196,7 +196,7 @@ func Test_GetColdPageTotalBytes(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotNil(t, coldPageInfo)
 	got := coldPageInfo.GetColdPageTotalBytes()
-	assert.Equal(t, uint64(1363836928), got)
+	assert.Equal(t, uint64(340172800), got)
 }
 
 func Test_SetKidledScanPeriodInSeconds(t *testing.T) {

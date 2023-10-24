@@ -447,9 +447,22 @@ func (r *nodeMetricInformer) collectNodeMetric(queryparam metriccache.QueryParam
 	}
 
 	var memAggregateResult metriccache.AggregateResult
-	// report usageMemoryWithHotPageCache
-	if *r.getNodeMetricSpec().CollectPolicy.NodeMemoryCollectPolicy == slov1alpha1.UsageWithHotPageCache && system.GetIsStartColdMemory() {
+	nodeMemoryCollectPolicy := *r.getNodeMetricSpec().CollectPolicy.NodeMemoryCollectPolicy
+	if nodeMemoryCollectPolicy == slov1alpha1.UsageWithoutPageCache {
+		// report usageMemoryWithoutPageCache
+		memAggregateResult, err = doQuery(querier, metriccache.NodeMemoryUsageMetric, nil)
+		if err != nil {
+			return rl, 0, err
+		}
+	} else if nodeMemoryCollectPolicy == slov1alpha1.UsageWithHotPageCache && system.GetIsStartColdMemory() {
+		// report usageMemoryWithHotPageCache
 		memAggregateResult, err = doQuery(querier, metriccache.NodeMemoryWithHotPageUsageMetric, nil)
+		if err != nil {
+			return rl, 0, err
+		}
+	} else if nodeMemoryCollectPolicy == slov1alpha1.UsageWithPageCache {
+		// report usageMemoryWithPageCache
+		memAggregateResult, err = doQuery(querier, metriccache.NodeMemoryUsageWithPageCacheMetric, nil)
 		if err != nil {
 			return rl, 0, err
 		}
@@ -640,8 +653,19 @@ func (r *nodeMetricInformer) collectPodMetric(podMeta *statesinformer.PodMeta, q
 		return nil, err
 	}
 	var memAggregateResult metriccache.AggregateResult
-	if *r.getNodeMetricSpec().CollectPolicy.NodeMemoryCollectPolicy == slov1alpha1.UsageWithHotPageCache && system.GetIsStartColdMemory() {
+	nodeMemoryCollectPolicy := *r.getNodeMetricSpec().CollectPolicy.NodeMemoryCollectPolicy
+	if nodeMemoryCollectPolicy == slov1alpha1.UsageWithoutPageCache {
+		memAggregateResult, err = doQuery(querier, metriccache.PodMemUsageMetric, metriccache.MetricPropertiesFunc.Pod(podUID))
+		if err != nil {
+			return nil, err
+		}
+	} else if nodeMemoryCollectPolicy == slov1alpha1.UsageWithHotPageCache && system.GetIsStartColdMemory() {
 		memAggregateResult, err = doQuery(querier, metriccache.PodMemoryWithHotPageUsageMetric, metriccache.MetricPropertiesFunc.Pod(podUID))
+		if err != nil {
+			return nil, err
+		}
+	} else if nodeMemoryCollectPolicy == slov1alpha1.UsageWithPageCache {
+		memAggregateResult, err = doQuery(querier, metriccache.PodMemoryUsageWithPageCacheMetric, metriccache.MetricPropertiesFunc.Pod(podUID))
 		if err != nil {
 			return nil, err
 		}
