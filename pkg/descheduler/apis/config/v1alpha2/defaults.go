@@ -34,7 +34,8 @@ import (
 )
 
 const (
-	defaultMigrationControllerMaxConcurrentReconciles = 1
+	defaultMigrationControllerMaxConcurrentReconciles       = 1
+	defaultNodeMetricExpirationSeconds                int64 = 180
 
 	defaultMaxMigratingPerNode         = 2
 	defaultMigrationJobMode            = sev1alpha1.PodMigrationJobModeReservationFirst
@@ -261,6 +262,10 @@ func SetDefaults_LowNodeLoadArgs(obj *LowNodeLoadArgs) {
 		obj.AnomalyCondition = defaultLoadAnomalyCondition
 	} else if obj.AnomalyCondition.ConsecutiveAbnormalities == 0 {
 		obj.AnomalyCondition.ConsecutiveAbnormalities = defaultLoadAnomalyCondition.ConsecutiveAbnormalities
+	}
+
+	if obj.NodeMetricExpirationSeconds == nil {
+		obj.NodeMetricExpirationSeconds = pointer.Int64(defaultNodeMetricExpirationSeconds)
 	}
 
 	defaultResourceWeights := map[corev1.ResourceName]int64{

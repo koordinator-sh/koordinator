@@ -20,9 +20,11 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/klog/v2"
 
@@ -127,7 +129,7 @@ func resourceThreshold(nodeCapacity corev1.ResourceList, resourceName corev1.Res
 	return resource.NewQuantity(resourceCapacityFraction(resourceCapacityQuantity.Value()), resourceCapacityQuantity.Format)
 }
 
-func getNodeUsage(nodes []*corev1.Node, resourceNames []corev1.ResourceName, nodeMetricLister slolisters.NodeMetricLister, getPodsAssignedToNode podutil.GetPodsAssignedToNodeFunc) map[string]*NodeUsage {
+func getNodeUsage(nodes []*corev1.Node, resourceNames []corev1.ResourceName, nodeMetricLister slolisters.NodeMetricLister, getPodsAssignedToNode podutil.GetPodsAssignedToNodeFunc, nodeMetricExpirationSeconds *int64) map[string]*NodeUsage {
 	nodeUsages := map[string]*NodeUsage{}
 	for _, v := range nodes {
 		pods, err := podutil.ListPodsOnANode(v.Name, getPodsAssignedToNode, nil)
@@ -141,8 +143,10 @@ func getNodeUsage(nodes []*corev1.Node, resourceNames []corev1.ResourceName, nod
 			klog.ErrorS(err, "Failed to get NodeMetric", "node", klog.KObj(v))
 			continue
 		}
-		// TODO(joseph): We should check if NodeMetric is expired.
-		if nodeMetric.Status.NodeMetric == nil {
+		// We should check if NodeMetric is expired.
+		if nodeMetric.Status.NodeMetric == nil || nodeMetricExpirationSeconds != nil &&
+			isNodeMetricExpired(nodeMetric.Status.UpdateTime, *nodeMetricExpirationSeconds) {
+			klog.ErrorS(err, "NodeMetric has expired", "node", klog.KObj(v), "effective period", time.Duration(*nodeMetricExpirationSeconds)*time.Second)
 			continue
 		}
 
@@ -413,6 +417,12 @@ func isNodeUnderutilized(usage, thresholds map[corev1.ResourceName]*resource.Qua
 		}
 	}
 	return true
+}
+
+func isNodeMetricExpired(lastUpdateTime *metav1.Time, nodeMetricExpirationSeconds int64) bool {
+	return lastUpdateTime == nil ||
+		nodeMetricExpirationSeconds > 0 &&
+			time.Since(lastUpdateTime.Time) >= time.Duration(nodeMetricExpirationSeconds)*time.Second
 }
 
 func getResourceNames(thresholds ResourceThresholds) []corev1.ResourceName {

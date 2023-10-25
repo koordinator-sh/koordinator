@@ -179,6 +179,11 @@ func (in *LowNodeLoadArgs) DeepCopyInto(out *LowNodeLoadArgs) {
 		*out = new(int32)
 		**out = **in
 	}
+	if in.NodeMetricExpirationSeconds != nil {
+		in, out := &in.NodeMetricExpirationSeconds, &out.NodeMetricExpirationSeconds
+		*out = new(int64)
+		**out = **in
+	}
 	if in.EvictableNamespaces != nil {
 		in, out := &in.EvictableNamespaces, &out.EvictableNamespaces
 		*out = new(Namespaces)
