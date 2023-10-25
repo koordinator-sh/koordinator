@@ -30,6 +30,7 @@ func TestConfiguration_InitFlags(t *testing.T) {
 		"--reconcile-interval-seconds=5",
 		"--cgroup-root-dir=/host-cgroup/",
 		"--feature-gates=AllBeta=true,AllAlpha=false",
+		"--enable-kernel-core-sched=false",
 	}
 	t.Run("ensure not panic", func(t *testing.T) {
 		fs := flag.NewFlagSet(cmdArgs[0], flag.ExitOnError)

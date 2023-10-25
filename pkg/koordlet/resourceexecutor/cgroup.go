@@ -193,6 +193,31 @@ func readCgroupAndParseInt32Slice(parentDir string, r sysutil.Resource) ([]int32
 	return values, nil
 }
 
+// readCgroupAndParseUint32Slice reads the given cgroup content and parses it into an uint32 slice.
+// e.g. content: "1\n23\n0\n4\n56789" -> []int32{ 1, 23, 0, 4, 56789 }
+func readCgroupAndParseUint32Slice(parentDir string, r sysutil.Resource) ([]uint32, error) {
+	s, err := cgroupFileRead(parentDir, r)
+	if err != nil {
+		return nil, err
+	}
+
+	// content: "%d\n%d\n%d\n..."
+	var values []uint32
+	lines := strings.Split(s, "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if len(line) <= 0 {
+			continue
+		}
+		v, err := strconv.ParseUint(line, 10, 32)
+		if err != nil {
+			return nil, fmt.Errorf("cannot parse cgroup value of line %s, err: %v", line, err)
+		}
+		values = append(values, uint32(v))
+	}
+	return values, nil
+}
+
 func IsCgroupPathExist(parentDir string, r sysutil.Resource) (bool, string) {
 	filePath := r.Path(parentDir)
 	cgroupDir := filepath.Dir(filePath)

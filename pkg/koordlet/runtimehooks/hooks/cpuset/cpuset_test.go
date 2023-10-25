@@ -494,7 +494,7 @@ func TestUnsetPodCPUQuota(t *testing.T) {
 			if podCtx == nil {
 				return
 			}
-			e := resourceexecutor.NewResourceUpdateExecutor()
+			e := resourceexecutor.NewTestResourceExecutor()
 			stop := make(chan struct{})
 			defer func() {
 				close(stop)

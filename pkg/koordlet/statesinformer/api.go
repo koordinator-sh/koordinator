@@ -17,6 +17,8 @@ limitations under the License.
 package statesinformer
 
 import (
+	"fmt"
+
 	topov1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 
@@ -78,6 +80,13 @@ func (r RegisterType) String() string {
 type CallbackTarget struct {
 	Pods             []*PodMeta
 	HostApplications []slov1alpha1.HostApplicationSpec
+}
+
+func (t *CallbackTarget) String() string {
+	if t == nil {
+		return "target: nil"
+	}
+	return fmt.Sprintf("target: pods num %v, host apps num %v", len(t.Pods), len(t.HostApplications))
 }
 
 type UpdateCbFn func(t RegisterType, obj interface{}, target *CallbackTarget)

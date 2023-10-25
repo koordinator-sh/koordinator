@@ -27,6 +27,10 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
+func init() {
+	globalHookRules = map[string]*Rule{}
+}
+
 type Rule struct {
 	name            string
 	description     string
@@ -57,6 +61,7 @@ func Register(name, description string, injectOpts ...InjectOption) *Rule {
 }
 
 func (r *Rule) runUpdateCallbacks(target *statesinformer.CallbackTarget) {
+	klog.V(6).Infof("run update callbacks for rules, target %s", target.String())
 	for _, callbackFn := range r.callbacks {
 		if err := callbackFn(target); err != nil {
 			cbName := runtime.FuncForPC(reflect.ValueOf(callbackFn).Pointer()).Name()
@@ -101,8 +106,4 @@ func UpdateRules(ruleType statesinformer.RegisterType, ruleObj interface{}, targ
 			r.runUpdateCallbacks(targets)
 		}
 	}
-}
-
-func init() {
-	globalHookRules = map[string]*Rule{}
 }

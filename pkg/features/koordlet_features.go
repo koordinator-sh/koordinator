@@ -141,6 +141,12 @@ const (
 	// Backend applications can enable the hugepages based on the allocation results.
 	// For example, the CSI mounts the pre-allocated hugepages into the pod.
 	HugePageReport featuregate.Feature = "HugePageReport"
+
+	// owner: @saintube @zwzhang0107
+	// alpha: v1.4
+	//
+	// CoreSchedule enables core sched cookie management for containers.
+	CoreSchedule featuregate.Feature = "CoreSchedule"
 )
 
 func init() {
@@ -170,6 +176,7 @@ var (
 		BlkIOReconcile:         {Default: false, PreRelease: featuregate.Alpha},
 		ColdPageCollector:      {Default: false, PreRelease: featuregate.Alpha},
 		HugePageReport:         {Default: false, PreRelease: featuregate.Alpha},
+		CoreSchedule:           {Default: false, PreRelease: featuregate.Alpha},
 	}
 )
 

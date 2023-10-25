@@ -102,7 +102,8 @@ func (s *callbackRunner) runCallbacks(objType statesinformer.RegisterType, obj i
 		callbackTarget.HostApplications = nodeSLO.Spec.HostApplications
 	}
 	for _, c := range callbacks {
-		klog.V(5).Infof("start running callback function %v for type %v", c.name, objType.String())
+		klog.V(5).Infof("start running callback function %v for type %v, pod num %v, host app num %v",
+			c.name, objType.String(), len(callbackTarget.Pods), len(callbackTarget.HostApplications))
 		c.fn(objType, obj, callbackTarget)
 	}
 }

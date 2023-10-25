@@ -34,6 +34,7 @@ type Hook struct {
 }
 
 type Options struct {
+	Reader   resourceexecutor.CgroupReader
 	Executor resourceexecutor.ResourceUpdateExecutor
 }
 
