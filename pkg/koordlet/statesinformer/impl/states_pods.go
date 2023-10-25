@@ -164,7 +164,7 @@ func (s *podsInformer) syncPods() error {
 	s.podMap = newPodMap
 	s.podHasSynced.Store(true)
 	s.podUpdatedTime = time.Now()
-	klog.Infof("get pods success, len %d, time %s", len(s.podMap), s.podUpdatedTime.String())
+	klog.V(4).Infof("get pods success, len %d, time %s", len(s.podMap), s.podUpdatedTime.String())
 	s.callbackRunner.SendCallback(statesinformer.RegisterTypeAllPods)
 	return nil
 }
