@@ -60,6 +60,17 @@ type PodMetricInfo struct {
 	Extensions *ExtensionsMap `json:"extensions,omitempty"`
 }
 
+type HostApplicationMetricInfo struct {
+	// Name of the host application
+	Name string `json:"name,omitempty"`
+	// Resource usage of the host application
+	Usage ResourceMap `json:"usage,omitempty"`
+	// Priority class of the application
+	Priority apiext.PriorityClass `json:"priority,omitempty"`
+	// QoS class of the application
+	QoS apiext.QoSClass `json:"qos,omitempty"`
+}
+
 // NodeMetricSpec defines the desired state of NodeMetric
 type NodeMetricSpec struct {
 	// CollectPolicy defines the Metric collection policy
@@ -98,6 +109,9 @@ type NodeMetricStatus struct {
 
 	// PodsMetric contains the metrics for pods belong to this node.
 	PodsMetric []*PodMetricInfo `json:"podsMetric,omitempty"`
+
+	// HostApplicationMetric contains the metrics of out-out-band applications on node.
+	HostApplicationMetric []*HostApplicationMetricInfo `json:"hostApplicationMetric,omitempty"`
 
 	// ProdReclaimableMetric is the indicator statistics of Prod type resources reclaimable
 	ProdReclaimableMetric *ReclaimableMetric `json:"prodReclaimableMetric,omitempty"`
