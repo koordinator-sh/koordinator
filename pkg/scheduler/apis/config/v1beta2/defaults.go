@@ -118,6 +118,21 @@ func SetDefaults_NodeNUMAResourceArgs(obj *NodeNUMAResourceArgs) {
 			},
 		}
 	}
+	if obj.NUMAScoringStrategy == nil {
+		obj.NUMAScoringStrategy = &ScoringStrategy{
+			Type: LeastAllocated,
+			Resources: []schedconfigv1beta2.ResourceSpec{
+				{
+					Name:   string(corev1.ResourceCPU),
+					Weight: 1,
+				},
+				{
+					Name:   string(corev1.ResourceMemory),
+					Weight: 1,
+				},
+			},
+		}
+	}
 }
 
 func SetDefaults_ReservationArgs(obj *ReservationArgs) {

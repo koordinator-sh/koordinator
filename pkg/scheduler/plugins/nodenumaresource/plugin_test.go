@@ -33,11 +33,12 @@ import (
 	"k8s.io/client-go/informers"
 	kubefake "k8s.io/client-go/kubernetes/fake"
 	apiresource "k8s.io/kubernetes/pkg/api/v1/resource"
+	k8sschedconfig "k8s.io/kubernetes/pkg/scheduler/apis/config"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultbinder"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/queuesort"
 	"k8s.io/kubernetes/pkg/scheduler/framework/runtime"
-	schedulertesting "k8s.io/kubernetes/pkg/scheduler/testing"
+	st "k8s.io/kubernetes/pkg/scheduler/testing"
 	"k8s.io/utils/pointer"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
@@ -49,6 +50,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/v1beta2"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/topologymanager"
+	"github.com/koordinator-sh/koordinator/pkg/util/bitmask"
 	"github.com/koordinator-sh/koordinator/pkg/util/cpuset"
 )
 
@@ -109,13 +111,13 @@ func (f *testSharedLister) Get(nodeName string) (*framework.NodeInfo, error) {
 }
 
 func makeNode(name string, capacity map[corev1.ResourceName]string, cpuAmpRatio extension.Ratio) *corev1.Node {
-	node := schedulertesting.MakeNode().Name(name).Capacity(capacity).Obj()
+	node := st.MakeNode().Name(name).Capacity(capacity).Obj()
 	_, _ = extension.SetNodeResourceAmplificationRatio(node, corev1.ResourceCPU, cpuAmpRatio)
 	return node
 }
 
 func makePodOnNode(request map[corev1.ResourceName]string, node string, isCPUSet bool) *corev1.Pod {
-	pod := schedulertesting.MakePod().Req(request).Node(node).Priority(extension.PriorityProdValueMax).Obj()
+	pod := st.MakePod().Req(request).Node(node).Priority(extension.PriorityProdValueMax).Obj()
 	if isCPUSet {
 		pod.Labels = map[string]string{
 			extension.LabelPodQoS: string(extension.QoSLSR),
@@ -171,9 +173,9 @@ func newPluginTestSuit(t *testing.T, pods []*corev1.Pod, nodes []*corev1.Node) *
 		})
 	})
 
-	registeredPlugins := []schedulertesting.RegisterPluginFunc{
-		schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
-		schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
+	registeredPlugins := []st.RegisterPluginFunc{
+		st.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
+		st.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
 	}
 
 	cs := kubefake.NewSimpleClientset()
@@ -183,7 +185,7 @@ func newPluginTestSuit(t *testing.T, pods []*corev1.Pod, nodes []*corev1.Node) *
 	}
 	informerFactory := informers.NewSharedInformerFactory(cs, 0)
 	snapshot := newTestSharedLister(pods, nodes)
-	fh, err := schedulertesting.NewFramework(
+	fh, err := st.NewFramework(
 		registeredPlugins,
 		"koord-scheduler",
 		runtime.WithClientSet(cs),
@@ -1518,6 +1520,229 @@ func Test_appendResourceSpecIfMissed(t *testing.T) {
 			resourceSpec, err := extension.GetResourceSpec(pod.Annotations)
 			assert.NoError(t, err)
 			assert.Equal(t, tt.wantSpec, resourceSpec)
+		})
+	}
+}
+
+func TestFilterWithNUMANodeScoring(t *testing.T) {
+	mostAllocatedStrategy := &schedulingconfig.ScoringStrategy{
+		Type: schedulingconfig.MostAllocated,
+		Resources: []k8sschedconfig.ResourceSpec{
+			{
+				Name:   string(corev1.ResourceCPU),
+				Weight: 1,
+			},
+			{
+				Name:   string(corev1.ResourceMemory),
+				Weight: 1,
+			},
+		},
+	}
+	leastAllocatedStrategy := &schedulingconfig.ScoringStrategy{
+		Type: schedulingconfig.LeastAllocated,
+		Resources: []k8sschedconfig.ResourceSpec{
+			{
+				Name:   string(corev1.ResourceCPU),
+				Weight: 1,
+			},
+			{
+				Name:   string(corev1.ResourceMemory),
+				Weight: 1,
+			},
+		},
+	}
+	tests := []struct {
+		name                string
+		node                *corev1.Node
+		numaNodeCount       int
+		requestedPod        *corev1.Pod
+		existingPods        map[int][]*corev1.Pod
+		numaScoringStrategy *schedulingconfig.ScoringStrategy
+		wantAffinity        bitmask.BitMask
+	}{
+		{
+			name: "single numa nodes and select most allocated",
+			node: st.MakeNode().Name("test-node-1").
+				Capacity(map[corev1.ResourceName]string{"cpu": "104", "memory": "256Gi"}).
+				Label(extension.LabelNUMATopologyPolicy, string(extension.NUMATopologyPolicySingleNUMANode)).
+				Obj(),
+			numaNodeCount: 2,
+			requestedPod:  st.MakePod().Req(map[corev1.ResourceName]string{"cpu": "4", "memory": "40Gi"}).Obj(),
+			existingPods: map[int][]*corev1.Pod{
+				0: {
+					st.MakePod().Req(map[corev1.ResourceName]string{"cpu": "4", "memory": "8Gi"}).Obj(),
+				},
+				1: {
+					st.MakePod().Req(map[corev1.ResourceName]string{"cpu": "40", "memory": "8Gi"}).Obj(),
+				},
+			},
+			numaScoringStrategy: mostAllocatedStrategy,
+			wantAffinity: func() bitmask.BitMask {
+				mask, _ := bitmask.NewBitMask(1)
+				return mask
+			}(),
+		},
+		{
+			name: "single numa nodes and select least allocated",
+			node: st.MakeNode().Name("test-node-1").
+				Capacity(map[corev1.ResourceName]string{"cpu": "104", "memory": "256Gi"}).
+				Label(extension.LabelNUMATopologyPolicy, string(extension.NUMATopologyPolicySingleNUMANode)).
+				Obj(),
+			numaNodeCount: 2,
+			requestedPod:  st.MakePod().Req(map[corev1.ResourceName]string{"cpu": "4", "memory": "40Gi"}).Obj(),
+			existingPods: map[int][]*corev1.Pod{
+				0: {
+					st.MakePod().Req(map[corev1.ResourceName]string{"cpu": "4", "memory": "8Gi"}).Obj(),
+				},
+				1: {
+					st.MakePod().Req(map[corev1.ResourceName]string{"cpu": "40", "memory": "8Gi"}).Obj(),
+				},
+			},
+			numaScoringStrategy: leastAllocatedStrategy,
+			wantAffinity: func() bitmask.BitMask {
+				mask, _ := bitmask.NewBitMask(0)
+				return mask
+			}(),
+		},
+		{
+			name: "single numa nodes and only one node can be used",
+			node: st.MakeNode().Name("test-node-1").
+				Capacity(map[corev1.ResourceName]string{"cpu": "104", "memory": "256Gi"}).
+				Label(extension.LabelNUMATopologyPolicy, string(extension.NUMATopologyPolicySingleNUMANode)).
+				Obj(),
+			numaNodeCount: 2,
+			requestedPod:  st.MakePod().Req(map[corev1.ResourceName]string{"cpu": "4", "memory": "40Gi"}).Obj(),
+			existingPods: map[int][]*corev1.Pod{
+				0: {
+					st.MakePod().Req(map[corev1.ResourceName]string{"cpu": "4", "memory": "8Gi"}).Obj(),
+				},
+				1: {
+					st.MakePod().Req(map[corev1.ResourceName]string{"cpu": "52", "memory": "8Gi"}).Obj(),
+				},
+			},
+			numaScoringStrategy: leastAllocatedStrategy,
+			wantAffinity: func() bitmask.BitMask {
+				mask, _ := bitmask.NewBitMask(0)
+				return mask
+			}(),
+		},
+		{
+			name: "restricted numa nodes and select most allocated and preferred",
+			node: st.MakeNode().Name("test-node-1").
+				Capacity(map[corev1.ResourceName]string{"cpu": "104", "memory": "256Gi"}).
+				Label(extension.LabelNUMATopologyPolicy, string(extension.NUMATopologyPolicyRestricted)).
+				Obj(),
+			numaNodeCount: 4,
+			requestedPod:  st.MakePod().Req(map[corev1.ResourceName]string{"cpu": "4", "memory": "40Gi"}).Obj(),
+			existingPods: map[int][]*corev1.Pod{
+				0: {
+					st.MakePod().Req(map[corev1.ResourceName]string{"cpu": "24", "memory": "8Gi"}).Obj(),
+				},
+				1: {
+					st.MakePod().Req(map[corev1.ResourceName]string{"cpu": "23", "memory": "8Gi"}).Obj(),
+				},
+				2: {
+					st.MakePod().Req(map[corev1.ResourceName]string{"cpu": "4", "memory": "8Gi"}).Obj(),
+				},
+				3: {
+					st.MakePod().Req(map[corev1.ResourceName]string{"cpu": "8", "memory": "8Gi"}).Obj(),
+				},
+			},
+			numaScoringStrategy: mostAllocatedStrategy,
+			wantAffinity: func() bitmask.BitMask {
+				mask, _ := bitmask.NewBitMask(3)
+				return mask
+			}(),
+		},
+		{
+			name: "restricted numa nodes and select least allocated and preferred",
+			node: st.MakeNode().Name("test-node-1").
+				Capacity(map[corev1.ResourceName]string{"cpu": "104", "memory": "256Gi"}).
+				Label(extension.LabelNUMATopologyPolicy, string(extension.NUMATopologyPolicyRestricted)).
+				Obj(),
+			numaNodeCount: 4,
+			requestedPod:  st.MakePod().Req(map[corev1.ResourceName]string{"cpu": "4", "memory": "40Gi"}).Obj(),
+			existingPods: map[int][]*corev1.Pod{
+				0: {
+					st.MakePod().Req(map[corev1.ResourceName]string{"cpu": "24", "memory": "8Gi"}).Obj(),
+				},
+				1: {
+					st.MakePod().Req(map[corev1.ResourceName]string{"cpu": "23", "memory": "8Gi"}).Obj(),
+				},
+				2: {
+					st.MakePod().Req(map[corev1.ResourceName]string{"cpu": "4", "memory": "8Gi"}).Obj(),
+				},
+				3: {
+					st.MakePod().Req(map[corev1.ResourceName]string{"cpu": "8", "memory": "8Gi"}).Obj(),
+				},
+			},
+			numaScoringStrategy: leastAllocatedStrategy,
+			wantAffinity: func() bitmask.BitMask {
+				mask, _ := bitmask.NewBitMask(2)
+				return mask
+			}(),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			suit := newPluginTestSuit(t, nil, []*corev1.Node{tt.node})
+			if tt.numaScoringStrategy != nil {
+				suit.nodeNUMAResourceArgs.NUMAScoringStrategy = tt.numaScoringStrategy
+			}
+			p, err := suit.proxyNew(suit.nodeNUMAResourceArgs, suit.Handle)
+			assert.NoError(t, err)
+			pl := p.(*Plugin)
+
+			if tt.numaNodeCount > 0 {
+				numaNodeResource := corev1.ResourceList{}
+				for resourceName, quantity := range tt.node.Status.Allocatable {
+					if resourceName == corev1.ResourceCPU {
+						numaNodeResource[resourceName] = *resource.NewMilliQuantity(quantity.MilliValue()/int64(tt.numaNodeCount), resource.DecimalSI)
+					} else if resourceName == corev1.ResourceMemory {
+						numaNodeResource[resourceName] = *resource.NewQuantity(quantity.Value()/int64(tt.numaNodeCount), resource.BinarySI)
+					} else {
+						numaNodeResource[resourceName] = *resource.NewQuantity(quantity.Value()/int64(tt.numaNodeCount), resource.DecimalSI)
+					}
+				}
+				pl.topologyOptionsManager.UpdateTopologyOptions(tt.node.Name, func(options *TopologyOptions) {
+					cores := tt.node.Status.Allocatable.Cpu().MilliValue() / 1000 / 2 / int64(tt.numaNodeCount)
+					options.CPUTopology = buildCPUTopologyForTest(tt.numaNodeCount, 1, int(cores), 2)
+					for i := 0; i < tt.numaNodeCount; i++ {
+						options.NUMANodeResources = append(options.NUMANodeResources, NUMANodeResource{
+							Node:      i,
+							Resources: numaNodeResource.DeepCopy(),
+						})
+					}
+				})
+			}
+			for numaNode, pods := range tt.existingPods {
+				for _, v := range pods {
+					id := uuid.NewUUID()
+					pl.resourceManager.Update(tt.node.Name, &PodAllocation{
+						UID:       id,
+						Namespace: "default",
+						Name:      string(id),
+						NUMANodeResources: []NUMANodeResource{
+							{
+								Node:      numaNode,
+								Resources: v.Spec.Containers[0].Resources.Requests,
+							},
+						},
+					})
+				}
+			}
+
+			cycleState := framework.NewCycleState()
+			_, status := pl.PreFilter(context.TODO(), cycleState, tt.requestedPod)
+			assert.True(t, status.IsSuccess())
+
+			nodeInfo, err := suit.Handle.SnapshotSharedLister().NodeInfos().Get(tt.node.Name)
+			assert.NoError(t, err)
+			status = pl.Filter(context.TODO(), cycleState, tt.requestedPod, nodeInfo)
+			assert.True(t, status.IsSuccess())
+			hint := topologymanager.GetStore(cycleState).GetAffinity(tt.node.Name)
+			assert.Equal(t, tt.wantAffinity.GetBits(), hint.NUMANodeAffinity.GetBits())
 		})
 	}
 }

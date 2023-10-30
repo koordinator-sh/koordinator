@@ -31,6 +31,7 @@ import (
 
 	schedulingconfig "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/topologymanager"
+	"github.com/koordinator-sh/koordinator/pkg/util"
 	"github.com/koordinator-sh/koordinator/pkg/util/bitmask"
 	"github.com/koordinator-sh/koordinator/pkg/util/cpuset"
 )
@@ -59,6 +60,7 @@ type ResourceOptions struct {
 	reusableResources     map[int]corev1.ResourceList
 	hint                  topologymanager.NUMATopologyHint
 	topologyOptions       TopologyOptions
+	numaScorer            *resourceAllocationScorer
 }
 
 type resourceManager struct {
@@ -127,11 +129,7 @@ func (c *resourceManager) GetTopologyHints(node *corev1.Node, pod *corev1.Pod, o
 		return nil, err
 	}
 
-	nodes := make([]int, 0, len(topologyOptions.NUMANodeResources))
-	for _, v := range topologyOptions.NUMANodeResources {
-		nodes = append(nodes, v.Node)
-	}
-	result := generateResourceHints(nodes, options.requests, totalAvailable)
+	result := generateResourceHints(topologyOptions.NUMANodeResources, options.requests, totalAvailable, options.numaScorer)
 	hints := make(map[string][]topologymanager.NUMATopologyHint)
 	for k, v := range result {
 		hints[k] = v
@@ -381,29 +379,45 @@ func (c *resourceManager) getAvailableNUMANodeResources(nodeName string, topolog
 	return totalAvailable, totalAllocated, nil
 }
 
-func generateResourceHints(numaNodes []int, podRequests corev1.ResourceList, totalAvailable map[int]corev1.ResourceList) map[string][]topologymanager.NUMATopologyHint {
+func generateResourceHints(numaNodeResources []NUMANodeResource, podRequests corev1.ResourceList, totalAvailable map[int]corev1.ResourceList, numaScorer *resourceAllocationScorer) map[string][]topologymanager.NUMATopologyHint {
 	// Initialize minAffinitySize to include all NUMA Cells.
-	minAffinitySize := len(numaNodes)
+	minAffinitySizeMap := map[corev1.ResourceName]*int{}
+	for resourceName := range podRequests {
+		size := len(numaNodeResources)
+		minAffinitySizeMap[resourceName] = &size
+	}
 
 	hints := map[string][]topologymanager.NUMATopologyHint{}
+
+	numaNodes := make([]int, 0, len(numaNodeResources))
+	for _, v := range numaNodeResources {
+		numaNodes = append(numaNodes, v.Node)
+	}
+
+	podRequestResources := framework.NewResource(podRequests)
 	bitmask.IterateBitMasks(numaNodes, func(mask bitmask.BitMask) {
 		maskBits := mask.GetBits()
-
 		available := make(corev1.ResourceList)
+		total := make(corev1.ResourceList)
 		for _, nodeID := range maskBits {
-			available = quotav1.Add(available, totalAvailable[nodeID])
-		}
-		if satisfied, _ := quotav1.LessThanOrEqual(podRequests, available); !satisfied {
-			return
-		}
-
-		// set the minimum amount of NUMA nodes that can satisfy the resources requests
-		if mask.Count() < minAffinitySize {
-			minAffinitySize = mask.Count()
+			util.AddResourceList(available, totalAvailable[nodeID])
+			for _, v := range numaNodeResources {
+				if v.Node == nodeID {
+					util.AddResourceList(total, v.Resources)
+					break
+				}
+			}
 		}
 
-		for resourceName := range podRequests {
-			if _, ok := available[resourceName]; !ok {
+		var score int64
+		if numaScorer != nil {
+			requested := quotav1.SubtractWithNonNegativeResult(total, available)
+			score, _ = numaScorer.score(framework.NewResource(requested), framework.NewResource(total), podRequestResources)
+		}
+
+		for resourceName, request := range podRequests {
+			minAffinitySize := minAffinitySizeMap[resourceName]
+			if !shouldGenerateHint(total[resourceName], available[resourceName], request, mask.Count(), minAffinitySize) {
 				continue
 			}
 			if _, ok := hints[string(resourceName)]; !ok {
@@ -412,6 +426,7 @@ func generateResourceHints(numaNodes []int, podRequests corev1.ResourceList, tot
 			hints[string(resourceName)] = append(hints[string(resourceName)], topologymanager.NUMATopologyHint{
 				NUMANodeAffinity: mask,
 				Preferred:        false,
+				Score:            score,
 			})
 		}
 	})
@@ -419,12 +434,26 @@ func generateResourceHints(numaNodes []int, podRequests corev1.ResourceList, tot
 	// update hints preferred according to multiNUMAGroups, in case when it wasn't provided, the default
 	// behavior to prefer the minimal amount of NUMA nodes will be used
 	for resourceName := range podRequests {
+		minAffinitySize := *minAffinitySizeMap[resourceName]
 		for i, hint := range hints[string(resourceName)] {
 			hints[string(resourceName)][i].Preferred = len(hint.NUMANodeAffinity.GetBits()) == minAffinitySize
 		}
 	}
 
 	return hints
+}
+
+func shouldGenerateHint(total resource.Quantity, available resource.Quantity, request resource.Quantity, nodeCount int, minAffinitySize *int) bool {
+	if total.Cmp(request) < 0 {
+		return false
+	}
+	if nodeCount < *minAffinitySize {
+		*minAffinitySize = nodeCount
+	}
+	if available.Cmp(request) < 0 {
+		return false
+	}
+	return true
 }
 
 func filterAvailableCPUsByRequiredCPUBindPolicy(policy schedulingconfig.CPUBindPolicy, availableCPUs cpuset.CPUSet, cpuDetails CPUDetails, cpusPerCore int) cpuset.CPUSet {

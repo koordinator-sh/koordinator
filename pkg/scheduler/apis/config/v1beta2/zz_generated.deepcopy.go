@@ -277,6 +277,11 @@ func (in *NodeNUMAResourceArgs) DeepCopyInto(out *NodeNUMAResourceArgs) {
 		*out = new(ScoringStrategy)
 		(*in).DeepCopyInto(*out)
 	}
+	if in.NUMAScoringStrategy != nil {
+		in, out := &in.NUMAScoringStrategy, &out.NUMAScoringStrategy
+		*out = new(ScoringStrategy)
+		(*in).DeepCopyInto(*out)
+	}
 	return
 }
 

@@ -64,13 +64,13 @@ func filterSingleNumaHints(allResourcesHints [][]NUMATopologyHint) [][]NUMATopol
 
 func (p *singleNumaNodePolicy) Merge(providersHints []map[string][]NUMATopologyHint) (NUMATopologyHint, bool) {
 	filteredHints := filterProvidersHints(providersHints)
-	// Filter to only include don't cares and hints with a single NUMA node.
+	// Filter to only include don't care and hints with a single NUMA node.
 	singleNumaHints := filterSingleNumaHints(filteredHints)
 	bestHint := mergeFilteredHints(p.numaNodes, singleNumaHints)
 
 	defaultAffinity, _ := bitmask.NewBitMask(p.numaNodes...)
 	if bestHint.NUMANodeAffinity.IsEqual(defaultAffinity) {
-		bestHint = NUMATopologyHint{nil, bestHint.Preferred}
+		bestHint = NUMATopologyHint{nil, bestHint.Preferred, 0}
 	}
 
 	admit := p.canAdmitPodResult(&bestHint)

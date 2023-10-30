@@ -928,7 +928,7 @@ func TestResourceManagerGetTopologyHint(t *testing.T) {
 							mask, _ := bitmask.NewBitMask(0, 1)
 							return mask
 						}(),
-						Preferred: true,
+						Preferred: false,
 					},
 				},
 			},

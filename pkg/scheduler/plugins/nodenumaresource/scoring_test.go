@@ -111,7 +111,7 @@ func TestNUMANodeScore(t *testing.T) {
 				"test-node-1": 2,
 				"test-node-2": 1,
 			},
-			requestedPod: st.MakePod().Req(map[corev1.ResourceName]string{"cpu": "54", "memory": "40Gi"}).Obj(),
+			requestedPod: st.MakePod().Req(map[corev1.ResourceName]string{"cpu": "50", "memory": "40Gi"}).Obj(),
 			strategy: &schedulerconfig.ScoringStrategy{
 				Type: schedulerconfig.MostAllocated,
 				Resources: []config.ResourceSpec{
@@ -128,52 +128,11 @@ func TestNUMANodeScore(t *testing.T) {
 			expectedScores: []framework.NodeScore{
 				{
 					Name:  "test-node-1",
-					Score: 33,
+					Score: 63,
 				},
 				{
 					Name:  "test-node-2",
-					Score: 57,
-				},
-			},
-		},
-		{
-			name: "restricted numa nodes score with same capacity",
-			nodes: []*corev1.Node{
-				st.MakeNode().Name("test-node-1").
-					Capacity(map[corev1.ResourceName]string{"cpu": "104", "memory": "256Gi"}).
-					Label(apiext.LabelNUMATopologyPolicy, string(apiext.NUMATopologyPolicyRestricted)).
-					Obj(),
-				st.MakeNode().Name("test-node-2").
-					Capacity(map[corev1.ResourceName]string{"cpu": "104", "memory": "256Gi"}).
-					Label(apiext.LabelNUMATopologyPolicy, string(apiext.NUMATopologyPolicyRestricted)).
-					Obj(),
-			},
-			numaNodeCounts: map[string]int{
-				"test-node-1": 2,
-				"test-node-2": 2,
-			},
-			requestedPod: st.MakePod().Req(map[corev1.ResourceName]string{"cpu": "54", "memory": "40Gi"}).Obj(),
-			strategy: &schedulerconfig.ScoringStrategy{
-				Type: schedulerconfig.MostAllocated,
-				Resources: []config.ResourceSpec{
-					{
-						Name:   string(corev1.ResourceCPU),
-						Weight: 1,
-					},
-					{
-						Name:   string(corev1.ResourceMemory),
-						Weight: 1,
-					},
-				},
-			},
-			expectedScores: []framework.NodeScore{
-				{
-					Name:  "test-node-1",
-					Score: 33,
-				},
-				{
-					Name:  "test-node-2",
-					Score: 33,
+					Score: 54,
 				},
 			},
 		},
@@ -182,15 +141,15 @@ func TestNUMANodeScore(t *testing.T) {
 			nodes: []*corev1.Node{
 				st.MakeNode().Name("test-node-1").
 					Capacity(map[corev1.ResourceName]string{"cpu": "104", "memory": "256Gi"}).
-					Label(apiext.LabelNUMATopologyPolicy, string(apiext.NUMATopologyPolicyRestricted)).
+					Label(apiext.LabelNUMATopologyPolicy, string(apiext.NUMATopologyPolicySingleNUMANode)).
 					Obj(),
 				st.MakeNode().Name("test-node-2").
 					Capacity(map[corev1.ResourceName]string{"cpu": "104", "memory": "256Gi"}).
-					Label(apiext.LabelNUMATopologyPolicy, string(apiext.NUMATopologyPolicyRestricted)).
+					Label(apiext.LabelNUMATopologyPolicy, string(apiext.NUMATopologyPolicySingleNUMANode)).
 					Obj(),
 				st.MakeNode().Name("test-node-3").
 					Capacity(map[corev1.ResourceName]string{"cpu": "104", "memory": "256Gi"}).
-					Label(apiext.LabelNUMATopologyPolicy, string(apiext.NUMATopologyPolicyRestricted)).
+					Label(apiext.LabelNUMATopologyPolicy, string(apiext.NUMATopologyPolicySingleNUMANode)).
 					Obj(),
 			},
 			numaNodeCounts: map[string]int{
@@ -220,15 +179,15 @@ func TestNUMANodeScore(t *testing.T) {
 			expectedScores: []framework.NodeScore{
 				{
 					Name:  "test-node-1",
-					Score: 26,
+					Score: 19,
 				},
 				{
 					Name:  "test-node-2",
-					Score: 39,
+					Score: 19,
 				},
 				{
 					Name:  "test-node-3",
-					Score: 65,
+					Score: 19,
 				},
 			},
 		},
@@ -237,15 +196,15 @@ func TestNUMANodeScore(t *testing.T) {
 			nodes: []*corev1.Node{
 				st.MakeNode().Name("test-node-1").
 					Capacity(map[corev1.ResourceName]string{"cpu": "104", "memory": "256Gi"}).
-					Label(apiext.LabelNUMATopologyPolicy, string(apiext.NUMATopologyPolicyRestricted)).
+					Label(apiext.LabelNUMATopologyPolicy, string(apiext.NUMATopologyPolicySingleNUMANode)).
 					Obj(),
 				st.MakeNode().Name("test-node-2").
 					Capacity(map[corev1.ResourceName]string{"cpu": "104", "memory": "256Gi"}).
-					Label(apiext.LabelNUMATopologyPolicy, string(apiext.NUMATopologyPolicyRestricted)).
+					Label(apiext.LabelNUMATopologyPolicy, string(apiext.NUMATopologyPolicySingleNUMANode)).
 					Obj(),
 				st.MakeNode().Name("test-node-3").
 					Capacity(map[corev1.ResourceName]string{"cpu": "104", "memory": "256Gi"}).
-					Label(apiext.LabelNUMATopologyPolicy, string(apiext.NUMATopologyPolicyRestricted)).
+					Label(apiext.LabelNUMATopologyPolicy, string(apiext.NUMATopologyPolicySingleNUMANode)).
 					Obj(),
 			},
 			numaNodeCounts: map[string]int{
@@ -285,15 +244,15 @@ func TestNUMANodeScore(t *testing.T) {
 			expectedScores: []framework.NodeScore{
 				{
 					Name:  "test-node-1",
-					Score: 29,
+					Score: 23,
 				},
 				{
 					Name:  "test-node-2",
-					Score: 52,
+					Score: 27,
 				},
 				{
 					Name:  "test-node-3",
-					Score: 65,
+					Score: 34,
 				},
 			},
 		},
