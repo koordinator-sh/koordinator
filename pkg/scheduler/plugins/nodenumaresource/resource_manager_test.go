@@ -722,22 +722,7 @@ func TestResourceManagerGetTopologyHint(t *testing.T) {
 				},
 			},
 			want: map[string][]topologymanager.NUMATopologyHint{
-				string(corev1.ResourceCPU): {
-					{
-						NUMANodeAffinity: func() bitmask.BitMask {
-							mask, _ := bitmask.NewBitMask(0)
-							return mask
-						}(),
-						Preferred: true,
-					},
-					{
-						NUMANodeAffinity: func() bitmask.BitMask {
-							mask, _ := bitmask.NewBitMask(0, 1)
-							return mask
-						}(),
-						Preferred: false,
-					},
-				},
+				string(corev1.ResourceCPU): {},
 			},
 			wantErr: false,
 		},
@@ -865,22 +850,7 @@ func TestResourceManagerGetTopologyHint(t *testing.T) {
 				},
 			},
 			want: map[string][]topologymanager.NUMATopologyHint{
-				string(corev1.ResourceCPU): {
-					{
-						NUMANodeAffinity: func() bitmask.BitMask {
-							mask, _ := bitmask.NewBitMask(0)
-							return mask
-						}(),
-						Preferred: true,
-					},
-					{
-						NUMANodeAffinity: func() bitmask.BitMask {
-							mask, _ := bitmask.NewBitMask(0, 1)
-							return mask
-						}(),
-						Preferred: false,
-					},
-				},
+				string(corev1.ResourceCPU): {},
 			},
 			wantErr: false,
 		},
@@ -933,6 +903,69 @@ func TestResourceManagerGetTopologyHint(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "failed to generate hints with insufficient memory and hugepages",
+			pod:  &corev1.Pod{},
+			options: &ResourceOptions{
+				numCPUsNeeded: 4,
+				requests: corev1.ResourceList{
+					corev1.ResourceCPU:                     resource.MustParse("4"),
+					corev1.ResourceMemory:                  resource.MustParse("4Gi"),
+					corev1.ResourceHugePagesPrefix + "1Gi": resource.MustParse("4Gi"),
+				},
+			},
+			allocated: &PodAllocation{
+				UID:       "123456",
+				Name:      "test-xxx",
+				Namespace: "default",
+				NUMANodeResources: []NUMANodeResource{
+					{
+						Node: 0,
+						Resources: corev1.ResourceList{
+							corev1.ResourceCPU:                     resource.MustParse("4"),
+							corev1.ResourceMemory:                  resource.MustParse("120Gi"),
+							corev1.ResourceHugePagesPrefix + "1Gi": resource.MustParse("4Gi"),
+						},
+					},
+					{
+						Node: 1,
+						Resources: corev1.ResourceList{
+							corev1.ResourceCPU:                     resource.MustParse("4"),
+							corev1.ResourceMemory:                  resource.MustParse("120Gi"),
+							corev1.ResourceHugePagesPrefix + "1Gi": resource.MustParse("4Gi"),
+						},
+					},
+				},
+			},
+			want: map[string][]topologymanager.NUMATopologyHint{
+				string(corev1.ResourceCPU): {
+					{
+						NUMANodeAffinity: func() bitmask.BitMask {
+							mask, _ := bitmask.NewBitMask(0)
+							return mask
+						}(),
+						Preferred: true,
+					},
+					{
+						NUMANodeAffinity: func() bitmask.BitMask {
+							mask, _ := bitmask.NewBitMask(1)
+							return mask
+						}(),
+						Preferred: true,
+					},
+					{
+						NUMANodeAffinity: func() bitmask.BitMask {
+							mask, _ := bitmask.NewBitMask(0, 1)
+							return mask
+						}(),
+						Preferred: false,
+					},
+				},
+				string(corev1.ResourceMemory):          {},
+				corev1.ResourceHugePagesPrefix + "1Gi": {},
+			},
+			wantErr: false,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -944,15 +977,17 @@ func TestResourceManagerGetTopologyHint(t *testing.T) {
 					{
 						Node: 0,
 						Resources: corev1.ResourceList{
-							corev1.ResourceCPU:    resource.MustParse("52"),
-							corev1.ResourceMemory: resource.MustParse("128Gi"),
+							corev1.ResourceCPU:                     resource.MustParse("52"),
+							corev1.ResourceMemory:                  resource.MustParse("128Gi"),
+							corev1.ResourceHugePagesPrefix + "1Gi": resource.MustParse("4Gi"),
 						},
 					},
 					{
 						Node: 1,
 						Resources: corev1.ResourceList{
-							corev1.ResourceCPU:    resource.MustParse("52"),
-							corev1.ResourceMemory: resource.MustParse("128Gi"),
+							corev1.ResourceCPU:                     resource.MustParse("52"),
+							corev1.ResourceMemory:                  resource.MustParse("128Gi"),
+							corev1.ResourceHugePagesPrefix + "1Gi": resource.MustParse("4Gi"),
 						},
 					},
 				}
@@ -963,8 +998,9 @@ func TestResourceManagerGetTopologyHint(t *testing.T) {
 				},
 				Status: corev1.NodeStatus{
 					Allocatable: corev1.ResourceList{
-						corev1.ResourceCPU:    resource.MustParse("104"),
-						corev1.ResourceMemory: resource.MustParse("256Gi"),
+						corev1.ResourceCPU:                     resource.MustParse("104"),
+						corev1.ResourceMemory:                  resource.MustParse("256Gi"),
+						corev1.ResourceHugePagesPrefix + "1Gi": resource.MustParse("8Gi"),
 					},
 				},
 			}
