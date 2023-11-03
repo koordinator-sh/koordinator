@@ -298,6 +298,7 @@ func autoConvert_v1beta2_NodeNUMAResourceArgs_To_config_NodeNUMAResourceArgs(in 
 		return err
 	}
 	out.ScoringStrategy = (*config.ScoringStrategy)(unsafe.Pointer(in.ScoringStrategy))
+	out.NUMAScoringStrategy = (*config.ScoringStrategy)(unsafe.Pointer(in.NUMAScoringStrategy))
 	return nil
 }
 
@@ -311,6 +312,7 @@ func autoConvert_config_NodeNUMAResourceArgs_To_v1beta2_NodeNUMAResourceArgs(in 
 		return err
 	}
 	out.ScoringStrategy = (*ScoringStrategy)(unsafe.Pointer(in.ScoringStrategy))
+	out.NUMAScoringStrategy = (*ScoringStrategy)(unsafe.Pointer(in.NUMAScoringStrategy))
 	return nil
 }
 

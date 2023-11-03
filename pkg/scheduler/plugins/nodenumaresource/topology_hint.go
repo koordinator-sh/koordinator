@@ -54,6 +54,7 @@ func (p *Plugin) GetPodTopologyHints(ctx context.Context, cycleState *framework.
 	if err != nil {
 		return nil, framework.AsStatus(err)
 	}
+	resourceOptions.numaScorer = p.numaScorer
 	hints, err := p.resourceManager.GetTopologyHints(node, pod, resourceOptions)
 	if err != nil {
 		return nil, framework.NewStatus(framework.Unschedulable, "node(s) Insufficient NUMA Node resources")

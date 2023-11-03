@@ -47,12 +47,12 @@ func TestPolicyNoneCanAdmitPodResult(t *testing.T) {
 	}{
 		{
 			name:     "Preferred is set to false in topology hints",
-			hint:     NUMATopologyHint{nil, false},
+			hint:     NUMATopologyHint{nil, false, 0},
 			expected: true,
 		},
 		{
 			name:     "Preferred is set to true in topology hints",
-			hint:     NUMATopologyHint{nil, true},
+			hint:     NUMATopologyHint{nil, true, 0},
 			expected: true,
 		},
 	}

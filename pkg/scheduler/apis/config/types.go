@@ -103,8 +103,14 @@ type ScoringStrategy struct {
 type NodeNUMAResourceArgs struct {
 	metav1.TypeMeta
 
+	// DefaultCPUBindPolicy represents the default CPU bind policy.
+	// If it is empty and the Pod does not declare a binding policy,
+	// the core will not be bound to the LSE/LSR type Pod.
 	DefaultCPUBindPolicy CPUBindPolicy
-	ScoringStrategy      *ScoringStrategy
+	// ScoringStrategy is used to configure the scoring strategy of the Node-level.
+	ScoringStrategy *ScoringStrategy
+	// NUMAScoringStrategy is used to configure the scoring strategy of the NUMANode-level
+	NUMAScoringStrategy *ScoringStrategy
 }
 
 // CPUBindPolicy defines the CPU binding policy
@@ -132,7 +138,7 @@ const (
 	CPUExclusivePolicyNUMANodeLevel CPUExclusivePolicy = extension.CPUExclusivePolicyNUMANodeLevel
 )
 
-// NUMAAllocateStrategy indicates how to choose satisfied NUMA Nodes
+// NUMAAllocateStrategy indicates how to choose satisfied NUMA Nodes during binding CPUs
 type NUMAAllocateStrategy = extension.NUMAAllocateStrategy
 
 const (

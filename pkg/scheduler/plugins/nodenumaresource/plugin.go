@@ -74,6 +74,7 @@ type Plugin struct {
 	pluginArgs      *schedulingconfig.NodeNUMAResourceArgs
 	nrtLister       topologylister.NodeResourceTopologyLister
 	scorer          *resourceAllocationScorer
+	numaScorer      *resourceAllocationScorer
 	resourceManager ResourceManager
 
 	topologyOptionsManager TopologyOptionsManager
@@ -114,6 +115,14 @@ func NewWithOptions(args runtime.Object, handle framework.Handle, opts ...Option
 	if !exists {
 		return nil, fmt.Errorf("scoring strategy %s is not supported", strategy)
 	}
+	scorer := scorePlugin(pluginArgs)
+
+	strategy = pluginArgs.NUMAScoringStrategy.Type
+	scorePlugin, exists = resourceStrategyTypeMap[strategy]
+	if !exists {
+		return nil, fmt.Errorf("numa scoring strategy %s is not supported", strategy)
+	}
+	numaScorer := scorePlugin(pluginArgs)
 
 	options := &pluginOptions{}
 	for _, optFnc := range opts {
@@ -144,7 +153,8 @@ func NewWithOptions(args runtime.Object, handle framework.Handle, opts ...Option
 		handle:                 handle,
 		pluginArgs:             pluginArgs,
 		nrtLister:              nrtLister,
-		scorer:                 scorePlugin(pluginArgs),
+		scorer:                 scorer,
+		numaScorer:             numaScorer,
 		resourceManager:        options.resourceManager,
 		topologyOptionsManager: options.topologyOptionsManager,
 	}, nil

@@ -24,9 +24,9 @@ import (
 )
 
 func GetDefaultNUMAAllocateStrategy(pluginArgs *schedulingconfig.NodeNUMAResourceArgs) schedulingconfig.NUMAAllocateStrategy {
-	numaAllocateStrategy := schedulingconfig.NUMAMostAllocated
-	if pluginArgs != nil && pluginArgs.ScoringStrategy != nil && pluginArgs.ScoringStrategy.Type == schedulingconfig.LeastAllocated {
-		numaAllocateStrategy = schedulingconfig.NUMALeastAllocated
+	numaAllocateStrategy := schedulingconfig.NUMALeastAllocated
+	if pluginArgs != nil && pluginArgs.NUMAScoringStrategy != nil && pluginArgs.NUMAScoringStrategy.Type == schedulingconfig.MostAllocated {
+		numaAllocateStrategy = schedulingconfig.NUMAMostAllocated
 	}
 	return numaAllocateStrategy
 }
