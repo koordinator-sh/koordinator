@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 )
@@ -50,6 +51,20 @@ const (
 
 func IsReservationOperatingMode(pod *corev1.Pod) bool {
 	return pod.Labels[LabelPodOperatingMode] == string(ReservationPodOperatingMode)
+}
+
+func SetReservationOwners(obj metav1.Object, owners []schedulingv1alpha1.ReservationOwner) error {
+	data, err := json.Marshal(owners)
+	if err != nil {
+		return err
+	}
+	annotations := obj.GetAnnotations()
+	if annotations == nil {
+		annotations = map[string]string{}
+	}
+	annotations[AnnotationReservationOwners] = string(data)
+	obj.SetAnnotations(annotations)
+	return nil
 }
 
 func GetReservationOwners(annotations map[string]string) ([]schedulingv1alpha1.ReservationOwner, error) {
