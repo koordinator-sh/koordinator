@@ -70,6 +70,144 @@ spec:
           status:
             description: NodeMetricStatus defines the observed state of NodeMetric
             properties:
+              hostApplicationMetric:
+                description: HostApplicationMetric contains the metrics of out-out-band
+                  applications on node.
+                items:
+                  properties:
+                    name:
+                      description: Name of the host application
+                      type: string
+                    priority:
+                      description: Priority class of the application
+                      type: string
+                    qos:
+                      description: QoS class of the application
+                      type: string
+                    usage:
+                      description: Resource usage of the host application
+                      properties:
+                        devices:
+                          items:
+                            properties:
+                              health:
+                                default: false
+                                description: Health indicates whether the device is
+                                  normal
+                                type: boolean
+                              id:
+                                description: UUID represents the UUID of device
+                                type: string
+                              labels:
+                                additionalProperties:
+                                  type: string
+                                description: Labels represents the device properties
+                                  that can be used to organize and categorize (scope
+                                  and select) objects
+                                type: object
+                              minor:
+                                description: Minor represents the Minor number of
+                                  Device, starting from 0
+                                format: int32
+                                type: integer
+                              moduleID:
+                                description: ModuleID represents the physical id of
+                                  Device
+                                format: int32
+                                type: integer
+                              resources:
+                                additionalProperties:
+                                  anyOf:
+                                  - type: integer
+                                  - type: string
+                                  pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                  x-kubernetes-int-or-string: true
+                                description: Resources is a set of (resource name,
+                                  quantity) pairs
+                                type: object
+                              topology:
+                                description: Topology represents the topology information
+                                  about the device
+                                properties:
+                                  busID:
+                                    description: BusID is the domain:bus:device.function
+                                      formatted identifier of PCI/PCIE device
+                                    type: string
+                                  nodeID:
+                                    description: NodeID is the ID of NUMA Node to
+                                      which the device belongs, it should be unique
+                                      across different CPU Sockets
+                                    format: int32
+                                    type: integer
+                                  pcieID:
+                                    description: PCIEID is the ID of PCIE Switch to
+                                      which the device is connected, it should be
+                                      unique across difference NUMANodes
+                                    type: string
+                                  socketID:
+                                    description: SocketID is the ID of CPU Socket
+                                      to which the device belongs
+                                    format: int32
+                                    type: integer
+                                required:
+                                - nodeID
+                                - pcieID
+                                - socketID
+                                type: object
+                              type:
+                                description: Type represents the type of device
+                                type: string
+                              vfGroups:
+                                description: VFGroups represents the virtual function
+                                  devices
+                                items:
+                                  properties:
+                                    labels:
+                                      additionalProperties:
+                                        type: string
+                                      description: Labels represents the Virtual Function
+                                        properties that can be used to organize and
+                                        categorize (scope and select) objects
+                                      type: object
+                                    vfs:
+                                      description: VFs are the virtual function devices
+                                        which belong to the group
+                                      items:
+                                        properties:
+                                          busID:
+                                            description: BusID is the domain:bus:device.function
+                                              formatted identifier of PCI/PCIE virtual
+                                              function device
+                                            type: string
+                                          minor:
+                                            description: Minor represents the Minor
+                                              number of VirtualFunction, starting
+                                              from 0, used to identify virtual function.
+                                            format: int32
+                                            type: integer
+                                        required:
+                                        - minor
+                                        type: object
+                                      type: array
+                                  type: object
+                                type: array
+                            required:
+                            - health
+                            type: object
+                          type: array
+                        resources:
+                          additionalProperties:
+                            anyOf:
+                            - type: integer
+                            - type: string
+                            pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                            x-kubernetes-int-or-string: true
+                          description: ResourceList is a set of (resource name, quantity)
+                            pairs.
+                          type: object
+                      type: object
+                  type: object
+                type: array
               nodeMetric:
                 description: NodeMetric contains the metrics for this node.
                 properties:
