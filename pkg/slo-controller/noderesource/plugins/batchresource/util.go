@@ -126,6 +126,11 @@ func getPodMetricUsage(info *slov1alpha1.PodMetricInfo) corev1.ResourceList {
 	return getResourceListForCPUAndMemory(info.PodUsage.ResourceList)
 }
 
+// getHostAppMetricUsage gets host application usage from HostApplicationMetricInfo
+func getHostAppMetricUsage(info *slov1alpha1.HostApplicationMetricInfo) corev1.ResourceList {
+	return getResourceListForCPUAndMemory(info.Usage.ResourceList)
+}
+
 // getPodNUMARequestAndUsage returns the pod request and usage on each NUMA nodes.
 // It averages the metrics over all sharepools when the pod does not allocate any sharepool or use all sharepools.
 func getPodNUMARequestAndUsage(pod *corev1.Pod, podRequest, podUsage corev1.ResourceList, numaNum int) ([]corev1.ResourceList, []corev1.ResourceList) {

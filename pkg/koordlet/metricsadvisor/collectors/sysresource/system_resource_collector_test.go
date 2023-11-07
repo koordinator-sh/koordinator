@@ -41,8 +41,9 @@ func Test_systemResourceCollector_collectSysResUsed(t *testing.T) {
 		memory float64
 	}
 	type fields struct {
-		nodeUsage *usageField
-		podUsage  map[string]usageField
+		nodeUsage    *usageField
+		podUsage     map[string]usageField
+		hostAppUsage *usageField
 	}
 	type want struct {
 		systemCPU    *float64
@@ -65,6 +66,24 @@ func Test_systemResourceCollector_collectSysResUsed(t *testing.T) {
 					ts:     timeNow(),
 					cpu:    1,
 					memory: 1024,
+				},
+			},
+			want: want{},
+		},
+		{
+			name: "host application metric not exist",
+			fields: fields{
+				nodeUsage: &usageField{
+					ts:     timeNow(),
+					cpu:    1,
+					memory: 1024,
+				},
+				podUsage: map[string]usageField{
+					"test-collector": {
+						ts:     timeNow(),
+						cpu:    0.5,
+						memory: 512,
+					},
 				},
 			},
 			want: want{},
@@ -106,6 +125,29 @@ func Test_systemResourceCollector_collectSysResUsed(t *testing.T) {
 			want: want{},
 		},
 		{
+			name: "host application metric outdated",
+			fields: fields{
+				nodeUsage: &usageField{
+					ts:     timeNow(),
+					cpu:    1,
+					memory: 1024,
+				},
+				podUsage: map[string]usageField{
+					"test-collector": {
+						ts:     timeNow(),
+						cpu:    0.5,
+						memory: 512,
+					},
+				},
+				hostAppUsage: &usageField{
+					ts:     timeNow().Add(-config.CollectSysMetricOutdatedInterval * 2),
+					cpu:    0.1,
+					memory: 128,
+				},
+			},
+			want: want{},
+		},
+		{
 			name: "one pod collector",
 			fields: fields{
 				nodeUsage: &usageField{
@@ -119,6 +161,11 @@ func Test_systemResourceCollector_collectSysResUsed(t *testing.T) {
 						cpu:    0.5,
 						memory: 512,
 					},
+				},
+				hostAppUsage: &usageField{
+					ts:     timeNow(),
+					cpu:    0,
+					memory: 0,
 				},
 			},
 			want: want{
@@ -146,10 +193,41 @@ func Test_systemResourceCollector_collectSysResUsed(t *testing.T) {
 						memory: 512,
 					},
 				},
+				hostAppUsage: &usageField{
+					ts:     timeNow(),
+					cpu:    0,
+					memory: 0,
+				},
 			},
 			want: want{
 				systemCPU:    pointer.Float64(0.5),
 				systemMemory: pointer.Float64(1024),
+			},
+		},
+		{
+			name: "one pod collector with host application",
+			fields: fields{
+				nodeUsage: &usageField{
+					ts:     timeNow(),
+					cpu:    1,
+					memory: 1024,
+				},
+				podUsage: map[string]usageField{
+					"test-collector": {
+						ts:     timeNow(),
+						cpu:    0.5,
+						memory: 512,
+					},
+				},
+				hostAppUsage: &usageField{
+					ts:     timeNow(),
+					cpu:    0.1,
+					memory: 128,
+				},
+			},
+			want: want{
+				systemCPU:    pointer.Float64(0.4),
+				systemMemory: pointer.Float64(384),
 			},
 		},
 	}
@@ -181,6 +259,12 @@ func Test_systemResourceCollector_collectSysResUsed(t *testing.T) {
 				s.sharedState.UpdatePodUsage(collector,
 					metriccache.Point{Timestamp: pod.ts, Value: pod.cpu},
 					metriccache.Point{Timestamp: pod.ts, Value: pod.memory},
+				)
+			}
+			if tt.fields.hostAppUsage != nil {
+				s.sharedState.UpdateHostAppUsage(
+					metriccache.Point{Timestamp: tt.fields.hostAppUsage.ts, Value: tt.fields.hostAppUsage.cpu},
+					metriccache.Point{Timestamp: tt.fields.hostAppUsage.ts, Value: tt.fields.hostAppUsage.memory},
 				)
 			}
 			s.collectSysResUsed()

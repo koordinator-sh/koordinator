@@ -130,3 +130,53 @@ func TestSharedState_UpdatePodUsage(t *testing.T) {
 		})
 	}
 }
+
+func TestSharedState_UpdateHostAppUsage(t *testing.T) {
+	now := time.Now()
+	type args struct {
+		cpu    metriccache.Point
+		memory metriccache.Point
+	}
+	type want struct {
+		cpu    metriccache.Point
+		memory metriccache.Point
+	}
+	tests := []struct {
+		name string
+		args args
+		want want
+	}{
+		{
+			name: "add host point",
+			args: args{
+				cpu: metriccache.Point{
+					Timestamp: now,
+					Value:     1,
+				},
+				memory: metriccache.Point{
+					Timestamp: now,
+					Value:     1024,
+				},
+			},
+			want: want{
+				cpu: metriccache.Point{
+					Timestamp: now,
+					Value:     1,
+				},
+				memory: metriccache.Point{
+					Timestamp: now,
+					Value:     1024,
+				},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := NewSharedState()
+			r.UpdateHostAppUsage(tt.args.cpu, tt.args.memory)
+			gotCPU, gotMemory := r.GetHostAppUsage()
+			assert.Equal(t, tt.want.cpu, *gotCPU)
+			assert.Equal(t, tt.want.memory, *gotMemory)
+		})
+	}
+}

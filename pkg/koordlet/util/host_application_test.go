@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package protocol
+package util
 
 import (
 	"path/filepath"
@@ -24,7 +24,6 @@ import (
 
 	ext "github.com/koordinator-sh/koordinator/apis/extension"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/util"
 )
 
 func Test_getHostCgroupRelativePath(t *testing.T) {
@@ -51,7 +50,7 @@ func Test_getHostCgroupRelativePath(t *testing.T) {
 					QoS:  ext.QoSLS,
 				},
 			},
-			want: filepath.Join(hostLSCgroupDir, "ls-app"),
+			want: filepath.Join(defaultHostLSCgroupDir, "ls-app"),
 		},
 		{
 			name: "be app with no cgroup",
@@ -61,7 +60,7 @@ func Test_getHostCgroupRelativePath(t *testing.T) {
 					QoS:  ext.QoSBE,
 				},
 			},
-			want: filepath.Join(hostBECgroupDir, "be-app"),
+			want: filepath.Join(defaultHostBECgroupDir, "be-app"),
 		},
 		{
 			name: "app with cgroup root base",
@@ -91,7 +90,7 @@ func Test_getHostCgroupRelativePath(t *testing.T) {
 					},
 				},
 			},
-			want: filepath.Join(util.GetPodQoSRelativePath(corev1.PodQOSGuaranteed), "host-ls-app", "test-app"),
+			want: filepath.Join(GetPodQoSRelativePath(corev1.PodQOSGuaranteed), "host-ls-app", "test-app"),
 		},
 		{
 			name: "app with burstable cgroup base",
@@ -106,7 +105,7 @@ func Test_getHostCgroupRelativePath(t *testing.T) {
 					},
 				},
 			},
-			want: filepath.Join(util.GetPodQoSRelativePath(corev1.PodQOSBurstable), "host-ls-app", "test-app"),
+			want: filepath.Join(GetPodQoSRelativePath(corev1.PodQOSBurstable), "host-ls-app", "test-app"),
 		},
 		{
 			name: "app with besteffort cgroup base",
@@ -121,12 +120,12 @@ func Test_getHostCgroupRelativePath(t *testing.T) {
 					},
 				},
 			},
-			want: filepath.Join(util.GetPodQoSRelativePath(corev1.PodQOSBestEffort), "host-be-app", "test-app"),
+			want: filepath.Join(GetPodQoSRelativePath(corev1.PodQOSBestEffort), "host-be-app", "test-app"),
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := getHostCgroupRelativePath(tt.args.hostAppSpec); got != tt.want {
+			if got := GetHostAppCgroupRelativePath(tt.args.hostAppSpec); got != tt.want {
 				t.Errorf("getHostCgroupRelativePath() = %v, want %v", got, tt.want)
 			}
 		})

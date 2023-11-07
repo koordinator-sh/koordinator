@@ -35,6 +35,10 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
+var (
+	timeNow = time.Now
+)
+
 type kidledcoldPageCollector struct {
 	collectInterval time.Duration
 	started         *atomic.Bool
@@ -42,7 +46,7 @@ type kidledcoldPageCollector struct {
 	statesInformer  statesinformer.StatesInformer
 	podFilter       framework.PodFilter
 	appendableDB    metriccache.Appendable
-	metricDB        metriccache.MetricCache
+	metricDB        metriccache.MetricCache // TODO remove redundant var
 	coldBoundary    int
 }
 
@@ -95,6 +99,12 @@ func (k *kidledcoldPageCollector) collectColdPageInfo() {
 	}
 	coldPageMetrics = append(coldPageMetrics, podsColdPageInfoMetric...)
 
+	hostAppsColdPageInfoMetric, err := k.collectHostAppsColdPageInfo()
+	if err != nil {
+		klog.Warningf("generate host application cold page info metrics failed, err %v", err)
+	}
+	coldPageMetrics = append(coldPageMetrics, hostAppsColdPageInfoMetric...)
+
 	appender := k.appendableDB.Appender()
 	if err := appender.Append(coldPageMetrics); err != nil {
 		klog.ErrorS(err, "Append node metrics error")
@@ -111,7 +121,7 @@ func (k *kidledcoldPageCollector) collectColdPageInfo() {
 
 func (k *kidledcoldPageCollector) collectNodeColdPageInfo() ([]metriccache.MetricSample, error) {
 	coldPageMetrics := make([]metriccache.MetricSample, 0)
-	collectTime := time.Now()
+	collectTime := timeNow()
 	nodeColdPageBytes, err := k.cgroupReader.ReadMemoryColdPageUsage("")
 	if err != nil {
 		return nil, err
@@ -133,6 +143,7 @@ func (k *kidledcoldPageCollector) collectNodeColdPageInfo() ([]metriccache.Metri
 		return nil, err
 	}
 	coldPageMetrics = append(coldPageMetrics, memUsageWithHotPageMetrics)
+
 	klog.V(4).Infof("collectNodeResUsed finished, count %v, memUsageWithHotPage[%v], coldPageSize[%v]",
 		len(coldPageMetrics), memUsageWithHotPageValue, nodeColdPageBytes)
 	return coldPageMetrics, nil
@@ -150,7 +161,7 @@ func (k *kidledcoldPageCollector) collectPodsColdPageInfo() ([]metriccache.Metri
 			klog.V(5).Infof("skip collect pod %s, reason: %s", podKey, msg)
 			continue
 		}
-		collectTime := time.Now()
+		collectTime := timeNow()
 		podCgroupDir := meta.CgroupDir
 		podColdPageBytes, err := k.cgroupReader.ReadMemoryColdPageUsage(podCgroupDir)
 		if err != nil {
@@ -169,7 +180,7 @@ func (k *kidledcoldPageCollector) collectPodsColdPageInfo() ([]metriccache.Metri
 		}
 		coldMetrics = append(coldMetrics, podColdPageMetrics)
 
-		podMemUsageWithHotPageBytes, err := koordletutil.GetPodMemUsageWithHotPageCache(k.cgroupReader, podCgroupDir, podColdPageBytes)
+		podMemUsageWithHotPageBytes, err := koordletutil.GetCgroupMemUsageWithHotPageCache(k.cgroupReader, podCgroupDir, podColdPageBytes)
 		if err != nil {
 			klog.Warningf("failed to collect pod usage for Memory err: %s pod: %s/%s", err, pod.Namespace, pod.Name)
 			continue
@@ -199,7 +210,7 @@ func (k *kidledcoldPageCollector) collectContainersColdPageInfo(meta *statesinfo
 	for i := range pod.Status.ContainerStatuses {
 		containerStat := &pod.Status.ContainerStatuses[i]
 		containerKey := fmt.Sprintf("%s/%s/%s", pod.Namespace, pod.Name, containerStat.Name)
-		collectTime := time.Now()
+		collectTime := timeNow()
 		if len(containerStat.ContainerID) == 0 {
 			klog.Warningf("container %s id is empty, maybe not ready, skip this round", containerKey)
 			continue
@@ -222,7 +233,7 @@ func (k *kidledcoldPageCollector) collectContainersColdPageInfo(meta *statesinfo
 		}
 		coldMetrics = append(coldMetrics, containerColdPageMetrics)
 
-		containerMemUsageWithHotPageBytes, err := koordletutil.GetContainerMemUsageWithHotPageCache(k.cgroupReader, containerCgroupDir, containerColdPageBytes)
+		containerMemUsageWithHotPageBytes, err := koordletutil.GetCgroupMemUsageWithHotPageCache(k.cgroupReader, containerCgroupDir, containerColdPageBytes)
 		if err != nil {
 			return nil, err
 		}
@@ -237,6 +248,48 @@ func (k *kidledcoldPageCollector) collectContainersColdPageInfo(meta *statesinfo
 	}
 	klog.V(6).Infof("collect Container ColdPageInfo for pod %s/%s finished, container num %d, collected %d",
 		pod.Namespace, pod.Name, len(pod.Status.ContainerStatuses), count)
+	return coldMetrics, nil
+}
+
+func (k *kidledcoldPageCollector) collectHostAppsColdPageInfo() ([]metriccache.MetricSample, error) {
+	nodeSLO := k.statesInformer.GetNodeSLO()
+	if nodeSLO == nil {
+		return nil, fmt.Errorf("get nil nodeslo curing collect host application cold page info")
+	}
+	coldMetrics := make([]metriccache.MetricSample, 0, len(nodeSLO.Spec.HostApplications))
+	count := 0
+	for _, hostApp := range nodeSLO.Spec.HostApplications {
+		collectTime := timeNow()
+		cgroupDir := koordletutil.GetHostAppCgroupRelativePath(&hostApp)
+		coldPageBytes, err := k.cgroupReader.ReadMemoryColdPageUsage(cgroupDir)
+		if err != nil {
+			klog.Warningf("can not get cold page info from memory.idle_page_stats file for host application %s", hostApp.Name)
+			continue
+		}
+		coldPageBytesValue := float64(coldPageBytes)
+		coldPageMetrics, err := metriccache.HostAppMemoryColdPageSizeMetric.GenerateSample(metriccache.MetricPropertiesFunc.HostApplication(hostApp.Name),
+			collectTime, coldPageBytesValue)
+		if err != nil {
+			return nil, err
+		}
+		coldMetrics = append(coldMetrics, coldPageMetrics)
+
+		memUsageWithHotPageBytes, err := koordletutil.GetCgroupMemUsageWithHotPageCache(k.cgroupReader, cgroupDir, coldPageBytes)
+		if err != nil {
+			klog.Warningf("failed to collect host application %v usage for memory err: %s", hostApp.Name, err)
+			continue
+		}
+
+		memUsageWithHotPageValue := float64(memUsageWithHotPageBytes)
+		memUsageWithHotPageMetrics, err := metriccache.HostAppMemoryWithHotPageUsageMetric.GenerateSample(metriccache.MetricPropertiesFunc.HostApplication(hostApp.Name),
+			collectTime, memUsageWithHotPageValue)
+		if err != nil {
+			return nil, err
+		}
+		coldMetrics = append(coldMetrics, memUsageWithHotPageMetrics)
+		count++
+	}
+	klog.V(4).Infof("collectHostAppsColdPageInfo finished, host application num %d, collected %d", len(coldMetrics), count)
 	return coldMetrics, nil
 }
 

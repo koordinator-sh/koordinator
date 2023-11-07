@@ -19,6 +19,7 @@ package impl
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"testing"
 	"time"
 
@@ -168,6 +169,7 @@ func Test_reporter_sync_with_single_node_metric(t *testing.T) {
 		nodeMetric       *slov1alpha1.NodeMetric
 		metricCache      func(ctrl *gomock.Controller) metriccache.MetricCache
 		podsInformer     *podsInformer
+		nodeSLOInformer  *nodeSLOInformer
 		nodeMetricLister listerv1alpha1.NodeMetricLister
 		nodeMetricClient clientsetv1alpha1.NodeMetricInterface
 	}
@@ -189,6 +191,7 @@ func Test_reporter_sync_with_single_node_metric(t *testing.T) {
 					return nil
 				},
 				podsInformer:     NewPodsInformer(),
+				nodeSLOInformer:  NewNodeSLOInformer(),
 				nodeMetricLister: nil,
 				nodeMetricClient: &fakeNodeMetricClient{},
 			},
@@ -309,6 +312,11 @@ func Test_reporter_sync_with_single_node_metric(t *testing.T) {
 						},
 					},
 				},
+				nodeSLOInformer: &nodeSLOInformer{
+					nodeSLO: &slov1alpha1.NodeSLO{
+						Spec: slov1alpha1.NodeSLOSpec{},
+					},
+				},
 				nodeMetricLister: &fakeNodeMetricLister{
 					nodeMetrics: &slov1alpha1.NodeMetric{
 						ObjectMeta: metav1.ObjectMeta{
@@ -415,6 +423,11 @@ func Test_reporter_sync_with_single_node_metric(t *testing.T) {
 					return c
 				},
 				podsInformer: NewPodsInformer(),
+				nodeSLOInformer: &nodeSLOInformer{
+					nodeSLO: &slov1alpha1.NodeSLO{
+						Spec: slov1alpha1.NodeSLOSpec{},
+					},
+				},
 				nodeMetricLister: &fakeNodeMetricLister{
 					nodeMetrics: &slov1alpha1.NodeMetric{
 						ObjectMeta: metav1.ObjectMeta{
@@ -448,6 +461,7 @@ func Test_reporter_sync_with_single_node_metric(t *testing.T) {
 				nodeMetric:       tt.fields.nodeMetric,
 				metricCache:      tt.fields.metricCache(ctrl),
 				podsInformer:     tt.fields.podsInformer,
+				nodeSLOInformer:  tt.fields.nodeSLOInformer,
 				nodeMetricLister: tt.fields.nodeMetricLister,
 				statusUpdater:    newStatusUpdater(tt.fields.nodeMetricClient),
 				predictorFactory: prediction.NewEmptyPredictorFactory(),
@@ -683,7 +697,8 @@ func Test_nodeMetricInformer_NewAndSetup(t *testing.T) {
 				state: &PluginState{
 					metricCache: mockmetriccache.NewMockMetricCache(ctrl),
 					informerPlugins: map[PluginName]informerPlugin{
-						podsInformerName: NewPodsInformer(),
+						podsInformerName:    NewPodsInformer(),
+						nodeSLOInformerName: NewNodeSLOInformer(),
 					},
 				},
 			},
@@ -692,7 +707,9 @@ func Test_nodeMetricInformer_NewAndSetup(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			r := NewNodeMetricInformer()
-			r.Setup(tt.args.ctx, tt.args.state)
+			assert.NotPanics(t, func() {
+				r.Setup(tt.args.ctx, tt.args.state)
+			})
 		})
 	}
 }
@@ -1220,6 +1237,169 @@ func Test_nodeMetricInformer_collectSystemMetric(t *testing.T) {
 			assert.NoError(t, err)
 			assert.Equalf(t, tt.want, got, "collectSystemMetric(%v)", tt.args.queryparam)
 			assert.Equalf(t, tt.want1, got1, "collectSystemMetric(%v)", tt.args.queryparam)
+		})
+	}
+}
+
+func Test_nodeMetricInformer_collectHostAppMetric(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+	now := time.Now()
+	startTime := now.Add(-time.Second * 120)
+
+	type fields struct {
+		memoryCollectPolicy slov1alpha1.NodeMemoryCollectPolicy
+		hostAppCPU          float64
+		hostAppMemory       float64
+	}
+	type args struct {
+		hostApp    *slov1alpha1.HostApplicationSpec
+		queryParam metriccache.QueryParam
+	}
+	tests := []struct {
+		name    string
+		fields  fields
+		args    args
+		want    *slov1alpha1.HostApplicationMetricInfo
+		wantErr bool
+	}{
+		{
+			name:   "return error for nil host app",
+			fields: fields{},
+			args: args{
+				queryParam: metriccache.QueryParam{Start: &startTime, End: &now, Aggregate: metriccache.AggregationTypeAVG},
+			},
+			want:    nil,
+			wantErr: true,
+		},
+		{
+			name: "get host app metric with memory without page cache",
+			fields: fields{
+				memoryCollectPolicy: slov1alpha1.UsageWithoutPageCache,
+				hostAppCPU:          1,
+				hostAppMemory:       1024,
+			},
+			args: args{
+				hostApp: &slov1alpha1.HostApplicationSpec{
+					Name:     "test-host-app",
+					Priority: apiext.PriorityBatch,
+					QoS:      apiext.QoSBE,
+				},
+				queryParam: metriccache.QueryParam{Start: &startTime, End: &now, Aggregate: metriccache.AggregationTypeAVG},
+			},
+			want: &slov1alpha1.HostApplicationMetricInfo{
+				Name: "test-host-app",
+				Usage: slov1alpha1.ResourceMap{
+					ResourceList: v1.ResourceList{
+						v1.ResourceCPU:    *resource.NewMilliQuantity(int64(1000), resource.DecimalSI),
+						v1.ResourceMemory: *resource.NewQuantity(int64(1024), resource.BinarySI),
+					},
+				},
+				Priority: apiext.PriorityBatch,
+				QoS:      apiext.QoSBE,
+			},
+			wantErr: false,
+		},
+		{
+			name: "get host app metric with memory with page cache",
+			fields: fields{
+				memoryCollectPolicy: slov1alpha1.UsageWithPageCache,
+				hostAppCPU:          1,
+				hostAppMemory:       1024,
+			},
+			args: args{
+				hostApp: &slov1alpha1.HostApplicationSpec{
+					Name:     "test-host-app",
+					Priority: apiext.PriorityBatch,
+					QoS:      apiext.QoSBE,
+				},
+				queryParam: metriccache.QueryParam{Start: &startTime, End: &now, Aggregate: metriccache.AggregationTypeAVG},
+			},
+			want: &slov1alpha1.HostApplicationMetricInfo{
+				Name: "test-host-app",
+				Usage: slov1alpha1.ResourceMap{
+					ResourceList: v1.ResourceList{
+						v1.ResourceCPU:    *resource.NewMilliQuantity(int64(1000), resource.DecimalSI),
+						v1.ResourceMemory: *resource.NewQuantity(int64(1024), resource.BinarySI),
+					},
+				},
+				Priority: apiext.PriorityBatch,
+				QoS:      apiext.QoSBE,
+			},
+			wantErr: false,
+		},
+		{
+			name: "get host app metric with memory with hot page cache",
+			fields: fields{
+				memoryCollectPolicy: slov1alpha1.UsageWithHotPageCache,
+				hostAppCPU:          1,
+				hostAppMemory:       1024,
+			},
+			args: args{
+				hostApp: &slov1alpha1.HostApplicationSpec{
+					Name:     "test-host-app",
+					Priority: apiext.PriorityBatch,
+					QoS:      apiext.QoSBE,
+				},
+				queryParam: metriccache.QueryParam{Start: &startTime, End: &now, Aggregate: metriccache.AggregationTypeAVG},
+			},
+			want: &slov1alpha1.HostApplicationMetricInfo{
+				Name: "test-host-app",
+				Usage: slov1alpha1.ResourceMap{
+					ResourceList: v1.ResourceList{
+						v1.ResourceCPU:    *resource.NewMilliQuantity(int64(1000), resource.DecimalSI),
+						v1.ResourceMemory: *resource.NewQuantity(int64(1024), resource.BinarySI),
+					},
+				},
+				Priority: apiext.PriorityBatch,
+				QoS:      apiext.QoSBE,
+			},
+			wantErr: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.fields.memoryCollectPolicy == slov1alpha1.UsageWithHotPageCache {
+				system.SetIsStartColdMemory(true)
+			}
+			mockMetricCache := mockmetriccache.NewMockMetricCache(ctrl)
+			mockResultFactory := mockmetriccache.NewMockAggregateResultFactory(ctrl)
+			metriccache.DefaultAggregateResultFactory = mockResultFactory
+			mockQuerier := mockmetriccache.NewMockQuerier(ctrl)
+			mockMetricCache.EXPECT().Querier(gomock.Any(), gomock.Any()).Return(mockQuerier, nil).AnyTimes()
+
+			if tt.args.hostApp != nil {
+
+				duration := tt.args.queryParam.End.Sub(*tt.args.queryParam.Start)
+				cpuQueryMeta, err := metriccache.HostAppCPUUsageMetric.BuildQueryMeta(
+					metriccache.MetricPropertiesFunc.HostApplication(tt.args.hostApp.Name))
+				assert.NoError(t, err)
+				buildMockQueryResult(ctrl, mockQuerier, mockResultFactory, cpuQueryMeta, tt.fields.hostAppCPU, duration)
+
+				memQueryMeta, err := metriccache.HostAppMemoryUsageMetric.BuildQueryMeta(metriccache.MetricPropertiesFunc.HostApplication(tt.args.hostApp.Name))
+				if tt.fields.memoryCollectPolicy == slov1alpha1.UsageWithHotPageCache {
+					memQueryMeta, err = metriccache.HostAppMemoryWithHotPageUsageMetric.BuildQueryMeta(metriccache.MetricPropertiesFunc.HostApplication(tt.args.hostApp.Name))
+				} else if tt.fields.memoryCollectPolicy == slov1alpha1.UsageWithPageCache {
+					memQueryMeta, err = metriccache.HostAppMemoryUsageWithPageCacheMetric.BuildQueryMeta(metriccache.MetricPropertiesFunc.HostApplication(tt.args.hostApp.Name))
+				}
+				assert.NoError(t, err)
+				buildMockQueryResult(ctrl, mockQuerier, mockResultFactory, memQueryMeta, tt.fields.hostAppMemory, duration)
+			}
+
+			r := &nodeMetricInformer{
+				metricCache: mockMetricCache,
+			}
+
+			r.getNodeMetricSpec().CollectPolicy.NodeMemoryCollectPolicy = &tt.fields.memoryCollectPolicy
+
+			got, err := r.collectHostAppMetric(tt.args.hostApp, tt.args.queryParam)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("collectHostAppMetric() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("collectHostAppMetric() got = %v, want %v", got, tt.want)
+			}
 		})
 	}
 }

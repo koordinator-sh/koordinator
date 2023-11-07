@@ -27,15 +27,7 @@ func GetNodeMemUsageWithHotPageCache(coldPageUsageBytes uint64) (uint64, error) 
 	return memInfo.MemTotal*1024 - memInfo.MemAvailable*1024 + memInfo.ActiveFile*1024 + memInfo.InactiveFile*1024 - coldPageUsageBytes, nil
 }
 
-func GetPodMemUsageWithHotPageCache(cgroupReader resourceexecutor.CgroupReader, parentDir string, coldPageUsageBytes uint64) (uint64, error) {
-	memStat, err := cgroupReader.ReadMemoryStat(parentDir)
-	if err != nil {
-		return 0, err
-	}
-	return uint64(memStat.UsageWithPageCache()) - coldPageUsageBytes, nil
-}
-
-func GetContainerMemUsageWithHotPageCache(cgroupReader resourceexecutor.CgroupReader, parentDir string, coldPageUsageBytes uint64) (uint64, error) {
+func GetCgroupMemUsageWithHotPageCache(cgroupReader resourceexecutor.CgroupReader, parentDir string, coldPageUsageBytes uint64) (uint64, error) {
 	memStat, err := cgroupReader.ReadMemoryStat(parentDir)
 	if err != nil {
 		return 0, err

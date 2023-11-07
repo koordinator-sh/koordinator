@@ -138,11 +138,11 @@ func (c *cpuEvictor) calculateMilliRelease(thresholdConfig *slov1alpha1.Resource
 		return 0
 	}
 	// BECPUUsage
-	avgBECPUMilliUsage, count01 := getBECPUMetric(metriccache.BEResouceAllocationUsage, querier, queryparam.Aggregate)
+	avgBECPUMilliUsage, count01 := getBECPUMetric(metriccache.BEResourceAllocationUsage, querier, queryparam.Aggregate)
 	// BECPURequest
-	avgBECPUMilliRequest, count02 := getBECPUMetric(metriccache.BEResouceAllocationRequest, querier, queryparam.Aggregate)
+	avgBECPUMilliRequest, count02 := getBECPUMetric(metriccache.BEResourceAllocationRequest, querier, queryparam.Aggregate)
 	// BECPULimit
-	avgBECPUMilliRealLimit, count03 := getBECPUMetric(metriccache.BEResouceAllocationRealLimit, querier, queryparam.Aggregate)
+	avgBECPUMilliRealLimit, count03 := getBECPUMetric(metriccache.BEResourceAllocationRealLimit, querier, queryparam.Aggregate)
 
 	// CPU Satisfaction considers the allocatable when policy=evictByAllocatable.
 	avgBECPUMilliLimit := avgBECPUMilliRealLimit
@@ -179,11 +179,11 @@ func (c *cpuEvictor) calculateMilliRelease(thresholdConfig *slov1alpha1.Resource
 		return 0
 	}
 	// BECPUUsage
-	currentBECPUMilliUsage, _ := getBECPUMetric(metriccache.BEResouceAllocationUsage, querier, queryparam.Aggregate)
+	currentBECPUMilliUsage, _ := getBECPUMetric(metriccache.BEResourceAllocationUsage, querier, queryparam.Aggregate)
 	// BECPURequest
-	currentBECPUMilliRequest, _ := getBECPUMetric(metriccache.BEResouceAllocationRequest, querier, queryparam.Aggregate)
+	currentBECPUMilliRequest, _ := getBECPUMetric(metriccache.BEResourceAllocationRequest, querier, queryparam.Aggregate)
 	// BECPULimit
-	currentBECPUMilliRealLimit, _ := getBECPUMetric(metriccache.BEResouceAllocationRealLimit, querier, queryparam.Aggregate)
+	currentBECPUMilliRealLimit, _ := getBECPUMetric(metriccache.BEResourceAllocationRealLimit, querier, queryparam.Aggregate)
 
 	// CPU Satisfaction considers the allocatable when policy=evictByAllocatable.
 	currentBECPUMilliLimit := currentBECPUMilliRealLimit
@@ -403,12 +403,12 @@ func getBECPUMetric(resouceAllocation metriccache.MetricPropertyValue, querier m
 	var properties map[metriccache.MetricProperty]string
 
 	switch resouceAllocation {
-	case metriccache.BEResouceAllocationUsage:
-		properties = metriccache.MetricPropertiesFunc.NodeBE(string(metriccache.BEResourceCPU), string(metriccache.BEResouceAllocationUsage))
-	case metriccache.BEResouceAllocationRequest:
-		properties = metriccache.MetricPropertiesFunc.NodeBE(string(metriccache.BEResourceCPU), string(metriccache.BEResouceAllocationRequest))
-	case metriccache.BEResouceAllocationRealLimit:
-		properties = metriccache.MetricPropertiesFunc.NodeBE(string(metriccache.BEResourceCPU), string(metriccache.BEResouceAllocationRealLimit))
+	case metriccache.BEResourceAllocationUsage:
+		properties = metriccache.MetricPropertiesFunc.NodeBE(string(metriccache.BEResourceCPU), string(metriccache.BEResourceAllocationUsage))
+	case metriccache.BEResourceAllocationRequest:
+		properties = metriccache.MetricPropertiesFunc.NodeBE(string(metriccache.BEResourceCPU), string(metriccache.BEResourceAllocationRequest))
+	case metriccache.BEResourceAllocationRealLimit:
+		properties = metriccache.MetricPropertiesFunc.NodeBE(string(metriccache.BEResourceCPU), string(metriccache.BEResourceAllocationRealLimit))
 	default:
 		properties = map[metriccache.MetricProperty]string{}
 	}

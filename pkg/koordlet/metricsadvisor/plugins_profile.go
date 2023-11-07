@@ -19,6 +19,7 @@ package metricsadvisor
 import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor/collectors/beresource"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor/collectors/coldmemoryresource"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor/collectors/hostapplication"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor/collectors/nodeinfo"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor/collectors/noderesource"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor/collectors/nodestorageinfo"
@@ -49,6 +50,7 @@ var (
 		sysresource.CollectorName:        sysresource.New,
 		coldmemoryresource.CollectorName: coldmemoryresource.New,
 		pagecache.CollectorName:          pagecache.New,
+		hostapplication.CollectorName:    hostapplication.New,
 	}
 
 	podFilters = map[string]framework.PodFilter{

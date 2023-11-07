@@ -137,11 +137,14 @@ func (r *CPUSuppress) writeBECgroupsCPUSet(paths []string, cpusetStr string, isR
 }
 
 // calculateBESuppressCPU calculates the quantity of cpuset cpus for suppressing be pods
-func (r *CPUSuppress) calculateBESuppressCPU(node *corev1.Node, nodeMetric float64,
-	podMetrics map[string]float64, podMetas []*statesinformer.PodMeta, beCPUUsedThreshold int64) *resource.Quantity {
+func (r *CPUSuppress) calculateBESuppressCPU(node *corev1.Node, nodeMetric float64, podMetrics map[string]float64,
+	podMetas []*statesinformer.PodMeta, hostApps []slov1alpha1.HostApplicationSpec,
+	hostAppMetrics map[string]float64, beCPUUsedThreshold int64) *resource.Quantity {
 	// node, nodeMetric, podMetric should not be nil
 	podAllUsedCPU := *resource.NewMilliQuantity(0, resource.DecimalSI)
 	podNoneBEUsedCPU := *resource.NewMilliQuantity(0, resource.DecimalSI)
+	hostAppAllUsedCPU := *resource.NewMilliQuantity(0, resource.DecimalSI)
+	hostAppNoneBEUsedCPU := *resource.NewMilliQuantity(0, resource.DecimalSI)
 	nodeUsedCPU := *resource.NewMilliQuantity(int64(nodeMetric*1000), resource.DecimalSI)
 
 	podMetaMap := map[string]*statesinformer.PodMeta{}
@@ -162,8 +165,21 @@ func (r *CPUSuppress) calculateBESuppressCPU(node *corev1.Node, nodeMetric float
 		}
 	}
 
+	for _, hostApp := range hostApps {
+		metric, exist := hostAppMetrics[hostApp.Name]
+		if !exist {
+			continue
+		}
+		hostAppAllUsedCPU.Add(*resource.NewMilliQuantity(int64(metric*1000), resource.DecimalSI))
+		if hostApp.QoS != apiext.QoSBE || hostApp.CgroupPath == nil || hostApp.CgroupPath.Base != slov1alpha1.CgroupBaseTypeKubeBesteffort {
+			// host app qos must be BE and also run under best-effort dir
+			hostAppNoneBEUsedCPU.Add(*resource.NewMilliQuantity(int64(metric*1000), resource.DecimalSI))
+		}
+	}
+
 	systemUsedCPU := nodeUsedCPU.DeepCopy()
 	systemUsedCPU.Sub(podAllUsedCPU)
+	systemUsedCPU.Sub(hostAppAllUsedCPU)
 	if systemUsedCPU.Value() < 0 {
 		// set systemUsedCPU always no less than 0
 		systemUsedCPU = *resource.NewMilliQuantity(0, resource.DecimalSI)
@@ -182,12 +198,13 @@ func (r *CPUSuppress) calculateBESuppressCPU(node *corev1.Node, nodeMetric float
 	nodeBESuppressCPU := resource.NewMilliQuantity(node.Status.Capacity.Cpu().MilliValue()*beCPUUsedThreshold/100,
 		node.Status.Allocatable.Cpu().Format)
 	nodeBESuppressCPU.Sub(podNoneBEUsedCPU)
+	nodeBESuppressCPU.Sub(hostAppNoneBEUsedCPU)
 	nodeBESuppressCPU.Sub(systemUsedCPU)
 
 	metrics.RecordBESuppressLSUsedCPU(float64(podNoneBEUsedCPU.MilliValue()) / 1000)
-	klog.V(6).Infof("nodeSuppressBE[CPU(Core)]:%v = node.Total:%v * SLOPercent:%v%% - systemUsage:%v - podLSUsed:%v, upper to %v\n",
+	klog.V(6).Infof("nodeSuppressBE[CPU(Core)]:%v = node.Total:%v * SLOPercent:%v%% - systemUsage:%v - podLSUsed:%v - hostAppLSUsed:%v, upper to %v\n",
 		nodeBESuppressCPU.AsApproximateFloat64(), node.Status.Allocatable.Cpu().AsApproximateFloat64(), beCPUUsedThreshold, systemUsedCPU.AsApproximateFloat64(),
-		podNoneBEUsedCPU.AsApproximateFloat64(), nodeBESuppressCPU.Value())
+		podNoneBEUsedCPU.AsApproximateFloat64(), hostAppNoneBEUsedCPU.AsApproximateFloat64(), nodeBESuppressCPU.Value())
 
 	return nodeBESuppressCPU
 }
@@ -317,13 +334,16 @@ func (r *CPUSuppress) suppressBECPU() {
 		klog.Warningf("build node query meta failed, error: %v", err)
 		return
 	}
-	value, err := helpers.CollectorNodeMetricLast(r.metricCache, queryMeta, r.metricCollectInterval)
+	nodeCPUUsage, err := helpers.CollectorNodeMetricLast(r.metricCache, queryMeta, r.metricCollectInterval)
 	if err != nil {
 		klog.Warningf("query node cpu metrics failed, error: %v", err)
 		return
 	}
+	hostAppMetrics := helpers.CollectAllHostAppMetricsLast(nodeSLO.Spec.HostApplications, r.metricCache,
+		metriccache.HostAppCPUUsageMetric, r.metricCollectInterval)
 
-	suppressCPUQuantity := r.calculateBESuppressCPU(node, value, podMetrics, podMetas,
+	suppressCPUQuantity := r.calculateBESuppressCPU(node, nodeCPUUsage, podMetrics, podMetas,
+		nodeSLO.Spec.HostApplications, hostAppMetrics,
 		*nodeSLO.Spec.ResourceUsedThresholdWithBE.CPUSuppressThresholdPercent)
 
 	// Step 2.
