@@ -84,9 +84,9 @@ func Test_collectBECPUResourceMetric(t *testing.T) {
 	querier, err := collector.metricCache.Querier(oldStartTime, now)
 	assert.NoError(t, err)
 
-	beCPUUsageProperties := metriccache.MetricPropertiesFunc.NodeBE(string(metriccache.BEResourceCPU), string(metriccache.BEResouceAllocationUsage))
-	beCPURequestProperties := metriccache.MetricPropertiesFunc.NodeBE(string(metriccache.BEResourceCPU), string(metriccache.BEResouceAllocationRequest))
-	beCPURealLimitProperties := metriccache.MetricPropertiesFunc.NodeBE(string(metriccache.BEResourceCPU), string(metriccache.BEResouceAllocationRealLimit))
+	beCPUUsageProperties := metriccache.MetricPropertiesFunc.NodeBE(string(metriccache.BEResourceCPU), string(metriccache.BEResourceAllocationUsage))
+	beCPURequestProperties := metriccache.MetricPropertiesFunc.NodeBE(string(metriccache.BEResourceCPU), string(metriccache.BEResourceAllocationRequest))
+	beCPURealLimitProperties := metriccache.MetricPropertiesFunc.NodeBE(string(metriccache.BEResourceCPU), string(metriccache.BEResourceAllocationRealLimit))
 
 	beCPUUsageQueryMeta, err := metriccache.NodeBEMetric.BuildQueryMeta(beCPUUsageProperties)
 	assert.NoError(t, err)

@@ -376,9 +376,9 @@ func Test_CPUEvict_calculateMilliRelease(t *testing.T) {
 				mockStateInformer.EXPECT().GetNode().Return(testNode).AnyTimes()
 			}
 			metriccache.DefaultAggregateResultFactory = mockResultFactory
-			beUsage := metriccache.MetricPropertiesFunc.NodeBE(string(metriccache.BEResourceCPU), string(metriccache.BEResouceAllocationUsage))
-			beRequest := metriccache.MetricPropertiesFunc.NodeBE(string(metriccache.BEResourceCPU), string(metriccache.BEResouceAllocationRequest))
-			beLimit := metriccache.MetricPropertiesFunc.NodeBE(string(metriccache.BEResourceCPU), string(metriccache.BEResouceAllocationRealLimit))
+			beUsage := metriccache.MetricPropertiesFunc.NodeBE(string(metriccache.BEResourceCPU), string(metriccache.BEResourceAllocationUsage))
+			beRequest := metriccache.MetricPropertiesFunc.NodeBE(string(metriccache.BEResourceCPU), string(metriccache.BEResourceAllocationRequest))
+			beLimit := metriccache.MetricPropertiesFunc.NodeBE(string(metriccache.BEResourceCPU), string(metriccache.BEResourceAllocationRealLimit))
 
 			beUsageQueryMeta, err := metriccache.NodeBEMetric.BuildQueryMeta(beUsage)
 			assert.NoError(t, err)

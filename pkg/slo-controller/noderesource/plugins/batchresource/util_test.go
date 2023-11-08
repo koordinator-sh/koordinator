@@ -655,3 +655,36 @@ func assertEqualNUMAResourceList(t *testing.T, want, got []corev1.ResourceList) 
 		assert.True(t, util.IsResourceListEqualValue(want[i], got[i]))
 	}
 }
+
+func Test_getHostAppMetricUsage(t *testing.T) {
+	type args struct {
+		info *slov1alpha1.HostApplicationMetricInfo
+	}
+	tests := []struct {
+		name string
+		args args
+		want corev1.ResourceList
+	}{
+		{
+			name: "get correct scaled resource quantity",
+			args: args{
+				info: &slov1alpha1.HostApplicationMetricInfo{
+					Usage: slov1alpha1.ResourceMap{
+						ResourceList: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("4"),
+							corev1.ResourceMemory: resource.MustParse("10Gi"),
+							"unknown_resource":    resource.MustParse("1"),
+						},
+					},
+				},
+			},
+			want: makeResourceList("4", "10Gi"),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := getHostAppMetricUsage(tt.args.info)
+			testingCorrectResourceList(t, &tt.want, &got)
+		})
+	}
+}

@@ -205,6 +205,16 @@ func (p *Plugin) calculate(strategy *configuration.ColocationStrategy, node *cor
 		}
 	}
 
+	hostAppHPUsed := util.NewZeroResourceList()
+	for _, hostAppMetric := range resourceMetrics.NodeMetric.Status.HostApplicationMetric {
+		if hostAppMetric.Priority == extension.PriorityBatch || hostAppMetric.Priority == extension.PriorityFree {
+			// only consider higher priority usage for batch allocatable
+			// now only support product and batch(hadoop-yarn) priority for host application
+			continue
+		}
+		hostAppHPUsed = quotav1.Add(hostAppHPUsed, getHostAppMetricUsage(hostAppMetric))
+	}
+
 	// For the pods reported with metrics but not shown in the current list, count them into the HP used.
 	podsUnknownPriorityUsed := quotav1.Subtract(podsAllUsed, podsKnownUsed)
 	podsHPUsed = quotav1.Add(podsHPUsed, podsUnknownPriorityUsed)
@@ -216,6 +226,10 @@ func (p *Plugin) calculate(strategy *configuration.ColocationStrategy, node *cor
 	nodeReservation := getNodeReservation(strategy, nodeCapacity)
 
 	systemUsed := getResourceListForCPUAndMemory(nodeMetric.Status.NodeMetric.SystemUsage.ResourceList)
+	// resource usage of host applications with prod priority will be count as host system usage since they consumes the
+	// node reserved resource.
+	systemUsed = quotav1.Add(systemUsed, hostAppHPUsed)
+
 	// System.Reserved = Node.Anno.Reserved, Node.Kubelet.Reserved)
 	nodeAnnoReserved := util.GetNodeReservationFromAnnotation(node.Annotations)
 	nodeKubeletReserved := util.GetNodeReservationFromKubelet(node)

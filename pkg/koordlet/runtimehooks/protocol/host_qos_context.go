@@ -17,9 +17,6 @@ limitations under the License.
 package protocol
 
 import (
-	"path/filepath"
-
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/klog/v2"
 
 	ext "github.com/koordinator-sh/koordinator/apis/extension"
@@ -28,40 +25,6 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util"
 )
-
-const (
-	hostLSCgroupDir = "host-latency-sensitive"
-	hostBECgroupDir = "host-best-effort"
-)
-
-func getHostCgroupRelativePath(hostAppSpec *slov1alpha1.HostApplicationSpec) string {
-	if hostAppSpec == nil {
-		return ""
-	}
-	if hostAppSpec.CgroupPath == nil {
-		cgroupBaseDir := ""
-		switch hostAppSpec.QoS {
-		case ext.QoSLSE, ext.QoSLSR, ext.QoSLS:
-			cgroupBaseDir = hostLSCgroupDir
-		case ext.QoSBE:
-			cgroupBaseDir = hostBECgroupDir
-			// empty string for QoSNone as default
-		}
-		return filepath.Join(cgroupBaseDir, hostAppSpec.Name)
-	} else {
-		cgroupBaseDir := ""
-		switch hostAppSpec.CgroupPath.Base {
-		case slov1alpha1.CgroupBaseTypeKubepods:
-			cgroupBaseDir = util.GetPodQoSRelativePath(corev1.PodQOSGuaranteed)
-		case slov1alpha1.CgroupBaseTypeKubeBurstable:
-			cgroupBaseDir = util.GetPodQoSRelativePath(corev1.PodQOSBurstable)
-		case slov1alpha1.CgroupBaseTypeKubeBesteffort:
-			cgroupBaseDir = util.GetPodQoSRelativePath(corev1.PodQOSBestEffort)
-			// empty string for CgroupBaseTypeRoot as default
-		}
-		return filepath.Join(cgroupBaseDir, hostAppSpec.CgroupPath.ParentDir, hostAppSpec.CgroupPath.RelativePath)
-	}
-}
 
 type HostAppRequest struct {
 	Name         string
@@ -72,7 +35,7 @@ type HostAppRequest struct {
 func (r *HostAppRequest) FromReconciler(hostAppSpec *slov1alpha1.HostApplicationSpec) {
 	r.Name = hostAppSpec.Name
 	r.QOSClass = hostAppSpec.QoS
-	r.CgroupParent = getHostCgroupRelativePath(hostAppSpec)
+	r.CgroupParent = util.GetHostAppCgroupRelativePath(hostAppSpec)
 }
 
 type HostAppResponse struct {

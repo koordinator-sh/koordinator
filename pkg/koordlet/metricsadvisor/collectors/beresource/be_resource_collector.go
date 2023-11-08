@@ -97,11 +97,11 @@ func (b *beResourceCollector) collectBECPUResourceMetric() {
 
 	collectTime := time.Now()
 	beLimit, err01 := metriccache.NodeBEMetric.GenerateSample(
-		metriccache.MetricPropertiesFunc.NodeBE(string(metriccache.BEResourceCPU), string(metriccache.BEResouceAllocationRealLimit)), collectTime, float64(realMilliLimit))
+		metriccache.MetricPropertiesFunc.NodeBE(string(metriccache.BEResourceCPU), string(metriccache.BEResourceAllocationRealLimit)), collectTime, float64(realMilliLimit))
 	beRequest, err02 := metriccache.NodeBEMetric.GenerateSample(
-		metriccache.MetricPropertiesFunc.NodeBE(string(metriccache.BEResourceCPU), string(metriccache.BEResouceAllocationRequest)), collectTime, float64(beCPUMilliRequest))
+		metriccache.MetricPropertiesFunc.NodeBE(string(metriccache.BEResourceCPU), string(metriccache.BEResourceAllocationRequest)), collectTime, float64(beCPUMilliRequest))
 	beUsage, err03 := metriccache.NodeBEMetric.GenerateSample(
-		metriccache.MetricPropertiesFunc.NodeBE(string(metriccache.BEResourceCPU), string(metriccache.BEResouceAllocationUsage)), collectTime, float64(beCPUUsageMilliCores))
+		metriccache.MetricPropertiesFunc.NodeBE(string(metriccache.BEResourceCPU), string(metriccache.BEResourceAllocationUsage)), collectTime, float64(beCPUUsageMilliCores))
 
 	if err01 != nil || err02 != nil || err03 != nil {
 		klog.Errorf("failed to collect node BECPU, beLimitGenerateSampleErr: %v, beRequestGenerateSampleErr: %v, beUsageGenerateSampleErr: %v", err01, err02, err03)

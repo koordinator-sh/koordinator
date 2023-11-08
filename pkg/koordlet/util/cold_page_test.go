@@ -169,7 +169,7 @@ total_unevictable 0
 				tt.fields.SetSysUtil(helper)
 			}
 			cgroupReader := resourceexecutor.NewCgroupReader()
-			got, err := GetPodMemUsageWithHotPageCache(cgroupReader, testPodParentDir, 100)
+			got, err := GetCgroupMemUsageWithHotPageCache(cgroupReader, testPodParentDir, 100)
 			assert.Equal(t, tt.wantErr, err != nil)
 			assert.Equal(t, tt.want, got)
 		})
@@ -232,7 +232,7 @@ total_unevictable 0
 				tt.fields.SetSysUtil(helper)
 			}
 			cgroupReader := resourceexecutor.NewCgroupReader()
-			got, err := GetContainerMemUsageWithHotPageCache(cgroupReader, testContainerParentDir, 100)
+			got, err := GetCgroupMemUsageWithHotPageCache(cgroupReader, testContainerParentDir, 100)
 			assert.Equal(t, tt.wantErr, err != nil)
 			assert.Equal(t, tt.want, got)
 		})

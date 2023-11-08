@@ -790,6 +790,8 @@ func Test_cpuSuppress_calculateBESuppressCPU(t *testing.T) {
 		nodeUsedCPU        float64
 		podMetrics         map[string]float64
 		podMetas           []*statesinformer.PodMeta
+		hostApps           []slov1alpha1.HostApplicationSpec
+		hostMetrics        map[string]float64
 		beCPUUsedThreshold int64
 	}
 	tests := []struct {
@@ -951,7 +953,209 @@ func Test_cpuSuppress_calculateBESuppressCPU(t *testing.T) {
 				},
 				beCPUUsedThreshold: 70,
 			},
+			// 20*0.7-(12-8-2)-8
 			want: resource.NewQuantity(4, resource.DecimalSI),
+		},
+		{
+			name: "calculate be suppress cpus correctly with ls host app",
+			args: args{
+				node: &corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node0",
+					},
+					Status: corev1.NodeStatus{
+						Allocatable: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("20"),
+							corev1.ResourceMemory: resource.MustParse("40G"),
+						},
+						Capacity: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("20"),
+							corev1.ResourceMemory: resource.MustParse("40G"),
+						},
+					},
+				},
+				nodeUsedCPU: 12,
+				podMetrics:  map[string]float64{"abc": 8, "def": 2},
+				podMetas: []*statesinformer.PodMeta{
+					{
+						Pod: &corev1.Pod{
+							ObjectMeta: metav1.ObjectMeta{
+								Name: "podA",
+								UID:  "abc",
+								Labels: map[string]string{
+									apiext.LabelPodQoS: string(apiext.QoSLS),
+								},
+							},
+							Spec: corev1.PodSpec{
+								NodeName: "test-node",
+								Containers: []corev1.Container{
+									{
+										Resources: corev1.ResourceRequirements{
+											Requests: corev1.ResourceList{
+												corev1.ResourceCPU:    resource.MustParse("10"),
+												corev1.ResourceMemory: resource.MustParse("20G"),
+											},
+											Limits: corev1.ResourceList{
+												corev1.ResourceCPU:    resource.MustParse("10"),
+												corev1.ResourceMemory: resource.MustParse("20G"),
+											},
+										},
+									},
+								},
+							},
+							Status: corev1.PodStatus{
+								Phase: corev1.PodRunning,
+							},
+						},
+					},
+					{
+						Pod: &corev1.Pod{
+							ObjectMeta: metav1.ObjectMeta{
+								Name: "podB",
+								UID:  "def",
+								Labels: map[string]string{
+									apiext.LabelPodQoS: string(apiext.QoSBE),
+								},
+							},
+							Spec: corev1.PodSpec{
+								NodeName: "test-node",
+								Containers: []corev1.Container{
+									{
+										Resources: corev1.ResourceRequirements{
+											Requests: corev1.ResourceList{
+												apiext.BatchCPU:    resource.MustParse("4"),
+												apiext.BatchMemory: resource.MustParse("6G"),
+											},
+											Limits: corev1.ResourceList{
+												apiext.BatchCPU:    resource.MustParse("4"),
+												apiext.BatchMemory: resource.MustParse("6G"),
+											},
+										},
+									},
+								},
+							},
+							Status: corev1.PodStatus{
+								Phase: corev1.PodRunning,
+							},
+						},
+					},
+				},
+				hostMetrics: map[string]float64{
+					"test-ls-app": 1,
+				},
+				hostApps: []slov1alpha1.HostApplicationSpec{
+					{
+						Name:     "test-ls-app",
+						Priority: apiext.PriorityProd,
+						QoS:      apiext.QoSLS,
+					},
+				},
+				beCPUUsedThreshold: 70,
+			},
+			// 20*0.7-(12-8-2-1)-8-1
+			want: resource.NewQuantity(4, resource.DecimalSI),
+		},
+		{
+			name: "calculate be suppress cpus correctly with ls host app",
+			args: args{
+				node: &corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node0",
+					},
+					Status: corev1.NodeStatus{
+						Allocatable: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("20"),
+							corev1.ResourceMemory: resource.MustParse("40G"),
+						},
+						Capacity: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("20"),
+							corev1.ResourceMemory: resource.MustParse("40G"),
+						},
+					},
+				},
+				nodeUsedCPU: 12,
+				podMetrics:  map[string]float64{"abc": 8, "def": 2},
+				podMetas: []*statesinformer.PodMeta{
+					{
+						Pod: &corev1.Pod{
+							ObjectMeta: metav1.ObjectMeta{
+								Name: "podA",
+								UID:  "abc",
+								Labels: map[string]string{
+									apiext.LabelPodQoS: string(apiext.QoSLS),
+								},
+							},
+							Spec: corev1.PodSpec{
+								NodeName: "test-node",
+								Containers: []corev1.Container{
+									{
+										Resources: corev1.ResourceRequirements{
+											Requests: corev1.ResourceList{
+												corev1.ResourceCPU:    resource.MustParse("10"),
+												corev1.ResourceMemory: resource.MustParse("20G"),
+											},
+											Limits: corev1.ResourceList{
+												corev1.ResourceCPU:    resource.MustParse("10"),
+												corev1.ResourceMemory: resource.MustParse("20G"),
+											},
+										},
+									},
+								},
+							},
+							Status: corev1.PodStatus{
+								Phase: corev1.PodRunning,
+							},
+						},
+					},
+					{
+						Pod: &corev1.Pod{
+							ObjectMeta: metav1.ObjectMeta{
+								Name: "podB",
+								UID:  "def",
+								Labels: map[string]string{
+									apiext.LabelPodQoS: string(apiext.QoSBE),
+								},
+							},
+							Spec: corev1.PodSpec{
+								NodeName: "test-node",
+								Containers: []corev1.Container{
+									{
+										Resources: corev1.ResourceRequirements{
+											Requests: corev1.ResourceList{
+												apiext.BatchCPU:    resource.MustParse("4"),
+												apiext.BatchMemory: resource.MustParse("6G"),
+											},
+											Limits: corev1.ResourceList{
+												apiext.BatchCPU:    resource.MustParse("4"),
+												apiext.BatchMemory: resource.MustParse("6G"),
+											},
+										},
+									},
+								},
+							},
+							Status: corev1.PodStatus{
+								Phase: corev1.PodRunning,
+							},
+						},
+					},
+				},
+				hostMetrics: map[string]float64{
+					"test-be-app": 1,
+				},
+				hostApps: []slov1alpha1.HostApplicationSpec{
+					{
+						Name:     "test-be-app",
+						Priority: apiext.PriorityBatch,
+						QoS:      apiext.QoSBE,
+						CgroupPath: &slov1alpha1.CgroupPath{
+							Base: slov1alpha1.CgroupBaseTypeKubeBesteffort,
+						},
+					},
+				},
+				beCPUUsedThreshold: 70,
+			},
+			// 20*0.7-(12-8-2-1)-8
+			want: resource.NewQuantity(5, resource.DecimalSI),
 		},
 	}
 	for _, tt := range tests {
@@ -962,7 +1166,7 @@ func Test_cpuSuppress_calculateBESuppressCPU(t *testing.T) {
 			}
 			cpuSuppress := newTestCPUSuppress(opt)
 			got := cpuSuppress.calculateBESuppressCPU(tt.args.node, tt.args.nodeUsedCPU, tt.args.podMetrics, tt.args.podMetas,
-				tt.args.beCPUUsedThreshold)
+				tt.args.hostApps, tt.args.hostMetrics, tt.args.beCPUUsedThreshold)
 			assert.Equal(t, tt.want.MilliValue(), got.MilliValue())
 		})
 	}

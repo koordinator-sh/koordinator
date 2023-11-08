@@ -106,10 +106,23 @@ func (s *systemResourceCollector) collectSysResUsed() {
 		return
 	}
 
+	// get all host application resource usage
+	hostAppCPU, hostAppMemory := s.sharedState.GetHostAppUsage()
+	if hostAppCPU == nil || hostAppMemory == nil {
+		klog.Warningf("host application resource cpu %v or memory %v is empty during collect system usage",
+			hostAppCPU, hostAppMemory)
+		return
+	}
+	if hostAppCPU.Timestamp.Before(validTime) || hostAppMemory.Timestamp.Before(validTime) {
+		klog.Warningf("host application metric is timeout, valid time %v, metric time is %v and %v",
+			validTime.String(), hostAppCPU.Timestamp.String(), hostAppMemory.Timestamp.String())
+		return
+	}
+
 	// calculate system resource usage
 	collectTime := timeNow()
-	systemCPUUsage := util.MaxFloat64(nodeCPU.Value-podsCPUUsage, 0)
-	systemMemoryUsage := util.MaxFloat64(nodeMemory.Value-podsMemoryUsage, 0)
+	systemCPUUsage := util.MaxFloat64(nodeCPU.Value-podsCPUUsage-hostAppCPU.Value, 0)
+	systemMemoryUsage := util.MaxFloat64(nodeMemory.Value-podsMemoryUsage-hostAppMemory.Value, 0)
 	systemCPUMetric, err := metriccache.SystemCPUUsageMetric.GenerateSample(nil, collectTime, systemCPUUsage)
 	if err != nil {
 		klog.Warningf("generate system cpu metric failed, err %v", err)

@@ -28,6 +28,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/klog/v2"
 
+	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor/framework"
@@ -153,6 +154,7 @@ func Test_collectColdPageInfo(t *testing.T) {
 	testPodMetaDir := "kubepods.slice/kubepods-podxxxxxxxx.slice"
 	testPodParentDir := "/kubepods.slice/kubepods-podxxxxxxxx.slice"
 	testContainerParentDir := "/kubepods.slice/kubepods-podxxxxxxxx.slice/cri-containerd-123abc.scope"
+	testHostAppParentDir := "/test-host-app/"
 	testMemoryIdlePageStatsContent := `# version: 1.0
 	# page_scans: 24
 	# slab_scans: 0
@@ -263,6 +265,7 @@ func Test_collectColdPageInfo(t *testing.T) {
 	type fields struct {
 		podFilterOption       framework.PodFilter
 		getPodMetas           []*statesinformer.PodMeta
+		nodeSLO               *slov1alpha1.NodeSLO
 		initPodLastStat       func(lastState *gocache.Cache)
 		initContainerLastStat func(lastState *gocache.Cache)
 		SetSysUtil            func(helper *system.FileTestUtil)
@@ -280,6 +283,19 @@ func Test_collectColdPageInfo(t *testing.T) {
 					{
 						CgroupDir: testPodMetaDir,
 						Pod:       testPod,
+					},
+				},
+				nodeSLO: &slov1alpha1.NodeSLO{
+					Spec: slov1alpha1.NodeSLOSpec{
+						HostApplications: []slov1alpha1.HostApplicationSpec{
+							{
+								Name: "host-app",
+								CgroupPath: &slov1alpha1.CgroupPath{
+									Base:         slov1alpha1.CgroupBaseTypeRoot,
+									RelativePath: testHostAppParentDir,
+								},
+							},
+						},
 					},
 				},
 				initPodLastStat: func(lastState *gocache.Cache) {
@@ -303,6 +319,8 @@ func Test_collectColdPageInfo(t *testing.T) {
 					helper.WriteCgroupFileContents(testPodParentDir, system.MemoryIdlePageStats, testMemoryIdlePageStatsContent)
 					helper.WriteCgroupFileContents(testContainerParentDir, system.MemoryStat, testMemStat)
 					helper.WriteCgroupFileContents(testContainerParentDir, system.MemoryIdlePageStats, testMemoryIdlePageStatsContent)
+					helper.WriteCgroupFileContents(testHostAppParentDir, system.MemoryStat, testMemStat)
+					helper.WriteCgroupFileContents(testHostAppParentDir, system.MemoryIdlePageStats, testMemoryIdlePageStatsContent)
 				},
 			},
 			wantstrated: true,
@@ -366,6 +384,7 @@ func Test_collectColdPageInfo(t *testing.T) {
 			if tt.name != "states informer nil" {
 				statesInformer.EXPECT().HasSynced().Return(true).AnyTimes()
 				statesInformer.EXPECT().GetAllPods().Return(tt.fields.getPodMetas).Times(1)
+				statesInformer.EXPECT().GetNodeSLO().Return(tt.fields.nodeSLO).Times(1)
 			}
 			c := &kidledcoldPageCollector{
 				collectInterval: 1 * time.Second,
@@ -523,7 +542,7 @@ func Test_collectNodeColdPageInfo(t *testing.T) {
 }
 
 func Test_collectPodColdPageInfo(t *testing.T) {
-	testNow := time.Now()
+	testNow := time.Now() /**/
 	testContainerID := "containerd://123abc"
 	testPodMetaDir := "kubepods.slice/kubepods-podxxxxxxxx.slice"
 	testPodParentDir := "/kubepods.slice/kubepods-podxxxxxxxx.slice"
@@ -767,4 +786,159 @@ func testQuery(querier metriccache.Querier, resource metriccache.MetricResource,
 		return nil, err
 	}
 	return aggregateResult, nil
+}
+
+func Test_kidledcoldPageCollector_collectHostAppsColdPageInfo(t *testing.T) {
+	testNow := time.Now()
+	timeNow = func() time.Time {
+		return testNow
+	}
+	testParentDir := "kubepods.slice/kubepods-besteffort.slice/test-host-app"
+	testMemoryIdlePageStatsContent := `# version: 1.0
+	# page_scans: 24
+	# slab_scans: 0
+	# scan_period_in_seconds: 120
+	# use_hierarchy: 1
+	# buckets: 1,2,5,15,30,60,120,240
+	#
+	#   _-----=> clean/dirty
+	#  / _----=> swap/file
+	# | / _---=> evict/unevict
+	# || / _--=> inactive/active
+	# ||| / _-=> slab
+	# |||| /
+	# |||||             [1,2)          [2,5)         [5,15)        [15,30)        [30,60)       [60,120)      [120,240)     [240,+inf)
+	  csei            2613248        4657152       18182144      293683200              0              0              0              0
+	  dsei            2568192        5140480       15306752       48648192              0              0              0              0
+	  cfei            2633728        4640768       66531328      340172800              0              0              0              0
+	  dfei                  0              0           4096              0              0              0              0              0
+	  csui                  0              0              0              0              0              0              0              0
+	  dsui                  0              0              0              0              0              0              0              0
+	  cfui                  0              0              0              0              0              0              0              0
+	  dfui                  0              0              0              0              0              0              0              0
+	  csea             765952        1044480        3784704       52834304              0              0              0              0
+	  dsea             286720         270336        1564672        5390336              0              0              0              0
+	  cfea            9273344       16609280      152109056      315121664              0              0              0              0
+	  dfea                  0              0              0              0              0              0              0              0
+	  csua                  0              0              0              0              0              0              0              0
+	  dsua                  0              0              0              0              0              0              0              0
+	  cfua                  0              0              0              0              0              0              0              0
+	  dfua                  0              0              0              0              0              0              0              0
+	  slab                  0              0              0              0              0              0              0              0`
+	testMemStat := `
+	total_cache 104857600
+	total_rss 104857600
+	total_inactive_anon 104857600
+	total_active_anon 340172800
+	total_inactive_file 104857600
+	total_active_file 0
+	total_unevictable 0
+	`
+	type fields struct {
+		getNodeSLO *slov1alpha1.NodeSLO
+		SetSysUtil func(helper *system.FileTestUtil)
+	}
+	type wantMetric struct {
+		coldPageSize    float64
+		memWithHotCache float64
+	}
+	type wants struct {
+		hostMetric map[string]wantMetric
+	}
+	tests := []struct {
+		name    string
+		fields  fields
+		wants   wants
+		wantErr bool
+	}{
+		{
+			name:    "return error for nil node slo",
+			fields:  fields{},
+			wants:   wants{},
+			wantErr: true,
+		},
+		{
+			name: "get host app cold page metric",
+			fields: fields{
+				getNodeSLO: &slov1alpha1.NodeSLO{
+					Spec: slov1alpha1.NodeSLOSpec{
+						HostApplications: []slov1alpha1.HostApplicationSpec{
+							{
+								Name: "test-host-app",
+								CgroupPath: &slov1alpha1.CgroupPath{
+									Base:         slov1alpha1.CgroupBaseTypeKubeBesteffort,
+									RelativePath: "test-host-app/",
+								},
+							},
+						},
+					},
+				},
+				SetSysUtil: func(helper *system.FileTestUtil) {
+					helper.WriteFileContents(system.KidledScanPeriodInSeconds.Path(""), `120`)
+					helper.WriteFileContents(system.KidledUseHierarchy.Path(""), `1`)
+					helper.SetResourcesSupported(true, system.MemoryIdlePageStats)
+					helper.WriteCgroupFileContents(testParentDir, system.MemoryStat, testMemStat)
+					helper.WriteCgroupFileContents(testParentDir, system.MemoryIdlePageStats, testMemoryIdlePageStatsContent)
+				},
+			},
+			wants: wants{
+				hostMetric: map[string]wantMetric{
+					"test-host-app": {
+						coldPageSize:    340172800,
+						memWithHotCache: 209715200,
+					},
+				},
+			},
+			wantErr: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			helper := system.NewFileTestUtil(t)
+			defer helper.Cleanup()
+			if tt.fields.SetSysUtil != nil {
+				tt.fields.SetSysUtil(helper)
+			}
+
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+
+			metricCache, err := metriccache.NewMetricCache(&metriccache.Config{
+				TSDBPath:              t.TempDir(),
+				TSDBEnablePromMetrics: false,
+			})
+			assert.NoError(t, err)
+			defer func() {
+				metricCache.Close()
+			}()
+			statesInformer := mock_statesinformer.NewMockStatesInformer(ctrl)
+			statesInformer.EXPECT().HasSynced().Return(true).AnyTimes()
+			statesInformer.EXPECT().GetNodeSLO().Return(tt.fields.getNodeSLO).Times(1)
+
+			k := &kidledcoldPageCollector{
+				collectInterval: 1 * time.Second,
+				cgroupReader:    resourceexecutor.NewCgroupReader(),
+				statesInformer:  statesInformer,
+				appendableDB:    metricCache,
+				metricDB:        metricCache,
+			}
+			got, err := k.collectHostAppsColdPageInfo()
+			assert.Equal(t, tt.wantErr, err != nil)
+
+			if err != nil {
+				assert.Nil(t, got)
+			} else {
+				assert.Equal(t, len(tt.wants.hostMetric)*2, len(got))
+				wantMetrics := make([]metriccache.MetricSample, 0, len(got))
+				for appName, wantHostMetric := range tt.wants.hostMetric {
+					wantColdPageSize, _ := metriccache.HostAppMemoryColdPageSizeMetric.GenerateSample(
+						metriccache.MetricPropertiesFunc.HostApplication(appName), testNow, wantHostMetric.coldPageSize)
+					wantMemoryWithHostPage, _ := metriccache.HostAppMemoryWithHotPageUsageMetric.GenerateSample(
+						metriccache.MetricPropertiesFunc.HostApplication(appName), testNow, wantHostMetric.memWithHotCache)
+					wantMetrics = append(wantMetrics, wantColdPageSize, wantMemoryWithHostPage)
+				}
+				assert.Equal(t, wantMetrics, got)
+			}
+		})
+	}
 }

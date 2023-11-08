@@ -49,10 +49,6 @@ const (
 	// NodeBE
 	NodeMetricBE MetricKind = "node_be"
 
-	PriorityMetricCPUUsage     MetricKind = "priority_cpu_usage"
-	PriorityMetricCPURealLimit MetricKind = "priority_cpu_real_limit"
-	PriorityMetricCPURequest   MetricKind = "priority_cpu_request"
-
 	PodMetricCPUUsage           MetricKind = "pod_cpu_usage"
 	PodMetricMemoryUsage        MetricKind = "pod_memory_usage"
 	PodMemoryWithPageCacheUsage MetricKind = "pod_memory_usage_with_page_cache"
@@ -70,6 +66,10 @@ const (
 	PodMetricCPUThrottled       MetricKind = "pod_cpu_throttled"
 	ContainerMetricCPUThrottled MetricKind = "container_cpu_throttled"
 
+	HostAppCPUUsage                 MetricKind = "host_application_cpu_usage"
+	HostAppMemoryUsage              MetricKind = "host_application_memory_usage"
+	HostAppMemoryWithPageCacheUsage MetricKind = "host_application_memory_usage_with_page_cache"
+
 	// CPI
 	ContainerMetricCPI MetricKind = "container_cpi"
 
@@ -83,7 +83,9 @@ const (
 	NodeMemoryWithHotPageUsage      MetricKind = "node_memory_with_hot_page_usage"
 	PodMemoryWithHotPageUsage       MetricKind = "pod_memory_with_hot_page_usage"
 	ContainerMemoryWithHotPageUsage MetricKind = "container_memory_with_hot_page_usage"
+	HostAppMemoryWithHotPageUsage   MetricKind = "host_application_memory_with_hot_page_usage"
 	NodeMemoryColdPageSize          MetricKind = "node_memory_cold_page_size"
+	HostAppMemoryColdPageSize       MetricKind = "host_application_memory_cold_page_size"
 	PodMemoryColdPageSize           MetricKind = "pod_memory_cold_page_size"
 	ContainerMemoryColdPageSize     MetricKind = "container_memory_cold_page_size"
 )
@@ -106,6 +108,8 @@ const (
 
 	MetricPropertyBEResource   MetricProperty = "be_resource"
 	MetricPropertyBEAllocation MetricProperty = "be_allocation"
+
+	MetricPropertyHostAppName MetricProperty = "host_app_name"
 )
 
 // MetricPropertyValue is the property value
@@ -124,10 +128,10 @@ const (
 	PSIDegreeFull   MetricPropertyValue = "full"
 	PSIDegreeSome   MetricPropertyValue = "some"
 
-	BEResourceCPU                MetricPropertyValue = "cpu"
-	BEResouceAllocationUsage     MetricPropertyValue = "usage"
-	BEResouceAllocationRealLimit MetricPropertyValue = "real-limit"
-	BEResouceAllocationRequest   MetricPropertyValue = "request"
+	BEResourceCPU                 MetricPropertyValue = "cpu"
+	BEResourceAllocationUsage     MetricPropertyValue = "usage"
+	BEResourceAllocationRealLimit MetricPropertyValue = "real-limit"
+	BEResourceAllocationRequest   MetricPropertyValue = "request"
 )
 
 // MetricPropertiesFunc is a collection of functions generating metric property k-v, for metric sample generation and query
@@ -142,6 +146,7 @@ var MetricPropertiesFunc = struct {
 	PodGPU              func(string, string, string) map[MetricProperty]string
 	ContainerGPU        func(string, string, string) map[MetricProperty]string
 	NodeBE              func(string, string) map[MetricProperty]string
+	HostApplication     func(string) map[MetricProperty]string
 }{
 	Pod: func(podUID string) map[MetricProperty]string {
 		return map[MetricProperty]string{MetricPropertyPodUID: podUID}
@@ -172,6 +177,9 @@ var MetricPropertiesFunc = struct {
 	},
 	NodeBE: func(beResource, beResourceAllocation string) map[MetricProperty]string {
 		return map[MetricProperty]string{MetricPropertyBEResource: beResource, MetricPropertyBEAllocation: beResourceAllocation}
+	},
+	HostApplication: func(appName string) map[MetricProperty]string {
+		return map[MetricProperty]string{MetricPropertyHostAppName: appName}
 	},
 }
 

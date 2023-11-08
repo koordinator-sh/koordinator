@@ -81,6 +81,10 @@ type LatestMetric struct {
 	podMutex              sync.RWMutex
 	podsCPUByCollector    map[string]metriccache.Point
 	podsMemoryByCollector map[string]metriccache.Point
+
+	hostAppMutex  sync.RWMutex
+	hostAppCPU    *metriccache.Point
+	hostAppMemory *metriccache.Point
 }
 
 func (r *SharedState) UpdateNodeUsage(cpu, memory metriccache.Point) {
@@ -97,10 +101,23 @@ func (r *SharedState) UpdatePodUsage(collectorName string, cpu, memory metriccac
 	r.podsMemoryByCollector[collectorName] = memory
 }
 
+func (r *SharedState) UpdateHostAppUsage(cpu, memory metriccache.Point) {
+	r.hostAppMutex.Lock()
+	defer r.hostAppMutex.Unlock()
+	r.hostAppCPU = &cpu
+	r.hostAppMemory = &memory
+}
+
 func (r *SharedState) GetNodeUsage() (cpu, memory *metriccache.Point) {
 	r.nodeMutex.RLock()
 	defer r.nodeMutex.RUnlock()
 	return r.nodeCPU, r.nodeMemory
+}
+
+func (r *SharedState) GetHostAppUsage() (cpu, memory *metriccache.Point) {
+	r.hostAppMutex.RLock()
+	defer r.hostAppMutex.RUnlock()
+	return r.hostAppCPU, r.hostAppMemory
 }
 
 func (r *SharedState) GetPodsUsageByCollector() (cpu, memory map[string]metriccache.Point) {

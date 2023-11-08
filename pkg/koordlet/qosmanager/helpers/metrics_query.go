@@ -22,6 +22,7 @@ import (
 
 	"k8s.io/klog/v2"
 
+	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 )
@@ -50,6 +51,45 @@ func CollectNodeMetrics(metricCache metriccache.MetricCache, start, end time.Tim
 		return nil, err
 	}
 	return aggregateResult, nil
+}
+
+func CollectAllHostAppMetricsLast(hostApps []slov1alpha1.HostApplicationSpec, metricCache metriccache.MetricCache,
+	metricResource metriccache.MetricResource, metricCollectInterval time.Duration) map[string]float64 {
+	queryParam := GenerateQueryParamsLast(metricCollectInterval * 2)
+	return CollectAllHostAppMetrics(hostApps, metricCache, *queryParam, metricResource)
+}
+
+func CollectAllHostAppMetrics(hostApps []slov1alpha1.HostApplicationSpec, metricCache metriccache.MetricCache,
+	queryParam metriccache.QueryParam, metricResource metriccache.MetricResource) map[string]float64 {
+	appsMetrics := make(map[string]float64)
+	querier, err := metricCache.Querier(*queryParam.Start, *queryParam.End)
+	if err != nil {
+		klog.Warningf("build host application querier failed, error: %v", err)
+		return appsMetrics
+	}
+	for _, hostApp := range hostApps {
+		queryMeta, err := metricResource.BuildQueryMeta(metriccache.MetricPropertiesFunc.HostApplication(hostApp.Name))
+		if err != nil || queryMeta == nil {
+			klog.Warningf("build host application %s query meta failed, kind: %s, error: %v", hostApp.Name, queryMeta, err)
+			continue
+		}
+		aggregateResult := metriccache.DefaultAggregateResultFactory.New(queryMeta)
+		if err := querier.Query(queryMeta, nil, aggregateResult); err != nil {
+			klog.Warningf("query host application %s metric failed, kind: %s, error: %v", hostApp.Name, queryMeta.GetKind(), err)
+			continue
+		}
+		if aggregateResult.Count() == 0 {
+			klog.V(5).Infof("query host application %s metric is empty, kind: %s", hostApp.Name, queryMeta.GetKind())
+			continue
+		}
+		value, err := aggregateResult.Value(queryParam.Aggregate)
+		if err != nil {
+			klog.Warningf("aggregate host application %s metric failed, kind: %s, error: %v", hostApp.Name, queryMeta.GetKind(), err)
+			continue
+		}
+		appsMetrics[hostApp.Name] = value
+	}
+	return appsMetrics
 }
 
 func CollectAllPodMetricsLast(statesInformer statesinformer.StatesInformer, metricCache metriccache.MetricCache,
@@ -83,7 +123,6 @@ func CollectAllPodMetrics(statesInformer statesinformer.StatesInformer, metricCa
 			continue
 		}
 		podsMetrics[string(podMeta.Pod.UID)] = value
-
 	}
 	return podsMetrics
 }

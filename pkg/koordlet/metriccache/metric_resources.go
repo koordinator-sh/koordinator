@@ -50,8 +50,10 @@ var (
 	NodeMemoryWithHotPageUsageMetric      = defaultMetricFactory.New(NodeMemoryWithHotPageUsage)
 	PodMemoryWithHotPageUsageMetric       = defaultMetricFactory.New(PodMemoryWithHotPageUsage).withPropertySchema(MetricPropertyPodUID)
 	ContainerMemoryWithHotPageUsageMetric = defaultMetricFactory.New(ContainerMemoryWithHotPageUsage).withPropertySchema(MetricPropertyContainerID)
+	HostAppMemoryWithHotPageUsageMetric   = defaultMetricFactory.New(HostAppMemoryWithHotPageUsage).withPropertySchema(MetricPropertyHostAppName)
 	NodeMemoryColdPageSizeMetric          = defaultMetricFactory.New(NodeMemoryColdPageSize)
 	PodMemoryColdPageSizeMetric           = defaultMetricFactory.New(PodMemoryColdPageSize).withPropertySchema(MetricPropertyPodUID)
+	HostAppMemoryColdPageSizeMetric       = defaultMetricFactory.New(HostAppMemoryColdPageSize).withPropertySchema(MetricPropertyHostAppName)
 	ContainerMemoryColdPageSizeMetric     = defaultMetricFactory.New(ContainerMemoryColdPageSize).withPropertySchema(MetricPropertyContainerID)
 
 	// CPI
@@ -65,4 +67,9 @@ var (
 
 	// BE
 	NodeBEMetric = defaultMetricFactory.New(NodeMetricBE).withPropertySchema(MetricPropertyBEResource, MetricPropertyBEAllocation)
+
+	// Host Application
+	HostAppCPUUsageMetric                 = defaultMetricFactory.New(HostAppCPUUsage).withPropertySchema(MetricPropertyHostAppName)
+	HostAppMemoryUsageMetric              = defaultMetricFactory.New(HostAppMemoryUsage).withPropertySchema(MetricPropertyHostAppName)
+	HostAppMemoryUsageWithPageCacheMetric = defaultMetricFactory.New(HostAppMemoryWithPageCacheUsage).withPropertySchema(MetricPropertyHostAppName)
 )
