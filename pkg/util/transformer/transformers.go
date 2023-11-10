@@ -45,5 +45,9 @@ func SetupTransformers(informerFactory informers.SharedInformerFactory, koordInf
 		if err := informer.Informer().SetTransform(transformFn); err != nil {
 			klog.Fatalf("Failed to SetTransform in informer, resource: %v, err: %v", resource, err)
 		}
+		// clean up partial metadata
+		if err := informer.Informer().SetTransform(PartialMetadataRemoveTransform); err != nil {
+			klog.Fatalf("Failed to PartialMetadataRemoveTransform in informer, resource: %v, err: %v", resource, err)
+		}
 	}
 }
