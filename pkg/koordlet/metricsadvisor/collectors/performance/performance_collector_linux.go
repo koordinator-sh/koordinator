@@ -80,6 +80,7 @@ func (p *performanceCollector) Setup(s *framework.Context) {}
 func (p *performanceCollector) Run(stopCh <-chan struct{}) {
 	if !cache.WaitForCacheSync(stopCh, p.statesInformer.HasSynced) {
 		// Koordlet exit because of statesInformer sync failed.
+		metrics.RecordModuleHealthyStatus(metrics.ModuleMetricsAdvisor, CollectorName, false)
 		klog.Fatalf("timed out waiting for states informer caches to sync")
 	}
 	if features.DefaultKoordletFeatureGate.Enabled(features.PSICollector) {
@@ -134,11 +135,13 @@ func (p *performanceCollector) collectContainerCPI() {
 	wg.Add(len(containerStatusesMap))
 	nodeCPUInfoRaw, exist := p.metricCache.Get(metriccache.NodeCPUInfoKey)
 	if !exist {
+		metrics.RecordModuleHealthyStatus(metrics.ModuleMetricsAdvisor, CollectorName+"_cpi", false)
 		klog.Error("failed to get node cpu info : not exist")
 		return
 	}
 	nodeCPUInfo, ok := nodeCPUInfoRaw.(*metriccache.NodeCPUInfo)
 	if !ok {
+		metrics.RecordModuleHealthyStatus(metrics.ModuleMetricsAdvisor, CollectorName+"_cpi", false)
 		klog.Fatalf("type error, expect %T, but got %T", metriccache.NodeCPUInfo{}, nodeCPUInfoRaw)
 	}
 	cpuNumber := nodeCPUInfo.TotalInfo.NumberCPUs
@@ -182,6 +185,7 @@ func (p *performanceCollector) collectContainerCPI() {
 	p.saveMetric(cpiMetrics)
 
 	p.started.Store(true)
+	metrics.RecordModuleHealthyStatus(metrics.ModuleMetricsAdvisor, CollectorName+"_cpi", true)
 	klog.V(5).Infof("collectContainerCPI for time window %s finished at %s, container num %d",
 		timeWindow, time.Now(), len(containerStatusesMap))
 }
@@ -403,6 +407,7 @@ func (p *performanceCollector) collectPSI(stopCh <-chan struct{}) {
 	go wait.Until(func() {
 		p.collectContainerPSI()
 		p.collectPodPSI()
+		metrics.RecordModuleHealthyStatus(metrics.ModuleMetricsAdvisor, CollectorName+"_psi", true)
 	}, p.psiCollectInterval, stopCh)
 }
 

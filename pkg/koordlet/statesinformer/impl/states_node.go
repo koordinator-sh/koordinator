@@ -22,9 +22,8 @@ import (
 	"sync"
 	"time"
 
-	"k8s.io/apimachinery/pkg/api/resource"
-
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	apiruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/watch"
@@ -167,6 +166,7 @@ func (s *nodeInformer) syncNode(newNode *corev1.Node) {
 
 	// also register node for metrics
 	recordNodeResourceMetrics(newNode)
+	metrics.RecordModuleHealthyStatus(metrics.ModuleStatesInformer, string(nodeInformerName), true)
 }
 
 func isNodeMetadataUpdated(oldNode, newNode *corev1.Node) bool {

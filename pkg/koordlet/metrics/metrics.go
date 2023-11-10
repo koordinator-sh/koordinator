@@ -58,6 +58,17 @@ const (
 
 	ResourceKey = "resource"
 
+	ModuleKey            = "module"
+	ModulePluginKey      = "module_plugin"
+	ModuleMetricsAdvisor = "metrics_advisor"
+	ModuleStatesInformer = "states_informer"
+	ModuleQoSManager     = "qos_manager"
+
+	PromScraperKey = "prom_scraper"
+
+	HttpURLKey          = "url"
+	HttpResponseCodeKey = "response_code"
+
 	UnitKey     = "unit"
 	UnitCore    = "core"
 	UnitByte    = "byte"

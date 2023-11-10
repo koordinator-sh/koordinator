@@ -35,6 +35,7 @@ func Test_NewDefaultConfig(t *testing.T) {
 		CPICollectorTimeWindow:           10 * time.Second,
 		ColdPageCollectorInterval:        5 * time.Second,
 		EnablePageCacheCollector:         false,
+		CollectPromMetricRulePath:        "",
 	}
 	defaultConfig := NewDefaultConfig()
 	assert.Equal(t, expectConfig, defaultConfig)
@@ -51,6 +52,7 @@ func Test_InitFlags(t *testing.T) {
 		"--psi-collector-interval=5s",
 		"--collect-cpi-timewindow=15s",
 		"--coldpage-collector-interval=15s",
+		"--collect-prom-metric-rule-path=/prom_rules.yaml",
 	}
 	fs := flag.NewFlagSet(cmdArgs[0], flag.ExitOnError)
 
@@ -63,6 +65,8 @@ func Test_InitFlags(t *testing.T) {
 		PSICollectorInterval             time.Duration
 		CPICollectorTimeWindow           time.Duration
 		ColdPageCollectorInterval        time.Duration
+		CollectPromMetricInterval        time.Duration
+		CollectPromMetricRulePath        string
 	}
 	type args struct {
 		fs *flag.FlagSet
@@ -83,6 +87,8 @@ func Test_InitFlags(t *testing.T) {
 				PSICollectorInterval:             5 * time.Second,
 				CPICollectorTimeWindow:           15 * time.Second,
 				ColdPageCollectorInterval:        15 * time.Second,
+				CollectPromMetricInterval:        30 * time.Second,
+				CollectPromMetricRulePath:        "/prom_rules.yaml",
 			},
 			args: args{fs: fs},
 		},
@@ -98,12 +104,78 @@ func Test_InitFlags(t *testing.T) {
 				PSICollectorInterval:             tt.fields.PSICollectorInterval,
 				CPICollectorTimeWindow:           tt.fields.CPICollectorTimeWindow,
 				ColdPageCollectorInterval:        tt.fields.ColdPageCollectorInterval,
+				CollectPromMetricRulePath:        tt.fields.CollectPromMetricRulePath,
 			}
 			c := NewDefaultConfig()
 			c.InitFlags(tt.args.fs)
 			err := tt.args.fs.Parse(cmdArgs[1:])
 			assert.NoError(t, err)
 			assert.Equal(t, raw, c)
+		})
+	}
+}
+
+func TestRegisterExtendedInitFlags(t *testing.T) {
+	testFlagBool := false
+	testFlagInt := 0
+	testFlagString := ""
+	type fields struct {
+		cmdArgs []string
+	}
+	tests := []struct {
+		name      string
+		fields    fields
+		arg       func(fs *flag.FlagSet)
+		wantField func(*testing.T)
+	}{
+		{
+			name: "nop",
+			fields: fields{
+				cmdArgs: []string{
+					"",
+					"--collect-res-used-interval=3s",
+					"--collect-sys-metric-outdated-interval=9s",
+					"--collect-node-cpu-info-interval=90s",
+				},
+			},
+			arg:       func(fs *flag.FlagSet) {},
+			wantField: func(t *testing.T) {},
+		},
+		{
+			name: "add some flags",
+			fields: fields{
+				cmdArgs: []string{
+					"",
+					"--collect-res-used-interval=3s",
+					"--collect-sys-metric-outdated-interval=9s",
+					"--collect-node-cpu-info-interval=90s",
+					"--test-flag-bool=true",
+					"--test-flag-int=10",
+					"--test-flag-string=xxx",
+				},
+			},
+			arg: func(fs *flag.FlagSet) {
+				fs.BoolVar(&testFlagBool, "test-flag-bool", testFlagBool, "test-flag-bool")
+				fs.IntVar(&testFlagInt, "test-flag-int", testFlagInt, "test-flag-int")
+				fs.StringVar(&testFlagString, "test-flag-string", testFlagString, "test-flag-string")
+			},
+			wantField: func(t *testing.T) {
+				assert.Equal(t, true, testFlagBool)
+				assert.Equal(t, 10, testFlagInt)
+				assert.Equal(t, "xxx", testFlagString)
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fs := flag.NewFlagSet(tt.fields.cmdArgs[0], flag.ExitOnError)
+
+			RegisterExtendedInitFlags(tt.arg)
+			c := NewDefaultConfig()
+			c.InitFlags(fs)
+			err := fs.Parse(tt.fields.cmdArgs[1:])
+			assert.NoError(t, err)
+			tt.wantField(t)
 		})
 	}
 }

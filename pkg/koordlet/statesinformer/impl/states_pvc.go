@@ -30,6 +30,7 @@ import (
 	"k8s.io/klog/v2"
 
 	"github.com/koordinator-sh/koordinator/pkg/features"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
@@ -64,6 +65,7 @@ func (s *pvcInformer) Setup(ctx *PluginOption, state *PluginState) {
 			pvc, ok := obj.(*corev1.PersistentVolumeClaim)
 			if ok {
 				s.updateVolumeNameMap(pvc)
+				metrics.RecordModuleHealthyStatus(metrics.ModuleStatesInformer, string(pvcInformerName), true)
 				klog.Infof("add PVC %s", util.GetNamespacedName(pvc.Namespace, pvc.Name))
 			} else {
 				klog.Errorf("pvc informer add func parse PVC failed")
@@ -73,6 +75,7 @@ func (s *pvcInformer) Setup(ctx *PluginOption, state *PluginState) {
 			pvc, ok := newObj.(*corev1.PersistentVolumeClaim)
 			if ok {
 				s.updateVolumeNameMap(pvc)
+				metrics.RecordModuleHealthyStatus(metrics.ModuleStatesInformer, string(pvcInformerName), true)
 				klog.Infof("update PVC %s", util.GetNamespacedName(pvc.Namespace, pvc.Name))
 			} else {
 				klog.Errorf("pvc informer update func parse PVC failed")

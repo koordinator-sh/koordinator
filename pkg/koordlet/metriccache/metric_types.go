@@ -110,6 +110,8 @@ const (
 	MetricPropertyBEAllocation MetricProperty = "be_allocation"
 
 	MetricPropertyHostAppName MetricProperty = "host_app_name"
+
+	MetricPropertyQoS MetricProperty = "qos"
 )
 
 // MetricPropertyValue is the property value
@@ -147,6 +149,7 @@ var MetricPropertiesFunc = struct {
 	ContainerGPU        func(string, string, string) map[MetricProperty]string
 	NodeBE              func(string, string) map[MetricProperty]string
 	HostApplication     func(string) map[MetricProperty]string
+	QoS                 func(string) map[MetricProperty]string // koordinator QoS
 }{
 	Pod: func(podUID string) map[MetricProperty]string {
 		return map[MetricProperty]string{MetricPropertyPodUID: podUID}
@@ -180,6 +183,9 @@ var MetricPropertiesFunc = struct {
 	},
 	HostApplication: func(appName string) map[MetricProperty]string {
 		return map[MetricProperty]string{MetricPropertyHostAppName: appName}
+	},
+	QoS: func(qos string) map[MetricProperty]string {
+		return map[MetricProperty]string{MetricPropertyQoS: qos}
 	},
 }
 

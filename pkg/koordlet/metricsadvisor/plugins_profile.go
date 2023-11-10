@@ -27,6 +27,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor/collectors/performance"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor/collectors/podresource"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor/collectors/podthrottled"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor/collectors/prom"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor/collectors/sysresource"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor/devices/gpu"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor/framework"
@@ -51,6 +52,7 @@ var (
 		coldmemoryresource.CollectorName: coldmemoryresource.New,
 		pagecache.CollectorName:          pagecache.New,
 		hostapplication.CollectorName:    hostapplication.New,
+		prom.CollectorName:               prom.New,
 	}
 
 	podFilters = map[string]framework.PodFilter{

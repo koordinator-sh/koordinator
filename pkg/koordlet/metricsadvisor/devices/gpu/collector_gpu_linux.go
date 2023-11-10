@@ -30,6 +30,7 @@ import (
 
 	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util"
 )
 
@@ -347,6 +348,7 @@ func (g *gpuDeviceManager) collectGPUUsage() {
 	g.collectTime = time.Now()
 	g.start.Store(true)
 	g.Unlock()
+	metrics.RecordModuleHealthyStatus(metrics.ModuleMetricsAdvisor, DeviceCollectorName, true)
 }
 
 func (g *gpuDeviceManager) started() bool {

@@ -123,6 +123,9 @@ func TestCommonCollectors(t *testing.T) {
 			FullSupported: true,
 		},
 	}
+	testModule := "test_module"
+	testPlugin := "test_plugin"
+	testScraper := "test_job"
 
 	t.Run("test not panic", func(t *testing.T) {
 		Register(testingNode)
@@ -147,6 +150,14 @@ func TestCommonCollectors(t *testing.T) {
 		RecordContainerPSI(testingContainer, testingPod, testingPSI)
 		ResetPodPSI()
 		RecordPodPSI(testingPod, testingPSI)
+		RecordReportNodeMetricStatus(testingErr)
+		RecordReportNodeMetricStatus(nil)
+		RecordModuleHealthyStatus(testModule, testPlugin, false)
+		RecordModuleHealthyStatus(testModule, testPlugin, true)
+		RecordCollectPromMetricsStatus(testScraper, false)
+		RecordCollectPromMetricsStatus(testScraper, true)
+		RecordHttpClientQueryStatus("127.0.0.1:9316/metrics", 200)
+		RecordHttpClientQueryLatency("127.0.0.1:9316/metrics", 10)
 	})
 }
 

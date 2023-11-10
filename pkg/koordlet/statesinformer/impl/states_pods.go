@@ -90,6 +90,7 @@ func (s *podsInformer) Setup(ctx *PluginOption, states *PluginState) {
 func (s *podsInformer) Start(stopCh <-chan struct{}) {
 	klog.V(2).Infof("starting pod informer")
 	if !cache.WaitForCacheSync(stopCh, s.nodeInformer.HasSynced) {
+		metrics.RecordModuleHealthyStatus(metrics.ModuleStatesInformer, string(podsInformerName), false)
 		klog.Fatalf("timed out waiting for pod caches to sync")
 	}
 	if s.config.KubeletSyncInterval <= 0 {
@@ -97,6 +98,7 @@ func (s *podsInformer) Start(stopCh <-chan struct{}) {
 	}
 	stub, err := newKubeletStubFromConfig(s.nodeInformer.GetNode(), s.config)
 	if err != nil {
+		metrics.RecordModuleHealthyStatus(metrics.ModuleStatesInformer, string(podsInformerName), false)
 		klog.Fatalf("create kubelet stub, %v", err)
 	}
 	s.kubelet = stub
@@ -117,6 +119,7 @@ func (s *podsInformer) Start(stopCh <-chan struct{}) {
 	go s.syncKubeletLoop(s.config.KubeletSyncInterval, stopCh)
 	go func() {
 		if err := s.pleg.Run(stopCh); err != nil {
+			metrics.RecordModuleHealthyStatus(metrics.ModuleStatesInformer, string(podsInformerName), false)
 			klog.Fatalf("Unable to run the pleg: ", err)
 		}
 	}()
@@ -146,6 +149,7 @@ func (s *podsInformer) syncPods() error {
 
 	// when kubelet recovers from crash, podList may be empty.
 	if err != nil || len(podList.Items) == 0 {
+		metrics.RecordModuleHealthyStatus(metrics.ModuleStatesInformer, string(podsInformerName), false)
 		klog.Warningf("get pods from kubelet failed, err: %v", err)
 		return err
 	}
@@ -164,6 +168,7 @@ func (s *podsInformer) syncPods() error {
 	s.podMap = newPodMap
 	s.podHasSynced.Store(true)
 	s.podUpdatedTime = time.Now()
+	metrics.RecordModuleHealthyStatus(metrics.ModuleStatesInformer, string(podsInformerName), true)
 	klog.V(4).Infof("get pods success, len %d, time %s", len(s.podMap), s.podUpdatedTime.String())
 	s.callbackRunner.SendCallback(statesinformer.RegisterTypeAllPods)
 	return nil

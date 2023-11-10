@@ -19,7 +19,6 @@ package cpuburst
 import (
 	"encoding/json"
 	"fmt"
-
 	"math/rand"
 	"strconv"
 	"time"
@@ -211,6 +210,7 @@ func (b *cpuBurst) start() {
 	// sync config from node slo
 	nodeSLO := b.statesInformer.GetNodeSLO()
 	if nodeSLO == nil || nodeSLO.Spec.CPUBurstStrategy == nil {
+		metrics.RecordModuleHealthyStatus(metrics.ModuleQoSManager, CPUBurstName, false)
 		klog.Warningf("cpu burst strategy config is nil, %+v", nodeSLO)
 		return
 	}
@@ -252,6 +252,7 @@ func (b *cpuBurst) start() {
 		b.applyCFSQuotaBurst(cpuBurstCfg, podMeta, nodeState)
 	}
 	b.Recycle()
+	metrics.RecordModuleHealthyStatus(metrics.ModuleQoSManager, CPUBurstName, true)
 }
 
 // getNodeStateForBurst checks whether node share pool cpu usage beyonds the threshold

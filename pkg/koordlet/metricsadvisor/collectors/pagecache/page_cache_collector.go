@@ -26,6 +26,7 @@ import (
 	"k8s.io/klog/v2"
 
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor/framework"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
@@ -104,6 +105,7 @@ func (p *pageCacheCollector) collectNodePageCache() {
 	// NOTE: The collected memory usage is in kilobytes not bytes.
 	memInfo, err := koordletutil.GetMemInfo()
 	if err != nil {
+		metrics.RecordModuleHealthyStatus(metrics.ModuleMetricsAdvisor, CollectorName+"_node", false)
 		klog.Warningf("failed to collect page cache of node err: %s", err)
 		return
 	}
@@ -111,6 +113,7 @@ func (p *pageCacheCollector) collectNodePageCache() {
 	memUsageWithPageCacheValue := float64(memInfo.MemUsageWithPageCache())
 	memUsageWithPageCacheMetric, err := metriccache.NodeMemoryUsageWithPageCacheMetric.GenerateSample(nil, collectTime, memUsageWithPageCacheValue)
 	if err != nil {
+		metrics.RecordModuleHealthyStatus(metrics.ModuleMetricsAdvisor, CollectorName+"_node", false)
 		klog.Warningf("generate node memory with page cache metrics failed, err %v", err)
 		return
 	}
@@ -118,15 +121,18 @@ func (p *pageCacheCollector) collectNodePageCache() {
 
 	appender := p.appendableDB.Appender()
 	if err := appender.Append(nodeMetrics); err != nil {
+		metrics.RecordModuleHealthyStatus(metrics.ModuleMetricsAdvisor, CollectorName+"_node", false)
 		klog.ErrorS(err, "Append node metrics error")
 		return
 	}
 
 	if err := appender.Commit(); err != nil {
+		metrics.RecordModuleHealthyStatus(metrics.ModuleMetricsAdvisor, CollectorName+"_node", false)
 		klog.Warningf("Commit node metrics failed, reason: %v", err)
 		return
 	}
 
+	metrics.RecordModuleHealthyStatus(metrics.ModuleMetricsAdvisor, CollectorName+"_node", true)
 	klog.V(4).Infof("collectNodePageCache finished, count %v, memUsageWithPageCache[%v]",
 		len(nodeMetrics), memUsageWithPageCacheValue)
 }
@@ -135,7 +141,7 @@ func (p *pageCacheCollector) collectPodPageCache() {
 	klog.V(6).Info("start collect pods PageCache")
 	podMetas := p.statesInformer.GetAllPods()
 	count := 0
-	metrics := make([]metriccache.MetricSample, 0)
+	metricSamples := make([]metriccache.MetricSample, 0)
 	for _, meta := range podMetas {
 		pod := meta.Pod
 		uid := string(pod.UID) // types.UID
@@ -166,26 +172,29 @@ func (p *pageCacheCollector) collectPodPageCache() {
 			klog.V(4).Infof("failed to generate pod mem with page cache metrics for pod %s , err %v", podKey, err)
 			return
 		}
-		metrics = append(metrics, memUsageWithPageCacheMetric)
+		metricSamples = append(metricSamples, memUsageWithPageCacheMetric)
 
-		klog.V(6).Infof("collect pod %s, uid %s finished, metric %+v", podKey, pod.UID, metrics)
+		klog.V(6).Infof("collect pod %s, uid %s finished, metric %+v", podKey, pod.UID, metricSamples)
 
 		count++
 		containerMetrics := p.collectContainerPageCache(meta)
-		metrics = append(metrics, containerMetrics...)
+		metricSamples = append(metricSamples, containerMetrics...)
 	}
 
 	appender := p.appendableDB.Appender()
-	if err := appender.Append(metrics); err != nil {
+	if err := appender.Append(metricSamples); err != nil {
+		metrics.RecordModuleHealthyStatus(metrics.ModuleMetricsAdvisor, CollectorName+"_pod", false)
 		klog.Warningf("Append pod metrics error: %v", err)
 		return
 	}
 
 	if err := appender.Commit(); err != nil {
+		metrics.RecordModuleHealthyStatus(metrics.ModuleMetricsAdvisor, CollectorName+"_pod", false)
 		klog.Warningf("Commit pod metrics failed, error: %v", err)
 		return
 	}
 
+	metrics.RecordModuleHealthyStatus(metrics.ModuleMetricsAdvisor, CollectorName+"_pod", true)
 	klog.V(4).Infof("collectPodPageCache finished, pod num %d, collected %d", len(podMetas), count)
 }
 

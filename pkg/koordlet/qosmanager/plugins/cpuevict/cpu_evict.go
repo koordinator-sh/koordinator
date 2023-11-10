@@ -31,6 +31,7 @@ import (
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/qosmanager/framework"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/qosmanager/helpers"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
@@ -95,6 +96,7 @@ func (c *cpuEvictor) cpuEvict() {
 
 	nodeSLO := c.statesInformer.GetNodeSLO()
 	if disabled, err := features.IsFeatureDisabled(nodeSLO, features.BECPUEvict); err != nil {
+		metrics.RecordModuleHealthyStatus(metrics.ModuleQoSManager, CPUEvictName, false)
 		klog.Warningf("cpuEvict failed, cannot check the feature gate, err: %s", err)
 		return
 	} else if disabled {
@@ -115,12 +117,14 @@ func (c *cpuEvictor) cpuEvict() {
 
 	node := c.statesInformer.GetNode()
 	if node == nil {
+		metrics.RecordModuleHealthyStatus(metrics.ModuleQoSManager, CPUEvictName, false)
 		klog.Warningf("cpuEvict failed, got nil node")
 		return
 	}
 
 	cpuCapacity := node.Status.Capacity.Cpu().Value()
 	if cpuCapacity <= 0 {
+		metrics.RecordModuleHealthyStatus(metrics.ModuleQoSManager, CPUEvictName, false)
 		klog.Warningf("cpuEvict failed, node cpuCapacity not valid,value: %d", cpuCapacity)
 		return
 	}
@@ -285,6 +289,7 @@ func (c *cpuEvictor) evictByResourceSatisfaction(node *corev1.Node, thresholdCon
 		bePodInfos := c.getPodEvictInfoAndSort()
 		c.killAndEvictBEPodsRelease(node, bePodInfos, milliRelease)
 	}
+	metrics.RecordModuleHealthyStatus(metrics.ModuleQoSManager, CPUEvictName, true)
 }
 
 func (c *cpuEvictor) killAndEvictBEPodsRelease(node *corev1.Node, bePodInfos []*podEvictCPUInfo, cpuNeedMilliRelease int64) {

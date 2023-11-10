@@ -30,6 +30,7 @@ import (
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/audit"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/qosmanager/framework"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/qosmanager/helpers"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
@@ -100,6 +101,7 @@ func (m *cgroupResourcesReconcile) reconcile() {
 	nodeSLO := m.statesInformer.GetNodeSLO()
 	if nodeSLO == nil || nodeSLO.Spec.ResourceQOSStrategy == nil {
 		// do nothing if nodeSLO == nil || nodeSLO.Spec.ResourceQOSStrategy == nil
+		metrics.RecordModuleHealthyStatus(metrics.ModuleQoSManager, CgroupReconcileName, false)
 		klog.Warningf("nodeSLO or nodeSLO.Spec.ResourceQOSStrategy is nil %v", util.DumpJSON(nodeSLO))
 		return
 	}
@@ -117,11 +119,13 @@ func (m *cgroupResourcesReconcile) calculateAndUpdateResources(nodeSLO *slov1alp
 	//         decreases to avoid higher-level's over-commit.
 	// 2. update resources in level order
 	if m.statesInformer == nil {
+		metrics.RecordModuleHealthyStatus(metrics.ModuleQoSManager, CgroupReconcileName, false)
 		klog.Errorf("failed to calculate cgroup resources, err: statesInformer uninitialized")
 		return
 	}
 	node := m.statesInformer.GetNode()
 	if node == nil || node.Status.Allocatable == nil {
+		metrics.RecordModuleHealthyStatus(metrics.ModuleQoSManager, CgroupReconcileName, false)
 		klog.Errorf("failed to calculate resources, err: node is invalid: %v", util.DumpJSON(node))
 		return
 	}
@@ -135,6 +139,7 @@ func (m *cgroupResourcesReconcile) calculateAndUpdateResources(nodeSLO *slov1alp
 	// e.g. /kubepods.slice/memory.min, /kubepods.slice-podxxx/memory.min, /kubepods.slice-podxxx/docker-yyy/memory.min
 	leveledResources := [][]resourceexecutor.ResourceUpdater{qosResources, podResources, containerResources}
 	m.executor.LeveledUpdateBatch(leveledResources)
+	metrics.RecordModuleHealthyStatus(metrics.ModuleQoSManager, CgroupReconcileName, true)
 }
 
 // calculateResources calculates qos-level, pod-level and container-level resources with nodeCfg and podMetas

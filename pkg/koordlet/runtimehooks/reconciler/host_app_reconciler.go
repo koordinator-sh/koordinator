@@ -86,7 +86,7 @@ func (r *hostReconciler) Run(stopCh <-chan struct{}) error {
 }
 
 func (r *hostReconciler) reconcile(stopCh <-chan struct{}) {
-	timer := time.NewTicker(r.reconcileInterval)
+	timer := time.NewTimer(r.reconcileInterval)
 	defer timer.Stop()
 	for {
 		select {

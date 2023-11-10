@@ -69,6 +69,7 @@ func (n *nodeInfoCollector) collectNodeLocalStorageInfo() {
 	if err != nil {
 		klog.Warningf("failed to collect node local storage info, err: %s", err)
 		metrics.RecordCollectNodeLocalStorageInfoStatus(err)
+		metrics.RecordModuleHealthyStatus(metrics.ModuleMetricsAdvisor, CollectorName, false)
 		return
 	}
 
@@ -83,5 +84,6 @@ func (n *nodeInfoCollector) collectNodeLocalStorageInfo() {
 	klog.V(6).Infof("collect node local storage info finished, nodeCPUInfo %v", localStorageInfo)
 	n.storage.Set(metriccache.NodeLocalStorageInfoKey, nodeLocalStorageInfo)
 	n.started.Store(true)
+	metrics.RecordModuleHealthyStatus(metrics.ModuleMetricsAdvisor, CollectorName, true)
 	metrics.RecordCollectNodeLocalStorageInfoStatus(nil)
 }
