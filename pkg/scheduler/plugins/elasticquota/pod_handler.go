@@ -18,6 +18,7 @@ package elasticquota
 
 import (
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 )
 
@@ -98,8 +99,15 @@ func (g *Plugin) OnPodUpdate(oldObj, newObj interface{}) {
 }
 
 func (g *Plugin) OnPodDelete(obj interface{}) {
-	pod, ok := obj.(*corev1.Pod)
-	if !ok {
+	var pod *corev1.Pod
+	switch t := obj.(type) {
+	case *corev1.Pod:
+		pod = t
+	case cache.DeletedFinalStateUnknown:
+		pod, _ = t.Obj.(*corev1.Pod)
+	}
+	if pod == nil {
+		klog.V(4).InfoS("OnPodDeleteFunc, failed to parse object, obj: %T", obj)
 		return
 	}
 
