@@ -64,3 +64,8 @@ func TestTransformMetadata(t *testing.T) {
 		})
 	}
 }
+
+func TestTransformMetadataError(t *testing.T) {
+	_, err := PartialMetadataRemoveTransform(&metav1.TypeMeta{})
+	assert.Error(t, err)
+}
