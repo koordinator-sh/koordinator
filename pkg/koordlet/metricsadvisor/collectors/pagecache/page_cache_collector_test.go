@@ -20,11 +20,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/golang/mock/gomock"
 	gocache "github.com/patrickmn/go-cache"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/golang/mock/gomock"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor/framework"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
