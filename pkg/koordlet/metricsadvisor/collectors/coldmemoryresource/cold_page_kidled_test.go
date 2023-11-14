@@ -810,8 +810,8 @@ func Test_kidledcoldPageCollector_collectHostAppsColdPageInfo(t *testing.T) {
 	# |||||             [1,2)          [2,5)         [5,15)        [15,30)        [30,60)       [60,120)      [120,240)     [240,+inf)
 	  csei            2613248        4657152       18182144      293683200              0              0              0              0
 	  dsei            2568192        5140480       15306752       48648192              0              0              0              0
-	  cfei            2633728        4640768       66531328      340172800              0              0              0              0
-	  dfei                  0              0           4096              0              0              0              0              0
+	  cfei            2633728        4640768       66531328      340172800              0       52834304              0              0
+	  dfei                  0              0           4096              0              0       52834304              0              0
 	  csui                  0              0              0              0              0              0              0              0
 	  dsui                  0              0              0              0              0              0              0              0
 	  cfui                  0              0              0              0              0              0              0              0
@@ -884,8 +884,8 @@ func Test_kidledcoldPageCollector_collectHostAppsColdPageInfo(t *testing.T) {
 			wants: wants{
 				hostMetric: map[string]wantMetric{
 					"test-host-app": {
-						coldPageSize:    340172800,
-						memWithHotCache: 209715200,
+						coldPageSize:    1.05668608e+08,
+						memWithHotCache: 4.44219392e+08,
 					},
 				},
 			},
