@@ -82,7 +82,13 @@ func TestPodEventHandler(t *testing.T) {
 	apiext.SetReservationAllocated(newPod, reservation)
 	handler.OnUpdate(pod, newPod)
 	rInfo = handler.cache.getReservationInfoByUID(reservationUID)
+	assert.Len(t, rInfo.AssignedPods, 0)
+
+	newPod.Spec.NodeName = reservation.Status.NodeName
+	handler.OnUpdate(pod, newPod)
+	rInfo = handler.cache.getReservationInfoByUID(reservationUID)
 	assert.Len(t, rInfo.AssignedPods, 1)
+
 	expectPodRequirement := &frameworkext.PodRequirement{
 		Name:      pod.Name,
 		Namespace: pod.Namespace,
