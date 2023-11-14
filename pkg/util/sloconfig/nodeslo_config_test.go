@@ -39,6 +39,7 @@ func Test_DefaultNodeSLOSpecConfig(t *testing.T) {
 
 func Test_NoneResourceQOSStrategy(t *testing.T) {
 	expect := &slov1alpha1.ResourceQOSStrategy{
+		Policies:    NoneResourceQOSPolicies(),
 		LSRClass:    NoneResourceQOS(apiext.QoSLSR),
 		LSClass:     NoneResourceQOS(apiext.QoSLS),
 		BEClass:     NoneResourceQOS(apiext.QoSBE),

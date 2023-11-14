@@ -42,6 +42,11 @@ func registerPodEventHandler(cache *reservationCache, factory informers.SharedIn
 	frameworkexthelper.ForceSyncFromInformer(context.TODO().Done(), factory, informer, eventHandler)
 }
 
+// assignedPod selects pods that are assigned (scheduled and running).
+func assignedPod(pod *corev1.Pod) bool {
+	return len(pod.Spec.NodeName) != 0
+}
+
 func (h *podEventHandler) OnAdd(obj interface{}) {
 	pod, _ := obj.(*corev1.Pod)
 	if pod == nil {
@@ -80,6 +85,10 @@ func (h *podEventHandler) OnDelete(obj interface{}) {
 func (h *podEventHandler) updatePod(oldPod, newPod *corev1.Pod) {
 	if util.IsPodTerminated(newPod) {
 		h.deletePod(newPod)
+		return
+	}
+
+	if !assignedPod(newPod) {
 		return
 	}
 
