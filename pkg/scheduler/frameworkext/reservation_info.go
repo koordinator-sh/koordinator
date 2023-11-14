@@ -284,6 +284,12 @@ func (ri *ReservationInfo) UpdateReservation(r *schedulingv1alpha1.Reservation) 
 	ri.AllocatablePorts = util.RequestedHostPorts(ri.Pod)
 	ri.ResourceNames = quotav1.ResourceNames(ri.Allocatable)
 	ri.Allocated = quotav1.Mask(ri.Allocated, ri.ResourceNames)
+	ownerMatchers, err := reservationutil.ParseReservationOwnerMatchers(r.Spec.Owners)
+	if err != nil {
+		klog.ErrorS(err, "Failed to parse reservation owner matchers", "reservation", klog.KObj(r))
+	}
+	ri.OwnerMatchers = ownerMatchers
+	ri.ParseError = err
 }
 
 func (ri *ReservationInfo) UpdatePod(pod *corev1.Pod) {
@@ -292,6 +298,20 @@ func (ri *ReservationInfo) UpdatePod(pod *corev1.Pod) {
 	ri.AllocatablePorts = util.RequestedHostPorts(pod)
 	ri.ResourceNames = quotav1.ResourceNames(ri.Allocatable)
 	ri.Allocated = quotav1.Mask(ri.Allocated, ri.ResourceNames)
+
+	owners, err := apiext.GetReservationOwners(pod.Annotations)
+	if err != nil {
+		klog.ErrorS(err, "Invalid reservation owners annotation of Pod", "pod", klog.KObj(pod))
+	}
+	var ownerMatchers []reservationutil.ReservationOwnerMatcher
+	if owners != nil {
+		ownerMatchers, err = reservationutil.ParseReservationOwnerMatchers(owners)
+		if err != nil {
+			klog.ErrorS(err, "Failed to parse reservation owner matchers of pod", "pod", klog.KObj(pod))
+		}
+	}
+	ri.OwnerMatchers = ownerMatchers
+	ri.ParseError = err
 }
 
 func (ri *ReservationInfo) AddAssignedPod(pod *corev1.Pod) {
