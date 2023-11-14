@@ -99,6 +99,8 @@ func Test_bvtRule_getPodBvtValue(t *testing.T) {
 }
 
 func Test_bvtPlugin_parseRule(t *testing.T) {
+	policyGroupIdentity := slov1alpha1.CPUQOSPolicyGroupIdentity
+	policyCoreSched := slov1alpha1.CPUQOSPolicyCoreSched
 	type args struct {
 		rule          *bvtRule
 		mergedNodeSLO *slov1alpha1.NodeSLOSpec
@@ -115,6 +117,9 @@ func Test_bvtPlugin_parseRule(t *testing.T) {
 			args: args{
 				mergedNodeSLO: &slov1alpha1.NodeSLOSpec{
 					ResourceQOSStrategy: &slov1alpha1.ResourceQOSStrategy{
+						Policies: &slov1alpha1.ResourceQOSPolicies{
+							CPUPolicy: &policyGroupIdentity,
+						},
 						LSRClass: &slov1alpha1.ResourceQOS{
 							CPUQOS: &slov1alpha1.CPUQOSCfg{
 								Enable: pointer.Bool(true),
@@ -169,6 +174,9 @@ func Test_bvtPlugin_parseRule(t *testing.T) {
 			args: args{
 				mergedNodeSLO: &slov1alpha1.NodeSLOSpec{
 					ResourceQOSStrategy: &slov1alpha1.ResourceQOSStrategy{
+						Policies: &slov1alpha1.ResourceQOSPolicies{
+							CPUPolicy: &policyGroupIdentity,
+						},
 						LSRClass: &slov1alpha1.ResourceQOS{
 							CPUQOS: &slov1alpha1.CPUQOSCfg{
 								Enable: pointer.Bool(false),
@@ -223,6 +231,9 @@ func Test_bvtPlugin_parseRule(t *testing.T) {
 			args: args{
 				mergedNodeSLO: &slov1alpha1.NodeSLOSpec{
 					ResourceQOSStrategy: &slov1alpha1.ResourceQOSStrategy{
+						Policies: &slov1alpha1.ResourceQOSPolicies{
+							CPUPolicy: &policyGroupIdentity,
+						},
 						LSRClass: &slov1alpha1.ResourceQOS{
 							CPUQOS: &slov1alpha1.CPUQOSCfg{
 								Enable: pointer.Bool(false),
@@ -277,6 +288,9 @@ func Test_bvtPlugin_parseRule(t *testing.T) {
 			args: args{
 				mergedNodeSLO: &slov1alpha1.NodeSLOSpec{
 					ResourceQOSStrategy: &slov1alpha1.ResourceQOSStrategy{
+						Policies: &slov1alpha1.ResourceQOSPolicies{
+							CPUPolicy: &policyGroupIdentity,
+						},
 						LSRClass: &slov1alpha1.ResourceQOS{
 							CPUQOS: &slov1alpha1.CPUQOSCfg{
 								Enable: pointer.Bool(false),
@@ -350,6 +364,9 @@ func Test_bvtPlugin_parseRule(t *testing.T) {
 				},
 				mergedNodeSLO: &slov1alpha1.NodeSLOSpec{
 					ResourceQOSStrategy: &slov1alpha1.ResourceQOSStrategy{
+						Policies: &slov1alpha1.ResourceQOSPolicies{
+							CPUPolicy: &policyGroupIdentity,
+						},
 						LSRClass: &slov1alpha1.ResourceQOS{
 							CPUQOS: &slov1alpha1.CPUQOSCfg{
 								Enable: pointer.Bool(true),
@@ -397,6 +414,175 @@ func Test_bvtPlugin_parseRule(t *testing.T) {
 				},
 			},
 			want:    false,
+			wantErr: false,
+		},
+		{
+			name: "only enable cpu qos for BE",
+			args: args{
+				mergedNodeSLO: &slov1alpha1.NodeSLOSpec{
+					ResourceQOSStrategy: &slov1alpha1.ResourceQOSStrategy{
+						Policies: &slov1alpha1.ResourceQOSPolicies{
+							CPUPolicy: &policyGroupIdentity,
+						},
+						LSRClass: &slov1alpha1.ResourceQOS{
+							CPUQOS: &slov1alpha1.CPUQOSCfg{
+								Enable: pointer.Bool(false),
+								CPUQOS: slov1alpha1.CPUQOS{
+									GroupIdentity: pointer.Int64(2),
+								},
+							},
+						},
+						LSClass: &slov1alpha1.ResourceQOS{
+							CPUQOS: &slov1alpha1.CPUQOSCfg{
+								Enable: pointer.Bool(false),
+								CPUQOS: slov1alpha1.CPUQOS{
+									GroupIdentity: pointer.Int64(2),
+								},
+							},
+						},
+						BEClass: &slov1alpha1.ResourceQOS{
+							CPUQOS: &slov1alpha1.CPUQOSCfg{
+								Enable: pointer.Bool(true),
+								CPUQOS: slov1alpha1.CPUQOS{
+									GroupIdentity: pointer.Int64(-1),
+								},
+							},
+						},
+					},
+				},
+			},
+			wantRule: bvtRule{
+				enable: true,
+				podQOSParams: map[ext.QoSClass]int64{
+					ext.QoSLSE: 0,
+					ext.QoSLSR: 0,
+					ext.QoSLS:  0,
+					ext.QoSBE:  -1,
+				},
+				kubeQOSDirParams: map[corev1.PodQOSClass]int64{
+					corev1.PodQOSGuaranteed: 0,
+					corev1.PodQOSBurstable:  0,
+					corev1.PodQOSBestEffort: -1,
+				},
+				kubeQOSPodParams: map[corev1.PodQOSClass]int64{
+					corev1.PodQOSGuaranteed: 0,
+					corev1.PodQOSBurstable:  0,
+					corev1.PodQOSBestEffort: -1,
+				},
+			},
+			want:    true,
+			wantErr: false,
+		},
+		{
+			name: "parse default cpu qos policy",
+			args: args{
+				mergedNodeSLO: &slov1alpha1.NodeSLOSpec{
+					ResourceQOSStrategy: &slov1alpha1.ResourceQOSStrategy{
+						Policies: &slov1alpha1.ResourceQOSPolicies{},
+						LSRClass: &slov1alpha1.ResourceQOS{
+							CPUQOS: &slov1alpha1.CPUQOSCfg{
+								Enable: pointer.Bool(true),
+								CPUQOS: slov1alpha1.CPUQOS{
+									GroupIdentity: pointer.Int64(2),
+								},
+							},
+						},
+						LSClass: &slov1alpha1.ResourceQOS{
+							CPUQOS: &slov1alpha1.CPUQOSCfg{
+								Enable: pointer.Bool(true),
+								CPUQOS: slov1alpha1.CPUQOS{
+									GroupIdentity: pointer.Int64(2),
+								},
+							},
+						},
+						BEClass: &slov1alpha1.ResourceQOS{
+							CPUQOS: &slov1alpha1.CPUQOSCfg{
+								Enable: pointer.Bool(true),
+								CPUQOS: slov1alpha1.CPUQOS{
+									GroupIdentity: pointer.Int64(-1),
+								},
+							},
+						},
+					},
+				},
+			},
+			wantRule: bvtRule{
+				enable: true,
+				podQOSParams: map[ext.QoSClass]int64{
+					ext.QoSLSE: 2,
+					ext.QoSLSR: 2,
+					ext.QoSLS:  2,
+					ext.QoSBE:  -1,
+				},
+				kubeQOSDirParams: map[corev1.PodQOSClass]int64{
+					corev1.PodQOSGuaranteed: 0,
+					corev1.PodQOSBurstable:  2,
+					corev1.PodQOSBestEffort: -1,
+				},
+				kubeQOSPodParams: map[corev1.PodQOSClass]int64{
+					corev1.PodQOSGuaranteed: 2,
+					corev1.PodQOSBurstable:  2,
+					corev1.PodQOSBestEffort: -1,
+				},
+			},
+			want:    true,
+			wantErr: false,
+		},
+		{
+			name: "parse different cpu qos policy",
+			args: args{
+				mergedNodeSLO: &slov1alpha1.NodeSLOSpec{
+					ResourceQOSStrategy: &slov1alpha1.ResourceQOSStrategy{
+						Policies: &slov1alpha1.ResourceQOSPolicies{
+							CPUPolicy: &policyCoreSched,
+						},
+						LSRClass: &slov1alpha1.ResourceQOS{
+							CPUQOS: &slov1alpha1.CPUQOSCfg{
+								Enable: pointer.Bool(true),
+								CPUQOS: slov1alpha1.CPUQOS{
+									GroupIdentity: pointer.Int64(2),
+								},
+							},
+						},
+						LSClass: &slov1alpha1.ResourceQOS{
+							CPUQOS: &slov1alpha1.CPUQOSCfg{
+								Enable: pointer.Bool(true),
+								CPUQOS: slov1alpha1.CPUQOS{
+									GroupIdentity: pointer.Int64(2),
+								},
+							},
+						},
+						BEClass: &slov1alpha1.ResourceQOS{
+							CPUQOS: &slov1alpha1.CPUQOSCfg{
+								Enable: pointer.Bool(true),
+								CPUQOS: slov1alpha1.CPUQOS{
+									GroupIdentity: pointer.Int64(-1),
+								},
+							},
+						},
+					},
+				},
+			},
+			wantRule: bvtRule{
+				enable: false,
+				podQOSParams: map[ext.QoSClass]int64{
+					ext.QoSLSE: 0,
+					ext.QoSLSR: 0,
+					ext.QoSLS:  0,
+					ext.QoSBE:  0,
+				},
+				kubeQOSDirParams: map[corev1.PodQOSClass]int64{
+					corev1.PodQOSGuaranteed: 0,
+					corev1.PodQOSBurstable:  0,
+					corev1.PodQOSBestEffort: 0,
+				},
+				kubeQOSPodParams: map[corev1.PodQOSClass]int64{
+					corev1.PodQOSGuaranteed: 0,
+					corev1.PodQOSBurstable:  0,
+					corev1.PodQOSBestEffort: 0,
+				},
+			},
+			want:    true,
 			wantErr: false,
 		},
 	}

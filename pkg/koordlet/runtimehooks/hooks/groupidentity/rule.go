@@ -76,16 +76,31 @@ func (r *bvtRule) getHostQOSBvtValue(qosClass ext.QoSClass) int64 {
 
 func (b *bvtPlugin) parseRule(mergedNodeSLOIf interface{}) (bool, error) {
 	mergedNodeSLO := mergedNodeSLOIf.(*slov1alpha1.NodeSLOSpec)
+	qosStrategy := mergedNodeSLO.ResourceQOSStrategy
 
-	// check if bvt is enabled
-	enable := *mergedNodeSLO.ResourceQOSStrategy.LSRClass.CPUQOS.Enable ||
-		*mergedNodeSLO.ResourceQOSStrategy.LSClass.CPUQOS.Enable ||
-		*mergedNodeSLO.ResourceQOSStrategy.BEClass.CPUQOS.Enable
+	// default policy enables
+	isPolicyGroupIdentity := qosStrategy.Policies == nil || qosStrategy.Policies.CPUPolicy == nil ||
+		len(*qosStrategy.Policies.CPUPolicy) <= 0 || *qosStrategy.Policies.CPUPolicy == slov1alpha1.CPUQOSPolicyGroupIdentity
+	// check if bvt (group identity) is enabled
+	lsrEnabled := isPolicyGroupIdentity && *qosStrategy.LSRClass.CPUQOS.Enable
+	lsEnabled := isPolicyGroupIdentity && *qosStrategy.LSClass.CPUQOS.Enable
+	beEnabled := isPolicyGroupIdentity && *qosStrategy.BEClass.CPUQOS.Enable
 
 	// setting pod rule by qos config
-	lsrValue := *mergedNodeSLO.ResourceQOSStrategy.LSRClass.CPUQOS.CPUQOS.GroupIdentity
-	lsValue := *mergedNodeSLO.ResourceQOSStrategy.LSClass.CPUQOS.GroupIdentity
-	beValue := *mergedNodeSLO.ResourceQOSStrategy.BEClass.CPUQOS.GroupIdentity
+	// Group Identity should be reset if the CPU QOS disables (already merged in states informer) or the CPU QoS policy
+	// is not "groupIdentity".
+	lsrValue := *sloconfig.NoneCPUQOS().GroupIdentity
+	if lsrEnabled {
+		lsrValue = *qosStrategy.LSRClass.CPUQOS.GroupIdentity
+	}
+	lsValue := *sloconfig.NoneCPUQOS().GroupIdentity
+	if lsEnabled {
+		lsValue = *qosStrategy.LSClass.CPUQOS.GroupIdentity
+	}
+	beValue := *sloconfig.NoneCPUQOS().GroupIdentity
+	if beEnabled {
+		beValue = *qosStrategy.BEClass.CPUQOS.GroupIdentity
+	}
 
 	// setting besteffort according to BE
 	besteffortDirVal := beValue
@@ -95,18 +110,18 @@ func (b *bvtPlugin) parseRule(mergedNodeSLOIf interface{}) (bool, error) {
 	burstableDirVal := lsValue
 	burstablePodVal := lsValue
 
-	// NOTICE guaranteed root dir must set as 0 until kernel supported
+	// NOTE: guaranteed root dir must set as 0 until kernel supported
 	guaranteedDirVal := *sloconfig.NoneCPUQOS().GroupIdentity
 	// setting guaranteed pod enabled if LS or LSR enabled
 	guaranteedPodVal := *sloconfig.NoneCPUQOS().GroupIdentity
-	if *mergedNodeSLO.ResourceQOSStrategy.LSRClass.CPUQOS.Enable {
+	if lsrEnabled {
 		guaranteedPodVal = lsrValue
-	} else if *mergedNodeSLO.ResourceQOSStrategy.LSClass.CPUQOS.Enable {
+	} else if lsEnabled {
 		guaranteedPodVal = lsValue
 	}
 
 	newRule := &bvtRule{
-		enable: enable,
+		enable: lsrEnabled || lsEnabled || beEnabled,
 		podQOSParams: map[ext.QoSClass]int64{
 			ext.QoSLSE: lsrValue,
 			ext.QoSLSR: lsrValue,

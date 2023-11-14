@@ -26,8 +26,27 @@ import (
 // CPUQOS enables cpu qos features.
 type CPUQOS struct {
 	// group identity value for pods, default = 0
+	// NOTE: It takes effect if cpuPolicy = "groupIdentity".
 	GroupIdentity *int64 `json:"groupIdentity,omitempty" validate:"omitempty,min=-1,max=2"`
+	// cpu.idle value for pods, default = 0.
+	// `1` means using SCHED_IDLE.
+	// CGroup Idle (introduced since mainline Linux 5.15): https://lore.kernel.org/lkml/162971078674.25758.15464079371945307825.tip-bot2@tip-bot2/#r
+	// NOTE: It takes effect if cpuPolicy = "coreSched".
+	SchedIdle *int64 `json:"schedIdle,omitempty" validate:"omitempty,min=0,max=1"`
+	// whether pods of the QoS class can expel the cgroup idle pods at the SMT-level. default = false
+	// If set to true, pods of this QoS will use a dedicated core sched group for noise clean with the SchedIdle pods.
+	// NOTE: It takes effect if cpuPolicy = "coreSched".
+	CoreExpeller *bool `json:"coreExpeller,omitempty"`
 }
+
+type CPUQOSPolicy string
+
+const (
+	// CPUQOSPolicyGroupIdentity indicates the Group Identity is applied to ensure the CPU QoS.
+	CPUQOSPolicyGroupIdentity CPUQOSPolicy = "groupIdentity"
+	// CPUQOSPolicyCoreSched indicates the Linux Core Scheduling and CGroup Idle is applied to ensure the CPU QoS.
+	CPUQOSPolicyCoreSched CPUQOSPolicy = "coreSched"
+)
 
 // MemoryQOS enables memory qos features.
 type MemoryQOS struct {
@@ -185,7 +204,15 @@ type ResourceQOS struct {
 	ResctrlQOS *ResctrlQOSCfg `json:"resctrlQOS,omitempty"`
 }
 
+type ResourceQOSPolicies struct {
+	// applied policy for the CPU QoS, default = "groupIdentity"
+	CPUPolicy *CPUQOSPolicy `json:"cpuPolicy,omitempty"`
+}
+
 type ResourceQOSStrategy struct {
+	// Policies of pod QoS.
+	Policies *ResourceQOSPolicies `json:"policies,omitempty"`
+
 	// ResourceQOS for LSR pods.
 	LSRClass *ResourceQOS `json:"lsrClass,omitempty"`
 
