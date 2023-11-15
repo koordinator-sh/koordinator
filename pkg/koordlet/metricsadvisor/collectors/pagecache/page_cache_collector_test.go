@@ -116,6 +116,22 @@ func Test_collectPageCache(t *testing.T) {
 			},
 		},
 	}
+	testFailedPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-failed-pod",
+			Namespace: "test",
+			UID:       "yyyyyy",
+		},
+		Status: corev1.PodStatus{
+			Phase: corev1.PodFailed,
+			ContainerStatuses: []corev1.ContainerStatus{
+				{
+					Name:        "test-container",
+					ContainerID: testContainerID,
+				},
+			},
+		},
+	}
 
 	type fields struct {
 		podFilterOption       framework.PodFilter
@@ -138,6 +154,40 @@ func Test_collectPageCache(t *testing.T) {
 					{
 						CgroupDir: testPodMetaDir,
 						Pod:       testPod,
+					},
+				},
+				initPodLastStat: func(lastState *gocache.Cache) {
+					lastState.Set(string(testPod.UID), framework.CPUStat{
+						CPUUsage:  0,
+						Timestamp: testNow.Add(-time.Second),
+					}, gocache.DefaultExpiration)
+				},
+				initContainerLastStat: func(lastState *gocache.Cache) {
+					lastState.Set(testContainerID, framework.CPUStat{
+						CPUUsage:  0,
+						Timestamp: testNow.Add(-time.Second),
+					}, gocache.DefaultExpiration)
+				},
+				SetSysUtil: func(helper *system.FileTestUtil) {
+					helper.WriteProcSubFileContents(system.ProcMemInfoName, meminfo)
+					helper.WriteCgroupFileContents(testPodParentDir, system.MemoryStat, testMemStat)
+					helper.WriteCgroupFileContents(testContainerParentDir, system.MemoryStat, testMemStat)
+				},
+			},
+			wantEnable:  true,
+			wantStarted: true,
+		},
+		{
+			name: "test failed pod",
+			fields: fields{
+				podFilterOption: framework.DefaultPodFilter,
+				getPodMetas: []*statesinformer.PodMeta{
+					{
+						CgroupDir: testPodMetaDir,
+						Pod:       testPod,
+					},
+					{
+						Pod: testFailedPod,
 					},
 				},
 				initPodLastStat: func(lastState *gocache.Cache) {
