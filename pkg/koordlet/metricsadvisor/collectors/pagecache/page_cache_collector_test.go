@@ -113,6 +113,11 @@ func Test_collectPageCache(t *testing.T) {
 						Running: &corev1.ContainerStateRunning{},
 					},
 				},
+				{
+					Name:        "test-failed-container",
+					ContainerID: testContainerID,
+					State:       corev1.ContainerState{},
+				},
 			},
 		},
 	}
