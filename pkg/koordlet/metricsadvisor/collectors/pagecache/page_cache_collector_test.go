@@ -183,7 +183,7 @@ func Test_collectPageCache(t *testing.T) {
 			wantStarted: true,
 		},
 		{
-			name: "test failed pod",
+			name: "test failed pod and failed container",
 			fields: fields{
 				podFilterOption: framework.DefaultPodFilter,
 				getPodMetas: []*statesinformer.PodMeta{
@@ -210,7 +210,6 @@ func Test_collectPageCache(t *testing.T) {
 				SetSysUtil: func(helper *system.FileTestUtil) {
 					helper.WriteProcSubFileContents(system.ProcMemInfoName, meminfo)
 					helper.WriteCgroupFileContents(testPodParentDir, system.MemoryStat, testMemStat)
-					helper.WriteCgroupFileContents(testContainerParentDir, system.MemoryStat, testMemStat)
 				},
 			},
 			wantEnable:  true,
