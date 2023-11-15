@@ -248,6 +248,9 @@ func Test_collectPageCache(t *testing.T) {
 			assert.NotPanics(t, func() {
 				c.collectPageCache()
 			})
+			assert.NotPanics(t, func() {
+				c.Setup(&framework.Context{})
+			})
 			assert.Equal(t, tt.wantEnable, c.Enabled())
 			assert.Equal(t, tt.wantStarted, c.Started())
 		})
