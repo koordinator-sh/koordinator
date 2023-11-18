@@ -41,62 +41,62 @@ func Test_collectPageCache(t *testing.T) {
 	testPodParentDir := "/kubepods.slice/kubepods-podxxxxxxxx.slice"
 	testContainerParentDir := "/kubepods.slice/kubepods-podxxxxxxxx.slice/cri-containerd-123abc.scope"
 	testMemStat := `
-	total_cache 104857600
-	total_rss 104857600
-	total_inactive_anon 104857600
-	total_active_anon 0
-	total_inactive_file 104857600
-	total_active_file 0
-	total_unevictable 0
-	`
+total_cache 104857600
+total_rss 104857600
+total_inactive_anon 104857600
+total_active_anon 0
+total_inactive_file 104857600
+total_active_file 0
+total_unevictable 0
+`
 	meminfo := `MemTotal:       1048576 kB
-	MemFree:          262144 kB
-	MemAvailable:     524288 kB
-	Buffers:               0 kB
-	Cached:           262144 kB
-	SwapCached:            0 kB
-	Active:           524288 kB
-	Inactive:         262144 kB
-	Active(anon):     262144 kB
-	Inactive(anon):   262144 kB
-	Active(file):          0 kB
-	Inactive(file):   262144 kB
-	Unevictable:           0 kB
-	Mlocked:               0 kB
-	SwapTotal:             0 kB
-	SwapFree:              0 kB
-	Dirty:                 0 kB
-	Writeback:             0 kB
-	AnonPages:             0 kB
-	Mapped:                0 kB
-	Shmem:                 0 kB
-	Slab:                  0 kB
-	SReclaimable:          0 kB
-	SUnreclaim:            0 kB
-	KernelStack:           0 kB
-	PageTables:            0 kB
-	NFS_Unstable:          0 kB
-	Bounce:                0 kB
-	WritebackTmp:          0 kB
-	CommitLimit:           0 kB
-	Committed_AS:          0 kB
-	VmallocTotal:          0 kB
-	VmallocUsed:           0 kB
-	VmallocChunk:          0 kB
-	HardwareCorrupted:     0 kB
-	AnonHugePages:         0 kB
-	ShmemHugePages:        0 kB
-	ShmemPmdMapped:        0 kB
-	CmaTotal:              0 kB
-	CmaFree:               0 kB
-	HugePages_Total:       0
-	HugePages_Free:        0
-	HugePages_Rsvd:        0
-	HugePages_Surp:        0
-	Hugepagesize:          0 kB
-	DirectMap4k:           0 kB
-	DirectMap2M:           0 kB
-	DirectMap1G:           0 kB`
+MemFree:          262144 kB
+MemAvailable:     524288 kB
+Buffers:               0 kB
+Cached:           262144 kB
+SwapCached:            0 kB
+Active:           524288 kB
+Inactive:         262144 kB
+Active(anon):     262144 kB
+Inactive(anon):   262144 kB
+Active(file):          0 kB
+Inactive(file):   262144 kB
+Unevictable:           0 kB
+Mlocked:               0 kB
+SwapTotal:             0 kB
+SwapFree:              0 kB
+Dirty:                 0 kB
+Writeback:             0 kB
+AnonPages:             0 kB
+Mapped:                0 kB
+Shmem:                 0 kB
+Slab:                  0 kB
+SReclaimable:          0 kB
+SUnreclaim:            0 kB
+KernelStack:           0 kB
+PageTables:            0 kB
+NFS_Unstable:          0 kB
+Bounce:                0 kB
+WritebackTmp:          0 kB
+CommitLimit:           0 kB
+Committed_AS:          0 kB
+VmallocTotal:          0 kB
+VmallocUsed:           0 kB
+VmallocChunk:          0 kB
+HardwareCorrupted:     0 kB
+AnonHugePages:         0 kB
+ShmemHugePages:        0 kB
+ShmemPmdMapped:        0 kB
+CmaTotal:              0 kB
+CmaFree:               0 kB
+HugePages_Total:       0
+HugePages_Free:        0
+HugePages_Rsvd:        0
+HugePages_Surp:        0
+Hugepagesize:          0 kB
+DirectMap4k:           0 kB
+DirectMap2M:           0 kB
+DirectMap1G:           0 kB`
 	testPod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "test-pod",
