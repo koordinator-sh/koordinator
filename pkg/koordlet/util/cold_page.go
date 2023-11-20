@@ -25,7 +25,7 @@ func GetNodeMemUsageWithHotPageCache(coldPageUsageBytes uint64) (uint64, error) 
 	if err != nil {
 		return 0, err
 	}
-	return memInfo.MemTotal*1024 - memInfo.MemAvailable*1024 + memInfo.ActiveFile*1024 + memInfo.InactiveFile*1024 - coldPageUsageBytes, nil
+	return memInfo.MemTotal*1024 - memInfo.MemFree*1024 - coldPageUsageBytes, nil
 }
 
 func GetCgroupMemUsageWithHotPageCache(cgroupReader resourceexecutor.CgroupReader, parentDir string, coldPageUsageBytes uint64) (uint64, error) {
