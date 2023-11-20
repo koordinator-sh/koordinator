@@ -530,8 +530,8 @@ DirectMap1G:           0 kB`
 	}
 	assert.NoError(t, err)
 	got1, got2 := testGetNodeMetrics(t, c.metricDB, testNow, 5*time.Second)
-	// memInfo.MemTotal*1024 - memInfo.MemAvailable*1024 + memInfo.ActiveFile*1024 + memInfo.InactiveFile*1024 - coldPageUsageBytes
-	assert.Equal(t, float64(1048576*1024-524288*1024+0*1024+262144*1024-52834304), got1)
+	// memInfo.MemTotal*1024 - memInfo.MemFree*1024 - coldPageUsageBytes
+	assert.Equal(t, float64((1048576-262144)<<10-52834304), got1)
 	assert.Equal(t, float64(52834304), got2)
 	// test collect failed
 	helper.WriteCgroupFileContents("", system.MemoryIdlePageStats, ``)
