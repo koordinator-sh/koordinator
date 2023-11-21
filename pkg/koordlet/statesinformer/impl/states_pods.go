@@ -241,13 +241,6 @@ func genPodCgroupParentDir(pod *corev1.Pod) string {
 	return koordletutil.GetPodCgroupParentDir(pod)
 }
 
-func genPodMetaKey(podMeta *statesinformer.PodMeta) string {
-	if podMeta == nil || podMeta.Pod == nil {
-		return ""
-	}
-	return util.GetPodKey(podMeta.Pod)
-}
-
 func resetPodMetrics() {
 	metrics.ResetContainerResourceRequests()
 	metrics.ResetContainerResourceLimits()

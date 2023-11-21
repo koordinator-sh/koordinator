@@ -186,6 +186,33 @@ func (p *Plugin) Calculate(strategy *configuration.ColocationStrategy, node *cor
 
 func (p *Plugin) calculate(strategy *configuration.ColocationStrategy, node *corev1.Node, podList *corev1.PodList,
 	resourceMetrics *framework.ResourceMetrics) ([]framework.ResourceItem, error) {
+	// calculate node-level batch resources
+	batchAllocatable, cpuMsg, memMsg := p.calculateOnNode(strategy, node, podList, resourceMetrics)
+
+	// calculate NUMA-level batch resources on NodeResourceTopology
+	batchZoneCPU, batchZoneMemory, err := p.calculateOnNUMALevel(strategy, node, podList, resourceMetrics)
+	if err != nil {
+		klog.ErrorS(err, "failed to calculate batch resource for NRT", "node", node.Name)
+	}
+
+	return []framework.ResourceItem{
+		{
+			Name:         extension.BatchCPU,
+			Quantity:     resource.NewQuantity(batchAllocatable.Cpu().MilliValue(), resource.DecimalSI),
+			ZoneQuantity: batchZoneCPU,
+			Message:      cpuMsg,
+		},
+		{
+			Name:         extension.BatchMemory,
+			Quantity:     batchAllocatable.Memory(),
+			ZoneQuantity: batchZoneMemory,
+			Message:      memMsg,
+		},
+	}, nil
+}
+
+func (p *Plugin) calculateOnNode(strategy *configuration.ColocationStrategy, node *corev1.Node, podList *corev1.PodList,
+	resourceMetrics *framework.ResourceMetrics) (corev1.ResourceList, string, string) {
 	// compute the requests and usages according to the pods' priority classes.
 	// HP means High-Priority (i.e. not Batch or Free) pods
 	podsHPRequest := util.NewZeroResourceList()
@@ -194,13 +221,17 @@ func (p *Plugin) calculate(strategy *configuration.ColocationStrategy, node *cor
 	// podsAllUsed is the sum usage of all pods reported in NodeMetric.
 	// podsKnownUsed is the sum usage of pods which are both reported in NodeMetric and shown in current pod list.
 	podsAllUsed := util.NewZeroResourceList()
-	podsKnownUsed := util.NewZeroResourceList()
 
 	nodeMetric := resourceMetrics.NodeMetric
 	podMetricMap := make(map[string]*slov1alpha1.PodMetricInfo)
+	podMetricDanglingMap := make(map[string]*slov1alpha1.PodMetricInfo)
 	for _, podMetric := range nodeMetric.Status.PodsMetric {
-		podMetricMap[util.GetPodMetricKey(podMetric)] = podMetric
-		podsAllUsed = quotav1.Add(podsAllUsed, getPodMetricUsage(podMetric))
+		podKey := util.GetPodMetricKey(podMetric)
+		podMetricMap[podKey] = podMetric
+		podMetricDanglingMap[podKey] = podMetric
+
+		podUsage := getPodMetricUsage(podMetric)
+		podsAllUsed = quotav1.Add(podsAllUsed, podUsage)
 	}
 
 	for i := range podList.Items {
@@ -213,7 +244,7 @@ func (p *Plugin) calculate(strategy *configuration.ColocationStrategy, node *cor
 		podKey := util.GetPodKey(pod)
 		podMetric, hasMetric := podMetricMap[podKey]
 		if hasMetric {
-			podsKnownUsed = quotav1.Add(podsKnownUsed, getPodMetricUsage(podMetric))
+			delete(podMetricDanglingMap, podKey)
 		}
 
 		// count the high-priority usage
@@ -248,12 +279,18 @@ func (p *Plugin) calculate(strategy *configuration.ColocationStrategy, node *cor
 		hostAppHPUsed = quotav1.Add(hostAppHPUsed, getHostAppMetricUsage(hostAppMetric))
 	}
 
-	// For the pods reported with metrics but not shown in the current list, count them into the HP used.
-	podsUnknownPriorityUsed := quotav1.Subtract(podsAllUsed, podsKnownUsed)
-	podsHPUsed = quotav1.Add(podsHPUsed, podsUnknownPriorityUsed)
-	podsHPMaxUsedReq = quotav1.Add(podsHPMaxUsedReq, podsUnknownPriorityUsed)
-	klog.V(6).InfoS("batch resource got unknown priority pods used", "node", node.Name,
-		"cpu", podsUnknownPriorityUsed.Cpu().String(), "memory", podsUnknownPriorityUsed.Memory().String())
+	// For the pods reported metrics but not shown in current list, count them according to the metric priority.
+	podsDanglingUsed := util.NewZeroResourceList()
+	for _, podMetric := range podMetricDanglingMap {
+		if priority := podMetric.Priority; priority == extension.PriorityBatch || priority == extension.PriorityFree {
+			continue
+		}
+		podsDanglingUsed = quotav1.Add(podsDanglingUsed, getPodMetricUsage(podMetric))
+	}
+	podsHPUsed = quotav1.Add(podsHPUsed, podsDanglingUsed)
+	podsHPMaxUsedReq = quotav1.Add(podsHPMaxUsedReq, podsDanglingUsed)
+	klog.V(6).InfoS("batch resource got dangling HP pods used", "node", node.Name,
+		"cpu", podsDanglingUsed.Cpu().String(), "memory", podsDanglingUsed.Memory().String())
 
 	nodeCapacity := getNodeCapacity(node)
 	nodeReservation := getNodeReservation(strategy, nodeCapacity)
@@ -270,32 +307,12 @@ func (p *Plugin) calculate(strategy *configuration.ColocationStrategy, node *cor
 
 	batchAllocatable, cpuMsg, memMsg := calculateBatchResourceByPolicy(strategy, nodeCapacity, nodeReservation, systemReserved,
 		systemUsed, podsHPRequest, podsHPUsed, podsHPMaxUsedReq)
-
 	metrics.RecordNodeExtendedResourceAllocatableInternal(node, string(extension.BatchCPU), metrics.UnitInteger, float64(batchAllocatable.Cpu().MilliValue())/1000)
 	metrics.RecordNodeExtendedResourceAllocatableInternal(node, string(extension.BatchMemory), metrics.UnitByte, float64(batchAllocatable.Memory().Value()))
 	klog.V(6).InfoS("calculate batch resource for node", "node", node.Name, "batch resource",
 		batchAllocatable, "cpu", cpuMsg, "memory", memMsg)
 
-	// calculate NUMA-level batch resources on NodeResourceTopology
-	batchZoneCPU, batchZoneMemory, err := p.calculateOnNUMALevel(strategy, node, podList, resourceMetrics)
-	if err != nil {
-		klog.ErrorS(err, "failed to calculate batch resource for NRT", "node", node.Name)
-	}
-
-	return []framework.ResourceItem{
-		{
-			Name:         extension.BatchCPU,
-			Quantity:     resource.NewQuantity(batchAllocatable.Cpu().MilliValue(), resource.DecimalSI),
-			ZoneQuantity: batchZoneCPU,
-			Message:      cpuMsg,
-		},
-		{
-			Name:         extension.BatchMemory,
-			Quantity:     batchAllocatable.Memory(),
-			ZoneQuantity: batchZoneMemory,
-			Message:      memMsg,
-		},
-	}, nil
+	return batchAllocatable, cpuMsg, memMsg
 }
 
 func (p *Plugin) calculateOnNUMALevel(strategy *configuration.ColocationStrategy, node *corev1.Node, podList *corev1.PodList,
@@ -327,7 +344,7 @@ func (p *Plugin) calculateOnNUMALevel(strategy *configuration.ColocationStrategy
 	nodeZoneReserve := make([]corev1.ResourceList, zoneNum)
 	systemZoneUsed := make([]corev1.ResourceList, zoneNum)
 	systemZoneReserved := make([]corev1.ResourceList, zoneNum)
-	podsUnknownPriorityZoneUsed := make([]corev1.ResourceList, zoneNum)
+	podsUnknownUsed := make([]corev1.ResourceList, zoneNum)
 	podsHPZoneRequested := make([]corev1.ResourceList, zoneNum)
 	podsHPZoneUsed := make([]corev1.ResourceList, zoneNum)
 	podsHPZoneMaxUsedReq := make([]corev1.ResourceList, zoneNum)
@@ -354,7 +371,7 @@ func (p *Plugin) calculateOnNUMALevel(strategy *configuration.ColocationStrategy
 	for i, zone := range nrt.Zones {
 		zoneIdxMap[i] = zone.Name
 		nodeZoneAllocatable[i] = corev1.ResourceList{}
-		podsUnknownPriorityZoneUsed[i] = util.NewZeroResourceList()
+		podsUnknownUsed[i] = util.NewZeroResourceList()
 		podsHPZoneRequested[i] = util.NewZeroResourceList()
 		podsHPZoneUsed[i] = util.NewZeroResourceList()
 		podsHPZoneMaxUsedReq[i] = util.NewZeroResourceList()
@@ -368,9 +385,11 @@ func (p *Plugin) calculateOnNUMALevel(strategy *configuration.ColocationStrategy
 		systemZoneReserved[i] = divideResourceList(systemReserved, float64(zoneNum))
 	}
 	podMetricMap := make(map[string]*slov1alpha1.PodMetricInfo)
-	podMetricInList := map[string]struct{}{}
+	podMetricUnknownMap := make(map[string]*slov1alpha1.PodMetricInfo)
 	for _, podMetric := range nodeMetric.Status.PodsMetric {
-		podMetricMap[util.GetPodMetricKey(podMetric)] = podMetric
+		podKey := util.GetPodMetricKey(podMetric)
+		podMetricMap[podKey] = podMetric
+		podMetricUnknownMap[podKey] = podMetric
 	}
 	for i := range podList.Items {
 		pod := &podList.Items[i]
@@ -385,7 +404,7 @@ func (p *Plugin) calculateOnNUMALevel(strategy *configuration.ColocationStrategy
 		var podUsage corev1.ResourceList
 		var podZoneRequests, podZoneUsages []corev1.ResourceList
 		if hasMetric {
-			podMetricInList[podKey] = struct{}{}
+			delete(podMetricUnknownMap, podKey)
 			podUsage = getPodMetricUsage(podMetric)
 			podZoneRequests, podZoneUsages = getPodNUMARequestAndUsage(pod, podRequest, podUsage, zoneNum)
 		} else {
@@ -416,17 +435,16 @@ func (p *Plugin) calculateOnNUMALevel(strategy *configuration.ColocationStrategy
 		}
 	}
 
-	// For the pods reported with metrics but not shown in the current list, count them into the HP used.
-	for _, podMetric := range nodeMetric.Status.PodsMetric {
-		podKey := util.GetPodMetricKey(podMetric)
-		if _, ok := podMetricInList[podKey]; ok {
+	// For the pods reported metrics but not shown in current list, count them according to the metric priority.
+	for _, podMetric := range podMetricUnknownMap {
+		if priority := podMetric.Priority; priority == extension.PriorityBatch || priority == extension.PriorityFree {
 			continue
 		}
 		podNUMAUsage := getPodUnknownNUMAUsage(getPodMetricUsage(podMetric), zoneNum)
-		podsUnknownPriorityZoneUsed = addZoneResourceList(podsUnknownPriorityZoneUsed, podNUMAUsage, zoneNum)
+		podsUnknownUsed = addZoneResourceList(podsUnknownUsed, podNUMAUsage, zoneNum)
 	}
-	podsHPZoneUsed = addZoneResourceList(podsHPZoneUsed, podsUnknownPriorityZoneUsed, zoneNum)
-	podsHPZoneMaxUsedReq = addZoneResourceList(podsHPZoneMaxUsedReq, podsUnknownPriorityZoneUsed, zoneNum)
+	podsHPZoneUsed = addZoneResourceList(podsHPZoneUsed, podsUnknownUsed, zoneNum)
+	podsHPZoneMaxUsedReq = addZoneResourceList(podsHPZoneMaxUsedReq, podsUnknownUsed, zoneNum)
 
 	batchZoneCPU := map[string]resource.Quantity{}
 	batchZoneMemory := map[string]resource.Quantity{}

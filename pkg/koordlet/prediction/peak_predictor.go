@@ -151,7 +151,7 @@ func (p *podReclaimablePredictor) AddPod(pod *v1.Pod) error {
 	}
 
 	if p.pods[string(pod.UID)] {
-		return fmt.Errorf("Pod %s already exist in the pod reclaimable predictor", util.GetPodKey(pod))
+		return fmt.Errorf("pod %s already exist in the pod reclaimable predictor", util.GetPodKey(pod))
 	}
 	p.pods[string(pod.UID)] = true
 

@@ -28,7 +28,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/util/wait"
-	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	"k8s.io/klog/v2"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
@@ -43,7 +42,6 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	koordletutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
-	"github.com/koordinator-sh/koordinator/pkg/util"
 	"github.com/koordinator-sh/koordinator/pkg/util/cpuset"
 )
 
@@ -136,77 +134,33 @@ func (r *CPUSuppress) writeBECgroupsCPUSet(paths []string, cpusetStr string, isR
 	r.executor.UpdateBatch(true, updaters...)
 }
 
-// calculateBESuppressCPU calculates the quantity of cpuset cpus for suppressing be pods
+// calculateBESuppressCPU calculates the quantity of cpuset cpus for suppressing BE pods.
 func (r *CPUSuppress) calculateBESuppressCPU(node *corev1.Node, nodeMetric float64, podMetrics map[string]float64,
 	podMetas []*statesinformer.PodMeta, hostApps []slov1alpha1.HostApplicationSpec,
 	hostAppMetrics map[string]float64, beCPUUsedThreshold int64) *resource.Quantity {
-	// node, nodeMetric, podMetric should not be nil
-	podAllUsedCPU := *resource.NewMilliQuantity(0, resource.DecimalSI)
-	podNoneBEUsedCPU := *resource.NewMilliQuantity(0, resource.DecimalSI)
-	hostAppAllUsedCPU := *resource.NewMilliQuantity(0, resource.DecimalSI)
-	hostAppNoneBEUsedCPU := *resource.NewMilliQuantity(0, resource.DecimalSI)
-	nodeUsedCPU := *resource.NewMilliQuantity(int64(nodeMetric*1000), resource.DecimalSI)
+	nodeReserved := helpers.GetNodeResourceReserved(node)
+	nodeReservedCPU := float64(nodeReserved.Cpu().MilliValue()) / 1000
 
-	podMetaMap := map[string]*statesinformer.PodMeta{}
-	for _, podMeta := range podMetas {
-		podMetaMap[string(podMeta.Pod.UID)] = podMeta
-	}
+	// calculate pod(non-BE).Used and system.Used
+	podNonBEUsedCPU, hostAppNonBEUsedCPU, systemUsedCPU := helpers.CalculateFilterPodsUsed(nodeMetric, nodeReservedCPU,
+		podMetas, podMetrics, hostApps, hostAppMetrics, helpers.NonBEPodFilter, helpers.NonBEHostAppFilter)
+	podNonBEUsed := resource.NewMilliQuantity(int64(podNonBEUsedCPU*1000), resource.DecimalSI)
+	hostAppNonBEUsed := resource.NewMilliQuantity(int64(hostAppNonBEUsedCPU*1000), resource.DecimalSI)
+	systemUsed := resource.NewMilliQuantity(int64(systemUsedCPU*1000), resource.DecimalSI)
 
-	for podUID, podMetric := range podMetrics {
-		podAllUsedCPU.Add(*resource.NewMilliQuantity(int64(podMetric*1000), resource.DecimalSI))
-
-		podMeta, ok := podMetaMap[podUID]
-		if !ok {
-			klog.Warningf("podMetric not included in the podMetas %v", podUID)
-		}
-		if !ok || (apiext.GetPodQoSClassRaw(podMeta.Pod) != apiext.QoSBE && util.GetKubeQosClass(podMeta.Pod) != corev1.PodQOSBestEffort) {
-			// NOTE: consider non-BE pods and podMeta-missing pods as LS
-			podNoneBEUsedCPU.Add(*resource.NewMilliQuantity(int64(podMetric*1000), resource.DecimalSI))
-		}
-	}
-
-	for _, hostApp := range hostApps {
-		metric, exist := hostAppMetrics[hostApp.Name]
-		if !exist {
-			continue
-		}
-		hostAppAllUsedCPU.Add(*resource.NewMilliQuantity(int64(metric*1000), resource.DecimalSI))
-		if hostApp.QoS != apiext.QoSBE || hostApp.CgroupPath == nil || hostApp.CgroupPath.Base != slov1alpha1.CgroupBaseTypeKubeBesteffort {
-			// host app qos must be BE and also run under best-effort dir
-			hostAppNoneBEUsedCPU.Add(*resource.NewMilliQuantity(int64(metric*1000), resource.DecimalSI))
-		}
-	}
-
-	systemUsedCPU := nodeUsedCPU.DeepCopy()
-	systemUsedCPU.Sub(podAllUsedCPU)
-	systemUsedCPU.Sub(hostAppAllUsedCPU)
-	if systemUsedCPU.Value() < 0 {
-		// set systemUsedCPU always no less than 0
-		systemUsedCPU = *resource.NewMilliQuantity(0, resource.DecimalSI)
-	}
-
-	nodeAnnoReserved := util.GetNodeReservationFromAnnotation(node.Annotations)
-	systemUsed := corev1.ResourceList{
-		corev1.ResourceCPU: systemUsedCPU,
-	}
-	nodeKubeletReserved := util.GetNodeReservationFromKubelet(node)
-	systemUsed = quotav1.Max(quotav1.Max(systemUsed, nodeAnnoReserved), nodeKubeletReserved)
-	systemUsedCPU = systemUsed[corev1.ResourceCPU]
-
-	// suppress(BE) := node.Capacity * SLOPercent - pod(non-be).Used - max(system.Used, node.anno.reserved, node.kubelet.reserved)
+	// suppress(BE) := node.Capacity * SLOPercent - pod(non-BE).Used - max(system.Used, node.anno.reserved, node.kubelet.reserved)
 	// NOTE: valid milli-cpu values should not larger than 2^20, so there is no overflow during the calculation
-	nodeBESuppressCPU := resource.NewMilliQuantity(node.Status.Capacity.Cpu().MilliValue()*beCPUUsedThreshold/100,
-		node.Status.Allocatable.Cpu().Format)
-	nodeBESuppressCPU.Sub(podNoneBEUsedCPU)
-	nodeBESuppressCPU.Sub(hostAppNoneBEUsedCPU)
-	nodeBESuppressCPU.Sub(systemUsedCPU)
+	nodeBESuppress := resource.NewMilliQuantity(node.Status.Capacity.Cpu().MilliValue()*beCPUUsedThreshold/100, resource.DecimalSI)
+	nodeBESuppress.Sub(*podNonBEUsed)
+	nodeBESuppress.Sub(*hostAppNonBEUsed)
+	nodeBESuppress.Sub(*systemUsed)
 
-	metrics.RecordBESuppressLSUsedCPU(float64(podNoneBEUsedCPU.MilliValue()) / 1000)
+	metrics.RecordBESuppressLSUsedCPU(podNonBEUsedCPU)
 	klog.V(6).Infof("nodeSuppressBE[CPU(Core)]:%v = node.Total:%v * SLOPercent:%v%% - systemUsage:%v - podLSUsed:%v - hostAppLSUsed:%v, upper to %v\n",
-		nodeBESuppressCPU.AsApproximateFloat64(), node.Status.Allocatable.Cpu().AsApproximateFloat64(), beCPUUsedThreshold, systemUsedCPU.AsApproximateFloat64(),
-		podNoneBEUsedCPU.AsApproximateFloat64(), hostAppNoneBEUsedCPU.AsApproximateFloat64(), nodeBESuppressCPU.Value())
+		nodeBESuppress.AsApproximateFloat64(), node.Status.Allocatable.Cpu().Value(), beCPUUsedThreshold, systemUsedCPU,
+		podNonBEUsedCPU, hostAppNonBEUsedCPU, nodeBESuppress.Value())
 
-	return nodeBESuppressCPU
+	return nodeBESuppress
 }
 
 func (r *CPUSuppress) applyBESuppressCPUSet(beCPUSet []int32, oldCPUSet []int32) error {
@@ -280,7 +234,6 @@ func (r *CPUSuppress) applyCPUSetWithStaticPolicy(cpus []int32) error {
 	r.writeBECgroupsCPUSet(containerPaths, cpusetStr, false)
 	metrics.RecordBESuppressCores(string(slov1alpha1.CPUSetPolicy), float64(len(cpus)))
 	return nil
-
 }
 
 // suppressBECPU adjusts the cpusets of BE pods to suppress BE cpu usage
