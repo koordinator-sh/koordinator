@@ -460,8 +460,46 @@ func TestDoCheckpoint_RestoreModels(t *testing.T) {
 			},
 		},
 	}
+	testModels := map[UIDType]*PredictModel{
+		UIDType(DefaultNodeID): {
+			CPU:    makeTestHistogram(),
+			Memory: makeTestHistogram(),
+		},
+		UIDType("__node-sys__"): {
+			CPU:    makeTestHistogram(),
+			Memory: makeTestHistogram(),
+		},
+		UIDType("__node-koord-prod__"): {
+			CPU:    makeTestHistogram(),
+			Memory: makeTestHistogram(),
+		},
+		UIDType("__node-koord-mid__"): {
+			CPU:    makeTestHistogram(),
+			Memory: makeTestHistogram(),
+		},
+		UIDType("__node-koord-batch__"): {
+			CPU:    makeTestHistogram(),
+			Memory: makeTestHistogram(),
+		},
+		UIDType("__node-koord-free__"): {
+			CPU:    makeTestHistogram(),
+			Memory: makeTestHistogram(),
+		},
+		UIDType("__node-__"): {
+			CPU:    makeTestHistogram(),
+			Memory: makeTestHistogram(),
+		},
+		UIDType("pod1"): {
+			CPU:    makeTestHistogram(),
+			Memory: makeTestHistogram(),
+		},
+		UIDType("pod2"): {
+			CPU:    makeTestHistogram(),
+			Memory: makeTestHistogram(),
+		},
+	}
 	cfg := NewDefaultConfig()
-	cfg.ModelCheckpointMaxPerStep = 5
+	cfg.ModelCheckpointMaxPerStep = 20
 	predictServer := &peakPredictServer{
 		cfg:          cfg,
 		hasSynced:    &atomic.Bool{},
@@ -469,20 +507,7 @@ func TestDoCheckpoint_RestoreModels(t *testing.T) {
 		metricServer: &mockMetricServer{},
 		uidGenerator: &generator{},
 		clock:        mockClock,
-		models: map[UIDType]*PredictModel{
-			UIDType("node1"): {
-				CPU:    makeTestHistogram(),
-				Memory: makeTestHistogram(),
-			},
-			UIDType("pod1"): {
-				CPU:    makeTestHistogram(),
-				Memory: makeTestHistogram(),
-			},
-			UIDType("pod2"): {
-				CPU:    makeTestHistogram(),
-				Memory: makeTestHistogram(),
-			},
-		},
+		models:       testModels,
 		checkpointer: NewFileCheckpointer(tempDir),
 	}
 	predictServer.hasSynced.Store(true)
@@ -491,7 +516,7 @@ func TestDoCheckpoint_RestoreModels(t *testing.T) {
 	// clear the models in memory and restore it
 	predictServer.models = make(map[UIDType]*PredictModel)
 	predictServer.restoreModels()
-	assert.Equal(t, 3, len(predictServer.models), "restore models from checkpoint")
+	assert.Equal(t, len(testModels), len(predictServer.models), "restore models from checkpoint")
 
 	// mock another model and restore it to unknownUIDs
 	predictServer.models["unknown"] = &PredictModel{
