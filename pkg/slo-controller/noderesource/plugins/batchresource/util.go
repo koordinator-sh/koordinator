@@ -98,6 +98,7 @@ func prepareNodeForResource(node *corev1.Node, nr *framework.NodeResource, name 
 		return
 	}
 
+	// TODO mv to post-calculate stage for merging multiple calculate results
 	// amplify batch cpu according to cpu normalization ratio
 	if name == extension.BatchCPU {
 		ratio, err := getCPUNormalizationRatio(nr)

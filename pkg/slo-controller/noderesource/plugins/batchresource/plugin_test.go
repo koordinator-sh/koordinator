@@ -1403,6 +1403,235 @@ func TestPrepare(t *testing.T) {
 	}
 }
 
+func TestPrepareWithThirdParty(t *testing.T) {
+	testScheme := runtime.NewScheme()
+	err := clientgoscheme.AddToScheme(testScheme)
+	assert.NoError(t, err)
+	err = slov1alpha1.AddToScheme(testScheme)
+	assert.NoError(t, err)
+	err = topov1alpha1.AddToScheme(testScheme)
+	assert.NoError(t, err)
+	type fields struct {
+		client ctrlclient.Client
+	}
+	type args struct {
+		strategy *configuration.ColocationStrategy
+		node     *corev1.Node
+		nr       *framework.NodeResource
+	}
+	tests := []struct {
+		name                string
+		fields              fields
+		args                args
+		wantErr             bool
+		wantField           *corev1.Node
+		wantOriginAllocated *slov1alpha1.OriginAllocatable
+	}{
+		{
+			name: "update batch resources with third party",
+			fields: fields{
+				client: fake.NewClientBuilder().WithScheme(testScheme).Build(),
+			},
+			args: args{
+				node: &corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node",
+						Annotations: map[string]string{
+							slov1alpha1.NodeThirdPartyAllocationsAnnotationKey: "{\"allocations\":[{\"name\":\"hadoop-yarn\",\"priority\":\"koord-batch\",\"resources\":{\"kubernetes.io/batch-cpu\":\"10000\",\"kubernetes.io/batch-memory\":\"10Gi\"}}]}",
+						},
+					},
+					Status: corev1.NodeStatus{
+						Capacity: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("100"),
+							corev1.ResourceMemory: resource.MustParse("400Gi"),
+						},
+						Allocatable: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("100"),
+							corev1.ResourceMemory: resource.MustParse("380Gi"),
+						},
+					},
+				},
+				nr: &framework.NodeResource{
+					Resources: map[corev1.ResourceName]*resource.Quantity{
+						extension.BatchCPU:    resource.NewQuantity(50000, resource.DecimalSI),
+						extension.BatchMemory: resource.NewQuantity(120*1024*1024*1024, resource.BinarySI),
+					},
+				},
+			},
+			wantErr: false,
+			wantField: &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node",
+				},
+				Status: corev1.NodeStatus{
+					Capacity: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("100"),
+						corev1.ResourceMemory: resource.MustParse("400Gi"),
+						extension.BatchCPU:    *resource.NewQuantity(40000, resource.DecimalSI),
+						extension.BatchMemory: *resource.NewQuantity(110*1024*1024*1024, resource.BinarySI),
+					},
+					Allocatable: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("100"),
+						corev1.ResourceMemory: resource.MustParse("380Gi"),
+						extension.BatchCPU:    *resource.NewQuantity(40000, resource.DecimalSI),
+						extension.BatchMemory: *resource.NewQuantity(110*1024*1024*1024, resource.BinarySI),
+					},
+				},
+			},
+			wantOriginAllocated: &slov1alpha1.OriginAllocatable{
+				Resources: corev1.ResourceList{
+					extension.BatchCPU:    resource.MustParse("50k"),
+					extension.BatchMemory: resource.MustParse("120Gi"),
+				},
+			},
+		},
+		{
+			name: "update batch resources with third party max zero",
+			fields: fields{
+				client: fake.NewClientBuilder().WithScheme(testScheme).Build(),
+			},
+			args: args{
+				node: &corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node",
+						Annotations: map[string]string{
+							slov1alpha1.NodeThirdPartyAllocationsAnnotationKey: "{\"allocations\":[{\"name\":\"hadoop-yarn\",\"priority\":\"koord-batch\",\"resources\":{\"kubernetes.io/batch-cpu\":\"60000\",\"kubernetes.io/batch-memory\":\"120Gi\"}}]}",
+						},
+					},
+					Status: corev1.NodeStatus{
+						Capacity: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("100"),
+							corev1.ResourceMemory: resource.MustParse("400Gi"),
+						},
+						Allocatable: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("100"),
+							corev1.ResourceMemory: resource.MustParse("380Gi"),
+						},
+					},
+				},
+				nr: &framework.NodeResource{
+					Resources: map[corev1.ResourceName]*resource.Quantity{
+						extension.BatchCPU:    resource.NewQuantity(50000, resource.DecimalSI),
+						extension.BatchMemory: resource.NewQuantity(120*1024*1024*1024, resource.BinarySI),
+					},
+				},
+			},
+			wantErr: false,
+			wantField: &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node",
+				},
+				Status: corev1.NodeStatus{
+					Capacity: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("100"),
+						corev1.ResourceMemory: resource.MustParse("400Gi"),
+						extension.BatchCPU:    *resource.NewQuantity(0, resource.DecimalSI),
+						extension.BatchMemory: *resource.NewQuantity(0, resource.BinarySI),
+					},
+					Allocatable: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("100"),
+						corev1.ResourceMemory: resource.MustParse("380Gi"),
+						extension.BatchCPU:    *resource.NewQuantity(0, resource.DecimalSI),
+						extension.BatchMemory: *resource.NewQuantity(0, resource.BinarySI),
+					},
+				},
+			},
+			wantOriginAllocated: &slov1alpha1.OriginAllocatable{
+				Resources: corev1.ResourceList{
+					extension.BatchCPU:    resource.MustParse("50k"),
+					extension.BatchMemory: resource.MustParse("120Gi"),
+				},
+			},
+		},
+		{
+			name: "reset batch resources with third party allocation",
+			fields: fields{
+				client: fake.NewClientBuilder().WithScheme(testScheme).Build(),
+			},
+			args: args{
+				node: &corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node",
+						Annotations: map[string]string{
+							slov1alpha1.NodeThirdPartyAllocationsAnnotationKey: "{\"allocations\":[{\"name\":\"hadoop-yarn\",\"priority\":\"koord-batch\",\"resources\":{\"kubernetes.io/batch-cpu\":\"10000\",\"kubernetes.io/batch-memory\":\"10Gi\"}}]}",
+						},
+					},
+					Status: corev1.NodeStatus{
+						Capacity: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("100"),
+							corev1.ResourceMemory: resource.MustParse("400Gi"),
+							extension.BatchCPU:    *resource.NewQuantity(50000, resource.DecimalSI),
+							extension.BatchMemory: *resource.NewScaledQuantity(120, 9),
+						},
+						Allocatable: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("100"),
+							corev1.ResourceMemory: resource.MustParse("380Gi"),
+							extension.BatchCPU:    *resource.NewQuantity(50000, resource.DecimalSI),
+							extension.BatchMemory: *resource.NewScaledQuantity(120, 9),
+						},
+					},
+				},
+				nr: &framework.NodeResource{
+					Resets: map[corev1.ResourceName]bool{
+						extension.BatchCPU:    true,
+						extension.BatchMemory: true,
+					},
+				},
+			},
+			wantErr: false,
+			wantField: &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node",
+				},
+				Status: corev1.NodeStatus{
+					Capacity: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("100"),
+						corev1.ResourceMemory: resource.MustParse("400Gi"),
+					},
+					Allocatable: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("100"),
+						corev1.ResourceMemory: resource.MustParse("380Gi"),
+					},
+				},
+			},
+			wantOriginAllocated: &slov1alpha1.OriginAllocatable{
+				Resources: corev1.ResourceList{
+					extension.BatchCPU:    resource.MustParse("0"),
+					extension.BatchMemory: resource.MustParse("0"),
+				},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			defer testPluginCleanup()
+			p := &Plugin{}
+			assert.Equal(t, PluginName, p.Name())
+			testOpt := &framework.Option{
+				Scheme:   testScheme,
+				Client:   fake.NewClientBuilder().WithScheme(testScheme).Build(),
+				Builder:  &builder.Builder{},
+				Recorder: &record.FakeRecorder{},
+			}
+			if tt.fields.client != nil {
+				testOpt.Client = tt.fields.client
+			}
+			err = p.Setup(testOpt)
+			assert.NoError(t, err)
+
+			gotErr := p.Prepare(tt.args.strategy, tt.args.node, tt.args.nr)
+			assert.Equal(t, tt.wantErr, gotErr != nil, gotErr)
+			testingCorrectResourceList(t, &tt.wantField.Status.Capacity, &tt.args.node.Status.Capacity)
+			testingCorrectResourceList(t, &tt.wantField.Status.Allocatable, &tt.args.node.Status.Allocatable)
+			if tt.wantOriginAllocated != nil {
+				getOriginAllocated, err := slov1alpha1.GetOriginExtendedAllocatable(tt.args.node.Annotations)
+				assert.NoError(t, err)
+				assert.Equal(t, tt.wantOriginAllocated, getOriginAllocated)
+			}
+		})
+	}
+}
+
 func TestPluginCalculate(t *testing.T) {
 	testScheme := runtime.NewScheme()
 	err := clientgoscheme.AddToScheme(testScheme)
