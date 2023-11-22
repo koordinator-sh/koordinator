@@ -220,6 +220,8 @@ func (p *Plugin) calculate(strategy *configuration.ColocationStrategy, node *cor
 		if priority := extension.GetPodPriorityClassWithDefault(pod); priority == extension.PriorityBatch ||
 			priority == extension.PriorityFree { // ignore LP pods
 			continue
+		} else if priority == extension.PriorityMid {
+			podRequest = util.GetPodRequest(pod, extension.MidCPU, extension.MidMemory)
 		}
 
 		podsHPRequest = quotav1.Add(podsHPRequest, podRequest)
