@@ -268,10 +268,11 @@ func TestPluginCalculate(t *testing.T) {
 			Phase: corev1.PodRunning,
 		},
 	}
-	testCPUQuant := resource.MustParse("10000")
+	testCPUQuant := resource.MustParse("90000")
+	//NOTE: if not call String, cpu String will be diff
 	_ = testCPUQuant.String()
-	testMemoryQuant := resource.MustParse("15Gi")
-	testMemoryQuant2 := resource.MustParse("30Gi")
+	testMemoryQuant := resource.MustParse("175Gi")
+	testMemoryQuant2 := resource.MustParse("190Gi")
 	type args struct {
 		strategy *configuration.ColocationStrategy
 		node     *corev1.Node
@@ -425,12 +426,12 @@ func TestPluginCalculate(t *testing.T) {
 			want: []framework.ResourceItem{
 				{
 					Name:     extension.MidCPU,
-					Message:  "midAllocatable[CPU(milli-core)]:10000 = min(nodeAllocatable:100000 * thresholdRatio:1, ProdReclaimable:10000)",
+					Message:  "midAllocatable[CPU(milli-core)]:90000 = min(nodeAllocatable:100000 * thresholdRatio:1, ProdReclaimable:10000) + Unallocated:80000",
 					Quantity: &testCPUQuant,
 				},
 				{
 					Name:     extension.MidMemory,
-					Message:  "midAllocatable[Memory(byte)]:15Gi = min(nodeAllocatable:200Gi * thresholdRatio:1, ProdReclaimable:15Gi)",
+					Message:  "midAllocatable[Memory(byte)]:175Gi = min(nodeAllocatable:200Gi * thresholdRatio:1, ProdReclaimable:15Gi) + Unallocated:160Gi",
 					Quantity: &testMemoryQuant,
 				},
 			},
@@ -504,12 +505,12 @@ func TestPluginCalculate(t *testing.T) {
 			want: []framework.ResourceItem{
 				{
 					Name:     extension.MidCPU,
-					Message:  "midAllocatable[CPU(milli-core)]:10000 = min(nodeAllocatable:100000 * thresholdRatio:0.1, ProdReclaimable:15000)",
+					Message:  "midAllocatable[CPU(milli-core)]:90000 = min(nodeAllocatable:100000 * thresholdRatio:0.1, ProdReclaimable:15000) + Unallocated:80000",
 					Quantity: &testCPUQuant,
 				},
 				{
 					Name:     extension.MidMemory,
-					Message:  "midAllocatable[Memory(byte)]:30Gi = min(nodeAllocatable:200Gi * thresholdRatio:0.2, ProdReclaimable:30Gi)",
+					Message:  "midAllocatable[Memory(byte)]:190Gi = min(nodeAllocatable:200Gi * thresholdRatio:0.2, ProdReclaimable:30Gi) + Unallocated:160Gi",
 					Quantity: &testMemoryQuant2,
 				},
 			},

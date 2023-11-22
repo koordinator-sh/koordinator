@@ -1027,13 +1027,13 @@ func Test_calculateNodeResource(t *testing.T) {
 				},
 				{
 					Name:     extension.MidCPU,
-					Quantity: resource.NewQuantity(10000, resource.DecimalSI),
-					Message:  "midAllocatable[CPU(milli-core)]:10000 = min(nodeAllocatable:100000 * thresholdRatio:1, ProdReclaimable:10000)",
+					Quantity: resource.NewQuantity(70000, resource.DecimalSI),
+					Message:  "midAllocatable[CPU(milli-core)]:70000 = min(nodeAllocatable:100000 * thresholdRatio:1, ProdReclaimable:10000) + Unallocated:60000",
 				},
 				{
 					Name:     extension.MidMemory,
-					Quantity: resource.NewQuantity(20000000000, resource.BinarySI),
-					Message:  "midAllocatable[Memory(byte)]:19531250Ki = min(nodeAllocatable:120G * thresholdRatio:1, ProdReclaimable:20G)",
+					Quantity: resource.NewQuantity(80000000000, resource.BinarySI),
+					Message:  "midAllocatable[Memory(byte)]:78125000Ki = min(nodeAllocatable:120G * thresholdRatio:1, ProdReclaimable:20G) + Unallocated:60G",
 				},
 			}...),
 		},
