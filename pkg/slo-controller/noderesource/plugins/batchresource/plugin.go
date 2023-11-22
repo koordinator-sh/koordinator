@@ -115,8 +115,9 @@ func (p *Plugin) Prepare(_ *configuration.ColocationStrategy, node *corev1.Node,
 	}
 
 	// set origin batch allocatable
-	batchMilliCPU := util.GetBatchMilliCPUFromResourceList(node.Status.Allocatable)
-	batchMemory := util.GetBatchMemoryFromResourceList(node.Status.Allocatable)
+	batchMilliCPU := util.GetNodeAllocatableBatchMilliCPU(node)
+	//batchMilliCPU := util.GetBatchMilliCPUFromResourceList(node.Status.Allocatable)
+	batchMemory := util.GetNodeAllocatableBatchMemory(node)
 	originBatchAllocatable := corev1.ResourceList{
 		extension.BatchCPU:    *resource.NewQuantity(util.MaxInt64(batchMilliCPU, 0), resource.DecimalSI),
 		extension.BatchMemory: *resource.NewQuantity(util.MaxInt64(batchMemory, 0), resource.BinarySI),
