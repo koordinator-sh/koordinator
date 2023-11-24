@@ -114,9 +114,11 @@ DirectMap1G:           0 kB`
 					},
 				},
 				{
-					Name:        "test-failed-container",
+					Name:        "test-no-running-container",
 					ContainerID: testContainerID,
-					State:       corev1.ContainerState{},
+					State: corev1.ContainerState{
+						Terminated: &corev1.ContainerStateTerminated{},
+					},
 				},
 			},
 		},
@@ -125,7 +127,7 @@ DirectMap1G:           0 kB`
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "test-failed-pod",
 			Namespace: "test",
-			UID:       "yyyyyy",
+			UID:       "yyyyyyyy",
 		},
 		Status: corev1.PodStatus{
 			Phase: corev1.PodFailed,
@@ -146,10 +148,13 @@ DirectMap1G:           0 kB`
 		SetSysUtil            func(helper *system.FileTestUtil)
 	}
 	tests := []struct {
-		name        string
-		fields      fields
-		wantEnable  bool
-		wantStarted bool
+		name                string
+		fields              fields
+		wantEnable          bool
+		wantStarted         bool
+		wantNodeMetric      float64
+		wantPodMetric       float64
+		wantContainerMetric float64
 	}{
 		{
 			name: "collect pagecache info",
@@ -179,8 +184,11 @@ DirectMap1G:           0 kB`
 					helper.WriteCgroupFileContents(testContainerParentDir, system.MemoryStat, testMemStat)
 				},
 			},
-			wantEnable:  true,
-			wantStarted: true,
+			wantEnable:          true,
+			wantStarted:         true,
+			wantNodeMetric:      (1048576 - 262144) << 10,
+			wantPodMetric:       104857600 + 0 + 0 + 104857600 + 0,
+			wantContainerMetric: 104857600 + 0 + 0 + 104857600 + 0,
 		},
 		{
 			name: "test failed pod and failed container",
@@ -235,7 +243,7 @@ DirectMap1G:           0 kB`
 			}()
 			statesInformer := mock_statesinformer.NewMockStatesInformer(ctrl)
 			statesInformer.EXPECT().HasSynced().Return(true).AnyTimes()
-			statesInformer.EXPECT().GetAllPods().Return(tt.fields.getPodMetas).Times(1)
+			statesInformer.EXPECT().GetAllPods().Return(tt.fields.getPodMetas).AnyTimes()
 			collector := New(&framework.Options{
 				Config: &framework.Config{
 					EnablePageCacheCollector: true,
@@ -253,7 +261,78 @@ DirectMap1G:           0 kB`
 			})
 			assert.Equal(t, tt.wantEnable, c.Enabled())
 			assert.Equal(t, tt.wantStarted, c.Started())
+			if tt.name == "collect pagecache info" {
+				nodeGot := testGetNodePageCacheMetrics(t, metricCache, testNow, 5*time.Second)
+				assert.Equal(t, tt.wantNodeMetric, nodeGot)
+				podGot := testGetPodPageCacheMetrics(t, metricCache, string(c.statesInformer.GetAllPods()[0].Pod.UID), testNow, 5*time.Second)
+				assert.Equal(t, tt.wantPodMetric, podGot)
+				containerGot := testGetContainerPageCacheMetrics(t, metricCache, string(c.statesInformer.GetAllPods()[0].Pod.Status.ContainerStatuses[0].ContainerID), testNow, 5*time.Second)
+				assert.Equal(t, tt.wantContainerMetric, containerGot)
+			}
 		})
 
 	}
+}
+
+func testGetNodePageCacheMetrics(t *testing.T, metricCache metriccache.TSDBStorage, testNow time.Time, d time.Duration) float64 {
+	testStart := testNow.Add(-d)
+	testEnd := testNow.Add(d)
+	queryParam := metriccache.QueryParam{
+		Start:     &testStart,
+		End:       &testEnd,
+		Aggregate: metriccache.AggregationTypeAVG,
+	}
+	querier, err := metricCache.Querier(*queryParam.Start, *queryParam.End)
+	assert.NoError(t, err)
+	nodeMemWithPageCacheAggregateResult, err := testQuery(querier, metriccache.NodeMemoryUsageWithPageCacheMetric, nil)
+	assert.NoError(t, err)
+	nodeMemWithPageCacheUsed, err := nodeMemWithPageCacheAggregateResult.Value(queryParam.Aggregate)
+	assert.NoError(t, err)
+	return nodeMemWithPageCacheUsed
+}
+
+func testGetPodPageCacheMetrics(t *testing.T, metricCache metriccache.TSDBStorage, podUID string, testNow time.Time, d time.Duration) float64 {
+	testStart := testNow.Add(-d)
+	testEnd := testNow.Add(d)
+	queryParam := metriccache.QueryParam{
+		Start:     &testStart,
+		End:       &testEnd,
+		Aggregate: metriccache.AggregationTypeAVG,
+	}
+	querier, err := metricCache.Querier(*queryParam.Start, *queryParam.End)
+	assert.NoError(t, err)
+	podMemWithPageCacheAggregateResult, err := testQuery(querier, metriccache.PodMemoryUsageWithPageCacheMetric, metriccache.MetricPropertiesFunc.Pod(podUID))
+	assert.NoError(t, err)
+	podMemWithPageCacheUsed, err := podMemWithPageCacheAggregateResult.Value(queryParam.Aggregate)
+	assert.NoError(t, err)
+	return podMemWithPageCacheUsed
+}
+
+func testGetContainerPageCacheMetrics(t *testing.T, metricCache metriccache.TSDBStorage, containerUID string, testNow time.Time, d time.Duration) float64 {
+	testStart := testNow.Add(-d)
+	testEnd := testNow.Add(d)
+	queryParam := metriccache.QueryParam{
+		Start:     &testStart,
+		End:       &testEnd,
+		Aggregate: metriccache.AggregationTypeAVG,
+	}
+	querier, err := metricCache.Querier(*queryParam.Start, *queryParam.End)
+	assert.NoError(t, err)
+	containerMemWithPageCacheAggregateResult, err := testQuery(querier, metriccache.ContainerMemoryUsageWithPageCacheMetric, metriccache.MetricPropertiesFunc.Container(containerUID))
+	assert.NoError(t, err)
+	containerMemWithPageCacheUsed, err := containerMemWithPageCacheAggregateResult.Value(queryParam.Aggregate)
+	assert.NoError(t, err)
+	return containerMemWithPageCacheUsed
+}
+
+func testQuery(querier metriccache.Querier, resource metriccache.MetricResource, properties map[metriccache.MetricProperty]string) (metriccache.AggregateResult, error) {
+	queryMeta, err := resource.BuildQueryMeta(properties)
+	if err != nil {
+		return nil, err
+	}
+	aggregateResult := metriccache.DefaultAggregateResultFactory.New(queryMeta)
+	if err = querier.Query(queryMeta, nil, aggregateResult); err != nil {
+		return nil, err
+	}
+	return aggregateResult, nil
 }
