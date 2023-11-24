@@ -363,13 +363,24 @@ func (p *peakPredictServer) restoreModels() (unknownUIDs []UIDType) {
 	}
 
 	knownUIDs := make(map[UIDType]bool)
+	// pods checkpoints
 	pods := p.informer.ListPods()
 	for _, pod := range pods {
-		knownUIDs[UIDType(pod.UID)] = true
+		podUID := p.uidGenerator.Pod(pod)
+		knownUIDs[podUID] = true
 	}
+	// node checkpoint
 	node := p.informer.GetNode()
 	if node != nil {
-		knownUIDs[UIDType(node.UID)] = true
+		nodeUID := p.uidGenerator.Node()
+		knownUIDs[nodeUID] = true
+	}
+	// node items checkpoints (priority classes)
+	systemUID := p.uidGenerator.NodeItem(SystemItemID)
+	knownUIDs[systemUID] = true
+	for _, priorityClass := range extension.KnownPriorityClasses {
+		priorityUID := p.uidGenerator.NodeItem(string(priorityClass))
+		knownUIDs[priorityUID] = true
 	}
 
 	for _, checkpoint := range checkpoints {

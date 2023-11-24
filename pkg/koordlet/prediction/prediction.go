@@ -29,8 +29,8 @@ import (
 const (
 	DefaultNodeID        = "__node__"
 	DefaultNodeItemIDFmt = "__node-%s__"
-	SystemItemID         = "sys" // node item ID for the system overhead which is not counted in any pod
-	AllPodsItemID        = "all-pods"
+	SystemItemID         = "sys"      // node item ID for the system overhead which is not counted in any pod
+	AllPodsItemID        = "all-pods" // not stored for now, just used for calculating the sys
 )
 
 type UIDType string
@@ -99,8 +99,8 @@ func (i *informer) HasSynced() bool {
 func (i *informer) ListPods() []*v1.Pod {
 	pods := i.statesInformer.GetAllPods()
 	result := make([]*v1.Pod, len(pods))
-	for i := range pods {
-		result[i] = pods[i].Pod
+	for j := range pods {
+		result[j] = pods[j].Pod
 	}
 	return result
 }

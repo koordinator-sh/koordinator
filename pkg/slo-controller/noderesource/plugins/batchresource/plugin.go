@@ -114,6 +114,39 @@ func (p *Plugin) Prepare(_ *configuration.ColocationStrategy, node *corev1.Node,
 		prepareNodeForResource(node, nr, resourceName)
 	}
 
+	// set origin batch allocatable
+	batchMilliCPU := util.GetNodeAllocatableBatchMilliCPU(node)
+	//batchMilliCPU := util.GetBatchMilliCPUFromResourceList(node.Status.Allocatable)
+	batchMemory := util.GetNodeAllocatableBatchMemory(node)
+	originBatchAllocatable := corev1.ResourceList{
+		extension.BatchCPU:    *resource.NewQuantity(util.MaxInt64(batchMilliCPU, 0), resource.DecimalSI),
+		extension.BatchMemory: *resource.NewQuantity(util.MaxInt64(batchMemory, 0), resource.BinarySI),
+	}
+	if err := slov1alpha1.SetOriginExtendedAllocatableRes(node.Annotations, originBatchAllocatable); err != nil {
+		return err
+	}
+
+	if batchMilliCPU < 0 || batchMemory < 0 {
+		// batch resources are reset, no need to recalculate node status
+		return nil
+	}
+
+	// subtract third party allocated
+	thirdPartyBatchAllocated, err := slov1alpha1.GetThirdPartyAllocatedResByPriority(node.Annotations, extension.PriorityBatch)
+	if err != nil || thirdPartyBatchAllocated == nil {
+		return err
+	}
+	batchZero := corev1.ResourceList{
+		extension.BatchCPU:    *resource.NewQuantity(0, resource.DecimalSI),
+		extension.BatchMemory: *resource.NewQuantity(0, resource.BinarySI),
+	}
+	kubeBatchAllocatable := quotav1.Max(quotav1.Subtract(originBatchAllocatable, thirdPartyBatchAllocated), batchZero)
+	for _, resourceName := range ResourceNames {
+		if value, exist := kubeBatchAllocatable[resourceName]; exist {
+			node.Status.Allocatable[resourceName] = value
+			node.Status.Capacity[resourceName] = value
+		}
+	}
 	return nil
 }
 
@@ -300,7 +333,20 @@ func (p *Plugin) calculateOnNUMALevel(strategy *configuration.ColocationStrategy
 	podsHPZoneMaxUsedReq := make([]corev1.ResourceList, zoneNum)
 	batchZoneAllocatable := make([]corev1.ResourceList, zoneNum)
 
+	hostAppHPUsed := util.NewZeroResourceList()
+	for _, hostAppMetric := range resourceMetrics.NodeMetric.Status.HostApplicationMetric {
+		if hostAppMetric.Priority == extension.PriorityBatch || hostAppMetric.Priority == extension.PriorityFree {
+			// only consider higher priority usage for batch allocatable
+			// now only support product and batch(hadoop-yarn) priority for host application
+			continue
+		}
+		hostAppHPUsed = quotav1.Add(hostAppHPUsed, getHostAppMetricUsage(hostAppMetric))
+	}
+
 	systemUsed := getResourceListForCPUAndMemory(nodeMetric.Status.NodeMetric.SystemUsage.ResourceList)
+	// resource usage of host applications with prod priority will be count as host system usage since they consumes the
+	// node reserved resource. bind host app on single numa node is not supported yet. divide the usage by numa node number.
+	systemUsed = quotav1.Add(systemUsed, hostAppHPUsed)
 	nodeAnnoReserved := util.GetNodeReservationFromAnnotation(node.Annotations)
 	nodeKubeletReserved := util.GetNodeReservationFromKubelet(node)
 	systemReserved := quotav1.Max(nodeKubeletReserved, nodeAnnoReserved)
