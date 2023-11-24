@@ -120,7 +120,7 @@ func (gqm *GroupQuotaManager) UpdateClusterTotalResource(deltaRes v1.ResourceLis
 func (gqm *GroupQuotaManager) updateClusterTotalResourceNoLock(deltaRes v1.ResourceList) {
 	gqm.totalResource = quotav1.Add(gqm.totalResource, deltaRes)
 
-	sysAndDefaultUsed := v1.ResourceList{}
+	var sysAndDefaultUsed v1.ResourceList
 	defaultQuota := gqm.quotaInfoMap[extension.DefaultQuotaName]
 	if defaultQuota != nil {
 		sysAndDefaultUsed = quotav1.Add(sysAndDefaultUsed, defaultQuota.CalculateInfo.Used.DeepCopy())
@@ -167,7 +167,7 @@ func (gqm *GroupQuotaManager) SetTotalResourceForTree(total v1.ResourceList) v1.
 }
 
 // updateGroupDeltaRequestNoLock no need lock gqm.lock
-func (gqm *GroupQuotaManager) updateGroupDeltaRequestNoLock(quotaName string, deltaReq v1.ResourceList) {
+func (gqm *GroupQuotaManager) updateGroupDeltaRequestNoLock(quotaName string, deltaReq, deltaNonPreemptibleRequest v1.ResourceList) {
 	curToAllParInfos := gqm.getCurToAllParentGroupQuotaInfoNoLock(quotaName)
 	allQuotaInfoLen := len(curToAllParInfos)
 	if allQuotaInfoLen <= 0 {
@@ -176,16 +176,16 @@ func (gqm *GroupQuotaManager) updateGroupDeltaRequestNoLock(quotaName string, de
 
 	defer gqm.scopedLockForQuotaInfo(curToAllParInfos)()
 
-	gqm.recursiveUpdateGroupTreeWithDeltaRequest(deltaReq, curToAllParInfos)
+	gqm.recursiveUpdateGroupTreeWithDeltaRequest(deltaReq, deltaNonPreemptibleRequest, curToAllParInfos)
 }
 
 // recursiveUpdateGroupTreeWithDeltaRequest update the quota of a node, also need update all parentNode, the lock operation
 // of all quotaInfo is done by gqm. scopedLockForQuotaInfo, so just get treeWrappers' lock when calling treeWrappers' function
-func (gqm *GroupQuotaManager) recursiveUpdateGroupTreeWithDeltaRequest(deltaReq v1.ResourceList, curToAllParInfos []*QuotaInfo) {
+func (gqm *GroupQuotaManager) recursiveUpdateGroupTreeWithDeltaRequest(deltaReq, deltaNonPreemptibleRequest v1.ResourceList, curToAllParInfos []*QuotaInfo) {
 	for i := 0; i < len(curToAllParInfos); i++ {
 		curQuotaInfo := curToAllParInfos[i]
 		oldSubLimitReq := curQuotaInfo.getLimitRequestNoLock()
-		curQuotaInfo.addRequestNonNegativeNoLock(deltaReq)
+		curQuotaInfo.addRequestNonNegativeNoLock(deltaReq, deltaNonPreemptibleRequest)
 		if curQuotaInfo.Name == extension.RootQuotaName {
 			return
 		}
@@ -250,7 +250,7 @@ func (gqm *GroupQuotaManager) updateGroupDeltaUsedNoLock(quotaName string, delta
 
 	// if systemQuotaGroup or DefaultQuotaGroup's used change, update cluster total resource.
 	if quotaName == extension.SystemQuotaName || quotaName == extension.DefaultQuotaName {
-		gqm.updateClusterTotalResourceNoLock(v1.ResourceList{})
+		gqm.updateClusterTotalResourceNoLock(nil)
 	}
 }
 
@@ -472,7 +472,8 @@ func (gqm *GroupQuotaManager) buildSubParGroupTopoNoLock() {
 
 // ResetAllGroupQuotaNoLock no need to lock gqm.lock
 func (gqm *GroupQuotaManager) resetAllGroupQuotaNoLock() {
-	childRequestMap, childNonPreemptibleUsedMap, childUsedMap := make(quotaResMapType), make(quotaResMapType), make(quotaResMapType)
+	childRequestMap, childNonPreemptibleUsedMap, childUsedMap, childNonPreemptibleRequestMap :=
+		make(quotaResMapType), make(quotaResMapType), make(quotaResMapType), make(quotaResMapType)
 	for quotaName, topoNode := range gqm.quotaTopoNodeMap {
 		if quotaName == extension.RootQuotaName {
 			gqm.resetRootQuotaUsedAndRequest()
@@ -481,6 +482,7 @@ func (gqm *GroupQuotaManager) resetAllGroupQuotaNoLock() {
 		topoNode.quotaInfo.lock.Lock()
 		if !topoNode.quotaInfo.IsParent {
 			childRequestMap[quotaName] = topoNode.quotaInfo.CalculateInfo.ChildRequest.DeepCopy()
+			childNonPreemptibleRequestMap[quotaName] = topoNode.quotaInfo.CalculateInfo.NonPreemptibleRequest.DeepCopy()
 			childNonPreemptibleUsedMap[quotaName] = topoNode.quotaInfo.CalculateInfo.NonPreemptibleUsed.DeepCopy()
 			childUsedMap[quotaName] = topoNode.quotaInfo.CalculateInfo.Used.DeepCopy()
 		}
@@ -500,7 +502,7 @@ func (gqm *GroupQuotaManager) resetAllGroupQuotaNoLock() {
 	// subGroup's topo relation may change; refresh the request/used from bottom to top
 	for quotaName, topoNode := range gqm.quotaTopoNodeMap {
 		if !topoNode.quotaInfo.IsParent {
-			gqm.updateGroupDeltaRequestNoLock(quotaName, childRequestMap[quotaName])
+			gqm.updateGroupDeltaRequestNoLock(quotaName, childRequestMap[quotaName], childNonPreemptibleRequestMap[quotaName])
 			gqm.updateGroupDeltaUsedNoLock(quotaName, childUsedMap[quotaName], childNonPreemptibleUsedMap[quotaName])
 		}
 	}
@@ -585,24 +587,27 @@ func (gqm *GroupQuotaManager) GetAllQuotaNames() map[string]struct{} {
 }
 
 func (gqm *GroupQuotaManager) updatePodRequestNoLock(quotaName string, oldPod, newPod *v1.Pod) {
-	var oldPodReq, newPodReq v1.ResourceList
+	var oldPodReq, newPodReq, oldNonPreemptibleRequest, newNonPreemptibleRequest v1.ResourceList
 	if oldPod != nil {
 		oldPodReq, _ = PodRequestsAndLimits(oldPod)
-	} else {
-		oldPodReq = make(v1.ResourceList)
+		if extension.IsPodNonPreemptible(oldPod) {
+			oldNonPreemptibleRequest = oldPodReq
+		}
 	}
 
 	if newPod != nil {
 		newPodReq, _ = PodRequestsAndLimits(newPod)
-	} else {
-		newPodReq = make(v1.ResourceList)
+		if extension.IsPodNonPreemptible(newPod) {
+			newNonPreemptibleRequest = newPodReq
+		}
 	}
 
 	deltaReq := quotav1.Subtract(newPodReq, oldPodReq)
-	if quotav1.IsZero(deltaReq) {
+	deltaNonPreemptibleRequest := quotav1.Subtract(newNonPreemptibleRequest, oldNonPreemptibleRequest)
+	if quotav1.IsZero(deltaReq) && quotav1.IsZero(deltaNonPreemptibleRequest) {
 		return
 	}
-	gqm.updateGroupDeltaRequestNoLock(quotaName, deltaReq)
+	gqm.updateGroupDeltaRequestNoLock(quotaName, deltaReq, deltaNonPreemptibleRequest)
 }
 
 func (gqm *GroupQuotaManager) updatePodUsedNoLock(quotaName string, oldPod, newPod *v1.Pod) {
@@ -622,9 +627,6 @@ func (gqm *GroupQuotaManager) updatePodUsedNoLock(quotaName string, oldPod, newP
 		if extension.IsPodNonPreemptible(oldPod) {
 			oldNonPreemptibleUsed = oldPodUsed
 		}
-	} else {
-		oldPodUsed = make(v1.ResourceList)
-		oldNonPreemptibleUsed = make(v1.ResourceList)
 	}
 
 	if newPod != nil {
@@ -632,9 +634,6 @@ func (gqm *GroupQuotaManager) updatePodUsedNoLock(quotaName string, oldPod, newP
 		if extension.IsPodNonPreemptible(newPod) {
 			newNonPreemptibleUsed = newPodUsed
 		}
-	} else {
-		newPodUsed = make(v1.ResourceList)
-		newNonPreemptibleUsed = make(v1.ResourceList)
 	}
 
 	deltaUsed := quotav1.Subtract(newPodUsed, oldPodUsed)
@@ -806,17 +805,20 @@ func (gqm *GroupQuotaManager) UnreservePod(quotaName string, p *v1.Pod) {
 	gqm.updatePodIsAssignedNoLock(quotaName, p, false)
 }
 
-func (gqm *GroupQuotaManager) GetQuotaInformationForSyncHandler(quotaName string) (used, request, childRequest, runtime, guaranteed, allocated v1.ResourceList, err error) {
+func (gqm *GroupQuotaManager) GetQuotaInformationForSyncHandler(quotaName string) (used, request, childRequest, runtime,
+	guaranteed, allocated, nonPreemptibleRequest, nonPreemptibleUsed v1.ResourceList, err error) {
 	gqm.hierarchyUpdateLock.RLock()
 	defer gqm.hierarchyUpdateLock.RUnlock()
 
 	quotaInfo := gqm.getQuotaInfoByNameNoLock(quotaName)
 	if quotaInfo == nil {
-		return nil, nil, nil, nil, nil, nil, fmt.Errorf("groupQuotaManager doesn't have this quota:%v", quotaName)
+		return nil, nil, nil, nil,
+			nil, nil, nil, nil, fmt.Errorf("groupQuotaManager doesn't have this quota:%v", quotaName)
 	}
 
 	runtime = gqm.RefreshRuntimeNoLock(quotaName)
-	return quotaInfo.GetUsed(), quotaInfo.GetRequest(), quotaInfo.GetChildRequest(), runtime, quotaInfo.GetGuaranteed(), quotaInfo.GetAllocated(), nil
+	return quotaInfo.GetUsed(), quotaInfo.GetRequest(), quotaInfo.GetChildRequest(), runtime,
+		quotaInfo.GetGuaranteed(), quotaInfo.GetAllocated(), quotaInfo.GetNonPreemptibleRequest(), quotaInfo.GetNonPreemptibleUsed(), nil
 }
 
 func getPodName(oldPod, newPod *v1.Pod) string {
@@ -871,7 +873,7 @@ func (gqm *GroupQuotaManager) OnNodeDelete(node *v1.Node) {
 		return
 	}
 
-	delta := quotav1.Subtract(v1.ResourceList{}, node.Status.Allocatable)
+	delta := quotav1.Subtract(nil, node.Status.Allocatable)
 	gqm.UpdateClusterTotalResource(delta)
 	delete(gqm.nodeResourceMap, node.Name)
 	klog.V(5).Infof("OnNodeDeleteFunc success: %v [%v]", node.Name, delta)
@@ -886,15 +888,14 @@ func (gqm *GroupQuotaManager) resetRootQuotaUsedAndRequest() {
 	rootQuotaInfo.lock.Lock()
 	defer rootQuotaInfo.lock.Unlock()
 
-	used := v1.ResourceList{}
-	request := v1.ResourceList{}
-	nonPreemptUsed := v1.ResourceList{}
+	var used, request, nonPreemptUsed, nonPreemptRequest v1.ResourceList
 
 	systemQuotaInfo := gqm.getQuotaInfoByNameNoLock(extension.SystemQuotaName)
 	if systemQuotaInfo != nil {
 		used = quotav1.Add(used, systemQuotaInfo.GetUsed())
 		request = quotav1.Add(request, systemQuotaInfo.GetRequest())
 		nonPreemptUsed = quotav1.Add(nonPreemptUsed, systemQuotaInfo.GetNonPreemptibleUsed())
+		nonPreemptRequest = quotav1.Add(nonPreemptRequest, systemQuotaInfo.GetNonPreemptibleRequest())
 	}
 
 	defaultQuotaInfo := gqm.getQuotaInfoByNameNoLock(extension.DefaultQuotaName)
@@ -902,11 +903,13 @@ func (gqm *GroupQuotaManager) resetRootQuotaUsedAndRequest() {
 		used = quotav1.Add(used, defaultQuotaInfo.GetUsed())
 		request = quotav1.Add(request, defaultQuotaInfo.GetRequest())
 		nonPreemptUsed = quotav1.Add(nonPreemptUsed, defaultQuotaInfo.GetNonPreemptibleUsed())
+		nonPreemptRequest = quotav1.Add(nonPreemptRequest, defaultQuotaInfo.GetNonPreemptibleRequest())
 	}
 
 	rootQuotaInfo.CalculateInfo.Used = used
 	rootQuotaInfo.CalculateInfo.Request = request
 	rootQuotaInfo.CalculateInfo.NonPreemptibleUsed = nonPreemptUsed
+	rootQuotaInfo.CalculateInfo.NonPreemptibleRequest = nonPreemptRequest
 }
 
 func (gqm *GroupQuotaManager) recursiveUpdateGroupTreeWithDeltaAllocated(deltaAllocated v1.ResourceList, curToAllParInfos []*QuotaInfo) {
@@ -986,7 +989,7 @@ func (gqm *GroupQuotaManager) doUpdateOneGroupMaxQuotaNoLock(quotaName string, n
 
 		newSubLimitReq := curQuotaInfo.getLimitRequestNoLock()
 		deltaRequest := quotav1.Subtract(newSubLimitReq, oldSubLimitReq)
-		gqm.recursiveUpdateGroupTreeWithDeltaRequest(deltaRequest, curToAllParInfos[1:])
+		gqm.recursiveUpdateGroupTreeWithDeltaRequest(deltaRequest, nil, curToAllParInfos[1:])
 	}
 }
 
@@ -1024,7 +1027,7 @@ func (gqm *GroupQuotaManager) doUpdateOneGroupMinQuotaNoLock(quotaName string, n
 
 		newSubLimitReq := curQuotaInfo.getLimitRequestNoLock()
 		deltaRequest := quotav1.Subtract(newSubLimitReq, oldSubLimitReq)
-		gqm.recursiveUpdateGroupTreeWithDeltaRequest(deltaRequest, curToAllParInfos[1:])
+		gqm.recursiveUpdateGroupTreeWithDeltaRequest(deltaRequest, nil, curToAllParInfos[1:])
 	}
 
 	// update the guarantee.

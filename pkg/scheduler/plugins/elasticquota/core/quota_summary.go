@@ -33,17 +33,18 @@ type QuotaInfoSummary struct {
 	AllowLentResource bool   `json:"allowLentResource"`
 	Tree              string `json:"tree"`
 
-	Max                v1.ResourceList `json:"max"`
-	Min                v1.ResourceList `json:"min"`
-	AutoScaleMin       v1.ResourceList `json:"autoScaleMin"`
-	Used               v1.ResourceList `json:"used"`
-	NonPreemptibleUsed v1.ResourceList `json:"nonPreemptibleUsed"`
-	Request            v1.ResourceList `json:"request"`
-	SharedWeight       v1.ResourceList `json:"sharedWeight"`
-	Runtime            v1.ResourceList `json:"runtime"`
-	ChildRequest       v1.ResourceList `json:"childRequest"`
-	Allocated          v1.ResourceList `json:"allocated"`
-	Guaranteed         v1.ResourceList `json:"guaranteed"`
+	Max                   v1.ResourceList `json:"max"`
+	Min                   v1.ResourceList `json:"min"`
+	AutoScaleMin          v1.ResourceList `json:"autoScaleMin"`
+	Used                  v1.ResourceList `json:"used"`
+	NonPreemptibleUsed    v1.ResourceList `json:"nonPreemptibleUsed"`
+	Request               v1.ResourceList `json:"request"`
+	NonPreemptibleRequest v1.ResourceList `json:"nonPreemptibleRequest"`
+	SharedWeight          v1.ResourceList `json:"sharedWeight"`
+	Runtime               v1.ResourceList `json:"runtime"`
+	ChildRequest          v1.ResourceList `json:"childRequest"`
+	Allocated             v1.ResourceList `json:"allocated"`
+	Guaranteed            v1.ResourceList `json:"guaranteed"`
 
 	PodCache map[string]*SimplePodInfo `json:"podCache"`
 }
