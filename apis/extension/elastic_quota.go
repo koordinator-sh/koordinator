@@ -27,29 +27,31 @@ import (
 
 // RootQuotaName means quotaTree's root\head.
 const (
-	SystemQuotaName             = "koordinator-system-quota"
-	RootQuotaName               = "koordinator-root-quota"
-	DefaultQuotaName            = "koordinator-default-quota"
-	QuotaKoordinatorPrefix      = "quota.scheduling.koordinator.sh"
-	LabelQuotaIsParent          = QuotaKoordinatorPrefix + "/is-parent"
-	LabelQuotaParent            = QuotaKoordinatorPrefix + "/parent"
-	LabelAllowLentResource      = QuotaKoordinatorPrefix + "/allow-lent-resource"
-	LabelQuotaName              = QuotaKoordinatorPrefix + "/name"
-	LabelQuotaProfile           = QuotaKoordinatorPrefix + "/profile"
-	LabelQuotaIsRoot            = QuotaKoordinatorPrefix + "/is-root"
-	LabelQuotaTreeID            = QuotaKoordinatorPrefix + "/tree-id"
-	LabelQuotaIgnoreDefaultTree = QuotaKoordinatorPrefix + "/ignore-default-tree"
-	LabelPreemptible            = QuotaKoordinatorPrefix + "/preemptible"
-	LabelAllowForceUpdate       = QuotaKoordinatorPrefix + "/allow-force-update"
-	AnnotationSharedWeight      = QuotaKoordinatorPrefix + "/shared-weight"
-	AnnotationRuntime           = QuotaKoordinatorPrefix + "/runtime"
-	AnnotationRequest           = QuotaKoordinatorPrefix + "/request"
-	AnnotationChildRequest      = QuotaKoordinatorPrefix + "/child-request"
-	AnnotationResourceKeys      = QuotaKoordinatorPrefix + "/resource-keys"
-	AnnotationTotalResource     = QuotaKoordinatorPrefix + "/total-resource"
-	AnnotationQuotaNamespaces   = QuotaKoordinatorPrefix + "/namespaces"
-	AnnotationGuaranteed        = QuotaKoordinatorPrefix + "/guaranteed"
-	AnnotationAllocated         = QuotaKoordinatorPrefix + "/allocated"
+	SystemQuotaName                 = "koordinator-system-quota"
+	RootQuotaName                   = "koordinator-root-quota"
+	DefaultQuotaName                = "koordinator-default-quota"
+	QuotaKoordinatorPrefix          = "quota.scheduling.koordinator.sh"
+	LabelQuotaIsParent              = QuotaKoordinatorPrefix + "/is-parent"
+	LabelQuotaParent                = QuotaKoordinatorPrefix + "/parent"
+	LabelAllowLentResource          = QuotaKoordinatorPrefix + "/allow-lent-resource"
+	LabelQuotaName                  = QuotaKoordinatorPrefix + "/name"
+	LabelQuotaProfile               = QuotaKoordinatorPrefix + "/profile"
+	LabelQuotaIsRoot                = QuotaKoordinatorPrefix + "/is-root"
+	LabelQuotaTreeID                = QuotaKoordinatorPrefix + "/tree-id"
+	LabelQuotaIgnoreDefaultTree     = QuotaKoordinatorPrefix + "/ignore-default-tree"
+	LabelPreemptible                = QuotaKoordinatorPrefix + "/preemptible"
+	LabelAllowForceUpdate           = QuotaKoordinatorPrefix + "/allow-force-update"
+	AnnotationSharedWeight          = QuotaKoordinatorPrefix + "/shared-weight"
+	AnnotationRuntime               = QuotaKoordinatorPrefix + "/runtime"
+	AnnotationRequest               = QuotaKoordinatorPrefix + "/request"
+	AnnotationChildRequest          = QuotaKoordinatorPrefix + "/child-request"
+	AnnotationResourceKeys          = QuotaKoordinatorPrefix + "/resource-keys"
+	AnnotationTotalResource         = QuotaKoordinatorPrefix + "/total-resource"
+	AnnotationQuotaNamespaces       = QuotaKoordinatorPrefix + "/namespaces"
+	AnnotationGuaranteed            = QuotaKoordinatorPrefix + "/guaranteed"
+	AnnotationAllocated             = QuotaKoordinatorPrefix + "/allocated"
+	AnnotationNonPreemptibleRequest = QuotaKoordinatorPrefix + "/non-preemptible-request"
+	AnnotationNonPreemptibleUsed    = QuotaKoordinatorPrefix + "/non-preemptible-used"
 )
 
 func GetParentQuotaName(quota *v1alpha1.ElasticQuota) string {
@@ -122,6 +124,26 @@ func GetAnnotationQuotaNamespaces(quota *v1alpha1.ElasticQuota) []string {
 		return nil
 	}
 	return namespaces
+}
+
+func GetNonPreemptibleRequest(quota *v1alpha1.ElasticQuota) (corev1.ResourceList, error) {
+	nonPreemptibleRequest := corev1.ResourceList{}
+	if quota.Annotations[AnnotationNonPreemptibleRequest] != "" {
+		if err := json.Unmarshal([]byte(quota.Annotations[AnnotationNonPreemptibleRequest]), &nonPreemptibleRequest); err != nil {
+			return nonPreemptibleRequest, err
+		}
+	}
+	return nonPreemptibleRequest, nil
+}
+
+func GetNonPreemptibleUsed(quota *v1alpha1.ElasticQuota) (corev1.ResourceList, error) {
+	nonPreemptibleUsed := corev1.ResourceList{}
+	if quota.Annotations[AnnotationNonPreemptibleUsed] != "" {
+		if err := json.Unmarshal([]byte(quota.Annotations[AnnotationNonPreemptibleUsed]), &nonPreemptibleUsed); err != nil {
+			return nonPreemptibleUsed, err
+		}
+	}
+	return nonPreemptibleUsed, nil
 }
 
 func GetGuaranteed(quota *v1alpha1.ElasticQuota) (corev1.ResourceList, error) {

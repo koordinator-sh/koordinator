@@ -162,7 +162,7 @@ func TestGroupQuotaManager_UpdateQuotaInternalAndRequest(t *testing.T) {
 
 	// test1 request[120, 290]  runtime == maxQuota
 	request := createResourceList(120, 290*GigaByte)
-	gqm.updateGroupDeltaRequestNoLock("test1", request)
+	gqm.updateGroupDeltaRequestNoLock("test1", request, request)
 	runtime := gqm.RefreshRuntime("test1")
 	assert.Equal(t, deltaRes, runtime)
 
@@ -225,13 +225,13 @@ func TestGroupQuotaManager_UpdateQuotaDeltaRequest(t *testing.T) {
 
 	// test1 request[120, 290]  runtime == maxQuota
 	request := createResourceList(120, 200*GigaByte)
-	gqm.updateGroupDeltaRequestNoLock("test1", request)
+	gqm.updateGroupDeltaRequestNoLock("test1", request, request)
 	runtime := gqm.RefreshRuntime("test1")
 	assert.Equal(t, deltaRes, runtime)
 
 	// test2 request[150, 210]  runtime
 	request = createResourceList(150, 210*GigaByte)
-	gqm.updateGroupDeltaRequestNoLock("test2", request)
+	gqm.updateGroupDeltaRequestNoLock("test2", request, request)
 	runtime = gqm.RefreshRuntime("test1")
 	assert.Equal(t, createResourceList(53, 80*GigaByte), runtime)
 	runtime = gqm.RefreshRuntime("test2")
@@ -248,7 +248,7 @@ func TestGroupQuotaManager_NotAllowLentResource(t *testing.T) {
 	AddQuotaToManager(t, gqm, "test2", extension.RootQuotaName, 96, 0, 40, 0, false, false)
 
 	request := createResourceList(120, 0)
-	gqm.updateGroupDeltaRequestNoLock("test1", request)
+	gqm.updateGroupDeltaRequestNoLock("test1", request, request)
 	runtime := gqm.RefreshRuntime("test1")
 	assert.Equal(t, int64(60), runtime.Cpu().Value())
 	runtime = gqm.RefreshRuntime("test2")
@@ -279,7 +279,7 @@ func TestGroupQuotaManager_NotAllowLentResource_2(t *testing.T) {
 
 	// add 40 request
 	request := createResourceList(40, 0)
-	gqm.updateGroupDeltaRequestNoLock("test-child1", request)
+	gqm.updateGroupDeltaRequestNoLock("test-child1", request, request)
 
 	rootRuntime = gqm.RefreshRuntime("test-root")
 	child1Runtime = gqm.RefreshRuntime("test-child1")
@@ -291,7 +291,7 @@ func TestGroupQuotaManager_NotAllowLentResource_2(t *testing.T) {
 
 	// add 20 request
 	request2 := createResourceList(20, 0)
-	gqm.updateGroupDeltaRequestNoLock("test-child1", request2)
+	gqm.updateGroupDeltaRequestNoLock("test-child1", request2, request2)
 
 	rootRuntime = gqm.RefreshRuntime("test-root")
 	child1Runtime = gqm.RefreshRuntime("test-child1")
@@ -326,7 +326,7 @@ func TestGroupQuotaManager_NotAllowLentResource_3(t *testing.T) {
 
 	// add 40 request
 	request := createResourceList(40, 0)
-	gqm.updateGroupDeltaRequestNoLock("test-child1", request)
+	gqm.updateGroupDeltaRequestNoLock("test-child1", request, request)
 
 	rootRuntime = gqm.RefreshRuntime("test-root")
 	child1Runtime = gqm.RefreshRuntime("test-child1")
@@ -338,7 +338,7 @@ func TestGroupQuotaManager_NotAllowLentResource_3(t *testing.T) {
 
 	// add 20 request
 	request2 := createResourceList(20, 0)
-	gqm.updateGroupDeltaRequestNoLock("test-child1", request2)
+	gqm.updateGroupDeltaRequestNoLock("test-child1", request2, request2)
 
 	rootRuntime = gqm.RefreshRuntime("test-root")
 	child1Runtime = gqm.RefreshRuntime("test-child1")
@@ -373,7 +373,7 @@ func TestGroupQuotaManager_NotAllowLentResource_4(t *testing.T) {
 
 	// add 40 request
 	request := createResourceList(40, 0)
-	gqm.updateGroupDeltaRequestNoLock("test-child1", request)
+	gqm.updateGroupDeltaRequestNoLock("test-child1", request, request)
 
 	rootRuntime = gqm.RefreshRuntime("test-root")
 	child1Runtime = gqm.RefreshRuntime("test-child1")
@@ -385,7 +385,7 @@ func TestGroupQuotaManager_NotAllowLentResource_4(t *testing.T) {
 
 	// add 20 request
 	request2 := createResourceList(20, 0)
-	gqm.updateGroupDeltaRequestNoLock("test-child1", request2)
+	gqm.updateGroupDeltaRequestNoLock("test-child1", request2, request2)
 
 	rootRuntime = gqm.RefreshRuntime("test-root")
 	child1Runtime = gqm.RefreshRuntime("test-child1")
@@ -411,19 +411,19 @@ func TestGroupQuotaManager_UpdateQuotaRequest(t *testing.T) {
 
 	// 1. initial test1 request [60, 100]
 	request := createResourceList(60, 100*GigaByte)
-	gqm.updateGroupDeltaRequestNoLock("test1", request)
+	gqm.updateGroupDeltaRequestNoLock("test1", request, request)
 	runtime := gqm.RefreshRuntime("test1")
 	assert.Equal(t, request, runtime)
 
 	// test1 request[120, 290]  runtime == maxQuota
 	newRequest := createResourceList(120, 200*GigaByte)
-	gqm.updateGroupDeltaRequestNoLock("test1", newRequest)
+	gqm.updateGroupDeltaRequestNoLock("test1", request, newRequest)
 	runtime = gqm.RefreshRuntime("test1")
 	assert.Equal(t, deltaRes, runtime)
 
 	// test2 request[150, 210]  runtime
 	request = createResourceList(150, 210*GigaByte)
-	gqm.updateGroupDeltaRequestNoLock("test2", request)
+	gqm.updateGroupDeltaRequestNoLock("test2", request, request)
 	runtime = gqm.RefreshRuntime("test1")
 	assert.Equal(t, createResourceList(53, 80*GigaByte), runtime)
 	runtime = gqm.RefreshRuntime("test2")
@@ -503,7 +503,7 @@ func TestGroupQuotaManager_MultiUpdateQuotaRequest(t *testing.T) {
 	AddQuotaToManager(t, gqm, "a-123", "test1-a", 96, 160*GigaByte, 50, 80*GigaByte, true, false)
 
 	request := createResourceList(96, 130*GigaByte)
-	gqm.updateGroupDeltaRequestNoLock("a-123", request)
+	gqm.updateGroupDeltaRequestNoLock("a-123", request, request)
 	runtime := gqm.RefreshRuntime("a-123")
 	assert.Equal(t, request, runtime)
 	runtime = gqm.RefreshRuntime("test1-a")
@@ -571,7 +571,7 @@ func TestGroupQuotaManager_MultiUpdateQuotaRequest2(t *testing.T) {
 
 	// a-123 request[10,30]  request < min
 	request := createResourceList(10, 30*GigaByte)
-	gqm.updateGroupDeltaRequestNoLock("a-123", request)
+	gqm.updateGroupDeltaRequestNoLock("a-123", request, request)
 	runtime := gqm.RefreshRuntime("a-123")
 	assert.Equal(t, request, runtime)
 	runtime = gqm.RefreshRuntime("test1-a")
@@ -581,7 +581,7 @@ func TestGroupQuotaManager_MultiUpdateQuotaRequest2(t *testing.T) {
 
 	// a-123 add request[15,15]  totalRequest[25,45] request > min
 	request = createResourceList(15, 15*GigaByte)
-	gqm.updateGroupDeltaRequestNoLock("a-123", request)
+	gqm.updateGroupDeltaRequestNoLock("a-123", request, request)
 	runtime = gqm.RefreshRuntime("a-123")
 	assert.Equal(t, createResourceList(25, 45*GigaByte), runtime)
 	quotaInfo := gqm.GetQuotaInfoByName("test1-a")
@@ -591,7 +591,7 @@ func TestGroupQuotaManager_MultiUpdateQuotaRequest2(t *testing.T) {
 
 	// a-123 add request[30,30]  totalRequest[55,75] request > max
 	request = createResourceList(30, 30*GigaByte)
-	gqm.updateGroupDeltaRequestNoLock("a-123", request)
+	gqm.updateGroupDeltaRequestNoLock("a-123", request, request)
 	runtime = gqm.RefreshRuntime("a-123")
 	assert.Equal(t, createResourceList(30, 60*GigaByte), runtime)
 	quotaInfo = gqm.GetQuotaInfoByName("test1-a")
@@ -612,9 +612,9 @@ func TestGroupQuotaManager_MultiUpdateQuotaRequest_WithScaledMinQuota1(t *testin
 	AddQuotaToManager(t, gqm, "c", "p", 1000, 1000*GigaByte, 100, 100*GigaByte, true, false)
 
 	request := createResourceList(200, 200*GigaByte)
-	gqm.updateGroupDeltaRequestNoLock("a", request)
-	gqm.updateGroupDeltaRequestNoLock("b", request)
-	gqm.updateGroupDeltaRequestNoLock("c", request)
+	gqm.updateGroupDeltaRequestNoLock("a", request, request)
+	gqm.updateGroupDeltaRequestNoLock("b", request, request)
+	gqm.updateGroupDeltaRequestNoLock("c", request, request)
 
 	deltaRes := createResourceList(200, 200*GigaByte)
 	gqm.UpdateClusterTotalResource(deltaRes)
@@ -685,9 +685,9 @@ func TestGroupQuotaManager_MultiUpdateQuotaRequest_WithScaledMinQuota2(t *testin
 	AddQuotaToManager(t, gqm, "c", "p", 1000, 1000*GigaByte, 100, 100*GigaByte, true, false)
 
 	request := createResourceList(200, 200*GigaByte)
-	gqm.updateGroupDeltaRequestNoLock("a", request)
-	gqm.updateGroupDeltaRequestNoLock("b", createResourceList(0, 0))
-	gqm.updateGroupDeltaRequestNoLock("c", request)
+	gqm.updateGroupDeltaRequestNoLock("a", request, request)
+	gqm.updateGroupDeltaRequestNoLock("b", createResourceList(0, 0), createResourceList(0, 0))
+	gqm.updateGroupDeltaRequestNoLock("c", request, request)
 	gqm.UpdateClusterTotalResource(createResourceList(199, 199*GigaByte))
 	runtime := gqm.RefreshRuntime("p")
 	assert.Equal(t, createResourceList(200, 200*GigaByte), runtime)
@@ -744,6 +744,34 @@ func TestGroupQuotaManager_MultiUpdateQuotaUsedAndNonPreemptibleUsed(t *testing.
 	assert.Equal(t, nonPreemptibleUsed, quotaInfo.CalculateInfo.NonPreemptibleUsed)
 }
 
+func TestGroupQuotaManager_MultiUpdateQuotaRequestAndNonPreemptibleRequest(t *testing.T) {
+	gqm := NewGroupQuotaManagerForTest()
+
+	AddQuotaToManager(t, gqm, "test1", extension.RootQuotaName, 96, 160*GigaByte, 50, 80*GigaByte, true, true)
+	AddQuotaToManager(t, gqm, "test1-sub1", "test1", 96, 160*GigaByte, 50, 80*GigaByte, true, true)
+	AddQuotaToManager(t, gqm, "test1-sub1-1", "test1-sub1", 96, 160*GigaByte, 50, 80*GigaByte, true, false)
+
+	request := createResourceList(120, 290*GigaByte)
+	nonPreemptibleRequest := createResourceList(50, 100*GigaByte)
+	limitedRequest := createResourceList(96, 160*GigaByte)
+
+	gqm.updateGroupDeltaRequestNoLock("test1-sub1-1", request, nonPreemptibleRequest)
+	quotaInfo := gqm.GetQuotaInfoByName("test1-sub1-1")
+	assert.True(t, quotaInfo != nil)
+	assert.Equal(t, request, quotaInfo.CalculateInfo.Request)
+	assert.Equal(t, nonPreemptibleRequest, quotaInfo.CalculateInfo.NonPreemptibleRequest)
+
+	quotaInfo = gqm.GetQuotaInfoByName("test1-sub1")
+	assert.True(t, quotaInfo != nil)
+	assert.Equal(t, limitedRequest, quotaInfo.CalculateInfo.Request)
+	assert.Equal(t, nonPreemptibleRequest, quotaInfo.CalculateInfo.NonPreemptibleRequest)
+
+	quotaInfo = gqm.GetQuotaInfoByName("test1")
+	assert.True(t, quotaInfo != nil)
+	assert.Equal(t, limitedRequest, quotaInfo.CalculateInfo.Request)
+	assert.Equal(t, nonPreemptibleRequest, quotaInfo.CalculateInfo.NonPreemptibleRequest)
+}
+
 func TestGroupQuotaManager_UpdateQuotaParentName(t *testing.T) {
 	gqm := NewGroupQuotaManagerForTest()
 
@@ -767,7 +795,7 @@ func TestGroupQuotaManager_UpdateQuotaParentName(t *testing.T) {
 
 	// a-123 request [60,100]
 	request := createResourceList(60, 100*GigaByte)
-	gqm.updateGroupDeltaRequestNoLock("a-123", request)
+	gqm.updateGroupDeltaRequestNoLock("a-123", request, request)
 	gqm.updateGroupDeltaUsedNoLock("a-123", request, createResourceList(0, 0))
 	runtime := gqm.RefreshRuntime("a-123")
 	assert.Equal(t, request, runtime)
@@ -780,7 +808,7 @@ func TestGroupQuotaManager_UpdateQuotaParentName(t *testing.T) {
 
 	// test2-a request [20,40]
 	request = createResourceList(20, 40*GigaByte)
-	gqm.updateGroupDeltaRequestNoLock("test2-a", request)
+	gqm.updateGroupDeltaRequestNoLock("test2-a", request, request)
 	gqm.updateGroupDeltaUsedNoLock("test2-a", request, createResourceList(0, 0))
 	runtime = gqm.RefreshRuntime("test2-a")
 	assert.Equal(t, request, runtime)
@@ -967,7 +995,7 @@ func TestGroupQuotaManager_MultiChildMaxGreaterParentMax_MaxGreaterThanTotalRes(
 	// test1 Request [500, 4096] limitRequest [500, 2048]
 	// test1-sub Request [500,2048] limitedRequest [500, 2048] limited by rootRes [300, 8000] -> [300,2048]
 	request := createResourceList(500, 4096)
-	gqm.updateGroupDeltaRequestNoLock("test1-sub1", request)
+	gqm.updateGroupDeltaRequestNoLock("test1-sub1", request, request)
 	runtime := gqm.RefreshRuntime("test1-sub1")
 	assert.Equal(t, createResourceList(300, 2048), runtime)
 	fmt.Printf("quota1 runtime:%v\n", runtime)
@@ -975,7 +1003,7 @@ func TestGroupQuotaManager_MultiChildMaxGreaterParentMax_MaxGreaterThanTotalRes(
 	// test1 Request [1050, 8192] limitRequest [500, 2048]
 	// test1-sub1 Request [500,2048] limitedRequest [500, 2048] limited by rootRes [300, 8000] -> [300,2048]
 	request = createResourceList(550, 4096)
-	gqm.updateGroupDeltaRequestNoLock("test1-sub1", request)
+	gqm.updateGroupDeltaRequestNoLock("test1-sub1", request, request)
 	runtime = gqm.RefreshRuntime("test1-sub")
 	fmt.Printf("quota1 runtime:%v\n", runtime)
 
@@ -1006,7 +1034,7 @@ func TestGroupQuotaManager_MultiChildMaxGreaterParentMax(t *testing.T) {
 	// test1-sub1 Request[400, 1500] limitedRequest [400, 1500]
 	// test1 Request [400,1500] limitedRequest [300, 1024]
 	request := createResourceList(400, 1500*GigaByte)
-	gqm.updateGroupDeltaRequestNoLock("test1-sub1", request)
+	gqm.updateGroupDeltaRequestNoLock("test1-sub1", request, request)
 	quotaInfo := gqm.GetQuotaInfoByName("test1")
 	assert.Equal(t, quotaInfo.CalculateInfo.Request, createResourceList(400, 1500*GigaByte))
 	quotaInfo = gqm.GetQuotaInfoByName("test1-sub1")
@@ -1018,7 +1046,7 @@ func TestGroupQuotaManager_MultiChildMaxGreaterParentMax(t *testing.T) {
 	// test1 max < test1-sub1 max < request
 	// test1-sub1 Request[800, 3000] limitedRequest [500, 2048]
 	// test1 Request [500, 2048] limitedRequest [300, 1024]
-	gqm.updateGroupDeltaRequestNoLock("test1-sub1", request)
+	gqm.updateGroupDeltaRequestNoLock("test1-sub1", request, request)
 	runtime = gqm.RefreshRuntime("test1-sub1")
 	assert.Equal(t, createResourceList(300, 1024*GigaByte), runtime)
 	fmt.Printf("quota1 runtime:%v\n", runtime)
@@ -1062,8 +1090,8 @@ func TestGroupQuotaManager_RefreshAndGetRuntimeQuota_UpdateQuota(t *testing.T) {
 
 	// case2: no existed group
 	assert.Nil(t, gqm.RefreshRuntime("5"))
-	gqm.updateGroupDeltaRequestNoLock("1", createResourceList(5, 5))
-	gqm.updateGroupDeltaRequestNoLock("2", createResourceList(5, 5))
+	gqm.updateGroupDeltaRequestNoLock("1", createResourceList(5, 5), createResourceList(5, 5))
+	gqm.updateGroupDeltaRequestNoLock("2", createResourceList(5, 5), createResourceList(5, 5))
 	gq1 := gqm.GetQuotaInfoByName("1")
 	gq2 := gqm.GetQuotaInfoByName("2")
 
@@ -1080,8 +1108,8 @@ func TestGroupQuotaManager_RefreshAndGetRuntimeQuota_UpdateQuota(t *testing.T) {
 	assert.Equal(t, gqm.RefreshRuntime("2"), createResourceList(5, 5))
 
 	// case5: request is larger than min
-	gqm.updateGroupDeltaRequestNoLock("1", createResourceList(25, 25))
-	gqm.updateGroupDeltaRequestNoLock("2", createResourceList(25, 25))
+	gqm.updateGroupDeltaRequestNoLock("1", createResourceList(25, 25), createResourceList(25, 25))
+	gqm.updateGroupDeltaRequestNoLock("2", createResourceList(25, 25), createResourceList(25, 25))
 	// 1 min [10,10] -> toPartitionRes [40,40] -> runtime [30,30]
 	// 2 min [0,0]	-> toPartitionRes [40,40] -> runtime [20,20]
 	assert.Equal(t, gqm.RefreshRuntime("1"), createResourceList(30, 30))
@@ -1129,8 +1157,8 @@ func TestGroupQuotaManager_UpdateOneGroupMaxQuota_UpdateQuota(t *testing.T) {
 	gqm.UpdateQuota(qi2, false)
 
 	// case1: min < req < max
-	gqm.updateGroupDeltaRequestNoLock("1", createResourceList(35, 35))
-	gqm.updateGroupDeltaRequestNoLock("2", createResourceList(35, 35))
+	gqm.updateGroupDeltaRequestNoLock("1", createResourceList(35, 35), createResourceList(35, 35))
+	gqm.updateGroupDeltaRequestNoLock("2", createResourceList(35, 35), createResourceList(35, 35))
 	assert.Equal(t, gqm.RefreshRuntime("1"), createResourceList(25, 25))
 	assert.Equal(t, gqm.RefreshRuntime("2"), createResourceList(25, 25))
 	assert.Equal(t, gqm.runtimeQuotaCalculatorMap[extension.RootQuotaName].groupReqLimit["1"], createResourceList(35, 35))
@@ -1169,8 +1197,8 @@ func TestGroupQuotaManager_UpdateOneGroupMinQuota_UpdateQuota(t *testing.T) {
 	gqm.UpdateQuota(qi2, false)
 
 	// case1:  min < req < max
-	gqm.updateGroupDeltaRequestNoLock("1", createResourceList(15, 15))
-	gqm.updateGroupDeltaRequestNoLock("2", createResourceList(15, 15))
+	gqm.updateGroupDeltaRequestNoLock("1", createResourceList(15, 15), createResourceList(15, 15))
+	gqm.updateGroupDeltaRequestNoLock("2", createResourceList(15, 15), createResourceList(15, 15))
 	assert.Equal(t, gqm.RefreshRuntime("1"), createResourceList(15, 15))
 	assert.Equal(t, gqm.RefreshRuntime("2"), createResourceList(15, 15))
 	assert.Equal(t, gqm.runtimeQuotaCalculatorMap[extension.RootQuotaName].totalResource, createResourceList(50, 50))
@@ -1215,8 +1243,8 @@ func TestGroupQuotaManager_UpdateOneGroupMinQuota_UpdateQuota(t *testing.T) {
 	qi2.Spec.Min = createResourceList(5, 5)
 	gqm.UpdateQuota(qi1, false)
 	gqm.UpdateQuota(qi2, false)
-	gqm.updateGroupDeltaRequestNoLock("1", createResourceList(100, 100))
-	gqm.updateGroupDeltaRequestNoLock("2", createResourceList(100, 100))
+	gqm.updateGroupDeltaRequestNoLock("1", createResourceList(100, 100), createResourceList(100, 100))
+	gqm.updateGroupDeltaRequestNoLock("2", createResourceList(100, 100), createResourceList(100, 100))
 	assert.Equal(t, gqm.RefreshRuntime("1"), createResourceList(40, 40))
 	assert.Equal(t, gqm.RefreshRuntime("2"), createResourceList(10, 10))
 	assert.Equal(t, gqm.runtimeQuotaCalculatorMap[extension.RootQuotaName].totalResource, createResourceList(50, 50))
@@ -1235,8 +1263,8 @@ func TestGroupQuotaManager_DeleteOneGroup_UpdateQuota(t *testing.T) {
 	qi2 := createQuota("2", extension.RootQuotaName, 40, 40, 10, 10)
 	gqm.UpdateQuota(qi1, false)
 	gqm.UpdateQuota(qi2, false)
-	gqm.updateGroupDeltaRequestNoLock("1", createResourceList(15, 15))
-	gqm.updateGroupDeltaRequestNoLock("2", createResourceList(15, 15))
+	gqm.updateGroupDeltaRequestNoLock("1", createResourceList(15, 15), createResourceList(15, 15))
+	gqm.updateGroupDeltaRequestNoLock("2", createResourceList(15, 15), createResourceList(15, 15))
 
 	// delete one group
 	gqm.UpdateQuota(q1, true)
@@ -1277,7 +1305,7 @@ func BenchmarkGroupQuotaManager_RefreshRuntime(b *testing.B) {
 		request := createResourceList(reqCpu, reqMem)
 		totalReqMem += float64(reqMem)
 		totalReqCpu += float64(reqCpu)
-		gqm.updateGroupDeltaRequestNoLock(fmt.Sprintf("%v", j), request)
+		gqm.updateGroupDeltaRequestNoLock(fmt.Sprintf("%v", j), request, request)
 	}
 	totalRes := createResourceList(int64(totalReqCpu/1.5), int64(totalReqMem/1.5))
 	gqm.UpdateClusterTotalResource(totalRes)
@@ -1339,14 +1367,21 @@ func TestGroupQuotaManager_UpdatePodCache_UpdatePodIsAssigned_GetPodIsAssigned_U
 	gqm.updatePodIsAssignedNoLock("2", pod1, true)
 	assert.True(t, gqm.getPodIsAssignedNoLock("2", pod1))
 
+	pod1.Labels = map[string]string{
+		extension.LabelPreemptible: "false",
+	}
 	gqm.updatePodRequestNoLock("1", nil, pod1)
 	assert.Equal(t, createResourceList(10, 10), gqm.GetQuotaInfoByName("1").GetRequest())
+	assert.Equal(t, createResourceList(10, 10), gqm.GetQuotaInfoByName("1").GetNonPreemptibleRequest())
 	gqm.updatePodUsedNoLock("2", nil, pod1)
 	assert.Equal(t, createResourceList(10, 10), gqm.GetQuotaInfoByName("2").GetUsed())
+	assert.Equal(t, createResourceList(10, 10), gqm.GetQuotaInfoByName("2").GetNonPreemptibleUsed())
 	gqm.updatePodRequestNoLock("1", pod1, nil)
 	assert.Equal(t, createResourceList(0, 0), gqm.GetQuotaInfoByName("1").GetRequest())
+	assert.Equal(t, createResourceList(0, 0), gqm.GetQuotaInfoByName("1").GetNonPreemptibleRequest())
 	gqm.updatePodUsedNoLock("2", pod1, nil)
 	assert.Equal(t, createResourceList(0, 0), gqm.GetQuotaInfoByName("2").GetUsed())
+	assert.Equal(t, createResourceList(0, 0), gqm.GetQuotaInfoByName("2").GetNonPreemptibleUsed())
 }
 
 func TestGroupQuotaManager_OnPodUpdate(t *testing.T) {
@@ -1436,10 +1471,10 @@ func TestGroupQuotaManager_GetQuotaInformationForSyncHandler(t *testing.T) {
 	qi1 := createQuota("1", extension.RootQuotaName, 400, 400, 10, 10)
 	gqm.UpdateQuota(qi1, false)
 	gqm.UpdateClusterTotalResource(createResourceList(1000, 1000))
-	gqm.updateGroupDeltaRequestNoLock("1", createResourceList(100, 100))
+	gqm.updateGroupDeltaRequestNoLock("1", createResourceList(100, 100), createResourceList(100, 100))
 	gqm.RefreshRuntime("1")
 	gqm.updateGroupDeltaUsedNoLock("1", createResourceList(10, 10), createResourceList(0, 0))
-	used, request, childRequest, runtime, _, _, err := gqm.GetQuotaInformationForSyncHandler("1")
+	used, request, childRequest, runtime, _, _, _, _, err := gqm.GetQuotaInformationForSyncHandler("1")
 	assert.Nil(t, err)
 	assert.Equal(t, used, createResourceList(10, 10))
 	assert.Equal(t, request, createResourceList(100, 100))
@@ -1454,10 +1489,10 @@ func TestGroupQuotaManager_GetQuotaInformationForSyncHandlerWithUsageGuarantee(t
 	qi1 := createQuota("1", extension.RootQuotaName, 400, 400, 10, 10)
 	gqm.UpdateQuota(qi1, false)
 	gqm.UpdateClusterTotalResource(createResourceList(1000, 1000))
-	gqm.updateGroupDeltaRequestNoLock("1", createResourceList(100, 100))
+	gqm.updateGroupDeltaRequestNoLock("1", createResourceList(100, 100), createResourceList(100, 100))
 	gqm.RefreshRuntime("1")
 	gqm.updateGroupDeltaUsedNoLock("1", createResourceList(10, 10), createResourceList(0, 0))
-	used, request, childRequest, runtime, guaranteed, allocated, err := gqm.GetQuotaInformationForSyncHandler("1")
+	used, request, childRequest, runtime, guaranteed, allocated, nonPreemptibleRequest, nonPreemptibleUsed, err := gqm.GetQuotaInformationForSyncHandler("1")
 	assert.Nil(t, err)
 	assert.Equal(t, used, createResourceList(10, 10))
 	assert.Equal(t, request, createResourceList(100, 100))
@@ -1465,6 +1500,8 @@ func TestGroupQuotaManager_GetQuotaInformationForSyncHandlerWithUsageGuarantee(t
 	assert.Equal(t, runtime, createResourceList(100, 100))
 	assert.Equal(t, guaranteed, createResourceList(10, 10))
 	assert.Equal(t, allocated, createResourceList(10, 10))
+	assert.Equal(t, nonPreemptibleRequest, createResourceList(100, 100))
+	assert.Equal(t, nonPreemptibleUsed, createResourceList(0, 0))
 }
 
 func TestGetPodName(t *testing.T) {
@@ -1497,23 +1534,31 @@ func TestGroupQuotaManager_IsParent(t *testing.T) {
 
 func TestGroupQuotaManager_UpdateRootQuotaUsed(t *testing.T) {
 	expectedTotalUsed := createResourceList(0, 0)
+	expectedTotalNonpreemptibleRequest := createResourceList(0, 0)
 	gqm := NewGroupQuotaManagerForTest()
 	gqm.UpdateClusterTotalResource(createResourceList(1000, 1000))
 
 	sysUsed := createResourceList(10, 30)
 	expectedTotalUsed = quotav1.Add(expectedTotalUsed, sysUsed)
+	expectedTotalNonpreemptibleRequest = quotav1.Add(expectedTotalNonpreemptibleRequest, sysUsed)
 	gqm.updateGroupDeltaUsedNoLock(extension.SystemQuotaName, sysUsed, createResourceList(0, 0))
+	gqm.updateGroupDeltaRequestNoLock(extension.SystemQuotaName, sysUsed, sysUsed)
 	assert.Equal(t, sysUsed, gqm.GetQuotaInfoByName(extension.SystemQuotaName).GetUsed())
+	assert.Equal(t, sysUsed, gqm.GetQuotaInfoByName(extension.SystemQuotaName).GetNonPreemptibleRequest())
 
 	defaultUsed := createResourceList(2, 5)
 	expectedTotalUsed = quotav1.Add(expectedTotalUsed, defaultUsed)
+	expectedTotalNonpreemptibleRequest = quotav1.Add(expectedTotalNonpreemptibleRequest, defaultUsed)
 	gqm.updateGroupDeltaUsedNoLock(extension.DefaultQuotaName, defaultUsed, createResourceList(0, 0))
+	gqm.updateGroupDeltaRequestNoLock(extension.DefaultQuotaName, defaultUsed, defaultUsed)
 	assert.Equal(t, defaultUsed, gqm.GetQuotaInfoByName(extension.DefaultQuotaName).GetUsed())
+	assert.Equal(t, defaultUsed, gqm.GetQuotaInfoByName(extension.DefaultQuotaName).GetNonPreemptibleRequest())
 
 	//case1: no quota, root quota used
 	rootQuotaUsed := gqm.getQuotaInfoByNameNoLock(extension.RootQuotaName).GetUsed()
 	sysAndDefaultUsed := quotav1.Add(sysUsed, defaultUsed)
 	assert.Equal(t, rootQuotaUsed, sysAndDefaultUsed)
+	assert.Equal(t, gqm.GetQuotaInfoByName(extension.RootQuotaName).GetNonPreemptibleRequest(), sysAndDefaultUsed)
 
 	//case2: just pod no quota, root quota used
 	pod1 := schetesting.MakePod().Name("1").Obj()
@@ -1526,12 +1571,16 @@ func TestGroupQuotaManager_UpdateRootQuotaUsed(t *testing.T) {
 	}
 	pod1Used := pod1.Spec.Containers[0].Resources.Requests
 	expectedTotalUsed = quotav1.Add(expectedTotalUsed, pod1Used)
+	pod1.Labels = map[string]string{extension.LabelPreemptible: "false"}
+	expectedTotalNonpreemptibleRequest = quotav1.Add(expectedTotalNonpreemptibleRequest, pod1Used)
 	gqm.updatePodCacheNoLock(extension.DefaultQuotaName, pod1, true)
 	assert.Equal(t, 1, len(gqm.GetQuotaInfoByName(extension.DefaultQuotaName).GetPodCache()))
 	gqm.updatePodIsAssignedNoLock(extension.DefaultQuotaName, pod1, true)
 	assert.True(t, gqm.getPodIsAssignedNoLock(extension.DefaultQuotaName, pod1))
 	gqm.updatePodUsedNoLock(extension.DefaultQuotaName, nil, pod1)
+	gqm.updatePodRequestNoLock(extension.DefaultQuotaName, nil, pod1)
 	assert.Equal(t, expectedTotalUsed, gqm.GetQuotaInfoByName(extension.RootQuotaName).GetUsed())
+	assert.Equal(t, expectedTotalNonpreemptibleRequest, gqm.GetQuotaInfoByName(extension.RootQuotaName).GetNonPreemptibleRequest())
 
 	// case3: when build quota tree, root quota used
 	qi1 := createQuota("1", extension.RootQuotaName, 20, 20, 10, 10)
@@ -1542,12 +1591,18 @@ func TestGroupQuotaManager_UpdateRootQuotaUsed(t *testing.T) {
 	gqm.UpdateQuota(qi3, false)
 	gqm.updateGroupDeltaUsedNoLock("2", createResourceList(5, 5), createResourceList(0, 0))
 	gqm.updateGroupDeltaUsedNoLock("3", createResourceList(7, 5), createResourceList(0, 0))
+	gqm.updateGroupDeltaRequestNoLock("2", createResourceList(0, 0), createResourceList(5, 5))
+	gqm.updateGroupDeltaRequestNoLock("3", createResourceList(0, 0), createResourceList(7, 5))
 
 	expectedTotalUsed = quotav1.Add(expectedTotalUsed, createResourceList(5, 5))
 	expectedTotalUsed = quotav1.Add(expectedTotalUsed, createResourceList(7, 5))
 
+	expectedTotalNonpreemptibleRequest = quotav1.Add(expectedTotalNonpreemptibleRequest, createResourceList(5, 5))
+	expectedTotalNonpreemptibleRequest = quotav1.Add(expectedTotalNonpreemptibleRequest, createResourceList(7, 5))
+
 	rootQuotaUsed = gqm.GetQuotaInfoByName(extension.RootQuotaName).GetUsed()
 	assert.Equal(t, expectedTotalUsed, rootQuotaUsed)
+	assert.Equal(t, expectedTotalNonpreemptibleRequest, gqm.GetQuotaInfoByName(extension.RootQuotaName).GetNonPreemptibleRequest())
 }
 
 func TestGroupQuotaManager_ChildRequestAndRequest_All_not_allowLent(t *testing.T) {
@@ -1631,12 +1686,12 @@ func TestGroupQuotaManager_UpdateRootQuotaRequest(t *testing.T) {
 
 	sysRequest := createResourceList(10, 30)
 	expectedTotalRequest = quotav1.Add(expectedTotalRequest, sysRequest)
-	gqm.updateGroupDeltaRequestNoLock(extension.SystemQuotaName, sysRequest)
+	gqm.updateGroupDeltaRequestNoLock(extension.SystemQuotaName, sysRequest, sysRequest)
 	assert.Equal(t, sysRequest, gqm.GetQuotaInfoByName(extension.SystemQuotaName).GetRequest())
 
 	defaultRequest := createResourceList(2, 5)
 	expectedTotalRequest = quotav1.Add(expectedTotalRequest, defaultRequest)
-	gqm.updateGroupDeltaRequestNoLock(extension.DefaultQuotaName, defaultRequest)
+	gqm.updateGroupDeltaRequestNoLock(extension.DefaultQuotaName, defaultRequest, defaultRequest)
 	assert.Equal(t, defaultRequest, gqm.GetQuotaInfoByName(extension.DefaultQuotaName).GetRequest())
 
 	//case1: no other quota, root quota request
@@ -1669,8 +1724,8 @@ func TestGroupQuotaManager_UpdateRootQuotaRequest(t *testing.T) {
 	gqm.UpdateQuota(qi1, false)
 	gqm.UpdateQuota(qi2, false)
 	gqm.UpdateQuota(qi3, false)
-	gqm.updateGroupDeltaRequestNoLock("2", createResourceList(5, 5))
-	gqm.updateGroupDeltaRequestNoLock("3", createResourceList(7, 5))
+	gqm.updateGroupDeltaRequestNoLock("2", createResourceList(5, 5), createResourceList(5, 5))
+	gqm.updateGroupDeltaRequestNoLock("3", createResourceList(7, 5), createResourceList(7, 5))
 
 	expectedTotalRequest = quotav1.Add(expectedTotalRequest, createResourceList(5, 5))
 	expectedTotalRequest = quotav1.Add(expectedTotalRequest, createResourceList(7, 5))
