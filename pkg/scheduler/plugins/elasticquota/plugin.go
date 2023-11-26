@@ -227,8 +227,8 @@ func (g *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleState
 	state := g.snapshotPostFilterState(quotaInfo, cycleState)
 
 	podRequest, _ := core.PodRequestsAndLimits(pod)
-	used := quotav1.Add(podRequest, state.used)
 
+	used := quotav1.Mask(quotav1.Add(podRequest, state.used), quotav1.ResourceNames(podRequest))
 	if isLessEqual, exceedDimensions := quotav1.LessThanOrEqual(used, state.runtime); !isLessEqual {
 		return nil, framework.NewStatus(framework.Unschedulable, fmt.Sprintf("Insufficient quotas, "+
 			"quotaName: %v, runtime: %v, used: %v, pod's request: %v, exceedDimensions: %v",
@@ -238,8 +238,7 @@ func (g *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleState
 	if extension.IsPodNonPreemptible(pod) {
 		quotaMin := state.quotaInfo.CalculateInfo.Min
 		nonPreemptibleUsed := state.nonPreemptibleUsed
-		addNonPreemptibleUsed := quotav1.Add(podRequest, nonPreemptibleUsed)
-
+		addNonPreemptibleUsed := quotav1.Mask(quotav1.Add(podRequest, nonPreemptibleUsed), quotav1.ResourceNames(podRequest))
 		if isLessEqual, exceedDimensions := quotav1.LessThanOrEqual(addNonPreemptibleUsed, quotaMin); !isLessEqual {
 			return nil, framework.NewStatus(framework.Unschedulable, fmt.Sprintf("Insufficient non-preemptible quotas, "+
 				"quotaName: %v, min: %v, nonPreemptibleUsed: %v, pod's request: %v, exceedDimensions: %v",
