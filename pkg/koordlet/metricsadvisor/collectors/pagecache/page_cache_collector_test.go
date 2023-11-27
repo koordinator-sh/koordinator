@@ -266,7 +266,7 @@ DirectMap1G:           0 kB`
 				assert.Equal(t, tt.wantNodeMetric, nodeGot)
 				podGot := testGetPodPageCacheMetrics(t, metricCache, string(c.statesInformer.GetAllPods()[0].Pod.UID), testNow, 5*time.Second)
 				assert.Equal(t, tt.wantPodMetric, podGot)
-				containerGot := testGetContainerPageCacheMetrics(t, metricCache, string(c.statesInformer.GetAllPods()[0].Pod.Status.ContainerStatuses[0].ContainerID), testNow, 5*time.Second)
+				containerGot := testGetContainerPageCacheMetrics(t, metricCache, c.statesInformer.GetAllPods()[0].Pod.Status.ContainerStatuses[0].ContainerID, testNow, 5*time.Second)
 				assert.Equal(t, tt.wantContainerMetric, containerGot)
 			}
 		})
