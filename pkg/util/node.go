@@ -160,3 +160,19 @@ func GetNodeAnnoReservedJson(reserved apiext.NodeReservation) string {
 
 	return result
 }
+
+func GetNodeAllocatableBatchMilliCPU(node *corev1.Node) int64 {
+	// assert node != nil
+	if milliCPU, ok := node.Status.Allocatable[apiext.BatchCPU]; ok {
+		return milliCPU.Value()
+	}
+	return -1
+}
+
+func GetNodeAllocatableBatchMemory(node *corev1.Node) int64 {
+	// assert node != nil
+	if memory, ok := node.Status.Allocatable[apiext.BatchMemory]; ok {
+		return memory.Value()
+	}
+	return -1
+}

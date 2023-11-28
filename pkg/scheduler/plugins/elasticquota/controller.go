@@ -106,7 +106,7 @@ func (ctrl *Controller) syncHandler() []error {
 				errors = append(errors, fmt.Errorf("failed get quota manager for %v", eq.Name))
 				return
 			}
-			used, request, childRequest, runtime, guaranteed, allocated, err := mgr.GetQuotaInformationForSyncHandler(eq.Name)
+			used, request, childRequest, runtime, guaranteed, allocated, nonPreemptibleRequest, nonPreemptibleUsed, err := mgr.GetQuotaInformationForSyncHandler(eq.Name)
 			if err != nil {
 				errors = append(errors, err)
 				return
@@ -121,7 +121,7 @@ func (ctrl *Controller) syncHandler() []error {
 			decorateResource(eq, guaranteed)
 			decorateResource(eq, allocated)
 
-			var oriRuntime, oriRequest, oriChildRequest, oriGuaranteed, oriAllocated v1.ResourceList
+			var oriRuntime, oriRequest, oriChildRequest, oriGuaranteed, oriAllocated, oriNonPreemptibleRequest, oriNonPreemptibleUsed v1.ResourceList
 
 			oriRequest, err = extension.GetRequest(eq)
 			if err != nil {
@@ -153,13 +153,27 @@ func (ctrl *Controller) syncHandler() []error {
 				return
 			}
 
+			oriNonPreemptibleRequest, err = extension.GetNonPreemptibleRequest(eq)
+			if err != nil {
+				errors = append(errors, err)
+				return
+			}
+
+			oriNonPreemptibleUsed, err = extension.GetNonPreemptibleUsed(eq)
+			if err != nil {
+				errors = append(errors, err)
+				return
+			}
+
 			// Ignore this loop if the runtime/request/used doesn't change
 			if quotav1.Equals(quotav1.RemoveZeros(eq.Status.Used), quotav1.RemoveZeros(used)) &&
 				quotav1.Equals(quotav1.RemoveZeros(oriRuntime), quotav1.RemoveZeros(runtime)) &&
 				quotav1.Equals(quotav1.RemoveZeros(oriRequest), quotav1.RemoveZeros(request)) &&
 				quotav1.Equals(quotav1.RemoveZeros(oriChildRequest), quotav1.RemoveZeros(childRequest)) &&
 				quotav1.Equals(quotav1.RemoveZeros(oriGuaranteed), quotav1.RemoveZeros(guaranteed)) &&
-				quotav1.Equals(quotav1.RemoveZeros(oriAllocated), quotav1.RemoveZeros(allocated)) {
+				quotav1.Equals(quotav1.RemoveZeros(oriAllocated), quotav1.RemoveZeros(allocated)) &&
+				quotav1.Equals(quotav1.RemoveZeros(oriNonPreemptibleRequest), quotav1.RemoveZeros(nonPreemptibleRequest)) &&
+				quotav1.Equals(quotav1.RemoveZeros(oriNonPreemptibleUsed), quotav1.RemoveZeros(nonPreemptibleUsed)) {
 				return
 			}
 			newEQ := eq.DeepCopy()
@@ -191,19 +205,35 @@ func (ctrl *Controller) syncHandler() []error {
 				errors = append(errors, err)
 				return
 			}
+			nonPreemptibleRequestBytes, err := json.Marshal(nonPreemptibleRequest)
+			if err != nil {
+				errors = append(errors, err)
+				return
+			}
+			nonPreemptibleUsedBytes, err := json.Marshal(nonPreemptibleUsed)
+			if err != nil {
+				errors = append(errors, err)
+				return
+			}
 			newEQ.Annotations[extension.AnnotationRuntime] = string(runtimeBytes)
 			newEQ.Annotations[extension.AnnotationRequest] = string(requestBytes)
 			newEQ.Annotations[extension.AnnotationChildRequest] = string(childRequestBytes)
 			newEQ.Annotations[extension.AnnotationGuaranteed] = string(guaranteedBytes)
 			newEQ.Annotations[extension.AnnotationAllocated] = string(allocatedBytes)
+			newEQ.Annotations[extension.AnnotationNonPreemptibleRequest] = string(nonPreemptibleRequestBytes)
+			newEQ.Annotations[extension.AnnotationNonPreemptibleUsed] = string(nonPreemptibleUsedBytes)
 			newEQ.Status.Used = used
 
-			klog.V(5).Infof("quota: %v, oldUsed: %v, newUsed: %v, oldRuntime: %v, newRuntime: %v, oldRequest: %v, newRequest: %v, oldChildRequest: %v, newChildRequest: %v, oldGuarantee: %v, newGuarantee: %v, oldAllocated: %v, newAllocated: %v",
+			klog.V(5).Infof("quota: %v, oldUsed: %v, newUsed: %v, oldRuntime: %v, newRuntime: %v, oldRequest: %v, newRequest: %v, "+
+				"oldChildRequest: %v, newChildRequest: %v, oldGuarantee: %v, newGuarantee: %v, oldAllocated: %v, newAllocated: %v, "+
+				"oldNonPreemptibleRequest: %v, newNonPreemptibleRequest: %v, oldNonPreemptibleUsed: %v, newNonPreemptibleUsed: %v",
 				eq.Name, eq.Status.Used, used, eq.Annotations[extension.AnnotationRuntime], string(runtimeBytes),
 				eq.Annotations[extension.AnnotationRequest], string(requestBytes),
 				eq.Annotations[extension.AnnotationChildRequest], string(childRequestBytes),
 				eq.Annotations[extension.AnnotationGuaranteed], string(guaranteedBytes),
-				eq.Annotations[extension.AnnotationAllocated], string(allocatedBytes))
+				eq.Annotations[extension.AnnotationAllocated], string(allocatedBytes),
+				eq.Annotations[extension.AnnotationNonPreemptibleRequest], string(nonPreemptibleRequestBytes),
+				eq.Annotations[extension.AnnotationNonPreemptibleUsed], string(nonPreemptibleUsedBytes))
 
 			patch, err := util.CreateMergePatch(eq, newEQ)
 			if err != nil {

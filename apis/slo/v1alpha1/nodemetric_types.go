@@ -56,6 +56,10 @@ type PodMetricInfo struct {
 	Name      string      `json:"name,omitempty"`
 	Namespace string      `json:"namespace,omitempty"`
 	PodUsage  ResourceMap `json:"podUsage,omitempty"`
+	// Priority class of the application
+	Priority apiext.PriorityClass `json:"priority,omitempty"`
+	// QoS class of the application
+	QoS apiext.QoSClass `json:"qos,omitempty"`
 	// Third party extensions for PodMetric
 	Extensions *ExtensionsMap `json:"extensions,omitempty"`
 }

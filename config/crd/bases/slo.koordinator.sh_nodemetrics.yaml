@@ -859,6 +859,12 @@ spec:
                             pairs.
                           type: object
                       type: object
+                    priority:
+                      description: Priority class of the application
+                      type: string
+                    qos:
+                      description: QoS class of the application
+                      type: string
                   type: object
                 type: array
               prodReclaimableMetric:

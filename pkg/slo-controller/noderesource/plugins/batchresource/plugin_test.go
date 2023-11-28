@@ -187,6 +187,14 @@ func genPodMetric(namespace string, name string, cpu string, memory string) *slo
 	}
 }
 
+func genPodMetricWithSLO(namespace string, name string, cpu string, memory string,
+	priority extension.PriorityClass, qos extension.QoSClass) *slov1alpha1.PodMetricInfo {
+	podMetric := genPodMetric(namespace, name, cpu, memory)
+	podMetric.Priority = priority
+	podMetric.QoS = qos
+	return podMetric
+}
+
 func TestPlugin(t *testing.T) {
 	t.Run("test", func(t *testing.T) {
 		testScheme := runtime.NewScheme()
@@ -1399,6 +1407,235 @@ func TestPrepare(t *testing.T) {
 			assert.Equal(t, tt.wantErr, gotErr != nil, gotErr)
 			testingCorrectResourceList(t, &tt.wantField.Status.Capacity, &tt.args.node.Status.Capacity)
 			testingCorrectResourceList(t, &tt.wantField.Status.Allocatable, &tt.args.node.Status.Allocatable)
+		})
+	}
+}
+
+func TestPrepareWithThirdParty(t *testing.T) {
+	testScheme := runtime.NewScheme()
+	err := clientgoscheme.AddToScheme(testScheme)
+	assert.NoError(t, err)
+	err = slov1alpha1.AddToScheme(testScheme)
+	assert.NoError(t, err)
+	err = topov1alpha1.AddToScheme(testScheme)
+	assert.NoError(t, err)
+	type fields struct {
+		client ctrlclient.Client
+	}
+	type args struct {
+		strategy *configuration.ColocationStrategy
+		node     *corev1.Node
+		nr       *framework.NodeResource
+	}
+	tests := []struct {
+		name                string
+		fields              fields
+		args                args
+		wantErr             bool
+		wantField           *corev1.Node
+		wantOriginAllocated *slov1alpha1.OriginAllocatable
+	}{
+		{
+			name: "update batch resources with third party",
+			fields: fields{
+				client: fake.NewClientBuilder().WithScheme(testScheme).Build(),
+			},
+			args: args{
+				node: &corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node",
+						Annotations: map[string]string{
+							slov1alpha1.NodeThirdPartyAllocationsAnnotationKey: "{\"allocations\":[{\"name\":\"hadoop-yarn\",\"priority\":\"koord-batch\",\"resources\":{\"kubernetes.io/batch-cpu\":\"10000\",\"kubernetes.io/batch-memory\":\"10Gi\"}}]}",
+						},
+					},
+					Status: corev1.NodeStatus{
+						Capacity: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("100"),
+							corev1.ResourceMemory: resource.MustParse("400Gi"),
+						},
+						Allocatable: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("100"),
+							corev1.ResourceMemory: resource.MustParse("380Gi"),
+						},
+					},
+				},
+				nr: &framework.NodeResource{
+					Resources: map[corev1.ResourceName]*resource.Quantity{
+						extension.BatchCPU:    resource.NewQuantity(50000, resource.DecimalSI),
+						extension.BatchMemory: resource.NewQuantity(120*1024*1024*1024, resource.BinarySI),
+					},
+				},
+			},
+			wantErr: false,
+			wantField: &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node",
+				},
+				Status: corev1.NodeStatus{
+					Capacity: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("100"),
+						corev1.ResourceMemory: resource.MustParse("400Gi"),
+						extension.BatchCPU:    *resource.NewQuantity(40000, resource.DecimalSI),
+						extension.BatchMemory: *resource.NewQuantity(110*1024*1024*1024, resource.BinarySI),
+					},
+					Allocatable: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("100"),
+						corev1.ResourceMemory: resource.MustParse("380Gi"),
+						extension.BatchCPU:    *resource.NewQuantity(40000, resource.DecimalSI),
+						extension.BatchMemory: *resource.NewQuantity(110*1024*1024*1024, resource.BinarySI),
+					},
+				},
+			},
+			wantOriginAllocated: &slov1alpha1.OriginAllocatable{
+				Resources: corev1.ResourceList{
+					extension.BatchCPU:    resource.MustParse("50k"),
+					extension.BatchMemory: resource.MustParse("120Gi"),
+				},
+			},
+		},
+		{
+			name: "update batch resources with third party max zero",
+			fields: fields{
+				client: fake.NewClientBuilder().WithScheme(testScheme).Build(),
+			},
+			args: args{
+				node: &corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node",
+						Annotations: map[string]string{
+							slov1alpha1.NodeThirdPartyAllocationsAnnotationKey: "{\"allocations\":[{\"name\":\"hadoop-yarn\",\"priority\":\"koord-batch\",\"resources\":{\"kubernetes.io/batch-cpu\":\"60000\",\"kubernetes.io/batch-memory\":\"120Gi\"}}]}",
+						},
+					},
+					Status: corev1.NodeStatus{
+						Capacity: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("100"),
+							corev1.ResourceMemory: resource.MustParse("400Gi"),
+						},
+						Allocatable: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("100"),
+							corev1.ResourceMemory: resource.MustParse("380Gi"),
+						},
+					},
+				},
+				nr: &framework.NodeResource{
+					Resources: map[corev1.ResourceName]*resource.Quantity{
+						extension.BatchCPU:    resource.NewQuantity(50000, resource.DecimalSI),
+						extension.BatchMemory: resource.NewQuantity(120*1024*1024*1024, resource.BinarySI),
+					},
+				},
+			},
+			wantErr: false,
+			wantField: &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node",
+				},
+				Status: corev1.NodeStatus{
+					Capacity: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("100"),
+						corev1.ResourceMemory: resource.MustParse("400Gi"),
+						extension.BatchCPU:    *resource.NewQuantity(0, resource.DecimalSI),
+						extension.BatchMemory: *resource.NewQuantity(0, resource.BinarySI),
+					},
+					Allocatable: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("100"),
+						corev1.ResourceMemory: resource.MustParse("380Gi"),
+						extension.BatchCPU:    *resource.NewQuantity(0, resource.DecimalSI),
+						extension.BatchMemory: *resource.NewQuantity(0, resource.BinarySI),
+					},
+				},
+			},
+			wantOriginAllocated: &slov1alpha1.OriginAllocatable{
+				Resources: corev1.ResourceList{
+					extension.BatchCPU:    resource.MustParse("50k"),
+					extension.BatchMemory: resource.MustParse("120Gi"),
+				},
+			},
+		},
+		{
+			name: "reset batch resources with third party allocation",
+			fields: fields{
+				client: fake.NewClientBuilder().WithScheme(testScheme).Build(),
+			},
+			args: args{
+				node: &corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node",
+						Annotations: map[string]string{
+							slov1alpha1.NodeThirdPartyAllocationsAnnotationKey: "{\"allocations\":[{\"name\":\"hadoop-yarn\",\"priority\":\"koord-batch\",\"resources\":{\"kubernetes.io/batch-cpu\":\"10000\",\"kubernetes.io/batch-memory\":\"10Gi\"}}]}",
+						},
+					},
+					Status: corev1.NodeStatus{
+						Capacity: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("100"),
+							corev1.ResourceMemory: resource.MustParse("400Gi"),
+							extension.BatchCPU:    *resource.NewQuantity(50000, resource.DecimalSI),
+							extension.BatchMemory: *resource.NewScaledQuantity(120, 9),
+						},
+						Allocatable: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("100"),
+							corev1.ResourceMemory: resource.MustParse("380Gi"),
+							extension.BatchCPU:    *resource.NewQuantity(50000, resource.DecimalSI),
+							extension.BatchMemory: *resource.NewScaledQuantity(120, 9),
+						},
+					},
+				},
+				nr: &framework.NodeResource{
+					Resets: map[corev1.ResourceName]bool{
+						extension.BatchCPU:    true,
+						extension.BatchMemory: true,
+					},
+				},
+			},
+			wantErr: false,
+			wantField: &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node",
+				},
+				Status: corev1.NodeStatus{
+					Capacity: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("100"),
+						corev1.ResourceMemory: resource.MustParse("400Gi"),
+					},
+					Allocatable: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("100"),
+						corev1.ResourceMemory: resource.MustParse("380Gi"),
+					},
+				},
+			},
+			wantOriginAllocated: &slov1alpha1.OriginAllocatable{
+				Resources: corev1.ResourceList{
+					extension.BatchCPU:    resource.MustParse("0"),
+					extension.BatchMemory: resource.MustParse("0"),
+				},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			defer testPluginCleanup()
+			p := &Plugin{}
+			assert.Equal(t, PluginName, p.Name())
+			testOpt := &framework.Option{
+				Scheme:   testScheme,
+				Client:   fake.NewClientBuilder().WithScheme(testScheme).Build(),
+				Builder:  &builder.Builder{},
+				Recorder: &record.FakeRecorder{},
+			}
+			if tt.fields.client != nil {
+				testOpt.Client = tt.fields.client
+			}
+			err = p.Setup(testOpt)
+			assert.NoError(t, err)
+
+			gotErr := p.Prepare(tt.args.strategy, tt.args.node, tt.args.nr)
+			assert.Equal(t, tt.wantErr, gotErr != nil, gotErr)
+			testingCorrectResourceList(t, &tt.wantField.Status.Capacity, &tt.args.node.Status.Capacity)
+			testingCorrectResourceList(t, &tt.wantField.Status.Allocatable, &tt.args.node.Status.Allocatable)
+			if tt.wantOriginAllocated != nil {
+				getOriginAllocated, err := slov1alpha1.GetOriginExtendedAllocatable(tt.args.node.Annotations)
+				assert.NoError(t, err)
+				assert.Equal(t, tt.wantOriginAllocated, getOriginAllocated)
+			}
 		})
 	}
 }
@@ -3325,10 +3562,10 @@ func TestPluginCalculate(t *testing.T) {
 								},
 							},
 							PodsMetric: []*slov1alpha1.PodMetricInfo{
-								genPodMetric("test", "podProd1", "6", "6G"),
-								genPodMetric("test", "podProd2", "2", "4G"), // dangling
-								genPodMetric("test", "podBatch", "10", "10G"),
-								genPodMetric("test", "podMid", "22", "22G"),
+								genPodMetricWithSLO("test", "podProd1", "6", "6G", extension.PriorityProd, extension.QoSLS),
+								genPodMetricWithSLO("test", "podProd2", "2", "4G", extension.PriorityProd, extension.QoSLSR), // dangling
+								genPodMetricWithSLO("test", "podBatch", "10", "10G", extension.PriorityBatch, extension.QoSBE),
+								genPodMetricWithSLO("test", "podMid", "22", "22G", extension.PriorityMid, extension.QoSBE),
 							},
 						},
 					},
@@ -3550,6 +3787,238 @@ func TestPluginCalculate(t *testing.T) {
 					Name:     extension.BatchMemory,
 					Quantity: resource.NewScaledQuantity(39, 9),
 					Message:  "batchAllocatable[Mem(GB)]:39 = nodeCapacity:120 - nodeReservation:42 - systemUsage:6 - podHPUsed:33",
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "calculate NUMA resources with memory not over-committed, some pods not shown in list",
+			fields: fields{
+				client: fake.NewClientBuilder().WithScheme(testScheme).WithObjects(&topov1alpha1.NodeResourceTopology{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node1",
+					},
+					TopologyPolicies: []string{string(topov1alpha1.None)},
+					Zones: topov1alpha1.ZoneList{
+						{
+							Name: util.GenNodeZoneName(0),
+							Type: util.NodeZoneType,
+							Resources: topov1alpha1.ResourceInfoList{
+								{
+									Name:        string(corev1.ResourceCPU),
+									Capacity:    resource.MustParse("50"),
+									Allocatable: resource.MustParse("50"),
+									Available:   resource.MustParse("50"),
+								},
+								{
+									Name:        string(corev1.ResourceMemory),
+									Capacity:    resource.MustParse("62G"),
+									Allocatable: resource.MustParse("62G"),
+									Available:   resource.MustParse("62G"),
+								},
+							},
+						},
+						{
+							Name: util.GenNodeZoneName(1),
+							Type: util.NodeZoneType,
+							Resources: topov1alpha1.ResourceInfoList{
+								{
+									Name:        string(corev1.ResourceCPU),
+									Capacity:    resource.MustParse("50"),
+									Allocatable: resource.MustParse("50"),
+									Available:   resource.MustParse("50"),
+								},
+								{
+									Name:        string(corev1.ResourceMemory),
+									Capacity:    resource.MustParse("58G"),
+									Allocatable: resource.MustParse("58G"),
+									Available:   resource.MustParse("58G"),
+								},
+							},
+						},
+					},
+				}).Build(),
+			},
+			args: args{
+				strategy: &configuration.ColocationStrategy{
+					Enable:                        pointer.Bool(true),
+					CPUReclaimThresholdPercent:    pointer.Int64(65),
+					MemoryReclaimThresholdPercent: pointer.Int64(65),
+					MemoryCalculatePolicy:         &memoryCalculateByReq,
+					DegradeTimeMinutes:            pointer.Int64(15),
+					UpdateTimeThresholdSeconds:    pointer.Int64(300),
+					ResourceDiffThreshold:         pointer.Float64(0.1),
+				},
+				node: &corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node1",
+					},
+					Status: makeNodeStat("100", "120G"),
+				},
+				podList: &corev1.PodList{
+					Items: []corev1.Pod{
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      "podProdLSE",
+								Namespace: "test",
+								Labels: map[string]string{
+									extension.LabelPodQoS: string(extension.QoSLSE),
+								},
+								Annotations: map[string]string{
+									extension.AnnotationResourceStatus: `{
+    "cpuset": "2-5,10-13",
+    "numaNodeResources": [
+        {
+            "node": 0
+        }
+    ]
+}`,
+								},
+							},
+							Spec: corev1.PodSpec{
+								NodeName: "test-node1",
+								Containers: []corev1.Container{
+									{
+										Resources: makeResourceReq("10", "10G"),
+									},
+								},
+								// regarded as Prod by default
+							},
+							Status: corev1.PodStatus{
+								Phase: corev1.PodRunning,
+							},
+						},
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      "podProd1",
+								Namespace: "test",
+								// missing qos label
+							},
+							Spec: corev1.PodSpec{
+								NodeName: "test-node1",
+								Containers: []corev1.Container{
+									{
+										Resources: makeResourceReq("10", "10G"),
+									},
+								},
+								PriorityClassName: string(extension.PriorityProd),
+								Priority:          pointer.Int32(extension.PriorityProdValueMax),
+							},
+							Status: corev1.PodStatus{
+								Phase: corev1.PodRunning,
+							},
+						},
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      "podBatch",
+								Namespace: "test",
+								Labels: map[string]string{
+									extension.LabelPodQoS: string(extension.QoSBE),
+								},
+							},
+							Spec: corev1.PodSpec{
+								NodeName: "test-node1",
+								Containers: []corev1.Container{
+									{
+										Resources: makeResourceReq("10", "10G"),
+									},
+								},
+								// regarded as Batch by default
+							},
+							Status: corev1.PodStatus{
+								Phase: corev1.PodRunning,
+							},
+						},
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      "podMid",
+								Namespace: "test",
+								Labels: map[string]string{
+									extension.LabelPodQoS: string(extension.QoSBE),
+								},
+							},
+							Spec: corev1.PodSpec{
+								NodeName: "test-node1",
+								Containers: []corev1.Container{
+									{
+										Resources: makeResourceReq("10", "20G"),
+									},
+									{
+										Resources: makeResourceReq("10", "20G"),
+									},
+								},
+								PriorityClassName: string(extension.PriorityMid),
+								Priority:          pointer.Int32(extension.PriorityMidValueMin),
+							},
+							Status: corev1.PodStatus{
+								Phase: corev1.PodPending,
+							},
+						},
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      "podProd2",
+								Namespace: "test",
+								Labels:    map[string]string{},
+							},
+							Spec: corev1.PodSpec{
+								NodeName: "test-node1",
+								Containers: []corev1.Container{
+									{
+										Resources: makeResourceReq("10", "10G"),
+									},
+								},
+							},
+							Status: corev1.PodStatus{
+								Phase: corev1.PodSucceeded,
+							},
+						},
+					},
+				},
+				resourceMetrics: &framework.ResourceMetrics{
+					NodeMetric: &slov1alpha1.NodeMetric{
+						Status: slov1alpha1.NodeMetricStatus{
+							UpdateTime: &metav1.Time{Time: time.Now()},
+							NodeMetric: &slov1alpha1.NodeMetricInfo{
+								NodeUsage: slov1alpha1.ResourceMap{
+									ResourceList: makeResourceList("50", "55G"),
+								},
+								SystemUsage: slov1alpha1.ResourceMap{
+									ResourceList: corev1.ResourceList{
+										corev1.ResourceCPU:    resource.MustParse("7"),
+										corev1.ResourceMemory: resource.MustParse("12G"),
+									},
+								},
+							},
+							PodsMetric: []*slov1alpha1.PodMetricInfo{
+								genPodMetricWithSLO("test", "podProd1", "6", "6G", extension.PriorityProd, extension.QoSLS),
+								genPodMetricWithSLO("test", "podProd2", "2", "4G", extension.PriorityProd, extension.QoSLSR), // dangling
+								genPodMetricWithSLO("test", "podBatch", "10", "10G", extension.PriorityBatch, extension.QoSBE),
+								genPodMetricWithSLO("test", "podMid", "22", "22G", extension.PriorityMid, extension.QoSBE),
+								genPodMetricWithSLO("test", "podProd3", "4", "8G", extension.PriorityProd, extension.QoSLS),
+								genPodMetricWithSLO("test", "podBatch2", "8", "8G", extension.PriorityBatch, extension.QoSBE),
+							},
+						},
+					},
+				},
+			},
+			want: []framework.ResourceItem{
+				{
+					Name:     extension.BatchCPU,
+					Quantity: resource.NewQuantity(14000, resource.DecimalSI),
+					Message:  "batchAllocatable[CPU(Milli-Core)]:14000 = nodeCapacity:100000 - nodeReservation:35000 - systemUsageOrReserved:7000 - podHPUsed:44000",
+					ZoneQuantity: map[string]resource.Quantity{
+						util.GenNodeZoneName(0): *resource.NewQuantity(2000, resource.DecimalSI),  // 50 - 17.5 - 3.5 - (14 + 10 + 1 + 2)
+						util.GenNodeZoneName(1): *resource.NewQuantity(12000, resource.DecimalSI), // 50 - 17.5 - 3.5 - (14 + 1 + 2)
+					},
+				},
+				{
+					Name:     extension.BatchMemory,
+					Quantity: resource.NewScaledQuantity(18, 9),
+					Message:  "batchAllocatable[Mem(GB)]:18 = nodeCapacity:120 - nodeReservation:42 - systemReserved:0 - podHPRequest:60",
+					ZoneQuantity: map[string]resource.Quantity{
+						util.GenNodeZoneName(0): *resource.NewScaledQuantity(5300, 6),  // 62 - 21.7(62*0.35) - (25 + 10)
+						util.GenNodeZoneName(1): *resource.NewScaledQuantity(12700, 6), // 58 - 20.3(58*0.35) - 25
+					},
 				},
 			},
 			wantErr: false,

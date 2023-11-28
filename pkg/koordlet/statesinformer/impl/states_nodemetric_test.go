@@ -308,6 +308,9 @@ func Test_reporter_sync_with_single_node_metric(t *testing.T) {
 									Namespace: "default",
 									UID:       "test-pod",
 								},
+								Status: v1.PodStatus{
+									QOSClass: v1.PodQOSBurstable,
+								},
 							},
 						},
 					},
@@ -363,6 +366,8 @@ func Test_reporter_sync_with_single_node_metric(t *testing.T) {
 				{
 					Name:      "test-pod",
 					Namespace: "default",
+					Priority:  apiext.PriorityProd,
+					QoS:       apiext.QoSLS,
 					PodUsage: slov1alpha1.ResourceMap{
 						ResourceList: v1.ResourceList{
 							v1.ResourceCPU:    *resource.NewMilliQuantity(1000, resource.DecimalSI),
@@ -946,8 +951,6 @@ func Test_nodeMetricInformer_collectNodeMetric(t *testing.T) {
 }
 
 func Test_nodeMetricInformer_collectPodMetric(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
 	now := time.Now()
 	startTime := now.Add(-time.Second * 120)
 
@@ -964,18 +967,26 @@ func Test_nodeMetricInformer_collectPodMetric(t *testing.T) {
 		name    string
 		args    args
 		samples samples
+		wantErr bool
+		want    *slov1alpha1.PodMetricInfo
 	}{
 		{
-			name: "test-1 report usageWithoutPageCache",
+			name: "report usageWithoutPageCache",
 			args: args{
 				queryparam:          metriccache.QueryParam{Start: &startTime, End: &now, Aggregate: metriccache.AggregationTypeAVG},
-				memoryCollectPolicy: "usageWithoutPageCache",
+				memoryCollectPolicy: slov1alpha1.UsageWithoutPageCache,
 				pod: &statesinformer.PodMeta{
 					Pod: &v1.Pod{
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      "test-pod",
 							Namespace: "default",
 							UID:       "test-pod",
+							Labels: map[string]string{
+								apiext.LabelPodQoS: string(apiext.QoSLSR),
+							},
+						},
+						Spec: v1.PodSpec{
+							Priority: pointer.Int32(apiext.PriorityProdValueMax),
 						},
 					},
 				},
@@ -983,19 +994,37 @@ func Test_nodeMetricInformer_collectPodMetric(t *testing.T) {
 			samples: samples{
 				CPUUsed: 2,
 				MemUsed: 10 * 1024 * 1024 * 1024,
+			},
+			want: &slov1alpha1.PodMetricInfo{
+				Name:      "test-pod",
+				Namespace: "default",
+				Priority:  apiext.PriorityProd,
+				QoS:       apiext.QoSLSR,
+				PodUsage: slov1alpha1.ResourceMap{
+					ResourceList: v1.ResourceList{
+						v1.ResourceCPU:    *resource.NewMilliQuantity(2000, resource.DecimalSI),
+						v1.ResourceMemory: *resource.NewQuantity(10*1024*1024*1024, resource.BinarySI),
+					},
+				},
 			},
 		},
 		{
-			name: "test-2 report usageWithHotPageCache",
+			name: "report usageWithHotPageCache",
 			args: args{
 				queryparam:          metriccache.QueryParam{Start: &startTime, End: &now, Aggregate: metriccache.AggregationTypeAVG},
-				memoryCollectPolicy: "usageWithHotPageCache",
+				memoryCollectPolicy: slov1alpha1.UsageWithHotPageCache,
 				pod: &statesinformer.PodMeta{
 					Pod: &v1.Pod{
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      "test-pod",
 							Namespace: "default",
 							UID:       "test-pod",
+							Labels: map[string]string{
+								apiext.LabelPodQoS: string(apiext.QoSLS),
+							},
+						},
+						Spec: v1.PodSpec{
+							Priority: pointer.Int32(apiext.PriorityBatchValueMin),
 						},
 					},
 				},
@@ -1003,13 +1032,25 @@ func Test_nodeMetricInformer_collectPodMetric(t *testing.T) {
 			samples: samples{
 				CPUUsed: 2,
 				MemUsed: 10 * 1024 * 1024 * 1024,
+			},
+			want: &slov1alpha1.PodMetricInfo{
+				Name:      "test-pod",
+				Namespace: "default",
+				Priority:  apiext.PriorityBatch,
+				QoS:       apiext.QoSLS,
+				PodUsage: slov1alpha1.ResourceMap{
+					ResourceList: v1.ResourceList{
+						v1.ResourceCPU:    *resource.NewMilliQuantity(2000, resource.DecimalSI),
+						v1.ResourceMemory: *resource.NewQuantity(10*1024*1024*1024, resource.BinarySI),
+					},
+				},
 			},
 		},
 		{
-			name: "test-3 report usageWithPageCache",
+			name: "report usageWithPageCache",
 			args: args{
 				queryparam:          metriccache.QueryParam{Start: &startTime, End: &now, Aggregate: metriccache.AggregationTypeAVG},
-				memoryCollectPolicy: "usageWithPageCache",
+				memoryCollectPolicy: slov1alpha1.UsageWithPageCache,
 				pod: &statesinformer.PodMeta{
 					Pod: &v1.Pod{
 						ObjectMeta: metav1.ObjectMeta{
@@ -1023,11 +1064,26 @@ func Test_nodeMetricInformer_collectPodMetric(t *testing.T) {
 			samples: samples{
 				CPUUsed: 2,
 				MemUsed: 10 * 1024 * 1024 * 1024,
+			},
+			want: &slov1alpha1.PodMetricInfo{
+				Name:      "test-pod",
+				Namespace: "default",
+				Priority:  apiext.PriorityBatch,
+				QoS:       apiext.QoSBE,
+				PodUsage: slov1alpha1.ResourceMap{
+					ResourceList: v1.ResourceList{
+						v1.ResourceCPU:    *resource.NewMilliQuantity(2000, resource.DecimalSI),
+						v1.ResourceMemory: *resource.NewQuantity(10*1024*1024*1024, resource.BinarySI),
+					},
+				},
 			},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+
 			if tt.args.memoryCollectPolicy == slov1alpha1.UsageWithHotPageCache {
 				system.SetIsStartColdMemory(true)
 			}
@@ -1050,12 +1106,20 @@ func Test_nodeMetricInformer_collectPodMetric(t *testing.T) {
 			}
 			assert.NoError(t, err)
 			buildMockQueryResult(ctrl, mockQuerier, mockResultFactory, memQueryMeta, tt.samples.MemUsed, duration)
+
 			r := &nodeMetricInformer{
 				metricCache: mockMetricCache,
+				nodeMetric: &slov1alpha1.NodeMetric{
+					Spec: slov1alpha1.NodeMetricSpec{
+						CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
+							NodeMemoryCollectPolicy: &tt.args.memoryCollectPolicy,
+						},
+					},
+				},
 			}
-			r.getNodeMetricSpec().CollectPolicy.NodeMemoryCollectPolicy = &tt.args.memoryCollectPolicy
-			_, err = r.collectPodMetric(tt.args.pod, tt.args.queryparam)
-			assert.NoError(t, err)
+			got, err := r.collectPodMetric(tt.args.pod, tt.args.queryparam)
+			assert.Equal(t, tt.wantErr, err != nil, err)
+			assert.Equal(t, tt.want, got)
 		})
 	}
 }

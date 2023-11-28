@@ -24,6 +24,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	k8sfeature "k8s.io/apiserver/pkg/util/feature"
+	"k8s.io/client-go/tools/cache"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	koordfeatures "github.com/koordinator-sh/koordinator/pkg/features"
@@ -171,4 +172,62 @@ func TestPlugin_OnPodUpdateWhenDisableDefaultAndRootTree(t *testing.T) {
 	assert.True(t, quotav1.Equals(defaultQuotaInfo.GetUsed(), v1.ResourceList{}))
 	assert.True(t, quotav1.Equals(test1QuotaInfo.GetUsed(), MakeResourceList().CPU(0).Mem(0).Obj()))
 	assert.True(t, quotav1.Equals(test2QuotaInfo.GetUsed(), MakeResourceList().CPU(0).Mem(0).Obj()))
+}
+
+func TestPlugin_OnPodDelete(t *testing.T) {
+	defer utilfeature.SetFeatureGateDuringTest(t, k8sfeature.DefaultMutableFeatureGate, koordfeatures.DisableDefaultQuota, true)()
+
+	suit := newPluginTestSuit(t, nil)
+	p, err := suit.proxyNew(suit.elasticQuotaArgs, suit.Handle)
+	assert.Nil(t, err)
+	plugin := p.(*Plugin)
+
+	suit.AddQuota("test", "", 10, 40, 10, 40, 10, 40, false, "")
+
+	testQuotaInfo := plugin.groupQuotaManager.GetQuotaInfoByName("test")
+
+	assert.True(t, quotav1.Equals(testQuotaInfo.GetUsed(), v1.ResourceList{}))
+
+	pod := makePod2("pod", MakeResourceList().CPU(1).Mem(2).Obj())
+	pod.Labels[extension.LabelQuotaName] = "test"
+
+	tests := []struct {
+		name         string
+		obj          interface{}
+		wantResource v1.ResourceList
+	}{
+		{
+			name:         "object is pod",
+			obj:          pod,
+			wantResource: MakeResourceList().CPU(0).Mem(0).Obj(),
+		},
+		{
+			name: "object is DeletedFinalStateUnknown{Obj: pod}",
+			obj: cache.DeletedFinalStateUnknown{
+				Key: "test",
+				Obj: pod,
+			},
+			wantResource: MakeResourceList().CPU(0).Mem(0).Obj(),
+		},
+		{
+			name:         "object is node",
+			obj:          &v1.Node{},
+			wantResource: MakeResourceList().CPU(1).Mem(2).Obj(),
+		},
+		{
+			name: "object is DeletedFinalStateUnknown{Obj: node}",
+			obj: cache.DeletedFinalStateUnknown{
+				Key: "test",
+				Obj: &v1.Node{},
+			},
+			wantResource: MakeResourceList().CPU(1).Mem(2).Obj(),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			plugin.OnPodAdd(pod)
+			plugin.OnPodDelete(tt.obj)
+			assert.True(t, quotav1.Equals(testQuotaInfo.GetUsed(), tt.wantResource))
+		})
+	}
 }
