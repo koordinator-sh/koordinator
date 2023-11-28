@@ -141,6 +141,7 @@ DirectMap1G:           0 kB`
 	}
 
 	type fields struct {
+		name                  string
 		podFilterOption       framework.PodFilter
 		getPodMetas           []*statesinformer.PodMeta
 		initPodLastStat       func(lastState *gocache.Cache)
@@ -159,6 +160,7 @@ DirectMap1G:           0 kB`
 		{
 			name: "collect pagecache info",
 			fields: fields{
+				name:            "used to collect metrics",
 				podFilterOption: framework.DefaultPodFilter,
 				getPodMetas: []*statesinformer.PodMeta{
 					{
@@ -261,7 +263,7 @@ DirectMap1G:           0 kB`
 			})
 			assert.Equal(t, tt.wantEnable, c.Enabled())
 			assert.Equal(t, tt.wantStarted, c.Started())
-			if tt.name == "collect pagecache info" {
+			if tt.fields.name == "used to collect metrics" {
 				nodeGot := testGetNodePageCacheMetrics(t, metricCache, testNow, 5*time.Second)
 				assert.Equal(t, tt.wantNodeMetric, nodeGot)
 				podGot := testGetPodPageCacheMetrics(t, metricCache, string(c.statesInformer.GetAllPods()[0].Pod.UID), testNow, 5*time.Second)
