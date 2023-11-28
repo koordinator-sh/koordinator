@@ -36,6 +36,7 @@ const (
 	ResourceRDMA           corev1.ResourceName = DomainPrefix + "rdma"
 	ResourceFPGA           corev1.ResourceName = DomainPrefix + "fpga"
 	ResourceGPU            corev1.ResourceName = DomainPrefix + "gpu"
+	ResourceGPUShared      corev1.ResourceName = DomainPrefix + "gpu.shared"
 	ResourceGPUCore        corev1.ResourceName = DomainPrefix + "gpu-core"
 	ResourceGPUMemory      corev1.ResourceName = DomainPrefix + "gpu-memory"
 	ResourceGPUMemoryRatio corev1.ResourceName = DomainPrefix + "gpu-memory-ratio"
