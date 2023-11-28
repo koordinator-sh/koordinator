@@ -361,16 +361,17 @@ func (r *nodeMetricInformer) collectMetric() (*slov1alpha1.NodeMetricInfo, []*sl
 		End:       &endTime,
 	}
 	prodPredictor := r.predictorFactory.New(prediction.ProdReclaimablePredictor)
+
 	for _, podMeta := range podsMeta {
 		podMetric, err := r.collectPodMetric(podMeta, queryParam)
 		if err != nil {
-			klog.Warningf("query pod metric failed, pod %s, error %v", genPodMetaKey(podMeta), err)
+			klog.Warningf("query pod metric failed, pod %s, err: %v", podMeta.Key(), err)
 			continue
 		}
 		// predict pods which have valid metrics; ignore prediction failures
 		err = prodPredictor.AddPod(podMeta.Pod)
 		if err != nil {
-			klog.V(4).Infof("predictor add pod aborted, pod %s, error: %v", genPodMetaKey(podMeta), err)
+			klog.V(4).Infof("predictor add pod aborted, pod %s, err: %v", podMeta.Key(), err)
 		}
 
 		r.fillExtensionMap(podMetric, podMeta.Pod)
@@ -382,11 +383,12 @@ func (r *nodeMetricInformer) collectMetric() (*slov1alpha1.NodeMetricInfo, []*sl
 	for _, hostApp := range nodeSLO.Spec.HostApplications {
 		appMetric, err := r.collectHostAppMetric(&hostApp, queryParam)
 		if err != nil {
-			klog.Warningf("query host application %v metric failed, error %v", hostApp.Name, err)
+			klog.Warningf("query host application %v metric failed, err: %v", hostApp.Name, err)
 			continue
 		}
 		hostAppMetricInfo = append(hostAppMetricInfo, appMetric)
 	}
+
 	prodReclaimable := &slov1alpha1.ReclaimableMetric{}
 	if p, err := prodPredictor.GetResult(); err != nil {
 		klog.Errorf("failed to get prediction, err %v", err)
@@ -653,10 +655,11 @@ func (r *nodeMetricInformer) collectSystemAggregateMetric(endTime time.Time, agg
 
 func (r *nodeMetricInformer) collectPodMetric(podMeta *statesinformer.PodMeta, queryParam metriccache.QueryParam) (*slov1alpha1.PodMetricInfo, error) {
 	if podMeta == nil || podMeta.Pod == nil {
-		return nil, fmt.Errorf("invalid pod meta %v", podMeta)
+		return nil, fmt.Errorf("invalid pod meta %+v", podMeta)
 	}
-	podUID := string(podMeta.Pod.UID)
 
+	pod := podMeta.Pod
+	podUID := string(pod.UID)
 	querier, err := r.metricCache.Querier(*queryParam.Start, *queryParam.End)
 	if err != nil {
 		klog.V(5).Infof("failed to get querier for pod %s/%s, error %v", podMeta.Pod.Namespace, podMeta.Pod.Name, err)
@@ -671,6 +674,7 @@ func (r *nodeMetricInformer) collectPodMetric(podMeta *statesinformer.PodMeta, q
 	if err != nil {
 		return nil, err
 	}
+
 	var memAggregateResult metriccache.AggregateResult
 	nodeMemoryCollectPolicy := *r.getNodeMetricSpec().CollectPolicy.NodeMemoryCollectPolicy
 	if nodeMemoryCollectPolicy == slov1alpha1.UsageWithHotPageCache && system.GetIsStartColdMemory() {
@@ -693,9 +697,12 @@ func (r *nodeMetricInformer) collectPodMetric(podMeta *statesinformer.PodMeta, q
 	if err != nil {
 		return nil, err
 	}
-	rtn := &slov1alpha1.PodMetricInfo{
-		Namespace: podMeta.Pod.Namespace,
-		Name:      podMeta.Pod.Name,
+
+	podMetric := &slov1alpha1.PodMetricInfo{
+		Namespace: pod.Namespace,
+		Name:      pod.Name,
+		Priority:  apiext.GetPodPriorityClassWithDefault(pod),
+		QoS:       apiext.GetPodQoSClassWithDefault(pod),
 		PodUsage: slov1alpha1.ResourceMap{
 			ResourceList: corev1.ResourceList{
 				corev1.ResourceCPU:    *resource.NewMilliQuantity(int64(cpuUsed*1000), resource.DecimalSI),
@@ -703,7 +710,8 @@ func (r *nodeMetricInformer) collectPodMetric(podMeta *statesinformer.PodMeta, q
 			},
 		},
 	}
-	return rtn, nil
+
+	return podMetric, nil
 }
 
 func (r *nodeMetricInformer) collectHostAppMetric(hostApp *slov1alpha1.HostApplicationSpec, queryParam metriccache.QueryParam) (*slov1alpha1.HostApplicationMetricInfo, error) {
