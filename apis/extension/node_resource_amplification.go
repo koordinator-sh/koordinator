@@ -30,9 +30,6 @@ const (
 	// AnnotationNodeResourceAmplificationRatio denotes the resource amplification ratio of the node.
 	AnnotationNodeResourceAmplificationRatio = NodeDomainPrefix + "/resource-amplification-ratio"
 
-	// AnnotationNodeRawCapacity denotes the un-amplified raw capacity of the node.
-	AnnotationNodeRawCapacity = NodeDomainPrefix + "/raw-capacity"
-
 	// AnnotationNodeRawAllocatable denotes the un-amplified raw allocatable of the node.
 	AnnotationNodeRawAllocatable = NodeDomainPrefix + "/raw-allocatable"
 )
@@ -106,28 +103,10 @@ func SetNodeResourceAmplificationRatio(node *corev1.Node, resource corev1.Resour
 	return true, nil
 }
 
-// GetNodeRawCapacity gets the raw capacity of node from annotations.
-func GetNodeRawCapacity(annotations map[string]string) (corev1.ResourceList, error) {
-	s, ok := annotations[AnnotationNodeRawCapacity]
-	if !ok {
-		return nil, nil
-	}
-
-	var capacity corev1.ResourceList
-	if err := json.Unmarshal([]byte(s), &capacity); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal node raw capacity: %w", err)
-	}
-
-	return capacity, nil
-}
-
-// SetNodeRawCapacity sets the node annotation according to the raw capacity.
-func SetNodeRawCapacity(node *corev1.Node, capacity corev1.ResourceList) {
-	s, _ := json.Marshal(capacity)
-	if node.Annotations == nil {
-		node.Annotations = map[string]string{}
-	}
-	node.Annotations[AnnotationNodeRawCapacity] = string(s)
+// HasNodeRawAllocatable checks if the node has raw allocatable annotation.
+func HasNodeRawAllocatable(annotations map[string]string) bool {
+	_, ok := annotations[AnnotationNodeRawAllocatable]
+	return ok
 }
 
 // GetNodeRawAllocatable gets the raw allocatable of node from annotations.

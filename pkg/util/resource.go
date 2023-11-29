@@ -77,25 +77,29 @@ func MinResourceList(a corev1.ResourceList, b corev1.ResourceList) corev1.Resour
 	return result
 }
 
-// IsResourceListEqualValue checks if the two resource lists are numerically equivalent.
-// NOTE: Resource name with a zero value will be ignored in comparison.
-// e.g. a = {"cpu": "10", "memory": "0"}, b = {"cpu": "10"} => true
-func IsResourceListEqualValue(a, b corev1.ResourceList) bool {
-	a = quotav1.RemoveZeros(a)
-	b = quotav1.RemoveZeros(b)
-	if len(a) != len(b) { // different number of no-zero resources
+// IsResourceListEqual checks if the two resource lists are numerically equivalent.
+func IsResourceListEqual(a corev1.ResourceList, b corev1.ResourceList) bool {
+	if len(a) != len(b) {
 		return false
 	}
-	for key, value := range a {
-		other, found := b[key]
-		if !found { // different resource names since all zero values have been dropped
-			return false
-		}
-		if value.Cmp(other) != 0 { // different values
+	for key, val := range a {
+		valInB, ok := b[key]
+		if !ok || val.Cmp(valInB) != 0 {
 			return false
 		}
 	}
+
 	return true
+}
+
+// IsResourceListEqualIgnoreZeroValues checks if the two resource lists are numerically equivalent.
+// NOTE: Resource name with a zero value will be ignored in comparison.
+// e.g. a = {"cpu": "10", "memory": "0"}, b = {"cpu": "10"} => true
+func IsResourceListEqualIgnoreZeroValues(a, b corev1.ResourceList) bool {
+	a = quotav1.RemoveZeros(a)
+	b = quotav1.RemoveZeros(b)
+
+	return IsResourceListEqual(a, b)
 }
 
 // IsResourceDiff returns whether the new resource has big enough difference with the old one or not
