@@ -274,7 +274,7 @@ func (g *Plugin) checkQuotaRecursive(curQuotaName string, quotaNameTopo []string
 	quotaInfo := g.groupQuotaManager.GetQuotaInfoByName(curQuotaName)
 	quotaUsed := quotaInfo.GetUsed()
 	quotaRuntime := quotaInfo.GetRuntime()
-	newUsed := quotav1.Add(podRequest, quotaUsed)
+	newUsed := quotav1.Mask(quotav1.Add(podRequest, quotaUsed), quotav1.ResourceNames(podRequest))
 	if isLessEqual, exceedDimensions := quotav1.LessThanOrEqual(newUsed, quotaRuntime); !isLessEqual {
 		return framework.NewStatus(framework.Unschedulable, fmt.Sprintf("Insufficient quotas, "+
 			"quotaNameTopo: %v, runtime: %v, used: %v, pod's request: %v, exceedDimensions: %v", quotaNameTopo,

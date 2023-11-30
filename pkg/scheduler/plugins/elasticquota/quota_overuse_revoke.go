@@ -115,7 +115,7 @@ func (monitor *QuotaOverUsedGroupMonitor) getToRevokePodList(quotaName string) [
 			continue
 		}
 		podReq, _ := core.PodRequestsAndLimits(pod)
-		used = quotav1.Subtract(used, podReq)
+		used = quotav1.Mask(quotav1.Subtract(used, podReq), quotav1.ResourceNames(podReq))
 		tryAssignBackPodCache = append(tryAssignBackPodCache, pod)
 	}
 
@@ -133,7 +133,7 @@ func (monitor *QuotaOverUsedGroupMonitor) getToRevokePodList(quotaName string) [
 	for index := len(tryAssignBackPodCache) - 1; index >= 0; index-- {
 		pod := tryAssignBackPodCache[index]
 		podRequest, _ := core.PodRequestsAndLimits(pod)
-		used = quotav1.Add(used, podRequest)
+		used = quotav1.Mask(quotav1.Add(used, podRequest), quotav1.ResourceNames(podRequest))
 		if canAssignBack, _ := quotav1.LessThanOrEqual(used, runtime); !canAssignBack {
 			used = quotav1.Subtract(used, podRequest)
 			realRevokePodCache = append(realRevokePodCache, pod)
