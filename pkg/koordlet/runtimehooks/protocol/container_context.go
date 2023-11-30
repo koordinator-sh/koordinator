@@ -21,7 +21,6 @@ import (
 	"strings"
 
 	"github.com/containerd/nri/pkg/api"
-
 	"k8s.io/klog/v2"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
@@ -30,6 +29,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	koordletutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
@@ -372,10 +372,10 @@ func (c *ContainerContext) injectForExt() {
 }
 
 func getContainerID(podAnnotations map[string]string, containerUID string) string {
-	// TODO parse from runtime hook request directly
-	runtimeType := "containerd"
+	// TODO parse from runtime hook request directly such as cgroup path format
+	runtimeType := system.Conf.DefaultRuntimeType
 	if _, exist := podAnnotations["io.kubernetes.docker.type"]; exist {
-		runtimeType = "docker"
+		runtimeType = system.RuntimeTypeDocker
 	}
 	return fmt.Sprintf("%s://%s", runtimeType, containerUID)
 }

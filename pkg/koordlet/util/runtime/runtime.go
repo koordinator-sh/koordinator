@@ -31,6 +31,7 @@ import (
 var (
 	DockerHandler     handler.ContainerRuntimeHandler
 	ContainerdHandler handler.ContainerRuntimeHandler
+	PouchHandler      handler.ContainerRuntimeHandler
 	mutex             = &sync.Mutex{}
 )
 
@@ -39,10 +40,12 @@ func GetRuntimeHandler(runtimeType string) (handler.ContainerRuntimeHandler, err
 	defer mutex.Unlock()
 
 	switch runtimeType {
-	case "docker":
+	case system.RuntimeTypeDocker:
 		return getDockerHandler()
-	case "containerd":
+	case system.RuntimeTypeContainerd:
 		return getContainerdHandler()
+	case system.RuntimeTypePouch:
+		return getPouchHandler()
 	default:
 		return nil, fmt.Errorf("runtime type %v is not supported", runtimeType)
 	}
@@ -114,6 +117,39 @@ func getContainerdEndpoint() (string, error) {
 	}
 
 	return "", fmt.Errorf("containerd endpoint does not exist")
+}
+
+func getPouchHandler() (handler.ContainerRuntimeHandler, error) {
+	if PouchHandler != nil {
+		return PouchHandler, nil
+	}
+
+	unixEndpoint, err := getPouchEndpoint()
+	if err != nil {
+		klog.Errorf("failed to get pouch endpoint, error: %v", err)
+		return nil, err
+	}
+
+	PouchHandler, err = handler.NewPouchRuntimeHandler(unixEndpoint)
+	if err != nil {
+		klog.Errorf("failed to create pouch runtime handler, error: %v", err)
+		return nil, err
+	}
+
+	return PouchHandler, nil
+}
+
+func getPouchEndpoint() (string, error) {
+	if pouchEndpoint := handler.GetPouchEndpoint(); isFile(pouchEndpoint) {
+		return fmt.Sprintf("unix://%s", pouchEndpoint), nil
+	}
+
+	if len(system.Conf.PouchEndpoint) > 0 && isFile(system.Conf.PouchEndpoint) {
+		klog.Infof("find pouch Endpoint : %v", system.Conf.PouchEndpoint)
+		return fmt.Sprintf("unix://%s", system.Conf.PouchEndpoint), nil
+	}
+
+	return "", fmt.Errorf("pouch endpoint does not exist")
 }
 
 func isFile(path string) bool {

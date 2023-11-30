@@ -44,7 +44,9 @@ type Config struct {
 	RuntimeHooksConfigDir string
 
 	ContainerdEndPoint string
+	PouchEndpoint      string
 	DockerEndPoint     string
+	DefaultRuntimeType string
 }
 
 func init() {
@@ -71,6 +73,7 @@ func NewHostModeConfig() *Config {
 		VarRunRootDir:         "/var/run/",
 		RunRootDir:            "/run/",
 		RuntimeHooksConfigDir: "/etc/runtime/hookserver.d",
+		DefaultRuntimeType:    "containerd",
 	}
 }
 
@@ -85,6 +88,7 @@ func NewDsModeConfig() *Config {
 		VarRunRootDir:         "/host-var-run/",
 		RunRootDir:            "/host-run/",
 		RuntimeHooksConfigDir: "/host-etc-hookserver/",
+		DefaultRuntimeType:    "containerd",
 	}
 }
 
@@ -103,6 +107,9 @@ func (c *Config) InitFlags(fs *flag.FlagSet) {
 	fs.StringVar(&c.CgroupKubePath, "cgroup-kube-dir", c.CgroupKubePath, "Cgroup kube dir")
 	fs.StringVar(&c.ContainerdEndPoint, "containerd-endpoint", c.ContainerdEndPoint, "containerd endPoint")
 	fs.StringVar(&c.DockerEndPoint, "docker-endpoint", c.DockerEndPoint, "docker endPoint")
+	fs.StringVar(&c.PouchEndpoint, "pouch-endpoint", c.PouchEndpoint, "pouch endPoint")
+
+	fs.StringVar(&c.DefaultRuntimeType, "default-runtime-type", c.DefaultRuntimeType, "default runtime type during runtime hooks handle request, candidates are containerd/docker/pouch.")
 
 	initSupportConfigs()
 }
