@@ -90,19 +90,6 @@ func (r *Rule) IsKubeQOSCPUIdle(KubeQOS corev1.PodQOSClass) bool {
 	return false
 }
 
-func (r *Rule) IsPodCPUIdle(podQoSClass extension.QoSClass, podKubeQOS corev1.PodQOSClass) bool {
-	r.lock.RLock()
-	defer r.lock.RUnlock()
-	if val, exist := r.podQOSParams[podQoSClass]; exist {
-		return val.IsCPUIdle
-	}
-	if val, exist := r.kubeQOSPodParams[podKubeQOS]; exist {
-		return val.IsCPUIdle
-	}
-	// cpu idle disabled by default
-	return false
-}
-
 func (r *Rule) Update(ruleNew *Rule) bool {
 	r.lock.Lock()
 	defer r.lock.Unlock()
@@ -234,16 +221,6 @@ func (p *Plugin) refreshForAllPods(podMetas []*statesinformer.PodMeta) error {
 		if qos := extension.QoSClass(filter.Filter(podMeta)); qos == extension.QoSSystem {
 			klog.V(6).Infof("skip refresh core sched cookie for pod %s whose QoS is SYSTEM", podMeta.Key())
 			continue
-		}
-
-		// pod-level
-		podCtx := &protocol.PodContext{}
-		podCtx.FromReconciler(podMeta)
-		if err := p.SetPodCPUIdle(podCtx); err != nil {
-			klog.V(4).Infof("callback %s set cpu idle for pod %s failed, err: %v", name, podMeta.Key(), err)
-		} else {
-			podCtx.ReconcilerDone(p.executor)
-			klog.V(5).Infof("callback %s set cpu idle for pod %s finished", name, podMeta.Key())
 		}
 
 		// sandbox-container-level

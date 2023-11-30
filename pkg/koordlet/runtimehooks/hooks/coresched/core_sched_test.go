@@ -2014,7 +2014,7 @@ func TestPlugin_SetKubeQOSCPUIdle(t *testing.T) {
 		{
 			name: "cpu idle enabled",
 			fields: fields{
-				rule: testGetEnabledRule(),
+				rule: testGetAllEnabledRule(),
 			},
 			arg: &protocol.KubeQOSContext{
 				Request: protocol.KubeQOSRequet{
@@ -2041,133 +2041,6 @@ func TestPlugin_SetKubeQOSCPUIdle(t *testing.T) {
 			p := newPlugin()
 			p.rule = tt.fields.rule
 			gotErr := p.SetKubeQOSCPUIdle(tt.arg)
-			assert.Equal(t, tt.wantErr, gotErr != nil, gotErr)
-			if !tt.wantErr {
-				assert.Equal(t, tt.wantField, tt.arg)
-			}
-		})
-	}
-}
-
-func TestPlugin_SetPodCPUIdle(t *testing.T) {
-	type fields struct {
-		rule *Rule
-	}
-	tests := []struct {
-		name      string
-		fields    fields
-		arg       protocol.HooksProtocol
-		wantErr   bool
-		wantField *protocol.PodContext
-	}{
-		{
-			name:    "nil context",
-			arg:     (*protocol.PodContext)(nil),
-			wantErr: true,
-		},
-		{
-			name: "rule not inited",
-			fields: fields{
-				rule: newRule(),
-			},
-			arg: &protocol.PodContext{
-				Request: protocol.PodRequest{
-					PodMeta: protocol.PodMeta{
-						Name: "test-pod",
-					},
-					Labels: map[string]string{
-						extension.LabelPodQoS: string(extension.QoSLS),
-					},
-					CgroupParent: "kubepods.slice/kubepods-burstable.slice/kubepods-burstable-podxxxxxx.slice",
-				},
-			},
-			wantErr: false,
-			wantField: &protocol.PodContext{
-				Request: protocol.PodRequest{
-					PodMeta: protocol.PodMeta{
-						Name: "test-pod",
-					},
-					Labels: map[string]string{
-						extension.LabelPodQoS: string(extension.QoSLS),
-					},
-					CgroupParent: "kubepods.slice/kubepods-burstable.slice/kubepods-burstable-podxxxxxx.slice",
-				},
-			},
-		},
-		{
-			name: "cpu idle disabled",
-			fields: fields{
-				rule: testGetDisabledRule(),
-			},
-			arg: &protocol.PodContext{
-				Request: protocol.PodRequest{
-					PodMeta: protocol.PodMeta{
-						Name: "test-pod",
-					},
-					Labels: map[string]string{
-						extension.LabelPodQoS: string(extension.QoSLSR),
-					},
-					CgroupParent: "kubepods.slice/kubepods-podxxxxxx.slice",
-				},
-			},
-			wantErr: false,
-			wantField: &protocol.PodContext{
-				Request: protocol.PodRequest{
-					PodMeta: protocol.PodMeta{
-						Name: "test-pod",
-					},
-					Labels: map[string]string{
-						extension.LabelPodQoS: string(extension.QoSLSR),
-					},
-					CgroupParent: "kubepods.slice/kubepods-podxxxxxx.slice",
-				},
-				Response: protocol.PodResponse{
-					Resources: protocol.Resources{
-						CPUIdle: pointer.Int64(0),
-					},
-				},
-			},
-		},
-		{
-			name: "cpu idle enabled",
-			fields: fields{
-				rule: testGetEnabledRule(),
-			},
-			arg: &protocol.PodContext{
-				Request: protocol.PodRequest{
-					PodMeta: protocol.PodMeta{
-						Name: "test-pod",
-					},
-					Labels: map[string]string{
-						extension.LabelPodQoS: string(extension.QoSBE),
-					},
-					CgroupParent: "kubepods.slice/kubepods-besteffort.slice/kubepods-besteffort-podxxxxxx.slice",
-				},
-			},
-			wantErr: false,
-			wantField: &protocol.PodContext{
-				Request: protocol.PodRequest{
-					PodMeta: protocol.PodMeta{
-						Name: "test-pod",
-					},
-					Labels: map[string]string{
-						extension.LabelPodQoS: string(extension.QoSBE),
-					},
-					CgroupParent: "kubepods.slice/kubepods-besteffort.slice/kubepods-besteffort-podxxxxxx.slice",
-				},
-				Response: protocol.PodResponse{
-					Resources: protocol.Resources{
-						CPUIdle: pointer.Int64(1),
-					},
-				},
-			},
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			p := newPlugin()
-			p.rule = tt.fields.rule
-			gotErr := p.SetPodCPUIdle(tt.arg)
 			assert.Equal(t, tt.wantErr, gotErr != nil, gotErr)
 			if !tt.wantErr {
 				assert.Equal(t, tt.wantField, tt.arg)

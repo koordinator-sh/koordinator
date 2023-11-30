@@ -111,8 +111,6 @@ func (p *Plugin) Register(op hooks.Options) {
 	reconciler.RegisterCgroupReconciler(reconciler.SandboxLevel, sysutil.VirtualCoreSchedCookie,
 		"set core sched cookie to process groups of sandbox container specified",
 		p.SetContainerCookie, reconciler.PodQOSFilter(), podQOSConditions...)
-	reconciler.RegisterCgroupReconciler(reconciler.PodLevel, sysutil.CPUIdle, "reconcile pod level cpu idle",
-		p.SetPodCPUIdle, reconciler.PodQOSFilter(), podQOSConditions...)
 	reconciler.RegisterCgroupReconciler(reconciler.KubeQOSLevel, sysutil.CPUIdle, "reconcile QoS level cpu idle",
 		p.SetKubeQOSCPUIdle, reconciler.NoneFilter())
 	p.Setup(op)
@@ -168,31 +166,6 @@ func (p *Plugin) SetKubeQOSCPUIdle(proto protocol.HooksProtocol) error {
 		kubeQOSCtx.Response.Resources.CPUIdle = pointer.Int64(1)
 	} else {
 		kubeQOSCtx.Response.Resources.CPUIdle = pointer.Int64(0)
-	}
-
-	return nil
-}
-
-func (p *Plugin) SetPodCPUIdle(proto protocol.HooksProtocol) error {
-	podCtx := proto.(*protocol.PodContext)
-	if podCtx == nil {
-		return fmt.Errorf("podCtx protocol is nil for plugin %s", name)
-	}
-	req := podCtx.Request
-
-	if !p.rule.IsInited() {
-		klog.V(5).Infof("plugin %s has not been inited, rule inited %v, aborted to set cpu idle for pod %s",
-			name, p.rule.IsInited(), req.PodMeta.String())
-		return nil
-	}
-
-	podQOS := extension.GetQoSClassByAttrs(req.Labels, req.Annotations)
-	podKubeQOS := util.GetKubeQoSByCgroupParent(req.CgroupParent)
-	isCPUIdle := p.rule.IsPodCPUIdle(podQOS, podKubeQOS)
-	if isCPUIdle {
-		podCtx.Response.Resources.CPUIdle = pointer.Int64(1)
-	} else {
-		podCtx.Response.Resources.CPUIdle = pointer.Int64(0)
 	}
 
 	return nil

@@ -49,8 +49,6 @@ func TestRule(t *testing.T) {
 		assert.False(t, got1)
 		got2 := r.IsKubeQOSCPUIdle(corev1.PodQOSBurstable)
 		assert.False(t, got2)
-		got3 := r.IsPodCPUIdle(extension.QoSLS, corev1.PodQOSGuaranteed)
-		assert.False(t, got3)
 		got, got1 = r.IsPodEnabled(extension.QoSNone, corev1.PodQOSBestEffort)
 		assert.False(t, got)
 		assert.False(t, got1)
@@ -62,8 +60,6 @@ func TestRule(t *testing.T) {
 		assert.False(t, got1)
 		got2 = r.IsKubeQOSCPUIdle(corev1.PodQOSBestEffort)
 		assert.False(t, got2)
-		got3 = r.IsPodCPUIdle(extension.QoSBE, corev1.PodQOSBestEffort)
-		assert.False(t, got3)
 
 		ruleNew = testGetEnabledRule()
 		got = r.Update(ruleNew)
@@ -79,12 +75,17 @@ func TestRule(t *testing.T) {
 		assert.False(t, got1)
 		got2 = r.IsKubeQOSCPUIdle(corev1.PodQOSBurstable)
 		assert.False(t, got2)
-		got3 = r.IsPodCPUIdle(extension.QoSNone, corev1.PodQOSBurstable)
-		assert.False(t, got3)
+
+		// enable CPU idle for BE
+		beParam := Param{
+			IsPodEnabled: true,
+			IsExpeller:   false,
+			IsCPUIdle:    true,
+		}
+		ruleNew.podQOSParams[extension.QoSBE] = beParam
+		ruleNew.kubeQOSPodParams[corev1.PodQOSBestEffort] = beParam
 		got2 = r.IsKubeQOSCPUIdle(corev1.PodQOSBestEffort)
 		assert.True(t, got2)
-		got3 = r.IsPodCPUIdle(extension.QoSBE, corev1.PodQOSBestEffort)
-		assert.True(t, got3)
 	})
 }
 
@@ -764,6 +765,182 @@ func Test_ruleUpdateCb(t *testing.T) {
 				parentDirToCPUIdle: map[string]int64{
 					util.GetPodQoSRelativePath(corev1.PodQOSGuaranteed): 0,
 					util.GetPodQoSRelativePath(corev1.PodQOSBurstable):  0,
+					util.GetPodQoSRelativePath(corev1.PodQOSBestEffort): 0,
+					"kubepods.slice/kubepods-podxxxxxx.slice":           0,
+				},
+			},
+		},
+		{
+			name: "sync cookie correctly with CPU idle enabled",
+			fields: fields{
+				prepareFn: func(helper *sysutil.FileTestUtil) {
+					featuresPath := sysutil.SchedFeatures.Path("")
+					helper.WriteFileContents(featuresPath, `FEATURE_A FEATURE_B FEATURE_C CORE_SCHED`)
+					cpuset, err := sysutil.GetCgroupResource(sysutil.CPUSetCPUSName)
+					assert.NoError(t, err)
+					cpuIdle, err := sysutil.GetCgroupResource(sysutil.CPUIdleName)
+					assert.NoError(t, err)
+					guaranteedQOSDir := util.GetPodQoSRelativePath(corev1.PodQOSGuaranteed)
+					burstableQOSDir := util.GetPodQoSRelativePath(corev1.PodQOSBurstable)
+					besteffortQOSDir := util.GetPodQoSRelativePath(corev1.PodQOSBestEffort)
+					helper.WriteCgroupFileContents(guaranteedQOSDir, cpuIdle, "0")
+					helper.WriteCgroupFileContents(burstableQOSDir, cpuIdle, "0")
+					helper.WriteCgroupFileContents(besteffortQOSDir, cpuIdle, "0")
+					sandboxContainerCgroupDir := testGetContainerCgroupParentDir(t, "kubepods.slice/kubepods-podxxxxxx.slice", "containerd://aaaaaa")
+					helper.WriteCgroupFileContents(sandboxContainerCgroupDir, sysutil.CPUProcs, "12340\n")
+					helper.WriteCgroupFileContents(sandboxContainerCgroupDir, sysutil.CPUProcsV2, "12340\n")
+					helper.WriteCgroupFileContents(sandboxContainerCgroupDir, cpuset, "0-127")
+					helper.WriteCgroupFileContents("kubepods.slice/kubepods-podxxxxxx.slice", cpuIdle, "0")
+					containerCgroupDir := testGetContainerCgroupParentDir(t, "kubepods.slice/kubepods-podxxxxxx.slice", "containerd://yyyyyy")
+					helper.WriteCgroupFileContents(containerCgroupDir, sysutil.CPUProcs, "12344\n12345\n12346\n")
+					helper.WriteCgroupFileContents(containerCgroupDir, sysutil.CPUProcsV2, "12344\n12345\n12346\n")
+					helper.WriteCgroupFileContents(containerCgroupDir, cpuset, "0-127")
+					helper.WriteCgroupFileContents("kubepods.slice/kubepods-podxxxxxx.slice", cpuIdle, "0")
+					statPath0 := sysutil.GetProcPIDStatPath(12340)
+					helper.WriteFileContents(statPath0, `12340 (stress) S 12340 12340 12340 12300 12340 123400 100 0 0 0 0 0 ...`)
+					statPath := sysutil.GetProcPIDStatPath(12344)
+					helper.WriteFileContents(statPath, `12344 (stress) S 12340 12344 12340 12300 12344 123450 151 0 0 0 0 0 ...`)
+					statPath1 := sysutil.GetProcPIDStatPath(12345)
+					helper.WriteFileContents(statPath1, `12345 (stress) S 12340 12344 12340 12300 12345 123450 151 0 0 0 0 0 ...`)
+					statPath2 := sysutil.GetProcPIDStatPath(12346)
+					helper.WriteFileContents(statPath2, `12346 (stress) S 12340 12346 12340 12300 12346 123450 151 0 0 0 0 0 ...`)
+				},
+				plugin: testGetEnabledPlugin(),
+				preparePluginFn: func(p *Plugin) {
+					p.rule = testGetAllEnabledRule()
+					p.executor = resourceexecutor.NewTestResourceExecutor()
+					p.initialized.Store(false)
+					f := p.cse.(*sysutil.FakeCoreSchedExtended)
+					f.SetNextCookieID(2000000)
+				},
+				cse: sysutil.NewFakeCoreSchedExtended(map[uint32]uint64{
+					1:     0,
+					10:    0,
+					12340: 1000000,
+					12344: 1000000,
+					12345: 1000000,
+					12346: 1000000,
+				}, map[uint32]uint32{
+					1:     1,
+					1000:  1000,
+					1001:  1001,
+					1002:  1001,
+					12340: 12340,
+					12344: 12344,
+					12345: 12344,
+					12346: 12346,
+				}, map[uint32]bool{
+					12346: true,
+				}),
+			},
+			arg: &statesinformer.CallbackTarget{
+				Pods: []*statesinformer.PodMeta{
+					{
+						CgroupDir: "kubepods.slice/kubepods-podxxxxxx.slice",
+						Pod: &corev1.Pod{
+							ObjectMeta: metav1.ObjectMeta{
+								Name: "test-pod",
+								UID:  "xxxxxx",
+								Annotations: map[string]string{
+									slov1alpha1.AnnotationCoreSchedGroupID: "group-xxx",
+								},
+								Labels: map[string]string{
+									extension.LabelPodQoS: string(extension.QoSLS),
+								},
+							},
+							Spec: corev1.PodSpec{
+								Containers: []corev1.Container{
+									{
+										Name: "test-container",
+										Resources: corev1.ResourceRequirements{
+											Requests: corev1.ResourceList{
+												corev1.ResourceCPU:    resource.MustParse("2"),
+												corev1.ResourceMemory: resource.MustParse("4Gi"),
+											},
+											Limits: corev1.ResourceList{
+												corev1.ResourceCPU:    resource.MustParse("2"),
+												corev1.ResourceMemory: resource.MustParse("4Gi"),
+											},
+										},
+									},
+								},
+							},
+							Status: corev1.PodStatus{
+								Phase:    corev1.PodRunning,
+								QOSClass: corev1.PodQOSGuaranteed,
+								ContainerStatuses: []corev1.ContainerStatus{
+									{
+										Name:        "test-container",
+										ContainerID: "containerd://yyyyyy",
+										State: corev1.ContainerState{
+											Running: &corev1.ContainerStateRunning{},
+										},
+									},
+								},
+							},
+						},
+					},
+					{
+						CgroupDir: "kubepods.slice/kubepods-podnnnnnn.slice",
+						Pod: &corev1.Pod{
+							ObjectMeta: metav1.ObjectMeta{
+								Name: "test-pod-1",
+								UID:  "nnnnnn",
+								Annotations: map[string]string{
+									slov1alpha1.AnnotationCoreSchedGroupID: "group-nnn",
+								},
+								Labels: map[string]string{
+									extension.LabelPodQoS: string(extension.QoSLSR),
+								},
+							},
+							Spec: corev1.PodSpec{
+								Containers: []corev1.Container{
+									{
+										Name: "test-container-1",
+										Resources: corev1.ResourceRequirements{
+											Requests: corev1.ResourceList{
+												corev1.ResourceCPU:    resource.MustParse("1"),
+												corev1.ResourceMemory: resource.MustParse("2Gi"),
+											},
+											Limits: corev1.ResourceList{
+												corev1.ResourceCPU:    resource.MustParse("1"),
+												corev1.ResourceMemory: resource.MustParse("2Gi"),
+											},
+										},
+									},
+								},
+							},
+							Status: corev1.PodStatus{
+								Phase:    corev1.PodFailed,
+								QOSClass: corev1.PodQOSGuaranteed,
+								ContainerStatuses: []corev1.ContainerStatus{
+									{
+										Name:        "test-container",
+										ContainerID: "containerd://mmmmmm",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			wantErr: false,
+			wantFields: wantFields{
+				rule:         testGetAllEnabledRule(),
+				sysSupported: pointer.Bool(true),
+				initialized:  true,
+				cookieToPGIDs: map[uint64][]uint32{
+					1000000: {
+						12340,
+						12344,
+					},
+				},
+				groupToCookie: map[string]uint64{
+					"group-xxx-expeller": 1000000,
+				},
+				parentDirToCPUIdle: map[string]int64{
+					util.GetPodQoSRelativePath(corev1.PodQOSGuaranteed): 0,
+					util.GetPodQoSRelativePath(corev1.PodQOSBurstable):  0,
 					util.GetPodQoSRelativePath(corev1.PodQOSBestEffort): 1,
 					"kubepods.slice/kubepods-podxxxxxx.slice":           0,
 				},
@@ -991,7 +1168,7 @@ func Test_ruleUpdateCb(t *testing.T) {
 				parentDirToCPUIdle: map[string]int64{
 					util.GetPodQoSRelativePath(corev1.PodQOSGuaranteed):                          0,
 					util.GetPodQoSRelativePath(corev1.PodQOSBurstable):                           0,
-					util.GetPodQoSRelativePath(corev1.PodQOSBestEffort):                          1,
+					util.GetPodQoSRelativePath(corev1.PodQOSBestEffort):                          0,
 					"kubepods.slice/kubepods-podxxxxxx.slice":                                    0,
 					"kubepods.slice/kubepods-burstable.slice/kubepods-burstable-podssssss.slice": 0,
 				},
@@ -1225,9 +1402,9 @@ func Test_ruleUpdateCb(t *testing.T) {
 				parentDirToCPUIdle: map[string]int64{
 					util.GetPodQoSRelativePath(corev1.PodQOSGuaranteed):                            0,
 					util.GetPodQoSRelativePath(corev1.PodQOSBurstable):                             0,
-					util.GetPodQoSRelativePath(corev1.PodQOSBestEffort):                            1,
+					util.GetPodQoSRelativePath(corev1.PodQOSBestEffort):                            0,
 					"kubepods.slice/kubepods-podxxxxxx.slice":                                      0,
-					"kubepods.slice/kubepods-besteffort.slice/kubepods-besteffort-podssssss.slice": 1,
+					"kubepods.slice/kubepods-besteffort.slice/kubepods-besteffort-podssssss.slice": 0,
 				},
 			},
 		},
@@ -1447,7 +1624,7 @@ func Test_ruleUpdateCb(t *testing.T) {
 				parentDirToCPUIdle: map[string]int64{
 					util.GetPodQoSRelativePath(corev1.PodQOSGuaranteed): 0,
 					util.GetPodQoSRelativePath(corev1.PodQOSBurstable):  0,
-					util.GetPodQoSRelativePath(corev1.PodQOSBestEffort): 1,
+					util.GetPodQoSRelativePath(corev1.PodQOSBestEffort): 0,
 					"kubepods.slice/kubepods-podxxxxxx.slice":           0,
 				},
 			},
@@ -1512,6 +1689,52 @@ func testGetDisabledRuleParam() Param {
 }
 
 func testGetEnabledRule() *Rule {
+	// use default CPUQOS
+	return &Rule{
+		podQOSParams: map[extension.QoSClass]Param{
+			extension.QoSLSE: {
+				IsPodEnabled: true,
+				IsExpeller:   true,
+				IsCPUIdle:    false,
+			},
+			extension.QoSLSR: {
+				IsPodEnabled: true,
+				IsExpeller:   true,
+				IsCPUIdle:    false,
+			},
+			extension.QoSLS: {
+				IsPodEnabled: true,
+				IsExpeller:   true,
+				IsCPUIdle:    false,
+			},
+			extension.QoSBE: {
+				IsPodEnabled: true,
+				IsExpeller:   false,
+				IsCPUIdle:    false,
+			},
+		},
+		kubeQOSPodParams: map[corev1.PodQOSClass]Param{
+			corev1.PodQOSGuaranteed: {
+				IsPodEnabled: true,
+				IsExpeller:   true,
+				IsCPUIdle:    false,
+			},
+			corev1.PodQOSBurstable: {
+				IsPodEnabled: true,
+				IsExpeller:   true,
+				IsCPUIdle:    false,
+			},
+			corev1.PodQOSBestEffort: {
+				IsPodEnabled: true,
+				IsExpeller:   false,
+				IsCPUIdle:    false,
+			},
+		},
+	}
+}
+
+func testGetAllEnabledRule() *Rule {
+	// use default CPUQOS and enable CPU Idle
 	return &Rule{
 		podQOSParams: map[extension.QoSClass]Param{
 			extension.QoSLSE: {
