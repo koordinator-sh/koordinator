@@ -141,7 +141,6 @@ DirectMap1G:           0 kB`
 	}
 
 	type fields struct {
-		name                  string
 		podFilterOption       framework.PodFilter
 		getPodMetas           []*statesinformer.PodMeta
 		initPodLastStat       func(lastState *gocache.Cache)
@@ -151,6 +150,7 @@ DirectMap1G:           0 kB`
 	tests := []struct {
 		name                string
 		fields              fields
+		wantMetrics         bool
 		wantEnable          bool
 		wantStarted         bool
 		wantNodeMetric      float64
@@ -158,9 +158,9 @@ DirectMap1G:           0 kB`
 		wantContainerMetric float64
 	}{
 		{
-			name: "collect pagecache info",
+			name:        "collect pagecache info",
+			wantMetrics: true,
 			fields: fields{
-				name:            "used to collect metrics",
 				podFilterOption: framework.DefaultPodFilter,
 				getPodMetas: []*statesinformer.PodMeta{
 					{
@@ -193,7 +193,8 @@ DirectMap1G:           0 kB`
 			wantContainerMetric: 104857600 + 0 + 0 + 104857600 + 0,
 		},
 		{
-			name: "test failed pod and failed container",
+			name:        "test failed pod and failed container",
+			wantMetrics: false,
 			fields: fields{
 				podFilterOption: framework.DefaultPodFilter,
 				getPodMetas: []*statesinformer.PodMeta{
@@ -263,7 +264,7 @@ DirectMap1G:           0 kB`
 			})
 			assert.Equal(t, tt.wantEnable, c.Enabled())
 			assert.Equal(t, tt.wantStarted, c.Started())
-			if tt.fields.name == "used to collect metrics" {
+			if tt.wantMetrics {
 				nodeGot := testGetNodePageCacheMetrics(t, metricCache, testNow, 5*time.Second)
 				assert.Equal(t, tt.wantNodeMetric, nodeGot)
 				podGot := testGetPodPageCacheMetrics(t, metricCache, string(c.statesInformer.GetAllPods()[0].Pod.UID), testNow, 5*time.Second)
