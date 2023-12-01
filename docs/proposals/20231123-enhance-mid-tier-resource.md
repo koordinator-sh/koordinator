@@ -28,6 +28,7 @@ see-also:
     - [Goals](#goals)
     - [Non-goals/Future work](#non-goalsfuture-work)
   - [Proposal](#proposal)
+    - [Terminology](#terminology)
     - [User stories](#user-stories)
       - [Story 1](#story-1)
       - [Story 2](#story-2)
@@ -52,23 +53,7 @@ While *node prediction* clarifies how the Mid-tier resources are calculated with
 
 ## Motivation
 
-Here I would like to explain some concepts:
-1. koord-QoS
-
-Quality of Service, we assume that the same QoS level has similar operational performance, operational quality.
-
-2. koord-priority
-
-Scheduling priority, high priority can preempt low priority by default.
-
-3. Resource models
-
-We now have four resource models: prod, mid, batch and free. The resource model takes care of whether the resource is oversold and whether it is stable, which affects pod eviction.
-
-koordinator bind koord-priority and resource model, different priorities have different resource models.
-
-This proposal introduce Mid+LS and Mid+BE fill the gap in Prod+LS and Batch+BE
-meet the requirements of different types of tasks.
+This proposal introduces Mid+LS and Mid+BE to close the gap in Prod+LS and Batch+BE and fulfil the requirements of different task types.
 
 ### Goals
 
@@ -84,19 +69,36 @@ meet the requirements of different types of tasks.
 
 ## Proposal
 
+### Terminology
+
+Here I would like to explain some concepts:
+1. koord-QoS
+
+Quality of Service, we assume that the same QoS level has similar operational performance, operational quality.
+
+2. koord-priority
+
+Scheduling priority, high priority can preempt low priority by default.
+
+3. Resource models
+
+We now have four resource models: prod, mid, batch and free. The resource model takes care of whether the resource is oversold and whether it is stable, which affects pod eviction.
+
+Note that koordinator bind koord-priority and the resource model; different priorities have different resource models.
+
 ### User stories
 
 #### Story 1
 
-There are online service tasks with low priority whose performance requirements match those of Prod+LS, but which should not be suppressed but can tolerate being evicted, when machine usage increases.
+There are low priority, latency-sensitive service tasks whose performance requirements match those of Prod+LS, but which should not be suppressed but can tolerate being evictied as machine utilisation increases.
 
 Mid+LS can handle them.
 
 #### Story 2
 
-There are resource-intensive tasks such as AI or stream computing, e.g. Apache Spark, that can consume a lot of resources. They require stable resources, can be suppressed and do not want to be evicted.
+There are latency-insensitive tasks such as AI or stream computing, e.g. Apache Spark, that can consume a lot of resources. They require stable resources, can be suppressed and do not want to be evicted.
 
-Mid+BE can defeat them.
+Mid+BE can handle them.
 
 ### Prerequisites
 
@@ -112,7 +114,7 @@ The adaptation of the QoS policy must be specific. In general, if the QoS is the
 However, there is no finer configuration granularity for CPU group identity, so no additional customization is required for the time being.
 In the future, advanced features such as core schedule and CPU idle need to be considered.
 
-Also, you can introduce a QoS level, such as MID between LS and BE to implement functions such as QoS detail customization.
+Also, you can introduce a QoS level, such as Mid between LS and BE to implement functions such as QoS detail customization.
 
 **resource oversale**
 
@@ -241,10 +243,10 @@ With the improved mid-resource we have the following panorama:
 koor-priority | resource model | koord-QoS | k8s-QoS | scenario |
  -- | -- | -- | -- | -- |
 koord-prod | cpu/memory | LSE | guaranteed | middleware |
-koord-prod | cpu/memory | LSR | guaranteed | high-priority online-service,CPU bind |
-koord-prod | cpu/memory | LS | guaranteed | high-priority online-service,微服务工作负载 |
-koord-prod | cpu/memory | LS | burstable | high-priority online-service,微服务工作负载 |
-koord-mid | mid-cpu/mid-memory | LS | burstable | low-priority online-service |
+koord-prod | cpu/memory | LSR | guaranteed | high-priority latency-sensitive, CPU bind |
+koord-prod | cpu/memory | LS | guaranteed | high-priority, latency-sensitive |
+koord-prod | cpu/memory | LS | burstable | high-priority latency-sensitive |
+koord-mid | mid-cpu/mid-memory | LS | burstable | low-priority latency-insensitive |
 koord-mid | mid-cpu/mid-memory | BE | besteffort | AI/Flink jobs |
 koord-batch | batch-cpu/batch-memory | BE | besteffort | big data jobs |
 koord-free | TBD | TBD | TBD | TBD |
