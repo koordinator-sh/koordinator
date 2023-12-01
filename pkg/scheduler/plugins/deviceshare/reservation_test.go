@@ -239,9 +239,11 @@ func Test_tryAllocateFromReservation(t *testing.T) {
 	deviceCache := newNodeDeviceCache()
 	deviceCache.updateNodeDevice("test-node", device)
 
-	podRequestsHalfGPU := corev1.ResourceList{
-		apiext.ResourceGPUCore:   resource.MustParse("50"),
-		apiext.ResourceGPUMemory: resource.MustParse("4Gi"),
+	podRequestsHalfGPU := map[schedulingv1alpha1.DeviceType]corev1.ResourceList{
+		schedulingv1alpha1.GPU: {
+			apiext.ResourceGPUCore:   resource.MustParse("50"),
+			apiext.ResourceGPUMemory: resource.MustParse("4Gi"),
+		},
 	}
 
 	defaultPolicyReservation := &schedulingv1alpha1.Reservation{
@@ -474,9 +476,11 @@ func Test_tryAllocateFromReservation(t *testing.T) {
 		{
 			name: "failed to allocate from Aligned policy reservation with bigger request but no remaining resources on node",
 			state: &preFilterState{
-				podRequests: corev1.ResourceList{
-					apiext.ResourceGPUCore:   resource.MustParse("60"),
-					apiext.ResourceGPUMemory: resource.MustParse("5Gi"),
+				podRequests: map[schedulingv1alpha1.DeviceType]corev1.ResourceList{
+					schedulingv1alpha1.GPU: {
+						apiext.ResourceGPUCore:   resource.MustParse("60"),
+						apiext.ResourceGPUMemory: resource.MustParse("5Gi"),
+					},
 				},
 			},
 			restoreState: &nodeReservationRestoreStateData{
@@ -512,9 +516,11 @@ func Test_tryAllocateFromReservation(t *testing.T) {
 		{
 			name: "failed to allocate from Aligned policy reservation that remaining little not fits request",
 			state: &preFilterState{
-				podRequests: corev1.ResourceList{
-					apiext.ResourceGPUCore:   resource.MustParse("30"),
-					apiext.ResourceGPUMemory: resource.MustParse("1Gi"),
+				podRequests: map[schedulingv1alpha1.DeviceType]corev1.ResourceList{
+					schedulingv1alpha1.GPU: {
+						apiext.ResourceGPUCore:   resource.MustParse("30"),
+						apiext.ResourceGPUMemory: resource.MustParse("1Gi"),
+					},
 				},
 			},
 			restoreState: &nodeReservationRestoreStateData{
@@ -636,8 +642,7 @@ func Test_tryAllocateFromReservation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			allocator := NewDefaultAllocator(AllocatorOptions{})
-			pl := &Plugin{allocator: allocator}
+			pl := &Plugin{}
 
 			basicPreemptible := appendAllocated(nil, tt.restoreState.mergedUnmatchedUsed, tt.state.preemptibleDevices["test-node"])
 
@@ -645,16 +650,27 @@ func Test_tryAllocateFromReservation(t *testing.T) {
 			nodeDeviceInfo.deviceUsed[schedulingv1alpha1.GPU] = tt.deviceUsed
 			nodeDeviceInfo.resetDeviceFree(schedulingv1alpha1.GPU)
 
+			node := &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node-1",
+				},
+			}
+
+			allocator := &AutopilotAllocator{
+				state:      tt.state,
+				nodeDevice: nodeDeviceInfo,
+				node:       node,
+				pod:        &corev1.Pod{},
+			}
+
 			result, status := pl.tryAllocateFromReservation(
+				allocator,
 				tt.state,
 				tt.restoreState,
 				tt.restoreState.matched,
-				nodeDeviceInfo,
-				"test-node",
-				&corev1.Pod{},
+				node,
 				basicPreemptible,
 				tt.requiredFromReservation,
-				nil,
 			)
 			assert.Equal(t, tt.wantStatus, status)
 			assert.Equal(t, tt.wantResult, result)
