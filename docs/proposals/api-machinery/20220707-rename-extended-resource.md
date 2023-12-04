@@ -35,7 +35,7 @@ over-committed and `koord-batch-cpu` cores can be requested as non-integer with 
 Koordinator defines extended resource for co-location such as `batch-cpu` and `batch-memory`. Due to the limitation of
 api-server, resources outside the `*kubernetes.io` namespace must be integers and cannot be over-committed
 (see https://github.com/kubernetes/kubernetes/pull/48922). This proposal suggests using `koordinator.kubernetes.io`
-as the namespace of koordiantor extended resources.
+as the namespace of koordinator extended resources.
 
 ### Goals
 

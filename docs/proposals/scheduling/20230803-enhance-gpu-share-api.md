@@ -91,7 +91,7 @@ Koordinator supports vendor agreements in strict accordance with the vendor's te
 | GPU Memory          | koordinator.sh/gpu-memory       | **Yes**      | The unit is the number of bytes.                     Recommended Use.                                                                                                                                                                                      |
 | Ratio of GPU Memory | koordinator.sh/gpu-memory-ratio | **Yes**      | It represents the percentage of the GPU's memory. Currently still maintained and supported, but not recommended to use at first.                                                                                                           |
 | GPU Core            | koordinator.sh/gpu-core         | No           | It represents the computing capacity of the GPU. Similar to K8s MilliCPU, we abstract the total computing power of GPU into one hundred, and users can apply for the corresponding amount of GPU computing power according to their needs. |
-| GPU Shared          | koordiantor.sh/gpu.shared       | **Yes**      | It indicates that several GPU device objects are expected to be shared. At least 1 must be set. |
+| GPU Shared          | koordinator.sh/gpu.shared       | **Yes**      | It indicates that several GPU device objects are expected to be shared. At least 1 must be set. |
 
 The following principles should be followed when using:
 
@@ -139,8 +139,8 @@ Added a new webhook plugin for validating the GPU Resource API. The verification
 
 1. Reject Pods that declare the vendor API and the GPU Share API at the same time.
 2. Reject Pods that declare both `koordinator.sh/gpu-memory` and `koordinator.sh/gpu-memory-ratio`.
-3. Reject Pods that declare `koordinator.sh/gpu-core` but not `koordinator.sh/gpu-memory` or `koordiantor.sh/gpu-memory-ratio`.
-4. Reject Pods that declare `koordinator.sh/gpu-memory` or `koordiantor.sh/gpu-memory-ratio` but not `koordinator.sh/gpu.shared`.
+3. Reject Pods that declare `koordinator.sh/gpu-core` but not `koordinator.sh/gpu-memory` or `koordinator.sh/gpu-memory-ratio`.
+4. Reject Pods that declare `koordinator.sh/gpu-memory` or `koordinator.sh/gpu-memory-ratio` but not `koordinator.sh/gpu.shared`.
 
 #### koord-scheduler
 
