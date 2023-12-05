@@ -174,13 +174,11 @@ Configured according limits.mid-cpu and limits.mid-memory.
 
 **cpuShares**
 
-Configured according requests.mid-cpu
-- for Mid+LS, same as Prod+LS
-- for Mid+BE, same as Batch+BE
+Configured according requests.mid-cpu.
 
 **cgroup hierarchy**
 
-- Mid+LS, injects limits.cpu/limits.memory through webhoook, so that it can be located in Burstable.
+- Mid+LS, injects limits.cpu/limits.memory through webhook, so that it can be located in Burstable.
 - Mid+BE, is located in Besteffort by default.
 
 *Notification*
@@ -204,13 +202,13 @@ Batch+BE and Mid+BE should be considered for CPU suppression.
 **CPU Evicton**
 
 CPU eviction is currently linked to pod satisfaction.
-in the long term, however, it should be done from the perspective of the operating system, like memory eviction.
+in the long term, however, it should be done from the perspective of the operating system, like memory eviction that evict low-priority pod if CPU utilization higher than given threshold.
 
 **Memory Evict**
 
 Eviction is sorted by priority and resource model
 - Batch first and then Mid.
-- Mid+LS first and then Mid+BE, for Mid pods, request and usage should be taken into account when evicting for fairness reasons.
+- for each pod, request and usage should be taken into account when evicting for fairness reasons.
 
 ### Risks and mitigations
 
