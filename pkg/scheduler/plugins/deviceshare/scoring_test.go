@@ -83,9 +83,11 @@ func TestScore(t *testing.T) {
 			name: "no device resources",
 			state: &preFilterState{
 				skip: false,
-				podRequests: corev1.ResourceList{
-					apiext.ResourceGPUCore:        resource.MustParse("100"),
-					apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+				podRequests: map[schedulingv1alpha1.DeviceType]corev1.ResourceList{
+					schedulingv1alpha1.GPU: {
+						apiext.ResourceGPUCore:        resource.MustParse("100"),
+						apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+					},
 				},
 			},
 			nodeDeviceCache: &nodeDeviceCache{
@@ -101,9 +103,11 @@ func TestScore(t *testing.T) {
 			name: "completely idle node",
 			state: &preFilterState{
 				skip: false,
-				podRequests: corev1.ResourceList{
-					apiext.ResourceGPUCore:        resource.MustParse("100"),
-					apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+				podRequests: map[schedulingv1alpha1.DeviceType]corev1.ResourceList{
+					schedulingv1alpha1.GPU: {
+						apiext.ResourceGPUCore:        resource.MustParse("100"),
+						apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+					},
 				},
 			},
 			nodeDeviceCache: &nodeDeviceCache{
@@ -138,9 +142,11 @@ func TestScore(t *testing.T) {
 			name: "multiple GPU devices and completely idle",
 			state: &preFilterState{
 				skip: false,
-				podRequests: corev1.ResourceList{
-					apiext.ResourceGPUCore:        resource.MustParse("50"),
-					apiext.ResourceGPUMemoryRatio: resource.MustParse("50"),
+				podRequests: map[schedulingv1alpha1.DeviceType]corev1.ResourceList{
+					schedulingv1alpha1.GPU: {
+						apiext.ResourceGPUCore:        resource.MustParse("50"),
+						apiext.ResourceGPUMemoryRatio: resource.MustParse("50"),
+					},
 				},
 			},
 			nodeDeviceCache: &nodeDeviceCache{
@@ -185,9 +191,11 @@ func TestScore(t *testing.T) {
 			name: "remaining device resources",
 			state: &preFilterState{
 				skip: false,
-				podRequests: corev1.ResourceList{
-					apiext.ResourceGPUCore:        resource.MustParse("50"),
-					apiext.ResourceGPUMemoryRatio: resource.MustParse("50"),
+				podRequests: map[schedulingv1alpha1.DeviceType]corev1.ResourceList{
+					schedulingv1alpha1.GPU: {
+						apiext.ResourceGPUCore:        resource.MustParse("50"),
+						apiext.ResourceGPUMemoryRatio: resource.MustParse("50"),
+					},
 				},
 			},
 			nodeDeviceCache: &nodeDeviceCache{
@@ -232,9 +240,11 @@ func TestScore(t *testing.T) {
 			strategy: schedulerconfig.MostAllocated,
 			state: &preFilterState{
 				skip: false,
-				podRequests: corev1.ResourceList{
-					apiext.ResourceGPUCore:        resource.MustParse("50"),
-					apiext.ResourceGPUMemoryRatio: resource.MustParse("50"),
+				podRequests: map[schedulingv1alpha1.DeviceType]corev1.ResourceList{
+					schedulingv1alpha1.GPU: {
+						apiext.ResourceGPUCore:        resource.MustParse("50"),
+						apiext.ResourceGPUMemoryRatio: resource.MustParse("50"),
+					},
 				},
 			},
 			nodeDeviceCache: &nodeDeviceCache{
@@ -278,10 +288,14 @@ func TestScore(t *testing.T) {
 			name: "requested multiple resources on the remaining resources of the node",
 			state: &preFilterState{
 				skip: false,
-				podRequests: corev1.ResourceList{
-					apiext.ResourceRDMA:           resource.MustParse("25"),
-					apiext.ResourceGPUCore:        resource.MustParse("50"),
-					apiext.ResourceGPUMemoryRatio: resource.MustParse("50"),
+				podRequests: map[schedulingv1alpha1.DeviceType]corev1.ResourceList{
+					schedulingv1alpha1.GPU: {
+						apiext.ResourceGPUCore:        resource.MustParse("50"),
+						apiext.ResourceGPUMemoryRatio: resource.MustParse("50"),
+					},
+					schedulingv1alpha1.RDMA: {
+						apiext.ResourceRDMA: resource.MustParse("25"),
+					},
 				},
 			},
 			nodeDeviceCache: &nodeDeviceCache{
@@ -340,9 +354,11 @@ func TestScore(t *testing.T) {
 			name: "score with preemptible",
 			state: &preFilterState{
 				skip: false,
-				podRequests: corev1.ResourceList{
-					apiext.ResourceGPUCore:        resource.MustParse("50"),
-					apiext.ResourceGPUMemoryRatio: resource.MustParse("50"),
+				podRequests: map[schedulingv1alpha1.DeviceType]corev1.ResourceList{
+					schedulingv1alpha1.GPU: {
+						apiext.ResourceGPUCore:        resource.MustParse("50"),
+						apiext.ResourceGPUMemoryRatio: resource.MustParse("50"),
+					},
 				},
 				preemptibleDevices: map[string]map[schedulingv1alpha1.DeviceType]deviceResources{
 					"test-node": {
@@ -397,9 +413,11 @@ func TestScore(t *testing.T) {
 			name: "score with reserved",
 			state: &preFilterState{
 				skip: false,
-				podRequests: corev1.ResourceList{
-					apiext.ResourceGPUCore:        resource.MustParse("50"),
-					apiext.ResourceGPUMemoryRatio: resource.MustParse("50"),
+				podRequests: map[schedulingv1alpha1.DeviceType]corev1.ResourceList{
+					schedulingv1alpha1.GPU: {
+						apiext.ResourceGPUCore:        resource.MustParse("50"),
+						apiext.ResourceGPUMemoryRatio: resource.MustParse("50"),
+					},
 				},
 			},
 			reserved: apiext.DeviceAllocations{
@@ -453,7 +471,7 @@ func TestScore(t *testing.T) {
 			}
 			scorerPlugin := deviceResourceStrategyTypeMap[args.ScoringStrategy.Type]
 			scorer := scorerPlugin(args)
-			p := &Plugin{nodeDeviceCache: tt.nodeDeviceCache, allocator: &defaultAllocator{}, scorer: scorer}
+			p := &Plugin{nodeDeviceCache: tt.nodeDeviceCache, scorer: scorer}
 			cycleState := framework.NewCycleState()
 			if tt.state != nil {
 				cycleState.Write(stateKey, tt.state)
@@ -566,7 +584,7 @@ func TestScoreExtension(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			p := &Plugin{nodeDeviceCache: newNodeDeviceCache(), allocator: &defaultAllocator{}}
+			p := &Plugin{nodeDeviceCache: newNodeDeviceCache()}
 			status := p.ScoreExtensions().NormalizeScore(context.TODO(), framework.NewCycleState(), &corev1.Pod{}, tt.nodeScoreList)
 			assert.True(t, status.IsSuccess())
 			assert.Equal(t, tt.want, tt.nodeScoreList)
@@ -968,7 +986,7 @@ func TestScoreReservation(t *testing.T) {
 			}
 			scorerPlugin := deviceResourceStrategyTypeMap[args.ScoringStrategy.Type]
 			scorer := scorerPlugin(args)
-			p := &Plugin{nodeDeviceCache: tt.nodeDeviceCache, allocator: &defaultAllocator{}, scorer: scorer}
+			p := &Plugin{nodeDeviceCache: tt.nodeDeviceCache, scorer: scorer}
 			cycleState := framework.NewCycleState()
 
 			pod := &corev1.Pod{

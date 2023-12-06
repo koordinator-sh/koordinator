@@ -81,6 +81,15 @@ func (r deviceResources) subtract(in deviceResources) {
 	}
 }
 
+func (r deviceResources) isZero() bool {
+	for _, v := range r {
+		if !quotav1.IsZero(v) {
+			return false
+		}
+	}
+	return true
+}
+
 func copyDeviceResources(m map[schedulingv1alpha1.DeviceType]deviceResources) map[schedulingv1alpha1.DeviceType]deviceResources {
 	r := map[schedulingv1alpha1.DeviceType]deviceResources{}
 	for k, v := range m {
@@ -175,9 +184,12 @@ func scoreDevices(podRequest corev1.ResourceList, totalResources, freeResources 
 }
 
 func sortDeviceResourcesByMinor(r []deviceResourceMinorPair, preferred sets.Int) []deviceResourceMinorPair {
-	for i := range r {
-		r[i].preferred = preferred.Has(r[i].minor)
+	if preferred.Len() > 0 {
+		for i := range r {
+			r[i].preferred = preferred.Has(r[i].minor)
+		}
 	}
+
 	sort.Slice(r, func(i, j int) bool {
 		if r[i].preferred && !r[j].preferred {
 			return true
@@ -192,4 +204,16 @@ func sortDeviceResourcesByMinor(r []deviceResourceMinorPair, preferred sets.Int)
 		return r[i].minor < r[j].minor
 	})
 	return r
+}
+
+func sortDeviceResourcesByPreferredPCIe(r []deviceResourceMinorPair, preferredPCIe sets.String, deviceInfos map[int]*schedulingv1alpha1.DeviceInfo) []deviceResourceMinorPair {
+	for i := range r {
+		r[i].preferred = false
+		minor := r[i].minor
+		deviceInfo := deviceInfos[minor]
+		if deviceInfo != nil && deviceInfo.Topology != nil && preferredPCIe.Has(deviceInfo.Topology.PCIEID) {
+			r[i].preferred = true
+		}
+	}
+	return sortDeviceResourcesByMinor(r, nil)
 }

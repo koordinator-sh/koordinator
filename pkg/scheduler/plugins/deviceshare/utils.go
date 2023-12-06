@@ -21,11 +21,16 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/types"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	"k8s.io/klog/v2"
+	resourceapi "k8s.io/kubernetes/pkg/api/v1/resource"
+	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
 const (
@@ -180,54 +185,117 @@ func ConvertDeviceRequest(podRequest corev1.ResourceList, combination uint) core
 	return nil
 }
 
-func isPodRequestsMultipleDevice(podRequest corev1.ResourceList, deviceType schedulingv1alpha1.DeviceType) bool {
-	if podRequest == nil || len(podRequest) == 0 {
-		klog.Warningf("pod request should not be empty")
-		return false
-	}
-	switch deviceType {
-	case schedulingv1alpha1.GPU:
-		memoryRatio := podRequest[apiext.ResourceGPUMemoryRatio]
-		return memoryRatio.Value() > 100 && memoryRatio.Value()%100 == 0
-	case schedulingv1alpha1.RDMA:
-		rdma := podRequest[apiext.ResourceRDMA]
-		return rdma.Value() > 100 && rdma.Value()%100 == 0
-	case schedulingv1alpha1.FPGA:
-		fpga := podRequest[apiext.ResourceFPGA]
-		return fpga.Value() > 100 && fpga.Value()%100 == 0
-	default:
-		return false
-	}
-}
-
-func memoryRatioToBytes(ratio, totalMemory resource.Quantity) resource.Quantity {
-	return *resource.NewQuantity(ratio.Value()*totalMemory.Value()/100, resource.BinarySI)
-}
-
-func memoryBytesToRatio(bytes, totalMemory resource.Quantity) resource.Quantity {
-	return *resource.NewQuantity(int64(float64(bytes.Value())/float64(totalMemory.Value())*100), resource.DecimalSI)
-}
-
-func fillGPUTotalMem(nodeDeviceTotal deviceResources, podRequest corev1.ResourceList) error {
-	// nodeDeviceTotal uses the minor of GPU as key. However, under certain circumstances,
-	// minor 0 might not exist. We need to iterate the cache once to find the active minor.
-	var total corev1.ResourceList
-	for _, resources := range nodeDeviceTotal {
-		if len(resources) > 0 && !quotav1.IsZero(resources) {
-			total = resources
-			break
+func hasVirtualFunctions(nodeDevice *nodeDevice, deviceType schedulingv1alpha1.DeviceType) bool {
+	deviceInfos := nodeDevice.deviceInfos[deviceType]
+	for _, v := range deviceInfos {
+		if len(v.VFGroups) > 0 {
+			return true
 		}
 	}
-	if total == nil {
-		return fmt.Errorf("cannot find sastisfied GPU resources")
+	return false
+}
+
+func mustAllocateVF(hint *apiext.DeviceHint) bool {
+	return hint != nil && hint.VFSelector != nil
+}
+
+func preparePod(pod *corev1.Pod) (state *preFilterState, status *framework.Status) {
+	state = &preFilterState{
+		skip:               true,
+		preemptibleDevices: map[string]map[schedulingv1alpha1.DeviceType]deviceResources{},
+		preemptibleInRRs:   map[string]map[types.UID]map[schedulingv1alpha1.DeviceType]deviceResources{},
 	}
 
-	// a node can only contain one type of GPU, so each of them has the same total memory.
-	if gpuMem, ok := podRequest[apiext.ResourceGPUMemory]; ok {
-		podRequest[apiext.ResourceGPUMemoryRatio] = memoryBytesToRatio(gpuMem, total[apiext.ResourceGPUMemory])
-	} else {
-		gpuMemRatio := podRequest[apiext.ResourceGPUMemoryRatio]
-		podRequest[apiext.ResourceGPUMemory] = memoryRatioToBytes(gpuMemRatio, total[apiext.ResourceGPUMemory])
+	requests, err := GetPodDeviceRequests(pod)
+	if err != nil {
+		return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, err.Error())
 	}
+
+	state.podRequests = requests
+	state.skip = len(requests) == 0
+	if !state.skip {
+		err = parsePodDeviceShareExtensions(pod, requests, state)
+		if err != nil {
+			return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, err.Error())
+		}
+	}
+
+	return
+}
+
+func GetPodDeviceRequests(pod *corev1.Pod) (map[schedulingv1alpha1.DeviceType]corev1.ResourceList, error) {
+	podRequests, _ := resourceapi.PodRequestsAndLimits(pod)
+	podRequests = quotav1.RemoveZeros(podRequests)
+
+	var requests map[schedulingv1alpha1.DeviceType]corev1.ResourceList
+	for deviceType, supportedResourceNames := range DeviceResourceNames {
+		deviceRequest := quotav1.Mask(podRequests, supportedResourceNames)
+		if quotav1.IsZero(deviceRequest) {
+			continue
+		}
+		combination, err := ValidateDeviceRequest(deviceRequest)
+		if err != nil {
+			return nil, err
+		}
+		if requests == nil {
+			requests = map[schedulingv1alpha1.DeviceType]corev1.ResourceList{}
+		}
+		requests[deviceType] = ConvertDeviceRequest(deviceRequest, combination)
+	}
+	return requests, nil
+}
+
+func parsePodDeviceShareExtensions(pod *corev1.Pod, podRequests map[schedulingv1alpha1.DeviceType]corev1.ResourceList, state *preFilterState) error {
+	hints, err := apiext.GetDeviceAllocateHints(pod.Annotations)
+	if err != nil {
+		return fmt.Errorf("invalid DeviceAllocateHint annotation, err: %s", err.Error())
+	}
+
+	var hintSelectors map[schedulingv1alpha1.DeviceType][2]labels.Selector
+	for deviceType, v := range hints {
+		var selector labels.Selector
+		var vfSelector labels.Selector
+		if v.Selector != nil {
+			var err error
+			selector, err = util.GetFastLabelSelector(v.Selector)
+			if err != nil {
+				return fmt.Errorf("invalid Selector of DeviceHint, deviceType: %s, err: %s", deviceType, err.Error())
+			}
+		}
+		if v.VFSelector != nil {
+			var err error
+			vfSelector, err = util.GetFastLabelSelector(v.VFSelector)
+			if err != nil {
+				return fmt.Errorf("invalid VFSelector of DeviceHint, deviceType: %s, err: %s", deviceType, err.Error())
+			}
+		}
+		if hintSelectors == nil {
+			hintSelectors = map[schedulingv1alpha1.DeviceType][2]labels.Selector{}
+		}
+		hintSelectors[deviceType] = [2]labels.Selector{selector, vfSelector}
+	}
+
+	jointAllocate, err := apiext.GetDeviceJointAllocate(pod.Annotations)
+	if err != nil {
+		return fmt.Errorf("invalid DeviceJointAllocate annotation, err: %s", err.Error())
+	}
+
+	if jointAllocate != nil {
+		var deviceTypes []schedulingv1alpha1.DeviceType
+		for _, deviceType := range jointAllocate.DeviceTypes {
+			if h := hints[deviceType]; h != nil && h.AllocateStrategy == apiext.ApplyForAllDeviceAllocateStrategy {
+				continue
+			}
+			requests := podRequests[deviceType]
+			if !quotav1.IsZero(requests) {
+				deviceTypes = append(deviceTypes, deviceType)
+			}
+		}
+		jointAllocate.DeviceTypes = deviceTypes
+	}
+
+	state.hints = hints
+	state.hintSelectors = hintSelectors
+	state.jointAllocate = jointAllocate
 	return nil
 }
