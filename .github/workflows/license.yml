@@ -20,7 +20,7 @@ jobs:
         run: |
           gem install license_finder
           license_finder --decisions_file .license/dependency_decisions.yml
-      - uses: actions/setup-go@v4
+      - uses: actions/setup-go@v5
         with:
           cache: false
           go-version-file: go.mod
