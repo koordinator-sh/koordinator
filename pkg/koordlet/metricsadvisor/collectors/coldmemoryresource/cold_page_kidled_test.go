@@ -196,53 +196,53 @@ func Test_collectColdPageInfo(t *testing.T) {
 	total_unevictable 0
 	`
 	meminfo := `MemTotal:       1048576 kB
-	MemFree:          262144 kB
-	MemAvailable:     524288 kB
-	Buffers:               0 kB
-	Cached:           262144 kB
-	SwapCached:            0 kB
-	Active:           524288 kB
-	Inactive:         262144 kB
-	Active(anon):     262144 kB
-	Inactive(anon):   262144 kB
-	Active(file):          0 kB
-	Inactive(file):   262144 kB
-	Unevictable:           0 kB
-	Mlocked:               0 kB
-	SwapTotal:             0 kB
-	SwapFree:              0 kB
-	Dirty:                 0 kB
-	Writeback:             0 kB
-	AnonPages:             0 kB
-	Mapped:                0 kB
-	Shmem:                 0 kB
-	Slab:                  0 kB
-	SReclaimable:          0 kB
-	SUnreclaim:            0 kB
-	KernelStack:           0 kB
-	PageTables:            0 kB
-	NFS_Unstable:          0 kB
-	Bounce:                0 kB
-	WritebackTmp:          0 kB
-	CommitLimit:           0 kB
-	Committed_AS:          0 kB
-	VmallocTotal:          0 kB
-	VmallocUsed:           0 kB
-	VmallocChunk:          0 kB
-	HardwareCorrupted:     0 kB
-	AnonHugePages:         0 kB
-	ShmemHugePages:        0 kB
-	ShmemPmdMapped:        0 kB
-	CmaTotal:              0 kB
-	CmaFree:               0 kB
-	HugePages_Total:       0
-	HugePages_Free:        0
-	HugePages_Rsvd:        0
-	HugePages_Surp:        0
-	Hugepagesize:          0 kB
-	DirectMap4k:           0 kB
-	DirectMap2M:           0 kB
-	DirectMap1G:           0 kB`
+MemFree:          262144 kB
+MemAvailable:     524288 kB
+Buffers:               0 kB
+Cached:           262144 kB
+SwapCached:            0 kB
+Active:           524288 kB
+Inactive:         262144 kB
+Active(anon):     262144 kB
+Inactive(anon):   262144 kB
+Active(file):          0 kB
+Inactive(file):   262144 kB
+Unevictable:           0 kB
+Mlocked:               0 kB
+SwapTotal:             0 kB
+SwapFree:              0 kB
+Dirty:                 0 kB
+Writeback:             0 kB
+AnonPages:             0 kB
+Mapped:                0 kB
+Shmem:                 0 kB
+Slab:                  0 kB
+SReclaimable:          0 kB
+SUnreclaim:            0 kB
+KernelStack:           0 kB
+PageTables:            0 kB
+NFS_Unstable:          0 kB
+Bounce:                0 kB
+WritebackTmp:          0 kB
+CommitLimit:           0 kB
+Committed_AS:          0 kB
+VmallocTotal:          0 kB
+VmallocUsed:           0 kB
+VmallocChunk:          0 kB
+HardwareCorrupted:     0 kB
+AnonHugePages:         0 kB
+ShmemHugePages:        0 kB
+ShmemPmdMapped:        0 kB
+CmaTotal:              0 kB
+CmaFree:               0 kB
+HugePages_Total:       0
+HugePages_Free:        0
+HugePages_Rsvd:        0
+HugePages_Surp:        0
+Hugepagesize:          0 kB
+DirectMap4k:           0 kB
+DirectMap2M:           0 kB
+DirectMap1G:           0 kB`
 	testPod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "test-pod",
@@ -424,14 +424,14 @@ func Test_collectNodeColdPageInfo(t *testing.T) {
 	# |||||             [1,2)          [2,5)         [5,15)        [15,30)        [30,60)       [60,120)      [120,240)     [240,+inf)
 	  csei            2613248        4657152       18182144      293683200              0              0              0              0
 	  dsei            2568192        5140480       15306752       48648192              0              0              0              0
-	  cfei            2633728        4640768       66531328      340172800              0              0              0              0
-	  dfei                  0              0           4096              0              0              0              0              0
+	  cfei            2633728        4640768       66531328      340172800       52834304              0              0              0
+	  dfei                  0              0           4096              0       52834304       52834304              0              0
 	  csui                  0              0              0              0              0              0              0              0
 	  dsui                  0              0              0              0              0              0              0              0
 	  cfui                  0              0              0              0              0              0              0              0
 	  dfui                  0              0              0              0              0              0              0              0
-	  csea             765952        1044480        3784704       52834304              0              0              0              0
-	  dsea             286720         270336        1564672        5390336              0              0              0              0
+	  csea             765952        1044480        3784704       52834304       52834304              0              0              0
+	  dsea             286720         270336        1564672        5390336       52834304              0              0              0
 	  cfea            9273344       16609280      152109056      315121664              0              0              0              0
 	  dfea                  0              0              0              0              0              0              0              0
 	  csua                  0              0              0              0              0              0              0              0
@@ -440,53 +440,53 @@ func Test_collectNodeColdPageInfo(t *testing.T) {
 	  dfua                  0              0              0              0              0              0              0              0
 	  slab                  0              0              0              0              0              0              0              0`
 	meminfo := `MemTotal:       1048576 kB
-	MemFree:          262144 kB
-	MemAvailable:     524288 kB
-	Buffers:               0 kB
-	Cached:           262144 kB
-	SwapCached:            0 kB
-	Active:           524288 kB
-	Inactive:         262144 kB
-	Active(anon):     262144 kB
-	Inactive(anon):   262144 kB
-	Active(file):          0 kB
-	Inactive(file):   262144 kB
-	Unevictable:           0 kB
-	Mlocked:               0 kB
-	SwapTotal:             0 kB
-	SwapFree:              0 kB
-	Dirty:                 0 kB
-	Writeback:             0 kB
-	AnonPages:             0 kB
-	Mapped:                0 kB
-	Shmem:                 0 kB
-	Slab:                  0 kB
-	SReclaimable:          0 kB
-	SUnreclaim:            0 kB
-	KernelStack:           0 kB
-	PageTables:            0 kB
-	NFS_Unstable:          0 kB
-	Bounce:                0 kB
-	WritebackTmp:          0 kB
-	CommitLimit:           0 kB
-	Committed_AS:          0 kB
-	VmallocTotal:          0 kB
-	VmallocUsed:           0 kB
-	VmallocChunk:          0 kB
-	HardwareCorrupted:     0 kB
-	AnonHugePages:         0 kB
-	ShmemHugePages:        0 kB
-	ShmemPmdMapped:        0 kB
-	CmaTotal:              0 kB
-	CmaFree:               0 kB
-	HugePages_Total:       0
-	HugePages_Free:        0
-	HugePages_Rsvd:        0
-	HugePages_Surp:        0
-	Hugepagesize:          0 kB
-	DirectMap4k:           0 kB
-	DirectMap2M:           0 kB
-	DirectMap1G:           0 kB`
+MemFree:          262144 kB
+MemAvailable:     524288 kB
+Buffers:               0 kB
+Cached:           262144 kB
+SwapCached:            0 kB
+Active:           524288 kB
+Inactive:         262144 kB
+Active(anon):     262144 kB
+Inactive(anon):   262144 kB
+Active(file):          0 kB
+Inactive(file):   262144 kB
+Unevictable:           0 kB
+Mlocked:               0 kB
+SwapTotal:             0 kB
+SwapFree:              0 kB
+Dirty:                 0 kB
+Writeback:             0 kB
+AnonPages:             0 kB
+Mapped:                0 kB
+Shmem:                 0 kB
+Slab:                  0 kB
+SReclaimable:          0 kB
+SUnreclaim:            0 kB
+KernelStack:           0 kB
+PageTables:            0 kB
+NFS_Unstable:          0 kB
+Bounce:                0 kB
+WritebackTmp:          0 kB
+CommitLimit:           0 kB
+Committed_AS:          0 kB
+VmallocTotal:          0 kB
+VmallocUsed:           0 kB
+VmallocChunk:          0 kB
+HardwareCorrupted:     0 kB
+AnonHugePages:         0 kB
+ShmemHugePages:        0 kB
+ShmemPmdMapped:        0 kB
+CmaTotal:              0 kB
+CmaFree:               0 kB
+HugePages_Total:       0
+HugePages_Free:        0
+HugePages_Rsvd:        0
+HugePages_Surp:        0
+Hugepagesize:          0 kB
+DirectMap4k:           0 kB
+DirectMap2M:           0 kB
+DirectMap1G:           0 kB`
 	helper := system.NewFileTestUtil(t)
 	defer helper.Cleanup()
 	ctrl := gomock.NewController(t)
@@ -530,8 +530,9 @@ func Test_collectNodeColdPageInfo(t *testing.T) {
 	}
 	assert.NoError(t, err)
 	got1, got2 := testGetNodeMetrics(t, c.metricDB, testNow, 5*time.Second)
-	assert.Equal(t, float64(7.33569024e+08), got1)
-	assert.Equal(t, float64(3.401728e+08), got2)
+	// memInfo.MemTotal*1024 - memInfo.MemFree*1024 - coldPageUsageBytes
+	assert.Equal(t, float64((1048576-262144)<<10-52834304), got1)
+	assert.Equal(t, float64(52834304), got2)
 	// test collect failed
 	helper.WriteCgroupFileContents("", system.MemoryIdlePageStats, ``)
 	helper.WriteProcSubFileContents(system.ProcMemInfoName, ``)
@@ -563,8 +564,8 @@ func Test_collectPodColdPageInfo(t *testing.T) {
 	# |||||             [1,2)          [2,5)         [5,15)        [15,30)        [30,60)       [60,120)      [120,240)     [240,+inf)
 	  csei            2613248        4657152       18182144      293683200              0              0              0              0
 	  dsei            2568192        5140480       15306752       48648192              0              0              0              0
-	  cfei            2633728        4640768       66531328      340172800              0              0              0              0
-	  dfei                  0              0           4096              0              0              0              0              0
+	  cfei            2633728        4640768       66531328      340172800              0       52834304              0              0
+	  dfei                  0              0           4096              0              0       52834304              0              0
 	  csui                  0              0              0              0              0              0              0              0
 	  dsui                  0              0              0              0              0              0              0              0
 	  cfui                  0              0              0              0              0              0              0              0
@@ -579,14 +580,14 @@ func Test_collectPodColdPageInfo(t *testing.T) {
 	  dfua                  0              0              0              0              0              0              0              0
 	  slab                  0              0              0              0              0              0              0              0`
 	testMemStat := `
-	total_cache 104857600
-	total_rss 104857600
-	total_inactive_anon 104857600
-	total_active_anon 0
-	total_inactive_file 104857600
-	total_active_file 0
-	total_unevictable 0
-	`
+total_cache 104857600
+total_rss 104857600
+total_inactive_anon 104857600
+total_active_anon 0
+total_inactive_file 104857600
+total_active_file 0
+total_unevictable 0
+`
 	testPod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "test-pod",
@@ -810,8 +811,8 @@ func Test_kidledcoldPageCollector_collectHostAppsColdPageInfo(t *testing.T) {
 	# |||||             [1,2)          [2,5)         [5,15)        [15,30)        [30,60)       [60,120)      [120,240)     [240,+inf)
 	  csei            2613248        4657152       18182144      293683200              0              0              0              0
 	  dsei            2568192        5140480       15306752       48648192              0              0              0              0
-	  cfei            2633728        4640768       66531328      340172800              0              0              0              0
-	  dfei                  0              0           4096              0              0              0              0              0
+	  cfei            2633728        4640768       66531328      340172800              0       52834304              0              0
+	  dfei                  0              0           4096              0              0       52834304              0              0
 	  csui                  0              0              0              0              0              0              0              0
 	  dsui                  0              0              0              0              0              0              0              0
 	  cfui                  0              0              0              0              0              0              0              0
@@ -826,14 +827,14 @@ func Test_kidledcoldPageCollector_collectHostAppsColdPageInfo(t *testing.T) {
 	  dfua                  0              0              0              0              0              0              0              0
 	  slab                  0              0              0              0              0              0              0              0`
 	testMemStat := `
-	total_cache 104857600
-	total_rss 104857600
-	total_inactive_anon 104857600
-	total_active_anon 340172800
-	total_inactive_file 104857600
-	total_active_file 0
-	total_unevictable 0
-	`
+total_cache 104857600
+total_rss 104857600
+total_inactive_anon 104857600
+total_active_anon 340172800
+total_inactive_file 104857600
+total_active_file 0
+total_unevictable 0
+`
 	type fields struct {
 		getNodeSLO *slov1alpha1.NodeSLO
 		SetSysUtil func(helper *system.FileTestUtil)
@@ -884,8 +885,8 @@ func Test_kidledcoldPageCollector_collectHostAppsColdPageInfo(t *testing.T) {
 			wants: wants{
 				hostMetric: map[string]wantMetric{
 					"test-host-app": {
-						coldPageSize:    340172800,
-						memWithHotCache: 209715200,
+						coldPageSize:    1.05668608e+08,
+						memWithHotCache: 4.44219392e+08,
 					},
 				},
 			},

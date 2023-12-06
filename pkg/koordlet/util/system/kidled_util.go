@@ -34,7 +34,7 @@ var (
 	kidledColdBoundary                            = defaultKidledColdBoundary
 	defaultKidledScanPeriodInseconds uint32       = 5
 	defaultKidledUseHierarchy        uint8        = 1
-	defaultKidledColdBoundary        int          = 3
+	defaultKidledColdBoundary        int          = 5
 )
 
 // the unit of Csei, Dsei, Cfei ... is byte

@@ -91,8 +91,8 @@ func (i *MemInfo) MemUsageBytes() uint64 {
 
 // MemWithPageCacheUsageBytes returns the usage of mem with page cache bytes.
 func (i *MemInfo) MemUsageWithPageCache() uint64 {
-	// total - available
-	return (i.MemTotal - i.MemAvailable + i.ActiveFile + i.InactiveFile) * 1024
+	// total - free
+	return (i.MemTotal - i.MemFree) * 1024
 }
 
 // readMemInfo reads and parses the meminfo from the given file.

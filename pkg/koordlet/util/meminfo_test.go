@@ -340,7 +340,7 @@ DirectMap1G:    261095424 kB`
 	got = memInfo.MemUsageBytes()
 	assert.Equal(t, uint64((263432804-256703236)<<10), got)
 	got = memInfo.MemUsageWithPageCache()
-	assert.Equal(t, uint64((263432804-256703236+2496524+2222452)<<10), got)
+	assert.Equal(t, uint64((263432804-254391744)<<10), got)
 }
 
 func TestGetNUMAMemInfo(t *testing.T) {
