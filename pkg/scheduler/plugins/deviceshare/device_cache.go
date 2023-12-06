@@ -311,62 +311,6 @@ func getVFAllocations(allocations []*apiext.DeviceAllocation) *VFAllocation {
 	return vfAllocation
 }
 
-func (n *nodeDevice) score(
-	podRequests map[schedulingv1alpha1.DeviceType]corev1.ResourceList,
-	requiredDeviceResources, preemptibleDeviceResources map[schedulingv1alpha1.DeviceType]deviceResources,
-	allocationScorer *resourceAllocationScorer,
-) (int64, error) {
-	var scores int64
-	for deviceType, requests := range podRequests {
-		if quotav1.IsZero(requests) {
-			continue
-		}
-		scoreByDeviceType, err := n.scoreByDeviceType(
-			requests,
-			deviceType,
-			requiredDeviceResources[deviceType],
-			preemptibleDeviceResources[deviceType],
-			allocationScorer,
-		)
-		if err != nil {
-			return 0, err
-		}
-		// TODO(joseph): Maybe different device types have different weights, but that's not currently supported.
-		scores += scoreByDeviceType
-	}
-
-	return scores, nil
-}
-
-func (n *nodeDevice) scoreByDeviceType(
-	podRequest corev1.ResourceList,
-	deviceType schedulingv1alpha1.DeviceType,
-	requiredDeviceResources deviceResources,
-	preemptibleDeviceResources deviceResources,
-	allocationScorer *resourceAllocationScorer,
-) (int64, error) {
-	nodeDeviceTotal := n.deviceTotal[deviceType]
-	if len(nodeDeviceTotal) == 0 {
-		return 0, nil
-	}
-
-	var freeDevices deviceResources
-	if len(requiredDeviceResources) > 0 {
-		freeDevices = requiredDeviceResources
-	} else {
-		freeDevices = n.calcFreeWithPreemptible(deviceType, preemptibleDeviceResources)
-	}
-
-	if deviceType == schedulingv1alpha1.GPU {
-		if err := fillGPUTotalMem(nodeDeviceTotal, podRequest); err != nil {
-			return 0, err
-		}
-	}
-
-	score := allocationScorer.scoreNode(podRequest, nodeDeviceTotal, freeDevices)
-	return score, nil
-}
-
 func (n *nodeDevice) calcFreeWithPreemptible(deviceType schedulingv1alpha1.DeviceType, preemptible deviceResources) deviceResources {
 	deviceFree := n.deviceFree[deviceType]
 	deviceUsed := n.deviceUsed[deviceType]

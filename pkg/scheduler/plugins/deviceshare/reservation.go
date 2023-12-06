@@ -281,10 +281,10 @@ func (p *Plugin) tryAllocateFromReservation(
 
 // scoreWithReservation combine the reservation with the node's resource usage to calculate the reservation score.
 func (p *Plugin) scoreWithReservation(
+	allocator *AutopilotAllocator,
 	state *preFilterState,
 	restoreState *nodeReservationRestoreStateData,
 	alloc *reservationAlloc,
-	nodeDeviceInfo *nodeDevice,
 	nodeName string,
 	basicPreemptible map[schedulingv1alpha1.DeviceType]deviceResources,
 ) (int64, *framework.Status) {
@@ -306,9 +306,9 @@ func (p *Plugin) scoreWithReservation(
 			preemptibleForDefault = appendAllocated(nil, basicPreemptible, restoreState.mergedMatchedAllocatable)
 		}
 		preemptible := appendAllocated(nil, preemptibleForDefault, preemptibleInRR)
-		score, err := nodeDeviceInfo.score(state.podRequests, nil, preemptible, p.scorer)
-		if err != nil {
-			return 0, framework.AsStatus(err)
+		score, status := allocator.score(nil, preemptible)
+		if !status.IsSuccess() {
+			return 0, status
 		}
 		return score, nil
 	}
@@ -318,18 +318,18 @@ func (p *Plugin) scoreWithReservation(
 	}
 	preemptible := appendAllocated(nil, preemptibleForAligned, alloc.remained, preemptibleInRR)
 	if allocatePolicy == schedulingv1alpha1.ReservationAllocatePolicyAligned {
-		score, err := nodeDeviceInfo.score(state.podRequests, nil, preemptible, p.scorer)
-		if err != nil {
-			return 0, framework.AsStatus(err)
+		score, status := allocator.score(nil, preemptible)
+		if !status.IsSuccess() {
+			return 0, status
 		}
 		return score, nil
 	}
 
 	if allocatePolicy == schedulingv1alpha1.ReservationAllocatePolicyRestricted {
 		requiredDeviceResources := calcRequiredDeviceResources(alloc, preemptibleInRR)
-		score, err := nodeDeviceInfo.score(state.podRequests, requiredDeviceResources, preemptible, p.scorer)
-		if err != nil {
-			return 0, framework.AsStatus(err)
+		score, status := allocator.score(requiredDeviceResources, preemptible)
+		if !status.IsSuccess() {
+			return 0, status
 		}
 		return score, nil
 	}
@@ -400,9 +400,9 @@ func (p *Plugin) allocateWithNominatedReservation(
 }
 
 func (p *Plugin) scoreWithNominatedReservation(
+	allocator *AutopilotAllocator,
 	state *preFilterState,
 	restoreState *nodeReservationRestoreStateData,
-	nodeDeviceInfo *nodeDevice,
 	nodeName string,
 	pod *corev1.Pod,
 	basicPreemptible map[schedulingv1alpha1.DeviceType]deviceResources,
@@ -424,10 +424,10 @@ func (p *Plugin) scoreWithNominatedReservation(
 	}
 
 	score, status := p.scoreWithReservation(
+		allocator,
 		state,
 		restoreState,
 		&restoreState.matched[allocIndex],
-		nodeDeviceInfo,
 		nodeName,
 		basicPreemptible,
 	)
