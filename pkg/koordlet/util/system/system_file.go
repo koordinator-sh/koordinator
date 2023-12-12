@@ -39,7 +39,8 @@ const (
 
 	KernelSchedGroupIdentityEnable = "kernel/sched_group_identity_enabled"
 
-	SysNUMASubDir = "bus/node/devices"
+	SysNUMASubDir   = "bus/node/devices"
+	SysPCIDeviceDir = "bus/pci/devices"
 
 	SysCPUSMTActiveSubPath       = "devices/system/cpu/smt/active"
 	SysIntelPStateNoTurboSubPath = "devices/system/cpu/intel_pstate/no_turbo"
@@ -117,6 +118,8 @@ func GetSysIntelPStateNoTurboPath() string {
 func GetProcSysFilePath(file string) string {
 	return filepath.Join(Conf.ProcRootDir, SysctlSubDir, file)
 }
+
+func GetPCIDeviceDir() string { return filepath.Join(Conf.SysRootDir, SysPCIDeviceDir) }
 
 var _ utilsysctl.Interface = &ProcSysctl{}
 

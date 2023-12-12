@@ -48,6 +48,7 @@ func Test_reportGPUDevice(t *testing.T) {
 	gpuDeviceInfo = []koordletutil.GPUDeviceInfo{
 		{UUID: "1", Minor: 1, MemoryTotal: 8000},
 		{UUID: "2", Minor: 2, MemoryTotal: 10000},
+		{UUID: "3", Minor: 3, MemoryTotal: 8000, BusID: "0000:00:08.0", NodeID: 0, PCIE: "pci0000:00"},
 	}
 	mockMetricCache.EXPECT().Get(koordletutil.GPUDeviceType).Return(gpuDeviceInfo, true)
 	r := &statesInformer{
@@ -88,14 +89,31 @@ func Test_reportGPUDevice(t *testing.T) {
 				extension.ResourceGPUMemoryRatio: *resource.NewQuantity(100, resource.DecimalSI),
 			},
 		},
+		{
+			UUID:   "3",
+			Minor:  pointer.Int32(3),
+			Type:   schedulingv1alpha1.GPU,
+			Health: true,
+			Resources: map[corev1.ResourceName]resource.Quantity{
+				extension.ResourceGPUCore:        *resource.NewQuantity(100, resource.DecimalSI),
+				extension.ResourceGPUMemory:      *resource.NewQuantity(8000, resource.BinarySI),
+				extension.ResourceGPUMemoryRatio: *resource.NewQuantity(100, resource.DecimalSI),
+			},
+			Topology: &schedulingv1alpha1.DeviceTopology{
+				SocketID: -1,
+				NodeID:   0,
+				PCIEID:   "pci0000:00",
+				BusID:    "0000:00:08.0",
+			},
+		},
 	}
 	device, err := fakeClient.Get(context.TODO(), "test", metav1.GetOptions{})
 	assert.Equal(t, nil, err)
 	assert.Equal(t, device.Spec.Devices, expectedDevices)
 
 	gpuDeviceInfo = append(gpuDeviceInfo, koordletutil.GPUDeviceInfo{
-		UUID:        "3",
-		Minor:       3,
+		UUID:        "4",
+		Minor:       4,
 		MemoryTotal: 10000,
 	})
 
@@ -103,8 +121,8 @@ func Test_reportGPUDevice(t *testing.T) {
 	r.reportDevice()
 
 	expectedDevices = append(expectedDevices, schedulingv1alpha1.DeviceInfo{
-		UUID:   "3",
-		Minor:  pointer.Int32(3),
+		UUID:   "4",
+		Minor:  pointer.Int32(4),
 		Type:   schedulingv1alpha1.GPU,
 		Health: true,
 		Resources: map[corev1.ResourceName]resource.Quantity{
