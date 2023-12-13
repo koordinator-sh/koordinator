@@ -25,24 +25,24 @@ import (
 	sysutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 )
 
-// CookieCacheEntry is an entry which stores the cookie ID and its belonging PGIDs.
+// CookieCacheEntry is an entry which stores the cookie ID and its belonging PIDs.
 type CookieCacheEntry struct {
-	rwMutex   sync.RWMutex
-	CookieID  uint64
-	pgidCache *OrderedMap[uint32]
+	rwMutex  sync.RWMutex
+	CookieID uint64
+	pidCache *OrderedMap[uint32]
 }
 
-func newCookieCacheEntry(cookieID uint64, pgids ...uint32) *CookieCacheEntry {
+func newCookieCacheEntry(cookieID uint64, pids ...uint32) *CookieCacheEntry {
 	return &CookieCacheEntry{
-		CookieID:  cookieID,
-		pgidCache: newUint32OrderedMap(pgids...),
+		CookieID: cookieID,
+		pidCache: newUint32OrderedMap(pids...),
 	}
 }
 
 func (c *CookieCacheEntry) DeepCopy() *CookieCacheEntry {
 	return &CookieCacheEntry{
-		CookieID:  c.CookieID,
-		pgidCache: c.pgidCache.DeepCopy(),
+		CookieID: c.CookieID,
+		pidCache: c.pidCache.DeepCopy(),
 	}
 }
 
@@ -61,51 +61,51 @@ func (c *CookieCacheEntry) SetCookieID(cookieID uint64) {
 func (c *CookieCacheEntry) IsEntryInvalid() bool {
 	c.rwMutex.RLock()
 	defer c.rwMutex.RUnlock()
-	return c.CookieID <= sysutil.DefaultCoreSchedCookieID || c.pgidCache.Len() <= 0
+	return c.CookieID <= sysutil.DefaultCoreSchedCookieID || c.pidCache.Len() <= 0
 }
 
-func (c *CookieCacheEntry) HasPGID(pgid uint32) bool {
+func (c *CookieCacheEntry) HasPID(pid uint32) bool {
 	c.rwMutex.RLock()
 	defer c.rwMutex.RUnlock()
-	_, ok := c.pgidCache.Get(pgid)
+	_, ok := c.pidCache.Get(pid)
 	return ok
 }
 
-func (c *CookieCacheEntry) ContainsPGIDs(pgids ...uint32) []uint32 {
+func (c *CookieCacheEntry) ContainsPIDs(pids ...uint32) []uint32 {
 	c.rwMutex.RLock()
 	defer c.rwMutex.RUnlock()
-	var notFoundPGIDs []uint32
-	for _, pgid := range pgids {
-		_, ok := c.pgidCache.Get(pgid)
+	var notFoundpids []uint32
+	for _, pid := range pids {
+		_, ok := c.pidCache.Get(pid)
 		if !ok {
-			notFoundPGIDs = append(notFoundPGIDs, pgid)
+			notFoundpids = append(notFoundpids, pid)
 		}
 	}
-	return notFoundPGIDs
+	return notFoundpids
 }
 
-func (c *CookieCacheEntry) GetAllPGIDs() []uint32 {
+func (c *CookieCacheEntry) GetAllPIDs() []uint32 {
 	c.rwMutex.RLock()
 	defer c.rwMutex.RUnlock()
-	return c.pgidCache.GetAll()
+	return c.pidCache.GetAll()
 }
 
-func (c *CookieCacheEntry) AddPGIDs(pgids ...uint32) {
-	if len(pgids) <= 0 {
+func (c *CookieCacheEntry) AddPIDs(pids ...uint32) {
+	if len(pids) <= 0 {
 		return
 	}
 	c.rwMutex.Lock()
 	defer c.rwMutex.Unlock()
-	c.pgidCache.AddAny(pgids...)
+	c.pidCache.AddAny(pids...)
 }
 
-func (c *CookieCacheEntry) DeletePGIDs(pgids ...uint32) {
-	if len(pgids) <= 0 {
+func (c *CookieCacheEntry) DeletePIDs(pids ...uint32) {
+	if len(pids) <= 0 {
 		return
 	}
 	c.rwMutex.Lock()
 	defer c.rwMutex.Unlock()
-	c.pgidCache.DeleteAny(pgids...)
+	c.pidCache.DeleteAny(pids...)
 }
 
 type IndexedValue[T constraints.Ordered] struct {

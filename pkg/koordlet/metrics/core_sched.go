@@ -36,8 +36,15 @@ var (
 		Help:      "the core scheduling cookie of the container",
 	}, []string{NodeKey, PodName, PodNamespace, PodUID, ContainerName, ContainerID, CoreSchedGroupKey, CoreSchedCookieKey}))
 
+	CoreSchedCookieManageStatus = metrics.NewGCCounterVec("core_sched_cookie_manage_status", prometheus.NewCounterVec(prometheus.CounterOpts{
+		Subsystem: KoordletSubsystem,
+		Name:      "core_sched_cookie_manage_status",
+		Help:      "the manage status of the core scheduling cookie",
+	}, []string{NodeKey, CoreSchedGroupKey, StatusKey}))
+
 	CoreSchedCollector = []prometheus.Collector{
 		ContainerCoreSchedCookie.GetGaugeVec(),
+		CoreSchedCookieManageStatus.GetCounterVec(),
 	}
 )
 
@@ -69,4 +76,17 @@ func ResetContainerCoreSchedCookie(namespace, podName, podUID, containerName, co
 	labels[CoreSchedGroupKey] = groupID
 	labels[CoreSchedCookieKey] = strconv.FormatUint(cookieID, 10)
 	ContainerCoreSchedCookie.Delete(labels)
+}
+
+func RecordCoreSchedCookieManageStatus(groupID string, isSucceeded bool) {
+	labels := genNodeLabels()
+	if labels == nil {
+		return
+	}
+	labels[CoreSchedGroupKey] = groupID
+	labels[StatusKey] = StatusSucceed
+	if !isSucceeded {
+		labels[StatusKey] = StatusFailed
+	}
+	CoreSchedCookieManageStatus.WithInc(labels)
 }

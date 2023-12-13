@@ -32,26 +32,26 @@ import (
 	sysutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 )
 
-type containerPGID struct {
+type containerPID struct {
 	ContainerName string
-	PGID          []uint32
+	PID           []uint32
 }
 
-// getCookie retrieves the last core sched cookies applied to the PGIDs.
-// If multiple cookies are set for the PGIDs, only the first non-default cookie is picked.
-// It returns the last cookie ID, PGIDs synced and the error.
-func (p *Plugin) getCookie(pgids []uint32, groupID string) (uint64, []uint32, error) {
-	if len(pgids) <= 0 {
-		klog.V(6).Infof("aborted to sync PGIDs cookie for group %s, no PGID", groupID)
+// getCookie retrieves the last core sched cookies applied to the PIDs.
+// If multiple cookies are set for the PIDs, only the first non-default cookie is picked.
+// It returns the last cookie ID, PIDs synced and the error.
+func (p *Plugin) getCookie(pids []uint32, groupID string) (uint64, []uint32, error) {
+	if len(pids) <= 0 {
+		klog.V(6).Infof("aborted to sync PIDs cookie for group %s, no PID", groupID)
 		return 0, nil, nil
 	}
 	newCookieIDMap := map[uint64]struct{}{}
 	firstNewCookieID := sysutil.DefaultCoreSchedCookieID
-	var newCookiePGIDs []uint32
-	for _, pgid := range pgids {
-		cookieID, err := p.cse.Get(sysutil.CoreSchedScopeThread, pgid)
+	var newCookiePIDs []uint32
+	for _, pid := range pids {
+		cookieID, err := p.cse.Get(sysutil.CoreSchedScopeThread, pid)
 		if err != nil {
-			klog.V(6).Infof("failed to sync last cookie for PGID %v, group %s, err: %s", pgid, groupID, err)
+			klog.V(6).Infof("failed to sync last cookie for PID %v, group %s, err: %s", pid, groupID, err)
 			continue
 		}
 		if cookieID != sysutil.DefaultCoreSchedCookieID {
@@ -61,176 +61,176 @@ func (p *Plugin) getCookie(pgids []uint32, groupID string) (uint64, []uint32, er
 				firstNewCookieID = cookieID
 			}
 			if cookieID == firstNewCookieID {
-				newCookiePGIDs = append(newCookiePGIDs, pgid)
+				newCookiePIDs = append(newCookiePIDs, pid)
 			}
 		}
 	}
 
-	if len(newCookieIDMap) <= 0 { // no cookie to sync, all PGIDs are default or unknown
+	if len(newCookieIDMap) <= 0 { // no cookie to sync, all PIDs are default or unknown
 		return 0, nil, nil
 	}
 
 	if len(newCookieIDMap) == 1 { // only one cookie to sync
-		return firstNewCookieID, newCookiePGIDs, nil
+		return firstNewCookieID, newCookiePIDs, nil
 	}
 	// else newCookieIDMap > 1
 
 	// When got more than one non-default cookie for given group, use the first synced new cookie ID.
-	// Let the PGIDs of different cookies fixed by the next container-level reconciliation.
-	klog.V(4).Infof("unexpected number of cookies to sync, group %s, cookie ID %v, found cookie num %v, PGID num %v",
-		groupID, firstNewCookieID, len(newCookieIDMap), len(pgids))
-	return firstNewCookieID, newCookiePGIDs, nil
+	// Let the PIDs of different cookies fixed by the next container-level reconciliation.
+	klog.V(4).Infof("unexpected number of cookies to sync, group %s, cookie ID %v, found cookie num %v, PID num %v",
+		groupID, firstNewCookieID, len(newCookieIDMap), len(pids))
+	return firstNewCookieID, newCookiePIDs, nil
 }
 
-// addCookie creates a new cookie for the given PGIDs[0], and assign the cookie to PGIDs[1:].
-// It returns the new cookie ID, the assigned PGIDs, and the error.
+// addCookie creates a new cookie for the given PIDs[0], and assign the cookie to PIDs[1:].
+// It returns the new cookie ID, the assigned PIDs, and the error.
 // TODO: refactor to resource updater.
-func (p *Plugin) addCookie(pgids []uint32, groupID string) (uint64, []uint32, error) {
-	if len(pgids) <= 0 {
-		klog.V(6).Infof("aborted to add PGIDs cookie for group %s, no PGID", groupID)
+func (p *Plugin) addCookie(pids []uint32, groupID string) (uint64, []uint32, error) {
+	if len(pids) <= 0 {
+		klog.V(6).Infof("aborted to add PIDs cookie for group %s, no PID", groupID)
 		return 0, nil, nil
 	}
-	lastCookieID, err := p.cse.Get(sysutil.CoreSchedScopeThread, pgids[0])
+	lastCookieID, err := p.cse.Get(sysutil.CoreSchedScopeThread, pids[0])
 	if err != nil {
-		return 0, nil, fmt.Errorf("get last cookie ID for PGID %v failed, err: %s", pgids[0], err)
+		return 0, nil, fmt.Errorf("get last cookie ID for PID %v failed, err: %s", pids[0], err)
 	}
 	if lastCookieID != sysutil.DefaultCoreSchedCookieID { // perhaps the group is changed
-		klog.V(5).Infof("last cookie ID for PGID %v is not default, group %s, cookie expect %v but got %v",
-			pgids[0], groupID, sysutil.DefaultCoreSchedCookieID, lastCookieID)
+		klog.V(5).Infof("last cookie ID for PID %v is not default, group %s, cookie expect %v but got %v",
+			pids[0], groupID, sysutil.DefaultCoreSchedCookieID, lastCookieID)
 	}
 
-	err = p.cse.Create(sysutil.CoreSchedScopeProcessGroup, pgids[0])
+	err = p.cse.Create(sysutil.CoreSchedScopeThread, pids[0])
 	if err != nil {
-		return 0, nil, fmt.Errorf("create cookie for PGID %v failed, err: %s", pgids[0], err)
+		return 0, nil, fmt.Errorf("create cookie for PID %v failed, err: %s", pids[0], err)
 	}
-	cookieID, err := p.cse.Get(sysutil.CoreSchedScopeThread, pgids[0])
+	cookieID, err := p.cse.Get(sysutil.CoreSchedScopeThread, pids[0])
 	if err != nil {
-		return 0, nil, fmt.Errorf("get new cookie ID for PGID %v failed, err: %s", pgids[0], err)
+		return 0, nil, fmt.Errorf("get new cookie ID for PID %v failed, err: %s", pids[0], err)
 	}
 
-	failedPIDs, err := p.cse.Assign(sysutil.CoreSchedScopeThread, pgids[0], sysutil.CoreSchedScopeProcessGroup, pgids[1:]...)
+	failedPIDs, err := p.cse.Assign(sysutil.CoreSchedScopeThread, pids[0], sysutil.CoreSchedScopeThreadGroup, pids[1:]...)
 	if err != nil {
-		klog.V(5).Infof("failed to assign new cookie for group %s, cookie %v, PGID from %v, PGID to %v failed of %v, err: %s",
-			groupID, cookieID, pgids[0], len(failedPIDs), len(pgids)-1, err)
+		klog.V(5).Infof("failed to assign new cookie for group %s, cookie %v, PID from %v, PID to %v failed of %v, err: %s",
+			groupID, cookieID, pids[0], len(failedPIDs), len(pids)-1, err)
 	}
 
-	pgidsAdded := newUint32OrderedMap(pgids...)
-	pgidsAdded.DeleteAny(failedPIDs...)
+	pidsAdded := newUint32OrderedMap(pids...)
+	pidsAdded.DeleteAny(failedPIDs...)
 
-	return cookieID, pgidsAdded.GetAll(), nil
+	return cookieID, pidsAdded.GetAll(), nil
 }
 
-// assignCookie assigns the target cookieID to the given PGIDs.
-// It returns the PGIDs assigned, PGIDs to delete, and the error (when exists, fallback adding new cookie).
+// assignCookie assigns the target cookieID to the given PIDs.
+// It returns the PIDs assigned, PIDs to delete, and the error (when exists, fallback adding new cookie).
 // TODO: refactor to resource updater.
-func (p *Plugin) assignCookie(pgids, siblingPGIDs []uint32, groupID string, targetCookieID uint64) ([]uint32, []uint32, error) {
-	if len(pgids) <= 0 {
-		klog.V(6).Infof("aborted to assign PGIDs cookie for group %s, target cookie %v, no PGID",
+func (p *Plugin) assignCookie(pids, siblingPIDs []uint32, groupID string, targetCookieID uint64) ([]uint32, []uint32, error) {
+	if len(pids) <= 0 {
+		klog.V(6).Infof("aborted to assign PIDs cookie for group %s, target cookie %v, no PID",
 			targetCookieID, groupID)
 		return nil, nil, nil
 	}
-	pgidsToAssign := newUint32OrderedMap()
-	var pgidsAssigned []uint32
+	pidsToAssign := newUint32OrderedMap()
+	var pidsAssigned []uint32
 	unknownCount := 0
-	for _, pgid := range pgids {
-		lastCookieID, err := p.cse.Get(sysutil.CoreSchedScopeThread, pgid)
+	for _, pid := range pids {
+		lastCookieID, err := p.cse.Get(sysutil.CoreSchedScopeThread, pid)
 		if err != nil {
-			klog.V(6).Infof("failed to get cookie for PGID %v during assign, group %s, err: %s",
-				pgid, groupID, err)
+			klog.V(6).Infof("failed to get cookie for PID %v during assign, group %s, err: %s",
+				pid, groupID, err)
 			unknownCount++
 			continue
 		}
 		if lastCookieID != targetCookieID {
-			pgidsToAssign.Add(pgid)
+			pidsToAssign.Add(pid)
 		} else {
-			pgidsAssigned = append(pgidsAssigned, pgid)
+			pidsAssigned = append(pidsAssigned, pid)
 		}
 	}
 
-	if unknownCount >= len(pgids) { // in case the given pgids terminate, e.g. the container is restarting, aborted
-		klog.V(5).Infof("failed to get last cookie for group %s, got %v unknown of %v PGIDs",
-			groupID, unknownCount, len(pgids))
+	if unknownCount >= len(pids) { // in case the given pids terminate, e.g. the container is restarting, aborted
+		klog.V(5).Infof("failed to get last cookie for group %s, got %v unknown of %v PIDs",
+			groupID, unknownCount, len(pids))
 		return nil, nil, nil
 	}
 
-	if pgidsToAssign.Len() <= 0 { // all PGIDs are assigned, just refresh reference
-		return pgidsAssigned, nil, nil
+	if pidsToAssign.Len() <= 0 { // all PIDs are assigned, just refresh reference
+		return pidsAssigned, nil, nil
 	}
 
-	var sPGIDsToDelete []uint32
-	validSiblingPGID := uint32(0) // find one valid sibling PGID to share from
-	for _, sPGID := range siblingPGIDs {
-		pCookieID, err := p.cse.Get(sysutil.CoreSchedScopeThread, sPGID)
+	var sPIDsToDelete []uint32
+	validSiblingPID := uint32(0) // find one valid sibling PID to share from
+	for _, sPID := range siblingPIDs {
+		pCookieID, err := p.cse.Get(sysutil.CoreSchedScopeThread, sPID)
 		if err != nil {
-			klog.V(6).Infof("failed to get cookie for sibling PGID %v, group %s, err: %s",
-				sPGID, groupID, err)
-			sPGIDsToDelete = append(sPGIDsToDelete, sPGID)
+			klog.V(6).Infof("failed to get cookie for sibling PID %v, group %s, err: %s",
+				sPID, groupID, err)
+			sPIDsToDelete = append(sPIDsToDelete, sPID)
 			continue
 		}
 		if pCookieID != targetCookieID {
-			klog.V(6).Infof("failed to get target cookie for sibling PGID %v, err: expect %v but got %v",
-				sPGID, targetCookieID, pCookieID)
-			sPGIDsToDelete = append(sPGIDsToDelete, sPGID)
+			klog.V(6).Infof("failed to get target cookie for sibling PID %v, err: expect %v but got %v",
+				sPID, targetCookieID, pCookieID)
+			sPIDsToDelete = append(sPIDsToDelete, sPID)
 			continue
 		}
 
-		// get the first valid sibling PGID
-		validSiblingPGID = sPGID
+		// get the first valid sibling PID
+		validSiblingPID = sPID
 		break
 	}
 
-	if validSiblingPGID == 0 {
-		return nil, sPGIDsToDelete, fmt.Errorf("no valid sibling PGID, sibling PGIDs to delete num %v",
-			len(sPGIDsToDelete))
+	if validSiblingPID == 0 {
+		return nil, sPIDsToDelete, fmt.Errorf("no valid sibling PID, sibling PIDs to delete num %v",
+			len(sPIDsToDelete))
 	}
 
-	// assign to valid sibling PGID
-	failedPGIDs, err := p.cse.Assign(sysutil.CoreSchedScopeThread, validSiblingPGID, sysutil.CoreSchedScopeProcessGroup, pgidsToAssign.GetAll()...)
+	// assign to valid sibling PID
+	failedPIDs, err := p.cse.Assign(sysutil.CoreSchedScopeThread, validSiblingPID, sysutil.CoreSchedScopeThreadGroup, pidsToAssign.GetAll()...)
 	if err != nil {
-		klog.V(5).Infof("failed to assign group cookie for group %s, target cookie %v, PGID from %v, PGID to %v failed of %v, err: %s",
-			groupID, targetCookieID, validSiblingPGID, len(failedPGIDs), pgidsToAssign.Len(), err)
-		pgidsToAssign.DeleteAny(failedPGIDs...)
+		klog.V(5).Infof("failed to assign group cookie for group %s, target cookie %v, PID from %v, PID to %v failed of %v, err: %s",
+			groupID, targetCookieID, validSiblingPID, len(failedPIDs), pidsToAssign.Len(), err)
+		pidsToAssign.DeleteAny(failedPIDs...)
 	}
-	pgidsToAssign.AddAny(pgidsAssigned...)
+	pidsToAssign.AddAny(pidsAssigned...)
 
-	return pgidsToAssign.GetAll(), sPGIDsToDelete, nil
+	return pidsToAssign.GetAll(), sPIDsToDelete, nil
 }
 
-// clearCookie clears the cookie for the given PGIDs to the default cookie 0.
-// It returns the PGIDs cleared.
-func (p *Plugin) clearCookie(pgids []uint32, groupID string, lastCookieID uint64) []uint32 {
-	if len(pgids) <= 0 {
-		klog.V(6).Infof("aborted to clear PGIDs cookie for group %s, no PGID", groupID)
+// clearCookie clears the cookie for the given PIDs to the default cookie 0.
+// It returns the PIDs cleared.
+func (p *Plugin) clearCookie(pids []uint32, groupID string, lastCookieID uint64) []uint32 {
+	if len(pids) <= 0 {
+		klog.V(6).Infof("aborted to clear PIDs cookie for group %s, no PID", groupID)
 		return nil
 	}
-	pgidsToClear := newUint32OrderedMap()
-	var pgidsCleared []uint32
-	for _, pgid := range pgids {
-		pCookieID, err := p.cse.Get(sysutil.CoreSchedScopeThread, pgid)
+	pidsToClear := newUint32OrderedMap()
+	var pidsCleared []uint32
+	for _, pid := range pids {
+		pCookieID, err := p.cse.Get(sysutil.CoreSchedScopeThread, pid)
 		if err != nil {
-			klog.V(6).Infof("failed to get cookie for PGID %v, group %s, err: %s", pgid, groupID, err)
+			klog.V(6).Infof("failed to get cookie for PID %v, group %s, err: %s", pid, groupID, err)
 			continue
 		}
 		if pCookieID != sysutil.DefaultCoreSchedCookieID {
-			pgidsToClear.Add(pgid)
+			pidsToClear.Add(pid)
 		} else {
-			pgidsCleared = append(pgidsCleared, pgid)
+			pidsCleared = append(pidsCleared, pid)
 		}
 	}
 
-	if pgidsToClear.Len() <= 0 {
-		return pgidsCleared
+	if pidsToClear.Len() <= 0 {
+		return pidsCleared
 	}
 
-	failedPIDs, err := p.cse.Clear(sysutil.CoreSchedScopeProcessGroup, pgidsToClear.GetAll()...)
+	failedPIDs, err := p.cse.Clear(sysutil.CoreSchedScopeThreadGroup, pidsToClear.GetAll()...)
 	if err != nil {
-		klog.V(4).Infof("failed to clear cookie for group, last cookie %v, PGID %v failed of %v, total %v, err: %s",
-			groupID, lastCookieID, len(failedPIDs), pgidsToClear.GetAll(), len(pgids), err)
-		pgidsToClear.DeleteAny(failedPIDs...)
+		klog.V(4).Infof("failed to clear cookie for group, last cookie %v, PID %v failed of %v, total %v, err: %s",
+			groupID, lastCookieID, len(failedPIDs), pidsToClear.GetAll(), len(pids), err)
+		pidsToClear.DeleteAny(failedPIDs...)
 	}
-	pgidsToClear.AddAny(pgidsCleared...)
+	pidsToClear.AddAny(pidsCleared...)
 
-	return pgidsToClear.GetAll()
+	return pidsToClear.GetAll()
 }
 
 // getPodEnabledAndGroup gets whether the pod enables the core scheduling and the group ID if it does.
@@ -264,7 +264,7 @@ func (p *Plugin) getGroupID(baseGroupID string, podUID string, isExpeller bool) 
 		groupID = podUID
 	}
 	if isExpeller {
-		groupID += DefaultExpellerSuffix
+		groupID += ExpellerGroupSuffix
 	}
 	return groupID
 }
@@ -273,24 +273,20 @@ func (p *Plugin) getContainerUID(podUID string, containerID string) string {
 	return podUID + "/" + containerID
 }
 
-func (p *Plugin) getContainerPGIDs(containerCgroupParent string) ([]uint32, error) {
-	containerPIDs, err := p.reader.ReadCPUProcs(containerCgroupParent)
+func (p *Plugin) getContainerPIDs(containerCgroupParent string) ([]uint32, error) {
+	pids, err := p.reader.ReadCPUProcs(containerCgroupParent)
 	if err != nil && resourceexecutor.IsCgroupDirErr(err) {
-		klog.V(5).Infof("aborted to get PGIDs for container dir %s, err: %s",
+		klog.V(5).Infof("aborted to get PIDs for container dir %s, err: %s",
 			containerCgroupParent, err)
 		return nil, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("get container PIDs failed, err: %w", err)
 	}
-	pgids, err := sysutil.GetPGIDsForPIDs(containerPIDs)
-	if err != nil {
-		return nil, fmt.Errorf("get container PGID failed, PID num %v, err: %w", len(containerPIDs), err)
-	}
-	return pgids, nil
+	return pids, nil
 }
 
-func (p *Plugin) getSandboxContainerPGIDs(podMeta *statesinformer.PodMeta) ([]uint32, string, error) {
+func (p *Plugin) getSandboxContainerPIDs(podMeta *statesinformer.PodMeta) ([]uint32, string, error) {
 	sandboxID, err := util.GetPodSandboxContainerID(podMeta.Pod)
 	if err != nil {
 		return nil, "", fmt.Errorf("get sandbox container ID failed, err: %w", err)
@@ -300,43 +296,43 @@ func (p *Plugin) getSandboxContainerPGIDs(podMeta *statesinformer.PodMeta) ([]ui
 		return nil, sandboxID, fmt.Errorf("get cgroup parent for sandbox container %s/%s, err: %w",
 			podMeta.Key(), sandboxID, err)
 	}
-	pgids, err := p.getContainerPGIDs(sandboxContainerDir)
+	pids, err := p.getContainerPIDs(sandboxContainerDir)
 	if err != nil {
-		return nil, sandboxID, fmt.Errorf("get PGID failed for sandbox container %s/%s, parent dir %s, err: %w",
+		return nil, sandboxID, fmt.Errorf("get PID failed for sandbox container %s/%s, parent dir %s, err: %w",
 			podMeta.Key(), sandboxID, sandboxContainerDir, err)
 	}
-	return pgids, sandboxID, nil
+	return pids, sandboxID, nil
 }
 
-func (p *Plugin) getNormalContainerPGIDs(podMeta *statesinformer.PodMeta, containerStatus *corev1.ContainerStatus) ([]uint32, error) {
-	var pgids []uint32
+func (p *Plugin) getNormalContainerPIDs(podMeta *statesinformer.PodMeta, containerStatus *corev1.ContainerStatus) ([]uint32, error) {
+	var pids []uint32
 	containerDir, err := util.GetContainerCgroupParentDir(podMeta.CgroupDir, containerStatus)
 	if err != nil {
 		return nil, fmt.Errorf("get cgroup parent for container %s/%s, err: %w",
 			podMeta.Key(), containerStatus.Name, err)
 	}
-	pgids, err = p.getContainerPGIDs(containerDir)
+	pids, err = p.getContainerPIDs(containerDir)
 	if err != nil {
-		return nil, fmt.Errorf("get PGID failed for container %s/%s, parent dir %s, err: %w",
+		return nil, fmt.Errorf("get PID failed for container %s/%s, parent dir %s, err: %w",
 			podMeta.Key(), containerStatus.Name, containerDir, err)
 	}
-	return pgids, nil
+	return pids, nil
 }
 
-func (p *Plugin) getAllContainerPGIDs(podMeta *statesinformer.PodMeta) map[string]*containerPGID {
-	containerToPGIDs := map[string]*containerPGID{}
+func (p *Plugin) getAllContainerPIDs(podMeta *statesinformer.PodMeta) map[string]*containerPID {
+	containerToPIDs := map[string]*containerPID{}
 	count := 0
 	pod := podMeta.Pod
 
 	// for sandbox container
-	sandboxPGIDs, sandboxContainerID, err := p.getSandboxContainerPGIDs(podMeta)
+	sandboxPIDs, sandboxContainerID, err := p.getSandboxContainerPIDs(podMeta)
 	if err != nil {
-		klog.V(5).Infof("failed to get sandbox container PGID for pod %s, err: %s", podMeta.Key(), err)
+		klog.V(5).Infof("failed to get sandbox container PID for pod %s, err: %s", podMeta.Key(), err)
 	} else {
-		containerToPGIDs[sandboxContainerID] = &containerPGID{
-			PGID: sandboxPGIDs,
+		containerToPIDs[sandboxContainerID] = &containerPID{
+			PID: sandboxPIDs,
 		}
-		count += len(sandboxPGIDs)
+		count += len(sandboxPIDs)
 	}
 
 	// for containers
@@ -360,22 +356,22 @@ func (p *Plugin) getAllContainerPGIDs(podMeta *statesinformer.PodMeta) map[strin
 			continue
 		}
 
-		containerPGIDs, err := p.getNormalContainerPGIDs(podMeta, containerStat)
+		containerPIDs, err := p.getNormalContainerPIDs(podMeta, containerStat)
 		if err != nil {
-			klog.V(5).Infof("failed to get container %s PGID for pod %s, err: %s",
+			klog.V(5).Infof("failed to get container %s PID for pod %s, err: %s",
 				container.Name, podMeta.Key(), err)
 			continue
 		}
 
-		containerToPGIDs[containerStat.ContainerID] = &containerPGID{
+		containerToPIDs[containerStat.ContainerID] = &containerPID{
 			ContainerName: containerStat.Name,
-			PGID:          containerPGIDs,
+			PID:           containerPIDs,
 		}
-		count += len(containerPGIDs)
+		count += len(containerPIDs)
 	}
 
-	klog.V(6).Infof("get PGIDs for pod %s finished, PGID num %v", podMeta.Key(), count)
-	return containerToPGIDs
+	klog.V(6).Infof("get PIDs for pod %s finished, PID num %v", podMeta.Key(), count)
+	return containerToPIDs
 }
 
 func recordContainerCookieMetrics(containerCtx *protocol.ContainerContext, groupID string, cookieID uint64) {
@@ -383,6 +379,7 @@ func recordContainerCookieMetrics(containerCtx *protocol.ContainerContext, group
 		containerCtx.Request.PodMeta.Name, containerCtx.Request.PodMeta.UID,
 		containerCtx.Request.ContainerMeta.Name, containerCtx.Request.ContainerMeta.ID,
 		groupID, cookieID)
+	metrics.RecordCoreSchedCookieManageStatus(groupID, true)
 }
 
 func resetContainerCookieMetrics(containerCtx *protocol.ContainerContext, groupID string, lastCookieID uint64) {

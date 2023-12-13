@@ -82,7 +82,7 @@ func TestPluginSystemSupported(t *testing.T) {
 			},
 		},
 		{
-			name: "plugin unsupported since core sched disabled by sysctl",
+			name: "plugin supported since core sched disabled but can be enabled by sysctl",
 			fields: fields{
 				prepareFn: func(helper *sysutil.FileTestUtil) {
 					sysctlFeaturePath := sysutil.GetProcSysFilePath(sysutil.KernelSchedCore)
@@ -90,12 +90,12 @@ func TestPluginSystemSupported(t *testing.T) {
 				},
 			},
 			wants: wants{
-				systemSupported: false,
-				supportMsg:      "core sched not supported",
+				systemSupported: true,
+				supportMsg:      "",
 			},
 		},
 		{
-			name: "plugin supported since no core sched in sched features",
+			name: "plugin supported since core sched in sched features",
 			fields: fields{
 				prepareFn: func(helper *sysutil.FileTestUtil) {
 					featuresPath := sysutil.SchedFeatures.Path("")
@@ -148,7 +148,7 @@ func TestPlugin_SetContainerCookie(t *testing.T) {
 		groupID         string
 	}
 	type wantFields struct {
-		cookieToPGIDs map[uint64][]uint32
+		cookieToPIDs  map[uint64][]uint32
 		groupToCookie map[string]uint64
 	}
 	tests := []struct {
@@ -220,12 +220,6 @@ func TestPlugin_SetContainerCookie(t *testing.T) {
 				prepareFn: func(helper *sysutil.FileTestUtil) {
 					helper.WriteCgroupFileContents("kubepods.slice/kubepods-podxxxxxx.slice/cri-containerd-yyyyyy.scope", sysutil.CPUProcs, "12344\n12345\n12346\n")
 					helper.WriteCgroupFileContents("kubepods.slice/kubepods-podxxxxxx.slice/cri-containerd-yyyyyy.scope", sysutil.CPUProcsV2, "12344\n12345\n12346\n")
-					statPath := sysutil.GetProcPIDStatPath(12344)
-					helper.WriteFileContents(statPath, `12344 (stress) S 12340 12344 12340 12300 12344 123450 151 0 0 0 0 0 ...`)
-					statPath1 := sysutil.GetProcPIDStatPath(12345)
-					helper.WriteFileContents(statPath1, `12345 (stress) S 12340 12344 12340 12300 12345 123450 151 0 0 0 0 0 ...`)
-					statPath2 := sysutil.GetProcPIDStatPath(12346)
-					helper.WriteFileContents(statPath2, `12346 (stress) S 12340 12346 12340 12300 12346 123450 151 0 0 0 0 0 ...`)
 				},
 				plugin: testGetEnabledPlugin(),
 				preparePluginFn: func(p *Plugin) {
@@ -269,9 +263,10 @@ func TestPlugin_SetContainerCookie(t *testing.T) {
 			},
 			wantErr: false,
 			wantFields: wantFields{
-				cookieToPGIDs: map[uint64][]uint32{
+				cookieToPIDs: map[uint64][]uint32{
 					1000000: {
 						12344,
+						12345,
 					},
 				},
 				groupToCookie: map[string]uint64{
@@ -285,12 +280,6 @@ func TestPlugin_SetContainerCookie(t *testing.T) {
 				prepareFn: func(helper *sysutil.FileTestUtil) {
 					helper.WriteCgroupFileContents("kubepods.slice/kubepods-podxxxxxx.slice/cri-containerd-yyyyyy.scope", sysutil.CPUProcs, "12344\n12345\n12346\n")
 					helper.WriteCgroupFileContents("kubepods.slice/kubepods-podxxxxxx.slice/cri-containerd-yyyyyy.scope", sysutil.CPUProcsV2, "12344\n12345\n12346\n")
-					statPath := sysutil.GetProcPIDStatPath(12344)
-					helper.WriteFileContents(statPath, `12344 (stress) S 12340 12344 12340 12300 12344 123450 151 0 0 0 0 0 ...`)
-					statPath1 := sysutil.GetProcPIDStatPath(12345)
-					helper.WriteFileContents(statPath1, `12345 (stress) S 12340 12344 12340 12300 12345 123450 151 0 0 0 0 0 ...`)
-					statPath2 := sysutil.GetProcPIDStatPath(12346)
-					helper.WriteFileContents(statPath2, `12346 (stress) S 12340 12346 12340 12300 12346 123450 151 0 0 0 0 0 ...`)
 				},
 				plugin: testGetEnabledPlugin(),
 				preparePluginFn: func(p *Plugin) {
@@ -336,14 +325,14 @@ func TestPlugin_SetContainerCookie(t *testing.T) {
 			},
 			wantErr: false,
 			wantFields: wantFields{
-				cookieToPGIDs: map[uint64][]uint32{
+				cookieToPIDs: map[uint64][]uint32{
 					1000000: {},
 				},
 				groupToCookie: map[string]uint64{},
 			},
 		},
 		{
-			name: "failed to add cookie for BE container when PGIDs no longer exist",
+			name: "failed to add cookie for BE container when PIDs no longer exist",
 			fields: fields{
 				prepareFn: func(helper *sysutil.FileTestUtil) {
 					helper.WriteCgroupFileContents("kubepods.slice/kubepods-besteffort.slice/kubepods-besteffort-podxxxxxx.slice/cri-containerd-yyyyyy.scope", sysutil.CPUProcs, "12344\n12345\n12346\n")
@@ -391,7 +380,7 @@ func TestPlugin_SetContainerCookie(t *testing.T) {
 			},
 			wantErr: false,
 			wantFields: wantFields{
-				cookieToPGIDs: map[uint64][]uint32{},
+				cookieToPIDs:  map[uint64][]uint32{},
 				groupToCookie: map[string]uint64{},
 			},
 		},
@@ -401,12 +390,6 @@ func TestPlugin_SetContainerCookie(t *testing.T) {
 				prepareFn: func(helper *sysutil.FileTestUtil) {
 					helper.WriteCgroupFileContents("kubepods.slice/kubepods-podxxxxxx.slice/cri-containerd-yyyyyy.scope", sysutil.CPUProcs, "12344\n12345\n12346\n")
 					helper.WriteCgroupFileContents("kubepods.slice/kubepods-podxxxxxx.slice/cri-containerd-yyyyyy.scope", sysutil.CPUProcsV2, "12344\n12345\n12346\n")
-					statPath := sysutil.GetProcPIDStatPath(12344)
-					helper.WriteFileContents(statPath, `12344 (stress) S 12340 12344 12340 12300 12344 123450 151 0 0 0 0 0 ...`)
-					statPath1 := sysutil.GetProcPIDStatPath(12345)
-					helper.WriteFileContents(statPath1, `12345 (stress) S 12340 12344 12340 12300 12345 123450 151 0 0 0 0 0 ...`)
-					statPath2 := sysutil.GetProcPIDStatPath(12346)
-					helper.WriteFileContents(statPath2, `12346 (stress) S 12340 12346 12340 12300 12346 123450 151 0 0 0 0 0 ...`)
 				},
 				plugin: testGetEnabledPlugin(),
 				preparePluginFn: func(p *Plugin) {
@@ -457,12 +440,13 @@ func TestPlugin_SetContainerCookie(t *testing.T) {
 			},
 			wantErr: false,
 			wantFields: wantFields{
-				cookieToPGIDs: map[uint64][]uint32{
+				cookieToPIDs: map[uint64][]uint32{
 					1000000: {
 						1000,
 						1001,
 						1002,
 						12344,
+						12345,
 					},
 				},
 				groupToCookie: map[string]uint64{
@@ -476,12 +460,6 @@ func TestPlugin_SetContainerCookie(t *testing.T) {
 				prepareFn: func(helper *sysutil.FileTestUtil) {
 					helper.WriteCgroupFileContents("kubepods.slice/kubepods-podxxxxxx.slice/cri-containerd-yyyyyy.scope", sysutil.CPUProcs, "12344\n12345\n12346\n")
 					helper.WriteCgroupFileContents("kubepods.slice/kubepods-podxxxxxx.slice/cri-containerd-yyyyyy.scope", sysutil.CPUProcsV2, "12344\n12345\n12346\n")
-					statPath := sysutil.GetProcPIDStatPath(12344)
-					helper.WriteFileContents(statPath, `12344 (stress) S 12340 12344 12340 12300 12344 123450 151 0 0 0 0 0 ...`)
-					statPath1 := sysutil.GetProcPIDStatPath(12345)
-					helper.WriteFileContents(statPath1, `12345 (stress) S 12340 12344 12340 12300 12345 123450 151 0 0 0 0 0 ...`)
-					statPath2 := sysutil.GetProcPIDStatPath(12346)
-					helper.WriteFileContents(statPath2, `12346 (stress) S 12340 12346 12340 12300 12346 123450 151 0 0 0 0 0 ...`)
 				},
 				plugin: testGetEnabledPlugin(),
 				preparePluginFn: func(p *Plugin) {
@@ -532,10 +510,11 @@ func TestPlugin_SetContainerCookie(t *testing.T) {
 			},
 			wantErr: false,
 			wantFields: wantFields{
-				cookieToPGIDs: map[uint64][]uint32{
+				cookieToPIDs: map[uint64][]uint32{
 					1000000: {},
 					2000000: {
 						12344,
+						12345,
 					},
 				},
 				groupToCookie: map[string]uint64{
@@ -549,12 +528,6 @@ func TestPlugin_SetContainerCookie(t *testing.T) {
 				prepareFn: func(helper *sysutil.FileTestUtil) {
 					helper.WriteCgroupFileContents("kubepods.slice/kubepods-podxxxxxx.slice/cri-containerd-yyyyyy.scope", sysutil.CPUProcs, "12344\n12345\n12346\n")
 					helper.WriteCgroupFileContents("kubepods.slice/kubepods-podxxxxxx.slice/cri-containerd-yyyyyy.scope", sysutil.CPUProcsV2, "12344\n12345\n12346\n")
-					statPath := sysutil.GetProcPIDStatPath(12344)
-					helper.WriteFileContents(statPath, `12344 (stress) S 12340 12344 12340 12300 12344 123450 151 0 0 0 0 0 ...`)
-					statPath1 := sysutil.GetProcPIDStatPath(12345)
-					helper.WriteFileContents(statPath1, `12345 (stress) S 12340 12344 12340 12300 12345 123450 151 0 0 0 0 0 ...`)
-					statPath2 := sysutil.GetProcPIDStatPath(12346)
-					helper.WriteFileContents(statPath2, `12346 (stress) S 12340 12346 12340 12300 12346 123450 151 0 0 0 0 0 ...`)
 				},
 				plugin: testGetEnabledPlugin(),
 				preparePluginFn: func(p *Plugin) {
@@ -607,7 +580,7 @@ func TestPlugin_SetContainerCookie(t *testing.T) {
 			},
 			wantErr: false,
 			wantFields: wantFields{
-				cookieToPGIDs: map[uint64][]uint32{
+				cookieToPIDs: map[uint64][]uint32{
 					1000000: {},
 				},
 				groupToCookie: map[string]uint64{},
@@ -619,12 +592,6 @@ func TestPlugin_SetContainerCookie(t *testing.T) {
 				prepareFn: func(helper *sysutil.FileTestUtil) {
 					helper.WriteCgroupFileContents("kubepods.slice/kubepods-podxxxxxx.slice/cri-containerd-yyyyyy.scope", sysutil.CPUProcs, "12344\n12345\n12346\n")
 					helper.WriteCgroupFileContents("kubepods.slice/kubepods-podxxxxxx.slice/cri-containerd-yyyyyy.scope", sysutil.CPUProcsV2, "12344\n12345\n12346\n")
-					statPath := sysutil.GetProcPIDStatPath(12344)
-					helper.WriteFileContents(statPath, `12344 (stress) S 12340 12344 12340 12300 12344 123450 151 0 0 0 0 0 ...`)
-					statPath1 := sysutil.GetProcPIDStatPath(12345)
-					helper.WriteFileContents(statPath1, `12345 (stress) S 12340 12344 12340 12300 12345 123450 151 0 0 0 0 0 ...`)
-					statPath2 := sysutil.GetProcPIDStatPath(12346)
-					helper.WriteFileContents(statPath2, `12346 (stress) S 12340 12346 12340 12300 12346 123450 151 0 0 0 0 0 ...`)
 				},
 				plugin: testGetEnabledPlugin(),
 				preparePluginFn: func(p *Plugin) {
@@ -676,7 +643,7 @@ func TestPlugin_SetContainerCookie(t *testing.T) {
 			},
 			wantErr: false,
 			wantFields: wantFields{
-				cookieToPGIDs: map[uint64][]uint32{
+				cookieToPIDs: map[uint64][]uint32{
 					1000000: {
 						1000,
 						1001,
@@ -694,12 +661,6 @@ func TestPlugin_SetContainerCookie(t *testing.T) {
 				prepareFn: func(helper *sysutil.FileTestUtil) {
 					helper.WriteCgroupFileContents("kubepods.slice/kubepods-podxxxxxx.slice/cri-containerd-yyyyyy.scope", sysutil.CPUProcs, "12344\n12345\n12346\n")
 					helper.WriteCgroupFileContents("kubepods.slice/kubepods-podxxxxxx.slice/cri-containerd-yyyyyy.scope", sysutil.CPUProcsV2, "12344\n12345\n12346\n")
-					statPath := sysutil.GetProcPIDStatPath(12344)
-					helper.WriteFileContents(statPath, `12344 (stress) S 12340 12344 12340 12300 12344 123450 151 0 0 0 0 0 ...`)
-					statPath1 := sysutil.GetProcPIDStatPath(12345)
-					helper.WriteFileContents(statPath1, `12345 (stress) S 12340 12344 12340 12300 12345 123450 151 0 0 0 0 0 ...`)
-					statPath2 := sysutil.GetProcPIDStatPath(12346)
-					helper.WriteFileContents(statPath2, `12346 (stress) S 12340 12346 12340 12300 12346 123450 151 0 0 0 0 0 ...`)
 				},
 				plugin: testGetEnabledPlugin(),
 				preparePluginFn: func(p *Plugin) {
@@ -756,7 +717,7 @@ func TestPlugin_SetContainerCookie(t *testing.T) {
 			},
 			wantErr: false,
 			wantFields: wantFields{
-				cookieToPGIDs: map[uint64][]uint32{
+				cookieToPIDs: map[uint64][]uint32{
 					1000000: {
 						1000,
 						1001,
@@ -774,12 +735,6 @@ func TestPlugin_SetContainerCookie(t *testing.T) {
 				prepareFn: func(helper *sysutil.FileTestUtil) {
 					helper.WriteCgroupFileContents("kubepods.slice/kubepods-besteffort.slice/kubepods-besteffort-podxxxxxx.slice/cri-containerd-yyyyyy.scope", sysutil.CPUProcs, "12344\n12345\n12346\n")
 					helper.WriteCgroupFileContents("kubepods.slice/kubepods-besteffort.slice/kubepods-besteffort-podxxxxxx.slice/cri-containerd-yyyyyy.scope", sysutil.CPUProcsV2, "12344\n12345\n12346\n")
-					statPath := sysutil.GetProcPIDStatPath(12344)
-					helper.WriteFileContents(statPath, `12344 (stress) S 12340 12344 12340 12300 12344 123450 151 0 0 0 0 0 ...`)
-					statPath1 := sysutil.GetProcPIDStatPath(12345)
-					helper.WriteFileContents(statPath1, `12345 (stress) S 12340 12344 12340 12300 12345 123450 151 0 0 0 0 0 ...`)
-					statPath2 := sysutil.GetProcPIDStatPath(12346)
-					helper.WriteFileContents(statPath2, `12346 (stress) S 12340 12346 12340 12300 12346 123450 151 0 0 0 0 0 ...`)
 				},
 				plugin: testGetEnabledPlugin(),
 				preparePluginFn: func(p *Plugin) {
@@ -831,7 +786,7 @@ func TestPlugin_SetContainerCookie(t *testing.T) {
 			},
 			wantErr: false,
 			wantFields: wantFields{
-				cookieToPGIDs: map[uint64][]uint32{
+				cookieToPIDs: map[uint64][]uint32{
 					1000000: {
 						1000,
 						1001,
@@ -849,12 +804,6 @@ func TestPlugin_SetContainerCookie(t *testing.T) {
 				prepareFn: func(helper *sysutil.FileTestUtil) {
 					helper.WriteCgroupFileContents("kubepods.slice/kubepods-podxxxxxx.slice/cri-containerd-yyyyyy.scope", sysutil.CPUProcs, "12344\n12345\n12346\n")
 					helper.WriteCgroupFileContents("kubepods.slice/kubepods-podxxxxxx.slice/cri-containerd-yyyyyy.scope", sysutil.CPUProcsV2, "12344\n12345\n12346\n")
-					statPath := sysutil.GetProcPIDStatPath(12344)
-					helper.WriteFileContents(statPath, `12344 (stress) S 12340 12344 12340 12300 12344 123450 151 0 0 0 0 0 ...`)
-					statPath1 := sysutil.GetProcPIDStatPath(12345)
-					helper.WriteFileContents(statPath1, `12345 (stress) S 12340 12344 12340 12300 12345 123450 151 0 0 0 0 0 ...`)
-					statPath2 := sysutil.GetProcPIDStatPath(12346)
-					helper.WriteFileContents(statPath2, `12346 (stress) S 12340 12346 12340 12300 12346 123450 151 0 0 0 0 0 ...`)
 				},
 				plugin: testGetEnabledPlugin(),
 				preparePluginFn: func(p *Plugin) {
@@ -898,12 +847,12 @@ func TestPlugin_SetContainerCookie(t *testing.T) {
 			},
 			wantErr: false,
 			wantFields: wantFields{
-				cookieToPGIDs: map[uint64][]uint32{},
+				cookieToPIDs:  map[uint64][]uint32{},
 				groupToCookie: map[string]uint64{},
 			},
 		},
 		{
-			name: "aborted to clear cookie for BE container since PGID not found",
+			name: "aborted to clear cookie for BE container since PID not found",
 			fields: fields{
 				prepareFn: func(helper *sysutil.FileTestUtil) {
 					helper.WriteCgroupFileContents("kubepods.slice/kubepods-besteffort.slice/kubepods-besteffort-podxxxxxx.slice/cri-containerd-yyyyyy.scope", sysutil.CPUProcs, "12344\n12345\n12346\n")
@@ -913,7 +862,7 @@ func TestPlugin_SetContainerCookie(t *testing.T) {
 				preparePluginFn: func(p *Plugin) {
 					f := p.cse.(*sysutil.FakeCoreSchedExtended)
 					f.SetNextCookieID(2000000)
-					p.cookieCache.SetDefault("group-xxx", newCookieCacheEntry(1000000, 1000, 1001, 1002, 12344))
+					p.cookieCache.SetDefault("group-xxx", newCookieCacheEntry(1000000, 1000, 1001, 1002))
 					p.groupCache.SetDefault("xxxxxx/containerd://yyyyyy", "group-xxx")
 				},
 				cse: sysutil.NewFakeCoreSchedExtended(map[uint32]uint64{
@@ -922,7 +871,7 @@ func TestPlugin_SetContainerCookie(t *testing.T) {
 					1000:  1000000,
 					1001:  1000000,
 					1002:  1000000,
-					12344: 1000000,
+					12344: 0,
 				}, map[uint32]uint32{
 					1:     1,
 					1000:  1000,
@@ -932,6 +881,8 @@ func TestPlugin_SetContainerCookie(t *testing.T) {
 					12345: 12344,
 					12346: 12346,
 				}, map[uint32]bool{
+					12344: true,
+					12345: true,
 					12346: true,
 				}),
 				groupID: "group-xxx",
@@ -957,12 +908,11 @@ func TestPlugin_SetContainerCookie(t *testing.T) {
 			},
 			wantErr: false,
 			wantFields: wantFields{
-				cookieToPGIDs: map[uint64][]uint32{
+				cookieToPIDs: map[uint64][]uint32{
 					1000000: {
 						1000,
 						1001,
 						1002,
-						12344,
 					},
 				},
 				groupToCookie: map[string]uint64{
@@ -976,12 +926,6 @@ func TestPlugin_SetContainerCookie(t *testing.T) {
 				prepareFn: func(helper *sysutil.FileTestUtil) {
 					helper.WriteCgroupFileContents("kubepods.slice/kubepods-podxxxxxx.slice/cri-containerd-yyyyyy.scope", sysutil.CPUProcs, "12344\n12345\n12346\n")
 					helper.WriteCgroupFileContents("kubepods.slice/kubepods-podxxxxxx.slice/cri-containerd-yyyyyy.scope", sysutil.CPUProcsV2, "12344\n12345\n12346\n")
-					statPath := sysutil.GetProcPIDStatPath(12344)
-					helper.WriteFileContents(statPath, `12344 (stress) S 12340 12344 12340 12300 12344 123450 151 0 0 0 0 0 ...`)
-					statPath1 := sysutil.GetProcPIDStatPath(12345)
-					helper.WriteFileContents(statPath1, `12345 (stress) S 12340 12344 12340 12300 12345 123450 151 0 0 0 0 0 ...`)
-					statPath2 := sysutil.GetProcPIDStatPath(12346)
-					helper.WriteFileContents(statPath2, `12346 (stress) S 12340 12346 12340 12300 12346 123450 151 0 0 0 0 0 ...`)
 				},
 				plugin: testGetEnabledPlugin(),
 				preparePluginFn: func(p *Plugin) {
@@ -1026,9 +970,10 @@ func TestPlugin_SetContainerCookie(t *testing.T) {
 			},
 			wantErr: false,
 			wantFields: wantFields{
-				cookieToPGIDs: map[uint64][]uint32{
+				cookieToPIDs: map[uint64][]uint32{
 					1000000: {
 						12344,
+						12345,
 					},
 				},
 				groupToCookie: map[string]uint64{
@@ -1054,10 +999,10 @@ func TestPlugin_SetContainerCookie(t *testing.T) {
 
 			gotErr := p.SetContainerCookie(tt.arg)
 			assert.Equal(t, tt.wantErr, gotErr != nil, gotErr)
-			for cookie, pgids := range tt.wantFields.cookieToPGIDs {
-				for _, pgid := range pgids {
+			for cookie, pids := range tt.wantFields.cookieToPIDs {
+				for _, pid := range pids {
 					if tt.fields.cse != nil {
-						got, gotErr := tt.fields.cse.Get(sysutil.CoreSchedScopeThread, pgid)
+						got, gotErr := tt.fields.cse.Get(sysutil.CoreSchedScopeThread, pid)
 						assert.NoError(t, gotErr)
 						assert.Equal(t, cookie, got)
 					}
@@ -1075,10 +1020,10 @@ func TestPlugin_SetContainerCookie(t *testing.T) {
 				entry, ok := entryIf.(*CookieCacheEntry)
 				assert.True(t, ok)
 				assert.Equal(t, cookieID, entry.CookieID)
-				assert.Equal(t, len(tt.wantFields.cookieToPGIDs[cookieID]), len(entry.GetAllPGIDs()),
-					"expect [%v] but got [%v]", tt.wantFields.cookieToPGIDs[cookieID], entry.GetAllPGIDs())
-				for _, pgid := range tt.wantFields.cookieToPGIDs[cookieID] {
-					assert.True(t, entry.HasPGID(pgid))
+				assert.Equal(t, len(tt.wantFields.cookieToPIDs[cookieID]), len(entry.GetAllPIDs()),
+					"expect [%v] but got [%v]", tt.wantFields.cookieToPIDs[cookieID], entry.GetAllPIDs())
+				for _, pid := range tt.wantFields.cookieToPIDs[cookieID] {
+					assert.True(t, entry.HasPID(pid))
 				}
 			}
 		})
@@ -1093,7 +1038,7 @@ func TestPlugin_LoadAllCookies(t *testing.T) {
 		cse             sysutil.CoreSchedExtendedInterface
 	}
 	type wantFields struct {
-		cookieToPGIDs map[uint64][]uint32
+		cookieToPIDs  map[uint64][]uint32
 		groupToCookie map[string]uint64
 	}
 	tests := []struct {
@@ -1104,7 +1049,7 @@ func TestPlugin_LoadAllCookies(t *testing.T) {
 		wantFields wantFields
 	}{
 		{
-			name: "sync pods failed for no pod PGID available",
+			name: "sync pods failed for no pod PID available",
 			fields: fields{
 				prepareFn: func(helper *sysutil.FileTestUtil) {
 					sandboxContainerCgroupDir, _ := util.GetContainerCgroupParentDirByID("kubepods.slice/kubepods-podxxxxxx.slice", "containerd://aaaaaa")
@@ -1230,7 +1175,7 @@ func TestPlugin_LoadAllCookies(t *testing.T) {
 			},
 			want: false,
 			wantFields: wantFields{
-				cookieToPGIDs: map[uint64][]uint32{},
+				cookieToPIDs:  map[uint64][]uint32{},
 				groupToCookie: map[string]uint64{},
 			},
 		},
@@ -1244,10 +1189,6 @@ func TestPlugin_LoadAllCookies(t *testing.T) {
 					containerCgroupDir, _ := util.GetContainerCgroupParentDirByID("kubepods.slice/kubepods-podxxxxxx.slice", "containerd://yyyyyy")
 					helper.WriteCgroupFileContents(containerCgroupDir, sysutil.CPUProcs, "12344\n12345\n12346\n")
 					helper.WriteCgroupFileContents(containerCgroupDir, sysutil.CPUProcsV2, "12344\n12345\n12346\n")
-					statPath0 := sysutil.GetProcPIDStatPath(12340)
-					helper.WriteFileContents(statPath0, `12340 (stress) S 12340 12340 12340 12300 12340 123400 100 0 0 0 0 0 ...`)
-					statPath := sysutil.GetProcPIDStatPath(12344)
-					helper.WriteFileContents(statPath, `12344 (stress) S 12340 12344 12340 12300 12344 123450 151 0 0 0 0 0 ...`)
 				},
 				plugin: testGetEnabledPlugin(),
 				preparePluginFn: func(p *Plugin) {
@@ -1270,7 +1211,9 @@ func TestPlugin_LoadAllCookies(t *testing.T) {
 					12344: 12344,
 					12345: 12344,
 					12346: 12346,
-				}, map[uint32]bool{}),
+				}, map[uint32]bool{
+					12345: true,
+				}),
 			},
 			arg: []*statesinformer.PodMeta{
 				{
@@ -1363,10 +1306,11 @@ func TestPlugin_LoadAllCookies(t *testing.T) {
 			},
 			want: true,
 			wantFields: wantFields{
-				cookieToPGIDs: map[uint64][]uint32{
+				cookieToPIDs: map[uint64][]uint32{
 					1000000: {
 						12340,
 						12344,
+						12346,
 					},
 				},
 				groupToCookie: map[string]uint64{
@@ -1384,14 +1328,6 @@ func TestPlugin_LoadAllCookies(t *testing.T) {
 					containerCgroupDir, _ := util.GetContainerCgroupParentDirByID("kubepods.slice/kubepods-podxxxxxx.slice", "containerd://yyyyyy")
 					helper.WriteCgroupFileContents(containerCgroupDir, sysutil.CPUProcs, "12344\n12345\n12346\n")
 					helper.WriteCgroupFileContents(containerCgroupDir, sysutil.CPUProcsV2, "12344\n12345\n12346\n")
-					statPath0 := sysutil.GetProcPIDStatPath(12340)
-					helper.WriteFileContents(statPath0, `12340 (stress) S 12340 12340 12340 12300 12340 123400 100 0 0 0 0 0 ...`)
-					statPath := sysutil.GetProcPIDStatPath(12344)
-					helper.WriteFileContents(statPath, `12344 (stress) S 12340 12344 12340 12300 12344 123450 151 0 0 0 0 0 ...`)
-					statPath1 := sysutil.GetProcPIDStatPath(12345)
-					helper.WriteFileContents(statPath1, `12345 (stress) S 12340 12344 12340 12300 12345 123450 151 0 0 0 0 0 ...`)
-					statPath2 := sysutil.GetProcPIDStatPath(12346)
-					helper.WriteFileContents(statPath2, `12346 (stress) S 12340 12346 12340 12300 12346 123450 151 0 0 0 0 0 ...`)
 				},
 				plugin: testGetEnabledPlugin(),
 				preparePluginFn: func(p *Plugin) {
@@ -1509,10 +1445,11 @@ func TestPlugin_LoadAllCookies(t *testing.T) {
 			},
 			want: true,
 			wantFields: wantFields{
-				cookieToPGIDs: map[uint64][]uint32{
+				cookieToPIDs: map[uint64][]uint32{
 					1000000: {
 						12340,
 						12344,
+						12345,
 					},
 				},
 				groupToCookie: map[string]uint64{
@@ -1531,14 +1468,6 @@ func TestPlugin_LoadAllCookies(t *testing.T) {
 					containerCgroupDir, _ := util.GetContainerCgroupParentDirByID("kubepods.slice/kubepods-podxxxxxx.slice", "containerd://yyyyyy")
 					helper.WriteCgroupFileContents(containerCgroupDir, sysutil.CPUProcs, "12344\n12345\n12346\n")
 					helper.WriteCgroupFileContents(containerCgroupDir, sysutil.CPUProcsV2, "12344\n12345\n12346\n")
-					statPath0 := sysutil.GetProcPIDStatPath(12340)
-					helper.WriteFileContents(statPath0, `12340 (stress) S 12340 12340 12340 12300 12340 123400 100 0 0 0 0 0 ...`)
-					statPath := sysutil.GetProcPIDStatPath(12344)
-					helper.WriteFileContents(statPath, `12344 (stress) S 12340 12344 12340 12300 12344 123450 151 0 0 0 0 0 ...`)
-					statPath1 := sysutil.GetProcPIDStatPath(12345)
-					helper.WriteFileContents(statPath1, `12345 (stress) S 12340 12344 12340 12300 12345 123450 151 0 0 0 0 0 ...`)
-					statPath2 := sysutil.GetProcPIDStatPath(12346)
-					helper.WriteFileContents(statPath2, `12346 (stress) S 12340 12346 12340 12300 12346 123450 151 0 0 0 0 0 ...`)
 					// test-pod-2
 					sandboxContainerCgroupDir1, _ := util.GetContainerCgroupParentDirByID("kubepods.slice/kubepods-burstable.slice/kubepods-burstable-podcccccc.slice", "containerd://dddddd")
 					helper.WriteCgroupFileContents(sandboxContainerCgroupDir1, sysutil.CPUProcs, "32760\n")
@@ -1546,14 +1475,6 @@ func TestPlugin_LoadAllCookies(t *testing.T) {
 					containerCgroupDir1, _ := util.GetContainerCgroupParentDirByID("kubepods.slice/kubepods-burstable.slice/kubepods-burstable-podcccccc.slice", "containerd://zzzzzz")
 					helper.WriteCgroupFileContents(containerCgroupDir1, sysutil.CPUProcs, "32768\n32770\n32771\n")
 					helper.WriteCgroupFileContents(containerCgroupDir1, sysutil.CPUProcsV2, "32768\n32770\n32771\n")
-					statPath3 := sysutil.GetProcPIDStatPath(32760)
-					helper.WriteFileContents(statPath3, `32760 (sleep) S 32760 32760 32760 32760 32760 0 100 0 0 0 0 0 ...`)
-					statPath4 := sysutil.GetProcPIDStatPath(32768)
-					helper.WriteFileContents(statPath4, `32768 (bash) S 32768 32768 32768 32760 32768 0 200 0 0 0 0 0 ...`)
-					statPath5 := sysutil.GetProcPIDStatPath(32770)
-					helper.WriteFileContents(statPath5, `32770 (entry) S 32770 32768 32768 32760 32768 0 200 0 0 0 0 0 ...`)
-					statPath6 := sysutil.GetProcPIDStatPath(32772)
-					helper.WriteFileContents(statPath6, `32772 (entry) S 32772 32768 32768 32760 32768 0 200 0 0 0 0 0 ...`)
 				},
 				plugin: testGetEnabledPlugin(),
 				preparePluginFn: func(p *Plugin) {
@@ -1725,12 +1646,14 @@ func TestPlugin_LoadAllCookies(t *testing.T) {
 			},
 			want: true,
 			wantFields: wantFields{
-				cookieToPGIDs: map[uint64][]uint32{
+				cookieToPIDs: map[uint64][]uint32{
 					1000000: {
 						12340,
 						12344,
+						12345,
 						32760,
 						32768,
+						32770,
 					},
 				},
 				groupToCookie: map[string]uint64{
@@ -1751,16 +1674,6 @@ func TestPlugin_LoadAllCookies(t *testing.T) {
 					containerCgroupDir1, _ := util.GetContainerCgroupParentDirByID("kubepods.slice/kubepods-podxxxxxx.slice", "containerd://zzzzzz")
 					helper.WriteCgroupFileContents(containerCgroupDir1, sysutil.CPUProcs, "12350\n")
 					helper.WriteCgroupFileContents(containerCgroupDir1, sysutil.CPUProcsV2, "12350\n")
-					statPath0 := sysutil.GetProcPIDStatPath(12340)
-					helper.WriteFileContents(statPath0, `12340 (stress) S 12340 12340 12340 12300 12340 123400 100 0 0 0 0 0 ...`)
-					statPath := sysutil.GetProcPIDStatPath(12344)
-					helper.WriteFileContents(statPath, `12344 (stress) S 12340 12344 12340 12300 12344 123450 151 0 0 0 0 0 ...`)
-					statPath1 := sysutil.GetProcPIDStatPath(12345)
-					helper.WriteFileContents(statPath1, `12345 (stress) S 12340 12344 12340 12300 12345 123450 151 0 0 0 0 0 ...`)
-					statPath2 := sysutil.GetProcPIDStatPath(12346)
-					helper.WriteFileContents(statPath2, `12346 (stress) S 12340 12346 12340 12300 12346 123450 151 0 0 0 0 0 ...`)
-					statPath3 := sysutil.GetProcPIDStatPath(12346)
-					helper.WriteFileContents(statPath3, `12350 (stress) S 12350 12350 12350 12350 12350 200000 200 0 0 0 0 0 ...`)
 				},
 				plugin: testGetEnabledPlugin(),
 				preparePluginFn: func(p *Plugin) {
@@ -1898,10 +1811,11 @@ func TestPlugin_LoadAllCookies(t *testing.T) {
 			},
 			want: true,
 			wantFields: wantFields{
-				cookieToPGIDs: map[uint64][]uint32{
+				cookieToPIDs: map[uint64][]uint32{
 					1000000: {
 						12340,
 						12344,
+						12345,
 					},
 					0: {
 						12350,
@@ -1942,10 +1856,10 @@ func TestPlugin_LoadAllCookies(t *testing.T) {
 				entry, ok := entryIf.(*CookieCacheEntry)
 				assert.True(t, ok)
 				assert.Equal(t, cookieID, entry.CookieID)
-				assert.Equal(t, len(tt.wantFields.cookieToPGIDs[cookieID]), len(entry.GetAllPGIDs()),
-					"expect [%v] but got [%v]", tt.wantFields.cookieToPGIDs[cookieID], entry.GetAllPGIDs())
-				for _, pgid := range tt.wantFields.cookieToPGIDs[cookieID] {
-					assert.True(t, entry.HasPGID(pgid), pgid)
+				assert.Equal(t, len(tt.wantFields.cookieToPIDs[cookieID]), len(entry.GetAllPIDs()),
+					"expect [%v] but got [%v]", tt.wantFields.cookieToPIDs[cookieID], entry.GetAllPIDs())
+				for _, pid := range tt.wantFields.cookieToPIDs[cookieID] {
+					assert.True(t, entry.HasPID(pid), pid)
 				}
 			}
 		})

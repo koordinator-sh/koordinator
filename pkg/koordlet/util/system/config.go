@@ -47,8 +47,6 @@ type Config struct {
 	PouchEndpoint      string
 	DockerEndPoint     string
 	DefaultRuntimeType string
-
-	EnableKernelCoreSched bool
 }
 
 func init() {
@@ -112,8 +110,6 @@ func (c *Config) InitFlags(fs *flag.FlagSet) {
 	fs.StringVar(&c.PouchEndpoint, "pouch-endpoint", c.PouchEndpoint, "pouch endPoint")
 
 	fs.StringVar(&c.DefaultRuntimeType, "default-runtime-type", c.DefaultRuntimeType, "default runtime type during runtime hooks handle request, candidates are containerd/docker/pouch.")
-
-	fs.BoolVar(&c.EnableKernelCoreSched, "enable-kernel-core-sched", c.EnableKernelCoreSched, "whethe to enable the Core Scheduling in kernel features")
 
 	initSupportConfigs()
 }

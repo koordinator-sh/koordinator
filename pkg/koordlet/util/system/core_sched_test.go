@@ -172,7 +172,7 @@ func TestFakeCoreSchedExtended(t *testing.T) {
 	})
 }
 
-func TestIsCoreSchedSupported(t *testing.T) {
+func TestEnableCoreSchedIfSupported(t *testing.T) {
 	type fields struct {
 		prepareFn func(helper *FileTestUtil)
 	}
@@ -221,15 +221,15 @@ func TestIsCoreSchedSupported(t *testing.T) {
 			want1: "",
 		},
 		{
-			name: "unsupported when core sched disabled in the sysctl",
+			name: "supported when core sched disabled in the sysctl but can be enabled",
 			fields: fields{
 				prepareFn: func(helper *FileTestUtil) {
 					sysctlFeaturePath := GetProcSysFilePath(KernelSchedCore)
 					helper.WriteFileContents(sysctlFeaturePath, "0\n")
 				},
 			},
-			want:  false,
-			want1: "core sched not supported",
+			want:  true,
+			want1: "",
 		},
 		{
 			name: "supported when core sched shows in the features",
@@ -259,31 +259,10 @@ func TestIsCoreSchedSupported(t *testing.T) {
 				prepareFn: func(helper *FileTestUtil) {
 					sysctlFeaturePath := GetProcSysFilePath(KernelSchedCore)
 					helper.WriteFileContents(sysctlFeaturePath, "0\n")
-					helper.SetConf(func(conf *Config) {
-						Conf.EnableKernelCoreSched = true
-					}, func(conf *Config) {
-						Conf.EnableKernelCoreSched = NewDsModeConfig().EnableKernelCoreSched
-					})
 				},
 			},
 			want:  true,
 			want1: "",
-		},
-		{
-			name: "supported when sysctl disabled and not allowed to enable",
-			fields: fields{
-				prepareFn: func(helper *FileTestUtil) {
-					sysctlFeaturePath := GetProcSysFilePath(KernelSchedCore)
-					helper.WriteFileContents(sysctlFeaturePath, "0\n")
-					helper.SetConf(func(conf *Config) {
-						Conf.EnableKernelCoreSched = false
-					}, func(conf *Config) {
-						Conf.EnableKernelCoreSched = NewDsModeConfig().EnableKernelCoreSched
-					})
-				},
-			},
-			want:  false,
-			want1: "core sched not supported",
 		},
 		{
 			name: "supported when sched_features disabled but can be enabled",
@@ -291,31 +270,10 @@ func TestIsCoreSchedSupported(t *testing.T) {
 				prepareFn: func(helper *FileTestUtil) {
 					featuresPath := SchedFeatures.Path("")
 					helper.WriteFileContents(featuresPath, `FEATURE_A FEATURE_B NO_CORE_SCHED`)
-					helper.SetConf(func(conf *Config) {
-						Conf.EnableKernelCoreSched = true
-					}, func(conf *Config) {
-						Conf.EnableKernelCoreSched = NewDsModeConfig().EnableKernelCoreSched
-					})
 				},
 			},
 			want:  true,
 			want1: "",
-		},
-		{
-			name: "supported when sched_features disabled and not allowed to enable",
-			fields: fields{
-				prepareFn: func(helper *FileTestUtil) {
-					featuresPath := SchedFeatures.Path("")
-					helper.WriteFileContents(featuresPath, `FEATURE_A FEATURE_B NO_CORE_SCHED`)
-					helper.SetConf(func(conf *Config) {
-						Conf.EnableKernelCoreSched = false
-					}, func(conf *Config) {
-						Conf.EnableKernelCoreSched = NewDsModeConfig().EnableKernelCoreSched
-					})
-				},
-			},
-			want:  false,
-			want1: "core sched not supported",
 		},
 	}
 	for _, tt := range tests {
@@ -325,7 +283,7 @@ func TestIsCoreSchedSupported(t *testing.T) {
 			if tt.fields.prepareFn != nil {
 				tt.fields.prepareFn(helper)
 			}
-			got, got1 := IsCoreSchedSupported()
+			got, got1 := EnableCoreSchedIfSupported()
 			assert.Equal(t, tt.want, got)
 			assert.Equal(t, tt.want1, got1)
 		})

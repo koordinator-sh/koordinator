@@ -49,8 +49,8 @@ const (
 	defaultCacheExpiration     = 300 * time.Second
 	defaultCacheDeleteInterval = 600 * time.Second
 
-	// DefaultExpellerSuffix is the default suffix of the expeller core sched group.
-	DefaultExpellerSuffix = "-expeller"
+	// ExpellerGroupSuffix is the default suffix of the expeller core sched group.
+	ExpellerGroupSuffix = "-expeller"
 )
 
 // SYSTEM QoS is excluded
@@ -68,7 +68,7 @@ type Plugin struct {
 	supportedMsg string
 	sysEnabled   bool
 
-	cookieCache        *gocache.Cache // core-sched-group-id -> cookie id, set<pgid>; if the group has had cookie
+	cookieCache        *gocache.Cache // core-sched-group-id -> cookie id, set<pid>; if the group has had cookie
 	cookieCacheRWMutex sync.RWMutex
 	groupCache         *gocache.Cache // pod-uid+container-id -> core-sched-group-id (note that it caches the last state); if the container has had cookie of the group
 
@@ -111,6 +111,7 @@ func (p *Plugin) Register(op hooks.Options) {
 	reconciler.RegisterCgroupReconciler(reconciler.SandboxLevel, sysutil.VirtualCoreSchedCookie,
 		"set core sched cookie to process groups of sandbox container specified",
 		p.SetContainerCookie, reconciler.PodQOSFilter(), podQOSConditions...)
+	// TODO: support host application
 	reconciler.RegisterCgroupReconciler(reconciler.KubeQOSLevel, sysutil.CPUIdle, "reconcile QoS level cpu idle",
 		p.SetKubeQOSCPUIdle, reconciler.NoneFilter())
 	p.Setup(op)
@@ -124,7 +125,7 @@ func (p *Plugin) Setup(op hooks.Options) {
 
 func (p *Plugin) SystemSupported() (bool, string) {
 	if p.sysSupported == nil {
-		isSupported, msg := sysutil.IsCoreSchedSupported()
+		isSupported, msg := sysutil.EnableCoreSchedIfSupported()
 		p.sysSupported = pointer.Bool(isSupported)
 		p.supportedMsg = msg
 		klog.Infof("update system supported info for plugin %s, supported %v, msg %s",
@@ -176,14 +177,14 @@ func (p *Plugin) SetKubeQOSCPUIdle(proto protocol.HooksProtocol) error {
 //  1. Get: Get the cookie for a core sched group, firstly try to find in cache and then get from the existing PIDs.
 //  2. Add: Add a new cookie for a core sched group for a container, and add a new entry into the cache, ref count = 1.
 //  3. Assign: Assign a cookie of an existing core sched group for a container, and increase cookie's ref count in cache.
-//     The cookies of sibling PGIDs (i.e. the PGIDs of the same core sched group) will be fetched in the Assign. If all
-//     the cookies of sibling PGIDs are default or invalid, the Assign will fall back to Add.
+//     The cookies of sibling PIDs (i.e. the PIDs of the same core sched group) will be fetched in the Assign. If all
+//     the cookies of sibling PIDs are default or invalid, the Assign will fall back to Add.
 //  4. Clear: Clear a cookie of an existing core sched group for a container (reset to default cookie 0), and the
 //     cookie's reference count in the cache is decreased. The cache entry will be removed when the ref count is no
 //     larger than zero.
 //
 // If multiple non-default cookies are assigned to existing containers of the same group, the firstly-created and
-// available cookie will be retained and the PGIDs of others will be moved to the former.
+// available cookie will be retained and the PIDs of others will be moved to the former.
 // NOTE: The agent itself should be set the default cookie. It can be excluded by setting QoS to SYSTEM.
 func (p *Plugin) SetContainerCookie(proto protocol.HooksProtocol) error {
 	containerCtx := proto.(*protocol.ContainerContext)
@@ -222,31 +223,31 @@ func (p *Plugin) SetContainerCookie(proto protocol.HooksProtocol) error {
 
 	// expect enabled
 	// 1. disabled -> enabled: Add or Assign.
-	// 2. keep enabled: Check the differences of cookie, group ID and the PGIDs, and do Assign.
+	// 2. keep enabled: Check the differences of cookie, group ID and the PIDs, and do Assign.
 	if isEnabled {
 		// assert groupID != "0"
-		// NOTE: if the group ID changed for a enabled pod, the cookie will be updated while the old PGIDs should expire
+		// NOTE: if the group ID changed for a enabled pod, the cookie will be updated while the old PIDs should expire
 		// in the old cookie's cache.
-		pgids, err := p.getContainerPGIDs(containerCtx.Request.CgroupParent)
+		pids, err := p.getContainerPIDs(containerCtx.Request.CgroupParent)
 		if err != nil {
-			klog.V(5).Infof("failed to get PGIDs for container %s/%s, err: %s", podMetaName, containerName, err)
+			klog.V(5).Infof("failed to get PIDs for container %s/%s, err: %s", podMetaName, containerName, err)
 			return nil
 		}
-		if len(pgids) <= 0 {
-			klog.V(5).Infof("no PGID found for container %s/%s, group %s", podMetaName, containerName, groupID)
+		if len(pids) <= 0 {
+			klog.V(5).Infof("no PID found for container %s/%s, group %s", podMetaName, containerName, groupID)
 			return nil
 		}
 
 		if cookieEntry != nil {
-			// firstly try Assign, if all cached sibling pgids invalid, then try Add
+			// firstly try Assign, if all cached sibling pids invalid, then try Add
 			// else cookie exists for group:
 			// 1. assign cookie if the container has not set cookie
 			// 2. assign cookie if some process of the container has missing cookie or set incoherent cookie
 			targetCookieID := cookieEntry.GetCookieID()
 
-			if notFoundPGIDs := cookieEntry.ContainsPGIDs(pgids...); len(notFoundPGIDs) <= 0 {
-				klog.V(6).Infof("assign cookie for container %s/%s skipped, group %s, cookie %v, PGID num %v",
-					podMetaName, containerName, groupID, cookieEntry.GetCookieID(), len(pgids))
+			if notFoundPIDs := cookieEntry.ContainsPIDs(pids...); len(notFoundPIDs) <= 0 {
+				klog.V(6).Infof("assign cookie for container %s/%s skipped, group %s, cookie %v, PID num %v",
+					podMetaName, containerName, groupID, cookieEntry.GetCookieID(), len(pids))
 				p.updateCookieCacheForContainer(groupID, containerUID, cookieEntry)
 				recordContainerCookieMetrics(containerCtx, groupID, targetCookieID)
 
@@ -254,70 +255,77 @@ func (p *Plugin) SetContainerCookie(proto protocol.HooksProtocol) error {
 			}
 
 			// do Assign
-			siblingPGIDs := cookieEntry.GetAllPGIDs()
-			pgidsAssigned, sPGIDsToDelete, err := p.assignCookie(pgids, siblingPGIDs, groupID, targetCookieID)
+			siblingPIDs := cookieEntry.GetAllPIDs()
+			pidsAssigned, sPIDsToDelete, err := p.assignCookie(pids, siblingPIDs, groupID, targetCookieID)
 			if err == nil {
-				klog.V(4).Infof("assign cookie for container %s/%s finished, cookie %v, PGID num %v, assigned %v",
-					podMetaName, containerName, targetCookieID, len(pgids), len(pgidsAssigned))
+				if lastGroupID != groupID {
+					klog.V(4).Infof("assign cookie for container %s/%s finished, last group %s, group %s, cookie %v, PID num %v, assigned %v",
+						podMetaName, containerName, lastGroupID, groupID, targetCookieID, len(pids), len(pidsAssigned))
+				} else {
+					klog.V(5).Infof("assign cookie for container %s/%s finished, cookie %v, PID num %v, assigned %v",
+						podMetaName, containerName, targetCookieID, len(pids), len(pidsAssigned))
+				}
 
-				if len(pgidsAssigned) <= 0 { // no pgid is successfully assigned
+				if len(pidsAssigned) <= 0 { // no pid is successfully assigned
 					return nil
 				}
 
-				cookieEntry.AddPGIDs(pgidsAssigned...)
-				cookieEntry.DeletePGIDs(sPGIDsToDelete...)
+				cookieEntry.AddPIDs(pidsAssigned...)
+				cookieEntry.DeletePIDs(sPIDsToDelete...)
 				p.updateCookieCacheForContainer(groupID, containerUID, cookieEntry)
 				recordContainerCookieMetrics(containerCtx, groupID, targetCookieID)
 
 				return nil
 			}
 
-			klog.V(4).Infof("failed to assign cookie for container %s/%s, fallback to add new cookie, group %s, old cookie %v, PGID num %v, err: %v",
-				podMetaName, containerName, groupID, targetCookieID, len(pgids), err)
+			metrics.RecordCoreSchedCookieManageStatus(groupID, false)
+			klog.V(4).Infof("failed to assign cookie for container %s/%s, fallback to add new cookie, group %s, old cookie %v, PID num %v, err: %v",
+				podMetaName, containerName, groupID, targetCookieID, len(pids), err)
 
-			// no valid sibling PGID, fallback to Add
-			cookieEntry.DeletePGIDs(sPGIDsToDelete...)
+			// no valid sibling PID, fallback to Add
+			cookieEntry.DeletePIDs(sPIDsToDelete...)
 			p.cleanCookieCacheForContainer(groupID, containerUID, cookieEntry)
 		}
 
 		// group has no cookie, do Add
-		cookieID, pgidAdded, err := p.addCookie(pgids, groupID)
+		cookieID, pidAdded, err := p.addCookie(pids, groupID)
 		if err != nil {
-			klog.V(4).Infof("failed to add cookie for container %s/%s, group %s, PGID num %v, err: %v",
-				podMetaName, containerName, groupID, len(pgids), err)
+			metrics.RecordCoreSchedCookieManageStatus(groupID, false)
+			klog.V(4).Infof("failed to add cookie for container %s/%s, group %s, PID num %v, err: %v",
+				podMetaName, containerName, groupID, len(pids), err)
 			return nil
 		}
 		if cookieID <= sysutil.DefaultCoreSchedCookieID {
-			klog.V(4).Infof("failed to add cookie for container %s/%s, group %s, PGID num %v, got unexpected cookie %v",
-				podMetaName, containerName, groupID, len(pgids), cookieID)
+			klog.V(4).Infof("failed to add cookie for container %s/%s, group %s, PID num %v, got unexpected cookie %v",
+				podMetaName, containerName, groupID, len(pids), cookieID)
 			return nil
 		}
 
-		cookieEntry = newCookieCacheEntry(cookieID, pgidAdded...)
+		cookieEntry = newCookieCacheEntry(cookieID, pidAdded...)
 		p.updateCookieCacheForContainer(groupID, containerUID, cookieEntry)
 		recordContainerCookieMetrics(containerCtx, groupID, cookieID)
 
-		klog.V(4).Infof("add cookie for container %s/%s finished, group %s, cookie %v, PGID num %v",
-			podMetaName, containerName, groupID, cookieID, len(pgids))
+		klog.V(4).Infof("add cookie for container %s/%s finished, group %s, cookie %v, PID num %v",
+			podMetaName, containerName, groupID, cookieID, len(pids))
 		return nil
 	}
 	// else pod disables
 
 	// invalid lastGroupID means container not in group cache (container should be cleared or not ever added)
 	// invalid lastCookieEntry means group not in cookie cache (group should be cleared)
-	// let its cached PGIDs expire or removed by siblings' Assign
+	// let its cached PIDs expire or removed by siblings' Assign
 	if (len(lastGroupID) <= 0 || lastGroupID == slov1alpha1.CoreSchedGroupIDNone) && lastCookieEntry == nil {
 		return nil
 	}
 
-	pgids, err := p.getContainerPGIDs(containerCtx.Request.CgroupParent)
+	pids, err := p.getContainerPIDs(containerCtx.Request.CgroupParent)
 	if err != nil {
-		klog.V(5).Infof("failed to get PGIDs for container %s/%s, err: %s",
+		klog.V(5).Infof("failed to get PIDs for container %s/%s, err: %s",
 			podMetaName, containerName, err)
 		return nil
 	}
-	if len(pgids) <= 0 {
-		klog.V(5).Infof("no PGID found for container %s/%s, group %s", podMetaName, containerName, groupID)
+	if len(pids) <= 0 {
+		klog.V(5).Infof("no PID found for container %s/%s, group %s", podMetaName, containerName, groupID)
 		return nil
 	}
 
@@ -329,13 +337,13 @@ func (p *Plugin) SetContainerCookie(proto protocol.HooksProtocol) error {
 
 	// do Clear:
 	// - clear cookie if any process of the container has set cookie
-	pgidsToClear := p.clearCookie(pgids, lastGroupID, lastCookieID)
-	lastCookieEntry.DeletePGIDs(pgidsToClear...)
+	pidsToClear := p.clearCookie(pids, lastGroupID, lastCookieID)
+	lastCookieEntry.DeletePIDs(pidsToClear...)
 	p.cleanCookieCacheForContainer(lastGroupID, containerUID, lastCookieEntry)
 	resetContainerCookieMetrics(containerCtx, lastGroupID, lastCookieID)
 
-	klog.V(4).Infof("clear cookie for container %s/%s finished, last group %s, last cookie %v, PGID num %v",
-		podMetaName, containerName, lastGroupID, lastCookieID, len(pgids))
+	klog.V(4).Infof("clear cookie for container %s/%s finished, last group %s, last cookie %v, PID num %v",
+		podMetaName, containerName, lastGroupID, lastCookieID, len(pids))
 
 	return nil
 }
@@ -358,17 +366,17 @@ func (p *Plugin) LoadAllCookies(podMetas []*statesinformer.PodMeta) bool {
 
 		isEnabled, groupID := p.getPodEnabledAndGroup(podAnnotations, podLabels, extension.GetKubeQosClass(pod), podUID)
 
-		containerPGIDs := p.getAllContainerPGIDs(podMeta)
+		containerPIDs := p.getAllContainerPIDs(podMeta)
 
-		for containerID, cPGID := range containerPGIDs {
-			pgids := cPGID.PGID
-			if len(pgids) <= 0 {
-				klog.V(5).Infof("aborted to get PGIDs for container %s/%s, err: no available PGID",
+		for containerID, cPID := range containerPIDs {
+			pids := cPID.PID
+			if len(pids) <= 0 {
+				klog.V(5).Infof("aborted to get PIDs for container %s/%s, err: no available PID",
 					podMeta.Key(), containerID)
 				continue
 			}
 
-			cookieID, pgidsSynced, err := p.getCookie(pgids, groupID)
+			cookieID, pidsSynced, err := p.getCookie(pids, groupID)
 			if err != nil {
 				klog.V(4).Infof("failed to sync cookie for container %s/%s, err: %s",
 					podMeta.Key(), containerID, err)
@@ -395,9 +403,9 @@ func (p *Plugin) LoadAllCookies(podMetas []*statesinformer.PodMeta) bool {
 						podMeta.Key(), containerID, isEnabled, groupID, cookieID, lastCookieID)
 					continue
 				}
-				cookieEntry.AddPGIDs(pgidsSynced...)
+				cookieEntry.AddPIDs(pidsSynced...)
 			} else {
-				cookieEntry = newCookieCacheEntry(cookieID, pgidsSynced...)
+				cookieEntry = newCookieCacheEntry(cookieID, pidsSynced...)
 			}
 
 			p.cookieCache.SetDefault(groupID, cookieEntry)
@@ -405,7 +413,7 @@ func (p *Plugin) LoadAllCookies(podMetas []*statesinformer.PodMeta) bool {
 			p.groupCache.SetDefault(containerUID, groupID)
 			klog.V(4).Infof("sync cookie for container %s/%s finished, isEnabled %v, groupID %s, cookie %v",
 				podMeta.Key(), containerID, isEnabled, groupID, cookieID)
-			metrics.RecordContainerCoreSchedCookie(pod.Namespace, pod.Name, podUID, cPGID.ContainerName, containerID,
+			metrics.RecordContainerCoreSchedCookie(pod.Namespace, pod.Name, podUID, cPID.ContainerName, containerID,
 				groupID, cookieID)
 		}
 	}
@@ -414,6 +422,7 @@ func (p *Plugin) LoadAllCookies(podMetas []*statesinformer.PodMeta) bool {
 }
 
 // getCookieCacheForPod gets the last group ID, the last cookie entry and the cookie entry for the current group.
+// If a pod has not set cookie before, return lastGroupID=0 and lastCookieEntry=nil.
 func (p *Plugin) getCookieCacheForContainer(groupID, containerUID string) (string, *CookieCacheEntry, *CookieCacheEntry) {
 	p.cookieCacheRWMutex.RLock()
 	defer p.cookieCacheRWMutex.RUnlock()

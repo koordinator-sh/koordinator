@@ -69,6 +69,7 @@ type CoreSchedExtendedInterface interface {
 type FakeCoreSchedExtended struct {
 	PIDToCookie  map[uint32]uint64
 	PIDToPGID    map[uint32]uint32
+	PIDToTGID    map[uint32]uint32
 	PIDToError   map[uint32]bool
 	CurPID       uint32
 	NextCookieID uint64
@@ -87,6 +88,9 @@ func NewFakeCoreSchedExtended(pidToCookie map[uint32]uint64, pidToPGID map[uint3
 	}
 	if f.PIDToPGID == nil {
 		f.PIDToPGID = map[uint32]uint32{}
+	}
+	if f.PIDToTGID == nil {
+		f.PIDToTGID = f.PIDToPGID
 	}
 	if f.PIDToError == nil {
 		f.PIDToError = map[uint32]bool{}
@@ -129,6 +133,12 @@ func (f *FakeCoreSchedExtended) Create(pidType CoreSchedScopeType, pid uint32) e
 				f.PIDToCookie[cPID] = f.NextCookieID
 			}
 		}
+	} else if pidType == CoreSchedScopeThreadGroup {
+		for cPID, tgid := range f.PIDToTGID {
+			if tgid == pid {
+				f.PIDToCookie[cPID] = f.NextCookieID
+			}
+		}
 	}
 	f.NextCookieID++
 	return nil
@@ -143,6 +153,12 @@ func (f *FakeCoreSchedExtended) ShareTo(pidType CoreSchedScopeType, pid uint32) 
 	if pidType == CoreSchedScopeProcessGroup {
 		for cPID, pgid := range f.PIDToPGID {
 			if pgid == pid {
+				f.PIDToCookie[cPID] = curCookieID
+			}
+		}
+	} else if pidType == CoreSchedScopeThreadGroup {
+		for cPID, tgid := range f.PIDToTGID {
+			if tgid == pid {
 				f.PIDToCookie[cPID] = curCookieID
 			}
 		}
@@ -175,6 +191,12 @@ func (f *FakeCoreSchedExtended) Clear(pidType CoreSchedScopeType, pids ...uint32
 					f.PIDToCookie[cPID] = 0
 				}
 			}
+		} else if pidType == CoreSchedScopeThreadGroup {
+			for cPID, tgid := range f.PIDToTGID {
+				if tgid == pid {
+					f.PIDToCookie[cPID] = 0
+				}
+			}
 		}
 	}
 	if len(failedPIDs) > 0 {
@@ -197,19 +219,32 @@ func (f *FakeCoreSchedExtended) Assign(pidTypeFrom CoreSchedScopeType, pidFrom u
 			failedPIDs = append(failedPIDs, pidTo)
 			continue
 		}
-		if pidTypeTo != CoreSchedScopeProcessGroup {
+		if pidTypeTo == CoreSchedScopeThreadGroup {
 			f.PIDToCookie[pidTo] = cookieID
 			continue
 		}
-		for cPID, pgid := range f.PIDToPGID {
-			if pgid != pidTo {
-				continue
+		if pidTypeTo == CoreSchedScopeProcessGroup {
+			for cPID, pgid := range f.PIDToPGID {
+				if pgid != pidTo {
+					continue
+				}
+				if _, ok := f.PIDToError[cPID]; ok {
+					failedPIDs = append(failedPIDs, cPID)
+					continue
+				}
+				f.PIDToCookie[cPID] = cookieID
 			}
-			if _, ok := f.PIDToError[cPID]; ok {
-				failedPIDs = append(failedPIDs, cPID)
-				continue
+		} else if pidTypeTo == CoreSchedScopeThreadGroup {
+			for cPID, tgid := range f.PIDToTGID {
+				if tgid != pidTo {
+					continue
+				}
+				if _, ok := f.PIDToError[cPID]; ok {
+					failedPIDs = append(failedPIDs, cPID)
+					continue
+				}
+				f.PIDToCookie[cPID] = cookieID
 			}
-			f.PIDToCookie[cPID] = cookieID
 		}
 	}
 	if len(failedPIDs) > 0 {
@@ -218,16 +253,21 @@ func (f *FakeCoreSchedExtended) Assign(pidTypeFrom CoreSchedScopeType, pidFrom u
 	return nil, nil
 }
 
-// IsCoreSchedSupported checks if the core scheduling feature is enabled in the kernel sched_features.
-// If `--enable-kernel-core-sched=true`, it tries to enables the core scheduling feature in the kernel.
-func IsCoreSchedSupported() (bool, string) {
+// EnableCoreSchedIfSupported checks if the core scheduling feature is enabled in the kernel sched_features.
+// If kernel supported, it tries to enable the core scheduling feature in the kernel.
+// The core sched's kernel feature is known set in two places, if both of them are not found, the system is considered
+// unsupported for the core scheduling:
+//  1. In `/sys/kernel/debug/sched_features`, the field `CORE_SCHED` means the feature is enabled while `NO_CORE_SCHED`
+//     means it is disabled.
+//  2. In `/proc/sys/kernel/sched_core`, the value `1` means the feature is enabled while `0` means disabled.
+func EnableCoreSchedIfSupported() (bool, string) {
 	// 1. try sysctl
 	isSysctlSupported, err := GetSchedCore()
 	if err == nil && isSysctlSupported {
 		klog.V(6).Infof("Core Sched is already enabled by sysctl")
 		return true, ""
 	}
-	if err == nil && Conf.EnableKernelCoreSched { // sysctl supported while value=0
+	if err == nil { // sysctl supported while value=0
 		klog.V(6).Infof("Core Sched is disabled by sysctl, try to enable it")
 		err = SetSchedCore(true)
 		if err == nil {
@@ -250,7 +290,7 @@ func IsCoreSchedSupported() (bool, string) {
 		klog.V(6).Infof("Core Sched is already enabled by sched_features")
 		return true, ""
 	}
-	if err == nil && Conf.EnableKernelCoreSched {
+	if err == nil {
 		klog.V(6).Infof("Core Sched is disabled by sched_features, try to enable it")
 		isSchedFeatureEnabled, msg = SetCoreSchedFeatureEnabled()
 		if isSchedFeatureEnabled {

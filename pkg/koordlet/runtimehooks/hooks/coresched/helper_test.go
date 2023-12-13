@@ -34,7 +34,7 @@ func Test_getCookie(t *testing.T) {
 		coreSchedExtended sysutil.CoreSchedExtendedInterface
 	}
 	type args struct {
-		pgids   []uint32
+		pids    []uint32
 		groupID string
 	}
 	tests := []struct {
@@ -46,7 +46,7 @@ func Test_getCookie(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			name: "no pgid to sync",
+			name: "no pid to sync",
 			fields: fields{
 				coreSchedExtended: sysutil.NewFakeCoreSchedExtended(map[uint32]uint64{
 					1: 0,
@@ -55,7 +55,7 @@ func Test_getCookie(t *testing.T) {
 				}, map[uint32]bool{}),
 			},
 			args: args{
-				pgids: nil,
+				pids: nil,
 			},
 			want:    0,
 			want1:   nil,
@@ -79,7 +79,7 @@ func Test_getCookie(t *testing.T) {
 				}),
 			},
 			args: args{
-				pgids: []uint32{
+				pids: []uint32{
 					1000,
 					1001,
 					1002,
@@ -109,7 +109,7 @@ func Test_getCookie(t *testing.T) {
 				}),
 			},
 			args: args{
-				pgids: []uint32{
+				pids: []uint32{
 					1000,
 					1001,
 					1002,
@@ -125,7 +125,7 @@ func Test_getCookie(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "all pgids get failed",
+			name: "all pids get failed",
 			fields: fields{
 				coreSchedExtended: sysutil.NewFakeCoreSchedExtended(map[uint32]uint64{
 					1: 0,
@@ -142,7 +142,7 @@ func Test_getCookie(t *testing.T) {
 				}),
 			},
 			args: args{
-				pgids: []uint32{
+				pids: []uint32{
 					1000,
 					1001,
 					1002,
@@ -170,7 +170,7 @@ func Test_getCookie(t *testing.T) {
 				}),
 			},
 			args: args{
-				pgids: []uint32{
+				pids: []uint32{
 					1000,
 					1001,
 					1002,
@@ -208,7 +208,7 @@ func Test_getCookie(t *testing.T) {
 				}),
 			},
 			args: args{
-				pgids: []uint32{
+				pids: []uint32{
 					1000,
 					1001,
 					1002,
@@ -230,7 +230,7 @@ func Test_getCookie(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			p := newPlugin()
 			p.cse = tt.fields.coreSchedExtended
-			got, got1, gotErr := p.getCookie(tt.args.pgids, tt.args.groupID)
+			got, got1, gotErr := p.getCookie(tt.args.pids, tt.args.groupID)
 			assert.Equal(t, tt.wantErr, gotErr != nil, gotErr)
 			assert.Equal(t, tt.want, got)
 			assert.Equal(t, tt.want1, got1)
@@ -244,7 +244,7 @@ func Test_addCookie(t *testing.T) {
 		nextCookieID      uint64
 	}
 	type args struct {
-		pgids   []uint32
+		pids    []uint32
 		groupID string
 	}
 	tests := []struct {
@@ -256,7 +256,7 @@ func Test_addCookie(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			name: "no pgid to add",
+			name: "no pid to add",
 			fields: fields{
 				coreSchedExtended: sysutil.NewFakeCoreSchedExtended(map[uint32]uint64{
 					1: 0,
@@ -267,14 +267,14 @@ func Test_addCookie(t *testing.T) {
 				}, map[uint32]bool{}),
 			},
 			args: args{
-				pgids: nil,
+				pids: nil,
 			},
 			want:    0,
 			want1:   nil,
 			wantErr: false,
 		},
 		{
-			name: "add cookie for pgids with non-default cookie",
+			name: "add cookie for pids with non-default cookie",
 			fields: fields{
 				coreSchedExtended: sysutil.NewFakeCoreSchedExtended(map[uint32]uint64{
 					1:    0,
@@ -290,7 +290,7 @@ func Test_addCookie(t *testing.T) {
 				nextCookieID: 100000,
 			},
 			args: args{
-				pgids: []uint32{
+				pids: []uint32{
 					1000,
 					1001,
 				},
@@ -303,7 +303,7 @@ func Test_addCookie(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "failed to add cookie for beginning pgid",
+			name: "failed to add cookie for beginning pid",
 			fields: fields{
 				coreSchedExtended: sysutil.NewFakeCoreSchedExtended(map[uint32]uint64{
 					1:    0,
@@ -322,7 +322,7 @@ func Test_addCookie(t *testing.T) {
 				nextCookieID: 100000,
 			},
 			args: args{
-				pgids: []uint32{
+				pids: []uint32{
 					1000,
 					1001,
 					1002,
@@ -351,7 +351,7 @@ func Test_addCookie(t *testing.T) {
 				nextCookieID: 100000,
 			},
 			args: args{
-				pgids: []uint32{
+				pids: []uint32{
 					1000,
 					1001,
 					1002,
@@ -387,7 +387,7 @@ func Test_addCookie(t *testing.T) {
 				nextCookieID: 200000,
 			},
 			args: args{
-				pgids: []uint32{
+				pids: []uint32{
 					1000,
 					1001,
 					1002,
@@ -411,7 +411,7 @@ func Test_addCookie(t *testing.T) {
 			f := tt.fields.coreSchedExtended.(*sysutil.FakeCoreSchedExtended)
 			f.SetCurPID(curPID)
 			f.SetNextCookieID(tt.fields.nextCookieID)
-			got, got1, gotErr := p.addCookie(tt.args.pgids, tt.args.groupID)
+			got, got1, gotErr := p.addCookie(tt.args.pids, tt.args.groupID)
 			assert.Equal(t, tt.wantErr, gotErr != nil, gotErr)
 			assert.Equal(t, tt.want, got)
 			assert.Equal(t, tt.want1, got1)
@@ -427,8 +427,8 @@ func Test_assignCookie(t *testing.T) {
 		coreSchedExtended sysutil.CoreSchedExtendedInterface
 	}
 	type args struct {
-		pgids          []uint32
-		siblingPGIDs   []uint32
+		pids           []uint32
+		siblingPIDs    []uint32
 		groupID        string
 		targetCookieID uint64
 	}
@@ -441,7 +441,7 @@ func Test_assignCookie(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			name: "no pgid to assign",
+			name: "no pid to assign",
 			fields: fields{
 				coreSchedExtended: sysutil.NewFakeCoreSchedExtended(map[uint32]uint64{},
 					map[uint32]uint32{},
@@ -456,7 +456,7 @@ func Test_assignCookie(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "all pgid unknown",
+			name: "all pid unknown",
 			fields: fields{
 				coreSchedExtended: sysutil.NewFakeCoreSchedExtended(map[uint32]uint64{
 					1:    0,
@@ -474,11 +474,11 @@ func Test_assignCookie(t *testing.T) {
 				}),
 			},
 			args: args{
-				pgids: []uint32{
+				pids: []uint32{
 					1001,
 					1002,
 				},
-				siblingPGIDs: []uint32{
+				siblingPIDs: []uint32{
 					1000,
 				},
 				groupID:        "1",
@@ -489,7 +489,7 @@ func Test_assignCookie(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "no valid sibling pgid to share",
+			name: "no valid sibling pid to share",
 			fields: fields{
 				coreSchedExtended: sysutil.NewFakeCoreSchedExtended(map[uint32]uint64{
 					1:    0,
@@ -505,11 +505,11 @@ func Test_assignCookie(t *testing.T) {
 				}),
 			},
 			args: args{
-				pgids: []uint32{
+				pids: []uint32{
 					1001,
 					1002,
 				},
-				siblingPGIDs: []uint32{
+				siblingPIDs: []uint32{
 					1000,
 				},
 				groupID:        "1",
@@ -522,7 +522,7 @@ func Test_assignCookie(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name: "assign pgid successfully",
+			name: "assign pid successfully",
 			fields: fields{
 				coreSchedExtended: sysutil.NewFakeCoreSchedExtended(map[uint32]uint64{
 					1:    0,
@@ -538,11 +538,11 @@ func Test_assignCookie(t *testing.T) {
 				}),
 			},
 			args: args{
-				pgids: []uint32{
+				pids: []uint32{
 					1001,
 					1002,
 				},
-				siblingPGIDs: []uint32{
+				siblingPIDs: []uint32{
 					1000,
 				},
 				groupID:        "1",
@@ -555,7 +555,7 @@ func Test_assignCookie(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "assign pgid successfully 1",
+			name: "assign pid successfully 1",
 			fields: fields{
 				coreSchedExtended: sysutil.NewFakeCoreSchedExtended(map[uint32]uint64{
 					1:    0,
@@ -576,13 +576,13 @@ func Test_assignCookie(t *testing.T) {
 				}),
 			},
 			args: args{
-				pgids: []uint32{
+				pids: []uint32{
 					1001,
 					1002,
 					1003,
 					1010,
 				},
-				siblingPGIDs: []uint32{
+				siblingPIDs: []uint32{
 					1000,
 				},
 				groupID:        "1",
@@ -601,7 +601,7 @@ func Test_assignCookie(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			p := newPlugin()
 			p.cse = tt.fields.coreSchedExtended
-			got, got1, gotErr := p.assignCookie(tt.args.pgids, tt.args.siblingPGIDs, tt.args.groupID, tt.args.targetCookieID)
+			got, got1, gotErr := p.assignCookie(tt.args.pids, tt.args.siblingPIDs, tt.args.groupID, tt.args.targetCookieID)
 			assert.Equal(t, tt.wantErr, gotErr != nil, gotErr)
 			assert.Equal(t, tt.want, got)
 			assert.Equal(t, tt.want1, got1)
@@ -614,7 +614,7 @@ func Test_clearCookie(t *testing.T) {
 		coreSchedExtended sysutil.CoreSchedExtendedInterface
 	}
 	type args struct {
-		pgids        []uint32
+		pids         []uint32
 		groupID      string
 		lastCookieID uint64
 	}
@@ -625,7 +625,7 @@ func Test_clearCookie(t *testing.T) {
 		want   []uint32
 	}{
 		{
-			name: "no pgid to clear",
+			name: "no pid to clear",
 			fields: fields{
 				coreSchedExtended: sysutil.NewFakeCoreSchedExtended(map[uint32]uint64{},
 					map[uint32]uint32{},
@@ -638,7 +638,7 @@ func Test_clearCookie(t *testing.T) {
 			want: nil,
 		},
 		{
-			name: "all pgid unknown",
+			name: "all pid unknown",
 			fields: fields{
 				coreSchedExtended: sysutil.NewFakeCoreSchedExtended(map[uint32]uint64{
 					1:    0,
@@ -656,7 +656,7 @@ func Test_clearCookie(t *testing.T) {
 				}),
 			},
 			args: args{
-				pgids: []uint32{
+				pids: []uint32{
 					1001,
 					1002,
 				},
@@ -666,7 +666,7 @@ func Test_clearCookie(t *testing.T) {
 			want: nil,
 		},
 		{
-			name: "clear pgid correctly",
+			name: "clear pid correctly",
 			fields: fields{
 				coreSchedExtended: sysutil.NewFakeCoreSchedExtended(map[uint32]uint64{
 					1:    0,
@@ -682,7 +682,7 @@ func Test_clearCookie(t *testing.T) {
 				}),
 			},
 			args: args{
-				pgids: []uint32{
+				pids: []uint32{
 					1001,
 					1002,
 				},
@@ -698,7 +698,7 @@ func Test_clearCookie(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			p := newPlugin()
 			p.cse = tt.fields.coreSchedExtended
-			got := p.clearCookie(tt.args.pgids, tt.args.groupID, tt.args.lastCookieID)
+			got := p.clearCookie(tt.args.pids, tt.args.groupID, tt.args.lastCookieID)
 			assert.Equal(t, tt.want, got)
 		})
 	}
@@ -915,7 +915,7 @@ func Test_isPodEnabled(t *testing.T) {
 	}
 }
 
-func Test_getContainerPGIDs(t *testing.T) {
+func Test_getContainerPIDs(t *testing.T) {
 	type fields struct {
 		prepareFn   func(helper *sysutil.FileTestUtil)
 		useCgroupV2 bool
@@ -928,20 +928,17 @@ func Test_getContainerPGIDs(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			name: "get container PGIDs correctly",
+			name: "get container PIDs correctly",
 			fields: fields{
 				prepareFn: func(helper *sysutil.FileTestUtil) {
 					helper.WriteCgroupFileContents("kubepods/podxxxxxx/yyyyyy", sysutil.CPUProcs, "12344\n12345\n")
-					statPath := sysutil.GetProcPIDStatPath(12344)
-					helper.WriteFileContents(statPath, `12344 (stress) S 12340 12344 12340 12300 12344 123450 151 0 0 0 0 0 ...`)
-					statPath1 := sysutil.GetProcPIDStatPath(12345)
-					helper.WriteFileContents(statPath1, `12345 (stress) S 12340 12344 12340 12300 12345 123450 151 0 0 0 0 0 ...`)
 				},
 				useCgroupV2: false,
 			},
 			arg: "kubepods/podxxxxxx/yyyyyy",
 			want: []uint32{
 				12344,
+				12345,
 			},
 			wantErr: false,
 		},
@@ -956,42 +953,32 @@ func Test_getContainerPGIDs(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "consider container pids as PGIDs when PGIDs not exist",
+			name: "consider container pids as PIDs when PIDs not exist",
 			fields: fields{
 				prepareFn: func(helper *sysutil.FileTestUtil) {
 					helper.WriteCgroupFileContents("kubepods/podxxxxxx/yyyyyy", sysutil.CPUProcs, "12344\n12345\n12350\n")
-					statPath := sysutil.GetProcPIDStatPath(12344)
-					helper.WriteFileContents(statPath, `12344 (stress) S 12340 12344 12340 12300 12344 123450 151 0 0 0 0 0 ...`)
-					statPath1 := sysutil.GetProcPIDStatPath(12345)
-					helper.WriteFileContents(statPath1, `12345 (stress) S 12340 12344 12340 12300 12345 123450 151 0 0 0 0 0 ...`)
-					statPath2 := sysutil.GetProcPIDStatPath(12350)
-					helper.WriteFileContents(statPath2, `12350 (stress) S 12350 12346 12350 12350 12350 123500 200 0 0 0 0 0 ...`)
 				},
 			},
 			arg: "kubepods/podxxxxxx/yyyyyy",
 			want: []uint32{
 				12344,
+				12345,
 				12350,
 			},
 			wantErr: false,
 		},
 		{
-			name: "get container PGIDs correctly on cgroup-v2",
+			name: "get container PIDs correctly on cgroup-v2",
 			fields: fields{
 				prepareFn: func(helper *sysutil.FileTestUtil) {
 					helper.WriteCgroupFileContents("kubepods/podxxxxxx/yyyyyy", sysutil.CPUProcsV2, "12344\n12345\n12350\n")
-					statPath := sysutil.GetProcPIDStatPath(12344)
-					helper.WriteFileContents(statPath, `12344 (stress) S 12340 12344 12340 12300 12344 123450 151 0 0 0 0 0 ...`)
-					statPath1 := sysutil.GetProcPIDStatPath(12345)
-					helper.WriteFileContents(statPath1, `12345 (stress) S 12340 12344 12340 12300 12345 123450 151 0 0 0 0 0 ...`)
-					statPath2 := sysutil.GetProcPIDStatPath(12350)
-					helper.WriteFileContents(statPath2, `12350 (stress) S 12350 12350 12350 12350 12350 123500 200 0 0 0 0 0 ...`)
 				},
 				useCgroupV2: true,
 			},
 			arg: "kubepods/podxxxxxx/yyyyyy",
 			want: []uint32{
 				12344,
+				12345,
 				12350,
 			},
 			wantErr: false,
@@ -1010,7 +997,7 @@ func Test_getContainerPGIDs(t *testing.T) {
 			p.Setup(hooks.Options{
 				Reader: resourceexecutor.NewCgroupReader(),
 			})
-			got, gotErr := p.getContainerPGIDs(tt.arg)
+			got, gotErr := p.getContainerPIDs(tt.arg)
 			assert.Equal(t, tt.wantErr, gotErr != nil)
 			assert.Equal(t, tt.want, got)
 		})

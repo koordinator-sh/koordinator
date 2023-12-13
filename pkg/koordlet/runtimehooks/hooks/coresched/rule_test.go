@@ -498,7 +498,7 @@ func Test_ruleUpdateCb(t *testing.T) {
 		rule               *Rule
 		sysSupported       *bool
 		initialized        bool
-		cookieToPGIDs      map[uint64][]uint32
+		cookieToPIDs       map[uint64][]uint32
 		groupToCookie      map[string]uint64
 		parentDirToCPUIdle map[string]int64
 	}
@@ -621,14 +621,6 @@ func Test_ruleUpdateCb(t *testing.T) {
 					helper.WriteCgroupFileContents(containerCgroupDir, sysutil.CPUProcsV2, "12344\n12345\n12346\n")
 					helper.WriteCgroupFileContents(containerCgroupDir, cpuset, "0-127")
 					helper.WriteCgroupFileContents("kubepods.slice/kubepods-podxxxxxx.slice", cpuIdle, "0")
-					statPath0 := sysutil.GetProcPIDStatPath(12340)
-					helper.WriteFileContents(statPath0, `12340 (stress) S 12340 12340 12340 12300 12340 123400 100 0 0 0 0 0 ...`)
-					statPath := sysutil.GetProcPIDStatPath(12344)
-					helper.WriteFileContents(statPath, `12344 (stress) S 12340 12344 12340 12300 12344 123450 151 0 0 0 0 0 ...`)
-					statPath1 := sysutil.GetProcPIDStatPath(12345)
-					helper.WriteFileContents(statPath1, `12345 (stress) S 12340 12344 12340 12300 12345 123450 151 0 0 0 0 0 ...`)
-					statPath2 := sysutil.GetProcPIDStatPath(12346)
-					helper.WriteFileContents(statPath2, `12346 (stress) S 12340 12346 12340 12300 12346 123450 151 0 0 0 0 0 ...`)
 				},
 				plugin: testGetEnabledPlugin(),
 				preparePluginFn: func(p *Plugin) {
@@ -753,10 +745,11 @@ func Test_ruleUpdateCb(t *testing.T) {
 				rule:         testGetEnabledRule(),
 				sysSupported: pointer.Bool(true),
 				initialized:  true,
-				cookieToPGIDs: map[uint64][]uint32{
+				cookieToPIDs: map[uint64][]uint32{
 					1000000: {
 						12340,
 						12344,
+						12345,
 					},
 				},
 				groupToCookie: map[string]uint64{
@@ -796,14 +789,6 @@ func Test_ruleUpdateCb(t *testing.T) {
 					helper.WriteCgroupFileContents(containerCgroupDir, sysutil.CPUProcsV2, "12344\n12345\n12346\n")
 					helper.WriteCgroupFileContents(containerCgroupDir, cpuset, "0-127")
 					helper.WriteCgroupFileContents("kubepods.slice/kubepods-podxxxxxx.slice", cpuIdle, "0")
-					statPath0 := sysutil.GetProcPIDStatPath(12340)
-					helper.WriteFileContents(statPath0, `12340 (stress) S 12340 12340 12340 12300 12340 123400 100 0 0 0 0 0 ...`)
-					statPath := sysutil.GetProcPIDStatPath(12344)
-					helper.WriteFileContents(statPath, `12344 (stress) S 12340 12344 12340 12300 12344 123450 151 0 0 0 0 0 ...`)
-					statPath1 := sysutil.GetProcPIDStatPath(12345)
-					helper.WriteFileContents(statPath1, `12345 (stress) S 12340 12344 12340 12300 12345 123450 151 0 0 0 0 0 ...`)
-					statPath2 := sysutil.GetProcPIDStatPath(12346)
-					helper.WriteFileContents(statPath2, `12346 (stress) S 12340 12346 12340 12300 12346 123450 151 0 0 0 0 0 ...`)
 				},
 				plugin: testGetEnabledPlugin(),
 				preparePluginFn: func(p *Plugin) {
@@ -929,10 +914,11 @@ func Test_ruleUpdateCb(t *testing.T) {
 				rule:         testGetAllEnabledRule(),
 				sysSupported: pointer.Bool(true),
 				initialized:  true,
-				cookieToPGIDs: map[uint64][]uint32{
+				cookieToPIDs: map[uint64][]uint32{
 					1000000: {
 						12340,
 						12344,
+						12345,
 					},
 				},
 				groupToCookie: map[string]uint64{
@@ -972,21 +958,11 @@ func Test_ruleUpdateCb(t *testing.T) {
 					helper.WriteCgroupFileContents(containerCgroupDir, sysutil.CPUProcsV2, "12344\n12345\n12346\n")
 					helper.WriteCgroupFileContents(containerCgroupDir, cpuset, "0-127")
 					helper.WriteCgroupFileContents("kubepods.slice/kubepods-podxxxxxx.slice", cpuIdle, "0")
-					statPath0 := sysutil.GetProcPIDStatPath(12340)
-					helper.WriteFileContents(statPath0, `12340 (stress) S 12340 12340 12340 12300 12340 123400 100 0 0 0 0 0 ...`)
-					statPath := sysutil.GetProcPIDStatPath(12344)
-					helper.WriteFileContents(statPath, `12344 (stress) S 12340 12344 12340 12300 12344 123450 151 0 0 0 0 0 ...`)
-					statPath1 := sysutil.GetProcPIDStatPath(12345)
-					helper.WriteFileContents(statPath1, `12345 (stress) S 12340 12344 12340 12300 12345 123450 151 0 0 0 0 0 ...`)
-					statPath2 := sysutil.GetProcPIDStatPath(12346)
-					helper.WriteFileContents(statPath2, `12346 (stress) S 12340 12346 12340 12300 12346 123450 151 0 0 0 0 0 ...`)
 					sandboxContainerCgroupDir1 := testGetContainerCgroupParentDir(t, "kubepods.slice/kubepods-burstable.slice/kubepods-burstable-podssssss.slice", "containerd://eeeeee")
 					helper.WriteCgroupFileContents(sandboxContainerCgroupDir1, sysutil.CPUProcs, "100\n")
 					helper.WriteCgroupFileContents(sandboxContainerCgroupDir1, sysutil.CPUProcsV2, "100\n")
 					helper.WriteCgroupFileContents(sandboxContainerCgroupDir1, cpuset, "0-127")
 					helper.WriteCgroupFileContents("kubepods.slice/kubepods-burstable.slice/kubepods-burstable-podssssss.slice", cpuIdle, "0")
-					statPath3 := sysutil.GetProcPIDStatPath(100)
-					helper.WriteFileContents(statPath3, `100 (koordlet) S 100 100 100 100 100 2000 50 0 0 0 0 0 ...`)
 				},
 				plugin: testGetEnabledPlugin(),
 				preparePluginFn: func(p *Plugin) {
@@ -1156,10 +1132,11 @@ func Test_ruleUpdateCb(t *testing.T) {
 				rule:         testGetEnabledRule(),
 				sysSupported: pointer.Bool(true),
 				initialized:  true,
-				cookieToPGIDs: map[uint64][]uint32{
+				cookieToPIDs: map[uint64][]uint32{
 					1000000: {
 						12340,
 						12344,
+						12345,
 					},
 				},
 				groupToCookie: map[string]uint64{
@@ -1200,21 +1177,11 @@ func Test_ruleUpdateCb(t *testing.T) {
 					helper.WriteCgroupFileContents(containerCgroupDir, sysutil.CPUProcsV2, "12344\n12345\n12346\n")
 					helper.WriteCgroupFileContents(containerCgroupDir, cpuset, "0-127")
 					helper.WriteCgroupFileContents("kubepods.slice/kubepods-podxxxxxx.slice", cpuIdle, "0")
-					statPath0 := sysutil.GetProcPIDStatPath(12340)
-					helper.WriteFileContents(statPath0, `12340 (stress) S 12340 12340 12340 12300 12340 123400 100 0 0 0 0 0 ...`)
-					statPath := sysutil.GetProcPIDStatPath(12344)
-					helper.WriteFileContents(statPath, `12344 (stress) S 12340 12344 12340 12300 12344 123450 151 0 0 0 0 0 ...`)
-					statPath1 := sysutil.GetProcPIDStatPath(12345)
-					helper.WriteFileContents(statPath1, `12345 (stress) S 12340 12344 12340 12300 12345 123450 151 0 0 0 0 0 ...`)
-					statPath2 := sysutil.GetProcPIDStatPath(12346)
-					helper.WriteFileContents(statPath2, `12346 (stress) S 12340 12346 12340 12300 12346 123450 151 0 0 0 0 0 ...`)
 					sandboxContainerCgroupDir1 := testGetContainerCgroupParentDir(t, "kubepods.slice/kubepods-besteffort.slice/kubepods-besteffort-podssssss.slice", "containerd://eeeeee")
 					helper.WriteCgroupFileContents(sandboxContainerCgroupDir1, sysutil.CPUProcs, "100\n")
 					helper.WriteCgroupFileContents(sandboxContainerCgroupDir1, sysutil.CPUProcsV2, "100\n")
 					helper.WriteCgroupFileContents(sandboxContainerCgroupDir1, cpuset, "0-127")
 					helper.WriteCgroupFileContents("kubepods.slice/kubepods-besteffort.slice/kubepods-besteffort-podssssss.slice", cpuIdle, "0")
-					statPath3 := sysutil.GetProcPIDStatPath(100)
-					helper.WriteFileContents(statPath3, `100 (koordlet) S 100 100 100 100 100 2000 50 0 0 0 0 0 ...`)
 				},
 				plugin: testGetEnabledPlugin(),
 				preparePluginFn: func(p *Plugin) {
@@ -1386,13 +1353,14 @@ func Test_ruleUpdateCb(t *testing.T) {
 				rule:         testGetEnabledRule(),
 				sysSupported: pointer.Bool(true),
 				initialized:  true,
-				cookieToPGIDs: map[uint64][]uint32{
+				cookieToPIDs: map[uint64][]uint32{
 					2000: {
 						100,
 					},
 					1000000: {
 						12340,
 						12344,
+						12345,
 					},
 				},
 				groupToCookie: map[string]uint64{
@@ -1433,27 +1401,15 @@ func Test_ruleUpdateCb(t *testing.T) {
 					helper.WriteCgroupFileContents(containerCgroupDir, sysutil.CPUProcs, "12344\n12345\n12346\n")
 					helper.WriteCgroupFileContents(containerCgroupDir, sysutil.CPUProcsV2, "12344\n12345\n12346\n")
 					helper.WriteCgroupFileContents(containerCgroupDir, cpuset, "0-127")
-					statPath0 := sysutil.GetProcPIDStatPath(12340)
-					helper.WriteFileContents(statPath0, `12340 (stress) S 12340 12340 12340 12300 12340 123400 100 0 0 0 0 0 ...`)
-					statPath := sysutil.GetProcPIDStatPath(12344)
-					helper.WriteFileContents(statPath, `12344 (stress) S 12340 12344 12340 12300 12344 123450 151 0 0 0 0 0 ...`)
-					statPath1 := sysutil.GetProcPIDStatPath(12345)
-					helper.WriteFileContents(statPath1, `12345 (stress) S 12340 12344 12340 12300 12345 123450 151 0 0 0 0 0 ...`)
-					statPath2 := sysutil.GetProcPIDStatPath(12346)
-					helper.WriteFileContents(statPath2, `12346 (stress) S 12340 12346 12340 12300 12346 123450 151 0 0 0 0 0 ...`)
 					containerCgroupDir1 := testGetContainerCgroupParentDir(t, "kubepods.slice/kubepods-podxxxxxx.slice", "containerd://zzzzzz")
 					helper.WriteCgroupFileContents(containerCgroupDir1, sysutil.CPUProcs, "12350\n")
 					helper.WriteCgroupFileContents(containerCgroupDir1, sysutil.CPUProcsV2, "12350\n")
 					helper.WriteCgroupFileContents(containerCgroupDir1, cpuset, "0-127")
-					statPath3 := sysutil.GetProcPIDStatPath(12350)
-					helper.WriteFileContents(statPath3, `12350 (stress) S 12350 12350 12350 12350 12350 123500 200 0 0 0 0 0 ...`)
 					helper.WriteCgroupFileContents("kubepods.slice/kubepods-podnnnnnn.slice", cpuIdle, "0")
 					sandboxContainerCgroupDir1 := testGetContainerCgroupParentDir(t, "kubepods.slice/kubepods-podnnnnnn.slice", "containerd://mmmmmm")
 					helper.WriteCgroupFileContents(sandboxContainerCgroupDir1, sysutil.CPUProcs, "15000\n")
 					helper.WriteCgroupFileContents(sandboxContainerCgroupDir1, sysutil.CPUProcsV2, "15000\n")
 					helper.WriteCgroupFileContents(sandboxContainerCgroupDir1, cpuset, "9-12,73-76")
-					statPath4 := sysutil.GetProcPIDStatPath(15000)
-					helper.WriteFileContents(statPath4, `15000 (bash) S 15000 15000 15000 15000 15000 150000 500 0 0 0 0 0 ...`)
 				},
 				plugin: testGetEnabledPlugin(),
 				preparePluginFn: func(p *Plugin) {
@@ -1608,7 +1564,7 @@ func Test_ruleUpdateCb(t *testing.T) {
 				rule:         testGetEnabledRule(),
 				sysSupported: pointer.Bool(true),
 				initialized:  true,
-				cookieToPGIDs: map[uint64][]uint32{
+				cookieToPIDs: map[uint64][]uint32{
 					1000000: {
 						12340,
 						12344,
@@ -1667,10 +1623,10 @@ func Test_ruleUpdateCb(t *testing.T) {
 				entry, ok := entryIf.(*CookieCacheEntry)
 				assert.True(t, ok)
 				assert.Equal(t, cookieID, entry.CookieID, groupID)
-				assert.Equal(t, len(tt.wantFields.cookieToPGIDs[cookieID]), len(entry.GetAllPGIDs()),
-					"expect [%v] but got [%v]", tt.wantFields.cookieToPGIDs[cookieID], entry.GetAllPGIDs())
-				for _, pgid := range tt.wantFields.cookieToPGIDs[cookieID] {
-					assert.True(t, entry.HasPGID(pgid), pgid)
+				assert.Equal(t, len(tt.wantFields.cookieToPIDs[cookieID]), len(entry.GetAllPIDs()),
+					"expect [%v] but got [%v]", tt.wantFields.cookieToPIDs[cookieID], entry.GetAllPIDs())
+				for _, pid := range tt.wantFields.cookieToPIDs[cookieID] {
+					assert.True(t, entry.HasPID(pid), pid)
 				}
 			}
 			for parentDir, wantValue := range tt.wantFields.parentDirToCPUIdle {

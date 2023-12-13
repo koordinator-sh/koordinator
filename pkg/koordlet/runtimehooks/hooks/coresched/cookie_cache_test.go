@@ -27,14 +27,14 @@ import (
 func TestCookieCacheEntry(t *testing.T) {
 	type args struct {
 		initCookieID uint64
-		orderedPGIDs []uint32
+		orderedPIDs  []uint32
 		setCookieID  uint64
-		addPGIDs     []uint32
+		addPIDs      []uint32
 	}
 	type expects struct {
-		expectInvalid             bool
-		expectOrderedPGIDsAdded   []uint32
-		expectOrderedPGIDsDeleted []uint32
+		expectInvalid            bool
+		expectOrderedPIDsAdded   []uint32
+		expectOrderedPIDsDeleted []uint32
 	}
 	tests := []struct {
 		name    string
@@ -54,7 +54,7 @@ func TestCookieCacheEntry(t *testing.T) {
 			name: "valid entry",
 			args: args{
 				initCookieID: 100000000,
-				orderedPGIDs: []uint32{
+				orderedPIDs: []uint32{
 					1,
 					2,
 					1000,
@@ -68,7 +68,7 @@ func TestCookieCacheEntry(t *testing.T) {
 			},
 			expects: expects{
 				expectInvalid: false,
-				expectOrderedPGIDsAdded: []uint32{
+				expectOrderedPIDsAdded: []uint32{
 					1,
 					2,
 					1000,
@@ -78,7 +78,7 @@ func TestCookieCacheEntry(t *testing.T) {
 					2000,
 					2002,
 				},
-				expectOrderedPGIDsDeleted: []uint32{
+				expectOrderedPIDsDeleted: []uint32{
 					1,
 					2,
 					1000,
@@ -94,23 +94,23 @@ func TestCookieCacheEntry(t *testing.T) {
 			name: "valid entry add",
 			args: args{
 				initCookieID: 100000000,
-				orderedPGIDs: []uint32{
+				orderedPIDs: []uint32{
 					10000,
 					10010,
 				},
 				setCookieID: 200000000,
-				addPGIDs: []uint32{
+				addPIDs: []uint32{
 					10001,
 				},
 			},
 			expects: expects{
 				expectInvalid: false,
-				expectOrderedPGIDsAdded: []uint32{
+				expectOrderedPIDsAdded: []uint32{
 					10000,
 					10001,
 					10010,
 				},
-				expectOrderedPGIDsDeleted: []uint32{
+				expectOrderedPIDsDeleted: []uint32{
 					10000,
 					10010,
 				},
@@ -120,7 +120,7 @@ func TestCookieCacheEntry(t *testing.T) {
 			name: "valid entry add 1",
 			args: args{
 				initCookieID: 100000000,
-				orderedPGIDs: []uint32{
+				orderedPIDs: []uint32{
 					10,
 					1000,
 					1001,
@@ -130,7 +130,7 @@ func TestCookieCacheEntry(t *testing.T) {
 					2002,
 				},
 				setCookieID: 100000000,
-				addPGIDs: []uint32{
+				addPIDs: []uint32{
 					3,
 					1011,
 					3000,
@@ -138,7 +138,7 @@ func TestCookieCacheEntry(t *testing.T) {
 			},
 			expects: expects{
 				expectInvalid: false,
-				expectOrderedPGIDsAdded: []uint32{
+				expectOrderedPIDsAdded: []uint32{
 					3,
 					10,
 					1000,
@@ -150,7 +150,7 @@ func TestCookieCacheEntry(t *testing.T) {
 					2002,
 					3000,
 				},
-				expectOrderedPGIDsDeleted: []uint32{
+				expectOrderedPIDsDeleted: []uint32{
 					10,
 					1000,
 					1001,
@@ -165,7 +165,7 @@ func TestCookieCacheEntry(t *testing.T) {
 			name: "valid entry add 2",
 			args: args{
 				initCookieID: 100000000,
-				orderedPGIDs: []uint32{
+				orderedPIDs: []uint32{
 					10,
 					1000,
 					1001,
@@ -174,7 +174,7 @@ func TestCookieCacheEntry(t *testing.T) {
 					2002,
 				},
 				setCookieID: 100000000,
-				addPGIDs: []uint32{
+				addPIDs: []uint32{
 					1001,
 					1010,
 					3100,
@@ -183,7 +183,7 @@ func TestCookieCacheEntry(t *testing.T) {
 			},
 			expects: expects{
 				expectInvalid: false,
-				expectOrderedPGIDsAdded: []uint32{
+				expectOrderedPIDsAdded: []uint32{
 					10,
 					1000,
 					1001,
@@ -194,7 +194,7 @@ func TestCookieCacheEntry(t *testing.T) {
 					3000,
 					3100,
 				},
-				expectOrderedPGIDsDeleted: []uint32{
+				expectOrderedPIDsDeleted: []uint32{
 					10,
 					1000,
 					1100,
@@ -206,13 +206,13 @@ func TestCookieCacheEntry(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			pgidsOO := testGetOutOfOrderUint32Slice(tt.args.orderedPGIDs)
+			pidsOO := testGetOutOfOrderUint32Slice(tt.args.orderedPIDs)
 
 			// ordered after init
-			entry := newCookieCacheEntry(tt.args.initCookieID, pgidsOO...)
+			entry := newCookieCacheEntry(tt.args.initCookieID, pidsOO...)
 			assert.NotNil(t, entry)
 			assert.Equal(t, tt.args.initCookieID, entry.GetCookieID())
-			assert.Equal(t, tt.args.orderedPGIDs, entry.GetAllPGIDs(), pgidsOO)
+			assert.Equal(t, tt.args.orderedPIDs, entry.GetAllPIDs(), pidsOO)
 
 			// check valid
 			assert.Equal(t, tt.expects.expectInvalid, entry.IsEntryInvalid())
@@ -221,27 +221,27 @@ func TestCookieCacheEntry(t *testing.T) {
 			entry.SetCookieID(tt.args.setCookieID)
 			assert.Equal(t, tt.args.setCookieID, entry.GetCookieID())
 
-			// pgid exists after init
-			if len(tt.args.orderedPGIDs) > 0 {
-				assert.True(t, entry.HasPGID(tt.args.orderedPGIDs[0]))
+			// pid exists after init
+			if len(tt.args.orderedPIDs) > 0 {
+				assert.True(t, entry.HasPID(tt.args.orderedPIDs[0]))
 			}
 
 			// ordered after add
-			entry.AddPGIDs(tt.args.addPGIDs...)
-			assert.Equal(t, tt.expects.expectOrderedPGIDsAdded, entry.GetAllPGIDs())
+			entry.AddPIDs(tt.args.addPIDs...)
+			assert.Equal(t, tt.expects.expectOrderedPIDsAdded, entry.GetAllPIDs())
 
-			// pgid exists after add
-			if len(tt.args.addPGIDs) > 0 {
-				assert.True(t, entry.HasPGID(tt.args.addPGIDs[0]))
+			// pid exists after add
+			if len(tt.args.addPIDs) > 0 {
+				assert.True(t, entry.HasPID(tt.args.addPIDs[0]))
 			}
 
 			// ordered after delete
-			entry.DeletePGIDs(tt.args.addPGIDs...)
-			assert.Equal(t, tt.expects.expectOrderedPGIDsDeleted, entry.GetAllPGIDs())
+			entry.DeletePIDs(tt.args.addPIDs...)
+			assert.Equal(t, tt.expects.expectOrderedPIDsDeleted, entry.GetAllPIDs())
 
-			// pgid not exists after delete
-			if len(tt.args.addPGIDs) > 0 {
-				assert.False(t, entry.HasPGID(tt.args.addPGIDs[0]))
+			// pid not exists after delete
+			if len(tt.args.addPIDs) > 0 {
+				assert.False(t, entry.HasPID(tt.args.addPIDs[0]))
 			}
 
 			// deep copy

@@ -170,6 +170,8 @@ func (s *statesInformer) Run(stopCh <-chan struct{}) error {
 	}
 
 	// start callback runner after informers synced
+	// since some callbacks needs the integrated input to execute, e.g. valid pods list
+	// the initial callback events will not be missing since the callback channels are buffered
 	go s.states.callbackRunner.Start(stopCh)
 
 	klog.Infof("start states informer successfully")
