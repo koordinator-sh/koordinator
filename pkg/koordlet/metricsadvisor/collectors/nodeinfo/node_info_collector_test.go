@@ -23,6 +23,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/atomic"
 
+	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor/framework"
 	koordletutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util"
@@ -63,17 +64,6 @@ func TestNodeInfoCollector(t *testing.T) {
 }
 
 func Test_collectNodeNUMAInfo(t *testing.T) {
-	helper := system.NewFileTestUtil(t)
-	defer helper.Cleanup()
-	metricCache, err := metriccache.NewMetricCache(&metriccache.Config{
-		TSDBPath:              t.TempDir(),
-		TSDBEnablePromMetrics: false,
-	})
-	assert.NoError(t, err)
-	defer func() {
-		err = metricCache.Close()
-		assert.NoError(t, err)
-	}()
 
 	numaMemInfoContentStr0 := `Node 0 MemTotal:       263432804 kB
 Node 0 MemFree:        254391744 kB
@@ -147,10 +137,7 @@ Node 1 HugePages_Total:       0
 Node 1 HugePages_Free:        0
 Node 1 HugePages_Rsvd:        0
 Node 1 HugePages_Surp:        0`
-	numaMemInfoPath0 := system.GetNUMAMemInfoPath("node0")
-	helper.WriteFileContents(numaMemInfoPath0, numaMemInfoContentStr0)
-	numaMemInfoPath1 := system.GetNUMAMemInfoPath("node1")
-	helper.WriteFileContents(numaMemInfoPath1, numaMemInfoContentStr1)
+
 	testMemInfo0 := &koordletutil.MemInfo{
 		MemTotal: 263432804, MemFree: 254391744, MemAvailable: 256703236,
 		Buffers: 958096, Cached: 0, SwapCached: 0,
@@ -179,41 +166,336 @@ Node 1 HugePages_Surp:        0`
 		HugePages_Total: 0, HugePages_Free: 0, HugePages_Rsvd: 0,
 		HugePages_Surp: 0,
 	}
-	expected := &koordletutil.NodeNUMAInfo{
-		NUMAInfos: []koordletutil.NUMAInfo{
-			{
-				NUMANodeID: 0,
-				MemInfo:    testMemInfo0,
+
+	tts := []struct {
+		name           string
+		initfunc       func(*system.FileTestUtil)
+		enableHugePage bool
+		expected       *koordletutil.NodeNUMAInfo
+	}{
+		{
+			name: "only memory",
+			initfunc: func(helper *system.FileTestUtil) {
+				numaMemInfoPath0 := system.GetNUMAMemInfoPath("node0")
+				helper.WriteFileContents(numaMemInfoPath0, numaMemInfoContentStr0)
+				numaMemInfoPath1 := system.GetNUMAMemInfoPath("node1")
+				helper.WriteFileContents(numaMemInfoPath1, numaMemInfoContentStr1)
 			},
-			{
-				NUMANodeID: 1,
-				MemInfo:    testMemInfo1,
+			enableHugePage: false,
+			expected: &koordletutil.NodeNUMAInfo{
+				NUMAInfos: []koordletutil.NUMAInfo{
+					{
+						NUMANodeID: 0,
+						MemInfo:    testMemInfo0,
+					},
+					{
+						NUMANodeID: 1,
+						MemInfo:    testMemInfo1,
+					},
+				},
+				MemInfoMap: map[int32]*koordletutil.MemInfo{
+					0: testMemInfo0,
+					1: testMemInfo1,
+				},
 			},
 		},
-		MemInfoMap: map[int32]*koordletutil.MemInfo{
-			0: testMemInfo0,
-			1: testMemInfo1,
+		{
+			name: "memory and hugepage, but featuregate not enable",
+			initfunc: func(helper *system.FileTestUtil) {
+				numaMemInfoPath0 := system.GetNUMAMemInfoPath("node0")
+				helper.WriteFileContents(numaMemInfoPath0, numaMemInfoContentStr0)
+				numaMemInfoPath1 := system.GetNUMAMemInfoPath("node1")
+				helper.WriteFileContents(numaMemInfoPath1, numaMemInfoContentStr1)
+				numaHugePage2MPath0 := system.GetNUMAHugepagesNrPath("node0", "hugepages-1048576kB")
+				helper.WriteFileContents(numaHugePage2MPath0, "20")
+				numaHugePage2MPath1 := system.GetNUMAHugepagesNrPath("node1", "hugepages-1048576kB")
+				helper.WriteFileContents(numaHugePage2MPath1, "40")
+			},
+			enableHugePage: false,
+			expected: &koordletutil.NodeNUMAInfo{
+				NUMAInfos: []koordletutil.NUMAInfo{
+					{
+						NUMANodeID: 0,
+						MemInfo:    testMemInfo0,
+					},
+					{
+						NUMANodeID: 1,
+						MemInfo:    testMemInfo1,
+					},
+				},
+				MemInfoMap: map[int32]*koordletutil.MemInfo{
+					0: testMemInfo0,
+					1: testMemInfo1,
+				},
+			},
+		},
+		{
+			name: "memory and 2M hugepage",
+			initfunc: func(helper *system.FileTestUtil) {
+				numaMemInfoPath0 := system.GetNUMAMemInfoPath("node0")
+				helper.WriteFileContents(numaMemInfoPath0, numaMemInfoContentStr0)
+				numaMemInfoPath1 := system.GetNUMAMemInfoPath("node1")
+				helper.WriteFileContents(numaMemInfoPath1, numaMemInfoContentStr1)
+				numaHugePage2MPath0 := system.GetNUMAHugepagesNrPath("node0", "hugepages-2048kB")
+				helper.WriteFileContents(numaHugePage2MPath0, "20")
+				numaHugePage2MPath1 := system.GetNUMAHugepagesNrPath("node1", "hugepages-2048kB")
+				helper.WriteFileContents(numaHugePage2MPath1, "40")
+			},
+			enableHugePage: true,
+			expected: &koordletutil.NodeNUMAInfo{
+				NUMAInfos: []koordletutil.NUMAInfo{
+					{
+						NUMANodeID: 0,
+						MemInfo:    testMemInfo0,
+						HugePages: map[uint64]*koordletutil.HugePagesInfo{
+							koordletutil.Hugepage2Mkbyte: {
+								PageSize: koordletutil.Hugepage2Mkbyte,
+								NumPages: 20,
+							},
+							koordletutil.Hugepage1Gkbyte: {
+								PageSize: koordletutil.Hugepage1Gkbyte,
+								NumPages: 0,
+							},
+						},
+					},
+					{
+						NUMANodeID: 1,
+						MemInfo:    testMemInfo1,
+						HugePages: map[uint64]*koordletutil.HugePagesInfo{
+							koordletutil.Hugepage2Mkbyte: {
+								PageSize: koordletutil.Hugepage2Mkbyte,
+								NumPages: 40,
+							},
+							koordletutil.Hugepage1Gkbyte: {
+								PageSize: koordletutil.Hugepage1Gkbyte,
+								NumPages: 0,
+							},
+						},
+					},
+				},
+				MemInfoMap: map[int32]*koordletutil.MemInfo{
+					0: testMemInfo0,
+					1: testMemInfo1,
+				},
+				HugePagesMap: map[int32]map[uint64]*koordletutil.HugePagesInfo{
+					0: {
+						koordletutil.Hugepage2Mkbyte: {
+							PageSize: koordletutil.Hugepage2Mkbyte,
+							NumPages: 20,
+						},
+						koordletutil.Hugepage1Gkbyte: {
+							PageSize: koordletutil.Hugepage1Gkbyte,
+							NumPages: 0,
+						},
+					},
+					1: {
+						koordletutil.Hugepage2Mkbyte: {
+							PageSize: koordletutil.Hugepage2Mkbyte,
+							NumPages: 40,
+						},
+						koordletutil.Hugepage1Gkbyte: {
+							PageSize: koordletutil.Hugepage1Gkbyte,
+							NumPages: 0,
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "memory and 1G hugepage",
+			initfunc: func(helper *system.FileTestUtil) {
+				numaMemInfoPath0 := system.GetNUMAMemInfoPath("node0")
+				helper.WriteFileContents(numaMemInfoPath0, numaMemInfoContentStr0)
+				numaMemInfoPath1 := system.GetNUMAMemInfoPath("node1")
+				helper.WriteFileContents(numaMemInfoPath1, numaMemInfoContentStr1)
+				numaHugePage1GPath0 := system.GetNUMAHugepagesNrPath("node0", "hugepages-1048576kB")
+				helper.WriteFileContents(numaHugePage1GPath0, "10")
+
+				numaHugePage1GPath1 := system.GetNUMAHugepagesNrPath("node1", "hugepages-1048576kB")
+				helper.WriteFileContents(numaHugePage1GPath1, "20")
+			},
+			enableHugePage: true,
+			expected: &koordletutil.NodeNUMAInfo{
+				NUMAInfos: []koordletutil.NUMAInfo{
+					{
+						NUMANodeID: 0,
+						MemInfo:    testMemInfo0,
+						HugePages: map[uint64]*koordletutil.HugePagesInfo{
+							koordletutil.Hugepage2Mkbyte: {
+								PageSize: koordletutil.Hugepage2Mkbyte,
+								NumPages: 0,
+							},
+							koordletutil.Hugepage1Gkbyte: {
+								PageSize: koordletutil.Hugepage1Gkbyte,
+								NumPages: 10,
+							},
+						},
+					},
+					{
+						NUMANodeID: 1,
+						MemInfo:    testMemInfo1,
+						HugePages: map[uint64]*koordletutil.HugePagesInfo{
+							koordletutil.Hugepage2Mkbyte: {
+								PageSize: koordletutil.Hugepage2Mkbyte,
+								NumPages: 0,
+							},
+							koordletutil.Hugepage1Gkbyte: {
+								PageSize: koordletutil.Hugepage1Gkbyte,
+								NumPages: 20,
+							},
+						},
+					},
+				},
+				MemInfoMap: map[int32]*koordletutil.MemInfo{
+					0: testMemInfo0,
+					1: testMemInfo1,
+				},
+				HugePagesMap: map[int32]map[uint64]*koordletutil.HugePagesInfo{
+					0: {
+						koordletutil.Hugepage2Mkbyte: {
+							PageSize: koordletutil.Hugepage2Mkbyte,
+							NumPages: 0,
+						},
+						koordletutil.Hugepage1Gkbyte: {
+							PageSize: koordletutil.Hugepage1Gkbyte,
+							NumPages: 10,
+						},
+					},
+					1: {
+						koordletutil.Hugepage2Mkbyte: {
+							PageSize: koordletutil.Hugepage2Mkbyte,
+							NumPages: 0,
+						},
+						koordletutil.Hugepage1Gkbyte: {
+							PageSize: koordletutil.Hugepage1Gkbyte,
+							NumPages: 20,
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "memory and 2M & 1G hugepage",
+			initfunc: func(helper *system.FileTestUtil) {
+				numaMemInfoPath0 := system.GetNUMAMemInfoPath("node0")
+				helper.WriteFileContents(numaMemInfoPath0, numaMemInfoContentStr0)
+				numaMemInfoPath1 := system.GetNUMAMemInfoPath("node1")
+				helper.WriteFileContents(numaMemInfoPath1, numaMemInfoContentStr1)
+				numaHugePage1GPath0 := system.GetNUMAHugepagesNrPath("node0", "hugepages-1048576kB")
+				helper.WriteFileContents(numaHugePage1GPath0, "10")
+				numaHugePage2MPath0 := system.GetNUMAHugepagesNrPath("node0", "hugepages-2048kB")
+				helper.WriteFileContents(numaHugePage2MPath0, "20")
+
+				numaHugePage1GPath1 := system.GetNUMAHugepagesNrPath("node1", "hugepages-1048576kB")
+				helper.WriteFileContents(numaHugePage1GPath1, "10")
+				numaHugePage2MPath1 := system.GetNUMAHugepagesNrPath("node1", "hugepages-2048kB")
+				helper.WriteFileContents(numaHugePage2MPath1, "20")
+			},
+			enableHugePage: true,
+			expected: &koordletutil.NodeNUMAInfo{
+				NUMAInfos: []koordletutil.NUMAInfo{
+					{
+						NUMANodeID: 0,
+						MemInfo:    testMemInfo0,
+						HugePages: map[uint64]*koordletutil.HugePagesInfo{
+							koordletutil.Hugepage2Mkbyte: {
+								PageSize: koordletutil.Hugepage2Mkbyte,
+								NumPages: 20,
+							},
+							koordletutil.Hugepage1Gkbyte: {
+								PageSize: koordletutil.Hugepage1Gkbyte,
+								NumPages: 10,
+							},
+						},
+					},
+					{
+						NUMANodeID: 1,
+						MemInfo:    testMemInfo1,
+						HugePages: map[uint64]*koordletutil.HugePagesInfo{
+							koordletutil.Hugepage2Mkbyte: {
+								PageSize: koordletutil.Hugepage2Mkbyte,
+								NumPages: 20,
+							},
+							koordletutil.Hugepage1Gkbyte: {
+								PageSize: koordletutil.Hugepage1Gkbyte,
+								NumPages: 10,
+							},
+						},
+					},
+				},
+				MemInfoMap: map[int32]*koordletutil.MemInfo{
+					0: testMemInfo0,
+					1: testMemInfo1,
+				},
+				HugePagesMap: map[int32]map[uint64]*koordletutil.HugePagesInfo{
+					0: {
+						koordletutil.Hugepage2Mkbyte: {
+							PageSize: koordletutil.Hugepage2Mkbyte,
+							NumPages: 20,
+						},
+						koordletutil.Hugepage1Gkbyte: {
+							PageSize: koordletutil.Hugepage1Gkbyte,
+							NumPages: 10,
+						},
+					},
+					1: {
+						koordletutil.Hugepage2Mkbyte: {
+							PageSize: koordletutil.Hugepage2Mkbyte,
+							NumPages: 20,
+						},
+						koordletutil.Hugepage1Gkbyte: {
+							PageSize: koordletutil.Hugepage1Gkbyte,
+							NumPages: 10,
+						},
+					},
+				},
+			},
 		},
 	}
-	t.Run("test", func(t *testing.T) {
-		c := &nodeInfoCollector{
-			collectInterval: 60 * time.Second,
-			storage:         metricCache,
-			started:         atomic.NewBool(false),
-		}
+	for _, tt := range tts {
+		t.Run(tt.name, func(t *testing.T) {
+			helper := system.NewFileTestUtil(t)
+			defer helper.Cleanup()
 
-		// test collect successfully
-		err = c.collectNodeNUMAInfo()
-		assert.NoError(t, err)
-		nodeNUMAInfoRaw, ok := c.storage.Get(metriccache.NodeNUMAInfoKey)
-		assert.True(t, ok)
-		nodeNUMAInfo, ok := nodeNUMAInfoRaw.(*koordletutil.NodeNUMAInfo)
-		assert.True(t, ok)
-		assert.Equal(t, expected, nodeNUMAInfo)
+			enabled := features.DefaultKoordletFeatureGate.Enabled(features.HugePageReport)
+			testFeatureGates := map[string]bool{string(features.HugePageReport): tt.enableHugePage}
+			err := features.DefaultMutableKoordletFeatureGate.SetFromMap(testFeatureGates)
+			assert.NoError(t, err)
+			defer func() {
+				testFeatureGates[string(features.HugePageReport)] = enabled
+				err = features.DefaultMutableKoordletFeatureGate.SetFromMap(testFeatureGates)
+				assert.NoError(t, err)
+			}()
 
-		// test collect failed when sys files are missing
-		helper.Cleanup()
-		err = c.collectNodeNUMAInfo()
-		assert.Error(t, err)
-	})
+			metricCache, err := metriccache.NewMetricCache(&metriccache.Config{
+				TSDBPath:              t.TempDir(),
+				TSDBEnablePromMetrics: false,
+			})
+			assert.NoError(t, err)
+			defer func() {
+				err = metricCache.Close()
+				assert.NoError(t, err)
+			}()
+
+			tt.initfunc(helper)
+
+			c := &nodeInfoCollector{
+				collectInterval: 60 * time.Second,
+				storage:         metricCache,
+				started:         atomic.NewBool(false),
+			}
+			err = c.collectNodeNUMAInfo()
+			assert.NoError(t, err)
+			nodeNUMAInfoRaw, ok := c.storage.Get(metriccache.NodeNUMAInfoKey)
+			assert.True(t, ok)
+			nodeNUMAInfo, ok := nodeNUMAInfoRaw.(*koordletutil.NodeNUMAInfo)
+			assert.True(t, ok)
+			assert.Equal(t, tt.expected, nodeNUMAInfo)
+
+			// test collect failed when sys files are missing
+			helper.Cleanup()
+			err = c.collectNodeNUMAInfo()
+			assert.Error(t, err)
+		})
+	}
 }

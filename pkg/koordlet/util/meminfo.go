@@ -29,6 +29,11 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 )
 
+const (
+	Hugepage1Gkbyte = 1048576
+	Hugepage2Mkbyte = 2048
+)
+
 // MemInfo is the content of system /proc/meminfo.
 // NOTE: the unit of each field is KiB.
 type MemInfo struct {
@@ -76,6 +81,15 @@ type MemInfo struct {
 	DirectMap4k       uint64 `json:"direct_map_4k"`
 	DirectMap2M       uint64 `json:"direct_map_2M"`
 	DirectMap1G       uint64 `json:"direct_map_1G"`
+}
+
+type HugePagesInfo struct {
+	NumPages uint64 `json:"numPages,omitempty"`
+	PageSize uint64 `json:"pageSize,omitempty"`
+}
+
+func (i *HugePagesInfo) MemTotalBytes() uint64 {
+	return i.PageSize * i.NumPages * 1024
 }
 
 // MemTotalBytes returns the mem info's total bytes.
@@ -148,6 +162,68 @@ func readMemInfo(path string, isNUMA bool) (*MemInfo, error) {
 	return &info, nil
 }
 
+func GetHugePagesInfo(nodeDir string) (map[uint64]*HugePagesInfo, error) {
+	hugePagesInfo := map[uint64]*HugePagesInfo{
+		Hugepage1Gkbyte: {
+			NumPages: 0,
+			PageSize: Hugepage1Gkbyte,
+		},
+		Hugepage2Mkbyte: {
+			NumPages: 0,
+			PageSize: Hugepage2Mkbyte,
+		},
+	}
+	hugepageDir := system.GetNUMAHugepagesDir(nodeDir)
+	hugeDirs, err := os.ReadDir(hugepageDir)
+	if err != nil {
+		klog.Warningf("failed to read hugepage dir %s, err: %w", hugepageDir, err)
+		return hugePagesInfo, err
+	}
+
+	for _, st := range hugeDirs {
+		nameArray := strings.Split(st.Name(), "-")
+		if len(nameArray) < 2 {
+			klog.Warningf("Split '-' failed, the directory name %s is invalid, it must be either hugepages-1048576kB or hugepages-2048kB, nameArray: %v, len(nameArray): %d", st.Name(), nameArray, len(nameArray))
+			continue
+		}
+		pageSizeArray := strings.Split(nameArray[1], "kB")
+		if len(pageSizeArray) < 1 {
+			klog.Warningf("Split 'kB' failed, the directory name %s is invalid, it must be either hugepages-1048576kB or hugepages-2048kB, pageSizeArray: %v, len(pageSizeArray): %d", st.Name(), pageSizeArray, len(pageSizeArray))
+			continue
+		}
+		pageSize, err := strconv.ParseUint(pageSizeArray[0], 10, 64)
+		if err != nil {
+			klog.Warningf("hugepage pageSize parse failed, it must be either hugepages-1048576kB or hugepages-2048kB, the dir: %s, origin data: %s, err: %v", st.Name(), pageSizeArray[0], err)
+			continue
+		}
+
+		if _, ok := hugePagesInfo[pageSize]; !ok {
+			klog.Warningf("An abnormal hugepage %d, the dir: %s", pageSize, st.Name())
+			continue
+		}
+
+		nrPath := system.GetNUMAHugepagesNrPath(nodeDir, st.Name())
+		val, err := os.ReadFile(nrPath)
+		if err != nil {
+			return hugePagesInfo, err
+		}
+
+		var numPages uint64
+		// we use sscanf as the file as a new-line that trips up ParseUint
+		// it returns the number of tokens successfully parsed, so if
+		// n != 1, it means we were unable to parse a number from the file
+		n, err := fmt.Sscanf(string(val), "%d", &numPages)
+		if err != nil || n != 1 {
+			klog.Warningf("could not parse file nr_hugepage for %s, contents %q", st.Name(), string(val))
+			continue
+		}
+
+		hugePagesInfo[pageSize].NumPages = numPages
+	}
+
+	return hugePagesInfo, nil
+}
+
 func GetMemInfo() (*MemInfo, error) {
 	memInfoPath := system.GetProcFilePath(system.ProcMemInfoName)
 	memInfo, err := readMemInfo(memInfoPath, false)
@@ -158,15 +234,17 @@ func GetMemInfo() (*MemInfo, error) {
 }
 
 type NUMAInfo struct {
-	NUMANodeID int32    `json:"numaNodeID,omitempty"`
-	MemInfo    *MemInfo `json:"memInfo,omitempty"`
+	NUMANodeID int32                     `json:"numaNodeID,omitempty"`
+	MemInfo    *MemInfo                  `json:"memInfo,omitempty"`
+	HugePages  map[uint64]*HugePagesInfo `json:"hugePages,omitempty"`
 }
 
 // NodeNUMAInfo represents the node NUMA information.
 // Currently, it just contains the meminfo for each NUMA node.
 type NodeNUMAInfo struct {
-	NUMAInfos  []NUMAInfo         `json:"numaInfos,omitempty"`
-	MemInfoMap map[int32]*MemInfo `json:"memInfoMap,omitempty"` // NUMANodeID -> MemInfo
+	NUMAInfos    []NUMAInfo                          `json:"numaInfos,omitempty"`
+	MemInfoMap   map[int32]*MemInfo                  `json:"memInfoMap,omitempty"` // NUMANodeID -> MemInfo
+	HugePagesMap map[int32]map[uint64]*HugePagesInfo `json:"hugePagesMap,omitempty"`
 }
 
 // GetNodeNUMAInfo gets the node NUMA information with the pre-configured sysfs path.
@@ -228,4 +306,74 @@ func GetNodeNUMAInfo() (*NodeNUMAInfo, error) {
 	})
 
 	return result, nil
+}
+
+// GetNodeHugePagesInfo gets the node NUMA hugepage information with pre-configured sysfs path.
+func GetNodeHugePagesInfo() (map[int32]map[uint64]*HugePagesInfo, error) {
+	numaNodeParentDir := system.GetSysNUMADir()
+	nodeDirs, err := os.ReadDir(numaNodeParentDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read NUMA dir, err: %w", err)
+	}
+
+	hugePagesMap := make(map[int32]map[uint64]*HugePagesInfo)
+	for _, n := range nodeDirs {
+		dirName := n.Name() // assert string pattern `nodeX`
+		if len(dirName) < 4 || dirName[:4] != "node" {
+			klog.V(4).Infof("failed to get node NUMA info, err: invalid dir name %s", dirName)
+			return nil, fmt.Errorf("failed to get node NUMA info, err: invalid dir name %s", dirName)
+		}
+
+		nodeIDRaw, err := strconv.ParseInt(dirName[4:], 10, 32)
+		if err != nil {
+			klog.V(4).Infof("failed to parse NUMA ID, err: invalid dir name %s, err %v", dirName, err)
+			return nil, fmt.Errorf("failed to get node NUMA info, err: invalid dir name %s", dirName)
+		}
+		nodeID := int32(nodeIDRaw)
+		hugepageInfos, err := GetHugePagesInfo(dirName)
+		if err != nil {
+			klog.V(4).Infof("failed to read hugepage info, just set empty hugepage info, dir %s, err: %v", dirName, err)
+			return nil, fmt.Errorf("failed to read hugepage info, just set empty hugepage info, dir %s, err: %v", dirName, err)
+		}
+		hugePagesMap[nodeID] = hugepageInfos
+	}
+	return hugePagesMap, nil
+}
+
+func GetAndMergeHugepageToNumaInfo(numaInfo *NodeNUMAInfo) *NodeNUMAInfo {
+	var hugePagesMap map[int32]map[uint64]*HugePagesInfo
+	var err error
+	hugePagesMap, err = GetNodeHugePagesInfo()
+	if err != nil {
+		hugePagesMap = map[int32]map[uint64]*HugePagesInfo{
+			0: {
+				Hugepage1Gkbyte: {
+					NumPages: 0,
+					PageSize: Hugepage1Gkbyte,
+				},
+				Hugepage2Mkbyte: {
+					NumPages: 0,
+					PageSize: Hugepage2Mkbyte,
+				},
+			},
+			1: {
+				Hugepage1Gkbyte: {
+					NumPages: 0,
+					PageSize: Hugepage1Gkbyte,
+				},
+				Hugepage2Mkbyte: {
+					NumPages: 0,
+					PageSize: Hugepage2Mkbyte,
+				},
+			},
+		}
+	}
+	numaInfo.HugePagesMap = hugePagesMap
+	for i, info := range numaInfo.NUMAInfos {
+		if _, ok := hugePagesMap[info.NUMANodeID]; ok {
+			numaInfo.NUMAInfos[i].HugePages = hugePagesMap[info.NUMANodeID]
+		}
+	}
+
+	return numaInfo
 }
