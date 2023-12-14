@@ -36,6 +36,8 @@ const (
 	SysctlSubDir          = "sys"
 	ProcCPUInfoName       = "cpuinfo"
 	KernelCmdlineFileName = "cmdline"
+	HugepageDir           = "hugepages"
+	nrPath                = "nr_hugepages"
 
 	KernelSchedGroupIdentityEnable = "kernel/sched_group_identity_enabled"
 
@@ -100,6 +102,14 @@ func GetSysNUMADir() string {
 
 func GetNUMAMemInfoPath(numaNodeSubDir string) string {
 	return filepath.Join(Conf.SysRootDir, SysNUMASubDir, numaNodeSubDir, ProcMemInfoName)
+}
+
+func GetNUMAHugepagesDir(numaNodeSubDir string) string {
+	return filepath.Join(Conf.SysRootDir, SysNUMASubDir, numaNodeSubDir, HugepageDir)
+}
+
+func GetNUMAHugepagesNrPath(numaNodeSubDir string, page string) string {
+	return filepath.Join(Conf.SysRootDir, SysNUMASubDir, numaNodeSubDir, HugepageDir, page, nrPath)
 }
 
 func GetCPUInfoPath() string {
