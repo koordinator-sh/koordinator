@@ -23,6 +23,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/pointer"
 
@@ -970,13 +971,13 @@ func Test_calculateSystemConfigMerged(t *testing.T) {
 	testingSystemConfig1Str, _ := json.Marshal(testingSystemConfig1)
 	expectTestingSystemConfig1 := &configuration.SystemCfg{
 		ClusterStrategy: &slov1alpha1.SystemStrategy{
-			MinFreeKbytesFactor:  oldSLOCfg.SystemCfgMerged.ClusterStrategy.MinFreeKbytesFactor,
-			WatermarkScaleFactor: pointer.Int64(151),
-			MemcgReapBackGround:  oldSLOCfg.SystemCfgMerged.ClusterStrategy.MemcgReapBackGround,
+			MinFreeKbytesFactor:   oldSLOCfg.SystemCfgMerged.ClusterStrategy.MinFreeKbytesFactor,
+			WatermarkScaleFactor:  pointer.Int64(151),
+			MemcgReapBackGround:   oldSLOCfg.SystemCfgMerged.ClusterStrategy.MemcgReapBackGround,
+			TotalNetworkBandwidth: resource.MustParse("0"),
 		},
 		NodeStrategies: []configuration.NodeSystemStrategy{
 			{
-
 				NodeCfgProfile: configuration.NodeCfgProfile{
 					NodeSelector: &metav1.LabelSelector{
 						MatchLabels: map[string]string{
@@ -985,9 +986,10 @@ func Test_calculateSystemConfigMerged(t *testing.T) {
 					},
 				},
 				SystemStrategy: &slov1alpha1.SystemStrategy{
-					MinFreeKbytesFactor:  pointer.Int64(130),
-					WatermarkScaleFactor: pointer.Int64(151),
-					MemcgReapBackGround:  pointer.Int64(1),
+					MinFreeKbytesFactor:   pointer.Int64(130),
+					WatermarkScaleFactor:  pointer.Int64(151),
+					MemcgReapBackGround:   pointer.Int64(1),
+					TotalNetworkBandwidth: resource.MustParse("0"),
 				},
 			},
 			{NodeCfgProfile: configuration.NodeCfgProfile{
@@ -998,9 +1000,10 @@ func Test_calculateSystemConfigMerged(t *testing.T) {
 				},
 			},
 				SystemStrategy: &slov1alpha1.SystemStrategy{
-					MinFreeKbytesFactor:  pointer.Int64(140),
-					WatermarkScaleFactor: pointer.Int64(151),
-					MemcgReapBackGround:  pointer.Int64(0),
+					MinFreeKbytesFactor:   pointer.Int64(140),
+					WatermarkScaleFactor:  pointer.Int64(151),
+					MemcgReapBackGround:   pointer.Int64(0),
+					TotalNetworkBandwidth: resource.MustParse("0"),
 				},
 			},
 		},
