@@ -17,6 +17,7 @@ limitations under the License.
 package sloconfig
 
 import (
+	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/klog/v2"
 	"k8s.io/utils/pointer"
 
@@ -345,9 +346,10 @@ func DefaultCPUBurstConfig() slov1alpha1.CPUBurstConfig {
 
 func DefaultSystemStrategy() *slov1alpha1.SystemStrategy {
 	return &slov1alpha1.SystemStrategy{
-		MinFreeKbytesFactor:  pointer.Int64(100), // 1 means 1/10000
-		WatermarkScaleFactor: pointer.Int64(150), // 1 means 1/10000
-		MemcgReapBackGround:  pointer.Int64(0),
+		MinFreeKbytesFactor:   pointer.Int64(100), // 1 means 1/10000
+		WatermarkScaleFactor:  pointer.Int64(150), // 1 means 1/10000
+		MemcgReapBackGround:   pointer.Int64(0),
+		TotalNetworkBandwidth: resource.MustParse("0"),
 	}
 }
 
