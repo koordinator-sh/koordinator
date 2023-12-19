@@ -68,6 +68,9 @@ type AutopilotAllocator struct {
 }
 
 func (a *AutopilotAllocator) Prepare() *framework.Status {
+	if a.requestsPerInstance != nil {
+		return nil
+	}
 	state := a.state
 	nodeDevice := a.nodeDevice
 	requestsPerInstance, desiredCountPerDeviceType, status := a.calcRequestsAndCountByDeviceType(state.podRequests, nodeDevice, state.hints)
@@ -88,31 +91,26 @@ func (a *AutopilotAllocator) Prepare() *framework.Status {
 
 func (a *AutopilotAllocator) Allocate(
 	required, preferred map[schedulingv1alpha1.DeviceType]sets.Int,
-	requiredDeviceResources, preemptibleFreeDevices map[schedulingv1alpha1.DeviceType]deviceResources,
+	requiredDeviceResources, preemptibleDeviceResources map[schedulingv1alpha1.DeviceType]deviceResources,
 ) (apiext.DeviceAllocations, *framework.Status) {
-	state := a.state
-	nodeDevice := a.nodeDevice
-	if a.requestsPerInstance == nil {
-		if status := a.Prepare(); !status.IsSuccess() {
-			return nil, status
-		}
+	if status := a.Prepare(); !status.IsSuccess() {
+		return nil, status
 	}
 
-	nodeDevice = a.filterNodeDevice(nodeDevice, state.hints, state.hintSelectors, requiredDeviceResources, preemptibleFreeDevices)
-
+	nodeDevice := a.filterNodeDevice(requiredDeviceResources, preemptibleDeviceResources)
 	requestCtx := &requestContext{
 		pod:                       a.pod,
 		node:                      a.node,
-		hints:                     state.hints,
-		hintSelectors:             state.hintSelectors,
-		required:                  required,
-		preferred:                 preferred,
+		hints:                     a.state.hints,
+		hintSelectors:             a.state.hintSelectors,
 		requestsPerInstance:       a.requestsPerInstance,
 		desiredCountPerDeviceType: a.desiredCountPerDeviceType,
 		allocationScorer:          a.scorer,
+		required:                  required,
+		preferred:                 preferred,
 	}
 
-	deviceAllocations, status := a.tryJointAllocate(requestCtx, state.jointAllocate, nodeDevice)
+	deviceAllocations, status := a.tryJointAllocate(requestCtx, a.state.jointAllocate, nodeDevice)
 	if !status.IsSuccess() {
 		return nil, status
 	}
@@ -131,16 +129,13 @@ func (a *AutopilotAllocator) Allocate(
 }
 
 func (a *AutopilotAllocator) filterNodeDevice(
-	nodeDevice *nodeDevice,
-	hints apiext.DeviceAllocateHints,
-	hintSelectors map[schedulingv1alpha1.DeviceType][2]labels.Selector,
-	requiredDeviceResources, preemptibleFreeDevices map[schedulingv1alpha1.DeviceType]deviceResources,
+	requiredDeviceResources, preemptibleDeviceResources map[schedulingv1alpha1.DeviceType]deviceResources,
 ) *nodeDevice {
 	devices := map[schedulingv1alpha1.DeviceType][]int{}
 	for deviceType := range a.requestsPerInstance {
-		deviceInfos := nodeDevice.deviceInfos[deviceType]
+		deviceInfos := a.nodeDevice.deviceInfos[deviceType]
 		minors := sets.NewInt()
-		selector := hintSelectors[deviceType][0]
+		selector := a.state.hintSelectors[deviceType][0]
 		for _, deviceInfo := range deviceInfos {
 			if a.numaNodes != nil {
 				if deviceInfo.Topology == nil || !a.numaNodes.IsSet(int(deviceInfo.Topology.NodeID)) {
@@ -155,7 +150,7 @@ func (a *AutopilotAllocator) filterNodeDevice(
 			devices[deviceType] = minors.UnsortedList()
 		}
 	}
-	nodeDevice = nodeDevice.filter(devices, hints, requiredDeviceResources, preemptibleFreeDevices)
+	nodeDevice := a.nodeDevice.filter(devices, a.state.hints, requiredDeviceResources, preemptibleDeviceResources)
 	return nodeDevice
 }
 
@@ -501,4 +496,29 @@ func newPreferredPCIes(nodeDevice *nodeDevice, deviceType schedulingv1alpha1.Dev
 		}
 	}
 	return pcies
+}
+
+func (a *AutopilotAllocator) score(
+	requiredDeviceResources, preemptibleDeviceResources map[schedulingv1alpha1.DeviceType]deviceResources,
+) (int64, *framework.Status) {
+	if status := a.Prepare(); !status.IsSuccess() {
+		return 0, status
+	}
+
+	nodeDevice := a.filterNodeDevice(requiredDeviceResources, preemptibleDeviceResources)
+
+	var finalScore int64
+	for deviceType, requests := range a.requestsPerInstance {
+		if quotav1.IsZero(requests) {
+			continue
+		}
+		deviceTotal := nodeDevice.deviceTotal[deviceType]
+		if len(deviceTotal) > 0 {
+			score := a.scorer.scoreNode(requests, deviceTotal, nodeDevice.deviceFree[deviceType])
+			// TODO(joseph): Maybe different device types have different weights, but that's not currently supported.
+			finalScore += score
+		}
+	}
+
+	return finalScore, nil
 }

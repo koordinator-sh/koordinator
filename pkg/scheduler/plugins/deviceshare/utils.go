@@ -251,28 +251,9 @@ func parsePodDeviceShareExtensions(pod *corev1.Pod, podRequests map[schedulingv1
 		return fmt.Errorf("invalid DeviceAllocateHint annotation, err: %s", err.Error())
 	}
 
-	var hintSelectors map[schedulingv1alpha1.DeviceType][2]labels.Selector
-	for deviceType, v := range hints {
-		var selector labels.Selector
-		var vfSelector labels.Selector
-		if v.Selector != nil {
-			var err error
-			selector, err = util.GetFastLabelSelector(v.Selector)
-			if err != nil {
-				return fmt.Errorf("invalid Selector of DeviceHint, deviceType: %s, err: %s", deviceType, err.Error())
-			}
-		}
-		if v.VFSelector != nil {
-			var err error
-			vfSelector, err = util.GetFastLabelSelector(v.VFSelector)
-			if err != nil {
-				return fmt.Errorf("invalid VFSelector of DeviceHint, deviceType: %s, err: %s", deviceType, err.Error())
-			}
-		}
-		if hintSelectors == nil {
-			hintSelectors = map[schedulingv1alpha1.DeviceType][2]labels.Selector{}
-		}
-		hintSelectors[deviceType] = [2]labels.Selector{selector, vfSelector}
+	hintSelectors, err := newHintSelectors(hints)
+	if err != nil {
+		return err
 	}
 
 	jointAllocate, err := apiext.GetDeviceJointAllocate(pod.Annotations)
@@ -298,4 +279,31 @@ func parsePodDeviceShareExtensions(pod *corev1.Pod, podRequests map[schedulingv1
 	state.hintSelectors = hintSelectors
 	state.jointAllocate = jointAllocate
 	return nil
+}
+
+func newHintSelectors(hints apiext.DeviceAllocateHints) (map[schedulingv1alpha1.DeviceType][2]labels.Selector, error) {
+	var hintSelectors map[schedulingv1alpha1.DeviceType][2]labels.Selector
+	for deviceType, v := range hints {
+		var selector labels.Selector
+		var vfSelector labels.Selector
+		if v.Selector != nil {
+			var err error
+			selector, err = util.GetFastLabelSelector(v.Selector)
+			if err != nil {
+				return nil, fmt.Errorf("invalid Selector of DeviceHint, deviceType: %s, err: %s", deviceType, err.Error())
+			}
+		}
+		if v.VFSelector != nil {
+			var err error
+			vfSelector, err = util.GetFastLabelSelector(v.VFSelector)
+			if err != nil {
+				return nil, fmt.Errorf("invalid VFSelector of DeviceHint, deviceType: %s, err: %s", deviceType, err.Error())
+			}
+		}
+		if hintSelectors == nil {
+			hintSelectors = map[schedulingv1alpha1.DeviceType][2]labels.Selector{}
+		}
+		hintSelectors[deviceType] = [2]labels.Selector{selector, vfSelector}
+	}
+	return hintSelectors, nil
 }

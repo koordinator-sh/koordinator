@@ -30,6 +30,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	apiruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	k8sfeature "k8s.io/apiserver/pkg/util/feature"
@@ -133,7 +134,11 @@ func newPluginTestSuit(t *testing.T, nodes []*corev1.Node) *pluginTestSuit {
 		schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
 	}
 
-	cs := kubefake.NewSimpleClientset()
+	var objects []apiruntime.Object
+	for _, node := range nodes {
+		objects = append(objects, node)
+	}
+	cs := kubefake.NewSimpleClientset(objects...)
 	informerFactory := informers.NewSharedInformerFactory(cs, 0)
 	snapshot := newTestSharedLister(nil, nodes)
 

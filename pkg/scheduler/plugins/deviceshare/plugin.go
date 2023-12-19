@@ -35,6 +35,7 @@ import (
 	schedulerconfig "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/validation"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/topologymanager"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
 
@@ -280,11 +281,15 @@ func (p *Plugin) Filter(ctx context.Context, cycleState *framework.CycleState, p
 	restoreState := reservationRestoreState.getNodeState(node.Name)
 	preemptible := appendAllocated(nil, restoreState.mergedUnmatchedUsed, state.preemptibleDevices[node.Name])
 
+	store := topologymanager.GetStore(cycleState)
+	affinity := store.GetAffinity(node.Name)
+
 	allocator := &AutopilotAllocator{
 		state:      state,
 		nodeDevice: nodeDeviceInfo,
 		node:       node,
 		pod:        pod,
+		numaNodes:  affinity.NUMANodeAffinity,
 	}
 
 	nodeDeviceInfo.lock.RLock()
@@ -338,11 +343,15 @@ func (p *Plugin) FilterReservation(ctx context.Context, cycleState *framework.Cy
 		return nil
 	}
 
+	store := topologymanager.GetStore(cycleState)
+	affinity := store.GetAffinity(nodeInfo.Node().Name)
+
 	allocator := &AutopilotAllocator{
 		state:      state,
 		nodeDevice: nodeDeviceInfo,
 		node:       nodeInfo.Node(),
 		pod:        pod,
+		numaNodes:  affinity.NUMANodeAffinity,
 	}
 
 	preemptible := appendAllocated(nil, restoreState.mergedUnmatchedUsed, state.preemptibleDevices[nodeName])
@@ -379,12 +388,16 @@ func (p *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState, 
 		return nil
 	}
 
+	store := topologymanager.GetStore(cycleState)
+	affinity := store.GetAffinity(nodeInfo.Node().Name)
+
 	allocator := &AutopilotAllocator{
 		state:      state,
 		nodeDevice: nodeDeviceInfo,
 		node:       nodeInfo.Node(),
 		pod:        pod,
 		scorer:     p.scorer,
+		numaNodes:  affinity.NUMANodeAffinity,
 	}
 
 	reservationRestoreState := getReservationRestoreState(cycleState)

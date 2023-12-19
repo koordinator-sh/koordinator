@@ -866,8 +866,10 @@ func TestAutopilotAllocator(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			deviceCR := tt.deviceCR.DeepCopy()
+			deviceCR.ResourceVersion = "1"
 			koordFakeClient := koordfake.NewSimpleClientset()
-			_, err := koordFakeClient.SchedulingV1alpha1().Devices().Create(context.TODO(), tt.deviceCR, metav1.CreateOptions{})
+			_, err := koordFakeClient.SchedulingV1alpha1().Devices().Create(context.TODO(), deviceCR, metav1.CreateOptions{})
 			assert.NoError(t, err)
 			koordShareInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordFakeClient, 0)
 
@@ -923,9 +925,6 @@ func TestAutopilotAllocator(t *testing.T) {
 			if tt.gpuWanted > 0 {
 				podRequest[apiext.ResourceNvidiaGPU] = *resource.NewQuantity(int64(tt.gpuWanted), resource.DecimalSI)
 			}
-
-			nodeDevice.lock.Lock()
-			defer nodeDevice.lock.Unlock()
 
 			pod := &corev1.Pod{
 				Spec: corev1.PodSpec{
@@ -1704,8 +1703,9 @@ func TestAutopilotAllocatorWithExclusivePolicyAndRequiredScope(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			deviceCR := tt.deviceCR.DeepCopy()
+			deviceCR.ResourceVersion = "1"
 			koordFakeClient := koordfake.NewSimpleClientset()
-			deviceCR := tt.deviceCR
 			_, err := koordFakeClient.SchedulingV1alpha1().Devices().Create(context.TODO(), deviceCR, metav1.CreateOptions{})
 			assert.NoError(t, err)
 			koordShareInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordFakeClient, 0)
@@ -1762,9 +1762,6 @@ func TestAutopilotAllocatorWithExclusivePolicyAndRequiredScope(t *testing.T) {
 			if tt.gpuWanted > 0 {
 				podRequest[apiext.ResourceNvidiaGPU] = *resource.NewQuantity(int64(tt.gpuWanted), resource.DecimalSI)
 			}
-
-			nodeDevice.lock.Lock()
-			defer nodeDevice.lock.Unlock()
 
 			pod := &corev1.Pod{
 				Spec: corev1.PodSpec{
