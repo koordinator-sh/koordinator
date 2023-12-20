@@ -200,6 +200,9 @@ func ParseMemoryNumaStat(content string) ([]NumaMemoryPages, error) {
 	return stat, nil
 }
 
+// ParseCgroupProcs parses the content in cgroup.procs.
+// pattern: `7742\n10971\n11049\n11051...`
+// TODO: refactor with readCgroupAndParseInt32Slice via Generics.
 func ParseCgroupProcs(content string) ([]uint32, error) {
 	pidStrs := strings.Fields(strings.TrimSpace(content))
 	pids := make([]uint32, len(pidStrs))

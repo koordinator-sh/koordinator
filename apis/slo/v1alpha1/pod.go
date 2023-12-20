@@ -67,12 +67,12 @@ func GetPodMemoryQoSConfig(pod *corev1.Pod) (*PodMemoryQOSConfig, error) {
 }
 
 const (
-	// AnnotationCoreSchedGroupID is the annotation key of the group ID of the Linux Core Scheduling.
+	// LabelCoreSchedGroupID is the label key of the group ID of the Linux Core Scheduling.
 	// Value should be a valid UUID or the none value "0".
 	// When the value is a valid UUID, pods with that group ID and the equal CoreExpelled status on the node will be
 	// assigned to the same core sched cookie.
 	// When the value is the none value "0", pod will be reset to the default core sched cookie `0`.
-	// When the annotation is missing but the node-level strategy enables the core sched, the pod will be assigned an
+	// When the k-v pair is missing but the node-level strategy enables the core sched, the pod will be assigned an
 	// internal group according to the pod's UID.
 	//
 	// Core Sched: https://docs.kernel.org/admin-guide/hw-vuln/core-scheduling.html
@@ -83,20 +83,20 @@ const (
 	// enables the individual cookie from pods of other QoS classes via adding a suffix for the group ID. So the pods
 	// of different QoS will take different cookies when their CoreExpelled status are diverse even if their group ID
 	// are the same.
-	AnnotationCoreSchedGroupID = apiext.DomainPrefix + "core-sched-group-id"
+	LabelCoreSchedGroupID = apiext.DomainPrefix + "core-sched-group-id"
 
 	// CoreSchedGroupIDNone is the none value of the core sched group ID which indicates the core sched is disabled for
 	// the pod. The pod will be reset to the system-default cookie `0`.
 	CoreSchedGroupIDNone = "0"
 )
 
-// GetCoreSchedGroupID gets the core sched group ID from the pod annotations.
+// GetCoreSchedGroupID gets the core sched group ID from the pod labels.
 // It returns the core sched group ID and whether the pod explicitly disables the core sched.
-func GetCoreSchedGroupID(annotations map[string]string) (string, *bool) {
-	if annotations == nil {
+func GetCoreSchedGroupID(labels map[string]string) (string, *bool) {
+	if labels == nil {
 		return "", nil
 	}
-	value, ok := annotations[AnnotationCoreSchedGroupID]
+	value, ok := labels[LabelCoreSchedGroupID]
 	if !ok {
 		return "", nil
 	}

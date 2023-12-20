@@ -727,11 +727,10 @@ func Test_isPodEnabled(t *testing.T) {
 				rule: testGetEnabledRule(),
 			},
 			args: args{
-				podAnnotations: map[string]string{
-					slov1alpha1.AnnotationCoreSchedGroupID: "group-xxx",
-				},
+				podAnnotations: map[string]string{},
 				podLabels: map[string]string{
-					extension.LabelPodQoS: string(extension.QoSLS),
+					extension.LabelPodQoS:             string(extension.QoSLS),
+					slov1alpha1.LabelCoreSchedGroupID: "group-xxx",
 				},
 				podUID: "xxx",
 			},
@@ -744,8 +743,9 @@ func Test_isPodEnabled(t *testing.T) {
 				rule: testGetDisabledRule(),
 			},
 			args: args{
-				podAnnotations: map[string]string{
-					slov1alpha1.AnnotationCoreSchedGroupID: "",
+				podAnnotations: map[string]string{},
+				podLabels: map[string]string{
+					slov1alpha1.LabelCoreSchedGroupID: "",
 				},
 				podUID: "xxx",
 			},
@@ -758,8 +758,9 @@ func Test_isPodEnabled(t *testing.T) {
 				rule: testGetEnabledRule(),
 			},
 			args: args{
-				podAnnotations: map[string]string{
-					slov1alpha1.AnnotationCoreSchedGroupID: slov1alpha1.CoreSchedGroupIDNone,
+				podAnnotations: map[string]string{},
+				podLabels: map[string]string{
+					slov1alpha1.LabelCoreSchedGroupID: slov1alpha1.CoreSchedGroupIDNone,
 				},
 				podUID: "xxx",
 			},

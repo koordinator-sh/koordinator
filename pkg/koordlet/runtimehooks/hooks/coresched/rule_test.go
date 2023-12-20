@@ -655,13 +655,12 @@ func Test_ruleUpdateCb(t *testing.T) {
 						CgroupDir: "kubepods.slice/kubepods-podxxxxxx.slice",
 						Pod: &corev1.Pod{
 							ObjectMeta: metav1.ObjectMeta{
-								Name: "test-pod",
-								UID:  "xxxxxx",
-								Annotations: map[string]string{
-									slov1alpha1.AnnotationCoreSchedGroupID: "group-xxx",
-								},
+								Name:        "test-pod",
+								UID:         "xxxxxx",
+								Annotations: map[string]string{},
 								Labels: map[string]string{
-									extension.LabelPodQoS: string(extension.QoSLS),
+									extension.LabelPodQoS:             string(extension.QoSLS),
+									slov1alpha1.LabelCoreSchedGroupID: "group-xxx",
 								},
 							},
 							Spec: corev1.PodSpec{
@@ -700,13 +699,12 @@ func Test_ruleUpdateCb(t *testing.T) {
 						CgroupDir: "kubepods.slice/kubepods-podnnnnnn.slice",
 						Pod: &corev1.Pod{
 							ObjectMeta: metav1.ObjectMeta{
-								Name: "test-pod-1",
-								UID:  "nnnnnn",
-								Annotations: map[string]string{
-									slov1alpha1.AnnotationCoreSchedGroupID: "group-nnn",
-								},
+								Name:        "test-pod-1",
+								UID:         "nnnnnn",
+								Annotations: map[string]string{},
 								Labels: map[string]string{
-									extension.LabelPodQoS: string(extension.QoSLSR),
+									extension.LabelPodQoS:             string(extension.QoSLSR),
+									slov1alpha1.LabelCoreSchedGroupID: "group-nnn",
 								},
 							},
 							Spec: corev1.PodSpec{
@@ -824,13 +822,12 @@ func Test_ruleUpdateCb(t *testing.T) {
 						CgroupDir: "kubepods.slice/kubepods-podxxxxxx.slice",
 						Pod: &corev1.Pod{
 							ObjectMeta: metav1.ObjectMeta{
-								Name: "test-pod",
-								UID:  "xxxxxx",
-								Annotations: map[string]string{
-									slov1alpha1.AnnotationCoreSchedGroupID: "group-xxx",
-								},
+								Name:        "test-pod",
+								UID:         "xxxxxx",
+								Annotations: map[string]string{},
 								Labels: map[string]string{
-									extension.LabelPodQoS: string(extension.QoSLS),
+									extension.LabelPodQoS:             string(extension.QoSLS),
+									slov1alpha1.LabelCoreSchedGroupID: "group-xxx",
 								},
 							},
 							Spec: corev1.PodSpec{
@@ -869,13 +866,12 @@ func Test_ruleUpdateCb(t *testing.T) {
 						CgroupDir: "kubepods.slice/kubepods-podnnnnnn.slice",
 						Pod: &corev1.Pod{
 							ObjectMeta: metav1.ObjectMeta{
-								Name: "test-pod-1",
-								UID:  "nnnnnn",
-								Annotations: map[string]string{
-									slov1alpha1.AnnotationCoreSchedGroupID: "group-nnn",
-								},
+								Name:        "test-pod-1",
+								UID:         "nnnnnn",
+								Annotations: map[string]string{},
 								Labels: map[string]string{
-									extension.LabelPodQoS: string(extension.QoSLSR),
+									extension.LabelPodQoS:             string(extension.QoSLSR),
+									slov1alpha1.LabelCoreSchedGroupID: "group-nnn",
 								},
 							},
 							Spec: corev1.PodSpec{
@@ -997,13 +993,12 @@ func Test_ruleUpdateCb(t *testing.T) {
 						CgroupDir: "kubepods.slice/kubepods-podxxxxxx.slice",
 						Pod: &corev1.Pod{
 							ObjectMeta: metav1.ObjectMeta{
-								Name: "test-pod",
-								UID:  "xxxxxx",
-								Annotations: map[string]string{
-									slov1alpha1.AnnotationCoreSchedGroupID: "group-xxx",
-								},
+								Name:        "test-pod",
+								UID:         "xxxxxx",
+								Annotations: map[string]string{},
 								Labels: map[string]string{
-									extension.LabelPodQoS: string(extension.QoSLS),
+									extension.LabelPodQoS:             string(extension.QoSLS),
+									slov1alpha1.LabelCoreSchedGroupID: "group-xxx",
 								},
 							},
 							Spec: corev1.PodSpec{
@@ -1042,13 +1037,12 @@ func Test_ruleUpdateCb(t *testing.T) {
 						CgroupDir: "kubepods.slice/kubepods-podnnnnnn.slice",
 						Pod: &corev1.Pod{
 							ObjectMeta: metav1.ObjectMeta{
-								Name: "test-pod-1",
-								UID:  "nnnnnn",
-								Annotations: map[string]string{
-									slov1alpha1.AnnotationCoreSchedGroupID: "group-nnn",
-								},
+								Name:        "test-pod-1",
+								UID:         "nnnnnn",
+								Annotations: map[string]string{},
 								Labels: map[string]string{
-									extension.LabelPodQoS: string(extension.QoSLSR),
+									extension.LabelPodQoS:             string(extension.QoSLSR),
+									slov1alpha1.LabelCoreSchedGroupID: "group-nnn",
 								},
 							},
 							Spec: corev1.PodSpec{
@@ -1084,13 +1078,12 @@ func Test_ruleUpdateCb(t *testing.T) {
 						CgroupDir: "kubepods.slice/kubepods-burstable.slice/kubepods-burstable-podssssss.slice",
 						Pod: &corev1.Pod{
 							ObjectMeta: metav1.ObjectMeta{
-								Name: "test-pod-s",
-								UID:  "ssssss",
-								Annotations: map[string]string{
-									slov1alpha1.AnnotationCoreSchedGroupID: "group-sss",
-								},
+								Name:        "test-pod-s",
+								UID:         "ssssss",
+								Annotations: map[string]string{},
 								Labels: map[string]string{
-									extension.LabelPodQoS: string(extension.QoSSystem),
+									extension.LabelPodQoS:             string(extension.QoSSystem),
+									slov1alpha1.LabelCoreSchedGroupID: "group-sss",
 								},
 							},
 							Spec: corev1.PodSpec{
@@ -1218,13 +1211,12 @@ func Test_ruleUpdateCb(t *testing.T) {
 						CgroupDir: "kubepods.slice/kubepods-podxxxxxx.slice",
 						Pod: &corev1.Pod{
 							ObjectMeta: metav1.ObjectMeta{
-								Name: "test-pod",
-								UID:  "xxxxxx",
-								Annotations: map[string]string{
-									slov1alpha1.AnnotationCoreSchedGroupID: "group-xxx",
-								},
+								Name:        "test-pod",
+								UID:         "xxxxxx",
+								Annotations: map[string]string{},
 								Labels: map[string]string{
-									extension.LabelPodQoS: string(extension.QoSLS),
+									extension.LabelPodQoS:             string(extension.QoSLS),
+									slov1alpha1.LabelCoreSchedGroupID: "group-xxx",
 								},
 							},
 							Spec: corev1.PodSpec{
@@ -1263,13 +1255,12 @@ func Test_ruleUpdateCb(t *testing.T) {
 						CgroupDir: "kubepods.slice/kubepods-podnnnnnn.slice",
 						Pod: &corev1.Pod{
 							ObjectMeta: metav1.ObjectMeta{
-								Name: "test-pod-1",
-								UID:  "nnnnnn",
-								Annotations: map[string]string{
-									slov1alpha1.AnnotationCoreSchedGroupID: "group-nnn",
-								},
+								Name:        "test-pod-1",
+								UID:         "nnnnnn",
+								Annotations: map[string]string{},
 								Labels: map[string]string{
-									extension.LabelPodQoS: string(extension.QoSLSR),
+									extension.LabelPodQoS:             string(extension.QoSLSR),
+									slov1alpha1.LabelCoreSchedGroupID: "group-nnn",
 								},
 							},
 							Spec: corev1.PodSpec{
@@ -1305,13 +1296,12 @@ func Test_ruleUpdateCb(t *testing.T) {
 						CgroupDir: "kubepods.slice/kubepods-besteffort.slice/kubepods-besteffort-podssssss.slice",
 						Pod: &corev1.Pod{
 							ObjectMeta: metav1.ObjectMeta{
-								Name: "test-pod-s",
-								UID:  "ssssss",
-								Annotations: map[string]string{
-									slov1alpha1.AnnotationCoreSchedGroupID: "group-sss",
-								},
+								Name:        "test-pod-s",
+								UID:         "ssssss",
+								Annotations: map[string]string{},
 								Labels: map[string]string{
-									extension.LabelPodQoS: string(extension.QoSBE),
+									extension.LabelPodQoS:             string(extension.QoSBE),
+									slov1alpha1.LabelCoreSchedGroupID: "group-sss",
 								},
 							},
 							Spec: corev1.PodSpec{
@@ -1454,13 +1444,12 @@ func Test_ruleUpdateCb(t *testing.T) {
 						CgroupDir: "kubepods.slice/kubepods-podxxxxxx.slice",
 						Pod: &corev1.Pod{
 							ObjectMeta: metav1.ObjectMeta{
-								Name: "test-pod",
-								UID:  "xxxxxx",
-								Annotations: map[string]string{
-									slov1alpha1.AnnotationCoreSchedGroupID: "group-xxx",
-								},
+								Name:        "test-pod",
+								UID:         "xxxxxx",
+								Annotations: map[string]string{},
 								Labels: map[string]string{
-									extension.LabelPodQoS: string(extension.QoSLS),
+									extension.LabelPodQoS:             string(extension.QoSLS),
+									slov1alpha1.LabelCoreSchedGroupID: "group-xxx",
 								},
 							},
 							Spec: corev1.PodSpec{
@@ -1519,13 +1508,12 @@ func Test_ruleUpdateCb(t *testing.T) {
 						CgroupDir: "kubepods.slice/kubepods-podnnnnnn.slice",
 						Pod: &corev1.Pod{
 							ObjectMeta: metav1.ObjectMeta{
-								Name: "test-pod-1",
-								UID:  "nnnnnn",
-								Annotations: map[string]string{
-									slov1alpha1.AnnotationCoreSchedGroupID: "0",
-								},
+								Name:        "test-pod-1",
+								UID:         "nnnnnn",
+								Annotations: map[string]string{},
 								Labels: map[string]string{
-									extension.LabelPodQoS: string(extension.QoSLSR),
+									extension.LabelPodQoS:             string(extension.QoSLSR),
+									slov1alpha1.LabelCoreSchedGroupID: slov1alpha1.CoreSchedGroupIDNone,
 								},
 							},
 							Spec: corev1.PodSpec{

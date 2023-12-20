@@ -195,8 +195,13 @@ func (r *CgroupV1Reader) ReadCPUProcs(parentDir string) ([]uint32, error) {
 	if !ok {
 		return nil, ErrResourceNotRegistered
 	}
+	s, err := cgroupFileRead(parentDir, resource)
+	if err != nil {
+		return nil, err
+	}
+
 	// content: `7742\n10971\n11049\n11051...`
-	return readCgroupAndParseUint32Slice(parentDir, resource)
+	return sysutil.ParseCgroupProcs(s)
 }
 
 func (r *CgroupV1Reader) ReadPSI(parentDir string) (*PSIByResource, error) {
@@ -396,8 +401,13 @@ func (r *CgroupV2Reader) ReadCPUProcs(parentDir string) ([]uint32, error) {
 	if !ok {
 		return nil, ErrResourceNotRegistered
 	}
+	s, err := cgroupFileRead(parentDir, resource)
+	if err != nil {
+		return nil, err
+	}
+
 	// content: `7742\n10971\n11049\n11051...`
-	return readCgroupAndParseUint32Slice(parentDir, resource)
+	return sysutil.ParseCgroupProcs(s)
 }
 
 func (r *CgroupV2Reader) ReadPSI(parentDir string) (*PSIByResource, error) {

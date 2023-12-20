@@ -248,11 +248,10 @@ func TestPlugin_SetContainerCookie(t *testing.T) {
 						Name: "test-pod",
 						UID:  "xxxxxx",
 					},
-					PodAnnotations: map[string]string{
-						slov1alpha1.AnnotationCoreSchedGroupID: "group-xxx",
-					},
+					PodAnnotations: map[string]string{},
 					PodLabels: map[string]string{
-						extension.LabelPodQoS: string(extension.QoSLS),
+						extension.LabelPodQoS:             string(extension.QoSLS),
+						slov1alpha1.LabelCoreSchedGroupID: "group-xxx",
 					},
 					ContainerMeta: protocol.ContainerMeta{
 						Name: "test-container",
@@ -310,11 +309,10 @@ func TestPlugin_SetContainerCookie(t *testing.T) {
 						Name: "test-pod",
 						UID:  "xxxxxx",
 					},
-					PodAnnotations: map[string]string{
-						slov1alpha1.AnnotationCoreSchedGroupID: "group-xxx",
-					},
+					PodAnnotations: map[string]string{},
 					PodLabels: map[string]string{
-						extension.LabelPodQoS: string(extension.QoSLS),
+						extension.LabelPodQoS:             string(extension.QoSLS),
+						slov1alpha1.LabelCoreSchedGroupID: "group-xxx",
 					},
 					ContainerMeta: protocol.ContainerMeta{
 						Name: "test-container",
@@ -365,11 +363,10 @@ func TestPlugin_SetContainerCookie(t *testing.T) {
 						Name: "test-pod",
 						UID:  "xxxxxx",
 					},
-					PodAnnotations: map[string]string{
-						slov1alpha1.AnnotationCoreSchedGroupID: "group-xxx",
-					},
+					PodAnnotations: map[string]string{},
 					PodLabels: map[string]string{
-						extension.LabelPodQoS: string(extension.QoSBE),
+						extension.LabelPodQoS:             string(extension.QoSBE),
+						slov1alpha1.LabelCoreSchedGroupID: "group-xxx",
 					},
 					ContainerMeta: protocol.ContainerMeta{
 						Name: "test-container",
@@ -425,11 +422,10 @@ func TestPlugin_SetContainerCookie(t *testing.T) {
 						Name: "test-pod",
 						UID:  "xxxxxx",
 					},
-					PodAnnotations: map[string]string{
-						slov1alpha1.AnnotationCoreSchedGroupID: "group-xxx",
-					},
+					PodAnnotations: map[string]string{},
 					PodLabels: map[string]string{
-						extension.LabelPodQoS: string(extension.QoSLS),
+						extension.LabelPodQoS:             string(extension.QoSLS),
+						slov1alpha1.LabelCoreSchedGroupID: "group-xxx",
 					},
 					ContainerMeta: protocol.ContainerMeta{
 						Name: "test-container",
@@ -495,11 +491,10 @@ func TestPlugin_SetContainerCookie(t *testing.T) {
 						Name: "test-pod",
 						UID:  "xxxxxx",
 					},
-					PodAnnotations: map[string]string{
-						slov1alpha1.AnnotationCoreSchedGroupID: "group-xxx",
-					},
+					PodAnnotations: map[string]string{},
 					PodLabels: map[string]string{
-						extension.LabelPodQoS: string(extension.QoSLS),
+						extension.LabelPodQoS:             string(extension.QoSLS),
+						slov1alpha1.LabelCoreSchedGroupID: "group-xxx",
 					},
 					ContainerMeta: protocol.ContainerMeta{
 						Name: "test-container",
@@ -565,11 +560,10 @@ func TestPlugin_SetContainerCookie(t *testing.T) {
 						Name: "test-pod",
 						UID:  "xxxxxx",
 					},
-					PodAnnotations: map[string]string{
-						slov1alpha1.AnnotationCoreSchedGroupID: "group-xxx",
-					},
+					PodAnnotations: map[string]string{},
 					PodLabels: map[string]string{
-						extension.LabelPodQoS: string(extension.QoSLS),
+						extension.LabelPodQoS:             string(extension.QoSLS),
+						slov1alpha1.LabelCoreSchedGroupID: "group-xxx",
 					},
 					ContainerMeta: protocol.ContainerMeta{
 						Name: "test-container",
@@ -628,11 +622,10 @@ func TestPlugin_SetContainerCookie(t *testing.T) {
 						Name: "test-pod",
 						UID:  "xxxxxx",
 					},
-					PodAnnotations: map[string]string{
-						slov1alpha1.AnnotationCoreSchedGroupID: slov1alpha1.CoreSchedGroupIDNone,
-					},
+					PodAnnotations: map[string]string{},
 					PodLabels: map[string]string{
-						extension.LabelPodQoS: string(extension.QoSLS),
+						extension.LabelPodQoS:             string(extension.QoSLS),
+						slov1alpha1.LabelCoreSchedGroupID: slov1alpha1.CoreSchedGroupIDNone,
 					},
 					ContainerMeta: protocol.ContainerMeta{
 						Name: "test-container",
@@ -702,11 +695,10 @@ func TestPlugin_SetContainerCookie(t *testing.T) {
 						Name: "test-pod",
 						UID:  "xxxxxx",
 					},
-					PodAnnotations: map[string]string{
-						slov1alpha1.AnnotationCoreSchedGroupID: slov1alpha1.CoreSchedGroupIDNone,
-					},
+					PodAnnotations: map[string]string{},
 					PodLabels: map[string]string{
-						extension.LabelPodQoS: string(extension.QoSLSR),
+						extension.LabelPodQoS:             string(extension.QoSLSR),
+						slov1alpha1.LabelCoreSchedGroupID: slov1alpha1.CoreSchedGroupIDNone,
 					},
 					ContainerMeta: protocol.ContainerMeta{
 						Name: "test-container",
@@ -771,11 +763,10 @@ func TestPlugin_SetContainerCookie(t *testing.T) {
 						Name: "test-pod",
 						UID:  "xxxxxx",
 					},
-					PodAnnotations: map[string]string{
-						slov1alpha1.AnnotationCoreSchedGroupID: slov1alpha1.CoreSchedGroupIDNone,
-					},
+					PodAnnotations: map[string]string{},
 					PodLabels: map[string]string{
-						extension.LabelPodQoS: string(extension.QoSBE),
+						extension.LabelPodQoS:             string(extension.QoSBE),
+						slov1alpha1.LabelCoreSchedGroupID: slov1alpha1.CoreSchedGroupIDNone,
 					},
 					ContainerMeta: protocol.ContainerMeta{
 						Name: "test-container",
@@ -832,11 +823,10 @@ func TestPlugin_SetContainerCookie(t *testing.T) {
 						Name: "test-pod",
 						UID:  "xxxxxx",
 					},
-					PodAnnotations: map[string]string{
-						slov1alpha1.AnnotationCoreSchedGroupID: slov1alpha1.CoreSchedGroupIDNone,
-					},
+					PodAnnotations: map[string]string{},
 					PodLabels: map[string]string{
-						extension.LabelPodQoS: string(extension.QoSLS),
+						extension.LabelPodQoS:             string(extension.QoSLS),
+						slov1alpha1.LabelCoreSchedGroupID: slov1alpha1.CoreSchedGroupIDNone,
 					},
 					ContainerMeta: protocol.ContainerMeta{
 						Name: "test-container",
@@ -893,11 +883,10 @@ func TestPlugin_SetContainerCookie(t *testing.T) {
 						Name: "test-pod",
 						UID:  "xxxxxx",
 					},
-					PodAnnotations: map[string]string{
-						slov1alpha1.AnnotationCoreSchedGroupID: slov1alpha1.CoreSchedGroupIDNone,
-					},
+					PodAnnotations: map[string]string{},
 					PodLabels: map[string]string{
-						extension.LabelPodQoS: string(extension.QoSBE),
+						extension.LabelPodQoS:             string(extension.QoSBE),
+						slov1alpha1.LabelCoreSchedGroupID: slov1alpha1.CoreSchedGroupIDNone,
 					},
 					ContainerMeta: protocol.ContainerMeta{
 						Name: "test-container",
@@ -955,11 +944,10 @@ func TestPlugin_SetContainerCookie(t *testing.T) {
 						Name: "test-pod",
 						UID:  "xxxxxx",
 					},
-					PodAnnotations: map[string]string{
-						slov1alpha1.AnnotationCoreSchedGroupID: "group-xxx",
-					},
+					PodAnnotations: map[string]string{},
 					PodLabels: map[string]string{
-						extension.LabelPodQoS: string(extension.QoSLS),
+						extension.LabelPodQoS:             string(extension.QoSLS),
+						slov1alpha1.LabelCoreSchedGroupID: "group-xxx",
 					},
 					ContainerMeta: protocol.ContainerMeta{
 						Name: "test-container",
@@ -1089,13 +1077,12 @@ func TestPlugin_LoadAllCookies(t *testing.T) {
 					CgroupDir: "kubepods.slice/kubepods-podxxxxxx.slice",
 					Pod: &corev1.Pod{
 						ObjectMeta: metav1.ObjectMeta{
-							Name: "test-pod",
-							UID:  "xxxxxx",
-							Annotations: map[string]string{
-								slov1alpha1.AnnotationCoreSchedGroupID: "group-xxx",
-							},
+							Name:        "test-pod",
+							UID:         "xxxxxx",
+							Annotations: map[string]string{},
 							Labels: map[string]string{
-								extension.LabelPodQoS: string(extension.QoSLS),
+								extension.LabelPodQoS:             string(extension.QoSLS),
+								slov1alpha1.LabelCoreSchedGroupID: "group-xxx",
 							},
 						},
 						Spec: corev1.PodSpec{
@@ -1134,13 +1121,12 @@ func TestPlugin_LoadAllCookies(t *testing.T) {
 					CgroupDir: "kubepods.slice/kubepods-podnnnnnn.slice",
 					Pod: &corev1.Pod{
 						ObjectMeta: metav1.ObjectMeta{
-							Name: "test-pod-1",
-							UID:  "nnnnnn",
-							Annotations: map[string]string{
-								slov1alpha1.AnnotationCoreSchedGroupID: "group-nnn",
-							},
+							Name:        "test-pod-1",
+							UID:         "nnnnnn",
+							Annotations: map[string]string{},
 							Labels: map[string]string{
-								extension.LabelPodQoS: string(extension.QoSLSR),
+								extension.LabelPodQoS:             string(extension.QoSLSR),
+								slov1alpha1.LabelCoreSchedGroupID: "group-nnn",
 							},
 						},
 						Spec: corev1.PodSpec{
@@ -1220,13 +1206,12 @@ func TestPlugin_LoadAllCookies(t *testing.T) {
 					CgroupDir: "kubepods.slice/kubepods-podxxxxxx.slice",
 					Pod: &corev1.Pod{
 						ObjectMeta: metav1.ObjectMeta{
-							Name: "test-pod",
-							UID:  "xxxxxx",
-							Annotations: map[string]string{
-								slov1alpha1.AnnotationCoreSchedGroupID: "group-xxx",
-							},
+							Name:        "test-pod",
+							UID:         "xxxxxx",
+							Annotations: map[string]string{},
 							Labels: map[string]string{
-								extension.LabelPodQoS: string(extension.QoSLS),
+								extension.LabelPodQoS:             string(extension.QoSLS),
+								slov1alpha1.LabelCoreSchedGroupID: "group-xxx",
 							},
 						},
 						Spec: corev1.PodSpec{
@@ -1265,13 +1250,12 @@ func TestPlugin_LoadAllCookies(t *testing.T) {
 					CgroupDir: "kubepods.slice/kubepods-podnnnnnn.slice",
 					Pod: &corev1.Pod{
 						ObjectMeta: metav1.ObjectMeta{
-							Name: "test-pod-1",
-							UID:  "nnnnnn",
-							Annotations: map[string]string{
-								slov1alpha1.AnnotationCoreSchedGroupID: "group-nnn",
-							},
+							Name:        "test-pod-1",
+							UID:         "nnnnnn",
+							Annotations: map[string]string{},
 							Labels: map[string]string{
-								extension.LabelPodQoS: string(extension.QoSLSR),
+								extension.LabelPodQoS:             string(extension.QoSLSR),
+								slov1alpha1.LabelCoreSchedGroupID: "group-nnn",
 							},
 						},
 						Spec: corev1.PodSpec{
@@ -1359,13 +1343,12 @@ func TestPlugin_LoadAllCookies(t *testing.T) {
 					CgroupDir: "kubepods.slice/kubepods-podxxxxxx.slice",
 					Pod: &corev1.Pod{
 						ObjectMeta: metav1.ObjectMeta{
-							Name: "test-pod",
-							UID:  "xxxxxx",
-							Annotations: map[string]string{
-								slov1alpha1.AnnotationCoreSchedGroupID: "group-xxx",
-							},
+							Name:        "test-pod",
+							UID:         "xxxxxx",
+							Annotations: map[string]string{},
 							Labels: map[string]string{
-								extension.LabelPodQoS: string(extension.QoSLS),
+								extension.LabelPodQoS:             string(extension.QoSLS),
+								slov1alpha1.LabelCoreSchedGroupID: "group-xxx",
 							},
 						},
 						Spec: corev1.PodSpec{
@@ -1404,13 +1387,12 @@ func TestPlugin_LoadAllCookies(t *testing.T) {
 					CgroupDir: "kubepods.slice/kubepods-podnnnnnn.slice",
 					Pod: &corev1.Pod{
 						ObjectMeta: metav1.ObjectMeta{
-							Name: "test-pod-1",
-							UID:  "nnnnnn",
-							Annotations: map[string]string{
-								slov1alpha1.AnnotationCoreSchedGroupID: "group-nnn",
-							},
+							Name:        "test-pod-1",
+							UID:         "nnnnnn",
+							Annotations: map[string]string{},
 							Labels: map[string]string{
-								extension.LabelPodQoS: string(extension.QoSLSR),
+								extension.LabelPodQoS:             string(extension.QoSLSR),
+								slov1alpha1.LabelCoreSchedGroupID: "group-nnn",
 							},
 						},
 						Spec: corev1.PodSpec{
@@ -1515,13 +1497,12 @@ func TestPlugin_LoadAllCookies(t *testing.T) {
 					CgroupDir: "kubepods.slice/kubepods-podxxxxxx.slice",
 					Pod: &corev1.Pod{
 						ObjectMeta: metav1.ObjectMeta{
-							Name: "test-pod",
-							UID:  "xxxxxx",
-							Annotations: map[string]string{
-								slov1alpha1.AnnotationCoreSchedGroupID: "group-xxx",
-							},
+							Name:        "test-pod",
+							UID:         "xxxxxx",
+							Annotations: map[string]string{},
 							Labels: map[string]string{
-								extension.LabelPodQoS: string(extension.QoSLSR),
+								extension.LabelPodQoS:             string(extension.QoSLSR),
+								slov1alpha1.LabelCoreSchedGroupID: "group-xxx",
 							},
 						},
 						Spec: corev1.PodSpec{
@@ -1560,13 +1541,12 @@ func TestPlugin_LoadAllCookies(t *testing.T) {
 					CgroupDir: "kubepods.slice/kubepods-podnnnnnn.slice",
 					Pod: &corev1.Pod{
 						ObjectMeta: metav1.ObjectMeta{
-							Name: "test-pod-1",
-							UID:  "nnnnnn",
-							Annotations: map[string]string{
-								slov1alpha1.AnnotationCoreSchedGroupID: "group-nnn",
-							},
+							Name:        "test-pod-1",
+							UID:         "nnnnnn",
+							Annotations: map[string]string{},
 							Labels: map[string]string{
-								extension.LabelPodQoS: string(extension.QoSLSR),
+								extension.LabelPodQoS:             string(extension.QoSLSR),
+								slov1alpha1.LabelCoreSchedGroupID: "group-nnn",
 							},
 						},
 						Spec: corev1.PodSpec{
@@ -1602,13 +1582,12 @@ func TestPlugin_LoadAllCookies(t *testing.T) {
 					CgroupDir: "kubepods.slice/kubepods-burstable.slice/kubepods-burstable-podcccccc.slice",
 					Pod: &corev1.Pod{
 						ObjectMeta: metav1.ObjectMeta{
-							Name: "test-pod-2",
-							UID:  "cccccc",
-							Annotations: map[string]string{
-								slov1alpha1.AnnotationCoreSchedGroupID: "group-xxx",
-							},
+							Name:        "test-pod-2",
+							UID:         "cccccc",
+							Annotations: map[string]string{},
 							Labels: map[string]string{
-								extension.LabelPodQoS: string(extension.QoSLS),
+								extension.LabelPodQoS:             string(extension.QoSLS),
+								slov1alpha1.LabelCoreSchedGroupID: "group-xxx",
 							},
 						},
 						Spec: corev1.PodSpec{
@@ -1707,13 +1686,12 @@ func TestPlugin_LoadAllCookies(t *testing.T) {
 					CgroupDir: "kubepods.slice/kubepods-podxxxxxx.slice",
 					Pod: &corev1.Pod{
 						ObjectMeta: metav1.ObjectMeta{
-							Name: "test-pod",
-							UID:  "xxxxxx",
-							Annotations: map[string]string{
-								slov1alpha1.AnnotationCoreSchedGroupID: "group-xxx",
-							},
+							Name:        "test-pod",
+							UID:         "xxxxxx",
+							Annotations: map[string]string{},
 							Labels: map[string]string{
-								extension.LabelPodQoS: string(extension.QoSLS),
+								extension.LabelPodQoS:             string(extension.QoSLS),
+								slov1alpha1.LabelCoreSchedGroupID: "group-xxx",
 							},
 						},
 						Spec: corev1.PodSpec{
@@ -1770,13 +1748,12 @@ func TestPlugin_LoadAllCookies(t *testing.T) {
 					CgroupDir: "kubepods.slice/kubepods-podnnnnnn.slice",
 					Pod: &corev1.Pod{
 						ObjectMeta: metav1.ObjectMeta{
-							Name: "test-pod-1",
-							UID:  "nnnnnn",
-							Annotations: map[string]string{
-								slov1alpha1.AnnotationCoreSchedGroupID: "group-nnn",
-							},
+							Name:        "test-pod-1",
+							UID:         "nnnnnn",
+							Annotations: map[string]string{},
 							Labels: map[string]string{
-								extension.LabelPodQoS: string(extension.QoSLSR),
+								extension.LabelPodQoS:             string(extension.QoSLSR),
+								slov1alpha1.LabelCoreSchedGroupID: "group-nnn",
 							},
 						},
 						Spec: corev1.PodSpec{
@@ -1816,9 +1793,6 @@ func TestPlugin_LoadAllCookies(t *testing.T) {
 						12340,
 						12344,
 						12345,
-					},
-					0: {
-						12350,
 					},
 				},
 				groupToCookie: map[string]uint64{

@@ -53,7 +53,9 @@ const (
 	ExpellerGroupSuffix = "-expeller"
 )
 
-// SYSTEM QoS is excluded
+// SYSTEM QoS is excluded from the cookie mutating.
+// All SYSTEM pods use the default cookie so the agent can reset the cookie of a container by ShareTo its cookie to
+// the target.
 var podQOSConditions = []string{string(extension.QoSBE), string(extension.QoSLS), string(extension.QoSLSR),
 	string(extension.QoSLSE), string(extension.QoSNone)}
 
@@ -174,14 +176,14 @@ func (p *Plugin) SetKubeQOSCPUIdle(proto protocol.HooksProtocol) error {
 
 // SetContainerCookie reconciles the core sched cookie for the container.
 // There are the following operations about the cookies:
-//  1. Get: Get the cookie for a core sched group, firstly try to find in cache and then get from the existing PIDs.
-//  2. Add: Add a new cookie for a core sched group for a container, and add a new entry into the cache, ref count = 1.
-//  3. Assign: Assign a cookie of an existing core sched group for a container, and increase cookie's ref count in cache.
-//     The cookies of sibling PIDs (i.e. the PIDs of the same core sched group) will be fetched in the Assign. If all
-//     the cookies of sibling PIDs are default or invalid, the Assign will fall back to Add.
+//  1. Get: Get the cookie for a core sched group, firstly try finding in cache and then get from the existing PIDs.
+//  2. Add: Add a new cookie for a core sched group for a container, and add a new entry into the cache.
+//  3. Assign: Assign a cookie of an existing core sched group for a container and update the cache entry.
+//     The cached sibling PIDs (i.e. the PIDs of the same core sched group) will be fetched in the Assign. If all
+//     cookies of the sibling PIDs are default or invalid, the Assign should fall back to Add.
 //  4. Clear: Clear a cookie of an existing core sched group for a container (reset to default cookie 0), and the
-//     cookie's reference count in the cache is decreased. The cache entry will be removed when the ref count is no
-//     larger than zero.
+//     containers' PIDs are removed from the cache. The cache entry of the group is removed when the number of the
+//     cached PIDs decreases to zero.
 //
 // If multiple non-default cookies are assigned to existing containers of the same group, the firstly-created and
 // available cookie will be retained and the PIDs of others will be moved to the former.
@@ -202,152 +204,29 @@ func (p *Plugin) SetContainerCookie(proto protocol.HooksProtocol) error {
 			name, podUID, containerCtx.Request.ContainerMeta.ID)
 	}
 
-	containerUID := p.getContainerUID(podUID, containerCtx.Request.ContainerMeta.ID)
-	podAnnotations := containerCtx.Request.PodAnnotations
-	podLabels := containerCtx.Request.PodLabels
-	podMetaName := containerCtx.Request.PodMeta.String()
-	containerName := containerCtx.Request.ContainerMeta.Name
-	podKubeQOS := util.GetKubeQoSByCgroupParent(containerCtx.Request.CgroupParent)
-
 	if !p.rule.IsInited() || !p.IsCacheInited() {
 		klog.V(5).Infof("plugin %s has not been inited, rule inited %v, cache inited %v, aborted to set cookie for container %s/%s",
-			name, p.rule.IsInited(), p.IsCacheInited(), podMetaName, containerName)
+			name, p.rule.IsInited(), p.IsCacheInited(), containerCtx.Request.PodMeta.String(), containerCtx.Request.ContainerMeta.Name)
 		return nil
 	}
 
-	isEnabled, groupID := p.getPodEnabledAndGroup(podAnnotations, podLabels, podKubeQOS, podUID)
+	isEnabled, groupID := p.getPodEnabledAndGroup(containerCtx.Request.PodAnnotations, containerCtx.Request.PodLabels,
+		util.GetKubeQoSByCgroupParent(containerCtx.Request.CgroupParent), podUID)
 	klog.V(6).Infof("manage cookie for container %s/%s, isEnabled %v, groupID %s",
-		podMetaName, containerName, isEnabled, groupID)
-
-	lastGroupID, lastCookieEntry, cookieEntry := p.getCookieCacheForContainer(groupID, containerUID)
+		containerCtx.Request.PodMeta.String(), containerCtx.Request.ContainerMeta.Name, isEnabled, groupID)
 
 	// expect enabled
 	// 1. disabled -> enabled: Add or Assign.
 	// 2. keep enabled: Check the differences of cookie, group ID and the PIDs, and do Assign.
 	if isEnabled {
-		// assert groupID != "0"
-		// NOTE: if the group ID changed for a enabled pod, the cookie will be updated while the old PIDs should expire
-		// in the old cookie's cache.
-		pids, err := p.getContainerPIDs(containerCtx.Request.CgroupParent)
-		if err != nil {
-			klog.V(5).Infof("failed to get PIDs for container %s/%s, err: %s", podMetaName, containerName, err)
-			return nil
-		}
-		if len(pids) <= 0 {
-			klog.V(5).Infof("no PID found for container %s/%s, group %s", podMetaName, containerName, groupID)
-			return nil
-		}
-
-		if cookieEntry != nil {
-			// firstly try Assign, if all cached sibling pids invalid, then try Add
-			// else cookie exists for group:
-			// 1. assign cookie if the container has not set cookie
-			// 2. assign cookie if some process of the container has missing cookie or set incoherent cookie
-			targetCookieID := cookieEntry.GetCookieID()
-
-			if notFoundPIDs := cookieEntry.ContainsPIDs(pids...); len(notFoundPIDs) <= 0 {
-				klog.V(6).Infof("assign cookie for container %s/%s skipped, group %s, cookie %v, PID num %v",
-					podMetaName, containerName, groupID, cookieEntry.GetCookieID(), len(pids))
-				p.updateCookieCacheForContainer(groupID, containerUID, cookieEntry)
-				recordContainerCookieMetrics(containerCtx, groupID, targetCookieID)
-
-				return nil
-			}
-
-			// do Assign
-			siblingPIDs := cookieEntry.GetAllPIDs()
-			pidsAssigned, sPIDsToDelete, err := p.assignCookie(pids, siblingPIDs, groupID, targetCookieID)
-			if err == nil {
-				if lastGroupID != groupID {
-					klog.V(4).Infof("assign cookie for container %s/%s finished, last group %s, group %s, cookie %v, PID num %v, assigned %v",
-						podMetaName, containerName, lastGroupID, groupID, targetCookieID, len(pids), len(pidsAssigned))
-				} else {
-					klog.V(5).Infof("assign cookie for container %s/%s finished, cookie %v, PID num %v, assigned %v",
-						podMetaName, containerName, targetCookieID, len(pids), len(pidsAssigned))
-				}
-
-				if len(pidsAssigned) <= 0 { // no pid is successfully assigned
-					return nil
-				}
-
-				cookieEntry.AddPIDs(pidsAssigned...)
-				cookieEntry.DeletePIDs(sPIDsToDelete...)
-				p.updateCookieCacheForContainer(groupID, containerUID, cookieEntry)
-				recordContainerCookieMetrics(containerCtx, groupID, targetCookieID)
-
-				return nil
-			}
-
-			metrics.RecordCoreSchedCookieManageStatus(groupID, false)
-			klog.V(4).Infof("failed to assign cookie for container %s/%s, fallback to add new cookie, group %s, old cookie %v, PID num %v, err: %v",
-				podMetaName, containerName, groupID, targetCookieID, len(pids), err)
-
-			// no valid sibling PID, fallback to Add
-			cookieEntry.DeletePIDs(sPIDsToDelete...)
-			p.cleanCookieCacheForContainer(groupID, containerUID, cookieEntry)
-		}
-
-		// group has no cookie, do Add
-		cookieID, pidAdded, err := p.addCookie(pids, groupID)
-		if err != nil {
-			metrics.RecordCoreSchedCookieManageStatus(groupID, false)
-			klog.V(4).Infof("failed to add cookie for container %s/%s, group %s, PID num %v, err: %v",
-				podMetaName, containerName, groupID, len(pids), err)
-			return nil
-		}
-		if cookieID <= sysutil.DefaultCoreSchedCookieID {
-			klog.V(4).Infof("failed to add cookie for container %s/%s, group %s, PID num %v, got unexpected cookie %v",
-				podMetaName, containerName, groupID, len(pids), cookieID)
-			return nil
-		}
-
-		cookieEntry = newCookieCacheEntry(cookieID, pidAdded...)
-		p.updateCookieCacheForContainer(groupID, containerUID, cookieEntry)
-		recordContainerCookieMetrics(containerCtx, groupID, cookieID)
-
-		klog.V(4).Infof("add cookie for container %s/%s finished, group %s, cookie %v, PID num %v",
-			podMetaName, containerName, groupID, cookieID, len(pids))
-		return nil
+		return p.enableContainerCookie(containerCtx, groupID)
 	}
 	// else pod disables
 
-	// invalid lastGroupID means container not in group cache (container should be cleared or not ever added)
-	// invalid lastCookieEntry means group not in cookie cache (group should be cleared)
-	// let its cached PIDs expire or removed by siblings' Assign
-	if (len(lastGroupID) <= 0 || lastGroupID == slov1alpha1.CoreSchedGroupIDNone) && lastCookieEntry == nil {
-		return nil
-	}
-
-	pids, err := p.getContainerPIDs(containerCtx.Request.CgroupParent)
-	if err != nil {
-		klog.V(5).Infof("failed to get PIDs for container %s/%s, err: %s",
-			podMetaName, containerName, err)
-		return nil
-	}
-	if len(pids) <= 0 {
-		klog.V(5).Infof("no PID found for container %s/%s, group %s", podMetaName, containerName, groupID)
-		return nil
-	}
-
-	// In case the pod has group set before while no cookie entry, do Clear to fix it
-	if lastCookieEntry == nil {
-		lastCookieEntry = newCookieCacheEntry(sysutil.DefaultCoreSchedCookieID)
-	}
-	lastCookieID := lastCookieEntry.GetCookieID()
-
-	// do Clear:
-	// - clear cookie if any process of the container has set cookie
-	pidsToClear := p.clearCookie(pids, lastGroupID, lastCookieID)
-	lastCookieEntry.DeletePIDs(pidsToClear...)
-	p.cleanCookieCacheForContainer(lastGroupID, containerUID, lastCookieEntry)
-	resetContainerCookieMetrics(containerCtx, lastGroupID, lastCookieID)
-
-	klog.V(4).Infof("clear cookie for container %s/%s finished, last group %s, last cookie %v, PID num %v",
-		podMetaName, containerName, lastGroupID, lastCookieID, len(pids))
-
-	return nil
+	return p.disableContainerCookie(containerCtx, groupID)
 }
 
+// LoadAllCookies syncs the current core sched cookies of all pods into the cookie cache.
 func (p *Plugin) LoadAllCookies(podMetas []*statesinformer.PodMeta) bool {
 	hasSynced := false
 	p.cookieCacheRWMutex.Lock()
@@ -368,7 +247,8 @@ func (p *Plugin) LoadAllCookies(podMetas []*statesinformer.PodMeta) bool {
 
 		containerPIDs := p.getAllContainerPIDs(podMeta)
 
-		for containerID, cPID := range containerPIDs {
+		for _, cPID := range containerPIDs {
+			containerID := cPID.ContainerID
 			pids := cPID.PID
 			if len(pids) <= 0 {
 				klog.V(5).Infof("aborted to get PIDs for container %s/%s, err: no available PID",
@@ -378,7 +258,7 @@ func (p *Plugin) LoadAllCookies(podMetas []*statesinformer.PodMeta) bool {
 
 			cookieID, pidsSynced, err := p.getCookie(pids, groupID)
 			if err != nil {
-				klog.V(4).Infof("failed to sync cookie for container %s/%s, err: %s",
+				klog.V(0).Infof("failed to sync cookie for container %s/%s, err: %s",
 					podMeta.Key(), containerID, err)
 				continue
 			}
@@ -419,6 +299,144 @@ func (p *Plugin) LoadAllCookies(podMetas []*statesinformer.PodMeta) bool {
 	}
 
 	return hasSynced
+}
+
+// enableContainerCookie adds or assigns a core sched cookie for the container.
+func (p *Plugin) enableContainerCookie(containerCtx *protocol.ContainerContext, groupID string) error {
+	podMetaName := containerCtx.Request.PodMeta.String()
+	containerName := containerCtx.Request.ContainerMeta.Name
+	podUID := containerCtx.Request.PodMeta.UID
+	containerUID := p.getContainerUID(podUID, containerCtx.Request.ContainerMeta.ID)
+	lastGroupID, _, cookieEntry := p.getCookieCacheForContainer(groupID, containerUID)
+
+	// assert groupID != "0"
+	// NOTE: if the group ID changed for a enabled pod, the cookie will be updated while the old PIDs should expire
+	// in the old cookie's cache.
+	pids, err := p.getContainerPIDs(containerCtx.Request.CgroupParent)
+	if err != nil {
+		klog.V(5).Infof("failed to get PIDs for container %s/%s, err: %s", podMetaName, containerName, err)
+		return nil
+	}
+	if len(pids) <= 0 {
+		klog.V(5).Infof("no PID found for container %s/%s, group %s", podMetaName, containerName, groupID)
+		return nil
+	}
+
+	if cookieEntry != nil {
+		// firstly try Assign, if all cached sibling pids invalid, then try Add
+		// else cookie exists for group:
+		// 1. assign cookie if the container has not set cookie
+		// 2. assign cookie if some process of the container has missing cookie or set incoherent cookie
+		targetCookieID := cookieEntry.GetCookieID()
+
+		if notFoundPIDs := cookieEntry.ContainsPIDs(pids...); len(notFoundPIDs) <= 0 {
+			klog.V(6).Infof("assign cookie for container %s/%s skipped, group %s, cookie %v, PID num %v",
+				podMetaName, containerName, groupID, cookieEntry.GetCookieID(), len(pids))
+			p.updateCookieCacheForContainer(groupID, containerUID, cookieEntry)
+			recordContainerCookieMetrics(containerCtx, groupID, targetCookieID)
+
+			return nil
+		}
+
+		// do Assign
+		siblingPIDs := cookieEntry.GetAllPIDs()
+		pidsAssigned, sPIDsToDelete, err := p.assignCookie(pids, siblingPIDs, groupID, targetCookieID)
+		if err == nil {
+			if lastGroupID != groupID {
+				klog.V(4).Infof("assign cookie for container %s/%s finished, last group %s, group %s, cookie %v, PID num %v, assigned %v",
+					podMetaName, containerName, lastGroupID, groupID, targetCookieID, len(pids), len(pidsAssigned))
+			} else {
+				klog.V(5).Infof("assign cookie for container %s/%s finished, cookie %v, PID num %v, assigned %v",
+					podMetaName, containerName, targetCookieID, len(pids), len(pidsAssigned))
+			}
+
+			if len(pidsAssigned) <= 0 { // no pid is successfully assigned
+				return nil
+			}
+
+			cookieEntry.AddPIDs(pidsAssigned...)
+			cookieEntry.DeletePIDs(sPIDsToDelete...)
+			p.updateCookieCacheForContainer(groupID, containerUID, cookieEntry)
+			recordContainerCookieMetrics(containerCtx, groupID, targetCookieID)
+
+			return nil
+		}
+
+		metrics.RecordCoreSchedCookieManageStatus(groupID, false)
+		klog.V(4).Infof("failed to assign cookie for container %s/%s, fallback to add new cookie, group %s, old cookie %v, PID num %v, err: %v",
+			podMetaName, containerName, groupID, targetCookieID, len(pids), err)
+
+		// no valid sibling PID, fallback to Add
+		cookieEntry.DeletePIDs(sPIDsToDelete...)
+		p.cleanCookieCacheForContainer(groupID, containerUID, cookieEntry)
+	}
+
+	// group has no cookie, do Add
+	cookieID, pidAdded, err := p.addCookie(pids, groupID)
+	if err != nil {
+		metrics.RecordCoreSchedCookieManageStatus(groupID, false)
+		klog.V(4).Infof("failed to add cookie for container %s/%s, group %s, PID num %v, err: %v",
+			podMetaName, containerName, groupID, len(pids), err)
+		return nil
+	}
+	if cookieID <= sysutil.DefaultCoreSchedCookieID {
+		klog.V(4).Infof("failed to add cookie for container %s/%s, group %s, PID num %v, got unexpected cookie %v",
+			podMetaName, containerName, groupID, len(pids), cookieID)
+		return nil
+	}
+
+	cookieEntry = newCookieCacheEntry(cookieID, pidAdded...)
+	p.updateCookieCacheForContainer(groupID, containerUID, cookieEntry)
+	recordContainerCookieMetrics(containerCtx, groupID, cookieID)
+
+	klog.V(4).Infof("add cookie for container %s/%s finished, group %s, cookie %v, PID num %v",
+		podMetaName, containerName, groupID, cookieID, len(pids))
+	return nil
+}
+
+// disableContainerCookie clears a core sched cookie for the container.
+func (p *Plugin) disableContainerCookie(containerCtx *protocol.ContainerContext, groupID string) error {
+	podMetaName := containerCtx.Request.PodMeta.String()
+	containerName := containerCtx.Request.ContainerMeta.Name
+	podUID := containerCtx.Request.PodMeta.UID
+	containerUID := p.getContainerUID(podUID, containerCtx.Request.ContainerMeta.ID)
+	lastGroupID, lastCookieEntry, _ := p.getCookieCacheForContainer(groupID, containerUID)
+
+	// invalid lastGroupID means container not in group cache (container should be cleared or not ever added)
+	// invalid lastCookieEntry means group not in cookie cache (group should be cleared)
+	// let its cached PIDs expire or removed by siblings' Assign
+	if (len(lastGroupID) <= 0 || lastGroupID == slov1alpha1.CoreSchedGroupIDNone) && lastCookieEntry == nil {
+		return nil
+	}
+
+	pids, err := p.getContainerPIDs(containerCtx.Request.CgroupParent)
+	if err != nil {
+		klog.V(5).Infof("failed to get PIDs for container %s/%s, err: %s",
+			podMetaName, containerName, err)
+		return nil
+	}
+	if len(pids) <= 0 {
+		klog.V(5).Infof("no PID found for container %s/%s, group %s", podMetaName, containerName, groupID)
+		return nil
+	}
+
+	// In case the pod has group set before while no cookie entry, do Clear to fix it
+	if lastCookieEntry == nil {
+		lastCookieEntry = newCookieCacheEntry(sysutil.DefaultCoreSchedCookieID)
+	}
+	lastCookieID := lastCookieEntry.GetCookieID()
+
+	// do Clear:
+	// - clear cookie if any process of the container has set cookie
+	pidsToClear := p.clearCookie(pids, lastGroupID, lastCookieID)
+	lastCookieEntry.DeletePIDs(pidsToClear...)
+	p.cleanCookieCacheForContainer(lastGroupID, containerUID, lastCookieEntry)
+	resetContainerCookieMetrics(containerCtx, lastGroupID, lastCookieID)
+
+	klog.V(4).Infof("clear cookie for container %s/%s finished, last group %s, last cookie %v, PID num %v",
+		podMetaName, containerName, lastGroupID, lastCookieID, len(pids))
+
+	return nil
 }
 
 // getCookieCacheForPod gets the last group ID, the last cookie entry and the cookie entry for the current group.

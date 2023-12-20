@@ -34,6 +34,7 @@ import (
 
 type containerPID struct {
 	ContainerName string
+	ContainerID   string
 	PID           []uint32
 }
 
@@ -99,7 +100,7 @@ func (p *Plugin) addCookie(pids []uint32, groupID string) (uint64, []uint32, err
 			pids[0], groupID, sysutil.DefaultCoreSchedCookieID, lastCookieID)
 	}
 
-	err = p.cse.Create(sysutil.CoreSchedScopeThread, pids[0])
+	err = p.cse.Create(sysutil.CoreSchedScopeThreadGroup, pids[0])
 	if err != nil {
 		return 0, nil, fmt.Errorf("create cookie for PID %v failed, err: %s", pids[0], err)
 	}
@@ -236,7 +237,7 @@ func (p *Plugin) clearCookie(pids []uint32, groupID string, lastCookieID uint64)
 // getPodEnabledAndGroup gets whether the pod enables the core scheduling and the group ID if it does.
 func (p *Plugin) getPodEnabledAndGroup(podAnnotations, podLabels map[string]string, podKubeQOS corev1.PodQOSClass, podUID string) (bool, string) {
 	// if the pod enables/disables the core-sched explicitly
-	groupID, isPodDisabled := slov1alpha1.GetCoreSchedGroupID(podAnnotations)
+	groupID, isPodDisabled := slov1alpha1.GetCoreSchedGroupID(podLabels)
 	if isPodDisabled != nil && *isPodDisabled { // pod disables
 		return false, groupID
 	}
@@ -319,8 +320,8 @@ func (p *Plugin) getNormalContainerPIDs(podMeta *statesinformer.PodMeta, contain
 	return pids, nil
 }
 
-func (p *Plugin) getAllContainerPIDs(podMeta *statesinformer.PodMeta) map[string]*containerPID {
-	containerToPIDs := map[string]*containerPID{}
+func (p *Plugin) getAllContainerPIDs(podMeta *statesinformer.PodMeta) []*containerPID {
+	var containerToPIDs []*containerPID
 	count := 0
 	pod := podMeta.Pod
 
@@ -329,9 +330,10 @@ func (p *Plugin) getAllContainerPIDs(podMeta *statesinformer.PodMeta) map[string
 	if err != nil {
 		klog.V(5).Infof("failed to get sandbox container PID for pod %s, err: %s", podMeta.Key(), err)
 	} else {
-		containerToPIDs[sandboxContainerID] = &containerPID{
-			PID: sandboxPIDs,
-		}
+		containerToPIDs = append(containerToPIDs, &containerPID{
+			ContainerID: sandboxContainerID,
+			PID:         sandboxPIDs,
+		})
 		count += len(sandboxPIDs)
 	}
 
@@ -363,14 +365,16 @@ func (p *Plugin) getAllContainerPIDs(podMeta *statesinformer.PodMeta) map[string
 			continue
 		}
 
-		containerToPIDs[containerStat.ContainerID] = &containerPID{
+		containerToPIDs = append(containerToPIDs, &containerPID{
 			ContainerName: containerStat.Name,
+			ContainerID:   containerStat.ContainerID,
 			PID:           containerPIDs,
-		}
+		})
 		count += len(containerPIDs)
 	}
 
-	klog.V(6).Infof("get PIDs for pod %s finished, PID num %v", podMeta.Key(), count)
+	klog.V(6).Infof("get PIDs for pod %s finished, sandbox and container num %v, PID num %v",
+		podMeta.Key(), len(containerToPIDs), count)
 	return containerToPIDs
 }
 

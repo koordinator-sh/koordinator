@@ -317,8 +317,8 @@ func TestCoreSchedCollector(t *testing.T) {
 			Name:      "test-pod",
 			Namespace: "test-ns",
 			UID:       "xxxxxx",
-			Annotations: map[string]string{
-				slov1alpha1.AnnotationCoreSchedGroupID: testCoreSchedGroup,
+			Labels: map[string]string{
+				slov1alpha1.LabelCoreSchedGroupID: testCoreSchedGroup,
 			},
 		},
 		Status: corev1.PodStatus{

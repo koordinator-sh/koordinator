@@ -254,12 +254,12 @@ func (f *FakeCoreSchedExtended) Assign(pidTypeFrom CoreSchedScopeType, pidFrom u
 }
 
 // EnableCoreSchedIfSupported checks if the core scheduling feature is enabled in the kernel sched_features.
-// If kernel supported, it tries to enable the core scheduling feature in the kernel.
+// If kernel supported (available in the latest Anolis OS), it tries to enable the core scheduling feature.
 // The core sched's kernel feature is known set in two places, if both of them are not found, the system is considered
 // unsupported for the core scheduling:
-//  1. In `/sys/kernel/debug/sched_features`, the field `CORE_SCHED` means the feature is enabled while `NO_CORE_SCHED`
+//  1. In `/proc/sys/kernel/sched_core`, the value `1` means the feature is enabled while `0` means disabled.
+//  2. (Older kernel) In `/sys/kernel/debug/sched_features`, the field `CORE_SCHED` means the feature is enabled while `NO_CORE_SCHED`
 //     means it is disabled.
-//  2. In `/proc/sys/kernel/sched_core`, the value `1` means the feature is enabled while `0` means disabled.
 func EnableCoreSchedIfSupported() (bool, string) {
 	// 1. try sysctl
 	isSysctlSupported, err := GetSchedCore()
@@ -279,7 +279,7 @@ func EnableCoreSchedIfSupported() (bool, string) {
 		klog.V(5).Infof("failed to enable core sched via sysctl since get failed, try sched_features, err: %s", err)
 	}
 
-	// 2. try sched_features
+	// 2. try sched_features (old interface)
 	isSchedFeaturesSuppported, msg := SchedFeatures.IsSupported("")
 	if !isSchedFeaturesSuppported { // sched_features not exist
 		klog.V(6).Infof("failed to enable core sched via sysctl or sched_features, feature unsupported, msg: %s", msg)
