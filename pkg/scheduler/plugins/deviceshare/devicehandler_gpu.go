@@ -37,6 +37,7 @@ type GPUHandler struct {
 }
 
 func (h *GPUHandler) CalcDesiredRequestsAndCount(podRequests corev1.ResourceList, totalDevices deviceResources, hint *apiext.DeviceHint) (corev1.ResourceList, int, error) {
+	podRequests = podRequests.DeepCopy()
 	if err := fillGPUTotalMem(totalDevices, podRequests); err != nil {
 		return nil, 0, err
 	}
