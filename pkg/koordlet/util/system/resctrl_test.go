@@ -98,6 +98,7 @@ func Test_ReadResctrlTasksMap(t *testing.T) {
 
 func TestResctrlSchemataRaw(t *testing.T) {
 	type fields struct {
+		cacheids  []int
 		l3Num     int
 		l3Mask    string
 		mbPercent string
@@ -111,14 +112,16 @@ func TestResctrlSchemataRaw(t *testing.T) {
 		{
 			name: "new l3 schemata",
 			fields: fields{
-				l3Num:  1,
-				l3Mask: "f",
+				cacheids: []int{0},
+				l3Num:    1,
+				l3Mask:   "f",
 			},
 			wantL3String: "L3:0=f;\n",
 		},
 		{
 			name: "new mba schemata",
 			fields: fields{
+				cacheids:  []int{0},
 				l3Num:     1,
 				mbPercent: "90",
 			},
@@ -127,6 +130,7 @@ func TestResctrlSchemataRaw(t *testing.T) {
 		{
 			name: "new l3 with mba schemata",
 			fields: fields{
+				cacheids:  []int{0, 1},
 				l3Num:     2,
 				l3Mask:    "fff",
 				mbPercent: "100",
@@ -134,10 +138,21 @@ func TestResctrlSchemataRaw(t *testing.T) {
 			wantL3String: "L3:0=fff;1=fff;\n",
 			wantMBString: "MB:0=100;1=100;\n",
 		},
+		{
+			name: "non-contiguous cache ids",
+			fields: fields{
+				cacheids:  []int{0, 8},
+				l3Num:     2,
+				l3Mask:    "fff",
+				mbPercent: "100",
+			},
+			wantL3String: "L3:0=fff;8=fff;\n",
+			wantMBString: "MB:0=100;8=100;\n",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			r := NewResctrlSchemataRaw()
+			r := NewResctrlSchemataRaw(tt.fields.cacheids)
 			r.WithL3Num(tt.fields.l3Num).WithL3Mask(tt.fields.l3Mask).WithMB(tt.fields.mbPercent)
 			if len(tt.fields.l3Mask) > 0 {
 				got := r.L3String()

@@ -520,7 +520,7 @@ func Test_getPodCgroupNewTaskIds(t *testing.T) {
 	}
 }
 
-func TestResctrlReconcile_calculateAndApplyCatL3PolicyForGroup(t *testing.T) {
+func TestResctrlReconcile_calculateAndApplyRDTL3PolicyForGroup(t *testing.T) {
 	type args struct {
 		group       string
 		cbm         uint
@@ -532,6 +532,7 @@ func TestResctrlReconcile_calculateAndApplyCatL3PolicyForGroup(t *testing.T) {
 		noUpdate     bool
 		cachedMask   string
 		schemataData []string
+		mockSchemata string
 	}
 	tests := []struct {
 		name    string
@@ -623,6 +624,9 @@ func TestResctrlReconcile_calculateAndApplyCatL3PolicyForGroup(t *testing.T) {
 					},
 				},
 			},
+			field: field{
+				mockSchemata: "L3:0=f;1=f;\n",
+			},
 			want:    "L3:0=f;1=f;\n",
 			wantErr: false,
 		},
@@ -651,6 +655,9 @@ func TestResctrlReconcile_calculateAndApplyCatL3PolicyForGroup(t *testing.T) {
 					},
 				},
 			},
+			field: field{
+				mockSchemata: "L3:0=7ff;1=7ff;\n",
+			},
 			want:    "L3:0=3c;1=3c;\n",
 			wantErr: false,
 		},
@@ -678,6 +685,9 @@ func TestResctrlReconcile_calculateAndApplyCatL3PolicyForGroup(t *testing.T) {
 						},
 					},
 				},
+			},
+			field: field{
+				mockSchemata: "L3:0=7ff;1=7ff;\n",
 			},
 			want:    "L3:0=3f;1=3f;\n",
 			wantErr: false,
@@ -711,6 +721,7 @@ func TestResctrlReconcile_calculateAndApplyCatL3PolicyForGroup(t *testing.T) {
 				noUpdate:     true,
 				cachedMask:   "3c",
 				schemataData: []string{"L3:0=f\nMB:0=100"},
+				mockSchemata: "L3:0=7ff\nMB:0=100\n",
 			},
 			want:    "L3:0=3c;\n",
 			wantErr: false,
@@ -719,12 +730,14 @@ func TestResctrlReconcile_calculateAndApplyCatL3PolicyForGroup(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			helper := system.NewFileTestUtil(t)
-			sysFSRootDirName := "calculateAndApplyCatL3PolicyForGroup"
+			sysFSRootDirName := "calculateAndApplyRDTL3PolicyForGroup"
 			helper.MkDirAll(sysFSRootDirName)
 			system.Conf.SysFSRootDir = filepath.Join(helper.TempDir, sysFSRootDirName)
 			validSysFSRootDir := system.Conf.SysFSRootDir
 			system.CommonRootDir = ""
-			testingPrepareResctrlL3CatGroups(t, "ff", "", tt.field.schemataData...)
+			testingPrepareResctrlL3CatGroups(t, "ff", tt.field.mockSchemata, tt.field.schemataData...)
+
+			os.ReadFile(filepath.Join(sysFSRootDirName))
 
 			opt := &framework.Options{
 				Config: framework.NewDefaultConfig(),
@@ -741,7 +754,7 @@ func TestResctrlReconcile_calculateAndApplyCatL3PolicyForGroup(t *testing.T) {
 			}
 
 			// execute function
-			err := r.calculateAndApplyCatL3PolicyForGroup(tt.args.group, tt.args.cbm, tt.args.l3Num,
+			err := r.calculateAndApplyRDTL3PolicyForGroup(tt.args.group, tt.args.cbm, tt.args.l3Num,
 				getResourceQOSForResctrlGroup(tt.args.qosStrategy, tt.args.group))
 			assert.Equal(t, tt.wantErr, err != nil, err)
 
@@ -760,7 +773,7 @@ func TestResctrlReconcile_calculateAndApplyCatL3PolicyForGroup(t *testing.T) {
 	}
 }
 
-func TestResctrlReconcile_calculateAndApplyCatMbPolicyForGroup(t *testing.T) {
+func TestResctrlReconcile_calculateAndApplyRDTMbPolicyForGroup(t *testing.T) {
 	type args struct {
 		group        string
 		l3Num        int
@@ -772,6 +785,7 @@ func TestResctrlReconcile_calculateAndApplyCatMbPolicyForGroup(t *testing.T) {
 		noUpdate      bool
 		cachedPercent string
 		schemataData  []string
+		mockSchemata  string
 	}
 	tests := []struct {
 		name    string
@@ -840,6 +854,9 @@ func TestResctrlReconcile_calculateAndApplyCatMbPolicyForGroup(t *testing.T) {
 					},
 				},
 			},
+			field: field{
+				mockSchemata: "L3:0=ff;1=ff;\nMB:0=90;1=90;\n",
+			},
 			want:    "MB:0=90;1=90;\n",
 			wantErr: false,
 		},
@@ -847,6 +864,7 @@ func TestResctrlReconcile_calculateAndApplyCatMbPolicyForGroup(t *testing.T) {
 			name: "apply policy correctly on amd",
 			field: field{
 				schemataData: []string{"    L3:0=f;1=f;2=f;3=f\n    MB:0=2048;1=2048;2=2048;3=2048"},
+				mockSchemata: "    L3:0=f;1=f;2=f;3=f\n    MB:0=2048;1=2048;2=2048;3=2048",
 			},
 			args: args{
 				group:        BEResctrlGroup,
@@ -870,6 +888,7 @@ func TestResctrlReconcile_calculateAndApplyCatMbPolicyForGroup(t *testing.T) {
 			name: "apply unlimited policy correctly on amd",
 			field: field{
 				schemataData: []string{"    L3:0=f;1=f;2=f;3=f\n    MB:0=100;1=100;2=100;3=100"},
+				mockSchemata: "    L3:0=f;1=f;2=f;3=f\n    MB:0=2048;1=2048;2=2048;3=2048",
 			},
 			args: args{
 				group:        BEResctrlGroup,
@@ -914,6 +933,7 @@ func TestResctrlReconcile_calculateAndApplyCatMbPolicyForGroup(t *testing.T) {
 			field: field{
 				noUpdate:      true,
 				cachedPercent: "90",
+				mockSchemata:  "L3:0=ff;1=ff\nMB:0=100;1=100;\n",
 			},
 			want:    "MB:0=90;1=90;\n",
 			wantErr: false,
@@ -945,6 +965,7 @@ func TestResctrlReconcile_calculateAndApplyCatMbPolicyForGroup(t *testing.T) {
 				noUpdate:      true,
 				cachedPercent: "80",
 				schemataData:  []string{"L3:0=f\nMB:0=100"},
+				mockSchemata:  "L3:0=f\nMB:0=100\n",
 			},
 			want:    "MB:0=80;\n",
 			wantErr: false,
@@ -953,12 +974,12 @@ func TestResctrlReconcile_calculateAndApplyCatMbPolicyForGroup(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			helper := system.NewFileTestUtil(t)
-			sysFSRootDirName := "calculateAndApplyCatMbPolicyForGroup"
+			sysFSRootDirName := "calculateAndApplyRDTMbPolicyForGroup"
 			helper.MkDirAll(sysFSRootDirName)
 			system.Conf.SysFSRootDir = filepath.Join(helper.TempDir, sysFSRootDirName)
 			validSysFSRootDir := system.Conf.SysFSRootDir
 			system.CommonRootDir = ""
-			testingPrepareResctrlL3CatGroups(t, "ff", "", tt.field.schemataData...)
+			testingPrepareResctrlL3CatGroups(t, "ff", tt.field.mockSchemata, tt.field.schemataData...)
 
 			opt := &framework.Options{
 				Config: framework.NewDefaultConfig(),
@@ -975,7 +996,7 @@ func TestResctrlReconcile_calculateAndApplyCatMbPolicyForGroup(t *testing.T) {
 			}
 
 			// execute function
-			err := r.calculateAndApplyCatMbPolicyForGroup(tt.args.group, tt.args.l3Num, tt.args.basicCPUInfo,
+			err := r.calculateAndApplyRDTMbPolicyForGroup(tt.args.group, tt.args.l3Num, tt.args.basicCPUInfo,
 				getResourceQOSForResctrlGroup(tt.args.qosStrategy, tt.args.group))
 			assert.Equal(t, tt.wantErr, err != nil)
 
@@ -994,7 +1015,7 @@ func TestResctrlReconcile_calculateAndApplyCatMbPolicyForGroup(t *testing.T) {
 	}
 }
 
-func TestResctrlReconcile_calculateAndApplyCatL3GroupTasks(t *testing.T) {
+func TestResctrlReconcile_calculateAndApplyRDTL3GroupTasks(t *testing.T) {
 	type args struct {
 		group   string
 		taskIds []int32
@@ -1069,7 +1090,7 @@ func TestResctrlReconcile_calculateAndApplyCatL3GroupTasks(t *testing.T) {
 			r.init(stop)
 			defer func() { stop <- struct{}{} }()
 
-			err := r.calculateAndApplyCatL3GroupTasks(tt.args.group, tt.args.taskIds)
+			err := r.calculateAndApplyRDTL3GroupTasks(tt.args.group, tt.args.taskIds)
 			assert.Equal(t, tt.wantErr, err != nil, err)
 
 			out, err := os.ReadFile(filepath.Join(validSysFSRootDir, system.ResctrlDir, tt.args.group,
@@ -1080,11 +1101,11 @@ func TestResctrlReconcile_calculateAndApplyCatL3GroupTasks(t *testing.T) {
 	}
 }
 
-func TestResctrlReconcile_reconcileCatResctrlPolicy(t *testing.T) {
+func TestResctrlReconcile_reconcileRDTResctrlPolicy(t *testing.T) {
 	t.Run("test", func(t *testing.T) {
 		helper := system.NewFileTestUtil(t)
 
-		sysFSRootDirName := "reconcileCatResctrlPolicy"
+		sysFSRootDirName := "reconcileRDTResctrlPolicy"
 		helper.MkDirAll(sysFSRootDirName)
 
 		system.Conf.SysFSRootDir = filepath.Join(helper.TempDir, sysFSRootDirName)
@@ -1147,7 +1168,7 @@ func TestResctrlReconcile_reconcileCatResctrlPolicy(t *testing.T) {
 		defer func() { stop <- struct{}{} }()
 
 		// reconcile and check if the result is correct
-		r.reconcileCatResctrlPolicy(nodeSLO.Spec.ResourceQOSStrategy)
+		r.reconcileRDTResctrlPolicy(nodeSLO.Spec.ResourceQOSStrategy)
 
 		beSchemataPath := filepath.Join(resctrlDirPath, BEResctrlGroup, system.ResctrlSchemataName)
 		expectBESchemataStr := "L3:0=3f;1=3f;\n"
@@ -1162,11 +1183,11 @@ func TestResctrlReconcile_reconcileCatResctrlPolicy(t *testing.T) {
 		// log error for invalid be resctrl path
 		err = os.RemoveAll(filepath.Join(resctrlDirPath, BEResctrlGroup))
 		assert.NoError(t, err)
-		r.reconcileCatResctrlPolicy(nodeSLO.Spec.ResourceQOSStrategy)
+		r.reconcileRDTResctrlPolicy(nodeSLO.Spec.ResourceQOSStrategy)
 
 		// log error for invalid root resctrl path
 		system.Conf.SysFSRootDir = "invalidPath"
-		r.reconcileCatResctrlPolicy(nodeSLO.Spec.ResourceQOSStrategy)
+		r.reconcileRDTResctrlPolicy(nodeSLO.Spec.ResourceQOSStrategy)
 		system.Conf.SysFSRootDir = validSysFSRootDir
 
 		// log error for invalid l3 number
@@ -1174,27 +1195,27 @@ func TestResctrlReconcile_reconcileCatResctrlPolicy(t *testing.T) {
 			BasicInfo: extension.CPUBasicInfo{CatL3CbmMask: "7ff"},
 			TotalInfo: koordletutil.CPUTotalInfo{},
 		}, true).Times(1)
-		r.reconcileCatResctrlPolicy(nodeSLO.Spec.ResourceQOSStrategy)
+		r.reconcileRDTResctrlPolicy(nodeSLO.Spec.ResourceQOSStrategy)
 
 		// log error for invalid l3 cbm
 		metricCache.EXPECT().Get(metriccache.NodeCPUInfoKey).Return(&metriccache.NodeCPUInfo{
 			BasicInfo: extension.CPUBasicInfo{CatL3CbmMask: "invalid"},
 			TotalInfo: koordletutil.CPUTotalInfo{L3ToCPU: map[int32][]koordletutil.ProcessorInfo{0: {}, 1: {}}},
 		}, true).Times(1)
-		r.reconcileCatResctrlPolicy(nodeSLO.Spec.ResourceQOSStrategy)
+		r.reconcileRDTResctrlPolicy(nodeSLO.Spec.ResourceQOSStrategy)
 		metricCache.EXPECT().Get(metriccache.NodeCPUInfoKey).Return(&metriccache.NodeCPUInfo{
 			BasicInfo: extension.CPUBasicInfo{CatL3CbmMask: ""},
 			TotalInfo: koordletutil.CPUTotalInfo{L3ToCPU: map[int32][]koordletutil.ProcessorInfo{0: {}, 1: {}}},
 		}, true).Times(1)
-		r.reconcileCatResctrlPolicy(nodeSLO.Spec.ResourceQOSStrategy)
+		r.reconcileRDTResctrlPolicy(nodeSLO.Spec.ResourceQOSStrategy)
 
 		// log error for invalid nodeCPUInfo
 		metricCache.EXPECT().Get(metriccache.NodeCPUInfoKey).Return(nil, false)
-		r.reconcileCatResctrlPolicy(nodeSLO.Spec.ResourceQOSStrategy)
+		r.reconcileRDTResctrlPolicy(nodeSLO.Spec.ResourceQOSStrategy)
 
 		// log error for get nodeCPUInfo failed
 		metricCache.EXPECT().Get(metriccache.NodeCPUInfoKey).Return(nil, false)
-		r.reconcileCatResctrlPolicy(nodeSLO.Spec.ResourceQOSStrategy)
+		r.reconcileRDTResctrlPolicy(nodeSLO.Spec.ResourceQOSStrategy)
 	})
 }
 

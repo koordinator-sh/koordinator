@@ -290,7 +290,7 @@ func (r *resctrlReconcile) getPodCgroupNewTaskIds(podMeta *statesinformer.PodMet
 	return taskIds
 }
 
-func (r *resctrlReconcile) calculateAndApplyCatL3PolicyForGroup(group string, cbm uint, l3Num int,
+func (r *resctrlReconcile) calculateAndApplyRDTL3PolicyForGroup(group string, cbm uint, l3Num int,
 	resourceQoS *slov1alpha1.ResourceQOS) error {
 	if resourceQoS == nil || resourceQoS.ResctrlQOS == nil || resourceQoS.ResctrlQOS.CATRangeStartPercent == nil ||
 		resourceQoS.ResctrlQOS.CATRangeEndPercent == nil {
@@ -326,7 +326,7 @@ func (r *resctrlReconcile) calculateAndApplyCatL3PolicyForGroup(group string, cb
 	return nil
 }
 
-func (r *resctrlReconcile) calculateAndApplyCatMbPolicyForGroup(group string, l3Num int, cpuBasicInfo extension.CPUBasicInfo, resourceQoS *slov1alpha1.ResourceQOS) error {
+func (r *resctrlReconcile) calculateAndApplyRDTMbPolicyForGroup(group string, l3Num int, cpuBasicInfo extension.CPUBasicInfo, resourceQoS *slov1alpha1.ResourceQOS) error {
 	if resourceQoS == nil || resourceQoS.ResctrlQOS == nil {
 		klog.Warningf("skipped, since resourceQoS or ResctrlQOS is nil for group %v, "+
 			"resourceQoS %v", resourceQoS, group)
@@ -356,7 +356,7 @@ func (r *resctrlReconcile) calculateAndApplyCatMbPolicyForGroup(group string, l3
 	return nil
 }
 
-func (r *resctrlReconcile) calculateAndApplyCatL3GroupTasks(group string, taskIds []int32) error {
+func (r *resctrlReconcile) calculateAndApplyRDTL3GroupTasks(group string, taskIds []int32) error {
 	if len(taskIds) <= 0 {
 		klog.V(6).Infof("apply l3 cat tasks for group %s skipped, no new task id", group)
 		return nil
@@ -384,7 +384,7 @@ func (r *resctrlReconcile) calculateAndApplyCatL3GroupTasks(group string, taskId
 	return nil
 }
 
-func (r *resctrlReconcile) reconcileCatResctrlPolicy(qosStrategy *slov1alpha1.ResourceQOSStrategy) {
+func (r *resctrlReconcile) reconcileRDTResctrlPolicy(qosStrategy *slov1alpha1.ResourceQOSStrategy) {
 	// 1. retrieve rdt configs from nodeSLOSpec
 	// 2.1 get cbm and l3 numbers, which are general for all resctrl groups
 	// 2.2 calculate applying resctrl policies, like cat policy and so on, with each rdt config
@@ -427,11 +427,11 @@ func (r *resctrlReconcile) reconcileCatResctrlPolicy(qosStrategy *slov1alpha1.Re
 	// calculate and apply l3 cat policy for each group
 	for _, group := range resctrlGroupList {
 		resQoSStrategy := getResourceQOSForResctrlGroup(qosStrategy, group)
-		err = r.calculateAndApplyCatL3PolicyForGroup(group, cbm, l3Num, resQoSStrategy)
+		err = r.calculateAndApplyRDTL3PolicyForGroup(group, cbm, l3Num, resQoSStrategy)
 		if err != nil {
 			klog.Warningf("failed to apply l3 cat policy for group %v, err: %v", group, err)
 		}
-		err = r.calculateAndApplyCatMbPolicyForGroup(group, l3Num, nodeCPUInfo.BasicInfo, resQoSStrategy)
+		err = r.calculateAndApplyRDTMbPolicyForGroup(group, l3Num, nodeCPUInfo.BasicInfo, resQoSStrategy)
 		if err != nil {
 			klog.Warningf("failed to apply cat MB policy for group %v, err: %v", group, err)
 		}
@@ -481,7 +481,7 @@ func (r *resctrlReconcile) reconcileResctrlGroups(qosStrategy *slov1alpha1.Resou
 
 	// write Cat L3 tasks for each resctrl group
 	for _, group := range resctrlGroupList {
-		err = r.calculateAndApplyCatL3GroupTasks(group, taskIds[group])
+		err = r.calculateAndApplyRDTL3GroupTasks(group, taskIds[group])
 		if err != nil {
 			klog.Warningf("failed to apply l3 cat tasks for group %s, err %s", group, err)
 		}
@@ -518,6 +518,6 @@ func (r *resctrlReconcile) reconcile() {
 		klog.V(4).Infof("resctrlReconcile failed, cannot initialize cat resctrl group, err: %s", err)
 		return
 	}
-	r.reconcileCatResctrlPolicy(nodeSLO.Spec.ResourceQOSStrategy)
+	r.reconcileRDTResctrlPolicy(nodeSLO.Spec.ResourceQOSStrategy)
 	r.reconcileResctrlGroups(nodeSLO.Spec.ResourceQOSStrategy)
 }
