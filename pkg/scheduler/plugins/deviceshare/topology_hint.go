@@ -35,6 +35,11 @@ func (p *Plugin) GetPodTopologyHints(ctx context.Context, cycleState *framework.
 	if !status.IsSuccess() {
 		return nil, status
 	}
+
+	if state.skip {
+		return nil, nil
+	}
+
 	nodeInfo, err := p.handle.SnapshotSharedLister().NodeInfos().Get(nodeName)
 	if err != nil {
 		return nil, framework.AsStatus(err)
@@ -53,6 +58,10 @@ func (p *Plugin) Allocate(ctx context.Context, cycleState *framework.CycleState,
 	state, status := getPreFilterState(cycleState)
 	if !status.IsSuccess() {
 		return status
+	}
+
+	if state.skip {
+		return nil
 	}
 
 	nodeInfo, err := p.handle.SnapshotSharedLister().NodeInfos().Get(nodeName)
