@@ -42,14 +42,18 @@ func GetCacheInfo(str string) (string, int32, error) {
 	if s == "-" {
 		return "0", 0, nil
 	}
-	// otherwise we suppose the input is valid cache info
-	// assert l1, l2 are private cache, so they has the same id with the core
+	// followings are same with amd64
+	// assert l1, l2 are private cache, so they have the same id with the core
+	// L3 cache maybe not available, when the host is qemu-kvm. detail: https://bugzilla.redhat.com/show_bug.cgi?id=1434537
 	infos := strings.Split(s, ":")
-	if len(infos) != 4 {
-		return "", 0, fmt.Errorf("invalid format for cache info")
+	if len(infos) < 3 {
+		return "", 0, fmt.Errorf("invalid cache info %s", str)
 	}
 	l1l2 := infos[0]
-	l3, err := strconv.Atoi(infos[3])
+	if len(infos) == 3 {
+		return l1l2, 0, nil
+	}
+	l3, err := strconv.ParseInt(infos[3], 10, 32)
 	if err != nil {
 		return "", 0, err
 	}
