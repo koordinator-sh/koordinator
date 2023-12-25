@@ -254,6 +254,9 @@ func (pgMgr *PodGroupManager) PreFilter(ctx context.Context, pod *corev1.Pod) er
 
 	gangMode := gang.getGangMode()
 	if gangMode == extension.GangModeStrict {
+		if pod.Status.NominatedNodeName != "" {
+			return nil
+		}
 		podScheduleCycle := gang.getChildScheduleCycle(pod)
 		if !gang.isScheduleCycleValid() {
 			return fmt.Errorf("gang scheduleCycle not valid, gangName: %v, podName: %v",
