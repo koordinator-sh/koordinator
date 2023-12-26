@@ -50,6 +50,15 @@ const (
 	CPUQOSPolicyCoreSched CPUQOSPolicy = "coreSched"
 )
 
+type NETQOSPolicy string
+
+const (
+	// NETQOSPolicyTC indicates implement netqos by tc.
+	NETQOSPolicyTC NETQOSPolicy = "tc"
+	// NETQOSPolicyTerwayQos indicates implement netqos by terway-qos.
+	NETQOSPolicyTerwayQos NETQOSPolicy = "terway-qos"
+)
+
 // MemoryQOS enables memory qos features.
 type MemoryQOS struct {
 	// memcg qos
@@ -243,6 +252,9 @@ type NetworkQOS struct {
 type ResourceQOSPolicies struct {
 	// applied policy for the CPU QoS, default = "groupIdentity"
 	CPUPolicy *CPUQOSPolicy `json:"cpuPolicy,omitempty"`
+
+	// applied policy for the Net QoS, default = "tc"
+	NETQOSPolicy *NETQOSPolicy `json:"netQOSPolicy,omitempty"`
 }
 
 type ResourceQOSStrategy struct {

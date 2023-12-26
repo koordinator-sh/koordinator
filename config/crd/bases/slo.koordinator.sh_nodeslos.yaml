@@ -1222,6 +1222,9 @@ spec:
                       cpuPolicy:
                         description: applied policy for the CPU QoS, default = "groupIdentity"
                         type: string
+                      netQOSPolicy:
+                        description: applied policy for the Net QoS, default = "tc"
+                        type: string
                     type: object
                   systemClass:
                     description: ResourceQOS for system pods
