@@ -260,14 +260,10 @@ func (pl *Plugin) AddPod(ctx context.Context, cycleState *framework.CycleState, 
 		return nil
 	}
 
-	boundReservation, err := apiext.GetReservationAllocated(podInfoToAdd.Pod)
-	if err != nil {
-		return framework.AsStatus(err)
-	}
-
 	node := nodeInfo.Node()
+	rInfo := pl.reservationCache.getReservationInfoByPod(podInfoToAdd.Pod, node.Name)
 	state := getStateData(cycleState)
-	if boundReservation == nil || boundReservation.UID == "" {
+	if rInfo == nil {
 		preemptible := quotav1.SubtractWithNonNegativeResult(state.preemptible[node.Name], podRequests)
 		if quotav1.IsZero(preemptible) {
 			delete(state.preemptible, node.Name)
@@ -276,10 +272,10 @@ func (pl *Plugin) AddPod(ctx context.Context, cycleState *framework.CycleState, 
 		}
 	} else {
 		preemptibleInRRs := state.preemptibleInRRs[node.Name]
-		preemptible := preemptibleInRRs[boundReservation.UID]
+		preemptible := preemptibleInRRs[rInfo.UID()]
 		preemptible = quotav1.SubtractWithNonNegativeResult(preemptible, podRequests)
 		if quotav1.IsZero(preemptible) {
-			delete(preemptibleInRRs, boundReservation.UID)
+			delete(preemptibleInRRs, rInfo.UID())
 		}
 		if len(preemptibleInRRs) == 0 {
 			delete(state.preemptibleInRRs, node.Name)
@@ -299,14 +295,10 @@ func (pl *Plugin) RemovePod(ctx context.Context, cycleState *framework.CycleStat
 		return nil
 	}
 
-	boundReservation, err := apiext.GetReservationAllocated(podInfoToRemove.Pod)
-	if err != nil {
-		return framework.AsStatus(err)
-	}
-
 	node := nodeInfo.Node()
+	rInfo := pl.reservationCache.getReservationInfoByPod(podInfoToRemove.Pod, node.Name)
 	state := getStateData(cycleState)
-	if boundReservation == nil || boundReservation.UID == "" {
+	if rInfo == nil {
 		preemptible := state.preemptible[node.Name]
 		state.preemptible[node.Name] = quotav1.Add(preemptible, podRequests)
 	} else {
@@ -315,8 +307,8 @@ func (pl *Plugin) RemovePod(ctx context.Context, cycleState *framework.CycleStat
 			preemptibleInRRs = map[types.UID]corev1.ResourceList{}
 			state.preemptibleInRRs[node.Name] = preemptibleInRRs
 		}
-		preemptible := preemptibleInRRs[boundReservation.UID]
-		preemptibleInRRs[boundReservation.UID] = quotav1.Add(preemptible, podRequests)
+		preemptible := preemptibleInRRs[rInfo.UID()]
+		preemptibleInRRs[rInfo.UID()] = quotav1.Add(preemptible, podRequests)
 	}
 
 	return nil
@@ -348,14 +340,14 @@ func (pl *Plugin) Filter(ctx context.Context, cycleState *framework.CycleState, 
 			allocatePolicy = schedulingv1alpha1.ReservationAllocatePolicyAligned
 		}
 
-		status := pl.reservationCache.forEachAvailableReservationOnNode(node.Name, func(rInfo *frameworkext.ReservationInfo) *framework.Status {
+		status := pl.reservationCache.forEachAvailableReservationOnNode(node.Name, func(rInfo *frameworkext.ReservationInfo) (bool, *framework.Status) {
 			// ReservationAllocatePolicyDefault cannot coexist with other allocate policies
 			if (allocatePolicy == schedulingv1alpha1.ReservationAllocatePolicyDefault ||
 				rInfo.GetAllocatePolicy() == schedulingv1alpha1.ReservationAllocatePolicyDefault) &&
 				allocatePolicy != rInfo.GetAllocatePolicy() {
-				return framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrReasonReservationAllocatePolicyConflict)
+				return false, framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrReasonReservationAllocatePolicyConflict)
 			}
-			return nil
+			return true, nil
 		})
 		if !status.IsSuccess() {
 			return status
