@@ -38,6 +38,7 @@ var theReservationCache atomic.Value
 
 type ReservationCache interface {
 	DeleteReservation(r *schedulingv1alpha1.Reservation) *frameworkext.ReservationInfo
+	GetReservationInfoByPod(pod *corev1.Pod, nodeName string) *frameworkext.ReservationInfo
 }
 
 func GetReservationCache() ReservationCache {
@@ -233,7 +234,7 @@ func (cache *reservationCache) getReservationInfoByUID(uid types.UID) *framework
 	return nil
 }
 
-func (cache *reservationCache) getReservationInfoByPod(pod *corev1.Pod, nodeName string) *frameworkext.ReservationInfo {
+func (cache *reservationCache) GetReservationInfoByPod(pod *corev1.Pod, nodeName string) *frameworkext.ReservationInfo {
 	var target *frameworkext.ReservationInfo
 	cache.forEachAvailableReservationOnNode(nodeName, func(rInfo *frameworkext.ReservationInfo) (bool, *framework.Status) {
 		if _, ok := rInfo.AssignedPods[pod.UID]; ok {

@@ -1271,7 +1271,11 @@ func TestPreFilterExtensionAddPod(t *testing.T) {
 				},
 				preemptibleInRRs: map[string]map[types.UID]corev1.ResourceList{},
 			},
-			wantPreemptible:      map[string]corev1.ResourceList{},
+			wantPreemptible: map[string]corev1.ResourceList{
+				"test-node": {
+					corev1.ResourceCPU: *resource.NewQuantity(0, resource.DecimalSI),
+				},
+			},
 			wantPreemptibleInRRs: map[string]map[types.UID]corev1.ResourceList{},
 		},
 		{
@@ -1305,8 +1309,14 @@ func TestPreFilterExtensionAddPod(t *testing.T) {
 					},
 				},
 			},
-			wantPreemptible:      map[string]corev1.ResourceList{},
-			wantPreemptibleInRRs: map[string]map[types.UID]corev1.ResourceList{},
+			wantPreemptible: map[string]corev1.ResourceList{},
+			wantPreemptibleInRRs: map[string]map[types.UID]corev1.ResourceList{
+				"test-node": {
+					"123456": {
+						corev1.ResourceCPU: *resource.NewQuantity(0, resource.DecimalSI),
+					},
+				},
+			},
 		},
 	}
 	for _, tt := range tests {

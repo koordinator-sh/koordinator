@@ -86,7 +86,7 @@ func (rs *nodeReservationRestoreStateData) mergeReservationAllocations() {
 	if len(unmatched) > 0 {
 		mergedUnmatchedUsed := map[schedulingv1alpha1.DeviceType]deviceResources{}
 		for _, alloc := range unmatched {
-			used := subtractAllocated(copyDeviceResources(alloc.allocatable), alloc.remained)
+			used := subtractAllocated(copyDeviceResources(alloc.allocatable), alloc.remained, true)
 			mergedUnmatchedUsed = appendAllocated(mergedUnmatchedUsed, used)
 		}
 		rs.mergedUnmatchedUsed = mergedUnmatchedUsed
@@ -154,7 +154,7 @@ func (p *Plugin) RestoreReservation(ctx context.Context, cycleState *framework.C
 				rInfo:       rInfo,
 				allocatable: allocatable,
 				allocated:   allocated,
-				remained:    subtractAllocated(copyDeviceResources(allocatable), allocated),
+				remained:    subtractAllocated(copyDeviceResources(allocatable), allocated, true),
 			})
 		}
 		return result
