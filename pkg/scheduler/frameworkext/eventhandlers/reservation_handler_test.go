@@ -55,6 +55,10 @@ func (f *fakeReservationCache) DeleteReservation(r *schedulingv1alpha1.Reservati
 	return frameworkext.NewReservationInfo(r)
 }
 
+func (f *fakeReservationCache) GetReservationInfoByPod(pod *corev1.Pod, nodeName string) *frameworkext.ReservationInfo {
+	return nil
+}
+
 func TestAddReservationErrorHandler(t *testing.T) {
 	testNodeName := "test-node-0"
 	testR := &schedulingv1alpha1.Reservation{

@@ -62,7 +62,7 @@ func (r deviceResources) append(in deviceResources, hintMinors sets.Int) {
 	}
 }
 
-func (r deviceResources) subtract(in deviceResources) {
+func (r deviceResources) subtract(in deviceResources, withNonNegativeResult bool) {
 	if len(r) == 0 {
 		return
 	}
@@ -72,7 +72,11 @@ func (r deviceResources) subtract(in deviceResources) {
 			continue
 		}
 		resourceNames := quotav1.ResourceNames(resourceList)
-		resourceList = quotav1.SubtractWithNonNegativeResult(resourceList, quotav1.Mask(res, resourceNames))
+		if withNonNegativeResult {
+			resourceList = quotav1.SubtractWithNonNegativeResult(resourceList, quotav1.Mask(res, resourceNames))
+		} else {
+			resourceList = quotav1.Subtract(resourceList, quotav1.Mask(res, resourceNames))
+		}
 		if quotav1.IsZero(resourceList) {
 			delete(r, minor)
 		} else {
@@ -98,13 +102,13 @@ func copyDeviceResources(m map[schedulingv1alpha1.DeviceType]deviceResources) ma
 	return r
 }
 
-func subtractAllocated(m, allocated map[schedulingv1alpha1.DeviceType]deviceResources) map[schedulingv1alpha1.DeviceType]deviceResources {
+func subtractAllocated(m, allocated map[schedulingv1alpha1.DeviceType]deviceResources, withNonNegativeResult bool) map[schedulingv1alpha1.DeviceType]deviceResources {
 	for deviceType, devicesResources := range allocated {
 		ra := m[deviceType]
 		if len(ra) == 0 {
 			continue
 		}
-		ra.subtract(devicesResources)
+		ra.subtract(devicesResources, withNonNegativeResult)
 		if len(ra) == 0 {
 			delete(m, deviceType)
 		}

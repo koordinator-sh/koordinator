@@ -261,25 +261,15 @@ func (pl *Plugin) AddPod(ctx context.Context, cycleState *framework.CycleState, 
 	}
 
 	node := nodeInfo.Node()
-	rInfo := pl.reservationCache.getReservationInfoByPod(podInfoToAdd.Pod, node.Name)
+	rInfo := pl.reservationCache.GetReservationInfoByPod(podInfoToAdd.Pod, node.Name)
 	state := getStateData(cycleState)
 	if rInfo == nil {
-		preemptible := quotav1.SubtractWithNonNegativeResult(state.preemptible[node.Name], podRequests)
-		if quotav1.IsZero(preemptible) {
-			delete(state.preemptible, node.Name)
-		} else {
-			state.preemptible[node.Name] = preemptible
-		}
+		preemptible := state.preemptible[node.Name]
+		state.preemptible[node.Name] = quotav1.Subtract(preemptible, podRequests)
 	} else {
 		preemptibleInRRs := state.preemptibleInRRs[node.Name]
 		preemptible := preemptibleInRRs[rInfo.UID()]
-		preemptible = quotav1.SubtractWithNonNegativeResult(preemptible, podRequests)
-		if quotav1.IsZero(preemptible) {
-			delete(preemptibleInRRs, rInfo.UID())
-		}
-		if len(preemptibleInRRs) == 0 {
-			delete(state.preemptibleInRRs, node.Name)
-		}
+		preemptibleInRRs[rInfo.UID()] = quotav1.Subtract(preemptible, podRequests)
 	}
 
 	return nil
@@ -295,9 +285,9 @@ func (pl *Plugin) RemovePod(ctx context.Context, cycleState *framework.CycleStat
 		return nil
 	}
 
-	node := nodeInfo.Node()
-	rInfo := pl.reservationCache.getReservationInfoByPod(podInfoToRemove.Pod, node.Name)
 	state := getStateData(cycleState)
+	node := nodeInfo.Node()
+	rInfo := pl.reservationCache.GetReservationInfoByPod(podInfoToRemove.Pod, node.Name)
 	if rInfo == nil {
 		preemptible := state.preemptible[node.Name]
 		state.preemptible[node.Name] = quotav1.Add(preemptible, podRequests)
