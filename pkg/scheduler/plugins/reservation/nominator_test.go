@@ -272,7 +272,14 @@ func TestNominateReservation(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			suit := newPluginTestSuit(t)
+			node := &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node",
+				},
+				Status: corev1.NodeStatus{},
+			}
+
+			suit := newPluginTestSuitWith(t, nil, []*corev1.Node{node})
 			plugin, err := suit.pluginFactory()
 			assert.NoError(t, err)
 			pl := plugin.(*Plugin)
@@ -292,7 +299,7 @@ func TestNominateReservation(t *testing.T) {
 				pl.reservationCache.updateReservation(reservation)
 			}
 			cycleState.Write(stateKey, state)
-			nominateRInfo, status := pl.NominateReservation(context.TODO(), cycleState, tt.pod, "test-node")
+			nominateRInfo, status := pl.NominateReservation(context.TODO(), cycleState, tt.pod, node.Name)
 			if tt.wantReservation == nil {
 				assert.Nil(t, nominateRInfo)
 			} else {

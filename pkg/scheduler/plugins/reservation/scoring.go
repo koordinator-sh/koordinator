@@ -117,7 +117,8 @@ func (pl *Plugin) Score(ctx context.Context, cycleState *framework.CycleState, p
 	if reservationInfo == nil {
 		return framework.MinNodeScore, nil
 	}
-	return scoreReservation(pod, reservationInfo), nil
+
+	return pl.ScoreReservation(ctx, cycleState, pod, reservationInfo, nodeName)
 }
 
 func (pl *Plugin) ScoreExtensions() framework.ScoreExtensions {
@@ -146,7 +147,14 @@ func (pl *Plugin) ScoreReservation(ctx context.Context, cycleState *framework.Cy
 		return 0, framework.AsStatus(fmt.Errorf("impossible, there is no relevant Reservation information"))
 	}
 
-	return scoreReservation(pod, rInfo), nil
+	preemptibleInRR := state.preemptibleInRRs[nodeName][rInfo.UID()]
+	allocated := rInfo.Allocated
+	if len(preemptibleInRR) > 0 {
+		allocated = quotav1.SubtractWithNonNegativeResult(allocated, preemptibleInRR)
+		allocated = quotav1.Mask(allocated, rInfo.ResourceNames)
+	}
+
+	return scoreReservation(pod, rInfo, allocated), nil
 }
 
 func (pl *Plugin) ReservationScoreExtensions() frameworkext.ReservationScoreExtensions {
@@ -174,14 +182,11 @@ func findMostPreferredReservationByOrder(rOnNode []*frameworkext.ReservationInfo
 	return highOrder, selectOrder
 }
 
-func scoreReservation(pod *corev1.Pod, reservation *frameworkext.ReservationInfo) int64 {
+func scoreReservation(pod *corev1.Pod, rInfo *frameworkext.ReservationInfo, allocated corev1.ResourceList) int64 {
 	// TODO(joseph): we should support zero-request pods
 	requested, _ := resourceapi.PodRequestsAndLimits(pod)
-	if allocated := reservation.Allocated; allocated != nil {
-		// consider multi owners sharing one reservation
-		requested = quotav1.Add(requested, allocated)
-	}
-	resources := quotav1.RemoveZeros(reservation.Allocatable)
+	requested = quotav1.Add(requested, allocated)
+	resources := quotav1.RemoveZeros(rInfo.Allocatable)
 
 	w := int64(len(resources))
 	if w <= 0 {
