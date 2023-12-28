@@ -49,6 +49,7 @@ import (
 	_ "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/scheme"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/v1beta2"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
+	frameworkexttesting "github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/testing"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/topologymanager"
 	"github.com/koordinator-sh/koordinator/pkg/util/bitmask"
 	"github.com/koordinator-sh/koordinator/pkg/util/cpuset"
@@ -163,6 +164,7 @@ func newPluginTestSuit(t *testing.T, pods []*corev1.Pod, nodes []*corev1.Node) *
 	extenderFactory, err := frameworkext.NewFrameworkExtenderFactory(
 		frameworkext.WithKoordinatorClientSet(koordClientSet),
 		frameworkext.WithKoordinatorSharedInformerFactory(koordSharedInformerFactory),
+		frameworkext.WithReservationNominator(frameworkexttesting.NewFakeReservationNominator()),
 	)
 	assert.NoError(t, err)
 
@@ -1117,7 +1119,7 @@ func TestPlugin_Reserve(t *testing.T) {
 							},
 						}
 						rInfo := frameworkext.NewReservationInfo(reservation)
-						frameworkext.SetNominatedReservation(cycleState, map[string]*frameworkext.ReservationInfo{"test-node-1": rInfo})
+						plg.handle.GetReservationNominator().AddNominatedReservation(tt.pod, "test-node-1", rInfo)
 					}
 					cycleState.Write(reservationRestoreStateKey, &reservationRestoreStateData{
 						skip: false,

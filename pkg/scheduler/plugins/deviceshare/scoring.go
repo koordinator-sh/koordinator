@@ -69,7 +69,7 @@ func (p *Plugin) Score(ctx context.Context, cycleState *framework.CycleState, po
 	nodeDeviceInfo.lock.RLock()
 	defer nodeDeviceInfo.lock.RUnlock()
 
-	reservationInfo := frameworkext.GetNominatedReservation(cycleState, nodeName)
+	reservationInfo := p.handle.GetReservationNominator().GetNominatedReservation(pod, nodeName)
 	if reservationInfo != nil {
 		score, status := p.scoreWithNominatedReservation(allocator, state, restoreState, nodeName, pod, preemptible, reservationInfo)
 		if status.IsSuccess() {

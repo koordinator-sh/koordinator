@@ -371,7 +371,7 @@ func (p *Plugin) allocateWithNominatedReservation(
 		return nil, nil
 	}
 
-	reservation := frameworkext.GetNominatedReservation(cycleState, node.Name)
+	reservation := p.handle.GetReservationNominator().GetNominatedReservation(pod, node.Name)
 	if reservation == nil {
 		return nil, nil
 	}

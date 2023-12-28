@@ -73,7 +73,7 @@ var (
 )
 
 type Plugin struct {
-	handle          framework.Handle
+	handle          frameworkext.ExtendedHandle
 	nodeDeviceCache *nodeDeviceCache
 	scorer          *resourceAllocationScorer
 }
@@ -192,6 +192,12 @@ func (p *Plugin) AddPod(ctx context.Context, cycleState *framework.CycleState, p
 
 	rInfo := reservation.GetReservationCache().GetReservationInfoByPod(podInfoToAdd.Pod, node.Name)
 	if rInfo == nil {
+		nominator := p.handle.GetReservationNominator()
+		if nominator != nil {
+			rInfo = nominator.GetNominatedReservation(podInfoToAdd.Pod, node.Name)
+		}
+	}
+	if rInfo == nil {
 		preemptibleDevices := state.preemptibleDevices[node.Name]
 		state.preemptibleDevices[node.Name] = subtractAllocated(preemptibleDevices, podAllocated, false)
 	} else {
@@ -232,6 +238,12 @@ func (p *Plugin) RemovePod(ctx context.Context, cycleState *framework.CycleState
 	}
 
 	rInfo := reservation.GetReservationCache().GetReservationInfoByPod(podInfoToRemove.Pod, node.Name)
+	if rInfo == nil {
+		nominator := p.handle.GetReservationNominator()
+		if nominator != nil {
+			rInfo = nominator.GetNominatedReservation(podInfoToRemove.Pod, node.Name)
+		}
+	}
 	if rInfo == nil {
 		preemptibleDevices := state.preemptibleDevices[node.Name]
 		state.preemptibleDevices[node.Name] = appendAllocated(preemptibleDevices, podAllocated)
@@ -544,7 +556,7 @@ func New(obj runtime.Object, handle framework.Handle) (framework.Plugin, error) 
 	go deviceCache.gcNodeDevice(context.TODO(), handle.SharedInformerFactory(), defaultGCPeriod)
 
 	return &Plugin{
-		handle:          handle,
+		handle:          extendedHandle,
 		nodeDeviceCache: deviceCache,
 		scorer:          scorePlugin(args),
 	}, nil

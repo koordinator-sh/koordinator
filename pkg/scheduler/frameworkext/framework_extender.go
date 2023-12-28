@@ -53,6 +53,7 @@ type frameworkExtenderImpl struct {
 	filterTransformers    map[string]FilterTransformer
 	scoreTransformers     map[string]ScoreTransformer
 
+	reservationNominator      ReservationNominator
 	reservationFilterPlugins  []ReservationFilterPlugin
 	reservationScorePlugins   []ReservationScorePlugin
 	reservationPreBindPlugins []ReservationPreBindPlugin
@@ -76,6 +77,7 @@ func NewFrameworkExtender(f *FrameworkExtenderFactory, fw framework.Framework) F
 		schedulerFn:                      schedulerFn,
 		koordinatorClientSet:             f.KoordinatorClientSet(),
 		koordinatorSharedInformerFactory: f.koordinatorSharedInformerFactory,
+		reservationNominator:             f.reservationNominator,
 		preFilterTransformers:            map[string]PreFilterTransformer{},
 		filterTransformers:               map[string]FilterTransformer{},
 		scoreTransformers:                map[string]ScoreTransformer{},
@@ -108,6 +110,10 @@ func (ext *frameworkExtenderImpl) updateTransformer(transformers ...SchedulingTr
 func (ext *frameworkExtenderImpl) updatePlugins(pl framework.Plugin) {
 	if transformer, ok := pl.(SchedulingTransformer); ok {
 		ext.updateTransformer(transformer)
+	}
+	// TODO(joseph): In the future, use only the default ReservationNominator
+	if r, ok := pl.(ReservationNominator); ok {
+		ext.reservationNominator = r
 	}
 	if r, ok := pl.(ReservationFilterPlugin); ok {
 		ext.reservationFilterPlugins = append(ext.reservationFilterPlugins, r)
@@ -149,6 +155,10 @@ func (ext *frameworkExtenderImpl) KoordinatorSharedInformerFactory() koordinator
 // nor are they allowed to hold the object within the plugin object.
 func (ext *frameworkExtenderImpl) Scheduler() Scheduler {
 	return ext.schedulerFn()
+}
+
+func (ext *frameworkExtenderImpl) GetReservationNominator() ReservationNominator {
+	return ext.reservationNominator
 }
 
 // RunPreFilterPlugins transforms the PreFilter phase of framework with pre-filter transformers.
@@ -211,6 +221,14 @@ func (ext *frameworkExtenderImpl) RunFilterPluginsWithNominatedPods(ctx context.
 		klog.Infof("Failed to filter for Pod %q on Node %q, failedPlugin: %s, reason: %s", klog.KObj(pod), klog.KObj(nodeInfo.Node()), status.FailedPlugin(), status.Message())
 	}
 	return status
+}
+
+func (ext *frameworkExtenderImpl) RunPostFilterPlugins(ctx context.Context, state *framework.CycleState, pod *corev1.Pod, filteredNodeStatusMap framework.NodeToStatusMap) (*framework.PostFilterResult, *framework.Status) {
+	result, status := ext.Framework.RunPostFilterPlugins(ctx, state, pod, filteredNodeStatusMap)
+	if result == nil || result.NominatingInfo.NominatedNodeName == "" {
+		ext.GetReservationNominator().RemoveNominatedReservations(pod)
+	}
+	return result, status
 }
 
 func (ext *frameworkExtenderImpl) RunScorePlugins(ctx context.Context, state *framework.CycleState, pod *corev1.Pod, nodes []*corev1.Node) (framework.PluginToNodeScores, *framework.Status) {
@@ -432,7 +450,9 @@ func (ext *frameworkExtenderImpl) RunReservePluginsReserve(ctx context.Context, 
 			return nil
 		}
 	}
-	return ext.Framework.RunReservePluginsReserve(ctx, cycleState, pod, nodeName)
+	status := ext.Framework.RunReservePluginsReserve(ctx, cycleState, pod, nodeName)
+	ext.GetReservationNominator().RemoveNominatedReservations(pod)
+	return status
 }
 
 func (ext *frameworkExtenderImpl) RunResizePod(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) *framework.Status {

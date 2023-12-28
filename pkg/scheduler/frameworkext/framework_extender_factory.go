@@ -37,6 +37,7 @@ type extendedHandleOptions struct {
 	servicesEngine                   *services.Engine
 	koordinatorClientSet             koordinatorclientset.Interface
 	koordinatorSharedInformerFactory koordinatorinformers.SharedInformerFactory
+	reservationNominator             ReservationNominator
 }
 
 type Option func(*extendedHandleOptions)
@@ -59,11 +60,18 @@ func WithKoordinatorSharedInformerFactory(informerFactory koordinatorinformers.S
 	}
 }
 
+func WithReservationNominator(nominator ReservationNominator) Option {
+	return func(options *extendedHandleOptions) {
+		options.reservationNominator = nominator
+	}
+}
+
 type FrameworkExtenderFactory struct {
 	controllerMaps                   *ControllersMap
 	servicesEngine                   *services.Engine
 	koordinatorClientSet             koordinatorclientset.Interface
 	koordinatorSharedInformerFactory koordinatorinformers.SharedInformerFactory
+	reservationNominator             ReservationNominator
 	profiles                         map[string]FrameworkExtender
 	scheduler                        Scheduler
 	schedulePod                      func(ctx context.Context, fwk framework.Framework, state *framework.CycleState, pod *corev1.Pod) (scheduler.ScheduleResult, error)
@@ -85,6 +93,7 @@ func NewFrameworkExtenderFactory(options ...Option) (*FrameworkExtenderFactory, 
 		servicesEngine:                   handleOptions.servicesEngine,
 		koordinatorClientSet:             handleOptions.koordinatorClientSet,
 		koordinatorSharedInformerFactory: handleOptions.koordinatorSharedInformerFactory,
+		reservationNominator:             handleOptions.reservationNominator,
 		profiles:                         map[string]FrameworkExtender{},
 		errorHandlerDispatcher:           newErrorHandlerDispatcher(),
 	}, nil
