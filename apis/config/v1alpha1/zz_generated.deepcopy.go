@@ -123,6 +123,20 @@ func (in *ClusterColocationProfileSpec) DeepCopyInto(out *ClusterColocationProfi
 			(*out)[key] = val
 		}
 	}
+	if in.LabelKeysMapping != nil {
+		in, out := &in.LabelKeysMapping, &out.LabelKeysMapping
+		*out = make(map[string]string, len(*in))
+		for key, val := range *in {
+			(*out)[key] = val
+		}
+	}
+	if in.AnnotationKeysMapping != nil {
+		in, out := &in.AnnotationKeysMapping, &out.AnnotationKeysMapping
+		*out = make(map[string]string, len(*in))
+		for key, val := range *in {
+			(*out)[key] = val
+		}
+	}
 	in.Patch.DeepCopyInto(&out.Patch)
 }
 
