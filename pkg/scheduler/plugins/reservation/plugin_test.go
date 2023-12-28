@@ -524,6 +524,101 @@ func TestFilter(t *testing.T) {
 	}
 }
 
+func TestFilterWithPreemption(t *testing.T) {
+	node := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-node",
+		},
+		Status: corev1.NodeStatus{
+			Allocatable: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("32"),
+				corev1.ResourceMemory: resource.MustParse("32Gi"),
+				corev1.ResourcePods:   resource.MustParse("100"),
+			},
+		},
+	}
+	tests := []struct {
+		name       string
+		stateData  *stateData
+		wantStatus *framework.Status
+	}{
+		{
+			name: "successfully filter non-reservations with preemption",
+			stateData: &stateData{
+				podRequestsResources: &framework.Resource{
+					MilliCPU: 4 * 1000,
+				},
+				preemptible: map[string]corev1.ResourceList{
+					node.Name: {
+						corev1.ResourceCPU: resource.MustParse("4"),
+					},
+				},
+				nodeReservationStates: map[string]nodeReservationState{
+					node.Name: {
+						podRequested: &framework.Resource{
+							MilliCPU: 32 * 1000,
+						},
+					},
+				},
+			},
+			wantStatus: nil,
+		},
+		{
+			name: "failed to filter non-reservations with preemption",
+			stateData: &stateData{
+				podRequestsResources: &framework.Resource{
+					MilliCPU: 4 * 1000,
+				},
+				preemptible: map[string]corev1.ResourceList{
+					node.Name: {
+						corev1.ResourceCPU: resource.MustParse("2"),
+					},
+				},
+				nodeReservationStates: map[string]nodeReservationState{
+					node.Name: {
+						podRequested: &framework.Resource{
+							MilliCPU: 32 * 1000,
+						},
+					},
+				},
+			},
+			wantStatus: framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrReasonPreemptionFailed),
+		},
+		{
+			name: "filter non-reservations with preemption but no preemptible resources",
+			stateData: &stateData{
+				podRequestsResources: &framework.Resource{
+					MilliCPU: 4 * 1000,
+				},
+				preemptible: map[string]corev1.ResourceList{},
+				nodeReservationStates: map[string]nodeReservationState{
+					node.Name: {
+						podRequested: &framework.Resource{
+							MilliCPU: 32 * 1000,
+						},
+					},
+				},
+			},
+			wantStatus: nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pl := &Plugin{}
+			cycleState := framework.NewCycleState()
+			if tt.stateData.podRequestsResources == nil {
+				resources := framework.NewResource(tt.stateData.podRequests)
+				tt.stateData.podRequestsResources = resources
+			}
+			cycleState.Write(stateKey, tt.stateData)
+			nodeInfo := framework.NewNodeInfo()
+			nodeInfo.SetNode(node)
+			got := pl.Filter(context.TODO(), cycleState, &corev1.Pod{}, nodeInfo)
+			assert.Equal(t, tt.wantStatus, got)
+		})
+	}
+}
+
 func Test_filterWithReservations(t *testing.T) {
 	node := &corev1.Node{
 		ObjectMeta: metav1.ObjectMeta{
@@ -721,89 +816,6 @@ func Test_filterWithReservations(t *testing.T) {
 				},
 			},
 			wantStatus: framework.NewStatus(framework.Unschedulable, ErrReasonReservationInsufficientResources),
-		},
-		{
-			name: "filter non-reservations with preemption",
-			stateData: &stateData{
-				podRequestsResources: &framework.Resource{
-					MilliCPU: 4 * 1000,
-				},
-				preemptible: map[string]corev1.ResourceList{
-					node.Name: {
-						corev1.ResourceCPU: resource.MustParse("4"),
-					},
-				},
-				nodeReservationStates: map[string]nodeReservationState{
-					node.Name: {
-						podRequested: &framework.Resource{
-							MilliCPU: 32 * 1000,
-						},
-					},
-				},
-			},
-			wantStatus: nil,
-		},
-		{
-			name: "filter non-reservations with preemption but no preemptible resources",
-			stateData: &stateData{
-				podRequestsResources: &framework.Resource{
-					MilliCPU: 4 * 1000,
-				},
-				preemptible: map[string]corev1.ResourceList{},
-				nodeReservationStates: map[string]nodeReservationState{
-					node.Name: {
-						podRequested: &framework.Resource{
-							MilliCPU: 32 * 1000,
-						},
-					},
-				},
-			},
-			wantStatus: nil,
-		},
-		{
-			name: "filter non-reservations with preemption but no preemptible resources and have preemptibleInRR",
-			stateData: &stateData{
-				podRequestsResources: &framework.Resource{
-					MilliCPU: 4 * 1000,
-				},
-				preemptible: map[string]corev1.ResourceList{},
-				preemptibleInRRs: map[string]map[types.UID]corev1.ResourceList{
-					node.Name: {
-						"123456": {
-							corev1.ResourceCPU: resource.MustParse("4"),
-						},
-					},
-				},
-				nodeReservationStates: map[string]nodeReservationState{
-					node.Name: {
-						podRequested: &framework.Resource{
-							MilliCPU: 32 * 1000,
-						},
-					},
-				},
-			},
-			wantStatus: framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrReasonPreemptionFailed),
-		},
-		{
-			name: "filter non-reservations with preemption",
-			stateData: &stateData{
-				podRequestsResources: &framework.Resource{
-					MilliCPU: 4 * 1000,
-				},
-				preemptible: map[string]corev1.ResourceList{
-					node.Name: {
-						corev1.ResourceCPU: resource.MustParse("2"),
-					},
-				},
-				nodeReservationStates: map[string]nodeReservationState{
-					node.Name: {
-						podRequested: &framework.Resource{
-							MilliCPU: 32 * 1000,
-						},
-					},
-				},
-			},
-			wantStatus: framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrReasonPreemptionFailed),
 		},
 		{
 			name: "filter default reservations with preemption",
@@ -1213,7 +1225,7 @@ func Test_filterWithReservations(t *testing.T) {
 			cycleState.Write(stateKey, tt.stateData)
 			nodeInfo := framework.NewNodeInfo()
 			nodeInfo.SetNode(node)
-			got := pl.filterWithReservations(context.TODO(), cycleState, &corev1.Pod{}, nodeInfo)
+			got := pl.filterWithReservations(context.TODO(), cycleState, &corev1.Pod{}, nodeInfo, tt.stateData.nodeReservationStates[node.Name].matched)
 			assert.Equal(t, tt.wantStatus, got)
 		})
 	}
@@ -1624,7 +1636,7 @@ func TestFilterReservation(t *testing.T) {
 				reservation4C8G,
 			},
 			targetReservation: reservation2C4G,
-			wantStatus:        framework.AsStatus(fmt.Errorf("no intersection resources")),
+			wantStatus:        framework.NewStatus(framework.Unschedulable, "no intersection resources"),
 		},
 		{
 			name: "failed with allocateOnce and allocated reservation",
@@ -1636,7 +1648,7 @@ func TestFilterReservation(t *testing.T) {
 				allocateOnceAndAllocatedReservation,
 			},
 			targetReservation: allocateOnceAndAllocatedReservation,
-			wantStatus:        framework.AsStatus(fmt.Errorf("reservation has allocateOnce enabled and has already been allocated")),
+			wantStatus:        framework.NewStatus(framework.Unschedulable, "reservation has allocateOnce enabled and has already been allocated"),
 		},
 		{
 			name: "missing reservation info but impossible",
@@ -1649,12 +1661,18 @@ func TestFilterReservation(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			suit := newPluginTestSuit(t)
+			node := &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node",
+				},
+				Status: corev1.NodeStatus{},
+			}
+
+			suit := newPluginTestSuitWith(t, nil, []*corev1.Node{node})
 			p, err := suit.pluginFactory()
 			assert.NoError(t, err)
 			assert.NotNil(t, p)
 			pl := p.(*Plugin)
-			cycleState := framework.NewCycleState()
 			pod := &corev1.Pod{
 				Spec: corev1.PodSpec{
 					Containers: []corev1.Container{
@@ -1681,10 +1699,11 @@ func TestFilterReservation(t *testing.T) {
 				nodeRState.matched = append(nodeRState.matched, rInfo)
 				state.nodeReservationStates[v.Status.NodeName] = nodeRState
 			}
+			cycleState := framework.NewCycleState()
 			cycleState.Write(stateKey, state)
 
 			rInfo := frameworkext.NewReservationInfo(tt.targetReservation)
-			status := pl.FilterReservation(context.TODO(), cycleState, pod, rInfo, "test-node")
+			status := pl.FilterReservation(context.TODO(), cycleState, pod, rInfo, node.Name)
 			assert.Equal(t, tt.wantStatus, status)
 		})
 	}

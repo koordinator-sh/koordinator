@@ -203,7 +203,14 @@ func TestScore(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			suit := newPluginTestSuit(t)
+			node := &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node",
+				},
+				Status: corev1.NodeStatus{},
+			}
+
+			suit := newPluginTestSuitWith(t, nil, []*corev1.Node{node})
 			p, err := suit.pluginFactory()
 			assert.NoError(t, err)
 			assert.NotNil(t, p)
@@ -235,7 +242,7 @@ func TestScore(t *testing.T) {
 			})
 			assert.True(t, status.IsSuccess())
 
-			score, status := pl.Score(context.TODO(), cycleState, tt.pod, "test-node")
+			score, status := pl.Score(context.TODO(), cycleState, tt.pod, node.Name)
 			assert.True(t, status.IsSuccess())
 			assert.Equal(t, tt.wantScore, score)
 		})
@@ -296,7 +303,15 @@ func TestScoreWithOrder(t *testing.T) {
 		}
 	}
 
-	suit := newPluginTestSuit(t)
+	var nodes []*corev1.Node
+	for i := 0; i < 4; i++ {
+		nodes = append(nodes, &corev1.Node{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: fmt.Sprintf("test-node-%d", i+1),
+			},
+		})
+	}
+	suit := newPluginTestSuitWith(t, nil, nodes)
 	p, err := suit.pluginFactory()
 	assert.NoError(t, err)
 	assert.NotNil(t, p)
@@ -331,15 +346,6 @@ func TestScoreWithOrder(t *testing.T) {
 
 	cycleState := framework.NewCycleState()
 	cycleState.Write(stateKey, state)
-
-	var nodes []*corev1.Node
-	for nodeName := range state.nodeReservationStates {
-		nodes = append(nodes, &corev1.Node{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: nodeName,
-			},
-		})
-	}
 
 	status := pl.PreScore(context.TODO(), cycleState, normalPod, nodes)
 	assert.True(t, status.IsSuccess())
@@ -659,7 +665,20 @@ func TestPreScoreWithNominateReservation(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			suit := newPluginTestSuit(t)
+			nodes := []*corev1.Node{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node",
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node-1",
+					},
+				},
+			}
+
+			suit := newPluginTestSuitWith(t, nil, nodes)
 			plugin, err := suit.pluginFactory()
 			assert.NoError(t, err)
 			pl := plugin.(*Plugin)
@@ -679,19 +698,6 @@ func TestPreScoreWithNominateReservation(t *testing.T) {
 				pl.reservationCache.updateReservation(reservation)
 			}
 			cycleState.Write(stateKey, state)
-
-			nodes := []*corev1.Node{
-				{
-					ObjectMeta: metav1.ObjectMeta{
-						Name: "test-node",
-					},
-				},
-				{
-					ObjectMeta: metav1.ObjectMeta{
-						Name: "test-node-1",
-					},
-				},
-			}
 
 			status := pl.PreScore(context.TODO(), cycleState, tt.pod, nodes)
 			assert.Equal(t, tt.wantStatus, status.IsSuccess())
