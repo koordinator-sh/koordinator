@@ -1311,16 +1311,24 @@ func TestPreFilterExtensionAddPod(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			pl := &Plugin{}
+			suit := newPluginTestSuit(t)
+			p, err := suit.pluginFactory()
+			assert.NoError(t, err)
+			pl := p.(*Plugin)
+			suit.start()
 			cycleState := framework.NewCycleState()
 			cycleState.Write(stateKey, tt.state)
 			if tt.withR {
-				apiext.SetReservationAllocated(tt.pod, &schedulingv1alpha1.Reservation{
+				reservation := &schedulingv1alpha1.Reservation{
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "test-r",
 						UID:  "123456",
 					},
-				})
+					Spec: schedulingv1alpha1.ReservationSpec{},
+				}
+				assert.NoError(t, reservationutil.SetReservationAvailable(reservation, node.Name))
+				pl.reservationCache.updateReservation(reservation)
+				assert.NoError(t, pl.reservationCache.assumePod(reservation.UID, tt.pod))
 			}
 			podInfo := framework.NewPodInfo(tt.pod)
 			nodeInfo := framework.NewNodeInfo()
@@ -1413,19 +1421,26 @@ func TestPreFilterExtensionRemovePod(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			pl := &Plugin{}
+			suit := newPluginTestSuit(t)
+			p, err := suit.pluginFactory()
+			assert.NoError(t, err)
+			pl := p.(*Plugin)
 			cycleState := framework.NewCycleState()
 			cycleState.Write(stateKey, &stateData{
 				preemptible:      map[string]corev1.ResourceList{},
 				preemptibleInRRs: map[string]map[types.UID]corev1.ResourceList{},
 			})
 			if tt.withR {
-				apiext.SetReservationAllocated(tt.pod, &schedulingv1alpha1.Reservation{
+				reservation := &schedulingv1alpha1.Reservation{
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "test-r",
 						UID:  "123456",
 					},
-				})
+					Spec: schedulingv1alpha1.ReservationSpec{},
+				}
+				assert.NoError(t, reservationutil.SetReservationAvailable(reservation, node.Name))
+				pl.reservationCache.updateReservation(reservation)
+				assert.NoError(t, pl.reservationCache.assumePod(reservation.UID, tt.pod))
 			}
 			podInfo := framework.NewPodInfo(tt.pod)
 			nodeInfo := framework.NewNodeInfo()

@@ -99,15 +99,15 @@ func (pl *Plugin) prepareMatchReservationState(ctx context.Context, cycleState *
 		}
 
 		var unmatched, matched []*frameworkext.ReservationInfo
-		status := pl.reservationCache.forEachAvailableReservationOnNode(node.Name, func(rInfo *frameworkext.ReservationInfo) *framework.Status {
+		status := pl.reservationCache.forEachAvailableReservationOnNode(node.Name, func(rInfo *frameworkext.ReservationInfo) (bool, *framework.Status) {
 			if !rInfo.IsAvailable() || rInfo.ParseError != nil {
-				return nil
+				return true, nil
 			}
 
 			// In this case, the Controller has not yet updated the status of the Reservation to Succeeded,
 			// but in fact it can no longer be used for allocation. So it's better to skip first.
 			if rInfo.IsAllocateOnce() && len(rInfo.AssignedPods) > 0 {
-				return nil
+				return true, nil
 			}
 
 			if !isReservedPod && !rInfo.IsUnschedulable() && matchReservation(pod, node, rInfo, reservationAffinity) {
@@ -116,7 +116,7 @@ func (pl *Plugin) prepareMatchReservationState(ctx context.Context, cycleState *
 			} else if len(rInfo.AssignedPods) > 0 {
 				unmatched = append(unmatched, rInfo.Clone())
 			}
-			return nil
+			return true, nil
 		})
 		if !status.IsSuccess() {
 			err = status.AsError()
