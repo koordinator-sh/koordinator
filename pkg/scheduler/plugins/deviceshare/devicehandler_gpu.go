@@ -22,6 +22,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
+	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
@@ -36,10 +37,14 @@ var _ DeviceHandler = &GPUHandler{}
 type GPUHandler struct {
 }
 
-func (h *GPUHandler) CalcDesiredRequestsAndCount(podRequests corev1.ResourceList, totalDevices deviceResources, hint *apiext.DeviceHint) (corev1.ResourceList, int, error) {
+func (h *GPUHandler) CalcDesiredRequestsAndCount(podRequests corev1.ResourceList, totalDevices deviceResources, hint *apiext.DeviceHint) (corev1.ResourceList, int, *framework.Status) {
+	if len(totalDevices) == 0 {
+		return nil, 0, framework.NewStatus(framework.UnschedulableAndUnresolvable, fmt.Sprintf("Insufficient %s devices", schedulingv1alpha1.GPU))
+	}
+
 	podRequests = podRequests.DeepCopy()
 	if err := fillGPUTotalMem(totalDevices, podRequests); err != nil {
-		return nil, 0, err
+		return nil, 0, framework.NewStatus(framework.UnschedulableAndUnresolvable, err.Error())
 	}
 
 	requests := podRequests
