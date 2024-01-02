@@ -133,6 +133,9 @@ const (
 	//
 	// ColdPageCollector enables coldPageCollector feature of koordlet.
 	ColdPageCollector featuregate.Feature = "ColdPageCollector"
+
+	// NetQOSByTC enable manage net bandwidth on the local host.
+	NetQOSByTC featuregate.Feature = "TC"
 )
 
 func init() {
@@ -161,6 +164,7 @@ var (
 		PSICollector:           {Default: false, PreRelease: featuregate.Alpha},
 		BlkIOReconcile:         {Default: false, PreRelease: featuregate.Alpha},
 		ColdPageCollector:      {Default: false, PreRelease: featuregate.Alpha},
+		NetQOSByTC:             {Default: false, PreRelease: featuregate.Alpha},
 	}
 )
 
