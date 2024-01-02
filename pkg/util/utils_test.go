@@ -267,3 +267,22 @@ func TestMinFloat64(t *testing.T) {
 	gotMax := MaxFloat64(big, small)
 	assert.Equal(t, big, gotMax)
 }
+
+func TestOnceValues(t *testing.T) {
+	calls := []int{0}
+	f := OnceValues(func() ([]int, error) {
+		calls[0]++
+		return calls, nil
+	})
+	allocs := testing.AllocsPerRun(10, func() { f() })
+	v1, v2 := f()
+	if calls[0] != 1 {
+		t.Errorf("want calls==1, got %d", calls)
+	}
+	if v1[0] != 1 || v2 != nil {
+		t.Errorf("want v1[0]==1 and v2==nil, got %d and %d", v1, v2)
+	}
+	if allocs != 0 {
+		t.Errorf("want 0 allocations per call, got %v", allocs)
+	}
+}

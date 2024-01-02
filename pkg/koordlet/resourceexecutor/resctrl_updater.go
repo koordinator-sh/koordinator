@@ -57,7 +57,7 @@ func NewResctrlL3SchemataResource(group, schemataDelta string, l3Num int) Resour
 	// The current assumption is that the cache ids obtained through
 	// resctrl schemata will not go wrong. TODO: Use the ability of node info
 	// to obtain cache ids to replace the current method.
-	ids, _ := sysutil.GetCacheIds()
+	ids, _ := sysutil.CacheIdsCacheFunc()
 	schemata := sysutil.NewResctrlSchemataRaw(ids).WithL3Num(l3Num).WithL3Mask(schemataDelta)
 	klog.V(6).Infof("generate new resctrl l3 schemata resource, file %s, key %s, value %s",
 		schemataFile, l3SchemataKey, schemata.L3String())
@@ -79,7 +79,7 @@ func NewResctrlMbSchemataResource(group, schemataDelta string, l3Num int) Resour
 	// The current assumption is that the cache ids obtained through
 	// resctrl schemata will not go wrong. TODO: Use the ability of node info
 	// to obtain cache ids to replace the current method.
-	ids, _ := sysutil.GetCacheIds()
+	ids, _ := sysutil.CacheIdsCacheFunc()
 	schemata := sysutil.NewResctrlSchemataRaw(ids).WithL3Num(l3Num).WithMB(schemataDelta)
 	klog.V(6).Infof("generate new resctrl mba schemata resource, file %s, key %s, value %s",
 		schemataFile, mbSchemataKey, schemata.MBString())

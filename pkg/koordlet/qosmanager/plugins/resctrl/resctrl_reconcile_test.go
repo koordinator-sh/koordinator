@@ -727,6 +727,7 @@ func TestResctrlReconcile_calculateAndApplyRDTL3PolicyForGroup(t *testing.T) {
 			wantErr: false,
 		},
 	}
+	system.CacheIdsCacheFunc = system.GetCacheIds
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			helper := system.NewFileTestUtil(t)
@@ -971,6 +972,7 @@ func TestResctrlReconcile_calculateAndApplyRDTMbPolicyForGroup(t *testing.T) {
 			wantErr: false,
 		},
 	}
+	system.CacheIdsCacheFunc = system.GetCacheIds
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			helper := system.NewFileTestUtil(t)

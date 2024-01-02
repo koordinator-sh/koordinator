@@ -28,6 +28,8 @@ import (
 	"sync"
 
 	"k8s.io/klog/v2"
+
+	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
 const (
@@ -51,10 +53,15 @@ const (
 )
 
 var (
-	initLock         sync.Mutex
-	isInit           bool
-	isSupportResctrl bool
+	initLock          sync.Mutex
+	isInit            bool
+	isSupportResctrl  bool
+	CacheIdsCacheFunc func() ([]int, error)
 )
+
+func init() {
+	CacheIdsCacheFunc = util.OnceValues(GetCacheIds)
+}
 
 func isCPUSupportResctrl() (bool, error) {
 	isCatFlagSet, isMbaFlagSet, err := isResctrlAvailableByCpuInfo(GetCPUInfoPath())
