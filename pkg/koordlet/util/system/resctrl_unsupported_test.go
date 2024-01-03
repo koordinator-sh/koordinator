@@ -1,5 +1,5 @@
-//go:build linux
-// +build linux
+//go:build !linux
+// +build !linux
 
 /*
 Copyright 2022 The Koordinator Authors.
@@ -43,7 +43,10 @@ func Test_MountResctrlSubsystem(t *testing.T) {
 		}
 
 		got, err := MountResctrlSubsystem()
+
+		// resctrl is only supported by linux
 		assert.Equal(t, false, got)
-		assert.NoError(t, err)
+		assert.EqualError(t, err, "only support linux")
+		return
 	})
 }

@@ -24,10 +24,9 @@ import (
 
 // CompareFn compares p1 and p2 and returns:
 //
-//   -1 if p1 <  p2
-//    0 if p1 == p2
-//   +1 if p1 >  p2
-//
+//	-1 if p1 <  p2
+//	 0 if p1 == p2
+//	+1 if p1 >  p2
 type CompareFn func(p1, p2 *corev1.Pod) int
 
 // MultiSorter implements the Sort interface

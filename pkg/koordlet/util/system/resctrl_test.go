@@ -19,7 +19,6 @@ package system
 import (
 	"os"
 	"path/filepath"
-	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -255,31 +254,159 @@ L3:0=fff;1=fff`,
 	}
 }
 
-func Test_MountResctrlSubsystem(t *testing.T) {
-	t.Run("test not panic", func(t *testing.T) {
-		sysFSRootDir := t.TempDir()
-		resctrlDir := filepath.Join(sysFSRootDir, ResctrlDir)
-		err := os.MkdirAll(resctrlDir, 0700)
-		assert.NoError(t, err)
+func TestGetVendorIDByCPUInfo(t *testing.T) {
+	type args struct {
+		content string
+	}
+	tests := []struct {
+		name    string
+		args    args
+		want    string
+		wantErr bool
+	}{
+		{
+			name: "test amd",
+			args: args{
+				content: "vendor_id       : AuthenticAMD\n",
+			},
+			want:    AMD_VENDOR_ID,
+			wantErr: false,
+		},
+		{
+			name: "test amd on one line",
+			args: args{
+				content: "vendor_id       : AuthenticAMD",
+			},
+			want:    AMD_VENDOR_ID,
+			wantErr: false,
+		},
+		{
+			name: "test intel",
+			args: args{
+				content: "vendor_id       : GenuineIntel",
+			},
+			want:    "GenuineIntel",
+			wantErr: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			helper := NewFileTestUtil(t)
+			helper.WriteProcSubFileContents("cpuinfo", tt.args.content)
+			got, err := GetVendorIDByCPUInfo(filepath.Join(Conf.ProcRootDir, "cpuinfo"))
+			if (err != nil) != tt.wantErr {
+				t.Errorf("GetVendorIDByCPUInfo() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if got != tt.want {
+				t.Errorf("GetVendorIDByCPUInfo() got = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
 
-		schemataPath := filepath.Join(resctrlDir, ResctrlSchemataName)
-		err = os.WriteFile(schemataPath, []byte("    L3:0=ff;1=ff\n    MB:0=100;1=100\n"), 0666)
-		assert.NoError(t, err)
+func Test_isResctrlAvailableByCpuInfo(t *testing.T) {
+	type field struct {
+		cpuInfoContents string
+	}
 
-		Conf = &Config{
-			SysFSRootDir: sysFSRootDir,
-		}
+	tests := []struct {
+		name               string
+		field              field
+		expectIsCatFlagSet bool
+		expectIsMbaFlagSet bool
+	}{
+		{
+			name: "testResctrlEnable",
+			field: field{
+				cpuInfoContents: "flags		: fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush dts acpi mmx fxsr sse sse2 ss ht tm pbe syscall nx pdpe1gb rdtscp lm constant_tsc art arch_perfmon pebs bts rep_good nopl xtopology nonstop_tsc cpuid aperfmperf pni pclmulqdq dtes64 monitor ds_cpl vmx smx est tm2 ssse3 sdbg fma cx16 xtpr pdcm pcid dca sse4_1 sse4_2 x2apic movbe popcnt tsc_deadline_timer aes xsave avx f16c rdrand lahf_lm abm 3dnowprefetch cpuid_fault epb cat_l3 cdp_l3 invpcid_single intel_ppin ssbd mba ibrs ibpb stibp ibrs_enhanced tpr_shadow vnmi flexpriority ept vpid ept_ad tsc_adjust bmi1 avx2 smep bmi2 erms invpcid cqm mpx rdt_a avx512f avx512dq rdseed adx smap clflushopt clwb intel_pt avx512cd avx512bw avx512vl xsaveopt xsavec xgetbv1 xsaves cqm_llc cqm_occup_llc cqm_mbm_total cqm_mbm_local dtherm ida arat pln pts pku ospke avx512_vnni md_clear flush_l1d arch_capabilities",
+			},
+			expectIsCatFlagSet: true,
+			expectIsMbaFlagSet: true,
+		},
+		{
+			name: "testResctrlUnable",
+			field: field{
+				cpuInfoContents: "flags		: fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush mmx fxsr sse sse2 ss ht syscall nx pdpe1gb rdtscp lm constant_tsc rep_good nopl nonstop_tsc cpuid tsc_known_freq pni pclmulqdq monitor ssse3 fma cx16 pcid sse4_1 sse4_2 x2apic movbe popcnt aes xsave avx f16c rdrand hypervisor lahf_lm abm 3dnowprefetch cpuid_fault invpcid_single ibrs_enhanced tsc_adjust bmi1 avx2 smep bmi2 erms invpcid avx512f avx512dq rdseed adx smap avx512ifma clflushopt clwb avx512cd sha_ni avx512bw avx512vl xsaveopt xsavec xgetbv1 xsaves wbnoinvd arat avx512vbmi pku ospke avx512_vbmi2 gfni vaes vpclmulqdq avx512_vnni avx512_bitalg avx512_vpopcntdq rdpid fsrm arch_capabilities",
+			},
+			expectIsCatFlagSet: false,
+			expectIsMbaFlagSet: false,
+		},
+		{
+			name: "testContentsInvalid",
+			field: field{
+				cpuInfoContents: "invalid contents",
+			},
+			expectIsCatFlagSet: false,
+			expectIsMbaFlagSet: false,
+		},
+	}
 
-		got, err := MountResctrlSubsystem()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			helper := NewFileTestUtil(t)
+			defer helper.Cleanup()
+			helper.WriteProcSubFileContents("cpuinfo", tt.field.cpuInfoContents)
 
-		// resctrl is only supported by linux
-		if runtime.GOOS != "linux" {
-			assert.Equal(t, false, got)
-			assert.EqualError(t, err, "only support linux")
-			return
-		}
+			gotIsCatFlagSet, gotIsMbaFlagSet, err := isResctrlAvailableByCpuInfo(GetCPUInfoPath())
+			assert.NoError(t, err, "testError")
+			assert.Equal(t, tt.expectIsCatFlagSet, gotIsCatFlagSet, "checkIsCatFlagSet")
+			assert.Equal(t, tt.expectIsMbaFlagSet, gotIsMbaFlagSet, "checkIsMbaFlagSet")
+		})
+	}
+}
 
-		assert.Equal(t, false, got)
-		assert.NoError(t, err)
-	})
+func Test_isResctrlAvailableByKernelCmd(t *testing.T) {
+	type args struct {
+		content string
+	}
+	tests := []struct {
+		name    string
+		args    args
+		wantCat bool
+		wantMba bool
+	}{
+		{
+			name: "testResctrlEnable",
+			args: args{
+				content: "BOOT_IMAGE=/boot/vmlinuz-4.19.91-24.1.al7.x86_64 root=UUID=231efa3b-302b-4e82-9445-0f7d5d353dda rdt=cmt,l3cat,l3cdp,mba",
+			},
+			wantCat: true,
+			wantMba: true,
+		},
+		{
+			name: "testResctrlCatDisable",
+			args: args{
+				content: "BOOT_IMAGE=/boot/vmlinuz-4.19.91-24.1.al7.x86_64 root=UUID=231efa3b-302b-4e82-9445-0f7d5d353dda rdt=cmt,mba,l3cdp",
+			},
+			wantCat: false,
+			wantMba: true,
+		},
+		{
+			name: "testResctrlMBADisable",
+			args: args{
+				content: "BOOT_IMAGE=/boot/vmlinuz-4.19.91-24.1.al7.x86_64 root=UUID=231efa3b-302b-4e82-9445-0f7d5d353dda rdt=cmt,l3cat,l3cdp",
+			},
+			wantCat: true,
+			wantMba: false,
+		},
+		{
+			name: "testContentsInvalid",
+			args: args{
+				content: "invalid contents",
+			},
+			wantCat: false,
+			wantMba: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			helper := NewFileTestUtil(t)
+			helper.WriteProcSubFileContents("cmdline", tt.args.content)
+			isCatFlagSet, isMbaFlagSet, err := isResctrlAvailableByKernelCmd(filepath.Join(Conf.ProcRootDir, KernelCmdlineFileName))
+			assert.NoError(t, err)
+			assert.Equal(t, tt.wantCat, isCatFlagSet)
+			assert.Equal(t, tt.wantMba, isMbaFlagSet)
+		})
+	}
 }

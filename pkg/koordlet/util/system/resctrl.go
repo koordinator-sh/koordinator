@@ -17,11 +17,13 @@ limitations under the License.
 package system
 
 import (
+	"bufio"
 	"fmt"
 	"math"
 	"math/bits"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -583,4 +585,103 @@ func CalculateCatL3MaskValue(cbm uint, startPercent, endPercent int64) (string, 
 
 	var l3Mask uint64 = (1 << endWay) - (1 << startWay)
 	return strconv.FormatUint(l3Mask, 16), nil
+}
+
+// GetVendorIDByCPUInfo returns vendor_id like AuthenticAMD from cpu info, e.g.
+// vendor_id       : AuthenticAMD
+// vendor_id       : GenuineIntel
+func GetVendorIDByCPUInfo(path string) (string, error) {
+	vendorID := "unknown"
+	f, err := os.Open(path)
+	if err != nil {
+		return vendorID, err
+	}
+	defer f.Close()
+
+	s := bufio.NewScanner(f)
+	for s.Scan() {
+		if err := s.Err(); err != nil {
+			return vendorID, err
+		}
+
+		line := s.Text()
+
+		// get "vendor_id" from first line
+		if strings.Contains(line, "vendor_id") {
+			attrs := strings.Split(line, ":")
+			if len(attrs) >= 2 {
+				vendorID = strings.TrimSpace(attrs[1])
+				break
+			}
+		}
+	}
+	return vendorID, nil
+}
+
+func isResctrlAvailableByCpuInfo(path string) (bool, bool, error) {
+	isCatFlagSet := false
+	isMbaFlagSet := false
+
+	f, err := os.Open(path)
+	if err != nil {
+		return false, false, err
+	}
+	defer f.Close()
+
+	s := bufio.NewScanner(f)
+	for s.Scan() {
+		if err := s.Err(); err != nil {
+			return false, false, err
+		}
+
+		line := s.Text()
+
+		// Search "cat_l3" and "mba" flags in first "flags" line
+		if strings.Contains(line, "flags") {
+			flags := strings.Split(line, " ")
+			// "cat_l3" flag for CAT and "mba" flag for MBA
+			for _, flag := range flags {
+				switch flag {
+				case "cat_l3":
+					isCatFlagSet = true
+				case "mba":
+					isMbaFlagSet = true
+				}
+			}
+			return isCatFlagSet, isMbaFlagSet, nil
+		}
+	}
+	return isCatFlagSet, isMbaFlagSet, nil
+}
+
+// file content example:
+// BOOT_IMAGE=/boot/vmlinuz-4.19.91-24.1.al7.x86_64 root=UUID=231efa3b-302b-4e82-9445-0f7d5d353dda \
+// crashkernel=0M-2G:0M,2G-8G:192M,8G-:256M cryptomgr.notests cgroup.memory=nokmem rcupdate.rcu_cpu_stall_timeout=300 \
+// vring_force_dma_api biosdevname=0 net.ifnames=0 console=tty0 console=ttyS0,115200n8 noibrs \
+// nvme_core.io_timeout=4294967295 nomodeset intel_idle.max_cstate=1 rdt=cmt,l3cat,l3cdp,mba
+func isResctrlAvailableByKernelCmd(path string) (bool, bool, error) {
+	isCatFlagSet := false
+	isMbaFlagSet := false
+	f, err := os.Open(path)
+	if err != nil {
+		return false, false, err
+	}
+	defer f.Close()
+	s := bufio.NewScanner(f)
+	for s.Scan() {
+		if err := s.Err(); err != nil {
+			return false, false, err
+		}
+		line := s.Text()
+		l3Reg, regErr := regexp.Compile(".* rdt=.*l3cat.*")
+		if regErr == nil && l3Reg.Match([]byte(line)) {
+			isCatFlagSet = true
+		}
+
+		mbaReg, regErr := regexp.Compile(".* rdt=.*mba.*")
+		if regErr == nil && mbaReg.Match([]byte(line)) {
+			isMbaFlagSet = true
+		}
+	}
+	return isCatFlagSet, isMbaFlagSet, nil
 }
