@@ -199,10 +199,22 @@ func (p *Plugin) AddPod(ctx context.Context, cycleState *framework.CycleState, p
 	}
 	if rInfo == nil {
 		preemptibleDevices := state.preemptibleDevices[node.Name]
+		if preemptibleDevices == nil {
+			preemptibleDevices = map[schedulingv1alpha1.DeviceType]deviceResources{}
+			state.preemptibleDevices[node.Name] = preemptibleDevices
+		}
 		state.preemptibleDevices[node.Name] = subtractAllocated(preemptibleDevices, podAllocated, false)
 	} else {
 		preemptibleInRRs := state.preemptibleInRRs[node.Name]
+		if preemptibleInRRs == nil {
+			preemptibleInRRs = map[types.UID]map[schedulingv1alpha1.DeviceType]deviceResources{}
+			state.preemptibleInRRs[node.Name] = preemptibleInRRs
+		}
 		preemptible := preemptibleInRRs[rInfo.UID()]
+		if preemptible == nil {
+			preemptible = map[schedulingv1alpha1.DeviceType]deviceResources{}
+			preemptibleInRRs[rInfo.UID()] = preemptible
+		}
 		preemptible = subtractAllocated(preemptible, podAllocated, false)
 		preemptibleInRRs[rInfo.UID()] = preemptible
 	}
@@ -246,6 +258,10 @@ func (p *Plugin) RemovePod(ctx context.Context, cycleState *framework.CycleState
 	}
 	if rInfo == nil {
 		preemptibleDevices := state.preemptibleDevices[node.Name]
+		if preemptibleDevices == nil {
+			preemptibleDevices = map[schedulingv1alpha1.DeviceType]deviceResources{}
+			state.preemptibleDevices[node.Name] = preemptibleDevices
+		}
 		state.preemptibleDevices[node.Name] = appendAllocated(preemptibleDevices, podAllocated)
 	} else {
 		preemptibleInRRs := state.preemptibleInRRs[node.Name]
@@ -254,6 +270,10 @@ func (p *Plugin) RemovePod(ctx context.Context, cycleState *framework.CycleState
 			state.preemptibleInRRs[node.Name] = preemptibleInRRs
 		}
 		preemptible := preemptibleInRRs[rInfo.UID()]
+		if preemptible == nil {
+			preemptible = map[schedulingv1alpha1.DeviceType]deviceResources{}
+			preemptibleInRRs[rInfo.UID()] = preemptible
+		}
 		preemptibleInRRs[rInfo.UID()] = appendAllocated(preemptible, podAllocated)
 	}
 

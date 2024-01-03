@@ -452,6 +452,24 @@ func Test_Plugin_PreFilterExtensionsWithReservation(t *testing.T) {
 		},
 	}
 	assert.Equal(t, expectPreemptible, state.preemptibleInRRs)
+
+	state.preemptibleInRRs = map[string]map[types.UID]map[schedulingv1alpha1.DeviceType]deviceResources{}
+	status = pl.PreFilterExtensions().AddPod(context.TODO(), cycleState, pod, framework.NewPodInfo(allocatedPod), nodeInfo)
+	assert.True(t, status.IsSuccess())
+	expectPreemptible = map[string]map[types.UID]map[schedulingv1alpha1.DeviceType]deviceResources{
+		"test-node-1": {
+			"123456": {
+				schedulingv1alpha1.GPU: {
+					1: {
+						apiext.ResourceGPUCore:        *resource.NewQuantity(-100, resource.DecimalSI),
+						apiext.ResourceGPUMemory:      *resource.NewQuantity(-8*1024*1024*1024, resource.BinarySI),
+						apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(-100, resource.DecimalSI),
+					},
+				},
+			},
+		},
+	}
+	assert.Equal(t, expectPreemptible, state.preemptibleInRRs)
 }
 
 func Test_Plugin_PreFilter(t *testing.T) {

@@ -1330,6 +1330,40 @@ func TestPreFilterExtensionAddPod(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "add nominated pod allocated in reservation",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test",
+					UID:  "123456",
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name: "main",
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU: resource.MustParse("4"),
+								},
+							},
+						},
+					},
+				},
+			},
+			withR: true,
+			state: &stateData{
+				preemptible:      map[string]corev1.ResourceList{},
+				preemptibleInRRs: map[string]map[types.UID]corev1.ResourceList{},
+			},
+			wantPreemptible: map[string]corev1.ResourceList{},
+			wantPreemptibleInRRs: map[string]map[types.UID]corev1.ResourceList{
+				"test-node": {
+					"123456": {
+						corev1.ResourceCPU: *resource.NewQuantity(-4, resource.DecimalSI),
+					},
+				},
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
