@@ -84,6 +84,8 @@ type Plugin struct {
 	rLister          listerschedulingv1alpha1.ReservationLister
 	client           clientschedulingv1alpha1.SchedulingV1alpha1Interface
 	reservationCache *reservationCache
+
+	nominator *nominator
 }
 
 func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error) {
@@ -101,7 +103,8 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 	reservationLister := koordSharedInformerFactory.Scheduling().V1alpha1().Reservations().Lister()
 	cache := newReservationCache(reservationLister)
 	registerReservationEventHandler(cache, koordSharedInformerFactory)
-	registerPodEventHandler(cache, sharedInformerFactory)
+	nominator := newNominator()
+	registerPodEventHandler(cache, nominator, sharedInformerFactory)
 
 	// TODO(joseph): Considering the amount of changed code,
 	// temporarily use global variable to store ReservationCache instance,
@@ -114,6 +117,7 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 		rLister:          reservationLister,
 		client:           extendedHandle.KoordinatorClientSet().SchedulingV1alpha1(),
 		reservationCache: cache,
+		nominator:        nominator,
 	}
 
 	return p, nil
@@ -260,9 +264,12 @@ func (pl *Plugin) AddPod(ctx context.Context, cycleState *framework.CycleState, 
 		return nil
 	}
 
+	state := getStateData(cycleState)
 	node := nodeInfo.Node()
 	rInfo := pl.reservationCache.GetReservationInfoByPod(podInfoToAdd.Pod, node.Name)
-	state := getStateData(cycleState)
+	if rInfo == nil {
+		rInfo = pl.GetNominatedReservation(podInfoToAdd.Pod, node.Name)
+	}
 	if rInfo == nil {
 		preemptible := state.preemptible[node.Name]
 		state.preemptible[node.Name] = quotav1.Subtract(preemptible, podRequests)
@@ -288,6 +295,9 @@ func (pl *Plugin) RemovePod(ctx context.Context, cycleState *framework.CycleStat
 	state := getStateData(cycleState)
 	node := nodeInfo.Node()
 	rInfo := pl.reservationCache.GetReservationInfoByPod(podInfoToRemove.Pod, node.Name)
+	if rInfo == nil {
+		rInfo = pl.GetNominatedReservation(podInfoToRemove.Pod, node.Name)
+	}
 	if rInfo == nil {
 		preemptible := state.preemptible[node.Name]
 		state.preemptible[node.Name] = quotav1.Add(preemptible, podRequests)
@@ -533,11 +543,11 @@ func (pl *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState,
 		return nil
 	}
 
-	nominatedReservation := frameworkext.GetNominatedReservation(cycleState, nodeName)
+	nominatedReservation := pl.handle.GetReservationNominator().GetNominatedReservation(pod, nodeName)
 	if nominatedReservation == nil {
 		// The scheduleOne skip scores and reservation nomination if there is only one node available.
 		var status *framework.Status
-		nominatedReservation, status = pl.NominateReservation(ctx, cycleState, pod, nodeName)
+		nominatedReservation, status = pl.handle.GetReservationNominator().NominateReservation(ctx, cycleState, pod, nodeName)
 		if status != nil {
 			return status
 		}
@@ -545,7 +555,7 @@ func (pl *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState,
 			klog.V(5).Infof("Skip reserve with reservation since there are no matched reservations, pod %v, node: %v", klog.KObj(pod), nodeName)
 			return nil
 		}
-		frameworkext.SetNominatedReservation(cycleState, map[string]*frameworkext.ReservationInfo{nodeName: nominatedReservation})
+		pl.handle.GetReservationNominator().AddNominatedReservation(pod, nodeName, nominatedReservation)
 	}
 
 	err := pl.reservationCache.assumePod(nominatedReservation.UID(), pod)

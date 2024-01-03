@@ -1828,7 +1828,7 @@ func TestReserve(t *testing.T) {
 			if tt.reservation != nil {
 				rInfo = frameworkext.NewReservationInfo(tt.reservation)
 			}
-			frameworkext.SetNominatedReservation(cycleState, map[string]*frameworkext.ReservationInfo{"test-node": rInfo})
+			pl.handle.GetReservationNominator().AddNominatedReservation(tt.pod, "test-node", rInfo)
 			status := pl.Reserve(context.TODO(), cycleState, tt.pod, "test-node")
 			assert.Equal(t, tt.wantStatus, status)
 			if tt.wantReservation == nil {
@@ -1948,7 +1948,7 @@ func TestUnreserve(t *testing.T) {
 			if tt.reservation != nil {
 				rInfo = frameworkext.NewReservationInfo(tt.reservation)
 			}
-			frameworkext.SetNominatedReservation(cycleState, map[string]*frameworkext.ReservationInfo{"test-node": rInfo})
+			pl.handle.GetReservationNominator().AddNominatedReservation(tt.pod, "test-node", rInfo)
 			status := pl.Reserve(context.TODO(), cycleState, tt.pod, "test-node")
 			pl.Unreserve(context.TODO(), cycleState, tt.pod, "test-node")
 			assert.Equal(t, tt.wantStatus, status)

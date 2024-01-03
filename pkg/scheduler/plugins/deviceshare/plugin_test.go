@@ -52,6 +52,7 @@ import (
 	schedulerconfig "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	v1beta2schedulerconfig "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/v1beta2"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
+	frameworkexttesting "github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/testing"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/reservation"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 	utilfeature "github.com/koordinator-sh/koordinator/pkg/util/feature"
@@ -127,6 +128,7 @@ func newPluginTestSuit(t *testing.T, nodes []*corev1.Node) *pluginTestSuit {
 	extenderFactory, _ := frameworkext.NewFrameworkExtenderFactory(
 		frameworkext.WithKoordinatorClientSet(koordClientSet),
 		frameworkext.WithKoordinatorSharedInformerFactory(koordSharedInformerFactory),
+		frameworkext.WithReservationNominator(frameworkexttesting.NewFakeReservationNominator()),
 	)
 	proxyNew := frameworkext.PluginFactoryProxy(extenderFactory, New)
 
@@ -2977,7 +2979,10 @@ func Test_Plugin_Reserve(t *testing.T) {
 				},
 			}
 			suit := newPluginTestSuit(t, []*corev1.Node{node})
-			p := &Plugin{handle: suit.Framework, nodeDeviceCache: tt.args.nodeDeviceCache}
+			p, err := suit.proxyNew(getDefaultArgs(), suit.Framework)
+			assert.NoError(t, err)
+			pl := p.(*Plugin)
+			pl.nodeDeviceCache = tt.args.nodeDeviceCache
 			cycleState := framework.NewCycleState()
 			if tt.args.state != nil {
 				cycleState.Write(stateKey, tt.args.state)
@@ -3021,10 +3026,10 @@ func Test_Plugin_Reserve(t *testing.T) {
 				}
 				cycleState.Write(reservationRestoreStateKey, restoreState)
 				rInfo := frameworkext.NewReservationInfo(reservation)
-				frameworkext.SetNominatedReservation(cycleState, map[string]*frameworkext.ReservationInfo{"test-node": rInfo})
+				pl.handle.GetReservationNominator().AddNominatedReservation(tt.args.pod, "test-node", rInfo)
 			}
 
-			status := p.Reserve(context.TODO(), cycleState, tt.args.pod, tt.args.nodeName)
+			status := pl.Reserve(context.TODO(), cycleState, tt.args.pod, tt.args.nodeName)
 			assert.Equal(t, tt.wants.status.Code(), status.Code())
 			assert.True(t, strings.Contains(status.Message(), tt.wants.status.Message()))
 			if tt.wants.allocationResult != nil {

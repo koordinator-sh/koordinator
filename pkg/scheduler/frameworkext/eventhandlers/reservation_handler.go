@@ -55,8 +55,19 @@ func MakeReservationErrorHandler(
 	reservationErrorFn := makeReservationErrorFunc(schedAdapter, reservationLister)
 	return func(podInfo *framework.QueuedPodInfo, schedulingErr error) bool {
 		pod := podInfo.Pod
+		fwk, ok := sched.Profiles[pod.Spec.SchedulerName]
+		if !ok {
+			klog.Errorf("profile not found for scheduler name %q", pod.Spec.SchedulerName)
+			return true
+		}
+
 		// if the pod is not a reserve pod, use the default error handler
 		if !reservationutil.IsReservePod(pod) {
+			// If the Pod failed to schedule or no post-filter plugins, should remove exist NominatedReservation of the Pod.
+			if _, ok := schedulingErr.(*framework.FitError); !ok || !fwk.HasPostFilterPlugins() {
+				extendedHandle := fwk.(frameworkext.ExtendedHandle)
+				extendedHandle.GetReservationNominator().RemoveNominatedReservations(pod)
+			}
 			return false
 		}
 
@@ -65,12 +76,6 @@ func MakeReservationErrorHandler(
 		rName := reservationutil.GetReservationNameFromReservePod(pod)
 		r, err := reservationLister.Get(rName)
 		if err != nil {
-			return true
-		}
-
-		fwk, ok := sched.Profiles[pod.Spec.SchedulerName]
-		if !ok {
-			klog.Errorf("profile not found for scheduler name %q", pod.Spec.SchedulerName)
 			return true
 		}
 

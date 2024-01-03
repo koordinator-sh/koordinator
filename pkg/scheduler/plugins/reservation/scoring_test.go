@@ -501,6 +501,7 @@ func TestPreScoreWithNominateReservation(t *testing.T) {
 						Labels: map[string]string{
 							apiext.LabelReservationOrder: "100",
 						},
+						UID: "123456",
 					},
 					Spec: schedulingv1alpha1.ReservationSpec{
 						Template: &corev1.PodTemplateSpec{
@@ -525,6 +526,7 @@ func TestPreScoreWithNominateReservation(t *testing.T) {
 				{
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "normal-reservation",
+						UID:  "654321",
 					},
 					Spec: schedulingv1alpha1.ReservationSpec{
 						Template: &corev1.PodTemplateSpec{
@@ -554,6 +556,7 @@ func TestPreScoreWithNominateReservation(t *testing.T) {
 						Labels: map[string]string{
 							apiext.LabelReservationOrder: "100",
 						},
+						UID: "123456",
 					},
 					Spec: schedulingv1alpha1.ReservationSpec{
 						Template: &corev1.PodTemplateSpec{
@@ -706,7 +709,7 @@ func TestPreScoreWithNominateReservation(t *testing.T) {
 				sort.Slice(wantReservationInfo.ResourceNames, func(i, j int) bool {
 					return wantReservationInfo.ResourceNames[i] < wantReservationInfo.ResourceNames[j]
 				})
-				rInfo := frameworkext.GetNominatedReservation(cycleState, nodeName)
+				rInfo := pl.handle.GetReservationNominator().GetNominatedReservation(tt.pod, nodeName)
 				if rInfo != nil {
 					sort.Slice(rInfo.ResourceNames, func(i, j int) bool {
 						return rInfo.ResourceNames[i] < rInfo.ResourceNames[j]

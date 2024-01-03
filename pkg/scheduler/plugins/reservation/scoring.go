@@ -66,7 +66,7 @@ func (pl *Plugin) PreScore(ctx context.Context, cycleState *framework.CycleState
 		_, order := findMostPreferredReservationByOrder(reservationInfos)
 		nodeOrders[piece] = order
 
-		nominatedReservationInfo, status := pl.NominateReservation(ctx, cycleState, pod, node.Name)
+		nominatedReservationInfo, status := pl.handle.GetReservationNominator().NominateReservation(ctx, cycleState, pod, node.Name)
 		if !status.IsSuccess() {
 			errCh.SendErrorWithCancel(status.AsError(), cancel)
 			return
@@ -82,11 +82,9 @@ func (pl *Plugin) PreScore(ctx context.Context, cycleState *framework.CycleState
 	}
 
 	nominatedReservations = nominatedReservations[:nominatedNodeIndex]
-	reservations := make(map[string]*frameworkext.ReservationInfo, len(nominatedReservations))
 	for _, v := range nominatedReservations {
-		reservations[v.GetNodeName()] = v
+		pl.handle.GetReservationNominator().AddNominatedReservation(pod, v.GetNodeName(), v)
 	}
-	frameworkext.SetNominatedReservation(cycleState, reservations)
 
 	var selectOrder int64 = math.MaxInt64
 	var nodeIndex int
@@ -113,7 +111,7 @@ func (pl *Plugin) Score(ctx context.Context, cycleState *framework.CycleState, p
 		return mostPreferredScore, nil
 	}
 
-	reservationInfo := frameworkext.GetNominatedReservation(cycleState, nodeName)
+	reservationInfo := pl.handle.GetReservationNominator().GetNominatedReservation(pod, nodeName)
 	if reservationInfo == nil {
 		return framework.MinNodeScore, nil
 	}
