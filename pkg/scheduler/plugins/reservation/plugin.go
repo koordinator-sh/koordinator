@@ -275,6 +275,10 @@ func (pl *Plugin) AddPod(ctx context.Context, cycleState *framework.CycleState, 
 		state.preemptible[node.Name] = quotav1.Subtract(preemptible, podRequests)
 	} else {
 		preemptibleInRRs := state.preemptibleInRRs[node.Name]
+		if preemptibleInRRs == nil {
+			preemptibleInRRs = map[types.UID]corev1.ResourceList{}
+			state.preemptibleInRRs[node.Name] = preemptibleInRRs
+		}
 		preemptible := preemptibleInRRs[rInfo.UID()]
 		preemptibleInRRs[rInfo.UID()] = quotav1.Subtract(preemptible, podRequests)
 	}
