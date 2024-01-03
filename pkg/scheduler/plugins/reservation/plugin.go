@@ -530,8 +530,19 @@ func (pl *Plugin) FilterReservation(ctx context.Context, cycleState *framework.C
 	if err != nil {
 		return framework.NewStatus(framework.UnschedulableAndUnresolvable, "missing node")
 	}
+	node := nodeInfo.Node()
 
-	return pl.filterWithReservations(ctx, cycleState, pod, nodeInfo, []*frameworkext.ReservationInfo{rInfo})
+	allocated := rInfo.Allocated
+	preemptibleInRR := state.preemptibleInRRs[node.Name][rInfo.UID()]
+	if len(preemptibleInRR) > 0 {
+		allocated = quotav1.SubtractWithNonNegativeResult(allocated, preemptibleInRR)
+		allocated = quotav1.Mask(allocated, rInfo.ResourceNames)
+	}
+	rRemained := quotav1.SubtractWithNonNegativeResult(rInfo.Allocatable, allocated)
+	if quotav1.IsZero(quotav1.Mask(rRemained, resourceNames)) {
+		return framework.AsStatus(fmt.Errorf("insufficient resources in reservation"))
+	}
+	return nil
 }
 
 func (pl *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) *framework.Status {

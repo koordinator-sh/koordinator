@@ -780,16 +780,16 @@ var _ = SIGDescribe("NodeNUMAResource", func() {
 			}
 			gomega.Expect(nodes.Len()).Should(gomega.Equal(2))
 
-			ginkgo.By("Create the third Pod allocates 40% resources of Node, expect it scheduled")
-			percent = intstr.FromString("30%")
+			ginkgo.By("Create the third Pod allocates 40% resources of Node, expect it failed to schedule")
+			percent = intstr.FromString("40%")
 			cpu, _ = intstr.GetScaledValueFromIntOrPercent(&percent, int(cpuQuantity.MilliValue()), false)
 			memory, _ = intstr.GetScaledValueFromIntOrPercent(&percent, int(memoryQuantity.Value()), false)
 			requests = corev1.ResourceList{
 				corev1.ResourceCPU:    *resource.NewMilliQuantity(int64(cpu), resource.DecimalSI),
 				corev1.ResourceMemory: *resource.NewQuantity(int64(memory), resource.DecimalSI),
 			}
-			pod := runPausePod(f, pausePodConfig{
-				Name:      "must-be-succeeded-pod",
+			pod := createPausePod(f, pausePodConfig{
+				Name:      "must-be-failed-pod",
 				Namespace: f.Namespace.Name,
 				Resources: &corev1.ResourceRequirements{
 					Limits:   requests,
@@ -798,16 +798,15 @@ var _ = SIGDescribe("NodeNUMAResource", func() {
 				SchedulerName: koordSchedulerName,
 				NodeName:      node.Name,
 			})
-			nodes = sets.NewInt()
-			resourceStatus, err := extension.GetResourceStatus(pod.Annotations)
-			framework.ExpectNoError(err, "invalid resourceStatus")
-			gomega.Expect(len(resourceStatus.NUMANodeResources)).Should(gomega.Equal(2))
-			allocated := quotav1.Add(resourceStatus.NUMANodeResources[0].Resources, resourceStatus.NUMANodeResources[1].Resources)
-			r := equality.Semantic.DeepEqual(allocated, requests)
-			gomega.Expect(r).Should(gomega.Equal(true))
-			nodes.Insert(int(resourceStatus.NUMANodeResources[0].Node))
-			nodes.Insert(int(resourceStatus.NUMANodeResources[1].Node))
-			gomega.Expect(nodes.Len()).Should(gomega.Equal(2))
+			ginkgo.By("Wait for Pod schedule failed")
+			framework.ExpectNoError(e2epod.WaitForPodCondition(f.ClientSet, pod.Namespace, pod.Name, "wait for pod schedule failed", 60*time.Second, func(pod *corev1.Pod) (bool, error) {
+				_, scheduledCondition := k8spodutil.GetPodCondition(&pod.Status, corev1.PodScheduled)
+				if scheduledCondition != nil && scheduledCondition.Status == corev1.ConditionFalse &&
+					strings.Contains(scheduledCondition.Message, "NUMA Topology affinity") {
+					return true, nil
+				}
+				return false, nil
+			}))
 		})
 
 		// Restricted with 2 NUMA Nodes - resources crossover two NUMA Nodes
@@ -867,7 +866,7 @@ var _ = SIGDescribe("NodeNUMAResource", func() {
 				corev1.ResourceCPU:    *resource.NewMilliQuantity(int64(cpu), resource.DecimalSI),
 				corev1.ResourceMemory: *resource.NewQuantity(int64(memory), resource.DecimalSI),
 			}
-			pod := runPausePod(f, pausePodConfig{
+			pod := createPausePod(f, pausePodConfig{
 				Name:      "must-be-failed-pod",
 				Namespace: f.Namespace.Name,
 				Resources: &corev1.ResourceRequirements{
@@ -877,16 +876,15 @@ var _ = SIGDescribe("NodeNUMAResource", func() {
 				SchedulerName: koordSchedulerName,
 				NodeName:      node.Name,
 			})
-			nodes := sets.NewInt()
-			resourceStatus, err := extension.GetResourceStatus(pod.Annotations)
-			framework.ExpectNoError(err, "invalid resourceStatus")
-			gomega.Expect(len(resourceStatus.NUMANodeResources)).Should(gomega.Equal(2))
-			allocated := quotav1.Add(resourceStatus.NUMANodeResources[0].Resources, resourceStatus.NUMANodeResources[1].Resources)
-			r := equality.Semantic.DeepEqual(allocated, requests)
-			gomega.Expect(r).Should(gomega.Equal(true))
-			nodes.Insert(int(resourceStatus.NUMANodeResources[0].Node))
-			nodes.Insert(int(resourceStatus.NUMANodeResources[1].Node))
-			gomega.Expect(nodes.Len()).Should(gomega.Equal(2))
+			ginkgo.By("Wait for Pod schedule failed")
+			framework.ExpectNoError(e2epod.WaitForPodCondition(f.ClientSet, pod.Namespace, pod.Name, "wait for pod schedule failed", 60*time.Second, func(pod *corev1.Pod) (bool, error) {
+				_, scheduledCondition := k8spodutil.GetPodCondition(&pod.Status, corev1.PodScheduled)
+				if scheduledCondition != nil && scheduledCondition.Status == corev1.ConditionFalse &&
+					strings.Contains(scheduledCondition.Message, "NUMA Topology affinity") {
+					return true, nil
+				}
+				return false, nil
+			}))
 		})
 
 		// BestEffort with 2 NUMA Nodes
