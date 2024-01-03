@@ -115,10 +115,10 @@ func (p *Plugin) addCookie(pids []uint32, groupID string) (uint64, []uint32, err
 			groupID, cookieID, pids[0], len(failedPIDs), len(pids)-1, err)
 	}
 
-	pidsAdded := newUint32OrderedMap(pids...)
+	pidsAdded := NewPIDCache(pids...)
 	pidsAdded.DeleteAny(failedPIDs...)
 
-	return cookieID, pidsAdded.GetAll(), nil
+	return cookieID, pidsAdded.GetAllSorted(), nil
 }
 
 // assignCookie assigns the target cookieID to the given PIDs.
@@ -130,7 +130,7 @@ func (p *Plugin) assignCookie(pids, siblingPIDs []uint32, groupID string, target
 			targetCookieID, groupID)
 		return nil, nil, nil
 	}
-	pidsToAssign := newUint32OrderedMap()
+	pidsToAssign := NewPIDCache()
 	var pidsAssigned []uint32
 	unknownCount := 0
 	for _, pid := range pids {
@@ -142,7 +142,7 @@ func (p *Plugin) assignCookie(pids, siblingPIDs []uint32, groupID string, target
 			continue
 		}
 		if lastCookieID != targetCookieID {
-			pidsToAssign.Add(pid)
+			pidsToAssign.AddAny(pid)
 		} else {
 			pidsAssigned = append(pidsAssigned, pid)
 		}
@@ -186,7 +186,7 @@ func (p *Plugin) assignCookie(pids, siblingPIDs []uint32, groupID string, target
 	}
 
 	// assign to valid sibling PID
-	failedPIDs, err := p.cse.Assign(sysutil.CoreSchedScopeThread, validSiblingPID, sysutil.CoreSchedScopeThreadGroup, pidsToAssign.GetAll()...)
+	failedPIDs, err := p.cse.Assign(sysutil.CoreSchedScopeThread, validSiblingPID, sysutil.CoreSchedScopeThreadGroup, pidsToAssign.GetAllSorted()...)
 	if err != nil {
 		klog.V(5).Infof("failed to assign group cookie for group %s, target cookie %v, PID from %v, PID to %v failed of %v, err: %s",
 			groupID, targetCookieID, validSiblingPID, len(failedPIDs), pidsToAssign.Len(), err)
@@ -194,7 +194,7 @@ func (p *Plugin) assignCookie(pids, siblingPIDs []uint32, groupID string, target
 	}
 	pidsToAssign.AddAny(pidsAssigned...)
 
-	return pidsToAssign.GetAll(), sPIDsToDelete, nil
+	return pidsToAssign.GetAllSorted(), sPIDsToDelete, nil
 }
 
 // clearCookie clears the cookie for the given PIDs to the default cookie 0.
@@ -204,7 +204,7 @@ func (p *Plugin) clearCookie(pids []uint32, groupID string, lastCookieID uint64)
 		klog.V(6).Infof("aborted to clear PIDs cookie for group %s, no PID", groupID)
 		return nil
 	}
-	pidsToClear := newUint32OrderedMap()
+	pidsToClear := NewPIDCache()
 	var pidsCleared []uint32
 	for _, pid := range pids {
 		pCookieID, err := p.cse.Get(sysutil.CoreSchedScopeThread, pid)
@@ -213,7 +213,7 @@ func (p *Plugin) clearCookie(pids []uint32, groupID string, lastCookieID uint64)
 			continue
 		}
 		if pCookieID != sysutil.DefaultCoreSchedCookieID {
-			pidsToClear.Add(pid)
+			pidsToClear.AddAny(pid)
 		} else {
 			pidsCleared = append(pidsCleared, pid)
 		}
@@ -223,15 +223,15 @@ func (p *Plugin) clearCookie(pids []uint32, groupID string, lastCookieID uint64)
 		return pidsCleared
 	}
 
-	failedPIDs, err := p.cse.Clear(sysutil.CoreSchedScopeThreadGroup, pidsToClear.GetAll()...)
+	failedPIDs, err := p.cse.Clear(sysutil.CoreSchedScopeThreadGroup, pidsToClear.GetAllSorted()...)
 	if err != nil {
 		klog.V(4).Infof("failed to clear cookie for group, last cookie %v, PID %v failed of %v, total %v, err: %s",
-			groupID, lastCookieID, len(failedPIDs), pidsToClear.GetAll(), len(pids), err)
+			groupID, lastCookieID, len(failedPIDs), pidsToClear.GetAllSorted(), len(pids), err)
 		pidsToClear.DeleteAny(failedPIDs...)
 	}
 	pidsToClear.AddAny(pidsCleared...)
 
-	return pidsToClear.GetAll()
+	return pidsToClear.GetAllSorted()
 }
 
 // getPodEnabledAndGroup gets whether the pod enables the core scheduling and the group ID if it does.

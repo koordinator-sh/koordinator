@@ -1610,7 +1610,7 @@ func Test_ruleUpdateCb(t *testing.T) {
 				assert.True(t, ok)
 				entry, ok := entryIf.(*CookieCacheEntry)
 				assert.True(t, ok)
-				assert.Equal(t, cookieID, entry.CookieID, groupID)
+				assert.Equal(t, cookieID, entry.GetCookieID(), groupID)
 				assert.Equal(t, len(tt.wantFields.cookieToPIDs[cookieID]), len(entry.GetAllPIDs()),
 					"expect [%v] but got [%v]", tt.wantFields.cookieToPIDs[cookieID], entry.GetAllPIDs())
 				for _, pid := range tt.wantFields.cookieToPIDs[cookieID] {

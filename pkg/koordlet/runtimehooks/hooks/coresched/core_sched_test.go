@@ -1007,7 +1007,7 @@ func TestPlugin_SetContainerCookie(t *testing.T) {
 				assert.True(t, ok)
 				entry, ok := entryIf.(*CookieCacheEntry)
 				assert.True(t, ok)
-				assert.Equal(t, cookieID, entry.CookieID)
+				assert.Equal(t, cookieID, entry.GetCookieID())
 				assert.Equal(t, len(tt.wantFields.cookieToPIDs[cookieID]), len(entry.GetAllPIDs()),
 					"expect [%v] but got [%v]", tt.wantFields.cookieToPIDs[cookieID], entry.GetAllPIDs())
 				for _, pid := range tt.wantFields.cookieToPIDs[cookieID] {
@@ -1829,7 +1829,7 @@ func TestPlugin_LoadAllCookies(t *testing.T) {
 				assert.True(t, ok)
 				entry, ok := entryIf.(*CookieCacheEntry)
 				assert.True(t, ok)
-				assert.Equal(t, cookieID, entry.CookieID)
+				assert.Equal(t, cookieID, entry.GetCookieID())
 				assert.Equal(t, len(tt.wantFields.cookieToPIDs[cookieID]), len(entry.GetAllPIDs()),
 					"expect [%v] but got [%v]", tt.wantFields.cookieToPIDs[cookieID], entry.GetAllPIDs())
 				for _, pid := range tt.wantFields.cookieToPIDs[cookieID] {

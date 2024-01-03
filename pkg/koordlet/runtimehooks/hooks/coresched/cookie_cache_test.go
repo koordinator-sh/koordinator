@@ -21,7 +21,6 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"golang.org/x/exp/constraints"
 )
 
 func TestCookieCacheEntry(t *testing.T) {
@@ -249,56 +248,6 @@ func TestCookieCacheEntry(t *testing.T) {
 			assert.Equal(t, c, entry)
 		})
 	}
-}
-
-func TestOrderedMap(t *testing.T) {
-	tests := []struct {
-		name   string
-		testFn func(t *testing.T)
-	}{
-		{
-			name:   "test uint32",
-			testFn: testOrderedMap[uint32],
-		},
-		{
-			name:   "test int",
-			testFn: testOrderedMap[int],
-		},
-		{
-			name:   "test float64",
-			testFn: testOrderedMap[float64],
-		},
-		{
-			name:   "test string",
-			testFn: testOrderedMap[string],
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			tt.testFn(t)
-		})
-	}
-}
-
-func testOrderedMap[T constraints.Ordered](t *testing.T) {
-	m := newOrderedMap[T]()
-	assert.NotNil(t, m)
-
-	var e T
-	assert.Equal(t, 0, m.Len())
-	_, gotExist := m.Get(e)
-	assert.False(t, gotExist)
-	m.AddAny(e)
-	assert.Equal(t, 1, m.Len())
-	got, gotExist := m.Get(e)
-	assert.True(t, gotExist)
-	assert.Equal(t, e, got)
-	m.DeleteAny(e)
-	assert.Equal(t, 0, m.Len())
-	_, gotExist = m.Get(e)
-	assert.False(t, gotExist)
-	mc := m.DeepCopy()
-	assert.Equal(t, m, mc)
 }
 
 func testGetOutOfOrderUint32Slice(ss []uint32) []uint32 {
