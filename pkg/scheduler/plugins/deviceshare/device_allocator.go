@@ -406,8 +406,8 @@ func defaultAllocateDevices(
 
 	var allocations []*apiext.DeviceAllocation
 	resourceMinorPairs := scoreDevices(podRequestPerInstance, nodeDeviceTotal, freeDevices, requestCtx.allocationScorer)
-	resourceMinorPairs = sortDeviceResourcesByMinor(resourceMinorPairs, requestCtx.preferred[deviceType])
 	resourceMinorPairs = sortDeviceResourcesByPreferredPCIe(resourceMinorPairs, preferredPCIEs, deviceInfos)
+	resourceMinorPairs = sortDeviceResourcesByMinor(resourceMinorPairs, requestCtx.preferred[deviceType])
 	for _, resourceMinorPair := range resourceMinorPairs {
 		if required.Len() > 0 && !required.Has(resourceMinorPair.minor) {
 			continue

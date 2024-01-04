@@ -28,6 +28,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/uuid"
+	apiresource "k8s.io/kubernetes/pkg/api/v1/resource"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
@@ -220,6 +221,8 @@ func TestScore(t *testing.T) {
 			state := &stateData{
 				nodeReservationStates: map[string]nodeReservationState{},
 			}
+			state.podRequests, _ = apiresource.PodRequestsAndLimits(tt.pod)
+			state.podRequestsResources = framework.NewResource(state.podRequests)
 			for _, reservation := range tt.reservations {
 				rInfo := frameworkext.NewReservationInfo(reservation)
 				if allocated := tt.allocated[reservation.UID]; len(allocated) > 0 {
@@ -320,6 +323,8 @@ func TestScoreWithOrder(t *testing.T) {
 	state := &stateData{
 		nodeReservationStates: map[string]nodeReservationState{},
 	}
+	state.podRequests, _ = apiresource.PodRequestsAndLimits(normalPod)
+	state.podRequestsResources = framework.NewResource(state.podRequests)
 
 	// add three Reservations to three node
 	for i := 0; i < 3; i++ {
@@ -689,6 +694,8 @@ func TestPreScoreWithNominateReservation(t *testing.T) {
 			state := &stateData{
 				nodeReservationStates: map[string]nodeReservationState{},
 			}
+			state.podRequests, _ = apiresource.PodRequestsAndLimits(tt.pod)
+			state.podRequestsResources = framework.NewResource(state.podRequests)
 			for _, reservation := range tt.reservations {
 				rInfo := frameworkext.NewReservationInfo(reservation)
 				if allocated := tt.allocated[reservation.UID]; len(allocated) > 0 {

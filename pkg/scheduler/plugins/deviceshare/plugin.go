@@ -46,12 +46,6 @@ const (
 
 	// stateKey is the key in CycleState to pre-computed data.
 	stateKey = Name
-
-	// ErrMissingDevice when node does not have Device.
-	ErrMissingDevice = "node(s) missing Device"
-
-	// ErrInsufficientDevices when node can't satisfy Pod's requested resource.
-	ErrInsufficientDevices = "Insufficient Devices"
 )
 
 var (
@@ -87,16 +81,19 @@ type preFilterState struct {
 	allocationResult   apiext.DeviceAllocations
 	preemptibleDevices map[string]map[schedulingv1alpha1.DeviceType]deviceResources
 	preemptibleInRRs   map[string]map[types.UID]map[schedulingv1alpha1.DeviceType]deviceResources
+
+	hasReservationAffinity bool
 }
 
 func (s *preFilterState) Clone() framework.StateData {
 	ns := &preFilterState{
-		skip:             s.skip,
-		podRequests:      s.podRequests,
-		hints:            s.hints,
-		hintSelectors:    s.hintSelectors,
-		jointAllocate:    s.jointAllocate,
-		allocationResult: s.allocationResult,
+		skip:                   s.skip,
+		podRequests:            s.podRequests,
+		hints:                  s.hints,
+		hintSelectors:          s.hintSelectors,
+		jointAllocate:          s.jointAllocate,
+		allocationResult:       s.allocationResult,
+		hasReservationAffinity: s.hasReservationAffinity,
 	}
 
 	preemptibleDevices := map[string]map[schedulingv1alpha1.DeviceType]deviceResources{}
@@ -316,7 +313,7 @@ func (p *Plugin) Filter(ctx context.Context, cycleState *framework.CycleState, p
 
 	nodeDeviceInfo.lock.RLock()
 	defer nodeDeviceInfo.lock.RUnlock()
-	allocateResult, status := p.tryAllocateFromReservation(allocator, state, restoreState, restoreState.matched, node, preemptible, false)
+	allocateResult, status := p.tryAllocateFromReservation(allocator, state, restoreState, restoreState.matched, node, preemptible, state.hasReservationAffinity)
 	if !status.IsSuccess() {
 		return status
 	}
@@ -381,14 +378,8 @@ func (p *Plugin) FilterReservation(ctx context.Context, cycleState *framework.Cy
 	nodeDeviceInfo.lock.RLock()
 	defer nodeDeviceInfo.lock.RUnlock()
 
-	allocateResult, status := p.tryAllocateFromReservation(allocator, state, restoreState, restoreState.matched[allocIndex:allocIndex+1], nodeInfo.Node(), preemptible, true)
-	if !status.IsSuccess() {
-		return status
-	}
-	if len(allocateResult) == 0 {
-		return framework.NewStatus(framework.Unschedulable, ErrInsufficientDevices)
-	}
-	return nil
+	_, status = p.tryAllocateFromReservation(allocator, state, restoreState, restoreState.matched[allocIndex:allocIndex+1], nodeInfo.Node(), preemptible, true)
+	return status
 }
 
 func (p *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) *framework.Status {

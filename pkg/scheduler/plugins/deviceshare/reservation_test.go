@@ -424,8 +424,19 @@ func Test_tryAllocateFromReservation(t *testing.T) {
 				},
 			},
 			requiredFromReservation: true,
-			wantResult:              nil,
-			wantStatus:              nil,
+			wantResult: apiext.DeviceAllocations{
+				schedulingv1alpha1.GPU: {
+					{
+						Minor: 1,
+						Resources: corev1.ResourceList{
+							apiext.ResourceGPUCore:        resource.MustParse("50"),
+							apiext.ResourceGPUMemory:      resource.MustParse("4Gi"),
+							apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(50, resource.DecimalSI),
+						},
+					},
+				},
+			},
+			wantStatus: nil,
 		},
 		{
 			name: "allocate from Aligned policy reservation",
@@ -510,8 +521,9 @@ func Test_tryAllocateFromReservation(t *testing.T) {
 					apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(100, resource.DecimalSI),
 				},
 			},
-			wantResult: nil,
-			wantStatus: framework.NewStatus(framework.Unschedulable, "node(s) reservations insufficient devices"),
+			requiredFromReservation: true,
+			wantResult:              nil,
+			wantStatus:              framework.NewStatus(framework.Unschedulable, "node(s) no reservation(s) to meet the device requirements"),
 		},
 		{
 			name: "failed to allocate from Aligned policy reservation that remaining little not fits request",
@@ -552,8 +564,9 @@ func Test_tryAllocateFromReservation(t *testing.T) {
 					apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(100, resource.DecimalSI),
 				},
 			},
-			wantResult: nil,
-			wantStatus: framework.NewStatus(framework.Unschedulable, "node(s) reservations insufficient devices"),
+			requiredFromReservation: true,
+			wantResult:              nil,
+			wantStatus:              framework.NewStatus(framework.Unschedulable, "node(s) no reservation(s) to meet the device requirements"),
 		},
 		{
 			name: "allocate from Restricted policy reservation",
@@ -635,8 +648,9 @@ func Test_tryAllocateFromReservation(t *testing.T) {
 					apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(100, resource.DecimalSI),
 				},
 			},
-			wantResult: nil,
-			wantStatus: framework.NewStatus(framework.Unschedulable, "node(s) reservations insufficient devices"),
+			requiredFromReservation: true,
+			wantResult:              nil,
+			wantStatus:              framework.NewStatus(framework.Unschedulable, "node(s) no reservation(s) to meet the device requirements"),
 		},
 	}
 
