@@ -165,10 +165,6 @@ type nodeReservationState struct {
 	podRequested *framework.Resource
 	// rAllocated represents the allocated resources of matched reservations
 	rAllocated *framework.Resource
-	// totalAligned represents the count of Reservation that specified Aligned policy
-	totalAligned int
-	// totalRestricted represents the count of Reservation that specified Restricted policy
-	totalRestricted int
 }
 
 func (s *stateData) Clone() framework.StateData {

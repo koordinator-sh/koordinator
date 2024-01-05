@@ -32,7 +32,6 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework/parallelize"
 	schedutil "k8s.io/kubernetes/pkg/scheduler/util"
 
-	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
@@ -158,7 +157,6 @@ func (pl *Plugin) prepareMatchReservationState(ctx context.Context, cycleState *
 			}
 		}
 
-		var totalAligned, totalRestricted int
 		rAllocated := corev1.ResourceList{}
 		for _, rInfo := range matched {
 			if err = restoreMatchedReservation(nodeInfo, rInfo, podInfoMap); err != nil {
@@ -167,12 +165,6 @@ func (pl *Plugin) prepareMatchReservationState(ctx context.Context, cycleState *
 			}
 
 			util.AddResourceList(rAllocated, rInfo.Allocated)
-			switch rInfo.GetAllocatePolicy() {
-			case schedulingv1alpha1.ReservationAllocatePolicyAligned:
-				totalAligned++
-			case schedulingv1alpha1.ReservationAllocatePolicyRestricted:
-				totalRestricted++
-			}
 		}
 
 		var pluginToRestoreState frameworkext.PluginToReservationRestoreStates
@@ -188,12 +180,10 @@ func (pl *Plugin) prepareMatchReservationState(ctx context.Context, cycleState *
 		if len(matched) > 0 || len(unmatched) > 0 {
 			index := atomic.AddInt32(&stateIndex, 1)
 			allNodeReservationStates[index-1] = &nodeReservationState{
-				nodeName:        node.Name,
-				matched:         matched,
-				podRequested:    podRequested,
-				rAllocated:      framework.NewResource(rAllocated),
-				totalAligned:    totalAligned,
-				totalRestricted: totalRestricted,
+				nodeName:     node.Name,
+				matched:      matched,
+				podRequested: podRequested,
+				rAllocated:   framework.NewResource(rAllocated),
 			}
 			allPluginToRestoreState[index-1] = pluginToRestoreState
 		}
