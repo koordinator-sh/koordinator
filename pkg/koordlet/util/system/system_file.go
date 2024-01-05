@@ -31,15 +31,13 @@ import (
 )
 
 const (
-	ProcStatName          = "stat"
-	ProcMemInfoName       = "meminfo"
 	SysctlSubDir          = "sys"
-	ProcCPUInfoName       = "cpuinfo"
 	KernelCmdlineFileName = "cmdline"
 	HugepageDir           = "hugepages"
 	nrPath                = "nr_hugepages"
 
 	KernelSchedGroupIdentityEnable = "kernel/sched_group_identity_enabled"
+	KernelSchedCore                = "kernel/sched_core"
 
 	SysNUMASubDir   = "bus/node/devices"
 	SysPCIDeviceDir = "bus/pci/devices"
@@ -83,14 +81,6 @@ func initJiffies() error {
 
 func GetPeriodTicks(start, end time.Time) float64 {
 	return float64(end.Sub(start)) / Jiffies
-}
-
-func GetProcFilePath(procRelativePath string) string {
-	return filepath.Join(Conf.ProcRootDir, procRelativePath)
-}
-
-func GetProcRootDir() string {
-	return Conf.ProcRootDir
 }
 
 func GetSysRootDir() string {
@@ -177,5 +167,38 @@ func SetSchedGroupIdentity(enable bool) error {
 		return fmt.Errorf("cannot set sysctl group identity, err: %v", err)
 	}
 	klog.V(4).Infof("SetSchedGroupIdentity set sysctl config successfully, value %v", v)
+	return nil
+}
+
+func GetSchedCore() (bool, error) {
+	s := NewProcSysctl()
+	// 0: disabled; 1: enabled
+	cur, err := s.GetSysctl(KernelSchedCore)
+	if err != nil {
+		return false, fmt.Errorf("cannot get sysctl sched core, err: %w", err)
+	}
+	return cur == 1, nil
+}
+
+func SetSchedCore(enable bool) error {
+	s := NewProcSysctl()
+	cur, err := s.GetSysctl(KernelSchedCore)
+	if err != nil {
+		return fmt.Errorf("cannot get sysctl sched core, err: %w", err)
+	}
+	v := 0 // 0: disabled; 1: enabled
+	if enable {
+		v = 1
+	}
+	if cur == v {
+		klog.V(6).Infof("SetSchedCore skips since current sysctl config is already %v", enable)
+		return nil
+	}
+
+	err = s.SetSysctl(KernelSchedCore, v)
+	if err != nil {
+		return fmt.Errorf("cannot set sysctl sched core, err: %w", err)
+	}
+	klog.V(4).Infof("SetSchedCore set sysctl config successfully, value %v", v)
 	return nil
 }

@@ -135,6 +135,7 @@ const (
 	CPUMaxName       = "cpu.max"
 	CPUMaxBurstName  = "cpu.max.burst"
 	CPUWeightName    = "cpu.weight"
+	CPUIdleName      = "cpu.idle"
 
 	CPUSetCPUSName          = "cpuset.cpus"
 	CPUSetCPUSEffectiveName = "cpuset.cpus.effective"
@@ -178,6 +179,7 @@ var (
 	CPUBvtWarpNsValidator                   = &RangeValidator{min: -1, max: 2}
 	CPUWeightValidator                      = &RangeValidator{min: CPUWeightMinValue, max: CPUWeightMaxValue}
 	CPUMaxBurstValidator                    = &RangeValidator{min: 0, max: math.MaxInt64}
+	CPUIdleValidator                        = &RangeValidator{min: 0, max: 1}
 	MemoryWmarkRatioValidator               = &RangeValidator{min: 0, max: 100}
 	MemoryPriorityValidator                 = &RangeValidator{min: 0, max: 12}
 	MemoryOomGroupValidator                 = &RangeValidator{min: 0, max: 1}
@@ -204,6 +206,7 @@ var (
 	CPUCFSPeriod = DefaultFactory.New(CPUCFSPeriodName, CgroupCPUDir)
 	CPUBurst     = DefaultFactory.New(CPUBurstName, CgroupCPUDir).WithValidator(CPUBurstValidator).WithCheckSupported(SupportedIfFileExists)
 	CPUBVTWarpNs = DefaultFactory.New(CPUBVTWarpNsName, CgroupCPUDir).WithValidator(CPUBvtWarpNsValidator).WithCheckSupported(SupportedIfFileExists)
+	CPUIdle      = DefaultFactory.New(CPUIdleName, CgroupCPUDir).WithValidator(CPUIdleValidator).WithCheckSupported(SupportedIfFileExistsInKubepods).WithCheckOnce(true)
 	CPUTasks     = DefaultFactory.New(CPUTasksName, CgroupCPUDir)
 	CPUProcs     = DefaultFactory.New(CPUProcsName, CgroupCPUDir)
 
@@ -245,6 +248,7 @@ var (
 		CPUBurst,
 		CPUTasks,
 		CPUBVTWarpNs,
+		CPUIdle,
 		CPUSet,
 		CPUAcctStat,
 		CPUAcctUsage,
@@ -282,6 +286,7 @@ var (
 	CPUAcctUsageV2 = DefaultFactory.NewV2(CPUAcctUsageName, CPUStatName)
 	CPUBurstV2     = DefaultFactory.NewV2(CPUBurstName, CPUMaxBurstName).WithValidator(CPUMaxBurstValidator).WithCheckSupported(SupportedIfFileExistsInKubepods).WithCheckOnce(true)
 	CPUBVTWarpNsV2 = DefaultFactory.NewV2(CPUBVTWarpNsName, CPUBVTWarpNsName).WithValidator(CPUBvtWarpNsValidator).WithCheckSupported(SupportedIfFileExists)
+	CPUIdleV2      = DefaultFactory.NewV2(CPUIdleName, CPUIdleName).WithValidator(CPUIdleValidator).WithCheckSupported(SupportedIfFileExistsInKubepods).WithCheckOnce(true)
 
 	CPUAcctCPUPressureV2    = DefaultFactory.NewV2(CPUAcctCPUPressureName, CPUAcctCPUPressureName).WithCheckSupported(SupportedIfFileExistsInKubepods).WithCheckOnce(true)
 	CPUAcctMemoryPressureV2 = DefaultFactory.NewV2(CPUAcctMemoryPressureName, CPUAcctMemoryPressureName).WithCheckSupported(SupportedIfFileExistsInKubepods).WithCheckOnce(true)
@@ -314,6 +319,7 @@ var (
 		CPUAcctUsageV2,
 		CPUBurstV2,
 		CPUBVTWarpNsV2,
+		CPUIdleV2,
 		CPUAcctCPUPressureV2,
 		CPUAcctMemoryPressureV2,
 		CPUAcctIOPressureV2,

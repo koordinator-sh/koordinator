@@ -76,8 +76,12 @@ func DefaultCPUQOS(qos apiext.QoSClass) *slov1alpha1.CPUQOS {
 	case apiext.QoSBE:
 		cpuQOS = &slov1alpha1.CPUQOS{
 			GroupIdentity: pointer.Int64(-1),
-			SchedIdle:     pointer.Int64(1),
-			CoreExpeller:  pointer.Bool(false),
+			// NOTE: Be careful to enable CPU Idle since it overrides and lock the cpu.shares/cpu.weight of the same
+			// cgroup to a minimal value. This can affect other components like Kubelet which wants to write
+			// cpu.shares/cpu.weight to other values.
+			// https://git.kernel.org/pub/scm/linux/kernel/git/tip/tip.git/commit/?id=304000390f88d049c85e9a0958ac5567f38816ee
+			SchedIdle:    pointer.Int64(0),
+			CoreExpeller: pointer.Bool(false),
 		}
 	case apiext.QoSSystem:
 		cpuQOS = &slov1alpha1.CPUQOS{

@@ -32,6 +32,7 @@ func init() {
 	prometheus.MustRegister(CPUSuppressCollector...)
 	prometheus.MustRegister(CPUBurstCollector...)
 	prometheus.MustRegister(PredictionCollectors...)
+	prometheus.MustRegister(CoreSchedCollector...)
 }
 
 const (
