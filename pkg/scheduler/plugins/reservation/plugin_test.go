@@ -701,7 +701,6 @@ func Test_filterWithReservations(t *testing.T) {
 						rAllocated: &framework.Resource{
 							MilliCPU: 0,
 						},
-						totalAligned: 1,
 						matched: []*frameworkext.ReservationInfo{
 							frameworkext.NewReservationInfo(&schedulingv1alpha1.Reservation{
 								ObjectMeta: metav1.ObjectMeta{
@@ -747,7 +746,6 @@ func Test_filterWithReservations(t *testing.T) {
 						rAllocated: &framework.Resource{
 							MilliCPU: 0,
 						},
-						totalAligned: 1,
 						matched: []*frameworkext.ReservationInfo{
 							frameworkext.NewReservationInfo(&schedulingv1alpha1.Reservation{
 								ObjectMeta: metav1.ObjectMeta{
@@ -792,7 +790,6 @@ func Test_filterWithReservations(t *testing.T) {
 						rAllocated: &framework.Resource{
 							MilliCPU: 0,
 						},
-						totalRestricted: 1,
 						matched: []*frameworkext.ReservationInfo{
 							frameworkext.NewReservationInfo(&schedulingv1alpha1.Reservation{
 								ObjectMeta: metav1.ObjectMeta{
@@ -838,7 +835,6 @@ func Test_filterWithReservations(t *testing.T) {
 						rAllocated: &framework.Resource{
 							MilliCPU: 0,
 						},
-						totalRestricted: 1,
 						matched: []*frameworkext.ReservationInfo{
 							frameworkext.NewReservationInfo(&schedulingv1alpha1.Reservation{
 								ObjectMeta: metav1.ObjectMeta{
@@ -1076,7 +1072,6 @@ func Test_filterWithReservations(t *testing.T) {
 						rAllocated: &framework.Resource{
 							MilliCPU: 6000,
 						},
-						totalRestricted: 1,
 						matched: []*frameworkext.ReservationInfo{
 							{
 								Reservation: &schedulingv1alpha1.Reservation{
@@ -1125,7 +1120,6 @@ func Test_filterWithReservations(t *testing.T) {
 						rAllocated: &framework.Resource{
 							MilliCPU: 6000,
 						},
-						totalRestricted: 1,
 						matched: []*frameworkext.ReservationInfo{
 							{
 								Reservation: &schedulingv1alpha1.Reservation{
@@ -1180,7 +1174,6 @@ func Test_filterWithReservations(t *testing.T) {
 						rAllocated: &framework.Resource{
 							MilliCPU: 6000,
 						},
-						totalRestricted: 1,
 						matched: []*frameworkext.ReservationInfo{
 							{
 								Reservation: &schedulingv1alpha1.Reservation{
@@ -1239,7 +1232,6 @@ func Test_filterWithReservations(t *testing.T) {
 						rAllocated: &framework.Resource{
 							MilliCPU: 6000,
 						},
-						totalRestricted: 1,
 						matched: []*frameworkext.ReservationInfo{
 							{
 								Reservation: &schedulingv1alpha1.Reservation{
