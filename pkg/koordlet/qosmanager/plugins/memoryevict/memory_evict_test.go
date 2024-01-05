@@ -408,6 +408,7 @@ func Test_memoryEvict(t *testing.T) {
 			memoryEvictor := m.(*memoryEvictor)
 			memoryEvictor.Setup(&framework.Context{Evictor: evictor})
 			memoryEvictor.lastEvictTime = time.Now().Add(-30 * time.Second)
+			memoryEvictor.onlyEvictByAPI = true
 			memoryEvictor.memoryEvict()
 
 			for _, pod := range tt.expectEvictPods {

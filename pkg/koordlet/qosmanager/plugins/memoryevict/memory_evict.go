@@ -32,6 +32,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/qosmanager/helpers"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
+	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
 const (
@@ -50,6 +51,7 @@ type memoryEvictor struct {
 	metricCache           metriccache.MetricCache
 	evictor               *framework.Evictor
 	lastEvictTime         time.Time
+	onlyEvictByAPI        bool
 }
 
 type podInfo struct {
@@ -64,6 +66,7 @@ func New(opt *framework.Options) framework.QOSStrategy {
 		metricCollectInterval: opt.MetricAdvisorConfig.CollectResUsedInterval,
 		statesInformer:        opt.StatesInformer,
 		metricCache:           opt.MetricCache,
+		onlyEvictByAPI:        opt.Config.OnlyEvictByAPI,
 	}
 }
 
@@ -164,24 +167,36 @@ func (m *memoryEvictor) killAndEvictBEPods(node *corev1.Node, podMetrics map[str
 	bePodInfos := m.getSortedBEPodInfos(podMetrics)
 	message := fmt.Sprintf("killAndEvictBEPods for node, need to release memory: %v", memoryNeedRelease)
 	memoryReleased := int64(0)
-
-	var killedPods []*corev1.Pod
+	hasKillPods := false
 	for _, bePod := range bePodInfos {
 		if memoryReleased >= memoryNeedRelease {
 			break
 		}
 
-		killMsg := fmt.Sprintf("%v, kill pod: %v", message, bePod.pod.Name)
-		helpers.KillContainers(bePod.pod, killMsg)
-		killedPods = append(killedPods, bePod.pod)
-		if bePod.memUsed != 0 {
-			memoryReleased += int64(bePod.memUsed)
+		if m.onlyEvictByAPI {
+			if m.evictor.EvictPodIfNotEvicted(bePod.pod, node, resourceexecutor.EvictPodByNodeMemoryUsage, message) {
+				hasKillPods = true
+				if bePod.memUsed != 0 {
+					memoryReleased += int64(bePod.memUsed)
+				}
+				klog.V(5).Infof("memoryEvict pick pod %s to evict", util.GetPodKey(bePod.pod))
+			} else {
+				klog.V(5).Infof("memoryEvict pick pod %s to evict", util.GetPodKey(bePod.pod))
+			}
+		} else {
+			killMsg := fmt.Sprintf("%v, kill pod: %v", message, bePod.pod.Name)
+			helpers.KillContainers(bePod.pod, killMsg)
+			hasKillPods = true
+			if bePod.memUsed != 0 {
+				memoryReleased += int64(bePod.memUsed)
+			}
+			klog.V(5).Infof("memoryEvict pick pod %s to evict", util.GetPodKey(bePod.pod))
 		}
 	}
+	if hasKillPods {
+		m.lastEvictTime = time.Now()
+	}
 
-	m.evictor.EvictPodsIfNotEvicted(killedPods, node, resourceexecutor.EvictPodByNodeMemoryUsage, message)
-
-	m.lastEvictTime = time.Now()
 	klog.Infof("killAndEvictBEPods completed, memoryNeedRelease(%v) memoryReleased(%v)", memoryNeedRelease, memoryReleased)
 }
 
