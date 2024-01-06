@@ -45,6 +45,7 @@ type frameworkExtenderImpl struct {
 
 	schedulerFn       func() Scheduler
 	configuredPlugins *schedconfig.Plugins
+	monitor           *SchedulerMonitor
 
 	koordinatorClientSet             koordinatorclientset.Interface
 	koordinatorSharedInformerFactory koordinatorinformers.SharedInformerFactory
@@ -75,6 +76,7 @@ func NewFrameworkExtender(f *FrameworkExtenderFactory, fw framework.Framework) F
 		Framework:                        fw,
 		errorHandlerDispatcher:           f.errorHandlerDispatcher,
 		schedulerFn:                      schedulerFn,
+		monitor:                          f.monitor,
 		koordinatorClientSet:             f.KoordinatorClientSet(),
 		koordinatorSharedInformerFactory: f.koordinatorSharedInformerFactory,
 		reservationNominator:             f.reservationNominator,
@@ -307,6 +309,13 @@ func (ext *frameworkExtenderImpl) runPreBindExtensionPlugins(ctx context.Context
 		return status
 	}
 	return nil
+}
+
+func (ext *frameworkExtenderImpl) RunPostBindPlugins(ctx context.Context, state *framework.CycleState, pod *corev1.Pod, nodeName string) {
+	if ext.monitor != nil {
+		defer ext.monitor.Complete(pod)
+	}
+	ext.Framework.RunPostBindPlugins(ctx, state, pod, nodeName)
 }
 
 func (ext *frameworkExtenderImpl) RunReservationExtensionPreRestoreReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod) *framework.Status {

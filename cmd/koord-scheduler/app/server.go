@@ -64,6 +64,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/defaultprofile"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/eventhandlers"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/services"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/metrics"
 	"github.com/koordinator-sh/koordinator/pkg/util/asynclog"
 	utilroutes "github.com/koordinator-sh/koordinator/pkg/util/routes"
 	"github.com/koordinator-sh/koordinator/pkg/util/transformer"
@@ -356,6 +357,8 @@ func Setup(ctx context.Context, opts *options.Options, outOfTreeRegistryOptions 
 
 	frameworkext.SetupCustomInformers(cc.InformerFactory)
 	transformer.SetupTransformers(cc.InformerFactory, cc.KoordinatorSharedInformerFactory)
+
+	metrics.Register()
 
 	// NOTE(joseph): K8s scheduling framework does not provide extension point for initialization.
 	// Currently, only by copying the initialization code and implementing custom initialization.
