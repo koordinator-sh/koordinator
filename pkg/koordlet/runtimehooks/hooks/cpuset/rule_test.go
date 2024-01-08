@@ -383,6 +383,59 @@ func Test_cpusetRule_getContainerCPUSet(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name: "get cpuset from annotation be share pool",
+			fields: fields{
+				sharePools: []ext.CPUSharedPool{
+					{
+						Socket: 0,
+						Node:   0,
+						CPUSet: "1-7",
+					},
+					{
+						Socket: 1,
+						Node:   1,
+						CPUSet: "9-15",
+					},
+				},
+				beSharePools: []ext.CPUSharedPool{
+					{
+						Socket: 0,
+						Node:   0,
+						CPUSet: "0-7",
+					},
+					{
+						Socket: 1,
+						Node:   1,
+						CPUSet: "8-15",
+					},
+				},
+			},
+			args: args{
+				beCPUManagerEnabled: true,
+				containerReq: &protocol.ContainerRequest{
+					PodMeta:       protocol.PodMeta{},
+					ContainerMeta: protocol.ContainerMeta{},
+					PodLabels: map[string]string{
+						ext.LabelPodQoS: string(ext.QoSBE),
+					},
+					PodAnnotations: map[string]string{},
+					CgroupParent:   "besteffort/test-pod/test-container",
+				},
+				podAlloc: &ext.ResourceStatus{
+					NUMANodeResources: []ext.NUMANodeResource{
+						{
+							Node: 1,
+							Resources: map[corev1.ResourceName]resource.Quantity{
+								ext.BatchCPU: *resource.NewQuantity(2000, resource.DecimalSI),
+							},
+						},
+					},
+				},
+			},
+			want:    pointer.String("8-15"),
+			wantErr: false,
+		},
+		{
 			name: "get cpuset from annotation system qos resource",
 			fields: fields{
 				sharePools: []ext.CPUSharedPool{
@@ -453,11 +506,8 @@ func Test_cpusetRule_getContainerCPUSet(t *testing.T) {
 			features.DefaultMutableKoordletFeatureGate.SetFromMap(
 				map[string]bool{string(features.BECPUManager): tt.args.beCPUManagerEnabled})
 			got, err := r.getContainerCPUSet(tt.args.containerReq)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("getCPUSet() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			assert.Equal(t, tt.want, got, "cpuset of container should be equal")
+			assert.Equal(t, tt.wantErr, err != nil, err)
+			assert.Equal(t, tt.want, got, "cpuset of container should be equal, want %+v, got %+v", util.DumpJSON(tt.want), util.DumpJSON(got))
 		})
 	}
 	// node.koordinator.sh/cpu-shared-pools: '[{"cpuset":"2-7"}]'

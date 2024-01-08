@@ -30,7 +30,8 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/protocol"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/util"
+	koordletutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util"
+	"github.com/koordinator-sh/koordinator/pkg/util"
 	"github.com/koordinator-sh/koordinator/pkg/util/cpuset"
 )
 
@@ -64,8 +65,12 @@ func (r *cpusetRule) getContainerCPUSet(containerReq *protocol.ContainerRequest)
 	// check if numa-aware
 	isNUMAAware := false
 	for _, numaNode := range podAlloc.NUMANodeResources {
+		if numaNode.Resources == nil {
+			continue
+		}
 		// check if cpu resource is allocated in numa-level since there can be numa allocation without cpu
-		if numaNode.Resources != nil && !numaNode.Resources.Cpu().IsZero() {
+		if !numaNode.Resources.Cpu().IsZero() ||
+			util.GetBatchMilliCPUFromResourceList(numaNode.Resources) > 0 {
 			isNUMAAware = true
 			break
 		}
@@ -117,7 +122,7 @@ func (r *cpusetRule) getContainerCPUSet(containerReq *protocol.ContainerRequest)
 		return pointer.String(strings.Join(allSharePoolCPUs, ",")), nil
 	}
 
-	kubeQOS := util.GetKubeQoSByCgroupParent(containerReq.CgroupParent)
+	kubeQOS := koordletutil.GetKubeQoSByCgroupParent(containerReq.CgroupParent)
 	if kubeQOS == corev1.PodQOSBestEffort {
 		// besteffort pods including QoS=BE, clear cpuset of BE container to avoid conflict with kubelet static policy,
 		// which will pass cpuset in StartContainerRequest of CRI
