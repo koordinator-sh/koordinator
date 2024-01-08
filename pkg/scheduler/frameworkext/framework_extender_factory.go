@@ -73,6 +73,7 @@ type FrameworkExtenderFactory struct {
 	koordinatorSharedInformerFactory koordinatorinformers.SharedInformerFactory
 	reservationNominator             ReservationNominator
 	profiles                         map[string]FrameworkExtender
+	monitor                          *SchedulerMonitor
 	scheduler                        Scheduler
 	schedulePod                      func(ctx context.Context, fwk framework.Framework, state *framework.CycleState, pod *corev1.Pod) (scheduler.ScheduleResult, error)
 	*errorHandlerDispatcher
@@ -95,6 +96,7 @@ func NewFrameworkExtenderFactory(options ...Option) (*FrameworkExtenderFactory, 
 		koordinatorSharedInformerFactory: handleOptions.koordinatorSharedInformerFactory,
 		reservationNominator:             handleOptions.reservationNominator,
 		profiles:                         map[string]FrameworkExtender{},
+		monitor:                          NewSchedulerMonitor(schedulerMonitorPeriod, schedulingTimeout),
 		errorHandlerDispatcher:           newErrorHandlerDispatcher(),
 	}, nil
 }
@@ -152,6 +154,8 @@ func (f *FrameworkExtenderFactory) InitScheduler(sched Scheduler) {
 }
 
 func (f *FrameworkExtenderFactory) scheduleOne(ctx context.Context, fwk framework.Framework, cycleState *framework.CycleState, pod *corev1.Pod) (scheduler.ScheduleResult, error) {
+	f.monitor.StartMonitoring(pod)
+
 	scheduleResult, err := f.schedulePod(ctx, fwk, cycleState, pod)
 	if err != nil {
 		return scheduleResult, err
@@ -182,7 +186,10 @@ func (f *FrameworkExtenderFactory) scheduleOne(ctx context.Context, fwk framewor
 
 func (f *FrameworkExtenderFactory) InterceptSchedulerError(sched *scheduler.Scheduler) {
 	f.errorHandlerDispatcher.setDefaultHandler(sched.Error)
-	sched.Error = f.errorHandlerDispatcher.Error
+	sched.Error = func(info *framework.QueuedPodInfo, err error) {
+		f.errorHandlerDispatcher.Error(info, err)
+		f.monitor.Complete(info.Pod)
+	}
 }
 
 func (f *FrameworkExtenderFactory) Run() {
