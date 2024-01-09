@@ -73,3 +73,7 @@ var (
 	HostAppMemoryUsageMetric              = defaultMetricFactory.New(HostAppMemoryUsage).withPropertySchema(MetricPropertyHostAppName)
 	HostAppMemoryUsageWithPageCacheMetric = defaultMetricFactory.New(HostAppMemoryWithPageCacheUsage).withPropertySchema(MetricPropertyHostAppName)
 )
+
+func GenMetricResource(metricKind MetricKind, propertySchema ...MetricProperty) MetricResource {
+	return defaultMetricFactory.New(metricKind).withPropertySchema(propertySchema...)
+}

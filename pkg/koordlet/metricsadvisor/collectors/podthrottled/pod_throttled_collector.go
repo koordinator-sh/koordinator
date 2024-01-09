@@ -27,6 +27,7 @@ import (
 	"k8s.io/klog/v2"
 
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor/framework"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
@@ -81,6 +82,7 @@ func (c *podThrottledCollector) Setup(ctx *framework.Context) {}
 func (c *podThrottledCollector) Run(stopCh <-chan struct{}) {
 	if !cache.WaitForCacheSync(stopCh, c.statesInformer.HasSynced) {
 		// Koordlet exit because of statesInformer sync failed.
+		metrics.RecordModuleHealthyStatus(metrics.ModuleMetricsAdvisor, CollectorName, false)
 		klog.Fatalf("timed out waiting for states informer caches to sync")
 	}
 	go wait.Until(c.collectPodThrottledInfo, c.collectInterval, stopCh)
@@ -142,20 +144,23 @@ func (c *podThrottledCollector) collectPodThrottledInfo() {
 	} // end for podMeta
 
 	for _, meta := range podMetas {
-		metrics := c.collectContainerThrottledInfo(meta)
-		podAndContainerMetrics = append(podAndContainerMetrics, metrics...)
+		metricSamples := c.collectContainerThrottledInfo(meta)
+		podAndContainerMetrics = append(podAndContainerMetrics, metricSamples...)
 	}
 
 	appender := c.appendableDB.Appender()
 	if err := appender.Append(podAndContainerMetrics); err != nil {
+		metrics.RecordModuleHealthyStatus(metrics.ModuleMetricsAdvisor, CollectorName, false)
 		klog.Warningf("append pods throttled metrics failed, reason: %v", err)
 		return
 	}
 	if err := appender.Commit(); err != nil {
+		metrics.RecordModuleHealthyStatus(metrics.ModuleMetricsAdvisor, CollectorName, false)
 		klog.Warningf("append pods throttled metrics failed, reason: %v", err)
 		return
 	}
 	c.started.Store(true)
+	metrics.RecordModuleHealthyStatus(metrics.ModuleMetricsAdvisor, CollectorName, true)
 	klog.V(5).Infof("collectPodThrottledInfo finished, pod num %d", len(podMetas))
 }
 

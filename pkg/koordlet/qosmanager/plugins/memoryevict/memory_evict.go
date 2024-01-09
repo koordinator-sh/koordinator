@@ -28,6 +28,7 @@ import (
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/qosmanager/framework"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/qosmanager/helpers"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
@@ -90,6 +91,7 @@ func (m *memoryEvictor) memoryEvict() {
 
 	nodeSLO := m.statesInformer.GetNodeSLO()
 	if disabled, err := features.IsFeatureDisabled(nodeSLO, features.BEMemoryEvict); err != nil {
+		metrics.RecordModuleHealthyStatus(metrics.ModuleQoSManager, MemoryEvictName, false)
 		klog.Errorf("failed to acquire memory eviction feature-gate, error: %v", err)
 		return
 	} else if disabled {
@@ -103,6 +105,7 @@ func (m *memoryEvictor) memoryEvict() {
 		klog.Warningf("skip memory evict, threshold percent is nil")
 		return
 	} else if *thresholdPercent < 0 {
+		metrics.RecordModuleHealthyStatus(metrics.ModuleQoSManager, MemoryEvictName, false)
 		klog.Warningf("skip memory evict, threshold percent(%v) should greater than 0", *thresholdPercent)
 		return
 	}
@@ -115,6 +118,7 @@ func (m *memoryEvictor) memoryEvict() {
 	}
 
 	if lowerPercent >= *thresholdPercent {
+		metrics.RecordModuleHealthyStatus(metrics.ModuleQoSManager, MemoryEvictName, false)
 		klog.Warningf("skip memory evict, lower percent(%v) should less than threshold percent(%v)", lowerPercent, *thresholdPercent)
 		return
 	}
@@ -122,24 +126,28 @@ func (m *memoryEvictor) memoryEvict() {
 	podMetrics := helpers.CollectAllPodMetricsLast(m.statesInformer, m.metricCache, metriccache.PodMemUsageMetric, m.metricCollectInterval)
 	node := m.statesInformer.GetNode()
 	if node == nil {
+		metrics.RecordModuleHealthyStatus(metrics.ModuleQoSManager, MemoryEvictName, false)
 		klog.Warningf("skip memory evict, Node is nil")
 		return
 	}
 
 	memoryCapacity := node.Status.Capacity.Memory().Value()
 	if memoryCapacity <= 0 {
+		metrics.RecordModuleHealthyStatus(metrics.ModuleQoSManager, MemoryEvictName, false)
 		klog.Warningf("skip memory evict, memory capacity(%v) should greater than 0", memoryCapacity)
 		return
 	}
 
 	queryMeta, err := metriccache.NodeMemoryUsageMetric.BuildQueryMeta(nil)
 	if err != nil {
+		metrics.RecordModuleHealthyStatus(metrics.ModuleQoSManager, MemoryEvictName, false)
 		klog.Warningf("skip memory evict, get node query failed, error: %v", err)
 		return
 	}
 
 	nodeMemoryUsed, err := helpers.CollectorNodeMetricLast(m.metricCache, queryMeta, m.metricCollectInterval)
 	if err != nil {
+		metrics.RecordModuleHealthyStatus(metrics.ModuleQoSManager, MemoryEvictName, false)
 		klog.Warningf("skip memory evict, get node metrics error: %v", err)
 		return
 	}
@@ -158,6 +166,7 @@ func (m *memoryEvictor) memoryEvict() {
 
 	memoryNeedRelease := memoryCapacity * (nodeMemoryUsage - lowerPercent) / 100
 	m.killAndEvictBEPods(node, podMetrics, memoryNeedRelease)
+	metrics.RecordModuleHealthyStatus(metrics.ModuleQoSManager, MemoryEvictName, true)
 }
 
 func (m *memoryEvictor) killAndEvictBEPods(node *corev1.Node, podMetrics map[string]float64, memoryNeedRelease int64) {

@@ -31,6 +31,7 @@ import (
 
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	koordclientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 	"github.com/koordinator-sh/koordinator/pkg/util/sloconfig"
@@ -105,6 +106,7 @@ func (s *nodeSLOInformer) HasSynced() bool {
 
 func (s *nodeSLOInformer) updateNodeSLOSpec(nodeSLO *slov1alpha1.NodeSLO) {
 	s.setNodeSLOSpec(nodeSLO)
+	metrics.RecordModuleHealthyStatus(metrics.ModuleStatesInformer, string(nodeSLOInformerName), true)
 	s.callbackRunner.SendCallback(statesinformer.RegisterTypeNodeSLOSpec)
 }
 

@@ -26,6 +26,7 @@ import (
 	"k8s.io/klog/v2"
 
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor/framework"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
@@ -74,6 +75,7 @@ func (s *systemResourceCollector) Run(stopCh <-chan struct{}) {
 		return true
 	}
 	if !cache.WaitForCacheSync(stopCh, dependencyStarted) {
+		metrics.RecordModuleHealthyStatus(metrics.ModuleMetricsAdvisor, CollectorName, false)
 		klog.Fatal("time out waiting for other collector started")
 	}
 	go wait.Until(s.collectSysResUsed, s.collectInterval, stopCh)
@@ -90,10 +92,12 @@ func (s *systemResourceCollector) collectSysResUsed() {
 	validTime := timeNow().Add(-s.outdatedInterval)
 	nodeCPU, nodeMemory := s.sharedState.GetNodeUsage()
 	if nodeCPU == nil || nodeMemory == nil {
+		metrics.RecordModuleHealthyStatus(metrics.ModuleMetricsAdvisor, CollectorName, false)
 		klog.Warningf("node resource cpu %v or memory %v is empty during collect system usage", nodeCPU, nodeMemory)
 		return
 	}
 	if nodeCPU.Timestamp.Before(validTime) || nodeMemory.Timestamp.Before(validTime) {
+		metrics.RecordModuleHealthyStatus(metrics.ModuleMetricsAdvisor, CollectorName, false)
 		klog.Warningf("node resource metric is timeout, valid time %v, metric time is %v and %v",
 			validTime.String(), nodeCPU.Timestamp.String(), nodeMemory.Timestamp.String())
 		return
@@ -102,6 +106,7 @@ func (s *systemResourceCollector) collectSysResUsed() {
 	// get all pod resource usage
 	podsCPUUsage, podsMemoryUsage, err := s.getAllPodsResourceUsage()
 	if err != nil {
+		metrics.RecordModuleHealthyStatus(metrics.ModuleMetricsAdvisor, CollectorName, false)
 		klog.Warningf("get all pods resource usage failed, error %v", err)
 		return
 	}
@@ -109,11 +114,13 @@ func (s *systemResourceCollector) collectSysResUsed() {
 	// get all host application resource usage
 	hostAppCPU, hostAppMemory := s.sharedState.GetHostAppUsage()
 	if hostAppCPU == nil || hostAppMemory == nil {
+		metrics.RecordModuleHealthyStatus(metrics.ModuleMetricsAdvisor, CollectorName, false)
 		klog.Warningf("host application resource cpu %v or memory %v is empty during collect system usage",
 			hostAppCPU, hostAppMemory)
 		return
 	}
 	if hostAppCPU.Timestamp.Before(validTime) || hostAppMemory.Timestamp.Before(validTime) {
+		metrics.RecordModuleHealthyStatus(metrics.ModuleMetricsAdvisor, CollectorName, false)
 		klog.Warningf("host application metric is timeout, valid time %v, metric time is %v and %v",
 			validTime.String(), hostAppCPU.Timestamp.String(), hostAppMemory.Timestamp.String())
 		return
@@ -125,28 +132,33 @@ func (s *systemResourceCollector) collectSysResUsed() {
 	systemMemoryUsage := util.MaxFloat64(nodeMemory.Value-podsMemoryUsage-hostAppMemory.Value, 0)
 	systemCPUMetric, err := metriccache.SystemCPUUsageMetric.GenerateSample(nil, collectTime, systemCPUUsage)
 	if err != nil {
+		metrics.RecordModuleHealthyStatus(metrics.ModuleMetricsAdvisor, CollectorName, false)
 		klog.Warningf("generate system cpu metric failed, err %v", err)
 		return
 	}
 	systemMemoryMetric, err := metriccache.SystemMemoryUsageMetric.GenerateSample(nil, collectTime, systemMemoryUsage)
 	if err != nil {
+		metrics.RecordModuleHealthyStatus(metrics.ModuleMetricsAdvisor, CollectorName, false)
 		klog.Warningf("generate system memory metric failed, err %v", err)
 		return
 	}
 
 	// commit metric sample
 	appender := s.appendableDB.Appender()
-	if err := appender.Append([]metriccache.MetricSample{systemCPUMetric, systemMemoryMetric}); err != nil {
+	if err = appender.Append([]metriccache.MetricSample{systemCPUMetric, systemMemoryMetric}); err != nil {
+		metrics.RecordModuleHealthyStatus(metrics.ModuleMetricsAdvisor, CollectorName, false)
 		klog.ErrorS(err, "append system metrics error")
 		return
 	}
-	if err := appender.Commit(); err != nil {
+	if err = appender.Commit(); err != nil {
+		metrics.RecordModuleHealthyStatus(metrics.ModuleMetricsAdvisor, CollectorName, false)
 		klog.ErrorS(err, "commit system metrics error")
 		return
 	}
 
-	klog.V(4).Infof("collect system resource usage finished, cpu %v, memory %v", systemCPUUsage, systemMemoryUsage)
 	s.started.Store(true)
+	metrics.RecordModuleHealthyStatus(metrics.ModuleMetricsAdvisor, CollectorName, true)
+	klog.V(4).Infof("collect system resource usage finished, cpu %v, memory %v", systemCPUUsage, systemMemoryUsage)
 }
 
 func (s *systemResourceCollector) getAllPodsResourceUsage() (cpuCore float64, memory float64, err error) {

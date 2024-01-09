@@ -27,6 +27,7 @@ import (
 
 	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor/framework"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
@@ -83,6 +84,7 @@ func (k *kidledcoldPageCollector) Setup(c1 *framework.Context) {}
 
 func (k *kidledcoldPageCollector) collectColdPageInfo() {
 	if k.statesInformer == nil {
+		metrics.RecordModuleHealthyStatus(metrics.ModuleMetricsAdvisor, CollectorName, false)
 		return
 	}
 	coldPageMetrics := make([]metriccache.MetricSample, 0)
@@ -106,17 +108,20 @@ func (k *kidledcoldPageCollector) collectColdPageInfo() {
 	coldPageMetrics = append(coldPageMetrics, hostAppsColdPageInfoMetric...)
 
 	appender := k.appendableDB.Appender()
-	if err := appender.Append(coldPageMetrics); err != nil {
+	if err = appender.Append(coldPageMetrics); err != nil {
+		metrics.RecordModuleHealthyStatus(metrics.ModuleMetricsAdvisor, CollectorName, false)
 		klog.ErrorS(err, "Append node metrics error")
 		return
 	}
 
-	if err := appender.Commit(); err != nil {
+	if err = appender.Commit(); err != nil {
+		metrics.RecordModuleHealthyStatus(metrics.ModuleMetricsAdvisor, CollectorName, false)
 		klog.Warningf("Commit node metrics failed, reason: %v", err)
 		return
 	}
 
 	k.started.Store(true)
+	metrics.RecordModuleHealthyStatus(metrics.ModuleMetricsAdvisor, CollectorName, true)
 }
 
 func (k *kidledcoldPageCollector) collectNodeColdPageInfo() ([]metriccache.MetricSample, error) {

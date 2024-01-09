@@ -17,6 +17,8 @@ limitations under the License.
 package metrics
 
 import (
+	"strconv"
+
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/koordinator-sh/koordinator/pkg/util/metrics"
@@ -65,6 +67,36 @@ var (
 		Help:      "Number of cpu cores used by node in realtime",
 	}, []string{NodeKey})
 
+	ReportNodeMetricStatus = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Subsystem: KoordletSubsystem,
+		Name:      "report_node_metric_status",
+		Help:      "the status of ReportNodeMetric status",
+	}, []string{NodeKey, StatusKey})
+
+	ModuleHealthyStatus = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Subsystem: KoordletSubsystem,
+		Name:      "module_healthy_status",
+		Help:      "the status of module healthy status",
+	}, []string{NodeKey, ModuleKey, ModulePluginKey, StatusKey})
+
+	CollectPromMetricsStatus = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Subsystem: KoordletSubsystem,
+		Name:      "collect_prom_metrics_status",
+		Help:      "the status of CollectPromMetrics status",
+	}, []string{NodeKey, PromScraperKey, StatusKey})
+
+	HttpClientQueryStatus = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Subsystem: KoordletSubsystem,
+		Name:      "http_client_query_status",
+		Help:      "the status of http client query status",
+	}, []string{NodeKey, HttpURLKey, HttpResponseCodeKey})
+
+	HttpClientQueryLatency = prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		Subsystem: KoordletSubsystem,
+		Name:      "http_client_query_latency",
+		Help:      "the latency of invoking http client query (in milli-second)",
+	}, []string{NodeKey, HttpURLKey})
+
 	CommonCollectors = []prometheus.Collector{
 		KoordletStartTime,
 		CollectNodeCPUInfoStatus,
@@ -73,6 +105,11 @@ var (
 		PodEviction,
 		PodEvictionDetail.GetCounterVec(),
 		NodeUsedCPU,
+		ReportNodeMetricStatus,
+		ModuleHealthyStatus,
+		CollectPromMetricsStatus,
+		HttpClientQueryStatus,
+		HttpClientQueryLatency,
 	}
 )
 
@@ -139,6 +176,64 @@ func RecordNodeUsedCPU(value float64) {
 		return
 	}
 	NodeUsedCPU.With(labels).Set(value)
+}
+
+func RecordReportNodeMetricStatus(err error) {
+	labels := genNodeLabels()
+	if labels == nil {
+		return
+	}
+	labels[StatusKey] = StatusSucceed
+	if err != nil {
+		labels[StatusKey] = StatusFailed
+	}
+	ReportNodeMetricStatus.With(labels).Inc()
+}
+
+func RecordModuleHealthyStatus(module string, pluginName string, isHealthy bool) {
+	labels := genNodeLabels()
+	if labels == nil {
+		return
+	}
+	labels[ModuleKey] = module
+	labels[ModulePluginKey] = pluginName
+	labels[StatusKey] = StatusSucceed
+	if !isHealthy {
+		labels[StatusKey] = StatusFailed
+	}
+	ModuleHealthyStatus.With(labels).Inc()
+}
+
+func RecordCollectPromMetricsStatus(scraper string, isHealthy bool) {
+	labels := genNodeLabels()
+	if labels == nil {
+		return
+	}
+	labels[PromScraperKey] = scraper
+	labels[StatusKey] = StatusSucceed
+	if !isHealthy {
+		labels[StatusKey] = StatusFailed
+	}
+	CollectPromMetricsStatus.With(labels).Inc()
+}
+
+func RecordHttpClientQueryStatus(url string, code int) {
+	labels := genNodeLabels()
+	if labels == nil {
+		return
+	}
+	labels[HttpURLKey] = url
+	labels[HttpResponseCodeKey] = strconv.Itoa(code)
+	HttpClientQueryStatus.With(labels).Inc()
+}
+
+func RecordHttpClientQueryLatency(url string, latencyMilliSeconds float64) {
+	labels := genNodeLabels()
+	if labels == nil {
+		return
+	}
+	labels[HttpURLKey] = url
+	HttpClientQueryLatency.With(labels).Observe(latencyMilliSeconds)
 }
 
 func labelsClone(labels prometheus.Labels) prometheus.Labels {

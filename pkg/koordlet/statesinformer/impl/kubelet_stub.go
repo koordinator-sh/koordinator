@@ -32,6 +32,8 @@ import (
 	"k8s.io/kubernetes/cmd/kubelet/app/options"
 	kubeletconfiginternal "k8s.io/kubernetes/pkg/kubelet/apis/config"
 	kubeletscheme "k8s.io/kubernetes/pkg/kubelet/apis/config/scheme"
+
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
 )
 
 type KubeletStub interface {
@@ -67,19 +69,24 @@ func NewKubeletStub(addr string, port int, scheme string, timeout time.Duration,
 }
 
 func (k *kubeletStub) GetAllPods() (corev1.PodList, error) {
-	url := url.URL{
+	podsURL := url.URL{
 		Scheme: k.scheme,
 		Host:   net.JoinHostPort(k.addr, strconv.Itoa(k.port)),
 		Path:   "/pods/",
 	}
+	podsURLString := podsURL.String()
 	podList := corev1.PodList{}
-	rsp, err := k.httpClient.Get(url.String())
+	timeNow := time.Now()
+	rsp, err := k.httpClient.Get(podsURLString)
+	metrics.RecordHttpClientQueryLatency(podsURLString, float64(time.Since(timeNow).Milliseconds()))
 	if err != nil {
+		metrics.RecordHttpClientQueryStatus(podsURLString, -1)
 		return podList, err
 	}
 	defer rsp.Body.Close()
+	metrics.RecordHttpClientQueryStatus(podsURLString, rsp.StatusCode)
 	if rsp.StatusCode != http.StatusOK {
-		return podList, fmt.Errorf("request %s failed, code %d", url.String(), rsp.StatusCode)
+		return podList, fmt.Errorf("request %s failed, code %d", podsURLString, rsp.StatusCode)
 	}
 
 	body, err := io.ReadAll(rsp.Body)
@@ -105,14 +112,19 @@ func (k *kubeletStub) GetKubeletConfiguration() (*kubeletconfiginternal.KubeletC
 		Host:   net.JoinHostPort(k.addr, strconv.Itoa(k.port)),
 		Path:   "/configz",
 	}
-	rsp, err := k.httpClient.Get(configzURL.String())
+	configzURLString := configzURL.String()
+	timeNow := time.Now()
+	rsp, err := k.httpClient.Get(configzURLString)
+	metrics.RecordHttpClientQueryLatency(configzURLString, float64(time.Since(timeNow).Milliseconds()))
 	if err != nil {
+		metrics.RecordHttpClientQueryStatus(configzURLString, -1)
 		return nil, err
 	}
 	defer rsp.Body.Close()
 
+	metrics.RecordHttpClientQueryStatus(configzURLString, rsp.StatusCode)
 	if rsp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("request %s failed, code %d", configzURL.String(), rsp.StatusCode)
+		return nil, fmt.Errorf("request %s failed, code %d", configzURLString, rsp.StatusCode)
 	}
 
 	body, err := io.ReadAll(rsp.Body)

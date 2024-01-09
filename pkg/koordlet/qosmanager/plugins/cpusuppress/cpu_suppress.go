@@ -249,6 +249,7 @@ func (r *CPUSuppress) suppressBECPU() {
 	// Step 0.
 	nodeSLO := r.statesInformer.GetNodeSLO()
 	if disabled, err := features.IsFeatureDisabled(nodeSLO, features.BECPUSuppress); err != nil {
+		metrics.RecordModuleHealthyStatus(metrics.ModuleQoSManager, CPUSuppressName, false)
 		klog.Warningf("suppressBECPU failed, cannot check the featuregate, err: %s", err)
 		return
 	} else if features.DefaultKoordletFeatureGate.Enabled(features.BECPUSuppress) &&
@@ -268,27 +269,32 @@ func (r *CPUSuppress) suppressBECPU() {
 	// Step 1.
 	node := r.statesInformer.GetNode()
 	if node == nil {
+		metrics.RecordModuleHealthyStatus(metrics.ModuleQoSManager, CPUSuppressName, false)
 		klog.Warningf("suppressBECPU failed, got nil node")
 		return
 	}
 	podMetas := r.statesInformer.GetAllPods()
 	if podMetas == nil || len(podMetas) <= 0 {
+		metrics.RecordModuleHealthyStatus(metrics.ModuleQoSManager, CPUSuppressName, false)
 		klog.Warningf("suppressBECPU failed, got empty pod metas %v", podMetas)
 		return
 	}
 
 	podMetrics := helpers.CollectAllPodMetricsLast(r.statesInformer, r.metricCache, metriccache.PodCPUUsageMetric, r.metricCollectInterval)
 	if podMetrics == nil {
+		metrics.RecordModuleHealthyStatus(metrics.ModuleQoSManager, CPUSuppressName, false)
 		klog.Warningf("suppressBECPU failed, got nil node metric or nil pod metrics, podMetrics %v", podMetrics)
 		return
 	}
 	queryMeta, err := metriccache.NodeCPUUsageMetric.BuildQueryMeta(nil)
 	if err != nil {
+		metrics.RecordModuleHealthyStatus(metrics.ModuleQoSManager, CPUSuppressName, false)
 		klog.Warningf("build node query meta failed, error: %v", err)
 		return
 	}
 	nodeCPUUsage, err := helpers.CollectorNodeMetricLast(r.metricCache, queryMeta, r.metricCollectInterval)
 	if err != nil {
+		metrics.RecordModuleHealthyStatus(metrics.ModuleQoSManager, CPUSuppressName, false)
 		klog.Warningf("query node cpu metrics failed, error: %v", err)
 		return
 	}
@@ -302,11 +308,13 @@ func (r *CPUSuppress) suppressBECPU() {
 	// Step 2.
 	nodeCPUInfoRaw, exist := r.metricCache.Get(metriccache.NodeCPUInfoKey)
 	if !exist {
+		metrics.RecordModuleHealthyStatus(metrics.ModuleQoSManager, CPUSuppressName, false)
 		klog.Warning("suppressBECPU failed to get nodeCPUInfo from metriccache: not exist")
 		return
 	}
 	nodeCPUInfo, ok := nodeCPUInfoRaw.(*metriccache.NodeCPUInfo)
 	if !ok {
+		metrics.RecordModuleHealthyStatus(metrics.ModuleQoSManager, CPUSuppressName, false)
 		klog.Fatalf("type error, expect %T， but got %T", metriccache.NodeCPUInfo{}, nodeCPUInfoRaw)
 	}
 	if nodeSLO.Spec.ResourceUsedThresholdWithBE.CPUSuppressPolicy == slov1alpha1.CPUCfsQuotaPolicy {
@@ -318,6 +326,7 @@ func (r *CPUSuppress) suppressBECPU() {
 		r.suppressPolicyStatuses[string(slov1alpha1.CPUSetPolicy)] = policyUsing
 		r.recoverCFSQuotaIfNeed()
 	}
+	metrics.RecordModuleHealthyStatus(metrics.ModuleQoSManager, CPUSuppressName, true)
 }
 
 func (r *CPUSuppress) adjustByCPUSet(cpusetQuantity *resource.Quantity, nodeCPUInfo *metriccache.NodeCPUInfo) {
@@ -423,9 +432,11 @@ func (r *CPUSuppress) adjustByCPUSet(cpusetQuantity *resource.Quantity, nodeCPUI
 func (r *CPUSuppress) recoverCPUSetForBECPUManager() {
 	beCPUSet, err := r.calcBECPUSet()
 	if err != nil {
+		metrics.RecordModuleHealthyStatus(metrics.ModuleQoSManager, CPUSuppressName, false)
 		klog.Warningf("get be cpuset failed during recoverCPUSetForBECPUManager, error %v", err)
 		return
 	} else if beCPUSet == nil {
+		metrics.RecordModuleHealthyStatus(metrics.ModuleQoSManager, CPUSuppressName, false)
 		klog.Warningf("got nil be cpuset during recoverCPUSetForBECPUManager")
 		return
 	}
@@ -433,6 +444,7 @@ func (r *CPUSuppress) recoverCPUSetForBECPUManager() {
 	// cpuset path under besteffort dir, include root, pod
 	cpusetPathOfAllBEPods, err := koordletutil.GetBECPUSetPathsByMaxDepth(koordletutil.PodCgroupPathRelativeDepth)
 	if err != nil {
+		metrics.RecordModuleHealthyStatus(metrics.ModuleQoSManager, CPUSuppressName, false)
 		klog.Warningf("GetBECPUSetPathsByMaxDepth until pod level failed, error %v", err)
 		return
 	}
@@ -440,6 +452,7 @@ func (r *CPUSuppress) recoverCPUSetForBECPUManager() {
 	// cpuset path under besteffort, only include container/sandbox dir
 	cpusetPathOfAllBEContainer, err := koordletutil.GetBECPUSetPathsByTargetDepth(koordletutil.ContainerCgroupPathRelativeDepth)
 	if err != nil {
+		metrics.RecordModuleHealthyStatus(metrics.ModuleQoSManager, CPUSuppressName, false)
 		klog.Warningf("GetBECPUSetPathsByTargetDepth until pod level failed, error %v", err)
 		return
 	}
@@ -491,20 +504,24 @@ func (r *CPUSuppress) recoverCPUSetForBECPUManager() {
 	klog.V(5).Infof("recover bestEffort cpuset with be cpu manager, cpuset %v", cpusetStr)
 	r.writeBECgroupsCPUSet(cpusetToRecover, cpusetStr, false)
 	r.suppressPolicyStatuses[string(slov1alpha1.CPUSetPolicy)] = policyRecovered
+	metrics.RecordModuleHealthyStatus(metrics.ModuleQoSManager, CPUSuppressName, true)
 }
 
 func (r *CPUSuppress) recoverCPUSetIfNeed(maxDepth int) {
 	beCPUSet, err := r.calcBECPUSet()
 	if err != nil {
+		metrics.RecordModuleHealthyStatus(metrics.ModuleQoSManager, CPUSuppressName, false)
 		klog.Warningf("get be cpuset failed during recoverCPUSetIfNeed, error %v", err)
 		return
 	} else if beCPUSet == nil {
+		metrics.RecordModuleHealthyStatus(metrics.ModuleQoSManager, CPUSuppressName, false)
 		klog.Warningf("got nil be cpuset during recoverCPUSetIfNeed")
 		return
 	}
 
 	cpusetCgroupPaths, err := koordletutil.GetBECPUSetPathsByMaxDepth(maxDepth)
 	if err != nil {
+		metrics.RecordModuleHealthyStatus(metrics.ModuleQoSManager, CPUSuppressName, false)
 		klog.Warningf("recover bestEffort cpuset failed, get be cgroup cpuset paths  err: %s", err)
 		return
 	}
@@ -513,6 +530,7 @@ func (r *CPUSuppress) recoverCPUSetIfNeed(maxDepth int) {
 	klog.V(6).Infof("recover bestEffort cpuset, cpuset %v", cpusetStr)
 	r.writeBECgroupsCPUSet(cpusetCgroupPaths, cpusetStr, false)
 	r.suppressPolicyStatuses[string(slov1alpha1.CPUSetPolicy)] = policyRecovered
+	metrics.RecordModuleHealthyStatus(metrics.ModuleQoSManager, CPUSuppressName, true)
 }
 
 func (r *CPUSuppress) calcBECPUSet() (*cpuset.CPUSet, error) {
@@ -637,11 +655,13 @@ func (r *CPUSuppress) recoverCFSQuotaIfNeed() {
 	eventHelper := audit.V(3).Reason("suppressBECPU").Message("recover bestEffort cfsQuota, isUpdated %v", "-1")
 	updater, err := resourceexecutor.DefaultCgroupUpdaterFactory.New(system.CPUCFSQuotaName, beCgroupPath, "-1", eventHelper)
 	if err != nil {
+		metrics.RecordModuleHealthyStatus(metrics.ModuleQoSManager, CPUSuppressName, false)
 		klog.V(4).Infof("failed to get be cfs quota updater, err: %v", err)
 		return
 	}
 	isUpdated, err := r.executor.Update(false, updater)
 	if err != nil {
+		metrics.RecordModuleHealthyStatus(metrics.ModuleQoSManager, CPUSuppressName, false)
 		klog.Errorf("recover bestEffort cfsQuota err: %v", err)
 		return
 	}

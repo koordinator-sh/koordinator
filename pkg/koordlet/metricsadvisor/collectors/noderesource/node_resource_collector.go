@@ -76,6 +76,7 @@ func (n *nodeResourceCollector) Run(stopCh <-chan struct{}) {
 	}
 	if !cache.WaitForCacheSync(stopCh, devicesSynced) {
 		// Koordlet exit because of statesInformer sync failed.
+		metrics.RecordModuleHealthyStatus(metrics.ModuleMetricsAdvisor, CollectorName, false)
 		klog.Fatalf("timed out waiting for devices to sync")
 	}
 	go wait.Until(n.collectNodeResUsed, n.collectInterval, stopCh)
@@ -95,6 +96,7 @@ func (n *nodeResourceCollector) collectNodeResUsed() {
 	// NOTE: The collected memory usage is in kilobytes not bytes.
 	memInfo, err1 := koordletutil.GetMemInfo()
 	if err0 != nil || err1 != nil {
+		metrics.RecordModuleHealthyStatus(metrics.ModuleMetricsAdvisor, CollectorName, false)
 		klog.Warningf("failed to collect node usage, CPU err: %s, Memory err: %s", err0, err1)
 		return
 	}
@@ -102,6 +104,7 @@ func (n *nodeResourceCollector) collectNodeResUsed() {
 	memUsageValue := float64(memInfo.MemUsageBytes())
 	memUsageMetrics, err := metriccache.NodeMemoryUsageMetric.GenerateSample(nil, collectTime, memUsageValue)
 	if err != nil {
+		metrics.RecordModuleHealthyStatus(metrics.ModuleMetricsAdvisor, CollectorName, false)
 		klog.Warningf("generate node cpu metrics failed, err %v", err)
 		return
 	}
@@ -121,6 +124,7 @@ func (n *nodeResourceCollector) collectNodeResUsed() {
 	cpuUsageValue := float64(currentCPUTick-lastCPUStat.CPUTick) / system.GetPeriodTicks(lastCPUStat.Timestamp, collectTime)
 	cpuUsageMetrics, err := metriccache.NodeCPUUsageMetric.GenerateSample(nil, collectTime, cpuUsageValue)
 	if err != nil {
+		metrics.RecordModuleHealthyStatus(metrics.ModuleMetricsAdvisor, CollectorName, false)
 		klog.Warningf("generate node cpu metrics failed, err %v", err)
 		return
 	}
@@ -136,12 +140,14 @@ func (n *nodeResourceCollector) collectNodeResUsed() {
 	}
 
 	appender := n.appendableDB.Appender()
-	if err := appender.Append(nodeMetrics); err != nil {
+	if err = appender.Append(nodeMetrics); err != nil {
+		metrics.RecordModuleHealthyStatus(metrics.ModuleMetricsAdvisor, CollectorName, false)
 		klog.ErrorS(err, "Append node metrics error")
 		return
 	}
 
-	if err := appender.Commit(); err != nil {
+	if err = appender.Commit(); err != nil {
+		metrics.RecordModuleHealthyStatus(metrics.ModuleMetricsAdvisor, CollectorName, false)
 		klog.Warningf("Commit node metrics failed, reason: %v", err)
 		return
 	}
@@ -152,7 +158,7 @@ func (n *nodeResourceCollector) collectNodeResUsed() {
 	// update collect time
 	n.started.Store(true)
 	metrics.RecordNodeUsedCPU(cpuUsageValue) // in cpu cores
-
+	metrics.RecordModuleHealthyStatus(metrics.ModuleMetricsAdvisor, CollectorName, true)
 	klog.V(4).Infof("collectNodeResUsed finished, count %v, cpu[%v], mem[%v]",
 		len(nodeMetrics), cpuUsageValue, memUsageValue)
 }

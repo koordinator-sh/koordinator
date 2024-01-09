@@ -28,6 +28,7 @@ import (
 	"k8s.io/klog/v2"
 
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor/framework"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
@@ -88,6 +89,7 @@ func (p *podResourceCollector) Run(stopCh <-chan struct{}) {
 	}
 	if !cache.WaitForCacheSync(stopCh, p.statesInformer.HasSynced, devicesSynced) {
 		// Koordlet exit because of statesInformer sync failed.
+		metrics.RecordModuleHealthyStatus(metrics.ModuleMetricsAdvisor, CollectorName, false)
 		klog.Fatalf("timed out waiting for states informer caches to sync")
 	}
 	go wait.Until(p.collectPodResUsed, p.collectInterval, stopCh)
@@ -105,7 +107,7 @@ func (p *podResourceCollector) collectPodResUsed() {
 	klog.V(6).Info("start collectPodResUsed")
 	podMetas := p.statesInformer.GetAllPods()
 	count := 0
-	metrics := make([]metriccache.MetricSample, 0)
+	metricSamples := make([]metriccache.MetricSample, 0)
 	allCPUUsageCores := metriccache.Point{Timestamp: time.Now(), Value: 0}
 	allMemoryUsage := metriccache.Point{Timestamp: time.Now(), Value: 0}
 	for _, meta := range podMetas {
@@ -162,26 +164,26 @@ func (p *podResourceCollector) collectPodResUsed() {
 			return
 		}
 
-		metrics = append(metrics, cpuUsageMetric, memUsageMetric)
+		metricSamples = append(metricSamples, cpuUsageMetric, memUsageMetric)
 		for deviceName, deviceCollector := range p.deviceCollectors {
 			if deviceMetrics, err := deviceCollector.GetPodMetric(uid, meta.CgroupDir, pod.Status.ContainerStatuses); err != nil {
 				klog.V(4).Infof("get pod %s device usage failed for %v, error: %v", podKey, deviceName, err)
-			} else if len(metrics) > 0 {
-				metrics = append(metrics, deviceMetrics...)
+			} else if len(metricSamples) > 0 {
+				metricSamples = append(metricSamples, deviceMetrics...)
 			}
 		}
 
-		klog.V(6).Infof("collect pod %s, uid %s finished, metric %+v", podKey, pod.UID, metrics)
+		klog.V(6).Infof("collect pod %s, uid %s finished, metric %+v", podKey, pod.UID, metricSamples)
 
 		count++
 		allCPUUsageCores.Value += cpuUsageValue
 		allMemoryUsage.Value += float64(memUsageValue)
 		containerMetrics := p.collectContainerResUsed(meta)
-		metrics = append(metrics, containerMetrics...)
+		metricSamples = append(metricSamples, containerMetrics...)
 	}
 
 	appender := p.appendableDB.Appender()
-	if err := appender.Append(metrics); err != nil {
+	if err := appender.Append(metricSamples); err != nil {
 		klog.Warningf("Append pod metrics error: %v", err)
 		return
 	}
@@ -195,6 +197,7 @@ func (p *podResourceCollector) collectPodResUsed() {
 
 	// update collect time
 	p.started.Store(true)
+	metrics.RecordModuleHealthyStatus(metrics.ModuleMetricsAdvisor, CollectorName, true)
 	klog.V(4).Infof("collectPodResUsed finished, pod num %d, collected %d", len(podMetas), count)
 }
 

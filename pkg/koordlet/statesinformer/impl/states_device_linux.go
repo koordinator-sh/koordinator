@@ -32,6 +32,7 @@ import (
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
 	koordletuti "github.com/koordinator-sh/koordinator/pkg/koordlet/util"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
@@ -39,11 +40,13 @@ import (
 func (s *statesInformer) reportDevice() {
 	node := s.GetNode()
 	if node == nil {
+		metrics.RecordModuleHealthyStatus(metrics.ModuleStatesInformer, "deviceInformer", false)
 		klog.Errorf("node is nil")
 		return
 	}
 	gpuDevices := s.buildGPUDevice()
 	if len(gpuDevices) == 0 {
+		metrics.RecordModuleHealthyStatus(metrics.ModuleStatesInformer, "deviceInformer", true)
 		return
 	}
 
@@ -54,18 +57,22 @@ func (s *statesInformer) reportDevice() {
 
 	err := s.updateDevice(device)
 	if err == nil {
+		metrics.RecordModuleHealthyStatus(metrics.ModuleStatesInformer, "deviceInformer", true)
 		klog.V(4).Infof("successfully update Device %s", node.Name)
 		return
 	}
 	if !errors.IsNotFound(err) {
+		metrics.RecordModuleHealthyStatus(metrics.ModuleStatesInformer, "deviceInformer", false)
 		klog.Errorf("Failed to updateDevice %s, err: %v", node.Name, err)
 		return
 	}
 
 	err = s.createDevice(device)
 	if err == nil {
+		metrics.RecordModuleHealthyStatus(metrics.ModuleStatesInformer, "deviceInformer", true)
 		klog.V(4).Infof("successfully create Device %s", node.Name)
 	} else {
+		metrics.RecordModuleHealthyStatus(metrics.ModuleStatesInformer, "deviceInformer", false)
 		klog.Errorf("Failed to create Device %s, err: %v", node.Name, err)
 	}
 }

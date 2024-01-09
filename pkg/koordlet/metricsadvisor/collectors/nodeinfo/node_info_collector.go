@@ -68,17 +68,20 @@ func (n *nodeInfoCollector) collectNodeInfo() {
 
 	err := n.collectNodeCPUInfo()
 	if err != nil {
+		metrics.RecordModuleHealthyStatus(metrics.ModuleMetricsAdvisor, CollectorName, false)
 		klog.Warningf("failed to collect node CPU info, err: %s", err)
 		return
 	}
 
 	err = n.collectNodeNUMAInfo()
 	if err != nil {
+		metrics.RecordModuleHealthyStatus(metrics.ModuleMetricsAdvisor, CollectorName, false)
 		klog.Warningf("failed to collect node NUMA info, err: %s", err)
 		return
 	}
 
 	n.started.Store(true)
+	metrics.RecordModuleHealthyStatus(metrics.ModuleMetricsAdvisor, CollectorName, true)
 	klog.V(4).Infof("collect node info finished, elapsed %s", time.Since(started).String())
 }
 

@@ -48,6 +48,7 @@ import (
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	koordletutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/kubelet"
@@ -157,11 +158,13 @@ func (s *nodeTopoInformer) Start(stopCh <-chan struct{}) {
 	klog.V(2).Infof("starting node topo informer")
 
 	if !cache.WaitForCacheSync(stopCh, s.nodeInformer.HasSynced, s.podsInformer.HasSynced) {
+		metrics.RecordModuleHealthyStatus(metrics.ModuleStatesInformer, string(nodeTopoInformerName), false)
 		klog.Fatalf("timed out waiting for caches to sync")
 	}
 	if features.DefaultKoordletFeatureGate.Enabled(features.NodeTopologyReport) {
 		go s.nodeResourceTopologyInformer.Run(stopCh)
 		if !cache.WaitForCacheSync(stopCh, s.nodeResourceTopologyInformer.HasSynced) {
+			metrics.RecordModuleHealthyStatus(metrics.ModuleStatesInformer, string(nodeTopoInformerName), false)
 			klog.Fatalf("timed out waiting for Topology cache to sync")
 		}
 	}
@@ -172,6 +175,7 @@ func (s *nodeTopoInformer) Start(stopCh <-chan struct{}) {
 
 	stub, err := newKubeletStubFromConfig(s.nodeInformer.GetNode(), s.config)
 	if err != nil {
+		metrics.RecordModuleHealthyStatus(metrics.ModuleStatesInformer, string(nodeTopoInformerName), false)
 		klog.Fatalf("create kubelet stub, %v", err)
 	}
 	s.kubelet = stub
@@ -536,6 +540,7 @@ func (s *nodeTopoInformer) reportNodeTopology() {
 
 	nodeTopoResult, err := s.calcNodeTopo()
 	if err != nil {
+		metrics.RecordModuleHealthyStatus(metrics.ModuleStatesInformer, string(nodeTopoInformerName), false)
 		klog.Errorf("failed to calculate node topology, err: %v", err)
 		return
 	}
@@ -589,7 +594,10 @@ func (s *nodeTopoInformer) reportNodeTopology() {
 		return nil
 	})
 	if err != nil {
+		metrics.RecordModuleHealthyStatus(metrics.ModuleStatesInformer, string(nodeTopoInformerName), false)
 		klog.Errorf("failed to update NodeResourceTopology, err: %v", err)
+	} else {
+		metrics.RecordModuleHealthyStatus(metrics.ModuleStatesInformer, string(nodeTopoInformerName), true)
 	}
 }
 

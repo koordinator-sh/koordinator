@@ -36,6 +36,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/audit"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/qosmanager/framework"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
@@ -73,6 +74,7 @@ func (b *blkIOReconcile) Setup(context *framework.Context) {
 
 func (b *blkIOReconcile) Run(stopCh <-chan struct{}) {
 	if err := b.init(stopCh); err != nil {
+		metrics.RecordModuleHealthyStatus(metrics.ModuleQoSManager, BlkIOReconcileName, false)
 		klog.Fatal("blkIOReconcile init failed, error %v", err)
 		return
 	}
@@ -107,17 +109,20 @@ func (b *blkIOReconcile) reconcile() {
 	// get node local storage info
 	storageInfoRaw, exist := b.metricCache.Get(metriccache.NodeLocalStorageInfoKey)
 	if !exist {
+		metrics.RecordModuleHealthyStatus(metrics.ModuleQoSManager, BlkIOReconcileName, false)
 		klog.Errorf("%s: fail to get node local storage info not exist", BlkIOReconcileName)
 		return
 	}
 	storageInfo, ok := storageInfoRaw.(*metriccache.NodeLocalStorageInfo)
 	if !ok {
+		metrics.RecordModuleHealthyStatus(metrics.ModuleQoSManager, BlkIOReconcileName, false)
 		klog.Fatalf("type error, expect %T， but got %T", metriccache.NodeLocalStorageInfo{}, storageInfoRaw)
 	}
 	b.storageInfo = storageInfo
 	// get nodeslo
 	nodeSLO := b.statesInformer.GetNodeSLO()
 	if nodeSLO == nil || nodeSLO.Spec.ResourceQOSStrategy == nil {
+		metrics.RecordModuleHealthyStatus(metrics.ModuleQoSManager, BlkIOReconcileName, false)
 		klog.Errorf("%s: nodeSLO or resourceQOSStrategy is nil, skip reconcile blkio!", BlkIOReconcileName)
 		return
 	}
@@ -226,6 +231,7 @@ func (b *blkIOReconcile) reconcile() {
 			klog.V(4).Infof("%s: reconcile pod %s/%s blkio config finished", BlkIOReconcileName, podMeta.Pod.Namespace, podMeta.Pod.Name)
 		}
 	}
+	metrics.RecordModuleHealthyStatus(metrics.ModuleQoSManager, BlkIOReconcileName, true)
 }
 
 type blkioUpdater struct {

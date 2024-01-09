@@ -26,6 +26,7 @@ import (
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/audit"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/qosmanager/framework"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
@@ -72,29 +73,33 @@ func (s *systemConfig) reconcile() {
 	nodeSLO := s.statesInformer.GetNodeSLO()
 
 	if nodeSLO == nil || nodeSLO.Spec.SystemStrategy == nil {
+		metrics.RecordModuleHealthyStatus(metrics.ModuleQoSManager, SystemConfigReconcileName, false)
 		klog.Warningf("nodeSLO or systemStrategy is nil, skip reconcile systemConfig!")
 		return
 	}
 
 	node := s.statesInformer.GetNode()
 	if node == nil {
+		metrics.RecordModuleHealthyStatus(metrics.ModuleQoSManager, SystemConfigReconcileName, false)
 		klog.Warningf("systemStrategy config failed, got nil node")
 		return
 	}
 	memoryCapacity := node.Status.Capacity.Memory().Value()
 	if memoryCapacity <= 0 {
+		metrics.RecordModuleHealthyStatus(metrics.ModuleQoSManager, SystemConfigReconcileName, false)
 		klog.Warningf("systemStrategy config failed, node memoryCapacity not valid,value: %d", memoryCapacity)
 		return
 	}
 
 	var resources []resourceexecutor.ResourceUpdater
-	resources = append(resources, caculateMemoryConfig(nodeSLO.Spec.SystemStrategy, memoryCapacity)...)
+	resources = append(resources, calculateMemoryConfig(nodeSLO.Spec.SystemStrategy, memoryCapacity)...)
 
 	s.executor.UpdateBatch(true, resources...)
+	metrics.RecordModuleHealthyStatus(metrics.ModuleQoSManager, SystemConfigReconcileName, true)
 	klog.V(5).Infof("finish to reconcile system config!")
 }
 
-func caculateMemoryConfig(strategy *slov1alpha1.SystemStrategy, nodeMemory int64) []resourceexecutor.ResourceUpdater {
+func calculateMemoryConfig(strategy *slov1alpha1.SystemStrategy, nodeMemory int64) []resourceexecutor.ResourceUpdater {
 	var resources []resourceexecutor.ResourceUpdater
 	if strategy.MinFreeKbytesFactor != nil {
 		totalMemory := nodeMemory / 1024 //to kbytes

@@ -36,6 +36,7 @@ type Config struct {
 	CPICollectorTimeWindow           time.Duration
 	ColdPageCollectorInterval        time.Duration
 	EnablePageCacheCollector         bool
+	CollectPromMetricRulePath        string
 }
 
 func NewDefaultConfig() *Config {
@@ -49,6 +50,7 @@ func NewDefaultConfig() *Config {
 		CPICollectorTimeWindow:           10 * time.Second,
 		ColdPageCollectorInterval:        5 * time.Second,
 		EnablePageCacheCollector:         false,
+		CollectPromMetricRulePath:        "",
 	}
 }
 
@@ -62,4 +64,17 @@ func (c *Config) InitFlags(fs *flag.FlagSet) {
 	fs.DurationVar(&c.CPICollectorTimeWindow, "collect-cpi-timewindow", c.CPICollectorTimeWindow, "Collect cpi time window. Non-zero values should contain a corresponding time unit (e.g. 1s, 2m, 3h).")
 	fs.DurationVar(&c.ColdPageCollectorInterval, "coldpage-collector-interval", c.ColdPageCollectorInterval, "Collect cold page interval. Non-zero values should contain a corresponding time unit (e.g. 1s, 2m, 3h).")
 	fs.BoolVar(&c.EnablePageCacheCollector, "enable-pagecache-collector", c.EnablePageCacheCollector, "Enable cache collector of node, pods and containers")
+	// TODO: support refreshing metric rule without restarting
+	fs.StringVar(&c.CollectPromMetricRulePath, "collect-prom-metric-rule-path", c.CollectPromMetricRulePath, "Collect prometheus metrics rule path. The prometheus collector is disabled when the path is empty.")
+
+	// init extended flags
+	for _, fn := range ExtendedInitFlagsFn {
+		fn(fs)
+	}
+}
+
+var ExtendedInitFlagsFn []func(fs *flag.FlagSet)
+
+func RegisterExtendedInitFlags(fn func(fs *flag.FlagSet)) {
+	ExtendedInitFlagsFn = append(ExtendedInitFlagsFn, fn)
 }

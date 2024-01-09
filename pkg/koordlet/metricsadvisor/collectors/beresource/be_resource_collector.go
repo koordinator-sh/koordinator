@@ -27,6 +27,7 @@ import (
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor/framework"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
@@ -69,6 +70,7 @@ func (b *beResourceCollector) Setup(s *framework.Context) {
 func (b *beResourceCollector) Run(stopCh <-chan struct{}) {
 	if !cache.WaitForCacheSync(stopCh, b.statesInformer.HasSynced) {
 		// Koordlet exit because of statesInformer sync failed.
+		metrics.RecordModuleHealthyStatus(metrics.ModuleMetricsAdvisor, CollectorName, false)
 		klog.Fatalf("timed out waiting for states informer caches to sync")
 	}
 	go wait.Until(b.collectBECPUResourceMetric, b.collectInterval, stopCh)
@@ -83,6 +85,7 @@ func (b *beResourceCollector) collectBECPUResourceMetric() {
 
 	realMilliLimit, err := b.getBECPURealMilliLimit()
 	if err != nil {
+		metrics.RecordModuleHealthyStatus(metrics.ModuleMetricsAdvisor, CollectorName, false)
 		klog.Errorf("getBECPURealMilliLimit failed, error: %v", err)
 		return
 	}
@@ -91,6 +94,7 @@ func (b *beResourceCollector) collectBECPUResourceMetric() {
 
 	beCPUUsageMilliCores, err := b.getBECPUUsageMilliCores()
 	if err != nil {
+		metrics.RecordModuleHealthyStatus(metrics.ModuleMetricsAdvisor, CollectorName, false)
 		klog.Errorf("getBECPUUsageCores failed, error: %v", err)
 		return
 	}
@@ -104,6 +108,7 @@ func (b *beResourceCollector) collectBECPUResourceMetric() {
 		metriccache.MetricPropertiesFunc.NodeBE(string(metriccache.BEResourceCPU), string(metriccache.BEResourceAllocationUsage)), collectTime, float64(beCPUUsageMilliCores))
 
 	if err01 != nil || err02 != nil || err03 != nil {
+		metrics.RecordModuleHealthyStatus(metrics.ModuleMetricsAdvisor, CollectorName, false)
 		klog.Errorf("failed to collect node BECPU, beLimitGenerateSampleErr: %v, beRequestGenerateSampleErr: %v, beUsageGenerateSampleErr: %v", err01, err02, err03)
 		return
 	}
@@ -113,16 +118,19 @@ func (b *beResourceCollector) collectBECPUResourceMetric() {
 
 	appender := b.metricCache.Appender()
 	if err := appender.Append(beMetrics); err != nil {
+		metrics.RecordModuleHealthyStatus(metrics.ModuleMetricsAdvisor, CollectorName, false)
 		klog.ErrorS(err, "Append node BECPUResource metrics error")
 		return
 	}
 
 	if err := appender.Commit(); err != nil {
+		metrics.RecordModuleHealthyStatus(metrics.ModuleMetricsAdvisor, CollectorName, false)
 		klog.ErrorS(err, "Commit node BECPUResouce metrics failed")
 		return
 	}
 
 	b.started.Store(true)
+	metrics.RecordModuleHealthyStatus(metrics.ModuleMetricsAdvisor, CollectorName, true)
 	klog.V(6).Info("collectBECPUResourceMetric finished")
 }
 

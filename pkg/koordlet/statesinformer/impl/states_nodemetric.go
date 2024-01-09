@@ -70,9 +70,9 @@ const (
 )
 
 var (
-	scheme                                                         = runtime.NewScheme()
-	defaultMemoryCollectPolicy slov1alpha1.NodeMemoryCollectPolicy = slov1alpha1.UsageWithoutPageCache
-	defaultNodeMetricSpec                                          = slov1alpha1.NodeMetricSpec{
+	scheme                     = runtime.NewScheme()
+	defaultMemoryCollectPolicy = slov1alpha1.UsageWithoutPageCache
+	defaultNodeMetricSpec      = slov1alpha1.NodeMetricSpec{
 		CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
 			AggregateDurationSeconds: pointer.Int64(defaultAggregateDurationSeconds),
 			ReportIntervalSeconds:    pointer.Int64(defaultReportIntervalSeconds),
@@ -201,13 +201,16 @@ func (r *nodeMetricInformer) Start(stopCh <-chan struct{}) {
 
 func (r *nodeMetricInformer) syncNodeMetricWorker(stopCh <-chan struct{}) {
 	reportInterval := r.getNodeMetricReportInterval()
+	timer := time.NewTimer(reportInterval)
+	defer timer.Stop()
 	for {
 		select {
 		case <-stopCh:
 			return
-		case <-time.After(reportInterval):
+		case <-timer.C:
 			r.sync()
 			reportInterval = r.getNodeMetricReportInterval()
+			timer.Reset(reportInterval)
 		}
 	}
 }
@@ -249,6 +252,7 @@ func (r *nodeMetricInformer) sync() {
 
 	nodeMetricInfo, podMetricInfo, hostAppMetricInfo, prodReclaimableMetric := r.collectMetric()
 	if nodeMetricInfo == nil {
+		metrics.RecordModuleHealthyStatus(metrics.ModuleStatesInformer, string(nodeMetricInformerName), false)
 		klog.Warningf("node metric is not ready, skip this round.")
 		return
 	}
@@ -273,9 +277,12 @@ func (r *nodeMetricInformer) sync() {
 		return err
 	})
 
+	metrics.RecordReportNodeMetricStatus(retErr)
 	if retErr != nil {
+		metrics.RecordModuleHealthyStatus(metrics.ModuleStatesInformer, string(nodeMetricInformerName), false)
 		klog.Warningf("update node metric status failed, status %v, err %v", util.DumpJSON(newStatus), retErr)
 	} else {
+		metrics.RecordModuleHealthyStatus(metrics.ModuleStatesInformer, string(nodeMetricInformerName), true)
 		klog.V(4).Infof("update node metric status success, detail: %v", util.DumpJSON(newStatus))
 	}
 }

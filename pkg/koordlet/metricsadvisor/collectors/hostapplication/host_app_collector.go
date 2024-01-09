@@ -26,6 +26,7 @@ import (
 	"k8s.io/klog/v2"
 
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor/framework"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
@@ -75,6 +76,7 @@ func (h *hostAppCollector) Setup(c *framework.Context) {
 func (h *hostAppCollector) Run(stopCh <-chan struct{}) {
 	if !cache.WaitForCacheSync(stopCh, h.statesInformer.HasSynced) {
 		// Koordlet exit because of statesInformer sync failed.
+		metrics.RecordModuleHealthyStatus(metrics.ModuleMetricsAdvisor, CollectorName, false)
 		klog.Fatalf("timed out waiting for states informer caches to sync")
 	}
 	go wait.Until(h.collectHostAppResUsed, h.collectInterval, stopCh)
@@ -88,11 +90,12 @@ func (h *hostAppCollector) collectHostAppResUsed() {
 	klog.V(6).Info("start collectHostAppResUsed")
 	nodeSLO := h.statesInformer.GetNodeSLO()
 	if nodeSLO == nil {
+		metrics.RecordModuleHealthyStatus(metrics.ModuleMetricsAdvisor, CollectorName, false)
 		klog.Warningf("get nil node slo during collect host application resource usage")
 		return
 	}
 	count := 0
-	metrics := make([]metriccache.MetricSample, 0)
+	metricSamples := make([]metriccache.MetricSample, 0)
 	allCPUUsageCores := metriccache.Point{Timestamp: timeNow(), Value: 0}
 	allMemoryUsage := metriccache.Point{Timestamp: timeNow(), Value: 0}
 	for _, hostApp := range nodeSLO.Spec.HostApplications {
@@ -139,7 +142,7 @@ func (h *hostAppCollector) collectHostAppResUsed() {
 			return
 		}
 
-		metrics = append(metrics, cpuUsageMetric, memUsageMetric)
+		metricSamples = append(metricSamples, cpuUsageMetric, memUsageMetric)
 		klog.V(6).Infof("collect host application %v finished, metric cpu=%v, memory=%v", hostApp.Name, cpuUsageValue, memoryUsageValue)
 		count++
 		allCPUUsageCores.Value += cpuUsageValue
@@ -147,12 +150,14 @@ func (h *hostAppCollector) collectHostAppResUsed() {
 	}
 
 	appender := h.appendableDB.Appender()
-	if err := appender.Append(metrics); err != nil {
+	if err := appender.Append(metricSamples); err != nil {
+		metrics.RecordModuleHealthyStatus(metrics.ModuleMetricsAdvisor, CollectorName, false)
 		klog.Warningf("Append host application metrics error: %v", err)
 		return
 	}
 
 	if err := appender.Commit(); err != nil {
+		metrics.RecordModuleHealthyStatus(metrics.ModuleMetricsAdvisor, CollectorName, false)
 		klog.Warningf("Commit host application metrics failed, error: %v", err)
 		return
 	}
@@ -160,6 +165,7 @@ func (h *hostAppCollector) collectHostAppResUsed() {
 	h.sharedState.UpdateHostAppUsage(allCPUUsageCores, allMemoryUsage)
 
 	h.started.Store(true)
+	metrics.RecordModuleHealthyStatus(metrics.ModuleMetricsAdvisor, CollectorName, true)
 	klog.V(4).Infof("collectHostAppResUsed finished, host application num %d, collected %d",
 		len(nodeSLO.Spec.HostApplications), count)
 }

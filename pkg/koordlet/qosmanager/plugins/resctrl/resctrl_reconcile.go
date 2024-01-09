@@ -31,6 +31,7 @@ import (
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/qosmanager/framework"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/qosmanager/helpers"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
@@ -495,18 +496,21 @@ func (r *resctrlReconcile) reconcile() {
 
 	// Step 0.
 	if r.executor == nil {
+		metrics.RecordModuleHealthyStatus(metrics.ModuleQoSManager, ResctrlReconcileName, false)
 		klog.Warning("resctrlReconcile failed, uninitialized")
 		return
 	}
 	nodeSLO := r.statesInformer.GetNodeSLO()
 	if nodeSLO == nil || nodeSLO.Spec.ResourceQOSStrategy == nil {
 		// do nothing if nodeSLO == nil || nodeSLO.spec.ResourceStrategy == nil
+		metrics.RecordModuleHealthyStatus(metrics.ModuleQoSManager, ResctrlReconcileName, false)
 		klog.Warningf("nodeSLO is nil %v, or nodeSLO.Spec.ResourceQOSStrategy is nil", nodeSLO == nil)
 		return
 	}
 
 	// skip if host not support resctrl
 	if support, err := system.IsSupportResctrl(); err != nil {
+		metrics.RecordModuleHealthyStatus(metrics.ModuleQoSManager, ResctrlReconcileName, false)
 		klog.Warningf("check support resctrl failed, err: %s", err)
 		return
 	} else if !support {
@@ -515,9 +519,12 @@ func (r *resctrlReconcile) reconcile() {
 	}
 
 	if err := initCatResctrl(); err != nil {
+		metrics.RecordModuleHealthyStatus(metrics.ModuleQoSManager, ResctrlReconcileName, false)
 		klog.V(4).Infof("resctrlReconcile failed, cannot initialize cat resctrl group, err: %s", err)
 		return
 	}
+
 	r.reconcileCatResctrlPolicy(nodeSLO.Spec.ResourceQOSStrategy)
 	r.reconcileResctrlGroups(nodeSLO.Spec.ResourceQOSStrategy)
+	metrics.RecordModuleHealthyStatus(metrics.ModuleQoSManager, ResctrlReconcileName, true)
 }
