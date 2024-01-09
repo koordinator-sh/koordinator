@@ -128,6 +128,10 @@ type ReservationFilterPlugin interface {
 // and locate the previously returned reusable resources for Pod allocation.
 type ReservationNominator interface {
 	framework.Plugin
+	// NominateReservation nominates reservation that fits the Pod.
+	// If the pod has one or more reservation matched, return the best-fit reservation.
+	// If the pod needs to be allocated from reservations, and no reservations matched, return nil reservation with error.
+	// Otherwise, return nil reservation with framework.Success.
 	NominateReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) (*ReservationInfo, *framework.Status)
 	AddNominatedReservation(pod *corev1.Pod, nodeName string, rInfo *ReservationInfo)
 	RemoveNominatedReservations(pod *corev1.Pod)

@@ -81,6 +81,9 @@ func (pl *Plugin) NominateReservation(ctx context.Context, cycleState *framework
 	state := getStateData(cycleState)
 	reservationInfos := state.nodeReservationStates[nodeName].matched
 	if len(reservationInfos) == 0 {
+		if state.hasAffinity {
+			return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrReasonReservationAffinity)
+		}
 		return nil, nil
 	}
 
@@ -98,11 +101,17 @@ func (pl *Plugin) NominateReservation(ctx context.Context, cycleState *framework
 	for _, rInfo := range reservationInfos {
 		status := extender.RunReservationFilterPlugins(ctx, cycleState, pod, rInfo, nodeName)
 		if !status.IsSuccess() {
+			if klog.V(5).Enabled() {
+				klog.InfoS("Failed to RunReservationFilterPlugins", "pod", klog.KObj(pod), "reservation", klog.KObj(rInfo), "nodeName", nodeName, "status", status.Message())
+			}
 			continue
 		}
 		reservations = append(reservations, rInfo)
 	}
 	if len(reservations) == 0 {
+		if state.hasAffinity {
+			return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrReasonReservationAffinity)
+		}
 		return nil, nil
 	}
 

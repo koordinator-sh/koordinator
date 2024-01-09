@@ -29,6 +29,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/uuid"
 	apiresource "k8s.io/kubernetes/pkg/api/v1/resource"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
+	st "k8s.io/kubernetes/pkg/scheduler/testing"
 	"k8s.io/utils/pointer"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
@@ -98,13 +99,22 @@ func TestNominateReservation(t *testing.T) {
 			},
 		},
 	}
+
+	allocateOnceReservation2C4G := reservation2C4G.DeepCopy()
+	allocateOnceReservation2C4G.Spec.AllocateOnce = pointer.Bool(true)
+
+	restrictedReservation2C4G := reservation2C4G.DeepCopy()
+	restrictedReservation2C4G.Spec.AllocatePolicy = schedulingv1alpha1.ReservationAllocatePolicyRestricted
+
 	tests := []struct {
 		name            string
 		pod             *corev1.Pod
+		hasAffinity     bool
 		reservations    []*schedulingv1alpha1.Reservation
 		allocated       map[types.UID]corev1.ResourceList
+		assignedPod     map[types.UID][]*corev1.Pod
 		wantReservation *schedulingv1alpha1.Reservation
-		wantStatus      bool
+		wantStatus      *framework.Status
 	}{
 		{
 			name: "reserve pod",
@@ -115,12 +125,18 @@ func TestNominateReservation(t *testing.T) {
 					},
 				},
 			},
-			wantStatus: true,
+			wantStatus: nil,
 		},
 		{
 			name:       "node without reservations",
 			pod:        &corev1.Pod{},
-			wantStatus: true,
+			wantStatus: nil,
+		},
+		{
+			name:        "node without reservations, but pod requires reservations",
+			pod:         &corev1.Pod{},
+			hasAffinity: true,
+			wantStatus:  framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrReasonReservationAffinity),
 		},
 		{
 			name: "preferred reservation",
@@ -218,7 +234,7 @@ func TestNominateReservation(t *testing.T) {
 					NodeName: "test-node",
 				},
 			},
-			wantStatus: true,
+			wantStatus: nil,
 		},
 		{
 			name: "allocated reservation",
@@ -246,8 +262,62 @@ func TestNominateReservation(t *testing.T) {
 					corev1.ResourceMemory: resource.MustParse("4Gi"),
 				},
 			},
-			wantStatus:      true,
+			wantStatus:      nil,
 			wantReservation: reservation4C8G,
+		},
+		{
+			name: "allocate with allocateOnce reservation",
+			pod: &corev1.Pod{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("2"),
+									corev1.ResourceMemory: resource.MustParse("4Gi"),
+								},
+							},
+						},
+					},
+				},
+			},
+			reservations: []*schedulingv1alpha1.Reservation{
+				allocateOnceReservation2C4G,
+			},
+			assignedPod: map[types.UID][]*corev1.Pod{
+				allocateOnceReservation2C4G.UID: {
+					st.MakePod().UID("123456").Name("test-pod-1").Req(map[corev1.ResourceName]string{"cpu": "1"}).Obj(),
+				},
+			},
+			wantStatus:      nil,
+			wantReservation: nil,
+		},
+		{
+			name: "allocate with restricted reservation",
+			pod: &corev1.Pod{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("2"),
+									corev1.ResourceMemory: resource.MustParse("4Gi"),
+								},
+							},
+						},
+					},
+				},
+			},
+			reservations: []*schedulingv1alpha1.Reservation{
+				restrictedReservation2C4G,
+			},
+			assignedPod: map[types.UID][]*corev1.Pod{
+				restrictedReservation2C4G.UID: {
+					st.MakePod().UID("123456").Name("test-pod-1").Req(map[corev1.ResourceName]string{"cpu": "2", "memory": "4Gi"}).Obj(),
+				},
+			},
+			wantStatus:      nil,
+			wantReservation: nil,
 		},
 		{
 			name: "matched reservations",
@@ -269,7 +339,7 @@ func TestNominateReservation(t *testing.T) {
 				reservation4C8G,
 				reservation2C4G,
 			},
-			wantStatus:      true,
+			wantStatus:      nil,
 			wantReservation: reservation2C4G,
 		},
 	}
@@ -279,7 +349,12 @@ func TestNominateReservation(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-node",
 				},
-				Status: corev1.NodeStatus{},
+				Status: corev1.NodeStatus{
+					Allocatable: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("8"),
+						corev1.ResourceMemory: resource.MustParse("16Gi"),
+					},
+				},
 			}
 
 			suit := newPluginTestSuitWith(t, nil, []*corev1.Node{node})
@@ -289,6 +364,7 @@ func TestNominateReservation(t *testing.T) {
 			cycleState := framework.NewCycleState()
 			requests, _ := apiresource.PodRequestsAndLimits(tt.pod)
 			state := &stateData{
+				hasAffinity:           tt.hasAffinity,
 				nodeReservationStates: map[string]nodeReservationState{},
 				podRequests:           requests,
 				podRequestsResources:  framework.NewResource(requests),
@@ -297,6 +373,11 @@ func TestNominateReservation(t *testing.T) {
 				rInfo := frameworkext.NewReservationInfo(reservation)
 				if allocated := tt.allocated[reservation.UID]; len(allocated) > 0 {
 					rInfo.Allocated = allocated
+				}
+				if assignedPods := tt.assignedPod[reservation.UID]; len(assignedPods) > 0 {
+					for _, v := range assignedPods {
+						rInfo.AddAssignedPod(v)
+					}
 				}
 				nodeRState := state.nodeReservationStates[reservation.Status.NodeName]
 				nodeRState.nodeName = reservation.Status.NodeName
@@ -311,7 +392,7 @@ func TestNominateReservation(t *testing.T) {
 			} else {
 				assert.Equal(t, tt.wantReservation, nominateRInfo.Reservation)
 			}
-			assert.Equal(t, tt.wantStatus, status.IsSuccess())
+			assert.Equal(t, tt.wantStatus, status)
 		})
 	}
 }

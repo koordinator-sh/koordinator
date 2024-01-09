@@ -536,7 +536,7 @@ func (pl *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState,
 		// The scheduleOne skip scores and reservation nomination if there is only one node available.
 		var status *framework.Status
 		nominatedReservation, status = pl.handle.GetReservationNominator().NominateReservation(ctx, cycleState, pod, nodeName)
-		if status != nil {
+		if !status.IsSuccess() {
 			return status
 		}
 		if nominatedReservation == nil {
