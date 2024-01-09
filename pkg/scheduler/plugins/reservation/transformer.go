@@ -54,7 +54,7 @@ func (pl *Plugin) prepareMatchReservationState(ctx context.Context, cycleState *
 	}
 
 	specificNodes, status := parseSpecificNodesFromAffinity(pod)
-	if status != nil {
+	if !status.IsSuccess() {
 		return nil, false, status
 	}
 	requiredNodeAffinity := nodeaffinity.GetRequiredNodeAffinity(pod)
