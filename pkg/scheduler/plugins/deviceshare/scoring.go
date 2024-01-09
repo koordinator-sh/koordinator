@@ -82,8 +82,7 @@ func (p *Plugin) Score(ctx context.Context, cycleState *framework.CycleState, po
 	preemptible = appendAllocated(preemptible, restoreState.mergedMatchedAllocatable)
 	score, status := allocator.score(nil, preemptible)
 	if !status.IsSuccess() {
-		klog.ErrorS(status.AsError(), "Failed to score of DeviceShare",
-			"pod", klog.KObj(pod), "reservation", klog.KObj(reservationInfo), "node", nodeName)
+		klog.ErrorS(status.AsError(), "Failed to score of DeviceShare", "pod", klog.KObj(pod), "node", nodeName)
 		return 0, status
 	}
 	return score, nil
