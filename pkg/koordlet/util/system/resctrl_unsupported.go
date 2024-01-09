@@ -25,15 +25,3 @@ import "fmt"
 func MountResctrlSubsystem() (bool, error) {
 	return false, fmt.Errorf("only support linux")
 }
-
-func isResctrlAvailableByCpuInfo(path string) (bool, bool, error) {
-	return false, false, nil
-}
-
-func GetVendorIDByCPUInfo(path string) (string, error) {
-	return "unknown", nil
-}
-
-func isResctrlAvailableByKernelCmd(path string) (bool, bool, error) {
-	return false, false, nil
-}
