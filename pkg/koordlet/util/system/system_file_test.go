@@ -76,3 +76,31 @@ func TestSetSchedGroupIdentity(t *testing.T) {
 		assert.Equal(t, got, testContent)
 	})
 }
+
+func TestSetSchedCore(t *testing.T) {
+	t.Run("test", func(t *testing.T) {
+		helper := NewFileTestUtil(t)
+
+		// system not supported
+		err := SetSchedCore(false)
+		assert.Error(t, err)
+
+		// system supported, already disabled
+		testProcSysFile := KernelSchedCore
+		testProcSysFilepath := filepath.Join(SysctlSubDir, testProcSysFile)
+		testContent := "0"
+		assert.False(t, FileExists(GetProcSysFilePath(testProcSysFile)))
+		helper.WriteProcSubFileContents(testProcSysFilepath, testContent)
+		err = SetSchedCore(false)
+		assert.NoError(t, err)
+		got := helper.ReadProcSubFileContents(testProcSysFilepath)
+		assert.Equal(t, got, testContent)
+
+		// system supported, set enabled
+		testContent = "1"
+		err = SetSchedCore(true)
+		assert.NoError(t, err)
+		got = helper.ReadProcSubFileContents(testProcSysFilepath)
+		assert.Equal(t, got, testContent)
+	})
+}

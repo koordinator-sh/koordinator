@@ -644,7 +644,7 @@ func Test_divideResourceList(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := divideResourceList(tt.arg, tt.arg1)
-			assert.True(t, util.IsResourceListEqualValue(tt.want, got))
+			assert.True(t, util.IsResourceListEqual(tt.want, got))
 		})
 	}
 }
@@ -652,7 +652,7 @@ func Test_divideResourceList(t *testing.T) {
 func assertEqualNUMAResourceList(t *testing.T, want, got []corev1.ResourceList) {
 	assert.Equal(t, len(want), len(got))
 	for i := range want {
-		assert.True(t, util.IsResourceListEqualValue(want[i], got[i]))
+		assert.True(t, util.IsResourceListEqual(want[i], got[i]))
 	}
 }
 

@@ -149,7 +149,6 @@ func (s *statesInformer) Run(stopCh <-chan struct{}) error {
 
 	klog.V(2).Infof("starting callback runner")
 	s.states.callbackRunner.Setup(s)
-	go s.states.callbackRunner.Start(stopCh)
 
 	klog.V(2).Infof("starting informer plugins")
 	s.setupPlugins()
@@ -169,6 +168,11 @@ func (s *statesInformer) Run(stopCh <-chan struct{}) error {
 			go s.gpuHealCheck(stopCh)
 		}
 	}
+
+	// start callback runner after informers synced
+	// since some callbacks needs the integrated input to execute, e.g. valid pods list
+	// the initial callback events will not be missing since the callback channels are buffered
+	go s.states.callbackRunner.Start(stopCh)
 
 	klog.Infof("start states informer successfully")
 	s.started.Store(true)

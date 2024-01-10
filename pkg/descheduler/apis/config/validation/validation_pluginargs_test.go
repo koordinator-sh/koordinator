@@ -22,6 +22,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/pointer"
 
 	deschedulerconfig "github.com/koordinator-sh/koordinator/pkg/descheduler/apis/config"
@@ -103,4 +104,174 @@ func TestValidateMigrationControllerArgs(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestValidateMigrationControllerArgs_MaxMigratingPerNamespace(t *testing.T) {
+	testCases := []struct {
+		maxMigratingPerNamespace *int32
+		wantErr                  bool
+	}{
+		{
+			maxMigratingPerNamespace: int32Ptr(10),
+			wantErr:                  false,
+		},
+		{
+			maxMigratingPerNamespace: int32Ptr(100),
+			wantErr:                  false,
+		},
+		{
+			maxMigratingPerNamespace: int32Ptr(0),
+			wantErr:                  false,
+		},
+		{
+			maxMigratingPerNamespace: int32Ptr(-1),
+			wantErr:                  true,
+		},
+	}
+
+	for _, tc := range testCases {
+		argsDefault := &v1alpha2.MigrationControllerArgs{}
+		v1alpha2.SetDefaults_MigrationControllerArgs(argsDefault)
+		args := &deschedulerconfig.MigrationControllerArgs{}
+		assert.NoError(t, v1alpha2.Convert_v1alpha2_MigrationControllerArgs_To_config_MigrationControllerArgs(argsDefault, args, nil))
+		args.MaxMigratingPerNamespace = tc.maxMigratingPerNamespace
+
+		err := ValidateMigrationControllerArgs(nil, args)
+		if tc.wantErr {
+			assert.Error(t, err, "Expected an error for invalid MaxMigratingPerNamespace")
+			assert.Contains(t, err.Error(), "maxMigratingPerNamespace should be greater or equal 0", "Expected specific error message")
+		} else {
+			assert.Nil(t, err, "Expected no error for valid configuration")
+		}
+	}
+}
+
+func TestValidateMigrationControllerArgs_MaxMigratingPerNode(t *testing.T) {
+	testCases := []struct {
+		maxMigratingPerNode *int32
+		wantErr             bool
+	}{
+		{
+			maxMigratingPerNode: int32Ptr(10),
+			wantErr:             false,
+		},
+		{
+			maxMigratingPerNode: int32Ptr(100),
+			wantErr:             false,
+		},
+		{
+			maxMigratingPerNode: int32Ptr(0),
+			wantErr:             false,
+		},
+		{
+			maxMigratingPerNode: int32Ptr(-1),
+			wantErr:             true,
+		},
+	}
+
+	for _, tc := range testCases {
+		argsDefault := &v1alpha2.MigrationControllerArgs{}
+		v1alpha2.SetDefaults_MigrationControllerArgs(argsDefault)
+		args := &deschedulerconfig.MigrationControllerArgs{}
+		assert.NoError(t, v1alpha2.Convert_v1alpha2_MigrationControllerArgs_To_config_MigrationControllerArgs(argsDefault, args, nil))
+		args.MaxMigratingPerNode = tc.maxMigratingPerNode
+
+		err := ValidateMigrationControllerArgs(nil, args)
+		if tc.wantErr {
+			assert.Error(t, err, "Expected an error for invalid MaxMigratingPerNode")
+			assert.Contains(t, err.Error(), "maxMigratingPerNode should be greater or equal 0", "Expected specific error message")
+		} else {
+			assert.Nil(t, err, "Expected no error for valid configuration")
+		}
+	}
+}
+
+func TestValidateMigrationControllerArgs_MaxMigratingPerWorkload(t *testing.T) {
+	testCases := []struct {
+		maxMigratingPerWorkload *intstr.IntOrString
+		wantErr                 bool
+	}{
+		{
+			maxMigratingPerWorkload: intstrPtr(10),
+			wantErr:                 false,
+		},
+		{
+			maxMigratingPerWorkload: intstrPtr(100),
+			wantErr:                 false,
+		},
+		{
+			maxMigratingPerWorkload: intstrPtr(0),
+			wantErr:                 false,
+		},
+		{
+			maxMigratingPerWorkload: intstrPtr(-1), // we do not check the valid value
+			wantErr:                 false,
+		},
+	}
+
+	for _, tc := range testCases {
+		argsDefault := &v1alpha2.MigrationControllerArgs{}
+		v1alpha2.SetDefaults_MigrationControllerArgs(argsDefault)
+		args := &deschedulerconfig.MigrationControllerArgs{}
+		assert.NoError(t, v1alpha2.Convert_v1alpha2_MigrationControllerArgs_To_config_MigrationControllerArgs(argsDefault, args, nil))
+		args.MaxMigratingPerWorkload = tc.maxMigratingPerWorkload
+
+		err := ValidateMigrationControllerArgs(nil, args)
+		if tc.wantErr {
+			assert.Error(t, err, "Expected an error for invalid MaxMigratingPerWorkload")
+			assert.Contains(t, err.Error(), "maxMigratingPerWorkload should be greater or equal 0", "Expected specific error message")
+		} else {
+			assert.Nil(t, err, "Expected no error for valid configuration")
+		}
+	}
+}
+
+func TestValidateMigrationControllerArgs_MaxUnavailablePerWorkload(t *testing.T) {
+	testCases := []struct {
+		maxUnavailablePerWorkload *intstr.IntOrString
+		wantErr                   bool
+	}{
+		{
+			maxUnavailablePerWorkload: intstrPtr(10),
+			wantErr:                   false,
+		},
+		{
+			maxUnavailablePerWorkload: intstrPtr(100),
+			wantErr:                   false,
+		},
+		{
+			maxUnavailablePerWorkload: intstrPtr(0),
+			wantErr:                   false,
+		},
+		{
+			maxUnavailablePerWorkload: intstrPtr(-1), // we do not check the valid value
+			wantErr:                   false,
+		},
+	}
+
+	for _, tc := range testCases {
+		argsDefault := &v1alpha2.MigrationControllerArgs{}
+		v1alpha2.SetDefaults_MigrationControllerArgs(argsDefault)
+		args := &deschedulerconfig.MigrationControllerArgs{}
+		assert.NoError(t, v1alpha2.Convert_v1alpha2_MigrationControllerArgs_To_config_MigrationControllerArgs(argsDefault, args, nil))
+		args.MaxUnavailablePerWorkload = tc.maxUnavailablePerWorkload
+
+		err := ValidateMigrationControllerArgs(nil, args)
+		if tc.wantErr {
+			assert.Error(t, err, "Expected an error for invalid MaxUnavailablePerWorkload")
+			assert.Contains(t, err.Error(), "maxUnavailablePerWorkload should be greater or equal 0", "Expected specific error message")
+		} else {
+			assert.Nil(t, err, "Expected no error for valid configuration")
+		}
+	}
+}
+
+// Helper functions for pointer creation
+func int32Ptr(value int32) *int32 {
+	return &value
+}
+
+func intstrPtr(val int) *intstr.IntOrString {
+	value := intstr.FromInt(val)
+	return &value
 }

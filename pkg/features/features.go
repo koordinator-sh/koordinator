@@ -36,6 +36,9 @@ const (
 	// ElasticQuotaValidatingWebhook enables validating webhook for ElasticQuotas creations or updates
 	ElasticQuotaValidatingWebhook featuregate.Feature = "ElasticValidatingWebhook"
 
+	// NodeValidatingWebhook enables mutating webhook for Node Creation or updates
+	NodeMutatingWebhook featuregate.Feature = "NodeMutatingWebhook"
+
 	// NodeValidatingWebhook enables validating webhook for Node Creation or updates
 	NodeValidatingWebhook featuregate.Feature = "NodeValidatingWebhook"
 
@@ -45,7 +48,7 @@ const (
 	// ColocationProfileSkipMutatingResources config whether to update resourceName according to priority by default
 	ColocationProfileSkipMutatingResources featuregate.Feature = "ColocationProfileSkipMutatingResources"
 
-	// WebhookFramework enables webhook framework
+	// WebhookFramework enables webhook framework, global feature-gate for webhook
 	WebhookFramework featuregate.Feature = "WebhookFramework"
 
 	// MultiQuotaTree enables multi quota tree.
@@ -68,6 +71,7 @@ var defaultFeatureGates = map[featuregate.Feature]featuregate.FeatureSpec{
 	PodValidatingWebhook:                   {Default: true, PreRelease: featuregate.Beta},
 	ElasticQuotaMutatingWebhook:            {Default: true, PreRelease: featuregate.Beta},
 	ElasticQuotaValidatingWebhook:          {Default: true, PreRelease: featuregate.Beta},
+	NodeMutatingWebhook:                    {Default: false, PreRelease: featuregate.Alpha},
 	NodeValidatingWebhook:                  {Default: false, PreRelease: featuregate.Alpha},
 	ConfigMapValidatingWebhook:             {Default: false, PreRelease: featuregate.Alpha},
 	WebhookFramework:                       {Default: true, PreRelease: featuregate.Beta},

@@ -46,6 +46,7 @@ func init() {
 	DefaultCgroupUpdaterFactory.Register(NewCommonCgroupUpdater,
 		sysutil.CPUBurstName,
 		sysutil.CPUBVTWarpNsName,
+		sysutil.CPUIdleName,
 		sysutil.CPUTasksName,
 		sysutil.CPUProcsName,
 		sysutil.MemoryWmarkRatioName,

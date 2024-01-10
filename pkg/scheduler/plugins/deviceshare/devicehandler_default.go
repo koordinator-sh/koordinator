@@ -17,25 +17,33 @@ limitations under the License.
 package deviceshare
 
 import (
+	"fmt"
+
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 )
 
 func init() {
-	deviceHandlers[schedulingv1alpha1.RDMA] = &DefaultDeviceHandler{resourceName: apiext.ResourceRDMA}
-	deviceHandlers[schedulingv1alpha1.FPGA] = &DefaultDeviceHandler{resourceName: apiext.ResourceFPGA}
+	deviceHandlers[schedulingv1alpha1.RDMA] = &DefaultDeviceHandler{deviceType: schedulingv1alpha1.RDMA, resourceName: apiext.ResourceRDMA}
+	deviceHandlers[schedulingv1alpha1.FPGA] = &DefaultDeviceHandler{deviceType: schedulingv1alpha1.FPGA, resourceName: apiext.ResourceFPGA}
 }
 
 var _ DeviceHandler = &DefaultDeviceHandler{}
 
 type DefaultDeviceHandler struct {
+	deviceType   schedulingv1alpha1.DeviceType
 	resourceName corev1.ResourceName
 }
 
-func (h *DefaultDeviceHandler) CalcDesiredRequestsAndCount(podRequests corev1.ResourceList, totalDevices deviceResources, hint *apiext.DeviceHint) (corev1.ResourceList, int, error) {
+func (h *DefaultDeviceHandler) CalcDesiredRequestsAndCount(node *corev1.Node, pod *corev1.Pod, podRequests corev1.ResourceList, totalDevices deviceResources, hint *apiext.DeviceHint) (corev1.ResourceList, int, *framework.Status) {
+	if len(totalDevices) == 0 {
+		return nil, 0, framework.NewStatus(framework.UnschedulableAndUnresolvable, fmt.Sprintf("Insufficient %s devices", h.deviceType))
+	}
+
 	requests := podRequests
 	desiredCount := int64(1)
 

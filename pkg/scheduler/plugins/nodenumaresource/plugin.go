@@ -70,7 +70,7 @@ var (
 )
 
 type Plugin struct {
-	handle          framework.Handle
+	handle          frameworkext.ExtendedHandle
 	pluginArgs      *schedulingconfig.NodeNUMAResourceArgs
 	nrtLister       topologylister.NodeResourceTopologyLister
 	scorer          *resourceAllocationScorer
@@ -150,7 +150,7 @@ func NewWithOptions(args runtime.Object, handle framework.Handle, opts ...Option
 	nrtLister := nrtInformerFactory.Topology().V1alpha1().NodeResourceTopologies().Lister()
 
 	return &Plugin{
-		handle:                 handle,
+		handle:                 handle.(frameworkext.ExtendedHandle),
 		pluginArgs:             pluginArgs,
 		nrtLister:              nrtLister,
 		scorer:                 scorer,
@@ -515,7 +515,7 @@ func (p *Plugin) getReservationReservedCPUs(cycleState *framework.CycleState, po
 	if reservationutil.IsReservePod(pod) {
 		return result, nil
 	}
-	nominatedReservation := frameworkext.GetNominatedReservation(cycleState, nodeName)
+	nominatedReservation := p.handle.GetReservationNominator().GetNominatedReservation(pod, nodeName)
 	if nominatedReservation == nil {
 		return result, nil
 	}

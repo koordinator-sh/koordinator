@@ -9,6 +9,7 @@ updates:
     commit-message:
       prefix: "feat"
       include: "scope"
+    open-pull-requests-limit: 0
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:

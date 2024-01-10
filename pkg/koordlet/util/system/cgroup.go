@@ -200,6 +200,22 @@ func ParseMemoryNumaStat(content string) ([]NumaMemoryPages, error) {
 	return stat, nil
 }
 
+// ParseCgroupProcs parses the content in cgroup.procs.
+// pattern: `7742\n10971\n11049\n11051...`
+// TODO: refactor with readCgroupAndParseInt32Slice via Generics.
+func ParseCgroupProcs(content string) ([]uint32, error) {
+	pidStrs := strings.Fields(strings.TrimSpace(content))
+	pids := make([]uint32, len(pidStrs))
+	for i := 0; i < len(pidStrs); i++ {
+		p, err := strconv.ParseUint(pidStrs[i], 10, 32)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse row %s into pid, err: %w", pidStrs[i], err)
+		}
+		pids[i] = uint32(p)
+	}
+	return pids, nil
+}
+
 func CalcCPUThrottledRatio(curPoint, prePoint *CPUStatRaw) float64 {
 	deltaPeriod := curPoint.NrPeriods - prePoint.NrPeriods
 	deltaThrottled := curPoint.NrThrottled - prePoint.NrThrottled

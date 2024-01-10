@@ -388,3 +388,35 @@ func TestSetCPUBasicInfo(t *testing.T) {
 		})
 	}
 }
+
+func TestCPUNormalizationRatioDifferent(t *testing.T) {
+	testCases := []struct {
+		old          float64
+		new          float64
+		expectedDiff bool
+	}{
+		{
+			old:          1.2,
+			new:          1.2,
+			expectedDiff: false,
+		},
+		{
+			old:          1.2,
+			new:          1.3,
+			expectedDiff: true,
+		},
+		{
+			old:          1.2,
+			new:          1.205,
+			expectedDiff: false,
+		},
+		{
+			old:          1.2,
+			new:          1.195,
+			expectedDiff: false,
+		},
+	}
+	for _, tc := range testCases {
+		assert.Equal(t, tc.expectedDiff, IsCPUNormalizationRatioDifferent(tc.old, tc.new))
+	}
+}

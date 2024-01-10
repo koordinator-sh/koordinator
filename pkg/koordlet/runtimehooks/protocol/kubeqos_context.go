@@ -91,4 +91,17 @@ func (k *KubeQOSContext) injectForExt() {
 				*k.Response.Resources.CPUBvt, k.Request.CgroupParent)
 		}
 	}
+	if k.Response.Resources.CPUIdle != nil {
+		eventHelper := audit.V(3).Group(string(k.Request.KubeQOSClass)).Reason("runtime-hooks").Message(
+			"set kubeqos idle to %v", *k.Response.Resources.CPUIdle)
+		updater, err := injectCPUIdle(k.Request.CgroupParent, *k.Response.Resources.CPUIdle, eventHelper, k.executor)
+		if err != nil {
+			klog.Infof("set kubeqos %v idle %v on cgroup parent %v failed, error %v", k.Request.KubeQOSClass,
+				*k.Response.Resources.CPUIdle, k.Request.CgroupParent, err)
+		} else {
+			k.updaters = append(k.updaters, updater)
+			klog.V(5).Infof("set kubeqos %v idle %v on cgroup parent %v", k.Request.KubeQOSClass,
+				*k.Response.Resources.CPUIdle, k.Request.CgroupParent)
+		}
+	}
 }

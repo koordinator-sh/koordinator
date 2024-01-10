@@ -738,7 +738,9 @@ func Test_metricsInColdStart(t *testing.T) {
 		{
 			name: "metric in cold start",
 			args: args{
-				duration: queryEnd.Sub(shortStart),
+				queryStart: queryStart,
+				queryEnd:   queryEnd,
+				duration:   queryEnd.Sub(shortStart),
 			},
 			want: true,
 		},

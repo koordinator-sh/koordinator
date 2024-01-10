@@ -47,6 +47,7 @@ type ExtendedHandle interface {
 	RegisterErrorHandlerFilters(preFilter PreErrorHandlerFilter, afterFilter PostErrorHandlerFilter)
 	RegisterForgetPodHandler(handler ForgetPodHandler)
 	ForgetPod(pod *corev1.Pod) error
+	GetReservationNominator() ReservationNominator
 }
 
 // FrameworkExtender extends the K8s Scheduling Framework interface to provide more extension methods to support Koordinator.
@@ -128,6 +129,9 @@ type ReservationFilterPlugin interface {
 type ReservationNominator interface {
 	framework.Plugin
 	NominateReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) (*ReservationInfo, *framework.Status)
+	AddNominatedReservation(pod *corev1.Pod, nodeName string, rInfo *ReservationInfo)
+	RemoveNominatedReservations(pod *corev1.Pod)
+	GetNominatedReservation(pod *corev1.Pod, nodeName string) *ReservationInfo
 }
 
 const (
@@ -173,37 +177,6 @@ type ReservationScoreExtensions interface {
 // If you want to use the feature, must enable the feature gate ResizePod=true
 type ResizePodPlugin interface {
 	ResizePod(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) *framework.Status
-}
-
-var (
-	nominatedReservationKey framework.StateKey = "koordinator.sh/nominated-reservation"
-)
-
-// nominatedReservationState saves the reservationInfo nominated by ReservationNominator
-type nominatedReservationState struct {
-	reservationInfos map[string]*ReservationInfo
-}
-
-func (r *nominatedReservationState) Clone() framework.StateData {
-	return r
-}
-
-func SetNominatedReservation(cycleState *framework.CycleState, reservationInfos map[string]*ReservationInfo) {
-	if len(reservationInfos) == 0 {
-		return
-	}
-	cycleState.Write(nominatedReservationKey, &nominatedReservationState{
-		reservationInfos: reservationInfos,
-	})
-}
-
-func GetNominatedReservation(cycleState *framework.CycleState, nodeName string) *ReservationInfo {
-	state, err := cycleState.Read(nominatedReservationKey)
-	if err != nil {
-		return nil
-	}
-	nominatedState := state.(*nominatedReservationState)
-	return nominatedState.reservationInfos[nodeName]
 }
 
 // ReservationPreBindPlugin performs special binding logic specifically for Reservation in the PreBind phase.

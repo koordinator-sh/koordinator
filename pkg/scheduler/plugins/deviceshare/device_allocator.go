@@ -37,7 +37,7 @@ var deviceHandlers = map[schedulingv1alpha1.DeviceType]DeviceHandler{}
 var deviceAllocators = map[schedulingv1alpha1.DeviceType]DeviceAllocator{}
 
 type DeviceHandler interface {
-	CalcDesiredRequestsAndCount(podRequests corev1.ResourceList, totalDevices deviceResources, hint *apiext.DeviceHint) (corev1.ResourceList, int, error)
+	CalcDesiredRequestsAndCount(node *corev1.Node, pod *corev1.Pod, podRequests corev1.ResourceList, totalDevices deviceResources, hint *apiext.DeviceHint) (corev1.ResourceList, int, *framework.Status)
 }
 
 type DeviceAllocator interface {
@@ -165,18 +165,17 @@ func (a *AutopilotAllocator) calcRequestsAndCountByDeviceType(
 			continue
 		}
 
-		totalDevices := nodeDevice.deviceTotal[deviceType]
-		if len(totalDevices) == 0 {
-			return nil, nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, fmt.Sprintf("Insufficient %s devices", deviceType))
-		}
-
 		handler := deviceHandlers[deviceType]
 		if handler == nil {
 			continue
 		}
-		requests, desiredCount, err := handler.CalcDesiredRequestsAndCount(requests, totalDevices, hints[deviceType])
-		if err != nil {
-			return nil, nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, err.Error())
+		totalDevices := nodeDevice.deviceTotal[deviceType]
+		requests, desiredCount, status := handler.CalcDesiredRequestsAndCount(a.node, a.pod, requests, totalDevices, hints[deviceType])
+		if !status.IsSuccess() {
+			if status.Code() == framework.Skip {
+				continue
+			}
+			return nil, nil, status
 		}
 		requestPerInstance[deviceType] = requests
 		desiredCountPerDeviceType[deviceType] = desiredCount
@@ -407,8 +406,8 @@ func defaultAllocateDevices(
 
 	var allocations []*apiext.DeviceAllocation
 	resourceMinorPairs := scoreDevices(podRequestPerInstance, nodeDeviceTotal, freeDevices, requestCtx.allocationScorer)
-	resourceMinorPairs = sortDeviceResourcesByMinor(resourceMinorPairs, requestCtx.preferred[deviceType])
 	resourceMinorPairs = sortDeviceResourcesByPreferredPCIe(resourceMinorPairs, preferredPCIEs, deviceInfos)
+	resourceMinorPairs = sortDeviceResourcesByMinor(resourceMinorPairs, requestCtx.preferred[deviceType])
 	for _, resourceMinorPair := range resourceMinorPairs {
 		if required.Len() > 0 && !required.Has(resourceMinorPair.minor) {
 			continue

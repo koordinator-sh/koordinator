@@ -24,15 +24,17 @@ import (
 )
 
 const (
-	ProcSysVmRelativePath   = "sys/vm/"
-	MemcgReaperRelativePath = "kernel/mm/memcg_reaper/"
-	KidledRelativePath      = "kernel/mm/kidled/"
+	ProcSysVmRelativePath     = "sys/vm/"
+	MemcgReaperRelativePath   = "kernel/mm/memcg_reaper/"
+	KidledRelativePath        = "kernel/mm/kidled/"
+	SchedFeaturesRelativePath = "kernel/debug/"
 
 	MinFreeKbytesFileName             = "min_free_kbytes"
 	WatermarkScaleFactorFileName      = "watermark_scale_factor"
 	MemcgReapBackGroundFileName       = "reap_background"
 	KidledScanPeriodInSecondsFileName = "scan_period_in_seconds"
 	KidledUseHierarchyFileFileName    = "use_hierarchy"
+	SchedFeaturesFileName             = "sched_features"
 )
 
 var (
@@ -49,6 +51,8 @@ var (
 	MemcgReapBackGround       = NewCommonSystemResource(MemcgReaperRelativePath, MemcgReapBackGroundFileName, GetSysRootDir).WithValidator(MemcgReapBackGroundValidator).WithCheckSupported(SupportedIfFileExists)
 	KidledScanPeriodInSeconds = NewCommonSystemResource(KidledRelativePath, KidledScanPeriodInSecondsFileName, GetSysRootDir).WithValidator(KidledScanPeriodInSecondsValidator).WithCheckSupported(SupportedIfFileExists)
 	KidledUseHierarchy        = NewCommonSystemResource(KidledRelativePath, KidledUseHierarchyFileFileName, GetSysRootDir).WithValidator(KidledUseHierarchyValidator).WithCheckSupported(SupportedIfFileExists)
+	// SchedFeatures is the system file which shows the enabled features of the kernel scheduling.
+	SchedFeatures = NewCommonSystemResource(SchedFeaturesRelativePath, SchedFeaturesFileName, GetSysRootDir).WithCheckSupported(SupportedIfFileExists)
 )
 
 var _ Resource = &SystemResource{}

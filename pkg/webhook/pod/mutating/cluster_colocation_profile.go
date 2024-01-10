@@ -173,6 +173,24 @@ func (h *PodMutatingHandler) doMutateByColocationProfile(ctx context.Context, po
 		}
 	}
 
+	if len(profile.Spec.LabelKeysMapping) > 0 {
+		if pod.Labels == nil {
+			pod.Labels = make(map[string]string)
+		}
+		for keyOld, keyNew := range profile.Spec.LabelKeysMapping {
+			pod.Labels[keyNew] = pod.Labels[keyOld]
+		}
+	}
+
+	if len(profile.Spec.AnnotationKeysMapping) > 0 {
+		if pod.Annotations == nil {
+			pod.Annotations = make(map[string]string)
+		}
+		for keyOld, keyNew := range profile.Spec.AnnotationKeysMapping {
+			pod.Annotations[keyNew] = pod.Annotations[keyOld]
+		}
+	}
+
 	if profile.Spec.SchedulerName != "" {
 		pod.Spec.SchedulerName = profile.Spec.SchedulerName
 	}

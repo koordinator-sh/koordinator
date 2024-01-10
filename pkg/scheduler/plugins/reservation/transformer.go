@@ -32,7 +32,6 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework/parallelize"
 	schedutil "k8s.io/kubernetes/pkg/scheduler/util"
 
-	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
@@ -55,7 +54,7 @@ func (pl *Plugin) prepareMatchReservationState(ctx context.Context, cycleState *
 	}
 
 	specificNodes, status := parseSpecificNodesFromAffinity(pod)
-	if status != nil {
+	if !status.IsSuccess() {
 		return nil, false, status
 	}
 	requiredNodeAffinity := nodeaffinity.GetRequiredNodeAffinity(pod)
@@ -99,15 +98,15 @@ func (pl *Plugin) prepareMatchReservationState(ctx context.Context, cycleState *
 		}
 
 		var unmatched, matched []*frameworkext.ReservationInfo
-		status := pl.reservationCache.forEachAvailableReservationOnNode(node.Name, func(rInfo *frameworkext.ReservationInfo) *framework.Status {
+		status := pl.reservationCache.forEachAvailableReservationOnNode(node.Name, func(rInfo *frameworkext.ReservationInfo) (bool, *framework.Status) {
 			if !rInfo.IsAvailable() || rInfo.ParseError != nil {
-				return nil
+				return true, nil
 			}
 
 			// In this case, the Controller has not yet updated the status of the Reservation to Succeeded,
 			// but in fact it can no longer be used for allocation. So it's better to skip first.
 			if rInfo.IsAllocateOnce() && len(rInfo.AssignedPods) > 0 {
-				return nil
+				return true, nil
 			}
 
 			if !isReservedPod && !rInfo.IsUnschedulable() && matchReservation(pod, node, rInfo, reservationAffinity) {
@@ -116,7 +115,7 @@ func (pl *Plugin) prepareMatchReservationState(ctx context.Context, cycleState *
 			} else if len(rInfo.AssignedPods) > 0 {
 				unmatched = append(unmatched, rInfo.Clone())
 			}
-			return nil
+			return true, nil
 		})
 		if !status.IsSuccess() {
 			err = status.AsError()
@@ -158,7 +157,6 @@ func (pl *Plugin) prepareMatchReservationState(ctx context.Context, cycleState *
 			}
 		}
 
-		var totalAligned, totalRestricted int
 		rAllocated := corev1.ResourceList{}
 		for _, rInfo := range matched {
 			if err = restoreMatchedReservation(nodeInfo, rInfo, podInfoMap); err != nil {
@@ -167,12 +165,6 @@ func (pl *Plugin) prepareMatchReservationState(ctx context.Context, cycleState *
 			}
 
 			util.AddResourceList(rAllocated, rInfo.Allocated)
-			switch rInfo.GetAllocatePolicy() {
-			case schedulingv1alpha1.ReservationAllocatePolicyAligned:
-				totalAligned++
-			case schedulingv1alpha1.ReservationAllocatePolicyRestricted:
-				totalRestricted++
-			}
 		}
 
 		var pluginToRestoreState frameworkext.PluginToReservationRestoreStates
@@ -188,12 +180,10 @@ func (pl *Plugin) prepareMatchReservationState(ctx context.Context, cycleState *
 		if len(matched) > 0 || len(unmatched) > 0 {
 			index := atomic.AddInt32(&stateIndex, 1)
 			allNodeReservationStates[index-1] = &nodeReservationState{
-				nodeName:        node.Name,
-				matched:         matched,
-				podRequested:    podRequested,
-				rAllocated:      framework.NewResource(rAllocated),
-				totalAligned:    totalAligned,
-				totalRestricted: totalRestricted,
+				nodeName:     node.Name,
+				matched:      matched,
+				podRequested: podRequested,
+				rAllocated:   framework.NewResource(rAllocated),
 			}
 			allPluginToRestoreState[index-1] = pluginToRestoreState
 		}
