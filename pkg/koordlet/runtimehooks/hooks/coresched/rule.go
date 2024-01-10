@@ -49,12 +49,14 @@ func newParam(qosCfg *slov1alpha1.CPUQOSCfg, policy slov1alpha1.CPUQOSPolicy) Pa
 
 type Rule struct {
 	lock             sync.RWMutex
+	enable           bool // node-level switch
 	podQOSParams     map[extension.QoSClass]Param
 	kubeQOSPodParams map[corev1.PodQOSClass]Param
 }
 
 func newRule() *Rule {
 	return &Rule{
+		enable:           false,
 		podQOSParams:     make(map[extension.QoSClass]Param),
 		kubeQOSPodParams: make(map[corev1.PodQOSClass]Param),
 	}
@@ -66,10 +68,19 @@ func (r *Rule) IsInited() bool {
 	return len(r.podQOSParams) > 0 && len(r.kubeQOSPodParams) > 0
 }
 
+func (r *Rule) IsEnabled() bool {
+	r.lock.RLock()
+	defer r.lock.RUnlock()
+	return r.enable
+}
+
 // IsPodEnabled returns if the pod's core sched is enabled by the rule, and if the QoS-level core expeller is enabled.
 func (r *Rule) IsPodEnabled(podQoSClass extension.QoSClass, podKubeQOS corev1.PodQOSClass) (bool, bool) {
 	r.lock.RLock()
 	defer r.lock.RUnlock()
+	if !r.enable {
+		return false, false
+	}
 	if val, exist := r.podQOSParams[podQoSClass]; exist {
 		return val.IsPodEnabled, val.IsExpeller
 	}
@@ -93,11 +104,13 @@ func (r *Rule) IsKubeQOSCPUIdle(KubeQOS corev1.PodQOSClass) bool {
 func (r *Rule) Update(ruleNew *Rule) bool {
 	r.lock.Lock()
 	defer r.lock.Unlock()
-	isEqual := reflect.DeepEqual(r.podQOSParams, ruleNew.podQOSParams) &&
+	isEqual := r.enable == ruleNew.enable &&
+		reflect.DeepEqual(r.podQOSParams, ruleNew.podQOSParams) &&
 		reflect.DeepEqual(r.kubeQOSPodParams, ruleNew.kubeQOSPodParams)
 	if isEqual {
 		return false
 	}
+	r.enable = ruleNew.enable
 	r.podQOSParams = ruleNew.podQOSParams
 	r.kubeQOSPodParams = ruleNew.kubeQOSPodParams
 	return true
@@ -127,6 +140,7 @@ func (p *Plugin) parseRuleForNodeSLO(mergedNodeSLOIf interface{}) (bool, error) 
 	}
 
 	ruleNew := &Rule{
+		enable: lsrValue.IsPodEnabled || lsValue.IsPodEnabled || beValue.IsPodEnabled,
 		podQOSParams: map[extension.QoSClass]Param{
 			extension.QoSLSE: lsrValue,
 			extension.QoSLSR: lsrValue,
@@ -172,9 +186,9 @@ func (p *Plugin) ruleUpdateCb(target *statesinformer.CallbackTarget) error {
 		return nil
 	}
 
-	// TBD: try to enable the kernel feature if needed
-	if supported, msg := p.SystemSupported(); !supported {
-		klog.V(4).Infof("plugin %s is not supported by system, msg: %s", name, msg)
+	// check the kernel feature and enable if needed
+	if !p.SystemSupported() {
+		klog.V(4).Infof("plugin %s is not supported by system, msg: %s", name, p.supportedMsg)
 		return nil
 	}
 
@@ -184,7 +198,13 @@ func (p *Plugin) ruleUpdateCb(target *statesinformer.CallbackTarget) error {
 		return nil
 	}
 
-	if !p.InitCache(podMetas) {
+	if err := p.initSystem(p.rule.IsEnabled()); err != nil {
+		klog.Warningf("plugin %s failed to initialize system, err: %s", name, err)
+		return nil
+	}
+	klog.V(6).Infof("plugin %s initialize system successfully", name)
+
+	if !p.initCache(podMetas) {
 		klog.V(4).Infof("plugin %s aborted for cookie cache has not been initialized", name)
 		return nil
 	}

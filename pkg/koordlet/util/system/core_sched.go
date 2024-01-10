@@ -268,6 +268,32 @@ func (f *FakeCoreSchedExtended) Assign(pidTypeFrom CoreSchedScopeType, pidFrom u
 	return nil, nil
 }
 
+func IsCoreSchedSysctlSupported() bool {
+	return FileExists(GetProcSysFilePath(KernelSchedCore))
+}
+
+// IsCoreSchedSupported checks if the kernel supports the core scheduling.
+// Currently, it relies on the interfaces provided by the Anolis OS.
+func IsCoreSchedSupported() (bool, string) {
+	// kernel supports if:
+	// a) sysctl has sched_core,
+	// b) sched_features has SCHED_CORE/NO_SCHED_CORE
+	if IsCoreSchedSysctlSupported() {
+		return true, "sysctl supported"
+	}
+
+	isSchedFeaturesSuppported, msg := SchedFeatures.IsSupported("")
+	if !isSchedFeaturesSuppported { // sched_features unavailable
+		return false, msg
+	}
+	_, err := IsCoreSchedFeatureEnabled()
+	if err == nil {
+		return true, "sched_features supported"
+	}
+
+	return false, "not supported neither by sysctl nor by sched_features"
+}
+
 // EnableCoreSchedIfSupported checks if the core scheduling feature is enabled in the kernel sched_features.
 // If kernel supported (available in the latest Anolis OS), it tries to enable the core scheduling feature.
 // The core sched's kernel feature is known set in two places, if both of them are not found, the system is considered

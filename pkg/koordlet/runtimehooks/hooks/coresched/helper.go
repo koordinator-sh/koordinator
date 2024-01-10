@@ -236,38 +236,24 @@ func (p *Plugin) clearCookie(pids []uint32, groupID string, lastCookieID uint64)
 
 // getPodEnabledAndGroup gets whether the pod enables the core scheduling and the group ID if it does.
 func (p *Plugin) getPodEnabledAndGroup(podAnnotations, podLabels map[string]string, podKubeQOS corev1.PodQOSClass, podUID string) (bool, string) {
-	// if the pod enables/disables the core-sched explicitly
-	groupID, isPodDisabled := slov1alpha1.GetCoreSchedGroupID(podLabels)
-	if isPodDisabled != nil && *isPodDisabled { // pod disables
-		return false, groupID
-	}
-
+	groupID := slov1alpha1.GetCoreSchedGroupID(podLabels)
+	policy := slov1alpha1.GetCoreSchedPolicy(podLabels)
 	podQOS := extension.QoSNone
 	if podLabels != nil {
 		podQOS = extension.GetQoSClassByAttrs(podLabels, podAnnotations)
 	}
-	isQOSEnabled, isExpeller := p.rule.IsPodEnabled(podQOS, podKubeQOS)
-	groupID = p.getGroupID(groupID, podUID, isExpeller)
+	isEnabled, isExpeller := p.rule.IsPodEnabled(podQOS, podKubeQOS)
 
-	if isPodDisabled != nil { // assert *isPodDisabled == true
-		return true, groupID
-	}
-
-	// use the QoS-level rules
-	return isQOSEnabled, groupID
-}
-
-func (p *Plugin) getGroupID(baseGroupID string, podUID string, isExpeller bool) string {
-	var groupID string
-	if len(baseGroupID) > 0 {
-		groupID = baseGroupID
-	} else {
+	if policy == slov1alpha1.CoreSchedPolicyExclusive {
 		groupID = podUID
+	} else if policy == slov1alpha1.CoreSchedPolicyNone {
+		isEnabled = false
 	}
 	if isExpeller {
 		groupID += ExpellerGroupSuffix
 	}
-	return groupID
+
+	return isEnabled, groupID
 }
 
 func (p *Plugin) getContainerUID(podUID string, containerID string) string {
