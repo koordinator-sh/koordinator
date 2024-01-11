@@ -301,6 +301,59 @@ spec:
                             minimum: 1
                             type: integer
                         type: object
+                      networkQOS:
+                        properties:
+                          egressLimit:
+                            anyOf:
+                            - type: integer
+                            - type: string
+                            default: 100
+                            description: 'EgressLimit describes the maximum network
+                              bandwidth can be used in the egress direction, unit:
+                              bps(bytes per second), two expressions are supported，int
+                              and string, int: percentage based on total bandwidth，valid
+                              in 0-100 string: a specific network bandwidth value,
+                              eg: 50M.'
+                            x-kubernetes-int-or-string: true
+                          egressRequest:
+                            anyOf:
+                            - type: integer
+                            - type: string
+                            default: 0
+                            description: 'EgressRequest describes the minimum network
+                              bandwidth guaranteed in the egress direction. unit:
+                              bps(bytes per second), two expressions are supported，int
+                              and string, int: percentage based on total bandwidth，valid
+                              in 0-100 string: a specific network bandwidth value,
+                              eg: 50M.'
+                            x-kubernetes-int-or-string: true
+                          enable:
+                            type: boolean
+                          ingressLimit:
+                            anyOf:
+                            - type: integer
+                            - type: string
+                            default: 100
+                            description: 'IngressLimit describes the maximum network
+                              bandwidth can be used in the ingress direction, unit:
+                              bps(bytes per second), two expressions are supported，int
+                              and string, int: percentage based on total bandwidth，valid
+                              in 0-100 string: a specific network bandwidth value,
+                              eg: 50M.'
+                            x-kubernetes-int-or-string: true
+                          ingressRequest:
+                            anyOf:
+                            - type: integer
+                            - type: string
+                            default: 0
+                            description: 'IngressRequest describes the minimum network
+                              bandwidth guaranteed in the ingress direction. unit:
+                              bps(bytes per second), two expressions are supported，int
+                              and string, int: percentage based on total bandwidth，valid
+                              in 0-100 string: a specific network bandwidth value,
+                              eg: 50M.'
+                            x-kubernetes-int-or-string: true
+                        type: object
                       resctrlQOS:
                         description: ResctrlQOSCfg stores node-level config of resctrl
                           qos
@@ -525,6 +578,59 @@ spec:
                             maximum: 1000
                             minimum: 1
                             type: integer
+                        type: object
+                      networkQOS:
+                        properties:
+                          egressLimit:
+                            anyOf:
+                            - type: integer
+                            - type: string
+                            default: 100
+                            description: 'EgressLimit describes the maximum network
+                              bandwidth can be used in the egress direction, unit:
+                              bps(bytes per second), two expressions are supported，int
+                              and string, int: percentage based on total bandwidth，valid
+                              in 0-100 string: a specific network bandwidth value,
+                              eg: 50M.'
+                            x-kubernetes-int-or-string: true
+                          egressRequest:
+                            anyOf:
+                            - type: integer
+                            - type: string
+                            default: 0
+                            description: 'EgressRequest describes the minimum network
+                              bandwidth guaranteed in the egress direction. unit:
+                              bps(bytes per second), two expressions are supported，int
+                              and string, int: percentage based on total bandwidth，valid
+                              in 0-100 string: a specific network bandwidth value,
+                              eg: 50M.'
+                            x-kubernetes-int-or-string: true
+                          enable:
+                            type: boolean
+                          ingressLimit:
+                            anyOf:
+                            - type: integer
+                            - type: string
+                            default: 100
+                            description: 'IngressLimit describes the maximum network
+                              bandwidth can be used in the ingress direction, unit:
+                              bps(bytes per second), two expressions are supported，int
+                              and string, int: percentage based on total bandwidth，valid
+                              in 0-100 string: a specific network bandwidth value,
+                              eg: 50M.'
+                            x-kubernetes-int-or-string: true
+                          ingressRequest:
+                            anyOf:
+                            - type: integer
+                            - type: string
+                            default: 0
+                            description: 'IngressRequest describes the minimum network
+                              bandwidth guaranteed in the ingress direction. unit:
+                              bps(bytes per second), two expressions are supported，int
+                              and string, int: percentage based on total bandwidth，valid
+                              in 0-100 string: a specific network bandwidth value,
+                              eg: 50M.'
+                            x-kubernetes-int-or-string: true
                         type: object
                       resctrlQOS:
                         description: ResctrlQOSCfg stores node-level config of resctrl
@@ -751,6 +857,59 @@ spec:
                             minimum: 1
                             type: integer
                         type: object
+                      networkQOS:
+                        properties:
+                          egressLimit:
+                            anyOf:
+                            - type: integer
+                            - type: string
+                            default: 100
+                            description: 'EgressLimit describes the maximum network
+                              bandwidth can be used in the egress direction, unit:
+                              bps(bytes per second), two expressions are supported，int
+                              and string, int: percentage based on total bandwidth，valid
+                              in 0-100 string: a specific network bandwidth value,
+                              eg: 50M.'
+                            x-kubernetes-int-or-string: true
+                          egressRequest:
+                            anyOf:
+                            - type: integer
+                            - type: string
+                            default: 0
+                            description: 'EgressRequest describes the minimum network
+                              bandwidth guaranteed in the egress direction. unit:
+                              bps(bytes per second), two expressions are supported，int
+                              and string, int: percentage based on total bandwidth，valid
+                              in 0-100 string: a specific network bandwidth value,
+                              eg: 50M.'
+                            x-kubernetes-int-or-string: true
+                          enable:
+                            type: boolean
+                          ingressLimit:
+                            anyOf:
+                            - type: integer
+                            - type: string
+                            default: 100
+                            description: 'IngressLimit describes the maximum network
+                              bandwidth can be used in the ingress direction, unit:
+                              bps(bytes per second), two expressions are supported，int
+                              and string, int: percentage based on total bandwidth，valid
+                              in 0-100 string: a specific network bandwidth value,
+                              eg: 50M.'
+                            x-kubernetes-int-or-string: true
+                          ingressRequest:
+                            anyOf:
+                            - type: integer
+                            - type: string
+                            default: 0
+                            description: 'IngressRequest describes the minimum network
+                              bandwidth guaranteed in the ingress direction. unit:
+                              bps(bytes per second), two expressions are supported，int
+                              and string, int: percentage based on total bandwidth，valid
+                              in 0-100 string: a specific network bandwidth value,
+                              eg: 50M.'
+                            x-kubernetes-int-or-string: true
+                        type: object
                       resctrlQOS:
                         description: ResctrlQOSCfg stores node-level config of resctrl
                           qos
@@ -975,6 +1134,59 @@ spec:
                             maximum: 1000
                             minimum: 1
                             type: integer
+                        type: object
+                      networkQOS:
+                        properties:
+                          egressLimit:
+                            anyOf:
+                            - type: integer
+                            - type: string
+                            default: 100
+                            description: 'EgressLimit describes the maximum network
+                              bandwidth can be used in the egress direction, unit:
+                              bps(bytes per second), two expressions are supported，int
+                              and string, int: percentage based on total bandwidth，valid
+                              in 0-100 string: a specific network bandwidth value,
+                              eg: 50M.'
+                            x-kubernetes-int-or-string: true
+                          egressRequest:
+                            anyOf:
+                            - type: integer
+                            - type: string
+                            default: 0
+                            description: 'EgressRequest describes the minimum network
+                              bandwidth guaranteed in the egress direction. unit:
+                              bps(bytes per second), two expressions are supported，int
+                              and string, int: percentage based on total bandwidth，valid
+                              in 0-100 string: a specific network bandwidth value,
+                              eg: 50M.'
+                            x-kubernetes-int-or-string: true
+                          enable:
+                            type: boolean
+                          ingressLimit:
+                            anyOf:
+                            - type: integer
+                            - type: string
+                            default: 100
+                            description: 'IngressLimit describes the maximum network
+                              bandwidth can be used in the ingress direction, unit:
+                              bps(bytes per second), two expressions are supported，int
+                              and string, int: percentage based on total bandwidth，valid
+                              in 0-100 string: a specific network bandwidth value,
+                              eg: 50M.'
+                            x-kubernetes-int-or-string: true
+                          ingressRequest:
+                            anyOf:
+                            - type: integer
+                            - type: string
+                            default: 0
+                            description: 'IngressRequest describes the minimum network
+                              bandwidth guaranteed in the ingress direction. unit:
+                              bps(bytes per second), two expressions are supported，int
+                              and string, int: percentage based on total bandwidth，valid
+                              in 0-100 string: a specific network bandwidth value,
+                              eg: 50M.'
+                            x-kubernetes-int-or-string: true
                         type: object
                       resctrlQOS:
                         description: ResctrlQOSCfg stores node-level config of resctrl
@@ -1208,6 +1420,59 @@ spec:
                             minimum: 1
                             type: integer
                         type: object
+                      networkQOS:
+                        properties:
+                          egressLimit:
+                            anyOf:
+                            - type: integer
+                            - type: string
+                            default: 100
+                            description: 'EgressLimit describes the maximum network
+                              bandwidth can be used in the egress direction, unit:
+                              bps(bytes per second), two expressions are supported，int
+                              and string, int: percentage based on total bandwidth，valid
+                              in 0-100 string: a specific network bandwidth value,
+                              eg: 50M.'
+                            x-kubernetes-int-or-string: true
+                          egressRequest:
+                            anyOf:
+                            - type: integer
+                            - type: string
+                            default: 0
+                            description: 'EgressRequest describes the minimum network
+                              bandwidth guaranteed in the egress direction. unit:
+                              bps(bytes per second), two expressions are supported，int
+                              and string, int: percentage based on total bandwidth，valid
+                              in 0-100 string: a specific network bandwidth value,
+                              eg: 50M.'
+                            x-kubernetes-int-or-string: true
+                          enable:
+                            type: boolean
+                          ingressLimit:
+                            anyOf:
+                            - type: integer
+                            - type: string
+                            default: 100
+                            description: 'IngressLimit describes the maximum network
+                              bandwidth can be used in the ingress direction, unit:
+                              bps(bytes per second), two expressions are supported，int
+                              and string, int: percentage based on total bandwidth，valid
+                              in 0-100 string: a specific network bandwidth value,
+                              eg: 50M.'
+                            x-kubernetes-int-or-string: true
+                          ingressRequest:
+                            anyOf:
+                            - type: integer
+                            - type: string
+                            default: 0
+                            description: 'IngressRequest describes the minimum network
+                              bandwidth guaranteed in the ingress direction. unit:
+                              bps(bytes per second), two expressions are supported，int
+                              and string, int: percentage based on total bandwidth，valid
+                              in 0-100 string: a specific network bandwidth value,
+                              eg: 50M.'
+                            x-kubernetes-int-or-string: true
+                        type: object
                       resctrlQOS:
                         description: ResctrlQOSCfg stores node-level config of resctrl
                           qos
@@ -1308,6 +1573,15 @@ spec:
                       = minFreeKbytesFactor * nodeTotalMemory /10000
                     format: int64
                     type: integer
+                  totalNetworkBandwidth:
+                    anyOf:
+                    - type: integer
+                    - type: string
+                    description: 'TotalNetworkBandwidth indicates the overall network
+                      bandwidth, cluster manager can set this field, and default value
+                      taken from /sys/class/net/${NIC_NAME}/speed, unit: Mbps'
+                    pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                    x-kubernetes-int-or-string: true
                   watermarkScaleFactor:
                     description: /proc/sys/vm/watermark_scale_factor
                     format: int64
