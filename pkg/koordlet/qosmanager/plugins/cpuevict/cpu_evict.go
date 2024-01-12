@@ -238,7 +238,8 @@ func isBECPUUsageHighEnough(beCPUMilliUsage, beCPUMilliRealLimit float64, thresh
 			beCPUMilliRealLimit)
 		return false
 	}
-	if beCPUMilliUsage < 1000 {
+	if beCPUMilliRealLimit < 1000 {
+		klog.Warningf("cpuEvict by ResourceSatisfaction: CPURealLimit %v is less than 1 core", beCPUMilliRealLimit)
 		return true
 	}
 	cpuUsage := beCPUMilliUsage / beCPUMilliRealLimit
