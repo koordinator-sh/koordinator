@@ -162,7 +162,10 @@ func (s *podsInformer) syncPods() error {
 		// record pod container metrics
 		recordPodResourceMetrics(podMeta)
 	}
+	s.podRWMutex.Lock()
 	s.podMap = newPodMap
+	s.podRWMutex.Unlock()
+
 	s.podHasSynced.Store(true)
 	s.podUpdatedTime = time.Now()
 	klog.V(4).Infof("get pods success, len %d, time %s", len(s.podMap), s.podUpdatedTime.String())
