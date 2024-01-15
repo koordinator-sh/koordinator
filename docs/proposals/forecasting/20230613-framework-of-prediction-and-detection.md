@@ -133,8 +133,8 @@ Cons:
 
 **And here are the milestones we plan.**
 
-Koordiantor will use `Prometheus` API at first so that our forecasting model can be verified rapidly with current data source.
-In the future we will use `metric api` and Koordiantor metric-server for better performance, and use history data in 
+Koordinator will use `Prometheus` API at first so that our forecasting model can be verified rapidly with current data source.
+In the future we will use `metric api` and Koordinator metric-server for better performance, and use history data in 
 `Prometheus` only for warm up since it is an optional component.
 
 ![metric-apis](/docs/images/forecasting/metric-apis.svg)

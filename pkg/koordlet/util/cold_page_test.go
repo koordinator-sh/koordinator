@@ -13,6 +13,7 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 */
+
 package util
 
 import (
@@ -90,7 +91,7 @@ DirectMap1G:    261095424 kB`
 					helper.WriteProcSubFileContents(system.ProcMemInfoName, testMemInfo)
 				},
 			},
-			want:    uint64((263432804-256703236+2496524+2222452)<<10) - uint64(100),
+			want:    uint64((263432804-254391744)<<10) - uint64(100),
 			wantErr: false,
 		},
 		{

@@ -133,6 +133,14 @@ const (
 	//
 	// ColdPageCollector enables coldPageCollector feature of koordlet.
 	ColdPageCollector featuregate.Feature = "ColdPageCollector"
+
+	// HugePageReport enables hugepage collector feature of koordlet.
+	// This feature supports reporting of hugepages.
+	// The koord-scheduler will allocate hugepage information based on the user's hugepage request and add it to the Pod's annotations.
+	// Format: scheduling.koordinator.sh/resource-status: '{"numaNodeResources":[{"node":1,"resources":{"hugepages-1Gi":"50Gi"}}]}'.
+	// Backend applications can enable the hugepages based on the allocation results.
+	// For example, the CSI mounts the pre-allocated hugepages into the pod.
+	HugePageReport featuregate.Feature = "HugePageReport"
 )
 
 func init() {
@@ -161,6 +169,7 @@ var (
 		PSICollector:           {Default: false, PreRelease: featuregate.Alpha},
 		BlkIOReconcile:         {Default: false, PreRelease: featuregate.Alpha},
 		ColdPageCollector:      {Default: false, PreRelease: featuregate.Alpha},
+		HugePageReport:         {Default: false, PreRelease: featuregate.Alpha},
 	}
 )
 

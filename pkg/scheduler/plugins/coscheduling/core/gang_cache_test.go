@@ -39,7 +39,7 @@ import (
 
 var fakeTimeNowFn = func() time.Time {
 	t := time.Time{}
-	t.Add(100 * time.Second)
+	_ = t.Add(100 * time.Second)
 	return t
 }
 

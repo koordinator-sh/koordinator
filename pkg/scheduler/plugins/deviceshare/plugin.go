@@ -22,11 +22,11 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	k8sfeature "k8s.io/apiserver/pkg/util/feature"
-	"k8s.io/kubernetes/pkg/api/v1/resource"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
@@ -35,6 +35,8 @@ import (
 	schedulerconfig "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/validation"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/topologymanager"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/reservation"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
 
@@ -44,12 +46,6 @@ const (
 
 	// stateKey is the key in CycleState to pre-computed data.
 	stateKey = Name
-
-	// ErrMissingDevice when node does not have Device.
-	ErrMissingDevice = "node(s) missing Device"
-
-	// ErrInsufficientDevices when node can't satisfy Pod's requested resource.
-	ErrInsufficientDevices = "Insufficient Devices"
 )
 
 var (
@@ -71,25 +67,33 @@ var (
 )
 
 type Plugin struct {
-	handle          framework.Handle
+	handle          frameworkext.ExtendedHandle
 	nodeDeviceCache *nodeDeviceCache
-	allocator       Allocator
 	scorer          *resourceAllocationScorer
 }
 
 type preFilterState struct {
 	skip               bool
+	podRequests        map[schedulingv1alpha1.DeviceType]corev1.ResourceList
+	hints              apiext.DeviceAllocateHints
+	hintSelectors      map[schedulingv1alpha1.DeviceType][2]labels.Selector
+	jointAllocate      *apiext.DeviceJointAllocate
 	allocationResult   apiext.DeviceAllocations
-	podRequests        corev1.ResourceList
 	preemptibleDevices map[string]map[schedulingv1alpha1.DeviceType]deviceResources
 	preemptibleInRRs   map[string]map[types.UID]map[schedulingv1alpha1.DeviceType]deviceResources
+
+	hasReservationAffinity bool
 }
 
 func (s *preFilterState) Clone() framework.StateData {
 	ns := &preFilterState{
-		skip:             s.skip,
-		allocationResult: s.allocationResult,
-		podRequests:      s.podRequests,
+		skip:                   s.skip,
+		podRequests:            s.podRequests,
+		hints:                  s.hints,
+		hintSelectors:          s.hintSelectors,
+		jointAllocate:          s.jointAllocate,
+		allocationResult:       s.allocationResult,
+		hasReservationAffinity: s.hasReservationAffinity,
 	}
 
 	preemptibleDevices := map[string]map[schedulingv1alpha1.DeviceType]deviceResources{}
@@ -144,41 +148,12 @@ func (p *Plugin) EventsToRegister() []framework.ClusterEvent {
 }
 
 func (p *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod) (*framework.PreFilterResult, *framework.Status) {
-	state := &preFilterState{
-		skip:               true,
-		preemptibleDevices: map[string]map[schedulingv1alpha1.DeviceType]deviceResources{},
-		preemptibleInRRs:   map[string]map[types.UID]map[schedulingv1alpha1.DeviceType]deviceResources{},
-	}
-
-	var status *framework.Status
-	state.skip, state.podRequests, status = PreparePod(pod)
+	state, status := preparePod(pod)
 	if !status.IsSuccess() {
 		return nil, status
 	}
 	cycleState.Write(stateKey, state)
 	return nil, nil
-}
-
-func PreparePod(pod *corev1.Pod) (skip bool, requests corev1.ResourceList, status *framework.Status) {
-	podRequests, _ := resource.PodRequestsAndLimits(pod)
-	podRequests = quotav1.RemoveZeros(podRequests)
-
-	skip = true
-	requests = corev1.ResourceList{}
-
-	for _, supportedResourceNames := range DeviceResourceNames {
-		deviceRequest := quotav1.Mask(podRequests, supportedResourceNames)
-		if quotav1.IsZero(deviceRequest) {
-			continue
-		}
-		combination, err := ValidateDeviceRequest(deviceRequest)
-		if err != nil {
-			return false, nil, framework.NewStatus(framework.Error, err.Error())
-		}
-		requests = quotav1.Add(requests, ConvertDeviceRequest(deviceRequest, combination))
-		skip = false
-	}
-	return
 }
 
 func (p *Plugin) PreFilterExtensions() framework.PreFilterExtensions {
@@ -198,7 +173,8 @@ func (p *Plugin) AddPod(ctx context.Context, cycleState *framework.CycleState, p
 		return nil
 	}
 
-	nd := p.nodeDeviceCache.getNodeDevice(podInfoToAdd.Pod.Spec.NodeName, false)
+	node := nodeInfo.Node()
+	nd := p.nodeDeviceCache.getNodeDevice(node.Name, false)
 	if nd == nil {
 		return nil
 	}
@@ -211,25 +187,33 @@ func (p *Plugin) AddPod(ctx context.Context, cycleState *framework.CycleState, p
 		return nil
 	}
 
-	boundReservation, err := apiext.GetReservationAllocated(podInfoToAdd.Pod)
-	if err != nil {
-		return framework.AsStatus(err)
+	rInfo := reservation.GetReservationCache().GetReservationInfoByPod(podInfoToAdd.Pod, node.Name)
+	if rInfo == nil {
+		nominator := p.handle.GetReservationNominator()
+		if nominator != nil {
+			rInfo = nominator.GetNominatedReservation(podInfoToAdd.Pod, node.Name)
+		}
 	}
-	if boundReservation == nil || boundReservation.UID == "" {
-		preemptible := subtractAllocated(state.preemptibleDevices[podInfoToAdd.Pod.Spec.NodeName], podAllocated)
-		if len(preemptible) == 0 {
-			delete(state.preemptibleDevices, podInfoToAdd.Pod.Spec.NodeName)
+	if rInfo == nil {
+		preemptibleDevices := state.preemptibleDevices[node.Name]
+		if preemptibleDevices == nil {
+			preemptibleDevices = map[schedulingv1alpha1.DeviceType]deviceResources{}
+			state.preemptibleDevices[node.Name] = preemptibleDevices
 		}
+		state.preemptibleDevices[node.Name] = subtractAllocated(preemptibleDevices, podAllocated, false)
 	} else {
-		preemptibleInRRs := state.preemptibleInRRs[podInfoToAdd.Pod.Spec.NodeName]
-		preemptible := preemptibleInRRs[boundReservation.UID]
-		preemptible = subtractAllocated(preemptible, podAllocated)
-		if len(preemptible) == 0 {
-			delete(preemptibleInRRs, boundReservation.UID)
+		preemptibleInRRs := state.preemptibleInRRs[node.Name]
+		if preemptibleInRRs == nil {
+			preemptibleInRRs = map[types.UID]map[schedulingv1alpha1.DeviceType]deviceResources{}
+			state.preemptibleInRRs[node.Name] = preemptibleInRRs
 		}
-		if len(preemptibleInRRs) == 0 {
-			delete(state.preemptibleInRRs, podInfoToAdd.Pod.Spec.NodeName)
+		preemptible := preemptibleInRRs[rInfo.UID()]
+		if preemptible == nil {
+			preemptible = map[schedulingv1alpha1.DeviceType]deviceResources{}
+			preemptibleInRRs[rInfo.UID()] = preemptible
 		}
+		preemptible = subtractAllocated(preemptible, podAllocated, false)
+		preemptibleInRRs[rInfo.UID()] = preemptible
 	}
 
 	return nil
@@ -248,7 +232,8 @@ func (p *Plugin) RemovePod(ctx context.Context, cycleState *framework.CycleState
 		return nil
 	}
 
-	nd := p.nodeDeviceCache.getNodeDevice(podInfoToRemove.Pod.Spec.NodeName, false)
+	node := nodeInfo.Node()
+	nd := p.nodeDeviceCache.getNodeDevice(node.Name, false)
 	if nd == nil {
 		return nil
 	}
@@ -261,21 +246,32 @@ func (p *Plugin) RemovePod(ctx context.Context, cycleState *framework.CycleState
 		return nil
 	}
 
-	boundReservation, err := apiext.GetReservationAllocated(podInfoToRemove.Pod)
-	if err != nil {
-		return framework.AsStatus(err)
+	rInfo := reservation.GetReservationCache().GetReservationInfoByPod(podInfoToRemove.Pod, node.Name)
+	if rInfo == nil {
+		nominator := p.handle.GetReservationNominator()
+		if nominator != nil {
+			rInfo = nominator.GetNominatedReservation(podInfoToRemove.Pod, node.Name)
+		}
 	}
-	if boundReservation == nil || boundReservation.UID == "" {
-		preemptibleDevices := state.preemptibleDevices[podInfoToRemove.Pod.Spec.NodeName]
-		state.preemptibleDevices[podInfoToRemove.Pod.Spec.NodeName] = appendAllocated(preemptibleDevices, podAllocated)
+	if rInfo == nil {
+		preemptibleDevices := state.preemptibleDevices[node.Name]
+		if preemptibleDevices == nil {
+			preemptibleDevices = map[schedulingv1alpha1.DeviceType]deviceResources{}
+			state.preemptibleDevices[node.Name] = preemptibleDevices
+		}
+		state.preemptibleDevices[node.Name] = appendAllocated(preemptibleDevices, podAllocated)
 	} else {
-		preemptibleInRRs := state.preemptibleInRRs[podInfoToRemove.Pod.Spec.NodeName]
+		preemptibleInRRs := state.preemptibleInRRs[node.Name]
 		if preemptibleInRRs == nil {
 			preemptibleInRRs = map[types.UID]map[schedulingv1alpha1.DeviceType]deviceResources{}
-			state.preemptibleInRRs[podInfoToRemove.Pod.Spec.NodeName] = preemptibleInRRs
+			state.preemptibleInRRs[node.Name] = preemptibleInRRs
 		}
-		preemptible := preemptibleInRRs[boundReservation.UID]
-		preemptibleInRRs[boundReservation.UID] = appendAllocated(preemptible, podAllocated)
+		preemptible := preemptibleInRRs[rInfo.UID()]
+		if preemptible == nil {
+			preemptible = map[schedulingv1alpha1.DeviceType]deviceResources{}
+			preemptibleInRRs[rInfo.UID()] = preemptible
+		}
+		preemptibleInRRs[rInfo.UID()] = appendAllocated(preemptible, podAllocated)
 	}
 
 	return nil
@@ -304,9 +300,20 @@ func (p *Plugin) Filter(ctx context.Context, cycleState *framework.CycleState, p
 	restoreState := reservationRestoreState.getNodeState(node.Name)
 	preemptible := appendAllocated(nil, restoreState.mergedUnmatchedUsed, state.preemptibleDevices[node.Name])
 
+	store := topologymanager.GetStore(cycleState)
+	affinity := store.GetAffinity(node.Name)
+
+	allocator := &AutopilotAllocator{
+		state:      state,
+		nodeDevice: nodeDeviceInfo,
+		node:       node,
+		pod:        pod,
+		numaNodes:  affinity.NUMANodeAffinity,
+	}
+
 	nodeDeviceInfo.lock.RLock()
 	defer nodeDeviceInfo.lock.RUnlock()
-	allocateResult, status := p.tryAllocateFromReservation(state, restoreState, restoreState.matched, nodeDeviceInfo, node.Name, pod, preemptible, false, nil)
+	allocateResult, status := p.tryAllocateFromReservation(allocator, state, restoreState, restoreState.matched, node, preemptible, state.hasReservationAffinity)
 	if !status.IsSuccess() {
 		return status
 	}
@@ -315,11 +322,11 @@ func (p *Plugin) Filter(ctx context.Context, cycleState *framework.CycleState, p
 	}
 
 	preemptible = appendAllocated(preemptible, restoreState.mergedMatchedAllocatable)
-	allocateResult, err := p.allocator.Allocate(node.Name, pod, state.podRequests, nodeDeviceInfo, nil, nil, nil, preemptible, nil)
-	if len(allocateResult) > 0 && err == nil {
+	_, status = allocator.Allocate(nil, nil, nil, preemptible)
+	if status.IsSuccess() {
 		return nil
 	}
-	return framework.NewStatus(framework.Unschedulable, ErrInsufficientDevices)
+	return status
 }
 
 func (p *Plugin) FilterReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, reservationInfo *frameworkext.ReservationInfo, nodeName string) *framework.Status {
@@ -329,6 +336,11 @@ func (p *Plugin) FilterReservation(ctx context.Context, cycleState *framework.Cy
 	}
 	if state.skip {
 		return nil
+	}
+
+	nodeInfo, err := p.handle.SnapshotSharedLister().NodeInfos().Get(nodeName)
+	if err != nil {
+		return framework.AsStatus(err)
 	}
 
 	reservationRestoreState := getReservationRestoreState(cycleState)
@@ -350,19 +362,24 @@ func (p *Plugin) FilterReservation(ctx context.Context, cycleState *framework.Cy
 		return nil
 	}
 
+	store := topologymanager.GetStore(cycleState)
+	affinity := store.GetAffinity(nodeInfo.Node().Name)
+
+	allocator := &AutopilotAllocator{
+		state:      state,
+		nodeDevice: nodeDeviceInfo,
+		node:       nodeInfo.Node(),
+		pod:        pod,
+		numaNodes:  affinity.NUMANodeAffinity,
+	}
+
 	preemptible := appendAllocated(nil, restoreState.mergedUnmatchedUsed, state.preemptibleDevices[nodeName])
 
 	nodeDeviceInfo.lock.RLock()
 	defer nodeDeviceInfo.lock.RUnlock()
 
-	allocateResult, status := p.tryAllocateFromReservation(state, restoreState, restoreState.matched[allocIndex:allocIndex+1], nodeDeviceInfo, nodeName, pod, preemptible, true, nil)
-	if !status.IsSuccess() {
-		return status
-	}
-	if len(allocateResult) == 0 {
-		return framework.NewStatus(framework.Unschedulable, ErrInsufficientDevices)
-	}
-	return nil
+	_, status = p.tryAllocateFromReservation(allocator, state, restoreState, restoreState.matched[allocIndex:allocIndex+1], nodeInfo.Node(), preemptible, true)
+	return status
 }
 
 func (p *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) *framework.Status {
@@ -374,9 +391,26 @@ func (p *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState, 
 		return nil
 	}
 
+	nodeInfo, err := p.handle.SnapshotSharedLister().NodeInfos().Get(nodeName)
+	if err != nil {
+		return framework.AsStatus(err)
+	}
+
 	nodeDeviceInfo := p.nodeDeviceCache.getNodeDevice(nodeName, false)
 	if nodeDeviceInfo == nil {
 		return nil
+	}
+
+	store := topologymanager.GetStore(cycleState)
+	affinity := store.GetAffinity(nodeInfo.Node().Name)
+
+	allocator := &AutopilotAllocator{
+		state:      state,
+		nodeDevice: nodeDeviceInfo,
+		node:       nodeInfo.Node(),
+		pod:        pod,
+		scorer:     p.scorer,
+		numaNodes:  affinity.NUMANodeAffinity,
 	}
 
 	reservationRestoreState := getReservationRestoreState(cycleState)
@@ -387,19 +421,18 @@ func (p *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState, 
 	defer nodeDeviceInfo.lock.Unlock()
 
 	result, status := p.allocateWithNominatedReservation(
-		cycleState, state, restoreState, nodeDeviceInfo, nodeName, pod, preemptible, p.scorer)
+		allocator, cycleState, state, restoreState, nodeInfo.Node(), pod, preemptible)
 	if !status.IsSuccess() {
 		return status
 	}
-	var err error
 	if len(result) == 0 {
 		preemptible = appendAllocated(preemptible, restoreState.mergedMatchedAllocatable)
-		result, err = p.allocator.Allocate(nodeName, pod, state.podRequests, nodeDeviceInfo, nil, nil, nil, preemptible, p.scorer)
+		result, status = allocator.Allocate(nil, nil, nil, preemptible)
+		if !status.IsSuccess() {
+			return status
+		}
 	}
-	if err != nil || len(result) == 0 {
-		return framework.NewStatus(framework.Unschedulable, ErrInsufficientDevices)
-	}
-	p.allocator.Reserve(pod, nodeDeviceInfo, result)
+	nodeDeviceInfo.updateCacheUsed(result, pod, true)
 	state.allocationResult = result
 	return nil
 }
@@ -421,7 +454,7 @@ func (p *Plugin) Unreserve(ctx context.Context, cycleState *framework.CycleState
 	nodeDeviceInfo.lock.Lock()
 	defer nodeDeviceInfo.lock.Unlock()
 
-	p.allocator.Unreserve(pod, nodeDeviceInfo, state.allocationResult)
+	nodeDeviceInfo.updateCacheUsed(state.allocationResult, pod, false)
 	state.allocationResult = nil
 }
 
@@ -533,16 +566,9 @@ func New(obj runtime.Object, handle framework.Handle) (framework.Plugin, error) 
 	registerPodEventHandler(deviceCache, handle.SharedInformerFactory(), extendedHandle.KoordinatorSharedInformerFactory())
 	go deviceCache.gcNodeDevice(context.TODO(), handle.SharedInformerFactory(), defaultGCPeriod)
 
-	allocatorOpts := AllocatorOptions{
-		SharedInformerFactory:      extendedHandle.SharedInformerFactory(),
-		KoordSharedInformerFactory: extendedHandle.KoordinatorSharedInformerFactory(),
-	}
-	allocator := NewAllocator(args.Allocator, allocatorOpts)
-
 	return &Plugin{
-		handle:          handle,
+		handle:          extendedHandle,
 		nodeDeviceCache: deviceCache,
-		allocator:       allocator,
 		scorer:          scorePlugin(args),
 	}, nil
 }

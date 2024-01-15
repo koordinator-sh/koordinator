@@ -766,7 +766,7 @@ func (s *nodeTopoInformer) calTopologyZoneList(nodeCPUInfo *metriccache.NodeCPUI
 	}
 	nodeNUMAInfo, ok := nodeNUMAInfoRaw.(*koordletutil.NodeNUMAInfo)
 	if !ok {
-		klog.Fatalf("type error, expect %T， but got %T", koordletutil.NodeNUMAInfo{}, nodeNUMAInfoRaw)
+		klog.Fatalf("type error, expect %T, but got %T", koordletutil.NodeNUMAInfo{}, nodeNUMAInfoRaw)
 	}
 	nodeNum := len(nodeNUMAInfo.NUMAInfos)
 
@@ -785,18 +785,42 @@ func (s *nodeTopoInformer) calTopologyZoneList(nodeCPUInfo *metriccache.NodeCPUI
 		} else {
 			cpuQuant = resource.MustParse("0")
 		}
+
+		hugepage2Mbyte := uint64(0)
+		hugepage1Gbyte := uint64(0)
+		hugepage2MQuant := *resource.NewQuantity(0, resource.BinarySI)
+		hugepage1GQuant := *resource.NewQuantity(0, resource.BinarySI)
+
+		if features.DefaultKoordletFeatureGate.Enabled(features.HugePageReport) {
+			hugepageInfos, ok := nodeNUMAInfo.HugePagesMap[int32(i)]
+			if ok {
+				if _, ok := hugepageInfos[koordletutil.Hugepage2Mkbyte]; ok {
+					hugepage2Mbyte = hugepageInfos[koordletutil.Hugepage2Mkbyte].MemTotalBytes()
+					hugepage2MQuant = *resource.NewQuantity(int64(hugepage2Mbyte), resource.BinarySI)
+				}
+				if _, ok := hugepageInfos[koordletutil.Hugepage1Gkbyte]; ok {
+					hugepage1Gbyte = hugepageInfos[koordletutil.Hugepage1Gkbyte].MemTotalBytes()
+					hugepage1GQuant = *resource.NewQuantity(int64(hugepage1Gbyte), resource.BinarySI)
+				}
+			}
+		}
+
 		var memQuant resource.Quantity
 		memInfo, ok := nodeNUMAInfo.MemInfoMap[int32(i)]
 		if ok {
-			memQuant = *resource.NewQuantity(int64(memInfo.MemTotalBytes()), resource.BinarySI)
+			memQuant = *resource.NewQuantity(int64(memInfo.MemTotalBytes()-hugepage2Mbyte-hugepage1Gbyte), resource.BinarySI)
 		} else {
-			memQuant = resource.MustParse("0")
+			memQuant = *resource.NewQuantity(0, resource.BinarySI)
 		}
+
 		zoneName := util.GenNodeZoneName(i)
 		zoneResourceList[zoneName] = corev1.ResourceList{
-			corev1.ResourceCPU:    cpuQuant,
-			corev1.ResourceMemory: memQuant,
+			corev1.ResourceCPU:                     cpuQuant,
+			corev1.ResourceMemory:                  memQuant,
+			corev1.ResourceHugePagesPrefix + "2Mi": hugepage2MQuant,
+			corev1.ResourceHugePagesPrefix + "1Gi": hugepage1GQuant,
 		}
+
 	}
 	zoneList := util.ZoneResourceListToZoneList(zoneResourceList)
 

@@ -27,6 +27,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
+	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
@@ -285,5 +286,55 @@ func TestPredictorCollectors(t *testing.T) {
 		defer Register(nil)
 		RecordNodePredictedResourceReclaimable(string(corev1.ResourceCPU), UnitCore, "testPredictor", float64(testNodeReclaimable.Cpu().MilliValue())/1000)
 		RecordNodePredictedResourceReclaimable(string(corev1.ResourceMemory), UnitByte, "testPredictor", float64(testNodeReclaimable.Memory().Value()))
+	})
+}
+
+func TestCoreSchedCollector(t *testing.T) {
+	testCoreSchedGroup := "test-core-sched-group"
+	testCoreSchedCookie := uint64(2000000000)
+	testingNode := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   "test-node",
+			Labels: map[string]string{},
+		},
+		Status: corev1.NodeStatus{
+			Allocatable: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("100"),
+				corev1.ResourceMemory: resource.MustParse("200Gi"),
+				apiext.BatchCPU:       resource.MustParse("50000"),
+				apiext.BatchMemory:    resource.MustParse("80Gi"),
+			},
+			Capacity: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("100"),
+				corev1.ResourceMemory: resource.MustParse("200Gi"),
+				apiext.BatchCPU:       resource.MustParse("50000"),
+				apiext.BatchMemory:    resource.MustParse("80Gi"),
+			},
+		},
+	}
+	testingPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-pod",
+			Namespace: "test-ns",
+			UID:       "xxxxxx",
+			Labels: map[string]string{
+				slov1alpha1.LabelCoreSchedGroupID: testCoreSchedGroup,
+			},
+		},
+		Status: corev1.PodStatus{
+			ContainerStatuses: []corev1.ContainerStatus{
+				{
+					Name:        "test-container",
+					ContainerID: "containerd://ccccccccc",
+				},
+			},
+		},
+	}
+	t.Run("test", func(t *testing.T) {
+		Register(testingNode)
+		defer Register(nil)
+		RecordContainerCoreSchedCookie(testingPod.Namespace, testingPod.Name, string(testingPod.UID),
+			testingPod.Status.ContainerStatuses[0].Name, testingPod.Status.ContainerStatuses[0].ContainerID,
+			testCoreSchedGroup, testCoreSchedCookie)
 	})
 }

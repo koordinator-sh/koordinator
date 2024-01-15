@@ -21,6 +21,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/utils/pointer"
 
 	ext "github.com/koordinator-sh/koordinator/apis/extension"
@@ -287,6 +289,9 @@ func Test_cpusetPlugin_SetContainerCPUSet(t *testing.T) {
 					NUMANodeResources: []ext.NUMANodeResource{
 						{
 							Node: 0,
+							Resources: map[corev1.ResourceName]resource.Quantity{
+								corev1.ResourceCPU: *resource.NewQuantity(2, resource.DecimalSI),
+							},
 						},
 					},
 				},
@@ -489,7 +494,7 @@ func TestUnsetPodCPUQuota(t *testing.T) {
 			if podCtx == nil {
 				return
 			}
-			e := resourceexecutor.NewResourceUpdateExecutor()
+			e := resourceexecutor.NewTestResourceExecutor()
 			stop := make(chan struct{})
 			defer func() {
 				close(stop)

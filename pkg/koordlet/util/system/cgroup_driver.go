@@ -49,6 +49,7 @@ const (
 
 	RuntimeTypeDocker     = "docker"
 	RuntimeTypeContainerd = "containerd"
+	RuntimeTypePouch      = "pouch"
 	RuntimeTypeUnknown    = "unknown"
 )
 
@@ -103,6 +104,8 @@ var cgroupPathFormatterInSystemd = Formatter{
 			return RuntimeTypeDocker, fmt.Sprintf("docker-%s.scope", hashID[1]), nil
 		case RuntimeTypeContainerd:
 			return RuntimeTypeContainerd, fmt.Sprintf("cri-containerd-%s.scope", hashID[1]), nil
+		case RuntimeTypePouch:
+			return RuntimeTypePouch, fmt.Sprintf("pouch-%s.scope", hashID[1]), nil
 		default:
 			return RuntimeTypeUnknown, "", fmt.Errorf("unknown container protocol %s", id)
 		}
@@ -179,10 +182,8 @@ var cgroupPathFormatterInCgroupfs = Formatter{
 		if len(hashID) < 2 {
 			return RuntimeTypeUnknown, "", fmt.Errorf("parse container id %s failed", id)
 		}
-		if hashID[0] == RuntimeTypeDocker {
-			return RuntimeTypeDocker, fmt.Sprintf("%s", hashID[1]), nil
-		} else if hashID[0] == RuntimeTypeContainerd {
-			return RuntimeTypeContainerd, fmt.Sprintf("%s", hashID[1]), nil
+		if hashID[0] == RuntimeTypeDocker || hashID[0] == RuntimeTypeContainerd || hashID[0] == RuntimeTypePouch {
+			return hashID[0], fmt.Sprintf("%s", hashID[1]), nil
 		} else {
 			return RuntimeTypeUnknown, "", fmt.Errorf("unknown container protocol %s", id)
 		}

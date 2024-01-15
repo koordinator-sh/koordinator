@@ -26,6 +26,7 @@ import (
 
 	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/hooks/batchresource"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/hooks/coresched"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/hooks/cpunormalization"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/hooks/cpuset"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/hooks/gpu"
@@ -66,6 +67,12 @@ const (
 	// owner: @saintube @zwzhang0107
 	// alpha: v1.4
 	CPUNormalization featuregate.Feature = "CPUNormalization"
+
+	// CoreSched manages Linux Core Scheduling cookies for containers who enable the core sched.
+	//
+	// owner: @saintube @zwzhang0107
+	// alpha: v1.4
+	CoreSched featuregate.Feature = "CoreSched"
 )
 
 var (
@@ -75,6 +82,7 @@ var (
 		GPUEnvInject:     {Default: false, PreRelease: featuregate.Alpha},
 		BatchResource:    {Default: true, PreRelease: featuregate.Beta},
 		CPUNormalization: {Default: false, PreRelease: featuregate.Alpha},
+		CoreSched:        {Default: false, PreRelease: featuregate.Alpha},
 	}
 
 	runtimeHookPlugins = map[featuregate.Feature]HookPlugin{
@@ -83,6 +91,7 @@ var (
 		GPUEnvInject:     gpu.Object(),
 		BatchResource:    batchresource.Object(),
 		CPUNormalization: cpunormalization.Object(),
+		CoreSched:        coresched.Object(),
 	}
 )
 

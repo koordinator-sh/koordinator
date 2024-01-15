@@ -28,6 +28,7 @@ import (
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 )
 
 func TestContainerContext_FromNri(t *testing.T) {
@@ -205,6 +206,68 @@ func TestContainerContext_NriDone(t *testing.T) {
 			}
 			if !reflect.DeepEqual(got1, tt.want1) {
 				t.Errorf("Protocol2NRI() got1 = %v, want %v", got1, tt.want1)
+			}
+		})
+	}
+}
+
+func Test_getContainerID(t *testing.T) {
+	type args struct {
+		podAnnotations           map[string]string
+		containerUID             string
+		systemConfDefaultRuntime string
+	}
+	tests := []struct {
+		name string
+		args args
+		want string
+	}{
+		{
+			name: "default is containerd",
+			args: args{
+				podAnnotations:           nil,
+				containerUID:             "testContainerID",
+				systemConfDefaultRuntime: system.RuntimeTypeContainerd,
+			},
+			want: "containerd://testContainerID",
+		},
+		{
+			name: "default is pouch",
+			args: args{
+				podAnnotations:           nil,
+				containerUID:             "testContainerID",
+				systemConfDefaultRuntime: system.RuntimeTypePouch,
+			},
+			want: "pouch://testContainerID",
+		},
+		{
+			name: "default is docker",
+			args: args{
+				podAnnotations:           nil,
+				containerUID:             "testContainerID",
+				systemConfDefaultRuntime: system.RuntimeTypeDocker,
+			},
+			want: "docker://testContainerID",
+		},
+		{
+			name: "docker in pod annotation",
+			args: args{
+				podAnnotations: map[string]string{
+					"io.kubernetes.docker.type": "true",
+				},
+				containerUID:             "testContainerID",
+				systemConfDefaultRuntime: system.RuntimeTypePouch,
+			},
+			want: "docker://testContainerID",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			system.Conf = &system.Config{
+				DefaultRuntimeType: tt.args.systemConfDefaultRuntime,
+			}
+			if got := getContainerID(tt.args.podAnnotations, tt.args.containerUID); got != tt.want {
+				t.Errorf("getContainerID() = %v, want %v", got, tt.want)
 			}
 		})
 	}

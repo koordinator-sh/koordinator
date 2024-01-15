@@ -170,6 +170,7 @@ func readCgroupAndParseUint64(parentDir string, r sysutil.Resource) (uint64, err
 
 // ReadCgroupAndParseInt32Slice reads the given cgroup content and parses it into an int32 slice.
 // e.g. content: "1\n23\n0\n4\n56789" -> []int32{ 1, 23, 0, 4, 56789 }
+// TODO: refactor via Generics.
 func readCgroupAndParseInt32Slice(parentDir string, r sysutil.Resource) ([]int32, error) {
 	s, err := cgroupFileRead(parentDir, r)
 	if err != nil {

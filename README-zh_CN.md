@@ -61,7 +61,7 @@ Koordinator 社区遵照[行为守则](CODE_OF_CONDUCT.md)。我们鼓励每个�
 - 社区双周会（中文）：
   - 周二 19:30 GMT+8 (北京时间)
   - [钉钉会议链接](https://meeting.dingtalk.com/j/cgTTojEI8Zy)
-  - [议题&记录文档](https://shimo.im/docs/m4kMLdgO1LIma9qD)
+  - [议题&记录文档](https://alidocs.dingtalk.com/document/edit?docKey=oJGq769vBG4WnAKe&dentryKey=paP7wO3nXFnLzMAa&type=d)
 - Slack( English ): [koordinator channel](https://kubernetes.slack.com/channels/koordinator) in Kubernetes workspace
 - 钉钉( Chinese ): 搜索群ID `33383887`或者扫描二维码加入
 

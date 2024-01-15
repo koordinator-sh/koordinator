@@ -33,7 +33,7 @@ func fieldAvgOfMetricList(metricsList interface{}, aggregateParam AggregateParam
 
 	metrics := reflect.ValueOf(metricsList)
 	if metrics.Len() == 0 {
-		return 0, fmt.Errorf("metrics input is empty")
+		return 0, fmt.Errorf("metric input is empty")
 	}
 
 	for i := 0; i < metrics.Len(); i++ {

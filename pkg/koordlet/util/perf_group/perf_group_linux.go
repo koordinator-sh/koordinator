@@ -372,6 +372,7 @@ func (p *perfCollector) collect(ch chan perfValue) error {
 
 	for i := 0; i < int(header.Nr); i++ {
 		v := perfValuePool.Get().(*value)
+		defer perfValuePool.Put(v)
 		value := &perfValue{}
 		if err := binary.Read(reader, binary.LittleEndian, v); err != nil {
 			return err

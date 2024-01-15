@@ -37,6 +37,9 @@ endif
 SHELL = /usr/bin/env bash -o pipefail
 .SHELLFLAGS = -ec
 
+LINT_TIMEOUT ?= 15m
+DOCKER_BUILDER ?= build # 'buildx build'
+
 .PHONY: all
 all: build
 
@@ -83,7 +86,7 @@ lint: lint-go lint-license ## Lint all code.
 
 .PHONY: lint-go
 lint-go: golangci-lint ## Lint Go code.
-	$(GOLANGCI_LINT) run -v --timeout=10m
+	$(GOLANGCI_LINT) run -v --timeout=$(LINT_TIMEOUT)
 
 .PHONY: lint-license
 lint-license:
@@ -91,7 +94,7 @@ lint-license:
 
 .PHONY: test
 test: manifests generate fmt vet envtest libpfm ## Run tests.
-	@KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" agent_mode=$(AGENT_MODE) go test $(PACKAGES) -race -covermode atomic -coverprofile cover.out 
+	@KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" agent_mode=$(AGENT_MODE) go test $(PACKAGES) -race -covermode atomic -coverprofile cover.out
 	@KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" agent_mode=$(AGENT_MODE) go test $(PERFGROUPPACKAGE) -covermode atomic -coverprofile tmp.out && cat tmp.out | tail -n +2 >> cover.out && rm tmp.out
 
 .PHONY: fast-test
@@ -129,19 +132,19 @@ docker-build: test docker-build-koordlet docker-build-koord-manager docker-build
 
 .PHONY: docker-build-koordlet
 docker-build-koordlet: ## Build docker image with the koordlet.
-	docker build --pull -t ${KOORDLET_IMG} -f docker/koordlet.dockerfile .
+	docker ${DOCKER_BUILDER} ${DOCKER_BUILD_ARGS} --pull -t ${KOORDLET_IMG} -f docker/koordlet.dockerfile .
 
 .PHONY: docker-build-koord-manager
 docker-build-koord-manager: ## Build docker image with the koord-manager.
-	docker build --pull -t ${KOORD_MANAGER_IMG} -f docker/koord-manager.dockerfile .
+	docker $(DOCKER_BUILDER) ${DOCKER_BUILD_ARGS} --pull -t ${KOORD_MANAGER_IMG} -f docker/koord-manager.dockerfile .
 
 .PHONY: docker-build-koord-scheduler
 docker-build-koord-scheduler: ## Build docker image with the scheduler.
-	docker build --pull -t ${KOORD_SCHEDULER_IMG} -f docker/koord-scheduler.dockerfile .
+	docker $(DOCKER_BUILDER) ${DOCKER_BUILD_ARGS} --pull -t ${KOORD_SCHEDULER_IMG} -f docker/koord-scheduler.dockerfile .
 
 .PHONY: docker-build-koord-descheduler
 docker-build-koord-descheduler: ## Build docker image with the descheduler.
-	docker build --pull -t ${KOORD_DESCHEDULER_IMG} -f docker/koord-descheduler.dockerfile .
+	docker $(DOCKER_BUILDER) ${DOCKER_BUILD_ARGS} --pull -t ${KOORD_DESCHEDULER_IMG} -f docker/koord-descheduler.dockerfile .
 
 .PHONY: docker-push
 docker-push: docker-push-koordlet docker-push-koord-manager docker-push-koord-scheduler docker-push-koord-descheduler
@@ -245,5 +248,5 @@ $(GINKGO): $(LOCALBIN)
 	GOBIN=$(LOCALBIN) go install github.com/onsi/ginkgo/ginkgo@$(GINKGO_VERSION)
 
 .PHONY: libpfm
-libpfm: 
+libpfm:
 	@hack/libpfm.sh

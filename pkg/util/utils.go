@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"sync"
 
 	jsonpatch "github.com/evanphx/json-patch"
 	corev1 "k8s.io/api/core/v1"
@@ -185,4 +186,32 @@ func IsIn(arr []string, val string) bool {
 	}
 
 	return false
+}
+
+// TODO: Replace this function with the standard library after go1.21+ version
+func OnceValues(f func() ([]int, error)) func() ([]int, error) {
+	var (
+		once  sync.Once
+		valid bool
+		p     any
+		r1    []int
+		r2    error
+	)
+	g := func() {
+		defer func() {
+			p = recover()
+			if !valid {
+				panic(p)
+			}
+		}()
+		r1, r2 = f()
+		valid = true
+	}
+	return func() ([]int, error) {
+		once.Do(g)
+		if !valid {
+			panic(p)
+		}
+		return r1, r2
+	}
 }

@@ -254,6 +254,9 @@ func (pgMgr *PodGroupManager) PreFilter(ctx context.Context, pod *corev1.Pod) er
 
 	gangMode := gang.getGangMode()
 	if gangMode == extension.GangModeStrict {
+		if pod.Status.NominatedNodeName != "" {
+			return nil
+		}
 		podScheduleCycle := gang.getChildScheduleCycle(pod)
 		if !gang.isScheduleCycleValid() {
 			return fmt.Errorf("gang scheduleCycle not valid, gangName: %v, podName: %v",
@@ -272,7 +275,7 @@ func (pgMgr *PodGroupManager) PreFilter(ctx context.Context, pod *corev1.Pod) er
 // ii. If non-strict mode, we will do nothing.
 func (pgMgr *PodGroupManager) PostFilter(ctx context.Context, pod *corev1.Pod, handle framework.Handle, pluginName string, filteredNodeStatusMap framework.NodeToStatusMap) (*framework.PostFilterResult, *framework.Status) {
 	if !util.IsPodNeedGang(pod) {
-		return &framework.PostFilterResult{}, framework.NewStatus(framework.Unschedulable, "")
+		return &framework.PostFilterResult{}, framework.NewStatus(framework.Unschedulable)
 	}
 	gang := pgMgr.GetGangByPod(pod)
 	if gang == nil {

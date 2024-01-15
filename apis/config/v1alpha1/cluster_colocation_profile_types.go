@@ -74,6 +74,16 @@ type ClusterColocationProfileSpec struct {
 	// +optional
 	Annotations map[string]string `json:"annotations,omitempty"`
 
+	// LabelKeysMapping describes the labels that needs to inject into Pod.Labels with the same values.
+	// It sets the Pod.Labels[LabelsToLabels[k]] = Pod.Labels[k] for each key k.
+	// +optional
+	LabelKeysMapping map[string]string `json:"labelKeysMapping,omitempty"`
+
+	// AnnotationKeysMapping describes the annotations that needs to inject into Pod.Annotations with the same values.
+	// It sets the Pod.Annotations[AnnotationsToAnnotations[k]] = Pod.Annotations[k] for each key k.
+	// +optional
+	AnnotationKeysMapping map[string]string `json:"annotationKeysMapping,omitempty"`
+
 	// If specified, the pod will be dispatched by specified scheduler.
 	// +optional
 	SchedulerName string `json:"schedulerName,omitempty"`

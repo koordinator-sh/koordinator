@@ -17,7 +17,9 @@ limitations under the License.
 package v1alpha1
 
 import (
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
@@ -202,6 +204,40 @@ type ResourceQOS struct {
 	MemoryQOS  *MemoryQOSCfg  `json:"memoryQOS,omitempty"`
 	BlkIOQOS   *BlkIOQOSCfg   `json:"blkioQOS,omitempty"`
 	ResctrlQOS *ResctrlQOSCfg `json:"resctrlQOS,omitempty"`
+	NetworkQOS *NetworkQOSCfg `json:"networkQOS,omitempty"`
+}
+
+type NetworkQOSCfg struct {
+	Enable     *bool `json:"enable,omitempty"`
+	NetworkQOS `json:",inline"`
+}
+
+type NetworkQOS struct {
+	// IngressRequest describes the minimum network bandwidth guaranteed in the ingress direction.
+	// unit: bps(bytes per second), two expressions are supported，int and string,
+	// int: percentage based on total bandwidth，valid in 0-100
+	// string: a specific network bandwidth value, eg: 50M.
+	// +kubebuilder:default=0
+	IngressRequest *intstr.IntOrString `json:"ingressRequest,omitempty"`
+	// IngressLimit describes the maximum network bandwidth can be used in the ingress direction,
+	// unit: bps(bytes per second), two expressions are supported，int and string,
+	// int: percentage based on total bandwidth，valid in 0-100
+	// string: a specific network bandwidth value, eg: 50M.
+	// +kubebuilder:default=100
+	IngressLimit *intstr.IntOrString `json:"ingressLimit,omitempty"`
+
+	// EgressRequest describes the minimum network bandwidth guaranteed in the egress direction.
+	// unit: bps(bytes per second), two expressions are supported，int and string,
+	// int: percentage based on total bandwidth，valid in 0-100
+	// string: a specific network bandwidth value, eg: 50M.
+	// +kubebuilder:default=0
+	EgressRequest *intstr.IntOrString `json:"egressRequest,omitempty"`
+	// EgressLimit describes the maximum network bandwidth can be used in the egress direction,
+	// unit: bps(bytes per second), two expressions are supported，int and string,
+	// int: percentage based on total bandwidth，valid in 0-100
+	// string: a specific network bandwidth value, eg: 50M.
+	// +kubebuilder:default=100
+	EgressLimit *intstr.IntOrString `json:"egressLimit,omitempty"`
 }
 
 type ResourceQOSPolicies struct {
@@ -340,6 +376,9 @@ type SystemStrategy struct {
 	WatermarkScaleFactor *int64 `json:"watermarkScaleFactor,omitempty" validate:"omitempty,gt=0,max=400"`
 	// /sys/kernel/mm/memcg_reaper/reap_background
 	MemcgReapBackGround *int64 `json:"memcgReapBackGround,omitempty" validate:"omitempty,min=0,max=1"`
+
+	// TotalNetworkBandwidth indicates the overall network bandwidth, cluster manager can set this field, and default value taken from /sys/class/net/${NIC_NAME}/speed, unit: Mbps
+	TotalNetworkBandwidth resource.Quantity `json:"totalNetworkBandwidth,omitempty"`
 }
 
 // NodeSLOSpec defines the desired state of NodeSLO

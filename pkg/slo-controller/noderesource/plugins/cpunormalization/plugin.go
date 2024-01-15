@@ -19,7 +19,6 @@ package cpunormalization
 import (
 	"context"
 	"fmt"
-	"math"
 	"strconv"
 
 	topologyv1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
@@ -41,9 +40,8 @@ const (
 	defaultRatioStr = "1.00"
 	// in case of unexpected resource amplification
 	// NOTE: Currently we do not support the scaling factor below 1.0.
-	defaultMinRatio  = 1.0
-	defaultMaxRatio  = 5.0
-	ratioDiffEpsilon = 0.01
+	defaultMinRatio = 1.0
+	defaultMaxRatio = 5.0
 )
 
 var (
@@ -99,7 +97,7 @@ func (p *Plugin) NeedSyncMeta(_ *configuration.ColocationStrategy, oldNode, newN
 	if ratioNew == -1 { // annotation to remove
 		return true, "new ratio is nil"
 	}
-	if math.Abs(ratioNew-ratioOld) < ratioDiffEpsilon {
+	if !extension.IsCPUNormalizationRatioDifferent(ratioOld, ratioNew) {
 		return false, "ratios are close"
 	}
 

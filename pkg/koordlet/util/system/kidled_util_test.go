@@ -176,15 +176,15 @@ func Test_GetColdPageTotalBytes(t *testing.T) {
 	# |||| /
 	# |||||             [1,2)          [2,5)         [5,15)        [15,30)        [30,60)       [60,120)      [120,240)     [240,+inf)
 	  csei            2613248        4657152       18182144      293683200              0              0              0              0
-	  dsei            2568192        5140480       15306752       48648192              0              0              0              0
-	  cfei            2633728        4640768       66531328      340172800              0              0              0              0
+	  dsei            2568192        5140480       15306752       48648192       52834304       52834304              0              0
+	  cfei            2633728        4640768       66531328      340172800       52834304       52834304              0              0
 	  dfei                  0              0           4096              0              0              0              0              0
 	  csui                  0              0              0              0              0              0              0              0
 	  dsui                  0              0              0              0              0              0              0              0
 	  cfui                  0              0              0              0              0              0              0              0
 	  dfui                  0              0              0              0              0              0              0              0
-	  csea             765952        1044480        3784704       52834304              0              0              0              0
-	  dsea             286720         270336        1564672        5390336              0              0              0              0
+	  csea             765952        1044480        3784704       52834304       52834304              0              0              0
+	  dsea             286720         270336        1564672        5390336       52834304              0              0              0
 	  cfea            9273344       16609280      152109056      315121664              0              0              0              0
 	  dfea                  0              0              0              0              0              0              0              0
 	  csua                  0              0              0              0              0              0              0              0
@@ -196,7 +196,7 @@ func Test_GetColdPageTotalBytes(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotNil(t, coldPageInfo)
 	got := coldPageInfo.GetColdPageTotalBytes()
-	assert.Equal(t, uint64(340172800), got)
+	assert.Equal(t, uint64(52834304), got)
 }
 
 func Test_SetKidledScanPeriodInSeconds(t *testing.T) {

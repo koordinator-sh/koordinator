@@ -152,16 +152,20 @@ func (s *podsInformer) syncPods() error {
 	newPodMap := make(map[string]*statesinformer.PodMeta, len(podList.Items))
 	// reset pod container metrics
 	resetPodMetrics()
-	for _, pod := range podList.Items {
+	for i := range podList.Items {
+		pod := &podList.Items[i]
 		podMeta := &statesinformer.PodMeta{
-			Pod:       pod.DeepCopy(),
-			CgroupDir: genPodCgroupParentDir(&pod),
+			Pod:       pod, // no need to deep-copy from unmarshalled
+			CgroupDir: genPodCgroupParentDir(pod),
 		}
 		newPodMap[string(pod.UID)] = podMeta
 		// record pod container metrics
 		recordPodResourceMetrics(podMeta)
 	}
+	s.podRWMutex.Lock()
 	s.podMap = newPodMap
+	s.podRWMutex.Unlock()
+
 	s.podHasSynced.Store(true)
 	s.podUpdatedTime = time.Now()
 	klog.V(4).Infof("get pods success, len %d, time %s", len(s.podMap), s.podUpdatedTime.String())

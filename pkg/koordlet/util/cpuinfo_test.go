@@ -59,7 +59,7 @@ CPU NODE SOCKET CORE L1d:L1i:L2:L3 ONLINE
 			args: args{
 				lsCPUStr: `
 CPU NODE SOCKET CORE L1d:L1i:L2:L3 ONLINE
-0   0    0      0    -             yes
+0   0    0      0    no cacheinfo  yes
 1   0    0      0    no cacheinfo  yes
 `},
 			want:    nil,
@@ -387,7 +387,7 @@ CPU NODE SOCKET CORE L1d:L1i:L2:L3 ONLINE
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := getProcessorInfos(tt.args.lsCPUStr)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("getProcessorInfos wantErr %v but got err %s", tt.wantErr, err)
+				t.Errorf("getProcessorInfos wantErr %v but got err %v", tt.wantErr, err)
 			}
 			if !reflect.DeepEqual(tt.want, got) {
 				t.Errorf("getProcessorInfos want %v but got %v", tt.want, got)

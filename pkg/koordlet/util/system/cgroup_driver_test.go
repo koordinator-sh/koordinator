@@ -149,3 +149,93 @@ func Test_ParseContainerIDCgroupfs(t *testing.T) {
 		}
 	}
 }
+
+func Test_SystemdCgroupPathContainerDirFn(t *testing.T) {
+	testCases := []struct {
+		name        string
+		containerID string
+		wantType    string
+		wantDirName string
+		wantError   bool
+	}{
+		{
+			name:        "docker",
+			containerID: "docker://testDockerContainerID",
+			wantType:    RuntimeTypeDocker,
+			wantDirName: "docker-testDockerContainerID.scope",
+			wantError:   false,
+		},
+		{
+			name:        "containerd",
+			containerID: "containerd://testContainerdContainerID",
+			wantType:    RuntimeTypeContainerd,
+			wantDirName: "cri-containerd-testContainerdContainerID.scope",
+			wantError:   false,
+		},
+		{
+			name:        "pouch",
+			containerID: "pouch://testPouchContainerID",
+			wantType:    RuntimeTypePouch,
+			wantDirName: "pouch-testPouchContainerID.scope",
+			wantError:   false,
+		},
+		{
+			name:        "bad-format",
+			containerID: "bad-format-id",
+			wantType:    RuntimeTypeUnknown,
+			wantDirName: "",
+			wantError:   true,
+		},
+	}
+	for _, tc := range testCases {
+		runtimeType, dirName, gotErr := cgroupPathFormatterInSystemd.ContainerDirFn(tc.containerID)
+		assert.Equal(t, tc.wantType, runtimeType)
+		assert.Equal(t, tc.wantDirName, dirName)
+		assert.Equal(t, tc.wantError, gotErr != nil)
+	}
+}
+
+func Test_CgroupfsCgroupPathContainerDirFn(t *testing.T) {
+	testCases := []struct {
+		name        string
+		containerID string
+		wantType    string
+		wantDirName string
+		wantError   bool
+	}{
+		{
+			name:        "docker",
+			containerID: "docker://testDockerContainerID",
+			wantType:    RuntimeTypeDocker,
+			wantDirName: "testDockerContainerID",
+			wantError:   false,
+		},
+		{
+			name:        "containerd",
+			containerID: "containerd://testContainerdContainerID",
+			wantType:    RuntimeTypeContainerd,
+			wantDirName: "testContainerdContainerID",
+			wantError:   false,
+		},
+		{
+			name:        "pouch",
+			containerID: "pouch://testPouchContainerID",
+			wantType:    RuntimeTypePouch,
+			wantDirName: "testPouchContainerID",
+			wantError:   false,
+		},
+		{
+			name:        "bad-format",
+			containerID: "bad-format-id",
+			wantType:    RuntimeTypeUnknown,
+			wantDirName: "",
+			wantError:   true,
+		},
+	}
+	for _, tc := range testCases {
+		runtimeType, dirName, gotErr := cgroupPathFormatterInCgroupfs.ContainerDirFn(tc.containerID)
+		assert.Equal(t, tc.wantType, runtimeType)
+		assert.Equal(t, tc.wantDirName, dirName)
+		assert.Equal(t, tc.wantError, gotErr != nil)
+	}
+}
