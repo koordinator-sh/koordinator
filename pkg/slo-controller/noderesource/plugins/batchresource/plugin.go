@@ -26,11 +26,11 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/clock"
 	"k8s.io/apimachinery/pkg/util/sets"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/klog/v2"
+	"k8s.io/utils/clock"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
@@ -50,7 +50,7 @@ var (
 )
 
 var (
-	Clock          clock.Clock = clock.RealClock{} // for testing
+	Clock          clock.WithTickerAndDelayedExecution = clock.RealClock{} // for testing
 	client         ctrlclient.Client
 	nrtHandler     *NRTHandler
 	nrtSyncContext *framework.SyncContext
