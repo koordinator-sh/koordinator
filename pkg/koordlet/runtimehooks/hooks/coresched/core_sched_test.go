@@ -65,7 +65,7 @@ func TestPluginSystemSupported(t *testing.T) {
 			name: "plugin unsupported since no sched features file",
 			wants: wants{
 				systemSupported: false,
-				supportMsg:      "core sched not supported",
+				supportMsg:      "file not exist",
 			},
 		},
 		{
@@ -78,7 +78,7 @@ func TestPluginSystemSupported(t *testing.T) {
 			},
 			wants: wants{
 				systemSupported: false,
-				supportMsg:      "core sched not supported",
+				supportMsg:      "not supported neither by sysctl nor by sched_features",
 			},
 		},
 		{
@@ -91,7 +91,7 @@ func TestPluginSystemSupported(t *testing.T) {
 			},
 			wants: wants{
 				systemSupported: true,
-				supportMsg:      "",
+				supportMsg:      "sysctl supported",
 			},
 		},
 		{
@@ -104,6 +104,7 @@ func TestPluginSystemSupported(t *testing.T) {
 			},
 			wants: wants{
 				systemSupported: true,
+				supportMsg:      "sched_features supported",
 			},
 		},
 		{
@@ -116,6 +117,7 @@ func TestPluginSystemSupported(t *testing.T) {
 			},
 			wants: wants{
 				systemSupported: true,
+				supportMsg:      "sysctl supported",
 			},
 		},
 	}
@@ -132,9 +134,163 @@ func TestPluginSystemSupported(t *testing.T) {
 				Reader:   resourceexecutor.NewCgroupReader(),
 				Executor: resourceexecutor.NewTestResourceExecutor(),
 			})
-			sysSupported, supportMsg := p.SystemSupported()
+			sysSupported := p.SystemSupported()
 			assert.Equal(t, tt.wants.systemSupported, sysSupported)
-			assert.Equal(t, tt.wants.supportMsg, supportMsg)
+			assert.Equal(t, tt.wants.supportMsg, p.supportedMsg)
+		})
+	}
+}
+
+func TestPlugin_initSystem(t *testing.T) {
+	type fields struct {
+		prepareFn   func(helper *sysutil.FileTestUtil)
+		giSupported *bool
+	}
+	tests := []struct {
+		name      string
+		fields    fields
+		arg       bool
+		wantErr   bool
+		wantField *bool
+		wantExtra func(t *testing.T, helper *sysutil.FileTestUtil)
+	}{
+		{
+			name: "skip to init if rule disabled",
+			fields: fields{
+				giSupported: pointer.Bool(true),
+			},
+			arg:       false,
+			wantErr:   false,
+			wantField: pointer.Bool(true),
+		},
+		{
+			name: "system does not support sysctl for group identity",
+			fields: fields{
+				prepareFn: func(helper *sysutil.FileTestUtil) {
+					helper.WriteFileContents(sysutil.GetProcSysFilePath(sysutil.KernelSchedCore), "1")
+				},
+				giSupported: nil,
+			},
+			arg:       true,
+			wantErr:   false,
+			wantField: pointer.Bool(false),
+		},
+		{
+			name: "already know system does not support sysctl for group identity",
+			fields: fields{
+				prepareFn: func(helper *sysutil.FileTestUtil) {
+					helper.WriteFileContents(sysutil.GetProcSysFilePath(sysutil.KernelSchedCore), "1")
+				},
+				giSupported: pointer.Bool(false),
+			},
+			arg:       true,
+			wantErr:   false,
+			wantField: pointer.Bool(false),
+		},
+		{
+			name: "successfully enable core sched and disable group identity",
+			fields: fields{
+				prepareFn: func(helper *sysutil.FileTestUtil) {
+					helper.WriteFileContents(sysutil.GetProcSysFilePath(sysutil.KernelSchedCore), "0")
+					bvtConfigPath := sysutil.GetProcSysFilePath(sysutil.KernelSchedGroupIdentityEnable)
+					helper.WriteFileContents(bvtConfigPath, "1")
+				},
+			},
+			arg:       true,
+			wantErr:   false,
+			wantField: pointer.Bool(true),
+			wantExtra: func(t *testing.T, helper *sysutil.FileTestUtil) {
+				bvtConfigPath := sysutil.GetProcSysFilePath(sysutil.KernelSchedGroupIdentityEnable)
+				got := helper.ReadFileContents(bvtConfigPath)
+				assert.Equal(t, "0", got)
+				got = helper.ReadFileContents(sysutil.GetProcSysFilePath(sysutil.KernelSchedCore))
+				assert.Equal(t, "1", got)
+			},
+		},
+		{
+			name: "successfully disable group identity",
+			fields: fields{
+				prepareFn: func(helper *sysutil.FileTestUtil) {
+					helper.WriteFileContents(sysutil.GetProcSysFilePath(sysutil.KernelSchedCore), "1")
+					bvtConfigPath := sysutil.GetProcSysFilePath(sysutil.KernelSchedGroupIdentityEnable)
+					helper.WriteFileContents(bvtConfigPath, "1")
+				},
+			},
+			arg:       true,
+			wantErr:   false,
+			wantField: pointer.Bool(true),
+			wantExtra: func(t *testing.T, helper *sysutil.FileTestUtil) {
+				bvtConfigPath := sysutil.GetProcSysFilePath(sysutil.KernelSchedGroupIdentityEnable)
+				got := helper.ReadFileContents(bvtConfigPath)
+				assert.Equal(t, "0", got)
+				got = helper.ReadFileContents(sysutil.GetProcSysFilePath(sysutil.KernelSchedCore))
+				assert.Equal(t, "1", got)
+			},
+		},
+		{
+			name: "successfully disable group identity for known sysctl support",
+			fields: fields{
+				prepareFn: func(helper *sysutil.FileTestUtil) {
+					helper.WriteFileContents(sysutil.GetProcSysFilePath(sysutil.KernelSchedCore), "1")
+					bvtConfigPath := sysutil.GetProcSysFilePath(sysutil.KernelSchedGroupIdentityEnable)
+					helper.WriteFileContents(bvtConfigPath, "1")
+				},
+				giSupported: pointer.Bool(true),
+			},
+			arg:       true,
+			wantErr:   false,
+			wantField: pointer.Bool(true),
+			wantExtra: func(t *testing.T, helper *sysutil.FileTestUtil) {
+				bvtConfigPath := sysutil.GetProcSysFilePath(sysutil.KernelSchedGroupIdentityEnable)
+				got := helper.ReadFileContents(bvtConfigPath)
+				assert.Equal(t, "0", got)
+				got = helper.ReadFileContents(sysutil.GetProcSysFilePath(sysutil.KernelSchedCore))
+				assert.Equal(t, "1", got)
+			},
+		},
+		{
+			name: "failed to disable group identity",
+			fields: fields{
+				prepareFn: func(helper *sysutil.FileTestUtil) {
+					helper.WriteFileContents(sysutil.GetProcSysFilePath(sysutil.KernelSchedCore), "0")
+				},
+				giSupported: pointer.Bool(true),
+			},
+			arg:       true,
+			wantErr:   true,
+			wantField: pointer.Bool(true),
+			wantExtra: func(t *testing.T, helper *sysutil.FileTestUtil) {
+				got := helper.ReadFileContents(sysutil.GetProcSysFilePath(sysutil.KernelSchedCore))
+				assert.Equal(t, "0", got)
+			},
+		},
+		{
+			name: "failed to enable core sched",
+			fields: fields{
+				giSupported: pointer.Bool(false),
+			},
+			arg:       true,
+			wantErr:   true,
+			wantField: pointer.Bool(false),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			helper := sysutil.NewFileTestUtil(t)
+			defer helper.Cleanup()
+			if tt.fields.prepareFn != nil {
+				tt.fields.prepareFn(helper)
+			}
+
+			p := newPlugin()
+			p.Setup(hooks.Options{})
+			p.giSysctlSupported = tt.fields.giSupported
+			gotErr := p.initSystem(tt.arg)
+			assert.Equal(t, tt.wantErr, gotErr != nil, gotErr)
+			assert.Equal(t, tt.wantField, p.giSysctlSupported)
+			if tt.wantExtra != nil {
+				tt.wantExtra(t, helper)
+			}
 		})
 	}
 }
@@ -180,7 +336,7 @@ func TestPlugin_SetContainerCookie(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name: "missing container ID",
+			name: "abort for missing container ID",
 			fields: fields{
 				plugin: newPlugin(),
 			},
@@ -193,7 +349,7 @@ func TestPlugin_SetContainerCookie(t *testing.T) {
 					CgroupParent: "kubepods.slice/kubepods-podxxxxxx.slice/cri-containerd-yyyyyy.scope",
 				},
 			},
-			wantErr: true,
+			wantErr: false,
 		},
 		{
 			name: "rule has not initialized",
@@ -215,9 +371,33 @@ func TestPlugin_SetContainerCookie(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name: "system does not support core sched",
+			fields: fields{
+				plugin: testGetEnabledPlugin(),
+				preparePluginFn: func(p *Plugin) {
+					p.sysSupported = pointer.Bool(false)
+				},
+			},
+			arg: &protocol.ContainerContext{
+				Request: protocol.ContainerRequest{
+					PodMeta: protocol.PodMeta{
+						Name: "test-pod",
+						UID:  "xxxxxx",
+					},
+					ContainerMeta: protocol.ContainerMeta{
+						ID: "containerd://yyyyyy",
+					},
+					CgroupParent: "kubepods.slice/kubepods-podxxxxxx.slice/cri-containerd-yyyyyy.scope",
+				},
+			},
+			wantErr: false,
+		},
+		{
 			name: "add cookie for LS container correctly",
 			fields: fields{
 				prepareFn: func(helper *sysutil.FileTestUtil) {
+					sysctlFeaturePath := sysutil.GetProcSysFilePath(sysutil.KernelSchedCore)
+					helper.WriteFileContents(sysctlFeaturePath, "1\n")
 					helper.WriteCgroupFileContents("kubepods.slice/kubepods-podxxxxxx.slice/cri-containerd-yyyyyy.scope", sysutil.CPUProcs, "12344\n12345\n12346\n")
 					helper.WriteCgroupFileContents("kubepods.slice/kubepods-podxxxxxx.slice/cri-containerd-yyyyyy.scope", sysutil.CPUProcsV2, "12344\n12345\n12346\n")
 				},
@@ -277,6 +457,8 @@ func TestPlugin_SetContainerCookie(t *testing.T) {
 			name: "failed to add cookie for LS container when core sched add failed",
 			fields: fields{
 				prepareFn: func(helper *sysutil.FileTestUtil) {
+					sysctlFeaturePath := sysutil.GetProcSysFilePath(sysutil.KernelSchedCore)
+					helper.WriteFileContents(sysctlFeaturePath, "1\n")
 					helper.WriteCgroupFileContents("kubepods.slice/kubepods-podxxxxxx.slice/cri-containerd-yyyyyy.scope", sysutil.CPUProcs, "12344\n12345\n12346\n")
 					helper.WriteCgroupFileContents("kubepods.slice/kubepods-podxxxxxx.slice/cri-containerd-yyyyyy.scope", sysutil.CPUProcsV2, "12344\n12345\n12346\n")
 				},
@@ -333,6 +515,8 @@ func TestPlugin_SetContainerCookie(t *testing.T) {
 			name: "failed to add cookie for BE container when PIDs no longer exist",
 			fields: fields{
 				prepareFn: func(helper *sysutil.FileTestUtil) {
+					sysctlFeaturePath := sysutil.GetProcSysFilePath(sysutil.KernelSchedCore)
+					helper.WriteFileContents(sysctlFeaturePath, "1\n")
 					helper.WriteCgroupFileContents("kubepods.slice/kubepods-besteffort.slice/kubepods-besteffort-podxxxxxx.slice/cri-containerd-yyyyyy.scope", sysutil.CPUProcs, "12344\n12345\n12346\n")
 					helper.WriteCgroupFileContents("kubepods.slice/kubepods-besteffort.slice/kubepods-besteffort-podxxxxxx.slice/cri-containerd-yyyyyy.scope", sysutil.CPUProcsV2, "12344\n12345\n12346\n")
 				},
@@ -385,6 +569,10 @@ func TestPlugin_SetContainerCookie(t *testing.T) {
 			name: "assign cookie for LS container correctly",
 			fields: fields{
 				prepareFn: func(helper *sysutil.FileTestUtil) {
+					sysctlFeaturePath := sysutil.GetProcSysFilePath(sysutil.KernelSchedCore)
+					helper.WriteFileContents(sysctlFeaturePath, "0\n")
+					giSysctlPath := sysutil.GetProcSysFilePath(sysutil.KernelSchedGroupIdentityEnable)
+					helper.WriteFileContents(giSysctlPath, "1\n")
 					helper.WriteCgroupFileContents("kubepods.slice/kubepods-podxxxxxx.slice/cri-containerd-yyyyyy.scope", sysutil.CPUProcs, "12344\n12345\n12346\n")
 					helper.WriteCgroupFileContents("kubepods.slice/kubepods-podxxxxxx.slice/cri-containerd-yyyyyy.scope", sysutil.CPUProcsV2, "12344\n12345\n12346\n")
 				},
@@ -454,6 +642,8 @@ func TestPlugin_SetContainerCookie(t *testing.T) {
 			name: "failed to assign cookie for LS container but fallback to add correctly",
 			fields: fields{
 				prepareFn: func(helper *sysutil.FileTestUtil) {
+					sysctlFeaturePath := sysutil.GetProcSysFilePath(sysutil.KernelSchedCore)
+					helper.WriteFileContents(sysctlFeaturePath, "1\n")
 					helper.WriteCgroupFileContents("kubepods.slice/kubepods-podxxxxxx.slice/cri-containerd-yyyyyy.scope", sysutil.CPUProcs, "12344\n12345\n12346\n")
 					helper.WriteCgroupFileContents("kubepods.slice/kubepods-podxxxxxx.slice/cri-containerd-yyyyyy.scope", sysutil.CPUProcsV2, "12344\n12345\n12346\n")
 				},
@@ -521,6 +711,8 @@ func TestPlugin_SetContainerCookie(t *testing.T) {
 			name: "failed to assign cookie for LS container neither add",
 			fields: fields{
 				prepareFn: func(helper *sysutil.FileTestUtil) {
+					sysctlFeaturePath := sysutil.GetProcSysFilePath(sysutil.KernelSchedCore)
+					helper.WriteFileContents(sysctlFeaturePath, "1\n")
 					helper.WriteCgroupFileContents("kubepods.slice/kubepods-podxxxxxx.slice/cri-containerd-yyyyyy.scope", sysutil.CPUProcs, "12344\n12345\n12346\n")
 					helper.WriteCgroupFileContents("kubepods.slice/kubepods-podxxxxxx.slice/cri-containerd-yyyyyy.scope", sysutil.CPUProcsV2, "12344\n12345\n12346\n")
 				},
@@ -581,6 +773,75 @@ func TestPlugin_SetContainerCookie(t *testing.T) {
 			},
 		},
 		{
+			name: "failed to assign cookie for LS container since system init failed",
+			fields: fields{
+				prepareFn: func(helper *sysutil.FileTestUtil) {
+					giSysctlPath := sysutil.GetProcSysFilePath(sysutil.KernelSchedGroupIdentityEnable)
+					helper.WriteFileContents(giSysctlPath, "1\n")
+					helper.WriteCgroupFileContents("kubepods.slice/kubepods-podxxxxxx.slice/cri-containerd-yyyyyy.scope", sysutil.CPUProcs, "12344\n12345\n12346\n")
+					helper.WriteCgroupFileContents("kubepods.slice/kubepods-podxxxxxx.slice/cri-containerd-yyyyyy.scope", sysutil.CPUProcsV2, "12344\n12345\n12346\n")
+				},
+				plugin: testGetEnabledPlugin(),
+				preparePluginFn: func(p *Plugin) {
+					f := p.cse.(*sysutil.FakeCoreSchedExtended)
+					f.SetNextCookieID(2000000)
+					p.cookieCache.SetDefault("group-xxx-expeller", newCookieCacheEntry(1000000, 1000, 1001, 1002))
+				},
+				cse: sysutil.NewFakeCoreSchedExtended(map[uint32]uint64{
+					1:     0,
+					10:    0,
+					1000:  1000000,
+					1001:  1000000,
+					1002:  1000000,
+					12344: 0,
+					12345: 0,
+					12346: 0,
+				}, map[uint32]uint32{
+					1:     1,
+					1000:  1000,
+					1001:  1001,
+					1002:  1001,
+					12344: 12344,
+					12345: 12344,
+					12346: 12346,
+				}, map[uint32]bool{
+					12346: true,
+				}),
+				groupID: "group-xxx-expeller",
+			},
+			arg: &protocol.ContainerContext{
+				Request: protocol.ContainerRequest{
+					PodMeta: protocol.PodMeta{
+						Name: "test-pod",
+						UID:  "xxxxxx",
+					},
+					PodAnnotations: map[string]string{},
+					PodLabels: map[string]string{
+						extension.LabelPodQoS:             string(extension.QoSLS),
+						slov1alpha1.LabelCoreSchedGroupID: "group-xxx",
+					},
+					ContainerMeta: protocol.ContainerMeta{
+						Name: "test-container",
+						ID:   "containerd://yyyyyy",
+					},
+					CgroupParent: "kubepods.slice/kubepods-podxxxxxx.slice/cri-containerd-yyyyyy.scope",
+				},
+			},
+			wantErr: false,
+			wantFields: wantFields{
+				cookieToPIDs: map[uint64][]uint32{
+					1000000: {
+						1000,
+						1001,
+						1002,
+					},
+				},
+				groupToCookie: map[string]uint64{
+					"group-xxx-expeller": 1000000,
+				},
+			},
+		},
+		{
 			name: "clear cookie for LS container correctly",
 			fields: fields{
 				prepareFn: func(helper *sysutil.FileTestUtil) {
@@ -625,7 +886,8 @@ func TestPlugin_SetContainerCookie(t *testing.T) {
 					PodAnnotations: map[string]string{},
 					PodLabels: map[string]string{
 						extension.LabelPodQoS:             string(extension.QoSLS),
-						slov1alpha1.LabelCoreSchedGroupID: slov1alpha1.CoreSchedGroupIDNone,
+						slov1alpha1.LabelCoreSchedGroupID: "group-xxx",
+						slov1alpha1.LabelCoreSchedPolicy:  string(slov1alpha1.CoreSchedPolicyNone),
 					},
 					ContainerMeta: protocol.ContainerMeta{
 						Name: "test-container",
@@ -698,7 +960,8 @@ func TestPlugin_SetContainerCookie(t *testing.T) {
 					PodAnnotations: map[string]string{},
 					PodLabels: map[string]string{
 						extension.LabelPodQoS:             string(extension.QoSLSR),
-						slov1alpha1.LabelCoreSchedGroupID: slov1alpha1.CoreSchedGroupIDNone,
+						slov1alpha1.LabelCoreSchedGroupID: "group-xxx",
+						slov1alpha1.LabelCoreSchedPolicy:  string(slov1alpha1.CoreSchedPolicyNone),
 					},
 					ContainerMeta: protocol.ContainerMeta{
 						Name: "test-container",
@@ -766,7 +1029,8 @@ func TestPlugin_SetContainerCookie(t *testing.T) {
 					PodAnnotations: map[string]string{},
 					PodLabels: map[string]string{
 						extension.LabelPodQoS:             string(extension.QoSBE),
-						slov1alpha1.LabelCoreSchedGroupID: slov1alpha1.CoreSchedGroupIDNone,
+						slov1alpha1.LabelCoreSchedGroupID: "group-xxx",
+						slov1alpha1.LabelCoreSchedPolicy:  string(slov1alpha1.CoreSchedPolicyNone),
 					},
 					ContainerMeta: protocol.ContainerMeta{
 						Name: "test-container",
@@ -826,7 +1090,8 @@ func TestPlugin_SetContainerCookie(t *testing.T) {
 					PodAnnotations: map[string]string{},
 					PodLabels: map[string]string{
 						extension.LabelPodQoS:             string(extension.QoSLS),
-						slov1alpha1.LabelCoreSchedGroupID: slov1alpha1.CoreSchedGroupIDNone,
+						slov1alpha1.LabelCoreSchedGroupID: "group-xxx",
+						slov1alpha1.LabelCoreSchedPolicy:  string(slov1alpha1.CoreSchedPolicyNone),
 					},
 					ContainerMeta: protocol.ContainerMeta{
 						Name: "test-container",
@@ -886,7 +1151,8 @@ func TestPlugin_SetContainerCookie(t *testing.T) {
 					PodAnnotations: map[string]string{},
 					PodLabels: map[string]string{
 						extension.LabelPodQoS:             string(extension.QoSBE),
-						slov1alpha1.LabelCoreSchedGroupID: slov1alpha1.CoreSchedGroupIDNone,
+						slov1alpha1.LabelCoreSchedGroupID: "group-xxx",
+						slov1alpha1.LabelCoreSchedPolicy:  string(slov1alpha1.CoreSchedPolicyNone),
 					},
 					ContainerMeta: protocol.ContainerMeta{
 						Name: "test-container",
@@ -913,6 +1179,8 @@ func TestPlugin_SetContainerCookie(t *testing.T) {
 			name: "add cookie for LS container migrated between groups",
 			fields: fields{
 				prepareFn: func(helper *sysutil.FileTestUtil) {
+					sysctlFeaturePath := sysutil.GetProcSysFilePath(sysutil.KernelSchedCore)
+					helper.WriteFileContents(sysctlFeaturePath, "1\n")
 					helper.WriteCgroupFileContents("kubepods.slice/kubepods-podxxxxxx.slice/cri-containerd-yyyyyy.scope", sysutil.CPUProcs, "12344\n12345\n12346\n")
 					helper.WriteCgroupFileContents("kubepods.slice/kubepods-podxxxxxx.slice/cri-containerd-yyyyyy.scope", sysutil.CPUProcsV2, "12344\n12345\n12346\n")
 				},
@@ -1018,7 +1286,7 @@ func TestPlugin_SetContainerCookie(t *testing.T) {
 	}
 }
 
-func TestPlugin_LoadAllCookies(t *testing.T) {
+func TestPlugin_loadAllCookies(t *testing.T) {
 	type fields struct {
 		prepareFn       func(helper *sysutil.FileTestUtil)
 		plugin          *Plugin
@@ -1816,7 +2084,7 @@ func TestPlugin_LoadAllCookies(t *testing.T) {
 				tt.fields.preparePluginFn(p)
 			}
 
-			got := p.LoadAllCookies(tt.arg)
+			got := p.loadAllCookies(tt.arg)
 			assert.Equal(t, tt.want, got)
 			for groupID, cookieID := range tt.wantFields.groupToCookie {
 				if cookieID <= 0 {

@@ -147,6 +147,20 @@ func (*ProcSysctl) SetSysctl(sysctl string, newVal int) error {
 	return os.WriteFile(GetProcSysFilePath(sysctl), []byte(strconv.Itoa(newVal)), 0640)
 }
 
+func IsGroupIdentitySysctlSupported() bool {
+	return FileExists(GetProcSysFilePath(KernelSchedGroupIdentityEnable))
+}
+
+func GetSchedGroupIdentity() (bool, error) {
+	s := NewProcSysctl()
+	// 0: disabled; 1: enabled
+	cur, err := s.GetSysctl(KernelSchedGroupIdentityEnable)
+	if err != nil {
+		return false, fmt.Errorf("cannot get sysctl group identity, err: %w", err)
+	}
+	return cur == 1, nil
+}
+
 func SetSchedGroupIdentity(enable bool) error {
 	s := NewProcSysctl()
 	cur, err := s.GetSysctl(KernelSchedGroupIdentityEnable)
@@ -164,7 +178,7 @@ func SetSchedGroupIdentity(enable bool) error {
 
 	err = s.SetSysctl(KernelSchedGroupIdentityEnable, v)
 	if err != nil {
-		return fmt.Errorf("cannot set sysctl group identity, err: %v", err)
+		return fmt.Errorf("cannot set sysctl group identity, err: %w", err)
 	}
 	klog.V(4).Infof("SetSchedGroupIdentity set sysctl config successfully, value %v", v)
 	return nil

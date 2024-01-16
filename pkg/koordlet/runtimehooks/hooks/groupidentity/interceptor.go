@@ -73,10 +73,16 @@ func (b *bvtPlugin) prepare() *bvtRule {
 		klog.V(5).Infof("hook plugin rule is nil, nothing to do for plugin %v", name)
 		return nil
 	}
-	err := b.initialize()
+
+	isSysctlEnabled, err := b.isSysctlEnabled()
 	if err != nil {
-		klog.V(4).Infof("failed to initialize plugin %s, err: %s", name, err)
+		klog.V(4).Infof("failed to check sysctl for plugin %s, err: %s", name, err)
 		return nil
 	}
+	if !r.getEnable() && !isSysctlEnabled { // no need to update cgroups if both rule and sysctl disabled
+		klog.V(5).Infof("rule is disabled for plugin %v, no more to do for resources", name)
+		return nil
+	}
+
 	return r
 }
