@@ -52,8 +52,8 @@ func TestGetCgroupPathsByTargetDepth(t *testing.T) {
 		prepareFn func(helper *system.FileTestUtil)
 	}
 	type args struct {
-		qos           corev1.PodQOSClass
 		resourceType  system.ResourceType
+		parentDir     string
 		relativeDepth int
 	}
 	tests := []struct {
@@ -66,7 +66,7 @@ func TestGetCgroupPathsByTargetDepth(t *testing.T) {
 		{
 			name: "get cgroup resource failed",
 			args: args{
-				qos:           corev1.PodQOSGuaranteed,
+				parentDir:     GetPodQoSRelativePath(corev1.PodQOSGuaranteed),
 				resourceType:  "unknown_resource_xxx",
 				relativeDepth: 1,
 			},
@@ -75,7 +75,7 @@ func TestGetCgroupPathsByTargetDepth(t *testing.T) {
 		{
 			name: "get root cgroup path failed",
 			args: args{
-				qos:           corev1.PodQOSGuaranteed,
+				parentDir:     GetPodQoSRelativePath(corev1.PodQOSGuaranteed),
 				resourceType:  system.CPUSetCPUSName,
 				relativeDepth: 1,
 			},
@@ -92,7 +92,7 @@ func TestGetCgroupPathsByTargetDepth(t *testing.T) {
 				},
 			},
 			args: args{
-				qos:           corev1.PodQOSGuaranteed,
+				parentDir:     GetPodQoSRelativePath(corev1.PodQOSGuaranteed),
 				resourceType:  system.CPUSetCPUSName,
 				relativeDepth: 0,
 			},
@@ -122,7 +122,7 @@ func TestGetCgroupPathsByTargetDepth(t *testing.T) {
 				},
 			},
 			args: args{
-				qos:           corev1.PodQOSBestEffort,
+				parentDir:     GetPodQoSRelativePath(corev1.PodQOSBestEffort),
 				resourceType:  system.CPUSetCPUSName,
 				relativeDepth: PodCgroupPathRelativeDepth,
 			},
@@ -153,7 +153,7 @@ func TestGetCgroupPathsByTargetDepth(t *testing.T) {
 				},
 			},
 			args: args{
-				qos:           corev1.PodQOSBestEffort,
+				parentDir:     GetPodQoSRelativePath(corev1.PodQOSBestEffort),
 				resourceType:  system.CPUSetCPUSName,
 				relativeDepth: ContainerCgroupPathRelativeDepth,
 			},
@@ -184,7 +184,7 @@ func TestGetCgroupPathsByTargetDepth(t *testing.T) {
 				},
 			},
 			args: args{
-				qos:           corev1.PodQOSBestEffort,
+				parentDir:     GetPodQoSRelativePath(corev1.PodQOSBestEffort),
 				resourceType:  system.MemoryLimitName,
 				relativeDepth: ContainerCgroupPathRelativeDepth,
 			},
@@ -215,7 +215,7 @@ func TestGetCgroupPathsByTargetDepth(t *testing.T) {
 				},
 			},
 			args: args{
-				qos:           corev1.PodQOSGuaranteed,
+				parentDir:     GetPodQoSRelativePath(corev1.PodQOSGuaranteed),
 				resourceType:  system.CPUSetCPUSName,
 				relativeDepth: PodCgroupPathRelativeDepth,
 			},
@@ -224,6 +224,34 @@ func TestGetCgroupPathsByTargetDepth(t *testing.T) {
 				GetPodQoSRelativePath(corev1.PodQOSBestEffort),
 				GetPodQoSRelativePath(corev1.PodQOSBurstable),
 				filepath.Join(GetPodQoSRelativePath(corev1.PodQOSGuaranteed), "/kubepods-test-guaranteed-pod.slice"),
+			},
+		},
+		{
+			name: "get for custom cgroup parent successfully",
+			fields: fields{
+				prepareFn: func(helper *system.FileTestUtil) {
+					helper.SetCgroupsV2(false)
+					cpuset, _ := system.GetCgroupResource(system.CPUSetCPUSName)
+					cgroupParentDir := "test"
+					helper.WriteCgroupFileContents(cgroupParentDir, cpuset, "0-63")
+					containerCgroupDir := filepath.Join(cgroupParentDir, "/test-pod-0.slice")
+					containerCgroupDir1 := filepath.Join(cgroupParentDir, "/test-pod-1.slice")
+					containerCgroupDir2 := filepath.Join(cgroupParentDir, "/test-pod-2.slice")
+					helper.WriteCgroupFileContents(containerCgroupDir, cpuset, "0-63")
+					helper.WriteCgroupFileContents(containerCgroupDir1, cpuset, "0-63")
+					helper.WriteCgroupFileContents(containerCgroupDir2, cpuset, "0-31")
+				},
+			},
+			args: args{
+				parentDir:     "test",
+				resourceType:  system.CPUSetCPUSName,
+				relativeDepth: 1,
+			},
+			wantErr: false,
+			want: []string{
+				"test/test-pod-0.slice",
+				"test/test-pod-1.slice",
+				"test/test-pod-2.slice",
 			},
 		},
 	}
@@ -235,7 +263,7 @@ func TestGetCgroupPathsByTargetDepth(t *testing.T) {
 				tt.fields.prepareFn(helper)
 			}
 
-			got, gotErr := GetCgroupPathsByTargetDepth(tt.args.qos, tt.args.resourceType, tt.args.relativeDepth)
+			got, gotErr := GetCgroupPathsByTargetDepth(tt.args.resourceType, tt.args.parentDir, tt.args.relativeDepth)
 			assert.Equal(t, tt.wantErr, gotErr != nil, gotErr)
 			assert.Equal(t, tt.want, got)
 		})
