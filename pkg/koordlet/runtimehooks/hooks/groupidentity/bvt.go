@@ -40,12 +40,14 @@ const (
 )
 
 type bvtPlugin struct {
-	rule             *bvtRule
-	ruleRWMutex      sync.RWMutex
-	sysSupported     *bool
-	hasKernelEnabled *bool // whether kernel is configurable for enabling bvt (via `kernel.sched_group_identity_enabled`)
-	kernelEnabled    *bool // if not nil, indicates whether bvt feature is enabled via `kernel.sched_group_identity_enabled`
-	executor         resourceexecutor.ResourceUpdateExecutor
+	rule        *bvtRule
+	ruleRWMutex sync.RWMutex
+
+	sysSupported             *bool
+	hasKernelEnabled         *bool // whether kernel is configurable for enabling bvt (via `kernel.sched_group_identity_enabled`)
+	coreSchedSysctlSupported *bool // whether core sched is supported by the sysctl
+
+	executor resourceexecutor.ResourceUpdateExecutor
 }
 
 func (b *bvtPlugin) Register(op hooks.Options) {
@@ -71,8 +73,8 @@ func (b *bvtPlugin) SystemSupported() bool {
 		if err == nil {
 			isBVTSupported, msg = bvtResource.IsSupported(util.GetPodQoSRelativePath(corev1.PodQOSGuaranteed))
 		}
-		bvtConfigPath := sysutil.GetProcSysFilePath(sysutil.KernelSchedGroupIdentityEnable)
-		b.sysSupported = pointer.Bool(isBVTSupported || sysutil.FileExists(bvtConfigPath))
+		sysSupported := isBVTSupported || sysutil.IsGroupIdentitySysctlSupported()
+		b.sysSupported = pointer.Bool(sysSupported)
 		klog.Infof("update system supported info to %v for plugin %v, supported msg %s",
 			*b.sysSupported, name, msg)
 	}
@@ -81,39 +83,64 @@ func (b *bvtPlugin) SystemSupported() bool {
 
 func (b *bvtPlugin) hasKernelEnable() bool {
 	if b.hasKernelEnabled == nil {
-		bvtConfigPath := sysutil.GetProcSysFilePath(sysutil.KernelSchedGroupIdentityEnable)
-		b.hasKernelEnabled = pointer.Bool(sysutil.FileExists(bvtConfigPath))
+		b.hasKernelEnabled = pointer.Bool(sysutil.IsGroupIdentitySysctlSupported())
 	}
 	return *b.hasKernelEnabled
 }
 
-// initKernelEnable checks and initializes the sysctl configuration for the bvt (group identity).
-// It returns any error for the initialization.
-func (b *bvtPlugin) initialize() error {
+// tryDisableCoreSched tries disabling the core scheduling via sysctl to safely enable the group identity.
+func (b *bvtPlugin) tryDisableCoreSched() error {
+	if b.coreSchedSysctlSupported == nil {
+		b.coreSchedSysctlSupported = pointer.Bool(sysutil.IsCoreSchedSysctlSupported())
+	}
+	if !*b.coreSchedSysctlSupported {
+		return nil
+	}
+
+	return sysutil.SetSchedCore(false)
+}
+
+// initSysctl initializes the sysctl for the group identity.
+// It returns whether cgroups need to set, e.g. if the sysctl config is not disabled.
+func (b *bvtPlugin) initSysctl() error {
+	if !b.hasKernelEnable() { // kernel does not support bvt sysctl
+		return nil
+	}
+
+	// NOTE: Currently the kernel feature core scheduling is strictly excluded with the group identity's
+	//       bvt=-1. So we have to check if the CoreSched can be disabled before enabling group identity.
+	err := b.tryDisableCoreSched()
+	if err != nil {
+		return err
+	}
+
+	// try to set bvt kernel enabled via sysctl when the sysctl config is disabled or unknown
+	// https://github.com/koordinator-sh/koordinator/pull/1172
+	err = sysutil.SetSchedGroupIdentity(true)
+	if err != nil {
+		return fmt.Errorf("cannot enable kernel sysctl for bvt, err: %w", err)
+	}
+
+	return nil
+}
+
+// isSysctlEnabled checks if the sysctl configuration for the bvt (group identity) is enabled.
+// It returns whether cgroups need to set, e.g. if the sysctl config is not disabled.
+func (b *bvtPlugin) isSysctlEnabled() (bool, error) {
 	// NOTE: bvt (group identity) is supported and can be initialized in the system if:
 	// 1. anolis os kernel (<26.4): cgroup cpu.bvt_warp_ns exists but sysctl kernel.sched_group_identity_enabled no exist,
 	//    the bvt feature is enabled by default, no need to set sysctl.
 	// 2. anolis os kernel (>=26.4): both cgroup cpu.bvt_warp_ns and sysctl kernel.sched_group_identity_enabled exist,
 	//    the bvt feature is enabled when kernel.sched_group_identity_enabled is set as `1`.
-	if !b.hasKernelEnable() { // skip initialization of kernel does not support bvt sysctl
-		return nil
+	if !b.hasKernelEnable() { // consider enabled when kernel does not support bvt sysctl
+		return true, nil
 	}
 
-	// if cpu qos is enabled/disabled in rule, check if we need to change the sysctl config for bvt (group identity)
-	if b.kernelEnabled != nil && *b.kernelEnabled {
-		klog.V(6).Infof("skip initialize plugin %s, no need to change sysctl", name)
-		return nil
-	}
-
-	// try to set bvt kernel enabled via sysctl when the sysctl config is disabled or unknown
-	err := sysutil.SetSchedGroupIdentity(true)
+	isSysEnabled, err := sysutil.GetSchedGroupIdentity()
 	if err != nil {
-		return fmt.Errorf("cannot enable kernel sysctl for bvt, err: %v", err)
+		return true, fmt.Errorf("cannot get sysctl group identity, err: %v", err)
 	}
-	b.kernelEnabled = pointer.Bool(true)
-	klog.V(4).Infof("hook plugin %s is successfully initialized", name)
-
-	return nil
+	return isSysEnabled, nil
 }
 
 var singleton *bvtPlugin

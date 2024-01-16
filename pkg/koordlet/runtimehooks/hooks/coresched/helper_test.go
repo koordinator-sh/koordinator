@@ -722,7 +722,7 @@ func Test_isPodEnabled(t *testing.T) {
 		want1 string
 	}{
 		{
-			name: "pod enabled on annotation",
+			name: "pod enabled",
 			field: field{
 				rule: testGetEnabledRule(),
 			},
@@ -738,67 +738,140 @@ func Test_isPodEnabled(t *testing.T) {
 			want1: "group-xxx-expeller",
 		},
 		{
-			name: "pod enabled on annotation 1",
+			name: "BE pod enabled",
+			field: field{
+				rule: testGetEnabledRule(),
+			},
+			args: args{
+				podAnnotations: map[string]string{},
+				podLabels: map[string]string{
+					extension.LabelPodQoS: string(extension.QoSBE),
+				},
+				podUID: "xxx",
+			},
+			want:  true,
+			want1: "",
+		},
+		{
+			name: "burstable pod enabled",
+			field: field{
+				rule: testGetEnabledRule(),
+			},
+			args: args{
+				podAnnotations: map[string]string{},
+				podLabels:      map[string]string{},
+				podKubeQOS:     corev1.PodQOSBurstable,
+				podUID:         "xxx",
+			},
+			want:  true,
+			want1: "-expeller",
+		},
+		{
+			name: "pod enabled without group id label",
+			field: field{
+				rule: testGetEnabledRule(),
+			},
+			args: args{
+				podAnnotations: map[string]string{},
+				podUID:         "xxx",
+				podKubeQOS:     corev1.PodQOSBurstable,
+			},
+			want:  true,
+			want1: "-expeller",
+		},
+		{
+			name: "pod enabled with policy exclusive",
+			field: field{
+				rule: testGetEnabledRule(),
+			},
+			args: args{
+				podAnnotations: map[string]string{},
+				podLabels: map[string]string{
+					extension.LabelPodQoS:            string(extension.QoSLS),
+					slov1alpha1.LabelCoreSchedPolicy: string(slov1alpha1.CoreSchedPolicyExclusive),
+				},
+				podUID: "xxx",
+			},
+			want:  true,
+			want1: "xxx-expeller",
+		},
+		{
+			name: "pod disabled",
 			field: field{
 				rule: testGetDisabledRule(),
 			},
 			args: args{
 				podAnnotations: map[string]string{},
 				podLabels: map[string]string{
-					slov1alpha1.LabelCoreSchedGroupID: "",
-				},
-				podUID: "xxx",
-			},
-			want:  true,
-			want1: "xxx",
-		},
-		{
-			name: "pod disabled on annotation",
-			field: field{
-				rule: testGetEnabledRule(),
-			},
-			args: args{
-				podAnnotations: map[string]string{},
-				podLabels: map[string]string{
-					slov1alpha1.LabelCoreSchedGroupID: slov1alpha1.CoreSchedGroupIDNone,
+					slov1alpha1.LabelCoreSchedGroupID: "group-xxx",
 				},
 				podUID: "xxx",
 			},
 			want:  false,
-			want1: slov1alpha1.CoreSchedGroupIDNone,
+			want1: "group-xxx",
 		},
 		{
-			name: "pod enabled according to nodeSLO",
+			name: "BE pod disabled",
 			field: field{
-				rule: testGetEnabledRule(),
+				rule: testGetDisabledRule(),
 			},
 			args: args{
-				podKubeQOS: corev1.PodQOSBurstable,
-				podUID:     "xxx",
+				podAnnotations: map[string]string{},
+				podLabels: map[string]string{
+					extension.LabelPodQoS:             string(extension.QoSBE),
+					slov1alpha1.LabelCoreSchedGroupID: "group-xxx",
+				},
+				podUID: "xxx",
 			},
-			want:  true,
-			want1: "xxx-expeller",
+			want:  false,
+			want1: "group-xxx",
 		},
 		{
-			name: "pod enabled according to nodeSLO 1",
+			name: "burstable pod disabled",
+			field: field{
+				rule: testGetDisabledRule(),
+			},
+			args: args{
+				podAnnotations: map[string]string{},
+				podLabels:      map[string]string{},
+				podKubeQOS:     corev1.PodQOSBurstable,
+				podUID:         "xxx",
+			},
+			want:  false,
+			want1: "",
+		},
+		{
+			name: "pod disabled without group id label",
+			field: field{
+				rule: testGetDisabledRule(),
+			},
+			args: args{
+				podLabels:  map[string]string{},
+				podKubeQOS: corev1.PodQOSBestEffort,
+			},
+			want:  false,
+			want1: "",
+		},
+		{
+			name: "pod disabled by policy none",
 			field: field{
 				rule: testGetEnabledRule(),
 			},
 			args: args{
 				podLabels: map[string]string{
-					extension.LabelPodQoS: string(extension.QoSLS),
+					extension.LabelPodQoS:            string(extension.QoSLS),
+					slov1alpha1.LabelCoreSchedPolicy: string(slov1alpha1.CoreSchedPolicyNone),
 				},
-				podAnnotations: map[string]string{},
-				podKubeQOS:     corev1.PodQOSGuaranteed,
-				podUID:         "xxx",
+				podKubeQOS: corev1.PodQOSGuaranteed,
 			},
-			want:  true,
-			want1: "xxx-expeller",
+			want:  false,
+			want1: "-expeller",
 		},
 		{
-			name: "pod enabled according to nodeSLO 2",
+			name: "pod enabled according to nodeSLO",
 			field: field{
 				rule: &Rule{
+					enable: true,
 					podQOSParams: map[extension.QoSClass]Param{
 						extension.QoSLSE: testGetDisabledRuleParam(),
 						extension.QoSLSR: testGetDisabledRuleParam(),
@@ -841,24 +914,13 @@ func Test_isPodEnabled(t *testing.T) {
 				podUID:         "xxx",
 			},
 			want:  true,
-			want1: "xxx",
+			want1: "",
 		},
 		{
 			name: "pod disabled according to nodeSLO",
 			field: field{
-				rule: testGetDisabledRule(),
-			},
-			args: args{
-				podKubeQOS: corev1.PodQOSBestEffort,
-				podUID:     "xxx",
-			},
-			want:  false,
-			want1: "xxx",
-		},
-		{
-			name: "pod disabled according to nodeSLO 1",
-			field: field{
 				rule: &Rule{
+					enable: false,
 					podQOSParams: map[extension.QoSClass]Param{
 						extension.QoSLSE: testGetDisabledRuleParam(),
 						extension.QoSLSR: testGetDisabledRuleParam(),
@@ -901,7 +963,7 @@ func Test_isPodEnabled(t *testing.T) {
 				podUID:         "xxx",
 			},
 			want:  false,
-			want1: "xxx",
+			want1: "",
 		},
 	}
 	for _, tt := range tests {

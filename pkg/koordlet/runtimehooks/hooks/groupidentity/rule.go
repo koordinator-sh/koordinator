@@ -155,6 +155,31 @@ func (b *bvtPlugin) ruleUpdateCb(target *statesinformer.CallbackTarget) error {
 		klog.V(5).Infof("hook plugin rule is nil, nothing to do for plugin %v", name)
 		return nil
 	}
+
+	// check sysctl
+	// Currently, the kernel feature core scheduling is conflict to the group identity. So before we enable the
+	// group identity, we should check if the GroupIdentity can be enabled via sysctl and the CoreSched can be
+	// disabled via sysctl. And when we disable the group identity, we can check if the GroupIdentity is already
+	// disabled which means we do not need to update the cgroups.
+	isEnabled := r.getEnable()
+	if isEnabled {
+		if err := b.initSysctl(); err != nil {
+			klog.Warningf("failed to initialize system config for plugin %s, err: %s", name, err)
+			return nil
+		}
+	} else {
+		isSysctlEnabled, err := b.isSysctlEnabled()
+		if err != nil {
+			klog.Warningf("failed to check sysctl for plugin %s, err: %s", name, err)
+			return nil
+		}
+		if !r.getEnable() && !isSysctlEnabled { // no need to update cgroups if both rule and sysctl disabled
+			klog.V(4).Infof("rule is disabled for plugin %v, no more to do for resources", name)
+			return nil
+		}
+	}
+
+	qosCgroupMap := map[string]struct{}{}
 	for _, kubeQOS := range []corev1.PodQOSClass{
 		corev1.PodQOSGuaranteed, corev1.PodQOSBurstable, corev1.PodQOSBestEffort} {
 		bvtValue := r.getKubeQOSDirBvtValue(kubeQOS)
@@ -162,14 +187,37 @@ func (b *bvtPlugin) ruleUpdateCb(target *statesinformer.CallbackTarget) error {
 		e := audit.V(3).Group(string(kubeQOS)).Reason(name).Message("set bvt to %v", bvtValue)
 		bvtUpdater, err := resourceexecutor.DefaultCgroupUpdaterFactory.New(sysutil.CPUBVTWarpNsName, kubeQOSCgroupPath, strconv.FormatInt(bvtValue, 10), e)
 		if err != nil {
-			klog.Infof("bvtupdater create failed, dir %v, error %v", kubeQOSCgroupPath, err)
+			klog.Infof("bvt updater create failed, dir %v, error %v", kubeQOSCgroupPath, err)
 		}
-		if _, err := b.executor.Update(true, bvtUpdater); err != nil {
+		if _, err = b.executor.Update(true, bvtUpdater); err != nil {
 			klog.Infof("update kube qos %v cpu bvt failed, dir %v, error %v", kubeQOS, kubeQOSCgroupPath, err)
 		}
+		qosCgroupMap[kubeQOSCgroupPath] = struct{}{}
 	}
+
 	if target == nil {
 		return fmt.Errorf("callback target is nil")
+	}
+
+	// FIXME(saintube): Currently the kernel feature core scheduling is strictly excluded with the group identity's
+	//  bvt=-1. So we have to check and disable all the BE cgroups' bvt for the GroupIdentity before creating the
+	//  core sched cookies. To keep the consistency of the cgroup tree's configuration, we list and update the cgroups
+	//  by the level order when the group identity is globally disabled.
+	//  This check should be removed after the kernel provides a more stable interface.
+	podCgroupMap := map[string]int64{}
+	// pod-level
+	for _, kubeQOS := range []corev1.PodQOSClass{corev1.PodQOSGuaranteed, corev1.PodQOSBurstable, corev1.PodQOSBestEffort} {
+		bvtValue := r.getKubeQOSDirBvtValue(kubeQOS)
+		podCgroupDirs, err := koordletutil.GetCgroupPathsByTargetDepth(kubeQOS, sysutil.CPUBVTWarpNsName, koordletutil.PodCgroupPathRelativeDepth)
+		if err != nil {
+			return fmt.Errorf("get pod cgroup paths failed, qos %s, err: %w", kubeQOS, err)
+		}
+		for _, cgroupDir := range podCgroupDirs {
+			if _, ok := qosCgroupMap[cgroupDir]; ok { // exclude qos cgroup
+				continue
+			}
+			podCgroupMap[cgroupDir] = bvtValue
+		}
 	}
 	for _, podMeta := range target.Pods {
 		podQOS := ext.GetPodQoSClassRaw(podMeta.Pod)
@@ -179,12 +227,13 @@ func (b *bvtPlugin) ruleUpdateCb(target *statesinformer.CallbackTarget) error {
 		e := audit.V(3).Pod(podMeta.Pod.Namespace, podMeta.Pod.Name).Reason(name).Message("set bvt to %v", podBvt)
 		bvtUpdater, err := resourceexecutor.DefaultCgroupUpdaterFactory.New(sysutil.CPUBVTWarpNsName, podCgroupPath, strconv.FormatInt(podBvt, 10), e)
 		if err != nil {
-			klog.Infof("bvtupdater create failed, dir %v, error %v", podCgroupPath, err)
+			klog.Infof("bvt updater create failed, dir %v, error %v", podCgroupPath, err)
 		}
-		if _, err := b.executor.Update(true, bvtUpdater); err != nil {
+		if _, err = b.executor.Update(true, bvtUpdater); err != nil {
 			klog.Infof("update pod %s cpu bvt failed, dir %v, error %v",
 				util.GetPodKey(podMeta.Pod), podCgroupPath, err)
 		}
+		delete(podCgroupMap, podCgroupPath)
 	}
 	for _, hostApp := range target.HostApplications {
 		hostCtx := protocol.HooksProtocolBuilder.HostApp(&hostApp)
@@ -195,6 +244,45 @@ func (b *bvtPlugin) ruleUpdateCb(target *statesinformer.CallbackTarget) error {
 			klog.V(5).Infof("set host application %v bvt value finished", hostApp.Name)
 		}
 	}
+	// handle the remaining pod cgroups, which can belong to the dangling pods
+	for podCgroupDir, bvtValue := range podCgroupMap {
+		e := audit.V(3).Reason(name).Message("set bvt to %v", bvtValue)
+		bvtUpdater, err := resourceexecutor.DefaultCgroupUpdaterFactory.New(sysutil.CPUBVTWarpNsName, podCgroupDir, strconv.FormatInt(bvtValue, 10), e)
+		if err != nil {
+			klog.Infof("bvt updater create failed, dir %v, error %v", podCgroupDir, err)
+		}
+		if _, err = b.executor.Update(true, bvtUpdater); err != nil {
+			klog.Infof("update remaining pod cpu bvt failed, dir %v, error %v", podCgroupDir, err)
+		}
+	}
+
+	// container-level
+	// NOTE: Although we do not set the container's cpu.bvt_warp_ns directly, it is inheritable from the pod-level,
+	//       we have to handle the container-level only when we want to disable the group identity.
+	if !r.getEnable() {
+		for _, kubeQOS := range []corev1.PodQOSClass{corev1.PodQOSGuaranteed, corev1.PodQOSBurstable, corev1.PodQOSBestEffort} {
+			bvtValue := r.getKubeQOSDirBvtValue(kubeQOS)
+			containerCgroupDirs, err := koordletutil.GetCgroupPathsByTargetDepth(kubeQOS, sysutil.CPUBVTWarpNsName, koordletutil.ContainerCgroupPathRelativeDepth)
+			if err != nil {
+				return fmt.Errorf("get container cgroup paths failed, qos %s, err: %w", kubeQOS, err)
+			}
+			for _, cgroupDir := range containerCgroupDirs {
+				if _, ok := podCgroupMap[cgroupDir]; ok {
+					continue
+				}
+
+				e := audit.V(3).Reason(name).Message("set bvt to %v", bvtValue)
+				bvtUpdater, err := resourceexecutor.DefaultCgroupUpdaterFactory.New(sysutil.CPUBVTWarpNsName, cgroupDir, strconv.FormatInt(bvtValue, 10), e)
+				if err != nil {
+					klog.Infof("bvt updater create failed, dir %v, error %v", cgroupDir, err)
+				}
+				if _, err = b.executor.Update(true, bvtUpdater); err != nil {
+					klog.Infof("update container cpu bvt failed, dir %v, error %v", cgroupDir, err)
+				}
+			}
+		}
+	}
+
 	return nil
 }
 

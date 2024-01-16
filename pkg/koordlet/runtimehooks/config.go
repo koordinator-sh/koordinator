@@ -69,6 +69,7 @@ const (
 	CPUNormalization featuregate.Feature = "CPUNormalization"
 
 	// CoreSched manages Linux Core Scheduling cookies for containers who enable the core sched.
+	// NOTE: CoreSched is an alternative policy of the CPU QoS, and it is exclusive to the Group Identity feature.
 	//
 	// owner: @saintube @zwzhang0107
 	// alpha: v1.4

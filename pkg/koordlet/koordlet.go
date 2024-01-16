@@ -37,6 +37,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/prediction"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/qosmanager"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	statesinformerimpl "github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer/impl"
@@ -63,6 +64,7 @@ type daemon struct {
 	qosManager     qosmanager.QOSManager
 	runtimeHook    runtimehooks.RuntimeHook
 	predictServer  prediction.PredictServer
+	executor       resourceexecutor.ResourceUpdateExecutor
 }
 
 func NewDaemon(config *config.Configuration) (Daemon, error) {
@@ -115,6 +117,7 @@ func NewDaemon(config *config.Configuration) (Daemon, error) {
 		qosManager:     qosManager,
 		runtimeHook:    runtimeHook,
 		predictServer:  predictServer,
+		executor:       resourceexecutor.NewResourceUpdateExecutor(),
 	}
 
 	return d, nil
@@ -162,6 +165,9 @@ func (d *daemon) Run(stopCh <-chan struct{}) {
 			klog.Fatal("Unable to run the predict server: ", err)
 		}
 	}()
+
+	// start resource executor before the writers modules
+	go d.executor.Run(stopCh)
 
 	// start qos manager
 	go func() {
