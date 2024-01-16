@@ -18,7 +18,6 @@ package elasticquota
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -171,8 +170,6 @@ func (g *Plugin) createDefaultQuotaIfNotPresent() {
 			Max: g.pluginArgs.DefaultQuotaGroupMax.DeepCopy(),
 		},
 	}
-	sharedWeight, _ := json.Marshal(defaultElasticQuota.Spec.Max)
-	defaultElasticQuota.Annotations[extension.AnnotationRuntime] = string(sharedWeight)
 	_, err := g.client.SchedulingV1alpha1().ElasticQuotas(g.pluginArgs.QuotaGroupNamespace).
 		Create(context.TODO(), defaultElasticQuota, metav1.CreateOptions{})
 	if err != nil {
@@ -201,8 +198,6 @@ func (g *Plugin) createSystemQuotaIfNotPresent() {
 			Max: g.pluginArgs.SystemQuotaGroupMax.DeepCopy(),
 		},
 	}
-	sharedWeight, _ := json.Marshal(systemElasticQuota.Spec.Max)
-	systemElasticQuota.Annotations[extension.AnnotationRuntime] = string(sharedWeight)
 	_, err := g.client.SchedulingV1alpha1().ElasticQuotas(g.pluginArgs.QuotaGroupNamespace).
 		Create(context.TODO(), systemElasticQuota, metav1.CreateOptions{})
 	if err != nil {
@@ -244,7 +239,7 @@ func (g *Plugin) snapshotPostFilterState(quotaInfo *core.QuotaInfo, state *frame
 		quotaInfo:          quotaInfo,
 		used:               quotaInfo.GetUsed(),
 		nonPreemptibleUsed: quotaInfo.GetNonPreemptibleUsed(),
-		runtime:            quotaInfo.GetRuntime(),
+		usedLimit:          g.getQuotaInfoUsedLimit(quotaInfo),
 	}
 	state.Write(postFilterKey, postFilterState)
 	return postFilterState
@@ -273,12 +268,13 @@ func getPostFilterState(cycleState *framework.CycleState) (*PostFilterState, err
 func (g *Plugin) checkQuotaRecursive(curQuotaName string, quotaNameTopo []string, podRequest v1.ResourceList) *framework.Status {
 	quotaInfo := g.groupQuotaManager.GetQuotaInfoByName(curQuotaName)
 	quotaUsed := quotaInfo.GetUsed()
-	quotaRuntime := quotaInfo.GetRuntime()
+	quotaUsedLimit := g.getQuotaInfoUsedLimit(quotaInfo)
+
 	newUsed := quotav1.Mask(quotav1.Add(podRequest, quotaUsed), quotav1.ResourceNames(podRequest))
-	if isLessEqual, exceedDimensions := quotav1.LessThanOrEqual(newUsed, quotaRuntime); !isLessEqual {
+	if isLessEqual, exceedDimensions := quotav1.LessThanOrEqual(newUsed, quotaUsedLimit); !isLessEqual {
 		return framework.NewStatus(framework.Unschedulable, fmt.Sprintf("Insufficient quotas, "+
 			"quotaNameTopo: %v, runtime: %v, used: %v, pod's request: %v, exceedDimensions: %v", quotaNameTopo,
-			printResourceList(quotaRuntime), printResourceList(quotaUsed), printResourceList(podRequest), exceedDimensions))
+			printResourceList(quotaUsedLimit), printResourceList(quotaUsed), printResourceList(podRequest), exceedDimensions))
 	}
 	if quotaInfo.ParentName != extension.RootQuotaName {
 		quotaNameTopo = append([]string{quotaInfo.ParentName}, quotaNameTopo...)
@@ -297,4 +293,11 @@ func printResourceList(rl v1.ResourceList) string {
 		return res[i] < res[j]
 	})
 	return strings.Join(res, ",")
+}
+
+func (g *Plugin) getQuotaInfoUsedLimit(quotaInfo *core.QuotaInfo) v1.ResourceList {
+	if g.pluginArgs.EnableRuntimeQuota {
+		return quotaInfo.GetRuntime()
+	}
+	return quotaInfo.GetMax()
 }

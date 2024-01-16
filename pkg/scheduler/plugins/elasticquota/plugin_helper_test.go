@@ -27,6 +27,8 @@ import (
 	schedulerv1alpha1 "sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/elasticquota/core"
 )
 
 func TestGetQuotaName(t *testing.T) {
@@ -102,6 +104,55 @@ func TestGetQuotaName(t *testing.T) {
 			time.Sleep(100 * time.Millisecond)
 			quotaName := eQP.GetQuotaName(tt.pod)
 			assert.Equal(t, tt.expectQuotaName, quotaName)
+		})
+	}
+}
+
+func TestPlugin_getQuotaInfoRuntime(t *testing.T) {
+	type args struct {
+		quotaInfo          *core.QuotaInfo
+		enableRuntimeQuota bool
+	}
+	tests := []struct {
+		name string
+		args args
+		want corev1.ResourceList
+	}{
+		{
+			name: "get runtime",
+			args: args{
+				enableRuntimeQuota: true,
+				quotaInfo: &core.QuotaInfo{
+					CalculateInfo: core.QuotaCalculateInfo{
+						Max:     createResourceList(100, 100),
+						Runtime: createResourceList(1, 1),
+					},
+				},
+			},
+			want: createResourceList(1, 1),
+		},
+		{
+			name: "get max",
+			args: args{
+				enableRuntimeQuota: false,
+				quotaInfo: &core.QuotaInfo{
+					CalculateInfo: core.QuotaCalculateInfo{
+						Max:     createResourceList(100, 100),
+						Runtime: createResourceList(1, 1),
+					},
+				},
+			},
+			want: createResourceList(100, 100),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := &Plugin{
+				pluginArgs: &config.ElasticQuotaArgs{
+					EnableRuntimeQuota: tt.args.enableRuntimeQuota,
+				},
+			}
+			assert.Equalf(t, tt.want, g.getQuotaInfoUsedLimit(tt.args.quotaInfo), "getQuotaInfoUsedLimit(%v)", tt.args.quotaInfo)
 		})
 	}
 }
