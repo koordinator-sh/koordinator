@@ -155,7 +155,7 @@ func (g *Plugin) migratePods(out, in string) {
 
 // createDefaultQuotaIfNotPresent create DefaultQuotaGroup's CRD
 func (g *Plugin) createDefaultQuotaIfNotPresent() {
-	eq, _ := g.quotaLister.ElasticQuotas(g.pluginArgs.QuotaGroupNamespace).Get(extension.DefaultQuotaName)
+	eq, _ := g.client.SchedulingV1alpha1().ElasticQuotas(g.pluginArgs.QuotaGroupNamespace).Get(context.TODO(), extension.DefaultQuotaName, metav1.GetOptions{ResourceVersion: "0"})
 	if eq != nil {
 		klog.Infof("DefaultQuota already exists, skip create it.")
 		return
@@ -185,7 +185,7 @@ func (g *Plugin) createDefaultQuotaIfNotPresent() {
 // defaultQuotaInfo and systemQuotaInfo are created once the groupQuotaManager is created, but we also want to see
 // the used/request of the two quotaGroups, so we create the two quota's CRD if not present.
 func (g *Plugin) createSystemQuotaIfNotPresent() {
-	eq, _ := g.quotaLister.ElasticQuotas(g.pluginArgs.QuotaGroupNamespace).Get(extension.SystemQuotaName)
+	eq, _ := g.client.SchedulingV1alpha1().ElasticQuotas(g.pluginArgs.QuotaGroupNamespace).Get(context.TODO(), extension.SystemQuotaName, metav1.GetOptions{ResourceVersion: "0"})
 	if eq != nil {
 		klog.Infof("SystemQuota already exists, skip create it.")
 		return
@@ -214,7 +214,7 @@ func (g *Plugin) createSystemQuotaIfNotPresent() {
 
 // createRootQuotaIfNotPresent create RootQuotaGroup's CRD
 func (g *Plugin) createRootQuotaIfNotPresent() {
-	eq, _ := g.quotaLister.ElasticQuotas(g.pluginArgs.QuotaGroupNamespace).Get(extension.RootQuotaName)
+	eq, _ := g.client.SchedulingV1alpha1().ElasticQuotas(g.pluginArgs.QuotaGroupNamespace).Get(context.TODO(), extension.RootQuotaName, metav1.GetOptions{ResourceVersion: "0"})
 	if eq != nil {
 		klog.Infof("RootQuota already exists, skip create it.")
 		return
