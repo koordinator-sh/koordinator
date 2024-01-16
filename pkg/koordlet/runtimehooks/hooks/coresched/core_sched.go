@@ -27,7 +27,6 @@ import (
 	"k8s.io/utils/pointer"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
-	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/hooks"
@@ -51,6 +50,8 @@ const (
 
 	// ExpellerGroupSuffix is the default suffix of the expeller core sched group.
 	ExpellerGroupSuffix = "-expeller"
+	// NoneGroupID is the special ID denoting none core sched group.
+	NoneGroupID = "__0__"
 )
 
 // SYSTEM QoS is excluded from the cookie mutating.
@@ -66,9 +67,9 @@ type Plugin struct {
 	initialized     *atomic.Bool // whether the cache has been initialized
 	allPodsSyncOnce sync.Once    // sync once for AllPods
 
-	sysSupported *bool
-	supportedMsg string
-	sysEnabled   bool
+	sysSupported      *bool
+	supportedMsg      string
+	giSysctlSupported *bool
 
 	cookieCache        *gocache.Cache // core-sched-group-id -> cookie id, set<pid>; if the group has had cookie
 	cookieCacheRWMutex sync.RWMutex
@@ -103,10 +104,12 @@ func (p *Plugin) Register(op hooks.Options) {
 	// TODO: hook NRI events RunPodSandbox, PostStartContainer
 	rule.Register(ruleNameForNodeSLO, description,
 		rule.WithParseFunc(statesinformer.RegisterTypeNodeSLOSpec, p.parseRuleForNodeSLO),
-		rule.WithUpdateCallback(p.ruleUpdateCb))
+		rule.WithUpdateCallback(p.ruleUpdateCb),
+		rule.WithSystemSupported(p.SystemSupported))
 	rule.Register(ruleNameForAllPods, description,
 		rule.WithParseFunc(statesinformer.RegisterTypeAllPods, p.parseForAllPods),
-		rule.WithUpdateCallback(p.ruleUpdateCb))
+		rule.WithUpdateCallback(p.ruleUpdateCb),
+		rule.WithSystemSupported(p.SystemSupported))
 	reconciler.RegisterCgroupReconciler(reconciler.ContainerLevel, sysutil.VirtualCoreSchedCookie,
 		"set core sched cookie to process groups of container specified",
 		p.SetContainerCookie, reconciler.PodQOSFilter(), podQOSConditions...)
@@ -125,26 +128,15 @@ func (p *Plugin) Setup(op hooks.Options) {
 	p.cse = sysutil.NewCoreSchedExtended()
 }
 
-func (p *Plugin) SystemSupported() (bool, string) {
+func (p *Plugin) SystemSupported() bool {
 	if p.sysSupported == nil {
-		isSupported, msg := sysutil.EnableCoreSchedIfSupported()
-		p.sysSupported = pointer.Bool(isSupported)
+		sysSupported, msg := sysutil.IsCoreSchedSupported()
+		p.sysSupported = pointer.Bool(sysSupported)
 		p.supportedMsg = msg
-		klog.Infof("update system supported info for plugin %s, supported %v, msg %s",
-			name, *p.sysSupported, p.supportedMsg)
+		klog.Infof("update system supported info to %v for plugin %v, supported msg %s",
+			sysSupported, name, msg)
 	}
-	return *p.sysSupported, p.supportedMsg
-}
-
-func (p *Plugin) InitCache(podMetas []*statesinformer.PodMeta) bool {
-	if p.initialized.Load() {
-		return true
-	}
-
-	synced := p.LoadAllCookies(podMetas)
-
-	p.initialized.Store(synced)
-	return synced
+	return *p.sysSupported
 }
 
 func (p *Plugin) IsCacheInited() bool {
@@ -200,10 +192,17 @@ func (p *Plugin) SetContainerCookie(proto protocol.HooksProtocol) error {
 	podUID := containerCtx.Request.PodMeta.UID
 	// only process sandbox container or container has valid ID
 	if len(podUID) <= 0 || len(containerCtx.Request.ContainerMeta.ID) <= 0 {
-		return fmt.Errorf("invalid container ID for plugin %s, pod UID %s, container ID %s",
-			name, podUID, containerCtx.Request.ContainerMeta.ID)
+		klog.V(5).Infof("aborted to manage cookie for container %s/%s, err: empty pod UID %s or container ID %s",
+			containerCtx.Request.PodMeta.String(), containerCtx.Request.ContainerMeta.Name,
+			podUID, containerCtx.Request.ContainerMeta.ID)
+		return nil
 	}
 
+	if !p.SystemSupported() {
+		klog.V(6).Infof("skipped to set cookie for container %s/%s, core sched is unsupported, msg: %s",
+			containerCtx.Request.PodMeta.String(), containerCtx.Request.ContainerMeta.Name, p.supportedMsg)
+		return nil
+	}
 	if !p.rule.IsInited() || !p.IsCacheInited() {
 		klog.V(5).Infof("plugin %s has not been inited, rule inited %v, cache inited %v, aborted to set cookie for container %s/%s",
 			name, p.rule.IsInited(), p.IsCacheInited(), containerCtx.Request.PodMeta.String(), containerCtx.Request.ContainerMeta.Name)
@@ -219,6 +218,15 @@ func (p *Plugin) SetContainerCookie(proto protocol.HooksProtocol) error {
 	// 1. disabled -> enabled: Add or Assign.
 	// 2. keep enabled: Check the differences of cookie, group ID and the PIDs, and do Assign.
 	if isEnabled {
+		// FIXME(saintube): Currently we need to ensure the group identity is disabled via sysctl before enabling
+		//   the core sched cookie in the container reconciler, because the disabling during the rule update might
+		//   fail. This check can be removed once the kernel feature provides a way to disable the group identity.
+		if err := p.initSystem(true); err != nil {
+			klog.V(4).Infof("plugin %s failed to initialize system for container %s/%s, err: %s",
+				name, containerCtx.Request.PodMeta.String(), containerCtx.Request.ContainerMeta.Name, err)
+			return nil
+		}
+
 		return p.enableContainerCookie(containerCtx, groupID)
 	}
 	// else pod disables
@@ -226,8 +234,19 @@ func (p *Plugin) SetContainerCookie(proto protocol.HooksProtocol) error {
 	return p.disableContainerCookie(containerCtx, groupID)
 }
 
-// LoadAllCookies syncs the current core sched cookies of all pods into the cookie cache.
-func (p *Plugin) LoadAllCookies(podMetas []*statesinformer.PodMeta) bool {
+func (p *Plugin) initCache(podMetas []*statesinformer.PodMeta) bool {
+	if p.initialized.Load() {
+		return true
+	}
+
+	synced := p.loadAllCookies(podMetas)
+
+	p.initialized.Store(synced)
+	return synced
+}
+
+// loadAllCookies syncs the current core sched cookies of all pods into the cookie cache.
+func (p *Plugin) loadAllCookies(podMetas []*statesinformer.PodMeta) bool {
 	hasSynced := false
 	p.cookieCacheRWMutex.Lock()
 	defer p.cookieCacheRWMutex.Unlock()
@@ -299,6 +318,38 @@ func (p *Plugin) LoadAllCookies(podMetas []*statesinformer.PodMeta) bool {
 	}
 
 	return hasSynced
+}
+
+func (p *Plugin) initSystem(isEnabled bool) error {
+	if !isEnabled { // only switch sysctl if enabled
+		return nil
+	}
+
+	// NOTE: Currently the kernel feature core scheduling is strictly excluded with the group identity's
+	//       bvt=-1. So we have to check if the GroupIdentity can be disabled before creating core sched cookies.
+	err := p.tryDisableGroupIdentity()
+	if err != nil {
+		return err
+	}
+
+	sysEnabled, msg := sysutil.EnableCoreSchedIfSupported()
+	if !sysEnabled {
+		return fmt.Errorf("failed to enable core sched, msg: %s", msg)
+	}
+
+	return nil
+}
+
+// tryDisableGroupIdentity tries disabling the group identity via sysctl to safely enable the core sched.
+func (p *Plugin) tryDisableGroupIdentity() error {
+	if p.giSysctlSupported == nil {
+		p.giSysctlSupported = pointer.Bool(sysutil.IsGroupIdentitySysctlSupported())
+	}
+	if !*p.giSysctlSupported { // not support either the group identity or the core sched
+		return nil
+	}
+
+	return sysutil.SetSchedGroupIdentity(false)
 }
 
 // enableContainerCookie adds or assigns a core sched cookie for the container.
@@ -405,7 +456,7 @@ func (p *Plugin) disableContainerCookie(containerCtx *protocol.ContainerContext,
 	// invalid lastGroupID means container not in group cache (container should be cleared or not ever added)
 	// invalid lastCookieEntry means group not in cookie cache (group should be cleared)
 	// let its cached PIDs expire or removed by siblings' Assign
-	if (len(lastGroupID) <= 0 || lastGroupID == slov1alpha1.CoreSchedGroupIDNone) && lastCookieEntry == nil {
+	if (len(lastGroupID) <= 0 || lastGroupID == NoneGroupID) && lastCookieEntry == nil {
 		return nil
 	}
 
@@ -446,7 +497,7 @@ func (p *Plugin) getCookieCacheForContainer(groupID, containerUID string) (strin
 	defer p.cookieCacheRWMutex.RUnlock()
 
 	lastGroupIDIf, containerHasGroup := p.groupCache.Get(containerUID)
-	lastGroupID := slov1alpha1.CoreSchedGroupIDNone
+	lastGroupID := NoneGroupID
 	if containerHasGroup {
 		lastGroupID = lastGroupIDIf.(string)
 	}

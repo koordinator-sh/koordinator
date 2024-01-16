@@ -40,11 +40,6 @@ func initKernelGroupIdentity(value int64, helper *system.FileTestUtil) {
 	helper.WriteProcSubFileContents(filepath.Join(system.SysctlSubDir, system.KernelSchedGroupIdentityEnable), strconv.FormatInt(value, 10))
 }
 
-func getKernelGroupIdentity(helper *system.FileTestUtil) (int64, error) {
-	valueStr := helper.ReadProcSubFileContents(filepath.Join(system.SysctlSubDir, system.KernelSchedGroupIdentityEnable))
-	return strconv.ParseInt(valueStr, 10, 64)
-}
-
 func getPodCPUBvt(podDirWithKube string, helper *system.FileTestUtil) int64 {
 	valueStr := helper.ReadCgroupFileContents(podDirWithKube, system.CPUBVTWarpNs)
 	value, _ := strconv.ParseInt(valueStr, 10, 64)
@@ -110,6 +105,15 @@ func Test_bvtPlugin_systemSupported(t *testing.T) {
 	}
 }
 
+func TestObject(t *testing.T) {
+	t.Run("test", func(t *testing.T) {
+		b := Object()
+		assert.NotNil(t, b)
+		b1 := Object()
+		assert.Equal(t, b, b1)
+	})
+}
+
 func Test_bvtPlugin_Register(t *testing.T) {
 	t.Run("register bvt plugin", func(t *testing.T) {
 		b := &bvtPlugin{}
@@ -117,7 +121,125 @@ func Test_bvtPlugin_Register(t *testing.T) {
 	})
 }
 
-func Test_bvtPlugin_initialized(t *testing.T) {
+func Test_bvtPlugin_initSysctl(t *testing.T) {
+	type fields struct {
+		prepareFn                func(helper *system.FileTestUtil)
+		hasKernelEnabled         *bool
+		coreSchedSysctlSupported *bool
+	}
+	tests := []struct {
+		name    string
+		fields  fields
+		wantErr bool
+		wantFn  func(t *testing.T, helper *system.FileTestUtil)
+	}{
+		{
+			name: "no need to init when sysctl not exist",
+			fields: fields{
+				hasKernelEnabled: nil,
+			},
+			wantErr: false,
+		},
+		{
+			name: "only enable sysctl for group identity",
+			fields: fields{
+				prepareFn: func(helper *system.FileTestUtil) {
+					helper.WriteFileContents(system.GetProcSysFilePath(system.KernelSchedGroupIdentityEnable), "0")
+				},
+				hasKernelEnabled: nil,
+			},
+			wantErr: false,
+			wantFn: func(t *testing.T, helper *system.FileTestUtil) {
+				got := helper.ReadFileContents(system.GetProcSysFilePath(system.KernelSchedGroupIdentityEnable))
+				assert.Equal(t, "1", got)
+			},
+		},
+		{
+			name: "enable sysctl for group identity and disable core sched",
+			fields: fields{
+				prepareFn: func(helper *system.FileTestUtil) {
+					helper.WriteFileContents(system.GetProcSysFilePath(system.KernelSchedGroupIdentityEnable), "0")
+					helper.WriteFileContents(system.GetProcSysFilePath(system.KernelSchedCore), "1")
+				},
+				hasKernelEnabled: nil,
+			},
+			wantErr: false,
+			wantFn: func(t *testing.T, helper *system.FileTestUtil) {
+				got := helper.ReadFileContents(system.GetProcSysFilePath(system.KernelSchedGroupIdentityEnable))
+				assert.Equal(t, "1", got)
+				got = helper.ReadFileContents(system.GetProcSysFilePath(system.KernelSchedCore))
+				assert.Equal(t, "0", got)
+			},
+		},
+		{
+			name: "skip enable sysctl for group identity 1",
+			fields: fields{
+				prepareFn: func(helper *system.FileTestUtil) {
+					helper.WriteFileContents(system.GetProcSysFilePath(system.KernelSchedGroupIdentityEnable), "1")
+					helper.WriteFileContents(system.GetProcSysFilePath(system.KernelSchedCore), "0")
+				},
+				hasKernelEnabled: nil,
+			},
+			wantErr: false,
+			wantFn: func(t *testing.T, helper *system.FileTestUtil) {
+				got := helper.ReadFileContents(system.GetProcSysFilePath(system.KernelSchedGroupIdentityEnable))
+				assert.Equal(t, "1", got)
+				got = helper.ReadFileContents(system.GetProcSysFilePath(system.KernelSchedCore))
+				assert.Equal(t, "0", got)
+			},
+		},
+		{
+			name: "failed to disable core sched",
+			fields: fields{
+				prepareFn: func(helper *system.FileTestUtil) {
+					helper.WriteFileContents(system.GetProcSysFilePath(system.KernelSchedGroupIdentityEnable), "0")
+				},
+				hasKernelEnabled:         pointer.Bool(true),
+				coreSchedSysctlSupported: pointer.Bool(true),
+			},
+			wantErr: true,
+			wantFn: func(t *testing.T, helper *system.FileTestUtil) {
+				got := helper.ReadFileContents(system.GetProcSysFilePath(system.KernelSchedGroupIdentityEnable))
+				assert.Equal(t, "0", got)
+			},
+		},
+		{
+			name: "failed to disable sysctl for group identity",
+			fields: fields{
+				prepareFn: func(helper *system.FileTestUtil) {
+					helper.WriteFileContents(system.GetProcSysFilePath(system.KernelSchedCore), "1")
+				},
+				hasKernelEnabled: pointer.Bool(true),
+			},
+			wantErr: true,
+			wantFn: func(t *testing.T, helper *system.FileTestUtil) {
+				got := helper.ReadFileContents(system.GetProcSysFilePath(system.KernelSchedCore))
+				assert.Equal(t, "0", got)
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			helper := system.NewFileTestUtil(t)
+			defer helper.Cleanup()
+			if tt.fields.prepareFn != nil {
+				tt.fields.prepareFn(helper)
+			}
+
+			b := &bvtPlugin{
+				hasKernelEnabled:         tt.fields.hasKernelEnabled,
+				coreSchedSysctlSupported: tt.fields.coreSchedSysctlSupported,
+			}
+			gotErr := b.initSysctl()
+			assert.Equal(t, tt.wantErr, gotErr != nil, gotErr)
+			if tt.wantFn != nil {
+				tt.wantFn(t, helper)
+			}
+		})
+	}
+}
+
+func Test_bvtPlugin_prepare(t *testing.T) {
 	kubeRootDir := util.GetPodQoSRelativePath(corev1.PodQOSGuaranteed)
 	type fields struct {
 		initPath                     *string
@@ -125,98 +247,82 @@ func Test_bvtPlugin_initialized(t *testing.T) {
 		initKernelGroupIdentityValue int
 		rule                         *bvtRule
 		hasKernelEnable              *bool
-		kernelEnabled                *bool
+		sysSupported                 *bool
 	}
 	tests := []struct {
 		name       string
 		fields     fields
-		wantErr    bool
+		want       *bvtRule
 		wantFields *int64
 	}{
 		{
-			name:    "cannot initialize since system not support",
-			fields:  fields{},
-			wantErr: false,
+			name:   "cannot prepare since system not support",
+			fields: fields{},
+			want:   nil,
 		},
 		{
-			name: "no need to initialize",
-			fields: fields{
-				hasKernelEnable: pointer.Bool(false),
-			},
-			wantErr: false,
-		},
-		{
-			name: "failed to initialize",
-			fields: fields{
-				hasKernelEnable: pointer.Bool(true),
-			},
-			wantErr: true,
-		},
-		{
-			name: "initialized since only bvt file exist",
+			name: "prepare successfully without sysctl",
 			fields: fields{
 				initPath: &kubeRootDir,
+				rule: &bvtRule{
+					enable: false,
+				},
+				hasKernelEnable: pointer.Bool(false),
 			},
-			wantErr: false,
+			want: &bvtRule{
+				enable: false,
+			},
 		},
 		{
-			name: "initialized since bvt kernel file exist",
+			name: "failed to prepare since rule is empty",
+			fields: fields{
+				sysSupported:    pointer.Bool(true),
+				hasKernelEnable: pointer.Bool(true),
+			},
+			want: nil,
+		},
+		{
+			name: "no need to prepare since rule and sysctl disabled",
 			fields: fields{
 				initKernelGroupIdentity:      true,
 				initKernelGroupIdentityValue: 0,
 				rule: &bvtRule{
-					enable: true,
+					enable: false,
 				},
+				sysSupported:    pointer.Bool(true),
+				hasKernelEnable: pointer.Bool(true),
 			},
-			wantFields: pointer.Int64(1),
+			want: nil,
 		},
 		{
-			name: "initialized since bvt kernel file exist 1",
-			fields: fields{
-				initKernelGroupIdentity:      true,
-				initKernelGroupIdentityValue: 1,
-				rule: &bvtRule{
-					enable: true,
-				},
-			},
-			wantFields: pointer.Int64(1),
-		},
-		{
-			name: "initialized since bvt kernel file exist 2",
-			fields: fields{
-				initPath:                     &kubeRootDir,
-				initKernelGroupIdentity:      true,
-				initKernelGroupIdentityValue: 0,
-				rule: &bvtRule{
-					enable: true,
-				},
-			},
-			wantFields: pointer.Int64(1),
-		},
-		{
-			name: "not initialize since bvt file not exist and cpu qos disabled",
+			name: "need to prepare since sysctl enabled",
 			fields: fields{
 				initKernelGroupIdentity:      true,
 				initKernelGroupIdentityValue: 1,
 				rule: &bvtRule{
 					enable: false,
 				},
+				sysSupported:    pointer.Bool(true),
+				hasKernelEnable: pointer.Bool(true),
 			},
-			wantFields: pointer.Int64(1),
+			want: &bvtRule{
+				enable: false,
+			},
 		},
 		{
-			name: "skip sysctl set since bvt kernel enable not changed",
+			name: "need to prepare since rule enabled",
 			fields: fields{
-				initPath:                     &kubeRootDir,
 				initKernelGroupIdentity:      true,
-				initKernelGroupIdentityValue: 0,
+				initKernelGroupIdentityValue: 1,
 				rule: &bvtRule{
 					enable: true,
 				},
+				sysSupported:    pointer.Bool(true),
 				hasKernelEnable: pointer.Bool(true),
-				kernelEnabled:   pointer.Bool(true),
 			},
-			wantFields: pointer.Int64(0),
+			want: &bvtRule{
+				enable: true,
+			},
 		},
 	}
 	for _, tt := range tests {
@@ -232,16 +338,10 @@ func Test_bvtPlugin_initialized(t *testing.T) {
 			b := &bvtPlugin{
 				rule:             tt.fields.rule,
 				hasKernelEnabled: tt.fields.hasKernelEnable,
-				kernelEnabled:    tt.fields.kernelEnabled,
+				sysSupported:     tt.fields.sysSupported,
 			}
-			gotErr := b.initialize()
-			assert.Equal(t, tt.wantErr, gotErr != nil)
-
-			if tt.wantFields != nil {
-				got, err := getKernelGroupIdentity(testHelper)
-				assert.NoError(t, err)
-				assert.Equal(t, *tt.wantFields, got)
-			}
+			got := b.prepare()
+			assert.Equal(t, tt.want, got)
 		})
 	}
 }

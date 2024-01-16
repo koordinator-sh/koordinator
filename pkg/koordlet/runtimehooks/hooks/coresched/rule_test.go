@@ -268,6 +268,7 @@ func Test_parseRuleForNodeSLO(t *testing.T) {
 			want:    true,
 			wantErr: false,
 			wantField: &Rule{
+				enable: true,
 				podQOSParams: map[extension.QoSClass]Param{
 					extension.QoSLSE: {
 						IsPodEnabled: false,
@@ -313,6 +314,7 @@ func Test_parseRuleForNodeSLO(t *testing.T) {
 			name: "policy enabled on BE",
 			field: field{
 				rule: &Rule{
+					enable: true,
 					podQOSParams: map[extension.QoSClass]Param{
 						extension.QoSLSE: {
 							IsPodEnabled: true,
@@ -384,6 +386,7 @@ func Test_parseRuleForNodeSLO(t *testing.T) {
 			want:    true,
 			wantErr: false,
 			wantField: &Rule{
+				enable: true,
 				podQOSParams: map[extension.QoSClass]Param{
 					extension.QoSLSE: {
 						IsPodEnabled: true,
@@ -556,6 +559,72 @@ func Test_ruleUpdateCb(t *testing.T) {
 			wantFields: wantFields{
 				rule:         testGetEnabledRule(),
 				sysSupported: pointer.Bool(false),
+				initialized:  false,
+			},
+		},
+		{
+			name: "failed to init core sched via sysctl",
+			fields: fields{
+				prepareFn: func(helper *sysutil.FileTestUtil) {
+				},
+				plugin: newPlugin(),
+				preparePluginFn: func(p *Plugin) {
+					p.rule = testGetEnabledRule()
+					p.sysSupported = pointer.Bool(true)
+				},
+			},
+			arg: &statesinformer.CallbackTarget{
+				Pods: []*statesinformer.PodMeta{
+					{
+						CgroupDir: "kubepods.slice/kubepods-podxxxxxx.slice",
+						Pod: &corev1.Pod{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:        "test-pod",
+								UID:         "xxxxxx",
+								Annotations: map[string]string{},
+								Labels: map[string]string{
+									extension.LabelPodQoS:             string(extension.QoSLS),
+									slov1alpha1.LabelCoreSchedGroupID: "group-xxx",
+								},
+							},
+							Spec: corev1.PodSpec{
+								Containers: []corev1.Container{
+									{
+										Name: "test-container",
+										Resources: corev1.ResourceRequirements{
+											Requests: corev1.ResourceList{
+												corev1.ResourceCPU:    resource.MustParse("2"),
+												corev1.ResourceMemory: resource.MustParse("4Gi"),
+											},
+											Limits: corev1.ResourceList{
+												corev1.ResourceCPU:    resource.MustParse("2"),
+												corev1.ResourceMemory: resource.MustParse("4Gi"),
+											},
+										},
+									},
+								},
+							},
+							Status: corev1.PodStatus{
+								Phase:    corev1.PodRunning,
+								QOSClass: corev1.PodQOSGuaranteed,
+								ContainerStatuses: []corev1.ContainerStatus{
+									{
+										Name:        "test-container",
+										ContainerID: "containerd://yyyyyy",
+										State: corev1.ContainerState{
+											Running: &corev1.ContainerStateRunning{},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			wantErr: false,
+			wantFields: wantFields{
+				rule:         testGetEnabledRule(),
+				sysSupported: pointer.Bool(true),
 				initialized:  false,
 			},
 		},
@@ -1513,7 +1582,8 @@ func Test_ruleUpdateCb(t *testing.T) {
 								Annotations: map[string]string{},
 								Labels: map[string]string{
 									extension.LabelPodQoS:             string(extension.QoSLSR),
-									slov1alpha1.LabelCoreSchedGroupID: slov1alpha1.CoreSchedGroupIDNone,
+									slov1alpha1.LabelCoreSchedGroupID: "group-nnn",
+									slov1alpha1.LabelCoreSchedPolicy:  string(slov1alpha1.CoreSchedPolicyNone),
 								},
 							},
 							Spec: corev1.PodSpec{
@@ -1635,6 +1705,7 @@ func testGetDisabledRuleParam() Param {
 func testGetEnabledRule() *Rule {
 	// use default CPUQOS
 	return &Rule{
+		enable: true,
 		podQOSParams: map[extension.QoSClass]Param{
 			extension.QoSLSE: {
 				IsPodEnabled: true,
@@ -1680,6 +1751,7 @@ func testGetEnabledRule() *Rule {
 func testGetAllEnabledRule() *Rule {
 	// use default CPUQOS and enable CPU Idle
 	return &Rule{
+		enable: true,
 		podQOSParams: map[extension.QoSClass]Param{
 			extension.QoSLSE: {
 				IsPodEnabled: true,
@@ -1724,6 +1796,7 @@ func testGetAllEnabledRule() *Rule {
 
 func testGetDisabledRule() *Rule {
 	return &Rule{
+		enable: false,
 		podQOSParams: map[extension.QoSClass]Param{
 			extension.QoSLSE: testGetDisabledRuleParam(),
 			extension.QoSLSR: testGetDisabledRuleParam(),
