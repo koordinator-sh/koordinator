@@ -152,7 +152,7 @@ func (in *ExtensionCfg) DeepCopy() *ExtensionCfg {
 // +k8s:deepcopy-gen=false
 type NodeExtensionStrategy struct {
 	NodeCfgProfile `json:",inline"`
-	NodeStrategy   interface{} // for third-party extension
+	NodeStrategy   interface{} `json:",inline"` // for third-party extension
 }
 
 func (in *NodeExtensionStrategy) DeepCopyInto(out *NodeExtensionStrategy) {
