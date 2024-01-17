@@ -181,6 +181,9 @@ type ElasticQuotaArgs struct {
 
 	// EnableCheckParentQuota check parentQuotaGroups' used and runtime Quota in PreFilter
 	EnableCheckParentQuota *bool `json:"enableCheckParentQuota,omitempty"`
+
+	// EnableRuntimeQuota if false, use max instead of runtime for all checks.
+	EnableRuntimeQuota *bool
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object

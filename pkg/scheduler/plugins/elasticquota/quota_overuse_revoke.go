@@ -152,6 +152,7 @@ type QuotaOverUsedRevokeController struct {
 	overUsedTriggerEvictDuration time.Duration
 	revokePodCycle               time.Duration
 	monitorAllQuotas             bool
+	enableRuntimeQuota           bool
 	plugin                       *Plugin
 }
 
@@ -165,6 +166,8 @@ func NewQuotaOverUsedRevokeController(plugin *Plugin) *QuotaOverUsedRevokeContro
 	if plugin.pluginArgs.MonitorAllQuotas != nil {
 		controller.monitorAllQuotas = *plugin.pluginArgs.MonitorAllQuotas
 	}
+	controller.enableRuntimeQuota = plugin.pluginArgs.EnableRuntimeQuota
+
 	return controller
 }
 
@@ -175,6 +178,10 @@ func (controller *QuotaOverUsedRevokeController) Name() string {
 func (controller *QuotaOverUsedRevokeController) Start() {
 	if !controller.monitorAllQuotas {
 		klog.Infof("monitorAllQuotas not true. will not start elasticQuota QuotaOverUsedRevokeController")
+		return
+	}
+	if !controller.enableRuntimeQuota {
+		klog.Infof("enableRuntimeQuota is false. will not start elasticQuota QuotaOverUsedRevokeController")
 		return
 	}
 	go wait.Until(controller.revokePodDueToQuotaOverUsed, controller.revokePodCycle, nil)
