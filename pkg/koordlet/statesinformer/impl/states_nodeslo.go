@@ -254,11 +254,18 @@ func mergeSLOSpecExtensions(defaultSpec,
 	if newSpec != nil {
 		spec = newSpec
 	}
-	// ignore err for serializing/deserializing the same struct type
-	data, _ := json.Marshal(spec)
-	// NOTE: use deepcopy to avoid a overwrite to the global default
+
 	out := defaultSpec.DeepCopy()
-	_ = json.Unmarshal(data, &out)
+	for key := range out.Object {
+		// merge extension one by one so that all extension types can be protected during unmarshal
+		if newObj, exist := spec.Object[key]; exist {
+			// ignore err for serializing/deserializing the same struct type
+			data, _ := json.Marshal(newObj)
+			// NOTE: use deepcopy to avoid a overwrite to the global default
+			_ = json.Unmarshal(data, out.Object[key])
+		}
+	}
+
 	return out
 }
 
