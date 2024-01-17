@@ -187,7 +187,6 @@ func (e *ResourceUpdateExecutorImpl) LeveledUpdateBatch(updaters [][]ResourceUpd
 }
 
 // Run runs the ResourceUpdateExecutor.
-// TODO: run single executor when the qos manager starts.
 func (e *ResourceUpdateExecutorImpl) Run(stopCh <-chan struct{}) {
 	e.onceRun.Do(func() {
 		e.run(stopCh)
