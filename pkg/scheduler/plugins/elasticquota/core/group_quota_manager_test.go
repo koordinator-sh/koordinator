@@ -1466,44 +1466,6 @@ func TestNewGroupQuotaManager(t *testing.T) {
 	assert.Equal(t, createResourceList(500, 500), gqm.GetClusterTotalResource())
 }
 
-func TestGroupQuotaManager_GetQuotaInformationForSyncHandler(t *testing.T) {
-	gqm := NewGroupQuotaManagerForTest()
-	qi1 := createQuota("1", extension.RootQuotaName, 400, 400, 10, 10)
-	gqm.UpdateQuota(qi1, false)
-	gqm.UpdateClusterTotalResource(createResourceList(1000, 1000))
-	gqm.updateGroupDeltaRequestNoLock("1", createResourceList(100, 100), createResourceList(100, 100))
-	gqm.RefreshRuntime("1")
-	gqm.updateGroupDeltaUsedNoLock("1", createResourceList(10, 10), createResourceList(0, 0))
-	used, request, childRequest, runtime, _, _, _, _, err := gqm.GetQuotaInformationForSyncHandler("1")
-	assert.Nil(t, err)
-	assert.Equal(t, used, createResourceList(10, 10))
-	assert.Equal(t, request, createResourceList(100, 100))
-	assert.Equal(t, childRequest, createResourceList(100, 100))
-	assert.Equal(t, runtime, createResourceList(100, 100))
-}
-
-func TestGroupQuotaManager_GetQuotaInformationForSyncHandlerWithUsageGuarantee(t *testing.T) {
-	defer utilfeature.SetFeatureGateDuringTest(t, k8sfeature.DefaultFeatureGate, features.ElasticQuotaGuaranteeUsage, true)()
-
-	gqm := NewGroupQuotaManagerForTest()
-	qi1 := createQuota("1", extension.RootQuotaName, 400, 400, 10, 10)
-	gqm.UpdateQuota(qi1, false)
-	gqm.UpdateClusterTotalResource(createResourceList(1000, 1000))
-	gqm.updateGroupDeltaRequestNoLock("1", createResourceList(100, 100), createResourceList(100, 100))
-	gqm.RefreshRuntime("1")
-	gqm.updateGroupDeltaUsedNoLock("1", createResourceList(10, 10), createResourceList(0, 0))
-	used, request, childRequest, runtime, guaranteed, allocated, nonPreemptibleRequest, nonPreemptibleUsed, err := gqm.GetQuotaInformationForSyncHandler("1")
-	assert.Nil(t, err)
-	assert.Equal(t, used, createResourceList(10, 10))
-	assert.Equal(t, request, createResourceList(100, 100))
-	assert.Equal(t, childRequest, createResourceList(100, 100))
-	assert.Equal(t, runtime, createResourceList(100, 100))
-	assert.Equal(t, guaranteed, createResourceList(10, 10))
-	assert.Equal(t, allocated, createResourceList(10, 10))
-	assert.Equal(t, nonPreemptibleRequest, createResourceList(100, 100))
-	assert.Equal(t, nonPreemptibleUsed, createResourceList(0, 0))
-}
-
 func TestGetPodName(t *testing.T) {
 	pod1 := schetesting.MakePod().Name("1").Obj()
 	assert.Equal(t, pod1.Name, getPodName(pod1, nil))

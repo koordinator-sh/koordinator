@@ -46,7 +46,7 @@ type QuotaInfoSummary struct {
 	Allocated             v1.ResourceList `json:"allocated"`
 	Guaranteed            v1.ResourceList `json:"guaranteed"`
 
-	PodCache map[string]*SimplePodInfo `json:"podCache"`
+	PodCache map[string]*SimplePodInfo `json:"podCache,omitempty"`
 }
 
 func NewQuotaInfoSummary() *QuotaInfoSummary {

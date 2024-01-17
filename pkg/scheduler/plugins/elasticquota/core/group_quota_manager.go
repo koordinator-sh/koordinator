@@ -696,7 +696,7 @@ func (gqm *GroupQuotaManager) MigratePod(pod *v1.Pod, out, in string) {
 	klog.V(5).Infof("migrate pod %v from quota %v to quota %v, podPhase: %v", pod.Name, out, in, pod.Status.Phase)
 }
 
-func (gqm *GroupQuotaManager) GetQuotaSummary(quotaName string) (*QuotaInfoSummary, bool) {
+func (gqm *GroupQuotaManager) GetQuotaSummary(quotaName string, includePods bool) (*QuotaInfoSummary, bool) {
 	gqm.hierarchyUpdateLock.RLock()
 	defer gqm.hierarchyUpdateLock.RUnlock()
 
@@ -705,19 +705,23 @@ func (gqm *GroupQuotaManager) GetQuotaSummary(quotaName string) (*QuotaInfoSumma
 		return nil, false
 	}
 
-	quotaSummary := quotaInfo.GetQuotaSummary()
+	quotaSummary := quotaInfo.GetQuotaSummary(includePods)
 	runtime := gqm.RefreshRuntimeNoLock(quotaName)
 	quotaSummary.Runtime = runtime.DeepCopy()
 	return quotaSummary, true
 }
 
-func (gqm *GroupQuotaManager) GetQuotaSummaries() map[string]*QuotaInfoSummary {
+func (gqm *GroupQuotaManager) GetQuotaSummaries(includePods bool) map[string]*QuotaInfoSummary {
 	gqm.hierarchyUpdateLock.RLock()
 	defer gqm.hierarchyUpdateLock.RUnlock()
 
 	result := make(map[string]*QuotaInfoSummary)
 	for quotaName, quotaInfo := range gqm.quotaInfoMap {
-		quotaSummary := quotaInfo.GetQuotaSummary()
+		// Skip koordinator-root-quota since it's an abstract entity
+		if quotaName == extension.RootQuotaName {
+			continue
+		}
+		quotaSummary := quotaInfo.GetQuotaSummary(includePods)
 		runtime := gqm.RefreshRuntimeNoLock(quotaName)
 		quotaSummary.Runtime = runtime.DeepCopy()
 		quotaSummary.Tree = gqm.treeID
@@ -803,22 +807,6 @@ func (gqm *GroupQuotaManager) UnreservePod(quotaName string, p *v1.Pod) {
 
 	gqm.updatePodUsedNoLock(quotaName, p, nil)
 	gqm.updatePodIsAssignedNoLock(quotaName, p, false)
-}
-
-func (gqm *GroupQuotaManager) GetQuotaInformationForSyncHandler(quotaName string) (used, request, childRequest, runtime,
-	guaranteed, allocated, nonPreemptibleRequest, nonPreemptibleUsed v1.ResourceList, err error) {
-	gqm.hierarchyUpdateLock.RLock()
-	defer gqm.hierarchyUpdateLock.RUnlock()
-
-	quotaInfo := gqm.getQuotaInfoByNameNoLock(quotaName)
-	if quotaInfo == nil {
-		return nil, nil, nil, nil,
-			nil, nil, nil, nil, fmt.Errorf("groupQuotaManager doesn't have this quota:%v", quotaName)
-	}
-
-	runtime = gqm.RefreshRuntimeNoLock(quotaName)
-	return quotaInfo.GetUsed(), quotaInfo.GetRequest(), quotaInfo.GetChildRequest(), runtime,
-		quotaInfo.GetGuaranteed(), quotaInfo.GetAllocated(), quotaInfo.GetNonPreemptibleRequest(), quotaInfo.GetNonPreemptibleUsed(), nil
 }
 
 func getPodName(oldPod, newPod *v1.Pod) string {
