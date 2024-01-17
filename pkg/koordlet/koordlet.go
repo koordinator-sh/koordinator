@@ -127,6 +127,9 @@ func (d *daemon) Run(stopCh <-chan struct{}) {
 	defer utilruntime.HandleCrash()
 	klog.Infof("Starting daemon")
 
+	// start resource executor cache
+	d.executor.Run(stopCh)
+
 	go func() {
 		if err := d.metricCache.Run(stopCh); err != nil {
 			klog.Fatal("Unable to run the metric cache: ", err)
@@ -150,7 +153,6 @@ func (d *daemon) Run(stopCh <-chan struct{}) {
 			klog.Fatal("Unable to run the metric advisor: ", err)
 		}
 	}()
-
 	// wait for metric advisor sync
 	if !cache.WaitForCacheSync(stopCh, d.metricAdvisor.HasSynced) {
 		klog.Fatal("time out waiting for metric advisor to sync")
@@ -165,9 +167,6 @@ func (d *daemon) Run(stopCh <-chan struct{}) {
 			klog.Fatal("Unable to run the predict server: ", err)
 		}
 	}()
-
-	// start resource executor before the writers modules
-	go d.executor.Run(stopCh)
 
 	// start qos manager
 	go func() {
