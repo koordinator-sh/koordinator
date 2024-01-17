@@ -188,7 +188,7 @@ func (g *Plugin) SelectVictimsOnNode(
 		}
 
 		newUsed := quotav1.Mask(quotav1.Add(postFilterState.used, podReq), quotav1.ResourceNames(podReq))
-		if isLessEqual, _ := quotav1.LessThanOrEqual(newUsed, postFilterState.runtime); !isLessEqual {
+		if isLessEqual, _ := quotav1.LessThanOrEqual(newUsed, postFilterState.usedLimit); !isLessEqual {
 			if err := removePod(pi); err != nil {
 				return false, err
 			}
