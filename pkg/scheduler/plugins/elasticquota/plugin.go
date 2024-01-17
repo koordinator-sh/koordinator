@@ -60,7 +60,7 @@ type PostFilterState struct {
 	quotaInfo          *core.QuotaInfo
 	used               corev1.ResourceList
 	nonPreemptibleUsed corev1.ResourceList
-	runtime            corev1.ResourceList
+	usedLimit          corev1.ResourceList
 }
 
 func (p *PostFilterState) Clone() framework.StateData {
@@ -68,7 +68,7 @@ func (p *PostFilterState) Clone() framework.StateData {
 		quotaInfo:          p.quotaInfo,
 		used:               p.used.DeepCopy(),
 		nonPreemptibleUsed: p.nonPreemptibleUsed.DeepCopy(),
-		runtime:            p.runtime.DeepCopy(),
+		usedLimit:          p.usedLimit.DeepCopy(),
 	}
 }
 
@@ -229,10 +229,10 @@ func (g *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleState
 	podRequest, _ := core.PodRequestsAndLimits(pod)
 
 	used := quotav1.Mask(quotav1.Add(podRequest, state.used), quotav1.ResourceNames(podRequest))
-	if isLessEqual, exceedDimensions := quotav1.LessThanOrEqual(used, state.runtime); !isLessEqual {
+	if isLessEqual, exceedDimensions := quotav1.LessThanOrEqual(used, state.usedLimit); !isLessEqual {
 		return nil, framework.NewStatus(framework.Unschedulable, fmt.Sprintf("Insufficient quotas, "+
 			"quotaName: %v, runtime: %v, used: %v, pod's request: %v, exceedDimensions: %v",
-			quotaName, printResourceList(state.runtime), printResourceList(state.used), printResourceList(podRequest), exceedDimensions))
+			quotaName, printResourceList(state.usedLimit), printResourceList(state.used), printResourceList(podRequest), exceedDimensions))
 	}
 
 	if extension.IsPodNonPreemptible(pod) {

@@ -182,6 +182,9 @@ func autoConvert_v1beta2_ElasticQuotaArgs_To_config_ElasticQuotaArgs(in *Elastic
 	out.QuotaGroupNamespace = in.QuotaGroupNamespace
 	out.MonitorAllQuotas = (*bool)(unsafe.Pointer(in.MonitorAllQuotas))
 	out.EnableCheckParentQuota = (*bool)(unsafe.Pointer(in.EnableCheckParentQuota))
+	if err := v1.Convert_Pointer_bool_To_bool(&in.EnableRuntimeQuota, &out.EnableRuntimeQuota, s); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -198,6 +201,9 @@ func autoConvert_config_ElasticQuotaArgs_To_v1beta2_ElasticQuotaArgs(in *config.
 	out.QuotaGroupNamespace = in.QuotaGroupNamespace
 	out.MonitorAllQuotas = (*bool)(unsafe.Pointer(in.MonitorAllQuotas))
 	out.EnableCheckParentQuota = (*bool)(unsafe.Pointer(in.EnableCheckParentQuota))
+	if err := v1.Convert_bool_To_Pointer_bool(&in.EnableRuntimeQuota, &out.EnableRuntimeQuota, s); err != nil {
+		return err
+	}
 	return nil
 }
 
