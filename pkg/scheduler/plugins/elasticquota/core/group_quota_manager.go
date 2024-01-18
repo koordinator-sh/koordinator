@@ -708,6 +708,7 @@ func (gqm *GroupQuotaManager) GetQuotaSummary(quotaName string, includePods bool
 	quotaSummary := quotaInfo.GetQuotaSummary(includePods)
 	runtime := gqm.RefreshRuntimeNoLock(quotaName)
 	quotaSummary.Runtime = runtime.DeepCopy()
+	quotaSummary.Tree = gqm.treeID
 	return quotaSummary, true
 }
 
