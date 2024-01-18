@@ -176,6 +176,7 @@ func updateElasticQuotaStatusIfChanged(eq *v1alpha1.ElasticQuota, summary *core.
 		}
 	}
 
+	decorateResource(eq, summary.Used)
 	if !quotav1.Equals(quotav1.RemoveZeros(eq.Status.Used), quotav1.RemoveZeros(summary.Used)) {
 		if logChanges {
 			changes = append(changes, traceChange{key: "used", original: eq.Status.Used, current: summary.Used})
@@ -262,6 +263,7 @@ func syncElasticQuotaMetrics(eq *v1alpha1.ElasticQuota, summary *core.QuotaInfoS
 		k = strings.TrimPrefix(k, extension.QuotaKoordinatorPrefix+"/")
 		RecordElasticQuotaMetric(ElasticQuotaStatusMetric, v, k, quotaLabels)
 	}
+	decorateResource(eq, summary.Used)
 	RecordElasticQuotaMetric(ElasticQuotaStatusMetric, summary.Used, "used", quotaLabels)
 
 	decorateResource(eq, summary.Min)
