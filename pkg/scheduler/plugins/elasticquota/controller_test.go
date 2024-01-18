@@ -20,9 +20,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"testing"
-	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+	dto "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/assert"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -33,6 +35,7 @@ import (
 	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/elasticquota/core"
 )
 
 func TestController_Run(t *testing.T) {
@@ -168,52 +171,276 @@ func TestController_Run(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			nodes := []*v1.Node{
-				{
-					ObjectMeta: metav1.ObjectMeta{
-						DeletionTimestamp: &metav1.Time{Time: time.Now()},
-					},
-					Status: v1.NodeStatus{
-						Allocatable: MakeResourceList().CPU(100).Mem(100).GPU(100).Obj(),
-					},
-				},
+			suit := newPluginTestSuitWithPod(t, nil, nil)
+			for _, v := range c.elasticQuotas {
+				suit.client.SchedulingV1alpha1().ElasticQuotas(v.Namespace).Create(ctx, v, metav1.CreateOptions{})
 			}
-			suit := newPluginTestSuitWithPod(t, nodes, nil)
+			for _, p := range c.pods {
+				suit.Handle.ClientSet().CoreV1().Pods(p.Namespace).Create(ctx, p, metav1.CreateOptions{})
+			}
 			plugin, err := suit.proxyNew(suit.elasticQuotaArgs, suit.Handle)
 			assert.Nil(t, err)
 			p := plugin.(*Plugin)
 			ctrl := NewElasticQuotaController(p)
-			for _, v := range c.elasticQuotas {
-				suit.client.SchedulingV1alpha1().ElasticQuotas(v.Namespace).Create(ctx, v, metav1.CreateOptions{})
-			}
-			time.Sleep(10 * time.Millisecond)
-			for _, p := range c.pods {
-				suit.Handle.ClientSet().CoreV1().Pods(p.Namespace).Create(ctx, p, metav1.CreateOptions{})
-			}
-			time.Sleep(100 * time.Millisecond)
-			ctrl.Start()
-			for i := 0; i < 10; i++ {
-				for _, v := range c.want {
-					get, _ := suit.client.SchedulingV1alpha1().ElasticQuotas(v.Namespace).Get(ctx, v.Name, metav1.GetOptions{})
-					if get == nil {
-						continue
-					}
-					var request v1.ResourceList
-					json.Unmarshal([]byte(get.Annotations[extension.AnnotationRequest]), &request)
-					if !quotav1.Equals(request, v.Status.Used) {
-						err = fmt.Errorf("want %v, got %v,quotaName:%v", v.Status.Used, get.Status.Used, get.Name)
-						time.Sleep(1 * time.Second)
-						continue
-					} else {
-						err = nil
-						break
-					}
+			ctrl.syncElasticQuotaStatusWorker()
+			for _, v := range c.want {
+				eq, _ := suit.client.SchedulingV1alpha1().ElasticQuotas(v.Namespace).Get(ctx, v.Name, metav1.GetOptions{})
+				assert.NotNil(t, eq)
+				request, innerErr := extension.GetRequest(eq)
+				assert.NoError(t, innerErr)
+				if !quotav1.Equals(request, v.Status.Used) {
+					err = fmt.Errorf("want %v, got %v,quotaName:%v", v.Status.Used, eq.Status.Used, eq.Name)
+					continue
+				} else {
+					err = nil
+					break
 				}
 			}
 			if err != nil {
 				t.Errorf("Elastic Quota Test Failed, err: %v", err)
 			}
 		})
+	}
+}
+
+func Test_updateElasticQuotaStatusIfChanged(t *testing.T) {
+	tests := []struct {
+		name    string
+		eq      *v1alpha1.ElasticQuota
+		summary *core.QuotaInfoSummary
+		wantEQ  *v1alpha1.ElasticQuota
+	}{
+		{
+			name: "full sync",
+			eq: &v1alpha1.ElasticQuota{
+				Spec: v1alpha1.ElasticQuotaSpec{
+					Max: MakeResourceList().CPU(4).Mem(200).Obj(),
+					Min: MakeResourceList().CPU(2).Mem(100).Obj(),
+				},
+			},
+			summary: &core.QuotaInfoSummary{
+				Max:                   MakeResourceList().CPU(4).Mem(200).Obj(),
+				Min:                   MakeResourceList().CPU(2).Mem(100).Obj(),
+				Used:                  MakeResourceList().CPU(1).Mem(50).Obj(),
+				NonPreemptibleUsed:    MakeResourceList().CPU(2).Mem(50).Obj(),
+				NonPreemptibleRequest: MakeResourceList().CPU(3).Mem(50).Obj(),
+				Request:               MakeResourceList().CPU(4).Mem(50).Obj(),
+				Runtime:               MakeResourceList().CPU(5).Mem(50).Obj(),
+				ChildRequest:          MakeResourceList().CPU(6).Mem(50).Obj(),
+				Allocated:             MakeResourceList().CPU(7).Mem(50).Obj(),
+				Guaranteed:            MakeResourceList().CPU(8).Mem(50).Obj(),
+			},
+			wantEQ: &v1alpha1.ElasticQuota{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						extension.AnnotationNonPreemptibleUsed:    `{"cpu":2,"memory":50}`,
+						extension.AnnotationNonPreemptibleRequest: `{"cpu":3,"memory":50}`,
+						extension.AnnotationRequest:               `{"cpu":4,"memory":50}`,
+						extension.AnnotationRuntime:               `{"cpu":5,"memory":50}`,
+						extension.AnnotationChildRequest:          `{"cpu":6,"memory":50}`,
+						extension.AnnotationAllocated:             `{"cpu":7,"memory":50}`,
+						extension.AnnotationGuaranteed:            `{"cpu":8,"memory":50}`,
+					},
+				},
+				Spec: v1alpha1.ElasticQuotaSpec{
+					Max: MakeResourceList().CPU(4).Mem(200).Obj(),
+					Min: MakeResourceList().CPU(2).Mem(100).Obj(),
+				},
+				Status: v1alpha1.ElasticQuotaStatus{
+					Used: MakeResourceList().CPU(1).Mem(50).Obj(),
+				},
+			},
+		},
+		{
+			name: "diff sync",
+			eq: &v1alpha1.ElasticQuota{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						extension.AnnotationNonPreemptibleUsed:    `{"cpu":2,"memory":50}`,
+						extension.AnnotationNonPreemptibleRequest: `{"cpu":3,"memory":50}`,
+						extension.AnnotationRequest:               `{"cpu":4,"memory":50}`,
+						extension.AnnotationRuntime:               `{"cpu":5,"memory":50}`,
+						extension.AnnotationChildRequest:          `{"cpu":6,"memory":50}`,
+						extension.AnnotationAllocated:             `{"cpu":7,"memory":50}`,
+						extension.AnnotationGuaranteed:            `{"cpu":8,"memory":50}`,
+					},
+				},
+				Spec: v1alpha1.ElasticQuotaSpec{
+					Max: MakeResourceList().CPU(4).Mem(200).Obj(),
+					Min: MakeResourceList().CPU(2).Mem(100).Obj(),
+				},
+				Status: v1alpha1.ElasticQuotaStatus{
+					Used: MakeResourceList().CPU(1).Mem(50).Obj(),
+				},
+			},
+			summary: &core.QuotaInfoSummary{
+				Max:                   MakeResourceList().CPU(4).Mem(200).Obj(),
+				Min:                   MakeResourceList().CPU(2).Mem(100).Obj(),
+				Used:                  MakeResourceList().CPU(1).Mem(50).Obj(),
+				NonPreemptibleUsed:    MakeResourceList().CPU(2).Mem(50).Obj(),
+				NonPreemptibleRequest: MakeResourceList().CPU(3).Mem(50).Obj(),
+				Request:               MakeResourceList().CPU(4).Mem(50).Obj(),
+				Runtime:               MakeResourceList().CPU(5).Mem(50).Obj(),
+				ChildRequest:          MakeResourceList().CPU(6).Mem(50).Obj(),
+				Allocated:             MakeResourceList().CPU(7).Mem(50).Obj(),
+				Guaranteed:            MakeResourceList().CPU(66666666).Mem(50).Obj(),
+			},
+			wantEQ: &v1alpha1.ElasticQuota{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						extension.AnnotationNonPreemptibleUsed:    `{"cpu":2,"memory":50}`,
+						extension.AnnotationNonPreemptibleRequest: `{"cpu":3,"memory":50}`,
+						extension.AnnotationRequest:               `{"cpu":4,"memory":50}`,
+						extension.AnnotationRuntime:               `{"cpu":5,"memory":50}`,
+						extension.AnnotationChildRequest:          `{"cpu":6,"memory":50}`,
+						extension.AnnotationAllocated:             `{"cpu":7,"memory":50}`,
+						extension.AnnotationGuaranteed:            `{"cpu":66666666,"memory":50}`,
+					},
+				},
+				Spec: v1alpha1.ElasticQuotaSpec{
+					Max: MakeResourceList().CPU(4).Mem(200).Obj(),
+					Min: MakeResourceList().CPU(2).Mem(100).Obj(),
+				},
+				Status: v1alpha1.ElasticQuotaStatus{
+					Used: MakeResourceList().CPU(1).Mem(50).Obj(),
+				},
+			},
+		},
+		{
+			name: "no sync",
+			eq: &v1alpha1.ElasticQuota{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						extension.AnnotationNonPreemptibleUsed:    `{"cpu":2,"memory":50}`,
+						extension.AnnotationNonPreemptibleRequest: `{"cpu":3,"memory":50}`,
+						extension.AnnotationRequest:               `{"cpu":4,"memory":50}`,
+						extension.AnnotationRuntime:               `{"cpu":5,"memory":50}`,
+						extension.AnnotationChildRequest:          `{"cpu":6,"memory":50}`,
+						extension.AnnotationAllocated:             `{"cpu":7,"memory":50}`,
+						extension.AnnotationGuaranteed:            `{"cpu":8,"memory":50}`,
+					},
+				},
+				Spec: v1alpha1.ElasticQuotaSpec{
+					Max: MakeResourceList().CPU(4).Mem(200).Obj(),
+					Min: MakeResourceList().CPU(2).Mem(100).Obj(),
+				},
+				Status: v1alpha1.ElasticQuotaStatus{
+					Used: MakeResourceList().CPU(1).Mem(50).Obj(),
+				},
+			},
+			summary: &core.QuotaInfoSummary{
+				Max:                   MakeResourceList().CPU(4).Mem(200).Obj(),
+				Min:                   MakeResourceList().CPU(2).Mem(100).Obj(),
+				Used:                  MakeResourceList().CPU(1).Mem(50).Obj(),
+				NonPreemptibleUsed:    MakeResourceList().CPU(2).Mem(50).Obj(),
+				NonPreemptibleRequest: MakeResourceList().CPU(3).Mem(50).Obj(),
+				Request:               MakeResourceList().CPU(4).Mem(50).Obj(),
+				Runtime:               MakeResourceList().CPU(5).Mem(50).Obj(),
+				ChildRequest:          MakeResourceList().CPU(6).Mem(50).Obj(),
+				Allocated:             MakeResourceList().CPU(7).Mem(50).Obj(),
+				Guaranteed:            MakeResourceList().CPU(8).Mem(50).Obj(),
+			},
+			wantEQ: nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			newEQ, err := updateElasticQuotaStatusIfChanged(tt.eq, tt.summary, true)
+			assert.NoError(t, err)
+			if tt.wantEQ == nil {
+				assert.Nil(t, newEQ)
+				return
+			}
+			assert.Equal(t, tt.wantEQ.Spec, newEQ.Spec)
+			assert.Equal(t, tt.wantEQ.Status, newEQ.Status)
+			for k, v := range tt.wantEQ.Annotations {
+				var expect v1.ResourceList
+				assert.NoError(t, json.Unmarshal([]byte(v), &expect))
+				var got v1.ResourceList
+				v = newEQ.Annotations[k]
+				assert.NoError(t, json.Unmarshal([]byte(v), &got))
+				assert.Equal(t, expect, got)
+			}
+		})
+	}
+}
+
+func Test_syncElasticQuotaMetrics(t *testing.T) {
+	eq := &v1alpha1.ElasticQuota{
+		Spec: v1alpha1.ElasticQuotaSpec{
+			Max: MakeResourceList().CPU(4).Mem(200).Obj(),
+			Min: MakeResourceList().CPU(2).Mem(100).Obj(),
+		},
+	}
+	summary := &core.QuotaInfoSummary{
+		Name:                  "test-eq",
+		ParentName:            "root",
+		IsParent:              true,
+		Tree:                  "tree-1",
+		Max:                   MakeResourceList().CPU(4).Mem(200).Obj(),
+		Min:                   MakeResourceList().CPU(2).Mem(100).Obj(),
+		Used:                  MakeResourceList().CPU(1).Mem(50).Obj(),
+		NonPreemptibleUsed:    MakeResourceList().CPU(2).Mem(50).Obj(),
+		NonPreemptibleRequest: MakeResourceList().CPU(3).Mem(50).Obj(),
+		Request:               MakeResourceList().CPU(4).Mem(50).Obj(),
+		Runtime:               MakeResourceList().CPU(5).Mem(50).Obj(),
+		ChildRequest:          MakeResourceList().CPU(6).Mem(50).Obj(),
+		Allocated:             MakeResourceList().CPU(7).Mem(50).Obj(),
+		Guaranteed:            MakeResourceList().CPU(8).Mem(50).Obj(),
+	}
+	syncElasticQuotaMetrics(eq, summary)
+	metricsCh := make(chan prometheus.Metric, 10)
+	go func() {
+		ElasticQuotaSpecMetric.Collect(metricsCh)
+		ElasticQuotaStatusMetric.Collect(metricsCh)
+		close(metricsCh)
+	}()
+	var ms []prometheus.Metric
+loopChan:
+	for {
+		select {
+		case metric, ok := <-metricsCh:
+			if !ok {
+				break loopChan
+			}
+			ms = append(ms, metric)
+		}
+	}
+
+	var dtoMetrics []dto.Metric
+	for _, v := range ms {
+		m := dto.Metric{}
+		assert.NoError(t, v.Write(&m))
+		dtoMetrics = append(dtoMetrics, m)
+	}
+	sort.Slice(dtoMetrics, func(i, j int) bool {
+		return dtoMetrics[i].String() < dtoMetrics[j].String()
+	})
+	expect := []string{
+		`label:<name:"field" value:"allocated" > label:<name:"is_parent" value:"true" > label:<name:"name" value:"test-eq" > label:<name:"parent" value:"root" > label:<name:"resource" value:"cpu" > label:<name:"tree" value:"tree-1" > gauge:<value:7000 > `,
+		`label:<name:"field" value:"allocated" > label:<name:"is_parent" value:"true" > label:<name:"name" value:"test-eq" > label:<name:"parent" value:"root" > label:<name:"resource" value:"memory" > label:<name:"tree" value:"tree-1" > gauge:<value:50 > `,
+		`label:<name:"field" value:"child-request" > label:<name:"is_parent" value:"true" > label:<name:"name" value:"test-eq" > label:<name:"parent" value:"root" > label:<name:"resource" value:"cpu" > label:<name:"tree" value:"tree-1" > gauge:<value:6000 > `,
+		`label:<name:"field" value:"child-request" > label:<name:"is_parent" value:"true" > label:<name:"name" value:"test-eq" > label:<name:"parent" value:"root" > label:<name:"resource" value:"memory" > label:<name:"tree" value:"tree-1" > gauge:<value:50 > `,
+		`label:<name:"field" value:"guaranteed" > label:<name:"is_parent" value:"true" > label:<name:"name" value:"test-eq" > label:<name:"parent" value:"root" > label:<name:"resource" value:"cpu" > label:<name:"tree" value:"tree-1" > gauge:<value:8000 > `,
+		`label:<name:"field" value:"guaranteed" > label:<name:"is_parent" value:"true" > label:<name:"name" value:"test-eq" > label:<name:"parent" value:"root" > label:<name:"resource" value:"memory" > label:<name:"tree" value:"tree-1" > gauge:<value:50 > `,
+		`label:<name:"field" value:"max" > label:<name:"is_parent" value:"true" > label:<name:"name" value:"test-eq" > label:<name:"parent" value:"root" > label:<name:"resource" value:"cpu" > label:<name:"tree" value:"tree-1" > gauge:<value:4000 > `,
+		`label:<name:"field" value:"max" > label:<name:"is_parent" value:"true" > label:<name:"name" value:"test-eq" > label:<name:"parent" value:"root" > label:<name:"resource" value:"memory" > label:<name:"tree" value:"tree-1" > gauge:<value:200 > `,
+		`label:<name:"field" value:"min" > label:<name:"is_parent" value:"true" > label:<name:"name" value:"test-eq" > label:<name:"parent" value:"root" > label:<name:"resource" value:"cpu" > label:<name:"tree" value:"tree-1" > gauge:<value:2000 > `,
+		`label:<name:"field" value:"min" > label:<name:"is_parent" value:"true" > label:<name:"name" value:"test-eq" > label:<name:"parent" value:"root" > label:<name:"resource" value:"memory" > label:<name:"tree" value:"tree-1" > gauge:<value:100 > `,
+		`label:<name:"field" value:"non-preemptible-request" > label:<name:"is_parent" value:"true" > label:<name:"name" value:"test-eq" > label:<name:"parent" value:"root" > label:<name:"resource" value:"cpu" > label:<name:"tree" value:"tree-1" > gauge:<value:3000 > `,
+		`label:<name:"field" value:"non-preemptible-request" > label:<name:"is_parent" value:"true" > label:<name:"name" value:"test-eq" > label:<name:"parent" value:"root" > label:<name:"resource" value:"memory" > label:<name:"tree" value:"tree-1" > gauge:<value:50 > `,
+		`label:<name:"field" value:"non-preemptible-used" > label:<name:"is_parent" value:"true" > label:<name:"name" value:"test-eq" > label:<name:"parent" value:"root" > label:<name:"resource" value:"cpu" > label:<name:"tree" value:"tree-1" > gauge:<value:2000 > `,
+		`label:<name:"field" value:"non-preemptible-used" > label:<name:"is_parent" value:"true" > label:<name:"name" value:"test-eq" > label:<name:"parent" value:"root" > label:<name:"resource" value:"memory" > label:<name:"tree" value:"tree-1" > gauge:<value:50 > `,
+		`label:<name:"field" value:"request" > label:<name:"is_parent" value:"true" > label:<name:"name" value:"test-eq" > label:<name:"parent" value:"root" > label:<name:"resource" value:"cpu" > label:<name:"tree" value:"tree-1" > gauge:<value:4000 > `,
+		`label:<name:"field" value:"request" > label:<name:"is_parent" value:"true" > label:<name:"name" value:"test-eq" > label:<name:"parent" value:"root" > label:<name:"resource" value:"memory" > label:<name:"tree" value:"tree-1" > gauge:<value:50 > `,
+		`label:<name:"field" value:"runtime" > label:<name:"is_parent" value:"true" > label:<name:"name" value:"test-eq" > label:<name:"parent" value:"root" > label:<name:"resource" value:"cpu" > label:<name:"tree" value:"tree-1" > gauge:<value:5000 > `,
+		`label:<name:"field" value:"runtime" > label:<name:"is_parent" value:"true" > label:<name:"name" value:"test-eq" > label:<name:"parent" value:"root" > label:<name:"resource" value:"memory" > label:<name:"tree" value:"tree-1" > gauge:<value:50 > `,
+		`label:<name:"field" value:"used" > label:<name:"is_parent" value:"true" > label:<name:"name" value:"test-eq" > label:<name:"parent" value:"root" > label:<name:"resource" value:"cpu" > label:<name:"tree" value:"tree-1" > gauge:<value:1000 > `,
+		`label:<name:"field" value:"used" > label:<name:"is_parent" value:"true" > label:<name:"name" value:"test-eq" > label:<name:"parent" value:"root" > label:<name:"resource" value:"memory" > label:<name:"tree" value:"tree-1" > gauge:<value:50 > `,
+	}
+	assert.Equal(t, len(expect), len(dtoMetrics))
+	for i, v := range dtoMetrics {
+		assert.Equal(t, expect[i], v.String())
 	}
 }
 

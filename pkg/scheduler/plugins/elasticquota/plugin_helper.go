@@ -284,6 +284,9 @@ func (g *Plugin) checkQuotaRecursive(curQuotaName string, quotaNameTopo []string
 }
 
 func printResourceList(rl v1.ResourceList) string {
+	if len(rl) == 0 {
+		return "<empty>"
+	}
 	res := make([]string, 0)
 	for k, v := range rl {
 		tmp := string(k) + ":" + v.String()

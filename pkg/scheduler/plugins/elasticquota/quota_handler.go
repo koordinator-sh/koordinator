@@ -113,13 +113,12 @@ func (g *Plugin) OnQuotaDelete(obj interface{}) {
 
 }
 
-func (g *Plugin) GetQuotaSummary(quotaName string) (*core.QuotaInfoSummary, bool) {
+func (g *Plugin) GetQuotaSummary(quotaName string, includePods bool) (*core.QuotaInfoSummary, bool) {
 	mgr := g.GetGroupQuotaManagerForQuota(quotaName)
-
-	return mgr.GetQuotaSummary(quotaName)
+	return mgr.GetQuotaSummary(quotaName, includePods)
 }
 
-func (g *Plugin) GetQuotaSummaries(tree string) map[string]*core.QuotaInfoSummary {
+func (g *Plugin) GetQuotaSummaries(tree string, includePods bool) map[string]*core.QuotaInfoSummary {
 	summaries := make(map[string]*core.QuotaInfoSummary)
 
 	managers := g.ListGroupQuotaManagersForQuotaTree()
@@ -127,17 +126,13 @@ func (g *Plugin) GetQuotaSummaries(tree string) map[string]*core.QuotaInfoSummar
 		if tree != "" && mgr.GetTreeID() != tree {
 			continue
 		}
-		for quotaName, summary := range mgr.GetQuotaSummaries() {
-			// quota tree root quota is virtual
-			if quotaName == extension.RootQuotaName {
-				continue
-			}
+		for quotaName, summary := range mgr.GetQuotaSummaries(includePods) {
 			summaries[quotaName] = summary
 		}
 	}
 
 	if g.groupQuotaManager.GetTreeID() == tree {
-		for quotaName, summary := range g.groupQuotaManager.GetQuotaSummaries() {
+		for quotaName, summary := range g.groupQuotaManager.GetQuotaSummaries(includePods) {
 			summaries[quotaName] = summary
 		}
 	}
