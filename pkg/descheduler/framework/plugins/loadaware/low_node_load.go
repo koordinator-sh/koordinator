@@ -231,7 +231,7 @@ func (pl *LowNodeLoad) processOneNodePool(ctx context.Context, nodePool *desched
 		continueEvictionCond,
 		overUtilizedEvictionReason(highThresholds),
 	)
-	tryMarkNodesAsNormal(sourceNodes, pl.nodeAnomalyDetectors)
+	tryMarkNodesAsNormal(abnormalNodes, pl.nodeAnomalyDetectors)
 	for _, v := range sourceNodes {
 		processedNodes.Insert(v.node.Name)
 	}
