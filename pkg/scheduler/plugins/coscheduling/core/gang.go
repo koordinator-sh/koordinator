@@ -154,12 +154,7 @@ func (gang *Gang) tryInitByPodConfig(pod *v1.Pod, args *config.CoschedulingArgs)
 	if err != nil || waitTime <= 0 {
 		klog.Errorf("pod's annotation GangWaitTimeAnnotation illegal, gangName: %v, value: %v",
 			gang.Name, pod.Annotations[extension.AnnotationGangWaitTime])
-		if args.DefaultTimeout != nil {
-			waitTime = args.DefaultTimeout.Duration
-		} else {
-			klog.Errorf("gangArgs DefaultTimeoutSeconds is nil")
-			waitTime = 0
-		}
+		waitTime = args.DefaultTimeout.Duration
 	}
 	gang.WaitTime = waitTime
 

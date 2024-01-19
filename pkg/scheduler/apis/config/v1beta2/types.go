@@ -183,7 +183,7 @@ type ElasticQuotaArgs struct {
 	EnableCheckParentQuota *bool `json:"enableCheckParentQuota,omitempty"`
 
 	// EnableRuntimeQuota if false, use max instead of runtime for all checks.
-	EnableRuntimeQuota *bool
+	EnableRuntimeQuota *bool `json:"enableRuntimeQuota,omitempty"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -210,6 +210,7 @@ type DeviceShareArgs struct {
 	metav1.TypeMeta
 
 	// Allocator indicates the expected allocator to use
+	// Deprecated: Adapting to different allocators is no longer supported.
 	Allocator string `json:"allocator,omitempty"`
 	// ScoringStrategy selects the device resource scoring strategy.
 	ScoringStrategy *ScoringStrategy `json:"scoringStrategy,omitempty"`

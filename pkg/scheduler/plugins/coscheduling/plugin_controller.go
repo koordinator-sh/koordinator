@@ -33,7 +33,7 @@ func (cs *Coscheduling) NewControllers() ([]frameworkext.Controller, error) {
 	if cs.args == nil {
 		controllerWorkers = 1
 	} else {
-		controllerWorkers = int(*cs.args.ControllerWorkers)
+		controllerWorkers = int(cs.args.ControllerWorkers)
 	}
 	podGroupController := controller.NewPodGroupController(cs.pgInformer, podInformer, cs.pgClient, pgMgr, controllerWorkers)
 	return []frameworkext.Controller{podGroupController}, nil
