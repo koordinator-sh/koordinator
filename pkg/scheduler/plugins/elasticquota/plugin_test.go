@@ -748,7 +748,7 @@ func TestPlugin_PreFilter_CheckParent(t *testing.T) {
 			p, err := suit.proxyNew(suit.elasticQuotaArgs, suit.Handle)
 			assert.Nil(t, err)
 			gp := p.(*Plugin)
-			gp.pluginArgs.EnableCheckParentQuota = pointer.Bool(true)
+			gp.pluginArgs.EnableCheckParentQuota = true
 			gp.OnQuotaAdd(tt.parQuotaInfo)
 			gp.OnQuotaAdd(tt.quotaInfo)
 			qi := gp.groupQuotaManager.GetQuotaInfoByName(tt.quotaInfo.Name)

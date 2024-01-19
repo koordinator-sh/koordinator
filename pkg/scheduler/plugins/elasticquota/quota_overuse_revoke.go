@@ -163,9 +163,7 @@ func NewQuotaOverUsedRevokeController(plugin *Plugin) *QuotaOverUsedRevokeContro
 		revokePodCycle:               plugin.pluginArgs.RevokePodInterval.Duration,
 		monitors:                     make(map[string]*QuotaOverUsedGroupMonitor),
 	}
-	if plugin.pluginArgs.MonitorAllQuotas != nil {
-		controller.monitorAllQuotas = *plugin.pluginArgs.MonitorAllQuotas
-	}
+	controller.monitorAllQuotas = plugin.pluginArgs.MonitorAllQuotas
 	controller.enableRuntimeQuota = plugin.pluginArgs.EnableRuntimeQuota
 
 	return controller
