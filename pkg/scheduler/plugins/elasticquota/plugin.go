@@ -219,7 +219,9 @@ func (g *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleState
 	if mgr == nil {
 		return nil, framework.NewStatus(framework.Error, fmt.Sprintf("Could not find the specified ElasticQuotaManager for quota: %v, tree: %v", quotaName, treeID))
 	}
-	mgr.RefreshRuntime(quotaName)
+	if g.pluginArgs.EnableRuntimeQuota {
+		mgr.RefreshRuntime(quotaName)
+	}
 	quotaInfo := mgr.GetQuotaInfoByName(quotaName)
 	if quotaInfo == nil {
 		return nil, framework.NewStatus(framework.Error, fmt.Sprintf("Could not find the specified ElasticQuota"))

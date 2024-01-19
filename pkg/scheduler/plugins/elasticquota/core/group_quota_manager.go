@@ -258,10 +258,10 @@ func (gqm *GroupQuotaManager) RefreshRuntime(quotaName string) v1.ResourceList {
 	gqm.hierarchyUpdateLock.RLock()
 	defer gqm.hierarchyUpdateLock.RUnlock()
 
-	return gqm.RefreshRuntimeNoLock(quotaName)
+	return gqm.refreshRuntimeNoLock(quotaName)
 }
 
-func (gqm *GroupQuotaManager) RefreshRuntimeNoLock(quotaName string) v1.ResourceList {
+func (gqm *GroupQuotaManager) refreshRuntimeNoLock(quotaName string) v1.ResourceList {
 	quotaInfo := gqm.getQuotaInfoByNameNoLock(quotaName)
 	if quotaInfo == nil {
 		return nil
@@ -705,10 +705,7 @@ func (gqm *GroupQuotaManager) GetQuotaSummary(quotaName string, includePods bool
 		return nil, false
 	}
 
-	quotaSummary := quotaInfo.GetQuotaSummary(includePods)
-	runtime := gqm.RefreshRuntimeNoLock(quotaName)
-	quotaSummary.Runtime = runtime.DeepCopy()
-	quotaSummary.Tree = gqm.treeID
+	quotaSummary := quotaInfo.GetQuotaSummary(gqm.treeID, includePods)
 	return quotaSummary, true
 }
 
@@ -722,10 +719,7 @@ func (gqm *GroupQuotaManager) GetQuotaSummaries(includePods bool) map[string]*Qu
 		if quotaName == extension.RootQuotaName {
 			continue
 		}
-		quotaSummary := quotaInfo.GetQuotaSummary(includePods)
-		runtime := gqm.RefreshRuntimeNoLock(quotaName)
-		quotaSummary.Runtime = runtime.DeepCopy()
-		quotaSummary.Tree = gqm.treeID
+		quotaSummary := quotaInfo.GetQuotaSummary(gqm.treeID, includePods)
 		result[quotaName] = quotaSummary
 	}
 
