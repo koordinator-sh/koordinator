@@ -157,7 +157,7 @@ type ReservationArgs struct {
 	metav1.TypeMeta
 
 	// EnablePreemption indicates whether to enable preemption for reservations.
-	EnablePreemption *bool
+	EnablePreemption bool
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -167,10 +167,10 @@ type ElasticQuotaArgs struct {
 	metav1.TypeMeta
 
 	// DelayEvictTime is the duration to handle the jitter of used and runtime
-	DelayEvictTime *metav1.Duration
+	DelayEvictTime metav1.Duration
 
 	// RevokePodInterval is the interval to check quotaGroup's used and runtime
-	RevokePodInterval *metav1.Duration
+	RevokePodInterval metav1.Duration
 
 	// DefaultQuotaGroupMax limit the maxQuota of DefaultQuotaGroup
 	DefaultQuotaGroupMax corev1.ResourceList
@@ -182,10 +182,10 @@ type ElasticQuotaArgs struct {
 	QuotaGroupNamespace string
 
 	// MonitorAllQuotas monitor the quotaGroups' used and runtime Quota to revoke pods
-	MonitorAllQuotas *bool
+	MonitorAllQuotas bool
 
 	// EnableCheckParentQuota check parentQuotaGroups' used and runtime Quota in PreFilter
-	EnableCheckParentQuota *bool
+	EnableCheckParentQuota bool
 
 	// EnableRuntimeQuota if true, use max instead of runtime for all checks.
 	EnableRuntimeQuota bool
@@ -199,10 +199,10 @@ type CoschedulingArgs struct {
 
 	// DefaultTimeout is the default gang's waiting time in Permit stage
 	// default is 600 seconds
-	DefaultTimeout *metav1.Duration
+	DefaultTimeout metav1.Duration
 	// Workers number of controller
 	// default is 1
-	ControllerWorkers *int64
+	ControllerWorkers int64
 	// Skip check schedule cycle
 	// default is false
 	SkipCheckScheduleCycle bool
@@ -215,6 +215,7 @@ type DeviceShareArgs struct {
 	metav1.TypeMeta
 
 	// Allocator indicates the expected allocator to use
+	// Deprecated: Adapting to different allocators is no longer supported.
 	Allocator string
 	// ScoringStrategy selects the device resource scoring strategy.
 	ScoringStrategy *ScoringStrategy

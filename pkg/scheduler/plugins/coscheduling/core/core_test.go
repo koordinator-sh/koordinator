@@ -58,7 +58,7 @@ func NewManagerForTest() *Mgr {
 	koordClient := koordfake.NewSimpleClientset()
 	koordInformerFactory := koordinformers.NewSharedInformerFactory(koordClient, 0)
 
-	args := &config.CoschedulingArgs{DefaultTimeout: &metav1.Duration{Duration: 300 * time.Second}}
+	args := &config.CoschedulingArgs{DefaultTimeout: metav1.Duration{Duration: 300 * time.Second}}
 
 	pgManager := NewPodGroupManager(args, pgClient, pgInformerFactory, informerFactory, koordInformerFactory)
 	return &Mgr{
