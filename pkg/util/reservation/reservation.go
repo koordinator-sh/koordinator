@@ -19,6 +19,8 @@ package reservation
 import (
 	"encoding/json"
 	"fmt"
+	"math"
+	"strconv"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -95,8 +97,19 @@ func NewReservePod(r *schedulingv1alpha1.Reservation) *corev1.Pod {
 	}
 
 	if reservePod.Spec.Priority == nil {
-		reservePod.Spec.Priority = pointer.Int32(0)
+		if priorityVal, ok := r.Labels[extension.LabelPodPriority]; ok && priorityVal != "" {
+			priority, err := strconv.ParseInt(priorityVal, 10, 32)
+			if err == nil {
+				reservePod.Spec.Priority = pointer.Int32(int32(priority))
+			}
+		}
 	}
+
+	if reservePod.Spec.Priority == nil {
+		// Forces priority to be set to maximum to prevent preemption.
+		reservePod.Spec.Priority = pointer.Int32(math.MaxInt32)
+	}
+
 	reservePod.Spec.SchedulerName = GetReservationSchedulerName(r)
 
 	if IsReservationSucceeded(r) {

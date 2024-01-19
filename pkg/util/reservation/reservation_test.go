@@ -17,6 +17,7 @@ limitations under the License.
 package reservation
 
 import (
+	"math"
 	"testing"
 	"time"
 
@@ -624,7 +625,7 @@ func TestReservePod(t *testing.T) {
 					},
 				},
 			},
-			Priority: pointer.Int32(0),
+			Priority: pointer.Int32(math.MaxInt32),
 			InitContainers: []corev1.Container{
 				{
 					Name:      "test-init-container",
@@ -644,6 +645,20 @@ func TestReservePod(t *testing.T) {
 			name:           "convert to reserve pod",
 			reservation:    reservation,
 			wantReservePod: expectReservePod,
+		},
+		{
+			name: "custom priority",
+			reservation: func() *schedulingv1alpha1.Reservation {
+				r := reservation.DeepCopy()
+				r.Labels[apiext.LabelPodPriority] = "1000"
+				return r
+			}(),
+			wantReservePod: func() *corev1.Pod {
+				p := expectReservePod.DeepCopy()
+				p.Labels[apiext.LabelPodPriority] = "1000"
+				p.Spec.Priority = pointer.Int32(1000)
+				return p
+			}(),
 		},
 	}
 	for _, tt := range tests {
