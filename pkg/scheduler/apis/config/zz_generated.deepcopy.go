@@ -22,8 +22,7 @@ limitations under the License.
 package config
 
 import (
-	corev1 "k8s.io/api/core/v1"
-	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	v1 "k8s.io/api/core/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	apisconfig "k8s.io/kubernetes/pkg/scheduler/apis/config"
 )
@@ -32,16 +31,7 @@ import (
 func (in *CoschedulingArgs) DeepCopyInto(out *CoschedulingArgs) {
 	*out = *in
 	out.TypeMeta = in.TypeMeta
-	if in.DefaultTimeout != nil {
-		in, out := &in.DefaultTimeout, &out.DefaultTimeout
-		*out = new(v1.Duration)
-		**out = **in
-	}
-	if in.ControllerWorkers != nil {
-		in, out := &in.ControllerWorkers, &out.ControllerWorkers
-		*out = new(int64)
-		**out = **in
-	}
+	out.DefaultTimeout = in.DefaultTimeout
 	return
 }
 
@@ -97,39 +87,21 @@ func (in *DeviceShareArgs) DeepCopyObject() runtime.Object {
 func (in *ElasticQuotaArgs) DeepCopyInto(out *ElasticQuotaArgs) {
 	*out = *in
 	out.TypeMeta = in.TypeMeta
-	if in.DelayEvictTime != nil {
-		in, out := &in.DelayEvictTime, &out.DelayEvictTime
-		*out = new(v1.Duration)
-		**out = **in
-	}
-	if in.RevokePodInterval != nil {
-		in, out := &in.RevokePodInterval, &out.RevokePodInterval
-		*out = new(v1.Duration)
-		**out = **in
-	}
+	out.DelayEvictTime = in.DelayEvictTime
+	out.RevokePodInterval = in.RevokePodInterval
 	if in.DefaultQuotaGroupMax != nil {
 		in, out := &in.DefaultQuotaGroupMax, &out.DefaultQuotaGroupMax
-		*out = make(corev1.ResourceList, len(*in))
+		*out = make(v1.ResourceList, len(*in))
 		for key, val := range *in {
 			(*out)[key] = val.DeepCopy()
 		}
 	}
 	if in.SystemQuotaGroupMax != nil {
 		in, out := &in.SystemQuotaGroupMax, &out.SystemQuotaGroupMax
-		*out = make(corev1.ResourceList, len(*in))
+		*out = make(v1.ResourceList, len(*in))
 		for key, val := range *in {
 			(*out)[key] = val.DeepCopy()
 		}
-	}
-	if in.MonitorAllQuotas != nil {
-		in, out := &in.MonitorAllQuotas, &out.MonitorAllQuotas
-		*out = new(bool)
-		**out = **in
-	}
-	if in.EnableCheckParentQuota != nil {
-		in, out := &in.EnableCheckParentQuota, &out.EnableCheckParentQuota
-		*out = new(bool)
-		**out = **in
 	}
 	return
 }
@@ -157,7 +129,7 @@ func (in *LoadAwareSchedulingAggregatedArgs) DeepCopyInto(out *LoadAwareScheduli
 	*out = *in
 	if in.UsageThresholds != nil {
 		in, out := &in.UsageThresholds, &out.UsageThresholds
-		*out = make(map[corev1.ResourceName]int64, len(*in))
+		*out = make(map[v1.ResourceName]int64, len(*in))
 		for key, val := range *in {
 			(*out)[key] = val
 		}
@@ -193,28 +165,28 @@ func (in *LoadAwareSchedulingArgs) DeepCopyInto(out *LoadAwareSchedulingArgs) {
 	}
 	if in.ResourceWeights != nil {
 		in, out := &in.ResourceWeights, &out.ResourceWeights
-		*out = make(map[corev1.ResourceName]int64, len(*in))
+		*out = make(map[v1.ResourceName]int64, len(*in))
 		for key, val := range *in {
 			(*out)[key] = val
 		}
 	}
 	if in.UsageThresholds != nil {
 		in, out := &in.UsageThresholds, &out.UsageThresholds
-		*out = make(map[corev1.ResourceName]int64, len(*in))
+		*out = make(map[v1.ResourceName]int64, len(*in))
 		for key, val := range *in {
 			(*out)[key] = val
 		}
 	}
 	if in.ProdUsageThresholds != nil {
 		in, out := &in.ProdUsageThresholds, &out.ProdUsageThresholds
-		*out = make(map[corev1.ResourceName]int64, len(*in))
+		*out = make(map[v1.ResourceName]int64, len(*in))
 		for key, val := range *in {
 			(*out)[key] = val
 		}
 	}
 	if in.EstimatedScalingFactors != nil {
 		in, out := &in.EstimatedScalingFactors, &out.EstimatedScalingFactors
-		*out = make(map[corev1.ResourceName]int64, len(*in))
+		*out = make(map[v1.ResourceName]int64, len(*in))
 		for key, val := range *in {
 			(*out)[key] = val
 		}
@@ -284,11 +256,6 @@ func (in *NodeNUMAResourceArgs) DeepCopyObject() runtime.Object {
 func (in *ReservationArgs) DeepCopyInto(out *ReservationArgs) {
 	*out = *in
 	out.TypeMeta = in.TypeMeta
-	if in.EnablePreemption != nil {
-		in, out := &in.EnablePreemption, &out.EnablePreemption
-		*out = new(bool)
-		**out = **in
-	}
 	return
 }
 

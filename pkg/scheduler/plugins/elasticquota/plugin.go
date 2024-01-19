@@ -248,7 +248,7 @@ func (g *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleState
 		}
 	}
 
-	if *g.pluginArgs.EnableCheckParentQuota {
+	if g.pluginArgs.EnableCheckParentQuota {
 		return nil, g.checkQuotaRecursive(quotaName, []string{quotaName}, podRequest)
 	}
 

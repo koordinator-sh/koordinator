@@ -109,11 +109,11 @@ func ValidateElasticQuotaArgs(elasticArgs *config.ElasticQuotaArgs) error {
 		}
 	}
 
-	if elasticArgs.DelayEvictTime != nil && elasticArgs.DelayEvictTime.Duration < 0 {
+	if elasticArgs.DelayEvictTime.Duration < 0 {
 		return fmt.Errorf("elasticQuotaArgs error, DelayEvictTime should be a positive value")
 	}
 
-	if elasticArgs.RevokePodInterval != nil && elasticArgs.RevokePodInterval.Duration < 0 {
+	if elasticArgs.RevokePodInterval.Duration < 0 {
 		return fmt.Errorf("elasticQuotaArgs error, RevokePodCycle should be a positive value")
 	}
 
@@ -121,10 +121,10 @@ func ValidateElasticQuotaArgs(elasticArgs *config.ElasticQuotaArgs) error {
 }
 
 func ValidateCoschedulingArgs(coeSchedulingArgs *config.CoschedulingArgs) error {
-	if coeSchedulingArgs.DefaultTimeout != nil && coeSchedulingArgs.DefaultTimeout.Duration < 0 {
+	if coeSchedulingArgs.DefaultTimeout.Duration < 0 {
 		return fmt.Errorf("coeSchedulingArgs DefaultTimeoutSeconds invalid")
 	}
-	if coeSchedulingArgs.ControllerWorkers != nil && *coeSchedulingArgs.ControllerWorkers < 1 {
+	if coeSchedulingArgs.ControllerWorkers < 1 {
 		return fmt.Errorf("coeSchedulingArgs ControllerWorkers invalid")
 	}
 	return nil
