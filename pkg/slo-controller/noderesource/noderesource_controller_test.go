@@ -41,7 +41,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/noderesource/framework"
 )
 
-func Test_NodeResourceController_ConfigNotAvaliable(t *testing.T) {
+func Test_NodeResourceController_ConfigNotAvailable(t *testing.T) {
 	r := &NodeResourceReconciler{
 		cfgCache: &FakeCfgCache{
 			available: false,

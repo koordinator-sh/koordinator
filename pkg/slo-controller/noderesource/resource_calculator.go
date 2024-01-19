@@ -168,15 +168,6 @@ func (r *NodeResourceReconciler) updateNodeMeta(node *corev1.Node, strategy *con
 
 // updateNodeExtensions is an extension point for updating node other than node metric resources.
 func (r *NodeResourceReconciler) updateNodeExtensions(node *corev1.Node, nodeMetric *slov1alpha1.NodeMetric, podList *corev1.PodList) error {
-	// update device resources
-	if err := r.updateDeviceResources(node); err != nil {
-		metrics.RecordNodeResourceReconcileCount(false, "updateDeviceResources")
-		klog.V(4).InfoS("failed to update device resources for node", "node", node.Name,
-			"err", err)
-		return err
-	}
-	metrics.RecordNodeResourceReconcileCount(true, "updateDeviceResources")
-
 	return nil
 }
 

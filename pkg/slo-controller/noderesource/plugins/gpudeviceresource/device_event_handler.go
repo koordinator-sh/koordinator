@@ -14,33 +14,25 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package noderesource
+package gpudeviceresource
 
 import (
-	"fmt"
 	"reflect"
 
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/workqueue"
-	"k8s.io/klog/v2"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
-	"github.com/koordinator-sh/koordinator/pkg/slo-controller/noderesource/framework"
-	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
-var _ handler.EventHandler = &EnqueueRequestForDevice{}
+var _ handler.EventHandler = &DeviceHandler{}
 
-type EnqueueRequestForDevice struct {
-	client.Client
-	syncContext *framework.SyncContext
-}
+type DeviceHandler struct{}
 
-func (n *EnqueueRequestForDevice) Create(e event.CreateEvent, q workqueue.RateLimitingInterface) {
+func (d *DeviceHandler) Create(e event.CreateEvent, q workqueue.RateLimitingInterface) {
 	device := e.Object.(*schedulingv1alpha1.Device)
 	q.Add(reconcile.Request{
 		NamespacedName: types.NamespacedName{
@@ -49,7 +41,7 @@ func (n *EnqueueRequestForDevice) Create(e event.CreateEvent, q workqueue.RateLi
 	})
 }
 
-func (n *EnqueueRequestForDevice) Update(e event.UpdateEvent, q workqueue.RateLimitingInterface) {
+func (d *DeviceHandler) Update(e event.UpdateEvent, q workqueue.RateLimitingInterface) {
 	newDevice := e.ObjectNew.(*schedulingv1alpha1.Device)
 	oldDevice := e.ObjectOld.(*schedulingv1alpha1.Device)
 	if reflect.DeepEqual(newDevice.Spec, oldDevice.Spec) {
@@ -62,13 +54,10 @@ func (n *EnqueueRequestForDevice) Update(e event.UpdateEvent, q workqueue.RateLi
 	})
 }
 
-func (n *EnqueueRequestForDevice) Delete(e event.DeleteEvent, q workqueue.RateLimitingInterface) {
+func (d *DeviceHandler) Delete(e event.DeleteEvent, q workqueue.RateLimitingInterface) {
 	device, ok := e.Object.(*schedulingv1alpha1.Device)
 	if !ok {
 		return
-	}
-	if err := n.cleanSyncContext(device); err != nil {
-		klog.Errorf("%v for Device %v/%v", err, device.Namespace, device.Name)
 	}
 	q.Add(reconcile.Request{
 		NamespacedName: types.NamespacedName{
@@ -77,16 +66,5 @@ func (n *EnqueueRequestForDevice) Delete(e event.DeleteEvent, q workqueue.RateLi
 	})
 }
 
-func (n *EnqueueRequestForDevice) Generic(e event.GenericEvent, q workqueue.RateLimitingInterface) {
-}
-
-func (n *EnqueueRequestForDevice) cleanSyncContext(device *schedulingv1alpha1.Device) error {
-	if n.syncContext == nil {
-		return fmt.Errorf("failed to cleanup empty sync context")
-	}
-
-	// device's name = node's name
-	n.syncContext.Delete(util.GenerateNodeKey(&device.ObjectMeta))
-
-	return nil
+func (d *DeviceHandler) Generic(e event.GenericEvent, q workqueue.RateLimitingInterface) {
 }
