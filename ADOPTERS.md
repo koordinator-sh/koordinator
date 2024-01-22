@@ -22,8 +22,6 @@ free to get in touch.
 | [meiyapico](https://www.300188.cn/)                                 | [@complone](https://github.com/complone)                                             | Sample   | Koordinatior is used as the elastic scheduler of flink, hudi, and alloxio to maximize the use of resources by using resource quotas and fair scheduling                                                                                                                                    |
 | [dewu](https://www.dewu.com/)                                       | [@zhouzijiang](https://github.com/zhouzijiang)                                       | Stable   | Use Koordinatior in production cluster for online/offline/flink colocation to improve k8s cluster resource utilization.                                                                                                                                                                    |
 | [Asiainfo](https://www.asiainfo.com/zh_cn/index.html)                                       | [@zhifanggao](https://github.com/zhifanggao)                                       | Sample   | Use Koordinatior in production cluster for online/offline colocation to improve cluster resource utilization.                                                                                                                                                                    |
-
-
 ## Process
 
 Send a PR
