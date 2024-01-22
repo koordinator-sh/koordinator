@@ -170,7 +170,7 @@ func (cs *Coscheduling) PreFilter(ctx context.Context, state *framework.CycleSta
 	// any preemption attempts.
 	if err := cs.pgMgr.PreFilter(ctx, pod); err != nil {
 		klog.ErrorS(err, "PreFilter failed", "pod", klog.KObj(pod))
-		return nil, framework.AsStatus(err)
+		return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, err.Error())
 	}
 	return nil, framework.NewStatus(framework.Success, "")
 }
