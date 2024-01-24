@@ -24,7 +24,7 @@ import (
 )
 
 func init() {
-	MustRegister(NodeResourceCollectors...)
+	InternalMustRegister(NodeResourceCollectors...)
 }
 
 var (
