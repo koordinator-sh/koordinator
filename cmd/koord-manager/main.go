@@ -24,21 +24,26 @@ import (
 	"os"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/spf13/pflag"
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/leaderelection/resourcelock"
+	_ "k8s.io/component-base/metrics/prometheus/clientgo" // load restclient and workqueue metrics
 	"k8s.io/klog/v2"
 	"k8s.io/klog/v2/klogr"
 	ctrl "sigs.k8s.io/controller-runtime"
+	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 
 	"github.com/koordinator-sh/koordinator/cmd/koord-manager/extensions"
 	"github.com/koordinator-sh/koordinator/cmd/koord-manager/options"
 	extclient "github.com/koordinator-sh/koordinator/pkg/client"
 	"github.com/koordinator-sh/koordinator/pkg/features"
+	"github.com/koordinator-sh/koordinator/pkg/slo-controller/metrics"
 	utilclient "github.com/koordinator-sh/koordinator/pkg/util/client"
 	utilfeature "github.com/koordinator-sh/koordinator/pkg/util/feature"
 	"github.com/koordinator-sh/koordinator/pkg/util/fieldindex"
+	metricsutil "github.com/koordinator-sh/koordinator/pkg/util/metrics"
 	_ "github.com/koordinator-sh/koordinator/pkg/util/metrics/leadership"
 	"github.com/koordinator-sh/koordinator/pkg/util/sloconfig"
 	"github.com/koordinator-sh/koordinator/pkg/webhook"
@@ -170,6 +175,11 @@ func main() {
 		klog.V(4).Infof("webhook framework feature gate not enabled")
 	}
 
+	if err := installHTTPHandler(mgr); err != nil {
+		setupLog.Error(err, "unable to install http handler")
+		os.Exit(1)
+	}
+
 	setupLog.Info("starting manager")
 	extensions.StartExtensions(ctx, mgr)
 	if err := mgr.Start(ctx); err != nil {
@@ -185,4 +195,19 @@ func setRestConfig(c *rest.Config) {
 	if *restConfigBurst > 0 {
 		c.Burst = *restConfigBurst
 	}
+}
+
+func installHTTPHandler(mgr ctrl.Manager) error {
+	if err := mgr.AddMetricsExtraHandler(metrics.InternalHTTPPath, promhttp.HandlerFor(metrics.InternalRegistry, promhttp.HandlerOpts{})); err != nil {
+		return err
+	}
+	if err := mgr.AddMetricsExtraHandler(metrics.ExternalHTTPPath, promhttp.HandlerFor(metrics.ExternalRegistry, promhttp.HandlerOpts{})); err != nil {
+		return err
+	}
+	// merge internal, external and controller-runtime metrics
+	if err := mgr.AddMetricsExtraHandler(metrics.DefaultHTTPPath, promhttp.HandlerFor(
+		metricsutil.MergedGatherFunc(metrics.InternalRegistry, metrics.ExternalRegistry, ctrlmetrics.Registry), promhttp.HandlerOpts{})); err != nil {
+		return err
+	}
+	return nil
 }
