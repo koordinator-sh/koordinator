@@ -33,6 +33,8 @@ import (
 	agent "github.com/koordinator-sh/koordinator/pkg/koordlet"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/audit"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/config"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
+	metricsutil "github.com/koordinator-sh/koordinator/pkg/util/metrics"
 )
 
 func main() {
@@ -77,18 +79,24 @@ func main() {
 	}
 
 	// Expose the Prometheus http endpoint
-	go func() {
-		klog.Infof("Starting prometheus server on %v", *options.ServerAddr)
-		mux := http.NewServeMux()
-		mux.Handle("/metrics", promhttp.Handler())
-		if features.DefaultKoordletFeatureGate.Enabled(features.AuditEventsHTTPHandler) {
-			mux.HandleFunc("/events", audit.HttpHandler())
-		}
-		// http.HandleFunc("/healthz", d.HealthzHandler())
-		klog.Fatalf("Prometheus monitoring failed: %v", http.ListenAndServe(*options.ServerAddr, mux))
-	}()
+	go installHTTPHandler()
 
 	// Start the Cmd
 	klog.Info("Starting the koordlet daemon")
 	d.Run(stopCtx.Done())
+}
+
+func installHTTPHandler() {
+	klog.Infof("Starting prometheus server on %v", *options.ServerAddr)
+	mux := http.NewServeMux()
+	mux.Handle(metrics.ExternalHTTPPath, promhttp.HandlerFor(metrics.ExternalRegistry, promhttp.HandlerOpts{}))
+	mux.Handle(metrics.InternalHTTPPath, promhttp.HandlerFor(metrics.InternalRegistry, promhttp.HandlerOpts{}))
+	// merge internal and external
+	mux.Handle(metrics.DefaultHTTPPath, promhttp.HandlerFor(
+		metricsutil.MergedGatherFunc(metrics.InternalRegistry, metrics.ExternalRegistry), promhttp.HandlerOpts{}))
+	if features.DefaultKoordletFeatureGate.Enabled(features.AuditEventsHTTPHandler) {
+		mux.HandleFunc("/events", audit.HttpHandler())
+	}
+	// http.HandleFunc("/healthz", d.HealthzHandler())
+	klog.Fatalf("Prometheus monitoring failed: %v", http.ListenAndServe(*options.ServerAddr, mux))
 }

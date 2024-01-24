@@ -35,7 +35,16 @@ func TestMustRegister(t *testing.T) {
 		Help:      "test counter",
 	}, []string{StatusKey, ReasonKey})
 	assert.NotPanics(t, func() {
-		MustRegister(testMetricVec)
+		InternalMustRegister(testMetricVec)
+	})
+
+	testExternalMetricVec := prometheus.NewCounterVec(prometheus.CounterOpts{
+		Subsystem: "test",
+		Name:      "test_external_counter",
+		Help:      "test counter",
+	}, []string{StatusKey, ReasonKey})
+	assert.NotPanics(t, func() {
+		ExternalMustRegister(testExternalMetricVec)
 	})
 }
 

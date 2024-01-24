@@ -19,7 +19,7 @@ package metrics
 import "github.com/prometheus/client_golang/prometheus"
 
 func init() {
-	MustRegister(CommonCollectors...)
+	InternalMustRegister(CommonCollectors...)
 }
 
 var (
