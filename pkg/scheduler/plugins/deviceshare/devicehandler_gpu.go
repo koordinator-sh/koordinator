@@ -37,13 +37,14 @@ var _ DeviceHandler = &GPUHandler{}
 type GPUHandler struct {
 }
 
-func (h *GPUHandler) CalcDesiredRequestsAndCount(node *corev1.Node, pod *corev1.Pod, podRequests corev1.ResourceList, totalDevices deviceResources, hint *apiext.DeviceHint) (corev1.ResourceList, int, *framework.Status) {
-	if len(totalDevices) == 0 {
+func (h *GPUHandler) CalcDesiredRequestsAndCount(node *corev1.Node, pod *corev1.Pod, podRequests corev1.ResourceList, nodeDevice *nodeDevice, hint *apiext.DeviceHint) (corev1.ResourceList, int, *framework.Status) {
+	totalDevice := nodeDevice.deviceTotal[schedulingv1alpha1.GPU]
+	if len(totalDevice) == 0 {
 		return nil, 0, framework.NewStatus(framework.UnschedulableAndUnresolvable, fmt.Sprintf("Insufficient %s devices", schedulingv1alpha1.GPU))
 	}
 
 	podRequests = podRequests.DeepCopy()
-	if err := fillGPUTotalMem(totalDevices, podRequests); err != nil {
+	if err := fillGPUTotalMem(totalDevice, podRequests); err != nil {
 		return nil, 0, framework.NewStatus(framework.UnschedulableAndUnresolvable, err.Error())
 	}
 

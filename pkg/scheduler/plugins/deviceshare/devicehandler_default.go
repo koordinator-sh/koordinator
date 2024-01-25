@@ -21,10 +21,12 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
 func init() {
@@ -39,7 +41,8 @@ type DefaultDeviceHandler struct {
 	resourceName corev1.ResourceName
 }
 
-func (h *DefaultDeviceHandler) CalcDesiredRequestsAndCount(node *corev1.Node, pod *corev1.Pod, podRequests corev1.ResourceList, totalDevices deviceResources, hint *apiext.DeviceHint) (corev1.ResourceList, int, *framework.Status) {
+func (h *DefaultDeviceHandler) CalcDesiredRequestsAndCount(_ *corev1.Node, _ *corev1.Pod, podRequests corev1.ResourceList, nodeDevice *nodeDevice, hint *apiext.DeviceHint) (corev1.ResourceList, int, *framework.Status) {
+	totalDevices := nodeDevice.deviceTotal[h.deviceType]
 	if len(totalDevices) == 0 {
 		return nil, 0, framework.NewStatus(framework.UnschedulableAndUnresolvable, fmt.Sprintf("Insufficient %s devices", h.deviceType))
 	}
@@ -54,20 +57,35 @@ func (h *DefaultDeviceHandler) CalcDesiredRequestsAndCount(node *corev1.Node, po
 		requests = corev1.ResourceList{
 			h.resourceName: *resource.NewQuantity(quantity.Value()/desiredCount, resource.DecimalSI),
 		}
-	} else {
-		if hint != nil {
-			switch hint.AllocateStrategy {
-			case apiext.ApplyForAllDeviceAllocateStrategy:
-				desiredCount = int64(len(totalDevices))
-			case apiext.RequestsAsCountAllocateStrategy:
-				desiredCount = quantity.Value()
-				desiredQuantity := 1
-				if hint.ExclusivePolicy == apiext.DeviceLevelDeviceExclusivePolicy {
-					desiredQuantity = 100
+	} else if hint != nil {
+		switch hint.AllocateStrategy {
+		case apiext.ApplyForAllDeviceAllocateStrategy:
+			desiredCount = int64(len(totalDevices))
+			if hint.Selector != nil {
+				selector, err := util.GetFastLabelSelector(hint.Selector)
+				if err != nil {
+					return nil, 0, framework.NewStatus(framework.UnschedulableAndUnresolvable, fmt.Sprintf("invalid Selector of DeviceHint, deviceType: %s, err: %s", h.deviceType, err.Error()))
 				}
-				requests = corev1.ResourceList{
-					h.resourceName: *resource.NewQuantity(int64(desiredQuantity), resource.DecimalSI),
+
+				matched := 0
+				for _, v := range nodeDevice.deviceInfos[h.deviceType] {
+					if selector.Matches(labels.Set(v.Labels)) {
+						matched++
+					}
 				}
+				desiredCount = int64(matched)
+			}
+			if desiredCount == 0 {
+				return nil, 0, framework.NewStatus(framework.UnschedulableAndUnresolvable, fmt.Sprintf("Insufficient %s devices", h.deviceType))
+			}
+		case apiext.RequestsAsCountAllocateStrategy:
+			desiredCount = quantity.Value()
+			desiredQuantity := 1
+			if hint.ExclusivePolicy == apiext.DeviceLevelDeviceExclusivePolicy {
+				desiredQuantity = 100
+			}
+			requests = corev1.ResourceList{
+				h.resourceName: *resource.NewQuantity(int64(desiredQuantity), resource.DecimalSI),
 			}
 		}
 	}
