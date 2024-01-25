@@ -131,7 +131,7 @@ func (n *nodeResourceCollector) collectNodeResUsed() {
 			nodeMetrics = append(nodeMetrics, metric...)
 		}
 		if info := deviceCollector.Infos(); info != nil {
-			n.metricDB.Set(koordletutil.GPUDeviceType, info)
+			n.metricDB.Set(info.Type(), info)
 		}
 	}
 
