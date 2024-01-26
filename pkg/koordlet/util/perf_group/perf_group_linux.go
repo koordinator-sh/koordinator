@@ -57,6 +57,7 @@ var (
 	EventsMap     = map[string][]string{
 		"CPICollector": {"cycles", "instructions"},
 	}
+	attrMap = make(map[string]*unix.PerfEventAttr)
 )
 
 func InitBufferPool(eventsNums map[int]struct{}) {
@@ -93,12 +94,29 @@ func LibInit() {
 			klog.Fatalf("Unable to init libpfm: %v", err)
 		}
 	})
+	for _, events := range EventsMap {
+		for _, event := range events {
+			attr, err := createPerfConfig(event)
+			if err != nil {
+				panic(err)
+			}
+			attr.Read_format = unix.PERF_FORMAT_GROUP | unix.PERF_FORMAT_TOTAL_TIME_ENABLED | unix.PERF_FORMAT_TOTAL_TIME_RUNNING | unix.PERF_FORMAT_ID
+			attr.Sample_type = unix.PERF_SAMPLE_IDENTIFIER
+			attr.Size = uint32(unsafe.Sizeof(unix.PerfEventAttr{}))
+			attr.Bits |= unix.PerfBitInherit
+			attr.Bits |= unix.PerfBitDisabled
+			attrMap[event] = attr
+		}
+	}
 }
 
 func LibFinalize() {
 	closelibpfm.Do(func() {
 		C.pfm_terminate()
 	})
+	for _, attr := range attrMap {
+		C.free(unsafe.Pointer(attr))
+	}
 }
 
 type PerfGroupCollector struct {
@@ -155,25 +173,6 @@ func NewPerfGroupCollector(cgroupFile *os.File, cpus []int, events []string, sys
 	}
 	var wg sync.WaitGroup
 	wg.Add(len(cpus))
-	attrMap := make(map[string]*unix.PerfEventAttr, len(events))
-	for i, event := range events {
-		attr, e := createPerfConfig(event)
-		defer C.free(unsafe.Pointer(attr))
-		if e != nil {
-			err = e
-			return nil, err
-		} else {
-			// first event is group leader
-			if i == 0 {
-				attr.Bits |= unix.PerfBitDisabled
-			}
-			attr.Read_format = unix.PERF_FORMAT_GROUP | unix.PERF_FORMAT_TOTAL_TIME_ENABLED | unix.PERF_FORMAT_TOTAL_TIME_RUNNING | unix.PERF_FORMAT_ID
-			attr.Sample_type = unix.PERF_SAMPLE_IDENTIFIER
-			attr.Size = uint32(unsafe.Sizeof(unix.PerfEventAttr{}))
-			attr.Bits |= unix.PerfBitInherit
-			attrMap[event] = attr
-		}
-	}
 	var errMutex sync.Mutex
 	for _, cpu := range cpus {
 		go func(cpu int) {
