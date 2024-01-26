@@ -263,3 +263,7 @@ func (qt *quotaTopology) getQuotaTopologyInfo() *QuotaTopologySummary {
 	}
 	return result
 }
+
+func (qt *quotaTopology) getQuotaInfo(name string) *QuotaInfo {
+	return qt.quotaInfoMap[name]
+}
