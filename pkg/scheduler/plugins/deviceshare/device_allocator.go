@@ -37,7 +37,7 @@ var deviceHandlers = map[schedulingv1alpha1.DeviceType]DeviceHandler{}
 var deviceAllocators = map[schedulingv1alpha1.DeviceType]DeviceAllocator{}
 
 type DeviceHandler interface {
-	CalcDesiredRequestsAndCount(node *corev1.Node, pod *corev1.Pod, podRequests corev1.ResourceList, totalDevices deviceResources, hint *apiext.DeviceHint) (corev1.ResourceList, int, *framework.Status)
+	CalcDesiredRequestsAndCount(node *corev1.Node, pod *corev1.Pod, podRequests corev1.ResourceList, nodeDevice *nodeDevice, hint *apiext.DeviceHint) (corev1.ResourceList, int, *framework.Status)
 }
 
 type DeviceAllocator interface {
@@ -169,8 +169,7 @@ func (a *AutopilotAllocator) calcRequestsAndCountByDeviceType(
 		if handler == nil {
 			continue
 		}
-		totalDevices := nodeDevice.deviceTotal[deviceType]
-		requests, desiredCount, status := handler.CalcDesiredRequestsAndCount(a.node, a.pod, requests, totalDevices, hints[deviceType])
+		requests, desiredCount, status := handler.CalcDesiredRequestsAndCount(a.node, a.pod, requests, nodeDevice, hints[deviceType])
 		if !status.IsSuccess() {
 			if status.Code() == framework.Skip {
 				continue
