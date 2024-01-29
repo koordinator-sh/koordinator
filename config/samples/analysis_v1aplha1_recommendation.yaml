@@ -1,0 +1,20 @@
+apiVersion: analysis.koordinator.sh/v1alpha1
+kind: Recommendation
+metadata:
+  namespace: default
+  name: recommendation-sample
+spec:
+  target:
+    type: workload
+    workload:
+      apiVersion: apps/v1
+      kind: Deployment
+      name: nginx-sample-deployment
+status:
+  podStatus:
+    containerStatuses:
+    - containerName: nginx
+      resources:
+        cpu: 1200m
+        memory: 1280Mi
+  updateTime: "2024-03-05T08:00:00Z"

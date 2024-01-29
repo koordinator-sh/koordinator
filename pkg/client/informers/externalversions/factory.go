@@ -24,6 +24,7 @@ import (
 	time "time"
 
 	versioned "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
+	analysis "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions/analysis"
 	config "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions/config"
 	internalinterfaces "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions/internalinterfaces"
 	quota "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions/quota"
@@ -175,10 +176,15 @@ type SharedInformerFactory interface {
 	ForResource(resource schema.GroupVersionResource) (GenericInformer, error)
 	WaitForCacheSync(stopCh <-chan struct{}) map[reflect.Type]bool
 
+	Analysis() analysis.Interface
 	Config() config.Interface
 	Quota() quota.Interface
 	Scheduling() scheduling.Interface
 	Slo() slo.Interface
+}
+
+func (f *sharedInformerFactory) Analysis() analysis.Interface {
+	return analysis.New(f, f.namespace, f.tweakListOptions)
 }
 
 func (f *sharedInformerFactory) Config() config.Interface {
