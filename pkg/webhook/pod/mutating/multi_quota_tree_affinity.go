@@ -49,7 +49,7 @@ func (h *PodMutatingHandler) addNodeAffinityForMultiQuotaTree(ctx context.Contex
 		quotaName = pod.Namespace
 	}
 
-	info := plugin.GetQuotaInfo(quotaName)
+	info := plugin.GetQuotaInfo(quotaName, pod.Namespace)
 	if info == nil {
 		return nil
 	}

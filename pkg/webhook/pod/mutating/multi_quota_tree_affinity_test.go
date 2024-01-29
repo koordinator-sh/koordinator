@@ -132,6 +132,9 @@ func TestAddNodeAffinityForMultiQuotaTree(t *testing.T) {
 					extension.LabelQuotaTreeID:   "tree2",
 					extension.LabelQuotaIsParent: "true",
 				},
+				Annotations: map[string]string{
+					extension.AnnotationQuotaNamespaces: "[\"namespace2\"]",
+				},
 			},
 		},
 		// the children quotas of root-quota-b
@@ -378,6 +381,41 @@ func TestAddNodeAffinityForMultiQuotaTree(t *testing.T) {
 												Key:      "node-pool",
 												Operator: corev1.NodeSelectorOpIn,
 												Values:   []string{"nodePoolA"},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "default quota 2",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "namespace2",
+					Name:      "test-pod-1",
+				},
+				Spec: corev1.PodSpec{},
+			},
+			expected: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "namespace2",
+					Name:      "test-pod-1",
+				},
+				Spec: corev1.PodSpec{
+					Affinity: &corev1.Affinity{
+						NodeAffinity: &corev1.NodeAffinity{
+							RequiredDuringSchedulingIgnoredDuringExecution: &corev1.NodeSelector{
+								NodeSelectorTerms: []corev1.NodeSelectorTerm{
+									{
+										MatchExpressions: []corev1.NodeSelectorRequirement{
+											{
+												Key:      "node-pool",
+												Operator: corev1.NodeSelectorOpIn,
+												Values:   []string{"nodePoolB"},
 											},
 										},
 									},
