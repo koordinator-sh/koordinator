@@ -21,7 +21,8 @@ package externalversions
 import (
 	"fmt"
 
-	v1alpha1 "github.com/koordinator-sh/koordinator/apis/config/v1alpha1"
+	v1alpha1 "github.com/koordinator-sh/koordinator/apis/analysis/v1alpha1"
+	configv1alpha1 "github.com/koordinator-sh/koordinator/apis/config/v1alpha1"
 	quotav1alpha1 "github.com/koordinator-sh/koordinator/apis/quota/v1alpha1"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
@@ -55,8 +56,12 @@ func (f *genericInformer) Lister() cache.GenericLister {
 // TODO extend this to unknown resources with a client pool
 func (f *sharedInformerFactory) ForResource(resource schema.GroupVersionResource) (GenericInformer, error) {
 	switch resource {
-	// Group=config, Version=v1alpha1
-	case v1alpha1.SchemeGroupVersion.WithResource("clustercolocationprofiles"):
+	// Group=analysis, Version=v1alpha1
+	case v1alpha1.SchemeGroupVersion.WithResource("metricpredictions"):
+		return &genericInformer{resource: resource.GroupResource(), informer: f.Analysis().V1alpha1().MetricPredictions().Informer()}, nil
+
+		// Group=config, Version=v1alpha1
+	case configv1alpha1.SchemeGroupVersion.WithResource("clustercolocationprofiles"):
 		return &genericInformer{resource: resource.GroupResource(), informer: f.Config().V1alpha1().ClusterColocationProfiles().Informer()}, nil
 
 		// Group=quota, Version=v1alpha1
