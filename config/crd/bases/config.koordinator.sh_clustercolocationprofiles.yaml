@@ -122,6 +122,10 @@ spec:
                 description: Patch indicates patching podTemplate that will be injected
                   to the Pod.
                 x-kubernetes-preserve-unknown-fields: true
+              priority:
+                description: Priority of profile if many profile matched The higher
+                  the value, the higher the priority.
+                type: integer
               priorityClassName:
                 description: If specified, the priorityClassName and the priority
                   value defined in PriorityClass will be injected into the Pod. The

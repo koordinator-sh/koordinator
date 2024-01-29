@@ -21,6 +21,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/rand"
+	"sort"
+	"strings"
 
 	admissionv1 "k8s.io/api/admission/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -85,6 +87,17 @@ func (h *PodMutatingHandler) clusterColocationProfileMutatingPod(ctx context.Con
 	if len(matchedProfiles) == 0 {
 		return nil
 	}
+
+	// sort by priority
+	sort.SliceStable(matchedProfiles, func(i, j int) bool {
+		if matchedProfiles[i].Spec.Priority != matchedProfiles[j].Spec.Priority {
+			// big number has high priority
+			return matchedProfiles[i].Spec.Priority > matchedProfiles[j].Spec.Priority
+		}
+		// if priority is same, sort by name
+		return strings.Compare(matchedProfiles[i].Name, matchedProfiles[j].Name) == 1
+	})
+
 	skipUpdateResourceFromProfile := false
 	for _, profile := range matchedProfiles {
 		if extension.ShouldSkipUpdateResource(profile) {
@@ -103,6 +116,11 @@ func (h *PodMutatingHandler) clusterColocationProfileMutatingPod(ctx context.Con
 			return err
 		}
 		klog.V(4).Infof("mutate Pod %s/%s by clusterColocationProfile %s", pod.Namespace, pod.Name, profile.Name)
+
+		if extension.ShouldSkipNextProfile(profile) {
+			klog.V(4).Infof("skip next profile after matched pod %s/%s by clusterColocationProfile %s", pod.Namespace, pod.Name, profile.Name)
+			break
+		}
 	}
 	if skipUpdateResourceFromProfile || utilfeature.DefaultFeatureGate.Enabled(features.ColocationProfileSkipMutatingResources) {
 		return nil

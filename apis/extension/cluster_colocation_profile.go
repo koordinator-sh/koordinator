@@ -22,6 +22,7 @@ import (
 
 const (
 	AnnotationSkipUpdateResource = "config.koordinator.sh/skip-update-resources"
+	AnnotationSkipNextProfile    = "config.koordinator.sh/skip-next-profile"
 )
 
 func ShouldSkipUpdateResource(profile *configv1alpha1.ClusterColocationProfile) bool {
@@ -29,5 +30,13 @@ func ShouldSkipUpdateResource(profile *configv1alpha1.ClusterColocationProfile) 
 		return false
 	}
 	_, ok := profile.Annotations[AnnotationSkipUpdateResource]
+	return ok
+}
+
+func ShouldSkipNextProfile(profile *configv1alpha1.ClusterColocationProfile) bool {
+	if profile == nil || profile.Annotations == nil {
+		return false
+	}
+	_, ok := profile.Annotations[AnnotationSkipNextProfile]
 	return ok
 }
