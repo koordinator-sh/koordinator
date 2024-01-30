@@ -51,19 +51,12 @@ var (
 	Jiffies = float64(10 * time.Millisecond)
 )
 
-func init() {
-	// $ getconf CLK_TCK > jiffies
-	if err := initJiffies(); err != nil {
-		klog.Warningf("failed to get Jiffies, use the default %v, err: %v", Jiffies, err)
-	}
-}
-
 // initJiffies use command "getconf CLK_TCK" to fetch the clock tick on current host,
 // if the command doesn't exist, uses the default value 10ms for jiffies
 func initJiffies() error {
 	getconf, err := exec.LookPath("getconf")
 	if err != nil {
-		return nil
+		return err
 	}
 	cmd := exec.Command(getconf, "CLK_TCK")
 	var out bytes.Buffer

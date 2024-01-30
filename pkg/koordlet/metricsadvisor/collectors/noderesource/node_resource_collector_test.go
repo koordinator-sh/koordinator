@@ -134,6 +134,7 @@ DirectMap1G:           0 kB`)
 		CPUTick:   0,
 		Timestamp: testLastCPUStatTime,
 	}
+	testDeviceCollector := &fakeDeviceCollector{isEnabled: true}
 
 	c := &nodeResourceCollector{
 		started:         atomic.NewBool(false),
@@ -141,7 +142,7 @@ DirectMap1G:           0 kB`)
 		metricDB:        metricCache,
 		lastNodeCPUStat: testLastCPUStat,
 		deviceCollectors: map[string]framework.DeviceCollector{
-			"TestDeviceCollector": &fakeDeviceCollector{},
+			"TestDeviceCollector": testDeviceCollector,
 		},
 		sharedState: framework.NewSharedState(),
 	}
@@ -167,6 +168,24 @@ DirectMap1G:           0 kB`)
 	assert.Equal(t, wantCPU, nodeCPU.Value)
 	assert.Equal(t, wantMemory, nodeMemory.Value)
 
+	// test collect without device collector
+	testDeviceCollector.isEnabled = false
+	testDeviceCollector.getNodeMetric = func() ([]metriccache.MetricSample, error) {
+		panic("should not be called")
+	}
+	assert.NotPanics(t, func() {
+		c.collectNodeResUsed()
+	})
+	assert.True(t, c.Started())
+	// validate collected values
+	// assert collected time is less than 10s
+	got, err = testGetNodeMetrics(t, c.metricDB, testNow, 5*time.Second)
+	wantCPU = testCPUUsage
+	assert.Equal(t, wantCPU, float64(got.Cpu().MilliValue()/1000))
+	// MemTotal - MemAvailable
+	wantMemory = float64(524288 * 1024)
+	assert.Equal(t, wantMemory, float64(got.Memory().Value()))
+
 	// test first cpu collection
 	c.lastNodeCPUStat = nil
 	assert.NotPanics(t, func() {
@@ -185,9 +204,18 @@ DirectMap1G:           0 kB`)
 
 type fakeDeviceCollector struct {
 	framework.DeviceCollector
+	isEnabled     bool
+	getNodeMetric func() ([]metriccache.MetricSample, error)
+}
+
+func (f *fakeDeviceCollector) Enabled() bool {
+	return f.isEnabled
 }
 
 func (f *fakeDeviceCollector) GetNodeMetric() ([]metriccache.MetricSample, error) {
+	if f.getNodeMetric != nil {
+		return f.getNodeMetric()
+	}
 	return nil, nil
 }
 

@@ -76,6 +76,7 @@ func NewDaemon(config *config.Configuration) (Daemon, error) {
 	klog.Infof("NODE_NAME is %v, start time %v", nodeName, float64(time.Now().Unix()))
 	metrics.RecordKoordletStartTime(nodeName, float64(time.Now().Unix()))
 
+	system.InitSupportConfigs()
 	klog.Infof("sysconf: %+v, agentMode: %v", system.Conf, system.AgentMode)
 	klog.Infof("kernel version INFO: %+v", system.HostSystemInfo)
 
