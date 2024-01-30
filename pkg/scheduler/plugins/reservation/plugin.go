@@ -115,7 +115,7 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 	cache := newReservationCache(reservationLister)
 	nm := newNominator(podLister, reservationLister)
 	registerReservationEventHandler(cache, koordSharedInformerFactory, nm)
-	registerPodEventHandler(cache, nm, sharedInformerFactory)
+	registerPodEventHandler(extendedHandle, cache, nm, sharedInformerFactory)
 
 	// TODO(joseph): Considering the amount of changed code,
 	// temporarily use global variable to store ReservationCache instance,

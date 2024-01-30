@@ -96,6 +96,9 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 	assignCache := newPodAssignCache(estimator)
 	podInformer := frameworkExtender.SharedInformerFactory().Core().V1().Pods()
 	frameworkexthelper.ForceSyncFromInformer(context.TODO().Done(), frameworkExtender.SharedInformerFactory(), podInformer.Informer(), assignCache)
+	frameworkExtender.RegisterForgetPodHandler(func(pod *corev1.Pod) {
+		assignCache.unAssign(pod.Spec.NodeName, pod)
+	})
 	nodeMetricLister := frameworkExtender.KoordinatorSharedInformerFactory().Slo().V1alpha1().NodeMetrics().Lister()
 
 	return &Plugin{
