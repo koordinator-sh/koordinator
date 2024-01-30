@@ -111,7 +111,7 @@ func NewRuntimeHook(si statesinformer.StatesInformer, cfg *Config) (RuntimeHook,
 		}
 		nriServer, err = nri.NewNriServer(nriServerOptions)
 		if err != nil {
-			klog.Errorf("new nri mode runtimehooks server error: %v", err)
+			klog.Warningf("new nri mode runtimehooks server error: %v", err)
 		}
 	} else {
 		klog.V(4).Info("nri mode runtimehooks is disabled")
