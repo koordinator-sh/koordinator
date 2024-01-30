@@ -21,6 +21,7 @@ import (
 	"os"
 
 	"go.uber.org/atomic"
+	"k8s.io/klog/v2"
 )
 
 const (
@@ -57,10 +58,20 @@ func init() {
 	}
 }
 
-func initSupportConfigs() {
+// InitSupportConfigs initializes the system support status.
+// e.g. the cgroup version, resctrl capability
+func InitSupportConfigs() {
+	// $ getconf CLK_TCK > jiffies
+	if err := initJiffies(); err != nil {
+		klog.Warningf("failed to get Jiffies, use the default %v, err: %v", Jiffies, err)
+	}
 	initCgroupsVersion()
 	HostSystemInfo = collectVersionInfo()
-	_, _ = IsSupportResctrl()
+	if isResctrlSupported, err := IsSupportResctrl(); err != nil {
+		klog.Warningf("failed to check resctrl support status, use %d, err: %v", isResctrlSupported, err)
+	} else {
+		klog.V(4).Infof("resctrl supported: %v", isResctrlSupported)
+	}
 }
 
 func NewHostModeConfig() *Config {
@@ -110,6 +121,4 @@ func (c *Config) InitFlags(fs *flag.FlagSet) {
 	fs.StringVar(&c.PouchEndpoint, "pouch-endpoint", c.PouchEndpoint, "pouch endPoint")
 
 	fs.StringVar(&c.DefaultRuntimeType, "default-runtime-type", c.DefaultRuntimeType, "default runtime type during runtime hooks handle request, candidates are containerd/docker/pouch.")
-
-	initSupportConfigs()
 }

@@ -78,6 +78,7 @@ func Test_collector_collectPodResUsed(t *testing.T) {
 	}
 	type fields struct {
 		podFilterOption       framework.PodFilter
+		deviceCollectors      map[string]framework.DeviceCollector
 		getPodMetas           []*statesinformer.PodMeta
 		initPodLastStat       func(lastState *gocache.Cache)
 		initContainerLastStat func(lastState *gocache.Cache)
@@ -96,6 +97,9 @@ func Test_collector_collectPodResUsed(t *testing.T) {
 			name: "cgroups v1",
 			fields: fields{
 				podFilterOption: framework.DefaultPodFilter,
+				deviceCollectors: map[string]framework.DeviceCollector{
+					"TestDeviceCollector": &fakeDeviceCollector{isEnabled: true},
+				},
 				getPodMetas: []*statesinformer.PodMeta{
 					{
 						CgroupDir: testPodMetaDir,
@@ -150,6 +154,9 @@ total_unevictable 0
 			name: "cgroups v2",
 			fields: fields{
 				podFilterOption: framework.DefaultPodFilter,
+				deviceCollectors: map[string]framework.DeviceCollector{
+					"TestDeviceCollector": &fakeDeviceCollector{isEnabled: true},
+				},
 				getPodMetas: []*statesinformer.PodMeta{
 					{
 						CgroupDir: testPodMetaDir,
@@ -212,9 +219,20 @@ unevictable 0
 			},
 		},
 		{
-			name: "cgroups v1, filter non-running pods",
+			name: "cgroups v1, filter non-running pods, skip disabled device collector",
 			fields: fields{
 				podFilterOption: &framework.TerminatedPodFilter{},
+				deviceCollectors: map[string]framework.DeviceCollector{
+					"TestDeviceCollector": &fakeDeviceCollector{
+						isEnabled: false,
+						getPodMetric: func(uid, podParentDir string, cs []corev1.ContainerStatus) ([]metriccache.MetricSample, error) {
+							panic("should not be called")
+						},
+						getContainerMetric: func(uid, podParentDir string, c *corev1.ContainerStatus) ([]metriccache.MetricSample, error) {
+							panic("should not be called")
+						},
+					},
+				},
 				getPodMetas: []*statesinformer.PodMeta{
 					{
 						CgroupDir: testPodMetaDir,
@@ -304,7 +322,8 @@ total_unevictable 0
 				},
 			})
 			collector.Setup(&framework.Context{
-				State: framework.NewSharedState(),
+				State:            framework.NewSharedState(),
+				DeviceCollectors: tt.fields.deviceCollectors,
 			})
 			c := collector.(*podResourceCollector)
 			tt.fields.initPodLastStat(c.lastPodCPUStat)
@@ -349,4 +368,29 @@ func Test_podResourceCollector_Run(t *testing.T) {
 		collector.Run(stopCh)
 		close(stopCh)
 	})
+}
+
+type fakeDeviceCollector struct {
+	framework.DeviceCollector
+	isEnabled          bool
+	getPodMetric       func(uid, podParentDir string, cs []corev1.ContainerStatus) ([]metriccache.MetricSample, error)
+	getContainerMetric func(uid, podParentDir string, c *corev1.ContainerStatus) ([]metriccache.MetricSample, error)
+}
+
+func (f *fakeDeviceCollector) Enabled() bool {
+	return f.isEnabled
+}
+
+func (f *fakeDeviceCollector) GetPodMetric(uid, podParentDir string, cs []corev1.ContainerStatus) ([]metriccache.MetricSample, error) {
+	if f.getPodMetric != nil {
+		return f.getPodMetric(uid, podParentDir, cs)
+	}
+	return nil, nil
+}
+
+func (f *fakeDeviceCollector) GetContainerMetric(containerID, podParentDir string, c *corev1.ContainerStatus) ([]metriccache.MetricSample, error) {
+	if f.getContainerMetric != nil {
+		return f.getContainerMetric(containerID, podParentDir, c)
+	}
+	return nil, nil
 }
