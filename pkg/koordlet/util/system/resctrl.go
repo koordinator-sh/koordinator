@@ -103,7 +103,7 @@ func IsSupportResctrl() (bool, error) {
 			return false, err
 		}
 		// Kernel cmdline not set resctrl features does not ensure feature must be disabled.
-		klog.V(4).Infof("isResctrlAvailableByKernelCmd result, cpuSupport: %v, kernelSupport: %v",
+		klog.Infof("IsSupportResctrl result, cpuSupport: %v, kernelSupport: %v",
 			cpuSupport, kernelCmdSupport)
 		isSupportResctrl = cpuSupport
 		isInit = true
@@ -556,21 +556,6 @@ func CheckAndTryEnableResctrlCat() error {
 	_, err = os.Stat(l3CbmFilePath)
 	if err != nil {
 		return fmt.Errorf("resctrl cat is not enabled, err: %s", err)
-	}
-	return nil
-}
-
-func InitCatGroupIfNotExist(group string) error {
-	path := GetResctrlGroupRootDirPath(group)
-	_, err := os.Stat(path)
-	if err == nil {
-		return nil
-	} else if !os.IsNotExist(err) {
-		return fmt.Errorf("check dir %v for group %s but got unexpected err: %v", path, group, err)
-	}
-	err = os.Mkdir(path, 0755)
-	if err != nil {
-		return fmt.Errorf("create dir %v failed for group %s, err: %v", path, group, err)
 	}
 	return nil
 }

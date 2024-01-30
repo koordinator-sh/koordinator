@@ -81,7 +81,7 @@ func NewFileTestUtil(t testing.TB) *FileTestUtil {
 	Conf.SysFSRootDir = filepath.Join(tempDir, "fs")
 	Conf.VarRunRootDir = tempDir
 
-	initSupportConfigs()
+	InitSupportConfigs()
 
 	return &FileTestUtil{
 		TempDir:          tempDir,
