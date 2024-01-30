@@ -117,6 +117,9 @@ func getHyperThreadEnabled() (bool, error) {
 	klog.V(5).Infof("read %s err: %v, try `lscpu`", hyperThreadEnabledPath, err)
 
 	lsCPUStr, err := lsCPU("-y")
+	if err != nil {
+		return false, err
+	}
 	for _, line := range strings.Split(lsCPUStr, "\n") {
 		items := strings.Split(line, ":")
 		if len(items) != 2 || !strings.Contains(items[0], "Thread(s) per core") {
@@ -128,7 +131,7 @@ func getHyperThreadEnabled() (bool, error) {
 		}
 		return threadsPerCore > 1, nil
 	}
-	klog.Warningf("failed to get HyperThreadEnabled, considered as disabled, err: %s", err)
+	klog.Warningf("failed to get HyperThreadEnabled, considered as disabled, lscpu output: %s", lsCPUStr)
 	return false, nil
 }
 
@@ -179,7 +182,7 @@ func lsCPU(option string) (string, error) {
 
 	executable, err := exec.LookPath("lscpu")
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to lookup lscpu path, err: %w", err)
 	}
 	output, err := exec.CommandContext(ctx, executable, option).Output()
 	if err != nil {
