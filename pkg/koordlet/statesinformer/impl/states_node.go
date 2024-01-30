@@ -206,4 +206,10 @@ func recordNodeResources(node *corev1.Node) {
 	metrics.RecordNodeResourceAllocatable(string(apiext.BatchCPU), metrics.UnitInteger, float64(batchCPU.Value()))
 	batchMemory := node.Status.Allocatable.Name(apiext.BatchMemory, resource.BinarySI)
 	metrics.RecordNodeResourceAllocatable(string(apiext.BatchMemory), metrics.UnitByte, float64(batchMemory.Value()))
+
+	// record node allocatable of MidCPU & MidMemory
+	midCPU := node.Status.Allocatable.Name(apiext.MidCPU, resource.DecimalSI)
+	metrics.RecordNodeResourceAllocatable(string(apiext.MidCPU), metrics.UnitInteger, float64(midCPU.Value()))
+	midMemory := node.Status.Allocatable.Name(apiext.MidMemory, resource.BinarySI)
+	metrics.RecordNodeResourceAllocatable(string(apiext.MidMemory), metrics.UnitByte, float64(midMemory.Value()))
 }
