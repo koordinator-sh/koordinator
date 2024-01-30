@@ -109,16 +109,28 @@ func (m *metricAdvisor) Run(stopCh <-chan struct{}) error {
 }
 
 func (m *metricAdvisor) setup() {
-	for _, device := range m.context.DeviceCollectors {
-		device.Setup(m.context)
+	for name, dc := range m.context.DeviceCollectors {
+		if !dc.Enabled() {
+			klog.V(4).Infof("device collector %v is not enabled, skip setup", name)
+			continue
+		}
+		dc.Setup(m.context)
 	}
-	for _, collector := range m.context.Collectors {
+	for name, collector := range m.context.Collectors {
+		if !collector.Enabled() {
+			klog.V(4).Infof("collector %v is not enabled, skip setup", name)
+			continue
+		}
 		collector.Setup(m.context)
 	}
 }
 
 func (m *metricAdvisor) shutdown() {
-	for _, dc := range m.context.DeviceCollectors {
+	for name, dc := range m.context.DeviceCollectors {
+		if !dc.Enabled() {
+			klog.V(4).Infof("device collector %v is not enabled, skip shutdown", name)
+			continue
+		}
 		dc.Shutdown()
 	}
 }
