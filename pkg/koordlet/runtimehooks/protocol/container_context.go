@@ -225,7 +225,10 @@ func (c *ContainerContext) FromProxy(req *runtimeapi.ContainerResourceHookReques
 	c.Request.FromProxy(req)
 }
 
-func (c *ContainerContext) ProxyDone(resp *runtimeapi.ContainerResourceHookResponse) {
+func (c *ContainerContext) ProxyDone(resp *runtimeapi.ContainerResourceHookResponse, executor resourceexecutor.ResourceUpdateExecutor) {
+	if c.executor == nil {
+		c.executor = executor
+	}
 	c.injectForExt()
 	c.Response.ProxyDone(resp)
 	c.Update()
