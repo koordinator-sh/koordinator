@@ -73,7 +73,7 @@ func (s *server) PreCreateContainerHook(ctx context.Context,
 	containerCtx := &protocol.ContainerContext{}
 	containerCtx.FromProxy(req)
 	err := hooks.RunHooks(s.options.PluginFailurePolicy, rmconfig.PreCreateContainer, containerCtx)
-	containerCtx.ProxyDone(resp)
+	containerCtx.ProxyDone(resp, s.options.Executor)
 	klog.V(5).Infof("send PreCreateContainerHook response for pod %v container %v response %v",
 		req.PodMeta.String(), req.ContainerMeta.String(), resp.String())
 	return resp, err
@@ -91,7 +91,7 @@ func (s *server) PreStartContainerHook(ctx context.Context,
 	containerCtx := &protocol.ContainerContext{}
 	containerCtx.FromProxy(req)
 	err := hooks.RunHooks(s.options.PluginFailurePolicy, rmconfig.PreStartContainer, containerCtx)
-	containerCtx.ProxyDone(resp)
+	containerCtx.ProxyDone(resp, s.options.Executor)
 	klog.V(5).Infof("send PreStartContainerHook for pod %v container %v response %v",
 		req.PodMeta.String(), req.ContainerMeta.String(), resp.String())
 	return resp, err
@@ -109,7 +109,7 @@ func (s *server) PostStartContainerHook(ctx context.Context,
 	containerCtx := &protocol.ContainerContext{}
 	containerCtx.FromProxy(req)
 	err := hooks.RunHooks(s.options.PluginFailurePolicy, rmconfig.PostStartContainer, containerCtx)
-	containerCtx.ProxyDone(resp)
+	containerCtx.ProxyDone(resp, s.options.Executor)
 	klog.V(5).Infof("send PostStartContainerHook for pod %v container %v response %v",
 		req.PodMeta.String(), req.ContainerMeta.String(), resp.String())
 	return resp, err
@@ -127,7 +127,7 @@ func (s *server) PostStopContainerHook(ctx context.Context,
 	containerCtx := &protocol.ContainerContext{}
 	containerCtx.FromProxy(req)
 	err := hooks.RunHooks(s.options.PluginFailurePolicy, rmconfig.PostStopContainer, containerCtx)
-	containerCtx.ProxyDone(resp)
+	containerCtx.ProxyDone(resp, s.options.Executor)
 	klog.V(5).Infof("send PostStopContainerHook for pod %v container %v response %v",
 		req.PodMeta.String(), req.ContainerMeta.String(), resp.String())
 	return resp, err
@@ -145,7 +145,7 @@ func (s *server) PreUpdateContainerResourcesHook(ctx context.Context,
 	containerCtx := &protocol.ContainerContext{}
 	containerCtx.FromProxy(req)
 	err := hooks.RunHooks(s.options.PluginFailurePolicy, rmconfig.PreUpdateContainerResources, containerCtx)
-	containerCtx.ProxyDone(resp)
+	containerCtx.ProxyDone(resp, s.options.Executor)
 	klog.V(5).Infof("send PreUpdateContainerResourcesHook for pod %v container %v response %v",
 		req.PodMeta.String(), req.ContainerMeta.String(), resp.String())
 	return resp, err
