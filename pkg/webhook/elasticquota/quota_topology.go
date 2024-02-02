@@ -263,3 +263,18 @@ func (qt *quotaTopology) getQuotaTopologyInfo() *QuotaTopologySummary {
 	}
 	return result
 }
+
+func (qt *quotaTopology) getQuotaInfo(name, namespace string) *QuotaInfo {
+	qt.lock.Lock()
+	defer qt.lock.Unlock()
+
+	info, ok := qt.quotaInfoMap[name]
+	if ok {
+		return info
+	}
+	quotaName, ok := qt.namespaceToQuotaMap[namespace]
+	if ok {
+		return qt.quotaInfoMap[quotaName]
+	}
+	return nil
+}
