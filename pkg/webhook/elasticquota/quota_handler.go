@@ -17,6 +17,8 @@ limitations under the License.
 package elasticquota
 
 import (
+	"reflect"
+
 	"k8s.io/klog/v2"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
@@ -44,6 +46,12 @@ func (qt *quotaTopology) OnQuotaAdd(obj interface{}) {
 		qt.quotaHierarchyInfo[quotaInfo.ParentName] = make(map[string]struct{})
 	}
 	qt.quotaHierarchyInfo[quotaInfo.ParentName][quotaInfo.Name] = struct{}{}
+
+	namespaces := extension.GetAnnotationQuotaNamespaces(quota)
+	for _, ns := range namespaces {
+		qt.namespaceToQuotaMap[ns] = quota.Name
+	}
+
 	klog.V(5).Infof("OnQuotaAdd success: %v.%v", quota.Namespace, quota.Name)
 }
 
@@ -71,6 +79,18 @@ func (qt *quotaTopology) OnQuotaUpdate(oldObj, newObj interface{}) {
 		delete(qt.quotaHierarchyInfo[oldQuotaInfo.ParentName], oldQuotaInfo.Name)
 		qt.quotaHierarchyInfo[newQuotaInfo.ParentName][newQuotaInfo.Name] = struct{}{}
 	}
+
+	oldNamespaces := extension.GetAnnotationQuotaNamespaces(oldQuota)
+	newNamespaces := extension.GetAnnotationQuotaNamespaces(newQuota)
+	if !reflect.DeepEqual(oldNamespaces, newNamespaces) {
+		for _, ns := range oldNamespaces {
+			delete(qt.namespaceToQuotaMap, ns)
+		}
+		for _, ns := range newNamespaces {
+			qt.namespaceToQuotaMap[ns] = newQuota.Name
+		}
+	}
+
 	klog.V(5).Infof("OnQuotaUpdate success: %v.%v", newQuota.Namespace, newQuota.Name)
 }
 
@@ -89,5 +109,10 @@ func (qt *quotaTopology) OnQuotaDelete(obj interface{}) {
 	delete(qt.quotaHierarchyInfo[parentName], quota.Name)
 	delete(qt.quotaHierarchyInfo, quota.Name)
 	delete(qt.quotaInfoMap, quota.Name)
+
+	namespaces := extension.GetAnnotationQuotaNamespaces(quota)
+	for _, ns := range namespaces {
+		delete(qt.namespaceToQuotaMap, ns)
+	}
 	klog.V(5).Infof("OnQuotaDelete success: %v.%v", quota.Namespace, quota.Name)
 }

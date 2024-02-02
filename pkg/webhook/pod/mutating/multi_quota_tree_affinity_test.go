@@ -25,9 +25,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
-	"sigs.k8s.io/controller-runtime/pkg/client/fake"
-	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 	schedulingv1alpha1 "sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
@@ -42,11 +41,133 @@ func init() {
 }
 
 func TestAddNodeAffinityForMultiQuotaTree(t *testing.T) {
+	handler, fakeInformers := makeTestHandler()
+	quotaInformer, err := fakeInformers.FakeInformerFor(&schedulingv1alpha1.ElasticQuota{})
+	assert.NoError(t, err)
+
+	profiles := []*quotav1alpha1.ElasticQuotaProfile{
+		{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: "kube-system",
+				Name:      "profileA",
+				Labels: map[string]string{
+					extension.LabelQuotaTreeID: "tree1",
+				},
+			},
+			Spec: quotav1alpha1.ElasticQuotaProfileSpec{
+				QuotaName: "root-quota-a",
+				NodeSelector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{
+						"node-pool": "nodePoolA",
+					},
+				},
+			},
+		},
+		{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: "kube-system",
+				Name:      "profileB",
+				Labels: map[string]string{
+					extension.LabelQuotaTreeID: "tree2",
+				},
+			},
+			Spec: quotav1alpha1.ElasticQuotaProfileSpec{
+				QuotaName: "root-quota-b",
+				NodeSelector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{
+						"node-pool": "nodePoolB",
+					},
+				},
+			},
+		},
+	}
+
+	quotas := []*schedulingv1alpha1.ElasticQuota{
+		// other-quota, no tree
+		{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: "kube-system",
+				Name:      "other-quota",
+			},
+		},
+		// root-quota-a
+		{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: "kube-system",
+				Name:      "root-quota-a",
+				Labels: map[string]string{
+					extension.LabelQuotaTreeID:   "tree1",
+					extension.LabelQuotaIsParent: "true",
+				},
+			},
+		},
+		// the children quotas of root-quota-a
+		{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: "kube-system",
+				Name:      "root-quota-a-child1",
+				Labels: map[string]string{
+					extension.LabelQuotaTreeID: "tree1",
+					extension.LabelQuotaParent: "root-quota-a",
+				},
+			},
+		},
+		// the namespace quota
+		{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: "namespace1",
+				Name:      "namespace1",
+				Labels: map[string]string{
+					extension.LabelQuotaTreeID: "tree1",
+					extension.LabelQuotaParent: "root-quota-a",
+				},
+			},
+		},
+		// root-quota-b
+		{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: "kube-system",
+				Name:      "root-quota-b",
+				Labels: map[string]string{
+					extension.LabelQuotaTreeID:   "tree2",
+					extension.LabelQuotaIsParent: "true",
+				},
+				Annotations: map[string]string{
+					extension.AnnotationQuotaNamespaces: "[\"namespace2\"]",
+				},
+			},
+		},
+		// the children quotas of root-quota-b
+		{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: "kube-system",
+				Name:      "root-quota-b-child1",
+				Labels: map[string]string{
+					extension.LabelQuotaTreeID: "tree2",
+					extension.LabelQuotaParent: "root-quota-b",
+				},
+			},
+		},
+	}
+
+	for _, profile := range profiles {
+		err := handler.Client.Create(context.TODO(), profile)
+		assert.NoError(t, err)
+	}
+
+	for _, quota := range quotas {
+		err := handler.Client.Create(context.TODO(), quota)
+		assert.NoError(t, err)
+		quotaInformer.Add(quota)
+	}
+
+	quota := &schedulingv1alpha1.ElasticQuota{}
+	err = handler.Client.Get(context.TODO(), types.NamespacedName{Namespace: "kube-system", Name: "root-quota-b-child1"}, quota)
+	assert.NoError(t, err)
+
 	testCases := []struct {
 		name     string
 		pod      *corev1.Pod
-		quotas   []*schedulingv1alpha1.ElasticQuota
-		profile  *quotav1alpha1.ElasticQuotaProfile
 		expected *corev1.Pod
 	}{
 		{
@@ -58,8 +179,6 @@ func TestAddNodeAffinityForMultiQuotaTree(t *testing.T) {
 				},
 				Spec: corev1.PodSpec{},
 			},
-			quotas:  nil,
-			profile: nil,
 			expected: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: "default",
@@ -75,26 +194,17 @@ func TestAddNodeAffinityForMultiQuotaTree(t *testing.T) {
 					Namespace: "default",
 					Name:      "test-pod-1",
 					Labels: map[string]string{
-						extension.LabelQuotaName: "quota1",
+						extension.LabelQuotaName: "other-quota",
 					},
 				},
 				Spec: corev1.PodSpec{},
 			},
-			quotas: []*schedulingv1alpha1.ElasticQuota{
-				{
-					ObjectMeta: metav1.ObjectMeta{
-						Namespace: "kube-system",
-						Name:      "quota1",
-					},
-				},
-			},
-			profile: nil,
 			expected: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: "default",
 					Name:      "test-pod-1",
 					Labels: map[string]string{
-						extension.LabelQuotaName: "quota1",
+						extension.LabelQuotaName: "other-quota",
 					},
 				},
 				Spec: corev1.PodSpec{},
@@ -107,45 +217,17 @@ func TestAddNodeAffinityForMultiQuotaTree(t *testing.T) {
 					Namespace: "default",
 					Name:      "test-pod-1",
 					Labels: map[string]string{
-						extension.LabelQuotaName: "quota1",
+						extension.LabelQuotaName: "root-quota-a-child1",
 					},
 				},
 				Spec: corev1.PodSpec{},
-			},
-			quotas: []*schedulingv1alpha1.ElasticQuota{
-				{
-					ObjectMeta: metav1.ObjectMeta{
-						Namespace: "kube-system",
-						Name:      "quota1",
-						Labels: map[string]string{
-							extension.LabelQuotaTreeID: "123456",
-						},
-					},
-				},
-			},
-			profile: &quotav1alpha1.ElasticQuotaProfile{
-				ObjectMeta: metav1.ObjectMeta{
-					Namespace: "kube-system",
-					Name:      "quota1-profile",
-					Labels: map[string]string{
-						extension.LabelQuotaTreeID: "123456",
-					},
-				},
-				Spec: quotav1alpha1.ElasticQuotaProfileSpec{
-					QuotaName: "root-quota",
-					NodeSelector: &metav1.LabelSelector{
-						MatchLabels: map[string]string{
-							"node-pool": "test",
-						},
-					},
-				},
 			},
 			expected: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: "default",
 					Name:      "test-pod-1",
 					Labels: map[string]string{
-						extension.LabelQuotaName: "quota1",
+						extension.LabelQuotaName: "root-quota-a-child1",
 					},
 				},
 				Spec: corev1.PodSpec{
@@ -158,7 +240,7 @@ func TestAddNodeAffinityForMultiQuotaTree(t *testing.T) {
 											{
 												Key:      "node-pool",
 												Operator: corev1.NodeSelectorOpIn,
-												Values:   []string{"test"},
+												Values:   []string{"nodePoolA"},
 											},
 										},
 									},
@@ -176,7 +258,7 @@ func TestAddNodeAffinityForMultiQuotaTree(t *testing.T) {
 					Namespace: "default",
 					Name:      "test-pod-1",
 					Labels: map[string]string{
-						extension.LabelQuotaName: "quota1",
+						extension.LabelQuotaName: "root-quota-a-child1",
 					},
 				},
 				Spec: corev1.PodSpec{
@@ -199,40 +281,12 @@ func TestAddNodeAffinityForMultiQuotaTree(t *testing.T) {
 					},
 				},
 			},
-			quotas: []*schedulingv1alpha1.ElasticQuota{
-				{
-					ObjectMeta: metav1.ObjectMeta{
-						Namespace: "kube-system",
-						Name:      "quota1",
-						Labels: map[string]string{
-							extension.LabelQuotaTreeID: "123456",
-						},
-					},
-				},
-			},
-			profile: &quotav1alpha1.ElasticQuotaProfile{
-				ObjectMeta: metav1.ObjectMeta{
-					Namespace: "kube-system",
-					Name:      "quota1-profile",
-					Labels: map[string]string{
-						extension.LabelQuotaTreeID: "123456",
-					},
-				},
-				Spec: quotav1alpha1.ElasticQuotaProfileSpec{
-					QuotaName: "root-quota",
-					NodeSelector: &metav1.LabelSelector{
-						MatchLabels: map[string]string{
-							"node-pool": "test",
-						},
-					},
-				},
-			},
 			expected: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: "default",
 					Name:      "test-pod-1",
 					Labels: map[string]string{
-						extension.LabelQuotaName: "quota1",
+						extension.LabelQuotaName: "root-quota-a-child1",
 					},
 				},
 				Spec: corev1.PodSpec{
@@ -250,7 +304,7 @@ func TestAddNodeAffinityForMultiQuotaTree(t *testing.T) {
 											{
 												Key:      "node-pool",
 												Operator: corev1.NodeSelectorOpIn,
-												Values:   []string{"test"},
+												Values:   []string{"nodePoolA"},
 											},
 										},
 									},
@@ -268,54 +322,17 @@ func TestAddNodeAffinityForMultiQuotaTree(t *testing.T) {
 					Namespace: "default",
 					Name:      "test-pod-1",
 					Labels: map[string]string{
-						extension.LabelQuotaName: "quota2",
+						extension.LabelQuotaName: "root-quota-b-child1",
 					},
 				},
 				Spec: corev1.PodSpec{},
-			},
-			quotas: []*schedulingv1alpha1.ElasticQuota{
-				{
-					ObjectMeta: metav1.ObjectMeta{
-						Namespace: "kube-system",
-						Name:      "quota1",
-						Labels: map[string]string{
-							extension.LabelQuotaTreeID: "123456",
-						},
-					},
-				},
-				{
-					ObjectMeta: metav1.ObjectMeta{
-						Namespace: "kube-system",
-						Name:      "quota2",
-						Labels: map[string]string{
-							extension.LabelQuotaTreeID: "123456",
-						},
-					},
-				},
-			},
-			profile: &quotav1alpha1.ElasticQuotaProfile{
-				ObjectMeta: metav1.ObjectMeta{
-					Namespace: "kube-system",
-					Name:      "quota1-profile",
-					Labels: map[string]string{
-						extension.LabelQuotaTreeID: "123456",
-					},
-				},
-				Spec: quotav1alpha1.ElasticQuotaProfileSpec{
-					QuotaName: "root-quota",
-					NodeSelector: &metav1.LabelSelector{
-						MatchLabels: map[string]string{
-							"node-pool": "test",
-						},
-					},
-				},
 			},
 			expected: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: "default",
 					Name:      "test-pod-1",
 					Labels: map[string]string{
-						extension.LabelQuotaName: "quota2",
+						extension.LabelQuotaName: "root-quota-b-child1",
 					},
 				},
 				Spec: corev1.PodSpec{
@@ -328,7 +345,7 @@ func TestAddNodeAffinityForMultiQuotaTree(t *testing.T) {
 											{
 												Key:      "node-pool",
 												Operator: corev1.NodeSelectorOpIn,
-												Values:   []string{"test"},
+												Values:   []string{"nodePoolB"},
 											},
 										},
 									},
@@ -343,42 +360,14 @@ func TestAddNodeAffinityForMultiQuotaTree(t *testing.T) {
 			name: "default quota",
 			pod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
-					Namespace: "default",
+					Namespace: "namespace1",
 					Name:      "test-pod-1",
 				},
 				Spec: corev1.PodSpec{},
 			},
-			quotas: []*schedulingv1alpha1.ElasticQuota{
-				{
-					ObjectMeta: metav1.ObjectMeta{
-						Namespace: "default",
-						Name:      "default",
-						Labels: map[string]string{
-							extension.LabelQuotaTreeID: "123456",
-						},
-					},
-				},
-			},
-			profile: &quotav1alpha1.ElasticQuotaProfile{
-				ObjectMeta: metav1.ObjectMeta{
-					Namespace: "kube-system",
-					Name:      "quota1-profile",
-					Labels: map[string]string{
-						extension.LabelQuotaTreeID: "123456",
-					},
-				},
-				Spec: quotav1alpha1.ElasticQuotaProfileSpec{
-					QuotaName: "root-quota",
-					NodeSelector: &metav1.LabelSelector{
-						MatchLabels: map[string]string{
-							"node-pool": "test",
-						},
-					},
-				},
-			},
 			expected: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
-					Namespace: "default",
+					Namespace: "namespace1",
 					Name:      "test-pod-1",
 				},
 				Spec: corev1.PodSpec{
@@ -391,7 +380,42 @@ func TestAddNodeAffinityForMultiQuotaTree(t *testing.T) {
 											{
 												Key:      "node-pool",
 												Operator: corev1.NodeSelectorOpIn,
-												Values:   []string{"test"},
+												Values:   []string{"nodePoolA"},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "default quota 2",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "namespace2",
+					Name:      "test-pod-1",
+				},
+				Spec: corev1.PodSpec{},
+			},
+			expected: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "namespace2",
+					Name:      "test-pod-1",
+				},
+				Spec: corev1.PodSpec{
+					Affinity: &corev1.Affinity{
+						NodeAffinity: &corev1.NodeAffinity{
+							RequiredDuringSchedulingIgnoredDuringExecution: &corev1.NodeSelector{
+								NodeSelectorTerms: []corev1.NodeSelectorTerm{
+									{
+										MatchExpressions: []corev1.NodeSelectorRequirement{
+											{
+												Key:      "node-pool",
+												Operator: corev1.NodeSelectorOpIn,
+												Values:   []string{"nodePoolB"},
 											},
 										},
 									},
@@ -407,30 +431,12 @@ func TestAddNodeAffinityForMultiQuotaTree(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			defer feature.SetFeatureGateDuringTest(t, feature.DefaultMutableFeatureGate, features.MultiQuotaTree, true)()
-			assert := assert.New(t)
-
-			client := fake.NewClientBuilder().Build()
-			decoder, _ := admission.NewDecoder(scheme.Scheme)
-			handler := &PodMutatingHandler{
-				Client:  client,
-				Decoder: decoder,
-			}
-
-			if tc.profile != nil {
-				err := client.Create(context.TODO(), tc.profile)
-				assert.NoError(err)
-			}
-
-			for _, quota := range tc.quotas {
-				err := client.Create(context.TODO(), quota)
-				assert.NoError(err)
-			}
 
 			req := newAdmission(admissionv1.Create, runtime.RawExtension{}, runtime.RawExtension{}, "")
 			err := handler.addNodeAffinityForMultiQuotaTree(context.TODO(), req, tc.pod)
-			assert.NoError(err)
+			assert.NoError(t, err)
 
-			assert.Equal(tc.expected, tc.pod)
+			assert.Equal(t, tc.expected, tc.pod)
 		})
 	}
 }

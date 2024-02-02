@@ -114,3 +114,11 @@ func (c *QuotaMetaChecker) GetQuotaTopologyInfo() *QuotaTopologySummary {
 	}
 	return quotaMetaCheck.QuotaTopo.getQuotaTopologyInfo()
 }
+
+func (c *QuotaMetaChecker) GetQuotaInfo(name, namespace string) *QuotaInfo {
+	if c.QuotaTopo == nil {
+		return nil
+	}
+
+	return c.QuotaTopo.getQuotaInfo(name, namespace)
+}
