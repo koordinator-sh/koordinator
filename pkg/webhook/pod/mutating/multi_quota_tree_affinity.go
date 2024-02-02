@@ -21,20 +21,17 @@ import (
 
 	admissionv1 "k8s.io/api/admission/v1"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
-	schedulingv1alpha1 "sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	quotav1alpha1 "github.com/koordinator-sh/koordinator/apis/quota/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/features"
 	utilclient "github.com/koordinator-sh/koordinator/pkg/util/client"
 	utilfeature "github.com/koordinator-sh/koordinator/pkg/util/feature"
+	"github.com/koordinator-sh/koordinator/pkg/webhook/elasticquota"
 )
 
 func (h *PodMutatingHandler) addNodeAffinityForMultiQuotaTree(ctx context.Context, req admission.Request, pod *corev1.Pod) error {
@@ -46,38 +43,23 @@ func (h *PodMutatingHandler) addNodeAffinityForMultiQuotaTree(ctx context.Contex
 		return nil
 	}
 
+	plugin := elasticquota.NewPlugin(h.Decoder, h.Client)
 	quotaName := extension.GetQuotaName(pod)
-	quota := &schedulingv1alpha1.ElasticQuota{}
 	if quotaName == "" {
-		err := h.Client.Get(ctx, types.NamespacedName{Namespace: pod.Namespace, Name: pod.Namespace}, quota)
-		if err != nil {
-			if errors.IsNotFound(err) {
-				return nil
-			}
-			return err
-		}
-	} else {
-		quotaList := &schedulingv1alpha1.ElasticQuotaList{}
-		err := h.Client.List(ctx, quotaList, &client.ListOptions{
-			FieldSelector: fields.OneTermEqualSelector("metadata.name", quotaName),
-		}, utilclient.DisableDeepCopy)
-		if err != nil {
-			return err
-		}
-		if len(quotaList.Items) == 0 {
-			return nil
-		}
-		quota = &quotaList.Items[0]
+		quotaName = pod.Namespace
 	}
 
-	treeID := extension.GetQuotaTreeID(quota)
-	if treeID == "" {
+	info := plugin.GetQuotaInfo(quotaName, pod.Namespace)
+	if info == nil {
+		return nil
+	}
+	if info.TreeID == "" {
 		return nil
 	}
 
 	profileList := &quotav1alpha1.ElasticQuotaProfileList{}
 	err := h.Client.List(ctx, profileList, &client.ListOptions{
-		LabelSelector: labels.SelectorFromSet(map[string]string{extension.LabelQuotaTreeID: treeID}),
+		LabelSelector: labels.SelectorFromSet(map[string]string{extension.LabelQuotaTreeID: info.TreeID}),
 	}, utilclient.DisableDeepCopy)
 	if err != nil {
 		return err
