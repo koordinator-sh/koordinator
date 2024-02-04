@@ -18,6 +18,7 @@ package transformer
 
 import (
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/tools/cache"
@@ -31,6 +32,7 @@ var transformers = map[schema.GroupVersionResource]cache.TransformFunc{
 	corev1.SchemeGroupVersion.WithResource("nodes"):               TransformNode,
 	corev1.SchemeGroupVersion.WithResource("pods"):                TransformPod,
 	schedulingv1alpha1.SchemeGroupVersion.WithResource("devices"): TransformDevice,
+	metav1.SchemeGroupVersion.WithResource("metas"):               TransformMeta,
 }
 
 func SetupTransformers(informerFactory informers.SharedInformerFactory, koordInformerFactory koordinformers.SharedInformerFactory) {
@@ -44,10 +46,6 @@ func SetupTransformers(informerFactory informers.SharedInformerFactory, koordInf
 		}
 		if err := informer.Informer().SetTransform(transformFn); err != nil {
 			klog.Fatalf("Failed to SetTransform in informer, resource: %v, err: %v", resource, err)
-		}
-		// clean up partial metadata
-		if err := informer.Informer().SetTransform(PartialMetadataRemoveTransform); err != nil {
-			klog.Fatalf("Failed to PartialMetadataRemoveTransform in informer, resource: %v, err: %v", resource, err)
 		}
 	}
 }

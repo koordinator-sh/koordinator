@@ -17,21 +17,44 @@ limitations under the License.
 package transformer
 
 import (
-	"fmt"
-
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/klog/v2"
 )
 
-var _ cache.TransformFunc = PartialMetadataRemoveTransform
+var metadataTransformers = []func(meta *metav1.PartialObjectMetadata){
+	TransformPartialMetadataRemoveResources,
+}
 
-// partialMetadataRemoveAll implements a cache.TransformFunc that removes managed
-// fields from PartialObjectMetadata.
-func PartialMetadataRemoveTransform(obj interface{}) (interface{}, error) {
-	partialMeta, ok := obj.(*metav1.PartialObjectMetadata)
-	if !ok {
-		return nil, fmt.Errorf("internal error: cannot cast object %#+v to PartialObjectMetadata", obj)
+func InstallMetadataTransformer(informer cache.SharedIndexInformer) {
+	if err := informer.SetTransform(TransformPod); err != nil {
+		klog.Fatalf("Failed to SetTransform with metadata, err: %v", err)
 	}
+}
+
+func TransformMeta(obj interface{}) (interface{}, error) {
+	var meta *metav1.PartialObjectMetadata
+	switch t := obj.(type) {
+	case *metav1.PartialObjectMetadata:
+		meta = t
+	case cache.DeletedFinalStateUnknown:
+		meta, _ = t.Obj.(*metav1.PartialObjectMetadata)
+	}
+	if meta == nil {
+		return obj, nil
+	}
+
+	for _, fn := range metadataTransformers {
+		fn(meta)
+	}
+
+	if unknown, ok := obj.(cache.DeletedFinalStateUnknown); ok {
+		unknown.Obj = meta
+		return unknown, nil
+	}
+	return meta, nil
+}
+
+func TransformPartialMetadataRemoveResources(partialMeta *metav1.PartialObjectMetadata) {
 	partialMeta.ManagedFields = nil
-	return partialMeta, nil
 }
