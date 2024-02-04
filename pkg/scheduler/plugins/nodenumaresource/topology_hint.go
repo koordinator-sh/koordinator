@@ -48,9 +48,13 @@ func (p *Plugin) GetPodTopologyHints(ctx context.Context, cycleState *framework.
 		return nil, framework.AsStatus(err)
 	}
 	node := nodeInfo.Node()
-
 	topologyOptions := p.topologyOptionsManager.GetTopologyOptions(nodeName)
-	resourceOptions, err := p.getResourceOptions(cycleState, state, node, pod, topologymanager.NUMATopologyHint{}, topologyOptions)
+	nodeCPUBindPolicy := apiext.GetNodeCPUBindPolicy(node.Labels, topologyOptions.Policy)
+	requestCPUBind, status := requestCPUBind(state, nodeCPUBindPolicy)
+	if !status.IsSuccess() {
+		return nil, status
+	}
+	resourceOptions, err := p.getResourceOptions(cycleState, state, node, pod, requestCPUBind, topologymanager.NUMATopologyHint{}, topologyOptions)
 	if err != nil {
 		return nil, framework.AsStatus(err)
 	}
@@ -63,7 +67,6 @@ func (p *Plugin) GetPodTopologyHints(ctx context.Context, cycleState *framework.
 }
 
 func (p *Plugin) Allocate(ctx context.Context, cycleState *framework.CycleState, affinity topologymanager.NUMATopologyHint, pod *corev1.Pod, nodeName string) *framework.Status {
-	topologyOptions := p.topologyOptionsManager.GetTopologyOptions(nodeName)
 	state, status := getPreFilterState(cycleState)
 	if !status.IsSuccess() {
 		return status
@@ -74,8 +77,14 @@ func (p *Plugin) Allocate(ctx context.Context, cycleState *framework.CycleState,
 		return framework.AsStatus(err)
 	}
 	node := nodeInfo.Node()
+	topologyOptions := p.topologyOptionsManager.GetTopologyOptions(nodeName)
+	nodeCPUBindPolicy := apiext.GetNodeCPUBindPolicy(node.Labels, topologyOptions.Policy)
+	requestCPUBind, status := requestCPUBind(state, nodeCPUBindPolicy)
+	if !status.IsSuccess() {
+		return status
+	}
 
-	resourceOptions, err := p.getResourceOptions(cycleState, state, node, pod, affinity, topologyOptions)
+	resourceOptions, err := p.getResourceOptions(cycleState, state, node, pod, requestCPUBind, affinity, topologyOptions)
 	if err != nil {
 		return framework.NewStatus(framework.UnschedulableAndUnresolvable, err.Error())
 	}

@@ -361,7 +361,7 @@ func (c *resourceManager) allocateCPUSet(node *corev1.Node, pod *corev1.Pod, all
 
 func (c *resourceManager) Update(nodeName string, allocation *PodAllocation) {
 	topologyOptions := c.topologyOptionsManager.GetTopologyOptions(nodeName)
-	if topologyOptions.CPUTopology == nil || !topologyOptions.CPUTopology.IsValid() {
+	if !topologyOptions.CPUTopology.IsValid() {
 		return
 	}
 
@@ -390,7 +390,7 @@ func (c *resourceManager) GetAllocatedCPUSet(nodeName string, podUID types.UID) 
 func (c *resourceManager) GetAvailableCPUs(nodeName string, preferredCPUs cpuset.CPUSet) (availableCPUs cpuset.CPUSet, allocated CPUDetails, err error) {
 	topologyOptions := c.topologyOptionsManager.GetTopologyOptions(nodeName)
 	if topologyOptions.CPUTopology == nil {
-		return cpuset.NewCPUSet(), nil, errors.New(ErrNotFoundCPUTopology)
+		return cpuset.NewCPUSet(), nil, nil
 	}
 	if !topologyOptions.CPUTopology.IsValid() {
 		return cpuset.NewCPUSet(), nil, errors.New(ErrInvalidCPUTopology)

@@ -18,6 +18,7 @@ package nodenumaresource
 
 import (
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingconfig "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
@@ -56,10 +57,6 @@ func getNUMATopologyPolicy(nodeLabels map[string]string, kubeletTopologyManagerP
 	return kubeletTopologyManagerPolicy
 }
 
-func skipTheNode(state *preFilterState, numaTopologyPolicy extension.NUMATopologyPolicy) bool {
-	return state.skip || (!state.requestCPUBind && numaTopologyPolicy == extension.NUMATopologyPolicyNone)
-}
-
 // amplifyNUMANodeResources amplifies the resources per NUMA Node.
 // NOTE(joseph): After the NodeResource controller supports amplifying by ratios, should remove the function.
 func amplifyNUMANodeResources(node *corev1.Node, topologyOptions *TopologyOptions) error {
@@ -83,4 +80,43 @@ func amplifyNUMANodeResources(node *corev1.Node, topologyOptions *TopologyOption
 	}
 	topologyOptions.NUMANodeResources = numaNodeResources
 	return nil
+}
+
+func getCPUBindPolicy(topologyOptions *TopologyOptions, node *corev1.Node, requiredCPUBindPolicy, preferredCPUBindPolicy schedulingconfig.CPUBindPolicy) (schedulingconfig.CPUBindPolicy, bool, error) {
+	if requiredCPUBindPolicy != "" {
+		return requiredCPUBindPolicy, true, nil
+	}
+
+	cpuBindPolicy := preferredCPUBindPolicy
+	required := false
+	kubeletCPUPolicy := topologyOptions.Policy
+	nodeCPUBindPolicy := extension.GetNodeCPUBindPolicy(node.Labels, kubeletCPUPolicy)
+	switch nodeCPUBindPolicy {
+	case extension.NodeCPUBindPolicySpreadByPCPUs:
+		cpuBindPolicy = schedulingconfig.CPUBindPolicySpreadByPCPUs
+		required = true
+	case extension.NodeCPUBindPolicyFullPCPUsOnly:
+		cpuBindPolicy = schedulingconfig.CPUBindPolicyFullPCPUs
+		required = true
+	}
+	return cpuBindPolicy, required, nil
+}
+
+func requestCPUBind(state *preFilterState, nodeCPUBindPolicy extension.NodeCPUBindPolicy) (bool, *framework.Status) {
+	if state.requestCPUBind {
+		return true, nil
+	}
+
+	requestedCPU := state.requests.Cpu().MilliValue()
+	if requestedCPU == 0 {
+		return false, nil
+	}
+
+	if nodeCPUBindPolicy != "" && nodeCPUBindPolicy != extension.NodeCPUBindPolicyNone {
+		if requestedCPU%1000 != 0 {
+			return false, framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrInvalidRequestedCPUs)
+		}
+		return true, nil
+	}
+	return false, nil
 }
