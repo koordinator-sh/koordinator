@@ -492,6 +492,18 @@ func Test_reportNodeTopology(t *testing.T) {
 					Available:   *resource.NewQuantity(4, resource.DecimalSI),
 				},
 				{
+					Name:        "hugepages-1Gi",
+					Capacity:    *resource.NewQuantity(0, resource.BinarySI),
+					Allocatable: *resource.NewQuantity(0, resource.BinarySI),
+					Available:   *resource.NewQuantity(0, resource.BinarySI),
+				},
+				{
+					Name:        "hugepages-2Mi",
+					Capacity:    *resource.NewQuantity(0, resource.BinarySI),
+					Allocatable: *resource.NewQuantity(0, resource.BinarySI),
+					Available:   *resource.NewQuantity(0, resource.BinarySI),
+				},
+				{
 					Name:        "memory",
 					Capacity:    *resource.NewQuantity(269755191296, resource.BinarySI),
 					Allocatable: *resource.NewQuantity(269755191296, resource.BinarySI),
@@ -508,6 +520,18 @@ func Test_reportNodeTopology(t *testing.T) {
 					Capacity:    *resource.NewQuantity(4, resource.DecimalSI),
 					Allocatable: *resource.NewQuantity(4, resource.DecimalSI),
 					Available:   *resource.NewQuantity(4, resource.DecimalSI),
+				},
+				{
+					Name:        "hugepages-1Gi",
+					Capacity:    *resource.NewQuantity(0, resource.BinarySI),
+					Allocatable: *resource.NewQuantity(0, resource.BinarySI),
+					Available:   *resource.NewQuantity(0, resource.BinarySI),
+				},
+				{
+					Name:        "hugepages-2Mi",
+					Capacity:    *resource.NewQuantity(0, resource.BinarySI),
+					Allocatable: *resource.NewQuantity(0, resource.BinarySI),
+					Available:   *resource.NewQuantity(0, resource.BinarySI),
 				},
 				{
 					Name:        "memory",
@@ -586,6 +610,18 @@ func Test_reportNodeTopology(t *testing.T) {
 					Available:   *resource.NewQuantity(1, resource.DecimalSI),
 				},
 				{
+					Name:        "hugepages-1Gi",
+					Capacity:    *resource.NewQuantity(0, resource.BinarySI),
+					Allocatable: *resource.NewQuantity(0, resource.BinarySI),
+					Available:   *resource.NewQuantity(0, resource.BinarySI),
+				},
+				{
+					Name:        "hugepages-2Mi",
+					Capacity:    *resource.NewQuantity(0, resource.BinarySI),
+					Allocatable: *resource.NewQuantity(0, resource.BinarySI),
+					Available:   *resource.NewQuantity(0, resource.BinarySI),
+				},
+				{
 					Name:        "memory",
 					Capacity:    *resource.NewQuantity(269755191296, resource.BinarySI),
 					Allocatable: *resource.NewQuantity(269755191296, resource.BinarySI),
@@ -608,6 +644,18 @@ func Test_reportNodeTopology(t *testing.T) {
 					Capacity:    *resource.NewQuantity(1, resource.DecimalSI),
 					Allocatable: *resource.NewQuantity(1, resource.DecimalSI),
 					Available:   *resource.NewQuantity(1, resource.DecimalSI),
+				},
+				{
+					Name:        "hugepages-1Gi",
+					Capacity:    *resource.NewQuantity(0, resource.BinarySI),
+					Allocatable: *resource.NewQuantity(0, resource.BinarySI),
+					Available:   *resource.NewQuantity(0, resource.BinarySI),
+				},
+				{
+					Name:        "hugepages-2Mi",
+					Capacity:    *resource.NewQuantity(0, resource.BinarySI),
+					Allocatable: *resource.NewQuantity(0, resource.BinarySI),
+					Available:   *resource.NewQuantity(0, resource.BinarySI),
 				},
 				{
 					Name:        "memory",
@@ -640,6 +688,18 @@ func Test_reportNodeTopology(t *testing.T) {
 					Available:   *resource.NewQuantity(1, resource.DecimalSI),
 				},
 				{
+					Name:        "hugepages-1Gi",
+					Capacity:    *resource.NewQuantity(0, resource.BinarySI),
+					Allocatable: *resource.NewQuantity(0, resource.BinarySI),
+					Available:   *resource.NewQuantity(0, resource.BinarySI),
+				},
+				{
+					Name:        "hugepages-2Mi",
+					Capacity:    *resource.NewQuantity(0, resource.BinarySI),
+					Allocatable: *resource.NewQuantity(0, resource.BinarySI),
+					Available:   *resource.NewQuantity(0, resource.BinarySI),
+				},
+				{
 					Name:        "memory",
 					Capacity:    *resource.NewQuantity(269755191296, resource.BinarySI),
 					Allocatable: *resource.NewQuantity(269755191296, resource.BinarySI),
@@ -662,6 +722,18 @@ func Test_reportNodeTopology(t *testing.T) {
 					Capacity:    *resource.NewQuantity(1, resource.DecimalSI),
 					Allocatable: *resource.NewQuantity(1, resource.DecimalSI),
 					Available:   *resource.NewQuantity(1, resource.DecimalSI),
+				},
+				{
+					Name:        "hugepages-1Gi",
+					Capacity:    *resource.NewQuantity(0, resource.BinarySI),
+					Allocatable: *resource.NewQuantity(0, resource.BinarySI),
+					Available:   *resource.NewQuantity(0, resource.BinarySI),
+				},
+				{
+					Name:        "hugepages-2Mi",
+					Capacity:    *resource.NewQuantity(0, resource.BinarySI),
+					Allocatable: *resource.NewQuantity(0, resource.BinarySI),
+					Available:   *resource.NewQuantity(0, resource.BinarySI),
 				},
 				{
 					Name:        "memory",
@@ -1212,11 +1284,12 @@ func Test_calTopologyZoneList(t *testing.T) {
 		nodeCPUInfo *metriccache.NodeCPUInfo
 	}
 	tests := []struct {
-		name    string
-		fields  fields
-		args    args
-		want    topologyv1alpha1.ZoneList
-		wantErr bool
+		name           string
+		fields         fields
+		args           args
+		hugepageEnable bool
+		want           topologyv1alpha1.ZoneList
+		wantErr        bool
 	}{
 		{
 			name: "err when numa info not exist",
@@ -1284,13 +1357,13 @@ func Test_calTopologyZoneList(t *testing.T) {
 							{
 								NUMANodeID: 0,
 								MemInfo: &koordletutil.MemInfo{
-									MemTotal: 1024000,
+									MemTotal: 157286400, // 150G
 								},
 							},
 						},
 						MemInfoMap: map[int32]*koordletutil.MemInfo{
 							0: {
-								MemTotal: 1024000,
+								MemTotal: 157286400, // 150G
 							},
 						},
 					}, true).Times(1)
@@ -1331,10 +1404,225 @@ func Test_calTopologyZoneList(t *testing.T) {
 							Available:   *resource.NewQuantity(2, resource.DecimalSI),
 						},
 						{
+							Name:        "hugepages-1Gi",
+							Capacity:    *resource.NewQuantity(0, resource.BinarySI),
+							Allocatable: *resource.NewQuantity(0, resource.BinarySI),
+							Available:   *resource.NewQuantity(0, resource.BinarySI),
+						},
+						{
+							Name:        "hugepages-2Mi",
+							Capacity:    *resource.NewQuantity(0, resource.BinarySI),
+							Allocatable: *resource.NewQuantity(0, resource.BinarySI),
+							Available:   *resource.NewQuantity(0, resource.BinarySI),
+						},
+						{
 							Name:        "memory",
-							Capacity:    *resource.NewQuantity(1048576000, resource.BinarySI),
-							Allocatable: *resource.NewQuantity(1048576000, resource.BinarySI),
-							Available:   *resource.NewQuantity(1048576000, resource.BinarySI),
+							Capacity:    *resource.NewQuantity(161061273600, resource.BinarySI),
+							Allocatable: *resource.NewQuantity(161061273600, resource.BinarySI),
+							Available:   *resource.NewQuantity(161061273600, resource.BinarySI),
+						},
+					},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "calculate single numa node with hugepage, but featuregate hugepage not enable",
+			fields: fields{
+				metricCache: func(ctrl *gomock.Controller) metriccache.MetricCache {
+					mc := mock_metriccache.NewMockMetricCache(ctrl)
+					mc.EXPECT().Get(metriccache.NodeNUMAInfoKey).Return(&koordletutil.NodeNUMAInfo{
+						NUMAInfos: []koordletutil.NUMAInfo{
+							{
+								NUMANodeID: 0,
+								MemInfo: &koordletutil.MemInfo{
+									MemTotal: 157286400, // 150G
+								},
+								HugePages: map[uint64]*koordletutil.HugePagesInfo{
+									koordletutil.Hugepage2Mkbyte: {
+										NumPages: 30,
+										PageSize: koordletutil.Hugepage2Mkbyte,
+									}, // 60M
+									koordletutil.Hugepage1Gkbyte: {
+										NumPages: 30,
+										PageSize: koordletutil.Hugepage1Gkbyte,
+									}, // 30G
+								},
+							},
+						},
+						MemInfoMap: map[int32]*koordletutil.MemInfo{
+							0: {
+								MemTotal: 157286400, // 150G
+							},
+						},
+						HugePagesMap: map[int32]map[uint64]*koordletutil.HugePagesInfo{
+							0: {
+								koordletutil.Hugepage2Mkbyte: {
+									NumPages: 30,
+									PageSize: koordletutil.Hugepage2Mkbyte,
+								}, // 60M
+								koordletutil.Hugepage1Gkbyte: {
+									NumPages: 30,
+									PageSize: koordletutil.Hugepage1Gkbyte,
+								}, // 30G
+							},
+						},
+					}, true).Times(1)
+					return mc
+				},
+			},
+			args: args{
+				nodeCPUInfo: &metriccache.NodeCPUInfo{
+					TotalInfo: koordletutil.CPUTotalInfo{
+						NodeToCPU: map[int32][]koordletutil.ProcessorInfo{
+							0: {
+								{
+									CPUID:    0,
+									CoreID:   0,
+									SocketID: 0,
+									NodeID:   0,
+								},
+								{
+									CPUID:    1,
+									CoreID:   1,
+									SocketID: 0,
+									NodeID:   0,
+								},
+							},
+						},
+					},
+				},
+			},
+			want: topologyv1alpha1.ZoneList{
+				{
+					Name: "node-0",
+					Type: util.NodeZoneType,
+					Resources: topologyv1alpha1.ResourceInfoList{
+						{
+							Name:        "cpu",
+							Capacity:    *resource.NewQuantity(2, resource.DecimalSI),
+							Allocatable: *resource.NewQuantity(2, resource.DecimalSI),
+							Available:   *resource.NewQuantity(2, resource.DecimalSI),
+						},
+						{
+							Name:        "hugepages-1Gi",
+							Capacity:    *resource.NewQuantity(0, resource.BinarySI),
+							Allocatable: *resource.NewQuantity(0, resource.BinarySI),
+							Available:   *resource.NewQuantity(0, resource.BinarySI),
+						},
+						{
+							Name:        "hugepages-2Mi",
+							Capacity:    *resource.NewQuantity(0, resource.BinarySI),
+							Allocatable: *resource.NewQuantity(0, resource.BinarySI),
+							Available:   *resource.NewQuantity(0, resource.BinarySI),
+						},
+						{
+							Name:        "memory",
+							Capacity:    *resource.NewQuantity(161061273600, resource.BinarySI),
+							Allocatable: *resource.NewQuantity(161061273600, resource.BinarySI),
+							Available:   *resource.NewQuantity(161061273600, resource.BinarySI),
+						},
+					},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name:           "calculate single numa node with hugepage, featuregate hugepage enable",
+			hugepageEnable: true,
+			fields: fields{
+				metricCache: func(ctrl *gomock.Controller) metriccache.MetricCache {
+					mc := mock_metriccache.NewMockMetricCache(ctrl)
+					mc.EXPECT().Get(metriccache.NodeNUMAInfoKey).Return(&koordletutil.NodeNUMAInfo{
+						NUMAInfos: []koordletutil.NUMAInfo{
+							{
+								NUMANodeID: 0,
+								MemInfo: &koordletutil.MemInfo{
+									MemTotal: 157286400, // 150G
+								},
+								HugePages: map[uint64]*koordletutil.HugePagesInfo{
+									koordletutil.Hugepage2Mkbyte: {
+										NumPages: 30,
+										PageSize: koordletutil.Hugepage2Mkbyte,
+									}, // 60M
+									koordletutil.Hugepage1Gkbyte: {
+										NumPages: 30,
+										PageSize: koordletutil.Hugepage1Gkbyte,
+									}, // 30G
+								},
+							},
+						},
+						MemInfoMap: map[int32]*koordletutil.MemInfo{
+							0: {
+								MemTotal: 157286400, // 150G
+							},
+						},
+						HugePagesMap: map[int32]map[uint64]*koordletutil.HugePagesInfo{
+							0: {
+								koordletutil.Hugepage2Mkbyte: {
+									NumPages: 30,
+									PageSize: koordletutil.Hugepage2Mkbyte,
+								}, // 60M
+								koordletutil.Hugepage1Gkbyte: {
+									NumPages: 30,
+									PageSize: koordletutil.Hugepage1Gkbyte,
+								}, // 30G
+							},
+						},
+					}, true).Times(1)
+					return mc
+				},
+			},
+			args: args{
+				nodeCPUInfo: &metriccache.NodeCPUInfo{
+					TotalInfo: koordletutil.CPUTotalInfo{
+						NodeToCPU: map[int32][]koordletutil.ProcessorInfo{
+							0: {
+								{
+									CPUID:    0,
+									CoreID:   0,
+									SocketID: 0,
+									NodeID:   0,
+								},
+								{
+									CPUID:    1,
+									CoreID:   1,
+									SocketID: 0,
+									NodeID:   0,
+								},
+							},
+						},
+					},
+				},
+			},
+			want: topologyv1alpha1.ZoneList{
+				{
+					Name: "node-0",
+					Type: util.NodeZoneType,
+					Resources: topologyv1alpha1.ResourceInfoList{
+						{
+							Name:        "cpu",
+							Capacity:    *resource.NewQuantity(2, resource.DecimalSI),
+							Allocatable: *resource.NewQuantity(2, resource.DecimalSI),
+							Available:   *resource.NewQuantity(2, resource.DecimalSI),
+						},
+						{
+							Name:        "hugepages-1Gi",
+							Capacity:    *resource.NewQuantity(32212254720, resource.BinarySI),
+							Allocatable: *resource.NewQuantity(32212254720, resource.BinarySI),
+							Available:   *resource.NewQuantity(32212254720, resource.BinarySI),
+						},
+						{
+							Name:        "hugepages-2Mi",
+							Capacity:    *resource.NewQuantity(62914560, resource.BinarySI),
+							Allocatable: *resource.NewQuantity(62914560, resource.BinarySI),
+							Available:   *resource.NewQuantity(62914560, resource.BinarySI),
+						},
+						{
+							Name:        "memory",
+							Capacity:    *resource.NewQuantity(128786104320, resource.BinarySI),
+							Allocatable: *resource.NewQuantity(128786104320, resource.BinarySI),
+							Available:   *resource.NewQuantity(128786104320, resource.BinarySI),
 						},
 					},
 				},
@@ -1351,22 +1639,22 @@ func Test_calTopologyZoneList(t *testing.T) {
 							{
 								NUMANodeID: 0,
 								MemInfo: &koordletutil.MemInfo{
-									MemTotal: 1024000,
+									MemTotal: 157286400, // 150G
 								},
 							},
 							{
 								NUMANodeID: 1,
 								MemInfo: &koordletutil.MemInfo{
-									MemTotal: 1000000,
+									MemTotal: 157286400, // 150G
 								},
 							},
 						},
 						MemInfoMap: map[int32]*koordletutil.MemInfo{
 							0: {
-								MemTotal: 1024000,
+								MemTotal: 157286400,
 							},
 							1: {
-								MemTotal: 1000000,
+								MemTotal: 157286400,
 							},
 						},
 					}, true).Times(1)
@@ -1445,10 +1733,22 @@ func Test_calTopologyZoneList(t *testing.T) {
 							Available:   *resource.NewQuantity(4, resource.DecimalSI),
 						},
 						{
+							Name:        "hugepages-1Gi",
+							Capacity:    *resource.NewQuantity(0, resource.BinarySI),
+							Allocatable: *resource.NewQuantity(0, resource.BinarySI),
+							Available:   *resource.NewQuantity(0, resource.BinarySI),
+						},
+						{
+							Name:        "hugepages-2Mi",
+							Capacity:    *resource.NewQuantity(0, resource.BinarySI),
+							Allocatable: *resource.NewQuantity(0, resource.BinarySI),
+							Available:   *resource.NewQuantity(0, resource.BinarySI),
+						},
+						{
 							Name:        "memory",
-							Capacity:    *resource.NewQuantity(1048576000, resource.BinarySI),
-							Allocatable: *resource.NewQuantity(1048576000, resource.BinarySI),
-							Available:   *resource.NewQuantity(1048576000, resource.BinarySI),
+							Capacity:    *resource.NewQuantity(161061273600, resource.BinarySI),
+							Allocatable: *resource.NewQuantity(161061273600, resource.BinarySI),
+							Available:   *resource.NewQuantity(161061273600, resource.BinarySI),
 						},
 					},
 				},
@@ -1463,10 +1763,419 @@ func Test_calTopologyZoneList(t *testing.T) {
 							Available:   *resource.NewQuantity(4, resource.DecimalSI),
 						},
 						{
+							Name:        "hugepages-1Gi",
+							Capacity:    *resource.NewQuantity(0, resource.BinarySI),
+							Allocatable: *resource.NewQuantity(0, resource.BinarySI),
+							Available:   *resource.NewQuantity(0, resource.BinarySI),
+						},
+						{
+							Name:        "hugepages-2Mi",
+							Capacity:    *resource.NewQuantity(0, resource.BinarySI),
+							Allocatable: *resource.NewQuantity(0, resource.BinarySI),
+							Available:   *resource.NewQuantity(0, resource.BinarySI),
+						},
+						{
 							Name:        "memory",
-							Capacity:    *resource.NewQuantity(1024000000, resource.BinarySI),
-							Allocatable: *resource.NewQuantity(1024000000, resource.BinarySI),
-							Available:   *resource.NewQuantity(1024000000, resource.BinarySI),
+							Capacity:    *resource.NewQuantity(161061273600, resource.BinarySI),
+							Allocatable: *resource.NewQuantity(161061273600, resource.BinarySI),
+							Available:   *resource.NewQuantity(161061273600, resource.BinarySI),
+						},
+					},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "calculate multiple numa nodes with hugepage, but featuregate hugepage not enable",
+			fields: fields{
+				metricCache: func(ctrl *gomock.Controller) metriccache.MetricCache {
+					mc := mock_metriccache.NewMockMetricCache(ctrl)
+					mc.EXPECT().Get(metriccache.NodeNUMAInfoKey).Return(&koordletutil.NodeNUMAInfo{
+						NUMAInfos: []koordletutil.NUMAInfo{
+							{
+								NUMANodeID: 0,
+								MemInfo: &koordletutil.MemInfo{
+									MemTotal: 157286400, // 150G
+								},
+								HugePages: map[uint64]*koordletutil.HugePagesInfo{
+									koordletutil.Hugepage2Mkbyte: {
+										NumPages: 30,
+										PageSize: koordletutil.Hugepage2Mkbyte,
+									}, // 60M
+									koordletutil.Hugepage1Gkbyte: {
+										NumPages: 30,
+										PageSize: koordletutil.Hugepage1Gkbyte,
+									}, // 30G
+								},
+							},
+							{
+								NUMANodeID: 1,
+								MemInfo: &koordletutil.MemInfo{
+									MemTotal: 157286400, // 150G
+								},
+								HugePages: map[uint64]*koordletutil.HugePagesInfo{
+									koordletutil.Hugepage2Mkbyte: {
+										NumPages: 30,
+										PageSize: koordletutil.Hugepage2Mkbyte,
+									}, // 60M
+									koordletutil.Hugepage1Gkbyte: {
+										NumPages: 30,
+										PageSize: koordletutil.Hugepage1Gkbyte,
+									}, // 30G
+								},
+							},
+						},
+						MemInfoMap: map[int32]*koordletutil.MemInfo{
+							0: {
+								MemTotal: 157286400,
+							},
+							1: {
+								MemTotal: 157286400,
+							},
+						},
+						HugePagesMap: map[int32]map[uint64]*koordletutil.HugePagesInfo{
+							0: {
+								koordletutil.Hugepage2Mkbyte: {
+									NumPages: 30,
+									PageSize: koordletutil.Hugepage2Mkbyte,
+								},
+								koordletutil.Hugepage1Gkbyte: {
+									NumPages: 30,
+									PageSize: koordletutil.Hugepage1Gkbyte,
+								},
+							},
+							1: {
+								koordletutil.Hugepage2Mkbyte: {
+									NumPages: 30,
+									PageSize: koordletutil.Hugepage2Mkbyte,
+								},
+								koordletutil.Hugepage1Gkbyte: {
+									NumPages: 30,
+									PageSize: koordletutil.Hugepage1Gkbyte,
+								},
+							},
+						},
+					}, true).Times(1)
+					return mc
+				},
+			},
+			args: args{
+				nodeCPUInfo: &metriccache.NodeCPUInfo{
+					TotalInfo: koordletutil.CPUTotalInfo{
+						NodeToCPU: map[int32][]koordletutil.ProcessorInfo{
+							0: {
+								{
+									CPUID:    0,
+									CoreID:   0,
+									SocketID: 0,
+									NodeID:   0,
+								},
+								{
+									CPUID:    1,
+									CoreID:   1,
+									SocketID: 0,
+									NodeID:   0,
+								},
+								{
+									CPUID:    4,
+									CoreID:   0,
+									SocketID: 0,
+									NodeID:   0,
+								},
+								{
+									CPUID:    5,
+									CoreID:   1,
+									SocketID: 0,
+									NodeID:   0,
+								},
+							},
+							1: {
+								{
+									CPUID:    2,
+									CoreID:   2,
+									SocketID: 1,
+									NodeID:   1,
+								},
+								{
+									CPUID:    3,
+									CoreID:   3,
+									SocketID: 1,
+									NodeID:   1,
+								},
+								{
+									CPUID:    6,
+									CoreID:   2,
+									SocketID: 1,
+									NodeID:   1,
+								},
+								{
+									CPUID:    7,
+									CoreID:   3,
+									SocketID: 1,
+									NodeID:   1,
+								},
+							},
+						},
+					},
+				},
+			},
+			want: topologyv1alpha1.ZoneList{
+				{
+					Name: "node-0",
+					Type: util.NodeZoneType,
+					Resources: topologyv1alpha1.ResourceInfoList{
+						{
+							Name:        "cpu",
+							Capacity:    *resource.NewQuantity(4, resource.DecimalSI),
+							Allocatable: *resource.NewQuantity(4, resource.DecimalSI),
+							Available:   *resource.NewQuantity(4, resource.DecimalSI),
+						},
+						{
+							Name:        "hugepages-1Gi",
+							Capacity:    *resource.NewQuantity(0, resource.BinarySI),
+							Allocatable: *resource.NewQuantity(0, resource.BinarySI),
+							Available:   *resource.NewQuantity(0, resource.BinarySI),
+						},
+						{
+							Name:        "hugepages-2Mi",
+							Capacity:    *resource.NewQuantity(0, resource.BinarySI),
+							Allocatable: *resource.NewQuantity(0, resource.BinarySI),
+							Available:   *resource.NewQuantity(0, resource.BinarySI),
+						},
+						{
+							Name:        "memory",
+							Capacity:    *resource.NewQuantity(161061273600, resource.BinarySI),
+							Allocatable: *resource.NewQuantity(161061273600, resource.BinarySI),
+							Available:   *resource.NewQuantity(161061273600, resource.BinarySI),
+						},
+					},
+				},
+				{
+					Name: "node-1",
+					Type: util.NodeZoneType,
+					Resources: topologyv1alpha1.ResourceInfoList{
+						{
+							Name:        "cpu",
+							Capacity:    *resource.NewQuantity(4, resource.DecimalSI),
+							Allocatable: *resource.NewQuantity(4, resource.DecimalSI),
+							Available:   *resource.NewQuantity(4, resource.DecimalSI),
+						},
+						{
+							Name:        "hugepages-1Gi",
+							Capacity:    *resource.NewQuantity(0, resource.BinarySI),
+							Allocatable: *resource.NewQuantity(0, resource.BinarySI),
+							Available:   *resource.NewQuantity(0, resource.BinarySI),
+						},
+						{
+							Name:        "hugepages-2Mi",
+							Capacity:    *resource.NewQuantity(0, resource.BinarySI),
+							Allocatable: *resource.NewQuantity(0, resource.BinarySI),
+							Available:   *resource.NewQuantity(0, resource.BinarySI),
+						},
+						{
+							Name:        "memory",
+							Capacity:    *resource.NewQuantity(161061273600, resource.BinarySI),
+							Allocatable: *resource.NewQuantity(161061273600, resource.BinarySI),
+							Available:   *resource.NewQuantity(161061273600, resource.BinarySI),
+						},
+					},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name:           "calculate multiple numa nodes with hugepage, featuregate hugepage enable",
+			hugepageEnable: true,
+			fields: fields{
+				metricCache: func(ctrl *gomock.Controller) metriccache.MetricCache {
+					mc := mock_metriccache.NewMockMetricCache(ctrl)
+					mc.EXPECT().Get(metriccache.NodeNUMAInfoKey).Return(&koordletutil.NodeNUMAInfo{
+						NUMAInfos: []koordletutil.NUMAInfo{
+							{
+								NUMANodeID: 0,
+								MemInfo: &koordletutil.MemInfo{
+									MemTotal: 157286400, // 150G
+								},
+								HugePages: map[uint64]*koordletutil.HugePagesInfo{
+									koordletutil.Hugepage2Mkbyte: {
+										NumPages: 30,
+										PageSize: koordletutil.Hugepage2Mkbyte,
+									}, // 60M
+									koordletutil.Hugepage1Gkbyte: {
+										NumPages: 30,
+										PageSize: koordletutil.Hugepage1Gkbyte,
+									}, // 30G
+								},
+							},
+							{
+								NUMANodeID: 1,
+								MemInfo: &koordletutil.MemInfo{
+									MemTotal: 157286400, // 150G
+								},
+								HugePages: map[uint64]*koordletutil.HugePagesInfo{
+									koordletutil.Hugepage2Mkbyte: {
+										NumPages: 30,
+										PageSize: koordletutil.Hugepage2Mkbyte,
+									}, // 60M
+									koordletutil.Hugepage1Gkbyte: {
+										NumPages: 30,
+										PageSize: koordletutil.Hugepage1Gkbyte,
+									}, // 30G
+								},
+							},
+						},
+						MemInfoMap: map[int32]*koordletutil.MemInfo{
+							0: {
+								MemTotal: 157286400,
+							},
+							1: {
+								MemTotal: 157286400,
+							},
+						},
+						HugePagesMap: map[int32]map[uint64]*koordletutil.HugePagesInfo{
+							0: {
+								koordletutil.Hugepage2Mkbyte: {
+									NumPages: 30,
+									PageSize: koordletutil.Hugepage2Mkbyte,
+								},
+								koordletutil.Hugepage1Gkbyte: {
+									NumPages: 30,
+									PageSize: koordletutil.Hugepage1Gkbyte,
+								},
+							},
+							1: {
+								koordletutil.Hugepage2Mkbyte: {
+									NumPages: 30,
+									PageSize: koordletutil.Hugepage2Mkbyte,
+								},
+								koordletutil.Hugepage1Gkbyte: {
+									NumPages: 30,
+									PageSize: koordletutil.Hugepage1Gkbyte,
+								},
+							},
+						},
+					}, true).Times(1)
+					return mc
+				},
+			},
+			args: args{
+				nodeCPUInfo: &metriccache.NodeCPUInfo{
+					TotalInfo: koordletutil.CPUTotalInfo{
+						NodeToCPU: map[int32][]koordletutil.ProcessorInfo{
+							0: {
+								{
+									CPUID:    0,
+									CoreID:   0,
+									SocketID: 0,
+									NodeID:   0,
+								},
+								{
+									CPUID:    1,
+									CoreID:   1,
+									SocketID: 0,
+									NodeID:   0,
+								},
+								{
+									CPUID:    4,
+									CoreID:   0,
+									SocketID: 0,
+									NodeID:   0,
+								},
+								{
+									CPUID:    5,
+									CoreID:   1,
+									SocketID: 0,
+									NodeID:   0,
+								},
+							},
+							1: {
+								{
+									CPUID:    2,
+									CoreID:   2,
+									SocketID: 1,
+									NodeID:   1,
+								},
+								{
+									CPUID:    3,
+									CoreID:   3,
+									SocketID: 1,
+									NodeID:   1,
+								},
+								{
+									CPUID:    6,
+									CoreID:   2,
+									SocketID: 1,
+									NodeID:   1,
+								},
+								{
+									CPUID:    7,
+									CoreID:   3,
+									SocketID: 1,
+									NodeID:   1,
+								},
+							},
+						},
+					},
+				},
+			},
+			want: topologyv1alpha1.ZoneList{
+				{
+					Name: "node-0",
+					Type: util.NodeZoneType,
+					Resources: topologyv1alpha1.ResourceInfoList{
+						{
+							Name:        "cpu",
+							Capacity:    *resource.NewQuantity(4, resource.DecimalSI),
+							Allocatable: *resource.NewQuantity(4, resource.DecimalSI),
+							Available:   *resource.NewQuantity(4, resource.DecimalSI),
+						},
+						{
+							Name:        "hugepages-1Gi",
+							Capacity:    *resource.NewQuantity(32212254720, resource.BinarySI),
+							Allocatable: *resource.NewQuantity(32212254720, resource.BinarySI),
+							Available:   *resource.NewQuantity(32212254720, resource.BinarySI),
+						},
+						{
+							Name:        "hugepages-2Mi",
+							Capacity:    *resource.NewQuantity(62914560, resource.BinarySI),
+							Allocatable: *resource.NewQuantity(62914560, resource.BinarySI),
+							Available:   *resource.NewQuantity(62914560, resource.BinarySI),
+						},
+						{
+							Name:        "memory",
+							Capacity:    *resource.NewQuantity(128786104320, resource.BinarySI),
+							Allocatable: *resource.NewQuantity(128786104320, resource.BinarySI),
+							Available:   *resource.NewQuantity(128786104320, resource.BinarySI),
+						},
+					},
+				},
+				{
+					Name: "node-1",
+					Type: util.NodeZoneType,
+					Resources: topologyv1alpha1.ResourceInfoList{
+						{
+							Name:        "cpu",
+							Capacity:    *resource.NewQuantity(4, resource.DecimalSI),
+							Allocatable: *resource.NewQuantity(4, resource.DecimalSI),
+							Available:   *resource.NewQuantity(4, resource.DecimalSI),
+						},
+						{
+							Name:        "hugepages-1Gi",
+							Capacity:    *resource.NewQuantity(32212254720, resource.BinarySI),
+							Allocatable: *resource.NewQuantity(32212254720, resource.BinarySI),
+							Available:   *resource.NewQuantity(32212254720, resource.BinarySI),
+						},
+						{
+							Name:        "hugepages-2Mi",
+							Capacity:    *resource.NewQuantity(62914560, resource.BinarySI),
+							Allocatable: *resource.NewQuantity(62914560, resource.BinarySI),
+							Available:   *resource.NewQuantity(62914560, resource.BinarySI),
+						},
+						{
+							Name:        "memory",
+							Capacity:    *resource.NewQuantity(128786104320, resource.BinarySI),
+							Allocatable: *resource.NewQuantity(128786104320, resource.BinarySI),
+							Available:   *resource.NewQuantity(128786104320, resource.BinarySI),
 						},
 					},
 				},
@@ -1478,6 +2187,16 @@ func Test_calTopologyZoneList(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			defer ctrl.Finish()
+
+			enabled := features.DefaultKoordletFeatureGate.Enabled(features.HugePageReport)
+			testFeatureGates := map[string]bool{string(features.HugePageReport): tt.hugepageEnable}
+			err := features.DefaultMutableKoordletFeatureGate.SetFromMap(testFeatureGates)
+			assert.NoError(t, err)
+			defer func() {
+				testFeatureGates[string(features.HugePageReport)] = enabled
+				err = features.DefaultMutableKoordletFeatureGate.SetFromMap(testFeatureGates)
+				assert.NoError(t, err)
+			}()
 
 			s := &nodeTopoInformer{
 				metricCache: tt.fields.metricCache(ctrl),

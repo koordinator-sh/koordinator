@@ -295,7 +295,8 @@ func doKubeQOSCgroup(e resourceexecutor.ResourceUpdateExecutor) {
 				continue
 			}
 			if err := reconcileFn(kubeQOSCtx); err != nil {
-				klog.Warningf("calling reconcile function %v failed, error %v", r.description, err)
+				klog.Warningf("calling reconcile function %v for kube qos %v failed, error %v",
+					r.description, kubeQOS, err)
 			} else {
 				kubeQOSCtx.ReconcilerDone(e)
 				klog.V(5).Infof("calling reconcile function %v for kube qos %v finish",
@@ -317,17 +318,18 @@ func (c *reconciler) reconcilePodCgroup(stopCh <-chan struct{}) {
 					reconcileFn, ok := r.fn[r.filter.Filter(podMeta)]
 					if !ok {
 						klog.V(5).Infof("calling reconcile function %v aborted for pod %v, condition %s not registered",
-							r.description, util.GetPodKey(podMeta.Pod), r.filter.Filter(podMeta))
+							r.description, podMeta.Key(), r.filter.Filter(podMeta))
 						continue
 					}
 
 					podCtx := protocol.HooksProtocolBuilder.Pod(podMeta)
 					if err := reconcileFn(podCtx); err != nil {
-						klog.Warningf("calling reconcile function %v failed, error %v", r.description, err)
+						klog.Warningf("calling reconcile function %v for pod %v failed, error %v",
+							r.description, podMeta.Key(), err)
 					} else {
 						podCtx.ReconcilerDone(c.executor)
 						klog.V(5).Infof("calling reconcile function %v for pod %v finished",
-							r.description, util.GetPodKey(podMeta.Pod))
+							r.description, podMeta.Key())
 					}
 				}
 
@@ -335,16 +337,17 @@ func (c *reconciler) reconcilePodCgroup(stopCh <-chan struct{}) {
 					reconcileFn, ok := r.fn[r.filter.Filter(podMeta)]
 					if !ok {
 						klog.V(5).Infof("calling reconcile function %v aborted for pod %v, condition %s not registered",
-							r.description, util.GetPodKey(podMeta.Pod), r.filter.Filter(podMeta))
+							r.description, podMeta.Key(), r.filter.Filter(podMeta))
 						continue
 					}
 					sandboxContainerCtx := protocol.HooksProtocolBuilder.Sandbox(podMeta)
 					if err := reconcileFn(sandboxContainerCtx); err != nil {
-						klog.Warningf("calling reconcile function %v failed for sandbox, error %v", r.description, err)
+						klog.Warningf("calling reconcile function %v failed for sandbox %v, error %v",
+							r.description, podMeta.Key(), err)
 					} else {
 						sandboxContainerCtx.ReconcilerDone(c.executor)
 						klog.V(5).Infof("calling reconcile function %v for pod sandbox %v finished",
-							r.description, util.GetPodKey(podMeta.Pod))
+							r.description, podMeta.Key())
 					}
 				}
 
@@ -352,18 +355,19 @@ func (c *reconciler) reconcilePodCgroup(stopCh <-chan struct{}) {
 					for _, r := range globalCgroupReconcilers.containerLevel {
 						reconcileFn, ok := r.fn[r.filter.Filter(podMeta)]
 						if !ok {
-							klog.V(5).Infof("calling reconcile function %v aborted for pod %v, condition %s not registered",
-								r.description, util.GetPodKey(podMeta.Pod), r.filter.Filter(podMeta))
+							klog.V(5).Infof("calling reconcile function %v aborted for container %v/%v, condition %s not registered",
+								r.description, podMeta.Key(), containerStat.Name, r.filter.Filter(podMeta))
 							continue
 						}
 
 						containerCtx := protocol.HooksProtocolBuilder.Container(podMeta, containerStat.Name)
 						if err := reconcileFn(containerCtx); err != nil {
-							klog.Warningf("calling reconcile function %v failed, error %v", r.description, err)
+							klog.Warningf("calling reconcile function %v for container %v/%v failed, error %v",
+								r.description, podMeta.Key(), containerStat.Name, err)
 						} else {
 							containerCtx.ReconcilerDone(c.executor)
 							klog.V(5).Infof("calling reconcile function %v for container %v/%v finish",
-								r.description, util.GetPodKey(podMeta.Pod), containerStat.Name)
+								r.description, podMeta.Key(), containerStat.Name)
 						}
 					}
 				}

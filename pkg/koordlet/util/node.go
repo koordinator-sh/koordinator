@@ -17,6 +17,7 @@ limitations under the License.
 package util
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -91,26 +92,31 @@ func GetBECPUSetPathsByMaxDepth(relativeDepth int) ([]string, error) {
 	return paths, err
 }
 
-// GetBECPUSetPathsByTargetDepth only gets the be containers' cpuset groups' paths
-func GetBECPUSetPathsByTargetDepth(relativeDepth int) ([]string, error) {
-	rootCgroupPath := GetRootCgroupCPUSetDir(corev1.PodQOSBestEffort)
-	rootCPUSetSubfsPath := system.GetRootCgroupSubfsDir(system.CgroupCPUSetDir)
-	_, err := os.Stat(rootCgroupPath)
+func GetCgroupPathsByTargetDepth(resourceType system.ResourceType, cgroupParent string, relativeDepth int) ([]string, error) {
+	r, err := system.GetCgroupResource(resourceType)
+	if err != nil {
+		return nil, fmt.Errorf("get resource type failed, err: %w", err)
+	}
+	cgroupResource := r.(*system.CgroupResource)
+	absCgroupParent := filepath.Dir(r.Path(cgroupParent))
+	rootSubfsPath := system.GetRootCgroupSubfsDir(cgroupResource.Subfs)
+	_, err = os.Stat(absCgroupParent)
 	if err != nil {
 		// make sure the rootCgroupPath is available
 		return nil, err
 	}
-	klog.V(6).Infof("get be rootCgroupPath: %v", rootCgroupPath)
+	klog.V(6).Infof("get rootCgroupPath, resource %s, parent %s, absolute path: %s",
+		resourceType, cgroupParent, absCgroupParent)
 
-	absDepth := strings.Count(rootCgroupPath, string(os.PathSeparator)) + relativeDepth
+	absDepth := strings.Count(absCgroupParent, string(os.PathSeparator)) + relativeDepth
 	var containerPaths []string
-	err = filepath.WalkDir(rootCgroupPath, func(path string, info os.DirEntry, err error) error {
+	err = filepath.WalkDir(absCgroupParent, func(path string, info os.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 		if info.IsDir() && strings.Count(path, string(os.PathSeparator)) == absDepth {
 			// get the path of parentDir
-			parentDir, err1 := filepath.Rel(rootCPUSetSubfsPath, path)
+			parentDir, err1 := filepath.Rel(rootSubfsPath, path)
 			if err1 != nil {
 				return err1
 			}
@@ -119,6 +125,12 @@ func GetBECPUSetPathsByTargetDepth(relativeDepth int) ([]string, error) {
 		return nil
 	})
 	return containerPaths, err
+}
+
+// GetBECPUSetPathsByTargetDepth only gets the be containers' cpuset groups' paths
+func GetBECPUSetPathsByTargetDepth(relativeDepth int) ([]string, error) {
+	beCgroupParentDir := GetPodQoSRelativePath(corev1.PodQOSBestEffort)
+	return GetCgroupPathsByTargetDepth(system.CPUSetCPUSName, beCgroupParentDir, relativeDepth)
 }
 
 // GetCgroupRootBlkIOAbsoluteDir gets the root blkio directory

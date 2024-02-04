@@ -34,7 +34,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
-	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/config"
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/metrics"
@@ -123,7 +122,7 @@ func (r *NodeResourceReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return ctrl.Result{Requeue: true}, err
 	}
 
-	// do other node updates. e.g. update device resources
+	// do other node updates.
 	if err := r.updateNodeExtensions(node, nodeMetric, podList); err != nil {
 		klog.ErrorS(err, "failed to update node extensions for node", "node", node.Name)
 		return ctrl.Result{Requeue: true}, err
@@ -187,8 +186,7 @@ func (r *NodeResourceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Named(Name). // avoid conflict with others reconciling `Node`
 		For(&corev1.Node{}).
 		Watches(&source.Kind{Type: &slov1alpha1.NodeMetric{}}, &EnqueueRequestForNodeMetric{syncContext: r.NodeSyncContext}).
-		Watches(&source.Kind{Type: &corev1.ConfigMap{}}, cfgHandler).
-		Watches(&source.Kind{Type: &schedulingv1alpha1.Device{}}, &EnqueueRequestForDevice{syncContext: r.GPUSyncContext})
+		Watches(&source.Kind{Type: &corev1.ConfigMap{}}, cfgHandler)
 
 	// setup plugins
 	// allow plugins to mutate controller via the builder

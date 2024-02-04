@@ -24,16 +24,6 @@ import (
 	"k8s.io/klog/v2"
 )
 
-func init() {
-	prometheus.MustRegister(CommonCollectors...)
-	prometheus.MustRegister(ResourceSummaryCollectors...)
-	prometheus.MustRegister(CPICollectors...)
-	prometheus.MustRegister(PSICollectors...)
-	prometheus.MustRegister(CPUSuppressCollector...)
-	prometheus.MustRegister(CPUBurstCollector...)
-	prometheus.MustRegister(PredictionCollectors...)
-}
-
 const (
 	KoordletSubsystem = "koordlet"
 
@@ -69,6 +59,10 @@ var (
 	Node     *corev1.Node
 
 	nodeLock sync.RWMutex
+)
+
+const (
+	DefaultHTTPPath = "/metrics"
 )
 
 // Register registers the metrics with the node object

@@ -21,13 +21,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
-	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	"k8s.io/klog/v2"
@@ -35,15 +35,96 @@ import (
 	"sigs.k8s.io/scheduler-plugins/pkg/util"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/elasticquota/core"
 	koordutil "github.com/koordinator-sh/koordinator/pkg/util"
 )
 
 const (
-	SyncHandlerCycle           = 1 * time.Second
-	ElasticQuotaControllerName = "QuotaCRDController"
+	ControllerName = "ElasticQuotaController"
 )
 
-var resourceDecorators = []func(quota *v1alpha1.ElasticQuota, resource v1.ResourceList){}
+// Controller is a controller that update elastic quota crd
+type Controller struct {
+	plugin *Plugin
+}
+
+func NewElasticQuotaController(plugin *Plugin) *Controller {
+	ctrl := &Controller{
+		plugin: plugin,
+	}
+	return ctrl
+}
+
+func (ctrl *Controller) Name() string {
+	return ControllerName
+}
+
+func (ctrl *Controller) Start() {
+	go wait.Until(ctrl.syncElasticQuotaStatusWorker, 1*time.Second, context.TODO().Done())
+	go wait.Until(ctrl.syncElasticQuotaStatusMetricsWorker, 10*time.Second, context.TODO().Done())
+}
+
+func (ctrl *Controller) syncElasticQuotaStatusWorker() {
+	elasticQuotas, err := ctrl.plugin.quotaLister.List(labels.Everything())
+	if err != nil {
+		klog.V(3).ErrorS(err, "Unable to list elastic quota in syncElasticQuotaStatusWorker")
+		return
+	}
+	for _, eq := range elasticQuotas {
+		ctrl.syncElasticQuotaStatus(eq)
+	}
+	return
+}
+
+func (ctrl *Controller) syncElasticQuotaStatus(eq *v1alpha1.ElasticQuota) {
+	summary, _ := ctrl.plugin.GetQuotaSummary(eq.Name, false)
+	if summary == nil {
+		klog.Warningf("failed get quota summary for elasticQuota %v", eq.Name)
+		return
+	}
+
+	newEQ, err := updateElasticQuotaStatusIfChanged(eq, summary, klog.V(5).Enabled())
+	if err != nil {
+		klog.ErrorS(err, "failed to updateElasticQuotaStatusIfChanged", "elasticQuota", eq.Name)
+		return
+	}
+	if newEQ == nil {
+		if klog.V(5).Enabled() {
+			klog.InfoS("Skip updating elasticQuota because there are no changes", "elasticQuota", eq.Name)
+		}
+		return
+	}
+
+	if klog.V(5).Enabled() {
+		klog.InfoS("Try updating elasticQuota since it has changed", "elasticQuota", eq.Name)
+	}
+
+	patch, err := util.CreateMergePatch(eq, newEQ)
+	if err != nil {
+		klog.ErrorS(err, "Failed to create mergePatch", "elasticQuota", eq.Name)
+		return
+	}
+
+	start := time.Now()
+	defer func() {
+		UpdateElasticQuotaStatusLatency.Observe(time.Since(start).Seconds())
+	}()
+
+	err = koordutil.RetryOnConflictOrTooManyRequests(func() error {
+		_, patchErr := ctrl.plugin.client.SchedulingV1alpha1().ElasticQuotas(eq.Namespace).
+			Patch(context.TODO(), eq.Name, types.MergePatchType, patch, metav1.PatchOptions{})
+		return patchErr
+	})
+	if err != nil {
+		klog.ErrorS(err, "Failed to patch elasticQuota", "elasticQuota", eq.Name)
+	} else {
+		if klog.V(5).Enabled() {
+			klog.InfoS("Successfully patch elasticQuota", "elasticQuota", eq.Name)
+		}
+	}
+}
+
+var resourceDecorators []func(quota *v1alpha1.ElasticQuota, resource v1.ResourceList)
 
 func decorateResource(quota *v1alpha1.ElasticQuota, resource v1.ResourceList) {
 	for _, fn := range resourceDecorators {
@@ -51,240 +132,144 @@ func decorateResource(quota *v1alpha1.ElasticQuota, resource v1.ResourceList) {
 	}
 }
 
-// Controller is a controller that update elastic quota crd
-type Controller struct {
-	plugin *Plugin
+type traceChange struct {
+	key      string
+	original v1.ResourceList
+	current  v1.ResourceList
 }
 
-// NewElasticQuotaController returns a new *Controller
-func NewElasticQuotaController(
-	plugin *Plugin,
-	newOpt ...func(ctrl *Controller),
-) *Controller {
-	// set up elastic quota ctrl
-	ctrl := &Controller{
-		plugin: plugin,
+func updateElasticQuotaStatusIfChanged(eq *v1alpha1.ElasticQuota, summary *core.QuotaInfoSummary, logChanges bool) (*v1alpha1.ElasticQuota, error) {
+	m := map[string]v1.ResourceList{
+		extension.AnnotationRuntime:               summary.Runtime,
+		extension.AnnotationRequest:               summary.Request,
+		extension.AnnotationChildRequest:          summary.ChildRequest,
+		extension.AnnotationGuaranteed:            summary.Guaranteed,
+		extension.AnnotationAllocated:             summary.Allocated,
+		extension.AnnotationNonPreemptibleRequest: summary.NonPreemptibleRequest,
+		extension.AnnotationNonPreemptibleUsed:    summary.NonPreemptibleUsed,
 	}
-	for _, f := range newOpt {
-		f(ctrl)
-	}
+	var newElasticQuota *v1alpha1.ElasticQuota
+	var changes []traceChange
+	for k, v := range m {
+		decorateResource(eq, v)
 
-	return ctrl
-}
+		diff, original, err := isElasticQuotaAnnotationDiff(eq, k, v)
+		if err != nil {
+			return nil, err
+		}
+		if !diff {
+			continue
+		}
 
-func (ctrl *Controller) Name() string {
-	return ElasticQuotaControllerName
-}
+		if logChanges {
+			changes = append(changes, traceChange{key: k, original: original, current: v})
+		}
 
-func (ctrl *Controller) Start() {
-	go wait.Until(ctrl.Run, SyncHandlerCycle, context.TODO().Done())
-	go wait.Until(ctrl.MonitorQuotas, 10*time.Second, context.TODO().Done())
-	klog.Infof("start elasticQuota controller syncHandler")
-}
-
-func (ctrl *Controller) Run() {
-	if errs := ctrl.syncHandler(); len(errs) != 0 {
-		for _, err := range errs {
-			utilruntime.HandleError(err)
+		if newElasticQuota == nil {
+			newElasticQuota = eq.DeepCopy()
+			if newElasticQuota.Annotations == nil {
+				newElasticQuota.Annotations = map[string]string{}
+			}
+		}
+		if err := updateElasticQuotaAnnotation(newElasticQuota, k, v); err != nil {
+			return nil, err
 		}
 	}
+
+	decorateResource(eq, summary.Used)
+	if !quotav1.Equals(quotav1.RemoveZeros(eq.Status.Used), quotav1.RemoveZeros(summary.Used)) {
+		if logChanges {
+			changes = append(changes, traceChange{key: "used", original: eq.Status.Used, current: summary.Used})
+		}
+		if newElasticQuota == nil {
+			newElasticQuota = eq.DeepCopy()
+			if newElasticQuota.Annotations == nil {
+				newElasticQuota.Annotations = map[string]string{}
+			}
+		}
+		newElasticQuota.Status.Used = summary.Used
+	}
+
+	if logChanges && len(changes) > 0 {
+		sb := strings.Builder{}
+		for i, v := range changes {
+			if i > 0 {
+				fmt.Fprintf(&sb, ", ")
+			}
+			fmt.Fprintf(&sb, "%s changed from %v to %v", v.key, printResourceList(v.original), printResourceList(v.current))
+		}
+		klog.InfoS("ElasticQuota changed", "elasticQuota", eq.Name, "changed", sb.String())
+	}
+
+	return newElasticQuota, nil
 }
 
-// syncHandler syncs elastic quotas with local and convert status.used/request/runtime
-func (ctrl *Controller) syncHandler() []error {
-	eqList, err := ctrl.plugin.quotaLister.List(labels.Everything())
+func isElasticQuotaAnnotationDiff(eq *v1alpha1.ElasticQuota, key string, resourceList v1.ResourceList) (bool, v1.ResourceList, error) {
+	var originalResourceList v1.ResourceList
+	if val := eq.Annotations[key]; val != "" {
+		if err := json.Unmarshal([]byte(val), &originalResourceList); err != nil {
+			return false, nil, err
+		}
+	}
+	changed := !quotav1.Equals(quotav1.RemoveZeros(originalResourceList), quotav1.RemoveZeros(resourceList))
+	return changed, originalResourceList, nil
+}
+
+func updateElasticQuotaAnnotation(eq *v1alpha1.ElasticQuota, key string, resourceList v1.ResourceList) error {
+	data, err := json.Marshal(resourceList)
 	if err != nil {
-		klog.V(3).ErrorS(err, "Unable to list elastic quota from store", "elasticQuota")
-		return []error{err}
+		return err
 	}
-	errors := make([]error, 0)
-
-	for _, eq := range eqList {
-		func() {
-			mgr := ctrl.plugin.GetGroupQuotaManagerForQuota(eq.Name)
-			if mgr == nil {
-				errors = append(errors, fmt.Errorf("failed get quota manager for %v", eq.Name))
-				return
-			}
-			used, request, childRequest, runtime, guaranteed, allocated, nonPreemptibleRequest, nonPreemptibleUsed, err := mgr.GetQuotaInformationForSyncHandler(eq.Name)
-			if err != nil {
-				errors = append(errors, err)
-				return
-			}
-
-			// decorate resources.
-			// It will convert unit or remove some resources which we don't want to expose.
-			decorateResource(eq, used)
-			decorateResource(eq, request)
-			decorateResource(eq, childRequest)
-			decorateResource(eq, runtime)
-			decorateResource(eq, guaranteed)
-			decorateResource(eq, allocated)
-
-			var oriRuntime, oriRequest, oriChildRequest, oriGuaranteed, oriAllocated, oriNonPreemptibleRequest, oriNonPreemptibleUsed v1.ResourceList
-
-			oriRequest, err = extension.GetRequest(eq)
-			if err != nil {
-				errors = append(errors, err)
-				return
-			}
-
-			oriChildRequest, err = extension.GetChildRequest(eq)
-			if err != nil {
-				errors = append(errors, err)
-				return
-			}
-
-			oriRuntime, err = extension.GetRuntime(eq)
-			if err != nil {
-				errors = append(errors, err)
-				return
-			}
-
-			oriGuaranteed, err = extension.GetGuaranteed(eq)
-			if err != nil {
-				errors = append(errors, err)
-				return
-			}
-
-			oriAllocated, err = extension.GetAllocated(eq)
-			if err != nil {
-				errors = append(errors, err)
-				return
-			}
-
-			oriNonPreemptibleRequest, err = extension.GetNonPreemptibleRequest(eq)
-			if err != nil {
-				errors = append(errors, err)
-				return
-			}
-
-			oriNonPreemptibleUsed, err = extension.GetNonPreemptibleUsed(eq)
-			if err != nil {
-				errors = append(errors, err)
-				return
-			}
-
-			// Ignore this loop if the runtime/request/used doesn't change
-			if quotav1.Equals(quotav1.RemoveZeros(eq.Status.Used), quotav1.RemoveZeros(used)) &&
-				quotav1.Equals(quotav1.RemoveZeros(oriRuntime), quotav1.RemoveZeros(runtime)) &&
-				quotav1.Equals(quotav1.RemoveZeros(oriRequest), quotav1.RemoveZeros(request)) &&
-				quotav1.Equals(quotav1.RemoveZeros(oriChildRequest), quotav1.RemoveZeros(childRequest)) &&
-				quotav1.Equals(quotav1.RemoveZeros(oriGuaranteed), quotav1.RemoveZeros(guaranteed)) &&
-				quotav1.Equals(quotav1.RemoveZeros(oriAllocated), quotav1.RemoveZeros(allocated)) &&
-				quotav1.Equals(quotav1.RemoveZeros(oriNonPreemptibleRequest), quotav1.RemoveZeros(nonPreemptibleRequest)) &&
-				quotav1.Equals(quotav1.RemoveZeros(oriNonPreemptibleUsed), quotav1.RemoveZeros(nonPreemptibleUsed)) {
-				return
-			}
-			newEQ := eq.DeepCopy()
-			if newEQ.Annotations == nil {
-				newEQ.Annotations = make(map[string]string)
-			}
-			runtimeBytes, err := json.Marshal(runtime)
-			if err != nil {
-				errors = append(errors, err)
-				return
-			}
-			requestBytes, err := json.Marshal(request)
-			if err != nil {
-				errors = append(errors, err)
-				return
-			}
-			childRequestBytes, err := json.Marshal(childRequest)
-			if err != nil {
-				errors = append(errors, err)
-				return
-			}
-			guaranteedBytes, err := json.Marshal(guaranteed)
-			if err != nil {
-				errors = append(errors, err)
-				return
-			}
-			allocatedBytes, err := json.Marshal(allocated)
-			if err != nil {
-				errors = append(errors, err)
-				return
-			}
-			nonPreemptibleRequestBytes, err := json.Marshal(nonPreemptibleRequest)
-			if err != nil {
-				errors = append(errors, err)
-				return
-			}
-			nonPreemptibleUsedBytes, err := json.Marshal(nonPreemptibleUsed)
-			if err != nil {
-				errors = append(errors, err)
-				return
-			}
-			newEQ.Annotations[extension.AnnotationRuntime] = string(runtimeBytes)
-			newEQ.Annotations[extension.AnnotationRequest] = string(requestBytes)
-			newEQ.Annotations[extension.AnnotationChildRequest] = string(childRequestBytes)
-			newEQ.Annotations[extension.AnnotationGuaranteed] = string(guaranteedBytes)
-			newEQ.Annotations[extension.AnnotationAllocated] = string(allocatedBytes)
-			newEQ.Annotations[extension.AnnotationNonPreemptibleRequest] = string(nonPreemptibleRequestBytes)
-			newEQ.Annotations[extension.AnnotationNonPreemptibleUsed] = string(nonPreemptibleUsedBytes)
-			newEQ.Status.Used = used
-
-			klog.V(5).Infof("quota: %v, oldUsed: %v, newUsed: %v, oldRuntime: %v, newRuntime: %v, oldRequest: %v, newRequest: %v, "+
-				"oldChildRequest: %v, newChildRequest: %v, oldGuarantee: %v, newGuarantee: %v, oldAllocated: %v, newAllocated: %v, "+
-				"oldNonPreemptibleRequest: %v, newNonPreemptibleRequest: %v, oldNonPreemptibleUsed: %v, newNonPreemptibleUsed: %v",
-				eq.Name, eq.Status.Used, used, eq.Annotations[extension.AnnotationRuntime], string(runtimeBytes),
-				eq.Annotations[extension.AnnotationRequest], string(requestBytes),
-				eq.Annotations[extension.AnnotationChildRequest], string(childRequestBytes),
-				eq.Annotations[extension.AnnotationGuaranteed], string(guaranteedBytes),
-				eq.Annotations[extension.AnnotationAllocated], string(allocatedBytes),
-				eq.Annotations[extension.AnnotationNonPreemptibleRequest], string(nonPreemptibleRequestBytes),
-				eq.Annotations[extension.AnnotationNonPreemptibleUsed], string(nonPreemptibleUsedBytes))
-
-			patch, err := util.CreateMergePatch(eq, newEQ)
-			if err != nil {
-				errors = append(errors, err)
-				return
-			}
-			err = koordutil.RetryOnConflictOrTooManyRequests(func() error {
-				_, patchErr := ctrl.plugin.client.SchedulingV1alpha1().ElasticQuotas(eq.Namespace).
-					Patch(context.TODO(), eq.Name, types.MergePatchType,
-						patch, metav1.PatchOptions{})
-				return patchErr
-			})
-			if err != nil {
-				errors = append(errors, err)
-				return
-			}
-		}()
-	}
-	return errors
+	eq.Annotations[key] = string(data)
+	return nil
 }
 
-func (ctrl *Controller) MonitorQuotas() {
-	eqList, err := ctrl.plugin.quotaLister.List(labels.Everything())
+func (ctrl *Controller) syncElasticQuotaStatusMetricsWorker() {
+	elasticQuotas, err := ctrl.plugin.quotaLister.List(labels.Everything())
 	if err != nil {
 		klog.V(3).ErrorS(err, "Unable to list elastic quota from store", "elasticQuota")
 		return
 	}
 
-	for _, eq := range eqList {
-		quotaLabels := map[string]string{
-			"name":      eq.Name,
-			"tree":      extension.GetQuotaTreeID(eq),
-			"is_parent": strconv.FormatBool(extension.IsParentQuota(eq)),
-			"parent":    extension.GetParentQuotaName(eq),
+	for _, eq := range elasticQuotas {
+		summary, _ := ctrl.plugin.GetQuotaSummary(eq.Name, false)
+		if summary == nil {
+			continue
 		}
-
-		sharedWeight := extension.GetSharedWeight(eq)
-		runtime, _ := extension.GetRuntime(eq)
-		request, _ := extension.GetRequest(eq)
-		childRequest, _ := extension.GetChildRequest(eq)
-		guaranteed, _ := extension.GetGuaranteed(eq)
-		allocated, _ := extension.GetAllocated(eq)
-
-		RecordMetricsByResourceList(ElasticQuotaSpecMetric, eq.Spec.Min, "min", quotaLabels)
-		RecordMetricsByResourceList(ElasticQuotaSpecMetric, eq.Spec.Max, "max", quotaLabels)
-		RecordMetricsByResourceList(ElasticQuotaSpecMetric, sharedWeight, "shared-weight", quotaLabels)
-		RecordMetricsByResourceList(ElasticQuotaStatusMetric, runtime, "runtime", quotaLabels)
-		RecordMetricsByResourceList(ElasticQuotaStatusMetric, eq.Status.Used, "used", quotaLabels)
-		RecordMetricsByResourceList(ElasticQuotaStatusMetric, request, "request", quotaLabels)
-		RecordMetricsByResourceList(ElasticQuotaStatusMetric, childRequest, "child-request", quotaLabels)
-		RecordMetricsByResourceList(ElasticQuotaStatusMetric, guaranteed, "guaranteed", quotaLabels)
-		RecordMetricsByResourceList(ElasticQuotaStatusMetric, allocated, "allocated", quotaLabels)
+		syncElasticQuotaMetrics(eq, summary)
 	}
+}
+
+func syncElasticQuotaMetrics(eq *v1alpha1.ElasticQuota, summary *core.QuotaInfoSummary) {
+	quotaLabels := map[string]string{
+		"name":      summary.Name,
+		"tree":      summary.Tree,
+		"is_parent": strconv.FormatBool(summary.IsParent),
+		"parent":    summary.ParentName,
+	}
+
+	m := map[string]v1.ResourceList{
+		extension.AnnotationRuntime:               summary.Runtime,
+		extension.AnnotationRequest:               summary.Request,
+		extension.AnnotationChildRequest:          summary.ChildRequest,
+		extension.AnnotationGuaranteed:            summary.Guaranteed,
+		extension.AnnotationAllocated:             summary.Allocated,
+		extension.AnnotationNonPreemptibleRequest: summary.NonPreemptibleRequest,
+		extension.AnnotationNonPreemptibleUsed:    summary.NonPreemptibleUsed,
+	}
+	for k, v := range m {
+		decorateResource(eq, v)
+
+		k = strings.TrimPrefix(k, extension.QuotaKoordinatorPrefix+"/")
+		RecordElasticQuotaMetric(ElasticQuotaStatusMetric, v, k, quotaLabels)
+	}
+	decorateResource(eq, summary.Used)
+	RecordElasticQuotaMetric(ElasticQuotaStatusMetric, summary.Used, "used", quotaLabels)
+
+	decorateResource(eq, summary.Min)
+	decorateResource(eq, summary.Max)
+	decorateResource(eq, summary.SharedWeight)
+	RecordElasticQuotaMetric(ElasticQuotaSpecMetric, summary.Min, "min", quotaLabels)
+	RecordElasticQuotaMetric(ElasticQuotaSpecMetric, summary.Max, "max", quotaLabels)
+	RecordElasticQuotaMetric(ElasticQuotaSpecMetric, summary.SharedWeight, "sharedWeight", quotaLabels)
 }

@@ -21,7 +21,6 @@ import (
 	"strings"
 
 	"github.com/containerd/nri/pkg/api"
-
 	"k8s.io/klog/v2"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
@@ -30,6 +29,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	koordletutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
@@ -129,11 +129,11 @@ func (c *ContainerRequest) FromReconciler(podMeta *statesinformer.PodMeta, conta
 	if sandbox {
 		var err error
 		if c.ContainerMeta.ID, err = koordletutil.GetPodSandboxContainerID(podMeta.Pod); err != nil {
-			klog.V(4).Infof("no container id for pod %v, container may not start, %v",
-				util.GetPodKey(podMeta.Pod), err)
+			klog.V(4).Infof("failed to get sandbox container ID for pod %s, err: %s",
+				podMeta.Key(), err)
 			return
 		} else if c.ContainerMeta.ID == "" {
-			klog.V(4).Infof("container status is empty for pod %v, skip")
+			klog.V(4).Infof("container ID is empty for pod %s, pod may not start, skip", podMeta.Key())
 			return
 		}
 	} else {
@@ -225,7 +225,10 @@ func (c *ContainerContext) FromProxy(req *runtimeapi.ContainerResourceHookReques
 	c.Request.FromProxy(req)
 }
 
-func (c *ContainerContext) ProxyDone(resp *runtimeapi.ContainerResourceHookResponse) {
+func (c *ContainerContext) ProxyDone(resp *runtimeapi.ContainerResourceHookResponse, executor resourceexecutor.ResourceUpdateExecutor) {
+	if c.executor == nil {
+		c.executor = executor
+	}
 	c.injectForExt()
 	c.Response.ProxyDone(resp)
 	c.Update()
@@ -372,10 +375,10 @@ func (c *ContainerContext) injectForExt() {
 }
 
 func getContainerID(podAnnotations map[string]string, containerUID string) string {
-	// TODO parse from runtime hook request directly
-	runtimeType := "containerd"
+	// TODO parse from runtime hook request directly such as cgroup path format
+	runtimeType := system.Conf.DefaultRuntimeType
 	if _, exist := podAnnotations["io.kubernetes.docker.type"]; exist {
-		runtimeType = "docker"
+		runtimeType = system.RuntimeTypeDocker
 	}
 	return fmt.Sprintf("%s://%s", runtimeType, containerUID)
 }

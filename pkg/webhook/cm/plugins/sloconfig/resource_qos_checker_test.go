@@ -13,6 +13,7 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 */
+
 package sloconfig
 
 import (
@@ -24,6 +25,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/pointer"
 
 	"github.com/koordinator-sh/koordinator/apis/configuration"
@@ -243,6 +245,16 @@ func Test_ResourceQOS_ConfigContentsValid(t *testing.T) {
 		cfg configuration.ResourceQOSCfg
 	}
 
+	fromInt := func(in int) *intstr.IntOrString {
+		res := intstr.FromInt(in)
+		return &res
+	}
+
+	fromString := func(in string) *intstr.IntOrString {
+		res := intstr.FromString(in)
+		return &res
+	}
+
 	tests := []struct {
 		name    string
 		args    args
@@ -368,6 +380,108 @@ func Test_ResourceQOS_ConfigContentsValid(t *testing.T) {
 											GroupIdentity: pointer.Int64(-1),
 										},
 									},
+								},
+							},
+						},
+					},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "netqos config not valid for percentage less than 0",
+			args: args{
+				cfg: configuration.ResourceQOSCfg{
+					ClusterStrategy: &slov1alpha1.ResourceQOSStrategy{
+						LSRClass: &slov1alpha1.ResourceQOS{
+							NetworkQOS: &slov1alpha1.NetworkQOSCfg{
+								NetworkQOS: slov1alpha1.NetworkQOS{
+									IngressRequest: fromInt(-1),
+								},
+							},
+						},
+					},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "netqos config not valid for percentage more than 100",
+			args: args{
+				cfg: configuration.ResourceQOSCfg{
+					ClusterStrategy: &slov1alpha1.ResourceQOSStrategy{
+						LSRClass: &slov1alpha1.ResourceQOS{
+							NetworkQOS: &slov1alpha1.NetworkQOSCfg{
+								NetworkQOS: slov1alpha1.NetworkQOS{
+									IngressRequest: fromInt(101),
+								},
+							},
+						},
+					},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "netqos config percentage format is valid",
+			args: args{
+				cfg: configuration.ResourceQOSCfg{
+					ClusterStrategy: &slov1alpha1.ResourceQOSStrategy{
+						LSRClass: &slov1alpha1.ResourceQOS{
+							NetworkQOS: &slov1alpha1.NetworkQOSCfg{
+								NetworkQOS: slov1alpha1.NetworkQOS{
+									IngressRequest: fromInt(50),
+								},
+							},
+						},
+					},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "netqos config quantity format invalid",
+			args: args{
+				cfg: configuration.ResourceQOSCfg{
+					ClusterStrategy: &slov1alpha1.ResourceQOSStrategy{
+						LSRClass: &slov1alpha1.ResourceQOS{
+							NetworkQOS: &slov1alpha1.NetworkQOSCfg{
+								NetworkQOS: slov1alpha1.NetworkQOS{
+									IngressRequest: fromString("50a"),
+								},
+							},
+						},
+					},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "netqos config quantity format is nil",
+			args: args{
+				cfg: configuration.ResourceQOSCfg{
+					ClusterStrategy: &slov1alpha1.ResourceQOSStrategy{
+						LSRClass: &slov1alpha1.ResourceQOS{
+							NetworkQOS: &slov1alpha1.NetworkQOSCfg{
+								NetworkQOS: slov1alpha1.NetworkQOS{
+									IngressRequest: fromString(""),
+								},
+							},
+						},
+					},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "netqos config quantity format valid",
+			args: args{
+				cfg: configuration.ResourceQOSCfg{
+					ClusterStrategy: &slov1alpha1.ResourceQOSStrategy{
+						LSRClass: &slov1alpha1.ResourceQOS{
+							NetworkQOS: &slov1alpha1.NetworkQOSCfg{
+								NetworkQOS: slov1alpha1.NetworkQOS{
+									IngressRequest: fromString("50m"),
 								},
 							},
 						},

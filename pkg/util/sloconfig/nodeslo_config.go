@@ -17,6 +17,7 @@ limitations under the License.
 package sloconfig
 
 import (
+	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/klog/v2"
 	"k8s.io/utils/pointer"
 
@@ -76,8 +77,12 @@ func DefaultCPUQOS(qos apiext.QoSClass) *slov1alpha1.CPUQOS {
 	case apiext.QoSBE:
 		cpuQOS = &slov1alpha1.CPUQOS{
 			GroupIdentity: pointer.Int64(-1),
-			SchedIdle:     pointer.Int64(1),
-			CoreExpeller:  pointer.Bool(false),
+			// NOTE: Be careful to enable CPU Idle since it overrides and lock the cpu.shares/cpu.weight of the same
+			// cgroup to a minimal value. This can affect other components like Kubelet which wants to write
+			// cpu.shares/cpu.weight to other values.
+			// https://git.kernel.org/pub/scm/linux/kernel/git/tip/tip.git/commit/?id=304000390f88d049c85e9a0958ac5567f38816ee
+			SchedIdle:    pointer.Int64(0),
+			CoreExpeller: pointer.Bool(false),
 		}
 	case apiext.QoSSystem:
 		cpuQOS = &slov1alpha1.CPUQOS{
@@ -345,9 +350,10 @@ func DefaultCPUBurstConfig() slov1alpha1.CPUBurstConfig {
 
 func DefaultSystemStrategy() *slov1alpha1.SystemStrategy {
 	return &slov1alpha1.SystemStrategy{
-		MinFreeKbytesFactor:  pointer.Int64(100), // 1 means 1/10000
-		WatermarkScaleFactor: pointer.Int64(150), // 1 means 1/10000
-		MemcgReapBackGround:  pointer.Int64(0),
+		MinFreeKbytesFactor:   pointer.Int64(100), // 1 means 1/10000
+		WatermarkScaleFactor:  pointer.Int64(150), // 1 means 1/10000
+		MemcgReapBackGround:   pointer.Int64(0),
+		TotalNetworkBandwidth: resource.MustParse("0"),
 	}
 }
 

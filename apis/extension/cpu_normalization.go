@@ -35,6 +35,9 @@ const (
 
 	// AnnotationCPUBasicInfo denotes the basic CPU info of the node.
 	AnnotationCPUBasicInfo = NodeDomainPrefix + "/cpu-basic-info"
+
+	// NormalizationRatioDiffEpsilon is the min difference between two cpu normalization ratios.
+	NormalizationRatioDiffEpsilon = 0.01
 )
 
 // GetCPUNormalizationRatio gets the cpu normalization ratio from the node.
@@ -88,6 +91,10 @@ func GetCPUNormalizationEnabled(node *corev1.Node) (*bool, error) {
 		return nil, fmt.Errorf("parse cpu normalization enabled failed, err: %w", err)
 	}
 	return pointer.Bool(v), nil
+}
+
+func IsCPUNormalizationRatioDifferent(old, new float64) bool {
+	return old > new+NormalizationRatioDiffEpsilon || old < new-NormalizationRatioDiffEpsilon
 }
 
 // CPUBasicInfo describes the cpu basic features and status.

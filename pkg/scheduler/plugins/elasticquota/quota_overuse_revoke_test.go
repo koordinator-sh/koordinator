@@ -144,9 +144,8 @@ func TestQuotaOverUsedRevokeController_GetToMonitorQuotas(t *testing.T) {
 	suit := newPluginTestSuit(t, nil)
 	p, _ := suit.proxyNew(suit.elasticQuotaArgs, suit.Handle)
 	plugin := p.(*Plugin)
-	monitorAllQuotas := true
 	plugin.pluginArgs.DelayEvictTime.Duration = 0 * time.Second
-	plugin.pluginArgs.MonitorAllQuotas = &monitorAllQuotas
+	plugin.pluginArgs.MonitorAllQuotas = true
 
 	gqm := plugin.groupQuotaManager
 	gqm.UpdateClusterTotalResource(createResourceList(10850060000, 0))

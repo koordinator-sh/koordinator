@@ -32,6 +32,7 @@ func Test_NewDsModeConfig(t *testing.T) {
 		VarRunRootDir:         "/host-var-run/",
 		RunRootDir:            "/host-run/",
 		RuntimeHooksConfigDir: "/host-etc-hookserver/",
+		DefaultRuntimeType:    "containerd",
 	}
 	defaultConfig := NewDsModeConfig()
 	assert.Equal(t, expectConfig, defaultConfig)
@@ -47,6 +48,7 @@ func Test_NewHostModeConfig(t *testing.T) {
 		VarRunRootDir:         "/var/run/",
 		RunRootDir:            "/run/",
 		RuntimeHooksConfigDir: "/etc/runtime/hookserver.d",
+		DefaultRuntimeType:    "containerd",
 	}
 	defaultConfig := NewHostModeConfig()
 	assert.Equal(t, expectConfig, defaultConfig)
@@ -57,4 +59,55 @@ func Test_InitFlags(t *testing.T) {
 		cfg := NewDsModeConfig()
 		assert.NotNil(t, cfg)
 	})
+}
+
+func Test_InitSupportConfigs(t *testing.T) {
+	type fields struct {
+		prepareFn func(helper *FileTestUtil)
+	}
+	type expects struct {
+		hostSystemInfo VersionInfo
+	}
+	tests := []struct {
+		name    string
+		fields  fields
+		expects expects
+	}{
+		{
+			name: "not anolis os, not support resctrl",
+			fields: fields{
+				prepareFn: func(helper *FileTestUtil) {},
+			},
+			expects: expects{
+				hostSystemInfo: VersionInfo{
+					IsAnolisOS: false,
+				},
+			},
+		},
+		{
+			name: "anolis os, not support resctrl",
+			fields: fields{
+				prepareFn: func(helper *FileTestUtil) {
+					bvtResource, _ := GetCgroupResource(CPUBVTWarpNsName)
+					helper.WriteCgroupFileContents("", bvtResource, "0")
+				},
+			},
+			expects: expects{
+				hostSystemInfo: VersionInfo{
+					IsAnolisOS: true,
+				},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			helper := NewFileTestUtil(t)
+			defer helper.Cleanup()
+			if tt.fields.prepareFn != nil {
+				tt.fields.prepareFn(helper)
+			}
+			InitSupportConfigs()
+			assert.Equal(t, tt.expects.hostSystemInfo, HostSystemInfo)
+		})
+	}
 }

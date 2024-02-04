@@ -41,9 +41,9 @@ func TestEndpointsQueryQuotaInfo(t *testing.T) {
 	assert.NotNil(t, p)
 	assert.Nil(t, err)
 
-	eq := p.(*Plugin)
+	plugin := p.(*Plugin)
 	quota := CreateQuota2("test1", "", 100, 100, 10, 10, 20, 20, false, "")
-	eq.OnQuotaAdd(quota)
+	plugin.OnQuotaAdd(quota)
 
 	node := &corev1.Node{
 		ObjectMeta: metav1.ObjectMeta{
@@ -53,7 +53,7 @@ func TestEndpointsQueryQuotaInfo(t *testing.T) {
 			Allocatable: createResourceList(1000, 1000),
 		},
 	}
-	eq.OnNodeAdd(node)
+	plugin.OnNodeAdd(node)
 
 	podToCreate := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
@@ -74,7 +74,10 @@ func TestEndpointsQueryQuotaInfo(t *testing.T) {
 		},
 	}
 	podToCreate.Spec.NodeName = "n1"
-	eq.OnPodAdd(podToCreate)
+	plugin.OnPodAdd(podToCreate)
+
+	mgr := plugin.GetGroupQuotaManagerForQuota(quota.Name)
+	mgr.RefreshRuntime(quota.Name)
 
 	quotaExpected := core.QuotaInfoSummary{
 		Name:              "test1",
@@ -98,9 +101,9 @@ func TestEndpointsQueryQuotaInfo(t *testing.T) {
 	}
 	{
 		engine := gin.Default()
-		eq.RegisterEndpoints(engine.Group("/"))
+		plugin.RegisterEndpoints(engine.Group("/"))
 		w := httptest.NewRecorder()
-		req, _ := http.NewRequest("GET", "/quotas/test1", nil)
+		req, _ := http.NewRequest("GET", "/quotas/test1?includePods=true", nil)
 		engine.ServeHTTP(w, req)
 		assert.Equal(t, http.StatusOK, w.Result().StatusCode)
 		quotaSummary := core.NewQuotaInfoSummary()
@@ -125,9 +128,9 @@ func TestEndpointsQueryQuotaInfo(t *testing.T) {
 	}
 	{
 		engine := gin.Default()
-		eq.RegisterEndpoints(engine.Group("/"))
+		plugin.RegisterEndpoints(engine.Group("/"))
 		w := httptest.NewRecorder()
-		req, _ := http.NewRequest("GET", "/quotas", nil)
+		req, _ := http.NewRequest("GET", "/quotas?includePods=true", nil)
 		engine.ServeHTTP(w, req)
 		assert.Equal(t, http.StatusOK, w.Result().StatusCode)
 		quotaSummaries := make(map[string]*core.QuotaInfoSummary)
@@ -155,12 +158,12 @@ func TestEndpointsQueryQuotaInfo(t *testing.T) {
 		defer utilfeature.SetFeatureGateDuringTest(t, k8sfeature.DefaultMutableFeatureGate, koordfeatures.MultiQuotaTree, true)()
 
 		// add root quota
-		eq.addRootQuota("tree1-root", "", 20, 20, 10, 10, 30, 30, false, "", "tree1")
+		plugin.addRootQuota("tree1-root", "", 20, 20, 10, 10, 30, 30, false, "", "tree1")
 
 		engine := gin.Default()
-		eq.RegisterEndpoints(engine.Group("/"))
+		plugin.RegisterEndpoints(engine.Group("/"))
 		w := httptest.NewRecorder()
-		req, _ := http.NewRequest("GET", "/quotas?tree=tree1", nil)
+		req, _ := http.NewRequest("GET", "/quotas?tree=tree1&includePods=true", nil)
 		engine.ServeHTTP(w, req)
 		assert.Equal(t, http.StatusOK, w.Result().StatusCode)
 		quotaSummaries := make(map[string]*core.QuotaInfoSummary)

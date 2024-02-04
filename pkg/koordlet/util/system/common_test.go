@@ -19,11 +19,17 @@ package system
 import (
 	"fmt"
 	"reflect"
+	"runtime"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 )
+
+func DumpGoroutineInfo() string {
+	return fmt.Sprintf("GOMAXPROC=%v, NumCPU=%v, NumGoroutine=%v",
+		runtime.GOMAXPROCS(0), runtime.NumCPU(), runtime.NumGoroutine())
+}
 
 type TestMetric struct {
 	Time  time.Time
@@ -88,6 +94,67 @@ func TestParseKVMap(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			got := ParseKVMap(tt.arg)
 			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestGoWithNewThread(t *testing.T) {
+	t.Run("test", func(t *testing.T) {
+		f := func() interface{} {
+			t.Log("TestGoWithNewThread without error")
+			return (error)(nil)
+		}
+		retIf := GoWithNewThread(f)
+		assert.Nil(t, retIf)
+
+		f = func() interface{} {
+			t.Log("TestGoWithNewThread with error")
+			return fmt.Errorf("got error")
+		}
+		retIf = GoWithNewThread(f)
+		err, ok := retIf.(error)
+		assert.True(t, ok)
+		assert.Error(t, err.(error))
+	})
+}
+
+func BenchmarkGoWithNewThread(b *testing.B) {
+	tests := []struct {
+		name    string
+		arg     func(*FileTestUtil) error
+		wantErr bool
+	}{
+		{
+			name: "empty func",
+			arg: func(*FileTestUtil) error {
+				return nil
+			},
+			wantErr: false,
+		},
+		{
+			name: "file write and read",
+			arg: func(helper *FileTestUtil) error {
+				content := `hello world`
+				helper.WriteFileContents("GoWithNewThreadWR.txt", content)
+				got := helper.ReadFileContents("GoWithNewThreadWR.txt")
+				assert.Equal(helper.t, content, got)
+				return nil
+			},
+			wantErr: false,
+		},
+	}
+	b.ResetTimer()
+	for _, tt := range tests {
+		b.Run(tt.name, func(b *testing.B) {
+			helper := NewFileTestUtil(b)
+			defer helper.Cleanup()
+			for i := 0; i < b.N; i++ {
+				got := GoWithNewThread(func() interface{} {
+					return tt.arg(helper)
+				})
+				gotErr := got.(error)
+				assert.Equal(b, tt.wantErr, gotErr != nil, gotErr)
+			}
 		})
 	}
 }

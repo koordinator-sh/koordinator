@@ -139,12 +139,11 @@ func (c *podThrottledCollector) collectPodThrottledInfo() {
 		} else {
 			podAndContainerMetrics = append(podAndContainerMetrics, podMetric)
 		}
-	} // end for podMeta
 
-	for _, meta := range podMetas {
+		// collect container-level metrics
 		metrics := c.collectContainerThrottledInfo(meta)
 		podAndContainerMetrics = append(podAndContainerMetrics, metrics...)
-	}
+	} // end for podMeta
 
 	appender := c.appendableDB.Appender()
 	if err := appender.Append(podAndContainerMetrics); err != nil {

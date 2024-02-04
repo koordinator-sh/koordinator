@@ -31,12 +31,14 @@ import (
 )
 
 type podEventHandler struct {
-	cache *reservationCache
+	cache     *reservationCache
+	nominator *nominator
 }
 
-func registerPodEventHandler(cache *reservationCache, factory informers.SharedInformerFactory) {
+func registerPodEventHandler(cache *reservationCache, nominator *nominator, factory informers.SharedInformerFactory) {
 	eventHandler := &podEventHandler{
-		cache: cache,
+		cache:     cache,
+		nominator: nominator,
 	}
 	informer := factory.Core().V1().Pods().Informer()
 	frameworkexthelper.ForceSyncFromInformer(context.TODO().Done(), factory, informer, eventHandler)
@@ -92,6 +94,8 @@ func (h *podEventHandler) updatePod(oldPod, newPod *corev1.Pod) {
 		return
 	}
 
+	h.nominator.RemoveNominatedReservation(newPod)
+
 	var reservationUID types.UID
 	if oldPod != nil {
 		reservationAllocated, err := apiext.GetReservationAllocated(oldPod)
@@ -123,6 +127,8 @@ func (h *podEventHandler) updatePod(oldPod, newPod *corev1.Pod) {
 }
 
 func (h *podEventHandler) deletePod(pod *corev1.Pod) {
+	h.nominator.RemoveNominatedReservation(pod)
+
 	reservationAllocated, err := apiext.GetReservationAllocated(pod)
 	if err == nil && reservationAllocated != nil && reservationAllocated.UID != "" {
 		h.cache.deletePod(reservationAllocated.UID, pod)

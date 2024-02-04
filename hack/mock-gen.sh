@@ -46,3 +46,8 @@ mockgen -source vendor/k8s.io/cri-api/pkg/apis/runtime/v1/api.pb.go \
   -imports github.com/koordinator-sh/koordinator/vendor/k8s.io/cri-api/pkg/apis/runtime/v1=k8s.io/cri-api/pkg/apis/runtime/v1 \
   -copyright_file ${LICENSE_HEADER_PATH} \
   -package mock_client RuntimeServiceClient
+mockgen -source vendor/k8s.io/cri-api/pkg/apis/runtime/v1alpha2/api.pb.go \
+  -destination pkg/koordlet/util/runtime/handler/mockv1alpha2client/mock.go \
+  -imports github.com/koordinator-sh/koordinator/vendor/k8s.io/cri-api/pkg/apis/runtime/v1alpha2=k8s.io/cri-api/pkg/apis/runtime/v1alpha2 \
+  -copyright_file ${LICENSE_HEADER_PATH} \
+  -package mockv1alpha2_client RuntimeServiceClient

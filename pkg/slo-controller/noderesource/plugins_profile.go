@@ -20,7 +20,9 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/noderesource/framework"
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/noderesource/plugins/batchresource"
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/noderesource/plugins/cpunormalization"
+	"github.com/koordinator-sh/koordinator/pkg/slo-controller/noderesource/plugins/gpudeviceresource"
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/noderesource/plugins/midresource"
+	"github.com/koordinator-sh/koordinator/pkg/slo-controller/noderesource/plugins/resourceamplification"
 )
 
 // NOTE: functions in this file can be overwritten for extension
@@ -30,6 +32,8 @@ func init() {
 	addPluginOption(&midresource.Plugin{}, true)
 	addPluginOption(&batchresource.Plugin{}, true)
 	addPluginOption(&cpunormalization.Plugin{}, true)
+	addPluginOption(&resourceamplification.Plugin{}, true)
+	addPluginOption(&gpudeviceresource.Plugin{}, true)
 }
 
 func addPlugins(filter framework.FilterFn) {
@@ -47,6 +51,7 @@ var (
 	setupPlugins = []framework.SetupPlugin{
 		&cpunormalization.Plugin{},
 		&batchresource.Plugin{},
+		&gpudeviceresource.Plugin{},
 	}
 	// NodePreUpdatePlugin implements node resource pre-updating.
 	nodePreUpdatePlugins = []framework.NodePreUpdatePlugin{
@@ -55,22 +60,29 @@ var (
 	// NodePreparePlugin implements node resource preparing for the calculated results.
 	nodePreparePlugins = []framework.NodePreparePlugin{
 		&cpunormalization.Plugin{}, // should be first
+		&resourceamplification.Plugin{},
 		&midresource.Plugin{},
 		&batchresource.Plugin{},
+		&gpudeviceresource.Plugin{},
 	}
 	// NodeSyncPlugin implements the check of resource updating.
 	nodeStatusCheckPlugins = []framework.NodeStatusCheckPlugin{
 		&midresource.Plugin{},
 		&batchresource.Plugin{},
+		&gpudeviceresource.Plugin{},
 	}
 	// nodeMetaCheckPlugins implements the check of node meta updating.
 	nodeMetaCheckPlugins = []framework.NodeMetaCheckPlugin{
 		&cpunormalization.Plugin{},
+		&resourceamplification.Plugin{},
+		&gpudeviceresource.Plugin{},
 	}
 	// ResourceCalculatePlugin implements resource counting and overcommitment algorithms.
 	resourceCalculatePlugins = []framework.ResourceCalculatePlugin{
 		&cpunormalization.Plugin{},
+		&resourceamplification.Plugin{},
 		&midresource.Plugin{},
 		&batchresource.Plugin{},
+		&gpudeviceresource.Plugin{},
 	}
 )

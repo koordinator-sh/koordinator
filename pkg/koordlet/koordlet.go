@@ -37,6 +37,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/prediction"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/qosmanager"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	statesinformerimpl "github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer/impl"
@@ -63,6 +64,7 @@ type daemon struct {
 	qosManager     qosmanager.QOSManager
 	runtimeHook    runtimehooks.RuntimeHook
 	predictServer  prediction.PredictServer
+	executor       resourceexecutor.ResourceUpdateExecutor
 }
 
 func NewDaemon(config *config.Configuration) (Daemon, error) {
@@ -74,6 +76,7 @@ func NewDaemon(config *config.Configuration) (Daemon, error) {
 	klog.Infof("NODE_NAME is %v, start time %v", nodeName, float64(time.Now().Unix()))
 	metrics.RecordKoordletStartTime(nodeName, float64(time.Now().Unix()))
 
+	system.InitSupportConfigs()
 	klog.Infof("sysconf: %+v, agentMode: %v", system.Conf, system.AgentMode)
 	klog.Infof("kernel version INFO: %+v", system.HostSystemInfo)
 
@@ -115,6 +118,7 @@ func NewDaemon(config *config.Configuration) (Daemon, error) {
 		qosManager:     qosManager,
 		runtimeHook:    runtimeHook,
 		predictServer:  predictServer,
+		executor:       resourceexecutor.NewResourceUpdateExecutor(),
 	}
 
 	return d, nil
@@ -123,6 +127,9 @@ func NewDaemon(config *config.Configuration) (Daemon, error) {
 func (d *daemon) Run(stopCh <-chan struct{}) {
 	defer utilruntime.HandleCrash()
 	klog.Infof("Starting daemon")
+
+	// start resource executor cache
+	d.executor.Run(stopCh)
 
 	go func() {
 		if err := d.metricCache.Run(stopCh); err != nil {
@@ -147,7 +154,6 @@ func (d *daemon) Run(stopCh <-chan struct{}) {
 			klog.Fatal("Unable to run the metric advisor: ", err)
 		}
 	}()
-
 	// wait for metric advisor sync
 	if !cache.WaitForCacheSync(stopCh, d.metricAdvisor.HasSynced) {
 		klog.Fatal("time out waiting for metric advisor to sync")

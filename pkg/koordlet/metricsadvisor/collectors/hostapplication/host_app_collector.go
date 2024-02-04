@@ -140,7 +140,7 @@ func (h *hostAppCollector) collectHostAppResUsed() {
 		}
 
 		metrics = append(metrics, cpuUsageMetric, memUsageMetric)
-		klog.V(6).Infof("collect host application %v finished, metric %+v", hostApp.Name, metrics)
+		klog.V(6).Infof("collect host application %v finished, metric cpu=%v, memory=%v", hostApp.Name, cpuUsageValue, memoryUsageValue)
 		count++
 		allCPUUsageCores.Value += cpuUsageValue
 		allMemoryUsage.Value += float64(memoryUsageValue)

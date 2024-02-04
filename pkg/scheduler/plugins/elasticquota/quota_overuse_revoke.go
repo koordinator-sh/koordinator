@@ -115,7 +115,7 @@ func (monitor *QuotaOverUsedGroupMonitor) getToRevokePodList(quotaName string) [
 			continue
 		}
 		podReq, _ := core.PodRequestsAndLimits(pod)
-		used = quotav1.Subtract(used, podReq)
+		used = quotav1.Mask(quotav1.Subtract(used, podReq), quotav1.ResourceNames(podReq))
 		tryAssignBackPodCache = append(tryAssignBackPodCache, pod)
 	}
 
@@ -133,7 +133,7 @@ func (monitor *QuotaOverUsedGroupMonitor) getToRevokePodList(quotaName string) [
 	for index := len(tryAssignBackPodCache) - 1; index >= 0; index-- {
 		pod := tryAssignBackPodCache[index]
 		podRequest, _ := core.PodRequestsAndLimits(pod)
-		used = quotav1.Add(used, podRequest)
+		used = quotav1.Mask(quotav1.Add(used, podRequest), quotav1.ResourceNames(podRequest))
 		if canAssignBack, _ := quotav1.LessThanOrEqual(used, runtime); !canAssignBack {
 			used = quotav1.Subtract(used, podRequest)
 			realRevokePodCache = append(realRevokePodCache, pod)
@@ -152,6 +152,7 @@ type QuotaOverUsedRevokeController struct {
 	overUsedTriggerEvictDuration time.Duration
 	revokePodCycle               time.Duration
 	monitorAllQuotas             bool
+	enableRuntimeQuota           bool
 	plugin                       *Plugin
 }
 
@@ -162,9 +163,9 @@ func NewQuotaOverUsedRevokeController(plugin *Plugin) *QuotaOverUsedRevokeContro
 		revokePodCycle:               plugin.pluginArgs.RevokePodInterval.Duration,
 		monitors:                     make(map[string]*QuotaOverUsedGroupMonitor),
 	}
-	if plugin.pluginArgs.MonitorAllQuotas != nil {
-		controller.monitorAllQuotas = *plugin.pluginArgs.MonitorAllQuotas
-	}
+	controller.monitorAllQuotas = plugin.pluginArgs.MonitorAllQuotas
+	controller.enableRuntimeQuota = plugin.pluginArgs.EnableRuntimeQuota
+
 	return controller
 }
 
@@ -175,6 +176,10 @@ func (controller *QuotaOverUsedRevokeController) Name() string {
 func (controller *QuotaOverUsedRevokeController) Start() {
 	if !controller.monitorAllQuotas {
 		klog.Infof("monitorAllQuotas not true. will not start elasticQuota QuotaOverUsedRevokeController")
+		return
+	}
+	if !controller.enableRuntimeQuota {
+		klog.Infof("enableRuntimeQuota is false. will not start elasticQuota QuotaOverUsedRevokeController")
 		return
 	}
 	go wait.Until(controller.revokePodDueToQuotaOverUsed, controller.revokePodCycle, nil)

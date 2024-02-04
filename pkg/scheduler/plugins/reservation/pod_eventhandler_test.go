@@ -32,7 +32,8 @@ import (
 
 func TestPodEventHandler(t *testing.T) {
 	handler := &podEventHandler{
-		cache: newReservationCache(nil),
+		cache:     newReservationCache(nil),
+		nominator: newNominator(),
 	}
 	reservationUID := uuid.NewUUID()
 	reservationName := "test-reservation"
@@ -106,7 +107,8 @@ func TestPodEventHandler(t *testing.T) {
 
 func TestPodEventHandlerWithOperatingPod(t *testing.T) {
 	handler := &podEventHandler{
-		cache: newReservationCache(nil),
+		cache:     newReservationCache(nil),
+		nominator: newNominator(),
 	}
 	reservationUID := uuid.NewUUID()
 	reservationName := "test-reservation"

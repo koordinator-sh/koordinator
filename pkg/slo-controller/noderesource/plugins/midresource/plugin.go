@@ -22,8 +22,8 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
-	"k8s.io/apimachinery/pkg/util/clock"
 	"k8s.io/klog/v2"
+	"k8s.io/utils/clock"
 
 	"github.com/koordinator-sh/koordinator/apis/configuration"
 	"github.com/koordinator-sh/koordinator/apis/extension"
@@ -38,7 +38,7 @@ const PluginName = "MidResource"
 // ResourceNames defines the Mid-tier extended resource names to update.
 var ResourceNames = []corev1.ResourceName{extension.MidCPU, extension.MidMemory}
 
-var clk clock.Clock = clock.RealClock{} // for testing
+var clk clock.WithTickerAndDelayedExecution = clock.RealClock{} // for testing
 
 type Plugin struct{}
 
@@ -90,7 +90,7 @@ func (p *Plugin) Calculate(strategy *configuration.ColocationStrategy, node *cor
 
 	// if the node metric is abnormal, do degraded calculation
 	if p.isDegradeNeeded(strategy, metrics.NodeMetric, node) {
-		klog.InfoS("node Mid-tier need degradation, reset node resources", "node", node.Name)
+		klog.V(5).InfoS("node Mid-tier need degradation, reset node resources", "node", node.Name)
 		return p.degradeCalculate(node,
 			"degrade node Mid resource because of abnormal nodeMetric, reason: degradedByMidResource"), nil
 	}

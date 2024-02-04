@@ -17,16 +17,21 @@ limitations under the License.
 package system
 
 import (
+	"bufio"
 	"fmt"
 	"math"
 	"math/bits"
 	"os"
 	"path/filepath"
+	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
 
 	"k8s.io/klog/v2"
+
+	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
 const (
@@ -50,10 +55,15 @@ const (
 )
 
 var (
-	initLock         sync.Mutex
-	isInit           bool
-	isSupportResctrl bool
+	initLock          sync.Mutex
+	isInit            bool
+	isSupportResctrl  bool
+	CacheIdsCacheFunc func() ([]int, error)
 )
+
+func init() {
+	CacheIdsCacheFunc = util.OnceValues(GetCacheIds)
+}
 
 func isCPUSupportResctrl() (bool, error) {
 	isCatFlagSet, isMbaFlagSet, err := isResctrlAvailableByCpuInfo(GetCPUInfoPath())
@@ -93,7 +103,7 @@ func IsSupportResctrl() (bool, error) {
 			return false, err
 		}
 		// Kernel cmdline not set resctrl features does not ensure feature must be disabled.
-		klog.V(4).Infof("isResctrlAvailableByKernelCmd result, cpuSupport: %v, kernelSupport: %v",
+		klog.Infof("IsSupportResctrl result, cpuSupport: %v, kernelSupport: %v",
 			cpuSupport, kernelCmdSupport)
 		isSupportResctrl = cpuSupport
 		isInit = true
@@ -171,13 +181,23 @@ func NewCommonResctrlResource(filename string, subdir string) Resource {
 }
 
 type ResctrlSchemataRaw struct {
-	L3    []int64
-	MB    []int64
+	L3    map[int]int64
+	MB    map[int]int64
 	L3Num int
 }
 
-func NewResctrlSchemataRaw() *ResctrlSchemataRaw {
-	return &ResctrlSchemataRaw{L3Num: 1}
+func NewResctrlSchemataRaw(cacheids []int) *ResctrlSchemataRaw {
+	r := &ResctrlSchemataRaw{
+		L3:    make(map[int]int64),
+		MB:    make(map[int]int64),
+		L3Num: 1,
+	}
+	for _, id := range cacheids {
+		r.L3[id] = 0
+		r.MB[id] = 0
+	}
+
+	return r
 }
 
 func (r *ResctrlSchemataRaw) WithL3Num(l3Num int) *ResctrlSchemataRaw {
@@ -191,9 +211,8 @@ func (r *ResctrlSchemataRaw) WithL3Mask(mask string) *ResctrlSchemataRaw {
 	if err != nil {
 		klog.V(5).Infof("failed to parse l3 mask %s, err: %v", mask, err)
 	}
-	r.L3 = make([]int64, r.L3Num)
-	for i := 0; i < r.L3Num; i++ {
-		r.L3[i] = maskValue
+	for id := range r.L3 {
+		r.L3[id] = maskValue
 	}
 	return r
 }
@@ -206,20 +225,17 @@ func (r *ResctrlSchemataRaw) WithMB(valueOrPercent string) *ResctrlSchemataRaw {
 	if err != nil {
 		klog.V(5).Infof("failed to parse mba %s, err: %v", valueOrPercent, err)
 	}
-	r.MB = make([]int64, r.L3Num)
-	for i := 0; i < r.L3Num; i++ {
-		r.MB[i] = percentValue
+	for id := range r.MB {
+		r.MB[id] = percentValue
 	}
 	return r
 }
 
 func (r *ResctrlSchemataRaw) DeepCopy() *ResctrlSchemataRaw {
-	n := NewResctrlSchemataRaw().WithL3Num(r.L3Num)
-	for i := range r.L3 {
-		n.L3 = append(n.L3, r.L3[i])
-	}
-	for i := range r.MB {
-		n.MB = append(n.MB, r.MB[i])
+	n := NewResctrlSchemataRaw(r.CacheIds()).WithL3Num(r.L3Num)
+	for id := range r.L3 {
+		n.L3[id] = r.L3[id]
+		n.MB[id] = r.MB[id]
 	}
 	return n
 }
@@ -239,14 +255,24 @@ func (r *ResctrlSchemataRaw) L3Number() int {
 	return r.L3Num
 }
 
+func (r *ResctrlSchemataRaw) CacheIds() []int {
+	ids := []int{}
+	for id := range r.L3 {
+		ids = append(ids, id)
+	}
+	return ids
+}
+
 func (r *ResctrlSchemataRaw) L3String() string {
 	if len(r.L3) <= 0 {
 		return ""
 	}
 	schemata := L3SchemataPrefix + ":"
 	// the last ';' will be auto ignored
-	for i := range r.L3 {
-		schemata = schemata + strconv.Itoa(i) + "=" + strconv.FormatInt(r.L3[i], 16) + ";"
+	ids := r.CacheIds()
+	sort.Ints(ids)
+	for _, id := range ids {
+		schemata = schemata + strconv.Itoa(id) + "=" + strconv.FormatInt(r.L3[id], 16) + ";"
 	}
 	// the trailing '\n' is necessary to append
 	schemata += "\n"
@@ -259,8 +285,10 @@ func (r *ResctrlSchemataRaw) MBString() string {
 	}
 	schemata := MbSchemataPrefix + ":"
 	// the last ';' will be auto ignored
-	for i := range r.MB {
-		schemata = schemata + strconv.Itoa(i) + "=" + strconv.FormatInt(r.MB[i], 10) + ";"
+	ids := r.CacheIds()
+	sort.Ints(ids)
+	for _, id := range ids {
+		schemata = schemata + strconv.Itoa(id) + "=" + strconv.FormatInt(r.MB[id], 10) + ";"
 	}
 	// the trailing '\n' is necessary to append
 	schemata += "\n"
@@ -331,14 +359,14 @@ func (r *ResctrlSchemataRaw) ValidateMB() (bool, string) {
 // Set l3Num=-1 to use the read L3 number from the schemata.
 // @content `L3:0=fff;1=fff\nMB:0=100;1=100\n` (may have additional lines (e.g. ARM MPAM))
 // @l3Num 2
-// @return { L3: ["fff", "fff"], MB: ["100", "100"] }, nil
+// @return {L3: {0: "fff", 1: "fff"}, MB: {0: "100", 1: "100"}}, nil
 func (r *ResctrlSchemataRaw) ParseResctrlSchemata(content string, l3Num int) error {
 	schemataMap := ParseResctrlSchemataMap(content)
 
 	for _, t := range []struct {
 		prefix string
 		base   int
-		v      *[]int64
+		v      *map[int]int64
 	}{
 		{
 			prefix: L3SchemataPrefix,
@@ -363,18 +391,13 @@ func (r *ResctrlSchemataRaw) ParseResctrlSchemata(content string, l3Num int) err
 			return fmt.Errorf("read resctrl schemata failed, %s masks has invalid count %v, l3Num %v",
 				t.prefix, len(maskMap), l3Num)
 		}
-		for i := 0; i < l3Num; i++ {
-			mask, ok := maskMap[i]
-			if !ok {
-				return fmt.Errorf("read resctrl schemata failed, %s masks of node %v is missing",
-					t.prefix, i)
-			}
+		for id, mask := range maskMap {
 			maskValue, err := strconv.ParseInt(strings.TrimSpace(mask), t.base, 64)
 			if err != nil {
 				return fmt.Errorf("read resctrl schemata failed, %s masks is invalid, value %s, err: %s",
 					t.prefix, mask, err)
 			}
-			*t.v = append(*t.v, maskValue)
+			(*t.v)[id] = maskValue
 		}
 	}
 
@@ -415,7 +438,7 @@ func ReadResctrlSchemataRaw(schemataFile string, l3Num int) (*ResctrlSchemataRaw
 		return nil, fmt.Errorf("failed to read schemata file, err: %v", err)
 	}
 
-	schemataRaw := NewResctrlSchemataRaw()
+	schemataRaw := NewResctrlSchemataRaw([]int{})
 	err = schemataRaw.ParseResctrlSchemata(string(content), l3Num)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse l3 schemata, content %s, err: %v", string(content), err)
@@ -425,6 +448,16 @@ func ReadResctrlSchemataRaw(schemataFile string, l3Num int) (*ResctrlSchemataRaw
 	}
 
 	return schemataRaw, nil
+}
+
+// GetCacheIds get cache ids from schemata file.
+// e.g. schemata=`L3:0=fff;1=fff\nMB:0=100;1=100\n` -> [0, 1]
+func GetCacheIds() ([]int, error) {
+	r, err := ReadResctrlSchemataRaw(filepath.Join(Conf.SysFSRootDir, ResctrlDir, ResctrlSchemataName), -1)
+	if err != nil {
+		return nil, err
+	}
+	return r.CacheIds(), nil
 }
 
 // ParseResctrlSchemataMap parses the content of resctrl schemata.
@@ -527,21 +560,6 @@ func CheckAndTryEnableResctrlCat() error {
 	return nil
 }
 
-func InitCatGroupIfNotExist(group string) error {
-	path := GetResctrlGroupRootDirPath(group)
-	_, err := os.Stat(path)
-	if err == nil {
-		return nil
-	} else if !os.IsNotExist(err) {
-		return fmt.Errorf("check dir %v for group %s but got unexpected err: %v", path, group, err)
-	}
-	err = os.Mkdir(path, 0755)
-	if err != nil {
-		return fmt.Errorf("create dir %v failed for group %s, err: %v", path, group, err)
-	}
-	return nil
-}
-
 func CheckResctrlSchemataValid() error {
 	schemataPath := GetResctrlSchemataFilePath("")
 	schemataRaw, err := ReadResctrlSchemataRaw(schemataPath, -1)
@@ -583,4 +601,103 @@ func CalculateCatL3MaskValue(cbm uint, startPercent, endPercent int64) (string, 
 
 	var l3Mask uint64 = (1 << endWay) - (1 << startWay)
 	return strconv.FormatUint(l3Mask, 16), nil
+}
+
+// GetVendorIDByCPUInfo returns vendor_id like AuthenticAMD from cpu info, e.g.
+// vendor_id       : AuthenticAMD
+// vendor_id       : GenuineIntel
+func GetVendorIDByCPUInfo(path string) (string, error) {
+	vendorID := "unknown"
+	f, err := os.Open(path)
+	if err != nil {
+		return vendorID, err
+	}
+	defer f.Close()
+
+	s := bufio.NewScanner(f)
+	for s.Scan() {
+		if err := s.Err(); err != nil {
+			return vendorID, err
+		}
+
+		line := s.Text()
+
+		// get "vendor_id" from first line
+		if strings.Contains(line, "vendor_id") {
+			attrs := strings.Split(line, ":")
+			if len(attrs) >= 2 {
+				vendorID = strings.TrimSpace(attrs[1])
+				break
+			}
+		}
+	}
+	return vendorID, nil
+}
+
+func isResctrlAvailableByCpuInfo(path string) (bool, bool, error) {
+	isCatFlagSet := false
+	isMbaFlagSet := false
+
+	f, err := os.Open(path)
+	if err != nil {
+		return false, false, err
+	}
+	defer f.Close()
+
+	s := bufio.NewScanner(f)
+	for s.Scan() {
+		if err := s.Err(); err != nil {
+			return false, false, err
+		}
+
+		line := s.Text()
+
+		// Search "cat_l3" and "mba" flags in first "flags" line
+		if strings.Contains(line, "flags") {
+			flags := strings.Split(line, " ")
+			// "cat_l3" flag for CAT and "mba" flag for MBA
+			for _, flag := range flags {
+				switch flag {
+				case "cat_l3":
+					isCatFlagSet = true
+				case "mba":
+					isMbaFlagSet = true
+				}
+			}
+			return isCatFlagSet, isMbaFlagSet, nil
+		}
+	}
+	return isCatFlagSet, isMbaFlagSet, nil
+}
+
+// file content example:
+// BOOT_IMAGE=/boot/vmlinuz-4.19.91-24.1.al7.x86_64 root=UUID=231efa3b-302b-4e82-9445-0f7d5d353dda \
+// crashkernel=0M-2G:0M,2G-8G:192M,8G-:256M cryptomgr.notests cgroup.memory=nokmem rcupdate.rcu_cpu_stall_timeout=300 \
+// vring_force_dma_api biosdevname=0 net.ifnames=0 console=tty0 console=ttyS0,115200n8 noibrs \
+// nvme_core.io_timeout=4294967295 nomodeset intel_idle.max_cstate=1 rdt=cmt,l3cat,l3cdp,mba
+func isResctrlAvailableByKernelCmd(path string) (bool, bool, error) {
+	isCatFlagSet := false
+	isMbaFlagSet := false
+	f, err := os.Open(path)
+	if err != nil {
+		return false, false, err
+	}
+	defer f.Close()
+	s := bufio.NewScanner(f)
+	for s.Scan() {
+		if err := s.Err(); err != nil {
+			return false, false, err
+		}
+		line := s.Text()
+		l3Reg, regErr := regexp.Compile(".* rdt=.*l3cat.*")
+		if regErr == nil && l3Reg.Match([]byte(line)) {
+			isCatFlagSet = true
+		}
+
+		mbaReg, regErr := regexp.Compile(".* rdt=.*mba.*")
+		if regErr == nil && mbaReg.Match([]byte(line)) {
+			isMbaFlagSet = true
+		}
+	}
+	return isCatFlagSet, isMbaFlagSet, nil
 }

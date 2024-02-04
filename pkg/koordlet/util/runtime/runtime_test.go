@@ -89,6 +89,13 @@ func Test_GetRuntimeHandler(t *testing.T) {
 			expectErr:            false,
 		},
 		{
+			name:                 "test_/var/run/pouchcri.sock",
+			endPoint:             "/var/run/pouchcri.sock",
+			runtimeType:          "pouch",
+			expectRuntimeHandler: "PouchRuntimeHandler",
+			expectErr:            false,
+		},
+		{
 			name:                 "custom containerd",
 			endPoint:             "/var/run/test1/containerd.sock",
 			flag:                 "test1/containerd.sock",
@@ -104,11 +111,22 @@ func Test_GetRuntimeHandler(t *testing.T) {
 			expectRuntimeHandler: "DockerRuntimeHandler",
 			expectErr:            false,
 		},
+		{
+			name:                 "custom pouch",
+			endPoint:             "/var/run/test3/pouchcri.sock",
+			flag:                 "test3/pouchcri.sock",
+			runtimeType:          "pouch",
+			expectRuntimeHandler: "PouchRuntimeHandler",
+			expectErr:            false,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			helper := system.NewFileTestUtil(t)
+			DockerHandler = nil
+			ContainerdHandler = nil
+			PouchHandler = nil
 			system.Conf.VarRunRootDir = filepath.Join(helper.TempDir, "/var/run")
 			if tt.endPoint != "" {
 				helper.CreateFile(tt.endPoint)
@@ -119,6 +137,8 @@ func Test_GetRuntimeHandler(t *testing.T) {
 					system.Conf.ContainerdEndPoint = filepath.Join(system.Conf.VarRunRootDir, tt.flag)
 				} else if tt.runtimeType == "docker" {
 					system.Conf.DockerEndPoint = filepath.Join(system.Conf.VarRunRootDir, tt.flag)
+				} else if tt.runtimeType == "pouch" {
+					system.Conf.PouchEndpoint = filepath.Join(system.Conf.VarRunRootDir, tt.flag)
 				}
 			}
 			resetEndpoint()
@@ -139,7 +159,6 @@ func Test_GetRuntimeHandler(t *testing.T) {
 				assert.True(t, strings.Contains(reflect.TypeOf(gotHandler).String(), tt.expectRuntimeHandler))
 				// fmt.Printf("handler type: %v ---",reflect.TypeOf(gotHandler).String())
 			}
-
 		})
 	}
 }

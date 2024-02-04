@@ -179,6 +179,156 @@ func TestCgroupResourceUpdater_Update(t *testing.T) {
 	}
 }
 
+func TestCgroupResourceUpdater_MergeUpdate(t *testing.T) {
+	type fields struct {
+		UseCgroupsV2 bool
+		initialValue string
+	}
+	type args struct {
+		resourceType sysutil.ResourceType
+		parentDir    string
+		value        string
+	}
+	tests := []struct {
+		name       string
+		fields     fields
+		args       args
+		wantErr    bool
+		wantMerged string
+		wantFinal  string
+	}{
+		{
+			name: "merge update cfs quota",
+			fields: fields{
+				initialValue: "10000",
+			},
+			args: args{
+				resourceType: sysutil.CPUCFSQuotaName,
+				parentDir:    "/kubepods.slice/kubepods.slice-podxxx",
+				value:        "-1",
+			},
+			wantMerged: "-1",
+			wantFinal:  "-1",
+			wantErr:    false,
+		},
+		{
+			name: "merge update cfs quota (case 1)",
+			fields: fields{
+				initialValue: "-1",
+			},
+			args: args{
+				resourceType: sysutil.CPUCFSQuotaName,
+				parentDir:    "/kubepods.slice/kubepods.slice-podxxx",
+				value:        "10000",
+			},
+			wantMerged: "-1",
+			wantFinal:  "10000",
+			wantErr:    false,
+		},
+		{
+			name: "failed to merge update cfs quota on cgroup v2",
+			fields: fields{
+				UseCgroupsV2: true,
+				initialValue: "invalid content",
+			},
+			args: args{
+				resourceType: sysutil.CPUCFSQuotaName,
+				parentDir:    "/kubepods.slice/kubepods.slice-podxxx",
+				value:        "-1",
+			},
+			wantErr: true,
+		},
+		{
+			name: "merge update cfs quota on cgroup v2",
+			fields: fields{
+				UseCgroupsV2: true,
+				initialValue: "10000 100000",
+			},
+			args: args{
+				resourceType: sysutil.CPUCFSQuotaName,
+				parentDir:    "/kubepods.slice/kubepods.slice-podxxx",
+				value:        "-1",
+			},
+			wantMerged: "max", // should be `max 100000` in the real cgroup
+			wantFinal:  "max", // should be `max 100000` in the real cgroup
+			wantErr:    false,
+		},
+		{
+			name: "merge update cfs quota on cgroup v2 (case 1)",
+			fields: fields{
+				UseCgroupsV2: true,
+				initialValue: "max 100000",
+			},
+			args: args{
+				resourceType: sysutil.CPUCFSQuotaName,
+				parentDir:    "/kubepods.slice/kubepods.slice-podxxx",
+				value:        "200000",
+			},
+			wantMerged: "max 100000",
+			wantFinal:  "200000", // should be `200000 100000` in the real cgroup
+			wantErr:    false,
+		},
+		{
+			name: "merge update min",
+			fields: fields{
+				UseCgroupsV2: true,
+				initialValue: "1048576",
+			},
+			args: args{
+				resourceType: sysutil.MemoryMinName,
+				parentDir:    "/kubepods.slice/kubepods.slice-podxxx",
+				value:        "2097152",
+			},
+			wantMerged: "2097152",
+			wantFinal:  "2097152",
+			wantErr:    false,
+		},
+		{
+			name: "merge update min (case 1)",
+			fields: fields{
+				UseCgroupsV2: true,
+				initialValue: "2097152",
+			},
+			args: args{
+				resourceType: sysutil.MemoryMinName,
+				parentDir:    "/kubepods.slice/kubepods.slice-podxxx",
+				value:        "1048576",
+			},
+			wantMerged: "2097152",
+			wantFinal:  "1048576",
+			wantErr:    false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			helper := sysutil.NewFileTestUtil(t)
+			defer helper.Cleanup()
+			helper.SetCgroupsV2(tt.fields.UseCgroupsV2)
+
+			u, gotErr := DefaultCgroupUpdaterFactory.New(tt.args.resourceType, tt.args.parentDir, tt.args.value, nil)
+			assert.NoError(t, gotErr)
+			c, ok := u.(*CgroupResourceUpdater)
+			assert.True(t, ok)
+			if tt.fields.initialValue != "" {
+				helper.WriteCgroupFileContents(tt.args.parentDir, c.file, tt.fields.initialValue)
+			}
+
+			mergedUpdater, gotErr := u.MergeUpdate()
+			assert.Equal(t, tt.wantErr, gotErr != nil, gotErr)
+			if tt.wantErr {
+				return
+			}
+			assert.NotNil(t, mergedUpdater)
+			gotErr = mergedUpdater.update()
+			assert.NoError(t, gotErr)
+			assert.Equal(t, tt.wantMerged, helper.ReadCgroupFileContents(c.parentDir, c.file))
+			gotErr = u.update()
+			assert.NoError(t, gotErr)
+			assert.Equal(t, tt.wantFinal, helper.ReadCgroupFileContents(c.parentDir, c.file))
+		})
+	}
+}
+
 func TestDefaultResourceUpdater_Update(t *testing.T) {
 	type fields struct {
 		initialValue string

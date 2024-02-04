@@ -82,7 +82,7 @@ func Test_NewColdPageCollector(t *testing.T) {
 				appendableDB:    opt.MetricCache,
 				metricDB:        opt.MetricCache,
 				started:         atomic.NewBool(false),
-				coldBoundary:    3,
+				coldBoundary:    system.GetKidledColdBoundary(),
 			},
 		},
 	}

@@ -350,7 +350,7 @@ func Test_gpuUsageDetailRecord_getPodOrContinerTotalGPUUsageOfPIDs(t *testing.T)
 				devices:          tt.fields.devices,
 				processesMetrics: tt.fields.processesMetrics,
 			}
-			got := g.getPodOrContinerTotalGPUUsageOfPIDs(tt.args.id, tt.args.isPodID, tt.args.pids)
+			got := g.getPodOrContainerTotalGPUUsageOfPIDs(tt.args.id, tt.args.isPodID, tt.args.pids)
 			assert.Equal(t, tt.want, got)
 		})
 	}

@@ -23,6 +23,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/klog/v2"
 
+	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor/framework"
@@ -110,6 +111,9 @@ func (n *nodeInfoCollector) collectNodeNUMAInfo() error {
 	if err != nil {
 		metrics.RecordCollectNodeNUMAInfoStatus(err)
 		return err
+	}
+	if features.DefaultKoordletFeatureGate.Enabled(features.HugePageReport) {
+		koordletutil.GetAndMergeHugepageToNumaInfo(nodeNUMAInfo)
 	}
 	klog.V(6).Infof("collect NUMA info successfully, info %+v", nodeNUMAInfo)
 

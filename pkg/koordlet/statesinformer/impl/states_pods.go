@@ -152,16 +152,20 @@ func (s *podsInformer) syncPods() error {
 	newPodMap := make(map[string]*statesinformer.PodMeta, len(podList.Items))
 	// reset pod container metrics
 	resetPodMetrics()
-	for _, pod := range podList.Items {
+	for i := range podList.Items {
+		pod := &podList.Items[i]
 		podMeta := &statesinformer.PodMeta{
-			Pod:       pod.DeepCopy(),
-			CgroupDir: genPodCgroupParentDir(&pod),
+			Pod:       pod, // no need to deep-copy from unmarshalled
+			CgroupDir: genPodCgroupParentDir(pod),
 		}
 		newPodMap[string(pod.UID)] = podMeta
 		// record pod container metrics
 		recordPodResourceMetrics(podMeta)
 	}
+	s.podRWMutex.Lock()
 	s.podMap = newPodMap
+	s.podRWMutex.Unlock()
+
 	s.podHasSynced.Store(true)
 	s.podUpdatedTime = time.Now()
 	klog.V(4).Infof("get pods success, len %d, time %s", len(s.podMap), s.podUpdatedTime.String())
@@ -286,5 +290,18 @@ func recordContainerResourceMetrics(container *corev1.Container, containerStatus
 	}
 	if q, ok := container.Resources.Limits[apiext.BatchMemory]; ok {
 		metrics.RecordContainerResourceLimits(string(apiext.BatchMemory), metrics.UnitByte, containerStatus, pod, float64(util.QuantityPtr(q).Value()))
+	}
+	// record pod requests/limits of MidCPU & MidMemory
+	if q, ok := container.Resources.Requests[apiext.MidCPU]; ok {
+		metrics.RecordContainerResourceRequests(string(apiext.MidCPU), metrics.UnitInteger, containerStatus, pod, float64(util.QuantityPtr(q).Value()))
+	}
+	if q, ok := container.Resources.Requests[apiext.MidMemory]; ok {
+		metrics.RecordContainerResourceRequests(string(apiext.MidMemory), metrics.UnitInteger, containerStatus, pod, float64(util.QuantityPtr(q).Value()))
+	}
+	if q, ok := container.Resources.Limits[apiext.MidCPU]; ok {
+		metrics.RecordContainerResourceLimits(string(apiext.MidCPU), metrics.UnitByte, containerStatus, pod, float64(util.QuantityPtr(q).Value()))
+	}
+	if q, ok := container.Resources.Limits[apiext.MidMemory]; ok {
+		metrics.RecordContainerResourceLimits(string(apiext.MidMemory), metrics.UnitByte, containerStatus, pod, float64(util.QuantityPtr(q).Value()))
 	}
 }

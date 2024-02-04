@@ -139,7 +139,7 @@ func (qi *QuotaInfo) DeepCopy() *QuotaInfo {
 	return quotaInfo
 }
 
-func (qi *QuotaInfo) GetQuotaSummary() *QuotaInfoSummary {
+func (qi *QuotaInfo) GetQuotaSummary(treeID string, includePods bool) *QuotaInfoSummary {
 	qi.lock.Lock()
 	defer qi.lock.Unlock()
 
@@ -149,6 +149,7 @@ func (qi *QuotaInfo) GetQuotaSummary() *QuotaInfoSummary {
 	quotaInfoSummary.IsParent = qi.IsParent
 	quotaInfoSummary.RuntimeVersion = qi.RuntimeVersion
 	quotaInfoSummary.AllowLentResource = qi.AllowLentResource
+	quotaInfoSummary.Tree = treeID
 	quotaInfoSummary.Max = qi.CalculateInfo.Max.DeepCopy()
 	quotaInfoSummary.Min = qi.CalculateInfo.Min.DeepCopy()
 	quotaInfoSummary.AutoScaleMin = qi.CalculateInfo.AutoScaleMin.DeepCopy()
@@ -162,10 +163,12 @@ func (qi *QuotaInfo) GetQuotaSummary() *QuotaInfoSummary {
 	quotaInfoSummary.Allocated = qi.CalculateInfo.Allocated.DeepCopy()
 	quotaInfoSummary.Guaranteed = qi.CalculateInfo.Guaranteed.DeepCopy()
 
-	for podName, podInfo := range qi.PodCache {
-		quotaInfoSummary.PodCache[podName] = &SimplePodInfo{
-			IsAssigned: podInfo.isAssigned,
-			Resource:   podInfo.resource,
+	if includePods {
+		for podName, podInfo := range qi.PodCache {
+			quotaInfoSummary.PodCache[podName] = &SimplePodInfo{
+				IsAssigned: podInfo.isAssigned,
+				Resource:   podInfo.resource,
+			}
 		}
 	}
 

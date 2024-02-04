@@ -125,8 +125,12 @@ func RegisterConversions(s *runtime.Scheme) error {
 }
 
 func autoConvert_v1beta2_CoschedulingArgs_To_config_CoschedulingArgs(in *CoschedulingArgs, out *config.CoschedulingArgs, s conversion.Scope) error {
-	out.DefaultTimeout = (*v1.Duration)(unsafe.Pointer(in.DefaultTimeout))
-	out.ControllerWorkers = (*int64)(unsafe.Pointer(in.ControllerWorkers))
+	if err := v1.Convert_Pointer_v1_Duration_To_v1_Duration(&in.DefaultTimeout, &out.DefaultTimeout, s); err != nil {
+		return err
+	}
+	if err := v1.Convert_Pointer_int64_To_int64(&in.ControllerWorkers, &out.ControllerWorkers, s); err != nil {
+		return err
+	}
 	if err := v1.Convert_Pointer_bool_To_bool(&in.SkipCheckScheduleCycle, &out.SkipCheckScheduleCycle, s); err != nil {
 		return err
 	}
@@ -139,8 +143,12 @@ func Convert_v1beta2_CoschedulingArgs_To_config_CoschedulingArgs(in *Coschedulin
 }
 
 func autoConvert_config_CoschedulingArgs_To_v1beta2_CoschedulingArgs(in *config.CoschedulingArgs, out *CoschedulingArgs, s conversion.Scope) error {
-	out.DefaultTimeout = (*v1.Duration)(unsafe.Pointer(in.DefaultTimeout))
-	out.ControllerWorkers = (*int64)(unsafe.Pointer(in.ControllerWorkers))
+	if err := v1.Convert_v1_Duration_To_Pointer_v1_Duration(&in.DefaultTimeout, &out.DefaultTimeout, s); err != nil {
+		return err
+	}
+	if err := v1.Convert_int64_To_Pointer_int64(&in.ControllerWorkers, &out.ControllerWorkers, s); err != nil {
+		return err
+	}
 	if err := v1.Convert_bool_To_Pointer_bool(&in.SkipCheckScheduleCycle, &out.SkipCheckScheduleCycle, s); err != nil {
 		return err
 	}
@@ -175,13 +183,24 @@ func Convert_config_DeviceShareArgs_To_v1beta2_DeviceShareArgs(in *config.Device
 }
 
 func autoConvert_v1beta2_ElasticQuotaArgs_To_config_ElasticQuotaArgs(in *ElasticQuotaArgs, out *config.ElasticQuotaArgs, s conversion.Scope) error {
-	out.DelayEvictTime = (*v1.Duration)(unsafe.Pointer(in.DelayEvictTime))
-	out.RevokePodInterval = (*v1.Duration)(unsafe.Pointer(in.RevokePodInterval))
+	if err := v1.Convert_Pointer_v1_Duration_To_v1_Duration(&in.DelayEvictTime, &out.DelayEvictTime, s); err != nil {
+		return err
+	}
+	if err := v1.Convert_Pointer_v1_Duration_To_v1_Duration(&in.RevokePodInterval, &out.RevokePodInterval, s); err != nil {
+		return err
+	}
 	out.DefaultQuotaGroupMax = *(*corev1.ResourceList)(unsafe.Pointer(&in.DefaultQuotaGroupMax))
 	out.SystemQuotaGroupMax = *(*corev1.ResourceList)(unsafe.Pointer(&in.SystemQuotaGroupMax))
 	out.QuotaGroupNamespace = in.QuotaGroupNamespace
-	out.MonitorAllQuotas = (*bool)(unsafe.Pointer(in.MonitorAllQuotas))
-	out.EnableCheckParentQuota = (*bool)(unsafe.Pointer(in.EnableCheckParentQuota))
+	if err := v1.Convert_Pointer_bool_To_bool(&in.MonitorAllQuotas, &out.MonitorAllQuotas, s); err != nil {
+		return err
+	}
+	if err := v1.Convert_Pointer_bool_To_bool(&in.EnableCheckParentQuota, &out.EnableCheckParentQuota, s); err != nil {
+		return err
+	}
+	if err := v1.Convert_Pointer_bool_To_bool(&in.EnableRuntimeQuota, &out.EnableRuntimeQuota, s); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -191,13 +210,24 @@ func Convert_v1beta2_ElasticQuotaArgs_To_config_ElasticQuotaArgs(in *ElasticQuot
 }
 
 func autoConvert_config_ElasticQuotaArgs_To_v1beta2_ElasticQuotaArgs(in *config.ElasticQuotaArgs, out *ElasticQuotaArgs, s conversion.Scope) error {
-	out.DelayEvictTime = (*v1.Duration)(unsafe.Pointer(in.DelayEvictTime))
-	out.RevokePodInterval = (*v1.Duration)(unsafe.Pointer(in.RevokePodInterval))
+	if err := v1.Convert_v1_Duration_To_Pointer_v1_Duration(&in.DelayEvictTime, &out.DelayEvictTime, s); err != nil {
+		return err
+	}
+	if err := v1.Convert_v1_Duration_To_Pointer_v1_Duration(&in.RevokePodInterval, &out.RevokePodInterval, s); err != nil {
+		return err
+	}
 	out.DefaultQuotaGroupMax = *(*corev1.ResourceList)(unsafe.Pointer(&in.DefaultQuotaGroupMax))
 	out.SystemQuotaGroupMax = *(*corev1.ResourceList)(unsafe.Pointer(&in.SystemQuotaGroupMax))
 	out.QuotaGroupNamespace = in.QuotaGroupNamespace
-	out.MonitorAllQuotas = (*bool)(unsafe.Pointer(in.MonitorAllQuotas))
-	out.EnableCheckParentQuota = (*bool)(unsafe.Pointer(in.EnableCheckParentQuota))
+	if err := v1.Convert_bool_To_Pointer_bool(&in.MonitorAllQuotas, &out.MonitorAllQuotas, s); err != nil {
+		return err
+	}
+	if err := v1.Convert_bool_To_Pointer_bool(&in.EnableCheckParentQuota, &out.EnableCheckParentQuota, s); err != nil {
+		return err
+	}
+	if err := v1.Convert_bool_To_Pointer_bool(&in.EnableRuntimeQuota, &out.EnableRuntimeQuota, s); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -322,7 +352,9 @@ func Convert_config_NodeNUMAResourceArgs_To_v1beta2_NodeNUMAResourceArgs(in *con
 }
 
 func autoConvert_v1beta2_ReservationArgs_To_config_ReservationArgs(in *ReservationArgs, out *config.ReservationArgs, s conversion.Scope) error {
-	out.EnablePreemption = (*bool)(unsafe.Pointer(in.EnablePreemption))
+	if err := v1.Convert_Pointer_bool_To_bool(&in.EnablePreemption, &out.EnablePreemption, s); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -332,7 +364,9 @@ func Convert_v1beta2_ReservationArgs_To_config_ReservationArgs(in *ReservationAr
 }
 
 func autoConvert_config_ReservationArgs_To_v1beta2_ReservationArgs(in *config.ReservationArgs, out *ReservationArgs, s conversion.Scope) error {
-	out.EnablePreemption = (*bool)(unsafe.Pointer(in.EnablePreemption))
+	if err := v1.Convert_bool_To_Pointer_bool(&in.EnablePreemption, &out.EnablePreemption, s); err != nil {
+		return err
+	}
 	return nil
 }
 

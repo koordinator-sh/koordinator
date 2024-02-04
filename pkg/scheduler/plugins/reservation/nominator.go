@@ -20,14 +20,58 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"sync"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
+
+type nominator struct {
+	// nominatedPodToNode is map keyed by a Pod UID to the node name where it is nominated.
+	nominatedPodToNode map[types.UID]map[string]types.UID
+	lock               sync.RWMutex
+}
+
+func newNominator() *nominator {
+	return &nominator{
+		nominatedPodToNode: map[types.UID]map[string]types.UID{},
+	}
+}
+
+func (nm *nominator) AddNominatedReservation(pod *corev1.Pod, nodeName string, rInfo *frameworkext.ReservationInfo) {
+	if rInfo == nil {
+		return
+	}
+	nm.lock.Lock()
+	defer nm.lock.Unlock()
+
+	nodeToReservation := nm.nominatedPodToNode[pod.UID]
+	if nodeToReservation == nil {
+		nodeToReservation = map[string]types.UID{}
+		nm.nominatedPodToNode[pod.UID] = nodeToReservation
+	}
+	nodeToReservation[nodeName] = rInfo.UID()
+}
+
+func (nm *nominator) RemoveNominatedReservation(pod *corev1.Pod) {
+	nm.lock.Lock()
+	defer nm.lock.Unlock()
+
+	delete(nm.nominatedPodToNode, pod.UID)
+}
+
+func (nm *nominator) GetNominatedReservation(pod *corev1.Pod, nodeName string) types.UID {
+	nm.lock.RLock()
+	defer nm.lock.RUnlock()
+	return nm.nominatedPodToNode[pod.UID][nodeName]
+}
+
+// TODO(joseph): Should move the function into frameworkext package as default nominator
 
 func (pl *Plugin) NominateReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) (*frameworkext.ReservationInfo, *framework.Status) {
 	if reservationutil.IsReservePod(pod) {
@@ -38,6 +82,11 @@ func (pl *Plugin) NominateReservation(ctx context.Context, cycleState *framework
 	reservationInfos := state.nodeReservationStates[nodeName].matched
 	if len(reservationInfos) == 0 {
 		return nil, nil
+	}
+
+	rInfo := pl.GetNominatedReservation(pod, nodeName)
+	if rInfo != nil {
+		return rInfo, nil
 	}
 
 	extender, ok := pl.handle.(frameworkext.FrameworkExtender)
@@ -82,6 +131,22 @@ func (pl *Plugin) NominateReservation(ctx context.Context, cycleState *framework
 			klog.KRef(reservationScoreList[0].Namespace, reservationScoreList[0].Name), reservationScoreList[0].UID))
 	}
 	return nominated, nil
+}
+
+func (pl *Plugin) AddNominatedReservation(pod *corev1.Pod, nodeName string, rInfo *frameworkext.ReservationInfo) {
+	pl.nominator.AddNominatedReservation(pod, nodeName, rInfo)
+}
+
+func (pl *Plugin) RemoveNominatedReservations(pod *corev1.Pod) {
+	pl.nominator.RemoveNominatedReservation(pod)
+}
+
+func (pl *Plugin) GetNominatedReservation(pod *corev1.Pod, nodeName string) *frameworkext.ReservationInfo {
+	reservationID := pl.nominator.GetNominatedReservation(pod, nodeName)
+	if reservationID == "" {
+		return nil
+	}
+	return pl.reservationCache.getReservationInfoByUID(reservationID)
 }
 
 func prioritizeReservations(

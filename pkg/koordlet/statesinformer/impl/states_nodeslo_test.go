@@ -58,7 +58,6 @@ func Test_mergeNodeSLOSpec(t *testing.T) {
 		SystemStrategy: &slov1alpha1.SystemStrategy{
 			WatermarkScaleFactor: pointer.Int64(200),
 		},
-		Extensions: &slov1alpha1.ExtensionsMap{},
 	}
 	testingMergedNodeSLOSpec := sloconfig.DefaultNodeSLOSpecConfig()
 	mergedInterface, err := util.MergeCfg(&testingMergedNodeSLOSpec, &testingCustomNodeSLOSpec)

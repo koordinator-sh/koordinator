@@ -136,7 +136,7 @@ func TestMinResourceList(t *testing.T) {
 
 			// compatibility check
 			want1 := quotav1.Subtract(quotav1.Add(tt.args.a, tt.args.b), quotav1.Max(tt.args.a, tt.args.b))
-			assert.True(t, IsResourceListEqualValue(want1, got), fmt.Sprintf("want: %+v, got: %+v", want1, got))
+			assert.True(t, IsResourceListEqualIgnoreZeroValues(want1, got), fmt.Sprintf("want: %+v, got: %+v", want1, got))
 		})
 	}
 }
@@ -248,7 +248,7 @@ func TestIsResourceListEqualValue(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := IsResourceListEqualValue(tt.args.a, tt.args.b)
+			got := IsResourceListEqualIgnoreZeroValues(tt.args.a, tt.args.b)
 			assert.Equal(t, tt.want, got)
 		})
 	}

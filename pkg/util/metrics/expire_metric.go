@@ -17,6 +17,7 @@ limitations under the License.
 package metrics
 
 import (
+	"fmt"
 	"sort"
 	"strings"
 	"sync"
@@ -57,6 +58,11 @@ func (g *GCGaugeVec) WithSet(labels prometheus.Labels, value float64) {
 	g.expireStatus.UpdateStatus(g.name, labels)
 }
 
+func (g *GCGaugeVec) Delete(labels prometheus.Labels) {
+	g.vec.Delete(labels)
+	g.expireStatus.RemoveStatus(g.name, labels)
+}
+
 type GCCounterVec struct {
 	name         string
 	vec          *prometheus.CounterVec
@@ -81,11 +87,18 @@ func (g *GCCounterVec) WithInc(labels prometheus.Labels) {
 	g.expireStatus.UpdateStatus(g.name, labels)
 }
 
+func (g *GCCounterVec) Delete(labels prometheus.Labels) {
+	g.vec.Delete(labels)
+	g.expireStatus.RemoveStatus(g.name, labels)
+}
+
 type MetricVecGC interface {
 	// Len returns the length of the alive metric statuses.
 	Len() int
 	// UpdateStatus updates the metric status with the given label values and timestamp (Unix seconds).
 	UpdateStatus(updateTime int64, labels prometheus.Labels)
+	// RemoveStatus removes the metric status with the given label values.
+	RemoveStatus(labels prometheus.Labels)
 	// ExpireMetrics expires all metric statuses which are updated before the expired time (Unix seconds).
 	ExpireMetrics(expireTime int64) int
 }
@@ -118,18 +131,31 @@ func (v *metricVecGC) Len() int {
 }
 
 func (v *metricVecGC) UpdateStatus(updateTime int64, labels prometheus.Labels) {
-	v.lock.Lock()
-	defer v.lock.Unlock()
-	v.updateStatus(updateTime, labels)
-}
-
-func (v *metricVecGC) updateStatus(updateTime int64, labels prometheus.Labels) {
 	statusKey := labelsToKey(labels)
-	status := metricStatus{
+	status := &metricStatus{
 		Labels:          labels,
 		lastUpdatedUnix: updateTime,
 	}
-	v.statuses[statusKey] = status
+
+	v.lock.Lock()
+	defer v.lock.Unlock()
+	v.updateStatus(statusKey, status)
+}
+
+func (v *metricVecGC) updateStatus(statusKey string, status *metricStatus) {
+	v.statuses[statusKey] = *status
+}
+
+func (v *metricVecGC) RemoveStatus(labels prometheus.Labels) {
+	statusKey := labelsToKey(labels)
+
+	v.lock.Lock()
+	defer v.lock.Unlock()
+	v.removeStatus(statusKey)
+}
+
+func (v *metricVecGC) removeStatus(statusKey string) {
+	delete(v.statuses, statusKey)
 }
 
 func (v *metricVecGC) ExpireMetrics(expireTime int64) int {
@@ -138,7 +164,7 @@ func (v *metricVecGC) ExpireMetrics(expireTime int64) int {
 	count := 0
 	for key, status := range v.statuses {
 		if status.lastUpdatedUnix < expireTime {
-			delete(v.statuses, key)
+			v.removeStatus(key)
 			v.metricVec.Delete(status.Labels)
 			count++
 			klog.V(6).Infof("metricVecGC %s delete metric, key %s, updateTime %v, expireTime %v",
@@ -156,6 +182,8 @@ type MetricGC interface {
 	Stop()
 	AddMetric(name string, metric *prometheus.MetricVec)
 	UpdateStatus(name string, labels prometheus.Labels)
+	RemoveStatus(name string, labels prometheus.Labels)
+	CountStatus(name string) int
 }
 
 type metricGC struct {
@@ -185,6 +213,10 @@ func NewMetricGC(expireTime time.Duration, interval time.Duration) MetricGC {
 func (e *metricGC) AddMetric(metricName string, metric *prometheus.MetricVec) {
 	e.globalLock.Lock()
 	defer e.globalLock.Unlock()
+	e.addMetric(metricName, metric)
+}
+
+func (e *metricGC) addMetric(metricName string, metric *prometheus.MetricVec) {
 	vecGC := NewMetricVecGC(metricName, metric)
 	e.metrics[metricName] = vecGC
 }
@@ -217,22 +249,54 @@ func (e *metricGC) Stop() {
 
 func (e *metricGC) UpdateStatus(metricName string, labels prometheus.Labels) {
 	e.globalLock.RLock()
-	defer e.globalLock.RUnlock()
 	// different metric vectors can update simultaneously
-	e.updateStatus(time.Now().Unix(), metricName, labels)
-}
-
-func (e *metricGC) updateStatus(updateTime int64, metricName string, labels prometheus.Labels) {
-	if metric := e.metrics[metricName]; metric != nil {
-		metric.UpdateStatus(updateTime, labels)
-	} else {
-		klog.Errorf("metric %v not correctly added", metricName)
+	err := e.updateStatus(time.Now().Unix(), metricName, labels)
+	e.globalLock.RUnlock()
+	if err != nil {
+		klog.Errorf("failed to update status for metric %s, err: %s", metricName)
 	}
 }
 
+func (e *metricGC) updateStatus(updateTime int64, metricName string, labels prometheus.Labels) error {
+	metric, ok := e.metrics[metricName]
+	if !ok {
+		return fmt.Errorf("metric not correctly added")
+	}
+	metric.UpdateStatus(updateTime, labels)
+	return nil
+}
+
+func (e *metricGC) RemoveStatus(metricName string, labels prometheus.Labels) {
+	e.globalLock.RLock()
+	err := e.removeStatus(metricName, labels)
+	e.globalLock.RUnlock()
+	if err != nil {
+		klog.Errorf("failed to remove status for metric %s, err: %s", metricName)
+	}
+}
+
+func (e *metricGC) removeStatus(metricName string, labels prometheus.Labels) error {
+	metric, ok := e.metrics[metricName]
+	if !ok {
+		return fmt.Errorf("metric not correctly added")
+	}
+	metric.RemoveStatus(labels)
+	return nil
+}
+
+func (e *metricGC) CountStatus(metricName string) int {
+	e.globalLock.RLock()
+	defer e.globalLock.RUnlock()
+	metric, ok := e.metrics[metricName]
+	if !ok {
+		return 0
+	}
+	return metric.Len()
+}
+
 func (e *metricGC) statusLen() int {
-	e.globalLock.Lock()
-	defer e.globalLock.Unlock()
+	e.globalLock.RLock()
+	defer e.globalLock.RUnlock()
 	statusLen := 0
 	for _, metric := range e.metrics {
 		statusLen += metric.Len()
@@ -241,8 +305,8 @@ func (e *metricGC) statusLen() int {
 }
 
 func (e *metricGC) expire() error {
-	e.globalLock.Lock()
-	defer e.globalLock.Unlock()
+	e.globalLock.RLock()
+	defer e.globalLock.RUnlock()
 	expireTime := time.Now().Unix() - int64(e.expireTime/time.Second)
 	count := 0
 	for _, metric := range e.metrics {

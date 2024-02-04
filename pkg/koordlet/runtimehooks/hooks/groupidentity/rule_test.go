@@ -22,7 +22,6 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/pointer"
@@ -605,8 +604,114 @@ func Test_bvtPlugin_parseRule(t *testing.T) {
 }
 
 func Test_bvtPlugin_ruleUpdateCbForPods(t *testing.T) {
+	testPodMetaMap := map[string]*statesinformer.PodMeta{
+		"lsr-pod": {
+			Pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "lsr-pod",
+					Labels: map[string]string{
+						ext.LabelPodQoS: string(ext.QoSLSR),
+					},
+				},
+				Status: corev1.PodStatus{
+					QOSClass: corev1.PodQOSGuaranteed,
+				},
+			},
+			CgroupDir: "kubepods.slice/kubepods-test-lsr-pod.slice",
+		},
+		"ls-pod1": {
+			Pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "ls-pod1",
+					Labels: map[string]string{
+						ext.LabelPodQoS: string(ext.QoSLS),
+					},
+				},
+				Status: corev1.PodStatus{
+					QOSClass: corev1.PodQOSGuaranteed,
+				},
+			},
+			CgroupDir: "kubepods.slice/kubepods-test-ls-pod1.slice",
+		},
+		"ls-pod2": {
+			Pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "ls-pod2",
+					Labels: map[string]string{
+						ext.LabelPodQoS: string(ext.QoSLS),
+					},
+				},
+				Status: corev1.PodStatus{
+					QOSClass: corev1.PodQOSBurstable,
+				},
+			},
+			CgroupDir: "kubepods.slice/kubepods-burstable.slice/kubepods-test-ls-pod2.slice",
+		},
+		"be-pod": {
+			Pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "be-pod",
+					Labels: map[string]string{
+						ext.LabelPodQoS: string(ext.QoSBE),
+					},
+				},
+				Status: corev1.PodStatus{
+					QOSClass: corev1.PodQOSBestEffort,
+				},
+			},
+			CgroupDir: "kubepods.slice/kubepods-besteffort.slice/kubepods-test-be-pod.slice",
+		},
+		"guaranteed-pod": {
+			Pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "guaranteed-pod",
+				},
+				Status: corev1.PodStatus{
+					QOSClass: corev1.PodQOSGuaranteed,
+				},
+			},
+			CgroupDir: "kubepods.slice/kubepods-test-besteffort-pod.slice",
+		},
+		"burstable-pod": {
+			Pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "burstable-pod",
+				},
+				Status: corev1.PodStatus{
+					QOSClass: corev1.PodQOSBurstable,
+				},
+			},
+			CgroupDir: "kubepods.slice/kubepods-burstable.slice/kubepods-test-burstable-pod.slice",
+		},
+		"besteffort-pod": {
+			Pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "besteffort-pod",
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name: "besteffort-container",
+						},
+					},
+				},
+				Status: corev1.PodStatus{
+					QOSClass: corev1.PodQOSBestEffort,
+					ContainerStatuses: []corev1.ContainerStatus{
+						{
+							Name:        "besteffort-container",
+							ContainerID: "containerd://xxxxxx",
+						},
+					},
+				},
+			},
+			CgroupDir: "kubepods.slice/kubepods-besteffort.slice/kubepods-test-besteffort-pod.slice",
+		},
+	}
 	type fields struct {
-		rule *bvtRule
+		rule             *bvtRule
+		hasKernelEnabled *bool
+		prepareFn        func(helper *system.FileTestUtil)
 	}
 	type args struct {
 		pods map[string]*statesinformer.PodMeta
@@ -618,11 +723,13 @@ func Test_bvtPlugin_ruleUpdateCbForPods(t *testing.T) {
 		wantKubeDirVal map[corev1.PodQOSClass]int64
 		wantPodVal     map[string]int64
 		wantErr        bool
+		wantFn         func(t *testing.T, helper *system.FileTestUtil)
 	}{
 		{
 			name: "callback with ls and be enabled",
 			fields: fields{
 				rule: &bvtRule{
+					enable: true,
 					podQOSParams: map[ext.QoSClass]int64{
 						ext.QoSLSR: 0,
 						ext.QoSLS:  2,
@@ -639,99 +746,21 @@ func Test_bvtPlugin_ruleUpdateCbForPods(t *testing.T) {
 						corev1.PodQOSBestEffort: -1,
 					},
 				},
+				prepareFn: func(helper *system.FileTestUtil) {
+					for _, kubeQoS := range []corev1.PodQOSClass{corev1.PodQOSGuaranteed, corev1.PodQOSBurstable, corev1.PodQOSBestEffort} {
+						initCPUBvt(util.GetPodQoSRelativePath(kubeQoS), 0, helper)
+					}
+					initCPUBvt(testPodMetaMap["lsr-pod"].CgroupDir, 0, helper)
+					initCPUBvt(testPodMetaMap["ls-pod1"].CgroupDir, 0, helper)
+					initCPUBvt(testPodMetaMap["ls-pod2"].CgroupDir, 0, helper)
+					initCPUBvt(testPodMetaMap["be-pod"].CgroupDir, 0, helper)
+					initCPUBvt(testPodMetaMap["guaranteed-pod"].CgroupDir, 0, helper)
+					initCPUBvt(testPodMetaMap["burstable-pod"].CgroupDir, 0, helper)
+					initCPUBvt(testPodMetaMap["besteffort-pod"].CgroupDir, 0, helper)
+				},
 			},
 			args: args{
-				pods: map[string]*statesinformer.PodMeta{
-					"lsr-pod": {
-						Pod: &corev1.Pod{
-							ObjectMeta: metav1.ObjectMeta{
-								Name: "lsr-pod",
-								Labels: map[string]string{
-									ext.LabelPodQoS: string(ext.QoSLSR),
-								},
-							},
-							Status: corev1.PodStatus{
-								QOSClass: corev1.PodQOSGuaranteed,
-							},
-						},
-						CgroupDir: "/kubepods-test-lsr-pod.slice",
-					},
-					"ls-pod1": {
-						Pod: &corev1.Pod{
-							ObjectMeta: metav1.ObjectMeta{
-								Name: "ls-pod1",
-								Labels: map[string]string{
-									ext.LabelPodQoS: string(ext.QoSLS),
-								},
-							},
-							Status: corev1.PodStatus{
-								QOSClass: corev1.PodQOSGuaranteed,
-							},
-						},
-						CgroupDir: "/kubepods-test-ls-pod1.slice",
-					},
-					"ls-pod2": {
-						Pod: &corev1.Pod{
-							ObjectMeta: metav1.ObjectMeta{
-								Name: "ls-pod2",
-								Labels: map[string]string{
-									ext.LabelPodQoS: string(ext.QoSLS),
-								},
-							},
-							Status: corev1.PodStatus{
-								QOSClass: corev1.PodQOSBurstable,
-							},
-						},
-						CgroupDir: "/kubepods-burstable.slice/kubepods-test-ls-pod2.slice",
-					},
-					"be-pod": {
-						Pod: &corev1.Pod{
-							ObjectMeta: metav1.ObjectMeta{
-								Name: "be-pod",
-								Labels: map[string]string{
-									ext.LabelPodQoS: string(ext.QoSBE),
-								},
-							},
-							Status: corev1.PodStatus{
-								QOSClass: corev1.PodQOSBestEffort,
-							},
-						},
-						CgroupDir: "/kubepods-besteffort.slice/kubepods-test-be-pod.slice",
-					},
-					"guaranteed-pod": {
-						Pod: &corev1.Pod{
-							ObjectMeta: metav1.ObjectMeta{
-								Name: "guaranteed-pod",
-							},
-							Status: corev1.PodStatus{
-								QOSClass: corev1.PodQOSGuaranteed,
-							},
-						},
-						CgroupDir: "/kubepods-test-besteffort-pod.slice",
-					},
-					"burstable-pod": {
-						Pod: &corev1.Pod{
-							ObjectMeta: metav1.ObjectMeta{
-								Name: "burstable-pod",
-							},
-							Status: corev1.PodStatus{
-								QOSClass: corev1.PodQOSBurstable,
-							},
-						},
-						CgroupDir: "/kubepods-burstable.slice/kubepods-test-burstable-pod.slice",
-					},
-					"besteffort-pod": {
-						Pod: &corev1.Pod{
-							ObjectMeta: metav1.ObjectMeta{
-								Name: "besteffort-pod",
-							},
-							Status: corev1.PodStatus{
-								QOSClass: corev1.PodQOSBestEffort,
-							},
-						},
-						CgroupDir: "/kubepods-besteffort.slice/kubepods-test-besteffort-pod.slice",
-					},
-				},
+				pods: testPodMetaMap,
 			},
 			wantKubeDirVal: map[corev1.PodQOSClass]int64{
 				corev1.PodQOSGuaranteed: int64(0),
@@ -749,42 +778,298 @@ func Test_bvtPlugin_ruleUpdateCbForPods(t *testing.T) {
 			},
 			wantErr: false,
 		},
+		{
+			name: "callback with ls and be disabled with dangling be pod",
+			fields: fields{
+				rule: &bvtRule{
+					enable: false,
+					podQOSParams: map[ext.QoSClass]int64{
+						ext.QoSLSR: 0,
+						ext.QoSLS:  0,
+						ext.QoSBE:  0,
+					},
+					kubeQOSDirParams: map[corev1.PodQOSClass]int64{
+						corev1.PodQOSGuaranteed: 0,
+						corev1.PodQOSBurstable:  0,
+						corev1.PodQOSBestEffort: 0,
+					},
+					kubeQOSPodParams: map[corev1.PodQOSClass]int64{
+						corev1.PodQOSGuaranteed: 0,
+						corev1.PodQOSBurstable:  0,
+						corev1.PodQOSBestEffort: 0,
+					},
+				},
+				prepareFn: func(helper *system.FileTestUtil) {
+					cpuSet, _ := system.GetCgroupResource(system.CPUSetCPUSName)
+					helper.WriteCgroupFileContents(util.GetPodQoSRelativePath(corev1.PodQOSBestEffort), cpuSet, "0-63")
+					helper.WriteCgroupFileContents(testPodMetaMap["besteffort-pod"].CgroupDir, cpuSet, "0-63")
+					initCPUBvt(util.GetPodQoSRelativePath(corev1.PodQOSGuaranteed), 0, helper)
+					initCPUBvt(util.GetPodQoSRelativePath(corev1.PodQOSBurstable), 2, helper)
+					initCPUBvt(util.GetPodQoSRelativePath(corev1.PodQOSBestEffort), -1, helper)
+					initCPUBvt(testPodMetaMap["lsr-pod"].CgroupDir, 2, helper)
+					initCPUBvt(testPodMetaMap["ls-pod1"].CgroupDir, 2, helper)
+					initCPUBvt(testPodMetaMap["ls-pod2"].CgroupDir, 2, helper)
+					initCPUBvt(testPodMetaMap["be-pod"].CgroupDir, -1, helper)
+					initCPUBvt(testPodMetaMap["guaranteed-pod"].CgroupDir, 2, helper)
+					initCPUBvt(testPodMetaMap["burstable-pod"].CgroupDir, 2, helper)
+					initCPUBvt(testPodMetaMap["besteffort-pod"].CgroupDir, -1, helper) // dangling
+				},
+			},
+			args: args{
+				pods: map[string]*statesinformer.PodMeta{
+					"lsr-pod":        testPodMetaMap["lsr-pod"],
+					"ls-pod1":        testPodMetaMap["ls-pod1"],
+					"ls-pod2":        testPodMetaMap["ls-pod2"],
+					"be-pod":         testPodMetaMap["be-pod"],
+					"guaranteed-pod": testPodMetaMap["guaranteed-pod"],
+					"burstable-pod":  testPodMetaMap["burstable-pod"],
+					// "besteffort-pod" is dangling
+				},
+			},
+			wantKubeDirVal: map[corev1.PodQOSClass]int64{
+				corev1.PodQOSGuaranteed: int64(0),
+				corev1.PodQOSBurstable:  int64(0),
+				corev1.PodQOSBestEffort: int64(0),
+			},
+			wantPodVal: map[string]int64{
+				"lsr-pod":        0,
+				"ls-pod1":        0,
+				"ls-pod2":        0,
+				"be-pod":         0,
+				"guaranteed-pod": 0,
+				"burstable-pod":  0,
+			},
+			wantErr: false,
+			wantFn: func(t *testing.T, helper *system.FileTestUtil) {
+				// check dangling pod
+				got := helper.ReadCgroupFileContents(testPodMetaMap["besteffort-pod"].CgroupDir, system.CPUBVTWarpNs)
+				assert.Equal(t, "0", got)
+			},
+		},
+		{
+			name: "callback with ls and be disabled with be containers",
+			fields: fields{
+				rule: &bvtRule{
+					enable: false,
+					podQOSParams: map[ext.QoSClass]int64{
+						ext.QoSLSR: 0,
+						ext.QoSLS:  0,
+						ext.QoSBE:  0,
+					},
+					kubeQOSDirParams: map[corev1.PodQOSClass]int64{
+						corev1.PodQOSGuaranteed: 0,
+						corev1.PodQOSBurstable:  0,
+						corev1.PodQOSBestEffort: 0,
+					},
+					kubeQOSPodParams: map[corev1.PodQOSClass]int64{
+						corev1.PodQOSGuaranteed: 0,
+						corev1.PodQOSBurstable:  0,
+						corev1.PodQOSBestEffort: 0,
+					},
+				},
+				prepareFn: func(helper *system.FileTestUtil) {
+					cpuSet, _ := system.GetCgroupResource(system.CPUSetCPUSName)
+					helper.WriteCgroupFileContents(util.GetPodQoSRelativePath(corev1.PodQOSBestEffort), cpuSet, "0-63")
+					helper.WriteCgroupFileContents(testPodMetaMap["besteffort-pod"].CgroupDir, cpuSet, "0-63")
+					besteffortContainerDir := testPodMetaMap["besteffort-pod"].CgroupDir + "/cri-containerd-xxxxxx.scope"
+					helper.WriteCgroupFileContents(besteffortContainerDir, cpuSet, "0-63")
+					initCPUBvt(util.GetPodQoSRelativePath(corev1.PodQOSGuaranteed), 0, helper)
+					initCPUBvt(util.GetPodQoSRelativePath(corev1.PodQOSBurstable), 2, helper)
+					initCPUBvt(util.GetPodQoSRelativePath(corev1.PodQOSBestEffort), -1, helper)
+					initCPUBvt(testPodMetaMap["lsr-pod"].CgroupDir, 2, helper)
+					initCPUBvt(testPodMetaMap["ls-pod1"].CgroupDir, 2, helper)
+					initCPUBvt(testPodMetaMap["ls-pod2"].CgroupDir, 2, helper)
+					initCPUBvt(testPodMetaMap["be-pod"].CgroupDir, -1, helper)
+					initCPUBvt(testPodMetaMap["guaranteed-pod"].CgroupDir, 2, helper)
+					initCPUBvt(testPodMetaMap["burstable-pod"].CgroupDir, 2, helper)
+					initCPUBvt(testPodMetaMap["besteffort-pod"].CgroupDir, -1, helper)
+					initCPUBvt(besteffortContainerDir, -1, helper)
+				},
+			},
+			args: args{
+				pods: map[string]*statesinformer.PodMeta{
+					"lsr-pod":        testPodMetaMap["lsr-pod"],
+					"ls-pod1":        testPodMetaMap["ls-pod1"],
+					"ls-pod2":        testPodMetaMap["ls-pod2"],
+					"be-pod":         testPodMetaMap["be-pod"],
+					"guaranteed-pod": testPodMetaMap["guaranteed-pod"],
+					"burstable-pod":  testPodMetaMap["burstable-pod"],
+					"besteffort-pod": testPodMetaMap["besteffort-pod"],
+				},
+			},
+			wantKubeDirVal: map[corev1.PodQOSClass]int64{
+				corev1.PodQOSGuaranteed: int64(0),
+				corev1.PodQOSBurstable:  int64(0),
+				corev1.PodQOSBestEffort: int64(0),
+			},
+			wantPodVal: map[string]int64{
+				"lsr-pod":        0,
+				"ls-pod1":        0,
+				"ls-pod2":        0,
+				"be-pod":         0,
+				"guaranteed-pod": 0,
+				"burstable-pod":  0,
+				"besteffort-pod": 0,
+			},
+			wantErr: false,
+			wantFn: func(t *testing.T, helper *system.FileTestUtil) {
+				// check be container
+				besteffortContainerDir := testPodMetaMap["besteffort-pod"].CgroupDir + "/cri-containerd-xxxxxx.scope"
+				got := helper.ReadCgroupFileContents(besteffortContainerDir, system.CPUBVTWarpNs)
+				assert.Equal(t, "0", got)
+			},
+		},
+		{
+			name: "callback with ls and be enabled but init sysctl failed",
+			fields: fields{
+				rule: &bvtRule{
+					enable: true,
+					podQOSParams: map[ext.QoSClass]int64{
+						ext.QoSLSR: 0,
+						ext.QoSLS:  2,
+						ext.QoSBE:  -1,
+					},
+					kubeQOSDirParams: map[corev1.PodQOSClass]int64{
+						corev1.PodQOSGuaranteed: 0,
+						corev1.PodQOSBurstable:  2,
+						corev1.PodQOSBestEffort: -1,
+					},
+					kubeQOSPodParams: map[corev1.PodQOSClass]int64{
+						corev1.PodQOSGuaranteed: 2,
+						corev1.PodQOSBurstable:  2,
+						corev1.PodQOSBestEffort: -1,
+					},
+				},
+				hasKernelEnabled: pointer.Bool(true),
+				prepareFn: func(helper *system.FileTestUtil) {
+					for _, kubeQoS := range []corev1.PodQOSClass{corev1.PodQOSGuaranteed, corev1.PodQOSBurstable, corev1.PodQOSBestEffort} {
+						initCPUBvt(util.GetPodQoSRelativePath(kubeQoS), 0, helper)
+					}
+					initCPUBvt(testPodMetaMap["lsr-pod"].CgroupDir, 0, helper)
+					initCPUBvt(testPodMetaMap["ls-pod1"].CgroupDir, 0, helper)
+					initCPUBvt(testPodMetaMap["ls-pod2"].CgroupDir, 0, helper)
+					initCPUBvt(testPodMetaMap["be-pod"].CgroupDir, 0, helper)
+					initCPUBvt(testPodMetaMap["guaranteed-pod"].CgroupDir, 0, helper)
+					initCPUBvt(testPodMetaMap["burstable-pod"].CgroupDir, 0, helper)
+					initCPUBvt(testPodMetaMap["besteffort-pod"].CgroupDir, 0, helper)
+				},
+			},
+			args: args{
+				pods: testPodMetaMap,
+			},
+			wantKubeDirVal: map[corev1.PodQOSClass]int64{
+				corev1.PodQOSGuaranteed: int64(0),
+				corev1.PodQOSBurstable:  int64(0),
+				corev1.PodQOSBestEffort: int64(0),
+			},
+			wantPodVal: map[string]int64{
+				"lsr-pod":        0,
+				"ls-pod1":        0,
+				"ls-pod2":        0,
+				"be-pod":         0,
+				"guaranteed-pod": 0,
+				"burstable-pod":  0,
+				"besteffort-pod": 0,
+			},
+			wantErr: false,
+		},
+		{
+			name: "callback with ls and be disabled and sysctl disabled",
+			fields: fields{
+				rule: &bvtRule{
+					enable: false,
+					podQOSParams: map[ext.QoSClass]int64{
+						ext.QoSLSR: 0,
+						ext.QoSLS:  0,
+						ext.QoSBE:  0,
+					},
+					kubeQOSDirParams: map[corev1.PodQOSClass]int64{
+						corev1.PodQOSGuaranteed: 0,
+						corev1.PodQOSBurstable:  0,
+						corev1.PodQOSBestEffort: 0,
+					},
+					kubeQOSPodParams: map[corev1.PodQOSClass]int64{
+						corev1.PodQOSGuaranteed: 0,
+						corev1.PodQOSBurstable:  0,
+						corev1.PodQOSBestEffort: 0,
+					},
+				},
+				hasKernelEnabled: pointer.Bool(true),
+				prepareFn: func(helper *system.FileTestUtil) {
+					initKernelGroupIdentity(0, helper)
+					for _, kubeQoS := range []corev1.PodQOSClass{corev1.PodQOSGuaranteed, corev1.PodQOSBurstable, corev1.PodQOSBestEffort} {
+						initCPUBvt(util.GetPodQoSRelativePath(kubeQoS), 0, helper)
+					}
+					initCPUBvt(testPodMetaMap["lsr-pod"].CgroupDir, 0, helper)
+					initCPUBvt(testPodMetaMap["ls-pod1"].CgroupDir, 0, helper)
+					initCPUBvt(testPodMetaMap["ls-pod2"].CgroupDir, 0, helper)
+					initCPUBvt(testPodMetaMap["be-pod"].CgroupDir, 0, helper)
+					initCPUBvt(testPodMetaMap["guaranteed-pod"].CgroupDir, 0, helper)
+					initCPUBvt(testPodMetaMap["burstable-pod"].CgroupDir, 0, helper)
+					initCPUBvt(testPodMetaMap["besteffort-pod"].CgroupDir, 0, helper)
+				},
+			},
+			args: args{
+				pods: testPodMetaMap,
+			},
+			wantKubeDirVal: map[corev1.PodQOSClass]int64{
+				corev1.PodQOSGuaranteed: int64(0),
+				corev1.PodQOSBurstable:  int64(0),
+				corev1.PodQOSBestEffort: int64(0),
+			},
+			wantPodVal: map[string]int64{
+				"lsr-pod":        0,
+				"ls-pod1":        0,
+				"ls-pod2":        0,
+				"be-pod":         0,
+				"guaranteed-pod": 0,
+				"burstable-pod":  0,
+				"besteffort-pod": 0,
+			},
+			wantErr: false,
+		},
 	}
 	for _, tt := range tests {
-		testHelper := system.NewFileTestUtil(t)
-		for _, kubeQoS := range []corev1.PodQOSClass{corev1.PodQOSGuaranteed, corev1.PodQOSBurstable, corev1.PodQOSBestEffort} {
-			initCPUBvt(util.GetPodQoSRelativePath(kubeQoS), 0, testHelper)
-		}
-		podList := make([]*statesinformer.PodMeta, 0, len(tt.args.pods))
-		for _, pod := range tt.args.pods {
-			initCPUBvt(pod.CgroupDir, 0, testHelper)
-			podList = append(podList, pod)
-		}
-		target := &statesinformer.CallbackTarget{
-			Pods: podList,
-		}
 		t.Run(tt.name, func(t *testing.T) {
+			testHelper := system.NewFileTestUtil(t)
+			defer testHelper.Cleanup()
+			if tt.fields.prepareFn != nil {
+				tt.fields.prepareFn(testHelper)
+			}
+
+			podList := make([]*statesinformer.PodMeta, 0, len(tt.args.pods))
+			for _, pod := range tt.args.pods {
+				podList = append(podList, pod)
+			}
+			target := &statesinformer.CallbackTarget{
+				Pods: podList,
+			}
 			b := &bvtPlugin{
-				rule:     tt.fields.rule,
-				executor: resourceexecutor.NewResourceUpdateExecutor(),
+				rule:             tt.fields.rule,
+				hasKernelEnabled: tt.fields.hasKernelEnabled,
+				executor:         resourceexecutor.NewResourceUpdateExecutor(),
 			}
 			stop := make(chan struct{})
-			defer func() { close(stop) }()
+			defer close(stop)
 			b.executor.Run(stop)
 
-			if err := b.ruleUpdateCb(target); (err != nil) != tt.wantErr {
-				t.Errorf("ruleUpdateCb() error = %v, wantErr %v", err, tt.wantErr)
-			}
+			err := b.ruleUpdateCb(target)
+			assert.Equal(t, tt.wantErr, err != nil, err)
 			for kubeQoS, wantBvt := range tt.wantKubeDirVal {
 				gotBvtStr := testHelper.ReadCgroupFileContents(util.GetPodQoSRelativePath(kubeQoS), system.CPUBVTWarpNs)
-				gotBvt, _ := strconv.ParseInt(gotBvtStr, 10, 64)
+				gotBvt, err := strconv.ParseInt(gotBvtStr, 10, 64)
+				assert.NoError(t, err)
 				assert.Equal(t, wantBvt, gotBvt, "qos %s bvt value not equal", kubeQoS)
 			}
 			for podName, pod := range tt.args.pods {
 				gotBvtStr := testHelper.ReadCgroupFileContents(pod.CgroupDir, system.CPUBVTWarpNs)
-				gotBvt, _ := strconv.ParseInt(gotBvtStr, 10, 64)
+				gotBvt, err := strconv.ParseInt(gotBvtStr, 10, 64)
+				assert.NoError(t, err)
 				wantBvt := tt.wantPodVal[podName]
 				assert.Equal(t, wantBvt, gotBvt, "pod %s bvt value not equal", podName)
+			}
+			if tt.wantFn != nil {
+				tt.wantFn(t, testHelper)
 			}
 		})
 	}
@@ -808,6 +1093,7 @@ func Test_bvtPlugin_ruleUpdateCbForHostApp(t *testing.T) {
 			name: "set host application bvt",
 			fields: fields{
 				rule: &bvtRule{
+					enable: true,
 					podQOSParams: map[ext.QoSClass]int64{
 						ext.QoSLSR: 0,
 						ext.QoSLS:  2,
@@ -842,6 +1128,7 @@ func Test_bvtPlugin_ruleUpdateCbForHostApp(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			testHelper := system.NewFileTestUtil(t)
+			defer testHelper.Cleanup()
 			testApp := tt.args.hostApp
 			if testApp.CgroupPath == nil ||
 				(testApp.CgroupPath.Base != "" && testApp.CgroupPath.Base != slov1alpha1.CgroupBaseTypeRoot) {
@@ -850,25 +1137,28 @@ func Test_bvtPlugin_ruleUpdateCbForHostApp(t *testing.T) {
 
 			cgroupDir := filepath.Join(testApp.CgroupPath.ParentDir, testApp.CgroupPath.RelativePath)
 			initCPUBvt(cgroupDir, 0, testHelper)
+			initCPUBvt(util.GetPodQoSRelativePath(corev1.PodQOSGuaranteed), 0, testHelper)
+			initCPUBvt(util.GetPodQoSRelativePath(corev1.PodQOSBurstable), 0, testHelper)
+			initCPUBvt(util.GetPodQoSRelativePath(corev1.PodQOSBestEffort), 0, testHelper)
+
 			b := &bvtPlugin{
-				rule:          tt.fields.rule,
-				sysSupported:  pointer.Bool(true),
-				kernelEnabled: pointer.Bool(true),
-				executor:      resourceexecutor.NewResourceUpdateExecutor(),
+				rule:         tt.fields.rule,
+				sysSupported: pointer.Bool(true),
+				executor:     resourceexecutor.NewResourceUpdateExecutor(),
 			}
 			stop := make(chan struct{})
-			defer func() { close(stop) }()
+			defer close(stop)
 			b.executor.Run(stop)
 			target := &statesinformer.CallbackTarget{
 				HostApplications: []slov1alpha1.HostApplicationSpec{tt.args.hostApp},
 			}
 
-			if err := b.ruleUpdateCb(target); (err != nil) != tt.wantErr {
-				t.Errorf("ruleUpdateCb() error = %v, wantErr %v", err, tt.wantErr)
-			}
+			err := b.ruleUpdateCb(target)
+			assert.Equal(t, tt.wantErr, err != nil, err)
 
 			gotBvtStr := testHelper.ReadCgroupFileContents(cgroupDir, system.CPUBVTWarpNs)
-			gotBvt, _ := strconv.ParseInt(gotBvtStr, 10, 64)
+			gotBvt, err := strconv.ParseInt(gotBvtStr, 10, 64)
+			assert.NoError(t, err)
 			assert.Equal(t, tt.wantBvt, gotBvt)
 		})
 	}

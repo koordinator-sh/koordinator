@@ -20,7 +20,6 @@ import (
 	"encoding/json"
 
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/utils/pointer"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 )
@@ -67,13 +66,9 @@ func GetPodMemoryQoSConfig(pod *corev1.Pod) (*PodMemoryQOSConfig, error) {
 }
 
 const (
-	// AnnotationCoreSchedGroupID is the annotation key of the group ID of the Linux Core Scheduling.
-	// Value should be a valid UUID or the none value "0".
-	// When the value is a valid UUID, pods with that group ID and the equal CoreExpelled status on the node will be
-	// assigned to the same core sched cookie.
-	// When the value is the none value "0", pod will be reset to the default core sched cookie `0`.
-	// When the annotation is missing but the node-level strategy enables the core sched, the pod will be assigned an
-	// internal group according to the pod's UID.
+	// LabelCoreSchedGroupID is the label key of the group ID of the Linux Core Scheduling.
+	// Value can be a valid UUID or empty. If it is empty, the pod is considered to belong to a core sched group "".
+	// Otherwise, the pod is set its core sched group ID according to the value.
 	//
 	// Core Sched: https://docs.kernel.org/admin-guide/hw-vuln/core-scheduling.html
 	// When the Core Sched is enabled, pods with the different core sched group IDs will not be running at the same SMT
@@ -83,22 +78,50 @@ const (
 	// enables the individual cookie from pods of other QoS classes via adding a suffix for the group ID. So the pods
 	// of different QoS will take different cookies when their CoreExpelled status are diverse even if their group ID
 	// are the same.
-	AnnotationCoreSchedGroupID = apiext.DomainPrefix + "core-sched-group-id"
+	LabelCoreSchedGroupID = apiext.DomainPrefix + "core-sched-group-id"
 
-	// CoreSchedGroupIDNone is the none value of the core sched group ID which indicates the core sched is disabled for
-	// the pod. The pod will be reset to the system-default cookie `0`.
-	CoreSchedGroupIDNone = "0"
+	// LabelCoreSchedPolicy is the label key that indicates the particular policy of the core scheduling.
+	// It is optional and the policy is considered as the default when the label is not set.
+	// It supports the following policies:
+	// - "" or not set (default): If the core sched is enabled for the node, the pod is set the group ID according to
+	//   the value of the LabelCoreSchedGroupID.
+	// - "none": The core sched is explicitly disabled for the pod even if the node-level strategy is enabled.
+	// - "exclusive": If the core sched is enabled for the node, the pod is set the group ID according to the pod UID,
+	//   so that the pod is exclusive to any other pods.
+	LabelCoreSchedPolicy = apiext.DomainPrefix + "core-sched-policy"
 )
 
-// GetCoreSchedGroupID gets the core sched group ID from the pod annotations.
-// It returns the core sched group ID and whether the pod explicitly disables the core sched.
-func GetCoreSchedGroupID(annotations map[string]string) (string, *bool) {
-	if annotations == nil {
-		return "", nil
+type CoreSchedPolicy string
+
+const (
+	// CoreSchedPolicyDefault is the default policy of the core scheduling which indicates the core sched group ID
+	// is set according to the value of the LabelCoreSchedGroupID.
+	CoreSchedPolicyDefault CoreSchedPolicy = ""
+	// CoreSchedPolicyNone is the none policy of the core scheduling which indicates the core sched is disabled for
+	// the pod. The pod will be reset to the system-default cookie `0`.
+	CoreSchedPolicyNone CoreSchedPolicy = "none"
+	// CoreSchedPolicyExclusive is the exclusive policy of the core scheduling which indicates the core sched group ID
+	// is set the same as the pod's UID
+	CoreSchedPolicyExclusive CoreSchedPolicy = "exclusive"
+)
+
+// GetCoreSchedGroupID gets the core sched group ID for the pod according to the labels.
+func GetCoreSchedGroupID(labels map[string]string) string {
+	if labels != nil {
+		return labels[LabelCoreSchedGroupID]
 	}
-	value, ok := annotations[AnnotationCoreSchedGroupID]
-	if !ok {
-		return "", nil
+	return ""
+}
+
+// GetCoreSchedPolicy gets the core sched policy for the pod according to the labels.
+func GetCoreSchedPolicy(labels map[string]string) CoreSchedPolicy {
+	if labels == nil {
+		return CoreSchedPolicyDefault
 	}
-	return value, pointer.Bool(value == CoreSchedGroupIDNone)
+	if v := labels[LabelCoreSchedPolicy]; v == string(CoreSchedPolicyNone) {
+		return CoreSchedPolicyNone
+	} else if v == string(CoreSchedPolicyExclusive) {
+		return CoreSchedPolicyExclusive
+	}
+	return CoreSchedPolicyDefault
 }

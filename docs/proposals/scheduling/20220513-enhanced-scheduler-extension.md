@@ -61,7 +61,7 @@ Although Kubernetes Scheduler provides the scheduling framework to help develope
 
 #### Story 1
 
-Koordiantor supports users to use `Reservation` CRD to reserve resources. We expect Reservation CRD objects to be scheduled like Pods. In this way, the native scheduling capabilities of Kubernetes and other extended scheduling capabilities can be reused. This requires a mechanism to disguise the Reservation CRD object as a Pod, and extend some scheduling framework extension points in order to better support Reservation.
+Koordinator supports users to use `Reservation` CRD to reserve resources. We expect Reservation CRD objects to be scheduled like Pods. In this way, the native scheduling capabilities of Kubernetes and other extended scheduling capabilities can be reused. This requires a mechanism to disguise the Reservation CRD object as a Pod, and extend some scheduling framework extension points in order to better support Reservation.
 
 #### Story 2
 

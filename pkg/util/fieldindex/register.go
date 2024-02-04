@@ -85,6 +85,18 @@ var indexDescriptors = []fieldIndexDescriptor{
 			return extension.GetAnnotationQuotaNamespaces(eq)
 		},
 	},
+	{
+		description: "index elastic quota by name",
+		obj:         &apiv1alpha1.ElasticQuota{},
+		field:       "metadata.name",
+		indexerFunc: func(obj client.Object) []string {
+			eq, ok := obj.(*apiv1alpha1.ElasticQuota)
+			if !ok {
+				return []string{}
+			}
+			return []string{eq.Name}
+		},
+	},
 }
 
 func RegisterFieldIndexes(c cache.Cache) error {

@@ -46,6 +46,7 @@ type runtimeHook struct {
 	nriServer         *nri.NriServer
 	reconciler        reconciler.Reconciler
 	hostAppReconciler reconciler.Reconciler
+	reader            resourceexecutor.CgroupReader
 	executor          resourceexecutor.ResourceUpdateExecutor
 }
 
@@ -87,6 +88,7 @@ func NewRuntimeHook(si statesinformer.StatesInformer, cfg *Config) (RuntimeHook,
 	if err != nil {
 		return nil, err
 	}
+	cr := resourceexecutor.NewCgroupReader()
 	e := resourceexecutor.NewResourceUpdateExecutor()
 	newServerOptions := proxyserver.Options{
 		Network:             cfg.RuntimeHooksNetwork,
@@ -109,7 +111,7 @@ func NewRuntimeHook(si statesinformer.StatesInformer, cfg *Config) (RuntimeHook,
 		}
 		nriServer, err = nri.NewNriServer(nriServerOptions)
 		if err != nil {
-			klog.Errorf("new nri mode runtimehooks server error: %v", err)
+			klog.Warningf("new nri mode runtimehooks server error: %v", err)
 		}
 	} else {
 		klog.V(4).Info("nri mode runtimehooks is disabled")
@@ -123,6 +125,7 @@ func NewRuntimeHook(si statesinformer.StatesInformer, cfg *Config) (RuntimeHook,
 	}
 
 	newPluginOptions := hooks.Options{
+		Reader:   cr,
 		Executor: e,
 	}
 
@@ -135,6 +138,7 @@ func NewRuntimeHook(si statesinformer.StatesInformer, cfg *Config) (RuntimeHook,
 		nriServer:         nriServer,
 		reconciler:        reconciler.NewReconciler(newReconcilerCtx),
 		hostAppReconciler: reconciler.NewHostAppReconciler(newReconcilerCtx),
+		reader:            cr,
 		executor:          e,
 	}
 	registerPlugins(newPluginOptions)
@@ -147,6 +151,8 @@ func NewRuntimeHook(si statesinformer.StatesInformer, cfg *Config) (RuntimeHook,
 	si.RegisterCallbacks(statesinformer.RegisterTypeNodeMetadata, "runtime-hooks-rule-node-metadata",
 		"Update hooks rule if Node metadata update",
 		rule.UpdateRules)
+	si.RegisterCallbacks(statesinformer.RegisterTypeAllPods, "runtime-hooks-rule-all-pods",
+		"Update hooks rule of all Pods refresh", rule.UpdateRules)
 	if err := s.Setup(); err != nil {
 		return nil, fmt.Errorf("failed to setup runtime hook server, error %v", err)
 	}

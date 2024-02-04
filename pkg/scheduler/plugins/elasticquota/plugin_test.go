@@ -602,11 +602,12 @@ func setLoglevel(logLevel string) {
 
 func TestPlugin_PreFilter(t *testing.T) {
 	test := []struct {
-		name           string
-		pod            *corev1.Pod
-		quotaInfo      *core.QuotaInfo
-		expectedStatus *framework.Status
-		checkParent    bool
+		name                string
+		pod                 *corev1.Pod
+		quotaInfo           *core.QuotaInfo
+		expectedStatus      *framework.Status
+		checkParent         bool
+		disableRuntimeQuota bool
 	}{
 		{
 			name: "default",
@@ -663,6 +664,20 @@ func TestPlugin_PreFilter(t *testing.T) {
 			},
 			expectedStatus: framework.NewStatus(framework.Success, ""),
 		},
+		{
+			name: "runtime not enough, but disable runtime",
+			pod: MakePod("t1-ns1", "pod1").Container(
+				MakeResourceList().CPU(1).Mem(3).GPU(1).Obj()).Obj(),
+			quotaInfo: &core.QuotaInfo{
+				Name: extension.DefaultQuotaName,
+				CalculateInfo: core.QuotaCalculateInfo{
+					Max:     MakeResourceList().CPU(1).Mem(3).Obj(),
+					Runtime: MakeResourceList().CPU(1).Mem(2).Obj(),
+				},
+			},
+			disableRuntimeQuota: true,
+			expectedStatus:      framework.NewStatus(framework.Success, ""),
+		},
 	}
 	for _, tt := range test {
 		t.Run(tt.name, func(t *testing.T) {
@@ -670,6 +685,7 @@ func TestPlugin_PreFilter(t *testing.T) {
 			p, err := suit.proxyNew(suit.elasticQuotaArgs, suit.Handle)
 			assert.Nil(t, err)
 			gp := p.(*Plugin)
+			gp.pluginArgs.EnableRuntimeQuota = !tt.disableRuntimeQuota
 			qi := gp.groupQuotaManager.GetQuotaInfoByName(tt.quotaInfo.Name)
 			qi.Lock()
 			qi.CalculateInfo.Runtime = tt.quotaInfo.CalculateInfo.Runtime.DeepCopy()
@@ -732,7 +748,7 @@ func TestPlugin_PreFilter_CheckParent(t *testing.T) {
 			p, err := suit.proxyNew(suit.elasticQuotaArgs, suit.Handle)
 			assert.Nil(t, err)
 			gp := p.(*Plugin)
-			gp.pluginArgs.EnableCheckParentQuota = pointer.Bool(true)
+			gp.pluginArgs.EnableCheckParentQuota = true
 			gp.OnQuotaAdd(tt.parQuotaInfo)
 			gp.OnQuotaAdd(tt.quotaInfo)
 			qi := gp.groupQuotaManager.GetQuotaInfoByName(tt.quotaInfo.Name)

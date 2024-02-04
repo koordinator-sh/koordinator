@@ -38,6 +38,7 @@ var theReservationCache atomic.Value
 
 type ReservationCache interface {
 	DeleteReservation(r *schedulingv1alpha1.Reservation) *frameworkext.ReservationInfo
+	GetReservationInfoByPod(pod *corev1.Pod, nodeName string) *frameworkext.ReservationInfo
 }
 
 func GetReservationCache() ReservationCache {
@@ -233,7 +234,19 @@ func (cache *reservationCache) getReservationInfoByUID(uid types.UID) *framework
 	return nil
 }
 
-func (cache *reservationCache) forEachAvailableReservationOnNode(nodeName string, fn func(rInfo *frameworkext.ReservationInfo) *framework.Status) *framework.Status {
+func (cache *reservationCache) GetReservationInfoByPod(pod *corev1.Pod, nodeName string) *frameworkext.ReservationInfo {
+	var target *frameworkext.ReservationInfo
+	cache.forEachAvailableReservationOnNode(nodeName, func(rInfo *frameworkext.ReservationInfo) (bool, *framework.Status) {
+		if _, ok := rInfo.AssignedPods[pod.UID]; ok {
+			target = rInfo
+			return false, nil
+		}
+		return true, nil
+	})
+	return target
+}
+
+func (cache *reservationCache) forEachAvailableReservationOnNode(nodeName string, fn func(rInfo *frameworkext.ReservationInfo) (bool, *framework.Status)) *framework.Status {
 	cache.lock.RLock()
 	defer cache.lock.RUnlock()
 	rOnNode := cache.reservationsOnNode[nodeName]
@@ -243,8 +256,12 @@ func (cache *reservationCache) forEachAvailableReservationOnNode(nodeName string
 	for uid := range rOnNode {
 		rInfo := cache.reservationInfos[uid]
 		if rInfo != nil && rInfo.IsAvailable() {
-			if status := fn(rInfo); !status.IsSuccess() {
+			beContinue, status := fn(rInfo)
+			if !status.IsSuccess() {
 				return status
+			}
+			if !beContinue {
+				return nil
 			}
 		}
 	}
@@ -253,9 +270,9 @@ func (cache *reservationCache) forEachAvailableReservationOnNode(nodeName string
 
 func (cache *reservationCache) listAvailableReservationInfosOnNode(nodeName string) []*frameworkext.ReservationInfo {
 	var result []*frameworkext.ReservationInfo
-	cache.forEachAvailableReservationOnNode(nodeName, func(rInfo *frameworkext.ReservationInfo) *framework.Status {
+	cache.forEachAvailableReservationOnNode(nodeName, func(rInfo *frameworkext.ReservationInfo) (bool, *framework.Status) {
 		result = append(result, rInfo.Clone())
-		return nil
+		return true, nil
 	})
 	return result
 }

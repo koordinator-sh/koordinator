@@ -58,7 +58,7 @@ func NewManagerForTest() *Mgr {
 	koordClient := koordfake.NewSimpleClientset()
 	koordInformerFactory := koordinformers.NewSharedInformerFactory(koordClient, 0)
 
-	args := &config.CoschedulingArgs{DefaultTimeout: &metav1.Duration{Duration: 300 * time.Second}}
+	args := &config.CoschedulingArgs{DefaultTimeout: metav1.Duration{Duration: 300 * time.Second}}
 
 	pgManager := NewPodGroupManager(args, pgClient, pgInformerFactory, informerFactory, koordInformerFactory)
 	return &Mgr{
@@ -173,6 +173,28 @@ func TestPlugin_PreFilter(t *testing.T) {
 				"ganga_ns/pod6": 1,
 			},
 			expectedErrorMessage:       "pod's schedule cycle too large, gangName: ganga_ns/gangc, podName: ganga_ns/pod6, podCycle: 1, gangCycle: 1",
+			expectedScheduleCycleValid: true,
+		},
+		{
+			name: "due to reschedule pod6's podScheduleCycle is equal with the gangScheduleCycle, but pod6's nominatedNodeName is not empty",
+			pod: st.MakePod().Name("pod6").UID("pod6").Namespace("ganga_ns").Label(v1alpha1.PodGroupLabel, "gangc").
+				NominatedNodeName("N1").Obj(),
+			pods: []*corev1.Pod{
+				st.MakePod().Name("pod6-1").UID("pod6-1").Namespace("ganga_ns").Label(v1alpha1.PodGroupLabel, "gangc").Obj(),
+				st.MakePod().Name("pod6-2").UID("pod6-2").Namespace("ganga_ns").Label(v1alpha1.PodGroupLabel, "gangc").Obj(),
+				st.MakePod().Name("pod6-3").UID("pod6-3").Namespace("ganga_ns").Label(v1alpha1.PodGroupLabel, "gangc").Obj(),
+			},
+			pgs:                           makePg("gangc", "ganga_ns", 4, &gangACreatedTime, nil),
+			shouldSetCycleEqualWithGlobal: true,
+			totalNum:                      5,
+			expectedScheduleCycle:         1,
+			expectedChildCycleMap: map[string]int{
+				"ganga_ns/pod6":   1,
+				"ganga_ns/pod6-1": 1,
+				"ganga_ns/pod6-2": 1,
+				"ganga_ns/pod6-3": 1,
+			},
+			expectedErrorMessage:       "",
 			expectedScheduleCycleValid: true,
 		},
 		{
