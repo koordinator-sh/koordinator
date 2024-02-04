@@ -302,15 +302,18 @@ func (p *Plugin) Filter(ctx context.Context, cycleState *framework.CycleState, p
 		if !topologyOptions.CPUTopology.IsValid() {
 			return framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrInvalidCPUTopology)
 		}
-		nodeRequiredFullPCPUsOnly := extension.GetNodeCPUBindPolicy(node.Labels, topologyOptions.Policy) == extension.NodeCPUBindPolicyFullPCPUsOnly
-		if nodeRequiredFullPCPUsOnly || state.requiredCPUBindPolicy == schedulingconfig.CPUBindPolicyFullPCPUs {
+		nodeCPUBindPolicy := extension.GetNodeCPUBindPolicy(node.Labels, topologyOptions.Policy)
+		if nodeCPUBindPolicy == extension.NodeCPUBindPolicyFullPCPUsOnly ||
+			state.requiredCPUBindPolicy == schedulingconfig.CPUBindPolicyFullPCPUs {
 			if state.numCPUsNeeded%topologyOptions.CPUTopology.CPUsPerCore() != 0 {
 				return framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrSMTAlignmentError)
 			}
 
-			if nodeRequiredFullPCPUsOnly &&
-				(state.requiredCPUBindPolicy != schedulingconfig.CPUBindPolicyFullPCPUs || state.preferredCPUBindPolicy != schedulingconfig.CPUBindPolicyFullPCPUs) {
-				return framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrRequiredFullPCPUsPolicy)
+			if nodeCPUBindPolicy == extension.NodeCPUBindPolicyFullPCPUsOnly {
+				if (state.requiredCPUBindPolicy != "" && state.requiredCPUBindPolicy != schedulingconfig.CPUBindPolicyFullPCPUs) ||
+					(state.preferredCPUBindPolicy != "" && state.preferredCPUBindPolicy != schedulingconfig.CPUBindPolicyFullPCPUs) {
+					return framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrRequiredFullPCPUsPolicy)
+				}
 			}
 		}
 
