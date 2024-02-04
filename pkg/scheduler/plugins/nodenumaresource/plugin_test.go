@@ -593,7 +593,7 @@ func TestPlugin_Filter(t *testing.T) {
 			want: nil,
 		},
 		{
-			name: "verify FullPCPUsOnly with SMTAlignmentError",
+			name: "failed to verify Node FullPCPUsOnly with SMTAlignmentError",
 			nodeLabels: map[string]string{
 				extension.LabelNodeCPUBindPolicy: string(extension.NodeCPUBindPolicyFullPCPUsOnly),
 			},
@@ -607,16 +607,40 @@ func TestPlugin_Filter(t *testing.T) {
 			want:            framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrSMTAlignmentError),
 		},
 		{
-			name: "verify required FullPCPUs SMTAlignmentError",
+			name: "verify Node FullPCPUsOnly",
+			nodeLabels: map[string]string{
+				extension.LabelNodeCPUBindPolicy: string(extension.NodeCPUBindPolicyFullPCPUsOnly),
+			},
 			state: &preFilterState{
 				requestCPUBind:         true,
-				requiredCPUBindPolicy:  schedulingconfig.CPUBindPolicyFullPCPUs,
 				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs,
-				numCPUsNeeded:          5,
+				numCPUsNeeded:          4,
+			},
+			cpuTopology:     buildCPUTopologyForTest(2, 1, 4, 2),
+			allocationState: NewNodeAllocation("test-node-1"),
+			want:            nil,
+		},
+		{
+			name: "failed to verify required FullPCPUs SMTAlignmentError",
+			state: &preFilterState{
+				requestCPUBind:        true,
+				requiredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs,
+				numCPUsNeeded:         5,
 			},
 			cpuTopology:     buildCPUTopologyForTest(2, 1, 4, 2),
 			allocationState: NewNodeAllocation("test-node-1"),
 			want:            framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrSMTAlignmentError),
+		},
+		{
+			name: "verify required FullPCPUs",
+			state: &preFilterState{
+				requestCPUBind:        true,
+				requiredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs,
+				numCPUsNeeded:         4,
+			},
+			cpuTopology:     buildCPUTopologyForTest(2, 1, 4, 2),
+			allocationState: NewNodeAllocation("test-node-1"),
+			want:            nil,
 		},
 		{
 			name: "verify FullPCPUsOnly with preferred SpreadByPCPUs",
