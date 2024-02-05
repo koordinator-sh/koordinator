@@ -131,18 +131,18 @@ func (c *cpuEvictor) cpuEvict() {
 
 func (c *cpuEvictor) calculateMilliRelease(thresholdConfig *slov1alpha1.ResourceThresholdStrategy, windowSeconds int64) int64 {
 	// Step1: Calculate release resource by BECPUResourceMetric in window
-	queryparam := helpers.GenerateQueryParamsAvg(windowSeconds)
-	querier, err := c.metricCache.Querier(*queryparam.Start, *queryparam.End)
+	queryParam := helpers.GenerateQueryParamsAvg(time.Duration(windowSeconds) * time.Second)
+	querier, err := c.metricCache.Querier(*queryParam.Start, *queryParam.End)
 	if err != nil {
 		klog.Warningf("get query failed, error %v", err)
 		return 0
 	}
 	// BECPUUsage
-	avgBECPUMilliUsage, count01 := getBECPUMetric(metriccache.BEResourceAllocationUsage, querier, queryparam.Aggregate)
+	avgBECPUMilliUsage, count01 := getBECPUMetric(metriccache.BEResourceAllocationUsage, querier, queryParam.Aggregate)
 	// BECPURequest
-	avgBECPUMilliRequest, count02 := getBECPUMetric(metriccache.BEResourceAllocationRequest, querier, queryparam.Aggregate)
+	avgBECPUMilliRequest, count02 := getBECPUMetric(metriccache.BEResourceAllocationRequest, querier, queryParam.Aggregate)
 	// BECPULimit
-	avgBECPUMilliRealLimit, count03 := getBECPUMetric(metriccache.BEResourceAllocationRealLimit, querier, queryparam.Aggregate)
+	avgBECPUMilliRealLimit, count03 := getBECPUMetric(metriccache.BEResourceAllocationRealLimit, querier, queryParam.Aggregate)
 
 	// CPU Satisfaction considers the allocatable when policy=evictByAllocatable.
 	avgBECPUMilliLimit := avgBECPUMilliRealLimit
@@ -172,18 +172,18 @@ func (c *cpuEvictor) calculateMilliRelease(thresholdConfig *slov1alpha1.Resource
 	}
 
 	// Step2: Calculate release resource current
-	queryparam = helpers.GenerateQueryParamsLast(c.metricCollectInterval * 2)
-	querier, err = c.metricCache.Querier(*queryparam.Start, *queryparam.End)
+	queryParam = helpers.GenerateQueryParamsLast(c.metricCollectInterval * 2)
+	querier, err = c.metricCache.Querier(*queryParam.Start, *queryParam.End)
 	if err != nil {
 		klog.Warningf("get query failed, error %v", err)
 		return 0
 	}
 	// BECPUUsage
-	currentBECPUMilliUsage, _ := getBECPUMetric(metriccache.BEResourceAllocationUsage, querier, queryparam.Aggregate)
+	currentBECPUMilliUsage, _ := getBECPUMetric(metriccache.BEResourceAllocationUsage, querier, queryParam.Aggregate)
 	// BECPURequest
-	currentBECPUMilliRequest, _ := getBECPUMetric(metriccache.BEResourceAllocationRequest, querier, queryparam.Aggregate)
+	currentBECPUMilliRequest, _ := getBECPUMetric(metriccache.BEResourceAllocationRequest, querier, queryParam.Aggregate)
 	// BECPULimit
-	currentBECPUMilliRealLimit, _ := getBECPUMetric(metriccache.BEResourceAllocationRealLimit, querier, queryparam.Aggregate)
+	currentBECPUMilliRealLimit, _ := getBECPUMetric(metriccache.BEResourceAllocationRealLimit, querier, queryParam.Aggregate)
 
 	// CPU Satisfaction considers the allocatable when policy=evictByAllocatable.
 	currentBECPUMilliLimit := currentBECPUMilliRealLimit

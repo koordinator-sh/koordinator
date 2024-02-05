@@ -258,7 +258,7 @@ func (b *cpuBurst) start() {
 // return isOverload, share pool usage ratio and message detail
 func (b *cpuBurst) getNodeStateForBurst(sharePoolThresholdPercent int64,
 	podsMeta []*statesinformer.PodMeta) nodeStateForBurst {
-	overloadMetricDuration := util.MinInt64(int64(b.reconcileInterval*5), int64(10*time.Second))
+	overloadMetricDuration := time.Duration(util.MinInt64(int64(b.reconcileInterval*5), int64(10*time.Second)))
 	queryParam := helpers.GenerateQueryParamsAvg(overloadMetricDuration)
 
 	queryMeta, err := metriccache.NodeCPUUsageMetric.BuildQueryMeta(nil)
