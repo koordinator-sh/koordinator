@@ -31,6 +31,7 @@ func Test_NewDefaultConfig(t *testing.T) {
 		MemoryEvictIntervalSeconds: 1,
 		MemoryEvictCoolTimeSeconds: 4,
 		CPUEvictCoolTimeSeconds:    20,
+		OnlyEvictByAPI:             false,
 		QOSExtensionCfg:            &QOSExtensionConfig{FeatureGates: map[string]bool{}},
 	}
 	defaultConfig := NewDefaultConfig()
@@ -47,6 +48,7 @@ func Test_InitFlags(t *testing.T) {
 		"--memory-evict-cool-time-seconds=8",
 		"--cpu-evict-cool-time-seconds=40",
 		"--qos-extension-plugins=test-plugin=true",
+		"--only-evict-by-api=false",
 	}
 	fs := flag.NewFlagSet(cmdArgs[0], flag.ExitOnError)
 
@@ -57,6 +59,7 @@ func Test_InitFlags(t *testing.T) {
 		MemoryEvictIntervalSeconds int
 		MemoryEvictCoolTimeSeconds int
 		CPUEvictCoolTimeSeconds    int
+		OnlyEvictByAPI             bool
 		QOSExtensionCfg            *QOSExtensionConfig
 	}
 	type args struct {
@@ -76,6 +79,7 @@ func Test_InitFlags(t *testing.T) {
 				MemoryEvictIntervalSeconds: 2,
 				MemoryEvictCoolTimeSeconds: 8,
 				CPUEvictCoolTimeSeconds:    40,
+				OnlyEvictByAPI:             false,
 				QOSExtensionCfg:            &QOSExtensionConfig{FeatureGates: map[string]bool{"test-plugin": true}},
 			},
 			args: args{fs: fs},
@@ -90,6 +94,7 @@ func Test_InitFlags(t *testing.T) {
 				MemoryEvictIntervalSeconds: tt.fields.MemoryEvictIntervalSeconds,
 				MemoryEvictCoolTimeSeconds: tt.fields.MemoryEvictCoolTimeSeconds,
 				CPUEvictCoolTimeSeconds:    tt.fields.CPUEvictCoolTimeSeconds,
+				OnlyEvictByAPI:             tt.fields.OnlyEvictByAPI,
 				QOSExtensionCfg:            tt.fields.QOSExtensionCfg,
 			}
 			c := NewDefaultConfig()
