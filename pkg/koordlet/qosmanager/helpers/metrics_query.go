@@ -190,9 +190,9 @@ func CollectContainerThrottledMetric(metricCache metriccache.MetricCache, contai
 	return aggregateResult, nil
 }
 
-func GenerateQueryParamsAvg(windowSeconds int64) *metriccache.QueryParam {
+func GenerateQueryParamsAvg(windowDuration time.Duration) *metriccache.QueryParam {
 	end := time.Now()
-	start := end.Add(-time.Duration(windowSeconds) * time.Second)
+	start := end.Add(-windowDuration)
 	queryParam := &metriccache.QueryParam{
 		Aggregate: metriccache.AggregationTypeAVG,
 		Start:     &start,
