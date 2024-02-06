@@ -528,3 +528,22 @@ func UpdateReservationResizeAllocatable(obj metav1.Object, resources corev1.Reso
 	}
 	return SetReservationResizeAllocatable(obj, resizeAllocatable)
 }
+
+func GetReservationRestrictedResources(allocatableResources []corev1.ResourceName, options *extension.ReservationRestrictedOptions) []corev1.ResourceName {
+	if options == nil {
+		return allocatableResources
+	}
+	result := make([]corev1.ResourceName, 0, len(allocatableResources))
+	for _, resourceName := range allocatableResources {
+		for _, v := range options.Resources {
+			if resourceName == v {
+				result = append(result, resourceName)
+				break
+			}
+		}
+	}
+	if len(result) == 0 {
+		result = allocatableResources
+	}
+	return result
+}
