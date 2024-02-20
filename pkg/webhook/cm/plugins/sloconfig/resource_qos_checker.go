@@ -18,11 +18,14 @@ package sloconfig
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"reflect"
 	"strconv"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	"k8s.io/apiserver/pkg/storage"
@@ -37,10 +40,19 @@ const (
 	InvalidPercentageValueMsg string = `must be percentage value just in 0-100'`
 )
 
+// NetDirection represents the stored type of IngressOrEgress
+type NetDirection int64
+
+const (
+	Ingress NetDirection = iota // The IngressOrEgress holds an ingress.
+	Egress                      // The IngressOrEgress holds an egress.
+)
+
 var _ ConfigChecker = &ResourceQOSChecker{}
 
 type ResourceQOSChecker struct {
-	cfg *configuration.ResourceQOSCfg
+	cfg    *configuration.ResourceQOSCfg
+	sysCfg *configuration.SystemCfg
 	CommonChecker
 }
 
@@ -62,52 +74,229 @@ func (c *ResourceQOSChecker) ConfigParamValid() error {
 		return err
 	}
 
-	return CheckNetQosCfg(c.cfg, field.NewPath("ResourceQOSCfg"))
+	return CheckNetQosCfg(c.cfg, c.sysCfg, field.NewPath("ResourceQOSCfg"))
 }
 
-func CheckNetQosCfg(cfg *configuration.ResourceQOSCfg, fldPath *field.Path) error {
-	if cfg == nil {
+func CheckNetQosCfg(cfg *configuration.ResourceQOSCfg, sysCfg *configuration.SystemCfg, fldPath *field.Path) error {
+	if cfg == nil || sysCfg == nil {
+		return nil
+	}
+
+	if err := CheckEachElementIsValid(cfg, fldPath); err != nil {
+		return err
+	}
+
+	if err := CheckOnlyOneFormat(cfg); err != nil {
+		return err
+	}
+
+	if err := CheckTotalPercentageIsValid(cfg); err != nil {
+		return err
+	}
+
+	return CheckTotalQuantityIsValid(cfg, sysCfg)
+}
+
+func CheckEachElementIsValid(cfg *configuration.ResourceQOSCfg, fldPath *field.Path) error {
+	doCheck := func(fldPath *field.Path, strategy *v1alpha1.ResourceQOSStrategy) error {
+		if strategy == nil {
+			return nil
+		}
+
+		if strategy.LSRClass != nil {
+			if err := CheckSubNetQos(fldPath.Child("LSRClass"), strategy.LSRClass.NetworkQOS); err != nil {
+				return err
+			}
+		}
+
+		if strategy.LSClass != nil {
+			if err := CheckSubNetQos(fldPath.Child("LSClass"), strategy.LSClass.NetworkQOS); err != nil {
+				return err
+			}
+		}
+		if strategy.BEClass != nil {
+			if err := CheckSubNetQos(fldPath.Child("BEClass"), strategy.BEClass.NetworkQOS); err != nil {
+				return err
+			}
+		}
+
 		return nil
 	}
 
 	// check netqos config is valid for cluster strategy
 	if cfg.ClusterStrategy != nil {
-		if cfg.ClusterStrategy.BEClass != nil {
-			if err := CheckSubNetQos(fldPath.Child("ClusterStrategy").Child("BEClass"), cfg.ClusterStrategy.BEClass.NetworkQOS); err != nil {
-				return err
-			}
-		}
-
-		if cfg.ClusterStrategy.LSClass != nil {
-			if err := CheckSubNetQos(fldPath.Child("ClusterStrategy").Child("LSClass"), cfg.ClusterStrategy.LSClass.NetworkQOS); err != nil {
-				return err
-			}
-		}
-
-		if cfg.ClusterStrategy.LSRClass != nil {
-			if err := CheckSubNetQos(fldPath.Child("ClusterStrategy").Child("LSRClass"), cfg.ClusterStrategy.LSRClass.NetworkQOS); err != nil {
-				return err
-			}
+		if err := doCheck(fldPath.Child("ClusterStrategy"), cfg.ClusterStrategy); err != nil {
+			return err
 		}
 	}
 
 	// check netqos config is valid for each node strategy
 	for idx, nodeStrategy := range cfg.NodeStrategies {
-		if nodeStrategy.BEClass != nil {
-			if err := CheckSubNetQos(fldPath.Child("nodeStrategy").Child(strconv.Itoa(idx)).Child("BEClass"), nodeStrategy.BEClass.NetworkQOS); err != nil {
-				return err
-			}
+		if err := doCheck(fldPath.Child("nodeStrategy").Child(strconv.Itoa(idx)), nodeStrategy.ResourceQOSStrategy); err != nil {
+			return err
 		}
-		if nodeStrategy.LSClass != nil {
-			if err := CheckSubNetQos(fldPath.Child("nodeStrategy").Child(strconv.Itoa(idx)).Child("LSClass"), nodeStrategy.LSClass.NetworkQOS); err != nil {
-				return err
-			}
+	}
+
+	return nil
+}
+
+func CheckTotalPercentageIsValid(cfg *configuration.ResourceQOSCfg) error {
+	// check netqos config is valid for cluster strategy
+	if cfg.ClusterStrategy != nil {
+		var totalPercentage int64 = 100
+		ingressLeft, egressLeft := doSubstration(cfg.ClusterStrategy, totalPercentage)
+		if ingressLeft < 0 || egressLeft < 0 {
+			return fmt.Errorf("ClusterStrategy total net bandwidth percentage already over 100")
+		}
+	}
+
+	// check netqos config is valid for each node strategy
+	for idx, nodeStrategy := range cfg.NodeStrategies {
+		var totalPercentage int64 = 100
+		ingressLeft, egressLeft := doSubstration(nodeStrategy.ResourceQOSStrategy, totalPercentage)
+		if ingressLeft < 0 || egressLeft < 0 {
+			return fmt.Errorf("cfg.NodeStrategies[%d] total net bandwidth percentage already over 100", idx)
+		}
+	}
+
+	return nil
+}
+
+func doSubstration(strategy *v1alpha1.ResourceQOSStrategy, totalNetBandWidth int64) (leftIngress, leftEgress int64) {
+	ingressRequestTotal, egressRequestTotal := totalNetBandWidth, totalNetBandWidth
+	if strategy == nil {
+		return ingressRequestTotal, egressRequestTotal
+	}
+
+	subFunc := func(direction NetDirection, request *intstr.IntOrString) {
+		if request == nil {
+			return
 		}
 
-		if nodeStrategy.LSRClass != nil {
-			if err := CheckSubNetQos(fldPath.Child("nodeStrategy").Child(strconv.Itoa(idx)).Child("LSRClass"), nodeStrategy.LSRClass.NetworkQOS); err != nil {
-				return err
+		if direction == Ingress {
+			if request.Type == intstr.Int {
+				ingressRequestTotal -= int64(request.IntValue())
 			}
+
+			if request.Type == intstr.String {
+				if cur, err := resource.ParseQuantity(request.StrVal); err == nil {
+					ingressRequestTotal -= cur.Value()
+				}
+			}
+		}
+		if direction == Egress {
+			if request.Type == intstr.Int {
+				egressRequestTotal -= int64(request.IntValue())
+			}
+
+			if request.Type == intstr.String {
+				if cur, err := resource.ParseQuantity(request.StrVal); err == nil {
+					egressRequestTotal -= cur.Value()
+				}
+			}
+		}
+	}
+
+	if strategy.LSRClass != nil && strategy.LSRClass.NetworkQOS != nil {
+		subFunc(Ingress, strategy.LSRClass.NetworkQOS.IngressRequest)
+		subFunc(Egress, strategy.LSRClass.NetworkQOS.EgressRequest)
+	}
+	if strategy.LSClass != nil && strategy.LSClass.NetworkQOS != nil {
+		subFunc(Ingress, strategy.LSClass.NetworkQOS.IngressRequest)
+		subFunc(Egress, strategy.LSClass.NetworkQOS.EgressRequest)
+	}
+	if strategy.BEClass != nil && strategy.BEClass.NetworkQOS != nil {
+		subFunc(Ingress, strategy.BEClass.NetworkQOS.IngressRequest)
+		subFunc(Egress, strategy.BEClass.NetworkQOS.EgressRequest)
+	}
+
+	return ingressRequestTotal, egressRequestTotal
+}
+
+func CheckTotalQuantityIsValid(cfg *configuration.ResourceQOSCfg, sysCfg *configuration.SystemCfg) error {
+	// check netqos config is valid for cluster strategy
+	if cfg.ClusterStrategy != nil && sysCfg.ClusterStrategy != nil {
+		ingressLeft, egressLeft := doSubstration(cfg.ClusterStrategy, sysCfg.ClusterStrategy.TotalNetworkBandwidth.Value())
+		if ingressLeft < 0 || egressLeft < 0 {
+			return fmt.Errorf("total net bandwidth over total network bandwidth in clusterStrategy")
+		}
+	}
+
+	// check netqos config is valid for each node strategy
+	for idx, nodeStrategy := range cfg.NodeStrategies {
+		totalNetbandWidth := getTotalNetBandWidth(nodeStrategy.NodeSelector, sysCfg)
+		ingressLeft, egressLeft := doSubstration(nodeStrategy.ResourceQOSStrategy, totalNetbandWidth.Value())
+		if ingressLeft < 0 || egressLeft < 0 {
+			return fmt.Errorf("total net bandwidth quantity already over total network bandwidth in cfg.NodeStrategies[%d]", idx)
+		}
+
+	}
+
+	return nil
+}
+
+func getTotalNetBandWidth(labelSelector *metav1.LabelSelector, sysCfg *configuration.SystemCfg) *resource.Quantity {
+	res := resource.NewQuantity(0, resource.DecimalSI)
+	if sysCfg == nil {
+		return res
+	}
+
+	if len(sysCfg.NodeStrategies) == 0 && sysCfg.ClusterStrategy != nil {
+		return &sysCfg.ClusterStrategy.TotalNetworkBandwidth
+	}
+
+	for _, cur := range sysCfg.NodeStrategies {
+		if reflect.DeepEqual(labelSelector, cur.NodeSelector) {
+			return &cur.TotalNetworkBandwidth
+		}
+	}
+
+	return res
+}
+
+func CheckOnlyOneFormat(cfg *configuration.ResourceQOSCfg) error {
+	getFormatsFunc := func(strategy *v1alpha1.ResourceQOSStrategy) int {
+		allTypes := make(map[intstr.Type]interface{})
+		if strategy == nil {
+			return len(allTypes)
+		}
+
+		mark := func(request *intstr.IntOrString) {
+			if request == nil {
+				return
+			}
+			allTypes[request.Type] = nil
+		}
+
+		if strategy.LSRClass != nil && strategy.LSRClass.NetworkQOS != nil {
+			mark(strategy.LSRClass.NetworkQOS.IngressRequest)
+			mark(strategy.LSRClass.NetworkQOS.EgressRequest)
+		}
+		if strategy.LSClass != nil && strategy.LSClass.NetworkQOS != nil {
+			mark(strategy.LSClass.NetworkQOS.IngressRequest)
+			mark(strategy.LSClass.NetworkQOS.EgressRequest)
+		}
+		if strategy.BEClass != nil && strategy.BEClass.NetworkQOS != nil {
+			mark(strategy.BEClass.NetworkQOS.IngressRequest)
+			mark(strategy.BEClass.NetworkQOS.EgressRequest)
+		}
+
+		return len(allTypes)
+	}
+
+	// check netqos config is valid for cluster strategy
+	if cfg.ClusterStrategy != nil {
+		allTypes := getFormatsFunc(cfg.ClusterStrategy)
+		if allTypes > 1 {
+			return errors.New("only one type can be used for percentages or quantity in clusterStrategy")
+		}
+	}
+
+	// check netqos config is valid for each node strategy
+	for idx, nodeStrategy := range cfg.NodeStrategies {
+		allTypes := getFormatsFunc(nodeStrategy.ResourceQOSStrategy)
+		if allTypes > 1 {
+			return fmt.Errorf("only one type can be used for percentages or quantity in nodeStrategy[%d]", idx)
 		}
 	}
 
@@ -184,6 +373,17 @@ func (c *ResourceQOSChecker) initConfig() error {
 		return buildJsonError(ReasonParseFail, message)
 	}
 	c.cfg = cfg
+
+	sysCfg := &configuration.SystemCfg{}
+	sysConfigStr := c.NewConfigMap.Data[configuration.SystemConfigKey]
+	err = json.Unmarshal([]byte(sysConfigStr), &sysCfg)
+	if err != nil {
+		message := fmt.Sprintf("Failed to parse System config in configmap %s/%s, err: %s",
+			c.NewConfigMap.Namespace, c.NewConfigMap.Name, err.Error())
+		klog.Error(message)
+		return buildJsonError(ReasonParseFail, message)
+	}
+	c.sysCfg = sysCfg
 
 	c.NodeConfigProfileChecker, err = CreateNodeConfigProfileChecker(configuration.ResourceQOSConfigKey, c.getConfigProfiles)
 	if err != nil {
