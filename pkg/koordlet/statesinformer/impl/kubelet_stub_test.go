@@ -60,6 +60,41 @@ var (
 		    }
 		}`,
 	)
+	kubeletConfigzData128 = []byte(`
+		{
+		    "kubeletconfig": {
+		        "enableServer": true,
+		        "cpuManagerPolicy": "static",
+		        "cpuManagerReconcilePeriod": "10s",
+		        "evictionHard": {
+		            "imagefs.available": "15%",
+		            "memory.available": "222Mi",
+		            "nodefs.available": "10%",
+		            "nodefs.inodesFree": "5%"
+		        },
+		        "systemReserved": {
+		            "cpu": "200m",
+		            "memory": "1111Mi",
+		            "pid": "1000"
+		        },
+		        "kubeReserved": {
+		            "cpu": "200m",
+		            "memory": "6666Mi",
+		            "pid": "1000"
+		        },
+		        "logging": {
+		            "format":"text",
+		            "flushFrequency":"5s",
+		            "verbosity":3,
+		            "options":{
+		                "json":{
+		                    "infoBufferSize":"0"
+		                }
+		            }
+		        }
+		    }
+		}`,
+	)
 )
 
 func validateAuth(r *http.Request) bool {
@@ -109,6 +144,16 @@ func mockGetKubeletConfiguration(w http.ResponseWriter, r *http.Request) {
 	w.Write(kubeletConfigzData)
 }
 
+func mockGetKubeletConfiguration128(w http.ResponseWriter, r *http.Request) {
+	if !validateAuth(r) {
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(kubeletConfigzData128)
+}
+
 func parseHostAndPort(rawURL string) (string, string, error) {
 	u, err := url.Parse(rawURL)
 	if err != nil {
@@ -154,6 +199,56 @@ func Test_kubeletStub_GetKubeletConfiguration(t *testing.T) {
 	token = "token"
 
 	server := httptest.NewTLSServer(http.HandlerFunc(mockGetKubeletConfiguration))
+	defer server.Close()
+
+	address, portStr, err := parseHostAndPort(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	port, _ := strconv.Atoi(portStr)
+	cfg := &rest.Config{
+		Host:        net.JoinHostPort(address, portStr),
+		BearerToken: token,
+		TLSClientConfig: rest.TLSClientConfig{
+			Insecure: true,
+		},
+	}
+
+	client, err := NewKubeletStub(address, port, "https", 10*time.Second, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	kubeletConfiguration, err := client.GetKubeletConfiguration()
+	if err != nil {
+		t.Fatal(err)
+	}
+	assert.Equal(t, "static", kubeletConfiguration.CPUManagerPolicy)
+	expectedEvictionHard := map[string]string{
+		"imagefs.available": "15%",
+		"memory.available":  "222Mi",
+		"nodefs.available":  "10%",
+		"nodefs.inodesFree": "5%",
+	}
+	expectedSystemReserved := map[string]string{
+		"cpu":    "200m",
+		"memory": "1111Mi",
+		"pid":    "1000",
+	}
+	expectedKubeReserved := map[string]string{
+		"cpu":    "200m",
+		"memory": "6666Mi",
+		"pid":    "1000",
+	}
+	assert.Equal(t, expectedEvictionHard, kubeletConfiguration.EvictionHard)
+	assert.Equal(t, expectedSystemReserved, kubeletConfiguration.SystemReserved)
+	assert.Equal(t, expectedKubeReserved, kubeletConfiguration.KubeReserved)
+}
+
+func Test_kubeletStub_GetKubeletConfigurationFrom128(t *testing.T) {
+	token = "token"
+
+	server := httptest.NewTLSServer(http.HandlerFunc(mockGetKubeletConfiguration128))
 	defer server.Close()
 
 	address, portStr, err := parseHostAndPort(server.URL)
