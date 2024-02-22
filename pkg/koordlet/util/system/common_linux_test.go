@@ -29,6 +29,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/vishvananda/netlink"
 )
 
 func Test_KubeletPortToPid(t *testing.T) {
@@ -114,4 +115,25 @@ func Test_WorkingDirOf(t *testing.T) {
 		_, err := WorkingDirOf(1909043242)
 		assert.NotEmpty(t, err)
 	})
+}
+
+func TestGetLinkInfoByDefaultRoute(t *testing.T) {
+	tests := []struct {
+		name    string
+		want    netlink.Link
+		wantErr error
+	}{
+		// TODO: Add test cases.
+		{
+			name:    "normal",
+			want:    nil,
+			wantErr: nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := GetLinkInfoByDefaultRoute()
+			assert.Equalf(t, tt.wantErr, err, "GetLinkInfoByDefaultRoute()")
+		})
+	}
 }
