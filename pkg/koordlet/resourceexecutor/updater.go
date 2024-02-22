@@ -84,6 +84,8 @@ type UpdateFunc func(resource ResourceUpdater) error
 type MergeUpdateFunc func(resource ResourceUpdater) (ResourceUpdater, error)
 
 type ResourceUpdater interface {
+	// Name returns the name of the resource updater
+	Name() string
 	ResourceType() sysutil.ResourceType
 	Key() string
 	Path() string
@@ -110,6 +112,10 @@ type CgroupResourceUpdater struct {
 	//    the new value with old value; then update resources from lower to upper with the new value.
 	mergeUpdateFunc MergeUpdateFunc
 	eventHelper     *audit.EventHelper
+}
+
+func (u *CgroupResourceUpdater) Name() string {
+	return "cgroup"
 }
 
 func (u *CgroupResourceUpdater) ResourceType() sysutil.ResourceType {
@@ -186,6 +192,10 @@ type DefaultResourceUpdater struct {
 	eventHelper         *audit.EventHelper
 }
 
+func (u *DefaultResourceUpdater) Name() string {
+	return "default"
+}
+
 func (u *DefaultResourceUpdater) ResourceType() sysutil.ResourceType {
 	return sysutil.ResourceType(u.file)
 }
@@ -243,11 +253,6 @@ func NewCommonDefaultUpdaterWithUpdateFunc(key string, file string, value string
 		updateFunc:  updateFunc,
 		eventHelper: e,
 	}, nil
-}
-
-type GuestCgroupResourceUpdater struct {
-	*CgroupResourceUpdater
-	sandboxID string // for execute the file operation inside the sandbox
 }
 
 type NewResourceUpdaterFunc func(resourceType sysutil.ResourceType, parentDir string, value string, e *audit.EventHelper) (ResourceUpdater, error)

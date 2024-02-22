@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package resourceexecutor
+package system
 
 import (
 	"bufio"
@@ -93,7 +93,7 @@ func ParsePSIStats(r io.Reader) (PSIStats, error) {
 	return psiStats, nil
 }
 
-func getPSIByResource(paths PSIPath) (*PSIByResource, error) {
+func GetPSIByResource(paths PSIPath) (*PSIByResource, error) {
 	cpuStats, err := readPSI(paths.CPU)
 	if err != nil {
 		return nil, err

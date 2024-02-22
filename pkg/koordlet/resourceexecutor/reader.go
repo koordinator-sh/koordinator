@@ -38,7 +38,7 @@ type CgroupReader interface {
 	ReadMemoryNumaStat(parentDir string) ([]sysutil.NumaMemoryPages, error)
 	ReadCPUTasks(parentDir string) ([]int32, error)
 	ReadCPUProcs(parentDir string) ([]uint32, error)
-	ReadPSI(parentDir string) (*PSIByResource, error)
+	ReadPSI(parentDir string) (*sysutil.PSIByResource, error)
 	ReadMemoryColdPageUsage(parentDir string) (uint64, error)
 }
 
@@ -204,7 +204,7 @@ func (r *CgroupV1Reader) ReadCPUProcs(parentDir string) ([]uint32, error) {
 	return sysutil.ParseCgroupProcs(s)
 }
 
-func (r *CgroupV1Reader) ReadPSI(parentDir string) (*PSIByResource, error) {
+func (r *CgroupV1Reader) ReadPSI(parentDir string) (*sysutil.PSIByResource, error) {
 	cpuPressureResource, ok := sysutil.DefaultRegistry.Get(sysutil.CgroupVersionV1, sysutil.CPUAcctCPUPressureName)
 	if !ok {
 		return nil, ErrResourceNotRegistered
@@ -218,12 +218,12 @@ func (r *CgroupV1Reader) ReadPSI(parentDir string) (*PSIByResource, error) {
 		return nil, ErrResourceNotRegistered
 	}
 
-	paths := PSIPath{
+	paths := sysutil.PSIPath{
 		CPU: cpuPressureResource.Path(parentDir),
 		Mem: memPressureResource.Path(parentDir),
 		IO:  ioPressureResource.Path(parentDir),
 	}
-	psi, err := getPSIByResource(paths)
+	psi, err := sysutil.GetPSIByResource(paths)
 	if err != nil {
 		return nil, err
 	}
@@ -410,7 +410,7 @@ func (r *CgroupV2Reader) ReadCPUProcs(parentDir string) ([]uint32, error) {
 	return sysutil.ParseCgroupProcs(s)
 }
 
-func (r *CgroupV2Reader) ReadPSI(parentDir string) (*PSIByResource, error) {
+func (r *CgroupV2Reader) ReadPSI(parentDir string) (*sysutil.PSIByResource, error) {
 	cpuPressureResource, ok := sysutil.DefaultRegistry.Get(sysutil.CgroupVersionV2, sysutil.CPUAcctCPUPressureName)
 	if !ok {
 		return nil, ErrResourceNotRegistered
@@ -424,12 +424,12 @@ func (r *CgroupV2Reader) ReadPSI(parentDir string) (*PSIByResource, error) {
 		return nil, ErrResourceNotRegistered
 	}
 
-	paths := PSIPath{
+	paths := sysutil.PSIPath{
 		CPU: cpuPressureResource.Path(parentDir),
 		Mem: memPressureResource.Path(parentDir),
 		IO:  ioPressureResource.Path(parentDir),
 	}
-	psi, err := getPSIByResource(paths)
+	psi, err := sysutil.GetPSIByResource(paths)
 	if err != nil {
 		return nil, err
 	}

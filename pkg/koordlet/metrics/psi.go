@@ -22,7 +22,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	corev1 "k8s.io/api/core/v1"
 
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 )
 
 const (
@@ -73,7 +73,7 @@ type PSIRecord struct {
 	CPUFullSupported bool
 }
 
-func getPSIRecords(psi *resourceexecutor.PSIByResource) []PSIRecord {
+func getPSIRecords(psi *system.PSIByResource) []PSIRecord {
 	var psiRecordAll []PSIRecord
 	psiRecordAll = append(psiRecordAll, makePSIRecordSlice(ResourceTypeCPU, psi.CPU)...)
 	psiRecordAll = append(psiRecordAll, makePSIRecordSlice(ResourceTypeMem, psi.Mem)...)
@@ -81,7 +81,7 @@ func getPSIRecords(psi *resourceexecutor.PSIByResource) []PSIRecord {
 	return psiRecordAll
 }
 
-func makePSIRecordSlice(resourceType string, psiStats resourceexecutor.PSIStats) []PSIRecord {
+func makePSIRecordSlice(resourceType string, psiStats system.PSIStats) []PSIRecord {
 	records := []PSIRecord{
 		{
 			ResourceType:     resourceType,
@@ -134,7 +134,7 @@ func makePSIRecordSlice(resourceType string, psiStats resourceexecutor.PSIStats)
 	return records
 }
 
-func RecordContainerPSI(status *corev1.ContainerStatus, pod *corev1.Pod, psi *resourceexecutor.PSIByResource) {
+func RecordContainerPSI(status *corev1.ContainerStatus, pod *corev1.Pod, psi *system.PSIByResource) {
 	psiRecords := getPSIRecords(psi)
 	for _, record := range psiRecords {
 		labels := genNodeLabels()
@@ -155,7 +155,7 @@ func RecordContainerPSI(status *corev1.ContainerStatus, pod *corev1.Pod, psi *re
 	}
 }
 
-func RecordPodPSI(pod *corev1.Pod, psi *resourceexecutor.PSIByResource) {
+func RecordPodPSI(pod *corev1.Pod, psi *system.PSIByResource) {
 	psiRecords := getPSIRecords(psi)
 	for _, record := range psiRecords {
 		labels := genNodeLabels()
