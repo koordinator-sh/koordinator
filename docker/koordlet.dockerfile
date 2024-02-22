@@ -6,6 +6,7 @@ ARG TARGETARCH
 ENV VERSION $VERSION
 ENV GOOS linux
 ENV GOARCH $TARGETARCH
+ENV GOPROXY https://goproxy.cn,direct
 
 RUN apt update && apt install -y bash build-essential cmake wget
 RUN wget https://sourceforge.net/projects/perfmon2/files/libpfm4/libpfm-4.13.0.tar.gz && \
@@ -36,6 +37,7 @@ RUN go build -a -o koordlet cmd/koordlet/main.go
 FROM --platform=$TARGETPLATFORM nvidia/cuda:11.6.2-base-ubuntu20.04
 WORKDIR /
 RUN apt-get update && apt-get install -y lvm2 && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y iptables
 COPY --from=builder /go/src/github.com/koordinator-sh/koordinator/koordlet .
 COPY --from=builder /usr/local/lib /usr/lib
 ENTRYPOINT ["/koordlet"]
