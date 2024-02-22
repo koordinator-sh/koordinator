@@ -32,6 +32,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/hooks/cpuset"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/hooks/gpu"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/hooks/groupidentity"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/hooks/tc"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/hooks/terwayqos"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 )
@@ -81,6 +82,11 @@ const (
 	// owner: @l1b0k
 	// alpha: v1.5
 	TerwayQoS featuregate.Feature = "TerwayQoS"
+
+	// TCNetworkQoS indicates a network qos implementation based on tc.
+	// owner: @lucming
+	// alpha: v1.5
+	TCNetworkQoS featuregate.Feature = "TCNetworkQoS"
 )
 
 var (
@@ -92,6 +98,7 @@ var (
 		CPUNormalization: {Default: false, PreRelease: featuregate.Alpha},
 		CoreSched:        {Default: false, PreRelease: featuregate.Alpha},
 		TerwayQoS:        {Default: false, PreRelease: featuregate.Alpha},
+		TCNetworkQoS:     {Default: false, PreRelease: featuregate.Alpha},
 	}
 
 	runtimeHookPlugins = map[featuregate.Feature]HookPlugin{
@@ -102,6 +109,7 @@ var (
 		CPUNormalization: cpunormalization.Object(),
 		CoreSched:        coresched.Object(),
 		TerwayQoS:        terwayqos.Object(),
+		TCNetworkQoS:     tc.Object(),
 	}
 )
 
