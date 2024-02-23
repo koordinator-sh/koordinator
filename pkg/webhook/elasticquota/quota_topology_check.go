@@ -69,6 +69,10 @@ func (qt *quotaTopology) validateQuotaSelfItem(quota *v1alpha1.ElasticQuota) err
 // validateQuotaTopology checks the quotaInfo's topology with its parent and its children.
 // oldQuotaInfo is null wben validate a new create request, and is the current quotaInfo when validate a update request.
 func (qt *quotaTopology) validateQuotaTopology(oldQuotaInfo, newQuotaInfo *QuotaInfo, oldNamespaces []string) error {
+	if newQuotaInfo.Name == extension.RootQuotaName {
+		return nil
+	}
+
 	if err := qt.checkIsParentChange(oldQuotaInfo, newQuotaInfo, oldNamespaces); err != nil {
 		return err
 	}
