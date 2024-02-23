@@ -118,6 +118,19 @@ func TestElasticQuotaMutatingHandler_Handle(t *testing.T) {
 			},
 			allowed: true,
 		},
+		{
+			name: "create root quota",
+			request: admission.Request{
+				AdmissionRequest: admissionv1.AdmissionRequest{
+					Resource:  gvr("elasticquotas"),
+					Operation: admissionv1.Create,
+					Object: runtime.RawExtension{
+						Raw: []byte(`{"metadata":{"name":"koordinator-root-quota"}}`),
+					},
+				},
+			},
+			allowed: true,
+		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
