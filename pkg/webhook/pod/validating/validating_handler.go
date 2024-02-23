@@ -57,6 +57,10 @@ func (h *PodValidatingHandler) validatingPodFn(ctx context.Context, req admissio
 		klog.Warningf("Skip to validate pod %s/%s deletion for no old object, maybe because of Kubernetes version < 1.16", req.Namespace, req.Name)
 		return
 	}
+	_, reason, err = h.clusterReservationValidatingPod(ctx, req)
+	if err != nil {
+		return false, reason, err
+	}
 
 	allowed, reason, err = h.clusterColocationProfileValidatingPod(ctx, req)
 	if err == nil {
