@@ -29,8 +29,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	configv1alpha1 "github.com/koordinator-sh/koordinator/apis/config/v1alpha1"
-	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/util"
+	"github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
 
 func init() {
@@ -54,13 +54,13 @@ func TestClusterReservationValidatingPod(t *testing.T) {
 			newPod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
-						extension.AnnotationReservationAllocated: "",
+						reservation.AnnotationReservePod: "",
 					},
 				},
 			},
 			wantErr:     true,
 			wantAllowed: false,
-			wantReason:  `annotations.scheduling.koordinator.sh/reservation-allocated: Forbidden: cannot set in annotations`,
+			wantReason:  `annotations.scheduling.koordinator.sh/reserve-pod: Forbidden: cannot set in annotations`,
 		},
 	}
 

@@ -24,7 +24,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
-	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
 
@@ -59,7 +58,6 @@ func (h *PodValidatingHandler) clusterReservationValidatingPod(ctx context.Conte
 }
 
 var forbidAnnotations = []string{
-	extension.AnnotationReservationAllocated,
 	reservation.AnnotationReservePod,
 }
 
@@ -71,7 +69,7 @@ func forbidSpecialAnnotations(pod *corev1.Pod) field.ErrorList {
 
 	for _, annotation := range forbidAnnotations {
 		if _, ok := pod.Annotations[annotation]; ok {
-			errorList = append(errorList, field.Forbidden(field.NewPath("annotations", extension.AnnotationReservationAllocated), "cannot set in annotations"))
+			errorList = append(errorList, field.Forbidden(field.NewPath("annotations", annotation), "cannot set in annotations"))
 		}
 	}
 	return errorList
