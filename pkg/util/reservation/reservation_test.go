@@ -28,6 +28,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/utils/pointer"
 
+	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 )
 
@@ -744,6 +745,52 @@ func TestReservationRequests(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			got := ReservationRequests(tt.reservation)
 			assert.True(t, equality.Semantic.DeepEqual(tt.want, got))
+		})
+	}
+}
+
+func TestGetReservationRestrictedResources(t *testing.T) {
+	tests := []struct {
+		name          string
+		resourceNames []corev1.ResourceName
+		options       *apiext.ReservationRestrictedOptions
+		want          []corev1.ResourceName
+	}{
+		{
+			name:          "no options, got all allocatable resources",
+			resourceNames: []corev1.ResourceName{"cpu", "memory"},
+			options:       nil,
+			want:          []corev1.ResourceName{"cpu", "memory"},
+		},
+		{
+			name:          "has options and same as resourceNames",
+			resourceNames: []corev1.ResourceName{"cpu", "memory"},
+			options: &apiext.ReservationRestrictedOptions{
+				Resources: []corev1.ResourceName{"cpu", "memory"},
+			},
+			want: []corev1.ResourceName{"cpu", "memory"},
+		},
+		{
+			name:          "has options but different resourceNames",
+			resourceNames: []corev1.ResourceName{"cpu", "memory"},
+			options: &apiext.ReservationRestrictedOptions{
+				Resources: []corev1.ResourceName{"cpu"},
+			},
+			want: []corev1.ResourceName{"cpu"},
+		},
+		{
+			name:          "has options but no resourceNames",
+			resourceNames: []corev1.ResourceName{"cpu", "memory"},
+			options: &apiext.ReservationRestrictedOptions{
+				Resources: []corev1.ResourceName{},
+			},
+			want: []corev1.ResourceName{"cpu", "memory"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := GetReservationRestrictedResources(tt.resourceNames, tt.options)
+			assert.Equal(t, tt.want, got)
 		})
 	}
 }

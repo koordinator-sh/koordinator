@@ -20,6 +20,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	corev1helpers "k8s.io/component-helpers/scheduling/corev1"
 	"k8s.io/klog/v2"
@@ -77,13 +78,28 @@ func (p *PodRequirement) Clone() *PodRequirement {
 }
 
 func NewReservationInfo(r *schedulingv1alpha1.Reservation) *ReservationInfo {
+	var parseErrors []error
 	allocatable := reservationutil.ReservationRequests(r)
 	resourceNames := quotav1.ResourceNames(allocatable)
+	if r.Spec.AllocatePolicy == schedulingv1alpha1.ReservationAllocatePolicyRestricted {
+		options, err := apiext.GetReservationRestrictedOptions(r.Annotations)
+		if err == nil {
+			resourceNames = reservationutil.GetReservationRestrictedResources(resourceNames, options)
+		} else {
+			parseErrors = append(parseErrors, err)
+		}
+	}
 	reservedPod := reservationutil.NewReservePod(r)
 
 	ownerMatchers, err := reservationutil.ParseReservationOwnerMatchers(r.Spec.Owners)
 	if err != nil {
+		parseErrors = append(parseErrors, err)
 		klog.ErrorS(err, "Failed to parse reservation owner matchers", "reservation", klog.KObj(r))
+	}
+
+	var parseError error
+	if len(parseErrors) > 0 {
+		parseError = utilerrors.NewAggregate(parseErrors)
 	}
 
 	return &ReservationInfo{
@@ -94,13 +110,21 @@ func NewReservationInfo(r *schedulingv1alpha1.Reservation) *ReservationInfo {
 		AllocatablePorts: util.RequestedHostPorts(reservedPod),
 		AssignedPods:     map[types.UID]*PodRequirement{},
 		OwnerMatchers:    ownerMatchers,
-		ParseError:       err,
+		ParseError:       parseError,
 	}
 }
 
 func NewReservationInfoFromPod(pod *corev1.Pod) *ReservationInfo {
+	var parseErrors []error
+
 	allocatable, _ := resource.PodRequestsAndLimits(pod)
 	resourceNames := quotav1.ResourceNames(allocatable)
+	options, err := apiext.GetReservationRestrictedOptions(pod.Annotations)
+	if err == nil {
+		resourceNames = reservationutil.GetReservationRestrictedResources(resourceNames, options)
+	} else {
+		parseErrors = append(parseErrors, err)
+	}
 
 	owners, err := apiext.GetReservationOwners(pod.Annotations)
 	if err != nil {
@@ -110,8 +134,14 @@ func NewReservationInfoFromPod(pod *corev1.Pod) *ReservationInfo {
 	if owners != nil {
 		ownerMatchers, err = reservationutil.ParseReservationOwnerMatchers(owners)
 		if err != nil {
+			parseErrors = append(parseErrors, err)
 			klog.ErrorS(err, "Failed to parse reservation owner matchers of pod", "pod", klog.KObj(pod))
 		}
+	}
+
+	var parseError error
+	if len(parseErrors) > 0 {
+		parseError = utilerrors.NewAggregate(parseErrors)
 	}
 
 	return &ReservationInfo{
@@ -121,7 +151,7 @@ func NewReservationInfoFromPod(pod *corev1.Pod) *ReservationInfo {
 		AllocatablePorts: util.RequestedHostPorts(pod),
 		AssignedPods:     map[types.UID]*PodRequirement{},
 		OwnerMatchers:    ownerMatchers,
-		ParseError:       err,
+		ParseError:       parseError,
 	}
 }
 
