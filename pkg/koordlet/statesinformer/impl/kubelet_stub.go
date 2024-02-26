@@ -33,6 +33,8 @@ import (
 	"k8s.io/kubernetes/cmd/kubelet/app/options"
 	kubeletconfiginternal "k8s.io/kubernetes/pkg/kubelet/apis/config"
 	kubeletscheme "k8s.io/kubernetes/pkg/kubelet/apis/config/scheme"
+
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
 )
 
 type KubeletStub interface {
@@ -68,13 +70,17 @@ func NewKubeletStub(addr string, port int, scheme string, timeout time.Duration,
 }
 
 func (k *kubeletStub) GetAllPods() (corev1.PodList, error) {
+	path := "/pods/"
 	url := url.URL{
 		Scheme: k.scheme,
 		Host:   net.JoinHostPort(k.addr, strconv.Itoa(k.port)),
-		Path:   "/pods/",
+		Path:   path,
 	}
 	podList := corev1.PodList{}
+	start := time.Now()
 	rsp, err := k.httpClient.Get(url.String())
+	metrics.RecordKubeletRequestDuration(metrics.HTTPVerbGet, path, strconv.Itoa(rsp.StatusCode), metrics.SinceInSeconds(start))
+
 	if err != nil {
 		return podList, err
 	}
@@ -102,12 +108,16 @@ type kubeletConfigz struct {
 
 // GetKubeletConfiguration removes the logging field from the configz during unmarshall to make sure the configz is compatible
 func (k *kubeletStub) GetKubeletConfiguration() (*kubeletconfiginternal.KubeletConfiguration, error) {
+	path := "/configz"
 	configzURL := url.URL{
 		Scheme: k.scheme,
 		Host:   net.JoinHostPort(k.addr, strconv.Itoa(k.port)),
-		Path:   "/configz",
+		Path:   path,
 	}
+	start := time.Now()
 	rsp, err := k.httpClient.Get(configzURL.String())
+	metrics.RecordKubeletRequestDuration(metrics.HTTPVerbGet, path, strconv.Itoa(rsp.StatusCode), metrics.SinceInSeconds(start))
+
 	if err != nil {
 		return nil, err
 	}

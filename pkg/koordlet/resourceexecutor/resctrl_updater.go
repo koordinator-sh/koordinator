@@ -36,6 +36,10 @@ type ResctrlSchemataResourceUpdater struct {
 	schemataRaw *sysutil.ResctrlSchemataRaw
 }
 
+func (r *ResctrlSchemataResourceUpdater) Name() string {
+	return "resctrl-schema"
+}
+
 func (r *ResctrlSchemataResourceUpdater) Key() string {
 	return r.schemataRaw.Prefix() + r.file
 }
