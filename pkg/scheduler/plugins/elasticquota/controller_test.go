@@ -367,6 +367,14 @@ func Test_updateElasticQuotaStatusIfChanged(t *testing.T) {
 
 func Test_syncElasticQuotaMetrics(t *testing.T) {
 	eq := &v1alpha1.ElasticQuota{
+		ObjectMeta: metav1.ObjectMeta{
+			Labels: map[string]string{
+				"quota.scheduling.koordinator.sh/is-root": "true",
+			},
+			Annotations: map[string]string{
+				"quota.scheduling.koordinator.sh/unschedulable-resource": `{"cpu":"4","memory":"8"}`,
+			},
+		},
 		Spec: v1alpha1.ElasticQuotaSpec{
 			Max: MakeResourceList().CPU(4).Mem(200).Obj(),
 			Min: MakeResourceList().CPU(2).Mem(100).Obj(),
@@ -435,6 +443,8 @@ loopChan:
 		`label:<name:"field" value:"request" > label:<name:"is_parent" value:"true" > label:<name:"name" value:"test-eq" > label:<name:"parent" value:"root" > label:<name:"resource" value:"memory" > label:<name:"tree" value:"tree-1" > gauge:<value:50 > `,
 		`label:<name:"field" value:"runtime" > label:<name:"is_parent" value:"true" > label:<name:"name" value:"test-eq" > label:<name:"parent" value:"root" > label:<name:"resource" value:"cpu" > label:<name:"tree" value:"tree-1" > gauge:<value:5000 > `,
 		`label:<name:"field" value:"runtime" > label:<name:"is_parent" value:"true" > label:<name:"name" value:"test-eq" > label:<name:"parent" value:"root" > label:<name:"resource" value:"memory" > label:<name:"tree" value:"tree-1" > gauge:<value:50 > `,
+		`label:<name:"field" value:"unschedulable-resource" > label:<name:"is_parent" value:"true" > label:<name:"name" value:"test-eq" > label:<name:"parent" value:"root" > label:<name:"resource" value:"cpu" > label:<name:"tree" value:"tree-1" > gauge:<value:4000 > `,
+		`label:<name:"field" value:"unschedulable-resource" > label:<name:"is_parent" value:"true" > label:<name:"name" value:"test-eq" > label:<name:"parent" value:"root" > label:<name:"resource" value:"memory" > label:<name:"tree" value:"tree-1" > gauge:<value:8 > `,
 		`label:<name:"field" value:"used" > label:<name:"is_parent" value:"true" > label:<name:"name" value:"test-eq" > label:<name:"parent" value:"root" > label:<name:"resource" value:"cpu" > label:<name:"tree" value:"tree-1" > gauge:<value:1000 > `,
 		`label:<name:"field" value:"used" > label:<name:"is_parent" value:"true" > label:<name:"name" value:"test-eq" > label:<name:"parent" value:"root" > label:<name:"resource" value:"memory" > label:<name:"tree" value:"tree-1" > gauge:<value:50 > `,
 	}

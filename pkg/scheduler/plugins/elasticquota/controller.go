@@ -257,6 +257,15 @@ func syncElasticQuotaMetrics(eq *v1alpha1.ElasticQuota, summary *core.QuotaInfoS
 		extension.AnnotationNonPreemptibleRequest: summary.NonPreemptibleRequest,
 		extension.AnnotationNonPreemptibleUsed:    summary.NonPreemptibleUsed,
 	}
+
+	// record the unschedulable resource
+	if extension.IsTreeRootQuota(eq) {
+		unschedulable, err := extension.GetUnschedulableResource(eq)
+		if err == nil {
+			m[extension.AnnotationUnschedulableResource] = unschedulable
+		}
+	}
+
 	for k, v := range m {
 		decorateResource(eq, v)
 
