@@ -252,9 +252,6 @@ func (pl *Plugin) PreFilterExtensions() framework.PreFilterExtensions {
 }
 
 func (pl *Plugin) AddPod(ctx context.Context, cycleState *framework.CycleState, podToSchedule *corev1.Pod, podInfoToAdd *framework.PodInfo, nodeInfo *framework.NodeInfo) *framework.Status {
-	if reservationutil.IsReservePod(podInfoToAdd.Pod) || nodeInfo.Node() == nil {
-		return nil
-	}
 	podRequests, _ := resourceapi.PodRequestsAndLimits(podInfoToAdd.Pod)
 	if quotav1.IsZero(podRequests) {
 		return nil
@@ -283,10 +280,6 @@ func (pl *Plugin) AddPod(ctx context.Context, cycleState *framework.CycleState, 
 }
 
 func (pl *Plugin) RemovePod(ctx context.Context, cycleState *framework.CycleState, podToSchedule *corev1.Pod, podInfoToRemove *framework.PodInfo, nodeInfo *framework.NodeInfo) *framework.Status {
-	if reservationutil.IsReservePod(podInfoToRemove.Pod) || nodeInfo.Node() == nil {
-		return nil
-	}
-
 	podRequests, _ := resourceapi.PodRequestsAndLimits(podInfoToRemove.Pod)
 	if quotav1.IsZero(podRequests) {
 		return nil
@@ -482,10 +475,7 @@ func fitsNode(podRequest *framework.Resource, nodeInfo *framework.NodeInfo, node
 }
 
 func (pl *Plugin) PostFilter(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, _ framework.NodeToStatusMap) (*framework.PostFilterResult, *framework.Status) {
-	if reservationutil.IsReservePod(pod) {
-		// return err to stop default preemption
-		return nil, framework.NewStatus(framework.Error)
-	}
+	// Implement an empty function to be compatible with existing configurations
 	return nil, framework.NewStatus(framework.Unschedulable)
 }
 

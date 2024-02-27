@@ -1556,49 +1556,6 @@ func TestPreFilterExtensionRemovePod(t *testing.T) {
 	}
 }
 
-func TestPostFilter(t *testing.T) {
-	reservePod := testGetReservePod(&corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			UID:  "reserve-pod-0",
-			Name: "reserve-pod-0",
-		},
-		Spec: corev1.PodSpec{
-			NodeName: "node1",
-		},
-	})
-	tests := []struct {
-		name       string
-		pod        *corev1.Pod
-		wantStatus *framework.Status
-	}{
-		{
-			name: "not reserve pod",
-			pod: &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "not-reserve",
-				},
-			},
-			wantStatus: framework.NewStatus(framework.Unschedulable),
-		},
-		{
-			name:       "reserve pod",
-			pod:        reservePod,
-			wantStatus: framework.NewStatus(framework.Error),
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			suit := newPluginTestSuitWith(t, []*corev1.Pod{reservePod}, []*corev1.Node{{ObjectMeta: metav1.ObjectMeta{Name: "node1"}}})
-			p, err := suit.pluginFactory()
-			assert.NoError(t, err)
-			pl := p.(*Plugin)
-			gotResult, status := pl.PostFilter(context.TODO(), nil, tt.pod, nil)
-			assert.Nil(t, gotResult)
-			assert.Equal(t, tt.wantStatus, status)
-		})
-	}
-}
-
 func TestFilterReservation(t *testing.T) {
 	reservation4C8G := &schedulingv1alpha1.Reservation{
 		ObjectMeta: metav1.ObjectMeta{

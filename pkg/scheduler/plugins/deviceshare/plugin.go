@@ -161,10 +161,6 @@ func (p *Plugin) PreFilterExtensions() framework.PreFilterExtensions {
 }
 
 func (p *Plugin) AddPod(ctx context.Context, cycleState *framework.CycleState, podToSchedule *corev1.Pod, podInfoToAdd *framework.PodInfo, nodeInfo *framework.NodeInfo) *framework.Status {
-	if reservationutil.IsReservePod(podInfoToAdd.Pod) {
-		return nil
-	}
-
 	state, status := getPreFilterState(cycleState)
 	if !status.IsSuccess() {
 		return status
@@ -220,10 +216,6 @@ func (p *Plugin) AddPod(ctx context.Context, cycleState *framework.CycleState, p
 }
 
 func (p *Plugin) RemovePod(ctx context.Context, cycleState *framework.CycleState, podToSchedule *corev1.Pod, podInfoToRemove *framework.PodInfo, nodeInfo *framework.NodeInfo) *framework.Status {
-	if reservationutil.IsReservePod(podInfoToRemove.Pod) {
-		return nil
-	}
-
 	state, status := getPreFilterState(cycleState)
 	if !status.IsSuccess() {
 		return status
