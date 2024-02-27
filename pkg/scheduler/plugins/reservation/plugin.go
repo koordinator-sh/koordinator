@@ -403,10 +403,11 @@ func (pl *Plugin) filterWithReservations(ctx context.Context, cycleState *framew
 			allocated := rInfo.Allocated
 			if len(preemptibleInRR) > 0 {
 				allocated = quotav1.SubtractWithNonNegativeResult(allocated, preemptibleInRR)
-				allocated = quotav1.Mask(allocated, rInfo.ResourceNames)
 			}
+			allocated = quotav1.Mask(allocated, rInfo.ResourceNames)
 			rRemained := quotav1.SubtractWithNonNegativeResult(rInfo.Allocatable, allocated)
-			fits, _ := quotav1.LessThanOrEqual(state.podRequests, rRemained)
+			requests := quotav1.Mask(state.podRequests, rInfo.ResourceNames)
+			fits, _ := quotav1.LessThanOrEqual(requests, rRemained)
 			if fits && nodeFits {
 				hasSatisfiedReservation = true
 				break
