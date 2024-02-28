@@ -25,16 +25,19 @@ import (
 	"testing"
 	"time"
 
+	faketopologyclientset "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/clientset/versioned/fake"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/atomic"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	fakeclientset "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	kubeletconfiginternal "k8s.io/kubernetes/pkg/kubelet/apis/config"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
+	fakekoordclientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/fake"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
@@ -117,6 +120,85 @@ func (t *testErrorKubeletStub) GetAllPods() (corev1.PodList, error) {
 
 func (t *testErrorKubeletStub) GetKubeletConfiguration() (*kubeletconfiginternal.KubeletConfiguration, error) {
 	return nil, errors.New("test error")
+}
+
+func Test_podsInformer(t *testing.T) {
+	tempCgroupDir := t.TempDir()
+	type fields struct {
+		GetCgroupDirFn func(helper *system.FileTestUtil) string
+	}
+	type args struct {
+		ctx    *PluginOption
+		states *PluginState
+	}
+	tests := []struct {
+		name   string
+		fields fields
+		args   args
+	}{
+		{
+			name: "default config",
+			fields: fields{
+				GetCgroupDirFn: nil,
+			},
+			args: args{
+				ctx: &PluginOption{
+					config:      NewDefaultConfig(),
+					KubeClient:  fakeclientset.NewSimpleClientset(),
+					KoordClient: fakekoordclientset.NewSimpleClientset(),
+					TopoClient:  faketopologyclientset.NewSimpleClientset(),
+					NodeName:    "test-node",
+				},
+				states: &PluginState{
+					informerPlugins: map[PluginName]informerPlugin{
+						nodeInformerName: NewNodeInformer(),
+					},
+				},
+			},
+		},
+		{
+			name: "change cgroup root",
+			fields: fields{
+				GetCgroupDirFn: func(helper *system.FileTestUtil) string {
+					return tempCgroupDir
+				},
+			},
+			args: args{
+				ctx: &PluginOption{
+					config:      NewDefaultConfig(),
+					KubeClient:  fakeclientset.NewSimpleClientset(),
+					KoordClient: fakekoordclientset.NewSimpleClientset(),
+					TopoClient:  faketopologyclientset.NewSimpleClientset(),
+					NodeName:    "test-node",
+				},
+				states: &PluginState{
+					informerPlugins: map[PluginName]informerPlugin{
+						nodeInformerName: NewNodeInformer(),
+					},
+				},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			helper := system.NewFileTestUtil(t)
+			oldCgroupRoot := system.Conf.CgroupRootDir
+			if tt.fields.GetCgroupDirFn != nil {
+				helper.SetConf(func(conf *system.Config) {
+					conf.CgroupRootDir = tt.fields.GetCgroupDirFn(helper)
+				}, func(conf *system.Config) {
+					conf.CgroupRootDir = oldCgroupRoot
+				})
+			}
+			defer helper.Cleanup()
+			pi := NewPodsInformer()
+			assert.NotNil(t, pi)
+			assert.NotPanics(t, func() {
+				pi.Setup(tt.args.ctx, tt.args.states)
+			})
+			assert.NotNil(t, pi.pleg)
+		})
+	}
 }
 
 func Test_statesInformer_syncPods(t *testing.T) {
