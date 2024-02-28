@@ -48,7 +48,7 @@ func (p *Plugin) RegisterEndpoints(group *gin.RouterGroup) {
 		}
 
 		topologyOptions := p.topologyOptionsManager.GetTopologyOptions(nodeName)
-		if topologyOptions.CPUTopology == nil || !topologyOptions.CPUTopology.IsValid() {
+		if !topologyOptions.CPUTopology.IsValid() {
 			services.ResponseErrorMessage(c, http.StatusInternalServerError, "invalid topology, please check the NodeResourceTopology object")
 			return
 		}

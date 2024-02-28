@@ -113,6 +113,8 @@ func (f *testSharedLister) Get(nodeName string) (*framework.NodeInfo, error) {
 
 func makeNode(name string, capacity map[corev1.ResourceName]string, cpuAmpRatio extension.Ratio) *corev1.Node {
 	node := st.MakeNode().Name(name).Capacity(capacity).Obj()
+	extension.SetNodeRawAllocatable(node, node.Status.Allocatable)
+	extension.AmplifyResourceList(node.Status.Allocatable, map[corev1.ResourceName]extension.Ratio{corev1.ResourceCPU: cpuAmpRatio}, corev1.ResourceCPU)
 	_, _ = extension.SetNodeResourceAmplificationRatio(node, corev1.ResourceCPU, cpuAmpRatio)
 	return node
 }
@@ -438,6 +440,7 @@ func TestPlugin_PreFilter(t *testing.T) {
 				requests: corev1.ResourceList{
 					corev1.ResourceCPU: resource.MustParse("4"),
 				},
+				numCPUsNeeded: 4,
 			},
 		},
 		{
@@ -484,7 +487,7 @@ func TestPlugin_PreFilter(t *testing.T) {
 					},
 				},
 			},
-			want: framework.NewStatus(framework.Error, "the requested CPUs must be integer"),
+			want: framework.NewStatus(framework.UnschedulableAndUnresolvable, "the requested CPUs must be integer"),
 		},
 		{
 			name: "skip Pod with unsupported bind policy",
@@ -516,6 +519,7 @@ func TestPlugin_PreFilter(t *testing.T) {
 				requests: corev1.ResourceList{
 					corev1.ResourceCPU: resource.MustParse("4.5"),
 				},
+				numCPUsNeeded: 4,
 			},
 		},
 	}
@@ -561,13 +565,6 @@ func TestPlugin_Filter(t *testing.T) {
 			want: framework.AsStatus(framework.ErrNotFound),
 		},
 		{
-			name: "error with missing CPUTopology",
-			state: &preFilterState{
-				requestCPUBind: true,
-			},
-			want: framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrNotFoundCPUTopology),
-		},
-		{
 			name: "error with invalid cpu topology",
 			state: &preFilterState{
 				requestCPUBind: true,
@@ -605,6 +602,38 @@ func TestPlugin_Filter(t *testing.T) {
 			cpuTopology:     buildCPUTopologyForTest(2, 1, 4, 2),
 			allocationState: NewNodeAllocation("test-node-1"),
 			want:            framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrSMTAlignmentError),
+		},
+		{
+			name: "LS Pod failed to verify Node FullPCPUsOnly with SMTAlignmentError",
+			nodeLabels: map[string]string{
+				extension.LabelNodeCPUBindPolicy: string(extension.NodeCPUBindPolicyFullPCPUsOnly),
+			},
+			state: &preFilterState{
+				requestCPUBind: false,
+				numCPUsNeeded:  5,
+				requests: corev1.ResourceList{
+					corev1.ResourceCPU: resource.MustParse("5"),
+				},
+			},
+			cpuTopology:     buildCPUTopologyForTest(2, 1, 4, 2),
+			allocationState: NewNodeAllocation("test-node-1"),
+			want:            framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrSMTAlignmentError),
+		},
+		{
+			name: "LS Pod failed to verify Node FullPCPUsOnly with non-integer request",
+			nodeLabels: map[string]string{
+				extension.LabelNodeCPUBindPolicy: string(extension.NodeCPUBindPolicyFullPCPUsOnly),
+			},
+			state: &preFilterState{
+				requestCPUBind: false,
+				numCPUsNeeded:  5,
+				requests: corev1.ResourceList{
+					corev1.ResourceCPU: resource.MustParse("5200m"),
+				},
+			},
+			cpuTopology:     buildCPUTopologyForTest(2, 1, 4, 2),
+			allocationState: NewNodeAllocation("test-node-1"),
+			want:            framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrInvalidRequestedCPUs),
 		},
 		{
 			name: "verify Node FullPCPUsOnly",
@@ -654,22 +683,35 @@ func TestPlugin_Filter(t *testing.T) {
 			},
 			cpuTopology:     buildCPUTopologyForTest(2, 1, 4, 2),
 			allocationState: NewNodeAllocation("test-node-1"),
-			want:            framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrRequiredFullPCPUsPolicy),
+			want:            nil,
 		},
 		{
-			name: "verify FullPCPUsOnly with required SpreadByPCPUs",
+			name: "failed to verify FullPCPUsOnly with required SpreadByPCPUs",
+			nodeLabels: map[string]string{
+				extension.LabelNodeCPUBindPolicy: string(extension.NodeCPUBindPolicySpreadByPCPUs),
+			},
+			state: &preFilterState{
+				requestCPUBind:        true,
+				requiredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs,
+				numCPUsNeeded:         4,
+			},
+			cpuTopology:     buildCPUTopologyForTest(2, 1, 4, 2),
+			allocationState: NewNodeAllocation("test-node-1"),
+			want:            framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrCPUBindPolicyConflict),
+		},
+		{
+			name: "verify FullPCPUsOnly with required FullPCPUs",
 			nodeLabels: map[string]string{
 				extension.LabelNodeCPUBindPolicy: string(extension.NodeCPUBindPolicyFullPCPUsOnly),
 			},
 			state: &preFilterState{
-				requestCPUBind:         true,
-				requiredCPUBindPolicy:  schedulingconfig.CPUBindPolicySpreadByPCPUs,
-				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicySpreadByPCPUs,
-				numCPUsNeeded:          4,
+				requestCPUBind:        true,
+				requiredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs,
+				numCPUsNeeded:         4,
 			},
 			cpuTopology:     buildCPUTopologyForTest(2, 1, 4, 2),
 			allocationState: NewNodeAllocation("test-node-1"),
-			want:            framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrRequiredFullPCPUsPolicy),
+			want:            nil,
 		},
 		{
 			name: "verify Kubelet FullPCPUsOnly with SMTAlignmentError",
@@ -689,11 +731,11 @@ func TestPlugin_Filter(t *testing.T) {
 			want: framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrSMTAlignmentError),
 		},
 		{
-			name: "verify Kubelet FullPCPUsOnly with RequiredFullPCPUsPolicy",
+			name: "verify Kubelet FullPCPUsOnly with required SpreadByPCPUs",
 			state: &preFilterState{
-				requestCPUBind:         true,
-				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicySpreadByPCPUs,
-				numCPUsNeeded:          4,
+				requestCPUBind:        true,
+				requiredCPUBindPolicy: schedulingconfig.CPUBindPolicySpreadByPCPUs,
+				numCPUsNeeded:         4,
 			},
 			cpuTopology:     buildCPUTopologyForTest(2, 1, 4, 2),
 			allocationState: NewNodeAllocation("test-node-1"),
@@ -703,7 +745,24 @@ func TestPlugin_Filter(t *testing.T) {
 					extension.KubeletCPUManagerPolicyFullPCPUsOnlyOption: "true",
 				},
 			},
-			want: framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrRequiredFullPCPUsPolicy),
+			want: framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrCPUBindPolicyConflict),
+		},
+		{
+			name: "verify Kubelet FullPCPUsOnly with required FullPCPUs",
+			state: &preFilterState{
+				requestCPUBind:        true,
+				requiredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs,
+				numCPUsNeeded:         4,
+			},
+			cpuTopology:     buildCPUTopologyForTest(2, 1, 4, 2),
+			allocationState: NewNodeAllocation("test-node-1"),
+			kubeletPolicy: &extension.KubeletCPUManagerPolicy{
+				Policy: extension.KubeletCPUManagerPolicyStatic,
+				Options: map[string]string{
+					extension.KubeletCPUManagerPolicyFullPCPUsOnlyOption: "true",
+				},
+			},
+			want: nil,
 		},
 		{
 			name: "verify required FullPCPUs with none NUMA topology policy",
@@ -820,7 +879,7 @@ func TestPlugin_Filter(t *testing.T) {
 
 			cycleState := framework.NewCycleState()
 			if tt.state != nil {
-				if tt.state.numCPUsNeeded > 0 {
+				if tt.state.numCPUsNeeded > 0 && tt.state.requests == nil {
 					tt.state.requests = corev1.ResourceList{corev1.ResourceCPU: *resource.NewQuantity(int64(tt.state.numCPUsNeeded), resource.DecimalSI)}
 				}
 				cycleState.Write(stateKey, tt.state)
@@ -910,7 +969,7 @@ func TestFilterWithAmplifiedCPUs(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			numCPUs := tt.cpuTopology.NumCPUs
-			cpu := fmt.Sprintf("%d", extension.Amplify(int64(numCPUs), tt.nodeCPUAmplificationRatio))
+			cpu := fmt.Sprintf("%d", numCPUs)
 			node := makeNode("node-1", map[corev1.ResourceName]string{"cpu": cpu, "memory": "40Gi"}, tt.nodeCPUAmplificationRatio)
 			suit := newPluginTestSuit(t, tt.existingPods, []*corev1.Node{node})
 
@@ -963,20 +1022,11 @@ func TestPlugin_Reserve(t *testing.T) {
 		allocatedCPUs []int
 		want          *framework.Status
 		wantCPUSet    cpuset.CPUSet
-		wantState     *preFilterState
 	}{
 		{
 			name: "error with missing preFilterState",
 			pod:  &corev1.Pod{},
 			want: framework.AsStatus(framework.ErrNotFound),
-		},
-		{
-			name: "error with missing allocationState",
-			state: &preFilterState{
-				requestCPUBind: true,
-			},
-			pod:  &corev1.Pod{},
-			want: framework.NewStatus(framework.Error, ErrNotFoundCPUTopology),
 		},
 		{
 			name: "error with invalid cpu topology",
@@ -1013,19 +1063,33 @@ func TestPlugin_Reserve(t *testing.T) {
 				extension.LabelNodeCPUBindPolicy: string(extension.NodeCPUBindPolicySpreadByPCPUs),
 			},
 			state: &preFilterState{
-				requestCPUBind:         true,
-				numCPUsNeeded:          4,
-				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs,
+				requestCPUBind: false,
+				numCPUsNeeded:  4,
+				requests: corev1.ResourceList{
+					corev1.ResourceCPU: resource.MustParse("4"),
+				},
 			},
 			cpuTopology: buildCPUTopologyForTest(2, 1, 4, 2),
 			pod:         &corev1.Pod{},
 			want:        nil,
 			wantCPUSet:  cpuset.NewCPUSet(0, 2, 4, 6),
-			wantState: &preFilterState{
-				requestCPUBind:         true,
-				numCPUsNeeded:          4,
-				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicySpreadByPCPUs,
+		},
+		{
+			name: "BE Pod reserves with node cpu bind policy",
+			nodeLabels: map[string]string{
+				extension.LabelNodeCPUBindPolicy: string(extension.NodeCPUBindPolicySpreadByPCPUs),
 			},
+			state: &preFilterState{
+				requestCPUBind: false,
+				numCPUsNeeded:  4,
+				requests: corev1.ResourceList{
+					extension.BatchCPU: resource.MustParse("4000"),
+				},
+			},
+			cpuTopology: buildCPUTopologyForTest(2, 1, 4, 2),
+			pod:         &corev1.Pod{},
+			want:        nil,
+			wantCPUSet:  cpuset.NewCPUSet(),
 		},
 		{
 			name: "error with big request cpu",
@@ -1215,7 +1279,12 @@ func TestPlugin_Unreserve(t *testing.T) {
 }
 
 func TestPlugin_PreBind(t *testing.T) {
-	suit := newPluginTestSuit(t, nil, nil)
+	node := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-node-1",
+		},
+	}
+	suit := newPluginTestSuit(t, nil, []*corev1.Node{node})
 	p, err := suit.proxyNew(suit.nodeNUMAResourceArgs, suit.Handle)
 	assert.NotNil(t, p)
 	assert.Nil(t, err)
@@ -1245,7 +1314,7 @@ func TestPlugin_PreBind(t *testing.T) {
 	cycleState := framework.NewCycleState()
 	cycleState.Write(stateKey, state)
 
-	s := plg.PreBind(context.TODO(), cycleState, pod, "test-node-1")
+	s := plg.PreBind(context.TODO(), cycleState, pod, node.Name)
 	assert.True(t, s.IsSuccess())
 	resourceStatus, err := extension.GetResourceStatus(pod.Annotations)
 	assert.NoError(t, err)
@@ -1257,7 +1326,12 @@ func TestPlugin_PreBind(t *testing.T) {
 }
 
 func TestPlugin_PreBindWithCPUBindPolicyNone(t *testing.T) {
-	suit := newPluginTestSuit(t, nil, nil)
+	node := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-node-1",
+		},
+	}
+	suit := newPluginTestSuit(t, nil, []*corev1.Node{node})
 	p, err := suit.proxyNew(suit.nodeNUMAResourceArgs, suit.Handle)
 	assert.NotNil(t, p)
 	assert.Nil(t, err)
@@ -1288,7 +1362,7 @@ func TestPlugin_PreBindWithCPUBindPolicyNone(t *testing.T) {
 	cycleState := framework.NewCycleState()
 	cycleState.Write(stateKey, state)
 
-	s := plg.PreBind(context.TODO(), cycleState, pod, "test-node-1")
+	s := plg.PreBind(context.TODO(), cycleState, pod, node.Name)
 	assert.True(t, s.IsSuccess())
 	resourceStatus, err := extension.GetResourceStatus(pod.Annotations)
 	assert.NoError(t, err)
@@ -1307,7 +1381,12 @@ func TestPlugin_PreBindWithCPUBindPolicyNone(t *testing.T) {
 }
 
 func TestPlugin_PreBindReservation(t *testing.T) {
-	suit := newPluginTestSuit(t, nil, nil)
+	node := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-node-1",
+		},
+	}
+	suit := newPluginTestSuit(t, nil, []*corev1.Node{node})
 	p, err := suit.proxyNew(suit.nodeNUMAResourceArgs, suit.Handle)
 	assert.NotNil(t, p)
 	assert.Nil(t, err)
@@ -1336,7 +1415,7 @@ func TestPlugin_PreBindReservation(t *testing.T) {
 	cycleState := framework.NewCycleState()
 	cycleState.Write(stateKey, state)
 
-	s := plg.PreBindReservation(context.TODO(), cycleState, reservation, "test-node-1")
+	s := plg.PreBindReservation(context.TODO(), cycleState, reservation, node.Name)
 	assert.True(t, s.IsSuccess())
 
 	resourceStatus, err := extension.GetResourceStatus(reservation.Annotations)
@@ -1459,6 +1538,7 @@ func Test_appendResourceSpecIfMissed(t *testing.T) {
 	tests := []struct {
 		name         string
 		resourceSpec *extension.ResourceSpec
+		nodePolicy   extension.NodeCPUBindPolicy
 		state        *preFilterState
 		wantErr      bool
 		wantSpec     *extension.ResourceSpec
@@ -1532,6 +1612,14 @@ func Test_appendResourceSpecIfMissed(t *testing.T) {
 				PreferredCPUExclusivePolicy: extension.CPUExclusivePolicyPCPULevel,
 			},
 		},
+		{
+			name:       "LS Pod assigned on node with FullPCPUsOnly",
+			state:      &preFilterState{},
+			nodePolicy: extension.NodeCPUBindPolicyFullPCPUsOnly,
+			wantSpec: &extension.ResourceSpec{
+				RequiredCPUBindPolicy: extension.CPUBindPolicyFullPCPUs,
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1539,7 +1627,15 @@ func Test_appendResourceSpecIfMissed(t *testing.T) {
 			if tt.resourceSpec != nil {
 				assert.NoError(t, extension.SetResourceSpec(pod, tt.resourceSpec))
 			}
-			err := appendResourceSpecIfMissed(pod, tt.state)
+			node := &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{},
+				},
+			}
+			if tt.nodePolicy != "" {
+				node.Labels[extension.LabelNodeCPUBindPolicy] = string(tt.nodePolicy)
+			}
+			err := appendResourceSpecIfMissed(pod, tt.state, node, &TopologyOptions{})
 			if tt.wantErr != (err != nil) {
 				t.Errorf("appendResourceSpecIfMissed(%v, %v)", pod, tt.state)
 			}

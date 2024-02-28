@@ -566,14 +566,15 @@ func TestScoreWithAmplifiedCPUs(t *testing.T) {
 		wantScoreList framework.NodeScoreList
 	}{
 		{
-			name:         "ScoringStrategy MostAllocated, no cpuset pod",
+			name:         "ScoringStrategy MostAllocated, non-cpuset pod",
 			requestedPod: makePod(map[corev1.ResourceName]string{"cpu": "8", "memory": "16Gi"}, false),
 			nodes: []*corev1.Node{
 				makeNode("node1", map[corev1.ResourceName]string{"cpu": "32", "memory": "40Gi"}, 1.0),
 				makeNode("node2", map[corev1.ResourceName]string{"cpu": "64", "memory": "60Gi"}, 2.0),
+				makeNode("node3", map[corev1.ResourceName]string{"cpu": "32", "memory": "40Gi"}, 2.0),
 			},
-			nodeRatios:    map[string]apiext.Ratio{"node1": 1.0, "node2": 2.0},
-			wantScoreList: []framework.NodeScore{{Name: "node1", Score: 0}, {Name: "node2", Score: 0}},
+			nodeRatios:    map[string]apiext.Ratio{"node1": 1.0, "node2": 2.0, "node3": 2.0},
+			wantScoreList: []framework.NodeScore{{Name: "node1", Score: 32}, {Name: "node2", Score: 16}, {Name: "node3", Score: 26}},
 			args: schedulerconfig.NodeNUMAResourceArgs{
 				ScoringStrategy: &schedulerconfig.ScoringStrategy{
 					Type:      schedulerconfig.MostAllocated,
@@ -582,7 +583,30 @@ func TestScoreWithAmplifiedCPUs(t *testing.T) {
 			},
 		},
 		{
-			name:         "ScoringStrategy MostAllocated, cpuset pods on node",
+			name:         "ScoringStrategy MostAllocated, cpuset pod",
+			requestedPod: makePod(map[corev1.ResourceName]string{"cpu": "8", "memory": "16Gi"}, true),
+			nodes: []*corev1.Node{
+				makeNode("node1", map[corev1.ResourceName]string{"cpu": "32", "memory": "40Gi"}, 1.0),
+				makeNode("node2", map[corev1.ResourceName]string{"cpu": "64", "memory": "60Gi"}, 2.0),
+				makeNode("node3", map[corev1.ResourceName]string{"cpu": "32", "memory": "40Gi"}, 2.0),
+			},
+			nodeRatios: map[string]apiext.Ratio{"node1": 1.0, "node2": 2.0, "node3": 2.0},
+			nodeHasNRT: []string{"node1", "node2", "node3"},
+			cpuTopologies: map[string]*CPUTopology{
+				"node1": buildCPUTopologyForTest(2, 1, 8, 2),
+				"node2": buildCPUTopologyForTest(2, 1, 8, 2),
+				"node3": buildCPUTopologyForTest(2, 1, 8, 2),
+			},
+			wantScoreList: []framework.NodeScore{{Name: "node1", Score: 32}, {Name: "node2", Score: 19}, {Name: "node3", Score: 32}},
+			args: schedulerconfig.NodeNUMAResourceArgs{
+				ScoringStrategy: &schedulerconfig.ScoringStrategy{
+					Type:      schedulerconfig.MostAllocated,
+					Resources: defaultResources,
+				},
+			},
+		},
+		{
+			name:         "ScoringStrategy MostAllocated, non-cpuset pods, and existing cpuset pod on node",
 			requestedPod: makePod(map[corev1.ResourceName]string{"cpu": "8", "memory": "16Gi"}, false),
 			nodes: []*corev1.Node{
 				makeNode("node1", map[corev1.ResourceName]string{"cpu": "32", "memory": "40Gi"}, 1.0),
@@ -598,7 +622,7 @@ func TestScoreWithAmplifiedCPUs(t *testing.T) {
 				makePodOnNode(map[corev1.ResourceName]string{"cpu": "20", "memory": "4Gi"}, "node1", true),
 				makePodOnNode(map[corev1.ResourceName]string{"cpu": "20", "memory": "4Gi"}, "node2", true),
 			},
-			wantScoreList: []framework.NodeScore{{Name: "node1", Score: 68}, {Name: "node2", Score: 54}},
+			wantScoreList: []framework.NodeScore{{Name: "node1", Score: 68}, {Name: "node2", Score: 35}},
 			args: schedulerconfig.NodeNUMAResourceArgs{
 				ScoringStrategy: &schedulerconfig.ScoringStrategy{
 					Type:      schedulerconfig.MostAllocated,
@@ -607,7 +631,7 @@ func TestScoreWithAmplifiedCPUs(t *testing.T) {
 			},
 		},
 		{
-			name:         "ScoringStrategy MostAllocated, scheduling cpuset pod",
+			name:         "ScoringStrategy MostAllocated, scheduling cpuset pod with existing non-cpuset pods",
 			requestedPod: makePod(map[corev1.ResourceName]string{"cpu": "8", "memory": "16Gi"}, true),
 			nodes: []*corev1.Node{
 				makeNode("node1", map[corev1.ResourceName]string{"cpu": "32", "memory": "40Gi"}, 1.0),
@@ -623,7 +647,7 @@ func TestScoreWithAmplifiedCPUs(t *testing.T) {
 				makePodOnNode(map[corev1.ResourceName]string{"cpu": "20", "memory": "4Gi"}, "node1", false),
 				makePodOnNode(map[corev1.ResourceName]string{"cpu": "20", "memory": "4Gi"}, "node2", false),
 			},
-			wantScoreList: []framework.NodeScore{{Name: "node1", Score: 37}, {Name: "node2", Score: 29}},
+			wantScoreList: []framework.NodeScore{{Name: "node1", Score: 68}, {Name: "node2", Score: 30}},
 			args: schedulerconfig.NodeNUMAResourceArgs{
 				ScoringStrategy: &schedulerconfig.ScoringStrategy{
 					Type:      schedulerconfig.MostAllocated,
@@ -648,7 +672,7 @@ func TestScoreWithAmplifiedCPUs(t *testing.T) {
 				makePodOnNode(map[corev1.ResourceName]string{"cpu": "20", "memory": "4Gi"}, "node1", true),
 				makePodOnNode(map[corev1.ResourceName]string{"cpu": "20", "memory": "4Gi"}, "node2", true),
 			},
-			wantScoreList: []framework.NodeScore{{Name: "node1", Score: 68}, {Name: "node2", Score: 60}},
+			wantScoreList: []framework.NodeScore{{Name: "node1", Score: 68}, {Name: "node2", Score: 38}},
 			args: schedulerconfig.NodeNUMAResourceArgs{
 				ScoringStrategy: &schedulerconfig.ScoringStrategy{
 					Type:      schedulerconfig.MostAllocated,
@@ -668,7 +692,7 @@ func TestScoreWithAmplifiedCPUs(t *testing.T) {
 				makePodOnNode(map[corev1.ResourceName]string{"cpu": "20", "memory": "4Gi"}, "node1", false),
 				makePodOnNode(map[corev1.ResourceName]string{"cpu": "20", "memory": "4Gi"}, "node2", false),
 			},
-			wantScoreList: []framework.NodeScore{{Name: "node1", Score: 0}, {Name: "node2", Score: 0}},
+			wantScoreList: []framework.NodeScore{{Name: "node1", Score: 31}, {Name: "node2", Score: 72}},
 			args: schedulerconfig.NodeNUMAResourceArgs{
 				ScoringStrategy: &schedulerconfig.ScoringStrategy{
 					Type:      schedulerconfig.LeastAllocated,
@@ -677,7 +701,7 @@ func TestScoreWithAmplifiedCPUs(t *testing.T) {
 			},
 		},
 		{
-			name:         "ScoringStrategy LeastAllocated, cpuset pods on node",
+			name:         "ScoringStrategy LeastAllocated, non-cpuset pod with existing cpuset pods",
 			requestedPod: makePod(map[corev1.ResourceName]string{"cpu": "8", "memory": "16Gi"}, false),
 			nodes: []*corev1.Node{
 				makeNode("node1", map[corev1.ResourceName]string{"cpu": "32", "memory": "40Gi"}, 1.0),
@@ -693,7 +717,7 @@ func TestScoreWithAmplifiedCPUs(t *testing.T) {
 				makePodOnNode(map[corev1.ResourceName]string{"cpu": "20", "memory": "4Gi"}, "node1", true),
 				makePodOnNode(map[corev1.ResourceName]string{"cpu": "20", "memory": "4Gi"}, "node2", true),
 			},
-			wantScoreList: []framework.NodeScore{{Name: "node1", Score: 31}, {Name: "node2", Score: 45}},
+			wantScoreList: []framework.NodeScore{{Name: "node1", Score: 31}, {Name: "node2", Score: 64}},
 			args: schedulerconfig.NodeNUMAResourceArgs{
 				ScoringStrategy: &schedulerconfig.ScoringStrategy{
 					Type:      schedulerconfig.LeastAllocated,
@@ -702,7 +726,7 @@ func TestScoreWithAmplifiedCPUs(t *testing.T) {
 			},
 		},
 		{
-			name:         "ScoringStrategy LeastAllocated, scheduling cpuset pod",
+			name:         "ScoringStrategy LeastAllocated, scheduling cpuset pod with existing non-cpuset pods",
 			requestedPod: makePod(map[corev1.ResourceName]string{"cpu": "8", "memory": "16Gi"}, true),
 			nodes: []*corev1.Node{
 				makeNode("node1", map[corev1.ResourceName]string{"cpu": "32", "memory": "40Gi"}, 1.0),
@@ -718,7 +742,7 @@ func TestScoreWithAmplifiedCPUs(t *testing.T) {
 				makePodOnNode(map[corev1.ResourceName]string{"cpu": "20", "memory": "4Gi"}, "node1", false),
 				makePodOnNode(map[corev1.ResourceName]string{"cpu": "20", "memory": "4Gi"}, "node2", false),
 			},
-			wantScoreList: []framework.NodeScore{{Name: "node1", Score: 62}, {Name: "node2", Score: 70}},
+			wantScoreList: []framework.NodeScore{{Name: "node1", Score: 31}, {Name: "node2", Score: 68}},
 			args: schedulerconfig.NodeNUMAResourceArgs{
 				ScoringStrategy: &schedulerconfig.ScoringStrategy{
 					Type:      schedulerconfig.LeastAllocated,
@@ -743,7 +767,7 @@ func TestScoreWithAmplifiedCPUs(t *testing.T) {
 				makePodOnNode(map[corev1.ResourceName]string{"cpu": "20", "memory": "4Gi"}, "node1", true),
 				makePodOnNode(map[corev1.ResourceName]string{"cpu": "20", "memory": "4Gi"}, "node2", true),
 			},
-			wantScoreList: []framework.NodeScore{{Name: "node1", Score: 31}, {Name: "node2", Score: 39}},
+			wantScoreList: []framework.NodeScore{{Name: "node1", Score: 31}, {Name: "node2", Score: 61}},
 			args: schedulerconfig.NodeNUMAResourceArgs{
 				ScoringStrategy: &schedulerconfig.ScoringStrategy{
 					Type:      schedulerconfig.LeastAllocated,
