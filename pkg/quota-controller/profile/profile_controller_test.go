@@ -65,6 +65,30 @@ func defaultCreateNode(nodeName string, labels map[string]string, capacity corev
 		},
 		Status: corev1.NodeStatus{
 			Allocatable: capacity,
+			Conditions: []corev1.NodeCondition{
+				{
+					Type:   corev1.NodeReady,
+					Status: corev1.ConditionTrue,
+				},
+			},
+		},
+	}
+}
+
+func defaultCreateUnreadyNode(nodeName string, labels map[string]string, capacity corev1.ResourceList) *corev1.Node {
+	return &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   nodeName,
+			Labels: labels,
+		},
+		Status: corev1.NodeStatus{
+			Allocatable: capacity,
+			Conditions: []corev1.NodeCondition{
+				{
+					Type:   corev1.NodeReady,
+					Status: corev1.ConditionFalse,
+				},
+			},
 		},
 	}
 }
@@ -77,7 +101,7 @@ func TestQuotaProfileReconciler_Reconciler_CreateQuota(t *testing.T) {
 
 	nodes := []*corev1.Node{
 		defaultCreateNode("node1", map[string]string{"topology.kubernetes.io/zone": "cn-hangzhou-a"}, createResourceListWithStorage(10, 1000, 1000)),
-		defaultCreateNode("node2", map[string]string{"topology.kubernetes.io/zone": "cn-hangzhou-a"}, createResourceListWithStorage(10, 1000, 1000)),
+		defaultCreateUnreadyNode("node2", map[string]string{"topology.kubernetes.io/zone": "cn-hangzhou-a"}, createResourceListWithStorage(10, 1000, 1000)),
 		defaultCreateNode("node3", map[string]string{"topology.kubernetes.io/zone": "cn-hangzhou-b"}, createResourceListWithStorage(10, 1000, 1000)),
 	}
 
@@ -87,12 +111,13 @@ func TestQuotaProfileReconciler_Reconciler_CreateQuota(t *testing.T) {
 	resourceRatio := "0.9"
 
 	tests := []struct {
-		name                string
-		profile             *quotav1alpha1.ElasticQuotaProfile
-		oriQuota            *schedv1alpha1.ElasticQuota
-		expectQuotaMin      corev1.ResourceList
-		expectTotalResource corev1.ResourceList
-		expectQuotaLabels   map[string]string
+		name                        string
+		profile                     *quotav1alpha1.ElasticQuotaProfile
+		oriQuota                    *schedv1alpha1.ElasticQuota
+		expectQuotaMin              corev1.ResourceList
+		expectTotalResource         corev1.ResourceList
+		expectUnschedulableResource corev1.ResourceList
+		expectQuotaLabels           map[string]string
 	}{
 		{
 			name: "cn-hangzhou-a profile",
@@ -107,9 +132,10 @@ func TestQuotaProfileReconciler_Reconciler_CreateQuota(t *testing.T) {
 					},
 				},
 			},
-			oriQuota:            nil,
-			expectQuotaMin:      createResourceList(20, 2000),
-			expectTotalResource: createResourceListWithStorage(20, 2000, 2000),
+			oriQuota:                    nil,
+			expectQuotaMin:              createResourceList(20, 2000),
+			expectTotalResource:         createResourceListWithStorage(20, 2000, 2000),
+			expectUnschedulableResource: createResourceListWithStorage(10, 1000, 1000),
 			expectQuotaLabels: map[string]string{
 				extension.LabelQuotaProfile: "profile1",
 				extension.LabelQuotaTreeID:  treeID1,
@@ -129,9 +155,10 @@ func TestQuotaProfileReconciler_Reconciler_CreateQuota(t *testing.T) {
 					},
 				},
 			},
-			oriQuota:            nil,
-			expectQuotaMin:      createResourceList(10, 1000),
-			expectTotalResource: createResourceListWithStorage(10, 1000, 1000),
+			oriQuota:                    nil,
+			expectQuotaMin:              createResourceList(10, 1000),
+			expectTotalResource:         createResourceListWithStorage(10, 1000, 1000),
+			expectUnschedulableResource: corev1.ResourceList{},
 			expectQuotaLabels: map[string]string{
 				extension.LabelQuotaProfile: "profile2",
 				extension.LabelQuotaTreeID:  treeID2,
@@ -154,9 +181,10 @@ func TestQuotaProfileReconciler_Reconciler_CreateQuota(t *testing.T) {
 					},
 				},
 			},
-			oriQuota:            nil,
-			expectQuotaMin:      createResourceList(20, 2000),
-			expectTotalResource: createResourceListWithStorage(20, 2000, 2000),
+			oriQuota:                    nil,
+			expectQuotaMin:              createResourceList(20, 2000),
+			expectTotalResource:         createResourceListWithStorage(20, 2000, 2000),
+			expectUnschedulableResource: createResourceListWithStorage(10, 1000, 1000),
 			expectQuotaLabels: map[string]string{
 				extension.LabelQuotaProfile:   "profile1",
 				extension.LabelQuotaTreeID:    treeID1,
@@ -189,8 +217,9 @@ func TestQuotaProfileReconciler_Reconciler_CreateQuota(t *testing.T) {
 					Min: createResourceList(5, 50),
 				},
 			},
-			expectQuotaMin:      createResourceList(20, 2000),
-			expectTotalResource: createResourceListWithStorage(20, 2000, 2000),
+			expectQuotaMin:              createResourceList(20, 2000),
+			expectTotalResource:         createResourceListWithStorage(20, 2000, 2000),
+			expectUnschedulableResource: createResourceListWithStorage(10, 1000, 1000),
 			expectQuotaLabels: map[string]string{
 				extension.LabelQuotaProfile:   "profile1",
 				extension.LabelQuotaTreeID:    treeID1,
@@ -213,9 +242,10 @@ func TestQuotaProfileReconciler_Reconciler_CreateQuota(t *testing.T) {
 					},
 				},
 			},
-			oriQuota:            nil,
-			expectQuotaMin:      createResourceList(18, 1800),
-			expectTotalResource: createResourceListWithStorage(18, 1800, 1800),
+			oriQuota:                    nil,
+			expectQuotaMin:              createResourceList(18, 1800),
+			expectTotalResource:         createResourceListWithStorage(18, 1800, 1800),
+			expectUnschedulableResource: createResourceListWithStorage(9, 900, 900),
 			expectQuotaLabels: map[string]string{
 				extension.LabelQuotaProfile: "profile1",
 				extension.LabelQuotaTreeID:  treeID1,
@@ -239,9 +269,10 @@ func TestQuotaProfileReconciler_Reconciler_CreateQuota(t *testing.T) {
 					},
 				},
 			},
-			oriQuota:            nil,
-			expectQuotaMin:      createResourceList(18, 1800),
-			expectTotalResource: createResourceListWithStorage(18, 1800, 1800),
+			oriQuota:                    nil,
+			expectQuotaMin:              createResourceList(18, 1800),
+			expectTotalResource:         createResourceListWithStorage(18, 1800, 1800),
+			expectUnschedulableResource: createResourceListWithStorage(9, 900, 900),
 			expectQuotaLabels: map[string]string{
 				extension.LabelQuotaProfile: "profile1",
 				extension.LabelQuotaTreeID:  "tree1",
@@ -268,9 +299,10 @@ func TestQuotaProfileReconciler_Reconciler_CreateQuota(t *testing.T) {
 					},
 				},
 			},
-			oriQuota:            nil,
-			expectQuotaMin:      corev1.ResourceList{corev1.ResourceCPU: *resource.NewMilliQuantity(18*1000, resource.DecimalSI)},
-			expectTotalResource: createResourceListWithStorage(18, 1800, 1800),
+			oriQuota:                    nil,
+			expectQuotaMin:              corev1.ResourceList{corev1.ResourceCPU: *resource.NewMilliQuantity(18*1000, resource.DecimalSI)},
+			expectTotalResource:         createResourceListWithStorage(18, 1800, 1800),
+			expectUnschedulableResource: createResourceListWithStorage(9, 900, 900),
 			expectQuotaLabels: map[string]string{
 				extension.LabelQuotaProfile: "profile1",
 				extension.LabelQuotaTreeID:  "tree1",
@@ -310,8 +342,12 @@ func TestQuotaProfileReconciler_Reconciler_CreateQuota(t *testing.T) {
 			err = json.Unmarshal([]byte(quota.Annotations[extension.AnnotationTotalResource]), &total)
 			assert.NoError(t, err)
 
+			unschedulable, err := extension.GetUnschedulableResource(quota)
+			assert.NoError(t, err)
+
 			assert.True(t, quotav1.Equals(tc.expectQuotaMin, quota.Spec.Min))
 			assert.True(t, quotav1.Equals(tc.expectTotalResource, total))
+			assert.True(t, quotav1.Equals(tc.expectUnschedulableResource, unschedulable))
 			assert.Equal(t, tc.expectQuotaLabels, quota.Labels)
 		})
 	}

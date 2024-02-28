@@ -35,6 +35,7 @@ import (
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/klog/v2"
+	nodeutil "k8s.io/kubernetes/pkg/util/node"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -138,11 +139,16 @@ func (r *QuotaProfileReconciler) Reconcile(ctx context.Context, req ctrl.Request
 
 	// TODO: consider node status.
 	totalResource := corev1.ResourceList{}
+	unschedulableResource := corev1.ResourceList{}
 	for _, node := range nodeList.Items {
 		totalResource = quotav1.Add(totalResource, GetNodeAllocatable(node))
+		if node.Spec.Unschedulable || !nodeutil.IsNodeReady(&node) {
+			unschedulableResource = quotav1.Add(unschedulableResource, GetNodeAllocatable(node))
+		}
 	}
 
 	decorateTotalResource(profile, totalResource)
+	decorateTotalResource(profile, unschedulableResource)
 
 	resourceKeys := []string{"cpu", "memory"}
 	raw, ok := profile.Annotations[extension.AnnotationResourceKeys]
@@ -196,6 +202,14 @@ func (r *QuotaProfileReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		quota.Annotations = make(map[string]string)
 	}
 	quota.Annotations[extension.AnnotationTotalResource] = string(data)
+
+	// update unschedulable resource
+	data, err = json.Marshal(unschedulableResource)
+	if err != nil {
+		klog.Errorf("failed marshal unschedulable resources, err: %v", err)
+		return ctrl.Result{Requeue: true}, err
+	}
+	quota.Annotations[extension.AnnotationUnschedulableResource] = string(data)
 
 	if !quotaExist {
 		err = r.Client.Create(context.TODO(), quota)

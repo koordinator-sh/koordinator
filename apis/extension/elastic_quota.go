@@ -47,6 +47,7 @@ const (
 	AnnotationChildRequest          = QuotaKoordinatorPrefix + "/child-request"
 	AnnotationResourceKeys          = QuotaKoordinatorPrefix + "/resource-keys"
 	AnnotationTotalResource         = QuotaKoordinatorPrefix + "/total-resource"
+	AnnotationUnschedulableResource = QuotaKoordinatorPrefix + "/unschedulable-resource"
 	AnnotationQuotaNamespaces       = QuotaKoordinatorPrefix + "/namespaces"
 	AnnotationGuaranteed            = QuotaKoordinatorPrefix + "/guaranteed"
 	AnnotationAllocated             = QuotaKoordinatorPrefix + "/allocated"
@@ -194,4 +195,14 @@ func GetChildRequest(quota *v1alpha1.ElasticQuota) (corev1.ResourceList, error) 
 		}
 	}
 	return request, nil
+}
+
+func GetUnschedulableResource(quota *v1alpha1.ElasticQuota) (corev1.ResourceList, error) {
+	unschedulable := corev1.ResourceList{}
+	if quota.Annotations[AnnotationUnschedulableResource] != "" {
+		if err := json.Unmarshal([]byte(quota.Annotations[AnnotationUnschedulableResource]), &unschedulable); err != nil {
+			return unschedulable, err
+		}
+	}
+	return unschedulable, nil
 }
