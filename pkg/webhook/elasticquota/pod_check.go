@@ -41,6 +41,11 @@ func (qt *quotaTopology) ValidateAddPod(pod *corev1.Pod) error {
 	qt.lock.Lock()
 	defer qt.lock.Unlock()
 
+	featureGate := utilfeature.DefaultFeatureGate
+	if featureGate.Enabled(features.SupportParentQuotaSubmitPod) {
+		return nil
+	}
+
 	quotaName := qt.getQuotaNameFromPodNoLock(pod)
 	if quotaName == "" || quotaName == extension.DefaultQuotaName {
 		return nil

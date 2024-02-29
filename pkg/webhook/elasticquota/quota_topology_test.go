@@ -32,9 +32,9 @@ import (
 	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
-	//"github.com/koordinator-sh/koordinator/pkg/features"
+	koordfeatures "github.com/koordinator-sh/koordinator/pkg/features"
 	utilclient "github.com/koordinator-sh/koordinator/pkg/util/client"
-	//utilfeature "github.com/koordinator-sh/koordinator/pkg/util/feature"
+	utilfeature "github.com/koordinator-sh/koordinator/pkg/util/feature"
 )
 
 func newFakeQuotaTopology() *quotaTopology {
@@ -767,6 +767,11 @@ func TestQuotaTopology_AddPod_UpdatePod(t *testing.T) {
 
 	err = qt.ValidateUpdatePod(pod2, oldPod2)
 	assert.NotNil(t, err)
+
+	defer utilfeature.SetFeatureGateDuringTest(t, utilfeature.DefaultMutableFeatureGate, koordfeatures.SupportParentQuotaSubmitPod, true)()
+
+	err = qt.ValidateUpdatePod(pod2, oldPod2)
+	assert.Nil(t, err)
 
 	pod2.Labels[extension.LabelQuotaName] = "default"
 	err = qt.ValidateUpdatePod(oldPod2, pod2)
