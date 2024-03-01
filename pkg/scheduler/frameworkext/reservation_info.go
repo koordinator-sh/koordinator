@@ -308,25 +308,51 @@ func (ri *ReservationInfo) Clone() *ReservationInfo {
 }
 
 func (ri *ReservationInfo) UpdateReservation(r *schedulingv1alpha1.Reservation) {
+	ri.Allocatable = reservationutil.ReservationRequests(r)
+	var parseErrors []error
+	resourceNames := quotav1.ResourceNames(ri.Allocatable)
+	if r.Spec.AllocatePolicy == schedulingv1alpha1.ReservationAllocatePolicyRestricted {
+		options, err := apiext.GetReservationRestrictedOptions(r.Annotations)
+		if err == nil {
+			resourceNames = reservationutil.GetReservationRestrictedResources(resourceNames, options)
+		} else {
+			parseErrors = append(parseErrors, err)
+		}
+	}
+	ri.ResourceNames = resourceNames
+
 	ri.Reservation = r
 	ri.Pod = reservationutil.NewReservePod(r)
-	ri.Allocatable = reservationutil.ReservationRequests(r)
 	ri.AllocatablePorts = util.RequestedHostPorts(ri.Pod)
-	ri.ResourceNames = quotav1.ResourceNames(ri.Allocatable)
 	ri.Allocated = quotav1.Mask(ri.Allocated, ri.ResourceNames)
 	ownerMatchers, err := reservationutil.ParseReservationOwnerMatchers(r.Spec.Owners)
 	if err != nil {
 		klog.ErrorS(err, "Failed to parse reservation owner matchers", "reservation", klog.KObj(r))
+		parseErrors = append(parseErrors, err)
 	}
 	ri.OwnerMatchers = ownerMatchers
-	ri.ParseError = err
+
+	var parseError error
+	if len(parseErrors) > 0 {
+		parseError = utilerrors.NewAggregate(parseErrors)
+	}
+	ri.ParseError = parseError
 }
 
 func (ri *ReservationInfo) UpdatePod(pod *corev1.Pod) {
-	ri.Pod = pod
 	ri.Allocatable, _ = resource.PodRequestsAndLimits(pod)
+	var parseErrors []error
+	resourceNames := quotav1.ResourceNames(ri.Allocatable)
+	options, err := apiext.GetReservationRestrictedOptions(pod.Annotations)
+	if err == nil {
+		resourceNames = reservationutil.GetReservationRestrictedResources(resourceNames, options)
+	} else {
+		parseErrors = append(parseErrors, err)
+	}
+	ri.ResourceNames = resourceNames
+
+	ri.Pod = pod
 	ri.AllocatablePorts = util.RequestedHostPorts(pod)
-	ri.ResourceNames = quotav1.ResourceNames(ri.Allocatable)
 	ri.Allocated = quotav1.Mask(ri.Allocated, ri.ResourceNames)
 
 	owners, err := apiext.GetReservationOwners(pod.Annotations)
@@ -338,10 +364,16 @@ func (ri *ReservationInfo) UpdatePod(pod *corev1.Pod) {
 		ownerMatchers, err = reservationutil.ParseReservationOwnerMatchers(owners)
 		if err != nil {
 			klog.ErrorS(err, "Failed to parse reservation owner matchers of pod", "pod", klog.KObj(pod))
+			parseErrors = append(parseErrors, err)
 		}
 	}
 	ri.OwnerMatchers = ownerMatchers
-	ri.ParseError = err
+
+	var parseError error
+	if len(parseErrors) > 0 {
+		parseError = utilerrors.NewAggregate(parseErrors)
+	}
+	ri.ParseError = parseError
 }
 
 func (ri *ReservationInfo) AddAssignedPod(pod *corev1.Pod) {

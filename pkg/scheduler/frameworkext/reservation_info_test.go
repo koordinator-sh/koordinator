@@ -26,6 +26,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
@@ -459,7 +460,7 @@ func TestReservationInfoUpdateReservation(t *testing.T) {
 							},
 						},
 					})
-					return err
+					return utilerrors.NewAggregate([]error{err})
 				}(),
 			},
 		},
@@ -628,7 +629,7 @@ func TestReservationInfoUpdatePod(t *testing.T) {
 							},
 						},
 					})
-					return err
+					return utilerrors.NewAggregate([]error{err})
 				}(),
 			},
 		},
