@@ -2000,6 +2000,7 @@ k8s.io/kubernetes v1.24.15 h1:FupxlSyYgbz22yjGVZ7dxH+azhuO0OU8MnACdydrBzQ=
 k8s.io/kubernetes v1.24.15/go.mod h1:MlcoxAWSYrfeOwlfRNne7zYyZsHmlT3dlw7v3xzDnDM=
 k8s.io/legacy-cloud-providers v0.24.15 h1:0yLKue7fbat+rXdZoJRVP+iQ/y0Oxy0tHIwU0WKIAQg=
 k8s.io/legacy-cloud-providers v0.24.15/go.mod h1:sj/vZmVN9070GMNU9cuqSTupFI7ErHjT+bMXSc0rvac=
+k8s.io/metrics v0.24.15 h1:DdQZ6/7/yxkg856MlNlyS3bYWeRoi764kElIQuZb5bs=
 k8s.io/metrics v0.24.15/go.mod h1:0ZqaLxkIiopW4h1QfW5qaUZeajmLVxrwJJvWEljRYSM=
 k8s.io/mount-utils v0.24.15 h1:q3sm4Gcp00iWXUInIEi5x8CqAmy2chmUTedIZdUxRkg=
 k8s.io/mount-utils v0.24.15/go.mod h1:Xjtb0dquC5PG63kOD8shViqRczdkdQqW5Pc/rlmbsiU=
