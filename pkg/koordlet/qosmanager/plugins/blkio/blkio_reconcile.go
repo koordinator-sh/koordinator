@@ -52,6 +52,7 @@ const (
 	DefaultWriteBPS           = 0
 	DefaultIOWeightPercentage = 100
 	DefaultIOLatency          = 3000
+	DefaultLatencyPercent     = 95
 )
 
 var _ framework.QOSStrategy = &blkIOReconcile{}
@@ -420,6 +421,7 @@ func (b *blkIOReconcile) getDiskNumberFromBlockCfg(block *slov1alpha1.BlockCfg, 
 // dynamicPath for root: ""
 func getDiskConfigUpdaterFromBlockCfg(block *slov1alpha1.BlockCfg, diskNumber string, dynamicPath string) (resources []resourceexecutor.ResourceUpdater) {
 	var readlat, writelat int64 = DefaultIOLatency, DefaultIOLatency
+	var readlatPercent, writelatPercent int64 = DefaultLatencyPercent, DefaultLatencyPercent
 	// disk io weight latency
 	if value := block.IOCfg.ReadLatency; value != nil {
 		readlat = *value
@@ -428,11 +430,19 @@ func getDiskConfigUpdaterFromBlockCfg(block *slov1alpha1.BlockCfg, diskNumber st
 		writelat = *value
 	}
 
+	// disk io latency percent
+	if value := block.IOCfg.ReadLatencyPercent; value != nil {
+		readlatPercent = *value
+	}
+	if value := block.IOCfg.WriteLatencyPercent; value != nil {
+		writelatPercent = *value
+	}
+
 	ioQoSUpdater, _ := resourceexecutor.NewBlkIOResourceUpdater(
 		system.BlkioIOQoSName,
 		dynamicPath,
-		fmt.Sprintf("%s enable=1 ctrl=user rlat=%d wlat=%d", diskNumber, readlat, writelat),
-		audit.V(3).Group("blkio").Reason("UpdateBlkIO").Message("update %s/%s to %s", dynamicPath, system.BlkioIOQoSName, fmt.Sprintf("%s enable=1 ctrl=user rlat=%d wlat=%d", diskNumber, readlat, writelat)),
+		fmt.Sprintf("%s enable=1 ctrl=user rpct=%d rlat=%d wpct=%d wlat=%d", diskNumber, readlatPercent, readlat, writelatPercent, writelat),
+		audit.V(3).Group("blkio").Reason("UpdateBlkIO").Message("update %s/%s to %s", dynamicPath, system.BlkioIOQoSName, fmt.Sprintf("%s enable=1 ctrl=user rpct=%d rlat=%d wpct=%d wlat=%d", diskNumber, readlatPercent, readlat, writelatPercent, writelat)),
 	)
 
 	resources = append(resources, ioQoSUpdater)

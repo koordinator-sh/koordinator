@@ -246,8 +246,10 @@ func newNodeSLO() *slov1alpha1.NodeSLO {
 									Name:      "/dev/vdb",
 									BlockType: slov1alpha1.BlockTypeDevice,
 									IOCfg: slov1alpha1.IOCfg{
-										ReadLatency:  pointer.Int64(1000),
-										WriteLatency: pointer.Int64(1000),
+										ReadLatency:         pointer.Int64(1000),
+										WriteLatency:        pointer.Int64(1000),
+										ReadLatencyPercent:  pointer.Int64(90),
+										WriteLatencyPercent: pointer.Int64(90),
 									},
 								},
 							},
