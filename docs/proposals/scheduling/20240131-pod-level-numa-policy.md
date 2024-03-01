@@ -113,7 +113,7 @@ another idle numa.)
 [//]: # (`SingleNUMANodeExclusive` should not be set by users, because some users may set all his/her pods as exclusive 
 so that all pods with restricted policy cannot be scheduled.)
 
-#### Examples
+#### Examples for NUMA topology policy
 ``` yaml
 metadata:
   annotations:|-
@@ -177,6 +177,45 @@ spec:
 ```
 We will not bind align gpu and cpu for this pod in one numa, because there is no
 numa topology policy on pod.
+
+#### Examples for SingleNUMANodeExclusive
+
+``` yaml
+metadata:
+  annotations:|-
+      {
+        "numaTopologyPolicy": "SingleNUMANode"
+      }
+```
+
+``` yaml
+metadata:
+  annotations:|-
+      {
+        "numaTopologyPolicy": "Restricted",
+      }
+```
+
+If pod-a requires `SingleNUMANode` and pod-b requires `Restricted`, all devices and CPU, memory will be alligned in one NUMA node for pod-a. Besides, scheduler will not place pod-b on the same NUMA node with pod-a if pod-b will be placed on multi-NUMA-node because we will set `SingleNUMANodeExclusive` as `required` by default.
+
+``` yaml
+metadata:
+  annotations:|-
+      {
+        "numaTopologyPolicy": "SingleNUMANode",
+      }
+```
+
+``` yaml
+metadata:
+  annotations:|-
+      {
+        "numaTopologyPolicy": "Restricted",
+        "singleNUMANodeExclusive": "preferred"
+      }
+```
+
+If pod-a has been placed on node, and `SingleNUMANodeExclusive` is set as `preferred`, then pod-b can be placed on same NUMA node with pod-a. This can used when user want to place pod with `SingleNUMANode` and pod with `Restricted` on the same node.
 
 ### Work with Node-Level Policy
 
