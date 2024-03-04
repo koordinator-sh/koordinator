@@ -60,21 +60,21 @@ type podsInformer struct {
 }
 
 func NewPodsInformer() *podsInformer {
-	p, err := pleg.NewPLEG(system.Conf.CgroupRootDir)
-	if err != nil {
-		klog.Fatalf("failed to create PLEG, %v", err)
-	}
-
 	podsInformer := &podsInformer{
 		podMap:       map[string]*statesinformer.PodMeta{},
 		podHasSynced: atomic.NewBool(false),
-		pleg:         p,
 		podCreated:   make(chan string, 1),
 	}
 	return podsInformer
 }
 
 func (s *podsInformer) Setup(ctx *PluginOption, states *PluginState) {
+	p, err := pleg.NewPLEG(system.Conf.CgroupRootDir)
+	if err != nil {
+		klog.Fatalf("failed to create PLEG, %v", err)
+	}
+	s.pleg = p
+
 	s.config = ctx.config
 
 	nodeInformerIf := states.informerPlugins[nodeInformerName]
