@@ -269,3 +269,50 @@ func TestGetCgroupPathsByTargetDepth(t *testing.T) {
 		})
 	}
 }
+
+func TestGetBECgroupCurCPUSet(t *testing.T) {
+	type fields struct {
+		prepareFn func(helper *system.FileTestUtil)
+	}
+	tests := []struct {
+		name    string
+		fields  fields
+		want    []int32
+		wantErr bool
+	}{
+		{
+			name:    "get the cpuset value of be containers fail",
+			wantErr: true,
+		},
+		{
+			name: "get the cpuset value of be containers successcully",
+			fields: fields{
+				prepareFn: func(helper *system.FileTestUtil) {
+					helper.SetCgroupsV2(false)
+					cpuset, _ := system.GetCgroupResource(system.CPUSetCPUSName)
+					qosCgroupDir := GetPodQoSRelativePath(corev1.PodQOSBestEffort)
+					helper.WriteCgroupFileContents(qosCgroupDir, cpuset, "0-63")
+					containerCgroupDir := filepath.Join(qosCgroupDir, "/kubepods-test-besteffort-pod-0.slice/cri-containerd-xxx.scope")
+					sandboxCgroupDir := filepath.Join(qosCgroupDir, "/kubepods-test-besteffort-pod-0.slice/cri-containerd-yyy.scope")
+					helper.WriteCgroupFileContents(containerCgroupDir, cpuset, "0-63")
+					helper.WriteCgroupFileContents(sandboxCgroupDir, cpuset, "0-1")
+				},
+			},
+			wantErr: false,
+			want:    []int32{0, 1},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			helper := system.NewFileTestUtil(t)
+			defer helper.Cleanup()
+			if tt.fields.prepareFn != nil {
+				tt.fields.prepareFn(helper)
+			}
+
+			got, gotErr := GetBECgroupCurCPUSet()
+			assert.Equal(t, tt.wantErr, gotErr != nil, gotErr)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
