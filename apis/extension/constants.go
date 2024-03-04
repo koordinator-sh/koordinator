@@ -40,6 +40,10 @@ const (
 	// LabelPodMutatingUpdate is a label key that pods with `pod.koordinator.sh/mutating-update=true` will
 	// be mutated by Koordinator webhook when updating.
 	LabelPodMutatingUpdate = PodDomainPrefix + "/mutating-update"
+
+	// AnnotationNetworkQOS are used to set bandwidth for Pod. The unit is bps.
+	// For example, 10M means 10 megabits per second.
+	AnnotationNetworkQOS = DomainPrefix + "networkQOS"
 )
 
 type AggregationType string
