@@ -191,6 +191,14 @@ type IOCfg struct {
 	ReadLatency *int64 `json:"readLatency,omitempty"`
 	// the write latency threshold. Unit: microseconds.
 	WriteLatency *int64 `json:"writeLatency,omitempty"`
+	// the read latency percentile
+	// +kubebuilder:validation:Maximum=100
+	// +kubebuilder:validation:Minimum=0
+	ReadLatencyPercent *int64 `json:"readLatencyPercent,omitempty"`
+	// the write latency percentile
+	// +kubebuilder:validation:Maximum=100
+	// +kubebuilder:validation:Minimum=0
+	WriteLatencyPercent *int64 `json:"writeLatencyPercent,omitempty"`
 }
 
 type BlockCfg struct {

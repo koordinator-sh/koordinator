@@ -150,6 +150,12 @@ spec:
                                         Unit: microseconds.'
                                       format: int64
                                       type: integer
+                                    readLatencyPercent:
+                                      description: the read latency percentile
+                                      format: int64
+                                      maximum: 100
+                                      minimum: 0
+                                      type: integer
                                     writeBPS:
                                       format: int64
                                       minimum: 0
@@ -162,6 +168,12 @@ spec:
                                       description: 'the write latency threshold. Unit:
                                         microseconds.'
                                       format: int64
+                                      type: integer
+                                    writeLatencyPercent:
+                                      description: the write latency percentile
+                                      format: int64
+                                      maximum: 100
+                                      minimum: 0
                                       type: integer
                                   type: object
                                 name:
@@ -428,6 +440,12 @@ spec:
                                         Unit: microseconds.'
                                       format: int64
                                       type: integer
+                                    readLatencyPercent:
+                                      description: the read latency percentile
+                                      format: int64
+                                      maximum: 100
+                                      minimum: 0
+                                      type: integer
                                     writeBPS:
                                       format: int64
                                       minimum: 0
@@ -440,6 +458,12 @@ spec:
                                       description: 'the write latency threshold. Unit:
                                         microseconds.'
                                       format: int64
+                                      type: integer
+                                    writeLatencyPercent:
+                                      description: the write latency percentile
+                                      format: int64
+                                      maximum: 100
+                                      minimum: 0
                                       type: integer
                                   type: object
                                 name:
@@ -706,6 +730,12 @@ spec:
                                         Unit: microseconds.'
                                       format: int64
                                       type: integer
+                                    readLatencyPercent:
+                                      description: the read latency percentile
+                                      format: int64
+                                      maximum: 100
+                                      minimum: 0
+                                      type: integer
                                     writeBPS:
                                       format: int64
                                       minimum: 0
@@ -718,6 +748,12 @@ spec:
                                       description: 'the write latency threshold. Unit:
                                         microseconds.'
                                       format: int64
+                                      type: integer
+                                    writeLatencyPercent:
+                                      description: the write latency percentile
+                                      format: int64
+                                      maximum: 100
+                                      minimum: 0
                                       type: integer
                                   type: object
                                 name:
@@ -984,6 +1020,12 @@ spec:
                                         Unit: microseconds.'
                                       format: int64
                                       type: integer
+                                    readLatencyPercent:
+                                      description: the read latency percentile
+                                      format: int64
+                                      maximum: 100
+                                      minimum: 0
+                                      type: integer
                                     writeBPS:
                                       format: int64
                                       minimum: 0
@@ -996,6 +1038,12 @@ spec:
                                       description: 'the write latency threshold. Unit:
                                         microseconds.'
                                       format: int64
+                                      type: integer
+                                    writeLatencyPercent:
+                                      description: the write latency percentile
+                                      format: int64
+                                      maximum: 100
+                                      minimum: 0
                                       type: integer
                                   type: object
                                 name:
@@ -1272,6 +1320,12 @@ spec:
                                         Unit: microseconds.'
                                       format: int64
                                       type: integer
+                                    readLatencyPercent:
+                                      description: the read latency percentile
+                                      format: int64
+                                      maximum: 100
+                                      minimum: 0
+                                      type: integer
                                     writeBPS:
                                       format: int64
                                       minimum: 0
@@ -1284,6 +1338,12 @@ spec:
                                       description: 'the write latency threshold. Unit:
                                         microseconds.'
                                       format: int64
+                                      type: integer
+                                    writeLatencyPercent:
+                                      description: the write latency percentile
+                                      format: int64
+                                      maximum: 100
+                                      minimum: 0
                                       type: integer
                                   type: object
                                 name:

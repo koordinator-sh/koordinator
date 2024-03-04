@@ -484,7 +484,9 @@ data:
               {
                 "ioCfg": {
                   "readLatency": 3000,
-                  "writeLatency": 3000
+                  "writeLatency": 3000,
+                  "readLatencyPercent": 95,
+                  "writeLatencyPercent": 95
                 },
                 "name": "ackdistro-pool",
                 "type": "volumegroup"
