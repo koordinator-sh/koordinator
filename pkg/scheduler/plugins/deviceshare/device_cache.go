@@ -374,7 +374,11 @@ func (n *nodeDevice) filter(
 		for minor, free := range freeDevices {
 			if minors.Has(minor) {
 				totalByDeviceType[minor] = originalTotal[minor].DeepCopy()
-				usedByDeviceType[minor] = quotav1.SubtractWithNonNegativeResult(originalTotal[minor], free)
+				usedByDeviceTypeOfMinor := quotav1.SubtractWithNonNegativeResult(originalTotal[minor], free)
+				if !quotav1.IsZero(usedByDeviceTypeOfMinor) {
+					usedByDeviceType[minor] = usedByDeviceTypeOfMinor
+				}
+
 			}
 		}
 

@@ -213,7 +213,7 @@ func (a *AutopilotAllocator) allocateByTopology(requestCtx *requestContext, node
 	for _, pcie := range freeNodeDevicesInPCIe {
 		if len(pcie.freeDevices[primaryDeviceType]) >= desiredCount {
 			allocations, status := a.jointAllocate(pcie.nodeDevice, requestCtx, jointAllocate, primaryDeviceType, secondaryDeviceTypes, sets.NewString(pcie.PCIeIndex.pcie))
-			if status.IsSuccess() {
+			if status.IsSuccess() && len(allocations) > 0 {
 				return allocations, nil
 			}
 		}
