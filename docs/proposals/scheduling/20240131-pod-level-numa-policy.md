@@ -94,8 +94,8 @@ could never be scheduled. Therefore, we allow some critical workloads to break t
 
 We will introduce a new property in pod `scheduling.koordinator.sh/resource-spec`: 
 `singleNUMANodeExclusive` to reach the goal, the value of this property can be:
-- `preferred`: a numa with a SingleNUMANode pod will not be scheduled another pod with multi-numa if there is another idle numa.
-- `required`: a numa with a SingleNUMANode pod can not be scheduled another pod with multi-numa.
+- `Preferred`: a numa with a SingleNUMANode pod will not be scheduled another pod with multi-numa if there is another idle numa.
+- `Required`: a numa with a SingleNUMANode pod can not be scheduled another pod with multi-numa.
 
 If `SingleNUMANodeExclusive` not set by user, it will be treated as if 'exclusive' were used to ensure that 'SingleNUMANode' 
 is not affected by other policies.
@@ -196,7 +196,7 @@ metadata:
       }
 ```
 
-If pod-a requires `SingleNUMANode` and pod-b requires `Restricted`, all devices and CPU, memory will be alligned in one NUMA node for pod-a. Besides, scheduler will not place pod-b on the same NUMA node with pod-a if pod-b will be placed on multi-NUMA-node because we will set `SingleNUMANodeExclusive` as `required` by default.
+If pod-a requires `SingleNUMANode` and pod-b requires `Restricted`, all devices and CPU, memory will be alligned in one NUMA node for pod-a. Besides, scheduler will not place pod-b on the same NUMA node with pod-a if pod-b will be placed on multi-NUMA-node because we will set `SingleNUMANodeExclusive` as `Required` by default.
 
 ``` yaml
 metadata:
@@ -211,11 +211,11 @@ metadata:
   annotations:|-
       {
         "numaTopologyPolicy": "Restricted",
-        "singleNUMANodeExclusive": "preferred"
+        "singleNUMANodeExclusive": "Preferred"
       }
 ```
 
-If pod-a has been placed on node, and `SingleNUMANodeExclusive` is set as `preferred`, then pod-b can be placed on same NUMA node with pod-a. This can used when user want to place pod with `SingleNUMANode` and pod with `Restricted` on the same node.
+If pod-a has been placed on node, and `SingleNUMANodeExclusive` is set as `Preferred`, then pod-b can be placed on same NUMA node with pod-a. This can used when user want to place pod with `SingleNUMANode` and pod with `Restricted` on the same node.
 
 ### Work with Node-Level Policy
 
