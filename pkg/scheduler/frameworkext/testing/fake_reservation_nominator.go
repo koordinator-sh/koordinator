@@ -22,6 +22,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
@@ -34,7 +35,10 @@ type FakeNominator struct {
 	// nominatedPodToNode is map keyed by a Pod UID to the node name where it is nominated.
 	nominatedPodToNode map[types.UID]map[string]types.UID
 	reservations       map[types.UID]*frameworkext.ReservationInfo
-	lock               sync.RWMutex
+	// nominatedReservePod is map keyed by nodeName, value is the nominated reservations
+	nominatedReservePod       map[string][]*framework.PodInfo
+	nominatedReservePodToNode map[types.UID]string
+	lock                      sync.RWMutex
 }
 
 func NewFakeReservationNominator() *FakeNominator {
@@ -86,4 +90,46 @@ func (nm *FakeNominator) NominateReservation(ctx context.Context, cycleState *fr
 
 	rInfo := nm.GetNominatedReservation(pod, nodeName)
 	return rInfo, nil
+}
+
+func (nm *FakeNominator) AddNominatedReservePod(rInfo *corev1.Pod, nodeName string) {
+	nm.lock.Lock()
+	defer nm.lock.Unlock()
+
+	// Always delete the reservation if it already exists, to ensure we never store more than
+	// one instance of the reservation.
+	nm.deleteReservePod(rInfo)
+
+	nm.nominatedReservePodToNode[rInfo.UID] = nodeName
+	for _, npi := range nm.nominatedReservePod[nodeName] {
+		if npi.Pod.UID == rInfo.UID {
+			klog.V(4).InfoS("reservation already exists in the nominator", "pod", klog.KObj(npi.Pod))
+			return
+		}
+	}
+	nm.nominatedReservePod[nodeName] = append(nm.nominatedReservePod[nodeName], framework.NewPodInfo(rInfo))
+}
+
+func (nm *FakeNominator) DeleteNominatedReservePod(rInfo *corev1.Pod) {
+	nm.lock.Lock()
+	defer nm.lock.Unlock()
+
+	nm.deleteReservePod(rInfo)
+}
+
+func (nm *FakeNominator) deleteReservePod(rInfo *corev1.Pod) {
+	nnn, ok := nm.nominatedReservePodToNode[rInfo.UID]
+	if !ok {
+		return
+	}
+	for i, np := range nm.nominatedReservePod[nnn] {
+		if np.Pod.UID == rInfo.UID {
+			nm.nominatedReservePod[nnn] = append(nm.nominatedReservePod[nnn][:i], nm.nominatedReservePod[nnn][i+1:]...)
+			if len(nm.nominatedReservePod[nnn]) == 0 {
+				delete(nm.nominatedReservePod, nnn)
+			}
+			break
+		}
+	}
+	delete(nm.nominatedReservePodToNode, rInfo.UID)
 }

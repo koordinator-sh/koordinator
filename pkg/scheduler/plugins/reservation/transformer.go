@@ -25,6 +25,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
+	schedulingcorev1 "k8s.io/component-helpers/scheduling/corev1"
 	"k8s.io/component-helpers/scheduling/corev1/nodeaffinity"
 	"k8s.io/klog/v2"
 	resourceapi "k8s.io/kubernetes/pkg/api/v1/resource"
@@ -410,4 +411,44 @@ func parseSpecificNodesFromAffinity(pod *corev1.Pod) (sets.String, *framework.St
 		nodeNames = nodeNames.Union(termNodeNames)
 	}
 	return nodeNames, nil
+}
+
+func (pl *Plugin) BeforeFilter(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeInfo *framework.NodeInfo) (*corev1.Pod, *framework.NodeInfo, bool, *framework.Status) {
+	if !reservationutil.IsReservePod(pod) {
+		return pod, nodeInfo, false, nil
+	}
+
+	nominatedReservationInfos := pl.nominator.NominatedReservePodForNode(nodeInfo.Node().Name)
+	if len(nominatedReservationInfos) == 0 {
+		return pod, nodeInfo, false, nil
+	}
+
+	if nodeInfo.Node() == nil {
+		// This may happen only in tests.
+		return pod, nodeInfo, false, nil
+	}
+
+	nodeInfoOut := nodeInfo.Clone()
+
+	rName := reservationutil.GetReservationNameFromReservePod(pod)
+	_, err := pl.rLister.Get(rName)
+	if err != nil {
+		return pod, nodeInfo, false, framework.NewStatus(framework.Error, "reservation not found")
+	}
+
+	for _, rInfo := range nominatedReservationInfos {
+		if schedulingcorev1.PodPriority(rInfo.Pod) >= schedulingcorev1.PodPriority(pod) && rInfo.Pod.UID != pod.UID {
+			pInfo := framework.NewPodInfo(rInfo.Pod)
+			nodeInfoOut.AddPodInfo(pInfo)
+			status := pl.handle.RunPreFilterExtensionAddPod(ctx, cycleState, pod, pInfo, nodeInfoOut)
+			if !status.IsSuccess() {
+				return pod, nodeInfo, false, status
+			}
+			klog.V(4).Infof("toschedule reservation: %s, added reservation: %s",
+				reservationutil.GetReservationNameFromReservePod(pod),
+				reservationutil.GetReservationNameFromReservePod(rInfo.Pod))
+		}
+	}
+
+	return pod, nodeInfoOut, true, nil
 }
