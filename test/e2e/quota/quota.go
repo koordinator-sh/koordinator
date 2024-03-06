@@ -28,12 +28,13 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	schedclientset "sigs.k8s.io/scheduler-plugins/pkg/generated/clientset/versioned"
 
+	schedv1alpha1 "sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
+
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 	"github.com/koordinator-sh/koordinator/test/e2e/framework"
 	e2enode "github.com/koordinator-sh/koordinator/test/e2e/framework/node"
 	e2epod "github.com/koordinator-sh/koordinator/test/e2e/framework/pod"
-	schedv1alpha1 "sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 )
 
 var _ = SIGDescribe("basic-quota", func() {

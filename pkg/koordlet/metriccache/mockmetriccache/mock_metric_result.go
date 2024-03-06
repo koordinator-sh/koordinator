@@ -26,8 +26,9 @@ import (
 	time "time"
 
 	gomock "github.com/golang/mock/gomock"
-	metriccache "github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	storage "github.com/prometheus/prometheus/storage"
+
+	metriccache "github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 )
 
 // MockMetricResult is a mock of MetricResult interface.

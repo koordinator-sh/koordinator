@@ -22,12 +22,13 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/koordinator-sh/koordinator/apis/extension"
-	apiext "github.com/koordinator-sh/koordinator/apis/extension"
-	"github.com/koordinator-sh/koordinator/pkg/util/bitmask"
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
+
+	"github.com/koordinator-sh/koordinator/apis/extension"
+	apiext "github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/pkg/util/bitmask"
 )
 
 var _ NUMATopologyHintProvider = &mockNUMATopologyHintProvider{}

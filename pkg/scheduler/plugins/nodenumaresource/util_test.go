@@ -23,11 +23,12 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
-	"github.com/koordinator-sh/koordinator/apis/extension"
-	schedulingconfig "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	"github.com/koordinator-sh/koordinator/apis/extension"
+	schedulingconfig "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 )
 
 func Test_getCPUBindPolicy(t *testing.T) {

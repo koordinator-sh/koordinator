@@ -56,7 +56,7 @@ func mergeTopologyPolicy(nodePolicy, podPolicy extension.NUMATopologyPolicy) (ex
 		return "", errors.New(ErrNotMatchNUMATopology)
 	}
 	if podPolicy != "" {
-		nodePolicy = extension.NUMATopologyPolicy(podPolicy)
+		nodePolicy = podPolicy
 	}
 	return nodePolicy, nil
 }

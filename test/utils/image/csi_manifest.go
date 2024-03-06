@@ -25,7 +25,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/util/yaml"
 
-	"github.com/koordinator-sh/koordinator/test/e2e/testing-manifests"
+	testing_manifests "github.com/koordinator-sh/koordinator/test/e2e/testing-manifests"
 )
 
 // All of the image tags are of the format k8s.gcr.io/sig-storage/hostpathplugin:v1.7.3.

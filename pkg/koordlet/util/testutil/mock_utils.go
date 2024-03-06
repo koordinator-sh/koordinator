@@ -20,13 +20,14 @@ import (
 	"fmt"
 
 	"github.com/golang/mock/gomock"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/utils/pointer"
+
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	mock_metriccache "github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache/mockmetriccache"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util"
-	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/utils/pointer"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
