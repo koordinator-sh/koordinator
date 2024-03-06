@@ -200,6 +200,9 @@ func (qt *quotaTopology) fillQuotaDefaultInformation(quota *v1alpha1.ElasticQuot
 		return nil
 	}
 
+	qt.lock.Lock()
+	defer qt.lock.Unlock()
+
 	if quota.Labels == nil {
 		quota.Labels = make(map[string]string)
 	}
