@@ -157,12 +157,6 @@ func (p *Plugin) generateTopologyHints(cycleState *framework.CycleState, state *
 			}
 		}
 
-		for resourceName, affinitySize := range minAffinitySize {
-			if nodeCount < affinitySize {
-				minAffinitySize[resourceName] = nodeCount
-			}
-		}
-
 		allocateResult, status := p.tryAllocateFromReservation(allocator, state, restoreState, restoreState.matched, node, preemptible, false)
 		if !status.IsSuccess() {
 			return
@@ -175,7 +169,10 @@ func (p *Plugin) generateTopologyHints(cycleState *framework.CycleState, state *
 			}
 		}
 
-		for resourceName := range minAffinitySize {
+		for resourceName, affinitySize := range minAffinitySize {
+			if nodeCount < affinitySize {
+				minAffinitySize[resourceName] = nodeCount
+			}
 			if _, ok := hints[string(resourceName)]; !ok {
 				hints[string(resourceName)] = []topologymanager.NUMATopologyHint{}
 			}

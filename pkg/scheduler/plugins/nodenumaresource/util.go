@@ -17,6 +17,8 @@ limitations under the License.
 package nodenumaresource
 
 import (
+	"errors"
+
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
@@ -47,6 +49,16 @@ func AllowUseCPUSet(pod *corev1.Pod) bool {
 	qosClass := extension.GetPodQoSClassRaw(pod)
 	priorityClass := extension.GetPodPriorityClassWithDefault(pod)
 	return (qosClass == extension.QoSLSE || qosClass == extension.QoSLSR) && priorityClass == extension.PriorityProd
+}
+
+func mergeTopologyPolicy(nodePolicy, podPolicy extension.NUMATopologyPolicy) (extension.NUMATopologyPolicy, error) {
+	if nodePolicy != "" && podPolicy != "" && podPolicy != nodePolicy {
+		return "", errors.New(ErrNotMatchNUMATopology)
+	}
+	if podPolicy != "" {
+		nodePolicy = podPolicy
+	}
+	return nodePolicy, nil
 }
 
 func getNUMATopologyPolicy(nodeLabels map[string]string, kubeletTopologyManagerPolicy extension.NUMATopologyPolicy) extension.NUMATopologyPolicy {

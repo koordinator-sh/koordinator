@@ -567,12 +567,6 @@ func (g *hintsGenerator) generateHints(mask bitmask.BitMask, score int64, totalA
 	}
 
 	nodeCount := mask.Count()
-	for _, resourceName := range resourceNames {
-		affinitySize := g.minAffinitySize[resourceName]
-		if nodeCount < affinitySize {
-			g.minAffinitySize[resourceName] = nodeCount
-		}
-	}
 
 	for _, resourceName := range resourceNames {
 		free, request := totalFree[resourceName], podRequests[resourceName]
@@ -582,6 +576,10 @@ func (g *hintsGenerator) generateHints(mask bitmask.BitMask, score int64, totalA
 	}
 
 	for _, resourceName := range resourceNames {
+		affinitySize := g.minAffinitySize[resourceName]
+		if nodeCount < affinitySize {
+			g.minAffinitySize[resourceName] = nodeCount
+		}
 		if _, ok := g.hints[string(resourceName)]; !ok {
 			g.hints[string(resourceName)] = []topologymanager.NUMATopologyHint{}
 		}

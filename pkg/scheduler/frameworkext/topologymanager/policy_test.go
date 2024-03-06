@@ -26,6 +26,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
+	"github.com/koordinator-sh/koordinator/apis/extension"
+	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/util/bitmask"
 )
 
@@ -928,9 +930,130 @@ func testPolicyMerge(policy Policy, tcases []policyMergeTestCase, t *testing.T) 
 			providersHints = append(providersHints, hints)
 		}
 
-		actual, _ := policy.Merge(providersHints)
+		actual, _ := policy.Merge(providersHints, extension.NumaTopologyExclusivePreferred, []extension.NumaNodeStatus{})
 		if !reflect.DeepEqual(actual, tc.expected) {
 			t.Errorf("%v: Expected Topology Hint to be %v, got %v:", tc.name, tc.expected, actual)
 		}
+	}
+}
+
+func Test_checkExclusivePolicy(t *testing.T) {
+	type args struct {
+		affinity          NUMATopologyHint
+		exclusivePolicy   apiext.NumaTopologyExclusive
+		allNUMANodeStatus []apiext.NumaNodeStatus
+	}
+	tests := []struct {
+		name string
+		args args
+		want bool
+	}{
+		// TODO: Add test cases.
+		{
+			name: "preferred policy 1",
+			args: args{
+				affinity:          NUMATopologyHint{NUMANodeAffinity: NewTestBitMask(0), Preferred: true, Score: 0},
+				exclusivePolicy:   apiext.NumaTopologyExclusivePreferred,
+				allNUMANodeStatus: []apiext.NumaNodeStatus{apiext.NumaNodeStatusShared, apiext.NumaNodeStatusShared},
+			},
+			want: true,
+		},
+		{
+			name: "preferred policy 2",
+			args: args{
+				affinity:          NUMATopologyHint{NUMANodeAffinity: NewTestBitMask(0, 1), Preferred: true, Score: 0},
+				exclusivePolicy:   apiext.NumaTopologyExclusivePreferred,
+				allNUMANodeStatus: []apiext.NumaNodeStatus{apiext.NumaNodeStatusShared, apiext.NumaNodeStatusShared},
+			},
+			want: true,
+		},
+		{
+			name: "preferred policy 3",
+			args: args{
+				affinity:          NUMATopologyHint{NUMANodeAffinity: NewTestBitMask(0), Preferred: true, Score: 0},
+				exclusivePolicy:   apiext.NumaTopologyExclusivePreferred,
+				allNUMANodeStatus: []apiext.NumaNodeStatus{apiext.NumaNodeStatusIdle, apiext.NumaNodeStatusSingle},
+			},
+			want: true,
+		},
+		{
+			name: "preferred policy 4",
+			args: args{
+				affinity:          NUMATopologyHint{NUMANodeAffinity: NewTestBitMask(0, 1), Preferred: true, Score: 0},
+				exclusivePolicy:   apiext.NumaTopologyExclusivePreferred,
+				allNUMANodeStatus: []apiext.NumaNodeStatus{apiext.NumaNodeStatusIdle, apiext.NumaNodeStatusSingle},
+			},
+			want: true,
+		},
+		{
+			name: "required policy 1",
+			args: args{
+				affinity:          NUMATopologyHint{NUMANodeAffinity: NewTestBitMask(0), Preferred: true, Score: 0},
+				exclusivePolicy:   apiext.NumaTopologyExclusiveRequired,
+				allNUMANodeStatus: []apiext.NumaNodeStatus{apiext.NumaNodeStatusIdle, apiext.NumaNodeStatusSingle},
+			},
+			want: true,
+		},
+		{
+			name: "required policy 2",
+			args: args{
+				affinity:          NUMATopologyHint{NUMANodeAffinity: NewTestBitMask(0), Preferred: true, Score: 0},
+				exclusivePolicy:   apiext.NumaTopologyExclusiveRequired,
+				allNUMANodeStatus: []apiext.NumaNodeStatus{apiext.NumaNodeStatusShared, apiext.NumaNodeStatusSingle},
+			},
+			want: false,
+		},
+		{
+			name: "required policy 3",
+			args: args{
+				affinity:          NUMATopologyHint{NUMANodeAffinity: NewTestBitMask(0), Preferred: true, Score: 0},
+				exclusivePolicy:   apiext.NumaTopologyExclusiveRequired,
+				allNUMANodeStatus: []apiext.NumaNodeStatus{apiext.NumaNodeStatusShared, apiext.NumaNodeStatusShared},
+			},
+			want: false,
+		},
+		{
+			name: "required policy 4",
+			args: args{
+				affinity:          NUMATopologyHint{NUMANodeAffinity: NewTestBitMask(0), Preferred: true, Score: 0},
+				exclusivePolicy:   apiext.NumaTopologyExclusiveRequired,
+				allNUMANodeStatus: []apiext.NumaNodeStatus{apiext.NumaNodeStatusSingle, apiext.NumaNodeStatusShared},
+			},
+			want: true,
+		},
+		{
+			name: "required policy 5",
+			args: args{
+				affinity:          NUMATopologyHint{NUMANodeAffinity: NewTestBitMask(0, 1), Preferred: true, Score: 0},
+				exclusivePolicy:   apiext.NumaTopologyExclusiveRequired,
+				allNUMANodeStatus: []apiext.NumaNodeStatus{apiext.NumaNodeStatusShared, apiext.NumaNodeStatusSingle},
+			},
+			want: false,
+		},
+		{
+			name: "required policy 6",
+			args: args{
+				affinity:          NUMATopologyHint{NUMANodeAffinity: NewTestBitMask(0, 1), Preferred: true, Score: 0},
+				exclusivePolicy:   apiext.NumaTopologyExclusiveRequired,
+				allNUMANodeStatus: []apiext.NumaNodeStatus{apiext.NumaNodeStatusShared, apiext.NumaNodeStatusIdle},
+			},
+			want: true,
+		},
+		{
+			name: "required policy 7",
+			args: args{
+				affinity:          NUMATopologyHint{NUMANodeAffinity: NewTestBitMask(0, 1), Preferred: true, Score: 0},
+				exclusivePolicy:   apiext.NumaTopologyExclusiveRequired,
+				allNUMANodeStatus: []apiext.NumaNodeStatus{apiext.NumaNodeStatusShared, apiext.NumaNodeStatusShared},
+			},
+			want: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := checkExclusivePolicy(tt.args.affinity, tt.args.exclusivePolicy, tt.args.allNUMANodeStatus); got != tt.want {
+				t.Errorf("checkExclusivePolicy() = %v, want %v", got, tt.want)
+			}
+		})
 	}
 }
