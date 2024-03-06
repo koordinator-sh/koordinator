@@ -75,7 +75,7 @@ type RecommendedContainerStatus struct {
 // RecommendationStatus defines the observed state of Recommendation
 type RecommendationStatus struct {
 	// PodStatus records the most recently computed amount of resources recommended
-	PodStatus RecommendedPodStatus `json:"podStatus,omitempty"`
+	PodStatus *RecommendedPodStatus `json:"podStatus,omitempty"`
 	// UpdateTime is the update time of the distribution
 	UpdateTime *metav1.Time `json:"updateTime,omitempty"`
 	// Conditions is the list of conditions representing the status of the distribution
