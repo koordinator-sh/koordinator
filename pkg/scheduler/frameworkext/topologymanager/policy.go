@@ -63,6 +63,26 @@ func (th *NUMATopologyHint) LessThan(other NUMATopologyHint) bool {
 	return th.NUMANodeAffinity.IsNarrowerThan(other.NUMANodeAffinity)
 }
 
+// Check if the affinity match the exclusive policy, return true if match or false otherwise.
+func checkExclusivePolicy(affinity NUMATopologyHint, exclusivePolicy apiext.NUMATopologyExclusive, allNUMANodeStatus []apiext.NUMANodeStatus) bool {
+	// check bestHint again if default hint is the best
+	if exclusivePolicy == apiext.NUMATopologyExclusiveRequired {
+		if affinity.NUMANodeAffinity.Count() > 1 {
+			// we should make sure no numa is in single state
+			for _, nodeid := range affinity.NUMANodeAffinity.GetBits() {
+				if allNUMANodeStatus[nodeid] == apiext.NUMANodeStatusSingle {
+					return false
+				}
+			}
+		} else {
+			if allNUMANodeStatus[affinity.NUMANodeAffinity.GetBits()[0]] == apiext.NUMANodeStatusShared {
+				return false
+			}
+		}
+	}
+	return true
+}
+
 // Merge a TopologyHints permutation to a single hint by performing a bitwise-AND
 // of their affinity masks. The hint shall be preferred if all hits in the permutation
 // are preferred.
@@ -143,19 +163,8 @@ func mergeFilteredHints(numaNodes []int, filteredHints [][]NUMATopologyHint, exc
 		if mergedHint.NUMANodeAffinity.Count() == 0 {
 			return
 		}
-		if exclusivePolicy == apiext.NUMATopologyExclusiveRequired {
-			if mergedHint.NUMANodeAffinity.Count() > 1 {
-				// we should make sure no numa is in single state
-				for _, nodeid := range mergedHint.NUMANodeAffinity.GetBits() {
-					if allNUMANodeStatus[nodeid] == apiext.NUMANodeStatusSingle {
-						return
-					}
-				}
-			} else {
-				if allNUMANodeStatus[mergedHint.NUMANodeAffinity.GetBits()[0]] == apiext.NUMANodeStatusShared {
-					return
-				}
-			}
+		if !checkExclusivePolicy(mergedHint, exclusivePolicy, allNUMANodeStatus) {
+			return
 		}
 
 		for _, v := range permutation {

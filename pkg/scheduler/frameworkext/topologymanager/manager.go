@@ -82,24 +82,9 @@ func (m *topologyManager) Admit(ctx context.Context, cycleState *framework.Cycle
 func (m *topologyManager) calculateAffinity(ctx context.Context, cycleState *framework.CycleState, policy Policy, pod *corev1.Pod, nodeName string, exclusivePolicy apiext.NUMATopologyExclusive, allNUMANodeStatus []apiext.NUMANodeStatus) (NUMATopologyHint, bool) {
 	providersHints := m.accumulateProvidersHints(ctx, cycleState, pod, nodeName)
 	bestHint, admit := policy.Merge(providersHints, exclusivePolicy, allNUMANodeStatus)
-	// check bestHint again if default hint is the best
-	if exclusivePolicy == apiext.NUMATopologyExclusiveRequired {
-		if bestHint.NUMANodeAffinity.Count() > 1 {
-			// we should make sure no numa is in single state
-			for _, nodeid := range bestHint.NUMANodeAffinity.GetBits() {
-				if allNUMANodeStatus[nodeid] == apiext.NUMANodeStatusSingle {
-					klog.V(5).Infof("bestHint violated the exclusivePolicy requirement: bestHint: %v, policy: %v, numaStatus: %v, nodeName: %v, pod: %v",
-						bestHint, exclusivePolicy, allNUMANodeStatus, nodeName, pod.Name)
-					return bestHint, false
-				}
-			}
-		} else {
-			if allNUMANodeStatus[bestHint.NUMANodeAffinity.GetBits()[0]] == apiext.NUMANodeStatusShared {
-				klog.V(5).Infof("bestHint violated the exclusivePolicy requirement: bestHint: %v, policy: %v, numaStatus: %v, nodeName: %v, pod: %v",
-					bestHint, exclusivePolicy, allNUMANodeStatus, nodeName, pod.Name)
-				return bestHint, false
-			}
-		}
+	if !checkExclusivePolicy(bestHint, exclusivePolicy, allNUMANodeStatus) {
+		klog.V(5).Infof("bestHint violated the exclusivePolicy requirement: bestHint: %v, policy: %v, numaStatus: %v, nodeName: %v, pod: %v",
+			bestHint, exclusivePolicy, allNUMANodeStatus, nodeName, pod.Name)
 	}
 	klog.V(5).Infof("PodTopologyHint: %v", bestHint)
 	return bestHint, admit
