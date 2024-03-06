@@ -27,7 +27,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/topologymanager"
 )
 
-func (p *Plugin) FilterByNUMANode(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string, policyType apiext.NUMATopologyPolicy, topologyOptions TopologyOptions) *framework.Status {
+func (p *Plugin) FilterByNUMANode(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string, policyType apiext.NUMATopologyPolicy, exclusivePolicy apiext.NUMATopologyExclusive, topologyOptions TopologyOptions) *framework.Status {
 	if policyType == apiext.NUMATopologyPolicyNone {
 		return nil
 	}
@@ -35,7 +35,8 @@ func (p *Plugin) FilterByNUMANode(ctx context.Context, cycleState *framework.Cyc
 	if len(numaNodes) == 0 {
 		return framework.NewStatus(framework.UnschedulableAndUnresolvable, "node(s) missing NUMA resources")
 	}
-	return p.handle.(frameworkext.FrameworkExtender).RunNUMATopologyManagerAdmit(ctx, cycleState, pod, nodeName, numaNodes, policyType)
+	numaNodesStatus := p.resourceManager.GetNodeAllocation(nodeName).GetAllNUMANodeStatus(len(numaNodes))
+	return p.handle.(frameworkext.FrameworkExtender).RunNUMATopologyManagerAdmit(ctx, cycleState, pod, nodeName, numaNodes, policyType, exclusivePolicy, numaNodesStatus)
 }
 
 func (p *Plugin) GetPodTopologyHints(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) (map[string][]topologymanager.NUMATopologyHint, *framework.Status) {

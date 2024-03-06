@@ -58,6 +58,12 @@ const (
 
 // ResourceSpec describes extra attributes of the resource requirements.
 type ResourceSpec struct {
+	// NumaTopologyPolicy represents the numa topology policy when schedule pod
+	NumaTopologyPolicy NUMATopologyPolicy `json:"numaTopologyPolicy,omitempty"`
+	// SingleNUMANodeExclusive represents whether a Pod that will use a single NUMA node/multiple NUMA nodes
+	// on a NUMA node can be scheduled to use the NUMA node when another Pod that uses multiple NUMA nodes/a single NUMA node
+	// is already running on the same node.
+	SingleNUMANodeExclusive NUMATopologyExclusive `json:"singleNUMANodeExclusive,omitempty"`
 	// RequiredCPUBindPolicy indicates that the CPU is allocated strictly
 	// according to the specified CPUBindPolicy, otherwise the scheduling fails
 	RequiredCPUBindPolicy CPUBindPolicy `json:"requiredCPUBindPolicy,omitempty"`
@@ -133,6 +139,21 @@ const (
 const (
 	NodeNUMAAllocateStrategyLeastAllocated = NUMALeastAllocated
 	NodeNUMAAllocateStrategyMostAllocated  = NUMAMostAllocated
+)
+
+type NUMATopologyExclusive string
+
+const (
+	NUMATopologyExclusivePreferred NUMATopologyExclusive = "Preferred"
+	NUMATopologyExclusiveRequired  NUMATopologyExclusive = "Required"
+)
+
+type NUMANodeStatus string
+
+const (
+	NUMANodeStatusIdle   NUMANodeStatus = "idle"
+	NUMANodeStatusShared NUMANodeStatus = "shared"
+	NUMANodeStatusSingle NUMANodeStatus = "single"
 )
 
 type NUMATopologyPolicy string

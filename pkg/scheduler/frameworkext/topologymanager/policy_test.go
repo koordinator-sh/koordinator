@@ -26,6 +26,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
+	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/util/bitmask"
 )
 
@@ -891,7 +892,7 @@ func testPolicyMerge(policy Policy, tcases []policyMergeTestCase, t *testing.T) 
 			providersHints = append(providersHints, hints)
 		}
 
-		actual, _ := policy.Merge(providersHints)
+		actual, _ := policy.Merge(providersHints, extension.NUMATopologyExclusivePreferred, []extension.NUMANodeStatus{})
 		if !reflect.DeepEqual(actual, tc.expected) {
 			t.Errorf("%v: Expected Topology Hint to be %v, got %v:", tc.name, tc.expected, actual)
 		}
