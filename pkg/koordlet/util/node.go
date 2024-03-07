@@ -50,15 +50,23 @@ func GetBECgroupCurCPUSet() ([]int32, error) {
 	if err != nil {
 		return nil, err
 	}
-	if len(containerPaths) != 0 {
-		targetCgroupDir = containerPaths[0]
+	containerPaths = append(containerPaths, targetCgroupDir)
+
+	// find the minimal length of container's cpuset to avoid the interference of sandbox's cpuset
+	// since the cpuset's value of sandbox could always be set to all cpu ids of the machine by kubelet
+	var targetCpus []int32
+	for _, path := range containerPaths {
+		cpuStr, err := resourceexecutor.NewCgroupReader().ReadCPUSet(path)
+		if err != nil {
+			return nil, err
+		}
+		curCpus := cpuset.ParseCPUSet(cpuStr)
+		if targetCpus == nil || len(curCpus) < len(targetCpus) {
+			targetCpus = curCpus
+		}
 	}
 
-	cpus, err := resourceexecutor.NewCgroupReader().ReadCPUSet(targetCgroupDir)
-	if err != nil {
-		return nil, err
-	}
-	return cpuset.ParseCPUSet(cpus), nil
+	return targetCpus, nil
 }
 
 // GetBECPUSetPathsByMaxDepth gets all the be cpuset groups' paths recursively from upper to lower
