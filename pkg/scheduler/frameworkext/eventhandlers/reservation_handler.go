@@ -60,12 +60,18 @@ func MakeReservationErrorHandler(
 		}
 
 		// if the pod is not a reserve pod, use the default error handler
-		if !reservationutil.IsReservePod(pod) {
-			// If the Pod failed to schedule or no post-filter plugins, should remove exist NominatedReservation of the Pod.
-			if _, ok := schedulingErr.(*framework.FitError); !ok || !fwk.HasPostFilterPlugins() {
-				extendedHandle := fwk.(frameworkext.ExtendedHandle)
-				extendedHandle.GetReservationNominator().RemoveNominatedReservations(pod)
+		// If the Pod failed to schedule or no post-filter plugins, should remove exist NominatedReservation of the Pod.
+		if _, ok := schedulingErr.(*framework.FitError); !ok || !fwk.HasPostFilterPlugins() {
+			if extendedHandle, ok := fwk.(frameworkext.ExtendedHandle); ok {
+				if !reservationutil.IsReservePod(pod) {
+					extendedHandle.GetReservationNominator().RemoveNominatedReservations(pod)
+				} else {
+					extendedHandle.GetReservationNominator().DeleteNominatedReservePod(pod)
+				}
 			}
+		}
+
+		if !reservationutil.IsReservePod(pod) {
 			return false
 		}
 

@@ -434,3 +434,58 @@ func TestMultiReservationsOnSameNode(t *testing.T) {
 		assert.Equal(t, 1, v)
 	}
 }
+
+func TestReservationsNominator(t *testing.T) {
+	node := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "node-1",
+		},
+		Status: corev1.NodeStatus{
+			Allocatable: map[corev1.ResourceName]resource.Quantity{
+				corev1.ResourceCPU:    resource.MustParse("96"),
+				corev1.ResourceMemory: resource.MustParse("1886495404Ki"),
+			},
+		},
+	}
+
+	resourceList := corev1.ResourceList{
+		corev1.ResourceCPU:    resource.MustParse("16"),
+		corev1.ResourceMemory: resource.MustParse("32Gi"),
+	}
+	labels := map[string]string{
+		"foo": "bar",
+	}
+	suit := newPluginTestSuitWith(t, nil, []*corev1.Node{node})
+	var pods []*corev1.Pod
+	for i := 0; i < 3; i++ {
+		r := newTestReservation(t, fmt.Sprintf("test-r-%d", i), labels, labels, node.Name, resourceList)
+		pods = append(pods, reservationutil.NewReservePod(r))
+		_, err := suit.extenderFactory.KoordinatorClientSet().SchedulingV1alpha1().Reservations().Create(context.TODO(), r, metav1.CreateOptions{})
+		assert.NoError(t, err)
+	}
+	nodeInfo, err := suit.fw.SnapshotSharedLister().NodeInfos().Get(node.Name)
+	assert.NoError(t, err)
+	assert.Equal(t, 0, len(nodeInfo.Pods))
+
+	p, err := suit.pluginFactory()
+	assert.NoError(t, err)
+	pl := p.(*Plugin)
+
+	nominatorImpl := pl.handle.(frameworkext.FrameworkExtender).GetReservationNominator()
+
+	nominatorImpl.AddNominatedReservePod(pods[0], "node-1")
+	ctx := context.TODO()
+	state := framework.NewCycleState()
+	pod, nodeInfoOut, update, status := pl.BeforeFilter(ctx, state, pods[2], nodeInfo)
+	assert.Equal(t, pod, pods[2])
+	assert.True(t, update)
+	assert.True(t, status.IsSuccess())
+	assert.Equal(t, 1, len(nodeInfoOut.Pods))
+
+	nominatorImpl.AddNominatedReservePod(pods[1], "node-1")
+	pod, nodeInfoOut, update, status = pl.BeforeFilter(ctx, state, pods[2], nodeInfo)
+	assert.Equal(t, pod, pods[2])
+	assert.True(t, update)
+	assert.True(t, status.IsSuccess())
+	assert.Equal(t, 2, len(nodeInfoOut.Pods))
+}

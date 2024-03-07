@@ -132,6 +132,8 @@ type ReservationNominator interface {
 	AddNominatedReservation(pod *corev1.Pod, nodeName string, rInfo *ReservationInfo)
 	RemoveNominatedReservations(pod *corev1.Pod)
 	GetNominatedReservation(pod *corev1.Pod, nodeName string) *ReservationInfo
+	AddNominatedReservePod(reservePod *corev1.Pod, nodeName string)
+	DeleteNominatedReservePod(reservePod *corev1.Pod)
 }
 
 const (

@@ -229,6 +229,7 @@ func (ext *frameworkExtenderImpl) RunPostFilterPlugins(ctx context.Context, stat
 	result, status := ext.Framework.RunPostFilterPlugins(ctx, state, pod, filteredNodeStatusMap)
 	if result == nil || result.NominatingInfo.NominatedNodeName == "" {
 		ext.GetReservationNominator().RemoveNominatedReservations(pod)
+		ext.GetReservationNominator().DeleteNominatedReservePod(pod)
 	}
 	return result, status
 }
@@ -461,6 +462,7 @@ func (ext *frameworkExtenderImpl) RunReservePluginsReserve(ctx context.Context, 
 	}
 	status := ext.Framework.RunReservePluginsReserve(ctx, cycleState, pod, nodeName)
 	ext.GetReservationNominator().RemoveNominatedReservations(pod)
+	ext.GetReservationNominator().DeleteNominatedReservePod(pod)
 	return status
 }
 
