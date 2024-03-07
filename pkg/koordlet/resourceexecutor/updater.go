@@ -75,6 +75,7 @@ func init() {
 		sysutil.BlkioTWIopsName,
 		sysutil.BlkioTWBpsName,
 		sysutil.BlkioIOQoSName,
+		sysutil.BlkioIOModelName,
 		sysutil.BlkioIOWeightName,
 	)
 }
@@ -563,7 +564,7 @@ func cgroupBlkIOFileWriteIfDifferent(cgroupTaskDir string, file sysutil.Resource
 	}
 
 	switch file.ResourceType() {
-	case sysutil.BlkioIOQoSName:
+	case sysutil.BlkioIOQoSName, sysutil.BlkioIOModelName:
 		needUpdate = CheckIfBlkRootConfigNeedUpdate(currentValue, value)
 	case sysutil.BlkioTRIopsName, sysutil.BlkioTRBpsName, sysutil.BlkioTWIopsName, sysutil.BlkioTWBpsName, sysutil.BlkioIOWeightName:
 		needUpdate = CheckIfBlkQOSNeedUpdate(currentValue, value)

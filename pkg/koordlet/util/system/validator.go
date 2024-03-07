@@ -86,11 +86,18 @@ func (r *BlkIORangeValidator) Validate(value string) (bool, string) {
 			newValues = append(newValues, rst[1])
 		}
 	case BlkioIOQoSName:
-		// 253:16 enable=1 ctrl=user rlat=3000 wlat=4000
+		// 253:16 enable=1 ctrl=user rpct=95 rlat=3000 wpct=95 wlat=4000
 		// 253:16 enable=0
 		rst := strings.Split(value, " ")
-		if len(rst) == 5 {
-			newValues = append(newValues, []string{rst[3][5:], rst[4][5:]}...)
+		if len(rst) == 7 {
+			newValues = append(newValues, []string{rst[3][5:], rst[4][5:], rst[5][5:], rst[6][5:]}...)
+		}
+	case BlkioIOModelName:
+		// 253:16 ctrl=user rbps=3324911720 rseqiops=168274 rrandiops=352545 wbps=2765819289 wseqiops=367565 wrandiops=339390
+		// 253:16 ctrl=auto
+		rst := strings.Split(value, " ")
+		if len(rst) == 8 {
+			newValues = append(newValues, []string{rst[2][5:], rst[3][9:], rst[4][10:], rst[5][5:], rst[6][9:], rst[7][10:]}...)
 		}
 	default:
 		return false, "unknown blkio resource name"
