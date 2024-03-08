@@ -26,6 +26,8 @@ import (
 	promstorage "github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"k8s.io/klog/v2"
+
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
 )
 
 // TSDBStorage defines time-series type DB, providing insert and query interface
@@ -122,7 +124,7 @@ func NewTSDBStorage(conf *Config) (TSDBStorage, error) {
 
 	var promReg prometheus.Registerer
 	if conf.TSDBEnablePromMetrics {
-		promReg = prometheus.DefaultRegisterer
+		promReg = metrics.ExternalRegistry
 	}
 	db, err := tsdb.Open(conf.TSDBPath, nil, promReg, tsdbOpt, nil)
 	if err != nil {
