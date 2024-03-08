@@ -71,22 +71,24 @@ func NewKubeletStub(addr string, port int, scheme string, timeout time.Duration,
 
 func (k *kubeletStub) GetAllPods() (corev1.PodList, error) {
 	path := "/pods/"
-	url := url.URL{
+	podsURL := url.URL{
 		Scheme: k.scheme,
 		Host:   net.JoinHostPort(k.addr, strconv.Itoa(k.port)),
 		Path:   path,
 	}
 	podList := corev1.PodList{}
 	start := time.Now()
-	rsp, err := k.httpClient.Get(url.String())
-	metrics.RecordKubeletRequestDuration(metrics.HTTPVerbGet, path, strconv.Itoa(rsp.StatusCode), metrics.SinceInSeconds(start))
-
+	rsp, err := k.httpClient.Get(podsURL.String())
+	if rsp != nil {
+		metrics.RecordKubeletRequestDuration(metrics.HTTPVerbGet, path, strconv.Itoa(rsp.StatusCode), metrics.SinceInSeconds(start))
+	}
 	if err != nil {
 		return podList, err
 	}
 	defer rsp.Body.Close()
+
 	if rsp.StatusCode != http.StatusOK {
-		return podList, fmt.Errorf("request %s failed, code %d", url.String(), rsp.StatusCode)
+		return podList, fmt.Errorf("request %s failed, code %d", podsURL.String(), rsp.StatusCode)
 	}
 
 	body, err := io.ReadAll(rsp.Body)
@@ -116,8 +118,9 @@ func (k *kubeletStub) GetKubeletConfiguration() (*kubeletconfiginternal.KubeletC
 	}
 	start := time.Now()
 	rsp, err := k.httpClient.Get(configzURL.String())
-	metrics.RecordKubeletRequestDuration(metrics.HTTPVerbGet, path, strconv.Itoa(rsp.StatusCode), metrics.SinceInSeconds(start))
-
+	if rsp != nil {
+		metrics.RecordKubeletRequestDuration(metrics.HTTPVerbGet, path, strconv.Itoa(rsp.StatusCode), metrics.SinceInSeconds(start))
+	}
 	if err != nil {
 		return nil, err
 	}
