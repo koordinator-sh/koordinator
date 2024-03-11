@@ -149,11 +149,13 @@ func (p *Plugin) RestoreReservation(ctx context.Context, cycleState *framework.C
 					allocated = appendAllocatedByHints(minorHints, allocated, podAllocated)
 				}
 			}
+			remained := subtractAllocated(copyDeviceResources(allocatable), allocated, false)
+
 			result = append(result, reservationAlloc{
 				rInfo:       rInfo,
 				allocatable: allocatable,
 				allocated:   allocated,
-				remained:    subtractAllocated(copyDeviceResources(allocatable), allocated, true),
+				remained:    remained,
 			})
 		}
 		return result
