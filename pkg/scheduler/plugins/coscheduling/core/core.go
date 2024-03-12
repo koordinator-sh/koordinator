@@ -369,6 +369,7 @@ func (pgMgr *PodGroupManager) rejectGangGroupById(handle framework.Handle, plugi
 	gangGroup := gang.getGangGroup()
 	gangSet := sets.NewString(gangGroup...)
 
+	rejectedPodCount := 0
 	if handle != nil {
 		handle.IterateOverWaitingPods(func(waitingPod framework.WaitingPod) {
 			waitingGangId := util.GetId(waitingPod.GetPod().Namespace, util.GetGangNameByPod(waitingPod.GetPod()))
@@ -376,8 +377,12 @@ func (pgMgr *PodGroupManager) rejectGangGroupById(handle framework.Handle, plugi
 				klog.V(1).InfoS("GangGroup gets rejected due to member Gang is unschedulable",
 					"gang", gangId, "waitingGang", waitingGangId, "waitingPod", klog.KObj(waitingPod.GetPod()))
 				waitingPod.Reject(pluginName, message)
+				rejectedPodCount++
 			}
 		})
+	}
+	if rejectedPodCount == 0 {
+		return
 	}
 	for gang := range gangSet {
 		gangIns := pgMgr.cache.getGangFromCacheByGangId(gang, false)
