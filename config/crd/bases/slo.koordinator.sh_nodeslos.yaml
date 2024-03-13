@@ -114,12 +114,49 @@ spec:
                               properties:
                                 ioCfg:
                                   properties:
+                                    enableUserModel:
+                                      description: 'configure the cost model of blkio-cost
+                                        manually whether the user model is enabled.
+                                        Default value: false'
+                                      type: boolean
                                     ioWeightPercent:
                                       description: 'This field is used to set the
                                         weight of a sub-group. Default value: 100.
                                         Valid values: 1 to 100.'
                                       format: int64
                                       maximum: 100
+                                      minimum: 1
+                                      type: integer
+                                    modelReadBPS:
+                                      description: the read BPS of user model
+                                      format: int64
+                                      minimum: 1
+                                      type: integer
+                                    modelReadRandIOPS:
+                                      description: the random read iops of user model
+                                      format: int64
+                                      minimum: 1
+                                      type: integer
+                                    modelReadSeqIOPS:
+                                      description: the sequential read iops of user
+                                        model
+                                      format: int64
+                                      minimum: 1
+                                      type: integer
+                                    modelWriteBPS:
+                                      description: the write BPS of user model
+                                      format: int64
+                                      minimum: 1
+                                      type: integer
+                                    modelWriteRandIOPS:
+                                      description: the random write iops of user model
+                                      format: int64
+                                      minimum: 1
+                                      type: integer
+                                    modelWriteSeqIOPS:
+                                      description: the sequential write iops of user
+                                        model
+                                      format: int64
                                       minimum: 1
                                       type: integer
                                     readBPS:
@@ -404,12 +441,49 @@ spec:
                               properties:
                                 ioCfg:
                                   properties:
+                                    enableUserModel:
+                                      description: 'configure the cost model of blkio-cost
+                                        manually whether the user model is enabled.
+                                        Default value: false'
+                                      type: boolean
                                     ioWeightPercent:
                                       description: 'This field is used to set the
                                         weight of a sub-group. Default value: 100.
                                         Valid values: 1 to 100.'
                                       format: int64
                                       maximum: 100
+                                      minimum: 1
+                                      type: integer
+                                    modelReadBPS:
+                                      description: the read BPS of user model
+                                      format: int64
+                                      minimum: 1
+                                      type: integer
+                                    modelReadRandIOPS:
+                                      description: the random read iops of user model
+                                      format: int64
+                                      minimum: 1
+                                      type: integer
+                                    modelReadSeqIOPS:
+                                      description: the sequential read iops of user
+                                        model
+                                      format: int64
+                                      minimum: 1
+                                      type: integer
+                                    modelWriteBPS:
+                                      description: the write BPS of user model
+                                      format: int64
+                                      minimum: 1
+                                      type: integer
+                                    modelWriteRandIOPS:
+                                      description: the random write iops of user model
+                                      format: int64
+                                      minimum: 1
+                                      type: integer
+                                    modelWriteSeqIOPS:
+                                      description: the sequential write iops of user
+                                        model
+                                      format: int64
                                       minimum: 1
                                       type: integer
                                     readBPS:
@@ -694,12 +768,49 @@ spec:
                               properties:
                                 ioCfg:
                                   properties:
+                                    enableUserModel:
+                                      description: 'configure the cost model of blkio-cost
+                                        manually whether the user model is enabled.
+                                        Default value: false'
+                                      type: boolean
                                     ioWeightPercent:
                                       description: 'This field is used to set the
                                         weight of a sub-group. Default value: 100.
                                         Valid values: 1 to 100.'
                                       format: int64
                                       maximum: 100
+                                      minimum: 1
+                                      type: integer
+                                    modelReadBPS:
+                                      description: the read BPS of user model
+                                      format: int64
+                                      minimum: 1
+                                      type: integer
+                                    modelReadRandIOPS:
+                                      description: the random read iops of user model
+                                      format: int64
+                                      minimum: 1
+                                      type: integer
+                                    modelReadSeqIOPS:
+                                      description: the sequential read iops of user
+                                        model
+                                      format: int64
+                                      minimum: 1
+                                      type: integer
+                                    modelWriteBPS:
+                                      description: the write BPS of user model
+                                      format: int64
+                                      minimum: 1
+                                      type: integer
+                                    modelWriteRandIOPS:
+                                      description: the random write iops of user model
+                                      format: int64
+                                      minimum: 1
+                                      type: integer
+                                    modelWriteSeqIOPS:
+                                      description: the sequential write iops of user
+                                        model
+                                      format: int64
                                       minimum: 1
                                       type: integer
                                     readBPS:
@@ -984,12 +1095,49 @@ spec:
                               properties:
                                 ioCfg:
                                   properties:
+                                    enableUserModel:
+                                      description: 'configure the cost model of blkio-cost
+                                        manually whether the user model is enabled.
+                                        Default value: false'
+                                      type: boolean
                                     ioWeightPercent:
                                       description: 'This field is used to set the
                                         weight of a sub-group. Default value: 100.
                                         Valid values: 1 to 100.'
                                       format: int64
                                       maximum: 100
+                                      minimum: 1
+                                      type: integer
+                                    modelReadBPS:
+                                      description: the read BPS of user model
+                                      format: int64
+                                      minimum: 1
+                                      type: integer
+                                    modelReadRandIOPS:
+                                      description: the random read iops of user model
+                                      format: int64
+                                      minimum: 1
+                                      type: integer
+                                    modelReadSeqIOPS:
+                                      description: the sequential read iops of user
+                                        model
+                                      format: int64
+                                      minimum: 1
+                                      type: integer
+                                    modelWriteBPS:
+                                      description: the write BPS of user model
+                                      format: int64
+                                      minimum: 1
+                                      type: integer
+                                    modelWriteRandIOPS:
+                                      description: the random write iops of user model
+                                      format: int64
+                                      minimum: 1
+                                      type: integer
+                                    modelWriteSeqIOPS:
+                                      description: the sequential write iops of user
+                                        model
+                                      format: int64
                                       minimum: 1
                                       type: integer
                                     readBPS:
@@ -1284,12 +1432,49 @@ spec:
                               properties:
                                 ioCfg:
                                   properties:
+                                    enableUserModel:
+                                      description: 'configure the cost model of blkio-cost
+                                        manually whether the user model is enabled.
+                                        Default value: false'
+                                      type: boolean
                                     ioWeightPercent:
                                       description: 'This field is used to set the
                                         weight of a sub-group. Default value: 100.
                                         Valid values: 1 to 100.'
                                       format: int64
                                       maximum: 100
+                                      minimum: 1
+                                      type: integer
+                                    modelReadBPS:
+                                      description: the read BPS of user model
+                                      format: int64
+                                      minimum: 1
+                                      type: integer
+                                    modelReadRandIOPS:
+                                      description: the random read iops of user model
+                                      format: int64
+                                      minimum: 1
+                                      type: integer
+                                    modelReadSeqIOPS:
+                                      description: the sequential read iops of user
+                                        model
+                                      format: int64
+                                      minimum: 1
+                                      type: integer
+                                    modelWriteBPS:
+                                      description: the write BPS of user model
+                                      format: int64
+                                      minimum: 1
+                                      type: integer
+                                    modelWriteRandIOPS:
+                                      description: the random write iops of user model
+                                      format: int64
+                                      minimum: 1
+                                      type: integer
+                                    modelWriteSeqIOPS:
+                                      description: the sequential write iops of user
+                                        model
+                                      format: int64
                                       minimum: 1
                                       type: integer
                                     readBPS:

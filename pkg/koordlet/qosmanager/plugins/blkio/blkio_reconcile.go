@@ -420,8 +420,12 @@ func (b *blkIOReconcile) getDiskNumberFromBlockCfg(block *slov1alpha1.BlockCfg, 
 // configure cgroup root
 // dynamicPath for root: ""
 func getDiskConfigUpdaterFromBlockCfg(block *slov1alpha1.BlockCfg, diskNumber string, dynamicPath string) (resources []resourceexecutor.ResourceUpdater) {
-	var readlat, writelat int64 = DefaultIOLatency, DefaultIOLatency
-	var readlatPercent, writelatPercent int64 = DefaultLatencyPercent, DefaultLatencyPercent
+	var (
+		readlat, writelat                                                                                       int64 = DefaultIOLatency, DefaultIOLatency
+		readlatPercent, writelatPercent                                                                         int64 = DefaultLatencyPercent, DefaultLatencyPercent
+		enableUserModel                                                                                         bool  = false
+		modelReadBPS, modelWriteBPS, modelReadSeqIOPS, modelWriteSeqIOPS, modelReadRandIOPS, modelWriteRandIOPS int64 = 0, 0, 0, 0, 0, 0
+	)
 	// disk io weight latency
 	if value := block.IOCfg.ReadLatency; value != nil {
 		readlat = *value
@@ -438,6 +442,31 @@ func getDiskConfigUpdaterFromBlockCfg(block *slov1alpha1.BlockCfg, diskNumber st
 		writelatPercent = *value
 	}
 
+	// user cost model configuration
+	if value := block.IOCfg.EnableUserModel; value != nil {
+		enableUserModel = *value
+	}
+	if enableUserModel {
+		if value := block.IOCfg.ModelReadBPS; value != nil {
+			modelReadBPS = *value
+		}
+		if value := block.IOCfg.ModelWriteBPS; value != nil {
+			modelWriteBPS = *value
+		}
+		if value := block.IOCfg.ModelReadSeqIOPS; value != nil {
+			modelReadSeqIOPS = *value
+		}
+		if value := block.IOCfg.ModelWriteSeqIOPS; value != nil {
+			modelWriteSeqIOPS = *value
+		}
+		if value := block.IOCfg.ModelReadRandIOPS; value != nil {
+			modelReadRandIOPS = *value
+		}
+		if value := block.IOCfg.ModelWriteRandIOPS; value != nil {
+			modelWriteRandIOPS = *value
+		}
+	}
+
 	ioQoSUpdater, _ := resourceexecutor.NewBlkIOResourceUpdater(
 		system.BlkioIOQoSName,
 		dynamicPath,
@@ -446,6 +475,26 @@ func getDiskConfigUpdaterFromBlockCfg(block *slov1alpha1.BlockCfg, diskNumber st
 	)
 
 	resources = append(resources, ioQoSUpdater)
+
+	if enableUserModel {
+		ioModelUpdater, _ := resourceexecutor.NewBlkIOResourceUpdater(
+			system.BlkioIOModelName,
+			dynamicPath,
+			fmt.Sprintf("%s ctrl=user rbps=%d rseqiops=%d rrandiops=%d wbps=%d wseqiops=%d wrandiops=%d", diskNumber, modelReadBPS, modelReadSeqIOPS, modelReadRandIOPS, modelWriteBPS, modelWriteSeqIOPS, modelWriteRandIOPS),
+			audit.V(3).Group("blkio").Reason("UpdateBlkIO").Message("update %s/%s to %s", dynamicPath, system.BlkioIOModelName, fmt.Sprintf("%s ctrl=user rbps=%d rseqiops=%d rrandiops=%d wbps=%d wseqiops=%d wrandiops=%d", diskNumber, modelReadBPS, modelReadSeqIOPS, modelReadRandIOPS, modelWriteBPS, modelWriteSeqIOPS, modelWriteRandIOPS)),
+		)
+
+		resources = append(resources, ioModelUpdater)
+	} else {
+		ioModelUpdater, _ := resourceexecutor.NewBlkIOResourceUpdater(
+			system.BlkioIOModelName,
+			dynamicPath,
+			fmt.Sprintf("%s ctrl=auto", diskNumber),
+			audit.V(3).Group("blkio").Reason("UpdateBlkIO").Message("update %s/%s to %s", dynamicPath, system.BlkioIOModelName, fmt.Sprintf("%s ctrl=auto", diskNumber)),
+		)
+
+		resources = append(resources, ioModelUpdater)
+	}
 
 	return
 }

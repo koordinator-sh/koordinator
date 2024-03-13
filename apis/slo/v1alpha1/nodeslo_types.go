@@ -199,6 +199,27 @@ type IOCfg struct {
 	// +kubebuilder:validation:Maximum=100
 	// +kubebuilder:validation:Minimum=0
 	WriteLatencyPercent *int64 `json:"writeLatencyPercent,omitempty"`
+	// configure the cost model of blkio-cost manually
+	// whether the user model is enabled. Default value: false
+	EnableUserModel *bool `json:"enableUserModel,omitempty"`
+	// the read BPS of user model
+	// +kubebuilder:validation:Minimum=1
+	ModelReadBPS *int64 `json:"modelReadBPS,omitempty"`
+	// the write BPS of user model
+	// +kubebuilder:validation:Minimum=1
+	ModelWriteBPS *int64 `json:"modelWriteBPS,omitempty"`
+	// the sequential read iops of user model
+	// +kubebuilder:validation:Minimum=1
+	ModelReadSeqIOPS *int64 `json:"modelReadSeqIOPS,omitempty"`
+	// the sequential write iops of user model
+	// +kubebuilder:validation:Minimum=1
+	ModelWriteSeqIOPS *int64 `json:"modelWriteSeqIOPS,omitempty"`
+	// the random read iops of user model
+	// +kubebuilder:validation:Minimum=1
+	ModelReadRandIOPS *int64 `json:"modelReadRandIOPS,omitempty"`
+	// the random write iops of user model
+	// +kubebuilder:validation:Minimum=1
+	ModelWriteRandIOPS *int64 `json:"modelWriteRandIOPS,omitempty"`
 }
 
 type BlockCfg struct {

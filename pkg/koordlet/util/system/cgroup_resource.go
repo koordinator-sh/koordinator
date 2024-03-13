@@ -169,6 +169,7 @@ const (
 	BlkioTWBpsName    = "blkio.throttle.write_bps_device"
 	BlkioIOWeightName = "blkio.cost.weight"
 	BlkioIOQoSName    = "blkio.cost.qos"
+	BlkioIOModelName  = "blkio.cost.model"
 )
 
 var (
@@ -192,6 +193,7 @@ var (
 	BlkioTWBpsValidator                     = &BlkIORangeValidator{min: 0, max: math.MaxInt64, resource: BlkioTWBpsName}
 	BlkioIOWeightValidator                  = &BlkIORangeValidator{min: 1, max: 100, resource: BlkioIOWeightName}
 	BlkioIOQoSValidator                     = &BlkIORangeValidator{min: 0, max: math.MaxInt64, resource: BlkioIOQoSName}
+	BlkioIOModelValidator                   = &BlkIORangeValidator{min: 1, max: math.MaxInt64, resource: BlkioIOModelName}
 
 	CPUSetCPUSValidator = &CPUSetStrValidator{}
 )
@@ -239,6 +241,7 @@ var (
 	BlkioWriteBps  = DefaultFactory.New(BlkioTWBpsName, CgroupBlkioDir).WithValidator(BlkioTWBpsValidator).WithCheckSupported(SupportedIfFileExistsInKubepods).WithCheckOnce(true)
 	BlkioIOWeight  = DefaultFactory.New(BlkioIOWeightName, CgroupBlkioDir).WithValidator(BlkioIOWeightValidator).WithCheckSupported(SupportedIfFileExistsInKubepods).WithCheckOnce(true)
 	BlkioIOQoS     = DefaultFactory.New(BlkioIOQoSName, CgroupBlkioDir).WithValidator(BlkioIOQoSValidator).WithSupported(SupportedIfFileExistsInRootCgroup(BlkioIOQoSName, CgroupBlkioDir))
+	BlkioIOModel   = DefaultFactory.New(BlkioIOModelName, CgroupBlkioDir).WithValidator(BlkioIOModelValidator).WithSupported(SupportedIfFileExistsInRootCgroup(BlkioIOModelName, CgroupBlkioDir))
 
 	knownCgroupResources = []Resource{
 		CPUStat,
@@ -276,6 +279,7 @@ var (
 		BlkioWriteBps,
 		BlkioIOWeight,
 		BlkioIOQoS,
+		BlkioIOModel,
 	}
 
 	CPUCFSQuotaV2  = DefaultFactory.NewV2(CPUCFSQuotaName, CPUMaxName)
@@ -340,8 +344,7 @@ var (
 		MemoryPriorityV2,
 		MemoryUsePriorityOomV2,
 		MemoryOomGroupV2,
-		BlkioIOWeight,
-		BlkioIOQoS,
+		// TODO: register BlkioIOWeight, BlkioIOQoS and BlkioIOModel
 	}
 )
 
