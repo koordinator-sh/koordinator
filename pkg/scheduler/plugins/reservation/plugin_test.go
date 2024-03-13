@@ -772,7 +772,7 @@ func Test_filterWithReservations(t *testing.T) {
 					},
 				},
 			},
-			wantStatus: framework.NewStatus(framework.Unschedulable, ErrReasonNoReservationsMeetRequirements),
+			wantStatus: framework.NewStatus(framework.Unschedulable, "Insufficient cpu by node"),
 		},
 		{
 			name: "filter restricted reservation with nodeInfo",
@@ -861,7 +861,7 @@ func Test_filterWithReservations(t *testing.T) {
 					},
 				},
 			},
-			wantStatus: framework.NewStatus(framework.Unschedulable, ErrReasonNoReservationsMeetRequirements),
+			wantStatus: framework.NewStatus(framework.Unschedulable, "Insufficient cpu by reservation"),
 		},
 		{
 			name: "filter default reservations with preemption",
@@ -962,6 +962,9 @@ func Test_filterWithReservations(t *testing.T) {
 			name: "failed to filter default reservations with preempt from reservation",
 			stateData: &stateData{
 				hasAffinity: true,
+				podRequests: corev1.ResourceList{
+					corev1.ResourceCPU: resource.MustParse("4"),
+				},
 				podRequestsResources: &framework.Resource{
 					MilliCPU: 4 * 1000,
 				},
@@ -991,6 +994,7 @@ func Test_filterWithReservations(t *testing.T) {
 										AllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyDefault,
 									},
 								},
+								ResourceNames: []corev1.ResourceName{corev1.ResourceCPU},
 								Allocatable: corev1.ResourceList{
 									corev1.ResourceCPU: resource.MustParse("6"),
 								},
@@ -1002,12 +1006,15 @@ func Test_filterWithReservations(t *testing.T) {
 					},
 				},
 			},
-			wantStatus: framework.NewStatus(framework.Unschedulable, ErrReasonNoReservationsMeetRequirements),
+			wantStatus: framework.NewStatus(framework.Unschedulable, "Insufficient cpu by node"),
 		},
 		{
 			name: "failed to filter default reservations with preempt from node",
 			stateData: &stateData{
 				hasAffinity: true,
+				podRequests: corev1.ResourceList{
+					corev1.ResourceCPU: resource.MustParse("4"),
+				},
 				podRequestsResources: &framework.Resource{
 					MilliCPU: 4 * 1000,
 				},
@@ -1035,6 +1042,7 @@ func Test_filterWithReservations(t *testing.T) {
 										AllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyDefault,
 									},
 								},
+								ResourceNames: []corev1.ResourceName{corev1.ResourceCPU},
 								Allocatable: corev1.ResourceList{
 									corev1.ResourceCPU: resource.MustParse("6"),
 								},
@@ -1046,7 +1054,7 @@ func Test_filterWithReservations(t *testing.T) {
 					},
 				},
 			},
-			wantStatus: framework.NewStatus(framework.Unschedulable, ErrReasonNoReservationsMeetRequirements),
+			wantStatus: framework.NewStatus(framework.Unschedulable, "Insufficient cpu by node"),
 		},
 		{
 			name: "filter restricted reservations with preempt from reservation",
@@ -1131,6 +1139,7 @@ func Test_filterWithReservations(t *testing.T) {
 										AllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyRestricted,
 									},
 								},
+								ResourceNames: []corev1.ResourceName{corev1.ResourceCPU},
 								Allocatable: corev1.ResourceList{
 									corev1.ResourceCPU: resource.MustParse("6"),
 								},
@@ -1142,7 +1151,7 @@ func Test_filterWithReservations(t *testing.T) {
 					},
 				},
 			},
-			wantStatus: framework.NewStatus(framework.Unschedulable, ErrReasonNoReservationsMeetRequirements),
+			wantStatus: framework.NewStatus(framework.Unschedulable, "Insufficient cpu by reservation"),
 		},
 		{
 			name: "failed to filter restricted reservations with preempt from reservation and node",
@@ -1199,7 +1208,7 @@ func Test_filterWithReservations(t *testing.T) {
 					},
 				},
 			},
-			wantStatus: framework.NewStatus(framework.Unschedulable, ErrReasonNoReservationsMeetRequirements),
+			wantStatus: framework.NewStatus(framework.Unschedulable, "Insufficient cpu by reservation"),
 		},
 		{
 			name: "filter restricted reservations with preempt from reservation and node",
