@@ -38,7 +38,7 @@ SHELL = /usr/bin/env bash -o pipefail
 .SHELLFLAGS = -ec
 
 LINT_TIMEOUT ?= 15m
-DOCKER_BUILDER ?= build # 'buildx build'
+DOCKER_BUILDER ?= buildx build
 
 .PHONY: all
 all: build
