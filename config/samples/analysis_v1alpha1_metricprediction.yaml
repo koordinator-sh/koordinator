@@ -1,0 +1,57 @@
+apiVersion: analysis.koordinator.sh/v1alpha1
+kind: MetricPrediction
+metadata:
+  name: metricprediction-sample
+  namespace: default
+spec:
+  target:
+    type: workload
+    workload:
+      apiVersion: apps/v1
+      kind: Deployment
+      name: nginx
+      hierarchy:
+        level: container
+  metric:
+    source: metricServer
+    metricServer:
+      resources: [cpu, memory]
+  profilers:
+  - name: recommendation-sample
+    model: distribution
+    distribution:
+      # args
+status:
+  results:
+  - profilerName: recommendation-sample
+    model: distribution
+    distributionResult:
+      items:
+      - id:
+          level: container
+          name: nginx-container
+        resources:
+        - name: cpu
+          avg: 6850m
+          quantiles:
+            # ...
+            p95: 7950m
+            p99: 8900m
+          stdDev: 759m
+          firstSampleTime: 2024-01-29T07:15:56Z
+          lastSampleTime: 2024-01-30T07:15:56Z
+          totalSamplesCount: 10000
+          updateTime: 2024-01-30T07:16:56Z
+          conditions: []
+        - name: memory
+          avg: 1000Mi
+          quantiles:
+            # ...
+            p95: 1100Mi
+            p99: 1200Mi
+          stdDev: 100Mi
+          firstSampleTime: 2024-01-29T07:15:56Z
+          lastSampleTime: 2024-01-30T07:15:56Z
+          totalSamplesCount: 10000
+          updateTime: 2024-01-30T07:16:56Z
+          conditions: []

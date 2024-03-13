@@ -1,6 +1,6 @@
 # See the OWNERS docs at https://go.k8s.io/owners
 
 approvers:
-  - yarn-copilot-approvers
+  - prediction-approvers
 reviewers:
-  - yarn-copilot-approvers
+  - prediction-approvers

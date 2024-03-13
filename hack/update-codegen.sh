@@ -47,7 +47,7 @@ echo ">> Temporary output directory ${TEMP_DIR}"
 #                  instead of the $GOPATH directly. For normal projects this can be dropped.
 $SCRIPT_ROOT/hack/generate-groups.sh "client,informer,lister" \
  github.com/koordinator-sh/koordinator/pkg/client github.com/koordinator-sh/koordinator/apis \
- "config:v1alpha1 slo:v1alpha1 scheduling:v1alpha1 quota:v1alpha1" \
+ "analysis:v1alpha1 config:v1alpha1 slo:v1alpha1 scheduling:v1alpha1 quota:v1alpha1" \
  --output-base "${TEMP_DIR}" \
  --go-header-file hack/boilerplate/boilerplate.go.txt
 
@@ -76,6 +76,7 @@ function custom_sed(){
     perl -i -pe $@
 }
 
+custom_sed 's#\"analysis\"#\"config.koordinator.sh\"#g' ./pkg/client/clientset/versioned/typed/analysis/v1alpha1/fake/fake_*.go
 custom_sed 's#\"config\"#\"config.koordinator.sh\"#g' ./pkg/client/clientset/versioned/typed/config/v1alpha1/fake/fake_*.go
 custom_sed 's#\"slo\"#\"slo.koordinator.sh\"#g' ./pkg/client/clientset/versioned/typed/slo/v1alpha1/fake/fake_*.go
 custom_sed 's#\"scheduling\"#\"scheduling.koordinator.sh\"#g' ./pkg/client/clientset/versioned/typed/scheduling/v1alpha1/fake/fake_*.go

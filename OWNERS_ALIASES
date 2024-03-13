@@ -34,19 +34,7 @@ aliases:
     - FillZpp
     - eahydra
 
-  yarn-approvers:
+  prediction-approvers:
     - zwzhang0107
     - saintube
-
-  yarn-controller-approvers:
-    - zwzhang0107
-    - saintube
-    - FillZpp
-    - songzh215
-
-  yarn-copilot-approvers:
-    - zwzhang0107
-    - saintube
-    - FillZpp
-    - songzh215
 
