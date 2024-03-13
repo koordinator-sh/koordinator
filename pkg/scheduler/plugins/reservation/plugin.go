@@ -439,7 +439,7 @@ func fitsNode(podRequest *framework.Resource, nodeInfo *framework.NodeInfo, node
 
 	var rRemained *framework.Resource
 	if rInfo != nil {
-		resources := quotav1.SubtractWithNonNegativeResult(rInfo.Allocatable, rInfo.Allocated)
+		resources := quotav1.Subtract(rInfo.Allocatable, rInfo.Allocated)
 		rRemained = framework.NewResource(resources)
 	} else {
 		rRemained = dummyResource
