@@ -359,8 +359,8 @@ func (pl *Plugin) Filter(ctx context.Context, cycleState *framework.CycleState, 
 			if len(state.preemptible[node.Name]) > 0 || len(state.preemptibleInRRs[node.Name]) > 0 {
 				preemptible := state.preemptible[node.Name]
 				preemptibleResource := framework.NewResource(preemptible)
-				nodeFits := fitsNode(state.podRequestsResources, nodeInfo, &nodeRState, nil, preemptibleResource)
-				if !nodeFits {
+				insufficientResources := fitsNode(state.podRequestsResources, nodeInfo, &nodeRState, nil, preemptibleResource)
+				if len(insufficientResources) != 0 {
 					return framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrReasonPreemptionFailed)
 				}
 			}
@@ -378,10 +378,11 @@ func (pl *Plugin) filterWithReservations(ctx context.Context, cycleState *framew
 	node := nodeInfo.Node()
 	state := getStateData(cycleState)
 	nodeRState := state.nodeReservationStates[node.Name]
-	podRequests, _ := resourceapi.PodRequestsAndLimits(pod)
-	podRequestsResourceNames := quotav1.ResourceNames(podRequests)
+	podRequestsResourceNames := quotav1.ResourceNames(state.podRequests)
 
 	var hasSatisfiedReservation bool
+	allInsufficientResourcesByNode := sets.NewString()
+	allInsufficientResourcesByReservation := sets.NewString()
 	for _, rInfo := range matchedReservations {
 		resourceNames := quotav1.Intersection(rInfo.ResourceNames, podRequestsResourceNames)
 		if len(resourceNames) == 0 {
@@ -391,7 +392,8 @@ func (pl *Plugin) filterWithReservations(ctx context.Context, cycleState *framew
 		preemptibleInRR := state.preemptibleInRRs[node.Name][rInfo.UID()]
 		preemptible := framework.NewResource(preemptibleInRR)
 		preemptible.Add(state.preemptible[node.Name])
-		nodeFits := fitsNode(state.podRequestsResources, nodeInfo, &nodeRState, rInfo, preemptible)
+		insufficientResourcesByNode := fitsNode(state.podRequestsResources, nodeInfo, &nodeRState, rInfo, preemptible)
+		nodeFits := len(insufficientResourcesByNode) == 0
 		allocatePolicy := rInfo.GetAllocatePolicy()
 		if allocatePolicy == schedulingv1alpha1.ReservationAllocatePolicyDefault ||
 			allocatePolicy == schedulingv1alpha1.ReservationAllocatePolicyAligned {
@@ -399,6 +401,7 @@ func (pl *Plugin) filterWithReservations(ctx context.Context, cycleState *framew
 				hasSatisfiedReservation = true
 				break
 			}
+			allInsufficientResourcesByNode.Insert(insufficientResourcesByNode...)
 		} else if allocatePolicy == schedulingv1alpha1.ReservationAllocatePolicyRestricted {
 			allocated := rInfo.Allocated
 			if len(preemptibleInRR) > 0 {
@@ -407,16 +410,31 @@ func (pl *Plugin) filterWithReservations(ctx context.Context, cycleState *framew
 			allocated = quotav1.Mask(allocated, rInfo.ResourceNames)
 			rRemained := quotav1.SubtractWithNonNegativeResult(rInfo.Allocatable, allocated)
 			requests := quotav1.Mask(state.podRequests, rInfo.ResourceNames)
-			fits, _ := quotav1.LessThanOrEqual(requests, rRemained)
+			fits, insufficientResourcesByReservation := quotav1.LessThanOrEqual(requests, rRemained)
 			if fits && nodeFits {
 				hasSatisfiedReservation = true
 				break
+			}
+			allInsufficientResourcesByNode.Insert(insufficientResourcesByNode...)
+			for _, insufficientResourceByReservation := range insufficientResourcesByReservation {
+				allInsufficientResourcesByReservation.Insert(string(insufficientResourceByReservation))
 			}
 		}
 	}
 	// The Pod requirement must be allocated from Reservation, but currently no Reservation meets the requirement
 	if !hasSatisfiedReservation && requiredFromReservation {
-		return framework.NewStatus(framework.Unschedulable, ErrReasonNoReservationsMeetRequirements)
+		// We will keep all failure reasons.
+		failureReasons := make([]string, 0, len(allInsufficientResourcesByNode)+len(allInsufficientResourcesByReservation)+1)
+		for insufficientResourceByNode := range allInsufficientResourcesByNode {
+			failureReasons = append(failureReasons, fmt.Sprintf("Insufficient %s by node", insufficientResourceByNode))
+		}
+		for insufficientResourceByReservation := range allInsufficientResourcesByReservation {
+			failureReasons = append(failureReasons, fmt.Sprintf("Insufficient %s by reservation", insufficientResourceByReservation))
+		}
+		if len(failureReasons) == 0 {
+			failureReasons = append(failureReasons, ErrReasonNoReservationsMeetRequirements)
+		}
+		return framework.NewStatus(framework.Unschedulable, failureReasons...)
 	}
 	return nil
 }
@@ -424,17 +442,19 @@ func (pl *Plugin) filterWithReservations(ctx context.Context, cycleState *framew
 var dummyResource = framework.NewResource(nil)
 
 // fitsNode checks if node have enough resources to host the pod.
-func fitsNode(podRequest *framework.Resource, nodeInfo *framework.NodeInfo, nodeRState *nodeReservationState, rInfo *frameworkext.ReservationInfo, preemptible *framework.Resource) bool {
+func fitsNode(podRequest *framework.Resource, nodeInfo *framework.NodeInfo, nodeRState *nodeReservationState, rInfo *frameworkext.ReservationInfo, preemptible *framework.Resource) []string {
+	var insufficientResources []string
+
 	allowedPodNumber := nodeInfo.Allocatable.AllowedPodNumber
 	if len(nodeInfo.Pods)-len(nodeRState.matched)+1 > allowedPodNumber {
-		return false
+		insufficientResources = append(insufficientResources, string(corev1.ResourcePods))
 	}
 
 	if podRequest.MilliCPU == 0 &&
 		podRequest.Memory == 0 &&
 		podRequest.EphemeralStorage == 0 &&
 		len(podRequest.ScalarResources) == 0 {
-		return true
+		return insufficientResources
 	}
 
 	var rRemained *framework.Resource
@@ -457,22 +477,22 @@ func fitsNode(podRequest *framework.Resource, nodeInfo *framework.NodeInfo, node
 	}
 
 	if podRequest.MilliCPU > (nodeInfo.Allocatable.MilliCPU - (podRequested.MilliCPU - rRemained.MilliCPU - allRAllocated.MilliCPU - preemptible.MilliCPU)) {
-		return false
+		insufficientResources = append(insufficientResources, string(corev1.ResourceCPU))
 	}
 	if podRequest.Memory > (nodeInfo.Allocatable.Memory - (podRequested.Memory - rRemained.Memory - allRAllocated.Memory - preemptible.Memory)) {
-		return false
+		insufficientResources = append(insufficientResources, string(corev1.ResourceMemory))
 	}
 	if podRequest.EphemeralStorage > (nodeInfo.Allocatable.EphemeralStorage - (podRequested.EphemeralStorage - rRemained.EphemeralStorage - allRAllocated.EphemeralStorage - preemptible.EphemeralStorage)) {
-		return false
+		insufficientResources = append(insufficientResources, string(corev1.ResourceEphemeralStorage))
 	}
 
 	for rName, rQuant := range podRequest.ScalarResources {
 		if rQuant > (nodeInfo.Allocatable.ScalarResources[rName] - (podRequested.ScalarResources[rName] - rRemained.ScalarResources[rName] - allRAllocated.ScalarResources[rName] - preemptible.ScalarResources[rName])) {
-			return false
+			insufficientResources = append(insufficientResources, string(rName))
 		}
 	}
 
-	return true
+	return insufficientResources
 }
 
 func (pl *Plugin) PostFilter(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, _ framework.NodeToStatusMap) (*framework.PostFilterResult, *framework.Status) {
