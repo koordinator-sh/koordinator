@@ -18,6 +18,7 @@ package deviceshare
 
 import (
 	"fmt"
+	"math/rand"
 	"sort"
 
 	corev1 "k8s.io/api/core/v1"
@@ -31,6 +32,10 @@ import (
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/util/bitmask"
+)
+
+var (
+	randIntnFn = rand.Intn
 )
 
 var deviceHandlers = map[schedulingv1alpha1.DeviceType]DeviceHandler{}
@@ -476,10 +481,11 @@ func allocateVF(vfAllocation *VFAllocation, deviceInfos map[int]*schedulingv1alp
 	if len(remainingVFs) == 0 {
 		return nil
 	}
+	// Here we sort the remaining vf just for test deterministic. In fact, we pick the vf by random to alleviating some unexpected vf duplicate allocation problem due to uncoordinated scheduling and node-side vf allocation components
 	sort.Slice(remainingVFs, func(i, j int) bool {
 		return remainingVFs[i].BusID < remainingVFs[j].BusID
 	})
-	vf := &remainingVFs[0]
+	vf := &remainingVFs[randIntnFn(len(remainingVFs))]
 	return vf
 }
 
