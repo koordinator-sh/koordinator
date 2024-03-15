@@ -237,6 +237,11 @@ func (in *LowNodeLoadArgs) DeepCopyInto(out *LowNodeLoadArgs) {
 		*out = new(LoadAnomalyCondition)
 		(*in).DeepCopyInto(*out)
 	}
+	if in.DetectorCacheTimeout != nil {
+		in, out := &in.DetectorCacheTimeout, &out.DetectorCacheTimeout
+		*out = new(v1.Duration)
+		**out = **in
+	}
 	if in.NodePools != nil {
 		in, out := &in.NodePools, &out.NodePools
 		*out = make([]LowNodeLoadNodePool, len(*in))
