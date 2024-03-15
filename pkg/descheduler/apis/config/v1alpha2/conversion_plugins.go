@@ -36,7 +36,7 @@ func Convert_v1alpha2_LowNodeLoadArgs_To_config_LowNodeLoadArgs(in *LowNodeLoadA
 		ResourceWeights:        out.ResourceWeights,
 		AnomalyCondition:       out.AnomalyCondition,
 	}
-	out.NodePools = append([]config.LowNodeLoadNodePool{pool}, out.NodePools...)
+	out.NodePools = append(out.NodePools, pool)
 	out.NodeSelector = nil
 	out.UseDeviationThresholds = false
 	out.HighThresholds = nil
