@@ -19,6 +19,9 @@ package loadaware
 import (
 	"context"
 	"fmt"
+	"sort"
+	"strings"
+
 	gocache "github.com/patrickmn/go-cache"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -27,8 +30,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/klog/v2"
-	"sort"
-	"strings"
 
 	koordclientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
 	koordinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"

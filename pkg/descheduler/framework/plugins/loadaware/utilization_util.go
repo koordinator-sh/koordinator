@@ -360,7 +360,7 @@ func evictPods(
 			"nodePool", nodePoolName,
 		}
 		for k, v := range nodeInfo.usage {
-			keysAndValues = append(keysAndValues, k, v.String())
+			keysAndValues = append(keysAndValues, k.String(), v.String())
 		}
 		for resourceName, quantity := range totalAvailableUsages {
 			keysAndValues = append(keysAndValues, fmt.Sprintf("%s/totalAvailable", resourceName), quantity.String())
