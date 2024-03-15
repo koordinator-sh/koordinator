@@ -49,12 +49,12 @@ last-updated: 2023-12-08
 ## Glossary  
 
 [ebpf](https://ebpf.io/what-is-ebpf/)  
-
 [ebpf tc](https://arthurchiao.art/blog/cilium-bpf-xdp-reference-guide-zh/#prog_type_tc)  
-
 [edt](https://arthurchiao.art/blog/better-bandwidth-management-with-ebpf-zh/#31-%E6%95%B4%E4%BD%93%E8%AE%BE%E8%AE%A1%E5%9F%BA%E4%BA%8E-bpfedt-%E5%AE%9E%E7%8E%B0%E5%AE%B9%E5%99%A8%E9%99%90%E9%80%9F)  
-
 [terway-qos](https://github.com/AliyunContainerService/terway-qos/blob/main/README-zh_CN.md)  
+[net_cls cgroup](https://www.kernel.org/doc/Documentation/cgroup-v1/net_cls.txt)  
+[tc](https://man7.org/linux/man-pages/man8/tc.8.html) (traffic control)  
+[ipset](https://linux.die.net/man/8/ipset)
 
 ## Summary
 
@@ -331,7 +331,44 @@ After that, the netqos plugin will implement the network limiting operation base
 
   - <span style="color: beige; ">for node  </span>  
     we can refer to the koordinator's API directly, to do some netqos operation.
+    The `koordlet` initializes the `tc`, `iptables`, and `ipset` rules according to `nodeslo` cr,
+    and then it only needs to watch the pod to update the `ipset` of the `tc` class corresponding to that pod
 
+    When `koordlet` starts, it creates the `tc` rules and the associated `ipset` objects on the physical `NIC` of the host.
+    Each `tc` `class` will correspond to an `ipset` rule. This `ipset` declares a group of pods. This group of pods has the same `tc` class priority,
+    and then share the network bandwidth in this `tc` class. By default, each `tc` `class` can use up all the network bandwidth of the node.
+    there are three classes defined, `high_class`/`mid_class`/`low_class` , each of pods will be matched to a `tc` class.
+
+    ![image](/docs/images/netqos-tc.jpg)
+
+    Logic for `htb qdisc` selection of specific classes:
+    1. The `htb` algorithm starts at the bottom of the `class` tree and works its way up to find `classes` with the `CAN_SEND` status.
+    2. If there are more than one `class` in the layer in the `CAN_SEND` state then the `class` with the highest priority (lowest value)
+       is selected. After each `class` has sent its own `quantum` bytes, it is the next `class`'s turn to send.
+
+    Configuration of parameters for the specific class corresponding to each priority pod:
+    |  PRIO    | HIGH |  MID  |  LOW  |
+    | ----     | ---- | ----  | ----  |
+    | net_prio | 0    | 1     | 2     |
+    | net_cls  | 1:2  | 1:3   | 1:4   |
+    | htb.rate | 40%  | 30%   | 30%   |
+    | htb.ceil | 100% | 100%  | 100%  |
+
+    Specific setup method:
+    ```bash
+    # With an entire network bandwidth of 1000Mbit, the following rules are created.
+    tc qdisc add dev eth0 root handle 1:0 htb default 1
+    tc class add dev eth0 parent 1:0 classid 1:1 htb rate 1000Mbit
+    tc class add dev eth0 parent 1:1 classid 1:2 htb rate 400Mbit ceil 1000Mbit prio 0
+    tc class add dev eth0 parent 1:1 classid 1:3 htb rate 300Mbit ceil 1000Mbit prio 1
+    tc class add dev eth0 parent 1:1 classid 1:4 htb rate 300Mbit ceil 1000Mbit prio 2
+    ipset create high_class hash:net
+    iptables -t mangle -A POSTROUTING -m set --match-set high_class src  -j CLASSIFY --set-class 1:2
+    ipset create mid_class hash:net
+    iptables -t mangle -A POSTROUTING -m set --match-set mid_class src  -j CLASSIFY --set-class 1:3
+    ipset create low_class hash:net
+    iptables -t mangle -A POSTROUTING -m set --match-set low_class src  -j CLASSIFY --set-class 1:4
+    ```
 
 
 #### koord-scheduler
