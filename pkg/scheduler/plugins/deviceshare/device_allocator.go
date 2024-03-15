@@ -59,6 +59,8 @@ type requestContext struct {
 	required                  map[schedulingv1alpha1.DeviceType]sets.Int
 	preferred                 map[schedulingv1alpha1.DeviceType]sets.Int
 	allocationScorer          *resourceAllocationScorer
+	nodeDevice                *nodeDevice
+	allocateByTopology        bool
 }
 
 type AutopilotAllocator struct {
@@ -113,6 +115,7 @@ func (a *AutopilotAllocator) Allocate(
 		allocationScorer:          a.scorer,
 		required:                  required,
 		preferred:                 preferred,
+		nodeDevice:                a.nodeDevice,
 	}
 
 	deviceAllocations, status := a.tryJointAllocate(requestCtx, a.state.jointAllocate, nodeDevice)
@@ -210,6 +213,10 @@ func (a *AutopilotAllocator) tryJointAllocate(requestCtx *requestContext, jointA
 }
 
 func (a *AutopilotAllocator) allocateByTopology(requestCtx *requestContext, nodeDevice *nodeDevice, topologyGuide *deviceTopologyGuide, primaryDeviceType schedulingv1alpha1.DeviceType, jointAllocate *apiext.DeviceJointAllocate, secondaryDeviceTypes []schedulingv1alpha1.DeviceType) (apiext.DeviceAllocations, *framework.Status) {
+	requestCtx.allocateByTopology = true
+	defer func() {
+		requestCtx.allocateByTopology = false
+	}()
 	desiredCount := requestCtx.desiredCountPerDeviceType[primaryDeviceType]
 	if desiredCount == 0 {
 		return nil, nil
@@ -236,6 +243,7 @@ func (a *AutopilotAllocator) allocateByTopology(requestCtx *requestContext, node
 
 	// TODO(joseph): Currently, scenarios with multiple sockets and multiple nodes are not supported
 
+	requestCtx.allocateByTopology = false
 	// In this case, we can only try to allocate jointly from the whole machine dimension and try to allocate them together as much as possible.
 	var preferredPCIes sets.String
 	for _, group := range groupedNodeDevices {
