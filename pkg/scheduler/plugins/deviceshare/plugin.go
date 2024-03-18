@@ -70,6 +70,7 @@ type Plugin struct {
 	handle          frameworkext.ExtendedHandle
 	nodeDeviceCache *nodeDeviceCache
 	scorer          *resourceAllocationScorer
+	nominator       *Nominator
 }
 
 type preFilterState struct {
@@ -178,12 +179,40 @@ func (p *Plugin) AddPod(ctx context.Context, cycleState *framework.CycleState, p
 	nd.lock.RLock()
 	defer nd.lock.RUnlock()
 
-	podAllocated := nd.getUsed(podInfoToAdd.Pod.Namespace, podInfoToAdd.Pod.Name)
+	var podAllocated map[schedulingv1alpha1.DeviceType]deviceResources
+	podAllocated = nd.getUsed(podInfoToAdd.Pod.Namespace, podInfoToAdd.Pod.Name)
+
+	//in generally, when we execute AddPod logic here, the pod may be in scheduling status,
+	//it won't exist in nodeDeviceCache's used map, so there is a bug that  when the framework execute
+	//RunFilterPluginsWithNominatedPods with AddPod for high priority pods, the plugin can't reserve resource for
+	//these high priority pods, In RDMA\VF scenario, it can cause high priority pods assign fail
+	//due to some resources is assigned by low priority pods. So we reused the "Reserve" logic to generate an assign
+	//placement and save it in nominator. We will clear the nominator cache In "Reserve" and "UnReserve", which means
+	//we will do clean job no matter assign success or not, this is the same process of the origin k8s framework
+	//nominate process.
+	if len(podAllocated) == 0 && p.nominator != nil {
+		if p.nominator.IsPodExist(podInfoToAdd.Pod) {
+			podAllocated = p.nominator.GetPodAllocated(podInfoToAdd.Pod)
+		} else {
+			assignFunc := func(state *preFilterState, nodeDeviceInfo *nodeDevice, pod *corev1.Pod, assignResult apiext.DeviceAllocations) {
+				//do nothing
+			}
+			result, _ := p.reserveInternal(ctx, cycleState, state, podInfoToAdd.Pod, nodeInfo, nd, assignFunc)
+			podAllocated = TransDeviceAllocationsToDeviceResources(result)
+
+			p.nominator.AddPod(podInfoToAdd.Pod, podAllocated)
+		}
+	}
+
 	if len(podAllocated) == 0 {
 		return nil
 	}
 
-	rInfo := reservation.GetReservationCache().GetReservationInfoByPod(podInfoToAdd.Pod, node.Name)
+	var rInfo *frameworkext.ReservationInfo
+	if reservation.GetReservationCache() != nil {
+		rInfo = reservation.GetReservationCache().GetReservationInfoByPod(podInfoToAdd.Pod, node.Name)
+	}
+
 	if rInfo == nil {
 		nominator := p.handle.GetReservationNominator()
 		if nominator != nil {
@@ -233,12 +262,25 @@ func (p *Plugin) RemovePod(ctx context.Context, cycleState *framework.CycleState
 	nd.lock.RLock()
 	defer nd.lock.RUnlock()
 
-	podAllocated := nd.getUsed(podInfoToRemove.Pod.Namespace, podInfoToRemove.Pod.Name)
+	var podAllocated map[schedulingv1alpha1.DeviceType]deviceResources
+	podAllocated = nd.getUsed(podInfoToRemove.Pod.Namespace, podInfoToRemove.Pod.Name)
+
+	if len(podAllocated) == 0 && p.nominator != nil {
+		if p.nominator.IsPodExist(podInfoToRemove.Pod) {
+			podAllocated = p.nominator.GetPodAllocated(podInfoToRemove.Pod)
+			p.nominator.RemovePod(podInfoToRemove.Pod)
+		}
+	}
+
 	if len(podAllocated) == 0 {
 		return nil
 	}
 
-	rInfo := reservation.GetReservationCache().GetReservationInfoByPod(podInfoToRemove.Pod, node.Name)
+	var rInfo *frameworkext.ReservationInfo
+	if reservation.GetReservationCache() != nil {
+		rInfo = reservation.GetReservationCache().GetReservationInfoByPod(podInfoToRemove.Pod, node.Name)
+	}
+
 	if rInfo == nil {
 		nominator := p.handle.GetReservationNominator()
 		if nominator != nil {
@@ -374,7 +416,47 @@ func (p *Plugin) FilterReservation(ctx context.Context, cycleState *framework.Cy
 	return status
 }
 
+func (p *Plugin) reserveInternal(ctx context.Context, cycleState *framework.CycleState, state *preFilterState, pod *corev1.Pod,
+	nodeInfo *framework.NodeInfo, nodeDeviceInfo *nodeDevice, assignFunc func(state *preFilterState, nodeDeviceInfo *nodeDevice, pod *corev1.Pod, assignResult apiext.DeviceAllocations)) (apiext.DeviceAllocations, *framework.Status) {
+	store := topologymanager.GetStore(cycleState)
+	affinity := store.GetAffinity(nodeInfo.Node().Name)
+
+	allocator := &AutopilotAllocator{
+		state:      state,
+		nodeDevice: nodeDeviceInfo,
+		node:       nodeInfo.Node(),
+		pod:        pod,
+		scorer:     p.scorer,
+		numaNodes:  affinity.NUMANodeAffinity,
+	}
+
+	reservationRestoreState := getReservationRestoreState(cycleState)
+	restoreState := reservationRestoreState.getNodeState(nodeInfo.Node().Name)
+	preemptible := appendAllocated(nil, restoreState.mergedUnmatchedUsed, state.preemptibleDevices[nodeInfo.Node().Name])
+
+	result, status := p.allocateWithNominatedReservation(
+		allocator, cycleState, state, restoreState, nodeInfo.Node(), pod, preemptible)
+	if !status.IsSuccess() {
+		return nil, status
+	}
+	if len(result) == 0 {
+		preemptible = appendAllocated(preemptible, restoreState.mergedMatchedAllocatable)
+		result, status = allocator.Allocate(nil, nil, nil, preemptible)
+		if !status.IsSuccess() {
+			return nil, status
+		}
+	}
+
+	assignFunc(state, nodeDeviceInfo, pod, result)
+
+	return result, nil
+}
+
 func (p *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) *framework.Status {
+	if p.nominator != nil && p.nominator.IsPodExist(pod) {
+		p.nominator.RemovePod(pod)
+	}
+
 	state, status := getPreFilterState(cycleState)
 	if !status.IsSuccess() {
 		return status
@@ -393,43 +475,24 @@ func (p *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState, 
 		return nil
 	}
 
-	store := topologymanager.GetStore(cycleState)
-	affinity := store.GetAffinity(nodeInfo.Node().Name)
-
-	allocator := &AutopilotAllocator{
-		state:      state,
-		nodeDevice: nodeDeviceInfo,
-		node:       nodeInfo.Node(),
-		pod:        pod,
-		scorer:     p.scorer,
-		numaNodes:  affinity.NUMANodeAffinity,
-	}
-
-	reservationRestoreState := getReservationRestoreState(cycleState)
-	restoreState := reservationRestoreState.getNodeState(nodeName)
-	preemptible := appendAllocated(nil, restoreState.mergedUnmatchedUsed, state.preemptibleDevices[nodeName])
-
 	nodeDeviceInfo.lock.Lock()
 	defer nodeDeviceInfo.lock.Unlock()
 
-	result, status := p.allocateWithNominatedReservation(
-		allocator, cycleState, state, restoreState, nodeInfo.Node(), pod, preemptible)
-	if !status.IsSuccess() {
-		return status
+	assignFunc := func(state *preFilterState, nodeDeviceInfo *nodeDevice, pod *corev1.Pod, assignResult apiext.DeviceAllocations) {
+		nodeDeviceInfo.updateCacheUsed(assignResult, pod, true)
+		state.allocationResult = assignResult
 	}
-	if len(result) == 0 {
-		preemptible = appendAllocated(preemptible, restoreState.mergedMatchedAllocatable)
-		result, status = allocator.Allocate(nil, nil, nil, preemptible)
-		if !status.IsSuccess() {
-			return status
-		}
-	}
-	nodeDeviceInfo.updateCacheUsed(result, pod, true)
-	state.allocationResult = result
-	return nil
+
+	_, status = p.reserveInternal(ctx, cycleState, state, pod, nodeInfo, nodeDeviceInfo, assignFunc)
+
+	return status
 }
 
 func (p *Plugin) Unreserve(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) {
+	if p.nominator != nil && p.nominator.IsPodExist(pod) {
+		p.nominator.RemovePod(pod)
+	}
+
 	state, status := getPreFilterState(cycleState)
 	if !status.IsSuccess() {
 		return
@@ -562,5 +625,6 @@ func New(obj runtime.Object, handle framework.Handle) (framework.Plugin, error) 
 		handle:          extendedHandle,
 		nodeDeviceCache: deviceCache,
 		scorer:          scorePlugin(args),
+		nominator:       NewNominator(),
 	}, nil
 }

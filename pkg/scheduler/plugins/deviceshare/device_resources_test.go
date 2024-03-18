@@ -19,6 +19,8 @@ package deviceshare
 import (
 	"testing"
 
+	corev1 "k8s.io/api/core/v1"
+
 	"github.com/stretchr/testify/assert"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -26,6 +28,20 @@ import (
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 )
+
+func TestTransDeviceAllocationsToDeviceResources(t *testing.T) {
+	allocation := make(apiext.DeviceAllocations)
+	allocation[schedulingv1alpha1.GPU] = append(allocation[schedulingv1alpha1.GPU], &apiext.DeviceAllocation{
+		Minor: 0,
+		Resources: corev1.ResourceList{
+			apiext.ResourceGPUCore: resource.MustParse("100"),
+		},
+	})
+
+	result := TransDeviceAllocationsToDeviceResources(allocation)
+	res := result[schedulingv1alpha1.GPU][0][apiext.ResourceGPUCore]
+	assert.Equal(t, "100", res.String())
+}
 
 func Test_sortDeviceResourcesByMinor(t *testing.T) {
 	tests := []struct {
