@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-	"time"
 
 	gocache "github.com/patrickmn/go-cache"
 	corev1 "k8s.io/api/core/v1"
@@ -107,7 +106,7 @@ func NewLowNodeLoad(args runtime.Object, handle framework.Handle) (framework.Plu
 	koordSharedInformerFactory.Start(context.TODO().Done())
 	koordSharedInformerFactory.WaitForCacheSync(context.TODO().Done())
 
-	nodeAnomalyDetectors := gocache.New(5*time.Minute, 5*time.Minute)
+	nodeAnomalyDetectors := gocache.New(loadLoadUtilizationArgs.DetectorCacheTimeout.Duration, loadLoadUtilizationArgs.DetectorCacheTimeout.Duration)
 
 	return &LowNodeLoad{
 		handle:               handle,

@@ -45,6 +45,7 @@ const (
 	defaultMigrationEvictBurst         = 1
 	defaultSchedulerSupportReservation = "koord-scheduler"
 	defaultArbitrationInterval         = 500 * time.Millisecond
+	defaultDetectorCacheTimeout        = 5 * time.Minute
 )
 
 var (
@@ -262,6 +263,9 @@ func SetDefaults_LowNodeLoadArgs(obj *LowNodeLoadArgs) {
 		obj.AnomalyCondition = defaultLoadAnomalyCondition
 	} else if obj.AnomalyCondition.ConsecutiveAbnormalities == 0 {
 		obj.AnomalyCondition.ConsecutiveAbnormalities = defaultLoadAnomalyCondition.ConsecutiveAbnormalities
+	}
+	if obj.DetectorCacheTimeout == nil {
+		obj.DetectorCacheTimeout = &metav1.Duration{Duration: defaultDetectorCacheTimeout}
 	}
 
 	if obj.NodeMetricExpirationSeconds == nil {

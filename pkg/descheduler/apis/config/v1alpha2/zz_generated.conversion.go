@@ -389,6 +389,7 @@ func autoConvert_v1alpha2_LowNodeLoadArgs_To_config_LowNodeLoadArgs(in *LowNodeL
 	} else {
 		out.AnomalyCondition = nil
 	}
+	out.DetectorCacheTimeout = (*v1.Duration)(unsafe.Pointer(in.DetectorCacheTimeout))
 	if in.NodePools != nil {
 		in, out := &in.NodePools, &out.NodePools
 		*out = make([]config.LowNodeLoadNodePool, len(*in))
@@ -435,6 +436,7 @@ func autoConvert_config_LowNodeLoadArgs_To_v1alpha2_LowNodeLoadArgs(in *config.L
 	} else {
 		out.AnomalyCondition = nil
 	}
+	out.DetectorCacheTimeout = (*v1.Duration)(unsafe.Pointer(in.DetectorCacheTimeout))
 	if in.NodePools != nil {
 		in, out := &in.NodePools, &out.NodePools
 		*out = make([]LowNodeLoadNodePool, len(*in))

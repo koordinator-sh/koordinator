@@ -1030,7 +1030,8 @@ func TestLowNodeLoad(t *testing.T) {
 										},
 									},
 								},
-								EvictableNamespaces: tt.evictableNamespaces,
+								DetectorCacheTimeout: &metav1.Duration{Duration: 5 * time.Minute},
+								EvictableNamespaces:  tt.evictableNamespaces,
 							},
 						})
 					},

@@ -80,6 +80,9 @@ type LowNodeLoadArgs struct {
 	// it is determined that the node is abnormal, and the Pods need to be migrated to reduce the load.
 	AnomalyCondition *LoadAnomalyCondition
 
+	// DetectorCacheTimeout indicates the cache expiration time of nodeAnomalyDetectors, the default is 5 minutes
+	DetectorCacheTimeout *metav1.Duration
+
 	// NodePools supports multiple different types of batch nodes to configure different strategies
 	NodePools []LowNodeLoadNodePool
 }
