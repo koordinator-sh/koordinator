@@ -19,9 +19,8 @@ package validation
 import (
 	"testing"
 
-	"github.com/stretchr/testify/assert"
-
 	deschedulerconfig "github.com/koordinator-sh/koordinator/pkg/descheduler/apis/config"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestValidateLowLoadUtilizationArgs_NumerOfNodes(t *testing.T) {

@@ -29,14 +29,13 @@ import (
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	schedclientset "sigs.k8s.io/scheduler-plugins/pkg/generated/clientset/versioned"
 
-	schedv1alpha1 "sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
-
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	quotav1alpha1 "github.com/koordinator-sh/koordinator/apis/quota/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 	"github.com/koordinator-sh/koordinator/test/e2e/framework"
 	e2enode "github.com/koordinator-sh/koordinator/test/e2e/framework/node"
 	imageutils "github.com/koordinator-sh/koordinator/test/utils/image"
+	schedv1alpha1 "sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 )
 
 var QuotaE2eLabel = "koord-quota-e2e"

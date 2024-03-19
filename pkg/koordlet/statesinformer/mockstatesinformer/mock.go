@@ -26,11 +26,10 @@ import (
 
 	gomock "github.com/golang/mock/gomock"
 	v1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
-	v1 "k8s.io/api/core/v1"
-
 	v1alpha10 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	statesinformer "github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	impl "github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer/impl"
+	v1 "k8s.io/api/core/v1"
 )
 
 // MockStatesInformer is a mock of StatesInformer interface.

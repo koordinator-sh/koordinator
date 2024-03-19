@@ -26,7 +26,6 @@ import (
 	time "time"
 
 	gomock "github.com/golang/mock/gomock"
-
 	metriccache "github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 )
 
