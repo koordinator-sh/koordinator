@@ -170,6 +170,17 @@ func (pl *LowNodeLoad) processOneNodePool(ctx context.Context, nodePool *desched
 
 	logUtilizationCriteria(nodePool.Name, "Criteria for nodes under low thresholds and above high thresholds", lowThresholds, highThresholds, len(lowNodes), len(sourceNodes), len(nodes))
 
+	if len(sourceNodes) == 0 {
+		klog.V(4).InfoS("All nodes are under target utilization, nothing to do here", "nodePool", nodePool.Name)
+		return nil
+	}
+
+	abnormalNodes := filterRealAbnormalNodes(sourceNodes, pl.nodeAnomalyDetectors, nodePool.AnomalyCondition)
+	if len(abnormalNodes) == 0 {
+		klog.V(4).InfoS("None of the nodes were detected as anomalous, nothing to do here", "nodePool", nodePool.Name)
+		return nil
+	}
+
 	if len(lowNodes) == 0 {
 		klog.V(4).InfoS("No nodes are underutilized, nothing to do here, you might tune your thresholds further", "nodePool", nodePool.Name)
 		return nil
@@ -185,17 +196,6 @@ func (pl *LowNodeLoad) processOneNodePool(ctx context.Context, nodePool *desched
 
 	if len(lowNodes) == len(nodes) {
 		klog.V(4).InfoS("All nodes are underutilized, nothing to do here", "nodePool", nodePool.Name)
-		return nil
-	}
-
-	if len(sourceNodes) == 0 {
-		klog.V(4).InfoS("All nodes are under target utilization, nothing to do here", "nodePool", nodePool.Name)
-		return nil
-	}
-
-	abnormalNodes := filterRealAbnormalNodes(sourceNodes, pl.nodeAnomalyDetectors, nodePool.AnomalyCondition)
-	if len(abnormalNodes) == 0 {
-		klog.V(4).InfoS("None of the nodes were detected as anomalous, nothing to do here", "nodePool", nodePool.Name)
 		return nil
 	}
 
