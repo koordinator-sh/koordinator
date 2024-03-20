@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"net/http"
 
+	analysisv1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/typed/analysis/v1alpha1"
 	configv1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/typed/config/v1alpha1"
 	quotav1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/typed/quota/v1alpha1"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/typed/scheduling/v1alpha1"
@@ -33,6 +34,7 @@ import (
 
 type Interface interface {
 	Discovery() discovery.DiscoveryInterface
+	AnalysisV1alpha1() analysisv1alpha1.AnalysisV1alpha1Interface
 	ConfigV1alpha1() configv1alpha1.ConfigV1alpha1Interface
 	QuotaV1alpha1() quotav1alpha1.QuotaV1alpha1Interface
 	SchedulingV1alpha1() schedulingv1alpha1.SchedulingV1alpha1Interface
@@ -43,10 +45,16 @@ type Interface interface {
 // version included in a Clientset.
 type Clientset struct {
 	*discovery.DiscoveryClient
+	analysisV1alpha1   *analysisv1alpha1.AnalysisV1alpha1Client
 	configV1alpha1     *configv1alpha1.ConfigV1alpha1Client
 	quotaV1alpha1      *quotav1alpha1.QuotaV1alpha1Client
 	schedulingV1alpha1 *schedulingv1alpha1.SchedulingV1alpha1Client
 	sloV1alpha1        *slov1alpha1.SloV1alpha1Client
+}
+
+// AnalysisV1alpha1 retrieves the AnalysisV1alpha1Client
+func (c *Clientset) AnalysisV1alpha1() analysisv1alpha1.AnalysisV1alpha1Interface {
+	return c.analysisV1alpha1
 }
 
 // ConfigV1alpha1 retrieves the ConfigV1alpha1Client
@@ -113,6 +121,10 @@ func NewForConfigAndClient(c *rest.Config, httpClient *http.Client) (*Clientset,
 
 	var cs Clientset
 	var err error
+	cs.analysisV1alpha1, err = analysisv1alpha1.NewForConfigAndClient(&configShallowCopy, httpClient)
+	if err != nil {
+		return nil, err
+	}
 	cs.configV1alpha1, err = configv1alpha1.NewForConfigAndClient(&configShallowCopy, httpClient)
 	if err != nil {
 		return nil, err
@@ -150,6 +162,7 @@ func NewForConfigOrDie(c *rest.Config) *Clientset {
 // New creates a new Clientset for the given RESTClient.
 func New(c rest.Interface) *Clientset {
 	var cs Clientset
+	cs.analysisV1alpha1 = analysisv1alpha1.New(c)
 	cs.configV1alpha1 = configv1alpha1.New(c)
 	cs.quotaV1alpha1 = quotav1alpha1.New(c)
 	cs.schedulingV1alpha1 = schedulingv1alpha1.New(c)

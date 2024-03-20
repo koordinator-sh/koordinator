@@ -19,6 +19,7 @@ limitations under the License.
 package fake
 
 import (
+	analysisv1alpha1 "github.com/koordinator-sh/koordinator/apis/analysis/v1alpha1"
 	configv1alpha1 "github.com/koordinator-sh/koordinator/apis/config/v1alpha1"
 	quotav1alpha1 "github.com/koordinator-sh/koordinator/apis/quota/v1alpha1"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
@@ -34,6 +35,7 @@ var scheme = runtime.NewScheme()
 var codecs = serializer.NewCodecFactory(scheme)
 
 var localSchemeBuilder = runtime.SchemeBuilder{
+	analysisv1alpha1.AddToScheme,
 	configv1alpha1.AddToScheme,
 	quotav1alpha1.AddToScheme,
 	schedulingv1alpha1.AddToScheme,
