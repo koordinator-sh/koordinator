@@ -3019,6 +3019,7 @@ func Test_Plugin_Reserve(t *testing.T) {
 			p, err := suit.proxyNew(getDefaultArgs(), suit.Framework)
 			assert.NoError(t, err)
 			pl := p.(*Plugin)
+			pl.nominator = NewNominator()
 			pl.nodeDeviceCache = tt.args.nodeDeviceCache
 			cycleState := framework.NewCycleState()
 			if tt.args.state != nil {
@@ -3064,6 +3065,8 @@ func Test_Plugin_Reserve(t *testing.T) {
 				cycleState.Write(reservationRestoreStateKey, restoreState)
 				rInfo := frameworkext.NewReservationInfo(reservation)
 				pl.handle.GetReservationNominator().AddNominatedReservation(tt.args.pod, "test-node", rInfo)
+				pl.nominator.AddPod(tt.args.pod, nil)
+				assert.Equal(t, 1, len(pl.nominator.nominateMap))
 			}
 
 			status := pl.Reserve(context.TODO(), cycleState, tt.args.pod, tt.args.nodeName)
@@ -3400,12 +3403,17 @@ func Test_Plugin_Unreserve(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			p := &Plugin{nodeDeviceCache: tt.args.nodeDeviceCache}
+			p := &Plugin{nodeDeviceCache: tt.args.nodeDeviceCache, nominator: NewNominator()}
 			cycleState := framework.NewCycleState()
 			if tt.args.state != nil {
 				cycleState.Write(stateKey, tt.args.state)
 			}
+
+			p.nominator.AddPod(tt.args.pod, nil)
+			assert.Equal(t, 1, len(p.nominator.nominateMap))
+
 			p.Unreserve(context.TODO(), cycleState, tt.args.pod, "test-node")
+			assert.Equal(t, 0, len(p.nominator.nominateMap))
 			if tt.changed {
 				assert.Empty(t, tt.args.state.allocationResult)
 				stateCmpOpts := []cmp.Option{
@@ -3642,4 +3650,231 @@ func Test_Plugin_PreBindReservation(t *testing.T) {
 	resizeAllocatable, err := reservationutil.GetReservationResizeAllocatable(reservation.Annotations)
 	assert.NoError(t, err)
 	assert.Equal(t, expectAllocations[schedulingv1alpha1.GPU][0].Resources, resizeAllocatable.Resources)
+}
+
+func Test_Plugin_AddPod_RemovePod_With_Nominator(t *testing.T) {
+	type args struct {
+		nodeDeviceCache *nodeDeviceCache
+		state           *preFilterState
+		reserved        apiext.DeviceAllocations
+		pod             *corev1.Pod
+		nodeName        string
+	}
+	type wants struct {
+		allocationResult apiext.DeviceAllocations
+		status           *framework.Status
+	}
+	tests := []struct {
+		name  string
+		args  args
+		wants wants
+	}{
+		{
+			name: "sufficient device resource 1",
+			args: args{
+				nodeDeviceCache: &nodeDeviceCache{
+					nodeDeviceInfos: map[string]*nodeDevice{
+						"test-node": {
+							deviceFree: map[schedulingv1alpha1.DeviceType]deviceResources{
+								schedulingv1alpha1.RDMA: {
+									0: corev1.ResourceList{
+										apiext.ResourceRDMA: resource.MustParse("100"),
+									},
+								},
+								schedulingv1alpha1.FPGA: {
+									0: corev1.ResourceList{
+										apiext.ResourceFPGA: resource.MustParse("100"),
+									},
+								},
+								schedulingv1alpha1.GPU: {
+									0: corev1.ResourceList{
+										apiext.ResourceGPUCore:        resource.MustParse("100"),
+										apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+										apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
+									},
+								},
+							},
+							deviceTotal: map[schedulingv1alpha1.DeviceType]deviceResources{
+								schedulingv1alpha1.RDMA: {
+									0: corev1.ResourceList{
+										apiext.ResourceRDMA: resource.MustParse("100"),
+									},
+								},
+								schedulingv1alpha1.FPGA: {
+									0: corev1.ResourceList{
+										apiext.ResourceFPGA: resource.MustParse("100"),
+									},
+								},
+								schedulingv1alpha1.GPU: {
+									0: corev1.ResourceList{
+										apiext.ResourceGPUCore:        resource.MustParse("100"),
+										apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+										apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
+									},
+								},
+							},
+							deviceUsed:    map[schedulingv1alpha1.DeviceType]deviceResources{},
+							allocateSet:   make(map[schedulingv1alpha1.DeviceType]map[types.NamespacedName]deviceResources),
+							vfAllocations: map[schedulingv1alpha1.DeviceType]*VFAllocation{},
+							numaTopology:  &NUMATopology{},
+							deviceInfos: map[schedulingv1alpha1.DeviceType][]*schedulingv1alpha1.DeviceInfo{
+								schedulingv1alpha1.GPU: {
+									{
+										Type:   schedulingv1alpha1.GPU,
+										Health: true,
+										UUID:   "123456-1",
+										Minor:  pointer.Int32(0),
+									},
+								},
+								schedulingv1alpha1.RDMA: {
+									{
+										Type:   schedulingv1alpha1.RDMA,
+										Health: true,
+										UUID:   "123456-1",
+										Minor:  pointer.Int32(0),
+									},
+								},
+								schedulingv1alpha1.FPGA: {
+									{
+										Type:   schedulingv1alpha1.FPGA,
+										Health: true,
+										UUID:   "123456-1",
+										Minor:  pointer.Int32(0),
+									},
+								},
+							},
+						},
+					},
+				},
+				pod: &corev1.Pod{},
+				state: &preFilterState{
+					skip: false,
+					podRequests: map[schedulingv1alpha1.DeviceType]corev1.ResourceList{
+						schedulingv1alpha1.GPU: {
+							apiext.ResourceGPUCore:        resource.MustParse("100"),
+							apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+						},
+						schedulingv1alpha1.RDMA: {
+							apiext.ResourceRDMA: resource.MustParse("100"),
+						},
+						schedulingv1alpha1.FPGA: {
+							apiext.ResourceFPGA: resource.MustParse("100"),
+						},
+					},
+				},
+				nodeName: "test-node",
+			},
+			wants: wants{
+				allocationResult: apiext.DeviceAllocations{
+					schedulingv1alpha1.GPU: {
+						{
+							Minor: 0,
+							Resources: corev1.ResourceList{
+								apiext.ResourceGPUCore:        resource.MustParse("100"),
+								apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+								apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
+							},
+						},
+					},
+					schedulingv1alpha1.FPGA: {
+						{
+							Minor: 0,
+							Resources: corev1.ResourceList{
+								apiext.ResourceFPGA: resource.MustParse("100"),
+							},
+						},
+					},
+					schedulingv1alpha1.RDMA: {
+						{
+							Minor: 0,
+							Resources: corev1.ResourceList{
+								apiext.ResourceRDMA: resource.MustParse("100"),
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			node := &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node",
+				},
+			}
+			suit := newPluginTestSuit(t, []*corev1.Node{node})
+			p, err := suit.proxyNew(getDefaultArgs(), suit.Framework)
+			assert.NoError(t, err)
+			pl := p.(*Plugin)
+			pl.nominator = NewNominator()
+			pl.nodeDeviceCache = tt.args.nodeDeviceCache
+			cycleState := framework.NewCycleState()
+			if tt.args.state != nil {
+				cycleState.Write(stateKey, tt.args.state)
+			}
+
+			if len(tt.args.reserved) > 0 {
+				reservation := &schedulingv1alpha1.Reservation{
+					ObjectMeta: metav1.ObjectMeta{
+						UID:  uuid.NewUUID(),
+						Name: "reservation-1",
+					},
+					Spec: schedulingv1alpha1.ReservationSpec{
+						Template: &corev1.PodTemplateSpec{},
+					},
+					Status: schedulingv1alpha1.ReservationStatus{
+						NodeName: "test-node",
+					},
+				}
+				err := apiext.SetDeviceAllocations(reservation, tt.args.reserved)
+				assert.NoError(t, err)
+
+				tt.args.nodeDeviceCache.updatePod(nil, reservationutil.NewReservePod(reservation))
+
+				namespacedName := reservationutil.GetReservePodNamespacedName(reservation)
+				allocatable := tt.args.nodeDeviceCache.getNodeDevice("test-node", false).getUsed(namespacedName.Namespace, namespacedName.Name)
+
+				restoreState := &reservationRestoreStateData{
+					skip: false,
+					nodeToState: frameworkext.NodeReservationRestoreStates{
+						"test-node": &nodeReservationRestoreStateData{
+							mergedMatchedAllocatable: allocatable,
+							matched: []reservationAlloc{
+								{
+									rInfo:       frameworkext.NewReservationInfo(reservation),
+									allocatable: allocatable,
+									remained:    allocatable,
+								},
+							},
+						},
+					},
+				}
+				cycleState.Write(reservationRestoreStateKey, restoreState)
+				rInfo := frameworkext.NewReservationInfo(reservation)
+				pl.handle.GetReservationNominator().AddNominatedReservation(tt.args.pod, "test-node", rInfo)
+			}
+
+			reservation.SetReservationCache(&fakeReservationCache{})
+
+			nodeInfo := framework.NewNodeInfo()
+			nodeInfo.SetNode(node)
+
+			tt.args.state.preemptibleDevices = make(map[string]map[schedulingv1alpha1.DeviceType]deviceResources)
+			cycleState.Write(stateKey, tt.args.state)
+			pl.AddPod(context.TODO(), cycleState, nil, framework.NewPodInfo(tt.args.pod), nodeInfo)
+
+			assert.Equal(t, 1, len(pl.nominator.nominateMap))
+			used := pl.nominator.GetPodAllocated(tt.args.pod)
+			gpuUsed := used[schedulingv1alpha1.GPU][0][apiext.ResourceGPUCore]
+			assert.Equal(t, "100", gpuUsed.String())
+			gpuUsed = tt.args.state.preemptibleDevices[node.Name][schedulingv1alpha1.GPU][0][apiext.ResourceGPUCore]
+			assert.Equal(t, "-100", gpuUsed.String())
+
+			pl.RemovePod(context.TODO(), cycleState, nil, framework.NewPodInfo(tt.args.pod), nodeInfo)
+			assert.Equal(t, 0, len(pl.nominator.nominateMap))
+			gpuUsed = tt.args.state.preemptibleDevices[node.Name][schedulingv1alpha1.GPU][0][apiext.ResourceGPUCore]
+			assert.Equal(t, "0", gpuUsed.String())
+		})
+	}
 }
