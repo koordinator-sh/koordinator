@@ -292,13 +292,7 @@ func evictPodsFromSourceNodes(
 			klog.V(4).InfoS("No removable pods on node, try next node", "node", klog.KObj(srcNode.node), "nodePool", nodePoolName)
 			continue
 		}
-
-		sorter.SortPodsByUsage(
-			removablePods,
-			srcNode.podMetrics,
-			map[string]corev1.ResourceList{srcNode.node.Name: srcNode.node.Status.Allocatable},
-			resourceWeights,
-		)
+		sortPodsOnOneOverloadedNode(srcNode, removablePods, resourceWeights)
 		evictPods(ctx, nodePoolName, dryRun, removablePods, srcNode, totalAvailableUsages, podEvictor, podFilter, continueEviction, evictionReasonGenerator)
 	}
 }
@@ -471,4 +465,18 @@ func calcAverageResourceUsagePercent(nodeUsages map[string]*NodeUsage) ResourceT
 		average[resourceName] = totalPercentage / Percentage(numberOfNodes)
 	}
 	return average
+}
+func sortPodsOnOneOverloadedNode(srcNode NodeInfo, removablePods []*corev1.Pod, resourceWeights map[corev1.ResourceName]int64) {
+	weights := make(map[corev1.ResourceName]int64)
+	// get the overused resource of this node, and the weights of appropriately using resources will be zero.
+	overusedResources, _ := isNodeOverutilized(srcNode.usage, srcNode.thresholds.highResourceThreshold)
+	for or := range overusedResources {
+		weights[or] = resourceWeights[or]
+	}
+	sorter.SortPodsByUsage(
+		removablePods,
+		srcNode.podMetrics,
+		map[string]corev1.ResourceList{srcNode.node.Name: srcNode.node.Status.Allocatable},
+		weights,
+	)
 }
