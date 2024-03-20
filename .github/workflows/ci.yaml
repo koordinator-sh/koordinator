@@ -18,7 +18,7 @@ jobs:
           cache: false
           go-version-file: go.mod
       - run: sudo apt update && sudo apt install -y libpfm4 libpfm4-dev
-      - uses: golangci/golangci-lint-action@v3
+      - uses: golangci/golangci-lint-action@v4
         with:
           version: v1.47.3
 
