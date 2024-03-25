@@ -778,7 +778,7 @@ func TestPlugin_Filter(t *testing.T) {
 		{
 			name: "verify FullPCPUs with NUMA Topology Policy",
 			nodeLabels: map[string]string{
-				extension.LabelNUMATopologyPolicy: string(extension.NUMATopologyPolicySingleNUMANode),
+				extension.LabelNUMATopologyPolicy: string(extension.NumaTopologyPolicySingleNUMANode),
 			},
 			state: &preFilterState{
 				requestCPUBind:         true,
@@ -792,7 +792,7 @@ func TestPlugin_Filter(t *testing.T) {
 		{
 			name: "verify FullPCPUs with NUMA Topology Policy and amplification ratio",
 			nodeLabels: map[string]string{
-				extension.LabelNUMATopologyPolicy: string(extension.NUMATopologyPolicySingleNUMANode),
+				extension.LabelNUMATopologyPolicy: string(extension.NumaTopologyPolicySingleNUMANode),
 			},
 			nodeAnnotations: map[string]string{
 				extension.AnnotationNodeResourceAmplificationRatio: `{"cpu": 1.5}`,
@@ -809,7 +809,7 @@ func TestPlugin_Filter(t *testing.T) {
 		{
 			name: "verify FullPCPUs with None NUMA Topology Policy and amplification ratio",
 			nodeLabels: map[string]string{
-				extension.LabelNUMATopologyPolicy: string(extension.NUMATopologyPolicyNone),
+				extension.LabelNUMATopologyPolicy: string(extension.NumaTopologyPolicyNone),
 			},
 			nodeAnnotations: map[string]string{
 				extension.AnnotationNodeResourceAmplificationRatio: `{"cpu": 1.5}`,
@@ -1686,7 +1686,7 @@ func TestFilterWithNUMANodeScoring(t *testing.T) {
 			name: "single numa nodes and select most allocated",
 			node: st.MakeNode().Name("test-node-1").
 				Capacity(map[corev1.ResourceName]string{"cpu": "104", "memory": "256Gi"}).
-				Label(extension.LabelNUMATopologyPolicy, string(extension.NUMATopologyPolicySingleNUMANode)).
+				Label(extension.LabelNUMATopologyPolicy, string(extension.NumaTopologyPolicySingleNUMANode)).
 				Obj(),
 			numaNodeCount: 2,
 			requestedPod:  st.MakePod().Req(map[corev1.ResourceName]string{"cpu": "4", "memory": "40Gi"}).Obj(),
@@ -1708,7 +1708,7 @@ func TestFilterWithNUMANodeScoring(t *testing.T) {
 			name: "single numa nodes and select least allocated",
 			node: st.MakeNode().Name("test-node-1").
 				Capacity(map[corev1.ResourceName]string{"cpu": "104", "memory": "256Gi"}).
-				Label(extension.LabelNUMATopologyPolicy, string(extension.NUMATopologyPolicySingleNUMANode)).
+				Label(extension.LabelNUMATopologyPolicy, string(extension.NumaTopologyPolicySingleNUMANode)).
 				Obj(),
 			numaNodeCount: 2,
 			requestedPod:  st.MakePod().Req(map[corev1.ResourceName]string{"cpu": "4", "memory": "40Gi"}).Obj(),
@@ -1730,7 +1730,7 @@ func TestFilterWithNUMANodeScoring(t *testing.T) {
 			name: "single numa nodes and only one node can be used",
 			node: st.MakeNode().Name("test-node-1").
 				Capacity(map[corev1.ResourceName]string{"cpu": "104", "memory": "256Gi"}).
-				Label(extension.LabelNUMATopologyPolicy, string(extension.NUMATopologyPolicySingleNUMANode)).
+				Label(extension.LabelNUMATopologyPolicy, string(extension.NumaTopologyPolicySingleNUMANode)).
 				Obj(),
 			numaNodeCount: 2,
 			requestedPod:  st.MakePod().Req(map[corev1.ResourceName]string{"cpu": "4", "memory": "40Gi"}).Obj(),
@@ -1752,7 +1752,7 @@ func TestFilterWithNUMANodeScoring(t *testing.T) {
 			name: "restricted numa nodes and select most allocated and preferred",
 			node: st.MakeNode().Name("test-node-1").
 				Capacity(map[corev1.ResourceName]string{"cpu": "104", "memory": "256Gi"}).
-				Label(extension.LabelNUMATopologyPolicy, string(extension.NUMATopologyPolicyRestricted)).
+				Label(extension.LabelNUMATopologyPolicy, string(extension.NumaTopologyPolicyRestricted)).
 				Obj(),
 			numaNodeCount: 4,
 			requestedPod:  st.MakePod().Req(map[corev1.ResourceName]string{"cpu": "4", "memory": "40Gi"}).Obj(),
@@ -1780,7 +1780,7 @@ func TestFilterWithNUMANodeScoring(t *testing.T) {
 			name: "restricted numa nodes and select least allocated and preferred",
 			node: st.MakeNode().Name("test-node-1").
 				Capacity(map[corev1.ResourceName]string{"cpu": "104", "memory": "256Gi"}).
-				Label(extension.LabelNUMATopologyPolicy, string(extension.NUMATopologyPolicyRestricted)).
+				Label(extension.LabelNUMATopologyPolicy, string(extension.NumaTopologyPolicyRestricted)).
 				Obj(),
 			numaNodeCount: 4,
 			requestedPod:  st.MakePod().Req(map[corev1.ResourceName]string{"cpu": "4", "memory": "40Gi"}).Obj(),

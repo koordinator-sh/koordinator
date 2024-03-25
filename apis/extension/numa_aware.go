@@ -58,6 +58,12 @@ const (
 
 // ResourceSpec describes extra attributes of the resource requirements.
 type ResourceSpec struct {
+	// NumaTopologyPolicy represents the numa topology policy when schedule pod
+	NumaTopologyPolicy NumaTopologyPolicy `json:"numaTopologyPolicy,omitempty"`
+	// SingleNUMANodeExclusive represents whether a Pod that will use a single NUMA node/multiple NUMA nodes
+	// on a NUMA node can be scheduled to use the NUMA node when another Pod that uses multiple NUMA nodes/a single NUMA node
+	// is already running on the same node.
+	SingleNUMANodeExclusive NumaTopologyExclusive `json:"singleNUMANodeExclusive,omitempty"`
 	// RequiredCPUBindPolicy indicates that the CPU is allocated strictly
 	// according to the specified CPUBindPolicy, otherwise the scheduling fails
 	RequiredCPUBindPolicy CPUBindPolicy `json:"requiredCPUBindPolicy,omitempty"`
@@ -135,13 +141,28 @@ const (
 	NodeNUMAAllocateStrategyMostAllocated  = NUMAMostAllocated
 )
 
-type NUMATopologyPolicy string
+type NumaTopologyExclusive string
 
 const (
-	NUMATopologyPolicyNone           NUMATopologyPolicy = ""
-	NUMATopologyPolicyBestEffort     NUMATopologyPolicy = "BestEffort"
-	NUMATopologyPolicyRestricted     NUMATopologyPolicy = "Restricted"
-	NUMATopologyPolicySingleNUMANode NUMATopologyPolicy = "SingleNUMANode"
+	NumaTopologyExclusivePreferred NumaTopologyExclusive = "Preferred"
+	NumaTopologyExclusiveRequired  NumaTopologyExclusive = "Required"
+)
+
+type NumaNodeStatus string
+
+const (
+	NumaNodeStatusIdle   NumaNodeStatus = "idle"
+	NumaNodeStatusShared NumaNodeStatus = "shared"
+	NumaNodeStatusSingle NumaNodeStatus = "single"
+)
+
+type NumaTopologyPolicy string
+
+const (
+	NumaTopologyPolicyNone           NumaTopologyPolicy = ""
+	NumaTopologyPolicyBestEffort     NumaTopologyPolicy = "BestEffort"
+	NumaTopologyPolicyRestricted     NumaTopologyPolicy = "Restricted"
+	NumaTopologyPolicySingleNUMANode NumaTopologyPolicy = "SingleNUMANode"
 )
 
 const (
@@ -324,11 +345,11 @@ func GetNodeCPUBindPolicy(nodeLabels map[string]string, kubeletCPUPolicy *Kubele
 	return NodeCPUBindPolicyNone
 }
 
-func GetNodeNUMATopologyPolicy(labels map[string]string) NUMATopologyPolicy {
-	return NUMATopologyPolicy(labels[LabelNUMATopologyPolicy])
+func GetNodeNUMATopologyPolicy(labels map[string]string) NumaTopologyPolicy {
+	return NumaTopologyPolicy(labels[LabelNUMATopologyPolicy])
 }
 
-func SetNodeNUMATopologyPolicy(obj metav1.Object, policy NUMATopologyPolicy) {
+func SetNodeNUMATopologyPolicy(obj metav1.Object, policy NumaTopologyPolicy) {
 	labels := obj.GetLabels()
 	if labels == nil {
 		labels = map[string]string{}

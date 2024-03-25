@@ -46,6 +46,7 @@ const (
 )
 
 const (
+	ErrNotMatchNUMATopology         = "node(s) NUMA Topology policy not match"
 	ErrInvalidRequestedCPUs         = "the requested CPUs must be integer"
 	ErrInvalidCPUTopology           = "node(s) invalid CPU Topology"
 	ErrSMTAlignmentError            = "node(s) requested cpus not multiple cpus per core"
@@ -180,6 +181,8 @@ type preFilterState struct {
 	requiredCPUBindPolicy       schedulingconfig.CPUBindPolicy
 	preferredCPUBindPolicy      schedulingconfig.CPUBindPolicy
 	preferredCPUExclusivePolicy schedulingconfig.CPUExclusivePolicy
+	podNUMATopologyPolicy       extension.NumaTopologyPolicy
+	podNUMAExclusive            extension.NumaTopologyExclusive
 	numCPUsNeeded               int
 	allocation                  *PodAllocation
 }
@@ -284,7 +287,18 @@ func (p *Plugin) Filter(ctx context.Context, cycleState *framework.CycleState, p
 	node := nodeInfo.Node()
 	topologyOptions := p.topologyOptionsManager.GetTopologyOptions(node.Name)
 	nodeCPUBindPolicy := extension.GetNodeCPUBindPolicy(node.Labels, topologyOptions.Policy)
+	podNUMAExclusive := state.podNUMAExclusive
+	podNUMATopologyPolicy := state.podNUMATopologyPolicy
+	// when numa topology policy is set on node, we should maintain the same behavior as before, so we only
+	// set default podNUMAExclusive when podNUMATopologyPolicy is not none
+	if podNUMAExclusive == "" && podNUMATopologyPolicy != "" {
+		podNUMAExclusive = extension.NumaTopologyExclusiveRequired
+	}
 	numaTopologyPolicy := getNUMATopologyPolicy(node.Labels, topologyOptions.NUMATopologyPolicy)
+	numaTopologyPolicy, err := mergeTopologyPolicy(numaTopologyPolicy, podNUMATopologyPolicy)
+	if err != nil {
+		return framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrNotMatchNUMATopology)
+	}
 	requestCPUBind, status := requestCPUBind(state, nodeCPUBindPolicy)
 	if !status.IsSuccess() {
 		return status
@@ -318,7 +332,7 @@ func (p *Plugin) Filter(ctx context.Context, cycleState *framework.CycleState, p
 			}
 		}
 
-		if requiredCPUBindPolicy != "" && numaTopologyPolicy == extension.NUMATopologyPolicyNone {
+		if requiredCPUBindPolicy != "" && numaTopologyPolicy == extension.NumaTopologyPolicyNone {
 			resourceOptions, err := p.getResourceOptions(cycleState, state, node, pod, requestCPUBind, topologymanager.NUMATopologyHint{}, topologyOptions)
 			if err != nil {
 				return framework.AsStatus(err)
@@ -330,8 +344,8 @@ func (p *Plugin) Filter(ctx context.Context, cycleState *framework.CycleState, p
 		}
 	}
 
-	if numaTopologyPolicy != extension.NUMATopologyPolicyNone {
-		return p.FilterByNUMANode(ctx, cycleState, pod, node.Name, numaTopologyPolicy, topologyOptions)
+	if numaTopologyPolicy != extension.NumaTopologyPolicyNone {
+		return p.FilterByNUMANode(ctx, cycleState, pod, node.Name, numaTopologyPolicy, podNUMAExclusive, topologyOptions)
 	}
 
 	return nil
@@ -388,12 +402,15 @@ func (p *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState, 
 	node := nodeInfo.Node()
 	topologyOptions := p.topologyOptionsManager.GetTopologyOptions(node.Name)
 	nodeCPUBindPolicy := extension.GetNodeCPUBindPolicy(node.Labels, topologyOptions.Policy)
+	podNUMATopologyPolicy := state.podNUMATopologyPolicy
 	numaTopologyPolicy := getNUMATopologyPolicy(node.Labels, topologyOptions.NUMATopologyPolicy)
+	// we have check in filter, so we will not get error in reserve
+	numaTopologyPolicy, _ = mergeTopologyPolicy(numaTopologyPolicy, podNUMATopologyPolicy)
 	requestCPUBind, status := requestCPUBind(state, nodeCPUBindPolicy)
 	if !status.IsSuccess() {
 		return status
 	}
-	if !requestCPUBind && numaTopologyPolicy == extension.NUMATopologyPolicyNone {
+	if !requestCPUBind && numaTopologyPolicy == extension.NumaTopologyPolicyNone {
 		return nil
 	}
 

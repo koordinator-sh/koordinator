@@ -59,11 +59,11 @@ func TestNUMANodeScore(t *testing.T) {
 			nodes: []*corev1.Node{
 				st.MakeNode().Name("test-node-1").
 					Capacity(map[corev1.ResourceName]string{"cpu": "104", "memory": "256Gi"}).
-					Label(apiext.LabelNUMATopologyPolicy, string(apiext.NUMATopologyPolicySingleNUMANode)).
+					Label(apiext.LabelNUMATopologyPolicy, string(apiext.NumaTopologyPolicySingleNUMANode)).
 					Obj(),
 				st.MakeNode().Name("test-node-2").
 					Capacity(map[corev1.ResourceName]string{"cpu": "64", "memory": "128Gi"}).
-					Label(apiext.LabelNUMATopologyPolicy, string(apiext.NUMATopologyPolicySingleNUMANode)).
+					Label(apiext.LabelNUMATopologyPolicy, string(apiext.NumaTopologyPolicySingleNUMANode)).
 					Obj(),
 			},
 			numaNodeCounts: map[string]int{
@@ -100,11 +100,11 @@ func TestNUMANodeScore(t *testing.T) {
 			nodes: []*corev1.Node{
 				st.MakeNode().Name("test-node-1").
 					Capacity(map[corev1.ResourceName]string{"cpu": "104", "memory": "256Gi"}).
-					Label(apiext.LabelNUMATopologyPolicy, string(apiext.NUMATopologyPolicyRestricted)).
+					Label(apiext.LabelNUMATopologyPolicy, string(apiext.NumaTopologyPolicyRestricted)).
 					Obj(),
 				st.MakeNode().Name("test-node-2").
 					Capacity(map[corev1.ResourceName]string{"cpu": "64", "memory": "128Gi"}).
-					Label(apiext.LabelNUMATopologyPolicy, string(apiext.NUMATopologyPolicyRestricted)).
+					Label(apiext.LabelNUMATopologyPolicy, string(apiext.NumaTopologyPolicyRestricted)).
 					Obj(),
 			},
 			numaNodeCounts: map[string]int{
@@ -141,15 +141,15 @@ func TestNUMANodeScore(t *testing.T) {
 			nodes: []*corev1.Node{
 				st.MakeNode().Name("test-node-1").
 					Capacity(map[corev1.ResourceName]string{"cpu": "104", "memory": "256Gi"}).
-					Label(apiext.LabelNUMATopologyPolicy, string(apiext.NUMATopologyPolicySingleNUMANode)).
+					Label(apiext.LabelNUMATopologyPolicy, string(apiext.NumaTopologyPolicySingleNUMANode)).
 					Obj(),
 				st.MakeNode().Name("test-node-2").
 					Capacity(map[corev1.ResourceName]string{"cpu": "104", "memory": "256Gi"}).
-					Label(apiext.LabelNUMATopologyPolicy, string(apiext.NUMATopologyPolicySingleNUMANode)).
+					Label(apiext.LabelNUMATopologyPolicy, string(apiext.NumaTopologyPolicySingleNUMANode)).
 					Obj(),
 				st.MakeNode().Name("test-node-3").
 					Capacity(map[corev1.ResourceName]string{"cpu": "104", "memory": "256Gi"}).
-					Label(apiext.LabelNUMATopologyPolicy, string(apiext.NUMATopologyPolicySingleNUMANode)).
+					Label(apiext.LabelNUMATopologyPolicy, string(apiext.NumaTopologyPolicySingleNUMANode)).
 					Obj(),
 			},
 			numaNodeCounts: map[string]int{
@@ -196,15 +196,15 @@ func TestNUMANodeScore(t *testing.T) {
 			nodes: []*corev1.Node{
 				st.MakeNode().Name("test-node-1").
 					Capacity(map[corev1.ResourceName]string{"cpu": "104", "memory": "256Gi"}).
-					Label(apiext.LabelNUMATopologyPolicy, string(apiext.NUMATopologyPolicySingleNUMANode)).
+					Label(apiext.LabelNUMATopologyPolicy, string(apiext.NumaTopologyPolicySingleNUMANode)).
 					Obj(),
 				st.MakeNode().Name("test-node-2").
 					Capacity(map[corev1.ResourceName]string{"cpu": "104", "memory": "256Gi"}).
-					Label(apiext.LabelNUMATopologyPolicy, string(apiext.NUMATopologyPolicySingleNUMANode)).
+					Label(apiext.LabelNUMATopologyPolicy, string(apiext.NumaTopologyPolicySingleNUMANode)).
 					Obj(),
 				st.MakeNode().Name("test-node-3").
 					Capacity(map[corev1.ResourceName]string{"cpu": "104", "memory": "256Gi"}).
-					Label(apiext.LabelNUMATopologyPolicy, string(apiext.NUMATopologyPolicySingleNUMANode)).
+					Label(apiext.LabelNUMATopologyPolicy, string(apiext.NumaTopologyPolicySingleNUMANode)).
 					Obj(),
 			},
 			numaNodeCounts: map[string]int{

@@ -34,7 +34,7 @@ func TestReserveByNUMANode(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "test-node",
 			Labels: map[string]string{
-				apiext.LabelNUMATopologyPolicy: string(apiext.NUMATopologyPolicySingleNUMANode),
+				apiext.LabelNUMATopologyPolicy: string(apiext.NumaTopologyPolicySingleNUMANode),
 			},
 		},
 		Status: corev1.NodeStatus{
