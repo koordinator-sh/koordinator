@@ -117,7 +117,7 @@ func (s *podsInformer) Start(stopCh <-chan struct{}) {
 	go s.syncKubeletLoop(s.config.KubeletSyncInterval, stopCh)
 	go func() {
 		if err := s.pleg.Run(stopCh); err != nil {
-			klog.Fatalf("Unable to run the pleg: ", err)
+			klog.Fatalf("Unable to run the pleg: %v", err.Error())
 		}
 	}()
 
