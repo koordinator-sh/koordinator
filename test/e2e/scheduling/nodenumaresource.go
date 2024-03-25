@@ -473,8 +473,8 @@ var _ = SIGDescribe("NodeNUMAResource", func() {
 			node, err := f.ClientSet.CoreV1().Nodes().Get(context.TODO(), nrt.Name, metav1.GetOptions{})
 			framework.ExpectNoError(err, "unable to get node")
 
-			ginkgo.By(fmt.Sprintf("Label node %s with %s=%s", node.Name, extension.LabelNUMATopologyPolicy, string(extension.NUMATopologyPolicySingleNUMANode)))
-			framework.AddOrUpdateLabelOnNode(f.ClientSet, node.Name, extension.LabelNUMATopologyPolicy, string(extension.NUMATopologyPolicySingleNUMANode))
+			ginkgo.By(fmt.Sprintf("Label node %s with %s=%s", node.Name, extension.LabelNUMATopologyPolicy, string(extension.NumaTopologyPolicySingleNUMANode)))
+			framework.AddOrUpdateLabelOnNode(f.ClientSet, node.Name, extension.LabelNUMATopologyPolicy, string(extension.NumaTopologyPolicySingleNUMANode))
 			targetNodeName = node.Name
 
 			ginkgo.By("Create two pods allocate 56% resources of Node, and every Pod allocates 28% resources per NUMA Node")
@@ -556,8 +556,8 @@ var _ = SIGDescribe("NodeNUMAResource", func() {
 			node, err := f.ClientSet.CoreV1().Nodes().Get(context.TODO(), nrt.Name, metav1.GetOptions{})
 			framework.ExpectNoError(err, "unable to get node")
 
-			ginkgo.By(fmt.Sprintf("Label node %s with %s=%s", node.Name, extension.LabelNUMATopologyPolicy, string(extension.NUMATopologyPolicySingleNUMANode)))
-			framework.AddOrUpdateLabelOnNode(f.ClientSet, node.Name, extension.LabelNUMATopologyPolicy, string(extension.NUMATopologyPolicySingleNUMANode))
+			ginkgo.By(fmt.Sprintf("Label node %s with %s=%s", node.Name, extension.LabelNUMATopologyPolicy, string(extension.NumaTopologyPolicySingleNUMANode)))
+			framework.AddOrUpdateLabelOnNode(f.ClientSet, node.Name, extension.LabelNUMATopologyPolicy, string(extension.NumaTopologyPolicySingleNUMANode))
 			targetNodeName = node.Name
 
 			ginkgo.By("Create two pods allocate 56% resources of Node, and every Pod allocates 28% resources per NUMA Node")
@@ -647,8 +647,8 @@ var _ = SIGDescribe("NodeNUMAResource", func() {
 			node, err := f.ClientSet.CoreV1().Nodes().Get(context.TODO(), nrt.Name, metav1.GetOptions{})
 			framework.ExpectNoError(err, "unable to get node")
 
-			ginkgo.By(fmt.Sprintf("Label node %s with %s=%s", node.Name, extension.LabelNUMATopologyPolicy, string(extension.NUMATopologyPolicySingleNUMANode)))
-			framework.AddOrUpdateLabelOnNode(f.ClientSet, node.Name, extension.LabelNUMATopologyPolicy, string(extension.NUMATopologyPolicySingleNUMANode))
+			ginkgo.By(fmt.Sprintf("Label node %s with %s=%s", node.Name, extension.LabelNUMATopologyPolicy, string(extension.NumaTopologyPolicySingleNUMANode)))
+			framework.AddOrUpdateLabelOnNode(f.ClientSet, node.Name, extension.LabelNUMATopologyPolicy, string(extension.NumaTopologyPolicySingleNUMANode))
 			targetNodeName = node.Name
 
 			ginkgo.By("Create two pods allocate 56% resources of Node, and every Pod allocates 28% resources per NUMA Node")
@@ -736,8 +736,8 @@ var _ = SIGDescribe("NodeNUMAResource", func() {
 			node, err := f.ClientSet.CoreV1().Nodes().Get(context.TODO(), nrt.Name, metav1.GetOptions{})
 			framework.ExpectNoError(err, "unable to get node")
 
-			ginkgo.By(fmt.Sprintf("Label node %s with %s=%s", node.Name, extension.LabelNUMATopologyPolicy, string(extension.NUMATopologyPolicySingleNUMANode)))
-			framework.AddOrUpdateLabelOnNode(f.ClientSet, node.Name, extension.LabelNUMATopologyPolicy, string(extension.NUMATopologyPolicySingleNUMANode))
+			ginkgo.By(fmt.Sprintf("Label node %s with %s=%s", node.Name, extension.LabelNUMATopologyPolicy, string(extension.NumaTopologyPolicySingleNUMANode)))
+			framework.AddOrUpdateLabelOnNode(f.ClientSet, node.Name, extension.LabelNUMATopologyPolicy, string(extension.NumaTopologyPolicySingleNUMANode))
 			targetNodeName = node.Name
 
 			ginkgo.By("Create two pods allocate 40% cpu of one NUMA Node, and 40% memory of one NUMA Node")
@@ -814,8 +814,8 @@ var _ = SIGDescribe("NodeNUMAResource", func() {
 			node, err := f.ClientSet.CoreV1().Nodes().Get(context.TODO(), nrt.Name, metav1.GetOptions{})
 			framework.ExpectNoError(err, "unable to get node")
 
-			ginkgo.By(fmt.Sprintf("Label node %s with %s=%s", node.Name, extension.LabelNUMATopologyPolicy, string(extension.NUMATopologyPolicyRestricted)))
-			framework.AddOrUpdateLabelOnNode(f.ClientSet, node.Name, extension.LabelNUMATopologyPolicy, string(extension.NUMATopologyPolicyRestricted))
+			ginkgo.By(fmt.Sprintf("Label node %s with %s=%s", node.Name, extension.LabelNUMATopologyPolicy, string(extension.NumaTopologyPolicyRestricted)))
+			framework.AddOrUpdateLabelOnNode(f.ClientSet, node.Name, extension.LabelNUMATopologyPolicy, string(extension.NumaTopologyPolicyRestricted))
 			targetNodeName = node.Name
 
 			ginkgo.By("Create two pods allocate 60% resources of Node, and every Pod allocates 30% resources per NUMA Node")
@@ -898,8 +898,8 @@ var _ = SIGDescribe("NodeNUMAResource", func() {
 			node, err := f.ClientSet.CoreV1().Nodes().Get(context.TODO(), nrt.Name, metav1.GetOptions{})
 			framework.ExpectNoError(err, "unable to get node")
 
-			ginkgo.By(fmt.Sprintf("Label node %s with %s=%s", node.Name, extension.LabelNUMATopologyPolicy, string(extension.NUMATopologyPolicyRestricted)))
-			framework.AddOrUpdateLabelOnNode(f.ClientSet, node.Name, extension.LabelNUMATopologyPolicy, string(extension.NUMATopologyPolicyRestricted))
+			ginkgo.By(fmt.Sprintf("Label node %s with %s=%s", node.Name, extension.LabelNUMATopologyPolicy, string(extension.NumaTopologyPolicyRestricted)))
+			framework.AddOrUpdateLabelOnNode(f.ClientSet, node.Name, extension.LabelNUMATopologyPolicy, string(extension.NumaTopologyPolicyRestricted))
 			targetNodeName = node.Name
 
 			ginkgo.By("Create two pods allocate 40% cpu of one NUMA Node, and 40% memory of one NUMA Node")
@@ -977,8 +977,8 @@ var _ = SIGDescribe("NodeNUMAResource", func() {
 			node, err := f.ClientSet.CoreV1().Nodes().Get(context.TODO(), nrt.Name, metav1.GetOptions{})
 			framework.ExpectNoError(err, "unable to get node")
 
-			ginkgo.By(fmt.Sprintf("Label node %s with %s=%s", node.Name, extension.LabelNUMATopologyPolicy, string(extension.NUMATopologyPolicyBestEffort)))
-			framework.AddOrUpdateLabelOnNode(f.ClientSet, node.Name, extension.LabelNUMATopologyPolicy, string(extension.NUMATopologyPolicyBestEffort))
+			ginkgo.By(fmt.Sprintf("Label node %s with %s=%s", node.Name, extension.LabelNUMATopologyPolicy, string(extension.NumaTopologyPolicyBestEffort)))
+			framework.AddOrUpdateLabelOnNode(f.ClientSet, node.Name, extension.LabelNUMATopologyPolicy, string(extension.NumaTopologyPolicyBestEffort))
 			targetNodeName = node.Name
 
 			ginkgo.By("Create two pods allocate 60% resources of Node, and every Pod allocates 30% resources per NUMA Node")

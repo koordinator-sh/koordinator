@@ -87,7 +87,7 @@ func (p *Plugin) Score(ctx context.Context, cycleState *framework.CycleState, po
 		return 0, nil
 	}
 
-	if numaTopologyPolicy == extension.NUMATopologyPolicyNone {
+	if numaTopologyPolicy == extension.NumaTopologyPolicyNone {
 		return p.scoreWithAmplifiedCPUs(state, nodeInfo, resourceOptions)
 	}
 

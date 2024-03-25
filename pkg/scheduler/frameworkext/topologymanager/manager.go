@@ -27,7 +27,7 @@ import (
 )
 
 type Interface interface {
-	Admit(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string, numaNodes []int, policyType apiext.NUMATopologyPolicy, exclusivePolicy apiext.NUMATopologyExclusive, allNUMANodeStatus []apiext.NUMANodeStatus) *framework.Status
+	Admit(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string, numaNodes []int, policyType apiext.NumaTopologyPolicy, exclusivePolicy apiext.NumaTopologyExclusive, allNUMANodeStatus []apiext.NumaNodeStatus) *framework.Status
 }
 
 type NUMATopologyHintProvider interface {
@@ -55,7 +55,7 @@ func New(hintProviderFactory NUMATopologyHintProviderFactory) Interface {
 	}
 }
 
-func (m *topologyManager) Admit(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string, numaNodes []int, policyType apiext.NUMATopologyPolicy, exclusivePolicy apiext.NUMATopologyExclusive, allNUMANodeStatus []apiext.NUMANodeStatus) *framework.Status {
+func (m *topologyManager) Admit(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string, numaNodes []int, policyType apiext.NumaTopologyPolicy, exclusivePolicy apiext.NumaTopologyExclusive, allNUMANodeStatus []apiext.NumaNodeStatus) *framework.Status {
 	s, err := cycleState.Read(affinityStateKey)
 	if err != nil {
 		return framework.AsStatus(err)
@@ -79,7 +79,7 @@ func (m *topologyManager) Admit(ctx context.Context, cycleState *framework.Cycle
 	return nil
 }
 
-func (m *topologyManager) calculateAffinity(ctx context.Context, cycleState *framework.CycleState, policy Policy, pod *corev1.Pod, nodeName string, exclusivePolicy apiext.NUMATopologyExclusive, allNUMANodeStatus []apiext.NUMANodeStatus) (NUMATopologyHint, bool) {
+func (m *topologyManager) calculateAffinity(ctx context.Context, cycleState *framework.CycleState, policy Policy, pod *corev1.Pod, nodeName string, exclusivePolicy apiext.NumaTopologyExclusive, allNUMANodeStatus []apiext.NumaNodeStatus) (NUMATopologyHint, bool) {
 	providersHints := m.accumulateProvidersHints(ctx, cycleState, pod, nodeName)
 	bestHint, admit := policy.Merge(providersHints, exclusivePolicy, allNUMANodeStatus)
 	if !checkExclusivePolicy(bestHint, exclusivePolicy, allNUMANodeStatus) {
@@ -114,14 +114,14 @@ func (m *topologyManager) allocateResources(ctx context.Context, cycleState *fra
 	return nil
 }
 
-func createNUMATopologyPolicy(policyType apiext.NUMATopologyPolicy, numaNodes []int) Policy {
+func createNUMATopologyPolicy(policyType apiext.NumaTopologyPolicy, numaNodes []int) Policy {
 	var p Policy
 	switch policyType {
-	case apiext.NUMATopologyPolicyBestEffort:
+	case apiext.NumaTopologyPolicyBestEffort:
 		p = NewBestEffortPolicy(numaNodes)
-	case apiext.NUMATopologyPolicyRestricted:
+	case apiext.NumaTopologyPolicyRestricted:
 		p = NewRestrictedPolicy(numaNodes)
-	case apiext.NUMATopologyPolicySingleNUMANode:
+	case apiext.NumaTopologyPolicySingleNUMANode:
 		p = NewSingleNumaNodePolicy(numaNodes)
 	}
 	return p

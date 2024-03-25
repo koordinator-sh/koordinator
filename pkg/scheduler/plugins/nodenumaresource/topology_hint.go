@@ -27,8 +27,8 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/topologymanager"
 )
 
-func (p *Plugin) FilterByNUMANode(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string, policyType apiext.NUMATopologyPolicy, exclusivePolicy apiext.NUMATopologyExclusive, topologyOptions TopologyOptions) *framework.Status {
-	if policyType == apiext.NUMATopologyPolicyNone {
+func (p *Plugin) FilterByNUMANode(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string, policyType apiext.NumaTopologyPolicy, exclusivePolicy apiext.NumaTopologyExclusive, topologyOptions TopologyOptions) *framework.Status {
+	if policyType == apiext.NumaTopologyPolicyNone {
 		return nil
 	}
 	numaNodes := topologyOptions.getNUMANodes()

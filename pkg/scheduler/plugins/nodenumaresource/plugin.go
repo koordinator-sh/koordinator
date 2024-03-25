@@ -181,8 +181,8 @@ type preFilterState struct {
 	requiredCPUBindPolicy       schedulingconfig.CPUBindPolicy
 	preferredCPUBindPolicy      schedulingconfig.CPUBindPolicy
 	preferredCPUExclusivePolicy schedulingconfig.CPUExclusivePolicy
-	podNUMATopologyPolicy       extension.NUMATopologyPolicy
-	podNUMAExclusive            extension.NUMATopologyExclusive
+	podNUMATopologyPolicy       extension.NumaTopologyPolicy
+	podNUMAExclusive            extension.NumaTopologyExclusive
 	numCPUsNeeded               int
 	allocation                  *PodAllocation
 }
@@ -292,7 +292,7 @@ func (p *Plugin) Filter(ctx context.Context, cycleState *framework.CycleState, p
 	// when numa topology policy is set on node, we should maintain the same behavior as before, so we only
 	// set default podNUMAExclusive when podNUMATopologyPolicy is not none
 	if podNUMAExclusive == "" && podNUMATopologyPolicy != "" {
-		podNUMAExclusive = extension.NUMATopologyExclusiveRequired
+		podNUMAExclusive = extension.NumaTopologyExclusiveRequired
 	}
 	numaTopologyPolicy := getNUMATopologyPolicy(node.Labels, topologyOptions.NUMATopologyPolicy)
 	numaTopologyPolicy, err := mergeTopologyPolicy(numaTopologyPolicy, podNUMATopologyPolicy)
@@ -332,7 +332,7 @@ func (p *Plugin) Filter(ctx context.Context, cycleState *framework.CycleState, p
 			}
 		}
 
-		if requiredCPUBindPolicy != "" && numaTopologyPolicy == extension.NUMATopologyPolicyNone {
+		if requiredCPUBindPolicy != "" && numaTopologyPolicy == extension.NumaTopologyPolicyNone {
 			resourceOptions, err := p.getResourceOptions(cycleState, state, node, pod, requestCPUBind, topologymanager.NUMATopologyHint{}, topologyOptions)
 			if err != nil {
 				return framework.AsStatus(err)
@@ -344,7 +344,7 @@ func (p *Plugin) Filter(ctx context.Context, cycleState *framework.CycleState, p
 		}
 	}
 
-	if numaTopologyPolicy != extension.NUMATopologyPolicyNone {
+	if numaTopologyPolicy != extension.NumaTopologyPolicyNone {
 		return p.FilterByNUMANode(ctx, cycleState, pod, node.Name, numaTopologyPolicy, podNUMAExclusive, topologyOptions)
 	}
 
@@ -410,7 +410,7 @@ func (p *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState, 
 	if !status.IsSuccess() {
 		return status
 	}
-	if !requestCPUBind && numaTopologyPolicy == extension.NUMATopologyPolicyNone {
+	if !requestCPUBind && numaTopologyPolicy == extension.NumaTopologyPolicyNone {
 		return nil
 	}
 

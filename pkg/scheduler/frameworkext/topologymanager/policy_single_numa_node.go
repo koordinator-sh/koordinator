@@ -63,7 +63,7 @@ func filterSingleNumaHints(allResourcesHints [][]NUMATopologyHint) [][]NUMATopol
 	return filteredResourcesHints
 }
 
-func (p *singleNumaNodePolicy) Merge(providersHints []map[string][]NUMATopologyHint, exclusivePolicy apiext.NUMATopologyExclusive, allNUMANodeStatus []apiext.NUMANodeStatus) (NUMATopologyHint, bool) {
+func (p *singleNumaNodePolicy) Merge(providersHints []map[string][]NUMATopologyHint, exclusivePolicy apiext.NumaTopologyExclusive, allNUMANodeStatus []apiext.NumaNodeStatus) (NUMATopologyHint, bool) {
 	filteredHints := filterProvidersHints(providersHints)
 	// Filter to only include don't care and hints with a single NUMA node.
 	singleNumaHints := filterSingleNumaHints(filteredHints)

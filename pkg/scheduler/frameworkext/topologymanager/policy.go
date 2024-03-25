@@ -28,7 +28,7 @@ type Policy interface {
 	// Name returns Policy Name
 	Name() string
 	// Merge returns a merged NUMATopologyHint based on input from hint providers
-	Merge(providersHints []map[string][]NUMATopologyHint, exclusivePolicy apiext.NUMATopologyExclusive, allNUMANodeStatus []apiext.NUMANodeStatus) (NUMATopologyHint, bool)
+	Merge(providersHints []map[string][]NUMATopologyHint, exclusivePolicy apiext.NumaTopologyExclusive, allNUMANodeStatus []apiext.NumaNodeStatus) (NUMATopologyHint, bool)
 }
 
 // NUMATopologyHint is a struct containing the NUMANodeAffinity for a Container
@@ -64,18 +64,18 @@ func (th *NUMATopologyHint) LessThan(other NUMATopologyHint) bool {
 }
 
 // Check if the affinity match the exclusive policy, return true if match or false otherwise.
-func checkExclusivePolicy(affinity NUMATopologyHint, exclusivePolicy apiext.NUMATopologyExclusive, allNUMANodeStatus []apiext.NUMANodeStatus) bool {
+func checkExclusivePolicy(affinity NUMATopologyHint, exclusivePolicy apiext.NumaTopologyExclusive, allNUMANodeStatus []apiext.NumaNodeStatus) bool {
 	// check bestHint again if default hint is the best
-	if exclusivePolicy == apiext.NUMATopologyExclusiveRequired {
+	if exclusivePolicy == apiext.NumaTopologyExclusiveRequired {
 		if affinity.NUMANodeAffinity.Count() > 1 {
 			// we should make sure no numa is in single state
 			for _, nodeid := range affinity.NUMANodeAffinity.GetBits() {
-				if allNUMANodeStatus[nodeid] == apiext.NUMANodeStatusSingle {
+				if allNUMANodeStatus[nodeid] == apiext.NumaNodeStatusSingle {
 					return false
 				}
 			}
 		} else {
-			if allNUMANodeStatus[affinity.NUMANodeAffinity.GetBits()[0]] == apiext.NUMANodeStatusShared {
+			if allNUMANodeStatus[affinity.NUMANodeAffinity.GetBits()[0]] == apiext.NumaNodeStatusShared {
 				return false
 			}
 		}
@@ -145,7 +145,7 @@ func filterProvidersHints(providersHints []map[string][]NUMATopologyHint) [][]NU
 	return allProviderHints
 }
 
-func mergeFilteredHints(numaNodes []int, filteredHints [][]NUMATopologyHint, exclusivePolicy apiext.NUMATopologyExclusive, allNUMANodeStatus []apiext.NUMANodeStatus) NUMATopologyHint {
+func mergeFilteredHints(numaNodes []int, filteredHints [][]NUMATopologyHint, exclusivePolicy apiext.NumaTopologyExclusive, allNUMANodeStatus []apiext.NumaNodeStatus) NUMATopologyHint {
 	// Set the default affinity as an any-numa affinity containing the list
 	// of NUMA Nodes available on this machine.
 	defaultAffinity, _ := bitmask.NewBitMask(numaNodes...)

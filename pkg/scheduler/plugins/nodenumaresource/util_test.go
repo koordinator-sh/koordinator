@@ -106,39 +106,39 @@ func Test_getCPUBindPolicy(t *testing.T) {
 
 func Test_mergeTopologyPolicy(t *testing.T) {
 	type args struct {
-		nodePolicy extension.NUMATopologyPolicy
-		podPolicy  extension.NUMATopologyPolicy
+		nodePolicy extension.NumaTopologyPolicy
+		podPolicy  extension.NumaTopologyPolicy
 	}
 	tests := []struct {
 		name    string
 		args    args
-		want    extension.NUMATopologyPolicy
+		want    extension.NumaTopologyPolicy
 		wantErr error
 	}{
 		// TODO: Add test cases.
 		{
 			name: "no policy on pod",
 			args: args{
-				nodePolicy: extension.NUMATopologyPolicyRestricted,
-				podPolicy:  extension.NUMATopologyPolicyNone,
+				nodePolicy: extension.NumaTopologyPolicyRestricted,
+				podPolicy:  extension.NumaTopologyPolicyNone,
 			},
-			want: extension.NUMATopologyPolicyRestricted,
+			want: extension.NumaTopologyPolicyRestricted,
 		},
 		{
 			name: "policy on pod",
 			args: args{
-				nodePolicy: extension.NUMATopologyPolicyRestricted,
-				podPolicy:  extension.NUMATopologyPolicyRestricted,
+				nodePolicy: extension.NumaTopologyPolicyRestricted,
+				podPolicy:  extension.NumaTopologyPolicyRestricted,
 			},
-			want: extension.NUMATopologyPolicyRestricted,
+			want: extension.NumaTopologyPolicyRestricted,
 		},
 		{
 			name: "policy on pod not match policy on node",
 			args: args{
-				nodePolicy: extension.NUMATopologyPolicyRestricted,
-				podPolicy:  extension.NUMATopologyPolicyBestEffort,
+				nodePolicy: extension.NumaTopologyPolicyRestricted,
+				podPolicy:  extension.NumaTopologyPolicyBestEffort,
 			},
-			want:    extension.NUMATopologyPolicyNone,
+			want:    extension.NumaTopologyPolicyNone,
 			wantErr: errors.New(ErrNotMatchNUMATopology),
 		},
 	}

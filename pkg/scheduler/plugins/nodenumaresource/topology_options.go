@@ -42,7 +42,7 @@ type TopologyOptions struct {
 	ReservedCPUs        cpuset.CPUSet                           `json:"reservedCPUs"`
 	MaxRefCount         int                                     `json:"maxRefCount"`
 	Policy              *extension.KubeletCPUManagerPolicy      `json:"policy,omitempty"`
-	NUMATopologyPolicy  extension.NUMATopologyPolicy            `json:"numaTopologyPolicy"`
+	NUMATopologyPolicy  extension.NumaTopologyPolicy            `json:"numaTopologyPolicy"`
 	NUMANodeResources   []NUMANodeResource                      `json:"numaNodeResources"`
 	AmplificationRatios map[corev1.ResourceName]extension.Ratio `json:"amplificationRatios,omitempty"`
 }
@@ -210,18 +210,18 @@ func extractNUMANodeResources(nrt *nrtv1alpha1.NodeResourceTopology) []NUMANodeR
 	return numaNodeResources
 }
 
-func convertToNUMATopologyPolicy(nrt *nrtv1alpha1.NodeResourceTopology) extension.NUMATopologyPolicy {
+func convertToNUMATopologyPolicy(nrt *nrtv1alpha1.NodeResourceTopology) extension.NumaTopologyPolicy {
 	for _, policy := range nrt.TopologyPolicies {
 		switch nrtv1alpha1.TopologyManagerPolicy(policy) {
 		case nrtv1alpha1.BestEffort:
-			return extension.NUMATopologyPolicyBestEffort
+			return extension.NumaTopologyPolicyBestEffort
 		case nrtv1alpha1.Restricted:
-			return extension.NUMATopologyPolicyRestricted
+			return extension.NumaTopologyPolicyRestricted
 		case nrtv1alpha1.SingleNUMANodePodLevel:
-			return extension.NUMATopologyPolicySingleNUMANode
+			return extension.NumaTopologyPolicySingleNUMANode
 		}
 	}
-	return extension.NUMATopologyPolicyNone
+	return extension.NumaTopologyPolicyNone
 }
 
 func (opts *TopologyOptions) getNUMANodes() []int {

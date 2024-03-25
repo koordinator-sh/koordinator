@@ -41,7 +41,7 @@ func (p *restrictedPolicy) canAdmitPodResult(hint *NUMATopologyHint) bool {
 	return hint.Preferred
 }
 
-func (p *restrictedPolicy) Merge(providersHints []map[string][]NUMATopologyHint, exclusivePolicy apiext.NUMATopologyExclusive, allNUMANodeStatus []apiext.NUMANodeStatus) (NUMATopologyHint, bool) {
+func (p *restrictedPolicy) Merge(providersHints []map[string][]NUMATopologyHint, exclusivePolicy apiext.NumaTopologyExclusive, allNUMANodeStatus []apiext.NumaNodeStatus) (NUMATopologyHint, bool) {
 	filteredHints := filterProvidersHints(providersHints)
 	hint := mergeFilteredHints(p.numaNodes, filteredHints, exclusivePolicy, allNUMANodeStatus)
 	admit := p.canAdmitPodResult(&hint)

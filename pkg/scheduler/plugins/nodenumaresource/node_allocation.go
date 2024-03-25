@@ -49,22 +49,22 @@ type PodAllocation struct {
 	NUMANodeResources  []NUMANodeResource                  `json:"numaNodeResources,omitempty"`
 }
 
-func (n *NodeAllocation) GetAllNUMANodeStatus(numaNodes int) []extension.NUMANodeStatus {
-	status := make([]extension.NUMANodeStatus, numaNodes)
+func (n *NodeAllocation) GetAllNUMANodeStatus(numaNodes int) []extension.NumaNodeStatus {
+	status := make([]extension.NumaNodeStatus, numaNodes)
 	for i := 0; i < numaNodes; i++ {
 		status = append(status, n.NUMANodeSharedStatus(i))
 	}
 	return status
 }
 
-func (n *NodeAllocation) NUMANodeSharedStatus(nodeid int) extension.NUMANodeStatus {
+func (n *NodeAllocation) NUMANodeSharedStatus(nodeid int) extension.NumaNodeStatus {
 	if len(n.singleNUMANode[nodeid]) == 0 && len(n.sharedNode[nodeid]) == 0 {
-		return extension.NUMANodeStatusIdle
+		return extension.NumaNodeStatusIdle
 	}
 	if len(n.singleNUMANode[nodeid]) > 0 && len(n.sharedNode[nodeid]) == 0 {
-		return extension.NUMANodeStatusSingle
+		return extension.NumaNodeStatusSingle
 	}
-	return extension.NUMANodeStatusShared
+	return extension.NumaNodeStatusShared
 }
 
 func NewNodeAllocation(nodeName string) *NodeAllocation {

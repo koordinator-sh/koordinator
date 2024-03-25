@@ -51,7 +51,7 @@ func AllowUseCPUSet(pod *corev1.Pod) bool {
 	return (qosClass == extension.QoSLSE || qosClass == extension.QoSLSR) && priorityClass == extension.PriorityProd
 }
 
-func mergeTopologyPolicy(nodePolicy, podPolicy extension.NUMATopologyPolicy) (extension.NUMATopologyPolicy, error) {
+func mergeTopologyPolicy(nodePolicy, podPolicy extension.NumaTopologyPolicy) (extension.NumaTopologyPolicy, error) {
 	if nodePolicy != "" && podPolicy != "" && podPolicy != nodePolicy {
 		return "", errors.New(ErrNotMatchNUMATopology)
 	}
@@ -61,9 +61,9 @@ func mergeTopologyPolicy(nodePolicy, podPolicy extension.NUMATopologyPolicy) (ex
 	return nodePolicy, nil
 }
 
-func getNUMATopologyPolicy(nodeLabels map[string]string, kubeletTopologyManagerPolicy extension.NUMATopologyPolicy) extension.NUMATopologyPolicy {
+func getNUMATopologyPolicy(nodeLabels map[string]string, kubeletTopologyManagerPolicy extension.NumaTopologyPolicy) extension.NumaTopologyPolicy {
 	policyType := extension.GetNodeNUMATopologyPolicy(nodeLabels)
-	if policyType != extension.NUMATopologyPolicyNone {
+	if policyType != extension.NumaTopologyPolicyNone {
 		return policyType
 	}
 	return kubeletTopologyManagerPolicy
