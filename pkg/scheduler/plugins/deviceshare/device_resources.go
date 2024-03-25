@@ -23,7 +23,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 
-	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
@@ -33,19 +32,6 @@ import (
 // "0": {koordinator.sh/gpu-core:100, koordinator.sh/gpu-memory-ratio:100, koordinator.sh/gpu-memory: 16GB}
 // "1": {koordinator.sh/gpu-core:100, koordinator.sh/gpu-memory-ratio:100, koordinator.sh/gpu-memory: 16GB}
 type deviceResources map[int]corev1.ResourceList
-
-func newDeviceResourcesFromAllocations(allocation apiext.DeviceAllocations) map[schedulingv1alpha1.DeviceType]deviceResources {
-	result := make(map[schedulingv1alpha1.DeviceType]deviceResources)
-
-	for deviceType, deviceDetails := range allocation {
-		result[deviceType] = make(deviceResources)
-		for _, deviceDetail := range deviceDetails {
-			result[deviceType][int(deviceDetail.Minor)] = deviceDetail.Resources.DeepCopy()
-		}
-	}
-
-	return result
-}
 
 func (r deviceResources) DeepCopy() deviceResources {
 	if r == nil {
