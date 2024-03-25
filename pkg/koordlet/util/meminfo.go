@@ -176,7 +176,7 @@ func GetHugePagesInfo(nodeDir string) (map[uint64]*HugePagesInfo, error) {
 	hugepageDir := system.GetNUMAHugepagesDir(nodeDir)
 	hugeDirs, err := os.ReadDir(hugepageDir)
 	if err != nil {
-		klog.Warningf("failed to read hugepage dir %s, err: %w", hugepageDir, err)
+		klog.Warningf("failed to read hugepage dir %s, err: %v", hugepageDir, err)
 		return hugePagesInfo, err
 	}
 

@@ -67,7 +67,7 @@ func (h *PodMutatingHandler) mutateByExtendedResources(pod *corev1.Pod) error {
 	}
 	if reflect.DeepEqual(extendedResourceSpec, spec) {
 		// if resource requirements not changed, just return
-		klog.V(6).Infof("extended resource spec of pod %s/%s unchanged, skip patch the annotation")
+		klog.V(6).Infof("extended resource spec of pod %s/%s unchanged, skip patch the annotation", pod.Namespace, pod.Name)
 		return nil
 	}
 

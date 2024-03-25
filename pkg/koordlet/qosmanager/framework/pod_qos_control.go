@@ -61,7 +61,7 @@ func InjectQOSGreyCtrlPlugins(pod *corev1.Pod, policyType QOSPolicyType, policy 
 			klog.Warningf("running qos grey control plugin %v for pod %v failed", name, util.GetPodKey(pod))
 		} else if pluginInjected {
 			klog.V(5).Infof("running qos grey control plugin %v for pod %v success, policy detail %v",
-				name, util.GetPodKey(pod))
+				name, util.GetPodKey(pod), policy)
 			injected = true
 		}
 	}

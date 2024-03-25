@@ -253,7 +253,7 @@ func (e *metricGC) UpdateStatus(metricName string, labels prometheus.Labels) {
 	err := e.updateStatus(time.Now().Unix(), metricName, labels)
 	e.globalLock.RUnlock()
 	if err != nil {
-		klog.Errorf("failed to update status for metric %s, err: %s", metricName)
+		klog.Errorf("failed to update status for metric %s, err: %s", metricName, err.Error())
 	}
 }
 
@@ -271,7 +271,7 @@ func (e *metricGC) RemoveStatus(metricName string, labels prometheus.Labels) {
 	err := e.removeStatus(metricName, labels)
 	e.globalLock.RUnlock()
 	if err != nil {
-		klog.Errorf("failed to remove status for metric %s, err: %s", metricName)
+		klog.Errorf("failed to remove status for metric %s, err: %s", metricName, err.Error())
 	}
 }
 

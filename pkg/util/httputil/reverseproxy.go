@@ -596,7 +596,7 @@ func (p *ReverseProxy) handleUpgradeResponse(rw http.ResponseWriter, req *http.R
 
 	conn, brw, err := hj.Hijack()
 	if err != nil {
-		p.getErrorHandler()(rw, req, fmt.Errorf("Hijack failed on protocol switch: %v", err))
+		p.getErrorHandler()(rw, req, fmt.Errorf("hijack failed on protocol switch: %v", err))
 		return
 	}
 	defer conn.Close()

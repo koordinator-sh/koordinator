@@ -92,7 +92,7 @@ func (c *ContainerRequest) FromNri(pod *api.PodSandbox, container *api.Container
 
 	spec, err := apiext.GetExtendedResourceSpec(pod.GetAnnotations())
 	if err != nil {
-		klog.V(4).Infof("failed to get ExtendedResourceSpec from nri via annotation, container %s/%s, err: %s",
+		klog.V(4).Infof("failed to get ExtendedResourceSpec from nri via annotation, container %s/%s, name: %s, err: %s",
 			c.PodMeta.Namespace, c.PodMeta.Name, c.ContainerMeta.Name, err)
 	}
 	if spec != nil && spec.Containers != nil {
@@ -112,7 +112,7 @@ func (c *ContainerRequest) FromProxy(req *runtimeapi.ContainerResourceHookReques
 	// retrieve ExtendedResources from pod annotations
 	spec, err := apiext.GetExtendedResourceSpec(req.GetPodAnnotations())
 	if err != nil {
-		klog.V(4).Infof("failed to get ExtendedResourceSpec from proxy via annotation, container %s/%s, err: %s",
+		klog.V(4).Infof("failed to get ExtendedResourceSpec from proxy via annotation, container %s/%s, name: %s, err: %s",
 			c.PodMeta.Namespace, c.PodMeta.Name, c.ContainerMeta.Name, err)
 	}
 	if spec != nil && spec.Containers != nil {
@@ -166,7 +166,7 @@ func (c *ContainerRequest) FromReconciler(podMeta *statesinformer.PodMeta, conta
 	// retrieve ExtendedResources from container spec and pod annotations (prefer container spec)
 	specFromAnnotations, err := apiext.GetExtendedResourceSpec(podMeta.Pod.Annotations)
 	if err != nil {
-		klog.V(4).Infof("failed to get ExtendedResourceSpec from reconciler via annotation, container %s/%s, err: %s",
+		klog.V(4).Infof("failed to get ExtendedResourceSpec from reconciler via annotation, container %s/%s, name: %s, err: %s",
 			c.PodMeta.Namespace, c.PodMeta.Name, c.ContainerMeta.Name, err)
 	}
 	if specFromContainer != nil {

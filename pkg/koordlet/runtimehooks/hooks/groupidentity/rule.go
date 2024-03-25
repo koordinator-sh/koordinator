@@ -212,7 +212,7 @@ func (b *bvtPlugin) ruleUpdateCb(target *statesinformer.CallbackTarget) error {
 		kubeQOSParentDir := koordletutil.GetPodQoSRelativePath(kubeQOS)
 		podCgroupDirs, err := koordletutil.GetCgroupPathsByTargetDepth(sysutil.CPUBVTWarpNsName, kubeQOSParentDir, koordletutil.PodCgroupPathRelativeDepth)
 		if err != nil {
-			klog.Infof("get pod cgroup paths failed, qos %s, err: %w", kubeQOS, err)
+			klog.Infof("get pod cgroup paths failed, qos %s, err: %v", kubeQOS, err.Error())
 			continue
 		}
 		for _, cgroupDir := range podCgroupDirs {

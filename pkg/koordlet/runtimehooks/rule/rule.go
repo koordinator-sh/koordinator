@@ -65,7 +65,7 @@ func (r *Rule) runUpdateCallbacks(target *statesinformer.CallbackTarget) {
 	for _, callbackFn := range r.callbacks {
 		if err := callbackFn(target); err != nil {
 			cbName := runtime.FuncForPC(reflect.ValueOf(callbackFn).Pointer()).Name()
-			klog.Warningf("executing %s callback function %s failed, error %v", r.name, cbName)
+			klog.Warningf("executing %s callback function %s failed, error %v", r.name, cbName, err.Error())
 		}
 	}
 }

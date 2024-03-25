@@ -83,7 +83,7 @@ func CreatePodMigrationJob(ctx context.Context, pod *corev1.Pod, evictOptions fr
 
 	err := client.Create(ctx, job)
 	if err != nil {
-		klog.Errorf("Failed to create PodMigrationJob for Pod %s/s, err: %v", pod.Namespace, pod.Name, err)
+		klog.Errorf("Failed to create PodMigrationJob for Pod %s/%s, err: %v", pod.Namespace, pod.Name, err)
 		return err
 	}
 	return nil
