@@ -62,20 +62,22 @@ func (r *Evictor) Start(stopCh <-chan struct{}) error {
 
 func (r *Evictor) EvictPodsIfNotEvicted(evictPods []*corev1.Pod, node *corev1.Node, reason string, message string) {
 	for _, evictPod := range evictPods {
-		r.evictPodIfNotEvicted(evictPod, node, reason, message)
+		r.EvictPodIfNotEvicted(evictPod, node, reason, message)
 	}
 }
 
-func (r *Evictor) evictPodIfNotEvicted(evictPod *corev1.Pod, node *corev1.Node, reason string, message string) {
+func (r *Evictor) EvictPodIfNotEvicted(evictPod *corev1.Pod, node *corev1.Node, reason string, message string) bool {
 	_, evicted := r.podsEvicted.Get(string(evictPod.UID))
 	if evicted {
 		klog.V(5).Infof("Pod has been evicted! podID: %v, evict reason: %s", evictPod.UID, reason)
-		return
+		return true
 	}
 	success := r.evictPod(evictPod, reason, message)
 	if success {
 		_ = r.podsEvicted.SetDefault(string(evictPod.UID), evictPod.UID)
 	}
+
+	return success
 }
 
 func (r *Evictor) evictPod(evictPod *corev1.Pod, reason string, message string) bool {
