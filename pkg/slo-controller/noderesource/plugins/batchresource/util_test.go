@@ -121,7 +121,7 @@ func Test_getNodeReservation(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := getNodeReservation(tt.args.strategy, tt.args.nodeAllocatable)
+			got := getNodeSafetyMargin(tt.args.strategy, tt.args.nodeAllocatable)
 			testingCorrectResourceList(t, &tt.want, &got)
 		})
 	}
