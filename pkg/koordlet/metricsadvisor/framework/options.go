@@ -27,5 +27,6 @@ type Options struct {
 	StatesInformer statesinformer.StatesInformer
 	MetricCache    metriccache.MetricCache
 	CgroupReader   resourceexecutor.CgroupReader
+	ResctrlReader  resourceexecutor.ResctrlReader
 	PodFilters     map[string]PodFilter
 }

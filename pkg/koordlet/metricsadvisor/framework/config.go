@@ -35,7 +35,9 @@ type Config struct {
 	PSICollectorInterval             time.Duration
 	CPICollectorTimeWindow           time.Duration
 	ColdPageCollectorInterval        time.Duration
+	ResctrlCollectorInterval         time.Duration
 	EnablePageCacheCollector         bool
+	EnableResctrlCollector           bool
 }
 
 func NewDefaultConfig() *Config {
@@ -48,7 +50,9 @@ func NewDefaultConfig() *Config {
 		PSICollectorInterval:             10 * time.Second,
 		CPICollectorTimeWindow:           10 * time.Second,
 		ColdPageCollectorInterval:        5 * time.Second,
+		ResctrlCollectorInterval:         1 * time.Second,
 		EnablePageCacheCollector:         false,
+		EnableResctrlCollector:           false,
 	}
 }
 
@@ -62,4 +66,6 @@ func (c *Config) InitFlags(fs *flag.FlagSet) {
 	fs.DurationVar(&c.CPICollectorTimeWindow, "collect-cpi-timewindow", c.CPICollectorTimeWindow, "Collect cpi time window. Non-zero values should contain a corresponding time unit (e.g. 1s, 2m, 3h).")
 	fs.DurationVar(&c.ColdPageCollectorInterval, "coldpage-collector-interval", c.ColdPageCollectorInterval, "Collect cold page interval. Non-zero values should contain a corresponding time unit (e.g. 1s, 2m, 3h).")
 	fs.BoolVar(&c.EnablePageCacheCollector, "enable-pagecache-collector", c.EnablePageCacheCollector, "Enable cache collector of node, pods and containers")
+	fs.BoolVar(&c.EnableResctrlCollector, "enable-resctrl-collector", c.EnableResctrlCollector, "Enable cache collector of node, pods and containers")
+	fs.DurationVar(&c.ResctrlCollectorInterval, "resctrl-collector-interval", c.ResctrlCollectorInterval, "Collect cpi time window. Non-zero values should contain a corresponding time unit (e.g. 1s, 2m, 3h).")
 }
