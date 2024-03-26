@@ -28,16 +28,17 @@ import (
 
 func Test_NewDefaultConfig(t *testing.T) {
 	expectConfig := &Config{
-		RuntimeHooksNetwork:             "unix",
-		RuntimeHooksAddr:                "/host-var-run-koordlet/koordlet.sock",
-		RuntimeHooksFailurePolicy:       "Ignore",
-		RuntimeHooksPluginFailurePolicy: "Ignore",
-		RuntimeHookConfigFilePath:       system.Conf.RuntimeHooksConfigDir,
-		RuntimeHookHostEndpoint:         "/var/run/koordlet/koordlet.sock",
-		RuntimeHookDisableStages:        []string{},
-		RuntimeHooksNRI:                 true,
-		RuntimeHooksNRISocketPath:       "nri/nri.sock",
-		RuntimeHookReconcileInterval:    10 * time.Second,
+		RuntimeHooksNetwork:              "unix",
+		RuntimeHooksAddr:                 "/host-var-run-koordlet/koordlet.sock",
+		RuntimeHooksFailurePolicy:        "Ignore",
+		RuntimeHooksPluginFailurePolicy:  "Ignore",
+		RuntimeHookConfigFilePath:        system.Conf.RuntimeHooksConfigDir,
+		RuntimeHookHostEndpoint:          "/var/run/koordlet/koordlet.sock",
+		RuntimeHookDisableStages:         []string{},
+		RuntimeHooksNRI:                  true,
+		RuntimeHooksNRIReconnectInterval: 10 * time.Second,
+		RuntimeHooksNRISocketPath:        "nri/nri.sock",
+		RuntimeHookReconcileInterval:     10 * time.Second,
 	}
 	defaultConfig := NewDefaultConfig()
 	assert.Equal(t, expectConfig, defaultConfig)

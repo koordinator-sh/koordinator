@@ -105,30 +105,32 @@ var (
 )
 
 type Config struct {
-	RuntimeHooksNetwork             string
-	RuntimeHooksAddr                string
-	RuntimeHooksFailurePolicy       string
-	RuntimeHooksPluginFailurePolicy string
-	RuntimeHookConfigFilePath       string
-	RuntimeHookHostEndpoint         string
-	RuntimeHookDisableStages        []string
-	RuntimeHooksNRI                 bool
-	RuntimeHooksNRISocketPath       string
-	RuntimeHookReconcileInterval    time.Duration
+	RuntimeHooksNetwork              string
+	RuntimeHooksAddr                 string
+	RuntimeHooksFailurePolicy        string
+	RuntimeHooksPluginFailurePolicy  string
+	RuntimeHookConfigFilePath        string
+	RuntimeHookHostEndpoint          string
+	RuntimeHookDisableStages         []string
+	RuntimeHooksNRI                  bool
+	RuntimeHooksNRIReconnectInterval time.Duration
+	RuntimeHooksNRISocketPath        string
+	RuntimeHookReconcileInterval     time.Duration
 }
 
 func NewDefaultConfig() *Config {
 	return &Config{
-		RuntimeHooksNetwork:             "unix",
-		RuntimeHooksAddr:                "/host-var-run-koordlet/koordlet.sock",
-		RuntimeHooksFailurePolicy:       "Ignore",
-		RuntimeHooksPluginFailurePolicy: "Ignore",
-		RuntimeHookConfigFilePath:       system.Conf.RuntimeHooksConfigDir,
-		RuntimeHookHostEndpoint:         "/var/run/koordlet/koordlet.sock",
-		RuntimeHookDisableStages:        []string{},
-		RuntimeHooksNRI:                 true,
-		RuntimeHooksNRISocketPath:       "nri/nri.sock",
-		RuntimeHookReconcileInterval:    10 * time.Second,
+		RuntimeHooksNetwork:              "unix",
+		RuntimeHooksAddr:                 "/host-var-run-koordlet/koordlet.sock",
+		RuntimeHooksFailurePolicy:        "Ignore",
+		RuntimeHooksPluginFailurePolicy:  "Ignore",
+		RuntimeHookConfigFilePath:        system.Conf.RuntimeHooksConfigDir,
+		RuntimeHookHostEndpoint:          "/var/run/koordlet/koordlet.sock",
+		RuntimeHookDisableStages:         []string{},
+		RuntimeHooksNRI:                  true,
+		RuntimeHooksNRIReconnectInterval: 10 * time.Second,
+		RuntimeHooksNRISocketPath:        "nri/nri.sock",
+		RuntimeHookReconcileInterval:     10 * time.Second,
 	}
 }
 
@@ -139,6 +141,7 @@ func (c *Config) InitFlags(fs *flag.FlagSet) {
 	fs.StringVar(&c.RuntimeHooksPluginFailurePolicy, "runtime-hooks-plugin-failure-policy", c.RuntimeHooksPluginFailurePolicy, "stop running other hooks once someone failed")
 	fs.StringVar(&c.RuntimeHookConfigFilePath, "runtime-hooks-config-path", c.RuntimeHookConfigFilePath, "config file path for runtime hooks")
 	fs.StringVar(&c.RuntimeHookHostEndpoint, "runtime-hooks-host-endpoint", c.RuntimeHookHostEndpoint, "host endpoint of runtime proxy")
+	fs.DurationVar(&c.RuntimeHooksNRIReconnectInterval, "runtime-hooks-nri-reconnect-interval", c.RuntimeHooksNRIReconnectInterval, "nri server reconnection interval")
 	fs.Var(cliflag.NewStringSlice(&c.RuntimeHookDisableStages), "runtime-hooks-disable-stages", "disable stages for runtime hooks")
 	fs.BoolVar(&c.RuntimeHooksNRI, "enable-nri-runtime-hook", c.RuntimeHooksNRI, "enable/disable runtime hooks nri mode")
 	fs.DurationVar(&c.RuntimeHookReconcileInterval, "runtime-hooks-reconcile-interval", c.RuntimeHookReconcileInterval, "reconcile interval for each plugins")
