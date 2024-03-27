@@ -71,7 +71,7 @@ func GetPodSandboxContainerID(pod *corev1.Pod) (string, error) {
 		}
 		containerSubDirNames[containerDirName] = struct{}{}
 		containerRuntime = runtimeType
-		klog.V(4).Infof("************containerSubDirNames is %v\n",containerSubDirNames[])
+		klog.V(4).Infof("************containerSubDirNames is %v\n",containerSubDirNames)
 		klog.V(4).Infof("************containerRuntime is %v\n",containerRuntime)
 	}
 
