@@ -21,8 +21,10 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"k8s.io/klog/v2"
 
 	corev1 "k8s.io/api/core/v1"
+	
 
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 )
