@@ -18,9 +18,11 @@ package hooks
 
 import (
 	"fmt"
+	"time"
 
 	"k8s.io/klog/v2"
 
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/protocol"
 	rmconfig "github.com/koordinator-sh/koordinator/pkg/runtimeproxy/config"
@@ -81,8 +83,11 @@ func RunHooks(failPolicy rmconfig.FailurePolicyType, stage rmconfig.RuntimeHookT
 	hooks := getHooksByStage(stage)
 	klog.V(5).Infof("start run %v hooks at %s", len(hooks), stage)
 	for _, hook := range hooks {
+		start := time.Now()
 		klog.V(5).Infof("call hook %v", hook.name)
-		if err := hook.fn(protocol); err != nil {
+		err := hook.fn(protocol)
+		metrics.RecordRuntimeHookInvokedDurationMilliSeconds(hook.name, string(stage), err, metrics.SinceInSeconds(start))
+		if err != nil {
 			klog.Errorf("failed to run hook %s in stage %s, reason: %v", hook.name, stage, err)
 			if failPolicy == rmconfig.PolicyFail {
 				return err

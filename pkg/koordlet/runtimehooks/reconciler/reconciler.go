@@ -24,6 +24,7 @@ import (
 	"k8s.io/klog/v2"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/protocol"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
@@ -91,7 +92,7 @@ func (d *noneFilter) Filter(podMeta *statesinformer.PodMeta) string {
 var singletonNoneFilter *noneFilter
 
 // NoneFilter returns a Filter which skip filtering anything (into the same condition)
-func NoneFilter() *noneFilter {
+func NoneFilter() Filter {
 	if singletonNoneFilter == nil {
 		singletonNoneFilter = &noneFilter{}
 	}
@@ -125,7 +126,7 @@ func (p *podQOSFilter) Filter(podMeta *statesinformer.PodMeta) string {
 var singletonPodQOSFilter *podQOSFilter
 
 // PodQOSFilter returns a Filter which filters pod qos class
-func PodQOSFilter() *podQOSFilter {
+func PodQOSFilter() Filter {
 	if singletonPodQOSFilter == nil {
 		singletonPodQOSFilter = &podQOSFilter{}
 	}
@@ -286,7 +287,7 @@ func (c *reconciler) reconcileKubeQOSCgroup(stopCh <-chan struct{}) {
 func doKubeQOSCgroup(e resourceexecutor.ResourceUpdateExecutor) {
 	for _, kubeQOS := range []corev1.PodQOSClass{
 		corev1.PodQOSGuaranteed, corev1.PodQOSBurstable, corev1.PodQOSBestEffort} {
-		for _, r := range globalCgroupReconcilers.kubeQOSLevel {
+		for resourceType, r := range globalCgroupReconcilers.kubeQOSLevel {
 			kubeQOSCtx := protocol.HooksProtocolBuilder.KubeQOS(kubeQOS)
 			reconcileFn, ok := r.fn[NoneFilterCondition]
 			if !ok { // all kube qos reconcilers should register in this condition
@@ -294,11 +295,14 @@ func doKubeQOSCgroup(e resourceexecutor.ResourceUpdateExecutor) {
 					r.description, NoneFilterCondition)
 				continue
 			}
+			start := time.Now()
 			if err := reconcileFn(kubeQOSCtx); err != nil {
+				metrics.RecordRuntimeHookReconcilerInvokedDurationMilliSeconds(string(KubeQOSLevel), resourceType, err, metrics.SinceInSeconds(start))
 				klog.Warningf("calling reconcile function %v for kube qos %v failed, error %v",
 					r.description, kubeQOS, err)
 			} else {
 				kubeQOSCtx.ReconcilerDone(e)
+				metrics.RecordRuntimeHookReconcilerInvokedDurationMilliSeconds(string(KubeQOSLevel), resourceType, nil, metrics.SinceInSeconds(start))
 				klog.V(5).Infof("calling reconcile function %v for kube qos %v finish",
 					r.description, kubeQOS)
 			}
@@ -314,7 +318,7 @@ func (c *reconciler) reconcilePodCgroup(stopCh <-chan struct{}) {
 		case <-c.podUpdated:
 			podsMeta := c.getPodsMeta()
 			for _, podMeta := range podsMeta {
-				for _, r := range globalCgroupReconcilers.podLevel {
+				for resourceType, r := range globalCgroupReconcilers.podLevel {
 					reconcileFn, ok := r.fn[r.filter.Filter(podMeta)]
 					if !ok {
 						klog.V(5).Infof("calling reconcile function %v aborted for pod %v, condition %s not registered",
@@ -323,17 +327,20 @@ func (c *reconciler) reconcilePodCgroup(stopCh <-chan struct{}) {
 					}
 
 					podCtx := protocol.HooksProtocolBuilder.Pod(podMeta)
+					start := time.Now()
 					if err := reconcileFn(podCtx); err != nil {
+						metrics.RecordRuntimeHookReconcilerInvokedDurationMilliSeconds(string(PodLevel), resourceType, err, metrics.SinceInSeconds(start))
 						klog.Warningf("calling reconcile function %v for pod %v failed, error %v",
 							r.description, podMeta.Key(), err)
 					} else {
 						podCtx.ReconcilerDone(c.executor)
+						metrics.RecordRuntimeHookReconcilerInvokedDurationMilliSeconds(string(PodLevel), resourceType, nil, metrics.SinceInSeconds(start))
 						klog.V(5).Infof("calling reconcile function %v for pod %v finished",
 							r.description, podMeta.Key())
 					}
 				}
 
-				for _, r := range globalCgroupReconcilers.sandboxContainerLevel {
+				for resourceType, r := range globalCgroupReconcilers.sandboxContainerLevel {
 					reconcileFn, ok := r.fn[r.filter.Filter(podMeta)]
 					if !ok {
 						klog.V(5).Infof("calling reconcile function %v aborted for pod %v, condition %s not registered",
@@ -341,18 +348,21 @@ func (c *reconciler) reconcilePodCgroup(stopCh <-chan struct{}) {
 						continue
 					}
 					sandboxContainerCtx := protocol.HooksProtocolBuilder.Sandbox(podMeta)
+					start := time.Now()
 					if err := reconcileFn(sandboxContainerCtx); err != nil {
+						metrics.RecordRuntimeHookReconcilerInvokedDurationMilliSeconds(string(SandboxLevel), resourceType, err, metrics.SinceInSeconds(start))
 						klog.Warningf("calling reconcile function %v failed for sandbox %v, error %v",
 							r.description, podMeta.Key(), err)
 					} else {
 						sandboxContainerCtx.ReconcilerDone(c.executor)
+						metrics.RecordRuntimeHookReconcilerInvokedDurationMilliSeconds(string(SandboxLevel), resourceType, nil, metrics.SinceInSeconds(start))
 						klog.V(5).Infof("calling reconcile function %v for pod sandbox %v finished",
 							r.description, podMeta.Key())
 					}
 				}
 
 				for _, containerStat := range podMeta.Pod.Status.ContainerStatuses {
-					for _, r := range globalCgroupReconcilers.containerLevel {
+					for resourceType, r := range globalCgroupReconcilers.containerLevel {
 						reconcileFn, ok := r.fn[r.filter.Filter(podMeta)]
 						if !ok {
 							klog.V(5).Infof("calling reconcile function %v aborted for container %v/%v, condition %s not registered",
@@ -361,11 +371,14 @@ func (c *reconciler) reconcilePodCgroup(stopCh <-chan struct{}) {
 						}
 
 						containerCtx := protocol.HooksProtocolBuilder.Container(podMeta, containerStat.Name)
+						start := time.Now()
 						if err := reconcileFn(containerCtx); err != nil {
+							metrics.RecordRuntimeHookReconcilerInvokedDurationMilliSeconds(string(ContainerLevel), resourceType, err, metrics.SinceInSeconds(start))
 							klog.Warningf("calling reconcile function %v for container %v/%v failed, error %v",
 								r.description, podMeta.Key(), containerStat.Name, err)
 						} else {
 							containerCtx.ReconcilerDone(c.executor)
+							metrics.RecordRuntimeHookReconcilerInvokedDurationMilliSeconds(string(ContainerLevel), resourceType, nil, metrics.SinceInSeconds(start))
 							klog.V(5).Infof("calling reconcile function %v for container %v/%v finish",
 								r.description, podMeta.Key(), containerStat.Name)
 						}
