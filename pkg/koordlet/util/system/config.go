@@ -47,6 +47,7 @@ type Config struct {
 	ContainerdEndPoint string
 	PouchEndpoint      string
 	DockerEndPoint     string
+	CrioEndPoint     string
 	DefaultRuntimeType string
 }
 
