@@ -21,10 +21,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"k8s.io/klog/v2"
 
 	corev1 "k8s.io/api/core/v1"
-	
 
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 )
@@ -54,7 +52,6 @@ func GetPodSandboxContainerID(pod *corev1.Pod) (string, error) {
 	cpuSetCgroupRootDir := system.GetRootCgroupSubfsDir(system.CgroupCPUSetDir)
 	podCgroupDir := GetPodCgroupParentDir(pod)
 	podCPUSetCgroupRootDir := filepath.Join(cpuSetCgroupRootDir, podCgroupDir)
-	klog.V(4).Infof("************podCPUSetCgroupRootDir is %v\n",podCPUSetCgroupRootDir)
 
 	if len(pod.Status.ContainerStatuses) <= 0 {
 		// container not created, skip until container is created because container runtime is unknown
@@ -71,8 +68,6 @@ func GetPodSandboxContainerID(pod *corev1.Pod) (string, error) {
 		}
 		containerSubDirNames[containerDirName] = struct{}{}
 		containerRuntime = runtimeType
-		klog.V(4).Infof("************containerSubDirNames is %v\n",containerSubDirNames)
-		klog.V(4).Infof("************containerRuntime is %v\n",containerRuntime)
 	}
 
 	sandboxCandidates := make([]string, 0)
@@ -85,11 +80,10 @@ func GetPodSandboxContainerID(pod *corev1.Pod) (string, error) {
 			continue
 		}
 		if _, exist := containerSubDirNames[containerDir.Name()]; !exist {
-			klog.V(4).Infof("************Container Sub Dir Name is %v\n",containerDir.Name())
 			if strings.HasPrefix(containerDir.Name(), "crio-") {
-				if strings.HasSuffix(containerDir.Name(), ".scope") {
+				if ! strings.HasSuffix(containerDir.Name(), ".scope") {
 					sandboxCandidates = append(sandboxCandidates, containerDir.Name())
-					}
+					} 
 			}else	{
 					sandboxCandidates = append(sandboxCandidates, containerDir.Name())
 				}
