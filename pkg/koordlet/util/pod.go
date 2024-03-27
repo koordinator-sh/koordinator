@@ -54,7 +54,7 @@ func GetPodSandboxContainerID(pod *corev1.Pod) (string, error) {
 	cpuSetCgroupRootDir := system.GetRootCgroupSubfsDir(system.CgroupCPUSetDir)
 	podCgroupDir := GetPodCgroupParentDir(pod)
 	podCPUSetCgroupRootDir := filepath.Join(cpuSetCgroupRootDir, podCgroupDir)
-	klog.V(4).Infof("************podCPUSetCgroupRootDir is %v\n",podCPUSetCgroupRootDir())
+	klog.V(4).Infof("************podCPUSetCgroupRootDir is %v\n",podCPUSetCgroupRootDir)
 
 	if len(pod.Status.ContainerStatuses) <= 0 {
 		// container not created, skip until container is created because container runtime is unknown
