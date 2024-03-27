@@ -93,6 +93,11 @@ type ClusterColocationProfileSpec struct {
 	// +kubebuilder:pruning:PreserveUnknownFields
 	// +kubebuilder:validation:Schemaless
 	Patch runtime.RawExtension `json:"patch,omitempty"`
+
+	// Priority of profile if many profile matched
+	// The higher the value, the higher the priority.
+	// +optional
+	Priority int `json:"priority,omitempty"`
 }
 
 // ClusterColocationProfileStatus represents information about the status of a ClusterColocationProfile.
