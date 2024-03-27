@@ -23,6 +23,7 @@ import (
 
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/protocol"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	rmconfig "github.com/koordinator-sh/koordinator/pkg/runtimeproxy/config"
 )
 
@@ -34,8 +35,9 @@ type Hook struct {
 }
 
 type Options struct {
-	Reader   resourceexecutor.CgroupReader
-	Executor resourceexecutor.ResourceUpdateExecutor
+	Reader         resourceexecutor.CgroupReader
+	Executor       resourceexecutor.ResourceUpdateExecutor
+	StatesInformer statesinformer.StatesInformer
 }
 
 type HookFn func(protocol.HooksProtocol) error
@@ -101,6 +103,7 @@ func init() {
 		rmconfig.PostStopContainer:           make([]*Hook, 0),
 		rmconfig.PostStopPodSandbox:          make([]*Hook, 0),
 		rmconfig.PreUpdateContainerResources: make([]*Hook, 0),
+		rmconfig.PreRemoveRunPodSandbox:      make([]*Hook, 0),
 	}
 }
 

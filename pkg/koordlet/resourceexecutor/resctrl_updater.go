@@ -55,6 +55,52 @@ func (r *ResctrlSchemataResourceUpdater) Clone() ResourceUpdater {
 	}
 }
 
+func NewResctrlSchemataResource(group, schemata string) (ResourceUpdater, error) {
+	err := sysutil.InitCatGroupIfNotExist(group)
+	if err != nil {
+		return nil, err
+	}
+
+	if schemata == "" {
+		return nil, fmt.Errorf("schemata is nil")
+	}
+	schemataFile := sysutil.ResctrlSchemata.Path(group)
+	schemataKey := sysutil.ResctrlSchemataName + ":" + schemataFile
+	// The current assumption is that the cache ids obtained through
+	// resctrl schemata will not go wrong. TODO: Use the ability of node info
+	// to obtain cache ids to replace the current method.
+	ids, _ := sysutil.CacheIdsCacheFunc()
+	schemataRaw := sysutil.NewResctrlSchemataRaw(ids).WithL3Num(len(ids))
+	err = schemataRaw.ParseResctrlSchemata(schemata, -1)
+	if err != nil {
+		klog.Errorf("failed to parse %v", err)
+	}
+	items := []string{}
+	for _, item := range []struct {
+		validFunc func() (bool, string)
+		value     func() string
+	}{
+		{validFunc: schemataRaw.ValidateL3, value: schemataRaw.L3String},
+		{validFunc: schemataRaw.ValidateMB, value: schemataRaw.MBString},
+	} {
+		if valid, _ := item.validFunc(); valid {
+			items = append(items, item.value())
+		}
+	}
+	schemataStr := strings.Join(items, "")
+	klog.V(6).Infof("generate new resctrl schemata resource, file %s, key %s, value %s, schemata %s",
+		schemataFile, schemataKey, schemataStr, schemata)
+	return &ResctrlSchemataResourceUpdater{
+		DefaultResourceUpdater: DefaultResourceUpdater{
+			key:        schemataKey,
+			file:       schemataFile,
+			value:      schemataStr,
+			updateFunc: UpdateResctrlSchemataFunc,
+		},
+		schemataRaw: schemataRaw,
+	}, err
+}
+
 func NewResctrlL3SchemataResource(group, schemataDelta string, l3Num int) ResourceUpdater {
 	schemataFile := sysutil.ResctrlSchemata.Path(group)
 	l3SchemataKey := sysutil.L3SchemataPrefix + ":" + schemataFile

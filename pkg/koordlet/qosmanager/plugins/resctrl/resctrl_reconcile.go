@@ -18,6 +18,7 @@ package resctrl
 
 import (
 	"fmt"
+	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	"os"
 	"strconv"
 	"time"
@@ -459,6 +460,11 @@ func (r *resctrlReconcile) reconcileResctrlGroups(qosStrategy *slov1alpha1.Resou
 	podsMeta := r.statesInformer.GetAllPods()
 	for _, podMeta := range podsMeta {
 		pod := podMeta.Pod
+
+		// only QoS class level pod are considered
+		if _, ok := pod.Annotations[apiext.AnnotationResctrl]; ok {
+			continue
+		}
 		// only Running and Pending pods are considered
 		if pod.Status.Phase != corev1.PodRunning && pod.Status.Phase != corev1.PodPending {
 			continue
