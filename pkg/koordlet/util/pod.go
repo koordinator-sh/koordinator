@@ -78,7 +78,7 @@ func GetPodSandboxContainerID(pod *corev1.Pod) (string, error) {
 		if !containerDir.IsDir() {
 			continue
 		}
-		containerDirName = containerDir.Name()
+		var containerDirName = containerDir.Name()
 		if _, exist := containerSubDirNames[containerDirName]; !exist {
 			if containerDirName.HasSuffix(".scope") {
 				sandboxCandidates = append(sandboxCandidates, containerDirName)
