@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 
@@ -80,7 +81,7 @@ func GetPodSandboxContainerID(pod *corev1.Pod) (string, error) {
 		}
 		var containerDirName = containerDir.Name()
 		if _, exist := containerSubDirNames[containerDirName]; !exist {
-			if containerDirName.HasSuffix(".scope") {
+			if strings.HasSuffix(containerDirName,".scope") {
 				sandboxCandidates = append(sandboxCandidates, containerDirName)
 			}
 		}
