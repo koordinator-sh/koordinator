@@ -50,7 +50,6 @@ type Options struct {
 	// todo: add support for disable stages
 	DisableStages      map[string]struct{}
 	Executor           resourceexecutor.ResourceUpdateExecutor
-	ReconnectInterval  time.Duration
 	ReconnectionOption ReconnectionOption
 }
 

@@ -111,7 +111,6 @@ func NewRuntimeHook(si statesinformer.StatesInformer, cfg *Config) (RuntimeHook,
 			PluginFailurePolicy: pluginFailurePolicy,
 			DisableStages:       getDisableStagesMap(cfg.RuntimeHookDisableStages),
 			Executor:            e,
-			ReconnectInterval:   cfg.RuntimeHooksNRIReconnectInitInterval,
 			ReconnectionOption: nri.ReconnectionOption{
 				LimitTimes: cfg.RuntimeHooksNRIReconnectLimit,
 				Backoff:    backOff,

@@ -134,6 +134,7 @@ func NewDefaultConfig() *Config {
 		RuntimeHooksNRIReconnectInitInterval: 10 * time.Second,
 		RuntimeHooksNRIReconnectMaxInterval:  5 * time.Minute,
 		RuntimeHooksNRIReconnectLimit:        100,
+		RuntimeHooksNRIReconnectMul:          2,
 		RuntimeHooksNRISocketPath:            "nri/nri.sock",
 		RuntimeHookReconcileInterval:         10 * time.Second,
 	}
