@@ -63,8 +63,7 @@ It supports limiting bandwidth by single pod and by priority on node level. Aims
 
 ## Motivation
 
-Currently, network bandwidth has not been taken into account in `koordinator`, 
-and there may be certain pitfalls, such as:
+Issues related to network bandwidth are not addressed in "koordinator", and there may be certain pitfalls, such as:
 1. Low network bandwidth utilisation; 
 2. Uneven distribution of network bandwidth load on cluster nodes;
 3. The QOS of high-priority processes cannot be guaranteed on a single machine.
