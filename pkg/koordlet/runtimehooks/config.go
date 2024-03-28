@@ -105,30 +105,38 @@ var (
 )
 
 type Config struct {
-	RuntimeHooksNetwork             string
-	RuntimeHooksAddr                string
-	RuntimeHooksFailurePolicy       string
-	RuntimeHooksPluginFailurePolicy string
-	RuntimeHookConfigFilePath       string
-	RuntimeHookHostEndpoint         string
-	RuntimeHookDisableStages        []string
-	RuntimeHooksNRI                 bool
-	RuntimeHooksNRISocketPath       string
-	RuntimeHookReconcileInterval    time.Duration
+	RuntimeHooksNetwork                  string
+	RuntimeHooksAddr                     string
+	RuntimeHooksFailurePolicy            string
+	RuntimeHooksPluginFailurePolicy      string
+	RuntimeHookConfigFilePath            string
+	RuntimeHookHostEndpoint              string
+	RuntimeHookDisableStages             []string
+	RuntimeHooksNRI                      bool
+	RuntimeHooksNRIReconnectInitInterval time.Duration
+	RuntimeHooksNRIReconnectMaxInterval  time.Duration
+	RuntimeHooksNRIReconnectMul          float64
+	RuntimeHooksNRIReconnectLimit        int
+	RuntimeHooksNRISocketPath            string
+	RuntimeHookReconcileInterval         time.Duration
 }
 
 func NewDefaultConfig() *Config {
 	return &Config{
-		RuntimeHooksNetwork:             "unix",
-		RuntimeHooksAddr:                "/host-var-run-koordlet/koordlet.sock",
-		RuntimeHooksFailurePolicy:       "Ignore",
-		RuntimeHooksPluginFailurePolicy: "Ignore",
-		RuntimeHookConfigFilePath:       system.Conf.RuntimeHooksConfigDir,
-		RuntimeHookHostEndpoint:         "/var/run/koordlet/koordlet.sock",
-		RuntimeHookDisableStages:        []string{},
-		RuntimeHooksNRI:                 true,
-		RuntimeHooksNRISocketPath:       "nri/nri.sock",
-		RuntimeHookReconcileInterval:    10 * time.Second,
+		RuntimeHooksNetwork:                  "unix",
+		RuntimeHooksAddr:                     "/host-var-run-koordlet/koordlet.sock",
+		RuntimeHooksFailurePolicy:            "Ignore",
+		RuntimeHooksPluginFailurePolicy:      "Ignore",
+		RuntimeHookConfigFilePath:            system.Conf.RuntimeHooksConfigDir,
+		RuntimeHookHostEndpoint:              "/var/run/koordlet/koordlet.sock",
+		RuntimeHookDisableStages:             []string{},
+		RuntimeHooksNRI:                      true,
+		RuntimeHooksNRIReconnectInitInterval: 10 * time.Second,
+		RuntimeHooksNRIReconnectMaxInterval:  5 * time.Minute,
+		RuntimeHooksNRIReconnectLimit:        100,
+		RuntimeHooksNRIReconnectMul:          2,
+		RuntimeHooksNRISocketPath:            "nri/nri.sock",
+		RuntimeHookReconcileInterval:         10 * time.Second,
 	}
 }
 
@@ -139,6 +147,10 @@ func (c *Config) InitFlags(fs *flag.FlagSet) {
 	fs.StringVar(&c.RuntimeHooksPluginFailurePolicy, "runtime-hooks-plugin-failure-policy", c.RuntimeHooksPluginFailurePolicy, "stop running other hooks once someone failed")
 	fs.StringVar(&c.RuntimeHookConfigFilePath, "runtime-hooks-config-path", c.RuntimeHookConfigFilePath, "config file path for runtime hooks")
 	fs.StringVar(&c.RuntimeHookHostEndpoint, "runtime-hooks-host-endpoint", c.RuntimeHookHostEndpoint, "host endpoint of runtime proxy")
+	fs.DurationVar(&c.RuntimeHooksNRIReconnectInitInterval, "runtime-hooks-nri-reconnect-init-interval", c.RuntimeHooksNRIReconnectInitInterval, "nri server reconnection init interval")
+	fs.DurationVar(&c.RuntimeHooksNRIReconnectMaxInterval, "runtime-hooks-nri-reconnect-max-interval", c.RuntimeHooksNRIReconnectMaxInterval, "nri server reconnection max interval")
+	fs.IntVar(&c.RuntimeHooksNRIReconnectLimit, "runtime-hooks-nri-reconnect-max-times", c.RuntimeHooksNRIReconnectLimit, "nri server reconnect max limit")
+	fs.Float64Var(&c.RuntimeHooksNRIReconnectMul, "runtime-hooks-nri-reconnect-mul", c.RuntimeHooksNRIReconnectMul, "nri server reconnect backoff mul")
 	fs.Var(cliflag.NewStringSlice(&c.RuntimeHookDisableStages), "runtime-hooks-disable-stages", "disable stages for runtime hooks")
 	fs.BoolVar(&c.RuntimeHooksNRI, "enable-nri-runtime-hook", c.RuntimeHooksNRI, "enable/disable runtime hooks nri mode")
 	fs.DurationVar(&c.RuntimeHookReconcileInterval, "runtime-hooks-reconcile-interval", c.RuntimeHookReconcileInterval, "reconcile interval for each plugins")
