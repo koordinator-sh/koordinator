@@ -100,12 +100,12 @@ func (r *Rule) UpdateCPUNormalizationRatio(ratio float64) bool {
 func (p *plugin) parseRuleForNodeSLO(mergedNodeSLOIf interface{}) (bool, error) {
 	mergedNodeSLO := mergedNodeSLOIf.(*slov1alpha1.NodeSLOSpec)
 
-	enableCFSQuota := true
+	enableCFSQuota := false
 	// NOTE: If CPU Suppress Policy `CPUCfsQuotaPolicy` is enabled for batch pods, batch pods' cfs_quota should be unset
 	// since the cfs quota of `kubepods-besteffort` is required to be no less than the children's. Then the cpu usage
 	// of Batch is limited by pod-level cpu.shares and qos-level cfs_quota.
 	if enable, policy := getCPUSuppressPolicy(mergedNodeSLO); enable && policy == slov1alpha1.CPUCfsQuotaPolicy {
-		enableCFSQuota = false
+		enableCFSQuota = true
 	}
 
 	isUpdated := p.rule.UpdateCFSQuotaEnabled(enableCFSQuota)
