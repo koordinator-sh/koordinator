@@ -23,6 +23,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"os/exec"
 	"path"
@@ -36,6 +37,7 @@ import (
 	"unicode"
 
 	"github.com/cakturk/go-netstat/netstat"
+	"github.com/vishvananda/netlink"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/klog/v2"
 )
@@ -221,4 +223,21 @@ func WorkingDirOf(pid int) (string, error) {
 		tokens := strings.Split(string(out), ":")
 		return strings.TrimSpace(tokens[1]), nil
 	}
+}
+
+func GetLinkInfoByDefaultRoute() (netlink.Link, error) {
+	routes, err := netlink.RouteListFiltered(netlink.FAMILY_V4, &netlink.Route{}, netlink.RT_FILTER_DST)
+	if err != nil {
+		return nil, err
+	}
+	if len(routes) == 0 {
+		return nil, fmt.Errorf("not find route info by dst ip=%s", net.IPv4zero.String())
+	}
+
+	linkInfo, err := netlink.LinkByIndex(routes[0].LinkIndex)
+	if err != nil {
+		return nil, err
+	}
+
+	return linkInfo, nil
 }

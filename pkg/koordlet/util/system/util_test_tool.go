@@ -50,6 +50,7 @@ var (
 		BlkioReadIops,
 		BlkioWriteBps,
 		BlkioWriteIops,
+		NetClsClassId,
 	}
 )
 

@@ -73,10 +73,11 @@ var HooksProtocolBuilder = hooksProtocolBuilder{
 
 type Resources struct {
 	// origin resources
-	CPUShares   *int64
-	CFSQuota    *int64
-	CPUSet      *string
-	MemoryLimit *int64
+	CPUShares     *int64
+	CFSQuota      *int64
+	CPUSet        *string
+	MemoryLimit   *int64
+	NetClsClassId *string
 
 	// extended resources
 	CPUBvt  *int64
@@ -171,6 +172,14 @@ func injectCPUBvt(cgroupParent string, bvtValue int64, a *audit.EventHelper, e r
 func injectCPUIdle(cgroupParent string, idleValue int64, a *audit.EventHelper, e resourceexecutor.ResourceUpdateExecutor) (resourceexecutor.ResourceUpdater, error) {
 	idleValueStr := strconv.FormatInt(idleValue, 10)
 	updater, err := resourceexecutor.DefaultCgroupUpdaterFactory.New(sysutil.CPUIdleName, cgroupParent, idleValueStr, a)
+	if err != nil {
+		return nil, err
+	}
+	return updater, nil
+}
+
+func injectNetClsClassId(cgroupParent string, classId string, a *audit.EventHelper, e resourceexecutor.ResourceUpdateExecutor) (resourceexecutor.ResourceUpdater, error) {
+	updater, err := resourceexecutor.DefaultCgroupUpdaterFactory.New(sysutil.NetClsClassIdName, cgroupParent, classId, a)
 	if err != nil {
 		return nil, err
 	}
