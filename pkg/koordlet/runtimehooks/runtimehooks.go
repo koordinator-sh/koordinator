@@ -103,6 +103,7 @@ func NewRuntimeHook(si statesinformer.StatesInformer, cfg *Config) (RuntimeHook,
 		Executor:            e,
 	}
 
+	backOff := nri.NewBackOff(cfg.RuntimeHooksNRIReconnectInitInterval, cfg.RuntimeHooksNRIReconnectMaxInterval, cfg.RuntimeHooksNRIReconnectMul)
 	var nriServer *nri.NriServer
 	if cfg.RuntimeHooksNRI {
 		nriServerOptions := nri.Options{
@@ -110,7 +111,11 @@ func NewRuntimeHook(si statesinformer.StatesInformer, cfg *Config) (RuntimeHook,
 			PluginFailurePolicy: pluginFailurePolicy,
 			DisableStages:       getDisableStagesMap(cfg.RuntimeHookDisableStages),
 			Executor:            e,
-			ReconnectInterval:   cfg.RuntimeHooksNRIReconnectInterval,
+			ReconnectInterval:   cfg.RuntimeHooksNRIReconnectInitInterval,
+			ReconnectionOption: nri.ReconnectionOption{
+				LimitTimes: cfg.RuntimeHooksNRIReconnectLimit,
+				Backoff:    backOff,
+			},
 		}
 		nriServer, err = nri.NewNriServer(nriServerOptions)
 		if err != nil {

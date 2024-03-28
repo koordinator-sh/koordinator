@@ -38,14 +38,20 @@ type nriConfig struct {
 	Events []string `json:"events"`
 }
 
+type ReconnectionOption struct {
+	LimitTimes int
+	Backoff    Backoff
+}
+
 type Options struct {
 	NriSocketPath string
 	// support stop running other hooks once someone failed
 	PluginFailurePolicy rmconfig.FailurePolicyType
 	// todo: add support for disable stages
-	DisableStages     map[string]struct{}
-	Executor          resourceexecutor.ResourceUpdateExecutor
-	ReconnectInterval time.Duration
+	DisableStages      map[string]struct{}
+	Executor           resourceexecutor.ResourceUpdateExecutor
+	ReconnectInterval  time.Duration
+	ReconnectionOption ReconnectionOption
 }
 
 func (o Options) Validate() error {
@@ -221,7 +227,7 @@ func (p *NriServer) UpdateContainer(pod *api.PodSandbox, container *api.Containe
 }
 
 func (p *NriServer) onClose() {
-	for {
+	for attempt := 1; attempt <= p.options.ReconnectionOption.LimitTimes; attempt++ {
 		stub, err := stub.New(p, append(opts, stub.WithOnClose(p.onClose))...)
 		if err != nil {
 			klog.Errorf("failed to create plugin stub: %v", err)
@@ -230,11 +236,11 @@ func (p *NriServer) onClose() {
 		p.stub = stub
 		err = p.Start()
 		if err != nil {
-			time.Sleep(p.options.ReconnectInterval)
+			time.Sleep(p.options.ReconnectionOption.Backoff.NextInterval(attempt))
 		} else {
-			break
+			klog.V(5).Infof("nri server restart success")
+			return
 		}
-
 	}
-	klog.Info("nri server restart")
+	klog.Warningf("nri server restart failed after %v times retry", p.options.ReconnectionOption.LimitTimes)
 }
