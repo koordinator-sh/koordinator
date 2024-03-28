@@ -60,7 +60,7 @@ func (r *runtimeHook) Run(stopCh <-chan struct{}) error {
 		go func() {
 			if err := r.nriServer.Start(); err != nil {
 				// if NRI is not enabled or container runtime not support NRI, we just skip NRI server start
-				klog.Errorf("nri mode runtime hook server start failed: %v", err)
+				klog.Warningf("nri mode runtime hook server start failed: %v", err)
 			} else {
 				klog.V(4).Infof("nri mode runtime hook server has started")
 			}
