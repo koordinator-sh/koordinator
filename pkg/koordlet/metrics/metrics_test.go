@@ -380,3 +380,35 @@ func TestCoreSchedCollector(t *testing.T) {
 			testCoreSchedGroup, testCoreSchedCookie)
 	})
 }
+
+func TestRuntimeHookCollector(t *testing.T) {
+	testingNode := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   "test-node",
+			Labels: map[string]string{},
+		},
+		Status: corev1.NodeStatus{
+			Allocatable: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("100"),
+				corev1.ResourceMemory: resource.MustParse("200Gi"),
+				apiext.BatchCPU:       resource.MustParse("50000"),
+				apiext.BatchMemory:    resource.MustParse("80Gi"),
+			},
+			Capacity: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("100"),
+				corev1.ResourceMemory: resource.MustParse("200Gi"),
+				apiext.BatchCPU:       resource.MustParse("50000"),
+				apiext.BatchMemory:    resource.MustParse("80Gi"),
+			},
+		},
+	}
+	testErr := fmt.Errorf("expected error")
+	t.Run("test", func(t *testing.T) {
+		Register(testingNode)
+		defer Register(nil)
+		RecordRuntimeHookInvokedDurationMilliSeconds("testHook", "testStage", nil, 10.0)
+		RecordRuntimeHookInvokedDurationMilliSeconds("testHook", "testStage", testErr, 5.0)
+		RecordRuntimeHookReconcilerInvokedDurationMilliSeconds("pod", "cpu.cfs_quota_us", nil, 10.0)
+		RecordRuntimeHookReconcilerInvokedDurationMilliSeconds("pod", "cpu.cfs_quota_us", testErr, 5.0)
+	})
+}
