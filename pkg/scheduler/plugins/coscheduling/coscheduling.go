@@ -135,28 +135,29 @@ func (cs *Coscheduling) Less(podInfo1, podInfo2 *framework.QueuedPodInfo) bool {
 
 	group1, _ := cs.pgMgr.GetGroupId(podInfo1.Pod)
 	group2, _ := cs.pgMgr.GetGroupId(podInfo2.Pod)
-	if group1 != group2 {
+
+	waitingBoundPodNum1 := cs.pgMgr.GetGangGroupWaitingBoundPodNum(podInfo1.Pod)
+	waitingBoundPodNum2 := cs.pgMgr.GetGangGroupWaitingBoundPodNum(podInfo2.Pod)
+	if waitingBoundPodNum1 != 0 || waitingBoundPodNum2 != 0 {
+		// At the same time, only member pod of one podGroup should be assumed, so we prefer the pod already having sibling assumed, then they can succeed together.
+		if waitingBoundPodNum1 == 0 || waitingBoundPodNum2 == 0 {
+			return waitingBoundPodNum1 != 0
+		}
+		/*
+			Two gang groups may both already have some assumed sibling pods.
+			For example:
+				1. GroupA has submitted 6 member, and have 5 already assumed;
+				2. then the sixth has been deleted;
+				3. then GroupB submitted its pods and have 3 already assumed;
+				4. GroupA submit the sixth pod
+			In this case, waitingPodNum will make no sense, so just sort it by group id to give fixed order.
+			Because no matter former succeed or fail, it's waitingPodNum will be zeroed. And the deadlock will be avoided
+		*/
 		return group1 < group2
 	}
-
-	isgang1satisfied := cs.pgMgr.IsGangMinSatisfied(podInfo1.Pod)
-	isgang2satisfied := cs.pgMgr.IsGangMinSatisfied(podInfo2.Pod)
-	if isgang1satisfied != isgang2satisfied {
-		return !isgang1satisfied
-	}
-
-	childScheduleCycle1 := cs.pgMgr.GetChildScheduleCycle(podInfo1.Pod)
-	childScheduleCycle2 := cs.pgMgr.GetChildScheduleCycle(podInfo2.Pod)
-	if childScheduleCycle1 != childScheduleCycle2 {
-		return childScheduleCycle1 < childScheduleCycle2
-	}
-
-	creationTime1 := cs.pgMgr.GetCreatTime(podInfo1)
-	creationTime2 := cs.pgMgr.GetCreatTime(podInfo2)
-	if creationTime1.Equal(creationTime2) {
-		return util.GetId(podInfo1.Pod.Namespace, podInfo1.Pod.Name) < util.GetId(podInfo2.Pod.Namespace, podInfo2.Pod.Name)
-	}
-	return creationTime1.Before(creationTime2)
+	// If no pod succeed, we will schedule all pod by RoundRobin to assure fairness.
+	// If some time-consuming member pod of one gang failed, then it's sibling will fail soon(because scheduling cycle invalid), so no need to assure all sibling should fail together.
+	return podInfo1.Timestamp.Before(podInfo2.Timestamp)
 }
 
 // PreFilter
