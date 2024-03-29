@@ -62,6 +62,8 @@ const (
 	// AnnotationAliasGangMatchPolicy defines same match policy but different prefix.
 	// Duplicate definitions here are only for compatibility considerations
 	AnnotationAliasGangMatchPolicy = "pod-group.scheduling.sigs.k8s.io/match-policy"
+
+	AnnotationLastScheduleTime = "internal.scheduling.koordinator.sh/last-schedule-time"
 )
 
 const (
