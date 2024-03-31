@@ -73,6 +73,7 @@ type Manager interface {
 	GetGangSummaries() map[string]*GangSummary
 	IsGangMinSatisfied(*corev1.Pod) bool
 	GetChildScheduleCycle(*corev1.Pod) int
+	GetGangGroupWaitingBoundPodNum(pod *corev1.Pod) int
 }
 
 // PodGroupManager defines the scheduling operation called
@@ -551,4 +552,20 @@ func (pgMgr *PodGroupManager) GetChildScheduleCycle(pod *corev1.Pod) int {
 	}
 
 	return gang.getChildScheduleCycle(pod)
+}
+
+func (pgMgr *PodGroupManager) GetGangGroupWaitingBoundPodNum(pod *corev1.Pod) int {
+	gang := pgMgr.GetGangByPod(pod)
+	if gang == nil {
+		return 0
+	}
+	gangGroup := gang.GangGroup
+	waitingPodNum := 0
+	for _, memberGangID := range gangGroup {
+		memberGang := pgMgr.cache.getGangFromCacheByGangId(memberGangID, false)
+		if memberGang != nil {
+			waitingPodNum += memberGang.getGangWaitingPods()
+		}
+	}
+	return waitingPodNum
 }

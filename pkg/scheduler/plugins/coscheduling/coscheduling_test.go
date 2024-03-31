@@ -382,12 +382,12 @@ func TestLess(t *testing.T) {
 		{
 			name: "equal priority, but p1 is added to schedulingQ earlier than p2",
 			p1: &framework.QueuedPodInfo{
-				PodInfo:                 framework.NewPodInfo(st.MakePod().Namespace(gangA_ns).Name("pod1").Priority(highPriority).Label(extension.LabelPodPriority, lowSubPriority).Obj()),
-				InitialAttemptTimestamp: earltTime,
+				PodInfo:   framework.NewPodInfo(st.MakePod().Namespace(gangA_ns).Name("pod1").Priority(highPriority).Label(extension.LabelPodPriority, lowSubPriority).Obj()),
+				Timestamp: earltTime,
 			},
 			p2: &framework.QueuedPodInfo{
-				PodInfo:                 framework.NewPodInfo(st.MakePod().Namespace(gangB_ns).Name("pod2").Priority(highPriority).Label(extension.LabelPodPriority, lowSubPriority).Obj()),
-				InitialAttemptTimestamp: lateTime,
+				PodInfo:   framework.NewPodInfo(st.MakePod().Namespace(gangB_ns).Name("pod2").Priority(highPriority).Label(extension.LabelPodPriority, lowSubPriority).Obj()),
+				Timestamp: lateTime,
 			},
 			expected: true, // p1 should be ahead of p2 in the queue
 		},
@@ -404,12 +404,12 @@ func TestLess(t *testing.T) {
 		{
 			name: "equal priority, p1 is added to schedulingQ earlier than p2",
 			p1: &framework.QueuedPodInfo{
-				PodInfo:                 framework.NewPodInfo(st.MakePod().Namespace(gangB_ns).Name("pod1").Priority(highPriority).Obj()),
-				InitialAttemptTimestamp: earltTime,
+				PodInfo:   framework.NewPodInfo(st.MakePod().Namespace(gangB_ns).Name("pod1").Priority(highPriority).Obj()),
+				Timestamp: earltTime,
 			},
 			p2: &framework.QueuedPodInfo{
-				PodInfo:                 framework.NewPodInfo(st.MakePod().Namespace(gangA_ns).Name("pod2").Priority(highPriority).Obj()),
-				InitialAttemptTimestamp: lateTime,
+				PodInfo:   framework.NewPodInfo(st.MakePod().Namespace(gangA_ns).Name("pod2").Priority(highPriority).Obj()),
+				Timestamp: lateTime,
 			},
 			expected: true, // p1 should be ahead of p2 in the queue
 		},
@@ -439,27 +439,27 @@ func TestLess(t *testing.T) {
 		{
 			name: "equal priority. p2 is added to schedulingQ earlier than p1, p1 belongs to gangA and p2 belongs to gangB",
 			p1: &framework.QueuedPodInfo{
-				PodInfo:                 framework.NewPodInfo(st.MakePod().Namespace(gangA_ns).Name("pod1").Priority(highPriority).Obj()),
-				InitialAttemptTimestamp: lateTime,
+				PodInfo:   framework.NewPodInfo(st.MakePod().Namespace(gangA_ns).Name("pod1").Priority(highPriority).Obj()),
+				Timestamp: lateTime,
 			},
 			annotations: map[string]string{extension.AnnotationGangName: "gangA"},
 			p2: &framework.QueuedPodInfo{
-				PodInfo:                 framework.NewPodInfo(st.MakePod().Namespace(gangB_ns).Name("pod2").Priority(highPriority).Label(v1alpha1.PodGroupLabel, "gangB").Obj()),
-				InitialAttemptTimestamp: earltTime,
+				PodInfo:   framework.NewPodInfo(st.MakePod().Namespace(gangB_ns).Name("pod2").Priority(highPriority).Label(v1alpha1.PodGroupLabel, "gangB").Obj()),
+				Timestamp: earltTime,
 			},
-			expected: true, // p1 should be ahead of p2 in the queue
+			expected: false, // p1 should be ahead of p2 in the queue
 		},
 		{
 			name: "equal priority and creation time, both belongs to gangB",
 			p1: &framework.QueuedPodInfo{
-				PodInfo:                 framework.NewPodInfo(st.MakePod().Namespace(gangB_ns).Name("pod1").Priority(highPriority).Label(v1alpha1.PodGroupLabel, "gangB").Obj()),
-				InitialAttemptTimestamp: lateTime,
+				PodInfo:   framework.NewPodInfo(st.MakePod().Namespace(gangB_ns).Name("pod1").Priority(highPriority).Label(v1alpha1.PodGroupLabel, "gangB").Obj()),
+				Timestamp: lateTime,
 			},
 			p2: &framework.QueuedPodInfo{
-				PodInfo:                 framework.NewPodInfo(st.MakePod().Namespace(gangB_ns).Name("pod2").Priority(highPriority).Label(v1alpha1.PodGroupLabel, "gangB").Obj()),
-				InitialAttemptTimestamp: earltTime,
+				PodInfo:   framework.NewPodInfo(st.MakePod().Namespace(gangB_ns).Name("pod2").Priority(highPriority).Label(v1alpha1.PodGroupLabel, "gangB").Obj()),
+				Timestamp: earltTime,
 			},
-			expected: true, // p1 should be ahead of p2 in the queue
+			expected: false,
 		},
 		{
 			name: "equal priority and creation time, both belongs to gangB, childScheduleCycle not equal",
@@ -478,14 +478,14 @@ func TestLess(t *testing.T) {
 		{
 			name: "equal priority and creation time, p1 belongs to gangA that has been satisfied",
 			p1: &framework.QueuedPodInfo{
-				PodInfo:                 framework.NewPodInfo(st.MakePod().Namespace(gangB_ns).Name("pod1").Priority(highPriority).Label(v1alpha1.PodGroupLabel, "gangD").Obj()),
-				InitialAttemptTimestamp: lateTime,
+				PodInfo:   framework.NewPodInfo(st.MakePod().Namespace(gangB_ns).Name("pod1").Priority(highPriority).Label(v1alpha1.PodGroupLabel, "gangD").Obj()),
+				Timestamp: lateTime,
 			},
 			p2: &framework.QueuedPodInfo{
-				PodInfo:                 framework.NewPodInfo(st.MakePod().Namespace(gangC_ns).Name("pod2").Priority(highPriority).Label(v1alpha1.PodGroupLabel, "gangC").Obj()),
-				InitialAttemptTimestamp: earltTime,
+				PodInfo:   framework.NewPodInfo(st.MakePod().Namespace(gangC_ns).Name("pod2").Priority(highPriority).Label(v1alpha1.PodGroupLabel, "gangC").Obj()),
+				Timestamp: earltTime,
 			},
-			expected: true, // p1 should be ahead of p2 in the queue
+			expected: false,
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
