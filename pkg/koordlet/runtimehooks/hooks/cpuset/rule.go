@@ -70,7 +70,7 @@ func (r *cpusetRule) getContainerCPUSet(containerReq *protocol.ContainerRequest)
 		}
 		// check if cpu resource is allocated in numa-level since there can be numa allocation without cpu
 		if !numaNode.Resources.Cpu().IsZero() ||
-			util.GetBatchMilliCPUFromResourceList(numaNode.Resources) > 0 {
+			util.GetExtendedMilliCPUFromResourceList(numaNode.Resources) > 0 {
 			isNUMAAware = true
 			break
 		}
