@@ -25,10 +25,10 @@ import (
 	"k8s.io/component-base/featuregate"
 
 	"github.com/koordinator-sh/koordinator/pkg/features"
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/hooks/batchresource"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/hooks/coresched"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/hooks/cpunormalization"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/hooks/cpuset"
+	extendedresource "github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/hooks/extendedresource"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/hooks/gpu"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/hooks/groupidentity"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/hooks/terwayqos"
@@ -97,7 +97,7 @@ var (
 		GroupIdentity:    groupidentity.Object(),
 		CPUSetAllocator:  cpuset.Object(),
 		GPUEnvInject:     gpu.Object(),
-		BatchResource:    batchresource.Object(),
+		BatchResource:    extendedresource.Object(),
 		CPUNormalization: cpunormalization.Object(),
 		CoreSched:        coresched.Object(),
 		TerwayQoS:        terwayqos.Object(),

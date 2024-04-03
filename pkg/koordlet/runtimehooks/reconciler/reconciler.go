@@ -164,10 +164,9 @@ type reconcileFunc func(protocol.HooksProtocol) error
 // RegisterCgroupReconciler registers a cgroup reconciler according to the cgroup file, reconcile function and filter
 // conditions. A cgroup file of one level can have multiple reconcile functions with different filtered conditions.
 //
-//	e.g. pod-level cfs_quota can be registered both by cpuset hook and batchresource hook. While cpuset hook reconciles
-//	cfs_quota for LSE and LSR pods, batchresource reconciles pods of BE QoS.
+//	e.g. pod-level cfs_quota can be registered both by cpuset hook and extendedresource hook. While cpuset hook reconciles
+//	cfs_quota for LSE and LSR pods, extendedresource reconciles pods of BE QoS.
 //
-// TODO: support priority+qos filter.
 func RegisterCgroupReconciler(level ReconcilerLevel, cgroupFile system.Resource, description string,
 	fn reconcileFunc, filter Filter, conditions ...string) {
 	if len(conditions) <= 0 { // default condition
