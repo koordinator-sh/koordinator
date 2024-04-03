@@ -133,6 +133,32 @@ func PodQOSFilter() Filter {
 	return singletonPodQOSFilter
 }
 
+type podPriorityFilter struct{}
+
+const (
+	PodPriorityFilterName = "podPriority"
+)
+
+func (p *podPriorityFilter) Name() string {
+	return PodPriorityFilterName
+}
+
+func (p *podPriorityFilter) Filter(podMeta *statesinformer.PodMeta) string {
+	priority := apiext.GetPodPriorityClassRaw(podMeta.Pod)
+
+	return string(priority)
+}
+
+var singletonPodPriorityFilter *podPriorityFilter
+
+// PodPriorityFilter returns a Filter which filters pod priority name
+func PodPriorityFilter() *podPriorityFilter {
+	if singletonPodPriorityFilter == nil {
+		singletonPodPriorityFilter = &podPriorityFilter{}
+	}
+	return singletonPodPriorityFilter
+}
+
 type reconcileFunc func(protocol.HooksProtocol) error
 
 // RegisterCgroupReconciler registers a cgroup reconciler according to the cgroup file, reconcile function and filter
@@ -153,12 +179,12 @@ func RegisterCgroupReconciler(level ReconcilerLevel, cgroupFile system.Resource,
 			continue
 		}
 
-		// if reconciler exist
 		if r.filter.Name() != filter.Name() {
-			klog.Fatalf("%v of level %v is already registered with filter %v by %v, cannot change to %v by %v",
+			klog.Warningf("%v of level %v is already registered with filter %v by [%v], and now add new filter %v by [%v]",
 				cgroupFile.ResourceType(), level, r.filter.Name(), r.description, filter.Name(), description)
 		}
 
+		// NOTE: different filter should have different condition, so no conflict here if many filter registered
 		for _, condition := range conditions {
 			if _, ok := r.fn[condition]; ok {
 				klog.Fatalf("%v of level %v is already registered with condition %v by %v, cannot change by %v",
