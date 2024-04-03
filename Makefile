@@ -5,7 +5,7 @@ GIT_COMMIT_ID ?= $(shell git rev-parse --short HEAD)
 
 # Image URL to use all building/pushing image targets
 REG ?= ghcr.io
-REG_NS ?= ocichina
+REG_NS ?= koordinator-sh
 REG_USER ?= ""
 REG_PWD ?= ""
 
