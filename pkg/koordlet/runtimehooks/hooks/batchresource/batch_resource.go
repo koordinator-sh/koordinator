@@ -24,6 +24,7 @@ import (
 	"k8s.io/klog/v2"
 	"k8s.io/utils/pointer"
 
+	"github.com/koordinator-sh/koordinator/apis/extension"
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/hooks"
@@ -37,8 +38,8 @@ import (
 )
 
 const (
-	name        = "BatchResource"
-	description = "set fundamental cgroups value for batch pod"
+	name        = "ExtendedResource"
+	description = "set fundamental cgroups value for mid pod and batch pod"
 
 	ruleNameForNodeSLO  = name + " (nodeSLO)"
 	ruleNameForNodeMeta = name + " (nodeMeta)"
@@ -49,7 +50,7 @@ type plugin struct {
 	executor resourceexecutor.ResourceUpdateExecutor
 }
 
-var podQOSConditions = []string{string(apiext.QoSBE)}
+var podPriorityConditions = []string{string(extension.PriorityMid), string(extension.PriorityBatch)}
 
 func (p *plugin) Register(op hooks.Options) {
 	klog.V(5).Infof("register hook %v", name)
@@ -63,17 +64,17 @@ func (p *plugin) Register(op hooks.Options) {
 	hooks.Register(rmconfig.PreCreateContainer, name, description+" (container)", p.SetContainerResources)
 	hooks.Register(rmconfig.PreUpdateContainerResources, name, description+" (container)", p.SetContainerResources)
 	reconciler.RegisterCgroupReconciler(reconciler.PodLevel, sysutil.CPUShares, description+" (pod cpu shares)",
-		p.SetPodCPUShares, reconciler.PodQOSFilter(), podQOSConditions...)
+		p.SetPodCPUShares, reconciler.PodPriorityFilter(), podPriorityConditions...)
 	reconciler.RegisterCgroupReconciler(reconciler.PodLevel, sysutil.CPUCFSQuota, description+" (pod cfs quota)",
-		p.SetPodCFSQuota, reconciler.PodQOSFilter(), podQOSConditions...)
+		p.SetPodCFSQuota, reconciler.PodPriorityFilter(), podPriorityConditions...)
 	reconciler.RegisterCgroupReconciler(reconciler.PodLevel, sysutil.MemoryLimit, description+" (pod memory limit)",
-		p.SetPodMemoryLimit, reconciler.PodQOSFilter(), podQOSConditions...)
+		p.SetPodMemoryLimit, reconciler.PodPriorityFilter(), podPriorityConditions...)
 	reconciler.RegisterCgroupReconciler(reconciler.ContainerLevel, sysutil.CPUShares, description+" (container cpu shares)",
-		p.SetContainerCPUShares, reconciler.PodQOSFilter(), podQOSConditions...)
+		p.SetContainerCPUShares, reconciler.PodPriorityFilter(), podPriorityConditions...)
 	reconciler.RegisterCgroupReconciler(reconciler.ContainerLevel, sysutil.CPUCFSQuota, description+" (container cfs quota)",
-		p.SetContainerCFSQuota, reconciler.PodQOSFilter(), podQOSConditions...)
+		p.SetContainerCFSQuota, reconciler.PodPriorityFilter(), podPriorityConditions...)
 	reconciler.RegisterCgroupReconciler(reconciler.ContainerLevel, sysutil.MemoryLimit, description+" (container memory limit)",
-		p.SetContainerMemoryLimit, reconciler.PodQOSFilter(), podQOSConditions...)
+		p.SetContainerMemoryLimit, reconciler.PodPriorityFilter(), podPriorityConditions...)
 	p.executor = op.Executor
 }
 
@@ -125,7 +126,7 @@ func (p *plugin) SetPodCPUShares(proto protocol.HooksProtocol) error {
 		return fmt.Errorf("pod protocol is nil for plugin %v", name)
 	}
 
-	if !isPodQoSBEByAttr(podCtx.Request.Labels, podCtx.Request.Annotations) {
+	if !isPodQoSMatchedByAttr(podCtx.Request.Labels, podCtx.Request.Annotations) {
 		return nil
 	}
 
@@ -141,7 +142,7 @@ func (p *plugin) SetPodCPUShares(proto protocol.HooksProtocol) error {
 		if c.Requests == nil {
 			continue
 		}
-		containerRequest := util.GetBatchMilliCPUFromResourceList(c.Requests)
+		containerRequest := util.GetExtendedMilliCPUFromResourceList(c.Requests)
 		if containerRequest <= 0 {
 			continue
 		}
@@ -159,7 +160,7 @@ func (p *plugin) SetPodCFSQuota(proto protocol.HooksProtocol) error {
 		return fmt.Errorf("pod protocol is nil for plugin %v", name)
 	}
 
-	if !isPodQoSBEByAttr(podCtx.Request.Labels, podCtx.Request.Annotations) {
+	if !isPodQoSMatchedByAttr(podCtx.Request.Labels, podCtx.Request.Annotations) {
 		return nil
 	}
 
@@ -186,7 +187,7 @@ func (p *plugin) SetPodCFSQuota(proto protocol.HooksProtocol) error {
 			milliCPULimit = -1
 			break
 		}
-		containerLimit := util.GetBatchMilliCPUFromResourceList(c.Limits)
+		containerLimit := util.GetExtendedMilliCPUFromResourceList(c.Limits)
 		if containerLimit <= 0 { // pod unlimited once a container is unlimited
 			milliCPULimit = -1
 			break
@@ -212,7 +213,7 @@ func (p *plugin) SetPodMemoryLimit(proto protocol.HooksProtocol) error {
 		return fmt.Errorf("pod protocol is nil for plugin %v", name)
 	}
 
-	if !isPodQoSBEByAttr(podCtx.Request.Labels, podCtx.Request.Annotations) {
+	if !isPodQoSMatchedByAttr(podCtx.Request.Labels, podCtx.Request.Annotations) {
 		return nil
 	}
 
@@ -229,7 +230,7 @@ func (p *plugin) SetPodMemoryLimit(proto protocol.HooksProtocol) error {
 			memoryLimit = -1
 			break
 		}
-		containerLimit := util.GetBatchMemoryFromResourceList(c.Limits)
+		containerLimit := util.GetExtendedMemoryFromResourceList(c.Limits)
 		if containerLimit <= 0 { // pod unlimited once a container is unlimited
 			memoryLimit = -1
 			break
@@ -277,7 +278,7 @@ func (p *plugin) SetContainerCPUShares(proto protocol.HooksProtocol) error {
 		return fmt.Errorf("container protocol is nil for plugin %v", name)
 	}
 
-	if !isPodQoSBEByAttr(containerCtx.Request.PodLabels, containerCtx.Request.PodAnnotations) {
+	if !isPodQoSMatchedByAttr(containerCtx.Request.PodLabels, containerCtx.Request.PodAnnotations) {
 		return nil
 	}
 
@@ -289,7 +290,7 @@ func (p *plugin) SetContainerCPUShares(proto protocol.HooksProtocol) error {
 
 	milliCPURequest := int64(0)
 	if containerSpec.Requests != nil {
-		containerRequest := util.GetBatchMilliCPUFromResourceList(containerSpec.Requests)
+		containerRequest := util.GetExtendedMilliCPUFromResourceList(containerSpec.Requests)
 		if containerRequest > 0 {
 			milliCPURequest = containerRequest
 		}
@@ -306,7 +307,7 @@ func (p *plugin) SetContainerCFSQuota(proto protocol.HooksProtocol) error {
 		return fmt.Errorf("container protocol is nil for plugin %v", name)
 	}
 
-	if !isPodQoSBEByAttr(containerCtx.Request.PodLabels, containerCtx.Request.PodAnnotations) {
+	if !isPodQoSMatchedByAttr(containerCtx.Request.PodLabels, containerCtx.Request.PodAnnotations) {
 		return nil
 	}
 
@@ -329,7 +330,7 @@ func (p *plugin) SetContainerCFSQuota(proto protocol.HooksProtocol) error {
 
 	milliCPULimit := int64(0)
 	if containerSpec.Limits != nil {
-		containerLimit := util.GetBatchMilliCPUFromResourceList(containerSpec.Limits)
+		containerLimit := util.GetExtendedMilliCPUFromResourceList(containerSpec.Limits)
 		if containerLimit > 0 {
 			milliCPULimit = containerLimit
 		}
@@ -354,7 +355,7 @@ func (p *plugin) SetContainerMemoryLimit(proto protocol.HooksProtocol) error {
 		return fmt.Errorf("container protocol is nil for plugin %v", name)
 	}
 
-	if !isPodQoSBEByAttr(containerCtx.Request.PodLabels, containerCtx.Request.PodAnnotations) {
+	if !isPodQoSMatchedByAttr(containerCtx.Request.PodLabels, containerCtx.Request.PodAnnotations) {
 		return nil
 	}
 
@@ -366,7 +367,7 @@ func (p *plugin) SetContainerMemoryLimit(proto protocol.HooksProtocol) error {
 
 	memoryLimit := int64(0)
 	if containerSpec.Limits != nil {
-		containerLimit := util.GetBatchMemoryFromResourceList(containerSpec.Limits)
+		containerLimit := util.GetExtendedMemoryFromResourceList(containerSpec.Limits)
 		if containerLimit > 0 {
 			memoryLimit = containerLimit
 		}
@@ -379,6 +380,7 @@ func (p *plugin) SetContainerMemoryLimit(proto protocol.HooksProtocol) error {
 	return nil
 }
 
-func isPodQoSBEByAttr(labels map[string]string, annotations map[string]string) bool {
-	return apiext.GetQoSClassByAttrs(labels, annotations) == apiext.QoSBE
+func isPodQoSMatchedByAttr(labels map[string]string, annotations map[string]string) bool {
+	podQoS := apiext.GetQoSClassByAttrs(labels, annotations)
+	return podQoS == apiext.QoSBE || podQoS == apiext.QoSLS
 }

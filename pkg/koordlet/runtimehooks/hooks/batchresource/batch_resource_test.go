@@ -808,7 +808,7 @@ func Test_plugin_SetContainerResources(t *testing.T) {
 	}
 }
 
-func Test_isPodQoSBEByAttr(t *testing.T) {
+func Test_isPodQoSMatchedByAttr(t *testing.T) {
 	tests := []struct {
 		name string
 		arg  map[string]string
@@ -823,11 +823,11 @@ func Test_isPodQoSBEByAttr(t *testing.T) {
 			want: true,
 		},
 		{
-			name: "qos is not BE",
+			name: "qos is LS",
 			arg: map[string]string{
 				apiext.LabelPodQoS: string(apiext.QoSLS),
 			},
-			want: false,
+			want: true,
 		},
 		{
 			name: "qos is not BE 1",
@@ -836,7 +836,7 @@ func Test_isPodQoSBEByAttr(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := isPodQoSBEByAttr(tt.arg, tt.arg1)
+			got := isPodQoSMatchedByAttr(tt.arg, tt.arg1)
 			assert.Equal(t, tt.want, got)
 		})
 	}
