@@ -168,7 +168,7 @@ func TestGetBatchXXXFromResourceList(t *testing.T) {
 	}{
 		{
 			name: "test GetBatchMilliCPUFromResourceList",
-			fn:   GetBatchMilliCPUFromResourceList,
+			fn:   GetExtendedMilliCPUFromResourceList,
 			arg: corev1.ResourceList{
 				extension.BatchCPU:    resource.MustParse("1000"),
 				extension.BatchMemory: resource.MustParse("2Gi"),
@@ -176,24 +176,55 @@ func TestGetBatchXXXFromResourceList(t *testing.T) {
 			want: 1000,
 		},
 		{
+			name: "test GetMidMilliCPUFromResourceList",
+			fn:   GetExtendedMilliCPUFromResourceList,
+			arg: corev1.ResourceList{
+				extension.MidCPU:    resource.MustParse("1000"),
+				extension.MidMemory: resource.MustParse("2Gi"),
+			},
+			want: 1000,
+		},
+		{
 			name: "test GetBatchMilliCPUFromResourceList 1",
-			fn:   GetBatchMilliCPUFromResourceList,
+			fn:   GetExtendedMilliCPUFromResourceList,
 			arg: corev1.ResourceList{
 				extension.BatchMemory: resource.MustParse("2Gi"),
 			},
 			want: -1,
 		},
 		{
+			name: "test GetMidMilliCPUFromResourceList 1",
+			fn:   GetExtendedMilliCPUFromResourceList,
+			arg: corev1.ResourceList{
+				extension.MidMemory: resource.MustParse("2Gi"),
+			},
+			want: -1,
+		},
+		{
 			name: "test GetBatchMemoryFromResourceList",
-			fn:   GetBatchMemoryFromResourceList,
+			fn:   GetExtendedMemoryFromResourceList,
 			arg: corev1.ResourceList{
 				extension.BatchMemory: resource.MustParse("2Gi"),
 			},
 			want: 2 * (1 << 30),
 		},
 		{
+			name: "test GetMidMemoryFromResourceList",
+			fn:   GetExtendedMemoryFromResourceList,
+			arg: corev1.ResourceList{
+				extension.MidMemory: resource.MustParse("2Gi"),
+			},
+			want: 2 * (1 << 30),
+		},
+		{
 			name: "test GetBatchMemoryFromResourceList 1",
-			fn:   GetBatchMemoryFromResourceList,
+			fn:   GetExtendedMemoryFromResourceList,
+			arg:  corev1.ResourceList{},
+			want: -1,
+		},
+		{
+			name: "test GetMidMemoryFromResourceList 1",
+			fn:   GetExtendedMemoryFromResourceList,
 			arg:  corev1.ResourceList{},
 			want: -1,
 		},
