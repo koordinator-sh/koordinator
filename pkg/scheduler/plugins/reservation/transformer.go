@@ -444,7 +444,8 @@ func (pl *Plugin) BeforeFilter(ctx context.Context, cycleState *framework.CycleS
 			if !status.IsSuccess() {
 				return pod, nodeInfo, false, status
 			}
-			klog.V(4).Infof("toschedule reservation: %s, added reservation: %s",
+			klog.V(4).Infof("nodeName: %s,toschedule reservation: %s, added reservation: %s",
+				nodeInfo.Node().Name,
 				reservationutil.GetReservationNameFromReservePod(pod),
 				reservationutil.GetReservationNameFromReservePod(rInfo.Pod))
 		}

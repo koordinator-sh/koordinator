@@ -21,6 +21,7 @@ import (
 
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
+	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
@@ -29,12 +30,15 @@ import (
 )
 
 type reservationEventHandler struct {
-	cache *reservationCache
+	cache       *reservationCache
+	rrNominator *nominator
 }
 
-func registerReservationEventHandler(cache *reservationCache, koordinatorInformerFactory koordinatorinformers.SharedInformerFactory) {
+func registerReservationEventHandler(cache *reservationCache, koordinatorInformerFactory koordinatorinformers.SharedInformerFactory,
+	rrNominator *nominator) {
 	eventHandler := &reservationEventHandler{
-		cache: cache,
+		cache:       cache,
+		rrNominator: rrNominator,
 	}
 	reservationInformer := koordinatorInformerFactory.Scheduling().V1alpha1().Reservations().Informer()
 	frameworkexthelper.ForceSyncFromInformer(context.TODO().Done(), koordinatorInformerFactory, reservationInformer, eventHandler)
@@ -63,6 +67,7 @@ func (h *reservationEventHandler) OnUpdate(oldObj, newObj interface{}) {
 
 	if reservationutil.IsReservationActive(newR) || reservationutil.IsReservationFailed(newR) || reservationutil.IsReservationSucceeded(newR) {
 		h.cache.updateReservation(newR)
+		h.rrNominator.DeleteReservePod(framework.NewPodInfo(reservationutil.NewReservePod(newR)))
 		klog.V(4).InfoS("update reservation into reservationCache", "reservation", klog.KObj(newR))
 	}
 }
@@ -82,6 +87,8 @@ func (h *reservationEventHandler) OnDelete(obj interface{}) {
 		klog.V(4).InfoS("reservation cache delete failed to parse, obj %T", obj)
 		return
 	}
+
+	h.rrNominator.DeleteReservePod(framework.NewPodInfo(reservationutil.NewReservePod(r)))
 
 	// Here it is only marked that ReservationInfo is unavailable,
 	// and the real deletion operation is executed in deleteReservationFromCache(pkg/scheduler/frameworkext/eventhandlers/reservation_handler.go).

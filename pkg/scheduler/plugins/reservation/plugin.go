@@ -102,8 +102,8 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 	koordSharedInformerFactory := extendedHandle.KoordinatorSharedInformerFactory()
 	reservationLister := koordSharedInformerFactory.Scheduling().V1alpha1().Reservations().Lister()
 	cache := newReservationCache(reservationLister)
-	registerReservationEventHandler(cache, koordSharedInformerFactory)
 	nominator := newNominator()
+	registerReservationEventHandler(cache, koordSharedInformerFactory, nominator)
 	registerPodEventHandler(cache, nominator, sharedInformerFactory)
 
 	// TODO(joseph): Considering the amount of changed code,
