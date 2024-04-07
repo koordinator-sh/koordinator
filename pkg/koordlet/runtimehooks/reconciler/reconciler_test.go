@@ -24,7 +24,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/pointer"
 
+	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/protocol"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
@@ -247,4 +249,192 @@ func TestNewReconciler(t *testing.T) {
 	stopCh <- struct{}{}
 	err := r.Run(stopCh)
 	assert.NoError(t, err, "run reconciler without error")
+}
+
+func TestFilters(t *testing.T) {
+	type args struct {
+		filter  Filter
+		podMeta *statesinformer.PodMeta
+	}
+
+	tests := []struct {
+		name  string
+		args  args
+		wants string
+	}{
+		{
+			name: "test NoneFilter",
+			args: args{
+				filter: NoneFilter(),
+			},
+			wants: "",
+		},
+		{
+			name: "test podQOSFilter with QoSNone",
+			args: args{
+				filter: PodQOSFilter(),
+				podMeta: &statesinformer.PodMeta{
+					Pod: &corev1.Pod{
+						ObjectMeta: metav1.ObjectMeta{
+							Namespace: "test-ns",
+							Name:      "test-pod-name",
+							UID:       "test-pod-uid",
+						},
+						Spec: corev1.PodSpec{
+							Containers: []corev1.Container{
+								{
+									Name: "test-container-name",
+								},
+							},
+						},
+						Status: corev1.PodStatus{
+							ContainerStatuses: []corev1.ContainerStatus{
+								{
+									Name:        "test-container-name",
+									ContainerID: "test-container-id",
+								},
+							},
+						},
+					},
+				},
+			},
+			wants: "",
+		},
+		{
+			name: "test podQOSFilter with QoSLS",
+			args: args{
+				filter: PodQOSFilter(),
+				podMeta: &statesinformer.PodMeta{
+					Pod: &corev1.Pod{
+						ObjectMeta: metav1.ObjectMeta{
+							Namespace: "test-ns",
+							Name:      "test-pod-name",
+							UID:       "test-pod-uid",
+							Labels: map[string]string{
+								extension.LabelPodQoS: string(extension.QoSLS),
+							},
+						},
+						Spec: corev1.PodSpec{
+							Containers: []corev1.Container{
+								{
+									Name: "test-container-name",
+								},
+							},
+						},
+						Status: corev1.PodStatus{
+							ContainerStatuses: []corev1.ContainerStatus{
+								{
+									Name:        "test-container-name",
+									ContainerID: "test-container-id",
+								},
+							},
+						},
+					},
+				},
+			},
+			wants: "LS",
+		},
+		{
+			name: "test podPriorityFilter with default",
+			args: args{
+				filter: PodPriorityFilter(),
+				podMeta: &statesinformer.PodMeta{
+					Pod: &corev1.Pod{
+						ObjectMeta: metav1.ObjectMeta{
+							Namespace: "test-ns",
+							Name:      "test-pod-name",
+							UID:       "test-pod-uid",
+						},
+						Spec: corev1.PodSpec{
+							Containers: []corev1.Container{
+								{
+									Name: "test-container-name",
+								},
+							},
+						},
+						Status: corev1.PodStatus{
+							ContainerStatuses: []corev1.ContainerStatus{
+								{
+									Name:        "test-container-name",
+									ContainerID: "test-container-id",
+								},
+							},
+						},
+					},
+				},
+			},
+			wants: "",
+		},
+		{
+			name: "test podPriorityFilter with koord-prod",
+			args: args{
+				filter: PodPriorityFilter(),
+				podMeta: &statesinformer.PodMeta{
+					Pod: &corev1.Pod{
+						ObjectMeta: metav1.ObjectMeta{
+							Namespace: "test-ns",
+							Name:      "test-pod-name",
+							UID:       "test-pod-uid",
+							Labels: map[string]string{
+								extension.LabelPodPriorityClass: string(extension.PriorityProd),
+							},
+						},
+						Spec: corev1.PodSpec{
+							Containers: []corev1.Container{
+								{
+									Name: "test-container-name",
+								},
+							},
+						},
+						Status: corev1.PodStatus{
+							ContainerStatuses: []corev1.ContainerStatus{
+								{
+									Name:        "test-container-name",
+									ContainerID: "test-container-id",
+								},
+							},
+						},
+					},
+				},
+			},
+			wants: "koord-prod",
+		},
+		{
+			name: "test podPriorityFilter with koord-prod 2",
+			args: args{
+				filter: PodPriorityFilter(),
+				podMeta: &statesinformer.PodMeta{
+					Pod: &corev1.Pod{
+						ObjectMeta: metav1.ObjectMeta{
+							Namespace: "test-ns",
+							Name:      "test-pod-name",
+							UID:       "test-pod-uid",
+						},
+						Spec: corev1.PodSpec{
+							Containers: []corev1.Container{
+								{
+									Name: "test-container-name",
+								},
+							},
+							Priority: pointer.Int32(9000),
+						},
+						Status: corev1.PodStatus{
+							ContainerStatuses: []corev1.ContainerStatus{
+								{
+									Name:        "test-container-name",
+									ContainerID: "test-container-id",
+								},
+							},
+						},
+					},
+				},
+			},
+			wants: "koord-prod",
+		},
+	}
+
+	for _, tt := range tests {
+		res := tt.args.filter.Filter(tt.args.podMeta)
+		assert.Equal(t, res, tt.wants, tt.name)
+	}
 }
