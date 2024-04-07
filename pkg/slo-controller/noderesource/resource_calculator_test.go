@@ -29,12 +29,15 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/clock"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/utils/pointer"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	"github.com/koordinator-sh/koordinator/apis/configuration"
 	"github.com/koordinator-sh/koordinator/apis/extension"
+	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/noderesource/framework"
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/noderesource/plugins/batchresource"
@@ -176,12 +179,12 @@ func Test_calculateNodeResource(t *testing.T) {
 				{
 					Name:     extension.BatchCPU,
 					Quantity: resource.NewQuantity(0, resource.DecimalSI),
-					Message:  "batchAllocatable[CPU(Milli-Core)]:0 = nodeCapacity:20000 - nodeReservation:7000 - systemUsageOrReserved:0 - podHPUsed:20000",
+					Message:  "batchAllocatable[CPU(Milli-Core)]:0 = nodeCapacity:20000 - nodeSafetyMargin:7000 - systemUsageOrNodeReserved:0 - podHPUsed:20000",
 				},
 				{
 					Name:     extension.BatchMemory,
 					Quantity: resource.NewScaledQuantity(6, 9),
-					Message:  "batchAllocatable[Mem(GB)]:6 = nodeCapacity:40 - nodeReservation:14 - systemUsage:0 - podHPUsed:20",
+					Message:  "batchAllocatable[Mem(GB)]:6 = nodeCapacity:40 - nodeSafetyMargin:14 - systemUsage:0 - podHPUsed:20",
 				},
 				{
 					Name:    extension.MidCPU,
@@ -383,12 +386,12 @@ func Test_calculateNodeResource(t *testing.T) {
 				{
 					Name:     extension.BatchCPU,
 					Quantity: resource.NewQuantity(25000, resource.DecimalSI),
-					Message:  "batchAllocatable[CPU(Milli-Core)]:25000 = nodeCapacity:100000 - nodeReservation:35000 - systemUsageOrReserved:7000 - podHPUsed:33000",
+					Message:  "batchAllocatable[CPU(Milli-Core)]:25000 = nodeCapacity:100000 - nodeSafetyMargin:35000 - systemUsageOrNodeReserved:7000 - podHPUsed:33000",
 				},
 				{
 					Name:     extension.BatchMemory,
 					Quantity: resource.NewScaledQuantity(33, 9),
-					Message:  "batchAllocatable[Mem(GB)]:33 = nodeCapacity:120 - nodeReservation:42 - systemUsage:12 - podHPUsed:33",
+					Message:  "batchAllocatable[Mem(GB)]:33 = nodeCapacity:120 - nodeSafetyMargin:42 - systemUsage:12 - podHPUsed:33",
 				},
 				{
 					Name:    extension.MidCPU,
@@ -593,12 +596,12 @@ func Test_calculateNodeResource(t *testing.T) {
 				{
 					Name:     extension.BatchCPU,
 					Quantity: resource.NewQuantity(30000, resource.DecimalSI),
-					Message:  "batchAllocatable[CPU(Milli-Core)]:30000 = nodeCapacity:100000 - nodeReservation:30000 - systemUsageOrReserved:7000 - podHPUsed:33000",
+					Message:  "batchAllocatable[CPU(Milli-Core)]:30000 = nodeCapacity:100000 - nodeSafetyMargin:30000 - systemUsageOrNodeReserved:7000 - podHPUsed:33000",
 				},
 				{
 					Name:     extension.BatchMemory,
 					Quantity: resource.NewScaledQuantity(39, 9),
-					Message:  "batchAllocatable[Mem(GB)]:39 = nodeCapacity:120 - nodeReservation:36 - systemUsage:12 - podHPUsed:33",
+					Message:  "batchAllocatable[Mem(GB)]:39 = nodeCapacity:120 - nodeSafetyMargin:36 - systemUsage:12 - podHPUsed:33",
 				},
 				{
 					Name:    extension.MidCPU,
@@ -803,12 +806,12 @@ func Test_calculateNodeResource(t *testing.T) {
 				{
 					Name:     extension.BatchCPU,
 					Quantity: resource.NewQuantity(30000, resource.DecimalSI),
-					Message:  "batchAllocatable[CPU(Milli-Core)]:30000 = nodeCapacity:100000 - nodeReservation:30000 - systemUsageOrReserved:7000 - podHPUsed:33000",
+					Message:  "batchAllocatable[CPU(Milli-Core)]:30000 = nodeCapacity:100000 - nodeSafetyMargin:30000 - systemUsageOrNodeReserved:7000 - podHPUsed:33000",
 				},
 				{
 					Name:     extension.BatchMemory,
 					Quantity: resource.NewScaledQuantity(36, 9),
-					Message:  "batchAllocatable[Mem(GB)]:36 = nodeCapacity:120 - nodeReservation:24 - systemReserved:0 - podHPRequest:60",
+					Message:  "batchAllocatable[Mem(GB)]:36 = nodeCapacity:120 - nodeSafetyMargin:24 - nodeReserved:0 - podHPRequest:60",
 				},
 				{
 					Name:    extension.MidCPU,
@@ -1018,12 +1021,12 @@ func Test_calculateNodeResource(t *testing.T) {
 				{
 					Name:     extension.BatchCPU,
 					Quantity: resource.NewQuantity(25000, resource.DecimalSI),
-					Message:  "batchAllocatable[CPU(Milli-Core)]:25000 = nodeCapacity:100000 - nodeReservation:35000 - systemUsageOrReserved:7000 - podHPUsed:33000",
+					Message:  "batchAllocatable[CPU(Milli-Core)]:25000 = nodeCapacity:100000 - nodeSafetyMargin:35000 - systemUsageOrNodeReserved:7000 - podHPUsed:33000",
 				},
 				{
 					Name:     extension.BatchMemory,
 					Quantity: resource.NewScaledQuantity(33, 9),
-					Message:  "batchAllocatable[Mem(GB)]:33 = nodeCapacity:120 - nodeReservation:42 - systemUsage:12 - podHPUsed:33",
+					Message:  "batchAllocatable[Mem(GB)]:33 = nodeCapacity:120 - nodeSafetyMargin:42 - systemUsage:12 - podHPUsed:33",
 				},
 				{
 					Name:     extension.MidCPU,
@@ -1038,6 +1041,14 @@ func Test_calculateNodeResource(t *testing.T) {
 			}...),
 		},
 	}
+
+	scheme := runtime.NewScheme()
+	clientgoscheme.AddToScheme(scheme)
+	slov1alpha1.AddToScheme(scheme)
+	schedulingv1alpha1.AddToScheme(scheme)
+	client := fake.NewClientBuilder().WithScheme(scheme).Build()
+	opt := framework.NewOption().WithClient(client).WithScheme(scheme).WithControllerBuilder(&builder.Builder{})
+	framework.RunSetupExtenders(opt)
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
