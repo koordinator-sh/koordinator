@@ -24,8 +24,10 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/uuid"
+	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
 
 func TestEventHandlerOnAdd(t *testing.T) {
@@ -194,7 +196,7 @@ func TestEventHandlerUpdate(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cache := newReservationCache(nil)
-			eh := &reservationEventHandler{cache: cache}
+			eh := &reservationEventHandler{cache: cache, rrNominator: newNominator()}
 			eh.OnUpdate(tt.oldReservation, tt.newReservation)
 			if tt.wantReservation == nil {
 				rInfo := cache.getReservationInfoByUID(tt.newReservation.UID)
@@ -239,12 +241,15 @@ func TestEventHandlerDelete(t *testing.T) {
 		},
 	}
 	cache := newReservationCache(nil)
-	eh := &reservationEventHandler{cache: cache}
+	eh := &reservationEventHandler{cache: cache, rrNominator: newNominator()}
 	eh.OnAdd(activeReservation)
 	rInfo := cache.getReservationInfoByUID(activeReservation.UID)
 	assert.NotNil(t, rInfo)
+	eh.rrNominator.AddNominatedReservePod(framework.NewPodInfo(reservation.NewReservePod(activeReservation)), "test-node")
+	assert.Equal(t, []*framework.PodInfo{framework.NewPodInfo(reservation.NewReservePod(activeReservation))}, eh.rrNominator.NominatedReservePodForNode("test-node"))
 	eh.OnDelete(activeReservation)
 	rInfo = cache.getReservationInfoByUID(activeReservation.UID)
 	assert.NotNil(t, rInfo)
 	assert.False(t, rInfo.IsAvailable())
+	assert.Equal(t, []*framework.PodInfo{}, eh.rrNominator.NominatedReservePodForNode("test-node"))
 }
