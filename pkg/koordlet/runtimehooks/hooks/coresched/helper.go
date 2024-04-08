@@ -126,8 +126,7 @@ func (p *Plugin) addCookie(pids []uint32, groupID string) (uint64, []uint32, err
 // TODO: refactor to resource updater.
 func (p *Plugin) assignCookie(pids, siblingPIDs []uint32, groupID string, targetCookieID uint64) ([]uint32, []uint32, error) {
 	if len(pids) <= 0 {
-		klog.V(6).Infof("aborted to assign PIDs cookie for group %s, target cookie %v, no PID",
-			targetCookieID, groupID)
+		klog.V(6).Infof("aborted to assign PIDs cookie for group %v, target cookie %v, no PID", groupID, targetCookieID)
 		return nil, nil, nil
 	}
 	pidsToAssign := NewPIDCache()
@@ -225,7 +224,7 @@ func (p *Plugin) clearCookie(pids []uint32, groupID string, lastCookieID uint64)
 
 	failedPIDs, err := p.cse.Clear(sysutil.CoreSchedScopeThreadGroup, pidsToClear.GetAllSorted()...)
 	if err != nil {
-		klog.V(4).Infof("failed to clear cookie for group, last cookie %v, PID %v failed of %v, total %v, err: %s",
+		klog.V(4).Infof("failed to clear cookie for group %v, last cookie %v, PID %v failed of %v, total %v, err: %s",
 			groupID, lastCookieID, len(failedPIDs), pidsToClear.GetAllSorted(), len(pids), err)
 		pidsToClear.DeleteAny(failedPIDs...)
 	}

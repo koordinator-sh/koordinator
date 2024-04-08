@@ -69,7 +69,7 @@ func InitSupportConfigs() {
 	initCgroupsVersion()
 	HostSystemInfo = collectVersionInfo()
 	if isResctrlSupported, err := IsSupportResctrl(); err != nil {
-		klog.Warningf("failed to check resctrl support status, use %d, err: %v", isResctrlSupported, err)
+		klog.Warningf("failed to check resctrl support status, use %v, err: %v", isResctrlSupported, err)
 	} else {
 		klog.V(4).Infof("resctrl supported: %v", isResctrlSupported)
 	}
