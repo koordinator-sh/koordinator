@@ -453,7 +453,7 @@ func (r *CPUSuppress) recoverCPUSetForBECPUManager() {
 		}
 		resourceStatus, err := apiext.GetResourceStatus(podMeta.Pod.Annotations)
 		if err != nil {
-			klog.Warningf("get resource status for pod %s failed, error %v", podMeta.Key())
+			klog.Warningf("get resource status for pod %s failed, error %v", podMeta.Key(), err.Error())
 			continue
 		}
 

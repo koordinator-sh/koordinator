@@ -218,7 +218,7 @@ func (c *cpuEvictor) calculateMilliRelease(thresholdConfig *slov1alpha1.Resource
 	if milliRelease > 0 {
 		klog.V(4).Infof("cpuEvict by ResourceSatisfaction start to evict, milliRelease: %v,"+
 			"current status (BEUsage:%v, BERequest:%v, BELimit:%v, BERealLimit:%v, BEAllocatable:%v)",
-			currentBECPUMilliUsage, currentBECPUMilliRequest, currentBECPUMilliLimit, currentBECPUMilliRealLimit,
+			milliRelease, currentBECPUMilliUsage, currentBECPUMilliRequest, currentBECPUMilliLimit, currentBECPUMilliRealLimit,
 			beCPUMilliAllocatable)
 	}
 	return milliRelease
@@ -305,7 +305,7 @@ func (c *cpuEvictor) killAndEvictBEPodsRelease(node *corev1.Node, bePodInfos []*
 		killedPods = append(killedPods, bePod.pod)
 		cpuMilliReleased = cpuMilliReleased + bePod.milliRequest
 
-		klog.V(5).Infof("cpuEvict pick pod %s/%s to evict", util.GetPodKey(bePod.pod))
+		klog.V(5).Infof("cpuEvict pick pod %s to evict", util.GetPodKey(bePod.pod))
 	}
 
 	c.evictor.EvictPodsIfNotEvicted(killedPods, node, resourceexecutor.EvictPodByBECPUSatisfaction, message)
