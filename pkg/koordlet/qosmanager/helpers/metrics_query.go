@@ -47,7 +47,7 @@ func CollectNodeMetrics(metricCache metriccache.MetricCache, start, end time.Tim
 	}
 
 	aggregateResult := metriccache.DefaultAggregateResultFactory.New(queryMeta)
-	if err := querier.Query(queryMeta, nil, aggregateResult); err != nil {
+	if err := querier.QueryAndClose(queryMeta, nil, aggregateResult); err != nil {
 		return nil, err
 	}
 	return aggregateResult, nil
@@ -63,10 +63,12 @@ func CollectAllHostAppMetrics(hostApps []slov1alpha1.HostApplicationSpec, metric
 	queryParam metriccache.QueryParam, metricResource metriccache.MetricResource) map[string]float64 {
 	appsMetrics := make(map[string]float64)
 	querier, err := metricCache.Querier(*queryParam.Start, *queryParam.End)
+
 	if err != nil {
 		klog.Warningf("build host application querier failed, error: %v", err)
 		return appsMetrics
 	}
+	defer querier.Close()
 	for _, hostApp := range hostApps {
 		queryMeta, err := metricResource.BuildQueryMeta(metriccache.MetricPropertiesFunc.HostApplication(hostApp.Name))
 		if err != nil || queryMeta == nil {
@@ -143,7 +145,7 @@ func CollectPodMetric(metricCache metriccache.MetricCache, queryMeta metriccache
 		return nil, err
 	}
 	aggregateResult := metriccache.DefaultAggregateResultFactory.New(queryMeta)
-	if err := querier.Query(queryMeta, nil, aggregateResult); err != nil {
+	if err := querier.QueryAndClose(queryMeta, nil, aggregateResult); err != nil {
 		return nil, err
 	}
 	return aggregateResult, nil
@@ -157,7 +159,7 @@ func CollectContainerResMetricLast(metricCache metriccache.MetricCache, queryMet
 		return 0, err
 	}
 	aggregateResult := metriccache.DefaultAggregateResultFactory.New(queryMeta)
-	if err := querier.Query(queryMeta, nil, aggregateResult); err != nil {
+	if err := querier.QueryAndClose(queryMeta, nil, aggregateResult); err != nil {
 		return 0, err
 	}
 	return aggregateResult.Value(queryParam.Aggregate)
@@ -183,7 +185,7 @@ func CollectContainerThrottledMetric(metricCache metriccache.MetricCache, contai
 	}
 
 	aggregateResult := metriccache.DefaultAggregateResultFactory.New(queryMeta)
-	if err := querier.Query(queryMeta, nil, aggregateResult); err != nil {
+	if err := querier.QueryAndClose(queryMeta, nil, aggregateResult); err != nil {
 		return nil, err
 	}
 

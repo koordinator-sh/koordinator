@@ -137,6 +137,7 @@ func (c *cpuEvictor) calculateMilliRelease(thresholdConfig *slov1alpha1.Resource
 		klog.Warningf("get query failed, error %v", err)
 		return 0
 	}
+	defer querier.Close()
 	// BECPUUsage
 	avgBECPUMilliUsage, count01 := getBECPUMetric(metriccache.BEResourceAllocationUsage, querier, queryParam.Aggregate)
 	// BECPURequest
@@ -178,6 +179,7 @@ func (c *cpuEvictor) calculateMilliRelease(thresholdConfig *slov1alpha1.Resource
 		klog.Warningf("get query failed, error %v", err)
 		return 0
 	}
+	defer querier.Close()
 	// BECPUUsage
 	currentBECPUMilliUsage, _ := getBECPUMetric(metriccache.BEResourceAllocationUsage, querier, queryParam.Aggregate)
 	// BECPURequest

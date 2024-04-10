@@ -561,6 +561,7 @@ func Test_nodeMetricInformer_collectNodeAggregateMetric(t *testing.T) {
 			result.EXPECT().TimeRangeDuration().Return(end.Sub(start)).AnyTimes()
 			mockResultFactory.EXPECT().New(gomock.Any()).Return(result).AnyTimes()
 			mockQuerier.EXPECT().Query(gomock.Any(), gomock.Any(), gomock.Any()).SetArg(2, *result).Return(nil).AnyTimes()
+			mockQuerier.EXPECT().Close().AnyTimes()
 			r := &nodeMetricInformer{
 				metricCache: mockMetricCache,
 				nodeMetric: &slov1alpha1.NodeMetric{
@@ -1134,6 +1135,8 @@ func buildMockQueryResult(ctrl *gomock.Controller, querier *mockmetriccache.Mock
 	result.EXPECT().TimeRangeDuration().Return(duration).AnyTimes()
 	factory.EXPECT().New(queryMeta).Return(result).AnyTimes()
 	querier.EXPECT().Query(queryMeta, gomock.Any(), result).SetArg(2, *result).Return(nil).AnyTimes()
+	querier.EXPECT().QueryAndClose(queryMeta, gomock.Any(), result).SetArg(2, *result).Return(nil).AnyTimes()
+	querier.EXPECT().Close().AnyTimes()
 }
 
 func Test_nodeMetricInformer_collectSystemAggregateMetric(t *testing.T) {
@@ -1206,6 +1209,7 @@ func Test_nodeMetricInformer_collectSystemAggregateMetric(t *testing.T) {
 			result.EXPECT().TimeRangeDuration().Return(end.Sub(start)).AnyTimes()
 			mockResultFactory.EXPECT().New(gomock.Any()).Return(result).AnyTimes()
 			mockQuerier.EXPECT().Query(gomock.Any(), gomock.Any(), gomock.Any()).SetArg(2, *result).Return(nil).AnyTimes()
+			mockQuerier.EXPECT().Close().AnyTimes()
 			r := &nodeMetricInformer{
 				metricCache: mockMetricCache,
 				nodeMetric: &slov1alpha1.NodeMetric{
