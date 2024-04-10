@@ -21,6 +21,7 @@ type GangSummary struct {
 	OnceResourceSatisfied    bool           `json:"onceResourceSatisfied"`
 	ScheduleCycleValid       bool           `json:"scheduleCycleValid"`
 	ScheduleCycle            int            `json:"scheduleCycle"`
+	LastScheduleTime         time.Time      `json:"lastScheduleTime"`
 	ChildrenScheduleRoundMap map[string]int `json:"childrenScheduleRoundMap"`
 	GangFrom                 string         `json:"gangFrom"`
 	HasGangInit              bool           `json:"hasGangInit"`
@@ -51,6 +52,7 @@ func (gang *Gang) GetGangSummary() *GangSummary {
 	gangSummary.OnceResourceSatisfied = gang.OnceResourceSatisfied
 	gangSummary.ScheduleCycleValid = gang.ScheduleCycleValid
 	gangSummary.ScheduleCycle = gang.ScheduleCycle
+	gangSummary.LastScheduleTime = gang.LastScheduleTime
 	gangSummary.GangFrom = gang.GangFrom
 	gangSummary.HasGangInit = gang.HasGangInit
 	gangSummary.GangGroup = append(gangSummary.GangGroup, gang.GangGroup...)
