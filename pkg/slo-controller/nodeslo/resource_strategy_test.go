@@ -28,6 +28,7 @@ import (
 	"k8s.io/utils/pointer"
 
 	"github.com/koordinator-sh/koordinator/apis/configuration"
+	"github.com/koordinator-sh/koordinator/apis/extension"
 	ext "github.com/koordinator-sh/koordinator/apis/extension"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/util/sloconfig"
@@ -812,12 +813,14 @@ func Test_getSystemConfigSpec(t *testing.T) {
 	defaultConfig := DefaultSLOCfg()
 	testingSystemConfig := &configuration.SystemCfg{
 		ClusterStrategy: &slov1alpha1.SystemStrategy{
-			MinFreeKbytesFactor: pointer.Int64(150),
+			MinFreeKbytesFactor:   pointer.Int64(150),
+			TotalNetworkBandwidth: resource.MustParse("10G"),
 		},
 	}
 	testingSystemConfig1 := &configuration.SystemCfg{
 		ClusterStrategy: &slov1alpha1.SystemStrategy{
-			MinFreeKbytesFactor: pointer.Int64(150),
+			MinFreeKbytesFactor:   pointer.Int64(150),
+			TotalNetworkBandwidth: resource.MustParse("100M"),
 		},
 		NodeStrategies: []configuration.NodeSystemStrategy{
 			{
@@ -829,7 +832,8 @@ func Test_getSystemConfigSpec(t *testing.T) {
 					},
 				},
 				SystemStrategy: &slov1alpha1.SystemStrategy{
-					MinFreeKbytesFactor: pointer.Int64(120),
+					MinFreeKbytesFactor:   pointer.Int64(120),
+					TotalNetworkBandwidth: resource.MustParse("10M"),
 				},
 			},
 			{
@@ -841,10 +845,15 @@ func Test_getSystemConfigSpec(t *testing.T) {
 					},
 				},
 				SystemStrategy: &slov1alpha1.SystemStrategy{
-					MinFreeKbytesFactor: pointer.Int64(130),
+					MinFreeKbytesFactor:   pointer.Int64(130),
+					TotalNetworkBandwidth: resource.MustParse("1000M"),
 				},
 			},
 		},
+	}
+	injectNodeBandwidth := func(systemStrategy *slov1alpha1.SystemStrategy, bandwidth resource.Quantity) *slov1alpha1.SystemStrategy {
+		systemStrategy.TotalNetworkBandwidth = bandwidth
+		return systemStrategy
 	}
 	type args struct {
 		node *corev1.Node
@@ -906,6 +915,39 @@ func Test_getSystemConfigSpec(t *testing.T) {
 				cfg: testingSystemConfig1,
 			},
 			want: testingSystemConfig1.NodeStrategies[0].SystemStrategy,
+		},
+		{
+			name: "use node-wise bandwidth config while use cluster strategy",
+			args: args{
+				node: &corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node",
+						Annotations: map[string]string{
+							extension.AnnotationNodeBandwidth: "99M",
+						},
+					},
+				},
+				cfg: testingSystemConfig,
+			},
+			want: injectNodeBandwidth(testingSystemConfig.ClusterStrategy.DeepCopy(), resource.MustParse("99M")),
+		},
+		{
+			name: "use node-wise bandwidth config while use node strategy",
+			args: args{
+				node: &corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node",
+						Labels: map[string]string{
+							"zzz": "zzz",
+						},
+						Annotations: map[string]string{
+							extension.AnnotationNodeBandwidth: "99M",
+						},
+					},
+				},
+				cfg: testingSystemConfig1,
+			},
+			want: injectNodeBandwidth(testingSystemConfig1.NodeStrategies[1].SystemStrategy.DeepCopy(), resource.MustParse("99M")),
 		},
 	}
 	for _, tt := range tests {
