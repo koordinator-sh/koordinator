@@ -133,30 +133,28 @@ func (cs *Coscheduling) Less(podInfo1, podInfo2 *framework.QueuedPodInfo) bool {
 		return subPrio1 > subPrio2
 	}
 
-	group1, _ := cs.pgMgr.GetGroupId(podInfo1.Pod)
-	group2, _ := cs.pgMgr.GetGroupId(podInfo2.Pod)
-
-	waitingBoundPodNum1 := cs.pgMgr.GetGangGroupWaitingBoundPodNum(podInfo1.Pod)
-	waitingBoundPodNum2 := cs.pgMgr.GetGangGroupWaitingBoundPodNum(podInfo2.Pod)
-	if waitingBoundPodNum1 != 0 || waitingBoundPodNum2 != 0 {
-		// At the same time, only member pod of one podGroup should be assumed, so we prefer the pod already having sibling assumed, then they can succeed together.
-		if waitingBoundPodNum1 == 0 || waitingBoundPodNum2 == 0 {
-			return waitingBoundPodNum1 != 0
-		}
-		/*
-			Two gang groups may both already have some assumed sibling pods.
-			For example:
-				1. GroupA has submitted 6 member, and have 5 already assumed;
-				2. then the sixth has been deleted;
-				3. then GroupB submitted its pods and have 3 already assumed;
-				4. GroupA submit the sixth pod
-			In this case, waitingPodNum will make no sense, so just sort it by group id to give fixed order.
-			Because no matter former succeed or fail, it's waitingPodNum will be zeroed. And the deadlock will be avoided
-		*/
-		return group1 < group2
+	lastScheduleTime1 := cs.pgMgr.GetGangGroupLastScheduleTimeOfPod(podInfo1.Pod, podInfo1.Timestamp)
+	lastScheduleTime2 := cs.pgMgr.GetGangGroupLastScheduleTimeOfPod(podInfo2.Pod, podInfo2.Timestamp)
+	if !lastScheduleTime1.Equal(lastScheduleTime2) {
+		return lastScheduleTime1.Before(lastScheduleTime2)
 	}
-	// If no pod succeed, we will schedule all pod by RoundRobin to assure fairness.
-	// If some time-consuming member pod of one gang failed, then it's sibling will fail soon(because scheduling cycle invalid), so no need to assure all sibling should fail together.
+	gangId1 := util.GetId(podInfo1.Pod.Namespace, util.GetGangNameByPod(podInfo1.Pod))
+	gangId2 := util.GetId(podInfo2.Pod.Namespace, util.GetGangNameByPod(podInfo2.Pod))
+	// for member gang of same gangGroup, the gang that haven’t been satisfied yet take precedence
+	if gangId1 != gangId2 {
+		isGang1Satisfied := cs.pgMgr.IsGangMinSatisfied(podInfo1.Pod)
+		isGang2Satisfied := cs.pgMgr.IsGangMinSatisfied(podInfo2.Pod)
+		if isGang1Satisfied != isGang2Satisfied {
+			return !isGang1Satisfied
+		}
+	} else {
+		// for member pod of same gang, the pod with the smaller scheduling cycle take precedence so that gang scheduling cycle can be valid and iterated
+		childScheduleCycle1 := cs.pgMgr.GetChildScheduleCycle(podInfo1.Pod)
+		childScheduleCycle2 := cs.pgMgr.GetChildScheduleCycle(podInfo2.Pod)
+		if childScheduleCycle1 != childScheduleCycle2 {
+			return childScheduleCycle1 < childScheduleCycle2
+		}
+	}
 	return podInfo1.Timestamp.Before(podInfo2.Timestamp)
 }
 

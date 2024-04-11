@@ -75,7 +75,10 @@ type Gang struct {
 	// we set the pod's cycle in `childrenScheduleRoundMap` equal with `scheduleCycle` and pass the check. If result is negative, means
 	// the pod has been scheduled in this cycle, so we should reject it. With `totalChildrenNum`'s help, when the last pod comes to make all
 	// `childrenScheduleRoundMap`'s values equal to `scheduleCycle`, Gang's `scheduleCycle` will be added by 1, which means a new schedule cycle.
-	ScheduleCycle            int
+	ScheduleCycle int
+	// Pods with the same priority are scheduled according to the scheduling time of the previous round to ensure fairness.
+	// For a Gang, its last round time as a whole is recorded as LastScheduleTime, that is, all Pods below it have the same time, which is LastScheduleTime.
+	LastScheduleTime         time.Time
 	ChildrenScheduleRoundMap map[string]int
 
 	GangFrom    string
@@ -98,6 +101,7 @@ func NewGang(gangName string) *Gang {
 		BoundChildren:            make(map[string]*v1.Pod),
 		ScheduleCycleValid:       true,
 		ScheduleCycle:            1,
+		LastScheduleTime:         timeNowFn(),
 		ChildrenScheduleRoundMap: make(map[string]int),
 		GangFrom:                 GangFromPodAnnotation,
 		HasGangInit:              false,
@@ -149,6 +153,7 @@ func (gang *Gang) tryInitByPodConfig(pod *v1.Pod, args *config.CoschedulingArgs)
 
 	// here we assume that Coscheduling's CreateTime equal with the pod's CreateTime
 	gang.CreateTime = pod.CreationTimestamp.Time
+	gang.LastScheduleTime = pod.CreationTimestamp.Time
 
 	waitTime, err := time.ParseDuration(pod.Annotations[extension.AnnotationGangWaitTime])
 	if err != nil || waitTime <= 0 {
@@ -215,6 +220,7 @@ func (gang *Gang) tryInitByPodGroup(pg *v1alpha1.PodGroup, args *config.Coschedu
 
 	// here we assume that Coscheduling's CreateTime equal with the podGroup CRD CreateTime
 	gang.CreateTime = pg.CreationTimestamp.Time
+	gang.LastScheduleTime = pg.CreationTimestamp.Time
 
 	waitTime := util.GetWaitTimeDuration(pg, args.DefaultTimeout.Duration)
 	gang.WaitTime = waitTime
@@ -382,6 +388,19 @@ func (gang *Gang) setScheduleCycleValid(valid bool) {
 	gang.lock.Lock()
 	defer gang.lock.Unlock()
 
+	if !valid && !gang.ScheduleCycleValid {
+		/*
+				let's explain why by following example, there are three gang of one group: A, B and C, every gang group have min-member of 10 pod, noted as A1-A10, B1-B10, C1-C10.
+				1. A1-A5 assumed in gangA scheduleCycle 1, B1-B5 assumed in gangA scheduleCycle 1, C1-C5 assumed in gangA scheduleCycle 1, C6 filter failed due to insufficient resource, then A6-10 failed due to cycle invalid, C7-C10 failed due to cycle invalid, B6-B9 failed due to cycle invalid
+				2. A1-A5 assumed in gangA scheduleCycle 2, C1-C5 assumed in gangA scheduleCycle 2, C6 failed due to insufficient resource and gangA\B\C cycle set to invalid,
+				3. then A6-A10,C7-C10 failed due to cycle invalid
+				4. then B10 failed due to cycle invalid, B1 comes and find its gang scheduling cycle 2 can be valid, so it's assumed.
+				5. however all it's sibling will come until next round of all gangs, these gangs will face insufficient resource due to pre-allocated of B10
+
+			TODO this logic can be optimized by give gangs of same group same scheduling cycle
+		*/
+		gang.ScheduleCycle += 1
+	}
 	gang.ScheduleCycleValid = valid
 	klog.Infof("SetScheduleCycleValid, gangName: %v, valid: %v", gang.Name, valid)
 }
@@ -493,4 +512,16 @@ func (gang *Gang) isGangValidForPermit() bool {
 	default:
 		return len(gang.WaitingForBindChildren) >= gang.MinRequiredNumber || gang.OnceResourceSatisfied == true
 	}
+}
+
+func (gang *Gang) getLastScheduleTime() time.Time {
+	gang.lock.Lock()
+	defer gang.lock.Unlock()
+	return gang.LastScheduleTime
+}
+
+func (gang *Gang) setLastScheduleTime(time time.Time) {
+	gang.lock.Lock()
+	defer gang.lock.Unlock()
+	gang.LastScheduleTime = time
 }

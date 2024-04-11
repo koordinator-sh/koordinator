@@ -73,7 +73,7 @@ type Manager interface {
 	GetGangSummaries() map[string]*GangSummary
 	IsGangMinSatisfied(*corev1.Pod) bool
 	GetChildScheduleCycle(*corev1.Pod) int
-	GetGangGroupWaitingBoundPodNum(pod *corev1.Pod) int
+	GetGangGroupLastScheduleTimeOfPod(pod *corev1.Pod, podLastScheduleTime time.Time) time.Time
 }
 
 // PodGroupManager defines the scheduling operation called
@@ -227,6 +227,7 @@ func (pgMgr *PodGroupManager) PreFilter(ctx context.Context, pod *corev1.Pod) er
 		return fmt.Errorf("can't find gang, gangName: %v, podName: %v", util.GetId(pod.Namespace, util.GetGangNameByPod(pod)),
 			util.GetId(pod.Namespace, pod.Name))
 	}
+	pgMgr.cache.setGangGroupLastScheduleTimeOfPod(pod.UID, gang.getLastScheduleTime())
 
 	// check if gang is initialized
 	if !gang.HasGangInit {
@@ -284,6 +285,9 @@ func (pgMgr *PodGroupManager) PostFilter(ctx context.Context, pod *corev1.Pod, h
 		klog.Warningf(message)
 		return &framework.PostFilterResult{}, framework.NewStatus(framework.Unschedulable, message)
 	}
+	defer func() {
+		pgMgr.cache.setGangGroupLastScheduleTimeOfPod(pod.UID, gang.getLastScheduleTime())
+	}()
 	if gang.getGangMatchPolicy() == extension.GangMatchPolicyOnceSatisfied && gang.isGangOnceResourceSatisfied() {
 		return &framework.PostFilterResult{}, framework.NewStatus(framework.Unschedulable)
 	}
@@ -350,6 +354,7 @@ func (pgMgr *PodGroupManager) Unreserve(ctx context.Context, state *framework.Cy
 		klog.Warningf("Pod %q missing Gang", klog.KObj(pod))
 		return
 	}
+	pgMgr.cache.setGangGroupLastScheduleTimeOfPod(pod.UID, gang.getLastScheduleTime())
 	// first delete the pod from gang's waitingFroBindChildren map
 	gang.delAssumedPod(pod)
 
@@ -370,25 +375,35 @@ func (pgMgr *PodGroupManager) rejectGangGroupById(handle framework.Handle, plugi
 	gangGroup := gang.getGangGroup()
 	gangSet := sets.NewString(gangGroup...)
 
-	rejectedPodCount := 0
 	if handle != nil {
-		handle.IterateOverWaitingPods(func(waitingPod framework.WaitingPod) {
-			waitingGangId := util.GetId(waitingPod.GetPod().Namespace, util.GetGangNameByPod(waitingPod.GetPod()))
-			if gangSet.Has(waitingGangId) {
-				klog.V(1).InfoS("GangGroup gets rejected due to member Gang is unschedulable",
-					"gang", gangId, "waitingGang", waitingGangId, "waitingPod", klog.KObj(waitingPod.GetPod()))
-				waitingPod.Reject(pluginName, message)
-				rejectedPodCount++
-			}
-		})
+		/*
+			let's explain why we need defer by following example, we have three gang of one gang group, noted as gangA, gangB and gangC,
+			the following is what happened when no defer.
+			1. gangB/C assumed, gangA failed
+			2. then gangA invoke PostFilter, reject gangB|gangC, gangB|gangC invoke unreserve asynchronously, i.e: invoke rejectGangGroupById concurrently
+			3. gangB or gangC maybe find it's scheduling cycle valid if it judges scheduling cycle before gang A reject it, then different lastScheduleTime is possible
+		*/
+		defer func() {
+			handle.IterateOverWaitingPods(func(waitingPod framework.WaitingPod) {
+				waitingGangId := util.GetId(waitingPod.GetPod().Namespace, util.GetGangNameByPod(waitingPod.GetPod()))
+				if gangSet.Has(waitingGangId) {
+					klog.V(1).InfoS("GangGroup gets rejected due to member Gang is unschedulable",
+						"gang", gangId, "waitingGang", waitingGangId, "waitingPod", klog.KObj(waitingPod.GetPod()))
+					waitingPod.Reject(pluginName, message)
+				}
+			})
+		}()
 	}
-	if rejectedPodCount == 0 {
+	if !gang.isScheduleCycleValid() {
+		// In a schedule cycle, one gang can only reject its self and sibling gang once
 		return
 	}
+	gangGroupLastScheduleTime := timeNowFn()
 	for gang := range gangSet {
 		gangIns := pgMgr.cache.getGangFromCacheByGangId(gang, false)
 		if gangIns != nil {
 			gangIns.setScheduleCycleValid(false)
+			gangIns.setLastScheduleTime(gangGroupLastScheduleTime)
 		}
 	}
 }
@@ -405,6 +420,7 @@ func (pgMgr *PodGroupManager) PostBind(ctx context.Context, pod *corev1.Pod, nod
 	}
 	// first update gang in cache
 	gang.addBoundPod(pod)
+	pgMgr.cache.deleteGangGroupLastScheduleTimeOfPod(pod)
 
 	//  update PodGroup
 	_, pg := pgMgr.GetPodGroup(pod)
@@ -554,18 +570,10 @@ func (pgMgr *PodGroupManager) GetChildScheduleCycle(pod *corev1.Pod) int {
 	return gang.getChildScheduleCycle(pod)
 }
 
-func (pgMgr *PodGroupManager) GetGangGroupWaitingBoundPodNum(pod *corev1.Pod) int {
-	gang := pgMgr.GetGangByPod(pod)
-	if gang == nil {
-		return 0
+func (pgMgr *PodGroupManager) GetGangGroupLastScheduleTimeOfPod(pod *corev1.Pod, podLastScheduleTime time.Time) time.Time {
+	gangGroupLastScheduleTime := pgMgr.cache.getGangGroupLastScheduleTimeOfPod(pod.UID)
+	if gangGroupLastScheduleTime != nil {
+		return *gangGroupLastScheduleTime
 	}
-	gangGroup := gang.GangGroup
-	waitingPodNum := 0
-	for _, memberGangID := range gangGroup {
-		memberGang := pgMgr.cache.getGangFromCacheByGangId(memberGangID, false)
-		if memberGang != nil {
-			waitingPodNum += memberGang.getGangWaitingPods()
-		}
-	}
-	return waitingPodNum
+	return podLastScheduleTime
 }

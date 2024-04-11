@@ -110,6 +110,7 @@ func TestEndpointsQueryGangInfo(t *testing.T) {
 		gangMarshal := &core.GangSummary{}
 		err = json.NewDecoder(w.Result().Body).Decode(gangMarshal)
 		assert.NoError(t, err)
+		gangMarshal.LastScheduleTime = gangExpected.LastScheduleTime
 		assert.Equal(t, &gangExpected, gangMarshal)
 	}
 	{
@@ -122,6 +123,7 @@ func TestEndpointsQueryGangInfo(t *testing.T) {
 		gangMarshalMap := make(map[string]*core.GangSummary)
 		err = json.Unmarshal([]byte(w.Body.String()), &gangMarshalMap)
 		assert.NoError(t, err)
+		gangMarshalMap["ganga_ns/ganga"].LastScheduleTime = gangExpected.LastScheduleTime
 		assert.Equal(t, &gangExpected, gangMarshalMap["ganga_ns/ganga"])
 	}
 }
