@@ -140,20 +140,15 @@ func (cs *Coscheduling) Less(podInfo1, podInfo2 *framework.QueuedPodInfo) bool {
 	}
 	gangId1 := util.GetId(podInfo1.Pod.Namespace, util.GetGangNameByPod(podInfo1.Pod))
 	gangId2 := util.GetId(podInfo2.Pod.Namespace, util.GetGangNameByPod(podInfo2.Pod))
-	// for member gang of same gangGroup, the gang that haven’t been satisfied yet take precedence
+
 	if gangId1 != gangId2 {
-		isGang1Satisfied := cs.pgMgr.IsGangMinSatisfied(podInfo1.Pod)
-		isGang2Satisfied := cs.pgMgr.IsGangMinSatisfied(podInfo2.Pod)
-		if isGang1Satisfied != isGang2Satisfied {
-			return !isGang1Satisfied
-		}
-	} else {
-		// for member pod of same gang, the pod with the smaller scheduling cycle take precedence so that gang scheduling cycle can be valid and iterated
-		childScheduleCycle1 := cs.pgMgr.GetChildScheduleCycle(podInfo1.Pod)
-		childScheduleCycle2 := cs.pgMgr.GetChildScheduleCycle(podInfo2.Pod)
-		if childScheduleCycle1 != childScheduleCycle2 {
-			return childScheduleCycle1 < childScheduleCycle2
-		}
+		return gangId1 < gangId2
+	}
+	// for member pod of same gang, the pod with the smaller scheduling cycle take precedence so that gang scheduling cycle can be valid and iterated
+	childScheduleCycle1 := cs.pgMgr.GetChildScheduleCycle(podInfo1.Pod)
+	childScheduleCycle2 := cs.pgMgr.GetChildScheduleCycle(podInfo2.Pod)
+	if childScheduleCycle1 != childScheduleCycle2 {
+		return childScheduleCycle1 < childScheduleCycle2
 	}
 	return podInfo1.Timestamp.Before(podInfo2.Timestamp)
 }
