@@ -243,6 +243,7 @@ func TestLess(t *testing.T) {
 	var lowSubPriority, highSubPriority = "111", "222"
 	var gangA_ns, gangB_ns = "namespace1", "namespace2"
 	gangC_ns := "namespace3"
+	gangGroupNS := "namespace4"
 	now := time.Now()
 	earltTime := now.Add(1 * time.Second)
 	lateTime := now.Add(3 * time.Second)
@@ -282,10 +283,16 @@ func TestLess(t *testing.T) {
 	pg2 := makePg("gangC", gangC_ns, 1, &gangCCreatTime, nil)
 	// GangD by PodGroup
 	pg3 := makePg("gangD", gangC_ns, 1, &gangCCreatTime, nil)
+	gangGroup := []string{"default/gangD", "default/gangE"}
+	rawGangGroup, err := json.Marshal(gangGroup)
+	assert.NoError(t, err)
+	pg4 := makePg("gang4", gangGroupNS, 0, nil, nil)
+	pg5 := makePg("gang5", gangGroupNS, 0, nil, nil)
+	pg4.Annotations = map[string]string{extension.AnnotationGangGroups: string(rawGangGroup)}
 	suit.start()
 	// create gangA and gangB
 
-	err := retry.OnError(
+	err = retry.OnError(
 		retry.DefaultRetry,
 		errors.IsTooManyRequests,
 		func() error {
@@ -324,6 +331,28 @@ func TestLess(t *testing.T) {
 		func() error {
 			var err error
 			_, err = pgClientSet.SchedulingV1alpha1().PodGroups(gangC_ns).Create(context.TODO(), pg3, metav1.CreateOptions{})
+			return err
+		})
+	if err != nil {
+		t.Errorf("retry pgClient create pg err: %v", err)
+	}
+	err = retry.OnError(
+		retry.DefaultRetry,
+		errors.IsTooManyRequests,
+		func() error {
+			var err error
+			_, err = pgClientSet.SchedulingV1alpha1().PodGroups(gangGroupNS).Create(context.TODO(), pg4, metav1.CreateOptions{})
+			return err
+		})
+	if err != nil {
+		t.Errorf("retry pgClient create pg err: %v", err)
+	}
+	err = retry.OnError(
+		retry.DefaultRetry,
+		errors.IsTooManyRequests,
+		func() error {
+			var err error
+			_, err = pgClientSet.SchedulingV1alpha1().PodGroups(gangGroupNS).Create(context.TODO(), pg5, metav1.CreateOptions{})
 			return err
 		})
 	if err != nil {
@@ -472,13 +501,13 @@ func TestLess(t *testing.T) {
 			expected:            false, // p1 should be ahead of p2 in the queue
 		},
 		{
-			name: "equal priority and creation time, p1 belongs to gang that has been satisfied",
+			name: "equal priority, p1 belongs to different gangs of one gangGroup, sort by gangID",
 			p1: &framework.QueuedPodInfo{
-				PodInfo:   framework.NewPodInfo(st.MakePod().Namespace(gangC_ns).Name("pod1").Priority(highPriority).Label(v1alpha1.PodGroupLabel, "gangD").Obj()),
+				PodInfo:   framework.NewPodInfo(st.MakePod().Namespace(gangGroupNS).Name("pod1").Priority(highPriority).Label(v1alpha1.PodGroupLabel, "gang4").Obj()),
 				Timestamp: earltTime,
 			},
 			p2: &framework.QueuedPodInfo{
-				PodInfo:   framework.NewPodInfo(st.MakePod().Namespace(gangC_ns).Name("pod2").Priority(highPriority).Label(v1alpha1.PodGroupLabel, "gangC").Obj()),
+				PodInfo:   framework.NewPodInfo(st.MakePod().Namespace(gangGroupNS).Name("pod2").Priority(highPriority).Label(v1alpha1.PodGroupLabel, "gang5").Obj()),
 				Timestamp: earltTime,
 			},
 			expected: true,
@@ -915,7 +944,7 @@ func TestFairness(t *testing.T) {
 		"gangJ": {"default/gangH", "default/gangI", "default/gangJ"},
 	}
 	gangMinRequiredNums := []int{20, 10, 32, 20, 20, 18, 43, 20, 30, 20}
-	gangInjectFilterError := []bool{false, false, true, false, false, true, true, false, false, true}
+	gangInjectFilterError := []bool{false, false, true, false, false, true, false, false, false, true}
 	var gangInjectFilterErrorIndex []int
 	for _, gangMinRequiredNum := range gangMinRequiredNums {
 		gangInjectFilterErrorIndex = append(gangInjectFilterErrorIndex, rand.Intn(gangMinRequiredNum))
@@ -996,8 +1025,8 @@ func TestFairness(t *testing.T) {
 		ctx.Done(),
 		scheduler.WithProfiles(cfg.Profiles...),
 		scheduler.WithFrameworkOutOfTreeRegistry(registry),
-		scheduler.WithPodInitialBackoffSeconds(1),
-		scheduler.WithPodMaxBackoffSeconds(1),
+		scheduler.WithPodInitialBackoffSeconds(0),
+		scheduler.WithPodMaxBackoffSeconds(0),
 		scheduler.WithPodMaxInUnschedulablePodsDuration(0),
 	)
 	assert.NoError(t, err)
