@@ -390,12 +390,9 @@ func (gang *Gang) setScheduleCycleValid(valid bool) {
 
 	if !valid && !gang.ScheduleCycleValid {
 		/*
-				let's explain why by following example, there are three gang of one group: A, B and C, every gang group have min-member of 10 pod, noted as A1-A10, B1-B10, C1-C10.
-				1. A1-A5 assumed in gangA scheduleCycle 1, B1-B5 assumed in gangA scheduleCycle 1, C1-C5 assumed in gangA scheduleCycle 1, C6 filter failed due to insufficient resource, then A6-10 failed due to cycle invalid, C7-C10 failed due to cycle invalid, B6-B9 failed due to cycle invalid
-				2. A1-A5 assumed in gangA scheduleCycle 2, C1-C5 assumed in gangA scheduleCycle 2, C6 failed due to insufficient resource and gangA\B\C cycle set to invalid,
-				3. then A6-A10,C7-C10 failed due to cycle invalid
-				4. then B10 failed due to cycle invalid, B1 comes and find its gang scheduling cycle 2 can be valid, so it's assumed.
-				5. however all it's sibling will come until next round of all gangs, these gangs will face insufficient resource due to pre-allocated of B10
+			let's explain why by following example, there are three gang of one group: F, G, every gang group have min-member of 10 pod, noted as F1-F10, G1-G10.
+			1. F1 failed due to insufficient resource, F2-F10 failed due to cycle invalid,
+			2. then G1-G10 assumed, however all it's sibling will come until next round of all gangs, these gangs will face insufficient resource due to pre-allocated of G1-G10
 
 			TODO this logic can be optimized by give gangs of same group same scheduling cycle
 		*/
