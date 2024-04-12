@@ -25,6 +25,7 @@ import (
 	"k8s.io/klog/v2"
 
 	"github.com/koordinator-sh/koordinator/apis/configuration"
+	"github.com/koordinator-sh/koordinator/apis/extension"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
@@ -79,6 +80,9 @@ func getCPUBurstConfigSpec(node *corev1.Node, cfg *configuration.CPUBurstCfg) (*
 }
 
 func getSystemConfigSpec(node *corev1.Node, cfg *configuration.SystemCfg) (*slov1alpha1.SystemStrategy, error) {
+	var nodeSystemConfig *slov1alpha1.SystemStrategy
+
+	// Find strategy that matches current node.
 	nodeLabels := labels.Set(node.Labels)
 	for _, nodeStrategy := range cfg.NodeStrategies {
 		selector, err := metav1.LabelSelectorAsSelector(nodeStrategy.NodeSelector)
@@ -87,11 +91,29 @@ func getSystemConfigSpec(node *corev1.Node, cfg *configuration.SystemCfg) (*slov
 			continue
 		}
 		if selector.Matches(nodeLabels) {
-			return nodeStrategy.SystemStrategy.DeepCopy(), nil
+			nodeSystemConfig = nodeStrategy.SystemStrategy.DeepCopy()
+			break
 		}
-
 	}
-	return cfg.ClusterStrategy.DeepCopy(), nil
+
+	// If there is no matched node strategy, use cluster strategy.
+	if nodeSystemConfig == nil {
+		nodeSystemConfig = cfg.ClusterStrategy.DeepCopy()
+	}
+
+	// Check whether node bandwidth is specified on current node, which takes HIGHER priority
+	// than ones configured in cluster strategy or node strategy.
+	// Error is returned if failed to parse node total bandwidth from annotation, which is not
+	// supposed to happen because we will check the validity of the annotation value in node
+	// plugins of validating webhook.
+	if nodeBandwidthQuantity, err := extension.GetNodeTotalBandwidth(node.Annotations); err != nil {
+		klog.Errorf("failed to get node total bandwidth from annotation, error: %v", err)
+		return nil, err
+	} else if nodeBandwidthQuantity != nil {
+		nodeSystemConfig.TotalNetworkBandwidth = *nodeBandwidthQuantity
+	}
+
+	return nodeSystemConfig, nil
 }
 
 func getHostApplicationConfig(node *corev1.Node, cfg *configuration.HostApplicationCfg) ([]slov1alpha1.HostApplicationSpec, error) {
