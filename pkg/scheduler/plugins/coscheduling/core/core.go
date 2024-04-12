@@ -59,7 +59,7 @@ const (
 
 // Manager defines the interfaces for PodGroup management.
 type Manager interface {
-	PreFilter(context.Context, *corev1.Pod) error
+	PreFilter(context.Context, *corev1.Pod) (err error, scheduleCycleInvalid bool)
 	Permit(context.Context, *corev1.Pod) (time.Duration, Status)
 	PostBind(context.Context, *corev1.Pod, string)
 	PostFilter(context.Context, *corev1.Pod, framework.Handle, string, framework.NodeToStatusMap) (*framework.PostFilterResult, *framework.Status)
@@ -218,35 +218,35 @@ func (pgMgr *PodGroupManager) ActivateSiblings(pod *corev1.Pod, state *framework
 // iii.Check whether the Gang is OnceResourceSatisfied
 // iv.Check whether the Gang has met the scheduleCycleValid check, and reject the pod if negative(only Strict mode ).
 // v.Try update scheduleCycle, scheduleCycleValid, childrenScheduleRoundMap as mentioned above.
-func (pgMgr *PodGroupManager) PreFilter(ctx context.Context, pod *corev1.Pod) error {
+func (pgMgr *PodGroupManager) PreFilter(ctx context.Context, pod *corev1.Pod) (err error, scheduleCycleInvalid bool) {
 	if !util.IsPodNeedGang(pod) {
-		return nil
+		return nil, false
 	}
 	gang := pgMgr.GetGangByPod(pod)
 	if gang == nil {
 		return fmt.Errorf("can't find gang, gangName: %v, podName: %v", util.GetId(pod.Namespace, util.GetGangNameByPod(pod)),
-			util.GetId(pod.Namespace, pod.Name))
+			util.GetId(pod.Namespace, pod.Name)), false
 	}
 	pgMgr.cache.setGangGroupLastScheduleTimeOfPod(pod.UID, gang.getLastScheduleTime())
 
 	// check if gang is initialized
 	if !gang.HasGangInit {
 		return fmt.Errorf("gang has not init, gangName: %v, podName: %v", gang.Name,
-			util.GetId(pod.Namespace, pod.Name))
+			util.GetId(pod.Namespace, pod.Name)), false
 	}
 	// resourceSatisfied means pod will directly pass the PreFilter
 	if gang.getGangMatchPolicy() == extension.GangMatchPolicyOnceSatisfied && gang.isGangOnceResourceSatisfied() {
-		return nil
+		return nil, false
 	}
 
 	// check minNum
 	if gang.getChildrenNum() < gang.getGangMinNum() {
 		return fmt.Errorf("gang child pod not collect enough, gangName: %v, podName: %v", gang.Name,
-			util.GetId(pod.Namespace, pod.Name))
+			util.GetId(pod.Namespace, pod.Name)), false
 	}
 
 	if pgMgr.args != nil && pgMgr.args.SkipCheckScheduleCycle {
-		return nil
+		return nil, false
 	}
 
 	// first try update the global cycle of gang
@@ -257,19 +257,19 @@ func (pgMgr *PodGroupManager) PreFilter(ctx context.Context, pod *corev1.Pod) er
 	gangMode := gang.getGangMode()
 	if gangMode == extension.GangModeStrict {
 		if pod.Status.NominatedNodeName != "" {
-			return nil
+			return nil, false
 		}
 		podScheduleCycle := gang.getChildScheduleCycle(pod)
 		if !gang.isScheduleCycleValid() {
 			return fmt.Errorf("gang scheduleCycle not valid, gangName: %v, podName: %v",
-				gang.Name, util.GetId(pod.Namespace, pod.Name))
+				gang.Name, util.GetId(pod.Namespace, pod.Name)), true
 		}
 		if podScheduleCycle >= gangScheduleCycle {
 			return fmt.Errorf("pod's schedule cycle too large, gangName: %v, podName: %v, podCycle: %v, gangCycle: %v",
-				gang.Name, util.GetId(pod.Namespace, pod.Name), podScheduleCycle, gangScheduleCycle)
+				gang.Name, util.GetId(pod.Namespace, pod.Name), podScheduleCycle, gangScheduleCycle), false
 		}
 	}
-	return nil
+	return nil, false
 }
 
 // PostFilter
