@@ -1335,3 +1335,117 @@ func TestDeadLockFree(t *testing.T) {
 		klog.Infoln(info)
 	}
 }
+
+func TestNoRejectWhenInvalidCycle(t *testing.T) {
+	gangNames := []string{"gangA", "gangB"}
+	gangGroups := map[string][]string{
+		"gangA": {"default/gangA", "default/gangB"},
+		"gangB": {"default/gangA", "default/gangB"},
+	}
+	gangMinRequiredNums := []int{1, 2}
+
+	podGroupCRs := map[string]*v1alpha1.PodGroup{}
+	memberPodsOfGang := map[string][]*corev1.Pod{}
+	var allPods []*corev1.Pod
+	for i, gangName := range gangNames {
+		gangID := util.GetId("default", gangName)
+
+		podGroup := makePg(gangName, "default", int32(gangMinRequiredNums[i]), nil, nil)
+		podGroup.Spec.ScheduleTimeoutSeconds = pointer.Int32(3600)
+		gangGroup := gangGroups[gangName]
+		rawGangGroup, err := json.Marshal(gangGroup)
+		assert.NoError(t, err)
+		podGroup.Annotations = map[string]string{extension.AnnotationGangGroups: string(rawGangGroup)}
+		podGroupCRs[gangID] = podGroup
+
+		for j := 0; j < gangMinRequiredNums[i]; j++ {
+			memberPodOfGang := st.MakePod().
+				Namespace("default").
+				Name(fmt.Sprintf("%s_%d", gangName, j)).
+				UID(fmt.Sprintf("%s_%d", gangName, j)).
+				Label(v1alpha1.PodGroupLabel, gangName).
+				SchedulerName("koord-scheduler").Obj()
+			memberPodsOfGang[gangID] = append(memberPodsOfGang[gangID], memberPodOfGang)
+			allPods = append(allPods, memberPodOfGang)
+		}
+	}
+
+	pgClientSet := fakepgclientset.NewSimpleClientset()
+	cs := kubefake.NewSimpleClientset()
+	for _, podGroupCR := range podGroupCRs {
+		_, err := pgClientSet.SchedulingV1alpha1().PodGroups(podGroupCR.Namespace).Create(context.Background(), podGroupCR, metav1.CreateOptions{})
+		assert.NoError(t, err)
+	}
+	rand.Shuffle(len(allPods), func(i, j int) {
+		allPods[i], allPods[j] = allPods[j], allPods[i]
+	})
+	for _, pod := range allPods {
+		_, err := cs.CoreV1().Pods(pod.Namespace).Create(context.TODO(), pod, metav1.CreateOptions{})
+		assert.NoError(t, err)
+	}
+
+	cfg := configtesting.V1beta3ToInternalWithDefaults(t, v1beta3.KubeSchedulerConfiguration{
+		Profiles: []v1beta3.KubeSchedulerProfile{{
+			SchedulerName: pointer.StringPtr("koord-scheduler"),
+			Plugins: &v1beta3.Plugins{
+				QueueSort: v1beta3.PluginSet{
+					Enabled: []v1beta3.Plugin{
+						{Name: "fakeQueueSortPlugin"},
+					},
+					Disabled: []v1beta3.Plugin{
+						{Name: "*"},
+					},
+				},
+			},
+		}}})
+
+	suit := newPluginTestSuit(t, nil, pgClientSet, cs)
+	registry := frameworkruntime.Registry{
+		"fakeQueueSortPlugin": func(_ apiruntime.Object, fh framework.Handle) (framework.Plugin, error) {
+			return suit.plugin.(framework.QueueSortPlugin), nil
+		},
+	}
+
+	eventBroadcaster := events.NewBroadcaster(&events.EventSinkImpl{Interface: cs.EventsV1()})
+	ctx := context.TODO()
+	sched, err := scheduler.New(cs,
+		suit.SharedInformerFactory(),
+		nil,
+		profile.NewRecorderFactory(eventBroadcaster),
+		ctx.Done(),
+		scheduler.WithProfiles(cfg.Profiles...),
+		scheduler.WithFrameworkOutOfTreeRegistry(registry),
+		scheduler.WithPodInitialBackoffSeconds(1),
+		scheduler.WithPodMaxBackoffSeconds(1),
+		scheduler.WithPodMaxInUnschedulablePodsDuration(0),
+	)
+
+	assert.NoError(t, err)
+	eventBroadcaster.StartRecordingToSink(ctx.Done())
+	suit.start()
+	sched.SchedulingQueue.Run()
+
+	var scheduleOrder []*debugPodScheduleInfo
+
+	_, status := suit.plugin.(*Coscheduling).PostFilter(ctx, framework.NewCycleState(), allPods[0], nil)
+	assert.False(t, status.IsSuccess())
+
+	_, status = suit.plugin.(*Coscheduling).PreFilter(ctx, framework.NewCycleState(), memberPodsOfGang[util.GetId("default", gangNames[0])][0])
+	assert.False(t, status.IsSuccess())
+
+	for i := 0; i < 5; i++ {
+		for j := 0; j < len(allPods); j++ {
+			if len(sched.SchedulingQueue.PendingPods()) == 0 {
+				break
+			}
+
+			simulateScheduleOne(t, ctx, sched, suit, &scheduleOrder, func(pod *corev1.Pod) bool {
+				return false
+			})
+		}
+	}
+	assert.Equal(t, 0, len(sched.SchedulingQueue.PendingPods()))
+	for _, info := range scheduleOrder {
+		klog.Infoln(info)
+	}
+}
