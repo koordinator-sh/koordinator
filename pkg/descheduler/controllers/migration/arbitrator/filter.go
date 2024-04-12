@@ -137,7 +137,10 @@ func (f *filter) initFilters(args *deschedulerconfig.MigrationControllerArgs, ha
 	f.retryablePodFilter = func(pod *corev1.Pod) bool {
 		return evictionsutil.HaveEvictAnnotation(pod) || retriablePodFilters(pod)
 	}
-	f.nonRetryablePodFilter = podFilter
+	f.nonRetryablePodFilter = func(pod *corev1.Pod) bool {
+		// any annotated as evictable pod pass non-retryable filter
+		return evictionsutil.HaveEvictAnnotation(pod) || podFilter(pod)
+	}
 	f.defaultFilterPlugin = defaultEvictor.(framework.FilterPlugin)
 	return nil
 }
