@@ -443,6 +443,8 @@ func TestGroupQuotaManager_UpdateGroupDeltaUsedAndNonPreemptibleUsed(t *testing.
 	assert.NotNil(t, quotaInfo)
 	assert.Equal(t, used, quotaInfo.CalculateInfo.Used)
 	assert.Equal(t, nonPreemptibleUsed, quotaInfo.CalculateInfo.NonPreemptibleUsed)
+	assert.Equal(t, nonPreemptibleUsed, quotaInfo.CalculateInfo.SelfNonPreemptibleUsed)
+	assert.Equal(t, used, quotaInfo.CalculateInfo.SelfUsed)
 
 	// 2. used increases to [130,300]
 	used = createResourceList(10, 10*GigaByte)
@@ -452,6 +454,8 @@ func TestGroupQuotaManager_UpdateGroupDeltaUsedAndNonPreemptibleUsed(t *testing.
 	assert.NotNil(t, quotaInfo)
 	assert.Equal(t, createResourceList(130, 300*GigaByte), quotaInfo.CalculateInfo.Used)
 	assert.Equal(t, createResourceList(30, 40*GigaByte), quotaInfo.CalculateInfo.NonPreemptibleUsed)
+	assert.Equal(t, createResourceList(130, 300*GigaByte), quotaInfo.CalculateInfo.SelfUsed)
+	assert.Equal(t, createResourceList(30, 40*GigaByte), quotaInfo.CalculateInfo.SelfNonPreemptibleUsed)
 
 	// 3. used decreases to [90,100]
 	used = createResourceList(-40, -200*GigaByte)
@@ -461,6 +465,8 @@ func TestGroupQuotaManager_UpdateGroupDeltaUsedAndNonPreemptibleUsed(t *testing.
 	assert.NotNil(t, quotaInfo)
 	assert.Equal(t, createResourceList(90, 100*GigaByte), quotaInfo.CalculateInfo.Used)
 	assert.Equal(t, createResourceList(15, 20*GigaByte), quotaInfo.CalculateInfo.NonPreemptibleUsed)
+	assert.Equal(t, createResourceList(90, 100*GigaByte), quotaInfo.CalculateInfo.SelfUsed)
+	assert.Equal(t, createResourceList(15, 20*GigaByte), quotaInfo.CalculateInfo.SelfNonPreemptibleUsed)
 }
 
 func TestGroupQuotaManager_MultiQuotaAdd(t *testing.T) {
@@ -797,6 +803,24 @@ func TestGroupQuotaManager_UpdateQuotaParentName(t *testing.T) {
 	request := createResourceList(60, 100*GigaByte)
 	gqm.updateGroupDeltaRequestNoLock("a-123", request, request)
 	gqm.updateGroupDeltaUsedNoLock("a-123", request, createResourceList(0, 0))
+	qi1 := gqm.GetQuotaInfoByName("test1")
+	qi2 := gqm.GetQuotaInfoByName("test1-a")
+	qi3 := gqm.GetQuotaInfoByName("a-123")
+	qi4 := gqm.GetQuotaInfoByName("test2")
+	qi5 := gqm.GetQuotaInfoByName("test2-a")
+	assert.Equal(t, request, qi1.CalculateInfo.Request)
+	assert.Equal(t, request, qi1.CalculateInfo.Used)
+	assert.Equal(t, request, qi2.CalculateInfo.Request)
+	assert.Equal(t, request, qi2.CalculateInfo.Used)
+	assert.Equal(t, request, qi3.CalculateInfo.SelfRequest)
+	assert.Equal(t, request, qi3.CalculateInfo.SelfUsed)
+	assert.Equal(t, v1.ResourceList{}, qi1.CalculateInfo.SelfRequest)
+	assert.Equal(t, v1.ResourceList{}, qi1.CalculateInfo.SelfUsed)
+	assert.Equal(t, v1.ResourceList{}, qi2.CalculateInfo.SelfRequest)
+	assert.Equal(t, v1.ResourceList{}, qi2.CalculateInfo.SelfUsed)
+	assert.Equal(t, request, qi3.CalculateInfo.SelfRequest)
+	assert.Equal(t, request, qi3.CalculateInfo.SelfUsed)
+
 	runtime := gqm.RefreshRuntime("a-123")
 	assert.Equal(t, request, runtime)
 
@@ -810,6 +834,15 @@ func TestGroupQuotaManager_UpdateQuotaParentName(t *testing.T) {
 	request = createResourceList(20, 40*GigaByte)
 	gqm.updateGroupDeltaRequestNoLock("test2-a", request, request)
 	gqm.updateGroupDeltaUsedNoLock("test2-a", request, createResourceList(0, 0))
+	assert.Equal(t, request, qi4.CalculateInfo.Request)
+	assert.Equal(t, request, qi4.CalculateInfo.Used)
+	assert.Equal(t, request, qi5.CalculateInfo.Request)
+	assert.Equal(t, request, qi5.CalculateInfo.Used)
+	assert.Equal(t, v1.ResourceList{}, qi4.CalculateInfo.SelfRequest)
+	assert.Equal(t, v1.ResourceList{}, qi4.CalculateInfo.SelfUsed)
+	assert.Equal(t, request, qi5.CalculateInfo.SelfRequest)
+	assert.Equal(t, request, qi5.CalculateInfo.SelfUsed)
+
 	runtime = gqm.RefreshRuntime("test2-a")
 	assert.Equal(t, request, runtime)
 
@@ -1373,15 +1406,23 @@ func TestGroupQuotaManager_UpdatePodCache_UpdatePodIsAssigned_GetPodIsAssigned_U
 	gqm.updatePodRequestNoLock("1", nil, pod1)
 	assert.Equal(t, createResourceList(10, 10), gqm.GetQuotaInfoByName("1").GetRequest())
 	assert.Equal(t, createResourceList(10, 10), gqm.GetQuotaInfoByName("1").GetNonPreemptibleRequest())
+	assert.Equal(t, createResourceList(10, 10), gqm.GetQuotaInfoByName("1").GetSelfRequest())
+	assert.Equal(t, createResourceList(10, 10), gqm.GetQuotaInfoByName("1").GetSelfNonPreemptibleRequest())
 	gqm.updatePodUsedNoLock("2", nil, pod1)
 	assert.Equal(t, createResourceList(10, 10), gqm.GetQuotaInfoByName("2").GetUsed())
 	assert.Equal(t, createResourceList(10, 10), gqm.GetQuotaInfoByName("2").GetNonPreemptibleUsed())
+	assert.Equal(t, createResourceList(10, 10), gqm.GetQuotaInfoByName("2").GetSelfUsed())
+	assert.Equal(t, createResourceList(10, 10), gqm.GetQuotaInfoByName("2").GetSelfNonPreemptibleUsed())
 	gqm.updatePodRequestNoLock("1", pod1, nil)
 	assert.Equal(t, createResourceList(0, 0), gqm.GetQuotaInfoByName("1").GetRequest())
 	assert.Equal(t, createResourceList(0, 0), gqm.GetQuotaInfoByName("1").GetNonPreemptibleRequest())
+	assert.Equal(t, createResourceList(0, 0), gqm.GetQuotaInfoByName("1").GetSelfRequest())
+	assert.Equal(t, createResourceList(0, 0), gqm.GetQuotaInfoByName("1").GetSelfNonPreemptibleRequest())
 	gqm.updatePodUsedNoLock("2", pod1, nil)
 	assert.Equal(t, createResourceList(0, 0), gqm.GetQuotaInfoByName("2").GetUsed())
 	assert.Equal(t, createResourceList(0, 0), gqm.GetQuotaInfoByName("2").GetNonPreemptibleUsed())
+	assert.Equal(t, createResourceList(0, 0), gqm.GetQuotaInfoByName("2").GetSelfUsed())
+	assert.Equal(t, createResourceList(0, 0), gqm.GetQuotaInfoByName("2").GetSelfNonPreemptibleUsed())
 }
 
 func TestGroupQuotaManager_OnPodUpdate(t *testing.T) {
@@ -1838,4 +1879,51 @@ func TestUpdateQuotaInternalNoLock(t *testing.T) {
 	// the parent should guarantee children min
 	assert.Equal(t, createResourceList(25, 25), gqm.GetQuotaInfoByName("1").GetAllocated())
 	assert.Equal(t, createResourceList(25, 25), gqm.GetQuotaInfoByName("1").GetGuaranteed())
+}
+
+func TestUpdateQuotaInternalNoLock_ParenstSelf(t *testing.T) {
+	gqm := NewGroupQuotaManagerForTest()
+	gqm.scaleMinQuotaEnabled = true
+	gqm.UpdateClusterTotalResource(createResourceList(50, 50))
+
+	// quota1 Max[40, 40]  Min[20,20] request[0,0]
+	//   |-- quota2 Max[30, 20]  Min[10,10] request[0,0]
+	//   |-- quota3 Max[20, 10]  Min[5,5] request[0,0]
+	eq1 := createQuota("1", extension.RootQuotaName, 40, 40, 20, 20)
+	eq2 := createQuota("2", "1", 30, 10, 10, 10)
+	eq3 := createQuota("3", "1", 20, 10, 5, 5)
+	eq4 := createQuota("4", "2", 30, 10, 10, 10)
+	gqm.UpdateQuota(eq1, false)
+	gqm.UpdateQuota(eq2, false)
+	gqm.UpdateQuota(eq3, false)
+	gqm.UpdateQuota(eq4, false)
+
+	qi1, qi2, qi3, qi4 := gqm.GetQuotaInfoByName(eq1.Name), gqm.GetQuotaInfoByName(eq2.Name), gqm.GetQuotaInfoByName(eq3.Name), gqm.GetQuotaInfoByName(eq4.Name)
+
+	qi2.CalculateInfo.SelfRequest = createResourceList(20, 20)
+	qi3.CalculateInfo.ChildRequest = createResourceList(20, 20)
+	qi4.CalculateInfo.ChildRequest = createResourceList(20, 20)
+	qi2.CalculateInfo.SelfNonPreemptibleRequest = createResourceList(10, 10)
+	qi3.CalculateInfo.NonPreemptibleRequest = createResourceList(5, 5)
+	qi4.CalculateInfo.NonPreemptibleRequest = createResourceList(10, 10)
+
+	gqm.updateQuotaGroupConfigNoLock()
+
+	assert.Equal(t, createResourceList(10, 10), qi4.CalculateInfo.SelfNonPreemptibleRequest)
+	assert.Equal(t, createResourceList(20, 20), qi4.CalculateInfo.SelfRequest)
+	assert.Equal(t, createResourceList(5, 5), qi3.CalculateInfo.SelfNonPreemptibleRequest)
+	assert.Equal(t, createResourceList(20, 20), qi3.CalculateInfo.SelfRequest)
+	assert.Equal(t, createResourceList(10, 10), qi2.CalculateInfo.SelfNonPreemptibleRequest)
+	assert.Equal(t, createResourceList(20, 20), qi2.CalculateInfo.SelfRequest)
+	assert.Equal(t, v1.ResourceList{}, qi1.CalculateInfo.SelfNonPreemptibleRequest)
+	assert.Equal(t, v1.ResourceList{}, qi1.CalculateInfo.SelfRequest)
+
+	assert.Equal(t, createResourceList(10, 10), qi4.CalculateInfo.NonPreemptibleRequest)
+	assert.Equal(t, createResourceList(20, 20), qi4.CalculateInfo.Request)
+	assert.Equal(t, createResourceList(5, 5), qi3.CalculateInfo.NonPreemptibleRequest)
+	assert.Equal(t, createResourceList(20, 20), qi3.CalculateInfo.Request)
+	assert.Equal(t, createResourceList(20, 20), qi2.CalculateInfo.NonPreemptibleRequest)
+	assert.Equal(t, createResourceList(40, 30), qi2.CalculateInfo.Request)
+	assert.Equal(t, createResourceList(25, 25), qi1.CalculateInfo.NonPreemptibleRequest)
+	assert.Equal(t, createResourceList(50, 20), qi1.CalculateInfo.Request)
 }
