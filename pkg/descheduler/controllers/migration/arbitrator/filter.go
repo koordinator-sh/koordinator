@@ -251,8 +251,8 @@ func (f *filter) filterMaxMigratingPerNode(pod *corev1.Pod) bool {
 	maxMigratingPerNode := int(*f.args.MaxMigratingPerNode)
 	exceeded := count >= maxMigratingPerNode
 	if exceeded {
-		klog.V(4).Infof("Pod %q fails to check maxMigratingPerNode because the Node %q has %d migrating Pods, exceeding the maxMigratingPerNode(%d)",
-			klog.KObj(pod), pod.Spec.NodeName, count, maxMigratingPerNode)
+		klog.V(4).InfoS("Pod fails the following checks", "pod", klog.KObj(pod),
+			"checks", "maxMigratingPerNode", "node", pod.Spec.NodeName, "count", count, "maxMigratingPerNode", maxMigratingPerNode)
 	}
 	return !exceeded
 }
@@ -282,8 +282,8 @@ func (f *filter) filterMaxMigratingPerNamespace(pod *corev1.Pod) bool {
 	maxMigratingPerNamespace := int(*f.args.MaxMigratingPerNamespace)
 	exceeded := count >= maxMigratingPerNamespace
 	if exceeded {
-		klog.V(4).Infof("Pod %q fails to check maxMigratingPerNamespace because the Namespace %q has %d migrating Pods, exceeding the maxMigratingPerNamespace(%d)",
-			klog.KObj(pod), pod.Namespace, count, maxMigratingPerNamespace)
+		klog.V(4).InfoS("Pod fails the following checks", "pod", klog.KObj(pod),
+			"checks", "maxMigratingPerNamespace", "namespace", pod.Namespace, "count", count, "maxMigratingPerNamespace", maxMigratingPerNamespace)
 	}
 	return !exceeded
 }
@@ -342,8 +342,9 @@ func (f *filter) filterMaxMigratingOrUnavailablePerWorkload(pod *corev1.Pod) boo
 	if len(migratingPods) > 0 {
 		exceeded := len(migratingPods) >= maxMigrating
 		if exceeded {
-			klog.V(4).Infof("The workload %s/%s/%s(%s) of Pod %q has %d migration jobs that exceed MaxMigratingPerWorkload %d",
-				ownerRef.Name, ownerRef.Kind, ownerRef.APIVersion, ownerRef.UID, klog.KObj(pod), len(migratingPods), maxMigrating)
+			klog.V(4).InfoS("Pod fails the following checks", "pod", klog.KObj(pod),
+				"checks", "maxMigratingPerWorkload", "owner", fmt.Sprintf("%s/%s/%s(%s)", ownerRef.Name, ownerRef.Kind, ownerRef.APIVersion, ownerRef.UID),
+				"migratingPods", len(migratingPods), "maxMigratingPerWorkload", maxMigrating)
 			return false
 		}
 	}
@@ -383,8 +384,9 @@ func (f *filter) filterExpectedReplicas(pod *corev1.Pod) bool {
 	if f.args.SkipCheckExpectedReplicas == nil || !*f.args.SkipCheckExpectedReplicas {
 		// TODO(joseph): There are f few special scenarios where should we allow eviction?
 		if expectedReplicas == 1 || int(expectedReplicas) == maxMigrating || int(expectedReplicas) == maxUnavailable {
-			klog.Warningf("maxMigrating(%d) or maxUnavailable(%d) equals to the replicas(%d) of the workload %s/%s/%s(%s) of Pod %q, or the replicas equals to 1, please increase the replicas or update the defense configurations",
-				maxMigrating, maxUnavailable, expectedReplicas, ownerRef.Name, ownerRef.Kind, ownerRef.APIVersion, ownerRef.UID, klog.KObj(pod))
+			klog.V(4).InfoS("Pod fails the following checks", "pod", klog.KObj(pod), "checks", "expectedReplicas",
+				"owner", fmt.Sprintf("%s/%s/%s(%s)", ownerRef.Name, ownerRef.Kind, ownerRef.APIVersion, ownerRef.UID),
+				"maxMigrating", maxMigrating, "maxUnavailable", maxUnavailable, "expectedReplicas", expectedReplicas)
 			return false
 		}
 	}
@@ -470,7 +472,8 @@ func (f *filter) filterLimitedObject(pod *corev1.Pod) bool {
 		defer f.limiterLock.Unlock()
 		if limiter := f.objectLimiters[ownerRef.UID]; limiter != nil {
 			if remainTokens := limiter.Tokens() - float64(1); remainTokens < 0 {
-				klog.Infof("Pod %q is filtered by workload %s/%s/%s is limited", klog.KObj(pod), ownerRef.Name, ownerRef.Kind, ownerRef.APIVersion)
+				klog.V(4).InfoS("Pod fails the following checks", "pod", klog.KObj(pod), "checks", "limitedObject",
+					"owner", fmt.Sprintf("%s/%s/%s", ownerRef.Name, ownerRef.Kind, ownerRef.APIVersion))
 				return false
 			}
 		}
