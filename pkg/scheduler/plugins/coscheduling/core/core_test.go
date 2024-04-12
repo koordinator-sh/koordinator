@@ -315,7 +315,7 @@ func TestPlugin_PreFilter(t *testing.T) {
 				}()
 			}
 			// run the case
-			err := mgr.PreFilter(ctx, tt.pod)
+			err, _ := mgr.PreFilter(ctx, tt.pod)
 			var returnMessage string
 			if err == nil {
 				returnMessage = ""
