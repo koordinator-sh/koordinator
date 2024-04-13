@@ -34,6 +34,7 @@ func Test_NewDefaultConfig(t *testing.T) {
 		PSICollectorInterval:             10 * time.Second,
 		CPICollectorTimeWindow:           10 * time.Second,
 		ColdPageCollectorInterval:        5 * time.Second,
+		ResctrlCollectorInterval:         1 * time.Second,
 		EnablePageCacheCollector:         false,
 	}
 	defaultConfig := NewDefaultConfig()
@@ -51,6 +52,7 @@ func Test_InitFlags(t *testing.T) {
 		"--psi-collector-interval=5s",
 		"--collect-cpi-timewindow=15s",
 		"--coldpage-collector-interval=15s",
+		"--resctrl-collector-interval=90s",
 	}
 	fs := flag.NewFlagSet(cmdArgs[0], flag.ExitOnError)
 
@@ -63,6 +65,7 @@ func Test_InitFlags(t *testing.T) {
 		PSICollectorInterval             time.Duration
 		CPICollectorTimeWindow           time.Duration
 		ColdPageCollectorInterval        time.Duration
+		ResctrlCollectorInterval         time.Duration
 	}
 	type args struct {
 		fs *flag.FlagSet
@@ -83,6 +86,7 @@ func Test_InitFlags(t *testing.T) {
 				PSICollectorInterval:             5 * time.Second,
 				CPICollectorTimeWindow:           15 * time.Second,
 				ColdPageCollectorInterval:        15 * time.Second,
+				ResctrlCollectorInterval:         90 * time.Second,
 			},
 			args: args{fs: fs},
 		},
@@ -98,6 +102,7 @@ func Test_InitFlags(t *testing.T) {
 				PSICollectorInterval:             tt.fields.PSICollectorInterval,
 				CPICollectorTimeWindow:           tt.fields.CPICollectorTimeWindow,
 				ColdPageCollectorInterval:        tt.fields.ColdPageCollectorInterval,
+				ResctrlCollectorInterval:         tt.fields.ResctrlCollectorInterval,
 			}
 			c := NewDefaultConfig()
 			c.InitFlags(tt.args.fs)

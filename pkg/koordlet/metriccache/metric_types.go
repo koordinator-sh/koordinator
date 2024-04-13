@@ -18,6 +18,7 @@ package metriccache
 
 import (
 	"fmt"
+	"strconv"
 	"time"
 )
 
@@ -73,6 +74,9 @@ const (
 	// CPI
 	ContainerMetricCPI MetricKind = "container_cpi"
 
+	// Resctrl
+	ResctrlQos MetricKind = "qos_resctrl_resource"
+
 	// PSI
 	ContainerMetricPSI                 MetricKind = "container_psi"
 	ContainerMetricPSICPUFullSupported MetricKind = "container_psi_cpu_full_supported"
@@ -101,6 +105,12 @@ const (
 	MetricPropertyGPUDeviceUUID MetricProperty = "gpu_device_uuid"
 
 	MetricPropertyCPIResource MetricProperty = "cpi_resource"
+
+	MetricPropertyNodeQos MetricProperty = "node_qos"
+
+	MetricPropertyResctrlType    MetricProperty = "resctrl_type"
+	MetricPropertyResctrlCacheId MetricProperty = "cache_id"
+	MetricPropertyResctrlMbType  MetricProperty = "resctrl_mb_type"
 
 	MetricPropertyPSIResource  MetricProperty = "psi_resource"
 	MetricPropertyPSIPrecision MetricProperty = "psi_precision"
@@ -141,6 +151,7 @@ var MetricPropertiesFunc = struct {
 	GPU                 func(string, string) map[MetricProperty]string
 	PSICPUFullSupported func(string, string) map[MetricProperty]string
 	ContainerCPI        func(string, string, string) map[MetricProperty]string
+	QosResctrl          func(string, int, string, string) map[MetricProperty]string
 	PodPSI              func(string, string, string, string) map[MetricProperty]string
 	ContainerPSI        func(string, string, string, string, string) map[MetricProperty]string
 	PodGPU              func(string, string, string) map[MetricProperty]string
@@ -159,6 +170,14 @@ var MetricPropertiesFunc = struct {
 	},
 	PSICPUFullSupported: func(podUID, containerID string) map[MetricProperty]string {
 		return map[MetricProperty]string{MetricPropertyPodUID: podUID, MetricPropertyContainerID: containerID}
+	},
+	QosResctrl: func(qos string, cacheid int, resctrlType string, resctrlMbType string) map[MetricProperty]string {
+		return map[MetricProperty]string{
+			MetricPropertyResctrlType:    resctrlType,
+			MetricPropertyResctrlCacheId: strconv.Itoa(cacheid),
+			MetricPropertyResctrlMbType:  resctrlMbType,
+			MetricPropertyNodeQos:        qos,
+		}
 	},
 	ContainerCPI: func(podUID, containerID, cpiResource string) map[MetricProperty]string {
 		return map[MetricProperty]string{MetricPropertyPodUID: podUID, MetricPropertyContainerID: containerID, MetricPropertyCPIResource: cpiResource}
