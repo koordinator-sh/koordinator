@@ -82,6 +82,64 @@ func makePg(name, namespace string, min int32, creationTime *time.Time, minResou
 	return pg
 }
 
+func TestPlugin_PreFilter_ResetScheduleTime(t *testing.T) {
+	mgr := NewManagerForTest().pgMgr
+
+	pod1 := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "default",
+			Name:      "pod1",
+			Annotations: map[string]string{
+				extension.AnnotationGangName:   "gangB",
+				extension.AnnotationGangMinNum: "2",
+			},
+		},
+	}
+
+	pod2 := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "default",
+			Name:      "pod2",
+			Annotations: map[string]string{
+				extension.AnnotationGangName:   "gangB",
+				extension.AnnotationGangMinNum: "2",
+			},
+		},
+	}
+	mgr.OnPodAdd(pod1)
+	mgr.OnPodAdd(pod2)
+
+	gang := mgr.GetGangByPod(pod1)
+	lastScheduleTime1 := gang.GangGroupInfo.LastScheduleTime
+	assert.Equal(t, 2, len(gang.GangGroupInfo.ChildrenLastScheduleTime))
+	assert.Equal(t, lastScheduleTime1, gang.GangGroupInfo.ChildrenLastScheduleTime["default/pod1"])
+	assert.Equal(t, lastScheduleTime1, gang.GangGroupInfo.ChildrenLastScheduleTime["default/pod2"])
+
+	mgr.PreFilter(context.TODO(), pod1)
+	lastScheduleTime2 := gang.GangGroupInfo.LastScheduleTime
+	assert.Equal(t, 2, len(gang.GangGroupInfo.ChildrenLastScheduleTime))
+	assert.Equal(t, lastScheduleTime2, gang.GangGroupInfo.ChildrenLastScheduleTime["default/pod1"])
+	assert.Equal(t, lastScheduleTime1, gang.GangGroupInfo.ChildrenLastScheduleTime["default/pod2"])
+
+	mgr.PreFilter(context.TODO(), pod1)
+	lastScheduleTime2 = gang.GangGroupInfo.LastScheduleTime
+	assert.Equal(t, 2, len(gang.GangGroupInfo.ChildrenLastScheduleTime))
+	assert.Equal(t, lastScheduleTime2, gang.GangGroupInfo.ChildrenLastScheduleTime["default/pod1"])
+	assert.Equal(t, lastScheduleTime1, gang.GangGroupInfo.ChildrenLastScheduleTime["default/pod2"])
+
+	mgr.PreFilter(context.TODO(), pod2)
+	lastScheduleTime2 = gang.GangGroupInfo.LastScheduleTime
+	assert.Equal(t, 2, len(gang.GangGroupInfo.ChildrenLastScheduleTime))
+	assert.Equal(t, lastScheduleTime2, gang.GangGroupInfo.ChildrenLastScheduleTime["default/pod1"])
+	assert.Equal(t, lastScheduleTime2, gang.GangGroupInfo.ChildrenLastScheduleTime["default/pod2"])
+
+	mgr.PreFilter(context.TODO(), pod2)
+	lastScheduleTime3 := gang.GangGroupInfo.LastScheduleTime
+	assert.Equal(t, 2, len(gang.GangGroupInfo.ChildrenLastScheduleTime))
+	assert.Equal(t, lastScheduleTime2, gang.GangGroupInfo.ChildrenLastScheduleTime["default/pod1"])
+	assert.Equal(t, lastScheduleTime3, gang.GangGroupInfo.ChildrenLastScheduleTime["default/pod2"])
+}
+
 func TestPlugin_PreFilter(t *testing.T) {
 	gangACreatedTime := time.Now()
 	mgr := NewManagerForTest().pgMgr
@@ -300,7 +358,7 @@ func TestPlugin_PreFilter(t *testing.T) {
 
 			// set pre cases before test pod run
 			if tt.shouldSetValidToFalse {
-				gang.setScheduleCycleValid(false)
+				gang.setScheduleCycleInvalid()
 			}
 			if tt.shouldSetCycleEqualWithGlobal {
 				gang.setChildScheduleCycle(tt.pod, 1)
@@ -315,7 +373,7 @@ func TestPlugin_PreFilter(t *testing.T) {
 				}()
 			}
 			// run the case
-			err, _ := mgr.PreFilter(ctx, tt.pod)
+			err := mgr.PreFilter(ctx, tt.pod)
 			var returnMessage string
 			if err == nil {
 				returnMessage = ""
@@ -327,7 +385,7 @@ func TestPlugin_PreFilter(t *testing.T) {
 			if gang != nil && !tt.isNonStrictMode && !tt.shouldSkipCheckScheduleCycle {
 				assert.Equal(t, tt.expectedScheduleCycle, gang.getScheduleCycle())
 				assert.Equal(t, tt.expectedScheduleCycleValid, gang.isScheduleCycleValid())
-				assert.Equal(t, tt.expectedChildCycleMap, gang.ChildrenScheduleRoundMap)
+				assert.Equal(t, tt.expectedChildCycleMap, gang.GangGroupInfo.ChildrenScheduleRoundMap)
 
 				assert.Equal(t, tt.expectedChildCycleMap[util.GetId(tt.pod.Namespace, tt.pod.Name)],
 					mgr.GetChildScheduleCycle(tt.pod))
