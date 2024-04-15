@@ -37,6 +37,9 @@ import (
 	metricsutil "github.com/koordinator-sh/koordinator/pkg/util/metrics"
 )
 
+// ExtendedHTTPHandlerRegistry is the registry of extended HTTP handlers.
+var ExtendedHTTPHandlerRegistry = map[string]func() http.HandlerFunc{}
+
 func main() {
 	cfg := config.NewConfiguration()
 	cfg.InitFlags(flag.CommandLine)
@@ -96,6 +99,10 @@ func installHTTPHandler() {
 		metricsutil.MergedGatherFunc(metrics.InternalRegistry, metrics.ExternalRegistry), promhttp.HandlerOpts{}))
 	if features.DefaultKoordletFeatureGate.Enabled(features.AuditEventsHTTPHandler) {
 		mux.HandleFunc("/events", audit.HttpHandler())
+	}
+	for path, newHandler := range ExtendedHTTPHandlerRegistry {
+		mux.HandleFunc(path, newHandler())
+		klog.V(4).Infof("extended HTTP handler registered on path %s", path)
 	}
 	// http.HandleFunc("/healthz", d.HealthzHandler())
 	klog.Fatalf("Prometheus monitoring failed: %v", http.ListenAndServe(*options.ServerAddr, mux))
