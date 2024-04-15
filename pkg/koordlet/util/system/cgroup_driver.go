@@ -50,7 +50,7 @@ const (
 	RuntimeTypeDocker     = "docker"
 	RuntimeTypeContainerd = "containerd"
 	RuntimeTypePouch      = "pouch"
-        RuntimeTypeCrio       = "cri-o"
+	RuntimeTypeCrio       = "cri-o"
 	RuntimeTypeUnknown    = "unknown"
 )
 
@@ -107,8 +107,8 @@ var cgroupPathFormatterInSystemd = Formatter{
 			return RuntimeTypeContainerd, fmt.Sprintf("cri-containerd-%s.scope", hashID[1]), nil
 		case RuntimeTypePouch:
 			return RuntimeTypePouch, fmt.Sprintf("pouch-%s.scope", hashID[1]), nil
-                case RuntimeTypeCrio:
-                        return RuntimeTypeCrio, fmt.Sprintf("crio-%s.scope", hashID[1]), nil
+		case RuntimeTypeCrio:
+			return RuntimeTypeCrio, fmt.Sprintf("crio-%s.scope", hashID[1]), nil
 		default:
 			return RuntimeTypeUnknown, "", fmt.Errorf("unknown container protocol %s", id)
 		}
@@ -161,10 +161,10 @@ var cgroupPathFormatterInSystemd = Formatter{
 		for i := range patterns {
 			if strings.HasPrefix(basename, patterns[i].prefix) && strings.HasSuffix(basename, patterns[i].suffix) {
 				return basename[len(patterns[i].prefix) : len(basename)-len(patterns[i].suffix)], nil
-			} 
+			}
 		}
 		if strings.HasPrefix(basename, "crio-") {
-			return basename[len("crio-") : len(basename)], nil
+			return basename[len("crio-"):], nil
 		}
 		return "", fmt.Errorf("fail to parse container id: %v", basename)
 	},

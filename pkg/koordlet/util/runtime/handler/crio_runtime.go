@@ -29,7 +29,6 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 )
 
-
 func GetCrioEndpoint() string {
 	return filepath.Join(system.Conf.VarRunRootDir, "crio/crio.sock")
 }
@@ -77,7 +76,6 @@ func (c *CrioRuntimeHandler) StopContainer(containerID string, timeout int64) er
 	_, err := c.runtimeServiceClient.StopContainer(ctx, request)
 	return err
 }
-
 
 func (c *CrioRuntimeHandler) UpdateContainerResources(containerID string, opts UpdateOptions) error {
 	if containerID == "" {

@@ -81,12 +81,12 @@ func GetPodSandboxContainerID(pod *corev1.Pod) (string, error) {
 		}
 		if _, exist := containerSubDirNames[containerDir.Name()]; !exist {
 			if strings.HasPrefix(containerDir.Name(), "crio-") {
-				if ! strings.HasSuffix(containerDir.Name(), ".scope") {
-					sandboxCandidates = append(sandboxCandidates, containerDir.Name())
-					} 
-			}else	{
+				if !strings.HasSuffix(containerDir.Name(), ".scope") {
 					sandboxCandidates = append(sandboxCandidates, containerDir.Name())
 				}
+			} else {
+				sandboxCandidates = append(sandboxCandidates, containerDir.Name())
+			}
 		}
 	}
 
