@@ -38,8 +38,8 @@ func Test_NewDefaultConfig(t *testing.T) {
 
 		TSDBWALSegmentSize:            1 * 1024 * 1024,
 		TSDBMaxBlockChunkSegmentSize:  5 * 1024 * 1024,
-		TSDBMinBlockDuration:          30 * time.Minute,
-		TSDBMaxBlockDuration:          30 * time.Minute,
+		TSDBMinBlockDuration:          10 * time.Minute,
+		TSDBMaxBlockDuration:          10 * time.Minute,
 		TSDBHeadChunksWriteBufferSize: 1024 * 1024,
 	}
 	defaultConfig := NewDefaultConfig()
