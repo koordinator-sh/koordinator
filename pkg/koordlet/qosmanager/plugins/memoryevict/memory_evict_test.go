@@ -359,7 +359,7 @@ func Test_memoryEvict(t *testing.T) {
 			mockResultFactory.EXPECT().New(nodeMemQueryMeta).Return(result).AnyTimes()
 			metriccache.DefaultAggregateResultFactory = mockResultFactory
 			mockQuerier := mock_metriccache.NewMockQuerier(ctl)
-			mockQuerier.EXPECT().Query(nodeMemQueryMeta, gomock.Any(), gomock.Any()).SetArg(2, *result).Return(nil).AnyTimes()
+			mockQuerier.EXPECT().QueryAndClose(nodeMemQueryMeta, gomock.Any(), gomock.Any()).SetArg(2, *result).Return(nil).AnyTimes()
 			mockMetricCache.EXPECT().Querier(gomock.Any(), gomock.Any()).Return(mockQuerier, nil).AnyTimes()
 
 			for _, podMetric := range tt.podMetrics {
@@ -369,7 +369,7 @@ func Test_memoryEvict(t *testing.T) {
 				podQueryMeta, err := metriccache.PodMemUsageMetric.BuildQueryMeta(metriccache.MetricPropertiesFunc.Pod(podMetric.UID))
 				assert.NoError(t, err)
 				mockResultFactory.EXPECT().New(podQueryMeta).Return(result).AnyTimes()
-				mockQuerier.EXPECT().Query(podQueryMeta, gomock.Any(), gomock.Any()).SetArg(2, *result).Return(nil).AnyTimes()
+				mockQuerier.EXPECT().QueryAndClose(podQueryMeta, gomock.Any(), gomock.Any()).SetArg(2, *result).Return(nil).AnyTimes()
 				//mockPodQueryResult := metriccache.PodResourceQueryResult{Metric: podMetric}
 				//mockMetricCache.EXPECT().GetPodResourceMetric(&podMetric.PodUID, gomock.Any()).Return(mockPodQueryResult).AnyTimes()
 			}

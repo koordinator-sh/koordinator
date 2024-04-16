@@ -18,6 +18,9 @@ package options
 
 import (
 	"flag"
+	"net/http"
+
+	"k8s.io/klog/v2"
 )
 
 var (
@@ -27,3 +30,13 @@ var (
 	KubeAPIQPS   = flag.Float64("kube-api-qps", 20.0, "QPS to use while talking with kube-apiserver.")
 	KubeAPIBurst = flag.Int("kube-api-burst", 30, "Burst to use while talking with kube-apiserver.")
 )
+
+// ExtendedHTTPHandlerRegistry is the registry of extended HTTP handlers.
+var ExtendedHTTPHandlerRegistry = map[string]func() http.HandlerFunc{}
+
+func InstallExtendedHTTPHandler(mux *http.ServeMux) {
+	for path, newHandler := range ExtendedHTTPHandlerRegistry {
+		mux.HandleFunc(path, newHandler())
+		klog.V(4).Infof("extended HTTP handler is registered on path %s", path)
+	}
+}

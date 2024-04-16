@@ -54,8 +54,8 @@ func NewDefaultConfig() *Config {
 
 		TSDBWALSegmentSize:            1 * 1024 * 1024,  // 1 MB
 		TSDBMaxBlockChunkSegmentSize:  5 * 1024 * 1024,  // 5 MB
-		TSDBMinBlockDuration:          30 * time.Minute, // 30 minutes
-		TSDBMaxBlockDuration:          30 * time.Minute, // 30 minutes
+		TSDBMinBlockDuration:          10 * time.Minute, // 10 minutes
+		TSDBMaxBlockDuration:          10 * time.Minute, // 10 minutes
 		TSDBHeadChunksWriteBufferSize: 1024 * 1024,      // 1 MB
 	}
 }

@@ -97,6 +97,8 @@ func installHTTPHandler() {
 	if features.DefaultKoordletFeatureGate.Enabled(features.AuditEventsHTTPHandler) {
 		mux.HandleFunc("/events", audit.HttpHandler())
 	}
+	// install extended HTTP handlers
+	options.InstallExtendedHTTPHandler(mux)
 	// http.HandleFunc("/healthz", d.HealthzHandler())
 	klog.Fatalf("Prometheus monitoring failed: %v", http.ListenAndServe(*options.ServerAddr, mux))
 }
