@@ -134,7 +134,7 @@ func (qi *QuotaInfo) DeepCopy() *QuotaInfo {
 		},
 	}
 	for name, pod := range qi.PodCache {
-		quotaInfo.PodCache[name] = pod.DeepCopy()
+		quotaInfo.PodCache[name] = pod
 	}
 	return quotaInfo
 }
