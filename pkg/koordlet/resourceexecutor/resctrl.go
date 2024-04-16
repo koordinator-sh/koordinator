@@ -17,6 +17,7 @@ limitations under the License.
 package resourceexecutor
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -46,12 +47,12 @@ func NewResctrlReader() ResctrlReader {
 			klog.V(0).ErrorS(err, "unsupported cpu vendor")
 		}
 	}
-	return nil
+	return &fakeReader{}
 }
 
 type CacheId int
 
-// parent for resctrl is like: “, `BE`, `LS`
+// parent for resctrl is like: ``, `BE`, `LS`
 type ResctrlReader interface {
 	ReadResctrlL3Stat(parent string) (map[CacheId]uint64, error)
 	ReadResctrlMBStat(parent string) (map[CacheId]system.MBStatData, error)
@@ -60,6 +61,16 @@ type ResctrlReader interface {
 type ResctrlRDTReader struct{}
 type ResctrlAMDReader struct {
 	ResctrlRDTReader
+}
+
+type fakeReader struct{}
+
+func (rr *fakeReader) ReadResctrlL3Stat(parent string) (map[CacheId]uint64, error) {
+	return nil, errors.New("unsupported platform")
+}
+
+func (rr *fakeReader) ReadResctrlMBStat(parent string) (map[CacheId]system.MBStatData, error) {
+	return nil, errors.New("unsupported platform")
 }
 
 func NewResctrlRDTReader() ResctrlReader {
@@ -73,6 +84,7 @@ func (rr *ResctrlRDTReader) ReadResctrlL3Stat(parent string) (map[CacheId]uint64
 	if err != nil {
 		return nil, fmt.Errorf(ErrResctrlDir)
 	}
+	// read all l3-memory domains
 	domains, err := fd.ReadDir(-1)
 	if err != nil {
 		return nil, fmt.Errorf("%s, cannot find L3 domains, err: %w", ErrResctrlDir, err)
@@ -104,6 +116,7 @@ func (rr *ResctrlRDTReader) ReadResctrlMBStat(parent string) (map[CacheId]system
 	if err != nil {
 		return nil, fmt.Errorf(ErrResctrlDir)
 	}
+	// read all l3-memory domains
 	domains, err := fd.ReadDir(-1)
 	if err != nil {
 		return nil, fmt.Errorf("%s, cannot find L3 domains, err: %w", ErrResctrlDir, err)

@@ -73,7 +73,7 @@ func (r *resctrlCollector) collectQoSResctrlStat() {
 	err := system.CheckResctrlSchemataValid()
 	if err != nil {
 		// use resctrl/schemata to check mount state TODO: use another method to check
-		klog.Warningf("cannot find resctrl file system schemata, error: %v", err)
+		klog.V(4).Infof("cannot find resctrl file system schemata, error: %v", err)
 		return
 	}
 	klog.V(6).Info("start collect QoS resctrl Stat")
@@ -85,7 +85,7 @@ func (r *resctrlCollector) collectQoSResctrlStat() {
 		resctrl.BEResctrlGroup} {
 		l3Map, err := r.resctrlReader.ReadResctrlL3Stat(qos)
 		if err != nil {
-			klog.Warningf("collect QoS %s resctrl llc data error: %v", qos, err)
+			klog.V(4).Infof("collect QoS %s resctrl llc data error: %v", qos, err)
 			continue
 		}
 		for cacheId, value := range l3Map {
@@ -99,13 +99,14 @@ func (r *resctrlCollector) collectQoSResctrlStat() {
 		mbMap, err := r.resctrlReader.ReadResctrlMBStat(qos)
 		if err != nil {
 			klog.V(4).Infof("collect QoS %s resctrl mb data error: %v", qos, err)
+			continue
 		}
 		for cacheId, value := range mbMap {
 			for mbType, mbValue := range value {
 				metrics.RecordQosResctrl(metrics.ResourceTypeMB, int(cacheId), qos, mbType, mbValue)
 				mbSample, err := metriccache.QosResctrl.GenerateSample(metriccache.MetricPropertiesFunc.QosResctrl(qos, int(cacheId), metrics.ResourceTypeMB, mbType), collectTime, float64(mbValue))
 				if err != nil {
-					klog.Warningf("generate QoS %s resctrl mb sample error: %v", qos, err)
+					klog.V(4).Infof("generate QoS %s resctrl mb sample error: %v", qos, err)
 				}
 				resctrlMetrics = append(resctrlMetrics, mbSample)
 			}
