@@ -78,3 +78,6 @@ Koordinator is licensed under the Apache License, Version 2.0. See [LICENSE](./L
 
 [![Star History Chart](https://api.star-history.com/svg?repos=koordinator-sh/koordinator&type=Date)](https://star-history.com/#koordinator-sh/koordinator&Date)
 -->
+
+## 安全
+对于发现的安全漏洞，请邮件发送至kubernetes-security@service.aliyun.com，您可在[SECURITY.md](./SECURITY.md)文件中找到更多信息。
