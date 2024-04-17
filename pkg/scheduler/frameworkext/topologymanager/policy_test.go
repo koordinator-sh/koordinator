@@ -344,6 +344,43 @@ func commonPolicyMergeTestCases(numaNodes []int) []policyMergeTestCase {
 func (p *bestEffortPolicy) mergeTestCases(numaNodes []int) []policyMergeTestCase {
 	return []policyMergeTestCase{
 		{
+			name: "Two providers, 2 hints each, same mask (some with different bits), same preferred",
+			hp: []NUMATopologyHintProvider{
+				&mockNUMATopologyHintProvider{
+					map[string][]NUMATopologyHint{
+						"resource1": {
+							{
+								NUMANodeAffinity: NewTestBitMask(0, 1),
+								Preferred:        true,
+							},
+							{
+								NUMANodeAffinity: NewTestBitMask(0, 2),
+								Preferred:        true,
+							},
+						},
+					},
+				},
+				&mockNUMATopologyHintProvider{
+					map[string][]NUMATopologyHint{
+						"resource2": {
+							{
+								NUMANodeAffinity: NewTestBitMask(0, 1),
+								Preferred:        true,
+							},
+							{
+								NUMANodeAffinity: NewTestBitMask(0, 2),
+								Preferred:        true,
+							},
+						},
+					},
+				},
+			},
+			expected: NUMATopologyHint{
+				NUMANodeAffinity: NewTestBitMask(0, 1),
+				Preferred:        true,
+			},
+		},
+		{
 			name: "NUMATopologyHint not set",
 			hp:   []NUMATopologyHintProvider{},
 			expected: NUMATopologyHint{
@@ -541,7 +578,7 @@ func (p *bestEffortPolicy) mergeTestCases(numaNodes []int) []policyMergeTestCase
 			},
 			expected: NUMATopologyHint{
 				NUMANodeAffinity: NewTestBitMask(0),
-				Preferred:        true,
+				Preferred:        false,
 			},
 		},
 		{
@@ -578,7 +615,7 @@ func (p *bestEffortPolicy) mergeTestCases(numaNodes []int) []policyMergeTestCase
 			},
 		},
 		{
-			name: "Two providers, 1 hint each, 1 wider mask, both preferred 1/2",
+			name: "Two providers, 1 hint each, 1 wider mask, both preferred 2/2",
 			hp: []NUMATopologyHintProvider{
 				&mockNUMATopologyHintProvider{
 					map[string][]NUMATopologyHint{
@@ -603,7 +640,7 @@ func (p *bestEffortPolicy) mergeTestCases(numaNodes []int) []policyMergeTestCase
 			},
 			expected: NUMATopologyHint{
 				NUMANodeAffinity: NewTestBitMask(1),
-				Preferred:        true,
+				Preferred:        false,
 			},
 		},
 	}
