@@ -60,6 +60,7 @@ func newPluginTestSuitForGangAPI(t *testing.T, nodes []*corev1.Node) *pluginTest
 		gangSchedulingArgs: &gangSchedulingArgs,
 	}
 }
+
 func TestEndpointsQueryGangInfo(t *testing.T) {
 	suit := newPluginTestSuitForGangAPI(t, nil)
 	podToCreateGangA := &corev1.Pod{
@@ -82,23 +83,20 @@ func TestEndpointsQueryGangInfo(t *testing.T) {
 	suit.start()
 	gp := p.(*Coscheduling)
 	gangExpected := core.GangSummary{
-		Name:                     "ganga_ns/ganga",
-		WaitTime:                 time.Second * 600,
-		CreateTime:               podToCreateGangA.CreationTimestamp.Time,
-		GangGroup:                []string{"ganga_ns/ganga"},
-		Mode:                     extension.GangModeStrict,
-		MinRequiredNumber:        2,
-		TotalChildrenNum:         2,
-		Children:                 sets.NewString("ganga_ns/pod1"),
-		WaitingForBindChildren:   sets.NewString(),
-		BoundChildren:            sets.NewString(),
-		OnceResourceSatisfied:    false,
-		ScheduleCycleValid:       true,
-		ScheduleCycle:            1,
-		ChildrenScheduleRoundMap: map[string]int{},
-		GangFrom:                 core.GangFromPodAnnotation,
-		GangMatchPolicy:          extension.GangMatchPolicyOnceSatisfied,
-		HasGangInit:              true,
+		Name:                   "ganga_ns/ganga",
+		WaitTime:               time.Second * 600,
+		CreateTime:             podToCreateGangA.CreationTimestamp.Time,
+		GangGroup:              []string{"ganga_ns/ganga"},
+		Mode:                   extension.GangModeStrict,
+		MinRequiredNumber:      2,
+		TotalChildrenNum:       2,
+		Children:               sets.NewString("ganga_ns/pod1"),
+		WaitingForBindChildren: sets.NewString(),
+		BoundChildren:          sets.NewString(),
+		OnceResourceSatisfied:  false,
+		GangFrom:               core.GangFromPodAnnotation,
+		GangMatchPolicy:        extension.GangMatchPolicyOnceSatisfied,
+		HasGangInit:            true,
 	}
 	{
 		engine := gin.Default()
@@ -110,7 +108,8 @@ func TestEndpointsQueryGangInfo(t *testing.T) {
 		gangMarshal := &core.GangSummary{}
 		err = json.NewDecoder(w.Result().Body).Decode(gangMarshal)
 		assert.NoError(t, err)
-		gangMarshal.LastScheduleTime = gangExpected.LastScheduleTime
+		assert.True(t, gangMarshal.GangGroupInfo != nil)
+		gangMarshal.GangGroupInfo = nil
 		assert.Equal(t, &gangExpected, gangMarshal)
 	}
 	{
@@ -123,7 +122,8 @@ func TestEndpointsQueryGangInfo(t *testing.T) {
 		gangMarshalMap := make(map[string]*core.GangSummary)
 		err = json.Unmarshal([]byte(w.Body.String()), &gangMarshalMap)
 		assert.NoError(t, err)
-		gangMarshalMap["ganga_ns/ganga"].LastScheduleTime = gangExpected.LastScheduleTime
+		assert.True(t, gangMarshalMap["ganga_ns/ganga"].GangGroupInfo != nil)
+		gangMarshalMap["ganga_ns/ganga"].GangGroupInfo = nil
 		assert.Equal(t, &gangExpected, gangMarshalMap["ganga_ns/ganga"])
 	}
 }
