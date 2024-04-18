@@ -55,14 +55,16 @@ const (
 	PodGroupNotFound Status = "PodGroup not found"
 	Success          Status = "Success"
 	Wait             Status = "Wait"
+
+	stateKey = "CoScheduling"
 )
 
 // Manager defines the interfaces for PodGroup management.
 type Manager interface {
-	PreFilter(context.Context, *corev1.Pod) error
+	PreFilter(context.Context, *framework.CycleState, *corev1.Pod) (err error)
 	Permit(context.Context, *corev1.Pod) (time.Duration, Status)
 	PostBind(context.Context, *corev1.Pod, string)
-	PostFilter(context.Context, *corev1.Pod, framework.Handle, string, framework.NodeToStatusMap) (*framework.PostFilterResult, *framework.Status)
+	PostFilter(context.Context, *framework.CycleState, *corev1.Pod, framework.Handle, string, framework.NodeToStatusMap) (*framework.PostFilterResult, *framework.Status)
 	GetCreatTime(*framework.QueuedPodInfo) time.Time
 	GetGangGroupId(*corev1.Pod) (string, error)
 	GetAllPodsFromGang(string) []*corev1.Pod
@@ -221,32 +223,28 @@ func (pgMgr *PodGroupManager) ActivateSiblings(pod *corev1.Pod, state *framework
 	}
 }
 
-type ScheduleCycleInValidError struct {
-	ErrMsg string
-}
-
-func (err *ScheduleCycleInValidError) Error() string {
-	return err.ErrMsg
-}
-
 // PreFilter
 // i.Check whether children in Gang has met the requirements of minimum number under each Gang, and reject the pod if negative.
 // ii.Check whether the Gang is inited, and reject the pod if positive.
 // iii.Check whether the Gang is OnceResourceSatisfied
 // iv.Check whether the Gang has met the scheduleCycleValid check, and reject the pod if negative(only Strict mode ).
 // v.Try update scheduleCycle, scheduleCycleValid, childrenScheduleRoundMap as mentioned above.
-func (pgMgr *PodGroupManager) PreFilter(ctx context.Context, pod *corev1.Pod) error {
+func (pgMgr *PodGroupManager) PreFilter(ctx context.Context, state *framework.CycleState, pod *corev1.Pod) (err error) {
 	if !util.IsPodNeedGang(pod) {
 		return nil
 	}
+	preFilterState := &stateData{skipReject: false, skipSetCycleInvalid: false}
+	state.Write(stateKey, preFilterState)
 	gang := pgMgr.GetGangByPod(pod)
 	if gang == nil {
+		preFilterState.skipSetCycleInvalid = true
 		return fmt.Errorf("can't find gang, gangName: %v, podName: %v", util.GetId(pod.Namespace, util.GetGangNameByPod(pod)),
 			util.GetId(pod.Namespace, pod.Name))
 	}
 
 	// check if gang is initialized
 	if !gang.HasGangInit {
+		preFilterState.skipSetCycleInvalid = true
 		return fmt.Errorf("gang has not init, gangName: %v, podName: %v", gang.Name,
 			util.GetId(pod.Namespace, pod.Name))
 	}
@@ -257,6 +255,7 @@ func (pgMgr *PodGroupManager) PreFilter(ctx context.Context, pod *corev1.Pod) er
 
 	// check minNum
 	if gang.getChildrenNum() < gang.getGangMinNum() {
+		preFilterState.skipSetCycleInvalid = true
 		return fmt.Errorf("gang child pod not collect enough, gangName: %v, podName: %v", gang.Name,
 			util.GetId(pod.Namespace, pod.Name))
 	}
@@ -279,10 +278,9 @@ func (pgMgr *PodGroupManager) PreFilter(ctx context.Context, pod *corev1.Pod) er
 		}
 		podScheduleCycle := gang.getChildScheduleCycle(pod)
 		if !gang.isScheduleCycleValid() {
-			err := &ScheduleCycleInValidError{}
-			err.ErrMsg = fmt.Sprintf("gang scheduleCycle not valid, gangName: %v, podName: %v",
+			preFilterState.skipReject = true
+			return fmt.Errorf("gang scheduleCycle not valid, gangName: %v, podName: %v",
 				gang.Name, util.GetId(pod.Namespace, pod.Name))
-			return err
 		}
 		if podScheduleCycle >= gangScheduleCycle {
 			return fmt.Errorf("pod's schedule cycle too large, gangName: %v, podName: %v, podCycle: %v, gangCycle: %v",
@@ -292,10 +290,32 @@ func (pgMgr *PodGroupManager) PreFilter(ctx context.Context, pod *corev1.Pod) er
 	return nil
 }
 
+type stateData struct {
+	skipReject          bool
+	skipSetCycleInvalid bool
+}
+
+func (s *stateData) Clone() framework.StateData {
+	ns := &stateData{
+		skipReject:          s.skipReject,
+		skipSetCycleInvalid: s.skipSetCycleInvalid,
+	}
+	return ns
+}
+
+func getPreFilterState(stateKey string, cycleState *framework.CycleState) *stateData {
+	value, err := cycleState.Read(framework.StateKey(stateKey))
+	if err != nil {
+		return nil
+	}
+	state := value.(*stateData)
+	return state
+}
+
 // PostFilter
 // i. If strict-mode, we will set scheduleCycleValid to false and release all assumed pods.
 // ii. If non-strict mode, we will do nothing.
-func (pgMgr *PodGroupManager) PostFilter(ctx context.Context, pod *corev1.Pod, handle framework.Handle, pluginName string, filteredNodeStatusMap framework.NodeToStatusMap) (*framework.PostFilterResult, *framework.Status) {
+func (pgMgr *PodGroupManager) PostFilter(ctx context.Context, state *framework.CycleState, pod *corev1.Pod, handle framework.Handle, pluginName string, filteredNodeStatusMap framework.NodeToStatusMap) (*framework.PostFilterResult, *framework.Status) {
 	if !util.IsPodNeedGang(pod) {
 		return &framework.PostFilterResult{}, framework.NewStatus(framework.Unschedulable)
 	}
@@ -310,6 +330,10 @@ func (pgMgr *PodGroupManager) PostFilter(ctx context.Context, pod *corev1.Pod, h
 	}
 
 	if gang.getGangMode() == extension.GangModeStrict {
+		preFilterState := getPreFilterState(stateKey, state)
+		if preFilterState != nil && preFilterState.skipReject {
+			return &framework.PostFilterResult{}, framework.NewStatus(framework.Unschedulable)
+		}
 		nodeInfos, _ := handle.SnapshotSharedLister().NodeInfos().List()
 		fitErr := &framework.FitError{
 			Pod:         pod,
@@ -319,7 +343,8 @@ func (pgMgr *PodGroupManager) PostFilter(ctx context.Context, pod *corev1.Pod, h
 			},
 		}
 		message := fmt.Sprintf("Gang %q gets rejected due to member Pod %q is unschedulable with reason %q", gang.Name, pod.Name, fitErr)
-		pgMgr.rejectGangGroupById(handle, pluginName, gang.Name, message)
+
+		pgMgr.rejectGangGroupById(handle, preFilterState != nil && preFilterState.skipSetCycleInvalid, pluginName, gang.Name, message)
 		return &framework.PostFilterResult{}, framework.NewStatus(framework.Unschedulable,
 			fmt.Sprintf("Gang %q gets rejected due to pod is unschedulable", gang.Name))
 	}
@@ -377,11 +402,11 @@ func (pgMgr *PodGroupManager) Unreserve(ctx context.Context, state *framework.Cy
 	if !(gang.getGangMatchPolicy() == extension.GangMatchPolicyOnceSatisfied && gang.isGangOnceResourceSatisfied()) &&
 		gang.getGangMode() == extension.GangModeStrict {
 		message := fmt.Sprintf("Gang %q gets rejected due to Pod %q in Unreserve", gang.Name, pod.Name)
-		pgMgr.rejectGangGroupById(handle, pluginName, gang.Name, message)
+		pgMgr.rejectGangGroupById(handle, false, pluginName, gang.Name, message)
 	}
 }
 
-func (pgMgr *PodGroupManager) rejectGangGroupById(handle framework.Handle, pluginName, gangId, message string) {
+func (pgMgr *PodGroupManager) rejectGangGroupById(handle framework.Handle, skipSetCycleInvalid bool, pluginName, gangId, message string) {
 	gang := pgMgr.cache.getGangFromCacheByGangId(gangId, false)
 	if gang == nil {
 		return
@@ -401,7 +426,9 @@ func (pgMgr *PodGroupManager) rejectGangGroupById(handle framework.Handle, plugi
 			}
 		})
 	}
-
+	if skipSetCycleInvalid {
+		return
+	}
 	for gang := range gangSet {
 		gangIns := pgMgr.cache.getGangFromCacheByGangId(gang, false)
 		if gangIns != nil {

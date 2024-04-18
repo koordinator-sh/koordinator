@@ -59,8 +59,7 @@ var _ framework.EnqueueExtensions = &Coscheduling{}
 
 const (
 	// Name is the name of the plugin used in Registry and configurations.
-	Name     = "Coscheduling"
-	stateKey = Name
+	Name = "Coscheduling"
 )
 
 // New initializes and returns a new Coscheduling plugin.
@@ -168,49 +167,19 @@ func (cs *Coscheduling) Less(podInfo1, podInfo2 *framework.QueuedPodInfo) bool {
 // iii.Check whether the Gang has met the scheduleCycleValid check, and reject the pod if negative.
 // iv.Try update scheduleCycle, scheduleCycleValid, childrenScheduleRoundMap as mentioned above.
 func (cs *Coscheduling) PreFilter(ctx context.Context, state *framework.CycleState, pod *v1.Pod) (*framework.PreFilterResult, *framework.Status) {
-	// If PreFilter fails, return framework.Error to avoid
-	// any preemption attempts.
-	if err := cs.pgMgr.PreFilter(ctx, pod); err != nil {
-		// If Prefilter failed due to scheduleCycle invalid, we shouldn't reject it's assumed sibling.
-		if _, ok := err.(*core.ScheduleCycleInValidError); ok {
-			state.Write(stateKey, &stateData{skipPostFilter: true})
-		}
-
+	// If PreFilter fails, return framework.UnschedulableAndUnresolvable to avoid any preemption attempts.
+	if err := cs.pgMgr.PreFilter(ctx, state, pod); err != nil {
 		klog.ErrorS(err, "PreFilter failed", "pod", klog.KObj(pod))
 		return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, err.Error())
 	}
 	return nil, framework.NewStatus(framework.Success, "")
 }
 
-type stateData struct {
-	skipPostFilter bool
-}
-
-func (s *stateData) Clone() framework.StateData {
-	ns := &stateData{
-		skipPostFilter: s.skipPostFilter,
-	}
-	return ns
-}
-
-func getPreFilterState(cycleState *framework.CycleState) *stateData {
-	value, err := cycleState.Read(stateKey)
-	if err != nil {
-		return nil
-	}
-	state := value.(*stateData)
-	return state
-}
-
 // PostFilter
 // i. If strict-mode, we will set scheduleCycleValid to false and release all assumed pods.
 // ii. If non-strict mode, we will do nothing.
 func (cs *Coscheduling) PostFilter(ctx context.Context, state *framework.CycleState, pod *v1.Pod, filteredNodeStatusMap framework.NodeToStatusMap) (*framework.PostFilterResult, *framework.Status) {
-	preFilterState := getPreFilterState(state)
-	if preFilterState != nil && preFilterState.skipPostFilter {
-		return &framework.PostFilterResult{}, framework.NewStatus(framework.Unschedulable)
-	}
-	return cs.pgMgr.PostFilter(ctx, pod, cs.frameworkHandler, Name, filteredNodeStatusMap)
+	return cs.pgMgr.PostFilter(ctx, state, pod, cs.frameworkHandler, Name, filteredNodeStatusMap)
 }
 
 // PreFilterExtensions returns a PreFilterExtensions interface if the plugin implements one.

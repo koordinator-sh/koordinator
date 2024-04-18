@@ -29,6 +29,7 @@ import (
 	"k8s.io/client-go/informers"
 	clientsetfake "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/util/retry"
+	"k8s.io/kubernetes/pkg/scheduler/framework"
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
 	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 	fakepgclientset "sigs.k8s.io/scheduler-plugins/pkg/generated/clientset/versioned/fake"
@@ -115,25 +116,25 @@ func TestPlugin_PreFilter_ResetScheduleTime(t *testing.T) {
 	assert.Equal(t, lastScheduleTime1, gang.GangGroupInfo.ChildrenLastScheduleTime["default/pod1"])
 	assert.Equal(t, lastScheduleTime1, gang.GangGroupInfo.ChildrenLastScheduleTime["default/pod2"])
 
-	mgr.PreFilter(context.TODO(), pod1)
+	mgr.PreFilter(context.TODO(), framework.NewCycleState(), pod1)
 	lastScheduleTime2 := gang.GangGroupInfo.LastScheduleTime
 	assert.Equal(t, 2, len(gang.GangGroupInfo.ChildrenLastScheduleTime))
 	assert.Equal(t, lastScheduleTime2, gang.GangGroupInfo.ChildrenLastScheduleTime["default/pod1"])
 	assert.Equal(t, lastScheduleTime1, gang.GangGroupInfo.ChildrenLastScheduleTime["default/pod2"])
 
-	mgr.PreFilter(context.TODO(), pod1)
+	mgr.PreFilter(context.TODO(), framework.NewCycleState(), pod1)
 	lastScheduleTime2 = gang.GangGroupInfo.LastScheduleTime
 	assert.Equal(t, 2, len(gang.GangGroupInfo.ChildrenLastScheduleTime))
 	assert.Equal(t, lastScheduleTime2, gang.GangGroupInfo.ChildrenLastScheduleTime["default/pod1"])
 	assert.Equal(t, lastScheduleTime1, gang.GangGroupInfo.ChildrenLastScheduleTime["default/pod2"])
 
-	mgr.PreFilter(context.TODO(), pod2)
+	mgr.PreFilter(context.TODO(), framework.NewCycleState(), pod2)
 	lastScheduleTime2 = gang.GangGroupInfo.LastScheduleTime
 	assert.Equal(t, 2, len(gang.GangGroupInfo.ChildrenLastScheduleTime))
 	assert.Equal(t, lastScheduleTime2, gang.GangGroupInfo.ChildrenLastScheduleTime["default/pod1"])
 	assert.Equal(t, lastScheduleTime2, gang.GangGroupInfo.ChildrenLastScheduleTime["default/pod2"])
 
-	mgr.PreFilter(context.TODO(), pod2)
+	mgr.PreFilter(context.TODO(), framework.NewCycleState(), pod2)
 	lastScheduleTime3 := gang.GangGroupInfo.LastScheduleTime
 	assert.Equal(t, 2, len(gang.GangGroupInfo.ChildrenLastScheduleTime))
 	assert.Equal(t, lastScheduleTime2, gang.GangGroupInfo.ChildrenLastScheduleTime["default/pod1"])
@@ -156,6 +157,7 @@ func TestPlugin_PreFilter(t *testing.T) {
 		expectedChildCycleMap      map[string]int
 		expectedScheduleCycle      int
 		expectedScheduleCycleValid bool
+		expectStateData            *stateData
 		// case value
 		// next two are set before pg created
 		totalNum          int
@@ -181,6 +183,9 @@ func TestPlugin_PreFilter(t *testing.T) {
 			},
 			expectedScheduleCycleValid: true,
 			expectedScheduleCycle:      1,
+			expectStateData: &stateData{
+				skipSetCycleInvalid: true,
+			},
 		},
 		{
 			name:                       "gang ResourceSatisfied",
@@ -190,6 +195,7 @@ func TestPlugin_PreFilter(t *testing.T) {
 			expectedScheduleCycleValid: true,
 			expectedScheduleCycle:      1,
 			resourceSatisfied:          true,
+			expectStateData:            &stateData{},
 		},
 		{
 			name: "pod count less than minMember",
@@ -202,6 +208,9 @@ func TestPlugin_PreFilter(t *testing.T) {
 			expectedScheduleCycle:      1,
 			expectedChildCycleMap:      map[string]int{},
 			expectedScheduleCycleValid: true,
+			expectStateData: &stateData{
+				skipSetCycleInvalid: true,
+			},
 		},
 		{
 			name: "pods count equal with minMember,but is NonStrictMode",
@@ -214,6 +223,7 @@ func TestPlugin_PreFilter(t *testing.T) {
 			pgs:                  makePg("gangb", "gangb_ns", 4, &gangACreatedTime, nil),
 			expectedErrorMessage: "",
 			isNonStrictMode:      true,
+			expectStateData:      &stateData{},
 		},
 		{
 			name: "due to reschedule pod6's podScheduleCycle is equal with the gangScheduleCycle",
@@ -232,6 +242,7 @@ func TestPlugin_PreFilter(t *testing.T) {
 			},
 			expectedErrorMessage:       "pod's schedule cycle too large, gangName: ganga_ns/gangc, podName: ganga_ns/pod6, podCycle: 1, gangCycle: 1",
 			expectedScheduleCycleValid: true,
+			expectStateData:            &stateData{},
 		},
 		{
 			name: "due to reschedule pod6's podScheduleCycle is equal with the gangScheduleCycle, but pod6's nominatedNodeName is not empty",
@@ -254,6 +265,7 @@ func TestPlugin_PreFilter(t *testing.T) {
 			},
 			expectedErrorMessage:       "",
 			expectedScheduleCycleValid: true,
+			expectStateData:            &stateData{},
 		},
 		{
 			name: "pods count equal with minMember,is StrictMode,but the gang's scheduleCycle is not valid due to pre pod Filter Failed",
@@ -271,6 +283,9 @@ func TestPlugin_PreFilter(t *testing.T) {
 			expectedScheduleCycleValid: false,
 			expectedErrorMessage:       "gang scheduleCycle not valid, gangName: ganga_ns/gangd, podName: ganga_ns/pod7",
 			shouldSetValidToFalse:      true,
+			expectStateData: &stateData{
+				skipReject: true,
+			},
 		},
 		{
 			name: "pods count equal with minMember,is StrictMode, disable check scheduleCycle even if the gang's scheduleCycle is not valid",
@@ -289,6 +304,7 @@ func TestPlugin_PreFilter(t *testing.T) {
 			expectedErrorMessage:         "",
 			shouldSetValidToFalse:        true,
 			shouldSkipCheckScheduleCycle: true,
+			expectStateData:              &stateData{},
 		},
 		{
 			name: "pods count equal with minMember,is StrictMode,scheduleCycle valid,but childrenNum is not reach to total num",
@@ -306,6 +322,7 @@ func TestPlugin_PreFilter(t *testing.T) {
 			},
 			expectedScheduleCycleValid: true,
 			expectedErrorMessage:       "",
+			expectStateData:            &stateData{},
 		},
 		{
 			name: "pods count more than minMember,is StrictMode,scheduleCycle valid,and childrenNum reach to total num",
@@ -327,6 +344,7 @@ func TestPlugin_PreFilter(t *testing.T) {
 			},
 			expectedErrorMessage:       "",
 			expectedScheduleCycleValid: true,
+			expectStateData:            &stateData{},
 		},
 	}
 	for _, tt := range tests {
@@ -352,7 +370,7 @@ func TestPlugin_PreFilter(t *testing.T) {
 			// add each neighbor pods and run preFilter
 			for _, pod := range tt.pods {
 				mgr.cache.onPodAdd(pod)
-				mgr.PreFilter(ctx, pod)
+				mgr.PreFilter(ctx, framework.NewCycleState(), pod)
 			}
 			mgr.cache.onPodAdd(tt.pod)
 
@@ -373,13 +391,16 @@ func TestPlugin_PreFilter(t *testing.T) {
 				}()
 			}
 			// run the case
-			err := mgr.PreFilter(ctx, tt.pod)
+			cycleState := framework.NewCycleState()
+			err := mgr.PreFilter(ctx, cycleState, tt.pod)
 			var returnMessage string
 			if err == nil {
 				returnMessage = ""
 			} else {
 				returnMessage = err.Error()
 			}
+			preFilterState := getPreFilterState(stateKey, cycleState)
+			assert.Equal(t, tt.expectStateData, preFilterState)
 			// assert
 			assert.Equal(t, tt.expectedErrorMessage, returnMessage)
 			if gang != nil && !tt.isNonStrictMode && !tt.shouldSkipCheckScheduleCycle {
