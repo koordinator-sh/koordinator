@@ -1,17 +1,17 @@
 /*
- Copyright 2024 The Koordinator Authors.
+Copyright 2022 The Koordinator Authors.
 
- Licensed under the Apache License, Version 2.0 (the "License");
- you may not use this file except in compliance with the License.
- You may obtain a copy of the License at
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
 
-     http://www.apache.org/licenses/LICENSE-2.0
+    http://www.apache.org/licenses/LICENSE-2.0
 
- Unless required by applicable law or agreed to in writing, software
- distributed under the License is distributed on an "AS IS" BASIS,
- WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- See the License for the specific language governing permissions and
- limitations under the License.
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 */
 
 package apis
@@ -24,24 +24,26 @@ import (
 type WorkloadTargetType string
 
 const (
-	// WorkloadTargetWorkload defines the k8s workload type
-	WorkloadTargetWorkload WorkloadTargetType = "controller"
+	// WorkloadTargetController defines the k8s workload type
+	WorkloadTargetController WorkloadTargetType = "controller"
 	// WorkloadTargetPodSelector defines the pod selector type
 	WorkloadTargetPodSelector WorkloadTargetType = "podSelector"
 )
 
-// AnalysisTarget defines the target for prediction
-type AnalysisTarget struct {
+// WorkloadTarget defines the target for prediction
+type WorkloadTarget struct {
 	// Type indicates the type of target
 	Type WorkloadTargetType `json:"type"`
-	// Workload indicates the target is a k8s workload, which is effective when Type is "workload"
-	Workload *WorkloadRef `json:"workload,omitempty"`
+	// Controller indicates the target is a k8s workload, which is effective when Type is "workload"
+	Controller *ControllerRef `json:"controller,omitempty"`
 	// PodSelector indicates the target is a series of pods, which is effective when Type is "podSelector"
 	PodSelector *PodSelectorRef `json:"podSelector,omitempty"`
 }
 
-// WorkloadRef defines the reference of a k8s workload
-type WorkloadRef struct {
+// ControllerRef defines the reference of a k8s workload managed by controller
+type ControllerRef struct {
+	// Namespace of thte workload
+	Namespace string `json:"namespace"`
 	// Kind of the referent; More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds"
 	Kind string `json:"kind"`
 	// Name of the referent; More info: http://kubernetes.io/docs/user-guide/identifiers#names
@@ -54,6 +56,10 @@ type WorkloadRef struct {
 
 // PodSelectorRef defines the reference of a series of pods
 type PodSelectorRef struct {
+	// Namespace of pods
+	Namespace string `json:"namespace"`
+	// Alias of pods selector
+	Alias string `json:"alias"`
 	// Selector is a label query over pods
 	Selector *metav1.LabelSelector `json:"selector"`
 	// Hierarchy indicates the hierarchy of the target for profiling
@@ -72,6 +78,6 @@ type ProfileHierarchyLevel string
 const (
 	// ProfileHierarchyLevelPod indicates the profiling target is a pod level
 	ProfileHierarchyLevelPod ProfileHierarchyLevel = "pod"
-	// ProfileHierarchyContainer indicates the profiling target is a container level
-	ProfileHierarchyContainer ProfileHierarchyLevel = "container"
+	// ProfileHierarchyLevelContainer indicates the profiling target is a container level
+	ProfileHierarchyLevelContainer ProfileHierarchyLevel = "container"
 )

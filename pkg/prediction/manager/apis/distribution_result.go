@@ -1,17 +1,17 @@
 /*
- Copyright 2024 The Koordinator Authors.
+Copyright 2022 The Koordinator Authors.
 
- Licensed under the Apache License, Version 2.0 (the "License");
- you may not use this file except in compliance with the License.
- You may obtain a copy of the License at
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
 
-     http://www.apache.org/licenses/LICENSE-2.0
+    http://www.apache.org/licenses/LICENSE-2.0
 
- Unless required by applicable law or agreed to in writing, software
- distributed under the License is distributed on an "AS IS" BASIS,
- WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- See the License for the specific language governing permissions and
- limitations under the License.
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 */
 
 package apis
@@ -29,6 +29,10 @@ type DistributionProfilerResult struct {
 	Models []DistributionModelDetail `json:"models,omitempty"`
 }
 
+func (r *DistributionProfilerResult) GetProfileKey() *ProfileKey {
+	return &r.ProfileKey
+}
+
 type DistributionModelDetail struct {
 	// ID is the identifier of the profiler hierarchy
 	ID HierarchyIdentifier `json:"id,omitempty"`
@@ -44,20 +48,27 @@ type HierarchyIdentifier struct {
 	Name string `json:"name,omitempty"`
 }
 
+type MetricIdentifier struct {
+	// Source is the source of the metric
+	Source MetricSourceType `json:"source,omitempty"`
+	// Name is the name of the metric
+	Name string `json:"name,omitempty"`
+}
+
 // MetricDistribution is the distribution result of a specified metric
 type MetricDistribution struct {
-	// Name is the identifier defined in MetricSpec
-	Name string `json:"name,omitempty"`
+	// MetricIdentifier is the identifier defined in MetricSpec
+	Metric MetricIdentifier `json:"metric,omitempty"`
 	// Avg is the average value of the resource
-	Avg resource.Quantity `json:"avg,omitempty"`
+	Avg *resource.Quantity `json:"avg,omitempty"`
 	// Quantiles is the quantiles of the resource
 	Quantiles map[string]resource.Quantity `json:"quantiles,omitempty"`
 	// StdDev is the standard deviation of the resource
-	StdDev resource.Quantity `json:"stdDev,omitempty"`
+	StdDev *resource.Quantity `json:"stdDev,omitempty"`
 	// LastSampleTime is the start time of the first sample
-	FirstSampleTime metav1.Time `json:"firstSampleTime,omitempty"`
+	FirstSampleTime *metav1.Time `json:"firstSampleTime,omitempty"`
 	// LastSampleTime is the start time of the last sample
-	LastSampleTime metav1.Time `json:"lastSampleTime,omitempty"`
+	LastSampleTime *metav1.Time `json:"lastSampleTime,omitempty"`
 	// TotalSamplesCount is the total samples count
 	TotalSamplesCount int64 `json:"totalSamplesCount,omitempty"`
 	// UpdateTime is the update time of the distribution
