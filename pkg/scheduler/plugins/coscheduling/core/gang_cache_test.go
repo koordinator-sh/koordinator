@@ -100,6 +100,7 @@ func TestGangCache_OnPodAdd(t *testing.T) {
 					WaitTime:        0,
 					GangGroupId:     "default/test",
 					GangGroup:       []string{"default/test"},
+					GangGroupInfo:   NewGangGroupInfo("", nil),
 					Mode:            extension.GangModeStrict,
 					GangFrom:        GangFromPodAnnotation,
 					GangMatchPolicy: extension.GangMatchPolicyOnceSatisfied,
@@ -519,9 +520,13 @@ func TestGangCache_OnPodAdd(t *testing.T) {
 					continue
 				}
 
-				gang.GangGroupInfo.GangTotalChildrenNumMap[gang.Name] = gang.TotalChildrenNum
-				gang.GangGroupInfo.ChildrenLastScheduleTime[util.GetId(pod.Namespace, pod.Name)] =
-					gang.GangGroupInfo.LastScheduleTime
+				if gangCache.gangItems[gangId].GangGroupInfo.IsInitialized() {
+					gang.GangGroupInfo.SetInitialized()
+
+					gang.GangGroupInfo.GangTotalChildrenNumMap[gang.Name] = gang.TotalChildrenNum
+					gang.GangGroupInfo.ChildrenLastScheduleTime[util.GetId(pod.Namespace, pod.Name)] =
+						gang.GangGroupInfo.LastScheduleTime
+				}
 			}
 
 			assert.Equal(t, tt.wantCache, gangCache.gangItems)
@@ -676,9 +681,13 @@ func TestGangCache_OnPodUpdate(t *testing.T) {
 					continue
 				}
 
-				gang.GangGroupInfo.GangTotalChildrenNumMap[gang.Name] = gang.TotalChildrenNum
-				gang.GangGroupInfo.ChildrenLastScheduleTime[util.GetId(pod.Namespace, pod.Name)] =
-					gang.GangGroupInfo.LastScheduleTime
+				if gangCache.gangItems[gangId].GangGroupInfo.IsInitialized() {
+					gang.GangGroupInfo.SetInitialized()
+
+					gang.GangGroupInfo.GangTotalChildrenNumMap[gang.Name] = gang.TotalChildrenNum
+					gang.GangGroupInfo.ChildrenLastScheduleTime[util.GetId(pod.Namespace, pod.Name)] =
+						gang.GangGroupInfo.LastScheduleTime
+				}
 			}
 
 			assert.Equal(t, tt.wantCache, gangCache.gangItems)
@@ -854,11 +863,9 @@ func TestGangCache_OnPodDelete(t *testing.T) {
 				}
 
 				gang.GangGroupInfo.GangTotalChildrenNumMap[gang.Name] = gang.TotalChildrenNum
-			}
 
-			for _, gang := range tt.wantCache {
-				if gangCache.gangItems[gang.Name].GangGroupInfo == nil {
-					gangCache.gangItems[gang.Name].GangGroupInfo = NewGangGroupInfo("", nil)
+				if gangCache.gangItems[gangId].GangGroupInfo.IsInitialized() {
+					gang.GangGroupInfo.SetInitialized()
 				}
 			}
 
@@ -1004,6 +1011,10 @@ func TestGangCache_OnPodGroupAdd(t *testing.T) {
 				if gang.GangGroupInfo != nil {
 					gang.GangGroupInfo.GangTotalChildrenNumMap[gang.Name] = gang.TotalChildrenNum
 				}
+
+				if gangCache.gangItems[gang.Name].GangGroupInfo.IsInitialized() {
+					gang.GangGroupInfo.SetInitialized()
+				}
 			}
 
 			for k, v := range tt.wantCache {
@@ -1122,6 +1133,11 @@ func TestGangCache_OnGangDelete(t *testing.T) {
 
 	cacheGang := cache.getGangFromCacheByGangId("default/gangb", false)
 	wantedGang.GangGroupId = util.GetGangGroupId(wantedGang.GangGroup)
+
+	if cacheGang.GangGroupInfo.IsInitialized() {
+		wantedGang.GangGroupInfo.SetInitialized()
+	}
+
 	assert.Equal(t, wantedGang, cacheGang)
 }
 

@@ -88,6 +88,7 @@ func NewGang(gangName string) *Gang {
 		BoundChildren:          make(map[string]*v1.Pod),
 		GangFrom:               GangFromPodAnnotation,
 		HasGangInit:            false,
+		GangGroupInfo:          NewGangGroupInfo("", nil),
 	}
 }
 
@@ -230,7 +231,7 @@ func (gang *Gang) SetGangGroupInfo(gangGroupInfo *GangGroupInfo) {
 	gang.lock.Lock()
 	defer gang.lock.Unlock()
 
-	if gang.GangGroupInfo == nil {
+	if !gang.GangGroupInfo.IsInitialized() {
 		gang.GangGroupInfo = gangGroupInfo
 		klog.Infof("SetGangGroupInfo done, gangName: %v, groupSlice: %v, gangGroupId: %v",
 			gang.Name, gang.GangGroup, gang.GangGroupId)
@@ -253,13 +254,8 @@ func (gang *Gang) deletePod(pod *v1.Pod) bool {
 	delete(gang.Children, podId)
 	delete(gang.WaitingForBindChildren, podId)
 	delete(gang.BoundChildren, podId)
-	if gang.GangGroupInfo != nil {
-		//t0: podGroup deleted, the gang and gangGroupInfo all deleted
-		//t1: pod updated, create a new fakeGang and nil gangGroupInfo
-		//t2: pod deleted
-		gang.GangGroupInfo.deleteChildScheduleCycle(podId)
-		gang.GangGroupInfo.deletePodLastScheduleTime(podId)
-	}
+	gang.GangGroupInfo.deleteChildScheduleCycle(podId)
+	gang.GangGroupInfo.deletePodLastScheduleTime(podId)
 	if gang.GangFrom == GangFromPodAnnotation {
 		if len(gang.Children) == 0 {
 			return true
