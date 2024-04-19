@@ -253,8 +253,13 @@ func (gang *Gang) deletePod(pod *v1.Pod) bool {
 	delete(gang.Children, podId)
 	delete(gang.WaitingForBindChildren, podId)
 	delete(gang.BoundChildren, podId)
-	gang.GangGroupInfo.deleteChildScheduleCycle(podId)
-	gang.GangGroupInfo.deletePodLastScheduleTime(podId)
+	if gang.GangGroupInfo != nil {
+		//t0: podGroup deleted, the gang and gangGroupInfo all deleted
+		//t1: pod updated, create a new fakeGang and nil gangGroupInfo
+		//t2: pod deleted
+		gang.GangGroupInfo.deleteChildScheduleCycle(podId)
+		gang.GangGroupInfo.deletePodLastScheduleTime(podId)
+	}
 	if gang.GangFrom == GangFromPodAnnotation {
 		if len(gang.Children) == 0 {
 			return true
