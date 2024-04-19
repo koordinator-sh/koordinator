@@ -150,6 +150,8 @@ func (gangCache *GangCache) onPodAdd(obj interface{}) {
 		gang.addBoundPod(pod)
 		gang.setResourceSatisfied()
 	}
+
+	klog.Infof("watch pod created, Name:%v, pgLabel:%v", pod.Name, pod.Labels[v1alpha1.PodGroupLabel])
 }
 
 func (gangCache *GangCache) onPodUpdate(oldObj, newObj interface{}) {
@@ -202,6 +204,8 @@ func (gangCache *GangCache) onPodDelete(obj interface{}) {
 			gangCache.deleteGangGroupInfo(gang.GangGroupInfo.GangGroupId)
 		}
 	}
+
+	klog.Infof("watch pod deleted, Name:%v, pgLabel:%v", pod.Name, pod.Labels[v1alpha1.PodGroupLabel])
 }
 
 func (gangCache *GangCache) onPodGroupAdd(obj interface{}) {
@@ -222,6 +226,8 @@ func (gangCache *GangCache) onPodGroupAdd(obj interface{}) {
 	gang.SetGangGroupInfo(gangGroupInfo)
 	//reset already connected pods lastScheduleTime
 	gang.initAllChildrenPodLastScheduleTime()
+
+	klog.Infof("watch podGroup created, Name:%v", pg.Name)
 }
 
 func (gangCache *GangCache) onPodGroupUpdate(oldObj interface{}, newObj interface{}) {
@@ -271,4 +277,6 @@ func (gangCache *GangCache) onPodGroupDelete(obj interface{}) {
 	if allGangDeleted {
 		gangCache.deleteGangGroupInfo(gang.GangGroupInfo.GangGroupId)
 	}
+
+	klog.Infof("watch podGroup deleted, Name:%v", pg.Name)
 }

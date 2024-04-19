@@ -31,24 +31,38 @@ func TestGangGroupInfo_SetGangGroupInfo(t *testing.T) {
 }
 
 func TestDeletePod(t *testing.T) {
-	gangGroupInfo := NewGangGroupInfo("aa_bb", []string{"aa", "bb"})
-	gangGroupInfo.ChildrenScheduleRoundMap["test/pod1"] = 1
-	gangGroupInfo.ChildrenLastScheduleTime["test/pod1"] = time.Now()
+	{
+		gangGroupInfo := NewGangGroupInfo("aa_bb", []string{"aa", "bb"})
+		gangGroupInfo.ChildrenScheduleRoundMap["test/pod1"] = 1
+		gangGroupInfo.ChildrenLastScheduleTime["test/pod1"] = time.Now()
 
-	gang := &Gang{}
-	gang.Name = "aa"
-	gang.TotalChildrenNum = 2
-	gang.SetGangGroupInfo(gangGroupInfo)
+		gang := &Gang{}
+		gang.Name = "aa"
+		gang.TotalChildrenNum = 2
+		gang.SetGangGroupInfo(gangGroupInfo)
 
-	pod := &corev1.Pod{}
-	pod.Namespace = "test"
-	pod.Name = "pod1"
+		pod := &corev1.Pod{}
+		pod.Namespace = "test"
+		pod.Name = "pod1"
 
-	assert.Equal(t, 1, len(gangGroupInfo.ChildrenScheduleRoundMap))
-	assert.Equal(t, 1, len(gangGroupInfo.ChildrenLastScheduleTime))
-	gang.deletePod(pod)
-	assert.Equal(t, 0, len(gangGroupInfo.ChildrenScheduleRoundMap))
-	assert.Equal(t, 0, len(gangGroupInfo.ChildrenLastScheduleTime))
+		assert.Equal(t, 1, len(gangGroupInfo.ChildrenScheduleRoundMap))
+		assert.Equal(t, 1, len(gangGroupInfo.ChildrenLastScheduleTime))
+		gang.deletePod(pod)
+		assert.Equal(t, 0, len(gangGroupInfo.ChildrenScheduleRoundMap))
+		assert.Equal(t, 0, len(gangGroupInfo.ChildrenLastScheduleTime))
+	}
+	{
+		//won't panic
+		gang := &Gang{}
+		gang.Name = "aa"
+		gang.TotalChildrenNum = 2
+
+		pod := &corev1.Pod{}
+		pod.Namespace = "test"
+		pod.Name = "pod1"
+
+		gang.deletePod(pod)
+	}
 }
 
 func TestIsScheduleCycleValid_GetScheduleCycle_GetChildScheduleCycle_SetChildScheduleCycle(t *testing.T) {
