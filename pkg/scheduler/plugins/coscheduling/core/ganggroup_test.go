@@ -10,12 +10,14 @@ import (
 func TestGangGroupInfo(t *testing.T) {
 	{
 		gg := NewGangGroupInfo("aa", []string{"aa"})
+		gg.SetInitialized()
 		assert.Equal(t, 1, gg.ScheduleCycle)
 		assert.Equal(t, true, gg.ScheduleCycleValid)
 		assert.True(t, !gg.LastScheduleTime.IsZero())
 	}
 	{
 		gg := NewGangGroupInfo("aa", []string{"aa"})
+		gg.SetInitialized()
 		gg.setScheduleCycleInvalid()
 
 		gg.SetGangTotalChildrenNum("aa", 1)
@@ -56,6 +58,7 @@ func TestGangGroupInfo(t *testing.T) {
 	}
 	{
 		gg := NewGangGroupInfo("aa", []string{"aa"})
+		gg.SetInitialized()
 
 		pod1 := &corev1.Pod{}
 		pod1.Namespace = "test"

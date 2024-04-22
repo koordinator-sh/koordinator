@@ -11,7 +11,9 @@ import (
 )
 
 type GangGroupInfo struct {
-	lock        sync.Mutex
+	lock sync.Mutex
+
+	Initialized bool
 	GangGroupId string
 	GangGroup   []string
 
@@ -32,6 +34,7 @@ type GangGroupInfo struct {
 
 func NewGangGroupInfo(gangGroupId string, gangGroup []string) *GangGroupInfo {
 	gangGroupInfo := &GangGroupInfo{
+		Initialized:              false,
 		GangGroupId:              gangGroupId,
 		GangGroup:                gangGroup,
 		ScheduleCycle:            1,
@@ -49,6 +52,20 @@ func NewGangGroupInfo(gangGroupId string, gangGroup []string) *GangGroupInfo {
 	return gangGroupInfo
 }
 
+func (gg *GangGroupInfo) SetInitialized() {
+	gg.lock.Lock()
+	defer gg.lock.Unlock()
+
+	gg.Initialized = true
+}
+
+func (gg *GangGroupInfo) IsInitialized() bool {
+	gg.lock.Lock()
+	defer gg.lock.Unlock()
+
+	return gg.Initialized
+}
+
 func (gg *GangGroupInfo) GetScheduleCycle() int {
 	gg.lock.Lock()
 	defer gg.lock.Unlock()
@@ -60,6 +77,10 @@ func (gg *GangGroupInfo) setScheduleCycleInvalid() {
 	gg.lock.Lock()
 	defer gg.lock.Unlock()
 
+	if !gg.Initialized {
+		return
+	}
+
 	if gg.ScheduleCycleValid {
 		gg.ScheduleCycleValid = false
 		klog.Infof("setScheduleCycleInvalid, gangGroupName: %v, valid: %v", gg.GangGroupId)
@@ -70,12 +91,20 @@ func (gg *GangGroupInfo) IsScheduleCycleValid() bool {
 	gg.lock.Lock()
 	defer gg.lock.Unlock()
 
+	if !gg.Initialized {
+		return false
+	}
+
 	return gg.ScheduleCycleValid
 }
 
 func (gg *GangGroupInfo) trySetScheduleCycleValid() {
 	gg.lock.Lock()
 	defer gg.lock.Unlock()
+
+	if !gg.Initialized {
+		return
+	}
 
 	num := 0
 	for _, childScheduleCycle := range gg.ChildrenScheduleRoundMap {
@@ -102,6 +131,10 @@ func (gg *GangGroupInfo) setChildScheduleCycle(pod *corev1.Pod, childCycle int) 
 	gg.lock.Lock()
 	defer gg.lock.Unlock()
 
+	if !gg.Initialized {
+		return
+	}
+
 	podId := util.GetId(pod.Namespace, pod.Name)
 	gg.ChildrenScheduleRoundMap[podId] = childCycle
 	klog.Infof("setChildScheduleCycle, pod: %v, childCycle: %v", podId, childCycle)
@@ -119,6 +152,10 @@ func (gg *GangGroupInfo) deleteChildScheduleCycle(podId string) {
 	gg.lock.Lock()
 	defer gg.lock.Unlock()
 
+	if !gg.Initialized {
+		return
+	}
+
 	delete(gg.ChildrenScheduleRoundMap, podId)
 }
 
@@ -126,12 +163,20 @@ func (gg *GangGroupInfo) SetGangTotalChildrenNum(gangName string, totalChildrenN
 	gg.lock.Lock()
 	defer gg.lock.Unlock()
 
+	if !gg.Initialized {
+		return
+	}
+
 	gg.GangTotalChildrenNumMap[gangName] = totalChildrenNum
 }
 
 func (gg *GangGroupInfo) initPodLastScheduleTime(pod *corev1.Pod) {
 	gg.lock.Lock()
 	defer gg.lock.Unlock()
+
+	if !gg.Initialized {
+		return
+	}
 
 	podId := util.GetId(pod.Namespace, pod.Name)
 	gg.ChildrenLastScheduleTime[podId] = gg.LastScheduleTime
@@ -149,12 +194,20 @@ func (gg *GangGroupInfo) deletePodLastScheduleTime(podId string) {
 	gg.lock.Lock()
 	defer gg.lock.Unlock()
 
+	if !gg.Initialized {
+		return
+	}
+
 	delete(gg.ChildrenLastScheduleTime, podId)
 }
 
 func (gg *GangGroupInfo) resetPodLastScheduleTime(pod *corev1.Pod) {
 	gg.lock.Lock()
 	defer gg.lock.Unlock()
+
+	if !gg.Initialized {
+		return
+	}
 
 	num := 0
 	for _, childLastScheduleTime := range gg.ChildrenLastScheduleTime {

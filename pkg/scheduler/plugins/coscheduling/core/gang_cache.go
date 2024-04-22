@@ -61,6 +61,7 @@ func (gangCache *GangCache) getGangGroupInfo(gangGroupId string, gangGroup []str
 	if gangCache.gangGroupInfoMap[gangGroupId] == nil {
 		if createIfNotExist {
 			gangGroupInfo = NewGangGroupInfo(gangGroupId, gangGroup)
+			gangGroupInfo.SetInitialized()
 			gangCache.gangGroupInfoMap[gangGroupId] = gangGroupInfo
 			klog.Infof("add gangGroupInfo to cache, gangGroupId: %v", gangGroupId)
 		}
