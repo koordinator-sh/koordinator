@@ -678,13 +678,6 @@ func TestResourceManagerGetTopologyHint(t *testing.T) {
 						}(),
 						Preferred: true,
 					},
-					{
-						NUMANodeAffinity: func() bitmask.BitMask {
-							mask, _ := bitmask.NewBitMask(0, 1)
-							return mask
-						}(),
-						Preferred: false,
-					},
 				},
 			},
 			wantErr: false,
@@ -805,13 +798,6 @@ func TestResourceManagerGetTopologyHint(t *testing.T) {
 							return mask
 						}(),
 						Preferred: true,
-					},
-					{
-						NUMANodeAffinity: func() bitmask.BitMask {
-							mask, _ := bitmask.NewBitMask(0, 1)
-							return mask
-						}(),
-						Preferred: false,
 					},
 				},
 			},
