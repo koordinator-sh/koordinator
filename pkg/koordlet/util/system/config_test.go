@@ -24,12 +24,12 @@ import (
 
 func Test_NewDsModeConfig(t *testing.T) {
 	expectConfig := &Config{
-		CgroupKubePath:        "kubepods/",
 		CgroupRootDir:         "/host-cgroup/",
 		ProcRootDir:           "/proc/",
 		SysRootDir:            "/host-sys/",
 		SysFSRootDir:          "/host-sys-fs/",
 		VarRunRootDir:         "/host-var-run/",
+		VarLibKubeletRootDir:  "/var/lib/kubelet/",
 		RunRootDir:            "/host-run/",
 		RuntimeHooksConfigDir: "/host-etc-hookserver/",
 		DefaultRuntimeType:    "containerd",
@@ -40,12 +40,12 @@ func Test_NewDsModeConfig(t *testing.T) {
 
 func Test_NewHostModeConfig(t *testing.T) {
 	expectConfig := &Config{
-		CgroupKubePath:        "kubepods/",
 		CgroupRootDir:         "/sys/fs/cgroup/",
 		ProcRootDir:           "/proc/",
 		SysRootDir:            "/sys/",
 		SysFSRootDir:          "/sys/fs/",
 		VarRunRootDir:         "/var/run/",
+		VarLibKubeletRootDir:  "/var/lib/kubelet/",
 		RunRootDir:            "/run/",
 		RuntimeHooksConfigDir: "/etc/runtime/hookserver.d",
 		DefaultRuntimeType:    "containerd",
