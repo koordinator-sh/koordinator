@@ -18,10 +18,8 @@ package core
 
 import (
 	"sync"
-	"time"
 
 	v1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/types"
 	listerv1 "k8s.io/client-go/listers/core/v1"
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
@@ -34,25 +32,52 @@ import (
 )
 
 type GangCache struct {
-	lock                           *sync.RWMutex
-	gangItems                      map[string]*Gang
-	pluginArgs                     *config.CoschedulingArgs
-	podLister                      listerv1.PodLister
-	pgLister                       pglister.PodGroupLister
-	pgClient                       pgclientset.Interface
-	gangGroupLastScheduleTimeOfPod map[types.UID]*time.Time
+	lock             *sync.RWMutex
+	gangItems        map[string]*Gang
+	gangGroupInfoMap map[string]*GangGroupInfo
+	pluginArgs       *config.CoschedulingArgs
+	podLister        listerv1.PodLister
+	pgLister         pglister.PodGroupLister
+	pgClient         pgclientset.Interface
 }
 
 func NewGangCache(args *config.CoschedulingArgs, podLister listerv1.PodLister, pgLister pglister.PodGroupLister, client pgclientset.Interface) *GangCache {
 	return &GangCache{
-		gangItems:                      make(map[string]*Gang),
-		lock:                           new(sync.RWMutex),
-		pluginArgs:                     args,
-		podLister:                      podLister,
-		pgLister:                       pgLister,
-		pgClient:                       client,
-		gangGroupLastScheduleTimeOfPod: make(map[types.UID]*time.Time),
+		gangItems:        make(map[string]*Gang),
+		gangGroupInfoMap: make(map[string]*GangGroupInfo),
+		lock:             new(sync.RWMutex),
+		pluginArgs:       args,
+		podLister:        podLister,
+		pgLister:         pgLister,
+		pgClient:         client,
 	}
+}
+
+func (gangCache *GangCache) getGangGroupInfo(gangGroupId string, gangGroup []string, createIfNotExist bool) *GangGroupInfo {
+	gangCache.lock.Lock()
+	defer gangCache.lock.Unlock()
+
+	var gangGroupInfo *GangGroupInfo
+	if gangCache.gangGroupInfoMap[gangGroupId] == nil {
+		if createIfNotExist {
+			gangGroupInfo = NewGangGroupInfo(gangGroupId, gangGroup)
+			gangGroupInfo.SetInitialized()
+			gangCache.gangGroupInfoMap[gangGroupId] = gangGroupInfo
+			klog.Infof("add gangGroupInfo to cache, gangGroupId: %v", gangGroupId)
+		}
+	} else {
+		gangGroupInfo = gangCache.gangGroupInfoMap[gangGroupId]
+	}
+
+	return gangGroupInfo
+}
+
+func (gangCache *GangCache) deleteGangGroupInfo(gangGroupId string) {
+	gangCache.lock.Lock()
+	defer gangCache.lock.Unlock()
+
+	delete(gangCache.gangGroupInfoMap, gangGroupId)
+	klog.Infof("delete gangGroupInfo from cache, gangGroupId: %v", gangGroupId)
 }
 
 func (gangCache *GangCache) getGangFromCacheByGangId(gangId string, createIfNotExist bool) *Gang {
@@ -65,26 +90,6 @@ func (gangCache *GangCache) getGangFromCacheByGangId(gangId string, createIfNotE
 		klog.Infof("getGangFromCache create new gang, gang: %v", gangId)
 	}
 	return gang
-}
-
-func (gangCache *GangCache) getGangGroupLastScheduleTimeOfPod(podUID types.UID) *time.Time {
-	gangCache.lock.Lock()
-	defer gangCache.lock.Unlock()
-	return gangCache.gangGroupLastScheduleTimeOfPod[podUID]
-}
-
-func (gangCache *GangCache) setGangGroupLastScheduleTimeOfPod(podUID types.UID, lastScheduleTime time.Time) {
-	gangCache.lock.Lock()
-	defer gangCache.lock.Unlock()
-	gangCache.gangGroupLastScheduleTimeOfPod[podUID] = &lastScheduleTime
-}
-
-func (gangCache *GangCache) deleteGangGroupLastScheduleTimeOfPod(pod *v1.Pod) {
-	gangCache.lock.Lock()
-	defer gangCache.lock.Unlock()
-
-	delete(gangCache.gangGroupLastScheduleTimeOfPod, pod.UID)
-	klog.Infof("delete podScheduleInfo from cache, pod: %s/%s/%v", pod.Namespace, pod.Name, pod.UID)
 }
 
 func (gangCache *GangCache) getAllGangsFromCache() map[string]*Gang {
@@ -125,13 +130,29 @@ func (gangCache *GangCache) onPodAdd(obj interface{}) {
 	// the gang is created in Annotation way
 	if pod.Labels[v1alpha1.PodGroupLabel] == "" {
 		gang.tryInitByPodConfig(pod, gangCache.pluginArgs)
+
+		gangGroup := gang.getGangGroup()
+		gangGroupId := util.GetGangGroupId(gangGroup)
+		gangGroupInfo := gangCache.getGangGroupInfo(gangGroupId, gangGroup, true)
+		gang.SetGangGroupInfo(gangGroupInfo)
+		gang.initPodLastScheduleTime(pod)
+	} else {
+		//only podGroup added then can initPodLastScheduleTime
+		gangGroup := gang.getGangGroup()
+		gangGroupId := util.GetGangGroupId(gangGroup)
+		gangGroupInfo := gangCache.getGangGroupInfo(gangGroupId, gangGroup, false)
+		if gangGroupInfo != nil {
+			gang.initPodLastScheduleTime(pod)
+		}
 	}
+
 	gang.setChild(pod)
 	if pod.Spec.NodeName != "" {
 		gang.addBoundPod(pod)
 		gang.setResourceSatisfied()
-		gangCache.deleteGangGroupLastScheduleTimeOfPod(pod)
 	}
+
+	klog.Infof("watch pod created, Name:%v, pgLabel:%v", pod.Name, pod.Labels[v1alpha1.PodGroupLabel])
 }
 
 func (gangCache *GangCache) onPodUpdate(oldObj, newObj interface{}) {
@@ -161,7 +182,6 @@ func (gangCache *GangCache) onPodDelete(obj interface{}) {
 	if gangName == "" {
 		return
 	}
-	gangCache.deleteGangGroupLastScheduleTimeOfPod(pod)
 
 	gangNamespace := pod.Namespace
 	gangId := util.GetId(gangNamespace, gangName)
@@ -173,7 +193,20 @@ func (gangCache *GangCache) onPodDelete(obj interface{}) {
 	shouldDeleteGang := gang.deletePod(pod)
 	if shouldDeleteGang {
 		gangCache.deleteGangFromCacheByGangId(gangId)
+
+		allGangDeleted := true
+		for _, gangId := range gang.GangGroup {
+			if gangCache.getGangFromCacheByGangId(gangId, false) != nil {
+				allGangDeleted = false
+				break
+			}
+		}
+		if allGangDeleted {
+			gangCache.deleteGangGroupInfo(gang.GangGroupInfo.GangGroupId)
+		}
 	}
+
+	klog.Infof("watch pod deleted, Name:%v, pgLabel:%v", pod.Name, pod.Labels[v1alpha1.PodGroupLabel])
 }
 
 func (gangCache *GangCache) onPodGroupAdd(obj interface{}) {
@@ -187,6 +220,15 @@ func (gangCache *GangCache) onPodGroupAdd(obj interface{}) {
 	gangId := util.GetId(gangNamespace, gangName)
 	gang := gangCache.getGangFromCacheByGangId(gangId, true)
 	gang.tryInitByPodGroup(pg, gangCache.pluginArgs)
+
+	gangGroup := gang.getGangGroup()
+	gangGroupId := util.GetGangGroupId(gangGroup)
+	gangGroupInfo := gangCache.getGangGroupInfo(gangGroupId, gangGroup, true)
+	gang.SetGangGroupInfo(gangGroupInfo)
+	//reset already connected pods lastScheduleTime
+	gang.initAllChildrenPodLastScheduleTime()
+
+	klog.Infof("watch podGroup created, Name:%v", pg.Name)
 }
 
 func (gangCache *GangCache) onPodGroupUpdate(oldObj interface{}, newObj interface{}) {
@@ -204,6 +246,11 @@ func (gangCache *GangCache) onPodGroupUpdate(oldObj interface{}, newObj interfac
 		return
 	}
 	gang.tryInitByPodGroup(pg, gangCache.pluginArgs)
+
+	gangGroup := gang.getGangGroup()
+	gangGroupId := util.GetGangGroupId(gangGroup)
+	gangGroupInfo := gangCache.getGangGroupInfo(gangGroupId, gangGroup, true)
+	gang.SetGangGroupInfo(gangGroupInfo)
 }
 
 func (gangCache *GangCache) onPodGroupDelete(obj interface{}) {
@@ -220,4 +267,17 @@ func (gangCache *GangCache) onPodGroupDelete(obj interface{}) {
 		return
 	}
 	gangCache.deleteGangFromCacheByGangId(gangId)
+
+	allGangDeleted := true
+	for _, gangId := range gang.GangGroup {
+		if gangCache.getGangFromCacheByGangId(gangId, false) != nil {
+			allGangDeleted = false
+			break
+		}
+	}
+	if allGangDeleted {
+		gangCache.deleteGangGroupInfo(gang.GangGroupInfo.GangGroupId)
+	}
+
+	klog.Infof("watch podGroup deleted, Name:%v", pg.Name)
 }
