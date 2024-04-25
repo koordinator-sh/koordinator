@@ -296,7 +296,7 @@ func (b *blkIOReconcile) getDiskNumberFromVolumeGroup(vgName string) (string, er
 // diskNumber: 253:16
 func (b *blkIOReconcile) getDiskNumberFromPodVolume(podMeta *statesinformer.PodMeta, volumeName string) (string, error) {
 	podUUID := podMeta.Pod.UID
-	mountpoint := filepath.Join(system.Conf.CgroupKubePath, "pods", string(podUUID), "volumes/kubernetes.io~csi", volumeName, "mount")
+	mountpoint := filepath.Join(system.Conf.VarLibKubeletRootDir, "pods", string(podUUID), "volumes/kubernetes.io~csi", volumeName, "mount")
 	disk := getDiskByMountPoint(b.storageInfo, mountpoint)
 	diskNumber := getDiskNumber(b.storageInfo, disk)
 	if diskNumber == "" {

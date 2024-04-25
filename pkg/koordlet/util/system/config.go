@@ -36,11 +36,11 @@ var UseCgroupsV2 = atomic.NewBool(false)
 
 type Config struct {
 	CgroupRootDir         string
-	CgroupKubePath        string
 	SysRootDir            string
 	SysFSRootDir          string
 	ProcRootDir           string
 	VarRunRootDir         string
+	VarLibKubeletRootDir  string
 	RunRootDir            string
 	RuntimeHooksConfigDir string
 
@@ -76,12 +76,12 @@ func InitSupportConfigs() {
 
 func NewHostModeConfig() *Config {
 	return &Config{
-		CgroupKubePath:        "kubepods/",
 		CgroupRootDir:         "/sys/fs/cgroup/",
 		ProcRootDir:           "/proc/",
 		SysRootDir:            "/sys/",
 		SysFSRootDir:          "/sys/fs/",
 		VarRunRootDir:         "/var/run/",
+		VarLibKubeletRootDir:  "/var/lib/kubelet/",
 		RunRootDir:            "/run/",
 		RuntimeHooksConfigDir: "/etc/runtime/hookserver.d",
 		DefaultRuntimeType:    "containerd",
@@ -90,13 +90,13 @@ func NewHostModeConfig() *Config {
 
 func NewDsModeConfig() *Config {
 	return &Config{
-		CgroupKubePath: "kubepods/",
-		CgroupRootDir:  "/host-cgroup/",
+		CgroupRootDir: "/host-cgroup/",
 		// some dirs are not covered by ns, or unused with `hostPID` is on
 		ProcRootDir:           "/proc/",
 		SysRootDir:            "/host-sys/",
 		SysFSRootDir:          "/host-sys-fs/",
 		VarRunRootDir:         "/host-var-run/",
+		VarLibKubeletRootDir:  "/var/lib/kubelet/",
 		RunRootDir:            "/host-run/",
 		RuntimeHooksConfigDir: "/host-etc-hookserver/",
 		DefaultRuntimeType:    "containerd",
@@ -113,9 +113,9 @@ func (c *Config) InitFlags(fs *flag.FlagSet) {
 	fs.StringVar(&c.SysFSRootDir, "sys-fs-root-dir", c.SysFSRootDir, "host /sys/fs dir in container, used by resctrl fs")
 	fs.StringVar(&c.ProcRootDir, "proc-root-dir", c.ProcRootDir, "host /proc dir in container")
 	fs.StringVar(&c.VarRunRootDir, "var-run-root-dir", c.VarRunRootDir, "host /var/run dir in container")
+	fs.StringVar(&c.VarLibKubeletRootDir, "var-lib-kubelet-dir", c.VarLibKubeletRootDir, "host /var/lib/kubelet dir in container")
 	fs.StringVar(&c.RunRootDir, "run-root-dir", c.RunRootDir, "host /run dir in container")
 
-	fs.StringVar(&c.CgroupKubePath, "cgroup-kube-dir", c.CgroupKubePath, "Cgroup kube dir")
 	fs.StringVar(&c.ContainerdEndPoint, "containerd-endpoint", c.ContainerdEndPoint, "containerd endPoint")
 	fs.StringVar(&c.DockerEndPoint, "docker-endpoint", c.DockerEndPoint, "docker endPoint")
 	fs.StringVar(&c.PouchEndpoint, "pouch-endpoint", c.PouchEndpoint, "pouch endPoint")
