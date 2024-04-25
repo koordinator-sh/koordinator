@@ -624,6 +624,7 @@ func TestAllocateDistributeEvenly(t *testing.T) {
 						return mask
 					}(),
 				},
+				numaAllocateStrategy: schedulingconfig.NUMADistributeEvenly,
 			},
 			want: &PodAllocation{
 				NUMANodeResources: []NUMANodeResource{
@@ -658,6 +659,7 @@ func TestAllocateDistributeEvenly(t *testing.T) {
 						return mask
 					}(),
 				},
+				numaAllocateStrategy: schedulingconfig.NUMADistributeEvenly,
 			},
 			want:    nil,
 			wantErr: true,
@@ -679,6 +681,7 @@ func TestAllocateDistributeEvenly(t *testing.T) {
 						return mask
 					}(),
 				},
+				numaAllocateStrategy: schedulingconfig.NUMADistributeEvenly,
 			},
 			want: &PodAllocation{
 				CPUSet: cpuset.MustParse("0-1,52-53"),
@@ -716,6 +719,7 @@ func TestAllocateDistributeEvenly(t *testing.T) {
 						return mask
 					}(),
 				},
+				numaAllocateStrategy: schedulingconfig.NUMADistributeEvenly,
 			},
 			allocated: &PodAllocation{
 				UID:       "123456",
@@ -773,6 +777,7 @@ func TestAllocateDistributeEvenly(t *testing.T) {
 						return mask
 					}(),
 				},
+				numaAllocateStrategy: schedulingconfig.NUMADistributeEvenly,
 			},
 			allocated: &PodAllocation{
 				UID:       "123456",
@@ -814,6 +819,7 @@ func TestAllocateDistributeEvenly(t *testing.T) {
 						return mask
 					}(),
 				},
+				numaAllocateStrategy: schedulingconfig.NUMADistributeEvenly,
 			},
 			want: &PodAllocation{
 				CPUSet: cpuset.MustParse("0,2,52,54"),
@@ -851,6 +857,7 @@ func TestAllocateDistributeEvenly(t *testing.T) {
 						return mask
 					}(),
 				},
+				numaAllocateStrategy: schedulingconfig.NUMADistributeEvenly,
 			},
 			allocated: &PodAllocation{
 				UID:       "123456",
@@ -908,6 +915,7 @@ func TestAllocateDistributeEvenly(t *testing.T) {
 						return mask
 					}(),
 				},
+				numaAllocateStrategy: schedulingconfig.NUMADistributeEvenly,
 			},
 			allocated: &PodAllocation{
 				UID:       "123456",
@@ -965,6 +973,7 @@ func TestAllocateDistributeEvenly(t *testing.T) {
 						return mask
 					}(),
 				},
+				numaAllocateStrategy: schedulingconfig.NUMADistributeEvenly,
 			},
 			allocated: &PodAllocation{
 				UID:       "123456",
@@ -1022,6 +1031,7 @@ func TestAllocateDistributeEvenly(t *testing.T) {
 						return mask
 					}(),
 				},
+				numaAllocateStrategy: schedulingconfig.NUMADistributeEvenly,
 			},
 			allocated: &PodAllocation{
 				UID:       "123456",
@@ -1066,6 +1076,7 @@ func TestAllocateDistributeEvenly(t *testing.T) {
 						return mask
 					}(),
 				},
+				numaAllocateStrategy: schedulingconfig.NUMADistributeEvenly,
 			},
 			amplificationRatios: map[corev1.ResourceName]apiext.Ratio{
 				corev1.ResourceCPU: 1.5,
@@ -1109,6 +1120,7 @@ func TestAllocateDistributeEvenly(t *testing.T) {
 						return mask
 					}(),
 				},
+				numaAllocateStrategy: schedulingconfig.NUMADistributeEvenly,
 			},
 			amplificationRatios: map[corev1.ResourceName]apiext.Ratio{
 				corev1.ResourceCPU: 1.5,
@@ -1171,6 +1183,7 @@ func TestAllocateDistributeEvenly(t *testing.T) {
 						return mask
 					}(),
 				},
+				numaAllocateStrategy: schedulingconfig.NUMADistributeEvenly,
 			},
 			amplificationRatios: map[corev1.ResourceName]apiext.Ratio{
 				corev1.ResourceCPU: 1.5,

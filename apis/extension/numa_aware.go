@@ -65,6 +65,8 @@ type ResourceSpec struct {
 	PreferredCPUBindPolicy CPUBindPolicy `json:"preferredCPUBindPolicy,omitempty"`
 	// PreferredCPUExclusivePolicy represents best-effort CPU exclusive policy.
 	PreferredCPUExclusivePolicy CPUExclusivePolicy `json:"preferredCPUExclusivePolicy,omitempty"`
+	// PreferredNUMAAllocateStrategy indicates that numa allocate strategy is strictly obeyed
+	PreferredNUMAAllocateStrategy NUMAAllocateStrategy `json:"preferredNUMAAllocateStrategy,omitempty"`
 }
 
 // ResourceStatus describes resource allocation result, such as how to bind CPU.

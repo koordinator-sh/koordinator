@@ -263,8 +263,9 @@ func TestPlugin_PreFilter(t *testing.T) {
 				requests: corev1.ResourceList{
 					corev1.ResourceCPU: resource.MustParse("4"),
 				},
-				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs,
-				numCPUsNeeded:          4,
+				preferredCPUBindPolicy:        schedulingconfig.CPUBindPolicyFullPCPUs,
+				preferredNUMAAllocateStrategy: schedulingconfig.NUMALeastAllocated,
+				numCPUsNeeded:                 4,
 			},
 		},
 		{
@@ -297,8 +298,9 @@ func TestPlugin_PreFilter(t *testing.T) {
 				requests: corev1.ResourceList{
 					corev1.ResourceCPU: resource.MustParse("4"),
 				},
-				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs,
-				numCPUsNeeded:          4,
+				preferredCPUBindPolicy:        schedulingconfig.CPUBindPolicyFullPCPUs,
+				preferredNUMAAllocateStrategy: schedulingconfig.NUMALeastAllocated,
+				numCPUsNeeded:                 4,
 			},
 		},
 		{
@@ -331,9 +333,10 @@ func TestPlugin_PreFilter(t *testing.T) {
 				requests: corev1.ResourceList{
 					corev1.ResourceCPU: resource.MustParse("4"),
 				},
-				requiredCPUBindPolicy:  schedulingconfig.CPUBindPolicyFullPCPUs,
-				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs,
-				numCPUsNeeded:          4,
+				requiredCPUBindPolicy:         schedulingconfig.CPUBindPolicyFullPCPUs,
+				preferredCPUBindPolicy:        schedulingconfig.CPUBindPolicyFullPCPUs,
+				preferredNUMAAllocateStrategy: schedulingconfig.NUMALeastAllocated,
+				numCPUsNeeded:                 4,
 			},
 		},
 		{
@@ -367,9 +370,10 @@ func TestPlugin_PreFilter(t *testing.T) {
 				requests: corev1.ResourceList{
 					corev1.ResourceCPU: resource.MustParse("4"),
 				},
-				requiredCPUBindPolicy:  schedulingconfig.CPUBindPolicySpreadByPCPUs,
-				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicySpreadByPCPUs,
-				numCPUsNeeded:          4,
+				requiredCPUBindPolicy:         schedulingconfig.CPUBindPolicySpreadByPCPUs,
+				preferredCPUBindPolicy:        schedulingconfig.CPUBindPolicySpreadByPCPUs,
+				preferredNUMAAllocateStrategy: schedulingconfig.NUMALeastAllocated,
+				numCPUsNeeded:                 4,
 			},
 		},
 		{
@@ -399,8 +403,9 @@ func TestPlugin_PreFilter(t *testing.T) {
 				requests: corev1.ResourceList{
 					corev1.ResourceCPU: resource.MustParse("4"),
 				},
-				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs,
-				numCPUsNeeded:          4,
+				preferredCPUBindPolicy:        schedulingconfig.CPUBindPolicyFullPCPUs,
+				preferredNUMAAllocateStrategy: schedulingconfig.NUMALeastAllocated,
+				numCPUsNeeded:                 4,
 			},
 		},
 		{
@@ -440,7 +445,8 @@ func TestPlugin_PreFilter(t *testing.T) {
 				requests: corev1.ResourceList{
 					corev1.ResourceCPU: resource.MustParse("4"),
 				},
-				numCPUsNeeded: 4,
+				preferredNUMAAllocateStrategy: schedulingconfig.NUMALeastAllocated,
+				numCPUsNeeded:                 4,
 			},
 		},
 		{
@@ -519,7 +525,8 @@ func TestPlugin_PreFilter(t *testing.T) {
 				requests: corev1.ResourceList{
 					corev1.ResourceCPU: resource.MustParse("4.5"),
 				},
-				numCPUsNeeded: 4,
+				preferredNUMAAllocateStrategy: schedulingconfig.NUMALeastAllocated,
+				numCPUsNeeded:                 4,
 			},
 		},
 	}

@@ -174,14 +174,15 @@ func (p *Plugin) GetTopologyOptionsManager() TopologyOptionsManager {
 }
 
 type preFilterState struct {
-	skip                        bool
-	requestCPUBind              bool
-	requests                    corev1.ResourceList
-	requiredCPUBindPolicy       schedulingconfig.CPUBindPolicy
-	preferredCPUBindPolicy      schedulingconfig.CPUBindPolicy
-	preferredCPUExclusivePolicy schedulingconfig.CPUExclusivePolicy
-	numCPUsNeeded               int
-	allocation                  *PodAllocation
+	skip                          bool
+	requestCPUBind                bool
+	requests                      corev1.ResourceList
+	requiredCPUBindPolicy         schedulingconfig.CPUBindPolicy
+	preferredCPUBindPolicy        schedulingconfig.CPUBindPolicy
+	preferredCPUExclusivePolicy   schedulingconfig.CPUExclusivePolicy
+	preferredNUMAAllocateStrategy schedulingconfig.NUMAAllocateStrategy
+	numCPUsNeeded                 int
+	allocation                    *PodAllocation
 }
 
 func (s *preFilterState) Clone() framework.StateData {
@@ -231,9 +232,13 @@ func (p *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleState
 	}
 	requestedCPU := requests.Cpu().MilliValue()
 	state := &preFilterState{
-		requestCPUBind: false,
-		requests:       requests,
-		numCPUsNeeded:  int(requestedCPU / 1000),
+		requestCPUBind:                false,
+		requests:                      requests,
+		numCPUsNeeded:                 int(requestedCPU / 1000),
+		preferredNUMAAllocateStrategy: resourceSpec.PreferredNUMAAllocateStrategy,
+	}
+	if state.preferredNUMAAllocateStrategy == "" {
+		state.preferredNUMAAllocateStrategy = GetDefaultNUMAAllocateStrategy(p.pluginArgs)
 	}
 	if AllowUseCPUSet(pod) {
 		cpuBindPolicy := schedulingconfig.CPUBindPolicy(resourceSpec.PreferredCPUBindPolicy)
@@ -518,6 +523,7 @@ func (p *Plugin) getResourceOptions(cycleState *framework.CycleState, state *pre
 		requiredCPUBindPolicy: requiredCPUBindPolicy,
 		cpuBindPolicy:         cpuBindPolicy,
 		cpuExclusivePolicy:    state.preferredCPUExclusivePolicy,
+		numaAllocateStrategy:  GetNUMAAllocateStrategy(node, state.preferredNUMAAllocateStrategy),
 		preferredCPUs:         reservationReservedCPUs,
 		reusableResources:     reusableResources,
 		hint:                  affinity,

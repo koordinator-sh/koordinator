@@ -59,6 +59,7 @@ type ResourceOptions struct {
 	requiredCPUBindPolicy bool
 	cpuBindPolicy         schedulingconfig.CPUBindPolicy
 	cpuExclusivePolicy    schedulingconfig.CPUExclusivePolicy
+	numaAllocateStrategy  schedulingconfig.NUMAAllocateStrategy
 	preferredCPUs         cpuset.CPUSet
 	reusableResources     map[int]corev1.ResourceList
 	hint                  topologymanager.NUMATopologyHint
@@ -233,7 +234,11 @@ func tryBestToDistributeEvenly(requests corev1.ResourceList, totalAvailable map[
 		copy(sortedNUMANodes, numaNodes)
 		sort.Slice(sortedNUMANodes, func(i, j int) bool {
 			iAvailableOfResource := totalAvailable[i][corev1.ResourceName(resourceName)]
-			return (&iAvailableOfResource).Cmp(totalAvailable[j][corev1.ResourceName(resourceName)]) < 0
+			if options.numaAllocateStrategy == schedulingconfig.NUMALeastAllocated {
+				return (&iAvailableOfResource).Cmp(totalAvailable[j][corev1.ResourceName(resourceName)]) > 0
+			} else {
+				return (&iAvailableOfResource).Cmp(totalAvailable[j][corev1.ResourceName(resourceName)]) < 0
+			}
 		})
 		sortedNUMANodeByResource[corev1.ResourceName(resourceName)] = sortedNUMANodes
 	}
@@ -276,6 +281,9 @@ func tryBestToDistributeEvenly(requests corev1.ResourceList, totalAvailable map[
 }
 
 func splitQuantity(resourceName corev1.ResourceName, quantity resource.Quantity, numaNodeCount int, options *ResourceOptions) resource.Quantity {
+	if options.numaAllocateStrategy != schedulingconfig.NUMADistributeEvenly {
+		return quantity
+	}
 	if resourceName != corev1.ResourceCPU {
 		return *resource.NewQuantity(quantity.Value()/int64(numaNodeCount), quantity.Format)
 	}
