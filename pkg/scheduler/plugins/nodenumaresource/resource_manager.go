@@ -457,9 +457,22 @@ func (c *resourceManager) getAvailableNUMANodeResources(nodeName string, topolog
 }
 
 func generateResourceHints(numaNodeResources []NUMANodeResource, podRequests corev1.ResourceList, totalAvailable map[int]corev1.ResourceList, numaScorer *resourceAllocationScorer) map[string][]topologymanager.NUMATopologyHint {
+	var resourceNamesByNUMA []corev1.ResourceName
+	for _, numaNodeResource := range numaNodeResources {
+		resourceNamesByNUMA = append(resourceNamesByNUMA, quotav1.ResourceNames(numaNodeResource.Resources)...)
+	}
+	numaNodesLackResource := map[corev1.ResourceName][]int{}
+	for _, resourceName := range resourceNamesByNUMA {
+		for nodeID, numaAvailable := range totalAvailable {
+			if available, ok := numaAvailable[resourceName]; !ok || available.IsZero() {
+				numaNodesLackResource[resourceName] = append(numaNodesLackResource[resourceName], nodeID)
+			}
+		}
+	}
 	generator := hintsGenerator{
-		minAffinitySize: make(map[corev1.ResourceName]int),
-		hints:           map[string][]topologymanager.NUMATopologyHint{},
+		numaNodesLackResource: numaNodesLackResource,
+		minAffinitySize:       make(map[corev1.ResourceName]int),
+		hints:                 map[string][]topologymanager.NUMATopologyHint{},
 	}
 	var memoryResourceNames []corev1.ResourceName
 	for resourceName := range podRequests {
@@ -533,14 +546,21 @@ func generateResourceHints(numaNodeResources []NUMANodeResource, podRequests cor
 }
 
 type hintsGenerator struct {
-	minAffinitySize map[corev1.ResourceName]int
-	hints           map[string][]topologymanager.NUMATopologyHint
+	numaNodesLackResource map[corev1.ResourceName][]int
+	minAffinitySize       map[corev1.ResourceName]int
+	hints                 map[string][]topologymanager.NUMATopologyHint
 }
 
 func (g *hintsGenerator) generateHints(mask bitmask.BitMask, score int64, totalAllocatable, totalFree corev1.ResourceList, podRequests corev1.ResourceList, resourceNames ...corev1.ResourceName) {
 	for _, resourceName := range resourceNames {
 		total, request := totalAllocatable[resourceName], podRequests[resourceName]
 		if total.Cmp(request) < 0 {
+			return
+		}
+	}
+
+	for _, resourceName := range resourceNames {
+		if mask.AnySet(g.numaNodesLackResource[resourceName]) {
 			return
 		}
 	}
