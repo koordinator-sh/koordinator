@@ -131,7 +131,11 @@ func (h *NodeMutatingHandler) Handle(ctx context.Context, req admission.Request)
 		klog.Errorf("Failed to marshal mutated Node %s, err: %v", obj.Name, err)
 		return admission.Errored(http.StatusInternalServerError, err)
 	}
-	return admission.PatchResponseFromRaw(req.AdmissionRequest.Object.Raw, marshaled)
+	original, err := json.Marshal(clone)
+	if err != nil {
+		return admission.Errored(http.StatusInternalServerError, err)
+	}
+	return admission.PatchResponseFromRaw(original, marshaled)
 }
 
 var _ inject.Client = &NodeMutatingHandler{}
