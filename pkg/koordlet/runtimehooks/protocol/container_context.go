@@ -262,6 +262,11 @@ func (c *ContainerContext) NriDone(executor resourceexecutor.ResourceUpdateExecu
 		update.SetLinuxMemoryLimit(*c.Response.Resources.MemoryLimit)
 	}
 
+	if c.Response.Resources.Resctrl != nil {
+		adjust.SetLinuxRDTClass((*(c.Response.Resources.Resctrl)).Closid)
+		update.SetLinuxRDTClass((*(c.Response.Resources.Resctrl)).Closid)
+	}
+
 	if c.Response.AddContainerEnvs != nil {
 		for k, v := range c.Response.AddContainerEnvs {
 			adjust.AddEnv(k, v)

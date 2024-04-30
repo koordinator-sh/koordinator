@@ -39,6 +39,7 @@ import (
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	fakekoordclientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/fake"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 )
@@ -223,6 +224,7 @@ func Test_statesInformer_syncPods(t *testing.T) {
 		}},
 		podHasSynced:   atomic.NewBool(false),
 		callbackRunner: NewCallbackRunner(),
+		cgroupReader:   resourceexecutor.NewCgroupReader(),
 	}
 
 	err := m.syncPods()
@@ -377,6 +379,7 @@ func Test_statesInformer_syncKubeletLoop(t *testing.T) {
 		}},
 		callbackRunner: NewCallbackRunner(),
 		podHasSynced:   atomic.NewBool(false),
+		cgroupReader:   resourceexecutor.NewCgroupReader(),
 	}
 	go m.syncKubeletLoop(c.KubeletSyncInterval, stopCh)
 	time.Sleep(5 * time.Second)

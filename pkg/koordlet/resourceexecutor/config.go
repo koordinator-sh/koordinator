@@ -21,6 +21,7 @@ import "flag"
 const (
 	ReasonUpdateCgroups      = "UpdateCgroups"
 	ReasonUpdateSystemConfig = "UpdateSystemConfig"
+	CreateCATGroup           = "CreateCATGroup"
 	ReasonUpdateResctrl      = "UpdateResctrl" // update resctrl tasks, schemata
 
 	EvictPodByNodeMemoryUsage   = "EvictPodByNodeMemoryUsage"
