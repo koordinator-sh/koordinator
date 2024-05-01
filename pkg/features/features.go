@@ -36,7 +36,7 @@ const (
 	// ElasticQuotaValidatingWebhook enables validating webhook for ElasticQuotas creations or updates
 	ElasticQuotaValidatingWebhook featuregate.Feature = "ElasticValidatingWebhook"
 
-	// NodeValidatingWebhook enables mutating webhook for Node Creation or updates
+	// NodeMutatingWebhook enables mutating webhook for Node Creation or updates
 	NodeMutatingWebhook featuregate.Feature = "NodeMutatingWebhook"
 
 	// NodeValidatingWebhook enables validating webhook for Node Creation or updates
