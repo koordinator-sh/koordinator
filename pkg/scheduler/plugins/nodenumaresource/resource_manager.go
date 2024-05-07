@@ -31,6 +31,7 @@ import (
 	corehelper "k8s.io/kubernetes/pkg/apis/core/v1/helper"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
+	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingconfig "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/topologymanager"
 	"github.com/koordinator-sh/koordinator/pkg/util"
@@ -39,7 +40,7 @@ import (
 )
 
 type ResourceManager interface {
-	GetTopologyHints(node *corev1.Node, pod *corev1.Pod, options *ResourceOptions) (map[string][]topologymanager.NUMATopologyHint, error)
+	GetTopologyHints(node *corev1.Node, pod *corev1.Pod, options *ResourceOptions, policy apiext.NUMATopologyPolicy) (map[string][]topologymanager.NUMATopologyHint, error)
 	Allocate(node *corev1.Node, pod *corev1.Pod, options *ResourceOptions) (*PodAllocation, error)
 
 	Update(nodeName string, allocation *PodAllocation)
@@ -120,7 +121,7 @@ func (c *resourceManager) getOrCreateNodeAllocation(nodeName string) *NodeAlloca
 	return v
 }
 
-func (c *resourceManager) GetTopologyHints(node *corev1.Node, pod *corev1.Pod, options *ResourceOptions) (map[string][]topologymanager.NUMATopologyHint, error) {
+func (c *resourceManager) GetTopologyHints(node *corev1.Node, pod *corev1.Pod, options *ResourceOptions, policy apiext.NUMATopologyPolicy) (map[string][]topologymanager.NUMATopologyHint, error) {
 	topologyOptions := options.topologyOptions
 	if len(topologyOptions.NUMANodeResources) == 0 {
 		return nil, fmt.Errorf("insufficient resources on NUMA Node")
@@ -134,7 +135,7 @@ func (c *resourceManager) GetTopologyHints(node *corev1.Node, pod *corev1.Pod, o
 		return nil, err
 	}
 
-	hints := generateResourceHints(topologyOptions.NUMANodeResources, options.requests, totalAvailable, options.numaScorer)
+	hints := generateResourceHints(topologyOptions.NUMANodeResources, options.requests, totalAvailable, options.numaScorer, policy)
 	return hints, nil
 }
 
@@ -456,7 +457,7 @@ func (c *resourceManager) getAvailableNUMANodeResources(nodeName string, topolog
 	return totalAvailable, totalAllocated, nil
 }
 
-func generateResourceHints(numaNodeResources []NUMANodeResource, podRequests corev1.ResourceList, totalAvailable map[int]corev1.ResourceList, numaScorer *resourceAllocationScorer) map[string][]topologymanager.NUMATopologyHint {
+func generateResourceHints(numaNodeResources []NUMANodeResource, podRequests corev1.ResourceList, totalAvailable map[int]corev1.ResourceList, numaScorer *resourceAllocationScorer, policy apiext.NUMATopologyPolicy) map[string][]topologymanager.NUMATopologyHint {
 	var resourceNamesByNUMA []corev1.ResourceName
 	for _, numaNodeResource := range numaNodeResources {
 		resourceNamesByNUMA = append(resourceNamesByNUMA, quotav1.ResourceNames(numaNodeResource.Resources)...)
@@ -528,7 +529,7 @@ func generateResourceHints(numaNodeResources []NUMANodeResource, podRequests cor
 	for resourceName := range podRequests {
 		minAffinitySize := generator.minAffinitySize[resourceName]
 		for i, hint := range generator.hints[string(resourceName)] {
-			generator.hints[string(resourceName)][i].Preferred = len(hint.NUMANodeAffinity.GetBits()) == minAffinitySize
+			generator.hints[string(resourceName)][i].Preferred = len(hint.NUMANodeAffinity.GetBits()) == minAffinitySize || policy == apiext.NUMATopologyPolicyRestricted
 		}
 	}
 

@@ -1692,7 +1692,7 @@ func TestResourceManagerGetTopologyHint(t *testing.T) {
 			}
 			assert.NoError(t, amplifyNUMANodeResources(node, &tt.options.topologyOptions))
 
-			got, err := resourceManager.GetTopologyHints(node, tt.pod, tt.options)
+			got, err := resourceManager.GetTopologyHints(node, tt.pod, tt.options, apiext.NUMATopologyPolicyBestEffort)
 			if tt.wantErr != (err != nil) {
 				t.Errorf("wantErr %v but got %v", tt.wantErr, err != nil)
 			}
