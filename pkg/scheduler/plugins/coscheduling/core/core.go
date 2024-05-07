@@ -469,7 +469,9 @@ func (pgMgr *PodGroupManager) PostBind(ctx context.Context, pod *corev1.Pod, nod
 			pgCopy.Status.ScheduleStartTime = metav1.Time{Time: time.Now()}
 		}
 	}
-	if pgCopy.Status.Phase != pg.Status.Phase {
+	// As PostBind is called async, the final phase and scheduled may be overwritten
+	// by former pod's PostBind, as a result, the phase and scheduled number will be incorrect.
+	if pgCopy.Status.Phase != pg.Status.Phase && pg.Status.Phase != v1alpha1.PodGroupScheduled {
 		pg, err := pgMgr.pgLister.PodGroups(pgCopy.Namespace).Get(pgCopy.Name)
 		if err != nil {
 			klog.ErrorS(err, "PosFilter failed to get PodGroup", "podGroup", klog.KObj(pgCopy))

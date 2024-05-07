@@ -629,6 +629,15 @@ func TestPostBind(t *testing.T) {
 			phase:             v1alpha1.PodGroupScheduling,
 			originalScheduled: 1,
 		},
+		{
+			name:              "pg status does not convert, although scheduled pods change",
+			pod:               st.MakePod().Name("p").UID("p").Namespace("ns1").Label(v1alpha1.PodGroupLabel, "pg2").Obj(),
+			pg:                makePg("pg2", "ns1", 3, nil, nil),
+			desiredGroupPhase: v1alpha1.PodGroupScheduled,
+			desiredScheduled:  3,
+			phase:             v1alpha1.PodGroupScheduled,
+			originalScheduled: 3,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -643,6 +652,8 @@ func TestPostBind(t *testing.T) {
 				mgr.cache.onPodAdd(tt.pod)
 			}
 			if tt.pg != nil {
+				tt.pg.Status.Phase = tt.phase
+				tt.pg.Status.Scheduled = int32(tt.originalScheduled)
 				err := retry.OnError(
 					retry.DefaultRetry,
 					errors.IsTooManyRequests,
