@@ -67,7 +67,6 @@ func (h *reservationEventHandler) OnUpdate(oldObj, newObj interface{}) {
 
 	if reservationutil.IsReservationActive(newR) || reservationutil.IsReservationFailed(newR) || reservationutil.IsReservationSucceeded(newR) {
 		h.cache.updateReservation(newR)
-		h.rrNominator.DeleteReservePod(framework.NewPodInfo(reservationutil.NewReservePod(newR)))
 		klog.V(4).InfoS("update reservation into reservationCache", "reservation", klog.KObj(newR))
 	}
 }
