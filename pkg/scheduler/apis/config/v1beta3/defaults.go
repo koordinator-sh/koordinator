@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package v1beta2
+package v1beta3
 
 import (
 	"math"
@@ -23,7 +23,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	schedconfigv1beta2 "k8s.io/kube-scheduler/config/v1beta2"
+	schedconfigv1beta3 "k8s.io/kube-scheduler/config/v1beta3"
 	"k8s.io/utils/pointer"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
@@ -107,7 +107,7 @@ func SetDefaults_NodeNUMAResourceArgs(obj *NodeNUMAResourceArgs) {
 	if obj.ScoringStrategy == nil {
 		obj.ScoringStrategy = &ScoringStrategy{
 			Type: LeastAllocated,
-			Resources: []schedconfigv1beta2.ResourceSpec{
+			Resources: []schedconfigv1beta3.ResourceSpec{
 				{
 					Name:   string(corev1.ResourceCPU),
 					Weight: 1,
@@ -122,7 +122,7 @@ func SetDefaults_NodeNUMAResourceArgs(obj *NodeNUMAResourceArgs) {
 	if obj.NUMAScoringStrategy == nil {
 		obj.NUMAScoringStrategy = &ScoringStrategy{
 			Type: LeastAllocated,
-			Resources: []schedconfigv1beta2.ResourceSpec{
+			Resources: []schedconfigv1beta3.ResourceSpec{
 				{
 					Name:   string(corev1.ResourceCPU),
 					Weight: 1,
@@ -189,7 +189,7 @@ func SetDefaults_DeviceShareArgs(obj *DeviceShareArgs) {
 		obj.ScoringStrategy = &ScoringStrategy{
 			// By default, LeastAllocate is used to ensure high availability of applications
 			Type: LeastAllocated,
-			Resources: []schedconfigv1beta2.ResourceSpec{
+			Resources: []schedconfigv1beta3.ResourceSpec{
 				{
 					Name:   string(extension.ResourceGPUMemoryRatio),
 					Weight: 1,

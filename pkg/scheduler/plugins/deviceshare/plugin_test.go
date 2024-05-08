@@ -50,7 +50,7 @@ import (
 	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
 	koordfeatures "github.com/koordinator-sh/koordinator/pkg/features"
 	schedulerconfig "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
-	v1beta2schedulerconfig "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/v1beta2"
+	v1beta3schedulerconfig "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/v1beta3"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	frameworkexttesting "github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/testing"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/reservation"
@@ -97,6 +97,14 @@ func newTestSharedLister(pods []*corev1.Pod, nodes []*corev1.Node) *testSharedLi
 
 func (f *testSharedLister) NodeInfos() framework.NodeInfoLister {
 	return f
+}
+
+func (f *testSharedLister) StorageInfos() framework.StorageInfoLister {
+	return f
+}
+
+func (f *testSharedLister) IsPVCUsedByPods(key string) bool {
+	return false
 }
 
 func (f *testSharedLister) List() ([]*framework.NodeInfo, error) {
@@ -146,6 +154,7 @@ func newPluginTestSuit(t *testing.T, nodes []*corev1.Node) *pluginTestSuit {
 	snapshot := newTestSharedLister(nil, nodes)
 
 	fh, err := schedulertesting.NewFramework(
+		context.TODO(),
 		registeredPlugins,
 		"koord-scheduler",
 		runtime.WithClientSet(cs),
@@ -162,10 +171,10 @@ func newPluginTestSuit(t *testing.T, nodes []*corev1.Node) *pluginTestSuit {
 }
 
 func getDefaultArgs() *schedulerconfig.DeviceShareArgs {
-	v1beta2Args := &v1beta2schedulerconfig.DeviceShareArgs{}
-	v1beta2schedulerconfig.SetDefaults_DeviceShareArgs(v1beta2Args)
+	v1beta3Args := &v1beta3schedulerconfig.DeviceShareArgs{}
+	v1beta3schedulerconfig.SetDefaults_DeviceShareArgs(v1beta3Args)
 	args := &schedulerconfig.DeviceShareArgs{}
-	_ = v1beta2schedulerconfig.Convert_v1beta2_DeviceShareArgs_To_config_DeviceShareArgs(v1beta2Args, args, nil)
+	_ = v1beta3schedulerconfig.Convert_v1beta3_DeviceShareArgs_To_config_DeviceShareArgs(v1beta3Args, args, nil)
 	return args
 }
 
@@ -187,6 +196,7 @@ func Test_New(t *testing.T) {
 	informerFactory := informers.NewSharedInformerFactory(cs, 0)
 	snapshot := newTestSharedLister(nil, nil)
 	fh, err := schedulertesting.NewFramework(
+		context.TODO(),
 		registeredPlugins,
 		"koord-scheduler",
 		runtime.WithClientSet(cs),
@@ -300,7 +310,8 @@ func Test_Plugin_PreFilterExtensions(t *testing.T) {
 	}
 	nd.updateCacheUsed(allocations, allocatedPod, true)
 
-	status = pl.PreFilterExtensions().RemovePod(context.TODO(), cycleState, pod, framework.NewPodInfo(allocatedPod), nodeInfo)
+	podInfo, _ := framework.NewPodInfo(allocatedPod)
+	status = pl.PreFilterExtensions().RemovePod(context.TODO(), cycleState, pod, podInfo, nodeInfo)
 	assert.True(t, status.IsSuccess())
 
 	expectPreemptible := map[string]map[schedulingv1alpha1.DeviceType]deviceResources{
@@ -318,7 +329,8 @@ func Test_Plugin_PreFilterExtensions(t *testing.T) {
 	assert.True(t, status.IsSuccess())
 	assert.Equal(t, expectPreemptible, state.preemptibleDevices)
 
-	status = pl.PreFilterExtensions().AddPod(context.TODO(), cycleState, pod, framework.NewPodInfo(allocatedPod), nodeInfo)
+	podInfo, _ = framework.NewPodInfo(allocatedPod)
+	status = pl.PreFilterExtensions().AddPod(context.TODO(), cycleState, pod, podInfo, nodeInfo)
 	assert.True(t, status.IsSuccess())
 	expectPreemptible = map[string]map[schedulingv1alpha1.DeviceType]deviceResources{
 		node.Name: {},
@@ -424,7 +436,8 @@ func Test_Plugin_PreFilterExtensionsWithReservation(t *testing.T) {
 	nd.updateCacheUsed(allocations, allocatedPod, true)
 	reservationCache.rInfo.AddAssignedPod(allocatedPod)
 
-	status = pl.PreFilterExtensions().RemovePod(context.TODO(), cycleState, pod, framework.NewPodInfo(allocatedPod), nodeInfo)
+	podInfo, _ := framework.NewPodInfo(allocatedPod)
+	status = pl.PreFilterExtensions().RemovePod(context.TODO(), cycleState, pod, podInfo, nodeInfo)
 	assert.True(t, status.IsSuccess())
 
 	expectPreemptible := map[string]map[types.UID]map[schedulingv1alpha1.DeviceType]deviceResources{
@@ -444,7 +457,8 @@ func Test_Plugin_PreFilterExtensionsWithReservation(t *testing.T) {
 	assert.True(t, status.IsSuccess())
 	assert.Equal(t, expectPreemptible, state.preemptibleInRRs)
 
-	status = pl.PreFilterExtensions().AddPod(context.TODO(), cycleState, pod, framework.NewPodInfo(allocatedPod), nodeInfo)
+	podInfo, _ = framework.NewPodInfo(allocatedPod)
+	status = pl.PreFilterExtensions().AddPod(context.TODO(), cycleState, pod, podInfo, nodeInfo)
 	assert.True(t, status.IsSuccess())
 	expectPreemptible = map[string]map[types.UID]map[schedulingv1alpha1.DeviceType]deviceResources{
 		"test-node-1": {
@@ -454,7 +468,8 @@ func Test_Plugin_PreFilterExtensionsWithReservation(t *testing.T) {
 	assert.Equal(t, expectPreemptible, state.preemptibleInRRs)
 
 	state.preemptibleInRRs = map[string]map[types.UID]map[schedulingv1alpha1.DeviceType]deviceResources{}
-	status = pl.PreFilterExtensions().AddPod(context.TODO(), cycleState, pod, framework.NewPodInfo(allocatedPod), nodeInfo)
+	podInfo, _ = framework.NewPodInfo(allocatedPod)
+	status = pl.PreFilterExtensions().AddPod(context.TODO(), cycleState, pod, podInfo, nodeInfo)
 	assert.True(t, status.IsSuccess())
 	expectPreemptible = map[string]map[types.UID]map[schedulingv1alpha1.DeviceType]deviceResources{
 		"test-node-1": {

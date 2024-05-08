@@ -27,9 +27,9 @@ import (
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/runtime/inject"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
-	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
+
+	"github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 
 	"github.com/koordinator-sh/koordinator/pkg/util"
 	"github.com/koordinator-sh/koordinator/pkg/webhook/elasticquota"
@@ -90,7 +90,7 @@ func (h *ElasticQuotaValidatingHandler) Handle(ctx context.Context, request admi
 	return admission.ValidationResponse(true, "")
 }
 
-var _ inject.Client = &ElasticQuotaValidatingHandler{}
+// var _ inject.Client = &ElasticQuotaValidatingHandler{}
 
 // InjectClient injects the client into the ElasticQuotaValidatingHandler
 func (h *ElasticQuotaValidatingHandler) InjectClient(c client.Client) error {
@@ -98,7 +98,7 @@ func (h *ElasticQuotaValidatingHandler) InjectClient(c client.Client) error {
 	return nil
 }
 
-var _ admission.DecoderInjector = &ElasticQuotaValidatingHandler{}
+// var _ admission.DecoderInjector = &ElasticQuotaValidatingHandler{}
 
 // InjectDecoder injects the client into the ElasticQuotaValidatingHandler
 func (h *ElasticQuotaValidatingHandler) InjectDecoder(d *admission.Decoder) error {
@@ -106,7 +106,7 @@ func (h *ElasticQuotaValidatingHandler) InjectDecoder(d *admission.Decoder) erro
 	return nil
 }
 
-var _ inject.Cache = &ElasticQuotaValidatingHandler{}
+// var _ inject.Cache = &ElasticQuotaValidatingHandler{}
 
 func (h *ElasticQuotaValidatingHandler) InjectCache(cache cache.Cache) error {
 	ctx := context.TODO()
@@ -121,12 +121,12 @@ func (h *ElasticQuotaValidatingHandler) InjectCache(cache cache.Cache) error {
 	}
 	plugin := elasticquota.NewPlugin(h.Decoder, h.Client)
 	qt := plugin.QuotaTopo
-	quotaInformer.AddEventHandler(clientcache.ResourceEventHandlerFuncs{
+	_, err = quotaInformer.AddEventHandler(clientcache.ResourceEventHandlerFuncs{
 		AddFunc:    qt.OnQuotaAdd,
 		UpdateFunc: qt.OnQuotaUpdate,
 		DeleteFunc: qt.OnQuotaDelete,
 	})
-	return nil
+	return err
 }
 
 var _ http.Handler = &ElasticQuotaValidatingHandler{}

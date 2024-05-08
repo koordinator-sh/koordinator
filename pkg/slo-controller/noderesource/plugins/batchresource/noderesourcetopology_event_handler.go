@@ -17,6 +17,7 @@ limitations under the License.
 package batchresource
 
 import (
+	"context"
 	"fmt"
 
 	topologyv1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
@@ -41,7 +42,7 @@ type NRTHandler struct {
 	syncContext *framework.SyncContext
 }
 
-func (h *NRTHandler) Create(evt event.CreateEvent, q workqueue.RateLimitingInterface) {
+func (h *NRTHandler) Create(ctx context.Context, evt event.CreateEvent, q workqueue.RateLimitingInterface) {
 	nrt, ok := evt.Object.(*topologyv1alpha1.NodeResourceTopology)
 	if !ok {
 		return
@@ -58,7 +59,7 @@ func (h *NRTHandler) Create(evt event.CreateEvent, q workqueue.RateLimitingInter
 	})
 }
 
-func (h *NRTHandler) Update(evt event.UpdateEvent, q workqueue.RateLimitingInterface) {
+func (h *NRTHandler) Update(ctx context.Context, evt event.UpdateEvent, q workqueue.RateLimitingInterface) {
 	nrtOld, okOld := evt.ObjectOld.(*topologyv1alpha1.NodeResourceTopology)
 	nrtNew, okNew := evt.ObjectNew.(*topologyv1alpha1.NodeResourceTopology)
 	if !okOld || !okNew {
@@ -80,7 +81,7 @@ func (h *NRTHandler) Update(evt event.UpdateEvent, q workqueue.RateLimitingInter
 	})
 }
 
-func (h *NRTHandler) Delete(evt event.DeleteEvent, q workqueue.RateLimitingInterface) {
+func (h *NRTHandler) Delete(ctx context.Context, evt event.DeleteEvent, q workqueue.RateLimitingInterface) {
 	nrt, ok := evt.Object.(*topologyv1alpha1.NodeResourceTopology)
 	if !ok {
 		return
@@ -91,7 +92,7 @@ func (h *NRTHandler) Delete(evt event.DeleteEvent, q workqueue.RateLimitingInter
 	}
 }
 
-func (h *NRTHandler) Generic(evt event.GenericEvent, q workqueue.RateLimitingInterface) {
+func (h *NRTHandler) Generic(ctx context.Context, evt event.GenericEvent, q workqueue.RateLimitingInterface) {
 }
 
 func isNRTResourcesCreated(nrt *topologyv1alpha1.NodeResourceTopology) bool {

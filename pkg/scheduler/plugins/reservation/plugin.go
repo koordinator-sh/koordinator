@@ -134,12 +134,12 @@ func (pl *Plugin) NewControllers() ([]frameworkext.Controller, error) {
 	return []frameworkext.Controller{reservationController}, nil
 }
 
-func (pl *Plugin) EventsToRegister() []framework.ClusterEvent {
+func (pl *Plugin) EventsToRegister() []framework.ClusterEventWithHint {
 	// To register a custom event, follow the naming convention at:
 	// https://github.com/kubernetes/kubernetes/blob/e1ad9bee5bba8fbe85a6bf6201379ce8b1a611b1/pkg/scheduler/eventhandlers.go#L415-L422
 	gvk := fmt.Sprintf("reservations.%v.%v", schedulingv1alpha1.GroupVersion.Version, schedulingv1alpha1.GroupVersion.Group)
-	return []framework.ClusterEvent{
-		{Resource: framework.GVK(gvk), ActionType: framework.Add | framework.Update | framework.Delete},
+	return []framework.ClusterEventWithHint{
+		{Event: framework.ClusterEvent{Resource: framework.GVK(gvk), ActionType: framework.Add | framework.Update | framework.Delete}},
 	}
 }
 
@@ -238,7 +238,7 @@ func (pl *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleStat
 			return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrReasonReservationAffinity)
 		}
 		preResult = &framework.PreFilterResult{
-			NodeNames: sets.NewString(),
+			NodeNames: sets.Set[string]{},
 		}
 		for nodeName := range state.nodeReservationStates {
 			preResult.NodeNames.Insert(nodeName)
@@ -252,7 +252,7 @@ func (pl *Plugin) PreFilterExtensions() framework.PreFilterExtensions {
 }
 
 func (pl *Plugin) AddPod(ctx context.Context, cycleState *framework.CycleState, podToSchedule *corev1.Pod, podInfoToAdd *framework.PodInfo, nodeInfo *framework.NodeInfo) *framework.Status {
-	podRequests, _ := resourceapi.PodRequestsAndLimits(podInfoToAdd.Pod)
+	podRequests := resourceapi.PodRequests(podInfoToAdd.Pod, resourceapi.PodResourcesOptions{})
 	if quotav1.IsZero(podRequests) {
 		return nil
 	}
@@ -280,7 +280,7 @@ func (pl *Plugin) AddPod(ctx context.Context, cycleState *framework.CycleState, 
 }
 
 func (pl *Plugin) RemovePod(ctx context.Context, cycleState *framework.CycleState, podToSchedule *corev1.Pod, podInfoToRemove *framework.PodInfo, nodeInfo *framework.NodeInfo) *framework.Status {
-	podRequests, _ := resourceapi.PodRequestsAndLimits(podInfoToRemove.Pod)
+	podRequests := resourceapi.PodRequests(podInfoToRemove.Pod, resourceapi.PodResourcesOptions{})
 	if quotav1.IsZero(podRequests) {
 		return nil
 	}

@@ -24,7 +24,6 @@ import (
 	v1alpha1 "github.com/koordinator-sh/koordinator/apis/config/v1alpha1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	labels "k8s.io/apimachinery/pkg/labels"
-	schema "k8s.io/apimachinery/pkg/runtime/schema"
 	types "k8s.io/apimachinery/pkg/types"
 	watch "k8s.io/apimachinery/pkg/watch"
 	testing "k8s.io/client-go/testing"
@@ -35,9 +34,9 @@ type FakeClusterColocationProfiles struct {
 	Fake *FakeConfigV1alpha1
 }
 
-var clustercolocationprofilesResource = schema.GroupVersionResource{Group: "config.koordinator.sh", Version: "v1alpha1", Resource: "clustercolocationprofiles"}
+var clustercolocationprofilesResource = v1alpha1.SchemeGroupVersion.WithResource("clustercolocationprofiles")
 
-var clustercolocationprofilesKind = schema.GroupVersionKind{Group: "config.koordinator.sh", Version: "v1alpha1", Kind: "ClusterColocationProfile"}
+var clustercolocationprofilesKind = v1alpha1.SchemeGroupVersion.WithKind("ClusterColocationProfile")
 
 // Get takes name of the clusterColocationProfile, and returns the corresponding clusterColocationProfile object, and an error if there is any.
 func (c *FakeClusterColocationProfiles) Get(ctx context.Context, name string, options v1.GetOptions) (result *v1alpha1.ClusterColocationProfile, err error) {

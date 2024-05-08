@@ -58,7 +58,7 @@ linters:
   fast: false
   disable-all: true
   enable:
-    - deadcode
+#    - unused
     - gofmt
     - govet
     - goimports

@@ -32,7 +32,6 @@ import (
 	"k8s.io/klog/v2"
 	"k8s.io/utils/clock"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	"github.com/koordinator-sh/koordinator/apis/configuration"
 	"github.com/koordinator-sh/koordinator/apis/extension"
@@ -79,7 +78,7 @@ func (p *Plugin) Setup(opt *framework.Option) error {
 	}
 
 	nrtHandler = &NRTHandler{syncContext: nrtSyncContext}
-	opt.Builder = opt.Builder.Watches(&source.Kind{Type: &topologyv1alpha1.NodeResourceTopology{}}, nrtHandler)
+	opt.Builder = opt.Builder.Watches(&topologyv1alpha1.NodeResourceTopology{}, nrtHandler)
 
 	return nil
 }

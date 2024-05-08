@@ -36,6 +36,7 @@ import (
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/noderesource/framework"
+	"github.com/koordinator-sh/koordinator/pkg/util/testutil"
 )
 
 func TestPlugin(t *testing.T) {
@@ -47,7 +48,7 @@ func TestPlugin(t *testing.T) {
 		testOpt := &framework.Option{
 			Scheme:  testScheme,
 			Client:  fake.NewClientBuilder().WithScheme(testScheme).Build(),
-			Builder: &builder.Builder{},
+			Builder: builder.ControllerManagedBy(&testutil.FakeManager{}),
 		}
 		err := p.Setup(testOpt)
 		assert.NoError(t, err)

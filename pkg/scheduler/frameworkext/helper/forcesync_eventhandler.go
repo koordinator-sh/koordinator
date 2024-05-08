@@ -54,7 +54,7 @@ func (h *forceSyncEventHandler) waitForSyncDone() {
 	<-h.syncCh
 }
 
-func (h *forceSyncEventHandler) OnAdd(obj interface{}) {
+func (h *forceSyncEventHandler) OnAdd(obj interface{}, isInInitialList bool) {
 	h.waitForSyncDone()
 	if metaAccessor, ok := obj.(metav1.ObjectMetaAccessor); ok {
 		objectMeta := metaAccessor.GetObjectMeta()
@@ -69,7 +69,7 @@ func (h *forceSyncEventHandler) OnAdd(obj interface{}) {
 		}
 	}
 	if h.handler != nil {
-		h.handler.OnAdd(obj)
+		h.handler.OnAdd(obj, isInInitialList)
 	}
 }
 
@@ -95,11 +95,11 @@ func (h *forceSyncEventHandler) OnDelete(obj interface{}) {
 	}
 }
 
-func (h *forceSyncEventHandler) addDirectly(obj interface{}) {
+func (h *forceSyncEventHandler) addDirectly(obj interface{}, isInInitialList bool) {
 	if h.handler == nil {
 		return
 	}
-	h.handler.OnAdd(obj)
+	h.handler.OnAdd(obj, isInInitialList)
 	if metaAccessor, ok := obj.(metav1.ObjectMetaAccessor); ok {
 		objectMeta := metaAccessor.GetObjectMeta()
 		resourceVersion, err := strconv.ParseInt(objectMeta.GetResourceVersion(), 10, 64)
@@ -124,17 +124,17 @@ func WithResyncPeriod(resyncPeriod time.Duration) Option {
 
 // ForceSyncFromInformer ensures that the EventHandler will synchronize data immediately after registration,
 // helping those plugins that need to build memory status through EventHandler to correctly synchronize data
-func ForceSyncFromInformer(stopCh <-chan struct{}, cacheSyncer CacheSyncer, informer cache.SharedInformer, handler cache.ResourceEventHandler, options ...Option) {
+func ForceSyncFromInformer(stopCh <-chan struct{}, cacheSyncer CacheSyncer, informer cache.SharedInformer, handler cache.ResourceEventHandler, options ...Option) (cache.ResourceEventHandlerRegistration, error) {
 	syncEventHandler := newForceSyncEventHandler(handler, options...)
-	informer.AddEventHandlerWithResyncPeriod(syncEventHandler, syncEventHandler.resyncPeriod)
+	registration, err := informer.AddEventHandlerWithResyncPeriod(syncEventHandler, syncEventHandler.resyncPeriod)
 	if cacheSyncer != nil {
 		cacheSyncer.Start(stopCh)
 		cacheSyncer.WaitForCacheSync(stopCh)
 	}
 	allObjects := informer.GetStore().List()
 	for _, obj := range allObjects {
-		syncEventHandler.addDirectly(obj)
+		syncEventHandler.addDirectly(obj, true)
 	}
 	syncEventHandler.syncDone()
-	return
+	return registration, err
 }

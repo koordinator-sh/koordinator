@@ -34,6 +34,7 @@ import (
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/scheme"
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/noderesource/framework"
+	"github.com/koordinator-sh/koordinator/pkg/util/testutil"
 )
 
 func TestPlugin(t *testing.T) {
@@ -45,7 +46,7 @@ func TestPlugin(t *testing.T) {
 		testOpt := &framework.Option{
 			Scheme:   testScheme,
 			Client:   fake.NewClientBuilder().WithScheme(testScheme).Build(),
-			Builder:  &builder.Builder{},
+			Builder:  builder.ControllerManagedBy(&testutil.FakeManager{}),
 			Recorder: &record.FakeRecorder{},
 		}
 		err := p.Setup(testOpt)

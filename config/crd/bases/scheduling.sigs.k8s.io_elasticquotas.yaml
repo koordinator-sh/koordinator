@@ -3,9 +3,8 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    api-approved.kubernetes.io: https://github.com/kubernetes-sigs/scheduler-plugins/pull/52 # edited manually
-    controller-gen.kubebuilder.io/version: v0.6.2
-  creationTimestamp: null
+    api-approved.kubernetes.io: https://github.com/kubernetes-sigs/scheduler-plugins/pull/52
+    controller-gen.kubebuilder.io/version: v0.14.0
   name: elasticquotas.scheduling.sigs.k8s.io
 spec:
   group: scheduling.sigs.k8s.io
@@ -14,9 +13,6 @@ spec:
     listKind: ElasticQuotaList
     plural: elasticquotas
     singular: elasticquota
-    shortNames: # edited manually
-    - eq  # edited manually
-    - eqs # edited manually
   scope: Namespaced
   versions:
   - name: v1alpha1
@@ -25,14 +21,19 @@ spec:
         description: ElasticQuota sets elastic quota restrictions per namespace
         properties:
           apiVersion:
-            description: 'APIVersion defines the versioned schema of this representation
-              of an object. Servers should convert recognized schemas to the latest
-              internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
             type: string
           kind:
-            description: 'Kind is a string value representing the REST resource this
-              object represents. Servers may infer this from the endpoint the client
-              submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
             type: string
           metadata:
             type: object
@@ -46,9 +47,9 @@ spec:
                   - type: string
                   pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                   x-kubernetes-int-or-string: true
-                description: Max is the set of desired max limits for each named resource.
-                  The usage of max is based on the resource configurations of successfully
-                  scheduled pods.
+                description: |-
+                  Max is the set of desired max limits for each named resource. The usage of max is based on the resource configurations of
+                  successfully scheduled pods.
                 type: object
               min:
                 additionalProperties:
@@ -78,9 +79,3 @@ spec:
         type: object
     served: true
     storage: true
-status:
-  acceptedNames:
-    kind: ""
-    plural: ""
-  conditions: []
-  storedVersions: []

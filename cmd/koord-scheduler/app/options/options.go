@@ -17,6 +17,8 @@ limitations under the License.
 package options
 
 import (
+	"context"
+
 	"github.com/gin-gonic/gin"
 	"k8s.io/apimachinery/pkg/runtime"
 	apiserveroptions "k8s.io/apiserver/pkg/server/options"
@@ -40,9 +42,9 @@ func NewOptions() *Options {
 	options := &Options{
 		Options: scheduleroptions.NewOptions(),
 		CombinedInsecureServing: &CombinedInsecureServingOptions{
-			Healthz: (&apiserveroptions.DeprecatedInsecureServingOptions{
+			Healthz: &apiserveroptions.DeprecatedInsecureServingOptions{
 				BindNetwork: "tcp",
-			}).WithLoopback(),
+			},
 		},
 	}
 	options.CombinedInsecureServing.AddFlags(options.Flags.FlagSet("insecure serving"))
@@ -56,8 +58,8 @@ func (o *Options) Validate() []error {
 }
 
 // Config return a scheduler config object
-func (o *Options) Config() (*schedulerappconfig.Config, error) {
-	config, err := o.Options.Config()
+func (o *Options) Config(ctx context.Context) (*schedulerappconfig.Config, error) {
+	config, err := o.Options.Config(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -87,7 +89,7 @@ func (o *Options) Config() (*schedulerappconfig.Config, error) {
 		KoordinatorSharedInformerFactory: koordinatorSharedInformerFactory,
 	}
 
-	if err := o.CombinedInsecureServing.ApplyTo(appConfig, &config.ComponentConfig); err != nil {
+	if err := o.CombinedInsecureServing.ApplyTo(appConfig); err != nil {
 		return nil, err
 	}
 

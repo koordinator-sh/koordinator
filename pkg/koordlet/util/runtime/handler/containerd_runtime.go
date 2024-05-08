@@ -68,7 +68,7 @@ func NewContainerdRuntimeHandler(endpoint string) (ContainerRuntimeHandler, erro
 	}, nil
 }
 
-func (c *ContainerdRuntimeHandler) StopContainer(containerID string, timeout int64) error {
+func (c *ContainerdRuntimeHandler) StopContainer(con context.Context, containerID string, timeout int64) error {
 	if containerID == "" {
 		return fmt.Errorf("containerID cannot be empty")
 	}

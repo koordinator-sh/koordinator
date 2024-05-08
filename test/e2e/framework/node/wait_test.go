@@ -169,6 +169,9 @@ func TestCheckReadyForTests(t *testing.T) {
 			})
 			checkFunc := CheckReadyForTests(c, tc.nonblockingTaints, tc.allowedNotReadyNodes, testLargeClusterThreshold)
 			out, err := checkFunc()
+			for i := 0; i < 3; i++ {
+				out, err = checkFunc()
+			}
 			if out != tc.expected {
 				t.Errorf("Expected %v but got %v", tc.expected, out)
 			}

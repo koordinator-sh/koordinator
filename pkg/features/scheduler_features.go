@@ -57,6 +57,12 @@ const (
 	//
 	// ResizePod is used to enable resize pod feature
 	ResizePod featuregate.Feature = "ResizePod"
+
+	CSIStorageCapacity featuregate.Feature = "CSIStorageCapacity"
+
+	GenericEphemeralVolume featuregate.Feature = "GenericEphemeralVolume"
+
+	PodDisruptionBudget featuregate.Feature = "PodDisruptionBudget"
 )
 
 var defaultSchedulerFeatureGates = map[featuregate.Feature]featuregate.FeatureSpec{
@@ -70,6 +76,9 @@ var defaultSchedulerFeatureGates = map[featuregate.Feature]featuregate.FeatureSp
 	ElasticQuotaGuaranteeUsage:         {Default: false, PreRelease: featuregate.Alpha},
 	DisableDefaultQuota:                {Default: false, PreRelease: featuregate.Alpha},
 	SupportParentQuotaSubmitPod:        {Default: false, PreRelease: featuregate.Alpha},
+	CSIStorageCapacity:                 {Default: true, PreRelease: featuregate.GA}, // remove in 1.26
+	GenericEphemeralVolume:             {Default: true, PreRelease: featuregate.GA},
+	PodDisruptionBudget:                {Default: true, PreRelease: featuregate.GA},
 }
 
 func init() {

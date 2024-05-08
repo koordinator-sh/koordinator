@@ -1,0 +1,106 @@
+name: E2E-K8S-1.28
+
+on:
+  push:
+    branches:
+      - main
+      - release-*
+  pull_request: {}
+  workflow_dispatch: {}
+
+env:
+  # Common versions
+  GO_VERSION: '1.20'
+  KIND_ACTION_VERSION: 'v1.5.0'
+  KIND_VERSION: 'v0.22.0'
+  KIND_IMAGE: 'kindest/node:v1.28.7'
+  KIND_CLUSTER_NAME: 'ci-testing'
+  COMPONENT_NS: "koordinator-system"
+
+jobs:
+
+  slo-controller:
+    continue-on-error: true
+    runs-on: ubuntu-20.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - name: Setup Kind Cluster
+        uses: helm/kind-action@v1.9.0
+        with:
+          node_image: ${{ env.KIND_IMAGE }}
+          cluster_name: ${{ env.KIND_CLUSTER_NAME }}
+          config: ./test/kind-conf.yaml
+          version: ${{ env.KIND_VERSION }}
+      - name: Build image
+        run: |
+          export MANAGER_IMAGE="koordinator-sh/koord-manager:e2e-${GITHUB_RUN_ID}"
+          docker build --pull . -t ${MANAGER_IMAGE} -f docker/koord-manager.dockerfile
+          export KOORDLET_IMAGE="koordinator-sh/koordlet:e2e-${GITHUB_RUN_ID}"
+          docker build --pull . -t ${KOORDLET_IMAGE} -f docker/koordlet.dockerfile
+          kind load docker-image --name=${KIND_CLUSTER_NAME} ${MANAGER_IMAGE} || { echo >&2 "kind not installed or error loading image: ${MANAGER_IMAGE}"; exit 1; }
+          kind load docker-image --name=${KIND_CLUSTER_NAME} ${KOORDLET_IMAGE} || { echo >&2 "kind not installed or error loading image: ${KOORDLET_IMAGE}"; exit 1; }
+      - name: Check host environment
+        run: |
+          set -ex
+          kubectl version --short
+          kubectl get pods -A
+          kubectl get nodes -o yaml
+          tree -L 2 /sys/
+          tree -L 2 /sys/fs/cgroup
+          cat /proc/cpuinfo
+      - name: Install Koordinator
+        run: |
+          set -ex
+          kubectl cluster-info
+          MANAGER_IMG=koordinator-sh/koord-manager:e2e-${GITHUB_RUN_ID} KOORDLET_IMG=koordinator-sh/koordlet:e2e-${GITHUB_RUN_ID} ./hack/deploy_kind.sh
+          NODES=$(kubectl get node | wc -l)
+          for ((i=1;i<10;i++));
+          do
+            set +e
+            PODS=$(kubectl get pod -n ${COMPONENT_NS} | grep "koord-manager\|koordlet" | grep '1/1' | wc -l)
+            set -e
+            if [ "$PODS" -ge "$NODES" ]; then
+              break
+            fi
+            sleep 6
+          done
+          set +e
+          PODS=$(kubectl get pod -n ${COMPONENT_NS} | grep "koord-manager\|koordlet" | grep '1/1' | wc -l)
+          kubectl get pod -A
+          kubectl get node -o yaml
+          kubectl get all -n ${COMPONENT_NS} -o wide
+          kubectl get pod -n ${COMPONENT_NS} --no-headers | grep koord-manager | head -n 1 | awk '{print $1}' | xargs kubectl logs -n ${COMPONENT_NS} --tail=100
+          kubectl get pod -n ${COMPONENT_NS} --no-headers | grep koord-scheduler | awk '{print $1}' | xargs kubectl logs -n ${COMPONENT_NS} --tail=100
+          kubectl get pod -n ${COMPONENT_NS} --no-headers | grep koordlet | head -n 1 | awk '{print $1}' | xargs -L 1 kubectl logs -n ${COMPONENT_NS}
+          kubectl get pod -n ${COMPONENT_NS} -o wide
+          set -e
+          if [ "$PODS" -ge "$NODES" ]; then
+            echo "Wait for koord-manager and koordlet ready successfully"
+          else
+            echo "Timeout to wait for koord-manager and koordlet ready"
+            exit 1
+          fi
+      - name: Run E2E Tests
+        run: |
+          export KUBECONFIG=/home/runner/.kube/config
+          make ginkgo
+          set +e
+          EXTRA_ARGS="-koordinator-component-namespace=${COMPONENT_NS} -allowed-not-ready-nodes=1 -system-pods-startup-timeout=10s -e2e-verify-service-account=false"
+          ./bin/ginkgo -timeout 60m -v --focus='slo-controller' test/e2e -- ${EXTRA_ARGS}
+          retVal=$?
+          restartCount=$(kubectl get pod -n ${COMPONENT_NS} -l koord-app=koord-manager --no-headers | head -n 1 | awk '{print $4}')
+          if [ "${restartCount}" -eq "0" ];then
+              echo "koord-manager has not restarted"
+          else
+              kubectl get pod -n ${COMPONENT_NS} -l koord-app=koord-manager --no-headers
+              echo "koord-manager has restarted, abort!!!"
+              kubectl get pod -n ${COMPONENT_NS} --no-headers -l koord-app=koord-manager | head -n 1 | awk '{print $1}' | xargs kubectl logs -p -n ${COMPONENT_NS}
+              exit 1
+          fi
+          exit $retVal

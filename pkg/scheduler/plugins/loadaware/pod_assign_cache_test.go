@@ -100,7 +100,7 @@ func TestPodAssignCache_OnAdd(t *testing.T) {
 			}()
 			timeNowFn = fakeTimeNowFn
 			assignCache := newPodAssignCache()
-			assignCache.OnAdd(tt.pod)
+			assignCache.OnAdd(tt.pod, true)
 			assert.Equal(t, tt.wantCache, assignCache.podInfoItems)
 		})
 	}

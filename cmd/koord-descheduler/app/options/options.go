@@ -39,9 +39,12 @@ import (
 	componentbaseconfig "k8s.io/component-base/config"
 	componentbaseoptions "k8s.io/component-base/config/options"
 	"k8s.io/component-base/logs"
+	logsapi "k8s.io/component-base/logs/api/v1"
 	"k8s.io/component-base/metrics"
 	"k8s.io/klog/v2"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
+	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	deschedulerappconfig "github.com/koordinator-sh/koordinator/cmd/koord-descheduler/app/config"
 	deschedulerconfig "github.com/koordinator-sh/koordinator/pkg/descheduler/apis/config"
@@ -95,11 +98,11 @@ func NewOptions() *Options {
 		ComponentConfig: cfg,
 		SecureServing:   apiserveroptions.NewSecureServingOptions().WithLoopback(),
 		CombinedInsecureServing: &CombinedInsecureServingOptions{
-			Healthz: (&apiserveroptions.DeprecatedInsecureServingOptions{
+			Healthz: &apiserveroptions.DeprecatedInsecureServingOptions{
 				BindNetwork: "tcp",
-			}).WithLoopback(),
-			Metrics: (&apiserveroptions.DeprecatedInsecureServingOptions{
-				BindNetwork: "tcp"}).WithLoopback(),
+			},
+			Metrics: &apiserveroptions.DeprecatedInsecureServingOptions{
+				BindNetwork: "tcp"},
 		},
 		LeaderElection: &componentbaseconfig.LeaderElectionConfiguration{
 			LeaderElect:       true,
@@ -170,7 +173,7 @@ func (o *Options) initFlags() {
 	componentbaseoptions.BindLeaderElectionFlags(o.LeaderElection, nfs.FlagSet("leader election"))
 	utilfeature.DefaultMutableFeatureGate.AddFlag(nfs.FlagSet("feature gate"))
 	o.Metrics.AddFlags(nfs.FlagSet("metrics"))
-	o.Logs.AddFlags(nfs.FlagSet("logs"))
+	logsapi.AddFlags(o.Logs, nfs.FlagSet("logs"))
 
 	o.Flags = &nfs
 }
@@ -267,10 +270,10 @@ func (o *Options) Config() (*deschedulerappconfig.Config, error) {
 	mgrKubeConfig.AcceptContentTypes = ""
 	mgr, err := ctrl.NewManager(&mgrKubeConfig, ctrl.Options{
 		Scheme:                 scheme,
-		MetricsBindAddress:     "0",
+		Metrics:                metricsserver.Options{BindAddress: "0"},
 		HealthProbeBindAddress: "0",
 		LeaderElection:         false,
-		SyncPeriod:             nil,
+		Cache:                  cache.Options{SyncPeriod: nil},
 		NewClient:              utilclient.NewClient,
 	})
 	if err != nil {

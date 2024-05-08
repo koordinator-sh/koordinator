@@ -31,7 +31,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
-	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/config"
@@ -194,8 +193,8 @@ func (r *NodeMetricReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	r.cfgCache = handler
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&slov1alpha1.NodeMetric{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
-		Watches(&source.Kind{Type: &corev1.Node{}}, &EnqueueRequestForNode{}).
-		Watches(&source.Kind{Type: &corev1.ConfigMap{}}, handler).
+		Watches(&corev1.Node{}, &EnqueueRequestForNode{}).
+		Watches(&corev1.ConfigMap{}, handler).
 		Named(Name).
 		Complete(r)
 }

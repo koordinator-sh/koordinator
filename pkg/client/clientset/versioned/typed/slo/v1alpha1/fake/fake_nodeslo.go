@@ -24,7 +24,6 @@ import (
 	v1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	labels "k8s.io/apimachinery/pkg/labels"
-	schema "k8s.io/apimachinery/pkg/runtime/schema"
 	types "k8s.io/apimachinery/pkg/types"
 	watch "k8s.io/apimachinery/pkg/watch"
 	testing "k8s.io/client-go/testing"
@@ -35,9 +34,9 @@ type FakeNodeSLOs struct {
 	Fake *FakeSloV1alpha1
 }
 
-var nodeslosResource = schema.GroupVersionResource{Group: "slo.koordinator.sh", Version: "v1alpha1", Resource: "nodeslos"}
+var nodeslosResource = v1alpha1.SchemeGroupVersion.WithResource("nodeslos")
 
-var nodeslosKind = schema.GroupVersionKind{Group: "slo.koordinator.sh", Version: "v1alpha1", Kind: "NodeSLO"}
+var nodeslosKind = v1alpha1.SchemeGroupVersion.WithKind("NodeSLO")
 
 // Get takes name of the nodeSLO, and returns the corresponding nodeSLO object, and an error if there is any.
 func (c *FakeNodeSLOs) Get(ctx context.Context, name string, options v1.GetOptions) (result *v1alpha1.NodeSLO, err error) {

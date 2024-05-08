@@ -48,6 +48,7 @@ func (pl *Plugin) BeforePreFilter(ctx context.Context, cycleState *framework.Cyc
 }
 
 func (pl *Plugin) prepareMatchReservationState(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod) (*stateData, bool, *framework.Status) {
+	logger := klog.FromContext(ctx)
 	reservationAffinity, err := reservationutil.GetRequiredReservationAffinity(pod)
 	if err != nil {
 		klog.ErrorS(err, "Failed to parse reservation affinity", "pod", klog.KObj(pod))
@@ -136,7 +137,7 @@ func (pl *Plugin) prepareMatchReservationState(ctx context.Context, cycleState *
 			return
 		}
 
-		if err := extender.Scheduler().GetCache().InvalidNodeInfo(node.Name); err != nil {
+		if err := extender.Scheduler().GetCache().InvalidNodeInfo(logger, node.Name); err != nil {
 			klog.ErrorS(err, "Failed to InvalidNodeInfo", "pod", klog.KObj(pod), "node", node.Name)
 			errCh.SendErrorWithCancel(err, cancel)
 			return
@@ -189,7 +190,7 @@ func (pl *Plugin) prepareMatchReservationState(ctx context.Context, cycleState *
 			allPluginToRestoreState[index-1] = pluginToRestoreState
 		}
 	}
-	pl.handle.Parallelizer().Until(parallelCtx, len(allNodes), processNode)
+	pl.handle.Parallelizer().Until(parallelCtx, len(allNodes), processNode, "transformNodesWithReservation")
 	err = errCh.ReceiveError()
 	if err != nil {
 		klog.ErrorS(err, "Failed to find matched or unmatched reservations", "pod", klog.KObj(pod))
@@ -199,7 +200,7 @@ func (pl *Plugin) prepareMatchReservationState(ctx context.Context, cycleState *
 	allNodeReservationStates = allNodeReservationStates[:stateIndex]
 	allPluginToRestoreState = allPluginToRestoreState[:stateIndex]
 
-	podRequests, _ := resourceapi.PodRequestsAndLimits(pod)
+	podRequests := resourceapi.PodRequests(pod, resourceapi.PodResourcesOptions{})
 	podRequestResources := framework.NewResource(podRequests)
 	state := &stateData{
 		hasAffinity:           reservationAffinity != nil,
@@ -438,7 +439,7 @@ func (pl *Plugin) BeforeFilter(ctx context.Context, cycleState *framework.CycleS
 
 	for _, rInfo := range nominatedReservationInfos {
 		if schedulingcorev1.PodPriority(rInfo.Pod) >= schedulingcorev1.PodPriority(pod) && rInfo.Pod.UID != pod.UID {
-			pInfo := framework.NewPodInfo(rInfo.Pod)
+			pInfo, _ := framework.NewPodInfo(rInfo.Pod)
 			nodeInfoOut.AddPodInfo(pInfo)
 			status := pl.handle.RunPreFilterExtensionAddPod(ctx, cycleState, pod, pInfo, nodeInfoOut)
 			if !status.IsSuccess() {

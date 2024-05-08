@@ -50,7 +50,7 @@ func assignedPod(pod *corev1.Pod) bool {
 	return len(pod.Spec.NodeName) != 0
 }
 
-func (h *podEventHandler) OnAdd(obj interface{}) {
+func (h *podEventHandler) OnAdd(obj interface{}, isInInitialList bool) {
 	pod, _ := obj.(*corev1.Pod)
 	if pod == nil {
 		return
@@ -96,7 +96,8 @@ func (h *podEventHandler) updatePod(oldPod, newPod *corev1.Pod) {
 	}
 
 	h.nominator.RemoveNominatedReservation(newPod)
-	h.nominator.DeleteReservePod(framework.NewPodInfo(newPod))
+	podInfo, _ := framework.NewPodInfo(newPod)
+	h.nominator.DeleteReservePod(podInfo)
 
 	var reservationUID types.UID
 	if oldPod != nil {
@@ -130,7 +131,8 @@ func (h *podEventHandler) updatePod(oldPod, newPod *corev1.Pod) {
 
 func (h *podEventHandler) deletePod(pod *corev1.Pod) {
 	h.nominator.RemoveNominatedReservation(pod)
-	h.nominator.DeleteReservePod(framework.NewPodInfo(pod))
+	podInfo, _ := framework.NewPodInfo(pod)
+	h.nominator.DeleteReservePod(podInfo)
 
 	reservationAllocated, err := apiext.GetReservationAllocated(pod)
 	if err == nil && reservationAllocated != nil && reservationAllocated.UID != "" {
