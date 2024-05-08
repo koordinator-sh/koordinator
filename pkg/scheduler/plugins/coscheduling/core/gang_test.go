@@ -30,6 +30,12 @@ func TestGangGroupInfo_SetGangGroupInfo(t *testing.T) {
 	gang.TotalChildrenNum = 2
 	gang.SetGangGroupInfo(gangGroupInfo)
 	assert.Equal(t, gang.GangGroupInfo.GangTotalChildrenNumMap["aa"], 2)
+
+	gang.BoundChildren = map[string]*corev1.Pod{
+		"pod1": {},
+		"pod2": {},
+	}
+	assert.Equal(t, int32(2), gang.getBoundPodNum())
 }
 
 func TestDeletePod(t *testing.T) {

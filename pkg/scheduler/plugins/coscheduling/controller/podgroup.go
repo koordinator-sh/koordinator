@@ -246,33 +246,38 @@ func (ctrl *PodGroupController) syncHandler(key string) error {
 			fillOccupiedObj(pgCopy, pods[0])
 		}
 	default:
-		var (
-			running   int32 = 0
-			succeeded int32 = 0
-			failed    int32 = 0
-		)
-		if len(pods) != 0 {
-			for _, pod := range pods {
-				switch pod.Status.Phase {
-				case v1.PodRunning:
-					running++
-				case v1.PodSucceeded:
-					succeeded++
-				case v1.PodFailed:
-					failed++
-				}
-			}
-		}
-		pgCopy.Status.Failed = failed
-		pgCopy.Status.Succeeded = succeeded
-		pgCopy.Status.Running = running
-
 		if len(pods) == 0 {
 			pgCopy.Status.Phase = schedv1alpha1.PodGroupPending
 			break
 		}
 
-		if pgCopy.Status.Scheduled >= pgCopy.Spec.MinMember && pgCopy.Status.Phase == schedv1alpha1.PodGroupScheduling {
+		var (
+			running   int32 = 0
+			succeeded int32 = 0
+			failed    int32 = 0
+		)
+
+		for _, pod := range pods {
+			switch pod.Status.Phase {
+			case v1.PodRunning:
+				running++
+			case v1.PodSucceeded:
+				succeeded++
+			case v1.PodFailed:
+				failed++
+			}
+		}
+		pgCopy.Status.Failed = failed
+		pgCopy.Status.Succeeded = succeeded
+		pgCopy.Status.Running = running
+		pgCopy.Status.Scheduled = ctrl.pgManager.GetBoundPodNumber(util.GetId(pg.Namespace, pg.Name))
+
+		if pgCopy.Status.Scheduled < pgCopy.Spec.MinMember {
+			pgCopy.Status.Phase = schedv1alpha1.PodGroupScheduling
+			if pgCopy.Status.ScheduleStartTime.IsZero() {
+				pgCopy.Status.ScheduleStartTime = metav1.Time{Time: time.Now()}
+			}
+		} else {
 			pgCopy.Status.Phase = schedv1alpha1.PodGroupScheduled
 		}
 

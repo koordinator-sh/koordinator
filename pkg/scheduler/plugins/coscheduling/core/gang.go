@@ -292,10 +292,10 @@ func (gang *Gang) getGangTotalNum() int {
 	return gang.TotalChildrenNum
 }
 
-func (gang *Gang) getBoundPodNum() int {
+func (gang *Gang) getBoundPodNum() int32 {
 	gang.lock.Lock()
 	defer gang.lock.Unlock()
-	return len(gang.BoundChildren)
+	return int32(len(gang.BoundChildren))
 }
 
 func (gang *Gang) getGangMode() string {
