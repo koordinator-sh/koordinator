@@ -487,7 +487,7 @@ func (gang *Gang) addBoundPod(pod *v1.Pod) {
 	gang.BoundChildren[podId] = pod
 
 	klog.Infof("AddBoundPod, gangName: %v, podName: %v", gang.Name, podId)
-	if len(gang.BoundChildren) >= gang.MinRequiredNumber {
+	if !gang.OnceResourceSatisfied && len(gang.BoundChildren) >= gang.MinRequiredNumber {
 		gang.OnceResourceSatisfied = true
 		klog.Infof("Gang ResourceSatisfied due to addBoundPod, gangName: %v", gang.Name)
 	}
