@@ -19,6 +19,7 @@ package runtimehooks
 import (
 	"fmt"
 
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/klog/v2"
 
 	"github.com/koordinator-sh/koordinator/pkg/features"
@@ -57,12 +58,14 @@ func (r *runtimeHook) Run(stopCh <-chan struct{}) error {
 		return err
 	}
 	if r.nriServer != nil {
-		if err := r.nriServer.Start(); err != nil {
-			// if NRI is not enabled or container runtime not support NRI, we just skip NRI server start
-			klog.Errorf("nri mode runtime hook server start failed: %v", err)
-		} else {
-			klog.V(4).Infof("nri mode runtime hook server has started")
-		}
+		go func() {
+			if err := r.nriServer.Start(); err != nil {
+				// if NRI is not enabled or container runtime not support NRI, we just skip NRI server start
+				klog.Warningf("nri mode runtime hook server start failed: %v", err)
+			} else {
+				klog.V(4).Infof("nri mode runtime hook server has started")
+			}
+		}()
 	}
 	if err := r.reconciler.Run(stopCh); err != nil {
 		return err
@@ -101,13 +104,22 @@ func NewRuntimeHook(si statesinformer.StatesInformer, cfg *Config) (RuntimeHook,
 		Executor:            e,
 	}
 
+	backOff := wait.Backoff{
+		Duration: cfg.RuntimeHooksNRIBackOffDuration,
+		Factor:   cfg.RuntimeHooksNRIBackOffFactor,
+		Jitter:   0.1,
+		Steps:    cfg.RuntimeHooksNRIBackOffSteps,
+		Cap:      cfg.RuntimeHooksNRIBackOffCap,
+	}
 	var nriServer *nri.NriServer
 	if cfg.RuntimeHooksNRI {
 		nriServerOptions := nri.Options{
 			NriSocketPath:       cfg.RuntimeHooksNRISocketPath,
+			NriConnectTimeout:   cfg.RuntimeHooksNRIConnectTimeout,
 			PluginFailurePolicy: pluginFailurePolicy,
 			DisableStages:       getDisableStagesMap(cfg.RuntimeHookDisableStages),
 			Executor:            e,
+			BackOff:             backOff,
 		}
 		nriServer, err = nri.NewNriServer(nriServerOptions)
 		if err != nil {

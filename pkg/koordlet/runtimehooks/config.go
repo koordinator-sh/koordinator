@@ -18,6 +18,7 @@ package runtimehooks
 
 import (
 	"flag"
+	"math"
 	"time"
 
 	"k8s.io/apimachinery/pkg/util/runtime"
@@ -113,6 +114,11 @@ type Config struct {
 	RuntimeHookHostEndpoint         string
 	RuntimeHookDisableStages        []string
 	RuntimeHooksNRI                 bool
+	RuntimeHooksNRIConnectTimeout   time.Duration
+	RuntimeHooksNRIBackOffDuration  time.Duration
+	RuntimeHooksNRIBackOffCap       time.Duration
+	RuntimeHooksNRIBackOffFactor    float64
+	RuntimeHooksNRIBackOffSteps     int
 	RuntimeHooksNRISocketPath       string
 	RuntimeHookReconcileInterval    time.Duration
 }
@@ -127,6 +133,11 @@ func NewDefaultConfig() *Config {
 		RuntimeHookHostEndpoint:         "/var/run/koordlet/koordlet.sock",
 		RuntimeHookDisableStages:        []string{},
 		RuntimeHooksNRI:                 true,
+		RuntimeHooksNRIConnectTimeout:   6 * time.Second,
+		RuntimeHooksNRIBackOffDuration:  1 * time.Second,
+		RuntimeHooksNRIBackOffCap:       1<<62 - 1,
+		RuntimeHooksNRIBackOffSteps:     math.MaxInt32,
+		RuntimeHooksNRIBackOffFactor:    2,
 		RuntimeHooksNRISocketPath:       "nri/nri.sock",
 		RuntimeHookReconcileInterval:    10 * time.Second,
 	}
@@ -139,6 +150,11 @@ func (c *Config) InitFlags(fs *flag.FlagSet) {
 	fs.StringVar(&c.RuntimeHooksPluginFailurePolicy, "runtime-hooks-plugin-failure-policy", c.RuntimeHooksPluginFailurePolicy, "stop running other hooks once someone failed")
 	fs.StringVar(&c.RuntimeHookConfigFilePath, "runtime-hooks-config-path", c.RuntimeHookConfigFilePath, "config file path for runtime hooks")
 	fs.StringVar(&c.RuntimeHookHostEndpoint, "runtime-hooks-host-endpoint", c.RuntimeHookHostEndpoint, "host endpoint of runtime proxy")
+	fs.DurationVar(&c.RuntimeHooksNRIConnectTimeout, "runtime-hooks-nri-connect-timeout", c.RuntimeHooksNRIConnectTimeout, "nri server connect time out, it should be a little more than default plugin registration timeout(5 seconds) which is defined in containerd config")
+	fs.DurationVar(&c.RuntimeHooksNRIBackOffDuration, "runtime-hooks-nri-backoff-duration", c.RuntimeHooksNRIBackOffDuration, "nri server backoff duration")
+	fs.DurationVar(&c.RuntimeHooksNRIBackOffCap, "runtime-hooks-nri-backoff-cap", c.RuntimeHooksNRIBackOffCap, "nri server backoff cap")
+	fs.IntVar(&c.RuntimeHooksNRIBackOffSteps, "runtime-hooks-nri-backoff-steps", c.RuntimeHooksNRIBackOffSteps, "nri server backoff steps")
+	fs.Float64Var(&c.RuntimeHooksNRIBackOffFactor, "runtime-hooks-nri-backoff-factor", c.RuntimeHooksNRIBackOffFactor, "nri server reconnect backoff factor")
 	fs.Var(cliflag.NewStringSlice(&c.RuntimeHookDisableStages), "runtime-hooks-disable-stages", "disable stages for runtime hooks")
 	fs.BoolVar(&c.RuntimeHooksNRI, "enable-nri-runtime-hook", c.RuntimeHooksNRI, "enable/disable runtime hooks nri mode")
 	fs.DurationVar(&c.RuntimeHookReconcileInterval, "runtime-hooks-reconcile-interval", c.RuntimeHookReconcileInterval, "reconcile interval for each plugins")
