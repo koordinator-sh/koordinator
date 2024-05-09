@@ -65,7 +65,7 @@ type NriServer struct {
 }
 
 const (
-	events     = "RunPodSandbox,CreateContainer,UpdateContainer"
+	events     = "RunPodSandbox,RemovePodSandbox,CreateContainer,UpdateContainer"
 	pluginName = "koordlet_nri"
 	pluginIdx  = "00"
 )
@@ -74,6 +74,7 @@ var (
 	_ = stub.ConfigureInterface(&NriServer{})
 	_ = stub.SynchronizeInterface(&NriServer{})
 	_ = stub.RunPodInterface(&NriServer{})
+	_ = stub.RemovePodInterface(&NriServer{})
 	_ = stub.CreateContainerInterface(&NriServer{})
 	_ = stub.UpdateContainerInterface(&NriServer{})
 )
@@ -186,6 +187,7 @@ func (p *NriServer) CreateContainer(pod *api.PodSandbox, container *api.Containe
 }
 
 func (p *NriServer) UpdateContainer(pod *api.PodSandbox, container *api.Container) ([]*api.ContainerUpdate, error) {
+
 	containerCtx := &protocol.ContainerContext{}
 	containerCtx.FromNri(pod, container)
 	// todo: return error or bypass error based on PluginFailurePolicy
@@ -202,10 +204,26 @@ func (p *NriServer) UpdateContainer(pod *api.PodSandbox, container *api.Containe
 		klog.Errorf("containerCtx nri done failed: %v", err)
 		return nil, nil
 	}
-
 	klog.V(6).Infof("handle NRI UpdateContainer successfully, container %s/%s/%s",
 		pod.GetNamespace(), pod.GetName(), container.GetName())
 	return []*api.ContainerUpdate{update}, nil
+}
+
+func (p *NriServer) RemovePodSandbox(pod *api.PodSandbox) error {
+	podCtx := &protocol.PodContext{}
+	podCtx.FromNri(pod)
+	// todo: return error or bypass error based on PluginFailurePolicy
+	err := hooks.RunHooks(p.options.PluginFailurePolicy, rmconfig.PreRemoveRunPodSandbox, podCtx)
+	if err != nil {
+		klog.Errorf("nri hooks run error: %v", err)
+		if p.options.PluginFailurePolicy == rmconfig.PolicyFail {
+			return err
+		}
+	}
+	podCtx.NriRemoveDone(p.options.Executor)
+
+	klog.V(6).Infof("handle NRI RemovePodSandbox successfully, pod %s/%s", pod.GetNamespace(), pod.GetName())
+	return nil
 }
 
 func (p *NriServer) onClose() {

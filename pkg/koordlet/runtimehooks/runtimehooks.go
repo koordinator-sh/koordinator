@@ -125,8 +125,9 @@ func NewRuntimeHook(si statesinformer.StatesInformer, cfg *Config) (RuntimeHook,
 	}
 
 	newPluginOptions := hooks.Options{
-		Reader:   cr,
-		Executor: e,
+		Reader:         cr,
+		Executor:       e,
+		StatesInformer: si,
 	}
 
 	if err != nil {

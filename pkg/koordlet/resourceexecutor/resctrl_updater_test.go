@@ -112,3 +112,47 @@ func TestNewResctrlMbSchemataResource(t *testing.T) {
 		assert.NoError(t, err)
 	})
 }
+
+func TestNewResctrlSchemataResource(t *testing.T) {
+	t.Run("test_all_schemata", func(t *testing.T) {
+		helper := system.NewFileTestUtil(t)
+		defer helper.Cleanup()
+
+		sysFSRootDirName := "NewResctrlSchemataResource"
+		helper.MkDirAll(sysFSRootDirName)
+		system.Conf.SysFSRootDir = filepath.Join(helper.TempDir, sysFSRootDirName)
+		testingPrepareResctrlL3CatGroups(t, "7ff", "    L3:0=ff;1=ff\n    MB:0=100;1=100")
+		updater, _ := NewResctrlSchemataResource("BE", "L3:0=f;1=f\nMB:0=60;1=60", nil)
+		assert.Equal(t, "L3:0=f;1=f;\nMB:0=60;1=60;\n", updater.Value())
+		err := updater.update()
+		assert.NoError(t, err)
+	})
+
+	t.Run("test_LLC_resource", func(t *testing.T) {
+		helper := system.NewFileTestUtil(t)
+		defer helper.Cleanup()
+
+		sysFSRootDirName := "NewResctrlSchemataResourceSingleLLC"
+		helper.MkDirAll(sysFSRootDirName)
+		system.Conf.SysFSRootDir = filepath.Join(helper.TempDir, sysFSRootDirName)
+		testingPrepareResctrlL3CatGroups(t, "7ff", "    L3:0=ff;1=ff")
+		updater, _ := NewResctrlSchemataResource("BE", "L3:0=f;1=f", nil)
+		assert.Equal(t, "L3:0=f;1=f;\n", updater.Value())
+		err := updater.update()
+		assert.NoError(t, err)
+	})
+
+	t.Run("test_MB_resource", func(t *testing.T) {
+		helper := system.NewFileTestUtil(t)
+		defer helper.Cleanup()
+
+		sysFSRootDirName := "NewResctrlSchemataResourceSingleMB"
+		helper.MkDirAll(sysFSRootDirName)
+		system.Conf.SysFSRootDir = filepath.Join(helper.TempDir, sysFSRootDirName)
+		testingPrepareResctrlL3CatGroups(t, "", "    MB:0=10;1=10")
+		updater, _ := NewResctrlSchemataResource("BE", "MB:0=20;1=20", nil)
+		assert.Equal(t, "MB:0=20;1=20;\n", updater.Value())
+		err := updater.update()
+		assert.NoError(t, err)
+	})
+}

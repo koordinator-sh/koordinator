@@ -57,6 +57,7 @@ const (
 	PostStartContainer          RuntimeHookType = "PostStartContainer"
 	PreUpdateContainerResources RuntimeHookType = "PreUpdateContainerResources"
 	PostStopContainer           RuntimeHookType = "PostStopContainer"
+	PreRemoveRunPodSandbox      RuntimeHookType = "PreRemoveRunPodSandbox"
 	NoneRuntimeHookType         RuntimeHookType = "NoneRuntimeHookType"
 )
 
