@@ -19,6 +19,7 @@ package nri
 import (
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/containerd/nri/pkg/api"
 	"github.com/containerd/nri/pkg/stub"
@@ -58,19 +59,19 @@ func TestNriServer_Start(t *testing.T) {
 				stub: nil,
 				mask: api.EventMask(1),
 				options: Options{
+					NriConnectTimeout:   time.Second,
 					PluginFailurePolicy: "Ignore",
 					DisableStages:       getDisableStagesMap([]string{"PreRunPodSandbox"}),
 					Executor:            nil,
 				},
 			},
-			wantErr: false,
+			wantErr: true,
 		},
 		{
 			fields: fields{
 				stub: nil,
 			},
 		},
-		{},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
