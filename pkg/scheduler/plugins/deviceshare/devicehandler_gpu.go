@@ -40,7 +40,7 @@ type GPUHandler struct {
 func (h *GPUHandler) CalcDesiredRequestsAndCount(node *corev1.Node, pod *corev1.Pod, podRequests corev1.ResourceList, nodeDevice *nodeDevice, hint *apiext.DeviceHint) (corev1.ResourceList, int, *framework.Status) {
 	totalDevice := nodeDevice.deviceTotal[schedulingv1alpha1.GPU]
 	if len(totalDevice) == 0 {
-		return nil, 0, framework.NewStatus(framework.UnschedulableAndUnresolvable, fmt.Sprintf("Insufficient %s devices", schedulingv1alpha1.GPU))
+		return nil, 0, framework.NewStatus(framework.UnschedulableAndUnresolvable, fmt.Sprintf(ErrInsufficientDevices, schedulingv1alpha1.GPU))
 	}
 
 	podRequests = podRequests.DeepCopy()

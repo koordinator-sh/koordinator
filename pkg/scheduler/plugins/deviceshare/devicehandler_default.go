@@ -44,7 +44,7 @@ type DefaultDeviceHandler struct {
 func (h *DefaultDeviceHandler) CalcDesiredRequestsAndCount(_ *corev1.Node, _ *corev1.Pod, podRequests corev1.ResourceList, nodeDevice *nodeDevice, hint *apiext.DeviceHint) (corev1.ResourceList, int, *framework.Status) {
 	totalDevices := nodeDevice.deviceTotal[h.deviceType]
 	if len(totalDevices) == 0 {
-		return nil, 0, framework.NewStatus(framework.UnschedulableAndUnresolvable, fmt.Sprintf("Insufficient %s devices", h.deviceType))
+		return nil, 0, framework.NewStatus(framework.UnschedulableAndUnresolvable, fmt.Sprintf(ErrInsufficientDevices, h.deviceType))
 	}
 
 	requests := podRequests
@@ -64,7 +64,7 @@ func (h *DefaultDeviceHandler) CalcDesiredRequestsAndCount(_ *corev1.Node, _ *co
 			if hint.Selector != nil {
 				selector, err := util.GetFastLabelSelector(hint.Selector)
 				if err != nil {
-					return nil, 0, framework.NewStatus(framework.UnschedulableAndUnresolvable, fmt.Sprintf("invalid Selector of DeviceHint, deviceType: %s, err: %s", h.deviceType, err.Error()))
+					return nil, 0, framework.NewStatus(framework.UnschedulableAndUnresolvable, fmt.Sprintf(ErrInvalidSelectorOfDeviceHint, h.deviceType, err.Error()))
 				}
 
 				matched := 0
@@ -76,7 +76,7 @@ func (h *DefaultDeviceHandler) CalcDesiredRequestsAndCount(_ *corev1.Node, _ *co
 				desiredCount = int64(matched)
 			}
 			if desiredCount == 0 {
-				return nil, 0, framework.NewStatus(framework.UnschedulableAndUnresolvable, fmt.Sprintf("Insufficient %s devices", h.deviceType))
+				return nil, 0, framework.NewStatus(framework.UnschedulableAndUnresolvable, fmt.Sprintf(ErrInsufficientDevices, h.deviceType))
 			}
 		case apiext.RequestsAsCountAllocateStrategy:
 			desiredCount = quantity.Value()

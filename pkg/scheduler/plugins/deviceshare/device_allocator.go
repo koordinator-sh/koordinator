@@ -82,7 +82,7 @@ func (a *AutopilotAllocator) Prepare() *framework.Status {
 
 	for deviceType := range requestsPerInstance {
 		if mustAllocateVF(a.state.hints[deviceType]) && !hasVirtualFunctions(nodeDevice, deviceType) {
-			return framework.NewStatus(framework.UnschedulableAndUnresolvable, fmt.Sprintf("Insufficient %s VirtualFunctions", deviceType))
+			return framework.NewStatus(framework.UnschedulableAndUnresolvable, fmt.Sprintf(ErrInsufficientVirtualFunctions, deviceType))
 		}
 	}
 
@@ -124,7 +124,7 @@ func (a *AutopilotAllocator) Allocate(
 	if len(deviceAllocations) == 0 {
 		var reasons []string
 		for deviceType := range a.requestsPerInstance {
-			reasons = append(reasons, fmt.Sprintf("Insufficient %s devices", deviceType))
+			reasons = append(reasons, fmt.Sprintf(ErrInsufficientDevices, deviceType))
 		}
 		return nil, framework.NewStatus(framework.Unschedulable, reasons...)
 	}
@@ -249,7 +249,7 @@ func (a *AutopilotAllocator) allocateByTopology(requestCtx *requestContext, node
 		return allocations, nil
 	}
 
-	return nil, framework.NewStatus(framework.Unschedulable, "node(s) Joint-Allocate rules not met")
+	return nil, framework.NewStatus(framework.Unschedulable, ErrNodeJointAllocationRuleNotMet)
 }
 
 func (a *AutopilotAllocator) validateJointAllocation(jointAllocate *apiext.DeviceJointAllocate, nodeDevice *nodeDevice, deviceAllocations apiext.DeviceAllocations) *framework.Status {
@@ -277,7 +277,7 @@ func (a *AutopilotAllocator) validateJointAllocation(jointAllocate *apiext.Devic
 	for _, deviceType := range jointAllocate.DeviceTypes[1:] {
 		secondaryPCIes := pcieGetterFn(deviceType)
 		if !secondaryPCIes.Equal(primaryPCIes) {
-			return framework.NewStatus(framework.Unschedulable, "node(s) Device Joint-Allocate rules violation")
+			return framework.NewStatus(framework.Unschedulable, ErrNodeJointAllocationRuleViolation)
 		}
 	}
 	return nil
@@ -456,7 +456,7 @@ func defaultAllocateDevices(
 
 	if len(allocations) < desiredCount {
 		klog.V(5).Infof("node resource does not satisfy pod's multiple %v request, expect %v, got %v", deviceType, desiredCount, len(allocations))
-		return nil, framework.NewStatus(framework.Unschedulable, fmt.Sprintf("Insufficient %s devices", deviceType))
+		return nil, framework.NewStatus(framework.Unschedulable, fmt.Sprintf(ErrInsufficientDevices, deviceType))
 	}
 	return allocations, nil
 }

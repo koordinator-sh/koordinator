@@ -43,9 +43,15 @@ import (
 const (
 	// Name is the name of the plugin used in the plugin registry and configurations.
 	Name = "DeviceShare"
-
 	// stateKey is the key in CycleState to pre-computed data.
 	stateKey = Name
+
+	ErrNodeMissingGPUPartitionTable     = "node(s) missing GPU Partition Table"
+	ErrInsufficientVirtualFunctions     = "Insufficient %s VirtualFunctions"
+	ErrInsufficientDevices              = "Insufficient %v Devices"
+	ErrNodeJointAllocationRuleViolation = "node(s) Device Joint-Allocate rules violation"
+	ErrNodeJointAllocationRuleNotMet    = "node(s) Joint-Allocate rules not met"
+	ErrInvalidSelectorOfDeviceHint      = "invalid Selector of DeviceHint, deviceType: %s, err: %s"
 )
 
 var (

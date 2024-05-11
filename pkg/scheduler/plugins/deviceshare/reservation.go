@@ -32,6 +32,10 @@ import (
 
 const reservationRestoreStateKey = Name + "/reservationRestoreState"
 
+const (
+	ErrNoReservationMeetDeviceRequirements = "node(s) no reservation(s) to meet the device requirements"
+)
+
 type reservationRestoreStateData struct {
 	skip        bool
 	nodeToState frameworkext.NodeReservationRestoreStates
@@ -240,7 +244,7 @@ func (p *Plugin) tryAllocateFromReservation(
 		}
 	}
 	if !hasSatisfiedReservation && requiredFromReservation {
-		return nil, framework.NewStatus(framework.Unschedulable, "node(s) no reservation(s) to meet the device requirements")
+		return nil, framework.NewStatus(framework.Unschedulable, ErrNoReservationMeetDeviceRequirements)
 	}
 	return result, nil
 }
