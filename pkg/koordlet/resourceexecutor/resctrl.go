@@ -32,17 +32,18 @@ import (
 const ErrResctrlDir = "resctrl path or file not exist"
 const CacheIdIndex = 2
 
+// NewResctrlReader: lazy resctrl reader, just check vendor to generate specific reader
 func NewResctrlReader() ResctrlReader {
+	// Support two main platforms; other platforms need to add their implementation of the resctrl interface.
 	if vendorId, err := system.GetVendorIDByCPUInfo(system.GetCPUInfoPath()); err != nil {
-		// FIXME: should we panic there?
-		klog.V(0).ErrorS(err, "get cpu vendor error")
-		return nil
+		klog.V(0).ErrorS(err, "get cpu vendor error, stop start resctrl collector")
+		return &fakeReader{}
 	} else {
 		switch vendorId {
 		case system.INTEL_VENDOR_ID:
 			return NewResctrlRDTReader()
 		case system.AMD_VENDOR_ID:
-			return &ResctrlAMDReader{}
+			return NewResctrlQoSReader()
 		default:
 			klog.V(0).ErrorS(err, "unsupported cpu vendor")
 		}
@@ -52,18 +53,25 @@ func NewResctrlReader() ResctrlReader {
 
 type CacheId int
 
-// parent for resctrl is like: ``, `BE`, `LS`
+// parent for resctrl is like: `BE`, `LS`
 type ResctrlReader interface {
 	ReadResctrlL3Stat(parent string) (map[CacheId]uint64, error)
 	ReadResctrlMBStat(parent string) (map[CacheId]system.MBStatData, error)
 }
 
-type ResctrlRDTReader struct{}
-type ResctrlAMDReader struct {
-	ResctrlRDTReader
+type ResctrlBaseReader struct {
 }
 
-type fakeReader struct{}
+type ResctrlRDTReader struct {
+	ResctrlBaseReader
+}
+type ResctrlAMDReader struct {
+	ResctrlBaseReader
+}
+
+type fakeReader struct {
+	ResctrlBaseReader
+}
 
 func (rr *fakeReader) ReadResctrlL3Stat(parent string) (map[CacheId]uint64, error) {
 	return nil, errors.New("unsupported platform")
@@ -77,13 +85,18 @@ func NewResctrlRDTReader() ResctrlReader {
 	return &ResctrlRDTReader{}
 }
 
-func (rr *ResctrlRDTReader) ReadResctrlL3Stat(parent string) (map[CacheId]uint64, error) {
+func NewResctrlQoSReader() ResctrlReader {
+	return &ResctrlAMDReader{}
+}
+
+func (rr *ResctrlBaseReader) ReadResctrlL3Stat(parent string) (map[CacheId]uint64, error) {
 	l3Stat := make(map[CacheId]uint64)
 	monDataPath := system.GetResctrlMonDataPath(parent)
 	fd, err := os.Open(monDataPath)
 	if err != nil {
 		return nil, fmt.Errorf(ErrResctrlDir)
 	}
+	defer fd.Close()
 	// read all l3-memory domains
 	domains, err := fd.ReadDir(-1)
 	if err != nil {
@@ -109,7 +122,7 @@ func (rr *ResctrlRDTReader) ReadResctrlL3Stat(parent string) (map[CacheId]uint64
 	return l3Stat, nil
 }
 
-func (rr *ResctrlRDTReader) ReadResctrlMBStat(parent string) (map[CacheId]system.MBStatData, error) {
+func (rr *ResctrlBaseReader) ReadResctrlMBStat(parent string) (map[CacheId]system.MBStatData, error) {
 	mbStat := make(map[CacheId]system.MBStatData)
 	monDataPath := system.GetResctrlMonDataPath(parent)
 	fd, err := os.Open(monDataPath)

@@ -29,6 +29,7 @@ import (
 	"strings"
 	"sync"
 
+	"go.uber.org/multierr"
 	"k8s.io/klog/v2"
 
 	"github.com/koordinator-sh/koordinator/pkg/util"
@@ -65,6 +66,7 @@ var (
 	isInit            bool
 	isSupportResctrl  bool
 	CacheIdsCacheFunc func() ([]int, error)
+	ARM_VENDOR_ID_MAP = map[string]struct{}{} // support MPAM ARM vendor ids
 )
 
 func init() {
@@ -96,6 +98,18 @@ func isKernelSupportResctrl() (bool, error) {
 	return isCatFlagSet && isMbaFlagSet, nil
 }
 
+func IsVendorSupportResctrl() bool {
+	vendorID, err := GetVendorIDByCPUInfo(GetCPUInfoPath())
+	if err != nil {
+		klog.V(4).Infof("GetVendorIDByCPUInfo error: %v", err)
+		return false
+	}
+	if _, ok := ARM_VENDOR_ID_MAP[vendorID]; ok {
+		return true
+	}
+	return vendorID == AMD_VENDOR_ID || vendorID == INTEL_VENDOR_ID
+}
+
 func IsSupportResctrl() (bool, error) {
 	initLock.Lock()
 	defer initLock.Unlock()
@@ -115,6 +129,15 @@ func IsSupportResctrl() (bool, error) {
 		isInit = true
 	}
 	return isSupportResctrl, nil
+}
+
+func IsResctrlCollectorAvailableByCpuInfo() (bool, error) {
+	initLock.Lock()
+	defer initLock.Unlock()
+	path := GetCPUInfoPath()
+	mbm, err1 := isResctrlMBMAvailableByCpuInfo(path)
+	cqm, err2 := isResctrlCQMAvailableByCpuInfo(path)
+	return mbm && cqm, multierr.Append(err1, err2)
 }
 
 var (
@@ -571,21 +594,6 @@ func CheckAndTryEnableResctrlCat() error {
 	_, err = os.Stat(l3CbmFilePath)
 	if err != nil {
 		return fmt.Errorf("resctrl cat is not enabled, err: %s", err)
-	}
-	return nil
-}
-
-func InitCatGroupIfNotExist(group string) error {
-	path := GetResctrlGroupRootDirPath(group)
-	_, err := os.Stat(path)
-	if err == nil {
-		return nil
-	} else if !os.IsNotExist(err) {
-		return fmt.Errorf("check dir %v for group %s but got unexpected err: %v", path, group, err)
-	}
-	err = os.Mkdir(path, 0755)
-	if err != nil {
-		return fmt.Errorf("create dir %v failed for group %s, err: %v", path, group, err)
 	}
 	return nil
 }

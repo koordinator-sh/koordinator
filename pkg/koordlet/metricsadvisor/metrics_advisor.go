@@ -45,7 +45,6 @@ func NewMetricAdvisor(cfg *framework.Config, statesInformer statesinformer.State
 		MetricCache:    metricCache,
 		CgroupReader:   resourceexecutor.NewCgroupReader(),
 		PodFilters:     podFilters,
-		ResctrlReader:  resourceexecutor.NewResctrlReader(),
 	}
 	ctx := &framework.Context{
 		DeviceCollectors: make(map[string]framework.DeviceCollector, len(devicePlugins)),

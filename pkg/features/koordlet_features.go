@@ -116,6 +116,12 @@ const (
 	// Libpfm4 enables libpfm4 feature of koordlet.
 	Libpfm4 featuregate.Feature = "Libpfm4"
 
+	// owner: @Rouzip
+	// alpha: v0.1
+	//
+	// ResctrlCollector enables resctrl collector feature of koordlet.
+	ResctrlCollector featuregate.Feature = "ResctrlCollector"
+
 	// owner: @songtao98 @zwzhang0107
 	// alpha: v1.0
 	//
@@ -161,6 +167,7 @@ var (
 		CPUBurst:               {Default: true, PreRelease: featuregate.Beta},
 		SystemConfig:           {Default: false, PreRelease: featuregate.Alpha},
 		RdtResctrl:             {Default: true, PreRelease: featuregate.Beta},
+		ResctrlCollector:       {Default: false, PreRelease: featuregate.Alpha},
 		CgroupReconcile:        {Default: false, PreRelease: featuregate.Alpha},
 		NodeTopologyReport:     {Default: true, PreRelease: featuregate.Beta},
 		Accelerators:           {Default: false, PreRelease: featuregate.Alpha},

@@ -23,6 +23,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/klog/v2"
 
+	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor/framework"
@@ -47,16 +48,26 @@ type resctrlCollector struct {
 
 func New(opt *framework.Options) framework.Collector {
 	return &resctrlCollector{
-		collectInterval: opt.Config.ResctrlCollectorInterval,
-		statesInformer:  opt.StatesInformer,
-		metricCache:     opt.MetricCache,
-		resctrlReader:   opt.ResctrlReader,
-		started:         atomic.NewBool(false),
+		collectInterval:      opt.Config.ResctrlCollectorInterval,
+		statesInformer:       opt.StatesInformer,
+		metricCache:          opt.MetricCache,
+		resctrlReader:        resourceexecutor.NewResctrlReader(),
+		resctrlCollectorGate: opt.Config.EnableResctrlCollector,
+		started:              atomic.NewBool(false),
 	}
 }
 
+// 1. config enable resctrl collector
+// 2. cmdline, os, cpuid enable resctrl collector
+// 3. check CPU vendor(Intel&AMD)
+// 4. check resctrl collector feature gate
 func (r *resctrlCollector) Enabled() bool {
-	return r.resctrlCollectorGate
+	isResctrlEnabled, _ := system.IsSupportResctrl()
+	isResctrlCollectorEnabled, _ := system.IsResctrlCollectorAvailableByCpuInfo()
+	return r.resctrlCollectorGate &&
+		isResctrlEnabled && isResctrlCollectorEnabled &&
+		system.IsVendorSupportResctrl() &&
+		features.DefaultKoordletFeatureGate.Enabled(features.ResctrlCollector)
 }
 
 func (r *resctrlCollector) Setup(c *framework.Context) {}

@@ -36,7 +36,6 @@ func TestNewResctrlCollector(t *testing.T) {
 		cfg            *framework.Config
 		statesInformer statesinformer.StatesInformer
 		metricCache    metriccache.MetricCache
-		resctrlReader  resourceexecutor.ResctrlReader
 	}
 	tests := []struct {
 		name string
@@ -48,7 +47,6 @@ func TestNewResctrlCollector(t *testing.T) {
 				cfg:            framework.NewDefaultConfig(),
 				statesInformer: nil,
 				metricCache:    nil,
-				resctrlReader:  resourceexecutor.NewResctrlReader(),
 			},
 		},
 	}
@@ -58,7 +56,6 @@ func TestNewResctrlCollector(t *testing.T) {
 				Config:         tt.args.cfg,
 				StatesInformer: tt.args.statesInformer,
 				MetricCache:    tt.args.metricCache,
-				ResctrlReader:  tt.args.resctrlReader,
 			}
 			if got := New(opt); got == nil {
 				t.Errorf("NewResctrlCollector() = %v", got)
@@ -152,7 +149,6 @@ func Test_collectQosResctrlStatNoErr(t *testing.T) {
 				Config:         framework.NewDefaultConfig(),
 				StatesInformer: mockStatesInformer,
 				MetricCache:    mockMetricCache,
-				ResctrlReader:  resourceexecutor.NewResctrlReader(),
 				CgroupReader:   resourceexecutor.NewCgroupReader(),
 			})
 

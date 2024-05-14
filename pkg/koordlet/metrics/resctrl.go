@@ -26,10 +26,10 @@ const (
 	ResourceTypeLLC = "llc"
 	ResourceTypeMB  = "mb"
 
-	ResctrlResourceType = "resctrl_resource_type"
-	ResctrlCacheId      = "resctrl_cacheid"
-	ResctrlQos          = "resctrl_qos"
-	ResctrlMbType       = "resctrl_mb_type"
+	ResctrlResourceType = "resource_type"
+	ResctrlCacheId      = "cache_id"
+	ResctrlQos          = "qos"
+	ResctrlMbType       = "mb_type"
 )
 
 var (
