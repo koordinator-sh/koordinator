@@ -201,6 +201,20 @@ func (in *LowNodeLoadArgs) DeepCopyInto(out *LowNodeLoadArgs) {
 			(*out)[key] = val
 		}
 	}
+	if in.ProdHighThresholds != nil {
+		in, out := &in.ProdHighThresholds, &out.ProdHighThresholds
+		*out = make(ResourceThresholds, len(*in))
+		for key, val := range *in {
+			(*out)[key] = val
+		}
+	}
+	if in.ProdLowThresholds != nil {
+		in, out := &in.ProdLowThresholds, &out.ProdLowThresholds
+		*out = make(ResourceThresholds, len(*in))
+		for key, val := range *in {
+			(*out)[key] = val
+		}
+	}
 	if in.ResourceWeights != nil {
 		in, out := &in.ResourceWeights, &out.ResourceWeights
 		*out = make(map[corev1.ResourceName]int64, len(*in))
@@ -263,6 +277,20 @@ func (in *LowNodeLoadNodePool) DeepCopyInto(out *LowNodeLoadNodePool) {
 	}
 	if in.LowThresholds != nil {
 		in, out := &in.LowThresholds, &out.LowThresholds
+		*out = make(ResourceThresholds, len(*in))
+		for key, val := range *in {
+			(*out)[key] = val
+		}
+	}
+	if in.ProdHighThresholds != nil {
+		in, out := &in.ProdHighThresholds, &out.ProdHighThresholds
+		*out = make(ResourceThresholds, len(*in))
+		for key, val := range *in {
+			(*out)[key] = val
+		}
+	}
+	if in.ProdLowThresholds != nil {
+		in, out := &in.ProdLowThresholds, &out.ProdLowThresholds
 		*out = make(ResourceThresholds, len(*in))
 		for key, val := range *in {
 			(*out)[key] = val

@@ -33,6 +33,8 @@ func Convert_v1alpha2_LowNodeLoadArgs_To_config_LowNodeLoadArgs(in *LowNodeLoadA
 		UseDeviationThresholds: out.UseDeviationThresholds,
 		HighThresholds:         out.HighThresholds,
 		LowThresholds:          out.LowThresholds,
+		ProdHighThresholds:     out.ProdHighThresholds,
+		ProdLowThresholds:      out.ProdLowThresholds,
 		ResourceWeights:        out.ResourceWeights,
 		AnomalyCondition:       out.AnomalyCondition,
 	}

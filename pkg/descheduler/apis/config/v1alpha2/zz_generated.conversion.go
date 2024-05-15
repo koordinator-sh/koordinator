@@ -379,6 +379,8 @@ func autoConvert_v1alpha2_LowNodeLoadArgs_To_config_LowNodeLoadArgs(in *LowNodeL
 	}
 	out.HighThresholds = *(*config.ResourceThresholds)(unsafe.Pointer(&in.HighThresholds))
 	out.LowThresholds = *(*config.ResourceThresholds)(unsafe.Pointer(&in.LowThresholds))
+	out.ProdHighThresholds = *(*config.ResourceThresholds)(unsafe.Pointer(&in.ProdHighThresholds))
+	out.ProdLowThresholds = *(*config.ResourceThresholds)(unsafe.Pointer(&in.ProdLowThresholds))
 	out.ResourceWeights = *(*map[corev1.ResourceName]int64)(unsafe.Pointer(&in.ResourceWeights))
 	if in.AnomalyCondition != nil {
 		in, out := &in.AnomalyCondition, &out.AnomalyCondition
@@ -426,6 +428,8 @@ func autoConvert_config_LowNodeLoadArgs_To_v1alpha2_LowNodeLoadArgs(in *config.L
 	}
 	out.HighThresholds = *(*ResourceThresholds)(unsafe.Pointer(&in.HighThresholds))
 	out.LowThresholds = *(*ResourceThresholds)(unsafe.Pointer(&in.LowThresholds))
+	out.ProdHighThresholds = *(*ResourceThresholds)(unsafe.Pointer(&in.ProdHighThresholds))
+	out.ProdLowThresholds = *(*ResourceThresholds)(unsafe.Pointer(&in.ProdLowThresholds))
 	out.ResourceWeights = *(*map[corev1.ResourceName]int64)(unsafe.Pointer(&in.ResourceWeights))
 	if in.AnomalyCondition != nil {
 		in, out := &in.AnomalyCondition, &out.AnomalyCondition
@@ -462,6 +466,8 @@ func autoConvert_v1alpha2_LowNodeLoadNodePool_To_config_LowNodeLoadNodePool(in *
 	out.UseDeviationThresholds = in.UseDeviationThresholds
 	out.HighThresholds = *(*config.ResourceThresholds)(unsafe.Pointer(&in.HighThresholds))
 	out.LowThresholds = *(*config.ResourceThresholds)(unsafe.Pointer(&in.LowThresholds))
+	out.ProdHighThresholds = *(*config.ResourceThresholds)(unsafe.Pointer(&in.ProdHighThresholds))
+	out.ProdLowThresholds = *(*config.ResourceThresholds)(unsafe.Pointer(&in.ProdLowThresholds))
 	out.ResourceWeights = *(*map[corev1.ResourceName]int64)(unsafe.Pointer(&in.ResourceWeights))
 	if in.AnomalyCondition != nil {
 		in, out := &in.AnomalyCondition, &out.AnomalyCondition
@@ -486,6 +492,8 @@ func autoConvert_config_LowNodeLoadNodePool_To_v1alpha2_LowNodeLoadNodePool(in *
 	out.UseDeviationThresholds = in.UseDeviationThresholds
 	out.HighThresholds = *(*ResourceThresholds)(unsafe.Pointer(&in.HighThresholds))
 	out.LowThresholds = *(*ResourceThresholds)(unsafe.Pointer(&in.LowThresholds))
+	out.ProdHighThresholds = *(*ResourceThresholds)(unsafe.Pointer(&in.ProdHighThresholds))
+	out.ProdLowThresholds = *(*ResourceThresholds)(unsafe.Pointer(&in.ProdLowThresholds))
 	out.ResourceWeights = *(*map[corev1.ResourceName]int64)(unsafe.Pointer(&in.ResourceWeights))
 	if in.AnomalyCondition != nil {
 		in, out := &in.AnomalyCondition, &out.AnomalyCondition

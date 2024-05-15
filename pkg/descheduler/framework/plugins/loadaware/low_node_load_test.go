@@ -174,6 +174,8 @@ func TestLowNodeLoad(t *testing.T) {
 		name                         string
 		useDeviationThresholds       bool
 		thresholds, targetThresholds ResourceThresholds
+		prodLowThresholds            ResourceThresholds
+		prodHighThresholds           ResourceThresholds
 		nodes                        []*corev1.Node
 		pods                         []*corev1.Pod
 		podMetrics                   map[types.NamespacedName]*slov1alpha1.ResourceMap
@@ -406,7 +408,7 @@ func TestLowNodeLoad(t *testing.T) {
 			expectedPodsEvicted: 2,
 		},
 		{
-			name: "without priorities stop when cpu capacity is depleted",
+			name: "without priorities stop when memory capacity is depleted",
 			thresholds: ResourceThresholds{
 				corev1.ResourceCPU:  30,
 				corev1.ResourcePods: 30,
@@ -453,7 +455,7 @@ func TestLowNodeLoad(t *testing.T) {
 				}),
 				test.BuildTestPod("p9", 400, 2100, n2NodeName, test.SetRSOwnerRef),
 			},
-			// 4 pods available for eviction based on corev1.ResourcePods, only 3 pods can be evicted before cpu is depleted
+			// 4 pods available for eviction based on corev1.ResourcePods, only 3 pods can be evicted before memory is depleted
 			expectedPodsEvicted: 3,
 		},
 		{
@@ -957,6 +959,285 @@ func TestLowNodeLoad(t *testing.T) {
 			expectedPodsEvicted: 2,
 			evictedPods:         []string{},
 		},
+		{
+			name: "node && prod thresholds, node under thresholds, but prod over thresholds",
+			thresholds: ResourceThresholds{
+				corev1.ResourceCPU:  30,
+				corev1.ResourcePods: 30,
+			},
+			targetThresholds: ResourceThresholds{
+				corev1.ResourceCPU:  90,
+				corev1.ResourcePods: 90,
+			},
+			prodLowThresholds: ResourceThresholds{
+				corev1.ResourceCPU:  20,
+				corev1.ResourcePods: 20,
+			},
+			prodHighThresholds: ResourceThresholds{
+				corev1.ResourceCPU:  40,
+				corev1.ResourcePods: 40,
+			},
+			nodes: []*corev1.Node{
+				test.BuildTestNode(n1NodeName, 4000, 3000, 9, nil),
+				test.BuildTestNode(n2NodeName, 4000, 3000, 10, nil),
+				test.BuildTestNode(n3NodeName, 4000, 3000, 10, test.SetNodeUnschedulable),
+			},
+			pods: []*corev1.Pod{
+				test.BuildTestPod("p1", 400, 0, n1NodeName, test.SetRSOwnerRef),
+				test.BuildTestPod("p2", 400, 0, n1NodeName, test.SetRSOwnerRef),
+				test.BuildTestPod("p3", 400, 0, n1NodeName, func(pod *corev1.Pod) {
+					test.SetRSOwnerRef(pod)
+					if pod.Labels == nil {
+						labels := make(map[string]string)
+						pod.Labels = labels
+						pod.Labels["koordinator.sh/priority-class"] = "koord-batch"
+					}
+				}),
+				test.BuildTestPod("p4", 400, 0, n1NodeName, func(pod *corev1.Pod) {
+					test.SetRSOwnerRef(pod)
+					if pod.Labels == nil {
+						labels := make(map[string]string)
+						pod.Labels = labels
+						pod.Labels["koordinator.sh/priority-class"] = "koord-batch"
+					}
+				}),
+				test.BuildTestPod("p5", 400, 0, n1NodeName, func(pod *corev1.Pod) {
+					test.SetRSOwnerRef(pod)
+					if pod.Labels == nil {
+						labels := make(map[string]string)
+						pod.Labels = labels
+						pod.Labels["koordinator.sh/priority-class"] = "koord-batch"
+					}
+				}),
+				// These won't be evicted.
+				test.BuildTestPod("p6", 400, 0, n1NodeName, test.SetDSOwnerRef),
+				test.BuildTestPod("p7", 400, 0, n1NodeName, func(pod *corev1.Pod) {
+					// A pod with local storage.
+					test.SetNormalOwnerRef(pod)
+					pod.Spec.Volumes = []corev1.Volume{
+						{
+							Name: "sample",
+							VolumeSource: corev1.VolumeSource{
+								HostPath: &corev1.HostPathVolumeSource{Path: "somePath"},
+								EmptyDir: &corev1.EmptyDirVolumeSource{
+									SizeLimit: resource.NewQuantity(int64(10), resource.BinarySI),
+								},
+							},
+						},
+					}
+					// A Mirror Pod.
+					pod.Annotations = test.GetMirrorPodAnnotation()
+				}),
+				test.BuildTestPod("p8", 400, 0, n1NodeName, func(pod *corev1.Pod) {
+					// A Critical Pod.
+					pod.Namespace = "kube-system"
+					priority := utils.SystemCriticalPriority
+					pod.Spec.Priority = &priority
+				}),
+				test.BuildTestPod("p9", 400, 0, n2NodeName, test.SetRSOwnerRef),
+			},
+			expectedPodsEvicted: 2,
+			evictedPods:         []string{},
+		},
+		{
+			name: "both node and prod usage is higher than thresholds, only node usage will be evicted",
+			thresholds: ResourceThresholds{
+				corev1.ResourceCPU:  30,
+				corev1.ResourcePods: 30,
+			},
+			targetThresholds: ResourceThresholds{
+				corev1.ResourceCPU:  70,
+				corev1.ResourcePods: 80,
+			},
+			prodLowThresholds: ResourceThresholds{
+				corev1.ResourceCPU:  20,
+				corev1.ResourcePods: 20,
+			},
+			prodHighThresholds: ResourceThresholds{
+				corev1.ResourceCPU:  40,
+				corev1.ResourcePods: 40,
+			},
+			nodes: []*corev1.Node{
+				test.BuildTestNode(n1NodeName, 4000, 3000, 9, nil),
+				test.BuildTestNode(n2NodeName, 4000, 3000, 10, nil),
+				test.BuildTestNode(n3NodeName, 4000, 3000, 10, test.SetNodeUnschedulable),
+			},
+			pods: []*corev1.Pod{
+				test.BuildTestPod("p1", 400, 0, n1NodeName, test.SetRSOwnerRef),
+				test.BuildTestPod("p2", 400, 0, n1NodeName, test.SetRSOwnerRef),
+				test.BuildTestPod("p3", 400, 0, n1NodeName, test.SetRSOwnerRef),
+				test.BuildTestPod("p4", 400, 0, n1NodeName, func(pod *corev1.Pod) {
+					test.SetRSOwnerRef(pod)
+					if pod.Labels == nil {
+						labels := make(map[string]string)
+						pod.Labels = labels
+						pod.Labels["koordinator.sh/priority-class"] = "koord-batch"
+					}
+				}),
+				test.BuildTestPod("p5", 400, 0, n1NodeName, func(pod *corev1.Pod) {
+					test.SetRSOwnerRef(pod)
+					if pod.Labels == nil {
+						labels := make(map[string]string)
+						pod.Labels = labels
+						pod.Labels["koordinator.sh/priority-class"] = "koord-batch"
+					}
+				}),
+				// These won't be evicted.
+				test.BuildTestPod("p6", 400, 0, n1NodeName, test.SetDSOwnerRef),
+				test.BuildTestPod("p7", 400, 0, n1NodeName, func(pod *corev1.Pod) {
+					// A pod with local storage.
+					test.SetNormalOwnerRef(pod)
+					pod.Spec.Volumes = []corev1.Volume{
+						{
+							Name: "sample",
+							VolumeSource: corev1.VolumeSource{
+								HostPath: &corev1.HostPathVolumeSource{Path: "somePath"},
+								EmptyDir: &corev1.EmptyDirVolumeSource{
+									SizeLimit: resource.NewQuantity(int64(10), resource.BinarySI),
+								},
+							},
+						},
+					}
+					// A Mirror Pod.
+					pod.Annotations = test.GetMirrorPodAnnotation()
+				}),
+				test.BuildTestPod("p8", 400, 0, n1NodeName, func(pod *corev1.Pod) {
+					// A Critical Pod.
+					pod.Namespace = "kube-system"
+					priority := utils.SystemCriticalPriority
+					pod.Spec.Priority = &priority
+				}),
+				test.BuildTestPod("p9", 400, 0, n2NodeName, test.SetRSOwnerRef),
+			},
+			expectedPodsEvicted: 1,
+			evictedPods:         []string{},
+		},
+		{
+			name: "support reschedule prod pod only",
+			thresholds: ResourceThresholds{
+				corev1.ResourceCPU:  0,
+				corev1.ResourcePods: 0,
+			},
+			targetThresholds: ResourceThresholds{
+				corev1.ResourceCPU:  100,
+				corev1.ResourcePods: 100,
+			},
+			prodLowThresholds: ResourceThresholds{
+				corev1.ResourceCPU:  30,
+				corev1.ResourcePods: 30,
+			},
+			prodHighThresholds: ResourceThresholds{
+				corev1.ResourceCPU:  50,
+				corev1.ResourcePods: 50,
+			},
+			nodes: []*corev1.Node{
+				test.BuildTestNode(n1NodeName, 4000, 3000, 9, nil),
+				test.BuildTestNode(n2NodeName, 4000, 3000, 10, nil),
+				test.BuildTestNode(n3NodeName, 4000, 3000, 10, test.SetNodeUnschedulable),
+			},
+			pods: []*corev1.Pod{
+				test.BuildTestPod("p1", 400, 0, n1NodeName, test.SetRSOwnerRef),
+				test.BuildTestPod("p2", 400, 0, n1NodeName, test.SetRSOwnerRef),
+				test.BuildTestPod("p3", 400, 0, n1NodeName, test.SetRSOwnerRef),
+				test.BuildTestPod("p4", 400, 0, n1NodeName, test.SetRSOwnerRef),
+				test.BuildTestPod("p5", 400, 0, n1NodeName, test.SetRSOwnerRef),
+				// These won't be evicted.
+				test.BuildTestPod("p6", 400, 0, n1NodeName, test.SetDSOwnerRef),
+				test.BuildTestPod("p7", 400, 0, n1NodeName, func(pod *corev1.Pod) {
+					// A pod with local storage.
+					test.SetNormalOwnerRef(pod)
+					pod.Spec.Volumes = []corev1.Volume{
+						{
+							Name: "sample",
+							VolumeSource: corev1.VolumeSource{
+								HostPath: &corev1.HostPathVolumeSource{Path: "somePath"},
+								EmptyDir: &corev1.EmptyDirVolumeSource{
+									SizeLimit: resource.NewQuantity(int64(10), resource.BinarySI),
+								},
+							},
+						},
+					}
+					// A Mirror Pod.
+					pod.Annotations = test.GetMirrorPodAnnotation()
+				}),
+				test.BuildTestPod("p8", 400, 0, n1NodeName, func(pod *corev1.Pod) {
+					// A Critical Pod.
+					pod.Namespace = "kube-system"
+					priority := utils.SystemCriticalPriority
+					pod.Spec.Priority = &priority
+				}),
+				test.BuildTestPod("p9", 400, 0, n2NodeName, test.SetRSOwnerRef),
+			},
+			expectedPodsEvicted: 4,
+			evictedPods:         []string{},
+		},
+		{
+			name: "both low resource used by high node, prod pods don`t have enough resource to rebalance",
+			thresholds: ResourceThresholds{
+				corev1.ResourceCPU:  30,
+				corev1.ResourcePods: 50,
+			},
+			targetThresholds: ResourceThresholds{
+				corev1.ResourceCPU:  60,
+				corev1.ResourcePods: 80,
+			},
+			prodLowThresholds: ResourceThresholds{
+				corev1.ResourceCPU:  20,
+				corev1.ResourcePods: 30,
+			},
+			prodHighThresholds: ResourceThresholds{
+				corev1.ResourceCPU:  30,
+				corev1.ResourcePods: 50,
+			},
+			nodes: []*corev1.Node{
+				test.BuildTestNode(n1NodeName, 4000, 3000, 20, nil),
+				test.BuildTestNode(n2NodeName, 4000, 3000, 20, nil),
+				test.BuildTestNode(n3NodeName, 4000, 3000, 20, nil),
+			},
+			pods: []*corev1.Pod{
+				test.BuildTestPod("p1", 400, 0, n1NodeName, test.SetRSOwnerRef),
+				test.BuildTestPod("p2", 400, 0, n1NodeName, test.SetRSOwnerRef),
+				test.BuildTestPod("p3", 400, 0, n1NodeName, test.SetRSOwnerRef),
+				test.BuildTestPod("p4", 400, 0, n1NodeName, test.SetRSOwnerRef),
+				test.BuildTestPod("p5", 400, 0, n1NodeName, test.SetRSOwnerRef),
+				test.BuildTestPod("p16", 400, 0, n1NodeName, test.SetRSOwnerRef),
+				test.BuildTestPod("p17", 400, 0, n1NodeName, test.SetRSOwnerRef),
+				// These won't be evicted.
+				test.BuildTestPod("p6", 400, 0, n1NodeName, test.SetDSOwnerRef),
+				test.BuildTestPod("p7", 400, 0, n1NodeName, func(pod *corev1.Pod) {
+					// A pod with local storage.
+					test.SetNormalOwnerRef(pod)
+					pod.Spec.Volumes = []corev1.Volume{
+						{
+							Name: "sample",
+							VolumeSource: corev1.VolumeSource{
+								HostPath: &corev1.HostPathVolumeSource{Path: "somePath"},
+								EmptyDir: &corev1.EmptyDirVolumeSource{
+									SizeLimit: resource.NewQuantity(int64(10), resource.BinarySI),
+								},
+							},
+						},
+					}
+					// A Mirror Pod.
+					pod.Annotations = test.GetMirrorPodAnnotation()
+				}),
+				test.BuildTestPod("p8", 400, 0, n1NodeName, func(pod *corev1.Pod) {
+					// A Critical Pod.
+					pod.Namespace = "kube-system"
+					priority := utils.SystemCriticalPriority
+					pod.Spec.Priority = &priority
+				}),
+				test.BuildTestPod("p9", 400, 0, n2NodeName, test.SetRSOwnerRef),
+				test.BuildTestPod("p10", 400, 0, n3NodeName, test.SetRSOwnerRef),
+				test.BuildTestPod("p11", 400, 0, n3NodeName, test.SetRSOwnerRef),
+				test.BuildTestPod("p12", 400, 0, n3NodeName, test.SetRSOwnerRef),
+				test.BuildTestPod("p13", 400, 0, n3NodeName, test.SetRSOwnerRef),
+				test.BuildTestPod("p14", 400, 0, n3NodeName, test.SetRSOwnerRef),
+				test.BuildTestPod("p15", 400, 0, n3NodeName, test.SetRSOwnerRef),
+			},
+			expectedPodsEvicted: 5,
+			evictedPods:         []string{},
+		},
 	}
 
 	for _, tt := range testCases {
@@ -1024,6 +1305,8 @@ func TestLowNodeLoad(t *testing.T) {
 									{
 										LowThresholds:          tt.thresholds,
 										HighThresholds:         tt.targetThresholds,
+										ProdLowThresholds:      tt.prodLowThresholds,
+										ProdHighThresholds:     tt.prodHighThresholds,
 										UseDeviationThresholds: tt.useDeviationThresholds,
 										AnomalyCondition: &deschedulerconfig.LoadAnomalyCondition{
 											ConsecutiveAbnormalities: 1,
@@ -1059,8 +1342,11 @@ func TestOverUtilizedEvictionReason(t *testing.T) {
 	tests := []struct {
 		name             string
 		targetThresholds ResourceThresholds
+		prodThresholds   ResourceThresholds
+		prod             bool
 		node             *corev1.Node
 		usage            map[corev1.ResourceName]*resource.Quantity
+		prodUsage        map[corev1.ResourceName]*resource.Quantity
 		want             string
 	}{
 		{
@@ -1084,7 +1370,7 @@ func TestOverUtilizedEvictionReason(t *testing.T) {
 				corev1.ResourceCPU:    resource.NewMilliQuantity(64*1000, resource.DecimalSI),
 				corev1.ResourceMemory: resource.NewQuantity(32*1024*1024*1024, resource.BinarySI),
 			},
-			want: "node is overutilized, cpu usage(66.67%)>threshold(50.00%)",
+			want: "node is overutilized, node cpu usage(66.67%)>threshold(50.00%)",
 		},
 		{
 			name: "both cpu and memory overutilized",
@@ -1107,25 +1393,91 @@ func TestOverUtilizedEvictionReason(t *testing.T) {
 				corev1.ResourceCPU:    resource.NewMilliQuantity(64*1000, resource.DecimalSI),
 				corev1.ResourceMemory: resource.NewQuantity(400*1024*1024*1024, resource.BinarySI),
 			},
-			want: "node is overutilized, cpu usage(66.67%)>threshold(50.00%), memory usage(78.12%)>threshold(50.00%)",
+			want: "node is overutilized, node cpu usage(66.67%)>threshold(50.00%), node memory usage(78.12%)>threshold(50.00%)",
+		},
+		{
+			name: "prod cpu overutilized",
+			targetThresholds: deschedulerconfig.ResourceThresholds{
+				corev1.ResourceCPU:    50,
+				corev1.ResourceMemory: 50,
+			},
+			prodThresholds: deschedulerconfig.ResourceThresholds{
+				corev1.ResourceCPU:    40,
+				corev1.ResourceMemory: 40,
+			},
+			prod: true,
+			node: &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node",
+				},
+				Status: corev1.NodeStatus{
+					Allocatable: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("96"),
+						corev1.ResourceMemory: resource.MustParse("512Gi"),
+					},
+				},
+			},
+			usage: map[corev1.ResourceName]*resource.Quantity{
+				corev1.ResourceCPU:    resource.NewMilliQuantity(46*1000, resource.DecimalSI),
+				corev1.ResourceMemory: resource.NewQuantity(250*1024*1024*1024, resource.BinarySI),
+			},
+			prodUsage: map[corev1.ResourceName]*resource.Quantity{
+				corev1.ResourceCPU:    resource.NewMilliQuantity(45*1000, resource.DecimalSI),
+				corev1.ResourceMemory: resource.NewQuantity(200*1024*1024*1024, resource.BinarySI),
+			},
+			want: "node is overutilized, prod cpu usage(46.88%)>threshold(40.00%)",
+		},
+		{
+			name: "prod cpu && memory overutilized",
+			targetThresholds: deschedulerconfig.ResourceThresholds{
+				corev1.ResourceCPU:    50,
+				corev1.ResourceMemory: 50,
+			},
+			prodThresholds: deschedulerconfig.ResourceThresholds{
+				corev1.ResourceCPU:    40,
+				corev1.ResourceMemory: 40,
+			},
+			prod: true,
+			node: &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node",
+				},
+				Status: corev1.NodeStatus{
+					Allocatable: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("96"),
+						corev1.ResourceMemory: resource.MustParse("512Gi"),
+					},
+				},
+			},
+			usage: map[corev1.ResourceName]*resource.Quantity{
+				corev1.ResourceCPU:    resource.NewMilliQuantity(46*1000, resource.DecimalSI),
+				corev1.ResourceMemory: resource.NewQuantity(250*1024*1024*1024, resource.BinarySI),
+			},
+			prodUsage: map[corev1.ResourceName]*resource.Quantity{
+				corev1.ResourceCPU:    resource.NewMilliQuantity(45*1000, resource.DecimalSI),
+				corev1.ResourceMemory: resource.NewQuantity(250*1024*1024*1024, resource.BinarySI),
+			},
+			want: "node is overutilized, prod cpu usage(46.88%)>threshold(40.00%), prod memory usage(48.83%)>threshold(40.00%)",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			nodeUsage := &NodeUsage{
-				node:  tt.node,
-				usage: tt.usage,
+				node:      tt.node,
+				usage:     tt.usage,
+				prodUsage: tt.prodUsage,
 			}
 
 			resourceNames := getResourceNames(tt.targetThresholds)
-			nodeThresholds := getNodeThresholds(map[string]*NodeUsage{"test-node": nodeUsage}, nil, tt.targetThresholds, resourceNames, false)
+			nodeThresholds := getNodeThresholds(map[string]*NodeUsage{"test-node": nodeUsage}, nil, tt.targetThresholds,
+				nil, tt.prodThresholds, resourceNames, false)
 
-			evictionReasonGenerator := overUtilizedEvictionReason(tt.targetThresholds)
+			evictionReasonGenerator := overUtilizedEvictionReason(tt.targetThresholds, tt.prodThresholds)
 			got := evictionReasonGenerator(NodeInfo{
 				NodeUsage:  nodeUsage,
 				thresholds: nodeThresholds["test-node"],
-			})
+			}, tt.prod)
 			assert.Equal(t, tt.want, got)
 		})
 	}
