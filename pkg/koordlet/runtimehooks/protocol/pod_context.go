@@ -177,6 +177,14 @@ func (p *PodContext) NriDone(executor resourceexecutor.ResourceUpdateExecutor) {
 	p.Update()
 }
 
+func (p *PodContext) NriRemoveDone(executor resourceexecutor.ResourceUpdateExecutor) {
+	if p.executor == nil {
+		p.executor = executor
+	}
+	p.removeForExt()
+	p.Update()
+}
+
 func (p *PodContext) FromReconciler(podMeta *statesinformer.PodMeta) {
 	p.Request.FromReconciler(podMeta)
 }
@@ -277,4 +285,8 @@ func (p *PodContext) injectForExt() {
 				p.Request.PodMeta.Namespace, p.Request.PodMeta.Name, *p.Response.Resources.MemoryLimit, p.Request.CgroupParent)
 		}
 	}
+}
+
+func (p *PodContext) removeForExt() {
+	// TODO: cleanup
 }
