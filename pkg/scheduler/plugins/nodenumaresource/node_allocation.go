@@ -22,6 +22,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/sets"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
@@ -35,6 +36,8 @@ type NodeAllocation struct {
 	allocatedPods      map[types.UID]PodAllocation
 	allocatedCPUs      CPUDetails
 	allocatedResources map[int]*NUMANodeResource
+	sharedNode         map[int]sets.String
+	singleNUMANode     map[int]sets.String
 }
 
 type PodAllocation struct {
@@ -46,12 +49,32 @@ type PodAllocation struct {
 	NUMANodeResources  []NUMANodeResource                  `json:"numaNodeResources,omitempty"`
 }
 
+func (n *NodeAllocation) GetAllNUMANodeStatus(numaNodes int) []extension.NumaNodeStatus {
+	status := make([]extension.NumaNodeStatus, 0, numaNodes)
+	for i := 0; i < numaNodes; i++ {
+		status = append(status, n.NUMANodeSharedStatus(i))
+	}
+	return status
+}
+
+func (n *NodeAllocation) NUMANodeSharedStatus(nodeid int) extension.NumaNodeStatus {
+	if len(n.singleNUMANode[nodeid]) == 0 && len(n.sharedNode[nodeid]) == 0 {
+		return extension.NumaNodeStatusIdle
+	}
+	if len(n.singleNUMANode[nodeid]) > 0 && len(n.sharedNode[nodeid]) == 0 {
+		return extension.NumaNodeStatusSingle
+	}
+	return extension.NumaNodeStatusShared
+}
+
 func NewNodeAllocation(nodeName string) *NodeAllocation {
 	return &NodeAllocation{
 		nodeName:           nodeName,
 		allocatedPods:      map[types.UID]PodAllocation{},
 		allocatedCPUs:      NewCPUDetails(),
 		allocatedResources: map[int]*NUMANodeResource{},
+		sharedNode:         map[int]sets.String{},
+		singleNUMANode:     map[int]sets.String{},
 	}
 }
 
@@ -78,6 +101,7 @@ func (n *NodeAllocation) addPodAllocation(request *PodAllocation, cpuTopology *C
 		return
 	}
 	n.allocatedPods[request.UID] = *request
+	usedNUMA := sets.NewInt()
 
 	for _, cpuID := range request.CPUSet.ToSliceNoSort() {
 		cpuInfo, ok := n.allocatedCPUs[cpuID]
@@ -87,6 +111,23 @@ func (n *NodeAllocation) addPodAllocation(request *PodAllocation, cpuTopology *C
 		cpuInfo.ExclusivePolicy = request.CPUExclusivePolicy
 		cpuInfo.RefCount++
 		n.allocatedCPUs[cpuID] = cpuInfo
+		usedNUMA.Insert(cpuInfo.NodeID)
+	}
+	if len(usedNUMA) > 1 {
+		for ni := range usedNUMA {
+			if ps := n.sharedNode[ni]; ps == nil {
+				n.sharedNode[ni] = sets.NewString(string(request.UID))
+			} else {
+				n.sharedNode[ni].Insert(string(request.UID))
+			}
+		}
+	} else if len(usedNUMA) == 1 {
+		ni := usedNUMA.UnsortedList()[0]
+		if ps := n.singleNUMANode[ni]; ps == nil {
+			n.singleNUMANode[ni] = sets.NewString(string(request.UID))
+		} else {
+			n.singleNUMANode[ni].Insert(string(request.UID))
+		}
 	}
 
 	for nodeID, numaNodeRes := range request.NUMANodeResources {
@@ -109,6 +150,7 @@ func (n *NodeAllocation) release(podUID types.UID) {
 	}
 	delete(n.allocatedPods, podUID)
 
+	usedNUMA := sets.NewInt()
 	for _, cpuID := range request.CPUSet.ToSliceNoSort() {
 		cpuInfo, ok := n.allocatedCPUs[cpuID]
 		if !ok {
@@ -120,6 +162,11 @@ func (n *NodeAllocation) release(podUID types.UID) {
 		} else {
 			n.allocatedCPUs[cpuID] = cpuInfo
 		}
+		usedNUMA.Insert(cpuInfo.NodeID)
+	}
+	for ni := range usedNUMA {
+		delete(n.sharedNode[ni], string(podUID))
+		delete(n.singleNUMANode[ni], string(podUID))
 	}
 
 	for _, numaNodeRes := range request.NUMANodeResources {

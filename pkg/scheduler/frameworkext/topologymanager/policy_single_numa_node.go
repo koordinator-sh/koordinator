@@ -18,6 +18,7 @@ limitations under the License.
 package topologymanager
 
 import (
+	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/util/bitmask"
 )
 
@@ -62,11 +63,11 @@ func filterSingleNumaHints(allResourcesHints [][]NUMATopologyHint) [][]NUMATopol
 	return filteredResourcesHints
 }
 
-func (p *singleNumaNodePolicy) Merge(providersHints []map[string][]NUMATopologyHint) (NUMATopologyHint, bool) {
+func (p *singleNumaNodePolicy) Merge(providersHints []map[string][]NUMATopologyHint, exclusivePolicy apiext.NumaTopologyExclusive, allNUMANodeStatus []apiext.NumaNodeStatus) (NUMATopologyHint, bool) {
 	filteredHints := filterProvidersHints(providersHints)
 	// Filter to only include don't care and hints with a single NUMA node.
 	singleNumaHints := filterSingleNumaHints(filteredHints)
-	bestHint := mergeFilteredHints(p.numaNodes, singleNumaHints)
+	bestHint := mergeFilteredHints(p.numaNodes, singleNumaHints, exclusivePolicy, allNUMANodeStatus)
 
 	defaultAffinity, _ := bitmask.NewBitMask(p.numaNodes...)
 	if bestHint.NUMANodeAffinity.IsEqual(defaultAffinity) {

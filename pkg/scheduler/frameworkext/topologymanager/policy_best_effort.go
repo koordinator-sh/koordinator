@@ -17,6 +17,8 @@ limitations under the License.
 
 package topologymanager
 
+import apiext "github.com/koordinator-sh/koordinator/apis/extension"
+
 type bestEffortPolicy struct {
 	//List of NUMA Nodes available on the underlying machine
 	numaNodes []int
@@ -40,9 +42,9 @@ func (p *bestEffortPolicy) canAdmitPodResult(hint *NUMATopologyHint) bool {
 	return true
 }
 
-func (p *bestEffortPolicy) Merge(providersHints []map[string][]NUMATopologyHint) (NUMATopologyHint, bool) {
+func (p *bestEffortPolicy) Merge(providersHints []map[string][]NUMATopologyHint, exclusivePolicy apiext.NumaTopologyExclusive, allNUMANodeStatus []apiext.NumaNodeStatus) (NUMATopologyHint, bool) {
 	filteredProvidersHints := filterProvidersHints(providersHints)
-	bestHint := mergeFilteredHints(p.numaNodes, filteredProvidersHints)
+	bestHint := mergeFilteredHints(p.numaNodes, filteredProvidersHints, exclusivePolicy, allNUMANodeStatus)
 	admit := p.canAdmitPodResult(&bestHint)
 	return bestHint, admit
 }
