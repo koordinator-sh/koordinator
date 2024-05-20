@@ -102,7 +102,7 @@ func TestEventHandlerOnAdd(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cache := newReservationCache(nil)
 			eh := &reservationEventHandler{cache: cache}
-			eh.OnAdd(tt.reservation)
+			eh.OnAdd(tt.reservation, true)
 			if tt.wantReservation == nil {
 				rInfo := cache.getReservationInfoByUID(tt.reservation.UID)
 				assert.Nil(t, rInfo)
@@ -242,11 +242,13 @@ func TestEventHandlerDelete(t *testing.T) {
 	}
 	cache := newReservationCache(nil)
 	eh := &reservationEventHandler{cache: cache, rrNominator: newNominator()}
-	eh.OnAdd(activeReservation)
+	eh.OnAdd(activeReservation, true)
 	rInfo := cache.getReservationInfoByUID(activeReservation.UID)
 	assert.NotNil(t, rInfo)
-	eh.rrNominator.AddNominatedReservePod(framework.NewPodInfo(reservation.NewReservePod(activeReservation)), "test-node")
-	assert.Equal(t, []*framework.PodInfo{framework.NewPodInfo(reservation.NewReservePod(activeReservation))}, eh.rrNominator.NominatedReservePodForNode("test-node"))
+	reservePodInfo, _ := framework.NewPodInfo(reservation.NewReservePod(activeReservation))
+	eh.rrNominator.AddNominatedReservePod(reservePodInfo, "test-node")
+	reservePodInfo, _ = framework.NewPodInfo(reservation.NewReservePod(activeReservation))
+	assert.Equal(t, []*framework.PodInfo{reservePodInfo}, eh.rrNominator.NominatedReservePodForNode("test-node"))
 	eh.OnDelete(activeReservation)
 	rInfo = cache.getReservationInfoByUID(activeReservation.UID)
 	assert.NotNil(t, rInfo)

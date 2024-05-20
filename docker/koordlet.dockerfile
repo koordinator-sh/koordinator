@@ -1,4 +1,4 @@
-FROM --platform=$TARGETPLATFORM golang:1.18 as builder
+FROM --platform=$TARGETPLATFORM golang:1.20 as builder
 WORKDIR /go/src/github.com/koordinator-sh/koordinator
 
 ARG VERSION
@@ -33,7 +33,7 @@ RUN go build -a -o koordlet cmd/koordlet/main.go
 # For more details about how those images got built, you might wanna check the original Dockerfile in
 # https://gitlab.com/nvidia/container-images/cuda/-/tree/master/dist.
 
-FROM --platform=$TARGETPLATFORM nvidia/cuda:11.6.2-base-ubuntu20.04
+FROM --platform=$TARGETPLATFORM nvidia/cuda:11.8.0-base-ubuntu22.04
 WORKDIR /
 RUN apt-get update && apt-get install -y lvm2 && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /go/src/github.com/koordinator-sh/koordinator/koordlet .

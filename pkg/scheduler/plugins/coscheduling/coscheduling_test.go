@@ -36,8 +36,9 @@ import (
 	"k8s.io/client-go/kubernetes"
 	kubefake "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/tools/events"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/klog/v2"
-	"k8s.io/kube-scheduler/config/v1beta3"
+	scheduledv1beta3 "k8s.io/kube-scheduler/config/v1beta3"
 	"k8s.io/kubernetes/pkg/scheduler"
 	scheduledconfig "k8s.io/kubernetes/pkg/scheduler/apis/config"
 	configtesting "k8s.io/kubernetes/pkg/scheduler/apis/config/testing"
@@ -49,15 +50,15 @@ import (
 	schedulertesting "k8s.io/kubernetes/pkg/scheduler/testing"
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
 	"k8s.io/utils/pointer"
-	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
-	pgclientset "sigs.k8s.io/scheduler-plugins/pkg/generated/clientset/versioned"
-	fakepgclientset "sigs.k8s.io/scheduler-plugins/pkg/generated/clientset/versioned/fake"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
+	pgclientset "github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/generated/clientset/versioned"
+	fakepgclientset "github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/generated/clientset/versioned/fake"
 	koordfake "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/fake"
 	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
-	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/v1beta2"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/v1beta3"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/coscheduling/core"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/coscheduling/util"
@@ -149,6 +150,14 @@ func (f *testSharedLister) NodeInfos() framework.NodeInfoLister {
 	return f
 }
 
+func (f *testSharedLister) StorageInfos() framework.StorageInfoLister {
+	return f
+}
+
+func (f *testSharedLister) IsPVCUsedByPods(key string) bool {
+	return false
+}
+
 func (f *testSharedLister) List() ([]*framework.NodeInfo, error) {
 	return f.nodeInfos, nil
 }
@@ -173,10 +182,10 @@ type pluginTestSuit struct {
 }
 
 func newPluginTestSuit(t *testing.T, nodes []*corev1.Node, pgClientSet pgclientset.Interface, cs kubernetes.Interface) *pluginTestSuit {
-	var v1beta2args v1beta2.CoschedulingArgs
-	v1beta2.SetDefaults_CoschedulingArgs(&v1beta2args)
+	var v1beta3args v1beta3.CoschedulingArgs
+	v1beta3.SetDefaults_CoschedulingArgs(&v1beta3args)
 	var gangSchedulingArgs config.CoschedulingArgs
-	err := v1beta2.Convert_v1beta2_CoschedulingArgs_To_config_CoschedulingArgs(&v1beta2args, &gangSchedulingArgs, nil)
+	err := v1beta3.Convert_v1beta3_CoschedulingArgs_To_config_CoschedulingArgs(&v1beta3args, &gangSchedulingArgs, nil)
 	assert.NoError(t, err)
 
 	gangSchedulingPluginConfig := scheduledconfig.PluginConfig{
@@ -200,15 +209,19 @@ func newPluginTestSuit(t *testing.T, nodes []*corev1.Node, pgClientSet pgclients
 		schedulertesting.RegisterPermitPlugin(Name, proxyNew),
 		schedulertesting.RegisterPluginAsExtensions(Name, proxyNew, "PostBind"),
 	}
+	fakeRecorder := record.NewFakeRecorder(1024)
+	eventRecorder := record.NewEventRecorderAdapter(fakeRecorder)
 
 	informerFactory := informers.NewSharedInformerFactory(cs, 0)
 	snapshot := newTestSharedLister(nil, nodes)
 	fh, err := schedulertesting.NewFramework(
+		context.TODO(),
 		registeredPlugins,
 		"koord-scheduler",
 		runtime.WithClientSet(cs),
 		runtime.WithInformerFactory(informerFactory),
 		runtime.WithSnapshotSharedLister(snapshot),
+		runtime.WithEventRecorder(eventRecorder),
 	)
 	assert.Nil(t, err)
 	return &pluginTestSuit{
@@ -223,6 +236,12 @@ func (p *pluginTestSuit) start() {
 	ctx := context.TODO()
 	p.Handle.SharedInformerFactory().Start(ctx.Done())
 	p.Handle.SharedInformerFactory().WaitForCacheSync(ctx.Done())
+}
+
+func NewPodInfo(t *testing.T, pod *corev1.Pod) *framework.PodInfo {
+	podInfo, err := framework.NewPodInfo(pod)
+	assert.NoError(t, err)
+	return podInfo
 }
 
 func TestLess(t *testing.T) {
@@ -991,15 +1010,15 @@ func TestFairness(t *testing.T) {
 		assert.NoError(t, err)
 	}
 
-	cfg := configtesting.V1beta3ToInternalWithDefaults(t, v1beta3.KubeSchedulerConfiguration{
-		Profiles: []v1beta3.KubeSchedulerProfile{{
+	cfg := configtesting.V1beta3ToInternalWithDefaults(t, scheduledv1beta3.KubeSchedulerConfiguration{
+		Profiles: []scheduledv1beta3.KubeSchedulerProfile{{
 			SchedulerName: pointer.StringPtr("koord-scheduler"),
-			Plugins: &v1beta3.Plugins{
-				QueueSort: v1beta3.PluginSet{
-					Enabled: []v1beta3.Plugin{
+			Plugins: &scheduledv1beta3.Plugins{
+				QueueSort: scheduledv1beta3.PluginSet{
+					Enabled: []scheduledv1beta3.Plugin{
 						{Name: "fakeQueueSortPlugin"},
 					},
-					Disabled: []v1beta3.Plugin{
+					Disabled: []scheduledv1beta3.Plugin{
 						{Name: "*"},
 					},
 				},
@@ -1016,11 +1035,11 @@ func TestFairness(t *testing.T) {
 	eventBroadcaster := events.NewBroadcaster(&events.EventSinkImpl{Interface: cs.EventsV1()})
 	ctx := context.TODO()
 	sched, err := scheduler.New(
+		ctx,
 		cs,
 		suit.SharedInformerFactory(),
 		nil,
 		profile.NewRecorderFactory(eventBroadcaster),
-		ctx.Done(),
 		scheduler.WithProfiles(cfg.Profiles...),
 		scheduler.WithFrameworkOutOfTreeRegistry(registry),
 		scheduler.WithPodInitialBackoffSeconds(0),
@@ -1030,7 +1049,8 @@ func TestFairness(t *testing.T) {
 	assert.NoError(t, err)
 	eventBroadcaster.StartRecordingToSink(ctx.Done())
 	suit.start()
-	sched.SchedulingQueue.Run()
+	logger := klog.FromContext(ctx)
+	sched.SchedulingQueue.Run(logger)
 
 	var scheduleOrder []*debugPodScheduleInfo
 
@@ -1099,7 +1119,7 @@ func (p *debugPodScheduleInfo) String() string {
 }
 
 func simulateScheduleOne(t *testing.T, ctx context.Context, sched *scheduler.Scheduler, suit *pluginTestSuit, scheduleOrder *[]*debugPodScheduleInfo, injectFilterErr func(pod *corev1.Pod) bool) {
-	podInfo := sched.NextPod()
+	podInfo, _ := sched.NextPod()
 	pod := podInfo.Pod
 
 	scheduleInfo := &debugPodScheduleInfo{
@@ -1135,9 +1155,9 @@ func simulateScheduleOne(t *testing.T, ctx context.Context, sched *scheduler.Sch
 			// Run PostFilter plugins to try to make the pod schedulable in a future scheduling cycle.
 			_, status := suit.plugin.(*Coscheduling).PostFilter(ctx, state, pod, fitError.Diagnosis.NodeToStatusMap)
 			assert.False(t, status.IsSuccess())
+			klog.Info("sched.Error:" + podInfo.Pod.Name)
+			sched.FailureHandler(ctx, fwk, podInfo, status, &framework.NominatingInfo{}, time.Time{})
 		}
-		klog.Info("sched.Error:" + podInfo.Pod.Name)
-		sched.Error(podInfo, err)
 		return
 	}
 
@@ -1154,13 +1174,13 @@ func simulateScheduleOne(t *testing.T, ctx context.Context, sched *scheduler.Sch
 		// One of the plugins returned status different from success or wait.
 		fwk.RunReservePluginsUnreserve(schedulingCycleCtx, state, assumedPod, scheduleResult.SuggestedHost)
 		klog.Info("sched.Error:" + assumedPodInfo.Pod.Name)
-		sched.Error(assumedPodInfo, runPermitStatus.AsError())
+		sched.FailureHandler(ctx, fwk, assumedPodInfo, runPermitStatus, &framework.NominatingInfo{}, time.Time{})
 		return
 	}
 
 	// At the end of a successful scheduling cycle, pop and move up Pods if needed.
 	if len(podsToActivate.Map) != 0 {
-		sched.SchedulingQueue.Activate(podsToActivate.Map)
+		sched.SchedulingQueue.Activate(klog.FromContext(ctx), podsToActivate.Map)
 		// Clear the entries after activation.
 		podsToActivate.Map = make(map[string]*corev1.Pod)
 	}
@@ -1175,7 +1195,7 @@ func simulateScheduleOne(t *testing.T, ctx context.Context, sched *scheduler.Sch
 			// trigger un-reserve plugins to clean up state associated with the reserved Pod
 			fwk.RunReservePluginsUnreserve(bindingCycleCtx, state, assumedPod, scheduleResult.SuggestedHost)
 			klog.Info("sched.Error:" + assumedPodInfo.Pod.Name)
-			sched.Error(assumedPodInfo, waitOnPermitStatus.AsError())
+			sched.FailureHandler(ctx, fwk, assumedPodInfo, waitOnPermitStatus, &framework.NominatingInfo{}, time.Time{})
 			return
 		}
 
@@ -1184,7 +1204,8 @@ func simulateScheduleOne(t *testing.T, ctx context.Context, sched *scheduler.Sch
 
 		// At the end of a successful binding cycle, move up Pods if needed.
 		if len(podsToActivate.Map) != 0 {
-			sched.SchedulingQueue.Activate(podsToActivate.Map)
+			logger := klog.FromContext(ctx)
+			sched.SchedulingQueue.Activate(logger, podsToActivate.Map)
 			// Unlike the logic in scheduling cycle, we don't bother deleting the entries
 			// as `podsToActivate.Map` is no longer consumed.
 		}
@@ -1194,7 +1215,7 @@ func simulateScheduleOne(t *testing.T, ctx context.Context, sched *scheduler.Sch
 func schedulePod(ctx context.Context, fwk framework.Framework, state *framework.CycleState, pod *corev1.Pod, info *debugPodScheduleInfo, injectFilterError bool) (result scheduler.ScheduleResult, err error) {
 	diagnosis := framework.Diagnosis{
 		NodeToStatusMap:      make(framework.NodeToStatusMap),
-		UnschedulablePlugins: sets.NewString(),
+		UnschedulablePlugins: sets.Set[string]{},
 	}
 
 	// Run "prefilter" plugins.
@@ -1266,15 +1287,15 @@ func TestDeadLockFree(t *testing.T) {
 		assert.NoError(t, err)
 	}
 
-	cfg := configtesting.V1beta3ToInternalWithDefaults(t, v1beta3.KubeSchedulerConfiguration{
-		Profiles: []v1beta3.KubeSchedulerProfile{{
+	cfg := configtesting.V1beta3ToInternalWithDefaults(t, scheduledv1beta3.KubeSchedulerConfiguration{
+		Profiles: []scheduledv1beta3.KubeSchedulerProfile{{
 			SchedulerName: pointer.StringPtr("koord-scheduler"),
-			Plugins: &v1beta3.Plugins{
-				QueueSort: v1beta3.PluginSet{
-					Enabled: []v1beta3.Plugin{
+			Plugins: &scheduledv1beta3.Plugins{
+				QueueSort: scheduledv1beta3.PluginSet{
+					Enabled: []scheduledv1beta3.Plugin{
 						{Name: "fakeQueueSortPlugin"},
 					},
-					Disabled: []v1beta3.Plugin{
+					Disabled: []scheduledv1beta3.Plugin{
 						{Name: "*"},
 					},
 				},
@@ -1290,11 +1311,11 @@ func TestDeadLockFree(t *testing.T) {
 
 	eventBroadcaster := events.NewBroadcaster(&events.EventSinkImpl{Interface: cs.EventsV1()})
 	ctx := context.TODO()
-	sched, err := scheduler.New(cs,
+	sched, err := scheduler.New(ctx,
+		cs,
 		suit.SharedInformerFactory(),
 		nil,
 		profile.NewRecorderFactory(eventBroadcaster),
-		ctx.Done(),
 		scheduler.WithProfiles(cfg.Profiles...),
 		scheduler.WithFrameworkOutOfTreeRegistry(registry),
 		scheduler.WithPodInitialBackoffSeconds(1),
@@ -1305,13 +1326,14 @@ func TestDeadLockFree(t *testing.T) {
 	assert.NoError(t, err)
 	eventBroadcaster.StartRecordingToSink(ctx.Done())
 	suit.start()
-	sched.SchedulingQueue.Run()
+	sched.SchedulingQueue.Run(klog.FromContext(ctx))
 
 	var scheduleOrder []*debugPodScheduleInfo
 
 	for i := 0; i < 3; i++ {
 		for j := 0; j < len(allPods); j++ {
-			if len(sched.SchedulingQueue.PendingPods()) == 0 {
+			pendingPods, _ := sched.SchedulingQueue.PendingPods()
+			if len(pendingPods) == 0 {
 				break
 			}
 
@@ -1328,7 +1350,8 @@ func TestDeadLockFree(t *testing.T) {
 			})
 		}
 	}
-	assert.Equal(t, 0, len(sched.SchedulingQueue.PendingPods()))
+	pendingPods, _ := sched.SchedulingQueue.PendingPods()
+	assert.Equal(t, 0, len(pendingPods))
 	for _, info := range scheduleOrder {
 		klog.Infoln(info)
 	}
@@ -1382,15 +1405,15 @@ func TestNoRejectWhenInvalidCycle(t *testing.T) {
 		assert.NoError(t, err)
 	}
 
-	cfg := configtesting.V1beta3ToInternalWithDefaults(t, v1beta3.KubeSchedulerConfiguration{
-		Profiles: []v1beta3.KubeSchedulerProfile{{
+	cfg := configtesting.V1beta3ToInternalWithDefaults(t, scheduledv1beta3.KubeSchedulerConfiguration{
+		Profiles: []scheduledv1beta3.KubeSchedulerProfile{{
 			SchedulerName: pointer.StringPtr("koord-scheduler"),
-			Plugins: &v1beta3.Plugins{
-				QueueSort: v1beta3.PluginSet{
-					Enabled: []v1beta3.Plugin{
+			Plugins: &scheduledv1beta3.Plugins{
+				QueueSort: scheduledv1beta3.PluginSet{
+					Enabled: []scheduledv1beta3.Plugin{
 						{Name: "fakeQueueSortPlugin"},
 					},
-					Disabled: []v1beta3.Plugin{
+					Disabled: []scheduledv1beta3.Plugin{
 						{Name: "*"},
 					},
 				},
@@ -1406,11 +1429,12 @@ func TestNoRejectWhenInvalidCycle(t *testing.T) {
 
 	eventBroadcaster := events.NewBroadcaster(&events.EventSinkImpl{Interface: cs.EventsV1()})
 	ctx := context.TODO()
-	sched, err := scheduler.New(cs,
+	sched, err := scheduler.New(
+		ctx,
+		cs,
 		suit.SharedInformerFactory(),
 		nil,
 		profile.NewRecorderFactory(eventBroadcaster),
-		ctx.Done(),
 		scheduler.WithProfiles(cfg.Profiles...),
 		scheduler.WithFrameworkOutOfTreeRegistry(registry),
 		scheduler.WithPodInitialBackoffSeconds(1),
@@ -1421,7 +1445,8 @@ func TestNoRejectWhenInvalidCycle(t *testing.T) {
 	assert.NoError(t, err)
 	eventBroadcaster.StartRecordingToSink(ctx.Done())
 	suit.start()
-	sched.SchedulingQueue.Run()
+	logger := klog.FromContext(ctx)
+	sched.SchedulingQueue.Run(logger)
 
 	var scheduleOrder []*debugPodScheduleInfo
 
@@ -1433,7 +1458,8 @@ func TestNoRejectWhenInvalidCycle(t *testing.T) {
 
 	for i := 0; i < 5; i++ {
 		for j := 0; j < len(allPods); j++ {
-			if len(sched.SchedulingQueue.PendingPods()) == 0 {
+			pendingPods, _ := sched.SchedulingQueue.PendingPods()
+			if len(pendingPods) == 0 {
 				break
 			}
 
@@ -1442,7 +1468,8 @@ func TestNoRejectWhenInvalidCycle(t *testing.T) {
 			})
 		}
 	}
-	assert.Equal(t, 0, len(sched.SchedulingQueue.PendingPods()))
+	pendingPods, _ := sched.SchedulingQueue.PendingPods()
+	assert.Equal(t, 0, len(pendingPods))
 	for _, info := range scheduleOrder {
 		klog.Infoln(info)
 	}

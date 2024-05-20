@@ -79,7 +79,7 @@ func (p *podAssignCache) unAssign(nodeName string, pod *corev1.Pod) {
 	}
 }
 
-func (p *podAssignCache) OnAdd(obj interface{}) {
+func (p *podAssignCache) OnAdd(obj interface{}, isInInitialList bool) {
 	pod, ok := obj.(*corev1.Pod)
 	if !ok {
 		return

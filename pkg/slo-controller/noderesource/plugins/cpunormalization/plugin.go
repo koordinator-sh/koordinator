@@ -27,7 +27,6 @@ import (
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/klog/v2"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	"github.com/koordinator-sh/koordinator/apis/configuration"
 	"github.com/koordinator-sh/koordinator/apis/extension"
@@ -67,10 +66,10 @@ func (p *Plugin) Setup(opt *framework.Option) error {
 	if err := topologyv1alpha1.AddToScheme(clientgoscheme.Scheme); err != nil {
 		return fmt.Errorf("failed to add client go scheme for NodeResourceTopology, err: %w", err)
 	}
-	opt.Builder = opt.Builder.Watches(&source.Kind{Type: &topologyv1alpha1.NodeResourceTopology{}}, &nrtHandler{})
+	opt.Builder = opt.Builder.Watches(&topologyv1alpha1.NodeResourceTopology{}, &nrtHandler{})
 
 	cfgHandler = newConfigHandler(opt.Client, DefaultCPUNormalizationCfg(), opt.Recorder)
-	opt.Builder = opt.Builder.Watches(&source.Kind{Type: &corev1.ConfigMap{}}, cfgHandler)
+	opt.Builder = opt.Builder.Watches(&corev1.ConfigMap{}, cfgHandler)
 
 	return nil
 }

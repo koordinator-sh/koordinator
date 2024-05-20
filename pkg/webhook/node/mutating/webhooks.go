@@ -17,14 +17,33 @@ limitations under the License.
 package mutating
 
 import (
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
+
+	"github.com/koordinator-sh/koordinator/pkg/webhook/util/framework"
 )
 
 // +kubebuilder:webhook:path=/mutate-node-status,mutating=true,failurePolicy=ignore,sideEffects=None,groups="",resources=nodes/status,verbs=create;update,versions=v1,name=mnode-status.koordinator.sh,admissionReviewVersions=v1;v1beta1
 
 var (
-	// HandlerMap contains admission webhook handlers
-	HandlerMap = map[string]admission.Handler{
-		"mutate-node-status": NewNodeStatusMutatingHandler(),
+	// HandlerBuilderMap contains admission webhook handlers builder
+	HandlerBuilderMap = map[string]framework.HandlerBuilder{
+		"mutate-node-status": &nodeMutateBuilder{},
 	}
 )
+
+var _ framework.HandlerBuilder = &nodeMutateBuilder{}
+
+type nodeMutateBuilder struct {
+	mgr manager.Manager
+}
+
+func (b *nodeMutateBuilder) WithControllerManager(mgr ctrl.Manager) framework.HandlerBuilder {
+	b.mgr = mgr
+	return b
+}
+
+func (b *nodeMutateBuilder) Build() admission.Handler {
+	return NewNodeStatusMutatingHandler(b.mgr.GetClient(), admission.NewDecoder(b.mgr.GetScheme()))
+}

@@ -14,12 +14,12 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package v1beta2
+package v1beta3
 
 import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	schedconfigv1beta2 "k8s.io/kube-scheduler/config/v1beta2"
+	schedconfigv1beta3 "k8s.io/kube-scheduler/config/v1beta3"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 )
@@ -89,7 +89,7 @@ type ScoringStrategy struct {
 
 	// Resources a list of pairs <resource, weight> to be considered while scoring
 	// allowed weights start from 1.
-	Resources []schedconfigv1beta2.ResourceSpec `json:"resources,omitempty"`
+	Resources []schedconfigv1beta3.ResourceSpec `json:"resources,omitempty"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object

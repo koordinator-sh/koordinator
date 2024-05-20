@@ -230,7 +230,7 @@ func preparePod(pod *corev1.Pod) (state *preFilterState, status *framework.Statu
 }
 
 func GetPodDeviceRequests(pod *corev1.Pod) (map[schedulingv1alpha1.DeviceType]corev1.ResourceList, error) {
-	podRequests, _ := resourceapi.PodRequestsAndLimits(pod)
+	podRequests := resourceapi.PodRequests(pod, resourceapi.PodResourcesOptions{})
 	podRequests = quotav1.RemoveZeros(podRequests)
 
 	var requests map[schedulingv1alpha1.DeviceType]corev1.ResourceList

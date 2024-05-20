@@ -49,7 +49,7 @@ import (
 	koordfake "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/fake"
 	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
-	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/v1beta2"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/v1beta3"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
@@ -96,6 +96,14 @@ func (f *fakeSharedLister) NodeInfos() framework.NodeInfoLister {
 	return f
 }
 
+func (f *fakeSharedLister) StorageInfos() framework.StorageInfoLister {
+	return f
+}
+
+func (f *fakeSharedLister) IsPVCUsedByPods(key string) bool {
+	return false
+}
+
 func (f *fakeSharedLister) List() ([]*framework.NodeInfo, error) {
 	if f.listErr {
 		return nil, fmt.Errorf("list error")
@@ -122,10 +130,10 @@ type pluginTestSuit struct {
 }
 
 func newPluginTestSuitWith(t testing.TB, pods []*corev1.Pod, nodes []*corev1.Node) *pluginTestSuit {
-	var v1beta2args v1beta2.ReservationArgs
-	v1beta2.SetDefaults_ReservationArgs(&v1beta2args)
+	var v1beta3args v1beta3.ReservationArgs
+	v1beta3.SetDefaults_ReservationArgs(&v1beta3args)
 	var reservationArgs config.ReservationArgs
-	err := v1beta2.Convert_v1beta2_ReservationArgs_To_config_ReservationArgs(&v1beta2args, &reservationArgs, nil)
+	err := v1beta3.Convert_v1beta3_ReservationArgs_To_config_ReservationArgs(&v1beta3args, &reservationArgs, nil)
 	assert.NoError(t, err)
 
 	koordClientSet := koordfake.NewSimpleClientset()
@@ -150,6 +158,7 @@ func newPluginTestSuitWith(t testing.TB, pods []*corev1.Pod, nodes []*corev1.Nod
 	eventRecorder := record.NewEventRecorderAdapter(fakeRecorder)
 
 	fw, err := schedulertesting.NewFramework(
+		context.TODO(),
 		registeredPlugins,
 		"koord-scheduler",
 		frameworkruntime.WithClientSet(cs),
@@ -284,7 +293,7 @@ func TestPreFilter(t *testing.T) {
 			},
 			wantStatus: nil,
 			wantPreRes: &framework.PreFilterResult{
-				NodeNames: sets.NewString("test-node-1"),
+				NodeNames: sets.New("test-node-1"),
 			},
 		},
 	}
@@ -562,7 +571,7 @@ func TestFilter(t *testing.T) {
 			pl := p.(*Plugin)
 			cycleState := framework.NewCycleState()
 			if tt.stateData != nil {
-				tt.stateData.podRequests, _ = apiresource.PodRequestsAndLimits(tt.pod)
+				tt.stateData.podRequests = apiresource.PodRequests(tt.pod, apiresource.PodResourcesOptions{})
 				tt.stateData.podRequestsResources = framework.NewResource(tt.stateData.podRequests)
 				cycleState.Write(stateKey, tt.stateData)
 			}
@@ -1441,7 +1450,7 @@ func TestPreFilterExtensionAddPod(t *testing.T) {
 				pl.reservationCache.updateReservation(reservation)
 				assert.NoError(t, pl.reservationCache.assumePod(reservation.UID, tt.pod))
 			}
-			podInfo := framework.NewPodInfo(tt.pod)
+			podInfo, _ := framework.NewPodInfo(tt.pod)
 			nodeInfo := framework.NewNodeInfo()
 			nodeInfo.SetNode(node)
 			status := pl.PreFilterExtensions().AddPod(context.TODO(), cycleState, nil, podInfo, nodeInfo)
@@ -1553,7 +1562,7 @@ func TestPreFilterExtensionRemovePod(t *testing.T) {
 				pl.reservationCache.updateReservation(reservation)
 				assert.NoError(t, pl.reservationCache.assumePod(reservation.UID, tt.pod))
 			}
-			podInfo := framework.NewPodInfo(tt.pod)
+			podInfo, _ := framework.NewPodInfo(tt.pod)
 			nodeInfo := framework.NewNodeInfo()
 			nodeInfo.SetNode(node)
 			status := pl.PreFilterExtensions().RemovePod(context.TODO(), cycleState, nil, podInfo, nodeInfo)

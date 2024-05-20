@@ -290,7 +290,7 @@ func TestNUMANodeScore(t *testing.T) {
 			for _, v := range tt.existingPods {
 				builder := cpuset.NewCPUSetBuilder()
 				if AllowUseCPUSet(v) {
-					requests, _ := apiresource.PodRequestsAndLimits(v)
+					requests := apiresource.PodRequests(v, apiresource.PodResourcesOptions{})
 					cpuCount := int(requests.Cpu().MilliValue() / 1000)
 					for i := 0; i < cpuCount; i++ {
 						builder.Add(i)
@@ -814,7 +814,7 @@ func TestScoreWithAmplifiedCPUs(t *testing.T) {
 
 			handler := &podEventHandler{resourceManager: pl.resourceManager}
 			for _, v := range tt.existingPods {
-				handler.OnAdd(v)
+				handler.OnAdd(v, true)
 			}
 
 			state := framework.NewCycleState()

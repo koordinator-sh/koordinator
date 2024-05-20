@@ -26,7 +26,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/runtime/inject"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
 
@@ -125,7 +124,7 @@ func (h *PodMutatingHandler) handleUpdate(ctx context.Context, req admission.Req
 	return nil
 }
 
-var _ inject.Client = &PodMutatingHandler{}
+// var _ inject.Client = &PodMutatingHandler{}
 
 // InjectClient injects the client into the PodMutatingHandler
 func (h *PodMutatingHandler) InjectClient(c client.Client) error {
@@ -133,7 +132,7 @@ func (h *PodMutatingHandler) InjectClient(c client.Client) error {
 	return nil
 }
 
-var _ admission.DecoderInjector = &PodMutatingHandler{}
+// var _ admission.DecoderInjector = &PodMutatingHandler{}
 
 // InjectDecoder injects the decoder into the PodMutatingHandler
 func (h *PodMutatingHandler) InjectDecoder(d *admission.Decoder) error {

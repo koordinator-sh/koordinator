@@ -287,7 +287,7 @@ func TestNominateReservation(t *testing.T) {
 			assert.NoError(t, err)
 			pl := plugin.(*Plugin)
 			cycleState := framework.NewCycleState()
-			requests, _ := apiresource.PodRequestsAndLimits(tt.pod)
+			requests := apiresource.PodRequests(tt.pod, apiresource.PodResourcesOptions{})
 			state := &stateData{
 				nodeReservationStates: map[string]nodeReservationState{},
 				podRequests:           requests,

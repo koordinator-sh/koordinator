@@ -32,6 +32,7 @@ import (
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/utils/clock"
 	"k8s.io/utils/pointer"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	"github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
@@ -43,7 +44,18 @@ func TestFilterExistingMigrationJob(t *testing.T) {
 	scheme := runtime.NewScheme()
 	_ = v1alpha1.AddToScheme(scheme)
 	_ = clientgoscheme.AddToScheme(scheme)
-	fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithStatusSubresource(&v1alpha1.PodMigrationJob{}).
+		WithIndex(&v1alpha1.PodMigrationJob{}, "job.pod.uid", func(obj client.Object) []string {
+			pmj := obj.(*v1alpha1.PodMigrationJob)
+			return []string{string(pmj.Spec.PodRef.UID)}
+		}).
+		WithIndex(&v1alpha1.PodMigrationJob{}, "job.pod.namespacedName", func(obj client.Object) []string {
+			pmj := obj.(*v1alpha1.PodMigrationJob)
+			return []string{pmj.Spec.PodRef.Namespace + "/" + pmj.Spec.PodRef.Name}
+		}).
+		Build()
 	a := filter{client: fakeClient, args: &config.MigrationControllerArgs{}, arbitratedPodMigrationJobs: map[types.UID]bool{}}
 
 	pod := &corev1.Pod{
@@ -152,7 +164,20 @@ func TestFilterMaxMigratingPerNode(t *testing.T) {
 			scheme := runtime.NewScheme()
 			_ = v1alpha1.AddToScheme(scheme)
 			_ = clientgoscheme.AddToScheme(scheme)
-			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).
+				WithIndex(&corev1.Pod{}, "pod.spec.nodeName", func(object client.Object) []string {
+					pod := object.(*corev1.Pod)
+					return []string{pod.Spec.NodeName}
+				}).
+				WithIndex(&v1alpha1.PodMigrationJob{}, "job.pod.uid", func(obj client.Object) []string {
+					pmj := obj.(*v1alpha1.PodMigrationJob)
+					return []string{string(pmj.Spec.PodRef.UID)}
+				}).
+				WithIndex(&v1alpha1.PodMigrationJob{}, "job.pod.namespacedName", func(obj client.Object) []string {
+					pmj := obj.(*v1alpha1.PodMigrationJob)
+					return []string{pmj.Spec.PodRef.Namespace + "/" + pmj.Spec.PodRef.Name}
+				}).
+				Build()
 			a := filter{client: fakeClient, args: &config.MigrationControllerArgs{}, arbitratedPodMigrationJobs: map[types.UID]bool{}}
 			a.args.MaxMigratingPerNode = pointer.Int32(tt.maxMigrating)
 
@@ -295,7 +320,16 @@ func TestFilterMaxMigratingPerNamespace(t *testing.T) {
 			scheme := runtime.NewScheme()
 			_ = v1alpha1.AddToScheme(scheme)
 			_ = clientgoscheme.AddToScheme(scheme)
-			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).
+				WithIndex(&v1alpha1.PodMigrationJob{}, "job.pod.uid", func(obj client.Object) []string {
+					pmj := obj.(*v1alpha1.PodMigrationJob)
+					return []string{string(pmj.Spec.PodRef.UID)}
+				}).
+				WithIndex(&v1alpha1.PodMigrationJob{}, "job.pod.namespace", func(obj client.Object) []string {
+					pmj := obj.(*v1alpha1.PodMigrationJob)
+					return []string{pmj.Spec.PodRef.Namespace}
+				}).
+				Build()
 			a := filter{client: fakeClient, args: &config.MigrationControllerArgs{}, arbitratedPodMigrationJobs: map[types.UID]bool{}}
 			a.args.MaxMigratingPerNamespace = pointer.Int32(tt.maxMigrating)
 
@@ -464,7 +498,16 @@ func TestFilterMaxMigratingPerWorkload(t *testing.T) {
 			scheme := runtime.NewScheme()
 			_ = v1alpha1.AddToScheme(scheme)
 			_ = clientgoscheme.AddToScheme(scheme)
-			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).
+				WithIndex(&v1alpha1.PodMigrationJob{}, "job.pod.uid", func(obj client.Object) []string {
+					pmj := obj.(*v1alpha1.PodMigrationJob)
+					return []string{string(pmj.Spec.PodRef.UID)}
+				}).
+				WithIndex(&v1alpha1.PodMigrationJob{}, "job.pod.namespace", func(obj client.Object) []string {
+					pmj := obj.(*v1alpha1.PodMigrationJob)
+					return []string{pmj.Spec.PodRef.Namespace}
+				}).
+				Build()
 			intOrString := intstr.FromInt(tt.maxMigrating)
 			maxUnavailable := intstr.FromInt(int(tt.totalReplicas - 1))
 
@@ -670,7 +713,15 @@ func TestFilterMaxUnavailablePerWorkload(t *testing.T) {
 			scheme := runtime.NewScheme()
 			_ = v1alpha1.AddToScheme(scheme)
 			_ = clientgoscheme.AddToScheme(scheme)
-			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).
+				WithIndex(&v1alpha1.PodMigrationJob{}, "job.pod.uid", func(obj client.Object) []string {
+					pmj := obj.(*v1alpha1.PodMigrationJob)
+					return []string{string(pmj.Spec.PodRef.UID)}
+				}).
+				WithIndex(&v1alpha1.PodMigrationJob{}, "job.pod.namespace", func(obj client.Object) []string {
+					pmj := obj.(*v1alpha1.PodMigrationJob)
+					return []string{pmj.Spec.PodRef.Namespace}
+				}).Build()
 			a := filter{client: fakeClient, args: &config.MigrationControllerArgs{}, arbitratedPodMigrationJobs: map[types.UID]bool{}}
 			a.args.MaxMigratingPerWorkload = &intOrString
 			a.args.MaxUnavailablePerWorkload = &maxUnavailable

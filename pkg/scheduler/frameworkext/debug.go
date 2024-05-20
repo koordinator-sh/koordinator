@@ -58,27 +58,20 @@ func DebugFiltersSetter(val string) (string, error) {
 	return fmt.Sprintf("successfully set debugFilterFailure to %s", val), nil
 }
 
-func debugScores(topN int, pod *corev1.Pod, pluginToNodeScores map[string]framework.NodeScoreList, nodes []*corev1.Node) prettytable.Writer {
-	// Summarize all scores.
-	result := make(framework.NodeScoreList, 0, len(nodes))
-	nodeOrders := make(map[string]int, len(nodes))
-
-	for i, node := range nodes {
-		nodeOrders[node.Name] = i
-		result = append(result, framework.NodeScore{Name: node.Name, Score: 0})
-		for j := range pluginToNodeScores {
-			result[i].Score += pluginToNodeScores[j][i].Score
-		}
+func debugScores(topN int, pod *corev1.Pod, allNodePluginScores []framework.NodePluginScores, nodes []*corev1.Node) prettytable.Writer {
+	if len(allNodePluginScores) == 0 {
+		return nil
 	}
-	sort.Slice(result, func(i, j int) bool {
-		return result[i].Score > result[j].Score
+	// Summarize all scores.
+	sort.Slice(allNodePluginScores, func(i, j int) bool {
+		return allNodePluginScores[i].TotalScore > allNodePluginScores[j].TotalScore
 	})
 
-	pluginNames := make([]string, 0, len(pluginToNodeScores))
-	for name := range pluginToNodeScores {
-		pluginNames = append(pluginNames, name)
+	pluginNames := make([]string, 0, len(allNodePluginScores))
+	pluginScores := allNodePluginScores[0].Scores
+	for _, v := range pluginScores {
+		pluginNames = append(pluginNames, v.Name)
 	}
-	sort.Strings(pluginNames)
 
 	w := prettytable.NewWriter()
 	headerRow := prettytable.Row{"#", "Pod", "Node", "Score"}
@@ -88,19 +81,13 @@ func debugScores(topN int, pod *corev1.Pod, pluginToNodeScores map[string]framew
 	w.AppendHeader(headerRow)
 
 	podRef := klog.KObj(pod)
-	for i, node := range result {
+	for i, nodeScore := range allNodePluginScores {
 		if i >= topN {
 			break
 		}
-		row := prettytable.Row{strconv.Itoa(i), podRef.String(), node.Name, node.Score}
-		if nodeIndex, ok := nodeOrders[node.Name]; ok {
-			for _, pluginName := range pluginNames {
-				if scores, ok := pluginToNodeScores[pluginName]; ok {
-					row = append(row, scores[nodeIndex].Score)
-				} else {
-					row = append(row, -1)
-				}
-			}
+		row := prettytable.Row{strconv.Itoa(i), podRef.String(), nodeScore.Name, nodeScore.TotalScore}
+		for _, pluginScore := range nodeScore.Scores {
+			row = append(row, pluginScore.Score)
 		}
 		w.AppendRow(row)
 	}

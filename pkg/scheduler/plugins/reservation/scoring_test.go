@@ -221,7 +221,7 @@ func TestScore(t *testing.T) {
 			state := &stateData{
 				nodeReservationStates: map[string]nodeReservationState{},
 			}
-			state.podRequests, _ = apiresource.PodRequestsAndLimits(tt.pod)
+			state.podRequests = apiresource.PodRequests(tt.pod, apiresource.PodResourcesOptions{})
 			state.podRequestsResources = framework.NewResource(state.podRequests)
 			for _, reservation := range tt.reservations {
 				rInfo := frameworkext.NewReservationInfo(reservation)
@@ -323,7 +323,7 @@ func TestScoreWithOrder(t *testing.T) {
 	state := &stateData{
 		nodeReservationStates: map[string]nodeReservationState{},
 	}
-	state.podRequests, _ = apiresource.PodRequestsAndLimits(normalPod)
+	state.podRequests = apiresource.PodRequests(normalPod, apiresource.PodResourcesOptions{})
 	state.podRequestsResources = framework.NewResource(state.podRequests)
 
 	// add three Reservations to three node
@@ -694,7 +694,7 @@ func TestPreScoreWithNominateReservation(t *testing.T) {
 			state := &stateData{
 				nodeReservationStates: map[string]nodeReservationState{},
 			}
-			state.podRequests, _ = apiresource.PodRequestsAndLimits(tt.pod)
+			state.podRequests = apiresource.PodRequests(tt.pod, apiresource.PodResourcesOptions{})
 			state.podRequestsResources = framework.NewResource(state.podRequests)
 			for _, reservation := range tt.reservations {
 				rInfo := frameworkext.NewReservationInfo(reservation)

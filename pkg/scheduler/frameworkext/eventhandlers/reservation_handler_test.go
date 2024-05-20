@@ -31,6 +31,7 @@ import (
 	"k8s.io/client-go/informers"
 	kubefake "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/apis/core/validation"
 	"k8s.io/kubernetes/pkg/scheduler"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
@@ -97,7 +98,7 @@ func TestAddReservationErrorHandler(t *testing.T) {
 		fakeRecorder := record.NewFakeRecorder(1024)
 		eventRecorder := record.NewEventRecorderAdapter(fakeRecorder)
 
-		fh, err := schedulertesting.NewFramework(registeredPlugins, "koord-scheduler",
+		fh, err := schedulertesting.NewFramework(context.TODO(), registeredPlugins, "koord-scheduler",
 			frameworkruntime.WithEventRecorder(eventRecorder),
 			frameworkruntime.WithClientSet(kubefake.NewSimpleClientset()),
 			frameworkruntime.WithInformerFactory(informers.NewSharedInformerFactory(kubefake.NewSimpleClientset(), 0)),
@@ -117,12 +118,13 @@ func TestAddReservationErrorHandler(t *testing.T) {
 		koordSharedInformerFactory.Start(nil)
 		koordSharedInformerFactory.WaitForCacheSync(nil)
 
+		podInfo, _ := framework.NewPodInfo(testPod)
 		queuedPodInfo := &framework.QueuedPodInfo{
-			PodInfo: framework.NewPodInfo(testPod),
+			PodInfo: podInfo,
 		}
 
 		expectedErr := errors.New(strings.Repeat("test error", validation.NoteLengthLimit))
-		handler(queuedPodInfo, expectedErr)
+		handler(context.TODO(), fh, queuedPodInfo, framework.AsStatus(expectedErr), nil, time.Now())
 
 		r, err := koordClientSet.SchedulingV1alpha1().Reservations().Get(context.TODO(), testR.Name, metav1.GetOptions{})
 		assert.NoError(t, err)
@@ -667,7 +669,7 @@ func Test_deleteReservationFromCache(t *testing.T) {
 			reservation.SetReservationCache(&fakeReservationCache{})
 			sched := frameworkext.NewFakeScheduler()
 			if reservationutil.ValidateReservation(tt.obj) == nil {
-				sched.AddPod(reservationutil.NewReservePod(tt.obj))
+				sched.AddPod(klog.Background(), reservationutil.NewReservePod(tt.obj))
 			}
 			deleteReservationFromSchedulerCache(sched, tt.obj)
 			pod, err := sched.GetPod(&corev1.Pod{
@@ -948,7 +950,7 @@ func Test_deleteReservationFromSchedulingQueue(t *testing.T) {
 					return &fakePermitPlugin{}, nil
 				}),
 			}
-			fh, err := schedulertesting.NewFramework(registeredPlugins, corev1.DefaultSchedulerName)
+			fh, err := schedulertesting.NewFramework(context.TODO(), registeredPlugins, corev1.DefaultSchedulerName)
 			assert.NoError(t, err)
 
 			sched := &scheduler.Scheduler{
@@ -1016,7 +1018,7 @@ func Test_unscheduledReservationEventHandler(t *testing.T) {
 			},
 		},
 	}
-	handler.OnAdd(reservation)
+	handler.OnAdd(reservation, true)
 	assert.NotNil(t, adapt.Queue.Pods[string(reservation.UID)])
 	reservationCopy := reservation.DeepCopy()
 	reservationCopy.ResourceVersion = "2"

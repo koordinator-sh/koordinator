@@ -32,12 +32,12 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
-	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
-	pgclientset "sigs.k8s.io/scheduler-plugins/pkg/generated/clientset/versioned"
-	pgformers "sigs.k8s.io/scheduler-plugins/pkg/generated/informers/externalversions"
-	pglister "sigs.k8s.io/scheduler-plugins/pkg/generated/listers/scheduling/v1alpha1"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
+	pgclientset "github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/generated/clientset/versioned"
+	pgformers "github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/generated/informers/externalversions"
+	pglister "github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/generated/listers/scheduling/v1alpha1"
 	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	frameworkexthelper "github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/helper"
@@ -494,7 +494,10 @@ func (pgMgr *PodGroupManager) GetCreatTime(podInfo *framework.QueuedPodInfo) tim
 	// first check if the pod belongs to the Gang
 	// it doesn't belong to the gang,we get the creation time of the pod
 	if !util.IsPodNeedGang(podInfo.Pod) {
-		return podInfo.InitialAttemptTimestamp
+		if podInfo.InitialAttemptTimestamp == nil {
+			return time.Now()
+		}
+		return *podInfo.InitialAttemptTimestamp
 	}
 	gang := pgMgr.GetGangByPod(podInfo.Pod)
 	// it belongs to a gang,we get the creation time of the Gang

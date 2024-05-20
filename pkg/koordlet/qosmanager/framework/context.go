@@ -66,6 +66,14 @@ func (r *Evictor) EvictPodsIfNotEvicted(evictPods []*corev1.Pod, node *corev1.No
 	}
 }
 
+func (r *Evictor) IsPodEvicted(pod *corev1.Pod) bool {
+	if pod == nil {
+		return false
+	}
+	_, evicted := r.podsEvicted.Get(string(pod.UID))
+	return evicted
+}
+
 func (r *Evictor) evictPodIfNotEvicted(evictPod *corev1.Pod, node *corev1.Node, reason string, message string) {
 	_, evicted := r.podsEvicted.Get(string(evictPod.UID))
 	if evicted {

@@ -1,4 +1,4 @@
-FROM --platform=$TARGETPLATFORM golang:1.18 as builder
+FROM --platform=$TARGETPLATFORM golang:1.20 as builder
 WORKDIR /go/src/github.com/koordinator-sh/koordinator
 
 ARG VERSION

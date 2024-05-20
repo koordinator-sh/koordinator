@@ -574,17 +574,12 @@ func Test_killAndEvictBEPodsRelease(t *testing.T) {
 
 	cpuEvictor.killAndEvictBEPodsRelease(node, podEvictInfosSorted, 18*1000)
 
-	getEvictObject, err := client.Tracker().Get(testutil.PodsResource, podEvictInfosSorted[0].pod.Namespace, podEvictInfosSorted[0].pod.Name)
-	assert.NotNil(t, getEvictObject, "evictPod Fail, err: %v", err)
-	assert.IsType(t, &policyv1beta1.Eviction{}, getEvictObject, "evictPod: %s Fail", podEvictInfosSorted[0].pod.Name)
+	// evict subresource will not be creat or update in client go testing, check evict object
+	// https://github.com/kubernetes/client-go/blob/v0.28.7/testing/fixture.go#L117
+	assert.True(t, cpuEvictor.evictor.IsPodEvicted(podEvictInfosSorted[0].pod))
+	assert.True(t, cpuEvictor.evictor.IsPodEvicted(podEvictInfosSorted[1].pod))
+	assert.False(t, cpuEvictor.evictor.IsPodEvicted(podEvictInfosSorted[2].pod))
 
-	getEvictObject, err = client.Tracker().Get(testutil.PodsResource, podEvictInfosSorted[1].pod.Namespace, podEvictInfosSorted[1].pod.Name)
-	assert.NotNil(t, getEvictObject, "evictPod Fail, err: %v", err)
-	assert.IsType(t, &policyv1beta1.Eviction{}, getEvictObject, "evictPod: %s Fail", podEvictInfosSorted[1].pod.Name)
-
-	getNotEvictObject, err := client.Tracker().Get(testutil.PodsResource, podEvictInfosSorted[2].pod.Namespace, podEvictInfosSorted[2].pod.Name)
-	assert.Nil(t, err, "get pod fail", err)
-	assert.IsType(t, &corev1.Pod{}, getNotEvictObject, "no need evict", podEvictInfosSorted[2].pod.Name)
 	assert.True(t, cpuEvictor.lastEvictTime.After(time.Now().Add(-5*time.Second)), "checkLastTime")
 
 }

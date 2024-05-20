@@ -410,17 +410,14 @@ func Test_memoryEvict(t *testing.T) {
 			memoryEvictor.lastEvictTime = time.Now().Add(-30 * time.Second)
 			memoryEvictor.memoryEvict()
 
+			// evict subresource will not be creat or update in client go testing, check evict object
+			// https://github.com/kubernetes/client-go/blob/v0.28.7/testing/fixture.go#L117
 			for _, pod := range tt.expectEvictPods {
-				getEvictObject, err := client.Tracker().Get(testutil.PodsResource, pod.Namespace, pod.Name)
-				assert.NotNil(t, getEvictObject, "evictPod Fail", err)
-				assert.IsType(t, &policyv1beta1.Eviction{}, getEvictObject, "evictPod Fail", pod.Name)
+				assert.True(t, memoryEvictor.evictor.IsPodEvicted(pod))
 			}
 
 			for _, pod := range tt.expectNotEvictPods {
-				getObject, _ := client.Tracker().Get(testutil.PodsResource, pod.Namespace, pod.Name)
-				assert.IsType(t, &corev1.Pod{}, getObject, "no need evict", pod.Name)
-				gotPod, err := client.CoreV1().Pods(pod.Namespace).Get(context.TODO(), pod.Name, metav1.GetOptions{})
-				assert.NotNil(t, gotPod, "no need evict!", err)
+				assert.False(t, memoryEvictor.evictor.IsPodEvicted(pod))
 			}
 		})
 	}

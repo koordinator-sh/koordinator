@@ -17,6 +17,7 @@ limitations under the License.
 package frameworkext
 
 import (
+	"context"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -55,6 +56,7 @@ func TestExtenderFactory(t *testing.T) {
 		schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
 	}
 	fh, err := schedulertesting.NewFramework(
+		context.TODO(),
 		registeredPlugins,
 		"koord-scheduler",
 		frameworkruntime.WithSnapshotSharedLister(fakeNodeInfoLister{NodeInfoLister: frameworkfake.NodeInfoLister{}}),

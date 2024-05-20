@@ -61,12 +61,12 @@ func NewCrioRuntimeHandler(endpoint string) (ContainerRuntimeHandler, error) {
 	}, nil
 }
 
-func (c *CrioRuntimeHandler) StopContainer(containerID string, timeout int64) error {
+func (c *CrioRuntimeHandler) StopContainer(ctx context.Context, containerID string, timeout int64) error {
 	if containerID == "" {
 		return fmt.Errorf("containerID cannot be empty")
 	}
 	t := c.timeout + time.Duration(timeout)
-	ctx, cancel := context.WithTimeout(context.Background(), t)
+	ctx, cancel := context.WithTimeout(ctx, t)
 	defer cancel()
 
 	request := &runtimeapi.StopContainerRequest{

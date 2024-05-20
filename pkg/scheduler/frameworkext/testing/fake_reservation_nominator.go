@@ -107,7 +107,8 @@ func (nm *FakeNominator) AddNominatedReservePod(rInfo *corev1.Pod, nodeName stri
 			return
 		}
 	}
-	nm.nominatedReservePod[nodeName] = append(nm.nominatedReservePod[nodeName], framework.NewPodInfo(rInfo))
+	podInfo, _ := framework.NewPodInfo(rInfo)
+	nm.nominatedReservePod[nodeName] = append(nm.nominatedReservePod[nodeName], podInfo)
 }
 
 func (nm *FakeNominator) DeleteNominatedReservePod(rInfo *corev1.Pod) {

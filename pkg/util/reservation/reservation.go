@@ -118,7 +118,7 @@ func NewReservePod(r *schedulingv1alpha1.Reservation) *corev1.Pod {
 		reservePod.Status.Phase = corev1.PodFailed
 	}
 	if IsReservationAvailable(r) {
-		podRequests, _ := resource.PodRequestsAndLimits(reservePod)
+		podRequests := resource.PodRequests(reservePod, resource.PodResourcesOptions{})
 		if !quotav1.Equals(podRequests, r.Status.Allocatable) {
 			//
 			// PodRequests is different from r.Status.Allocatable,
@@ -133,7 +133,7 @@ func NewReservePod(r *schedulingv1alpha1.Reservation) *corev1.Pod {
 
 func UpdateReservePodWithAllocatable(reservePod *corev1.Pod, podRequests, allocatable corev1.ResourceList) {
 	if podRequests == nil {
-		podRequests, _ = resource.PodRequestsAndLimits(reservePod)
+		podRequests = resource.PodRequests(reservePod, resource.PodResourcesOptions{})
 	} else {
 		podRequests = podRequests.DeepCopy()
 	}
@@ -349,9 +349,9 @@ func ReservationRequests(r *schedulingv1alpha1.Reservation) corev1.ResourceList 
 		return r.Status.Allocatable.DeepCopy()
 	}
 	if r.Spec.Template != nil {
-		requests, _ := resource.PodRequestsAndLimits(&corev1.Pod{
+		requests := resource.PodRequests(&corev1.Pod{
 			Spec: r.Spec.Template.Spec,
-		})
+		}, resource.PodResourcesOptions{})
 		return requests
 	}
 	return nil

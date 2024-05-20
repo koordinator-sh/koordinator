@@ -49,7 +49,7 @@ func registerPodEventHandler(handle framework.Handle, resourceManager ResourceMa
 	}
 }
 
-func (c *podEventHandler) OnAdd(obj interface{}) {
+func (c *podEventHandler) OnAdd(obj interface{}, isInInitialList bool) {
 	pod, ok := obj.(*corev1.Pod)
 	if !ok {
 		return

@@ -234,7 +234,7 @@ func (ext *frameworkExtenderImpl) RunPostFilterPlugins(ctx context.Context, stat
 	return result, status
 }
 
-func (ext *frameworkExtenderImpl) RunScorePlugins(ctx context.Context, state *framework.CycleState, pod *corev1.Pod, nodes []*corev1.Node) (framework.PluginToNodeScores, *framework.Status) {
+func (ext *frameworkExtenderImpl) RunScorePlugins(ctx context.Context, state *framework.CycleState, pod *corev1.Pod, nodes []*corev1.Node) ([]framework.NodePluginScores, *framework.Status) {
 	for _, pl := range ext.configuredPlugins.Score.Enabled {
 		transformer := ext.scoreTransformers[pl.Name]
 		if transformer == nil {
@@ -436,8 +436,8 @@ func (ext *frameworkExtenderImpl) RegisterForgetPodHandler(handler ForgetPodHand
 	ext.forgetPodHandlers = append(ext.forgetPodHandlers, handler)
 }
 
-func (ext *frameworkExtenderImpl) ForgetPod(pod *corev1.Pod) error {
-	if err := ext.Scheduler().GetCache().ForgetPod(pod); err != nil {
+func (ext *frameworkExtenderImpl) ForgetPod(logger klog.Logger, pod *corev1.Pod) error {
+	if err := ext.Scheduler().GetCache().ForgetPod(logger, pod); err != nil {
 		return err
 	}
 	for _, handler := range ext.forgetPodHandlers {

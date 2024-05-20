@@ -14,11 +14,9 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// +k8s:deepcopy-gen=package
-// +k8s:conversion-gen=github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config
-// +k8s:defaulter-gen=TypeMeta
-// +k8s:defaulter-gen-input=.
-// +groupName=kubescheduler.config.k8s.io
+package scheduling
 
-// Package v1beta2
-package v1beta2
+// GroupName is the group name used in this package
+const (
+	GroupName = "scheduling.sigs.k8s.io"
+)

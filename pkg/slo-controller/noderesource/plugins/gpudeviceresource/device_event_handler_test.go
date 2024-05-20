@@ -17,6 +17,7 @@ limitations under the License.
 package gpudeviceresource
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -40,7 +41,7 @@ func Test_EnqueueRequestForNodeMetricMetric(t *testing.T) {
 		{
 			name: "create device event",
 			fn: func(handler handler.EventHandler, q workqueue.RateLimitingInterface) {
-				handler.Create(event.CreateEvent{
+				handler.Create(context.TODO(), event.CreateEvent{
 					Object: &schedulingv1alpha1.Device{
 						ObjectMeta: metav1.ObjectMeta{
 							Name: "node1",
@@ -54,7 +55,7 @@ func Test_EnqueueRequestForNodeMetricMetric(t *testing.T) {
 		{
 			name: "delete device event",
 			fn: func(handler handler.EventHandler, q workqueue.RateLimitingInterface) {
-				handler.Delete(event.DeleteEvent{
+				handler.Delete(context.TODO(), event.DeleteEvent{
 					Object: &schedulingv1alpha1.Device{
 						ObjectMeta: metav1.ObjectMeta{
 							Name: "node1",
@@ -68,7 +69,7 @@ func Test_EnqueueRequestForNodeMetricMetric(t *testing.T) {
 		{
 			name: "delete event not device",
 			fn: func(handler handler.EventHandler, q workqueue.RateLimitingInterface) {
-				handler.Delete(event.DeleteEvent{
+				handler.Delete(context.TODO(), event.DeleteEvent{
 					Object: &corev1.Node{
 						ObjectMeta: metav1.ObjectMeta{
 							Name: "node1",
@@ -81,14 +82,14 @@ func Test_EnqueueRequestForNodeMetricMetric(t *testing.T) {
 		{
 			name: "generic event ignore",
 			fn: func(handler handler.EventHandler, q workqueue.RateLimitingInterface) {
-				handler.Generic(event.GenericEvent{}, q)
+				handler.Generic(context.TODO(), event.GenericEvent{}, q)
 			},
 			hasEvent: false,
 		},
 		{
 			name: "update device event",
 			fn: func(handler handler.EventHandler, q workqueue.RateLimitingInterface) {
-				handler.Update(event.UpdateEvent{
+				handler.Update(context.TODO(), event.UpdateEvent{
 					ObjectOld: &schedulingv1alpha1.Device{
 						ObjectMeta: metav1.ObjectMeta{
 							Name:            "node1",
@@ -120,7 +121,7 @@ func Test_EnqueueRequestForNodeMetricMetric(t *testing.T) {
 		{
 			name: "update device event ignore",
 			fn: func(handler handler.EventHandler, q workqueue.RateLimitingInterface) {
-				handler.Update(event.UpdateEvent{
+				handler.Update(context.TODO(), event.UpdateEvent{
 					ObjectOld: &schedulingv1alpha1.Device{
 						ObjectMeta: metav1.ObjectMeta{
 							Name:            "node1",

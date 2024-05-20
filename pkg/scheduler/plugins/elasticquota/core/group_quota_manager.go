@@ -25,9 +25,9 @@ import (
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	utilfeature "k8s.io/apiserver/pkg/util/feature"
 	"k8s.io/klog/v2"
-	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
@@ -596,14 +596,14 @@ func (gqm *GroupQuotaManager) GetAllQuotaNames() map[string]struct{} {
 func (gqm *GroupQuotaManager) updatePodRequestNoLock(quotaName string, oldPod, newPod *v1.Pod) {
 	var oldPodReq, newPodReq, oldNonPreemptibleRequest, newNonPreemptibleRequest v1.ResourceList
 	if oldPod != nil {
-		oldPodReq, _ = PodRequestsAndLimits(oldPod)
+		oldPodReq = PodRequests(oldPod)
 		if extension.IsPodNonPreemptible(oldPod) {
 			oldNonPreemptibleRequest = oldPodReq
 		}
 	}
 
 	if newPod != nil {
-		newPodReq, _ = PodRequestsAndLimits(newPod)
+		newPodReq = PodRequests(newPod)
 		if extension.IsPodNonPreemptible(newPod) {
 			newNonPreemptibleRequest = newPodReq
 		}
@@ -630,14 +630,14 @@ func (gqm *GroupQuotaManager) updatePodUsedNoLock(quotaName string, oldPod, newP
 
 	var oldPodUsed, newPodUsed, oldNonPreemptibleUsed, newNonPreemptibleUsed v1.ResourceList
 	if oldPod != nil {
-		oldPodUsed, _ = PodRequestsAndLimits(oldPod)
+		oldPodUsed = PodRequests(oldPod)
 		if extension.IsPodNonPreemptible(oldPod) {
 			oldNonPreemptibleUsed = oldPodUsed
 		}
 	}
 
 	if newPod != nil {
-		newPodUsed, _ = PodRequestsAndLimits(newPod)
+		newPodUsed = PodRequests(newPod)
 		if extension.IsPodNonPreemptible(newPod) {
 			newNonPreemptibleUsed = newPodUsed
 		}
