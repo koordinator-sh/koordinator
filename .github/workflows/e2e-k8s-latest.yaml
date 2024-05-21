@@ -5,7 +5,7 @@ on:
     branches:
       - main
       - release-*
-  pull_request: {}
+  # For the latest version of the K8S, check it in the main branch and no need to run in each PR.
   workflow_dispatch: {}
 
 env:
@@ -43,12 +43,9 @@ jobs:
           docker build --pull . -t ${KOORDLET_IMAGE} -f docker/koordlet.dockerfile
           export SCHEDULER_IMAGE="koordinator-sh/koord-scheduler:e2e-${GITHUB_RUN_ID}"
           docker build --pull . -t ${SCHEDULER_IMAGE} -f docker/koord-scheduler.dockerfile
-          export DESCHEDULER_IMAGE="koordinator-sh/koord-descheduler:e2e-${GITHUB_RUN_ID}"
-          docker build --pull . -t ${DESCHEDULER_IMAGE} -f docker/koord-descheduler.dockerfile
           kind load docker-image --name=${KIND_CLUSTER_NAME} ${MANAGER_IMAGE} || { echo >&2 "kind not installed or error loading image: ${MANAGER_IMAGE}"; exit 1; }
           kind load docker-image --name=${KIND_CLUSTER_NAME} ${KOORDLET_IMAGE} || { echo >&2 "kind not installed or error loading image: ${KOORDLET_IMAGE}"; exit 1; }
           kind load docker-image --name=${KIND_CLUSTER_NAME} ${SCHEDULER_IMAGE} || { echo >&2 "kind not installed or error loading image: ${SCHEDULER_IMAGE}"; exit 1; }
-          kind load docker-image --name=${KIND_CLUSTER_NAME} ${DESCHEDULER_IMAGE} || { echo >&2 "kind not installed or error loading image: ${DESCHEDULER_IMAGE}"; exit 1; }
       - name: Check host environment
         run: |
           set -ex
@@ -62,7 +59,7 @@ jobs:
         run: |
           set -ex
           kubectl cluster-info
-          MANAGER_IMG=koordinator-sh/koord-manager:e2e-${GITHUB_RUN_ID} KOORDLET_IMG=koordinator-sh/koordlet:e2e-${GITHUB_RUN_ID} SCHEDULER_IMG=koordinator-sh/koord-scheduler:e2e-${GITHUB_RUN_ID} DESCHEDULER_IMG=koordinator-sh/koord-descheduler:e2e-${GITHUB_RUN_ID} ./hack/deploy_kind.sh
+          MANAGER_IMG=koordinator-sh/koord-manager:e2e-${GITHUB_RUN_ID} KOORDLET_IMG=koordinator-sh/koordlet:e2e-${GITHUB_RUN_ID} SCHEDULER_IMG=koordinator-sh/koord-scheduler:e2e-${GITHUB_RUN_ID} ./hack/deploy_kind.sh
           NODES=$(kubectl get node | wc -l)
           for ((i=1;i<10;i++));
           do
