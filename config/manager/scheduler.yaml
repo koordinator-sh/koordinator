@@ -35,7 +35,6 @@ spec:
       containers:
         - args:
             - --port=10251
-            - --logtostderr=true
             - --authentication-skip-lookup=true
             - --v=4
             - --feature-gates=
