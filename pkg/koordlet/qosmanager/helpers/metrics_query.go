@@ -172,7 +172,7 @@ func CollectContainerThrottledMetric(metricCache metriccache.MetricCache, contai
 	}
 
 	queryEndTime := time.Now()
-	queryStartTime := queryEndTime.Add(-metricCollectInterval)
+	queryStartTime := queryEndTime.Add(-metricCollectInterval * 2)
 	querier, err := metricCache.Querier(queryStartTime, queryEndTime)
 	if err != nil {
 		return nil, err
