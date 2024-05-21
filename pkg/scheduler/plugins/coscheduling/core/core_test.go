@@ -24,11 +24,9 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/informers"
 	clientsetfake "k8s.io/client-go/kubernetes/fake"
-	"k8s.io/client-go/util/retry"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
 
@@ -485,7 +483,7 @@ func TestPermit(t *testing.T) {
 				st.MakePod().Name("pod3-1").UID("pod3-1").Namespace("gangA_ns").Label(v1alpha1.PodGroupLabel, "gangA").Obj(),
 			},
 			runningPods: []*corev1.Pod{
-				st.MakePod().Name("pod3-2").UID("pod3-2").Namespace("gangA_ns").Label(v1alpha1.PodGroupLabel, "gangA").Obj(),
+				st.MakePod().Name("pod3-2").UID("pod3-2").Namespace("gangA_ns").Label(v1alpha1.PodGroupLabel, "gangA").Node("n1").Obj(),
 			},
 			pgs:          []*v1alpha1.PodGroup{makePg("gangA", "gangA_ns", 3, &gangACreatedTime, nil)},
 			onceSatisfy:  true,
@@ -500,7 +498,7 @@ func TestPermit(t *testing.T) {
 				st.MakePod().Name("pod3-1").UID("pod3-1").Namespace("gangA_ns").Label(v1alpha1.PodGroupLabel, "gangA").Obj(),
 			},
 			runningPods: []*corev1.Pod{
-				st.MakePod().Name("pod3-2").UID("pod3-2").Namespace("gangA_ns").Label(v1alpha1.PodGroupLabel, "gangA").Obj(),
+				st.MakePod().Name("pod3-2").UID("pod3-2").Namespace("gangA_ns").Label(v1alpha1.PodGroupLabel, "gangA").Node("n1").Obj(),
 			},
 			pgs:          []*v1alpha1.PodGroup{makePg("gangA", "gangA_ns", 3, &gangACreatedTime, nil)},
 			onceSatisfy:  true,
@@ -584,99 +582,13 @@ func TestPermit(t *testing.T) {
 				mgr.cache.onPodAdd(pod)
 				mgr.PostBind(ctx, pod, "tmp")
 			}
+			if len(tt.runningPods) != 0 {
+				assert.Equal(t, int32(len(tt.runningPods)), mgr.GetBoundPodNumber(util.GetId(tt.runningPods[0].Namespace, util.GetGangNameByPod(tt.runningPods[0]))))
+			}
 			mgr.cache.onPodAdd(tt.pod)
 			timeout, status := mgr.Permit(ctx, tt.pod)
 			assert.Equal(t, tt.wantWaittime, timeout)
 			assert.Equal(t, tt.wantStatus, status)
 		})
 	}
-}
-
-// Unreserve also tested in the Coscheduling_test
-
-func TestPostBind(t *testing.T) {
-	tests := []struct {
-		name              string
-		pod               *corev1.Pod
-		pg                *v1alpha1.PodGroup
-		desiredGroupPhase v1alpha1.PodGroupPhase
-		desiredScheduled  int32
-		// case
-		originalScheduled int
-		phase             v1alpha1.PodGroupPhase
-		annotation        map[string]string
-	}{
-		{
-			name:              "pg status convert to scheduled",
-			pod:               st.MakePod().Name("p").UID("p").Namespace("ns1").Label(v1alpha1.PodGroupLabel, "pg").Obj(),
-			pg:                makePg("pg", "ns1", 1, nil, nil),
-			desiredGroupPhase: v1alpha1.PodGroupScheduled,
-			desiredScheduled:  1,
-		},
-		{
-			name:              "pg status convert to scheduling",
-			pod:               st.MakePod().Name("p").UID("p").Namespace("ns1").Label(v1alpha1.PodGroupLabel, "pg1").Obj(),
-			pg:                makePg("pg1", "ns1", 2, nil, nil),
-			desiredGroupPhase: v1alpha1.PodGroupScheduling,
-			desiredScheduled:  1,
-		},
-		{
-			name:              "pg status does not convert, although scheduled pods change",
-			pod:               st.MakePod().Name("p").UID("p").Namespace("ns1").Label(v1alpha1.PodGroupLabel, "pg2").Obj(),
-			pg:                makePg("pg2", "ns1", 3, nil, nil),
-			desiredGroupPhase: v1alpha1.PodGroupScheduling,
-			desiredScheduled:  1,
-			phase:             v1alpha1.PodGroupScheduling,
-			originalScheduled: 1,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			bigMgr := NewManagerForTest()
-			mgr, pginforme := bigMgr.pgMgr, bigMgr.pgInformer
-			// pg create
-			if tt.annotation != nil {
-				if tt.pod.Annotations == nil {
-					tt.pod.Annotations = map[string]string{}
-				}
-				tt.pod.Annotations = tt.annotation
-				mgr.cache.onPodAdd(tt.pod)
-			}
-			if tt.pg != nil {
-				err := retry.OnError(
-					retry.DefaultRetry,
-					errors.IsTooManyRequests,
-					func() error {
-						var err error
-						_, err = mgr.pgClient.SchedulingV1alpha1().PodGroups(tt.pg.Namespace).Create(context.TODO(), tt.pg, metav1.CreateOptions{})
-						return err
-					})
-				if err != nil {
-					t.Errorf("pgclient create pg err: %v", err)
-				}
-				pginforme.Informer().GetStore().Add(tt.pg)
-				mgr.cache.onPodGroupAdd(tt.pg)
-			}
-			ctx := context.TODO()
-			// create  pods
-			mgr.cache.onPodAdd(tt.pod)
-			mgr.PostBind(ctx, tt.pod, "test")
-			// get the pg cr
-			var pg *v1alpha1.PodGroup
-			err := retry.OnError(
-				retry.DefaultRetry,
-				errors.IsTooManyRequests,
-				func() error {
-					var err error
-					pg, err = mgr.pgClient.SchedulingV1alpha1().PodGroups(tt.pod.Namespace).Get(context.TODO(), util.GetGangNameByPod(tt.pod), metav1.GetOptions{})
-					return err
-				})
-			if err != nil {
-				t.Errorf("pgclient get pg err: %v", err)
-			}
-			assert.Equal(t, tt.desiredGroupPhase, pg.Status.Phase)
-			assert.Equal(t, tt.desiredScheduled, pg.Status.Scheduled)
-		})
-	}
-
 }

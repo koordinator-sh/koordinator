@@ -76,6 +76,7 @@ type Manager interface {
 	IsGangMinSatisfied(*corev1.Pod) bool
 	GetChildScheduleCycle(*corev1.Pod) int
 	GetLastScheduleTime(*corev1.Pod, time.Time) time.Time
+	GetBoundPodNumber(gangId string) int32
 }
 
 // PodGroupManager defines the scheduling operation called
@@ -447,47 +448,8 @@ func (pgMgr *PodGroupManager) PostBind(ctx context.Context, pod *corev1.Pod, nod
 		klog.Warningf("Pod %q missing Gang", klog.KObj(pod))
 		return
 	}
-	// first update gang in cache
+	// update gang in cache
 	gang.addBoundPod(pod)
-
-	//  update PodGroup
-	_, pg := pgMgr.GetPodGroup(pod)
-	if pg == nil {
-		return
-	}
-	pgCopy := pg.DeepCopy()
-
-	pgCopy.Status.Scheduled = int32(gang.getBoundPodNum())
-
-	if pgCopy.Status.Scheduled >= pgCopy.Spec.MinMember {
-		pgCopy.Status.Phase = v1alpha1.PodGroupScheduled
-		klog.InfoS("PostBind has got enough bound child for gang", "gang", gang.Name, "pod", klog.KObj(pod))
-	} else {
-		pgCopy.Status.Phase = v1alpha1.PodGroupScheduling
-		klog.InfoS("PostBind has not got enough bound child for gang", "gang", gang.Name, "pod", klog.KObj(pod))
-		if pgCopy.Status.ScheduleStartTime.IsZero() {
-			pgCopy.Status.ScheduleStartTime = metav1.Time{Time: time.Now()}
-		}
-	}
-	if pgCopy.Status.Phase != pg.Status.Phase {
-		pg, err := pgMgr.pgLister.PodGroups(pgCopy.Namespace).Get(pgCopy.Name)
-		if err != nil {
-			klog.ErrorS(err, "PosFilter failed to get PodGroup", "podGroup", klog.KObj(pgCopy))
-			return
-		}
-		patch, err := util.CreateMergePatch(pg, pgCopy)
-		if err != nil {
-			klog.ErrorS(err, "PostFilter failed to create merge patch", "podGroup", klog.KObj(pg), "podGroup", klog.KObj(pgCopy))
-			return
-		}
-		if err := pgMgr.PatchPodGroup(pg.Name, pg.Namespace, patch); err != nil {
-			klog.ErrorS(err, "PostFilter Failed to patch", "podGroup", klog.KObj(pg))
-			return
-		} else {
-			klog.InfoS("PostFilter success to patch podGroup", "podGroup", klog.KObj(pgCopy))
-		}
-	}
-
 }
 
 func (pgMgr *PodGroupManager) GetCreatTime(podInfo *framework.QueuedPodInfo) time.Time {
@@ -599,4 +561,12 @@ func (pgMgr *PodGroupManager) GetChildScheduleCycle(pod *corev1.Pod) int {
 	}
 
 	return gang.getChildScheduleCycle(pod)
+}
+
+func (pgMgr *PodGroupManager) GetBoundPodNumber(gangId string) int32 {
+	gang := pgMgr.cache.getGangFromCacheByGangId(gangId, false)
+	if gang == nil {
+		return 0
+	}
+	return gang.getBoundPodNum()
 }
