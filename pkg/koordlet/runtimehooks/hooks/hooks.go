@@ -106,6 +106,7 @@ func init() {
 		rmconfig.PostStopContainer:           make([]*Hook, 0),
 		rmconfig.PostStopPodSandbox:          make([]*Hook, 0),
 		rmconfig.PreUpdateContainerResources: make([]*Hook, 0),
+		rmconfig.PreRemoveRunPodSandbox:      make([]*Hook, 0),
 	}
 }
 
