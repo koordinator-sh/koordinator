@@ -100,6 +100,7 @@ func (pl *Plugin) prepareMatchReservationState(ctx context.Context, cycleState *
 		}
 
 		var unmatched, matched []*frameworkext.ReservationInfo
+		isUnschedulableUnmatched, affinityUnmatched := 0, 0
 		status := pl.reservationCache.forEachAvailableReservationOnNode(node.Name, func(rInfo *frameworkext.ReservationInfo) (bool, *framework.Status) {
 			if !rInfo.IsAvailable() || rInfo.ParseError != nil {
 				return true, nil
@@ -111,8 +112,14 @@ func (pl *Plugin) prepareMatchReservationState(ctx context.Context, cycleState *
 				return true, nil
 			}
 
-			if !isReservedPod && !rInfo.IsUnschedulable() && matchReservation(pod, node, rInfo, reservationAffinity) {
-				matched = append(matched, rInfo.Clone())
+			if !isReservedPod && rInfo.Match(pod) { // owner matched
+				if rInfo.IsUnschedulable() {
+					isUnschedulableUnmatched++
+				} else if !matchReservationAffinity(node, rInfo, reservationAffinity) {
+					affinityUnmatched++
+				} else {
+					matched = append(matched, rInfo.Clone())
+				}
 
 			} else if len(rInfo.AssignedPods) > 0 {
 				unmatched = append(unmatched, rInfo.Clone())
@@ -182,10 +189,12 @@ func (pl *Plugin) prepareMatchReservationState(ctx context.Context, cycleState *
 		if len(matched) > 0 || len(unmatched) > 0 {
 			index := atomic.AddInt32(&stateIndex, 1)
 			allNodeReservationStates[index-1] = &nodeReservationState{
-				nodeName:     node.Name,
-				matched:      matched,
-				podRequested: podRequested,
-				rAllocated:   framework.NewResource(rAllocated),
+				nodeName:                 node.Name,
+				matched:                  matched,
+				isUnschedulableUnmatched: isUnschedulableUnmatched,
+				affinityUnmatched:        affinityUnmatched,
+				podRequested:             podRequested,
+				rAllocated:               framework.NewResource(rAllocated),
 			}
 			allPluginToRestoreState[index-1] = pluginToRestoreState
 		}
@@ -347,11 +356,7 @@ func calculateResource(pod *corev1.Pod) (res framework.Resource, non0CPU int64, 
 	return
 }
 
-func matchReservation(pod *corev1.Pod, node *corev1.Node, reservation *frameworkext.ReservationInfo, reservationAffinity *reservationutil.RequiredReservationAffinity) bool {
-	if !reservation.Match(pod) {
-		return false
-	}
-
+func matchReservationAffinity(node *corev1.Node, reservation *frameworkext.ReservationInfo, reservationAffinity *reservationutil.RequiredReservationAffinity) bool {
 	if reservationAffinity != nil {
 		// NOTE: There are some special scenarios.
 		// For example, the AZ where the Pod wants to select the Reservation is cn-hangzhou, but the Reservation itself
