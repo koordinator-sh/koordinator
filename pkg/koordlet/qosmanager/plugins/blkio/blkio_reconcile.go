@@ -530,6 +530,7 @@ func getDiskNumbersFromCgroupFile(filePath string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	defer file.Close()
 	fileScanner := bufio.NewScanner(file)
 	for fileScanner.Scan() {
 		output := strings.Split(fileScanner.Text(), " ")
