@@ -2058,7 +2058,7 @@ func Test_Plugin_FilterReservation(t *testing.T) {
 	assert.True(t, status.IsSuccess())
 
 	status = pl.FilterReservation(context.TODO(), cycleState, pod, reservationInfo, "test-node-1")
-	assert.Equal(t, framework.NewStatus(framework.Unschedulable, "node(s) no reservation(s) to meet the device requirements"), status)
+	assert.Equal(t, framework.NewStatus(framework.Unschedulable, "Reservation(s) Insufficient gpu devices"), status)
 }
 
 func Test_Plugin_Reserve(t *testing.T) {
