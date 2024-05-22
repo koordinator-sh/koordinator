@@ -355,6 +355,11 @@ func (b *cpuBurst) applyCFSQuotaBurst(burstCfg *slov1alpha1.CPUBurstConfig, podM
 			continue
 		}
 
+		if containerStat.State.Running == nil {
+			klog.V(6).Infof("skip container %s/%s/%s, because it is not running", pod.Namespace, pod.Name, containerStat.Name)
+			continue
+		}
+
 		containerBaseCFS := koordletutil.GetContainerBaseCFSQuota(container)
 		if containerBaseCFS <= 0 {
 			continue

@@ -149,6 +149,7 @@ func newTestPodWithQOS(name string, qos apiext.QoSClass, cpuMilli, memoryBytes i
 				{
 					Name:        containerName,
 					ContainerID: genTestContainerIDByName(containerName),
+					State:       corev1.ContainerState{Running: &corev1.ContainerStateRunning{}},
 				},
 			},
 			Phase: corev1.PodRunning,
@@ -233,6 +234,7 @@ func createPodMetaByResource(podName string, containersRes map[string]corev1.Res
 		containerStat := corev1.ContainerStatus{
 			Name:        containerName,
 			ContainerID: genTestContainerIDByName(containerName),
+			State:       corev1.ContainerState{Running: &corev1.ContainerStateRunning{}},
 		}
 		pod.Spec.Containers = append(pod.Spec.Containers, container)
 		pod.Status.ContainerStatuses = append(pod.Status.ContainerStatuses, containerStat)
