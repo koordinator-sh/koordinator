@@ -256,11 +256,18 @@ func (r *ResctrlSchemataRaw) L3Number() int {
 }
 
 func (r *ResctrlSchemataRaw) CacheIds() []int {
-	ids := []int{}
+	ids1 := []int{}
 	for id := range r.L3 {
-		ids = append(ids, id)
+		ids1 = append(ids1, id)
 	}
-	return ids
+	ids2 := []int{}
+	for id := range r.MB {
+		ids2 = append(ids2, id)
+	}
+	if len(ids1) >= len(ids2) {
+		return ids1
+	}
+	return ids2
 }
 
 func (r *ResctrlSchemataRaw) L3String() string {
@@ -342,6 +349,11 @@ func (r *ResctrlSchemataRaw) ValidateL3() (bool, string) {
 	if r.L3Num != len(r.L3) {
 		return false, "unmatched L3 number and CAT infos"
 	}
+	for _, value := range r.L3 {
+		if value <= 0 {
+			return false, "wrong value of L3 mask"
+		}
+	}
 	return true, ""
 }
 
@@ -351,6 +363,11 @@ func (r *ResctrlSchemataRaw) ValidateMB() (bool, string) {
 	}
 	if len(r.MB) <= 0 {
 		return false, "no MBA info"
+	}
+	for _, value := range r.MB {
+		if value <= 0 {
+			return false, "wrong value of MB mask"
+		}
 	}
 	return true, ""
 }
@@ -444,7 +461,13 @@ func ReadResctrlSchemataRaw(schemataFile string, l3Num int) (*ResctrlSchemataRaw
 		return nil, fmt.Errorf("failed to parse l3 schemata, content %s, err: %v", string(content), err)
 	}
 	if l3Num == -1 {
-		schemataRaw.WithL3Num(len(schemataRaw.L3))
+		len1 := len(schemataRaw.L3)
+		len2 := len(schemataRaw.MB)
+		if len1 >= len2 {
+			schemataRaw.WithL3Num(len1)
+		} else {
+			schemataRaw.WithL3Num(len2)
+		}
 	}
 
 	return schemataRaw, nil
@@ -558,6 +581,21 @@ func CheckAndTryEnableResctrlCat() error {
 		return fmt.Errorf("resctrl cat is not enabled, err: %s", err)
 	}
 	return nil
+}
+
+func InitCatGroupIfNotExist(group string) (bool, error) {
+	path := GetResctrlGroupRootDirPath(group)
+	_, err := os.Stat(path)
+	if err == nil {
+		return false, nil
+	} else if !os.IsNotExist(err) {
+		return false, fmt.Errorf("check dir %v for group %s but got unexpected err: %v", path, group, err)
+	}
+	err = os.Mkdir(path, 0755)
+	if err != nil {
+		return false, fmt.Errorf("create dir %v failed for group %s, err: %v", path, group, err)
+	}
+	return true, nil
 }
 
 func CheckResctrlSchemataValid() error {
