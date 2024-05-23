@@ -18,6 +18,10 @@ package eventhandlers
 
 import (
 	"context"
+	"fmt"
+	"regexp"
+	"strconv"
+	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -31,6 +35,7 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/profile"
 
+	"github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	koordclientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
 	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
@@ -74,24 +79,125 @@ func MakeReservationErrorHandler(
 			}
 		}
 
-		if !reservationutil.IsReservePod(pod) {
+		if _, reserveAffExist := pod.Annotations[extension.AnnotationReservationAffinity]; reserveAffExist {
+			// for pod specified reservation affinity, export new event on reservation level
+			reservationLevelMsg, hasReservation := generatePodEventOnReservationLevel(schedulingErr.Error())
+			klog.V(7).Infof("origin scheduling error info: %s. hasReservation %v. reservation msg: %s",
+				schedulingErr.Error(), hasReservation, reservationLevelMsg)
+			if hasReservation {
+				msg := truncateMessage(reservationLevelMsg)
+				// user reason=FailedScheduling-Reservation to avoid event being auto-merged
+				fwk.EventRecorder().Eventf(pod, nil, corev1.EventTypeWarning, "FailedScheduling-Reservation", "Scheduling", msg)
+			}
 			return false
-		}
+		} else if reservationutil.IsReservePod(pod) {
+			// for reservation CR, which is treated as pod internal
+			reservationErrorFn(ctx, fwk, podInfo, status, nominatingInfo, start)
 
-		reservationErrorFn(ctx, fwk, podInfo, status, nominatingInfo, start)
+			rName := reservationutil.GetReservationNameFromReservePod(pod)
+			r, err := reservationLister.Get(rName)
+			if err != nil {
+				return true
+			}
 
-		rName := reservationutil.GetReservationNameFromReservePod(pod)
-		r, err := reservationLister.Get(rName)
-		if err != nil {
+			msg := truncateMessage(schedulingErr.Error())
+			fwk.EventRecorder().Eventf(r, nil, corev1.EventTypeWarning, "FailedScheduling", "Scheduling", msg)
+
+			updateReservationStatus(koordClientSet, reservationLister, rName, schedulingErr)
 			return true
 		}
-
-		msg := truncateMessage(schedulingErr.Error())
-		fwk.EventRecorder().Eventf(r, nil, corev1.EventTypeWarning, "FailedScheduling", "Scheduling", msg)
-
-		updateReservationStatus(koordClientSet, reservationLister, rName, schedulingErr)
-		return true
+		// not reservation CR, not pod with reservation affinity
+		return false
 	}
+}
+
+// input:
+// "0/1 nodes are available: 3 Reservation(s) didn't match affinity rules, 1 Reservation(s) is unshedulable, 1 Reservation(s) is unavailable,
+// 2 Reservation(s) Insufficient cpu, 1 Reservation(s) Insufficient memory, 1 Insufficient cpu, 1 Insufficient memory.
+// 8 Reservation(s) matched owner total, Gang "default/demo-job-podgroup" gets rejected due to pod is unschedulable."
+// output:
+// "0/8 reservations are available: 3 Reservation(s) didn't match affinity rules, 1 Reservation(s) is unschedulable, 1 Reservation(s) is unavailable,
+// 2 Reservation(s) Insufficient cpu, 1 Reservation(s) Insufficient memory."
+func generatePodEventOnReservationLevel(errorMsg string) (string, bool) {
+	trimErrorMsg := strings.TrimSpace(errorMsg)
+	fitErrPrefix := regexp.MustCompile("^0/[0-9]+ nodes are available: ")
+
+	// expect: ["", "3 Reservation(s) ..."]
+	prefixSplit := fitErrPrefix.Split(trimErrorMsg, -1)
+	if len(prefixSplit) != 2 || prefixSplit[0] != "" {
+		return "", false
+	}
+
+	// "3 Reservations ..., 1 Reservation ..."
+	detailedMsg := prefixSplit[1]
+
+	splitFunc := func(c rune) bool {
+		detailSeparators := ",."
+		return strings.ContainsRune(detailSeparators, c)
+	}
+	// ["3 Reservation(s) ...", " 1 Reservation(s) ...", ..., " 8 Reservation(s) matched owner total", " Gang rejected..."]
+	detailSplit := strings.FieldsFunc(detailedMsg, splitFunc)
+
+	total := int64(-1)
+	resultDetails := make([]string, 0, len(detailSplit))
+
+	// for reservation total item
+	reserveTotalRe := regexp.MustCompile("^([0-9]+) Reservation\\(s\\) matched owner total$")
+
+	// for reservation detail item
+	reserveDetailRe := regexp.MustCompile("^([0-9]+) Reservation\\(s\\) .*$")
+
+	// for affinity item of node level
+	affinityPatterns := []string{
+		"^([0-9]+) node\\(s\\) (didn't match pod topology spread constraints \\(missing required label\\))",
+		"^([0-9]+) node\\(s\\) (didn't match pod topology spread constraints)",
+		"^([0-9]+) node\\(s\\) (didn't satisfy existing pods anti-affinity rules)",
+		"^([0-9]+) node\\(s\\) (didn't match pod affinity rules)",
+		"^([0-9]+) node\\(s\\) (didn't match pod anti-affinity rules)",
+	}
+	affinityDetailRe := regexp.MustCompile(strings.Join(affinityPatterns, "|"))
+
+	for _, item := range detailSplit {
+		trimItem := strings.TrimSpace(item)
+		totalStr := reserveTotalRe.FindAllStringSubmatch(trimItem, -1)
+
+		if len(totalStr) > 0 && len(totalStr[0]) == 2 {
+			// matched total item "8 Reservation(s) matched owner total"
+			var err error
+			if total, err = strconv.ParseInt(totalStr[0][1], 10, 64); err != nil {
+				return "", false
+			}
+		} else if reserveDetailRe.MatchString(trimItem) {
+			// not total item, append to details, e.g. " 1 Reservation(s) ..."
+			resultDetails = append(resultDetails, trimItem)
+		} else {
+			// other node items, record affinity errors on reservation level as:
+			// "at least 3 didn't match pod topology spread constraints Reservation(s)"
+			affinityDetailsSubMatch := affinityDetailRe.FindAllStringSubmatch(trimItem, -1)
+			if len(affinityDetailsSubMatch) == 0 {
+				continue
+			}
+			for _, submatch := range affinityDetailsSubMatch {
+				if len(submatch) <= 1 {
+					continue
+				}
+				r := &strings.Builder{}
+				r.WriteString("at least ")
+				for _, vv := range submatch[1:] {
+					if vv == "" {
+						continue
+					}
+					r.WriteString(vv + " ")
+				}
+				r.WriteString("Reservation(s)")
+				resultDetails = append(resultDetails, r.String())
+			}
+		}
+	}
+
+	reserveLevelMsgFmt := "0/%d reservations are available: %s."
+
+	return fmt.Sprintf(reserveLevelMsgFmt, total, strings.Join(resultDetails, ", ")), total >= 0
 }
 
 func makeReservationErrorFunc(sched frameworkext.Scheduler, reservationLister schedulingv1alpha1lister.ReservationLister) scheduler.FailureHandlerFn {

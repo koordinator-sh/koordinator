@@ -1884,7 +1884,7 @@ func TestPostFilter(t *testing.T) {
 			want1: framework.NewStatus(framework.Unschedulable, "4 Reservation(s) is unschedulable", "4 Reservation(s) matched owner total"),
 		},
 		{
-			name: "show reservation owner matched, unschedulable and affinity unmatched",
+			name: "show reservation matched owner, unschedulable and affinity unmatched",
 			args: args{
 				hasStateData: true,
 				nodeReservationDiagnosis: map[string]nodeDiagnosisState{
