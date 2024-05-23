@@ -152,21 +152,6 @@ func TestPlegHandlePodEvents(t *testing.T) {
 }
 
 func TestPlegHandleContainerEvents(t *testing.T) {
-	stopCh := make(chan struct{})
-	defer close(stopCh)
-
-	pg, err := NewPLEG("./test")
-	if err != nil {
-		t.Fatal(err)
-	}
-	pg.(*pleg).podWatcher, _ = NewTestWatcher()
-	pg.(*pleg).containerWatcher, _ = NewTestWatcher()
-	go pg.Run(stopCh)
-
-	handler := NewTestHandler()
-	id := pg.AddHandler(handler)
-	defer pg.RemoverHandler(id)
-
 	testCases := []struct {
 		name      string
 		mockEvent *inotify.Event
@@ -194,6 +179,21 @@ func TestPlegHandleContainerEvents(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			stopCh := make(chan struct{})
+			defer close(stopCh)
+
+			pg, err := NewPLEG("./test-" + tc.name)
+			if err != nil {
+				t.Fatal(err)
+			}
+			pg.(*pleg).podWatcher, _ = NewTestWatcher()
+			pg.(*pleg).containerWatcher, _ = NewTestWatcher()
+			go pg.Run(stopCh)
+
+			handler := NewTestHandler()
+			id := pg.AddHandler(handler)
+			defer pg.RemoverHandler(id)
+
 			pg.(*pleg).containerWatcher.Event() <- tc.mockEvent
 			timer := time.NewTimer(100 * time.Millisecond)
 			defer timer.Stop()
