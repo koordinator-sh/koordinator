@@ -154,16 +154,15 @@ type stateData struct {
 	preemptible          map[string]corev1.ResourceList
 	preemptibleInRRs     map[string]map[types.UID]corev1.ResourceList
 
-	nodeReservationStates map[string]nodeReservationState
-	preferredNode         string
-	assumed               *frameworkext.ReservationInfo
+	nodeReservationStates    map[string]nodeReservationState
+	nodeReservationDiagnosis map[string]nodeDiagnosisState
+	preferredNode            string
+	assumed                  *frameworkext.ReservationInfo
 }
 
 type nodeReservationState struct {
-	nodeName                 string
-	matched                  []*frameworkext.ReservationInfo // owner and affinity matched, not unschedulable
-	isUnschedulableUnmatched int                             // owner matched but unmatched due to unschedulable
-	affinityUnmatched        int                             // owner matched but unmatched due to affinity
+	nodeName string
+	matched  []*frameworkext.ReservationInfo
 
 	// podRequested represents all Pods(including matched reservation) requested resources
 	// but excluding the already allocated from unmatched reservations
@@ -172,14 +171,22 @@ type nodeReservationState struct {
 	rAllocated *framework.Resource
 }
 
+type nodeDiagnosisState struct {
+	nodeName                 string
+	ownerMatched             int // owner matched
+	isUnschedulableUnmatched int // owner matched but unmatched due to unschedulable
+	affinityUnmatched        int // owner matched but unmatched due to affinity
+}
+
 func (s *stateData) Clone() framework.StateData {
 	ns := &stateData{
-		hasAffinity:           s.hasAffinity,
-		podRequests:           s.podRequests,
-		podRequestsResources:  s.podRequestsResources,
-		nodeReservationStates: s.nodeReservationStates,
-		preferredNode:         s.preferredNode,
-		assumed:               s.assumed,
+		hasAffinity:              s.hasAffinity,
+		podRequests:              s.podRequests,
+		podRequestsResources:     s.podRequestsResources,
+		nodeReservationStates:    s.nodeReservationStates,
+		nodeReservationDiagnosis: s.nodeReservationDiagnosis,
+		preferredNode:            s.preferredNode,
+		assumed:                  s.assumed,
 	}
 	preemptible := map[string]corev1.ResourceList{}
 	for nodeName, returned := range s.preemptible {
@@ -509,12 +516,12 @@ func (pl *Plugin) PostFilter(ctx context.Context, cycleState *framework.CycleSta
 
 func (pl *Plugin) makePostFilterReasons(state *stateData) []string {
 	ownerMatched, affinityUnmatched, isUnSchedulableUnmatched := 0, 0, 0
-	for _, nodeState := range state.nodeReservationStates {
+	for _, nodeState := range state.nodeReservationDiagnosis {
 		isUnSchedulableUnmatched += nodeState.isUnschedulableUnmatched
 		affinityUnmatched += nodeState.affinityUnmatched
-		ownerMatched += len(nodeState.matched) + nodeState.isUnschedulableUnmatched + nodeState.affinityUnmatched
+		ownerMatched += nodeState.ownerMatched
 	}
-	if ownerMatched <= 0 {
+	if ownerMatched <= 0 && !state.hasAffinity {
 		return nil
 	}
 
@@ -524,7 +531,7 @@ func (pl *Plugin) makePostFilterReasons(state *stateData) []string {
 	var b strings.Builder
 	if affinityUnmatched > 0 {
 		b.WriteString(strconv.Itoa(affinityUnmatched))
-		b.WriteString(" Reservation(s) owner match but bad affinity")
+		b.WriteString(" Reservation(s) didn't match affinity rules")
 		reasons = append(reasons, b.String())
 		b.Reset()
 	}
@@ -535,7 +542,7 @@ func (pl *Plugin) makePostFilterReasons(state *stateData) []string {
 		b.Reset()
 	}
 	b.WriteString(strconv.Itoa(ownerMatched))
-	b.WriteString(" Reservation(s) owner matched total")
+	b.WriteString(" Reservation(s) matched owner total")
 	reasons = append(reasons, b.String())
 	return reasons
 }
