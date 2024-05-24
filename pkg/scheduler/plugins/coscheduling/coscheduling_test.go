@@ -1145,7 +1145,7 @@ func simulateScheduleOne(t *testing.T, ctx context.Context, sched *scheduler.Sch
 
 	schedulingCycleCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	scheduleResult, err := schedulePod(schedulingCycleCtx, fwk, state, pod, scheduleInfo, injectFilterErr(pod))
+	scheduleResult, err := schedulePod(schedulingCycleCtx, suit, fwk, state, pod, scheduleInfo, injectFilterErr(pod))
 	if err != nil {
 		// SchedulePod() may have failed because the pod would not fit on any host, so we try to
 		// preempt, with the expectation that the next time the pod is tried for scheduling it
@@ -1212,13 +1212,14 @@ func simulateScheduleOne(t *testing.T, ctx context.Context, sched *scheduler.Sch
 	}()
 }
 
-func schedulePod(ctx context.Context, fwk framework.Framework, state *framework.CycleState, pod *corev1.Pod, info *debugPodScheduleInfo, injectFilterError bool) (result scheduler.ScheduleResult, err error) {
+func schedulePod(ctx context.Context, suit *pluginTestSuit, fwk framework.Framework, state *framework.CycleState, pod *corev1.Pod, info *debugPodScheduleInfo, injectFilterError bool) (result scheduler.ScheduleResult, err error) {
 	diagnosis := framework.Diagnosis{
 		NodeToStatusMap:      make(framework.NodeToStatusMap),
 		UnschedulablePlugins: sets.Set[string]{},
 	}
 
 	// Run "prefilter" plugins.
+	suit.plugin.(*Coscheduling).BeforePreFilter(ctx, state, pod)
 	_, s := fwk.RunPreFilterPlugins(ctx, state, pod)
 	if !s.IsSuccess() {
 		info.result = "PreFiler"
@@ -1453,7 +1454,7 @@ func TestNoRejectWhenInvalidCycle(t *testing.T) {
 	_, status := suit.plugin.(*Coscheduling).PostFilter(ctx, framework.NewCycleState(), allPods[0], nil)
 	assert.False(t, status.IsSuccess())
 
-	_, status = suit.plugin.(*Coscheduling).PreFilter(ctx, framework.NewCycleState(), memberPodsOfGang[util.GetId("default", gangNames[0])][0])
+	_, _, status = suit.plugin.(*Coscheduling).BeforePreFilter(ctx, framework.NewCycleState(), memberPodsOfGang[util.GetId("default", gangNames[0])][0])
 	assert.False(t, status.IsSuccess())
 
 	for i := 0; i < 5; i++ {

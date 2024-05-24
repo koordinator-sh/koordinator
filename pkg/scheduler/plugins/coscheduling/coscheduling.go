@@ -50,6 +50,7 @@ type Coscheduling struct {
 }
 
 var _ framework.QueueSortPlugin = &Coscheduling{}
+var _ frameworkext.PreFilterTransformer = &Coscheduling{}
 var _ framework.PreFilterPlugin = &Coscheduling{}
 var _ framework.PostFilterPlugin = &Coscheduling{}
 var _ framework.PermitPlugin = &Coscheduling{}
@@ -160,19 +161,27 @@ func (cs *Coscheduling) Less(podInfo1, podInfo2 *framework.QueuedPodInfo) bool {
 	return podInfo1.Pod.Name < podInfo2.Pod.Name
 }
 
-// PreFilter
+// BeforePreFilter
 // if non-strict-mode, we only do step1 and step2:
 // i.Check whether childes in Gang has met the requirements of minimum number under each Gang, and reject the pod if negative.
 // ii.Check whether the Gang has been timeout(check the pod's annotation,later introduced at Permit section) or is inited, and reject the pod if positive.
 // iii.Check whether the Gang has met the scheduleCycleValid check, and reject the pod if negative.
 // iv.Try update scheduleCycle, scheduleCycleValid, childrenScheduleRoundMap as mentioned above.
-func (cs *Coscheduling) PreFilter(ctx context.Context, state *framework.CycleState, pod *v1.Pod) (*framework.PreFilterResult, *framework.Status) {
+func (cs *Coscheduling) BeforePreFilter(ctx context.Context, state *framework.CycleState, pod *v1.Pod) (*v1.Pod, bool, *framework.Status) {
 	// If PreFilter fails, return framework.UnschedulableAndUnresolvable to avoid any preemption attempts.
 	if err := cs.pgMgr.PreFilter(ctx, state, pod); err != nil {
 		klog.ErrorS(err, "PreFilter failed", "pod", klog.KObj(pod))
-		return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, err.Error())
+		return nil, false, framework.NewStatus(framework.UnschedulableAndUnresolvable, err.Error())
 	}
-	return nil, framework.NewStatus(framework.Success, "")
+	return nil, false, framework.NewStatus(framework.Success, "")
+}
+
+func (cs *Coscheduling) PreFilter(ctx context.Context, state *framework.CycleState, pod *v1.Pod) (*framework.PreFilterResult, *framework.Status) {
+	return nil, nil
+}
+
+func (cs *Coscheduling) AfterPreFilter(ctx context.Context, state *framework.CycleState, pod *v1.Pod) *framework.Status {
+	return nil
 }
 
 // PostFilter
