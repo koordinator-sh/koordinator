@@ -465,7 +465,7 @@ func GetRequiredReservationAffinity(pod *corev1.Pod) (*RequiredReservationAffini
 	if err != nil {
 		return nil, err
 	}
-	if len(reservationAffinity.ReservationSelector) == 0 && reservationAffinity.RequiredDuringSchedulingIgnoredDuringExecution == nil {
+	if reservationAffinity == nil {
 		return nil, nil
 	}
 	var selector labels.Selector
