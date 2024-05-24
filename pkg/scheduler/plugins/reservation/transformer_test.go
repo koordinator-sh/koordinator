@@ -322,6 +322,14 @@ func TestRestoreReservation(t *testing.T) {
 				rAllocated: framework.NewResource(nil),
 			},
 		},
+		nodeReservationDiagnosis: map[string]nodeDiagnosisState{
+			node.Name: {
+				nodeName:                 node.Name,
+				ownerMatched:             1,
+				affinityUnmatched:        0,
+				isUnschedulableUnmatched: 0,
+			},
+		},
 	}
 	assert.Equal(t, expectedStat, getStateData(cycleState))
 

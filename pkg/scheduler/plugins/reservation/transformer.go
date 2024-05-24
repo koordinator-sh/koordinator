@@ -61,9 +61,10 @@ func (pl *Plugin) prepareMatchReservationState(ctx context.Context, cycleState *
 	}
 	requiredNodeAffinity := nodeaffinity.GetRequiredNodeAffinity(pod)
 
-	var stateIndex int32
+	var stateIndex, diagnosisIndex int32
 	allNodes := pl.reservationCache.listAllNodes()
 	allNodeReservationStates := make([]*nodeReservationState, len(allNodes))
+	allNodeDiagnosisStates := make([]*nodeDiagnosisState, len(allNodes))
 	allPluginToRestoreState := make([]frameworkext.PluginToReservationRestoreStates, len(allNodes))
 
 	isReservedPod := reservationutil.IsReservePod(pod)
@@ -100,7 +101,12 @@ func (pl *Plugin) prepareMatchReservationState(ctx context.Context, cycleState *
 		}
 
 		var unmatched, matched []*frameworkext.ReservationInfo
-		isUnschedulableUnmatched, affinityUnmatched := 0, 0
+		diagnosisState := &nodeDiagnosisState{
+			nodeName:                 node.Name,
+			ownerMatched:             0,
+			isUnschedulableUnmatched: 0,
+			affinityUnmatched:        0,
+		}
 		status := pl.reservationCache.forEachAvailableReservationOnNode(node.Name, func(rInfo *frameworkext.ReservationInfo) (bool, *framework.Status) {
 			if !rInfo.IsAvailable() || rInfo.ParseError != nil {
 				return true, nil
@@ -112,18 +118,24 @@ func (pl *Plugin) prepareMatchReservationState(ctx context.Context, cycleState *
 				return true, nil
 			}
 
-			if !isReservedPod && rInfo.Match(pod) { // owner matched
-				if rInfo.IsUnschedulable() {
-					isUnschedulableUnmatched++
-				} else if !matchReservationAffinity(node, rInfo, reservationAffinity) {
-					affinityUnmatched++
-				} else {
-					matched = append(matched, rInfo.Clone())
-				}
+			isOwnerMatched := rInfo.Match(pod)
+			isUnschedulable := rInfo.IsUnschedulable()
+			isMatchReservationAffinity := matchReservationAffinity(node, rInfo, reservationAffinity)
+			if !isReservedPod && !isUnschedulable && isOwnerMatched && isMatchReservationAffinity {
+				matched = append(matched, rInfo.Clone())
 
 			} else if len(rInfo.AssignedPods) > 0 {
 				unmatched = append(unmatched, rInfo.Clone())
 			}
+			if isOwnerMatched { // count owner-matched diagnosis state
+				diagnosisState.ownerMatched++
+				if isUnschedulable {
+					diagnosisState.isUnschedulableUnmatched++
+				} else if !isMatchReservationAffinity {
+					diagnosisState.affinityUnmatched++
+				}
+			}
+
 			return true, nil
 		})
 		if !status.IsSuccess() {
@@ -131,6 +143,11 @@ func (pl *Plugin) prepareMatchReservationState(ctx context.Context, cycleState *
 			klog.ErrorS(err, "Failed to forEach reservations on node", "pod", klog.KObj(pod), "node", node.Name)
 			errCh.SendErrorWithCancel(err, cancel)
 			return
+		}
+
+		if diagnosisState.ownerMatched > 0 {
+			idx := atomic.AddInt32(&diagnosisIndex, 1)
+			allNodeDiagnosisStates[idx-1] = diagnosisState
 		}
 
 		if len(matched) == 0 && len(unmatched) == 0 {
@@ -189,12 +206,10 @@ func (pl *Plugin) prepareMatchReservationState(ctx context.Context, cycleState *
 		if len(matched) > 0 || len(unmatched) > 0 {
 			index := atomic.AddInt32(&stateIndex, 1)
 			allNodeReservationStates[index-1] = &nodeReservationState{
-				nodeName:                 node.Name,
-				matched:                  matched,
-				isUnschedulableUnmatched: isUnschedulableUnmatched,
-				affinityUnmatched:        affinityUnmatched,
-				podRequested:             podRequested,
-				rAllocated:               framework.NewResource(rAllocated),
+				nodeName:     node.Name,
+				matched:      matched,
+				podRequested: podRequested,
+				rAllocated:   framework.NewResource(rAllocated),
 			}
 			allPluginToRestoreState[index-1] = pluginToRestoreState
 		}
@@ -208,19 +223,22 @@ func (pl *Plugin) prepareMatchReservationState(ctx context.Context, cycleState *
 
 	allNodeReservationStates = allNodeReservationStates[:stateIndex]
 	allPluginToRestoreState = allPluginToRestoreState[:stateIndex]
+	allNodeDiagnosisStates = allNodeDiagnosisStates[:diagnosisIndex]
 
 	podRequests := resourceapi.PodRequests(pod, resourceapi.PodResourcesOptions{})
 	podRequestResources := framework.NewResource(podRequests)
 	state := &stateData{
-		hasAffinity:           reservationAffinity != nil,
-		podRequests:           podRequests,
-		podRequestsResources:  podRequestResources,
-		preemptible:           map[string]corev1.ResourceList{},
-		preemptibleInRRs:      map[string]map[types.UID]corev1.ResourceList{},
-		nodeReservationStates: map[string]nodeReservationState{},
+		hasAffinity:              reservationAffinity != nil,
+		podRequests:              podRequests,
+		podRequestsResources:     podRequestResources,
+		preemptible:              map[string]corev1.ResourceList{},
+		preemptibleInRRs:         map[string]map[types.UID]corev1.ResourceList{},
+		nodeReservationStates:    map[string]nodeReservationState{},
+		nodeReservationDiagnosis: map[string]nodeDiagnosisState{},
 	}
 	pluginToNodeReservationRestoreState := frameworkext.PluginToNodeReservationRestoreStates{}
-	for index, v := range allNodeReservationStates {
+	for index := range allNodeReservationStates {
+		v := allNodeReservationStates[index]
 		state.nodeReservationStates[v.nodeName] = *v
 		for pluginName, pluginState := range allPluginToRestoreState[index] {
 			if pluginState == nil {
@@ -233,6 +251,10 @@ func (pl *Plugin) prepareMatchReservationState(ctx context.Context, cycleState *
 			}
 			nodeRestoreStates[v.nodeName] = pluginState
 		}
+	}
+	for i := range allNodeDiagnosisStates {
+		v := allNodeDiagnosisStates[i]
+		state.nodeReservationDiagnosis[v.nodeName] = *v
 	}
 	if extender != nil {
 		status := extender.RunReservationExtensionFinalRestoreReservation(ctx, cycleState, pod, pluginToNodeReservationRestoreState)
