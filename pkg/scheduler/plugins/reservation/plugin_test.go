@@ -870,7 +870,7 @@ func Test_filterWithReservations(t *testing.T) {
 					},
 				},
 			},
-			wantStatus: framework.NewStatus(framework.Unschedulable, "Insufficient cpu by reservation"),
+			wantStatus: framework.NewStatus(framework.Unschedulable, "Reservation(s) Insufficient cpu"),
 		},
 		{
 			name: "filter default reservations with preemption",
@@ -1160,7 +1160,74 @@ func Test_filterWithReservations(t *testing.T) {
 					},
 				},
 			},
-			wantStatus: framework.NewStatus(framework.Unschedulable, "Insufficient cpu by reservation"),
+			wantStatus: framework.NewStatus(framework.Unschedulable, "Reservation(s) Insufficient cpu"),
+		},
+		{
+			name: "failed to filter multiple restricted reservations with preempt from node",
+			stateData: &stateData{
+				hasAffinity: true,
+				podRequests: corev1.ResourceList{
+					corev1.ResourceCPU: resource.MustParse("4"),
+				},
+				podRequestsResources: &framework.Resource{
+					MilliCPU: 4 * 1000,
+				},
+				preemptible: map[string]corev1.ResourceList{
+					node.Name: {
+						corev1.ResourceCPU: resource.MustParse("4"),
+					},
+				},
+				preemptibleInRRs: nil,
+				nodeReservationStates: map[string]nodeReservationState{
+					node.Name: {
+						podRequested: &framework.Resource{
+							MilliCPU: 38 * 1000,
+						},
+						rAllocated: &framework.Resource{
+							MilliCPU: 10000,
+						},
+						matched: []*frameworkext.ReservationInfo{
+							{
+								Reservation: &schedulingv1alpha1.Reservation{
+									ObjectMeta: metav1.ObjectMeta{
+										Name: "test-r",
+										UID:  "123456",
+									},
+									Spec: schedulingv1alpha1.ReservationSpec{
+										AllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyRestricted,
+									},
+								},
+								ResourceNames: []corev1.ResourceName{corev1.ResourceCPU},
+								Allocatable: corev1.ResourceList{
+									corev1.ResourceCPU: resource.MustParse("6"),
+								},
+								Allocated: corev1.ResourceList{
+									corev1.ResourceCPU: resource.MustParse("6"),
+								},
+							},
+							{
+								Reservation: &schedulingv1alpha1.Reservation{
+									ObjectMeta: metav1.ObjectMeta{
+										Name: "test-r-1",
+										UID:  "7891011",
+									},
+									Spec: schedulingv1alpha1.ReservationSpec{
+										AllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyRestricted,
+									},
+								},
+								ResourceNames: []corev1.ResourceName{corev1.ResourceCPU},
+								Allocatable: corev1.ResourceList{
+									corev1.ResourceCPU: resource.MustParse("4"),
+								},
+								Allocated: corev1.ResourceList{
+									corev1.ResourceCPU: resource.MustParse("1"),
+								},
+							},
+						},
+					},
+				},
+			},
+			wantStatus: framework.NewStatus(framework.Unschedulable, "Reservation(s) Insufficient cpu", "Reservation(s) Insufficient cpu"),
 		},
 		{
 			name: "failed to filter restricted reservations with preempt from reservation and node",
@@ -1217,7 +1284,7 @@ func Test_filterWithReservations(t *testing.T) {
 					},
 				},
 			},
-			wantStatus: framework.NewStatus(framework.Unschedulable, "Insufficient cpu by reservation"),
+			wantStatus: framework.NewStatus(framework.Unschedulable, "Reservation(s) Insufficient cpu"),
 		},
 		{
 			name: "filter restricted reservations with preempt from reservation and node",
@@ -1762,6 +1829,94 @@ func TestFilterReservation(t *testing.T) {
 			rInfo := frameworkext.NewReservationInfo(tt.targetReservation)
 			status := pl.FilterReservation(context.TODO(), cycleState, pod, rInfo, node.Name)
 			assert.Equal(t, tt.wantStatus, status)
+		})
+	}
+}
+
+func TestPostFilter(t *testing.T) {
+	type args struct {
+		hasStateData             bool
+		hasAffinity              bool
+		nodeReservationDiagnosis map[string]nodeDiagnosisState
+	}
+	tests := []struct {
+		name  string
+		args  args
+		want  *framework.PostFilterResult
+		want1 *framework.Status
+	}{
+		{
+			name: "no reservation filtering",
+			args: args{
+				hasStateData: false,
+			},
+			want:  nil,
+			want1: framework.NewStatus(framework.Unschedulable),
+		},
+		{
+			name: "show reservation owner matched when reservation affinity specified",
+			args: args{
+				hasStateData:             true,
+				hasAffinity:              true,
+				nodeReservationDiagnosis: map[string]nodeDiagnosisState{},
+			},
+			want:  nil,
+			want1: framework.NewStatus(framework.Unschedulable, "0 Reservation(s) matched owner total"),
+		},
+		{
+			name: "show reservation owner matched, unschedulable unmatched",
+			args: args{
+				hasStateData: true,
+				nodeReservationDiagnosis: map[string]nodeDiagnosisState{
+					"test-node-0": {
+						ownerMatched:             3,
+						isUnschedulableUnmatched: 3,
+						affinityUnmatched:        0,
+					},
+					"test-node-1": {
+						ownerMatched:             1,
+						isUnschedulableUnmatched: 1,
+						affinityUnmatched:        0,
+					},
+				},
+			},
+			want:  nil,
+			want1: framework.NewStatus(framework.Unschedulable, "4 Reservation(s) is unschedulable", "4 Reservation(s) matched owner total"),
+		},
+		{
+			name: "show reservation matched owner, unschedulable and affinity unmatched",
+			args: args{
+				hasStateData: true,
+				nodeReservationDiagnosis: map[string]nodeDiagnosisState{
+					"test-node-0": {
+						ownerMatched:             3,
+						isUnschedulableUnmatched: 0,
+						affinityUnmatched:        3,
+					},
+					"test-node-1": {
+						ownerMatched:             2,
+						isUnschedulableUnmatched: 1,
+						affinityUnmatched:        1,
+					},
+				},
+			},
+			want:  nil,
+			want1: framework.NewStatus(framework.Unschedulable, "4 Reservation(s) didn't match affinity rules", "1 Reservation(s) is unschedulable", "5 Reservation(s) matched owner total"),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pl := &Plugin{}
+			cycleState := framework.NewCycleState()
+			if tt.args.hasStateData {
+				cycleState.Write(stateKey, &stateData{
+					hasAffinity:              tt.args.hasAffinity,
+					nodeReservationDiagnosis: tt.args.nodeReservationDiagnosis,
+				})
+			}
+			got, got1 := pl.PostFilter(context.TODO(), cycleState, nil, nil)
+			assert.Equal(t, tt.want, got)
+			assert.Equal(t, tt.want1, got1)
 		})
 	}
 }
