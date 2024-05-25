@@ -219,4 +219,6 @@ type DeviceShareArgs struct {
 	Allocator string
 	// ScoringStrategy selects the device resource scoring strategy.
 	ScoringStrategy *ScoringStrategy
+	// DisableDeviceNUMATopologyAlignment indicates device don't need to align with other resources' numa topology
+	DisableDeviceNUMATopologyAlignment bool
 }

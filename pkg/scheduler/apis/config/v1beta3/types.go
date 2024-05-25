@@ -214,4 +214,6 @@ type DeviceShareArgs struct {
 	Allocator string `json:"allocator,omitempty"`
 	// ScoringStrategy selects the device resource scoring strategy.
 	ScoringStrategy *ScoringStrategy `json:"scoringStrategy,omitempty"`
+	// DisableDeviceNUMATopologyAlignment indicates device don't need to align with other resources' numa topology
+	DisableDeviceNUMATopologyAlignment bool `json:"disableDeviceNUMATopologyAlignment,omitempty"`
 }

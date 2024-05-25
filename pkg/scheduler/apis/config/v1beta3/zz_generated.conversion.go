@@ -163,6 +163,7 @@ func Convert_config_CoschedulingArgs_To_v1beta3_CoschedulingArgs(in *config.Cosc
 func autoConvert_v1beta3_DeviceShareArgs_To_config_DeviceShareArgs(in *DeviceShareArgs, out *config.DeviceShareArgs, s conversion.Scope) error {
 	out.Allocator = in.Allocator
 	out.ScoringStrategy = (*config.ScoringStrategy)(unsafe.Pointer(in.ScoringStrategy))
+	out.DisableDeviceNUMATopologyAlignment = in.DisableDeviceNUMATopologyAlignment
 	return nil
 }
 
@@ -174,6 +175,7 @@ func Convert_v1beta3_DeviceShareArgs_To_config_DeviceShareArgs(in *DeviceShareAr
 func autoConvert_config_DeviceShareArgs_To_v1beta3_DeviceShareArgs(in *config.DeviceShareArgs, out *DeviceShareArgs, s conversion.Scope) error {
 	out.Allocator = in.Allocator
 	out.ScoringStrategy = (*ScoringStrategy)(unsafe.Pointer(in.ScoringStrategy))
+	out.DisableDeviceNUMATopologyAlignment = in.DisableDeviceNUMATopologyAlignment
 	return nil
 }
 

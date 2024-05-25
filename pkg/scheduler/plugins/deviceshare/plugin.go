@@ -67,9 +67,10 @@ var (
 )
 
 type Plugin struct {
-	handle          frameworkext.ExtendedHandle
-	nodeDeviceCache *nodeDeviceCache
-	scorer          *resourceAllocationScorer
+	disableDeviceNUMATopologyAlignment bool
+	handle                             frameworkext.ExtendedHandle
+	nodeDeviceCache                    *nodeDeviceCache
+	scorer                             *resourceAllocationScorer
 }
 
 type preFilterState struct {
@@ -292,8 +293,11 @@ func (p *Plugin) Filter(ctx context.Context, cycleState *framework.CycleState, p
 	restoreState := reservationRestoreState.getNodeState(node.Name)
 	preemptible := appendAllocated(nil, restoreState.mergedUnmatchedUsed, state.preemptibleDevices[node.Name])
 
-	store := topologymanager.GetStore(cycleState)
-	affinity := store.GetAffinity(node.Name)
+	var affinity topologymanager.NUMATopologyHint
+	if !p.disableDeviceNUMATopologyAlignment {
+		store := topologymanager.GetStore(cycleState)
+		affinity = store.GetAffinity(nodeInfo.Node().Name)
+	}
 
 	allocator := &AutopilotAllocator{
 		state:      state,
@@ -301,6 +305,9 @@ func (p *Plugin) Filter(ctx context.Context, cycleState *framework.CycleState, p
 		node:       node,
 		pod:        pod,
 		numaNodes:  affinity.NUMANodeAffinity,
+	}
+	if !p.disableDeviceNUMATopologyAlignment {
+		allocator.numaNodes = nil
 	}
 
 	nodeDeviceInfo.lock.RLock()
@@ -354,8 +361,11 @@ func (p *Plugin) FilterReservation(ctx context.Context, cycleState *framework.Cy
 		return nil
 	}
 
-	store := topologymanager.GetStore(cycleState)
-	affinity := store.GetAffinity(nodeInfo.Node().Name)
+	var affinity topologymanager.NUMATopologyHint
+	if !p.disableDeviceNUMATopologyAlignment {
+		store := topologymanager.GetStore(cycleState)
+		affinity = store.GetAffinity(nodeInfo.Node().Name)
+	}
 
 	allocator := &AutopilotAllocator{
 		state:      state,
@@ -393,8 +403,11 @@ func (p *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState, 
 		return nil
 	}
 
-	store := topologymanager.GetStore(cycleState)
-	affinity := store.GetAffinity(nodeInfo.Node().Name)
+	var affinity topologymanager.NUMATopologyHint
+	if !p.disableDeviceNUMATopologyAlignment {
+		store := topologymanager.GetStore(cycleState)
+		affinity = store.GetAffinity(nodeInfo.Node().Name)
+	}
 
 	allocator := &AutopilotAllocator{
 		state:      state,
@@ -559,8 +572,9 @@ func New(obj runtime.Object, handle framework.Handle) (framework.Plugin, error) 
 	go deviceCache.gcNodeDevice(context.TODO(), handle.SharedInformerFactory(), defaultGCPeriod)
 
 	return &Plugin{
-		handle:          extendedHandle,
-		nodeDeviceCache: deviceCache,
-		scorer:          scorePlugin(args),
+		handle:                             extendedHandle,
+		nodeDeviceCache:                    deviceCache,
+		scorer:                             scorePlugin(args),
+		disableDeviceNUMATopologyAlignment: args.DisableDeviceNUMATopologyAlignment,
 	}, nil
 }

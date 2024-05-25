@@ -31,6 +31,9 @@ import (
 )
 
 func (p *Plugin) GetPodTopologyHints(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) (map[string][]topologymanager.NUMATopologyHint, *framework.Status) {
+	if p.disableDeviceNUMATopologyAlignment {
+		return nil, nil
+	}
 	state, status := getPreFilterState(cycleState)
 	if !status.IsSuccess() {
 		return nil, status
@@ -55,6 +58,9 @@ func (p *Plugin) GetPodTopologyHints(ctx context.Context, cycleState *framework.
 }
 
 func (p *Plugin) Allocate(ctx context.Context, cycleState *framework.CycleState, affinity topologymanager.NUMATopologyHint, pod *corev1.Pod, nodeName string) *framework.Status {
+	if p.disableDeviceNUMATopologyAlignment {
+		return nil
+	}
 	state, status := getPreFilterState(cycleState)
 	if !status.IsSuccess() {
 		return status
