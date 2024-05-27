@@ -246,7 +246,6 @@ require (
 )
 
 replace (
-	github.com/AliyunContainerService/terway-apis => gitlab.alibaba-inc.com/cos/terway-apis v0.1.1
 	// github.com/containerd/ttrpc => github.com/containerd/ttrpc v1.1.0
 	github.com/go-logr/logr => github.com/go-logr/logr v1.2.0
 	github.com/gophercloud/gophercloud => github.com/gophercloud/gophercloud v0.1.0
@@ -256,11 +255,6 @@ replace (
 	github.com/grpc-ecosystem/grpc-gateway/v2 => github.com/grpc-ecosystem/grpc-gateway/v2 v2.7.0
 	github.com/koordinator-sh/apis => github.com/koordinator-sh/apis v1.2.0
 	github.com/prometheus/prometheus => github.com/prometheus/prometheus v0.39.2
-	gitlab.alibaba-inc.com/cache/api => gitlab.alibaba-inc.com/cache/api v0.1.5-0.20240308092105-65e5b96f60ab
-	gitlab.alibaba-inc.com/cos/unified-resource-api => gitlab.alibaba-inc.com/cos/unified-resource-api v1.22.15-8.0.20240308085936-5f879bf29db5
-	gitlab.alibaba-inc.com/serverlessinfra/dummy-workload => gitlab.alibaba-inc.com/serverlessinfra/dummy-workload v1.0.2-0.20240308091048-eae05b39e593
-	gitlab.alibaba-inc.com/unischeduler/api => gitlab.alibaba-inc.com/unischeduler/api v0.0.3-0.20240308091437-58bf0e6c4d47
-	gitlab.alibaba-inc.com/virtcontainers/agent-protocols => gitlab.alibaba-inc.com/koordinator-sh/virtcontainers-protocols v0.0.0-20240313131222-81245f6955f2 // replace for exclude github.com/gogo/protobuf
 	golang.org/x/crypto => golang.org/x/crypto v0.0.0-20210711020723-a769d52b0f97
 	golang.org/x/time => golang.org/x/time v0.3.0
 	google.golang.org/api => google.golang.org/api v0.114.0
