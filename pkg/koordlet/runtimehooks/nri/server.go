@@ -25,6 +25,7 @@ import (
 
 	"github.com/containerd/nri/pkg/api"
 	"github.com/containerd/nri/pkg/stub"
+	"go.uber.org/atomic"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/yaml"
@@ -41,6 +42,8 @@ type nriConfig struct {
 }
 
 type Options struct {
+	NriPluginName     string
+	NriPluginIdx      string
 	NriSocketPath     string
 	NriConnectTimeout time.Duration
 	// support stop running other hooks once someone failed
@@ -62,26 +65,25 @@ func (o Options) Validate() error {
 }
 
 type NriServer struct {
-	cfg     nriConfig
-	stub    stub.Stub
-	mask    stub.EventMask
-	options Options // server options
+	cfg      nriConfig
+	stub     stub.Stub
+	mask     stub.EventMask
+	options  Options       // server options
+	stubOpts []stub.Option // nri stub options
+	stopped  *atomic.Bool  // if false, the stub will try to reconnect when stub.OnClose is invoked
 }
 
 const (
-	events     = "RunPodSandbox,RemovePodSandbox,CreateContainer,UpdateContainer"
-	pluginName = "koordlet_nri"
-	pluginIdx  = "00"
+	events = "RunPodSandbox,RemovePodSandbox,CreateContainer,UpdateContainer"
 )
 
 var (
-	_    = stub.ConfigureInterface(&NriServer{})
-	_    = stub.SynchronizeInterface(&NriServer{})
-	_    = stub.RunPodInterface(&NriServer{})
-	_    = stub.RemovePodInterface(&NriServer{})
-	_    = stub.CreateContainerInterface(&NriServer{})
-	_    = stub.UpdateContainerInterface(&NriServer{})
-	opts []stub.Option
+	_ = stub.ConfigureInterface(&NriServer{})
+	_ = stub.SynchronizeInterface(&NriServer{})
+	_ = stub.RunPodInterface(&NriServer{})
+	_ = stub.RemovePodInterface(&NriServer{})
+	_ = stub.CreateContainerInterface(&NriServer{})
+	_ = stub.UpdateContainerInterface(&NriServer{})
 )
 
 func NewNriServer(opt Options) (*NriServer, error) {
@@ -90,17 +92,23 @@ func NewNriServer(opt Options) (*NriServer, error) {
 		return nil, fmt.Errorf("failed to validate nri server, err: %w", err)
 	}
 
-	opts = append(opts, stub.WithPluginName(pluginName))
-	opts = append(opts, stub.WithPluginIdx(pluginIdx))
-	opts = append(opts, stub.WithSocketPath(filepath.Join(system.Conf.VarRunRootDir, opt.NriSocketPath)))
-	p := &NriServer{options: opt}
+	stubOpts := []stub.Option{
+		stub.WithPluginName(opt.NriPluginName),
+		stub.WithPluginIdx(opt.NriPluginIdx),
+		stub.WithSocketPath(filepath.Join(system.Conf.VarRunRootDir, opt.NriSocketPath)),
+	}
+	p := &NriServer{
+		options:  opt,
+		stubOpts: stubOpts,
+		stopped:  atomic.NewBool(false),
+	}
 	if p.mask, err = api.ParseEventMask(events); err != nil {
 		klog.Errorf("failed to parse events %v", err)
 		return p, err
 	}
 	p.cfg.Events = strings.Split(events, ",")
 
-	if p.stub, err = stub.New(p, append(opts, stub.WithOnClose(p.onClose))...); err != nil {
+	if p.stub, err = stub.New(p, append(p.stubOpts, stub.WithOnClose(p.onClose))...); err != nil {
 		klog.Errorf("failed to create plugin stub: %v", err)
 		return nil, err
 	}
@@ -135,8 +143,13 @@ func (p *NriServer) Start() error {
 	case <-success:
 		return nil
 	case <-errorChan:
-		return fmt.Errorf("nri start fail")
+		return fmt.Errorf("nri start fail, err: %w", err)
 	}
+}
+
+func (p *NriServer) Stop() {
+	p.stopped.Store(true)
+	p.stub.Stop()
 }
 
 func (p *NriServer) Configure(config, runtime, version string) (stub.EventMask, error) {
@@ -248,13 +261,17 @@ func (p *NriServer) RemovePodSandbox(pod *api.PodSandbox) error {
 func (p *NriServer) onClose() {
 	//TODO: consider the pod status during restart
 	retryFunc := func() (bool, error) {
-		stub, err := stub.New(p, append(opts, stub.WithOnClose(p.onClose))...)
+		if p.stopped.Load() { // if set to stopped, no longer reconnect
+			return true, nil
+		}
+
+		newStub, err := stub.New(p, append(p.stubOpts, stub.WithOnClose(p.onClose))...)
 		if err != nil {
 			klog.Errorf("failed to create plugin stub: %v", err)
 			return false, nil
 		}
 
-		p.stub = stub
+		p.stub = newStub
 		err = p.Start()
 		if err != nil {
 			completeNriSocketPath := filepath.Join(system.Conf.VarRunRootDir, p.options.NriSocketPath)
@@ -263,7 +280,7 @@ func (p *NriServer) onClose() {
 				return false, err
 			}
 			//TODO: check the error type, if nri server disable nri, we should also break backoff
-			klog.Warningf("nri reconnect failed")
+			klog.Warningf("nri reconnect failed, err: %s", err)
 			return false, nil
 		} else {
 			klog.V(4).Info("nri server restart success")

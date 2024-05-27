@@ -114,6 +114,8 @@ func NewRuntimeHook(si statesinformer.StatesInformer, cfg *Config) (RuntimeHook,
 	var nriServer *nri.NriServer
 	if cfg.RuntimeHooksNRI {
 		nriServerOptions := nri.Options{
+			NriPluginName:       cfg.RuntimeHooksNRIPluginName,
+			NriPluginIdx:        cfg.RuntimeHooksNRIPluginIndex,
 			NriSocketPath:       cfg.RuntimeHooksNRISocketPath,
 			NriConnectTimeout:   cfg.RuntimeHooksNRIConnectTimeout,
 			PluginFailurePolicy: pluginFailurePolicy,
