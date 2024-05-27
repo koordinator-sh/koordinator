@@ -1219,8 +1219,7 @@ func schedulePod(ctx context.Context, suit *pluginTestSuit, fwk framework.Framew
 	}
 
 	// Run "prefilter" plugins.
-	suit.plugin.(*Coscheduling).BeforePreFilter(ctx, state, pod)
-	_, s := fwk.RunPreFilterPlugins(ctx, state, pod)
+	_, _, s := suit.plugin.(*Coscheduling).BeforePreFilter(ctx, state, pod)
 	if !s.IsSuccess() {
 		info.result = "PreFiler"
 	} else if injectFilterError {
