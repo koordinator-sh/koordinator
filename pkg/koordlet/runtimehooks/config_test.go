@@ -43,6 +43,8 @@ func Test_NewDefaultConfig(t *testing.T) {
 		RuntimeHooksNRIBackOffSteps:     math.MaxInt32,
 		RuntimeHooksNRIBackOffFactor:    2,
 		RuntimeHooksNRISocketPath:       "nri/nri.sock",
+		RuntimeHooksNRIPluginName:       "koordlet_nri",
+		RuntimeHooksNRIPluginIndex:      "00",
 		RuntimeHookReconcileInterval:    10 * time.Second,
 	}
 	defaultConfig := NewDefaultConfig()

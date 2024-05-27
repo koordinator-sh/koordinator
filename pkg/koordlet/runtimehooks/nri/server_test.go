@@ -67,11 +67,12 @@ func TestNriServer_Start(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			name: "stub is nil",
+			name: "nri socket not found",
 			fields: fields{
 				stub: nil,
 				mask: api.EventMask(1),
 				options: Options{
+					NriSocketPath:       "nri/nri.sock",
 					NriConnectTimeout:   time.Second,
 					PluginFailurePolicy: "Ignore",
 					DisableStages:       getDisableStagesMap([]string{"PreRunPodSandbox"}),
@@ -81,18 +82,33 @@ func TestNriServer_Start(t *testing.T) {
 			wantErr: true,
 		},
 		{
+			name: "stub is nil",
 			fields: fields{
 				stub: nil,
+				mask: api.EventMask(1),
+				options: Options{
+					NriSocketPath:       "",
+					NriConnectTimeout:   time.Second,
+					PluginFailurePolicy: "Ignore",
+					DisableStages:       getDisableStagesMap([]string{"PreRunPodSandbox"}),
+					Executor:            nil,
+				},
 			},
+			wantErr: true,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			helper := system.NewFileTestUtil(t)
+			defer helper.Cleanup()
 
 			s := &NriServer{
 				stub:    tt.fields.stub,
 				mask:    tt.fields.mask,
 				options: tt.fields.options,
+			}
+			if s.stub != nil {
+				defer s.Stop()
 			}
 
 			if err := s.Start(); (err != nil) != tt.wantErr {
@@ -122,6 +138,8 @@ func TestNewNriServer(t *testing.T) {
 				isNriSocketExist: false,
 			},
 			args: args{opt: Options{
+				NriPluginName:       "test_newNriServer_0",
+				NriPluginIdx:        "00",
 				NriSocketPath:       "nri/nri.sock",
 				PluginFailurePolicy: "Ignore",
 				DisableStages:       getDisableStagesMap([]string{"PreRunPodSandbox"}),
@@ -135,6 +153,8 @@ func TestNewNriServer(t *testing.T) {
 				isNriSocketExist: true,
 			},
 			args: args{opt: Options{
+				NriPluginName:       "test_newNriServer_1",
+				NriPluginIdx:        "01",
 				NriSocketPath:       "nri/nri.sock",
 				PluginFailurePolicy: "Ignore",
 				DisableStages:       getDisableStagesMap([]string{"PreRunPodSandbox"}),
@@ -150,7 +170,10 @@ func TestNewNriServer(t *testing.T) {
 				helper.WriteFileContents("nri/nri.sock", "")
 			}
 
-			_, err := NewNriServer(tt.args.opt)
+			s, err := NewNriServer(tt.args.opt)
+			if s != nil && s.stub != nil {
+				defer s.Stop()
+			}
 			if (err != nil) != tt.wantErr {
 				t.Errorf("NewNriServer() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -596,6 +619,9 @@ func TestNriServer_RemovePodSandbox(t *testing.T) {
 				stub:    tt.fields.stub,
 				mask:    tt.fields.mask,
 				options: tt.fields.options,
+			}
+			if p.stub != nil {
+				defer p.Stop()
 			}
 			if tt.fields.plugin != nil {
 				tt.fields.plugin.Register(hooks.Options{})
