@@ -536,6 +536,72 @@ func TestPluginCalculate(t *testing.T) {
 			},
 		},
 	}
+	deviceMissingLabels := &schedulingv1alpha1.Device{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   testNode.Name,
+			Labels: nil,
+		},
+		Spec: schedulingv1alpha1.DeviceSpec{
+			Devices: []schedulingv1alpha1.DeviceInfo{
+				{
+					UUID:   "1",
+					Minor:  pointer.Int32(0),
+					Health: true,
+					Type:   schedulingv1alpha1.GPU,
+					Resources: map[corev1.ResourceName]resource.Quantity{
+						extension.ResourceGPUCore:        *resource.NewQuantity(100, resource.DecimalSI),
+						extension.ResourceGPUMemory:      *resource.NewQuantity(8000, resource.DecimalSI),
+						extension.ResourceGPUMemoryRatio: *resource.NewQuantity(100, resource.DecimalSI),
+					},
+				},
+				{
+					UUID:   "2",
+					Minor:  pointer.Int32(1),
+					Health: true,
+					Type:   schedulingv1alpha1.GPU,
+					Resources: map[corev1.ResourceName]resource.Quantity{
+						extension.ResourceGPUCore:        *resource.NewQuantity(100, resource.DecimalSI),
+						extension.ResourceGPUMemory:      *resource.NewQuantity(10000, resource.DecimalSI),
+						extension.ResourceGPUMemoryRatio: *resource.NewQuantity(100, resource.DecimalSI),
+					},
+				},
+			},
+		},
+	}
+	deviceMissingGPURelatedLabels := &schedulingv1alpha1.Device{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: testNode.Name,
+			Labels: map[string]string{
+				"anything": "anything",
+			},
+		},
+		Spec: schedulingv1alpha1.DeviceSpec{
+			Devices: []schedulingv1alpha1.DeviceInfo{
+				{
+					UUID:   "1",
+					Minor:  pointer.Int32(0),
+					Health: true,
+					Type:   schedulingv1alpha1.GPU,
+					Resources: map[corev1.ResourceName]resource.Quantity{
+						extension.ResourceGPUCore:        *resource.NewQuantity(100, resource.DecimalSI),
+						extension.ResourceGPUMemory:      *resource.NewQuantity(8000, resource.DecimalSI),
+						extension.ResourceGPUMemoryRatio: *resource.NewQuantity(100, resource.DecimalSI),
+					},
+				},
+				{
+					UUID:   "2",
+					Minor:  pointer.Int32(1),
+					Health: true,
+					Type:   schedulingv1alpha1.GPU,
+					Resources: map[corev1.ResourceName]resource.Quantity{
+						extension.ResourceGPUCore:        *resource.NewQuantity(100, resource.DecimalSI),
+						extension.ResourceGPUMemory:      *resource.NewQuantity(10000, resource.DecimalSI),
+						extension.ResourceGPUMemoryRatio: *resource.NewQuantity(100, resource.DecimalSI),
+					},
+				},
+			},
+		},
+	}
 	type fields struct {
 		client ctrlclient.Client
 	}
@@ -647,6 +713,70 @@ func TestPluginCalculate(t *testing.T) {
 						extension.LabelGPUDriverVersion: "480",
 					},
 					Message: UpdateLabelsMsg,
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "calculate device resources correctly",
+			fields: fields{
+				client: fake.NewClientBuilder().WithScheme(testScheme).WithObjects(testNode, deviceMissingLabels).Build(),
+			},
+			args: args{
+				node: testNode,
+			},
+			want: []framework.ResourceItem{
+				{
+					Name:     extension.ResourceGPU,
+					Quantity: resource.NewQuantity(200, resource.DecimalSI),
+					Message:  UpdateResourcesMsg,
+				},
+				{
+					Name:     extension.ResourceGPUCore,
+					Quantity: resource.NewQuantity(200, resource.DecimalSI),
+					Message:  UpdateResourcesMsg,
+				},
+				{
+					Name:     extension.ResourceGPUMemory,
+					Quantity: resource.NewScaledQuantity(18, 3),
+					Message:  UpdateResourcesMsg,
+				},
+				{
+					Name:     extension.ResourceGPUMemoryRatio,
+					Quantity: resource.NewQuantity(200, resource.DecimalSI),
+					Message:  UpdateResourcesMsg,
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "calculate device resources correctly",
+			fields: fields{
+				client: fake.NewClientBuilder().WithScheme(testScheme).WithObjects(testNode, deviceMissingGPURelatedLabels).Build(),
+			},
+			args: args{
+				node: testNode,
+			},
+			want: []framework.ResourceItem{
+				{
+					Name:     extension.ResourceGPU,
+					Quantity: resource.NewQuantity(200, resource.DecimalSI),
+					Message:  UpdateResourcesMsg,
+				},
+				{
+					Name:     extension.ResourceGPUCore,
+					Quantity: resource.NewQuantity(200, resource.DecimalSI),
+					Message:  UpdateResourcesMsg,
+				},
+				{
+					Name:     extension.ResourceGPUMemory,
+					Quantity: resource.NewScaledQuantity(18, 3),
+					Message:  UpdateResourcesMsg,
+				},
+				{
+					Name:     extension.ResourceGPUMemoryRatio,
+					Quantity: resource.NewQuantity(200, resource.DecimalSI),
+					Message:  UpdateResourcesMsg,
 				},
 			},
 			wantErr: false,
