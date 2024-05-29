@@ -1336,6 +1336,13 @@ func Test_generatePodEventOnReservationLevel(t *testing.T) {
 			wantIsReserve: true,
 		},
 		{
+			name: "reservation gpu resource not enough",
+			errorMsg: "0/21 nodes are available: 1 Insufficient nvidia.com/gpu by node, 4 Reservation(s) Insufficient nvidia.com/gpu. " +
+				"1 Reservation(s) is unschedulable, 5 Reservation(s) matched owner total",
+			wantMsg:       "0/5 reservations are available: 4 Reservation(s) Insufficient nvidia.com/gpu, 1 Reservation(s) is unschedulable.",
+			wantIsReserve: true,
+		},
+		{
 			name: "pod topology spread constraints missing required label errors",
 			errorMsg: "0/5 nodes are available: 3 node(s) didn't match pod topology spread constraints (missing required label)," +
 				"1 Insufficient cpu, 1 Insufficient memory, 2 Reservation(s) Insufficient cpu, 1 Reservation(s) Insufficient memory. " +
