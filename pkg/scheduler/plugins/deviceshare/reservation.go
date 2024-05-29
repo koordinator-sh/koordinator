@@ -238,8 +238,8 @@ func (p *Plugin) tryAllocateFromReservation(
 					hasSatisfiedReservation = true
 					break
 				}
-				reservationReasons = append(reservationReasons, status)
 			}
+			reservationReasons = append(reservationReasons, status)
 		}
 	}
 	if !hasSatisfiedReservation && requiredFromReservation {
