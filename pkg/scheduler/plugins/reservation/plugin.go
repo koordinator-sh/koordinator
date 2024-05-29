@@ -589,6 +589,7 @@ func (pl *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState,
 		return nil
 	}
 
+	state := getStateData(cycleState)
 	nominatedReservation := pl.handle.GetReservationNominator().GetNominatedReservation(pod, nodeName)
 	if nominatedReservation == nil {
 		// The scheduleOne skip scores and reservation nomination if there is only one node available.
@@ -598,6 +599,9 @@ func (pl *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState,
 			return status
 		}
 		if nominatedReservation == nil {
+			if state.hasAffinity {
+				return framework.NewStatus(framework.Unschedulable, ErrReasonReservationAffinity)
+			}
 			klog.V(5).Infof("Skip reserve with reservation since there are no matched reservations, pod %v, node: %v", klog.KObj(pod), nodeName)
 			return nil
 		}
@@ -609,8 +613,6 @@ func (pl *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState,
 		klog.ErrorS(err, "Failed to assume pod in reservationCache", "pod", klog.KObj(pod), "reservation", klog.KObj(nominatedReservation))
 		return framework.AsStatus(err)
 	}
-
-	state := getStateData(cycleState)
 	state.assumed = nominatedReservation.Clone()
 	klog.V(4).InfoS("Reserve pod to node with reservations", "pod", klog.KObj(pod), "node", nodeName, "assumed", klog.KObj(nominatedReservation))
 	return nil
@@ -647,6 +649,9 @@ func (pl *Plugin) PreBind(ctx context.Context, cycleState *framework.CycleState,
 
 	state := getStateData(cycleState)
 	if state.assumed == nil {
+		if state.hasAffinity {
+			return framework.NewStatus(framework.Unschedulable, ErrReasonReservationAffinity)
+		}
 		klog.V(5).Infof("Skip the Reservation PreBind since no reservation allocated for the pod %s on node %s", klog.KObj(pod), nodeName)
 		return nil
 	}
