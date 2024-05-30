@@ -105,8 +105,8 @@ func (r *aggregateResult) AddSeries(series promstorage.Series) error {
 	}
 	it := series.Iterator()
 	for it.Next() {
-		if it.Err() != nil {
-			return it.Err()
+		if err := it.Err(); err != nil {
+			return err
 		}
 		t, v := it.At()
 		r.points = append(r.points, &Point{
