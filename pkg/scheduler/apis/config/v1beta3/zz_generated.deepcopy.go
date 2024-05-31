@@ -209,6 +209,11 @@ func (in *LoadAwareSchedulingArgs) DeepCopyInto(out *LoadAwareSchedulingArgs) {
 		*out = new(int64)
 		**out = **in
 	}
+	if in.EnableScheduleWhenNodeMetricsExpired != nil {
+		in, out := &in.EnableScheduleWhenNodeMetricsExpired, &out.EnableScheduleWhenNodeMetricsExpired
+		*out = new(bool)
+		**out = **in
+	}
 	if in.ResourceWeights != nil {
 		in, out := &in.ResourceWeights, &out.ResourceWeights
 		*out = make(map[corev1.ResourceName]int64, len(*in))

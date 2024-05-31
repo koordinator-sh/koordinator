@@ -183,7 +183,7 @@ func TestFilterExpiredNodeMetric(t *testing.T) {
 					},
 				},
 			},
-			wantStatus: nil,
+			wantStatus: framework.NewStatus(framework.Unschedulable, ErrReasonNodeMetricExpired),
 		},
 		{
 			name: "filter unhealthy nodeMetric with expired updateTime",
@@ -202,13 +202,172 @@ func TestFilterExpiredNodeMetric(t *testing.T) {
 					},
 				},
 			},
-			wantStatus: nil,
+			wantStatus: framework.NewStatus(framework.Unschedulable, ErrReasonNodeMetricExpired),
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var v1beta3args v1beta3.LoadAwareSchedulingArgs
 			v1beta3.SetDefaults_LoadAwareSchedulingArgs(&v1beta3args)
+			var loadAwareSchedulingArgs config.LoadAwareSchedulingArgs
+			err := v1beta3.Convert_v1beta3_LoadAwareSchedulingArgs_To_config_LoadAwareSchedulingArgs(&v1beta3args, &loadAwareSchedulingArgs, nil)
+			assert.NoError(t, err)
+
+			koordClientSet := koordfake.NewSimpleClientset()
+			koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
+			extenderFactory, _ := frameworkext.NewFrameworkExtenderFactory(
+				frameworkext.WithKoordinatorClientSet(koordClientSet),
+				frameworkext.WithKoordinatorSharedInformerFactory(koordSharedInformerFactory),
+			)
+			proxyNew := frameworkext.PluginFactoryProxy(extenderFactory, New)
+
+			cs := kubefake.NewSimpleClientset()
+			informerFactory := informers.NewSharedInformerFactory(cs, 0)
+
+			nodes := []*corev1.Node{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: tt.nodeMetric.Name,
+					},
+				},
+			}
+
+			snapshot := newTestSharedLister(nil, nodes)
+			registeredPlugins := []schedulertesting.RegisterPluginFunc{
+				schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
+				schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
+			}
+			fh, err := schedulertesting.NewFramework(context.TODO(), registeredPlugins, "koord-scheduler",
+				frameworkruntime.WithClientSet(cs),
+				frameworkruntime.WithInformerFactory(informerFactory),
+				frameworkruntime.WithSnapshotSharedLister(snapshot),
+			)
+			assert.Nil(t, err)
+
+			p, err := proxyNew(&loadAwareSchedulingArgs, fh)
+			assert.NotNil(t, p)
+			assert.Nil(t, err)
+
+			_, err = koordClientSet.SloV1alpha1().NodeMetrics().Create(context.TODO(), tt.nodeMetric, metav1.CreateOptions{})
+			assert.NoError(t, err)
+
+			koordSharedInformerFactory.Start(context.TODO().Done())
+			koordSharedInformerFactory.WaitForCacheSync(context.TODO().Done())
+
+			cycleState := framework.NewCycleState()
+
+			nodeInfo, err := snapshot.Get(tt.nodeMetric.Name)
+			assert.NoError(t, err)
+			assert.NotNil(t, nodeInfo)
+
+			status := p.(*Plugin).Filter(context.TODO(), cycleState, &corev1.Pod{}, nodeInfo)
+			assert.True(t, tt.wantStatus.Equal(status), "want status: %s, but got %s", tt.wantStatus.Message(), status.Message())
+		})
+	}
+}
+
+func TestEnableScheduleWhenNodeMetricsExpired(t *testing.T) {
+	tests := []struct {
+		name                                 string
+		nodeMetric                           *slov1alpha1.NodeMetric
+		enableScheduleWhenNodeMetricsExpired *bool
+		wantStatus                           *framework.Status
+	}{
+		{
+			name: "filter healthy nodeMetrics",
+			nodeMetric: &slov1alpha1.NodeMetric{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node-1",
+				},
+				Spec: slov1alpha1.NodeMetricSpec{
+					CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
+						ReportIntervalSeconds: pointer.Int64(60),
+					},
+				},
+				Status: slov1alpha1.NodeMetricStatus{
+					UpdateTime: &metav1.Time{
+						Time: time.Now(),
+					},
+				},
+			},
+			wantStatus: nil,
+		},
+		{
+			name: "enable scheduling when nodeMetric with nil updateTime",
+			nodeMetric: &slov1alpha1.NodeMetric{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node-1",
+				},
+				Spec: slov1alpha1.NodeMetricSpec{
+					CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
+						ReportIntervalSeconds: pointer.Int64(60),
+					},
+				},
+			},
+			enableScheduleWhenNodeMetricsExpired: pointer.Bool(true),
+			wantStatus:                           nil,
+		},
+		{
+			name: "enable scheduling when nodeMetric with expired updateTime",
+			nodeMetric: &slov1alpha1.NodeMetric{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node-1",
+				},
+				Spec: slov1alpha1.NodeMetricSpec{
+					CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
+						ReportIntervalSeconds: pointer.Int64(60),
+					},
+				},
+				Status: slov1alpha1.NodeMetricStatus{
+					UpdateTime: &metav1.Time{
+						Time: time.Now().Add(-180 * time.Second),
+					},
+				},
+			},
+			enableScheduleWhenNodeMetricsExpired: pointer.Bool(true),
+			wantStatus:                           nil,
+		},
+		{
+			name: "disable scheduling when nodeMetric with nil updateTime",
+			nodeMetric: &slov1alpha1.NodeMetric{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node-1",
+				},
+				Spec: slov1alpha1.NodeMetricSpec{
+					CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
+						ReportIntervalSeconds: pointer.Int64(60),
+					},
+				},
+			},
+			enableScheduleWhenNodeMetricsExpired: pointer.Bool(false),
+			wantStatus:                           framework.NewStatus(framework.Unschedulable, ErrReasonNodeMetricExpired),
+		},
+		{
+			name: "disable scheduling when nodeMetric with expired updateTime",
+			nodeMetric: &slov1alpha1.NodeMetric{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node-1",
+				},
+				Spec: slov1alpha1.NodeMetricSpec{
+					CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
+						ReportIntervalSeconds: pointer.Int64(60),
+					},
+				},
+				Status: slov1alpha1.NodeMetricStatus{
+					UpdateTime: &metav1.Time{
+						Time: time.Now().Add(-180 * time.Second),
+					},
+				},
+			},
+			enableScheduleWhenNodeMetricsExpired: pointer.Bool(false),
+			wantStatus:                           framework.NewStatus(framework.Unschedulable, ErrReasonNodeMetricExpired),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var v1beta3args v1beta3.LoadAwareSchedulingArgs
+			v1beta3.SetDefaults_LoadAwareSchedulingArgs(&v1beta3args)
+			v1beta3args.EnableScheduleWhenNodeMetricsExpired = tt.enableScheduleWhenNodeMetricsExpired
 			var loadAwareSchedulingArgs config.LoadAwareSchedulingArgs
 			err := v1beta3.Convert_v1beta3_LoadAwareSchedulingArgs_To_config_LoadAwareSchedulingArgs(&v1beta3args, &loadAwareSchedulingArgs, nil)
 			assert.NoError(t, err)

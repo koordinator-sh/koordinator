@@ -36,6 +36,8 @@ type LoadAwareSchedulingArgs struct {
 	// When NodeMetrics expired, the node is considered abnormal.
 	// Default is 180 seconds.
 	NodeMetricExpirationSeconds *int64 `json:"nodeMetricExpirationSeconds,omitempty"`
+	// EnableScheduleWhenNodeMetricsExpired Indicates whether nodes with expired nodeMetrics are allowed to schedule pods.
+	EnableScheduleWhenNodeMetricsExpired *bool `json:"enableScheduleWhenNodeMetricsExpired,omitempty"`
 	// ResourceWeights indicates the weights of resources.
 	// The weights of CPU and Memory are both 1 by default.
 	ResourceWeights map[corev1.ResourceName]int64 `json:"resourceWeights,omitempty"`
