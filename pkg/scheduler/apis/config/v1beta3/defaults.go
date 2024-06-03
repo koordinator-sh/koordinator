@@ -78,6 +78,9 @@ func SetDefaults_LoadAwareSchedulingArgs(obj *LoadAwareSchedulingArgs) {
 	if obj.FilterExpiredNodeMetrics == nil {
 		obj.FilterExpiredNodeMetrics = pointer.Bool(true)
 	}
+	if obj.EnableScheduleWhenNodeMetricsExpired == nil {
+		obj.EnableScheduleWhenNodeMetricsExpired = pointer.Bool(false)
+	}
 	if obj.NodeMetricExpirationSeconds == nil {
 		obj.NodeMetricExpirationSeconds = pointer.Int64(defaultNodeMetricExpirationSeconds)
 	}
