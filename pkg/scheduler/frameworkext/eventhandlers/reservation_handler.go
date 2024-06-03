@@ -169,7 +169,11 @@ func generatePodEventOnReservationLevel(errorMsg string) (string, bool) {
 			}
 		} else if reserveDetailRe.MatchString(trimItem) {
 			// not total item, append to details, e.g. " 1 Reservation(s) ..."
-			resultDetails = append(resultDetails, trimItem)
+
+			// for 1 Reservation(s) Insufficient nvidia, replace nvidia with nvidia.com/gpu
+			// TODO support other extend resource fields like kubernetes.io/batch-cpu
+			itemReplaced := strings.Replace(trimItem, "nvidia", "nvidia.com/gpu", -1)
+			resultDetails = append(resultDetails, itemReplaced)
 		} else {
 			// other node items, record affinity errors on reservation level as:
 			// "at least 3 didn't match pod topology spread constraints Reservation(s)"
