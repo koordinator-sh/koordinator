@@ -58,6 +58,7 @@ type cpuEvictor struct {
 	metricCache           metriccache.MetricCache
 	evictor               *framework.Evictor
 	lastEvictTime         time.Time
+	onlyEvictByAPI        bool
 }
 
 func New(opt *framework.Options) framework.QOSStrategy {
@@ -68,6 +69,7 @@ func New(opt *framework.Options) framework.QOSStrategy {
 		statesInformer:        opt.StatesInformer,
 		metricCache:           opt.MetricCache,
 		lastEvictTime:         time.Now(),
+		onlyEvictByAPI:        opt.Config.OnlyEvictByAPI,
 	}
 }
 
@@ -295,24 +297,30 @@ func (c *cpuEvictor) killAndEvictBEPodsRelease(node *corev1.Node, bePodInfos []*
 		node.Name, cpuNeedMilliRelease)
 
 	cpuMilliReleased := int64(0)
-	var killedPods []*corev1.Pod
+	hasKillPods := false
 	for _, bePod := range bePodInfos {
 		if cpuMilliReleased >= cpuNeedMilliRelease {
 			break
 		}
 
-		podKillMsg := fmt.Sprintf("%s, kill pod: %s", message, util.GetPodKey(bePod.pod))
-		helpers.KillContainers(bePod.pod, podKillMsg)
-
-		killedPods = append(killedPods, bePod.pod)
-		cpuMilliReleased = cpuMilliReleased + bePod.milliRequest
-
-		klog.V(5).Infof("cpuEvict pick pod %s to evict", util.GetPodKey(bePod.pod))
+		if c.onlyEvictByAPI {
+			if c.evictor.EvictPodIfNotEvicted(bePod.pod, node, resourceexecutor.EvictPodByBECPUSatisfaction, message) {
+				cpuMilliReleased = cpuMilliReleased + bePod.milliRequest
+				klog.V(5).Infof("cpuEvict pick pod %s to evict", util.GetPodKey(bePod.pod))
+				hasKillPods = true
+			} else {
+				klog.V(5).Infof("cpuEvict pick pod %s to evict, failed", util.GetPodKey(bePod.pod))
+			}
+		} else {
+			podKillMsg := fmt.Sprintf("%s, kill pod: %s", message, util.GetPodKey(bePod.pod))
+			helpers.KillContainers(bePod.pod, podKillMsg)
+			cpuMilliReleased = cpuMilliReleased + bePod.milliRequest
+			klog.V(5).Infof("cpuEvict pick pod %s to evict", util.GetPodKey(bePod.pod))
+			hasKillPods = true
+		}
 	}
 
-	c.evictor.EvictPodsIfNotEvicted(killedPods, node, resourceexecutor.EvictPodByBECPUSatisfaction, message)
-
-	if len(killedPods) > 0 {
+	if hasKillPods {
 		c.lastEvictTime = time.Now()
 	}
 	klog.V(5).Infof("killAndEvictBEPodsRelease finished! cpuNeedMilliRelease(%d) cpuMilliReleased(%d)",

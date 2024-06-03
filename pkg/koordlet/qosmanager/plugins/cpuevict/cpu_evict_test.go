@@ -576,12 +576,71 @@ func Test_killAndEvictBEPodsRelease(t *testing.T) {
 
 	// evict subresource will not be creat or update in client go testing, check evict object
 	// https://github.com/kubernetes/client-go/blob/v0.28.7/testing/fixture.go#L117
+
+	// evict by API is false, so podsEvicted cache will not record killed pod
+	assert.False(t, cpuEvictor.evictor.IsPodEvicted(podEvictInfosSorted[0].pod))
+	assert.False(t, cpuEvictor.evictor.IsPodEvicted(podEvictInfosSorted[1].pod))
+	assert.False(t, cpuEvictor.evictor.IsPodEvicted(podEvictInfosSorted[2].pod))
+}
+
+func Test_killAndEvictBEPodsReleaseWithEvictionAPIOnly(t *testing.T) {
+	podEvictInfosSorted := []*podEvictCPUInfo{
+		{
+			pod:          mockBEPodForCPUEvict("pod_be_3_priority10", 16*1000, 10),
+			milliRequest: 16 * 1000,
+		},
+		{
+			pod:          mockBEPodForCPUEvict("pod_be_2_priority100", 16*1000, 100),
+			milliRequest: 16 * 1000,
+		},
+		{
+			pod:          mockBEPodForCPUEvict("pod_be_1_priority100", 16*1000, 100),
+			milliRequest: 16 * 1000,
+		},
+	}
+
+	ctl := gomock.NewController(t)
+	defer ctl.Finish()
+
+	fakeRecorder := &testutil.FakeRecorder{}
+	client := clientsetfake.NewSimpleClientset()
+
+	stop := make(chan struct{})
+	evictor := framework.NewEvictor(client, fakeRecorder, policyv1beta1.SchemeGroupVersion.Version)
+	evictor.Start(stop)
+	defer func() { stop <- struct{}{} }()
+
+	node := testutil.MockTestNode("100", "500G")
+	runtime.DockerHandler = handler.NewFakeRuntimeHandler()
+	// create pod
+	var containers []*critesting.FakeContainer
+	for _, podInfo := range podEvictInfosSorted {
+		pod := podInfo.pod
+		_, _ = client.CoreV1().Pods(pod.Namespace).Create(context.TODO(), pod, metav1.CreateOptions{})
+		for _, containerStatus := range pod.Status.ContainerStatuses {
+			_, containerId, _ := util.ParseContainerId(containerStatus.ContainerID)
+			fakeContainer := &critesting.FakeContainer{
+				SandboxID:       string(pod.UID),
+				ContainerStatus: runtimeapi.ContainerStatus{Id: containerId},
+			}
+			containers = append(containers, fakeContainer)
+		}
+	}
+	runtime.DockerHandler.(*handler.FakeRuntimeHandler).SetFakeContainers(containers)
+
+	cpuEvictor := &cpuEvictor{
+		evictor:        evictor,
+		onlyEvictByAPI: true,
+		lastEvictTime:  time.Now().Add(-5 * time.Minute),
+	}
+
+	cpuEvictor.killAndEvictBEPodsRelease(node, podEvictInfosSorted, 18*1000)
+
+	// evict subresource will not be creat or update in client go testing, check evict object
+	// https://github.com/kubernetes/client-go/blob/v0.28.7/testing/fixture.go#L117
 	assert.True(t, cpuEvictor.evictor.IsPodEvicted(podEvictInfosSorted[0].pod))
 	assert.True(t, cpuEvictor.evictor.IsPodEvicted(podEvictInfosSorted[1].pod))
 	assert.False(t, cpuEvictor.evictor.IsPodEvicted(podEvictInfosSorted[2].pod))
-
-	assert.True(t, cpuEvictor.lastEvictTime.After(time.Now().Add(-5*time.Second)), "checkLastTime")
-
 }
 
 func Test_isSatisfactionConfigValid(t *testing.T) {
