@@ -312,6 +312,7 @@ func (p *Plugin) Filter(ctx context.Context, cycleState *framework.CycleState, p
 
 	nodeDeviceInfo.lock.RLock()
 	defer nodeDeviceInfo.lock.RUnlock()
+	// TODO 当 NUMA 策略不为空时，关于 NUMA 下设备是否能分配其实已经在 NodeNUMAResource 的 FilterByNUMANode 中调用过，这里存在重复调用，待优化
 	allocateResult, status := p.tryAllocateFromReservation(allocator, state, restoreState, restoreState.matched, node, preemptible, state.hasReservationAffinity)
 	if !status.IsSuccess() {
 		return status

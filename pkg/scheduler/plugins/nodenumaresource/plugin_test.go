@@ -31,6 +31,7 @@ import (
 	apiruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/uuid"
+	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	"k8s.io/client-go/informers"
 	kubefake "k8s.io/client-go/kubernetes/fake"
 	apiresource "k8s.io/kubernetes/pkg/api/v1/resource"
@@ -1022,16 +1023,21 @@ func TestFilterWithAmplifiedCPUs(t *testing.T) {
 }
 
 func TestPlugin_Reserve(t *testing.T) {
+	node0, _ := bitmask.NewBitMask(0)
+	node1, _ := bitmask.NewBitMask(1)
 	tests := []struct {
-		name          string
-		nodeLabels    map[string]string
-		state         *preFilterState
-		reservedCPUs  map[types.UID]cpuset.CPUSet
-		pod           *corev1.Pod
-		cpuTopology   *CPUTopology
-		allocatedCPUs []int
-		want          *framework.Status
-		wantCPUSet    cpuset.CPUSet
+		name                      string
+		nodeLabels                map[string]string
+		state                     *preFilterState
+		matched                   map[types.UID]reservationAlloc
+		reservationAllocatePolicy schedulingv1alpha1.ReservationAllocatePolicy
+		pod                       *corev1.Pod
+		numaAffinity              bitmask.BitMask
+		cpuTopology               *CPUTopology
+		allocatedCPUs             []int
+		want                      *framework.Status
+		wantCPUSet                cpuset.CPUSet
+		wantNUMAResource          []NUMANodeResource
 	}{
 		{
 			name: "error with missing preFilterState",
@@ -1099,7 +1105,6 @@ func TestPlugin_Reserve(t *testing.T) {
 			cpuTopology: buildCPUTopologyForTest(2, 1, 4, 2),
 			pod:         &corev1.Pod{},
 			want:        nil,
-			wantCPUSet:  cpuset.NewCPUSet(),
 		},
 		{
 			name: "error with big request cpu",
@@ -1144,19 +1149,190 @@ func TestPlugin_Reserve(t *testing.T) {
 			wantCPUSet:    cpuset.NewCPUSet(4, 5, 6, 7),
 		},
 		{
-			name: "succeed allocate from reservation reserved cpus",
+			name: "succeed allocate from reservation reserved cpus;default allocate policy",
 			state: &preFilterState{
 				requestCPUBind:         true,
 				numCPUsNeeded:          4,
 				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs,
 			},
-			reservedCPUs: map[types.UID]cpuset.CPUSet{
-				uuid.NewUUID(): cpuset.NewCPUSet(4, 5, 6, 7, 8, 9, 10),
+			matched: map[types.UID]reservationAlloc{
+				uuid.NewUUID(): {
+					reservedCPUs: cpuset.NewCPUSet(4, 5, 6, 7, 8, 9, 10),
+				},
 			},
-			cpuTopology: buildCPUTopologyForTest(2, 1, 4, 2),
-			pod:         &corev1.Pod{},
-			want:        nil,
-			wantCPUSet:  cpuset.NewCPUSet(4, 5, 6, 7),
+			reservationAllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyDefault,
+			cpuTopology:               buildCPUTopologyForTest(2, 1, 4, 2),
+			pod:                       &corev1.Pod{},
+			want:                      nil,
+			wantCPUSet:                cpuset.NewCPUSet(4, 5, 6, 7),
+		},
+		{
+			name: "succeed allocate from reservation reserved cpus;restricted allocate policy",
+			state: &preFilterState{
+				requestCPUBind:         true,
+				numCPUsNeeded:          4,
+				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs,
+			},
+			matched: map[types.UID]reservationAlloc{
+				uuid.NewUUID(): {
+					reservedCPUs: cpuset.NewCPUSet(4, 5, 6, 7, 8, 9, 10),
+				},
+			},
+			reservationAllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyRestricted,
+			cpuTopology:               buildCPUTopologyForTest(2, 1, 4, 2),
+			pod:                       &corev1.Pod{},
+			want:                      nil,
+			wantCPUSet:                cpuset.NewCPUSet(4, 5, 6, 7),
+		},
+		{
+			name: "failed to allocate from reservation reserved cpus;restricted allocate policy",
+			state: &preFilterState{
+				requestCPUBind:         true,
+				numCPUsNeeded:          4,
+				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs,
+				hasReservationAffinity: true,
+			},
+			matched: map[types.UID]reservationAlloc{
+				uuid.NewUUID(): {
+					reservedCPUs: cpuset.NewCPUSet(4, 5),
+				},
+			},
+			reservationAllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyRestricted,
+			cpuTopology:               buildCPUTopologyForTest(2, 1, 4, 2),
+			pod:                       &corev1.Pod{},
+			want:                      framework.NewStatus(framework.Unschedulable, "Reservation(s) not enough cpus available to satisfy request"),
+			wantCPUSet:                cpuset.NewCPUSet(),
+		},
+		{
+			name: "succeed allocate from reservation reserved numa resource and cpuset;restricted allocate policy",
+			state: &preFilterState{
+				requestCPUBind:         true,
+				numCPUsNeeded:          4,
+				requests:               corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("4")},
+				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs,
+				podNUMATopologyPolicy:  extension.NUMATopologyPolicyRestricted,
+				hasReservationAffinity: true,
+			},
+			matched: map[types.UID]reservationAlloc{
+				uuid.NewUUID(): {
+					reservedCPUs: cpuset.NewCPUSet(4, 5, 6, 7, 8, 9, 10),
+					allocatable: map[int]corev1.ResourceList{
+						0: {
+							corev1.ResourceCPU: resource.MustParse("7"),
+						},
+					},
+				},
+			},
+			reservationAllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyRestricted,
+			cpuTopology:               buildCPUTopologyForTest(2, 1, 8, 2),
+			pod:                       &corev1.Pod{},
+			numaAffinity:              node0,
+			want:                      nil,
+			wantCPUSet:                cpuset.NewCPUSet(4, 5, 6, 7),
+			wantNUMAResource: []NUMANodeResource{
+				{
+					Node:      0,
+					Resources: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("4")},
+				},
+			},
+		},
+		{
+			name: "failed to allocate from reservation reserved numa resource and cpuset;restricted allocate policy",
+			state: &preFilterState{
+				requestCPUBind:         true,
+				numCPUsNeeded:          4,
+				requests:               corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("4")},
+				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs,
+				podNUMATopologyPolicy:  extension.NUMATopologyPolicyRestricted,
+				hasReservationAffinity: true,
+			},
+			matched: map[types.UID]reservationAlloc{
+				uuid.NewUUID(): {
+					reservedCPUs: cpuset.NewCPUSet(4, 5),
+					allocatable: map[int]corev1.ResourceList{
+						0: {
+							corev1.ResourceCPU: resource.MustParse("2"),
+						},
+					},
+					remained: map[int]corev1.ResourceList{
+						0: {
+							corev1.ResourceCPU: resource.MustParse("2"),
+						},
+					},
+				},
+			},
+			reservationAllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyRestricted,
+			cpuTopology:               buildCPUTopologyForTest(2, 1, 4, 2),
+			pod:                       &corev1.Pod{},
+			numaAffinity:              node0,
+			want:                      framework.NewStatus(framework.Unschedulable, "Reservation(s) not enough cpus available to satisfy request"),
+			wantCPUSet:                cpuset.NewCPUSet(),
+		},
+		{
+			name: "succeed allocate from reservation reserved numa resource;restricted allocate policy",
+			state: &preFilterState{
+				numCPUsNeeded:          4,
+				requests:               corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("4")},
+				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs,
+				podNUMATopologyPolicy:  extension.NUMATopologyPolicyRestricted,
+				hasReservationAffinity: true,
+			},
+			matched: map[types.UID]reservationAlloc{
+				uuid.NewUUID(): {
+					allocatable: map[int]corev1.ResourceList{
+						1: {
+							corev1.ResourceCPU: resource.MustParse("7"),
+						},
+					},
+					remained: map[int]corev1.ResourceList{
+						1: {
+							corev1.ResourceCPU: resource.MustParse("7"),
+						},
+					},
+				},
+			},
+			reservationAllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyRestricted,
+			cpuTopology:               buildCPUTopologyForTest(2, 1, 4, 2),
+			pod:                       &corev1.Pod{},
+			numaAffinity:              node1,
+			want:                      nil,
+			wantCPUSet:                cpuset.CPUSet{},
+			wantNUMAResource: []NUMANodeResource{
+				{
+					Node:      1,
+					Resources: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("4")},
+				},
+			},
+		},
+		{
+			name: "failed to allocate from reservation reserved numa resource;restricted allocate policy",
+			state: &preFilterState{
+				numCPUsNeeded:          4,
+				requests:               corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("4")},
+				podNUMATopologyPolicy:  extension.NUMATopologyPolicyRestricted,
+				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs,
+				hasReservationAffinity: true,
+			},
+			matched: map[types.UID]reservationAlloc{
+				uuid.NewUUID(): {
+					allocatable: map[int]corev1.ResourceList{
+						0: {
+							corev1.ResourceCPU: resource.MustParse("2"),
+						},
+					},
+					remained: map[int]corev1.ResourceList{
+						0: {
+							corev1.ResourceCPU: resource.MustParse("2"),
+						},
+					},
+				},
+			},
+			reservationAllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyRestricted,
+			cpuTopology:               buildCPUTopologyForTest(2, 1, 4, 2),
+			pod:                       &corev1.Pod{},
+			numaAffinity:              node0,
+			want:                      framework.NewStatus(framework.Unschedulable, "Reservation(s) Insufficient NUMA cpu"),
+			wantCPUSet:                cpuset.NewCPUSet(),
 		},
 	}
 	for _, tt := range tests {
@@ -1189,13 +1365,32 @@ func TestPlugin_Reserve(t *testing.T) {
 			if tt.cpuTopology != nil {
 				plg.topologyOptionsManager.UpdateTopologyOptions(nodeAllocation.nodeName, func(options *TopologyOptions) {
 					options.CPUTopology = tt.cpuTopology
+					for i := 0; i < tt.cpuTopology.NumSockets; i++ {
+						options.NUMANodeResources = append(options.NUMANodeResources, NUMANodeResource{
+							Node:      i,
+							Resources: corev1.ResourceList{corev1.ResourceCPU: *resource.NewQuantity(int64(tt.cpuTopology.CPUsPerNode()), resource.DecimalSI)},
+						})
+					}
 				})
 				if len(tt.allocatedCPUs) > 0 {
 					nodeAllocation.addCPUs(tt.cpuTopology, uuid.NewUUID(), cpuset.NewCPUSet(tt.allocatedCPUs...), schedulingconfig.CPUExclusivePolicyNone)
 				}
-				if len(tt.reservedCPUs) > 0 {
-					for reservationUID, cpus := range tt.reservedCPUs {
-						nodeAllocation.addCPUs(tt.cpuTopology, reservationUID, cpus, schedulingconfig.CPUExclusivePolicyNone)
+				if len(tt.matched) > 0 {
+					for reservationUID, alloc := range tt.matched {
+						nodeAllocation.addCPUs(tt.cpuTopology, reservationUID, alloc.reservedCPUs, schedulingconfig.CPUExclusivePolicyNone)
+						var numaResources []NUMANodeResource
+						for i, allocatable := range alloc.allocatable {
+							numaResources = append(numaResources, NUMANodeResource{
+								Node:      i,
+								Resources: allocatable,
+							})
+						}
+						nodeAllocation.addPodAllocation(&PodAllocation{
+							UID:                reservationUID,
+							CPUSet:             alloc.reservedCPUs,
+							CPUExclusivePolicy: schedulingconfig.CPUExclusivePolicyNone,
+							NUMANodeResources:  numaResources,
+						}, tt.cpuTopology)
 					}
 				}
 			}
@@ -1208,24 +1403,34 @@ func TestPlugin_Reserve(t *testing.T) {
 			cycleState := framework.NewCycleState()
 			if tt.state != nil {
 				cycleState.Write(stateKey, tt.state)
-				if len(tt.reservedCPUs) > 0 {
-					for reservationUID := range tt.reservedCPUs {
+				if len(tt.matched) > 0 {
+					for reservationUID, alloc := range tt.matched {
 						reservation := &schedulingv1alpha1.Reservation{
 							ObjectMeta: metav1.ObjectMeta{
 								UID:  reservationUID,
 								Name: "test-reservation",
 							},
+							Spec: schedulingv1alpha1.ReservationSpec{
+								AllocatePolicy: tt.reservationAllocatePolicy,
+							},
 						}
+						alloc.rInfo = frameworkext.NewReservationInfo(reservation)
+						tt.matched[reservationUID] = alloc
 						rInfo := frameworkext.NewReservationInfo(reservation)
 						plg.handle.GetReservationNominator().AddNominatedReservation(tt.pod, "test-node-1", rInfo)
 					}
 					cycleState.Write(reservationRestoreStateKey, &reservationRestoreStateData{
-						skip: false,
 						nodeToState: frameworkext.NodeReservationRestoreStates{
-							"test-node-1": &nodeReservationRestoreStateData{reservedCPUs: tt.reservedCPUs},
+							"test-node-1": &nodeReservationRestoreStateData{matched: tt.matched},
 						},
 					})
 				}
+			}
+
+			if tt.numaAffinity != nil {
+				topologymanager.InitStore(cycleState)
+				store := topologymanager.GetStore(cycleState)
+				store.SetAffinity("test-node-1", topologymanager.NUMATopologyHint{NUMANodeAffinity: tt.numaAffinity})
 			}
 
 			nodeInfo, err := suit.Handle.SnapshotSharedLister().NodeInfos().Get("test-node-1")
@@ -1239,10 +1444,16 @@ func TestPlugin_Reserve(t *testing.T) {
 				return
 			}
 			var gotCPUs cpuset.CPUSet
+			var gotNUMAResource []NUMANodeResource
 			if tt.state.allocation != nil {
 				gotCPUs = tt.state.allocation.CPUSet
+				gotNUMAResource = tt.state.allocation.NUMANodeResources
 			}
-			assert.True(t, tt.wantCPUSet.Equals(gotCPUs))
+			assert.Equal(t, tt.wantCPUSet, gotCPUs)
+			for i, nodeResource := range gotNUMAResource {
+				assert.Equal(t, tt.wantNUMAResource[i].Node, nodeResource.Node)
+				assert.True(t, quotav1.Equals(tt.wantNUMAResource[i].Resources, nodeResource.Resources))
+			}
 		})
 	}
 }
@@ -1536,7 +1747,7 @@ func TestRestoreReservation(t *testing.T) {
 
 	nodeReservationState, status := pl.RestoreReservation(context.TODO(), cycleState, testPod, []*frameworkext.ReservationInfo{rInfo}, nil, nodeInfo)
 	assert.True(t, status.IsSuccess())
-	assert.Equal(t, cpuset.NewCPUSet(8, 9), nodeReservationState.(*nodeReservationRestoreStateData).reservedCPUs[reservation.UID])
+	assert.Equal(t, cpuset.NewCPUSet(8, 9), nodeReservationState.(*nodeReservationRestoreStateData).matched[reservation.UID].reservedCPUs)
 
 	rInfo.AddAssignedPod(podB)
 	nodeReservationState, status = pl.RestoreReservation(context.TODO(), cycleState, testPod, []*frameworkext.ReservationInfo{rInfo}, nil, nodeInfo)
