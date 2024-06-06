@@ -322,7 +322,7 @@ func TestRestoreReservation(t *testing.T) {
 				rAllocated: framework.NewResource(nil),
 			},
 		},
-		nodeReservationDiagnosis: map[string]nodeDiagnosisState{
+		nodeReservationDiagnosis: map[string]*nodeDiagnosisState{
 			node.Name: {
 				nodeName:                 node.Name,
 				ownerMatched:             1,

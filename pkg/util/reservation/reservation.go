@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"math"
 	"strconv"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -49,6 +50,9 @@ var (
 	// AnnotationReservationResizeAllocatable indicates the desired allocatable are to be updated.
 	AnnotationReservationResizeAllocatable = extension.SchedulingDomainPrefix + "/reservation-resize-allocatable"
 )
+
+// ErrReasonPrefix is the prefix of the reservation-level scheduling errors.
+const ErrReasonPrefix = "Reservation(s) "
 
 // NewReservePod returns a fake pod set as the reservation's specifications.
 // The reserve pod is only visible for the scheduler and does not make actual creation on nodes.
@@ -559,4 +563,14 @@ func GetReservationRestrictedResources(allocatableResources []corev1.ResourceNam
 		result = allocatableResources
 	}
 	return result
+}
+
+// NewReservationReason creates a reservation-level error reason with the given message.
+func NewReservationReason(msg string) string {
+	return ErrReasonPrefix + msg
+}
+
+// IsReservationReason checks if the error reason is at the reservation-level.
+func IsReservationReason(reason string) bool {
+	return strings.HasPrefix(reason, ErrReasonPrefix)
 }

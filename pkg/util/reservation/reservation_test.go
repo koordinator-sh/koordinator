@@ -809,3 +809,11 @@ func TestGetReservationRestrictedResources(t *testing.T) {
 		})
 	}
 }
+
+func TestNewReservationReason(t *testing.T) {
+	t.Run("test", func(t *testing.T) {
+		reasonMsg := "node(s) didn't match the requested node name"
+		got := NewReservationReason(reasonMsg)
+		assert.True(t, IsReservationReason(got))
+	})
+}
