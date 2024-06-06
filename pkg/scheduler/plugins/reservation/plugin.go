@@ -155,7 +155,7 @@ type stateData struct {
 	preemptibleInRRs     map[string]map[types.UID]corev1.ResourceList
 
 	nodeReservationStates    map[string]nodeReservationState
-	nodeReservationDiagnosis map[string]nodeDiagnosisState
+	nodeReservationDiagnosis map[string]*nodeDiagnosisState
 	preferredNode            string
 	assumed                  *frameworkext.ReservationInfo
 }
@@ -174,8 +174,8 @@ type nodeReservationState struct {
 type nodeDiagnosisState struct {
 	nodeName                 string
 	ownerMatched             int // owner matched
-	isUnschedulableUnmatched int // owner matched but unmatched due to unschedulable
-	affinityUnmatched        int // owner matched but unmatched due to affinity
+	isUnschedulableUnmatched int // owner matched but BeforePreFilter unmatched due to unschedulable
+	affinityUnmatched        int // owner matched but BeforePreFilter unmatched due to affinity
 }
 
 func (s *stateData) Clone() framework.StateData {
@@ -441,7 +441,7 @@ func (pl *Plugin) filterWithReservations(ctx context.Context, cycleState *framew
 			failureReasons = append(failureReasons, fmt.Sprintf("Insufficient %s by node", insufficientResourceByNode))
 		}
 		for _, insufficientResourceByReservation := range allInsufficientResourcesByReservation {
-			failureReasons = append(failureReasons, fmt.Sprintf("Reservation(s) Insufficient %s", insufficientResourceByReservation))
+			failureReasons = append(failureReasons, reservationutil.NewReservationReason("Insufficient "+insufficientResourceByReservation))
 		}
 		if len(failureReasons) == 0 {
 			failureReasons = append(failureReasons, ErrReasonNoReservationsMeetRequirements)
@@ -507,20 +507,44 @@ func fitsNode(podRequest *framework.Resource, nodeInfo *framework.NodeInfo, node
 	return insufficientResources
 }
 
-func (pl *Plugin) PostFilter(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, _ framework.NodeToStatusMap) (*framework.PostFilterResult, *framework.Status) {
-	// Implement an empty function to be compatible with existing configurations
+func (pl *Plugin) PostFilter(_ context.Context, cycleState *framework.CycleState, _ *corev1.Pod, filteredNodeStatusMap framework.NodeToStatusMap) (*framework.PostFilterResult, *framework.Status) {
 	state := getStateData(cycleState)
-	reasons := pl.makePostFilterReasons(state)
+	reasons := pl.makePostFilterReasons(state, filteredNodeStatusMap)
 	return nil, framework.NewStatus(framework.Unschedulable, reasons...)
 }
 
-func (pl *Plugin) makePostFilterReasons(state *stateData) []string {
+func (pl *Plugin) makePostFilterReasons(state *stateData, filteredNodeStatusMap framework.NodeToStatusMap) []string {
 	ownerMatched, affinityUnmatched, isUnSchedulableUnmatched := 0, 0, 0
-	for _, nodeState := range state.nodeReservationDiagnosis {
-		isUnSchedulableUnmatched += nodeState.isUnschedulableUnmatched
-		affinityUnmatched += nodeState.affinityUnmatched
-		ownerMatched += nodeState.ownerMatched
+	// failure reasons and counts for the nodes which have not been handled by the Reservation's Filter
+	reasonsByNode := map[string]int{}
+	for nodeName, diagnosisState := range state.nodeReservationDiagnosis {
+		isUnSchedulableUnmatched += diagnosisState.isUnschedulableUnmatched
+		affinityUnmatched += diagnosisState.affinityUnmatched
+		ownerMatched += diagnosisState.ownerMatched
+		// calculate the remaining unmatched which is owner-matched and Reservation BeforePreFilter matched
+		remainUnmatched := diagnosisState.ownerMatched - diagnosisState.affinityUnmatched - diagnosisState.isUnschedulableUnmatched
+		if remainUnmatched <= 0 { // no need to check other reasons
+			continue
+		}
+		// count the failure reasons which is neither counted by the PreFilterTransformer nor by the Reservation Filter.
+		nodeReasons := map[string]int{}
+		if failureStatus, ok := filteredNodeStatusMap[nodeName]; ok {
+			for _, reason := range failureStatus.Reasons() {
+				if reservationutil.IsReservationReason(reason) { // reservation-level reasons are not counted
+					remainUnmatched--
+					continue
+				}
+				nodeReasons[reason]++
+			}
+		}
+		if remainUnmatched <= 0 { // capped with zero
+			continue
+		}
+		for reason, count := range nodeReasons {
+			reasonsByNode[reason] += remainUnmatched * count
+		}
 	}
+	// if the pod specifies an affinity, we always show the owner matched reason
 	if ownerMatched <= 0 && !state.hasAffinity {
 		return nil
 	}
@@ -538,6 +562,13 @@ func (pl *Plugin) makePostFilterReasons(state *stateData) []string {
 	if isUnSchedulableUnmatched > 0 {
 		b.WriteString(strconv.Itoa(isUnSchedulableUnmatched))
 		b.WriteString(" Reservation(s) is unschedulable")
+		reasons = append(reasons, b.String())
+		b.Reset()
+	}
+	for nodeReason, count := range reasonsByNode { // node reason Filter failed
+		b.WriteString(strconv.Itoa(count))
+		b.WriteString(" Reservation(s) for node reason that ")
+		b.WriteString(nodeReason)
 		reasons = append(reasons, b.String())
 		b.Reset()
 	}

@@ -234,7 +234,7 @@ func (pl *Plugin) prepareMatchReservationState(ctx context.Context, cycleState *
 		preemptible:              map[string]corev1.ResourceList{},
 		preemptibleInRRs:         map[string]map[types.UID]corev1.ResourceList{},
 		nodeReservationStates:    map[string]nodeReservationState{},
-		nodeReservationDiagnosis: map[string]nodeDiagnosisState{},
+		nodeReservationDiagnosis: map[string]*nodeDiagnosisState{},
 	}
 	pluginToNodeReservationRestoreState := frameworkext.PluginToNodeReservationRestoreStates{}
 	for index := range allNodeReservationStates {
@@ -254,7 +254,7 @@ func (pl *Plugin) prepareMatchReservationState(ctx context.Context, cycleState *
 	}
 	for i := range allNodeDiagnosisStates {
 		v := allNodeDiagnosisStates[i]
-		state.nodeReservationDiagnosis[v.nodeName] = *v
+		state.nodeReservationDiagnosis[v.nodeName] = v
 	}
 	if extender != nil {
 		status := extender.RunReservationExtensionFinalRestoreReservation(ctx, cycleState, pod, pluginToNodeReservationRestoreState)

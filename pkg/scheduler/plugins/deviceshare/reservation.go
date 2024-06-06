@@ -252,7 +252,7 @@ func (p *Plugin) makeReasonsByReservation(reservationReasons []*framework.Status
 	var reasons []string
 	for _, status := range reservationReasons {
 		for _, r := range status.Reasons() {
-			reasons = append(reasons, fmt.Sprintf("Reservation(s) %s", r))
+			reasons = append(reasons, reservationutil.NewReservationReason(r))
 		}
 	}
 	return reasons

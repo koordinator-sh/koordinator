@@ -1834,10 +1834,18 @@ func TestFilterReservation(t *testing.T) {
 }
 
 func TestPostFilter(t *testing.T) {
+	testFilterStatus := framework.NewStatus(framework.Unschedulable, "node(s) didn't match the requested node name")
+	testFilterReservationStatus := framework.NewStatus(framework.Unschedulable,
+		reservationutil.NewReservationReason("Insufficient nvidia.com/gpu"),
+		reservationutil.NewReservationReason("Insufficient koordinator.sh/gpu-mem-ratio"))
+	testFilterReservationStatus1 := framework.NewStatus(framework.Unschedulable,
+		reservationutil.NewReservationReason("Insufficient cpu"),
+		"Insufficient memory")
 	type args struct {
 		hasStateData             bool
 		hasAffinity              bool
-		nodeReservationDiagnosis map[string]nodeDiagnosisState
+		nodeReservationDiagnosis map[string]*nodeDiagnosisState
+		filteredNodeStatusMap    framework.NodeToStatusMap
 	}
 	tests := []struct {
 		name  string
@@ -1848,7 +1856,8 @@ func TestPostFilter(t *testing.T) {
 		{
 			name: "no reservation filtering",
 			args: args{
-				hasStateData: false,
+				hasStateData:          false,
+				filteredNodeStatusMap: framework.NodeToStatusMap{},
 			},
 			want:  nil,
 			want1: framework.NewStatus(framework.Unschedulable),
@@ -1858,7 +1867,8 @@ func TestPostFilter(t *testing.T) {
 			args: args{
 				hasStateData:             true,
 				hasAffinity:              true,
-				nodeReservationDiagnosis: map[string]nodeDiagnosisState{},
+				nodeReservationDiagnosis: map[string]*nodeDiagnosisState{},
+				filteredNodeStatusMap:    framework.NodeToStatusMap{},
 			},
 			want:  nil,
 			want1: framework.NewStatus(framework.Unschedulable, "0 Reservation(s) matched owner total"),
@@ -1867,7 +1877,7 @@ func TestPostFilter(t *testing.T) {
 			name: "show reservation owner matched, unschedulable unmatched",
 			args: args{
 				hasStateData: true,
-				nodeReservationDiagnosis: map[string]nodeDiagnosisState{
+				nodeReservationDiagnosis: map[string]*nodeDiagnosisState{
 					"test-node-0": {
 						ownerMatched:             3,
 						isUnschedulableUnmatched: 3,
@@ -1879,15 +1889,21 @@ func TestPostFilter(t *testing.T) {
 						affinityUnmatched:        0,
 					},
 				},
+				filteredNodeStatusMap: framework.NodeToStatusMap{
+					"test-node-0": {},
+					"test-node-1": {},
+				},
 			},
-			want:  nil,
-			want1: framework.NewStatus(framework.Unschedulable, "4 Reservation(s) is unschedulable", "4 Reservation(s) matched owner total"),
+			want: nil,
+			want1: framework.NewStatus(framework.Unschedulable,
+				"4 Reservation(s) is unschedulable",
+				"4 Reservation(s) matched owner total"),
 		},
 		{
 			name: "show reservation matched owner, unschedulable and affinity unmatched",
 			args: args{
 				hasStateData: true,
-				nodeReservationDiagnosis: map[string]nodeDiagnosisState{
+				nodeReservationDiagnosis: map[string]*nodeDiagnosisState{
 					"test-node-0": {
 						ownerMatched:             3,
 						isUnschedulableUnmatched: 0,
@@ -1899,9 +1915,72 @@ func TestPostFilter(t *testing.T) {
 						affinityUnmatched:        1,
 					},
 				},
+				filteredNodeStatusMap: framework.NodeToStatusMap{
+					"test-node-0": {},
+					"test-node-1": {},
+				},
 			},
-			want:  nil,
-			want1: framework.NewStatus(framework.Unschedulable, "4 Reservation(s) didn't match affinity rules", "1 Reservation(s) is unschedulable", "5 Reservation(s) matched owner total"),
+			want: nil,
+			want1: framework.NewStatus(framework.Unschedulable,
+				"4 Reservation(s) didn't match affinity rules",
+				"1 Reservation(s) is unschedulable",
+				"5 Reservation(s) matched owner total"),
+		},
+		{
+			name: "show reservation matched owner and filter failures of other plugins",
+			args: args{
+				hasStateData: true,
+				nodeReservationDiagnosis: map[string]*nodeDiagnosisState{
+					"test-node-0": {
+						ownerMatched:             3,
+						isUnschedulableUnmatched: 0,
+						affinityUnmatched:        3,
+					},
+					"test-node-1": {
+						ownerMatched:             3,
+						isUnschedulableUnmatched: 1,
+						affinityUnmatched:        0,
+					},
+				},
+				filteredNodeStatusMap: framework.NodeToStatusMap{
+					"test-node-0": {},
+					"test-node-1": testFilterStatus,
+				},
+			},
+			want: nil,
+			want1: framework.NewStatus(framework.Unschedulable,
+				"3 Reservation(s) didn't match affinity rules",
+				"1 Reservation(s) is unschedulable",
+				"2 Reservation(s) for node reason that node(s) didn't match the requested node name",
+				"6 Reservation(s) matched owner total"),
+		},
+		{
+			name: "show reservation matched owner and skip reservation-level reasons and filter other failures",
+			args: args{
+				hasStateData: true,
+				nodeReservationDiagnosis: map[string]*nodeDiagnosisState{
+					"test-node-0": {
+						ownerMatched:             3,
+						isUnschedulableUnmatched: 0,
+						affinityUnmatched:        1,
+					},
+					"test-node-1": {
+						ownerMatched:             3,
+						isUnschedulableUnmatched: 1,
+						affinityUnmatched:        0,
+					},
+				},
+				filteredNodeStatusMap: framework.NodeToStatusMap{
+					"test-node-0": testFilterReservationStatus,
+					"test-node-1": testFilterReservationStatus1,
+				},
+			},
+			want: nil,
+			want1: framework.NewStatus(framework.Unschedulable,
+				"1 Reservation(s) didn't match affinity rules",
+				"1 Reservation(s) is unschedulable",
+				"1 Reservation(s) for node reason that Insufficient memory",
+				"6 Reservation(s) matched owner total"),
 		},
 	}
 	for _, tt := range tests {
@@ -1914,7 +1993,7 @@ func TestPostFilter(t *testing.T) {
 					nodeReservationDiagnosis: tt.args.nodeReservationDiagnosis,
 				})
 			}
-			got, got1 := pl.PostFilter(context.TODO(), cycleState, nil, nil)
+			got, got1 := pl.PostFilter(context.TODO(), cycleState, nil, tt.args.filteredNodeStatusMap)
 			assert.Equal(t, tt.want, got)
 			assert.Equal(t, tt.want1, got1)
 		})
