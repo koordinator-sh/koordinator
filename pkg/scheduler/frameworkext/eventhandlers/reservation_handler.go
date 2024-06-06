@@ -144,18 +144,11 @@ func generatePodEventOnReservationLevel(errorMsg string) (string, bool) {
 	// for reservation total item
 	reserveTotalRe := regexp.MustCompile("^([0-9]+) Reservation\\(s\\) matched owner total$")
 
+	// for node related item
+	reserveNodeDetailRe := regexp.MustCompile("^([0-9]+ Reservation\\(s\\)) for node reason that (.*)$")
+
 	// for reservation detail item
 	reserveDetailRe := regexp.MustCompile("^([0-9]+) Reservation\\(s\\) .*$")
-
-	// for affinity item of node level
-	affinityPatterns := []string{
-		"^([0-9]+) node\\(s\\) (didn't match pod topology spread constraints \\(missing required label\\))",
-		"^([0-9]+) node\\(s\\) (didn't match pod topology spread constraints)",
-		"^([0-9]+) node\\(s\\) (didn't satisfy existing pods anti-affinity rules)",
-		"^([0-9]+) node\\(s\\) (didn't match pod affinity rules)",
-		"^([0-9]+) node\\(s\\) (didn't match pod anti-affinity rules)",
-	}
-	affinityDetailRe := regexp.MustCompile(strings.Join(affinityPatterns, "|"))
 
 	for _, item := range detailSplit {
 		trimItem := strings.TrimSpace(item)
@@ -167,35 +160,27 @@ func generatePodEventOnReservationLevel(errorMsg string) (string, bool) {
 			if total, err = strconv.ParseInt(totalStr[0][1], 10, 64); err != nil {
 				return "", false
 			}
+		} else if reserveNodeDetailRe.MatchString(trimItem) {
+			// node related item, e.g. "2 Reservation(s) for node reason that node(s) didn't match pod affinity rules"
+			reserveNodeSubMatch := reserveNodeDetailRe.FindStringSubmatch(trimItem)
+			if len(reserveNodeSubMatch) <= 1 {
+				continue
+			}
+			// expect: ["2 Reservation(s)", "didn't match pod affinity rules"]
+			nodeReasonWords := make([]string, 0, len(reserveNodeSubMatch)-1)
+			for _, vv := range reserveNodeSubMatch[1:] {
+				if vv == "" {
+					continue
+				}
+				nodeReasonWords = append(nodeReasonWords, vv)
+			}
+			resultDetails = append(resultDetails, strings.Join(nodeReasonWords, " "))
 		} else if reserveDetailRe.MatchString(trimItem) {
-			// not total item, append to details, e.g. " 1 Reservation(s) ..."
-
+			// reservation itself item, append to details, e.g. " 1 Reservation(s) ..."
 			// for 1 Reservation(s) Insufficient nvidia, replace nvidia with nvidia.com/gpu
 			// TODO support other extend resource fields like kubernetes.io/batch-cpu
 			itemReplaced := strings.Replace(trimItem, "nvidia", "nvidia.com/gpu", -1)
 			resultDetails = append(resultDetails, itemReplaced)
-		} else {
-			// other node items, record affinity errors on reservation level as:
-			// "at least 3 didn't match pod topology spread constraints Reservation(s)"
-			affinityDetailsSubMatch := affinityDetailRe.FindAllStringSubmatch(trimItem, -1)
-			if len(affinityDetailsSubMatch) == 0 {
-				continue
-			}
-			for _, submatch := range affinityDetailsSubMatch {
-				if len(submatch) <= 1 {
-					continue
-				}
-				r := &strings.Builder{}
-				r.WriteString("at least ")
-				for _, vv := range submatch[1:] {
-					if vv == "" {
-						continue
-					}
-					r.WriteString(vv + " ")
-				}
-				r.WriteString("Reservation(s)")
-				resultDetails = append(resultDetails, r.String())
-			}
 		}
 	}
 
