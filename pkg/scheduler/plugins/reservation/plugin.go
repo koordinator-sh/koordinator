@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -148,6 +149,7 @@ func (pl *Plugin) EventsToRegister() []framework.ClusterEventWithHint {
 var _ framework.StateData = &stateData{}
 
 type stateData struct {
+	preemptLock          sync.RWMutex
 	hasAffinity          bool
 	podRequests          corev1.ResourceList
 	podRequestsResources *framework.Resource
@@ -188,6 +190,10 @@ func (s *stateData) Clone() framework.StateData {
 		preferredNode:            s.preferredNode,
 		assumed:                  s.assumed,
 	}
+
+	s.preemptLock.RLock()
+	defer s.preemptLock.RUnlock()
+
 	preemptible := map[string]corev1.ResourceList{}
 	for nodeName, returned := range s.preemptible {
 		preemptible[nodeName] = returned.DeepCopy()
@@ -244,6 +250,7 @@ func (pl *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleStat
 	}
 
 	var preResult *framework.PreFilterResult
+
 	state := getStateData(cycleState)
 	if state.hasAffinity {
 		if len(state.nodeReservationStates) == 0 {
@@ -275,6 +282,9 @@ func (pl *Plugin) AddPod(ctx context.Context, cycleState *framework.CycleState, 
 	if rInfo == nil {
 		rInfo = pl.GetNominatedReservation(podInfoToAdd.Pod, node.Name)
 	}
+
+	state.preemptLock.Lock()
+	defer state.preemptLock.Unlock()
 	if rInfo == nil {
 		preemptible := state.preemptible[node.Name]
 		state.preemptible[node.Name] = quotav1.Subtract(preemptible, podRequests)
@@ -303,6 +313,9 @@ func (pl *Plugin) RemovePod(ctx context.Context, cycleState *framework.CycleStat
 	if rInfo == nil {
 		rInfo = pl.GetNominatedReservation(podInfoToRemove.Pod, node.Name)
 	}
+
+	state.preemptLock.Lock()
+	defer state.preemptLock.Unlock()
 	if rInfo == nil {
 		preemptible := state.preemptible[node.Name]
 		state.preemptible[node.Name] = quotav1.Add(preemptible, podRequests)
@@ -368,14 +381,24 @@ func (pl *Plugin) Filter(ctx context.Context, cycleState *framework.CycleState, 
 				return framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrReasonReservationAffinity)
 			}
 
-			if len(state.preemptible[node.Name]) > 0 || len(state.preemptibleInRRs[node.Name]) > 0 {
-				preemptible := state.preemptible[node.Name]
-				preemptibleResource := framework.NewResource(preemptible)
-				insufficientResources := fitsNode(state.podRequestsResources, nodeInfo, &nodeRState, nil, preemptibleResource)
-				if len(insufficientResources) != 0 {
-					return framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrReasonPreemptionFailed)
+			status := func() *framework.Status {
+				state.preemptLock.RLock()
+				defer state.preemptLock.RUnlock()
+
+				if len(state.preemptible[node.Name]) > 0 || len(state.preemptibleInRRs[node.Name]) > 0 {
+					preemptible := state.preemptible[node.Name]
+					preemptibleResource := framework.NewResource(preemptible)
+					insufficientResources := fitsNode(state.podRequestsResources, nodeInfo, &nodeRState, nil, preemptibleResource)
+					if len(insufficientResources) != 0 {
+						return framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrReasonPreemptionFailed)
+					}
 				}
+				return nil
+			}()
+			if !status.IsSuccess() {
+				return status
 			}
+
 			return nil
 		}
 
@@ -401,10 +424,13 @@ func (pl *Plugin) filterWithReservations(ctx context.Context, cycleState *framew
 			continue
 		}
 
+		state.preemptLock.RLock()
 		preemptibleInRR := state.preemptibleInRRs[node.Name][rInfo.UID()]
 		preemptible := framework.NewResource(preemptibleInRR)
 		preemptible.Add(state.preemptible[node.Name])
 		insufficientResourcesByNode := fitsNode(state.podRequestsResources, nodeInfo, &nodeRState, rInfo, preemptible)
+		state.preemptLock.RUnlock()
+
 		nodeFits := len(insufficientResourcesByNode) == 0
 		allocatePolicy := rInfo.GetAllocatePolicy()
 		if allocatePolicy == schedulingv1alpha1.ReservationAllocatePolicyDefault ||
