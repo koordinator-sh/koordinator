@@ -992,7 +992,172 @@ func TestLowNodeLoad(t *testing.T) {
 			sharedInformerFactory.WaitForCacheSync(ctx.Done())
 
 			eventRecorder := &events.FakeRecorder{}
-			evictionLimiter := evictions.NewEvictionLimiter(nil, nil)
+			evictionLimiter := evictions.NewEvictionLimiter(nil, nil, nil)
+
+			koordClientSet := koordfake.NewSimpleClientset()
+			setupNodeMetrics(koordClientSet, tt.nodes, tt.pods, tt.podMetrics)
+
+			fh, err := frameworktesting.NewFramework(
+				[]frameworktesting.RegisterPluginFunc{
+					func(reg *frameworkruntime.Registry, profile *deschedulerconfig.DeschedulerProfile) {
+						reg.Register(defaultevictor.PluginName, defaultevictor.New)
+						profile.Plugins.Evict.Enabled = append(profile.Plugins.Evict.Enabled, deschedulerconfig.Plugin{Name: defaultevictor.PluginName})
+						profile.Plugins.Filter.Enabled = append(profile.Plugins.Filter.Enabled, deschedulerconfig.Plugin{Name: defaultevictor.PluginName})
+						profile.PluginConfig = append(profile.PluginConfig, deschedulerconfig.PluginConfig{
+							Name: defaultevictor.PluginName,
+							Args: &defaultevictor.DefaultEvictorArgs{},
+						})
+					},
+					func(reg *frameworkruntime.Registry, profile *deschedulerconfig.DeschedulerProfile) {
+						reg.Register(LowNodeLoadName, func(args runtime.Object, handle framework.Handle) (framework.Plugin, error) {
+							return NewLowNodeLoad(args, &fakeFrameworkHandle{
+								Handle:    handle,
+								Interface: koordClientSet,
+							})
+						})
+						profile.Plugins.Balance.Enabled = append(profile.Plugins.Balance.Enabled, deschedulerconfig.Plugin{Name: LowNodeLoadName})
+						profile.PluginConfig = append(profile.PluginConfig, deschedulerconfig.PluginConfig{
+							Name: LowNodeLoadName,
+							Args: &deschedulerconfig.LowNodeLoadArgs{
+								NodeFit: true,
+								NodePools: []deschedulerconfig.LowNodeLoadNodePool{
+									{
+										LowThresholds:          tt.thresholds,
+										HighThresholds:         tt.targetThresholds,
+										UseDeviationThresholds: tt.useDeviationThresholds,
+										AnomalyCondition: &deschedulerconfig.LoadAnomalyCondition{
+											ConsecutiveAbnormalities: 1,
+										},
+									},
+								},
+								DetectorCacheTimeout: &metav1.Duration{Duration: 5 * time.Minute},
+								EvictableNamespaces:  tt.evictableNamespaces,
+							},
+						})
+					},
+				},
+				"test",
+				frameworkruntime.WithClientSet(fakeClient),
+				frameworkruntime.WithEvictionLimiter(evictionLimiter),
+				frameworkruntime.WithEventRecorder(eventRecorder),
+				frameworkruntime.WithSharedInformerFactory(sharedInformerFactory),
+				frameworkruntime.WithGetPodsAssignedToNodeFunc(getPodsAssignedToNode),
+			)
+			assert.NoError(t, err)
+
+			fh.RunBalancePlugins(ctx, tt.nodes)
+
+			podsEvicted := evictionLimiter.TotalEvicted()
+			if tt.expectedPodsEvicted != podsEvicted {
+				t.Errorf("Expected %v pods to be evicted but %v got evicted", tt.expectedPodsEvicted, podsEvicted)
+			}
+		})
+	}
+}
+
+func TestMaxEvictionTotal(t *testing.T) {
+	n1NodeName := "n1"
+	n2NodeName := "n2"
+	n3NodeName := "n3"
+
+	testCases := []struct {
+		name                         string
+		useDeviationThresholds       bool
+		thresholds, targetThresholds ResourceThresholds
+		nodes                        []*corev1.Node
+		pods                         []*corev1.Pod
+		podMetrics                   map[types.NamespacedName]*slov1alpha1.ResourceMap
+		expectedPodsEvicted          uint
+		evictedPods                  []string
+		evictableNamespaces          *deschedulerconfig.Namespaces
+		maxEvictionTotal             uint
+	}{
+		{
+			name: "maxPodsToEvictTotal",
+			thresholds: ResourceThresholds{
+				corev1.ResourceCPU:  30,
+				corev1.ResourcePods: 30,
+			},
+			targetThresholds: ResourceThresholds{
+				corev1.ResourceCPU:  50,
+				corev1.ResourcePods: 50,
+			},
+			maxEvictionTotal: 1,
+			nodes: []*corev1.Node{
+				test.BuildTestNode(n1NodeName, 4000, 3000, 9, nil),
+				test.BuildTestNode(n2NodeName, 4000, 3000, 10, nil),
+				test.BuildTestNode(n3NodeName, 4000, 3000, 10, test.SetNodeUnschedulable),
+			},
+			pods: []*corev1.Pod{
+				test.BuildTestPod("p1", 400, 0, n1NodeName, test.SetRSOwnerRef),
+				test.BuildTestPod("p2", 400, 0, n1NodeName, test.SetRSOwnerRef),
+				test.BuildTestPod("p3", 400, 0, n1NodeName, test.SetRSOwnerRef),
+				test.BuildTestPod("p4", 400, 0, n1NodeName, test.SetRSOwnerRef),
+				test.BuildTestPod("p5", 400, 0, n1NodeName, test.SetRSOwnerRef),
+				// These won't be evicted.
+				test.BuildTestPod("p6", 400, 0, n1NodeName, test.SetDSOwnerRef),
+				test.BuildTestPod("p7", 400, 0, n1NodeName, func(pod *corev1.Pod) {
+					// A pod with local storage.
+					test.SetNormalOwnerRef(pod)
+					pod.Spec.Volumes = []corev1.Volume{
+						{
+							Name: "sample",
+							VolumeSource: corev1.VolumeSource{
+								HostPath: &corev1.HostPathVolumeSource{Path: "somePath"},
+								EmptyDir: &corev1.EmptyDirVolumeSource{
+									SizeLimit: resource.NewQuantity(int64(10), resource.BinarySI),
+								},
+							},
+						},
+					}
+					// A Mirror Pod.
+					pod.Annotations = test.GetMirrorPodAnnotation()
+				}),
+				test.BuildTestPod("p8", 400, 0, n1NodeName, func(pod *corev1.Pod) {
+					// A Critical Pod.
+					pod.Namespace = "kube-system"
+					priority := utils.SystemCriticalPriority
+					pod.Spec.Priority = &priority
+				}),
+				test.BuildTestPod("p9", 400, 0, n2NodeName, test.SetRSOwnerRef),
+			},
+			expectedPodsEvicted: 1,
+		},
+	}
+	for _, tt := range testCases {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			var objs []runtime.Object
+			for _, node := range tt.nodes {
+				objs = append(objs, node)
+			}
+			for _, pod := range tt.pods {
+				objs = append(objs, pod)
+			}
+			fakeClient := fake.NewSimpleClientset(objs...)
+			setupFakeDiscoveryWithPolicyResource(&fakeClient.Fake)
+
+			sharedInformerFactory := informers.NewSharedInformerFactory(fakeClient, 0)
+			_ = sharedInformerFactory.Core().V1().Nodes().Informer()
+			podInformer := sharedInformerFactory.Core().V1().Pods()
+
+			getPodsAssignedToNode, err := test.BuildGetPodsAssignedToNodeFunc(podInformer)
+			if err != nil {
+				t.Errorf("Build get pods assigned to node function error: %v", err)
+			}
+
+			podsForEviction := make(map[string]struct{})
+			for _, pod := range tt.evictedPods {
+				podsForEviction[pod] = struct{}{}
+			}
+
+			sharedInformerFactory.Start(ctx.Done())
+			sharedInformerFactory.WaitForCacheSync(ctx.Done())
+
+			eventRecorder := &events.FakeRecorder{}
+			evictionLimiter := evictions.NewEvictionLimiter(nil, nil, &tt.maxEvictionTotal)
 
 			koordClientSet := koordfake.NewSimpleClientset()
 			setupNodeMetrics(koordClientSet, tt.nodes, tt.pods, tt.podMetrics)

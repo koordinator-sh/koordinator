@@ -247,6 +247,7 @@ func autoConvert_v1alpha2_DeschedulerConfiguration_To_config_DeschedulerConfigur
 	out.NodeSelector = (*v1.LabelSelector)(unsafe.Pointer(in.NodeSelector))
 	out.MaxNoOfPodsToEvictPerNode = (*uint)(unsafe.Pointer(in.MaxNoOfPodsToEvictPerNode))
 	out.MaxNoOfPodsToEvictPerNamespace = (*uint)(unsafe.Pointer(in.MaxNoOfPodsToEvictPerNamespace))
+	out.MaxNoOfPodsToEvictTotal = (*uint)(unsafe.Pointer(in.MaxNoOfPodsToEvictTotal))
 	return nil
 }
 
@@ -282,6 +283,7 @@ func autoConvert_config_DeschedulerConfiguration_To_v1alpha2_DeschedulerConfigur
 	out.NodeSelector = (*v1.LabelSelector)(unsafe.Pointer(in.NodeSelector))
 	out.MaxNoOfPodsToEvictPerNode = (*uint)(unsafe.Pointer(in.MaxNoOfPodsToEvictPerNode))
 	out.MaxNoOfPodsToEvictPerNamespace = (*uint)(unsafe.Pointer(in.MaxNoOfPodsToEvictPerNamespace))
+	out.MaxNoOfPodsToEvictTotal = (*uint)(unsafe.Pointer(in.MaxNoOfPodsToEvictTotal))
 	return nil
 }
 

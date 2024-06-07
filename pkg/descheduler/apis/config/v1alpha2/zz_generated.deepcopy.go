@@ -90,6 +90,11 @@ func (in *DeschedulerConfiguration) DeepCopyInto(out *DeschedulerConfiguration) 
 		*out = new(uint)
 		**out = **in
 	}
+	if in.MaxNoOfPodsToEvictTotal != nil {
+		in, out := &in.MaxNoOfPodsToEvictTotal, &out.MaxNoOfPodsToEvictTotal
+		*out = new(uint)
+		**out = **in
+	}
 	return
 }
 
