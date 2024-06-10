@@ -428,6 +428,7 @@ func TestEnableScheduleWhenNodeMetricsExpired(t *testing.T) {
 func TestFilterUsage(t *testing.T) {
 	tests := []struct {
 		name                      string
+		assignedPods              []*podAssignInfo
 		usageThresholds           map[corev1.ResourceName]int64
 		prodUsageThresholds       map[corev1.ResourceName]int64
 		aggregated                *v1beta3.LoadAwareSchedulingAggregatedArgs
@@ -967,6 +968,345 @@ func TestFilterUsage(t *testing.T) {
 			testPod:    schedulertesting.MakePod().Namespace("default").Name("test-pod").Priority(extension.PriorityProdValueMax).OwnerReference("test-daemonset", schema.GroupVersionKind{Group: "apps", Version: "v1", Kind: "DaemonSet"}).Obj(),
 			wantStatus: nil,
 		},
+		{
+			name: "filter prod pod with node have assigned pods",
+			usageThresholds: map[corev1.ResourceName]int64{
+				corev1.ResourceCPU:    100,
+				corev1.ResourceMemory: 100,
+			},
+			prodUsageThresholds: map[corev1.ResourceName]int64{
+				corev1.ResourceCPU:    50,
+				corev1.ResourceMemory: 100,
+			},
+			assignedPods: []*podAssignInfo{
+				{
+					timestamp: time.Now(),
+					pod: &corev1.Pod{
+						ObjectMeta: metav1.ObjectMeta{
+							Namespace: "default",
+							Name:      "assigned-pod-1",
+						},
+						Spec: corev1.PodSpec{
+							NodeName: "test-node-1",
+							Containers: []corev1.Container{
+								{
+									Name: "test-container",
+									Resources: corev1.ResourceRequirements{
+										Limits: corev1.ResourceList{
+											corev1.ResourceCPU:    resource.MustParse("64"),
+											corev1.ResourceMemory: resource.MustParse("128Gi"),
+										},
+										Requests: corev1.ResourceList{
+											corev1.ResourceCPU:    resource.MustParse("64"),
+											corev1.ResourceMemory: resource.MustParse("128Gi"),
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			nodeName: "test-node-1",
+			nodeMetric: &slov1alpha1.NodeMetric{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node-1",
+				},
+				Spec: slov1alpha1.NodeMetricSpec{
+					CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
+						ReportIntervalSeconds: pointer.Int64(60),
+					},
+				},
+				Status: slov1alpha1.NodeMetricStatus{
+					UpdateTime: &metav1.Time{
+						Time: time.Now().Add(-10 * time.Second),
+					},
+					NodeMetric: &slov1alpha1.NodeMetricInfo{
+						NodeUsage: slov1alpha1.ResourceMap{
+							ResourceList: corev1.ResourceList{
+								corev1.ResourceCPU:    resource.MustParse("64"),
+								corev1.ResourceMemory: resource.MustParse("128Gi"),
+							},
+						},
+					},
+				},
+			},
+			testPod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "default",
+					Name:      "test-pod-1",
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name: "test-container",
+							Resources: corev1.ResourceRequirements{
+								Limits: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("16"),
+									corev1.ResourceMemory: resource.MustParse("32Gi"),
+								},
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("16"),
+									corev1.ResourceMemory: resource.MustParse("32Gi"),
+								},
+							},
+						},
+					},
+				},
+			},
+			wantStatus: framework.NewStatus(framework.Unschedulable, fmt.Sprintf(ErrReasonUsageExceedThreshold, corev1.ResourceCPU)),
+		},
+		{
+			name: "filter prod pod with node have not reported usage and have assigned pods",
+			usageThresholds: map[corev1.ResourceName]int64{
+				corev1.ResourceCPU:    100,
+				corev1.ResourceMemory: 100,
+			},
+			prodUsageThresholds: map[corev1.ResourceName]int64{
+				corev1.ResourceCPU:    50,
+				corev1.ResourceMemory: 100,
+			},
+			assignedPods: []*podAssignInfo{
+				{
+					timestamp: time.Now(),
+					pod: &corev1.Pod{
+						ObjectMeta: metav1.ObjectMeta{
+							Namespace: "default",
+							Name:      "assigned-pod-1",
+						},
+						Spec: corev1.PodSpec{
+							NodeName: "test-node-1",
+							Containers: []corev1.Container{
+								{
+									Name: "test-container",
+									Resources: corev1.ResourceRequirements{
+										Limits: corev1.ResourceList{
+											corev1.ResourceCPU:    resource.MustParse("64"),
+											corev1.ResourceMemory: resource.MustParse("128Gi"),
+										},
+										Requests: corev1.ResourceList{
+											corev1.ResourceCPU:    resource.MustParse("64"),
+											corev1.ResourceMemory: resource.MustParse("128Gi"),
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			nodeName: "test-node-1",
+			nodeMetric: &slov1alpha1.NodeMetric{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node-1",
+				},
+				Spec: slov1alpha1.NodeMetricSpec{
+					CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
+						ReportIntervalSeconds: pointer.Int64(60),
+					},
+				},
+				Status: slov1alpha1.NodeMetricStatus{
+					UpdateTime: &metav1.Time{
+						Time: time.Now().Add(-10 * time.Second),
+					},
+				},
+			},
+			testPod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "default",
+					Name:      "test-pod-1",
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name: "test-container",
+							Resources: corev1.ResourceRequirements{
+								Limits: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("16"),
+									corev1.ResourceMemory: resource.MustParse("32Gi"),
+								},
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("16"),
+									corev1.ResourceMemory: resource.MustParse("32Gi"),
+								},
+							},
+						},
+					},
+				},
+			},
+			wantStatus: framework.NewStatus(framework.Unschedulable, fmt.Sprintf(ErrReasonUsageExceedThreshold, corev1.ResourceCPU)),
+		},
+		{
+			name: "filter batch pod with node have assigned pods",
+			usageThresholds: map[corev1.ResourceName]int64{
+				corev1.ResourceCPU:    75,
+				corev1.ResourceMemory: 100,
+			},
+			prodUsageThresholds: map[corev1.ResourceName]int64{
+				corev1.ResourceCPU:    100,
+				corev1.ResourceMemory: 100,
+			},
+			assignedPods: []*podAssignInfo{
+				{
+					timestamp: time.Now(),
+					pod: &corev1.Pod{
+						ObjectMeta: metav1.ObjectMeta{
+							Namespace: "default",
+							Name:      "assigned-pod-1",
+						},
+						Spec: corev1.PodSpec{
+							NodeName: "test-node-1",
+							Containers: []corev1.Container{
+								{
+									Name: "test-container",
+									Resources: corev1.ResourceRequirements{
+										Limits: corev1.ResourceList{
+											corev1.ResourceCPU:    resource.MustParse("16"),
+											corev1.ResourceMemory: resource.MustParse("32Gi"),
+										},
+										Requests: corev1.ResourceList{
+											corev1.ResourceCPU:    resource.MustParse("16"),
+											corev1.ResourceMemory: resource.MustParse("32Gi"),
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			nodeName: "test-node-1",
+			nodeMetric: &slov1alpha1.NodeMetric{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node-1",
+				},
+				Spec: slov1alpha1.NodeMetricSpec{
+					CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
+						ReportIntervalSeconds: pointer.Int64(60),
+					},
+				},
+				Status: slov1alpha1.NodeMetricStatus{
+					UpdateTime: &metav1.Time{
+						Time: time.Now().Add(-10 * time.Second),
+					},
+					NodeMetric: &slov1alpha1.NodeMetricInfo{
+						NodeUsage: slov1alpha1.ResourceMap{
+							ResourceList: corev1.ResourceList{
+								corev1.ResourceCPU:    resource.MustParse("64"),
+								corev1.ResourceMemory: resource.MustParse("128Gi"),
+							},
+						},
+					},
+				},
+			},
+			testPod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "default",
+					Name:      "test-pod-1",
+				},
+				Spec: corev1.PodSpec{
+					Priority: pointer.Int32(extension.PriorityBatchValueMin),
+					Containers: []corev1.Container{
+						{
+							Name: "test-container",
+							Resources: corev1.ResourceRequirements{
+								Limits: corev1.ResourceList{
+									extension.BatchCPU:    resource.MustParse("16000"),
+									extension.BatchMemory: resource.MustParse("32Gi"),
+								},
+								Requests: corev1.ResourceList{
+									extension.BatchCPU:    resource.MustParse("16000"),
+									extension.BatchMemory: resource.MustParse("32Gi"),
+								},
+							},
+						},
+					},
+				},
+			},
+			wantStatus: framework.NewStatus(framework.Unschedulable, fmt.Sprintf(ErrReasonUsageExceedThreshold, corev1.ResourceCPU)),
+		},
+		{
+			name: "filter batch pod with node have not reported usage and hava assigned pods",
+			usageThresholds: map[corev1.ResourceName]int64{
+				corev1.ResourceCPU:    75,
+				corev1.ResourceMemory: 100,
+			},
+			prodUsageThresholds: map[corev1.ResourceName]int64{
+				corev1.ResourceCPU:    100,
+				corev1.ResourceMemory: 100,
+			},
+			assignedPods: []*podAssignInfo{
+				{
+					timestamp: time.Now(),
+					pod: &corev1.Pod{
+						ObjectMeta: metav1.ObjectMeta{
+							Namespace: "default",
+							Name:      "assigned-pod-1",
+						},
+						Spec: corev1.PodSpec{
+							NodeName: "test-node-1",
+							Containers: []corev1.Container{
+								{
+									Name: "test-container",
+									Resources: corev1.ResourceRequirements{
+										Limits: corev1.ResourceList{
+											corev1.ResourceCPU:    resource.MustParse("16"),
+											corev1.ResourceMemory: resource.MustParse("32Gi"),
+										},
+										Requests: corev1.ResourceList{
+											corev1.ResourceCPU:    resource.MustParse("16"),
+											corev1.ResourceMemory: resource.MustParse("32Gi"),
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			nodeName: "test-node-1",
+			nodeMetric: &slov1alpha1.NodeMetric{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node-1",
+				},
+				Spec: slov1alpha1.NodeMetricSpec{
+					CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
+						ReportIntervalSeconds: pointer.Int64(60),
+					},
+				},
+				Status: slov1alpha1.NodeMetricStatus{
+					UpdateTime: &metav1.Time{
+						Time: time.Now().Add(-10 * time.Second),
+					},
+					NodeMetric: &slov1alpha1.NodeMetricInfo{},
+				},
+			},
+			testPod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "default",
+					Name:      "test-pod-1",
+				},
+				Spec: corev1.PodSpec{
+					Priority: pointer.Int32(extension.PriorityBatchValueMin),
+					Containers: []corev1.Container{
+						{
+							Name: "test-container",
+							Resources: corev1.ResourceRequirements{
+								Limits: corev1.ResourceList{
+									extension.BatchCPU:    resource.MustParse("16000"),
+									extension.BatchMemory: resource.MustParse("32Gi"),
+								},
+								Requests: corev1.ResourceList{
+									extension.BatchCPU:    resource.MustParse("16000"),
+									extension.BatchMemory: resource.MustParse("32Gi"),
+								},
+							},
+						},
+					},
+				},
+			},
+			wantStatus: nil,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1000,6 +1340,13 @@ func TestFilterUsage(t *testing.T) {
 			for _, v := range tt.pods {
 				_, err = cs.CoreV1().Pods(v.Namespace).Create(context.TODO(), v, metav1.CreateOptions{})
 				assert.Nil(t, err)
+			}
+
+			for _, v := range tt.assignedPods {
+				v.pod.UID = uuid.NewUUID()
+				v.pod.ResourceVersion = "111"
+				_, err = cs.CoreV1().Pods(v.pod.Namespace).Create(context.TODO(), v.pod, metav1.CreateOptions{})
+				assert.NoError(t, err)
 			}
 
 			nodes := []*corev1.Node{
@@ -1054,6 +1401,16 @@ func TestFilterUsage(t *testing.T) {
 				assert.NoError(t, err)
 			}
 
+			assignCache := p.(*Plugin).podAssignCache
+			for _, v := range tt.assignedPods {
+				m := assignCache.podInfoItems[tt.nodeName]
+				if m == nil {
+					m = map[types.UID]*podAssignInfo{}
+					assignCache.podInfoItems[tt.nodeName] = m
+				}
+				m[v.pod.UID] = v
+			}
+
 			informerFactory.Start(context.TODO().Done())
 			informerFactory.WaitForCacheSync(context.TODO().Done())
 
@@ -1071,6 +1428,8 @@ func TestFilterUsage(t *testing.T) {
 				testPod = &corev1.Pod{}
 			}
 
+			argsStr, _ := json.Marshal(loadAwareSchedulingArgs)
+			fmt.Println("--args:", string(argsStr))
 			status := p.(*Plugin).Filter(context.TODO(), cycleState, testPod, nodeInfo)
 			assert.True(t, tt.wantStatus.Equal(status), "want status: %s, but got %s", tt.wantStatus.Message(), status.Message())
 		})
