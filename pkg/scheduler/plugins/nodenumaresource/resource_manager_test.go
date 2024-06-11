@@ -24,7 +24,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
-	"k8s.io/klog/v2"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingconfig "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
@@ -1613,29 +1612,7 @@ func TestResourceManagerGetTopologyHint(t *testing.T) {
 				},
 			},
 			want: map[string][]topologymanager.NUMATopologyHint{
-				string(corev1.ResourceCPU): {
-					{
-						NUMANodeAffinity: func() bitmask.BitMask {
-							mask, _ := bitmask.NewBitMask(0)
-							return mask
-						}(),
-						Preferred: true,
-					},
-					{
-						NUMANodeAffinity: func() bitmask.BitMask {
-							mask, _ := bitmask.NewBitMask(1)
-							return mask
-						}(),
-						Preferred: true,
-					},
-					{
-						NUMANodeAffinity: func() bitmask.BitMask {
-							mask, _ := bitmask.NewBitMask(0, 1)
-							return mask
-						}(),
-						Preferred: false,
-					},
-				},
+				string(corev1.ResourceCPU):             {},
 				string(corev1.ResourceMemory):          {},
 				corev1.ResourceHugePagesPrefix + "1Gi": {},
 			},
@@ -1692,17 +1669,11 @@ func TestResourceManagerGetTopologyHint(t *testing.T) {
 			}
 			assert.NoError(t, amplifyNUMANodeResources(node, &tt.options.topologyOptions))
 
-			got, err := resourceManager.GetTopologyHints(node, tt.pod, tt.options, apiext.NUMATopologyPolicyBestEffort)
+			got, err := resourceManager.GetTopologyHints(node, tt.pod, tt.options, apiext.NUMATopologyPolicyBestEffort, &nodeReservationRestoreStateData{})
 			if tt.wantErr != (err != nil) {
 				t.Errorf("wantErr %v but got %v", tt.wantErr, err != nil)
 			}
 			assert.Equal(t, tt.want, got)
 		})
 	}
-}
-
-func TestA(t *testing.T) {
-	a := map[string]corev1.ResourceList{}
-	b := a["a"]
-	klog.Info(b["cpu"])
 }

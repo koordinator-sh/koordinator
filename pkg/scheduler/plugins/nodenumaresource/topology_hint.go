@@ -25,6 +25,7 @@ import (
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/topologymanager"
+	"github.com/koordinator-sh/koordinator/pkg/util/cpuset"
 )
 
 func (p *Plugin) FilterByNUMANode(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string, policyType apiext.NUMATopologyPolicy, exclusivePolicy apiext.NumaTopologyExclusive, topologyOptions TopologyOptions) *framework.Status {
@@ -59,12 +60,14 @@ func (p *Plugin) GetPodTopologyHints(ctx context.Context, cycleState *framework.
 	if !status.IsSuccess() {
 		return nil, status
 	}
-	resourceOptions, err := p.getResourceOptions(cycleState, state, node, pod, requestCPUBind, topologymanager.NUMATopologyHint{}, topologyOptions)
+	reservationRestoreState := getReservationRestoreState(cycleState)
+	restoreState := reservationRestoreState.getNodeState(nodeName)
+	resourceOptions, err := p.getResourceOptions(state, node, pod, requestCPUBind, topologymanager.NUMATopologyHint{}, topologyOptions)
 	if err != nil {
 		return nil, framework.AsStatus(err)
 	}
 	resourceOptions.numaScorer = p.numaScorer
-	hints, err := p.resourceManager.GetTopologyHints(node, pod, resourceOptions, numaTopologyPolicy)
+	hints, err := p.resourceManager.GetTopologyHints(node, pod, resourceOptions, numaTopologyPolicy, restoreState)
 	if err != nil {
 		return nil, framework.NewStatus(framework.Unschedulable, "node(s) Insufficient NUMA Node resources")
 	}
@@ -89,13 +92,26 @@ func (p *Plugin) Allocate(ctx context.Context, cycleState *framework.CycleState,
 		return status
 	}
 
-	resourceOptions, err := p.getResourceOptions(cycleState, state, node, pod, requestCPUBind, affinity, topologyOptions)
+	reservationRestoreState := getReservationRestoreState(cycleState)
+	restoreState := reservationRestoreState.getNodeState(nodeName)
+
+	resourceOptions, err := p.getResourceOptions(state, node, pod, requestCPUBind, affinity, topologyOptions)
 	if err != nil {
 		return framework.NewStatus(framework.UnschedulableAndUnresolvable, err.Error())
 	}
-	_, err = p.resourceManager.Allocate(node, pod, resourceOptions)
-	if err != nil {
-		return framework.NewStatus(framework.Unschedulable, err.Error())
+	podAllocation, status := tryAllocateFromReservation(p.resourceManager, restoreState, resourceOptions, restoreState.matched, pod, node)
+	if !status.IsSuccess() {
+		return status
+	}
+	if podAllocation != nil {
+		return nil
+	}
+	resourceOptions.requiredResources = nil
+	resourceOptions.reusableResources = appendAllocated(nil, restoreState.mergedUnmatchedUsed)
+	resourceOptions.preferredCPUs = cpuset.NewCPUSet()
+	_, status = p.resourceManager.Allocate(node, pod, resourceOptions)
+	if !status.IsSuccess() {
+		return status
 	}
 	return nil
 }

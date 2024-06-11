@@ -30,6 +30,7 @@ import (
 	schedulingconfig "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/topologymanager"
 	"github.com/koordinator-sh/koordinator/pkg/util"
+	"github.com/koordinator-sh/koordinator/pkg/util/cpuset"
 )
 
 // resourceStrategyTypeMap maps strategy to scorer implementation
@@ -82,7 +83,7 @@ func (p *Plugin) Score(ctx context.Context, cycleState *framework.CycleState, po
 
 	store := topologymanager.GetStore(cycleState)
 	affinity := store.GetAffinity(nodeName)
-	resourceOptions, err := p.getResourceOptions(cycleState, state, node, pod, requestCPUBind, affinity, topologyOptions)
+	resourceOptions, err := p.getResourceOptions(state, node, pod, requestCPUBind, affinity, topologyOptions)
 	if err != nil {
 		return 0, nil
 	}
@@ -91,10 +92,22 @@ func (p *Plugin) Score(ctx context.Context, cycleState *framework.CycleState, po
 		return p.scoreWithAmplifiedCPUs(state, nodeInfo, resourceOptions)
 	}
 
-	podAllocation, err := p.resourceManager.Allocate(node, pod, resourceOptions)
-	if err != nil {
-		return 0, nil
+	reservationRestoreState := getReservationRestoreState(cycleState)
+	restoreState := reservationRestoreState.getNodeState(nodeName)
+	podAllocation, status := p.allocateWithNominatedReservation(restoreState, resourceOptions, pod, node)
+	if !status.IsSuccess() {
+		return 0, status
 	}
+	if podAllocation == nil {
+		resourceOptions.requiredResources = nil
+		resourceOptions.preferredCPUs = cpuset.NewCPUSet()
+		resourceOptions.reusableResources = appendAllocated(nil, restoreState.mergedUnmatchedUsed)
+		podAllocation, status = p.resourceManager.Allocate(node, pod, resourceOptions)
+		if !status.IsSuccess() {
+			return 0, status
+		}
+	}
+
 	allocatable, requested := p.calculateAllocatableAndRequested(node.Name, nodeInfo, podAllocation, resourceOptions)
 	return p.scorer.score(requested, allocatable, framework.NewResource(resourceOptions.requests))
 }

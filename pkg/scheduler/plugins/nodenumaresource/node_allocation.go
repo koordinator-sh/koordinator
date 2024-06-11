@@ -88,6 +88,18 @@ func (n *NodeAllocation) getCPUs(podUID types.UID) (cpuset.CPUSet, bool) {
 	return request.CPUSet, ok
 }
 
+func (n *NodeAllocation) getNUMAResource(podUID types.UID) (map[int]corev1.ResourceList, bool) {
+	request, ok := n.allocatedPods[podUID]
+	if !ok {
+		return nil, false
+	}
+	numaResource := map[int]corev1.ResourceList{}
+	for _, numaNodeResource := range request.NUMANodeResources {
+		numaResource[numaNodeResource.Node] = numaNodeResource.Resources
+	}
+	return numaResource, ok
+}
+
 func (n *NodeAllocation) addCPUs(cpuTopology *CPUTopology, podUID types.UID, cpuset cpuset.CPUSet, exclusivePolicy schedulingconfig.CPUExclusivePolicy) {
 	n.addPodAllocation(&PodAllocation{
 		UID:                podUID,
