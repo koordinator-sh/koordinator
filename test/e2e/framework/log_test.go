@@ -183,10 +183,15 @@ var functionArgs = regexp.MustCompile(`([[:alpha:]]+)\(.*\)`)
 // testFailureOutput matches TestFailureOutput() and its source followed by additional stack entries:
 //
 // github.com/koordinator-sh/koordinator/test/e2e/framework_test.TestFailureOutput(0xc000558800)
+//
 //	/nvme/gopath/src/github.com/koordinator-sh/koordinator/test/e2e/framework/log/log_test.go:73 +0x1c9
+//
 // testing.tRunner(0xc000558800, 0x1af2848)
-// 	/nvme/gopath/go/src/testing/testing.go:865 +0xc0
+//
+//	/nvme/gopath/go/src/testing/testing.go:865 +0xc0
+//
 // created by testing.(*T).Run
+//
 //	/nvme/gopath/go/src/testing/testing.go:916 +0x35a
 var testFailureOutput = regexp.MustCompile(`(?m)^github.com/koordinator-sh/koordinator/test/e2e/framework_test\.TestFailureOutput\(.*\n\t.*(\n.*\n\t.*)*`)
 

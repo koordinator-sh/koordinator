@@ -17,16 +17,30 @@ limitations under the License.
 package nri
 
 import (
+	"fmt"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/containerd/nri/pkg/api"
 	"github.com/containerd/nri/pkg/stub"
 
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/hooks"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/protocol"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 	"github.com/koordinator-sh/koordinator/pkg/runtimeproxy/config"
 )
+
+type mockPlugin struct{}
+
+func (p *mockPlugin) Register(op hooks.Options) {
+	hooks.Register(config.PreRemoveRunPodSandbox, "mockPlugin", "mockPlugin remove", p.Remove)
+}
+
+func (p *mockPlugin) Remove(proto protocol.HooksProtocol) error {
+	return fmt.Errorf("mock error")
+}
 
 func getDisableStagesMap(stagesSlice []string) map[string]struct{} {
 	stagesMap := map[string]struct{}{}
@@ -53,32 +67,48 @@ func TestNriServer_Start(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			name: "stub is nil",
+			name: "nri socket not found",
 			fields: fields{
 				stub: nil,
 				mask: api.EventMask(1),
 				options: Options{
+					NriSocketPath:       "nri/nri.sock",
+					NriConnectTimeout:   time.Second,
 					PluginFailurePolicy: "Ignore",
 					DisableStages:       getDisableStagesMap([]string{"PreRunPodSandbox"}),
 					Executor:            nil,
 				},
 			},
-			wantErr: false,
+			wantErr: true,
 		},
 		{
+			name: "stub is nil",
 			fields: fields{
 				stub: nil,
+				mask: api.EventMask(1),
+				options: Options{
+					NriSocketPath:       "",
+					NriConnectTimeout:   time.Second,
+					PluginFailurePolicy: "Ignore",
+					DisableStages:       getDisableStagesMap([]string{"PreRunPodSandbox"}),
+					Executor:            nil,
+				},
 			},
+			wantErr: true,
 		},
-		{},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			helper := system.NewFileTestUtil(t)
+			defer helper.Cleanup()
 
 			s := &NriServer{
 				stub:    tt.fields.stub,
 				mask:    tt.fields.mask,
 				options: tt.fields.options,
+			}
+			if s.stub != nil {
+				defer s.Stop()
 			}
 
 			if err := s.Start(); (err != nil) != tt.wantErr {
@@ -108,6 +138,8 @@ func TestNewNriServer(t *testing.T) {
 				isNriSocketExist: false,
 			},
 			args: args{opt: Options{
+				NriPluginName:       "test_newNriServer_0",
+				NriPluginIdx:        "00",
 				NriSocketPath:       "nri/nri.sock",
 				PluginFailurePolicy: "Ignore",
 				DisableStages:       getDisableStagesMap([]string{"PreRunPodSandbox"}),
@@ -121,6 +153,8 @@ func TestNewNriServer(t *testing.T) {
 				isNriSocketExist: true,
 			},
 			args: args{opt: Options{
+				NriPluginName:       "test_newNriServer_1",
+				NriPluginIdx:        "01",
 				NriSocketPath:       "nri/nri.sock",
 				PluginFailurePolicy: "Ignore",
 				DisableStages:       getDisableStagesMap([]string{"PreRunPodSandbox"}),
@@ -136,7 +170,10 @@ func TestNewNriServer(t *testing.T) {
 				helper.WriteFileContents("nri/nri.sock", "")
 			}
 
-			_, err := NewNriServer(tt.args.opt)
+			s, err := NewNriServer(tt.args.opt)
+			if s != nil && s.stub != nil {
+				defer s.Stop()
+			}
 			if (err != nil) != tt.wantErr {
 				t.Errorf("NewNriServer() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -503,6 +540,94 @@ func TestNriServer_UpdateContainer(t *testing.T) {
 			if (err != nil) != tt.wantErr {
 				t.Errorf("UpdateContainer() error = %v, wantErr %v", err, tt.wantErr)
 				return
+			}
+		})
+	}
+}
+
+func TestNriServer_RemovePodSandbox(t *testing.T) {
+	type fields struct {
+		stub            stub.Stub
+		mask            stub.EventMask
+		options         Options
+		runPodSandbox   func(*NriServer, *api.PodSandbox, *api.Container) error
+		createContainer func(*NriServer, *api.PodSandbox, *api.Container) (*api.ContainerAdjustment, []*api.ContainerUpdate, error)
+		updateContainer func(*NriServer, *api.PodSandbox, *api.Container) ([]*api.ContainerUpdate, error)
+		plugin          *mockPlugin
+	}
+	pod := &api.PodSandbox{
+		Id:          "test",
+		Name:        "test",
+		Uid:         "test",
+		Namespace:   "test",
+		Labels:      nil,
+		Annotations: nil,
+		Linux: &api.LinuxPodSandbox{
+			PodOverhead:  nil,
+			PodResources: nil,
+			CgroupParent: "",
+			CgroupsPath:  "",
+			Namespaces:   nil,
+			Resources:    nil,
+		},
+		Pid: 0,
+	}
+	type args struct {
+		pod *api.PodSandbox
+	}
+	tests := []struct {
+		name    string
+		fields  fields
+		args    args
+		wantErr bool
+	}{
+		{
+			name: "RemovePodSandbox success",
+			fields: fields{
+				stub: nil,
+				options: Options{
+					PluginFailurePolicy: config.PolicyIgnore,
+					DisableStages:       getDisableStagesMap([]string{"PreRemovePodSandbox"}),
+					Executor:            resourceexecutor.NewTestResourceExecutor(),
+				},
+			},
+			args: args{
+				pod: pod,
+			},
+			wantErr: false,
+		},
+		{
+			name: "RemovePodSandbox fail",
+			fields: fields{
+				stub: nil,
+				options: Options{
+					PluginFailurePolicy: config.PolicyFail,
+					DisableStages:       getDisableStagesMap([]string{"PreRemovePodSandbox"}),
+					Executor:            resourceexecutor.NewTestResourceExecutor(),
+				},
+				plugin: &mockPlugin{},
+			},
+			args: args{
+				pod: pod,
+			},
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := &NriServer{
+				stub:    tt.fields.stub,
+				mask:    tt.fields.mask,
+				options: tt.fields.options,
+			}
+			if p.stub != nil {
+				defer p.Stop()
+			}
+			if tt.fields.plugin != nil {
+				tt.fields.plugin.Register(hooks.Options{})
+			}
+			if err := p.RemovePodSandbox(tt.args.pod); (err != nil) != tt.wantErr {
+				t.Errorf("RemovePodSandbox() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
 	}

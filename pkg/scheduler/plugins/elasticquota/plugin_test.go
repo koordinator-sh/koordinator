@@ -50,15 +50,15 @@ import (
 	schedulertesting "k8s.io/kubernetes/pkg/scheduler/testing"
 	imageutils "k8s.io/kubernetes/test/utils/image"
 	"k8s.io/utils/pointer"
-	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
-	pgclientset "sigs.k8s.io/scheduler-plugins/pkg/generated/clientset/versioned"
-	pgfake "sigs.k8s.io/scheduler-plugins/pkg/generated/clientset/versioned/fake"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
+	pgclientset "github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/generated/clientset/versioned"
+	pgfake "github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/generated/clientset/versioned/fake"
 	"github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/fake"
 	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
-	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/v1beta2"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/v1beta3"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/elasticquota/core"
 )
@@ -115,10 +115,10 @@ var (
 
 func newPluginTestSuit(t *testing.T, nodes []*corev1.Node) *pluginTestSuit {
 	setLoglevel("5")
-	var v1beta2args v1beta2.ElasticQuotaArgs
-	v1beta2.SetDefaults_ElasticQuotaArgs(&v1beta2args)
+	var v1beta3args v1beta3.ElasticQuotaArgs
+	v1beta3.SetDefaults_ElasticQuotaArgs(&v1beta3args)
 	var elasticQuotaArgs config.ElasticQuotaArgs
-	err := v1beta2.Convert_v1beta2_ElasticQuotaArgs_To_config_ElasticQuotaArgs(&v1beta2args, &elasticQuotaArgs, nil)
+	err := v1beta3.Convert_v1beta3_ElasticQuotaArgs_To_config_ElasticQuotaArgs(&v1beta3args, &elasticQuotaArgs, nil)
 	assert.NoError(t, err)
 
 	elasticQuotaPluginConfig := schedulerconfig.PluginConfig{
@@ -175,6 +175,7 @@ func newPluginTestSuit(t *testing.T, nodes []*corev1.Node) *pluginTestSuit {
 		flag.Parse()
 	}
 	fh, err := schedulertesting.NewFramework(
+		context.TODO(),
 		registeredPlugins,
 		"koord-scheduler",
 		runtime.WithClientSet(cs),
@@ -194,10 +195,10 @@ func newPluginTestSuit(t *testing.T, nodes []*corev1.Node) *pluginTestSuit {
 
 func newPluginTestSuitWithPod(t *testing.T, nodes []*corev1.Node, pods []*corev1.Pod) *pluginTestSuit {
 	setLoglevel("5")
-	var v1beta2args v1beta2.ElasticQuotaArgs
-	v1beta2.SetDefaults_ElasticQuotaArgs(&v1beta2args)
+	var v1beta3args v1beta3.ElasticQuotaArgs
+	v1beta3.SetDefaults_ElasticQuotaArgs(&v1beta3args)
 	var elasticQuotaArgs config.ElasticQuotaArgs
-	err := v1beta2.Convert_v1beta2_ElasticQuotaArgs_To_config_ElasticQuotaArgs(&v1beta2args, &elasticQuotaArgs, nil)
+	err := v1beta3.Convert_v1beta3_ElasticQuotaArgs_To_config_ElasticQuotaArgs(&v1beta3args, &elasticQuotaArgs, nil)
 	assert.NoError(t, err)
 
 	elasticQuotaPluginConfig := schedulerconfig.PluginConfig{
@@ -256,6 +257,7 @@ func newPluginTestSuitWithPod(t *testing.T, nodes []*corev1.Node, pods []*corev1
 		flag.Parse()
 	}
 	fh, err := schedulertesting.NewFramework(
+		context.TODO(),
 		registeredPlugins,
 		"koord-scheduler",
 		runtime.WithClientSet(cs),
@@ -281,6 +283,14 @@ type testSharedLister struct {
 	nodes       []*corev1.Node
 	nodeInfos   []*framework.NodeInfo
 	nodeInfoMap map[string]*framework.NodeInfo
+}
+
+func (f *testSharedLister) StorageInfos() framework.StorageInfoLister {
+	return f
+}
+
+func (f *testSharedLister) IsPVCUsedByPods(key string) bool {
+	return false
 }
 
 func (f *testSharedLister) NodeInfos() framework.NodeInfoLister {
@@ -759,7 +769,7 @@ func TestPlugin_PreFilter_CheckParent(t *testing.T) {
 			qi1.Lock()
 			qi1.CalculateInfo.Runtime = tt.parentRuntime.DeepCopy()
 			qi1.UnLock()
-			podRequests, _ := core.PodRequestsAndLimits(tt.pod)
+			podRequests := core.PodRequests(tt.pod)
 			status := *gp.checkQuotaRecursive(tt.quotaInfo.Name, []string{tt.quotaInfo.Name}, podRequests)
 			assert.Equal(t, tt.expectedStatus, status)
 		})
@@ -1134,7 +1144,7 @@ func (npm *nominatedPodMap) delete(p *corev1.Pod) {
 }
 
 // UpdateNominatedPod updates the <oldPod> with <newPod>.
-func (npm *nominatedPodMap) UpdateNominatedPod(oldPod *corev1.Pod, newPodInfo *framework.PodInfo) {
+func (npm *nominatedPodMap) UpdateNominatedPod(logr klog.Logger, oldPod *corev1.Pod, newPodInfo *framework.PodInfo) {
 	npm.Lock()
 	defer npm.Unlock()
 	// In some cases, an Update event with no "NominatedNode" present is received right
@@ -1181,7 +1191,7 @@ func (npm *nominatedPodMap) DeleteNominatedPodIfExists(pod *corev1.Pod) {
 // This is called during the preemption process after a node is nominated to run
 // the pod. We update the structure before sending a request to update the pod
 // object to avoid races with the following scheduling cycles.
-func (npm *nominatedPodMap) AddNominatedPod(pi *framework.PodInfo, nominatingInfo *framework.NominatingInfo) {
+func (npm *nominatedPodMap) AddNominatedPod(logger klog.Logger, pi *framework.PodInfo, nominatingInfo *framework.NominatingInfo) {
 	npm.Lock()
 	npm.add(pi, nominatingInfo.NominatedNodeName)
 	npm.Unlock()

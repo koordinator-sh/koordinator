@@ -18,6 +18,7 @@ package handler
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -90,13 +91,13 @@ func Test_Docker_StopContainer(t *testing.T) {
 	dockerClient, err := createDockerClient(newMockClient(stopContainer), endPoint)
 	assert.NoError(t, err)
 	dockerRuntimeHandler := DockerRuntimeHandler{endpoint: endPoint, dockerClient: dockerClient}
-	err = dockerRuntimeHandler.StopContainer("test_stop_container", 5)
+	err = dockerRuntimeHandler.StopContainer(context.TODO(), "test_stop_container", 5)
 	assert.NoError(t, err)
-	err = dockerRuntimeHandler.StopContainer("", 5)
+	err = dockerRuntimeHandler.StopContainer(context.TODO(), "", 5)
 	assert.Error(t, err)
 
 	dockerRuntimeHandlerNotInit := DockerRuntimeHandler{endpoint: endPoint, dockerClient: nil}
-	err = dockerRuntimeHandlerNotInit.StopContainer("test_stop_container", 5)
+	err = dockerRuntimeHandlerNotInit.StopContainer(context.TODO(), "test_stop_container", 5)
 	assert.Error(t, err)
 }
 

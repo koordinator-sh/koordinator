@@ -18,6 +18,7 @@ package frameworkext
 
 import (
 	"context"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -143,11 +144,14 @@ func (f *FrameworkExtenderFactory) InitScheduler(sched Scheduler) {
 			adaptor.Scheduler.SchedulePod = f.scheduleOne
 
 			nextPod := adaptor.Scheduler.NextPod
-			adaptor.Scheduler.NextPod = func() *framework.QueuedPodInfo {
-				podInfo := nextPod()
+			adaptor.Scheduler.NextPod = func() (*framework.QueuedPodInfo, error) {
+				podInfo, err := nextPod()
+				if err != nil {
+					return podInfo, err
+				}
 				// Deep copy podInfo to allow pod modification during scheduling
 				podInfo = podInfo.DeepCopy()
-				return podInfo
+				return podInfo, nil
 			}
 		}
 	}
@@ -185,10 +189,10 @@ func (f *FrameworkExtenderFactory) scheduleOne(ctx context.Context, fwk framewor
 }
 
 func (f *FrameworkExtenderFactory) InterceptSchedulerError(sched *scheduler.Scheduler) {
-	f.errorHandlerDispatcher.setDefaultHandler(sched.Error)
-	sched.Error = func(info *framework.QueuedPodInfo, err error) {
-		f.errorHandlerDispatcher.Error(info, err)
-		f.monitor.Complete(info.Pod)
+	f.errorHandlerDispatcher.setDefaultHandler(sched.FailureHandler)
+	sched.FailureHandler = func(ctx context.Context, fwk framework.Framework, podInfo *framework.QueuedPodInfo, status *framework.Status, nominatingInfo *framework.NominatingInfo, start time.Time) {
+		f.errorHandlerDispatcher.Error(ctx, fwk, podInfo, status, nominatingInfo, start)
+		f.monitor.Complete(podInfo.Pod)
 	}
 }
 

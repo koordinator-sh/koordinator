@@ -27,11 +27,11 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/clock"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/client-go/tools/events"
 	"k8s.io/klog/v2"
 	k8spodutil "k8s.io/kubernetes/pkg/api/v1/pod"
+	"k8s.io/utils/clock"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/event"
@@ -110,7 +110,7 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 	r.arbitrator = a
 	arbitrationEventHandler := arbitrator.NewHandler(a, r.Client)
 
-	if err = c.Watch(&source.Kind{Type: &sev1alpha1.PodMigrationJob{}}, arbitrationEventHandler, &predicate.Funcs{
+	if err = c.Watch(source.Kind(options.Manager.GetCache(), &sev1alpha1.PodMigrationJob{}), arbitrationEventHandler, &predicate.Funcs{
 		DeleteFunc: func(event event.DeleteEvent) bool {
 			job := event.Object.(*sev1alpha1.PodMigrationJob)
 			r.assumedCache.delete(job)
@@ -122,7 +122,7 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 		}}); err != nil {
 		return nil, err
 	}
-	if err = c.Watch(&source.Kind{Type: r.reservationInterpreter.GetReservationType()}, &handler.Funcs{}); err != nil {
+	if err = c.Watch(source.Kind(options.Manager.GetCache(), r.reservationInterpreter.GetReservationType()), &handler.Funcs{}); err != nil {
 		return nil, err
 	}
 	return r, nil

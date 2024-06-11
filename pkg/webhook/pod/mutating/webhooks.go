@@ -17,15 +17,37 @@ limitations under the License.
 package mutating
 
 import (
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
+
+	"github.com/koordinator-sh/koordinator/pkg/webhook/util/framework"
 )
 
 // +kubebuilder:webhook:path=/mutate-pod,mutating=true,failurePolicy=fail,sideEffects=None,admissionReviewVersions=v1;v1beta1,groups="",resources=pods,verbs=create,versions=v1,name=mpod-create.koordinator.sh
 // +kubebuilder:webhook:path=/mutate-pod,mutating=true,failurePolicy=fail,sideEffects=None,admissionReviewVersions=v1;v1beta1,groups="",resources=pods,verbs=update,versions=v1,name=mpod-update.koordinator.sh
 
 var (
-	// HandlerMap contains admission webhook handlers
-	HandlerMap = map[string]admission.Handler{
-		"mutate-pod": &PodMutatingHandler{},
+	// HandlerBuilderMap contains admission webhook handlers builder
+	HandlerBuilderMap = map[string]framework.HandlerBuilder{
+		"mutate-pod": &podMutateBuilder{},
 	}
 )
+
+var _ framework.HandlerBuilder = &podMutateBuilder{}
+
+type podMutateBuilder struct {
+	mgr manager.Manager
+}
+
+func (b *podMutateBuilder) WithControllerManager(mgr ctrl.Manager) framework.HandlerBuilder {
+	b.mgr = mgr
+	return b
+}
+
+func (b *podMutateBuilder) Build() admission.Handler {
+	return &PodMutatingHandler{
+		Client:  b.mgr.GetClient(),
+		Decoder: admission.NewDecoder(b.mgr.GetScheme()),
+	}
+}

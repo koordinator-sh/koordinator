@@ -24,7 +24,6 @@ import (
 	v1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	labels "k8s.io/apimachinery/pkg/labels"
-	schema "k8s.io/apimachinery/pkg/runtime/schema"
 	types "k8s.io/apimachinery/pkg/types"
 	watch "k8s.io/apimachinery/pkg/watch"
 	testing "k8s.io/client-go/testing"
@@ -35,9 +34,9 @@ type FakeNodeMetrics struct {
 	Fake *FakeSloV1alpha1
 }
 
-var nodemetricsResource = schema.GroupVersionResource{Group: "slo.koordinator.sh", Version: "v1alpha1", Resource: "nodemetrics"}
+var nodemetricsResource = v1alpha1.SchemeGroupVersion.WithResource("nodemetrics")
 
-var nodemetricsKind = schema.GroupVersionKind{Group: "slo.koordinator.sh", Version: "v1alpha1", Kind: "NodeMetric"}
+var nodemetricsKind = v1alpha1.SchemeGroupVersion.WithKind("NodeMetric")
 
 // Get takes name of the nodeMetric, and returns the corresponding nodeMetric object, and an error if there is any.
 func (c *FakeNodeMetrics) Get(ctx context.Context, name string, options v1.GetOptions) (result *v1alpha1.NodeMetric, err error) {

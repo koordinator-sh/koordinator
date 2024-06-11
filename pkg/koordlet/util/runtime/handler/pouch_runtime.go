@@ -24,7 +24,7 @@ import (
 	"strings"
 	"time"
 
-	"k8s.io/cri-api/pkg/apis/runtime/v1alpha2"
+	v1 "k8s.io/cri-api/pkg/apis/runtime/v1"
 
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 )
@@ -38,7 +38,7 @@ func GetPouchEndpoint() string {
 }
 
 type PouchRuntimeHandler struct {
-	runtimeServiceClient v1alpha2.RuntimeServiceClient
+	runtimeServiceClient v1.RuntimeServiceClient
 	timeout              time.Duration
 	endpoint             string
 }
@@ -61,12 +61,12 @@ func NewPouchRuntimeHandler(endpoint string) (ContainerRuntimeHandler, error) {
 	}, nil
 }
 
-func (c *PouchRuntimeHandler) StopContainer(containerID string, timeout int64) error {
+func (c *PouchRuntimeHandler) StopContainer(ctx context.Context, containerID string, timeout int64) error {
 	if containerID == "" {
 		return fmt.Errorf("containerID cannot be empty")
 	}
 
-	request := &v1alpha2.StopContainerRequest{
+	request := &v1.StopContainerRequest{
 		ContainerId: containerID,
 		Timeout:     timeout,
 	}
@@ -81,9 +81,9 @@ func (c *PouchRuntimeHandler) UpdateContainerResources(containerID string, opts 
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
 	defer cancel()
-	request := &v1alpha2.UpdateContainerResourcesRequest{
+	request := &v1.UpdateContainerResourcesRequest{
 		ContainerId: containerID,
-		Linux: &v1alpha2.LinuxContainerResources{
+		Linux: &v1.LinuxContainerResources{
 			CpuPeriod:          opts.CPUPeriod,
 			CpuQuota:           opts.CPUQuota,
 			CpuShares:          opts.CPUShares,
@@ -97,11 +97,11 @@ func (c *PouchRuntimeHandler) UpdateContainerResources(containerID string, opts 
 	return err
 }
 
-func getRuntimeV1alpha2Client(endpoint string) (v1alpha2.RuntimeServiceClient, error) {
+func getRuntimeV1alpha2Client(endpoint string) (v1.RuntimeServiceClient, error) {
 	conn, err := getClientConnection(endpoint)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect: %v", err)
 	}
-	runtimeClient := v1alpha2.NewRuntimeServiceClient(conn)
+	runtimeClient := v1.NewRuntimeServiceClient(conn)
 	return runtimeClient, nil
 }

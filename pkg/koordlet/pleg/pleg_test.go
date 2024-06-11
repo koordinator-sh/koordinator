@@ -82,21 +82,6 @@ func (h *testHandler) OnContainerDeleted(podID, containerID string) {
 }
 
 func TestPlegHandlePodEvents(t *testing.T) {
-	stopCh := make(chan struct{})
-	defer close(stopCh)
-
-	pg, err := NewPLEG("./test")
-	if err != nil {
-		t.Fatal(err)
-	}
-	pg.(*pleg).podWatcher, _ = NewTestWatcher()
-	pg.(*pleg).containerWatcher, _ = NewTestWatcher()
-	go pg.Run(stopCh)
-
-	handler := NewTestHandler()
-	id := pg.AddHandler(handler)
-	defer pg.RemoverHandler(id)
-
 	testCases := []struct {
 		name      string
 		mockEvent *inotify.Event
@@ -130,10 +115,25 @@ func TestPlegHandlePodEvents(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			stopCh := make(chan struct{})
+			defer close(stopCh)
+
+			pg, err := NewPLEG("./test")
+			if err != nil {
+				t.Fatal(err)
+			}
+			pg.(*pleg).podWatcher, _ = NewTestWatcher()
+			pg.(*pleg).containerWatcher, _ = NewTestWatcher()
+			go pg.Run(stopCh)
+
+			handler := NewTestHandler()
+			id := pg.AddHandler(handler)
+			defer pg.RemoverHandler(id)
+
 			pg.(*pleg).podWatcher.Event() <- tc.mockEvent
-			timer := time.NewTimer(100 * time.Millisecond)
-			defer timer.Stop()
 			if tc.want {
+				timer := time.NewTimer(2 * time.Second)
+				defer timer.Stop()
 				select {
 				case evt := <-handler.events:
 					assert.Equal(t, tc.wantEvent, evt, "unexpected event received "+evt.podID)
@@ -141,9 +141,11 @@ func TestPlegHandlePodEvents(t *testing.T) {
 					t.Errorf("read event timeout")
 				}
 			} else {
+				timer := time.NewTimer(100 * time.Millisecond)
+				defer timer.Stop()
 				select {
 				case evt := <-handler.events:
-					t.Errorf("unexpceted event received: %v", evt)
+					t.Errorf("unexpected event received: %v", evt)
 				case <-timer.C:
 				}
 			}
@@ -152,21 +154,6 @@ func TestPlegHandlePodEvents(t *testing.T) {
 }
 
 func TestPlegHandleContainerEvents(t *testing.T) {
-	stopCh := make(chan struct{})
-	defer close(stopCh)
-
-	pg, err := NewPLEG("./test")
-	if err != nil {
-		t.Fatal(err)
-	}
-	pg.(*pleg).podWatcher, _ = NewTestWatcher()
-	pg.(*pleg).containerWatcher, _ = NewTestWatcher()
-	go pg.Run(stopCh)
-
-	handler := NewTestHandler()
-	id := pg.AddHandler(handler)
-	defer pg.RemoverHandler(id)
-
 	testCases := []struct {
 		name      string
 		mockEvent *inotify.Event
@@ -194,10 +181,25 @@ func TestPlegHandleContainerEvents(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			stopCh := make(chan struct{})
+			defer close(stopCh)
+
+			pg, err := NewPLEG("./test")
+			if err != nil {
+				t.Fatal(err)
+			}
+			pg.(*pleg).podWatcher, _ = NewTestWatcher()
+			pg.(*pleg).containerWatcher, _ = NewTestWatcher()
+			go pg.Run(stopCh)
+
+			handler := NewTestHandler()
+			id := pg.AddHandler(handler)
+			defer pg.RemoverHandler(id)
+
 			pg.(*pleg).containerWatcher.Event() <- tc.mockEvent
-			timer := time.NewTimer(100 * time.Millisecond)
-			defer timer.Stop()
 			if tc.want {
+				timer := time.NewTimer(2 * time.Second)
+				defer timer.Stop()
 				select {
 				case evt := <-handler.events:
 					assert.Equal(t, tc.wantEvent, evt, "unexpected event received")
@@ -205,9 +207,11 @@ func TestPlegHandleContainerEvents(t *testing.T) {
 					t.Errorf("read event timeout")
 				}
 			} else {
+				timer := time.NewTimer(100 * time.Millisecond)
+				defer timer.Stop()
 				select {
 				case evt := <-handler.events:
-					t.Errorf("unexpceted event received: %v", evt)
+					t.Errorf("unexpected event received: %v", evt)
 				case <-timer.C:
 				}
 			}

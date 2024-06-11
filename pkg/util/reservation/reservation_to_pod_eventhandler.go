@@ -58,13 +58,13 @@ func NewReservationToPodEventHandler(handler cache.ResourceEventHandler, filters
 	}
 }
 
-func (r ReservationToPodEventHandler) OnAdd(obj interface{}) {
+func (r ReservationToPodEventHandler) OnAdd(obj interface{}, isInInitialList bool) {
 	reservation, ok := obj.(*schedulingv1alpha1.Reservation)
 	if !ok {
 		return
 	}
 	pod := NewReservePod(reservation)
-	r.handler.OnAdd(pod)
+	r.handler.OnAdd(pod, isInInitialList)
 }
 
 // OnUpdate calls UpdateFunc if it's not nil.

@@ -27,6 +27,7 @@ import (
 
 	gomock "github.com/golang/mock/gomock"
 	grpc "google.golang.org/grpc"
+	metadata "google.golang.org/grpc/metadata"
 	v1 "k8s.io/cri-api/pkg/apis/runtime/v1"
 )
 
@@ -71,6 +72,26 @@ func (mr *MockRuntimeServiceClientMockRecorder) Attach(ctx, in interface{}, opts
 	mr.mock.ctrl.T.Helper()
 	varargs := append([]interface{}{ctx, in}, opts...)
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Attach", reflect.TypeOf((*MockRuntimeServiceClient)(nil).Attach), varargs...)
+}
+
+// CheckpointContainer mocks base method.
+func (m *MockRuntimeServiceClient) CheckpointContainer(ctx context.Context, in *v1.CheckpointContainerRequest, opts ...grpc.CallOption) (*v1.CheckpointContainerResponse, error) {
+	m.ctrl.T.Helper()
+	varargs := []interface{}{ctx, in}
+	for _, a := range opts {
+		varargs = append(varargs, a)
+	}
+	ret := m.ctrl.Call(m, "CheckpointContainer", varargs...)
+	ret0, _ := ret[0].(*v1.CheckpointContainerResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CheckpointContainer indicates an expected call of CheckpointContainer.
+func (mr *MockRuntimeServiceClientMockRecorder) CheckpointContainer(ctx, in interface{}, opts ...interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	varargs := append([]interface{}{ctx, in}, opts...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CheckpointContainer", reflect.TypeOf((*MockRuntimeServiceClient)(nil).CheckpointContainer), varargs...)
 }
 
 // ContainerStats mocks base method.
@@ -173,6 +194,26 @@ func (mr *MockRuntimeServiceClientMockRecorder) ExecSync(ctx, in interface{}, op
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ExecSync", reflect.TypeOf((*MockRuntimeServiceClient)(nil).ExecSync), varargs...)
 }
 
+// GetContainerEvents mocks base method.
+func (m *MockRuntimeServiceClient) GetContainerEvents(ctx context.Context, in *v1.GetEventsRequest, opts ...grpc.CallOption) (v1.RuntimeService_GetContainerEventsClient, error) {
+	m.ctrl.T.Helper()
+	varargs := []interface{}{ctx, in}
+	for _, a := range opts {
+		varargs = append(varargs, a)
+	}
+	ret := m.ctrl.Call(m, "GetContainerEvents", varargs...)
+	ret0, _ := ret[0].(v1.RuntimeService_GetContainerEventsClient)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetContainerEvents indicates an expected call of GetContainerEvents.
+func (mr *MockRuntimeServiceClientMockRecorder) GetContainerEvents(ctx, in interface{}, opts ...interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	varargs := append([]interface{}{ctx, in}, opts...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetContainerEvents", reflect.TypeOf((*MockRuntimeServiceClient)(nil).GetContainerEvents), varargs...)
+}
+
 // ListContainerStats mocks base method.
 func (m *MockRuntimeServiceClient) ListContainerStats(ctx context.Context, in *v1.ListContainerStatsRequest, opts ...grpc.CallOption) (*v1.ListContainerStatsResponse, error) {
 	m.ctrl.T.Helper()
@@ -213,6 +254,26 @@ func (mr *MockRuntimeServiceClientMockRecorder) ListContainers(ctx, in interface
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListContainers", reflect.TypeOf((*MockRuntimeServiceClient)(nil).ListContainers), varargs...)
 }
 
+// ListMetricDescriptors mocks base method.
+func (m *MockRuntimeServiceClient) ListMetricDescriptors(ctx context.Context, in *v1.ListMetricDescriptorsRequest, opts ...grpc.CallOption) (*v1.ListMetricDescriptorsResponse, error) {
+	m.ctrl.T.Helper()
+	varargs := []interface{}{ctx, in}
+	for _, a := range opts {
+		varargs = append(varargs, a)
+	}
+	ret := m.ctrl.Call(m, "ListMetricDescriptors", varargs...)
+	ret0, _ := ret[0].(*v1.ListMetricDescriptorsResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListMetricDescriptors indicates an expected call of ListMetricDescriptors.
+func (mr *MockRuntimeServiceClientMockRecorder) ListMetricDescriptors(ctx, in interface{}, opts ...interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	varargs := append([]interface{}{ctx, in}, opts...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListMetricDescriptors", reflect.TypeOf((*MockRuntimeServiceClient)(nil).ListMetricDescriptors), varargs...)
+}
+
 // ListPodSandbox mocks base method.
 func (m *MockRuntimeServiceClient) ListPodSandbox(ctx context.Context, in *v1.ListPodSandboxRequest, opts ...grpc.CallOption) (*v1.ListPodSandboxResponse, error) {
 	m.ctrl.T.Helper()
@@ -231,6 +292,26 @@ func (mr *MockRuntimeServiceClientMockRecorder) ListPodSandbox(ctx, in interface
 	mr.mock.ctrl.T.Helper()
 	varargs := append([]interface{}{ctx, in}, opts...)
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListPodSandbox", reflect.TypeOf((*MockRuntimeServiceClient)(nil).ListPodSandbox), varargs...)
+}
+
+// ListPodSandboxMetrics mocks base method.
+func (m *MockRuntimeServiceClient) ListPodSandboxMetrics(ctx context.Context, in *v1.ListPodSandboxMetricsRequest, opts ...grpc.CallOption) (*v1.ListPodSandboxMetricsResponse, error) {
+	m.ctrl.T.Helper()
+	varargs := []interface{}{ctx, in}
+	for _, a := range opts {
+		varargs = append(varargs, a)
+	}
+	ret := m.ctrl.Call(m, "ListPodSandboxMetrics", varargs...)
+	ret0, _ := ret[0].(*v1.ListPodSandboxMetricsResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListPodSandboxMetrics indicates an expected call of ListPodSandboxMetrics.
+func (mr *MockRuntimeServiceClientMockRecorder) ListPodSandboxMetrics(ctx, in interface{}, opts ...interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	varargs := append([]interface{}{ctx, in}, opts...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListPodSandboxMetrics", reflect.TypeOf((*MockRuntimeServiceClient)(nil).ListPodSandboxMetrics), varargs...)
 }
 
 // ListPodSandboxStats mocks base method.
@@ -393,6 +474,26 @@ func (mr *MockRuntimeServiceClientMockRecorder) RunPodSandbox(ctx, in interface{
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RunPodSandbox", reflect.TypeOf((*MockRuntimeServiceClient)(nil).RunPodSandbox), varargs...)
 }
 
+// RuntimeConfig mocks base method.
+func (m *MockRuntimeServiceClient) RuntimeConfig(ctx context.Context, in *v1.RuntimeConfigRequest, opts ...grpc.CallOption) (*v1.RuntimeConfigResponse, error) {
+	m.ctrl.T.Helper()
+	varargs := []interface{}{ctx, in}
+	for _, a := range opts {
+		varargs = append(varargs, a)
+	}
+	ret := m.ctrl.Call(m, "RuntimeConfig", varargs...)
+	ret0, _ := ret[0].(*v1.RuntimeConfigResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// RuntimeConfig indicates an expected call of RuntimeConfig.
+func (mr *MockRuntimeServiceClientMockRecorder) RuntimeConfig(ctx, in interface{}, opts ...interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	varargs := append([]interface{}{ctx, in}, opts...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RuntimeConfig", reflect.TypeOf((*MockRuntimeServiceClient)(nil).RuntimeConfig), varargs...)
+}
+
 // StartContainer mocks base method.
 func (m *MockRuntimeServiceClient) StartContainer(ctx context.Context, in *v1.StartContainerRequest, opts ...grpc.CallOption) (*v1.StartContainerResponse, error) {
 	m.ctrl.T.Helper()
@@ -533,6 +634,129 @@ func (mr *MockRuntimeServiceClientMockRecorder) Version(ctx, in interface{}, opt
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Version", reflect.TypeOf((*MockRuntimeServiceClient)(nil).Version), varargs...)
 }
 
+// MockRuntimeService_GetContainerEventsClient is a mock of RuntimeService_GetContainerEventsClient interface.
+type MockRuntimeService_GetContainerEventsClient struct {
+	ctrl     *gomock.Controller
+	recorder *MockRuntimeService_GetContainerEventsClientMockRecorder
+}
+
+// MockRuntimeService_GetContainerEventsClientMockRecorder is the mock recorder for MockRuntimeService_GetContainerEventsClient.
+type MockRuntimeService_GetContainerEventsClientMockRecorder struct {
+	mock *MockRuntimeService_GetContainerEventsClient
+}
+
+// NewMockRuntimeService_GetContainerEventsClient creates a new mock instance.
+func NewMockRuntimeService_GetContainerEventsClient(ctrl *gomock.Controller) *MockRuntimeService_GetContainerEventsClient {
+	mock := &MockRuntimeService_GetContainerEventsClient{ctrl: ctrl}
+	mock.recorder = &MockRuntimeService_GetContainerEventsClientMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockRuntimeService_GetContainerEventsClient) EXPECT() *MockRuntimeService_GetContainerEventsClientMockRecorder {
+	return m.recorder
+}
+
+// CloseSend mocks base method.
+func (m *MockRuntimeService_GetContainerEventsClient) CloseSend() error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CloseSend")
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// CloseSend indicates an expected call of CloseSend.
+func (mr *MockRuntimeService_GetContainerEventsClientMockRecorder) CloseSend() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CloseSend", reflect.TypeOf((*MockRuntimeService_GetContainerEventsClient)(nil).CloseSend))
+}
+
+// Context mocks base method.
+func (m *MockRuntimeService_GetContainerEventsClient) Context() context.Context {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Context")
+	ret0, _ := ret[0].(context.Context)
+	return ret0
+}
+
+// Context indicates an expected call of Context.
+func (mr *MockRuntimeService_GetContainerEventsClientMockRecorder) Context() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Context", reflect.TypeOf((*MockRuntimeService_GetContainerEventsClient)(nil).Context))
+}
+
+// Header mocks base method.
+func (m *MockRuntimeService_GetContainerEventsClient) Header() (metadata.MD, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Header")
+	ret0, _ := ret[0].(metadata.MD)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// Header indicates an expected call of Header.
+func (mr *MockRuntimeService_GetContainerEventsClientMockRecorder) Header() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Header", reflect.TypeOf((*MockRuntimeService_GetContainerEventsClient)(nil).Header))
+}
+
+// Recv mocks base method.
+func (m *MockRuntimeService_GetContainerEventsClient) Recv() (*v1.ContainerEventResponse, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Recv")
+	ret0, _ := ret[0].(*v1.ContainerEventResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// Recv indicates an expected call of Recv.
+func (mr *MockRuntimeService_GetContainerEventsClientMockRecorder) Recv() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Recv", reflect.TypeOf((*MockRuntimeService_GetContainerEventsClient)(nil).Recv))
+}
+
+// RecvMsg mocks base method.
+func (m_2 *MockRuntimeService_GetContainerEventsClient) RecvMsg(m interface{}) error {
+	m_2.ctrl.T.Helper()
+	ret := m_2.ctrl.Call(m_2, "RecvMsg", m)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// RecvMsg indicates an expected call of RecvMsg.
+func (mr *MockRuntimeService_GetContainerEventsClientMockRecorder) RecvMsg(m interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RecvMsg", reflect.TypeOf((*MockRuntimeService_GetContainerEventsClient)(nil).RecvMsg), m)
+}
+
+// SendMsg mocks base method.
+func (m_2 *MockRuntimeService_GetContainerEventsClient) SendMsg(m interface{}) error {
+	m_2.ctrl.T.Helper()
+	ret := m_2.ctrl.Call(m_2, "SendMsg", m)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// SendMsg indicates an expected call of SendMsg.
+func (mr *MockRuntimeService_GetContainerEventsClientMockRecorder) SendMsg(m interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SendMsg", reflect.TypeOf((*MockRuntimeService_GetContainerEventsClient)(nil).SendMsg), m)
+}
+
+// Trailer mocks base method.
+func (m *MockRuntimeService_GetContainerEventsClient) Trailer() metadata.MD {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Trailer")
+	ret0, _ := ret[0].(metadata.MD)
+	return ret0
+}
+
+// Trailer indicates an expected call of Trailer.
+func (mr *MockRuntimeService_GetContainerEventsClientMockRecorder) Trailer() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Trailer", reflect.TypeOf((*MockRuntimeService_GetContainerEventsClient)(nil).Trailer))
+}
+
 // MockRuntimeServiceServer is a mock of RuntimeServiceServer interface.
 type MockRuntimeServiceServer struct {
 	ctrl     *gomock.Controller
@@ -569,6 +793,21 @@ func (m *MockRuntimeServiceServer) Attach(arg0 context.Context, arg1 *v1.AttachR
 func (mr *MockRuntimeServiceServerMockRecorder) Attach(arg0, arg1 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Attach", reflect.TypeOf((*MockRuntimeServiceServer)(nil).Attach), arg0, arg1)
+}
+
+// CheckpointContainer mocks base method.
+func (m *MockRuntimeServiceServer) CheckpointContainer(arg0 context.Context, arg1 *v1.CheckpointContainerRequest) (*v1.CheckpointContainerResponse, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CheckpointContainer", arg0, arg1)
+	ret0, _ := ret[0].(*v1.CheckpointContainerResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CheckpointContainer indicates an expected call of CheckpointContainer.
+func (mr *MockRuntimeServiceServerMockRecorder) CheckpointContainer(arg0, arg1 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CheckpointContainer", reflect.TypeOf((*MockRuntimeServiceServer)(nil).CheckpointContainer), arg0, arg1)
 }
 
 // ContainerStats mocks base method.
@@ -646,6 +885,20 @@ func (mr *MockRuntimeServiceServerMockRecorder) ExecSync(arg0, arg1 interface{})
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ExecSync", reflect.TypeOf((*MockRuntimeServiceServer)(nil).ExecSync), arg0, arg1)
 }
 
+// GetContainerEvents mocks base method.
+func (m *MockRuntimeServiceServer) GetContainerEvents(arg0 *v1.GetEventsRequest, arg1 v1.RuntimeService_GetContainerEventsServer) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetContainerEvents", arg0, arg1)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// GetContainerEvents indicates an expected call of GetContainerEvents.
+func (mr *MockRuntimeServiceServerMockRecorder) GetContainerEvents(arg0, arg1 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetContainerEvents", reflect.TypeOf((*MockRuntimeServiceServer)(nil).GetContainerEvents), arg0, arg1)
+}
+
 // ListContainerStats mocks base method.
 func (m *MockRuntimeServiceServer) ListContainerStats(arg0 context.Context, arg1 *v1.ListContainerStatsRequest) (*v1.ListContainerStatsResponse, error) {
 	m.ctrl.T.Helper()
@@ -676,6 +929,21 @@ func (mr *MockRuntimeServiceServerMockRecorder) ListContainers(arg0, arg1 interf
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListContainers", reflect.TypeOf((*MockRuntimeServiceServer)(nil).ListContainers), arg0, arg1)
 }
 
+// ListMetricDescriptors mocks base method.
+func (m *MockRuntimeServiceServer) ListMetricDescriptors(arg0 context.Context, arg1 *v1.ListMetricDescriptorsRequest) (*v1.ListMetricDescriptorsResponse, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListMetricDescriptors", arg0, arg1)
+	ret0, _ := ret[0].(*v1.ListMetricDescriptorsResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListMetricDescriptors indicates an expected call of ListMetricDescriptors.
+func (mr *MockRuntimeServiceServerMockRecorder) ListMetricDescriptors(arg0, arg1 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListMetricDescriptors", reflect.TypeOf((*MockRuntimeServiceServer)(nil).ListMetricDescriptors), arg0, arg1)
+}
+
 // ListPodSandbox mocks base method.
 func (m *MockRuntimeServiceServer) ListPodSandbox(arg0 context.Context, arg1 *v1.ListPodSandboxRequest) (*v1.ListPodSandboxResponse, error) {
 	m.ctrl.T.Helper()
@@ -689,6 +957,21 @@ func (m *MockRuntimeServiceServer) ListPodSandbox(arg0 context.Context, arg1 *v1
 func (mr *MockRuntimeServiceServerMockRecorder) ListPodSandbox(arg0, arg1 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListPodSandbox", reflect.TypeOf((*MockRuntimeServiceServer)(nil).ListPodSandbox), arg0, arg1)
+}
+
+// ListPodSandboxMetrics mocks base method.
+func (m *MockRuntimeServiceServer) ListPodSandboxMetrics(arg0 context.Context, arg1 *v1.ListPodSandboxMetricsRequest) (*v1.ListPodSandboxMetricsResponse, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListPodSandboxMetrics", arg0, arg1)
+	ret0, _ := ret[0].(*v1.ListPodSandboxMetricsResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListPodSandboxMetrics indicates an expected call of ListPodSandboxMetrics.
+func (mr *MockRuntimeServiceServerMockRecorder) ListPodSandboxMetrics(arg0, arg1 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListPodSandboxMetrics", reflect.TypeOf((*MockRuntimeServiceServer)(nil).ListPodSandboxMetrics), arg0, arg1)
 }
 
 // ListPodSandboxStats mocks base method.
@@ -811,6 +1094,21 @@ func (mr *MockRuntimeServiceServerMockRecorder) RunPodSandbox(arg0, arg1 interfa
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RunPodSandbox", reflect.TypeOf((*MockRuntimeServiceServer)(nil).RunPodSandbox), arg0, arg1)
 }
 
+// RuntimeConfig mocks base method.
+func (m *MockRuntimeServiceServer) RuntimeConfig(arg0 context.Context, arg1 *v1.RuntimeConfigRequest) (*v1.RuntimeConfigResponse, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RuntimeConfig", arg0, arg1)
+	ret0, _ := ret[0].(*v1.RuntimeConfigResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// RuntimeConfig indicates an expected call of RuntimeConfig.
+func (mr *MockRuntimeServiceServerMockRecorder) RuntimeConfig(arg0, arg1 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RuntimeConfig", reflect.TypeOf((*MockRuntimeServiceServer)(nil).RuntimeConfig), arg0, arg1)
+}
+
 // StartContainer mocks base method.
 func (m *MockRuntimeServiceServer) StartContainer(arg0 context.Context, arg1 *v1.StartContainerRequest) (*v1.StartContainerResponse, error) {
 	m.ctrl.T.Helper()
@@ -914,6 +1212,125 @@ func (m *MockRuntimeServiceServer) Version(arg0 context.Context, arg1 *v1.Versio
 func (mr *MockRuntimeServiceServerMockRecorder) Version(arg0, arg1 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Version", reflect.TypeOf((*MockRuntimeServiceServer)(nil).Version), arg0, arg1)
+}
+
+// MockRuntimeService_GetContainerEventsServer is a mock of RuntimeService_GetContainerEventsServer interface.
+type MockRuntimeService_GetContainerEventsServer struct {
+	ctrl     *gomock.Controller
+	recorder *MockRuntimeService_GetContainerEventsServerMockRecorder
+}
+
+// MockRuntimeService_GetContainerEventsServerMockRecorder is the mock recorder for MockRuntimeService_GetContainerEventsServer.
+type MockRuntimeService_GetContainerEventsServerMockRecorder struct {
+	mock *MockRuntimeService_GetContainerEventsServer
+}
+
+// NewMockRuntimeService_GetContainerEventsServer creates a new mock instance.
+func NewMockRuntimeService_GetContainerEventsServer(ctrl *gomock.Controller) *MockRuntimeService_GetContainerEventsServer {
+	mock := &MockRuntimeService_GetContainerEventsServer{ctrl: ctrl}
+	mock.recorder = &MockRuntimeService_GetContainerEventsServerMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockRuntimeService_GetContainerEventsServer) EXPECT() *MockRuntimeService_GetContainerEventsServerMockRecorder {
+	return m.recorder
+}
+
+// Context mocks base method.
+func (m *MockRuntimeService_GetContainerEventsServer) Context() context.Context {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Context")
+	ret0, _ := ret[0].(context.Context)
+	return ret0
+}
+
+// Context indicates an expected call of Context.
+func (mr *MockRuntimeService_GetContainerEventsServerMockRecorder) Context() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Context", reflect.TypeOf((*MockRuntimeService_GetContainerEventsServer)(nil).Context))
+}
+
+// RecvMsg mocks base method.
+func (m_2 *MockRuntimeService_GetContainerEventsServer) RecvMsg(m interface{}) error {
+	m_2.ctrl.T.Helper()
+	ret := m_2.ctrl.Call(m_2, "RecvMsg", m)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// RecvMsg indicates an expected call of RecvMsg.
+func (mr *MockRuntimeService_GetContainerEventsServerMockRecorder) RecvMsg(m interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RecvMsg", reflect.TypeOf((*MockRuntimeService_GetContainerEventsServer)(nil).RecvMsg), m)
+}
+
+// Send mocks base method.
+func (m *MockRuntimeService_GetContainerEventsServer) Send(arg0 *v1.ContainerEventResponse) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Send", arg0)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// Send indicates an expected call of Send.
+func (mr *MockRuntimeService_GetContainerEventsServerMockRecorder) Send(arg0 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Send", reflect.TypeOf((*MockRuntimeService_GetContainerEventsServer)(nil).Send), arg0)
+}
+
+// SendHeader mocks base method.
+func (m *MockRuntimeService_GetContainerEventsServer) SendHeader(arg0 metadata.MD) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SendHeader", arg0)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// SendHeader indicates an expected call of SendHeader.
+func (mr *MockRuntimeService_GetContainerEventsServerMockRecorder) SendHeader(arg0 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SendHeader", reflect.TypeOf((*MockRuntimeService_GetContainerEventsServer)(nil).SendHeader), arg0)
+}
+
+// SendMsg mocks base method.
+func (m_2 *MockRuntimeService_GetContainerEventsServer) SendMsg(m interface{}) error {
+	m_2.ctrl.T.Helper()
+	ret := m_2.ctrl.Call(m_2, "SendMsg", m)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// SendMsg indicates an expected call of SendMsg.
+func (mr *MockRuntimeService_GetContainerEventsServerMockRecorder) SendMsg(m interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SendMsg", reflect.TypeOf((*MockRuntimeService_GetContainerEventsServer)(nil).SendMsg), m)
+}
+
+// SetHeader mocks base method.
+func (m *MockRuntimeService_GetContainerEventsServer) SetHeader(arg0 metadata.MD) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SetHeader", arg0)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// SetHeader indicates an expected call of SetHeader.
+func (mr *MockRuntimeService_GetContainerEventsServerMockRecorder) SetHeader(arg0 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetHeader", reflect.TypeOf((*MockRuntimeService_GetContainerEventsServer)(nil).SetHeader), arg0)
+}
+
+// SetTrailer mocks base method.
+func (m *MockRuntimeService_GetContainerEventsServer) SetTrailer(arg0 metadata.MD) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "SetTrailer", arg0)
+}
+
+// SetTrailer indicates an expected call of SetTrailer.
+func (mr *MockRuntimeService_GetContainerEventsServerMockRecorder) SetTrailer(arg0 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetTrailer", reflect.TypeOf((*MockRuntimeService_GetContainerEventsServer)(nil).SetTrailer), arg0)
 }
 
 // MockImageServiceClient is a mock of ImageServiceClient interface.

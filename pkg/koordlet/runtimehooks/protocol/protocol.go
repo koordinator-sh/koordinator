@@ -88,7 +88,8 @@ func (r *Resources) IsOriginResSet() bool {
 }
 
 func (r *Resources) FromPod(pod *corev1.Pod) {
-	requests, limits := resource.PodRequestsAndLimits(pod)
+	requests := resource.PodRequests(pod, resource.PodResourcesOptions{})
+	limits := resource.PodLimits(pod, resource.PodResourcesOptions{})
 	cpuShares := sysutil.MilliCPUToShares(requests.Cpu().MilliValue())
 	cfsQuota := sysutil.MilliCPUToQuota(limits.Cpu().MilliValue())
 	memoryLimit := limits.Memory().Value()

@@ -27,7 +27,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/topologymanager"
 )
 
-func (p *Plugin) FilterByNUMANode(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string, policyType apiext.NUMATopologyPolicy, topologyOptions TopologyOptions) *framework.Status {
+func (p *Plugin) FilterByNUMANode(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string, policyType apiext.NUMATopologyPolicy, exclusivePolicy apiext.NumaTopologyExclusive, topologyOptions TopologyOptions) *framework.Status {
 	if policyType == apiext.NUMATopologyPolicyNone {
 		return nil
 	}
@@ -35,7 +35,8 @@ func (p *Plugin) FilterByNUMANode(ctx context.Context, cycleState *framework.Cyc
 	if len(numaNodes) == 0 {
 		return framework.NewStatus(framework.UnschedulableAndUnresolvable, "node(s) missing NUMA resources")
 	}
-	return p.handle.(frameworkext.FrameworkExtender).RunNUMATopologyManagerAdmit(ctx, cycleState, pod, nodeName, numaNodes, policyType)
+	numaNodesStatus := p.resourceManager.GetNodeAllocation(nodeName).GetAllNUMANodeStatus(len(numaNodes))
+	return p.handle.(frameworkext.FrameworkExtender).RunNUMATopologyManagerAdmit(ctx, cycleState, pod, nodeName, numaNodes, policyType, exclusivePolicy, numaNodesStatus)
 }
 
 func (p *Plugin) GetPodTopologyHints(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) (map[string][]topologymanager.NUMATopologyHint, *framework.Status) {
@@ -49,6 +50,10 @@ func (p *Plugin) GetPodTopologyHints(ctx context.Context, cycleState *framework.
 	}
 	node := nodeInfo.Node()
 	topologyOptions := p.topologyOptionsManager.GetTopologyOptions(nodeName)
+	podNUMATopologyPolicy := state.podNUMATopologyPolicy
+	numaTopologyPolicy := getNUMATopologyPolicy(node.Labels, topologyOptions.NUMATopologyPolicy)
+	// we have check in filter, so we will not get error in reserve
+	numaTopologyPolicy, _ = mergeTopologyPolicy(numaTopologyPolicy, podNUMATopologyPolicy)
 	nodeCPUBindPolicy := apiext.GetNodeCPUBindPolicy(node.Labels, topologyOptions.Policy)
 	requestCPUBind, status := requestCPUBind(state, nodeCPUBindPolicy)
 	if !status.IsSuccess() {
@@ -59,7 +64,7 @@ func (p *Plugin) GetPodTopologyHints(ctx context.Context, cycleState *framework.
 		return nil, framework.AsStatus(err)
 	}
 	resourceOptions.numaScorer = p.numaScorer
-	hints, err := p.resourceManager.GetTopologyHints(node, pod, resourceOptions)
+	hints, err := p.resourceManager.GetTopologyHints(node, pod, resourceOptions, numaTopologyPolicy)
 	if err != nil {
 		return nil, framework.NewStatus(framework.Unschedulable, "node(s) Insufficient NUMA Node resources")
 	}

@@ -29,7 +29,8 @@ import (
 	testing2 "k8s.io/kubernetes/pkg/scheduler/testing"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
-	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
+
+	"github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	koordfeatures "github.com/koordinator-sh/koordinator/pkg/features"
@@ -505,7 +506,9 @@ func TestQuotaTopology_ValidUpdateQuota(t *testing.T) {
 	assert.Equal(t, fmt.Sprintf("quota has children, isParent is forbidden to modify as false, quotaName:%v", quota1.Name), err.Error())
 
 	pod1 := MakePod("", "pod1").Label(extension.LabelQuotaName, "sub-1").Obj()
-	client := fake.NewClientBuilder().Build()
+	client := fake.NewClientBuilder().WithIndex(&v1.Pod{}, "label.quotaName", func(object client.Object) []string {
+		return []string{object.(*v1.Pod).Labels[extension.LabelQuotaName]}
+	}).Build()
 	v1alpha1.AddToScheme(client.Scheme())
 	qt.client = client
 	qt.client.Create(context.TODO(), pod1)
@@ -525,7 +528,7 @@ func TestQuotaTopology_ValidUpdateQuota(t *testing.T) {
 	assert.Equal(t, fmt.Sprintf("quota has bound pods, isParent is forbidden to modify as true, quotaName: sub-1"), err.Error())
 
 	qt.client.Delete(context.TODO(), pod2)
-	pod3 := MakePod("sub-2", "pod3").Obj()
+	pod3 := MakePod("sub-2", "pod3").Label(extension.LabelQuotaName, "sub-1").Obj()
 	qt.client.Create(context.TODO(), pod3)
 
 	sub1.Annotations[extension.AnnotationQuotaNamespaces] = "[\"namespace1\",\"namespace2\"]"
@@ -575,7 +578,9 @@ func TestQuotaTopology_ListQuotaPods(t *testing.T) {
 func TestQuotaTopology_AnnotationNamespaces(t *testing.T) {
 	quota := MakeQuota("temp").Annotations(map[string]string{extension.AnnotationQuotaNamespaces: "[\"test1\",\"test2\"]"}).Obj()
 	qt := newFakeQuotaTopology()
-	client := fake.NewClientBuilder().Build()
+	client := fake.NewClientBuilder().WithIndex(&v1.Pod{}, "label.quotaName", func(object client.Object) []string {
+		return []string{object.(*v1.Pod).Labels["label.quotaName"]}
+	}).Build()
 	v1alpha1.AddToScheme(client.Scheme())
 	qt.client = client
 
@@ -619,7 +624,9 @@ func TestQuotaTopology_AnnotationNamespaces(t *testing.T) {
 func TestQuotaTopology_ValidDeleteQuota(t *testing.T) {
 	qt := newFakeQuotaTopology()
 
-	client := fake.NewClientBuilder().Build()
+	client := fake.NewClientBuilder().WithIndex(&v1.Pod{}, "label.quotaName", func(object client.Object) []string {
+		return []string{object.(*v1.Pod).Labels[extension.LabelQuotaName]}
+	}).Build()
 	v1alpha1.AddToScheme(client.Scheme())
 	qt.client = client
 
@@ -649,26 +656,26 @@ func TestQuotaTopology_ValidDeleteQuota(t *testing.T) {
 	assert.Equal(t, 0, len(qt.quotaHierarchyInfo["temp2"]))
 
 	err = qt.ValidDeleteQuota(quota1)
-	assert.True(t, err == nil)
+	assert.NoError(t, err)
 	assert.Equal(t, 2, len(qt.quotaInfoMap))
 	assert.Equal(t, 3, len(qt.quotaHierarchyInfo))
 	assert.Equal(t, 1, len(qt.quotaHierarchyInfo["temp"]))
 
 	// add pod to quota sub-1
-	pod := MakePod("sub-1", "pod1").Obj()
+	pod := MakePod("sub-1", "pod1").Label(extension.LabelQuotaName, "sub-1").Obj()
 	err = qt.client.Create(context.TODO(), pod)
 	assert.Nil(t, err)
 
 	// forbidden delete quota with pods
 	err = qt.ValidDeleteQuota(sub1)
-	assert.True(t, err != nil)
+	assert.Error(t, err)
 
 	// delete pod
 	err = qt.client.Delete(context.TODO(), pod)
 	assert.Nil(t, err)
 
 	err = qt.ValidDeleteQuota(sub1)
-	assert.True(t, err == nil)
+	assert.NoError(t, err)
 	assert.Equal(t, 1, len(qt.quotaInfoMap))
 	assert.Equal(t, 2, len(qt.quotaHierarchyInfo))
 	assert.Equal(t, 0, len(qt.quotaHierarchyInfo["temp"]))

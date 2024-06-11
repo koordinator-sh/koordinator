@@ -34,12 +34,12 @@ last-updated: 2023-12-08
     - [Design Principles](#design-principles)
     - [Implementation Details](#implementation-details)
       - [koordlet:](#koordlet)
-        - [API](#api)
-          - [node level](#node-level)
-          - [pod level](#pod-level)
-        - [supported plugins](#supported-plugins)
-          - [external](#external-plugins)
-          - [internal](#internal-plugins)
+        - [api：](#api)
+          - [node level：](#node-level)
+          - [pod level：](#pod-level)
+        - [supported plugins:](#supported-plugins)
+          - [external plugins：](#external-plugins)
+          - [internal plugins:](#internal-plugins)
       - [koord-scheduler](#koord-scheduler)
       - [koord-descheduler](#koord-descheduler)
     - [usage:](#usage)
@@ -49,12 +49,12 @@ last-updated: 2023-12-08
 ## Glossary  
 
 [ebpf](https://ebpf.io/what-is-ebpf/)  
-
 [ebpf tc](https://arthurchiao.art/blog/cilium-bpf-xdp-reference-guide-zh/#prog_type_tc)  
-
 [edt](https://arthurchiao.art/blog/better-bandwidth-management-with-ebpf-zh/#31-%E6%95%B4%E4%BD%93%E8%AE%BE%E8%AE%A1%E5%9F%BA%E4%BA%8E-bpfedt-%E5%AE%9E%E7%8E%B0%E5%AE%B9%E5%99%A8%E9%99%90%E9%80%9F)  
-
 [terway-qos](https://github.com/AliyunContainerService/terway-qos/blob/main/README-zh_CN.md)  
+[net_cls cgroup](https://www.kernel.org/doc/Documentation/cgroup-v1/net_cls.txt)  
+[tc](https://man7.org/linux/man-pages/man8/tc.8.html) (traffic control)  
+[ipset](https://linux.die.net/man/8/ipset)
 
 ## Summary
 
@@ -330,7 +330,85 @@ After that, the netqos plugin will implement the network limiting operation base
 - <span style="color: cornflowerblue; "> TC： </span>(builtin plugin for `koordinator`, some netqos solution based on linux itself.)  
 
   - <span style="color: beige; ">for node  </span>  
-    we can refer to the koordinator's API directly, to do some netqos operation.
+    - For the pods of `!host` network, network speed limiting is implemented as follows:  
+      ![image](/docs/images/tcplugin.png)
+
+      When koordlet starts, it will initialise some rules according to the netqos configuration of nodeslo, mainly including tc, iptables, ipset rules, 
+      the specific speed limit is achieved by tc qdisc, and other rules are auxiliary.
+
+      notes:  
+      the tc rules will be set on the NIC that corresponds to the host's default route. the case of multiple NICs has not been handled yet.   
+      **todo:** Multiple NIC network speed limit.
+
+      each `tc class` will correspond to an `ipset` rule. This `ipset` declares a group of pods. This group of pods has the same `tc` class priority, 
+      and then share the network bandwidth in this `tc` class. By default, each `tc class` can use up all the network bandwidth of the node.
+      there are three classes defined, `system_class`/`ls_class`/`be_class` , each of pods will be matched to a `tc` class.
+
+      On the reason for using iptables:  
+      <font color=gray >case:</font> if you go to mark packets only by configuring the net_cls cgroup, you will find that packets from this this container do not make it to the desired tc class.   
+      <font color=gray >reason:</font> packages from the container's network namespace to the host network namespce will loss the classid(because the classid acts as a markes, 
+      it does not exist on the skb struct, and the packet drops the this markes during transmission). and then package will not be able to enter the desired tc class, causing the speed limit failing.    
+      <font color=gray >ways to resolve:</font> add this flag back in some other way, eg: iptables.  
+      On the reasons for using ipset:  
+      It is mainly used for IP grouping so that marking via iptables can be based on ipset objects without having to create an iptables rule for each pod, improving performance.
+
+      The specific traffic distribution is as follows:  
+      ![image](/docs/images/netqos-tc.jpg)
+
+      Logic for `htb qdisc` selection of specific classes:
+      1. The `htb` algorithm starts at the bottom of the `class` tree and works its way up to find `classes` with the `CAN_SEND` status.
+      2. If there are more than one `class` in the layer in the `CAN_SEND` state then the `class` with the highest priority (lowest value) is selected. 
+         After each `class` has sent its own `quantum` bytes, it is the next `class`'s turn to send.
+
+      Configuration of parameters for the specific class corresponding to each priority pod:
+      |  PRIO    | SYSTEM |  LS   |  BE   |
+      | ----     |  ----  | ----  | ----  |
+      | net_prio | 0      | 1     | 2     |
+      | net_cls  | 1:2    | 1:3   | 1:4   |
+      | htb.rate | 40%    | 30%   | 30%   |
+      | htb.ceil | 100%   | 100%  | 100%  |
+
+      Of course, the rules can also be configured via shell commands as follows:
+      ```bash
+      # With an entire network bandwidth of 1000Mbit, the following rules are created.
+      tc qdisc add dev eth0 root handle 1:0 htb default 1
+      tc class add dev eth0 parent 1:0 classid 1:1 htb rate 1000Mbit
+      tc class add dev eth0 parent 1:1 classid 1:2 htb rate 400Mbit ceil 1000Mbit prio 0
+      tc class add dev eth0 parent 1:1 classid 1:3 htb rate 300Mbit ceil 1000Mbit prio 1
+      tc class add dev eth0 parent 1:1 classid 1:4 htb rate 300Mbit ceil 1000Mbit prio 2
+      ipset create system_class hash:net
+      iptables -t mangle -A POSTROUTING -m set --match-set system_class src  -j CLASSIFY --set-class 1:2
+      ipset create ls_class hash:net
+      iptables -t mangle -A POSTROUTING -m set --match-set ls_class src  -j CLASSIFY --set-class 1:3
+      ipset create be_class hash:net
+      iptables -t mangle -A POSTROUTING -m set --match-set be_class src  -j CLASSIFY --set-class 1:4
+      ```
+    - For the pod of host network.
+      The speed limit can be achieved directly through the `net_cls` cgroup(Because there is no network namespace switching, 
+      the packet classid marking will not be lost, so you can enter the specific class, thus achieving the speed limit).
+
+    **todo:**  
+    Limits the network bandwidth in the ingress direction. 
+    > tc's rate limiting for ingress direction requires that business traffic be redirected to an `ifb` device,
+      limit the network bandwidth in the ingress direction of the device by limiting the rate in the egress direction of the ifb device,
+      so we can only limit the speed of requests to the application, in fact, the traffic has already arrived at the physical device, 
+      we can decide if this is necessary based on the business scenario.
+
+    shell comamnd just as follows:
+    ```shell
+    # the ifb module needs to be loaded manually.
+    modprobe ifb
+    
+    # enable virtual device ifb0
+    ip link set dev ifb0 up
+    
+    # configure filter rules for ifb0
+    tc qdisc add dev eth0 handle ffff: ingress
+    tc filter add dev eth0 parent ffff: protocol ip u32 match u32 0 0 action mirred egress redirect dev ifb0
+    tc qdisc add dev ifb0 root handle 1: htb default 10
+    tc class add dev ifb0 parent 1: classid 1:1 htb rate 10000mbit
+    tc class add dev ifb0 parent 1:1 classid 1:10 htb rate 1000mbit ceil 1000mbit
+    ```
 
 
 

@@ -27,7 +27,6 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/klog/v2"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	"github.com/koordinator-sh/koordinator/apis/configuration"
 	"github.com/koordinator-sh/koordinator/apis/extension"
@@ -66,7 +65,7 @@ func (p *Plugin) Setup(opt *framework.Option) error {
 	client = opt.Client
 
 	// schedulingv1alpha1.AddToScheme(opt.Scheme)
-	opt.Builder = opt.Builder.Watches(&source.Kind{Type: &schedulingv1alpha1.Device{}}, &DeviceHandler{})
+	opt.Builder = opt.Builder.Watches(&schedulingv1alpha1.Device{}, &DeviceHandler{})
 
 	return nil
 }
@@ -184,13 +183,17 @@ func (p *Plugin) calculate(node *corev1.Node, device *schedulingv1alpha1.Device)
 	klog.V(5).InfoS("calculate gpu resources", "node", node.Name, "resources", gpuResources)
 
 	// calculate labels about gpu driver and model
-	if device.Labels != nil {
+	updatedLabels := map[string]string{}
+	if gpuModel, ok := device.Labels[extension.LabelGPUModel]; ok {
+		updatedLabels[extension.LabelGPUModel] = gpuModel
+	}
+	if gpuDriverVersion, ok := device.Labels[extension.LabelGPUDriverVersion]; ok {
+		updatedLabels[extension.LabelGPUDriverVersion] = gpuDriverVersion
+	}
+	if len(updatedLabels) != 0 {
 		items = append(items, framework.ResourceItem{
-			Name: PluginName,
-			Labels: map[string]string{
-				extension.LabelGPUModel:         device.Labels[extension.LabelGPUModel],
-				extension.LabelGPUDriverVersion: device.Labels[extension.LabelGPUDriverVersion],
-			},
+			Name:    PluginName,
+			Labels:  updatedLabels,
 			Message: UpdateLabelsMsg,
 		})
 	}

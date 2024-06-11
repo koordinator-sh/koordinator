@@ -59,7 +59,7 @@ func ValidateMigrationControllerArgs(path *field.Path, args *deschedulerconfig.M
 	}
 
 	if args.LabelSelector != nil {
-		allErrs = append(allErrs, metav1validation.ValidateLabelSelector(args.LabelSelector, field.NewPath("labelSelector"))...)
+		allErrs = append(allErrs, metav1validation.ValidateLabelSelector(args.LabelSelector, metav1validation.LabelSelectorValidationOptions{}, field.NewPath("labelSelector"))...)
 	}
 
 	// At most one of include/exclude can be set

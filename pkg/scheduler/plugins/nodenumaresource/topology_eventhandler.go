@@ -59,7 +59,7 @@ func initNRTInformerFactory(handle framework.Handle) (nrtinformers.SharedInforme
 	return nodeResTopologyInformerFactory, nil
 }
 
-func (m *nodeResourceTopologyEventHandler) OnAdd(obj interface{}) {
+func (m *nodeResourceTopologyEventHandler) OnAdd(obj interface{}, isInInitialList bool) {
 	nodeResTopology, ok := obj.(*nrtv1alpha1.NodeResourceTopology)
 	if !ok {
 		return

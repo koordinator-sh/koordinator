@@ -30,9 +30,9 @@ import (
 	sigcache "sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/cache/informertest"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
-	"sigs.k8s.io/controller-runtime/pkg/runtime/inject"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
-	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
+
+	"github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 
 	"github.com/koordinator-sh/koordinator/pkg/webhook/elasticquota"
 )
@@ -44,7 +44,7 @@ func makeTestHandler() (*PodMutatingHandler, *informertest.FakeInformers) {
 		Group:   "scheduling.sigs.k8s.io",
 		Version: "v1alpha1",
 	}, &v1alpha1.ElasticQuota{}, &v1alpha1.ElasticQuotaList{})
-	decoder, _ := admission.NewDecoder(sche)
+	decoder := admission.NewDecoder(sche)
 	handler := &PodMutatingHandler{}
 	handler.InjectClient(client)
 	handler.InjectDecoder(decoder)
@@ -137,7 +137,7 @@ func TestMutatingHandler(t *testing.T) {
 	}
 }
 
-var _ inject.Cache = &PodMutatingHandler{}
+// var _ inject.Cache = &PodMutatingHandler{}
 
 func (h *PodMutatingHandler) InjectCache(cache sigcache.Cache) error {
 	ctx := context.TODO()

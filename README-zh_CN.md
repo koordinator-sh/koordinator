@@ -10,7 +10,7 @@
 [![codecov](https://img.shields.io/codecov/c/github/koordinator-sh/koordinator?logo=codecov&style=flat-square)](https://codecov.io/github/koordinator-sh/koordinator)
 [![PRs Welcome](https://badgen.net/badge/PRs/welcome/green?icon=https://api.iconify.design/octicon:git-pull-request.svg?color=white&style=flat-square)](CONTRIBUTING.md)
 [![Slack](https://badgen.net/badge/slack/join/4A154B?icon=slack&style=flat-square)](https://join.slack.com/t/koordinator-sh/shared_invite/zt-1756qoub4-Cn4~esfdlfAPsD7cwO2NzA)
-
+[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/8846/badge)](https://www.bestpractices.dev/projects/8846)
 
 [English](./README.md) | 简体中文
 
@@ -78,3 +78,6 @@ Koordinator is licensed under the Apache License, Version 2.0. See [LICENSE](./L
 
 [![Star History Chart](https://api.star-history.com/svg?repos=koordinator-sh/koordinator&type=Date)](https://star-history.com/#koordinator-sh/koordinator&Date)
 -->
+
+## 安全
+对于发现的安全漏洞，请邮件发送至kubernetes-security@service.aliyun.com，您可在[SECURITY.md](./SECURITY.md)文件中找到更多信息。

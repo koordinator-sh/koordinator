@@ -32,6 +32,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/utils/pointer"
@@ -191,7 +192,20 @@ func TestSortJobsByMigratingNum(t *testing.T) {
 			scheme := runtime.NewScheme()
 			_ = v1alpha1.AddToScheme(scheme)
 			_ = clientgoscheme.AddToScheme(scheme)
-			fakeClient := newFieldIndexFakeClient(fake.NewClientBuilder().WithScheme(scheme).Build())
+			fakeClient := newFieldIndexFakeClient(fake.NewClientBuilder().WithScheme(scheme).
+				WithIndex(&corev1.Pod{}, "pod.ownerRefUID", func(obj client.Object) []string {
+					pod := obj.(*corev1.Pod)
+					ownerUID := []string{}
+					for _, ref := range pod.OwnerReferences {
+						ownerUID = append(ownerUID, string(ref.UID))
+					}
+					return ownerUID
+				}).
+				WithIndex(&v1alpha1.PodMigrationJob{}, "job.pod.uid", func(obj client.Object) []string {
+					pmj := obj.(*v1alpha1.PodMigrationJob)
+					return []string{string(pmj.Spec.PodRef.UID)}
+				}).
+				Build())
 
 			creationTime := time.Now()
 			jobs := make([]*batchv1.Job, testCase.jobNum)
@@ -422,7 +436,20 @@ func TestGetMigratingJobNum(t *testing.T) {
 			scheme := runtime.NewScheme()
 			_ = v1alpha1.AddToScheme(scheme)
 			_ = clientgoscheme.AddToScheme(scheme)
-			fakeClient := newFieldIndexFakeClient(fake.NewClientBuilder().WithScheme(scheme).Build())
+			fakeClient := newFieldIndexFakeClient(fake.NewClientBuilder().WithScheme(scheme).
+				WithIndex(&corev1.Pod{}, "pod.ownerRefUID", func(obj client.Object) []string {
+					pod := obj.(*corev1.Pod)
+					ownerUID := []string{}
+					for _, ref := range pod.OwnerReferences {
+						ownerUID = append(ownerUID, string(ref.UID))
+					}
+					return ownerUID
+				}).
+				WithIndex(&v1alpha1.PodMigrationJob{}, "job.pod.uid", func(obj client.Object) []string {
+					job := obj.(*v1alpha1.PodMigrationJob)
+					return []string{string(job.Spec.PodRef.UID)}
+				}).
+				Build())
 			creationTime := time.Now()
 
 			// create job
@@ -493,9 +520,23 @@ func TestGetMigratingJobNum(t *testing.T) {
 	}
 }
 
+var _ client.Client = &fieldIndexFakeClient{}
+
 type fieldIndexFakeClient struct {
 	c client.Client
 	m map[string]func(obj client.Object) []string
+}
+
+func (f *fieldIndexFakeClient) SubResource(subResource string) client.SubResourceClient {
+	return f.c.SubResource(subResource)
+}
+
+func (f *fieldIndexFakeClient) GroupVersionKindFor(obj runtime.Object) (schema.GroupVersionKind, error) {
+	return f.c.GroupVersionKindFor(obj)
+}
+
+func (f *fieldIndexFakeClient) IsObjectNamespaced(obj runtime.Object) (bool, error) {
+	return f.c.IsObjectNamespaced(obj)
 }
 
 func newFieldIndexFakeClient(c client.Client) *fieldIndexFakeClient {
@@ -554,7 +595,7 @@ func newFieldIndexFakeClient(c client.Client) *fieldIndexFakeClient {
 	}
 }
 
-func (f *fieldIndexFakeClient) Get(ctx context.Context, key client.ObjectKey, obj client.Object) error {
+func (f *fieldIndexFakeClient) Get(ctx context.Context, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
 	return f.c.Get(ctx, key, obj)
 }
 

@@ -76,7 +76,7 @@ func (pl *Plugin) PreScore(ctx context.Context, cycleState *framework.CycleState
 			index := atomic.AddInt32(&nominatedNodeIndex, 1)
 			nominatedReservations[index-1] = nominatedReservationInfo
 		}
-	})
+	}, "ReservationPreScore")
 	if err := errCh.ReceiveError(); err != nil {
 		return framework.AsStatus(err)
 	}
@@ -182,7 +182,7 @@ func findMostPreferredReservationByOrder(rOnNode []*frameworkext.ReservationInfo
 
 func scoreReservation(pod *corev1.Pod, rInfo *frameworkext.ReservationInfo, allocated corev1.ResourceList) int64 {
 	// TODO(joseph): we should support zero-request pods
-	requested, _ := resourceapi.PodRequestsAndLimits(pod)
+	requested := resourceapi.PodRequests(pod, resourceapi.PodResourcesOptions{})
 	requested = quotav1.Add(requested, allocated)
 	resources := quotav1.RemoveZeros(rInfo.Allocatable)
 

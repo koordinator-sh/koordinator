@@ -167,7 +167,7 @@ func PodFitsAnyNode(nodeIndexer podutil.GetPodsAssignedToNodeFunc, pod *corev1.P
 			klog.V(4).InfoS("Pod fits on node", "pod", klog.KObj(pod), "node", klog.KObj(node))
 			return true
 		} else {
-			klog.V(5).InfoS("Pod does not fit on node", "pod", klog.KObj(pod), "node", klog.KObj(node), "errors", utilerrors.NewAggregate(errors))
+			klog.V(4).InfoS("Pod does not fit on node", "pod", klog.KObj(pod), "node", klog.KObj(node), "errors", utilerrors.NewAggregate(errors))
 		}
 	}
 	return false
@@ -201,7 +201,7 @@ func fitsRequest(nodeIndexer podutil.GetPodsAssignedToNodeFunc, pod *corev1.Pod,
 	var insufficientResources []error
 
 	// Get pod requests
-	podRequests, _ := resourcehelper.PodRequestsAndLimits(pod)
+	podRequests := resourcehelper.PodRequests(pod, resourcehelper.PodResourcesOptions{})
 	resourceNames := make([]corev1.ResourceName, 0, len(podRequests))
 	for name := range podRequests {
 		resourceNames = append(resourceNames, name)
@@ -264,7 +264,7 @@ func NodeUtilization(pods []*corev1.Pod, resourceNames []corev1.ResourceName) ma
 	}
 
 	for _, pod := range pods {
-		req, _ := resourcehelper.PodRequestsAndLimits(pod)
+		req := resourcehelper.PodRequests(pod, resourcehelper.PodResourcesOptions{})
 		for _, name := range resourceNames {
 			quantity, ok := req[name]
 			if ok && name != corev1.ResourcePods {

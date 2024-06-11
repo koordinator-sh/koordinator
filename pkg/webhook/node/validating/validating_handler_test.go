@@ -32,10 +32,8 @@ import (
 func makeTestHandler() *NodeValidatingHandler {
 	client := fake.NewClientBuilder().Build()
 	sche := client.Scheme()
-	decoder, _ := admission.NewDecoder(sche)
-	handler := NewNodeValidatingHandler()
-	handler.InjectClient(client)
-	handler.InjectDecoder(decoder)
+	decoder := admission.NewDecoder(sche)
+	handler := NewNodeValidatingHandler(client, decoder)
 
 	return handler
 }

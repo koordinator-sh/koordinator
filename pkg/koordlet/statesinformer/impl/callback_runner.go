@@ -117,7 +117,7 @@ func (s *callbackRunner) Start(stopCh <-chan struct{}) {
 				case cbCtx := <-s.callbackChans[cbType]:
 					cbObj := s.getObjByType(cbType, cbCtx)
 					if cbObj == nil {
-						klog.Warningf("callback runner with type %v is not exist")
+						klog.Warningf("callback runner with type %T is not exist", cbObj)
 					} else {
 						s.runCallbacks(cbType, cbObj)
 					}

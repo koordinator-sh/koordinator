@@ -18,6 +18,7 @@ package nodenumaresource
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"reflect"
 	"testing"
@@ -47,7 +48,7 @@ import (
 	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
 	schedulingconfig "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	_ "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/scheme"
-	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/v1beta2"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/v1beta3"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	frameworkexttesting "github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/testing"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/topologymanager"
@@ -91,6 +92,14 @@ func newTestSharedLister(pods []*corev1.Pod, nodes []*corev1.Node) *testSharedLi
 	}
 }
 
+func (f *testSharedLister) StorageInfos() framework.StorageInfoLister {
+	return f
+}
+
+func (f *testSharedLister) IsPVCUsedByPods(key string) bool {
+	return false
+}
+
 func (f *testSharedLister) NodeInfos() framework.NodeInfoLister {
 	return f
 }
@@ -126,7 +135,7 @@ func makePodOnNode(request map[corev1.ResourceName]string, node string, isCPUSet
 			extension.LabelPodQoS: string(extension.QoSLSR),
 		}
 		if node != "" {
-			reqs, _ := apiresource.PodRequestsAndLimits(pod)
+			reqs := apiresource.PodRequests(pod, apiresource.PodResourcesOptions{})
 			val := reqs.Cpu().MilliValue() / 1000
 			_ = extension.SetResourceStatus(pod, &extension.ResourceStatus{CPUSet: fmt.Sprintf("0-%d", val-1)})
 		}
@@ -154,10 +163,10 @@ type pluginTestSuit struct {
 }
 
 func newPluginTestSuit(t *testing.T, pods []*corev1.Pod, nodes []*corev1.Node) *pluginTestSuit {
-	var v1beta2args v1beta2.NodeNUMAResourceArgs
-	v1beta2.SetDefaults_NodeNUMAResourceArgs(&v1beta2args)
+	var v1beta3args v1beta3.NodeNUMAResourceArgs
+	v1beta3.SetDefaults_NodeNUMAResourceArgs(&v1beta3args)
 	var nodeNUMAResourceArgs schedulingconfig.NodeNUMAResourceArgs
-	err := v1beta2.Convert_v1beta2_NodeNUMAResourceArgs_To_config_NodeNUMAResourceArgs(&v1beta2args, &nodeNUMAResourceArgs, nil)
+	err := v1beta3.Convert_v1beta3_NodeNUMAResourceArgs_To_config_NodeNUMAResourceArgs(&v1beta3args, &nodeNUMAResourceArgs, nil)
 	assert.NoError(t, err)
 
 	nrtClientSet := nrtfake.NewSimpleClientset()
@@ -190,6 +199,7 @@ func newPluginTestSuit(t *testing.T, pods []*corev1.Pod, nodes []*corev1.Node) *
 	informerFactory := informers.NewSharedInformerFactory(cs, 0)
 	snapshot := newTestSharedLister(pods, nodes)
 	fh, err := st.NewFramework(
+		context.TODO(),
 		registeredPlugins,
 		"koord-scheduler",
 		runtime.WithClientSet(cs),
@@ -996,7 +1006,7 @@ func TestFilterWithAmplifiedCPUs(t *testing.T) {
 			}
 			handler := &podEventHandler{resourceManager: pl.resourceManager}
 			for _, v := range tt.existingPods {
-				handler.OnAdd(v)
+				handler.OnAdd(v, true)
 			}
 
 			cycleState := framework.NewCycleState()
@@ -1099,7 +1109,7 @@ func TestPlugin_Reserve(t *testing.T) {
 			},
 			cpuTopology: buildCPUTopologyForTest(2, 1, 4, 2),
 			pod:         &corev1.Pod{},
-			want:        framework.NewStatus(framework.Error, "not enough cpus available to satisfy request"),
+			want:        framework.AsStatus(errors.New("not enough cpus available to satisfy request")),
 		},
 		{
 			name: "succeed with valid cpu topology and node numa least allocate strategy",

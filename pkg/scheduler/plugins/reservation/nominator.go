@@ -200,11 +200,13 @@ func (pl *Plugin) RemoveNominatedReservations(pod *corev1.Pod) {
 }
 
 func (pl *Plugin) AddNominatedReservePod(pod *corev1.Pod, nodeName string) {
-	pl.nominator.AddNominatedReservePod(framework.NewPodInfo(pod), nodeName)
+	podInfo, _ := framework.NewPodInfo(pod)
+	pl.nominator.AddNominatedReservePod(podInfo, nodeName)
 }
 
 func (pl *Plugin) DeleteNominatedReservePod(pod *corev1.Pod) {
-	pl.nominator.DeleteReservePod(framework.NewPodInfo(pod))
+	podInfo, _ := framework.NewPodInfo(pod)
+	pl.nominator.DeleteReservePod(podInfo)
 }
 
 func (pl *Plugin) GetNominatedReservation(pod *corev1.Pod, nodeName string) *frameworkext.ReservationInfo {

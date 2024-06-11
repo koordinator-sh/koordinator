@@ -18,39 +18,49 @@ package coscheduling
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"math"
+	"math/rand"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/coscheduling/core"
-
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	apiruntime "k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	kubefake "k8s.io/client-go/kubernetes/fake"
-	"k8s.io/client-go/util/retry"
+	"k8s.io/client-go/tools/events"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/klog/v2"
+	scheduledv1beta3 "k8s.io/kube-scheduler/config/v1beta3"
+	"k8s.io/kubernetes/pkg/scheduler"
 	scheduledconfig "k8s.io/kubernetes/pkg/scheduler/apis/config"
+	configtesting "k8s.io/kubernetes/pkg/scheduler/apis/config/testing"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultbinder"
 	"k8s.io/kubernetes/pkg/scheduler/framework/runtime"
 	frameworkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
+	"k8s.io/kubernetes/pkg/scheduler/profile"
 	schedulertesting "k8s.io/kubernetes/pkg/scheduler/testing"
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
-	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
-	pgclientset "sigs.k8s.io/scheduler-plugins/pkg/generated/clientset/versioned"
-	fakepgclientset "sigs.k8s.io/scheduler-plugins/pkg/generated/clientset/versioned/fake"
+	"k8s.io/utils/pointer"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
+	pgclientset "github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/generated/clientset/versioned"
+	fakepgclientset "github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/generated/clientset/versioned/fake"
 	koordfake "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/fake"
 	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
-	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/v1beta2"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/v1beta3"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/coscheduling/core"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/coscheduling/util"
 )
 
@@ -140,6 +150,14 @@ func (f *testSharedLister) NodeInfos() framework.NodeInfoLister {
 	return f
 }
 
+func (f *testSharedLister) StorageInfos() framework.StorageInfoLister {
+	return f
+}
+
+func (f *testSharedLister) IsPVCUsedByPods(key string) bool {
+	return false
+}
+
 func (f *testSharedLister) List() ([]*framework.NodeInfo, error) {
 	return f.nodeInfos, nil
 }
@@ -164,10 +182,10 @@ type pluginTestSuit struct {
 }
 
 func newPluginTestSuit(t *testing.T, nodes []*corev1.Node, pgClientSet pgclientset.Interface, cs kubernetes.Interface) *pluginTestSuit {
-	var v1beta2args v1beta2.CoschedulingArgs
-	v1beta2.SetDefaults_CoschedulingArgs(&v1beta2args)
+	var v1beta3args v1beta3.CoschedulingArgs
+	v1beta3.SetDefaults_CoschedulingArgs(&v1beta3args)
 	var gangSchedulingArgs config.CoschedulingArgs
-	err := v1beta2.Convert_v1beta2_CoschedulingArgs_To_config_CoschedulingArgs(&v1beta2args, &gangSchedulingArgs, nil)
+	err := v1beta3.Convert_v1beta3_CoschedulingArgs_To_config_CoschedulingArgs(&v1beta3args, &gangSchedulingArgs, nil)
 	assert.NoError(t, err)
 
 	gangSchedulingPluginConfig := scheduledconfig.PluginConfig{
@@ -187,17 +205,23 @@ func newPluginTestSuit(t *testing.T, nodes []*corev1.Node, pgClientSet pgclients
 		schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
 		schedulertesting.RegisterQueueSortPlugin(Name, proxyNew),
 		schedulertesting.RegisterPreFilterPlugin(Name, proxyNew),
+		schedulertesting.RegisterReservePlugin(Name, proxyNew),
 		schedulertesting.RegisterPermitPlugin(Name, proxyNew),
+		schedulertesting.RegisterPluginAsExtensions(Name, proxyNew, "PostBind"),
 	}
+	fakeRecorder := record.NewFakeRecorder(1024)
+	eventRecorder := record.NewEventRecorderAdapter(fakeRecorder)
 
 	informerFactory := informers.NewSharedInformerFactory(cs, 0)
 	snapshot := newTestSharedLister(nil, nodes)
 	fh, err := schedulertesting.NewFramework(
+		context.TODO(),
 		registeredPlugins,
 		"koord-scheduler",
 		runtime.WithClientSet(cs),
 		runtime.WithInformerFactory(informerFactory),
 		runtime.WithSnapshotSharedLister(snapshot),
+		runtime.WithEventRecorder(eventRecorder),
 	)
 	assert.Nil(t, err)
 	return &pluginTestSuit{
@@ -214,301 +238,319 @@ func (p *pluginTestSuit) start() {
 	p.Handle.SharedInformerFactory().WaitForCacheSync(ctx.Done())
 }
 
+func NewPodInfo(t *testing.T, pod *corev1.Pod) *framework.PodInfo {
+	podInfo, err := framework.NewPodInfo(pod)
+	assert.NoError(t, err)
+	return podInfo
+}
+
 func TestLess(t *testing.T) {
-	pgClientSet := fakepgclientset.NewSimpleClientset()
-	cs := kubefake.NewSimpleClientset()
-	suit := newPluginTestSuit(t, nil, pgClientSet, cs)
-	gp := suit.plugin.(*Coscheduling)
+	{
+		//pod priority
+		pgClientSet := fakepgclientset.NewSimpleClientset()
+		cs := kubefake.NewSimpleClientset()
+		suit := newPluginTestSuit(t, nil, pgClientSet, cs)
+		gp := suit.plugin.(*Coscheduling)
 
-	var lowPriority, highPriority = int32(10), int32(100)
-	// koordinator priority announced in pod's Labels
-	var lowSubPriority, highSubPriority = "111", "222"
-	var gangA_ns, gangB_ns = "namespace1", "namespace2"
-	gangC_ns := "namespace3"
-	now := time.Now()
-	earltTime := now.Add(1 * time.Second)
-	lateTime := now.Add(3 * time.Second)
+		var lowPriority, highPriority = int32(10), int32(100)
 
-	// we assume that there are tow gang: gangA and gangB
-	// gangA is announced by the pod's annotation,gangB is created by the podGroup
-	// so here we need to add two gangs to the cluster
+		pod1 := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: "default",
+				Name:      "pod1",
+			},
+		}
+		pod1.Spec.Priority = &lowPriority
 
-	// GangA by Annotations
-	podToCreateGangA := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: gangA_ns,
-			Name:      "pod1",
-			Annotations: map[string]string{
-				extension.AnnotationGangName:   "gangA",
-				extension.AnnotationGangMinNum: "2",
+		pod2 := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: "default",
+				Name:      "pod1",
 			},
-		},
-	}
-	podToSatisfyGangC := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: gangC_ns,
-			Name:      "podC",
-			Labels: map[string]string{
-				"pod-group.scheduling.sigs.k8s.io/name": "gangC",
-			},
-		},
-	}
-	// GangB by PodGroup
-	gangBCreatTime := now.Add(5 * time.Second)
-	pg := makePg("gangB", gangB_ns, 2, &gangBCreatTime, nil)
-	// GangC by PodGroup
-	gangCCreatTime := now.Add(5 * time.Second)
-	pg2 := makePg("gangC", gangC_ns, 1, &gangCCreatTime, nil)
-	// GangD by PodGroup
-	pg3 := makePg("gangD", gangC_ns, 1, &gangCCreatTime, nil)
-	suit.start()
-	// create gangA and gangB
+		}
+		pod2.Spec.Priority = &highPriority
 
-	err := retry.OnError(
-		retry.DefaultRetry,
-		errors.IsTooManyRequests,
-		func() error {
-			var err error
-			_, err = suit.Handle.ClientSet().CoreV1().Pods(gangA_ns).Create(context.TODO(), podToCreateGangA, metav1.CreateOptions{})
-			return err
-		})
-	if err != nil {
-		t.Errorf("retry podClient create pod err: %v", err)
-	}
-	err = retry.OnError(
-		retry.DefaultRetry,
-		errors.IsTooManyRequests,
-		func() error {
-			var err error
-			_, err = pgClientSet.SchedulingV1alpha1().PodGroups(gangB_ns).Create(context.TODO(), pg, metav1.CreateOptions{})
-			return err
-		})
-	if err != nil {
-		t.Errorf("retry pgClient create pg err: %v", err)
-	}
-	err = retry.OnError(
-		retry.DefaultRetry,
-		errors.IsTooManyRequests,
-		func() error {
-			var err error
-			_, err = pgClientSet.SchedulingV1alpha1().PodGroups(gangC_ns).Create(context.TODO(), pg2, metav1.CreateOptions{})
-			return err
-		})
-	if err != nil {
-		t.Errorf("retry pgClient create pg err: %v", err)
-	}
-	err = retry.OnError(
-		retry.DefaultRetry,
-		errors.IsTooManyRequests,
-		func() error {
-			var err error
-			_, err = pgClientSet.SchedulingV1alpha1().PodGroups(gangC_ns).Create(context.TODO(), pg3, metav1.CreateOptions{})
-			return err
-		})
-	if err != nil {
-		t.Errorf("retry pgClient create pg err: %v", err)
-	}
-	err = retry.OnError(
-		retry.DefaultRetry,
-		errors.IsTooManyRequests,
-		func() error {
-			var err error
-			_, err = suit.Handle.ClientSet().CoreV1().Pods(gangC_ns).Create(context.TODO(), podToSatisfyGangC, metav1.CreateOptions{})
-			return err
-		})
-	if err != nil {
-		t.Errorf("retry podClient create pod err: %v", err)
-	}
-	time.Sleep(100 * time.Millisecond)
-	for _, tt := range []struct {
-		name                string
-		p1                  *framework.QueuedPodInfo
-		p2                  *framework.QueuedPodInfo
-		childScheduleCycle1 int
-		childScheduleCycle2 int
-		annotations         map[string]string
-		expected            bool
-	}{
-		{
-			name: "p1.priority less than p2.priority,but p1's subPriority is greater than p2's",
-			p1: &framework.QueuedPodInfo{
-				PodInfo: framework.NewPodInfo(st.MakePod().Namespace(gangA_ns).Name("pod1").Priority(lowPriority).Label(extension.LabelPodPriority, highSubPriority).Obj()),
-			},
-			p2: &framework.QueuedPodInfo{
-				PodInfo: framework.NewPodInfo(st.MakePod().Namespace(gangB_ns).Name("pod2").Priority(highPriority).Label(extension.LabelPodPriority, lowSubPriority).Obj()),
-			},
-			expected: false, // p2 should be ahead of p1 in the queue
-		},
-		{
-			name: "p1.priority greater than p2.priority, p2's subPriority is greater than p1's",
-			p1: &framework.QueuedPodInfo{
-				PodInfo: framework.NewPodInfo(st.MakePod().Namespace(gangA_ns).Name("pod1").Priority(highPriority).Label(extension.LabelPodPriority, lowSubPriority).Obj()),
-			},
-			p2: &framework.QueuedPodInfo{
-				PodInfo: framework.NewPodInfo(st.MakePod().Namespace(gangB_ns).Name("pod2").Priority(lowPriority).Label(extension.LabelPodPriority, highSubPriority).Obj()),
-			},
-			expected: true, // p1 should be ahead of p2 in the queue
-		},
-		{
-			name: "equal priority. p1's subPriority is less than p2's subPriority",
-			p1: &framework.QueuedPodInfo{
-				PodInfo: framework.NewPodInfo(st.MakePod().Namespace(gangA_ns).Name("pod1").Priority(highPriority).Label(extension.LabelPodPriority, lowSubPriority).Obj()),
-			},
-			p2: &framework.QueuedPodInfo{
-				PodInfo: framework.NewPodInfo(st.MakePod().Namespace(gangB_ns).Name("pod2").Priority(highPriority).Label(extension.LabelPodPriority, highSubPriority).Obj()),
-			},
-			expected: false, // p2 should be ahead of p1 in the queue
-		},
-		{
-			name: "equal priority. p1's subPriority is greater than p2's subPriority",
-			p1: &framework.QueuedPodInfo{
-				PodInfo: framework.NewPodInfo(st.MakePod().Namespace(gangA_ns).Name("pod1").Priority(highPriority).Label(extension.LabelPodPriority, highSubPriority).Obj()),
-			},
-			p2: &framework.QueuedPodInfo{
-				PodInfo: framework.NewPodInfo(st.MakePod().Namespace(gangB_ns).Name("pod2").Priority(highPriority).Label(extension.LabelPodPriority, lowSubPriority).Obj()),
-			},
-			expected: true, // p1 should be ahead of p2 in the queue
-		},
-		{
-			name: "equal priority. p1's subPriority is illegal , p2's subPriority is greater than 0",
-			p1: &framework.QueuedPodInfo{
-				PodInfo: framework.NewPodInfo(st.MakePod().Namespace(gangA_ns).Name("pod1").Priority(highPriority).Label(extension.LabelPodPriority, "????").Obj()),
-			},
-			p2: &framework.QueuedPodInfo{
-				PodInfo: framework.NewPodInfo(st.MakePod().Namespace(gangB_ns).Name("pod2").Priority(highPriority).Label(extension.LabelPodPriority, lowSubPriority).Obj()),
-			},
-			expected: false, // p2 should be ahead of p1 in the queue
-		},
-		{
-			name: "equal priority, but p1 is added to schedulingQ earlier than p2",
-			p1: &framework.QueuedPodInfo{
-				PodInfo:   framework.NewPodInfo(st.MakePod().Namespace(gangA_ns).Name("pod1").Priority(highPriority).Label(extension.LabelPodPriority, lowSubPriority).Obj()),
-				Timestamp: earltTime,
-			},
-			p2: &framework.QueuedPodInfo{
-				PodInfo:   framework.NewPodInfo(st.MakePod().Namespace(gangB_ns).Name("pod2").Priority(highPriority).Label(extension.LabelPodPriority, lowSubPriority).Obj()),
-				Timestamp: lateTime,
-			},
-			expected: true, // p1 should be ahead of p2 in the queue
-		},
-		{
-			name: "p1.priority less than p2.priority, p1 belongs to gangB",
-			p1: &framework.QueuedPodInfo{
-				PodInfo: framework.NewPodInfo(st.MakePod().Namespace(gangB_ns).Name("pod1").Priority(lowPriority).Label(v1alpha1.PodGroupLabel, "gangB").Obj()),
-			},
-			p2: &framework.QueuedPodInfo{
-				PodInfo: framework.NewPodInfo(st.MakePod().Namespace(gangA_ns).Name("pod2").Priority(highPriority).Obj()),
-			},
-			expected: false, // p2 should be ahead of p1 in the queue
-		},
-		{
-			name: "equal priority, p1 is added to schedulingQ earlier than p2",
-			p1: &framework.QueuedPodInfo{
-				PodInfo:   framework.NewPodInfo(st.MakePod().Namespace(gangB_ns).Name("pod1").Priority(highPriority).Obj()),
-				Timestamp: earltTime,
-			},
-			p2: &framework.QueuedPodInfo{
-				PodInfo:   framework.NewPodInfo(st.MakePod().Namespace(gangA_ns).Name("pod2").Priority(highPriority).Obj()),
-				Timestamp: lateTime,
-			},
-			expected: true, // p1 should be ahead of p2 in the queue
-		},
-		{
-			name: "equal priority, p1 is added to schedulingQ earlier than p2, but p1 belongs to gangB",
-			p1: &framework.QueuedPodInfo{
-				PodInfo:                 framework.NewPodInfo(st.MakePod().Namespace(gangB_ns).Name("pod1").Priority(highPriority).Label(v1alpha1.PodGroupLabel, "gangB").Obj()),
-				InitialAttemptTimestamp: earltTime,
-			},
-			p2: &framework.QueuedPodInfo{
-				PodInfo:                 framework.NewPodInfo(st.MakePod().Namespace(gangA_ns).Name("pod2").Priority(highPriority).Obj()),
-				InitialAttemptTimestamp: lateTime,
-			},
-			expected: false, // p2 should be ahead of p1 in the queue
-		},
-		{
-			name: "p1.priority less than p2.priority, p1 belongs to gangA and p2 belongs to gangB",
-			p1: &framework.QueuedPodInfo{
-				PodInfo: framework.NewPodInfo(st.MakePod().Namespace(gangA_ns).Name("pod1").Priority(lowPriority).Obj()),
-			},
-			annotations: map[string]string{extension.AnnotationGangName: "gangA"},
-			p2: &framework.QueuedPodInfo{
-				PodInfo: framework.NewPodInfo(st.MakePod().Namespace(gangB_ns).Name("pod2").Priority(highPriority).Label(v1alpha1.PodGroupLabel, "gangB").Obj()),
-			},
-			expected: false, // p1 should be ahead of p2 in the queue
-		},
-		{
-			name: "equal priority. p2 is added to schedulingQ earlier than p1, p1 belongs to gangA and p2 belongs to gangB",
-			p1: &framework.QueuedPodInfo{
-				PodInfo:   framework.NewPodInfo(st.MakePod().Namespace(gangA_ns).Name("pod1").Priority(highPriority).Obj()),
-				Timestamp: lateTime,
-			},
-			annotations: map[string]string{extension.AnnotationGangName: "gangA"},
-			p2: &framework.QueuedPodInfo{
-				PodInfo:   framework.NewPodInfo(st.MakePod().Namespace(gangB_ns).Name("pod2").Priority(highPriority).Label(v1alpha1.PodGroupLabel, "gangB").Obj()),
-				Timestamp: earltTime,
-			},
-			expected: false, // p1 should be ahead of p2 in the queue
-		},
-		{
-			name: "equal priority and creation time, both belongs to gangB",
-			p1: &framework.QueuedPodInfo{
-				PodInfo:   framework.NewPodInfo(st.MakePod().Namespace(gangB_ns).Name("pod1").Priority(highPriority).Label(v1alpha1.PodGroupLabel, "gangB").Obj()),
-				Timestamp: lateTime,
-			},
-			p2: &framework.QueuedPodInfo{
-				PodInfo:   framework.NewPodInfo(st.MakePod().Namespace(gangB_ns).Name("pod2").Priority(highPriority).Label(v1alpha1.PodGroupLabel, "gangB").Obj()),
-				Timestamp: earltTime,
-			},
-			expected: false,
-		},
-		{
-			name: "equal priority and creation time, both belongs to gangB, childScheduleCycle not equal",
-			p1: &framework.QueuedPodInfo{
-				PodInfo:                 framework.NewPodInfo(st.MakePod().Namespace(gangB_ns).Name("pod1").Priority(highPriority).Label(v1alpha1.PodGroupLabel, "gangB").Obj()),
-				InitialAttemptTimestamp: lateTime,
-			},
-			p2: &framework.QueuedPodInfo{
-				PodInfo:                 framework.NewPodInfo(st.MakePod().Namespace(gangB_ns).Name("pod2").Priority(highPriority).Label(v1alpha1.PodGroupLabel, "gangB").Obj()),
-				InitialAttemptTimestamp: earltTime,
-			},
-			childScheduleCycle1: 2,
-			childScheduleCycle2: 1,
-			expected:            false, // p1 should be ahead of p2 in the queue
-		},
-		{
-			name: "equal priority and creation time, p1 belongs to gangA that has been satisfied",
-			p1: &framework.QueuedPodInfo{
-				PodInfo:   framework.NewPodInfo(st.MakePod().Namespace(gangB_ns).Name("pod1").Priority(highPriority).Label(v1alpha1.PodGroupLabel, "gangD").Obj()),
-				Timestamp: lateTime,
-			},
-			p2: &framework.QueuedPodInfo{
-				PodInfo:   framework.NewPodInfo(st.MakePod().Namespace(gangC_ns).Name("pod2").Priority(highPriority).Label(v1alpha1.PodGroupLabel, "gangC").Obj()),
-				Timestamp: earltTime,
-			},
-			expected: false,
-		},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
+		q1 := &framework.QueuedPodInfo{}
+		q1.PodInfo = &framework.PodInfo{}
+		q1.Pod = pod1
 
-			if len(tt.annotations) != 0 {
-				tt.p1.Pod.Annotations = tt.annotations
-			}
+		q2 := &framework.QueuedPodInfo{}
+		q2.PodInfo = &framework.PodInfo{}
+		q2.Pod = pod2
 
-			gang1 := gp.pgMgr.(*core.PodGroupManager).GetGangByPod(tt.p1.Pod)
-			gang2 := gp.pgMgr.(*core.PodGroupManager).GetGangByPod(tt.p2.Pod)
-			if gang1 != nil {
-				gang1.ChildrenScheduleRoundMap[util.GetId(tt.p1.Pod.Namespace, tt.p1.Pod.Name)] = tt.childScheduleCycle1
-			}
-			if gang2 != nil {
-				gang2.ChildrenScheduleRoundMap[util.GetId(tt.p2.Pod.Namespace, tt.p2.Pod.Name)] = tt.childScheduleCycle2
-			}
-
-			if got := gp.Less(tt.p1, tt.p2); got != tt.expected {
-				t.Errorf("expected %v, got %v", tt.expected, got)
-			}
-		})
+		assert.Equal(t, false, gp.Less(q1, q2))
+		assert.Equal(t, true, gp.Less(q2, q1))
 	}
+	{
+		//sub priority
+		pgClientSet := fakepgclientset.NewSimpleClientset()
+		cs := kubefake.NewSimpleClientset()
+		suit := newPluginTestSuit(t, nil, pgClientSet, cs)
+		gp := suit.plugin.(*Coscheduling)
 
+		var lowPriority = int32(10)
+
+		pod1 := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: "default",
+				Name:      "pod1",
+			},
+		}
+		pod1.Spec.Priority = &lowPriority
+		pod1.Labels = map[string]string{
+			extension.LabelPodPriority: "111",
+		}
+
+		pod2 := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: "default",
+				Name:      "pod1",
+			},
+		}
+		pod2.Spec.Priority = &lowPriority
+		pod2.Labels = map[string]string{
+			extension.LabelPodPriority: "222",
+		}
+
+		q1 := &framework.QueuedPodInfo{}
+		q1.PodInfo = &framework.PodInfo{}
+		q1.Pod = pod1
+
+		q2 := &framework.QueuedPodInfo{}
+		q2.PodInfo = &framework.PodInfo{}
+		q2.Pod = pod2
+
+		assert.Equal(t, false, gp.Less(q1, q2))
+		assert.Equal(t, true, gp.Less(q2, q1))
+	}
+	{
+		//two gang LastScheduleTime
+		pgClientSet := fakepgclientset.NewSimpleClientset()
+		cs := kubefake.NewSimpleClientset()
+		suit := newPluginTestSuit(t, nil, pgClientSet, cs)
+		gp := suit.plugin.(*Coscheduling)
+
+		pod1 := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: "default",
+				Name:      "pod1",
+				Annotations: map[string]string{
+					extension.AnnotationGangName:   "gangA",
+					extension.AnnotationGangMinNum: "2",
+				},
+			},
+		}
+
+		pod2 := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: "default",
+				Name:      "pod2",
+				Annotations: map[string]string{
+					extension.AnnotationGangName:   "gangB",
+					extension.AnnotationGangMinNum: "2",
+				},
+			},
+		}
+
+		suit.Handle.ClientSet().CoreV1().Pods("default").Create(context.TODO(), pod2, metav1.CreateOptions{})
+		time.Sleep(time.Millisecond * 100)
+		suit.Handle.ClientSet().CoreV1().Pods("default").Create(context.TODO(), pod1, metav1.CreateOptions{})
+		time.Sleep(time.Millisecond * 100)
+
+		q1 := &framework.QueuedPodInfo{}
+		q1.PodInfo = &framework.PodInfo{}
+		q1.Pod = pod1
+
+		q2 := &framework.QueuedPodInfo{}
+		q2.PodInfo = &framework.PodInfo{}
+		q2.Pod = pod2
+
+		assert.Equal(t, false, gp.Less(q1, q2))
+		assert.Equal(t, true, gp.Less(q2, q1))
+	}
+	{
+		//gang and normal pod LastScheduleTime
+		pgClientSet := fakepgclientset.NewSimpleClientset()
+		cs := kubefake.NewSimpleClientset()
+		suit := newPluginTestSuit(t, nil, pgClientSet, cs)
+		gp := suit.plugin.(*Coscheduling)
+
+		pod1 := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: "default",
+				Name:      "pod1",
+				Annotations: map[string]string{
+					extension.AnnotationGangName:   "gangA",
+					extension.AnnotationGangMinNum: "2",
+				},
+			},
+		}
+
+		pod2 := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace:   "default",
+				Name:        "pod2",
+				Annotations: map[string]string{},
+			},
+		}
+
+		suit.Handle.ClientSet().CoreV1().Pods("default").Create(context.TODO(), pod1, metav1.CreateOptions{})
+		time.Sleep(time.Millisecond * 100)
+		suit.Handle.ClientSet().CoreV1().Pods("default").Create(context.TODO(), pod2, metav1.CreateOptions{})
+		time.Sleep(time.Millisecond * 100)
+
+		q1 := &framework.QueuedPodInfo{}
+		q1.PodInfo = &framework.PodInfo{}
+		q1.Pod = pod1
+
+		q2 := &framework.QueuedPodInfo{}
+		q2.PodInfo = &framework.PodInfo{}
+		q2.Pod = pod2
+		q2.Timestamp = time.Now().Add(time.Second * 1000 * -1)
+
+		assert.Equal(t, false, gp.Less(q1, q2))
+		assert.Equal(t, true, gp.Less(q2, q1))
+	}
+	{
+		//gangGroup, gangId diff
+		pgClientSet := fakepgclientset.NewSimpleClientset()
+		cs := kubefake.NewSimpleClientset()
+		suit := newPluginTestSuit(t, nil, pgClientSet, cs)
+		gp := suit.plugin.(*Coscheduling)
+
+		pod1 := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: "default",
+				Name:      "pod1",
+				Annotations: map[string]string{
+					extension.AnnotationGangName:   "gangB",
+					extension.AnnotationGangMinNum: "2",
+					extension.AnnotationGangGroups: "[\"default/gangA\",\"default/gangB\"]",
+				},
+			},
+		}
+
+		pod2 := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: "default",
+				Name:      "pod2",
+				Annotations: map[string]string{
+					extension.AnnotationGangName:   "gangA",
+					extension.AnnotationGangMinNum: "2",
+					extension.AnnotationGangGroups: "[\"default/gangA\",\"default/gangB\"]",
+				},
+			},
+		}
+
+		suit.Handle.ClientSet().CoreV1().Pods("default").Create(context.TODO(), pod1, metav1.CreateOptions{})
+		time.Sleep(time.Millisecond * 100)
+		suit.Handle.ClientSet().CoreV1().Pods("default").Create(context.TODO(), pod2, metav1.CreateOptions{})
+		time.Sleep(time.Millisecond * 100)
+
+		q1 := &framework.QueuedPodInfo{}
+		q1.PodInfo = &framework.PodInfo{}
+		q1.Pod = pod1
+
+		q2 := &framework.QueuedPodInfo{}
+		q2.PodInfo = &framework.PodInfo{}
+		q2.Pod = pod2
+
+		assert.Equal(t, false, gp.Less(q1, q2))
+		assert.Equal(t, true, gp.Less(q2, q1))
+	}
+	{
+		//same gang, child schedule cycle diff
+		pgClientSet := fakepgclientset.NewSimpleClientset()
+		cs := kubefake.NewSimpleClientset()
+		suit := newPluginTestSuit(t, nil, pgClientSet, cs)
+		gp := suit.plugin.(*Coscheduling)
+
+		pod1 := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: "default",
+				Name:      "pod1",
+				Annotations: map[string]string{
+					extension.AnnotationGangName:   "gangB",
+					extension.AnnotationGangMinNum: "2",
+				},
+			},
+		}
+
+		pod2 := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: "default",
+				Name:      "pod2",
+				Annotations: map[string]string{
+					extension.AnnotationGangName:   "gangB",
+					extension.AnnotationGangMinNum: "2",
+				},
+			},
+		}
+
+		suit.Handle.ClientSet().CoreV1().Pods("default").Create(context.TODO(), pod1, metav1.CreateOptions{})
+		time.Sleep(time.Millisecond * 100)
+		suit.Handle.ClientSet().CoreV1().Pods("default").Create(context.TODO(), pod2, metav1.CreateOptions{})
+		time.Sleep(time.Millisecond * 100)
+
+		q1 := &framework.QueuedPodInfo{}
+		q1.PodInfo = &framework.PodInfo{}
+		q1.Pod = pod1
+
+		q2 := &framework.QueuedPodInfo{}
+		q2.PodInfo = &framework.PodInfo{}
+		q2.Pod = pod2
+
+		gang1 := gp.pgMgr.(*core.PodGroupManager).GetGangByPod(pod1)
+		gang1.GangGroupInfo.ChildrenScheduleRoundMap["default/pod1"] = 1
+
+		assert.Equal(t, false, gp.Less(q1, q2))
+		assert.Equal(t, true, gp.Less(q2, q1))
+	}
+	{
+		//same gang, child schedule cycle diff
+		pgClientSet := fakepgclientset.NewSimpleClientset()
+		cs := kubefake.NewSimpleClientset()
+		suit := newPluginTestSuit(t, nil, pgClientSet, cs)
+		gp := suit.plugin.(*Coscheduling)
+
+		pod1 := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: "default",
+				Name:      "pod1",
+				Annotations: map[string]string{
+					extension.AnnotationGangName:   "gangB",
+					extension.AnnotationGangMinNum: "2",
+				},
+			},
+		}
+
+		pod2 := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: "default",
+				Name:      "pod2",
+				Annotations: map[string]string{
+					extension.AnnotationGangName:   "gangB",
+					extension.AnnotationGangMinNum: "2",
+				},
+			},
+		}
+
+		suit.Handle.ClientSet().CoreV1().Pods("default").Create(context.TODO(), pod1, metav1.CreateOptions{})
+		time.Sleep(time.Millisecond * 100)
+		suit.Handle.ClientSet().CoreV1().Pods("default").Create(context.TODO(), pod2, metav1.CreateOptions{})
+		time.Sleep(time.Millisecond * 100)
+
+		q1 := &framework.QueuedPodInfo{}
+		q1.PodInfo = &framework.PodInfo{}
+		q1.Pod = pod1
+
+		q2 := &framework.QueuedPodInfo{}
+		q2.PodInfo = &framework.PodInfo{}
+		q2.Pod = pod2
+
+		assert.Equal(t, true, gp.Less(q1, q2))
+		assert.Equal(t, false, gp.Less(q2, q1))
+	}
 }
 
 func TestPostFilter(t *testing.T) {
@@ -901,5 +943,534 @@ func TestUnreserve(t *testing.T) {
 			wg.Wait()
 
 		})
+	}
+}
+
+func TestFairness(t *testing.T) {
+	gangNames := []string{"gangA", "gangB", "gangC", "gangD", "gangE", "gangF", "gangG", "gangH", "gangI", "gangJ"}
+	gangGroups := map[string][]string{
+		"gangA": {"default/gangA", "default/gangB", "default/gangC"},
+		"gangB": {"default/gangA", "default/gangB", "default/gangC"},
+		"gangC": {"default/gangA", "default/gangB", "default/gangC"},
+		"gangD": {"default/gangD", "default/gangE"},
+		"gangE": {"default/gangD", "default/gangE"},
+		"gangF": {"default/gangF", "default/gangG"},
+		"gangG": {"default/gangF", "default/gangG"},
+		"gangH": {"default/gangH", "default/gangI", "default/gangJ"},
+		"gangI": {"default/gangH", "default/gangI", "default/gangJ"},
+		"gangJ": {"default/gangH", "default/gangI", "default/gangJ"},
+	}
+	gangMinRequiredNums := []int{20, 10, 32, 20, 20, 18, 43, 20, 30, 20}
+	gangInjectFilterError := []bool{false, false, true, false, false, true, false, false, false, true}
+	var gangInjectFilterErrorIndex []int
+	for _, gangMinRequiredNum := range gangMinRequiredNums {
+		gangInjectFilterErrorIndex = append(gangInjectFilterErrorIndex, rand.Intn(gangMinRequiredNum))
+	}
+
+	podGroupCRs := map[string]*v1alpha1.PodGroup{}
+	memberPodsOfGang := map[string][]*corev1.Pod{}
+	var allPods []*corev1.Pod
+	for i, gangName := range gangNames {
+		gangID := util.GetId("default", gangName)
+
+		podGroup := makePg(gangName, "default", int32(gangMinRequiredNums[i]), nil, nil)
+		podGroup.Spec.ScheduleTimeoutSeconds = pointer.Int32(3600)
+		gangGroup := gangGroups[gangName]
+		rawGangGroup, err := json.Marshal(gangGroup)
+		assert.NoError(t, err)
+		podGroup.Annotations = map[string]string{extension.AnnotationGangGroups: string(rawGangGroup)}
+		podGroupCRs[gangID] = podGroup
+
+		for j := 0; j < gangMinRequiredNums[i]; j++ {
+			memberPodOfGang := st.MakePod().
+				Namespace("default").
+				Name(fmt.Sprintf("%s_%d", gangName, j)).
+				UID(fmt.Sprintf("%s_%d", gangName, j)).
+				Label(v1alpha1.PodGroupLabel, gangName).
+				SchedulerName("koord-scheduler").Obj()
+			if gangInjectFilterError[i] && j == gangInjectFilterErrorIndex[i] {
+				memberPodOfGang.Labels["filterError"] = "true"
+			}
+			memberPodsOfGang[gangID] = append(memberPodsOfGang[gangID], memberPodOfGang)
+			allPods = append(allPods, memberPodOfGang)
+		}
+	}
+
+	pgClientSet := fakepgclientset.NewSimpleClientset()
+	cs := kubefake.NewSimpleClientset()
+	for _, podGroupCR := range podGroupCRs {
+		_, err := pgClientSet.SchedulingV1alpha1().PodGroups(podGroupCR.Namespace).Create(context.Background(), podGroupCR, metav1.CreateOptions{})
+		assert.NoError(t, err)
+	}
+	rand.Shuffle(len(allPods), func(i, j int) {
+		allPods[i], allPods[j] = allPods[j], allPods[i]
+	})
+	for _, pod := range allPods {
+		_, err := cs.CoreV1().Pods(pod.Namespace).Create(context.TODO(), pod, metav1.CreateOptions{})
+		assert.NoError(t, err)
+	}
+
+	cfg := configtesting.V1beta3ToInternalWithDefaults(t, scheduledv1beta3.KubeSchedulerConfiguration{
+		Profiles: []scheduledv1beta3.KubeSchedulerProfile{{
+			SchedulerName: pointer.StringPtr("koord-scheduler"),
+			Plugins: &scheduledv1beta3.Plugins{
+				QueueSort: scheduledv1beta3.PluginSet{
+					Enabled: []scheduledv1beta3.Plugin{
+						{Name: "fakeQueueSortPlugin"},
+					},
+					Disabled: []scheduledv1beta3.Plugin{
+						{Name: "*"},
+					},
+				},
+			},
+		}}})
+
+	suit := newPluginTestSuit(t, nil, pgClientSet, cs)
+	registry := frameworkruntime.Registry{
+		"fakeQueueSortPlugin": func(_ apiruntime.Object, fh framework.Handle) (framework.Plugin, error) {
+			return suit.plugin.(framework.QueueSortPlugin), nil
+		},
+	}
+
+	eventBroadcaster := events.NewBroadcaster(&events.EventSinkImpl{Interface: cs.EventsV1()})
+	ctx := context.TODO()
+	sched, err := scheduler.New(
+		ctx,
+		cs,
+		suit.SharedInformerFactory(),
+		nil,
+		profile.NewRecorderFactory(eventBroadcaster),
+		scheduler.WithProfiles(cfg.Profiles...),
+		scheduler.WithFrameworkOutOfTreeRegistry(registry),
+		scheduler.WithPodInitialBackoffSeconds(0),
+		scheduler.WithPodMaxBackoffSeconds(0),
+		scheduler.WithPodMaxInUnschedulablePodsDuration(0),
+	)
+	assert.NoError(t, err)
+	eventBroadcaster.StartRecordingToSink(ctx.Done())
+	suit.start()
+	logger := klog.FromContext(ctx)
+	sched.SchedulingQueue.Run(logger)
+
+	var scheduleOrder []*debugPodScheduleInfo
+
+	for i := 0; i < 3; i++ {
+		for j := 0; j < len(allPods); j++ {
+			simulateScheduleOne(t, ctx, sched, suit, &scheduleOrder, func(pod *corev1.Pod) bool {
+				if gangName := util.GetGangNameByPod(pod); gangName == "gangD" || gangName == "gangE" {
+					waitingPod := 0
+					gangSummaries := suit.plugin.(*Coscheduling).pgMgr.GetGangSummaries()
+					for _, gangSummary := range gangSummaries {
+						if !gangSummary.GangGroupInfo.IsScheduleCycleValid() {
+							continue
+						}
+						waitingPod += gangSummary.WaitingForBindChildren.Len()
+					}
+
+					return waitingPod >= 40
+				}
+				return pod.Labels["filterError"] == "true"
+			})
+		}
+	}
+
+	waitingPodNum := 0
+	suit.Handle.IterateOverWaitingPods(func(pod framework.WaitingPod) {
+		waitingPodNum++
+	})
+	minGangSchedulingCycle, maxGangSchedulingCycle := math.MaxInt, 0
+	gangSummaries := suit.plugin.(*Coscheduling).pgMgr.GetGangSummaries()
+
+	nonZeroWaitingBoundGroup := map[string]bool{}
+	for _, gangSummary := range gangSummaries {
+		if gangSummary.Name == "default/gangD" || gangSummary.Name == "default/gangE" {
+			assert.True(t, gangSummary.OnceResourceSatisfied)
+			assert.Zero(t, len(gangSummary.WaitingForBindChildren))
+			continue
+		}
+		if len(gangSummary.WaitingForBindChildren) != 0 {
+			nonZeroWaitingBoundGroup[strings.Join(gangSummary.GangGroup, ",")] = true
+		}
+		if gangSummary.GangGroupInfo.GetScheduleCycle() < minGangSchedulingCycle {
+			minGangSchedulingCycle = gangSummary.GangGroupInfo.GetScheduleCycle()
+		}
+		if gangSummary.GangGroupInfo.GetScheduleCycle() > maxGangSchedulingCycle {
+			maxGangSchedulingCycle = gangSummary.GangGroupInfo.GetScheduleCycle()
+		}
+	}
+	assert.LessOrEqual(t, 3, minGangSchedulingCycle)
+	for _, info := range scheduleOrder {
+		klog.Infoln(info)
+	}
+}
+
+type debugPodScheduleInfo struct {
+	podID                   string
+	result                  string
+	childScheduleCycle      int
+	gangScheduleCycle       int
+	hasWaitForBoundChildren bool
+	schedulingCycleValid    bool
+	lastScheduleTime        time.Time
+}
+
+func (p *debugPodScheduleInfo) String() string {
+	return fmt.Sprintf("%s,%s,%d,%d,%t,%s,%t", p.podID, p.lastScheduleTime, p.childScheduleCycle, p.gangScheduleCycle, p.schedulingCycleValid, p.result, p.hasWaitForBoundChildren)
+}
+
+func simulateScheduleOne(t *testing.T, ctx context.Context, sched *scheduler.Scheduler, suit *pluginTestSuit, scheduleOrder *[]*debugPodScheduleInfo, injectFilterErr func(pod *corev1.Pod) bool) {
+	podInfo, _ := sched.NextPod()
+	pod := podInfo.Pod
+
+	scheduleInfo := &debugPodScheduleInfo{
+		podID:              pod.Name,
+		childScheduleCycle: suit.plugin.(*Coscheduling).pgMgr.GetChildScheduleCycle(pod),
+	}
+	summary, exists := suit.plugin.(*Coscheduling).pgMgr.GetGangSummary(util.GetId(pod.Namespace, util.GetGangNameByPod(pod)))
+	if exists {
+		scheduleInfo.gangScheduleCycle = summary.GangGroupInfo.GetScheduleCycle()
+		scheduleInfo.schedulingCycleValid = summary.GangGroupInfo.IsScheduleCycleValid()
+		scheduleInfo.hasWaitForBoundChildren = summary.WaitingForBindChildren.Len() != 0
+		scheduleInfo.lastScheduleTime = suit.plugin.(*Coscheduling).pgMgr.GetLastScheduleTime(pod, time.Time{})
+	}
+	*scheduleOrder = append(*scheduleOrder, scheduleInfo)
+	fwk := suit.Handle.(framework.Framework)
+	klog.InfoS("Attempting to schedule pod", "pod", klog.KObj(pod))
+
+	// Synchronously attempt to find a fit for the pod.
+	state := framework.NewCycleState()
+	// Initialize an empty podsToActivate struct, which will be filled up by plugins or stay empty.
+	podsToActivate := framework.NewPodsToActivate()
+	state.Write(framework.PodsToActivateKey, podsToActivate)
+
+	schedulingCycleCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	scheduleResult, err := schedulePod(schedulingCycleCtx, suit, fwk, state, pod, scheduleInfo, injectFilterErr(pod))
+	if err != nil {
+		// SchedulePod() may have failed because the pod would not fit on any host, so we try to
+		// preempt, with the expectation that the next time the pod is tried for scheduling it
+		// will fit due to the preemption. It is also possible that a different pod will schedule
+		// into the resources that were preempted, but this is harmless.
+		if fitError, ok := err.(*framework.FitError); ok {
+			// Run PostFilter plugins to try to make the pod schedulable in a future scheduling cycle.
+			_, status := suit.plugin.(*Coscheduling).PostFilter(ctx, state, pod, fitError.Diagnosis.NodeToStatusMap)
+			assert.False(t, status.IsSuccess())
+			klog.Info("sched.Error:" + podInfo.Pod.Name)
+			sched.FailureHandler(ctx, fwk, podInfo, status, &framework.NominatingInfo{}, time.Time{})
+		}
+		return
+	}
+
+	// Tell the cache to assume that a pod now is running on a given node, even though it hasn't been bound yet.
+	// This allows us to keep scheduling without waiting on binding to occur.
+	assumedPodInfo := podInfo.DeepCopy()
+	assumedPod := assumedPodInfo.Pod
+	assumedPod.Spec.NodeName = scheduleResult.SuggestedHost
+	scheduleInfo.result = "assumed"
+
+	// Run "permit" plugins.
+	runPermitStatus := fwk.RunPermitPlugins(schedulingCycleCtx, state, assumedPod, scheduleResult.SuggestedHost)
+	if runPermitStatus.Code() != framework.Wait && !runPermitStatus.IsSuccess() {
+		// One of the plugins returned status different from success or wait.
+		fwk.RunReservePluginsUnreserve(schedulingCycleCtx, state, assumedPod, scheduleResult.SuggestedHost)
+		klog.Info("sched.Error:" + assumedPodInfo.Pod.Name)
+		sched.FailureHandler(ctx, fwk, assumedPodInfo, runPermitStatus, &framework.NominatingInfo{}, time.Time{})
+		return
+	}
+
+	// At the end of a successful scheduling cycle, pop and move up Pods if needed.
+	if len(podsToActivate.Map) != 0 {
+		sched.SchedulingQueue.Activate(klog.FromContext(ctx), podsToActivate.Map)
+		// Clear the entries after activation.
+		podsToActivate.Map = make(map[string]*corev1.Pod)
+	}
+
+	// bind the pod to its host asynchronously (we can do this b/c of the assumption step above).
+	go func() {
+		bindingCycleCtx, cancel := context.WithCancel(ctx)
+		defer cancel()
+
+		waitOnPermitStatus := fwk.WaitOnPermit(bindingCycleCtx, assumedPod)
+		if !waitOnPermitStatus.IsSuccess() {
+			// trigger un-reserve plugins to clean up state associated with the reserved Pod
+			fwk.RunReservePluginsUnreserve(bindingCycleCtx, state, assumedPod, scheduleResult.SuggestedHost)
+			klog.Info("sched.Error:" + assumedPodInfo.Pod.Name)
+			sched.FailureHandler(ctx, fwk, assumedPodInfo, waitOnPermitStatus, &framework.NominatingInfo{}, time.Time{})
+			return
+		}
+
+		// Run "PostBind" plugins.
+		fwk.RunPostBindPlugins(bindingCycleCtx, state, assumedPod, scheduleResult.SuggestedHost)
+
+		// At the end of a successful binding cycle, move up Pods if needed.
+		if len(podsToActivate.Map) != 0 {
+			logger := klog.FromContext(ctx)
+			sched.SchedulingQueue.Activate(logger, podsToActivate.Map)
+			// Unlike the logic in scheduling cycle, we don't bother deleting the entries
+			// as `podsToActivate.Map` is no longer consumed.
+		}
+	}()
+}
+
+func schedulePod(ctx context.Context, suit *pluginTestSuit, fwk framework.Framework, state *framework.CycleState, pod *corev1.Pod, info *debugPodScheduleInfo, injectFilterError bool) (result scheduler.ScheduleResult, err error) {
+	diagnosis := framework.Diagnosis{
+		NodeToStatusMap:      make(framework.NodeToStatusMap),
+		UnschedulablePlugins: sets.Set[string]{},
+	}
+
+	// Run "prefilter" plugins.
+	_, _, s := suit.plugin.(*Coscheduling).BeforePreFilter(ctx, state, pod)
+	if !s.IsSuccess() {
+		info.result = "PreFiler"
+	} else if injectFilterError {
+		info.result = "Filter"
+	}
+	if info.result != "" {
+		return result, &framework.FitError{
+			Pod:         pod,
+			NumAllNodes: 1,
+			Diagnosis:   diagnosis,
+		}
+	}
+	return scheduler.ScheduleResult{
+		SuggestedHost: "fake-host",
+	}, err
+}
+
+func TestDeadLockFree(t *testing.T) {
+	gangNames := []string{"gangA", "gangB", "gangC", "gangD"}
+	gangGroups := map[string][]string{
+		"gangA": {"default/gangA"},
+		"gangB": {"default/gangB"},
+		"gangC": {"default/gangC"},
+		"gangD": {"default/gangD"},
+	}
+	gangMinRequiredNums := []int{13, 13, 13, 13}
+
+	podGroupCRs := map[string]*v1alpha1.PodGroup{}
+	memberPodsOfGang := map[string][]*corev1.Pod{}
+	var allPods []*corev1.Pod
+	for i, gangName := range gangNames {
+		gangID := util.GetId("default", gangName)
+
+		podGroup := makePg(gangName, "default", int32(gangMinRequiredNums[i]), nil, nil)
+		podGroup.Spec.ScheduleTimeoutSeconds = pointer.Int32(3600)
+		gangGroup := gangGroups[gangName]
+		rawGangGroup, err := json.Marshal(gangGroup)
+		assert.NoError(t, err)
+		podGroup.Annotations = map[string]string{extension.AnnotationGangGroups: string(rawGangGroup)}
+		podGroupCRs[gangID] = podGroup
+
+		for j := 0; j < gangMinRequiredNums[i]; j++ {
+			memberPodOfGang := st.MakePod().
+				Namespace("default").
+				Name(fmt.Sprintf("%s_%d", gangName, j)).
+				UID(fmt.Sprintf("%s_%d", gangName, j)).
+				Label(v1alpha1.PodGroupLabel, gangName).
+				SchedulerName("koord-scheduler").Obj()
+			memberPodsOfGang[gangID] = append(memberPodsOfGang[gangID], memberPodOfGang)
+			allPods = append(allPods, memberPodOfGang)
+		}
+	}
+
+	pgClientSet := fakepgclientset.NewSimpleClientset()
+	cs := kubefake.NewSimpleClientset()
+	for _, podGroupCR := range podGroupCRs {
+		_, err := pgClientSet.SchedulingV1alpha1().PodGroups(podGroupCR.Namespace).Create(context.Background(), podGroupCR, metav1.CreateOptions{})
+		assert.NoError(t, err)
+	}
+	rand.Shuffle(len(allPods), func(i, j int) {
+		allPods[i], allPods[j] = allPods[j], allPods[i]
+	})
+	for _, pod := range allPods {
+		_, err := cs.CoreV1().Pods(pod.Namespace).Create(context.TODO(), pod, metav1.CreateOptions{})
+		assert.NoError(t, err)
+	}
+
+	cfg := configtesting.V1beta3ToInternalWithDefaults(t, scheduledv1beta3.KubeSchedulerConfiguration{
+		Profiles: []scheduledv1beta3.KubeSchedulerProfile{{
+			SchedulerName: pointer.StringPtr("koord-scheduler"),
+			Plugins: &scheduledv1beta3.Plugins{
+				QueueSort: scheduledv1beta3.PluginSet{
+					Enabled: []scheduledv1beta3.Plugin{
+						{Name: "fakeQueueSortPlugin"},
+					},
+					Disabled: []scheduledv1beta3.Plugin{
+						{Name: "*"},
+					},
+				},
+			},
+		}}})
+
+	suit := newPluginTestSuit(t, nil, pgClientSet, cs)
+	registry := frameworkruntime.Registry{
+		"fakeQueueSortPlugin": func(_ apiruntime.Object, fh framework.Handle) (framework.Plugin, error) {
+			return suit.plugin.(framework.QueueSortPlugin), nil
+		},
+	}
+
+	eventBroadcaster := events.NewBroadcaster(&events.EventSinkImpl{Interface: cs.EventsV1()})
+	ctx := context.TODO()
+	sched, err := scheduler.New(ctx,
+		cs,
+		suit.SharedInformerFactory(),
+		nil,
+		profile.NewRecorderFactory(eventBroadcaster),
+		scheduler.WithProfiles(cfg.Profiles...),
+		scheduler.WithFrameworkOutOfTreeRegistry(registry),
+		scheduler.WithPodInitialBackoffSeconds(1),
+		scheduler.WithPodMaxBackoffSeconds(1),
+		scheduler.WithPodMaxInUnschedulablePodsDuration(0),
+	)
+
+	assert.NoError(t, err)
+	eventBroadcaster.StartRecordingToSink(ctx.Done())
+	suit.start()
+	sched.SchedulingQueue.Run(klog.FromContext(ctx))
+
+	var scheduleOrder []*debugPodScheduleInfo
+
+	for i := 0; i < 3; i++ {
+		for j := 0; j < len(allPods); j++ {
+			pendingPods, _ := sched.SchedulingQueue.PendingPods()
+			if len(pendingPods) == 0 {
+				break
+			}
+
+			simulateScheduleOne(t, ctx, sched, suit, &scheduleOrder, func(pod *corev1.Pod) bool {
+				waitingPod := 0
+				gangSummaries := suit.plugin.(*Coscheduling).pgMgr.GetGangSummaries()
+				for _, gangSummary := range gangSummaries {
+					if gangSummary.GangGroupInfo.IsScheduleCycleValid() == false {
+						continue
+					}
+					waitingPod += gangSummary.WaitingForBindChildren.Len()
+				}
+				return waitingPod >= 13
+			})
+		}
+	}
+	pendingPods, _ := sched.SchedulingQueue.PendingPods()
+	assert.Equal(t, 0, len(pendingPods))
+	for _, info := range scheduleOrder {
+		klog.Infoln(info)
+	}
+}
+
+func TestNoRejectWhenInvalidCycle(t *testing.T) {
+	gangNames := []string{"gangA", "gangB"}
+	gangGroups := map[string][]string{
+		"gangA": {"default/gangA", "default/gangB"},
+		"gangB": {"default/gangA", "default/gangB"},
+	}
+	gangMinRequiredNums := []int{1, 2}
+
+	podGroupCRs := map[string]*v1alpha1.PodGroup{}
+	memberPodsOfGang := map[string][]*corev1.Pod{}
+	var allPods []*corev1.Pod
+	for i, gangName := range gangNames {
+		gangID := util.GetId("default", gangName)
+
+		podGroup := makePg(gangName, "default", int32(gangMinRequiredNums[i]), nil, nil)
+		podGroup.Spec.ScheduleTimeoutSeconds = pointer.Int32(3600)
+		gangGroup := gangGroups[gangName]
+		rawGangGroup, err := json.Marshal(gangGroup)
+		assert.NoError(t, err)
+		podGroup.Annotations = map[string]string{extension.AnnotationGangGroups: string(rawGangGroup)}
+		podGroupCRs[gangID] = podGroup
+
+		for j := 0; j < gangMinRequiredNums[i]; j++ {
+			memberPodOfGang := st.MakePod().
+				Namespace("default").
+				Name(fmt.Sprintf("%s_%d", gangName, j)).
+				UID(fmt.Sprintf("%s_%d", gangName, j)).
+				Label(v1alpha1.PodGroupLabel, gangName).
+				SchedulerName("koord-scheduler").Obj()
+			memberPodsOfGang[gangID] = append(memberPodsOfGang[gangID], memberPodOfGang)
+			allPods = append(allPods, memberPodOfGang)
+		}
+	}
+
+	pgClientSet := fakepgclientset.NewSimpleClientset()
+	cs := kubefake.NewSimpleClientset()
+	for _, podGroupCR := range podGroupCRs {
+		_, err := pgClientSet.SchedulingV1alpha1().PodGroups(podGroupCR.Namespace).Create(context.Background(), podGroupCR, metav1.CreateOptions{})
+		assert.NoError(t, err)
+	}
+	rand.Shuffle(len(allPods), func(i, j int) {
+		allPods[i], allPods[j] = allPods[j], allPods[i]
+	})
+	for _, pod := range allPods {
+		_, err := cs.CoreV1().Pods(pod.Namespace).Create(context.TODO(), pod, metav1.CreateOptions{})
+		assert.NoError(t, err)
+	}
+
+	cfg := configtesting.V1beta3ToInternalWithDefaults(t, scheduledv1beta3.KubeSchedulerConfiguration{
+		Profiles: []scheduledv1beta3.KubeSchedulerProfile{{
+			SchedulerName: pointer.StringPtr("koord-scheduler"),
+			Plugins: &scheduledv1beta3.Plugins{
+				QueueSort: scheduledv1beta3.PluginSet{
+					Enabled: []scheduledv1beta3.Plugin{
+						{Name: "fakeQueueSortPlugin"},
+					},
+					Disabled: []scheduledv1beta3.Plugin{
+						{Name: "*"},
+					},
+				},
+			},
+		}}})
+
+	suit := newPluginTestSuit(t, nil, pgClientSet, cs)
+	registry := frameworkruntime.Registry{
+		"fakeQueueSortPlugin": func(_ apiruntime.Object, fh framework.Handle) (framework.Plugin, error) {
+			return suit.plugin.(framework.QueueSortPlugin), nil
+		},
+	}
+
+	eventBroadcaster := events.NewBroadcaster(&events.EventSinkImpl{Interface: cs.EventsV1()})
+	ctx := context.TODO()
+	sched, err := scheduler.New(
+		ctx,
+		cs,
+		suit.SharedInformerFactory(),
+		nil,
+		profile.NewRecorderFactory(eventBroadcaster),
+		scheduler.WithProfiles(cfg.Profiles...),
+		scheduler.WithFrameworkOutOfTreeRegistry(registry),
+		scheduler.WithPodInitialBackoffSeconds(1),
+		scheduler.WithPodMaxBackoffSeconds(1),
+		scheduler.WithPodMaxInUnschedulablePodsDuration(0),
+	)
+
+	assert.NoError(t, err)
+	eventBroadcaster.StartRecordingToSink(ctx.Done())
+	suit.start()
+	logger := klog.FromContext(ctx)
+	sched.SchedulingQueue.Run(logger)
+
+	var scheduleOrder []*debugPodScheduleInfo
+
+	_, status := suit.plugin.(*Coscheduling).PostFilter(ctx, framework.NewCycleState(), allPods[0], nil)
+	assert.False(t, status.IsSuccess())
+
+	_, _, status = suit.plugin.(*Coscheduling).BeforePreFilter(ctx, framework.NewCycleState(), memberPodsOfGang[util.GetId("default", gangNames[0])][0])
+	assert.False(t, status.IsSuccess())
+
+	for i := 0; i < 5; i++ {
+		for j := 0; j < len(allPods); j++ {
+			pendingPods, _ := sched.SchedulingQueue.PendingPods()
+			if len(pendingPods) == 0 {
+				break
+			}
+
+			simulateScheduleOne(t, ctx, sched, suit, &scheduleOrder, func(pod *corev1.Pod) bool {
+				return false
+			})
+		}
+	}
+	pendingPods, _ := sched.SchedulingQueue.PendingPods()
+	assert.Equal(t, 0, len(pendingPods))
+	for _, info := range scheduleOrder {
+		klog.Infoln(info)
 	}
 }

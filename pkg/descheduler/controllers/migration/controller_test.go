@@ -30,10 +30,11 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/clock"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/utils/clock"
+	fakceclock "k8s.io/utils/clock/testing"
 	"k8s.io/utils/pointer"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -104,7 +105,8 @@ func newTestReconciler() *Reconciler {
 		panic(err)
 	}
 
-	runtimeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+	runtimeClient := fake.NewClientBuilder().
+		WithStatusSubresource(&sev1alpha1.PodMigrationJob{}).WithScheme(scheme).Build()
 	eventBroadcaster := record.NewBroadcaster()
 	recorder := eventBroadcaster.NewRecorder(scheme, corev1.EventSource{Component: Name})
 
@@ -158,7 +160,7 @@ func TestAbortJobIfTimeout(t *testing.T) {
 	assert.False(t, timeout)
 	assert.Nil(t, err)
 
-	reconciler.clock = clock.NewFakeClock(time.Now().Add(60 * time.Minute))
+	reconciler.clock = fakceclock.NewFakeClock(time.Now().Add(60 * time.Minute))
 	timeout, err = reconciler.abortJobIfTimeout(context.TODO(), job)
 	assert.True(t, timeout)
 	assert.Nil(t, err)
@@ -1365,7 +1367,7 @@ func TestDoScavenge(t *testing.T) {
 		}
 		assert.Nil(t, reconciler.Client.Create(context.TODO(), mustScavengeJob))
 	}
-	reconciler.clock = clock.NewFakeClock(time.Now().Add(20 * time.Minute))
+	reconciler.clock = fakceclock.NewFakeClock(time.Now().Add(20 * time.Minute))
 	stopCh := make(chan struct{})
 	close(stopCh)
 	reconciler.scavenger(stopCh)

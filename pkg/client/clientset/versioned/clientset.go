@@ -41,8 +41,7 @@ type Interface interface {
 	SloV1alpha1() slov1alpha1.SloV1alpha1Interface
 }
 
-// Clientset contains the clients for groups. Each group has exactly one
-// version included in a Clientset.
+// Clientset contains the clients for groups.
 type Clientset struct {
 	*discovery.DiscoveryClient
 	analysisV1alpha1   *analysisv1alpha1.AnalysisV1alpha1Client

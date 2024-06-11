@@ -124,10 +124,12 @@ func (a *arbitratorImpl) Start(ctx context.Context) error {
 // Filter checks if a pod can be evicted
 func (a *arbitratorImpl) Filter(pod *corev1.Pod) bool {
 	if !a.filter.filterExistingPodMigrationJob(pod) {
+		klog.V(4).InfoS("Pod fails the following checks", "pod", klog.KObj(pod), "checks", "filterExistingPodMigrationJob")
 		return false
 	}
 
 	if !a.filter.reservationFilter(pod) {
+		klog.V(4).InfoS("Pod fails the following checks", "pod", klog.KObj(pod), "checks", "reservationFilter")
 		return false
 	}
 

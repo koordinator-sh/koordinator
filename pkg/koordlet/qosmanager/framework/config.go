@@ -27,6 +27,7 @@ type Config struct {
 	MemoryEvictIntervalSeconds int
 	MemoryEvictCoolTimeSeconds int
 	CPUEvictCoolTimeSeconds    int
+	OnlyEvictByAPI             bool
 	QOSExtensionCfg            *QOSExtensionConfig
 }
 
@@ -38,6 +39,7 @@ func NewDefaultConfig() *Config {
 		MemoryEvictIntervalSeconds: 1,
 		MemoryEvictCoolTimeSeconds: 4,
 		CPUEvictCoolTimeSeconds:    20,
+		OnlyEvictByAPI:             false,
 		QOSExtensionCfg:            &QOSExtensionConfig{FeatureGates: map[string]bool{}},
 	}
 }
@@ -49,5 +51,6 @@ func (c *Config) InitFlags(fs *flag.FlagSet) {
 	fs.IntVar(&c.MemoryEvictIntervalSeconds, "memory-evict-interval-seconds", c.MemoryEvictIntervalSeconds, "evict be pod(memory) interval by seconds")
 	fs.IntVar(&c.MemoryEvictCoolTimeSeconds, "memory-evict-cool-time-seconds", c.MemoryEvictCoolTimeSeconds, "cooling time: memory next evict time should after lastEvictTime + MemoryEvictCoolTimeSeconds")
 	fs.IntVar(&c.CPUEvictCoolTimeSeconds, "cpu-evict-cool-time-seconds", c.CPUEvictCoolTimeSeconds, "cooltime: CPU next evict time should after lastEvictTime + CPUEvictCoolTimeSeconds")
+	fs.BoolVar(&c.OnlyEvictByAPI, "only-evict-by-api", c.OnlyEvictByAPI, "only evict pod if call eviction api successed")
 	c.QOSExtensionCfg.InitFlags(fs)
 }

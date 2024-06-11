@@ -111,8 +111,12 @@ func IsReservationAllocateOnce(r *schedulingv1alpha1.Reservation) bool {
 }
 
 func GetReservationAffinity(annotations map[string]string) (*ReservationAffinity, error) {
+	s, ok := annotations[AnnotationReservationAffinity]
+	if !ok {
+		return nil, nil
+	}
 	var affinity ReservationAffinity
-	if s := annotations[AnnotationReservationAffinity]; s != "" {
+	if s != "" {
 		if err := json.Unmarshal([]byte(s), &affinity); err != nil {
 			return nil, err
 		}

@@ -535,7 +535,7 @@ func Test_CreateNodeMetricAndUpdateUnmarshalError(t *testing.T) {
 	err = reconciler.Update(context.TODO(), invalidConfigMap)
 	assert.NoError(t, err)
 	queue := workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter())
-	handler.Update(event.UpdateEvent{ObjectOld: configMap, ObjectNew: invalidConfigMap}, queue)
+	handler.Update(context.TODO(), event.UpdateEvent{ObjectOld: configMap, ObjectNew: invalidConfigMap}, queue)
 
 	_, err = reconciler.Reconcile(ctx, nodeReq)
 	assert.NoError(t, err)
@@ -646,5 +646,5 @@ func prepareConfig(t *testing.T, reconciler *NodeMetricReconciler, handler *conf
 	assert.NoError(t, err, "failed to create config")
 
 	queue := workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter())
-	handler.Create(event.CreateEvent{Object: configMap}, queue)
+	handler.Create(context.TODO(), event.CreateEvent{Object: configMap}, queue)
 }

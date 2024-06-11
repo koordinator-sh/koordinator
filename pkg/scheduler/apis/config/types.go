@@ -37,6 +37,8 @@ type LoadAwareSchedulingArgs struct {
 	// When NodeMetrics expired, the node is considered abnormal.
 	// Default is 180 seconds.
 	NodeMetricExpirationSeconds *int64
+	// EnableScheduleWhenNodeMetricsExpired Indicates whether nodes with expired nodeMetrics are allowed to schedule pods.
+	EnableScheduleWhenNodeMetricsExpired *bool
 	// ResourceWeights indicates the weights of resources.
 	// The weights of CPU and Memory are both 1 by default.
 	ResourceWeights map[corev1.ResourceName]int64
@@ -219,4 +221,6 @@ type DeviceShareArgs struct {
 	Allocator string
 	// ScoringStrategy selects the device resource scoring strategy.
 	ScoringStrategy *ScoringStrategy
+	// DisableDeviceNUMATopologyAlignment indicates device don't need to align with other resources' numa topology
+	DisableDeviceNUMATopologyAlignment bool
 }

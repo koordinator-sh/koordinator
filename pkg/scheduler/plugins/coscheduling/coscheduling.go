@@ -27,12 +27,12 @@ import (
 	corev1helpers "k8s.io/component-helpers/scheduling/corev1"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
-	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling"
-	pgclientset "sigs.k8s.io/scheduler-plugins/pkg/generated/clientset/versioned"
-	pgformers "sigs.k8s.io/scheduler-plugins/pkg/generated/informers/externalversions"
-	schedinformers "sigs.k8s.io/scheduler-plugins/pkg/generated/informers/externalversions/scheduling/v1alpha1"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/apis/scheduling"
+	pgclientset "github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/generated/clientset/versioned"
+	pgformers "github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/generated/informers/externalversions"
+	schedinformers "github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/generated/informers/externalversions/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/validation"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
@@ -50,6 +50,7 @@ type Coscheduling struct {
 }
 
 var _ framework.QueueSortPlugin = &Coscheduling{}
+var _ frameworkext.PreFilterTransformer = &Coscheduling{}
 var _ framework.PreFilterPlugin = &Coscheduling{}
 var _ framework.PostFilterPlugin = &Coscheduling{}
 var _ framework.PermitPlugin = &Coscheduling{}
@@ -95,13 +96,13 @@ func New(obj runtime.Object, handle framework.Handle) (framework.Plugin, error) 
 	return plugin, nil
 }
 
-func (cs *Coscheduling) EventsToRegister() []framework.ClusterEvent {
+func (cs *Coscheduling) EventsToRegister() []framework.ClusterEventWithHint {
 	// To register a custom event, follow the naming convention at:
 	// https://git.k8s.io/kubernetes/pkg/scheduler/eventhandlers.go#L403-L410
 	pgGVK := fmt.Sprintf("podgroups.v1alpha1.%v", scheduling.GroupName)
-	return []framework.ClusterEvent{
-		{Resource: framework.Pod, ActionType: framework.Add},
-		{Resource: framework.GVK(pgGVK), ActionType: framework.Add | framework.Update},
+	return []framework.ClusterEventWithHint{
+		{Event: framework.ClusterEvent{Resource: framework.Pod, ActionType: framework.Add}},
+		{Event: framework.ClusterEvent{Resource: framework.GVK(pgGVK), ActionType: framework.Add | framework.Update}},
 	}
 }
 
@@ -133,54 +134,61 @@ func (cs *Coscheduling) Less(podInfo1, podInfo2 *framework.QueuedPodInfo) bool {
 		return subPrio1 > subPrio2
 	}
 
-	group1, _ := cs.pgMgr.GetGroupId(podInfo1.Pod)
-	group2, _ := cs.pgMgr.GetGroupId(podInfo2.Pod)
-
-	waitingBoundPodNum1 := cs.pgMgr.GetGangGroupWaitingBoundPodNum(podInfo1.Pod)
-	waitingBoundPodNum2 := cs.pgMgr.GetGangGroupWaitingBoundPodNum(podInfo2.Pod)
-	if waitingBoundPodNum1 != 0 || waitingBoundPodNum2 != 0 {
-		// At the same time, only member pod of one podGroup should be assumed, so we prefer the pod already having sibling assumed, then they can succeed together.
-		if waitingBoundPodNum1 == 0 || waitingBoundPodNum2 == 0 {
-			return waitingBoundPodNum1 != 0
-		}
-		/*
-			Two gang groups may both already have some assumed sibling pods.
-			For example:
-				1. GroupA has submitted 6 member, and have 5 already assumed;
-				2. then the sixth has been deleted;
-				3. then GroupB submitted its pods and have 3 already assumed;
-				4. GroupA submit the sixth pod
-			In this case, waitingPodNum will make no sense, so just sort it by group id to give fixed order.
-			Because no matter former succeed or fail, it's waitingPodNum will be zeroed. And the deadlock will be avoided
-		*/
-		return group1 < group2
+	lastScheduleTime1 := cs.pgMgr.GetLastScheduleTime(podInfo1.Pod, podInfo1.Timestamp)
+	lastScheduleTime2 := cs.pgMgr.GetLastScheduleTime(podInfo2.Pod, podInfo2.Timestamp)
+	if !lastScheduleTime1.Equal(lastScheduleTime2) {
+		return lastScheduleTime1.Before(lastScheduleTime2)
 	}
-	// If no pod succeed, we will schedule all pod by RoundRobin to assure fairness.
-	// If some time-consuming member pod of one gang failed, then it's sibling will fail soon(because scheduling cycle invalid), so no need to assure all sibling should fail together.
-	return podInfo1.Timestamp.Before(podInfo2.Timestamp)
+
+	gangGroup1, _ := cs.pgMgr.GetGangGroupId(podInfo1.Pod)
+	gangGroup2, _ := cs.pgMgr.GetGangGroupId(podInfo2.Pod)
+	if gangGroup1 != gangGroup2 {
+		return gangGroup1 < gangGroup2
+	}
+
+	gang1 := util.GetId(podInfo1.Pod.Namespace, util.GetGangNameByPod(podInfo1.Pod))
+	gang2 := util.GetId(podInfo2.Pod.Namespace, util.GetGangNameByPod(podInfo2.Pod))
+	if gang1 != gang2 {
+		return gang1 < gang2
+	}
+
+	childScheduleCycle1 := cs.pgMgr.GetChildScheduleCycle(podInfo1.Pod)
+	childScheduleCycle2 := cs.pgMgr.GetChildScheduleCycle(podInfo2.Pod)
+	if childScheduleCycle1 != childScheduleCycle2 {
+		return childScheduleCycle1 < childScheduleCycle2
+	}
+
+	return podInfo1.Pod.Name < podInfo2.Pod.Name
 }
 
-// PreFilter
+// BeforePreFilter
 // if non-strict-mode, we only do step1 and step2:
 // i.Check whether childes in Gang has met the requirements of minimum number under each Gang, and reject the pod if negative.
 // ii.Check whether the Gang has been timeout(check the pod's annotation,later introduced at Permit section) or is inited, and reject the pod if positive.
 // iii.Check whether the Gang has met the scheduleCycleValid check, and reject the pod if negative.
 // iv.Try update scheduleCycle, scheduleCycleValid, childrenScheduleRoundMap as mentioned above.
-func (cs *Coscheduling) PreFilter(ctx context.Context, state *framework.CycleState, pod *v1.Pod) (*framework.PreFilterResult, *framework.Status) {
-	// If PreFilter fails, return framework.Error to avoid
-	// any preemption attempts.
-	if err := cs.pgMgr.PreFilter(ctx, pod); err != nil {
+func (cs *Coscheduling) BeforePreFilter(ctx context.Context, state *framework.CycleState, pod *v1.Pod) (*v1.Pod, bool, *framework.Status) {
+	// If PreFilter fails, return framework.UnschedulableAndUnresolvable to avoid any preemption attempts.
+	if err := cs.pgMgr.PreFilter(ctx, state, pod); err != nil {
 		klog.ErrorS(err, "PreFilter failed", "pod", klog.KObj(pod))
-		return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, err.Error())
+		return nil, false, framework.NewStatus(framework.UnschedulableAndUnresolvable, err.Error())
 	}
-	return nil, framework.NewStatus(framework.Success, "")
+	return nil, false, framework.NewStatus(framework.Success, "")
+}
+
+func (cs *Coscheduling) PreFilter(ctx context.Context, state *framework.CycleState, pod *v1.Pod) (*framework.PreFilterResult, *framework.Status) {
+	return nil, nil
+}
+
+func (cs *Coscheduling) AfterPreFilter(ctx context.Context, state *framework.CycleState, pod *v1.Pod) *framework.Status {
+	return nil
 }
 
 // PostFilter
 // i. If strict-mode, we will set scheduleCycleValid to false and release all assumed pods.
 // ii. If non-strict mode, we will do nothing.
 func (cs *Coscheduling) PostFilter(ctx context.Context, state *framework.CycleState, pod *v1.Pod, filteredNodeStatusMap framework.NodeToStatusMap) (*framework.PostFilterResult, *framework.Status) {
-	return cs.pgMgr.PostFilter(ctx, pod, cs.frameworkHandler, Name, filteredNodeStatusMap)
+	return cs.pgMgr.PostFilter(ctx, state, pod, cs.frameworkHandler, Name, filteredNodeStatusMap)
 }
 
 // PreFilterExtensions returns a PreFilterExtensions interface if the plugin implements one.

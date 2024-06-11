@@ -49,7 +49,7 @@ import (
 	koordfake "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/fake"
 	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
-	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/v1beta2"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/v1beta3"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
@@ -96,6 +96,14 @@ func (f *fakeSharedLister) NodeInfos() framework.NodeInfoLister {
 	return f
 }
 
+func (f *fakeSharedLister) StorageInfos() framework.StorageInfoLister {
+	return f
+}
+
+func (f *fakeSharedLister) IsPVCUsedByPods(key string) bool {
+	return false
+}
+
 func (f *fakeSharedLister) List() ([]*framework.NodeInfo, error) {
 	if f.listErr {
 		return nil, fmt.Errorf("list error")
@@ -122,10 +130,10 @@ type pluginTestSuit struct {
 }
 
 func newPluginTestSuitWith(t testing.TB, pods []*corev1.Pod, nodes []*corev1.Node) *pluginTestSuit {
-	var v1beta2args v1beta2.ReservationArgs
-	v1beta2.SetDefaults_ReservationArgs(&v1beta2args)
+	var v1beta3args v1beta3.ReservationArgs
+	v1beta3.SetDefaults_ReservationArgs(&v1beta3args)
 	var reservationArgs config.ReservationArgs
-	err := v1beta2.Convert_v1beta2_ReservationArgs_To_config_ReservationArgs(&v1beta2args, &reservationArgs, nil)
+	err := v1beta3.Convert_v1beta3_ReservationArgs_To_config_ReservationArgs(&v1beta3args, &reservationArgs, nil)
 	assert.NoError(t, err)
 
 	koordClientSet := koordfake.NewSimpleClientset()
@@ -150,6 +158,7 @@ func newPluginTestSuitWith(t testing.TB, pods []*corev1.Pod, nodes []*corev1.Nod
 	eventRecorder := record.NewEventRecorderAdapter(fakeRecorder)
 
 	fw, err := schedulertesting.NewFramework(
+		context.TODO(),
 		registeredPlugins,
 		"koord-scheduler",
 		frameworkruntime.WithClientSet(cs),
@@ -284,7 +293,7 @@ func TestPreFilter(t *testing.T) {
 			},
 			wantStatus: nil,
 			wantPreRes: &framework.PreFilterResult{
-				NodeNames: sets.NewString("test-node-1"),
+				NodeNames: sets.New("test-node-1"),
 			},
 		},
 	}
@@ -562,7 +571,7 @@ func TestFilter(t *testing.T) {
 			pl := p.(*Plugin)
 			cycleState := framework.NewCycleState()
 			if tt.stateData != nil {
-				tt.stateData.podRequests, _ = apiresource.PodRequestsAndLimits(tt.pod)
+				tt.stateData.podRequests = apiresource.PodRequests(tt.pod, apiresource.PodResourcesOptions{})
 				tt.stateData.podRequestsResources = framework.NewResource(tt.stateData.podRequests)
 				cycleState.Write(stateKey, tt.stateData)
 			}
@@ -861,7 +870,7 @@ func Test_filterWithReservations(t *testing.T) {
 					},
 				},
 			},
-			wantStatus: framework.NewStatus(framework.Unschedulable, "Insufficient cpu by reservation"),
+			wantStatus: framework.NewStatus(framework.Unschedulable, "Reservation(s) Insufficient cpu"),
 		},
 		{
 			name: "filter default reservations with preemption",
@@ -1151,7 +1160,74 @@ func Test_filterWithReservations(t *testing.T) {
 					},
 				},
 			},
-			wantStatus: framework.NewStatus(framework.Unschedulable, "Insufficient cpu by reservation"),
+			wantStatus: framework.NewStatus(framework.Unschedulable, "Reservation(s) Insufficient cpu"),
+		},
+		{
+			name: "failed to filter multiple restricted reservations with preempt from node",
+			stateData: &stateData{
+				hasAffinity: true,
+				podRequests: corev1.ResourceList{
+					corev1.ResourceCPU: resource.MustParse("4"),
+				},
+				podRequestsResources: &framework.Resource{
+					MilliCPU: 4 * 1000,
+				},
+				preemptible: map[string]corev1.ResourceList{
+					node.Name: {
+						corev1.ResourceCPU: resource.MustParse("4"),
+					},
+				},
+				preemptibleInRRs: nil,
+				nodeReservationStates: map[string]nodeReservationState{
+					node.Name: {
+						podRequested: &framework.Resource{
+							MilliCPU: 38 * 1000,
+						},
+						rAllocated: &framework.Resource{
+							MilliCPU: 10000,
+						},
+						matched: []*frameworkext.ReservationInfo{
+							{
+								Reservation: &schedulingv1alpha1.Reservation{
+									ObjectMeta: metav1.ObjectMeta{
+										Name: "test-r",
+										UID:  "123456",
+									},
+									Spec: schedulingv1alpha1.ReservationSpec{
+										AllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyRestricted,
+									},
+								},
+								ResourceNames: []corev1.ResourceName{corev1.ResourceCPU},
+								Allocatable: corev1.ResourceList{
+									corev1.ResourceCPU: resource.MustParse("6"),
+								},
+								Allocated: corev1.ResourceList{
+									corev1.ResourceCPU: resource.MustParse("6"),
+								},
+							},
+							{
+								Reservation: &schedulingv1alpha1.Reservation{
+									ObjectMeta: metav1.ObjectMeta{
+										Name: "test-r-1",
+										UID:  "7891011",
+									},
+									Spec: schedulingv1alpha1.ReservationSpec{
+										AllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyRestricted,
+									},
+								},
+								ResourceNames: []corev1.ResourceName{corev1.ResourceCPU},
+								Allocatable: corev1.ResourceList{
+									corev1.ResourceCPU: resource.MustParse("4"),
+								},
+								Allocated: corev1.ResourceList{
+									corev1.ResourceCPU: resource.MustParse("1"),
+								},
+							},
+						},
+					},
+				},
+			},
+			wantStatus: framework.NewStatus(framework.Unschedulable, "Reservation(s) Insufficient cpu", "Reservation(s) Insufficient cpu"),
 		},
 		{
 			name: "failed to filter restricted reservations with preempt from reservation and node",
@@ -1208,7 +1284,7 @@ func Test_filterWithReservations(t *testing.T) {
 					},
 				},
 			},
-			wantStatus: framework.NewStatus(framework.Unschedulable, "Insufficient cpu by reservation"),
+			wantStatus: framework.NewStatus(framework.Unschedulable, "Reservation(s) Insufficient cpu"),
 		},
 		{
 			name: "filter restricted reservations with preempt from reservation and node",
@@ -1441,7 +1517,7 @@ func TestPreFilterExtensionAddPod(t *testing.T) {
 				pl.reservationCache.updateReservation(reservation)
 				assert.NoError(t, pl.reservationCache.assumePod(reservation.UID, tt.pod))
 			}
-			podInfo := framework.NewPodInfo(tt.pod)
+			podInfo, _ := framework.NewPodInfo(tt.pod)
 			nodeInfo := framework.NewNodeInfo()
 			nodeInfo.SetNode(node)
 			status := pl.PreFilterExtensions().AddPod(context.TODO(), cycleState, nil, podInfo, nodeInfo)
@@ -1553,7 +1629,7 @@ func TestPreFilterExtensionRemovePod(t *testing.T) {
 				pl.reservationCache.updateReservation(reservation)
 				assert.NoError(t, pl.reservationCache.assumePod(reservation.UID, tt.pod))
 			}
-			podInfo := framework.NewPodInfo(tt.pod)
+			podInfo, _ := framework.NewPodInfo(tt.pod)
 			nodeInfo := framework.NewNodeInfo()
 			nodeInfo.SetNode(node)
 			status := pl.PreFilterExtensions().RemovePod(context.TODO(), cycleState, nil, podInfo, nodeInfo)
@@ -1753,6 +1829,173 @@ func TestFilterReservation(t *testing.T) {
 			rInfo := frameworkext.NewReservationInfo(tt.targetReservation)
 			status := pl.FilterReservation(context.TODO(), cycleState, pod, rInfo, node.Name)
 			assert.Equal(t, tt.wantStatus, status)
+		})
+	}
+}
+
+func TestPostFilter(t *testing.T) {
+	testFilterStatus := framework.NewStatus(framework.Unschedulable, "node(s) didn't match the requested node name")
+	testFilterReservationStatus := framework.NewStatus(framework.Unschedulable,
+		reservationutil.NewReservationReason("Insufficient nvidia.com/gpu"),
+		reservationutil.NewReservationReason("Insufficient koordinator.sh/gpu-mem-ratio"))
+	testFilterReservationStatus1 := framework.NewStatus(framework.Unschedulable,
+		reservationutil.NewReservationReason("Insufficient cpu"),
+		"Insufficient memory")
+	type args struct {
+		hasStateData             bool
+		hasAffinity              bool
+		nodeReservationDiagnosis map[string]*nodeDiagnosisState
+		filteredNodeStatusMap    framework.NodeToStatusMap
+	}
+	tests := []struct {
+		name  string
+		args  args
+		want  *framework.PostFilterResult
+		want1 *framework.Status
+	}{
+		{
+			name: "no reservation filtering",
+			args: args{
+				hasStateData:          false,
+				filteredNodeStatusMap: framework.NodeToStatusMap{},
+			},
+			want:  nil,
+			want1: framework.NewStatus(framework.Unschedulable),
+		},
+		{
+			name: "show reservation owner matched when reservation affinity specified",
+			args: args{
+				hasStateData:             true,
+				hasAffinity:              true,
+				nodeReservationDiagnosis: map[string]*nodeDiagnosisState{},
+				filteredNodeStatusMap:    framework.NodeToStatusMap{},
+			},
+			want:  nil,
+			want1: framework.NewStatus(framework.Unschedulable, "0 Reservation(s) matched owner total"),
+		},
+		{
+			name: "show reservation owner matched, unschedulable unmatched",
+			args: args{
+				hasStateData: true,
+				nodeReservationDiagnosis: map[string]*nodeDiagnosisState{
+					"test-node-0": {
+						ownerMatched:             3,
+						isUnschedulableUnmatched: 3,
+						affinityUnmatched:        0,
+					},
+					"test-node-1": {
+						ownerMatched:             1,
+						isUnschedulableUnmatched: 1,
+						affinityUnmatched:        0,
+					},
+				},
+				filteredNodeStatusMap: framework.NodeToStatusMap{
+					"test-node-0": {},
+					"test-node-1": {},
+				},
+			},
+			want: nil,
+			want1: framework.NewStatus(framework.Unschedulable,
+				"4 Reservation(s) is unschedulable",
+				"4 Reservation(s) matched owner total"),
+		},
+		{
+			name: "show reservation matched owner, unschedulable and affinity unmatched",
+			args: args{
+				hasStateData: true,
+				nodeReservationDiagnosis: map[string]*nodeDiagnosisState{
+					"test-node-0": {
+						ownerMatched:             3,
+						isUnschedulableUnmatched: 0,
+						affinityUnmatched:        3,
+					},
+					"test-node-1": {
+						ownerMatched:             2,
+						isUnschedulableUnmatched: 1,
+						affinityUnmatched:        1,
+					},
+				},
+				filteredNodeStatusMap: framework.NodeToStatusMap{
+					"test-node-0": {},
+					"test-node-1": {},
+				},
+			},
+			want: nil,
+			want1: framework.NewStatus(framework.Unschedulable,
+				"4 Reservation(s) didn't match affinity rules",
+				"1 Reservation(s) is unschedulable",
+				"5 Reservation(s) matched owner total"),
+		},
+		{
+			name: "show reservation matched owner and filter failures of other plugins",
+			args: args{
+				hasStateData: true,
+				nodeReservationDiagnosis: map[string]*nodeDiagnosisState{
+					"test-node-0": {
+						ownerMatched:             3,
+						isUnschedulableUnmatched: 0,
+						affinityUnmatched:        3,
+					},
+					"test-node-1": {
+						ownerMatched:             3,
+						isUnschedulableUnmatched: 1,
+						affinityUnmatched:        0,
+					},
+				},
+				filteredNodeStatusMap: framework.NodeToStatusMap{
+					"test-node-0": {},
+					"test-node-1": testFilterStatus,
+				},
+			},
+			want: nil,
+			want1: framework.NewStatus(framework.Unschedulable,
+				"3 Reservation(s) didn't match affinity rules",
+				"1 Reservation(s) is unschedulable",
+				"2 Reservation(s) for node reason that node(s) didn't match the requested node name",
+				"6 Reservation(s) matched owner total"),
+		},
+		{
+			name: "show reservation matched owner and skip reservation-level reasons and filter other failures",
+			args: args{
+				hasStateData: true,
+				nodeReservationDiagnosis: map[string]*nodeDiagnosisState{
+					"test-node-0": {
+						ownerMatched:             3,
+						isUnschedulableUnmatched: 0,
+						affinityUnmatched:        1,
+					},
+					"test-node-1": {
+						ownerMatched:             3,
+						isUnschedulableUnmatched: 1,
+						affinityUnmatched:        0,
+					},
+				},
+				filteredNodeStatusMap: framework.NodeToStatusMap{
+					"test-node-0": testFilterReservationStatus,
+					"test-node-1": testFilterReservationStatus1,
+				},
+			},
+			want: nil,
+			want1: framework.NewStatus(framework.Unschedulable,
+				"1 Reservation(s) didn't match affinity rules",
+				"1 Reservation(s) is unschedulable",
+				"1 Reservation(s) for node reason that Insufficient memory",
+				"6 Reservation(s) matched owner total"),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pl := &Plugin{}
+			cycleState := framework.NewCycleState()
+			if tt.args.hasStateData {
+				cycleState.Write(stateKey, &stateData{
+					hasAffinity:              tt.args.hasAffinity,
+					nodeReservationDiagnosis: tt.args.nodeReservationDiagnosis,
+				})
+			}
+			got, got1 := pl.PostFilter(context.TODO(), cycleState, nil, tt.args.filteredNodeStatusMap)
+			assert.Equal(t, tt.want, got)
+			assert.Equal(t, tt.want1, got1)
 		})
 	}
 }

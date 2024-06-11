@@ -29,9 +29,9 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/clock"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/record"
+	fakeclock "k8s.io/utils/clock/testing"
 	"k8s.io/utils/pointer"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -42,6 +42,7 @@ import (
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/noderesource/framework"
 	"github.com/koordinator-sh/koordinator/pkg/util"
+	"github.com/koordinator-sh/koordinator/pkg/util/testutil"
 )
 
 func makeResourceList(cpu, memory string) corev1.ResourceList {
@@ -211,7 +212,7 @@ func TestPlugin(t *testing.T) {
 		testOpt := &framework.Option{
 			Scheme:   testScheme,
 			Client:   fake.NewClientBuilder().WithScheme(testScheme).Build(),
-			Builder:  &builder.Builder{},
+			Builder:  builder.ControllerManagedBy(&testutil.FakeManager{}),
 			Recorder: &record.FakeRecorder{},
 		}
 		err = p.Setup(testOpt)
@@ -875,7 +876,7 @@ func TestPreUpdate(t *testing.T) {
 			testOpt := &framework.Option{
 				Scheme:   testScheme,
 				Client:   fake.NewClientBuilder().WithScheme(testScheme).Build(),
-				Builder:  &builder.Builder{},
+				Builder:  builder.ControllerManagedBy(&testutil.FakeManager{}),
 				Recorder: &record.FakeRecorder{},
 			}
 			if tt.fields.client != nil {
@@ -1394,7 +1395,7 @@ func TestPrepare(t *testing.T) {
 			testOpt := &framework.Option{
 				Scheme:   testScheme,
 				Client:   fake.NewClientBuilder().WithScheme(testScheme).Build(),
-				Builder:  &builder.Builder{},
+				Builder:  builder.ControllerManagedBy(&testutil.FakeManager{}),
 				Recorder: &record.FakeRecorder{},
 			}
 			if tt.fields.client != nil {
@@ -1618,7 +1619,7 @@ func TestPrepareWithThirdParty(t *testing.T) {
 			testOpt := &framework.Option{
 				Scheme:   testScheme,
 				Client:   fake.NewClientBuilder().WithScheme(testScheme).Build(),
-				Builder:  &builder.Builder{},
+				Builder:  builder.ControllerManagedBy(&testutil.FakeManager{}),
 				Recorder: &record.FakeRecorder{},
 			}
 			if tt.fields.client != nil {
@@ -4033,7 +4034,7 @@ func TestPluginCalculate(t *testing.T) {
 			testOpt := &framework.Option{
 				Scheme:   testScheme,
 				Client:   fake.NewClientBuilder().WithScheme(testScheme).Build(),
-				Builder:  &builder.Builder{},
+				Builder:  builder.ControllerManagedBy(&testutil.FakeManager{}),
 				Recorder: &record.FakeRecorder{},
 			}
 			if tt.fields.client != nil {
@@ -4060,7 +4061,7 @@ func TestPluginCalculate(t *testing.T) {
 func TestPlugin_isDegradeNeeded(t *testing.T) {
 	const degradeTimeoutMinutes = 10
 	type fields struct {
-		Clock clock.Clock
+		Clock *fakeclock.FakeClock
 	}
 	type args struct {
 		strategy   *configuration.ColocationStrategy
@@ -4076,7 +4077,7 @@ func TestPlugin_isDegradeNeeded(t *testing.T) {
 		{
 			name: "empty NodeMetric should degrade",
 			fields: fields{
-				Clock: clock.RealClock{},
+				Clock: &fakeclock.FakeClock{},
 			},
 			args: args{
 				nodeMetric: nil,
@@ -4086,7 +4087,7 @@ func TestPlugin_isDegradeNeeded(t *testing.T) {
 		{
 			name: "empty NodeMetric status should degrade",
 			fields: fields{
-				Clock: clock.RealClock{},
+				Clock: &fakeclock.FakeClock{},
 			},
 			args: args{
 				nodeMetric: &slov1alpha1.NodeMetric{},
@@ -4096,7 +4097,7 @@ func TestPlugin_isDegradeNeeded(t *testing.T) {
 		{
 			name: "outdated NodeMetric status should degrade",
 			fields: fields{
-				Clock: clock.RealClock{},
+				Clock: nil,
 			},
 			args: args{
 				strategy: &configuration.ColocationStrategy{
@@ -4131,7 +4132,7 @@ func TestPlugin_isDegradeNeeded(t *testing.T) {
 		{
 			name: "outdated NodeMetric status should degrade 1",
 			fields: fields{
-				Clock: clock.NewFakeClock(time.Now().Add(time.Minute * (degradeTimeoutMinutes + 1))),
+				Clock: fakeclock.NewFakeClock(time.Now().Add(time.Minute * (degradeTimeoutMinutes + 1))),
 			},
 			args: args{
 				strategy: &configuration.ColocationStrategy{
@@ -4166,11 +4167,13 @@ func TestPlugin_isDegradeNeeded(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			oldClock := Clock
-			Clock = tt.fields.Clock
-			defer func() {
-				Clock = oldClock
-			}()
+			if tt.fields.Clock != nil {
+				oldClock := Clock
+				Clock = tt.fields.Clock
+				defer func() {
+					Clock = oldClock
+				}()
+			}
 
 			p := &Plugin{}
 			assert.Equal(t, tt.want, p.isDegradeNeeded(tt.args.strategy, tt.args.nodeMetric, tt.args.node))

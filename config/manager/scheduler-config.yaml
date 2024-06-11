@@ -5,7 +5,7 @@ metadata:
   namespace: system
 data:
   koord-scheduler-config: |
-    apiVersion: kubescheduler.config.k8s.io/v1beta2
+    apiVersion: kubescheduler.config.k8s.io/v1beta3
     kind: KubeSchedulerConfiguration
     leaderElection:
       leaderElect: true
@@ -16,7 +16,7 @@ data:
       - pluginConfig:
         - name: NodeResourcesFit
           args:
-            apiVersion: kubescheduler.config.k8s.io/v1beta2
+            apiVersion: kubescheduler.config.k8s.io/v1beta3
             kind: NodeResourcesFitArgs
             scoringStrategy:
               type: LeastAllocated
@@ -31,7 +31,7 @@ data:
                   weight: 1
         - name: LoadAwareScheduling
           args:
-            apiVersion: kubescheduler.config.k8s.io/v1beta2
+            apiVersion: kubescheduler.config.k8s.io/v1beta3
             kind: LoadAwareSchedulingArgs
             filterExpiredNodeMetrics: false
             nodeMetricExpirationSeconds: 300
@@ -46,7 +46,7 @@ data:
               memory: 70
         - name: ElasticQuota
           args:
-            apiVersion: kubescheduler.config.k8s.io/v1beta2
+            apiVersion: kubescheduler.config.k8s.io/v1beta3
             kind: ElasticQuotaArgs
             quotaGroupNamespace: koordinator-system
         plugins:

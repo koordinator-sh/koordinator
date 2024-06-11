@@ -17,6 +17,7 @@ limitations under the License.
 package config
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -138,7 +139,7 @@ func Test_common_Create(t *testing.T) {
 				p.SyncCacheIfChanged = tt.args.cacheChangedReturn
 			}
 			q := workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter())
-			p.Create(tt.args.evt, q)
+			p.Create(context.TODO(), tt.args.evt, q)
 
 			assert.Equal(t, q.Len(), len(tt.want.objs), "Create() test fail, len expect equal!")
 
@@ -299,7 +300,7 @@ func Test_common_Update(t *testing.T) {
 				p.SyncCacheIfChanged = tt.args.cacheChangedReturn
 			}
 			q := workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter())
-			p.Update(tt.args.evt, q)
+			p.Update(context.TODO(), tt.args.evt, q)
 
 			assert.Equal(t, q.Len(), len(tt.want.objs), "update() test fail, len expect equal!")
 

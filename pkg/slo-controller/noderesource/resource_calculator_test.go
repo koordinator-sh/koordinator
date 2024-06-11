@@ -28,8 +28,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/clock"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/utils/clock"
 	"k8s.io/utils/pointer"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -42,6 +42,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/noderesource/framework"
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/noderesource/plugins/batchresource"
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/noderesource/plugins/midresource"
+	"github.com/koordinator-sh/koordinator/pkg/util/testutil"
 )
 
 func init() {
@@ -1047,7 +1048,8 @@ func Test_calculateNodeResource(t *testing.T) {
 	slov1alpha1.AddToScheme(scheme)
 	schedulingv1alpha1.AddToScheme(scheme)
 	client := fake.NewClientBuilder().WithScheme(scheme).Build()
-	opt := framework.NewOption().WithClient(client).WithScheme(scheme).WithControllerBuilder(&builder.Builder{})
+	fakeBuilder := builder.ControllerManagedBy(&testutil.FakeManager{})
+	opt := framework.NewOption().WithClient(client).WithScheme(scheme).WithControllerBuilder(fakeBuilder)
 	framework.RunSetupExtenders(opt)
 
 	for _, tt := range tests {
@@ -1210,6 +1212,8 @@ func Test_isColocationCfgDisabled(t *testing.T) {
 }
 
 func Test_updateNodeResource(t *testing.T) {
+	scheme := runtime.NewScheme()
+	_ = clientgoscheme.AddToScheme(scheme)
 	enabledCfg := &configuration.ColocationCfg{
 		ColocationStrategy: configuration.ColocationStrategy{
 			Enable:                        pointer.Bool(true),
@@ -1701,18 +1705,18 @@ func Test_updateNodeResource(t *testing.T) {
 		{
 			name: "update node meta",
 			fields: fields{
-				Client: fake.NewClientBuilder().WithRuntimeObjects(&corev1.Node{
+				Client: fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(&corev1.Node{
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "test-node0",
 					},
 					Status: corev1.NodeStatus{
 						Allocatable: corev1.ResourceList{
-							extension.BatchCPU:    resource.MustParse("20"),
-							extension.BatchMemory: resource.MustParse("40G"),
+							corev1.ResourceCPU:    resource.MustParse("20"),
+							corev1.ResourceMemory: resource.MustParse("40G"),
 						},
 						Capacity: corev1.ResourceList{
-							extension.BatchCPU:    resource.MustParse("20"),
-							extension.BatchMemory: resource.MustParse("40G"),
+							corev1.ResourceCPU:    resource.MustParse("20"),
+							corev1.ResourceMemory: resource.MustParse("40G"),
 						},
 					},
 				}).Build(),

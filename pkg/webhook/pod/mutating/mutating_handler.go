@@ -26,7 +26,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/runtime/inject"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
 
@@ -94,7 +93,11 @@ func (h *PodMutatingHandler) Handle(ctx context.Context, req admission.Request) 
 		klog.Errorf("Failed to marshal mutated Pod %s/%s, err: %v", obj.Namespace, obj.Name, err)
 		return admission.Errored(http.StatusInternalServerError, err)
 	}
-	return admission.PatchResponseFromRaw(req.AdmissionRequest.Object.Raw, marshaled)
+	original, err := json.Marshal(clone)
+	if err != nil {
+		return admission.Errored(http.StatusInternalServerError, err)
+	}
+	return admission.PatchResponseFromRaw(original, marshaled)
 }
 
 func (h *PodMutatingHandler) handleCreate(ctx context.Context, req admission.Request, obj *corev1.Pod) error {
@@ -121,7 +124,7 @@ func (h *PodMutatingHandler) handleUpdate(ctx context.Context, req admission.Req
 	return nil
 }
 
-var _ inject.Client = &PodMutatingHandler{}
+// var _ inject.Client = &PodMutatingHandler{}
 
 // InjectClient injects the client into the PodMutatingHandler
 func (h *PodMutatingHandler) InjectClient(c client.Client) error {
@@ -129,7 +132,7 @@ func (h *PodMutatingHandler) InjectClient(c client.Client) error {
 	return nil
 }
 
-var _ admission.DecoderInjector = &PodMutatingHandler{}
+// var _ admission.DecoderInjector = &PodMutatingHandler{}
 
 // InjectDecoder injects the decoder into the PodMutatingHandler
 func (h *PodMutatingHandler) InjectDecoder(d *admission.Decoder) error {
