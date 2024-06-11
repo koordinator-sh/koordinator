@@ -1349,7 +1349,7 @@ func Test_generatePodEventOnReservationLevel(t *testing.T) {
 				"3 Reservation(s) for node reason that didn't match pod topology spread constraints (missing required label), " +
 				"2 Reservation(s) Insufficient cpu, 1 Reservation(s) Insufficient memory, " +
 				"8 Reservation(s) matched owner total.",
-			wantMsg: "0/8 reservations are available: 3 Reservation(s) didn't match pod topology spread constraints (missing required label), " +
+			wantMsg: "0/8 reservations are available: 3 Reservation(s) for node reason that didn't match pod topology spread constraints (missing required label), " +
 				"2 Reservation(s) Insufficient cpu, 1 Reservation(s) Insufficient memory.",
 			wantIsReserve: true,
 		},
@@ -1360,7 +1360,7 @@ func Test_generatePodEventOnReservationLevel(t *testing.T) {
 				"3 Reservation(s) for node reason that didn't match pod topology spread constraints," +
 				"2 Reservation(s) Insufficient cpu, 1 Reservation(s) Insufficient memory. " +
 				"8 Reservation(s) matched owner total.",
-			wantMsg: "0/8 reservations are available: 3 Reservation(s) didn't match pod topology spread constraints, " +
+			wantMsg: "0/8 reservations are available: 3 Reservation(s) for node reason that didn't match pod topology spread constraints, " +
 				"2 Reservation(s) Insufficient cpu, 1 Reservation(s) Insufficient memory.",
 			wantIsReserve: true,
 		},
@@ -1371,7 +1371,7 @@ func Test_generatePodEventOnReservationLevel(t *testing.T) {
 				"3 Reservation(s) for node reason that didn't satisfy existing pods anti-affinity rules," +
 				"2 Reservation(s) Insufficient cpu, 1 Reservation(s) Insufficient memory. " +
 				"8 Reservation(s) matched owner total.",
-			wantMsg: "0/8 reservations are available: 3 Reservation(s) didn't satisfy existing pods anti-affinity rules, " +
+			wantMsg: "0/8 reservations are available: 3 Reservation(s) for node reason that didn't satisfy existing pods anti-affinity rules, " +
 				"2 Reservation(s) Insufficient cpu, 1 Reservation(s) Insufficient memory.",
 			wantIsReserve: true,
 		},
@@ -1382,7 +1382,7 @@ func Test_generatePodEventOnReservationLevel(t *testing.T) {
 				"3 Reservation(s) for node reason that didn't match pod affinity rules, " +
 				"2 Reservation(s) Insufficient cpu, 1 Reservation(s) Insufficient memory. " +
 				"8 Reservation(s) matched owner total.",
-			wantMsg: "0/8 reservations are available: 3 Reservation(s) didn't match pod affinity rules, " +
+			wantMsg: "0/8 reservations are available: 3 Reservation(s) for node reason that didn't match pod affinity rules, " +
 				"2 Reservation(s) Insufficient cpu, 1 Reservation(s) Insufficient memory.",
 			wantIsReserve: true,
 		},
@@ -1393,7 +1393,7 @@ func Test_generatePodEventOnReservationLevel(t *testing.T) {
 				"3 Reservation(s) for node reason that didn't match pod anti-affinity rules, " +
 				"2 Reservation(s) Insufficient cpu, 1 Reservation(s) Insufficient memory. " +
 				"8 Reservation(s) matched owner total.",
-			wantMsg: "0/8 reservations are available: 3 Reservation(s) didn't match pod anti-affinity rules, " +
+			wantMsg: "0/8 reservations are available: 3 Reservation(s) for node reason that didn't match pod anti-affinity rules, " +
 				"2 Reservation(s) Insufficient cpu, 1 Reservation(s) Insufficient memory.",
 			wantIsReserve: true,
 		},
@@ -1406,8 +1406,8 @@ func Test_generatePodEventOnReservationLevel(t *testing.T) {
 				"1 Reservation(s) for node reason that didn't match pod affinity rules, " +
 				"2 Reservation(s) Insufficient cpu, 1 Reservation(s) Insufficient memory. " +
 				"8 Reservation(s) matched owner total.",
-			wantMsg: "0/8 reservations are available: 3 Reservation(s) didn't match pod topology spread constraints, " +
-				"1 Reservation(s) didn't match pod affinity rules, " +
+			wantMsg: "0/8 reservations are available: 3 Reservation(s) for node reason that didn't match pod topology spread constraints, " +
+				"1 Reservation(s) for node reason that didn't match pod affinity rules, " +
 				"2 Reservation(s) Insufficient cpu, 1 Reservation(s) Insufficient memory.",
 			wantIsReserve: true,
 		},
@@ -1419,8 +1419,8 @@ func Test_generatePodEventOnReservationLevel(t *testing.T) {
 				"2 Reservation(s) for node reason that didn't match pod affinity rules," +
 				"2 Reservation(s) Insufficient cpu, 1 Reservation(s) Insufficient memory. " +
 				"8 Reservation(s) matched owner total.",
-			wantMsg: "0/8 reservations are available: 3 Reservation(s) didn't match pod topology spread constraints, " +
-				"2 Reservation(s) didn't match pod affinity rules, 2 Reservation(s) Insufficient cpu, " +
+			wantMsg: "0/8 reservations are available: 3 Reservation(s) for node reason that didn't match pod topology spread constraints, " +
+				"2 Reservation(s) for node reason that didn't match pod affinity rules, 2 Reservation(s) Insufficient cpu, " +
 				"1 Reservation(s) Insufficient memory.",
 			wantIsReserve: true,
 		},

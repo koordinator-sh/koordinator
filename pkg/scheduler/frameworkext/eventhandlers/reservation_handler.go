@@ -145,7 +145,7 @@ func generatePodEventOnReservationLevel(errorMsg string) (string, bool) {
 	reserveTotalRe := regexp.MustCompile("^([0-9]+) Reservation\\(s\\) matched owner total$")
 
 	// for node related item
-	reserveNodeDetailRe := regexp.MustCompile("^([0-9]+ Reservation\\(s\\)) for node reason that (.*)$")
+	reserveNodeDetailRe := regexp.MustCompile("^([0-9]+ Reservation\\(s\\)) (for node reason that .*)$")
 
 	// for reservation detail item
 	reserveDetailRe := regexp.MustCompile("^([0-9]+) Reservation\\(s\\) .*$")
