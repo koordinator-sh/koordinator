@@ -186,6 +186,45 @@ func (p *Plugin) filterNodeUsage(node *corev1.Node, nodeMetric *slov1alpha1.Node
 		usageThresholds = filterProfile.UsageThresholds
 	}
 
+	var nodeUsage *slov1alpha1.ResourceMap
+	if filterProfile.AggregatedUsage != nil {
+		nodeUsage = getTargetAggregatedUsage(
+			nodeMetric,
+			filterProfile.AggregatedUsage.UsageAggregatedDuration,
+			filterProfile.AggregatedUsage.UsageAggregationType,
+		)
+	} else {
+		nodeUsage = &nodeMetric.Status.NodeMetric.NodeUsage
+	}
+	if nodeUsage == nil {
+		return nil
+	}
+
+	podMetrics := buildPodMetricMap(p.podLister, nodeMetric, false)
+	podUsages := make(map[corev1.ResourceName]int64)
+	assignedPodEstimatedUsed, estimatedPods := p.estimatedAssignedPodUsed(node.Name, nodeMetric, podMetrics, false)
+	for resourceName, value := range assignedPodEstimatedUsed {
+		podUsages[resourceName] += value
+	}
+
+	_, estimatedPodActualUsages := sumPodUsages(podMetrics, estimatedPods)
+	for resourceName, quantity := range nodeUsage.ResourceList {
+		if q := estimatedPodActualUsages[resourceName]; !q.IsZero() {
+			quantity = quantity.DeepCopy()
+			if quantity.Cmp(q) >= 0 {
+				quantity.Sub(q)
+			}
+		}
+		podUsages[resourceName] += getResourceValue(resourceName, quantity)
+	}
+
+	for resourceName, value := range podUsages {
+		if resourceName == corev1.ResourceCPU {
+			continue
+		}
+		podUsages[resourceName] += value * 1000
+	}
+
 	for resourceName, threshold := range usageThresholds {
 		if threshold == 0 {
 			continue
@@ -199,23 +238,9 @@ func (p *Plugin) filterNodeUsage(node *corev1.Node, nodeMetric *slov1alpha1.Node
 		if total.IsZero() {
 			continue
 		}
-		// TODO(joseph): maybe we should estimate the Pod that just be scheduled that have not reported
-		var nodeUsage *slov1alpha1.ResourceMap
-		if filterProfile.AggregatedUsage != nil {
-			nodeUsage = getTargetAggregatedUsage(
-				nodeMetric,
-				filterProfile.AggregatedUsage.UsageAggregatedDuration,
-				filterProfile.AggregatedUsage.UsageAggregationType,
-			)
-		} else {
-			nodeUsage = &nodeMetric.Status.NodeMetric.NodeUsage
-		}
-		if nodeUsage == nil {
-			continue
-		}
 
-		used := nodeUsage.ResourceList[resourceName]
-		usage := int64(math.Round(float64(used.MilliValue()) / float64(total.MilliValue()) * 100))
+		used := podUsages[resourceName]
+		usage := int64(math.Round(float64(used) / float64(total.MilliValue()) * 100))
 		if usage >= threshold {
 			reason := ErrReasonUsageExceedThreshold
 			if filterProfile.AggregatedUsage != nil {
@@ -228,13 +253,26 @@ func (p *Plugin) filterNodeUsage(node *corev1.Node, nodeMetric *slov1alpha1.Node
 }
 
 func (p *Plugin) filterProdUsage(node *corev1.Node, nodeMetric *slov1alpha1.NodeMetric, prodUsageThresholds map[corev1.ResourceName]int64) *framework.Status {
-	if len(nodeMetric.Status.PodsMetric) == 0 {
-		return nil
+	podMetrics := buildPodMetricMap(p.podLister, nodeMetric, true)
+
+	prodPodUsages := make(map[corev1.ResourceName]int64)
+	assignedPodEstimatedUsed, estimatedPods := p.estimatedAssignedPodUsed(node.Name, nodeMetric, podMetrics, true)
+	for resourceName, value := range assignedPodEstimatedUsed {
+		prodPodUsages[resourceName] += value
 	}
 
-	// TODO(joseph): maybe we should estimate the Pod that just be scheduled that have not reported
-	podMetrics := buildPodMetricMap(p.podLister, nodeMetric, true)
-	prodPodUsages, _ := sumPodUsages(podMetrics, nil)
+	prodPodActualUsages, _ := sumPodUsages(podMetrics, estimatedPods)
+	for resourceName, quantity := range prodPodActualUsages {
+		prodPodUsages[resourceName] += getResourceValue(resourceName, quantity)
+	}
+
+	for resourceName, value := range prodPodUsages {
+		if resourceName == corev1.ResourceCPU {
+			continue
+		}
+		prodPodUsages[resourceName] += value * 1000
+	}
+
 	for resourceName, threshold := range prodUsageThresholds {
 		if threshold == 0 {
 			continue
@@ -249,7 +287,7 @@ func (p *Plugin) filterProdUsage(node *corev1.Node, nodeMetric *slov1alpha1.Node
 			continue
 		}
 		used := prodPodUsages[resourceName]
-		usage := int64(math.Round(float64(used.MilliValue()) / float64(total.MilliValue()) * 100))
+		usage := int64(math.Round(float64(used) / float64(total.MilliValue()) * 100))
 		if usage >= threshold {
 			return framework.NewStatus(framework.Unschedulable, fmt.Sprintf(ErrReasonUsageExceedThreshold, resourceName))
 		}
