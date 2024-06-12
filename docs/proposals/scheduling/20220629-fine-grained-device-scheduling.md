@@ -228,16 +228,16 @@ In the PreBind stage, the scheduler will update the device (including GPU) alloc
       "minor": 0,
       "resouurces": {
         "koordinator.sh/gpu-core": 100,
-        "koordinator.sh/gpu-mem-ratio": 100,
-        "koordinator.sh/gpu-mem": "16Gi"
+        "koordinator.sh/gpu-memory-ratio": 100,
+        "koordinator.sh/gpu-memory": "16Gi"
       }
     },
     {
       "minor": 1,
       "resouurces": {
         "koordinator.sh/gpu-core": 100,
-        "koordinator.sh/gpu-mem-ratio": 100,
-        "koordinator.sh/gpu-mem": "16Gi"
+        "koordinator.sh/gpu-memory-ratio": 100,
+        "koordinator.sh/gpu-memory": "16Gi"
       }
     }
   ]

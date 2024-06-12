@@ -385,6 +385,88 @@ var _ = SIGDescribe("NodeNUMAResource", func() {
 			}
 		})
 
+		framework.ConformanceIt("NUMA topology is set on pod, the pod is scheduled on a node without any policy", func() {
+			nrt := getSuitableNodeResourceTopology(nrtClient, 2)
+			node, err := f.ClientSet.CoreV1().Nodes().Get(context.TODO(), nrt.Name, metav1.GetOptions{})
+			framework.ExpectNoError(err, "unable to get node")
+			targetNodeName = node.Name
+			ginkgo.By("Create two pods allocate 56% resources of Node, and every Pod allocates 28% resources per NUMA Node")
+			cpuQuantity := node.Status.Allocatable[corev1.ResourceCPU]
+			memoryQuantity := node.Status.Allocatable[corev1.ResourceMemory]
+			percent := intstr.FromString("28%")
+			cpu, _ := intstr.GetScaledValueFromIntOrPercent(&percent, int(cpuQuantity.MilliValue()), false)
+			memory, _ := intstr.GetScaledValueFromIntOrPercent(&percent, int(memoryQuantity.Value()), false)
+			requests := corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewMilliQuantity(int64(cpu), resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(int64(memory), resource.DecimalSI),
+			}
+			rsConfig := pauseRSConfig{
+				Replicas: int32(2),
+				PodConfig: pausePodConfig{
+					Name:      "request-resource-with-single-numa-pod",
+					Namespace: f.Namespace.Name,
+					Labels: map[string]string{
+						"test-app": "true",
+					},
+					Annotations: map[string]string{
+						extension.AnnotationNUMATopologySpec: `{"numaTopologyPolicy":"SingleNUMANode"}`,
+					},
+					Resources: &corev1.ResourceRequirements{
+						Limits:   requests,
+						Requests: requests,
+					},
+					SchedulerName: koordSchedulerName,
+					NodeName:      node.Name,
+				},
+			}
+			runPauseRS(f, rsConfig)
+
+			ginkgo.By("Check the two pods allocated in two NUMA Nodes")
+			podList, err := f.ClientSet.CoreV1().Pods(f.Namespace.Name).List(context.TODO(), metav1.ListOptions{})
+			framework.ExpectNoError(err)
+			nodes := sets.NewInt()
+			for i := range podList.Items {
+				pod := &podList.Items[i]
+				ginkgo.By(fmt.Sprintf("pod %q, resourceStatus: %s", pod.Name, pod.Annotations[extension.AnnotationResourceStatus]))
+				resourceStatus, err := extension.GetResourceStatus(pod.Annotations)
+				framework.ExpectNoError(err, "invalid resourceStatus")
+				gomega.Expect(len(resourceStatus.NUMANodeResources)).Should(gomega.Equal(1))
+				r := equality.Semantic.DeepEqual(resourceStatus.NUMANodeResources[0].Resources, requests)
+				gomega.Expect(r).Should(gomega.Equal(true))
+				gomega.Expect(false).Should(gomega.Equal(nodes.Has(int(resourceStatus.NUMANodeResources[0].Node))))
+				nodes.Insert(int(resourceStatus.NUMANodeResources[0].Node))
+			}
+			gomega.Expect(nodes.Len()).Should(gomega.Equal(2))
+
+			ginkgo.By("Create the third Pod allocates 30% resources of Node, expect it failed to schedule")
+			percent = intstr.FromString("30%")
+			cpu, _ = intstr.GetScaledValueFromIntOrPercent(&percent, int(cpuQuantity.MilliValue()), false)
+			memory, _ = intstr.GetScaledValueFromIntOrPercent(&percent, int(memoryQuantity.Value()), false)
+			requests = corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewMilliQuantity(int64(cpu), resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(int64(memory), resource.DecimalSI),
+			}
+			pod := createPausePod(f, pausePodConfig{
+				Name:      "must-be-failed-pod",
+				Namespace: f.Namespace.Name,
+				Resources: &corev1.ResourceRequirements{
+					Limits:   requests,
+					Requests: requests,
+				},
+				SchedulerName: koordSchedulerName,
+				NodeName:      node.Name,
+			})
+			ginkgo.By("Wait for Pod schedule failed")
+			framework.ExpectNoError(e2epod.WaitForPodCondition(f.ClientSet, pod.Namespace, pod.Name, "wait for pod schedule failed", 60*time.Second, func(pod *corev1.Pod) (bool, error) {
+				_, scheduledCondition := k8spodutil.GetPodCondition(&pod.Status, corev1.PodScheduled)
+				if scheduledCondition != nil && scheduledCondition.Status == corev1.ConditionFalse &&
+					strings.Contains(scheduledCondition.Message, "NUMA Topology affinity") {
+					return true, nil
+				}
+				return false, nil
+			}))
+		})
+
 		// SingleNUMANode with 2 NUMA Nodes
 		framework.ConformanceIt("SingleNUMANode with 2 NUMA Nodes", func() {
 			nrt := getSuitableNodeResourceTopology(nrtClient, 2)

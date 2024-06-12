@@ -96,6 +96,20 @@ func Test_GetRuntimeHandler(t *testing.T) {
 			expectErr:            false,
 		},
 		{
+			name:                 "test_/var/run/crio.sock",
+			endPoint:             "/var/run/crio.sock",
+			runtimeType:          "cri-o",
+			expectRuntimeHandler: "CrioRuntimeHandler",
+			expectErr:            false,
+		},
+		{
+			name:                 "test_/var/run/crio/crio.sock",
+			endPoint:             "/var/run/crio/crio.sock",
+			runtimeType:          "cri-o",
+			expectRuntimeHandler: "CrioRuntimeHandler",
+			expectErr:            false,
+		},
+		{
 			name:                 "custom containerd",
 			endPoint:             "/var/run/test1/containerd.sock",
 			flag:                 "test1/containerd.sock",
@@ -117,6 +131,14 @@ func Test_GetRuntimeHandler(t *testing.T) {
 			flag:                 "test3/pouchcri.sock",
 			runtimeType:          "pouch",
 			expectRuntimeHandler: "PouchRuntimeHandler",
+			expectErr:            false,
+		},
+		{
+			name:                 "custom crio",
+			endPoint:             "/var/run/test4/crio.sock",
+			flag:                 "test4/crio.sock",
+			runtimeType:          "cri-o",
+			expectRuntimeHandler: "CrioRuntimeHandler",
 			expectErr:            false,
 		},
 	}

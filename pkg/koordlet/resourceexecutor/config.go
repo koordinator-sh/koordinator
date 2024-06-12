@@ -22,6 +22,7 @@ const (
 	ReasonUpdateCgroups      = "UpdateCgroups"
 	ReasonUpdateSystemConfig = "UpdateSystemConfig"
 	ReasonUpdateResctrl      = "UpdateResctrl" // update resctrl tasks, schemata
+	CreateCATGroup           = "CreateCATGroup"
 
 	EvictPodByNodeMemoryUsage   = "EvictPodByNodeMemoryUsage"
 	EvictPodByBECPUSatisfaction = "EvictPodByBECPUSatisfaction"

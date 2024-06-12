@@ -198,6 +198,7 @@ func (p *Plugin) tryAllocateFromReservation(
 
 	basicPreemptible = appendAllocated(nil, basicPreemptible, restoreState.mergedMatchedAllocated)
 
+	var reservationReasons []*framework.Status
 	for _, alloc := range matchedReservations {
 		rInfo := alloc.rInfo
 		preemptibleInRR := state.preemptibleInRRs[node.Name][rInfo.UID()]
@@ -222,6 +223,7 @@ func (p *Plugin) tryAllocateFromReservation(
 				hasSatisfiedReservation = true
 				break
 			}
+			reservationReasons = append(reservationReasons, status)
 		} else if allocatePolicy == schedulingv1alpha1.ReservationAllocatePolicyRestricted {
 			_, status := allocator.Allocate(preferred, preferred, nil, preemptible)
 			if status.IsSuccess() {
@@ -237,12 +239,23 @@ func (p *Plugin) tryAllocateFromReservation(
 					break
 				}
 			}
+			reservationReasons = append(reservationReasons, status)
 		}
 	}
 	if !hasSatisfiedReservation && requiredFromReservation {
-		return nil, framework.NewStatus(framework.Unschedulable, "node(s) no reservation(s) to meet the device requirements")
+		return nil, framework.NewStatus(framework.Unschedulable, p.makeReasonsByReservation(reservationReasons)...)
 	}
 	return result, nil
+}
+
+func (p *Plugin) makeReasonsByReservation(reservationReasons []*framework.Status) []string {
+	var reasons []string
+	for _, status := range reservationReasons {
+		for _, r := range status.Reasons() {
+			reasons = append(reasons, reservationutil.NewReservationReason(r))
+		}
+	}
+	return reasons
 }
 
 // scoreWithReservation combine the reservation with the node's resource usage to calculate the reservation score.

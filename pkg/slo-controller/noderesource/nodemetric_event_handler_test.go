@@ -17,6 +17,7 @@ limitations under the License.
 package noderesource
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -46,14 +47,14 @@ func Test_EnqueueRequestForNodeMetricMetric(t *testing.T) {
 		{
 			name: "create nodemetric event",
 			fn: func(handler *EnqueueRequestForNodeMetric, q workqueue.RateLimitingInterface) {
-				handler.Create(event.CreateEvent{}, q)
+				handler.Create(context.TODO(), event.CreateEvent{}, q)
 			},
 			hasEvent: false,
 		},
 		{
 			name: "delete nodemetric event",
 			fn: func(handler *EnqueueRequestForNodeMetric, q workqueue.RateLimitingInterface) {
-				handler.Delete(event.DeleteEvent{
+				handler.Delete(context.TODO(), event.DeleteEvent{
 					Object: &slov1alpha1.NodeMetric{
 						ObjectMeta: metav1.ObjectMeta{
 							Name: "node1",
@@ -67,7 +68,7 @@ func Test_EnqueueRequestForNodeMetricMetric(t *testing.T) {
 		{
 			name: "delete event not nodemetric",
 			fn: func(handler *EnqueueRequestForNodeMetric, q workqueue.RateLimitingInterface) {
-				handler.Delete(event.DeleteEvent{
+				handler.Delete(context.TODO(), event.DeleteEvent{
 					Object: &corev1.Node{
 						ObjectMeta: metav1.ObjectMeta{
 							Name: "node1",
@@ -80,14 +81,14 @@ func Test_EnqueueRequestForNodeMetricMetric(t *testing.T) {
 		{
 			name: "generic event ignore",
 			fn: func(handler *EnqueueRequestForNodeMetric, q workqueue.RateLimitingInterface) {
-				handler.Generic(event.GenericEvent{}, q)
+				handler.Generic(context.TODO(), event.GenericEvent{}, q)
 			},
 			hasEvent: false,
 		},
 		{
 			name: "update nodemetric event",
 			fn: func(handler *EnqueueRequestForNodeMetric, q workqueue.RateLimitingInterface) {
-				handler.Update(event.UpdateEvent{
+				handler.Update(context.TODO(), event.UpdateEvent{
 					ObjectOld: &slov1alpha1.NodeMetric{
 						ObjectMeta: metav1.ObjectMeta{
 							Name: "node1",
@@ -109,7 +110,7 @@ func Test_EnqueueRequestForNodeMetricMetric(t *testing.T) {
 		{
 			name: "update nodemetric event ignore",
 			fn: func(handler *EnqueueRequestForNodeMetric, q workqueue.RateLimitingInterface) {
-				handler.Update(event.UpdateEvent{
+				handler.Update(context.TODO(), event.UpdateEvent{
 					ObjectOld: &slov1alpha1.NodeMetric{
 						ObjectMeta: metav1.ObjectMeta{
 							Name: "node1",

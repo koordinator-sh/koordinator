@@ -33,13 +33,13 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework/preemption"
 	"k8s.io/kubernetes/pkg/scheduler/metrics"
-	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling"
-	apiv1alpha1 "sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
-	"sigs.k8s.io/scheduler-plugins/pkg/generated/clientset/versioned"
-	"sigs.k8s.io/scheduler-plugins/pkg/generated/informers/externalversions"
-	"sigs.k8s.io/scheduler-plugins/pkg/generated/listers/scheduling/v1alpha1"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/apis/scheduling"
+	apiv1alpha1 "github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
+	"github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/generated/clientset/versioned"
+	"github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/generated/informers/externalversions"
+	"github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/generated/listers/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/validation"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
@@ -197,13 +197,13 @@ func (g *Plugin) Name() string {
 	return Name
 }
 
-func (g *Plugin) EventsToRegister() []framework.ClusterEvent {
+func (g *Plugin) EventsToRegister() []framework.ClusterEventWithHint {
 	// To register a custom event, follow the naming convention at:
 	// https://git.k8s.io/kubernetes/pkg/scheduler/eventhandlers.go#L403-L410
 	eqGVK := fmt.Sprintf("elasticquotas.v1alpha1.%v", scheduling.GroupName)
-	return []framework.ClusterEvent{
-		{Resource: framework.Pod, ActionType: framework.Delete},
-		{Resource: framework.GVK(eqGVK), ActionType: framework.All},
+	return []framework.ClusterEventWithHint{
+		{Event: framework.ClusterEvent{Resource: framework.Pod, ActionType: framework.Delete}},
+		{Event: framework.ClusterEvent{Resource: framework.GVK(eqGVK), ActionType: framework.All}},
 	}
 }
 
@@ -227,8 +227,7 @@ func (g *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleState
 	}
 	state := g.snapshotPostFilterState(quotaInfo, cycleState)
 
-	podRequest, _ := core.PodRequestsAndLimits(pod)
-
+	podRequest := core.PodRequests(pod)
 	used := quotav1.Mask(quotav1.Add(podRequest, state.used), quotav1.ResourceNames(podRequest))
 	if isLessEqual, exceedDimensions := quotav1.LessThanOrEqual(used, state.usedLimit); !isLessEqual {
 		return nil, framework.NewStatus(framework.Unschedulable, fmt.Sprintf("Insufficient quotas, "+
@@ -272,7 +271,7 @@ func (g *Plugin) AddPod(ctx context.Context, state *framework.CycleState, podToS
 	}
 
 	if postFilterState.quotaInfo.IsPodExist(podInfoToAdd.Pod) {
-		podReq, _ := core.PodRequestsAndLimits(podInfoToAdd.Pod)
+		podReq := core.PodRequests(podInfoToAdd.Pod)
 		postFilterState.used = quotav1.Add(postFilterState.used, podReq)
 	}
 	return framework.NewStatus(framework.Success, "")
@@ -292,7 +291,7 @@ func (g *Plugin) RemovePod(ctx context.Context, state *framework.CycleState, pod
 	}
 
 	if postFilterState.quotaInfo.IsPodExist(podInfoToRemove.Pod) {
-		podReq, _ := core.PodRequestsAndLimits(podInfoToRemove.Pod)
+		podReq := core.PodRequests(podInfoToRemove.Pod)
 		postFilterState.used = quotav1.SubtractWithNonNegativeResult(postFilterState.used, podReq)
 	}
 	return framework.NewStatus(framework.Success, "")

@@ -26,7 +26,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/runtime/inject"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	"github.com/koordinator-sh/koordinator/pkg/util"
@@ -43,8 +42,11 @@ type ConfigMapValidatingHandler struct {
 	Decoder *admission.Decoder
 }
 
-func NewConfigMapValidatingHandler() *ConfigMapValidatingHandler {
-	handler := &ConfigMapValidatingHandler{}
+func NewConfigMapValidatingHandler(c client.Client, d *admission.Decoder) *ConfigMapValidatingHandler {
+	handler := &ConfigMapValidatingHandler{
+		Client:  c,
+		Decoder: d,
+	}
 	return handler
 }
 
@@ -110,7 +112,7 @@ func (h *ConfigMapValidatingHandler) getPlugins() []plugins.ConfigMapPlugin {
 	return []plugins.ConfigMapPlugin{sloconfig.NewPlugin(h.Decoder, h.Client)}
 }
 
-var _ inject.Client = &ConfigMapValidatingHandler{}
+// var _ inject.Client = &ConfigMapValidatingHandler{}
 
 // InjectClient injects the client into the ValidatingHandler
 func (h *ConfigMapValidatingHandler) InjectClient(c client.Client) error {
@@ -118,7 +120,7 @@ func (h *ConfigMapValidatingHandler) InjectClient(c client.Client) error {
 	return nil
 }
 
-var _ admission.DecoderInjector = &ConfigMapValidatingHandler{}
+// var _ admission.DecoderInjector = &ConfigMapValidatingHandler{}
 
 // InjectDecoder injects the decoder into the ValidatingHandler
 func (h *ConfigMapValidatingHandler) InjectDecoder(d *admission.Decoder) error {

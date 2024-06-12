@@ -56,7 +56,7 @@ ${SCRIPT_ROOT}/hack/generate-internal-groups.sh \
   github.com/koordinator-sh/koordinator/pkg/scheduler/apis/generated \
   github.com/koordinator-sh/koordinator/pkg/scheduler/apis \
   github.com/koordinator-sh/koordinator/pkg/scheduler/apis \
-  "config:v1beta2" \
+  "config:v1beta3" \
   --output-base "${TEMP_DIR}" \
   --go-header-file hack/boilerplate/boilerplate.go.txt
 

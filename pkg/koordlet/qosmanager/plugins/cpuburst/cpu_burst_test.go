@@ -149,6 +149,7 @@ func newTestPodWithQOS(name string, qos apiext.QoSClass, cpuMilli, memoryBytes i
 				{
 					Name:        containerName,
 					ContainerID: genTestContainerIDByName(containerName),
+					State:       corev1.ContainerState{Running: &corev1.ContainerStateRunning{}},
 				},
 			},
 			Phase: corev1.PodRunning,
@@ -233,6 +234,7 @@ func createPodMetaByResource(podName string, containersRes map[string]corev1.Res
 		containerStat := corev1.ContainerStatus{
 			Name:        containerName,
 			ContainerID: genTestContainerIDByName(containerName),
+			State:       corev1.ContainerState{Running: &corev1.ContainerStateRunning{}},
 		}
 		pod.Spec.Containers = append(pod.Spec.Containers, container)
 		pod.Status.ContainerStatuses = append(pod.Status.ContainerStatuses, containerStat)
@@ -386,7 +388,7 @@ func TestCPUBurst_getNodeStateForBurst(t *testing.T) {
 			assert.NoError(t, err)
 			mockResultFactory.EXPECT().New(nodeQueryMeta).Return(nodeResult).AnyTimes()
 
-			mockQuerier.EXPECT().Query(nodeQueryMeta, gomock.Any(), gomock.Any()).SetArg(2, *nodeResult).Return(nil).AnyTimes()
+			mockQuerier.EXPECT().QueryAndClose(nodeQueryMeta, gomock.Any(), gomock.Any()).SetArg(2, *nodeResult).Return(nil).AnyTimes()
 			mockMetricCache.EXPECT().Querier(gomock.Any(), gomock.Any()).Return(mockQuerier, nil).AnyTimes()
 
 			for _, podMetric := range tt.fields.podsMetric {
@@ -1266,7 +1268,7 @@ func TestCPUBurst_applyCFSQuotaBurst(t *testing.T) {
 				assert.NoError(t, err)
 
 				mockResultFactory.EXPECT().New(queryMeta).Return(result).AnyTimes()
-				mockQuerier.EXPECT().Query(queryMeta, gomock.Any(), gomock.Any()).SetArg(2, *result).Return(nil).AnyTimes()
+				mockQuerier.EXPECT().QueryAndClose(queryMeta, gomock.Any(), gomock.Any()).SetArg(2, *result).Return(nil).AnyTimes()
 			}
 
 			initPodCFSQuota(podMeta, tt.fields.podCurCFSQuota, testHelper)
@@ -1569,7 +1571,7 @@ func TestCPUBurst_start(t *testing.T) {
 			nodeCPUQueryMeta, err := metriccache.NodeCPUUsageMetric.BuildQueryMeta(nil)
 			assert.NoError(t, err)
 			mockResultFactory.EXPECT().New(nodeCPUQueryMeta).Return(nodeCPUAggregateResult).AnyTimes()
-			mockQuerier.EXPECT().Query(nodeCPUQueryMeta, gomock.Any(), gomock.Any()).SetArg(2, *nodeCPUAggregateResult).Return(nil).AnyTimes()
+			mockQuerier.EXPECT().QueryAndClose(nodeCPUQueryMeta, gomock.Any(), gomock.Any()).SetArg(2, *nodeCPUAggregateResult).Return(nil).AnyTimes()
 
 			mockMetricCache := mock_metriccache.NewMockMetricCache(ctl)
 			mockMetricCache.EXPECT().Querier(gomock.Any(), gomock.Any()).Return(mockQuerier, nil).AnyTimes()
@@ -1593,7 +1595,7 @@ func TestCPUBurst_start(t *testing.T) {
 				assert.NoError(t, err)
 
 				mockResultFactory.EXPECT().New(queryMeta).Return(result).AnyTimes()
-				mockQuerier.EXPECT().Query(queryMeta, gomock.Any(), gomock.Any()).SetArg(2, *result).Return(nil).AnyTimes()
+				mockQuerier.EXPECT().QueryAndClose(queryMeta, gomock.Any(), gomock.Any()).SetArg(2, *result).Return(nil).AnyTimes()
 			}
 
 			opt := &framework.Options{

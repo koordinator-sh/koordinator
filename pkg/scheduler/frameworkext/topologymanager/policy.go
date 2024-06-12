@@ -20,6 +20,7 @@ package topologymanager
 import (
 	"k8s.io/klog/v2"
 
+	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/util/bitmask"
 )
 
@@ -27,7 +28,7 @@ type Policy interface {
 	// Name returns Policy Name
 	Name() string
 	// Merge returns a merged NUMATopologyHint based on input from hint providers
-	Merge(providersHints []map[string][]NUMATopologyHint) (NUMATopologyHint, bool)
+	Merge(providersHints []map[string][]NUMATopologyHint, exclusivePolicy apiext.NumaTopologyExclusive, allNUMANodeStatus []apiext.NumaNodeStatus) (NUMATopologyHint, bool)
 }
 
 // NUMATopologyHint is a struct containing the NUMANodeAffinity for a Container
@@ -62,6 +63,29 @@ func (th *NUMATopologyHint) LessThan(other NUMATopologyHint) bool {
 	return th.NUMANodeAffinity.IsNarrowerThan(other.NUMANodeAffinity)
 }
 
+// Check if the affinity match the exclusive policy, return true if match or false otherwise.
+func checkExclusivePolicy(affinity NUMATopologyHint, exclusivePolicy apiext.NumaTopologyExclusive, allNUMANodeStatus []apiext.NumaNodeStatus) bool {
+	// check bestHint again if default hint is the best
+	if affinity.NUMANodeAffinity == nil {
+		return false
+	}
+	if exclusivePolicy == apiext.NumaTopologyExclusiveRequired {
+		if affinity.NUMANodeAffinity.Count() > 1 {
+			// we should make sure no numa is in single state
+			for _, nodeid := range affinity.NUMANodeAffinity.GetBits() {
+				if allNUMANodeStatus[nodeid] == apiext.NumaNodeStatusSingle {
+					return false
+				}
+			}
+		} else {
+			if allNUMANodeStatus[affinity.NUMANodeAffinity.GetBits()[0]] == apiext.NumaNodeStatusShared {
+				return false
+			}
+		}
+	}
+	return true
+}
+
 // Merge a TopologyHints permutation to a single hint by performing a bitwise-AND
 // of their affinity masks. The hint shall be preferred if all hits in the permutation
 // are preferred.
@@ -73,12 +97,14 @@ func mergePermutation(numaNodes []int, permutation []NUMATopologyHint) NUMATopol
 	var numaAffinities []bitmask.BitMask
 	for _, hint := range permutation {
 		// Only consider hints that have an actual NUMANodeAffinity set.
-		if hint.NUMANodeAffinity == nil {
-			numaAffinities = append(numaAffinities, defaultAffinity)
-		} else {
+		if hint.NUMANodeAffinity != nil {
 			numaAffinities = append(numaAffinities, hint.NUMANodeAffinity)
+			// Only mark preferred if all affinities are equal.
+			if !hint.NUMANodeAffinity.IsEqual(numaAffinities[0]) {
+				preferred = false
+			}
 		}
-
+		// Only mark preferred if all affinities are preferred.
 		if !hint.Preferred {
 			preferred = false
 		}
@@ -124,7 +150,7 @@ func filterProvidersHints(providersHints []map[string][]NUMATopologyHint) [][]NU
 	return allProviderHints
 }
 
-func mergeFilteredHints(numaNodes []int, filteredHints [][]NUMATopologyHint) NUMATopologyHint {
+func mergeFilteredHints(numaNodes []int, filteredHints [][]NUMATopologyHint, exclusivePolicy apiext.NumaTopologyExclusive, allNUMANodeStatus []apiext.NumaNodeStatus) NUMATopologyHint {
 	// Set the default affinity as an any-numa affinity containing the list
 	// of NUMA Nodes available on this machine.
 	defaultAffinity, _ := bitmask.NewBitMask(numaNodes...)
@@ -141,6 +167,9 @@ func mergeFilteredHints(numaNodes []int, filteredHints [][]NUMATopologyHint) NUM
 		// replace the current bestHint.
 		if mergedHint.NUMANodeAffinity.Count() == 0 {
 			return
+		}
+		if !checkExclusivePolicy(mergedHint, exclusivePolicy, allNUMANodeStatus) {
+			mergedHint.Preferred = false
 		}
 
 		for _, v := range permutation {

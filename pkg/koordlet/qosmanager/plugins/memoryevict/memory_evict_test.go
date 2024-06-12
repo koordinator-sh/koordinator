@@ -359,7 +359,7 @@ func Test_memoryEvict(t *testing.T) {
 			mockResultFactory.EXPECT().New(nodeMemQueryMeta).Return(result).AnyTimes()
 			metriccache.DefaultAggregateResultFactory = mockResultFactory
 			mockQuerier := mock_metriccache.NewMockQuerier(ctl)
-			mockQuerier.EXPECT().Query(nodeMemQueryMeta, gomock.Any(), gomock.Any()).SetArg(2, *result).Return(nil).AnyTimes()
+			mockQuerier.EXPECT().QueryAndClose(nodeMemQueryMeta, gomock.Any(), gomock.Any()).SetArg(2, *result).Return(nil).AnyTimes()
 			mockMetricCache.EXPECT().Querier(gomock.Any(), gomock.Any()).Return(mockQuerier, nil).AnyTimes()
 
 			for _, podMetric := range tt.podMetrics {
@@ -369,7 +369,7 @@ func Test_memoryEvict(t *testing.T) {
 				podQueryMeta, err := metriccache.PodMemUsageMetric.BuildQueryMeta(metriccache.MetricPropertiesFunc.Pod(podMetric.UID))
 				assert.NoError(t, err)
 				mockResultFactory.EXPECT().New(podQueryMeta).Return(result).AnyTimes()
-				mockQuerier.EXPECT().Query(podQueryMeta, gomock.Any(), gomock.Any()).SetArg(2, *result).Return(nil).AnyTimes()
+				mockQuerier.EXPECT().QueryAndClose(podQueryMeta, gomock.Any(), gomock.Any()).SetArg(2, *result).Return(nil).AnyTimes()
 				//mockPodQueryResult := metriccache.PodResourceQueryResult{Metric: podMetric}
 				//mockMetricCache.EXPECT().GetPodResourceMetric(&podMetric.PodUID, gomock.Any()).Return(mockPodQueryResult).AnyTimes()
 			}
@@ -408,19 +408,17 @@ func Test_memoryEvict(t *testing.T) {
 			memoryEvictor := m.(*memoryEvictor)
 			memoryEvictor.Setup(&framework.Context{Evictor: evictor})
 			memoryEvictor.lastEvictTime = time.Now().Add(-30 * time.Second)
+			memoryEvictor.onlyEvictByAPI = true
 			memoryEvictor.memoryEvict()
 
+			// evict subresource will not be creat or update in client go testing, check evict object
+			// https://github.com/kubernetes/client-go/blob/v0.28.7/testing/fixture.go#L117
 			for _, pod := range tt.expectEvictPods {
-				getEvictObject, err := client.Tracker().Get(testutil.PodsResource, pod.Namespace, pod.Name)
-				assert.NotNil(t, getEvictObject, "evictPod Fail", err)
-				assert.IsType(t, &policyv1beta1.Eviction{}, getEvictObject, "evictPod Fail", pod.Name)
+				assert.True(t, memoryEvictor.evictor.IsPodEvicted(pod))
 			}
 
 			for _, pod := range tt.expectNotEvictPods {
-				getObject, _ := client.Tracker().Get(testutil.PodsResource, pod.Namespace, pod.Name)
-				assert.IsType(t, &corev1.Pod{}, getObject, "no need evict", pod.Name)
-				gotPod, err := client.CoreV1().Pods(pod.Namespace).Get(context.TODO(), pod.Name, metav1.GetOptions{})
-				assert.NotNil(t, gotPod, "no need evict!", err)
+				assert.False(t, memoryEvictor.evictor.IsPodEvicted(pod))
 			}
 		})
 	}

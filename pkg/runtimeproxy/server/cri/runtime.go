@@ -19,8 +19,10 @@ package cri
 import (
 	"context"
 
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
 	runtimeapi "k8s.io/cri-api/pkg/apis/runtime/v1"
-	runtimeapialpha "k8s.io/cri-api/pkg/apis/runtime/v1alpha2"
 )
 
 func (c *criServer) Version(ctx context.Context, req *runtimeapi.VersionRequest) (*runtimeapi.VersionResponse, error) {
@@ -165,144 +167,22 @@ func (c *criServer) PodSandboxStats(ctx context.Context, in *runtimeapi.PodSandb
 	return c.backendRuntimeServiceClient.PodSandboxStats(ctx, in)
 }
 
-func (c *criAlphaServer) Version(ctx context.Context, req *runtimeapialpha.VersionRequest) (*runtimeapialpha.VersionResponse, error) {
-	return c.backendRuntimeServiceClient.Version(ctx, req)
+func (c *criServer) CheckpointContainer(ctx context.Context, req *runtimeapi.CheckpointContainerRequest) (*runtimeapi.CheckpointContainerResponse, error) {
+	return c.backendRuntimeServiceClient.CheckpointContainer(ctx, req)
 }
 
-func (c *criAlphaServer) RunPodSandbox(ctx context.Context, req *runtimeapialpha.RunPodSandboxRequest) (*runtimeapialpha.RunPodSandboxResponse, error) {
-	rsp, err := c.InterceptRuntimeRequest(RunPodSandbox, ctx, req,
-		func(ctx context.Context, req interface{}) (interface{}, error) {
-			return c.backendRuntimeServiceClient.RunPodSandbox(ctx, req.(*runtimeapialpha.RunPodSandboxRequest))
-		}, true)
-	if err != nil {
-		return nil, err
-	}
-	return rsp.(*runtimeapialpha.RunPodSandboxResponse), err
-}
-func (c *criAlphaServer) StopPodSandbox(ctx context.Context, req *runtimeapialpha.StopPodSandboxRequest) (*runtimeapialpha.StopPodSandboxResponse, error) {
-	rsp, err := c.InterceptRuntimeRequest(StopPodSandbox, ctx, req,
-		func(ctx context.Context, req interface{}) (interface{}, error) {
-			return c.backendRuntimeServiceClient.StopPodSandbox(ctx, req.(*runtimeapialpha.StopPodSandboxRequest))
-		}, true)
-
-	if err != nil {
-		return nil, err
-	}
-	return rsp.(*runtimeapialpha.StopPodSandboxResponse), err
+func (c *criServer) GetContainerEvents(req *runtimeapi.GetEventsRequest, server runtimeapi.RuntimeService_GetContainerEventsServer) error {
+	return status.Errorf(codes.Unimplemented, "method GetContainerEvents not implemented")
 }
 
-func (c *criAlphaServer) RemovePodSandbox(ctx context.Context, req *runtimeapialpha.RemovePodSandboxRequest) (*runtimeapialpha.RemovePodSandboxResponse, error) {
-	return c.backendRuntimeServiceClient.RemovePodSandbox(ctx, req)
+func (c *criServer) ListMetricDescriptors(ctx context.Context, req *runtimeapi.ListMetricDescriptorsRequest) (*runtimeapi.ListMetricDescriptorsResponse, error) {
+	return c.backendRuntimeServiceClient.ListMetricDescriptors(ctx, req)
 }
 
-func (c *criAlphaServer) PodSandboxStatus(ctx context.Context, req *runtimeapialpha.PodSandboxStatusRequest) (*runtimeapialpha.PodSandboxStatusResponse, error) {
-	return c.backendRuntimeServiceClient.PodSandboxStatus(ctx, req)
+func (c *criServer) ListPodSandboxMetrics(ctx context.Context, req *runtimeapi.ListPodSandboxMetricsRequest) (*runtimeapi.ListPodSandboxMetricsResponse, error) {
+	return c.backendRuntimeServiceClient.ListPodSandboxMetrics(ctx, req)
 }
 
-func (c *criAlphaServer) ListPodSandbox(ctx context.Context, req *runtimeapialpha.ListPodSandboxRequest) (*runtimeapialpha.ListPodSandboxResponse, error) {
-	return c.backendRuntimeServiceClient.ListPodSandbox(ctx, req)
-}
-
-func (c *criAlphaServer) CreateContainer(ctx context.Context, req *runtimeapialpha.CreateContainerRequest) (*runtimeapialpha.CreateContainerResponse, error) {
-	rsp, err := c.InterceptRuntimeRequest(CreateContainer, ctx, req,
-		func(ctx context.Context, req interface{}) (interface{}, error) {
-			return c.backendRuntimeServiceClient.CreateContainer(ctx, req.(*runtimeapialpha.CreateContainerRequest))
-		}, true)
-	if err != nil {
-		return nil, err
-	}
-	return rsp.(*runtimeapialpha.CreateContainerResponse), err
-}
-
-func (c *criAlphaServer) StartContainer(ctx context.Context, req *runtimeapialpha.StartContainerRequest) (*runtimeapialpha.StartContainerResponse, error) {
-	rsp, err := c.InterceptRuntimeRequest(StartContainer, ctx, req,
-		func(ctx context.Context, req interface{}) (interface{}, error) {
-			return c.backendRuntimeServiceClient.StartContainer(ctx, req.(*runtimeapialpha.StartContainerRequest))
-		}, true)
-	if err != nil {
-		return nil, err
-	}
-	return rsp.(*runtimeapialpha.StartContainerResponse), err
-}
-
-func (c *criAlphaServer) StopContainer(ctx context.Context, req *runtimeapialpha.StopContainerRequest) (*runtimeapialpha.StopContainerResponse, error) {
-	rsp, err := c.InterceptRuntimeRequest(StopContainer, ctx, req,
-		func(ctx context.Context, req interface{}) (interface{}, error) {
-			return c.backendRuntimeServiceClient.StopContainer(ctx, req.(*runtimeapialpha.StopContainerRequest))
-		}, true)
-	if err != nil {
-		return nil, err
-	}
-	return rsp.(*runtimeapialpha.StopContainerResponse), err
-}
-
-func (c *criAlphaServer) RemoveContainer(ctx context.Context, req *runtimeapialpha.RemoveContainerRequest) (*runtimeapialpha.RemoveContainerResponse, error) {
-	rsp, err := c.InterceptRuntimeRequest(RemoveContainer, ctx, req,
-		func(ctx context.Context, req interface{}) (interface{}, error) {
-			return c.backendRuntimeServiceClient.RemoveContainer(ctx, req.(*runtimeapialpha.RemoveContainerRequest))
-		}, true)
-	if err != nil {
-		return nil, err
-	}
-	return rsp.(*runtimeapialpha.RemoveContainerResponse), err
-}
-
-func (c *criAlphaServer) ContainerStatus(ctx context.Context, req *runtimeapialpha.ContainerStatusRequest) (*runtimeapialpha.ContainerStatusResponse, error) {
-	return c.backendRuntimeServiceClient.ContainerStatus(ctx, req)
-}
-
-func (c *criAlphaServer) ListContainers(ctx context.Context, req *runtimeapialpha.ListContainersRequest) (*runtimeapialpha.ListContainersResponse, error) {
-	return c.backendRuntimeServiceClient.ListContainers(ctx, req)
-}
-
-func (c *criAlphaServer) UpdateContainerResources(ctx context.Context, req *runtimeapialpha.UpdateContainerResourcesRequest) (*runtimeapialpha.UpdateContainerResourcesResponse, error) {
-	rsp, err := c.InterceptRuntimeRequest(UpdateContainerResources, ctx, req,
-		func(ctx context.Context, req interface{}) (interface{}, error) {
-			return c.backendRuntimeServiceClient.UpdateContainerResources(ctx, req.(*runtimeapialpha.UpdateContainerResourcesRequest))
-		}, true)
-	if err != nil {
-		return nil, err
-	}
-	return rsp.(*runtimeapialpha.UpdateContainerResourcesResponse), err
-}
-
-func (c *criAlphaServer) ContainerStats(ctx context.Context, req *runtimeapialpha.ContainerStatsRequest) (*runtimeapialpha.ContainerStatsResponse, error) {
-	return c.backendRuntimeServiceClient.ContainerStats(ctx, req)
-}
-func (c *criAlphaServer) ListContainerStats(ctx context.Context, req *runtimeapialpha.ListContainerStatsRequest) (*runtimeapialpha.ListContainerStatsResponse, error) {
-	return c.backendRuntimeServiceClient.ListContainerStats(ctx, req)
-}
-
-func (c *criAlphaServer) Status(ctx context.Context, req *runtimeapialpha.StatusRequest) (*runtimeapialpha.StatusResponse, error) {
-	return c.backendRuntimeServiceClient.Status(ctx, req)
-}
-
-func (c *criAlphaServer) ReopenContainerLog(ctx context.Context, in *runtimeapialpha.ReopenContainerLogRequest) (*runtimeapialpha.ReopenContainerLogResponse, error) {
-	return c.backendRuntimeServiceClient.ReopenContainerLog(ctx, in)
-}
-func (c *criAlphaServer) ExecSync(ctx context.Context, in *runtimeapialpha.ExecSyncRequest) (*runtimeapialpha.ExecSyncResponse, error) {
-	return c.backendRuntimeServiceClient.ExecSync(ctx, in)
-}
-func (c *criAlphaServer) Exec(ctx context.Context, in *runtimeapialpha.ExecRequest) (*runtimeapialpha.ExecResponse, error) {
-	return c.backendRuntimeServiceClient.Exec(ctx, in)
-}
-
-func (c *criAlphaServer) Attach(ctx context.Context, in *runtimeapialpha.AttachRequest) (*runtimeapialpha.AttachResponse, error) {
-	return c.backendRuntimeServiceClient.Attach(ctx, in)
-}
-
-func (c *criAlphaServer) PortForward(ctx context.Context, in *runtimeapialpha.PortForwardRequest) (*runtimeapialpha.PortForwardResponse, error) {
-	return c.backendRuntimeServiceClient.PortForward(ctx, in)
-}
-
-func (c *criAlphaServer) UpdateRuntimeConfig(ctx context.Context, in *runtimeapialpha.UpdateRuntimeConfigRequest) (*runtimeapialpha.UpdateRuntimeConfigResponse, error) {
-	return c.backendRuntimeServiceClient.UpdateRuntimeConfig(ctx, in)
-}
-
-func (c *criAlphaServer) PodSandboxStats(ctx context.Context, in *runtimeapialpha.PodSandboxStatsRequest) (*runtimeapialpha.PodSandboxStatsResponse, error) {
-	return c.backendRuntimeServiceClient.PodSandboxStats(ctx, in)
-}
-
-func (c *criAlphaServer) ListPodSandboxStats(ctx context.Context, in *runtimeapialpha.ListPodSandboxStatsRequest) (*runtimeapialpha.ListPodSandboxStatsResponse, error) {
-	return c.backendRuntimeServiceClient.ListPodSandboxStats(ctx, in)
+func (c *criServer) RuntimeConfig(ctx context.Context, req *runtimeapi.RuntimeConfigRequest) (*runtimeapi.RuntimeConfigResponse, error) {
+	return c.backendRuntimeServiceClient.RuntimeConfig(ctx, req)
 }

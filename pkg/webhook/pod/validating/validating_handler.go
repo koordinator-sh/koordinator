@@ -23,7 +23,6 @@ import (
 	admissionv1 "k8s.io/api/admission/v1"
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/runtime/inject"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	"github.com/koordinator-sh/koordinator/pkg/webhook/elasticquota"
@@ -83,7 +82,7 @@ func (h *PodValidatingHandler) Handle(ctx context.Context, req admission.Request
 	return admission.ValidationResponse(allowed, reason)
 }
 
-var _ inject.Client = &PodValidatingHandler{}
+// var _ inject.Client = &PodValidatingHandler{}
 
 // InjectClient injects the client into the PodValidatingHandler
 func (h *PodValidatingHandler) InjectClient(c client.Client) error {
@@ -91,7 +90,7 @@ func (h *PodValidatingHandler) InjectClient(c client.Client) error {
 	return nil
 }
 
-var _ admission.DecoderInjector = &PodValidatingHandler{}
+// var _ admission.DecoderInjector = &PodValidatingHandler{}
 
 // InjectDecoder injects the decoder into the PodValidatingHandler
 func (h *PodValidatingHandler) InjectDecoder(d *admission.Decoder) error {

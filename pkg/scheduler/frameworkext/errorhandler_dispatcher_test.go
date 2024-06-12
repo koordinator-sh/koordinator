@@ -17,7 +17,9 @@ limitations under the License.
 package frameworkext
 
 import (
+	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
@@ -28,21 +30,21 @@ import (
 func TestErrorHandlerDispatcher(t *testing.T) {
 	dispatcher := newErrorHandlerDispatcher()
 	enterDefaultHandler := false
-	dispatcher.setDefaultHandler(func(info *framework.QueuedPodInfo, err error) {
+	dispatcher.setDefaultHandler(func(ctx context.Context, fwk framework.Framework, podInfo *framework.QueuedPodInfo, status *framework.Status, nominatingInfo *framework.NominatingInfo, start time.Time) {
 		enterDefaultHandler = true
 	})
 
 	handler1Processed := false
 	afterHandler1Processed := false
 
-	dispatcher.RegisterErrorHandlerFilters(func(info *framework.QueuedPodInfo, err error) bool {
-		if info.Pod.Name == "handler1" {
+	dispatcher.RegisterErrorHandlerFilters(func(ctx context.Context, fwk framework.Framework, podInfo *framework.QueuedPodInfo, status *framework.Status, nominatingInfo *framework.NominatingInfo, start time.Time) bool {
+		if podInfo.Pod.Name == "handler1" {
 			handler1Processed = true
 			return true
 		}
 		return false
-	}, func(info *framework.QueuedPodInfo, err error) bool {
-		if info.Pod.Name == "handler1" {
+	}, func(ctx context.Context, fwk framework.Framework, podInfo *framework.QueuedPodInfo, status *framework.Status, nominatingInfo *framework.NominatingInfo, start time.Time) bool {
+		if podInfo.Pod.Name == "handler1" {
 			afterHandler1Processed = true
 			return true
 		}
@@ -51,21 +53,21 @@ func TestErrorHandlerDispatcher(t *testing.T) {
 
 	handler2Processed := false
 	afterHandler2Processed := false
-	dispatcher.RegisterErrorHandlerFilters(func(info *framework.QueuedPodInfo, err error) bool {
-		if info.Pod.Name == "handler2" {
+	dispatcher.RegisterErrorHandlerFilters(func(ctx context.Context, fwk framework.Framework, podInfo *framework.QueuedPodInfo, status *framework.Status, nominatingInfo *framework.NominatingInfo, start time.Time) bool {
+		if podInfo.Pod.Name == "handler2" {
 			handler2Processed = true
 			return true
 		}
 		return false
-	}, func(info *framework.QueuedPodInfo, err error) bool {
-		if info.Pod.Name == "handler2" {
+	}, func(ctx context.Context, fwk framework.Framework, podInfo *framework.QueuedPodInfo, status *framework.Status, nominatingInfo *framework.NominatingInfo, start time.Time) bool {
+		if podInfo.Pod.Name == "handler2" {
 			afterHandler2Processed = true
 			return true
 		}
 		return false
 	})
 
-	dispatcher.Error(&framework.QueuedPodInfo{
+	podInfo := &framework.QueuedPodInfo{
 		PodInfo: &framework.PodInfo{
 			Pod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
@@ -73,11 +75,12 @@ func TestErrorHandlerDispatcher(t *testing.T) {
 				},
 			},
 		},
-	}, nil)
+	}
+	dispatcher.Error(context.TODO(), nil, podInfo, nil, nil, time.Now())
 	assert.True(t, enterDefaultHandler)
 	enterDefaultHandler = false
 
-	dispatcher.Error(&framework.QueuedPodInfo{
+	podInfo = &framework.QueuedPodInfo{
 		PodInfo: &framework.PodInfo{
 			Pod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
@@ -85,7 +88,8 @@ func TestErrorHandlerDispatcher(t *testing.T) {
 				},
 			},
 		},
-	}, nil)
+	}
+	dispatcher.Error(context.TODO(), nil, podInfo, nil, nil, time.Now())
 	assert.False(t, handler1Processed)
 	assert.False(t, afterHandler1Processed)
 	assert.True(t, handler2Processed)
@@ -94,7 +98,7 @@ func TestErrorHandlerDispatcher(t *testing.T) {
 	handler2Processed = false
 	afterHandler2Processed = false
 
-	dispatcher.Error(&framework.QueuedPodInfo{
+	podInfo = &framework.QueuedPodInfo{
 		PodInfo: &framework.PodInfo{
 			Pod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
@@ -102,7 +106,8 @@ func TestErrorHandlerDispatcher(t *testing.T) {
 				},
 			},
 		},
-	}, nil)
+	}
+	dispatcher.Error(context.TODO(), nil, podInfo, nil, nil, time.Now())
 	assert.True(t, handler1Processed)
 	assert.True(t, afterHandler1Processed)
 	assert.False(t, handler2Processed)

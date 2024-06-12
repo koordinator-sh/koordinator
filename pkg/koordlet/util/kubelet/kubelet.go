@@ -29,10 +29,10 @@ import (
 	kubeletconfiginternal "k8s.io/kubernetes/pkg/kubelet/apis/config"
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpumanager"
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpumanager/topology"
-	"k8s.io/kubernetes/pkg/kubelet/cm/cpuset"
 	"k8s.io/kubernetes/pkg/kubelet/eviction"
 	evictionapi "k8s.io/kubernetes/pkg/kubelet/eviction/api"
 	"k8s.io/kubernetes/pkg/kubelet/stats/pidlimit"
+	"k8s.io/utils/cpuset"
 
 	koordletutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util"
 )
@@ -148,7 +148,7 @@ func GetKubeletReservedOptions(kubeletConfiguration *kubeletconfiginternal.Kubel
 }
 
 func getReservedCPUs(topology *topology.CPUTopology, cpus string) (cpuset.CPUSet, error) {
-	emptyCPUSet := cpuset.NewCPUSet()
+	emptyCPUSet := cpuset.New()
 
 	if cpus == "" {
 		return emptyCPUSet, nil

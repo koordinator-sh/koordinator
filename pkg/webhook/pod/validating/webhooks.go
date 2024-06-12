@@ -17,14 +17,36 @@ limitations under the License.
 package validating
 
 import (
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
+
+	"github.com/koordinator-sh/koordinator/pkg/webhook/util/framework"
 )
 
 // +kubebuilder:webhook:path=/validate-pod,mutating=false,failurePolicy=fail,sideEffects=None,admissionReviewVersions=v1;v1beta1,groups="",resources=pods,verbs=create;update,versions=v1,name=vpod.koordinator.sh
 
 var (
 	// HandlerMap contains admission webhook handlers
-	HandlerMap = map[string]admission.Handler{
-		"validate-pod": &PodValidatingHandler{},
+	HandlerBuilderMap = map[string]framework.HandlerBuilder{
+		"validate-pod": &podValidateBuilder{},
 	}
 )
+
+var _ framework.HandlerBuilder = &podValidateBuilder{}
+
+type podValidateBuilder struct {
+	mgr manager.Manager
+}
+
+func (b *podValidateBuilder) WithControllerManager(mgr ctrl.Manager) framework.HandlerBuilder {
+	b.mgr = mgr
+	return b
+}
+
+func (b *podValidateBuilder) Build() admission.Handler {
+	return &PodValidatingHandler{
+		Client:  b.mgr.GetClient(),
+		Decoder: admission.NewDecoder(b.mgr.GetScheme()),
+	}
+}

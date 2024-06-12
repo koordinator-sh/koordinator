@@ -140,3 +140,37 @@ func TestPodContext_NriDone(t *testing.T) {
 		})
 	}
 }
+
+func TestPodContext_NriRemoveDone(t *testing.T) {
+	type fields struct {
+		Request  PodRequest
+		Response PodResponse
+		executor resourceexecutor.ResourceUpdateExecutor
+	}
+	type args struct {
+		executor resourceexecutor.ResourceUpdateExecutor
+	}
+	tests := []struct {
+		name   string
+		fields fields
+		args   args
+	}{
+		{
+			name: "nri remove done",
+			fields: fields{
+				executor: resourceexecutor.NewTestResourceExecutor(),
+			},
+			args: args{},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := &PodContext{
+				Request:  tt.fields.Request,
+				Response: tt.fields.Response,
+				executor: tt.fields.executor,
+			}
+			p.NriRemoveDone(tt.args.executor)
+		})
+	}
+}

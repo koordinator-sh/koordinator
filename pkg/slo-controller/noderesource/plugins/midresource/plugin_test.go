@@ -24,7 +24,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/clock"
+	clock "k8s.io/utils/clock/testing"
 	"k8s.io/utils/pointer"
 
 	"github.com/koordinator-sh/koordinator/apis/configuration"
@@ -529,7 +529,7 @@ func TestPluginCalculate(t *testing.T) {
 func TestPlugin_isDegradeNeeded(t *testing.T) {
 	const degradeTimeoutMinutes = 10
 	type fields struct {
-		Clock clock.Clock
+		Clock *clock.FakeClock
 	}
 	type args struct {
 		strategy   *configuration.ColocationStrategy

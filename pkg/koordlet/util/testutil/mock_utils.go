@@ -89,13 +89,19 @@ func MockTestPod(qosClass apiext.QoSClass, name string) *corev1.Pod {
 
 var PodsResource = schema.GroupVersionResource{Group: "", Version: "v1", Resource: "pods"}
 
+var EvictionResource = schema.GroupVersionResource{Group: "policy", Version: "v1beta1", Resource: "evictions"}
+
+var EvictionKind = schema.GroupVersionKind{Group: "policy", Version: "v1beta1", Kind: "Eviction"}
+
 func BuildMockQueryResult(ctrl *gomock.Controller, querier *mock_metriccache.MockQuerier, factory *mock_metriccache.MockAggregateResultFactory,
 	queryMeta metriccache.MetricMeta, value float64) {
 	result := mock_metriccache.NewMockAggregateResult(ctrl)
 	result.EXPECT().Value(gomock.Any()).Return(value, nil).AnyTimes()
 	result.EXPECT().Count().Return(1).AnyTimes()
 	factory.EXPECT().New(queryMeta).Return(result).AnyTimes()
+	querier.EXPECT().QueryAndClose(queryMeta, gomock.Any(), result).SetArg(2, *result).Return(nil).AnyTimes()
 	querier.EXPECT().Query(queryMeta, gomock.Any(), result).SetArg(2, *result).Return(nil).AnyTimes()
+	querier.EXPECT().Close().AnyTimes()
 }
 
 func BuildMockQueryResultAndCount(ctrl *gomock.Controller, querier *mock_metriccache.MockQuerier, factory *mock_metriccache.MockAggregateResultFactory,

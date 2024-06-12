@@ -448,7 +448,7 @@ func TestClusterColocationProfileValidatingPod(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			client := fake.NewClientBuilder().Build()
-			decoder, _ := admission.NewDecoder(scheme.Scheme)
+			decoder := admission.NewDecoder(scheme.Scheme)
 			h := &PodValidatingHandler{
 				Client:  client,
 				Decoder: decoder,

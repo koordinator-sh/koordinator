@@ -12,6 +12,7 @@ aliases:
   scheduler-approvers:
     - eahydra
     - buptcozy
+    - ZiMengSheng
 
   slo-controller-approvers:
     - jasonliu747

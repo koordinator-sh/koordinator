@@ -16,6 +16,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/utils/pointer"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	sev1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
@@ -63,7 +64,15 @@ func TestControllerFinder_GetPodsForRef(t *testing.T) {
 			_ = appsv1alpha1.AddToScheme(scheme)
 			_ = appsv1beta1.AddToScheme(scheme)
 			_ = kruisepolicyv1alpha1.AddToScheme(scheme)
-			runtimeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+			runtimeClient := fake.NewClientBuilder().WithScheme(scheme).
+				WithIndex(&corev1.Pod{}, "pod.ownerRefUID", func(obj client.Object) []string {
+					pod := obj.(*corev1.Pod)
+					ownerUID := []string{}
+					for _, ref := range pod.OwnerReferences {
+						ownerUID = append(ownerUID, string(ref.UID))
+					}
+					return ownerUID
+				}).Build()
 			deployment := &appsv1.Deployment{
 				TypeMeta: metav1.TypeMeta{
 					Kind:       ControllerKindDep.Kind,

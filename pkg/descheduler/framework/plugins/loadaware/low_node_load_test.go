@@ -86,7 +86,7 @@ func setupFakeDiscoveryWithPolicyResource(fake *coretesting.Fake) {
 	})
 }
 
-func setupNodeMetrics(t *testing.T, koordClientSet koordinatorclientset.Interface, nodes []*corev1.Node, pods []*corev1.Pod, podMetrics map[types.NamespacedName]*slov1alpha1.ResourceMap) {
+func setupNodeMetrics(koordClientSet koordinatorclientset.Interface, nodes []*corev1.Node, pods []*corev1.Pod, podMetrics map[types.NamespacedName]*slov1alpha1.ResourceMap) {
 	nodeMetrics := map[string]*slov1alpha1.NodeMetric{}
 	if len(pods) > 0 {
 		if podMetrics == nil {
@@ -995,7 +995,7 @@ func TestLowNodeLoad(t *testing.T) {
 			evictionLimiter := evictions.NewEvictionLimiter(nil, nil)
 
 			koordClientSet := koordfake.NewSimpleClientset()
-			setupNodeMetrics(t, koordClientSet, tt.nodes, tt.pods, tt.podMetrics)
+			setupNodeMetrics(koordClientSet, tt.nodes, tt.pods, tt.podMetrics)
 
 			fh, err := frameworktesting.NewFramework(
 				[]frameworktesting.RegisterPluginFunc{

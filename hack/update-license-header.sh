@@ -17,7 +17,7 @@
 
 PROJECT=$(cd $(dirname $0)/..; pwd)
 
-LICENSEHEADERCHECKER_VERSION=v1.4.0
+LICENSEHEADERCHECKER_VERSION=v1.5.0
 
 GOBIN=${PROJECT}/bin go install github.com/lluissm/license-header-checker/cmd/license-header-checker@${LICENSEHEADERCHECKER_VERSION}
 

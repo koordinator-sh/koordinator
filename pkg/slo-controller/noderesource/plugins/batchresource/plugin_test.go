@@ -29,9 +29,9 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/clock"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/record"
+	fakeclock "k8s.io/utils/clock/testing"
 	"k8s.io/utils/pointer"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -42,6 +42,7 @@ import (
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/noderesource/framework"
 	"github.com/koordinator-sh/koordinator/pkg/util"
+	"github.com/koordinator-sh/koordinator/pkg/util/testutil"
 )
 
 func makeResourceList(cpu, memory string) corev1.ResourceList {
@@ -211,7 +212,7 @@ func TestPlugin(t *testing.T) {
 		testOpt := &framework.Option{
 			Scheme:   testScheme,
 			Client:   fake.NewClientBuilder().WithScheme(testScheme).Build(),
-			Builder:  &builder.Builder{},
+			Builder:  builder.ControllerManagedBy(&testutil.FakeManager{}),
 			Recorder: &record.FakeRecorder{},
 		}
 		err = p.Setup(testOpt)
@@ -875,7 +876,7 @@ func TestPreUpdate(t *testing.T) {
 			testOpt := &framework.Option{
 				Scheme:   testScheme,
 				Client:   fake.NewClientBuilder().WithScheme(testScheme).Build(),
-				Builder:  &builder.Builder{},
+				Builder:  builder.ControllerManagedBy(&testutil.FakeManager{}),
 				Recorder: &record.FakeRecorder{},
 			}
 			if tt.fields.client != nil {
@@ -1394,7 +1395,7 @@ func TestPrepare(t *testing.T) {
 			testOpt := &framework.Option{
 				Scheme:   testScheme,
 				Client:   fake.NewClientBuilder().WithScheme(testScheme).Build(),
-				Builder:  &builder.Builder{},
+				Builder:  builder.ControllerManagedBy(&testutil.FakeManager{}),
 				Recorder: &record.FakeRecorder{},
 			}
 			if tt.fields.client != nil {
@@ -1618,7 +1619,7 @@ func TestPrepareWithThirdParty(t *testing.T) {
 			testOpt := &framework.Option{
 				Scheme:   testScheme,
 				Client:   fake.NewClientBuilder().WithScheme(testScheme).Build(),
-				Builder:  &builder.Builder{},
+				Builder:  builder.ControllerManagedBy(&testutil.FakeManager{}),
 				Recorder: &record.FakeRecorder{},
 			}
 			if tt.fields.client != nil {
@@ -1694,12 +1695,12 @@ func TestPluginCalculate(t *testing.T) {
 				{
 					Name:     extension.BatchCPU,
 					Quantity: resource.NewQuantity(25000, resource.DecimalSI),
-					Message:  "batchAllocatable[CPU(Milli-Core)]:25000 = nodeCapacity:100000 - nodeReservation:35000 - systemUsageOrReserved:7000 - podHPUsed:33000",
+					Message:  "batchAllocatable[CPU(Milli-Core)]:25000 = nodeCapacity:100000 - nodeSafetyMargin:35000 - systemUsageOrNodeReserved:7000 - podHPUsed:33000",
 				},
 				{
 					Name:     extension.BatchMemory,
 					Quantity: resource.NewScaledQuantity(33, 9),
-					Message:  "batchAllocatable[Mem(GB)]:33 = nodeCapacity:120 - nodeReservation:42 - systemUsage:12 - podHPUsed:33",
+					Message:  "batchAllocatable[Mem(GB)]:33 = nodeCapacity:120 - nodeSafetyMargin:42 - systemUsage:12 - podHPUsed:33",
 				},
 			},
 			wantErr: false,
@@ -1729,12 +1730,12 @@ func TestPluginCalculate(t *testing.T) {
 				{
 					Name:     extension.BatchCPU,
 					Quantity: resource.NewQuantity(25000, resource.DecimalSI),
-					Message:  "batchAllocatable[CPU(Milli-Core)]:25000 = nodeCapacity:100000 - nodeReservation:35000 - systemUsageOrReserved:7000 - podHPUsed:33000",
+					Message:  "batchAllocatable[CPU(Milli-Core)]:25000 = nodeCapacity:100000 - nodeSafetyMargin:35000 - systemUsageOrNodeReserved:7000 - podHPUsed:33000",
 				},
 				{
 					Name:     extension.BatchMemory,
 					Quantity: resource.NewScaledQuantity(33, 9),
-					Message:  "batchAllocatable[Mem(GB)]:33 = nodeCapacity:120 - nodeReservation:42 - systemUsage:12 - podHPUsed:33",
+					Message:  "batchAllocatable[Mem(GB)]:33 = nodeCapacity:120 - nodeSafetyMargin:42 - systemUsage:12 - podHPUsed:33",
 				},
 			},
 			wantErr: false,
@@ -1766,12 +1767,12 @@ func TestPluginCalculate(t *testing.T) {
 				{
 					Name:     extension.BatchCPU,
 					Quantity: resource.NewQuantity(25000, resource.DecimalSI),
-					Message:  "batchAllocatable[CPU(Milli-Core)]:25000 = nodeCapacity:100000 - nodeReservation:35000 - systemUsageOrReserved:7000 - podHPUsed:33000",
+					Message:  "batchAllocatable[CPU(Milli-Core)]:25000 = nodeCapacity:100000 - nodeSafetyMargin:35000 - systemUsageOrNodeReserved:7000 - podHPUsed:33000",
 				},
 				{
 					Name:     extension.BatchMemory,
 					Quantity: resource.NewScaledQuantity(33, 9),
-					Message:  "batchAllocatable[Mem(GB)]:33 = nodeCapacity:120 - nodeReservation:42 - systemUsage:12 - podHPUsed:33",
+					Message:  "batchAllocatable[Mem(GB)]:33 = nodeCapacity:120 - nodeSafetyMargin:42 - systemUsage:12 - podHPUsed:33",
 				},
 			},
 			wantErr: false,
@@ -1803,12 +1804,12 @@ func TestPluginCalculate(t *testing.T) {
 				{
 					Name:     extension.BatchCPU,
 					Quantity: resource.NewQuantity(12000, resource.DecimalSI),
-					Message:  "batchAllocatable[CPU(Milli-Core)]:12000 = nodeCapacity:100000 - nodeReservation:35000 - systemUsageOrReserved:20000 - podHPUsed:33000",
+					Message:  "batchAllocatable[CPU(Milli-Core)]:12000 = nodeCapacity:100000 - nodeSafetyMargin:35000 - systemUsageOrNodeReserved:20000 - podHPUsed:33000",
 				},
 				{
 					Name:     extension.BatchMemory,
 					Quantity: resource.NewScaledQuantity(33, 9),
-					Message:  "batchAllocatable[Mem(GB)]:33 = nodeCapacity:120 - nodeReservation:42 - systemUsage:12 - podHPUsed:33",
+					Message:  "batchAllocatable[Mem(GB)]:33 = nodeCapacity:120 - nodeSafetyMargin:42 - systemUsage:12 - podHPUsed:33",
 				},
 			},
 			wantErr: false,
@@ -1840,12 +1841,12 @@ func TestPluginCalculate(t *testing.T) {
 				{
 					Name:     extension.BatchCPU,
 					Quantity: resource.NewQuantity(12000, resource.DecimalSI),
-					Message:  "batchAllocatable[CPU(Milli-Core)]:12000 = nodeCapacity:100000 - nodeReservation:35000 - systemUsageOrReserved:20000 - podHPUsed:33000",
+					Message:  "batchAllocatable[CPU(Milli-Core)]:12000 = nodeCapacity:100000 - nodeSafetyMargin:35000 - systemUsageOrNodeReserved:20000 - podHPUsed:33000",
 				},
 				{
 					Name:     extension.BatchMemory,
 					Quantity: resource.NewScaledQuantity(33, 9),
-					Message:  "batchAllocatable[Mem(GB)]:33 = nodeCapacity:120 - nodeReservation:42 - systemUsage:12 - podHPUsed:33",
+					Message:  "batchAllocatable[Mem(GB)]:33 = nodeCapacity:120 - nodeSafetyMargin:42 - systemUsage:12 - podHPUsed:33",
 				},
 			},
 			wantErr: false,
@@ -1878,12 +1879,12 @@ func TestPluginCalculate(t *testing.T) {
 				{
 					Name:     extension.BatchCPU,
 					Quantity: resource.NewQuantity(22000, resource.DecimalSI),
-					Message:  "batchAllocatable[CPU(Milli-Core)]:22000 = nodeCapacity:100000 - nodeReservation:35000 - systemUsageOrReserved:10000 - podHPUsed:33000",
+					Message:  "batchAllocatable[CPU(Milli-Core)]:22000 = nodeCapacity:100000 - nodeSafetyMargin:35000 - systemUsageOrNodeReserved:10000 - podHPUsed:33000",
 				},
 				{
 					Name:     extension.BatchMemory,
 					Quantity: resource.NewScaledQuantity(33, 9),
-					Message:  "batchAllocatable[Mem(GB)]:33 = nodeCapacity:120 - nodeReservation:42 - systemUsage:12 - podHPUsed:33",
+					Message:  "batchAllocatable[Mem(GB)]:33 = nodeCapacity:120 - nodeSafetyMargin:42 - systemUsage:12 - podHPUsed:33",
 				},
 			},
 			wantErr: false,
@@ -1915,12 +1916,12 @@ func TestPluginCalculate(t *testing.T) {
 				{
 					Name:     extension.BatchCPU,
 					Quantity: resource.NewQuantity(25000, resource.DecimalSI),
-					Message:  "batchAllocatable[CPU(Milli-Core)]:25000 = nodeCapacity:100000 - nodeReservation:35000 - systemUsageOrReserved:7000 - podHPUsed:33000",
+					Message:  "batchAllocatable[CPU(Milli-Core)]:25000 = nodeCapacity:100000 - nodeSafetyMargin:35000 - systemUsageOrNodeReserved:7000 - podHPUsed:33000",
 				},
 				{
 					Name:     extension.BatchMemory,
 					Quantity: resource.NewScaledQuantity(25, 9),
-					Message:  "batchAllocatable[Mem(GB)]:25 = nodeCapacity:120 - nodeReservation:42 - systemUsage:20 - podHPUsed:33",
+					Message:  "batchAllocatable[Mem(GB)]:25 = nodeCapacity:120 - nodeSafetyMargin:42 - systemUsage:20 - podHPUsed:33",
 				},
 			},
 			wantErr: false,
@@ -1952,12 +1953,12 @@ func TestPluginCalculate(t *testing.T) {
 				{
 					Name:     extension.BatchCPU,
 					Quantity: resource.NewQuantity(25000, resource.DecimalSI),
-					Message:  "batchAllocatable[CPU(Milli-Core)]:25000 = nodeCapacity:100000 - nodeReservation:35000 - systemUsageOrReserved:7000 - podHPUsed:33000",
+					Message:  "batchAllocatable[CPU(Milli-Core)]:25000 = nodeCapacity:100000 - nodeSafetyMargin:35000 - systemUsageOrNodeReserved:7000 - podHPUsed:33000",
 				},
 				{
 					Name:     extension.BatchMemory,
 					Quantity: resource.NewScaledQuantity(33, 9),
-					Message:  "batchAllocatable[Mem(GB)]:33 = nodeCapacity:120 - nodeReservation:42 - systemUsage:12 - podHPUsed:33",
+					Message:  "batchAllocatable[Mem(GB)]:33 = nodeCapacity:120 - nodeSafetyMargin:42 - systemUsage:12 - podHPUsed:33",
 				},
 			},
 			wantErr: false,
@@ -1992,12 +1993,12 @@ func TestPluginCalculate(t *testing.T) {
 				{
 					Name:     extension.BatchCPU,
 					Quantity: resource.NewQuantity(25000, resource.DecimalSI),
-					Message:  "batchAllocatable[CPU(Milli-Core)]:25000 = nodeCapacity:100000 - nodeReservation:35000 - systemUsageOrReserved:7000 - podHPUsed:33000",
+					Message:  "batchAllocatable[CPU(Milli-Core)]:25000 = nodeCapacity:100000 - nodeSafetyMargin:35000 - systemUsageOrNodeReserved:7000 - podHPUsed:33000",
 				},
 				{
 					Name:     extension.BatchMemory,
 					Quantity: resource.NewScaledQuantity(33, 9),
-					Message:  "batchAllocatable[Mem(GB)]:33 = nodeCapacity:120 - nodeReservation:42 - systemUsage:12 - podHPUsed:33",
+					Message:  "batchAllocatable[Mem(GB)]:33 = nodeCapacity:120 - nodeSafetyMargin:42 - systemUsage:12 - podHPUsed:33",
 				},
 			},
 			wantErr: false,
@@ -2032,12 +2033,12 @@ func TestPluginCalculate(t *testing.T) {
 				{
 					Name:     extension.BatchCPU,
 					Quantity: resource.NewQuantity(22000, resource.DecimalSI),
-					Message:  "batchAllocatable[CPU(Milli-Core)]:22000 = nodeCapacity:100000 - nodeReservation:35000 - systemUsageOrReserved:10000 - podHPUsed:33000",
+					Message:  "batchAllocatable[CPU(Milli-Core)]:22000 = nodeCapacity:100000 - nodeSafetyMargin:35000 - systemUsageOrNodeReserved:10000 - podHPUsed:33000",
 				},
 				{
 					Name:     extension.BatchMemory,
 					Quantity: resource.NewScaledQuantity(25, 9),
-					Message:  "batchAllocatable[Mem(GB)]:25 = nodeCapacity:120 - nodeReservation:42 - systemUsage:20 - podHPUsed:33",
+					Message:  "batchAllocatable[Mem(GB)]:25 = nodeCapacity:120 - nodeSafetyMargin:42 - systemUsage:20 - podHPUsed:33",
 				},
 			},
 			wantErr: false,
@@ -2072,12 +2073,12 @@ func TestPluginCalculate(t *testing.T) {
 				{
 					Name:     extension.BatchCPU,
 					Quantity: resource.NewQuantity(22000, resource.DecimalSI),
-					Message:  "batchAllocatable[CPU(Milli-Core)]:22000 = nodeCapacity:100000 - nodeReservation:35000 - systemUsageOrReserved:10000 - podHPUsed:33000",
+					Message:  "batchAllocatable[CPU(Milli-Core)]:22000 = nodeCapacity:100000 - nodeSafetyMargin:35000 - systemUsageOrNodeReserved:10000 - podHPUsed:33000",
 				},
 				{
 					Name:     extension.BatchMemory,
 					Quantity: resource.NewScaledQuantity(25, 9),
-					Message:  "batchAllocatable[Mem(GB)]:25 = nodeCapacity:120 - nodeReservation:42 - systemUsage:20 - podHPUsed:33",
+					Message:  "batchAllocatable[Mem(GB)]:25 = nodeCapacity:120 - nodeSafetyMargin:42 - systemUsage:20 - podHPUsed:33",
 				},
 			},
 			wantErr: false,
@@ -2112,12 +2113,12 @@ func TestPluginCalculate(t *testing.T) {
 				{
 					Name:     extension.BatchCPU,
 					Quantity: resource.NewQuantity(22000, resource.DecimalSI),
-					Message:  "batchAllocatable[CPU(Milli-Core)]:22000 = nodeCapacity:100000 - nodeReservation:35000 - systemUsageOrReserved:10000 - podHPUsed:33000",
+					Message:  "batchAllocatable[CPU(Milli-Core)]:22000 = nodeCapacity:100000 - nodeSafetyMargin:35000 - systemUsageOrNodeReserved:10000 - podHPUsed:33000",
 				},
 				{
 					Name:     extension.BatchMemory,
 					Quantity: resource.NewScaledQuantity(25, 9),
-					Message:  "batchAllocatable[Mem(GB)]:25 = nodeCapacity:120 - nodeReservation:42 - systemUsage:20 - podHPUsed:33",
+					Message:  "batchAllocatable[Mem(GB)]:25 = nodeCapacity:120 - nodeSafetyMargin:42 - systemUsage:20 - podHPUsed:33",
 				},
 			},
 			wantErr: false,
@@ -2148,12 +2149,12 @@ func TestPluginCalculate(t *testing.T) {
 				{
 					Name:     extension.BatchCPU,
 					Quantity: resource.NewQuantity(30000, resource.DecimalSI),
-					Message:  "batchAllocatable[CPU(Milli-Core)]:30000 = nodeCapacity:100000 - nodeReservation:30000 - systemUsageOrReserved:7000 - podHPUsed:33000",
+					Message:  "batchAllocatable[CPU(Milli-Core)]:30000 = nodeCapacity:100000 - nodeSafetyMargin:30000 - systemUsageOrNodeReserved:7000 - podHPUsed:33000",
 				},
 				{
 					Name:     extension.BatchMemory,
 					Quantity: resource.NewScaledQuantity(36, 9),
-					Message:  "batchAllocatable[Mem(GB)]:36 = nodeCapacity:120 - nodeReservation:24 - systemReserved:0 - podHPRequest:60",
+					Message:  "batchAllocatable[Mem(GB)]:36 = nodeCapacity:120 - nodeSafetyMargin:24 - nodeReserved:0 - podHPRequest:60",
 				},
 			},
 			wantErr: false,
@@ -2189,12 +2190,12 @@ func TestPluginCalculate(t *testing.T) {
 				{
 					Name:     extension.BatchCPU,
 					Quantity: resource.NewQuantity(30000, resource.DecimalSI),
-					Message:  "batchAllocatable[CPU(Milli-Core)]:30000 = nodeCapacity:100000 - nodeReservation:30000 - systemUsageOrReserved:7000 - podHPUsed:33000",
+					Message:  "batchAllocatable[CPU(Milli-Core)]:30000 = nodeCapacity:100000 - nodeSafetyMargin:30000 - systemUsageOrNodeReserved:7000 - podHPUsed:33000",
 				},
 				{
 					Name:     extension.BatchMemory,
 					Quantity: resource.NewScaledQuantity(31, 9),
-					Message:  "batchAllocatable[Mem(GB)]:31 = nodeCapacity:120 - nodeReservation:24 - systemReserved:5 - podHPRequest:60",
+					Message:  "batchAllocatable[Mem(GB)]:31 = nodeCapacity:120 - nodeSafetyMargin:24 - nodeReserved:5 - podHPRequest:60",
 				},
 			},
 			wantErr: false,
@@ -2230,12 +2231,12 @@ func TestPluginCalculate(t *testing.T) {
 				{
 					Name:     extension.BatchCPU,
 					Quantity: resource.NewQuantity(27000, resource.DecimalSI),
-					Message:  "batchAllocatable[CPU(Milli-Core)]:27000 = nodeCapacity:100000 - nodeReservation:30000 - systemUsageOrReserved:10000 - podHPUsed:33000",
+					Message:  "batchAllocatable[CPU(Milli-Core)]:27000 = nodeCapacity:100000 - nodeSafetyMargin:30000 - systemUsageOrNodeReserved:10000 - podHPUsed:33000",
 				},
 				{
 					Name:     extension.BatchMemory,
 					Quantity: resource.NewScaledQuantity(16, 9),
-					Message:  "batchAllocatable[Mem(GB)]:16 = nodeCapacity:120 - nodeReservation:24 - systemReserved:20 - podHPRequest:60",
+					Message:  "batchAllocatable[Mem(GB)]:16 = nodeCapacity:120 - nodeSafetyMargin:24 - nodeReserved:20 - podHPRequest:60",
 				},
 			},
 			wantErr: false,
@@ -2271,12 +2272,12 @@ func TestPluginCalculate(t *testing.T) {
 				{
 					Name:     extension.BatchCPU,
 					Quantity: resource.NewQuantity(30000, resource.DecimalSI),
-					Message:  "batchAllocatable[CPU(Milli-Core)]:30000 = nodeCapacity:100000 - nodeReservation:30000 - systemUsageOrReserved:7000 - podHPUsed:33000",
+					Message:  "batchAllocatable[CPU(Milli-Core)]:30000 = nodeCapacity:100000 - nodeSafetyMargin:30000 - systemUsageOrNodeReserved:7000 - podHPUsed:33000",
 				},
 				{
 					Name:     extension.BatchMemory,
 					Quantity: resource.NewScaledQuantity(26, 9),
-					Message:  "batchAllocatable[Mem(GB)]:26 = nodeCapacity:120 - nodeReservation:24 - systemReserved:10 - podHPRequest:60",
+					Message:  "batchAllocatable[Mem(GB)]:26 = nodeCapacity:120 - nodeSafetyMargin:24 - nodeReserved:10 - podHPRequest:60",
 				},
 			},
 			wantErr: false,
@@ -2435,12 +2436,12 @@ func TestPluginCalculate(t *testing.T) {
 				{
 					Name:     extension.BatchCPU,
 					Quantity: resource.NewQuantity(25000, resource.DecimalSI),
-					Message:  "batchAllocatable[CPU(Milli-Core)]:25000 = nodeCapacity:100000 - nodeReservation:35000 - systemUsageOrReserved:7000 - podHPUsed:33000",
+					Message:  "batchAllocatable[CPU(Milli-Core)]:25000 = nodeCapacity:100000 - nodeSafetyMargin:35000 - systemUsageOrNodeReserved:7000 - podHPUsed:33000",
 				},
 				{
 					Name:     extension.BatchMemory,
 					Quantity: resource.NewScaledQuantity(33, 9),
-					Message:  "batchAllocatable[Mem(GB)]:33 = nodeCapacity:120 - nodeReservation:42 - systemUsage:12 - podHPUsed:33",
+					Message:  "batchAllocatable[Mem(GB)]:33 = nodeCapacity:120 - nodeSafetyMargin:42 - systemUsage:12 - podHPUsed:33",
 				},
 			},
 			wantErr: false,
@@ -2534,12 +2535,12 @@ func TestPluginCalculate(t *testing.T) {
 				{
 					Name:     extension.BatchCPU,
 					Quantity: resource.NewQuantity(35000, resource.DecimalSI),
-					Message:  "batchAllocatable[CPU(Milli-Core)]:35000 = nodeCapacity:100000 - nodeReservation:35000 - systemUsageOrReserved:5000 - podHPUsed:25000",
+					Message:  "batchAllocatable[CPU(Milli-Core)]:35000 = nodeCapacity:100000 - nodeSafetyMargin:35000 - systemUsageOrNodeReserved:5000 - podHPUsed:25000",
 				},
 				{
 					Name:     extension.BatchMemory,
 					Quantity: resource.NewScaledQuantity(43, 9),
-					Message:  "batchAllocatable[Mem(GB)]:43 = nodeCapacity:120 - nodeReservation:42 - systemUsage:10 - podHPUsed:25",
+					Message:  "batchAllocatable[Mem(GB)]:43 = nodeCapacity:120 - nodeSafetyMargin:42 - systemUsage:10 - podHPUsed:25",
 				},
 			},
 			wantErr: false,
@@ -2698,12 +2699,12 @@ func TestPluginCalculate(t *testing.T) {
 				{
 					Name:     extension.BatchCPU,
 					Quantity: resource.NewQuantity(20000, resource.DecimalSI),
-					Message:  "batchAllocatable[CPU(Milli-Core)]:20000 = nodeCapacity:100000 - nodeReservation:35000 - systemUsageOrReserved:7000 - podHPUsed:38000",
+					Message:  "batchAllocatable[CPU(Milli-Core)]:20000 = nodeCapacity:100000 - nodeSafetyMargin:35000 - systemUsageOrNodeReserved:7000 - podHPUsed:38000",
 				},
 				{
 					Name:     extension.BatchMemory,
 					Quantity: resource.NewScaledQuantity(33, 9),
-					Message:  "batchAllocatable[Mem(GB)]:33 = nodeCapacity:120 - nodeReservation:42 - systemUsage:12 - podHPUsed:33",
+					Message:  "batchAllocatable[Mem(GB)]:33 = nodeCapacity:120 - nodeSafetyMargin:42 - systemUsage:12 - podHPUsed:33",
 				},
 			},
 			wantErr: false,
@@ -2890,7 +2891,7 @@ func TestPluginCalculate(t *testing.T) {
 				{
 					Name:     extension.BatchCPU,
 					Quantity: resource.NewQuantity(25000, resource.DecimalSI),
-					Message:  "batchAllocatable[CPU(Milli-Core)]:25000 = nodeCapacity:100000 - nodeReservation:35000 - systemUsageOrReserved:7000 - podHPUsed:33000",
+					Message:  "batchAllocatable[CPU(Milli-Core)]:25000 = nodeCapacity:100000 - nodeSafetyMargin:35000 - systemUsageOrNodeReserved:7000 - podHPUsed:33000",
 					ZoneQuantity: map[string]resource.Quantity{
 						util.GenNodeZoneName(0): *resource.NewQuantity(25000, resource.DecimalSI),
 					},
@@ -2898,7 +2899,7 @@ func TestPluginCalculate(t *testing.T) {
 				{
 					Name:     extension.BatchMemory,
 					Quantity: resource.NewScaledQuantity(33, 9),
-					Message:  "batchAllocatable[Mem(GB)]:33 = nodeCapacity:120 - nodeReservation:42 - systemUsage:12 - podHPUsed:33",
+					Message:  "batchAllocatable[Mem(GB)]:33 = nodeCapacity:120 - nodeSafetyMargin:42 - systemUsage:12 - podHPUsed:33",
 					ZoneQuantity: map[string]resource.Quantity{
 						util.GenNodeZoneName(0): *resource.NewScaledQuantity(33, 9),
 					},
@@ -3115,7 +3116,7 @@ func TestPluginCalculate(t *testing.T) {
 				{
 					Name:     extension.BatchCPU,
 					Quantity: resource.NewQuantity(25000, resource.DecimalSI),
-					Message:  "batchAllocatable[CPU(Milli-Core)]:25000 = nodeCapacity:100000 - nodeReservation:35000 - systemUsageOrReserved:7000 - podHPUsed:33000",
+					Message:  "batchAllocatable[CPU(Milli-Core)]:25000 = nodeCapacity:100000 - nodeSafetyMargin:35000 - systemUsageOrNodeReserved:7000 - podHPUsed:33000",
 					ZoneQuantity: map[string]resource.Quantity{
 						util.GenNodeZoneName(0): *resource.NewQuantity(10000, resource.DecimalSI), // 50 - 17.5 - 3.5 - (14 + 5)
 						util.GenNodeZoneName(1): *resource.NewQuantity(15000, resource.DecimalSI), // 50 - 17.5 - 3.5 - 14
@@ -3124,7 +3125,7 @@ func TestPluginCalculate(t *testing.T) {
 				{
 					Name:     extension.BatchMemory,
 					Quantity: resource.NewScaledQuantity(33, 9),
-					Message:  "batchAllocatable[Mem(GB)]:33 = nodeCapacity:120 - nodeReservation:42 - systemUsage:12 - podHPUsed:33",
+					Message:  "batchAllocatable[Mem(GB)]:33 = nodeCapacity:120 - nodeSafetyMargin:42 - systemUsage:12 - podHPUsed:33",
 					ZoneQuantity: map[string]resource.Quantity{
 						util.GenNodeZoneName(0): *resource.NewScaledQuantity(15300, 6), // 62 - 21.7(62*0.35) - 6 - (14 + 5)
 						util.GenNodeZoneName(1): *resource.NewScaledQuantity(17700, 6), // 58 - 20.3(58*0.35) - 6 - 14
@@ -3345,7 +3346,7 @@ func TestPluginCalculate(t *testing.T) {
 				{
 					Name:     extension.BatchCPU,
 					Quantity: resource.NewQuantity(20000, resource.DecimalSI),
-					Message:  "batchAllocatable[CPU(Milli-Core)]:20000 = nodeCapacity:100000 - nodeReservation:35000 - systemUsageOrReserved:7000 - podHPUsed:38000",
+					Message:  "batchAllocatable[CPU(Milli-Core)]:20000 = nodeCapacity:100000 - nodeSafetyMargin:35000 - systemUsageOrNodeReserved:7000 - podHPUsed:38000",
 					ZoneQuantity: map[string]resource.Quantity{
 						util.GenNodeZoneName(0): *resource.NewQuantity(5000, resource.DecimalSI),  // 50 - 17.5 - 3.5 - (14 + 10)
 						util.GenNodeZoneName(1): *resource.NewQuantity(15000, resource.DecimalSI), // 50 - 17.5 - 3.5 - 14
@@ -3354,7 +3355,7 @@ func TestPluginCalculate(t *testing.T) {
 				{
 					Name:     extension.BatchMemory,
 					Quantity: resource.NewScaledQuantity(18, 9),
-					Message:  "batchAllocatable[Mem(GB)]:18 = nodeCapacity:120 - nodeReservation:42 - systemReserved:0 - podHPRequest:60",
+					Message:  "batchAllocatable[Mem(GB)]:18 = nodeCapacity:120 - nodeSafetyMargin:42 - nodeReserved:0 - podHPRequest:60",
 					ZoneQuantity: map[string]resource.Quantity{
 						util.GenNodeZoneName(0): *resource.NewScaledQuantity(5300, 6),  // 62 - 21.7(62*0.35) - (25 + 10)
 						util.GenNodeZoneName(1): *resource.NewScaledQuantity(12700, 6), // 58 - 20.3(58*0.35) - 25
@@ -3575,7 +3576,7 @@ func TestPluginCalculate(t *testing.T) {
 				{
 					Name:     extension.BatchCPU,
 					Quantity: resource.NewQuantity(18000, resource.DecimalSI),
-					Message:  "batchAllocatable[CPU(Milli-Core)]:18000 = nodeCapacity:100000 - nodeReservation:35000 - systemUsageOrReserved:7000 - podHPUsed:40000",
+					Message:  "batchAllocatable[CPU(Milli-Core)]:18000 = nodeCapacity:100000 - nodeSafetyMargin:35000 - systemUsageOrNodeReserved:7000 - podHPUsed:40000",
 					ZoneQuantity: map[string]resource.Quantity{
 						util.GenNodeZoneName(0): *resource.NewQuantity(4000, resource.DecimalSI),  // 50 - 17.5 - 3.5 - (14 + 10 + 1)
 						util.GenNodeZoneName(1): *resource.NewQuantity(14000, resource.DecimalSI), // 50 - 17.5 - 3.5 - (14 + 1)
@@ -3584,7 +3585,7 @@ func TestPluginCalculate(t *testing.T) {
 				{
 					Name:     extension.BatchMemory,
 					Quantity: resource.NewScaledQuantity(18, 9),
-					Message:  "batchAllocatable[Mem(GB)]:18 = nodeCapacity:120 - nodeReservation:42 - systemReserved:0 - podHPRequest:60",
+					Message:  "batchAllocatable[Mem(GB)]:18 = nodeCapacity:120 - nodeSafetyMargin:42 - nodeReserved:0 - podHPRequest:60",
 					ZoneQuantity: map[string]resource.Quantity{
 						util.GenNodeZoneName(0): *resource.NewScaledQuantity(5300, 6),  // 62 - 21.7(62*0.35) - (25 + 10)
 						util.GenNodeZoneName(1): *resource.NewScaledQuantity(12700, 6), // 58 - 20.3(58*0.35) - 25
@@ -3621,12 +3622,12 @@ func TestPluginCalculate(t *testing.T) {
 				{
 					Name:     extension.BatchCPU,
 					Quantity: resource.NewQuantity(21000, resource.DecimalSI),
-					Message:  "batchAllocatable[CPU(Milli-Core)]:21000 = nodeCapacity:100000 - nodeReservation:30000 - systemUsageOrReserved:7000 - podHPMaxUsedRequest:42000",
+					Message:  "batchAllocatable[CPU(Milli-Core)]:21000 = nodeCapacity:100000 - nodeSafetyMargin:30000 - systemUsageOrNodeReserved:7000 - podHPMaxUsedRequest:42000",
 				},
 				{
 					Name:     extension.BatchMemory,
 					Quantity: resource.NewScaledQuantity(36, 9),
-					Message:  "batchAllocatable[Mem(GB)]:36 = nodeCapacity:120 - nodeReservation:24 - systemReserved:0 - podHPRequest:60",
+					Message:  "batchAllocatable[Mem(GB)]:36 = nodeCapacity:120 - nodeSafetyMargin:24 - nodeReserved:0 - podHPRequest:60",
 				},
 			},
 			wantErr: false,
@@ -3659,12 +3660,12 @@ func TestPluginCalculate(t *testing.T) {
 				{
 					Name:     extension.BatchCPU,
 					Quantity: resource.NewQuantity(101000, resource.DecimalSI),
-					Message:  "batchAllocatable[CPU(Milli-Core)]:101000 = nodeCapacity:100000 - nodeReservation:-50000 - systemUsageOrReserved:7000 - podHPMaxUsedRequest:42000",
+					Message:  "batchAllocatable[CPU(Milli-Core)]:101000 = nodeCapacity:100000 - nodeSafetyMargin:-50000 - systemUsageOrNodeReserved:7000 - podHPMaxUsedRequest:42000",
 				},
 				{
 					Name:     extension.BatchMemory,
 					Quantity: resource.NewScaledQuantity(84, 9),
-					Message:  "batchAllocatable[Mem(GB)]:84 = nodeCapacity:120 - nodeReservation:-24 - systemReserved:0 - podHPRequest:60",
+					Message:  "batchAllocatable[Mem(GB)]:84 = nodeCapacity:120 - nodeSafetyMargin:-24 - nodeReserved:0 - podHPRequest:60",
 				},
 			},
 			wantErr: false,
@@ -3720,12 +3721,12 @@ func TestPluginCalculate(t *testing.T) {
 				{
 					Name:     extension.BatchCPU,
 					Quantity: resource.NewQuantity(25000, resource.DecimalSI),
-					Message:  "batchAllocatable[CPU(Milli-Core)]:25000 = nodeCapacity:100000 - nodeReservation:35000 - systemUsageOrReserved:7000 - podHPUsed:33000",
+					Message:  "batchAllocatable[CPU(Milli-Core)]:25000 = nodeCapacity:100000 - nodeSafetyMargin:35000 - systemUsageOrNodeReserved:7000 - podHPUsed:33000",
 				},
 				{
 					Name:     extension.BatchMemory,
 					Quantity: resource.NewScaledQuantity(33, 9),
-					Message:  "batchAllocatable[Mem(GB)]:33 = nodeCapacity:120 - nodeReservation:42 - systemUsage:12 - podHPUsed:33",
+					Message:  "batchAllocatable[Mem(GB)]:33 = nodeCapacity:120 - nodeSafetyMargin:42 - systemUsage:12 - podHPUsed:33",
 				},
 			},
 			wantErr: false,
@@ -3781,12 +3782,12 @@ func TestPluginCalculate(t *testing.T) {
 				{
 					Name:     extension.BatchCPU,
 					Quantity: resource.NewQuantity(28000, resource.DecimalSI),
-					Message:  "batchAllocatable[CPU(Milli-Core)]:28000 = nodeCapacity:100000 - nodeReservation:35000 - systemUsageOrReserved:4000 - podHPUsed:33000",
+					Message:  "batchAllocatable[CPU(Milli-Core)]:28000 = nodeCapacity:100000 - nodeSafetyMargin:35000 - systemUsageOrNodeReserved:4000 - podHPUsed:33000",
 				},
 				{
 					Name:     extension.BatchMemory,
 					Quantity: resource.NewScaledQuantity(39, 9),
-					Message:  "batchAllocatable[Mem(GB)]:39 = nodeCapacity:120 - nodeReservation:42 - systemUsage:6 - podHPUsed:33",
+					Message:  "batchAllocatable[Mem(GB)]:39 = nodeCapacity:120 - nodeSafetyMargin:42 - systemUsage:6 - podHPUsed:33",
 				},
 			},
 			wantErr: false,
@@ -4005,7 +4006,7 @@ func TestPluginCalculate(t *testing.T) {
 				{
 					Name:     extension.BatchCPU,
 					Quantity: resource.NewQuantity(14000, resource.DecimalSI),
-					Message:  "batchAllocatable[CPU(Milli-Core)]:14000 = nodeCapacity:100000 - nodeReservation:35000 - systemUsageOrReserved:7000 - podHPUsed:44000",
+					Message:  "batchAllocatable[CPU(Milli-Core)]:14000 = nodeCapacity:100000 - nodeSafetyMargin:35000 - systemUsageOrNodeReserved:7000 - podHPUsed:44000",
 					ZoneQuantity: map[string]resource.Quantity{
 						util.GenNodeZoneName(0): *resource.NewQuantity(2000, resource.DecimalSI),  // 50 - 17.5 - 3.5 - (14 + 10 + 1 + 2)
 						util.GenNodeZoneName(1): *resource.NewQuantity(12000, resource.DecimalSI), // 50 - 17.5 - 3.5 - (14 + 1 + 2)
@@ -4014,7 +4015,7 @@ func TestPluginCalculate(t *testing.T) {
 				{
 					Name:     extension.BatchMemory,
 					Quantity: resource.NewScaledQuantity(18, 9),
-					Message:  "batchAllocatable[Mem(GB)]:18 = nodeCapacity:120 - nodeReservation:42 - systemReserved:0 - podHPRequest:60",
+					Message:  "batchAllocatable[Mem(GB)]:18 = nodeCapacity:120 - nodeSafetyMargin:42 - nodeReserved:0 - podHPRequest:60",
 					ZoneQuantity: map[string]resource.Quantity{
 						util.GenNodeZoneName(0): *resource.NewScaledQuantity(5300, 6),  // 62 - 21.7(62*0.35) - (25 + 10)
 						util.GenNodeZoneName(1): *resource.NewScaledQuantity(12700, 6), // 58 - 20.3(58*0.35) - 25
@@ -4033,7 +4034,7 @@ func TestPluginCalculate(t *testing.T) {
 			testOpt := &framework.Option{
 				Scheme:   testScheme,
 				Client:   fake.NewClientBuilder().WithScheme(testScheme).Build(),
-				Builder:  &builder.Builder{},
+				Builder:  builder.ControllerManagedBy(&testutil.FakeManager{}),
 				Recorder: &record.FakeRecorder{},
 			}
 			if tt.fields.client != nil {
@@ -4060,7 +4061,7 @@ func TestPluginCalculate(t *testing.T) {
 func TestPlugin_isDegradeNeeded(t *testing.T) {
 	const degradeTimeoutMinutes = 10
 	type fields struct {
-		Clock clock.Clock
+		Clock *fakeclock.FakeClock
 	}
 	type args struct {
 		strategy   *configuration.ColocationStrategy
@@ -4076,7 +4077,7 @@ func TestPlugin_isDegradeNeeded(t *testing.T) {
 		{
 			name: "empty NodeMetric should degrade",
 			fields: fields{
-				Clock: clock.RealClock{},
+				Clock: &fakeclock.FakeClock{},
 			},
 			args: args{
 				nodeMetric: nil,
@@ -4086,7 +4087,7 @@ func TestPlugin_isDegradeNeeded(t *testing.T) {
 		{
 			name: "empty NodeMetric status should degrade",
 			fields: fields{
-				Clock: clock.RealClock{},
+				Clock: &fakeclock.FakeClock{},
 			},
 			args: args{
 				nodeMetric: &slov1alpha1.NodeMetric{},
@@ -4096,7 +4097,7 @@ func TestPlugin_isDegradeNeeded(t *testing.T) {
 		{
 			name: "outdated NodeMetric status should degrade",
 			fields: fields{
-				Clock: clock.RealClock{},
+				Clock: nil,
 			},
 			args: args{
 				strategy: &configuration.ColocationStrategy{
@@ -4131,7 +4132,7 @@ func TestPlugin_isDegradeNeeded(t *testing.T) {
 		{
 			name: "outdated NodeMetric status should degrade 1",
 			fields: fields{
-				Clock: clock.NewFakeClock(time.Now().Add(time.Minute * (degradeTimeoutMinutes + 1))),
+				Clock: fakeclock.NewFakeClock(time.Now().Add(time.Minute * (degradeTimeoutMinutes + 1))),
 			},
 			args: args{
 				strategy: &configuration.ColocationStrategy{
@@ -4166,11 +4167,13 @@ func TestPlugin_isDegradeNeeded(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			oldClock := Clock
-			Clock = tt.fields.Clock
-			defer func() {
-				Clock = oldClock
-			}()
+			if tt.fields.Clock != nil {
+				oldClock := Clock
+				Clock = tt.fields.Clock
+				defer func() {
+					Clock = oldClock
+				}()
+			}
 
 			p := &Plugin{}
 			assert.Equal(t, tt.want, p.isDegradeNeeded(tt.args.strategy, tt.args.nodeMetric, tt.args.node))

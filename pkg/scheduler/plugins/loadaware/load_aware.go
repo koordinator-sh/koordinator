@@ -42,6 +42,7 @@ import (
 
 const (
 	Name                                    = "LoadAwareScheduling"
+	ErrReasonNodeMetricExpired              = "node(s) nodeMetric expired"
 	ErrReasonUsageExceedThreshold           = "node(s) %s usage exceed threshold"
 	ErrReasonAggregatedUsageExceedThreshold = "node(s) %s aggregated usage exceed threshold"
 	ErrReasonFailedEstimatePod
@@ -111,12 +112,12 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 
 func (p *Plugin) Name() string { return Name }
 
-func (p *Plugin) EventsToRegister() []framework.ClusterEvent {
+func (p *Plugin) EventsToRegister() []framework.ClusterEventWithHint {
 	// To register a custom event, follow the naming convention at:
 	// https://github.com/kubernetes/kubernetes/blob/e1ad9bee5bba8fbe85a6bf6201379ce8b1a611b1/pkg/scheduler/eventhandlers.go#L415-L422
 	gvk := fmt.Sprintf("nodemetrics.%v.%v", slov1alpha1.GroupVersion.Version, slov1alpha1.GroupVersion.Group)
-	return []framework.ClusterEvent{
-		{Resource: framework.GVK(gvk), ActionType: framework.Add | framework.Update | framework.Delete},
+	return []framework.ClusterEventWithHint{
+		{Event: framework.ClusterEvent{Resource: framework.GVK(gvk), ActionType: framework.Add | framework.Update | framework.Delete}},
 	}
 }
 
@@ -143,6 +144,9 @@ func (p *Plugin) Filter(ctx context.Context, state *framework.CycleState, pod *c
 
 	if p.args.FilterExpiredNodeMetrics != nil && *p.args.FilterExpiredNodeMetrics &&
 		p.args.NodeMetricExpirationSeconds != nil && isNodeMetricExpired(nodeMetric, *p.args.NodeMetricExpirationSeconds) {
+		if p.args.EnableScheduleWhenNodeMetricsExpired != nil && !*p.args.EnableScheduleWhenNodeMetricsExpired {
+			return framework.NewStatus(framework.Unschedulable, ErrReasonNodeMetricExpired)
+		}
 		return nil
 	}
 

@@ -17,6 +17,8 @@ limitations under the License.
 package helpers
 
 import (
+	"context"
+
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/klog/v2"
 
@@ -44,7 +46,7 @@ func KillContainers(pod *corev1.Pod, message string) {
 				klog.Errorf("%s, kill container(%s) error! GetRuntimeHandler fail! error: %v", message, containerStatus.ContainerID, err)
 				continue
 			}
-			if err := runtimeHandler.StopContainer(containerID, 0); err != nil {
+			if err := runtimeHandler.StopContainer(context.Background(), containerID, 0); err != nil {
 				klog.Errorf("%s, stop container error! error: %v", message, err)
 			}
 		} else {

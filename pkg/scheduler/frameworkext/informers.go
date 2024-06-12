@@ -40,7 +40,6 @@ import (
 	"k8s.io/kubernetes/pkg/apis/storage"
 	storagev1adapt "k8s.io/kubernetes/pkg/apis/storage/v1"
 	storagev1beta1adapt "k8s.io/kubernetes/pkg/apis/storage/v1beta1"
-	"k8s.io/kubernetes/pkg/features"
 
 	koordfeatures "github.com/koordinator-sh/koordinator/pkg/features"
 )
@@ -50,7 +49,7 @@ func SetupCustomInformers(informerFactory informers.SharedInformerFactory) {
 		// Versions below k8s v1.22 need to disable CSIStorageCapacity
 		disableCSIStorageCapacityInformer(informerFactory)
 	} else if k8sfeature.DefaultFeatureGate.Enabled(koordfeatures.CompatibleCSIStorageCapacity) &&
-		k8sfeature.DefaultFeatureGate.Enabled(features.CSIStorageCapacity) {
+		k8sfeature.DefaultFeatureGate.Enabled(koordfeatures.CSIStorageCapacity) {
 		// The k8s v1.22 version needs to enable the FeatureGate to convert v1beta1.CSIStorageCapacity to v1.CSIStorageCapacity
 		setupCompatibleCSICapacityInformer(informerFactory)
 	}
@@ -58,7 +57,7 @@ func SetupCustomInformers(informerFactory informers.SharedInformerFactory) {
 	if k8sfeature.DefaultFeatureGate.Enabled(koordfeatures.DisablePodDisruptionBudgetInformer) {
 		disablePodDisruptionBudgetInformer(informerFactory)
 	} else if k8sfeature.DefaultFeatureGate.Enabled(koordfeatures.CompatiblePodDisruptionBudget) &&
-		k8sfeature.DefaultFeatureGate.Enabled(features.PodDisruptionBudget) {
+		k8sfeature.DefaultFeatureGate.Enabled(koordfeatures.PodDisruptionBudget) {
 		// Versions below k8s v1.22 need to enable the FeatureGate to convert v1beta1.PodDisruptionBudget to v1.PodDisruptionBudget
 		setupCompatiblePodDisruptionBudgetInformer(informerFactory)
 	}

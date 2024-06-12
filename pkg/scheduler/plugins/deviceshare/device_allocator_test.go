@@ -866,9 +866,6 @@ func TestAutopilotAllocator(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			randIntnFn = func(n int) int {
-				return 0
-			}
 			deviceCR := tt.deviceCR.DeepCopy()
 			deviceCR.ResourceVersion = "1"
 			koordFakeClient := koordfake.NewSimpleClientset()
@@ -1706,9 +1703,6 @@ func TestAutopilotAllocatorWithExclusivePolicyAndRequiredScope(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			randIntnFn = func(n int) int {
-				return 0
-			}
 			deviceCR := tt.deviceCR.DeepCopy()
 			deviceCR.ResourceVersion = "1"
 			koordFakeClient := koordfake.NewSimpleClientset()

@@ -33,7 +33,9 @@ import (
 	"k8s.io/klog/v2"
 	"k8s.io/klog/v2/klogr"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
 	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
+	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	"github.com/koordinator-sh/koordinator/cmd/koord-manager/extensions"
 	"github.com/koordinator-sh/koordinator/cmd/koord-manager/options"
@@ -70,8 +72,8 @@ func main() {
 	flag.BoolVar(&enableLeaderElection, "enable-leader-election", true, "Whether you need to enable leader election.")
 	flag.StringVar(&leaderElectionNamespace, "leader-election-namespace", "koordinator-system",
 		"This determines the namespace in which the leader election configmap will be created, it will use in-cluster namespace if empty.")
-	flag.StringVar(&leaderElectResourceLock, "leader-elect-resource-lock", resourcelock.ConfigMapsLeasesResourceLock,
-		"The leader election resource lock for controller manager. e.g. 'leases', 'configmaps', 'endpoints', 'endpointsleases', 'configmapsleases'")
+	flag.StringVar(&leaderElectResourceLock, "leader-elect-resource-lock", resourcelock.LeasesResourceLock,
+		"The leader election resource lock for controller manager. e.g. 'leases', 'configmaps', 'endpoints', 'endpointsleases'")
 	flag.StringVar(&namespace, "namespace", "",
 		"Namespace if specified restricts the manager's cache to watch objects in the desired namespace. Defaults to all namespaces.")
 	flag.BoolVar(&enablePprof, "enable-pprof", true, "Enable pprof for controller manager.")
@@ -116,18 +118,33 @@ func main() {
 			syncPeriod = &d
 		}
 	}
-	mgr, err := ctrl.NewManager(cfg, ctrl.Options{
+
+	mgrOpt := ctrl.Options{
 		Scheme:                     options.Scheme,
-		MetricsBindAddress:         metricsAddr,
+		Metrics:                    metricsserver.Options{BindAddress: metricsAddr},
 		HealthProbeBindAddress:     healthProbeAddr,
 		LeaderElection:             enableLeaderElection,
 		LeaderElectionID:           "koordinator-manager",
 		LeaderElectionNamespace:    leaderElectionNamespace,
 		LeaderElectionResourceLock: leaderElectResourceLock,
-		Namespace:                  namespace,
-		SyncPeriod:                 syncPeriod,
+		Cache:                      cache.Options{SyncPeriod: syncPeriod},
 		NewClient:                  utilclient.NewClient,
-	})
+	}
+
+	if namespace != "" {
+		mgrOpt.Cache.DefaultNamespaces = map[string]cache.Config{}
+		mgrOpt.Cache.DefaultNamespaces[namespace] = cache.Config{}
+	}
+
+	installMetricsHandler(mgrOpt)
+	ctx := ctrl.SetupSignalHandler()
+
+	if utilfeature.DefaultFeatureGate.Enabled(features.WebhookFramework) {
+		setupLog.Info("setup webhook opt")
+		webhook.SetupWithWebhookOpt(&mgrOpt)
+	}
+
+	mgr, err := ctrl.NewManager(cfg, mgrOpt)
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")
 		os.Exit(1)
@@ -146,8 +163,6 @@ func main() {
 
 	extensions.PrepareExtensions(cfg, mgr)
 	// +kubebuilder:scaffold:builder
-
-	ctx := ctrl.SetupSignalHandler()
 
 	if utilfeature.DefaultFeatureGate.Enabled(features.WebhookFramework) {
 		setupLog.Info("setup webhook")
@@ -175,11 +190,6 @@ func main() {
 		klog.V(4).Infof("webhook framework feature gate not enabled")
 	}
 
-	if err := installHTTPHandler(mgr); err != nil {
-		setupLog.Error(err, "unable to install http handler")
-		os.Exit(1)
-	}
-
 	setupLog.Info("starting manager")
 	extensions.StartExtensions(ctx, mgr)
 	if err := mgr.Start(ctx); err != nil {
@@ -197,17 +207,11 @@ func setRestConfig(c *rest.Config) {
 	}
 }
 
-func installHTTPHandler(mgr ctrl.Manager) error {
-	if err := mgr.AddMetricsExtraHandler(metrics.InternalHTTPPath, promhttp.HandlerFor(metrics.InternalRegistry, promhttp.HandlerOpts{})); err != nil {
-		return err
+func installMetricsHandler(mgr ctrl.Options) {
+	mgr.Metrics.ExtraHandlers = map[string]http.Handler{
+		metrics.InternalHTTPPath: promhttp.HandlerFor(metrics.InternalRegistry, promhttp.HandlerOpts{}),
+		metrics.ExternalHTTPPath: promhttp.HandlerFor(metrics.ExternalRegistry, promhttp.HandlerOpts{}),
+		metrics.DefaultHTTPPath: promhttp.HandlerFor(
+			metricsutil.MergedGatherFunc(metrics.InternalRegistry, metrics.ExternalRegistry, ctrlmetrics.Registry), promhttp.HandlerOpts{}),
 	}
-	if err := mgr.AddMetricsExtraHandler(metrics.ExternalHTTPPath, promhttp.HandlerFor(metrics.ExternalRegistry, promhttp.HandlerOpts{})); err != nil {
-		return err
-	}
-	// merge internal, external and controller-runtime metrics
-	if err := mgr.AddMetricsExtraHandler(metrics.DefaultHTTPPath, promhttp.HandlerFor(
-		metricsutil.MergedGatherFunc(metrics.InternalRegistry, metrics.ExternalRegistry, ctrlmetrics.Registry), promhttp.HandlerOpts{})); err != nil {
-		return err
-	}
-	return nil
 }

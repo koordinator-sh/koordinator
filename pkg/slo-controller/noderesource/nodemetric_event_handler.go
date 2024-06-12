@@ -17,6 +17,7 @@ limitations under the License.
 package noderesource
 
 import (
+	"context"
 	"fmt"
 	"reflect"
 
@@ -40,10 +41,10 @@ type EnqueueRequestForNodeMetric struct {
 	syncContext *framework.SyncContext
 }
 
-func (n *EnqueueRequestForNodeMetric) Create(e event.CreateEvent, q workqueue.RateLimitingInterface) {
+func (n *EnqueueRequestForNodeMetric) Create(ctx context.Context, e event.CreateEvent, q workqueue.RateLimitingInterface) {
 }
 
-func (n *EnqueueRequestForNodeMetric) Update(e event.UpdateEvent, q workqueue.RateLimitingInterface) {
+func (n *EnqueueRequestForNodeMetric) Update(ctx context.Context, e event.UpdateEvent, q workqueue.RateLimitingInterface) {
 	newNodeMetric := e.ObjectNew.(*slov1alpha1.NodeMetric)
 	oldNodeMetric := e.ObjectOld.(*slov1alpha1.NodeMetric)
 	if reflect.DeepEqual(oldNodeMetric.Status, newNodeMetric.Status) {
@@ -56,7 +57,7 @@ func (n *EnqueueRequestForNodeMetric) Update(e event.UpdateEvent, q workqueue.Ra
 	})
 }
 
-func (n *EnqueueRequestForNodeMetric) Delete(e event.DeleteEvent, q workqueue.RateLimitingInterface) {
+func (n *EnqueueRequestForNodeMetric) Delete(ctx context.Context, e event.DeleteEvent, q workqueue.RateLimitingInterface) {
 	nodeMetric, ok := e.Object.(*slov1alpha1.NodeMetric)
 	if !ok {
 		return
@@ -71,7 +72,7 @@ func (n *EnqueueRequestForNodeMetric) Delete(e event.DeleteEvent, q workqueue.Ra
 	})
 }
 
-func (n *EnqueueRequestForNodeMetric) Generic(e event.GenericEvent, q workqueue.RateLimitingInterface) {
+func (n *EnqueueRequestForNodeMetric) Generic(ctx context.Context, e event.GenericEvent, q workqueue.RateLimitingInterface) {
 }
 
 func (n *EnqueueRequestForNodeMetric) cleanSyncContext(nodeMetric *slov1alpha1.NodeMetric) error {

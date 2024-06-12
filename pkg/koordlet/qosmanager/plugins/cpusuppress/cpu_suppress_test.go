@@ -691,7 +691,7 @@ func Test_cpuSuppress_suppressBECPU(t *testing.T) {
 			nodeCPUQueryMeta, err := metriccache.NodeCPUUsageMetric.BuildQueryMeta(nil)
 			assert.NoError(t, err)
 			mockResultFactory.EXPECT().New(nodeCPUQueryMeta).Return(nodeResult).AnyTimes()
-			mockQuerier.EXPECT().Query(nodeCPUQueryMeta, gomock.Any(), gomock.Any()).SetArg(2, *nodeResult).Return(nil).AnyTimes()
+			mockQuerier.EXPECT().QueryAndClose(nodeCPUQueryMeta, gomock.Any(), gomock.Any()).SetArg(2, *nodeResult).Return(nil).AnyTimes()
 
 			for _, podMetric := range tt.args.podMetrics {
 				podQueryMeta, err := metriccache.PodCPUUsageMetric.BuildQueryMeta(metriccache.MetricPropertiesFunc.Pod(podMetric.UID))

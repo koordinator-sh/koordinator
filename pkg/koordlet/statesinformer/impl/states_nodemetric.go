@@ -457,6 +457,7 @@ func (r *nodeMetricInformer) collectNodeMetric(queryparam metriccache.QueryParam
 		klog.V(5).Infof("get node metric querier failed, error %v", err)
 		return rl, 0, err
 	}
+	defer querier.Close()
 
 	cpuAggregateResult, err := doQuery(querier, metriccache.NodeCPUUsageMetric, nil)
 	if err != nil {
@@ -512,6 +513,7 @@ func (r *nodeMetricInformer) collectNodeGPUMetric(queryparam metriccache.QueryPa
 		klog.V(5).Infof("get node gpu metric querier failed, error %v", err)
 		return nil, err
 	}
+	defer querier.Close()
 	for _, gpu := range gpus {
 		gpuCoreUsageAggregateResult, err := doQuery(querier, metriccache.NodeGPUCoreUsageMetric, metriccache.MetricPropertiesFunc.GPU(fmt.Sprintf("%d", gpu.Minor), gpu.UUID))
 		if err != nil {
@@ -581,6 +583,7 @@ func (r *nodeMetricInformer) collectSystemMetric(queryparam metriccache.QueryPar
 		klog.V(5).Infof("get system metric querier failed, error %v", err)
 		return rl, 0, err
 	}
+	defer querier.Close()
 
 	cpuAggregateResult, err := doQuery(querier, metriccache.SystemCPUUsageMetric, nil)
 	if err != nil {
@@ -665,6 +668,7 @@ func (r *nodeMetricInformer) collectPodMetric(podMeta *statesinformer.PodMeta, q
 		klog.V(5).Infof("failed to get querier for pod %s/%s, error %v", podMeta.Pod.Namespace, podMeta.Pod.Name, err)
 		return nil, err
 	}
+	defer querier.Close()
 
 	cpuAggregateResult, err := doQuery(querier, metriccache.PodCPUUsageMetric, metriccache.MetricPropertiesFunc.Pod(podUID))
 	if err != nil {
@@ -723,6 +727,7 @@ func (r *nodeMetricInformer) collectHostAppMetric(hostApp *slov1alpha1.HostAppli
 		klog.V(5).Infof("failed to get querier for host application %s, error %v", hostApp.Name, err)
 		return nil, err
 	}
+	defer querier.Close()
 
 	cpuAggregateResult, err := doQuery(querier, metriccache.HostAppCPUUsageMetric, metriccache.MetricPropertiesFunc.HostApplication(hostApp.Name))
 	if err != nil {
@@ -773,6 +778,7 @@ func (r *nodeMetricInformer) collectPodGPUMetric(queryparam metriccache.QueryPar
 		klog.V(5).Infof("get pod gpu metric querier failed, error %v", err)
 		return nil, err
 	}
+	defer querier.Close()
 	for _, gpu := range gpus {
 		properties := metriccache.MetricPropertiesFunc.PodGPU(uid, fmt.Sprintf("%d", gpu.Minor), gpu.UUID)
 		gpuCoreUsageAggregateResult, err := doQuery(querier, metriccache.PodGPUCoreUsageMetric, properties)

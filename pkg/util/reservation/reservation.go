@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"math"
 	"strconv"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -49,6 +50,9 @@ var (
 	// AnnotationReservationResizeAllocatable indicates the desired allocatable are to be updated.
 	AnnotationReservationResizeAllocatable = extension.SchedulingDomainPrefix + "/reservation-resize-allocatable"
 )
+
+// ErrReasonPrefix is the prefix of the reservation-level scheduling errors.
+const ErrReasonPrefix = "Reservation(s) "
 
 // NewReservePod returns a fake pod set as the reservation's specifications.
 // The reserve pod is only visible for the scheduler and does not make actual creation on nodes.
@@ -118,7 +122,7 @@ func NewReservePod(r *schedulingv1alpha1.Reservation) *corev1.Pod {
 		reservePod.Status.Phase = corev1.PodFailed
 	}
 	if IsReservationAvailable(r) {
-		podRequests, _ := resource.PodRequestsAndLimits(reservePod)
+		podRequests := resource.PodRequests(reservePod, resource.PodResourcesOptions{})
 		if !quotav1.Equals(podRequests, r.Status.Allocatable) {
 			//
 			// PodRequests is different from r.Status.Allocatable,
@@ -133,7 +137,7 @@ func NewReservePod(r *schedulingv1alpha1.Reservation) *corev1.Pod {
 
 func UpdateReservePodWithAllocatable(reservePod *corev1.Pod, podRequests, allocatable corev1.ResourceList) {
 	if podRequests == nil {
-		podRequests, _ = resource.PodRequestsAndLimits(reservePod)
+		podRequests = resource.PodRequests(reservePod, resource.PodResourcesOptions{})
 	} else {
 		podRequests = podRequests.DeepCopy()
 	}
@@ -349,9 +353,9 @@ func ReservationRequests(r *schedulingv1alpha1.Reservation) corev1.ResourceList 
 		return r.Status.Allocatable.DeepCopy()
 	}
 	if r.Spec.Template != nil {
-		requests, _ := resource.PodRequestsAndLimits(&corev1.Pod{
+		requests := resource.PodRequests(&corev1.Pod{
 			Spec: r.Spec.Template.Spec,
-		})
+		}, resource.PodResourcesOptions{})
 		return requests
 	}
 	return nil
@@ -465,7 +469,7 @@ func GetRequiredReservationAffinity(pod *corev1.Pod) (*RequiredReservationAffini
 	if err != nil {
 		return nil, err
 	}
-	if len(reservationAffinity.ReservationSelector) == 0 && reservationAffinity.RequiredDuringSchedulingIgnoredDuringExecution == nil {
+	if reservationAffinity == nil {
 		return nil, nil
 	}
 	var selector labels.Selector
@@ -559,4 +563,14 @@ func GetReservationRestrictedResources(allocatableResources []corev1.ResourceNam
 		result = allocatableResources
 	}
 	return result
+}
+
+// NewReservationReason creates a reservation-level error reason with the given message.
+func NewReservationReason(msg string) string {
+	return ErrReasonPrefix + msg
+}
+
+// IsReservationReason checks if the error reason is at the reservation-level.
+func IsReservationReason(reason string) bool {
+	return strings.HasPrefix(reason, ErrReasonPrefix)
 }

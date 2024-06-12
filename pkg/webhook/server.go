@@ -32,19 +32,21 @@ import (
 
 	webhookutil "github.com/koordinator-sh/koordinator/pkg/webhook/util"
 	webhookcontroller "github.com/koordinator-sh/koordinator/pkg/webhook/util/controller"
+	"github.com/koordinator-sh/koordinator/pkg/webhook/util/framework"
 	"github.com/koordinator-sh/koordinator/pkg/webhook/util/health"
 )
 
 type GateFunc func() (enabled bool)
 
 var (
-	// HandlerMap contains all admission webhook handlers.
-	HandlerMap   = map[string]admission.Handler{}
-	handlerGates = map[string]GateFunc{}
+	// handlerMap contains all admission webhook handlers.
+	handlerMap        = map[string]admission.Handler{}
+	handlerGates      = map[string]GateFunc{}
+	HandlerBuilderMap = map[string]framework.HandlerBuilder{}
 )
 
-func addHandlersWithGate(m map[string]admission.Handler, fn GateFunc) {
-	for path, handler := range m {
+func addHandlersWithGate(m map[string]framework.HandlerBuilder, fn GateFunc) {
+	for path, handlerBuilder := range m {
 		if len(path) == 0 {
 			klog.Warningf("Skip handler with empty path.")
 			continue
@@ -52,11 +54,11 @@ func addHandlersWithGate(m map[string]admission.Handler, fn GateFunc) {
 		if path[0] != '/' {
 			path = "/" + path
 		}
-		_, found := HandlerMap[path]
+		_, found := HandlerBuilderMap[path]
 		if found {
 			klog.V(1).Infof("conflicting webhook builder path %v in handler map", path)
 		}
-		HandlerMap[path] = handler
+		HandlerBuilderMap[path] = handlerBuilder
 		if fn != nil {
 			handlerGates[path] = fn
 		}
@@ -65,7 +67,7 @@ func addHandlersWithGate(m map[string]admission.Handler, fn GateFunc) {
 
 func filterActiveHandlers() {
 	disablePaths := sets.NewString()
-	for path := range HandlerMap {
+	for path := range HandlerBuilderMap {
 		if fn, ok := handlerGates[path]; ok {
 			if !fn() {
 				disablePaths.Insert(path)
@@ -73,25 +75,32 @@ func filterActiveHandlers() {
 		}
 	}
 	for _, path := range disablePaths.List() {
-		delete(HandlerMap, path)
+		delete(HandlerBuilderMap, path)
 	}
+}
+
+func SetupWithWebhookOpt(opt *manager.Options) {
+	opt.WebhookServer = webhook.NewServer(webhook.Options{
+		Host:    "0.0.0.0",
+		Port:    webhookutil.GetPort(),
+		CertDir: webhookutil.GetCertDir(),
+	})
 }
 
 func SetupWithManager(mgr manager.Manager) error {
 	server := mgr.GetWebhookServer()
-	server.Host = "0.0.0.0"
-	server.Port = webhookutil.GetPort()
-	server.CertDir = webhookutil.GetCertDir()
 
 	// register admission handlers
 	filterActiveHandlers()
-	for path, handler := range HandlerMap {
+	for path, handlerBuilder := range HandlerBuilderMap {
+		handler := handlerBuilder.WithControllerManager(mgr).Build()
 		server.Register(path, &webhook.Admission{Handler: handler})
+		handlerMap[path] = handler
 		klog.V(3).Infof("Registered webhook handler %s", path)
 	}
 
 	// register conversion webhook
-	server.Register("/convert", &conversion.Webhook{})
+	server.Register("/convert", conversion.NewWebhookHandler(mgr.GetScheme()))
 
 	// register health handler
 	server.Register("/healthz", &health.Handler{})
@@ -106,7 +115,7 @@ func SetupWithManager(mgr manager.Manager) error {
 // +kubebuilder:rbac:groups=admissionregistration.k8s.io,resources=validatingwebhookconfigurations,verbs=get;list;watch;update;patch
 
 func Initialize(ctx context.Context, cfg *rest.Config) error {
-	c, err := webhookcontroller.New(cfg, HandlerMap)
+	c, err := webhookcontroller.New(cfg, handlerMap)
 	if err != nil {
 		return err
 	}
