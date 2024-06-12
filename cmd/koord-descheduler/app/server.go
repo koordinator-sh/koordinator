@@ -307,7 +307,8 @@ func Setup(ctx context.Context, opts *options.Options, outOfTreeRegistryOptions 
 
 	evictionLimiter := evictions.NewEvictionLimiter(
 		cc.ComponentConfig.MaxNoOfPodsToEvictPerNode,
-		cc.ComponentConfig.MaxNoOfPodsToEvictPerNamespace)
+		cc.ComponentConfig.MaxNoOfPodsToEvictPerNamespace,
+		cc.ComponentConfig.MaxNoOfPodsToEvictTotal)
 
 	desched, err := descheduler.New(
 		cc.Client,
