@@ -108,7 +108,7 @@ func TestResourceUsagePercentages(t *testing.T) {
 			corev1.ResourceMemory: resource.NewQuantity(3038982964, resource.BinarySI),
 			corev1.ResourcePods:   resource.NewQuantity(11, resource.BinarySI),
 		},
-	})
+	}, false)
 
 	expectedUsageInIntPercentage := map[corev1.ResourceName]float64{
 		corev1.ResourceCPU:    63,
@@ -133,7 +133,7 @@ func TestSortNodesByUsageDescendingOrder(t *testing.T) {
 		corev1.ResourceMemory: 1,
 		corev1.ResourcePods:   1,
 	}
-	sortNodesByUsage(nodeList, weightMap, false)
+	sortNodesByUsage(nodeList, weightMap, false, false)
 
 	assert.Equal(t, expectedNodeList, nodeList)
 }
@@ -146,7 +146,7 @@ func TestSortNodesByUsageAscendingOrder(t *testing.T) {
 		corev1.ResourceMemory: 1,
 		corev1.ResourcePods:   1,
 	}
-	sortNodesByUsage(nodeList, weightMap, true)
+	sortNodesByUsage(nodeList, weightMap, true, false)
 
 	assert.Equal(t, expectedNodeList, nodeList)
 }
