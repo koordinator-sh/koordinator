@@ -19,6 +19,7 @@ package frameworkext
 import (
 	"context"
 	"fmt"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -26,6 +27,7 @@ import (
 	"k8s.io/klog/v2"
 	schedconfig "k8s.io/kubernetes/pkg/scheduler/apis/config"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
+	utiltrace "k8s.io/utils/trace"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	koordinatorclientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
@@ -165,12 +167,16 @@ func (ext *frameworkExtenderImpl) GetReservationNominator() ReservationNominator
 
 // RunPreFilterPlugins transforms the PreFilter phase of framework with pre-filter transformers.
 func (ext *frameworkExtenderImpl) RunPreFilterPlugins(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod) (*framework.PreFilterResult, *framework.Status) {
+	trace := utiltrace.New("RunPreFilterPluginTransformers", utiltrace.Field{Key: "namespace", Value: pod.Namespace}, utiltrace.Field{Key: "name", Value: pod.Name})
+	defer trace.LogIfLong(5 * time.Millisecond)
 	for _, pl := range ext.configuredPlugins.PreFilter.Enabled {
 		transformer := ext.preFilterTransformers[pl.Name]
 		if transformer == nil {
 			continue
 		}
+		trace.Step(fmt.Sprintf("BeforePrefilter %s begin", transformer.Name()))
 		newPod, transformed, status := transformer.BeforePreFilter(ctx, cycleState, pod)
+		trace.Step(fmt.Sprintf("BeforePrefilter %s done", transformer.Name()))
 		if !status.IsSuccess() {
 			klog.ErrorS(status.AsError(), "Failed to run BeforePreFilter", "pod", klog.KObj(pod), "plugin", transformer.Name())
 			return nil, status
@@ -191,7 +197,10 @@ func (ext *frameworkExtenderImpl) RunPreFilterPlugins(ctx context.Context, cycle
 		if transformer == nil {
 			continue
 		}
-		if status := transformer.AfterPreFilter(ctx, cycleState, pod); !status.IsSuccess() {
+		trace.Step(fmt.Sprintf("AfterPrefilter %s begin", transformer.Name()))
+		status := transformer.AfterPreFilter(ctx, cycleState, pod)
+		trace.Step(fmt.Sprintf("AfterPrefilter %s done", transformer.Name()))
+		if !status.IsSuccess() {
 			klog.ErrorS(status.AsError(), "Failed to run AfterPreFilter", "pod", klog.KObj(pod), "plugin", transformer.Name())
 			return nil, status
 		}
