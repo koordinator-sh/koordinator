@@ -39,14 +39,14 @@ import (
 
 const colocationEnabledConfigData = `{
   "enable": true,
-  "cpuReclaimThresholdPercent": 80,
-  "memoryReclaimThresholdPercent": 80,
+  "cpuReclaimThresholdPercent": 95,
+  "memoryReclaimThresholdPercent": 95,
   "memoryCalculatePolicy": "usage"
 }`
 
 var (
-	cpuReclaimThresholdPercent    = 80
-	memoryReclaimThresholdPercent = 80
+	cpuReclaimThresholdPercent    = 95
+	memoryReclaimThresholdPercent = 95
 	maxNodeBatchCPUDiffPercent    = 10
 	maxNodeBatchMemoryDiffPercent = 5
 
