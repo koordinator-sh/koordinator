@@ -1305,6 +1305,8 @@ func TestLowNodeLoad(t *testing.T) {
 									{
 										LowThresholds:          tt.thresholds,
 										HighThresholds:         tt.targetThresholds,
+										ProdLowThresholds:      tt.prodLowThresholds,
+										ProdHighThresholds:     tt.prodHighThresholds,
 										UseDeviationThresholds: tt.useDeviationThresholds,
 										AnomalyCondition: &deschedulerconfig.LoadAnomalyCondition{
 											ConsecutiveAbnormalities: 1,
@@ -1470,8 +1472,6 @@ func TestMaxEvictionTotal(t *testing.T) {
 									{
 										LowThresholds:          tt.thresholds,
 										HighThresholds:         tt.targetThresholds,
-										ProdLowThresholds:      tt.prodLowThresholds,
-										ProdHighThresholds:     tt.prodHighThresholds,
 										UseDeviationThresholds: tt.useDeviationThresholds,
 										AnomalyCondition: &deschedulerconfig.LoadAnomalyCondition{
 											ConsecutiveAbnormalities: 1,
