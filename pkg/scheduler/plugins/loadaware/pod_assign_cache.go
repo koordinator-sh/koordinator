@@ -61,9 +61,14 @@ func (p *podAssignCache) assign(nodeName string, pod *corev1.Pod) {
 		m = make(map[types.UID]*podAssignInfo)
 		p.podInfoItems[nodeName] = m
 	}
-	m[pod.UID] = &podAssignInfo{
-		timestamp: timeNowFn(),
-		pod:       pod,
+
+	if _, ok := m[pod.UID]; ok {
+		m[pod.UID].pod = pod
+	} else {
+		m[pod.UID] = &podAssignInfo{
+			timestamp: timeNowFn(),
+			pod:       pod,
+		}
 	}
 }
 

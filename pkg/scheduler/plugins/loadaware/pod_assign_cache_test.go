@@ -193,6 +193,64 @@ func TestPodAssignCache_OnUpdate(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "update scheduled running pod, timestamp won't be updated",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					UID:       "123456789",
+					Namespace: "default",
+					Name:      "test",
+				},
+				Spec: corev1.PodSpec{
+					NodeName: "test-node",
+				},
+				Status: corev1.PodStatus{
+					Phase: corev1.PodRunning,
+				},
+			},
+			assignCache: &podAssignCache{
+				podInfoItems: map[string]map[types.UID]*podAssignInfo{
+					"test-node": {
+						"123456789": &podAssignInfo{
+							pod: &corev1.Pod{
+								ObjectMeta: metav1.ObjectMeta{
+									UID:       "123456789",
+									Namespace: "default",
+									Name:      "test",
+								},
+								Spec: corev1.PodSpec{
+									NodeName: "test-node",
+								},
+								Status: corev1.PodStatus{
+									Phase: corev1.PodRunning,
+								},
+							},
+							timestamp: fakeTimeNowFn().Add(1000),
+						},
+					},
+				},
+			},
+			wantCache: map[string]map[types.UID]*podAssignInfo{
+				"test-node": {
+					"123456789": &podAssignInfo{
+						pod: &corev1.Pod{
+							ObjectMeta: metav1.ObjectMeta{
+								UID:       "123456789",
+								Namespace: "default",
+								Name:      "test",
+							},
+							Spec: corev1.PodSpec{
+								NodeName: "test-node",
+							},
+							Status: corev1.PodStatus{
+								Phase: corev1.PodRunning,
+							},
+						},
+						timestamp: fakeTimeNowFn().Add(1000),
+					},
+				},
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
