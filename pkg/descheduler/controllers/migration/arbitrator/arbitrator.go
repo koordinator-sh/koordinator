@@ -46,7 +46,6 @@ var enqueueLog = klog.Background().WithName("eventHandler").WithName("arbitrator
 type MigrationFilter interface {
 	Filter(pod *corev1.Pod) bool
 	PreEvictionFilter(pod *corev1.Pod) bool
-	TrackEvictedPod(pod *corev1.Pod)
 }
 
 type Arbitrator interface {
@@ -144,10 +143,6 @@ func (a *arbitratorImpl) Filter(pod *corev1.Pod) bool {
 
 func (a *arbitratorImpl) PreEvictionFilter(pod *corev1.Pod) bool {
 	return a.filter.defaultFilterPlugin.PreEvictionFilter(pod)
-}
-
-func (a *arbitratorImpl) TrackEvictedPod(pod *corev1.Pod) {
-	a.filter.trackEvictedPod(pod)
 }
 
 // sort stably sorts jobs, outputs the sorted results and corresponding ranking map.

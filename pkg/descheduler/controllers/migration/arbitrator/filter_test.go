@@ -30,14 +30,12 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
-	"k8s.io/utils/clock"
 	"k8s.io/utils/pointer"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	"github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/apis/config"
-	"github.com/koordinator-sh/koordinator/pkg/descheduler/apis/config/v1alpha2"
 )
 
 func TestFilterExistingMigrationJob(t *testing.T) {
@@ -980,154 +978,6 @@ func TestFilterExpectedReplicas(t *testing.T) {
 			}
 
 			got := a.filterExpectedReplicas(filterPod)
-			assert.Equal(t, tt.want, got)
-		})
-	}
-}
-
-func TestFilterObjectLimiter(t *testing.T) {
-	ownerReferences1 := []metav1.OwnerReference{
-		{
-			APIVersion: "apps/v1",
-			Controller: pointer.Bool(true),
-			Kind:       "StatefulSet",
-			Name:       "test-1",
-			UID:        uuid.NewUUID(),
-		},
-	}
-	otherOwnerReferences := metav1.OwnerReference{
-		APIVersion: "apps/v1",
-		Controller: pointer.Bool(true),
-		Kind:       "StatefulSet",
-		Name:       "test-2",
-		UID:        uuid.NewUUID(),
-	}
-	testObjectLimiters := config.ObjectLimiterMap{
-		config.MigrationLimitObjectWorkload: {
-			Duration:     metav1.Duration{Duration: 1 * time.Second},
-			MaxMigrating: &intstr.IntOrString{Type: intstr.Int, IntVal: 10},
-		},
-	}
-
-	tests := []struct {
-		name             string
-		objectLimiters   config.ObjectLimiterMap
-		totalReplicas    int32
-		sleepDuration    time.Duration
-		pod              *corev1.Pod
-		evictedPodsCount int
-		evictedWorkload  *metav1.OwnerReference
-		want             bool
-	}{
-		{
-			name:           "less than default maxMigrating",
-			totalReplicas:  100,
-			objectLimiters: testObjectLimiters,
-			sleepDuration:  100 * time.Millisecond,
-			pod: &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					OwnerReferences: ownerReferences1,
-				},
-			},
-			evictedPodsCount: 6,
-			want:             true,
-		},
-		{
-			name:           "exceeded default maxMigrating",
-			totalReplicas:  100,
-			objectLimiters: testObjectLimiters,
-			pod: &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					OwnerReferences: ownerReferences1,
-				},
-			},
-			evictedPodsCount: 11,
-			want:             false,
-		},
-		{
-			name:           "other than workload",
-			totalReplicas:  100,
-			objectLimiters: testObjectLimiters,
-			sleepDuration:  100 * time.Millisecond,
-			pod: &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					OwnerReferences: ownerReferences1,
-				},
-			},
-			evictedPodsCount: 11,
-			evictedWorkload:  &otherOwnerReferences,
-			want:             true,
-		},
-		{
-			name:          "disable objectLimiters",
-			totalReplicas: 100,
-			pod: &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					OwnerReferences: ownerReferences1,
-				},
-			},
-			evictedPodsCount: 11,
-			objectLimiters: config.ObjectLimiterMap{
-				config.MigrationLimitObjectWorkload: config.MigrationObjectLimiter{
-					Duration: metav1.Duration{Duration: 0},
-				},
-			},
-			want: true,
-		},
-		{
-			name:          "default limiter",
-			totalReplicas: 100,
-			pod: &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					OwnerReferences: ownerReferences1,
-				},
-			},
-			evictedPodsCount: 1,
-			want:             false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			scheme := runtime.NewScheme()
-			_ = v1alpha1.AddToScheme(scheme)
-			_ = clientgoscheme.AddToScheme(scheme)
-			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
-
-			var v1beta2args v1alpha2.MigrationControllerArgs
-			v1alpha2.SetDefaults_MigrationControllerArgs(&v1beta2args)
-			var args config.MigrationControllerArgs
-			err := v1alpha2.Convert_v1alpha2_MigrationControllerArgs_To_config_MigrationControllerArgs(&v1beta2args, &args, nil)
-			if err != nil {
-				panic(err)
-			}
-			a := filter{client: fakeClient, args: &args, clock: clock.RealClock{}}
-
-			controllerFinder := &fakeControllerFinder{}
-			if tt.objectLimiters != nil {
-				a.args.ObjectLimiters = tt.objectLimiters
-			}
-
-			a.initObjectLimiters()
-			if tt.totalReplicas > 0 {
-				controllerFinder.replicas = tt.totalReplicas
-			}
-			a.controllerFinder = controllerFinder
-			if tt.evictedPodsCount > 0 {
-				for i := 0; i < tt.evictedPodsCount; i++ {
-					pod := tt.pod.DeepCopy()
-					if tt.evictedWorkload != nil {
-						pod.OwnerReferences = []metav1.OwnerReference{
-							*tt.evictedWorkload,
-						}
-					}
-					a.trackEvictedPod(pod)
-					if tt.sleepDuration > 0 {
-						time.Sleep(tt.sleepDuration)
-					}
-				}
-			}
-			got := a.filterLimitedObject(tt.pod)
 			assert.Equal(t, tt.want, got)
 		})
 	}

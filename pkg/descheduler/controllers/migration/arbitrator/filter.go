@@ -20,10 +20,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
-	"time"
 
-	gocache "github.com/patrickmn/go-cache"
-	"golang.org/x/time/rate"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
@@ -60,9 +57,6 @@ type filter struct {
 
 	args             *deschedulerconfig.MigrationControllerArgs
 	controllerFinder controllerfinder.Interface
-	objectLimiters   map[types.UID]*rate.Limiter
-	limiterCache     *gocache.Cache
-	limiterLock      sync.Mutex
 
 	arbitratedPodMigrationJobs map[types.UID]bool
 	arbitratedMapLock          sync.Mutex
@@ -83,7 +77,6 @@ func newFilter(args *deschedulerconfig.MigrationControllerArgs, handle framework
 	if err := f.initFilters(args, handle); err != nil {
 		return nil, err
 	}
-	f.initObjectLimiters()
 	return f, nil
 }
 
@@ -129,7 +122,6 @@ func (f *filter) initFilters(args *deschedulerconfig.MigrationControllerArgs, ha
 		return err
 	}
 	retriablePodFilters := podutil.WrapFilterFuncs(
-		f.filterLimitedObject,
 		f.filterMaxMigratingPerNode,
 		f.filterMaxMigratingPerNamespace,
 		f.filterMaxMigratingOrUnavailablePerWorkload,
@@ -414,92 +406,6 @@ func (f *filter) getUnavailablePods(pods []*corev1.Pod) map[types.NamespacedName
 func mergeUnavailableAndMigratingPods(unavailablePods, migratingPods map[types.NamespacedName]struct{}) {
 	for k, v := range migratingPods {
 		unavailablePods[k] = v
-	}
-}
-
-func (f *filter) trackEvictedPod(pod *corev1.Pod) {
-	if f.objectLimiters == nil || f.limiterCache == nil {
-		return
-	}
-	ownerRef := metav1.GetControllerOf(pod)
-	if ownerRef == nil {
-		return
-	}
-
-	objectLimiterArgs, ok := f.args.ObjectLimiters[deschedulerconfig.MigrationLimitObjectWorkload]
-	if !ok || objectLimiterArgs.Duration.Seconds() == 0 {
-		return
-	}
-
-	var maxMigratingReplicas int
-	if expectedReplicas, err := f.controllerFinder.GetExpectedScaleForPod(pod); err == nil {
-		maxMigrating := objectLimiterArgs.MaxMigrating
-		if maxMigrating == nil {
-			maxMigrating = f.args.MaxMigratingPerWorkload
-		}
-		maxMigratingReplicas, _ = util.GetMaxMigrating(int(expectedReplicas), maxMigrating)
-	}
-	if maxMigratingReplicas == 0 {
-		return
-	}
-
-	f.limiterLock.Lock()
-	defer f.limiterLock.Unlock()
-
-	uid := ownerRef.UID
-	limit := rate.Limit(maxMigratingReplicas) / rate.Limit(objectLimiterArgs.Duration.Seconds())
-	limiter := f.objectLimiters[uid]
-	if limiter == nil {
-		limiter = rate.NewLimiter(limit, 1)
-		f.objectLimiters[uid] = limiter
-	} else if limiter.Limit() != limit {
-		limiter.SetLimit(limit)
-	}
-
-	if !limiter.AllowN(f.clock.Now(), 1) {
-		klog.Infof("The workload %s/%s/%s has been frequently descheduled recently and needs to be limited for f period of time", ownerRef.Name, ownerRef.Kind, ownerRef.APIVersion)
-	}
-	f.limiterCache.Set(string(uid), 0, gocache.DefaultExpiration)
-}
-
-func (f *filter) filterLimitedObject(pod *corev1.Pod) bool {
-	if f.objectLimiters == nil || f.limiterCache == nil {
-		return true
-	}
-	objectLimiterArgs, ok := f.args.ObjectLimiters[deschedulerconfig.MigrationLimitObjectWorkload]
-	if !ok || objectLimiterArgs.Duration.Duration == 0 {
-		return true
-	}
-	if ownerRef := metav1.GetControllerOf(pod); ownerRef != nil {
-		f.limiterLock.Lock()
-		defer f.limiterLock.Unlock()
-		if limiter := f.objectLimiters[ownerRef.UID]; limiter != nil {
-			if remainTokens := limiter.Tokens() - float64(1); remainTokens < 0 {
-				klog.V(4).InfoS("Pod fails the following checks", "pod", klog.KObj(pod), "checks", "limitedObject",
-					"owner", fmt.Sprintf("%s/%s/%s", ownerRef.Name, ownerRef.Kind, ownerRef.APIVersion))
-				return false
-			}
-		}
-	}
-	return true
-}
-
-func (f *filter) initObjectLimiters() {
-	var trackExpiration time.Duration
-	for _, v := range f.args.ObjectLimiters {
-		if v.Duration.Duration > trackExpiration {
-			trackExpiration = v.Duration.Duration
-		}
-	}
-	if trackExpiration > 0 {
-		f.objectLimiters = make(map[types.UID]*rate.Limiter)
-		limiterExpiration := trackExpiration + trackExpiration/2
-		f.limiterCache = gocache.New(limiterExpiration, limiterExpiration)
-		f.limiterCache.OnEvicted(func(s string, _ interface{}) {
-			f.limiterLock.Lock()
-			defer f.limiterLock.Unlock()
-			delete(f.objectLimiters, types.UID(s))
-		})
 	}
 }
 
