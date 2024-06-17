@@ -39,6 +39,9 @@ type MigrationControllerArgs struct {
 	// EvictFailedBarePods allows pods without ownerReferences and in failed phase to be evicted.
 	EvictFailedBarePods bool `json:"evictFailedBarePods"`
 
+	// EvictAllBarePods allows all pods without ownerReferences to be evicted.
+	EvictAllBarePods bool `json:"evictAllBarePods"`
+
 	// EvictLocalStoragePods allows pods using local storage to be evicted.
 	EvictLocalStoragePods bool `json:"evictLocalStoragePods"`
 

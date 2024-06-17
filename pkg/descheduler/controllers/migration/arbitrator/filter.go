@@ -42,6 +42,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/fieldindex"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/framework"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/framework/plugins/kubernetes/defaultevictor"
+	nodeutil "github.com/koordinator-sh/koordinator/pkg/descheduler/node"
 	podutil "github.com/koordinator-sh/koordinator/pkg/descheduler/pod"
 	pkgutil "github.com/koordinator-sh/koordinator/pkg/util"
 	utilclient "github.com/koordinator-sh/koordinator/pkg/util/client"
@@ -90,11 +91,13 @@ func (f *filter) initFilters(args *deschedulerconfig.MigrationControllerArgs, ha
 		EvictFailedBarePods:     args.EvictFailedBarePods,
 		LabelSelector:           args.LabelSelector,
 	}
+	var priority *int32
 	if args.PriorityThreshold != nil {
 		defaultEvictorArgs.PriorityThreshold = &k8sdeschedulerapi.PriorityThreshold{
 			Name:  args.PriorityThreshold.Name,
 			Value: args.PriorityThreshold.Value,
 		}
+		priority = args.PriorityThreshold.Value
 	}
 	defaultEvictor, err := defaultevictor.New(defaultEvictorArgs, handle)
 	if err != nil {
@@ -106,8 +109,19 @@ func (f *filter) initFilters(args *deschedulerconfig.MigrationControllerArgs, ha
 		includedNamespaces = sets.NewString(args.Namespaces.Include...)
 		excludedNamespaces = sets.NewString(args.Namespaces.Exclude...)
 	}
-
-	filterPlugin := defaultEvictor.(framework.FilterPlugin)
+	nodeGetter := func() ([]*corev1.Node, error) {
+		nodes, err := nodeutil.ReadyNodes(context.TODO(), handle.ClientSet(), handle.SharedInformerFactory().Core().V1().Nodes(), defaultEvictorArgs.NodeSelector)
+		if err != nil {
+			return nil, err
+		}
+		return nodes, nil
+	}
+	filterPlugin, err := evictionsutil.NewEvictorFilter(nodeGetter, handle.GetPodsAssignedToNodeFunc(), args.EvictLocalStoragePods,
+		args.EvictSystemCriticalPods, args.IgnorePvcPods, args.EvictFailedBarePods, args.EvictAllBarePods,
+		evictionsutil.WithLabelSelector(args.LabelSelector), evictionsutil.WithPriorityThreshold(priority))
+	if err != nil {
+		return err
+	}
 	wrapFilterFuncs := podutil.WrapFilterFuncs(
 		util.FilterPodWithMaxEvictionCost,
 		filterPlugin.Filter,

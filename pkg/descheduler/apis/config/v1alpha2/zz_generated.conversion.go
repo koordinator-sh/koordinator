@@ -542,6 +542,7 @@ func autoConvert_v1alpha2_MigrationControllerArgs_To_config_MigrationControllerA
 		return err
 	}
 	out.EvictFailedBarePods = in.EvictFailedBarePods
+	out.EvictAllBarePods = in.EvictAllBarePods
 	out.EvictLocalStoragePods = in.EvictLocalStoragePods
 	out.EvictSystemCriticalPods = in.EvictSystemCriticalPods
 	out.IgnorePvcPods = in.IgnorePvcPods
@@ -582,6 +583,7 @@ func autoConvert_config_MigrationControllerArgs_To_v1alpha2_MigrationControllerA
 		return err
 	}
 	out.EvictFailedBarePods = in.EvictFailedBarePods
+	out.EvictAllBarePods = in.EvictAllBarePods
 	out.EvictLocalStoragePods = in.EvictLocalStoragePods
 	out.EvictSystemCriticalPods = in.EvictSystemCriticalPods
 	out.IgnorePvcPods = in.IgnorePvcPods
