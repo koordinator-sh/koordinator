@@ -226,6 +226,6 @@ func TestSortPodsOnOneOverloadedNode(t *testing.T) {
 		corev1.ResourceCPU:    int64(1),
 		corev1.ResourceMemory: int64(1),
 	}
-	sortPodsOnOneOverloadedNode(nodeInfo, removablePods, resourceWeights)
+	sortPodsOnOneOverloadedNode(nodeInfo, removablePods, resourceWeights, false)
 	assert.Equal(t, expectedResult, removablePods)
 }

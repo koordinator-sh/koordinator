@@ -435,7 +435,8 @@ func balancePods(ctx context.Context,
 			klog.V(4).InfoS("No removable pods on node, try next node", "node", klog.KObj(srcNode.node), "nodePool", nodePoolName)
 			continue
 		}
-		sortPodsOnOneOverloadedNode(srcNode, removablePods, resourceWeights)
+		sortPodsOnOneOverloadedNode(srcNode, removablePods, resourceWeights, prod)
+
 		evictPods(ctx, nodePoolName, dryRun, prod, removablePods, srcNode, totalAvailableUsages, podEvictor, podFilter, continueEviction, evictionReasonGenerator)
 	}
 }
@@ -665,14 +666,28 @@ func calcAverageResourceUsagePercent(nodeUsages map[string]*NodeUsage) (Resource
 	}
 	return average, prodAverage
 }
-func sortPodsOnOneOverloadedNode(srcNode NodeInfo, removablePods []*corev1.Pod, resourceWeights map[corev1.ResourceName]int64) {
+func sortPodsOnOneOverloadedNode(srcNode NodeInfo, removablePods []*corev1.Pod, resourceWeights map[corev1.ResourceName]int64, prod bool) {
 	weights := make(map[corev1.ResourceName]int64)
 	// get the overused resource of this node, and the weights of appropriately using resources will be zero.
-	overusedResources, _ := isNodeOverutilized(srcNode.usage, srcNode.thresholds.highResourceThreshold)
-	for or := range overusedResources {
+	var overusedResources corev1.ResourceList
+	if prod {
+		overusedResources, _ = isNodeOverutilized(srcNode.prodUsage, srcNode.thresholds.prodHighResourceThreshold)
+	} else {
+		overusedResources, _ = isNodeOverutilized(srcNode.usage, srcNode.thresholds.highResourceThreshold)
+	}
+	resourcesThatExceedThresholds := map[corev1.ResourceName]resource.Quantity{}
+	for or, used := range overusedResources {
+		usedCopy := used.DeepCopy()
 		weights[or] = resourceWeights[or]
+		if prod {
+			usedCopy.Sub(*srcNode.thresholds.prodHighResourceThreshold[or])
+		} else {
+			usedCopy.Sub(*srcNode.thresholds.highResourceThreshold[or])
+		}
+		resourcesThatExceedThresholds[or] = usedCopy
 	}
 	sorter.SortPodsByUsage(
+		resourcesThatExceedThresholds,
 		removablePods,
 		srcNode.podMetrics,
 		map[string]corev1.ResourceList{srcNode.node.Name: srcNode.node.Status.Allocatable},
