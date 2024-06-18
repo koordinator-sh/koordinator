@@ -136,7 +136,7 @@ func main() {
 		mgrOpt.Cache.DefaultNamespaces[namespace] = cache.Config{}
 	}
 
-	installMetricsHandler(mgrOpt)
+	installMetricsHandler(&mgrOpt)
 	ctx := ctrl.SetupSignalHandler()
 
 	if utilfeature.DefaultFeatureGate.Enabled(features.WebhookFramework) {
@@ -207,11 +207,16 @@ func setRestConfig(c *rest.Config) {
 	}
 }
 
-func installMetricsHandler(mgr ctrl.Options) {
-	mgr.Metrics.ExtraHandlers = map[string]http.Handler{
+func installMetricsHandler(mgr *ctrl.Options) {
+	if mgr.Metrics.ExtraHandlers == nil {
+		mgr.Metrics.ExtraHandlers = map[string]http.Handler{}
+	}
+	for path, handler := range map[string]http.Handler{
 		metrics.InternalHTTPPath: promhttp.HandlerFor(metrics.InternalRegistry, promhttp.HandlerOpts{}),
 		metrics.ExternalHTTPPath: promhttp.HandlerFor(metrics.ExternalRegistry, promhttp.HandlerOpts{}),
 		metrics.DefaultHTTPPath: promhttp.HandlerFor(
 			metricsutil.MergedGatherFunc(metrics.InternalRegistry, metrics.ExternalRegistry, ctrlmetrics.Registry), promhttp.HandlerOpts{}),
+	} {
+		mgr.Metrics.ExtraHandlers[path] = handler
 	}
 }
