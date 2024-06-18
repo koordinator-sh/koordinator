@@ -80,6 +80,7 @@ Currently, Koordinator supports LLC and MBA configuration and adjustment by conf
 - Migrate existing fixed class LLC and MBA configuration to NRI-powered runtime hooks for timely execution
 - Add LLC and MBA monitor for fixed class
 - Add pod level LLC and MBA configuration/adjustment and monitor
+- Support pod LLC/MBA configuration/adjustment switching at pod level and QoS class
 
 ### Non-Goals/Future Work
 
@@ -92,7 +93,7 @@ Currently, Koordinator supports LLC and MBA configuration and adjustment by conf
 To achieve real-time control over LLC and MBA at fixed class and pod level, we will implement a runtime hook plugin dedicated to these functionalities. This plugin, named the Resctrl runtime hook plugin, will leverage NRI to facilitate timely adjustments and granular resource management.
 
 - Resctrl runtime hook will create/update QoS class level by using Rule to subscribe NodeSLO
-- Resctrl runtime hook subscribe RunPodSandBox event, and will handle pod level LLC and MBA schemata init
+- Resctrl runtime hook subscribe RunPodSandBox event, and will handle pod level LLC and MBA schemata init, also responsible for creating the ctrl group for the QoS class level
 - Resctrl runtime hook subscribe CreateContainer event, and set closid to ContainerContext, ContainerContext will update OCI spec based on the closid
 - Resctrl runtime hook will register a callback to Reconciler to consume ContainerTaskIds and then update new ContainerTaskIds to corresponding resctrl control group and monitor group
 
@@ -217,7 +218,7 @@ To achieve fine-grained control and monitoring of LLC and MBA resources, we prop
 
 
 ##### Fixed Class Level LLC/MBA
-1. Subscribe RunPodSanbox, if pod without annotation `node.koordinator.sh/resctrl`, ResctrlEngine will record this pod.
+1. Subscribe RunPodSanbox, if pod without annotation `node.koordinator.sh/resctrl` and corresponding resctrl control group does not exist, then resctrl runtime hook will create it for this QoS class. Resctrl runtime hook plugin need to reserve enough control group for QoS class
 2. Subscribe CreateContainer, resctrl runtime hook will get closid and runc prestart hook from ResctrlEngine, and then update ContainerContext, leverage ContainerContext to adjust OCI spec
 
 ##### Exsiting Pod
@@ -462,6 +463,23 @@ func (s *podsInformer) syncPods() error {
 
 Reconciler will help guarantee eventual consistency of Resctrl configuration. It will reconcile all QoS class resctrl config based on NodeSLO. For pod level, it will reconcile all pods resctrl config based on their annotations. 
 
+```go
+func (c *reconciler) reconcileKubeQOSCgroup(stopCh <-chan struct{}) {
+    // TODO refactor kubeqos reconciler, inotify watch corresponding cgroup file and update only when receive modified event
+    timer := time.NewTimer(c.reconcileInterval)
+    defer timer.Stop()
+    for {
+        select {
+            case <-timer.C:
+            // reconcile QoS class level LLC/MBA configuration/adjustment
+                doKubeQOSCgroup(c.executor)
+                timer.Reset(c.reconcileInterval)
+            case <-stopCh:
+                klog.V(1).Infof("stop reconcile kube qos cgroup")
+        }
+    }
+}
+```
 
 ```go
 func (c *reconciler) reconcilePodCgroup(stopCh <-chan struct{}) {
@@ -474,7 +492,7 @@ func (c *reconciler) reconcilePodCgroup(stopCh <-chan struct{}) {
                 // add resctrl group for specific pod
             case <-c.podUpdated:
                 podsMeta := c.getPodsMeta()
-                // call Resctrl runtime hook reconcilerFn to write new taskids to cgroup
+                // call Resctrl runtime hook reconcilerFn to write new taskids to cgroup based on annotation or QoS class
             // add new pod event handler
             case <-c.PodRemoved:
                 // remove resctrl group for specific pod
