@@ -39,6 +39,7 @@ import (
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	fakekoordclientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/fake"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 )
@@ -223,6 +224,8 @@ func Test_statesInformer_syncPods(t *testing.T) {
 		}},
 		podHasSynced:   atomic.NewBool(false),
 		callbackRunner: NewCallbackRunner(),
+		cgroupReader:   resourceexecutor.NewCgroupReader(),
+		config:         c,
 	}
 
 	err := m.syncPods()
@@ -377,6 +380,8 @@ func Test_statesInformer_syncKubeletLoop(t *testing.T) {
 		}},
 		callbackRunner: NewCallbackRunner(),
 		podHasSynced:   atomic.NewBool(false),
+		cgroupReader:   resourceexecutor.NewCgroupReader(),
+		config:         c,
 	}
 	go m.syncKubeletLoop(c.KubeletSyncInterval, stopCh)
 	time.Sleep(5 * time.Second)
@@ -528,6 +533,244 @@ func Test_recordPodResourceMetrics(t *testing.T) {
 			defer metrics.Register(nil)
 
 			recordPodResourceMetrics(tt.arg)
+		})
+	}
+}
+
+func testingPrepareContainerCgroupCPUTasks(t *testing.T, helper *system.FileTestUtil, containerParentPath, tasksStr string) {
+	tasks, err := system.GetCgroupResource(system.CPUTasksName)
+	assert.NoError(t, err)
+	helper.WriteCgroupFileContents(containerParentPath, tasks, tasksStr)
+}
+
+func Test_getTaskIds(t *testing.T) {
+	type args struct {
+		podMeta *statesinformer.PodMeta
+	}
+	type fields struct {
+		containerParentDir string
+		containerTasksStr  string
+		invalidPath        bool
+		useCgroupsV2       bool
+	}
+	tests := []struct {
+		name   string
+		args   args
+		fields fields
+		want   map[string][]int32
+	}{
+		{
+			name: "do nothing for empty pod",
+			args: args{
+				podMeta: &statesinformer.PodMeta{Pod: &corev1.Pod{}},
+			},
+			want: nil,
+		},
+		{
+			name: "successfully get task ids for the pod",
+			fields: fields{
+				containerParentDir: "kubepods.slice/p0/cri-containerd-c0.scope",
+				containerTasksStr:  "122450\n122454\n123111\n128912",
+			},
+			args: args{
+				podMeta: &statesinformer.PodMeta{
+					Pod: &corev1.Pod{
+						ObjectMeta: metav1.ObjectMeta{
+							Name: "pod0",
+							UID:  "p0",
+						},
+						Spec: corev1.PodSpec{
+							Containers: []corev1.Container{
+								{
+									Name: "container0",
+								},
+							},
+						},
+						Status: corev1.PodStatus{
+							ContainerStatuses: []corev1.ContainerStatus{
+								{
+									Name:        "container0",
+									ContainerID: "containerd://c0",
+								},
+							},
+						},
+					},
+					CgroupDir:        "kubepods.slice/p0",
+					ContainerTaskIds: make(map[string][]int32),
+				},
+			},
+			want: map[string][]int32{"containerd://c0": {122450, 122454, 123111, 128912}},
+		},
+		{
+			name: "return empty for invalid path",
+			fields: fields{
+				containerParentDir: "p0/cri-containerd-c0.scope",
+				containerTasksStr:  "122454\n123111\n128912",
+				invalidPath:        true,
+			},
+			args: args{
+				podMeta: &statesinformer.PodMeta{
+					Pod: &corev1.Pod{
+						ObjectMeta: metav1.ObjectMeta{
+							Name: "pod0",
+							UID:  "p0",
+						},
+						Spec: corev1.PodSpec{
+							Containers: []corev1.Container{
+								{
+									Name: "container0",
+								},
+							},
+						},
+						Status: corev1.PodStatus{
+							ContainerStatuses: []corev1.ContainerStatus{
+								{
+									Name:        "container0",
+									ContainerID: "containerd://c0",
+								},
+							},
+						},
+					},
+					CgroupDir:        "kubepods.slice/p0",
+					ContainerTaskIds: make(map[string][]int32),
+				},
+			},
+			want: make(map[string][]int32),
+		},
+		{
+			name: "missing container's status",
+			fields: fields{
+				containerParentDir: "p0/cri-containerd-c0.scope",
+				containerTasksStr:  "122454\n123111\n128912",
+				invalidPath:        true,
+			},
+			args: args{
+				podMeta: &statesinformer.PodMeta{
+					Pod: &corev1.Pod{
+						ObjectMeta: metav1.ObjectMeta{
+							Name: "pod0",
+							UID:  "p0",
+						},
+						Spec: corev1.PodSpec{
+							Containers: []corev1.Container{
+								{
+									Name: "container0",
+								},
+							},
+						},
+						Status: corev1.PodStatus{
+							Phase:             corev1.PodRunning,
+							ContainerStatuses: []corev1.ContainerStatus{},
+						},
+					},
+					CgroupDir:        "kubepods.slice/p0",
+					ContainerTaskIds: make(map[string][]int32),
+				},
+			},
+			want: make(map[string][]int32),
+		},
+		{
+			name: "successfully get task ids on cgroups v2",
+			fields: fields{
+				containerParentDir: "kubepods.slice/p0/cri-containerd-c0.scope",
+				containerTasksStr:  "122450\n122454\n123111\n128912",
+				useCgroupsV2:       true,
+			},
+			args: args{
+				podMeta: &statesinformer.PodMeta{
+					Pod: &corev1.Pod{
+						ObjectMeta: metav1.ObjectMeta{
+							Name: "pod0",
+							UID:  "p0",
+						},
+						Spec: corev1.PodSpec{
+							Containers: []corev1.Container{
+								{
+									Name: "container0",
+								},
+							},
+						},
+						Status: corev1.PodStatus{
+							ContainerStatuses: []corev1.ContainerStatus{
+								{
+									Name:        "container0",
+									ContainerID: "containerd://c0",
+								},
+							},
+						},
+					},
+					CgroupDir:        "kubepods.slice/p0",
+					ContainerTaskIds: make(map[string][]int32),
+				},
+			},
+			want: map[string][]int32{"containerd://c0": {122450, 122454, 123111, 128912}},
+		},
+		{
+			name: "successfully get task ids from the sandbox container",
+			fields: fields{
+				containerParentDir: "kubepods.slice/kubepods-besteffort.slice/kubepods-besteffort-podp0.slice/cri-containerd-abc.scope",
+				containerTasksStr:  "122450\n122454\n123111\n128912",
+				useCgroupsV2:       true,
+			},
+			args: args{
+				podMeta: &statesinformer.PodMeta{
+					Pod: &corev1.Pod{
+						ObjectMeta: metav1.ObjectMeta{
+							Name: "pod0",
+							UID:  "p0",
+						},
+						Spec: corev1.PodSpec{
+							Containers: []corev1.Container{
+								{
+									Name: "container0",
+								},
+							},
+						},
+						Status: corev1.PodStatus{
+							ContainerStatuses: []corev1.ContainerStatus{
+								{
+									Name:        "container0",
+									ContainerID: "containerd://c0",
+								},
+							},
+						},
+					},
+					CgroupDir:        "kubepods.slice/kubepods-besteffort.slice/kubepods-besteffort-podp0.slice",
+					ContainerTaskIds: make(map[string][]int32),
+				},
+			},
+			want: map[string][]int32{"containerd://abc": {122450, 122454, 123111, 128912}},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			helper := system.NewFileTestUtil(t)
+			helper.SetCgroupsV2(tt.fields.useCgroupsV2)
+			defer helper.Cleanup()
+
+			testingPrepareContainerCgroupCPUTasks(t, helper, tt.fields.containerParentDir, tt.fields.containerTasksStr)
+
+			system.CommonRootDir = ""
+			if tt.fields.invalidPath {
+				system.Conf.CgroupRootDir = "invalidPath"
+			}
+
+			c := NewDefaultConfig()
+
+			m := &podsInformer{
+				kubelet: &testKubeletStub{pods: corev1.PodList{
+					Items: []corev1.Pod{
+						{},
+					},
+				}},
+				callbackRunner: NewCallbackRunner(),
+				podHasSynced:   atomic.NewBool(false),
+				cgroupReader:   resourceexecutor.NewCgroupReader(),
+				config:         c,
+			}
+
+			m.getTaskIds(tt.args.podMeta)
+			assert.Equal(t, tt.want, tt.args.podMeta.ContainerTaskIds)
 		})
 	}
 }

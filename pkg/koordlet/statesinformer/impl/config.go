@@ -33,6 +33,7 @@ type Config struct {
 	DisableQueryKubeletConfig   bool
 	EnableNodeMetricReport      bool
 	MetricReportInterval        time.Duration // Deprecated
+	EnablePodTaskIds            bool
 }
 
 func NewDefaultConfig() *Config {
@@ -45,6 +46,7 @@ func NewDefaultConfig() *Config {
 		NodeTopologySyncInterval:    3 * time.Second,
 		DisableQueryKubeletConfig:   false,
 		EnableNodeMetricReport:      true,
+		EnablePodTaskIds:            false,
 	}
 }
 
@@ -58,4 +60,5 @@ func (c *Config) InitFlags(fs *flag.FlagSet) {
 	fs.BoolVar(&c.DisableQueryKubeletConfig, "disable-query-kubelet-config", c.DisableQueryKubeletConfig, "Disables querying the kubelet configuration from kubelet. Flag must be set to true if kubelet-insecure-tls=true is configured")
 	fs.DurationVar(&c.MetricReportInterval, "report-interval", c.MetricReportInterval, "Deprecated since v1.1, use ColocationStrategy.MetricReportIntervalSeconds in config map of slo-controller")
 	fs.BoolVar(&c.EnableNodeMetricReport, "enable-node-metric-report", c.EnableNodeMetricReport, "Enable status update of node metric crd.")
+	fs.BoolVar(&c.EnablePodTaskIds, "enable-pod-taskids", c.EnablePodTaskIds, "Enable pod taskids in statesinformer.")
 }
