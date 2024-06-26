@@ -21,6 +21,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/uuid"
 
@@ -43,4 +44,86 @@ func TestSetReservationAllocated(t *testing.T) {
 		Name: reservation.Name,
 	}
 	assert.Equal(t, expectReservationAllocated, reservationAllocated)
+}
+
+func TestExactMatchReservation(t *testing.T) {
+	tests := []struct {
+		name                   string
+		podRequests            corev1.ResourceList
+		reservationAllocatable corev1.ResourceList
+		spec                   *ExactMatchReservationSpec
+		want                   bool
+	}{
+		{
+			name: "exact matched cpu",
+			spec: &ExactMatchReservationSpec{
+				ResourceNames: []corev1.ResourceName{
+					corev1.ResourceCPU,
+				},
+			},
+			podRequests: corev1.ResourceList{
+				corev1.ResourceCPU: resource.MustParse("1"),
+			},
+			reservationAllocatable: corev1.ResourceList{
+				corev1.ResourceCPU: resource.MustParse("1"),
+			},
+			want: true,
+		},
+		{
+			name: "exact matched cpu",
+			spec: &ExactMatchReservationSpec{
+				ResourceNames: []corev1.ResourceName{
+					corev1.ResourceCPU,
+				},
+			},
+			podRequests: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("1"),
+				corev1.ResourceMemory: resource.MustParse("1Gi"),
+			},
+			reservationAllocatable: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("1"),
+				corev1.ResourceMemory: resource.MustParse("2Gi"),
+			},
+			want: true,
+		},
+		{
+			name: "exact matched cpu, memory not exact matched",
+			spec: &ExactMatchReservationSpec{
+				ResourceNames: []corev1.ResourceName{
+					corev1.ResourceCPU,
+					corev1.ResourceMemory,
+				},
+			},
+			podRequests: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("1"),
+				corev1.ResourceMemory: resource.MustParse("1Gi"),
+			},
+			reservationAllocatable: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("1"),
+				corev1.ResourceMemory: resource.MustParse("2Gi"),
+			},
+			want: false,
+		},
+		{
+			name: "exact matched cpu, memory exact match spec doesn't matter",
+			spec: &ExactMatchReservationSpec{
+				ResourceNames: []corev1.ResourceName{
+					corev1.ResourceCPU,
+					corev1.ResourceMemory,
+				},
+			},
+			podRequests: corev1.ResourceList{
+				corev1.ResourceCPU: resource.MustParse("1"),
+			},
+			reservationAllocatable: corev1.ResourceList{
+				corev1.ResourceCPU: resource.MustParse("1"),
+			},
+			want: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, ExactMatchReservation(tt.podRequests, tt.reservationAllocatable, tt.spec))
+		})
+	}
 }

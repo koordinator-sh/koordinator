@@ -161,3 +161,57 @@ func SetReservationRestrictedOptions(obj metav1.Object, options *ReservationRest
 	obj.SetAnnotations(annotations)
 	return nil
 }
+
+const (
+	AnnotationExactMatchReservationSpec = SchedulingDomainPrefix + "/exact-match-reservation"
+)
+
+type ExactMatchReservationSpec struct {
+	ResourceNames []corev1.ResourceName `json:"resourceNames,omitempty"`
+}
+
+func SetExactMatchReservationSpec(obj metav1.Object, spec *ExactMatchReservationSpec) error {
+	data, err := json.Marshal(spec)
+	if err != nil {
+		return err
+	}
+	annotations := obj.GetAnnotations()
+	if annotations == nil {
+		annotations = map[string]string{}
+	}
+	annotations[AnnotationExactMatchReservationSpec] = string(data)
+	obj.SetAnnotations(annotations)
+	return nil
+}
+
+func GetExactMatchReservationSpec(annotations map[string]string) (*ExactMatchReservationSpec, error) {
+	if s := annotations[AnnotationExactMatchReservationSpec]; s != "" {
+		var exactMatchReservationSpec ExactMatchReservationSpec
+		if err := json.Unmarshal([]byte(s), &exactMatchReservationSpec); err != nil {
+			return nil, err
+		}
+		return &exactMatchReservationSpec, nil
+	}
+	return nil, nil
+}
+
+func ExactMatchReservation(podRequests, reservationAllocatable corev1.ResourceList, spec *ExactMatchReservationSpec) bool {
+	if spec == nil || len(spec.ResourceNames) == 0 {
+		return true
+	}
+	for _, resourceName := range spec.ResourceNames {
+		allocatable, existsInReservation := reservationAllocatable[resourceName]
+		request, existsInPod := podRequests[resourceName]
+		if !existsInReservation || !existsInPod {
+			if !existsInReservation && !existsInPod {
+				return true
+			}
+			return false
+		}
+
+		if allocatable.Cmp(request) != 0 {
+			return false
+		}
+	}
+	return true
+}
