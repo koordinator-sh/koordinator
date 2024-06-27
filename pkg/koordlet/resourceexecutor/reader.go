@@ -40,6 +40,7 @@ type CgroupReader interface {
 	ReadCPUProcs(parentDir string) ([]uint32, error)
 	ReadPSI(parentDir string) (*sysutil.PSIByResource, error)
 	ReadMemoryColdPageUsage(parentDir string) (uint64, error)
+	ReadNetClsId(parentDir string) (uint64, error)
 }
 
 var _ CgroupReader = &CgroupV1Reader{}
@@ -228,6 +229,14 @@ func (r *CgroupV1Reader) ReadPSI(parentDir string) (*sysutil.PSIByResource, erro
 		return nil, err
 	}
 	return psi, nil
+}
+
+func (r *CgroupV1Reader) ReadNetClsId(parentDir string) (uint64, error) {
+	resource, ok := sysutil.DefaultRegistry.Get(sysutil.CgroupVersionV1, sysutil.NetClsClassIdName)
+	if !ok {
+		return 0, ErrResourceNotRegistered
+	}
+	return readCgroupAndParseUint64(parentDir, resource)
 }
 
 var _ CgroupReader = &CgroupV2Reader{}
@@ -434,6 +443,14 @@ func (r *CgroupV2Reader) ReadPSI(parentDir string) (*sysutil.PSIByResource, erro
 		return nil, err
 	}
 	return psi, nil
+}
+
+func (r *CgroupV2Reader) ReadNetClsId(parentDir string) (uint64, error) {
+	resource, ok := sysutil.DefaultRegistry.Get(sysutil.CgroupVersionV2, sysutil.NetClsClassIdName)
+	if !ok {
+		return 0, ErrResourceNotRegistered
+	}
+	return readCgroupAndParseUint64(parentDir, resource)
 }
 
 func NewCgroupReader() CgroupReader {

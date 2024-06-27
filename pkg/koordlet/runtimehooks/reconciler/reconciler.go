@@ -17,6 +17,7 @@ limitations under the License.
 package reconciler
 
 import (
+	"strconv"
 	"sync"
 	"time"
 
@@ -103,6 +104,7 @@ type podQOSFilter struct{}
 
 const (
 	PodQOSFilterName = "podQOS"
+	HostNetWork      = "hostNetwork"
 )
 
 func (p *podQOSFilter) Name() string {
@@ -123,6 +125,16 @@ func (p *podQOSFilter) Filter(podMeta *statesinformer.PodMeta) string {
 	return string(qosClass)
 }
 
+type podHostNetworkFilter struct{}
+
+func (p *podHostNetworkFilter) Name() string {
+	return HostNetWork
+}
+
+func (p *podHostNetworkFilter) Filter(podMeta *statesinformer.PodMeta) string {
+	return strconv.FormatBool(podMeta.Pod.Spec.HostNetwork)
+}
+
 var singletonPodQOSFilter *podQOSFilter
 
 // PodQOSFilter returns a Filter which filters pod qos class
@@ -131,6 +143,16 @@ func PodQOSFilter() Filter {
 		singletonPodQOSFilter = &podQOSFilter{}
 	}
 	return singletonPodQOSFilter
+}
+
+var singletonPodHostNetworkFilter *podHostNetworkFilter
+
+// PodHostNetworkFilter returns a Filter which filters pod hostnetwork is true
+func PodHostNetworkFilter() *podHostNetworkFilter {
+	if singletonPodQOSFilter == nil {
+		singletonPodHostNetworkFilter = &podHostNetworkFilter{}
+	}
+	return singletonPodHostNetworkFilter
 }
 
 type reconcileFunc func(protocol.HooksProtocol) error
