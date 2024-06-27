@@ -373,7 +373,7 @@ func evictPodsFromSourceNodes(
 	prodKeysAndValues := []interface{}{
 		"nodePool", nodePoolName,
 	}
-	for resourceName, quantity := range nodeTotalAvailableUsages {
+	for resourceName, quantity := range prodTotalAvailableUsages {
 		prodKeysAndValues = append(prodKeysAndValues, string(resourceName), quantity.String())
 	}
 	klog.V(4).InfoS("Total prod usage capacity to be moved", prodKeysAndValues...)
