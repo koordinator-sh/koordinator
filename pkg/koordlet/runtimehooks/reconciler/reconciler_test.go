@@ -32,6 +32,36 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 )
 
+type none1Filter struct{}
+
+const (
+	None1FilterCondition = "none1"
+	None2FilterCondition = "none2"
+	None1FilterName      = "none"
+)
+
+func (d *none1Filter) Name() string {
+	return None1FilterName
+}
+
+func (d *none1Filter) Filter(podMeta *statesinformer.PodMeta) string {
+	if podMeta.Pod.Name == "test1-pod-name" {
+		return None1FilterCondition
+	} else if podMeta.Pod.Name == "test2-pod-name" {
+		return None2FilterCondition
+	}
+	return podMeta.Pod.Name
+}
+
+var singletonNone1Filter *none1Filter
+
+func None1Filter() Filter {
+	if singletonNone1Filter == nil {
+		singletonNone1Filter = &none1Filter{}
+	}
+	return singletonNone1Filter
+}
+
 func Test_doKubeQOSCgroup(t *testing.T) {
 	type args struct {
 		resource     system.Resource
@@ -136,14 +166,16 @@ func Test_reconciler_reconcilePodCgroup(t *testing.T) {
 
 	RegisterCgroupReconciler(PodLevel, system.CPUBVTWarpNs, "get pod uid", podReconcilerFn, NoneFilter())
 	RegisterCgroupReconciler(ContainerLevel, system.CPUBVTWarpNs, "get container uid", containerReconcilerFn, NoneFilter())
-	RegisterCgroupReconciler4AllPods(AllPodsLevel, system.CPUBVTWarpNs, "get all pods uid", allpodReconcilerFn, NoneFilter())
+	RegisterCgroupReconciler4AllPods(AllPodsLevel, system.CPUBVTWarpNs, "get all pods uid", allpodReconcilerFn, None1Filter(), None1FilterCondition)
+	RegisterCgroupReconciler4AllPods(AllPodsLevel, system.CPUBVTWarpNs, "get all pods uid", allpodReconcilerFn, None1Filter(), None2FilterCondition)
 
 	type fields struct {
 		podsMeta []*statesinformer.PodMeta
 	}
 	type wants struct {
-		wantPods       map[string]string
-		wantContainers map[string]string
+		wantPods         map[string]string
+		wantContainers   map[string]string
+		wantPods4AllPods map[string]string
 	}
 
 	test := struct {
@@ -159,21 +191,21 @@ func Test_reconciler_reconcilePodCgroup(t *testing.T) {
 					Pod: &corev1.Pod{
 						ObjectMeta: metav1.ObjectMeta{
 							Namespace: "test-ns",
-							Name:      "test-pod-name",
-							UID:       "test-pod-uid",
+							Name:      "test1-pod-name",
+							UID:       "test1-pod-uid",
 						},
 						Spec: corev1.PodSpec{
 							Containers: []corev1.Container{
 								{
-									Name: "test-container-name",
+									Name: "test1-container-name",
 								},
 							},
 						},
 						Status: corev1.PodStatus{
 							ContainerStatuses: []corev1.ContainerStatus{
 								{
-									Name:        "test-container-name",
-									ContainerID: "test-container-id",
+									Name:        "test1-container-name",
+									ContainerID: "test1-container-id",
 								},
 							},
 						},
@@ -183,21 +215,45 @@ func Test_reconciler_reconcilePodCgroup(t *testing.T) {
 					Pod: &corev1.Pod{
 						ObjectMeta: metav1.ObjectMeta{
 							Namespace: "test-ns",
-							Name:      "test-pod-name-1",
-							UID:       "test-pod-uid-1",
+							Name:      "test2-pod-name",
+							UID:       "test2-pod-uid",
 						},
 						Spec: corev1.PodSpec{
 							Containers: []corev1.Container{
 								{
-									Name: "test-container-name-1",
+									Name: "test2-container-name",
 								},
 							},
 						},
 						Status: corev1.PodStatus{
 							ContainerStatuses: []corev1.ContainerStatus{
 								{
-									Name:        "test-container-name-1",
-									ContainerID: "test-container-id-1",
+									Name:        "test2-container-name",
+									ContainerID: "test2-container-id",
+								},
+							},
+						},
+					},
+				},
+				{
+					Pod: &corev1.Pod{
+						ObjectMeta: metav1.ObjectMeta{
+							Namespace: "test-ns",
+							Name:      "test3-pod-name",
+							UID:       "test3-pod-uid",
+						},
+						Spec: corev1.PodSpec{
+							Containers: []corev1.Container{
+								{
+									Name: "test3-container-name",
+								},
+							},
+						},
+						Status: corev1.PodStatus{
+							ContainerStatuses: []corev1.ContainerStatus{
+								{
+									Name:        "test3-container-name",
+									ContainerID: "test3-container-id",
 								},
 							},
 						},
@@ -207,12 +263,18 @@ func Test_reconciler_reconcilePodCgroup(t *testing.T) {
 		},
 		wants: wants{
 			wantPods: map[string]string{
-				genPodKey("test-ns", "test-pod-name"):   "test-pod-uid",
-				genPodKey("test-ns", "test-pod-name-1"): "test-pod-uid-1",
+				genPodKey("test-ns", "test1-pod-name"): "test1-pod-uid",
+				genPodKey("test-ns", "test2-pod-name"): "test2-pod-uid",
+				genPodKey("test-ns", "test3-pod-name"): "test3-pod-uid",
 			},
 			wantContainers: map[string]string{
-				genContainerKey("test-ns", "test-pod-name", "test-container-name"):     "test-container-id",
-				genContainerKey("test-ns", "test-pod-name-1", "test-container-name-1"): "test-container-id-1",
+				genContainerKey("test-ns", "test1-pod-name", "test1-container-name"): "test1-container-id",
+				genContainerKey("test-ns", "test2-pod-name", "test2-container-name"): "test2-container-id",
+				genContainerKey("test-ns", "test3-pod-name", "test3-container-name"): "test3-container-id",
+			},
+			wantPods4AllPods: map[string]string{
+				genPodKey("test-ns", "test1-pod-name"): "test1-pod-uid",
+				genPodKey("test-ns", "test2-pod-name"): "test2-pod-uid",
 			},
 		},
 	}
@@ -229,7 +291,7 @@ func Test_reconciler_reconcilePodCgroup(t *testing.T) {
 		c.reconcilePodCgroup(stopCh)
 		assert.Equal(t, test.wants.wantPods, podLevelOutput, "pod reconciler should be equal")
 		assert.Equal(t, test.wants.wantContainers, containerLevelOutput, "container reconciler should be equal")
-		assert.Equal(t, test.wants.wantPods, allPodsLevelOutput, "all pods reconciler should be equal")
+		assert.Equal(t, test.wants.wantPods4AllPods, allPodsLevelOutput, "all pods reconciler should be equal")
 	})
 }
 

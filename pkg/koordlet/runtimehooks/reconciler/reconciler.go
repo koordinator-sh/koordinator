@@ -447,32 +447,33 @@ func (c *reconciler) reconcilePodCgroup(stopCh <-chan struct{}) {
 			}
 
 			for _, r := range globalCgroupReconcilers.allPodsLevel {
-				var reconcileFn reconcileFunc4AllPods
 				currentPods := make([]protocol.HooksProtocol, 0)
+				fns := make(map[string]reconcileFunc4AllPods)
 				for _, podMeta := range podsMeta {
-					if fn, ok := r.fn4AllPods[r.filter.Filter(podMeta)]; ok {
+					key := r.filter.Filter(podMeta)
+					if fn, ok := r.fn4AllPods[key]; ok {
 						podCtx := protocol.HooksProtocolBuilder.Pod(podMeta)
 						currentPods = append(currentPods, podCtx)
-						if reconcileFn == nil {
-							reconcileFn = fn
-						}
+						fns[key] = fn
 					}
 				}
 
 				if len(currentPods) > 0 {
-					if reconcileFn == nil {
+					if len(fns) == 0 {
 						klog.V(5).Infof("calling reconcile function %v aborted, condition %s not registered",
 							r.description, r.filter.Name())
 						continue
 					}
 
-					if err := reconcileFn(currentPods); err != nil {
-						klog.Warningf("calling reconcile function %v for pod %v failed, error %v",
-							r.description, err)
+					for k, fn := range fns {
+						if err := fn(currentPods); err != nil {
+							klog.Warningf("calling reconcile function %v for pod %v failed, error %v, condition %s",
+								r.description, err, k)
+						}
 					}
 				}
-
 			}
+
 		case <-stopCh:
 			klog.V(1).Infof("stop reconcile pod cgroup")
 			return
