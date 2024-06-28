@@ -20,6 +20,7 @@ import (
 	"context"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
@@ -69,6 +70,7 @@ func (p *Plugin) GetPodTopologyHints(ctx context.Context, cycleState *framework.
 	resourceOptions.numaScorer = p.numaScorer
 	hints, err := p.resourceManager.GetTopologyHints(node, pod, resourceOptions, numaTopologyPolicy, restoreState)
 	if err != nil {
+		klog.V(5).ErrorS(err, "failed to get topology hints", "pod", klog.KObj(pod), "node", nodeName)
 		return nil, framework.NewStatus(framework.Unschedulable, "node(s) Insufficient NUMA Node resources")
 	}
 	return hints, nil

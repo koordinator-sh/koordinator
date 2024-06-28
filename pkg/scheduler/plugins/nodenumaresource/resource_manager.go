@@ -28,6 +28,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
@@ -130,13 +131,16 @@ func (c *resourceManager) GetTopologyHints(node *corev1.Node, pod *corev1.Pod, o
 	}
 
 	options.reusableResources = appendAllocated(nil, restoreStateData.mergedUnmatchedUsed, restoreStateData.mergedMatchedAllocatable)
+	options.preferredCPUs = restoreStateData.mergedMatchedReservedCPUs
 	totalAvailable, _, err := c.getAvailableNUMANodeResources(node.Name, topologyOptions, options.reusableResources)
 	if err != nil {
 		return nil, err
 	}
+	klog.V(6).InfoS("GetTopologyHints", "pod", klog.KObj(pod), "node", node.Name, "before trimmed", totalAvailable)
 	if err := c.trimNUMANodeResources(node.Name, totalAvailable, options); err != nil {
 		return nil, err
 	}
+	klog.V(6).InfoS("GetTopologyHints", "pod", klog.KObj(pod), "node", node.Name, "after trimmed", totalAvailable)
 
 	hints := c.generateResourceHints(node, pod, topologyOptions.NUMANodeResources, options, totalAvailable, policy, restoreStateData)
 	return hints, nil
@@ -484,6 +488,8 @@ func (c *resourceManager) generateResourceHints(node *corev1.Node, pod *corev1.P
 			}
 		}
 	}
+
+	klog.V(5).InfoS("generate resource hints", "numaNodesLackResource", numaNodesLackResource, "pod", klog.KObj(pod), "node", node.Name)
 
 	generator := hintsGenerator{
 		numaNodesLackResource: numaNodesLackResource,
