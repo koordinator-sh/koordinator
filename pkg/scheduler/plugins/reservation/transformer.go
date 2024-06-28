@@ -228,13 +228,15 @@ func (pl *Plugin) prepareMatchReservationState(ctx context.Context, cycleState *
 	podRequests := resourceapi.PodRequests(pod, resourceapi.PodResourcesOptions{})
 	podRequestResources := framework.NewResource(podRequests)
 	state := &stateData{
-		hasAffinity:              reservationAffinity != nil,
-		podRequests:              podRequests,
-		podRequestsResources:     podRequestResources,
-		preemptible:              map[string]corev1.ResourceList{},
-		preemptibleInRRs:         map[string]map[types.UID]corev1.ResourceList{},
-		nodeReservationStates:    map[string]nodeReservationState{},
-		nodeReservationDiagnosis: map[string]*nodeDiagnosisState{},
+		schedulingStateData: schedulingStateData{
+			hasAffinity:              reservationAffinity != nil,
+			podRequests:              podRequests,
+			podRequestsResources:     podRequestResources,
+			preemptible:              map[string]corev1.ResourceList{},
+			preemptibleInRRs:         map[string]map[types.UID]corev1.ResourceList{},
+			nodeReservationStates:    map[string]nodeReservationState{},
+			nodeReservationDiagnosis: map[string]*nodeDiagnosisState{},
+		},
 	}
 	pluginToNodeReservationRestoreState := frameworkext.PluginToNodeReservationRestoreStates{}
 	for index := range allNodeReservationStates {

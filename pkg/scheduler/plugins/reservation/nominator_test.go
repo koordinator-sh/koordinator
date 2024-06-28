@@ -289,9 +289,11 @@ func TestNominateReservation(t *testing.T) {
 			cycleState := framework.NewCycleState()
 			requests := apiresource.PodRequests(tt.pod, apiresource.PodResourcesOptions{})
 			state := &stateData{
-				nodeReservationStates: map[string]nodeReservationState{},
-				podRequests:           requests,
-				podRequestsResources:  framework.NewResource(requests),
+				schedulingStateData: schedulingStateData{
+					nodeReservationStates: map[string]nodeReservationState{},
+					podRequests:           requests,
+					podRequestsResources:  framework.NewResource(requests),
+				},
 			}
 			for _, reservation := range tt.reservations {
 				rInfo := frameworkext.NewReservationInfo(reservation)

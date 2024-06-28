@@ -149,6 +149,19 @@ func (pl *Plugin) EventsToRegister() []framework.ClusterEventWithHint {
 var _ framework.StateData = &stateData{}
 
 type stateData struct {
+	// scheduling cycle data
+	schedulingStateData
+
+	// all cycle data
+	// NOTE: The part of data is kept during both the scheduling cycle and the binding cycle. In case too many
+	// binding goroutines reference the data causing OOM issues, the memory overhead of this part should be
+	// small and its space complexity should be no more than O(1) for pods, reservations and nodes.
+	assumed *frameworkext.ReservationInfo
+}
+
+// schedulingStateData is the data only kept in the scheduling cycle. It could be cleaned up
+// before entering the binding cycle to reduce memory cost.
+type schedulingStateData struct {
 	preemptLock          sync.RWMutex
 	hasAffinity          bool
 	podRequests          corev1.ResourceList
@@ -159,7 +172,6 @@ type stateData struct {
 	nodeReservationStates    map[string]nodeReservationState
 	nodeReservationDiagnosis map[string]*nodeDiagnosisState
 	preferredNode            string
-	assumed                  *frameworkext.ReservationInfo
 }
 
 type nodeReservationState struct {
@@ -182,13 +194,15 @@ type nodeDiagnosisState struct {
 
 func (s *stateData) Clone() framework.StateData {
 	ns := &stateData{
-		hasAffinity:              s.hasAffinity,
-		podRequests:              s.podRequests,
-		podRequestsResources:     s.podRequestsResources,
-		nodeReservationStates:    s.nodeReservationStates,
-		nodeReservationDiagnosis: s.nodeReservationDiagnosis,
-		preferredNode:            s.preferredNode,
-		assumed:                  s.assumed,
+		schedulingStateData: schedulingStateData{
+			hasAffinity:              s.hasAffinity,
+			podRequests:              s.podRequests,
+			podRequestsResources:     s.podRequestsResources,
+			nodeReservationStates:    s.nodeReservationStates,
+			nodeReservationDiagnosis: s.nodeReservationDiagnosis,
+			preferredNode:            s.preferredNode,
+		},
+		assumed: s.assumed,
 	}
 
 	s.preemptLock.RLock()
@@ -214,6 +228,12 @@ func (s *stateData) Clone() framework.StateData {
 	ns.preemptibleInRRs = preemptibleInRRs
 
 	return ns
+}
+
+// CleanSchedulingData clears the scheduling cycle data in the stateData to reduce memory cost before entering
+// the binding cycle.
+func (s *stateData) CleanSchedulingData() {
+	s.schedulingStateData = schedulingStateData{}
 }
 
 func getStateData(cycleState *framework.CycleState) *stateData {
@@ -660,6 +680,8 @@ func (pl *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState,
 				return framework.NewStatus(framework.Unschedulable, ErrReasonReservationAffinity)
 			}
 			klog.V(5).Infof("Skip reserve with reservation since there are no matched reservations, pod %v, node: %v", klog.KObj(pod), nodeName)
+			// clean scheduling cycle to avoid unnecessary memory cost before entering the binding
+			state.CleanSchedulingData()
 			return nil
 		}
 		pl.handle.GetReservationNominator().AddNominatedReservation(pod, nodeName, nominatedReservation)
@@ -671,6 +693,8 @@ func (pl *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState,
 		return framework.AsStatus(err)
 	}
 	state.assumed = nominatedReservation.Clone()
+	// clean scheduling cycle to avoid unnecessary memory cost before entering the binding
+	state.CleanSchedulingData()
 	klog.V(4).InfoS("Reserve pod to node with reservations", "pod", klog.KObj(pod), "node", nodeName, "assumed", klog.KObj(nominatedReservation))
 	return nil
 }
