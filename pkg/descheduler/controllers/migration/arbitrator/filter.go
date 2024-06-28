@@ -135,13 +135,13 @@ func (f *filter) initFilters(args *deschedulerconfig.MigrationControllerArgs, ha
 	if err != nil {
 		return err
 	}
-	retriablePodFilters := podutil.WrapFilterFuncs(
+	retryablePodFilters := podutil.WrapFilterFuncs(
 		f.filterMaxMigratingPerNode,
 		f.filterMaxMigratingPerNamespace,
 		f.filterMaxMigratingOrUnavailablePerWorkload,
 	)
 	f.retryablePodFilter = func(pod *corev1.Pod) bool {
-		return evictionsutil.HaveEvictAnnotation(pod) || retriablePodFilters(pod)
+		return evictionsutil.HaveEvictAnnotation(pod) || retryablePodFilters(pod)
 	}
 	f.nonRetryablePodFilter = func(pod *corev1.Pod) bool {
 		// any annotated as evictable pod pass non-retryable filter

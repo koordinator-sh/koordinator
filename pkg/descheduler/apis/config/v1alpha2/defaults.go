@@ -53,6 +53,7 @@ var (
 		MigrationLimitObjectWorkload: {
 			Duration: metav1.Duration{Duration: 5 * time.Minute},
 		},
+		// namespace object limiter is disabled as default
 	}
 
 	defaultLoadAnomalyCondition = &LoadAnomalyCondition{
