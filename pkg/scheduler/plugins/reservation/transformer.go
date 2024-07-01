@@ -33,6 +33,7 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework/parallelize"
 	schedutil "k8s.io/kubernetes/pkg/scheduler/util"
 
+	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
@@ -60,6 +61,13 @@ func (pl *Plugin) prepareMatchReservationState(ctx context.Context, cycleState *
 		return nil, false, status
 	}
 	requiredNodeAffinity := nodeaffinity.GetRequiredNodeAffinity(pod)
+
+	podRequests := resourceapi.PodRequests(pod, resourceapi.PodResourcesOptions{})
+	exactMatchReservationSpec, err := extension.GetExactMatchReservationSpec(pod.Annotations)
+	if err != nil {
+		klog.ErrorS(err, "Failed to parse exact match reservation spec", "pod", klog.KObj(pod))
+		return nil, false, framework.AsStatus(err)
+	}
 
 	var stateIndex, diagnosisIndex int32
 	allNodes := pl.reservationCache.listAllNodes()
@@ -106,6 +114,7 @@ func (pl *Plugin) prepareMatchReservationState(ctx context.Context, cycleState *
 			ownerMatched:             0,
 			isUnschedulableUnmatched: 0,
 			affinityUnmatched:        0,
+			notExactMatched:          0,
 		}
 		status := pl.reservationCache.forEachAvailableReservationOnNode(node.Name, func(rInfo *frameworkext.ReservationInfo) (bool, *framework.Status) {
 			if !rInfo.IsAvailable() || rInfo.ParseError != nil {
@@ -121,7 +130,8 @@ func (pl *Plugin) prepareMatchReservationState(ctx context.Context, cycleState *
 			isOwnerMatched := rInfo.Match(pod)
 			isUnschedulable := rInfo.IsUnschedulable()
 			isMatchReservationAffinity := matchReservationAffinity(node, rInfo, reservationAffinity)
-			if !isReservedPod && !isUnschedulable && isOwnerMatched && isMatchReservationAffinity {
+			isExactMatched := extension.ExactMatchReservation(podRequests, rInfo.Allocatable, exactMatchReservationSpec)
+			if !isReservedPod && !isUnschedulable && isOwnerMatched && isMatchReservationAffinity && isExactMatched {
 				matched = append(matched, rInfo.Clone())
 
 			} else if len(rInfo.AssignedPods) > 0 {
@@ -133,6 +143,8 @@ func (pl *Plugin) prepareMatchReservationState(ctx context.Context, cycleState *
 					diagnosisState.isUnschedulableUnmatched++
 				} else if !isMatchReservationAffinity {
 					diagnosisState.affinityUnmatched++
+				} else if !isExactMatched {
+					diagnosisState.notExactMatched++
 				}
 			}
 
@@ -224,8 +236,6 @@ func (pl *Plugin) prepareMatchReservationState(ctx context.Context, cycleState *
 	allNodeReservationStates = allNodeReservationStates[:stateIndex]
 	allPluginToRestoreState = allPluginToRestoreState[:stateIndex]
 	allNodeDiagnosisStates = allNodeDiagnosisStates[:diagnosisIndex]
-
-	podRequests := resourceapi.PodRequests(pod, resourceapi.PodResourcesOptions{})
 	podRequestResources := framework.NewResource(podRequests)
 	state := &stateData{
 		hasAffinity:              reservationAffinity != nil,

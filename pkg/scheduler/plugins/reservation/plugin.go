@@ -178,6 +178,7 @@ type nodeDiagnosisState struct {
 	ownerMatched             int // owner matched
 	isUnschedulableUnmatched int // owner matched but BeforePreFilter unmatched due to unschedulable
 	affinityUnmatched        int // owner matched but BeforePreFilter unmatched due to affinity
+	notExactMatched          int // owner matched but BeforePreFilter unmatched due to not exact match
 }
 
 func (s *stateData) Clone() framework.StateData {
@@ -540,15 +541,17 @@ func (pl *Plugin) PostFilter(_ context.Context, cycleState *framework.CycleState
 }
 
 func (pl *Plugin) makePostFilterReasons(state *stateData, filteredNodeStatusMap framework.NodeToStatusMap) []string {
-	ownerMatched, affinityUnmatched, isUnSchedulableUnmatched := 0, 0, 0
+	ownerMatched, affinityUnmatched, isUnSchedulableUnmatched, notExactMatched := 0, 0, 0, 0
 	// failure reasons and counts for the nodes which have not been handled by the Reservation's Filter
 	reasonsByNode := map[string]int{}
 	for nodeName, diagnosisState := range state.nodeReservationDiagnosis {
 		isUnSchedulableUnmatched += diagnosisState.isUnschedulableUnmatched
 		affinityUnmatched += diagnosisState.affinityUnmatched
 		ownerMatched += diagnosisState.ownerMatched
+		notExactMatched += diagnosisState.notExactMatched
+
 		// calculate the remaining unmatched which is owner-matched and Reservation BeforePreFilter matched
-		remainUnmatched := diagnosisState.ownerMatched - diagnosisState.affinityUnmatched - diagnosisState.isUnschedulableUnmatched
+		remainUnmatched := diagnosisState.ownerMatched - diagnosisState.affinityUnmatched - diagnosisState.isUnschedulableUnmatched - diagnosisState.notExactMatched
 		if remainUnmatched <= 0 { // no need to check other reasons
 			continue
 		}
@@ -588,6 +591,12 @@ func (pl *Plugin) makePostFilterReasons(state *stateData, filteredNodeStatusMap 
 	if isUnSchedulableUnmatched > 0 {
 		b.WriteString(strconv.Itoa(isUnSchedulableUnmatched))
 		b.WriteString(" Reservation(s) is unschedulable")
+		reasons = append(reasons, b.String())
+		b.Reset()
+	}
+	if notExactMatched > 0 {
+		b.WriteString(strconv.Itoa(notExactMatched))
+		b.WriteString(" Reservation(s) is not exact matched")
 		reasons = append(reasons, b.String())
 		b.Reset()
 	}

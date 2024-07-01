@@ -1900,6 +1900,60 @@ func TestPostFilter(t *testing.T) {
 				"4 Reservation(s) matched owner total"),
 		},
 		{
+			name: "show reservation matched owner, unschedulable and exact matched",
+			args: args{
+				hasStateData: true,
+				nodeReservationDiagnosis: map[string]*nodeDiagnosisState{
+					"test-node-0": {
+						ownerMatched:             3,
+						isUnschedulableUnmatched: 0,
+						notExactMatched:          3,
+					},
+					"test-node-1": {
+						ownerMatched:             2,
+						isUnschedulableUnmatched: 1,
+						notExactMatched:          1,
+					},
+				},
+				filteredNodeStatusMap: framework.NodeToStatusMap{
+					"test-node-0": {},
+					"test-node-1": {},
+				},
+			},
+			want: nil,
+			want1: framework.NewStatus(framework.Unschedulable,
+				"1 Reservation(s) is unschedulable",
+				"4 Reservation(s) is not exact matched",
+				"5 Reservation(s) matched owner total"),
+		},
+		{
+			name: "show reservation matched owner, unschedulable and exact matched",
+			args: args{
+				hasStateData: true,
+				nodeReservationDiagnosis: map[string]*nodeDiagnosisState{
+					"test-node-0": {
+						ownerMatched:             3,
+						isUnschedulableUnmatched: 0,
+						notExactMatched:          3,
+					},
+					"test-node-1": {
+						ownerMatched:             2,
+						isUnschedulableUnmatched: 1,
+						notExactMatched:          1,
+					},
+				},
+				filteredNodeStatusMap: framework.NodeToStatusMap{
+					"test-node-0": {},
+					"test-node-1": {},
+				},
+			},
+			want: nil,
+			want1: framework.NewStatus(framework.Unschedulable,
+				"1 Reservation(s) is unschedulable",
+				"4 Reservation(s) is not exact matched",
+				"5 Reservation(s) matched owner total"),
+		},
+		{
 			name: "show reservation matched owner, unschedulable and affinity unmatched",
 			args: args{
 				hasStateData: true,
