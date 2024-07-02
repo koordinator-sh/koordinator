@@ -64,6 +64,29 @@ type FileTestUtil struct {
 	t testing.TB
 }
 
+type MockMonData struct {
+	CacheItems map[int]MockCacheItem
+}
+
+type MockCacheItem map[string]uint64
+
+// create mock ctrl group mon_data directory and files
+func TestingPrepareResctrlMondata(t *testing.T, sysFsRootPath, ctrlGrp string, mmd MockMonData) {
+	resctrlMonDataPath := filepath.Join(sysFsRootPath, "resctrl", ctrlGrp, "mon_data")
+	err := os.MkdirAll(resctrlMonDataPath, 0777)
+	assert.NoError(t, err)
+	for cacheId, cacheItem := range mmd.CacheItems {
+		cacheMonDir := filepath.Join(resctrlMonDataPath, fmt.Sprintf("mon_L3_%02d", cacheId))
+		err = os.MkdirAll(cacheMonDir, 0777)
+		assert.NoError(t, err)
+		for item, value := range cacheItem {
+			itemPath := filepath.Join(cacheMonDir, item)
+			err = os.WriteFile(itemPath, []byte(fmt.Sprintf("%d", value)), 0644)
+			assert.NoError(t, err)
+		}
+	}
+}
+
 // NewFileTestUtil creates a new test util for the specified subsystem.
 // NOTE: this function should be called only for testing purposes.
 func NewFileTestUtil(t testing.TB) *FileTestUtil {
