@@ -314,8 +314,10 @@ func TestPreFilter(t *testing.T) {
 			assert.NoError(t, err)
 			cycleState := framework.NewCycleState()
 			cycleState.Write(stateKey, &stateData{
-				hasAffinity:           reservationAffinity != nil,
-				nodeReservationStates: tt.nodeReservationStates,
+				schedulingStateData: schedulingStateData{
+					hasAffinity:           reservationAffinity != nil,
+					nodeReservationStates: tt.nodeReservationStates,
+				},
 			})
 			preRes, got := pl.PreFilter(context.TODO(), cycleState, tt.pod)
 			assert.Equal(t, tt.wantStatus, got)
@@ -524,7 +526,9 @@ func TestFilter(t *testing.T) {
 			pod:      &corev1.Pod{},
 			nodeInfo: testNodeInfo,
 			stateData: &stateData{
-				hasAffinity: true,
+				schedulingStateData: schedulingStateData{
+					hasAffinity: true,
+				},
 			},
 			want: framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrReasonReservationAffinity),
 		},
@@ -545,11 +549,13 @@ func TestFilter(t *testing.T) {
 			},
 			nodeInfo: testNodeInfo,
 			stateData: &stateData{
-				hasAffinity: true,
-				nodeReservationStates: map[string]nodeReservationState{
-					testNode.Name: {
-						matched: []*frameworkext.ReservationInfo{
-							frameworkext.NewReservationInfo(reservation),
+				schedulingStateData: schedulingStateData{
+					hasAffinity: true,
+					nodeReservationStates: map[string]nodeReservationState{
+						testNode.Name: {
+							matched: []*frameworkext.ReservationInfo{
+								frameworkext.NewReservationInfo(reservation),
+							},
 						},
 					},
 				},
@@ -602,18 +608,20 @@ func TestFilterWithPreemption(t *testing.T) {
 		{
 			name: "successfully filter non-reservations with preemption",
 			stateData: &stateData{
-				podRequestsResources: &framework.Resource{
-					MilliCPU: 4 * 1000,
-				},
-				preemptible: map[string]corev1.ResourceList{
-					node.Name: {
-						corev1.ResourceCPU: resource.MustParse("4"),
+				schedulingStateData: schedulingStateData{
+					podRequestsResources: &framework.Resource{
+						MilliCPU: 4 * 1000,
 					},
-				},
-				nodeReservationStates: map[string]nodeReservationState{
-					node.Name: {
-						podRequested: &framework.Resource{
-							MilliCPU: 32 * 1000,
+					preemptible: map[string]corev1.ResourceList{
+						node.Name: {
+							corev1.ResourceCPU: resource.MustParse("4"),
+						},
+					},
+					nodeReservationStates: map[string]nodeReservationState{
+						node.Name: {
+							podRequested: &framework.Resource{
+								MilliCPU: 32 * 1000,
+							},
 						},
 					},
 				},
@@ -623,18 +631,20 @@ func TestFilterWithPreemption(t *testing.T) {
 		{
 			name: "failed to filter non-reservations with preemption",
 			stateData: &stateData{
-				podRequestsResources: &framework.Resource{
-					MilliCPU: 4 * 1000,
-				},
-				preemptible: map[string]corev1.ResourceList{
-					node.Name: {
-						corev1.ResourceCPU: resource.MustParse("2"),
+				schedulingStateData: schedulingStateData{
+					podRequestsResources: &framework.Resource{
+						MilliCPU: 4 * 1000,
 					},
-				},
-				nodeReservationStates: map[string]nodeReservationState{
-					node.Name: {
-						podRequested: &framework.Resource{
-							MilliCPU: 32 * 1000,
+					preemptible: map[string]corev1.ResourceList{
+						node.Name: {
+							corev1.ResourceCPU: resource.MustParse("2"),
+						},
+					},
+					nodeReservationStates: map[string]nodeReservationState{
+						node.Name: {
+							podRequested: &framework.Resource{
+								MilliCPU: 32 * 1000,
+							},
 						},
 					},
 				},
@@ -644,14 +654,16 @@ func TestFilterWithPreemption(t *testing.T) {
 		{
 			name: "filter non-reservations with preemption but no preemptible resources",
 			stateData: &stateData{
-				podRequestsResources: &framework.Resource{
-					MilliCPU: 4 * 1000,
-				},
-				preemptible: map[string]corev1.ResourceList{},
-				nodeReservationStates: map[string]nodeReservationState{
-					node.Name: {
-						podRequested: &framework.Resource{
-							MilliCPU: 32 * 1000,
+				schedulingStateData: schedulingStateData{
+					podRequestsResources: &framework.Resource{
+						MilliCPU: 4 * 1000,
+					},
+					preemptible: map[string]corev1.ResourceList{},
+					nodeReservationStates: map[string]nodeReservationState{
+						node.Name: {
+							podRequested: &framework.Resource{
+								MilliCPU: 32 * 1000,
+							},
 						},
 					},
 				},
@@ -697,41 +709,43 @@ func Test_filterWithReservations(t *testing.T) {
 		{
 			name: "filter aligned reservation with nodeInfo",
 			stateData: &stateData{
-				podRequests: corev1.ResourceList{
-					corev1.ResourceCPU:    resource.MustParse("8"),
-					corev1.ResourceMemory: resource.MustParse("8Gi"),
-				},
-				nodeReservationStates: map[string]nodeReservationState{
-					node.Name: {
-						podRequested: &framework.Resource{
-							MilliCPU: 30 * 1000,
-							Memory:   24 * 1024 * 1024 * 1024,
-						},
-						rAllocated: &framework.Resource{
-							MilliCPU: 0,
-						},
-						matched: []*frameworkext.ReservationInfo{
-							frameworkext.NewReservationInfo(&schedulingv1alpha1.Reservation{
-								ObjectMeta: metav1.ObjectMeta{
-									Name: "test-r",
-								},
-								Spec: schedulingv1alpha1.ReservationSpec{
-									AllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyAligned,
-									Template: &corev1.PodTemplateSpec{
-										Spec: corev1.PodSpec{
-											Containers: []corev1.Container{
-												{
-													Resources: corev1.ResourceRequirements{
-														Requests: corev1.ResourceList{
-															corev1.ResourceCPU: resource.MustParse("6"),
+				schedulingStateData: schedulingStateData{
+					podRequests: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("8"),
+						corev1.ResourceMemory: resource.MustParse("8Gi"),
+					},
+					nodeReservationStates: map[string]nodeReservationState{
+						node.Name: {
+							podRequested: &framework.Resource{
+								MilliCPU: 30 * 1000,
+								Memory:   24 * 1024 * 1024 * 1024,
+							},
+							rAllocated: &framework.Resource{
+								MilliCPU: 0,
+							},
+							matched: []*frameworkext.ReservationInfo{
+								frameworkext.NewReservationInfo(&schedulingv1alpha1.Reservation{
+									ObjectMeta: metav1.ObjectMeta{
+										Name: "test-r",
+									},
+									Spec: schedulingv1alpha1.ReservationSpec{
+										AllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyAligned,
+										Template: &corev1.PodTemplateSpec{
+											Spec: corev1.PodSpec{
+												Containers: []corev1.Container{
+													{
+														Resources: corev1.ResourceRequirements{
+															Requests: corev1.ResourceList{
+																corev1.ResourceCPU: resource.MustParse("6"),
+															},
 														},
 													},
 												},
 											},
 										},
 									},
-								},
-							}),
+								}),
+							},
 						},
 					},
 				},
@@ -741,42 +755,44 @@ func Test_filterWithReservations(t *testing.T) {
 		{
 			name: "failed to filter aligned reservation with nodeInfo",
 			stateData: &stateData{
-				hasAffinity: true,
-				podRequests: corev1.ResourceList{
-					corev1.ResourceCPU:    resource.MustParse("8"),
-					corev1.ResourceMemory: resource.MustParse("8Gi"),
-				},
-				nodeReservationStates: map[string]nodeReservationState{
-					node.Name: {
-						podRequested: &framework.Resource{
-							MilliCPU: 32 * 1000, // no remaining resources
-							Memory:   24 * 1024 * 1024 * 1024,
-						},
-						rAllocated: &framework.Resource{
-							MilliCPU: 0,
-						},
-						matched: []*frameworkext.ReservationInfo{
-							frameworkext.NewReservationInfo(&schedulingv1alpha1.Reservation{
-								ObjectMeta: metav1.ObjectMeta{
-									Name: "test-r",
-								},
-								Spec: schedulingv1alpha1.ReservationSpec{
-									AllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyAligned,
-									Template: &corev1.PodTemplateSpec{
-										Spec: corev1.PodSpec{
-											Containers: []corev1.Container{
-												{
-													Resources: corev1.ResourceRequirements{
-														Requests: corev1.ResourceList{
-															corev1.ResourceCPU: resource.MustParse("6"),
+				schedulingStateData: schedulingStateData{
+					hasAffinity: true,
+					podRequests: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("8"),
+						corev1.ResourceMemory: resource.MustParse("8Gi"),
+					},
+					nodeReservationStates: map[string]nodeReservationState{
+						node.Name: {
+							podRequested: &framework.Resource{
+								MilliCPU: 32 * 1000, // no remaining resources
+								Memory:   24 * 1024 * 1024 * 1024,
+							},
+							rAllocated: &framework.Resource{
+								MilliCPU: 0,
+							},
+							matched: []*frameworkext.ReservationInfo{
+								frameworkext.NewReservationInfo(&schedulingv1alpha1.Reservation{
+									ObjectMeta: metav1.ObjectMeta{
+										Name: "test-r",
+									},
+									Spec: schedulingv1alpha1.ReservationSpec{
+										AllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyAligned,
+										Template: &corev1.PodTemplateSpec{
+											Spec: corev1.PodSpec{
+												Containers: []corev1.Container{
+													{
+														Resources: corev1.ResourceRequirements{
+															Requests: corev1.ResourceList{
+																corev1.ResourceCPU: resource.MustParse("6"),
+															},
 														},
 													},
 												},
 											},
 										},
 									},
-								},
-							}),
+								}),
+							},
 						},
 					},
 				},
@@ -786,41 +802,43 @@ func Test_filterWithReservations(t *testing.T) {
 		{
 			name: "filter restricted reservation with nodeInfo",
 			stateData: &stateData{
-				podRequests: corev1.ResourceList{
-					corev1.ResourceCPU:    resource.MustParse("6"),
-					corev1.ResourceMemory: resource.MustParse("8Gi"),
-				},
-				nodeReservationStates: map[string]nodeReservationState{
-					node.Name: {
-						podRequested: &framework.Resource{
-							MilliCPU: 30 * 1000,
-							Memory:   24 * 1024 * 1024 * 1024,
-						},
-						rAllocated: &framework.Resource{
-							MilliCPU: 0,
-						},
-						matched: []*frameworkext.ReservationInfo{
-							frameworkext.NewReservationInfo(&schedulingv1alpha1.Reservation{
-								ObjectMeta: metav1.ObjectMeta{
-									Name: "test-r",
-								},
-								Spec: schedulingv1alpha1.ReservationSpec{
-									AllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyRestricted,
-									Template: &corev1.PodTemplateSpec{
-										Spec: corev1.PodSpec{
-											Containers: []corev1.Container{
-												{
-													Resources: corev1.ResourceRequirements{
-														Requests: corev1.ResourceList{
-															corev1.ResourceCPU: resource.MustParse("6"),
+				schedulingStateData: schedulingStateData{
+					podRequests: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("6"),
+						corev1.ResourceMemory: resource.MustParse("8Gi"),
+					},
+					nodeReservationStates: map[string]nodeReservationState{
+						node.Name: {
+							podRequested: &framework.Resource{
+								MilliCPU: 30 * 1000,
+								Memory:   24 * 1024 * 1024 * 1024,
+							},
+							rAllocated: &framework.Resource{
+								MilliCPU: 0,
+							},
+							matched: []*frameworkext.ReservationInfo{
+								frameworkext.NewReservationInfo(&schedulingv1alpha1.Reservation{
+									ObjectMeta: metav1.ObjectMeta{
+										Name: "test-r",
+									},
+									Spec: schedulingv1alpha1.ReservationSpec{
+										AllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyRestricted,
+										Template: &corev1.PodTemplateSpec{
+											Spec: corev1.PodSpec{
+												Containers: []corev1.Container{
+													{
+														Resources: corev1.ResourceRequirements{
+															Requests: corev1.ResourceList{
+																corev1.ResourceCPU: resource.MustParse("6"),
+															},
 														},
 													},
 												},
 											},
 										},
 									},
-								},
-							}),
+								}),
+							},
 						},
 					},
 				},
@@ -830,42 +848,44 @@ func Test_filterWithReservations(t *testing.T) {
 		{
 			name: "failed to filter restricted reservation with nodeInfo",
 			stateData: &stateData{
-				hasAffinity: true,
-				podRequests: corev1.ResourceList{
-					corev1.ResourceCPU:    resource.MustParse("8"),
-					corev1.ResourceMemory: resource.MustParse("8Gi"),
-				},
-				nodeReservationStates: map[string]nodeReservationState{
-					node.Name: {
-						podRequested: &framework.Resource{
-							MilliCPU: 30 * 1000,
-							Memory:   24 * 1024 * 1024 * 1024,
-						},
-						rAllocated: &framework.Resource{
-							MilliCPU: 0,
-						},
-						matched: []*frameworkext.ReservationInfo{
-							frameworkext.NewReservationInfo(&schedulingv1alpha1.Reservation{
-								ObjectMeta: metav1.ObjectMeta{
-									Name: "test-r",
-								},
-								Spec: schedulingv1alpha1.ReservationSpec{
-									AllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyRestricted,
-									Template: &corev1.PodTemplateSpec{
-										Spec: corev1.PodSpec{
-											Containers: []corev1.Container{
-												{
-													Resources: corev1.ResourceRequirements{
-														Requests: corev1.ResourceList{
-															corev1.ResourceCPU: resource.MustParse("6"),
+				schedulingStateData: schedulingStateData{
+					hasAffinity: true,
+					podRequests: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("8"),
+						corev1.ResourceMemory: resource.MustParse("8Gi"),
+					},
+					nodeReservationStates: map[string]nodeReservationState{
+						node.Name: {
+							podRequested: &framework.Resource{
+								MilliCPU: 30 * 1000,
+								Memory:   24 * 1024 * 1024 * 1024,
+							},
+							rAllocated: &framework.Resource{
+								MilliCPU: 0,
+							},
+							matched: []*frameworkext.ReservationInfo{
+								frameworkext.NewReservationInfo(&schedulingv1alpha1.Reservation{
+									ObjectMeta: metav1.ObjectMeta{
+										Name: "test-r",
+									},
+									Spec: schedulingv1alpha1.ReservationSpec{
+										AllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyRestricted,
+										Template: &corev1.PodTemplateSpec{
+											Spec: corev1.PodSpec{
+												Containers: []corev1.Container{
+													{
+														Resources: corev1.ResourceRequirements{
+															Requests: corev1.ResourceList{
+																corev1.ResourceCPU: resource.MustParse("6"),
+															},
 														},
 													},
 												},
 											},
 										},
 									},
-								},
-							}),
+								}),
+							},
 						},
 					},
 				},
@@ -875,40 +895,42 @@ func Test_filterWithReservations(t *testing.T) {
 		{
 			name: "filter default reservations with preemption",
 			stateData: &stateData{
-				podRequestsResources: &framework.Resource{
-					MilliCPU: 4 * 1000,
-				},
-				preemptibleInRRs: map[string]map[types.UID]corev1.ResourceList{
-					node.Name: {
-						"123456": {
-							corev1.ResourceCPU: resource.MustParse("4"),
+				schedulingStateData: schedulingStateData{
+					podRequestsResources: &framework.Resource{
+						MilliCPU: 4 * 1000,
+					},
+					preemptibleInRRs: map[string]map[types.UID]corev1.ResourceList{
+						node.Name: {
+							"123456": {
+								corev1.ResourceCPU: resource.MustParse("4"),
+							},
 						},
 					},
-				},
-				nodeReservationStates: map[string]nodeReservationState{
-					node.Name: {
-						podRequested: &framework.Resource{
-							MilliCPU: 36 * 1000,
-						},
-						rAllocated: &framework.Resource{
-							MilliCPU: 6000,
-						},
-						matched: []*frameworkext.ReservationInfo{
-							{
-								Reservation: &schedulingv1alpha1.Reservation{
-									ObjectMeta: metav1.ObjectMeta{
-										Name: "test-r",
-										UID:  "123456",
+					nodeReservationStates: map[string]nodeReservationState{
+						node.Name: {
+							podRequested: &framework.Resource{
+								MilliCPU: 36 * 1000,
+							},
+							rAllocated: &framework.Resource{
+								MilliCPU: 6000,
+							},
+							matched: []*frameworkext.ReservationInfo{
+								{
+									Reservation: &schedulingv1alpha1.Reservation{
+										ObjectMeta: metav1.ObjectMeta{
+											Name: "test-r",
+											UID:  "123456",
+										},
+										Spec: schedulingv1alpha1.ReservationSpec{
+											AllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyDefault,
+										},
 									},
-									Spec: schedulingv1alpha1.ReservationSpec{
-										AllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyDefault,
+									Allocatable: corev1.ResourceList{
+										corev1.ResourceCPU: resource.MustParse("6"),
 									},
-								},
-								Allocatable: corev1.ResourceList{
-									corev1.ResourceCPU: resource.MustParse("6"),
-								},
-								Allocated: corev1.ResourceList{
-									corev1.ResourceCPU: resource.MustParse("6"),
+									Allocated: corev1.ResourceList{
+										corev1.ResourceCPU: resource.MustParse("6"),
+									},
 								},
 							},
 						},
@@ -920,45 +942,47 @@ func Test_filterWithReservations(t *testing.T) {
 		{
 			name: "filter default reservations with preempt from reservation and node",
 			stateData: &stateData{
-				podRequestsResources: &framework.Resource{
-					MilliCPU: 4 * 1000,
-				},
-				preemptible: map[string]corev1.ResourceList{
-					node.Name: {
-						corev1.ResourceCPU: resource.MustParse("2"),
+				schedulingStateData: schedulingStateData{
+					podRequestsResources: &framework.Resource{
+						MilliCPU: 4 * 1000,
 					},
-				},
-				preemptibleInRRs: map[string]map[types.UID]corev1.ResourceList{
-					node.Name: {
-						"123456": {
+					preemptible: map[string]corev1.ResourceList{
+						node.Name: {
 							corev1.ResourceCPU: resource.MustParse("2"),
 						},
 					},
-				},
-				nodeReservationStates: map[string]nodeReservationState{
-					node.Name: {
-						podRequested: &framework.Resource{
-							MilliCPU: 38 * 1000,
+					preemptibleInRRs: map[string]map[types.UID]corev1.ResourceList{
+						node.Name: {
+							"123456": {
+								corev1.ResourceCPU: resource.MustParse("2"),
+							},
 						},
-						rAllocated: &framework.Resource{
-							MilliCPU: 6000,
-						},
-						matched: []*frameworkext.ReservationInfo{
-							{
-								Reservation: &schedulingv1alpha1.Reservation{
-									ObjectMeta: metav1.ObjectMeta{
-										Name: "test-r",
-										UID:  "123456",
+					},
+					nodeReservationStates: map[string]nodeReservationState{
+						node.Name: {
+							podRequested: &framework.Resource{
+								MilliCPU: 38 * 1000,
+							},
+							rAllocated: &framework.Resource{
+								MilliCPU: 6000,
+							},
+							matched: []*frameworkext.ReservationInfo{
+								{
+									Reservation: &schedulingv1alpha1.Reservation{
+										ObjectMeta: metav1.ObjectMeta{
+											Name: "test-r",
+											UID:  "123456",
+										},
+										Spec: schedulingv1alpha1.ReservationSpec{
+											AllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyDefault,
+										},
 									},
-									Spec: schedulingv1alpha1.ReservationSpec{
-										AllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyDefault,
+									Allocatable: corev1.ResourceList{
+										corev1.ResourceCPU: resource.MustParse("6"),
 									},
-								},
-								Allocatable: corev1.ResourceList{
-									corev1.ResourceCPU: resource.MustParse("6"),
-								},
-								Allocated: corev1.ResourceList{
-									corev1.ResourceCPU: resource.MustParse("6"),
+									Allocated: corev1.ResourceList{
+										corev1.ResourceCPU: resource.MustParse("6"),
+									},
 								},
 							},
 						},
@@ -970,45 +994,47 @@ func Test_filterWithReservations(t *testing.T) {
 		{
 			name: "failed to filter default reservations with preempt from reservation",
 			stateData: &stateData{
-				hasAffinity: true,
-				podRequests: corev1.ResourceList{
-					corev1.ResourceCPU: resource.MustParse("4"),
-				},
-				podRequestsResources: &framework.Resource{
-					MilliCPU: 4 * 1000,
-				},
-				preemptibleInRRs: map[string]map[types.UID]corev1.ResourceList{
-					node.Name: {
-						"123456": {
-							corev1.ResourceCPU: resource.MustParse("2"),
+				schedulingStateData: schedulingStateData{
+					hasAffinity: true,
+					podRequests: corev1.ResourceList{
+						corev1.ResourceCPU: resource.MustParse("4"),
+					},
+					podRequestsResources: &framework.Resource{
+						MilliCPU: 4 * 1000,
+					},
+					preemptibleInRRs: map[string]map[types.UID]corev1.ResourceList{
+						node.Name: {
+							"123456": {
+								corev1.ResourceCPU: resource.MustParse("2"),
+							},
 						},
 					},
-				},
-				nodeReservationStates: map[string]nodeReservationState{
-					node.Name: {
-						podRequested: &framework.Resource{
-							MilliCPU: 38 * 1000,
-						},
-						rAllocated: &framework.Resource{
-							MilliCPU: 6000,
-						},
-						matched: []*frameworkext.ReservationInfo{
-							{
-								Reservation: &schedulingv1alpha1.Reservation{
-									ObjectMeta: metav1.ObjectMeta{
-										Name: "test-r",
-										UID:  "123456",
+					nodeReservationStates: map[string]nodeReservationState{
+						node.Name: {
+							podRequested: &framework.Resource{
+								MilliCPU: 38 * 1000,
+							},
+							rAllocated: &framework.Resource{
+								MilliCPU: 6000,
+							},
+							matched: []*frameworkext.ReservationInfo{
+								{
+									Reservation: &schedulingv1alpha1.Reservation{
+										ObjectMeta: metav1.ObjectMeta{
+											Name: "test-r",
+											UID:  "123456",
+										},
+										Spec: schedulingv1alpha1.ReservationSpec{
+											AllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyDefault,
+										},
 									},
-									Spec: schedulingv1alpha1.ReservationSpec{
-										AllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyDefault,
+									ResourceNames: []corev1.ResourceName{corev1.ResourceCPU},
+									Allocatable: corev1.ResourceList{
+										corev1.ResourceCPU: resource.MustParse("6"),
 									},
-								},
-								ResourceNames: []corev1.ResourceName{corev1.ResourceCPU},
-								Allocatable: corev1.ResourceList{
-									corev1.ResourceCPU: resource.MustParse("6"),
-								},
-								Allocated: corev1.ResourceList{
-									corev1.ResourceCPU: resource.MustParse("6"),
+									Allocated: corev1.ResourceList{
+										corev1.ResourceCPU: resource.MustParse("6"),
+									},
 								},
 							},
 						},
@@ -1020,43 +1046,45 @@ func Test_filterWithReservations(t *testing.T) {
 		{
 			name: "failed to filter default reservations with preempt from node",
 			stateData: &stateData{
-				hasAffinity: true,
-				podRequests: corev1.ResourceList{
-					corev1.ResourceCPU: resource.MustParse("4"),
-				},
-				podRequestsResources: &framework.Resource{
-					MilliCPU: 4 * 1000,
-				},
-				preemptible: map[string]corev1.ResourceList{
-					node.Name: {
-						corev1.ResourceCPU: resource.MustParse("2"),
+				schedulingStateData: schedulingStateData{
+					hasAffinity: true,
+					podRequests: corev1.ResourceList{
+						corev1.ResourceCPU: resource.MustParse("4"),
 					},
-				},
-				nodeReservationStates: map[string]nodeReservationState{
-					node.Name: {
-						podRequested: &framework.Resource{
-							MilliCPU: 38 * 1000,
+					podRequestsResources: &framework.Resource{
+						MilliCPU: 4 * 1000,
+					},
+					preemptible: map[string]corev1.ResourceList{
+						node.Name: {
+							corev1.ResourceCPU: resource.MustParse("2"),
 						},
-						rAllocated: &framework.Resource{
-							MilliCPU: 6000,
-						},
-						matched: []*frameworkext.ReservationInfo{
-							{
-								Reservation: &schedulingv1alpha1.Reservation{
-									ObjectMeta: metav1.ObjectMeta{
-										Name: "test-r",
-										UID:  "123456",
+					},
+					nodeReservationStates: map[string]nodeReservationState{
+						node.Name: {
+							podRequested: &framework.Resource{
+								MilliCPU: 38 * 1000,
+							},
+							rAllocated: &framework.Resource{
+								MilliCPU: 6000,
+							},
+							matched: []*frameworkext.ReservationInfo{
+								{
+									Reservation: &schedulingv1alpha1.Reservation{
+										ObjectMeta: metav1.ObjectMeta{
+											Name: "test-r",
+											UID:  "123456",
+										},
+										Spec: schedulingv1alpha1.ReservationSpec{
+											AllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyDefault,
+										},
 									},
-									Spec: schedulingv1alpha1.ReservationSpec{
-										AllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyDefault,
+									ResourceNames: []corev1.ResourceName{corev1.ResourceCPU},
+									Allocatable: corev1.ResourceList{
+										corev1.ResourceCPU: resource.MustParse("6"),
 									},
-								},
-								ResourceNames: []corev1.ResourceName{corev1.ResourceCPU},
-								Allocatable: corev1.ResourceList{
-									corev1.ResourceCPU: resource.MustParse("6"),
-								},
-								Allocated: corev1.ResourceList{
-									corev1.ResourceCPU: resource.MustParse("6"),
+									Allocated: corev1.ResourceList{
+										corev1.ResourceCPU: resource.MustParse("6"),
+									},
 								},
 							},
 						},
@@ -1068,43 +1096,45 @@ func Test_filterWithReservations(t *testing.T) {
 		{
 			name: "filter restricted reservations with preempt from reservation",
 			stateData: &stateData{
-				podRequests: corev1.ResourceList{
-					corev1.ResourceCPU: resource.MustParse("4"),
-				},
-				podRequestsResources: &framework.Resource{
-					MilliCPU: 4 * 1000,
-				},
-				preemptibleInRRs: map[string]map[types.UID]corev1.ResourceList{
-					node.Name: {
-						"123456": {
-							corev1.ResourceCPU: resource.MustParse("4"),
+				schedulingStateData: schedulingStateData{
+					podRequests: corev1.ResourceList{
+						corev1.ResourceCPU: resource.MustParse("4"),
+					},
+					podRequestsResources: &framework.Resource{
+						MilliCPU: 4 * 1000,
+					},
+					preemptibleInRRs: map[string]map[types.UID]corev1.ResourceList{
+						node.Name: {
+							"123456": {
+								corev1.ResourceCPU: resource.MustParse("4"),
+							},
 						},
 					},
-				},
-				nodeReservationStates: map[string]nodeReservationState{
-					node.Name: {
-						podRequested: &framework.Resource{
-							MilliCPU: 38 * 1000,
-						},
-						rAllocated: &framework.Resource{
-							MilliCPU: 6000,
-						},
-						matched: []*frameworkext.ReservationInfo{
-							{
-								Reservation: &schedulingv1alpha1.Reservation{
-									ObjectMeta: metav1.ObjectMeta{
-										Name: "test-r",
-										UID:  "123456",
+					nodeReservationStates: map[string]nodeReservationState{
+						node.Name: {
+							podRequested: &framework.Resource{
+								MilliCPU: 38 * 1000,
+							},
+							rAllocated: &framework.Resource{
+								MilliCPU: 6000,
+							},
+							matched: []*frameworkext.ReservationInfo{
+								{
+									Reservation: &schedulingv1alpha1.Reservation{
+										ObjectMeta: metav1.ObjectMeta{
+											Name: "test-r",
+											UID:  "123456",
+										},
+										Spec: schedulingv1alpha1.ReservationSpec{
+											AllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyRestricted,
+										},
 									},
-									Spec: schedulingv1alpha1.ReservationSpec{
-										AllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyRestricted,
+									Allocatable: corev1.ResourceList{
+										corev1.ResourceCPU: resource.MustParse("6"),
 									},
-								},
-								Allocatable: corev1.ResourceList{
-									corev1.ResourceCPU: resource.MustParse("6"),
-								},
-								Allocated: corev1.ResourceList{
-									corev1.ResourceCPU: resource.MustParse("6"),
+									Allocated: corev1.ResourceList{
+										corev1.ResourceCPU: resource.MustParse("6"),
+									},
 								},
 							},
 						},
@@ -1116,44 +1146,46 @@ func Test_filterWithReservations(t *testing.T) {
 		{
 			name: "failed to filter restricted reservations with preempt from node",
 			stateData: &stateData{
-				hasAffinity: true,
-				podRequests: corev1.ResourceList{
-					corev1.ResourceCPU: resource.MustParse("4"),
-				},
-				podRequestsResources: &framework.Resource{
-					MilliCPU: 4 * 1000,
-				},
-				preemptible: map[string]corev1.ResourceList{
-					node.Name: {
+				schedulingStateData: schedulingStateData{
+					hasAffinity: true,
+					podRequests: corev1.ResourceList{
 						corev1.ResourceCPU: resource.MustParse("4"),
 					},
-				},
-				preemptibleInRRs: nil,
-				nodeReservationStates: map[string]nodeReservationState{
-					node.Name: {
-						podRequested: &framework.Resource{
-							MilliCPU: 38 * 1000,
+					podRequestsResources: &framework.Resource{
+						MilliCPU: 4 * 1000,
+					},
+					preemptible: map[string]corev1.ResourceList{
+						node.Name: {
+							corev1.ResourceCPU: resource.MustParse("4"),
 						},
-						rAllocated: &framework.Resource{
-							MilliCPU: 6000,
-						},
-						matched: []*frameworkext.ReservationInfo{
-							{
-								Reservation: &schedulingv1alpha1.Reservation{
-									ObjectMeta: metav1.ObjectMeta{
-										Name: "test-r",
-										UID:  "123456",
+					},
+					preemptibleInRRs: nil,
+					nodeReservationStates: map[string]nodeReservationState{
+						node.Name: {
+							podRequested: &framework.Resource{
+								MilliCPU: 38 * 1000,
+							},
+							rAllocated: &framework.Resource{
+								MilliCPU: 6000,
+							},
+							matched: []*frameworkext.ReservationInfo{
+								{
+									Reservation: &schedulingv1alpha1.Reservation{
+										ObjectMeta: metav1.ObjectMeta{
+											Name: "test-r",
+											UID:  "123456",
+										},
+										Spec: schedulingv1alpha1.ReservationSpec{
+											AllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyRestricted,
+										},
 									},
-									Spec: schedulingv1alpha1.ReservationSpec{
-										AllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyRestricted,
+									ResourceNames: []corev1.ResourceName{corev1.ResourceCPU},
+									Allocatable: corev1.ResourceList{
+										corev1.ResourceCPU: resource.MustParse("6"),
 									},
-								},
-								ResourceNames: []corev1.ResourceName{corev1.ResourceCPU},
-								Allocatable: corev1.ResourceList{
-									corev1.ResourceCPU: resource.MustParse("6"),
-								},
-								Allocated: corev1.ResourceList{
-									corev1.ResourceCPU: resource.MustParse("6"),
+									Allocated: corev1.ResourceList{
+										corev1.ResourceCPU: resource.MustParse("6"),
+									},
 								},
 							},
 						},
@@ -1165,62 +1197,64 @@ func Test_filterWithReservations(t *testing.T) {
 		{
 			name: "failed to filter multiple restricted reservations with preempt from node",
 			stateData: &stateData{
-				hasAffinity: true,
-				podRequests: corev1.ResourceList{
-					corev1.ResourceCPU: resource.MustParse("4"),
-				},
-				podRequestsResources: &framework.Resource{
-					MilliCPU: 4 * 1000,
-				},
-				preemptible: map[string]corev1.ResourceList{
-					node.Name: {
+				schedulingStateData: schedulingStateData{
+					hasAffinity: true,
+					podRequests: corev1.ResourceList{
 						corev1.ResourceCPU: resource.MustParse("4"),
 					},
-				},
-				preemptibleInRRs: nil,
-				nodeReservationStates: map[string]nodeReservationState{
-					node.Name: {
-						podRequested: &framework.Resource{
-							MilliCPU: 38 * 1000,
+					podRequestsResources: &framework.Resource{
+						MilliCPU: 4 * 1000,
+					},
+					preemptible: map[string]corev1.ResourceList{
+						node.Name: {
+							corev1.ResourceCPU: resource.MustParse("4"),
 						},
-						rAllocated: &framework.Resource{
-							MilliCPU: 10000,
-						},
-						matched: []*frameworkext.ReservationInfo{
-							{
-								Reservation: &schedulingv1alpha1.Reservation{
-									ObjectMeta: metav1.ObjectMeta{
-										Name: "test-r",
-										UID:  "123456",
-									},
-									Spec: schedulingv1alpha1.ReservationSpec{
-										AllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyRestricted,
-									},
-								},
-								ResourceNames: []corev1.ResourceName{corev1.ResourceCPU},
-								Allocatable: corev1.ResourceList{
-									corev1.ResourceCPU: resource.MustParse("6"),
-								},
-								Allocated: corev1.ResourceList{
-									corev1.ResourceCPU: resource.MustParse("6"),
-								},
+					},
+					preemptibleInRRs: nil,
+					nodeReservationStates: map[string]nodeReservationState{
+						node.Name: {
+							podRequested: &framework.Resource{
+								MilliCPU: 38 * 1000,
 							},
-							{
-								Reservation: &schedulingv1alpha1.Reservation{
-									ObjectMeta: metav1.ObjectMeta{
-										Name: "test-r-1",
-										UID:  "7891011",
+							rAllocated: &framework.Resource{
+								MilliCPU: 10000,
+							},
+							matched: []*frameworkext.ReservationInfo{
+								{
+									Reservation: &schedulingv1alpha1.Reservation{
+										ObjectMeta: metav1.ObjectMeta{
+											Name: "test-r",
+											UID:  "123456",
+										},
+										Spec: schedulingv1alpha1.ReservationSpec{
+											AllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyRestricted,
+										},
 									},
-									Spec: schedulingv1alpha1.ReservationSpec{
-										AllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyRestricted,
+									ResourceNames: []corev1.ResourceName{corev1.ResourceCPU},
+									Allocatable: corev1.ResourceList{
+										corev1.ResourceCPU: resource.MustParse("6"),
+									},
+									Allocated: corev1.ResourceList{
+										corev1.ResourceCPU: resource.MustParse("6"),
 									},
 								},
-								ResourceNames: []corev1.ResourceName{corev1.ResourceCPU},
-								Allocatable: corev1.ResourceList{
-									corev1.ResourceCPU: resource.MustParse("4"),
-								},
-								Allocated: corev1.ResourceList{
-									corev1.ResourceCPU: resource.MustParse("1"),
+								{
+									Reservation: &schedulingv1alpha1.Reservation{
+										ObjectMeta: metav1.ObjectMeta{
+											Name: "test-r-1",
+											UID:  "7891011",
+										},
+										Spec: schedulingv1alpha1.ReservationSpec{
+											AllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyRestricted,
+										},
+									},
+									ResourceNames: []corev1.ResourceName{corev1.ResourceCPU},
+									Allocatable: corev1.ResourceList{
+										corev1.ResourceCPU: resource.MustParse("4"),
+									},
+									Allocated: corev1.ResourceList{
+										corev1.ResourceCPU: resource.MustParse("1"),
+									},
 								},
 							},
 						},
@@ -1232,52 +1266,54 @@ func Test_filterWithReservations(t *testing.T) {
 		{
 			name: "failed to filter restricted reservations with preempt from reservation and node",
 			stateData: &stateData{
-				hasAffinity: true,
-				podRequests: corev1.ResourceList{
-					corev1.ResourceCPU: resource.MustParse("4"),
-				},
-				podRequestsResources: &framework.Resource{
-					MilliCPU: 4 * 1000,
-				},
-				preemptible: map[string]corev1.ResourceList{
-					node.Name: {
-						corev1.ResourceCPU: resource.MustParse("2"),
+				schedulingStateData: schedulingStateData{
+					hasAffinity: true,
+					podRequests: corev1.ResourceList{
+						corev1.ResourceCPU: resource.MustParse("4"),
 					},
-				},
-				preemptibleInRRs: map[string]map[types.UID]corev1.ResourceList{
-					node.Name: {
-						"123456": {
+					podRequestsResources: &framework.Resource{
+						MilliCPU: 4 * 1000,
+					},
+					preemptible: map[string]corev1.ResourceList{
+						node.Name: {
 							corev1.ResourceCPU: resource.MustParse("2"),
 						},
 					},
-				},
-				nodeReservationStates: map[string]nodeReservationState{
-					node.Name: {
-						podRequested: &framework.Resource{
-							MilliCPU: 38 * 1000,
+					preemptibleInRRs: map[string]map[types.UID]corev1.ResourceList{
+						node.Name: {
+							"123456": {
+								corev1.ResourceCPU: resource.MustParse("2"),
+							},
 						},
-						rAllocated: &framework.Resource{
-							MilliCPU: 6000,
-						},
-						matched: []*frameworkext.ReservationInfo{
-							{
-								Reservation: &schedulingv1alpha1.Reservation{
-									ObjectMeta: metav1.ObjectMeta{
-										Name: "test-r",
-										UID:  "123456",
+					},
+					nodeReservationStates: map[string]nodeReservationState{
+						node.Name: {
+							podRequested: &framework.Resource{
+								MilliCPU: 38 * 1000,
+							},
+							rAllocated: &framework.Resource{
+								MilliCPU: 6000,
+							},
+							matched: []*frameworkext.ReservationInfo{
+								{
+									Reservation: &schedulingv1alpha1.Reservation{
+										ObjectMeta: metav1.ObjectMeta{
+											Name: "test-r",
+											UID:  "123456",
+										},
+										Spec: schedulingv1alpha1.ReservationSpec{
+											AllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyRestricted,
+										},
 									},
-									Spec: schedulingv1alpha1.ReservationSpec{
-										AllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyRestricted,
+									Allocatable: corev1.ResourceList{
+										corev1.ResourceCPU: resource.MustParse("6"),
 									},
-								},
-								Allocatable: corev1.ResourceList{
-									corev1.ResourceCPU: resource.MustParse("6"),
-								},
-								Allocated: corev1.ResourceList{
-									corev1.ResourceCPU: resource.MustParse("6"),
-								},
-								ResourceNames: []corev1.ResourceName{
-									corev1.ResourceCPU,
+									Allocated: corev1.ResourceList{
+										corev1.ResourceCPU: resource.MustParse("6"),
+									},
+									ResourceNames: []corev1.ResourceName{
+										corev1.ResourceCPU,
+									},
 								},
 							},
 						},
@@ -1289,53 +1325,55 @@ func Test_filterWithReservations(t *testing.T) {
 		{
 			name: "filter restricted reservations with preempt from reservation and node",
 			stateData: &stateData{
-				podRequests: corev1.ResourceList{
-					corev1.ResourceCPU:    resource.MustParse("4"),
-					corev1.ResourceMemory: resource.MustParse("4Gi"),
-				},
-				podRequestsResources: &framework.Resource{
-					MilliCPU: 4 * 1000,
-					Memory:   4 * 1024 * 1024 * 1024,
-				},
-				preemptible: map[string]corev1.ResourceList{
-					node.Name: {
-						corev1.ResourceMemory: resource.MustParse("32Gi"),
+				schedulingStateData: schedulingStateData{
+					podRequests: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("4"),
+						corev1.ResourceMemory: resource.MustParse("4Gi"),
 					},
-				},
-				preemptibleInRRs: map[string]map[types.UID]corev1.ResourceList{
-					node.Name: {
-						"123456": {
-							corev1.ResourceCPU: resource.MustParse("4"),
+					podRequestsResources: &framework.Resource{
+						MilliCPU: 4 * 1000,
+						Memory:   4 * 1024 * 1024 * 1024,
+					},
+					preemptible: map[string]corev1.ResourceList{
+						node.Name: {
+							corev1.ResourceMemory: resource.MustParse("32Gi"),
 						},
 					},
-				},
-				nodeReservationStates: map[string]nodeReservationState{
-					node.Name: {
-						podRequested: &framework.Resource{
-							MilliCPU: 38 * 1000,
+					preemptibleInRRs: map[string]map[types.UID]corev1.ResourceList{
+						node.Name: {
+							"123456": {
+								corev1.ResourceCPU: resource.MustParse("4"),
+							},
 						},
-						rAllocated: &framework.Resource{
-							MilliCPU: 6000,
-						},
-						matched: []*frameworkext.ReservationInfo{
-							{
-								Reservation: &schedulingv1alpha1.Reservation{
-									ObjectMeta: metav1.ObjectMeta{
-										Name: "test-r",
-										UID:  "123456",
+					},
+					nodeReservationStates: map[string]nodeReservationState{
+						node.Name: {
+							podRequested: &framework.Resource{
+								MilliCPU: 38 * 1000,
+							},
+							rAllocated: &framework.Resource{
+								MilliCPU: 6000,
+							},
+							matched: []*frameworkext.ReservationInfo{
+								{
+									Reservation: &schedulingv1alpha1.Reservation{
+										ObjectMeta: metav1.ObjectMeta{
+											Name: "test-r",
+											UID:  "123456",
+										},
+										Spec: schedulingv1alpha1.ReservationSpec{
+											AllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyRestricted,
+										},
 									},
-									Spec: schedulingv1alpha1.ReservationSpec{
-										AllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyRestricted,
+									Allocatable: corev1.ResourceList{
+										corev1.ResourceCPU: resource.MustParse("6"),
 									},
-								},
-								Allocatable: corev1.ResourceList{
-									corev1.ResourceCPU: resource.MustParse("6"),
-								},
-								Allocated: corev1.ResourceList{
-									corev1.ResourceCPU: resource.MustParse("6"),
-								},
-								ResourceNames: []corev1.ResourceName{
-									corev1.ResourceCPU,
+									Allocated: corev1.ResourceList{
+										corev1.ResourceCPU: resource.MustParse("6"),
+									},
+									ResourceNames: []corev1.ResourceName{
+										corev1.ResourceCPU,
+									},
 								},
 							},
 						},
@@ -1380,8 +1418,10 @@ func TestPreFilterExtensionAddPod(t *testing.T) {
 			name: "with BestEffort Pod",
 			pod:  &corev1.Pod{},
 			state: &stateData{
-				preemptible:      map[string]corev1.ResourceList{},
-				preemptibleInRRs: map[string]map[types.UID]corev1.ResourceList{},
+				schedulingStateData: schedulingStateData{
+					preemptible:      map[string]corev1.ResourceList{},
+					preemptibleInRRs: map[string]map[types.UID]corev1.ResourceList{},
+				},
 			},
 			wantPreemptible:      map[string]corev1.ResourceList{},
 			wantPreemptibleInRRs: map[string]map[types.UID]corev1.ResourceList{},
@@ -1407,12 +1447,14 @@ func TestPreFilterExtensionAddPod(t *testing.T) {
 				},
 			},
 			state: &stateData{
-				preemptible: map[string]corev1.ResourceList{
-					node.Name: {
-						corev1.ResourceCPU: resource.MustParse("4"),
+				schedulingStateData: schedulingStateData{
+					preemptible: map[string]corev1.ResourceList{
+						node.Name: {
+							corev1.ResourceCPU: resource.MustParse("4"),
+						},
 					},
+					preemptibleInRRs: map[string]map[types.UID]corev1.ResourceList{},
 				},
-				preemptibleInRRs: map[string]map[types.UID]corev1.ResourceList{},
 			},
 			wantPreemptible: map[string]corev1.ResourceList{
 				"test-node": {
@@ -1443,11 +1485,13 @@ func TestPreFilterExtensionAddPod(t *testing.T) {
 			},
 			withR: true,
 			state: &stateData{
-				preemptible: map[string]corev1.ResourceList{},
-				preemptibleInRRs: map[string]map[types.UID]corev1.ResourceList{
-					node.Name: {
-						"123456": {
-							corev1.ResourceCPU: resource.MustParse("4"),
+				schedulingStateData: schedulingStateData{
+					preemptible: map[string]corev1.ResourceList{},
+					preemptibleInRRs: map[string]map[types.UID]corev1.ResourceList{
+						node.Name: {
+							"123456": {
+								corev1.ResourceCPU: resource.MustParse("4"),
+							},
 						},
 					},
 				},
@@ -1483,8 +1527,10 @@ func TestPreFilterExtensionAddPod(t *testing.T) {
 			},
 			withR: true,
 			state: &stateData{
-				preemptible:      map[string]corev1.ResourceList{},
-				preemptibleInRRs: map[string]map[types.UID]corev1.ResourceList{},
+				schedulingStateData: schedulingStateData{
+					preemptible:      map[string]corev1.ResourceList{},
+					preemptibleInRRs: map[string]map[types.UID]corev1.ResourceList{},
+				},
 			},
 			wantPreemptible: map[string]corev1.ResourceList{},
 			wantPreemptibleInRRs: map[string]map[types.UID]corev1.ResourceList{
@@ -1614,8 +1660,10 @@ func TestPreFilterExtensionRemovePod(t *testing.T) {
 			pl := p.(*Plugin)
 			cycleState := framework.NewCycleState()
 			cycleState.Write(stateKey, &stateData{
-				preemptible:      map[string]corev1.ResourceList{},
-				preemptibleInRRs: map[string]map[types.UID]corev1.ResourceList{},
+				schedulingStateData: schedulingStateData{
+					preemptible:      map[string]corev1.ResourceList{},
+					preemptibleInRRs: map[string]map[types.UID]corev1.ResourceList{},
+				},
 			})
 			if tt.withR {
 				reservation := &schedulingv1alpha1.Reservation{
@@ -1808,9 +1856,11 @@ func TestFilterReservation(t *testing.T) {
 			}
 
 			state := &stateData{
-				nodeReservationStates: map[string]nodeReservationState{},
-				podRequests:           tt.podRequests,
-				podRequestsResources:  framework.NewResource(tt.podRequests),
+				schedulingStateData: schedulingStateData{
+					nodeReservationStates: map[string]nodeReservationState{},
+					podRequests:           tt.podRequests,
+					podRequestsResources:  framework.NewResource(tt.podRequests),
+				},
 			}
 			for _, v := range tt.reservations {
 				pl.reservationCache.updateReservation(v)
@@ -2043,8 +2093,10 @@ func TestPostFilter(t *testing.T) {
 			cycleState := framework.NewCycleState()
 			if tt.args.hasStateData {
 				cycleState.Write(stateKey, &stateData{
-					hasAffinity:              tt.args.hasAffinity,
-					nodeReservationDiagnosis: tt.args.nodeReservationDiagnosis,
+					schedulingStateData: schedulingStateData{
+						hasAffinity:              tt.args.hasAffinity,
+						nodeReservationDiagnosis: tt.args.nodeReservationDiagnosis,
+					},
 				})
 			}
 			got, got1 := pl.PostFilter(context.TODO(), cycleState, nil, tt.args.filteredNodeStatusMap)
@@ -2184,6 +2236,7 @@ func TestReserve(t *testing.T) {
 			if tt.reservation != nil {
 				rInfo := pl.reservationCache.getReservationInfoByUID(tt.reservation.UID)
 				assert.Equal(t, tt.wantPods, rInfo.AssignedPods)
+				assert.Equal(t, &schedulingStateData{}, &state.schedulingStateData)
 			}
 		})
 	}

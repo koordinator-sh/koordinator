@@ -307,27 +307,29 @@ func TestRestoreReservation(t *testing.T) {
 
 	matchRInfo := pl.reservationCache.getReservationInfoByUID(matchedReservation.UID)
 	expectedStat := &stateData{
-		podRequests:          corev1.ResourceList{},
-		podRequestsResources: framework.NewResource(nil),
-		preemptible:          map[string]corev1.ResourceList{},
-		preemptibleInRRs:     map[string]map[types.UID]corev1.ResourceList{},
-		nodeReservationStates: map[string]nodeReservationState{
-			node.Name: {
-				nodeName: node.Name,
-				matched:  []*frameworkext.ReservationInfo{matchRInfo},
-				podRequested: &framework.Resource{
-					MilliCPU: 32000,
-					Memory:   68719476736,
+		schedulingStateData: schedulingStateData{
+			podRequests:          corev1.ResourceList{},
+			podRequestsResources: framework.NewResource(nil),
+			preemptible:          map[string]corev1.ResourceList{},
+			preemptibleInRRs:     map[string]map[types.UID]corev1.ResourceList{},
+			nodeReservationStates: map[string]nodeReservationState{
+				node.Name: {
+					nodeName: node.Name,
+					matched:  []*frameworkext.ReservationInfo{matchRInfo},
+					podRequested: &framework.Resource{
+						MilliCPU: 32000,
+						Memory:   68719476736,
+					},
+					rAllocated: framework.NewResource(nil),
 				},
-				rAllocated: framework.NewResource(nil),
 			},
-		},
-		nodeReservationDiagnosis: map[string]*nodeDiagnosisState{
-			node.Name: {
-				nodeName:                 node.Name,
-				ownerMatched:             1,
-				affinityUnmatched:        0,
-				isUnschedulableUnmatched: 0,
+			nodeReservationDiagnosis: map[string]*nodeDiagnosisState{
+				node.Name: {
+					nodeName:                 node.Name,
+					ownerMatched:             1,
+					affinityUnmatched:        0,
+					isUnschedulableUnmatched: 0,
+				},
 			},
 		},
 	}

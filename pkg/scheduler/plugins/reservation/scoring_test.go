@@ -219,7 +219,9 @@ func TestScore(t *testing.T) {
 
 			cycleState := framework.NewCycleState()
 			state := &stateData{
-				nodeReservationStates: map[string]nodeReservationState{},
+				schedulingStateData: schedulingStateData{
+					nodeReservationStates: map[string]nodeReservationState{},
+				},
 			}
 			state.podRequests = apiresource.PodRequests(tt.pod, apiresource.PodResourcesOptions{})
 			state.podRequestsResources = framework.NewResource(state.podRequests)
@@ -321,7 +323,9 @@ func TestScoreWithOrder(t *testing.T) {
 	pl := p.(*Plugin)
 
 	state := &stateData{
-		nodeReservationStates: map[string]nodeReservationState{},
+		schedulingStateData: schedulingStateData{
+			nodeReservationStates: map[string]nodeReservationState{},
+		},
 	}
 	state.podRequests = apiresource.PodRequests(normalPod, apiresource.PodResourcesOptions{})
 	state.podRequestsResources = framework.NewResource(state.podRequests)
@@ -692,7 +696,9 @@ func TestPreScoreWithNominateReservation(t *testing.T) {
 			pl := plugin.(*Plugin)
 			cycleState := framework.NewCycleState()
 			state := &stateData{
-				nodeReservationStates: map[string]nodeReservationState{},
+				schedulingStateData: schedulingStateData{
+					nodeReservationStates: map[string]nodeReservationState{},
+				},
 			}
 			state.podRequests = apiresource.PodRequests(tt.pod, apiresource.PodResourcesOptions{})
 			state.podRequestsResources = framework.NewResource(state.podRequests)
