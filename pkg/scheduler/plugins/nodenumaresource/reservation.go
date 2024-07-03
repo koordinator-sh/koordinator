@@ -19,6 +19,7 @@ package nodenumaresource
 import (
 	"context"
 	"fmt"
+	"reflect"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -42,9 +43,10 @@ type nodeReservationRestoreStateData struct {
 	matched   map[types.UID]reservationAlloc
 	unmatched map[types.UID]reservationAlloc
 
-	mergedMatchedAllocatable map[int]corev1.ResourceList
-	mergedMatchedAllocated   map[int]corev1.ResourceList
-	mergedUnmatchedUsed      map[int]corev1.ResourceList
+	mergedMatchedReservedCPUs cpuset.CPUSet
+	mergedMatchedAllocatable  map[int]corev1.ResourceList
+	mergedMatchedAllocated    map[int]corev1.ResourceList
+	mergedUnmatchedUsed       map[int]corev1.ResourceList
 }
 
 type reservationAlloc struct {
@@ -98,12 +100,15 @@ func (rs *nodeReservationRestoreStateData) mergeReservationAllocations() {
 	if len(matched) > 0 {
 		mergedMatchedAllocatable := map[int]corev1.ResourceList{}
 		mergedMatchedAllocated := map[int]corev1.ResourceList{}
+		mergedCPUSetBuilder := cpuset.NewCPUSetBuilder()
 		for _, alloc := range matched {
 			mergedMatchedAllocatable = appendAllocated(mergedMatchedAllocatable, alloc.allocatable)
 			mergedMatchedAllocated = appendAllocated(mergedMatchedAllocated, alloc.allocated)
+			mergedCPUSetBuilder.Add(alloc.reservedCPUs.ToSliceNoSort()...)
 		}
 		rs.mergedMatchedAllocatable = mergedMatchedAllocatable
 		rs.mergedMatchedAllocated = mergedMatchedAllocated
+		rs.mergedMatchedReservedCPUs = mergedCPUSetBuilder.Result()
 	}
 
 	return
@@ -244,9 +249,10 @@ func tryAllocateFromReservation(
 	for _, alloc := range matchedReservations {
 		rInfo := alloc.rInfo
 
-		reusableResource = appendAllocated(nil, reusableResource, alloc.remained)
-		resourceOptions.reusableResources = reusableResource
+		reservationReusableResource := appendAllocated(nil, reusableResource, alloc.remained)
+		resourceOptions.reusableResources = reservationReusableResource
 		resourceOptions.preferredCPUs = alloc.reservedCPUs
+		resourceOptions.requiredResources = nil
 
 		allocatePolicy := rInfo.GetAllocatePolicy()
 		if allocatePolicy == schedulingv1alpha1.ReservationAllocatePolicyDefault ||
@@ -274,8 +280,17 @@ func tryAllocateFromReservation(
 					}
 					hasSatisfiedReservation = true
 					break
+				} else {
+					klog.V(5).InfoS("failed to allocated from reservation", "reservation", rInfo.Reservation.Name, "pod", pod.Name, "node", node.Name, "status", status.Message(), "numaNode", resourceOptions.hint.NUMANodeAffinity.String())
+					logStruct(reflect.ValueOf(resourceOptions), "options", 6)
+					logStruct(reflect.ValueOf(restoreState), "restoreState", 6)
 				}
+			} else {
+				klog.V(5).InfoS("failed to allocated from reservation", "reservation", rInfo.Reservation.Name, "pod", pod.Name, "node", node.Name, "status", status.Message(), "numaNode", resourceOptions.hint.NUMANodeAffinity.String())
+				logStruct(reflect.ValueOf(resourceOptions), "options", 6)
+				logStruct(reflect.ValueOf(restoreState), "restoreState", 6)
 			}
+
 			reservationReasons = append(reservationReasons, status)
 		}
 	}
