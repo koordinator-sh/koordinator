@@ -386,6 +386,12 @@ func (p *Plugin) FilterReservation(ctx context.Context, cycleState *framework.Cy
 }
 
 func (p *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) *framework.Status {
+	defer func() {
+		// ReservationRestoreState is O(n) complexity of node number of the cluster.
+		// cleanReservationRestoreState clears ReservationRestoreState in the stateData to reduce memory cost before entering
+		// the binding cycle.
+		cleanReservationRestoreState(cycleState)
+	}()
 	state, status := getPreFilterState(cycleState)
 	if !status.IsSuccess() {
 		return status
