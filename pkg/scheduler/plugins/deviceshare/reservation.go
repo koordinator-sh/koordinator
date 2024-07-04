@@ -67,6 +67,10 @@ func getReservationRestoreState(cycleState *framework.CycleState) *reservationRe
 	return state
 }
 
+func cleanReservationRestoreState(cycleState *framework.CycleState) {
+	cycleState.Delete(reservationRestoreStateKey)
+}
+
 func (s *reservationRestoreStateData) Clone() framework.StateData {
 	return s
 }
