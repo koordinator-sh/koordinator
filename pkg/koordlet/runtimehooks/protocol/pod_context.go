@@ -67,6 +67,7 @@ type PodRequest struct {
 	CgroupParent      string
 	Resources         *Resources // TODO: support proxy & nri mode
 	ExtendedResources *apiext.ExtendedResourceSpec
+	ContainerTaskIds  map[string][]int32
 }
 
 func (p *PodRequest) FromNri(pod *api.PodSandbox) {
@@ -106,6 +107,7 @@ func (p *PodRequest) FromReconciler(podMeta *statesinformer.PodMeta) {
 	p.Labels = podMeta.Pod.Labels
 	p.Annotations = podMeta.Pod.Annotations
 	p.CgroupParent = podMeta.CgroupDir
+	p.ContainerTaskIds = podMeta.ContainerTaskIds
 	p.Resources = &Resources{}
 	p.Resources.FromPod(podMeta.Pod)
 	// retrieve ExtendedResources from pod spec and pod annotations (prefer pod spec)
