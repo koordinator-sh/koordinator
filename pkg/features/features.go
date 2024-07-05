@@ -70,6 +70,9 @@ const (
 
 	// EnableQuotaAdmission enables quota admission.
 	EnableQuotaAdmission featuregate.Feature = "EnableQuotaAdmission"
+
+	// Enable sync GPU shared resource from Device CRD
+	EnableSyncGPUSharedResource featuregate.Feature = "EnableSyncGPUSharedResource"
 )
 
 var defaultFeatureGates = map[featuregate.Feature]featuregate.FeatureSpec{
@@ -88,6 +91,7 @@ var defaultFeatureGates = map[featuregate.Feature]featuregate.FeatureSpec{
 	DisableDefaultQuota:                    {Default: false, PreRelease: featuregate.Alpha},
 	SupportParentQuotaSubmitPod:            {Default: false, PreRelease: featuregate.Alpha},
 	EnableQuotaAdmission:                   {Default: false, PreRelease: featuregate.Alpha},
+	EnableSyncGPUSharedResource:            {Default: true, PreRelease: featuregate.Alpha},
 }
 
 const (
