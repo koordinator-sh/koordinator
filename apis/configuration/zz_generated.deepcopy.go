@@ -83,6 +83,11 @@ func (in *CPUNormalizationStrategy) DeepCopyInto(out *CPUNormalizationStrategy) 
 		*out = new(bool)
 		**out = **in
 	}
+	if in.DefaultRatio != nil {
+		in, out := &in.DefaultRatio, &out.DefaultRatio
+		*out = new(float64)
+		**out = **in
+	}
 	if in.RatioModel != nil {
 		in, out := &in.RatioModel, &out.RatioModel
 		*out = make(map[string]ModelRatioCfg, len(*in))

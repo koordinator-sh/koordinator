@@ -894,6 +894,90 @@ func Test_getCPUNormalizationRatioFromModel(t *testing.T) {
 	}
 }
 
+func Test_getCPUNormalizationRatio(t *testing.T) {
+	type args struct {
+		info     *extension.CPUBasicInfo
+		strategy *configuration.CPUNormalizationStrategy
+	}
+	tests := []struct {
+		name    string
+		args    args
+		want    float64
+		wantErr bool
+	}{
+		{
+			name: "nil model and nil default ratio",
+			args: args{
+				strategy: &configuration.CPUNormalizationStrategy{
+					Enable:       pointer.Bool(true),
+					DefaultRatio: nil,
+					RatioModel:   nil,
+				},
+			},
+			want:    -1,
+			wantErr: true,
+		},
+		{
+			name: "nil model and valid default ratio",
+			args: args{
+				strategy: &configuration.CPUNormalizationStrategy{
+					Enable:       pointer.Bool(true),
+					DefaultRatio: pointer.Float64(2.5),
+					RatioModel:   nil,
+				},
+			},
+			want:    2.5,
+			wantErr: false,
+		},
+		{
+			name: "model takes precedence over the default ratio",
+			args: args{
+				info: &extension.CPUBasicInfo{
+					CPUModel: "CPU XXX",
+				},
+				strategy: &configuration.CPUNormalizationStrategy{
+					Enable:       pointer.Bool(true),
+					DefaultRatio: pointer.Float64(3.5),
+					RatioModel: map[string]configuration.ModelRatioCfg{
+						"CPU XXX": {
+							BaseRatio:                    pointer.Float64(1.9),
+							TurboEnabledRatio:            pointer.Float64(1.65),
+							HyperThreadEnabledRatio:      pointer.Float64(1.0),
+							HyperThreadTurboEnabledRatio: pointer.Float64(1.1),
+						},
+					},
+				},
+			},
+			want:    1.9,
+			wantErr: false,
+		},
+		{
+			name: "use the default ratio with invalid model",
+			args: args{
+				info: &extension.CPUBasicInfo{
+					CPUModel: "CPU XXX",
+				},
+				strategy: &configuration.CPUNormalizationStrategy{
+					Enable:       pointer.Bool(true),
+					DefaultRatio: pointer.Float64(2.2),
+					RatioModel: map[string]configuration.ModelRatioCfg{
+						"CPU XXX": {},
+					},
+				},
+			},
+			want:    2.2,
+			wantErr: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, gotErr := getCPUNormalizationRatio(tt.args.info, tt.args.strategy)
+			assert.Equal(t, tt.want, got)
+			assert.Equal(t, tt.wantErr, gotErr != nil)
+		})
+	}
+}
+
 func testPluginCleanup() {
 	client = nil
 	cfgHandler = nil
