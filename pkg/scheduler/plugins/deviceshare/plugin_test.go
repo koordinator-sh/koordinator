@@ -2900,7 +2900,8 @@ func Test_Plugin_Reserve(t *testing.T) {
 									},
 								},
 							},
-							allocateSet: map[schedulingv1alpha1.DeviceType]map[types.NamespacedName]deviceResources{},
+							numaTopology: &NUMATopology{},
+							allocateSet:  map[schedulingv1alpha1.DeviceType]map[types.NamespacedName]deviceResources{},
 							deviceInfos: map[schedulingv1alpha1.DeviceType][]*schedulingv1alpha1.DeviceInfo{
 								schedulingv1alpha1.GPU: {
 									{Type: schedulingv1alpha1.GPU, Health: true, Minor: pointer.Int32(0)},
@@ -2972,8 +2973,9 @@ func Test_Plugin_Reserve(t *testing.T) {
 									},
 								},
 							},
-							deviceUsed:  map[schedulingv1alpha1.DeviceType]deviceResources{},
-							allocateSet: map[schedulingv1alpha1.DeviceType]map[types.NamespacedName]deviceResources{},
+							numaTopology: &NUMATopology{},
+							deviceUsed:   map[schedulingv1alpha1.DeviceType]deviceResources{},
+							allocateSet:  map[schedulingv1alpha1.DeviceType]map[types.NamespacedName]deviceResources{},
 							deviceInfos: map[schedulingv1alpha1.DeviceType][]*schedulingv1alpha1.DeviceInfo{
 								schedulingv1alpha1.GPU: {
 									{Type: schedulingv1alpha1.GPU, Health: true, Minor: pointer.Int32(0)},
