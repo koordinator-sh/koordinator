@@ -54,6 +54,7 @@ const (
 	AnnotationAllocated             = QuotaKoordinatorPrefix + "/allocated"
 	AnnotationNonPreemptibleRequest = QuotaKoordinatorPrefix + "/non-preemptible-request"
 	AnnotationNonPreemptibleUsed    = QuotaKoordinatorPrefix + "/non-preemptible-used"
+	AnnotationAdmission             = QuotaKoordinatorPrefix + "/admission"
 )
 
 func GetParentQuotaName(quota *v1alpha1.ElasticQuota) string {
@@ -206,4 +207,14 @@ func GetUnschedulableResource(quota *v1alpha1.ElasticQuota) (corev1.ResourceList
 		}
 	}
 	return unschedulable, nil
+}
+
+func GetAdmission(quota *v1alpha1.ElasticQuota) (corev1.ResourceList, error) {
+	admission := corev1.ResourceList{}
+	if quota.Annotations[AnnotationAdmission] != "" {
+		if err := json.Unmarshal([]byte(quota.Annotations[AnnotationAdmission]), &admission); err != nil {
+			return admission, err
+		}
+	}
+	return admission, nil
 }

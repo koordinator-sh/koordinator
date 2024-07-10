@@ -19,6 +19,7 @@ package core
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"math/rand"
 	"testing"
 	"time"
@@ -1316,8 +1317,18 @@ func NewGroupQuotaManagerForTest() *GroupQuotaManager {
 		scaleMinQuotaManager:                    NewScaleMinQuotaManager(),
 		quotaTopoNodeMap:                        make(map[string]*QuotaTopoNode),
 	}
-	quotaManager.quotaInfoMap[extension.SystemQuotaName] = NewQuotaInfo(false, true, extension.SystemQuotaName, extension.RootQuotaName)
-	quotaManager.quotaInfoMap[extension.DefaultQuotaName] = NewQuotaInfo(false, true, extension.DefaultQuotaName, extension.RootQuotaName)
+	systemQuotaInfo := NewQuotaInfo(false, true, extension.SystemQuotaName, extension.RootQuotaName)
+	systemQuotaInfo.CalculateInfo.Max = v1.ResourceList{
+		v1.ResourceCPU:    *resource.NewQuantity(math.MaxInt64/5, resource.DecimalSI),
+		v1.ResourceMemory: *resource.NewQuantity(math.MaxInt64/5, resource.BinarySI),
+	}
+	defaultQuotaInfo := NewQuotaInfo(false, true, extension.DefaultQuotaName, extension.RootQuotaName)
+	defaultQuotaInfo.CalculateInfo.Max = v1.ResourceList{
+		v1.ResourceCPU:    *resource.NewQuantity(math.MaxInt64/5, resource.DecimalSI),
+		v1.ResourceMemory: *resource.NewQuantity(math.MaxInt64/5, resource.BinarySI),
+	}
+	quotaManager.quotaInfoMap[extension.SystemQuotaName] = systemQuotaInfo
+	quotaManager.quotaInfoMap[extension.DefaultQuotaName] = defaultQuotaInfo
 	quotaManager.quotaInfoMap[extension.RootQuotaName] = NewQuotaInfo(true, false, extension.RootQuotaName, "")
 	quotaManager.runtimeQuotaCalculatorMap[extension.RootQuotaName] = NewRuntimeQuotaCalculator(extension.RootQuotaName)
 	return quotaManager

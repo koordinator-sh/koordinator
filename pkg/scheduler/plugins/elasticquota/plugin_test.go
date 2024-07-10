@@ -626,13 +626,13 @@ func TestPlugin_PreFilter(t *testing.T) {
 			quotaInfo: &core.QuotaInfo{
 				Name: extension.DefaultQuotaName,
 				CalculateInfo: core.QuotaCalculateInfo{
-					Runtime: MakeResourceList().CPU(0).Mem(20).GPU(10).Obj(),
+					Runtime: MakeResourceList().CPU(0).Mem(20).Obj(),
 				},
 			},
 			expectedStatus: framework.NewStatus(framework.Unschedulable, fmt.Sprintf("Insufficient quotas, "+
 				"quotaName: %v, runtime: %v, used: %v, pod's request: %v, exceedDimensions: [cpu]",
-				extension.DefaultQuotaName, printResourceList(MakeResourceList().CPU(0).Mem(20).GPU(10).Obj()),
-				printResourceList(corev1.ResourceList{}), printResourceList(MakeResourceList().CPU(1).Mem(2).GPU(1).Obj()))),
+				extension.DefaultQuotaName, printResourceList(MakeResourceList().CPU(0).Mem(20).Obj()),
+				printResourceList(corev1.ResourceList{}), printResourceList(MakeResourceList().CPU(1).Mem(2).Obj()))),
 		},
 		{
 			name: "used dimension larger than runtime, but value is enough",
@@ -641,7 +641,7 @@ func TestPlugin_PreFilter(t *testing.T) {
 			quotaInfo: &core.QuotaInfo{
 				Name: extension.DefaultQuotaName,
 				CalculateInfo: core.QuotaCalculateInfo{
-					Runtime: MakeResourceList().CPU(10).Mem(20).GPU(10).Obj(),
+					Runtime: MakeResourceList().CPU(10).Mem(20).Obj(),
 				},
 			},
 			expectedStatus: framework.NewStatus(framework.Success, ""),
@@ -653,6 +653,7 @@ func TestPlugin_PreFilter(t *testing.T) {
 			quotaInfo: &core.QuotaInfo{
 				Name: extension.DefaultQuotaName,
 				CalculateInfo: core.QuotaCalculateInfo{
+					Max:     MakeResourceList().CPU(10).Mem(20).Obj(),
 					Runtime: MakeResourceList().CPU(1).Mem(2).Obj(),
 				},
 			},
@@ -660,7 +661,7 @@ func TestPlugin_PreFilter(t *testing.T) {
 				fmt.Sprintf("Insufficient quotas, "+
 					"quotaName: %v, runtime: %v, used: %v, pod's request: %v, exceedDimensions: [memory]",
 					extension.DefaultQuotaName, printResourceList(MakeResourceList().CPU(1).Mem(2).Obj()),
-					printResourceList(corev1.ResourceList{}), printResourceList(MakeResourceList().CPU(1).Mem(3).GPU(1).Obj()))),
+					printResourceList(corev1.ResourceList{}), printResourceList(MakeResourceList().CPU(1).Mem(3).Obj()))),
 		},
 		{
 			name: "used dimension larger than runtime, but value is enough",
@@ -669,7 +670,7 @@ func TestPlugin_PreFilter(t *testing.T) {
 			quotaInfo: &core.QuotaInfo{
 				Name: extension.DefaultQuotaName,
 				CalculateInfo: core.QuotaCalculateInfo{
-					Runtime: MakeResourceList().CPU(10).Mem(20).GPU(10).Obj(),
+					Runtime: MakeResourceList().CPU(10).Mem(20).Obj(),
 				},
 			},
 			expectedStatus: framework.NewStatus(framework.Success, ""),
@@ -681,7 +682,6 @@ func TestPlugin_PreFilter(t *testing.T) {
 			quotaInfo: &core.QuotaInfo{
 				Name: extension.DefaultQuotaName,
 				CalculateInfo: core.QuotaCalculateInfo{
-					Max:     MakeResourceList().CPU(1).Mem(3).Obj(),
 					Runtime: MakeResourceList().CPU(1).Mem(2).Obj(),
 				},
 			},
@@ -898,10 +898,10 @@ func TestPlugin_Reserve(t *testing.T) {
 			quotaInfo: &core.QuotaInfo{
 				Name: extension.DefaultQuotaName,
 				CalculateInfo: core.QuotaCalculateInfo{
-					Used: MakeResourceList().CPU(10).Mem(20).GPU(10).Obj(),
+					Used: MakeResourceList().CPU(10).Mem(20).Obj(),
 				},
 			},
-			expectedUsed: MakeResourceList().CPU(11).Mem(22).GPU(11).Obj(),
+			expectedUsed: MakeResourceList().CPU(11).Mem(22).Obj(),
 		},
 	}
 	for _, tt := range test {
@@ -977,12 +977,12 @@ func TestPlugin_AddPod(t *testing.T) {
 			quotaInfo: &core.QuotaInfo{
 				Name: extension.DefaultQuotaName,
 				CalculateInfo: core.QuotaCalculateInfo{
-					Used: MakeResourceList().CPU(10).Mem(20).GPU(10).Obj(),
+					Used: MakeResourceList().CPU(10).Mem(20).Obj(),
 				},
 				PodCache: make(map[string]*core.PodInfo),
 			},
 			wantStatusSuccess: true,
-			expectedUsed:      MakeResourceList().CPU(11).Mem(22).GPU(11).Obj(),
+			expectedUsed:      MakeResourceList().CPU(11).Mem(22).Obj(),
 		},
 	}
 	for _, tt := range test {
@@ -1029,11 +1029,11 @@ func TestPlugin_RemovePod(t *testing.T) {
 			quotaInfo: &core.QuotaInfo{
 				Name: extension.DefaultQuotaName,
 				CalculateInfo: core.QuotaCalculateInfo{
-					Used: MakeResourceList().CPU(10).Mem(20).GPU(10).Obj(),
+					Used: MakeResourceList().CPU(10).Mem(20).Obj(),
 				},
 			},
 			wantStatusSuccess: true,
-			expectedUsed:      MakeResourceList().CPU(9).Mem(18).GPU(9).Obj(),
+			expectedUsed:      MakeResourceList().CPU(9).Mem(18).Obj(),
 		},
 	}
 	for _, tt := range test {

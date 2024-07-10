@@ -594,6 +594,11 @@ func (gqm *GroupQuotaManager) GetAllQuotaNames() map[string]struct{} {
 }
 
 func (gqm *GroupQuotaManager) updatePodRequestNoLock(quotaName string, oldPod, newPod *v1.Pod) {
+	quotaInfo := gqm.getQuotaInfoByNameNoLock(quotaName)
+	if quotaInfo == nil {
+		return
+	}
+
 	var oldPodReq, newPodReq, oldNonPreemptibleRequest, newNonPreemptibleRequest v1.ResourceList
 	if oldPod != nil {
 		oldPodReq = PodRequests(oldPod)
@@ -609,8 +614,9 @@ func (gqm *GroupQuotaManager) updatePodRequestNoLock(quotaName string, oldPod, n
 		}
 	}
 
-	deltaReq := quotav1.Subtract(newPodReq, oldPodReq)
-	deltaNonPreemptibleRequest := quotav1.Subtract(newNonPreemptibleRequest, oldNonPreemptibleRequest)
+	resourceNames := quotav1.ResourceNames(quotaInfo.CalculateInfo.Max)
+	deltaReq := quotav1.Mask(quotav1.Subtract(newPodReq, oldPodReq), resourceNames)
+	deltaNonPreemptibleRequest := quotav1.Mask(quotav1.Subtract(newNonPreemptibleRequest, oldNonPreemptibleRequest), resourceNames)
 	if quotav1.IsZero(deltaReq) && quotav1.IsZero(deltaNonPreemptibleRequest) {
 		return
 	}
@@ -643,8 +649,9 @@ func (gqm *GroupQuotaManager) updatePodUsedNoLock(quotaName string, oldPod, newP
 		}
 	}
 
-	deltaUsed := quotav1.Subtract(newPodUsed, oldPodUsed)
-	deltaNonPreemptibleUsed := quotav1.Subtract(newNonPreemptibleUsed, oldNonPreemptibleUsed)
+	resourceNames := quotav1.ResourceNames(quotaInfo.CalculateInfo.Max)
+	deltaUsed := quotav1.Mask(quotav1.Subtract(newPodUsed, oldPodUsed), resourceNames)
+	deltaNonPreemptibleUsed := quotav1.Mask(quotav1.Subtract(newNonPreemptibleUsed, oldNonPreemptibleUsed), resourceNames)
 	if quotav1.IsZero(deltaUsed) && quotav1.IsZero(deltaNonPreemptibleUsed) {
 		if klog.V(5).Enabled() {
 			klog.Infof("updatePodUsed, deltaUsedIsZero and deltaNonPreemptibleUsedIsZero, quotaName: %v, podName: %v, podUsed: %v, podNonPreemptibleUsed: %v",
