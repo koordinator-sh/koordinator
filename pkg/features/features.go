@@ -67,6 +67,9 @@ const (
 
 	// SupportParentQuotaSubmitPod enables parent Quota submit pod
 	SupportParentQuotaSubmitPod featuregate.Feature = "SupportParentQuotaSubmitPod"
+
+	// EnableQuotaAdmission enables quota admission.
+	EnableQuotaAdmission featuregate.Feature = "EnableQuotaAdmission"
 )
 
 var defaultFeatureGates = map[featuregate.Feature]featuregate.FeatureSpec{
@@ -84,6 +87,7 @@ var defaultFeatureGates = map[featuregate.Feature]featuregate.FeatureSpec{
 	ElasticQuotaGuaranteeUsage:             {Default: false, PreRelease: featuregate.Alpha},
 	DisableDefaultQuota:                    {Default: false, PreRelease: featuregate.Alpha},
 	SupportParentQuotaSubmitPod:            {Default: false, PreRelease: featuregate.Alpha},
+	EnableQuotaAdmission:                   {Default: false, PreRelease: featuregate.Alpha},
 }
 
 const (

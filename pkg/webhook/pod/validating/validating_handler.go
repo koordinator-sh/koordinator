@@ -26,6 +26,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	"github.com/koordinator-sh/koordinator/pkg/webhook/elasticquota"
+	"github.com/koordinator-sh/koordinator/pkg/webhook/quotaevaluate"
 )
 
 // PodValidatingHandler handles Pod
@@ -34,6 +35,9 @@ type PodValidatingHandler struct {
 
 	// Decoder decodes objects
 	Decoder *admission.Decoder
+
+	// QuotaEvaluator evaluate pod quota usage
+	QuotaEvaluator quotaevaluate.Evaluator
 }
 
 var _ admission.Handler = &PodValidatingHandler{}
@@ -61,13 +65,18 @@ func (h *PodValidatingHandler) validatingPodFn(ctx context.Context, req admissio
 		return false, reason, err
 	}
 
-	allowed, reason, err = h.clusterColocationProfileValidatingPod(ctx, req)
-	if err == nil {
-		plugin := elasticquota.NewPlugin(h.Decoder, h.Client)
-		if err = plugin.ValidatePod(ctx, req); err != nil {
-			return false, "", err
-		}
+	_, reason, err = h.clusterColocationProfileValidatingPod(ctx, req)
+	if err != nil {
+		return false, reason, err
 	}
+
+	plugin := elasticquota.NewPlugin(h.Decoder, h.Client)
+	if err = plugin.ValidatePod(ctx, req); err != nil {
+		return false, "", err
+	}
+
+	allowed, reason, err = h.evaluateQuota(ctx, req)
+
 	return
 }
 
