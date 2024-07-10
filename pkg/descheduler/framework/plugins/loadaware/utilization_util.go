@@ -90,6 +90,7 @@ func getNodeThresholds(
 	var averageResourceUsagePercent, prodAverageResourceUsagePercent ResourceThresholds
 	if useDeviationThresholds {
 		averageResourceUsagePercent, prodAverageResourceUsagePercent = calcAverageResourceUsagePercent(nodeUsages)
+		klog.V(4).InfoS("useDeviationThresholds", "node", averageResourceUsagePercent, "prod", prodAverageResourceUsagePercent)
 	}
 
 	nodeThresholdsMap := map[string]NodeThresholds{}
@@ -107,11 +108,14 @@ func getNodeThresholds(
 				if lowThreshold[resourceName] == MinResourcePercentage {
 					thresholds.lowResourceThreshold[resourceName] = &resourceCapacity
 					thresholds.highResourceThreshold[resourceName] = &resourceCapacity
-					thresholds.prodLowResourceThreshold[resourceName] = &resourceCapacity
-					thresholds.prodHighResourceThreshold[resourceName] = &resourceCapacity
 				} else {
 					thresholds.lowResourceThreshold[resourceName] = resourceThreshold(allocatable, resourceName, normalizePercentage(averageResourceUsagePercent[resourceName]-lowThreshold[resourceName]))
 					thresholds.highResourceThreshold[resourceName] = resourceThreshold(allocatable, resourceName, normalizePercentage(averageResourceUsagePercent[resourceName]+highThreshold[resourceName]))
+				}
+				if prodLowThreshold[resourceName] == MinResourcePercentage {
+					thresholds.prodLowResourceThreshold[resourceName] = &resourceCapacity
+					thresholds.prodHighResourceThreshold[resourceName] = &resourceCapacity
+				} else {
 					thresholds.prodLowResourceThreshold[resourceName] = resourceThreshold(allocatable, resourceName, normalizePercentage(prodAverageResourceUsagePercent[resourceName]-prodLowThreshold[resourceName]))
 					thresholds.prodHighResourceThreshold[resourceName] = resourceThreshold(allocatable, resourceName, normalizePercentage(prodAverageResourceUsagePercent[resourceName]+prodHighThreshold[resourceName]))
 				}
@@ -253,13 +257,15 @@ func classifyNodes(
 				lowNodes = append(lowNodes, nodeInfo)
 				nodeUsageExplain = "lower than node usage and it's appropriately for prod usage"
 			}
-			klog.InfoS("Node's utilization", "node", klog.KObj(nodeUsage.node), "result information", nodeUsageExplain, "node usage", nodeUsage.usage, "node usagePercentage", resourceUsagePercentages(nodeUsage, false),
-				"prod usage", nodeUsage.prodUsage, "prod usagePercentage", resourceUsagePercentages(nodeUsage, true))
+			klog.V(4).InfoS("Node's utilization", "node", klog.KObj(nodeUsage.node), "result information", nodeUsageExplain, "node usage", nodeUsage.usage, "node usagePercentage", resourceUsagePercentages(nodeUsage, false),
+				"node high threshold", nodeThresholds[nodeUsage.node.Name].highResourceThreshold, "node low threshold", nodeThresholds[nodeUsage.node.Name].lowResourceThreshold, "prod usage", nodeUsage.prodUsage,
+				"prod usagePercentage", resourceUsagePercentages(nodeUsage, true), "prod high threshold", nodeThresholds[nodeUsage.node.Name].prodHighResourceThreshold, "prod low threshold", nodeThresholds[nodeUsage.node.Name].prodLowResourceThreshold)
 		} else if highThresholdFilter(nodeUsage, nodeThresholds[nodeUsage.node.Name]) {
 			highNodes = append(highNodes, nodeInfo)
 			nodeUsageExplain = "higher than node usage"
-			klog.InfoS("Node's utilization", "node", klog.KObj(nodeUsage.node), "result information", nodeUsageExplain, "node usage", nodeUsage.usage, "node usagePercentage", resourceUsagePercentages(nodeUsage, false),
-				"prod usage", nodeUsage.prodUsage, "prod usagePercentage", resourceUsagePercentages(nodeUsage, true))
+			klog.V(4).InfoS("Node's utilization", "node", klog.KObj(nodeUsage.node), "result information", nodeUsageExplain, "node usage", nodeUsage.usage, "node usagePercentage", resourceUsagePercentages(nodeUsage, false),
+				"node high threshold", nodeThresholds[nodeUsage.node.Name].highResourceThreshold, "node low threshold", nodeThresholds[nodeUsage.node.Name].lowResourceThreshold, "prod usage", nodeUsage.prodUsage,
+				"prod usagePercentage", resourceUsagePercentages(nodeUsage, true), "prod high threshold", nodeThresholds[nodeUsage.node.Name].prodHighResourceThreshold, "prod low threshold", nodeThresholds[nodeUsage.node.Name].prodLowResourceThreshold)
 		} else {
 			if prodHighThresholdFilter(nodeUsage, nodeThresholds[nodeUsage.node.Name]) {
 				prodHighNodes = append(prodHighNodes, nodeInfo)
@@ -270,8 +276,9 @@ func classifyNodes(
 			} else {
 				nodeUsageExplain = "both appropriately for node && prod usage"
 			}
-			klog.InfoS("Node's utilization", "node", klog.KObj(nodeUsage.node), "result information", nodeUsageExplain, "node usage", nodeUsage.usage, "node usagePercentage", resourceUsagePercentages(nodeUsage, false),
-				"prod usage", nodeUsage.prodUsage, "prod usagePercentage", resourceUsagePercentages(nodeUsage, true))
+			klog.V(4).InfoS("Node's utilization", "node", klog.KObj(nodeUsage.node), "result information", nodeUsageExplain, "node usage", nodeUsage.usage, "node usagePercentage", resourceUsagePercentages(nodeUsage, false),
+				"node high threshold", nodeThresholds[nodeUsage.node.Name].highResourceThreshold, "node low threshold", nodeThresholds[nodeUsage.node.Name].lowResourceThreshold, "prod usage", nodeUsage.prodUsage,
+				"prod usagePercentage", resourceUsagePercentages(nodeUsage, true), "prod high threshold", nodeThresholds[nodeUsage.node.Name].prodHighResourceThreshold, "prod low threshold", nodeThresholds[nodeUsage.node.Name].prodLowResourceThreshold)
 		}
 	}
 
