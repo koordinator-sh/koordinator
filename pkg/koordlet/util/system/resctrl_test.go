@@ -537,3 +537,57 @@ func TestGetResctrlMonDataPath(t *testing.T) {
 		})
 	}
 }
+
+func TestIsVendorSupportResctrl(t *testing.T) {
+	// use HiSilicon for example
+	ARM_VENDOR_ID_MAP["HiSilicon"] = struct{}{}
+	type args struct {
+		vendorID string
+	}
+	tests := []struct {
+		name string
+		args args
+		want bool
+	}{
+		{
+			name: "intel",
+			args: args{
+				vendorID: "GenuineIntel",
+			},
+			want: true,
+		},
+		{
+			name: "AMD",
+			args: args{
+				vendorID: "AuthenticAMD",
+			},
+			want: true,
+		},
+		{
+			name: "HiSilicon",
+			args: args{
+				vendorID: "HiSilicon",
+			},
+			want: true,
+		},
+		{
+			name: "NVIDIA",
+			args: args{
+				vendorID: "NVIDIA",
+			},
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			helper := NewFileTestUtil(t)
+			defer helper.Cleanup()
+			p := GetCPUInfoPath()
+			helper.WriteFileContents(p, "vendor_id       : "+tt.args.vendorID)
+
+			got := IsVendorSupportResctrl()
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}

@@ -62,11 +62,13 @@ const (
 )
 
 var (
-	initLock          sync.Mutex
-	isInit            bool
-	isSupportResctrl  bool
-	CacheIdsCacheFunc func() ([]int, error)
-	ARM_VENDOR_ID_MAP = map[string]struct{}{} // support MPAM ARM vendor ids
+	initLock                  sync.Mutex
+	isInit                    bool
+	isSupportResctrl          bool
+	isSupportResctrlCollector bool
+	collectorOnceFunc         sync.Once
+	CacheIdsCacheFunc         func() ([]int, error)
+	ARM_VENDOR_ID_MAP         = map[string]struct{}{} // support MPAM ARM vendor ids
 )
 
 func init() {
@@ -131,13 +133,16 @@ func IsSupportResctrl() (bool, error) {
 	return isSupportResctrl, nil
 }
 
-func IsResctrlCollectorAvailableByCpuInfo() (bool, error) {
-	initLock.Lock()
-	defer initLock.Unlock()
-	path := GetCPUInfoPath()
-	mbm, err1 := isResctrlMBMAvailableByCpuInfo(path)
-	cqm, err2 := isResctrlCQMAvailableByCpuInfo(path)
-	return mbm && cqm, multierr.Append(err1, err2)
+func IsSupportResctrlCollector() (bool, error) {
+	var err error
+	collectorOnceFunc.Do(func() {
+		path := GetCPUInfoPath()
+		mbm, err1 := isResctrlMBMAvailableByCpuInfo(path)
+		cqm, err2 := isResctrlCQMAvailableByCpuInfo(path)
+		isSupportResctrlCollector = mbm && cqm
+		err = multierr.Append(err1, err2)
+	})
+	return isSupportResctrlCollector, err
 }
 
 var (

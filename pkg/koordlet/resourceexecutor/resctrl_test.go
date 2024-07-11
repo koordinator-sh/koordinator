@@ -283,3 +283,19 @@ func TestResctrlReader(t *testing.T) {
 		})
 	}
 }
+
+func TestFakeReader(t *testing.T) {
+	t.Run("test fake reader ", func(t *testing.T) {
+		helper := system.NewFileTestUtil(t)
+		defer helper.Cleanup()
+		reader := NewResctrlReader()
+
+		l3Data, err := reader.ReadResctrlL3Stat("")
+		assert.Nil(t, l3Data)
+		assert.Error(t, err)
+
+		mbmData, err := reader.ReadResctrlMBStat("")
+		assert.Nil(t, mbmData)
+		assert.Error(t, err)
+	})
+}

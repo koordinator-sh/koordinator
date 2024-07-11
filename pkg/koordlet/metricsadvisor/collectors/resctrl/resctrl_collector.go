@@ -63,7 +63,7 @@ func New(opt *framework.Options) framework.Collector {
 // 4. check resctrl collector feature gate
 func (r *resctrlCollector) Enabled() bool {
 	isResctrlEnabled, _ := system.IsSupportResctrl()
-	isResctrlCollectorEnabled, _ := system.IsResctrlCollectorAvailableByCpuInfo()
+	isResctrlCollectorEnabled, _ := system.IsSupportResctrlCollector()
 	return r.resctrlCollectorGate &&
 		isResctrlEnabled && isResctrlCollectorEnabled &&
 		system.IsVendorSupportResctrl() &&
