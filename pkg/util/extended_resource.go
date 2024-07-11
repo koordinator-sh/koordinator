@@ -27,18 +27,28 @@ import (
 var ExtendedResourceNames = []corev1.ResourceName{
 	extension.BatchCPU,
 	extension.BatchMemory,
+	extension.MidCPU,
+	extension.MidMemory,
 }
 
-func GetBatchMilliCPUFromResourceList(r corev1.ResourceList) int64 {
+func GetExtendedMilliCPUFromResourceList(r corev1.ResourceList) int64 {
 	// assert r != nil
+	// suppose only one of mid-cpu and batch-cpu exists
+	if milliCPU, ok := r[extension.MidCPU]; ok {
+		return milliCPU.Value()
+	}
 	if milliCPU, ok := r[extension.BatchCPU]; ok {
 		return milliCPU.Value()
 	}
 	return -1
 }
 
-func GetBatchMemoryFromResourceList(r corev1.ResourceList) int64 {
+func GetExtendedMemoryFromResourceList(r corev1.ResourceList) int64 {
 	// assert r != nil
+	// suppose only one of mid-memory and batch-memory exists
+	if memory, ok := r[extension.MidMemory]; ok {
+		return memory.Value()
+	}
 	if memory, ok := r[extension.BatchMemory]; ok {
 		return memory.Value()
 	}
@@ -46,17 +56,17 @@ func GetBatchMemoryFromResourceList(r corev1.ResourceList) int64 {
 }
 
 func GetContainerBatchMilliCPURequest(c *corev1.Container) int64 {
-	return GetBatchMilliCPUFromResourceList(c.Resources.Requests)
+	return GetExtendedMilliCPUFromResourceList(c.Resources.Requests)
 }
 
 func GetContainerBatchMilliCPULimit(c *corev1.Container) int64 {
-	return GetBatchMilliCPUFromResourceList(c.Resources.Limits)
+	return GetExtendedMilliCPUFromResourceList(c.Resources.Limits)
 }
 
 func GetContainerBatchMemoryByteRequest(c *corev1.Container) int64 {
-	return GetBatchMemoryFromResourceList(c.Resources.Requests)
+	return GetExtendedMemoryFromResourceList(c.Resources.Requests)
 }
 
 func GetContainerBatchMemoryByteLimit(c *corev1.Container) int64 {
-	return GetBatchMemoryFromResourceList(c.Resources.Limits)
+	return GetExtendedMemoryFromResourceList(c.Resources.Limits)
 }

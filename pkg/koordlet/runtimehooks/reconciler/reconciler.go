@@ -137,6 +137,32 @@ func PodQOSFilter() Filter {
 	return singletonPodQOSFilter
 }
 
+type podPriorityFilter struct{}
+
+const (
+	PodPriorityFilterName = "podPriority"
+)
+
+func (p *podPriorityFilter) Name() string {
+	return PodPriorityFilterName
+}
+
+func (p *podPriorityFilter) Filter(podMeta *statesinformer.PodMeta) string {
+	priority := apiext.GetPodPriorityClassRaw(podMeta.Pod)
+
+	return string(priority)
+}
+
+var singletonPodPriorityFilter *podPriorityFilter
+
+// PodPriorityFilter returns a Filter which filters pod priority name
+func PodPriorityFilter() *podPriorityFilter {
+	if singletonPodPriorityFilter == nil {
+		singletonPodPriorityFilter = &podPriorityFilter{}
+	}
+	return singletonPodPriorityFilter
+}
+
 type reconcileFunc func(protocol.HooksProtocol) error
 type reconcileFunc4AllPods func([]protocol.HooksProtocol) error
 
@@ -197,10 +223,9 @@ func RegisterCgroupReconciler4AllPods(level ReconcilerLevel, cgroupFile system.R
 // RegisterCgroupReconciler registers a cgroup reconciler according to the cgroup file, reconcile function and filter
 // conditions. A cgroup file of one level can have multiple reconcile functions with different filtered conditions.
 //
-//	e.g. pod-level cfs_quota can be registered both by cpuset hook and batchresource hook. While cpuset hook reconciles
-//	cfs_quota for LSE and LSR pods, batchresource reconciles pods of BE QoS.
+//	e.g. pod-level cfs_quota can be registered both by cpuset hook and extendedresource hook. While cpuset hook reconciles
+//	cfs_quota for LSE and LSR pods, extendedresource reconciles pods of BE QoS.
 //
-// TODO: support priority+qos filter.
 func RegisterCgroupReconciler(level ReconcilerLevel, cgroupFile system.Resource, description string,
 	fn reconcileFunc, filter Filter, conditions ...string) {
 	if len(conditions) <= 0 { // default condition
@@ -212,12 +237,12 @@ func RegisterCgroupReconciler(level ReconcilerLevel, cgroupFile system.Resource,
 			continue
 		}
 
-		// if reconciler exist
 		if r.filter.Name() != filter.Name() {
-			klog.Fatalf("%v of level %v is already registered with filter %v by %v, cannot change to %v by %v",
+			klog.Warningf("%v of level %v is already registered with filter %v by [%v], and now add new filter %v by [%v]",
 				cgroupFile.ResourceType(), level, r.filter.Name(), r.description, filter.Name(), description)
 		}
 
+		// NOTE: different filter should have different condition, so no conflict here if many filter registered
 		for _, condition := range conditions {
 			if _, ok := r.fn[condition]; ok {
 				klog.Fatalf("%v of level %v is already registered with condition %v by %v, cannot change by %v",
