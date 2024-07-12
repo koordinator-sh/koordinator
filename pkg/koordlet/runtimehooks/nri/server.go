@@ -152,7 +152,7 @@ func (p *NriServer) Stop() {
 	p.stub.Stop()
 }
 
-func (p *NriServer) Configure(config, runtime, version string) (stub.EventMask, error) {
+func (p *NriServer) Configure(_ context.Context, config, runtime, version string) (stub.EventMask, error) {
 	klog.V(4).Infof("got configuration data: %q from runtime %s %s", config, runtime, version)
 	if config == "" {
 		return p.mask, nil
@@ -173,12 +173,12 @@ func (p *NriServer) Configure(config, runtime, version string) (stub.EventMask, 
 	return p.mask, nil
 }
 
-func (p *NriServer) Synchronize(pods []*api.PodSandbox, containers []*api.Container) ([]*api.ContainerUpdate, error) {
+func (p *NriServer) Synchronize(_ context.Context, pods []*api.PodSandbox, containers []*api.Container) ([]*api.ContainerUpdate, error) {
 	// todo: update existed containers configure
 	return nil, nil
 }
 
-func (p *NriServer) RunPodSandbox(pod *api.PodSandbox) error {
+func (p *NriServer) RunPodSandbox(_ context.Context, pod *api.PodSandbox) error {
 	podCtx := &protocol.PodContext{}
 	podCtx.FromNri(pod)
 	// todo: return error or bypass error based on PluginFailurePolicy
@@ -195,7 +195,7 @@ func (p *NriServer) RunPodSandbox(pod *api.PodSandbox) error {
 	return nil
 }
 
-func (p *NriServer) CreateContainer(pod *api.PodSandbox, container *api.Container) (*api.ContainerAdjustment, []*api.ContainerUpdate, error) {
+func (p *NriServer) CreateContainer(_ context.Context, pod *api.PodSandbox, container *api.Container) (*api.ContainerAdjustment, []*api.ContainerUpdate, error) {
 	containerCtx := &protocol.ContainerContext{}
 	containerCtx.FromNri(pod, container)
 	// todo: return error or bypass error based on PluginFailurePolicy
@@ -218,7 +218,7 @@ func (p *NriServer) CreateContainer(pod *api.PodSandbox, container *api.Containe
 	return adjust, nil, nil
 }
 
-func (p *NriServer) UpdateContainer(pod *api.PodSandbox, container *api.Container) ([]*api.ContainerUpdate, error) {
+func (p *NriServer) UpdateContainer(_ context.Context, pod *api.PodSandbox, container *api.Container, r *api.LinuxResources) ([]*api.ContainerUpdate, error) {
 	containerCtx := &protocol.ContainerContext{}
 	containerCtx.FromNri(pod, container)
 	// todo: return error or bypass error based on PluginFailurePolicy
@@ -241,7 +241,7 @@ func (p *NriServer) UpdateContainer(pod *api.PodSandbox, container *api.Containe
 	return []*api.ContainerUpdate{update}, nil
 }
 
-func (p *NriServer) RemovePodSandbox(pod *api.PodSandbox) error {
+func (p *NriServer) RemovePodSandbox(_ context.Context, pod *api.PodSandbox) error {
 	podCtx := &protocol.PodContext{}
 	podCtx.FromNri(pod)
 	// todo: return error or bypass error based on PluginFailurePolicy
