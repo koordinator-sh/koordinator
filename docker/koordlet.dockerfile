@@ -11,8 +11,8 @@ RUN apt update && apt install -y bash build-essential cmake wget
 RUN wget https://sourceforge.net/projects/perfmon2/files/libpfm4/libpfm-4.13.0.tar.gz && \
   echo "bcb52090f02bc7bcb5ac066494cd55bbd5084e65  libpfm-4.13.0.tar.gz" | sha1sum -c && \
   tar -xzf libpfm-4.13.0.tar.gz && \
-  rm libpfm-4.13.0.tar.gz
-RUN export DBG="-g -Wall" && \
+  rm libpfm-4.13.0.tar.gz && \
+  export DBG="-g -Wall" && \
   make -e -C libpfm-4.13.0 && \
   make install -C libpfm-4.13.0
 
@@ -35,8 +35,7 @@ RUN go build -a -o koordlet cmd/koordlet/main.go
 
 FROM --platform=$TARGETPLATFORM nvidia/cuda:11.8.0-base-ubuntu22.04
 WORKDIR /
-RUN apt-get update && apt-get install -y lvm2 && rm -rf /var/lib/apt/lists/*
-RUN apt-get update && apt-get install -y iptables
+RUN apt-get update && apt-get install -y lvm2 iptables && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /go/src/github.com/koordinator-sh/koordinator/koordlet .
 COPY --from=builder /usr/local/lib /usr/lib
 ENTRYPOINT ["/koordlet"]
