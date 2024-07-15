@@ -275,6 +275,8 @@ type CPUNormalizationStrategy struct {
 	// Enable defines whether the cpu normalization is enabled.
 	// If set to false, the node cpu normalization ratio will be removed.
 	Enable *bool `json:"enable,omitempty"`
+	// DefaultRatio defines the default cpu normalization.
+	DefaultRatio *float64 `json:"defaultRatio,omitempty"`
 	// RatioModel defines the cpu normalization ratio of each CPU model.
 	// It maps the CPUModel of BasicInfo into the ratios.
 	RatioModel map[string]ModelRatioCfg `json:"ratioModel,omitempty"`
