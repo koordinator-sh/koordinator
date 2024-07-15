@@ -36,6 +36,7 @@ RUN go build -a -o koordlet cmd/koordlet/main.go
 FROM --platform=$TARGETPLATFORM nvidia/cuda:11.8.0-base-ubuntu22.04
 WORKDIR /
 RUN apt-get update && apt-get install -y lvm2 && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y iptables
 COPY --from=builder /go/src/github.com/koordinator-sh/koordinator/koordlet .
 COPY --from=builder /usr/local/lib /usr/lib
 ENTRYPOINT ["/koordlet"]
