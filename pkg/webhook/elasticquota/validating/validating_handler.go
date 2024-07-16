@@ -22,8 +22,6 @@ import (
 	"net/http"
 
 	v1 "k8s.io/api/admission/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	clientcache "k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -109,24 +107,17 @@ func (h *ElasticQuotaValidatingHandler) InjectDecoder(d *admission.Decoder) erro
 // var _ inject.Cache = &ElasticQuotaValidatingHandler{}
 
 func (h *ElasticQuotaValidatingHandler) InjectCache(cache cache.Cache) error {
-	ctx := context.TODO()
-	quotaInformer, err := cache.GetInformer(ctx, &v1alpha1.ElasticQuota{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       "ElasticQuota",
-			APIVersion: v1alpha1.SchemeGroupVersion.String(),
-		},
-	})
+	plugin := elasticquota.NewPlugin(h.Decoder, h.Client)
+	if plugin.QuotaInformer != nil {
+		return nil
+	}
+
+	quotaInformer, err := elasticquota.NewQuotaInformer(cache, plugin.QuotaTopo)
 	if err != nil {
 		return err
 	}
-	plugin := elasticquota.NewPlugin(h.Decoder, h.Client)
-	qt := plugin.QuotaTopo
-	_, err = quotaInformer.AddEventHandler(clientcache.ResourceEventHandlerFuncs{
-		AddFunc:    qt.OnQuotaAdd,
-		UpdateFunc: qt.OnQuotaUpdate,
-		DeleteFunc: qt.OnQuotaDelete,
-	})
-	return err
+	plugin.InjectInformer(quotaInformer)
+	return nil
 }
 
 var _ http.Handler = &ElasticQuotaValidatingHandler{}

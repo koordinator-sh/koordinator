@@ -24,6 +24,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/klog/v2"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
@@ -94,5 +95,19 @@ func (h *ElasticQuotaMutatingHandler) InjectClient(c client.Client) error {
 // InjectDecoder injects the decoder into the ElasticQuotaMutatingHandler
 func (h *ElasticQuotaMutatingHandler) InjectDecoder(decoder *admission.Decoder) error {
 	h.Decoder = decoder
+	return nil
+}
+
+func (h *ElasticQuotaMutatingHandler) InjectCache(cache cache.Cache) error {
+	plugin := elasticquota.NewPlugin(h.Decoder, h.Client)
+	if plugin.QuotaInformer != nil {
+		return nil
+	}
+
+	quotaInformer, err := elasticquota.NewQuotaInformer(cache, plugin.QuotaTopo)
+	if err != nil {
+		return err
+	}
+	plugin.InjectInformer(quotaInformer)
 	return nil
 }
