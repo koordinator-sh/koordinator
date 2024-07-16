@@ -191,8 +191,7 @@ func (a *AutopilotAllocator) tryJointAllocate(requestCtx *requestContext, jointA
 	}
 
 	primaryDeviceType := jointAllocate.DeviceTypes[0]
-	topologyGuide := newDeviceTopologyGuide(nodeDevice, requestCtx.requestsPerInstance, jointAllocate)
-
+	topologyGuide := newDeviceTopologyGuide(nodeDevice, requestCtx.requestsPerInstance, primaryDeviceType, jointAllocate)
 	deviceAllocations, status := a.allocateByTopology(requestCtx, nodeDevice, topologyGuide, primaryDeviceType, jointAllocate, jointAllocate.DeviceTypes[1:])
 	if jointAllocate.RequiredScope == apiext.SamePCIeDeviceJointAllocateScope {
 		if status.IsSuccess() {
@@ -220,20 +219,34 @@ func (a *AutopilotAllocator) allocateByTopology(requestCtx *requestContext, node
 	for _, pcie := range freeNodeDevicesInPCIe {
 		if len(pcie.freeDevices[primaryDeviceType]) >= desiredCount {
 			allocations, status := a.jointAllocate(pcie.nodeDevice, requestCtx, jointAllocate, primaryDeviceType, secondaryDeviceTypes, sets.NewString(pcie.PCIeIndex.pcie))
+			if status.IsSkip() {
+				return nil, nil
+			}
 			if status.IsSuccess() && len(allocations) > 0 {
 				return allocations, nil
 			}
 		}
 	}
 
-	groupedNodeDevices := topologyGuide.freeNodeDevicesInNode(requestCtx, nodeDevice, jointAllocate)
+	if deviceHint := requestCtx.hints[primaryDeviceType]; deviceHint != nil && deviceHint.RequiredTopologyScope == apiext.DeviceTopologyScopePCIe {
+		return nil, framework.NewStatus(framework.Unschedulable, fmt.Sprintf("Insufficient %s devices in same %s", primaryDeviceType, deviceHint.RequiredTopologyScope))
+	}
+
+	groupedNodeDevices := topologyGuide.freeNodeDevicesInNode()
 	for _, group := range groupedNodeDevices {
 		if len(group.freeDevices[primaryDeviceType]) >= desiredCount {
 			allocations, status := a.jointAllocate(group.nodeDevice, requestCtx, jointAllocate, primaryDeviceType, secondaryDeviceTypes, group.preferredPCIes)
+			if status.IsSkip() {
+				return nil, nil
+			}
 			if status.IsSuccess() && len(allocations) > 0 {
 				return allocations, nil
 			}
 		}
+	}
+
+	if deviceHint := requestCtx.hints[primaryDeviceType]; deviceHint != nil && deviceHint.RequiredTopologyScope == apiext.DeviceTopologyScopeNUMANode {
+		return nil, framework.NewStatus(framework.Unschedulable, fmt.Sprintf("Insufficient %s devices in same %s", primaryDeviceType, deviceHint.RequiredTopologyScope))
 	}
 
 	// TODO(joseph): Currently, scenarios with multiple sockets and multiple nodes are not supported
@@ -245,11 +258,18 @@ func (a *AutopilotAllocator) allocateByTopology(requestCtx *requestContext, node
 		preferredPCIes = preferredPCIes.Union(group.preferredPCIes)
 	}
 	allocations, status := a.jointAllocate(nodeDevice, requestCtx, jointAllocate, primaryDeviceType, secondaryDeviceTypes, preferredPCIes)
+	if status.IsSkip() {
+		return nil, nil
+	}
 	if status.IsSuccess() && len(allocations) > 0 {
 		return allocations, nil
 	}
 
-	return nil, framework.NewStatus(framework.Unschedulable, "node(s) Joint-Allocate rules not met")
+	if jointAllocate != nil {
+		return nil, framework.NewStatus(framework.Unschedulable, "node(s) Joint-Allocate rules not met")
+	} else {
+		return nil, framework.NewStatus(framework.Unschedulable, fmt.Sprintf("Insufficient %s devices", primaryDeviceType))
+	}
 }
 
 func (a *AutopilotAllocator) validateJointAllocation(jointAllocate *apiext.DeviceJointAllocate, nodeDevice *nodeDevice, deviceAllocations apiext.DeviceAllocations) *framework.Status {
@@ -346,12 +366,13 @@ func (a *AutopilotAllocator) allocateDevices(requestCtx *requestContext, nodeDev
 		if deviceAllocations[deviceType] != nil {
 			continue
 		}
-		allocations, status := allocateDevices(requestCtx, nodeDevice, deviceType, requestCtx.requestsPerInstance[deviceType], requestCtx.desiredCountPerDeviceType[deviceType], nil)
+		topologyGuide := newDeviceTopologyGuide(nodeDevice, requestCtx.requestsPerInstance, deviceType, nil)
+		allocations, status := a.allocateByTopology(requestCtx, nodeDevice, topologyGuide, deviceType, nil, nil)
 		if !status.IsSuccess() {
 			return nil, status
 		}
-		if len(allocations) != 0 {
-			deviceAllocations[deviceType] = allocations
+		if len(allocations) != 0 && len(allocations[deviceType]) != 0 {
+			deviceAllocations[deviceType] = allocations[deviceType]
 		}
 	}
 	return deviceAllocations, nil
