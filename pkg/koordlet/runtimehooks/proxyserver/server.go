@@ -19,6 +19,7 @@ package proxyserver
 import (
 	"encoding/json"
 	"fmt"
+	"k8s.io/client-go/tools/record"
 	"net"
 	"path/filepath"
 	"syscall"
@@ -44,6 +45,8 @@ type Options struct {
 	ConfigFilePath      string
 	DisableStages       map[string]struct{}
 	Executor            resourceexecutor.ResourceUpdateExecutor
+	EventRecorder       record.EventRecorder
+
 }
 
 type Server interface {

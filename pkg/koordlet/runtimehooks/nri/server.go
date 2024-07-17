@@ -19,6 +19,7 @@ package nri
 import (
 	"context"
 	"fmt"
+	"k8s.io/client-go/tools/record"
 	"path/filepath"
 	"strings"
 	"time"
@@ -52,6 +53,7 @@ type Options struct {
 	DisableStages map[string]struct{}
 	Executor      resourceexecutor.ResourceUpdateExecutor
 	BackOff       wait.Backoff
+	EventRecorder       record.EventRecorder
 }
 
 func (o Options) Validate() error {
