@@ -87,7 +87,7 @@ func (r *runtimeHook) Run(stopCh <-chan struct{}) error {
 	return nil
 }
 
-func NewRuntimeHook(si statesinformer.StatesInformer, cfg *Config, schema *apiruntime.Scheme, kubeClient clientset.Interface, nodeName string,) (RuntimeHook, error) {
+func NewRuntimeHook(si statesinformer.StatesInformer, cfg *Config, schema *apiruntime.Scheme, kubeClient clientset.Interface, nodeName string) (RuntimeHook, error) {
 	failurePolicy, err := config.GetFailurePolicyType(cfg.RuntimeHooksFailurePolicy)
 	if err != nil {
 		return nil, err
@@ -110,7 +110,7 @@ func NewRuntimeHook(si statesinformer.StatesInformer, cfg *Config, schema *apiru
 		ConfigFilePath:      cfg.RuntimeHookConfigFilePath,
 		DisableStages:       getDisableStagesMap(cfg.RuntimeHookDisableStages),
 		Executor:            e,
-		EventRecorder: recorder,
+		EventRecorder:       recorder,
 	}
 
 	backOff := wait.Backoff{
@@ -131,7 +131,7 @@ func NewRuntimeHook(si statesinformer.StatesInformer, cfg *Config, schema *apiru
 			DisableStages:       getDisableStagesMap(cfg.RuntimeHookDisableStages),
 			Executor:            e,
 			BackOff:             backOff,
-			EventRecorder: recorder,
+			EventRecorder:       recorder,
 		}
 		nriServer, err = nri.NewNriServer(nriServerOptions)
 		if err != nil {

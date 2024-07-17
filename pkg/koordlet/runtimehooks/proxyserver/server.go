@@ -46,7 +46,6 @@ type Options struct {
 	DisableStages       map[string]struct{}
 	Executor            resourceexecutor.ResourceUpdateExecutor
 	EventRecorder       record.EventRecorder
-
 }
 
 type Server interface {
