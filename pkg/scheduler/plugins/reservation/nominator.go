@@ -142,6 +142,10 @@ func (pl *Plugin) NominateReservation(ctx context.Context, cycleState *framework
 		return nil, nil
 	}
 
+	if len(reservationInfos) == 1 && state.hasAffinity {
+		return reservationInfos[0], nil
+	}
+
 	rInfo := pl.GetNominatedReservation(pod, nodeName)
 	if rInfo != nil {
 		return rInfo, nil
@@ -162,6 +166,10 @@ func (pl *Plugin) NominateReservation(ctx context.Context, cycleState *framework
 	}
 	if len(reservations) == 0 {
 		return nil, nil
+	}
+
+	if len(reservations) == 1 {
+		return reservations[0], nil
 	}
 
 	nominated, _ := findMostPreferredReservationByOrder(reservations)
