@@ -98,9 +98,25 @@ var defaultDeschedulerFeatureGates = map[featuregate.Feature]featuregate.Feature
 	DisablePVCReservation: {Default: false, PreRelease: featuregate.Beta},
 }
 
+const (
+	// PriorityTransformer is used to map the pod priority to priority classes defined by Koordinator.
+	// If a pod does not set a priorityClass, it will be mapped to the DefaultPriorityClass.
+	PriorityTransformer featuregate.Feature = "PriorityTransformer"
+	// PreemptionPolicyTransformer is used to take over the pod preemption policy with the specified label.
+	// If a pod does not set a preemptionPolicy, it will be mapped to the DefaultPreemptionPolicy.
+	PreemptionPolicyTransformer featuregate.Feature = "PreemptionPolicyTransformer"
+)
+
+var transformerFeatureGates = map[featuregate.Feature]featuregate.FeatureSpec{
+	PriorityTransformer:         {Default: false, PreRelease: featuregate.Alpha},
+	PreemptionPolicyTransformer: {Default: false, PreRelease: featuregate.Alpha},
+}
+
 func init() {
 	runtime.Must(utilfeature.DefaultMutableFeatureGate.Add(defaultFeatureGates))
 	runtime.Must(utilfeature.DefaultMutableFeatureGate.Add(defaultDeschedulerFeatureGates))
+	// TODO: use a unified feature-gate
+	runtime.Must(utilfeature.DefaultMutableFeatureGate.Add(transformerFeatureGates))
 }
 
 func SetDefaultFeatureGates() {
