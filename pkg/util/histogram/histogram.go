@@ -38,6 +38,8 @@ type Histogram interface {
 	// If the histogram is empty, Percentile() returns 0.0.
 	Percentile(percentile float64) float64
 
+	Average() float64
+
 	// Add a sample with a given value and weight.
 	AddSample(value float64, weight float64, time time.Time)
 
@@ -175,6 +177,18 @@ func (h *histogram) Percentile(percentile float64) float64 {
 	// Return the start of the last bucket (note that the last bucket
 	// doesn't have an upper bound).
 	return h.options.GetBucketStart(bucket)
+}
+
+func (h *histogram) Average() float64 {
+	if h.IsEmpty() {
+		return 0.0
+	}
+	var sum = 0.0
+	for bucket := h.minBucket; bucket <= h.maxBucket; bucket++ {
+		sum += h.bucketWeight[bucket] * h.options.GetBucketStart(bucket)
+	}
+
+	return sum / h.totalWeight
 }
 
 func (h *histogram) IsEmpty() bool {
