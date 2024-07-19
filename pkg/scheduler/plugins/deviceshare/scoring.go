@@ -31,6 +31,17 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/topologymanager"
 )
 
+func (p *Plugin) PreScore(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodes []*corev1.Node) *framework.Status {
+	state, status := getPreFilterState(cycleState)
+	if !status.IsSuccess() {
+		return status
+	}
+	if state.skip {
+		return framework.NewStatus(framework.Skip)
+	}
+	return nil
+}
+
 func (p *Plugin) Score(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) (int64, *framework.Status) {
 	state, status := getPreFilterState(cycleState)
 	if !status.IsSuccess() {

@@ -420,6 +420,7 @@ func TestPlugin_PreFilter(t *testing.T) {
 			wantState: &preFilterState{
 				skip: true,
 			},
+			want: framework.NewStatus(framework.Skip),
 		},
 		{
 			name: "skip BE Pod",
@@ -472,6 +473,7 @@ func TestPlugin_PreFilter(t *testing.T) {
 			wantState: &preFilterState{
 				skip: true,
 			},
+			want: framework.NewStatus(framework.Skip),
 		},
 		{
 			name: "error with non-integer pod",
@@ -1012,7 +1014,7 @@ func TestFilterWithAmplifiedCPUs(t *testing.T) {
 
 			cycleState := framework.NewCycleState()
 			_, preFilterStatus := pl.PreFilter(context.TODO(), cycleState, tt.pod)
-			assert.True(t, preFilterStatus.IsSuccess())
+			assert.True(t, preFilterStatus.IsSuccess() || preFilterStatus.IsSkip())
 
 			nodeInfo, err := suit.Handle.SnapshotSharedLister().NodeInfos().Get("node-1")
 			assert.NoError(t, err)

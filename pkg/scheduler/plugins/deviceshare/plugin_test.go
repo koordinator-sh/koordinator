@@ -502,6 +502,7 @@ func Test_Plugin_PreFilter(t *testing.T) {
 				preemptibleDevices: map[string]map[schedulingv1alpha1.DeviceType]deviceResources{},
 				preemptibleInRRs:   map[string]map[types.UID]map[schedulingv1alpha1.DeviceType]deviceResources{},
 			},
+			wantStatus: framework.NewStatus(framework.Skip),
 		},
 		{
 			name: "pod has invalid fpga request",
@@ -867,6 +868,7 @@ func Test_Plugin_PreFilter(t *testing.T) {
 				preemptibleDevices: map[string]map[schedulingv1alpha1.DeviceType]deviceResources{},
 				preemptibleInRRs:   map[string]map[types.UID]map[schedulingv1alpha1.DeviceType]deviceResources{},
 			},
+			wantStatus: framework.NewStatus(framework.Skip),
 		},
 	}
 	for _, tt := range tests {
