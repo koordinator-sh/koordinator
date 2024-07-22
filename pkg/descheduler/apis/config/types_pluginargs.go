@@ -118,7 +118,8 @@ type MigrationControllerArgs struct {
 type MigrationLimitObjectType string
 
 const (
-	MigrationLimitObjectWorkload MigrationLimitObjectType = "workload"
+	MigrationLimitObjectWorkload  MigrationLimitObjectType = "workload"
+	MigrationLimitObjectNamespace MigrationLimitObjectType = "namespace"
 )
 
 type ObjectLimiterMap map[MigrationLimitObjectType]MigrationObjectLimiter
