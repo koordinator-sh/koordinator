@@ -129,12 +129,15 @@ type pluginTestSuit struct {
 	extenderFactory *frameworkext.FrameworkExtenderFactory
 }
 
-func newPluginTestSuitWith(t testing.TB, pods []*corev1.Pod, nodes []*corev1.Node) *pluginTestSuit {
+func newPluginTestSuitWith(t testing.TB, pods []*corev1.Pod, nodes []*corev1.Node, setArgs ...func(*config.ReservationArgs)) *pluginTestSuit {
 	var v1beta3args v1beta3.ReservationArgs
 	v1beta3.SetDefaults_ReservationArgs(&v1beta3args)
 	var reservationArgs config.ReservationArgs
 	err := v1beta3.Convert_v1beta3_ReservationArgs_To_config_ReservationArgs(&v1beta3args, &reservationArgs, nil)
 	assert.NoError(t, err)
+	for _, fn := range setArgs {
+		fn(&reservationArgs)
+	}
 
 	koordClientSet := koordfake.NewSimpleClientset()
 	koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
@@ -191,7 +194,9 @@ func (s *pluginTestSuit) start() {
 }
 
 func TestNew(t *testing.T) {
-	suit := newPluginTestSuit(t)
+	suit := newPluginTestSuitWith(t, nil, nil, func(args *config.ReservationArgs) {
+		args.EnablePreemption = true
+	})
 	pl, err := suit.pluginFactory()
 	assert.NoError(t, err)
 	assert.NotNil(t, pl)

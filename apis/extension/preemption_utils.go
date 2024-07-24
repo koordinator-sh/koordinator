@@ -16,11 +16,19 @@ limitations under the License.
 
 package extension
 
-import corev1 "k8s.io/api/core/v1"
+import (
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/utils/pointer"
+)
 
 // NOTE: functions in this file can be overwritten for extension
 
-var DefaultPreemptionPolicy = GetPreemptionPolicyPtr(corev1.PreemptNever)
+var (
+	DefaultPreemptionPolicy = GetPreemptionPolicyPtr(corev1.PreemptNever)
+
+	// DefaultIsPreemptible indicates whether the pod is preemptible when the preemptible label unspecified.
+	DefaultIsPreemptible = pointer.Bool(true)
+)
 
 func GetPodKoordPreemptionPolicyWithDefault(pod *corev1.Pod) *corev1.PreemptionPolicy {
 	if preemptionPolicy := GetPodKoordPreemptionPolicy(pod); preemptionPolicy != nil {
