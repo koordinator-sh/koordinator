@@ -302,6 +302,7 @@ func NewEvictorFilter(
 			return nil
 		})
 	}
+	// todo: to align with the k8s descheduling framework, nodeFit should be moved into PreEvictionFilter in the future
 	if options.nodeFit {
 		ev.constraints = append(ev.constraints, func(pod *corev1.Pod) error {
 			nodes, err := nodeGetter()
