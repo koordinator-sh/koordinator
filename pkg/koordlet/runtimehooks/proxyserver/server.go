@@ -19,13 +19,13 @@ package proxyserver
 import (
 	"encoding/json"
 	"fmt"
-	"k8s.io/client-go/tools/record"
 	"net"
 	"path/filepath"
 	"syscall"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/klog/v2"
 
 	runtimeapi "github.com/koordinator-sh/koordinator/apis/runtime/v1alpha1"

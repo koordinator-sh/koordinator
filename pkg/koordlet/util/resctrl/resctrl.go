@@ -170,7 +170,10 @@ func (R *RDTEngine) RegisterApp(podid, annotation string, fromNRI bool, updater 
 		updater.SetKey(ClosdIdPrefix + podid)
 		updater.SetValue(schemataStr)
 	}
-	R.Cgm.AddPod(podid, schemataStr, fromNRI, updater, nil)
+	err = R.Cgm.AddPod(podid, schemataStr, fromNRI, updater, nil)
+	if err != nil {
+		return err
+	}
 
 	R.Apps[podid] = app
 	return nil

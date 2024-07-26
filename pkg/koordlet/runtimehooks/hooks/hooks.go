@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"time"
 
+	"k8s.io/client-go/tools/record"
 	"k8s.io/klog/v2"
 
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
@@ -40,6 +41,7 @@ type Options struct {
 	Reader         resourceexecutor.CgroupReader
 	Executor       resourceexecutor.ResourceUpdateExecutor
 	StatesInformer statesinformer.StatesInformer
+	EventRecorder  record.EventRecorder
 }
 
 type HookFn func(protocol.HooksProtocol) error

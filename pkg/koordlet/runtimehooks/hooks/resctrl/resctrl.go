@@ -18,6 +18,7 @@ package resctrl
 
 import (
 	"fmt"
+	"k8s.io/client-go/tools/record"
 	"strings"
 
 	"k8s.io/klog/v2"
@@ -46,6 +47,7 @@ type plugin struct {
 	engine         util.ResctrlEngine
 	executor       resourceexecutor.ResourceUpdateExecutor
 	statesInformer statesinformer.StatesInformer
+	EventRecorder  record.EventRecorder
 }
 
 var singleton *plugin
@@ -82,6 +84,7 @@ func (p *plugin) Register(op hooks.Options) {
 	}
 	p.executor = op.Executor
 	p.statesInformer = op.StatesInformer
+	p.EventRecorder = op.EventRecorder
 	p.engine.Rebuild()
 
 	rule.Register(ruleNameForAllPods, description,
@@ -95,7 +98,6 @@ func (p *plugin) Register(op hooks.Options) {
 	reconciler.RegisterCgroupReconciler(reconciler.PodLevel, system.ResctrlSchemata, description+" (pod resctrl schema)", p.SetPodResctrlResourcesForReconciler, reconciler.NoneFilter())
 	reconciler.RegisterCgroupReconciler(reconciler.PodLevel, system.ResctrlTasks, description+" (pod resctrl tasks)", p.UpdatePodTaskIds, reconciler.NoneFilter())
 	reconciler.RegisterCgroupReconciler4AllPods(reconciler.AllPodsLevel, system.ResctrlRoot, description+" (pod resctl schema)", p.RemoveUnusedResctrlPath, reconciler.PodAnnotationResctrlFilter(), "resctrl")
-
 }
 
 func (p *plugin) SetPodResctrlResourcesForHooks(proto protocol.HooksProtocol) error {

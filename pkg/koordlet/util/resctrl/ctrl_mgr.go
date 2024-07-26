@@ -106,7 +106,7 @@ func (c *ControlGroupManager) Init() {
 	}
 }
 
-func (c *ControlGroupManager) AddPod(podid string, schemata string, fromNRI bool, createUpdater ResctrlUpdater, schemataUpdater ResctrlUpdater) {
+func (c *ControlGroupManager) AddPod(podid string, schemata string, fromNRI bool, createUpdater ResctrlUpdater, schemataUpdater ResctrlUpdater) error {
 	c.Lock()
 	defer c.Unlock()
 
@@ -128,6 +128,7 @@ func (c *ControlGroupManager) AddPod(podid string, schemata string, fromNRI bool
 			err := createUpdater.Update()
 			if err != nil {
 				klog.Errorf("create ctrl group error %v", err)
+				return err
 			} else {
 				pod.GroupId = ClosdIdPrefix + podid
 				pod.CreatedTime = time.Now().UnixNano()
@@ -138,6 +139,7 @@ func (c *ControlGroupManager) AddPod(podid string, schemata string, fromNRI bool
 			err := schemataUpdater.Update()
 			if err != nil {
 				klog.Errorf("updater ctrl group schemata error %v", err)
+				return err
 			}
 			pod.Schemata = schemata
 		}
@@ -150,12 +152,14 @@ func (c *ControlGroupManager) AddPod(podid string, schemata string, fromNRI bool
 				err := schemataUpdater.Update()
 				if err != nil {
 					klog.Errorf("updater ctrl group schemata error %v", err)
+					return err
 				}
 				pod.Schemata = schemata
 			}
 			c.rdtcgs.Set(podid, pod, -1)
 		}
 	}
+	return nil
 }
 
 func (c *ControlGroupManager) RemovePod(podid string, fromNRI bool, removeUpdater ResctrlUpdater) bool {

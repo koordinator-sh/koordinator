@@ -149,8 +149,9 @@ func NewRuntimeHook(si statesinformer.StatesInformer, cfg *Config, schema *apiru
 	}
 
 	newPluginOptions := hooks.Options{
-		Reader:   cr,
-		Executor: e,
+		Reader:        cr,
+		Executor:      e,
+		EventRecorder: recorder,
 	}
 
 	if err != nil {
