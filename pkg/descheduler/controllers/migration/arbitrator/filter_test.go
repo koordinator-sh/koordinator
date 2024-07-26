@@ -89,6 +89,123 @@ func TestFilterExistingMigrationJob(t *testing.T) {
 	assert.False(t, a.filterExistingPodMigrationJob(pod))
 }
 
+func TestFilterMaxMigratingGlobally(t *testing.T) {
+	tests := []struct {
+		name                     string
+		numMigratingPodsGlobally int
+		samePod                  bool
+		maxMigratingGlobally     int32
+		want                     bool
+	}{
+		{
+			name: "maxMigratingGlobally=0",
+			want: true,
+		},
+		{
+			name:                 "maxMigratingGlobally=1 no migrating Pods",
+			maxMigratingGlobally: 1,
+			want:                 true,
+		},
+		{
+			name:                     "maxMigratingGlobally=1 one migrating same Pod",
+			numMigratingPodsGlobally: 1,
+			samePod:                  true,
+			maxMigratingGlobally:     1,
+			want:                     true,
+		},
+		{
+			name:                     "maxMigrating=1 one migrating Pod with diff Pod",
+			numMigratingPodsGlobally: 1,
+			samePod:                  false,
+			maxMigratingGlobally:     1,
+			want:                     false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			scheme := runtime.NewScheme()
+			_ = v1alpha1.AddToScheme(scheme)
+			_ = clientgoscheme.AddToScheme(scheme)
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).
+				WithIndex(&corev1.Pod{}, "pod.spec.nodeName", func(object client.Object) []string {
+					pod := object.(*corev1.Pod)
+					return []string{pod.Spec.NodeName}
+				}).
+				WithIndex(&v1alpha1.PodMigrationJob{}, "job.pod.uid", func(obj client.Object) []string {
+					pmj := obj.(*v1alpha1.PodMigrationJob)
+					return []string{string(pmj.Spec.PodRef.UID)}
+				}).
+				WithIndex(&v1alpha1.PodMigrationJob{}, "job.pod.namespacedName", func(obj client.Object) []string {
+					pmj := obj.(*v1alpha1.PodMigrationJob)
+					return []string{pmj.Spec.PodRef.Namespace + "/" + pmj.Spec.PodRef.Name}
+				}).
+				Build()
+			a := filter{client: fakeClient, args: &config.MigrationControllerArgs{}, arbitratedPodMigrationJobs: map[types.UID]bool{}}
+			a.args.MaxMigratingGlobally = pointer.Int32(tt.maxMigratingGlobally)
+
+			var migratingPods []*corev1.Pod
+			for i := 0; i < tt.numMigratingPodsGlobally; i++ {
+				pod := &corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: "default",
+						Name:      fmt.Sprintf("test-migrating-pod-%d", i),
+						UID:       uuid.NewUUID(),
+					},
+					Spec: corev1.PodSpec{
+						NodeName: "test-node",
+					},
+					Status: corev1.PodStatus{
+						Phase: corev1.PodRunning,
+					},
+				}
+				migratingPods = append(migratingPods, pod)
+
+				assert.Nil(t, a.client.Create(context.TODO(), pod))
+
+				job := &v1alpha1.PodMigrationJob{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:              fmt.Sprintf("test-%d", i),
+						CreationTimestamp: metav1.Time{Time: time.Now()},
+						Annotations:       map[string]string{AnnotationPassedArbitration: "true"},
+						UID:               uuid.NewUUID(),
+					},
+					Spec: v1alpha1.PodMigrationJobSpec{
+						PodRef: &corev1.ObjectReference{
+							Namespace: pod.Namespace,
+							Name:      pod.Name,
+							UID:       pod.UID,
+						},
+					},
+				}
+				a.markJobPassedArbitration(job.UID)
+				assert.Nil(t, a.client.Create(context.TODO(), job))
+			}
+
+			var filterPod *corev1.Pod
+			if tt.samePod && len(migratingPods) > 0 {
+				filterPod = migratingPods[0]
+			}
+			if filterPod == nil {
+				filterPod = &corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: "default",
+						Name:      fmt.Sprintf("test-pod-%s", uuid.NewUUID()),
+						UID:       uuid.NewUUID(),
+					},
+					Status: corev1.PodStatus{
+						Phase: corev1.PodRunning,
+					},
+				}
+			}
+			filterPod.Spec.NodeName = "test-node"
+
+			got := a.filterMaxMigratingGlobally(filterPod)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
 func TestFilterMaxMigratingPerNode(t *testing.T) {
 	tests := []struct {
 		name             string

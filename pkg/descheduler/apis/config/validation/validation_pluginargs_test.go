@@ -146,6 +146,46 @@ func TestValidateMigrationControllerArgs_MaxMigratingPerNamespace(t *testing.T) 
 	}
 }
 
+func TestValidateMigrationControllerArgs_MaxMigratingGlobally(t *testing.T) {
+	testCases := []struct {
+		maxMigratingGlobally *int32
+		wantErr              bool
+	}{
+		{
+			maxMigratingGlobally: int32Ptr(10),
+			wantErr:              false,
+		},
+		{
+			maxMigratingGlobally: int32Ptr(100),
+			wantErr:              false,
+		},
+		{
+			maxMigratingGlobally: int32Ptr(0),
+			wantErr:              false,
+		},
+		{
+			maxMigratingGlobally: int32Ptr(-1),
+			wantErr:              true,
+		},
+	}
+
+	for _, tc := range testCases {
+		argsDefault := &v1alpha2.MigrationControllerArgs{}
+		v1alpha2.SetDefaults_MigrationControllerArgs(argsDefault)
+		args := &deschedulerconfig.MigrationControllerArgs{}
+		assert.NoError(t, v1alpha2.Convert_v1alpha2_MigrationControllerArgs_To_config_MigrationControllerArgs(argsDefault, args, nil))
+		args.MaxMigratingGlobally = tc.maxMigratingGlobally
+
+		err := ValidateMigrationControllerArgs(nil, args)
+		if tc.wantErr {
+			assert.Error(t, err, "Expected an error for invalid MaxMigratingGlobally")
+			assert.Contains(t, err.Error(), "maxMigratingGlobally should be greater or equal 0", "Expected specific error message")
+		} else {
+			assert.Nil(t, err, "Expected no error for valid configuration")
+		}
+	}
+}
+
 func TestValidateMigrationControllerArgs_MaxMigratingPerNode(t *testing.T) {
 	testCases := []struct {
 		maxMigratingPerNode *int32

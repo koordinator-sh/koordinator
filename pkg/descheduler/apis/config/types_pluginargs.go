@@ -66,13 +66,16 @@ type MigrationControllerArgs struct {
 	// NodeSelector for a set of nodes to operate over
 	NodeSelector string
 
-	// MaxMigratingPerNode represents he maximum number of pods that can be migrating during migrate per node.
+	// MaxMigratingGlobally represents the maximum number of pods that can be migrating during migrate globally.
+	MaxMigratingGlobally *int32
+
+	// MaxMigratingPerNode represents the maximum number of pods that can be migrating during migrate per node.
 	MaxMigratingPerNode *int32
 
-	// MaxMigratingPerNamespace represents he maximum number of pods that can be migrating during migrate per namespace.
+	// MaxMigratingPerNamespace represents the maximum number of pods that can be migrating during migrate per namespace.
 	MaxMigratingPerNamespace *int32
 
-	// MaxMigratingPerWorkload represents he maximum number of pods that can be migrating during migrate per workload.
+	// MaxMigratingPerWorkload represents the maximum number of pods that can be migrating during migrate per workload.
 	// Value can be an absolute number (ex: 5) or a percentage of desired pods (ex: 10%).
 	MaxMigratingPerWorkload *intstr.IntOrString
 
