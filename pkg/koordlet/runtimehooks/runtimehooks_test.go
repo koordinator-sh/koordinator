@@ -17,17 +17,17 @@ limitations under the License.
 package runtimehooks
 
 import (
-	apiruntime "k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/client-go/kubernetes"
 	"path"
 	"testing"
 	"time"
 
-	"github.com/golang/mock/gomock"
-	"github.com/stretchr/testify/assert"
+	apiruntime "k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/kubernetes"
 
+	"github.com/golang/mock/gomock"
 	"github.com/koordinator-sh/koordinator/pkg/features"
 	mockstatesinformer "github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer/mockstatesinformer"
+	"github.com/stretchr/testify/assert"
 )
 
 func Test_runtimeHook_Run(t *testing.T) {
