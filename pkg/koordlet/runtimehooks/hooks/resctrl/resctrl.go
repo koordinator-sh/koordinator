@@ -18,9 +18,9 @@ package resctrl
 
 import (
 	"fmt"
-	"k8s.io/client-go/tools/record"
 	"strings"
 
+	"k8s.io/client-go/tools/record"
 	"k8s.io/klog/v2"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
