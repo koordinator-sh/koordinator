@@ -53,6 +53,7 @@ var (
 
 	_ framework.PreFilterPlugin = &Plugin{}
 	_ framework.FilterPlugin    = &Plugin{}
+	_ framework.PreScorePlugin  = &Plugin{}
 	_ framework.ScorePlugin     = &Plugin{}
 	_ framework.ScoreExtensions = &Plugin{}
 	_ framework.ReservePlugin   = &Plugin{}
@@ -154,6 +155,9 @@ func (p *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleState
 		return nil, status
 	}
 	cycleState.Write(stateKey, state)
+	if state.skip {
+		return nil, framework.NewStatus(framework.Skip)
+	}
 	return nil, nil
 }
 

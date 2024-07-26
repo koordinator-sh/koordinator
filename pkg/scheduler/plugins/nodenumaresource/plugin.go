@@ -61,6 +61,7 @@ var (
 
 	_ framework.PreFilterPlugin = &Plugin{}
 	_ framework.FilterPlugin    = &Plugin{}
+	_ framework.PreScorePlugin  = &Plugin{}
 	_ framework.ScorePlugin     = &Plugin{}
 	_ framework.ReservePlugin   = &Plugin{}
 	_ framework.PreBindPlugin   = &Plugin{}
@@ -239,7 +240,7 @@ func (p *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleState
 		cycleState.Write(stateKey, &preFilterState{
 			skip: true,
 		})
-		return nil, nil
+		return nil, framework.NewStatus(framework.Skip)
 	}
 	reservationAffinity, err := reservationutil.GetRequiredReservationAffinity(pod)
 	if err != nil {
