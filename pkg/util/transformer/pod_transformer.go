@@ -19,10 +19,13 @@ package transformer
 import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	k8sfeature "k8s.io/apiserver/pkg/util/feature"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
+	koordfeatures "github.com/koordinator-sh/koordinator/pkg/features"
+	utilfeature "github.com/koordinator-sh/koordinator/pkg/util/feature"
 )
 
 var podTransformers = []func(pod *corev1.Pod){
@@ -30,33 +33,80 @@ var podTransformers = []func(pod *corev1.Pod){
 	TransformDeprecatedDeviceResources,
 }
 
+var podTransformerFactories = []func() func(pod *corev1.Pod){
+	TransformKoordPriorityClassFunc,
+	TransformKoordPreemptionPolicyFunc,
+}
+
 func InstallPodTransformer(informer cache.SharedIndexInformer) {
-	if err := informer.SetTransform(TransformPod); err != nil {
+	transformHandler := TransformPodFactory()
+	if err := informer.SetTransform(transformHandler); err != nil {
 		klog.Fatalf("Failed to SetTransform with pod, err: %v", err)
 	}
 }
 
-func TransformPod(obj interface{}) (interface{}, error) {
-	var pod *corev1.Pod
-	switch t := obj.(type) {
-	case *corev1.Pod:
-		pod = t
-	case cache.DeletedFinalStateUnknown:
-		pod, _ = t.Obj.(*corev1.Pod)
-	}
-	if pod == nil {
-		return obj, nil
-	}
-
+func TransformPodFactory() cache.TransformFunc {
+	var podTransformerFns []func(pod *corev1.Pod)
 	for _, fn := range podTransformers {
-		fn(pod)
+		podTransformerFns = append(podTransformerFns, fn)
+	}
+	for _, factoryFn := range podTransformerFactories {
+		fn := factoryFn()
+		if fn == nil {
+			continue
+		}
+		podTransformerFns = append(podTransformerFns, fn)
 	}
 
-	if unknown, ok := obj.(cache.DeletedFinalStateUnknown); ok {
-		unknown.Obj = pod
-		return unknown, nil
+	return func(obj interface{}) (interface{}, error) {
+		var pod *corev1.Pod
+		switch t := obj.(type) {
+		case *corev1.Pod:
+			pod = t
+		case cache.DeletedFinalStateUnknown:
+			pod, _ = t.Obj.(*corev1.Pod)
+		}
+		if pod == nil {
+			return obj, nil
+		}
+
+		for _, fn := range podTransformerFns {
+			fn(pod)
+		}
+
+		if unknown, ok := obj.(cache.DeletedFinalStateUnknown); ok {
+			unknown.Obj = pod
+			return unknown, nil
+		}
+		return pod, nil
 	}
-	return pod, nil
+}
+
+func TransformKoordPriorityClassFunc() func(pod *corev1.Pod) {
+	if !k8sfeature.DefaultFeatureGate.Enabled(koordfeatures.PriorityTransformer) &&
+		!utilfeature.DefaultFeatureGate.Enabled(koordfeatures.PriorityTransformer) {
+		return nil
+	}
+
+	return func(pod *corev1.Pod) {
+		koordPriorityValue := apiext.GetPodPriorityValueWithDefault(pod)
+		pod.Spec.Priority = koordPriorityValue
+	}
+}
+
+func TransformKoordPreemptionPolicyFunc() func(pod *corev1.Pod) {
+	if !k8sfeature.DefaultFeatureGate.Enabled(koordfeatures.PreemptionPolicyTransformer) &&
+		!utilfeature.DefaultFeatureGate.Enabled(koordfeatures.PreemptionPolicyTransformer) {
+		return nil
+	}
+
+	return func(pod *corev1.Pod) {
+		preemptionPolicy := apiext.GetPodKoordPreemptionPolicyWithDefault(pod)
+		if preemptionPolicy == nil {
+			return
+		}
+		pod.Spec.PreemptionPolicy = preemptionPolicy
+	}
 }
 
 func TransformDeprecatedBatchResources(pod *corev1.Pod) {
