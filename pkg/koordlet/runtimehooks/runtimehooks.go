@@ -19,7 +19,12 @@ package runtimehooks
 import (
 	"fmt"
 
+	corev1 "k8s.io/api/core/v1"
+	apiruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
+	clientset "k8s.io/client-go/kubernetes"
+	clientcorev1 "k8s.io/client-go/kubernetes/typed/core/v1"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/klog/v2"
 
 	"github.com/koordinator-sh/koordinator/pkg/features"
@@ -82,7 +87,7 @@ func (r *runtimeHook) Run(stopCh <-chan struct{}) error {
 	return nil
 }
 
-func NewRuntimeHook(si statesinformer.StatesInformer, cfg *Config) (RuntimeHook, error) {
+func NewRuntimeHook(si statesinformer.StatesInformer, cfg *Config, schema *apiruntime.Scheme, kubeClient clientset.Interface, nodeName string) (RuntimeHook, error) {
 	failurePolicy, err := config.GetFailurePolicyType(cfg.RuntimeHooksFailurePolicy)
 	if err != nil {
 		return nil, err
@@ -93,6 +98,9 @@ func NewRuntimeHook(si statesinformer.StatesInformer, cfg *Config) (RuntimeHook,
 	}
 	cr := resourceexecutor.NewCgroupReader()
 	e := resourceexecutor.NewResourceUpdateExecutor()
+	eventBroadcaster := record.NewBroadcaster()
+	eventBroadcaster.StartRecordingToSink(&clientcorev1.EventSinkImpl{Interface: kubeClient.CoreV1().Events("")})
+	recorder := eventBroadcaster.NewRecorder(schema, corev1.EventSource{Component: "koordlet-runtimehook", Host: nodeName})
 	newServerOptions := proxyserver.Options{
 		Network:             cfg.RuntimeHooksNetwork,
 		Address:             cfg.RuntimeHooksAddr,
@@ -102,6 +110,7 @@ func NewRuntimeHook(si statesinformer.StatesInformer, cfg *Config) (RuntimeHook,
 		ConfigFilePath:      cfg.RuntimeHookConfigFilePath,
 		DisableStages:       getDisableStagesMap(cfg.RuntimeHookDisableStages),
 		Executor:            e,
+		EventRecorder:       recorder,
 	}
 
 	backOff := wait.Backoff{
@@ -122,6 +131,7 @@ func NewRuntimeHook(si statesinformer.StatesInformer, cfg *Config) (RuntimeHook,
 			DisableStages:       getDisableStagesMap(cfg.RuntimeHookDisableStages),
 			Executor:            e,
 			BackOff:             backOff,
+			EventRecorder:       recorder,
 		}
 		nriServer, err = nri.NewNriServer(nriServerOptions)
 		if err != nil {
@@ -139,8 +149,9 @@ func NewRuntimeHook(si statesinformer.StatesInformer, cfg *Config) (RuntimeHook,
 	}
 
 	newPluginOptions := hooks.Options{
-		Reader:   cr,
-		Executor: e,
+		Reader:        cr,
+		Executor:      e,
+		EventRecorder: recorder,
 	}
 
 	if err != nil {

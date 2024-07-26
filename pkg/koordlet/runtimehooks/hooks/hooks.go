@@ -20,11 +20,13 @@ import (
 	"fmt"
 	"time"
 
+	"k8s.io/client-go/tools/record"
 	"k8s.io/klog/v2"
 
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/protocol"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	rmconfig "github.com/koordinator-sh/koordinator/pkg/runtimeproxy/config"
 )
 
@@ -36,8 +38,10 @@ type Hook struct {
 }
 
 type Options struct {
-	Reader   resourceexecutor.CgroupReader
-	Executor resourceexecutor.ResourceUpdateExecutor
+	Reader         resourceexecutor.CgroupReader
+	Executor       resourceexecutor.ResourceUpdateExecutor
+	StatesInformer statesinformer.StatesInformer
+	EventRecorder  record.EventRecorder
 }
 
 type HookFn func(protocol.HooksProtocol) error

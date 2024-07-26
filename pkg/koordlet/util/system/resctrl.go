@@ -51,7 +51,8 @@ const (
 	MbSchemataPrefix = "MB"
 
 	// other cpu vendor like "GenuineIntel"
-	AMD_VENDOR_ID = "AuthenticAMD"
+	AMD_VENDOR_ID   = "AuthenticAMD"
+	INTEL_VENDOR_ID = "GenuineIntel"
 )
 
 var (
@@ -112,6 +113,7 @@ func IsSupportResctrl() (bool, error) {
 }
 
 var (
+	ResctrlRoot      = NewCommonResctrlResource("", "")
 	ResctrlSchemata  = NewCommonResctrlResource(ResctrlSchemataName, "")
 	ResctrlTasks     = NewCommonResctrlResource(ResctrlTasksName, "")
 	ResctrlL3CbmMask = NewCommonResctrlResource(ResctrlCbmMaskName, filepath.Join(RdtInfoDir, L3CatDir))
