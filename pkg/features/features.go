@@ -57,6 +57,9 @@ const (
 	// ElasticQuotaIgnorePodOverhead ignore pod.spec.overhead when accounting pod requests
 	ElasticQuotaIgnorePodOverhead featuregate.Feature = "ElasticQuotaIgnorePodOverhead"
 
+	// ElasticQuotaIgnoreTerminatingPod ignore the terminating pod.
+	ElasticQuotaIgnoreTerminatingPod featuregate.Feature = "ElasticQuotaIgnoreTerminatingPod"
+
 	// ElasticQuotaGuaranteeUsage enable guarantee the quota usage
 	// In some specific scenarios, resources that have been allocated to users are considered
 	// to belong to the users and will not be preempted back.
