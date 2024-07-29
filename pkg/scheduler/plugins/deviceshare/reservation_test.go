@@ -682,6 +682,7 @@ func Test_tryAllocateFromReservation(t *testing.T) {
 				tt.state,
 				tt.restoreState,
 				tt.restoreState.matched,
+				nil,
 				node,
 				basicPreemptible,
 				tt.requiredFromReservation,

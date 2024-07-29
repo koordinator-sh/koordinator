@@ -28,6 +28,57 @@ import (
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 )
 
+func TestIsReservationIgnored(t *testing.T) {
+	tests := []struct {
+		name string
+		arg  *corev1.Pod
+		want bool
+	}{
+		{
+			name: "pod is nil",
+			arg:  nil,
+			want: false,
+		},
+		{
+			name: "pod labels is missing",
+			arg: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-pod",
+				},
+			},
+			want: false,
+		},
+		{
+			name: "pod label is empty",
+			arg: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:   "test-pod",
+					Labels: map[string]string{},
+				},
+			},
+			want: false,
+		},
+		{
+			name: "pod set label to true",
+			arg: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-pod",
+					Labels: map[string]string{
+						LabelReservationIgnored: "true",
+					},
+				},
+			},
+			want: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := IsReservationIgnored(tt.arg)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
 func TestSetReservationAllocated(t *testing.T) {
 	reservation := &schedulingv1alpha1.Reservation{
 		ObjectMeta: metav1.ObjectMeta{

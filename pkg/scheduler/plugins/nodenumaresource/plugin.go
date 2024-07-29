@@ -376,6 +376,7 @@ func (p *Plugin) Filter(ctx context.Context, cycleState *framework.CycleState, p
 		}
 	}
 
+	// FIXME: move it ahead the resourceManager.Allocate so that we can check with NUMA hints almost in the Filter
 	if numaTopologyPolicy != extension.NUMATopologyPolicyNone {
 		return p.FilterByNUMANode(ctx, cycleState, pod, node.Name, numaTopologyPolicy, podNUMAExclusive, topologyOptions)
 	}
@@ -402,6 +403,7 @@ func (p *Plugin) filterAmplifiedCPUs(podRequestMilliCPU int64, nodeInfo *framewo
 	}
 
 	// TODO(joseph): Reservations and preemption should be considered here.
+	// TODO: support allocate reserved cpus with amplified ratios
 	_, allocated, err := p.resourceManager.GetAvailableCPUs(node.Name, cpuset.CPUSet{})
 	if err != nil {
 		return framework.NewStatus(framework.UnschedulableAndUnresolvable, err.Error())
@@ -507,6 +509,7 @@ func (p *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState, 
 		}
 	}
 
+	// TODO: de-duplicate logic done by the Filter phase and move head the pre-process of the resource options
 	store := topologymanager.GetStore(cycleState)
 	affinity := store.GetAffinity(nodeName)
 	resourceOptions, err := p.getResourceOptions(state, node, pod, requestCPUBind, affinity, topologyOptions)
