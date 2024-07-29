@@ -27,6 +27,7 @@ import (
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
+	"github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	"github.com/koordinator-sh/koordinator/pkg/util/cpuset"
@@ -231,12 +232,16 @@ func tryAllocateFromReservation(
 	manager ResourceManager,
 	restoreState *nodeReservationRestoreStateData,
 	resourceOptions *ResourceOptions,
-	matchedReservations map[types.UID]reservationAlloc,
+	matchedOrIgnoredReservations map[types.UID]reservationAlloc,
 	pod *corev1.Pod,
 	node *corev1.Node,
 ) (*PodAllocation, *framework.Status) {
-	if len(matchedReservations) == 0 {
+	if len(matchedOrIgnoredReservations) == 0 {
 		return nil, nil
+	}
+
+	if extension.IsReservationIgnored(pod) {
+		return tryAllocateIgnoreReservation(manager, restoreState, resourceOptions, matchedOrIgnoredReservations, pod, node)
 	}
 
 	var hasSatisfiedReservation bool
@@ -246,7 +251,7 @@ func tryAllocateFromReservation(
 	reusableResource := appendAllocated(nil, restoreState.mergedUnmatchedUsed, restoreState.mergedMatchedAllocated)
 
 	var reservationReasons []*framework.Status
-	for _, alloc := range matchedReservations {
+	for _, alloc := range matchedOrIgnoredReservations {
 		rInfo := alloc.rInfo
 
 		reservationReusableResource := appendAllocated(nil, reusableResource, alloc.remained)
@@ -255,43 +260,52 @@ func tryAllocateFromReservation(
 		resourceOptions.requiredResources = nil
 
 		allocatePolicy := rInfo.GetAllocatePolicy()
+		// TODO: Currently the ReservationAllocatePolicyDefault is actually implemented as
+		//       ReservationAllocatePolicyAligned. Need to re-visit the policies.
 		if allocatePolicy == schedulingv1alpha1.ReservationAllocatePolicyDefault ||
 			allocatePolicy == schedulingv1alpha1.ReservationAllocatePolicyAligned {
 			result, status = manager.Allocate(node, pod, resourceOptions)
-			if status.IsSuccess() {
-				hasSatisfiedReservation = true
-				break
+			if !status.IsSuccess() {
+				reservationReasons = append(reservationReasons, status)
+				continue
 			}
-			reservationReasons = append(reservationReasons, status)
+
+			hasSatisfiedReservation = true
+			break
+
 		} else if allocatePolicy == schedulingv1alpha1.ReservationAllocatePolicyRestricted {
 			// TODO 这里仿照 deviceShare 的逻辑这样处理，后续需要再琢磨一下是否有必要
 			_, status := manager.Allocate(node, pod, resourceOptions)
-			if status.IsSuccess() {
-				resourceOptions.requiredResources = alloc.remained
-				if resourceOptions.requestCPUBind && resourceOptions.numCPUsNeeded > alloc.reservedCPUs.Size() {
-					reservationReasons = append(reservationReasons, framework.NewStatus(framework.Unschedulable, "not enough cpus available to satisfy request"))
-					continue
-				}
-				result, status = manager.Allocate(node, pod, resourceOptions)
-				if status.IsSuccess() {
-					if result.CPUSet.Size() > alloc.reservedCPUs.Size() {
-						reservationReasons = append(reservationReasons, framework.NewStatus(framework.Unschedulable, "not enough cpus available to satisfy request"))
-						continue
-					}
-					hasSatisfiedReservation = true
-					break
-				} else {
-					klog.V(5).InfoS("failed to allocated from reservation", "reservation", rInfo.Reservation.Name, "pod", pod.Name, "node", node.Name, "status", status.Message(), "numaNode", resourceOptions.hint.NUMANodeAffinity.String())
-					logStruct(reflect.ValueOf(resourceOptions), "options", 6)
-					logStruct(reflect.ValueOf(restoreState), "restoreState", 6)
-				}
-			} else {
+			if !status.IsSuccess() {
 				klog.V(5).InfoS("failed to allocated from reservation", "reservation", rInfo.Reservation.Name, "pod", pod.Name, "node", node.Name, "status", status.Message(), "numaNode", resourceOptions.hint.NUMANodeAffinity.String())
 				logStruct(reflect.ValueOf(resourceOptions), "options", 6)
 				logStruct(reflect.ValueOf(restoreState), "restoreState", 6)
+				reservationReasons = append(reservationReasons, status)
+				continue
 			}
 
-			reservationReasons = append(reservationReasons, status)
+			resourceOptions.requiredResources = alloc.remained
+			if resourceOptions.requestCPUBind && resourceOptions.numCPUsNeeded > alloc.reservedCPUs.Size() {
+				reservationReasons = append(reservationReasons, framework.NewStatus(framework.Unschedulable, "not enough cpus available to satisfy request"))
+				continue
+			}
+
+			result, status = manager.Allocate(node, pod, resourceOptions)
+			if !status.IsSuccess() {
+				klog.V(5).InfoS("failed to allocated from reservation", "reservation", rInfo.Reservation.Name, "pod", pod.Name, "node", node.Name, "status", status.Message(), "numaNode", resourceOptions.hint.NUMANodeAffinity.String())
+				logStruct(reflect.ValueOf(resourceOptions), "options", 6)
+				logStruct(reflect.ValueOf(restoreState), "restoreState", 6)
+				reservationReasons = append(reservationReasons, status)
+				continue
+			}
+
+			if result.CPUSet.Size() > alloc.reservedCPUs.Size() {
+				reservationReasons = append(reservationReasons, framework.NewStatus(framework.Unschedulable, "not enough cpus available to satisfy request"))
+				continue
+			}
+
+			hasSatisfiedReservation = true
+			break
 		}
 	}
 	if !hasSatisfiedReservation && resourceOptions.requiredFromReservation {
@@ -310,6 +324,31 @@ func makeReasonsByReservation(reservationReasons []*framework.Status) []string {
 	return reasons
 }
 
+// tryAllocateIgnoreReservation will try to allocate where the reserved resources of the node ignored.
+func tryAllocateIgnoreReservation(manager ResourceManager,
+	restoreState *nodeReservationRestoreStateData,
+	resourceOptions *ResourceOptions,
+	ignoredReservations map[types.UID]reservationAlloc,
+	pod *corev1.Pod,
+	node *corev1.Node,
+) (*PodAllocation, *framework.Status) {
+	reusableResourcesFromIgnored := map[int]corev1.ResourceList{}
+	reservedCPUsFromIgnored := cpuset.NewCPUSet()
+
+	// accumulate all ignored reserved resources which are not allocated to any owner pods
+	for _, alloc := range ignoredReservations {
+		reusableResourcesFromIgnored = appendAllocated(reusableResourcesFromIgnored, alloc.remained)
+		reservedCPUsFromIgnored = reservedCPUsFromIgnored.Union(alloc.reservedCPUs)
+	}
+
+	resourceOptions.reusableResources = appendAllocated(nil, restoreState.mergedUnmatchedUsed,
+		restoreState.mergedMatchedAllocated, resourceOptions.reusableResources, reusableResourcesFromIgnored)
+	resourceOptions.preferredCPUs = reservedCPUsFromIgnored
+	resourceOptions.requiredResources = nil
+
+	return manager.Allocate(node, pod, resourceOptions)
+}
+
 func (p *Plugin) allocateWithNominatedReservation(
 	restoreState *nodeReservationRestoreStateData,
 	resourceOptions *ResourceOptions,
@@ -319,11 +358,19 @@ func (p *Plugin) allocateWithNominatedReservation(
 	if reservationutil.IsReservePod(pod) {
 		return nil, nil
 	}
+
+	// if the pod is reservation-ignored, it should allocate the node unallocated resources and all the reserved
+	// unallocated resources.
+	if extension.IsReservationIgnored(pod) {
+		return tryAllocateIgnoreReservation(p.resourceManager, restoreState, resourceOptions, restoreState.matched, pod, node)
+	}
+
 	reservation := p.handle.GetReservationNominator().GetNominatedReservation(pod, node.Name)
 	if reservation == nil {
 		if resourceOptions.requiredFromReservation {
 			return nil, framework.NewStatus(framework.Unschedulable, "no nominated reservation")
 		}
+
 		return nil, nil
 	}
 	nominatedReservationAlloc, ok := restoreState.matched[reservation.UID()]

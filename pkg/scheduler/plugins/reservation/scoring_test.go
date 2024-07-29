@@ -261,7 +261,7 @@ func TestScore(t *testing.T) {
 				}
 				nodeRState := state.nodeReservationStates[reservation.Status.NodeName]
 				nodeRState.nodeName = reservation.Status.NodeName
-				nodeRState.matched = append(nodeRState.matched, rInfo)
+				nodeRState.matchedOrIgnored = append(nodeRState.matchedOrIgnored, rInfo)
 				state.nodeReservationStates[reservation.Status.NodeName] = nodeRState
 				pl.reservationCache.updateReservation(reservation)
 			}
@@ -370,7 +370,7 @@ func TestScoreWithOrder(t *testing.T) {
 			rInfo := pl.reservationCache.getReservationInfoByUID(reservation.UID)
 			nodeRState := state.nodeReservationStates[reservation.Status.NodeName]
 			nodeRState.nodeName = reservation.Status.NodeName
-			nodeRState.matched = append(nodeRState.matched, rInfo)
+			nodeRState.matchedOrIgnored = append(nodeRState.matchedOrIgnored, rInfo)
 			state.nodeReservationStates[reservation.Status.NodeName] = nodeRState
 
 			_, err = suit.extenderFactory.KoordinatorClientSet().SchedulingV1alpha1().Reservations().Create(context.TODO(), reservation.DeepCopy(), metav1.CreateOptions{})
@@ -387,7 +387,7 @@ func TestScoreWithOrder(t *testing.T) {
 		rInfo := pl.reservationCache.getReservationInfoByUID(reservationWithOrder.UID)
 		nodeRState := state.nodeReservationStates[reservationWithOrder.Status.NodeName]
 		nodeRState.nodeName = reservationWithOrder.Status.NodeName
-		nodeRState.matched = append(nodeRState.matched, rInfo)
+		nodeRState.matchedOrIgnored = append(nodeRState.matchedOrIgnored, rInfo)
 		state.nodeReservationStates[reservationWithOrder.Status.NodeName] = nodeRState
 		_, err = suit.extenderFactory.KoordinatorClientSet().SchedulingV1alpha1().Reservations().Create(context.TODO(), reservationWithOrder.DeepCopy(), metav1.CreateOptions{})
 		assert.NoError(t, err)
@@ -833,7 +833,7 @@ func TestPreScoreWithNominateReservation(t *testing.T) {
 				}
 				nodeRState := state.nodeReservationStates[reservation.Status.NodeName]
 				nodeRState.nodeName = reservation.Status.NodeName
-				nodeRState.matched = append(nodeRState.matched, rInfo)
+				nodeRState.matchedOrIgnored = append(nodeRState.matchedOrIgnored, rInfo)
 				state.nodeReservationStates[reservation.Status.NodeName] = nodeRState
 				pl.reservationCache.updateReservation(reservation)
 			}

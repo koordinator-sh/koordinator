@@ -188,12 +188,17 @@ func (p *Plugin) tryAllocateFromReservation(
 	state *preFilterState,
 	restoreState *nodeReservationRestoreStateData,
 	matchedReservations []reservationAlloc,
+	pod *corev1.Pod,
 	node *corev1.Node,
 	basicPreemptible map[schedulingv1alpha1.DeviceType]deviceResources,
 	requiredFromReservation bool,
 ) (apiext.DeviceAllocations, *framework.Status) {
 	if len(matchedReservations) == 0 {
 		return nil, nil
+	}
+
+	if apiext.IsReservationIgnored(pod) {
+		return p.tryAllocateIgnoreReservation(allocator, state, restoreState, restoreState.matched, node, basicPreemptible, false)
 	}
 
 	var hasSatisfiedReservation bool
@@ -220,36 +225,72 @@ func (p *Plugin) tryAllocateFromReservation(
 		preemptible := appendAllocated(nil, basicPreemptible, alloc.remained, preemptibleInRR)
 
 		allocatePolicy := rInfo.GetAllocatePolicy()
+		// TODO: Currently the ReservationAllocatePolicyDefault is actually implemented as
+		//       ReservationAllocatePolicyAligned. Need to re-visit the policies.
 		if allocatePolicy == schedulingv1alpha1.ReservationAllocatePolicyDefault ||
 			allocatePolicy == schedulingv1alpha1.ReservationAllocatePolicyAligned {
 			result, status = allocator.Allocate(nil, preferred, nil, preemptible)
-			if status.IsSuccess() {
-				hasSatisfiedReservation = true
-				break
+			if !status.IsSuccess() {
+				reservationReasons = append(reservationReasons, status)
+				continue
 			}
-			reservationReasons = append(reservationReasons, status)
+
+			hasSatisfiedReservation = true
+			break
+
 		} else if allocatePolicy == schedulingv1alpha1.ReservationAllocatePolicyRestricted {
-			_, status := allocator.Allocate(preferred, preferred, nil, preemptible)
-			if status.IsSuccess() {
-				//
-				// It is necessary to check separately whether the remaining resources of the device instance
-				// reserved by the Restricted Reservation meet the requirements of the Pod, to ensure that
-				// the intersecting resources do not exceed the reserved range of the Restricted Reservation.
-				//
-				requiredDeviceResources := calcRequiredDeviceResources(&alloc, preemptibleInRR)
-				result, status = allocator.Allocate(preferred, preferred, requiredDeviceResources, preemptible)
-				if status.IsSuccess() {
-					hasSatisfiedReservation = true
-					break
-				}
+			_, status = allocator.Allocate(preferred, preferred, nil, preemptible)
+			if !status.IsSuccess() {
+				reservationReasons = append(reservationReasons, status)
+				continue
 			}
-			reservationReasons = append(reservationReasons, status)
+
+			//
+			// It is necessary to check separately whether the remaining resources of the device instance
+			// reserved by the Restricted Reservation meet the requirements of the Pod, to ensure that
+			// the intersecting resources do not exceed the reserved range of the Restricted Reservation.
+			//
+			requiredDeviceResources := calcRequiredDeviceResources(&alloc, preemptibleInRR)
+			result, status = allocator.Allocate(preferred, preferred, requiredDeviceResources, preemptible)
+			if !status.IsSuccess() {
+				reservationReasons = append(reservationReasons, status)
+				continue
+			}
+
+			hasSatisfiedReservation = true
+			break
 		}
 	}
 	if !hasSatisfiedReservation && requiredFromReservation {
 		return nil, framework.NewStatus(framework.Unschedulable, p.makeReasonsByReservation(reservationReasons)...)
 	}
 	return result, nil
+}
+
+// tryAllocateIgnoreReservation will try to allocate where the reserved resources of the node ignored.
+func (p *Plugin) tryAllocateIgnoreReservation(
+	allocator *AutopilotAllocator,
+	state *preFilterState,
+	restoreState *nodeReservationRestoreStateData,
+	ignoredReservations []reservationAlloc,
+	node *corev1.Node,
+	basicPreemptible map[schedulingv1alpha1.DeviceType]deviceResources,
+	requiredFromReservation bool,
+) (apiext.DeviceAllocations, *framework.Status) {
+	preemptibleFromIgnored := map[schedulingv1alpha1.DeviceType]deviceResources{}
+	allocatableFromIgnored := map[schedulingv1alpha1.DeviceType]deviceResources{}
+
+	// accumulate all ignored reserved resources which are not allocated to any owner pods
+	for _, alloc := range ignoredReservations {
+		preemptibleFromIgnored = appendAllocated(preemptibleFromIgnored,
+			state.preemptibleInRRs[node.Name][alloc.rInfo.UID()], alloc.remained)
+		allocatableFromIgnored = appendAllocated(allocatableFromIgnored, alloc.allocatable)
+	}
+
+	preemptibleFromIgnored = appendAllocated(preemptibleFromIgnored, basicPreemptible, restoreState.mergedMatchedAllocated)
+	preferred := newDeviceMinorMap(allocatableFromIgnored)
+
+	return allocator.Allocate(nil, preferred, nil, preemptibleFromIgnored)
 }
 
 func (p *Plugin) makeReasonsByReservation(reservationReasons []*framework.Status) []string {
@@ -321,6 +362,12 @@ func (p *Plugin) allocateWithNominatedReservation(
 		return nil, nil
 	}
 
+	// if the pod is reservation-ignored, it should allocate the node unallocated resources and all the reserved
+	// unallocated resources.
+	if apiext.IsReservationIgnored(pod) {
+		return p.tryAllocateIgnoreReservation(allocator, state, restoreState, restoreState.matched, node, basicPreemptible, false)
+	}
+
 	reservation := p.handle.GetReservationNominator().GetNominatedReservation(pod, node.Name)
 	if reservation == nil {
 		return nil, nil
@@ -342,6 +389,7 @@ func (p *Plugin) allocateWithNominatedReservation(
 		state,
 		restoreState,
 		restoreState.matched[allocIndex:allocIndex+1],
+		pod,
 		node,
 		basicPreemptible,
 		false,
