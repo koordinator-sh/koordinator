@@ -83,7 +83,7 @@ func (gg *GangGroupInfo) setScheduleCycleInvalid() {
 
 	if gg.ScheduleCycleValid {
 		gg.ScheduleCycleValid = false
-		klog.Infof("setScheduleCycleInvalid, gangGroupName: %v, valid: %v", gg.GangGroupId)
+		klog.Infof("setScheduleCycleInvalid, gangGroupName: %v, valid: %v", gg.GangGroupId, gg.ScheduleCycleValid)
 	}
 }
 

@@ -49,6 +49,7 @@ type Coscheduling struct {
 	pgMgr            core.Manager
 }
 
+var _ framework.PreEnqueuePlugin = &Coscheduling{}
 var _ framework.QueueSortPlugin = &Coscheduling{}
 var _ frameworkext.PreFilterTransformer = &Coscheduling{}
 var _ framework.PreFilterPlugin = &Coscheduling{}
@@ -111,6 +112,17 @@ func (cs *Coscheduling) Name() string {
 	return Name
 }
 
+// PreEnqueue
+// i.Check whether childes in Gang has met the requirements of minimum number under each Gang, and reject the pod if negative.
+// ii.Check whether the Gang has been timeout(check the pod's annotation,later introduced at Permit section) or is inited, and reject the pod if positive.
+func (cs *Coscheduling) PreEnqueue(ctx context.Context, pod *v1.Pod) *framework.Status {
+	if err := cs.pgMgr.PreEnqueue(ctx, pod); err != nil {
+		klog.ErrorS(err, "PreEnqueue failed", "pod", klog.KObj(pod))
+		return framework.NewStatus(framework.UnschedulableAndUnresolvable, err.Error())
+	}
+	return framework.NewStatus(framework.Success, "")
+}
+
 // Less is sorting pods in the scheduling queue in the following order.
 // Firstly, compare the priorities of the two pods, the higher priority (if pod's priority is equal,then compare their KoordinatorPriority at labels )is at the front of the queue,
 // Secondly, compare Gang group ID of the two pods, pods that NOT belong to a Gang will have higher priority than pods that belongs to a Gang,
@@ -162,11 +174,8 @@ func (cs *Coscheduling) Less(podInfo1, podInfo2 *framework.QueuedPodInfo) bool {
 }
 
 // BeforePreFilter
-// if non-strict-mode, we only do step1 and step2:
-// i.Check whether childes in Gang has met the requirements of minimum number under each Gang, and reject the pod if negative.
-// ii.Check whether the Gang has been timeout(check the pod's annotation,later introduced at Permit section) or is inited, and reject the pod if positive.
-// iii.Check whether the Gang has met the scheduleCycleValid check, and reject the pod if negative.
-// iv.Try update scheduleCycle, scheduleCycleValid, childrenScheduleRoundMap as mentioned above.
+// i.Check whether the Gang has met the scheduleCycleValid check, and reject the pod if negative.
+// ii.Try update scheduleCycle, scheduleCycleValid, childrenScheduleRoundMap as mentioned above.
 func (cs *Coscheduling) BeforePreFilter(ctx context.Context, state *framework.CycleState, pod *v1.Pod) (*v1.Pod, bool, *framework.Status) {
 	// If PreFilter fails, return framework.UnschedulableAndUnresolvable to avoid any preemption attempts.
 	if err := cs.pgMgr.PreFilter(ctx, state, pod); err != nil {
