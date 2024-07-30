@@ -245,6 +245,8 @@ func (pl *LowNodeLoad) processOneNodePool(ctx context.Context, nodePool *desched
 		abnormalProdNodes,
 		prodLowNodes,
 		bothLowNodes,
+		nodeUsages,
+		nodeThresholds,
 		pl.args.DryRun,
 		pl.args.NodeFit,
 		nodePool.ResourceWeights,
