@@ -69,7 +69,7 @@ type MigrationControllerArgs struct {
 	NodeSelector string `json:"nodeSelector,omitempty"`
 
 	// MaxMigratingGlobally represents the maximum number of pods that can be migrating during migrate globally.
-	MaxMigratingGlobally *int32
+	MaxMigratingGlobally *int32 `json:"maxMigratingGlobally,omitempty"`
 
 	// MaxMigratingPerNode represents he maximum number of pods that can be migrating during migrate per node.
 	MaxMigratingPerNode *int32 `json:"maxMigratingPerNode,omitempty"`
