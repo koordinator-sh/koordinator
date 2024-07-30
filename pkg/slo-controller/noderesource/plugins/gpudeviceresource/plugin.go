@@ -31,8 +31,10 @@ import (
 	"github.com/koordinator-sh/koordinator/apis/configuration"
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/noderesource/framework"
 	"github.com/koordinator-sh/koordinator/pkg/util"
+	utilfeature "github.com/koordinator-sh/koordinator/pkg/util/feature"
 )
 
 const PluginName = "GPUDeviceResource"
@@ -161,14 +163,22 @@ func (p *Plugin) calculate(node *corev1.Node, device *schedulingv1alpha1.Device)
 	// calculate gpu resources
 	gpuResources := make(corev1.ResourceList)
 	totalKoordGPU := resource.NewQuantity(0, resource.DecimalSI)
+	healthGPUNum := 0
 	for _, d := range device.Spec.Devices {
 		if d.Type != schedulingv1alpha1.GPU || !d.Health {
 			continue
 		}
+
+		healthGPUNum++
 		util.AddResourceList(gpuResources, d.Resources)
 		totalKoordGPU.Add(d.Resources[extension.ResourceGPUCore])
 	}
+
 	gpuResources[extension.ResourceGPU] = *totalKoordGPU
+	if utilfeature.DefaultFeatureGate.Enabled(features.EnableSyncGPUSharedResource) {
+		gpuResources[extension.ResourceGPUShared] = *resource.NewQuantity(int64(healthGPUNum)*100, resource.DecimalSI)
+	}
+
 	var items []framework.ResourceItem
 	// FIXME: shall we add node resources in devices but not in ResourceNames?
 	for resourceName := range gpuResources {

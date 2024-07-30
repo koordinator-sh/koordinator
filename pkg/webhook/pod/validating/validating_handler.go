@@ -75,7 +75,15 @@ func (h *PodValidatingHandler) validatingPodFn(ctx context.Context, req admissio
 		return false, "", err
 	}
 
-	allowed, reason, err = h.evaluateQuota(ctx, req)
+	_, reason, err = h.evaluateQuota(ctx, req)
+	if err != nil {
+		return false, reason, err
+	}
+
+	allowed, reason, err = h.deviceResourceValidatingPod(ctx, req)
+	if err != nil {
+		return false, reason, err
+	}
 
 	return
 }

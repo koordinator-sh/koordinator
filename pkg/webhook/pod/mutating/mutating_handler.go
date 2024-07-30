@@ -116,6 +116,11 @@ func (h *PodMutatingHandler) handleCreate(ctx context.Context, req admission.Req
 		return err
 	}
 
+	if err := h.deviceResourceSpecMutatingPod(ctx, req, obj); err != nil {
+		klog.Errorf("Failed to mutating Pod %s/%s by DeviceResourceSpec, err: %v", obj.Namespace, obj.Name, err)
+		return err
+	}
+
 	return nil
 }
 

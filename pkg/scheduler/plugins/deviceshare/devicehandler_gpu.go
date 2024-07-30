@@ -51,17 +51,25 @@ func (h *GPUHandler) CalcDesiredRequestsAndCount(node *corev1.Node, pod *corev1.
 	requests := podRequests
 	desiredCount := int64(1)
 
-	memoryRatio := podRequests[apiext.ResourceGPUMemoryRatio]
-	multiDevices := memoryRatio.Value() > 100 && memoryRatio.Value()%100 == 0
-	if multiDevices {
-		gpuCore, gpuMem, gpuMemoryRatio := podRequests[apiext.ResourceGPUCore], podRequests[apiext.ResourceGPUMemory], podRequests[apiext.ResourceGPUMemoryRatio]
-		desiredCount = gpuMemoryRatio.Value() / 100
+	gpuShare, ok := podRequests[apiext.ResourceGPUShared]
+	gpuCore, gpuMem, gpuMemoryRatio := podRequests[apiext.ResourceGPUCore], podRequests[apiext.ResourceGPUMemory], podRequests[apiext.ResourceGPUMemoryRatio]
+	// gpu share mode
+	if ok && gpuShare.Value() > 0 {
+		desiredCount = gpuShare.Value()
+	} else {
+		if gpuMemoryRatio.Value() > 100 && gpuMemoryRatio.Value()%100 == 0 {
+			desiredCount = gpuMemoryRatio.Value() / 100
+		}
+	}
+
+	if desiredCount > 1 {
 		requests = corev1.ResourceList{
 			apiext.ResourceGPUCore:        *resource.NewQuantity(gpuCore.Value()/desiredCount, resource.DecimalSI),
 			apiext.ResourceGPUMemory:      *resource.NewQuantity(gpuMem.Value()/desiredCount, resource.BinarySI),
 			apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(gpuMemoryRatio.Value()/desiredCount, resource.DecimalSI),
 		}
 	}
+
 	return requests, int(desiredCount), nil
 }
 
