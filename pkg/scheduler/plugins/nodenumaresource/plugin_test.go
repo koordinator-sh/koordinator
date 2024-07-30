@@ -18,7 +18,6 @@ package nodenumaresource
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"reflect"
 	"testing"
@@ -1116,7 +1115,7 @@ func TestPlugin_Reserve(t *testing.T) {
 			},
 			cpuTopology: buildCPUTopologyForTest(2, 1, 4, 2),
 			pod:         &corev1.Pod{},
-			want:        framework.AsStatus(errors.New("not enough cpus available to satisfy request")),
+			want:        framework.NewStatus(framework.Unschedulable, "not enough cpus available to satisfy request"),
 		},
 		{
 			name: "succeed with valid cpu topology and node numa least allocate strategy",

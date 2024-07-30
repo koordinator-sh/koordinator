@@ -191,7 +191,7 @@ func (c *resourceManager) Allocate(node *corev1.Node, pod *corev1.Pod, options *
 	if options.requestCPUBind {
 		cpus, err := c.allocateCPUSet(node, pod, allocation.NUMANodeResources, options)
 		if err != nil {
-			return nil, framework.AsStatus(err)
+			return nil, framework.NewStatus(framework.Unschedulable, err.Error())
 		}
 		allocation.CPUSet = cpus
 	}
@@ -200,7 +200,7 @@ func (c *resourceManager) Allocate(node *corev1.Node, pod *corev1.Pod, options *
 
 func (c *resourceManager) allocateResourcesByHint(node *corev1.Node, pod *corev1.Pod, options *ResourceOptions) ([]NUMANodeResource, *framework.Status) {
 	if len(options.topologyOptions.NUMANodeResources) == 0 {
-		return nil, framework.NewStatus(framework.Error, "insufficient resources on NUMA Node")
+		return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, "insufficient resources on NUMA Node")
 	}
 
 	totalAvailable := options.requiredResources
@@ -208,11 +208,11 @@ func (c *resourceManager) allocateResourcesByHint(node *corev1.Node, pod *corev1
 		var err error
 		totalAvailable, _, err = c.getAvailableNUMANodeResources(node.Name, options.topologyOptions, options.reusableResources)
 		if err != nil {
-			return nil, framework.AsStatus(err)
+			return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, err.Error())
 		}
 	}
 	if err := c.trimNUMANodeResources(node.Name, totalAvailable, options); err != nil {
-		return nil, framework.AsStatus(err)
+		return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, err.Error())
 	}
 
 	var requests corev1.ResourceList

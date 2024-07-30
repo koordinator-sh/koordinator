@@ -352,7 +352,7 @@ func (p *Plugin) Filter(ctx context.Context, cycleState *framework.CycleState, p
 		if requiredCPUBindPolicy != "" && numaTopologyPolicy == extension.NUMATopologyPolicyNone {
 			resourceOptions, err := p.getResourceOptions(state, node, pod, requestCPUBind, topologymanager.NUMATopologyHint{}, topologyOptions)
 			if err != nil {
-				return framework.AsStatus(err)
+				return framework.NewStatus(framework.UnschedulableAndUnresolvable, err.Error())
 			}
 
 			reservationRestoreState := getReservationRestoreState(cycleState)
@@ -449,7 +449,7 @@ func (p *Plugin) FilterReservation(ctx context.Context, cycleState *framework.Cy
 
 	if requestCPUBind {
 		if !topologyOptions.CPUTopology.IsValid() {
-			return framework.NewStatus(framework.Error, ErrInvalidCPUTopology)
+			return framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrInvalidCPUTopology)
 		}
 	}
 
