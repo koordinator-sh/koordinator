@@ -123,11 +123,12 @@ func (n *NodeResourceAmplificationPlugin) handleUpdate(oldNode, node *corev1.Nod
 			extension.SetNodeRawAllocatable(node, originalResources)
 		}
 	} else {
-		originalResources, err := extension.GetNodeRawAllocatable(node.Annotations)
-		if originalResources == nil {
+		rawAllocatable, err := extension.GetNodeRawAllocatable(node.Annotations)
+		if rawAllocatable == nil {
 			klog.Errorf("admit for %s, failed to parse raw allocatable: %v", node.Name, err)
 			return err
 		}
+		originalResources = rawAllocatable
 	}
 
 	// parse resource amplification ratios from annotations
@@ -154,7 +155,7 @@ func (n *NodeResourceAmplificationPlugin) handleUpdate(oldNode, node *corev1.Nod
 		}
 		resourceValue, ok := originalResources[resourceName]
 		if !ok {
-			klog.V(4).Infof("admit for %s, skip resource %v as it is not found in original resources", node.Name, resourceName)
+			klog.V(4).Infof("admit for %s, skip resource %v as it is not found in original resources %v", node.Name, resourceName, originalResources)
 			continue
 		}
 		node.Status.Allocatable[resourceName] = util.MultiplyMilliQuant(resourceValue, float64(ratio))
