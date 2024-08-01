@@ -228,13 +228,13 @@ func (a *deviceTopologyGuide) freeNodeDevicesInPCIe() []*pcieSwitch {
 }
 
 func (a *deviceTopologyGuide) freeNodeDevicesInNode() []*groupedNodeDevice {
-	groupedNodeDevices := make([]*groupedNodeDevice, len(a.groupedNodeDevices))
-	for i, device := range a.groupedNodeDevices {
-		groupedNodeDevices[i] = device
+	var groupedNodeDevices []*groupedNodeDevice
+	for _, device := range a.groupedNodeDevices {
+		groupedNodeDevices = append(groupedNodeDevices, device)
 	}
 	sort.Slice(groupedNodeDevices, func(i, j int) bool {
-		iGroup := a.groupedNodeDevices[i]
-		jGroup := a.groupedNodeDevices[j]
+		iGroup := groupedNodeDevices[i]
+		jGroup := groupedNodeDevices[j]
 		if iGroup.preferredPCIes.Len() != jGroup.preferredPCIes.Len() {
 			return iGroup.preferredPCIes.Len() > jGroup.preferredPCIes.Len()
 		}
