@@ -43,7 +43,7 @@ func Test_registerDefaultColocationExtension(t *testing.T) {
 		configBytes, fmtErr := json.Marshal(defautlColocationCfg)
 		configStr := string(configBytes)
 
-		expectStr := `{"enable":false,"metricAggregateDurationSeconds":300,"metricReportIntervalSeconds":60,"metricAggregatePolicy":{"durations":["5m0s","10m0s","30m0s"]},"metricMemoryCollectPolicy":"usageWithoutPageCache","cpuReclaimThresholdPercent":60,"cpuCalculatePolicy":"usage","memoryReclaimThresholdPercent":65,"memoryCalculatePolicy":"usage","degradeTimeMinutes":15,"updateTimeThresholdSeconds":300,"resourceDiffThreshold":0.1,"extensions":{"test-ext-key":{"testBoolVal":true}}}`
+		expectStr := `{"enable":false,"metricAggregateDurationSeconds":300,"metricReportIntervalSeconds":60,"metricAggregatePolicy":{"durations":["5m0s","10m0s","30m0s"]},"metricMemoryCollectPolicy":"usageWithoutPageCache","cpuReclaimThresholdPercent":60,"cpuCalculatePolicy":"usage","memoryReclaimThresholdPercent":65,"memoryCalculatePolicy":"usage","degradeTimeMinutes":15,"updateTimeThresholdSeconds":300,"resourceDiffThreshold":0.1,"midCPUThresholdPercent":100,"midMemoryThresholdPercent":100,"midUnallocatedPercent":0,"extensions":{"test-ext-key":{"testBoolVal":true}}}`
 		assert.Equal(t, expectStr, configStr, "config json")
 		assert.NoError(t, fmtErr, "default colocation config marshall")
 
