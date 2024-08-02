@@ -22,6 +22,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	"k8s.io/klog/v2"
 	"k8s.io/utils/clock"
 
@@ -125,9 +126,33 @@ func (p *Plugin) degradeCalculate(node *corev1.Node, message string) []framework
 	return p.Reset(node, message)
 }
 
+// Unallocated[Mid] = max(NodeAllocatable - Allocated[Prod], 0)
+func (p *Plugin) getUnallocated(node *corev1.Node, podList *corev1.PodList) corev1.ResourceList {
+	allocated := corev1.ResourceList{}
+	for i := range podList.Items {
+		pod := &podList.Items[i]
+		priorityClass := extension.GetPodPriorityClassWithDefault(pod)
+		// If the pod is not marked as low priority, it is considered high priority
+		isHighPriority := priorityClass != extension.PriorityMid && priorityClass != extension.PriorityBatch && priorityClass != extension.PriorityFree
+		if !isHighPriority {
+			continue
+		}
+
+		if pod.Status.Phase != corev1.PodRunning && pod.Status.Phase != corev1.PodPending {
+			continue
+		}
+		podRequest := util.GetPodRequest(pod, corev1.ResourceCPU, corev1.ResourceMemory)
+		allocated = quotav1.Add(allocated, podRequest)
+	}
+
+	return quotav1.SubtractWithNonNegativeResult(node.Status.Allocatable, allocated)
+}
+
 func (p *Plugin) calculate(strategy *configuration.ColocationStrategy, node *corev1.Node, podList *corev1.PodList,
 	resourceMetrics *framework.ResourceMetrics) []framework.ResourceItem {
-	// MidAllocatable := min(NodeAllocatable * thresholdRatio, ProdReclaimable)
+	// Allocatable[Mid]' := min(Reclaimable[Mid], NodeAllocatable * thresholdRatio) + Unallocated[Mid]
+	// Unallocated[Mid] = max(NodeAllocatable - Allocated[Prod], 0)
+
 	prodReclaimable := resourceMetrics.NodeMetric.Status.ProdReclaimableMetric.Resource
 	allocatableMilliCPU := prodReclaimable.Cpu().MilliValue()
 	allocatableMemory := prodReclaimable.Memory().Value()
@@ -161,6 +186,13 @@ func (p *Plugin) calculate(strategy *configuration.ColocationStrategy, node *cor
 	}
 	memory := resource.NewQuantity(allocatableMemory, resource.BinarySI)
 
+	// add unallocated
+	unallocated := p.getUnallocated(node, podList)
+	// CPU need turn into milli value
+	unallocatedCPU, unallocatedMemory := resource.NewQuantity(unallocated.Cpu().MilliValue(), resource.DecimalSI), unallocated.Memory()
+	cpuInMilliCores.Add(*unallocatedCPU)
+	memory.Add(*unallocatedMemory)
+
 	metrics.RecordNodeExtendedResourceAllocatableInternal(node, string(extension.MidCPU), metrics.UnitInteger, float64(cpuInMilliCores.MilliValue())/1000)
 	metrics.RecordNodeExtendedResourceAllocatableInternal(node, string(extension.MidMemory), metrics.UnitByte, float64(memory.Value()))
 	klog.V(6).Infof("calculated mid allocatable for node %s, cpu(milli-core) %v, memory(byte) %v",
@@ -170,14 +202,14 @@ func (p *Plugin) calculate(strategy *configuration.ColocationStrategy, node *cor
 		{
 			Name:     extension.MidCPU,
 			Quantity: cpuInMilliCores, // in milli-cores
-			Message: fmt.Sprintf("midAllocatable[CPU(milli-core)]:%v = min(nodeAllocatable:%v * thresholdRatio:%v, ProdReclaimable:%v)",
-				cpuInMilliCores.Value(), nodeAllocatable.Cpu().MilliValue(), cpuThresholdRatio, prodReclaimable.Cpu().MilliValue()),
+			Message: fmt.Sprintf("midAllocatable[CPU(milli-core)]:%v = min(nodeAllocatable:%v * thresholdRatio:%v, ProdReclaimable:%v) + Unallocated:%v",
+				cpuInMilliCores.Value(), nodeAllocatable.Cpu().MilliValue(), cpuThresholdRatio, prodReclaimable.Cpu().MilliValue(), unallocatedCPU.Value()),
 		},
 		{
 			Name:     extension.MidMemory,
 			Quantity: memory,
-			Message: fmt.Sprintf("midAllocatable[Memory(byte)]:%s = min(nodeAllocatable:%s * thresholdRatio:%v, ProdReclaimable:%s)",
-				memory.String(), nodeAllocatable.Memory().String(), memThresholdRatio, prodReclaimable.Memory().String()),
+			Message: fmt.Sprintf("midAllocatable[Memory(byte)]:%s = min(nodeAllocatable:%s * thresholdRatio:%v, ProdReclaimable:%s) + Unallocated:%v",
+				memory.String(), nodeAllocatable.Memory().String(), memThresholdRatio, prodReclaimable.Memory().String(), unallocatedMemory.String()),
 		},
 	}
 }
