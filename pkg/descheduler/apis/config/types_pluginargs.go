@@ -135,6 +135,8 @@ type MigrationObjectLimiter struct {
 	// MaxMigrating indicates the maximum number of migrations/evictions allowed within the window time.
 	// If configured as nil or 0, the maximum number will be calculated according to MaxMigratingPerWorkload.
 	MaxMigrating *intstr.IntOrString
+	// Burst indicates the limiter allows bursts of up to 'burst' to exceed within the time window.
+	Burst int
 }
 
 // ArbitrationArgs holds arguments used to configure the Arbitration Mechanism.
