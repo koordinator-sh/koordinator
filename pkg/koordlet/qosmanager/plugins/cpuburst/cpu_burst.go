@@ -241,15 +241,21 @@ func (b *cpuBurst) start() {
 		// merge burst config from pod and node
 		cpuBurstCfg := genPodBurstConfig(podMeta.Pod, &b.nodeCPUBurstStrategy.CPUBurstConfig)
 		if cpuBurstCfg == nil {
-			klog.Warningf("pod %v/%v burst config illegal, burst config %v",
-				podMeta.Pod.Namespace, podMeta.Pod.Name, cpuBurstCfg)
+			klog.Warningf("pod %v/%v burst config illegal, because burst config is nil",
+				podMeta.Pod.Namespace, podMeta.Pod.Name)
 			continue
 		}
-		klog.V(5).Infof("get pod %v/%v cpu burst config: %v", podMeta.Pod.Namespace, podMeta.Pod.Name, cpuBurstCfg)
-		// set cpu.cfs_burst_us for pod and containers
-		b.applyCPUBurst(cpuBurstCfg, podMeta)
-		// scale cpu.cfs_quota_us for pod and containers
-		b.applyCFSQuotaBurst(cpuBurstCfg, podMeta, nodeState)
+		klog.V(5).Infof("get pod %v/%v cpu burst config: %#v", podMeta.Pod.Namespace, podMeta.Pod.Name, cpuBurstCfg)
+
+		if cpuBurstEnabled(cpuBurstCfg.Policy) {
+			// set cpu.cfs_burst_us for pod and containers
+			b.applyCPUBurst(cpuBurstCfg, podMeta)
+		}
+
+		if cfsQuotaBurstEnabled(cpuBurstCfg.Policy) {
+			// scale cpu.cfs_quota_us for pod and containers
+			b.applyCFSQuotaBurst(cpuBurstCfg, podMeta, nodeState)
+		}
 	}
 	b.Recycle()
 }
