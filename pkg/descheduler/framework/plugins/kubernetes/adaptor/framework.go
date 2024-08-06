@@ -21,7 +21,7 @@ import (
 	"k8s.io/client-go/informers"
 	clientset "k8s.io/client-go/kubernetes"
 	podutil "sigs.k8s.io/descheduler/pkg/descheduler/pod"
-	k8sdeschedulerframework "sigs.k8s.io/descheduler/pkg/framework"
+	k8sdeschedulerframework "sigs.k8s.io/descheduler/pkg/framework/types"
 
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/framework"
 )
