@@ -50,6 +50,7 @@ func (pl *Plugin) BeforePreFilter(ctx context.Context, cycleState *framework.Cyc
 
 func (pl *Plugin) prepareMatchReservationState(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod) (*stateData, bool, *framework.Status) {
 	logger := klog.FromContext(ctx)
+	pl.reservationCache.UpdateSnapshot()
 	reservationAffinity, err := reservationutil.GetRequiredReservationAffinity(pod)
 	if err != nil {
 		klog.ErrorS(err, "Failed to parse reservation affinity", "pod", klog.KObj(pod))
@@ -116,7 +117,7 @@ func (pl *Plugin) prepareMatchReservationState(ctx context.Context, cycleState *
 			affinityUnmatched:        0,
 			notExactMatched:          0,
 		}
-		status := pl.reservationCache.forEachAvailableReservationOnNode(node.Name, func(rInfo *frameworkext.ReservationInfo) (bool, *framework.Status) {
+		status := pl.reservationCache.snapshot.forEachAvailableReservationOnNode(node.Name, func(rInfo *frameworkext.ReservationInfo) (bool, *framework.Status) {
 			if !rInfo.IsAvailable() || rInfo.ParseError != nil {
 				return true, nil
 			}
@@ -132,10 +133,10 @@ func (pl *Plugin) prepareMatchReservationState(ctx context.Context, cycleState *
 			isMatchReservationAffinity := matchReservationAffinity(node, rInfo, reservationAffinity)
 			isExactMatched := extension.ExactMatchReservation(podRequests, rInfo.Allocatable, exactMatchReservationSpec)
 			if !isReservedPod && !isUnschedulable && isOwnerMatched && isMatchReservationAffinity && isExactMatched {
-				matched = append(matched, rInfo.Clone())
+				matched = append(matched, rInfo)
 
 			} else if len(rInfo.AssignedPods) > 0 {
-				unmatched = append(unmatched, rInfo.Clone())
+				unmatched = append(unmatched, rInfo)
 			}
 			if isOwnerMatched { // count owner-matched diagnosis state
 				diagnosisState.ownerMatched++

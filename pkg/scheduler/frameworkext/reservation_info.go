@@ -17,6 +17,8 @@ limitations under the License.
 package frameworkext
 
 import (
+	"sync/atomic"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -34,6 +36,14 @@ import (
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
 
+var generation int64
+
+// nextGeneration: Let's make sure history never forgets the name...
+// Increments the generation number monotonically ensuring that generation numbers never collide.
+func nextGeneration() int64 {
+	return atomic.AddInt64(&generation, 1)
+}
+
 type ReservationInfo struct {
 	Reservation      *schedulingv1alpha1.Reservation
 	Pod              *corev1.Pod
@@ -45,6 +55,7 @@ type ReservationInfo struct {
 	AssignedPods     map[types.UID]*PodRequirement
 	OwnerMatchers    []reservationutil.ReservationOwnerMatcher
 	ParseError       error
+	Generation       int64
 }
 
 type PodRequirement struct {
@@ -111,6 +122,7 @@ func NewReservationInfo(r *schedulingv1alpha1.Reservation) *ReservationInfo {
 		AssignedPods:     map[types.UID]*PodRequirement{},
 		OwnerMatchers:    ownerMatchers,
 		ParseError:       parseError,
+		Generation:       nextGeneration(),
 	}
 }
 
@@ -152,6 +164,7 @@ func NewReservationInfoFromPod(pod *corev1.Pod) *ReservationInfo {
 		AssignedPods:     map[types.UID]*PodRequirement{},
 		OwnerMatchers:    ownerMatchers,
 		ParseError:       parseError,
+		Generation:       nextGeneration(),
 	}
 }
 
@@ -304,6 +317,9 @@ func (ri *ReservationInfo) Clone() *ReservationInfo {
 		AllocatablePorts: util.CloneHostPorts(ri.AllocatablePorts),
 		AllocatedPorts:   util.CloneHostPorts(ri.AllocatedPorts),
 		AssignedPods:     assignedPods,
+		OwnerMatchers:    ri.OwnerMatchers,
+		ParseError:       ri.ParseError,
+		Generation:       ri.Generation,
 	}
 }
 
@@ -337,6 +353,7 @@ func (ri *ReservationInfo) UpdateReservation(r *schedulingv1alpha1.Reservation) 
 		parseError = utilerrors.NewAggregate(parseErrors)
 	}
 	ri.ParseError = parseError
+	ri.Generation = nextGeneration()
 }
 
 func (ri *ReservationInfo) UpdatePod(pod *corev1.Pod) {
@@ -374,6 +391,7 @@ func (ri *ReservationInfo) UpdatePod(pod *corev1.Pod) {
 		parseError = utilerrors.NewAggregate(parseErrors)
 	}
 	ri.ParseError = parseError
+	ri.Generation = nextGeneration()
 }
 
 func (ri *ReservationInfo) AddAssignedPod(pod *corev1.Pod) {
@@ -385,6 +403,7 @@ func (ri *ReservationInfo) AddAssignedPod(pod *corev1.Pod) {
 	ri.Allocated = quotav1.Add(ri.Allocated, quotav1.Mask(requirement.Requests, ri.ResourceNames))
 	ri.AllocatedPorts = util.AppendHostPorts(ri.AllocatedPorts, requirement.Ports)
 	ri.AssignedPods[pod.UID] = requirement
+	ri.Generation = nextGeneration()
 }
 
 func (ri *ReservationInfo) RemoveAssignedPod(pod *corev1.Pod) {
@@ -398,4 +417,5 @@ func (ri *ReservationInfo) RemoveAssignedPod(pod *corev1.Pod) {
 
 		delete(ri.AssignedPods, pod.UID)
 	}
+	ri.Generation = nextGeneration()
 }

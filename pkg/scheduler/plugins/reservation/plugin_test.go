@@ -581,6 +581,7 @@ func TestFilter(t *testing.T) {
 				tt.stateData.podRequestsResources = framework.NewResource(tt.stateData.podRequests)
 				cycleState.Write(stateKey, tt.stateData)
 			}
+			pl.reservationCache.UpdateSnapshot()
 			got := pl.Filter(context.TODO(), cycleState, tt.pod, tt.nodeInfo)
 			assert.Equal(t, tt.want, got)
 		})
@@ -1566,6 +1567,7 @@ func TestPreFilterExtensionAddPod(t *testing.T) {
 			podInfo, _ := framework.NewPodInfo(tt.pod)
 			nodeInfo := framework.NewNodeInfo()
 			nodeInfo.SetNode(node)
+			pl.reservationCache.UpdateSnapshot()
 			status := pl.PreFilterExtensions().AddPod(context.TODO(), cycleState, nil, podInfo, nodeInfo)
 			assert.True(t, status.IsSuccess())
 			sd := getStateData(cycleState)
@@ -1677,6 +1679,7 @@ func TestPreFilterExtensionRemovePod(t *testing.T) {
 				pl.reservationCache.updateReservation(reservation)
 				assert.NoError(t, pl.reservationCache.assumePod(reservation.UID, tt.pod))
 			}
+			pl.reservationCache.UpdateSnapshot()
 			podInfo, _ := framework.NewPodInfo(tt.pod)
 			nodeInfo := framework.NewNodeInfo()
 			nodeInfo.SetNode(node)
