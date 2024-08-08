@@ -216,7 +216,7 @@ func (pgMgr *PodGroupManager) ActivateSiblings(pod *corev1.Pod, state *framework
 				for _, siblingPod := range toActivePods {
 					namespacedName := util.GetId(siblingPod.Namespace, siblingPod.Name)
 					s.Map[namespacedName] = siblingPod
-					klog.InfoS("ActivateSiblings add pod's key to PodsToActivate map", "pod", namespacedName)
+					klog.V(4).InfoS("ActivateSiblings add pod's key to PodsToActivate map", "pod", namespacedName)
 				}
 				s.Unlock()
 			}
@@ -507,7 +507,7 @@ func (pgMgr *PodGroupManager) AllowGangGroup(pod *corev1.Pod, handle framework.H
 		podGangId := util.GetId(waitingPod.GetPod().Namespace, util.GetGangNameByPod(waitingPod.GetPod()))
 		for _, gangIdTmp := range gangSlices {
 			if podGangId == gangIdTmp {
-				klog.InfoS("Permit allows pod from gang", "gang", podGangId, "pod", klog.KObj(waitingPod.GetPod()))
+				klog.V(4).InfoS("Permit allows pod from gang", "gang", podGangId, "pod", klog.KObj(waitingPod.GetPod()))
 				waitingPod.Allow(pluginName)
 				break
 			}

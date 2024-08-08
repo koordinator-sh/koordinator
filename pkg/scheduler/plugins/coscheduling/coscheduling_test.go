@@ -27,6 +27,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-logr/logr"
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -1049,8 +1050,7 @@ func TestFairness(t *testing.T) {
 	assert.NoError(t, err)
 	eventBroadcaster.StartRecordingToSink(ctx.Done())
 	suit.start()
-	logger := klog.FromContext(ctx)
-	sched.SchedulingQueue.Run(logger)
+	sched.SchedulingQueue.Run(logr.Discard())
 
 	var scheduleOrder []*debugPodScheduleInfo
 
@@ -1135,7 +1135,7 @@ func simulateScheduleOne(t *testing.T, ctx context.Context, sched *scheduler.Sch
 	}
 	*scheduleOrder = append(*scheduleOrder, scheduleInfo)
 	fwk := suit.Handle.(framework.Framework)
-	klog.InfoS("Attempting to schedule pod", "pod", klog.KObj(pod))
+	klog.V(4).InfoS("Attempting to schedule pod", "pod", klog.KObj(pod))
 
 	// Synchronously attempt to find a fit for the pod.
 	state := framework.NewCycleState()
@@ -1155,7 +1155,7 @@ func simulateScheduleOne(t *testing.T, ctx context.Context, sched *scheduler.Sch
 			// Run PostFilter plugins to try to make the pod schedulable in a future scheduling cycle.
 			_, status := suit.plugin.(*Coscheduling).PostFilter(ctx, state, pod, fitError.Diagnosis.NodeToStatusMap)
 			assert.False(t, status.IsSuccess())
-			klog.Info("sched.Error:" + podInfo.Pod.Name)
+			klog.V(4).Info("sched.Error:" + podInfo.Pod.Name)
 			sched.FailureHandler(ctx, fwk, podInfo, status, &framework.NominatingInfo{}, time.Time{})
 		}
 		return
@@ -1180,7 +1180,7 @@ func simulateScheduleOne(t *testing.T, ctx context.Context, sched *scheduler.Sch
 
 	// At the end of a successful scheduling cycle, pop and move up Pods if needed.
 	if len(podsToActivate.Map) != 0 {
-		sched.SchedulingQueue.Activate(klog.FromContext(ctx), podsToActivate.Map)
+		sched.SchedulingQueue.Activate(logr.Discard(), podsToActivate.Map)
 		// Clear the entries after activation.
 		podsToActivate.Map = make(map[string]*corev1.Pod)
 	}
@@ -1194,7 +1194,7 @@ func simulateScheduleOne(t *testing.T, ctx context.Context, sched *scheduler.Sch
 		if !waitOnPermitStatus.IsSuccess() {
 			// trigger un-reserve plugins to clean up state associated with the reserved Pod
 			fwk.RunReservePluginsUnreserve(bindingCycleCtx, state, assumedPod, scheduleResult.SuggestedHost)
-			klog.Info("sched.Error:" + assumedPodInfo.Pod.Name)
+			klog.V(4).Info("sched.Error:" + assumedPodInfo.Pod.Name)
 			sched.FailureHandler(ctx, fwk, assumedPodInfo, waitOnPermitStatus, &framework.NominatingInfo{}, time.Time{})
 			return
 		}
@@ -1204,8 +1204,7 @@ func simulateScheduleOne(t *testing.T, ctx context.Context, sched *scheduler.Sch
 
 		// At the end of a successful binding cycle, move up Pods if needed.
 		if len(podsToActivate.Map) != 0 {
-			logger := klog.FromContext(ctx)
-			sched.SchedulingQueue.Activate(logger, podsToActivate.Map)
+			sched.SchedulingQueue.Activate(logr.Discard(), podsToActivate.Map)
 			// Unlike the logic in scheduling cycle, we don't bother deleting the entries
 			// as `podsToActivate.Map` is no longer consumed.
 		}
@@ -1326,7 +1325,7 @@ func TestDeadLockFree(t *testing.T) {
 	assert.NoError(t, err)
 	eventBroadcaster.StartRecordingToSink(ctx.Done())
 	suit.start()
-	sched.SchedulingQueue.Run(klog.FromContext(ctx))
+	sched.SchedulingQueue.Run(logr.Discard())
 
 	var scheduleOrder []*debugPodScheduleInfo
 
@@ -1445,8 +1444,7 @@ func TestNoRejectWhenInvalidCycle(t *testing.T) {
 	assert.NoError(t, err)
 	eventBroadcaster.StartRecordingToSink(ctx.Done())
 	suit.start()
-	logger := klog.FromContext(ctx)
-	sched.SchedulingQueue.Run(logger)
+	sched.SchedulingQueue.Run(logr.Discard())
 
 	var scheduleOrder []*debugPodScheduleInfo
 
