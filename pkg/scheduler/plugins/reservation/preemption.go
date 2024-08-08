@@ -58,7 +58,7 @@ var (
 // PreemptionMgr is a wrapper of defaultpreemption.DefaultPreemption, supporting the following preemption behaviors:
 // 1. a pod preempt a pod.
 // 2. a reservation preempt a pod.
-// TODO: support a reservation being preempted
+// TODO: support the reservation being preempted
 type PreemptionMgr struct {
 	*defaultpreemption.DefaultPreemption
 	fh                frameworkext.ExtendedHandle
@@ -126,7 +126,7 @@ func (pm *PreemptionMgr) PostFilter(ctx context.Context, state *framework.CycleS
 
 // SelectVictimsOnNode finds minimum set of pods on the given node that should be preempted in order to make enough room
 // for "pod" to be scheduled.
-// Note that both `state` and `nodeInfo` are deep copied.
+// Note that both `state` and `nodeInfo` are deep-copied.
 // We delegate the function to extend the preemption rules:
 // If a pod is marked as non-preemptible, it will not be selected as the victim.
 func (pm *PreemptionMgr) SelectVictimsOnNode(

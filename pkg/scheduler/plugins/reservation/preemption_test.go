@@ -1,5 +1,6 @@
 /*
 Copyright 2022 The Koordinator Authors.
+Copyright 2020 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -22,6 +23,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
+	policy "k8s.io/api/policy/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/uuid"
@@ -267,6 +269,209 @@ func TestPostFilterWithPreemption(t *testing.T) {
 			got, got1 := pl.PostFilter(context.TODO(), cycleState, testPod, tt.args.filteredNodeStatusMap)
 			assert.Equal(t, tt.want, got)
 			assert.Equal(t, tt.want1, got1)
+		})
+	}
+}
+
+func TestPreemptionMgrSelectVictimsOnNode(t *testing.T) {
+	preemptionPolicyLowerPriority := corev1.PreemptLowerPriority
+	preemptionPolicyNever := corev1.PreemptNever
+	testNode := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-node-0",
+			UID:  uuid.NewUUID(),
+		},
+		Status: corev1.NodeStatus{
+			Capacity: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("32"),
+				corev1.ResourceMemory: resource.MustParse("128Gi"),
+			},
+			Allocatable: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("32"),
+				corev1.ResourceMemory: resource.MustParse("128Gi"),
+			},
+		},
+	}
+	testHPPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-hp-pod",
+			Namespace: "test-ns",
+			UID:       uuid.NewUUID(),
+		},
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{
+				{
+					Name: "test-container",
+					Resources: corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("2"),
+							corev1.ResourceMemory: resource.MustParse("4Gi"),
+						},
+					},
+				},
+			},
+			Priority:         pointer.Int32(extension.PriorityProdValueMax),
+			PreemptionPolicy: &preemptionPolicyNever,
+			NodeName:         testNode.Name,
+		},
+	}
+	testLPPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-lp-pod",
+			Namespace: "test-ns",
+			UID:       uuid.NewUUID(),
+		},
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{
+				{
+					Name: "test-container",
+					Resources: corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("2"),
+							corev1.ResourceMemory: resource.MustParse("4Gi"),
+						},
+					},
+				},
+			},
+			Priority:         pointer.Int32(extension.PriorityProdValueMin),
+			PreemptionPolicy: &preemptionPolicyLowerPriority,
+			NodeName:         testNode.Name,
+		},
+	}
+	testReservation := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{
+			UID:  uuid.NewUUID(),
+			Name: "reservation2C4G",
+		},
+		Spec: schedulingv1alpha1.ReservationSpec{
+			Template: &corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("2"),
+									corev1.ResourceMemory: resource.MustParse("4Gi"),
+								},
+							},
+						},
+					},
+					Priority:         pointer.Int32(extension.PriorityProdValueMax),
+					PreemptionPolicy: &preemptionPolicyLowerPriority,
+				},
+			},
+		},
+		Status: schedulingv1alpha1.ReservationStatus{
+			Phase: schedulingv1alpha1.ReservationPending,
+		},
+	}
+	testReservePod := reservationutil.NewReservePod(testReservation)
+	testNodeInfo := framework.NewNodeInfo()
+	testNodeInfo.SetNode(testNode)
+	testNodeInfo.AddPod(testLPPod)
+	testNodeInfo.AddPod(testHPPod)
+	testNodeInfo1 := framework.NewNodeInfo()
+	testNodeInfo1.SetNode(testNode)
+	testNodeInfo1.AddPod(testLPPod)
+	type fields struct {
+		pods         []*corev1.Pod
+		reservePods  []*corev1.Pod
+		nodes        []*corev1.Node
+		reservations []*schedulingv1alpha1.Reservation
+	}
+	type args struct {
+		state    *framework.CycleState
+		pod      *corev1.Pod
+		nodeInfo *framework.NodeInfo
+		pdbs     []*policy.PodDisruptionBudget
+	}
+	tests := []struct {
+		name   string
+		fields fields
+		args   args
+		want   []*corev1.Pod
+		want1  int
+		want2  *framework.Status
+	}{
+		{
+			name: "reserve pod preempt successfully",
+			fields: fields{
+				pods: []*corev1.Pod{
+					testLPPod,
+					testHPPod,
+				},
+				reservePods: []*corev1.Pod{
+					testReservePod,
+				},
+				nodes: []*corev1.Node{
+					testNode,
+				},
+				reservations: []*schedulingv1alpha1.Reservation{
+					testReservation,
+				},
+			},
+			args: args{
+				state:    framework.NewCycleState(),
+				pod:      testReservePod,
+				nodeInfo: testNodeInfo.Clone(),
+				pdbs:     nil,
+			},
+			want:  nil,
+			want1: 0,
+			want2: framework.NewStatus(framework.Success),
+		},
+		{
+			name: "compatible to pod preemption",
+			fields: fields{
+				pods: []*corev1.Pod{
+					testLPPod,
+				},
+				nodes: []*corev1.Node{
+					testNode,
+				},
+			},
+			args: args{
+				state:    framework.NewCycleState(),
+				pod:      testHPPod,
+				nodeInfo: testNodeInfo1.Clone(),
+				pdbs:     nil,
+			},
+			want:  nil,
+			want1: 0,
+			want2: framework.NewStatus(framework.Success),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			suit := newPluginTestSuitWith(t,
+				append(tt.fields.pods, tt.fields.reservePods...),
+				tt.fields.nodes,
+				func(args *config.ReservationArgs) {
+					args.EnablePreemption = true
+				})
+			p, err := suit.pluginFactory()
+			assert.NoError(t, err)
+			assert.NotNil(t, p)
+			pl, ok := p.(*Plugin)
+			assert.True(t, ok)
+			for _, pod := range tt.fields.pods {
+				_, err = pl.handle.ClientSet().CoreV1().Pods(pod.Namespace).Create(context.TODO(), pod, metav1.CreateOptions{})
+				assert.NoError(t, err)
+			}
+			for _, node := range tt.fields.nodes {
+				_, err = pl.handle.ClientSet().CoreV1().Nodes().Create(context.TODO(), node, metav1.CreateOptions{})
+				assert.NoError(t, err)
+			}
+			for _, reservation := range tt.fields.reservations {
+				_, err = pl.handle.KoordinatorClientSet().SchedulingV1alpha1().Reservations().Create(context.TODO(), reservation, metav1.CreateOptions{})
+				assert.NoError(t, err)
+			}
+			suit.start()
+
+			got, got1, got2 := pl.preemptionMgr.SelectVictimsOnNode(context.TODO(), tt.args.state, tt.args.pod, tt.args.nodeInfo, tt.args.pdbs)
+			assert.Equal(t, tt.want, got)
+			assert.Equal(t, tt.want1, got1)
+			assert.Equal(t, tt.want2, got2)
 		})
 	}
 }

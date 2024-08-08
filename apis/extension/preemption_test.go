@@ -119,7 +119,7 @@ func TestIsPodPreemptible(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-pod",
 					Labels: map[string]string{
-						LabelIsPreemptible: "false",
+						LabelDisablePreemptible: "true",
 					},
 				},
 			},
@@ -131,7 +131,7 @@ func TestIsPodPreemptible(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-pod",
 					Labels: map[string]string{
-						LabelIsPreemptible: "true",
+						LabelDisablePreemptible: "false",
 					},
 				},
 			},
