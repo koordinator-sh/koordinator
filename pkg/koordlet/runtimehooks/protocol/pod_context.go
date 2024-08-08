@@ -20,8 +20,10 @@ import (
 	"fmt"
 
 	"github.com/containerd/nri/pkg/api"
-
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/tools/record"
+	recutil "k8s.io/client-go/tools/record/util"
 	"k8s.io/klog/v2"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
@@ -122,15 +124,45 @@ func (p *PodRequest) FromReconciler(podMeta *statesinformer.PodMeta) {
 	}
 }
 
+type RecorderEvent struct {
+	HookName  string
+	MsgFmt    string
+	Reason    string
+	EventType string
+}
+
 type PodResponse struct {
 	Resources Resources
 }
 
 type PodContext struct {
-	Request  PodRequest
-	Response PodResponse
-	executor resourceexecutor.ResourceUpdateExecutor
-	updaters []resourceexecutor.ResourceUpdater
+	Request        PodRequest
+	Response       PodResponse
+	executor       resourceexecutor.ResourceUpdateExecutor
+	updaters       []resourceexecutor.ResourceUpdater
+	RecorderEvents []RecorderEvent
+}
+
+func (p *PodContext) RecordEvent(r record.EventRecorder, pod *corev1.Pod) {
+	// Noraml, Warning => RecordEvent
+	events := make(map[string]RecorderEvent)
+	for _, event := range p.RecorderEvents {
+		if !recutil.ValidateEventType(event.EventType) {
+			klog.Warningf("EventType is not valid %v", event)
+			continue
+		}
+
+		e := event
+		if _, ok := events[event.EventType]; ok {
+			e.MsgFmt += "-" + event.MsgFmt
+			e.Reason += "-" + event.Reason
+		}
+		events[event.EventType] = e
+	}
+
+	for eventType, event := range events {
+		r.Eventf(pod, eventType, event.Reason, event.MsgFmt)
+	}
 }
 
 func (p *PodResponse) ProxyDone(resp *runtimeapi.PodSandboxHookResponse) {

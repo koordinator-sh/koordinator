@@ -20,6 +20,7 @@ import (
 	"strconv"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/kubernetes/pkg/api/v1/resource"
 
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
@@ -33,6 +34,7 @@ type HooksProtocol interface {
 	ReconcilerDone(executor resourceexecutor.ResourceUpdateExecutor)
 	Update()
 	GetUpdaters() []resourceexecutor.ResourceUpdater
+	RecordEvent(r record.EventRecorder, pod *corev1.Pod)
 }
 
 type hooksProtocolBuilder struct {
