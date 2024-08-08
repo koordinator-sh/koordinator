@@ -139,7 +139,7 @@ func TestPlugin_PreFilter_ResetScheduleTime(t *testing.T) {
 	assert.Equal(t, lastScheduleTime3, gang.GangGroupInfo.ChildrenLastScheduleTime["default/pod2"])
 }
 
-func TestPlugin_PreFilter(t *testing.T) {
+func TestPlugin_PreEnqueue(t *testing.T) {
 	gangACreatedTime := time.Now()
 	mgr := NewManagerForTest().pgMgr
 	tests := []struct {
@@ -224,25 +224,6 @@ func TestPlugin_PreFilter(t *testing.T) {
 			expectStateData:      &stateData{},
 		},
 		{
-			name: "due to reschedule pod6's podScheduleCycle is equal with the gangScheduleCycle",
-			pod:  st.MakePod().Name("pod6").UID("pod6").Namespace("ganga_ns").Label(v1alpha1.PodGroupLabel, "gangc").Obj(),
-			pods: []*corev1.Pod{
-				st.MakePod().Name("pod6-1").UID("pod6-1").Namespace("ganga_ns").Label(v1alpha1.PodGroupLabel, "gangc").Obj(),
-				st.MakePod().Name("pod6-2").UID("pod6-2").Namespace("ganga_ns").Label(v1alpha1.PodGroupLabel, "gangc").Obj(),
-				st.MakePod().Name("pod6-3").UID("pod6-3").Namespace("ganga_ns").Label(v1alpha1.PodGroupLabel, "gangc").Obj(),
-			},
-			pgs:                           makePg("gangc", "ganga_ns", 4, &gangACreatedTime, nil),
-			shouldSetCycleEqualWithGlobal: true,
-			totalNum:                      5,
-			expectedScheduleCycle:         1,
-			expectedChildCycleMap: map[string]int{
-				"ganga_ns/pod6": 1,
-			},
-			expectedErrorMessage:       "pod's schedule cycle too large, gangName: ganga_ns/gangc, podName: ganga_ns/pod6, podCycle: 1, gangCycle: 1",
-			expectedScheduleCycleValid: true,
-			expectStateData:            &stateData{},
-		},
-		{
 			name: "due to reschedule pod6's podScheduleCycle is equal with the gangScheduleCycle, but pod6's nominatedNodeName is not empty",
 			pod: st.MakePod().Name("pod6").UID("pod6").Namespace("ganga_ns").Label(v1alpha1.PodGroupLabel, "gangc").
 				NominatedNodeName("N1").Obj(),
@@ -264,26 +245,6 @@ func TestPlugin_PreFilter(t *testing.T) {
 			expectedErrorMessage:       "",
 			expectedScheduleCycleValid: true,
 			expectStateData:            &stateData{},
-		},
-		{
-			name: "pods count equal with minMember,is StrictMode,but the gang's scheduleCycle is not valid due to pre pod Filter Failed",
-			pod:  st.MakePod().Name("pod7").UID("pod7").Namespace("ganga_ns").Label(v1alpha1.PodGroupLabel, "gangd").Obj(),
-			pods: []*corev1.Pod{
-				st.MakePod().Name("pod7-1").UID("pod7-1").Namespace("ganga_ns").Label(v1alpha1.PodGroupLabel, "gangd").Obj(),
-				st.MakePod().Name("pod7-2").UID("pod7-2").Namespace("ganga_ns").Label(v1alpha1.PodGroupLabel, "gangd").Obj(),
-				st.MakePod().Name("pod7-3").UID("pod7-3").Namespace("ganga_ns").Label(v1alpha1.PodGroupLabel, "gangd").Obj(),
-			},
-			pgs:                   makePg("gangd", "ganga_ns", 4, &gangACreatedTime, nil),
-			expectedScheduleCycle: 1,
-			expectedChildCycleMap: map[string]int{
-				"ganga_ns/pod7": 1,
-			},
-			expectedScheduleCycleValid: false,
-			expectedErrorMessage:       "gang scheduleCycle not valid, gangName: ganga_ns/gangd, podName: ganga_ns/pod7",
-			shouldSetValidToFalse:      true,
-			expectStateData: &stateData{
-				skipReject: true,
-			},
 		},
 		{
 			name: "pods count equal with minMember,is StrictMode, disable check scheduleCycle even if the gang's scheduleCycle is not valid",
@@ -331,6 +292,215 @@ func TestPlugin_PreFilter(t *testing.T) {
 				st.MakePod().Name("pod9-3").UID("pod9-3").Namespace("ganga_ns").Label(v1alpha1.PodGroupLabel, "ganga").Obj(),
 				st.MakePod().Name("pod9-4").UID("pod9-4").Namespace("ganga_ns").Label(v1alpha1.PodGroupLabel, "ganga").Obj(),
 			},
+			totalNum:              5,
+			expectedScheduleCycle: 1,
+			expectedChildCycleMap: map[string]int{
+				"ganga_ns/pod9":   1,
+				"ganga_ns/pod9-1": 1,
+				"ganga_ns/pod9-2": 1,
+				"ganga_ns/pod9-3": 1,
+				"ganga_ns/pod9-4": 1,
+			},
+			expectedErrorMessage:       "",
+			expectedScheduleCycleValid: true,
+			expectStateData:            &stateData{},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var gang *Gang
+			// first create the podGroup
+			if tt.pgs != nil {
+				if tt.pgs.Annotations == nil {
+					tt.pgs.Annotations = map[string]string{}
+				}
+				if tt.totalNum != 0 {
+					totalNumStr := strconv.Itoa(tt.totalNum)
+					tt.pgs.Annotations[extension.AnnotationGangTotalNum] = totalNumStr
+				}
+				if tt.isNonStrictMode {
+					tt.pgs.Annotations[extension.AnnotationGangMode] = extension.GangModeNonStrict
+				}
+				mgr.cache.onPodGroupAdd(tt.pgs)
+				gang = mgr.cache.getGangFromCacheByGangId(util.GetId(tt.pgs.Namespace, tt.pgs.Name), false)
+			}
+			ctx := context.TODO()
+
+			// add each neighbor pods and run preFilter
+			for _, pod := range tt.pods {
+				mgr.cache.onPodAdd(pod)
+				mgr.PreEnqueue(ctx, pod)
+
+			}
+			mgr.cache.onPodAdd(tt.pod)
+
+			// set pre cases before test pod run
+			if tt.shouldSetValidToFalse {
+				gang.setScheduleCycleInvalid()
+			}
+			if tt.shouldSetCycleEqualWithGlobal {
+				gang.setChildScheduleCycle(tt.pod, 1)
+			}
+			if tt.resourceSatisfied {
+				gang.setResourceSatisfied()
+			}
+			if tt.shouldSkipCheckScheduleCycle {
+				mgr.args.SkipCheckScheduleCycle = true
+				defer func() {
+					mgr.args.SkipCheckScheduleCycle = false
+				}()
+			}
+			// run the case
+			// cycleState := framework.NewCycleState()
+			// err := mgr.PreFilter(ctx, cycleState, tt.pod)
+			err := mgr.PreEnqueue(ctx, tt.pod)
+			var returnMessage string
+			if err == nil {
+				returnMessage = ""
+			} else {
+				returnMessage = err.Error()
+			}
+
+			assert.Equal(t, tt.expectedErrorMessage, returnMessage)
+		})
+	}
+}
+
+func TestPlugin_PreFilter(t *testing.T) {
+	gangACreatedTime := time.Now()
+	mgr := NewManagerForTest().pgMgr
+	tests := []struct {
+		name string
+		// test pod
+		pod *corev1.Pod
+		// neighbor pods, make the condition ready for the test pod
+		pods []*corev1.Pod
+		pgs  *v1alpha1.PodGroup
+		// assert value
+		// expectedErrorMessage is "" represents that error is nil
+		expectedErrorMessage       string
+		expectedChildCycleMap      map[string]int
+		expectedScheduleCycle      int
+		expectedScheduleCycleValid bool
+		expectStateData            *stateData
+		// case value
+		// next two are set before pg created
+		totalNum          int
+		isNonStrictMode   bool
+		resourceSatisfied bool
+		// next tow are set before test pod run
+		shouldSetValidToFalse         bool
+		shouldSetCycleEqualWithGlobal bool
+		shouldSkipCheckScheduleCycle  bool
+	}{
+		{
+			name:                 "pod does not belong to any gang",
+			pod:                  st.MakePod().Name("pod1").UID("pod1").Namespace("ns1").Obj(),
+			pods:                 []*corev1.Pod{},
+			expectedErrorMessage: "",
+		},
+		{
+			name:                       "gang ResourceSatisfied",
+			pod:                        st.MakePod().Name("podq").UID("podq").Namespace("gangq_ns").Label(v1alpha1.PodGroupLabel, "gangq").Obj(),
+			expectedChildCycleMap:      map[string]int{},
+			pgs:                        makePg("gangq", "gangq_ns", 4, &gangACreatedTime, nil),
+			expectedScheduleCycleValid: true,
+			expectedScheduleCycle:      1,
+			resourceSatisfied:          true,
+			expectStateData:            &stateData{},
+		},
+		{
+			name: "pods count equal with minMember,but is NonStrictMode",
+			pod:  st.MakePod().Name("pod5").UID("pod5").Namespace("gangb_ns").Label(v1alpha1.PodGroupLabel, "gangb").Obj(),
+			pods: []*corev1.Pod{
+				st.MakePod().Name("pod5-1").UID("pod5-1").Namespace("gangb_ns").Label(v1alpha1.PodGroupLabel, "gangb").Obj(),
+				st.MakePod().Name("pod5-2").UID("pod5-2").Namespace("gangb_ns").Label(v1alpha1.PodGroupLabel, "gangb").Obj(),
+				st.MakePod().Name("pod5-3").UID("pod5-3").Namespace("gangb_ns").Label(v1alpha1.PodGroupLabel, "gangb").Obj(),
+			},
+			pgs:                  makePg("gangb", "gangb_ns", 4, &gangACreatedTime, nil),
+			expectedErrorMessage: "",
+			isNonStrictMode:      true,
+			expectStateData:      &stateData{},
+		},
+		{
+			name:                          "due to reschedule pod6's podScheduleCycle is equal with the gangScheduleCycle",
+			pod:                           st.MakePod().Name("pod6").UID("pod6").Namespace("ganga_ns").Label(v1alpha1.PodGroupLabel, "gangc").Obj(),
+			pods:                          []*corev1.Pod{},
+			pgs:                           makePg("gangc", "ganga_ns", 1, &gangACreatedTime, nil),
+			shouldSetCycleEqualWithGlobal: true,
+			totalNum:                      5,
+			expectedScheduleCycle:         1,
+			expectedChildCycleMap: map[string]int{
+				"ganga_ns/pod6": 1,
+			},
+			expectedErrorMessage:       "pod's schedule cycle too large, gangName: ganga_ns/gangc, podName: ganga_ns/pod6, podCycle: 1, gangCycle: 1",
+			expectedScheduleCycleValid: true,
+			expectStateData:            &stateData{},
+		},
+		{
+			name: "due to reschedule pod6's podScheduleCycle is equal with the gangScheduleCycle, but pod6's nominatedNodeName is not empty",
+			pod: st.MakePod().Name("pod6").UID("pod6").Namespace("ganga_ns").Label(v1alpha1.PodGroupLabel, "gangc").
+				NominatedNodeName("N1").Obj(),
+			pods: []*corev1.Pod{
+				st.MakePod().Name("pod6-1").UID("pod6-1").Namespace("ganga_ns").Label(v1alpha1.PodGroupLabel, "gangc").NominatedNodeName("N1").Obj(),
+				st.MakePod().Name("pod6-2").UID("pod6-2").Namespace("ganga_ns").Label(v1alpha1.PodGroupLabel, "gangc").NominatedNodeName("N1").Obj(),
+				st.MakePod().Name("pod6-3").UID("pod6-3").Namespace("ganga_ns").Label(v1alpha1.PodGroupLabel, "gangc").NominatedNodeName("N1").Obj(),
+			},
+			pgs:                           makePg("gangc", "ganga_ns", 4, &gangACreatedTime, nil),
+			shouldSetCycleEqualWithGlobal: true,
+			totalNum:                      5,
+			expectedScheduleCycle:         1,
+			expectedChildCycleMap: map[string]int{
+				"ganga_ns/pod6":   1,
+				"ganga_ns/pod6-1": 1,
+				"ganga_ns/pod6-2": 1,
+				"ganga_ns/pod6-3": 1,
+			},
+			expectedErrorMessage:       "",
+			expectedScheduleCycleValid: true,
+			expectStateData:            &stateData{},
+		},
+		{
+			name:                  "pods count equal with minMember,is StrictMode,but the gang's scheduleCycle is not valid due to pre pod Filter Failed",
+			pod:                   st.MakePod().Name("pod7").UID("pod7").Namespace("ganga_ns").Label(v1alpha1.PodGroupLabel, "gangd").Obj(),
+			pods:                  []*corev1.Pod{},
+			pgs:                   makePg("gangd", "ganga_ns", 1, &gangACreatedTime, nil),
+			expectedScheduleCycle: 1,
+			expectedChildCycleMap: map[string]int{
+				"ganga_ns/pod7": 1,
+			},
+			expectedScheduleCycleValid: false,
+			expectedErrorMessage:       "gang scheduleCycle not valid, gangName: ganga_ns/gangd, podName: ganga_ns/pod7",
+			shouldSetValidToFalse:      true,
+			expectStateData: &stateData{
+				skipReject: true,
+			},
+		},
+		{
+			name:                  "pods count equal with minMember,is StrictMode, disable check scheduleCycle even if the gang's scheduleCycle is not valid",
+			pod:                   st.MakePod().Name("pod7").UID("pod7").Namespace("ganga_ns").Label(v1alpha1.PodGroupLabel, "gangd").Obj(),
+			pods:                  []*corev1.Pod{},
+			pgs:                   makePg("gangd", "ganga_ns", 1, &gangACreatedTime, nil),
+			expectedScheduleCycle: 1,
+			expectedChildCycleMap: map[string]int{
+				"ganga_ns/pod7": 1,
+			},
+			expectedScheduleCycleValid:   false,
+			expectedErrorMessage:         "",
+			shouldSetValidToFalse:        true,
+			shouldSkipCheckScheduleCycle: true,
+			expectStateData:              &stateData{},
+		},
+		{
+			name: "pods count more than minMember,is StrictMode,scheduleCycle valid,and childrenNum reach to total num",
+			pod:  st.MakePod().Name("pod9").UID("pod9").Namespace("ganga_ns").Label(v1alpha1.PodGroupLabel, "ganga").Obj(),
+			pods: []*corev1.Pod{
+				st.MakePod().Name("pod9-1").UID("pod9-1").Namespace("ganga_ns").Label(v1alpha1.PodGroupLabel, "ganga").Obj(),
+				st.MakePod().Name("pod9-2").UID("pod9-2").Namespace("ganga_ns").Label(v1alpha1.PodGroupLabel, "ganga").Obj(),
+				st.MakePod().Name("pod9-3").UID("pod9-3").Namespace("ganga_ns").Label(v1alpha1.PodGroupLabel, "ganga").Obj(),
+				st.MakePod().Name("pod9-4").UID("pod9-4").Namespace("ganga_ns").Label(v1alpha1.PodGroupLabel, "ganga").Obj(),
+			},
+			pgs:                   makePg("ganga", "ganga_ns", 1, &gangACreatedTime, nil),
 			totalNum:              5,
 			expectedScheduleCycle: 1,
 			expectedChildCycleMap: map[string]int{

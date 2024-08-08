@@ -50,6 +50,9 @@ data:
             kind: ElasticQuotaArgs
             quotaGroupNamespace: koordinator-system
         plugins:
+          preEnqueue:
+            enabled:
+              - name: Coscheduling
           queueSort:
             disabled:
               - name: "*"
