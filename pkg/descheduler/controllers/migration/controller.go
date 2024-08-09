@@ -872,8 +872,13 @@ func (r *Reconciler) trackEvictedPod(pod *corev1.Pod) {
 			continue
 		}
 		var maxMigratingReplicas int
-		if expectedReplicas, err := r.controllerFinder.GetExpectedScaleForPod(pod); err == nil {
-			maxMigrating := objectLimiterArgs.MaxMigrating
+		maxMigrating := objectLimiterArgs.MaxMigrating
+		// namespace limiter should only accept int value. If a percent value is provided, it will be parsed as 0, thus just return.
+		if limiterType == deschedulerconfig.MigrationLimitObjectNamespace {
+			if maxMigrating != nil {
+				maxMigratingReplicas = maxMigrating.IntValue()
+			}
+		} else if expectedReplicas, err := r.controllerFinder.GetExpectedScaleForPod(pod); err == nil {
 			if maxMigrating == nil {
 				maxMigrating = r.args.MaxMigratingPerWorkload
 			}
@@ -899,7 +904,7 @@ func (r *Reconciler) track(limit rate.Limit, limiterKey, processScope string, li
 	}
 	limiter := limiters[limiterKey]
 	if limiter == nil {
-		limiter = rate.NewLimiter(limit, maxMigratingReplicas)
+		limiter = rate.NewLimiter(limit, 1)
 		limiters[limiterKey] = limiter
 	} else if limiter.Limit() != limit {
 		limiter.SetLimit(limit)
