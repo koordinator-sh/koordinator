@@ -28,6 +28,14 @@ import (
 )
 
 const (
+	// LabelReservationIgnored indicates whether the pod should schedule ignoring resource reservations on the nodes.
+	// If a scheduling pod set this label, the pod can allocate the node unreserved resources unallocated and the
+	// reserved resources unallocated of all reservations on the node. If a pod scheduled with this label on a node,
+	// the reservations of the node will not consider the pod as their owners. To avoid the pods setting with this label
+	// to block the other pods allocated reserved resources, it should be used with the reservation preemption.
+	// It is similar to match all reservations with the default allocate policy.
+	LabelReservationIgnored = SchedulingDomainPrefix + "/reservation-ignored"
+
 	// LabelReservationOrder controls the preference logic for Reservation.
 	// Reservation with lower order is preferred to be selected before Reservation with higher order.
 	// But if it is 0, Reservation will be selected according to the capacity score.
@@ -76,6 +84,10 @@ type ReservationRestrictedOptions struct {
 	// If the Reservation's AllocatePolicy is Restricted, and no resources configured,
 	// by default the resources equal all reserved resources by the Reservation.
 	Resources []corev1.ResourceName `json:"resources,omitempty"`
+}
+
+func IsReservationIgnored(pod *corev1.Pod) bool {
+	return pod != nil && pod.Labels != nil && pod.Labels[LabelReservationIgnored] == "true"
 }
 
 func GetReservationAllocated(pod *corev1.Pod) (*ReservationAllocated, error) {

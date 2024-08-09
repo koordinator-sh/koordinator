@@ -302,7 +302,7 @@ func TestNominateReservation(t *testing.T) {
 				}
 				nodeRState := state.nodeReservationStates[reservation.Status.NodeName]
 				nodeRState.nodeName = reservation.Status.NodeName
-				nodeRState.matched = append(nodeRState.matched, rInfo)
+				nodeRState.matchedOrIgnored = append(nodeRState.matchedOrIgnored, rInfo)
 				state.nodeReservationStates[reservation.Status.NodeName] = nodeRState
 				pl.reservationCache.updateReservation(reservation)
 			}

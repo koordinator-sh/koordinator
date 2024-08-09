@@ -314,8 +314,8 @@ func TestRestoreReservation(t *testing.T) {
 			preemptibleInRRs:     map[string]map[types.UID]corev1.ResourceList{},
 			nodeReservationStates: map[string]nodeReservationState{
 				node.Name: {
-					nodeName: node.Name,
-					matched:  []*frameworkext.ReservationInfo{matchRInfo},
+					nodeName:         node.Name,
+					matchedOrIgnored: []*frameworkext.ReservationInfo{matchRInfo},
 					podRequested: &framework.Resource{
 						MilliCPU: 32000,
 						Memory:   68719476736,
@@ -669,19 +669,29 @@ func TestBeforePreFilterWithNodeAffinity(t *testing.T) {
 	}
 	var pods []*corev1.Pod
 	pods = append(pods, reservationutil.NewReservePod(matchedReservation))
+	testPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Labels: map[string]string{
+				"test-reservation": "true",
+			},
+		},
+	}
 
 	tests := []struct {
 		name         string
+		pod          *corev1.Pod
 		nodeAffinity *corev1.NodeAffinity
 		wantRestored bool
 	}{
 		{
 			name:         "pod has no affinity",
+			pod:          testPod.DeepCopy(),
 			nodeAffinity: nil,
 			wantRestored: true,
 		},
 		{
 			name: "pod has affinity with matchField",
+			pod:  testPod.DeepCopy(),
 			nodeAffinity: &corev1.NodeAffinity{
 				RequiredDuringSchedulingIgnoredDuringExecution: &corev1.NodeSelector{
 					NodeSelectorTerms: []corev1.NodeSelectorTerm{
@@ -701,6 +711,7 @@ func TestBeforePreFilterWithNodeAffinity(t *testing.T) {
 		},
 		{
 			name: "pod has affinity with matchField but failed to match",
+			pod:  testPod.DeepCopy(),
 			nodeAffinity: &corev1.NodeAffinity{
 				RequiredDuringSchedulingIgnoredDuringExecution: &corev1.NodeSelector{
 					NodeSelectorTerms: []corev1.NodeSelectorTerm{
@@ -720,6 +731,7 @@ func TestBeforePreFilterWithNodeAffinity(t *testing.T) {
 		},
 		{
 			name: "pod has affinity with matchExpressions",
+			pod:  testPod.DeepCopy(),
 			nodeAffinity: &corev1.NodeAffinity{
 				RequiredDuringSchedulingIgnoredDuringExecution: &corev1.NodeSelector{
 					NodeSelectorTerms: []corev1.NodeSelectorTerm{
@@ -739,6 +751,7 @@ func TestBeforePreFilterWithNodeAffinity(t *testing.T) {
 		},
 		{
 			name: "pod has affinity with matchExpressions but failed to match",
+			pod:  testPod.DeepCopy(),
 			nodeAffinity: &corev1.NodeAffinity{
 				RequiredDuringSchedulingIgnoredDuringExecution: &corev1.NodeSelector{
 					NodeSelectorTerms: []corev1.NodeSelectorTerm{
@@ -756,6 +769,33 @@ func TestBeforePreFilterWithNodeAffinity(t *testing.T) {
 			},
 			wantRestored: false,
 		},
+		{
+			name: "pod has affinity and set reservation ignored",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						"test-reservation":             "true",
+						apiext.LabelReservationIgnored: "true",
+					},
+				},
+			},
+			nodeAffinity: &corev1.NodeAffinity{
+				RequiredDuringSchedulingIgnoredDuringExecution: &corev1.NodeSelector{
+					NodeSelectorTerms: []corev1.NodeSelectorTerm{
+						{
+							MatchExpressions: []corev1.NodeSelectorRequirement{
+								{
+									Key:      "test",
+									Operator: corev1.NodeSelectorOpIn,
+									Values:   []string{"true"},
+								},
+							},
+						},
+					},
+				},
+			},
+			wantRestored: true,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -765,19 +805,10 @@ func TestBeforePreFilterWithNodeAffinity(t *testing.T) {
 			pl := p.(*Plugin)
 
 			pl.reservationCache.updateReservation(matchedReservation)
-
-			testPod := &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Labels: map[string]string{
-						"test-reservation": "true",
-					},
-				},
-				Spec: corev1.PodSpec{
-					Affinity: &corev1.Affinity{
-						NodeAffinity: tt.nodeAffinity,
-					},
-				},
+			testPod.Spec.Affinity = &corev1.Affinity{
+				NodeAffinity: tt.nodeAffinity,
 			}
+
 			cycleState := framework.NewCycleState()
 			_, restored, status := pl.BeforePreFilter(context.TODO(), cycleState, testPod)
 			assert.Equal(t, tt.wantRestored, restored)
