@@ -88,7 +88,8 @@ type Plugin struct {
 	client           clientschedulingv1alpha1.SchedulingV1alpha1Interface
 	reservationCache *reservationCache
 
-	nominator *nominator
+	nominator     *nominator
+	preemptionMgr *PreemptionMgr
 }
 
 func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error) {
@@ -121,6 +122,14 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 		client:           extendedHandle.KoordinatorClientSet().SchedulingV1alpha1(),
 		reservationCache: cache,
 		nominator:        nominator,
+	}
+
+	if pluginArgs.EnablePreemption {
+		preemptionMgr, err := newPreemptionMgr(pluginArgs, extendedHandle)
+		if err != nil {
+			return nil, fmt.Errorf("failed to new preemption, err: %w", err)
+		}
+		p.preemptionMgr = preemptionMgr
 	}
 
 	return p, nil
@@ -554,10 +563,29 @@ func fitsNode(podRequest *framework.Resource, nodeInfo *framework.NodeInfo, node
 	return insufficientResources
 }
 
-func (pl *Plugin) PostFilter(_ context.Context, cycleState *framework.CycleState, _ *corev1.Pod, filteredNodeStatusMap framework.NodeToStatusMap) (*framework.PostFilterResult, *framework.Status) {
+func (pl *Plugin) PostFilter(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, filteredNodeStatusMap framework.NodeToStatusMap) (*framework.PostFilterResult, *framework.Status) {
+	var result *framework.PostFilterResult
+	var reasons []string
+
+	// If Reservation Preemption is enabled, try preemption before aggregating failure reasons.
+	if pl.preemptionMgr != nil {
+		preemptionResult, preemptionStatus := pl.preemptionMgr.PostFilter(ctx, cycleState, pod, filteredNodeStatusMap)
+		if preemptionStatus.IsSuccess() ||
+			preemptionStatus.Code() == framework.UnschedulableAndUnresolvable ||
+			!preemptionStatus.IsUnschedulable() {
+			return preemptionResult, preemptionStatus
+		}
+		if preemptionResult != nil && preemptionResult.Mode() != framework.ModeNoop {
+			result = preemptionResult
+		}
+
+		reasons = append(reasons, preemptionStatus.Reasons()...)
+	}
+
 	state := getStateData(cycleState)
-	reasons := pl.makePostFilterReasons(state, filteredNodeStatusMap)
-	return nil, framework.NewStatus(framework.Unschedulable, reasons...)
+	postFilterReasons := pl.makePostFilterReasons(state, filteredNodeStatusMap)
+	reasons = append(reasons, postFilterReasons...)
+	return result, framework.NewStatus(framework.Unschedulable, reasons...)
 }
 
 func (pl *Plugin) makePostFilterReasons(state *stateData, filteredNodeStatusMap framework.NodeToStatusMap) []string {

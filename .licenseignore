@@ -4,6 +4,8 @@ pkg/descheduler/controllers/migration/controllerfinder
 pkg/scheduler/plugins/coscheduling
 pkg/scheduler/plugins/nodenumaresource/least_allocated.go
 pkg/scheduler/plugins/nodenumaresource/most_allocated.go
+pkg/scheduler/plugins/reservation/preemption.go
+pkg/scheduler/plugins/reservation/preemption_test.go
 pkg/scheduler/frameworkext/topologymanager/policy.go
 pkg/scheduler/frameworkext/topologymanager/policy_test.go
 pkg/scheduler/frameworkext/topologymanager/policy_best_effort.go

@@ -92,3 +92,56 @@ func TestGetPodKoordPreemptionPolicy(t *testing.T) {
 		})
 	}
 }
+
+func TestIsPodPreemptible(t *testing.T) {
+	tests := []struct {
+		name string
+		arg  *corev1.Pod
+		want bool
+	}{
+		{
+			name: "pod is nil",
+			arg:  nil,
+			want: true,
+		},
+		{
+			name: "pod has no label",
+			arg: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-pod",
+				},
+			},
+			want: true,
+		},
+		{
+			name: "pod is marked as non-preemptible",
+			arg: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-pod",
+					Labels: map[string]string{
+						LabelDisablePreemptible: "true",
+					},
+				},
+			},
+			want: false,
+		},
+		{
+			name: "pod is marked as preemptible",
+			arg: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-pod",
+					Labels: map[string]string{
+						LabelDisablePreemptible: "false",
+					},
+				},
+			},
+			want: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := IsPodPreemptible(tt.arg)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}

@@ -94,6 +94,10 @@ func MakeReservationErrorHandler(
 			// for reservation CR, which is treated as pod internal
 			reservationErrorFn(ctx, fwk, podInfo, status, nominatingInfo, start)
 
+			// nominate for the reserve pod if it is
+			// TODO: use the default nominator
+			addNominatedReservation(f, podInfo, nominatingInfo)
+
 			rName := reservationutil.GetReservationNameFromReservePod(pod)
 			r, err := reservationLister.Get(rName)
 			if err != nil {
@@ -109,6 +113,19 @@ func MakeReservationErrorHandler(
 		// not reservation CR, not pod with reservation affinity
 		return false
 	}
+}
+
+func addNominatedReservation(f framework.Framework, podInfo *framework.QueuedPodInfo, nominatingInfo *framework.NominatingInfo) {
+	frameworkExtender, ok := f.(frameworkext.FrameworkExtender)
+	if !ok {
+		return
+	}
+
+	reservationNominator := frameworkExtender.GetReservationNominator()
+	if reservationNominator == nil {
+		return
+	}
+	reservationNominator.AddNominatedReservePod(podInfo.Pod, nominatingInfo.NominatedNodeName)
 }
 
 // input:

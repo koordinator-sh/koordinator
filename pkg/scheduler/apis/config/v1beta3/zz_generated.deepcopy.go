@@ -322,6 +322,16 @@ func (in *ReservationArgs) DeepCopyInto(out *ReservationArgs) {
 		*out = new(bool)
 		**out = **in
 	}
+	if in.MinCandidateNodesPercentage != nil {
+		in, out := &in.MinCandidateNodesPercentage, &out.MinCandidateNodesPercentage
+		*out = new(int32)
+		**out = **in
+	}
+	if in.MinCandidateNodesAbsolute != nil {
+		in, out := &in.MinCandidateNodesAbsolute, &out.MinCandidateNodesAbsolute
+		*out = new(int32)
+		**out = **in
+	}
 	return
 }
 
