@@ -102,7 +102,7 @@ func TestIsPodPreemptible(t *testing.T) {
 		{
 			name: "pod is nil",
 			arg:  nil,
-			want: *DefaultIsPreemptible,
+			want: true,
 		},
 		{
 			name: "pod has no label",
@@ -111,7 +111,7 @@ func TestIsPodPreemptible(t *testing.T) {
 					Name: "test-pod",
 				},
 			},
-			want: *DefaultIsPreemptible,
+			want: true,
 		},
 		{
 			name: "pod is marked as non-preemptible",
