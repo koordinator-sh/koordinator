@@ -445,6 +445,26 @@ func TestFilter(t *testing.T) {
 		},
 	}
 
+	testReservationIgnoredPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-pod",
+			Labels: map[string]string{
+				apiext.LabelReservationIgnored: "true",
+			},
+		},
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{
+				{
+					Resources: corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceCPU: resource.MustParse("4"),
+						},
+					},
+				},
+			},
+		},
+	}
+
 	tests := []struct {
 		name         string
 		pod          *corev1.Pod
@@ -574,6 +594,16 @@ func TestFilter(t *testing.T) {
 				},
 			},
 			want: nil,
+		},
+		{
+			name: "Aligned policy can coexist with Restricted policy",
+			pod:  testReservationIgnoredPod,
+			reservations: []*schedulingv1alpha1.Reservation{
+				alignedReservation,
+				restrictedReservation,
+			},
+			nodeInfo: testNodeInfo,
+			want:     nil,
 		},
 	}
 	for _, tt := range tests {
