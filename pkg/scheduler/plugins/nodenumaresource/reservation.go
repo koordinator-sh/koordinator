@@ -277,7 +277,9 @@ func tryAllocateFromReservation(
 			// TODO 这里仿照 deviceShare 的逻辑这样处理，后续需要再琢磨一下是否有必要
 			_, status := manager.Allocate(node, pod, resourceOptions)
 			if !status.IsSuccess() {
-				klog.V(5).InfoS("failed to allocated from reservation", "reservation", rInfo.Reservation.Name, "pod", pod.Name, "node", node.Name, "status", status.Message(), "numaNode", resourceOptions.hint.NUMANodeAffinity.String())
+				klog.V(5).InfoS("failed to allocated from reservation",
+					"reservation", rInfo.Reservation.Name, "pod", pod.Name, "node", node.Name,
+					"status", status.Message(), "NUMA hint", resourceOptions.hint)
 				logStruct(reflect.ValueOf(resourceOptions), "options", 6)
 				logStruct(reflect.ValueOf(restoreState), "restoreState", 6)
 				reservationReasons = append(reservationReasons, status)
@@ -292,7 +294,9 @@ func tryAllocateFromReservation(
 
 			result, status = manager.Allocate(node, pod, resourceOptions)
 			if !status.IsSuccess() {
-				klog.V(5).InfoS("failed to allocated from reservation", "reservation", rInfo.Reservation.Name, "pod", pod.Name, "node", node.Name, "status", status.Message(), "numaNode", resourceOptions.hint.NUMANodeAffinity.String())
+				klog.V(5).InfoS("failed to allocated from reservation",
+					"reservation", rInfo.Reservation.Name, "pod", pod.Name, "node", node.Name,
+					"status", status.Message(), "NUMA hint", resourceOptions.hint)
 				logStruct(reflect.ValueOf(resourceOptions), "options", 6)
 				logStruct(reflect.ValueOf(restoreState), "restoreState", 6)
 				reservationReasons = append(reservationReasons, status)
