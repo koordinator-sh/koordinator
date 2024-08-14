@@ -131,6 +131,11 @@ func (in *DeschedulerProfile) DeepCopyInto(out *DeschedulerProfile) {
 		*out = new(Plugins)
 		(*in).DeepCopyInto(*out)
 	}
+	if in.NodeSelector != nil {
+		in, out := &in.NodeSelector, &out.NodeSelector
+		*out = new(v1.LabelSelector)
+		(*in).DeepCopyInto(*out)
+	}
 	return
 }
 

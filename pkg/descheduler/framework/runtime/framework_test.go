@@ -23,6 +23,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes/fake"
@@ -225,6 +226,36 @@ func TestNewFramework(t *testing.T) {
 							{Name: testPlugin1},
 							{Name: evictorPluginName},
 						},
+					},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "normal register with node selector",
+			profile: &deschedulerconfig.DeschedulerProfile{
+				Name: testProfileName,
+				Plugins: &deschedulerconfig.Plugins{
+					Evict: deschedulerconfig.PluginSet{
+						Enabled: []deschedulerconfig.Plugin{
+							{Name: evictorPluginName},
+						},
+					},
+					Filter: deschedulerconfig.PluginSet{
+						Enabled: []deschedulerconfig.Plugin{
+							{Name: evictorPluginName},
+						},
+					},
+					Deschedule: deschedulerconfig.PluginSet{
+						Enabled: []deschedulerconfig.Plugin{
+							{Name: testPlugin1},
+							{Name: deschedulePluginWithEvictor},
+						},
+					},
+				},
+				NodeSelector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{
+						"xxx": "yyy",
 					},
 				},
 			},
