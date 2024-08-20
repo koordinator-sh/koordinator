@@ -165,8 +165,8 @@ func (p *tcPlugin) ruleUpdateCbForPod(target *statesinformer.CallbackTarget) err
 			if err != nil || netClsId == 0 {
 				continue
 			}
-			r.uidToHandle[pod.Pod.UID] = uint32(netClsId)
-			r.handleToUid[uint32(netClsId)] = pod.Pod.UID
+			r.uidToHandle[pod.Pod.UID] = netClsId
+			r.handleToUid[netClsId] = pod.Pod.UID
 			p.updateRule(r)
 		}
 	})
