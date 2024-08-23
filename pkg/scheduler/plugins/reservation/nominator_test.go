@@ -409,6 +409,8 @@ func TestMultiReservationsOnSameNode(t *testing.T) {
 		ReservationSelector: labels,
 	}
 	assert.NoError(t, apiext.SetReservationAffinity(pod, affinity))
+	_, err = suit.fw.ClientSet().CoreV1().Pods(pod.Namespace).Create(context.TODO(), pod, metav1.CreateOptions{})
+	assert.NoError(t, err)
 
 	p, err := suit.pluginFactory()
 	assert.NoError(t, err)
@@ -420,15 +422,15 @@ func TestMultiReservationsOnSameNode(t *testing.T) {
 		cycleState := framework.NewCycleState()
 		pl.BeforePreFilter(context.TODO(), cycleState, pod)
 		pl.PreFilter(context.TODO(), cycleState, pod)
-		nominator := pl.handle.(frameworkext.FrameworkExtender).GetReservationNominator()
-		rInfo, status := nominator.NominateReservation(context.TODO(), cycleState, pod, node.Name)
+		nm := pl.handle.(frameworkext.FrameworkExtender).GetReservationNominator()
+		rInfo, status := nm.NominateReservation(context.TODO(), cycleState, pod, node.Name)
 		assert.True(t, status.IsSuccess())
-		nominator.AddNominatedReservation(pod, node.Name, rInfo)
+		nm.AddNominatedReservation(pod, node.Name, rInfo)
 		rInfo = pl.handle.GetReservationNominator().GetNominatedReservation(pod, node.Name)
 		assert.NotNil(t, rInfo)
 		pl.Reserve(context.TODO(), cycleState, pod, node.Name)
 		nominatedReservationCount[rInfo.UID()]++
-		nominator.RemoveNominatedReservations(pod)
+		nm.RemoveNominatedReservations(pod)
 	}
 
 	assert.Len(t, nominatedReservationCount, len(reservations))
@@ -461,6 +463,7 @@ func TestReservationsNominator(t *testing.T) {
 	var pods []*corev1.Pod
 	for i := 0; i < 3; i++ {
 		r := newTestReservation(t, fmt.Sprintf("test-r-%d", i), labels, labels, node.Name, resourceList)
+		r.Status.Phase = "" // set to inactive
 		pods = append(pods, reservationutil.NewReservePod(r))
 		_, err := suit.extenderFactory.KoordinatorClientSet().SchedulingV1alpha1().Reservations().Create(context.TODO(), r, metav1.CreateOptions{})
 		assert.NoError(t, err)

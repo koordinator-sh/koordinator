@@ -2177,6 +2177,10 @@ func TestReserve(t *testing.T) {
 				Spec: corev1.PodSpec{},
 			},
 		},
+		Status: schedulingv1alpha1.ReservationStatus{
+			Phase:    schedulingv1alpha1.ReservationAvailable,
+			NodeName: "test-node",
+		},
 	}
 
 	tests := []struct {
@@ -2226,6 +2230,10 @@ func TestReserve(t *testing.T) {
 				_, err := client.SchedulingV1alpha1().Reservations().Create(context.TODO(), tt.reservation, metav1.CreateOptions{})
 				assert.NoError(t, err)
 			}
+			if tt.pod != nil {
+				_, err := suit.fw.ClientSet().CoreV1().Pods(tt.pod.Namespace).Create(context.TODO(), tt.pod, metav1.CreateOptions{})
+				assert.NoError(t, err)
+			}
 
 			p, err := suit.pluginFactory()
 			assert.NoError(t, err)
@@ -2244,10 +2252,11 @@ func TestReserve(t *testing.T) {
 			if tt.wantReservation == nil {
 				assert.Nil(t, state.assumed)
 			} else {
+				assert.NotNil(t, state.assumed)
 				assert.Equal(t, tt.wantReservation, state.assumed.Reservation)
 			}
 			if tt.reservation != nil {
-				rInfo := pl.reservationCache.getReservationInfoByUID(tt.reservation.UID)
+				rInfo = pl.reservationCache.getReservationInfoByUID(tt.reservation.UID)
 				assert.Equal(t, tt.wantPods, rInfo.AssignedPods)
 				assert.Equal(t, &schedulingStateData{}, &state.schedulingStateData)
 			}

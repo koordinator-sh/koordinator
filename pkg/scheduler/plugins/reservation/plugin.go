@@ -103,12 +103,13 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 	}
 
 	sharedInformerFactory := handle.SharedInformerFactory()
+	podLister := handle.SharedInformerFactory().Core().V1().Pods().Lister()
 	koordSharedInformerFactory := extendedHandle.KoordinatorSharedInformerFactory()
 	reservationLister := koordSharedInformerFactory.Scheduling().V1alpha1().Reservations().Lister()
 	cache := newReservationCache(reservationLister)
-	nominator := newNominator()
-	registerReservationEventHandler(cache, koordSharedInformerFactory, nominator)
-	registerPodEventHandler(cache, nominator, sharedInformerFactory)
+	nm := newNominator(podLister, reservationLister)
+	registerReservationEventHandler(cache, koordSharedInformerFactory, nm)
+	registerPodEventHandler(cache, nm, sharedInformerFactory)
 
 	// TODO(joseph): Considering the amount of changed code,
 	// temporarily use global variable to store ReservationCache instance,
@@ -121,11 +122,11 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 		rLister:          reservationLister,
 		client:           extendedHandle.KoordinatorClientSet().SchedulingV1alpha1(),
 		reservationCache: cache,
-		nominator:        nominator,
+		nominator:        nm,
 	}
 
 	if pluginArgs.EnablePreemption {
-		preemptionMgr, err := newPreemptionMgr(pluginArgs, extendedHandle)
+		preemptionMgr, err := newPreemptionMgr(pluginArgs, extendedHandle, podLister, reservationLister)
 		if err != nil {
 			return nil, fmt.Errorf("failed to new preemption, err: %w", err)
 		}

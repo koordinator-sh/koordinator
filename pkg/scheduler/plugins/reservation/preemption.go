@@ -67,7 +67,8 @@ type PreemptionMgr struct {
 	reservationLister listerschedulingv1alpha1.ReservationLister
 }
 
-func newPreemptionMgr(pluginArgs *config.ReservationArgs, extendedHandle frameworkext.ExtendedHandle) (*PreemptionMgr, error) {
+func newPreemptionMgr(pluginArgs *config.ReservationArgs, extendedHandle frameworkext.ExtendedHandle,
+	podLister corelisters.PodLister, rLister listerschedulingv1alpha1.ReservationLister) (*PreemptionMgr, error) {
 	preemptionArgs, err := getPreemptionArgs(pluginArgs)
 	if err != nil {
 		return nil, err
@@ -83,8 +84,6 @@ func newPreemptionMgr(pluginArgs *config.ReservationArgs, extendedHandle framewo
 	}
 
 	preemptionPl := pl.(*defaultpreemption.DefaultPreemption)
-	podLister := extendedHandle.SharedInformerFactory().Core().V1().Pods().Lister()
-	reservationLister := extendedHandle.KoordinatorSharedInformerFactory().Scheduling().V1alpha1().Reservations().Lister()
 	var pdbLister policylisters.PodDisruptionBudgetLister
 	if k8sfeature.DefaultFeatureGate.Enabled(koordfeature.PodDisruptionBudget) {
 		pdbLister = extendedHandle.SharedInformerFactory().Policy().V1().PodDisruptionBudgets().Lister()
@@ -95,7 +94,7 @@ func newPreemptionMgr(pluginArgs *config.ReservationArgs, extendedHandle framewo
 		fh:                extendedHandle,
 		podLister:         podLister,
 		pdbLister:         pdbLister,
-		reservationLister: reservationLister,
+		reservationLister: rLister,
 	}, nil
 }
 
