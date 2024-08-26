@@ -33,9 +33,21 @@ var (
 			Help:           "The currently scheduled Pod exceeds the maximum acceptable time interval",
 			StabilityLevel: metrics.STABLE,
 		}, []string{"profile"})
+	SchedulingTracePointElapsedTime = metrics.NewHistogramVec(
+		&metrics.HistogramOpts{
+			Subsystem: schedulermetrics.SchedulerSubsystem,
+			Name:      "scheduling_trace_point_elapsed_time",
+			Help:      "Duration for between different trace points in scheduling timeline",
+			// Start with 0.01ms with the last bucket being [~22ms, Inf). We use a small factor (1.2)
+			// so that we have better granularity since plugin latency is very sensitive.
+			Buckets:        metrics.ExponentialBuckets(0.00001, 1.2, 100),
+			StabilityLevel: metrics.ALPHA,
+		},
+		[]string{"tracePoint"})
 
 	metricsList = []metrics.Registerable{
 		SchedulingTimeout,
+		SchedulingTracePointElapsedTime,
 	}
 )
 
