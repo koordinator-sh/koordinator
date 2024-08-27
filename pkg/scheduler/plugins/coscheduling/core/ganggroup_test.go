@@ -102,4 +102,11 @@ func TestGangGroupInfo(t *testing.T) {
 		gg.deletePodLastScheduleTime("test/pod1")
 		assert.Equal(t, 1, len(gg.ChildrenLastScheduleTime))
 	}
+	{
+		gg := NewGangGroupInfo("aa", []string{"aa"})
+		assert.Equal(t, false, gg.isGangOnceResourceSatisfied())
+
+		gg.setResourceSatisfied()
+		assert.Equal(t, true, gg.isGangOnceResourceSatisfied())
+	}
 }

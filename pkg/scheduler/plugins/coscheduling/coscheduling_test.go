@@ -640,6 +640,7 @@ func TestPostFilter(t *testing.T) {
 			if tt.pod.Name == "pod3" {
 				wg.Add(2)
 			}
+
 			for _, pod := range tt.pods {
 				tmpPod := pod
 				suit.Handle.(framework.Framework).RunPermitPlugins(context.Background(), cycleState, tmpPod, "")
@@ -652,6 +653,7 @@ func TestPostFilter(t *testing.T) {
 					defer wg.Done()
 				}()
 			}
+
 			if tt.pod.Name == "pod3" {
 				totalWaitingPods := 0
 				suit.Handle.IterateOverWaitingPods(

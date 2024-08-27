@@ -738,7 +738,7 @@ func TestPermit(t *testing.T) {
 				gangId := util.GetId(pg.Namespace, pg.Name)
 				gang := mgr.cache.getGangFromCacheByGangId(gangId, false)
 				gang.lock.Lock()
-				gang.OnceResourceSatisfied = tt.onceSatisfy
+				gang.GangGroupInfo.OnceResourceSatisfied = tt.onceSatisfy
 				gang.GangMatchPolicy = tt.matchPolicy
 				gang.lock.Unlock()
 			}
