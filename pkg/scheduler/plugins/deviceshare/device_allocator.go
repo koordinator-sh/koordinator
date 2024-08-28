@@ -366,13 +366,24 @@ func (a *AutopilotAllocator) allocateDevices(requestCtx *requestContext, nodeDev
 		if deviceAllocations[deviceType] != nil {
 			continue
 		}
-		topologyGuide := newDeviceTopologyGuide(nodeDevice, requestCtx.requestsPerInstance, deviceType, nil)
-		allocations, status := a.allocateByTopology(requestCtx, nodeDevice, topologyGuide, deviceType, nil, nil)
-		if !status.IsSuccess() {
-			return nil, status
-		}
-		if len(allocations) != 0 && len(allocations[deviceType]) != 0 {
-			deviceAllocations[deviceType] = allocations[deviceType]
+		if deviceType != schedulingv1alpha1.GPU {
+			allocations, status := allocateDevices(requestCtx, nodeDevice, deviceType, requestCtx.requestsPerInstance[deviceType], requestCtx.desiredCountPerDeviceType[deviceType], nil)
+			if !status.IsSuccess() {
+				return nil, status
+			}
+			if len(allocations) != 0 {
+				deviceAllocations[deviceType] = allocations
+			}
+		} else {
+			// assure only gpu will allocate by topology
+			topologyGuide := newDeviceTopologyGuide(nodeDevice, requestCtx.requestsPerInstance, deviceType, nil)
+			allocations, status := a.allocateByTopology(requestCtx, nodeDevice, topologyGuide, deviceType, nil, nil)
+			if !status.IsSuccess() {
+				return nil, status
+			}
+			if len(allocations) != 0 && len(allocations[deviceType]) != 0 {
+				deviceAllocations[deviceType] = allocations[deviceType]
+			}
 		}
 	}
 	return deviceAllocations, nil
