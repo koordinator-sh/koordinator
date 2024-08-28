@@ -300,7 +300,7 @@ func (p *Plugin) Filter(ctx context.Context, cycleState *framework.CycleState, p
 	var affinity topologymanager.NUMATopologyHint
 	if !p.disableDeviceNUMATopologyAlignment {
 		store := topologymanager.GetStore(cycleState)
-		affinity = store.GetAffinity(nodeInfo.Node().Name)
+		affinity, _ = store.GetAffinity(nodeInfo.Node().Name)
 	}
 
 	allocator := &AutopilotAllocator{
@@ -369,7 +369,7 @@ func (p *Plugin) FilterReservation(ctx context.Context, cycleState *framework.Cy
 	var affinity topologymanager.NUMATopologyHint
 	if !p.disableDeviceNUMATopologyAlignment {
 		store := topologymanager.GetStore(cycleState)
-		affinity = store.GetAffinity(nodeInfo.Node().Name)
+		affinity, _ = store.GetAffinity(nodeInfo.Node().Name)
 	}
 
 	allocator := &AutopilotAllocator{
@@ -417,7 +417,7 @@ func (p *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState, 
 	var affinity topologymanager.NUMATopologyHint
 	if !p.disableDeviceNUMATopologyAlignment {
 		store := topologymanager.GetStore(cycleState)
-		affinity = store.GetAffinity(nodeInfo.Node().Name)
+		affinity, _ = store.GetAffinity(nodeInfo.Node().Name)
 	}
 
 	allocator := &AutopilotAllocator{

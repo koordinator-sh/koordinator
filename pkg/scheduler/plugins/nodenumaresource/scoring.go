@@ -93,7 +93,7 @@ func (p *Plugin) Score(ctx context.Context, cycleState *framework.CycleState, po
 	}
 
 	store := topologymanager.GetStore(cycleState)
-	affinity := store.GetAffinity(nodeName)
+	affinity, _ := store.GetAffinity(nodeName)
 	resourceOptions, err := p.getResourceOptions(state, node, pod, requestCPUBind, affinity, topologyOptions)
 	if err != nil {
 		return 0, nil

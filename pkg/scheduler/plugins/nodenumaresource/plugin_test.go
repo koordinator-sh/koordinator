@@ -2085,7 +2085,7 @@ func TestFilterWithNUMANodeScoring(t *testing.T) {
 			assert.NoError(t, err)
 			status = pl.Filter(context.TODO(), cycleState, tt.requestedPod, nodeInfo)
 			assert.True(t, status.IsSuccess())
-			hint := topologymanager.GetStore(cycleState).GetAffinity(tt.node.Name)
+			hint, _ := topologymanager.GetStore(cycleState).GetAffinity(tt.node.Name)
 			assert.Equal(t, tt.wantAffinity.GetBits(), hint.NUMANodeAffinity.GetBits())
 		})
 	}
