@@ -728,6 +728,8 @@ func TestPreScoreWithNominateReservation(t *testing.T) {
 						return rInfo.ResourceNames[i] < rInfo.ResourceNames[j]
 					})
 				}
+				wantReservationInfo.Generation = 0
+				rInfo.Generation = 0
 				assert.Equal(t, wantReservationInfo, rInfo)
 			}
 		})

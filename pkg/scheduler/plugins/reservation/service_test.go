@@ -21,7 +21,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"sort"
+	"strconv"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
@@ -29,6 +31,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/uuid"
+	"k8s.io/klog/v2"
 	"k8s.io/utils/pointer"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
@@ -248,4 +251,32 @@ func TestQueryNodeReservations(t *testing.T) {
 		return reservations.Items[i].UID < reservations.Items[j].UID
 	})
 	assert.Equal(t, expectedReservations, reservations)
+}
+
+func TestA(t *testing.T) {
+	reservationsOnNode := map[string]map[string]struct{}{}
+	for i := 0; i < 5000; i++ {
+		nodeName := strconv.Itoa(i)
+		reservationSet, ok := reservationsOnNode[nodeName]
+		if !ok {
+			reservationSet = map[string]struct{}{}
+			reservationsOnNode[nodeName] = reservationSet
+		}
+		for j := 0; j < 1000; j++ {
+			reservationSet[strconv.Itoa(i)] = struct{}{}
+		}
+	}
+	now := time.Now()
+	newReservationsOnNode := make(map[string]map[string]struct{}, len(reservationsOnNode))
+	for k, v := range reservationsOnNode {
+		reservationSet, ok := newReservationsOnNode[k]
+		if !ok {
+			reservationSet = make(map[string]struct{}, len(v))
+			newReservationsOnNode[k] = reservationSet
+		}
+		for reservationName := range v {
+			reservationSet[reservationName] = struct{}{}
+		}
+	}
+	klog.Info(time.Now().Sub(now))
 }

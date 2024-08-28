@@ -86,6 +86,7 @@ func TestCacheUpdateReservation(t *testing.T) {
 		},
 		Allocated:    nil,
 		AssignedPods: map[types.UID]*frameworkext.PodRequirement{},
+		Generation:   1,
 	}
 	sort.Slice(rInfo.ResourceNames, func(i, j int) bool {
 		return rInfo.ResourceNames[i] < rInfo.ResourceNames[j]
@@ -97,6 +98,7 @@ func TestCacheUpdateReservation(t *testing.T) {
 	assert.Len(t, reservationInfos, 1)
 	rInfo = reservationInfos[0]
 	expectReservationInfo.Allocated = corev1.ResourceList{}
+	expectReservationInfo.Generation = 2
 	sort.Slice(rInfo.ResourceNames, func(i, j int) bool {
 		return rInfo.ResourceNames[i] < rInfo.ResourceNames[j]
 	})
@@ -160,6 +162,7 @@ func TestCacheDeleteReservation(t *testing.T) {
 	sort.Slice(rInfo.ResourceNames, func(i, j int) bool {
 		return rInfo.ResourceNames[i] < rInfo.ResourceNames[j]
 	})
+	rInfo.Generation = 0
 	assert.Equal(t, expectReservationInfo, rInfo)
 
 	cache.DeleteReservation(reservation)
@@ -260,6 +263,7 @@ func TestCacheAddOrUpdateOrDeletePod(t *testing.T) {
 			},
 		},
 	}
+	rInfo.Generation = 0
 	assert.Equal(t, expectReservationInfo, rInfo)
 
 	cache.updatePod(reservation.UID, pod, pod)
@@ -271,6 +275,7 @@ func TestCacheAddOrUpdateOrDeletePod(t *testing.T) {
 		corev1.ResourceCPU:    resource.MustParse("0"),
 		corev1.ResourceMemory: resource.MustParse("0"),
 	})
+	rInfo.Generation = 0
 	assert.Equal(t, expectReservationInfo, rInfo)
 
 	cache.deletePod(reservation.UID, pod)
@@ -282,6 +287,7 @@ func TestCacheAddOrUpdateOrDeletePod(t *testing.T) {
 		corev1.ResourceCPU:    resource.MustParse("0"),
 		corev1.ResourceMemory: resource.MustParse("0"),
 	}
+	rInfo.Generation = 0
 	expectReservationInfo.AssignedPods = map[types.UID]*frameworkext.PodRequirement{}
 	assert.Equal(t, expectReservationInfo, rInfo)
 }

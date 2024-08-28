@@ -500,6 +500,7 @@ func TestReservationInfoUpdateReservation(t *testing.T) {
 			})
 			tt.want.Reservation = tt.newReservation
 			tt.want.Pod = reservationutil.NewReservePod(tt.newReservation)
+			reservationInfo.Generation = 0
 			assert.Equal(t, tt.want, reservationInfo)
 		})
 	}
@@ -645,6 +646,7 @@ func TestReservationInfoUpdatePod(t *testing.T) {
 				return tt.want.ResourceNames[i] < tt.want.ResourceNames[j]
 			})
 			tt.want.Pod = tt.newPod
+			reservationInfo.Generation = 0
 			assert.Equal(t, tt.want, reservationInfo)
 		})
 	}
