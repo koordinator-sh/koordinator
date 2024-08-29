@@ -113,6 +113,10 @@ func (gangCache *GangCache) deleteGangFromCacheByGangId(gangId string) {
 }
 
 func (gangCache *GangCache) onPodAdd(obj interface{}) {
+	gangCache.onPodAddInternal(obj, "create")
+}
+
+func (gangCache *GangCache) onPodAddInternal(obj interface{}, action string) {
 	pod, ok := obj.(*v1.Pod)
 	if !ok {
 		return
@@ -152,7 +156,7 @@ func (gangCache *GangCache) onPodAdd(obj interface{}) {
 		gang.setResourceSatisfied()
 	}
 
-	klog.Infof("watch pod created, Name:%v, pgLabel:%v", pod.Name, pod.Labels[v1alpha1.PodGroupLabel])
+	klog.Infof("watch pod %v, Name:%v, pgLabel:%v", action, pod.Name, pod.Labels[v1alpha1.PodGroupLabel])
 }
 
 func (gangCache *GangCache) onPodUpdate(oldObj, newObj interface{}) {
@@ -170,7 +174,7 @@ func (gangCache *GangCache) onPodUpdate(oldObj, newObj interface{}) {
 		return
 	}
 
-	gangCache.onPodAdd(newObj)
+	gangCache.onPodAddInternal(newObj, "update")
 }
 
 func (gangCache *GangCache) onPodDelete(obj interface{}) {

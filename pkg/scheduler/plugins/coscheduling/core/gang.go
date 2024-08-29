@@ -57,10 +57,6 @@ type Gang struct {
 	WaitingForBindChildren map[string]*v1.Pod
 	// pods that have already bound
 	BoundChildren map[string]*v1.Pod
-	// OnceResourceSatisfied indicates whether the gang has ever reached the ResourceSatisfied state，which means the
-	// children number has reached the minNum in the early step,
-	// once this variable is set true, it is irreversible.
-	OnceResourceSatisfied bool
 
 	// only-waiting, only consider waiting pods
 	// waiting-and-running, consider waiting and running pods
@@ -344,7 +340,7 @@ func (gang *Gang) isGangOnceResourceSatisfied() bool {
 	gang.lock.Lock()
 	defer gang.lock.Unlock()
 
-	return gang.OnceResourceSatisfied
+	return gang.GangGroupInfo.isGangOnceResourceSatisfied()
 }
 
 func (gang *Gang) setChild(pod *v1.Pod) {
@@ -472,10 +468,7 @@ func (gang *Gang) setResourceSatisfied() {
 	gang.lock.Lock()
 	defer gang.lock.Unlock()
 
-	if !gang.OnceResourceSatisfied {
-		gang.OnceResourceSatisfied = true
-		klog.Infof("Gang ResourceSatisfied, gangName: %v", gang.Name)
-	}
+	gang.GangGroupInfo.setResourceSatisfied()
 }
 
 func (gang *Gang) addBoundPod(pod *v1.Pod) {
@@ -487,8 +480,8 @@ func (gang *Gang) addBoundPod(pod *v1.Pod) {
 	gang.BoundChildren[podId] = pod
 
 	klog.Infof("AddBoundPod, gangName: %v, podName: %v", gang.Name, podId)
-	if !gang.OnceResourceSatisfied && len(gang.BoundChildren) >= gang.MinRequiredNumber {
-		gang.OnceResourceSatisfied = true
+	if !gang.GangGroupInfo.isGangOnceResourceSatisfied() {
+		gang.GangGroupInfo.setResourceSatisfied()
 		klog.Infof("Gang ResourceSatisfied due to addBoundPod, gangName: %v", gang.Name)
 	}
 }
@@ -507,6 +500,6 @@ func (gang *Gang) isGangValidForPermit() bool {
 	case extension.GangMatchPolicyWaitingAndRunning:
 		return len(gang.WaitingForBindChildren)+len(gang.BoundChildren) >= gang.MinRequiredNumber
 	default:
-		return len(gang.WaitingForBindChildren) >= gang.MinRequiredNumber || gang.OnceResourceSatisfied == true
+		return len(gang.WaitingForBindChildren) >= gang.MinRequiredNumber || gang.GangGroupInfo.isGangOnceResourceSatisfied()
 	}
 }
