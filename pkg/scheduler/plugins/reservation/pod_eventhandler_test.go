@@ -29,12 +29,13 @@ import (
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
+	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
 
 func TestPodEventHandler(t *testing.T) {
 	handler := &podEventHandler{
 		cache:     newReservationCache(nil),
-		nominator: newNominator(),
+		nominator: newNominator(nil, nil),
 	}
 	reservationUID := uuid.NewUUID()
 	reservationName := "test-reservation"
@@ -61,6 +62,10 @@ func TestPodEventHandler(t *testing.T) {
 			Name:      "test-pod",
 			Namespace: "default",
 			UID:       uuid.NewUUID(),
+			Annotations: map[string]string{
+				reservationutil.AnnotationReservePod:      "true",
+				reservationutil.AnnotationReservationName: "test-pod",
+			},
 		},
 		Spec: corev1.PodSpec{
 			Containers: []corev1.Container{
@@ -149,7 +154,7 @@ func TestPodEventHandler(t *testing.T) {
 func TestPodEventHandlerWithOperatingPod(t *testing.T) {
 	handler := &podEventHandler{
 		cache:     newReservationCache(nil),
-		nominator: newNominator(),
+		nominator: newNominator(nil, nil),
 	}
 	reservationUID := uuid.NewUUID()
 	reservationName := "test-reservation"

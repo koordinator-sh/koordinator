@@ -364,6 +364,12 @@ func autoConvert_v1_ReservationArgs_To_config_ReservationArgs(in *ReservationArg
 	if err := metav1.Convert_Pointer_bool_To_bool(&in.EnablePreemption, &out.EnablePreemption, s); err != nil {
 		return err
 	}
+	if err := metav1.Convert_Pointer_int32_To_int32(&in.MinCandidateNodesPercentage, &out.MinCandidateNodesPercentage, s); err != nil {
+		return err
+	}
+	if err := metav1.Convert_Pointer_int32_To_int32(&in.MinCandidateNodesAbsolute, &out.MinCandidateNodesAbsolute, s); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -374,6 +380,12 @@ func Convert_v1_ReservationArgs_To_config_ReservationArgs(in *ReservationArgs, o
 
 func autoConvert_config_ReservationArgs_To_v1_ReservationArgs(in *config.ReservationArgs, out *ReservationArgs, s conversion.Scope) error {
 	if err := metav1.Convert_bool_To_Pointer_bool(&in.EnablePreemption, &out.EnablePreemption, s); err != nil {
+		return err
+	}
+	if err := metav1.Convert_int32_To_Pointer_int32(&in.MinCandidateNodesPercentage, &out.MinCandidateNodesPercentage, s); err != nil {
+		return err
+	}
+	if err := metav1.Convert_int32_To_Pointer_int32(&in.MinCandidateNodesAbsolute, &out.MinCandidateNodesAbsolute, s); err != nil {
 		return err
 	}
 	return nil

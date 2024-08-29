@@ -24,14 +24,18 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
+	corelisters "k8s.io/client-go/listers/core/v1"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
+	listerschedulingv1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/listers/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
 
 type nominator struct {
+	podLister corelisters.PodLister
+	rLister   listerschedulingv1alpha1.ReservationLister
 	// nominatedPodToNode is map keyed by a Pod UID to the node name where it is nominated.
 	nominatedPodToNode map[types.UID]map[string]types.UID
 	// nominatedReservePod is map keyed by nodeName, value is the nominated reservation's PodInfo
@@ -40,8 +44,10 @@ type nominator struct {
 	lock                      sync.RWMutex
 }
 
-func newNominator() *nominator {
+func newNominator(podLister corelisters.PodLister, rLister listerschedulingv1alpha1.ReservationLister) *nominator {
 	return &nominator{
+		podLister:                 podLister,
+		rLister:                   rLister,
 		nominatedPodToNode:        map[types.UID]map[string]types.UID{},
 		nominatedReservePod:       map[string][]*framework.PodInfo{},
 		nominatedReservePodToNode: map[types.UID]string{},
@@ -54,6 +60,35 @@ func (nm *nominator) AddNominatedReservation(pod *corev1.Pod, nodeName string, r
 	}
 	nm.lock.Lock()
 	defer nm.lock.Unlock()
+
+	// nominate it only if the pod is unscheduled and reservation is active
+	rName := rInfo.GetName()
+	if nm.podLister != nil {
+		p, err := nm.podLister.Pods(pod.Namespace).Get(pod.Name)
+		if err != nil {
+			klog.V(4).InfoS("Pod doesn't exist in podLister, aborted nominating it to the reservation",
+				"node", nodeName, "pod", klog.KObj(pod), "reservation", rName)
+			return
+		}
+		if p.Spec.NodeName != "" {
+			klog.V(4).InfoS("Pod is already scheduled to a node, aborted nominating it to the reservation",
+				"current node", p.Spec.NodeName, "node", nodeName, "pod", klog.KObj(pod), "reservation", rName)
+			return
+		}
+	}
+	if nm.rLister != nil {
+		r, err := nm.rLister.Get(rName)
+		if err != nil {
+			klog.V(4).InfoS("reservation doesn't exist in rLister, aborted nominating pod to it",
+				"node", nodeName, "pod", klog.KObj(pod), "reservation", rName)
+			return
+		}
+		if !reservationutil.IsReservationActive(r) { // cannot nominate to an inactive reservation
+			klog.V(4).InfoS("reservation is inactive, aborted nominating pod to it",
+				"node", nodeName, "pod", klog.KObj(pod), "reservation", rName)
+			return
+		}
+	}
 
 	nodeToReservation := nm.nominatedPodToNode[pod.UID]
 	if nodeToReservation == nil {
@@ -71,10 +106,37 @@ func (nm *nominator) AddNominatedReservePod(pi *framework.PodInfo, nodeName stri
 	// one instance of the reservation.
 	nm.deleteReservePod(pi)
 
+	rName := reservationutil.GetReservationNameFromReservePod(pi.Pod)
+	if len(rName) <= 0 { // not a reserve pod
+		klog.V(4).InfoS("reservation nominator aborts nominating pod which is not a reserve pod",
+			"pod", klog.KObj(pi.Pod), "reservation", rName, "nominatedNodeName", nodeName)
+		return
+	}
+	if nodeName == "" {
+		klog.V(4).InfoS("reservation nominated node is removed",
+			"pod", klog.KObj(pi.Pod), "reservation", rName, "nominatedNodeName", nodeName)
+		return
+	}
+
+	if nm.rLister != nil {
+		// If a reservation is just deleted or scheduled, don't nominate it.
+		r, err := nm.rLister.Get(rName)
+		if err != nil {
+			klog.V(4).InfoS("reservation doesn't exist in rLister, aborted adding it to the nominator",
+				"pod", klog.KObj(pi.Pod), "reservation", rName)
+			return
+		}
+		if reservationutil.IsReservationActive(r) {
+			klog.V(4).InfoS("reservation is already scheduled to a node and become active, aborted to adding it to the nominator",
+				"pod", klog.KObj(pi.Pod), "reservation", rName)
+			return
+		}
+	}
+
 	nm.nominatedReservePodToNode[pi.Pod.UID] = nodeName
 	for _, npi := range nm.nominatedReservePod[nodeName] {
 		if npi.Pod.UID == pi.Pod.UID {
-			klog.V(4).InfoS("reservation already exists in the nominator", "pod", klog.KObj(npi.Pod))
+			klog.V(4).InfoS("reservation already exists in the nominator", "pod", klog.KObj(npi.Pod), "reservation", rName)
 			return
 		}
 	}
@@ -157,12 +219,12 @@ func (pl *Plugin) NominateReservation(ctx context.Context, cycleState *framework
 	}
 
 	reservations := make([]*frameworkext.ReservationInfo, 0, len(reservationInfos))
-	for _, rInfo := range reservationInfos {
-		status := extender.RunReservationFilterPlugins(ctx, cycleState, pod, rInfo, nodeName)
+	for i := range reservationInfos {
+		status := extender.RunReservationFilterPlugins(ctx, cycleState, pod, reservationInfos[i], nodeName)
 		if !status.IsSuccess() {
 			continue
 		}
-		reservations = append(reservations, rInfo)
+		reservations = append(reservations, reservationInfos[i])
 	}
 	if len(reservations) == 0 {
 		return nil, nil

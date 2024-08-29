@@ -454,10 +454,7 @@ func parseSpecificNodesFromAffinity(pod *corev1.Pod) (sets.String, *framework.St
 }
 
 func (pl *Plugin) BeforeFilter(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeInfo *framework.NodeInfo) (*corev1.Pod, *framework.NodeInfo, bool, *framework.Status) {
-	if !reservationutil.IsReservePod(pod) {
-		return pod, nodeInfo, false, nil
-	}
-
+	// Both the reserve pod or the normal pod should consider the nominated reserve pods.
 	nominatedReservationInfos := pl.nominator.NominatedReservePodForNode(nodeInfo.Node().Name)
 	if len(nominatedReservationInfos) == 0 {
 		return pod, nodeInfo, false, nil
@@ -470,12 +467,6 @@ func (pl *Plugin) BeforeFilter(ctx context.Context, cycleState *framework.CycleS
 
 	nodeInfoOut := nodeInfo.Clone()
 
-	rName := reservationutil.GetReservationNameFromReservePod(pod)
-	_, err := pl.rLister.Get(rName)
-	if err != nil {
-		return pod, nodeInfo, false, framework.NewStatus(framework.Error, "reservation not found")
-	}
-
 	for _, rInfo := range nominatedReservationInfos {
 		if schedulingcorev1.PodPriority(rInfo.Pod) >= schedulingcorev1.PodPriority(pod) && rInfo.Pod.UID != pod.UID {
 			pInfo, _ := framework.NewPodInfo(rInfo.Pod)
@@ -484,8 +475,8 @@ func (pl *Plugin) BeforeFilter(ctx context.Context, cycleState *framework.CycleS
 			if !status.IsSuccess() {
 				return pod, nodeInfo, false, status
 			}
-			klog.V(4).Infof("nodeName: %s,toschedule reservation: %s, added reservation: %s",
-				nodeInfo.Node().Name,
+			klog.V(4).Infof("nodeName %s, to schedule pod %s (reserve pod %s) with nominated reservation %s",
+				nodeInfo.Node().Name, klog.KObj(pod),
 				reservationutil.GetReservationNameFromReservePod(pod),
 				reservationutil.GetReservationNameFromReservePod(rInfo.Pod))
 		}
