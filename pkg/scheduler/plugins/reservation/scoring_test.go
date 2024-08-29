@@ -839,6 +839,9 @@ func TestPreScoreWithNominateReservation(t *testing.T) {
 			}
 			cycleState.Write(stateKey, state)
 
+			// the usage of the lister requires the informers started
+			suit.start()
+
 			status := pl.PreScore(context.TODO(), cycleState, tt.pod, nodes)
 			assert.Equal(t, tt.wantStatus, status.IsSuccess())
 
