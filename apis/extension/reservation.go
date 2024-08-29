@@ -33,7 +33,6 @@ const (
 	// reserved resources unallocated of all reservations on the node. If a pod scheduled with this label on a node,
 	// the reservations of the node will not consider the pod as their owners. To avoid the pods setting with this label
 	// to block the other pods allocated reserved resources, it should be used with the reservation preemption.
-	// It is similar to match all reservations with the default allocate policy.
 	LabelReservationIgnored = SchedulingDomainPrefix + "/reservation-ignored"
 
 	// LabelReservationOrder controls the preference logic for Reservation.

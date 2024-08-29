@@ -132,6 +132,7 @@ func (c *resourceManager) GetTopologyHints(node *corev1.Node, pod *corev1.Pod, o
 		return nil, fmt.Errorf("insufficient resources on NUMA Node")
 	}
 
+	// FIXME: restore reserved cpus according to reservations' allocatePolicy
 	options.reusableResources = appendAllocated(nil, restoreStateData.mergedUnmatchedUsed, restoreStateData.mergedMatchedAllocatable)
 	options.preferredCPUs = restoreStateData.mergedMatchedRemainCPUs
 	// update with preemptible resources

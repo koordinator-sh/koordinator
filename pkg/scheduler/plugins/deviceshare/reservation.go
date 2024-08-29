@@ -278,19 +278,16 @@ func (p *Plugin) tryAllocateIgnoreReservation(
 	requiredFromReservation bool,
 ) (apiext.DeviceAllocations, *framework.Status) {
 	preemptibleFromIgnored := map[schedulingv1alpha1.DeviceType]deviceResources{}
-	allocatableFromIgnored := map[schedulingv1alpha1.DeviceType]deviceResources{}
 
 	// accumulate all ignored reserved resources which are not allocated to any owner pods
 	for _, alloc := range ignoredReservations {
 		preemptibleFromIgnored = appendAllocated(preemptibleFromIgnored,
 			state.preemptibleInRRs[node.Name][alloc.rInfo.UID()], alloc.remained)
-		allocatableFromIgnored = appendAllocated(allocatableFromIgnored, alloc.allocatable)
 	}
 
 	preemptibleFromIgnored = appendAllocated(preemptibleFromIgnored, basicPreemptible, restoreState.mergedMatchedAllocated)
-	preferred := newDeviceMinorMap(allocatableFromIgnored)
 
-	return allocator.Allocate(nil, preferred, nil, preemptibleFromIgnored)
+	return allocator.Allocate(nil, nil, nil, preemptibleFromIgnored)
 }
 
 func (p *Plugin) makeReasonsByReservation(reservationReasons []*framework.Status) []string {
