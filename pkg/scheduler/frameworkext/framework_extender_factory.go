@@ -159,7 +159,7 @@ func (f *FrameworkExtenderFactory) InitScheduler(sched Scheduler) {
 
 func (f *FrameworkExtenderFactory) scheduleOne(ctx context.Context, fwk framework.Framework, cycleState *framework.CycleState, pod *corev1.Pod) (scheduler.ScheduleResult, error) {
 	f.monitor.StartMonitoring(pod)
-
+	InitPodSchedulingTrace(cycleState)
 	scheduleResult, err := f.schedulePod(ctx, fwk, cycleState, pod)
 	if err != nil {
 		return scheduleResult, err

@@ -19,6 +19,7 @@ package frameworkext
 import (
 	"context"
 	"fmt"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -26,12 +27,14 @@ import (
 	"k8s.io/klog/v2"
 	schedconfig "k8s.io/kubernetes/pkg/scheduler/apis/config"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
+	utiltrace "k8s.io/utils/trace"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	koordinatorclientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
 	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
 	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/topologymanager"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/metrics"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
 
@@ -165,12 +168,18 @@ func (ext *frameworkExtenderImpl) GetReservationNominator() ReservationNominator
 
 // RunPreFilterPlugins transforms the PreFilter phase of framework with pre-filter transformers.
 func (ext *frameworkExtenderImpl) RunPreFilterPlugins(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod) (*framework.PreFilterResult, *framework.Status) {
+	podSchedulingTrace := GetPodSchedulingTrace(cycleState)
+	podSchedulingTrace.AddNewTracePoint(BeforeFirstBeforePreFilter)
+	trace := utiltrace.New("RunPreFilterPluginTransformers", utiltrace.Field{Key: "namespace", Value: pod.Namespace}, utiltrace.Field{Key: "name", Value: pod.Name})
+	defer trace.LogIfLong(5 * time.Millisecond)
 	for _, pl := range ext.configuredPlugins.PreFilter.Enabled {
 		transformer := ext.preFilterTransformers[pl.Name]
 		if transformer == nil {
 			continue
 		}
+		trace.Step(fmt.Sprintf("BeforePrefilter %s begin", transformer.Name()))
 		newPod, transformed, status := transformer.BeforePreFilter(ctx, cycleState, pod)
+		trace.Step(fmt.Sprintf("BeforePrefilter %s done", transformer.Name()))
 		if !status.IsSuccess() {
 			klog.ErrorS(status.AsError(), "Failed to run BeforePreFilter", "pod", klog.KObj(pod), "plugin", transformer.Name())
 			return nil, status
@@ -180,22 +189,28 @@ func (ext *frameworkExtenderImpl) RunPreFilterPlugins(ctx context.Context, cycle
 			pod = newPod
 		}
 	}
+	podSchedulingTrace.AddNewTracePoint(AfterLastBeforePreFilter)
 
 	result, status := ext.Framework.RunPreFilterPlugins(ctx, cycleState, pod)
 	if !status.IsSuccess() {
 		return result, status
 	}
+	podSchedulingTrace.AddNewTracePoint(AfterLastPreFilter)
 
 	for _, pl := range ext.configuredPlugins.PreFilter.Enabled {
 		transformer := ext.preFilterTransformers[pl.Name]
 		if transformer == nil {
 			continue
 		}
-		if status := transformer.AfterPreFilter(ctx, cycleState, pod); !status.IsSuccess() {
+		trace.Step(fmt.Sprintf("AfterPrefilter %s begin", transformer.Name()))
+		status := transformer.AfterPreFilter(ctx, cycleState, pod)
+		trace.Step(fmt.Sprintf("AfterPrefilter %s done", transformer.Name()))
+		if !status.IsSuccess() {
 			klog.ErrorS(status.AsError(), "Failed to run AfterPreFilter", "pod", klog.KObj(pod), "plugin", transformer.Name())
 			return nil, status
 		}
 	}
+	podSchedulingTrace.AddNewTracePoint(AfterLastAfterPreFilter)
 	return result, nil
 }
 
@@ -234,7 +249,20 @@ func (ext *frameworkExtenderImpl) RunPostFilterPlugins(ctx context.Context, stat
 	return result, status
 }
 
+// RunPreScorePlugins runs the set of configured PreScore plugins. If any
+// of these plugins returns any status other than "Success", the given pod is rejected.
+func (ext *frameworkExtenderImpl) RunPreScorePlugins(ctx context.Context, state *framework.CycleState, pod *corev1.Pod, nodes []*corev1.Node) *framework.Status {
+	podSchedulingTrace := GetPodSchedulingTrace(state)
+	podSchedulingTrace.AddNewTracePoint(BeforeReservationPreScore)
+	defer func() {
+		podSchedulingTrace.AddNewTracePoint(AfterReservationPreScore)
+	}()
+	return ext.Framework.RunPreScorePlugins(ctx, state, pod, nodes)
+}
+
 func (ext *frameworkExtenderImpl) RunScorePlugins(ctx context.Context, state *framework.CycleState, pod *corev1.Pod, nodes []*corev1.Node) ([]framework.NodePluginScores, *framework.Status) {
+	podSchedulingTrace := GetPodSchedulingTrace(state)
+	podSchedulingTrace.AddNewTracePoint(BeforeFirstBeforeScore)
 	for _, pl := range ext.configuredPlugins.Score.Enabled {
 		transformer := ext.scoreTransformers[pl.Name]
 		if transformer == nil {
@@ -251,7 +279,9 @@ func (ext *frameworkExtenderImpl) RunScorePlugins(ctx context.Context, state *fr
 			nodes = newNodes
 		}
 	}
+	podSchedulingTrace.AddNewTracePoint(AfterLastBeforeScore)
 	pluginToNodeScores, status := ext.Framework.RunScorePlugins(ctx, state, pod, nodes)
+	podSchedulingTrace.AddNewTracePoint(AfterLastScore)
 	if status.IsSuccess() && debugTopNScores > 0 {
 		debugScores(debugTopNScores, pod, pluginToNodeScores, nodes)
 	}
@@ -316,6 +346,11 @@ func (ext *frameworkExtenderImpl) RunPostBindPlugins(ctx context.Context, state 
 	if ext.monitor != nil {
 		defer ext.monitor.Complete(pod)
 	}
+	podSchedulingTrace := GetPodSchedulingTrace(state)
+	for _, info := range podSchedulingTrace.TimeLine {
+		metrics.SchedulingTracePointElapsedTime.WithLabelValues(string(info.TracePointKey)).Observe(info.ElapsedTime.Seconds())
+	}
+	klog.InfoS("pod scheduling trace", "pod", klog.KObj(pod), "schedulingTrace", podSchedulingTrace.TimeLine)
 	ext.Framework.RunPostBindPlugins(ctx, state, pod, nodeName)
 }
 
@@ -460,19 +495,25 @@ func (ext *frameworkExtenderImpl) RunReservePluginsReserve(ctx context.Context, 
 			return nil
 		}
 	}
+	podSchedulingTrace := GetPodSchedulingTrace(cycleState)
+	podSchedulingTrace.AddNewTracePoint(BeforeFirstReserve)
 	status := ext.Framework.RunReservePluginsReserve(ctx, cycleState, pod, nodeName)
 	ext.GetReservationNominator().RemoveNominatedReservations(pod)
 	ext.GetReservationNominator().DeleteNominatedReservePod(pod)
+	podSchedulingTrace.AddNewTracePoint(AfterLastReserve)
 	return status
 }
 
 func (ext *frameworkExtenderImpl) RunResizePod(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) *framework.Status {
+	podSchedulingTrace := GetPodSchedulingTrace(cycleState)
+	podSchedulingTrace.AddNewTracePoint(BeforeFirstResize)
 	for _, pl := range ext.resizePodPlugins {
 		status := pl.ResizePod(ctx, cycleState, pod, nodeName)
 		if !status.IsSuccess() {
 			return status
 		}
 	}
+	podSchedulingTrace.AddNewTracePoint(AfterLastResize)
 	return nil
 }
 
