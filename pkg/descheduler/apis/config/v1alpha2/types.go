@@ -68,6 +68,9 @@ type DeschedulerConfiguration struct {
 
 	// MaxNoOfPodsToEvictPerNamespace restricts maximum of pods to be evicted per namespace.
 	MaxNoOfPodsToEvictPerNamespace *uint `json:"maxNoOfPodsToEvictPerNamespace,omitempty"`
+
+	// MaxNoOfPodsToTotal restricts maximum of pods to be evicted total.
+	MaxNoOfPodsToEvictTotal *uint `json:"maxNoOfPodsToEvictTotal,omitempty"`
 }
 
 // DecodeNestedObjects decodes plugin args for known types.

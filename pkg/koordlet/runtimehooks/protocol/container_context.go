@@ -21,6 +21,8 @@ import (
 	"strings"
 
 	"github.com/containerd/nri/pkg/api"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/klog/v2"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
@@ -215,6 +217,10 @@ type ContainerContext struct {
 	Response ContainerResponse
 	executor resourceexecutor.ResourceUpdateExecutor
 	updaters []resourceexecutor.ResourceUpdater
+}
+
+func (c *ContainerContext) RecordEvent(r record.EventRecorder, pod *corev1.Pod) {
+	//TODO: Don't record pod by container level
 }
 
 func (c *ContainerContext) FromNri(pod *api.PodSandbox, container *api.Container) {

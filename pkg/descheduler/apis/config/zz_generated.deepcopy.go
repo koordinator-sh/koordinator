@@ -79,6 +79,11 @@ func (in *DeschedulerConfiguration) DeepCopyInto(out *DeschedulerConfiguration) 
 		*out = new(uint)
 		**out = **in
 	}
+	if in.MaxNoOfPodsToEvictTotal != nil {
+		in, out := &in.MaxNoOfPodsToEvictTotal, &out.MaxNoOfPodsToEvictTotal
+		*out = new(uint)
+		**out = **in
+	}
 	return
 }
 
@@ -201,6 +206,20 @@ func (in *LowNodeLoadArgs) DeepCopyInto(out *LowNodeLoadArgs) {
 			(*out)[key] = val
 		}
 	}
+	if in.ProdHighThresholds != nil {
+		in, out := &in.ProdHighThresholds, &out.ProdHighThresholds
+		*out = make(ResourceThresholds, len(*in))
+		for key, val := range *in {
+			(*out)[key] = val
+		}
+	}
+	if in.ProdLowThresholds != nil {
+		in, out := &in.ProdLowThresholds, &out.ProdLowThresholds
+		*out = make(ResourceThresholds, len(*in))
+		for key, val := range *in {
+			(*out)[key] = val
+		}
+	}
 	if in.ResourceWeights != nil {
 		in, out := &in.ResourceWeights, &out.ResourceWeights
 		*out = make(map[corev1.ResourceName]int64, len(*in))
@@ -263,6 +282,20 @@ func (in *LowNodeLoadNodePool) DeepCopyInto(out *LowNodeLoadNodePool) {
 	}
 	if in.LowThresholds != nil {
 		in, out := &in.LowThresholds, &out.LowThresholds
+		*out = make(ResourceThresholds, len(*in))
+		for key, val := range *in {
+			(*out)[key] = val
+		}
+	}
+	if in.ProdHighThresholds != nil {
+		in, out := &in.ProdHighThresholds, &out.ProdHighThresholds
+		*out = make(ResourceThresholds, len(*in))
+		for key, val := range *in {
+			(*out)[key] = val
+		}
+	}
+	if in.ProdLowThresholds != nil {
+		in, out := &in.ProdLowThresholds, &out.ProdLowThresholds
 		*out = make(ResourceThresholds, len(*in))
 		for key, val := range *in {
 			(*out)[key] = val
@@ -332,6 +365,11 @@ func (in *MigrationControllerArgs) DeepCopyInto(out *MigrationControllerArgs) {
 		in, out := &in.Namespaces, &out.Namespaces
 		*out = new(Namespaces)
 		(*in).DeepCopyInto(*out)
+	}
+	if in.MaxMigratingGlobally != nil {
+		in, out := &in.MaxMigratingGlobally, &out.MaxMigratingGlobally
+		*out = new(int32)
+		**out = **in
 	}
 	if in.MaxMigratingPerNode != nil {
 		in, out := &in.MaxMigratingPerNode, &out.MaxMigratingPerNode

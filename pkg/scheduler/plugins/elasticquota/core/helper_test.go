@@ -30,11 +30,10 @@ import (
 
 func TestPodRequestsAndLimits(t *testing.T) {
 	tests := []struct {
-		name       string
-		overhead   corev1.ResourceList
-		ignore     bool
-		wantReqs   corev1.ResourceList
-		wantLimits corev1.ResourceList
+		name     string
+		overhead corev1.ResourceList
+		ignore   bool
+		wantReqs corev1.ResourceList
 	}{
 		{
 			name: "ElasticQuotaIgnorePodOverhead=false",
@@ -47,10 +46,6 @@ func TestPodRequestsAndLimits(t *testing.T) {
 				corev1.ResourceCPU:    *resource.NewMilliQuantity(5000, resource.DecimalSI),
 				corev1.ResourceMemory: *resource.NewQuantity(9*1024*1024*1024, resource.BinarySI),
 			},
-			wantLimits: corev1.ResourceList{
-				corev1.ResourceCPU:    *resource.NewMilliQuantity(9000, resource.DecimalSI),
-				corev1.ResourceMemory: *resource.NewQuantity(17*1024*1024*1024, resource.BinarySI),
-			},
 		},
 		{
 			name: "ElasticQuotaIgnorePodOverhead=true",
@@ -62,10 +57,6 @@ func TestPodRequestsAndLimits(t *testing.T) {
 			wantReqs: corev1.ResourceList{
 				corev1.ResourceCPU:    *resource.NewMilliQuantity(4000, resource.DecimalSI),
 				corev1.ResourceMemory: *resource.NewQuantity(8*1024*1024*1024, resource.BinarySI),
-			},
-			wantLimits: corev1.ResourceList{
-				corev1.ResourceCPU:    *resource.NewMilliQuantity(8000, resource.DecimalSI),
-				corev1.ResourceMemory: *resource.NewQuantity(16*1024*1024*1024, resource.BinarySI),
 			},
 		},
 	}
@@ -91,9 +82,8 @@ func TestPodRequestsAndLimits(t *testing.T) {
 					Overhead: tt.overhead,
 				},
 			}
-			reqs, limits := PodRequestsAndLimits(pod)
+			reqs := PodRequests(pod)
 			assert.Equal(t, tt.wantReqs, reqs)
-			assert.Equal(t, tt.wantLimits, limits)
 		})
 	}
 

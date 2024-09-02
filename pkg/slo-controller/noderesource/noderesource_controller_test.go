@@ -26,12 +26,13 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/clock"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/utils/clock"
 	"k8s.io/utils/pointer"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	"github.com/koordinator-sh/koordinator/apis/configuration"
@@ -39,6 +40,7 @@ import (
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/noderesource/framework"
+	"github.com/koordinator-sh/koordinator/pkg/util/testutil"
 )
 
 func Test_NodeResourceController_ConfigNotAvailable(t *testing.T) {
@@ -92,7 +94,11 @@ func Test_NodeResourceController_NodeMetricNotExist(t *testing.T) {
 	slov1alpha1.AddToScheme(scheme)
 	schedulingv1alpha1.AddToScheme(scheme)
 
-	client := fake.NewClientBuilder().WithScheme(scheme).Build()
+	client := fake.NewClientBuilder().WithScheme(scheme).
+		WithIndex(&corev1.Pod{}, "spec.nodeName", func(obj client.Object) []string {
+			return []string{obj.(*corev1.Pod).Spec.NodeName}
+		}).
+		Build()
 	r := &NodeResourceReconciler{
 		Client: client,
 		cfgCache: &FakeCfgCache{
@@ -124,7 +130,8 @@ func Test_NodeResourceController_NodeMetricNotExist(t *testing.T) {
 	key := types.NamespacedName{Name: nodeName}
 	nodeReq := ctrl.Request{NamespacedName: key}
 
-	opt := framework.NewOption().WithClient(client).WithScheme(scheme).WithControllerBuilder(&builder.Builder{})
+	fakeBuilder := builder.ControllerManagedBy(&testutil.FakeManager{})
+	opt := framework.NewOption().WithClient(client).WithScheme(scheme).WithControllerBuilder(fakeBuilder)
 	framework.RunSetupExtenders(opt)
 
 	result, err := r.Reconcile(ctx, nodeReq)
@@ -137,7 +144,11 @@ func Test_NodeResourceController_ColocationEnabled(t *testing.T) {
 	_ = clientgoscheme.AddToScheme(scheme)
 	_ = slov1alpha1.AddToScheme(scheme)
 	_ = schedulingv1alpha1.AddToScheme(scheme)
-	client := fake.NewClientBuilder().WithScheme(scheme).Build()
+	client := fake.NewClientBuilder().WithScheme(scheme).
+		WithIndex(&corev1.Pod{}, "spec.nodeName", func(obj client.Object) []string {
+			return []string{obj.(*corev1.Pod).Spec.NodeName}
+		}).
+		Build()
 	r := &NodeResourceReconciler{
 		Client: client,
 		cfgCache: &FakeCfgCache{

@@ -523,7 +523,7 @@ func Test_tryAllocateFromReservation(t *testing.T) {
 			},
 			requiredFromReservation: true,
 			wantResult:              nil,
-			wantStatus:              framework.NewStatus(framework.Unschedulable, "node(s) no reservation(s) to meet the device requirements"),
+			wantStatus:              framework.NewStatus(framework.Unschedulable, "Reservation(s) Insufficient gpu devices"),
 		},
 		{
 			name: "failed to allocate from Aligned policy reservation that remaining little not fits request",
@@ -566,7 +566,7 @@ func Test_tryAllocateFromReservation(t *testing.T) {
 			},
 			requiredFromReservation: true,
 			wantResult:              nil,
-			wantStatus:              framework.NewStatus(framework.Unschedulable, "node(s) no reservation(s) to meet the device requirements"),
+			wantStatus:              framework.NewStatus(framework.Unschedulable, "Reservation(s) Insufficient gpu devices"),
 		},
 		{
 			name: "allocate from Restricted policy reservation",
@@ -650,7 +650,7 @@ func Test_tryAllocateFromReservation(t *testing.T) {
 			},
 			requiredFromReservation: true,
 			wantResult:              nil,
-			wantStatus:              framework.NewStatus(framework.Unschedulable, "node(s) no reservation(s) to meet the device requirements"),
+			wantStatus:              framework.NewStatus(framework.Unschedulable, "Reservation(s) Insufficient gpu devices"),
 		},
 	}
 
@@ -682,6 +682,7 @@ func Test_tryAllocateFromReservation(t *testing.T) {
 				tt.state,
 				tt.restoreState,
 				tt.restoreState.matched,
+				nil,
 				node,
 				basicPreemptible,
 				tt.requiredFromReservation,

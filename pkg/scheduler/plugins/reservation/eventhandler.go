@@ -44,7 +44,7 @@ func registerReservationEventHandler(cache *reservationCache, koordinatorInforme
 	frameworkexthelper.ForceSyncFromInformer(context.TODO().Done(), koordinatorInformerFactory, reservationInformer, eventHandler)
 }
 
-func (h *reservationEventHandler) OnAdd(obj interface{}) {
+func (h *reservationEventHandler) OnAdd(obj interface{}, isInInitialList bool) {
 	r, ok := obj.(*schedulingv1alpha1.Reservation)
 	if !ok {
 		return
@@ -67,7 +67,8 @@ func (h *reservationEventHandler) OnUpdate(oldObj, newObj interface{}) {
 
 	if reservationutil.IsReservationActive(newR) || reservationutil.IsReservationFailed(newR) || reservationutil.IsReservationSucceeded(newR) {
 		h.cache.updateReservation(newR)
-		h.rrNominator.DeleteReservePod(framework.NewPodInfo(reservationutil.NewReservePod(newR)))
+		podInfo, _ := framework.NewPodInfo(reservationutil.NewReservePod(newR))
+		h.rrNominator.DeleteReservePod(podInfo)
 		klog.V(4).InfoS("update reservation into reservationCache", "reservation", klog.KObj(newR))
 	}
 }
@@ -87,8 +88,8 @@ func (h *reservationEventHandler) OnDelete(obj interface{}) {
 		klog.V(4).InfoS("reservation cache delete failed to parse, obj %T", obj)
 		return
 	}
-
-	h.rrNominator.DeleteReservePod(framework.NewPodInfo(reservationutil.NewReservePod(r)))
+	podInfo, _ := framework.NewPodInfo(reservationutil.NewReservePod(r))
+	h.rrNominator.DeleteReservePod(podInfo)
 
 	// Here it is only marked that ReservationInfo is unavailable,
 	// and the real deletion operation is executed in deleteReservationFromCache(pkg/scheduler/frameworkext/eventhandlers/reservation_handler.go).

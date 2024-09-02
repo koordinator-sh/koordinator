@@ -52,6 +52,17 @@ var resourceStrategyTypeMap = map[schedulingconfig.ScoringStrategyType]scorer{
 	},
 }
 
+func (p *Plugin) PreScore(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodes []*corev1.Node) *framework.Status {
+	state, status := getPreFilterState(cycleState)
+	if !status.IsSuccess() {
+		return status
+	}
+	if state.skip {
+		return framework.NewStatus(framework.Skip)
+	}
+	return nil
+}
+
 func (p *Plugin) Score(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) (int64, *framework.Status) {
 	state, status := getPreFilterState(cycleState)
 	if !status.IsSuccess() {
@@ -68,7 +79,10 @@ func (p *Plugin) Score(ctx context.Context, cycleState *framework.CycleState, po
 	node := nodeInfo.Node()
 	topologyOptions := p.topologyOptionsManager.GetTopologyOptions(node.Name)
 	nodeCPUBindPolicy := extension.GetNodeCPUBindPolicy(node.Labels, topologyOptions.Policy)
+	podNUMATopologyPolicy := state.podNUMATopologyPolicy
 	numaTopologyPolicy := getNUMATopologyPolicy(node.Labels, topologyOptions.NUMATopologyPolicy)
+	// we have check in filter, so we will not get error in reserve
+	numaTopologyPolicy, _ = mergeTopologyPolicy(numaTopologyPolicy, podNUMATopologyPolicy)
 	requestCPUBind, status := requestCPUBind(state, nodeCPUBindPolicy)
 	if !status.IsSuccess() {
 		return 0, status
@@ -78,8 +92,8 @@ func (p *Plugin) Score(ctx context.Context, cycleState *framework.CycleState, po
 	}
 
 	store := topologymanager.GetStore(cycleState)
-	affinity := store.GetAffinity(nodeName)
-	resourceOptions, err := p.getResourceOptions(cycleState, state, node, pod, requestCPUBind, affinity, topologyOptions)
+	affinity, _ := store.GetAffinity(nodeName)
+	resourceOptions, err := p.getResourceOptions(state, node, pod, requestCPUBind, affinity, topologyOptions)
 	if err != nil {
 		return 0, nil
 	}
@@ -88,10 +102,19 @@ func (p *Plugin) Score(ctx context.Context, cycleState *framework.CycleState, po
 		return p.scoreWithAmplifiedCPUs(state, nodeInfo, resourceOptions)
 	}
 
-	podAllocation, err := p.resourceManager.Allocate(node, pod, resourceOptions)
-	if err != nil {
-		return 0, nil
+	reservationRestoreState := getReservationRestoreState(cycleState)
+	restoreState := reservationRestoreState.getNodeState(nodeName)
+	podAllocation, status := p.allocateWithNominatedReservation(restoreState, resourceOptions, pod, node)
+	if !status.IsSuccess() {
+		return 0, status
 	}
+	if podAllocation == nil {
+		podAllocation, status = tryAllocateFromNode(p.resourceManager, restoreState, resourceOptions, pod, node)
+		if !status.IsSuccess() {
+			return 0, status
+		}
+	}
+
 	allocatable, requested := p.calculateAllocatableAndRequested(node.Name, nodeInfo, podAllocation, resourceOptions)
 	return p.scorer.score(requested, allocatable, framework.NewResource(resourceOptions.requests))
 }

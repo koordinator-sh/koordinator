@@ -31,6 +31,17 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/topologymanager"
 )
 
+func (p *Plugin) PreScore(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodes []*corev1.Node) *framework.Status {
+	state, status := getPreFilterState(cycleState)
+	if !status.IsSuccess() {
+		return status
+	}
+	if state.skip {
+		return framework.NewStatus(framework.Skip)
+	}
+	return nil
+}
+
 func (p *Plugin) Score(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) (int64, *framework.Status) {
 	state, status := getPreFilterState(cycleState)
 	if !status.IsSuccess() {
@@ -51,7 +62,7 @@ func (p *Plugin) Score(ctx context.Context, cycleState *framework.CycleState, po
 	}
 
 	store := topologymanager.GetStore(cycleState)
-	affinity := store.GetAffinity(nodeName)
+	affinity, _ := store.GetAffinity(nodeName)
 
 	allocator := &AutopilotAllocator{
 		state:      state,
@@ -119,7 +130,7 @@ func (p *Plugin) ScoreReservation(ctx context.Context, cycleState *framework.Cyc
 	}
 
 	store := topologymanager.GetStore(cycleState)
-	affinity := store.GetAffinity(nodeInfo.Node().Name)
+	affinity, _ := store.GetAffinity(nodeInfo.Node().Name)
 
 	allocator := &AutopilotAllocator{
 		state:      state,

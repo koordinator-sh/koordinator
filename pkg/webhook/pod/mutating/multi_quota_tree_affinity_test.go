@@ -27,7 +27,8 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
-	schedulingv1alpha1 "sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
+
+	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	quotav1alpha1 "github.com/koordinator-sh/koordinator/apis/quota/v1alpha1"
@@ -42,7 +43,7 @@ func init() {
 
 func TestAddNodeAffinityForMultiQuotaTree(t *testing.T) {
 	handler, fakeInformers := makeTestHandler()
-	quotaInformer, err := fakeInformers.FakeInformerFor(&schedulingv1alpha1.ElasticQuota{})
+	quotaInformer, err := fakeInformers.FakeInformerFor(context.TODO(), &schedulingv1alpha1.ElasticQuota{})
 	assert.NoError(t, err)
 
 	profiles := []*quotav1alpha1.ElasticQuotaProfile{

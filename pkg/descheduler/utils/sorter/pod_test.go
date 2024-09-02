@@ -129,8 +129,69 @@ func TestSortPods(t *testing.T) {
 		corev1.ResourceMemory: 1,
 		corev1.ResourcePods:   1,
 	}
-	SortPodsByUsage(pods, podMetrics, nodeAllocatableMap, resourceToWeightMap)
-	expectedPodsOrder := []string{"test-1", "test-12", "test-18", "test-19", "test-17", "test-16", "test-15", "test-21", "test-20", "test-23", "test-22", "test-9", "test-8", "test-11", "test-10", "test-13", "test-14", "test-2", "test-3", "test-7", "test-4", "test-6", "test-5"}
+	SortPodsByUsage(nil, pods, podMetrics, nodeAllocatableMap, resourceToWeightMap)
+	expectedPodsOrder := []string{"test-1", "test-12", "test-18", "test-16", "test-19", "test-17", "test-15", "test-21", "test-20", "test-23", "test-22", "test-9", "test-8", "test-11", "test-10", "test-13", "test-14", "test-2", "test-3", "test-7", "test-4", "test-6", "test-5"}
+	var podsOrder []string
+	for _, v := range pods {
+		podsOrder = append(podsOrder, v.Name)
+	}
+	assert.Equal(t, expectedPodsOrder, podsOrder)
+}
+
+func TestSortPods2(t *testing.T) {
+	creationTime := time.Now()
+	pods := []*corev1.Pod{
+		makePod("test-1", extension.PriorityBatchValueMin, extension.QoSBE, corev1.PodQOSBestEffort, creationTime),
+		makePod("test-2", extension.PriorityBatchValueMin, extension.QoSBE, corev1.PodQOSBestEffort, creationTime),
+		makePod("test-3", extension.PriorityBatchValueMin, extension.QoSBE, corev1.PodQOSBestEffort, creationTime),
+		makePod("test-4", extension.PriorityBatchValueMin, extension.QoSBE, corev1.PodQOSBestEffort, creationTime),
+	}
+	podMetrics := map[types.NamespacedName]*slov1alpha1.ResourceMap{
+		{Namespace: "default", Name: "test-1"}: {
+			ResourceList: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("2"),
+				corev1.ResourceMemory: resource.MustParse("5Gi"),
+			},
+		},
+		{Namespace: "default", Name: "test-2"}: {
+			ResourceList: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("3"),
+				corev1.ResourceMemory: resource.MustParse("4Gi"),
+			},
+		},
+		{Namespace: "default", Name: "test-3"}: {
+			ResourceList: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("4"),
+				corev1.ResourceMemory: resource.MustParse("3Gi"),
+			},
+		},
+		{Namespace: "default", Name: "test-4"}: {
+			ResourceList: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("5"),
+				corev1.ResourceMemory: resource.MustParse("2Gi"),
+			},
+		},
+	}
+
+	nodeAllocatableMap := map[string]corev1.ResourceList{
+		"test-node": {
+			corev1.ResourceCPU:    resource.MustParse("96"),
+			corev1.ResourceMemory: resource.MustParse("512Gi"),
+		},
+	}
+
+	resourcesThatExceedThresholds := map[corev1.ResourceName]resource.Quantity{
+		corev1.ResourceCPU:    resource.MustParse("4"),
+		corev1.ResourceMemory: resource.MustParse("4Gi"),
+	}
+
+	resourceToWeightMap := map[corev1.ResourceName]int64{
+		corev1.ResourceCPU:    1,
+		corev1.ResourceMemory: 2,
+		corev1.ResourcePods:   1,
+	}
+	SortPodsByUsage(resourcesThatExceedThresholds, pods, podMetrics, nodeAllocatableMap, resourceToWeightMap)
+	expectedPodsOrder := []string{"test-2", "test-1", "test-3", "test-4"}
 	var podsOrder []string
 	for _, v := range pods {
 		podsOrder = append(podsOrder, v.Name)

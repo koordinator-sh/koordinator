@@ -18,10 +18,13 @@ package protocol
 
 import (
 	"fmt"
+	"sort"
 
 	"github.com/containerd/nri/pkg/api"
-
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/tools/record"
+	recutil "k8s.io/client-go/tools/record/util"
 	"k8s.io/klog/v2"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
@@ -122,15 +125,52 @@ func (p *PodRequest) FromReconciler(podMeta *statesinformer.PodMeta) {
 	}
 }
 
+type RecorderEvent struct {
+	HookName  string
+	MsgFmt    string
+	Reason    string
+	EventType string
+}
+
 type PodResponse struct {
 	Resources Resources
 }
 
 type PodContext struct {
-	Request  PodRequest
-	Response PodResponse
-	executor resourceexecutor.ResourceUpdateExecutor
-	updaters []resourceexecutor.ResourceUpdater
+	Request        PodRequest
+	Response       PodResponse
+	executor       resourceexecutor.ResourceUpdateExecutor
+	updaters       []resourceexecutor.ResourceUpdater
+	RecorderEvents []RecorderEvent
+}
+
+func (p *PodContext) RecordEvent(r record.EventRecorder, pod *corev1.Pod) {
+	// Noraml, Warning => RecordEvent
+	events := make(map[string]RecorderEvent)
+	for _, event := range p.RecorderEvents {
+		if !recutil.ValidateEventType(event.EventType) {
+			klog.Warningf("EventType is not valid %v", event)
+			continue
+		}
+
+		e := event
+		if _, ok := events[event.EventType]; ok {
+			e.MsgFmt += "-" + event.MsgFmt
+			e.Reason += "-" + event.Reason
+		}
+		events[event.EventType] = e
+	}
+
+	eventTypes := make([]string, 0, len(events))
+	for eventType := range events {
+		eventTypes = append(eventTypes, eventType)
+	}
+	sort.Strings(eventTypes)
+
+	for _, eventType := range eventTypes {
+		event := events[eventType]
+		r.Eventf(pod, eventType, event.Reason, event.MsgFmt)
+	}
 }
 
 func (p *PodResponse) ProxyDone(resp *runtimeapi.PodSandboxHookResponse) {
@@ -174,6 +214,14 @@ func (p *PodContext) NriDone(executor resourceexecutor.ResourceUpdateExecutor) {
 		p.executor = executor
 	}
 	p.injectForExt()
+	p.Update()
+}
+
+func (p *PodContext) NriRemoveDone(executor resourceexecutor.ResourceUpdateExecutor) {
+	if p.executor == nil {
+		p.executor = executor
+	}
+	p.removeForExt()
 	p.Update()
 }
 
@@ -277,4 +325,22 @@ func (p *PodContext) injectForExt() {
 				p.Request.PodMeta.Namespace, p.Request.PodMeta.Name, *p.Response.Resources.MemoryLimit, p.Request.CgroupParent)
 		}
 	}
+
+	if p.Response.Resources.NetClsClassId != nil {
+		eventHelper := audit.V(3).Pod(p.Request.PodMeta.Namespace, p.Request.PodMeta.Name).Reason("runtime-hooks").Message(
+			"set pod net class id to %v", *p.Response.Resources.NetClsClassId)
+		updater, err := injectNetClsClassId(p.Request.CgroupParent, *p.Response.Resources.NetClsClassId, eventHelper, p.executor)
+		if err != nil {
+			klog.Infof("set pod %v/%v net class id %v on cgroup parent %v failed, error %v", p.Request.PodMeta.Namespace,
+				p.Request.PodMeta.Name, *p.Response.Resources.NetClsClassId, p.Request.CgroupParent, err)
+		} else {
+			p.updaters = append(p.updaters, updater)
+			klog.V(5).Infof("set pod %v/%v net class id %v on cgroup parent %v",
+				p.Request.PodMeta.Namespace, p.Request.PodMeta.Name, *p.Response.Resources.NetClsClassId, p.Request.CgroupParent)
+		}
+	}
+}
+
+func (p *PodContext) removeForExt() {
+	// TODO: cleanup
 }

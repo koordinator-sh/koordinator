@@ -17,8 +17,12 @@ limitations under the License.
 package nodenumaresource
 
 import (
+	"errors"
+	"reflect"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -95,6 +99,67 @@ func Test_getCPUBindPolicy(t *testing.T) {
 			assert.Equal(t, tt.wantRequired, required)
 			if tt.wantError != (err != nil) {
 				t.Errorf("wantErr=%v, but got err=%v", tt.wantError, err)
+			}
+		})
+	}
+}
+
+func Test_mergeTopologyPolicy(t *testing.T) {
+	type args struct {
+		nodePolicy extension.NUMATopologyPolicy
+		podPolicy  extension.NUMATopologyPolicy
+	}
+	tests := []struct {
+		name    string
+		args    args
+		want    extension.NUMATopologyPolicy
+		wantErr error
+	}{
+		// TODO: Add test cases.
+		{
+			name: "no policy on pod",
+			args: args{
+				nodePolicy: extension.NUMATopologyPolicyRestricted,
+				podPolicy:  extension.NUMATopologyPolicyNone,
+			},
+			want: extension.NUMATopologyPolicyRestricted,
+		},
+		{
+			name: "policy on pod",
+			args: args{
+				nodePolicy: extension.NUMATopologyPolicyRestricted,
+				podPolicy:  extension.NUMATopologyPolicyRestricted,
+			},
+			want: extension.NUMATopologyPolicyRestricted,
+		},
+		{
+			name: "policy on pod not match policy on node",
+			args: args{
+				nodePolicy: extension.NUMATopologyPolicyRestricted,
+				podPolicy:  extension.NUMATopologyPolicyBestEffort,
+			},
+			want:    extension.NUMATopologyPolicyNone,
+			wantErr: errors.New(ErrNotMatchNUMATopology),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := mergeTopologyPolicy(tt.args.nodePolicy, tt.args.podPolicy)
+			if err == nil && err != tt.wantErr {
+				t.Errorf("mergeTopologyPolicy() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			} else if tt.wantErr == nil && err != tt.wantErr {
+				t.Errorf("mergeTopologyPolicy() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if err != nil && tt.wantErr != nil {
+				if diff := cmp.Diff(err.Error(), tt.wantErr.Error(), cmpopts.EquateErrors()); diff != "" {
+					t.Errorf("mergeTopologyPolicy() error = %v, wantErr %v, diff: %v", err, tt.wantErr, diff)
+					return
+				}
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("mergeTopologyPolicy() = %v, want %v", got, tt.want)
 			}
 		})
 	}

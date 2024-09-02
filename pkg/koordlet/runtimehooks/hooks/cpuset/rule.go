@@ -40,6 +40,7 @@ type cpusetRule struct {
 	sharePools      []extension.CPUSharedPool
 	beSharePools    []extension.CPUSharedPool
 	systemQOSCPUSet string
+	// TODO: support per-node disable
 }
 
 func (r *cpusetRule) getContainerCPUSet(containerReq *protocol.ContainerRequest) (*string, error) {

@@ -27,7 +27,6 @@ import (
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/klog/v2"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	"github.com/koordinator-sh/koordinator/apis/configuration"
 	"github.com/koordinator-sh/koordinator/apis/extension"
@@ -67,10 +66,10 @@ func (p *Plugin) Setup(opt *framework.Option) error {
 	if err := topologyv1alpha1.AddToScheme(clientgoscheme.Scheme); err != nil {
 		return fmt.Errorf("failed to add client go scheme for NodeResourceTopology, err: %w", err)
 	}
-	opt.Builder = opt.Builder.Watches(&source.Kind{Type: &topologyv1alpha1.NodeResourceTopology{}}, &nrtHandler{})
+	opt.Builder = opt.Builder.Watches(&topologyv1alpha1.NodeResourceTopology{}, &nrtHandler{})
 
 	cfgHandler = newConfigHandler(opt.Client, DefaultCPUNormalizationCfg(), opt.Recorder)
-	opt.Builder = opt.Builder.Watches(&source.Kind{Type: &corev1.ConfigMap{}}, cfgHandler)
+	opt.Builder = opt.Builder.Watches(&corev1.ConfigMap{}, cfgHandler)
 
 	return nil
 }
@@ -175,10 +174,11 @@ func (p *Plugin) Calculate(_ *configuration.ColocationStrategy, node *corev1.Nod
 		return nil, fmt.Errorf("failed to get CPUBasicInfo in cpu normalization calculation, err: info is missing")
 	}
 
-	ratio, err := getCPUNormalizationRatioFromModel(basicInfo, strategy)
+	ratio, err := getCPUNormalizationRatio(basicInfo, strategy)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get ratio in cpu normalization calculation, err: %s", err)
 	}
+
 	if err = isCPUNormalizationRatioValid(ratio); err != nil {
 		return nil, fmt.Errorf("failed to validate ratio in cpu normalization calculation, ratio %v, err: %s", ratio, err)
 	}
@@ -217,6 +217,19 @@ func isCPUBasicInfoChanged(infoOld, infoNew *extension.CPUBasicInfo) (bool, stri
 	}
 
 	return false, ""
+}
+
+func getCPUNormalizationRatio(info *extension.CPUBasicInfo, strategy *configuration.CPUNormalizationStrategy) (float64, error) {
+	ratio, err := getCPUNormalizationRatioFromModel(info, strategy)
+	if err != nil {
+		if strategy.DefaultRatio != nil {
+			klog.V(6).Infof("get no cpu ratio from model, use the default ratio %v", *strategy.DefaultRatio)
+			ratio = *strategy.DefaultRatio
+		} else {
+			return -1, fmt.Errorf("failed to get cpu normalization ratio from model, err: %s", err)
+		}
+	}
+	return ratio, nil
 }
 
 func getCPUNormalizationRatioFromModel(info *extension.CPUBasicInfo, strategy *configuration.CPUNormalizationStrategy) (float64, error) {

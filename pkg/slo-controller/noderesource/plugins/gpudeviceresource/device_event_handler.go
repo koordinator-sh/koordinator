@@ -17,6 +17,7 @@ limitations under the License.
 package gpudeviceresource
 
 import (
+	"context"
 	"reflect"
 
 	"k8s.io/apimachinery/pkg/types"
@@ -32,7 +33,7 @@ var _ handler.EventHandler = &DeviceHandler{}
 
 type DeviceHandler struct{}
 
-func (d *DeviceHandler) Create(e event.CreateEvent, q workqueue.RateLimitingInterface) {
+func (d *DeviceHandler) Create(ctx context.Context, e event.CreateEvent, q workqueue.RateLimitingInterface) {
 	device := e.Object.(*schedulingv1alpha1.Device)
 	q.Add(reconcile.Request{
 		NamespacedName: types.NamespacedName{
@@ -41,7 +42,7 @@ func (d *DeviceHandler) Create(e event.CreateEvent, q workqueue.RateLimitingInte
 	})
 }
 
-func (d *DeviceHandler) Update(e event.UpdateEvent, q workqueue.RateLimitingInterface) {
+func (d *DeviceHandler) Update(ctx context.Context, e event.UpdateEvent, q workqueue.RateLimitingInterface) {
 	newDevice := e.ObjectNew.(*schedulingv1alpha1.Device)
 	oldDevice := e.ObjectOld.(*schedulingv1alpha1.Device)
 	if reflect.DeepEqual(newDevice.Spec, oldDevice.Spec) {
@@ -54,7 +55,7 @@ func (d *DeviceHandler) Update(e event.UpdateEvent, q workqueue.RateLimitingInte
 	})
 }
 
-func (d *DeviceHandler) Delete(e event.DeleteEvent, q workqueue.RateLimitingInterface) {
+func (d *DeviceHandler) Delete(ctx context.Context, e event.DeleteEvent, q workqueue.RateLimitingInterface) {
 	device, ok := e.Object.(*schedulingv1alpha1.Device)
 	if !ok {
 		return
@@ -66,5 +67,5 @@ func (d *DeviceHandler) Delete(e event.DeleteEvent, q workqueue.RateLimitingInte
 	})
 }
 
-func (d *DeviceHandler) Generic(e event.GenericEvent, q workqueue.RateLimitingInterface) {
+func (d *DeviceHandler) Generic(ctx context.Context, e event.GenericEvent, q workqueue.RateLimitingInterface) {
 }

@@ -20,10 +20,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
-	"time"
 
-	gocache "github.com/patrickmn/go-cache"
-	"golang.org/x/time/rate"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
@@ -45,6 +42,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/fieldindex"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/framework"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/framework/plugins/kubernetes/defaultevictor"
+	nodeutil "github.com/koordinator-sh/koordinator/pkg/descheduler/node"
 	podutil "github.com/koordinator-sh/koordinator/pkg/descheduler/pod"
 	pkgutil "github.com/koordinator-sh/koordinator/pkg/util"
 	utilclient "github.com/koordinator-sh/koordinator/pkg/util/client"
@@ -60,9 +58,6 @@ type filter struct {
 
 	args             *deschedulerconfig.MigrationControllerArgs
 	controllerFinder controllerfinder.Interface
-	objectLimiters   map[types.UID]*rate.Limiter
-	limiterCache     *gocache.Cache
-	limiterLock      sync.Mutex
 
 	arbitratedPodMigrationJobs map[types.UID]bool
 	arbitratedMapLock          sync.Mutex
@@ -83,7 +78,6 @@ func newFilter(args *deschedulerconfig.MigrationControllerArgs, handle framework
 	if err := f.initFilters(args, handle); err != nil {
 		return nil, err
 	}
-	f.initObjectLimiters()
 	return f, nil
 }
 
@@ -97,11 +91,13 @@ func (f *filter) initFilters(args *deschedulerconfig.MigrationControllerArgs, ha
 		EvictFailedBarePods:     args.EvictFailedBarePods,
 		LabelSelector:           args.LabelSelector,
 	}
+	var priority *int32
 	if args.PriorityThreshold != nil {
 		defaultEvictorArgs.PriorityThreshold = &k8sdeschedulerapi.PriorityThreshold{
 			Name:  args.PriorityThreshold.Name,
 			Value: args.PriorityThreshold.Value,
 		}
+		priority = args.PriorityThreshold.Value
 	}
 	defaultEvictor, err := defaultevictor.New(defaultEvictorArgs, handle)
 	if err != nil {
@@ -113,8 +109,19 @@ func (f *filter) initFilters(args *deschedulerconfig.MigrationControllerArgs, ha
 		includedNamespaces = sets.NewString(args.Namespaces.Include...)
 		excludedNamespaces = sets.NewString(args.Namespaces.Exclude...)
 	}
-
-	filterPlugin := defaultEvictor.(framework.FilterPlugin)
+	nodeGetter := func() ([]*corev1.Node, error) {
+		nodes, err := nodeutil.ReadyNodes(context.TODO(), handle.ClientSet(), handle.SharedInformerFactory().Core().V1().Nodes(), defaultEvictorArgs.NodeSelector)
+		if err != nil {
+			return nil, err
+		}
+		return nodes, nil
+	}
+	filterPlugin, err := evictionsutil.NewEvictorFilter(nodeGetter, handle.GetPodsAssignedToNodeFunc(), args.EvictLocalStoragePods,
+		args.EvictSystemCriticalPods, args.IgnorePvcPods, args.EvictFailedBarePods, args.EvictAllBarePods,
+		evictionsutil.WithLabelSelector(args.LabelSelector), evictionsutil.WithPriorityThreshold(priority))
+	if err != nil {
+		return err
+	}
 	wrapFilterFuncs := podutil.WrapFilterFuncs(
 		util.FilterPodWithMaxEvictionCost,
 		filterPlugin.Filter,
@@ -128,14 +135,14 @@ func (f *filter) initFilters(args *deschedulerconfig.MigrationControllerArgs, ha
 	if err != nil {
 		return err
 	}
-	retriablePodFilters := podutil.WrapFilterFuncs(
-		f.filterLimitedObject,
+	retryablePodFilters := podutil.WrapFilterFuncs(
+		f.filterMaxMigratingGlobally,
 		f.filterMaxMigratingPerNode,
 		f.filterMaxMigratingPerNamespace,
 		f.filterMaxMigratingOrUnavailablePerWorkload,
 	)
 	f.retryablePodFilter = func(pod *corev1.Pod) bool {
-		return evictionsutil.HaveEvictAnnotation(pod) || retriablePodFilters(pod)
+		return evictionsutil.HaveEvictAnnotation(pod) || retryablePodFilters(pod)
 	}
 	f.nonRetryablePodFilter = func(pod *corev1.Pod) bool {
 		// any annotated as evictable pod pass non-retryable filter
@@ -218,6 +225,37 @@ func (f *filter) existingPodMigrationJob(pod *corev1.Pod, expectedPhaseContexts 
 	return existing
 }
 
+func (f *filter) filterMaxMigratingGlobally(pod *corev1.Pod) bool {
+	if f.args.MaxMigratingGlobally == nil || *f.args.MaxMigratingGlobally <= 0 {
+		return true
+	}
+
+	var expectedPhaseContexts []phaseContext
+	if checkPodArbitrating(pod) {
+		expectedPhaseContexts = []phaseContext{
+			{phase: sev1alpha1.PodMigrationJobRunning, checkArbitration: false},
+			{phase: sev1alpha1.PodMigrationJobPending, checkArbitration: true},
+		}
+	}
+
+	count := 0
+	listOpts := &client.ListOptions{}
+	f.forEachAvailableMigrationJobs(listOpts, func(job *sev1alpha1.PodMigrationJob) bool {
+		if podRef := job.Spec.PodRef; podRef != nil && podRef.UID != pod.UID {
+			count++
+		}
+		return true
+	}, expectedPhaseContexts...)
+
+	maxMigratingGlobally := int(*f.args.MaxMigratingGlobally)
+	exceeded := count >= maxMigratingGlobally
+	if exceeded {
+		klog.V(4).InfoS("Pod fails the following checks", "pod", klog.KObj(pod),
+			"checks", "maxMigratingGlobally", "count", count, "maxMigratingGlobally", maxMigratingGlobally)
+	}
+	return !exceeded
+}
+
 func (f *filter) filterMaxMigratingPerNode(pod *corev1.Pod) bool {
 	if pod.Spec.NodeName == "" || f.args.MaxMigratingPerNode == nil || *f.args.MaxMigratingPerNode <= 0 {
 		return true
@@ -254,8 +292,8 @@ func (f *filter) filterMaxMigratingPerNode(pod *corev1.Pod) bool {
 	maxMigratingPerNode := int(*f.args.MaxMigratingPerNode)
 	exceeded := count >= maxMigratingPerNode
 	if exceeded {
-		klog.V(4).Infof("Pod %q fails to check maxMigratingPerNode because the Node %q has %d migrating Pods, exceeding the maxMigratingPerNode(%d)",
-			klog.KObj(pod), pod.Spec.NodeName, count, maxMigratingPerNode)
+		klog.V(4).InfoS("Pod fails the following checks", "pod", klog.KObj(pod),
+			"checks", "maxMigratingPerNode", "node", pod.Spec.NodeName, "count", count, "maxMigratingPerNode", maxMigratingPerNode)
 	}
 	return !exceeded
 }
@@ -285,8 +323,8 @@ func (f *filter) filterMaxMigratingPerNamespace(pod *corev1.Pod) bool {
 	maxMigratingPerNamespace := int(*f.args.MaxMigratingPerNamespace)
 	exceeded := count >= maxMigratingPerNamespace
 	if exceeded {
-		klog.V(4).Infof("Pod %q fails to check maxMigratingPerNamespace because the Namespace %q has %d migrating Pods, exceeding the maxMigratingPerNamespace(%d)",
-			klog.KObj(pod), pod.Namespace, count, maxMigratingPerNamespace)
+		klog.V(4).InfoS("Pod fails the following checks", "pod", klog.KObj(pod),
+			"checks", "maxMigratingPerNamespace", "namespace", pod.Namespace, "count", count, "maxMigratingPerNamespace", maxMigratingPerNamespace)
 	}
 	return !exceeded
 }
@@ -345,8 +383,9 @@ func (f *filter) filterMaxMigratingOrUnavailablePerWorkload(pod *corev1.Pod) boo
 	if len(migratingPods) > 0 {
 		exceeded := len(migratingPods) >= maxMigrating
 		if exceeded {
-			klog.V(4).Infof("The workload %s/%s/%s(%s) of Pod %q has %d migration jobs that exceed MaxMigratingPerWorkload %d",
-				ownerRef.Name, ownerRef.Kind, ownerRef.APIVersion, ownerRef.UID, klog.KObj(pod), len(migratingPods), maxMigrating)
+			klog.V(4).InfoS("Pod fails the following checks", "pod", klog.KObj(pod),
+				"checks", "maxMigratingPerWorkload", "owner", fmt.Sprintf("%s/%s/%s(%s)", ownerRef.Name, ownerRef.Kind, ownerRef.APIVersion, ownerRef.UID),
+				"migratingPods", len(migratingPods), "maxMigratingPerWorkload", maxMigrating)
 			return false
 		}
 	}
@@ -386,8 +425,9 @@ func (f *filter) filterExpectedReplicas(pod *corev1.Pod) bool {
 	if f.args.SkipCheckExpectedReplicas == nil || !*f.args.SkipCheckExpectedReplicas {
 		// TODO(joseph): There are f few special scenarios where should we allow eviction?
 		if expectedReplicas == 1 || int(expectedReplicas) == maxMigrating || int(expectedReplicas) == maxUnavailable {
-			klog.Warningf("maxMigrating(%d) or maxUnavailable(%d) equals to the replicas(%d) of the workload %s/%s/%s(%s) of Pod %q, or the replicas equals to 1, please increase the replicas or update the defense configurations",
-				maxMigrating, maxUnavailable, expectedReplicas, ownerRef.Name, ownerRef.Kind, ownerRef.APIVersion, ownerRef.UID, klog.KObj(pod))
+			klog.V(4).InfoS("Pod fails the following checks", "pod", klog.KObj(pod), "checks", "expectedReplicas",
+				"owner", fmt.Sprintf("%s/%s/%s(%s)", ownerRef.Name, ownerRef.Kind, ownerRef.APIVersion, ownerRef.UID),
+				"maxMigrating", maxMigrating, "maxUnavailable", maxUnavailable, "expectedReplicas", expectedReplicas)
 			return false
 		}
 	}
@@ -412,91 +452,6 @@ func (f *filter) getUnavailablePods(pods []*corev1.Pod) map[types.NamespacedName
 func mergeUnavailableAndMigratingPods(unavailablePods, migratingPods map[types.NamespacedName]struct{}) {
 	for k, v := range migratingPods {
 		unavailablePods[k] = v
-	}
-}
-
-func (f *filter) trackEvictedPod(pod *corev1.Pod) {
-	if f.objectLimiters == nil || f.limiterCache == nil {
-		return
-	}
-	ownerRef := metav1.GetControllerOf(pod)
-	if ownerRef == nil {
-		return
-	}
-
-	objectLimiterArgs, ok := f.args.ObjectLimiters[deschedulerconfig.MigrationLimitObjectWorkload]
-	if !ok || objectLimiterArgs.Duration.Seconds() == 0 {
-		return
-	}
-
-	var maxMigratingReplicas int
-	if expectedReplicas, err := f.controllerFinder.GetExpectedScaleForPod(pod); err == nil {
-		maxMigrating := objectLimiterArgs.MaxMigrating
-		if maxMigrating == nil {
-			maxMigrating = f.args.MaxMigratingPerWorkload
-		}
-		maxMigratingReplicas, _ = util.GetMaxMigrating(int(expectedReplicas), maxMigrating)
-	}
-	if maxMigratingReplicas == 0 {
-		return
-	}
-
-	f.limiterLock.Lock()
-	defer f.limiterLock.Unlock()
-
-	uid := ownerRef.UID
-	limit := rate.Limit(maxMigratingReplicas) / rate.Limit(objectLimiterArgs.Duration.Seconds())
-	limiter := f.objectLimiters[uid]
-	if limiter == nil {
-		limiter = rate.NewLimiter(limit, 1)
-		f.objectLimiters[uid] = limiter
-	} else if limiter.Limit() != limit {
-		limiter.SetLimit(limit)
-	}
-
-	if !limiter.AllowN(f.clock.Now(), 1) {
-		klog.Infof("The workload %s/%s/%s has been frequently descheduled recently and needs to be limited for f period of time", ownerRef.Name, ownerRef.Kind, ownerRef.APIVersion)
-	}
-	f.limiterCache.Set(string(uid), 0, gocache.DefaultExpiration)
-}
-
-func (f *filter) filterLimitedObject(pod *corev1.Pod) bool {
-	if f.objectLimiters == nil || f.limiterCache == nil {
-		return true
-	}
-	objectLimiterArgs, ok := f.args.ObjectLimiters[deschedulerconfig.MigrationLimitObjectWorkload]
-	if !ok || objectLimiterArgs.Duration.Duration == 0 {
-		return true
-	}
-	if ownerRef := metav1.GetControllerOf(pod); ownerRef != nil {
-		f.limiterLock.Lock()
-		defer f.limiterLock.Unlock()
-		if limiter := f.objectLimiters[ownerRef.UID]; limiter != nil {
-			if remainTokens := limiter.Tokens() - float64(1); remainTokens < 0 {
-				klog.Infof("Pod %q is filtered by workload %s/%s/%s is limited", klog.KObj(pod), ownerRef.Name, ownerRef.Kind, ownerRef.APIVersion)
-				return false
-			}
-		}
-	}
-	return true
-}
-
-func (f *filter) initObjectLimiters() {
-	var trackExpiration time.Duration
-	for _, v := range f.args.ObjectLimiters {
-		if v.Duration.Duration > trackExpiration {
-			trackExpiration = v.Duration.Duration
-		}
-	}
-	if trackExpiration > 0 {
-		f.objectLimiters = make(map[types.UID]*rate.Limiter)
-		limiterExpiration := trackExpiration + trackExpiration/2
-		f.limiterCache = gocache.New(limiterExpiration, limiterExpiration)
-		f.limiterCache.OnEvicted(func(s string, _ interface{}) {
-			f.limiterLock.Lock()
-			defer f.limiterLock.Unlock()
-			delete(f.objectLimiters, types.UID(s))
-		})
 	}
 }
 

@@ -44,6 +44,11 @@ func (pl *Plugin) PreScore(ctx context.Context, cycleState *framework.CycleState
 		return nil
 	}
 
+	// if the pod is reservation-ignored, it does not want a nominated reservation
+	if apiext.IsReservationIgnored(pod) {
+		return nil
+	}
+
 	state := getStateData(cycleState)
 	if len(state.nodeReservationStates) == 0 {
 		return nil
@@ -59,7 +64,7 @@ func (pl *Plugin) PreScore(ctx context.Context, cycleState *framework.CycleState
 	errCh := parallelize.NewErrorChannel()
 	pl.handle.Parallelizer().Until(ctx, len(nodes), func(piece int) {
 		node := nodes[piece]
-		reservationInfos := state.nodeReservationStates[node.Name].matched
+		reservationInfos := state.nodeReservationStates[node.Name].matchedOrIgnored
 		if len(reservationInfos) == 0 {
 			return
 		}
@@ -76,7 +81,7 @@ func (pl *Plugin) PreScore(ctx context.Context, cycleState *framework.CycleState
 			index := atomic.AddInt32(&nominatedNodeIndex, 1)
 			nominatedReservations[index-1] = nominatedReservationInfo
 		}
-	})
+	}, "ReservationPreScore")
 	if err := errCh.ReceiveError(); err != nil {
 		return framework.AsStatus(err)
 	}
@@ -132,7 +137,7 @@ func (pl *Plugin) NormalizeScore(ctx context.Context, state *framework.CycleStat
 
 func (pl *Plugin) ScoreReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, reservationInfo *frameworkext.ReservationInfo, nodeName string) (int64, *framework.Status) {
 	state := getStateData(cycleState)
-	reservationInfos := state.nodeReservationStates[nodeName].matched
+	reservationInfos := state.nodeReservationStates[nodeName].matchedOrIgnored
 
 	var rInfo *frameworkext.ReservationInfo
 	for _, v := range reservationInfos {
@@ -182,7 +187,7 @@ func findMostPreferredReservationByOrder(rOnNode []*frameworkext.ReservationInfo
 
 func scoreReservation(pod *corev1.Pod, rInfo *frameworkext.ReservationInfo, allocated corev1.ResourceList) int64 {
 	// TODO(joseph): we should support zero-request pods
-	requested, _ := resourceapi.PodRequestsAndLimits(pod)
+	requested := resourceapi.PodRequests(pod, resourceapi.PodResourcesOptions{})
 	requested = quotav1.Add(requested, allocated)
 	resources := quotav1.RemoveZeros(rInfo.Allocatable)
 

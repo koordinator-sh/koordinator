@@ -44,6 +44,11 @@ func (r *Reconciler) Evict(ctx context.Context, pod *corev1.Pod, evictOptions fr
 		return false
 	}
 
+	if r.checkPodExceedObjectLimiter(pod) {
+		klog.Errorf("Pod %q cannot be evicted since it exceeds object limiter", klog.KObj(pod))
+		return false
+	}
+
 	err := CreatePodMigrationJob(ctx, pod, evictOptions, r.Client, r.args)
 	return err == nil
 }

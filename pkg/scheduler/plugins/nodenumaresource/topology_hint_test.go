@@ -24,6 +24,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
@@ -116,5 +117,12 @@ func TestReserveByNUMANode(t *testing.T) {
 			},
 		},
 	}
+	for i := range expectPodAllocation.NUMANodeResources {
+		assert.Equal(t, expectPodAllocation.NUMANodeResources[i].Node, state.allocation.NUMANodeResources[i].Node)
+		assert.True(t, quotav1.Equals(expectPodAllocation.NUMANodeResources[i].Resources, state.allocation.NUMANodeResources[i].Resources))
+	}
+	expectPodAllocation.NUMANodeResources = nil
+	state.allocation.NUMANodeResources = nil
 	assert.Equal(t, expectPodAllocation, state.allocation)
+
 }

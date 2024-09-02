@@ -115,6 +115,8 @@ type DeviceHint struct {
 	VFSelector *metav1.LabelSelector `json:"vfSelector,omitempty"`
 	// AllocateStrategy controls the allocation strategy
 	AllocateStrategy DeviceAllocateStrategy `json:"allocateStrategy,omitempty"`
+	// RequiredTopologyScope defines the required topology scope for allocating devices.
+	RequiredTopologyScope DeviceTopologyScope `json:"requiredTopologyScope,omitempty"`
 	// ExclusivePolicy indicates the exclusive policy.
 	ExclusivePolicy DeviceExclusivePolicy `json:"exclusivePolicy,omitempty"`
 }
@@ -124,6 +126,13 @@ type DeviceAllocateStrategy string
 const (
 	ApplyForAllDeviceAllocateStrategy DeviceAllocateStrategy = "ApplyForAll"
 	RequestsAsCountAllocateStrategy   DeviceAllocateStrategy = "RequestsAsCount"
+)
+
+type DeviceTopologyScope string
+
+const (
+	DeviceTopologyScopePCIe     DeviceTopologyScope = "PCIe"
+	DeviceTopologyScopeNUMANode DeviceTopologyScope = "NUMANode"
 )
 
 type DeviceExclusivePolicy string

@@ -39,6 +39,9 @@ type MigrationControllerArgs struct {
 	// EvictFailedBarePods allows pods without ownerReferences and in failed phase to be evicted.
 	EvictFailedBarePods bool `json:"evictFailedBarePods"`
 
+	// EvictAllBarePods allows all pods without ownerReferences to be evicted.
+	EvictAllBarePods bool `json:"evictAllBarePods"`
+
 	// EvictLocalStoragePods allows pods using local storage to be evicted.
 	EvictLocalStoragePods bool `json:"evictLocalStoragePods"`
 
@@ -64,6 +67,9 @@ type MigrationControllerArgs struct {
 
 	// NodeSelector for a set of nodes to operate over
 	NodeSelector string `json:"nodeSelector,omitempty"`
+
+	// MaxMigratingGlobally represents the maximum number of pods that can be migrating during migrate globally.
+	MaxMigratingGlobally *int32 `json:"maxMigratingGlobally,omitempty"`
 
 	// MaxMigratingPerNode represents he maximum number of pods that can be migrating during migrate per node.
 	MaxMigratingPerNode *int32 `json:"maxMigratingPerNode,omitempty"`

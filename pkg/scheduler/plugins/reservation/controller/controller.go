@@ -223,7 +223,7 @@ func (c *Controller) syncStatus(reservation *schedulingv1alpha1.Reservation) err
 			Name:      pod.Name,
 			UID:       pod.UID,
 		})
-		requests, _ := resource.PodRequestsAndLimits(pod)
+		requests := resource.PodRequests(pod, resource.PodResourcesOptions{})
 		actualAllocated = quotav1.Add(actualAllocated, requests)
 	}
 

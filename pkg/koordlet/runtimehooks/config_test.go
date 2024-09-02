@@ -18,6 +18,7 @@ package runtimehooks
 
 import (
 	"flag"
+	"math"
 	"testing"
 	"time"
 
@@ -36,7 +37,14 @@ func Test_NewDefaultConfig(t *testing.T) {
 		RuntimeHookHostEndpoint:         "/var/run/koordlet/koordlet.sock",
 		RuntimeHookDisableStages:        []string{},
 		RuntimeHooksNRI:                 true,
+		RuntimeHooksNRIConnectTimeout:   6 * time.Second,
+		RuntimeHooksNRIBackOffDuration:  1 * time.Second,
+		RuntimeHooksNRIBackOffCap:       1<<62 - 1,
+		RuntimeHooksNRIBackOffSteps:     math.MaxInt32,
+		RuntimeHooksNRIBackOffFactor:    2,
 		RuntimeHooksNRISocketPath:       "nri/nri.sock",
+		RuntimeHooksNRIPluginName:       "koordlet_nri",
+		RuntimeHooksNRIPluginIndex:      "00",
 		RuntimeHookReconcileInterval:    10 * time.Second,
 	}
 	defaultConfig := NewDefaultConfig()

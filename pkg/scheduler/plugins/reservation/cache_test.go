@@ -96,7 +96,6 @@ func TestCacheUpdateReservation(t *testing.T) {
 	reservationInfos = cache.listAvailableReservationInfosOnNode(reservation.Status.NodeName)
 	assert.Len(t, reservationInfos, 1)
 	rInfo = reservationInfos[0]
-	expectReservationInfo.Allocated = corev1.ResourceList{}
 	sort.Slice(rInfo.ResourceNames, func(i, j int) bool {
 		return rInfo.ResourceNames[i] < rInfo.ResourceNames[j]
 	})

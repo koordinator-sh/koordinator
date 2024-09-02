@@ -150,6 +150,24 @@ func readCgroupAndParseInt64(parentDir string, r sysutil.Resource) (int64, error
 	return v, nil
 }
 
+func readCgroupAndParseUint32(parentDir string, r sysutil.Resource) (uint32, error) {
+	// TODO: refactor with generics
+	s, err := cgroupFileRead(parentDir, r)
+	if err != nil {
+		return 0, err
+	}
+
+	// "max" means unlimited
+	if strings.Trim(s, "\n ") == CgroupMaxSymbolStr {
+		return math.MaxInt32, nil
+	}
+	v, err := strconv.ParseUint(s, 10, 32)
+	if err != nil {
+		return 0, fmt.Errorf("cannot parse cgroup value %s, err: %v", s, err)
+	}
+	return uint32(v), nil
+}
+
 func readCgroupAndParseUint64(parentDir string, r sysutil.Resource) (uint64, error) {
 	s, err := cgroupFileRead(parentDir, r)
 	if err != nil {

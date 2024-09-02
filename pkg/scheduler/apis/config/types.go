@@ -37,6 +37,8 @@ type LoadAwareSchedulingArgs struct {
 	// When NodeMetrics expired, the node is considered abnormal.
 	// Default is 180 seconds.
 	NodeMetricExpirationSeconds *int64
+	// EnableScheduleWhenNodeMetricsExpired Indicates whether nodes with expired nodeMetrics are allowed to schedule pods.
+	EnableScheduleWhenNodeMetricsExpired *bool
 	// ResourceWeights indicates the weights of resources.
 	// The weights of CPU and Memory are both 1 by default.
 	ResourceWeights map[corev1.ResourceName]int64
@@ -158,6 +160,19 @@ type ReservationArgs struct {
 
 	// EnablePreemption indicates whether to enable preemption for reservations.
 	EnablePreemption bool
+	// MinCandidateNodesPercentage is the minimum number of candidates to
+	// shortlist when dry running preemption as a percentage of number of nodes.
+	// Must be in the range [0, 100]. Defaults to 10% of the cluster size if
+	// unspecified.
+	MinCandidateNodesPercentage int32
+	// MinCandidateNodesAbsolute is the absolute minimum number of candidates to
+	// shortlist. The likely number of candidates enumerated for dry running
+	// preemption is given by the formula:
+	// numCandidates = max(numNodes * minCandidateNodesPercentage, minCandidateNodesAbsolute)
+	// We say "likely" because there are other factors such as PDB violations
+	// that play a role in the number of candidates shortlisted. Must be at least
+	// 0 nodes. Defaults to 100 nodes if unspecified.
+	MinCandidateNodesAbsolute int32
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -219,4 +234,6 @@ type DeviceShareArgs struct {
 	Allocator string
 	// ScoringStrategy selects the device resource scoring strategy.
 	ScoringStrategy *ScoringStrategy
+	// DisableDeviceNUMATopologyAlignment indicates device don't need to align with other resources' numa topology
+	DisableDeviceNUMATopologyAlignment bool
 }

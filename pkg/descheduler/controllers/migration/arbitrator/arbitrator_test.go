@@ -311,7 +311,7 @@ func TestAbortJobIfNonRetryablePodFilterFailed(t *testing.T) {
 	scheme := runtime.NewScheme()
 	_ = v1alpha1.AddToScheme(scheme)
 	_ = clientgoscheme.AddToScheme(scheme)
-	fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+	fakeClient := fake.NewClientBuilder().WithStatusSubresource(&v1alpha1.PodMigrationJob{}).WithScheme(scheme).Build()
 
 	job := &v1alpha1.PodMigrationJob{
 		ObjectMeta: metav1.ObjectMeta{
@@ -451,7 +451,7 @@ func TestDoOnceArbitrate(t *testing.T) {
 			scheme := runtime.NewScheme()
 			_ = v1alpha1.AddToScheme(scheme)
 			_ = clientgoscheme.AddToScheme(scheme)
-			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+			fakeClient := fake.NewClientBuilder().WithStatusSubresource(&v1alpha1.PodMigrationJob{}).WithScheme(scheme).Build()
 
 			jobs := make([]*v1alpha1.PodMigrationJob, testCase.jobNum)
 			podOfJob := map[*v1alpha1.PodMigrationJob]*corev1.Pod{}
@@ -638,7 +638,7 @@ func TestUpdateFailedJob(t *testing.T) {
 	scheme := runtime.NewScheme()
 	_ = v1alpha1.AddToScheme(scheme)
 	_ = clientgoscheme.AddToScheme(scheme)
-	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(job).Build()
+	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&v1alpha1.PodMigrationJob{}).WithObjects(job).Build()
 	arbitrator := &arbitratorImpl{
 		waitingCollection: map[types.UID]*v1alpha1.PodMigrationJob{job.UID: job},
 		client:            fakeClient,
@@ -687,7 +687,7 @@ func TestEventHandler(t *testing.T) {
 		assert.Nil(t, fakeClient.Create(context.TODO(), job))
 
 		assert.False(t, arbitrator.filter.checkJobPassedArbitration(job.UID))
-		handler.Create(event.CreateEvent{Object: job}, queue)
+		handler.Create(context.TODO(), event.CreateEvent{Object: job}, queue)
 
 		arbitrator.filter.markJobPassedArbitration(job.UID)
 		assert.True(t, arbitrator.filter.checkJobPassedArbitration(job.UID))
@@ -701,17 +701,17 @@ func TestEventHandler(t *testing.T) {
 	}
 	assert.Equal(t, 0, queue.Len())
 	for _, job := range migratingJobs[:3] {
-		handler.Delete(event.DeleteEvent{Object: job}, queue)
+		handler.Delete(context.TODO(), event.DeleteEvent{Object: job}, queue)
 		assert.False(t, arbitrator.filter.checkJobPassedArbitration(job.UID))
 	}
 	migratingJobs[3].Status.Phase = v1alpha1.PodMigrationJobFailed
 	assert.Nil(t, fakeClient.Update(context.TODO(), migratingJobs[3]))
-	handler.Update(event.UpdateEvent{ObjectNew: migratingJobs[3]}, queue)
+	handler.Update(context.TODO(), event.UpdateEvent{ObjectNew: migratingJobs[3]}, queue)
 	assert.False(t, arbitrator.filter.checkJobPassedArbitration(migratingJobs[3].UID))
 
 	migratingJobs[4].Status.Phase = v1alpha1.PodMigrationJobSucceeded
 	assert.Nil(t, fakeClient.Update(context.TODO(), migratingJobs[4]))
-	handler.Update(event.UpdateEvent{ObjectNew: migratingJobs[4]}, queue)
+	handler.Update(context.TODO(), event.UpdateEvent{ObjectNew: migratingJobs[4]}, queue)
 	assert.False(t, arbitrator.filter.checkJobPassedArbitration(migratingJobs[4].UID))
 }
 

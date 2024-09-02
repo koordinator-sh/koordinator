@@ -56,7 +56,7 @@ type PodRequirement struct {
 }
 
 func NewPodRequirement(pod *corev1.Pod) *PodRequirement {
-	requests, _ := resource.PodRequestsAndLimits(pod)
+	requests := resource.PodRequests(pod, resource.PodResourcesOptions{})
 	ports := util.RequestedHostPorts(pod)
 	return &PodRequirement{
 		Namespace: pod.Namespace,
@@ -117,7 +117,7 @@ func NewReservationInfo(r *schedulingv1alpha1.Reservation) *ReservationInfo {
 func NewReservationInfoFromPod(pod *corev1.Pod) *ReservationInfo {
 	var parseErrors []error
 
-	allocatable, _ := resource.PodRequestsAndLimits(pod)
+	allocatable := resource.PodRequests(pod, resource.PodResourcesOptions{})
 	resourceNames := quotav1.ResourceNames(allocatable)
 	options, err := apiext.GetReservationRestrictedOptions(pod.Annotations)
 	if err == nil {
@@ -324,7 +324,9 @@ func (ri *ReservationInfo) UpdateReservation(r *schedulingv1alpha1.Reservation) 
 	ri.Reservation = r
 	ri.Pod = reservationutil.NewReservePod(r)
 	ri.AllocatablePorts = util.RequestedHostPorts(ri.Pod)
-	ri.Allocated = quotav1.Mask(ri.Allocated, ri.ResourceNames)
+	if ri.Allocated != nil {
+		ri.Allocated = quotav1.Mask(ri.Allocated, ri.ResourceNames)
+	}
 	ownerMatchers, err := reservationutil.ParseReservationOwnerMatchers(r.Spec.Owners)
 	if err != nil {
 		klog.ErrorS(err, "Failed to parse reservation owner matchers", "reservation", klog.KObj(r))
@@ -340,7 +342,7 @@ func (ri *ReservationInfo) UpdateReservation(r *schedulingv1alpha1.Reservation) 
 }
 
 func (ri *ReservationInfo) UpdatePod(pod *corev1.Pod) {
-	ri.Allocatable, _ = resource.PodRequestsAndLimits(pod)
+	ri.Allocatable = resource.PodRequests(pod, resource.PodResourcesOptions{})
 	var parseErrors []error
 	resourceNames := quotav1.ResourceNames(ri.Allocatable)
 	options, err := apiext.GetReservationRestrictedOptions(pod.Annotations)

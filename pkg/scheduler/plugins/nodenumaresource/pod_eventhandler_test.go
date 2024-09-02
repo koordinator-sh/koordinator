@@ -114,7 +114,7 @@ func TestPodEventHandler(t *testing.T) {
 			handler := &podEventHandler{
 				resourceManager: resourceManager,
 			}
-			handler.OnAdd(tt.pod)
+			handler.OnAdd(tt.pod, true)
 			handler.OnUpdate(tt.pod, tt.pod)
 
 			nodeAllocation := resourceManager.getOrCreateNodeAllocation("test-node-1")

@@ -24,7 +24,6 @@ import (
 	v1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	labels "k8s.io/apimachinery/pkg/labels"
-	schema "k8s.io/apimachinery/pkg/runtime/schema"
 	types "k8s.io/apimachinery/pkg/types"
 	watch "k8s.io/apimachinery/pkg/watch"
 	testing "k8s.io/client-go/testing"
@@ -35,9 +34,9 @@ type FakePodMigrationJobs struct {
 	Fake *FakeSchedulingV1alpha1
 }
 
-var podmigrationjobsResource = schema.GroupVersionResource{Group: "scheduling.koordinator.sh", Version: "v1alpha1", Resource: "podmigrationjobs"}
+var podmigrationjobsResource = v1alpha1.SchemeGroupVersion.WithResource("podmigrationjobs")
 
-var podmigrationjobsKind = schema.GroupVersionKind{Group: "scheduling.koordinator.sh", Version: "v1alpha1", Kind: "PodMigrationJob"}
+var podmigrationjobsKind = v1alpha1.SchemeGroupVersion.WithKind("PodMigrationJob")
 
 // Get takes name of the podMigrationJob, and returns the corresponding podMigrationJob object, and an error if there is any.
 func (c *FakePodMigrationJobs) Get(ctx context.Context, name string, options v1.GetOptions) (result *v1alpha1.PodMigrationJob, err error) {

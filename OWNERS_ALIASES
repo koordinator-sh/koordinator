@@ -5,13 +5,16 @@ aliases:
   ci-approvers:
     - eahydra
     - jasonliu747
+    - saintube
 
   api-machinery-approvers:
     - FillZpp
+    - zwzhang0107
 
   scheduler-approvers:
     - eahydra
     - buptcozy
+    - ZiMengSheng
 
   slo-controller-approvers:
     - jasonliu747
@@ -33,6 +36,7 @@ aliases:
   webhook-approvers:
     - FillZpp
     - eahydra
+    - zwzhang0107
 
   prediction-approvers:
     - zwzhang0107

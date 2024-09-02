@@ -24,7 +24,6 @@ import (
 	v1alpha1 "github.com/koordinator-sh/koordinator/apis/analysis/v1alpha1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	labels "k8s.io/apimachinery/pkg/labels"
-	schema "k8s.io/apimachinery/pkg/runtime/schema"
 	types "k8s.io/apimachinery/pkg/types"
 	watch "k8s.io/apimachinery/pkg/watch"
 	testing "k8s.io/client-go/testing"
@@ -36,9 +35,9 @@ type FakeRecommendations struct {
 	ns   string
 }
 
-var recommendationsResource = schema.GroupVersionResource{Group: "config.koordinator.sh", Version: "v1alpha1", Resource: "recommendations"}
+var recommendationsResource = v1alpha1.SchemeGroupVersion.WithResource("recommendations")
 
-var recommendationsKind = schema.GroupVersionKind{Group: "config.koordinator.sh", Version: "v1alpha1", Kind: "Recommendation"}
+var recommendationsKind = v1alpha1.SchemeGroupVersion.WithKind("Recommendation")
 
 // Get takes name of the recommendation, and returns the corresponding recommendation object, and an error if there is any.
 func (c *FakeRecommendations) Get(ctx context.Context, name string, options v1.GetOptions) (result *v1alpha1.Recommendation, err error) {

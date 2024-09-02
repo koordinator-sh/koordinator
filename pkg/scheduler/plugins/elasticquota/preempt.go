@@ -31,12 +31,12 @@ import (
 	corev1helpers "k8s.io/component-helpers/scheduling/corev1"
 	"k8s.io/klog/v2"
 	extenderv1 "k8s.io/kube-scheduler/extender/v1"
-	"k8s.io/kubernetes/pkg/features"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework/preemption"
 	"k8s.io/kubernetes/pkg/scheduler/util"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
+	koordfeature "github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/elasticquota/core"
 )
 
@@ -170,7 +170,7 @@ func (g *Plugin) SelectVictimsOnNode(
 	violatingVictims, nonViolatingVictims := filterPodsWithPDBViolation(potentialVictims, pdbs)
 
 	postFilterState, _ := getPostFilterState(state)
-	podReq, _ := core.PodRequestsAndLimits(pod)
+	podReq := core.PodRequests(pod)
 
 	reprievePod := func(pi *framework.PodInfo) (bool, error) {
 		if err := addPod(pi); err != nil {
@@ -268,7 +268,7 @@ func filterPodsWithPDBViolation(podInfos []*framework.PodInfo, pdbs []*policy.Po
 
 // TODO if the kubernetes version is before 1.20, will return nil.
 func getPDBLister(handle framework.Handle) policylisters.PodDisruptionBudgetLister {
-	if !feature.DefaultFeatureGate.Enabled(features.PodDisruptionBudget) {
+	if !feature.DefaultFeatureGate.Enabled(koordfeature.PodDisruptionBudget) {
 		return nil
 	}
 

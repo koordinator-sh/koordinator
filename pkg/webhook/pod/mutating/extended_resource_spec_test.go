@@ -39,7 +39,7 @@ func TestExtendedResourceSpecMutatingPod(t *testing.T) {
 	assert := assert.New(t)
 
 	client := fake.NewClientBuilder().Build()
-	decoder, _ := admission.NewDecoder(scheme.Scheme)
+	decoder := admission.NewDecoder(scheme.Scheme)
 	handler := &PodMutatingHandler{
 		Client:  client,
 		Decoder: decoder,

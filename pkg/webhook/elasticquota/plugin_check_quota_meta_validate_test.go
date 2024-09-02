@@ -27,7 +27,8 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
-	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
+
+	"github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 )
@@ -39,7 +40,7 @@ func TestQuotaMetaChecker(t *testing.T) {
 		Group:   "scheduling.sigs.k8s.io",
 		Version: "v1alpha1",
 	}, &v1alpha1.ElasticQuota{}, &v1alpha1.ElasticQuotaList{})
-	decoder, _ := admission.NewDecoder(sche)
+	decoder := admission.NewDecoder(sche)
 
 	plugin := NewPlugin(decoder, client)
 

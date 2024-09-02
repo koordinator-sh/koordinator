@@ -24,9 +24,9 @@ import (
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	utilfeature "k8s.io/apiserver/pkg/util/feature"
 	"k8s.io/klog/v2"
-	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/features"
 )
 
@@ -573,7 +573,7 @@ type PodInfo struct {
 }
 
 func NewPodInfo(pod *v1.Pod) *PodInfo {
-	res, _ := PodRequestsAndLimits(pod)
+	res := PodRequests(pod)
 	return &PodInfo{
 		pod:      pod,
 		resource: res,

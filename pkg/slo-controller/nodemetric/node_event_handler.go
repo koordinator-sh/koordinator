@@ -17,6 +17,7 @@ limitations under the License.
 package nodemetric
 
 import (
+	"context"
 	"reflect"
 
 	corev1 "k8s.io/api/core/v1"
@@ -34,7 +35,7 @@ type EnqueueRequestForNode struct {
 	client.Client
 }
 
-func (n *EnqueueRequestForNode) Create(e event.CreateEvent, q workqueue.RateLimitingInterface) {
+func (n *EnqueueRequestForNode) Create(ctx context.Context, e event.CreateEvent, q workqueue.RateLimitingInterface) {
 	if node, ok := e.Object.(*corev1.Node); !ok {
 		return
 	} else {
@@ -46,7 +47,7 @@ func (n *EnqueueRequestForNode) Create(e event.CreateEvent, q workqueue.RateLimi
 	}
 }
 
-func (n *EnqueueRequestForNode) Update(e event.UpdateEvent, q workqueue.RateLimitingInterface) {
+func (n *EnqueueRequestForNode) Update(ctx context.Context, e event.UpdateEvent, q workqueue.RateLimitingInterface) {
 	newNode, oldNode := e.ObjectNew.(*corev1.Node), e.ObjectOld.(*corev1.Node)
 	// TODO, only use for noderesource
 	if !isNodeAllocatableUpdated(newNode, oldNode) {
@@ -59,7 +60,7 @@ func (n *EnqueueRequestForNode) Update(e event.UpdateEvent, q workqueue.RateLimi
 	})
 }
 
-func (n *EnqueueRequestForNode) Delete(e event.DeleteEvent, q workqueue.RateLimitingInterface) {
+func (n *EnqueueRequestForNode) Delete(ctx context.Context, e event.DeleteEvent, q workqueue.RateLimitingInterface) {
 	if node, ok := e.Object.(*corev1.Node); !ok {
 		return
 	} else {
@@ -71,7 +72,8 @@ func (n *EnqueueRequestForNode) Delete(e event.DeleteEvent, q workqueue.RateLimi
 	}
 }
 
-func (n *EnqueueRequestForNode) Generic(e event.GenericEvent, q workqueue.RateLimitingInterface) {}
+func (n *EnqueueRequestForNode) Generic(ctx context.Context, e event.GenericEvent, q workqueue.RateLimitingInterface) {
+}
 
 // isNodeAllocatableUpdated returns whether the new node's allocatable is different from the old one's
 func isNodeAllocatableUpdated(newNode *corev1.Node, oldNode *corev1.Node) bool {

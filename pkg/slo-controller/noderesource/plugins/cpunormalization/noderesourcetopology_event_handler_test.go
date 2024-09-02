@@ -17,6 +17,7 @@ limitations under the License.
 package cpunormalization
 
 import (
+	"context"
 	"testing"
 
 	topologyv1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
@@ -197,7 +198,7 @@ func Test_EnqueueRequestForNodeResourceTopology(t *testing.T) {
 		{
 			name: "create NRT event",
 			fn: func(handler *nrtHandler, q workqueue.RateLimitingInterface) {
-				handler.Create(event.CreateEvent{
+				handler.Create(context.TODO(), event.CreateEvent{
 					Object: &topologyv1alpha1.NodeResourceTopology{
 						ObjectMeta: metav1.ObjectMeta{
 							Name: "node1",
@@ -215,7 +216,7 @@ func Test_EnqueueRequestForNodeResourceTopology(t *testing.T) {
 		{
 			name: "create event not NRT",
 			fn: func(handler *nrtHandler, q workqueue.RateLimitingInterface) {
-				handler.Create(event.CreateEvent{
+				handler.Create(context.TODO(), event.CreateEvent{
 					Object: &corev1.Pod{
 						ObjectMeta: metav1.ObjectMeta{
 							Name: "pod1",
@@ -228,7 +229,7 @@ func Test_EnqueueRequestForNodeResourceTopology(t *testing.T) {
 		{
 			name: "delete NRT event",
 			fn: func(handler *nrtHandler, q workqueue.RateLimitingInterface) {
-				handler.Delete(event.DeleteEvent{
+				handler.Delete(context.TODO(), event.DeleteEvent{
 					Object: &topologyv1alpha1.NodeResourceTopology{
 						ObjectMeta: metav1.ObjectMeta{
 							Name: "node1",
@@ -246,7 +247,7 @@ func Test_EnqueueRequestForNodeResourceTopology(t *testing.T) {
 		{
 			name: "delete event not NRT",
 			fn: func(handler *nrtHandler, q workqueue.RateLimitingInterface) {
-				handler.Delete(event.DeleteEvent{
+				handler.Delete(context.TODO(), event.DeleteEvent{
 					Object: &corev1.Pod{
 						ObjectMeta: metav1.ObjectMeta{
 							Name: "pod1",
@@ -259,7 +260,7 @@ func Test_EnqueueRequestForNodeResourceTopology(t *testing.T) {
 		{
 			name: "update NRT event",
 			fn: func(handler *nrtHandler, q workqueue.RateLimitingInterface) {
-				handler.Update(event.UpdateEvent{
+				handler.Update(context.TODO(), event.UpdateEvent{
 					ObjectOld: &topologyv1alpha1.NodeResourceTopology{
 						ObjectMeta: metav1.ObjectMeta{
 							Name:            "node1",
@@ -286,7 +287,7 @@ func Test_EnqueueRequestForNodeResourceTopology(t *testing.T) {
 		{
 			name: "update node event ignore",
 			fn: func(handler *nrtHandler, q workqueue.RateLimitingInterface) {
-				handler.Update(event.UpdateEvent{
+				handler.Update(context.TODO(), event.UpdateEvent{
 					ObjectOld: &topologyv1alpha1.NodeResourceTopology{
 						ObjectMeta: metav1.ObjectMeta{
 							Name: "node1",
@@ -304,7 +305,7 @@ func Test_EnqueueRequestForNodeResourceTopology(t *testing.T) {
 		{
 			name: "generic node event ignore",
 			fn: func(handler *nrtHandler, q workqueue.RateLimitingInterface) {
-				handler.Generic(event.GenericEvent{}, q)
+				handler.Generic(context.TODO(), event.GenericEvent{}, q)
 			},
 			hasEvent: false,
 		},

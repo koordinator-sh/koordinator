@@ -3,8 +3,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.9.0
-  creationTimestamp: null
+    controller-gen.kubebuilder.io/version: v0.14.0
   name: clustercolocationprofiles.config.koordinator.sh
 spec:
   group: config.koordinator.sh
@@ -22,14 +21,19 @@ spec:
           API
         properties:
           apiVersion:
-            description: 'APIVersion defines the versioned schema of this representation
-              of an object. Servers should convert recognized schemas to the latest
-              internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
             type: string
           kind:
-            description: 'Kind is a string value representing the REST resource this
-              object represents. Servers may infer this from the endpoint the client
-              submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
             type: string
           metadata:
             type: object
@@ -39,10 +43,9 @@ spec:
               annotationKeysMapping:
                 additionalProperties:
                   type: string
-                description: AnnotationKeysMapping describes the annotations that
-                  needs to inject into Pod.Annotations with the same values. It sets
-                  the Pod.Annotations[AnnotationsToAnnotations[k]] = Pod.Annotations[k]
-                  for each key k.
+                description: |-
+                  AnnotationKeysMapping describes the annotations that needs to inject into Pod.Annotations with the same values.
+                  It sets the Pod.Annotations[AnnotationsToAnnotations[k]] = Pod.Annotations[k] for each key k.
                 type: object
               annotations:
                 additionalProperties:
@@ -51,20 +54,20 @@ spec:
                   into Pod.Annotations
                 type: object
               koordinatorPriority:
-                description: KoordinatorPriority defines the Pod sub-priority in Koordinator.
+                description: |-
+                  KoordinatorPriority defines the Pod sub-priority in Koordinator.
                   The priority value will be injected into Pod as label koordinator.sh/priority.
                   Various Koordinator components determine the priority of the Pod
-                  in the Koordinator through KoordinatorPriority and the priority
-                  value in PriorityClassName. The higher the value, the higher the
-                  priority.
+                  in the Koordinator through KoordinatorPriority and the priority value in PriorityClassName.
+                  The higher the value, the higher the priority.
                 format: int32
                 type: integer
               labelKeysMapping:
                 additionalProperties:
                   type: string
-                description: LabelKeysMapping describes the labels that needs to inject
-                  into Pod.Labels with the same values. It sets the Pod.Labels[LabelsToLabels[k]]
-                  = Pod.Labels[k] for each key k.
+                description: |-
+                  LabelKeysMapping describes the labels that needs to inject into Pod.Labels with the same values.
+                  It sets the Pod.Labels[LabelsToLabels[k]] = Pod.Labels[k] for each key k.
                 type: object
               labels:
                 additionalProperties:
@@ -73,32 +76,33 @@ spec:
                   Pod.Labels
                 type: object
               namespaceSelector:
-                description: NamespaceSelector decides whether to mutate/validate
-                  Pods if the namespace matches the selector. Default to the empty
-                  LabelSelector, which matches everything.
+                description: |-
+                  NamespaceSelector decides whether to mutate/validate Pods if the
+                  namespace matches the selector.
+                  Default to the empty LabelSelector, which matches everything.
                 properties:
                   matchExpressions:
                     description: matchExpressions is a list of label selector requirements.
                       The requirements are ANDed.
                     items:
-                      description: A label selector requirement is a selector that
-                        contains values, a key, and an operator that relates the key
-                        and values.
+                      description: |-
+                        A label selector requirement is a selector that contains values, a key, and an operator that
+                        relates the key and values.
                       properties:
                         key:
                           description: key is the label key that the selector applies
                             to.
                           type: string
                         operator:
-                          description: operator represents a key's relationship to
-                            a set of values. Valid operators are In, NotIn, Exists
-                            and DoesNotExist.
+                          description: |-
+                            operator represents a key's relationship to a set of values.
+                            Valid operators are In, NotIn, Exists and DoesNotExist.
                           type: string
                         values:
-                          description: values is an array of string values. If the
-                            operator is In or NotIn, the values array must be non-empty.
-                            If the operator is Exists or DoesNotExist, the values
-                            array must be empty. This array is replaced during a strategic
+                          description: |-
+                            values is an array of string values. If the operator is In or NotIn,
+                            the values array must be non-empty. If the operator is Exists or DoesNotExist,
+                            the values array must be empty. This array is replaced during a strategic
                             merge patch.
                           items:
                             type: string
@@ -111,23 +115,24 @@ spec:
                   matchLabels:
                     additionalProperties:
                       type: string
-                    description: matchLabels is a map of {key,value} pairs. A single
-                      {key,value} in the matchLabels map is equivalent to an element
-                      of matchExpressions, whose key field is "key", the operator
-                      is "In", and the values array contains only "value". The requirements
-                      are ANDed.
+                    description: |-
+                      matchLabels is a map of {key,value} pairs. A single {key,value} in the matchLabels
+                      map is equivalent to an element of matchExpressions, whose key field is "key", the
+                      operator is "In", and the values array contains only "value". The requirements are ANDed.
                     type: object
                 type: object
+                x-kubernetes-map-type: atomic
               patch:
                 description: Patch indicates patching podTemplate that will be injected
                   to the Pod.
                 x-kubernetes-preserve-unknown-fields: true
               priorityClassName:
-                description: If specified, the priorityClassName and the priority
-                  value defined in PriorityClass will be injected into the Pod. The
-                  PriorityClassName, priority value in PriorityClassName and KoordinatorPriority
-                  will affect the scheduling, preemption and other behaviors of Koordinator
-                  system.
+                description: |-
+                  If specified, the priorityClassName and the priority value defined in PriorityClass
+                  will be injected into the Pod.
+                  The PriorityClassName, priority value in PriorityClassName and
+                  KoordinatorPriority will affect the scheduling, preemption and
+                  other behaviors of Koordinator system.
                 type: string
               probability:
                 anyOf:
@@ -137,8 +142,9 @@ spec:
                   probability.
                 x-kubernetes-int-or-string: true
               qosClass:
-                description: QoSClass describes the type of Koordinator QoS that the
-                  Pod is running. The value will be injected into Pod as label koordinator.sh/qosClass.
+                description: |-
+                  QoSClass describes the type of Koordinator QoS that the Pod is running.
+                  The value will be injected into Pod as label koordinator.sh/qosClass.
                   Options are LSE/LSR/LS/BE/SYSTEM.
                 enum:
                 - LSE
@@ -152,32 +158,33 @@ spec:
                   scheduler.
                 type: string
               selector:
-                description: Selector decides whether to mutate/validate Pods if the
-                  Pod matches the selector. Default to the empty LabelSelector, which
-                  matches everything.
+                description: |-
+                  Selector decides whether to mutate/validate Pods if the
+                  Pod matches the selector.
+                  Default to the empty LabelSelector, which matches everything.
                 properties:
                   matchExpressions:
                     description: matchExpressions is a list of label selector requirements.
                       The requirements are ANDed.
                     items:
-                      description: A label selector requirement is a selector that
-                        contains values, a key, and an operator that relates the key
-                        and values.
+                      description: |-
+                        A label selector requirement is a selector that contains values, a key, and an operator that
+                        relates the key and values.
                       properties:
                         key:
                           description: key is the label key that the selector applies
                             to.
                           type: string
                         operator:
-                          description: operator represents a key's relationship to
-                            a set of values. Valid operators are In, NotIn, Exists
-                            and DoesNotExist.
+                          description: |-
+                            operator represents a key's relationship to a set of values.
+                            Valid operators are In, NotIn, Exists and DoesNotExist.
                           type: string
                         values:
-                          description: values is an array of string values. If the
-                            operator is In or NotIn, the values array must be non-empty.
-                            If the operator is Exists or DoesNotExist, the values
-                            array must be empty. This array is replaced during a strategic
+                          description: |-
+                            values is an array of string values. If the operator is In or NotIn,
+                            the values array must be non-empty. If the operator is Exists or DoesNotExist,
+                            the values array must be empty. This array is replaced during a strategic
                             merge patch.
                           items:
                             type: string
@@ -190,13 +197,13 @@ spec:
                   matchLabels:
                     additionalProperties:
                       type: string
-                    description: matchLabels is a map of {key,value} pairs. A single
-                      {key,value} in the matchLabels map is equivalent to an element
-                      of matchExpressions, whose key field is "key", the operator
-                      is "In", and the values array contains only "value". The requirements
-                      are ANDed.
+                    description: |-
+                      matchLabels is a map of {key,value} pairs. A single {key,value} in the matchLabels
+                      map is equivalent to an element of matchExpressions, whose key field is "key", the
+                      operator is "In", and the values array contains only "value". The requirements are ANDed.
                     type: object
                 type: object
+                x-kubernetes-map-type: atomic
             type: object
           status:
             description: ClusterColocationProfileStatus represents information about

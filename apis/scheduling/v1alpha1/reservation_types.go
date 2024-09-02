@@ -76,6 +76,8 @@ type ReservationAllocatePolicy string
 const (
 	// ReservationAllocatePolicyDefault means that there is no restriction on the policy of reserved resources,
 	// and allocated from the Reservation first, and if it is insufficient, it is allocated from the node.
+	// DEPRECATED: ReservationAllocatePolicyDefault is deprecated, it is considered as Aligned if specified.
+	// Please try other polices or set LabelReservationIgnored instead.
 	ReservationAllocatePolicyDefault ReservationAllocatePolicy = ""
 	// ReservationAllocatePolicyAligned indicates that the Pod allocates resources from the Reservation first.
 	// If the remaining resources of the Reservation are insufficient, it can be allocated from the node,

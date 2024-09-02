@@ -25,7 +25,6 @@ import (
 	"github.com/mwitkow/grpc-proxy/proxy"
 	"google.golang.org/grpc"
 	runtimeapi "k8s.io/cri-api/pkg/apis/runtime/v1"
-	runtimeapialpha "k8s.io/cri-api/pkg/apis/runtime/v1alpha2"
 	"k8s.io/klog/v2"
 
 	"github.com/koordinator-sh/koordinator/cmd/koord-runtime-proxy/options"
@@ -44,20 +43,16 @@ type RuntimeRequestInterceptor interface {
 	InterceptRuntimeRequest(serviceType RuntimeServiceType, ctx context.Context, request interface{}, handler grpc.UnaryHandler, alphaRuntime bool) (interface{}, error)
 }
 
+var _ runtimeapi.RuntimeServiceServer = &criServer{}
+
 type criServer struct {
 	RuntimeRequestInterceptor
 	backendRuntimeServiceClient runtimeapi.RuntimeServiceClient
 }
 
-type criAlphaServer struct {
-	RuntimeRequestInterceptor
-	backendRuntimeServiceClient runtimeapialpha.RuntimeServiceClient
-}
-
 type RuntimeManagerCriServer struct {
 	hookDispatcher *dispatcher.RuntimeHookDispatcher
 	criServer      *criServer
-	criAlphaServer *criAlphaServer
 }
 
 func NewRuntimeManagerCriServer() *RuntimeManagerCriServer {
@@ -96,9 +91,6 @@ func (c *RuntimeManagerCriServer) Run() error {
 	if c.criServer != nil {
 		runtimeapi.RegisterRuntimeServiceServer(grpcServer, c.criServer)
 	}
-	if c.criAlphaServer != nil {
-		runtimeapialpha.RegisterRuntimeServiceServer(grpcServer, c.criAlphaServer)
-	}
 	err = grpcServer.Serve(listener)
 	return err
 }
@@ -129,12 +121,12 @@ func (c *RuntimeManagerCriServer) InterceptRuntimeRequest(serviceType RuntimeSer
 	resourceExecutor := resource_executor.NewRuntimeResourceExecutor(runtimeResourceType)
 
 	var err error
-	if alphaRuntime {
-		request, err = alphaObjectToV1Object(request)
-		if err != nil {
-			return nil, err
-		}
-	}
+	//if alphaRuntime {
+	//	request, err = alphaObjectToV1Object(request)
+	//	if err != nil {
+	//		return nil, err
+	//	}
+	//}
 	callHookOperation, err := resourceExecutor.ParseRequest(request)
 	if err != nil {
 		klog.Errorf("fail to parse request %v %v", request, err)
@@ -157,22 +149,22 @@ func (c *RuntimeManagerCriServer) InterceptRuntimeRequest(serviceType RuntimeSer
 		}
 	}
 	// call the backend runtime engine
-	if alphaRuntime {
-		request, err = v1ObjectToAlphaObject(request)
-		if err != nil {
-			return nil, err
-		}
-	}
+	//if alphaRuntime {
+	//	request, err = v1ObjectToAlphaObject(request)
+	//	if err != nil {
+	//		return nil, err
+	//	}
+	//}
 	res, err := handler(ctx, request)
-	responseConverted := false
+	// responseConverted := false
 	if err == nil {
-		if alphaRuntime {
-			responseConverted = true
-			res, err = alphaObjectToV1Object(res)
-			if err != nil {
-				return nil, err
-			}
-		}
+		//if alphaRuntime {
+		//	responseConverted = true
+		//	res, err = alphaObjectToV1Object(res)
+		//	if err != nil {
+		//		return nil, err
+		//	}
+		//}
 		klog.Infof("%v call containerd %v success", resourceExecutor.GetMetaInfo(), string(runtimeHookPath))
 		// store checkpoint info basing request only when response success
 		if err := resourceExecutor.ResourceCheckPoint(res); err != nil {
@@ -187,12 +179,12 @@ func (c *RuntimeManagerCriServer) InterceptRuntimeRequest(serviceType RuntimeSer
 		// TODO the response
 		c.hookDispatcher.Dispatch(ctx, runtimeHookPath, config.PostHook, resourceExecutor.GenerateHookRequest())
 	}
-	if responseConverted {
-		res, err = v1ObjectToAlphaObject(res)
-		if err != nil {
-			return nil, err
-		}
-	}
+	// if responseConverted {
+	//res, err = v1ObjectToAlphaObject(res)
+	//if err != nil {
+	//	return nil, err
+	//}
+	// }
 	return res, err
 }
 
@@ -222,15 +214,8 @@ func (c *RuntimeManagerCriServer) initCriServer(runtimeSockPath string) (*grpc.C
 			backendRuntimeServiceClient: runtimeapi.NewRuntimeServiceClient(runtimeConn),
 		}
 	}
-	_, alphaErr := runtimeapialpha.NewRuntimeServiceClient(runtimeConn).Version(context.Background(), &runtimeapialpha.VersionRequest{})
-	if alphaErr == nil {
-		c.criAlphaServer = &criAlphaServer{
-			RuntimeRequestInterceptor:   c,
-			backendRuntimeServiceClient: runtimeapialpha.NewRuntimeServiceClient(runtimeConn),
-		}
-	}
-	if c.criServer == nil && c.criAlphaServer == nil {
-		err = fmt.Errorf("%s, %s", v1Err.Error(), alphaErr.Error())
+	if c.criServer == nil {
+		err = fmt.Errorf("%s", v1Err.Error())
 		klog.Errorf("fail to create cri service %v", err)
 		return nil, err
 	}
@@ -243,15 +228,6 @@ func (c *RuntimeManagerCriServer) failOver() error {
 	var err error
 	if c.criServer != nil {
 		podResponse, err = c.criServer.backendRuntimeServiceClient.ListPodSandbox(context.TODO(), &runtimeapi.ListPodSandboxRequest{})
-		if err != nil {
-			return err
-		}
-	} else {
-		podResponseAlpha, err := c.criAlphaServer.backendRuntimeServiceClient.ListPodSandbox(context.TODO(), &runtimeapialpha.ListPodSandboxRequest{})
-		if err != nil {
-			return err
-		}
-		err = convert(podResponseAlpha, podResponse)
 		if err != nil {
 			return err
 		}
@@ -268,15 +244,6 @@ func (c *RuntimeManagerCriServer) failOver() error {
 	var containerResponse *runtimeapi.ListContainersResponse
 	if c.criServer != nil {
 		containerResponse, err = c.criServer.ListContainers(context.TODO(), &runtimeapi.ListContainersRequest{})
-		if err != nil {
-			return err
-		}
-	} else {
-		containerResponseAlpha, err := c.criAlphaServer.ListContainers(context.TODO(), &runtimeapialpha.ListContainersRequest{})
-		if err != nil {
-			return err
-		}
-		err = convert(containerResponseAlpha, podResponse)
 		if err != nil {
 			return err
 		}

@@ -25,11 +25,11 @@ import (
 
 func init() {
 
-	addHandlersWithGate(validating.HandlerMap, func() (enabled bool) {
+	addHandlersWithGate(validating.HandlerBuilderMap, func() (enabled bool) {
 		return utilfeature.DefaultFeatureGate.Enabled(features.NodeValidatingWebhook)
 	})
 
-	addHandlersWithGate(mutating.HandlerMap, func() (enabled bool) {
+	addHandlersWithGate(mutating.HandlerBuilderMap, func() (enabled bool) {
 		return utilfeature.DefaultFeatureGate.Enabled(features.NodeMutatingWebhook)
 	})
 }

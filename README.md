@@ -10,6 +10,7 @@
 [![codecov](https://img.shields.io/codecov/c/github/koordinator-sh/koordinator?logo=codecov&style=flat-square)](https://codecov.io/github/koordinator-sh/koordinator)
 [![PRs Welcome](https://badgen.net/badge/PRs/welcome/green?icon=https://api.iconify.design/octicon:git-pull-request.svg?color=white&style=flat-square)](CONTRIBUTING.md)
 [![Slack](https://badgen.net/badge/slack/join/4A154B?icon=slack&style=flat-square)](https://join.slack.com/t/koordinator-sh/shared_invite/zt-1756qoub4-Cn4~esfdlfAPsD7cwO2NzA)
+[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/8846/badge)](https://www.bestpractices.dev/projects/8846)
 
 English | [简体中文](./README-zh_CN.md)
 ## Introduction

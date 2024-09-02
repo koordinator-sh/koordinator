@@ -16,22 +16,30 @@ limitations under the License.
 
 package frameworkext
 
-import "k8s.io/kubernetes/pkg/scheduler/framework"
+import (
+	"context"
+	"time"
 
-type PreErrorHandlerFilter func(*framework.QueuedPodInfo, error) bool
+	"k8s.io/kubernetes/pkg/scheduler"
+	"k8s.io/kubernetes/pkg/scheduler/framework"
+)
+
+// TODO: We should refactor these function types with scheduler.FailureHandlerFn
+
+type PreErrorHandlerFilter func(ctx context.Context, fwk framework.Framework, podInfo *framework.QueuedPodInfo, status *framework.Status, nominatingInfo *framework.NominatingInfo, start time.Time) bool
 type PostErrorHandlerFilter PreErrorHandlerFilter
 
 type errorHandlerDispatcher struct {
 	preHandlerFilters  []PreErrorHandlerFilter
 	postHandlerFilters []PostErrorHandlerFilter
-	defaultHandler     func(*framework.QueuedPodInfo, error)
+	defaultHandler     scheduler.FailureHandlerFn
 }
 
 func newErrorHandlerDispatcher() *errorHandlerDispatcher {
 	return &errorHandlerDispatcher{}
 }
 
-func (d *errorHandlerDispatcher) setDefaultHandler(handler func(*framework.QueuedPodInfo, error)) {
+func (d *errorHandlerDispatcher) setDefaultHandler(handler scheduler.FailureHandlerFn) {
 	d.defaultHandler = handler
 }
 
@@ -44,19 +52,19 @@ func (d *errorHandlerDispatcher) RegisterErrorHandlerFilters(preFilter PreErrorH
 	}
 }
 
-func (d *errorHandlerDispatcher) Error(podInfo *framework.QueuedPodInfo, err error) {
+func (d *errorHandlerDispatcher) Error(ctx context.Context, fwk framework.Framework, podInfo *framework.QueuedPodInfo, status *framework.Status, nominatingInfo *framework.NominatingInfo, start time.Time) {
 	defer func() {
 		for _, handlerFilter := range d.postHandlerFilters {
-			if handlerFilter(podInfo, err) {
+			if handlerFilter(ctx, fwk, podInfo, status, nominatingInfo, start) {
 				return
 			}
 		}
 	}()
 
 	for _, handlerFilter := range d.preHandlerFilters {
-		if handlerFilter(podInfo, err) {
+		if handlerFilter(ctx, fwk, podInfo, status, nominatingInfo, start) {
 			return
 		}
 	}
-	d.defaultHandler(podInfo, err)
+	d.defaultHandler(ctx, fwk, podInfo, status, nominatingInfo, start)
 }

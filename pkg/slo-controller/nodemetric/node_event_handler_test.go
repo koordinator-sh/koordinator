@@ -17,6 +17,7 @@ limitations under the License.
 package nodemetric
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -53,7 +54,7 @@ func Test_EnqueueRequestForNode(t *testing.T) {
 		{
 			name: "create node event",
 			fn: func(handler *EnqueueRequestForNode, q workqueue.RateLimitingInterface) {
-				handler.Create(event.CreateEvent{
+				handler.Create(context.TODO(), event.CreateEvent{
 					Object: &corev1.Node{
 						ObjectMeta: metav1.ObjectMeta{
 							Name: "node1",
@@ -67,7 +68,7 @@ func Test_EnqueueRequestForNode(t *testing.T) {
 		{
 			name: "create event not node",
 			fn: func(handler *EnqueueRequestForNode, q workqueue.RateLimitingInterface) {
-				handler.Create(event.CreateEvent{
+				handler.Create(context.TODO(), event.CreateEvent{
 					Object: &corev1.Pod{
 						ObjectMeta: metav1.ObjectMeta{
 							Name: "pod1",
@@ -80,7 +81,7 @@ func Test_EnqueueRequestForNode(t *testing.T) {
 		{
 			name: "delete node event",
 			fn: func(handler *EnqueueRequestForNode, q workqueue.RateLimitingInterface) {
-				handler.Delete(event.DeleteEvent{
+				handler.Delete(context.TODO(), event.DeleteEvent{
 					Object: &corev1.Node{
 						ObjectMeta: metav1.ObjectMeta{
 							Name: "node1",
@@ -94,7 +95,7 @@ func Test_EnqueueRequestForNode(t *testing.T) {
 		{
 			name: "delete event not node",
 			fn: func(handler *EnqueueRequestForNode, q workqueue.RateLimitingInterface) {
-				handler.Delete(event.DeleteEvent{
+				handler.Delete(context.TODO(), event.DeleteEvent{
 					Object: &corev1.Pod{
 						ObjectMeta: metav1.ObjectMeta{
 							Name: "pod1",
@@ -107,7 +108,7 @@ func Test_EnqueueRequestForNode(t *testing.T) {
 		{
 			name: "update node event",
 			fn: func(handler *EnqueueRequestForNode, q workqueue.RateLimitingInterface) {
-				handler.Update(event.UpdateEvent{
+				handler.Update(context.TODO(), event.UpdateEvent{
 					ObjectOld: &corev1.Node{
 						ObjectMeta: metav1.ObjectMeta{
 							Name: "node1",
@@ -131,7 +132,7 @@ func Test_EnqueueRequestForNode(t *testing.T) {
 		{
 			name: "update node event ignore",
 			fn: func(handler *EnqueueRequestForNode, q workqueue.RateLimitingInterface) {
-				handler.Update(event.UpdateEvent{
+				handler.Update(context.TODO(), event.UpdateEvent{
 					ObjectOld: &corev1.Node{
 						ObjectMeta: metav1.ObjectMeta{
 							Name: "node1",
@@ -149,7 +150,7 @@ func Test_EnqueueRequestForNode(t *testing.T) {
 		{
 			name: "generic node event ignore",
 			fn: func(handler *EnqueueRequestForNode, q workqueue.RateLimitingInterface) {
-				handler.Generic(event.GenericEvent{}, q)
+				handler.Generic(context.TODO(), event.GenericEvent{}, q)
 			},
 			hasEvent: false,
 		},

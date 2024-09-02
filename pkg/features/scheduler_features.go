@@ -57,6 +57,12 @@ const (
 	//
 	// ResizePod is used to enable resize pod feature
 	ResizePod featuregate.Feature = "ResizePod"
+
+	CSIStorageCapacity featuregate.Feature = "CSIStorageCapacity"
+
+	GenericEphemeralVolume featuregate.Feature = "GenericEphemeralVolume"
+
+	PodDisruptionBudget featuregate.Feature = "PodDisruptionBudget"
 )
 
 var defaultSchedulerFeatureGates = map[featuregate.Feature]featuregate.FeatureSpec{
@@ -67,11 +73,17 @@ var defaultSchedulerFeatureGates = map[featuregate.Feature]featuregate.FeatureSp
 	ResizePod:                          {Default: false, PreRelease: featuregate.Alpha},
 	MultiQuotaTree:                     {Default: false, PreRelease: featuregate.Alpha},
 	ElasticQuotaIgnorePodOverhead:      {Default: false, PreRelease: featuregate.Alpha},
+	ElasticQuotaIgnoreTerminatingPod:   {Default: false, PreRelease: featuregate.Alpha},
 	ElasticQuotaGuaranteeUsage:         {Default: false, PreRelease: featuregate.Alpha},
 	DisableDefaultQuota:                {Default: false, PreRelease: featuregate.Alpha},
 	SupportParentQuotaSubmitPod:        {Default: false, PreRelease: featuregate.Alpha},
+	CSIStorageCapacity:                 {Default: true, PreRelease: featuregate.GA}, // remove in 1.26
+	GenericEphemeralVolume:             {Default: true, PreRelease: featuregate.GA},
+	PodDisruptionBudget:                {Default: true, PreRelease: featuregate.GA},
 }
 
 func init() {
 	runtime.Must(k8sfeature.DefaultMutableFeatureGate.Add(defaultSchedulerFeatureGates))
+	// TODO: use a unified feature-gate
+	runtime.Must(k8sfeature.DefaultMutableFeatureGate.Add(transformerFeatureGates))
 }

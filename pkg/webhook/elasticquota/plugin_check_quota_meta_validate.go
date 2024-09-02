@@ -22,17 +22,22 @@ import (
 
 	v1 "k8s.io/api/admission/v1"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	clientcache "k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
-	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
+
+	"github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 )
 
 type QuotaMetaChecker struct {
 	client.Client
 	*admission.Decoder
-	QuotaTopo *quotaTopology
+	QuotaTopo     *quotaTopology
+	QuotaInformer cache.Informer
 }
 
 var (
@@ -121,4 +126,27 @@ func (c *QuotaMetaChecker) GetQuotaInfo(name, namespace string) *QuotaInfo {
 	}
 
 	return c.QuotaTopo.getQuotaInfo(name, namespace)
+}
+
+func (c *QuotaMetaChecker) InjectInformer(elasticQuotaInformer cache.Informer) {
+	c.QuotaInformer = elasticQuotaInformer
+}
+
+func NewQuotaInformer(cache cache.Cache, qt *quotaTopology) (cache.Informer, error) {
+	ctx := context.TODO()
+	quotaInformer, err := cache.GetInformer(ctx, &v1alpha1.ElasticQuota{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "ElasticQuota",
+			APIVersion: v1alpha1.SchemeGroupVersion.String(),
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	_, err = quotaInformer.AddEventHandler(clientcache.ResourceEventHandlerFuncs{
+		AddFunc:    qt.OnQuotaAdd,
+		UpdateFunc: qt.OnQuotaUpdate,
+		DeleteFunc: qt.OnQuotaDelete,
+	})
+	return quotaInformer, err
 }

@@ -36,6 +36,7 @@ type LowNodeLoadArgs struct {
 
 	// NumberOfNodes can be configured to activate the strategy only when the number of under utilized nodes are above the configured value.
 	// This could be helpful in large clusters where a few nodes could go under utilized frequently or for a short period of time.
+	// This parameter includes the sum of nodes with low node utilization, low prod utilization, and both.
 	// By default, NumberOfNodes is set to zero.
 	NumberOfNodes *int32 `json:"numberOfNodes,omitempty"`
 
@@ -64,11 +65,17 @@ type LowNodeLoadArgs struct {
 	// A resource consumption above (resp. below) this window is considered as overutilization (resp. underutilization).
 	UseDeviationThresholds *bool `json:"useDeviationThresholds,omitempty"`
 
-	// HighThresholds defines the target usage threshold of resources
+	// HighThresholds defines the target usage threshold of node resources
 	HighThresholds ResourceThresholds `json:"highThresholds,omitempty"`
 
-	// LowThresholds defines the low usage threshold of resources
+	// LowThresholds defines the low usage threshold of node resources
 	LowThresholds ResourceThresholds `json:"lowThresholds,omitempty"`
+
+	// ProdHighThresholds defines the target usage threshold of Prod resources
+	ProdHighThresholds ResourceThresholds `json:"prodHighThresholds,omitempty"`
+
+	// ProdLowThresholds defines the low usage threshold of Prod resources
+	ProdLowThresholds ResourceThresholds `json:"prodLowThresholds,omitempty"`
 
 	// ResourceWeights indicates the weights of resources.
 	// The weights of CPU and Memory are both 1 by default.
@@ -96,11 +103,17 @@ type LowNodeLoadNodePool struct {
 	// A resource consumption above (resp. below) this window is considered as overutilization (resp. underutilization).
 	UseDeviationThresholds bool `json:"useDeviationThresholds,omitempty"`
 
-	// HighThresholds defines the target usage threshold of resources
+	// HighThresholds defines the target usage threshold of node resources
 	HighThresholds ResourceThresholds `json:"highThresholds,omitempty"`
 
-	// LowThresholds defines the low usage threshold of resources
+	// LowThresholds defines the low usage threshold of node resources
 	LowThresholds ResourceThresholds `json:"lowThresholds,omitempty"`
+
+	// ProdHighThresholds defines the target usage threshold of Prod resources
+	ProdHighThresholds ResourceThresholds `json:"prodHighThresholds,omitempty"`
+
+	// ProdLowThresholds defines the low usage threshold of Prod resources
+	ProdLowThresholds ResourceThresholds `json:"prodLowThresholds,omitempty"`
 
 	// ResourceWeights indicates the weights of resources.
 	// The weights of resources are both 1 by default.
