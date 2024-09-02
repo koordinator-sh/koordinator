@@ -1108,6 +1108,10 @@ func shouldBeIgnored(pod *v1.Pod) bool {
 		return false
 	}
 
+	if utilfeature.DefaultFeatureGate.Enabled(features.ElasticQuotaImmediateIgnoreTerminatingPod) {
+		return true
+	}
+
 	if !utilfeature.DefaultFeatureGate.Enabled(features.ElasticQuotaIgnoreTerminatingPod) {
 		return false
 	}
