@@ -2022,3 +2022,50 @@ func TestUpdateQuotaInternalNoLock_ParenstSelf(t *testing.T) {
 	assert.Equal(t, createResourceList(25, 25), qi1.CalculateInfo.NonPreemptibleRequest)
 	assert.Equal(t, createResourceList(50, 20), qi1.CalculateInfo.Request)
 }
+
+func TestUpdatePod_WhenQuotaCreateAfterPodCreate(t *testing.T) {
+	gqm := NewGroupQuotaManagerForTest()
+	gqm.scaleMinQuotaEnabled = true
+	gqm.UpdateClusterTotalResource(createResourceList(50, 50))
+
+	// create pod first
+	pod1 := schetesting.MakePod().Name("1").Obj()
+	pod1.Spec.Containers = []v1.Container{
+		{
+			Resources: v1.ResourceRequirements{
+				Requests: createResourceList(10, 10),
+			},
+		},
+	}
+	gqm.OnPodAdd("1", pod1)
+
+	// create quota later
+	eq1 := createQuota("1", extension.RootQuotaName, 40, 40, 20, 20)
+	gqm.UpdateQuota(eq1, false)
+
+	quotaInfo := gqm.GetQuotaInfoByName(eq1.Name)
+	assert.Equal(t, 0, len(quotaInfo.GetPodCache()))
+	assert.Equal(t, v1.ResourceList{}, quotaInfo.GetRequest())
+	assert.Equal(t, v1.ResourceList{}, quotaInfo.GetUsed())
+
+	// update pod.
+	newPod1 := pod1.DeepCopy()
+	newPod1.Labels = map[string]string{"aaa": "aaa"}
+
+	gqm.OnPodUpdate("1", "1", newPod1, pod1)
+
+	quotaInfo = gqm.GetQuotaInfoByName(eq1.Name)
+	assert.Equal(t, 1, len(quotaInfo.GetPodCache()))
+	assert.Equal(t, createResourceList(10, 10), quotaInfo.GetRequest())
+	assert.Equal(t, v1.ResourceList{}, quotaInfo.GetUsed())
+
+	// update again
+	newPod2 := newPod1.DeepCopy()
+	newPod2.Spec.NodeName = "node1"
+	gqm.OnPodUpdate("1", "1", newPod2, newPod1)
+	quotaInfo = gqm.GetQuotaInfoByName(eq1.Name)
+	assert.Equal(t, 1, len(quotaInfo.GetPodCache()))
+	assert.Equal(t, createResourceList(10, 10), quotaInfo.GetRequest())
+	assert.Equal(t, createResourceList(10, 10), quotaInfo.GetUsed())
+
+}

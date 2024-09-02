@@ -23,6 +23,9 @@ const (
 	// PreemptionPolicyTransformer is enabled.
 	// When PreemptionPolicyTransformer is enabled but the pod does not set the label, DefaultPreemptionPolicy is used.
 	LabelPodPreemptionPolicy = SchedulingDomainPrefix + "/preemption-policy"
+
+	// LabelDisablePreemptible determines whether the pod disables being a victim during the reservation preemption.
+	LabelDisablePreemptible = SchedulingDomainPrefix + "/disable-preemptible"
 )
 
 func GetPodKoordPreemptionPolicy(pod *corev1.Pod) *corev1.PreemptionPolicy {
@@ -39,4 +42,15 @@ func GetPodKoordPreemptionPolicy(pod *corev1.Pod) *corev1.PreemptionPolicy {
 
 func GetPreemptionPolicyPtr(policy corev1.PreemptionPolicy) *corev1.PreemptionPolicy {
 	return &policy
+}
+
+func IsPodPreemptible(pod *corev1.Pod) bool {
+	if pod == nil || pod.Labels == nil {
+		return true
+	}
+	v, ok := pod.Labels[LabelDisablePreemptible]
+	if !ok {
+		return true
+	}
+	return v != "true"
 }

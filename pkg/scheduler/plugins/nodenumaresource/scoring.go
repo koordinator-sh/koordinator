@@ -30,7 +30,6 @@ import (
 	schedulingconfig "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/topologymanager"
 	"github.com/koordinator-sh/koordinator/pkg/util"
-	"github.com/koordinator-sh/koordinator/pkg/util/cpuset"
 )
 
 // resourceStrategyTypeMap maps strategy to scorer implementation
@@ -93,7 +92,7 @@ func (p *Plugin) Score(ctx context.Context, cycleState *framework.CycleState, po
 	}
 
 	store := topologymanager.GetStore(cycleState)
-	affinity := store.GetAffinity(nodeName)
+	affinity, _ := store.GetAffinity(nodeName)
 	resourceOptions, err := p.getResourceOptions(state, node, pod, requestCPUBind, affinity, topologyOptions)
 	if err != nil {
 		return 0, nil
@@ -110,10 +109,7 @@ func (p *Plugin) Score(ctx context.Context, cycleState *framework.CycleState, po
 		return 0, status
 	}
 	if podAllocation == nil {
-		resourceOptions.requiredResources = nil
-		resourceOptions.preferredCPUs = cpuset.NewCPUSet()
-		resourceOptions.reusableResources = appendAllocated(nil, restoreState.mergedUnmatchedUsed)
-		podAllocation, status = p.resourceManager.Allocate(node, pod, resourceOptions)
+		podAllocation, status = tryAllocateFromNode(p.resourceManager, restoreState, resourceOptions, pod, node)
 		if !status.IsSuccess() {
 			return 0, status
 		}

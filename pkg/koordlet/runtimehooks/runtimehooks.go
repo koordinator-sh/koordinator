@@ -19,7 +19,12 @@ package runtimehooks
 import (
 	"fmt"
 
+	corev1 "k8s.io/api/core/v1"
+	apiruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
+	clientset "k8s.io/client-go/kubernetes"
+	clientcorev1 "k8s.io/client-go/kubernetes/typed/core/v1"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/klog/v2"
 
 	"github.com/koordinator-sh/koordinator/pkg/features"
@@ -82,7 +87,10 @@ func (r *runtimeHook) Run(stopCh <-chan struct{}) error {
 	return nil
 }
 
-func NewRuntimeHook(si statesinformer.StatesInformer, cfg *Config) (RuntimeHook, error) {
+func NewRuntimeHook(si statesinformer.StatesInformer, cfg *Config, schema *apiruntime.Scheme, kubeClient clientset.Interface, nodeName string) (RuntimeHook, error) {
+	eventBroadcaster := record.NewBroadcaster()
+	eventBroadcaster.StartRecordingToSink(&clientcorev1.EventSinkImpl{Interface: kubeClient.CoreV1().Events("")})
+	recorder := eventBroadcaster.NewRecorder(schema, corev1.EventSource{Component: "koordlet-runtimehook", Host: nodeName})
 	failurePolicy, err := config.GetFailurePolicyType(cfg.RuntimeHooksFailurePolicy)
 	if err != nil {
 		return nil, err
@@ -136,6 +144,7 @@ func NewRuntimeHook(si statesinformer.StatesInformer, cfg *Config) (RuntimeHook,
 		StatesInformer:    si,
 		Executor:          e,
 		ReconcileInterval: cfg.RuntimeHookReconcileInterval,
+		EventRecorder:     recorder,
 	}
 
 	newPluginOptions := hooks.Options{

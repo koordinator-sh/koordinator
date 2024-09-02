@@ -28,6 +28,11 @@ type GangGroupInfo struct {
 	GangTotalChildrenNumMap  map[string]int
 	ChildrenScheduleRoundMap map[string]int
 
+	// OnceResourceSatisfied indicates whether the gang has ever reached the ResourceSatisfied state，which means the
+	// children number has reached the minNum in the early step,
+	// once this variable is set true, it is irreversible.
+	OnceResourceSatisfied bool
+
 	LastScheduleTime         time.Time
 	ChildrenLastScheduleTime map[string]time.Time
 }
@@ -83,7 +88,7 @@ func (gg *GangGroupInfo) setScheduleCycleInvalid() {
 
 	if gg.ScheduleCycleValid {
 		gg.ScheduleCycleValid = false
-		klog.Infof("setScheduleCycleInvalid, gangGroupName: %v, valid: %v", gg.GangGroupId)
+		klog.Infof("setScheduleCycleInvalid, gangGroupName: %v, valid: %v", gg.GangGroupId, gg.ScheduleCycleValid)
 	}
 }
 
@@ -223,4 +228,21 @@ func (gg *GangGroupInfo) resetPodLastScheduleTime(pod *corev1.Pod) {
 
 	podId := util.GetId(pod.Namespace, pod.Name)
 	gg.ChildrenLastScheduleTime[podId] = gg.LastScheduleTime
+}
+
+func (gg *GangGroupInfo) isGangOnceResourceSatisfied() bool {
+	gg.lock.Lock()
+	defer gg.lock.Unlock()
+
+	return gg.OnceResourceSatisfied
+}
+
+func (gg *GangGroupInfo) setResourceSatisfied() {
+	gg.lock.Lock()
+	defer gg.lock.Unlock()
+
+	if !gg.OnceResourceSatisfied {
+		gg.OnceResourceSatisfied = true
+		klog.Infof("Gang ResourceSatisfied, gangName: %v", gg.GangGroupId)
+	}
 }
