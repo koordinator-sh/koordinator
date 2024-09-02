@@ -36,6 +36,7 @@ import (
 
 const (
 	NvidiaGPU = 1 << iota
+	AMDGPU
 	HygonDCU
 	KoordGPU
 	GPUShared
@@ -49,6 +50,7 @@ const (
 var DeviceResourceNames = map[schedulingv1alpha1.DeviceType][]corev1.ResourceName{
 	schedulingv1alpha1.GPU: {
 		apiext.ResourceNvidiaGPU,
+		apiext.ResourceAMDGPU,
 		apiext.ResourceHygonDCU,
 		apiext.ResourceGPU,
 		apiext.ResourceGPUShared,
@@ -62,6 +64,7 @@ var DeviceResourceNames = map[schedulingv1alpha1.DeviceType][]corev1.ResourceNam
 
 var DeviceResourceFlags = map[corev1.ResourceName]uint{
 	apiext.ResourceNvidiaGPU:      NvidiaGPU,
+	apiext.ResourceAMDGPU:         AMDGPU,
 	apiext.ResourceHygonDCU:       HygonDCU,
 	apiext.ResourceGPU:            KoordGPU,
 	apiext.ResourceGPUCore:        GPUCore,
@@ -74,6 +77,7 @@ var DeviceResourceFlags = map[corev1.ResourceName]uint{
 
 var ValidDeviceResourceCombinations = map[uint]func(resources corev1.ResourceList) bool{
 	NvidiaGPU:                            ValidDeviceResourceCombinationsDefaultTrue,
+	AMDGPU:                               ValidDeviceResourceCombinationsDefaultTrue,
 	HygonDCU:                             ValidDeviceResourceCombinationsDefaultTrue,
 	KoordGPU:                             ValidDeviceResourceCombinationsDefaultTrue,
 	GPUMemory:                            ValidDeviceResourceCombinationsGPUPercentage,
@@ -154,6 +158,13 @@ var ResourceCombinationsMapper = map[uint]func(podRequest corev1.ResourceList) c
 		return corev1.ResourceList{
 			apiext.ResourceGPUCore:        *resource.NewQuantity(nvidiaGPU.Value()*100, resource.DecimalSI),
 			apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(nvidiaGPU.Value()*100, resource.DecimalSI),
+		}
+	},
+	AMDGPU: func(podRequest corev1.ResourceList) corev1.ResourceList {
+		amdGPU := podRequest[apiext.ResourceAMDGPU]
+		return corev1.ResourceList{
+			apiext.ResourceGPUCore:        *resource.NewQuantity(amdGPU.Value()*100, resource.DecimalSI),
+			apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(amdGPU.Value()*100, resource.DecimalSI),
 		}
 	},
 	HygonDCU: func(podRequest corev1.ResourceList) corev1.ResourceList {
