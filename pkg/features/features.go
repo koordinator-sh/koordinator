@@ -60,6 +60,9 @@ const (
 	// ElasticQuotaIgnoreTerminatingPod ignore the terminating pod.
 	ElasticQuotaIgnoreTerminatingPod featuregate.Feature = "ElasticQuotaIgnoreTerminatingPod"
 
+	// ElasticQuotaImmediateIgnoreTerminatingPod ignore the terminating pod immediately.
+	ElasticQuotaImmediateIgnoreTerminatingPod featuregate.Feature = "ElasticQuotaImmediateIgnoreTerminatingPod"
+
 	// ElasticQuotaGuaranteeUsage enable guarantee the quota usage
 	// In some specific scenarios, resources that have been allocated to users are considered
 	// to belong to the users and will not be preempted back.

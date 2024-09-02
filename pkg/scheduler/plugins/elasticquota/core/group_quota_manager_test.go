@@ -2067,5 +2067,44 @@ func TestUpdatePod_WhenQuotaCreateAfterPodCreate(t *testing.T) {
 	assert.Equal(t, 1, len(quotaInfo.GetPodCache()))
 	assert.Equal(t, createResourceList(10, 10), quotaInfo.GetRequest())
 	assert.Equal(t, createResourceList(10, 10), quotaInfo.GetUsed())
+}
 
+func TestGroupQuotaManager_ImmediateIgnoreTerminatingPod(t *testing.T) {
+	defer utilfeature.SetFeatureGateDuringTest(t, k8sfeature.DefaultFeatureGate,
+		features.ElasticQuotaImmediateIgnoreTerminatingPod, true)()
+	gqm := NewGroupQuotaManagerForTest()
+
+	gqm.UpdateClusterTotalResource(createResourceList(50, 50))
+
+	qi1 := createQuota("1", extension.RootQuotaName, 40, 40, 10, 10)
+	gqm.UpdateQuota(qi1, false)
+
+	// add pod
+	pod1 := schetesting.MakePod().Name("1").Obj()
+	pod1.Spec.Containers = []v1.Container{
+		{
+			Resources: v1.ResourceRequirements{
+				Requests: createResourceList(10, 10),
+			},
+		},
+	}
+	pod1.Spec.NodeName = "node1"
+	gqm.OnPodAdd(qi1.Name, pod1)
+	assert.Equal(t, createResourceList(10, 10), gqm.GetQuotaInfoByName("1").GetRequest())
+	assert.Equal(t, createResourceList(10, 10), gqm.GetQuotaInfoByName("1").GetUsed())
+
+	// deleting the pod
+	pod2 := pod1.DeepCopy()
+	deleteTimestamp := metav1.Time{Time: time.Now()}
+	deleteGracePeriodsSeconds := int64(30)
+	pod2.DeletionTimestamp = &deleteTimestamp
+	pod2.DeletionGracePeriodSeconds = &deleteGracePeriodsSeconds
+	gqm.OnPodUpdate("1", "1", pod2, pod1)
+	assert.Equal(t, createResourceList(0, 0), gqm.GetQuotaInfoByName("1").GetRequest())
+	assert.Equal(t, createResourceList(0, 0), gqm.GetQuotaInfoByName("1").GetUsed())
+
+	// delete the pod
+	gqm.OnPodDelete("1", pod2)
+	assert.Equal(t, createResourceList(0, 0), gqm.GetQuotaInfoByName("1").GetRequest())
+	assert.Equal(t, createResourceList(0, 0), gqm.GetQuotaInfoByName("1").GetUsed())
 }
