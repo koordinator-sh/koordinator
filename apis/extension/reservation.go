@@ -57,6 +57,8 @@ type ReservationAllocated struct {
 
 // ReservationAffinity represents the constraints of Pod selection Reservation
 type ReservationAffinity struct {
+	// Specifies the reservation name directly, other reservation affinity fields will be ignored.
+	Name string `json:"name,omitempty"`
 	// If the affinity requirements specified by this field are not met at
 	// scheduling time, the pod will not be scheduled onto the node.
 	// If the affinity requirements specified by this field cease to be met
@@ -66,6 +68,8 @@ type ReservationAffinity struct {
 	// ReservationSelector is a selector which must be true for the pod to fit on a reservation.
 	// Selector which must match a reservation's labels for the pod to be scheduled on that node.
 	ReservationSelector map[string]string `json:"reservationSelector,omitempty"`
+	// Specifies the pod's reservation tolerations. This can tolerate taints of Reservation.
+	Tolerations []corev1.Toleration `json:"tolerations,omitempty"`
 }
 
 // ReservationAffinitySelector represents the union of the results of one or more label queries

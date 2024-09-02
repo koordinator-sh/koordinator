@@ -69,6 +69,10 @@ type ReservationSpec struct {
 	// Unschedulable controls reservation schedulability of new pods. By default, reservation is schedulable.
 	// +optional
 	Unschedulable bool `json:"unschedulable,omitempty"`
+	// Specifies the reservation's taints. This can be toleranted by the reservation tolerance.
+	// Eviction is not supported for NoExecute taints
+	// +optional
+	Taints []corev1.Taint `json:"taints,omitempty"`
 }
 
 type ReservationAllocatePolicy string
