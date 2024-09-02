@@ -113,6 +113,13 @@ func GetMaxMigrating(replicas int, intOrPercent *intstr.IntOrString) (int, error
 	return GetMaxUnavailable(replicas, intOrPercent)
 }
 
+func GetLimiterBurst(burst int) int {
+	if burst == 0 {
+		return 1
+	}
+	return burst
+}
+
 // FilterPodWithMaxEvictionCost rejects if pod's eviction cost is math.MaxInt32
 func FilterPodWithMaxEvictionCost(pod *corev1.Pod) bool {
 	cost, _ := extension.GetEvictionCost(pod.Annotations)
