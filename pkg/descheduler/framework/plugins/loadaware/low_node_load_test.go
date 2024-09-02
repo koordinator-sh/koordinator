@@ -1297,7 +1297,7 @@ func TestLowNodeLoad(t *testing.T) {
 				test.BuildTestPod("p10", 400, 0, n3NodeName, test.SetRSOwnerRef),
 				test.BuildTestPod("p11", 400, 0, n3NodeName, test.SetRSOwnerRef),
 			},
-			expectedPodsEvicted: 4,
+			expectedPodsEvicted: 3,
 			evictedPods:         []string{},
 		},
 	}

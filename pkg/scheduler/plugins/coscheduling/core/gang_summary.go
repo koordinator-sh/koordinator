@@ -45,7 +45,7 @@ func (gang *Gang) GetGangSummary() *GangSummary {
 	gangSummary.GangMatchPolicy = gang.GangMatchPolicy
 	gangSummary.MinRequiredNumber = gang.MinRequiredNumber
 	gangSummary.TotalChildrenNum = gang.TotalChildrenNum
-	gangSummary.OnceResourceSatisfied = gang.OnceResourceSatisfied
+	gangSummary.OnceResourceSatisfied = gang.GangGroupInfo.isGangOnceResourceSatisfied()
 	gangSummary.GangGroupInfo = gang.GangGroupInfo
 	gangSummary.GangFrom = gang.GangFrom
 	gangSummary.HasGangInit = gang.HasGangInit

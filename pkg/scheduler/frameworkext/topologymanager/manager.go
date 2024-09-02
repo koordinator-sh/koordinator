@@ -63,15 +63,16 @@ func (m *topologyManager) Admit(ctx context.Context, cycleState *framework.Cycle
 	store := s.(*Store)
 
 	policy := createNUMATopologyPolicy(policyType, numaNodes)
-
-	bestHint, admit := m.calculateAffinity(ctx, cycleState, policy, pod, nodeName, exclusivePolicy, allNUMANodeStatus)
-	klog.V(5).Infof("Best TopologyHint for (pod: %v): %v on node: %v", klog.KObj(pod), bestHint, nodeName)
-	if !admit {
-		return framework.NewStatus(framework.Unschedulable, "node(s) NUMA Topology affinity error")
+	bestHint, ok := store.GetAffinity(nodeName)
+	if !ok {
+		var admit bool
+		bestHint, admit = m.calculateAffinity(ctx, cycleState, policy, pod, nodeName, exclusivePolicy, allNUMANodeStatus)
+		klog.V(5).Infof("Best TopologyHint for (pod: %v): %v on node: %v", klog.KObj(pod), bestHint, nodeName)
+		if !admit {
+			return framework.NewStatus(framework.Unschedulable, "node(s) NUMA Topology affinity error")
+		}
+		store.SetAffinity(nodeName, bestHint)
 	}
-
-	store.SetAffinity(nodeName, bestHint)
-
 	status := m.allocateResources(ctx, cycleState, bestHint, pod, nodeName)
 	if !status.IsSuccess() {
 		return status

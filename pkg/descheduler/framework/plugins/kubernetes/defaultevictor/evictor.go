@@ -24,8 +24,8 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/kubernetes/scheme"
-	k8sdeschedulerframework "sigs.k8s.io/descheduler/pkg/framework"
 	"sigs.k8s.io/descheduler/pkg/framework/plugins/defaultevictor"
+	k8sdeschedulerframework "sigs.k8s.io/descheduler/pkg/framework/types"
 
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/apis/config/v1alpha2"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/evictions"
