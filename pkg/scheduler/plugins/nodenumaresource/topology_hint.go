@@ -26,7 +26,6 @@ import (
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/topologymanager"
-	"github.com/koordinator-sh/koordinator/pkg/util/cpuset"
 )
 
 func (p *Plugin) FilterByNUMANode(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string, policyType apiext.NUMATopologyPolicy, exclusivePolicy apiext.NumaTopologyExclusive, topologyOptions TopologyOptions) *framework.Status {
@@ -101,6 +100,7 @@ func (p *Plugin) Allocate(ctx context.Context, cycleState *framework.CycleState,
 	if err != nil {
 		return framework.NewStatus(framework.UnschedulableAndUnresolvable, err.Error())
 	}
+
 	podAllocation, status := tryAllocateFromReservation(p.resourceManager, restoreState, resourceOptions, restoreState.matched, pod, node)
 	if !status.IsSuccess() {
 		return status
@@ -108,10 +108,8 @@ func (p *Plugin) Allocate(ctx context.Context, cycleState *framework.CycleState,
 	if podAllocation != nil {
 		return nil
 	}
-	resourceOptions.requiredResources = nil
-	resourceOptions.reusableResources = appendAllocated(nil, restoreState.mergedUnmatchedUsed)
-	resourceOptions.preferredCPUs = cpuset.NewCPUSet()
-	_, status = p.resourceManager.Allocate(node, pod, resourceOptions)
+
+	_, status = tryAllocateFromNode(p.resourceManager, restoreState, resourceOptions, pod, node)
 	if !status.IsSuccess() {
 		return status
 	}

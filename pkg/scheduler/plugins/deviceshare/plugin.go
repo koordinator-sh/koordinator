@@ -317,7 +317,7 @@ func (p *Plugin) Filter(ctx context.Context, cycleState *framework.CycleState, p
 	nodeDeviceInfo.lock.RLock()
 	defer nodeDeviceInfo.lock.RUnlock()
 	// TODO 当 NUMA 策略不为空时，关于 NUMA 下设备是否能分配其实已经在 NodeNUMAResource 的 FilterByNUMANode 中调用过，这里存在重复调用，待优化
-	allocateResult, status := p.tryAllocateFromReservation(allocator, state, restoreState, restoreState.matched, node, preemptible, state.hasReservationAffinity)
+	allocateResult, status := p.tryAllocateFromReservation(allocator, state, restoreState, restoreState.matched, pod, node, preemptible, state.hasReservationAffinity)
 	if !status.IsSuccess() {
 		return status
 	}
@@ -385,7 +385,7 @@ func (p *Plugin) FilterReservation(ctx context.Context, cycleState *framework.Cy
 	nodeDeviceInfo.lock.RLock()
 	defer nodeDeviceInfo.lock.RUnlock()
 
-	_, status = p.tryAllocateFromReservation(allocator, state, restoreState, restoreState.matched[allocIndex:allocIndex+1], nodeInfo.Node(), preemptible, true)
+	_, status = p.tryAllocateFromReservation(allocator, state, restoreState, restoreState.matched[allocIndex:allocIndex+1], pod, nodeInfo.Node(), preemptible, true)
 	return status
 }
 
@@ -429,6 +429,7 @@ func (p *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState, 
 		numaNodes:  affinity.NUMANodeAffinity,
 	}
 
+	// TODO: de-duplicate logic done by the Filter phase and move head the pre-process of the resource options
 	reservationRestoreState := getReservationRestoreState(cycleState)
 	restoreState := reservationRestoreState.getNodeState(nodeName)
 	preemptible := appendAllocated(nil, restoreState.mergedUnmatchedUsed, state.preemptibleDevices[nodeName])

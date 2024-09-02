@@ -189,10 +189,17 @@ func (n *NodeAllocation) release(podUID types.UID) {
 	}
 }
 
-func (n *NodeAllocation) getAvailableCPUs(cpuTopology *CPUTopology, maxRefCount int, reservedCPUs, preferredCPUs cpuset.CPUSet) (availableCPUs cpuset.CPUSet, allocateInfo CPUDetails) {
+func (n *NodeAllocation) getAvailableCPUs(cpuTopology *CPUTopology, maxRefCount int, reservedCPUs cpuset.CPUSet, preferredCPUs ...cpuset.CPUSet) (availableCPUs cpuset.CPUSet, allocateInfo CPUDetails) {
 	allocateInfo = n.allocatedCPUs.Clone()
-	if !preferredCPUs.IsEmpty() {
-		for _, cpuID := range preferredCPUs.ToSliceNoSort() {
+	// NOTE: preferredCPUs is a slice since we may restore a cpu multiple times when it is referenced more than once.
+	// e.g. For a pod A tries to preempt a pod B in the reservation R, the CPU C is allocated twice by the B and R.
+	// So the RefCount of CPU C is 2, and the pod A should allocate it by returning the C twice, where the one is
+	// by the reservation restoring and the another is by the preemption restoring.
+	for _, preferred := range preferredCPUs {
+		if preferred.IsEmpty() {
+			continue
+		}
+		for _, cpuID := range preferred.ToSliceNoSort() {
 			cpuInfo, ok := allocateInfo[cpuID]
 			if ok {
 				cpuInfo.RefCount--

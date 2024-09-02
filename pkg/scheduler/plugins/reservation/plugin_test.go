@@ -445,6 +445,26 @@ func TestFilter(t *testing.T) {
 		},
 	}
 
+	testReservationIgnoredPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-pod",
+			Labels: map[string]string{
+				apiext.LabelReservationIgnored: "true",
+			},
+		},
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{
+				{
+					Resources: corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceCPU: resource.MustParse("4"),
+						},
+					},
+				},
+			},
+		},
+	}
+
 	tests := []struct {
 		name         string
 		pod          *corev1.Pod
@@ -566,7 +586,7 @@ func TestFilter(t *testing.T) {
 					hasAffinity: true,
 					nodeReservationStates: map[string]nodeReservationState{
 						testNode.Name: {
-							matched: []*frameworkext.ReservationInfo{
+							matchedOrIgnored: []*frameworkext.ReservationInfo{
 								frameworkext.NewReservationInfo(reservation),
 							},
 						},
@@ -574,6 +594,16 @@ func TestFilter(t *testing.T) {
 				},
 			},
 			want: nil,
+		},
+		{
+			name: "Aligned policy can coexist with Restricted policy",
+			pod:  testReservationIgnoredPod,
+			reservations: []*schedulingv1alpha1.Reservation{
+				alignedReservation,
+				restrictedReservation,
+			},
+			nodeInfo: testNodeInfo,
+			want:     nil,
 		},
 	}
 	for _, tt := range tests {
@@ -736,7 +766,7 @@ func Test_filterWithReservations(t *testing.T) {
 							rAllocated: &framework.Resource{
 								MilliCPU: 0,
 							},
-							matched: []*frameworkext.ReservationInfo{
+							matchedOrIgnored: []*frameworkext.ReservationInfo{
 								frameworkext.NewReservationInfo(&schedulingv1alpha1.Reservation{
 									ObjectMeta: metav1.ObjectMeta{
 										Name: "test-r",
@@ -783,7 +813,7 @@ func Test_filterWithReservations(t *testing.T) {
 							rAllocated: &framework.Resource{
 								MilliCPU: 0,
 							},
-							matched: []*frameworkext.ReservationInfo{
+							matchedOrIgnored: []*frameworkext.ReservationInfo{
 								frameworkext.NewReservationInfo(&schedulingv1alpha1.Reservation{
 									ObjectMeta: metav1.ObjectMeta{
 										Name: "test-r",
@@ -829,7 +859,7 @@ func Test_filterWithReservations(t *testing.T) {
 							rAllocated: &framework.Resource{
 								MilliCPU: 0,
 							},
-							matched: []*frameworkext.ReservationInfo{
+							matchedOrIgnored: []*frameworkext.ReservationInfo{
 								frameworkext.NewReservationInfo(&schedulingv1alpha1.Reservation{
 									ObjectMeta: metav1.ObjectMeta{
 										Name: "test-r",
@@ -876,7 +906,7 @@ func Test_filterWithReservations(t *testing.T) {
 							rAllocated: &framework.Resource{
 								MilliCPU: 0,
 							},
-							matched: []*frameworkext.ReservationInfo{
+							matchedOrIgnored: []*frameworkext.ReservationInfo{
 								frameworkext.NewReservationInfo(&schedulingv1alpha1.Reservation{
 									ObjectMeta: metav1.ObjectMeta{
 										Name: "test-r",
@@ -927,7 +957,7 @@ func Test_filterWithReservations(t *testing.T) {
 							rAllocated: &framework.Resource{
 								MilliCPU: 6000,
 							},
-							matched: []*frameworkext.ReservationInfo{
+							matchedOrIgnored: []*frameworkext.ReservationInfo{
 								{
 									Reservation: &schedulingv1alpha1.Reservation{
 										ObjectMeta: metav1.ObjectMeta{
@@ -979,7 +1009,7 @@ func Test_filterWithReservations(t *testing.T) {
 							rAllocated: &framework.Resource{
 								MilliCPU: 6000,
 							},
-							matched: []*frameworkext.ReservationInfo{
+							matchedOrIgnored: []*frameworkext.ReservationInfo{
 								{
 									Reservation: &schedulingv1alpha1.Reservation{
 										ObjectMeta: metav1.ObjectMeta{
@@ -1030,7 +1060,7 @@ func Test_filterWithReservations(t *testing.T) {
 							rAllocated: &framework.Resource{
 								MilliCPU: 6000,
 							},
-							matched: []*frameworkext.ReservationInfo{
+							matchedOrIgnored: []*frameworkext.ReservationInfo{
 								{
 									Reservation: &schedulingv1alpha1.Reservation{
 										ObjectMeta: metav1.ObjectMeta{
@@ -1080,7 +1110,7 @@ func Test_filterWithReservations(t *testing.T) {
 							rAllocated: &framework.Resource{
 								MilliCPU: 6000,
 							},
-							matched: []*frameworkext.ReservationInfo{
+							matchedOrIgnored: []*frameworkext.ReservationInfo{
 								{
 									Reservation: &schedulingv1alpha1.Reservation{
 										ObjectMeta: metav1.ObjectMeta{
@@ -1131,7 +1161,7 @@ func Test_filterWithReservations(t *testing.T) {
 							rAllocated: &framework.Resource{
 								MilliCPU: 6000,
 							},
-							matched: []*frameworkext.ReservationInfo{
+							matchedOrIgnored: []*frameworkext.ReservationInfo{
 								{
 									Reservation: &schedulingv1alpha1.Reservation{
 										ObjectMeta: metav1.ObjectMeta{
@@ -1181,7 +1211,7 @@ func Test_filterWithReservations(t *testing.T) {
 							rAllocated: &framework.Resource{
 								MilliCPU: 6000,
 							},
-							matched: []*frameworkext.ReservationInfo{
+							matchedOrIgnored: []*frameworkext.ReservationInfo{
 								{
 									Reservation: &schedulingv1alpha1.Reservation{
 										ObjectMeta: metav1.ObjectMeta{
@@ -1232,7 +1262,7 @@ func Test_filterWithReservations(t *testing.T) {
 							rAllocated: &framework.Resource{
 								MilliCPU: 10000,
 							},
-							matched: []*frameworkext.ReservationInfo{
+							matchedOrIgnored: []*frameworkext.ReservationInfo{
 								{
 									Reservation: &schedulingv1alpha1.Reservation{
 										ObjectMeta: metav1.ObjectMeta{
@@ -1307,7 +1337,7 @@ func Test_filterWithReservations(t *testing.T) {
 							rAllocated: &framework.Resource{
 								MilliCPU: 6000,
 							},
-							matched: []*frameworkext.ReservationInfo{
+							matchedOrIgnored: []*frameworkext.ReservationInfo{
 								{
 									Reservation: &schedulingv1alpha1.Reservation{
 										ObjectMeta: metav1.ObjectMeta{
@@ -1367,7 +1397,7 @@ func Test_filterWithReservations(t *testing.T) {
 							rAllocated: &framework.Resource{
 								MilliCPU: 6000,
 							},
-							matched: []*frameworkext.ReservationInfo{
+							matchedOrIgnored: []*frameworkext.ReservationInfo{
 								{
 									Reservation: &schedulingv1alpha1.Reservation{
 										ObjectMeta: metav1.ObjectMeta{
@@ -1407,7 +1437,7 @@ func Test_filterWithReservations(t *testing.T) {
 			cycleState.Write(stateKey, tt.stateData)
 			nodeInfo := framework.NewNodeInfo()
 			nodeInfo.SetNode(node)
-			got := pl.filterWithReservations(context.TODO(), cycleState, &corev1.Pod{}, nodeInfo, tt.stateData.nodeReservationStates[node.Name].matched, tt.stateData.hasAffinity)
+			got := pl.filterWithReservations(context.TODO(), cycleState, &corev1.Pod{}, nodeInfo, tt.stateData.nodeReservationStates[node.Name].matchedOrIgnored, tt.stateData.hasAffinity)
 			assert.Equal(t, tt.wantStatus, got)
 		})
 	}
@@ -1883,7 +1913,7 @@ func TestFilterReservation(t *testing.T) {
 				rInfo := pl.reservationCache.getReservationInfoByUID(v.UID)
 				nodeRState := state.nodeReservationStates[v.Status.NodeName]
 				nodeRState.nodeName = v.Status.NodeName
-				nodeRState.matched = append(nodeRState.matched, rInfo)
+				nodeRState.matchedOrIgnored = append(nodeRState.matchedOrIgnored, rInfo)
 				state.nodeReservationStates[v.Status.NodeName] = nodeRState
 			}
 			cycleState := framework.NewCycleState()
@@ -2098,6 +2128,26 @@ func TestPostFilter(t *testing.T) {
 				"1 Reservation(s) is unschedulable",
 				"1 Reservation(s) for node reason that Insufficient memory",
 				"6 Reservation(s) matched owner total"),
+		},
+		{
+			name: "ignore reservation ignored",
+			args: args{
+				hasStateData: true,
+				nodeReservationDiagnosis: map[string]*nodeDiagnosisState{
+					"test-node-0": {
+						ignored: 3,
+					},
+					"test-node-1": {
+						ignored: 1,
+					},
+				},
+				filteredNodeStatusMap: framework.NodeToStatusMap{
+					"test-node-0": {},
+					"test-node-1": {},
+				},
+			},
+			want:  nil,
+			want1: framework.NewStatus(framework.Unschedulable),
 		},
 	}
 	for _, tt := range tests {
