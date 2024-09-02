@@ -484,7 +484,7 @@ func (p *Plugin) FilterReservation(ctx context.Context, cycleState *framework.Cy
 	restoreState := reservationRestoreState.getNodeState(nodeName)
 
 	store := topologymanager.GetStore(cycleState)
-	affinity := store.GetAffinity(nodeName)
+	affinity, _ := store.GetAffinity(nodeName)
 	resourceOptions, err := p.getResourceOptions(state, node, pod, requestCPUBind, affinity, topologyOptions)
 	if err != nil {
 		return framework.NewStatus(framework.UnschedulableAndUnresolvable, err.Error())
@@ -541,7 +541,7 @@ func (p *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState, 
 
 	// TODO: de-duplicate logic done by the Filter phase and move head the pre-process of the resource options
 	store := topologymanager.GetStore(cycleState)
-	affinity := store.GetAffinity(nodeName)
+	affinity, _ := store.GetAffinity(nodeName)
 	resourceOptions, err := p.getResourceOptions(state, node, pod, requestCPUBind, affinity, topologyOptions)
 	if err != nil {
 		return framework.AsStatus(err)
