@@ -17,6 +17,7 @@ limitations under the License.
 package loadaware
 
 import (
+	"context"
 	"math"
 	"testing"
 
@@ -24,9 +25,13 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/informers"
+	"k8s.io/client-go/kubernetes/fake"
 
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/descheduler/test"
 )
 
 var (
@@ -228,4 +233,110 @@ func TestSortPodsOnOneOverloadedNode(t *testing.T) {
 	}
 	sortPodsOnOneOverloadedNode(nodeInfo, removablePods, resourceWeights, false)
 	assert.Equal(t, expectedResult, removablePods)
+}
+
+func TestPodFitsAnyNodeWithThreshold(t *testing.T) {
+	tests := []struct {
+		name           string
+		pod            *corev1.Pod
+		nodes          []*corev1.Node
+		nodeUsages     map[string]*NodeUsage
+		nodeThresholds map[string]NodeThresholds
+		prod           bool
+		podMetric      *slov1alpha1.ResourceMap
+		want           bool
+	}{
+		{
+			name: "Nodes matches the Pod via affinity, but exceeds threshold",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "default",
+					Name:      "test-pod-1",
+				},
+				Spec: corev1.PodSpec{
+					Affinity: &corev1.Affinity{
+						NodeAffinity: &corev1.NodeAffinity{
+							RequiredDuringSchedulingIgnoredDuringExecution: &corev1.NodeSelector{
+								NodeSelectorTerms: []corev1.NodeSelectorTerm{
+									{
+										MatchExpressions: []corev1.NodeSelectorRequirement{
+											{
+												Key:      "test-node-type",
+												Operator: corev1.NodeSelectorOpIn,
+												Values: []string{
+													"test-node-type-A",
+												},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			nodes: []*corev1.Node{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node-1",
+						Labels: map[string]string{
+							"test-node-type": "test-node-type-A",
+						},
+					},
+				},
+			},
+			nodeUsages: map[string]*NodeUsage{
+				"test-node-1": {
+					usage: map[corev1.ResourceName]*resource.Quantity{
+						corev1.ResourceCPU:    resource.NewMilliQuantity(1000, resource.DecimalSI),
+						corev1.ResourceMemory: resource.NewQuantity(2000000000, resource.BinarySI),
+					},
+				},
+			},
+			nodeThresholds: map[string]NodeThresholds{
+				"test-node-1": {
+					highResourceThreshold: map[corev1.ResourceName]*resource.Quantity{
+						corev1.ResourceCPU:    resource.NewMilliQuantity(2000, resource.DecimalSI),
+						corev1.ResourceMemory: resource.NewMilliQuantity(3000000000, resource.DecimalSI),
+					},
+				},
+			},
+			podMetric: &slov1alpha1.ResourceMap{
+				ResourceList: corev1.ResourceList{
+					corev1.ResourceCPU:    *resource.NewMilliQuantity(1500, resource.DecimalSI),
+					corev1.ResourceMemory: *resource.NewMilliQuantity(1500000000, resource.DecimalSI),
+				},
+			},
+			want: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			var objs []runtime.Object
+			for _, node := range tt.nodes {
+				objs = append(objs, node)
+			}
+			objs = append(objs, tt.pod)
+
+			fakeClient := fake.NewSimpleClientset(objs...)
+
+			sharedInformerFactory := informers.NewSharedInformerFactory(fakeClient, 0)
+			podInformer := sharedInformerFactory.Core().V1().Pods()
+
+			getPodsAssignedToNode, err := test.BuildGetPodsAssignedToNodeFunc(podInformer)
+			if err != nil {
+				t.Errorf("Build get pods assigned to node function error: %v", err)
+			}
+
+			sharedInformerFactory.Start(ctx.Done())
+			sharedInformerFactory.WaitForCacheSync(ctx.Done())
+
+			if got := podFitsAnyNodeWithThreshold(getPodsAssignedToNode, tt.pod, tt.nodes, tt.nodeUsages, tt.nodeThresholds, false, tt.podMetric); got != tt.want {
+				t.Errorf("PodFitsAnyNode() = %v, want %v", got, tt.want)
+			}
+		})
+	}
 }
