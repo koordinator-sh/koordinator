@@ -22,6 +22,7 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/klog/v2"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
@@ -301,6 +302,7 @@ type Context struct {
 	StatesInformer    statesinformer.StatesInformer
 	Executor          resourceexecutor.ResourceUpdateExecutor
 	ReconcileInterval time.Duration
+	EventRecorder     record.EventRecorder
 }
 
 func NewReconciler(ctx Context) Reconciler {
@@ -308,6 +310,7 @@ func NewReconciler(ctx Context) Reconciler {
 		podUpdated:        make(chan struct{}, 1),
 		executor:          ctx.Executor,
 		reconcileInterval: ctx.ReconcileInterval,
+		eventRecorder:     ctx.EventRecorder,
 	}
 	// TODO register individual pod event
 	ctx.StatesInformer.RegisterCallbacks(statesinformer.RegisterTypeAllPods, "runtime-hooks-reconciler",
@@ -321,6 +324,7 @@ type reconciler struct {
 	podUpdated        chan struct{}
 	executor          resourceexecutor.ResourceUpdateExecutor
 	reconcileInterval time.Duration
+	eventRecorder     record.EventRecorder
 }
 
 func (c *reconciler) Run(stopCh <-chan struct{}) error {
@@ -420,6 +424,7 @@ func (c *reconciler) reconcilePodCgroup(stopCh <-chan struct{}) {
 						klog.V(5).Infof("calling reconcile function %v for pod %v finished",
 							r.description, podMeta.Key())
 					}
+					podCtx.RecordEvent(c.eventRecorder, podMeta.Pod)
 				}
 
 				for resourceType, r := range globalCgroupReconcilers.sandboxContainerLevel {

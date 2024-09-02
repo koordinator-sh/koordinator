@@ -59,7 +59,7 @@ require (
 	k8s.io/utils v0.0.0-20240102154912-e7106e64919e
 	sigs.k8s.io/controller-runtime v0.16.5
 	sigs.k8s.io/controller-runtime/tools/setup-envtest v0.0.0-20231005234617-5771399a8ce5
-	sigs.k8s.io/descheduler v0.26.0
+	sigs.k8s.io/descheduler v0.28.0
 	sigs.k8s.io/yaml v1.3.0
 )
 
@@ -131,7 +131,7 @@ require (
 	github.com/gin-contrib/sse v0.1.0 // indirect
 	github.com/go-kit/log v0.2.1
 	github.com/go-logfmt/logfmt v0.5.1 // indirect
-	github.com/go-logr/logr v1.2.4 // indirect
+	github.com/go-logr/logr v1.2.4
 	github.com/go-logr/zapr v1.2.4 // indirect
 	github.com/go-openapi/jsonpointer v0.19.6 // indirect
 	github.com/go-openapi/jsonreference v0.20.2 // indirect
@@ -297,5 +297,4 @@ replace (
 	k8s.io/pod-security-admission => k8s.io/pod-security-admission v0.28.7
 	k8s.io/sample-apiserver => k8s.io/sample-apiserver v0.28.7
 	sigs.k8s.io/controller-runtime => sigs.k8s.io/controller-runtime v0.16.5
-	sigs.k8s.io/descheduler => sigs.k8s.io/descheduler v0.26.1-0.20230402001301-90905d2c2194
 )

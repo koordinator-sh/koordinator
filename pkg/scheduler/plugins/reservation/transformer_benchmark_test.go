@@ -148,7 +148,7 @@ func BenchmarkBeforePrefilterWithMatchedPod(b *testing.B) {
 		for _, v := range sd.nodeReservationStates {
 			nodeInfo, err := pl.handle.SnapshotSharedLister().NodeInfos().Get(v.nodeName)
 			assert.NoError(b, err)
-			for _, ri := range v.matched {
+			for _, ri := range v.matchedOrIgnored {
 				p := reservePods[string(ri.UID())]
 				if p != nil {
 					nodeInfo.AddPod(p)

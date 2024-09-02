@@ -61,9 +61,10 @@ func TestGangCache_OnPodAdd(t *testing.T) {
 
 	defaultArgs := getTestDefaultCoschedulingArgs(t)
 	tests := []struct {
-		name      string
-		pods      []*corev1.Pod
-		wantCache map[string]*Gang
+		name          string
+		pods          []*corev1.Pod
+		wantCache     map[string]*Gang
+		onceSatisfied bool
 	}{
 		{
 			name:      "add invalid pod",
@@ -216,9 +217,9 @@ func TestGangCache_OnPodAdd(t *testing.T) {
 							},
 						},
 					},
-					OnceResourceSatisfied: true,
 				},
 			},
+			onceSatisfied: true,
 		},
 		{
 			name: "add pod announcing Gang in lightweight-coscheduling way",
@@ -314,9 +315,9 @@ func TestGangCache_OnPodAdd(t *testing.T) {
 							},
 						},
 					},
-					OnceResourceSatisfied: true,
 				},
 			},
+			onceSatisfied: true,
 		},
 		{
 			name: "add pods announcing Gang in Annotation way,but with illegal args",
@@ -506,6 +507,7 @@ func TestGangCache_OnPodAdd(t *testing.T) {
 					continue
 				}
 				tt.wantCache[k].GangGroupId = util.GetGangGroupId(v.GangGroup)
+				tt.wantCache[k].GangGroupInfo.OnceResourceSatisfied = tt.onceSatisfied
 			}
 
 			for _, pod := range tt.pods {
@@ -543,9 +545,10 @@ func TestGangCache_OnPodUpdate(t *testing.T) {
 
 	defaultArgs := getTestDefaultCoschedulingArgs(t)
 	tests := []struct {
-		name      string
-		pods      []*corev1.Pod
-		wantCache map[string]*Gang
+		name          string
+		pods          []*corev1.Pod
+		wantCache     map[string]*Gang
+		onceSatisfied bool
 	}{
 		{
 			name:      "add invalid pod",
@@ -649,9 +652,9 @@ func TestGangCache_OnPodUpdate(t *testing.T) {
 							},
 						},
 					},
-					OnceResourceSatisfied: true,
 				},
 			},
+			onceSatisfied: true,
 		},
 	}
 
@@ -671,6 +674,7 @@ func TestGangCache_OnPodUpdate(t *testing.T) {
 					continue
 				}
 				tt.wantCache[k].GangGroupId = util.GetGangGroupId(v.GangGroup)
+				tt.wantCache[k].GangGroupInfo.OnceResourceSatisfied = true
 			}
 
 			for _, pod := range tt.pods {
@@ -1125,8 +1129,8 @@ func TestGangCache_OnGangDelete(t *testing.T) {
 				},
 			},
 		},
-		OnceResourceSatisfied: true,
 	}
+	wantedGang.GangGroupInfo.OnceResourceSatisfied = true
 
 	wantedGang.GangGroupInfo.GangTotalChildrenNumMap[wantedGang.Name] = wantedGang.TotalChildrenNum
 	wantedGang.GangGroupInfo.ChildrenLastScheduleTime["default/pod1"] = wantedGang.GangGroupInfo.LastScheduleTime

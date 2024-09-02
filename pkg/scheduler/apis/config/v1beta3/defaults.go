@@ -49,7 +49,9 @@ var (
 
 	defaultPreferredCPUBindPolicy = CPUBindPolicyFullPCPUs
 
-	defaultEnablePreemption = pointer.Bool(false)
+	defaultEnablePreemption            = pointer.Bool(false)
+	defaultMinCandidateNodesPercentage = pointer.Int32(10)
+	defaultMinCandidateNodesAbsolute   = pointer.Int32(100)
 
 	defaultDelayEvictTime       = 120 * time.Second
 	defaultRevokePodInterval    = 1 * time.Second
@@ -142,6 +144,12 @@ func SetDefaults_NodeNUMAResourceArgs(obj *NodeNUMAResourceArgs) {
 func SetDefaults_ReservationArgs(obj *ReservationArgs) {
 	if obj.EnablePreemption == nil {
 		obj.EnablePreemption = defaultEnablePreemption
+	}
+	if obj.MinCandidateNodesPercentage == nil {
+		obj.MinCandidateNodesPercentage = defaultMinCandidateNodesPercentage
+	}
+	if obj.MinCandidateNodesAbsolute == nil {
+		obj.MinCandidateNodesAbsolute = defaultMinCandidateNodesAbsolute
 	}
 }
 

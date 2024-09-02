@@ -91,6 +91,8 @@ func MakeReservationErrorHandler(
 			}
 			return false
 		} else if reservationutil.IsReservePod(pod) {
+			// NOTE: Since the failure handler is asynchronous and not locked with the reservation event handler,
+			// please make sure the status of the object is expected before adding or updating it.
 			// for reservation CR, which is treated as pod internal
 			reservationErrorFn(ctx, fwk, podInfo, status, nominatingInfo, start)
 
@@ -99,6 +101,10 @@ func MakeReservationErrorHandler(
 			if err != nil {
 				return true
 			}
+
+			// nominate for the reserve pod if it is
+			// TODO: use the default nominator
+			addNominatedReservation(f, podInfo, nominatingInfo)
 
 			msg := truncateMessage(schedulingErr.Error())
 			fwk.EventRecorder().Eventf(r, nil, corev1.EventTypeWarning, "FailedScheduling", "Scheduling", msg)
@@ -109,6 +115,19 @@ func MakeReservationErrorHandler(
 		// not reservation CR, not pod with reservation affinity
 		return false
 	}
+}
+
+func addNominatedReservation(f framework.Framework, podInfo *framework.QueuedPodInfo, nominatingInfo *framework.NominatingInfo) {
+	frameworkExtender, ok := f.(frameworkext.FrameworkExtender)
+	if !ok {
+		return
+	}
+
+	reservationNominator := frameworkExtender.GetReservationNominator()
+	if reservationNominator == nil {
+		return
+	}
+	reservationNominator.AddNominatedReservePod(podInfo.Pod, nominatingInfo.NominatedNodeName)
 }
 
 // input:

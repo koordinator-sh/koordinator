@@ -17,6 +17,8 @@ limitations under the License.
 package protocol
 
 import (
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/klog/v2"
 
 	ext "github.com/koordinator-sh/koordinator/apis/extension"
@@ -47,6 +49,10 @@ type HostAppContext struct {
 	Response HostAppResponse
 	executor resourceexecutor.ResourceUpdateExecutor
 	updaters []resourceexecutor.ResourceUpdater
+}
+
+func (c *HostAppContext) RecordEvent(r record.EventRecorder, pod *corev1.Pod) {
+	//TODO: don't support record pod by host level
 }
 
 func (c *HostAppContext) FromReconciler(hostAppSpec *slov1alpha1.HostApplicationSpec) {
