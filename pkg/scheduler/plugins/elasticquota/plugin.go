@@ -64,6 +64,7 @@ type PostFilterState struct {
 
 func (p *PostFilterState) Clone() framework.StateData {
 	return &PostFilterState{
+		skip:               p.skip,
 		quotaInfo:          p.quotaInfo,
 		used:               p.used.DeepCopy(),
 		nonPreemptibleUsed: p.nonPreemptibleUsed.DeepCopy(),
