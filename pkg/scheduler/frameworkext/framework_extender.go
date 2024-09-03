@@ -225,15 +225,6 @@ func (ext *frameworkExtenderImpl) RunFilterPluginsWithNominatedPods(ctx context.
 	return status
 }
 
-func (ext *frameworkExtenderImpl) RunPostFilterPlugins(ctx context.Context, state *framework.CycleState, pod *corev1.Pod, filteredNodeStatusMap framework.NodeToStatusMap) (*framework.PostFilterResult, *framework.Status) {
-	result, status := ext.Framework.RunPostFilterPlugins(ctx, state, pod, filteredNodeStatusMap)
-	if result == nil || result.NominatingInfo.NominatedNodeName == "" {
-		ext.GetReservationNominator().RemoveNominatedReservations(pod)
-		ext.GetReservationNominator().DeleteNominatedReservePod(pod)
-	}
-	return result, status
-}
-
 func (ext *frameworkExtenderImpl) RunScorePlugins(ctx context.Context, state *framework.CycleState, pod *corev1.Pod, nodes []*corev1.Node) ([]framework.NodePluginScores, *framework.Status) {
 	for _, pl := range ext.configuredPlugins.Score.Enabled {
 		transformer := ext.scoreTransformers[pl.Name]
