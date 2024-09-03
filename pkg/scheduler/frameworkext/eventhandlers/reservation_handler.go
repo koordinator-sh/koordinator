@@ -78,15 +78,18 @@ func MakeReservationErrorHandler(
 		schedulingErr := status.AsError()
 
 		if _, reserveAffExist := pod.Annotations[extension.AnnotationReservationAffinity]; reserveAffExist {
-			// for pod specified reservation affinity, export new event on reservation level
-			reservationLevelMsg, hasReservation := generatePodEventOnReservationLevel(schedulingErr.Error())
-			klog.V(7).Infof("origin scheduling error info: %s. hasReservation %v. reservation msg: %s",
-				schedulingErr.Error(), hasReservation, reservationLevelMsg)
-			if hasReservation {
-				msg := truncateMessage(reservationLevelMsg)
-				// user reason=FailedScheduling-Reservation to avoid event being auto-merged
-				fwk.EventRecorder().Eventf(pod, nil, corev1.EventTypeWarning, "FailedScheduling-Reservation", "Scheduling", msg)
-			}
+			// export event on reservation level asynchronously
+			go func() {
+				// for pod specified reservation affinity, export new event on reservation level
+				reservationLevelMsg, hasReservation := generatePodEventOnReservationLevel(schedulingErr.Error())
+				klog.V(7).Infof("origin scheduling error info: %s. hasReservation %v. reservation msg: %s",
+					schedulingErr.Error(), hasReservation, reservationLevelMsg)
+				if hasReservation {
+					msg := truncateMessage(reservationLevelMsg)
+					// user reason=FailedScheduling-Reservation to avoid event being auto-merged
+					fwk.EventRecorder().Eventf(pod, nil, corev1.EventTypeWarning, "FailedScheduling-Reservation", "Scheduling", msg)
+				}
+			}()
 			return false
 		} else if reservationutil.IsReservePod(pod) {
 			// NOTE: Since the failure handler is asynchronous and not locked with the reservation event handler,
@@ -151,21 +154,25 @@ func generatePodEventOnReservationLevel(errorMsg string) (string, bool) {
 		return "", false
 	}
 
-	// "3 Reservations ..., 1 Reservation ..."
+	// "3 Reservations ..., 1 Reservation xxx. 1 Reservation ..."
 	detailedMsg := prefixSplit[1]
-
-	splitFunc := func(c rune) bool {
-		detailSeparators := ",."
-		return strings.ContainsRune(detailSeparators, c)
-	}
-	// ["3 Reservation(s) ...", " 1 Reservation(s) ...", ..., " 8 Reservation(s) matched owner total", " Gang rejected..."]
-	detailSplit := strings.FieldsFunc(detailedMsg, splitFunc)
+	// "3 Reservations ..., 1 Reservation xxx, 1 Reservation ..."
+	detailedMsg = strings.ReplaceAll(detailedMsg, ". ", ", ")
+	// ["3 Reservation(s) ...", " 1 Reservation(s) ...", ..., " 8 Reservation(s) matched owner total.", " Gang rejected..."]
+	detailSplit := strings.FieldsFunc(detailedMsg, func(c rune) bool {
+		return c == ','
+	})
 
 	total := int64(-1)
 	resultDetails := make([]string, 0, len(detailSplit))
+	nodeRelatedDetails := make([]string, 0, len(detailSplit))
+	var reservationNameDetail []string
 
 	// for reservation total item
 	reserveTotalRe := regexp.MustCompile("^([0-9]+) Reservation\\(s\\) matched owner total$")
+
+	// for reservation name matched item
+	reserveNameTotalRe := regexp.MustCompile("^([0-9]+) Reservation\\(s\\) exactly matches the requested reservation name$")
 
 	// for node related item
 	reserveNodeDetailRe := regexp.MustCompile("^([0-9]+ Reservation\\(s\\)) (for node reason that .*)$")
@@ -174,7 +181,7 @@ func generatePodEventOnReservationLevel(errorMsg string) (string, bool) {
 	reserveDetailRe := regexp.MustCompile("^([0-9]+) Reservation\\(s\\) .*$")
 
 	for _, item := range detailSplit {
-		trimItem := strings.TrimSpace(item)
+		trimItem := strings.Trim(item, ". ")
 		totalStr := reserveTotalRe.FindAllStringSubmatch(trimItem, -1)
 
 		if len(totalStr) > 0 && len(totalStr[0]) == 2 {
@@ -197,15 +204,22 @@ func generatePodEventOnReservationLevel(errorMsg string) (string, bool) {
 				}
 				nodeReasonWords = append(nodeReasonWords, vv)
 			}
-			resultDetails = append(resultDetails, strings.Join(nodeReasonWords, " "))
+			nodeRelatedDetails = append(nodeRelatedDetails, strings.Join(nodeReasonWords, " "))
+		} else if reserveNameTotalRe.MatchString(trimItem) {
+			reservationNameDetail = append(reservationNameDetail, trimItem)
 		} else if reserveDetailRe.MatchString(trimItem) {
 			// reservation itself item, append to details, e.g. " 1 Reservation(s) ..."
-			// for 1 Reservation(s) Insufficient nvidia, replace nvidia with nvidia.com/gpu
-			// TODO support other extend resource fields like kubernetes.io/batch-cpu
-			itemReplaced := strings.Replace(trimItem, "nvidia", "nvidia.com/gpu", -1)
-			resultDetails = append(resultDetails, itemReplaced)
+			resultDetails = append(resultDetails, trimItem)
 		}
 	}
+
+	// put the reservation name at the front, and put the node-related details at the end
+	if d := len(reservationNameDetail); d > 0 {
+		resultDetails = append(resultDetails, reservationNameDetail...)
+		copy(resultDetails[d:], resultDetails[:len(resultDetails)-d])
+		copy(resultDetails[:d], reservationNameDetail)
+	}
+	resultDetails = append(resultDetails, nodeRelatedDetails...)
 
 	reserveLevelMsgFmt := "0/%d reservations are available: %s."
 
