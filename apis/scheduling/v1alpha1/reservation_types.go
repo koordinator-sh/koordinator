@@ -35,44 +35,44 @@ type ReservationSpec struct {
 	// +kubebuilder:pruning:PreserveUnknownFields
 	// +kubebuilder:validation:Schemaless
 	// +kubebuilder:validation:Required
-	Template *corev1.PodTemplateSpec `json:"template"`
+	Template *corev1.PodTemplateSpec `json:"template" protobuf:"bytes,1,opt,name=template"`
 	// Specify the owners who can allocate the reserved resources.
 	// Multiple owner selectors and ORed.
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:MinItems=1
-	Owners []ReservationOwner `json:"owners"`
+	Owners []ReservationOwner `json:"owners" protobuf:"bytes,2,rep,name=owners"`
 	// Time-to-Live period for the reservation.
 	// `expires` and `ttl` are mutually exclusive. Defaults to 24h. Set 0 to disable expiration.
 	// +kubebuilder:default="24h"
 	// +optional
-	TTL *metav1.Duration `json:"ttl,omitempty"`
+	TTL *metav1.Duration `json:"ttl,omitempty" protobuf:"bytes,3,opt,name=ttl"`
 	// Expired timestamp when the reservation is expected to expire.
 	// If both `expires` and `ttl` are set, `expires` is checked first.
 	// `expires` and `ttl` are mutually exclusive. Defaults to being set dynamically at runtime based on the `ttl`.
 	// +optional
-	Expires *metav1.Time `json:"expires,omitempty"`
+	Expires *metav1.Time `json:"expires,omitempty" protobuf:"bytes,4,opt,name=expires"`
 	// By default, the resources requirements of reservation (specified in `template.spec`) is filtered by whether the
 	// node has sufficient free resources (i.e. Reservation Request <  Node Free).
 	// When `preAllocation` is set, the scheduler will skip this validation and allow overcommitment. The scheduled
 	// reservation would be waiting to be available until free resources are sufficient.
 	// +optional
-	PreAllocation bool `json:"preAllocation,omitempty"`
+	PreAllocation bool `json:"preAllocation,omitempty" protobuf:"varint,5,opt,name=preAllocation"`
 	// When `AllocateOnce` is set, the reserved resources are only available for the first owner who allocates successfully
 	// and are not allocatable to other owners anymore. Defaults to true.
 	// +kubebuilder:default=true
 	// +optional
-	AllocateOnce *bool `json:"allocateOnce,omitempty"`
+	AllocateOnce *bool `json:"allocateOnce,omitempty" protobuf:"varint,6,opt,name=allocateOnce"`
 	// AllocatePolicy represents the allocation policy of reserved resources that Reservation expects.
 	// +kubebuilder:validation:Enum=Aligned;Restricted
 	// +optional
-	AllocatePolicy ReservationAllocatePolicy `json:"allocatePolicy,omitempty"`
+	AllocatePolicy ReservationAllocatePolicy `json:"allocatePolicy,omitempty" protobuf:"bytes,7,opt,name=allocatePolicy,casttype=ReservationAllocatePolicy"`
 	// Unschedulable controls reservation schedulability of new pods. By default, reservation is schedulable.
 	// +optional
-	Unschedulable bool `json:"unschedulable,omitempty"`
+	Unschedulable bool `json:"unschedulable,omitempty" protobuf:"varint,8,opt,name=unschedulable"`
 	// Specifies the reservation's taints. This can be toleranted by the reservation tolerance.
 	// Eviction is not supported for NoExecute taints
 	// +optional
-	Taints []corev1.Taint `json:"taints,omitempty"`
+	Taints []corev1.Taint `json:"taints,omitempty" protobuf:"bytes,9,rep,name=taints"`
 }
 
 type ReservationAllocatePolicy string
@@ -101,11 +101,11 @@ type ReservationTemplateSpec struct {
 	// Standard object's metadata.
 	// +kubebuilder:pruning:PreserveUnknownFields
 	// +optional
-	metav1.ObjectMeta `json:"metadata,omitempty"`
+	metav1.ObjectMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 
 	// Specification of the desired behavior of the Reservation.
 	// +optional
-	Spec ReservationSpec `json:"spec,omitempty"`
+	Spec ReservationSpec `json:"spec,omitempty" protobuf:"bytes,2,opt,name=spec"`
 }
 
 type ReservationStatus struct {
@@ -115,22 +115,22 @@ type ReservationStatus struct {
 	// The `phase` indicates whether is reservation is waiting for process, available to allocate or failed/expired to
 	// get cleanup.
 	// +optional
-	Phase ReservationPhase `json:"phase,omitempty"`
+	Phase ReservationPhase `json:"phase,omitempty" protobuf:"bytes,1,opt,name=phase,casttype=ReservationPhase"`
 	// The `conditions` indicate the messages of reason why the reservation is still pending.
 	// +optional
-	Conditions []ReservationCondition `json:"conditions,omitempty"`
+	Conditions []ReservationCondition `json:"conditions,omitempty" protobuf:"bytes,2,rep,name=conditions"`
 	// Current resource owners which allocated the reservation resources.
 	// +optional
-	CurrentOwners []corev1.ObjectReference `json:"currentOwners,omitempty"`
+	CurrentOwners []corev1.ObjectReference `json:"currentOwners,omitempty" protobuf:"bytes,3,rep,name=currentOwners"`
 	// Name of node the reservation is scheduled on.
 	// +optional
-	NodeName string `json:"nodeName,omitempty"`
+	NodeName string `json:"nodeName,omitempty" protobuf:"bytes,4,opt,name=nodeName"`
 	// Resource reserved and allocatable for owners.
 	// +optional
-	Allocatable corev1.ResourceList `json:"allocatable,omitempty"`
+	Allocatable corev1.ResourceList `json:"allocatable,omitempty" protobuf:"bytes,5,rep,name=allocatable,casttype=k8s.io/api/core/v1.ResourceList,castkey=k8s.io/api/core/v1.ResourceName"`
 	// Resource allocated by current owners.
 	// +optional
-	Allocated corev1.ResourceList `json:"allocated,omitempty"`
+	Allocated corev1.ResourceList `json:"allocated,omitempty" protobuf:"bytes,6,rep,name=allocated,casttype=k8s.io/api/core/v1.ResourceList,castkey=k8s.io/api/core/v1.ResourceName"`
 }
 
 // ReservationOwner indicates the owner specification which can allocate reserved resources.
@@ -138,17 +138,17 @@ type ReservationStatus struct {
 type ReservationOwner struct {
 	// Multiple field selectors are ANDed.
 	// +optional
-	Object *corev1.ObjectReference `json:"object,omitempty"`
+	Object *corev1.ObjectReference `json:"object,omitempty" protobuf:"bytes,1,opt,name=object"`
 	// +optional
-	Controller *ReservationControllerReference `json:"controller,omitempty"`
+	Controller *ReservationControllerReference `json:"controller,omitempty" protobuf:"bytes,2,opt,name=controller"`
 	// +optional
-	LabelSelector *metav1.LabelSelector `json:"labelSelector,omitempty"`
+	LabelSelector *metav1.LabelSelector `json:"labelSelector,omitempty" protobuf:"bytes,3,opt,name=labelSelector"`
 }
 
 type ReservationControllerReference struct {
 	// Extend with a `namespace` field for reference different namespaces.
-	metav1.OwnerReference `json:",inline"`
-	Namespace             string `json:"namespace,omitempty"`
+	metav1.OwnerReference `json:",inline" protobuf:"bytes,1,opt,name=ownerReference"`
+	Namespace             string `json:"namespace,omitempty" protobuf:"bytes,2,opt,name=namespace"`
 }
 
 type ReservationPhase string
@@ -194,12 +194,12 @@ const (
 )
 
 type ReservationCondition struct {
-	Type               ReservationConditionType `json:"type,omitempty"`
-	Status             ConditionStatus          `json:"status,omitempty"`
-	Reason             string                   `json:"reason,omitempty"`
-	Message            string                   `json:"message,omitempty"`
-	LastProbeTime      metav1.Time              `json:"lastProbeTime,omitempty"`
-	LastTransitionTime metav1.Time              `json:"lastTransitionTime,omitempty"`
+	Type               ReservationConditionType `json:"type,omitempty" protobuf:"bytes,1,opt,name=type,casttype=ReservationConditionType"`
+	Status             ConditionStatus          `json:"status,omitempty" protobuf:"bytes,2,opt,name=status,casttype=ConditionStatus"`
+	Reason             string                   `json:"reason,omitempty" protobuf:"bytes,3,opt,name=reason"`
+	Message            string                   `json:"message,omitempty" protobuf:"bytes,4,opt,name=message"`
+	LastProbeTime      metav1.Time              `json:"lastProbeTime,omitempty" protobuf:"bytes,5,opt,name=lastProbeTime"`
+	LastTransitionTime metav1.Time              `json:"lastTransitionTime,omitempty" protobuf:"bytes,6,opt,name=lastTransitionTime"`
 }
 
 // +genclient
@@ -218,10 +218,10 @@ type ReservationCondition struct {
 // Any namespaced affinity/anti-affinity of reservation scheduling can be specified in the spec.template.
 type Reservation struct {
 	metav1.TypeMeta   `json:",inline"`
-	metav1.ObjectMeta `json:"metadata,omitempty"`
+	metav1.ObjectMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 
-	Spec   ReservationSpec   `json:"spec,omitempty"`
-	Status ReservationStatus `json:"status,omitempty"`
+	Spec   ReservationSpec   `json:"spec,omitempty" protobuf:"bytes,2,opt,name=spec"`
+	Status ReservationStatus `json:"status,omitempty" protobuf:"bytes,3,opt,name=status"`
 }
 
 // +kubebuilder:object:root=true
@@ -229,8 +229,8 @@ type Reservation struct {
 // ReservationList contains a list of Reservation
 type ReservationList struct {
 	metav1.TypeMeta `json:",inline"`
-	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []Reservation `json:"items"`
+	metav1.ListMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
+	Items           []Reservation `json:"items" protobuf:"bytes,2,rep,name=items"`
 }
 
 func init() {
