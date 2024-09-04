@@ -110,6 +110,7 @@ func NewRuntimeHook(si statesinformer.StatesInformer, cfg *Config, schema *apiru
 		ConfigFilePath:      cfg.RuntimeHookConfigFilePath,
 		DisableStages:       getDisableStagesMap(cfg.RuntimeHookDisableStages),
 		Executor:            e,
+		EventRecorder:       recorder,
 	}
 
 	backOff := wait.Backoff{
@@ -130,6 +131,7 @@ func NewRuntimeHook(si statesinformer.StatesInformer, cfg *Config, schema *apiru
 			DisableStages:       getDisableStagesMap(cfg.RuntimeHookDisableStages),
 			Executor:            e,
 			BackOff:             backOff,
+			EventRecorder:       recorder,
 		}
 		nriServer, err = nri.NewNriServer(nriServerOptions)
 		if err != nil {
@@ -148,8 +150,10 @@ func NewRuntimeHook(si statesinformer.StatesInformer, cfg *Config, schema *apiru
 	}
 
 	newPluginOptions := hooks.Options{
-		Reader:   cr,
-		Executor: e,
+		Reader:         cr,
+		Executor:       e,
+		StatesInformer: si,
+		EventRecorder:  recorder,
 	}
 
 	if err != nil {

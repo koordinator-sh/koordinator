@@ -73,6 +73,12 @@ var HooksProtocolBuilder = hooksProtocolBuilder{
 	},
 }
 
+type Resctrl struct {
+	Schemata   string
+	Closid     string
+	NewTaskIds []int32
+}
+
 type Resources struct {
 	// origin resources
 	CPUShares     *int64
@@ -84,6 +90,7 @@ type Resources struct {
 	// extended resources
 	CPUBvt  *int64
 	CPUIdle *int64
+	Resctrl *Resctrl
 }
 
 func (r *Resources) IsOriginResSet() bool {
@@ -184,6 +191,22 @@ func injectCPUIdle(cgroupParent string, idleValue int64, a *audit.EventHelper, e
 func injectNetClsClassId(cgroupParent string, classId uint32, a *audit.EventHelper, e resourceexecutor.ResourceUpdateExecutor) (resourceexecutor.ResourceUpdater, error) {
 	clsIdStr := strconv.FormatUint(uint64(classId), 10)
 	updater, err := resourceexecutor.DefaultCgroupUpdaterFactory.New(sysutil.NetClsClassIdName, cgroupParent, clsIdStr, a)
+	if err != nil {
+		return nil, err
+	}
+	return updater, nil
+}
+
+func createCatGroup(closid string, a *audit.EventHelper, e resourceexecutor.ResourceUpdateExecutor) (resourceexecutor.ResourceUpdater, error) {
+	updater, err := resourceexecutor.NewCatGroupResource(closid, a)
+	if err != nil {
+		return nil, err
+	}
+	return updater, nil
+}
+
+func injectResctrl(closid string, schemata string, e *audit.EventHelper, executor resourceexecutor.ResourceUpdateExecutor) (resourceexecutor.ResourceUpdater, error) {
+	updater, err := resourceexecutor.NewResctrlSchemataResource(closid, schemata, e)
 	if err != nil {
 		return nil, err
 	}
