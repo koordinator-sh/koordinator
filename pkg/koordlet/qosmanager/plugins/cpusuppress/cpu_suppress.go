@@ -156,8 +156,8 @@ func (r *CPUSuppress) calculateBESuppressCPU(node *corev1.Node, nodeMetric float
 	nodeBESuppress.Sub(*systemUsed)
 
 	metrics.RecordBESuppressLSUsedCPU(podNonBEUsedCPU)
-	klog.V(6).Infof("nodeSuppressBE[CPU(Core)]:%v = node.Total:%v * SLOPercent:%v%% - systemUsage:%v - podLSUsed:%v - hostAppLSUsed:%v, upper to %v\n",
-		nodeBESuppress.AsApproximateFloat64(), node.Status.Allocatable.Cpu().Value(), beCPUUsedThreshold, systemUsedCPU,
+	klog.V(6).Infof("nodeSuppressBE[CPU(Core)]:%v = node.Capacity:%v * SLOPercent:%v%% - systemUsage:%v - podLSUsed:%v - hostAppLSUsed:%v, upper to %v\n",
+		nodeBESuppress.AsApproximateFloat64(), node.Status.Capacity.Cpu().Value(), beCPUUsedThreshold, systemUsedCPU,
 		podNonBEUsedCPU, hostAppNonBEUsedCPU, nodeBESuppress.Value())
 
 	return nodeBESuppress
