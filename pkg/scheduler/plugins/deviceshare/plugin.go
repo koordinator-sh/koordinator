@@ -449,6 +449,10 @@ func (p *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState, 
 			return status
 		}
 	}
+	err = fillGPUTotalMem(result, nodeDeviceInfo)
+	if err != nil {
+		return framework.AsStatus(err)
+	}
 	nodeDeviceInfo.updateCacheUsed(result, pod, true)
 	state.allocationResult = result
 	return nil
