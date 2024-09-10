@@ -142,7 +142,7 @@ func (p *Plugin) AddPod(_ context.Context, cycleState *framework.CycleState, pre
 	state.schedulingStateData.lock.Unlock()
 
 	rInfo := p.getPodNominatedReservationInfo(pod, nodeName)
-	if p.isReservationUnallocatedNUMAResources(rInfo) { // preempt node unallocated resources
+	if rInfo == nil || p.notNUMAAwareReservation(rInfo) { // preempt node unallocated resources
 		if nodeState.nodeAlloc == nil {
 			nodeState.nodeAlloc = newPreemptibleAlloc()
 		}
@@ -198,7 +198,7 @@ func (p *Plugin) RemovePod(_ context.Context, cycleState *framework.CycleState, 
 	state.schedulingStateData.lock.Unlock()
 
 	rInfo := p.getPodNominatedReservationInfo(pod, nodeName)
-	if p.isReservationUnallocatedNUMAResources(rInfo) { // preempt node unallocated resources
+	if rInfo == nil || p.notNUMAAwareReservation(rInfo) { // preempt node unallocated resources
 		if nodeState.nodeAlloc == nil {
 			nodeState.nodeAlloc = newPreemptibleAlloc()
 		}
@@ -220,10 +220,7 @@ func (p *Plugin) RemovePod(_ context.Context, cycleState *framework.CycleState, 
 	return nil
 }
 
-func (p *Plugin) isReservationUnallocatedNUMAResources(rInfo *frameworkext.ReservationInfo) bool {
-	if rInfo == nil {
-		return true
-	}
+func (p *Plugin) notNUMAAwareReservation(rInfo *frameworkext.ReservationInfo) bool {
 	podAllocatedCPUs, podAllocatedNUMAResources := p.getPodAllocated(rInfo.Pod, rInfo.GetNodeName())
 	if podAllocatedCPUs.IsEmpty() && len(podAllocatedNUMAResources) == 0 {
 		return true
