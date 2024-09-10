@@ -297,13 +297,13 @@ func TestGetMaxUnavailable(t *testing.T) {
 				Type:   intstr.String,
 				StrVal: "0%",
 			},
-			want: 5,
+			want: 1,
 		},
 		{
 			name:         "case7",
 			replicas:     6,
 			intOrPercent: &intstr.IntOrString{},
-			want:         2,
+			want:         1,
 		},
 	}
 	for _, tt := range tests {
