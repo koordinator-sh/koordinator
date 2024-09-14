@@ -687,6 +687,8 @@ func Test_tryAllocateFromReservation(t *testing.T) {
 				basicPreemptible,
 				tt.requiredFromReservation,
 			)
+			err := fillGPUTotalMem(result, nodeDeviceInfo)
+			assert.NoError(t, err)
 			assert.Equal(t, tt.wantStatus, status)
 			assert.Equal(t, tt.wantResult, result)
 		})

@@ -973,6 +973,7 @@ func TestAutopilotAllocator(t *testing.T) {
 			}
 			sortDeviceAllocations(allocations)
 			sortDeviceAllocations(tt.want)
+			fillGPUTotalMem(allocations, nodeDevice)
 			assert.Equal(t, tt.want, allocations)
 		})
 	}
@@ -1931,6 +1932,7 @@ func TestAutopilotAllocatorWithExclusivePolicyAndRequiredScope(t *testing.T) {
 			}
 			sortDeviceAllocations(allocations)
 			sortDeviceAllocations(tt.want)
+			fillGPUTotalMem(allocations, nodeDevice)
 			assert.Equal(t, tt.want, allocations)
 		})
 	}
@@ -2117,6 +2119,8 @@ func Test_allocateGPUWithLeastAllocatedScorer(t *testing.T) {
 		scorer:     allocationScorer,
 	}
 	allocateResult, status := allocator.Allocate(nil, nil, nil, nil)
+	err := fillGPUTotalMem(allocateResult, nd)
+	assert.NoError(t, err)
 	assert.True(t, status.IsSuccess())
 	expectAllocations := []*apiext.DeviceAllocation{
 		{
@@ -2226,6 +2230,7 @@ func Test_nodeDevice_allocateGPUWithMostAllocatedScorer(t *testing.T) {
 			},
 		},
 	}
+	fillGPUTotalMem(allocateResult, nd)
 	assert.True(t, equality.Semantic.DeepEqual(expectAllocations, allocateResult[schedulingv1alpha1.GPU]))
 }
 
