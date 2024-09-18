@@ -197,17 +197,25 @@ func (c *resourceManager) Allocate(node *corev1.Node, pod *corev1.Pod, options *
 		Name:               pod.Name,
 		CPUExclusivePolicy: options.cpuExclusivePolicy,
 	}
+	klog.V(5).Infof("Allocate pod %s/%s on node %s, numaNodeAffinity: %+v, requestCPUBind %v", pod.Namespace, pod.Name, node.Name, options.hint, options.requestCPUBind)
 	if options.hint.NUMANodeAffinity != nil {
 		resources, err := c.allocateResourcesByHint(node, pod, options)
 		if err != nil {
 			return nil, err
 		}
+		if len(resources) == 0 {
+			klog.Warningf("succeed allocateResourcesByHint but allocatedNUMAResources nil, options: %+v", options)
+		}
 		allocation.NUMANodeResources = resources
+
 	}
 	if options.requestCPUBind {
 		cpus, err := c.allocateCPUSet(node, pod, allocation.NUMANodeResources, options)
 		if err != nil {
 			return nil, framework.NewStatus(framework.Unschedulable, err.Error())
+		}
+		if cpus.IsEmpty() {
+			klog.Warningf("succeed allocateCPUSet but allocatedCPUs empty, options: %+v, allocation.NUMANodeResources: %+v", options, allocation.NUMANodeResources)
 		}
 		allocation.CPUSet = cpus
 	}

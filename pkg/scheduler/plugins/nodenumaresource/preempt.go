@@ -24,6 +24,7 @@ import (
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	"github.com/koordinator-sh/koordinator/pkg/util/cpuset"
 )
 
@@ -141,7 +142,7 @@ func (p *Plugin) AddPod(_ context.Context, cycleState *framework.CycleState, pre
 	state.schedulingStateData.lock.Unlock()
 
 	rInfo := p.getPodNominatedReservationInfo(pod, nodeName)
-	if rInfo == nil { // preempt node unallocated resources
+	if rInfo == nil || p.notNUMAAwareReservation(rInfo) { // preempt node unallocated resources
 		if nodeState.nodeAlloc == nil {
 			nodeState.nodeAlloc = newPreemptibleAlloc()
 		}
@@ -197,7 +198,7 @@ func (p *Plugin) RemovePod(_ context.Context, cycleState *framework.CycleState, 
 	state.schedulingStateData.lock.Unlock()
 
 	rInfo := p.getPodNominatedReservationInfo(pod, nodeName)
-	if rInfo == nil { // preempt node unallocated resources
+	if rInfo == nil || p.notNUMAAwareReservation(rInfo) { // preempt node unallocated resources
 		if nodeState.nodeAlloc == nil {
 			nodeState.nodeAlloc = newPreemptibleAlloc()
 		}
@@ -217,6 +218,14 @@ func (p *Plugin) RemovePod(_ context.Context, cycleState *framework.CycleState, 
 		"podAllocatedCPUs", podAllocatedCPUs, "podAllocatedNUMAResources", podAllocatedNUMAResources,
 		"reservationInfo", rInfo)
 	return nil
+}
+
+func (p *Plugin) notNUMAAwareReservation(rInfo *frameworkext.ReservationInfo) bool {
+	podAllocatedCPUs, podAllocatedNUMAResources := p.getPodAllocated(rInfo.Pod, rInfo.GetNodeName())
+	if podAllocatedCPUs.IsEmpty() && len(podAllocatedNUMAResources) == 0 {
+		return true
+	}
+	return false
 }
 
 func (p *Plugin) getPodAllocated(pod *corev1.Pod, nodeName string) (cpus cpuset.CPUSet, numaResources map[int]corev1.ResourceList) {
