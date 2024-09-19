@@ -24,6 +24,7 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/schedulingphase"
 )
 
 type Interface interface {
@@ -64,18 +65,25 @@ func (m *topologyManager) Admit(ctx context.Context, cycleState *framework.Cycle
 
 	policy := createNUMATopologyPolicy(policyType, numaNodes)
 	bestHint, ok := store.GetAffinity(nodeName)
-	if !ok {
+	extensionPointBeingExecuted := schedulingphase.GetExtensionPointBeingExecuted(cycleState)
+	klog.V(5).Infof("extensionPointBeingExecuted: %v, bestHint: %v, nodeName: %v, pod: %v", extensionPointBeingExecuted, bestHint, nodeName, pod.Name)
+	if !ok || extensionPointBeingExecuted == schedulingphase.PostFilter {
 		var admit bool
 		bestHint, admit = m.calculateAffinity(ctx, cycleState, policy, pod, nodeName, exclusivePolicy, allNUMANodeStatus)
 		klog.V(5).Infof("Best TopologyHint for (pod: %v): %v on node: %v", klog.KObj(pod), bestHint, nodeName)
 		if !admit {
 			return framework.NewStatus(framework.Unschedulable, "node(s) NUMA Topology affinity error")
 		}
+		status := m.allocateResources(ctx, cycleState, bestHint, pod, nodeName)
+		if !status.IsSuccess() {
+			return status
+		}
 		store.SetAffinity(nodeName, bestHint)
-	}
-	status := m.allocateResources(ctx, cycleState, bestHint, pod, nodeName)
-	if !status.IsSuccess() {
-		return status
+	} else {
+		status := m.allocateResources(ctx, cycleState, bestHint, pod, nodeName)
+		if !status.IsSuccess() {
+			return status
+		}
 	}
 	return nil
 }
