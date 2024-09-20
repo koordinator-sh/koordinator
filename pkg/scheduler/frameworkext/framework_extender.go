@@ -31,6 +31,7 @@ import (
 	koordinatorclientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
 	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
 	"github.com/koordinator-sh/koordinator/pkg/features"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/schedulingphase"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/topologymanager"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
@@ -247,6 +248,11 @@ func (ext *frameworkExtenderImpl) RunScorePlugins(ctx context.Context, state *fr
 		debugScores(debugTopNScores, pod, pluginToNodeScores, nodes)
 	}
 	return pluginToNodeScores, status
+}
+
+func (ext *frameworkExtenderImpl) RunPostFilterPlugins(ctx context.Context, state *framework.CycleState, pod *corev1.Pod, filteredNodeStatusMap framework.NodeToStatusMap) (_ *framework.PostFilterResult, status *framework.Status) {
+	schedulingphase.RecordPhase(state, schedulingphase.PostFilter)
+	return ext.Framework.RunPostFilterPlugins(ctx, state, pod, filteredNodeStatusMap)
 }
 
 // RunPreBindPlugins supports PreBindReservation for Reservation
