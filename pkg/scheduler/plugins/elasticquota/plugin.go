@@ -212,7 +212,7 @@ func (g *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleState
 	quotaName, treeID := g.getPodAssociateQuotaNameAndTreeID(pod)
 	if quotaName == "" {
 		g.skipPostFilterState(cycleState)
-		return nil, framework.NewStatus(framework.Success, "")
+		return nil, framework.NewStatus(framework.Skip)
 	}
 
 	mgr := g.GetGroupQuotaManagerForTree(treeID)

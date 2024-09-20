@@ -41,17 +41,17 @@ const (
 
 func (pl *Plugin) PreScore(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodes []*corev1.Node) *framework.Status {
 	if reservationutil.IsReservePod(pod) {
-		return nil
+		return framework.NewStatus(framework.Skip)
 	}
 
 	// if the pod is reservation-ignored, it does not want a nominated reservation
 	if apiext.IsReservationIgnored(pod) {
-		return nil
+		return framework.NewStatus(framework.Skip)
 	}
 
 	state := getStateData(cycleState)
 	if len(state.nodeReservationStates) == 0 {
-		return nil
+		return framework.NewStatus(framework.Skip)
 	}
 
 	ctx, cancel := context.WithCancel(ctx)

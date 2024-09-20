@@ -19,13 +19,16 @@ package frameworkext
 import (
 	"context"
 	"fmt"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/wait"
 	k8sfeature "k8s.io/apiserver/pkg/util/feature"
 	"k8s.io/klog/v2"
 	schedconfig "k8s.io/kubernetes/pkg/scheduler/apis/config"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
+	"k8s.io/kubernetes/pkg/scheduler/metrics"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	koordinatorclientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
@@ -51,9 +54,12 @@ type frameworkExtenderImpl struct {
 	koordinatorClientSet             koordinatorclientset.Interface
 	koordinatorSharedInformerFactory koordinatorinformers.SharedInformerFactory
 
-	preFilterTransformers map[string]PreFilterTransformer
-	filterTransformers    map[string]FilterTransformer
-	scoreTransformers     map[string]ScoreTransformer
+	preFilterTransformers        map[string]PreFilterTransformer
+	filterTransformers           map[string]FilterTransformer
+	scoreTransformers            map[string]ScoreTransformer
+	preFilterTransformersEnabled []PreFilterTransformer
+	filterTransformersEnabled    []FilterTransformer
+	scoreTransformersEnabled     []ScoreTransformer
 
 	reservationNominator      ReservationNominator
 	reservationFilterPlugins  []ReservationFilterPlugin
@@ -66,6 +72,8 @@ type frameworkExtenderImpl struct {
 
 	numaTopologyHintProviders []topologymanager.NUMATopologyHintProvider
 	topologyManager           topologymanager.Interface
+
+	metricsRecorder *metrics.MetricAsyncRecorder
 }
 
 func NewFrameworkExtender(f *FrameworkExtenderFactory, fw framework.Framework) FrameworkExtender {
@@ -85,6 +93,7 @@ func NewFrameworkExtender(f *FrameworkExtenderFactory, fw framework.Framework) F
 		filterTransformers:               map[string]FilterTransformer{},
 		scoreTransformers:                map[string]ScoreTransformer{},
 		preBindExtensionsPlugins:         map[string]PreBindExtensions{},
+		metricsRecorder:                  metrics.NewMetricsAsyncRecorder(1000, time.Second, wait.NeverStop),
 	}
 	frameworkExtender.topologyManager = topologymanager.New(frameworkExtender)
 	return frameworkExtender
@@ -143,6 +152,29 @@ func (ext *frameworkExtenderImpl) updatePlugins(pl framework.Plugin) {
 
 func (ext *frameworkExtenderImpl) SetConfiguredPlugins(plugins *schedconfig.Plugins) {
 	ext.configuredPlugins = plugins
+
+	for _, pl := range ext.configuredPlugins.PreFilter.Enabled {
+		transformer := ext.preFilterTransformers[pl.Name]
+		if transformer != nil {
+			ext.preFilterTransformersEnabled = append(ext.preFilterTransformersEnabled, transformer)
+		}
+	}
+	for _, pl := range ext.configuredPlugins.Filter.Enabled {
+		transformer := ext.filterTransformers[pl.Name]
+		if transformer != nil {
+			ext.filterTransformersEnabled = append(ext.filterTransformersEnabled, transformer)
+		}
+	}
+	for _, pl := range ext.configuredPlugins.Score.Enabled {
+		transformer := ext.scoreTransformers[pl.Name]
+		if transformer != nil {
+			ext.scoreTransformersEnabled = append(ext.scoreTransformersEnabled, transformer)
+		}
+	}
+	klog.V(5).InfoS("Set configured transformer plugins",
+		"PreFilterTransformer", len(ext.preFilterTransformersEnabled),
+		"FilterTransformer", len(ext.filterTransformersEnabled),
+		"ScoreTransformer", len(ext.scoreTransformersEnabled))
 }
 
 func (ext *frameworkExtenderImpl) KoordinatorClientSet() koordinatorclientset.Interface {
@@ -166,12 +198,10 @@ func (ext *frameworkExtenderImpl) GetReservationNominator() ReservationNominator
 
 // RunPreFilterPlugins transforms the PreFilter phase of framework with pre-filter transformers.
 func (ext *frameworkExtenderImpl) RunPreFilterPlugins(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod) (*framework.PreFilterResult, *framework.Status) {
-	for _, pl := range ext.configuredPlugins.PreFilter.Enabled {
-		transformer := ext.preFilterTransformers[pl.Name]
-		if transformer == nil {
-			continue
-		}
+	for _, transformer := range ext.preFilterTransformersEnabled {
+		startTime := time.Now()
 		newPod, transformed, status := transformer.BeforePreFilter(ctx, cycleState, pod)
+		ext.metricsRecorder.ObservePluginDurationAsync("BeforePreFilter", transformer.Name(), status.Code().String(), metrics.SinceInSeconds(startTime))
 		if !status.IsSuccess() {
 			klog.ErrorS(status.AsError(), "Failed to run BeforePreFilter", "pod", klog.KObj(pod), "plugin", transformer.Name())
 			return nil, status
@@ -187,12 +217,11 @@ func (ext *frameworkExtenderImpl) RunPreFilterPlugins(ctx context.Context, cycle
 		return result, status
 	}
 
-	for _, pl := range ext.configuredPlugins.PreFilter.Enabled {
-		transformer := ext.preFilterTransformers[pl.Name]
-		if transformer == nil {
-			continue
-		}
-		if status := transformer.AfterPreFilter(ctx, cycleState, pod); !status.IsSuccess() {
+	for _, transformer := range ext.preFilterTransformersEnabled {
+		startTime := time.Now()
+		status = transformer.AfterPreFilter(ctx, cycleState, pod)
+		ext.metricsRecorder.ObservePluginDurationAsync("AfterPreFilter", transformer.Name(), status.Code().String(), metrics.SinceInSeconds(startTime))
+		if !status.IsSuccess() {
 			klog.ErrorS(status.AsError(), "Failed to run AfterPreFilter", "pod", klog.KObj(pod), "plugin", transformer.Name())
 			return nil, status
 		}
@@ -203,12 +232,10 @@ func (ext *frameworkExtenderImpl) RunPreFilterPlugins(ctx context.Context, cycle
 // RunFilterPluginsWithNominatedPods transforms the Filter phase of framework with filter transformers.
 // We don't transform RunFilterPlugins since framework's RunFilterPluginsWithNominatedPods just calls its RunFilterPlugins.
 func (ext *frameworkExtenderImpl) RunFilterPluginsWithNominatedPods(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeInfo *framework.NodeInfo) *framework.Status {
-	for _, pl := range ext.configuredPlugins.Filter.Enabled {
-		transformer := ext.filterTransformers[pl.Name]
-		if transformer == nil {
-			continue
-		}
+	for _, transformer := range ext.filterTransformersEnabled {
+		startTime := time.Now()
 		newPod, newNodeInfo, transformed, status := transformer.BeforeFilter(ctx, cycleState, pod, nodeInfo)
+		ext.metricsRecorder.ObservePluginDurationAsync("BeforeFilter", transformer.Name(), status.Code().String(), metrics.SinceInSeconds(startTime))
 		if !status.IsSuccess() {
 			klog.ErrorS(status.AsError(), "Failed to run BeforeFilter", "pod", klog.KObj(pod), "plugin", transformer.Name())
 			return status
@@ -227,12 +254,10 @@ func (ext *frameworkExtenderImpl) RunFilterPluginsWithNominatedPods(ctx context.
 }
 
 func (ext *frameworkExtenderImpl) RunScorePlugins(ctx context.Context, state *framework.CycleState, pod *corev1.Pod, nodes []*corev1.Node) ([]framework.NodePluginScores, *framework.Status) {
-	for _, pl := range ext.configuredPlugins.Score.Enabled {
-		transformer := ext.scoreTransformers[pl.Name]
-		if transformer == nil {
-			continue
-		}
+	for _, transformer := range ext.scoreTransformersEnabled {
+		startTime := time.Now()
 		newPod, newNodes, transformed, status := transformer.BeforeScore(ctx, state, pod, nodes)
+		ext.metricsRecorder.ObservePluginDurationAsync("BeforeScore", transformer.Name(), status.Code().String(), metrics.SinceInSeconds(startTime))
 		if !status.IsSuccess() {
 			klog.ErrorS(status.AsError(), "Failed to run BeforeScore", "pod", klog.KObj(pod), "plugin", transformer.Name())
 			return nil, status
@@ -278,7 +303,9 @@ func (ext *frameworkExtenderImpl) RunPreBindPlugins(ctx context.Context, state *
 	reservation = reservation.DeepCopy()
 	reservation.Status.NodeName = nodeName
 	for _, pl := range ext.reservationPreBindPlugins {
+		startTime := time.Now()
 		status := pl.PreBindReservation(ctx, state, reservation, nodeName)
+		ext.metricsRecorder.ObservePluginDurationAsync("PreBindReservation", pl.Name(), status.Code().String(), metrics.SinceInSeconds(startTime))
 		if !status.IsSuccess() {
 			err := status.AsError()
 			klog.ErrorS(err, "Failed running ReservationPreBindPlugin plugin", "plugin", pl.Name(), "reservation", klog.KObj(reservation))
@@ -465,7 +492,9 @@ func (ext *frameworkExtenderImpl) RunReservePluginsReserve(ctx context.Context, 
 
 func (ext *frameworkExtenderImpl) RunResizePod(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) *framework.Status {
 	for _, pl := range ext.resizePodPlugins {
+		startTime := time.Now()
 		status := pl.ResizePod(ctx, cycleState, pod, nodeName)
+		ext.metricsRecorder.ObservePluginDurationAsync("ResizePod", pl.Name(), status.Code().String(), metrics.SinceInSeconds(startTime))
 		if !status.IsSuccess() {
 			return status
 		}

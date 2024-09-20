@@ -271,7 +271,7 @@ func TestScore(t *testing.T) {
 			suit.start()
 
 			status := pl.PreScore(context.TODO(), cycleState, tt.pod, []*corev1.Node{node})
-			assert.True(t, status.IsSuccess())
+			assert.True(t, status.IsSuccess() || status.IsSkip())
 
 			score, status := pl.Score(context.TODO(), cycleState, tt.pod, node.Name)
 			assert.True(t, status.IsSuccess())
@@ -843,7 +843,7 @@ func TestPreScoreWithNominateReservation(t *testing.T) {
 			suit.start()
 
 			status := pl.PreScore(context.TODO(), cycleState, tt.pod, nodes)
-			assert.Equal(t, tt.wantStatus, status.IsSuccess())
+			assert.Equal(t, tt.wantStatus, status.IsSuccess() || status.IsSkip())
 
 			for nodeName, wantReservationInfo := range tt.wantReservation {
 				sort.Slice(wantReservationInfo.ResourceNames, func(i, j int) bool {

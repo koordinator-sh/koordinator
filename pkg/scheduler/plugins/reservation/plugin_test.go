@@ -256,7 +256,7 @@ func TestPreFilter(t *testing.T) {
 					Name: "not-reserve",
 				},
 			},
-			wantStatus: nil,
+			wantStatus: framework.NewStatus(framework.Skip),
 			wantPreRes: nil,
 		},
 		{
