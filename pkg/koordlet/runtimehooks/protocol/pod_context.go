@@ -18,6 +18,7 @@ package protocol
 
 import (
 	"fmt"
+	"os"
 	"sort"
 
 	"github.com/containerd/nri/pkg/api"
@@ -32,6 +33,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/audit"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
@@ -70,6 +72,7 @@ type PodRequest struct {
 	CgroupParent      string
 	Resources         *Resources // TODO: support proxy & nri mode
 	ExtendedResources *apiext.ExtendedResourceSpec
+	ContainerTaskIds  map[string][]int32
 }
 
 func (p *PodRequest) FromNri(pod *api.PodSandbox) {
@@ -109,6 +112,7 @@ func (p *PodRequest) FromReconciler(podMeta *statesinformer.PodMeta) {
 	p.Labels = podMeta.Pod.Labels
 	p.Annotations = podMeta.Pod.Annotations
 	p.CgroupParent = podMeta.CgroupDir
+	p.ContainerTaskIds = podMeta.ContainerTaskIds
 	p.Resources = &Resources{}
 	p.Resources.FromPod(podMeta.Pod)
 	// retrieve ExtendedResources from pod spec and pod annotations (prefer pod spec)
@@ -339,8 +343,51 @@ func (p *PodContext) injectForExt() {
 				p.Request.PodMeta.Namespace, p.Request.PodMeta.Name, *p.Response.Resources.NetClsClassId, p.Request.CgroupParent)
 		}
 	}
+
+	if p.Response.Resources.Resctrl != nil {
+		eventHelper := audit.V(3).Pod(p.Request.PodMeta.Namespace, p.Request.PodMeta.Name).Reason("runtime-hooks").Message(
+			"set pod LLC/MB limit to %v", *p.Response.Resources.Resctrl)
+		if p.Response.Resources.Resctrl.Closid != "" || p.Response.Resources.Resctrl.Schemata != "" {
+			updater, err := createCatGroup(p.Response.Resources.Resctrl.Closid, eventHelper, p.executor)
+			if err != nil {
+				klog.Infof("create pod %v/%v cat group %v failed, error %v", p.Request.PodMeta.Namespace,
+					p.Request.PodMeta.Name, p.Response.Resources.Resctrl.Closid, err)
+			} else {
+				p.updaters = append(p.updaters, updater)
+				klog.V(5).Infof("create pod %v/%v cat group %v",
+					p.Request.PodMeta.Namespace, p.Request.PodMeta.Name, p.Response.Resources.Resctrl.Closid)
+			}
+
+			updater, err = injectResctrl(p.Response.Resources.Resctrl.Closid, p.Response.Resources.Resctrl.Schemata, eventHelper, p.executor)
+			if err != nil {
+				klog.Infof("set pod %v/%v LLC/MB limit %v on cgroup parent %v failed, error %v", p.Request.PodMeta.Namespace,
+					p.Request.PodMeta.Name, p.Response.Resources.Resctrl.Closid, p.Response.Resources.Resctrl.Schemata, err)
+			} else {
+				p.updaters = append(p.updaters, updater)
+				klog.V(5).Infof("set pod %v/%v LLC/MB limit %v on cgroup parent %v",
+					p.Request.PodMeta.Namespace, p.Request.PodMeta.Name, *p.Response.Resources.Resctrl, p.Request.CgroupParent)
+			}
+		}
+
+		if len(p.Response.Resources.Resctrl.NewTaskIds) > 0 {
+			updater, err := resourceexecutor.CalculateResctrlL3TasksResource(p.Response.Resources.Resctrl.Closid, p.Response.Resources.Resctrl.NewTaskIds)
+			if err != nil {
+				klog.V(5).Infof("failed to get l3 tasks resource for group %s, err: %s", p.Response.Resources.Resctrl.Closid, err)
+			} else {
+				p.updaters = append(p.updaters, updater)
+			}
+		}
+	}
 }
 
 func (p *PodContext) removeForExt() {
-	// TODO: cleanup
+	if p.Response.Resources.Resctrl != nil && p.Response.Resources.Resctrl.Closid != "" {
+		if err := os.Remove(system.GetResctrlGroupRootDirPath(p.Response.Resources.Resctrl.Closid)); err != nil {
+			klog.Infof("cannot remove ctrl group, err: %v", err)
+		} else {
+			klog.Infof("remove pod %v/%v ctrl group %v on cgroup parent %v",
+				p.Request.PodMeta.Namespace, p.Request.PodMeta.Name, *p.Response.Resources.Resctrl, p.Request.CgroupParent)
+
+		}
+	}
 }

@@ -160,6 +160,34 @@ func PodHostNetworkFilter() *podHostNetworkFilter {
 	return singletonPodHostNetworkFilter
 }
 
+type podAnnotationResctrlFilter struct{}
+
+const (
+	podAnnotationResctrlFilterName = "resctrl"
+)
+
+func (p *podAnnotationResctrlFilter) Name() string {
+	return podAnnotationResctrlFilterName
+}
+
+func (p *podAnnotationResctrlFilter) Filter(podMeta *statesinformer.PodMeta) string {
+	if _, ok := podMeta.Pod.Annotations[apiext.AnnotationResctrl]; ok {
+		return podAnnotationResctrlFilterName
+	}
+
+	return ""
+}
+
+var singletonPodAnnotationResctrlFilter *podAnnotationResctrlFilter
+
+// PodQOSFilter returns a Filter which filters pod qos class
+func PodAnnotationResctrlFilter() *podAnnotationResctrlFilter {
+	if singletonPodQOSFilter == nil {
+		singletonPodQOSFilter = &podQOSFilter{}
+	}
+	return singletonPodAnnotationResctrlFilter
+}
+
 type reconcileFunc func(protocol.HooksProtocol) error
 type reconcileFunc4AllPods func([]protocol.HooksProtocol) error
 
@@ -469,6 +497,28 @@ func (c *reconciler) reconcilePodCgroup(stopCh <-chan struct{}) {
 							klog.V(5).Infof("calling reconcile function %v for container %v/%v finish",
 								r.description, podMeta.Key(), containerStat.Name)
 						}
+					}
+				}
+
+				for _, r := range globalCgroupReconcilers.allPodsLevel {
+					currentPods := make([]protocol.HooksProtocol, 0)
+					for _, podMeta := range podsMeta {
+						if _, ok := r.fn4AllPods[r.filter.Filter(podMeta)]; ok {
+							podCtx := protocol.HooksProtocolBuilder.Pod(podMeta)
+							currentPods = append(currentPods, podCtx)
+						}
+					}
+
+					reconcileFn, ok := r.fn4AllPods[r.filter.Name()]
+					if !ok {
+						klog.V(5).Infof("calling reconcile function %v aborted, condition %s not registered",
+							r.description, r.filter.Name())
+						continue
+					}
+
+					if err := reconcileFn(currentPods); err != nil {
+						klog.Warningf("calling reconcile function %v for pod %v failed, error %v",
+							r.description, err)
 					}
 				}
 			}
