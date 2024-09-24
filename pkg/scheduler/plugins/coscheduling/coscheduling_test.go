@@ -133,7 +133,7 @@ func newTestSharedLister(pods []*corev1.Pod, nodes []*corev1.Node) *testSharedLi
 	}
 }
 
-func makePg(name, namespace string, min int32, creationTime *time.Time, minResource *corev1.ResourceList) *v1alpha1.PodGroup {
+func makePg(name, namespace string, min int32, creationTime *time.Time, minResource corev1.ResourceList) *v1alpha1.PodGroup {
 	var ti int32 = 10
 	pg := &v1alpha1.PodGroup{
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
