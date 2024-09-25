@@ -25,6 +25,7 @@ import (
 
 	ext "github.com/koordinator-sh/koordinator/apis/extension"
 	runtimeapi "github.com/koordinator-sh/koordinator/apis/runtime/v1alpha1"
+	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/protocol"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util"
@@ -123,6 +124,51 @@ func Test_bvtPlugin_SetPodBvtValue_Proxy(t *testing.T) {
 			},
 			want: want{
 				bvtValue: pointer.Int64(2),
+			},
+		},
+		{
+			name: "set ls pod bvt with annoation override succeed",
+			fields: fields{
+				rule:            defaultRule,
+				systemSupported: pointer.Bool(true),
+			},
+			args: args{
+				request: &runtimeapi.PodSandboxHookRequest{
+					Labels: map[string]string{
+						ext.LabelPodQoS: string(ext.QoSLS),
+					},
+					Annotations: map[string]string{
+						slov1alpha1.AnnotationPodCPUQoS: `{"enable":true,"groupIdentity":-1}`,
+					},
+					CgroupParent: "kubepods/pod-guaranteed-test-uid/",
+				},
+				response: &runtimeapi.PodSandboxHookResponse{},
+			},
+			want: want{
+				bvtValue: pointer.Int64(-1),
+			},
+		},
+		{
+			name: "set ls pod bvt with annoation override failed",
+			fields: fields{
+				rule:            defaultRule,
+				systemSupported: pointer.Bool(true),
+			},
+			args: args{
+				request: &runtimeapi.PodSandboxHookRequest{
+					Labels: map[string]string{
+						ext.LabelPodQoS: string(ext.QoSLS),
+					},
+					Annotations: map[string]string{
+						slov1alpha1.AnnotationPodCPUQoS: `{"enable":false}`,
+					},
+					CgroupParent: "kubepods/pod-guaranteed-test-uid/",
+				},
+				response: &runtimeapi.PodSandboxHookResponse{},
+			},
+			want: want{
+				// default value
+				bvtValue: pointer.Int64(0),
 			},
 		},
 		{
