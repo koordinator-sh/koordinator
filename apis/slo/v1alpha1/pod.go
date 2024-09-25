@@ -18,6 +18,7 @@ package v1alpha1
 
 import (
 	"encoding/json"
+	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
 
@@ -26,6 +27,8 @@ import (
 
 const (
 	AnnotationPodCPUBurst = apiext.DomainPrefix + "cpuBurst"
+
+	AnnotationPodCPUQoS = apiext.DomainPrefix + "cpuQOS"
 
 	AnnotationPodMemoryQoS = apiext.DomainPrefix + "memoryQOS"
 
@@ -61,6 +64,28 @@ func GetPodMemoryQoSConfig(pod *corev1.Pod) (*PodMemoryQOSConfig, error) {
 	err := json.Unmarshal([]byte(value), &cfg)
 	if err != nil {
 		return nil, err
+	}
+	return &cfg, nil
+}
+
+func GetPodCPUQoSConfigByAttr(labels, annotations map[string]string) (*CPUQOSCfg, error) {
+	value, exist := annotations[AnnotationPodCPUQoS]
+	if !exist {
+		return nil, nil
+	}
+	cfg := CPUQOSCfg{}
+	err := json.Unmarshal([]byte(value), &cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	// check before return
+	if cfg.GroupIdentity != nil {
+		bvt := *cfg.GroupIdentity
+		// bvt value allowed [-1, 2], see https://help.aliyun.com/zh/alinux/user-guide/group-identity-feature
+		if bvt < -1 || bvt > 2 {
+			return nil, fmt.Errorf("bad group identity value: %v", bvt)
+		}
 	}
 	return &cfg, nil
 }
