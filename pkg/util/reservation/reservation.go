@@ -510,6 +510,13 @@ func (s *RequiredReservationAffinity) MatchName(reservationName string) bool {
 	return s != nil && len(s.name) > 0 && s.name == reservationName
 }
 
+// Match checks whether the pod is schedulable onto nodes according to
+// the requirements in both nodeSelector and nodeAffinity.
+// DEPRECATED: use MatchAffinity instead.
+func (s *RequiredReservationAffinity) Match(node *corev1.Node) bool {
+	return s.MatchAffinity(node)
+}
+
 // MatchAffinity checks whether the pod is schedulable onto nodes according to
 // the requirements in both nodeSelector and nodeAffinity.
 func (s *RequiredReservationAffinity) MatchAffinity(node *corev1.Node) bool {
