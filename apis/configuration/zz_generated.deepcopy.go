@@ -204,6 +204,11 @@ func (in *ColocationStrategy) DeepCopyInto(out *ColocationStrategy) {
 		*out = new(int64)
 		**out = **in
 	}
+	if in.MidUnallocatedPercent != nil {
+		in, out := &in.MidUnallocatedPercent, &out.MidUnallocatedPercent
+		*out = new(int64)
+		**out = **in
+	}
 	in.ColocationStrategyExtender.DeepCopyInto(&out.ColocationStrategyExtender)
 }
 

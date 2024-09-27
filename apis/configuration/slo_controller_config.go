@@ -247,12 +247,13 @@ type ColocationStrategy struct {
 	UpdateTimeThresholdSeconds *int64           `json:"updateTimeThresholdSeconds,omitempty" validate:"omitempty,min=1"`
 	ResourceDiffThreshold      *float64         `json:"resourceDiffThreshold,omitempty" validate:"omitempty,gt=0,max=1"`
 
-	// MidCPUThresholdPercent defines the maximum percentage of the Mid-tier cpu resource dividing the node allocatable.
-	// MidCPUAllocatable <= NodeCPUAllocatable * MidCPUThresholdPercent / 100.
+	// AllocatableCPU[Mid]' := min(Reclaimable[Mid], NodeAllocatable * MidCPUThresholdPercent) + Unallocated[Mid] * midUnallocatedRatio.
 	MidCPUThresholdPercent *int64 `json:"midCPUThresholdPercent,omitempty" validate:"omitempty,min=0,max=100"`
-	// MidMemoryThresholdPercent defines the maximum percentage of the Mid-tier memory resource dividing the node allocatable.
-	// MidMemoryAllocatable <= NodeMemoryAllocatable * MidMemoryThresholdPercent / 100.
+	// AllocatableMemory[Mid]' := min(Reclaimable[Mid], NodeAllocatable * MidMemoryThresholdPercent) + Unallocated[Mid] * midUnallocatedRatio.
 	MidMemoryThresholdPercent *int64 `json:"midMemoryThresholdPercent,omitempty" validate:"omitempty,min=0,max=100"`
+	// MidUnallocatedPercent defines the percentage of unallocated resources in the Mid-tier allocable resources.
+	// Allocatable[Mid]' := min(Reclaimable[Mid], NodeAllocatable * thresholdRatio) + Unallocated[Mid] * midUnallocatedRatio.
+	MidUnallocatedPercent *int64 `json:"midUnallocatedPercent,omitempty" validate:"omitempty,min=0,max=100"`
 
 	ColocationStrategyExtender `json:",inline"` // for third-party extension
 }
