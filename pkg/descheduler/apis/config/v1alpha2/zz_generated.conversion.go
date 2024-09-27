@@ -551,6 +551,7 @@ func autoConvert_v1alpha2_MigrationControllerArgs_To_config_MigrationControllerA
 	out.Namespaces = (*config.Namespaces)(unsafe.Pointer(in.Namespaces))
 	out.NodeFit = in.NodeFit
 	out.NodeSelector = in.NodeSelector
+	out.MaxMigratingGlobally = (*int32)(unsafe.Pointer(in.MaxMigratingGlobally))
 	out.MaxMigratingPerNode = (*int32)(unsafe.Pointer(in.MaxMigratingPerNode))
 	out.MaxMigratingPerNamespace = (*int32)(unsafe.Pointer(in.MaxMigratingPerNamespace))
 	out.MaxMigratingPerWorkload = (*intstr.IntOrString)(unsafe.Pointer(in.MaxMigratingPerWorkload))
@@ -592,6 +593,7 @@ func autoConvert_config_MigrationControllerArgs_To_v1alpha2_MigrationControllerA
 	out.Namespaces = (*Namespaces)(unsafe.Pointer(in.Namespaces))
 	out.NodeFit = in.NodeFit
 	out.NodeSelector = in.NodeSelector
+	out.MaxMigratingGlobally = (*int32)(unsafe.Pointer(in.MaxMigratingGlobally))
 	out.MaxMigratingPerNode = (*int32)(unsafe.Pointer(in.MaxMigratingPerNode))
 	out.MaxMigratingPerNamespace = (*int32)(unsafe.Pointer(in.MaxMigratingPerNamespace))
 	out.MaxMigratingPerWorkload = (*intstr.IntOrString)(unsafe.Pointer(in.MaxMigratingPerWorkload))
@@ -621,6 +623,7 @@ func Convert_config_MigrationControllerArgs_To_v1alpha2_MigrationControllerArgs(
 func autoConvert_v1alpha2_MigrationObjectLimiter_To_config_MigrationObjectLimiter(in *MigrationObjectLimiter, out *config.MigrationObjectLimiter, s conversion.Scope) error {
 	out.Duration = in.Duration
 	out.MaxMigrating = (*intstr.IntOrString)(unsafe.Pointer(in.MaxMigrating))
+	out.Burst = in.Burst
 	return nil
 }
 
@@ -632,6 +635,7 @@ func Convert_v1alpha2_MigrationObjectLimiter_To_config_MigrationObjectLimiter(in
 func autoConvert_config_MigrationObjectLimiter_To_v1alpha2_MigrationObjectLimiter(in *config.MigrationObjectLimiter, out *MigrationObjectLimiter, s conversion.Scope) error {
 	out.Duration = in.Duration
 	out.MaxMigrating = (*intstr.IntOrString)(unsafe.Pointer(in.MaxMigrating))
+	out.Burst = in.Burst
 	return nil
 }
 

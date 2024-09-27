@@ -6,10 +6,12 @@ require (
 	github.com/NVIDIA/go-nvml v0.11.6-0.0.20220823120812-7e2082095e82
 	github.com/cakturk/go-netstat v0.0.0-20200220111822-e5b49efee7a5
 	github.com/containerd/nri v0.6.1
+	github.com/coreos/go-iptables v0.5.0
 	github.com/docker/docker v20.10.21+incompatible
 	github.com/evanphx/json-patch v5.6.0+incompatible
 	github.com/fsnotify/fsnotify v1.6.0
 	github.com/gin-gonic/gin v1.9.0
+	github.com/go-logr/logr v1.3.0
 	github.com/go-playground/locales v0.14.1
 	github.com/go-playground/universal-translator v0.18.1
 	github.com/go-playground/validator/v10 v10.11.2
@@ -58,7 +60,7 @@ require (
 	k8s.io/utils v0.0.0-20240102154912-e7106e64919e
 	sigs.k8s.io/controller-runtime v0.16.5
 	sigs.k8s.io/controller-runtime/tools/setup-envtest v0.0.0-20231005234617-5771399a8ce5
-	sigs.k8s.io/descheduler v0.26.0
+	sigs.k8s.io/descheduler v0.28.0
 	sigs.k8s.io/yaml v1.3.0
 )
 
@@ -130,7 +132,6 @@ require (
 	github.com/gin-contrib/sse v0.1.0 // indirect
 	github.com/go-kit/log v0.2.1
 	github.com/go-logfmt/logfmt v0.5.1 // indirect
-	github.com/go-logr/logr v1.3.0 // indirect
 	github.com/go-logr/zapr v1.2.4 // indirect
 	github.com/go-openapi/jsonpointer v0.19.6 // indirect
 	github.com/go-openapi/jsonreference v0.20.2 // indirect
@@ -196,7 +197,7 @@ require (
 	github.com/syndtr/gocapability v0.0.0-20200815063812-42c35b437635 // indirect
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	github.com/ugorji/go/codec v1.2.9 // indirect
-	github.com/vishvananda/netlink v1.1.1-0.20210330154013-f5de75959ad5 // indirect
+	github.com/vishvananda/netlink v1.1.1-0.20210330154013-f5de75959ad5
 	github.com/vishvananda/netns v0.0.4 // indirect
 	github.com/vmware/govmomi v0.30.6 // indirect
 	go.etcd.io/etcd/api/v3 v3.5.9 // indirect
@@ -296,5 +297,4 @@ replace (
 	k8s.io/pod-security-admission => k8s.io/pod-security-admission v0.28.7
 	k8s.io/sample-apiserver => k8s.io/sample-apiserver v0.28.7
 	sigs.k8s.io/controller-runtime => sigs.k8s.io/controller-runtime v0.16.5
-	sigs.k8s.io/descheduler => sigs.k8s.io/descheduler v0.26.1-0.20230402001301-90905d2c2194
 )

@@ -1509,6 +1509,90 @@ func TestGroupQuotaManager_OnPodUpdateAfterReserve(t *testing.T) {
 	assert.Equal(t, createResourceList(10, 10), gqm.GetQuotaInfoByName("1").GetUsed())
 }
 
+func TestGroupQuotaManager_OnTerminatingPodUpdateAndDelete(t *testing.T) {
+	defer utilfeature.SetFeatureGateDuringTest(t, k8sfeature.DefaultFeatureGate, features.ElasticQuotaIgnoreTerminatingPod, true)()
+	gqm := NewGroupQuotaManagerForTest()
+	gqm.scaleMinQuotaEnabled = true
+
+	gqm.UpdateClusterTotalResource(createResourceList(50, 50))
+
+	qi1 := createQuota("1", extension.RootQuotaName, 40, 40, 10, 10)
+	gqm.UpdateQuota(qi1, false)
+
+	// unscheduler pod
+	pod1 := schetesting.MakePod().Name("1").Obj()
+	pod1.Spec.Containers = []v1.Container{
+		{
+			Resources: v1.ResourceRequirements{
+				Requests: createResourceList(10, 10),
+			},
+		},
+	}
+	gqm.OnPodAdd(qi1.Name, pod1)
+	assert.Equal(t, createResourceList(10, 10), gqm.GetQuotaInfoByName("1").GetRequest())
+	assert.Equal(t, v1.ResourceList{}, gqm.GetQuotaInfoByName("1").GetUsed())
+
+	// scheduler the pod.
+	pod2 := pod1.DeepCopy()
+	pod2.Spec.NodeName = "node1"
+	gqm.OnPodUpdate("1", "1", pod2, pod1)
+	assert.Equal(t, createResourceList(10, 10), gqm.GetQuotaInfoByName("1").GetRequest())
+	assert.Equal(t, createResourceList(10, 10), gqm.GetQuotaInfoByName("1").GetUsed())
+
+	// deleting the pod.
+	pod3 := pod2.DeepCopy()
+	deleteTimestamp := metav1.Time{Time: time.Now().Add(-10 * time.Second)}
+	deleteGracePeriodsSeconds := int64(30)
+	pod3.DeletionTimestamp = &deleteTimestamp
+	pod3.DeletionGracePeriodSeconds = &deleteGracePeriodsSeconds
+	gqm.OnPodUpdate("1", "1", pod3, pod2)
+	assert.Equal(t, createResourceList(10, 10), gqm.GetQuotaInfoByName("1").GetRequest())
+	assert.Equal(t, createResourceList(10, 10), gqm.GetQuotaInfoByName("1").GetUsed())
+
+	// deleting the pod again.
+	pod4 := pod3.DeepCopy()
+	deleteTimestamp = metav1.Time{Time: time.Now().Add(-40 * time.Second)}
+	pod4.DeletionTimestamp = &deleteTimestamp
+	pod4.DeletionGracePeriodSeconds = &deleteGracePeriodsSeconds
+	gqm.OnPodUpdate("1", "1", pod4, pod3)
+	assert.Equal(t, createResourceList(0, 0), gqm.GetQuotaInfoByName("1").GetRequest())
+	assert.Equal(t, createResourceList(0, 0), gqm.GetQuotaInfoByName("1").GetUsed())
+
+	// delete the pod.
+	gqm.OnPodDelete("1", pod4)
+	assert.Equal(t, createResourceList(0, 0), gqm.GetQuotaInfoByName("1").GetRequest())
+	assert.Equal(t, createResourceList(0, 0), gqm.GetQuotaInfoByName("1").GetUsed())
+}
+
+func TestGroupQuotaManager_OnTerminatingPodAdd(t *testing.T) {
+	defer utilfeature.SetFeatureGateDuringTest(t, k8sfeature.DefaultFeatureGate, features.ElasticQuotaIgnoreTerminatingPod, true)()
+	gqm := NewGroupQuotaManagerForTest()
+	gqm.scaleMinQuotaEnabled = true
+
+	gqm.UpdateClusterTotalResource(createResourceList(50, 50))
+
+	qi1 := createQuota("1", extension.RootQuotaName, 40, 40, 10, 10)
+	gqm.UpdateQuota(qi1, false)
+
+	// add deleted pod
+	pod1 := schetesting.MakePod().Name("1").Obj()
+	pod1.Spec.Containers = []v1.Container{
+		{
+			Resources: v1.ResourceRequirements{
+				Requests: createResourceList(10, 10),
+			},
+		},
+	}
+	deleteTimestamp := metav1.Time{Time: time.Now().Add(-40 * time.Second)}
+	deleteGracePeriodsSeconds := int64(30)
+	pod1.Spec.NodeName = "node1"
+	pod1.DeletionTimestamp = &deleteTimestamp
+	pod1.DeletionGracePeriodSeconds = &deleteGracePeriodsSeconds
+	gqm.OnPodAdd(qi1.Name, pod1)
+	assert.Equal(t, v1.ResourceList{}, gqm.GetQuotaInfoByName("1").GetRequest())
+	assert.Equal(t, v1.ResourceList{}, gqm.GetQuotaInfoByName("1").GetUsed())
+}
+
 func TestNewGroupQuotaManager(t *testing.T) {
 	gqm := NewGroupQuotaManager("", createResourceList(100, 100), createResourceList(300, 300))
 	assert.Equal(t, createResourceList(100, 100), gqm.GetQuotaInfoByName(extension.SystemQuotaName).GetMax())
@@ -1937,4 +2021,90 @@ func TestUpdateQuotaInternalNoLock_ParenstSelf(t *testing.T) {
 	assert.Equal(t, createResourceList(40, 30), qi2.CalculateInfo.Request)
 	assert.Equal(t, createResourceList(25, 25), qi1.CalculateInfo.NonPreemptibleRequest)
 	assert.Equal(t, createResourceList(50, 20), qi1.CalculateInfo.Request)
+}
+
+func TestUpdatePod_WhenQuotaCreateAfterPodCreate(t *testing.T) {
+	gqm := NewGroupQuotaManagerForTest()
+	gqm.scaleMinQuotaEnabled = true
+	gqm.UpdateClusterTotalResource(createResourceList(50, 50))
+
+	// create pod first
+	pod1 := schetesting.MakePod().Name("1").Obj()
+	pod1.Spec.Containers = []v1.Container{
+		{
+			Resources: v1.ResourceRequirements{
+				Requests: createResourceList(10, 10),
+			},
+		},
+	}
+	gqm.OnPodAdd("1", pod1)
+
+	// create quota later
+	eq1 := createQuota("1", extension.RootQuotaName, 40, 40, 20, 20)
+	gqm.UpdateQuota(eq1, false)
+
+	quotaInfo := gqm.GetQuotaInfoByName(eq1.Name)
+	assert.Equal(t, 0, len(quotaInfo.GetPodCache()))
+	assert.Equal(t, v1.ResourceList{}, quotaInfo.GetRequest())
+	assert.Equal(t, v1.ResourceList{}, quotaInfo.GetUsed())
+
+	// update pod.
+	newPod1 := pod1.DeepCopy()
+	newPod1.Labels = map[string]string{"aaa": "aaa"}
+
+	gqm.OnPodUpdate("1", "1", newPod1, pod1)
+
+	quotaInfo = gqm.GetQuotaInfoByName(eq1.Name)
+	assert.Equal(t, 1, len(quotaInfo.GetPodCache()))
+	assert.Equal(t, createResourceList(10, 10), quotaInfo.GetRequest())
+	assert.Equal(t, v1.ResourceList{}, quotaInfo.GetUsed())
+
+	// update again
+	newPod2 := newPod1.DeepCopy()
+	newPod2.Spec.NodeName = "node1"
+	gqm.OnPodUpdate("1", "1", newPod2, newPod1)
+	quotaInfo = gqm.GetQuotaInfoByName(eq1.Name)
+	assert.Equal(t, 1, len(quotaInfo.GetPodCache()))
+	assert.Equal(t, createResourceList(10, 10), quotaInfo.GetRequest())
+	assert.Equal(t, createResourceList(10, 10), quotaInfo.GetUsed())
+}
+
+func TestGroupQuotaManager_ImmediateIgnoreTerminatingPod(t *testing.T) {
+	defer utilfeature.SetFeatureGateDuringTest(t, k8sfeature.DefaultFeatureGate,
+		features.ElasticQuotaImmediateIgnoreTerminatingPod, true)()
+	gqm := NewGroupQuotaManagerForTest()
+
+	gqm.UpdateClusterTotalResource(createResourceList(50, 50))
+
+	qi1 := createQuota("1", extension.RootQuotaName, 40, 40, 10, 10)
+	gqm.UpdateQuota(qi1, false)
+
+	// add pod
+	pod1 := schetesting.MakePod().Name("1").Obj()
+	pod1.Spec.Containers = []v1.Container{
+		{
+			Resources: v1.ResourceRequirements{
+				Requests: createResourceList(10, 10),
+			},
+		},
+	}
+	pod1.Spec.NodeName = "node1"
+	gqm.OnPodAdd(qi1.Name, pod1)
+	assert.Equal(t, createResourceList(10, 10), gqm.GetQuotaInfoByName("1").GetRequest())
+	assert.Equal(t, createResourceList(10, 10), gqm.GetQuotaInfoByName("1").GetUsed())
+
+	// deleting the pod
+	pod2 := pod1.DeepCopy()
+	deleteTimestamp := metav1.Time{Time: time.Now()}
+	deleteGracePeriodsSeconds := int64(30)
+	pod2.DeletionTimestamp = &deleteTimestamp
+	pod2.DeletionGracePeriodSeconds = &deleteGracePeriodsSeconds
+	gqm.OnPodUpdate("1", "1", pod2, pod1)
+	assert.Equal(t, createResourceList(0, 0), gqm.GetQuotaInfoByName("1").GetRequest())
+	assert.Equal(t, createResourceList(0, 0), gqm.GetQuotaInfoByName("1").GetUsed())
+
+	// delete the pod
+	gqm.OnPodDelete("1", pod2)
+	assert.Equal(t, createResourceList(0, 0), gqm.GetQuotaInfoByName("1").GetRequest())
+	assert.Equal(t, createResourceList(0, 0), gqm.GetQuotaInfoByName("1").GetUsed())
 }

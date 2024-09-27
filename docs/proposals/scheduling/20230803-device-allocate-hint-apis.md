@@ -145,6 +145,8 @@ type DeviceHint struct {
 	VFSelector *metav1.LabelSelector `json:"vfSelector,omitempty"`
 	// AllocateStrategy controls the allocation strategy
 	AllocateStrategy DeviceAllocateStrategy `json:"allocateStrategy,omitempty"`
+    // RequiredTopologyScope defines the required topology scope for allocating devices.
+    RequiredTopologyScope DeviceTopologyScope `json:"requiredTopologyScope,omitempty"`
 	// ExclusivePolicy indicates the exclusive policy.
 	ExclusivePolicy DeviceExclusivePolicy `json:"exclusivePolicy,omitempty"`
 }
@@ -154,6 +156,14 @@ type DeviceAllocateStrategy string
 const (
 	ApplyForAllDeviceAllocateStrategy DeviceAllocateStrategy = "ApplyForAll"
 	RequestsAsCountAllocateStrategy   DeviceAllocateStrategy = "RequestsAsCount"
+)
+
+
+type DeviceTopologyScope string
+
+const (
+    DeviceTopologyScopePCIe     DeviceTopologyScope = "PCIe"
+    DeviceTopologyScopeNUMANode DeviceTopologyScope = "NUMANode"
 )
 
 type DeviceExclusivePolicy string
@@ -174,6 +184,7 @@ Field Descriptions:
   - `selector`: A label selector to identify specific devices for allocation.
   - `vfSelector`: A label selector for VFs. When set, this instructs the scheduler to allocate VFs from PFs matching the selector.
   - `allocateStrategy`: Defines the approach for allocating devices.
+  - `requiredTopologyScope`: Defines the required topology scope for allocating devices.
   - `exclusivePolicy`: Details the exclusivity policy for device allocation, ensuring devices are not shared contrary to specified policies.
 
 - `DeviceAllocateStrategy`: Enumerated type detailing different allocation strategies. Includes `ApplyForAll` which requests all matching devices, `RequestsAsCount` indicates that the corresponding resource request amount is used as the expected number of device instances.

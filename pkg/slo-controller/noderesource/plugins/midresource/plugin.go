@@ -22,6 +22,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	"k8s.io/klog/v2"
 	"k8s.io/utils/clock"
 
@@ -31,9 +32,16 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/metrics"
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/noderesource/framework"
 	"github.com/koordinator-sh/koordinator/pkg/util"
+	"github.com/koordinator-sh/koordinator/pkg/util/sloconfig"
 )
 
 const PluginName = "MidResource"
+
+const (
+	MidCPUThreshold       = "midCPUThreshold"
+	MidMemoryThreshold    = "midMemoryThreshold"
+	MidUnallocatedPercent = "midUnallocatedPercent"
+)
 
 // ResourceNames defines the Mid-tier extended resource names to update.
 var ResourceNames = []corev1.ResourceName{extension.MidCPU, extension.MidMemory}
@@ -104,18 +112,18 @@ func (p *Plugin) isDegradeNeeded(strategy *configuration.ColocationStrategy, nod
 		return true
 	}
 
-	if nodeMetric.Status.ProdReclaimableMetric == nil ||
-		nodeMetric.Status.ProdReclaimableMetric.Resource.ResourceList == nil {
-		klog.V(4).Infof("need degradation for Mid-tier, err: nodeMetric %v has no valid prod reclaimable: %v",
-			nodeMetric.Name, nodeMetric.Status.ProdReclaimableMetric)
-		return true
-	}
-
 	now := clk.Now()
 	if now.After(nodeMetric.Status.UpdateTime.Add(time.Duration(*strategy.DegradeTimeMinutes) * time.Minute)) {
 		klog.V(4).Infof("need degradation for Mid-tier, err: timeout nodeMetric: %v, current timestamp: %v,"+
 			" metric last update timestamp: %v", nodeMetric.Name, now, nodeMetric.Status.UpdateTime)
 		return true
+	}
+
+	if nodeMetric.Status.ProdReclaimableMetric == nil ||
+		nodeMetric.Status.ProdReclaimableMetric.Resource.ResourceList == nil {
+		klog.V(4).Infof("need degradation for Mid-tier, err: nodeMetric %v has no valid prod reclaimable, set it to zero: %v",
+			nodeMetric.Name, nodeMetric.Status.ProdReclaimableMetric)
+		return false
 	}
 
 	return false
@@ -125,18 +133,52 @@ func (p *Plugin) degradeCalculate(node *corev1.Node, message string) []framework
 	return p.Reset(node, message)
 }
 
+// Unallocated[Mid] = max(NodeAllocatable - Allocated[Prod], 0)
+func (p *Plugin) getUnallocated(node *corev1.Node, podList *corev1.PodList) corev1.ResourceList {
+	allocated := corev1.ResourceList{}
+	for i := range podList.Items {
+		pod := &podList.Items[i]
+		priorityClass := extension.GetPodPriorityClassWithDefault(pod)
+		// If the pod is not marked as low priority, it is considered high priority
+		isHighPriority := priorityClass != extension.PriorityMid && priorityClass != extension.PriorityBatch && priorityClass != extension.PriorityFree
+		if !isHighPriority {
+			continue
+		}
+
+		if pod.Status.Phase != corev1.PodRunning && pod.Status.Phase != corev1.PodPending {
+			continue
+		}
+		podRequest := util.GetPodRequest(pod, corev1.ResourceCPU, corev1.ResourceMemory)
+		allocated = quotav1.Add(allocated, podRequest)
+	}
+
+	return quotav1.SubtractWithNonNegativeResult(node.Status.Allocatable, allocated)
+}
+
 func (p *Plugin) calculate(strategy *configuration.ColocationStrategy, node *corev1.Node, podList *corev1.PodList,
 	resourceMetrics *framework.ResourceMetrics) []framework.ResourceItem {
-	// MidAllocatable := min(NodeAllocatable * thresholdRatio, ProdReclaimable)
-	prodReclaimable := resourceMetrics.NodeMetric.Status.ProdReclaimableMetric.Resource
-	allocatableMilliCPU := prodReclaimable.Cpu().MilliValue()
-	allocatableMemory := prodReclaimable.Memory().Value()
+	// Allocatable[Mid]' := min(Reclaimable[Mid], NodeAllocatable * thresholdRatio) + Unallocated[Mid] * midUnallocatedRatio
+	// Unallocated[Mid] = max(NodeAllocatable - Allocated[Prod], 0)
+
+	var allocatableMilliCPU, allocatableMemory, prodReclaimableCPU int64
+	var prodReclaimableMemory string = "0"
+	prodReclaimableMetic := resourceMetrics.NodeMetric.Status.ProdReclaimableMetric
+
+	if prodReclaimableMetic == nil || prodReclaimableMetic.Resource.ResourceList == nil {
+		klog.V(4).Infof("no valid prod reclaimable, so use default zero value")
+		allocatableMilliCPU = 0
+		allocatableMemory = 0
+	} else {
+		prodReclaimable := resourceMetrics.NodeMetric.Status.ProdReclaimableMetric.Resource
+		allocatableMilliCPU = prodReclaimable.Cpu().MilliValue()
+		allocatableMemory = prodReclaimable.Memory().Value()
+		prodReclaimableCPU = allocatableMilliCPU
+		prodReclaimableMemory = prodReclaimable.Memory().String()
+	}
 
 	nodeAllocatable := node.Status.Allocatable
-	cpuThresholdRatio := 1.0
-	if strategy != nil && strategy.MidCPUThresholdPercent != nil {
-		cpuThresholdRatio = float64(*strategy.MidCPUThresholdPercent) / 100
-	}
+	defaultStrategy := sloconfig.DefaultColocationStrategy()
+	cpuThresholdRatio := getPercentFromStrategy(strategy, &defaultStrategy, MidCPUThreshold)
 	if maxMilliCPU := float64(nodeAllocatable.Cpu().MilliValue()) * cpuThresholdRatio; allocatableMilliCPU > int64(maxMilliCPU) {
 		allocatableMilliCPU = int64(maxMilliCPU)
 	}
@@ -147,10 +189,7 @@ func (p *Plugin) calculate(strategy *configuration.ColocationStrategy, node *cor
 	}
 	cpuInMilliCores := resource.NewQuantity(allocatableMilliCPU, resource.DecimalSI)
 
-	memThresholdRatio := 1.0
-	if strategy != nil && strategy.MidMemoryThresholdPercent != nil {
-		memThresholdRatio = float64(*strategy.MidMemoryThresholdPercent) / 100
-	}
+	memThresholdRatio := getPercentFromStrategy(strategy, &defaultStrategy, MidMemoryThreshold)
 	if maxMemory := float64(nodeAllocatable.Memory().Value()) * memThresholdRatio; allocatableMemory > int64(maxMemory) {
 		allocatableMemory = int64(maxMemory)
 	}
@@ -161,6 +200,17 @@ func (p *Plugin) calculate(strategy *configuration.ColocationStrategy, node *cor
 	}
 	memory := resource.NewQuantity(allocatableMemory, resource.BinarySI)
 
+	// add unallocated
+	unallocated := p.getUnallocated(node, podList)
+	// CPU need turn into milli value
+	unallocatedMilliCPU, unallocatedMemory := resource.NewQuantity(unallocated.Cpu().MilliValue(), resource.DecimalSI), unallocated.Memory()
+	midUnallocatedRatio := getPercentFromStrategy(strategy, &defaultStrategy, MidUnallocatedPercent)
+	adjustedUnallocatedCPU := resource.NewQuantity(int64(float64(unallocatedMilliCPU.Value())*midUnallocatedRatio), resource.DecimalSI)
+	adjustedUnallocatedMemory := resource.NewQuantity(int64(float64(unallocatedMemory.Value())*midUnallocatedRatio), resource.BinarySI)
+
+	cpuInMilliCores.Add(*adjustedUnallocatedCPU)
+	memory.Add(*adjustedUnallocatedMemory)
+
 	metrics.RecordNodeExtendedResourceAllocatableInternal(node, string(extension.MidCPU), metrics.UnitInteger, float64(cpuInMilliCores.MilliValue())/1000)
 	metrics.RecordNodeExtendedResourceAllocatableInternal(node, string(extension.MidMemory), metrics.UnitByte, float64(memory.Value()))
 	klog.V(6).Infof("calculated mid allocatable for node %s, cpu(milli-core) %v, memory(byte) %v",
@@ -170,14 +220,14 @@ func (p *Plugin) calculate(strategy *configuration.ColocationStrategy, node *cor
 		{
 			Name:     extension.MidCPU,
 			Quantity: cpuInMilliCores, // in milli-cores
-			Message: fmt.Sprintf("midAllocatable[CPU(milli-core)]:%v = min(nodeAllocatable:%v * thresholdRatio:%v, ProdReclaimable:%v)",
-				cpuInMilliCores.Value(), nodeAllocatable.Cpu().MilliValue(), cpuThresholdRatio, prodReclaimable.Cpu().MilliValue()),
+			Message: fmt.Sprintf("midAllocatable[CPU(milli-core)]:%v = min(nodeAllocatable:%v * thresholdRatio:%v, ProdReclaimable:%v) + Unallocated:%v * midUnallocatedRatio:%v",
+				cpuInMilliCores.Value(), nodeAllocatable.Cpu().MilliValue(), cpuThresholdRatio, prodReclaimableCPU, unallocatedMilliCPU.Value(), midUnallocatedRatio),
 		},
 		{
 			Name:     extension.MidMemory,
 			Quantity: memory,
-			Message: fmt.Sprintf("midAllocatable[Memory(byte)]:%s = min(nodeAllocatable:%s * thresholdRatio:%v, ProdReclaimable:%s)",
-				memory.String(), nodeAllocatable.Memory().String(), memThresholdRatio, prodReclaimable.Memory().String()),
+			Message: fmt.Sprintf("midAllocatable[Memory(byte)]:%s = min(nodeAllocatable:%s * thresholdRatio:%v, ProdReclaimable:%s) + Unallocated:%v * midUnallocatedRatio:%v",
+				memory.String(), nodeAllocatable.Memory().String(), memThresholdRatio, prodReclaimableMemory, unallocatedMemory.String(), midUnallocatedRatio),
 		},
 	}
 }
@@ -194,5 +244,27 @@ func prepareNodeForResource(node *corev1.Node, nr *framework.NodeResource, name 
 		}
 		node.Status.Capacity[name] = *q
 		node.Status.Allocatable[name] = *q
+	}
+}
+
+func getPercentFromStrategy(strategy, defaultStrategy *configuration.ColocationStrategy, strategyType string) float64 {
+	switch strategyType {
+	case MidCPUThreshold:
+		if strategy == nil || strategy.MidCPUThresholdPercent == nil {
+			return float64(*defaultStrategy.MidCPUThresholdPercent) / 100
+		}
+		return float64(*strategy.MidCPUThresholdPercent) / 100
+	case MidMemoryThreshold:
+		if strategy == nil || strategy.MidMemoryThresholdPercent == nil {
+			return float64(*defaultStrategy.MidMemoryThresholdPercent) / 100
+		}
+		return float64(*strategy.MidMemoryThresholdPercent) / 100
+	case MidUnallocatedPercent:
+		if strategy == nil || strategy.MidUnallocatedPercent == nil {
+			return float64(*defaultStrategy.MidUnallocatedPercent) / 100
+		}
+		return float64(*strategy.MidUnallocatedPercent) / 100
+	default:
+		return 0
 	}
 }

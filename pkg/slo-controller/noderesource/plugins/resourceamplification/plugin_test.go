@@ -22,7 +22,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/utils/pointer"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
+	"github.com/koordinator-sh/koordinator/apis/configuration"
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/noderesource/framework"
 )
@@ -230,14 +234,26 @@ func TestPluginCalculate(t *testing.T) {
 	type args struct {
 		node *corev1.Node
 	}
+	type fields struct {
+		handler *configHandler
+	}
 	tests := []struct {
 		name    string
+		fields  fields
 		args    args
 		want    []framework.ResourceItem
 		wantErr bool
 	}{
 		{
 			name: "get cpu normalization ratio failed",
+			fields: fields{
+				handler: &configHandler{
+					Client: fake.NewClientBuilder().WithScheme(scheme.Scheme).Build(),
+					cache: &cfgCache{
+						available: true,
+						config:    &configuration.ResourceAmplificationCfg{},
+					},
+				}},
 			args: args{
 				node: &corev1.Node{
 					ObjectMeta: metav1.ObjectMeta{
@@ -252,6 +268,14 @@ func TestPluginCalculate(t *testing.T) {
 		},
 		{
 			name: "calculate ratio correctly with cpu normalization",
+			fields: fields{
+				handler: &configHandler{
+					Client: fake.NewClientBuilder().WithScheme(scheme.Scheme).Build(),
+					cache: &cfgCache{
+						available: true,
+						config:    &configuration.ResourceAmplificationCfg{},
+					},
+				}},
 			args: args{
 				node: &corev1.Node{
 					ObjectMeta: metav1.ObjectMeta{
@@ -274,6 +298,14 @@ func TestPluginCalculate(t *testing.T) {
 		},
 		{
 			name: "calculate ratio correctly without cpu normalization",
+			fields: fields{
+				handler: &configHandler{
+					Client: fake.NewClientBuilder().WithScheme(scheme.Scheme).Build(),
+					cache: &cfgCache{
+						available: true,
+						config:    &configuration.ResourceAmplificationCfg{},
+					},
+				}},
 			args: args{
 				node: &corev1.Node{
 					ObjectMeta: metav1.ObjectMeta{
@@ -288,13 +320,270 @@ func TestPluginCalculate(t *testing.T) {
 			},
 			wantErr: false,
 		},
+		{
+			name: "calculate ratio with amplification ratio",
+			args: args{
+				node: &corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node",
+					},
+				},
+			},
+			fields: fields{
+				handler: &configHandler{
+					Client: fake.NewClientBuilder().WithScheme(scheme.Scheme).Build(),
+					cache: &cfgCache{
+						available: true,
+						config: &configuration.ResourceAmplificationCfg{
+							ResourceAmplificationStrategy: configuration.ResourceAmplificationStrategy{
+								Enable: pointer.Bool(true),
+								ResourceAmplificationRatio: map[corev1.ResourceName]float64{
+									corev1.ResourceCPU:    1.1,
+									corev1.ResourceMemory: 2.1,
+								},
+							},
+						},
+					},
+				}},
+			want: []framework.ResourceItem{
+				{
+					Name: PluginName,
+					Annotations: map[string]string{
+						extension.AnnotationNodeResourceAmplificationRatio: `{"cpu":1.10,"memory":2.10}`,
+					},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "calculate ratio with both cpu normalization ratio and amplification ratio",
+			args: args{
+				node: &corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node",
+						Annotations: map[string]string{
+							extension.AnnotationCPUNormalizationRatio: "1.20",
+						},
+					},
+				},
+			},
+			fields: fields{
+				handler: &configHandler{
+					Client: fake.NewClientBuilder().WithScheme(scheme.Scheme).Build(),
+					cache: &cfgCache{
+						available: true,
+						config: &configuration.ResourceAmplificationCfg{
+							ResourceAmplificationStrategy: configuration.ResourceAmplificationStrategy{
+								Enable: pointer.Bool(true),
+								ResourceAmplificationRatio: map[corev1.ResourceName]float64{
+									corev1.ResourceCPU:    1.5,
+									corev1.ResourceMemory: 2.5,
+								},
+							},
+						},
+					},
+				}},
+			want: []framework.ResourceItem{
+				{
+					Name: PluginName,
+					Annotations: map[string]string{
+						extension.AnnotationNodeResourceAmplificationRatio: `{"cpu":1.80,"memory":2.50}`,
+					},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "calculate ratio with cpu normalization ratio and amplification memory ratio",
+			args: args{
+				node: &corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node",
+						Annotations: map[string]string{
+							extension.AnnotationCPUNormalizationRatio: "1.50",
+						},
+					},
+				},
+			},
+			fields: fields{
+				handler: &configHandler{
+					Client: fake.NewClientBuilder().WithScheme(scheme.Scheme).Build(),
+					cache: &cfgCache{
+						available: true,
+						config: &configuration.ResourceAmplificationCfg{
+							ResourceAmplificationStrategy: configuration.ResourceAmplificationStrategy{
+								Enable: pointer.Bool(true),
+								ResourceAmplificationRatio: map[corev1.ResourceName]float64{
+									corev1.ResourceMemory: 3.5,
+								},
+							},
+						},
+					},
+				}},
+			want: []framework.ResourceItem{
+				{
+					Name: PluginName,
+					Annotations: map[string]string{
+						extension.AnnotationNodeResourceAmplificationRatio: `{"cpu":1.50,"memory":3.50}`,
+					},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "calculate ratio with cpu normalization ratio and other resource type ratio",
+			args: args{
+				node: &corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node",
+						Annotations: map[string]string{
+							extension.AnnotationCPUNormalizationRatio: "1.50",
+						},
+					},
+				},
+			},
+			fields: fields{
+				handler: &configHandler{
+					Client: fake.NewClientBuilder().WithScheme(scheme.Scheme).Build(),
+					cache: &cfgCache{
+						available: true,
+						config: &configuration.ResourceAmplificationCfg{
+							ResourceAmplificationStrategy: configuration.ResourceAmplificationStrategy{
+								Enable: pointer.Bool(true),
+								ResourceAmplificationRatio: map[corev1.ResourceName]float64{
+									corev1.ResourceMemory:  3.5,
+									corev1.ResourceStorage: 1.8,
+								},
+							},
+						},
+					},
+				}},
+			want: []framework.ResourceItem{
+				{
+					Name: PluginName,
+					Annotations: map[string]string{
+						extension.AnnotationNodeResourceAmplificationRatio: `{"cpu":1.50,"memory":3.50,"storage":1.80}`,
+					},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "calculate ratio with final cpu normalization ratio > 1 correctly",
+			args: args{
+				node: &corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node",
+						Annotations: map[string]string{
+							extension.AnnotationCPUNormalizationRatio: "1.50",
+						},
+					},
+				},
+			},
+			fields: fields{
+				handler: &configHandler{
+					Client: fake.NewClientBuilder().WithScheme(scheme.Scheme).Build(),
+					cache: &cfgCache{
+						available: true,
+						config: &configuration.ResourceAmplificationCfg{
+							ResourceAmplificationStrategy: configuration.ResourceAmplificationStrategy{
+								Enable: pointer.Bool(true),
+								ResourceAmplificationRatio: map[corev1.ResourceName]float64{
+									corev1.ResourceCPU:     0.8,
+									corev1.ResourceMemory:  3.5,
+									corev1.ResourceStorage: 1.8,
+								},
+							},
+						},
+					},
+				}},
+			want: []framework.ResourceItem{
+				{
+					Name: PluginName,
+					Annotations: map[string]string{
+						extension.AnnotationNodeResourceAmplificationRatio: `{"cpu":1.20,"memory":3.50,"storage":1.80}`,
+					},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "calculate ratio with final cpu normalization ratio < 1 invalid",
+			args: args{
+				node: &corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node",
+						Annotations: map[string]string{
+							extension.AnnotationCPUNormalizationRatio: "1.50",
+						},
+					},
+				},
+			},
+			fields: fields{
+				handler: &configHandler{
+					Client: fake.NewClientBuilder().WithScheme(scheme.Scheme).Build(),
+					cache: &cfgCache{
+						available: true,
+						config: &configuration.ResourceAmplificationCfg{
+							ResourceAmplificationStrategy: configuration.ResourceAmplificationStrategy{
+								Enable: pointer.Bool(true),
+								ResourceAmplificationRatio: map[corev1.ResourceName]float64{
+									corev1.ResourceCPU:     0.5,
+									corev1.ResourceMemory:  3.5,
+									corev1.ResourceStorage: 1.8,
+								},
+							},
+						},
+					},
+				}},
+			wantErr: true,
+		},
+		{
+			name: "calculate ratio with one resource amplification ratio invalid",
+			args: args{
+				node: &corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node",
+						Annotations: map[string]string{
+							extension.AnnotationCPUNormalizationRatio: "1.50",
+						},
+					},
+				},
+			},
+			fields: fields{
+				handler: &configHandler{
+					Client: fake.NewClientBuilder().WithScheme(scheme.Scheme).Build(),
+					cache: &cfgCache{
+						available: true,
+						config: &configuration.ResourceAmplificationCfg{
+							ResourceAmplificationStrategy: configuration.ResourceAmplificationStrategy{
+								Enable: pointer.Bool(true),
+								ResourceAmplificationRatio: map[corev1.ResourceName]float64{
+									corev1.ResourceMemory:  3.5,
+									corev1.ResourceStorage: 0.5,
+								},
+							},
+						},
+					},
+				}},
+			wantErr: true,
+		},
 	}
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			defer testPluginCleanup()
 			p := Plugin{}
+			if tt.fields.handler != nil {
+				cfgHandler = tt.fields.handler
+			}
 			got, gotErr := p.Calculate(nil, tt.args.node, nil, nil)
 			assert.Equal(t, tt.want, got)
 			assert.Equal(t, tt.wantErr, gotErr != nil, gotErr)
 		})
 	}
+}
+
+func testPluginCleanup() {
+	cfgHandler = nil
 }

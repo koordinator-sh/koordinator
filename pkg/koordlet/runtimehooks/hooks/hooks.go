@@ -20,11 +20,13 @@ import (
 	"fmt"
 	"time"
 
+	"k8s.io/client-go/tools/record"
 	"k8s.io/klog/v2"
 
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/protocol"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	rmconfig "github.com/koordinator-sh/koordinator/pkg/runtimeproxy/config"
 )
 
@@ -36,8 +38,10 @@ type Hook struct {
 }
 
 type Options struct {
-	Reader   resourceexecutor.CgroupReader
-	Executor resourceexecutor.ResourceUpdateExecutor
+	Reader         resourceexecutor.CgroupReader
+	Executor       resourceexecutor.ResourceUpdateExecutor
+	StatesInformer statesinformer.StatesInformer
+	EventRecorder  record.EventRecorder
 }
 
 type HookFn func(protocol.HooksProtocol) error
@@ -49,7 +53,7 @@ func Register(stage rmconfig.RuntimeHookType, name, description string, hookFn H
 	if err != nil {
 		klog.Fatalf("hook %s register failed, reason: %v", name, err)
 	}
-	klog.V(1).Infof("hook %s is registered", name)
+	klog.V(1).Infof("hook %s with description %v is registered", name, description)
 	h.description = description
 	h.fn = hookFn
 	return h
@@ -84,7 +88,7 @@ func RunHooks(failPolicy rmconfig.FailurePolicyType, stage rmconfig.RuntimeHookT
 	klog.V(5).Infof("start run %v hooks at %s", len(hooks), stage)
 	for _, hook := range hooks {
 		start := time.Now()
-		klog.V(5).Infof("call hook %v", hook.name)
+		klog.V(5).Infof("call hook %v with description %v", hook.name, hook.description)
 		err := hook.fn(protocol)
 		metrics.RecordRuntimeHookInvokedDurationMilliSeconds(hook.name, string(stage), err, metrics.SinceInSeconds(start))
 		if err != nil {

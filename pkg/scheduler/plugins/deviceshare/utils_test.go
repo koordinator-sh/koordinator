@@ -135,6 +135,82 @@ func TestValidateDeviceRequest(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name: "invalid gpu request 8",
+			podRequest: corev1.ResourceList{
+				apiext.ResourceGPUMemoryRatio: resource.MustParse("101"),
+				apiext.ResourceGPUShared:      resource.MustParse("1"),
+			},
+			want:    0,
+			wantErr: true,
+		},
+		{
+			name: "invalid gpu request 9",
+			podRequest: corev1.ResourceList{
+				apiext.ResourceGPUMemoryRatio: resource.MustParse("101"),
+				apiext.ResourceGPUShared:      resource.MustParse("2"),
+			},
+			want:    0,
+			wantErr: true,
+		},
+		{
+			name: "invalid gpu request 10",
+			podRequest: corev1.ResourceList{
+				apiext.ResourceGPUCore:   resource.MustParse("101"),
+				apiext.ResourceGPUMemory: resource.MustParse("64Gi"),
+				apiext.ResourceGPUShared: resource.MustParse("1"),
+			},
+			want:    0,
+			wantErr: true,
+		},
+		{
+			name: "invalid gpu request 11",
+			podRequest: corev1.ResourceList{
+				apiext.ResourceGPUCore:   resource.MustParse("101"),
+				apiext.ResourceGPUMemory: resource.MustParse("64Gi"),
+				apiext.ResourceGPUShared: resource.MustParse("2"),
+			},
+			want:    0,
+			wantErr: true,
+		},
+		{
+			name: "valid gpu request 12",
+			podRequest: corev1.ResourceList{
+				apiext.ResourceGPUMemoryRatio: resource.MustParse("200"),
+				apiext.ResourceGPUShared:      resource.MustParse("2"),
+			},
+			want:    GPUShared | GPUMemoryRatio,
+			wantErr: false,
+		},
+		{
+			name: "valid gpu request 13",
+			podRequest: corev1.ResourceList{
+				apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+				apiext.ResourceGPUShared:      resource.MustParse("2"),
+			},
+			want:    GPUShared | GPUMemoryRatio,
+			wantErr: false,
+		},
+		{
+			name: "invalid gpu request 14",
+			podRequest: corev1.ResourceList{
+				apiext.ResourceGPUCore:   resource.MustParse("100"),
+				apiext.ResourceGPUMemory: resource.MustParse("64Gi"),
+				apiext.ResourceGPUShared: resource.MustParse("1"),
+			},
+			want:    GPUShared | GPUMemory | GPUCore,
+			wantErr: false,
+		},
+		{
+			name: "invalid gpu request 15",
+			podRequest: corev1.ResourceList{
+				apiext.ResourceGPUCore:   resource.MustParse("100"),
+				apiext.ResourceGPUMemory: resource.MustParse("64Gi"),
+				apiext.ResourceGPUShared: resource.MustParse("2"),
+			},
+			want:    GPUShared | GPUMemory | GPUCore,
+			wantErr: false,
+		},
+		{
 			name: "invalid fpga request",
 			podRequest: corev1.ResourceList{
 				apiext.ResourceFPGA: resource.MustParse("201"),

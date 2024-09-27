@@ -174,10 +174,11 @@ func (p *Plugin) Calculate(_ *configuration.ColocationStrategy, node *corev1.Nod
 		return nil, fmt.Errorf("failed to get CPUBasicInfo in cpu normalization calculation, err: info is missing")
 	}
 
-	ratio, err := getCPUNormalizationRatioFromModel(basicInfo, strategy)
+	ratio, err := getCPUNormalizationRatio(basicInfo, strategy)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get ratio in cpu normalization calculation, err: %s", err)
 	}
+
 	if err = isCPUNormalizationRatioValid(ratio); err != nil {
 		return nil, fmt.Errorf("failed to validate ratio in cpu normalization calculation, ratio %v, err: %s", ratio, err)
 	}
@@ -216,6 +217,19 @@ func isCPUBasicInfoChanged(infoOld, infoNew *extension.CPUBasicInfo) (bool, stri
 	}
 
 	return false, ""
+}
+
+func getCPUNormalizationRatio(info *extension.CPUBasicInfo, strategy *configuration.CPUNormalizationStrategy) (float64, error) {
+	ratio, err := getCPUNormalizationRatioFromModel(info, strategy)
+	if err != nil {
+		if strategy.DefaultRatio != nil {
+			klog.V(6).Infof("get no cpu ratio from model, use the default ratio %v", *strategy.DefaultRatio)
+			ratio = *strategy.DefaultRatio
+		} else {
+			return -1, fmt.Errorf("failed to get cpu normalization ratio from model, err: %s", err)
+		}
+	}
+	return ratio, nil
 }
 
 func getCPUNormalizationRatioFromModel(info *extension.CPUBasicInfo, strategy *configuration.CPUNormalizationStrategy) (float64, error) {

@@ -324,7 +324,9 @@ func (ri *ReservationInfo) UpdateReservation(r *schedulingv1alpha1.Reservation) 
 	ri.Reservation = r
 	ri.Pod = reservationutil.NewReservePod(r)
 	ri.AllocatablePorts = util.RequestedHostPorts(ri.Pod)
-	ri.Allocated = quotav1.Mask(ri.Allocated, ri.ResourceNames)
+	if ri.Allocated != nil {
+		ri.Allocated = quotav1.Mask(ri.Allocated, ri.ResourceNames)
+	}
 	ownerMatchers, err := reservationutil.ParseReservationOwnerMatchers(r.Spec.Owners)
 	if err != nil {
 		klog.ErrorS(err, "Failed to parse reservation owner matchers", "reservation", klog.KObj(r))

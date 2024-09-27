@@ -135,13 +135,14 @@ func (f *filter) initFilters(args *deschedulerconfig.MigrationControllerArgs, ha
 	if err != nil {
 		return err
 	}
-	retriablePodFilters := podutil.WrapFilterFuncs(
+	retryablePodFilters := podutil.WrapFilterFuncs(
+		f.filterMaxMigratingGlobally,
 		f.filterMaxMigratingPerNode,
 		f.filterMaxMigratingPerNamespace,
 		f.filterMaxMigratingOrUnavailablePerWorkload,
 	)
 	f.retryablePodFilter = func(pod *corev1.Pod) bool {
-		return evictionsutil.HaveEvictAnnotation(pod) || retriablePodFilters(pod)
+		return evictionsutil.HaveEvictAnnotation(pod) || retryablePodFilters(pod)
 	}
 	f.nonRetryablePodFilter = func(pod *corev1.Pod) bool {
 		// any annotated as evictable pod pass non-retryable filter
@@ -222,6 +223,37 @@ func (f *filter) existingPodMigrationJob(pod *corev1.Pod, expectedPhaseContexts 
 		}, expectedPhaseContexts...)
 	}
 	return existing
+}
+
+func (f *filter) filterMaxMigratingGlobally(pod *corev1.Pod) bool {
+	if f.args.MaxMigratingGlobally == nil || *f.args.MaxMigratingGlobally <= 0 {
+		return true
+	}
+
+	var expectedPhaseContexts []phaseContext
+	if checkPodArbitrating(pod) {
+		expectedPhaseContexts = []phaseContext{
+			{phase: sev1alpha1.PodMigrationJobRunning, checkArbitration: false},
+			{phase: sev1alpha1.PodMigrationJobPending, checkArbitration: true},
+		}
+	}
+
+	count := 0
+	listOpts := &client.ListOptions{}
+	f.forEachAvailableMigrationJobs(listOpts, func(job *sev1alpha1.PodMigrationJob) bool {
+		if podRef := job.Spec.PodRef; podRef != nil && podRef.UID != pod.UID {
+			count++
+		}
+		return true
+	}, expectedPhaseContexts...)
+
+	maxMigratingGlobally := int(*f.args.MaxMigratingGlobally)
+	exceeded := count >= maxMigratingGlobally
+	if exceeded {
+		klog.V(4).InfoS("Pod fails the following checks", "pod", klog.KObj(pod),
+			"checks", "maxMigratingGlobally", "count", count, "maxMigratingGlobally", maxMigratingGlobally)
+	}
+	return !exceeded
 }
 
 func (f *filter) filterMaxMigratingPerNode(pod *corev1.Pod) bool {

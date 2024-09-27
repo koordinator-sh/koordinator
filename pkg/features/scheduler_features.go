@@ -66,21 +66,25 @@ const (
 )
 
 var defaultSchedulerFeatureGates = map[featuregate.Feature]featuregate.FeatureSpec{
-	CompatibleCSIStorageCapacity:       {Default: false, PreRelease: featuregate.Alpha},
-	DisableCSIStorageCapacityInformer:  {Default: false, PreRelease: featuregate.Alpha},
-	CompatiblePodDisruptionBudget:      {Default: false, PreRelease: featuregate.Alpha},
-	DisablePodDisruptionBudgetInformer: {Default: false, PreRelease: featuregate.Alpha},
-	ResizePod:                          {Default: false, PreRelease: featuregate.Alpha},
-	MultiQuotaTree:                     {Default: false, PreRelease: featuregate.Alpha},
-	ElasticQuotaIgnorePodOverhead:      {Default: false, PreRelease: featuregate.Alpha},
-	ElasticQuotaGuaranteeUsage:         {Default: false, PreRelease: featuregate.Alpha},
-	DisableDefaultQuota:                {Default: false, PreRelease: featuregate.Alpha},
-	SupportParentQuotaSubmitPod:        {Default: false, PreRelease: featuregate.Alpha},
-	CSIStorageCapacity:                 {Default: true, PreRelease: featuregate.GA}, // remove in 1.26
-	GenericEphemeralVolume:             {Default: true, PreRelease: featuregate.GA},
-	PodDisruptionBudget:                {Default: true, PreRelease: featuregate.GA},
+	CompatibleCSIStorageCapacity:              {Default: false, PreRelease: featuregate.Alpha},
+	DisableCSIStorageCapacityInformer:         {Default: false, PreRelease: featuregate.Alpha},
+	CompatiblePodDisruptionBudget:             {Default: false, PreRelease: featuregate.Alpha},
+	DisablePodDisruptionBudgetInformer:        {Default: false, PreRelease: featuregate.Alpha},
+	ResizePod:                                 {Default: false, PreRelease: featuregate.Alpha},
+	MultiQuotaTree:                            {Default: false, PreRelease: featuregate.Alpha},
+	ElasticQuotaIgnorePodOverhead:             {Default: false, PreRelease: featuregate.Alpha},
+	ElasticQuotaIgnoreTerminatingPod:          {Default: false, PreRelease: featuregate.Alpha},
+	ElasticQuotaImmediateIgnoreTerminatingPod: {Default: false, PreRelease: featuregate.Alpha},
+	ElasticQuotaGuaranteeUsage:                {Default: false, PreRelease: featuregate.Alpha},
+	DisableDefaultQuota:                       {Default: false, PreRelease: featuregate.Alpha},
+	SupportParentQuotaSubmitPod:               {Default: false, PreRelease: featuregate.Alpha},
+	CSIStorageCapacity:                        {Default: true, PreRelease: featuregate.GA}, // remove in 1.26
+	GenericEphemeralVolume:                    {Default: true, PreRelease: featuregate.GA},
+	PodDisruptionBudget:                       {Default: true, PreRelease: featuregate.GA},
 }
 
 func init() {
 	runtime.Must(k8sfeature.DefaultMutableFeatureGate.Add(defaultSchedulerFeatureGates))
+	// TODO: use a unified feature-gate
+	runtime.Must(k8sfeature.DefaultMutableFeatureGate.Add(transformerFeatureGates))
 }

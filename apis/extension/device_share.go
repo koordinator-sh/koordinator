@@ -37,6 +37,7 @@ const (
 const (
 	ResourceNvidiaGPU      corev1.ResourceName = "nvidia.com/gpu"
 	ResourceHygonDCU       corev1.ResourceName = "dcu.com/gpu"
+	ResourceAMDGPU         corev1.ResourceName = "amd.com/gpu"
 	ResourceRDMA           corev1.ResourceName = DomainPrefix + "rdma"
 	ResourceFPGA           corev1.ResourceName = DomainPrefix + "fpga"
 	ResourceGPU            corev1.ResourceName = DomainPrefix + "gpu"
@@ -115,6 +116,8 @@ type DeviceHint struct {
 	VFSelector *metav1.LabelSelector `json:"vfSelector,omitempty"`
 	// AllocateStrategy controls the allocation strategy
 	AllocateStrategy DeviceAllocateStrategy `json:"allocateStrategy,omitempty"`
+	// RequiredTopologyScope defines the required topology scope for allocating devices.
+	RequiredTopologyScope DeviceTopologyScope `json:"requiredTopologyScope,omitempty"`
 	// ExclusivePolicy indicates the exclusive policy.
 	ExclusivePolicy DeviceExclusivePolicy `json:"exclusivePolicy,omitempty"`
 }
@@ -124,6 +127,13 @@ type DeviceAllocateStrategy string
 const (
 	ApplyForAllDeviceAllocateStrategy DeviceAllocateStrategy = "ApplyForAll"
 	RequestsAsCountAllocateStrategy   DeviceAllocateStrategy = "RequestsAsCount"
+)
+
+type DeviceTopologyScope string
+
+const (
+	DeviceTopologyScopePCIe     DeviceTopologyScope = "PCIe"
+	DeviceTopologyScopeNUMANode DeviceTopologyScope = "NUMANode"
 )
 
 type DeviceExclusivePolicy string

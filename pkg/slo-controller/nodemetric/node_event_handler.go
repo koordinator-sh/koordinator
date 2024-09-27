@@ -50,7 +50,7 @@ func (n *EnqueueRequestForNode) Create(ctx context.Context, e event.CreateEvent,
 func (n *EnqueueRequestForNode) Update(ctx context.Context, e event.UpdateEvent, q workqueue.RateLimitingInterface) {
 	newNode, oldNode := e.ObjectNew.(*corev1.Node), e.ObjectOld.(*corev1.Node)
 	// TODO, only use for noderesource
-	if !isNodeAllocatableUpdated(newNode, oldNode) {
+	if !isNodeUpdated(newNode, oldNode) {
 		return
 	}
 	q.Add(reconcile.Request{
@@ -75,10 +75,10 @@ func (n *EnqueueRequestForNode) Delete(ctx context.Context, e event.DeleteEvent,
 func (n *EnqueueRequestForNode) Generic(ctx context.Context, e event.GenericEvent, q workqueue.RateLimitingInterface) {
 }
 
-// isNodeAllocatableUpdated returns whether the new node's allocatable is different from the old one's
-func isNodeAllocatableUpdated(newNode *corev1.Node, oldNode *corev1.Node) bool {
+// isNodeUpdated returns whether the new node's allocatable or labels is different from the old one's
+func isNodeUpdated(newNode *corev1.Node, oldNode *corev1.Node) bool {
 	if newNode == nil || oldNode == nil {
 		return false
 	}
-	return !reflect.DeepEqual(oldNode.Status.Allocatable, newNode.Status.Allocatable)
+	return !reflect.DeepEqual(oldNode.Status.Allocatable, newNode.Status.Allocatable) || !reflect.DeepEqual(oldNode.Labels, newNode.Labels)
 }

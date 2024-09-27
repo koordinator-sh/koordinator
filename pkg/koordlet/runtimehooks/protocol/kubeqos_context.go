@@ -18,6 +18,7 @@ package protocol
 
 import (
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/klog/v2"
 
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/audit"
@@ -44,6 +45,10 @@ type KubeQOSContext struct {
 	Response KubeQOSResponse
 	executor resourceexecutor.ResourceUpdateExecutor
 	updaters []resourceexecutor.ResourceUpdater
+}
+
+func (k *KubeQOSContext) RecordEvent(r record.EventRecorder, pod *corev1.Pod) {
+	//TODO: Don't record pods by QoS
 }
 
 func (k *KubeQOSContext) FromReconciler(kubeQOS corev1.PodQOSClass) {

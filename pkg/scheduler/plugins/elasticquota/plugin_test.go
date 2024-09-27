@@ -1333,3 +1333,33 @@ func defaultCreatePod(name string, priority int32, cpu, mem int64) *corev1.Pod {
 	pod.Spec.NodeName = "test-node"
 	return pod
 }
+
+func TestPostFilterState(t *testing.T) {
+	t.Run("test", func(t *testing.T) {
+		testCycleState := framework.NewCycleState()
+		p := &Plugin{
+			pluginArgs: &config.ElasticQuotaArgs{
+				EnableRuntimeQuota: false,
+			},
+		}
+
+		p.skipPostFilterState(testCycleState)
+		got, err := getPostFilterState(testCycleState)
+		assert.NoError(t, err)
+		assert.NotNil(t, got)
+		cycleStateCopy := testCycleState.Clone()
+		got1, err := getPostFilterState(cycleStateCopy)
+		assert.NoError(t, err)
+		assert.Equal(t, got, got1)
+
+		testCycleState = framework.NewCycleState()
+		p.snapshotPostFilterState(&core.QuotaInfo{}, testCycleState)
+		got, err = getPostFilterState(testCycleState)
+		assert.NoError(t, err)
+		assert.NotNil(t, got)
+		cycleStateCopy = testCycleState.Clone()
+		got1, err = getPostFilterState(cycleStateCopy)
+		assert.NoError(t, err)
+		assert.Equal(t, got, got1)
+	})
+}

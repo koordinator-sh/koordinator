@@ -87,6 +87,16 @@ func TestNodeResourceAmplificationPlugin_handleNormalization(t *testing.T) {
 			expectedAllocatableValue:    1000,
 			expectedOriginalAllocatable: 1000,
 		},
+		{
+			name: "get original resource from annotation and amplify",
+			annotations: map[string]string{extension.AnnotationNodeResourceAmplificationRatio: `{"cpu": 2}`,
+				extension.AnnotationNodeRawAllocatable: `{"cpu":"1"}`},
+			resourceName:                corev1.ResourceCPU,
+			alloatableValue:             1000,
+			expectedErr:                 false,
+			expectedAllocatableValue:    2000,
+			expectedOriginalAllocatable: 1000,
+		},
 	}
 
 	for _, tc := range testCases {
