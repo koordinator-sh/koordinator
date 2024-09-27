@@ -30,7 +30,6 @@ import (
 	schedulingconfig "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/topologymanager"
 	"github.com/koordinator-sh/koordinator/pkg/util"
-	"github.com/koordinator-sh/koordinator/pkg/util/cpuset"
 )
 
 // resourceStrategyTypeMap maps strategy to scorer implementation
@@ -51,6 +50,17 @@ var resourceStrategyTypeMap = map[schedulingconfig.ScoringStrategyType]scorer{
 			resourceToWeightMap: resToWeightMap,
 		}
 	},
+}
+
+func (p *Plugin) PreScore(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodes []*corev1.Node) *framework.Status {
+	state, status := getPreFilterState(cycleState)
+	if !status.IsSuccess() {
+		return status
+	}
+	if state.skip {
+		return framework.NewStatus(framework.Skip)
+	}
+	return nil
 }
 
 func (p *Plugin) Score(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) (int64, *framework.Status) {
@@ -82,7 +92,7 @@ func (p *Plugin) Score(ctx context.Context, cycleState *framework.CycleState, po
 	}
 
 	store := topologymanager.GetStore(cycleState)
-	affinity := store.GetAffinity(nodeName)
+	affinity, _ := store.GetAffinity(nodeName)
 	resourceOptions, err := p.getResourceOptions(state, node, pod, requestCPUBind, affinity, topologyOptions)
 	if err != nil {
 		return 0, nil
@@ -99,10 +109,7 @@ func (p *Plugin) Score(ctx context.Context, cycleState *framework.CycleState, po
 		return 0, status
 	}
 	if podAllocation == nil {
-		resourceOptions.requiredResources = nil
-		resourceOptions.preferredCPUs = cpuset.NewCPUSet()
-		resourceOptions.reusableResources = appendAllocated(nil, restoreState.mergedUnmatchedUsed)
-		podAllocation, status = p.resourceManager.Allocate(node, pod, resourceOptions)
+		podAllocation, status = tryAllocateFromNode(p.resourceManager, restoreState, resourceOptions, pod, node)
 		if !status.IsSuccess() {
 			return 0, status
 		}

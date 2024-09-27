@@ -111,6 +111,7 @@ const ( // subsystems
 	CgroupCPUAcctDir string = "cpuacct/"
 	CgroupMemDir     string = "memory/"
 	CgroupBlkioDir   string = "blkio/"
+	CgroupNetClsDir  string = "net_cls/"
 
 	CgroupV2Dir = ""
 )
@@ -170,6 +171,8 @@ const (
 	BlkioIOWeightName = "blkio.cost.weight"
 	BlkioIOQoSName    = "blkio.cost.qos"
 	BlkioIOModelName  = "blkio.cost.model"
+
+	NetClsClassIdName = "net_cls.classid"
 )
 
 var (
@@ -194,6 +197,8 @@ var (
 	BlkioIOWeightValidator                  = &BlkIORangeValidator{min: 1, max: 100, resource: BlkioIOWeightName}
 	BlkioIOQoSValidator                     = &BlkIORangeValidator{min: 0, max: math.MaxInt64, resource: BlkioIOQoSName}
 	BlkioIOModelValidator                   = &BlkIORangeValidator{min: 1, max: math.MaxInt64, resource: BlkioIOModelName}
+
+	NetClsClassIdValidator = &NetClsRangeValidator{resource: NetClsClassIdName}
 
 	CPUSetCPUSValidator = &CPUSetStrValidator{}
 )
@@ -243,6 +248,8 @@ var (
 	BlkioIOQoS     = DefaultFactory.New(BlkioIOQoSName, CgroupBlkioDir).WithValidator(BlkioIOQoSValidator).WithSupported(SupportedIfFileExistsInRootCgroup(BlkioIOQoSName, CgroupBlkioDir))
 	BlkioIOModel   = DefaultFactory.New(BlkioIOModelName, CgroupBlkioDir).WithValidator(BlkioIOModelValidator).WithSupported(SupportedIfFileExistsInRootCgroup(BlkioIOModelName, CgroupBlkioDir))
 
+	NetClsClassId = DefaultFactory.New(NetClsClassIdName, CgroupNetClsDir).WithValidator(NetClsClassIdValidator).WithCheckSupported(SupportedIfFileExistsInKubepods).WithCheckOnce(true)
+
 	knownCgroupResources = []Resource{
 		CPUStat,
 		CPUShares,
@@ -280,6 +287,7 @@ var (
 		BlkioIOWeight,
 		BlkioIOQoS,
 		BlkioIOModel,
+		NetClsClassId,
 	}
 
 	CPUCFSQuotaV2  = DefaultFactory.NewV2(CPUCFSQuotaName, CPUMaxName)
@@ -345,6 +353,8 @@ var (
 		MemoryUsePriorityOomV2,
 		MemoryOomGroupV2,
 		// TODO: register BlkioIOWeight, BlkioIOQoS and BlkioIOModel
+
+		NetClsClassId,
 	}
 )
 

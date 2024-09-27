@@ -5,7 +5,8 @@ go 1.20
 require (
 	github.com/NVIDIA/go-nvml v0.11.6-0.0.20220823120812-7e2082095e82
 	github.com/cakturk/go-netstat v0.0.0-20200220111822-e5b49efee7a5
-	github.com/containerd/nri v0.3.0
+	github.com/containerd/nri v0.6.1
+	github.com/coreos/go-iptables v0.5.0
 	github.com/docker/docker v20.10.21+incompatible
 	github.com/evanphx/json-patch v5.6.0+incompatible
 	github.com/fsnotify/fsnotify v1.6.0
@@ -39,7 +40,7 @@ require (
 	golang.org/x/net v0.19.0
 	golang.org/x/sys v0.15.0
 	golang.org/x/time v0.3.0
-	google.golang.org/grpc v1.56.3
+	google.golang.org/grpc v1.57.1
 	google.golang.org/protobuf v1.31.0
 	gopkg.in/yaml.v2 v2.4.0
 	k8s.io/api v0.28.7
@@ -58,7 +59,7 @@ require (
 	k8s.io/utils v0.0.0-20240102154912-e7106e64919e
 	sigs.k8s.io/controller-runtime v0.16.5
 	sigs.k8s.io/controller-runtime/tools/setup-envtest v0.0.0-20231005234617-5771399a8ce5
-	sigs.k8s.io/descheduler v0.26.0
+	sigs.k8s.io/descheduler v0.28.0
 	sigs.k8s.io/yaml v1.3.0
 )
 
@@ -67,7 +68,7 @@ require (
 	github.com/antlr/antlr4/runtime/Go/antlr/v4 v4.0.0-20230305170008-8188dc5388df // indirect
 	github.com/cenkalti/backoff/v4 v4.2.1 // indirect
 	github.com/containerd/containerd v1.6.9 // indirect
-	github.com/containerd/ttrpc v1.2.2 // indirect
+	github.com/containerd/ttrpc v1.2.3 // indirect
 	github.com/emicklei/go-restful/v3 v3.11.0 // indirect
 	github.com/evanphx/json-patch/v5 v5.6.0 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
@@ -78,7 +79,7 @@ require (
 	github.com/stoewer/go-strcase v1.2.0 // indirect
 	golang.org/x/exp v0.0.0-20220827204233-334a2380cb91 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20230525234035-dd9d682886f9 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20230525234030-28d5490b6b19 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20230731190214-cbb8c96f2d6d // indirect
 	k8s.io/controller-manager v0.28.7 // indirect
 	k8s.io/dynamic-resource-allocation v0.28.7 // indirect
 	k8s.io/gengo v0.0.0-20220902162205-c0856e24416d // indirect
@@ -130,7 +131,7 @@ require (
 	github.com/gin-contrib/sse v0.1.0 // indirect
 	github.com/go-kit/log v0.2.1
 	github.com/go-logfmt/logfmt v0.5.1 // indirect
-	github.com/go-logr/logr v1.2.4 // indirect
+	github.com/go-logr/logr v1.2.4
 	github.com/go-logr/zapr v1.2.4 // indirect
 	github.com/go-openapi/jsonpointer v0.19.6 // indirect
 	github.com/go-openapi/jsonreference v0.20.2 // indirect
@@ -196,7 +197,7 @@ require (
 	github.com/syndtr/gocapability v0.0.0-20200815063812-42c35b437635 // indirect
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	github.com/ugorji/go/codec v1.2.9 // indirect
-	github.com/vishvananda/netlink v1.1.1-0.20210330154013-f5de75959ad5 // indirect
+	github.com/vishvananda/netlink v1.1.1-0.20210330154013-f5de75959ad5
 	github.com/vishvananda/netns v0.0.4 // indirect
 	github.com/vmware/govmomi v0.30.6 // indirect
 	go.etcd.io/etcd/api/v3 v3.5.9 // indirect
@@ -296,5 +297,4 @@ replace (
 	k8s.io/pod-security-admission => k8s.io/pod-security-admission v0.28.7
 	k8s.io/sample-apiserver => k8s.io/sample-apiserver v0.28.7
 	sigs.k8s.io/controller-runtime => sigs.k8s.io/controller-runtime v0.16.5
-	sigs.k8s.io/descheduler => sigs.k8s.io/descheduler v0.26.1-0.20230402001301-90905d2c2194
 )

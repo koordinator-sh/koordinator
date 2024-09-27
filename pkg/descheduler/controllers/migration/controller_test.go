@@ -1652,7 +1652,7 @@ func TestRequeueJobIfObjectLimiterFailed(t *testing.T) {
 		want             bool
 	}{
 		{
-			name:           "less than default maxMigrating",
+			name:           "less than workload limiter",
 			totalReplicas:  100,
 			objectLimiters: testObjectLimiters,
 			sleepDuration:  100 * time.Millisecond,
@@ -1675,13 +1675,14 @@ func TestRequeueJobIfObjectLimiterFailed(t *testing.T) {
 					},
 				},
 			},
-			evictedPodsCount: 6,
+			evictedPodsCount: 1,
 			want:             false,
 		},
 		{
-			name:           "exceeded default maxMigrating",
+			name:           "exceeded workload limiter",
 			totalReplicas:  100,
 			objectLimiters: testObjectLimiters,
+			sleepDuration:  10 * time.Millisecond,
 			pod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					OwnerReferences: ownerReferences1,
@@ -1701,14 +1702,14 @@ func TestRequeueJobIfObjectLimiterFailed(t *testing.T) {
 					},
 				},
 			},
-			evictedPodsCount: 11,
+			evictedPodsCount: 1,
 			want:             true,
 		},
 		{
-			name:           "other than workload",
+			name:           "other workload",
 			totalReplicas:  100,
 			objectLimiters: testObjectLimiters,
-			sleepDuration:  100 * time.Millisecond,
+			sleepDuration:  10 * time.Millisecond,
 			pod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					OwnerReferences: ownerReferences1,
@@ -1728,13 +1729,14 @@ func TestRequeueJobIfObjectLimiterFailed(t *testing.T) {
 					},
 				},
 			},
-			evictedPodsCount: 11,
+			evictedPodsCount: 1,
 			evictedWorkload:  &otherOwnerReferences,
 			want:             false,
 		},
 		{
-			name:          "disable objectLimiters",
+			name:          "disable workloadObjectLimiters",
 			totalReplicas: 100,
+			sleepDuration: 10 * time.Millisecond,
 			pod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					OwnerReferences: ownerReferences1,
@@ -1742,7 +1744,7 @@ func TestRequeueJobIfObjectLimiterFailed(t *testing.T) {
 					Namespace:       "test-namespace",
 				},
 			},
-			evictedPodsCount: 11,
+			evictedPodsCount: 1,
 			objectLimiters: deschedulerconfig.ObjectLimiterMap{
 				deschedulerconfig.MigrationLimitObjectWorkload: deschedulerconfig.MigrationObjectLimiter{
 					Duration: metav1.Duration{Duration: 0},
@@ -1763,8 +1765,9 @@ func TestRequeueJobIfObjectLimiterFailed(t *testing.T) {
 			want: false,
 		},
 		{
-			name:          "default limiter",
+			name:          "default workload limiter",
 			totalReplicas: 100,
+			sleepDuration: 10 * time.Millisecond,
 			pod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					OwnerReferences: ownerReferences1,
@@ -1784,8 +1787,41 @@ func TestRequeueJobIfObjectLimiterFailed(t *testing.T) {
 					},
 				},
 			},
-			evictedPodsCount: 11,
+			evictedPodsCount: 1,
 			want:             true,
+		},
+		{
+			name:          "workload limiter with burst",
+			totalReplicas: 100,
+			sleepDuration: 10 * time.Millisecond,
+			objectLimiters: deschedulerconfig.ObjectLimiterMap{
+				deschedulerconfig.MigrationLimitObjectWorkload: deschedulerconfig.MigrationObjectLimiter{
+					Duration:     metav1.Duration{Duration: 1 * time.Second},
+					MaxMigrating: &intstr.IntOrString{Type: intstr.Int, IntVal: 10},
+					Burst:        2,
+				},
+			},
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					OwnerReferences: ownerReferences1,
+					Name:            "test-pod",
+					Namespace:       "test-namespace",
+				},
+			},
+			job: &sev1alpha1.PodMigrationJob{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:              "test",
+					CreationTimestamp: metav1.Time{Time: time.Now()},
+				},
+				Spec: sev1alpha1.PodMigrationJobSpec{
+					PodRef: &corev1.ObjectReference{
+						Namespace: "test-namespace",
+						Name:      "test-pod",
+					},
+				},
+			},
+			evictedPodsCount: 1,
+			want:             false,
 		},
 	}
 
@@ -1822,6 +1858,236 @@ func TestRequeueJobIfObjectLimiterFailed(t *testing.T) {
 						pod.OwnerReferences = []metav1.OwnerReference{
 							*tt.evictedWorkload,
 						}
+					}
+					reconciler.trackEvictedPod(pod)
+					if tt.sleepDuration > 0 {
+						time.Sleep(tt.sleepDuration)
+					}
+				}
+			}
+			got := reconciler.requeueJobIfObjectLimiterFailed(context.TODO(), tt.job)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestRequeueJobIfObjectLimiterFailedWithNamespace(t *testing.T) {
+	ownerReferences1 := []metav1.OwnerReference{
+		{
+			APIVersion: "apps/v1",
+			Controller: pointer.Bool(true),
+			Kind:       "StatefulSet",
+			Name:       "test-1",
+			UID:        uuid.NewUUID(),
+		},
+	}
+	testObjectLimiters := deschedulerconfig.ObjectLimiterMap{
+		deschedulerconfig.MigrationLimitObjectWorkload: {
+			Duration:     metav1.Duration{Duration: 1 * time.Second},
+			MaxMigrating: &intstr.IntOrString{Type: intstr.Int, IntVal: 10},
+		},
+		deschedulerconfig.MigrationLimitObjectNamespace: {
+			Duration:     metav1.Duration{Duration: 1 * time.Second},
+			MaxMigrating: &intstr.IntOrString{Type: intstr.Int, IntVal: 5},
+		},
+	}
+
+	tests := []struct {
+		name             string
+		objectLimiters   deschedulerconfig.ObjectLimiterMap
+		totalReplicas    int32
+		sleepDuration    time.Duration
+		pod              *corev1.Pod
+		job              *sev1alpha1.PodMigrationJob
+		evictedPodsCount int
+		evictedNamespace string
+		want             bool
+	}{
+		{
+			name:           "less than workload but more than namespace",
+			totalReplicas:  100,
+			objectLimiters: testObjectLimiters,
+			sleepDuration:  100 * time.Millisecond,
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					OwnerReferences: ownerReferences1,
+					Name:            "test-pod",
+					Namespace:       "test-namespace",
+				},
+			},
+			job: &sev1alpha1.PodMigrationJob{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:              "test",
+					CreationTimestamp: metav1.Time{Time: time.Now()},
+				},
+				Spec: sev1alpha1.PodMigrationJobSpec{
+					PodRef: &corev1.ObjectReference{
+						Namespace: "test-namespace",
+						Name:      "test-pod",
+					},
+				},
+			},
+			evictedPodsCount: 1,
+			want:             true,
+		},
+		{
+			name:           "less than both",
+			totalReplicas:  100,
+			objectLimiters: testObjectLimiters,
+			sleepDuration:  200 * time.Millisecond,
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					OwnerReferences: ownerReferences1,
+					Name:            "test-pod",
+					Namespace:       "test-namespace",
+				},
+			},
+			job: &sev1alpha1.PodMigrationJob{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:              "test",
+					CreationTimestamp: metav1.Time{Time: time.Now()},
+				},
+				Spec: sev1alpha1.PodMigrationJobSpec{
+					PodRef: &corev1.ObjectReference{
+						Namespace: "test-namespace",
+						Name:      "test-pod",
+					},
+				},
+			},
+			evictedPodsCount: 1,
+			want:             false,
+		},
+		{
+			name:          "disable namespaceObjectLimiters",
+			totalReplicas: 100,
+			sleepDuration: 100 * time.Millisecond,
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					OwnerReferences: ownerReferences1,
+					Name:            "test-pod",
+					Namespace:       "test-namespace",
+				},
+			},
+			evictedPodsCount: 1,
+			objectLimiters: deschedulerconfig.ObjectLimiterMap{
+				deschedulerconfig.MigrationLimitObjectWorkload: {
+					Duration:     metav1.Duration{Duration: 1 * time.Second},
+					MaxMigrating: &intstr.IntOrString{Type: intstr.Int, IntVal: 10},
+				},
+				deschedulerconfig.MigrationLimitObjectNamespace: deschedulerconfig.MigrationObjectLimiter{
+					Duration: metav1.Duration{Duration: 0},
+				},
+			},
+			job: &sev1alpha1.PodMigrationJob{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:              "test",
+					CreationTimestamp: metav1.Time{Time: time.Now()},
+				},
+				Spec: sev1alpha1.PodMigrationJobSpec{
+					PodRef: &corev1.ObjectReference{
+						Namespace: "test-namespace",
+						Name:      "test-pod",
+					},
+				},
+			},
+			want: false,
+		},
+		{
+			name:          "disable namespaceObjectLimiters and exceed workload",
+			totalReplicas: 100,
+			sleepDuration: 10 * time.Millisecond,
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					OwnerReferences: ownerReferences1,
+					Name:            "test-pod",
+					Namespace:       "test-namespace",
+				},
+			},
+			evictedPodsCount: 1,
+			objectLimiters: deschedulerconfig.ObjectLimiterMap{
+				deschedulerconfig.MigrationLimitObjectWorkload: {
+					Duration:     metav1.Duration{Duration: 1 * time.Second},
+					MaxMigrating: &intstr.IntOrString{Type: intstr.Int, IntVal: 10},
+				},
+				deschedulerconfig.MigrationLimitObjectNamespace: deschedulerconfig.MigrationObjectLimiter{
+					Duration: metav1.Duration{Duration: 0},
+				},
+			},
+			job: &sev1alpha1.PodMigrationJob{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:              "test",
+					CreationTimestamp: metav1.Time{Time: time.Now()},
+				},
+				Spec: sev1alpha1.PodMigrationJobSpec{
+					PodRef: &corev1.ObjectReference{
+						Namespace: "test-namespace",
+						Name:      "test-pod",
+					},
+				},
+			},
+			want: true,
+		},
+		{
+			name:           "other namespace",
+			totalReplicas:  100,
+			objectLimiters: testObjectLimiters,
+			sleepDuration:  100 * time.Millisecond,
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					OwnerReferences: ownerReferences1,
+					Name:            "test-pod",
+					Namespace:       "test-namespace",
+				},
+			},
+			job: &sev1alpha1.PodMigrationJob{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:              "test",
+					CreationTimestamp: metav1.Time{Time: time.Now()},
+				},
+				Spec: sev1alpha1.PodMigrationJobSpec{
+					PodRef: &corev1.ObjectReference{
+						Namespace: "test-namespace",
+						Name:      "test-pod",
+					},
+				},
+			},
+			evictedPodsCount: 1,
+			evictedNamespace: "test-namespace-other",
+			want:             false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			scheme := runtime.NewScheme()
+			_ = sev1alpha1.AddToScheme(scheme)
+			_ = clientgoscheme.AddToScheme(scheme)
+
+			var v1beta2args v1alpha2.MigrationControllerArgs
+			v1alpha2.SetDefaults_MigrationControllerArgs(&v1beta2args)
+			var args deschedulerconfig.MigrationControllerArgs
+			err := v1alpha2.Convert_v1alpha2_MigrationControllerArgs_To_config_MigrationControllerArgs(&v1beta2args, &args, nil)
+			if err != nil {
+				panic(err)
+			}
+			reconciler := newTestReconciler()
+			controllerFinder := &fakeControllerFinder{}
+			if tt.objectLimiters != nil {
+				reconciler.args.ObjectLimiters = tt.objectLimiters
+			}
+
+			reconciler.initObjectLimiters()
+			if tt.totalReplicas > 0 {
+				controllerFinder.replicas = tt.totalReplicas
+			}
+			reconciler.controllerFinder = controllerFinder
+			assert.NoError(t, reconciler.Create(context.TODO(), tt.pod))
+			assert.NoError(t, reconciler.Create(context.TODO(), tt.job))
+			if tt.evictedPodsCount > 0 {
+				for i := 0; i < tt.evictedPodsCount; i++ {
+					pod := tt.pod.DeepCopy()
+					if tt.evictedNamespace != "" {
+						pod.Namespace = tt.evictedNamespace
 					}
 					reconciler.trackEvictedPod(pod)
 					if tt.sleepDuration > 0 {

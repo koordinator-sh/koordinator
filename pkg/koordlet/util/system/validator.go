@@ -121,3 +121,46 @@ func (r *BlkIORangeValidator) Validate(value string) (bool, string) {
 
 	return true, ""
 }
+
+type NetClsRangeValidator struct {
+	resource string
+}
+
+const (
+	maxClassIdDecimal = 41231686041
+	maxClassIdHex     = 99999999
+)
+
+func (r *NetClsRangeValidator) Validate(value string) (bool, string) {
+	if value == "" {
+		return false, "value is nil"
+	}
+
+	if r.resource == NetClsClassIdName {
+		if strings.HasPrefix(value, "0x") {
+			value = value[2:]
+			// You can write hexadecimal values to net_cls.classid; the format for these values is 0xAAAABBBB;
+			// AAAA is the major handle number and BBBB is the minor handle number. Reading net_cls.classid yields a decimal result.
+			// so, the max length of this value is 8.
+			hexVal, err := strconv.Atoi(value)
+			if err != nil {
+				return false, err.Error()
+			}
+
+			if hexVal < 0 || hexVal > maxClassIdHex {
+				return false, "class id is invalid, decimal value must in 0~0x99999999"
+			}
+		} else {
+			decimalVal, err := strconv.ParseInt(value, 10, 32)
+			if err != nil {
+				return false, err.Error()
+			}
+
+			if decimalVal > maxClassIdDecimal || decimalVal < 0 {
+				return false, fmt.Sprintf("class id is invaild, decimal vaule must in 0~%d", maxClassIdDecimal)
+			}
+		}
+	}
+
+	return true, ""
+}

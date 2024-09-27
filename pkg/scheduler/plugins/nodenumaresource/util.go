@@ -18,8 +18,12 @@ package nodenumaresource
 
 import (
 	"errors"
+	"fmt"
+	"reflect"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
@@ -131,4 +135,45 @@ func requestCPUBind(state *preFilterState, nodeCPUBindPolicy extension.NodeCPUBi
 		return true, nil
 	}
 	return false, nil
+}
+
+func logStruct(v reflect.Value, key string, verbosity klog.Level) {
+	rawStr := &strings.Builder{}
+	logValue(v, 0, rawStr)
+	klog.V(verbosity).Infof("key: %s, value: %s", key, rawStr.String())
+}
+
+// logValue is a recursive function that prints the contents of any value.
+// For pointers to structs, it recursively unwraps until it reaches the underlying struct.
+func logValue(v reflect.Value, depth int, builder *strings.Builder) {
+	// Indent for pretty printing
+	indent := strings.Repeat(" ", depth)
+	switch v.Kind() {
+	case reflect.Ptr:
+		// For pointers, obtain the value being pointed to
+		elem := v.Elem()
+		if !elem.IsValid() {
+			builder.WriteString(fmt.Sprintf("%s<nil>\t", indent)) // Appends "nil" representation for nil pointers
+		} else {
+			logValue(elem, depth+1, builder) // Recursively log the pointer element
+		}
+	case reflect.Struct:
+		// For structs, iterate through all fields
+		builder.WriteString("\t")
+		for i := 0; i < v.NumField(); i++ {
+			field := v.Field(i)
+			fieldType := v.Type().Field(i)
+			builder.WriteString(fmt.Sprintf("%s%s:\t", indent, fieldType.Name)) // Appends the field name
+			logValue(field, depth+2, builder)                                   // Recursively log each struct field
+		}
+	case reflect.Slice, reflect.Array:
+		// For slices or arrays, iterate through each element
+		for i := 0; i < v.Len(); i++ {
+			builder.WriteString(fmt.Sprintf("%s[%d]:\t", indent, i)) // Appends the index of the element
+			logValue(v.Index(i), depth+2, builder)                   // Recursively log each element
+		}
+	default:
+		// For other types, print the value directly
+		builder.WriteString(fmt.Sprintf("%s%v\t", indent, v)) // Appends the value
+	}
 }

@@ -27,6 +27,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-logr/logr"
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -132,7 +133,7 @@ func newTestSharedLister(pods []*corev1.Pod, nodes []*corev1.Node) *testSharedLi
 	}
 }
 
-func makePg(name, namespace string, min int32, creationTime *time.Time, minResource *corev1.ResourceList) *v1alpha1.PodGroup {
+func makePg(name, namespace string, min int32, creationTime *time.Time, minResource corev1.ResourceList) *v1alpha1.PodGroup {
 	var ti int32 = 10
 	pg := &v1alpha1.PodGroup{
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
@@ -208,6 +209,7 @@ func newPluginTestSuit(t *testing.T, nodes []*corev1.Node, pgClientSet pgclients
 		schedulertesting.RegisterReservePlugin(Name, proxyNew),
 		schedulertesting.RegisterPermitPlugin(Name, proxyNew),
 		schedulertesting.RegisterPluginAsExtensions(Name, proxyNew, "PostBind"),
+		schedulertesting.RegisterPluginAsExtensions(Name, proxyNew, "PreEnqueue"),
 	}
 	fakeRecorder := record.NewFakeRecorder(1024)
 	eventRecorder := record.NewEventRecorderAdapter(fakeRecorder)
@@ -638,6 +640,7 @@ func TestPostFilter(t *testing.T) {
 			if tt.pod.Name == "pod3" {
 				wg.Add(2)
 			}
+
 			for _, pod := range tt.pods {
 				tmpPod := pod
 				suit.Handle.(framework.Framework).RunPermitPlugins(context.Background(), cycleState, tmpPod, "")
@@ -650,6 +653,7 @@ func TestPostFilter(t *testing.T) {
 					defer wg.Done()
 				}()
 			}
+
 			if tt.pod.Name == "pod3" {
 				totalWaitingPods := 0
 				suit.Handle.IterateOverWaitingPods(
@@ -1049,8 +1053,7 @@ func TestFairness(t *testing.T) {
 	assert.NoError(t, err)
 	eventBroadcaster.StartRecordingToSink(ctx.Done())
 	suit.start()
-	logger := klog.FromContext(ctx)
-	sched.SchedulingQueue.Run(logger)
+	sched.SchedulingQueue.Run(logr.Discard())
 
 	var scheduleOrder []*debugPodScheduleInfo
 
@@ -1135,7 +1138,7 @@ func simulateScheduleOne(t *testing.T, ctx context.Context, sched *scheduler.Sch
 	}
 	*scheduleOrder = append(*scheduleOrder, scheduleInfo)
 	fwk := suit.Handle.(framework.Framework)
-	klog.InfoS("Attempting to schedule pod", "pod", klog.KObj(pod))
+	klog.V(4).InfoS("Attempting to schedule pod", "pod", klog.KObj(pod))
 
 	// Synchronously attempt to find a fit for the pod.
 	state := framework.NewCycleState()
@@ -1155,7 +1158,7 @@ func simulateScheduleOne(t *testing.T, ctx context.Context, sched *scheduler.Sch
 			// Run PostFilter plugins to try to make the pod schedulable in a future scheduling cycle.
 			_, status := suit.plugin.(*Coscheduling).PostFilter(ctx, state, pod, fitError.Diagnosis.NodeToStatusMap)
 			assert.False(t, status.IsSuccess())
-			klog.Info("sched.Error:" + podInfo.Pod.Name)
+			klog.V(4).Info("sched.Error:" + podInfo.Pod.Name)
 			sched.FailureHandler(ctx, fwk, podInfo, status, &framework.NominatingInfo{}, time.Time{})
 		}
 		return
@@ -1180,7 +1183,7 @@ func simulateScheduleOne(t *testing.T, ctx context.Context, sched *scheduler.Sch
 
 	// At the end of a successful scheduling cycle, pop and move up Pods if needed.
 	if len(podsToActivate.Map) != 0 {
-		sched.SchedulingQueue.Activate(klog.FromContext(ctx), podsToActivate.Map)
+		sched.SchedulingQueue.Activate(logr.Discard(), podsToActivate.Map)
 		// Clear the entries after activation.
 		podsToActivate.Map = make(map[string]*corev1.Pod)
 	}
@@ -1194,7 +1197,7 @@ func simulateScheduleOne(t *testing.T, ctx context.Context, sched *scheduler.Sch
 		if !waitOnPermitStatus.IsSuccess() {
 			// trigger un-reserve plugins to clean up state associated with the reserved Pod
 			fwk.RunReservePluginsUnreserve(bindingCycleCtx, state, assumedPod, scheduleResult.SuggestedHost)
-			klog.Info("sched.Error:" + assumedPodInfo.Pod.Name)
+			klog.V(4).Info("sched.Error:" + assumedPodInfo.Pod.Name)
 			sched.FailureHandler(ctx, fwk, assumedPodInfo, waitOnPermitStatus, &framework.NominatingInfo{}, time.Time{})
 			return
 		}
@@ -1204,8 +1207,7 @@ func simulateScheduleOne(t *testing.T, ctx context.Context, sched *scheduler.Sch
 
 		// At the end of a successful binding cycle, move up Pods if needed.
 		if len(podsToActivate.Map) != 0 {
-			logger := klog.FromContext(ctx)
-			sched.SchedulingQueue.Activate(logger, podsToActivate.Map)
+			sched.SchedulingQueue.Activate(logr.Discard(), podsToActivate.Map)
 			// Unlike the logic in scheduling cycle, we don't bother deleting the entries
 			// as `podsToActivate.Map` is no longer consumed.
 		}
@@ -1218,20 +1220,31 @@ func schedulePod(ctx context.Context, suit *pluginTestSuit, fwk framework.Framew
 		UnschedulablePlugins: sets.Set[string]{},
 	}
 
+	fitError := &framework.FitError{
+		Pod:         pod,
+		NumAllNodes: 1,
+		Diagnosis:   diagnosis,
+	}
+
+	// Run "preEnqueue" plugins
+	s := suit.plugin.(*Coscheduling).PreEnqueue(ctx, pod)
+	if !s.IsSuccess() {
+		info.result = "PreEnqueue"
+		return result, fitError
+	}
+
 	// Run "prefilter" plugins.
-	_, _, s := suit.plugin.(*Coscheduling).BeforePreFilter(ctx, state, pod)
+	_, _, s = suit.plugin.(*Coscheduling).BeforePreFilter(ctx, state, pod)
 	if !s.IsSuccess() {
 		info.result = "PreFiler"
-	} else if injectFilterError {
-		info.result = "Filter"
+		return result, fitError
 	}
-	if info.result != "" {
-		return result, &framework.FitError{
-			Pod:         pod,
-			NumAllNodes: 1,
-			Diagnosis:   diagnosis,
-		}
+
+	if injectFilterError {
+		info.result = "PreFiler"
+		return result, fitError
 	}
+
 	return scheduler.ScheduleResult{
 		SuggestedHost: "fake-host",
 	}, err
@@ -1326,7 +1339,7 @@ func TestDeadLockFree(t *testing.T) {
 	assert.NoError(t, err)
 	eventBroadcaster.StartRecordingToSink(ctx.Done())
 	suit.start()
-	sched.SchedulingQueue.Run(klog.FromContext(ctx))
+	sched.SchedulingQueue.Run(logr.Discard())
 
 	var scheduleOrder []*debugPodScheduleInfo
 
@@ -1445,13 +1458,15 @@ func TestNoRejectWhenInvalidCycle(t *testing.T) {
 	assert.NoError(t, err)
 	eventBroadcaster.StartRecordingToSink(ctx.Done())
 	suit.start()
-	logger := klog.FromContext(ctx)
-	sched.SchedulingQueue.Run(logger)
+	sched.SchedulingQueue.Run(logr.Discard())
 
 	var scheduleOrder []*debugPodScheduleInfo
 
 	_, status := suit.plugin.(*Coscheduling).PostFilter(ctx, framework.NewCycleState(), allPods[0], nil)
 	assert.False(t, status.IsSuccess())
+
+	status = suit.plugin.(*Coscheduling).PreEnqueue(ctx, memberPodsOfGang[util.GetId("default", gangNames[0])][0])
+	assert.True(t, status.IsSuccess())
 
 	_, _, status = suit.plugin.(*Coscheduling).BeforePreFilter(ctx, framework.NewCycleState(), memberPodsOfGang[util.GetId("default", gangNames[0])][0])
 	assert.False(t, status.IsSuccess())

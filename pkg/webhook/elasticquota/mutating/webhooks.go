@@ -17,6 +17,7 @@ limitations under the License.
 package mutating
 
 import (
+	"k8s.io/klog/v2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
@@ -45,8 +46,13 @@ func (b *quotaMutateBuilder) WithControllerManager(mgr ctrl.Manager) framework.H
 }
 
 func (b *quotaMutateBuilder) Build() admission.Handler {
-	return &ElasticQuotaMutatingHandler{
+	h := &ElasticQuotaMutatingHandler{
 		Client:  b.mgr.GetClient(),
 		Decoder: admission.NewDecoder(b.mgr.GetScheme()),
 	}
+	err := h.InjectCache(b.mgr.GetCache())
+	if err != nil {
+		klog.Fatal("failed to inject cache for quotaMutateBuilder: %v", err)
+	}
+	return h
 }

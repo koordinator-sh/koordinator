@@ -22,6 +22,23 @@ jobs:
     continue-on-error: true
     runs-on: ubuntu-20.04
     steps:
+      - name: Check host environment before
+        run: |
+          set -ex
+          lscpu -e
+          tree -L 2 /sys/
+          tree -L 2 /sys/fs/cgroup
+          df -h
+      - name: Free Disk Space
+        uses: jlumbroso/free-disk-space@v1.3.1
+        with:
+          tool-cache: false
+          swap-storage: false
+          large-packages: false
+          docker-images: false
+          android: true
+          dotnet: true
+          haskell: true
       - uses: actions/checkout@v4
         with:
           submodules: true
@@ -46,15 +63,12 @@ jobs:
           kind load docker-image --name=${KIND_CLUSTER_NAME} ${MANAGER_IMAGE} || { echo >&2 "kind not installed or error loading image: ${MANAGER_IMAGE}"; exit 1; }
           kind load docker-image --name=${KIND_CLUSTER_NAME} ${KOORDLET_IMAGE} || { echo >&2 "kind not installed or error loading image: ${KOORDLET_IMAGE}"; exit 1; }
           kind load docker-image --name=${KIND_CLUSTER_NAME} ${SCHEDULER_IMAGE} || { echo >&2 "kind not installed or error loading image: ${SCHEDULER_IMAGE}"; exit 1; }
-      - name: Check host environment
+      - name: Check cluster environment
         run: |
           set -ex
           kubectl version --short
           kubectl get pods -A
           kubectl get nodes -o yaml
-          tree -L 2 /sys/
-          tree -L 2 /sys/fs/cgroup
-          cat /proc/cpuinfo
       - name: Install Koordinator
         run: |
           set -ex
@@ -105,3 +119,5 @@ jobs:
               exit 1
           fi
           exit $retVal
+      - name: Checkout host environment after
+        run: df -h

@@ -667,6 +667,11 @@ func TestPluginCalculate(t *testing.T) {
 					Message:  UpdateResourcesMsg,
 				},
 				{
+					Name:     extension.ResourceGPUShared,
+					Quantity: resource.NewQuantity(200, resource.DecimalSI),
+					Message:  UpdateResourcesMsg,
+				},
+				{
 					Name: PluginName,
 					Labels: map[string]string{
 						extension.LabelGPUModel:         "A100",
@@ -703,6 +708,11 @@ func TestPluginCalculate(t *testing.T) {
 				},
 				{
 					Name:     extension.ResourceGPUMemoryRatio,
+					Quantity: resource.NewQuantity(200, resource.DecimalSI),
+					Message:  UpdateResourcesMsg,
+				},
+				{
+					Name:     extension.ResourceGPUShared,
 					Quantity: resource.NewQuantity(200, resource.DecimalSI),
 					Message:  UpdateResourcesMsg,
 				},
@@ -746,6 +756,11 @@ func TestPluginCalculate(t *testing.T) {
 					Quantity: resource.NewQuantity(200, resource.DecimalSI),
 					Message:  UpdateResourcesMsg,
 				},
+				{
+					Name:     extension.ResourceGPUShared,
+					Quantity: resource.NewQuantity(200, resource.DecimalSI),
+					Message:  UpdateResourcesMsg,
+				},
 			},
 			wantErr: false,
 		},
@@ -775,6 +790,11 @@ func TestPluginCalculate(t *testing.T) {
 				},
 				{
 					Name:     extension.ResourceGPUMemoryRatio,
+					Quantity: resource.NewQuantity(200, resource.DecimalSI),
+					Message:  UpdateResourcesMsg,
+				},
+				{
+					Name:     extension.ResourceGPUShared,
 					Quantity: resource.NewQuantity(200, resource.DecimalSI),
 					Message:  UpdateResourcesMsg,
 				},
@@ -874,6 +894,7 @@ func Test_cleanupGPUNodeResource(t *testing.T) {
 				extension.ResourceGPUCore:        *resource.NewQuantity(200, resource.DecimalSI),
 				extension.ResourceGPUMemory:      *resource.NewScaledQuantity(18, 3),
 				extension.ResourceGPUMemoryRatio: *resource.NewQuantity(200, resource.DecimalSI),
+				extension.ResourceGPUShared:      *resource.NewQuantity(200, resource.DecimalSI),
 			},
 			Capacity: map[corev1.ResourceName]resource.Quantity{
 				corev1.ResourceCPU:               resource.MustParse("100"),
@@ -882,6 +903,7 @@ func Test_cleanupGPUNodeResource(t *testing.T) {
 				extension.ResourceGPUCore:        *resource.NewQuantity(200, resource.DecimalSI),
 				extension.ResourceGPUMemory:      *resource.NewScaledQuantity(18, 3),
 				extension.ResourceGPUMemoryRatio: *resource.NewQuantity(200, resource.DecimalSI),
+				extension.ResourceGPUShared:      *resource.NewQuantity(200, resource.DecimalSI),
 			},
 		},
 	}
@@ -900,6 +922,7 @@ func Test_cleanupGPUNodeResource(t *testing.T) {
 				extension.ResourceGPUCore:        *resource.NewQuantity(200, resource.DecimalSI),
 				extension.ResourceGPUMemory:      *resource.NewScaledQuantity(18, 3),
 				extension.ResourceGPUMemoryRatio: *resource.NewQuantity(200, resource.DecimalSI),
+				extension.ResourceGPUShared:      *resource.NewQuantity(200, resource.DecimalSI),
 			},
 			Capacity: map[corev1.ResourceName]resource.Quantity{
 				corev1.ResourceCPU:               resource.MustParse("100"),
@@ -908,6 +931,7 @@ func Test_cleanupGPUNodeResource(t *testing.T) {
 				extension.ResourceGPUCore:        *resource.NewQuantity(200, resource.DecimalSI),
 				extension.ResourceGPUMemory:      *resource.NewScaledQuantity(18, 3),
 				extension.ResourceGPUMemoryRatio: *resource.NewQuantity(200, resource.DecimalSI),
+				extension.ResourceGPUShared:      *resource.NewQuantity(200, resource.DecimalSI),
 			},
 		},
 	}

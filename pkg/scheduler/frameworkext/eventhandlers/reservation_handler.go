@@ -65,19 +65,17 @@ func MakeReservationErrorHandler(
 			return true
 		}
 
-		schedulingErr := status.AsError()
-
 		// if the pod is not a reserve pod, use the default error handler
 		// If the Pod failed to schedule or no post-filter plugins, should remove exist NominatedReservation of the Pod.
-		if _, ok := schedulingErr.(*framework.FitError); !ok || !fwk.HasPostFilterPlugins() {
-			if extendedHandle, ok := fwk.(frameworkext.ExtendedHandle); ok {
-				if !reservationutil.IsReservePod(pod) {
-					extendedHandle.GetReservationNominator().RemoveNominatedReservations(pod)
-				} else {
-					extendedHandle.GetReservationNominator().DeleteNominatedReservePod(pod)
-				}
+		if extendedHandle, ok := fwk.(frameworkext.ExtendedHandle); ok {
+			if !reservationutil.IsReservePod(pod) {
+				extendedHandle.GetReservationNominator().RemoveNominatedReservations(pod)
+			} else {
+				extendedHandle.GetReservationNominator().DeleteNominatedReservePod(pod)
 			}
 		}
+
+		schedulingErr := status.AsError()
 
 		if _, reserveAffExist := pod.Annotations[extension.AnnotationReservationAffinity]; reserveAffExist {
 			// for pod specified reservation affinity, export new event on reservation level
@@ -91,6 +89,8 @@ func MakeReservationErrorHandler(
 			}
 			return false
 		} else if reservationutil.IsReservePod(pod) {
+			// NOTE: Since the failure handler is asynchronous and not locked with the reservation event handler,
+			// please make sure the status of the object is expected before adding or updating it.
 			// for reservation CR, which is treated as pod internal
 			reservationErrorFn(ctx, fwk, podInfo, status, nominatingInfo, start)
 
@@ -99,6 +99,10 @@ func MakeReservationErrorHandler(
 			if err != nil {
 				return true
 			}
+
+			// nominate for the reserve pod if it is
+			// TODO: use the default nominator
+			addNominatedReservation(f, podInfo, nominatingInfo)
 
 			msg := truncateMessage(schedulingErr.Error())
 			fwk.EventRecorder().Eventf(r, nil, corev1.EventTypeWarning, "FailedScheduling", "Scheduling", msg)
@@ -109,6 +113,25 @@ func MakeReservationErrorHandler(
 		// not reservation CR, not pod with reservation affinity
 		return false
 	}
+}
+
+func addNominatedReservation(f framework.Framework, podInfo *framework.QueuedPodInfo, nominatingInfo *framework.NominatingInfo) {
+	frameworkExtender, ok := f.(frameworkext.FrameworkExtender)
+	if !ok {
+		return
+	}
+
+	reservationNominator := frameworkExtender.GetReservationNominator()
+	if reservationNominator == nil {
+		return
+	}
+	var nodeName string
+	if nominatingInfo.Mode() == framework.ModeOverride {
+		nodeName = nominatingInfo.NominatedNodeName
+	} else if nominatingInfo.Mode() == framework.ModeNoop {
+		nodeName = podInfo.Pod.Status.NominatedNodeName
+	}
+	reservationNominator.AddNominatedReservePod(podInfo.Pod, nodeName)
 }
 
 // input:

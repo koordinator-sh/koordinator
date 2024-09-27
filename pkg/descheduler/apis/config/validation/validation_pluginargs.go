@@ -30,6 +30,10 @@ import (
 func ValidateMigrationControllerArgs(path *field.Path, args *deschedulerconfig.MigrationControllerArgs) error {
 	var allErrs field.ErrorList
 
+	if args.MaxMigratingGlobally != nil && *args.MaxMigratingGlobally < 0 {
+		allErrs = append(allErrs, field.Invalid(path.Child("maxMigratingGlobally"), *args.MaxMigratingGlobally, "maxMigratingGlobally should be greater or equal 0"))
+	}
+
 	if args.MaxMigratingPerNamespace != nil && *args.MaxMigratingPerNamespace < 0 {
 		allErrs = append(allErrs, field.Invalid(path.Child("maxMigratingPerNamespace"), *args.MaxMigratingPerNamespace, "maxMigratingPerNamespace should be greater or equal 0"))
 	}

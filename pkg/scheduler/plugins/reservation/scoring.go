@@ -41,12 +41,17 @@ const (
 
 func (pl *Plugin) PreScore(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodes []*corev1.Node) *framework.Status {
 	if reservationutil.IsReservePod(pod) {
-		return nil
+		return framework.NewStatus(framework.Skip)
+	}
+
+	// if the pod is reservation-ignored, it does not want a nominated reservation
+	if apiext.IsReservationIgnored(pod) {
+		return framework.NewStatus(framework.Skip)
 	}
 
 	state := getStateData(cycleState)
 	if len(state.nodeReservationStates) == 0 {
-		return nil
+		return framework.NewStatus(framework.Skip)
 	}
 
 	ctx, cancel := context.WithCancel(ctx)
@@ -59,7 +64,7 @@ func (pl *Plugin) PreScore(ctx context.Context, cycleState *framework.CycleState
 	errCh := parallelize.NewErrorChannel()
 	pl.handle.Parallelizer().Until(ctx, len(nodes), func(piece int) {
 		node := nodes[piece]
-		reservationInfos := state.nodeReservationStates[node.Name].matched
+		reservationInfos := state.nodeReservationStates[node.Name].matchedOrIgnored
 		if len(reservationInfos) == 0 {
 			return
 		}
@@ -132,7 +137,7 @@ func (pl *Plugin) NormalizeScore(ctx context.Context, state *framework.CycleStat
 
 func (pl *Plugin) ScoreReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, reservationInfo *frameworkext.ReservationInfo, nodeName string) (int64, *framework.Status) {
 	state := getStateData(cycleState)
-	reservationInfos := state.nodeReservationStates[nodeName].matched
+	reservationInfos := state.nodeReservationStates[nodeName].matchedOrIgnored
 
 	var rInfo *frameworkext.ReservationInfo
 	for _, v := range reservationInfos {

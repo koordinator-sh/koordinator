@@ -395,6 +395,11 @@ func (in *MigrationControllerArgs) DeepCopyInto(out *MigrationControllerArgs) {
 		*out = new(Namespaces)
 		(*in).DeepCopyInto(*out)
 	}
+	if in.MaxMigratingGlobally != nil {
+		in, out := &in.MaxMigratingGlobally, &out.MaxMigratingGlobally
+		*out = new(int32)
+		**out = **in
+	}
 	if in.MaxMigratingPerNode != nil {
 		in, out := &in.MaxMigratingPerNode, &out.MaxMigratingPerNode
 		*out = new(int32)

@@ -64,6 +64,7 @@ type PostFilterState struct {
 
 func (p *PostFilterState) Clone() framework.StateData {
 	return &PostFilterState{
+		skip:               p.skip,
 		quotaInfo:          p.quotaInfo,
 		used:               p.used.DeepCopy(),
 		nonPreemptibleUsed: p.nonPreemptibleUsed.DeepCopy(),
@@ -211,7 +212,7 @@ func (g *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleState
 	quotaName, treeID := g.getPodAssociateQuotaNameAndTreeID(pod)
 	if quotaName == "" {
 		g.skipPostFilterState(cycleState)
-		return nil, framework.NewStatus(framework.Success, "")
+		return nil, framework.NewStatus(framework.Skip)
 	}
 
 	mgr := g.GetGroupQuotaManagerForTree(treeID)
@@ -228,7 +229,8 @@ func (g *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleState
 	state := g.snapshotPostFilterState(quotaInfo, cycleState)
 
 	podRequest := core.PodRequests(pod)
-	used := quotav1.Mask(quotav1.Add(podRequest, state.used), quotav1.ResourceNames(podRequest))
+	podRequest = quotav1.Mask(podRequest, quotav1.ResourceNames(quotaInfo.CalculateInfo.Max))
+	used := quotav1.Add(podRequest, state.used)
 	if isLessEqual, exceedDimensions := quotav1.LessThanOrEqual(used, state.usedLimit); !isLessEqual {
 		return nil, framework.NewStatus(framework.Unschedulable, fmt.Sprintf("Insufficient quotas, "+
 			"quotaName: %v, runtime: %v, used: %v, pod's request: %v, exceedDimensions: %v",
@@ -238,7 +240,7 @@ func (g *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleState
 	if extension.IsPodNonPreemptible(pod) {
 		quotaMin := state.quotaInfo.CalculateInfo.Min
 		nonPreemptibleUsed := state.nonPreemptibleUsed
-		addNonPreemptibleUsed := quotav1.Mask(quotav1.Add(podRequest, nonPreemptibleUsed), quotav1.ResourceNames(podRequest))
+		addNonPreemptibleUsed := quotav1.Add(podRequest, nonPreemptibleUsed)
 		if isLessEqual, exceedDimensions := quotav1.LessThanOrEqual(addNonPreemptibleUsed, quotaMin); !isLessEqual {
 			return nil, framework.NewStatus(framework.Unschedulable, fmt.Sprintf("Insufficient non-preemptible quotas, "+
 				"quotaName: %v, min: %v, nonPreemptibleUsed: %v, pod's request: %v, exceedDimensions: %v",
@@ -272,6 +274,7 @@ func (g *Plugin) AddPod(ctx context.Context, state *framework.CycleState, podToS
 
 	if postFilterState.quotaInfo.IsPodExist(podInfoToAdd.Pod) {
 		podReq := core.PodRequests(podInfoToAdd.Pod)
+		podReq = quotav1.Mask(podReq, quotav1.ResourceNames(postFilterState.quotaInfo.CalculateInfo.Max))
 		postFilterState.used = quotav1.Add(postFilterState.used, podReq)
 	}
 	return framework.NewStatus(framework.Success, "")
@@ -292,6 +295,7 @@ func (g *Plugin) RemovePod(ctx context.Context, state *framework.CycleState, pod
 
 	if postFilterState.quotaInfo.IsPodExist(podInfoToRemove.Pod) {
 		podReq := core.PodRequests(podInfoToRemove.Pod)
+		podReq = quotav1.Mask(podReq, quotav1.ResourceNames(postFilterState.quotaInfo.CalculateInfo.Max))
 		postFilterState.used = quotav1.SubtractWithNonNegativeResult(postFilterState.used, podReq)
 	}
 	return framework.NewStatus(framework.Success, "")

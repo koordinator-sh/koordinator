@@ -96,19 +96,32 @@ func newNUMATopology(deviceObj *schedulingv1alpha1.Device) *NUMATopology {
 }
 
 type deviceTopologyGuide struct {
-	pcieSwitches []*pcieSwitch
+	pcieSwitches       []*pcieSwitch
+	groupedNodeDevices map[int]*groupedNodeDevice
+	primaryDeviceType  schedulingv1alpha1.DeviceType
 }
 
 type pcieSwitch struct {
 	PCIeIndex
 	nodeDevice  *nodeDevice
 	freeDevices map[schedulingv1alpha1.DeviceType]deviceResources
+	isEmpty     bool
 	preferred   bool
+}
+
+type groupedNodeDevice struct {
+	node           int
+	nodeDevice     *nodeDevice
+	freeDevices    map[schedulingv1alpha1.DeviceType]deviceResources
+	isEmpty        bool
+	preferred      bool
+	preferredPCIes sets.String
 }
 
 func newDeviceTopologyGuide(
 	nodeDevice *nodeDevice,
 	requestPerInstance map[schedulingv1alpha1.DeviceType]corev1.ResourceList,
+	primaryDeviceType schedulingv1alpha1.DeviceType,
 	jointAllocate *apiext.DeviceJointAllocate,
 ) *deviceTopologyGuide {
 	var pcieSwitches []*pcieSwitch
@@ -133,25 +146,56 @@ func newDeviceTopologyGuide(
 				PCIeIndex:   pcie.PCIeIndex,
 				nodeDevice:  filteredNodeDevice,
 				freeDevices: freeDevices,
+				isEmpty:     len(freeDevices[primaryDeviceType]) == len(filteredNodeDevice.deviceTotal[primaryDeviceType]),
 				preferred:   preferred,
 			})
 		}
 	}
 
-	sort.Slice(pcieSwitches, func(i, j int) bool {
-		iPCIE := pcieSwitches[i]
-		jPCIE := pcieSwitches[j]
-		if iPCIE.socket != jPCIE.socket {
-			return iPCIE.socket < jPCIE.socket
+	groupedNodeDevices := make(map[int]*groupedNodeDevice, len(nodeDevice.numaTopology.nodes))
+	for node, pcies := range nodeDevice.numaTopology.nodes {
+		deviceMinors := map[schedulingv1alpha1.DeviceType][]int{}
+		preferredPCIe := sets.NewString()
+		for _, pcie := range pcies {
+			for deviceType, minors := range pcie.devices {
+				deviceMinors[deviceType] = append(deviceMinors[deviceType], minors...)
+			}
+			for _, v := range pcieSwitches {
+				if v.preferred && v.PCIeIndex == pcie.PCIeIndex {
+					preferredPCIe.Insert(v.PCIeIndex.pcie)
+				}
+			}
 		}
-		if iPCIE.node != jPCIE.node {
-			return iPCIE.node < jPCIE.node
+
+		filteredNodeDevice := nodeDevice.filter(deviceMinors, nil, nil, nil)
+
+		freeDevices := map[schedulingv1alpha1.DeviceType]deviceResources{}
+		for deviceType, requests := range requestPerInstance {
+			free := filteredNodeDevice.split(requests, deviceType)
+			freeDevices[deviceType] = free
 		}
-		return iPCIE.pcie < jPCIE.pcie
-	})
+
+		preferred := false
+		if jointAllocate != nil {
+			for _, deviceType := range jointAllocate.DeviceTypes {
+				preferred = len(freeDevices[deviceType]) > 0
+			}
+		}
+
+		groupedNodeDevices[node] = &groupedNodeDevice{
+			node:           node,
+			nodeDevice:     filteredNodeDevice,
+			freeDevices:    freeDevices,
+			isEmpty:        len(freeDevices[primaryDeviceType]) == len(filteredNodeDevice.deviceTotal[primaryDeviceType]),
+			preferred:      preferred,
+			preferredPCIes: preferredPCIe,
+		}
+	}
 
 	return &deviceTopologyGuide{
-		pcieSwitches: pcieSwitches,
+		pcieSwitches:       pcieSwitches,
+		groupedNodeDevices: groupedNodeDevices,
+		primaryDeviceType:  primaryDeviceType,
 	}
 }
 
@@ -166,63 +210,28 @@ func (a *deviceTopologyGuide) freeNodeDevicesInPCIe() []*pcieSwitch {
 		} else if !iPCIE.preferred && jPCIE.preferred {
 			return false
 		}
+		if a.groupedNodeDevices[iPCIE.node].isEmpty != a.groupedNodeDevices[jPCIE.node].isEmpty {
+			return !a.groupedNodeDevices[iPCIE.node].isEmpty
+		}
+		if iPCIE.isEmpty != jPCIE.isEmpty {
+			return !iPCIE.isEmpty
+		}
 		if iPCIE.socket != jPCIE.socket {
 			return iPCIE.socket < jPCIE.socket
 		}
-		return iPCIE.node < jPCIE.node
+		if iPCIE.node != jPCIE.node {
+			return iPCIE.node < jPCIE.node
+		}
+		return iPCIE.pcie < jPCIE.pcie
 	})
 	return pcieSwitches
 }
 
-type groupedNodeDevice struct {
-	node           int
-	nodeDevice     *nodeDevice
-	freeDevices    map[schedulingv1alpha1.DeviceType]deviceResources
-	preferred      bool
-	preferredPCIes sets.String
-}
-
-func (a *deviceTopologyGuide) freeNodeDevicesInNode(requestCtx *requestContext, nodeDevice *nodeDevice, jointAllocate *apiext.DeviceJointAllocate) []*groupedNodeDevice {
+func (a *deviceTopologyGuide) freeNodeDevicesInNode() []*groupedNodeDevice {
 	var groupedNodeDevices []*groupedNodeDevice
-
-	for node, pcies := range nodeDevice.numaTopology.nodes {
-		deviceMinors := map[schedulingv1alpha1.DeviceType][]int{}
-		preferredPCIe := sets.NewString()
-		for _, pcie := range pcies {
-			for deviceType, minors := range pcie.devices {
-				deviceMinors[deviceType] = append(deviceMinors[deviceType], minors...)
-			}
-			for _, v := range a.pcieSwitches {
-				if v.preferred && v.PCIeIndex == pcie.PCIeIndex {
-					preferredPCIe.Insert(v.PCIeIndex.pcie)
-				}
-			}
-		}
-
-		filteredNodeDevice := nodeDevice.filter(deviceMinors, nil, nil, nil)
-
-		freeDevices := map[schedulingv1alpha1.DeviceType]deviceResources{}
-		for deviceType, requests := range requestCtx.requestsPerInstance {
-			free := filteredNodeDevice.split(requests, deviceType)
-			freeDevices[deviceType] = free
-		}
-
-		preferred := false
-		if jointAllocate != nil {
-			for _, deviceType := range jointAllocate.DeviceTypes {
-				preferred = len(freeDevices[deviceType]) > 0
-			}
-		}
-
-		groupedNodeDevices = append(groupedNodeDevices, &groupedNodeDevice{
-			node:           node,
-			nodeDevice:     filteredNodeDevice,
-			freeDevices:    freeDevices,
-			preferred:      preferred,
-			preferredPCIes: preferredPCIe,
-		})
+	for _, device := range a.groupedNodeDevices {
+		groupedNodeDevices = append(groupedNodeDevices, device)
 	}
-
 	sort.Slice(groupedNodeDevices, func(i, j int) bool {
 		iGroup := groupedNodeDevices[i]
 		jGroup := groupedNodeDevices[j]
@@ -233,6 +242,9 @@ func (a *deviceTopologyGuide) freeNodeDevicesInNode(requestCtx *requestContext, 
 			return true
 		} else if !iGroup.preferred && jGroup.preferred {
 			return false
+		}
+		if iGroup.isEmpty != jGroup.isEmpty {
+			return !iGroup.isEmpty
 		}
 		return iGroup.node < jGroup.node
 	})

@@ -86,6 +86,10 @@ func GetMaxUnavailable(replicas int, intOrPercent *intstr.IntOrString) (int, err
 		if err != nil {
 			return 0, err
 		}
+		// handle the case of float value that less than 1.0
+		if maxUnavailable == 0 {
+			maxUnavailable = 1
+		}
 	}
 	if maxUnavailable == 0 {
 		if replicas > 10 {
@@ -111,6 +115,13 @@ func GetMaxUnavailable(replicas int, intOrPercent *intstr.IntOrString) (int, err
 
 func GetMaxMigrating(replicas int, intOrPercent *intstr.IntOrString) (int, error) {
 	return GetMaxUnavailable(replicas, intOrPercent)
+}
+
+func GetLimiterBurst(burst int) int {
+	if burst == 0 {
+		return 1
+	}
+	return burst
 }
 
 // FilterPodWithMaxEvictionCost rejects if pod's eviction cost is math.MaxInt32
