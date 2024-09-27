@@ -29,6 +29,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
+	corev1helper "k8s.io/component-helpers/scheduling/corev1"
 	"k8s.io/component-helpers/scheduling/corev1/nodeaffinity"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/api/v1/resource"
@@ -461,6 +462,8 @@ func MatchReservationControllerReference(pod *corev1.Pod, controllerRef *schedul
 type RequiredReservationAffinity struct {
 	labelSelector labels.Selector
 	nodeSelector  *nodeaffinity.NodeSelector
+	tolerations   []corev1.Toleration
+	name          string
 }
 
 // GetRequiredReservationAffinity returns the parsing result of pod's nodeSelector and nodeAffinity.
@@ -486,12 +489,40 @@ func GetRequiredReservationAffinity(pod *corev1.Pod) (*RequiredReservationAffini
 			return nil, err
 		}
 	}
-	return &RequiredReservationAffinity{labelSelector: selector, nodeSelector: affinity}, nil
+	return &RequiredReservationAffinity{
+		labelSelector: selector,
+		nodeSelector:  affinity,
+		tolerations:   reservationAffinity.Tolerations,
+		name:          reservationAffinity.Name,
+	}, nil
+}
+
+// GetName returns the reservation name if it is specified in the reservation affinity.
+func (s *RequiredReservationAffinity) GetName() string {
+	if s == nil {
+		return ""
+	}
+	return s.name
+}
+
+// MatchName checks if the reservation affinity specifies a reservation name, and it matches the given reservation's.
+func (s *RequiredReservationAffinity) MatchName(reservationName string) bool {
+	return s != nil && len(s.name) > 0 && s.name == reservationName
 }
 
 // Match checks whether the pod is schedulable onto nodes according to
 // the requirements in both nodeSelector and nodeAffinity.
+// DEPRECATED: use MatchAffinity instead.
 func (s *RequiredReservationAffinity) Match(node *corev1.Node) bool {
+	return s.MatchAffinity(node)
+}
+
+// MatchAffinity checks whether the pod is schedulable onto nodes according to
+// the requirements in both nodeSelector and nodeAffinity.
+func (s *RequiredReservationAffinity) MatchAffinity(node *corev1.Node) bool {
+	if s == nil {
+		return true
+	}
 	if s.labelSelector != nil {
 		if !s.labelSelector.Matches(labels.Set(node.Labels)) {
 			return false
@@ -501,6 +532,15 @@ func (s *RequiredReservationAffinity) Match(node *corev1.Node) bool {
 		return s.nodeSelector.Match(node)
 	}
 	return true
+}
+
+// FindMatchingUntoleratedTaint checks if the reservation tolerations tolerates all the filtered reservation taints.
+// It returns the first taint without a toleration and the status if any taint is NOT tolerated.
+func (s *RequiredReservationAffinity) FindMatchingUntoleratedTaint(taints []corev1.Taint, inclusionFilter func(*corev1.Taint) bool) (corev1.Taint, bool) {
+	if s == nil {
+		return corev1.Taint{}, false
+	}
+	return corev1helper.FindMatchingUntoleratedTaint(taints, s.tolerations, inclusionFilter)
 }
 
 type ReservationResizeAllocatable struct {
@@ -566,11 +606,20 @@ func GetReservationRestrictedResources(allocatableResources []corev1.ResourceNam
 }
 
 // NewReservationReason creates a reservation-level error reason with the given message.
-func NewReservationReason(msg string) string {
-	return ErrReasonPrefix + msg
+func NewReservationReason(fmtMsg string, args ...interface{}) string {
+	if len(args) <= 0 {
+		return ErrReasonPrefix + fmtMsg
+	}
+	return fmt.Sprintf(ErrReasonPrefix+fmtMsg, args...)
 }
 
 // IsReservationReason checks if the error reason is at the reservation-level.
 func IsReservationReason(reason string) bool {
 	return strings.HasPrefix(reason, ErrReasonPrefix)
+}
+
+// DoNotScheduleTaintsFilter can filter out the node taints that reject scheduling Pod on a Node.
+func DoNotScheduleTaintsFilter(t *corev1.Taint) bool {
+	// PodToleratesNodeTaints is only interested in NoSchedule and NoExecute taints.
+	return t.Effect == corev1.TaintEffectNoSchedule || t.Effect == corev1.TaintEffectNoExecute
 }

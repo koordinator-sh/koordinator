@@ -329,6 +329,7 @@ func TestRestoreReservation(t *testing.T) {
 					ownerMatched:             1,
 					affinityUnmatched:        0,
 					isUnschedulableUnmatched: 0,
+					taintsUnmatchedReasons:   map[string]int{},
 				},
 			},
 		},
@@ -582,6 +583,20 @@ func TestBeforePreFilterWithReservationAffinity(t *testing.T) {
 						},
 					},
 				},
+			},
+			wantRestored: false,
+		},
+		{
+			name: "pod specifies a reservation name and matched",
+			rAffinity: &apiext.ReservationAffinity{
+				Name: "reservation8C16G",
+			},
+			wantRestored: true,
+		},
+		{
+			name: "pod specifies a reservation name but failed to match",
+			rAffinity: &apiext.ReservationAffinity{
+				Name: "not-reservation8C16G",
 			},
 			wantRestored: false,
 		},

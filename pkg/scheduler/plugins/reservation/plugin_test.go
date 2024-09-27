@@ -418,6 +418,9 @@ func TestFilter(t *testing.T) {
 		Status: schedulingv1alpha1.ReservationStatus{
 			Phase:    schedulingv1alpha1.ReasonReservationAvailable,
 			NodeName: testNode.Name,
+			Allocatable: corev1.ResourceList{
+				corev1.ResourceCPU: resource.MustParse("4"),
+			},
 		},
 	}
 
@@ -442,6 +445,9 @@ func TestFilter(t *testing.T) {
 		Status: schedulingv1alpha1.ReservationStatus{
 			Phase:    schedulingv1alpha1.ReasonReservationAvailable,
 			NodeName: testNode.Name,
+			Allocatable: corev1.ResourceList{
+				corev1.ResourceCPU: resource.MustParse("4"),
+			},
 		},
 	}
 
@@ -588,6 +594,37 @@ func TestFilter(t *testing.T) {
 						testNode.Name: {
 							matchedOrIgnored: []*frameworkext.ReservationInfo{
 								frameworkext.NewReservationInfo(reservation),
+							},
+						},
+					},
+				},
+			},
+			want: nil,
+		},
+		{
+			name: "normal pod specifies a reservation name and filter successfully",
+			pod: &corev1.Pod{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU: resource.MustParse("4"),
+								},
+							},
+						},
+					},
+				},
+			},
+			nodeInfo: testNodeInfo,
+			stateData: &stateData{
+				schedulingStateData: schedulingStateData{
+					hasAffinity:     true,
+					reservationName: restrictedReservation.Name,
+					nodeReservationStates: map[string]nodeReservationState{
+						testNode.Name: {
+							matchedOrIgnored: []*frameworkext.ReservationInfo{
+								frameworkext.NewReservationInfo(restrictedReservation),
 							},
 						},
 					},
@@ -1993,6 +2030,62 @@ func TestPostFilter(t *testing.T) {
 				"4 Reservation(s) matched owner total"),
 		},
 		{
+			name: "show reservation owner matched, name unmatched",
+			args: args{
+				hasStateData: true,
+				nodeReservationDiagnosis: map[string]*nodeDiagnosisState{
+					"test-node-0": {
+						ownerMatched:      3,
+						nameUnmatched:     3,
+						affinityUnmatched: 0,
+					},
+					"test-node-1": {
+						ownerMatched:      1,
+						nameUnmatched:     1,
+						affinityUnmatched: 0,
+					},
+				},
+				filteredNodeStatusMap: framework.NodeToStatusMap{
+					"test-node-0": {},
+					"test-node-1": {},
+				},
+			},
+			want: nil,
+			want1: framework.NewStatus(framework.Unschedulable,
+				"4 Reservation(s) didn't match the requested reservation name",
+				"4 Reservation(s) matched owner total"),
+		},
+		{
+			name: "show reservation owner matched, taints not tolerated",
+			args: args{
+				hasStateData: true,
+				nodeReservationDiagnosis: map[string]*nodeDiagnosisState{
+					"test-node-0": {
+						ownerMatched:    3,
+						taintsUnmatched: 3,
+						taintsUnmatchedReasons: map[string]int{
+							"{node.kubernetes.io/unreachable: }": 3,
+						},
+					},
+					"test-node-1": {
+						ownerMatched:    1,
+						taintsUnmatched: 1,
+						taintsUnmatchedReasons: map[string]int{
+							"{node.kubernetes.io/unreachable: }": 1,
+						},
+					},
+				},
+				filteredNodeStatusMap: framework.NodeToStatusMap{
+					"test-node-0": {},
+					"test-node-1": {},
+				},
+			},
+			want: nil,
+			want1: framework.NewStatus(framework.Unschedulable,
+				"4 Reservation(s) had untolerated taint {node.kubernetes.io/unreachable: }",
+				"4 Reservation(s) matched owner total"),
+		},
+		{
 			name: "show reservation matched owner, unschedulable and exact matched",
 			args: args{
 				hasStateData: true,
@@ -2071,6 +2164,34 @@ func TestPostFilter(t *testing.T) {
 			want1: framework.NewStatus(framework.Unschedulable,
 				"4 Reservation(s) didn't match affinity rules",
 				"1 Reservation(s) is unschedulable",
+				"5 Reservation(s) matched owner total"),
+		},
+		{
+			name: "show reservation matched owner, name and unschedulable unmatched",
+			args: args{
+				hasStateData: true,
+				nodeReservationDiagnosis: map[string]*nodeDiagnosisState{
+					"test-node-0": {
+						ownerMatched:    3,
+						nameMatched:     1,
+						nameUnmatched:   2,
+						notExactMatched: 1,
+					},
+					"test-node-1": {
+						ownerMatched:  2,
+						nameUnmatched: 2,
+					},
+				},
+				filteredNodeStatusMap: framework.NodeToStatusMap{
+					"test-node-0": {},
+					"test-node-1": {},
+				},
+			},
+			want: nil,
+			want1: framework.NewStatus(framework.Unschedulable,
+				"1 Reservation(s) exactly matches the requested reservation name",
+				"4 Reservation(s) didn't match the requested reservation name",
+				"1 Reservation(s) is not exact matched",
 				"5 Reservation(s) matched owner total"),
 		},
 		{
