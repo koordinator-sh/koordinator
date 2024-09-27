@@ -62,7 +62,7 @@ func (p *Plugin) Score(ctx context.Context, cycleState *framework.CycleState, po
 	}
 
 	store := topologymanager.GetStore(cycleState)
-	affinity := store.GetAffinity(nodeName)
+	affinity, _ := store.GetAffinity(nodeName)
 
 	allocator := &AutopilotAllocator{
 		state:      state,
@@ -130,7 +130,7 @@ func (p *Plugin) ScoreReservation(ctx context.Context, cycleState *framework.Cyc
 	}
 
 	store := topologymanager.GetStore(cycleState)
-	affinity := store.GetAffinity(nodeInfo.Node().Name)
+	affinity, _ := store.GetAffinity(nodeInfo.Node().Name)
 
 	allocator := &AutopilotAllocator{
 		state:      state,

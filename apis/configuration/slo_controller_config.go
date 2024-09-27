@@ -18,6 +18,7 @@ package configuration
 
 import (
 	"github.com/mohae/deepcopy"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
@@ -25,13 +26,14 @@ import (
 
 const (
 	// keys in the configmap
-	ColocationConfigKey        = "colocation-config"
-	ResourceThresholdConfigKey = "resource-threshold-config"
-	ResourceQOSConfigKey       = "resource-qos-config"
-	CPUBurstConfigKey          = "cpu-burst-config"
-	SystemConfigKey            = "system-config"
-	HostApplicationConfigKey   = "host-application-config"
-	CPUNormalizationConfigKey  = "cpu-normalization-config"
+	ColocationConfigKey            = "colocation-config"
+	ResourceThresholdConfigKey     = "resource-threshold-config"
+	ResourceQOSConfigKey           = "resource-qos-config"
+	CPUBurstConfigKey              = "cpu-burst-config"
+	SystemConfigKey                = "system-config"
+	HostApplicationConfigKey       = "host-application-config"
+	CPUNormalizationConfigKey      = "cpu-normalization-config"
+	ResourceAmplificationConfigKey = "resource-amplification-config"
 )
 
 // +k8s:deepcopy-gen=true
@@ -245,12 +247,13 @@ type ColocationStrategy struct {
 	UpdateTimeThresholdSeconds *int64           `json:"updateTimeThresholdSeconds,omitempty" validate:"omitempty,min=1"`
 	ResourceDiffThreshold      *float64         `json:"resourceDiffThreshold,omitempty" validate:"omitempty,gt=0,max=1"`
 
-	// MidCPUThresholdPercent defines the maximum percentage of the Mid-tier cpu resource dividing the node allocatable.
-	// MidCPUAllocatable <= NodeCPUAllocatable * MidCPUThresholdPercent / 100.
+	// AllocatableCPU[Mid]' := min(Reclaimable[Mid], NodeAllocatable * MidCPUThresholdPercent) + Unallocated[Mid] * midUnallocatedRatio.
 	MidCPUThresholdPercent *int64 `json:"midCPUThresholdPercent,omitempty" validate:"omitempty,min=0,max=100"`
-	// MidMemoryThresholdPercent defines the maximum percentage of the Mid-tier memory resource dividing the node allocatable.
-	// MidMemoryAllocatable <= NodeMemoryAllocatable * MidMemoryThresholdPercent / 100.
+	// AllocatableMemory[Mid]' := min(Reclaimable[Mid], NodeAllocatable * MidMemoryThresholdPercent) + Unallocated[Mid] * midUnallocatedRatio.
 	MidMemoryThresholdPercent *int64 `json:"midMemoryThresholdPercent,omitempty" validate:"omitempty,min=0,max=100"`
+	// MidUnallocatedPercent defines the percentage of unallocated resources in the Mid-tier allocable resources.
+	// Allocatable[Mid]' := min(Reclaimable[Mid], NodeAllocatable * thresholdRatio) + Unallocated[Mid] * midUnallocatedRatio.
+	MidUnallocatedPercent *int64 `json:"midUnallocatedPercent,omitempty" validate:"omitempty,min=0,max=100"`
 
 	ColocationStrategyExtender `json:",inline"` // for third-party extension
 }
@@ -293,6 +296,29 @@ type ModelRatioCfg struct {
 	TurboEnabledRatio *float64 `json:"turboEnabledRatio,omitempty"`
 	// HyperThreadTurboEnabledRatio defines the ratio of which the CPU enables the Hyper Thread and Turbo.
 	HyperThreadTurboEnabledRatio *float64 `json:"hyperThreadTurboEnabledRatio,omitempty"`
+}
+
+// ResourceAmplificationCfg is the cluster-level configuration of the resource amplification strategy.
+// +k8s:deepcopy-gen=true
+type ResourceAmplificationCfg struct {
+	ResourceAmplificationStrategy `json:",inline"`
+	NodeConfigs                   []NodeResourceAmplificationCfg `json:"nodeConfigs,omitempty" validate:"dive"`
+}
+
+// NodeResourceAmplificationCfg is the node-level configuration of the resource amplification strategy.
+// +k8s:deepcopy-gen=true
+type NodeResourceAmplificationCfg struct {
+	NodeCfgProfile `json:",inline"`
+	ResourceAmplificationStrategy
+}
+
+// ResourceAmplificationStrategy is the resource amplification strategy.
+// +k8s:deepcopy-gen=true
+type ResourceAmplificationStrategy struct {
+	// Enable defines whether the resource amplification strategy is enabled.
+	Enable *bool `json:"enable,omitempty"`
+	// ResourceAmplificationRatio defines resource amplification ratio
+	ResourceAmplificationRatio map[corev1.ResourceName]float64 `json:"resourceAmplificationRatio,omitempty"`
 }
 
 /*

@@ -749,8 +749,9 @@ func (gqm *GroupQuotaManager) OnPodAdd(quotaName string, pod *v1.Pod) {
 	gqm.hierarchyUpdateLock.RLock()
 	defer gqm.hierarchyUpdateLock.RUnlock()
 
+	// if the quotaInfo is nil or include the pod, skip it.
 	quotaInfo := gqm.getQuotaInfoByNameNoLock(quotaName)
-	if quotaInfo != nil && quotaInfo.IsPodExist(pod) {
+	if quotaInfo == nil || quotaInfo.IsPodExist(pod) {
 		return
 	}
 
@@ -774,6 +775,14 @@ func (gqm *GroupQuotaManager) OnPodUpdate(newQuotaName, oldQuotaName string, new
 		}
 
 		if !shouldBeIgnored(newPod) {
+			if quotaInfo.IsPodExist(newPod) {
+				gqm.updatePodRequestNoLock(newQuotaName, oldPod, newPod)
+			} else {
+				// it's means the pod creation is before quota creation.
+				gqm.updatePodCacheNoLock(newQuotaName, newPod, true)
+				gqm.updatePodRequestNoLock(newQuotaName, nil, newPod)
+			}
+
 			isAssigned := gqm.getPodIsAssignedNoLock(newQuotaName, newPod)
 			if isAssigned {
 				// reserve phase will assign the pod. Just update it.
@@ -786,7 +795,6 @@ func (gqm *GroupQuotaManager) OnPodUpdate(newQuotaName, oldQuotaName string, new
 					gqm.updatePodUsedNoLock(newQuotaName, nil, newPod)
 				}
 			}
-			gqm.updatePodRequestNoLock(newQuotaName, oldPod, newPod)
 		} else {
 			if quotaInfo.IsPodExist(oldPod) {
 				// remove the old resource.
@@ -1098,6 +1106,10 @@ func (gqm *GroupQuotaManager) doUpdateOneGroupSharedWeightNoLock(quotaName strin
 func shouldBeIgnored(pod *v1.Pod) bool {
 	if pod.DeletionTimestamp == nil {
 		return false
+	}
+
+	if utilfeature.DefaultFeatureGate.Enabled(features.ElasticQuotaImmediateIgnoreTerminatingPod) {
+		return true
 	}
 
 	if !utilfeature.DefaultFeatureGate.Enabled(features.ElasticQuotaIgnoreTerminatingPod) {

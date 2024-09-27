@@ -1993,8 +1993,8 @@ sigs.k8s.io/controller-runtime v0.16.5 h1:yr1cEJbX08xsTW6XEIzT13KHHmIyX8Umvme2cU
 sigs.k8s.io/controller-runtime v0.16.5/go.mod h1:j7bialYoSn142nv9sCOJmQgDXQXxnroFU4VnX/brVJ0=
 sigs.k8s.io/controller-runtime/tools/setup-envtest v0.0.0-20231005234617-5771399a8ce5 h1:q6JvS/AwlDfe9sHMTo1KOMdI376+mlB21pV7Xhfy5uA=
 sigs.k8s.io/controller-runtime/tools/setup-envtest v0.0.0-20231005234617-5771399a8ce5/go.mod h1:B6HLcvOy2S1qq2eWOFm9xepiKPMIc8Z9OXSPsnUDaR4=
-sigs.k8s.io/descheduler v0.26.1-0.20230402001301-90905d2c2194 h1:xPrRjhoJr6pst13/3UHNwATYAsJROWcv+vvGRa+Fk1Q=
-sigs.k8s.io/descheduler v0.26.1-0.20230402001301-90905d2c2194/go.mod h1:/z7jjqyhgYDSd+LclGulcqX/JgfGIOTNB7ohFlGNQAQ=
+sigs.k8s.io/descheduler v0.28.0 h1:ahB8Epb2txHa9WV2AWxYSIJV9Fr/8N6Ejyfplpl78j0=
+sigs.k8s.io/descheduler v0.28.0/go.mod h1:GmzDGIeFdVQqw7fXS2kt5PAJEXq+5AHNnYPRFq0Uh8g=
 sigs.k8s.io/json v0.0.0-20221116044647-bc3834ca7abd h1:EDPBXCAspyGV4jQlpZSudPeMmr1bNJefnuqLsRAsHZo=
 sigs.k8s.io/json v0.0.0-20221116044647-bc3834ca7abd/go.mod h1:B8JuhiUyNFVKdsE8h686QcCxMaH6HrOAZj4vswFpcB0=
 sigs.k8s.io/kustomize/api v0.13.4/go.mod h1:Bkaavz5RKK6ZzP0zgPrB7QbpbBJKiHuD3BB0KujY7Ls=

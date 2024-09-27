@@ -208,6 +208,9 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 						UpdateTimeThresholdSeconds:     pointer.Int64(100),
 						ResourceDiffThreshold:          pointer.Float64(0.1),
 						MetricMemoryCollectPolicy:      &defaultNodeMemoryCollectPolicy,
+						MidCPUThresholdPercent:         pointer.Int64(100),
+						MidMemoryThresholdPercent:      pointer.Int64(100),
+						MidUnallocatedPercent:          pointer.Int64(0),
 					},
 				},
 				available:   true,
@@ -299,6 +302,9 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 						UpdateTimeThresholdSeconds:     pointer.Int64(300),
 						ResourceDiffThreshold:          pointer.Float64(0.1),
 						MetricMemoryCollectPolicy:      &defaultNodeMemoryCollectPolicy,
+						MidCPUThresholdPercent:         pointer.Int64(100),
+						MidMemoryThresholdPercent:      pointer.Int64(100),
+						MidUnallocatedPercent:          pointer.Int64(0),
 					},
 					NodeConfigs: []configuration.NodeColocationCfg{
 						{
@@ -322,6 +328,9 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 								UpdateTimeThresholdSeconds:     pointer.Int64(300),
 								ResourceDiffThreshold:          pointer.Float64(0.1),
 								MetricMemoryCollectPolicy:      &defaultNodeMemoryCollectPolicy,
+								MidCPUThresholdPercent:         pointer.Int64(100),
+								MidMemoryThresholdPercent:      pointer.Int64(100),
+								MidUnallocatedPercent:          pointer.Int64(0),
 							},
 						},
 					},
@@ -367,6 +376,9 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 						UpdateTimeThresholdSeconds:     pointer.Int64(300),
 						ResourceDiffThreshold:          pointer.Float64(0.1),
 						MetricMemoryCollectPolicy:      &defaultNodeMemoryCollectPolicy,
+						MidCPUThresholdPercent:         pointer.Int64(100),
+						MidMemoryThresholdPercent:      pointer.Int64(100),
+						MidUnallocatedPercent:          pointer.Int64(0),
 					},
 				},
 				available:   true,
@@ -390,6 +402,9 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 						UpdateTimeThresholdSeconds:     pointer.Int64(300),
 						ResourceDiffThreshold:          pointer.Float64(0.1),
 						MetricMemoryCollectPolicy:      &defaultNodeMemoryCollectPolicy,
+						MidCPUThresholdPercent:         pointer.Int64(100),
+						MidMemoryThresholdPercent:      pointer.Int64(100),
+						MidUnallocatedPercent:          pointer.Int64(0),
 					},
 				},
 				available: true,
@@ -425,6 +440,9 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 						UpdateTimeThresholdSeconds:     pointer.Int64(300),
 						ResourceDiffThreshold:          pointer.Float64(0.1),
 						MetricMemoryCollectPolicy:      &defaultNodeMemoryCollectPolicy,
+						MidCPUThresholdPercent:         pointer.Int64(100),
+						MidMemoryThresholdPercent:      pointer.Int64(100),
+						MidUnallocatedPercent:          pointer.Int64(0),
 					},
 				},
 				available:   true,
@@ -496,6 +514,7 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
     "resourceDiffThreshold": 0.1,
     "midCPUThresholdPercent": 45,
     "midMemoryThresholdPercent": 65,
+	"midUnallocatedPercent": 50,
     "nodeConfigs": [{
         "nodeSelector": {
             "matchLabels": {
@@ -526,6 +545,7 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 						MidCPUThresholdPercent:         pointer.Int64(45),
 						MidMemoryThresholdPercent:      pointer.Int64(65),
 						MetricMemoryCollectPolicy:      &defaultNodeMemoryCollectPolicy,
+						MidUnallocatedPercent:          pointer.Int64(50),
 					},
 					NodeConfigs: []configuration.NodeColocationCfg{
 						{
@@ -551,6 +571,7 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 								MidCPUThresholdPercent:         pointer.Int64(45),
 								MidMemoryThresholdPercent:      pointer.Int64(65),
 								MetricMemoryCollectPolicy:      &defaultNodeMemoryCollectPolicy,
+								MidUnallocatedPercent:          pointer.Int64(50),
 							},
 						},
 					},
@@ -628,6 +649,9 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 						UpdateTimeThresholdSeconds:     pointer.Int64(300),
 						ResourceDiffThreshold:          pointer.Float64(0.1),
 						MetricMemoryCollectPolicy:      &defaultNodeMemoryCollectPolicy,
+						MidCPUThresholdPercent:         pointer.Int64(100),
+						MidMemoryThresholdPercent:      pointer.Int64(100),
+						MidUnallocatedPercent:          pointer.Int64(0),
 					},
 					NodeConfigs: []configuration.NodeColocationCfg{
 						{
@@ -650,6 +674,9 @@ func Test_syncColocationConfigIfChanged(t *testing.T) {
 								UpdateTimeThresholdSeconds:     pointer.Int64(300),
 								ResourceDiffThreshold:          pointer.Float64(0.1),
 								MetricMemoryCollectPolicy:      &defaultNodeMemoryCollectPolicy,
+								MidCPUThresholdPercent:         pointer.Int64(100),
+								MidMemoryThresholdPercent:      pointer.Int64(100),
+								MidUnallocatedPercent:          pointer.Int64(0),
 								//change
 								CPUReclaimThresholdPercent: pointer.Int64(60),
 								CPUCalculatePolicy:         &cpuCalcPolicyNew,
@@ -758,6 +785,9 @@ func Test_IsCfgAvailable(t *testing.T) {
 					ResourceDiffThreshold:          pointer.Float64(0.1),
 					MetricReportIntervalSeconds:    pointer.Int64(60),
 					MetricMemoryCollectPolicy:      &defaultNodeMemoryCollectPolicy,
+					MidCPUThresholdPercent:         pointer.Int64(100),
+					MidMemoryThresholdPercent:      pointer.Int64(100),
+					MidUnallocatedPercent:          pointer.Int64(0),
 				},
 			},
 		},

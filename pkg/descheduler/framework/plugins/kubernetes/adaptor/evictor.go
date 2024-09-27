@@ -21,7 +21,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	k8sdeschedulerevictions "sigs.k8s.io/descheduler/pkg/descheduler/evictions"
-	k8sdeschedulerframework "sigs.k8s.io/descheduler/pkg/framework"
+	k8sdeschedulerframework "sigs.k8s.io/descheduler/pkg/framework/types"
 
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/framework"
 	frameworkruntime "github.com/koordinator-sh/koordinator/pkg/descheduler/framework/runtime"

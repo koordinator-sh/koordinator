@@ -64,6 +64,7 @@ type PostFilterState struct {
 
 func (p *PostFilterState) Clone() framework.StateData {
 	return &PostFilterState{
+		skip:               p.skip,
 		quotaInfo:          p.quotaInfo,
 		used:               p.used.DeepCopy(),
 		nonPreemptibleUsed: p.nonPreemptibleUsed.DeepCopy(),
@@ -211,7 +212,7 @@ func (g *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleState
 	quotaName, treeID := g.getPodAssociateQuotaNameAndTreeID(pod)
 	if quotaName == "" {
 		g.skipPostFilterState(cycleState)
-		return nil, framework.NewStatus(framework.Success, "")
+		return nil, framework.NewStatus(framework.Skip)
 	}
 
 	mgr := g.GetGroupQuotaManagerForTree(treeID)

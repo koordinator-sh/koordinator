@@ -72,11 +72,6 @@ func TestPlugin_GetPodTopologyHints(t *testing.T) {
 					{NUMANodeAffinity: newBitMask(1), Preferred: true},
 					{NUMANodeAffinity: newBitMask(0, 1), Preferred: false},
 				},
-				string(apiext.ResourceGPUMemory): {
-					{NUMANodeAffinity: newBitMask(0), Preferred: true},
-					{NUMANodeAffinity: newBitMask(1), Preferred: true},
-					{NUMANodeAffinity: newBitMask(0, 1), Preferred: false},
-				},
 				string(apiext.ResourceGPUMemoryRatio): {
 					{NUMANodeAffinity: newBitMask(0), Preferred: true},
 					{NUMANodeAffinity: newBitMask(1), Preferred: true},
@@ -107,10 +102,6 @@ func TestPlugin_GetPodTopologyHints(t *testing.T) {
 			},
 			want: map[string][]topologymanager.NUMATopologyHint{
 				string(apiext.ResourceGPUCore): {
-					{NUMANodeAffinity: newBitMask(1), Preferred: true},
-					{NUMANodeAffinity: newBitMask(0, 1), Preferred: false},
-				},
-				string(apiext.ResourceGPUMemory): {
 					{NUMANodeAffinity: newBitMask(1), Preferred: true},
 					{NUMANodeAffinity: newBitMask(0, 1), Preferred: false},
 				},
@@ -201,11 +192,6 @@ func TestPlugin_GetPodTopologyHints(t *testing.T) {
 			},
 			want: map[string][]topologymanager.NUMATopologyHint{
 				string(apiext.ResourceGPUCore): {
-					{NUMANodeAffinity: newBitMask(0), Preferred: true},
-					{NUMANodeAffinity: newBitMask(1), Preferred: true},
-					{NUMANodeAffinity: newBitMask(0, 1), Preferred: false},
-				},
-				string(apiext.ResourceGPUMemory): {
 					{NUMANodeAffinity: newBitMask(0), Preferred: true},
 					{NUMANodeAffinity: newBitMask(1), Preferred: true},
 					{NUMANodeAffinity: newBitMask(0, 1), Preferred: false},

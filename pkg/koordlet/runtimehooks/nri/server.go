@@ -27,6 +27,7 @@ import (
 	"github.com/containerd/nri/pkg/stub"
 	"go.uber.org/atomic"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/yaml"
 
@@ -52,6 +53,7 @@ type Options struct {
 	DisableStages map[string]struct{}
 	Executor      resourceexecutor.ResourceUpdateExecutor
 	BackOff       wait.Backoff
+	EventRecorder record.EventRecorder
 }
 
 func (o Options) Validate() error {

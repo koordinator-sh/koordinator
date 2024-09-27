@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -35,9 +36,11 @@ import (
 	"k8s.io/client-go/informers"
 	kubefake "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/klog/v2"
 	apiresource "k8s.io/kubernetes/pkg/api/v1/resource"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultbinder"
+	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/nodename"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/queuesort"
 	frameworkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
 	schedulertesting "k8s.io/kubernetes/pkg/scheduler/testing"
@@ -129,12 +132,15 @@ type pluginTestSuit struct {
 	extenderFactory *frameworkext.FrameworkExtenderFactory
 }
 
-func newPluginTestSuitWith(t testing.TB, pods []*corev1.Pod, nodes []*corev1.Node) *pluginTestSuit {
+func newPluginTestSuitWith(t testing.TB, pods []*corev1.Pod, nodes []*corev1.Node, setArgs ...func(*config.ReservationArgs)) *pluginTestSuit {
 	var v1beta3args v1beta3.ReservationArgs
 	v1beta3.SetDefaults_ReservationArgs(&v1beta3args)
 	var reservationArgs config.ReservationArgs
 	err := v1beta3.Convert_v1beta3_ReservationArgs_To_config_ReservationArgs(&v1beta3args, &reservationArgs, nil)
 	assert.NoError(t, err)
+	for _, fn := range setArgs {
+		fn(&reservationArgs)
+	}
 
 	koordClientSet := koordfake.NewSimpleClientset()
 	koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
@@ -146,6 +152,7 @@ func newPluginTestSuitWith(t testing.TB, pods []*corev1.Pod, nodes []*corev1.Nod
 	proxyNew := frameworkext.PluginFactoryProxy(extenderFactory, New)
 
 	registeredPlugins := []schedulertesting.RegisterPluginFunc{
+		schedulertesting.RegisterFilterPlugin(nodename.Name, nodename.New),
 		schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
 		schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
 	}
@@ -167,6 +174,10 @@ func newPluginTestSuitWith(t testing.TB, pods []*corev1.Pod, nodes []*corev1.Nod
 		frameworkruntime.WithEventRecorder(eventRecorder),
 	)
 	assert.NoError(t, err)
+
+	fwExt := extenderFactory.NewFrameworkExtender(fw)
+	fwExt.SetConfiguredPlugins(fw.ListPlugins())
+	fwExt.SetPodNominator(NewPodNominator())
 
 	factory := func() (framework.Plugin, error) {
 		return proxyNew(&reservationArgs, fw)
@@ -191,7 +202,9 @@ func (s *pluginTestSuit) start() {
 }
 
 func TestNew(t *testing.T) {
-	suit := newPluginTestSuit(t)
+	suit := newPluginTestSuitWith(t, nil, nil, func(args *config.ReservationArgs) {
+		args.EnablePreemption = true
+	})
 	pl, err := suit.pluginFactory()
 	assert.NoError(t, err)
 	assert.NotNil(t, pl)
@@ -243,7 +256,7 @@ func TestPreFilter(t *testing.T) {
 					Name: "not-reserve",
 				},
 			},
-			wantStatus: nil,
+			wantStatus: framework.NewStatus(framework.Skip),
 			wantPreRes: nil,
 		},
 		{
@@ -432,6 +445,26 @@ func TestFilter(t *testing.T) {
 		},
 	}
 
+	testReservationIgnoredPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-pod",
+			Labels: map[string]string{
+				apiext.LabelReservationIgnored: "true",
+			},
+		},
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{
+				{
+					Resources: corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceCPU: resource.MustParse("4"),
+						},
+					},
+				},
+			},
+		},
+	}
+
 	tests := []struct {
 		name         string
 		pod          *corev1.Pod
@@ -553,7 +586,7 @@ func TestFilter(t *testing.T) {
 					hasAffinity: true,
 					nodeReservationStates: map[string]nodeReservationState{
 						testNode.Name: {
-							matched: []*frameworkext.ReservationInfo{
+							matchedOrIgnored: []*frameworkext.ReservationInfo{
 								frameworkext.NewReservationInfo(reservation),
 							},
 						},
@@ -561,6 +594,16 @@ func TestFilter(t *testing.T) {
 				},
 			},
 			want: nil,
+		},
+		{
+			name: "Aligned policy can coexist with Restricted policy",
+			pod:  testReservationIgnoredPod,
+			reservations: []*schedulingv1alpha1.Reservation{
+				alignedReservation,
+				restrictedReservation,
+			},
+			nodeInfo: testNodeInfo,
+			want:     nil,
 		},
 	}
 	for _, tt := range tests {
@@ -723,7 +766,7 @@ func Test_filterWithReservations(t *testing.T) {
 							rAllocated: &framework.Resource{
 								MilliCPU: 0,
 							},
-							matched: []*frameworkext.ReservationInfo{
+							matchedOrIgnored: []*frameworkext.ReservationInfo{
 								frameworkext.NewReservationInfo(&schedulingv1alpha1.Reservation{
 									ObjectMeta: metav1.ObjectMeta{
 										Name: "test-r",
@@ -770,7 +813,7 @@ func Test_filterWithReservations(t *testing.T) {
 							rAllocated: &framework.Resource{
 								MilliCPU: 0,
 							},
-							matched: []*frameworkext.ReservationInfo{
+							matchedOrIgnored: []*frameworkext.ReservationInfo{
 								frameworkext.NewReservationInfo(&schedulingv1alpha1.Reservation{
 									ObjectMeta: metav1.ObjectMeta{
 										Name: "test-r",
@@ -816,7 +859,7 @@ func Test_filterWithReservations(t *testing.T) {
 							rAllocated: &framework.Resource{
 								MilliCPU: 0,
 							},
-							matched: []*frameworkext.ReservationInfo{
+							matchedOrIgnored: []*frameworkext.ReservationInfo{
 								frameworkext.NewReservationInfo(&schedulingv1alpha1.Reservation{
 									ObjectMeta: metav1.ObjectMeta{
 										Name: "test-r",
@@ -863,7 +906,7 @@ func Test_filterWithReservations(t *testing.T) {
 							rAllocated: &framework.Resource{
 								MilliCPU: 0,
 							},
-							matched: []*frameworkext.ReservationInfo{
+							matchedOrIgnored: []*frameworkext.ReservationInfo{
 								frameworkext.NewReservationInfo(&schedulingv1alpha1.Reservation{
 									ObjectMeta: metav1.ObjectMeta{
 										Name: "test-r",
@@ -914,7 +957,7 @@ func Test_filterWithReservations(t *testing.T) {
 							rAllocated: &framework.Resource{
 								MilliCPU: 6000,
 							},
-							matched: []*frameworkext.ReservationInfo{
+							matchedOrIgnored: []*frameworkext.ReservationInfo{
 								{
 									Reservation: &schedulingv1alpha1.Reservation{
 										ObjectMeta: metav1.ObjectMeta{
@@ -966,7 +1009,7 @@ func Test_filterWithReservations(t *testing.T) {
 							rAllocated: &framework.Resource{
 								MilliCPU: 6000,
 							},
-							matched: []*frameworkext.ReservationInfo{
+							matchedOrIgnored: []*frameworkext.ReservationInfo{
 								{
 									Reservation: &schedulingv1alpha1.Reservation{
 										ObjectMeta: metav1.ObjectMeta{
@@ -1017,7 +1060,7 @@ func Test_filterWithReservations(t *testing.T) {
 							rAllocated: &framework.Resource{
 								MilliCPU: 6000,
 							},
-							matched: []*frameworkext.ReservationInfo{
+							matchedOrIgnored: []*frameworkext.ReservationInfo{
 								{
 									Reservation: &schedulingv1alpha1.Reservation{
 										ObjectMeta: metav1.ObjectMeta{
@@ -1067,7 +1110,7 @@ func Test_filterWithReservations(t *testing.T) {
 							rAllocated: &framework.Resource{
 								MilliCPU: 6000,
 							},
-							matched: []*frameworkext.ReservationInfo{
+							matchedOrIgnored: []*frameworkext.ReservationInfo{
 								{
 									Reservation: &schedulingv1alpha1.Reservation{
 										ObjectMeta: metav1.ObjectMeta{
@@ -1118,7 +1161,7 @@ func Test_filterWithReservations(t *testing.T) {
 							rAllocated: &framework.Resource{
 								MilliCPU: 6000,
 							},
-							matched: []*frameworkext.ReservationInfo{
+							matchedOrIgnored: []*frameworkext.ReservationInfo{
 								{
 									Reservation: &schedulingv1alpha1.Reservation{
 										ObjectMeta: metav1.ObjectMeta{
@@ -1168,7 +1211,7 @@ func Test_filterWithReservations(t *testing.T) {
 							rAllocated: &framework.Resource{
 								MilliCPU: 6000,
 							},
-							matched: []*frameworkext.ReservationInfo{
+							matchedOrIgnored: []*frameworkext.ReservationInfo{
 								{
 									Reservation: &schedulingv1alpha1.Reservation{
 										ObjectMeta: metav1.ObjectMeta{
@@ -1219,7 +1262,7 @@ func Test_filterWithReservations(t *testing.T) {
 							rAllocated: &framework.Resource{
 								MilliCPU: 10000,
 							},
-							matched: []*frameworkext.ReservationInfo{
+							matchedOrIgnored: []*frameworkext.ReservationInfo{
 								{
 									Reservation: &schedulingv1alpha1.Reservation{
 										ObjectMeta: metav1.ObjectMeta{
@@ -1294,7 +1337,7 @@ func Test_filterWithReservations(t *testing.T) {
 							rAllocated: &framework.Resource{
 								MilliCPU: 6000,
 							},
-							matched: []*frameworkext.ReservationInfo{
+							matchedOrIgnored: []*frameworkext.ReservationInfo{
 								{
 									Reservation: &schedulingv1alpha1.Reservation{
 										ObjectMeta: metav1.ObjectMeta{
@@ -1354,7 +1397,7 @@ func Test_filterWithReservations(t *testing.T) {
 							rAllocated: &framework.Resource{
 								MilliCPU: 6000,
 							},
-							matched: []*frameworkext.ReservationInfo{
+							matchedOrIgnored: []*frameworkext.ReservationInfo{
 								{
 									Reservation: &schedulingv1alpha1.Reservation{
 										ObjectMeta: metav1.ObjectMeta{
@@ -1394,7 +1437,7 @@ func Test_filterWithReservations(t *testing.T) {
 			cycleState.Write(stateKey, tt.stateData)
 			nodeInfo := framework.NewNodeInfo()
 			nodeInfo.SetNode(node)
-			got := pl.filterWithReservations(context.TODO(), cycleState, &corev1.Pod{}, nodeInfo, tt.stateData.nodeReservationStates[node.Name].matched, tt.stateData.hasAffinity)
+			got := pl.filterWithReservations(context.TODO(), cycleState, &corev1.Pod{}, nodeInfo, tt.stateData.nodeReservationStates[node.Name].matchedOrIgnored, tt.stateData.hasAffinity)
 			assert.Equal(t, tt.wantStatus, got)
 		})
 	}
@@ -1870,7 +1913,7 @@ func TestFilterReservation(t *testing.T) {
 				rInfo := pl.reservationCache.getReservationInfoByUID(v.UID)
 				nodeRState := state.nodeReservationStates[v.Status.NodeName]
 				nodeRState.nodeName = v.Status.NodeName
-				nodeRState.matched = append(nodeRState.matched, rInfo)
+				nodeRState.matchedOrIgnored = append(nodeRState.matchedOrIgnored, rInfo)
 				state.nodeReservationStates[v.Status.NodeName] = nodeRState
 			}
 			cycleState := framework.NewCycleState()
@@ -2086,6 +2129,26 @@ func TestPostFilter(t *testing.T) {
 				"1 Reservation(s) for node reason that Insufficient memory",
 				"6 Reservation(s) matched owner total"),
 		},
+		{
+			name: "ignore reservation ignored",
+			args: args{
+				hasStateData: true,
+				nodeReservationDiagnosis: map[string]*nodeDiagnosisState{
+					"test-node-0": {
+						ignored: 3,
+					},
+					"test-node-1": {
+						ignored: 1,
+					},
+				},
+				filteredNodeStatusMap: framework.NodeToStatusMap{
+					"test-node-0": {},
+					"test-node-1": {},
+				},
+			},
+			want:  nil,
+			want1: framework.NewStatus(framework.Unschedulable),
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -2164,6 +2227,10 @@ func TestReserve(t *testing.T) {
 				Spec: corev1.PodSpec{},
 			},
 		},
+		Status: schedulingv1alpha1.ReservationStatus{
+			Phase:    schedulingv1alpha1.ReservationAvailable,
+			NodeName: "test-node",
+		},
 	}
 
 	tests := []struct {
@@ -2213,6 +2280,10 @@ func TestReserve(t *testing.T) {
 				_, err := client.SchedulingV1alpha1().Reservations().Create(context.TODO(), tt.reservation, metav1.CreateOptions{})
 				assert.NoError(t, err)
 			}
+			if tt.pod != nil {
+				_, err := suit.fw.ClientSet().CoreV1().Pods(tt.pod.Namespace).Create(context.TODO(), tt.pod, metav1.CreateOptions{})
+				assert.NoError(t, err)
+			}
 
 			p, err := suit.pluginFactory()
 			assert.NoError(t, err)
@@ -2231,10 +2302,11 @@ func TestReserve(t *testing.T) {
 			if tt.wantReservation == nil {
 				assert.Nil(t, state.assumed)
 			} else {
+				assert.NotNil(t, state.assumed)
 				assert.Equal(t, tt.wantReservation, state.assumed.Reservation)
 			}
 			if tt.reservation != nil {
-				rInfo := pl.reservationCache.getReservationInfoByUID(tt.reservation.UID)
+				rInfo = pl.reservationCache.getReservationInfoByUID(tt.reservation.UID)
 				assert.Equal(t, tt.wantPods, rInfo.AssignedPods)
 				assert.Equal(t, &schedulingStateData{}, &state.schedulingStateData)
 			}
@@ -2610,4 +2682,123 @@ func testGetReservePod(pod *corev1.Pod) *corev1.Pod {
 	pod.Annotations[reservationutil.AnnotationReservePod] = "true"
 	pod.Annotations[reservationutil.AnnotationReservationName] = pod.Name
 	return pod
+}
+
+// nominatedPodMap is a structure that stores pods nominated to run on nodes.
+// It exists because nominatedNodeName of pod objects stored in the structure
+// may be different than what scheduler has here. We should be able to find pods
+// by their UID and update/delete them.
+type nominatedPodMap struct {
+	// nominatedPods is a map keyed by a node name and the value is a list of
+	// pods which are nominated to run on the node. These are pods which can be in
+	// the activeQ or unschedulableQ.
+	nominatedPods map[string][]*framework.PodInfo
+	// nominatedPodToNode is map keyed by a Pod UID to the node name where it is
+	// nominated.
+	nominatedPodToNode map[types.UID]string
+
+	sync.RWMutex
+}
+
+func (npm *nominatedPodMap) add(pi *framework.PodInfo, nodeName string) {
+	// always delete the pod if it already exist, to ensure we never store more than
+	// one instance of the pod.
+	npm.delete(pi.Pod)
+
+	nnn := nodeName
+	if len(nnn) == 0 {
+		nnn = NominatedNodeName(pi.Pod)
+		if len(nnn) == 0 {
+			return
+		}
+	}
+	npm.nominatedPodToNode[pi.Pod.UID] = nnn
+	for _, npi := range npm.nominatedPods[nnn] {
+		if npi.Pod.UID == pi.Pod.UID {
+			klog.V(4).InfoS("Pod already exists in the nominated map", "pod", klog.KObj(npi.Pod))
+			return
+		}
+	}
+	npm.nominatedPods[nnn] = append(npm.nominatedPods[nnn], pi)
+}
+
+func (npm *nominatedPodMap) delete(p *corev1.Pod) {
+	nnn, ok := npm.nominatedPodToNode[p.UID]
+	if !ok {
+		return
+	}
+	for i, np := range npm.nominatedPods[nnn] {
+		if np.Pod.UID == p.UID {
+			npm.nominatedPods[nnn] = append(npm.nominatedPods[nnn][:i], npm.nominatedPods[nnn][i+1:]...)
+			if len(npm.nominatedPods[nnn]) == 0 {
+				delete(npm.nominatedPods, nnn)
+			}
+			break
+		}
+	}
+	delete(npm.nominatedPodToNode, p.UID)
+}
+
+// UpdateNominatedPod updates the <oldPod> with <newPod>.
+func (npm *nominatedPodMap) UpdateNominatedPod(logr klog.Logger, oldPod *corev1.Pod, newPodInfo *framework.PodInfo) {
+	npm.Lock()
+	defer npm.Unlock()
+	// In some cases, an Update event with no "NominatedNode" present is received right
+	// after a node("NominatedNode") is reserved for this pod in memory.
+	// In this case, we need to keep reserving the NominatedNode when updating the pod pointer.
+	nodeName := ""
+	// We won't fall into below `if` block if the Update event represents:
+	// (1) NominatedNode info is added
+	// (2) NominatedNode info is updated
+	// (3) NominatedNode info is removed
+	if NominatedNodeName(oldPod) == "" && NominatedNodeName(newPodInfo.Pod) == "" {
+		if nnn, ok := npm.nominatedPodToNode[oldPod.UID]; ok {
+			// This is the only case we should continue reserving the NominatedNode
+			nodeName = nnn
+		}
+	}
+	// We update irrespective of the nominatedNodeName changed or not, to ensure
+	// that pod pointer is updated.
+	npm.delete(oldPod)
+	npm.add(newPodInfo, nodeName)
+}
+
+// NewPodNominator creates a nominatedPodMap as a backing of framework.PodNominator.
+func NewPodNominator() framework.PodNominator {
+	return &nominatedPodMap{
+		nominatedPods:      make(map[string][]*framework.PodInfo),
+		nominatedPodToNode: make(map[types.UID]string),
+	}
+}
+
+// NominatedNodeName returns nominated node name of a Pod.
+func NominatedNodeName(pod *corev1.Pod) string {
+	return pod.Status.NominatedNodeName
+}
+
+// DeleteNominatedPodIfExists deletes <pod> from nominatedPods.
+func (npm *nominatedPodMap) DeleteNominatedPodIfExists(pod *corev1.Pod) {
+	npm.Lock()
+	npm.delete(pod)
+	npm.Unlock()
+}
+
+// AddNominatedPod adds a pod to the nominated pods of the given node.
+// This is called during the preemption process after a node is nominated to run
+// the pod. We update the structure before sending a request to update the pod
+// object to avoid races with the following scheduling cycles.
+func (npm *nominatedPodMap) AddNominatedPod(logger klog.Logger, pi *framework.PodInfo, nominatingInfo *framework.NominatingInfo) {
+	npm.Lock()
+	npm.add(pi, nominatingInfo.NominatedNodeName)
+	npm.Unlock()
+}
+
+// NominatedPodsForNode returns pods that are nominated to run on the given node,
+// but they are waiting for other pods to be removed from the node.
+func (npm *nominatedPodMap) NominatedPodsForNode(nodeName string) []*framework.PodInfo {
+	npm.RLock()
+	defer npm.RUnlock()
+	// TODO: we may need to return a copy of []*Pods to avoid modification
+	// on the caller side.
+	return npm.nominatedPods[nodeName]
 }

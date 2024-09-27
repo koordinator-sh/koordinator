@@ -33,13 +33,13 @@ func Test_isNodeAllocatableUpdated(t *testing.T) {
 	assert := assert.New(t)
 	newNode := &corev1.Node{}
 	oldNode := &corev1.Node{}
-	assert.Equal(false, isNodeAllocatableUpdated(nil, oldNode))
-	assert.Equal(false, isNodeAllocatableUpdated(newNode, nil))
-	assert.Equal(false, isNodeAllocatableUpdated(nil, nil))
-	assert.Equal(false, isNodeAllocatableUpdated(newNode, oldNode))
+	assert.Equal(false, isNodeUpdated(nil, oldNode))
+	assert.Equal(false, isNodeUpdated(newNode, nil))
+	assert.Equal(false, isNodeUpdated(nil, nil))
+	assert.Equal(false, isNodeUpdated(newNode, oldNode))
 	newNode.Status.Allocatable = corev1.ResourceList{}
 	newNode.Status.Allocatable["test"] = resource.Quantity{}
-	assert.Equal(true, isNodeAllocatableUpdated(newNode, oldNode))
+	assert.Equal(true, isNodeUpdated(newNode, oldNode))
 }
 
 func Test_EnqueueRequestForNode(t *testing.T) {
@@ -151,6 +151,65 @@ func Test_EnqueueRequestForNode(t *testing.T) {
 			name: "generic node event ignore",
 			fn: func(handler *EnqueueRequestForNode, q workqueue.RateLimitingInterface) {
 				handler.Generic(context.TODO(), event.GenericEvent{}, q)
+			},
+			hasEvent: false,
+		},
+		{
+			name: "update node labels",
+			fn: func(handler *EnqueueRequestForNode, q workqueue.RateLimitingInterface) {
+				handler.Update(context.TODO(), event.UpdateEvent{
+					ObjectOld: &corev1.Node{
+						ObjectMeta: metav1.ObjectMeta{
+							Name: "node1",
+							Labels: map[string]string{
+								"test": "test",
+							},
+						},
+					},
+					ObjectNew: &corev1.Node{
+						ObjectMeta: metav1.ObjectMeta{
+							Name: "node1",
+							Labels: map[string]string{
+								"test": "test1",
+							},
+						},
+					},
+				}, q)
+			},
+			hasEvent:  true,
+			eventName: "node1",
+		},
+		{
+			name: "allocatable and labels not updated",
+			fn: func(handler *EnqueueRequestForNode, q workqueue.RateLimitingInterface) {
+				handler.Update(context.TODO(), event.UpdateEvent{
+					ObjectOld: &corev1.Node{
+						ObjectMeta: metav1.ObjectMeta{
+							Name: "node1",
+							Labels: map[string]string{
+								"test": "test",
+							},
+						},
+						Status: corev1.NodeStatus{
+							Allocatable: corev1.ResourceList{
+								corev1.ResourceCPU: *resource.NewQuantity(500, resource.DecimalSI),
+							},
+						},
+					},
+					ObjectNew: &corev1.Node{
+						ObjectMeta: metav1.ObjectMeta{
+							Name: "node1",
+							Labels: map[string]string{
+								"test": "test",
+							},
+						},
+						Status: corev1.NodeStatus{
+							Allocatable: corev1.ResourceList{
+								corev1.ResourceCPU: *resource.NewQuantity(500, resource.DecimalSI),
+							},
+						},
+					},
+				}, q)
 			},
 			hasEvent: false,
 		},

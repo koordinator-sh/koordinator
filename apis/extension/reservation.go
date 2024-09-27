@@ -28,6 +28,13 @@ import (
 )
 
 const (
+	// LabelReservationIgnored indicates whether the pod should schedule ignoring resource reservations on the nodes.
+	// If a scheduling pod set this label, the pod can allocate the node unreserved resources unallocated and the
+	// reserved resources unallocated of all reservations on the node. If a pod scheduled with this label on a node,
+	// the reservations of the node will not consider the pod as their owners. To avoid the pods setting with this label
+	// to block the other pods allocated reserved resources, it should be used with the reservation preemption.
+	LabelReservationIgnored = SchedulingDomainPrefix + "/reservation-ignored"
+
 	// LabelReservationOrder controls the preference logic for Reservation.
 	// Reservation with lower order is preferred to be selected before Reservation with higher order.
 	// But if it is 0, Reservation will be selected according to the capacity score.
@@ -50,6 +57,8 @@ type ReservationAllocated struct {
 
 // ReservationAffinity represents the constraints of Pod selection Reservation
 type ReservationAffinity struct {
+	// Specifies the reservation name directly, other reservation affinity fields will be ignored.
+	Name string `json:"name,omitempty"`
 	// If the affinity requirements specified by this field are not met at
 	// scheduling time, the pod will not be scheduled onto the node.
 	// If the affinity requirements specified by this field cease to be met
@@ -59,6 +68,8 @@ type ReservationAffinity struct {
 	// ReservationSelector is a selector which must be true for the pod to fit on a reservation.
 	// Selector which must match a reservation's labels for the pod to be scheduled on that node.
 	ReservationSelector map[string]string `json:"reservationSelector,omitempty"`
+	// Specifies the pod's reservation tolerations. This can tolerate taints of Reservation.
+	Tolerations []corev1.Toleration `json:"tolerations,omitempty"`
 }
 
 // ReservationAffinitySelector represents the union of the results of one or more label queries
@@ -76,6 +87,10 @@ type ReservationRestrictedOptions struct {
 	// If the Reservation's AllocatePolicy is Restricted, and no resources configured,
 	// by default the resources equal all reserved resources by the Reservation.
 	Resources []corev1.ResourceName `json:"resources,omitempty"`
+}
+
+func IsReservationIgnored(pod *corev1.Pod) bool {
+	return pod != nil && pod.Labels != nil && pod.Labels[LabelReservationIgnored] == "true"
 }
 
 func GetReservationAllocated(pod *corev1.Pod) (*ReservationAllocated, error) {
