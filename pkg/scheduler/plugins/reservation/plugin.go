@@ -295,7 +295,10 @@ func (pl *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleStat
 		for nodeName := range state.nodeReservationStates {
 			preResult.NodeNames.Insert(nodeName)
 		}
+	} else if len(state.nodeReservationStates) <= 0 { // nor available reservation neither a reserve pod
+		return nil, framework.NewStatus(framework.Skip)
 	}
+
 	return preResult, nil
 }
 
