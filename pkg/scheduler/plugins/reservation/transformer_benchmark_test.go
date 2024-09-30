@@ -26,6 +26,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/uuid"
+	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/utils/pointer"
 
@@ -105,7 +106,7 @@ func BenchmarkBeforePrefilterWithMatchedPod(b *testing.B) {
 		reservePod := reservationutil.NewReservePod(reservation)
 		reservePods[string(reservePod.UID)] = reservePod
 		nodeInfo.AddPod(reservePod)
-		assert.NoError(b, pl.handle.Scheduler().GetCache().AddPod(reservePod))
+		assert.NoError(b, pl.handle.Scheduler().GetCache().AddPod(klog.Background(), reservePod))
 	}
 
 	pod := &corev1.Pod{
@@ -147,7 +148,7 @@ func BenchmarkBeforePrefilterWithMatchedPod(b *testing.B) {
 		for _, v := range sd.nodeReservationStates {
 			nodeInfo, err := pl.handle.SnapshotSharedLister().NodeInfos().Get(v.nodeName)
 			assert.NoError(b, err)
-			for _, ri := range v.matched {
+			for _, ri := range v.matchedOrIgnored {
 				p := reservePods[string(ri.UID())]
 				if p != nil {
 					nodeInfo.AddPod(p)
@@ -248,8 +249,8 @@ func BenchmarkBeforePrefilterWithUnmatchedPod(b *testing.B) {
 		reservePod := reservationutil.NewReservePod(reservation)
 		nodeInfo.AddPod(reservePod)
 		nodeInfo.AddPod(assignedPod)
-		assert.NoError(b, pl.handle.Scheduler().GetCache().AddPod(reservePod))
-		assert.NoError(b, pl.handle.Scheduler().GetCache().AddPod(assignedPod))
+		assert.NoError(b, pl.handle.Scheduler().GetCache().AddPod(klog.Background(), reservePod))
+		assert.NoError(b, pl.handle.Scheduler().GetCache().AddPod(klog.Background(), assignedPod))
 	}
 
 	pod := &corev1.Pod{

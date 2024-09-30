@@ -29,12 +29,13 @@ import (
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
+	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
 
 func TestPodEventHandler(t *testing.T) {
 	handler := &podEventHandler{
 		cache:     newReservationCache(nil),
-		nominator: newNominator(),
+		nominator: newNominator(nil, nil),
 	}
 	reservationUID := uuid.NewUUID()
 	reservationName := "test-reservation"
@@ -61,6 +62,10 @@ func TestPodEventHandler(t *testing.T) {
 			Name:      "test-pod",
 			Namespace: "default",
 			UID:       uuid.NewUUID(),
+			Annotations: map[string]string{
+				reservationutil.AnnotationReservePod:      "true",
+				reservationutil.AnnotationReservationName: "test-pod",
+			},
 		},
 		Spec: corev1.PodSpec{
 			Containers: []corev1.Container{
@@ -76,19 +81,16 @@ func TestPodEventHandler(t *testing.T) {
 		},
 	}
 
-	handler.nominator.AddNominatedReservePod(framework.NewPodInfo(pod), "test-node-1")
+	podInfo, _ := framework.NewPodInfo(pod)
+	handler.nominator.AddNominatedReservePod(podInfo, "test-node-1")
 	assert.Equal(t, "test-node-1", handler.nominator.nominatedReservePodToNode[pod.UID])
-	assert.Equal(t, []*framework.PodInfo{
-		framework.NewPodInfo(pod),
-	}, handler.nominator.nominatedReservePod["test-node-1"])
-	handler.OnAdd(pod)
+	assert.Equal(t, []*framework.PodInfo{podInfo}, handler.nominator.nominatedReservePod["test-node-1"])
+	handler.OnAdd(pod, true)
 	rInfo := handler.cache.getReservationInfoByUID(reservationUID)
 	assert.Empty(t, rInfo.AssignedPods)
 	// pod not assigned, no need to delete reservation nominated node
 	assert.Equal(t, "test-node-1", handler.nominator.nominatedReservePodToNode[pod.UID])
-	assert.Equal(t, []*framework.PodInfo{
-		framework.NewPodInfo(pod),
-	}, handler.nominator.nominatedReservePod["test-node-1"])
+	assert.Equal(t, []*framework.PodInfo{podInfo}, handler.nominator.nominatedReservePod["test-node-1"])
 
 	newPod := pod.DeepCopy()
 	apiext.SetReservationAllocated(newPod, reservation)
@@ -97,9 +99,7 @@ func TestPodEventHandler(t *testing.T) {
 	assert.Len(t, rInfo.AssignedPods, 0)
 	// pod not assigned, no need to delete reservation nominated node
 	assert.Equal(t, "test-node-1", handler.nominator.nominatedReservePodToNode[pod.UID])
-	assert.Equal(t, []*framework.PodInfo{
-		framework.NewPodInfo(pod),
-	}, handler.nominator.nominatedReservePod["test-node-1"])
+	assert.Equal(t, []*framework.PodInfo{podInfo}, handler.nominator.nominatedReservePod["test-node-1"])
 
 	newPod.Spec.NodeName = reservation.Status.NodeName
 	handler.OnUpdate(pod, newPod)
@@ -119,44 +119,42 @@ func TestPodEventHandler(t *testing.T) {
 	}
 	assert.Equal(t, expectPodRequirement, rInfo.AssignedPods[pod.UID])
 
-	handler.nominator.nominatedReservePod["test-node-1"] = []*framework.PodInfo{
-		framework.NewPodInfo(&corev1.Pod{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: "test-1",
-				UID:  "test-1",
-			},
-		}),
-	}
-	handler.nominator.AddNominatedReservePod(framework.NewPodInfo(newPod), "test-node-1")
+	podInfo, _ = framework.NewPodInfo(&corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-1",
+			UID:  "test-1",
+		},
+	})
+	handler.nominator.nominatedReservePod["test-node-1"] = []*framework.PodInfo{podInfo}
+	podInfo, _ = framework.NewPodInfo(newPod)
+	handler.nominator.AddNominatedReservePod(podInfo, "test-node-1")
 	assert.Equal(t, "test-node-1", handler.nominator.nominatedReservePodToNode[newPod.UID])
-	assert.Equal(t, []*framework.PodInfo{
-		framework.NewPodInfo(&corev1.Pod{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: "test-1",
-				UID:  "test-1",
-			},
-		}),
-		framework.NewPodInfo(newPod),
-	}, handler.nominator.nominatedReservePod["test-node-1"])
+	podInfo1, _ := framework.NewPodInfo(&corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-1",
+			UID:  "test-1",
+		},
+	})
+	podInfo2, _ := framework.NewPodInfo(newPod)
+	assert.Equal(t, []*framework.PodInfo{podInfo1, podInfo2}, handler.nominator.nominatedReservePod["test-node-1"])
 
 	handler.OnDelete(newPod)
 	rInfo = handler.cache.getReservationInfoByUID(reservationUID)
 	assert.Empty(t, rInfo.AssignedPods)
 	assert.Equal(t, "", handler.nominator.nominatedReservePodToNode[newPod.UID])
-	assert.Equal(t, []*framework.PodInfo{
-		framework.NewPodInfo(&corev1.Pod{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: "test-1",
-				UID:  "test-1",
-			},
-		}),
-	}, handler.nominator.nominatedReservePod["test-node-1"])
+	podInfo, _ = framework.NewPodInfo(&corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-1",
+			UID:  "test-1",
+		},
+	})
+	assert.Equal(t, []*framework.PodInfo{podInfo}, handler.nominator.nominatedReservePod["test-node-1"])
 }
 
 func TestPodEventHandlerWithOperatingPod(t *testing.T) {
 	handler := &podEventHandler{
 		cache:     newReservationCache(nil),
-		nominator: newNominator(),
+		nominator: newNominator(nil, nil),
 	}
 	reservationUID := uuid.NewUUID()
 	reservationName := "test-reservation"
@@ -173,7 +171,7 @@ func TestPodEventHandlerWithOperatingPod(t *testing.T) {
 			NodeName: "test-node-1",
 		},
 	}
-	handler.OnAdd(operatingReservationPod)
+	handler.OnAdd(operatingReservationPod, true)
 
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
@@ -194,7 +192,7 @@ func TestPodEventHandlerWithOperatingPod(t *testing.T) {
 			},
 		},
 	}
-	handler.OnAdd(pod)
+	handler.OnAdd(pod, true)
 	rInfo := handler.cache.getReservationInfoByUID(operatingReservationPod.UID)
 	assert.NotNil(t, rInfo)
 

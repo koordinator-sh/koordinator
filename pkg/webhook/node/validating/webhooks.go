@@ -17,14 +17,33 @@ limitations under the License.
 package validating
 
 import (
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
+
+	"github.com/koordinator-sh/koordinator/pkg/webhook/util/framework"
 )
 
 // +kubebuilder:webhook:path=/validate-node,mutating=false,failurePolicy=ignore,sideEffects=None,groups="",resources=nodes,verbs=create;update,versions=v1,name=vnode.koordinator.sh,admissionReviewVersions=v1;v1beta1
 
 var (
-	// HandlerMap contains admission webhook handlers
-	HandlerMap = map[string]admission.Handler{
-		"validate-node": NewNodeValidatingHandler(),
+	// HandlerBuilderMap contains admission webhook handlers builder
+	HandlerBuilderMap = map[string]framework.HandlerBuilder{
+		"validate-node": &nodeValidateBuilder{},
 	}
 )
+
+var _ framework.HandlerBuilder = &nodeValidateBuilder{}
+
+type nodeValidateBuilder struct {
+	mgr manager.Manager
+}
+
+func (b *nodeValidateBuilder) WithControllerManager(mgr ctrl.Manager) framework.HandlerBuilder {
+	b.mgr = mgr
+	return b
+}
+
+func (b *nodeValidateBuilder) Build() admission.Handler {
+	return NewNodeValidatingHandler(b.mgr.GetClient(), admission.NewDecoder(b.mgr.GetScheme()))
+}

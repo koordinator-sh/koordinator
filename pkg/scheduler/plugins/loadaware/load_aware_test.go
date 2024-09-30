@@ -44,7 +44,7 @@ import (
 	koordfake "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/fake"
 	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
-	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/v1beta2"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/v1beta3"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 )
 
@@ -84,6 +84,14 @@ func newTestSharedLister(pods []*corev1.Pod, nodes []*corev1.Node) *testSharedLi
 	}
 }
 
+func (f *testSharedLister) StorageInfos() framework.StorageInfoLister {
+	return f
+}
+
+func (f *testSharedLister) IsPVCUsedByPods(key string) bool {
+	return false
+}
+
 func (f *testSharedLister) NodeInfos() framework.NodeInfoLister {
 	return f
 }
@@ -105,10 +113,10 @@ func (f *testSharedLister) Get(nodeName string) (*framework.NodeInfo, error) {
 }
 
 func TestNew(t *testing.T) {
-	var v1beta2args v1beta2.LoadAwareSchedulingArgs
-	v1beta2.SetDefaults_LoadAwareSchedulingArgs(&v1beta2args)
+	var v1beta3args v1beta3.LoadAwareSchedulingArgs
+	v1beta3.SetDefaults_LoadAwareSchedulingArgs(&v1beta3args)
 	var loadAwareSchedulingArgs config.LoadAwareSchedulingArgs
-	err := v1beta2.Convert_v1beta2_LoadAwareSchedulingArgs_To_config_LoadAwareSchedulingArgs(&v1beta2args, &loadAwareSchedulingArgs, nil)
+	err := v1beta3.Convert_v1beta3_LoadAwareSchedulingArgs_To_config_LoadAwareSchedulingArgs(&v1beta3args, &loadAwareSchedulingArgs, nil)
 	assert.NoError(t, err)
 
 	koordClientSet := koordfake.NewSimpleClientset()
@@ -126,7 +134,7 @@ func TestNew(t *testing.T) {
 		schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
 		schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
 	}
-	fh, err := schedulertesting.NewFramework(registeredPlugins, "koord-scheduler",
+	fh, err := schedulertesting.NewFramework(context.TODO(), registeredPlugins, "koord-scheduler",
 		frameworkruntime.WithClientSet(cs),
 		frameworkruntime.WithInformerFactory(informerFactory),
 		frameworkruntime.WithSnapshotSharedLister(snapshot),
@@ -175,7 +183,7 @@ func TestFilterExpiredNodeMetric(t *testing.T) {
 					},
 				},
 			},
-			wantStatus: nil,
+			wantStatus: framework.NewStatus(framework.Unschedulable, ErrReasonNodeMetricExpired),
 		},
 		{
 			name: "filter unhealthy nodeMetric with expired updateTime",
@@ -194,15 +202,15 @@ func TestFilterExpiredNodeMetric(t *testing.T) {
 					},
 				},
 			},
-			wantStatus: nil,
+			wantStatus: framework.NewStatus(framework.Unschedulable, ErrReasonNodeMetricExpired),
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var v1beta2args v1beta2.LoadAwareSchedulingArgs
-			v1beta2.SetDefaults_LoadAwareSchedulingArgs(&v1beta2args)
+			var v1beta3args v1beta3.LoadAwareSchedulingArgs
+			v1beta3.SetDefaults_LoadAwareSchedulingArgs(&v1beta3args)
 			var loadAwareSchedulingArgs config.LoadAwareSchedulingArgs
-			err := v1beta2.Convert_v1beta2_LoadAwareSchedulingArgs_To_config_LoadAwareSchedulingArgs(&v1beta2args, &loadAwareSchedulingArgs, nil)
+			err := v1beta3.Convert_v1beta3_LoadAwareSchedulingArgs_To_config_LoadAwareSchedulingArgs(&v1beta3args, &loadAwareSchedulingArgs, nil)
 			assert.NoError(t, err)
 
 			koordClientSet := koordfake.NewSimpleClientset()
@@ -229,7 +237,166 @@ func TestFilterExpiredNodeMetric(t *testing.T) {
 				schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
 				schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
 			}
-			fh, err := schedulertesting.NewFramework(registeredPlugins, "koord-scheduler",
+			fh, err := schedulertesting.NewFramework(context.TODO(), registeredPlugins, "koord-scheduler",
+				frameworkruntime.WithClientSet(cs),
+				frameworkruntime.WithInformerFactory(informerFactory),
+				frameworkruntime.WithSnapshotSharedLister(snapshot),
+			)
+			assert.Nil(t, err)
+
+			p, err := proxyNew(&loadAwareSchedulingArgs, fh)
+			assert.NotNil(t, p)
+			assert.Nil(t, err)
+
+			_, err = koordClientSet.SloV1alpha1().NodeMetrics().Create(context.TODO(), tt.nodeMetric, metav1.CreateOptions{})
+			assert.NoError(t, err)
+
+			koordSharedInformerFactory.Start(context.TODO().Done())
+			koordSharedInformerFactory.WaitForCacheSync(context.TODO().Done())
+
+			cycleState := framework.NewCycleState()
+
+			nodeInfo, err := snapshot.Get(tt.nodeMetric.Name)
+			assert.NoError(t, err)
+			assert.NotNil(t, nodeInfo)
+
+			status := p.(*Plugin).Filter(context.TODO(), cycleState, &corev1.Pod{}, nodeInfo)
+			assert.True(t, tt.wantStatus.Equal(status), "want status: %s, but got %s", tt.wantStatus.Message(), status.Message())
+		})
+	}
+}
+
+func TestEnableScheduleWhenNodeMetricsExpired(t *testing.T) {
+	tests := []struct {
+		name                                 string
+		nodeMetric                           *slov1alpha1.NodeMetric
+		enableScheduleWhenNodeMetricsExpired *bool
+		wantStatus                           *framework.Status
+	}{
+		{
+			name: "filter healthy nodeMetrics",
+			nodeMetric: &slov1alpha1.NodeMetric{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node-1",
+				},
+				Spec: slov1alpha1.NodeMetricSpec{
+					CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
+						ReportIntervalSeconds: pointer.Int64(60),
+					},
+				},
+				Status: slov1alpha1.NodeMetricStatus{
+					UpdateTime: &metav1.Time{
+						Time: time.Now(),
+					},
+				},
+			},
+			wantStatus: nil,
+		},
+		{
+			name: "enable scheduling when nodeMetric with nil updateTime",
+			nodeMetric: &slov1alpha1.NodeMetric{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node-1",
+				},
+				Spec: slov1alpha1.NodeMetricSpec{
+					CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
+						ReportIntervalSeconds: pointer.Int64(60),
+					},
+				},
+			},
+			enableScheduleWhenNodeMetricsExpired: pointer.Bool(true),
+			wantStatus:                           nil,
+		},
+		{
+			name: "enable scheduling when nodeMetric with expired updateTime",
+			nodeMetric: &slov1alpha1.NodeMetric{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node-1",
+				},
+				Spec: slov1alpha1.NodeMetricSpec{
+					CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
+						ReportIntervalSeconds: pointer.Int64(60),
+					},
+				},
+				Status: slov1alpha1.NodeMetricStatus{
+					UpdateTime: &metav1.Time{
+						Time: time.Now().Add(-180 * time.Second),
+					},
+				},
+			},
+			enableScheduleWhenNodeMetricsExpired: pointer.Bool(true),
+			wantStatus:                           nil,
+		},
+		{
+			name: "disable scheduling when nodeMetric with nil updateTime",
+			nodeMetric: &slov1alpha1.NodeMetric{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node-1",
+				},
+				Spec: slov1alpha1.NodeMetricSpec{
+					CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
+						ReportIntervalSeconds: pointer.Int64(60),
+					},
+				},
+			},
+			enableScheduleWhenNodeMetricsExpired: pointer.Bool(false),
+			wantStatus:                           framework.NewStatus(framework.Unschedulable, ErrReasonNodeMetricExpired),
+		},
+		{
+			name: "disable scheduling when nodeMetric with expired updateTime",
+			nodeMetric: &slov1alpha1.NodeMetric{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node-1",
+				},
+				Spec: slov1alpha1.NodeMetricSpec{
+					CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
+						ReportIntervalSeconds: pointer.Int64(60),
+					},
+				},
+				Status: slov1alpha1.NodeMetricStatus{
+					UpdateTime: &metav1.Time{
+						Time: time.Now().Add(-180 * time.Second),
+					},
+				},
+			},
+			enableScheduleWhenNodeMetricsExpired: pointer.Bool(false),
+			wantStatus:                           framework.NewStatus(framework.Unschedulable, ErrReasonNodeMetricExpired),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var v1beta3args v1beta3.LoadAwareSchedulingArgs
+			v1beta3.SetDefaults_LoadAwareSchedulingArgs(&v1beta3args)
+			v1beta3args.EnableScheduleWhenNodeMetricsExpired = tt.enableScheduleWhenNodeMetricsExpired
+			var loadAwareSchedulingArgs config.LoadAwareSchedulingArgs
+			err := v1beta3.Convert_v1beta3_LoadAwareSchedulingArgs_To_config_LoadAwareSchedulingArgs(&v1beta3args, &loadAwareSchedulingArgs, nil)
+			assert.NoError(t, err)
+
+			koordClientSet := koordfake.NewSimpleClientset()
+			koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
+			extenderFactory, _ := frameworkext.NewFrameworkExtenderFactory(
+				frameworkext.WithKoordinatorClientSet(koordClientSet),
+				frameworkext.WithKoordinatorSharedInformerFactory(koordSharedInformerFactory),
+			)
+			proxyNew := frameworkext.PluginFactoryProxy(extenderFactory, New)
+
+			cs := kubefake.NewSimpleClientset()
+			informerFactory := informers.NewSharedInformerFactory(cs, 0)
+
+			nodes := []*corev1.Node{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: tt.nodeMetric.Name,
+					},
+				},
+			}
+
+			snapshot := newTestSharedLister(nil, nodes)
+			registeredPlugins := []schedulertesting.RegisterPluginFunc{
+				schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
+				schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
+			}
+			fh, err := schedulertesting.NewFramework(context.TODO(), registeredPlugins, "koord-scheduler",
 				frameworkruntime.WithClientSet(cs),
 				frameworkruntime.WithInformerFactory(informerFactory),
 				frameworkruntime.WithSnapshotSharedLister(snapshot),
@@ -263,9 +430,10 @@ func TestFilterUsage(t *testing.T) {
 		name                      string
 		usageThresholds           map[corev1.ResourceName]int64
 		prodUsageThresholds       map[corev1.ResourceName]int64
-		aggregated                *v1beta2.LoadAwareSchedulingAggregatedArgs
+		aggregated                *v1beta3.LoadAwareSchedulingAggregatedArgs
 		customUsageThresholds     map[corev1.ResourceName]int64
 		customProdUsageThresholds map[corev1.ResourceName]int64
+		assignedPod               []*podAssignInfo
 		customAggregatedUsage     *extension.CustomAggregatedUsage
 		nodeName                  string
 		nodeMetric                *slov1alpha1.NodeMetric
@@ -337,7 +505,7 @@ func TestFilterUsage(t *testing.T) {
 		{
 			name:     "filter exceed p95 cpu usage",
 			nodeName: "test-node-1",
-			aggregated: &v1beta2.LoadAwareSchedulingAggregatedArgs{
+			aggregated: &v1beta3.LoadAwareSchedulingAggregatedArgs{
 				UsageThresholds: map[corev1.ResourceName]int64{
 					corev1.ResourceCPU: 60,
 				},
@@ -800,23 +968,381 @@ func TestFilterUsage(t *testing.T) {
 			testPod:    schedulertesting.MakePod().Namespace("default").Name("test-pod").Priority(extension.PriorityProdValueMax).OwnerReference("test-daemonset", schema.GroupVersionKind{Group: "apps", Version: "v1", Kind: "DaemonSet"}).Obj(),
 			wantStatus: nil,
 		},
+		{
+			name:     "filter prod cpu usage with new pod request configuration",
+			nodeName: "test-node-1",
+			usageThresholds: map[corev1.ResourceName]int64{
+				corev1.ResourceCPU:    65,
+				corev1.ResourceMemory: 100,
+			},
+			prodUsageThresholds: map[corev1.ResourceName]int64{
+				corev1.ResourceCPU:    60,
+				corev1.ResourceMemory: 100,
+			},
+			nodeMetric: &slov1alpha1.NodeMetric{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node-1",
+				},
+				Spec: slov1alpha1.NodeMetricSpec{
+					CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
+						ReportIntervalSeconds: pointer.Int64(60),
+					},
+				},
+				Status: slov1alpha1.NodeMetricStatus{
+					UpdateTime: &metav1.Time{
+						Time: time.Now(),
+					},
+					NodeMetric: &slov1alpha1.NodeMetricInfo{
+						NodeUsage: slov1alpha1.ResourceMap{
+							ResourceList: corev1.ResourceList{
+								corev1.ResourceCPU:    resource.MustParse("53"),
+								corev1.ResourceMemory: resource.MustParse("500Gi"),
+							},
+						},
+					},
+					PodsMetric: []*slov1alpha1.PodMetricInfo{
+						{
+							Namespace: "default",
+							Name:      "prod-pod-1",
+							PodUsage: slov1alpha1.ResourceMap{
+								ResourceList: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("30"),
+									corev1.ResourceMemory: resource.MustParse("100Gi"),
+								},
+							},
+						},
+						{
+							Namespace: "default",
+							Name:      "prod-pod-2",
+							PodUsage: slov1alpha1.ResourceMap{
+								ResourceList: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("23"),
+									corev1.ResourceMemory: resource.MustParse("200Gi"),
+								},
+							},
+						},
+					},
+				},
+			},
+			pods: []*corev1.Pod{
+				schedulertesting.MakePod().Namespace("default").Name("prod-pod-1").Priority(extension.PriorityProdValueMax).Obj(),
+				schedulertesting.MakePod().Namespace("default").Name("prod-pod-2").Priority(extension.PriorityProdValueMax).Obj(),
+			},
+			testPod:    schedulertesting.MakePod().Namespace("default").Name("prod-pod-3").Req(map[corev1.ResourceName]string{corev1.ResourceCPU: "20", corev1.ResourceMemory: "100Gi"}).Priority(extension.PriorityProdValueMax).Obj(),
+			wantStatus: framework.NewStatus(framework.Unschedulable, fmt.Sprintf(ErrReasonUsageExceedThreshold, corev1.ResourceCPU)),
+		},
+		{
+			name:     "filter mid cpu usage with new pod request configuration",
+			nodeName: "test-node-1",
+			usageThresholds: map[corev1.ResourceName]int64{
+				corev1.ResourceCPU:    65,
+				corev1.ResourceMemory: 100,
+			},
+			prodUsageThresholds: map[corev1.ResourceName]int64{
+				corev1.ResourceCPU:    60,
+				corev1.ResourceMemory: 100,
+			},
+			nodeMetric: &slov1alpha1.NodeMetric{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node-1",
+				},
+				Spec: slov1alpha1.NodeMetricSpec{
+					CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
+						ReportIntervalSeconds: pointer.Int64(60),
+					},
+				},
+				Status: slov1alpha1.NodeMetricStatus{
+					UpdateTime: &metav1.Time{
+						Time: time.Now(),
+					},
+					NodeMetric: &slov1alpha1.NodeMetricInfo{
+						NodeUsage: slov1alpha1.ResourceMap{
+							ResourceList: corev1.ResourceList{
+								corev1.ResourceCPU:    resource.MustParse("53"),
+								corev1.ResourceMemory: resource.MustParse("300Gi"),
+							},
+						},
+					},
+					PodsMetric: []*slov1alpha1.PodMetricInfo{
+						{
+							Namespace: "default",
+							Name:      "prod-pod-1",
+							PodUsage: slov1alpha1.ResourceMap{
+								ResourceList: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("30"),
+									corev1.ResourceMemory: resource.MustParse("100Gi"),
+								},
+							},
+						},
+						{
+							Namespace: "default",
+							Name:      "prod-pod-2",
+							PodUsage: slov1alpha1.ResourceMap{
+								ResourceList: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("23"),
+									corev1.ResourceMemory: resource.MustParse("200Gi"),
+								},
+							},
+						},
+					},
+				},
+			},
+			pods: []*corev1.Pod{
+				schedulertesting.MakePod().Namespace("default").Name("prod-pod-1").Priority(extension.PriorityProdValueMax).Obj(),
+				schedulertesting.MakePod().Namespace("default").Name("prod-pod-2").Priority(extension.PriorityProdValueMax).Obj(),
+			},
+			testPod:    schedulertesting.MakePod().Namespace("default").Name("prod-pod-3").Req(map[corev1.ResourceName]string{extension.MidCPU: "12k", extension.MidMemory: "100Gi"}).Priority(extension.PriorityMidValueMax).Obj(),
+			wantStatus: framework.NewStatus(framework.Unschedulable, fmt.Sprintf(ErrReasonUsageExceedThreshold, corev1.ResourceCPU)),
+		},
+		{
+			name:     "filter memory usage with new pod request configuration",
+			nodeName: "test-node-1",
+			usageThresholds: map[corev1.ResourceName]int64{
+				corev1.ResourceCPU:    65,
+				corev1.ResourceMemory: 85,
+			},
+			prodUsageThresholds: map[corev1.ResourceName]int64{
+				corev1.ResourceCPU:    60,
+				corev1.ResourceMemory: 80,
+			},
+			nodeMetric: &slov1alpha1.NodeMetric{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node-1",
+				},
+				Spec: slov1alpha1.NodeMetricSpec{
+					CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
+						ReportIntervalSeconds: pointer.Int64(60),
+					},
+				},
+				Status: slov1alpha1.NodeMetricStatus{
+					UpdateTime: &metav1.Time{
+						Time: time.Now(),
+					},
+					NodeMetric: &slov1alpha1.NodeMetricInfo{
+						NodeUsage: slov1alpha1.ResourceMap{
+							ResourceList: corev1.ResourceList{
+								corev1.ResourceCPU:    resource.MustParse("53"),
+								corev1.ResourceMemory: resource.MustParse("300Gi"),
+							},
+						},
+					},
+					PodsMetric: []*slov1alpha1.PodMetricInfo{
+						{
+							Namespace: "default",
+							Name:      "prod-pod-1",
+							PodUsage: slov1alpha1.ResourceMap{
+								ResourceList: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("30"),
+									corev1.ResourceMemory: resource.MustParse("100Gi"),
+								},
+							},
+						},
+						{
+							Namespace: "default",
+							Name:      "prod-pod-2",
+							PodUsage: slov1alpha1.ResourceMap{
+								ResourceList: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("23"),
+									corev1.ResourceMemory: resource.MustParse("200Gi"),
+								},
+							},
+						},
+					},
+				},
+			},
+			pods: []*corev1.Pod{
+				schedulertesting.MakePod().Namespace("default").Name("prod-pod-1").Priority(extension.PriorityProdValueMax).Obj(),
+				schedulertesting.MakePod().Namespace("default").Name("prod-pod-2").Priority(extension.PriorityProdValueMax).Obj(),
+			},
+			testPod:    schedulertesting.MakePod().Namespace("default").Name("prod-pod-3").Req(map[corev1.ResourceName]string{corev1.ResourceCPU: "1", corev1.ResourceMemory: "165Gi"}).Priority(extension.PriorityProdValueMax).Obj(),
+			wantStatus: framework.NewStatus(framework.Unschedulable, fmt.Sprintf(ErrReasonUsageExceedThreshold, corev1.ResourceMemory)),
+		},
+		{
+			name:     "filter mid memory usage with new pod request configuration",
+			nodeName: "test-node-1",
+			usageThresholds: map[corev1.ResourceName]int64{
+				corev1.ResourceCPU:    65,
+				corev1.ResourceMemory: 85,
+			},
+			prodUsageThresholds: map[corev1.ResourceName]int64{
+				corev1.ResourceCPU:    60,
+				corev1.ResourceMemory: 80,
+			},
+			nodeMetric: &slov1alpha1.NodeMetric{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node-1",
+				},
+				Spec: slov1alpha1.NodeMetricSpec{
+					CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
+						ReportIntervalSeconds: pointer.Int64(60),
+					},
+				},
+				Status: slov1alpha1.NodeMetricStatus{
+					UpdateTime: &metav1.Time{
+						Time: time.Now(),
+					},
+					NodeMetric: &slov1alpha1.NodeMetricInfo{
+						NodeUsage: slov1alpha1.ResourceMap{
+							ResourceList: corev1.ResourceList{
+								corev1.ResourceCPU:    resource.MustParse("53"),
+								corev1.ResourceMemory: resource.MustParse("300Gi"),
+							},
+						},
+					},
+					PodsMetric: []*slov1alpha1.PodMetricInfo{
+						{
+							Namespace: "default",
+							Name:      "prod-pod-1",
+							PodUsage: slov1alpha1.ResourceMap{
+								ResourceList: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("30"),
+									corev1.ResourceMemory: resource.MustParse("100Gi"),
+								},
+							},
+						},
+						{
+							Namespace: "default",
+							Name:      "prod-pod-2",
+							PodUsage: slov1alpha1.ResourceMap{
+								ResourceList: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("23"),
+									corev1.ResourceMemory: resource.MustParse("200Gi"),
+								},
+							},
+						},
+					},
+				},
+			},
+			pods: []*corev1.Pod{
+				schedulertesting.MakePod().Namespace("default").Name("prod-pod-1").Priority(extension.PriorityProdValueMax).Obj(),
+				schedulertesting.MakePod().Namespace("default").Name("prod-pod-2").Priority(extension.PriorityProdValueMax).Obj(),
+			},
+			testPod:    schedulertesting.MakePod().Namespace("default").Name("prod-pod-3").Req(map[corev1.ResourceName]string{extension.MidCPU: "1k", extension.MidMemory: "200Gi"}).Priority(extension.PriorityMidValueMax).Obj(),
+			wantStatus: framework.NewStatus(framework.Unschedulable, fmt.Sprintf(ErrReasonUsageExceedThreshold, corev1.ResourceMemory)),
+		},
+		{
+			name:     "filter prod memory usage with assignedCache pod",
+			nodeName: "test-node-1",
+			usageThresholds: map[corev1.ResourceName]int64{
+				corev1.ResourceCPU:    65,
+				corev1.ResourceMemory: 85,
+			},
+			prodUsageThresholds: map[corev1.ResourceName]int64{
+				corev1.ResourceCPU:    60,
+				corev1.ResourceMemory: 70,
+			},
+			nodeMetric: &slov1alpha1.NodeMetric{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node-1",
+				},
+				Spec: slov1alpha1.NodeMetricSpec{
+					CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
+						ReportIntervalSeconds: pointer.Int64(60),
+					},
+				},
+				Status: slov1alpha1.NodeMetricStatus{
+					UpdateTime: &metav1.Time{
+						Time: time.Now(),
+					},
+					NodeMetric: &slov1alpha1.NodeMetricInfo{
+						NodeUsage: slov1alpha1.ResourceMap{
+							ResourceList: corev1.ResourceList{
+								corev1.ResourceCPU:    resource.MustParse("53"),
+								corev1.ResourceMemory: resource.MustParse("300Gi"),
+							},
+						},
+					},
+					PodsMetric: []*slov1alpha1.PodMetricInfo{
+						{
+							Namespace: "default",
+							Name:      "prod-pod-1",
+							PodUsage: slov1alpha1.ResourceMap{
+								ResourceList: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("30"),
+									corev1.ResourceMemory: resource.MustParse("100Gi"),
+								},
+							},
+						},
+					},
+				},
+			},
+			pods: []*corev1.Pod{
+				schedulertesting.MakePod().Namespace("default").Name("prod-pod-1").Priority(extension.PriorityProdValueMax).Obj(),
+				schedulertesting.MakePod().Namespace("default").Name("prod-pod-2").Req(map[corev1.ResourceName]string{corev1.ResourceCPU: "1", corev1.ResourceMemory: "200Gi"}).Priority(extension.PriorityProdValueMax).Obj(),
+			},
+			testPod:    schedulertesting.MakePod().Namespace("default").Name("prod-pod-3").Req(map[corev1.ResourceName]string{corev1.ResourceCPU: "1", corev1.ResourceMemory: "200Gi"}).Priority(extension.PriorityProdValueMax).Obj(),
+			wantStatus: framework.NewStatus(framework.Unschedulable, fmt.Sprintf(ErrReasonUsageExceedThreshold, corev1.ResourceMemory)),
+		},
+		{
+			name:     "filter mid cpu usage with assignedCache pod",
+			nodeName: "test-node-1",
+			usageThresholds: map[corev1.ResourceName]int64{
+				corev1.ResourceCPU:    65,
+				corev1.ResourceMemory: 85,
+			},
+			prodUsageThresholds: map[corev1.ResourceName]int64{
+				corev1.ResourceCPU:    60,
+				corev1.ResourceMemory: 70,
+			},
+			nodeMetric: &slov1alpha1.NodeMetric{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node-1",
+				},
+				Spec: slov1alpha1.NodeMetricSpec{
+					CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
+						ReportIntervalSeconds: pointer.Int64(60),
+					},
+				},
+				Status: slov1alpha1.NodeMetricStatus{
+					UpdateTime: &metav1.Time{
+						Time: time.Now(),
+					},
+					NodeMetric: &slov1alpha1.NodeMetricInfo{
+						NodeUsage: slov1alpha1.ResourceMap{
+							ResourceList: corev1.ResourceList{
+								corev1.ResourceCPU:    resource.MustParse("33"),
+								corev1.ResourceMemory: resource.MustParse("110Gi"),
+							},
+						},
+					},
+					PodsMetric: []*slov1alpha1.PodMetricInfo{
+						{
+							Namespace: "default",
+							Name:      "prod-pod-1",
+							PodUsage: slov1alpha1.ResourceMap{
+								ResourceList: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("30"),
+									corev1.ResourceMemory: resource.MustParse("100Gi"),
+								},
+							},
+						},
+					},
+				},
+			},
+			pods: []*corev1.Pod{
+				schedulertesting.MakePod().Namespace("default").Name("prod-pod-1").Priority(extension.PriorityProdValueMax).Obj(),
+				schedulertesting.MakePod().Namespace("default").Name("mid-pod-2").Req(map[corev1.ResourceName]string{extension.MidCPU: "20k", extension.MidMemory: "200Gi"}).Priority(extension.PriorityMidValueMax).Obj(),
+			},
+			testPod:    schedulertesting.MakePod().Namespace("default").Name("mid-pod-3").Req(map[corev1.ResourceName]string{extension.MidCPU: "20k", extension.MidMemory: "200Gi"}).Priority(extension.PriorityMidValueMax).Obj(),
+			wantStatus: framework.NewStatus(framework.Unschedulable, fmt.Sprintf(ErrReasonUsageExceedThreshold, corev1.ResourceCPU)),
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var v1beta2args v1beta2.LoadAwareSchedulingArgs
-			v1beta2args.FilterExpiredNodeMetrics = pointer.Bool(false)
+			var v1beta3args v1beta3.LoadAwareSchedulingArgs
+			v1beta3args.FilterExpiredNodeMetrics = pointer.Bool(false)
 			if len(tt.usageThresholds) > 0 {
-				v1beta2args.UsageThresholds = tt.usageThresholds
+				v1beta3args.UsageThresholds = tt.usageThresholds
 			}
 			if len(tt.prodUsageThresholds) > 0 {
-				v1beta2args.ProdUsageThresholds = tt.prodUsageThresholds
+				v1beta3args.ProdUsageThresholds = tt.prodUsageThresholds
 			}
 			if tt.aggregated != nil {
-				v1beta2args.Aggregated = tt.aggregated
+				v1beta3args.Aggregated = tt.aggregated
 			}
-			v1beta2.SetDefaults_LoadAwareSchedulingArgs(&v1beta2args)
+			v1beta3.SetDefaults_LoadAwareSchedulingArgs(&v1beta3args)
 			var loadAwareSchedulingArgs config.LoadAwareSchedulingArgs
-			err := v1beta2.Convert_v1beta2_LoadAwareSchedulingArgs_To_config_LoadAwareSchedulingArgs(&v1beta2args, &loadAwareSchedulingArgs, nil)
+			err := v1beta3.Convert_v1beta3_LoadAwareSchedulingArgs_To_config_LoadAwareSchedulingArgs(&v1beta3args, &loadAwareSchedulingArgs, nil)
 			assert.NoError(t, err)
 
 			koordClientSet := koordfake.NewSimpleClientset()
@@ -871,7 +1397,7 @@ func TestFilterUsage(t *testing.T) {
 			}
 
 			snapshot := newTestSharedLister(nil, nodes)
-			fh, err := schedulertesting.NewFramework(registeredPlugins, "koord-scheduler",
+			fh, err := schedulertesting.NewFramework(context.TODO(), registeredPlugins, "koord-scheduler",
 				frameworkruntime.WithClientSet(cs),
 				frameworkruntime.WithInformerFactory(informerFactory),
 				frameworkruntime.WithSnapshotSharedLister(snapshot),
@@ -903,6 +1429,19 @@ func TestFilterUsage(t *testing.T) {
 			if testPod == nil {
 				testPod = &corev1.Pod{}
 			}
+			assignCache := p.(*Plugin).podAssignCache
+			for _, v := range tt.pods {
+				m := assignCache.podInfoItems[tt.nodeName]
+				if m == nil {
+					m = map[types.UID]*podAssignInfo{}
+					assignCache.podInfoItems[tt.nodeName] = m
+				}
+				podUid := uuid.NewUUID()
+				m[podUid] = &podAssignInfo{
+					timestamp: time.Now().Add(-10 * time.Second),
+					pod:       v,
+				}
+			}
 
 			status := p.(*Plugin).Filter(context.TODO(), cycleState, testPod, nodeInfo)
 			assert.True(t, tt.wantStatus.Equal(status), "want status: %s, but got %s", tt.wantStatus.Message(), status.Message())
@@ -918,7 +1457,7 @@ func TestScore(t *testing.T) {
 		nodeName                string
 		nodeMetric              *slov1alpha1.NodeMetric
 		scoreAccordingProdUsage bool
-		aggregatedArgs          *v1beta2.LoadAwareSchedulingAggregatedArgs
+		aggregatedArgs          *v1beta3.LoadAwareSchedulingAggregatedArgs
 		wantScore               int64
 		wantStatus              *framework.Status
 	}{
@@ -937,6 +1476,11 @@ func TestScore(t *testing.T) {
 				Status: slov1alpha1.NodeMetricStatus{
 					UpdateTime: &metav1.Time{
 						Time: time.Now().Add(-180 * time.Second),
+					},
+					NodeMetric: &slov1alpha1.NodeMetricInfo{
+						NodeUsage: slov1alpha1.ResourceMap{
+							ResourceList: corev1.ResourceList{},
+						},
 					},
 				},
 			},
@@ -981,6 +1525,11 @@ func TestScore(t *testing.T) {
 				Status: slov1alpha1.NodeMetricStatus{
 					UpdateTime: &metav1.Time{
 						Time: time.Now(),
+					},
+					NodeMetric: &slov1alpha1.NodeMetricInfo{
+						NodeUsage: slov1alpha1.ResourceMap{
+							ResourceList: corev1.ResourceList{},
+						},
 					},
 				},
 			},
@@ -1070,7 +1619,7 @@ func TestScore(t *testing.T) {
 		},
 		{
 			name: "score load node with p95",
-			aggregatedArgs: &v1beta2.LoadAwareSchedulingAggregatedArgs{
+			aggregatedArgs: &v1beta3.LoadAwareSchedulingAggregatedArgs{
 				ScoreAggregationType:    extension.P95,
 				ScoreAggregatedDuration: &metav1.Duration{Duration: 5 * time.Minute},
 			},
@@ -1145,7 +1694,7 @@ func TestScore(t *testing.T) {
 		},
 		{
 			name: "score load node with p95 but have not reported usage",
-			aggregatedArgs: &v1beta2.LoadAwareSchedulingAggregatedArgs{
+			aggregatedArgs: &v1beta3.LoadAwareSchedulingAggregatedArgs{
 				ScoreAggregationType:    extension.P95,
 				ScoreAggregatedDuration: &metav1.Duration{Duration: 5 * time.Minute},
 			},
@@ -1201,7 +1750,7 @@ func TestScore(t *testing.T) {
 		},
 		{
 			name: "score load node with p95 but have not reported usage and have assigned pods",
-			aggregatedArgs: &v1beta2.LoadAwareSchedulingAggregatedArgs{
+			aggregatedArgs: &v1beta3.LoadAwareSchedulingAggregatedArgs{
 				ScoreAggregationType:    extension.P95,
 				ScoreAggregatedDuration: &metav1.Duration{Duration: 5 * time.Minute},
 			},
@@ -1579,6 +2128,11 @@ func TestScore(t *testing.T) {
 					UpdateTime: &metav1.Time{
 						Time: time.Now(),
 					},
+					NodeMetric: &slov1alpha1.NodeMetricInfo{
+						NodeUsage: slov1alpha1.ResourceMap{
+							ResourceList: corev1.ResourceList{},
+						},
+					},
 				},
 			},
 			wantScore:  90,
@@ -1655,6 +2209,11 @@ func TestScore(t *testing.T) {
 					UpdateTime: &metav1.Time{
 						Time: time.Now(),
 					},
+					NodeMetric: &slov1alpha1.NodeMetricInfo{
+						NodeUsage: slov1alpha1.ResourceMap{
+							ResourceList: corev1.ResourceList{},
+						},
+					},
 					PodsMetric: []*slov1alpha1.PodMetricInfo{
 						{
 							Namespace: "default",
@@ -1711,6 +2270,11 @@ func TestScore(t *testing.T) {
 					UpdateTime: &metav1.Time{
 						Time: time.Now(),
 					},
+					NodeMetric: &slov1alpha1.NodeMetricInfo{
+						NodeUsage: slov1alpha1.ResourceMap{
+							ResourceList: corev1.ResourceList{},
+						},
+					},
 				},
 			},
 			wantScore:  88,
@@ -1745,6 +2309,11 @@ func TestScore(t *testing.T) {
 					UpdateTime: &metav1.Time{
 						Time: time.Now(),
 					},
+					NodeMetric: &slov1alpha1.NodeMetricInfo{
+						NodeUsage: slov1alpha1.ResourceMap{
+							ResourceList: corev1.ResourceList{},
+						},
+					},
 				},
 			},
 			wantScore:  99,
@@ -1753,14 +2322,14 @@ func TestScore(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var v1beta2args v1beta2.LoadAwareSchedulingArgs
-			v1beta2args.ScoreAccordingProdUsage = &tt.scoreAccordingProdUsage
+			var v1beta3args v1beta3.LoadAwareSchedulingArgs
+			v1beta3args.ScoreAccordingProdUsage = &tt.scoreAccordingProdUsage
 			if tt.aggregatedArgs != nil {
-				v1beta2args.Aggregated = tt.aggregatedArgs
+				v1beta3args.Aggregated = tt.aggregatedArgs
 			}
-			v1beta2.SetDefaults_LoadAwareSchedulingArgs(&v1beta2args)
+			v1beta3.SetDefaults_LoadAwareSchedulingArgs(&v1beta3args)
 			var loadAwareSchedulingArgs config.LoadAwareSchedulingArgs
-			err := v1beta2.Convert_v1beta2_LoadAwareSchedulingArgs_To_config_LoadAwareSchedulingArgs(&v1beta2args, &loadAwareSchedulingArgs, nil)
+			err := v1beta3.Convert_v1beta3_LoadAwareSchedulingArgs_To_config_LoadAwareSchedulingArgs(&v1beta3args, &loadAwareSchedulingArgs, nil)
 			assert.NoError(t, err)
 
 			koordClientSet := koordfake.NewSimpleClientset()
@@ -1794,6 +2363,7 @@ func TestScore(t *testing.T) {
 				schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
 			}
 			fh, err := schedulertesting.NewFramework(
+				context.TODO(),
 				registeredPlugins,
 				"koord-scheduler",
 				frameworkruntime.WithClientSet(cs),

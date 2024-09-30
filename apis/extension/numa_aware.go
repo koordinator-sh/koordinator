@@ -26,6 +26,9 @@ import (
 
 // Defines the pod level annotations and labels
 const (
+	// AnnotationNUMATopologySpec represents numa allocation API defined by Koordinator.
+	// The user specifies the desired numa policy by setting the annotation.
+	AnnotationNUMATopologySpec = SchedulingDomainPrefix + "/numa-topology-spec"
 	// AnnotationResourceSpec represents resource allocation API defined by Koordinator.
 	// The user specifies the desired CPU orchestration policy by setting the annotation.
 	AnnotationResourceSpec = SchedulingDomainPrefix + "/resource-spec"
@@ -65,6 +68,15 @@ type ResourceSpec struct {
 	PreferredCPUBindPolicy CPUBindPolicy `json:"preferredCPUBindPolicy,omitempty"`
 	// PreferredCPUExclusivePolicy represents best-effort CPU exclusive policy.
 	PreferredCPUExclusivePolicy CPUExclusivePolicy `json:"preferredCPUExclusivePolicy,omitempty"`
+}
+
+type NUMATopologySpec struct {
+	// NUMATopologyPolicy represents the numa topology policy when schedule pod
+	NUMATopologyPolicy NUMATopologyPolicy `json:"numaTopologyPolicy,omitempty"`
+	// SingleNUMANodeExclusive represents whether a Pod that will use a single NUMA node/multiple NUMA nodes
+	// on a NUMA node can be scheduled to use the NUMA node when another Pod that uses multiple NUMA nodes/a single NUMA node
+	// is already running on the same node.
+	SingleNUMANodeExclusive NumaTopologyExclusive `json:"singleNUMANodeExclusive,omitempty"`
 }
 
 // ResourceStatus describes resource allocation result, such as how to bind CPU.
@@ -135,6 +147,21 @@ const (
 	NodeNUMAAllocateStrategyMostAllocated  = NUMAMostAllocated
 )
 
+type NumaTopologyExclusive string
+
+const (
+	NumaTopologyExclusivePreferred NumaTopologyExclusive = "Preferred"
+	NumaTopologyExclusiveRequired  NumaTopologyExclusive = "Required"
+)
+
+type NumaNodeStatus string
+
+const (
+	NumaNodeStatusIdle   NumaNodeStatus = "idle"
+	NumaNodeStatusShared NumaNodeStatus = "shared"
+	NumaNodeStatusSingle NumaNodeStatus = "single"
+)
+
 type NUMATopologyPolicy string
 
 const (
@@ -185,6 +212,19 @@ type KubeletCPUManagerPolicy struct {
 	Policy       string            `json:"policy,omitempty"`
 	Options      map[string]string `json:"options,omitempty"`
 	ReservedCPUs string            `json:"reservedCPUs,omitempty"`
+}
+
+func GetNUMATopologySpec(annotations map[string]string) (*NUMATopologySpec, error) {
+	numaSpec := &NUMATopologySpec{}
+	data, ok := annotations[AnnotationNUMATopologySpec]
+	if !ok {
+		return numaSpec, nil
+	}
+	err := json.Unmarshal([]byte(data), numaSpec)
+	if err != nil {
+		return nil, err
+	}
+	return numaSpec, nil
 }
 
 // GetResourceSpec parses ResourceSpec from annotations

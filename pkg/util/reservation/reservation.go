@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"math"
 	"strconv"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -28,6 +29,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
+	corev1helper "k8s.io/component-helpers/scheduling/corev1"
 	"k8s.io/component-helpers/scheduling/corev1/nodeaffinity"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/api/v1/resource"
@@ -49,6 +51,9 @@ var (
 	// AnnotationReservationResizeAllocatable indicates the desired allocatable are to be updated.
 	AnnotationReservationResizeAllocatable = extension.SchedulingDomainPrefix + "/reservation-resize-allocatable"
 )
+
+// ErrReasonPrefix is the prefix of the reservation-level scheduling errors.
+const ErrReasonPrefix = "Reservation(s) "
 
 // NewReservePod returns a fake pod set as the reservation's specifications.
 // The reserve pod is only visible for the scheduler and does not make actual creation on nodes.
@@ -118,7 +123,7 @@ func NewReservePod(r *schedulingv1alpha1.Reservation) *corev1.Pod {
 		reservePod.Status.Phase = corev1.PodFailed
 	}
 	if IsReservationAvailable(r) {
-		podRequests, _ := resource.PodRequestsAndLimits(reservePod)
+		podRequests := resource.PodRequests(reservePod, resource.PodResourcesOptions{})
 		if !quotav1.Equals(podRequests, r.Status.Allocatable) {
 			//
 			// PodRequests is different from r.Status.Allocatable,
@@ -133,7 +138,7 @@ func NewReservePod(r *schedulingv1alpha1.Reservation) *corev1.Pod {
 
 func UpdateReservePodWithAllocatable(reservePod *corev1.Pod, podRequests, allocatable corev1.ResourceList) {
 	if podRequests == nil {
-		podRequests, _ = resource.PodRequestsAndLimits(reservePod)
+		podRequests = resource.PodRequests(reservePod, resource.PodResourcesOptions{})
 	} else {
 		podRequests = podRequests.DeepCopy()
 	}
@@ -349,9 +354,9 @@ func ReservationRequests(r *schedulingv1alpha1.Reservation) corev1.ResourceList 
 		return r.Status.Allocatable.DeepCopy()
 	}
 	if r.Spec.Template != nil {
-		requests, _ := resource.PodRequestsAndLimits(&corev1.Pod{
+		requests := resource.PodRequests(&corev1.Pod{
 			Spec: r.Spec.Template.Spec,
-		})
+		}, resource.PodResourcesOptions{})
 		return requests
 	}
 	return nil
@@ -457,6 +462,8 @@ func MatchReservationControllerReference(pod *corev1.Pod, controllerRef *schedul
 type RequiredReservationAffinity struct {
 	labelSelector labels.Selector
 	nodeSelector  *nodeaffinity.NodeSelector
+	tolerations   []corev1.Toleration
+	name          string
 }
 
 // GetRequiredReservationAffinity returns the parsing result of pod's nodeSelector and nodeAffinity.
@@ -465,7 +472,7 @@ func GetRequiredReservationAffinity(pod *corev1.Pod) (*RequiredReservationAffini
 	if err != nil {
 		return nil, err
 	}
-	if len(reservationAffinity.ReservationSelector) == 0 && reservationAffinity.RequiredDuringSchedulingIgnoredDuringExecution == nil {
+	if reservationAffinity == nil {
 		return nil, nil
 	}
 	var selector labels.Selector
@@ -482,12 +489,40 @@ func GetRequiredReservationAffinity(pod *corev1.Pod) (*RequiredReservationAffini
 			return nil, err
 		}
 	}
-	return &RequiredReservationAffinity{labelSelector: selector, nodeSelector: affinity}, nil
+	return &RequiredReservationAffinity{
+		labelSelector: selector,
+		nodeSelector:  affinity,
+		tolerations:   reservationAffinity.Tolerations,
+		name:          reservationAffinity.Name,
+	}, nil
+}
+
+// GetName returns the reservation name if it is specified in the reservation affinity.
+func (s *RequiredReservationAffinity) GetName() string {
+	if s == nil {
+		return ""
+	}
+	return s.name
+}
+
+// MatchName checks if the reservation affinity specifies a reservation name, and it matches the given reservation's.
+func (s *RequiredReservationAffinity) MatchName(reservationName string) bool {
+	return s != nil && len(s.name) > 0 && s.name == reservationName
 }
 
 // Match checks whether the pod is schedulable onto nodes according to
 // the requirements in both nodeSelector and nodeAffinity.
+// DEPRECATED: use MatchAffinity instead.
 func (s *RequiredReservationAffinity) Match(node *corev1.Node) bool {
+	return s.MatchAffinity(node)
+}
+
+// MatchAffinity checks whether the pod is schedulable onto nodes according to
+// the requirements in both nodeSelector and nodeAffinity.
+func (s *RequiredReservationAffinity) MatchAffinity(node *corev1.Node) bool {
+	if s == nil {
+		return true
+	}
 	if s.labelSelector != nil {
 		if !s.labelSelector.Matches(labels.Set(node.Labels)) {
 			return false
@@ -497,6 +532,15 @@ func (s *RequiredReservationAffinity) Match(node *corev1.Node) bool {
 		return s.nodeSelector.Match(node)
 	}
 	return true
+}
+
+// FindMatchingUntoleratedTaint checks if the reservation tolerations tolerates all the filtered reservation taints.
+// It returns the first taint without a toleration and the status if any taint is NOT tolerated.
+func (s *RequiredReservationAffinity) FindMatchingUntoleratedTaint(taints []corev1.Taint, inclusionFilter func(*corev1.Taint) bool) (corev1.Taint, bool) {
+	if s == nil {
+		return corev1.Taint{}, false
+	}
+	return corev1helper.FindMatchingUntoleratedTaint(taints, s.tolerations, inclusionFilter)
 }
 
 type ReservationResizeAllocatable struct {
@@ -559,4 +603,23 @@ func GetReservationRestrictedResources(allocatableResources []corev1.ResourceNam
 		result = allocatableResources
 	}
 	return result
+}
+
+// NewReservationReason creates a reservation-level error reason with the given message.
+func NewReservationReason(fmtMsg string, args ...interface{}) string {
+	if len(args) <= 0 {
+		return ErrReasonPrefix + fmtMsg
+	}
+	return fmt.Sprintf(ErrReasonPrefix+fmtMsg, args...)
+}
+
+// IsReservationReason checks if the error reason is at the reservation-level.
+func IsReservationReason(reason string) bool {
+	return strings.HasPrefix(reason, ErrReasonPrefix)
+}
+
+// DoNotScheduleTaintsFilter can filter out the node taints that reject scheduling Pod on a Node.
+func DoNotScheduleTaintsFilter(t *corev1.Taint) bool {
+	// PodToleratesNodeTaints is only interested in NoSchedule and NoExecute taints.
+	return t.Effect == corev1.TaintEffectNoSchedule || t.Effect == corev1.TaintEffectNoExecute
 }

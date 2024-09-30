@@ -31,6 +31,7 @@ import (
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/pleg"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	koordletutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
@@ -57,6 +58,7 @@ type podsInformer struct {
 	nodeInformer *nodeInformer
 
 	callbackRunner *callbackRunner
+	cgroupReader   resourceexecutor.CgroupReader
 }
 
 func NewPodsInformer() *podsInformer {
@@ -85,6 +87,8 @@ func (s *podsInformer) Setup(ctx *PluginOption, states *PluginState) {
 	s.nodeInformer = nodeInformer
 
 	s.callbackRunner = states.callbackRunner
+
+	s.cgroupReader = resourceexecutor.NewCgroupReader()
 }
 
 func (s *podsInformer) Start(stopCh <-chan struct{}) {
@@ -141,6 +145,70 @@ func (s *podsInformer) GetAllPods() []*statesinformer.PodMeta {
 	return pods
 }
 
+func (s *podsInformer) getTaskIds(podMeta *statesinformer.PodMeta) {
+	pod := podMeta.Pod
+	containerMap := make(map[string]*corev1.Container, len(pod.Spec.Containers))
+	for i := range pod.Spec.Containers {
+		container := &pod.Spec.Containers[i]
+		containerMap[container.Name] = container
+	}
+
+	for _, containerStat := range pod.Status.ContainerStatuses {
+		container, exist := containerMap[containerStat.Name]
+		if !exist {
+			klog.Warningf("container %s/%s/%s lost during reconcile resctrl group", pod.Namespace,
+				pod.Name, containerStat.Name)
+			continue
+		}
+
+		containerDir, err := koordletutil.GetContainerCgroupParentDir(podMeta.CgroupDir, &containerStat)
+		if err != nil {
+			klog.V(4).Infof("failed to get pod container cgroup path for container %s/%s/%s, err: %s",
+				pod.Namespace, pod.Name, container.Name, err)
+			continue
+		}
+		ids, err := s.cgroupReader.ReadCPUTasks(containerDir)
+		if err == nil && ids != nil && podMeta.ContainerTaskIds != nil {
+			podMeta.ContainerTaskIds[containerStat.ContainerID] = ids
+		}
+		if err != nil && resourceexecutor.IsCgroupDirErr(err) {
+			klog.V(5).Infof("failed to read container task ids whose cgroup path %s does not exists, err: %s",
+				containerDir, err)
+			continue
+		} else if err != nil {
+			klog.Warningf("failed to get pod container cgroup task ids for container %s/%s/%s, err: %s",
+				pod.Namespace, pod.Name, container.Name, err)
+			continue
+		}
+	}
+
+	sandboxID, err := koordletutil.GetPodSandboxContainerID(pod)
+	if err != nil {
+		klog.V(4).Infof("failed to get sandbox container ID for pod %s/%s, err: %s",
+			pod.Namespace, pod.Name, err)
+		return
+	}
+	sandboxContainerDir, err := koordletutil.GetContainerCgroupParentDirByID(podMeta.CgroupDir, sandboxID)
+	if err != nil {
+		klog.V(4).Infof("failed to get pod container cgroup path for sandbox container %s/%s/%s, err: %s",
+			pod.Namespace, pod.Name, sandboxID, err)
+		return
+	}
+	ids, err := s.cgroupReader.ReadCPUTasks(sandboxContainerDir)
+	if err == nil && ids != nil && podMeta.ContainerTaskIds != nil {
+		podMeta.ContainerTaskIds[sandboxID] = ids
+	}
+	if err != nil && resourceexecutor.IsCgroupDirErr(err) {
+		klog.V(5).Infof("failed to read container task ids whose cgroup path %s does not exists, err: %s",
+			sandboxContainerDir, err)
+		return
+	} else if err != nil {
+		klog.Warningf("failed to get pod container cgroup task ids for sandbox container %s/%s/%s, err: %s",
+			pod.Namespace, pod.Name, sandboxID, err)
+		return
+	}
+}
+
 func (s *podsInformer) syncPods() error {
 	podList, err := s.kubelet.GetAllPods()
 
@@ -159,6 +227,11 @@ func (s *podsInformer) syncPods() error {
 			CgroupDir: genPodCgroupParentDir(pod),
 		}
 		newPodMap[string(pod.UID)] = podMeta
+		if s.config.EnablePodTaskIds && !util.IsPodTerminated(pod) {
+			podMeta.ContainerTaskIds = make(map[string][]int32)
+			// record pod's containers taskids
+			s.getTaskIds(podMeta)
+		}
 		// record pod container metrics
 		recordPodResourceMetrics(podMeta)
 	}

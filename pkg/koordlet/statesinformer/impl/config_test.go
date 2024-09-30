@@ -42,6 +42,7 @@ func TestNewDefaultConfig(t *testing.T) {
 				DisableQueryKubeletConfig:   false,
 				EnableNodeMetricReport:      true,
 				MetricReportInterval:        0,
+				EnablePodTaskIds:            false,
 			},
 		},
 	}
@@ -64,6 +65,7 @@ func TestConfig_InitFlags(t *testing.T) {
 		"--node-topology-sync-interval=10s",
 		"--disable-query-kubelet-config=true",
 		"--enable-node-metric-report=false",
+		"--enable-pod-taskids=true",
 	}
 	fs := flag.NewFlagSet(cmdArgs[0], flag.ExitOnError)
 
@@ -76,6 +78,7 @@ func TestConfig_InitFlags(t *testing.T) {
 		NodeTopologySyncInterval    time.Duration
 		DisableQueryKubeletConfig   bool
 		EnableNodeMetricReport      bool
+		EnablePodTaskIds            bool
 	}
 	type args struct {
 		fs *flag.FlagSet
@@ -96,6 +99,7 @@ func TestConfig_InitFlags(t *testing.T) {
 				NodeTopologySyncInterval:    10 * time.Second,
 				DisableQueryKubeletConfig:   true,
 				EnableNodeMetricReport:      false,
+				EnablePodTaskIds:            true,
 			},
 			args: args{fs: fs},
 		},
@@ -111,6 +115,7 @@ func TestConfig_InitFlags(t *testing.T) {
 				NodeTopologySyncInterval:    tt.fields.NodeTopologySyncInterval,
 				DisableQueryKubeletConfig:   tt.fields.DisableQueryKubeletConfig,
 				EnableNodeMetricReport:      tt.fields.EnableNodeMetricReport,
+				EnablePodTaskIds:            tt.fields.EnablePodTaskIds,
 			}
 			c := NewDefaultConfig()
 			c.InitFlags(tt.args.fs)

@@ -24,7 +24,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/clock"
+	clock "k8s.io/utils/clock/testing"
 	"k8s.io/utils/pointer"
 
 	"github.com/koordinator-sh/koordinator/apis/configuration"
@@ -269,9 +269,18 @@ func TestPluginCalculate(t *testing.T) {
 		},
 	}
 	testCPUQuant := resource.MustParse("10000")
+	testCPUQuant2 := resource.MustParse("18000")
+	testCPUQuant3 := resource.MustParse("0")
+
+	//NOTE: if not call String, cpu String will be diff
 	_ = testCPUQuant.String()
+	_ = testCPUQuant2.String()
+	_ = testCPUQuant3.String()
 	testMemoryQuant := resource.MustParse("15Gi")
-	testMemoryQuant2 := resource.MustParse("30Gi")
+	testMemoryQuant2 := resource.MustParse("46Gi")
+	testMemoryQuant3 := resource.MustParse("0Gi")
+	_ = testMemoryQuant3.String()
+
 	type args struct {
 		strategy *configuration.ColocationStrategy
 		node     *corev1.Node
@@ -425,12 +434,12 @@ func TestPluginCalculate(t *testing.T) {
 			want: []framework.ResourceItem{
 				{
 					Name:     extension.MidCPU,
-					Message:  "midAllocatable[CPU(milli-core)]:10000 = min(nodeAllocatable:100000 * thresholdRatio:1, ProdReclaimable:10000)",
+					Message:  "midAllocatable[CPU(milli-core)]:10000 = min(nodeAllocatable:100000 * thresholdRatio:1, ProdReclaimable:10000) + Unallocated:80000 * midUnallocatedRatio:0",
 					Quantity: &testCPUQuant,
 				},
 				{
 					Name:     extension.MidMemory,
-					Message:  "midAllocatable[Memory(byte)]:15Gi = min(nodeAllocatable:200Gi * thresholdRatio:1, ProdReclaimable:15Gi)",
+					Message:  "midAllocatable[Memory(byte)]:15Gi = min(nodeAllocatable:200Gi * thresholdRatio:1, ProdReclaimable:15Gi) + Unallocated:160Gi * midUnallocatedRatio:0",
 					Quantity: &testMemoryQuant,
 				},
 			},
@@ -444,6 +453,7 @@ func TestPluginCalculate(t *testing.T) {
 					DegradeTimeMinutes:        pointer.Int64(10),
 					MidCPUThresholdPercent:    pointer.Int64(10),
 					MidMemoryThresholdPercent: pointer.Int64(20),
+					MidUnallocatedPercent:     pointer.Int64(10),
 				},
 				node: testNode,
 				podList: &corev1.PodList{
@@ -504,13 +514,83 @@ func TestPluginCalculate(t *testing.T) {
 			want: []framework.ResourceItem{
 				{
 					Name:     extension.MidCPU,
-					Message:  "midAllocatable[CPU(milli-core)]:10000 = min(nodeAllocatable:100000 * thresholdRatio:0.1, ProdReclaimable:15000)",
-					Quantity: &testCPUQuant,
+					Message:  "midAllocatable[CPU(milli-core)]:18000 = min(nodeAllocatable:100000 * thresholdRatio:0.1, ProdReclaimable:15000) + Unallocated:80000 * midUnallocatedRatio:0.1",
+					Quantity: &testCPUQuant2,
 				},
 				{
 					Name:     extension.MidMemory,
-					Message:  "midAllocatable[Memory(byte)]:30Gi = min(nodeAllocatable:200Gi * thresholdRatio:0.2, ProdReclaimable:30Gi)",
+					Message:  "midAllocatable[Memory(byte)]:46Gi = min(nodeAllocatable:200Gi * thresholdRatio:0.2, ProdReclaimable:30Gi) + Unallocated:160Gi * midUnallocatedRatio:0.1",
 					Quantity: &testMemoryQuant2,
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "calculate correctly when prod reclaimable is nil",
+			args: args{
+				strategy: &configuration.ColocationStrategy{
+					Enable:             pointer.Bool(true),
+					DegradeTimeMinutes: pointer.Int64(10),
+				},
+				node: testNode,
+				podList: &corev1.PodList{
+					Items: []corev1.Pod{
+						*testProdLSPod,
+						*testBatchBEPod,
+					},
+				},
+				metrics: &framework.ResourceMetrics{
+					NodeMetric: &slov1alpha1.NodeMetric{
+						ObjectMeta: metav1.ObjectMeta{
+							Name: "test-node",
+						},
+						Status: slov1alpha1.NodeMetricStatus{
+							UpdateTime: &metav1.Time{Time: time.Now().Add(-20 * time.Second)},
+							NodeMetric: &slov1alpha1.NodeMetricInfo{
+								NodeUsage: slov1alpha1.ResourceMap{
+									ResourceList: corev1.ResourceList{
+										corev1.ResourceCPU:    resource.MustParse("30"),
+										corev1.ResourceMemory: resource.MustParse("50Gi"),
+									},
+								},
+							},
+							PodsMetric: []*slov1alpha1.PodMetricInfo{
+								{
+									Name:      testProdLSPod.Name,
+									Namespace: testProdLSPod.Namespace,
+									PodUsage: slov1alpha1.ResourceMap{
+										ResourceList: corev1.ResourceList{
+											corev1.ResourceCPU:    resource.MustParse("5"),
+											corev1.ResourceMemory: resource.MustParse("10Gi"),
+										},
+									},
+								},
+								{
+									Name:      testBatchBEPod.Name,
+									Namespace: testBatchBEPod.Namespace,
+									PodUsage: slov1alpha1.ResourceMap{
+										ResourceList: corev1.ResourceList{
+											corev1.ResourceCPU:    resource.MustParse("15"),
+											corev1.ResourceMemory: resource.MustParse("30Gi"),
+										},
+									},
+								},
+							},
+							ProdReclaimableMetric: &slov1alpha1.ReclaimableMetric{},
+						},
+					},
+				},
+			},
+			want: []framework.ResourceItem{
+				{
+					Name:     extension.MidCPU,
+					Message:  "midAllocatable[CPU(milli-core)]:0 = min(nodeAllocatable:100000 * thresholdRatio:1, ProdReclaimable:0) + Unallocated:80000 * midUnallocatedRatio:0",
+					Quantity: &testCPUQuant3,
+				},
+				{
+					Name:     extension.MidMemory,
+					Message:  "midAllocatable[Memory(byte)]:0 = min(nodeAllocatable:200Gi * thresholdRatio:1, ProdReclaimable:0) + Unallocated:160Gi * midUnallocatedRatio:0",
+					Quantity: &testMemoryQuant3,
 				},
 			},
 			wantErr: false,
@@ -529,7 +609,7 @@ func TestPluginCalculate(t *testing.T) {
 func TestPlugin_isDegradeNeeded(t *testing.T) {
 	const degradeTimeoutMinutes = 10
 	type fields struct {
-		Clock clock.Clock
+		Clock *clock.FakeClock
 	}
 	type args struct {
 		strategy   *configuration.ColocationStrategy
@@ -649,7 +729,7 @@ func TestPlugin_isDegradeNeeded(t *testing.T) {
 					Status: corev1.NodeStatus{},
 				},
 			},
-			want: true,
+			want: false,
 		},
 		{
 			name: "valid NodeMetric status should not degrade",

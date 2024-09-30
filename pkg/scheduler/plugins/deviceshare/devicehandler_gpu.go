@@ -44,47 +44,58 @@ func (h *GPUHandler) CalcDesiredRequestsAndCount(node *corev1.Node, pod *corev1.
 	}
 
 	podRequests = podRequests.DeepCopy()
-	if err := fillGPUTotalMem(totalDevice, podRequests); err != nil {
-		return nil, 0, framework.NewStatus(framework.UnschedulableAndUnresolvable, err.Error())
-	}
 
 	requests := podRequests
 	desiredCount := int64(1)
 
-	memoryRatio := podRequests[apiext.ResourceGPUMemoryRatio]
-	multiDevices := memoryRatio.Value() > 100 && memoryRatio.Value()%100 == 0
-	if multiDevices {
-		gpuCore, gpuMem, gpuMemoryRatio := podRequests[apiext.ResourceGPUCore], podRequests[apiext.ResourceGPUMemory], podRequests[apiext.ResourceGPUMemoryRatio]
-		desiredCount = gpuMemoryRatio.Value() / 100
-		requests = corev1.ResourceList{
-			apiext.ResourceGPUCore:        *resource.NewQuantity(gpuCore.Value()/desiredCount, resource.DecimalSI),
-			apiext.ResourceGPUMemory:      *resource.NewQuantity(gpuMem.Value()/desiredCount, resource.BinarySI),
-			apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(gpuMemoryRatio.Value()/desiredCount, resource.DecimalSI),
+	gpuShare, ok := podRequests[apiext.ResourceGPUShared]
+	gpuCore, coreExists := podRequests[apiext.ResourceGPUCore]
+	gpuMemoryRatio, memoryRatioExists := podRequests[apiext.ResourceGPUMemoryRatio]
+	// gpu share mode
+	if ok && gpuShare.Value() > 0 {
+		desiredCount = gpuShare.Value()
+	} else {
+		if memoryRatioExists && gpuMemoryRatio.Value() > 100 && gpuMemoryRatio.Value()%100 == 0 {
+			desiredCount = gpuMemoryRatio.Value() / 100
 		}
 	}
+
+	if desiredCount > 1 {
+		requests = corev1.ResourceList{}
+		if coreExists {
+			requests[apiext.ResourceGPUCore] = *resource.NewQuantity(gpuCore.Value()/desiredCount, resource.DecimalSI)
+		}
+		if memoryRatioExists {
+			requests[apiext.ResourceGPUMemoryRatio] = *resource.NewQuantity(gpuMemoryRatio.Value()/desiredCount, resource.DecimalSI)
+		} else if gpuMem, memExists := podRequests[apiext.ResourceGPUMemory]; memExists {
+			requests[apiext.ResourceGPUMemory] = *resource.NewQuantity(gpuMem.Value()/desiredCount, resource.BinarySI)
+		}
+	}
+
 	return requests, int(desiredCount), nil
 }
 
-func fillGPUTotalMem(nodeDeviceTotal deviceResources, podRequest corev1.ResourceList) error {
-	// nodeDeviceTotal uses the minor of GPU as key. However, under certain circumstances,
-	// minor 0 might not exist. We need to iterate the cache once to find the active minor.
-	var total corev1.ResourceList
-	for _, resources := range nodeDeviceTotal {
-		if len(resources) > 0 && !quotav1.IsZero(resources) {
-			total = resources
-			break
-		}
+func fillGPUTotalMem(allocations apiext.DeviceAllocations, nodeDeviceInfo *nodeDevice) error {
+	gpuAllocations, ok := allocations[schedulingv1alpha1.GPU]
+	if !ok {
+		return nil
 	}
-	if total == nil {
-		return fmt.Errorf("no healthy GPU Devices")
+	gpuTotalDevices, ok := nodeDeviceInfo.deviceTotal[schedulingv1alpha1.GPU]
+	if !ok {
+		return nil
 	}
 
-	// a node can only contain one type of GPU, so each of them has the same total memory.
-	if gpuMem, ok := podRequest[apiext.ResourceGPUMemory]; ok {
-		podRequest[apiext.ResourceGPUMemoryRatio] = memoryBytesToRatio(gpuMem, total[apiext.ResourceGPUMemory])
-	} else {
-		gpuMemRatio := podRequest[apiext.ResourceGPUMemoryRatio]
-		podRequest[apiext.ResourceGPUMemory] = memoryRatioToBytes(gpuMemRatio, total[apiext.ResourceGPUMemory])
+	for i, allocation := range gpuAllocations {
+		gpuDevice, ok := gpuTotalDevices[int(allocation.Minor)]
+		if !ok || gpuDevice == nil || quotav1.IsZero(gpuDevice) {
+			return fmt.Errorf("no healthy gpu device with minor %d of allocation", allocation.Minor)
+		}
+		if gpuMem, ok := allocation.Resources[apiext.ResourceGPUMemory]; ok {
+			gpuAllocations[i].Resources[apiext.ResourceGPUMemoryRatio] = memoryBytesToRatio(gpuMem, gpuDevice[apiext.ResourceGPUMemory])
+		} else {
+			gpuMemRatio := allocation.Resources[apiext.ResourceGPUMemoryRatio]
+			gpuAllocations[i].Resources[apiext.ResourceGPUMemory] = memoryRatioToBytes(gpuMemRatio, gpuDevice[apiext.ResourceGPUMemory])
+		}
 	}
 	return nil
 }

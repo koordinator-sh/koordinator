@@ -28,6 +28,13 @@ import (
 )
 
 const (
+	// LabelReservationIgnored indicates whether the pod should schedule ignoring resource reservations on the nodes.
+	// If a scheduling pod set this label, the pod can allocate the node unreserved resources unallocated and the
+	// reserved resources unallocated of all reservations on the node. If a pod scheduled with this label on a node,
+	// the reservations of the node will not consider the pod as their owners. To avoid the pods setting with this label
+	// to block the other pods allocated reserved resources, it should be used with the reservation preemption.
+	LabelReservationIgnored = SchedulingDomainPrefix + "/reservation-ignored"
+
 	// LabelReservationOrder controls the preference logic for Reservation.
 	// Reservation with lower order is preferred to be selected before Reservation with higher order.
 	// But if it is 0, Reservation will be selected according to the capacity score.
@@ -50,6 +57,8 @@ type ReservationAllocated struct {
 
 // ReservationAffinity represents the constraints of Pod selection Reservation
 type ReservationAffinity struct {
+	// Specifies the reservation name directly, other reservation affinity fields will be ignored.
+	Name string `json:"name,omitempty"`
 	// If the affinity requirements specified by this field are not met at
 	// scheduling time, the pod will not be scheduled onto the node.
 	// If the affinity requirements specified by this field cease to be met
@@ -59,6 +68,8 @@ type ReservationAffinity struct {
 	// ReservationSelector is a selector which must be true for the pod to fit on a reservation.
 	// Selector which must match a reservation's labels for the pod to be scheduled on that node.
 	ReservationSelector map[string]string `json:"reservationSelector,omitempty"`
+	// Specifies the pod's reservation tolerations. This can tolerate taints of Reservation.
+	Tolerations []corev1.Toleration `json:"tolerations,omitempty"`
 }
 
 // ReservationAffinitySelector represents the union of the results of one or more label queries
@@ -76,6 +87,10 @@ type ReservationRestrictedOptions struct {
 	// If the Reservation's AllocatePolicy is Restricted, and no resources configured,
 	// by default the resources equal all reserved resources by the Reservation.
 	Resources []corev1.ResourceName `json:"resources,omitempty"`
+}
+
+func IsReservationIgnored(pod *corev1.Pod) bool {
+	return pod != nil && pod.Labels != nil && pod.Labels[LabelReservationIgnored] == "true"
 }
 
 func GetReservationAllocated(pod *corev1.Pod) (*ReservationAllocated, error) {
@@ -111,8 +126,12 @@ func IsReservationAllocateOnce(r *schedulingv1alpha1.Reservation) bool {
 }
 
 func GetReservationAffinity(annotations map[string]string) (*ReservationAffinity, error) {
+	s, ok := annotations[AnnotationReservationAffinity]
+	if !ok {
+		return nil, nil
+	}
 	var affinity ReservationAffinity
-	if s := annotations[AnnotationReservationAffinity]; s != "" {
+	if s != "" {
 		if err := json.Unmarshal([]byte(s), &affinity); err != nil {
 			return nil, err
 		}
@@ -156,4 +175,58 @@ func SetReservationRestrictedOptions(obj metav1.Object, options *ReservationRest
 	annotations[AnnotationReservationRestrictedOptions] = string(data)
 	obj.SetAnnotations(annotations)
 	return nil
+}
+
+const (
+	AnnotationExactMatchReservationSpec = SchedulingDomainPrefix + "/exact-match-reservation"
+)
+
+type ExactMatchReservationSpec struct {
+	ResourceNames []corev1.ResourceName `json:"resourceNames,omitempty"`
+}
+
+func SetExactMatchReservationSpec(obj metav1.Object, spec *ExactMatchReservationSpec) error {
+	data, err := json.Marshal(spec)
+	if err != nil {
+		return err
+	}
+	annotations := obj.GetAnnotations()
+	if annotations == nil {
+		annotations = map[string]string{}
+	}
+	annotations[AnnotationExactMatchReservationSpec] = string(data)
+	obj.SetAnnotations(annotations)
+	return nil
+}
+
+func GetExactMatchReservationSpec(annotations map[string]string) (*ExactMatchReservationSpec, error) {
+	if s := annotations[AnnotationExactMatchReservationSpec]; s != "" {
+		var exactMatchReservationSpec ExactMatchReservationSpec
+		if err := json.Unmarshal([]byte(s), &exactMatchReservationSpec); err != nil {
+			return nil, err
+		}
+		return &exactMatchReservationSpec, nil
+	}
+	return nil, nil
+}
+
+func ExactMatchReservation(podRequests, reservationAllocatable corev1.ResourceList, spec *ExactMatchReservationSpec) bool {
+	if spec == nil || len(spec.ResourceNames) == 0 {
+		return true
+	}
+	for _, resourceName := range spec.ResourceNames {
+		allocatable, existsInReservation := reservationAllocatable[resourceName]
+		request, existsInPod := podRequests[resourceName]
+		if !existsInReservation || !existsInPod {
+			if !existsInReservation && !existsInPod {
+				return true
+			}
+			return false
+		}
+
+		if allocatable.Cmp(request) != 0 {
+			return false
+		}
+	}
+	return true
 }

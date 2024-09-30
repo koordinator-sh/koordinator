@@ -23,10 +23,10 @@ import (
 	admissionv1 "k8s.io/api/admission/v1"
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/runtime/inject"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	"github.com/koordinator-sh/koordinator/pkg/webhook/elasticquota"
+	"github.com/koordinator-sh/koordinator/pkg/webhook/quotaevaluate"
 )
 
 // PodValidatingHandler handles Pod
@@ -35,6 +35,9 @@ type PodValidatingHandler struct {
 
 	// Decoder decodes objects
 	Decoder *admission.Decoder
+
+	// QuotaEvaluator evaluate pod quota usage
+	QuotaEvaluator quotaevaluate.Evaluator
 }
 
 var _ admission.Handler = &PodValidatingHandler{}
@@ -62,13 +65,26 @@ func (h *PodValidatingHandler) validatingPodFn(ctx context.Context, req admissio
 		return false, reason, err
 	}
 
-	allowed, reason, err = h.clusterColocationProfileValidatingPod(ctx, req)
-	if err == nil {
-		plugin := elasticquota.NewPlugin(h.Decoder, h.Client)
-		if err = plugin.ValidatePod(ctx, req); err != nil {
-			return false, "", err
-		}
+	_, reason, err = h.clusterColocationProfileValidatingPod(ctx, req)
+	if err != nil {
+		return false, reason, err
 	}
+
+	plugin := elasticquota.NewPlugin(h.Decoder, h.Client)
+	if err = plugin.ValidatePod(ctx, req); err != nil {
+		return false, "", err
+	}
+
+	_, reason, err = h.evaluateQuota(ctx, req)
+	if err != nil {
+		return false, reason, err
+	}
+
+	allowed, reason, err = h.deviceResourceValidatingPod(ctx, req)
+	if err != nil {
+		return false, reason, err
+	}
+
 	return
 }
 
@@ -83,7 +99,7 @@ func (h *PodValidatingHandler) Handle(ctx context.Context, req admission.Request
 	return admission.ValidationResponse(allowed, reason)
 }
 
-var _ inject.Client = &PodValidatingHandler{}
+// var _ inject.Client = &PodValidatingHandler{}
 
 // InjectClient injects the client into the PodValidatingHandler
 func (h *PodValidatingHandler) InjectClient(c client.Client) error {
@@ -91,7 +107,7 @@ func (h *PodValidatingHandler) InjectClient(c client.Client) error {
 	return nil
 }
 
-var _ admission.DecoderInjector = &PodValidatingHandler{}
+// var _ admission.DecoderInjector = &PodValidatingHandler{}
 
 // InjectDecoder injects the decoder into the PodValidatingHandler
 func (h *PodValidatingHandler) InjectDecoder(d *admission.Decoder) error {

@@ -30,16 +30,17 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/cache/informertest"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
-	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
-	pgfake "sigs.k8s.io/scheduler-plugins/pkg/generated/clientset/versioned/fake"
-	"sigs.k8s.io/scheduler-plugins/pkg/generated/informers/externalversions"
+
+	"github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
+	pgfake "github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/generated/clientset/versioned/fake"
+	"github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/generated/informers/externalversions"
 )
 
 func makeTestHandler() *ElasticQuotaValidatingHandler {
 	client := fake.NewClientBuilder().Build()
 	sche := client.Scheme()
 	v1alpha1.AddToScheme(sche)
-	decoder, _ := admission.NewDecoder(sche)
+	decoder := admission.NewDecoder(sche)
 	handler := &ElasticQuotaValidatingHandler{}
 	handler.InjectClient(client)
 	handler.InjectDecoder(decoder)

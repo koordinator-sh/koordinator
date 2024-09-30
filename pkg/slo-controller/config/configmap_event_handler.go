@@ -17,6 +17,7 @@ limitations under the License.
 package config
 
 import (
+	"context"
 	"reflect"
 
 	corev1 "k8s.io/api/core/v1"
@@ -34,7 +35,7 @@ type EnqueueRequestForConfigMap struct {
 	SyncCacheIfChanged func(configMap *corev1.ConfigMap) bool
 }
 
-func (p *EnqueueRequestForConfigMap) Create(evt event.CreateEvent, q workqueue.RateLimitingInterface) {
+func (p *EnqueueRequestForConfigMap) Create(ctx context.Context, evt event.CreateEvent, q workqueue.RateLimitingInterface) {
 	configMap, ok := evt.Object.(*corev1.ConfigMap)
 	if !ok {
 		return
@@ -49,13 +50,13 @@ func (p *EnqueueRequestForConfigMap) Create(evt event.CreateEvent, q workqueue.R
 	p.EnqueueRequest(&q)
 }
 
-func (p *EnqueueRequestForConfigMap) Delete(evt event.DeleteEvent, q workqueue.RateLimitingInterface) {
+func (p *EnqueueRequestForConfigMap) Delete(ctx context.Context, evt event.DeleteEvent, q workqueue.RateLimitingInterface) {
 }
 
-func (p *EnqueueRequestForConfigMap) Generic(evt event.GenericEvent, q workqueue.RateLimitingInterface) {
+func (p *EnqueueRequestForConfigMap) Generic(ctx context.Context, evt event.GenericEvent, q workqueue.RateLimitingInterface) {
 }
 
-func (p *EnqueueRequestForConfigMap) Update(evt event.UpdateEvent, q workqueue.RateLimitingInterface) {
+func (p *EnqueueRequestForConfigMap) Update(ctx context.Context, evt event.UpdateEvent, q workqueue.RateLimitingInterface) {
 	newConfigMap := evt.ObjectNew.(*corev1.ConfigMap)
 	oldConfigMap := evt.ObjectOld.(*corev1.ConfigMap)
 	if reflect.DeepEqual(newConfigMap.Data, oldConfigMap.Data) {

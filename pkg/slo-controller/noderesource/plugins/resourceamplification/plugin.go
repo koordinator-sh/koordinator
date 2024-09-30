@@ -30,8 +30,12 @@ import (
 
 const PluginName = "ResourceAmplification"
 
+var (
+	cfgHandler *configHandler
+)
+
 // Plugin calculates and updates final node resource amplification ratios automatically
-// based on user config (not implemented) and node cpu normalization ratio.
+// based on user config and node cpu normalization ratio.
 type Plugin struct{}
 
 func (p *Plugin) Name() string {
@@ -57,6 +61,14 @@ func (p *Plugin) NeedSyncMeta(_ *configuration.ColocationStrategy, oldNode, newN
 	return true, "ratio changed"
 }
 
+// +kubebuilder:rbac:groups=core,resources=nodes,verbs=get;list;watch
+func (p *Plugin) Setup(opt *framework.Option) error {
+	cfgHandler = newConfigHandler(opt.Client, DefaultResourceAmplificationCfg(), opt.Recorder)
+	opt.Builder = opt.Builder.Watches(&corev1.ConfigMap{}, cfgHandler)
+
+	return nil
+}
+
 func (p *Plugin) Prepare(_ *configuration.ColocationStrategy, node *corev1.Node, nr *framework.NodeResource) error {
 	ratioStr, ok := nr.Annotations[extension.AnnotationNodeResourceAmplificationRatio]
 	if !ok {
@@ -79,27 +91,35 @@ func (p *Plugin) Reset(node *corev1.Node, message string) []framework.ResourceIt
 	return nil
 }
 
+// Calculate calculates resource amplification ratio, resource final ratio should >= 1
+// cpuAmplificationRatio = amplificationStrategy.resourceAmplificationRatio["cpu"] * CPUNormalizationRatio
+// otherResourceAmplificationRatio = amplificationStrategy.resourceAmplificationRatio["other-resource"]
 func (p *Plugin) Calculate(_ *configuration.ColocationStrategy, node *corev1.Node, _ *corev1.PodList, _ *framework.ResourceMetrics) ([]framework.ResourceItem, error) {
-	normRatio, err := extension.GetCPUNormalizationRatio(node)
+	resourceAmplificationRatios, err := getResourceAmplificationRatios(node)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get cpu normalization ratio: %w", err)
+		return nil, fmt.Errorf("calculate failed for node %s, getResourceAmplificationRatios failed: %w", node.Name, err)
 	}
 
-	if normRatio <= 1 {
+	cpuAmplificationRatio, err := calculateCPUAmplificationRatio(node, resourceAmplificationRatios[corev1.ResourceCPU])
+	if err != nil {
+		return nil, fmt.Errorf("calculate failed for node %s, calculateCPUAmplificationRatio failed: %w", node.Name, err)
+	}
+	if cpuAmplificationRatio > 1 {
+		resourceAmplificationRatios[corev1.ResourceCPU] = cpuAmplificationRatio
+	}
+
+	if err := validateResourceAmplificationRatios(resourceAmplificationRatios); err != nil {
+		return nil, fmt.Errorf("calculate failed for node %s, amplification ratio is invalid: %w", node.Name, err)
+	}
+
+	if len(resourceAmplificationRatios) == 0 {
+		klog.V(6).Infof("node %s does not need resource amplification ratio", node.Name)
 		return []framework.ResourceItem{
-			{
-				Name: PluginName,
-			},
+			{Name: PluginName},
 		}, nil
 	}
 
-	// Set cpu amplification ratio according to cpu normalization ratio.
-	// TODO: In the future, we should read user's amplification config, multiply its cpu amplification ratio
-	// with cpu normalization ratio, and apply the final result.
-	ampRatios := map[corev1.ResourceName]extension.Ratio{
-		corev1.ResourceCPU: extension.Ratio(normRatio),
-	}
-	ratioBytes, _ := json.Marshal(ampRatios)
+	ratioBytes, _ := json.Marshal(resourceAmplificationRatios)
 	ratioStr := string(ratioBytes)
 	klog.V(6).Infof("calculate resource amplification ratio %s for node %s", ratioStr, node.Name)
 	return []framework.ResourceItem{
@@ -110,4 +130,48 @@ func (p *Plugin) Calculate(_ *configuration.ColocationStrategy, node *corev1.Nod
 			},
 		},
 	}, nil
+}
+
+func calculateCPUAmplificationRatio(node *corev1.Node, ratio extension.Ratio) (extension.Ratio, error) {
+	var finalRatio extension.Ratio = 1
+	if ratio > 0 {
+		finalRatio = ratio
+	}
+
+	cpuNormalizationRatio, err := extension.GetCPUNormalizationRatio(node)
+	if err != nil {
+		return finalRatio, fmt.Errorf("failed to get cpu normalization ratio, error: %w", err)
+	}
+
+	if cpuNormalizationRatio > 0 {
+		finalRatio *= extension.Ratio(cpuNormalizationRatio)
+	}
+
+	return finalRatio, nil
+}
+
+func validateResourceAmplificationRatios(ratios map[corev1.ResourceName]extension.Ratio) error {
+	for k, v := range ratios {
+		if v < 1 {
+			return fmt.Errorf("ratio with resource type %v and value %v is invalid", k, v)
+		}
+	}
+
+	return nil
+}
+
+func getResourceAmplificationRatios(node *corev1.Node) (map[corev1.ResourceName]extension.Ratio, error) {
+	if !cfgHandler.IsCfgAvailable() {
+		return nil, fmt.Errorf("cfgHandler is not available")
+	}
+
+	ratios := map[corev1.ResourceName]extension.Ratio{}
+	strategy := cfgHandler.GetStrategyCopy(node)
+	if strategy.Enable != nil && *strategy.Enable {
+		for k, v := range strategy.ResourceAmplificationRatio {
+			ratios[k] = extension.Ratio(v)
+		}
+	}
+
+	return ratios, nil
 }

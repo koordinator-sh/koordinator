@@ -50,6 +50,7 @@ const (
 )
 
 func TestBlkIOReconcile_reconcile(t *testing.T) {
+	helper := system.NewFileTestUtil(t)
 	sysFSRootDirName := BlkIOReconcileName
 
 	testingNodeSLO := newNodeSLO()
@@ -92,7 +93,14 @@ func TestBlkIOReconcile_reconcile(t *testing.T) {
 		"/dev/mapper/yoda--pool0-yoda--test1":                                    "yoda-pool0",
 		"/dev/mapper/yoda--pool0-yoda--test2":                                    "yoda-pool0",
 	}
-	system.Conf.CgroupKubePath = KubePath
+
+	var oldVarLibKubeletRoot string
+	helper.SetConf(func(conf *system.Config) {
+		oldVarLibKubeletRoot = conf.VarLibKubeletRootDir
+		conf.VarLibKubeletRootDir = KubePath
+	}, func(conf *system.Config) {
+		conf.VarLibKubeletRootDir = oldVarLibKubeletRoot
+	})
 	mpDiskMap := map[string]string{
 		fmt.Sprintf("%s/pods/%s/volumes/kubernetes.io~csi/%s/mount", KubePath, pod0.UID, "yoda-87d8625a-dcc9-47bf-a14a-994cf2971193"): "/dev/mapper/yoda--pool0-yoda--87d8625a--dcc9--47bf--a14a--994cf2971193",
 		fmt.Sprintf("%s/pods/%s/volumes/kubernetes.io~csi/html/mount", KubePath, pod1.UID):                                            "/dev/mapper/yoda--pool0-yoda--test1",

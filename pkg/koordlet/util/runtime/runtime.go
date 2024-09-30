@@ -32,6 +32,7 @@ var (
 	DockerHandler     handler.ContainerRuntimeHandler
 	ContainerdHandler handler.ContainerRuntimeHandler
 	PouchHandler      handler.ContainerRuntimeHandler
+	CrioHandler       handler.ContainerRuntimeHandler
 	mutex             = &sync.Mutex{}
 )
 
@@ -46,6 +47,8 @@ func GetRuntimeHandler(runtimeType string) (handler.ContainerRuntimeHandler, err
 		return getContainerdHandler()
 	case system.RuntimeTypePouch:
 		return getPouchHandler()
+	case system.RuntimeTypeCrio:
+		return getCrioHandler()
 	default:
 		return nil, fmt.Errorf("runtime type %v is not supported", runtimeType)
 	}
@@ -150,6 +153,43 @@ func getPouchEndpoint() (string, error) {
 	}
 
 	return "", fmt.Errorf("pouch endpoint does not exist")
+}
+
+func getCrioHandler() (handler.ContainerRuntimeHandler, error) {
+	if CrioHandler != nil {
+		return CrioHandler, nil
+	}
+
+	unixEndpoint, err := getCrioEndpoint()
+	if err != nil {
+		klog.Errorf("failed to get cri-o endpoint, error: %v", err)
+		return nil, err
+	}
+
+	CrioHandler, err = handler.NewCrioRuntimeHandler(unixEndpoint)
+	if err != nil {
+		klog.Errorf("failed to create cri-o runtime handler, error: %v", err)
+		return nil, err
+	}
+
+	return CrioHandler, nil
+}
+
+func getCrioEndpoint() (string, error) {
+	if crioEndpoint := handler.GetCrioEndpoint(); isFile(crioEndpoint) {
+		return fmt.Sprintf("unix://%s", crioEndpoint), nil
+	}
+
+	if crioEndpoint2 := handler.GetCrioEndpoint2(); isFile(crioEndpoint2) {
+		return fmt.Sprintf("unix://%s", crioEndpoint2), nil
+	}
+
+	if len(system.Conf.CrioEndPoint) > 0 && isFile(system.Conf.CrioEndPoint) {
+		klog.Infof("find cri-o Endpoint : %v", system.Conf.CrioEndPoint)
+		return fmt.Sprintf("unix://%s", system.Conf.CrioEndPoint), nil
+	}
+
+	return "", fmt.Errorf("cri-o endpoint does not exist")
 }
 
 func isFile(path string) bool {

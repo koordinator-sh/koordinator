@@ -23,7 +23,8 @@ import (
 	kubeschedulerscheme "k8s.io/kubernetes/pkg/scheduler/apis/config/scheme"
 
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
-	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/v1beta2"
+	v1 "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/v1"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/v1beta3"
 )
 
 var (
@@ -41,5 +42,6 @@ func init() {
 // AddToScheme builds the kubescheduler scheme using all known versions of the kubescheduler api.
 func AddToScheme(scheme *runtime.Scheme) {
 	utilruntime.Must(config.AddToScheme(scheme))
-	utilruntime.Must(v1beta2.AddToScheme(scheme))
+	utilruntime.Must(v1beta3.AddToScheme(scheme))
+	utilruntime.Must(v1.AddToScheme(scheme))
 }

@@ -23,9 +23,9 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/klog/v2"
-	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/coscheduling/util"
 )
@@ -51,35 +51,18 @@ type Gang struct {
 	TotalChildrenNum  int
 	GangGroupId       string
 	GangGroup         []string
+	GangGroupInfo     *GangGroupInfo
 	Children          map[string]*v1.Pod
 	// pods that have already assumed(waiting in Permit stage)
 	WaitingForBindChildren map[string]*v1.Pod
 	// pods that have already bound
 	BoundChildren map[string]*v1.Pod
-	// OnceResourceSatisfied indicates whether the gang has ever reached the ResourceSatisfied state，which means the
-	// children number has reached the minNum in the early step,
-	// once this variable is set true, it is irreversible.
-	OnceResourceSatisfied bool
 
 	// only-waiting, only consider waiting pods
 	// waiting-and-running, consider waiting and running pods
 	// waiting-running-succeed, consider waiting, running and succeed pods
 	// once-satisfied, once gang is satisfied, no need to consider any status pods
 	GangMatchPolicy string
-
-	// if the podGroup should be passed at PreFilter stage(Strict-Mode)
-	ScheduleCycleValid bool
-	// these fields used to count the cycle
-	// For example, at the beginning, `scheduleCycle` is 1, and each pod's cycle in `childrenScheduleRoundMap` is 0. When each pod comes to PreFilter,
-	// we will check if the pod's value in `childrenScheduleRoundMap` is smaller than Gang's `scheduleCycle`, If result is positive,
-	// we set the pod's cycle in `childrenScheduleRoundMap` equal with `scheduleCycle` and pass the check. If result is negative, means
-	// the pod has been scheduled in this cycle, so we should reject it. With `totalChildrenNum`'s help, when the last pod comes to make all
-	// `childrenScheduleRoundMap`'s values equal to `scheduleCycle`, Gang's `scheduleCycle` will be added by 1, which means a new schedule cycle.
-	ScheduleCycle int
-	// Pods with the same priority are scheduled according to the scheduling time of the previous round to ensure fairness.
-	// For a Gang, its last round time as a whole is recorded as LastScheduleTime, that is, all Pods below it have the same time, which is LastScheduleTime.
-	LastScheduleTime         time.Time
-	ChildrenScheduleRoundMap map[string]int
 
 	GangFrom    string
 	HasGangInit bool
@@ -89,22 +72,19 @@ type Gang struct {
 
 func NewGang(gangName string) *Gang {
 	return &Gang{
-		Name:                     gangName,
-		CreateTime:               timeNowFn(),
-		WaitTime:                 0,
-		GangGroupId:              gangName,
-		GangGroup:                []string{gangName},
-		Mode:                     extension.GangModeStrict,
-		GangMatchPolicy:          extension.GangMatchPolicyOnceSatisfied,
-		Children:                 make(map[string]*v1.Pod),
-		WaitingForBindChildren:   make(map[string]*v1.Pod),
-		BoundChildren:            make(map[string]*v1.Pod),
-		ScheduleCycleValid:       true,
-		ScheduleCycle:            1,
-		LastScheduleTime:         timeNowFn(),
-		ChildrenScheduleRoundMap: make(map[string]int),
-		GangFrom:                 GangFromPodAnnotation,
-		HasGangInit:              false,
+		Name:                   gangName,
+		CreateTime:             timeNowFn(),
+		WaitTime:               0,
+		GangGroupId:            gangName,
+		GangGroup:              []string{gangName},
+		Mode:                   extension.GangModeStrict,
+		GangMatchPolicy:        extension.GangMatchPolicyOnceSatisfied,
+		Children:               make(map[string]*v1.Pod),
+		WaitingForBindChildren: make(map[string]*v1.Pod),
+		BoundChildren:          make(map[string]*v1.Pod),
+		GangFrom:               GangFromPodAnnotation,
+		HasGangInit:            false,
+		GangGroupInfo:          NewGangGroupInfo("", nil),
 	}
 }
 
@@ -153,7 +133,6 @@ func (gang *Gang) tryInitByPodConfig(pod *v1.Pod, args *config.CoschedulingArgs)
 
 	// here we assume that Coscheduling's CreateTime equal with the pod's CreateTime
 	gang.CreateTime = pod.CreationTimestamp.Time
-	gang.LastScheduleTime = pod.CreationTimestamp.Time
 
 	waitTime, err := time.ParseDuration(pod.Annotations[extension.AnnotationGangWaitTime])
 	if err != nil || waitTime <= 0 {
@@ -220,7 +199,6 @@ func (gang *Gang) tryInitByPodGroup(pg *v1alpha1.PodGroup, args *config.Coschedu
 
 	// here we assume that Coscheduling's CreateTime equal with the podGroup CRD CreateTime
 	gang.CreateTime = pg.CreationTimestamp.Time
-	gang.LastScheduleTime = pg.CreationTimestamp.Time
 
 	waitTime := util.GetWaitTimeDuration(pg, args.DefaultTimeout.Duration)
 	gang.WaitTime = waitTime
@@ -245,6 +223,19 @@ func (gang *Gang) tryInitByPodGroup(pg *v1alpha1.PodGroup, args *config.Coschedu
 		gang.Mode, gang.WaitTime, gang.GangGroup)
 }
 
+func (gang *Gang) SetGangGroupInfo(gangGroupInfo *GangGroupInfo) {
+	gang.lock.Lock()
+	defer gang.lock.Unlock()
+
+	if !gang.GangGroupInfo.IsInitialized() {
+		gang.GangGroupInfo = gangGroupInfo
+		klog.Infof("SetGangGroupInfo done, gangName: %v, groupSlice: %v, gangGroupId: %v",
+			gang.Name, gang.GangGroup, gang.GangGroupId)
+	}
+
+	gang.GangGroupInfo.SetGangTotalChildrenNum(gang.Name, gang.TotalChildrenNum)
+}
+
 func (gang *Gang) deletePod(pod *v1.Pod) bool {
 	if pod == nil {
 		return false
@@ -259,7 +250,8 @@ func (gang *Gang) deletePod(pod *v1.Pod) bool {
 	delete(gang.Children, podId)
 	delete(gang.WaitingForBindChildren, podId)
 	delete(gang.BoundChildren, podId)
-	delete(gang.ChildrenScheduleRoundMap, podId)
+	gang.GangGroupInfo.deleteChildScheduleCycle(podId)
+	gang.GangGroupInfo.deletePodLastScheduleTime(podId)
 	if gang.GangFrom == GangFromPodAnnotation {
 		if len(gang.Children) == 0 {
 			return true
@@ -296,10 +288,10 @@ func (gang *Gang) getGangTotalNum() int {
 	return gang.TotalChildrenNum
 }
 
-func (gang *Gang) getBoundPodNum() int {
+func (gang *Gang) getBoundPodNum() int32 {
 	gang.lock.Lock()
 	defer gang.lock.Unlock()
-	return len(gang.BoundChildren)
+	return int32(len(gang.BoundChildren))
 }
 
 func (gang *Gang) getGangMode() string {
@@ -330,21 +322,6 @@ func (gang *Gang) getGangWaitingPods() int {
 	return len(gang.WaitingForBindChildren)
 }
 
-func (gang *Gang) getScheduleCycle() int {
-	gang.lock.Lock()
-	defer gang.lock.Unlock()
-
-	return gang.ScheduleCycle
-}
-
-func (gang *Gang) getChildScheduleCycle(pod *v1.Pod) int {
-	gang.lock.Lock()
-	defer gang.lock.Unlock()
-
-	podId := util.GetId(pod.Namespace, pod.Name)
-	return gang.ChildrenScheduleRoundMap[podId]
-}
-
 func (gang *Gang) getCreateTime() time.Time {
 	gang.lock.Lock()
 	defer gang.lock.Unlock()
@@ -363,14 +340,7 @@ func (gang *Gang) isGangOnceResourceSatisfied() bool {
 	gang.lock.Lock()
 	defer gang.lock.Unlock()
 
-	return gang.OnceResourceSatisfied
-}
-
-func (gang *Gang) isScheduleCycleValid() bool {
-	gang.lock.Lock()
-	defer gang.lock.Unlock()
-
-	return gang.ScheduleCycleValid
+	return gang.GangGroupInfo.isGangOnceResourceSatisfied()
 }
 
 func (gang *Gang) setChild(pod *v1.Pod) {
@@ -384,50 +354,76 @@ func (gang *Gang) setChild(pod *v1.Pod) {
 	}
 }
 
-func (gang *Gang) setScheduleCycleValid(valid bool) {
+func (gang *Gang) initAllChildrenPodLastScheduleTime() {
 	gang.lock.Lock()
 	defer gang.lock.Unlock()
 
-	if !valid && !gang.ScheduleCycleValid {
-		/*
-			let's explain why by following example, there are three gang of one group: F, G, every gang group have min-member of 10 pod, noted as F1-F10, G1-G10.
-			1. F1 failed due to insufficient resource, F2-F10 failed due to cycle invalid,
-			2. then G1-G10 assumed, however all it's sibling will come until next round of all gangs, these gangs will face insufficient resource due to pre-allocated of G1-G10
-
-			TODO this logic can be optimized by give gangs of same group same scheduling cycle
-		*/
-		gang.ScheduleCycle += 1
+	for _, pod := range gang.Children {
+		gang.GangGroupInfo.initPodLastScheduleTime(pod)
 	}
-	gang.ScheduleCycleValid = valid
-	klog.Infof("SetScheduleCycleValid, gangName: %v, valid: %v", gang.Name, valid)
+}
+
+func (gang *Gang) initPodLastScheduleTime(pod *v1.Pod) {
+	gang.lock.Lock()
+	defer gang.lock.Unlock()
+
+	gang.GangGroupInfo.initPodLastScheduleTime(pod)
+}
+
+func (gang *Gang) getPodLastScheduleTime(pod *v1.Pod) time.Time {
+	gang.lock.Lock()
+	defer gang.lock.Unlock()
+
+	return gang.GangGroupInfo.getPodLastScheduleTime(pod)
+}
+
+func (gang *Gang) resetPodLastScheduleTime(pod *v1.Pod) {
+	gang.lock.Lock()
+	defer gang.lock.Unlock()
+
+	gang.GangGroupInfo.resetPodLastScheduleTime(pod)
+}
+
+func (gang *Gang) setScheduleCycleInvalid() {
+	gang.lock.Lock()
+	defer gang.lock.Unlock()
+
+	gang.GangGroupInfo.setScheduleCycleInvalid()
+}
+
+func (gang *Gang) isScheduleCycleValid() bool {
+	gang.lock.Lock()
+	defer gang.lock.Unlock()
+
+	return gang.GangGroupInfo.IsScheduleCycleValid()
 }
 
 func (gang *Gang) setChildScheduleCycle(pod *v1.Pod, childCycle int) {
 	gang.lock.Lock()
 	defer gang.lock.Unlock()
 
-	podId := util.GetId(pod.Namespace, pod.Name)
-	gang.ChildrenScheduleRoundMap[podId] = childCycle
-	klog.Infof("setChildScheduleCycle, pod: %v, childCycle: %v", podId, childCycle)
+	gang.GangGroupInfo.setChildScheduleCycle(pod, childCycle)
+}
+
+func (gang *Gang) getChildScheduleCycle(pod *v1.Pod) int {
+	gang.lock.Lock()
+	defer gang.lock.Unlock()
+
+	return gang.GangGroupInfo.getChildScheduleCycle(pod)
+}
+
+func (gang *Gang) getScheduleCycle() int {
+	gang.lock.Lock()
+	defer gang.lock.Unlock()
+
+	return gang.GangGroupInfo.GetScheduleCycle()
 }
 
 func (gang *Gang) trySetScheduleCycleValid() {
 	gang.lock.Lock()
 	defer gang.lock.Unlock()
 
-	num := 0
-	for _, childScheduleCycle := range gang.ChildrenScheduleRoundMap {
-		if childScheduleCycle == gang.ScheduleCycle {
-			num++
-		}
-	}
-
-	if num == gang.TotalChildrenNum {
-		gang.ScheduleCycleValid = true
-		gang.ScheduleCycle += 1
-		klog.Infof("trySetScheduleCycleTrue, gangName: %v, ScheduleCycle: %v, ScheduleCycleValid: %v",
-			gang.Name, gang.ScheduleCycle, gang.ScheduleCycleValid)
-	}
+	gang.GangGroupInfo.trySetScheduleCycleValid()
 }
 
 func (gang *Gang) addAssumedPod(pod *v1.Pod) {
@@ -472,10 +468,7 @@ func (gang *Gang) setResourceSatisfied() {
 	gang.lock.Lock()
 	defer gang.lock.Unlock()
 
-	if !gang.OnceResourceSatisfied {
-		gang.OnceResourceSatisfied = true
-		klog.Infof("Gang ResourceSatisfied, gangName: %v", gang.Name)
-	}
+	gang.GangGroupInfo.setResourceSatisfied()
 }
 
 func (gang *Gang) addBoundPod(pod *v1.Pod) {
@@ -487,8 +480,8 @@ func (gang *Gang) addBoundPod(pod *v1.Pod) {
 	gang.BoundChildren[podId] = pod
 
 	klog.Infof("AddBoundPod, gangName: %v, podName: %v", gang.Name, podId)
-	if len(gang.BoundChildren) >= gang.MinRequiredNumber {
-		gang.OnceResourceSatisfied = true
+	if !gang.GangGroupInfo.isGangOnceResourceSatisfied() {
+		gang.GangGroupInfo.setResourceSatisfied()
 		klog.Infof("Gang ResourceSatisfied due to addBoundPod, gangName: %v", gang.Name)
 	}
 }
@@ -507,18 +500,6 @@ func (gang *Gang) isGangValidForPermit() bool {
 	case extension.GangMatchPolicyWaitingAndRunning:
 		return len(gang.WaitingForBindChildren)+len(gang.BoundChildren) >= gang.MinRequiredNumber
 	default:
-		return len(gang.WaitingForBindChildren) >= gang.MinRequiredNumber || gang.OnceResourceSatisfied == true
+		return len(gang.WaitingForBindChildren) >= gang.MinRequiredNumber || gang.GangGroupInfo.isGangOnceResourceSatisfied()
 	}
-}
-
-func (gang *Gang) getLastScheduleTime() time.Time {
-	gang.lock.Lock()
-	defer gang.lock.Unlock()
-	return gang.LastScheduleTime
-}
-
-func (gang *Gang) setLastScheduleTime(time time.Time) {
-	gang.lock.Lock()
-	defer gang.lock.Unlock()
-	gang.LastScheduleTime = time
 }

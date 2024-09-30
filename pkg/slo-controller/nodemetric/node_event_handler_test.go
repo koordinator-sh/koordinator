@@ -17,6 +17,7 @@ limitations under the License.
 package nodemetric
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -32,13 +33,13 @@ func Test_isNodeAllocatableUpdated(t *testing.T) {
 	assert := assert.New(t)
 	newNode := &corev1.Node{}
 	oldNode := &corev1.Node{}
-	assert.Equal(false, isNodeAllocatableUpdated(nil, oldNode))
-	assert.Equal(false, isNodeAllocatableUpdated(newNode, nil))
-	assert.Equal(false, isNodeAllocatableUpdated(nil, nil))
-	assert.Equal(false, isNodeAllocatableUpdated(newNode, oldNode))
+	assert.Equal(false, isNodeUpdated(nil, oldNode))
+	assert.Equal(false, isNodeUpdated(newNode, nil))
+	assert.Equal(false, isNodeUpdated(nil, nil))
+	assert.Equal(false, isNodeUpdated(newNode, oldNode))
 	newNode.Status.Allocatable = corev1.ResourceList{}
 	newNode.Status.Allocatable["test"] = resource.Quantity{}
-	assert.Equal(true, isNodeAllocatableUpdated(newNode, oldNode))
+	assert.Equal(true, isNodeUpdated(newNode, oldNode))
 }
 
 func Test_EnqueueRequestForNode(t *testing.T) {
@@ -53,7 +54,7 @@ func Test_EnqueueRequestForNode(t *testing.T) {
 		{
 			name: "create node event",
 			fn: func(handler *EnqueueRequestForNode, q workqueue.RateLimitingInterface) {
-				handler.Create(event.CreateEvent{
+				handler.Create(context.TODO(), event.CreateEvent{
 					Object: &corev1.Node{
 						ObjectMeta: metav1.ObjectMeta{
 							Name: "node1",
@@ -67,7 +68,7 @@ func Test_EnqueueRequestForNode(t *testing.T) {
 		{
 			name: "create event not node",
 			fn: func(handler *EnqueueRequestForNode, q workqueue.RateLimitingInterface) {
-				handler.Create(event.CreateEvent{
+				handler.Create(context.TODO(), event.CreateEvent{
 					Object: &corev1.Pod{
 						ObjectMeta: metav1.ObjectMeta{
 							Name: "pod1",
@@ -80,7 +81,7 @@ func Test_EnqueueRequestForNode(t *testing.T) {
 		{
 			name: "delete node event",
 			fn: func(handler *EnqueueRequestForNode, q workqueue.RateLimitingInterface) {
-				handler.Delete(event.DeleteEvent{
+				handler.Delete(context.TODO(), event.DeleteEvent{
 					Object: &corev1.Node{
 						ObjectMeta: metav1.ObjectMeta{
 							Name: "node1",
@@ -94,7 +95,7 @@ func Test_EnqueueRequestForNode(t *testing.T) {
 		{
 			name: "delete event not node",
 			fn: func(handler *EnqueueRequestForNode, q workqueue.RateLimitingInterface) {
-				handler.Delete(event.DeleteEvent{
+				handler.Delete(context.TODO(), event.DeleteEvent{
 					Object: &corev1.Pod{
 						ObjectMeta: metav1.ObjectMeta{
 							Name: "pod1",
@@ -107,7 +108,7 @@ func Test_EnqueueRequestForNode(t *testing.T) {
 		{
 			name: "update node event",
 			fn: func(handler *EnqueueRequestForNode, q workqueue.RateLimitingInterface) {
-				handler.Update(event.UpdateEvent{
+				handler.Update(context.TODO(), event.UpdateEvent{
 					ObjectOld: &corev1.Node{
 						ObjectMeta: metav1.ObjectMeta{
 							Name: "node1",
@@ -131,7 +132,7 @@ func Test_EnqueueRequestForNode(t *testing.T) {
 		{
 			name: "update node event ignore",
 			fn: func(handler *EnqueueRequestForNode, q workqueue.RateLimitingInterface) {
-				handler.Update(event.UpdateEvent{
+				handler.Update(context.TODO(), event.UpdateEvent{
 					ObjectOld: &corev1.Node{
 						ObjectMeta: metav1.ObjectMeta{
 							Name: "node1",
@@ -149,7 +150,66 @@ func Test_EnqueueRequestForNode(t *testing.T) {
 		{
 			name: "generic node event ignore",
 			fn: func(handler *EnqueueRequestForNode, q workqueue.RateLimitingInterface) {
-				handler.Generic(event.GenericEvent{}, q)
+				handler.Generic(context.TODO(), event.GenericEvent{}, q)
+			},
+			hasEvent: false,
+		},
+		{
+			name: "update node labels",
+			fn: func(handler *EnqueueRequestForNode, q workqueue.RateLimitingInterface) {
+				handler.Update(context.TODO(), event.UpdateEvent{
+					ObjectOld: &corev1.Node{
+						ObjectMeta: metav1.ObjectMeta{
+							Name: "node1",
+							Labels: map[string]string{
+								"test": "test",
+							},
+						},
+					},
+					ObjectNew: &corev1.Node{
+						ObjectMeta: metav1.ObjectMeta{
+							Name: "node1",
+							Labels: map[string]string{
+								"test": "test1",
+							},
+						},
+					},
+				}, q)
+			},
+			hasEvent:  true,
+			eventName: "node1",
+		},
+		{
+			name: "allocatable and labels not updated",
+			fn: func(handler *EnqueueRequestForNode, q workqueue.RateLimitingInterface) {
+				handler.Update(context.TODO(), event.UpdateEvent{
+					ObjectOld: &corev1.Node{
+						ObjectMeta: metav1.ObjectMeta{
+							Name: "node1",
+							Labels: map[string]string{
+								"test": "test",
+							},
+						},
+						Status: corev1.NodeStatus{
+							Allocatable: corev1.ResourceList{
+								corev1.ResourceCPU: *resource.NewQuantity(500, resource.DecimalSI),
+							},
+						},
+					},
+					ObjectNew: &corev1.Node{
+						ObjectMeta: metav1.ObjectMeta{
+							Name: "node1",
+							Labels: map[string]string{
+								"test": "test",
+							},
+						},
+						Status: corev1.NodeStatus{
+							Allocatable: corev1.ResourceList{
+								corev1.ResourceCPU: *resource.NewQuantity(500, resource.DecimalSI),
+							},
+						},
+					},
+				}, q)
 			},
 			hasEvent: false,
 		},

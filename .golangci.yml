@@ -53,12 +53,18 @@ linters-settings:
     # Default is to use a neutral variety of English.
     # Setting locale to US will correct the British spelling of 'colour' to 'color'.
     locale: US
+  depguard:
+    rules:
+      main:
+        deny:
+        - pkg: "io/ioutil"
+          desc: "Use corresponding 'os' or 'io' functions instead."
 
 linters:
   fast: false
   disable-all: true
   enable:
-    - deadcode
+#    - unused
     - gofmt
     - govet
     - goimports
@@ -67,6 +73,7 @@ linters:
     - vet
     - unconvert
     - staticcheck
+    - depguard
 
 issues:
   exclude-rules:

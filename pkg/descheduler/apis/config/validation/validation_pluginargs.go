@@ -30,6 +30,10 @@ import (
 func ValidateMigrationControllerArgs(path *field.Path, args *deschedulerconfig.MigrationControllerArgs) error {
 	var allErrs field.ErrorList
 
+	if args.MaxMigratingGlobally != nil && *args.MaxMigratingGlobally < 0 {
+		allErrs = append(allErrs, field.Invalid(path.Child("maxMigratingGlobally"), *args.MaxMigratingGlobally, "maxMigratingGlobally should be greater or equal 0"))
+	}
+
 	if args.MaxMigratingPerNamespace != nil && *args.MaxMigratingPerNamespace < 0 {
 		allErrs = append(allErrs, field.Invalid(path.Child("maxMigratingPerNamespace"), *args.MaxMigratingPerNamespace, "maxMigratingPerNamespace should be greater or equal 0"))
 	}
@@ -59,7 +63,7 @@ func ValidateMigrationControllerArgs(path *field.Path, args *deschedulerconfig.M
 	}
 
 	if args.LabelSelector != nil {
-		allErrs = append(allErrs, metav1validation.ValidateLabelSelector(args.LabelSelector, field.NewPath("labelSelector"))...)
+		allErrs = append(allErrs, metav1validation.ValidateLabelSelector(args.LabelSelector, metav1validation.LabelSelectorValidationOptions{}, field.NewPath("labelSelector"))...)
 	}
 
 	// At most one of include/exclude can be set

@@ -21,6 +21,8 @@ import (
 	"strings"
 
 	"github.com/containerd/nri/pkg/api"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/klog/v2"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
@@ -217,6 +219,10 @@ type ContainerContext struct {
 	updaters []resourceexecutor.ResourceUpdater
 }
 
+func (c *ContainerContext) RecordEvent(r record.EventRecorder, pod *corev1.Pod) {
+	//TODO: Don't record pod by container level
+}
+
 func (c *ContainerContext) FromNri(pod *api.PodSandbox, container *api.Container) {
 	c.Request.FromNri(pod, container)
 }
@@ -260,6 +266,11 @@ func (c *ContainerContext) NriDone(executor resourceexecutor.ResourceUpdateExecu
 	if c.Response.Resources.MemoryLimit != nil {
 		adjust.SetLinuxMemoryLimit(*c.Response.Resources.MemoryLimit)
 		update.SetLinuxMemoryLimit(*c.Response.Resources.MemoryLimit)
+	}
+
+	if c.Response.Resources.Resctrl != nil {
+		adjust.SetLinuxRDTClass((*(c.Response.Resources.Resctrl)).Closid)
+		update.SetLinuxRDTClass((*(c.Response.Resources.Resctrl)).Closid)
 	}
 
 	if c.Response.AddContainerEnvs != nil {

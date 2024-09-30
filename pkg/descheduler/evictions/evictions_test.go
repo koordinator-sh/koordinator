@@ -92,6 +92,7 @@ func TestIsEvictable(t *testing.T) {
 		pods                    []*corev1.Pod
 		nodes                   []*corev1.Node
 		evictFailedBarePods     bool
+		evictAllBarePods        bool
 		evictLocalStoragePods   bool
 		evictSystemCriticalPods bool
 		ignorePVCPods           bool
@@ -124,6 +125,22 @@ func TestIsEvictable(t *testing.T) {
 				}),
 			},
 			evictFailedBarePods: true,
+			result:              true,
+		}, {
+			description:         "Normal pod eviction with no ownerRefs and evictAllBarePods enabled",
+			pods:                []*corev1.Pod{test.BuildTestPod("bare_pod_normal_but_can_be_evicted", 400, 0, n1.Name, nil)},
+			evictFailedBarePods: false,
+			evictAllBarePods:    true,
+			result:              true,
+		}, {
+			description: "Failed pod eviction with no ownerRefs and evictAllBarePods enabled",
+			pods: []*corev1.Pod{
+				test.BuildTestPod("bare_pod_failed_but_can_be_evicted", 400, 0, n1.Name, func(pod *corev1.Pod) {
+					pod.Status.Phase = corev1.PodFailed
+				}),
+			},
+			evictFailedBarePods: false,
+			evictAllBarePods:    true,
 			result:              true,
 		}, {
 			description: "Normal pod eviction with normal ownerRefs",
@@ -716,21 +733,16 @@ func TestIsEvictable(t *testing.T) {
 
 			var opts []func(opts *Options)
 			if tt.priorityThreshold != nil {
-				opts = append(opts, WithPriorityThreshold(*tt.priorityThreshold))
+				opts = append(opts, WithPriorityThreshold(tt.priorityThreshold))
 			}
 			if tt.nodeFit {
 				opts = append(opts, WithNodeFit(true))
 			}
 			if tt.labelSelector != nil {
-				selector, err := metav1.LabelSelectorAsSelector(tt.labelSelector)
-				if err != nil {
-					t.Errorf("failed to get label selectors: %v", err)
-				} else {
-					opts = append(opts, WithLabelSelector(selector))
-				}
+				opts = append(opts, WithLabelSelector(tt.labelSelector))
 			}
 
-			evictorFilter := NewEvictorFilter(
+			evictorFilter, err := NewEvictorFilter(
 				func() ([]*corev1.Node, error) {
 					return nodes, nil
 				},
@@ -739,8 +751,12 @@ func TestIsEvictable(t *testing.T) {
 				tt.evictSystemCriticalPods,
 				tt.ignorePVCPods,
 				tt.evictFailedBarePods,
+				tt.evictAllBarePods,
 				opts...,
 			)
+			if err != nil {
+				t.Errorf("Failed to get evictorFilter, err: %s", err.Error())
+			}
 
 			result := evictorFilter.Filter(tt.pods[0])
 			if result != tt.result {

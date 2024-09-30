@@ -22,6 +22,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/klog/v2"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	sev1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
@@ -85,6 +86,10 @@ func GetMaxUnavailable(replicas int, intOrPercent *intstr.IntOrString) (int, err
 		if err != nil {
 			return 0, err
 		}
+		// handle the case of float value that less than 1.0
+		if maxUnavailable == 0 {
+			maxUnavailable = 1
+		}
 	}
 	if maxUnavailable == 0 {
 		if replicas > 10 {
@@ -112,8 +117,18 @@ func GetMaxMigrating(replicas int, intOrPercent *intstr.IntOrString) (int, error
 	return GetMaxUnavailable(replicas, intOrPercent)
 }
 
+func GetLimiterBurst(burst int) int {
+	if burst == 0 {
+		return 1
+	}
+	return burst
+}
+
 // FilterPodWithMaxEvictionCost rejects if pod's eviction cost is math.MaxInt32
 func FilterPodWithMaxEvictionCost(pod *corev1.Pod) bool {
 	cost, _ := extension.GetEvictionCost(pod.Annotations)
+	if cost == math.MaxInt32 {
+		klog.V(4).InfoS("Pod fails the following checks", "pod", klog.KObj(pod), "checks", "podWithMaxEvictionCost")
+	}
 	return !(cost == math.MaxInt32)
 }

@@ -17,6 +17,8 @@ limitations under the License.
 package cpunormalization
 
 import (
+	"context"
+
 	topologyv1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/workqueue"
@@ -32,7 +34,7 @@ var _ handler.EventHandler = &nrtHandler{}
 
 type nrtHandler struct{}
 
-func (h *nrtHandler) Create(evt event.CreateEvent, q workqueue.RateLimitingInterface) {
+func (h *nrtHandler) Create(ctx context.Context, evt event.CreateEvent, q workqueue.RateLimitingInterface) {
 	nrt, ok := evt.Object.(*topologyv1alpha1.NodeResourceTopology)
 	if !ok {
 		return
@@ -49,7 +51,7 @@ func (h *nrtHandler) Create(evt event.CreateEvent, q workqueue.RateLimitingInter
 	})
 }
 
-func (h *nrtHandler) Update(evt event.UpdateEvent, q workqueue.RateLimitingInterface) {
+func (h *nrtHandler) Update(ctx context.Context, evt event.UpdateEvent, q workqueue.RateLimitingInterface) {
 	nrtOld, okOld := evt.ObjectOld.(*topologyv1alpha1.NodeResourceTopology)
 	nrtNew, okNew := evt.ObjectNew.(*topologyv1alpha1.NodeResourceTopology)
 	if !okOld || !okNew {
@@ -71,10 +73,10 @@ func (h *nrtHandler) Update(evt event.UpdateEvent, q workqueue.RateLimitingInter
 	})
 }
 
-func (h *nrtHandler) Delete(evt event.DeleteEvent, q workqueue.RateLimitingInterface) {
+func (h *nrtHandler) Delete(ctx context.Context, evt event.DeleteEvent, q workqueue.RateLimitingInterface) {
 }
 
-func (h *nrtHandler) Generic(evt event.GenericEvent, q workqueue.RateLimitingInterface) {
+func (h *nrtHandler) Generic(ctx context.Context, evt event.GenericEvent, q workqueue.RateLimitingInterface) {
 }
 
 func isNRTCPUBasicInfoCreated(nrt *topologyv1alpha1.NodeResourceTopology) bool {

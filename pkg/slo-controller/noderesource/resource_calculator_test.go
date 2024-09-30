@@ -28,8 +28,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/clock"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/utils/clock"
 	"k8s.io/utils/pointer"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -42,6 +42,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/noderesource/framework"
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/noderesource/plugins/batchresource"
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/noderesource/plugins/midresource"
+	"github.com/koordinator-sh/koordinator/pkg/util/testutil"
 )
 
 func init() {
@@ -187,14 +188,14 @@ func Test_calculateNodeResource(t *testing.T) {
 					Message:  "batchAllocatable[Mem(GB)]:6 = nodeCapacity:40 - nodeSafetyMargin:14 - systemUsage:0 - podHPUsed:20",
 				},
 				{
-					Name:    extension.MidCPU,
-					Reset:   true,
-					Message: "degrade node Mid resource because of abnormal nodeMetric, reason: degradedByMidResource",
+					Name:     extension.MidCPU,
+					Quantity: resource.NewQuantity(0, resource.DecimalSI),
+					Message:  "midAllocatable[CPU(milli-core)]:0 = min(nodeAllocatable:20000 * thresholdRatio:1, ProdReclaimable:0) + Unallocated:0 * midUnallocatedRatio:0",
 				},
 				{
-					Name:    extension.MidMemory,
-					Reset:   true,
-					Message: "degrade node Mid resource because of abnormal nodeMetric, reason: degradedByMidResource",
+					Name:     extension.MidMemory,
+					Quantity: resource.NewQuantity(0, resource.BinarySI),
+					Message:  "midAllocatable[Memory(byte)]:0 = min(nodeAllocatable:40G * thresholdRatio:1, ProdReclaimable:0) + Unallocated:20G * midUnallocatedRatio:0",
 				},
 			}...),
 		},
@@ -394,14 +395,14 @@ func Test_calculateNodeResource(t *testing.T) {
 					Message:  "batchAllocatable[Mem(GB)]:33 = nodeCapacity:120 - nodeSafetyMargin:42 - systemUsage:12 - podHPUsed:33",
 				},
 				{
-					Name:    extension.MidCPU,
-					Reset:   true,
-					Message: "degrade node Mid resource because of abnormal nodeMetric, reason: degradedByMidResource",
+					Name:     extension.MidCPU,
+					Quantity: resource.NewQuantity(0, resource.DecimalSI),
+					Message:  "midAllocatable[CPU(milli-core)]:0 = min(nodeAllocatable:100000 * thresholdRatio:1, ProdReclaimable:0) + Unallocated:60000 * midUnallocatedRatio:0",
 				},
 				{
-					Name:    extension.MidMemory,
-					Reset:   true,
-					Message: "degrade node Mid resource because of abnormal nodeMetric, reason: degradedByMidResource",
+					Name:     extension.MidMemory,
+					Quantity: resource.NewQuantity(0, resource.BinarySI),
+					Message:  "midAllocatable[Memory(byte)]:0 = min(nodeAllocatable:120G * thresholdRatio:1, ProdReclaimable:0) + Unallocated:60G * midUnallocatedRatio:0",
 				},
 			}...),
 		},
@@ -604,14 +605,14 @@ func Test_calculateNodeResource(t *testing.T) {
 					Message:  "batchAllocatable[Mem(GB)]:39 = nodeCapacity:120 - nodeSafetyMargin:36 - systemUsage:12 - podHPUsed:33",
 				},
 				{
-					Name:    extension.MidCPU,
-					Reset:   true,
-					Message: "degrade node Mid resource because of abnormal nodeMetric, reason: degradedByMidResource",
+					Name:     extension.MidCPU,
+					Quantity: resource.NewQuantity(0, resource.DecimalSI),
+					Message:  "midAllocatable[CPU(milli-core)]:0 = min(nodeAllocatable:100000 * thresholdRatio:1, ProdReclaimable:0) + Unallocated:60000 * midUnallocatedRatio:0",
 				},
 				{
-					Name:    extension.MidMemory,
-					Reset:   true,
-					Message: "degrade node Mid resource because of abnormal nodeMetric, reason: degradedByMidResource",
+					Name:     extension.MidMemory,
+					Quantity: resource.NewQuantity(0, resource.BinarySI),
+					Message:  "midAllocatable[Memory(byte)]:0 = min(nodeAllocatable:120G * thresholdRatio:1, ProdReclaimable:0) + Unallocated:60G * midUnallocatedRatio:0",
 				},
 			}...),
 		},
@@ -814,14 +815,14 @@ func Test_calculateNodeResource(t *testing.T) {
 					Message:  "batchAllocatable[Mem(GB)]:36 = nodeCapacity:120 - nodeSafetyMargin:24 - nodeReserved:0 - podHPRequest:60",
 				},
 				{
-					Name:    extension.MidCPU,
-					Reset:   true,
-					Message: "degrade node Mid resource because of abnormal nodeMetric, reason: degradedByMidResource",
+					Name:     extension.MidCPU,
+					Quantity: resource.NewQuantity(0, resource.DecimalSI),
+					Message:  "midAllocatable[CPU(milli-core)]:0 = min(nodeAllocatable:100000 * thresholdRatio:1, ProdReclaimable:0) + Unallocated:60000 * midUnallocatedRatio:0",
 				},
 				{
-					Name:    extension.MidMemory,
-					Reset:   true,
-					Message: "degrade node Mid resource because of abnormal nodeMetric, reason: degradedByMidResource",
+					Name:     extension.MidMemory,
+					Quantity: resource.NewQuantity(0, resource.BinarySI),
+					Message:  "midAllocatable[Memory(byte)]:0 = min(nodeAllocatable:120G * thresholdRatio:1, ProdReclaimable:0) + Unallocated:60G * midUnallocatedRatio:0",
 				},
 			}...),
 		},
@@ -1031,12 +1032,12 @@ func Test_calculateNodeResource(t *testing.T) {
 				{
 					Name:     extension.MidCPU,
 					Quantity: resource.NewQuantity(10000, resource.DecimalSI),
-					Message:  "midAllocatable[CPU(milli-core)]:10000 = min(nodeAllocatable:100000 * thresholdRatio:1, ProdReclaimable:10000)",
+					Message:  "midAllocatable[CPU(milli-core)]:10000 = min(nodeAllocatable:100000 * thresholdRatio:1, ProdReclaimable:10000) + Unallocated:60000 * midUnallocatedRatio:0",
 				},
 				{
 					Name:     extension.MidMemory,
 					Quantity: resource.NewQuantity(20000000000, resource.BinarySI),
-					Message:  "midAllocatable[Memory(byte)]:19531250Ki = min(nodeAllocatable:120G * thresholdRatio:1, ProdReclaimable:20G)",
+					Message:  "midAllocatable[Memory(byte)]:19531250Ki = min(nodeAllocatable:120G * thresholdRatio:1, ProdReclaimable:20G) + Unallocated:60G * midUnallocatedRatio:0",
 				},
 			}...),
 		},
@@ -1047,7 +1048,8 @@ func Test_calculateNodeResource(t *testing.T) {
 	slov1alpha1.AddToScheme(scheme)
 	schedulingv1alpha1.AddToScheme(scheme)
 	client := fake.NewClientBuilder().WithScheme(scheme).Build()
-	opt := framework.NewOption().WithClient(client).WithScheme(scheme).WithControllerBuilder(&builder.Builder{})
+	fakeBuilder := builder.ControllerManagedBy(&testutil.FakeManager{})
+	opt := framework.NewOption().WithClient(client).WithScheme(scheme).WithControllerBuilder(fakeBuilder)
 	framework.RunSetupExtenders(opt)
 
 	for _, tt := range tests {
@@ -1210,6 +1212,8 @@ func Test_isColocationCfgDisabled(t *testing.T) {
 }
 
 func Test_updateNodeResource(t *testing.T) {
+	scheme := runtime.NewScheme()
+	_ = clientgoscheme.AddToScheme(scheme)
 	enabledCfg := &configuration.ColocationCfg{
 		ColocationStrategy: configuration.ColocationStrategy{
 			Enable:                        pointer.Bool(true),
@@ -1701,18 +1705,18 @@ func Test_updateNodeResource(t *testing.T) {
 		{
 			name: "update node meta",
 			fields: fields{
-				Client: fake.NewClientBuilder().WithRuntimeObjects(&corev1.Node{
+				Client: fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(&corev1.Node{
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "test-node0",
 					},
 					Status: corev1.NodeStatus{
 						Allocatable: corev1.ResourceList{
-							extension.BatchCPU:    resource.MustParse("20"),
-							extension.BatchMemory: resource.MustParse("40G"),
+							corev1.ResourceCPU:    resource.MustParse("20"),
+							corev1.ResourceMemory: resource.MustParse("40G"),
 						},
 						Capacity: corev1.ResourceList{
-							extension.BatchCPU:    resource.MustParse("20"),
-							extension.BatchMemory: resource.MustParse("40G"),
+							corev1.ResourceCPU:    resource.MustParse("20"),
+							corev1.ResourceMemory: resource.MustParse("40G"),
 						},
 					},
 				}).Build(),

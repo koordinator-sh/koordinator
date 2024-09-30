@@ -32,7 +32,6 @@ import (
 	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/events"
 	"k8s.io/klog/v2"
-	"k8s.io/utils/pointer"
 
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/framework"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/metrics"
@@ -195,14 +194,14 @@ func EvictPod(ctx context.Context, client clientset.Interface, pod *corev1.Pod, 
 type Options struct {
 	priority      *int32
 	nodeFit       bool
-	labelSelector labels.Selector
+	labelSelector *metav1.LabelSelector
 }
 
 // WithPriorityThreshold sets a threshold for pod's priority class.
 // Any pod whose priority class is lower is evictable.
-func WithPriorityThreshold(priority int32) func(opts *Options) {
+func WithPriorityThreshold(priority *int32) func(opts *Options) {
 	return func(opts *Options) {
-		opts.priority = pointer.Int32(priority)
+		opts.priority = priority
 	}
 }
 
@@ -218,7 +217,7 @@ func WithNodeFit(nodeFit bool) func(opts *Options) {
 
 // WithLabelSelector sets whether or not to apply label filtering when evicting.
 // Any pod matching the label selector is considered evictable.
-func WithLabelSelector(labelSelector labels.Selector) func(opts *Options) {
+func WithLabelSelector(labelSelector *metav1.LabelSelector) func(opts *Options) {
 	return func(opts *Options) {
 		opts.labelSelector = labelSelector
 	}
@@ -239,32 +238,35 @@ func NewEvictorFilter(
 	evictSystemCriticalPods bool,
 	ignorePvcPods bool,
 	evictFailedBarePods bool,
+	evictAllBarePods bool,
 	opts ...func(opts *Options),
-) *EvictorFilter {
+) (*EvictorFilter, error) {
 	options := &Options{}
 	for _, opt := range opts {
 		opt(options)
 	}
 
 	ev := &EvictorFilter{}
-	if evictFailedBarePods {
-		ev.constraints = append(ev.constraints, func(pod *corev1.Pod) error {
-			ownerRefList := podutil.OwnerRef(pod)
-			// Enable evictFailedBarePods to evict bare pods in failed phase
-			if len(ownerRefList) == 0 && pod.Status.Phase != corev1.PodFailed {
-				return fmt.Errorf("pod does not have any ownerRefs and is not in failed phase")
-			}
-			return nil
-		})
-	} else {
-		ev.constraints = append(ev.constraints, func(pod *corev1.Pod) error {
-			ownerRefList := podutil.OwnerRef(pod)
-			// Moved from IsEvictable function for backward compatibility
-			if len(ownerRefList) == 0 {
-				return fmt.Errorf("pod does not have any ownerRefs")
-			}
-			return nil
-		})
+	if !evictAllBarePods {
+		if evictFailedBarePods {
+			ev.constraints = append(ev.constraints, func(pod *corev1.Pod) error {
+				ownerRefList := podutil.OwnerRef(pod)
+				// Enable evictFailedBarePods to evict bare pods in failed phase
+				if len(ownerRefList) == 0 && pod.Status.Phase != corev1.PodFailed {
+					return fmt.Errorf("pod does not have any ownerRefs and is not in failed phase")
+				}
+				return nil
+			})
+		} else {
+			ev.constraints = append(ev.constraints, func(pod *corev1.Pod) error {
+				ownerRefList := podutil.OwnerRef(pod)
+				// Moved from IsEvictable function for backward compatibility
+				if len(ownerRefList) == 0 {
+					return fmt.Errorf("pod does not have any ownerRefs")
+				}
+				return nil
+			})
+		}
 	}
 	if !evictSystemCriticalPods {
 		ev.constraints = append(ev.constraints, func(pod *corev1.Pod) error {
@@ -300,6 +302,7 @@ func NewEvictorFilter(
 			return nil
 		})
 	}
+	// todo: to align with the k8s descheduling framework, nodeFit should be moved into PreEvictionFilter in the future
 	if options.nodeFit {
 		ev.constraints = append(ev.constraints, func(pod *corev1.Pod) error {
 			nodes, err := nodeGetter()
@@ -312,16 +315,20 @@ func NewEvictorFilter(
 			return nil
 		})
 	}
-	if options.labelSelector != nil && !options.labelSelector.Empty() {
+	selector, err := metav1.LabelSelectorAsSelector(options.labelSelector)
+	if err != nil {
+		return nil, fmt.Errorf("could not get selector from label selector")
+	}
+	if options.labelSelector != nil && !selector.Empty() {
 		ev.constraints = append(ev.constraints, func(pod *corev1.Pod) error {
-			if !options.labelSelector.Matches(labels.Set(pod.Labels)) {
+			if !selector.Matches(labels.Set(pod.Labels)) {
 				return fmt.Errorf("pod labels do not match the labelSelector filter in the policy parameter")
 			}
 			return nil
 		})
 	}
 
-	return ev
+	return ev, nil
 }
 
 // Filter decides when a pod is evictable

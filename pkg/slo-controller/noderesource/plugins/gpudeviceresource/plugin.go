@@ -27,13 +27,14 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/klog/v2"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	"github.com/koordinator-sh/koordinator/apis/configuration"
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/noderesource/framework"
 	"github.com/koordinator-sh/koordinator/pkg/util"
+	utilfeature "github.com/koordinator-sh/koordinator/pkg/util/feature"
 )
 
 const PluginName = "GPUDeviceResource"
@@ -66,7 +67,7 @@ func (p *Plugin) Setup(opt *framework.Option) error {
 	client = opt.Client
 
 	// schedulingv1alpha1.AddToScheme(opt.Scheme)
-	opt.Builder = opt.Builder.Watches(&source.Kind{Type: &schedulingv1alpha1.Device{}}, &DeviceHandler{})
+	opt.Builder = opt.Builder.Watches(&schedulingv1alpha1.Device{}, &DeviceHandler{})
 
 	return nil
 }
@@ -162,14 +163,22 @@ func (p *Plugin) calculate(node *corev1.Node, device *schedulingv1alpha1.Device)
 	// calculate gpu resources
 	gpuResources := make(corev1.ResourceList)
 	totalKoordGPU := resource.NewQuantity(0, resource.DecimalSI)
+	healthGPUNum := 0
 	for _, d := range device.Spec.Devices {
 		if d.Type != schedulingv1alpha1.GPU || !d.Health {
 			continue
 		}
+
+		healthGPUNum++
 		util.AddResourceList(gpuResources, d.Resources)
 		totalKoordGPU.Add(d.Resources[extension.ResourceGPUCore])
 	}
+
 	gpuResources[extension.ResourceGPU] = *totalKoordGPU
+	if utilfeature.DefaultFeatureGate.Enabled(features.EnableSyncGPUSharedResource) {
+		gpuResources[extension.ResourceGPUShared] = *resource.NewQuantity(int64(healthGPUNum)*100, resource.DecimalSI)
+	}
+
 	var items []framework.ResourceItem
 	// FIXME: shall we add node resources in devices but not in ResourceNames?
 	for resourceName := range gpuResources {
@@ -184,13 +193,17 @@ func (p *Plugin) calculate(node *corev1.Node, device *schedulingv1alpha1.Device)
 	klog.V(5).InfoS("calculate gpu resources", "node", node.Name, "resources", gpuResources)
 
 	// calculate labels about gpu driver and model
-	if device.Labels != nil {
+	updatedLabels := map[string]string{}
+	if gpuModel, ok := device.Labels[extension.LabelGPUModel]; ok {
+		updatedLabels[extension.LabelGPUModel] = gpuModel
+	}
+	if gpuDriverVersion, ok := device.Labels[extension.LabelGPUDriverVersion]; ok {
+		updatedLabels[extension.LabelGPUDriverVersion] = gpuDriverVersion
+	}
+	if len(updatedLabels) != 0 {
 		items = append(items, framework.ResourceItem{
-			Name: PluginName,
-			Labels: map[string]string{
-				extension.LabelGPUModel:         device.Labels[extension.LabelGPUModel],
-				extension.LabelGPUDriverVersion: device.Labels[extension.LabelGPUDriverVersion],
-			},
+			Name:    PluginName,
+			Labels:  updatedLabels,
 			Message: UpdateLabelsMsg,
 		})
 	}

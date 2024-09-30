@@ -198,6 +198,9 @@ func Test_GetNodeColocationStrategy(t *testing.T) {
 				UpdateTimeThresholdSeconds:     pointer.Int64(300),
 				ResourceDiffThreshold:          pointer.Float64(0.1),
 				MetricMemoryCollectPolicy:      &defaultMemoryCollectPolicy,
+				MidCPUThresholdPercent:         pointer.Int64(100),
+				MidMemoryThresholdPercent:      pointer.Int64(100),
+				MidUnallocatedPercent:          pointer.Int64(0),
 			},
 		},
 		{
@@ -613,6 +616,96 @@ func Test_IsColocationStrategyValid(t *testing.T) {
 				},
 			},
 			want: true,
+		},
+		{
+			name: "midCPUThresholdPercent less than 0 strategy is invalid",
+			args: args{
+				strategy: &configuration.ColocationStrategy{
+					Enable:                        pointer.Bool(true),
+					CPUReclaimThresholdPercent:    pointer.Int64(65),
+					MemoryReclaimThresholdPercent: pointer.Int64(65),
+					DegradeTimeMinutes:            pointer.Int64(15),
+					UpdateTimeThresholdSeconds:    pointer.Int64(300),
+					ResourceDiffThreshold:         pointer.Float64(0.1),
+					MidCPUThresholdPercent:        pointer.Int64(-1),
+				},
+			},
+			want: false,
+		},
+		{
+			name: "midCPUThresholdPercent more than 100 strategy is invalid",
+			args: args{
+				strategy: &configuration.ColocationStrategy{
+					Enable:                        pointer.Bool(true),
+					CPUReclaimThresholdPercent:    pointer.Int64(65),
+					MemoryReclaimThresholdPercent: pointer.Int64(65),
+					DegradeTimeMinutes:            pointer.Int64(15),
+					UpdateTimeThresholdSeconds:    pointer.Int64(300),
+					ResourceDiffThreshold:         pointer.Float64(0.1),
+					MidCPUThresholdPercent:        pointer.Int64(150),
+				},
+			},
+			want: false,
+		},
+		{
+			name: "midMemoryThresholdPercent less than 0 strategy is invalid",
+			args: args{
+				strategy: &configuration.ColocationStrategy{
+					Enable:                        pointer.Bool(true),
+					CPUReclaimThresholdPercent:    pointer.Int64(65),
+					MemoryReclaimThresholdPercent: pointer.Int64(65),
+					DegradeTimeMinutes:            pointer.Int64(15),
+					UpdateTimeThresholdSeconds:    pointer.Int64(300),
+					ResourceDiffThreshold:         pointer.Float64(0.1),
+					MidMemoryThresholdPercent:     pointer.Int64(-20),
+				},
+			},
+			want: false,
+		},
+		{
+			name: "midMemoryThresholdPercent more than 100 strategy is invalid",
+			args: args{
+				strategy: &configuration.ColocationStrategy{
+					Enable:                        pointer.Bool(true),
+					CPUReclaimThresholdPercent:    pointer.Int64(65),
+					MemoryReclaimThresholdPercent: pointer.Int64(65),
+					DegradeTimeMinutes:            pointer.Int64(15),
+					UpdateTimeThresholdSeconds:    pointer.Int64(300),
+					ResourceDiffThreshold:         pointer.Float64(0.1),
+					MidMemoryThresholdPercent:     pointer.Int64(101),
+				},
+			},
+			want: false,
+		},
+		{
+			name: "midUnallocatedPercent less than 0 strategy is invalid",
+			args: args{
+				strategy: &configuration.ColocationStrategy{
+					Enable:                        pointer.Bool(true),
+					CPUReclaimThresholdPercent:    pointer.Int64(65),
+					MemoryReclaimThresholdPercent: pointer.Int64(65),
+					DegradeTimeMinutes:            pointer.Int64(15),
+					UpdateTimeThresholdSeconds:    pointer.Int64(300),
+					ResourceDiffThreshold:         pointer.Float64(0.1),
+					MidUnallocatedPercent:         pointer.Int64(-10),
+				},
+			},
+			want: false,
+		},
+		{
+			name: "midUnallocatedPercent more than 100 strategy is invalid",
+			args: args{
+				strategy: &configuration.ColocationStrategy{
+					Enable:                        pointer.Bool(true),
+					CPUReclaimThresholdPercent:    pointer.Int64(65),
+					MemoryReclaimThresholdPercent: pointer.Int64(65),
+					DegradeTimeMinutes:            pointer.Int64(15),
+					UpdateTimeThresholdSeconds:    pointer.Int64(300),
+					ResourceDiffThreshold:         pointer.Float64(0.1),
+					MidUnallocatedPercent:         pointer.Int64(200),
+				},
+			},
+			want: false,
 		},
 	}
 	for _, tt := range tests {

@@ -144,6 +144,7 @@ func (ms *metricServer) GetPodMetric(desc MetricDesc, m MetricKey) (float64, err
 	if err != nil {
 		return 0, err
 	}
+	defer querier.Close()
 
 	podProperties := metriccache.MetricPropertiesFunc.Pod(string(desc.UID))
 	queryPodMetric := func(m metriccache.MetricResource) (float64, error) {
@@ -175,6 +176,7 @@ func (ms *metricServer) GetNodeMetric(desc MetricDesc, m MetricKey) (float64, er
 	if err != nil {
 		return 0, err
 	}
+	defer querier.Close()
 
 	queryNodeMetric := func(m metriccache.MetricResource) (float64, error) {
 		meta, err := m.BuildQueryMeta(nil)

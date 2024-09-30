@@ -24,18 +24,20 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/kubernetes/pkg/controller"
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
 	"k8s.io/utils/pointer"
-	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
-	pgfake "sigs.k8s.io/scheduler-plugins/pkg/generated/clientset/versioned/fake"
-	schedinformer "sigs.k8s.io/scheduler-plugins/pkg/generated/informers/externalversions"
 
+	"github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
+	pgfake "github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/generated/clientset/versioned/fake"
+	schedinformer "github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/generated/informers/externalversions"
 	koordfake "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/fake"
 	koordinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
@@ -159,6 +161,15 @@ func Test_Run(t *testing.T) {
 			previousPhase:     v1alpha1.PodGroupRunning,
 			desiredGroupPhase: v1alpha1.PodGroupPending,
 		},
+		{
+			name:              "Group status convert from scheduling to scheduled, bugCase",
+			pgName:            "pg11",
+			minMember:         4,
+			podNames:          []string{"pod11-1", "pod11-2", "pod11-3", "pod11-4"},
+			podPhase:          v1.PodRunning,
+			previousPhase:     v1alpha1.PodGroupScheduling,
+			desiredGroupPhase: v1alpha1.PodGroupRunning,
+		},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -178,6 +189,9 @@ func Test_Run(t *testing.T) {
 				}
 				if pg.Status.Phase != c.desiredGroupPhase {
 					return false, fmt.Errorf("want %v, got %v", c.desiredGroupPhase, pg.Status.Phase)
+				}
+				if c.name == "Group status convert from scheduling to scheduled, bugCase" {
+					assert.Equal(t, int32(4), pg.Status.Scheduled)
 				}
 				return true, nil
 			})
@@ -268,10 +282,16 @@ func setUp(ctx context.Context, podNames []string, pgName string, podPhase v1.Po
 	if len(podNames) == 0 {
 		kubeClient = fake.NewSimpleClientset()
 	} else {
-		ps := makePods(podNames, pgName, podPhase, podOwnerReference)
-		kubeClient = fake.NewSimpleClientset(ps[0], ps[1])
+		var objs []runtime.Object
+		for _, pod := range makePods(podNames, pgName, podPhase, podOwnerReference) {
+			objs = append(objs, pod)
+		}
+		kubeClient = fake.NewSimpleClientset(objs...)
 	}
 	pg := makePG(pgName, minMember, groupPhase, podGroupCreateTime)
+	if pg.Name == "pg11" {
+		pg.Status.Scheduled = 3
+	}
 	pgClient := pgfake.NewSimpleClientset(pg)
 
 	informerFactory := informers.NewSharedInformerFactory(kubeClient, controller.NoResyncPeriodFunc())
@@ -297,6 +317,7 @@ func makePods(podNames []string, pgName string, phase v1.PodPhase, reference []m
 		if reference != nil && len(reference) != 0 {
 			pod.OwnerReferences = reference
 		}
+		pod.Spec.NodeName = "test"
 		pds = append(pds, pod)
 	}
 	return pds

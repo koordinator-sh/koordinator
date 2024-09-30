@@ -42,6 +42,7 @@ import (
 	"k8s.io/client-go/informers/node"
 	"k8s.io/client-go/informers/policy"
 	"k8s.io/client-go/informers/rbac"
+	"k8s.io/client-go/informers/resource"
 	"k8s.io/client-go/informers/scheduling"
 	"k8s.io/client-go/informers/storage"
 	"k8s.io/client-go/tools/cache"
@@ -151,6 +152,9 @@ func (f *sharedInformerFactory) InformerFor(obj runtime.Object, newFunc internal
 	return sharedIndexerInformer
 }
 
+func (f *sharedInformerFactory) Shutdown() {
+}
+
 func (f *sharedInformerFactory) Admissionregistration() admissionregistration.Interface {
 	return admissionregistration.New(f, f.namespace, f.tweakListOptions)
 }
@@ -213,6 +217,10 @@ func (f *sharedInformerFactory) Policy() policy.Interface {
 
 func (f *sharedInformerFactory) Rbac() rbac.Interface {
 	return rbac.New(f, f.namespace, f.tweakListOptions)
+}
+
+func (f *sharedInformerFactory) Resource() resource.Interface {
+	return resource.New(f, f.namespace, f.tweakListOptions)
 }
 
 func (f *sharedInformerFactory) Scheduling() scheduling.Interface {

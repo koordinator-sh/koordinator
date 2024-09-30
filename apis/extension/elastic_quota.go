@@ -22,7 +22,8 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/apiserver/pkg/quota/v1"
-	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
+
+	"github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 )
 
 // RootQuotaName means quotaTree's root\head.
@@ -53,6 +54,7 @@ const (
 	AnnotationAllocated             = QuotaKoordinatorPrefix + "/allocated"
 	AnnotationNonPreemptibleRequest = QuotaKoordinatorPrefix + "/non-preemptible-request"
 	AnnotationNonPreemptibleUsed    = QuotaKoordinatorPrefix + "/non-preemptible-used"
+	AnnotationAdmission             = QuotaKoordinatorPrefix + "/admission"
 )
 
 func GetParentQuotaName(quota *v1alpha1.ElasticQuota) string {
@@ -205,4 +207,14 @@ func GetUnschedulableResource(quota *v1alpha1.ElasticQuota) (corev1.ResourceList
 		}
 	}
 	return unschedulable, nil
+}
+
+func GetAdmission(quota *v1alpha1.ElasticQuota) (corev1.ResourceList, error) {
+	admission := corev1.ResourceList{}
+	if quota.Annotations[AnnotationAdmission] != "" {
+		if err := json.Unmarshal([]byte(quota.Annotations[AnnotationAdmission]), &admission); err != nil {
+			return admission, err
+		}
+	}
+	return admission, nil
 }

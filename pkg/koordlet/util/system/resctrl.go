@@ -57,8 +57,8 @@ const (
 	ResctrlMBMTotalName     = "mbm_total_bytes"
 
 	// other cpu vendor like "GenuineIntel"
-	INTEL_VENDOR_ID = "GenuineIntel"
 	AMD_VENDOR_ID   = "AuthenticAMD"
+	INTEL_VENDOR_ID = "GenuineIntel"
 )
 
 var (
@@ -146,7 +146,8 @@ func IsSupportResctrlCollector() (bool, error) {
 }
 
 var (
-	ResctrlSchemata     = NewCommonResctrlResource(ResctrlSchemataName, "")
+	ResctrlRoot         = NewCommonResctrlResource("", "")
+  ResctrlSchemata     = NewCommonResctrlResource(ResctrlSchemataName, "")
 	ResctrlTasks        = NewCommonResctrlResource(ResctrlTasksName, "")
 	ResctrlL3CbmMask    = NewCommonResctrlResource(ResctrlCbmMaskName, filepath.Join(RdtInfoDir, L3CatDir))
 	ResctrlLLCOccupancy = NewCommonResctrlResource(ResctrlLLCOccupancyName, "")
@@ -293,6 +294,7 @@ func (r *ResctrlSchemataRaw) L3Number() int {
 }
 
 func (r *ResctrlSchemataRaw) CacheIds() []int {
+	// TODO: consider situation that L3 number and the MB number are the same.
 	ids := []int{}
 	for id := range r.L3 {
 		ids = append(ids, id)
@@ -379,6 +381,11 @@ func (r *ResctrlSchemataRaw) ValidateL3() (bool, string) {
 	if r.L3Num != len(r.L3) {
 		return false, "unmatched L3 number and CAT infos"
 	}
+	for _, value := range r.L3 {
+		if value <= 0 {
+			return false, "wrong value of L3 mask"
+		}
+	}
 	return true, ""
 }
 
@@ -388,6 +395,11 @@ func (r *ResctrlSchemataRaw) ValidateMB() (bool, string) {
 	}
 	if len(r.MB) <= 0 {
 		return false, "no MBA info"
+	}
+	for _, value := range r.MB {
+		if value <= 0 {
+			return false, "wrong value of MB mask"
+		}
 	}
 	return true, ""
 }
@@ -601,6 +613,21 @@ func CheckAndTryEnableResctrlCat() error {
 		return fmt.Errorf("resctrl cat is not enabled, err: %s", err)
 	}
 	return nil
+}
+
+func InitCatGroupIfNotExist(group string) (bool, error) {
+	path := GetResctrlGroupRootDirPath(group)
+	_, err := os.Stat(path)
+	if err == nil {
+		return false, nil
+	} else if !os.IsNotExist(err) {
+		return false, fmt.Errorf("check dir %v for group %s but got unexpected err: %v", path, group, err)
+	}
+	err = os.Mkdir(path, 0755)
+	if err != nil {
+		return false, fmt.Errorf("create dir %v failed for group %s, err: %v", path, group, err)
+	}
+	return true, nil
 }
 
 func CheckResctrlSchemataValid() error {

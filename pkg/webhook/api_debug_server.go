@@ -29,9 +29,9 @@ func RegisterDebugAPIProvider(name string, provider http.Handler) {
 	debugAPIProviderMap[name] = provider
 }
 
-func InstallDebugAPIHandler(server *webhook.Server) {
+func InstallDebugAPIHandler(server webhook.Server) {
 	for name, provider := range debugAPIProviderMap {
 		server.Register(name, provider)
-		klog.Infof("Success register debug api handler, name:%v, tcpAddr:%s:%d", name, server.Host, server.Port)
+		klog.Infof("Success register debug api handler, name:%v", name)
 	}
 }

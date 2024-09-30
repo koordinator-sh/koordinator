@@ -40,14 +40,13 @@ func newForceSyncSharedIndexInformer(informer cache.SharedIndexInformer, default
 	}
 }
 
-func (s *forceSyncsharedIndexInformer) AddEventHandler(handler cache.ResourceEventHandler) {
-	s.AddEventHandlerWithResyncPeriod(handler, s.defaultResync)
+func (s *forceSyncsharedIndexInformer) AddEventHandler(handler cache.ResourceEventHandler) (cache.ResourceEventHandlerRegistration, error) {
+	return s.AddEventHandlerWithResyncPeriod(handler, s.defaultResync)
 }
 
-func (s *forceSyncsharedIndexInformer) AddEventHandlerWithResyncPeriod(handler cache.ResourceEventHandler, resyncPeriod time.Duration) {
+func (s *forceSyncsharedIndexInformer) AddEventHandlerWithResyncPeriod(handler cache.ResourceEventHandler, resyncPeriod time.Duration) (cache.ResourceEventHandlerRegistration, error) {
 	if _, ok := handler.(*forceSyncEventHandler); ok {
-		s.SharedIndexInformer.AddEventHandlerWithResyncPeriod(handler, resyncPeriod)
-		return
+		return s.SharedIndexInformer.AddEventHandlerWithResyncPeriod(handler, resyncPeriod)
 	}
-	ForceSyncFromInformer(context.Background().Done(), s.factory, s.SharedIndexInformer, handler, WithResyncPeriod(resyncPeriod))
+	return ForceSyncFromInformer(context.Background().Done(), s.factory, s.SharedIndexInformer, handler, WithResyncPeriod(resyncPeriod))
 }

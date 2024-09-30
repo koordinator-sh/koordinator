@@ -53,6 +53,7 @@ var (
 
 	_ framework.PreFilterPlugin = &Plugin{}
 	_ framework.FilterPlugin    = &Plugin{}
+	_ framework.PreScorePlugin  = &Plugin{}
 	_ framework.ScorePlugin     = &Plugin{}
 	_ framework.ScoreExtensions = &Plugin{}
 	_ framework.ReservePlugin   = &Plugin{}
@@ -67,9 +68,10 @@ var (
 )
 
 type Plugin struct {
-	handle          frameworkext.ExtendedHandle
-	nodeDeviceCache *nodeDeviceCache
-	scorer          *resourceAllocationScorer
+	disableDeviceNUMATopologyAlignment bool
+	handle                             frameworkext.ExtendedHandle
+	nodeDeviceCache                    *nodeDeviceCache
+	scorer                             *resourceAllocationScorer
 }
 
 type preFilterState struct {
@@ -138,12 +140,12 @@ func getPreFilterState(cycleState *framework.CycleState) (*preFilterState, *fram
 	return state, nil
 }
 
-func (p *Plugin) EventsToRegister() []framework.ClusterEvent {
+func (p *Plugin) EventsToRegister() []framework.ClusterEventWithHint {
 	// To register a custom event, follow the naming convention at:
 	// https://github.com/kubernetes/kubernetes/blob/e1ad9bee5bba8fbe85a6bf6201379ce8b1a611b1/pkg/scheduler/eventhandlers.go#L415-L422
 	gvk := fmt.Sprintf("devices.%v.%v", schedulingv1alpha1.GroupVersion.Version, schedulingv1alpha1.GroupVersion.Group)
-	return []framework.ClusterEvent{
-		{Resource: framework.GVK(gvk), ActionType: framework.Add | framework.Update | framework.Delete},
+	return []framework.ClusterEventWithHint{
+		{Event: framework.ClusterEvent{Resource: framework.GVK(gvk), ActionType: framework.Add | framework.Update | framework.Delete}},
 	}
 }
 
@@ -153,6 +155,9 @@ func (p *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleState
 		return nil, status
 	}
 	cycleState.Write(stateKey, state)
+	if state.skip {
+		return nil, framework.NewStatus(framework.Skip)
+	}
 	return nil, nil
 }
 
@@ -292,8 +297,11 @@ func (p *Plugin) Filter(ctx context.Context, cycleState *framework.CycleState, p
 	restoreState := reservationRestoreState.getNodeState(node.Name)
 	preemptible := appendAllocated(nil, restoreState.mergedUnmatchedUsed, state.preemptibleDevices[node.Name])
 
-	store := topologymanager.GetStore(cycleState)
-	affinity := store.GetAffinity(node.Name)
+	var affinity topologymanager.NUMATopologyHint
+	if !p.disableDeviceNUMATopologyAlignment {
+		store := topologymanager.GetStore(cycleState)
+		affinity, _ = store.GetAffinity(nodeInfo.Node().Name)
+	}
 
 	allocator := &AutopilotAllocator{
 		state:      state,
@@ -302,10 +310,14 @@ func (p *Plugin) Filter(ctx context.Context, cycleState *framework.CycleState, p
 		pod:        pod,
 		numaNodes:  affinity.NUMANodeAffinity,
 	}
+	if !p.disableDeviceNUMATopologyAlignment {
+		allocator.numaNodes = nil
+	}
 
 	nodeDeviceInfo.lock.RLock()
 	defer nodeDeviceInfo.lock.RUnlock()
-	allocateResult, status := p.tryAllocateFromReservation(allocator, state, restoreState, restoreState.matched, node, preemptible, state.hasReservationAffinity)
+	// TODO 当 NUMA 策略不为空时，关于 NUMA 下设备是否能分配其实已经在 NodeNUMAResource 的 FilterByNUMANode 中调用过，这里存在重复调用，待优化
+	allocateResult, status := p.tryAllocateFromReservation(allocator, state, restoreState, restoreState.matched, pod, node, preemptible, state.hasReservationAffinity)
 	if !status.IsSuccess() {
 		return status
 	}
@@ -354,8 +366,11 @@ func (p *Plugin) FilterReservation(ctx context.Context, cycleState *framework.Cy
 		return nil
 	}
 
-	store := topologymanager.GetStore(cycleState)
-	affinity := store.GetAffinity(nodeInfo.Node().Name)
+	var affinity topologymanager.NUMATopologyHint
+	if !p.disableDeviceNUMATopologyAlignment {
+		store := topologymanager.GetStore(cycleState)
+		affinity, _ = store.GetAffinity(nodeInfo.Node().Name)
+	}
 
 	allocator := &AutopilotAllocator{
 		state:      state,
@@ -370,11 +385,17 @@ func (p *Plugin) FilterReservation(ctx context.Context, cycleState *framework.Cy
 	nodeDeviceInfo.lock.RLock()
 	defer nodeDeviceInfo.lock.RUnlock()
 
-	_, status = p.tryAllocateFromReservation(allocator, state, restoreState, restoreState.matched[allocIndex:allocIndex+1], nodeInfo.Node(), preemptible, true)
+	_, status = p.tryAllocateFromReservation(allocator, state, restoreState, restoreState.matched[allocIndex:allocIndex+1], pod, nodeInfo.Node(), preemptible, true)
 	return status
 }
 
 func (p *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) *framework.Status {
+	defer func() {
+		// ReservationRestoreState is O(n) complexity of node number of the cluster.
+		// cleanReservationRestoreState clears ReservationRestoreState in the stateData to reduce memory cost before entering
+		// the binding cycle.
+		cleanReservationRestoreState(cycleState)
+	}()
 	state, status := getPreFilterState(cycleState)
 	if !status.IsSuccess() {
 		return status
@@ -393,8 +414,11 @@ func (p *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState, 
 		return nil
 	}
 
-	store := topologymanager.GetStore(cycleState)
-	affinity := store.GetAffinity(nodeInfo.Node().Name)
+	var affinity topologymanager.NUMATopologyHint
+	if !p.disableDeviceNUMATopologyAlignment {
+		store := topologymanager.GetStore(cycleState)
+		affinity, _ = store.GetAffinity(nodeInfo.Node().Name)
+	}
 
 	allocator := &AutopilotAllocator{
 		state:      state,
@@ -405,6 +429,7 @@ func (p *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState, 
 		numaNodes:  affinity.NUMANodeAffinity,
 	}
 
+	// TODO: de-duplicate logic done by the Filter phase and move head the pre-process of the resource options
 	reservationRestoreState := getReservationRestoreState(cycleState)
 	restoreState := reservationRestoreState.getNodeState(nodeName)
 	preemptible := appendAllocated(nil, restoreState.mergedUnmatchedUsed, state.preemptibleDevices[nodeName])
@@ -423,6 +448,10 @@ func (p *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState, 
 		if !status.IsSuccess() {
 			return status
 		}
+	}
+	err = fillGPUTotalMem(result, nodeDeviceInfo)
+	if err != nil {
+		return framework.AsStatus(err)
 	}
 	nodeDeviceInfo.updateCacheUsed(result, pod, true)
 	state.allocationResult = result
@@ -559,8 +588,9 @@ func New(obj runtime.Object, handle framework.Handle) (framework.Plugin, error) 
 	go deviceCache.gcNodeDevice(context.TODO(), handle.SharedInformerFactory(), defaultGCPeriod)
 
 	return &Plugin{
-		handle:          extendedHandle,
-		nodeDeviceCache: deviceCache,
-		scorer:          scorePlugin(args),
+		handle:                             extendedHandle,
+		nodeDeviceCache:                    deviceCache,
+		scorer:                             scorePlugin(args),
+		disableDeviceNUMATopologyAlignment: args.DisableDeviceNUMATopologyAlignment,
 	}, nil
 }
