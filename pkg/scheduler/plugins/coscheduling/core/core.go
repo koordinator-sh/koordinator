@@ -259,9 +259,11 @@ func (pgMgr *PodGroupManager) PreEnqueue(ctx context.Context, pod *corev1.Pod) (
 }
 
 // PreFilter
-// i.Check whether the Gang has met the scheduleCycleValid check, and reject the pod if negative(only Strict mode ).
-// ii.Check whether the Gang is OnceResourceSatisfied
-// iii.Check whether the Gang has met the scheduleCycleValid check, and reject the pod if negative(only Strict mode ).
+// i.Check whether children in Gang has met the requirements of minimum number under each Gang, and reject the pod if negative.
+// ii.Check whether the Gang is inited, and reject the pod if positive.
+// iii.Check whether the Gang is OnceResourceSatisfied
+// iv.Check whether the Gang has met the scheduleCycleValid check, and reject the pod if negative(only Strict mode ).
+// v.Try update scheduleCycle, scheduleCycleValid, childrenScheduleRoundMap as mentioned above.
 func (pgMgr *PodGroupManager) PreFilter(ctx context.Context, state *framework.CycleState, pod *corev1.Pod) (err error) {
 	if !util.IsPodNeedGang(pod) {
 		return nil
@@ -269,10 +271,28 @@ func (pgMgr *PodGroupManager) PreFilter(ctx context.Context, state *framework.Cy
 	preFilterState := &stateData{skipReject: false, skipSetCycleInvalid: false}
 	state.Write(stateKey, preFilterState)
 	gang := pgMgr.GetGangByPod(pod)
+	if gang == nil {
+		preFilterState.skipSetCycleInvalid = true
+		return fmt.Errorf("can't find gang, gangName: %v, podName: %v", util.GetId(pod.Namespace, util.GetGangNameByPod(pod)),
+			util.GetId(pod.Namespace, pod.Name))
+	}
 
+	// check if gang is initialized
+	if !gang.HasGangInit {
+		preFilterState.skipSetCycleInvalid = true
+		return fmt.Errorf("gang has not init, gangName: %v, podName: %v", gang.Name,
+			util.GetId(pod.Namespace, pod.Name))
+	}
 	// resourceSatisfied means pod will directly pass the PreFilter
 	if gang.getGangMatchPolicy() == extension.GangMatchPolicyOnceSatisfied && gang.isGangOnceResourceSatisfied() {
 		return nil
+	}
+
+	// check minNum
+	if gang.getChildrenNum() < gang.getGangMinNum() {
+		preFilterState.skipSetCycleInvalid = true
+		return fmt.Errorf("gang child pod not collect enough, gangName: %v, podName: %v", gang.Name,
+			util.GetId(pod.Namespace, pod.Name))
 	}
 
 	if pgMgr.args != nil && pgMgr.args.SkipCheckScheduleCycle {
