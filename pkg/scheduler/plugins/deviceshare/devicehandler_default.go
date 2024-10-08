@@ -41,7 +41,7 @@ type DefaultDeviceHandler struct {
 	resourceName corev1.ResourceName
 }
 
-func (h *DefaultDeviceHandler) CalcDesiredRequestsAndCount(_ *corev1.Node, _ *corev1.Pod, podRequests corev1.ResourceList, nodeDevice *nodeDevice, hint *apiext.DeviceHint) (corev1.ResourceList, int, *framework.Status) {
+func (h *DefaultDeviceHandler) CalcDesiredRequestsAndCount(node *corev1.Node, pod *corev1.Pod, podRequests corev1.ResourceList, nodeDevice *nodeDevice, hint *apiext.DeviceHint, state *preFilterState) (corev1.ResourceList, int, *framework.Status) {
 	totalDevices := nodeDevice.deviceTotal[h.deviceType]
 	if len(totalDevices) == 0 {
 		return nil, 0, framework.NewStatus(framework.UnschedulableAndUnresolvable, fmt.Sprintf("Insufficient %s devices", h.deviceType))
