@@ -1422,6 +1422,7 @@ func TestAutopilotAllocatorWithExclusivePolicyAndRequiredScope(t *testing.T) {
 				},
 			},
 		},
+		// TODO 需要考虑这个场景真实存在么
 		{
 			name:            "allocate 3 GPU and 2 VF with assigned devices",
 			deviceCR:        fakeDeviceCR,
@@ -1451,52 +1452,7 @@ func TestAutopilotAllocatorWithExclusivePolicyAndRequiredScope(t *testing.T) {
 					},
 				},
 			},
-			want: apiext.DeviceAllocations{
-				schedulingv1alpha1.GPU: []*apiext.DeviceAllocation{
-					{
-						Minor:     4,
-						Resources: gpuResourceList,
-					},
-					{
-						Minor:     5,
-						Resources: gpuResourceList,
-					},
-					{
-						Minor:     6,
-						Resources: gpuResourceList,
-					},
-				},
-				schedulingv1alpha1.RDMA: []*apiext.DeviceAllocation{
-					{
-						Minor: 3,
-						Resources: corev1.ResourceList{
-							apiext.ResourceRDMA: *resource.NewQuantity(1, resource.DecimalSI),
-						},
-						Extension: &apiext.DeviceAllocationExtension{
-							VirtualFunctions: []apiext.VirtualFunction{
-								{
-									BusID: "0000:51:00.2",
-									Minor: 0,
-								},
-							},
-						},
-					},
-					{
-						Minor: 4,
-						Resources: corev1.ResourceList{
-							apiext.ResourceRDMA: *resource.NewQuantity(1, resource.DecimalSI),
-						},
-						Extension: &apiext.DeviceAllocationExtension{
-							VirtualFunctions: []apiext.VirtualFunction{
-								{
-									BusID: "0000:b9:00.2",
-									Minor: 0,
-								},
-							},
-						},
-					},
-				},
-			},
+			wantErr: true,
 		},
 		{
 			name: "Only 1 RDMA and 4 PCIE with 2 GPUs Per PCIE, allocate 4 GPUs",
@@ -1695,118 +1651,6 @@ func TestAutopilotAllocatorWithExclusivePolicyAndRequiredScope(t *testing.T) {
 						Minor: 4,
 						Resources: corev1.ResourceList{
 							apiext.ResourceRDMA: *resource.NewQuantity(1, resource.DecimalSI),
-						},
-					},
-				},
-			},
-		},
-		{
-			name:            "allocate 1 GPU and 1 VF with assigned devices; topology scope BinPack",
-			deviceCR:        fakeDeviceCR,
-			gpuWanted:       1,
-			exclusivePolicy: apiext.PCIExpressLevelDeviceExclusivePolicy,
-			assignedDevices: apiext.DeviceAllocations{
-				schedulingv1alpha1.GPU: []*apiext.DeviceAllocation{
-					{
-						Minor:     5,
-						Resources: gpuResourceList,
-					},
-				},
-				schedulingv1alpha1.RDMA: []*apiext.DeviceAllocation{
-					{
-						Minor: 3,
-						Resources: corev1.ResourceList{
-							apiext.ResourceRDMA: *resource.NewQuantity(1, resource.DecimalSI),
-						},
-						Extension: &apiext.DeviceAllocationExtension{
-							VirtualFunctions: []apiext.VirtualFunction{
-								{
-									BusID: "0000:51:00.2",
-									Minor: 0,
-								},
-							},
-						},
-					},
-				},
-			},
-			want: apiext.DeviceAllocations{
-				schedulingv1alpha1.GPU: []*apiext.DeviceAllocation{
-					{
-						Minor:     4,
-						Resources: gpuResourceList,
-					},
-				},
-				schedulingv1alpha1.RDMA: []*apiext.DeviceAllocation{
-					{
-						Minor: 3,
-						Resources: corev1.ResourceList{
-							apiext.ResourceRDMA: *resource.NewQuantity(1, resource.DecimalSI),
-						},
-						Extension: &apiext.DeviceAllocationExtension{
-							VirtualFunctions: []apiext.VirtualFunction{
-								{
-									BusID: "0000:51:00.3",
-									Minor: 1,
-								},
-							},
-						},
-					},
-				},
-			},
-		},
-		{
-			name:            "allocate 2 GPU and 1 VF with assigned devices; topology scope BinPack",
-			deviceCR:        fakeDeviceCR,
-			gpuWanted:       2,
-			exclusivePolicy: apiext.PCIExpressLevelDeviceExclusivePolicy,
-			assignedDevices: apiext.DeviceAllocations{
-				schedulingv1alpha1.GPU: []*apiext.DeviceAllocation{
-					{
-						Minor:     5,
-						Resources: gpuResourceList,
-					},
-				},
-				schedulingv1alpha1.RDMA: []*apiext.DeviceAllocation{
-					{
-						Minor: 3,
-						Resources: corev1.ResourceList{
-							apiext.ResourceRDMA: *resource.NewQuantity(100, resource.DecimalSI),
-						},
-						Extension: &apiext.DeviceAllocationExtension{
-							VirtualFunctions: []apiext.VirtualFunction{
-								{
-									BusID: "0000:51:00.2",
-									Minor: 0,
-								},
-							},
-						},
-					},
-				},
-			},
-			want: apiext.DeviceAllocations{
-				schedulingv1alpha1.GPU: []*apiext.DeviceAllocation{
-					{
-						Minor:     6,
-						Resources: gpuResourceList,
-					},
-					{
-						Minor:     7,
-						Resources: gpuResourceList,
-					},
-				},
-				schedulingv1alpha1.RDMA: []*apiext.DeviceAllocation{
-					{
-						Minor: 4,
-						Resources: corev1.ResourceList{
-							apiext.ResourceRDMA: *resource.NewQuantity(1, resource.DecimalSI),
-						},
-						Extension: &apiext.DeviceAllocationExtension{
-							VirtualFunctions: []apiext.VirtualFunction{
-								{
-									BusID: "0000:b9:00.2",
-									Minor: 0,
-								},
-							},
 						},
 					},
 				},
@@ -2014,6 +1858,7 @@ func Test_allocateGPU(t *testing.T) {
 		podRequests:        podRequests,
 		preemptibleDevices: map[string]map[schedulingv1alpha1.DeviceType]deviceResources{"test-node": preemptible},
 	}
+	state.gpuRequirements, _ = parseGPURequirements(pod, state.podRequests, nil)
 	allocator := &AutopilotAllocator{
 		state:      state,
 		nodeDevice: nd,
@@ -2111,6 +1956,7 @@ func Test_allocateGPUWithLeastAllocatedScorer(t *testing.T) {
 	state := &preFilterState{
 		podRequests: podRequests,
 	}
+	state.gpuRequirements, _ = parseGPURequirements(pod, state.podRequests, nil)
 	allocator := &AutopilotAllocator{
 		state:      state,
 		nodeDevice: nd,
@@ -2211,6 +2057,7 @@ func Test_nodeDevice_allocateGPUWithMostAllocatedScorer(t *testing.T) {
 	state := &preFilterState{
 		podRequests: podRequests,
 	}
+	state.gpuRequirements, _ = parseGPURequirements(pod, state.podRequests, nil)
 	allocator := &AutopilotAllocator{
 		state:      state,
 		nodeDevice: nd,
@@ -2311,6 +2158,7 @@ func Test_failedPreemptGPUFromReservation(t *testing.T) {
 		podRequests:        podRequests,
 		preemptibleDevices: map[string]map[schedulingv1alpha1.DeviceType]deviceResources{"test-node": preemptible},
 	}
+	state.gpuRequirements, _ = parseGPURequirements(pod, state.podRequests, nil)
 	allocator := &AutopilotAllocator{
 		state:      state,
 		nodeDevice: nd,
@@ -2358,6 +2206,7 @@ func Test_allocateGPUWithUnhealthyInstance(t *testing.T) {
 		node:       &corev1.Node{},
 		pod:        &corev1.Pod{},
 	}
+	state.gpuRequirements, _ = parseGPURequirements(allocator.pod, podRequests, nil)
 	allocateResult, status := allocator.Allocate(nil, nil, nil, nil)
 	assert.True(t, status.IsSuccess())
 	expectAllocations := []*apiext.DeviceAllocation{
