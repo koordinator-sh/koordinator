@@ -17,6 +17,7 @@ limitations under the License.
 package extension
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -25,6 +26,10 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
+)
+
+var (
+	bandWidthOf200Gi = resource.MustParse("200Gi")
 )
 
 func Test_GetDeviceAllocations(t *testing.T) {
@@ -134,6 +139,203 @@ func Test_SetDeviceAllocations(t *testing.T) {
 			assert.Equal(t, tt.wantErr, err != nil)
 			if !tt.wantErr {
 				assert.Equal(t, tt.wantAnnotation, tt.pod.Annotations[AnnotationDeviceAllocated])
+			}
+		})
+	}
+}
+
+func TestGetGPUPartitionSpec(t *testing.T) {
+	type args struct {
+		annotations map[string]string
+	}
+	tests := []struct {
+		name    string
+		args    args
+		want    *GPUPartitionSpec
+		wantErr assert.ErrorAssertionFunc
+	}{
+		{
+			name: "nil partitionSpec",
+			args: args{
+				annotations: nil,
+			},
+			want: &GPUPartitionSpec{
+				AllocatePolicy: GPUPartitionAllocatePolicyPrefer,
+			},
+			wantErr: assert.NoError,
+		},
+		{
+			name: "empty partitionSpec",
+			args: args{
+				annotations: map[string]string{
+					AnnotationGPUPartitionSpec: `{}`,
+				},
+			},
+			want: &GPUPartitionSpec{
+				AllocatePolicy: GPUPartitionAllocatePolicyPrefer,
+			},
+			wantErr: assert.NoError,
+		},
+		{
+			name: "allocatePolicy prefer",
+			args: args{
+				annotations: map[string]string{
+					AnnotationGPUPartitionSpec: `{"allocatePolicy":"Prefer"}`,
+				},
+			},
+			want: &GPUPartitionSpec{
+				AllocatePolicy: GPUPartitionAllocatePolicyPrefer,
+			},
+			wantErr: assert.NoError,
+		},
+		{
+			name: "allocatePolicy honor",
+			args: args{
+				annotations: map[string]string{
+					AnnotationGPUPartitionSpec: `{"allocatePolicy":"Honor"}`,
+				},
+			},
+			want: &GPUPartitionSpec{
+				AllocatePolicy: GPUPartitionAllocatePolicyHonor,
+			},
+			wantErr: assert.NoError,
+		},
+		{
+			name: "allocatePolicy honor, ringAllReduceBandwidth specified",
+			args: args{
+				annotations: map[string]string{
+					AnnotationGPUPartitionSpec: `{"allocatePolicy":"Honor", "ringAllReduceBandwidth":"200Gi"}`,
+				},
+			},
+			want: &GPUPartitionSpec{
+				AllocatePolicy:         GPUPartitionAllocatePolicyHonor,
+				RingAllReduceBandwidth: &bandWidthOf200Gi,
+			},
+			wantErr: assert.NoError,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := GetGPUPartitionSpec(tt.args.annotations)
+			if !tt.wantErr(t, err, fmt.Sprintf("GetGPUPartitionSpec(%v)", tt.args.annotations)) {
+				return
+			}
+			assert.Equalf(t, tt.want, got, "GetGPUPartitionSpec(%v)", tt.args.annotations)
+		})
+	}
+}
+
+func TestGetGPUPartitionTable(t *testing.T) {
+	tests := []struct {
+		name    string
+		device  *schedulingv1alpha1.Device
+		want    GPUPartitionTable
+		wantErr assert.ErrorAssertionFunc
+	}{
+		{
+			name: "Valid GPU Partition Table",
+			device: &schedulingv1alpha1.Device{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						AnnotationGPUPartitions: `{"0": {"NVLink": [{"minors": [0,1], "gpuLinkType": "NVLink","ringAllReduceBandwidth": "200Gi", "allocationScore": 10}]}}`,
+					},
+				},
+			},
+			want: GPUPartitionTable{
+				0: {
+					GPUNVLink: []GPUPartition{
+						{
+							Minors:                 []int{0, 1},
+							GPULinkType:            GPUNVLink,
+							RingAllReduceBandwidth: &bandWidthOf200Gi,
+							AllocationScore:        10,
+							MinorsHash:             0, // This would be calculated.
+							BinPackScore:           0, // This would also be calculated if needed in actual implementation.
+						},
+					},
+				},
+			},
+			wantErr: assert.NoError,
+		},
+		{
+			name:    "No Annotation",
+			device:  &schedulingv1alpha1.Device{},
+			want:    nil,
+			wantErr: assert.NoError,
+		},
+		{
+			name: "Invalid JSON",
+			device: &schedulingv1alpha1.Device{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						AnnotationGPUPartitions: `Invalid JSON format`,
+					},
+				},
+			},
+			want:    nil,
+			wantErr: assert.Error,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := GetGPUPartitionTable(tt.device)
+			if !tt.wantErr(t, err, fmt.Sprintf("GetGPUPartitionTable(%v)", tt.device)) {
+				return
+			}
+			assert.Equalf(t, tt.want, got, "GetGPUPartitionTable(%v)", tt.device)
+		})
+	}
+}
+
+// TestGetNodeGPUAllocatePolicy tests the GetNodeLevelGPUAllocatePolicy function.
+func TestGetNodeLevelGPUAllocatePolicy(t *testing.T) {
+	tests := []struct {
+		name     string
+		node     *schedulingv1alpha1.Device
+		expected GPUPartitionAllocatePolicy
+	}{
+		{
+			name:     "Nil node",
+			node:     nil,
+			expected: GPUPartitionAllocatePolicyPrefer,
+		},
+		{
+			name: "Node with Honor policy",
+			node: &schedulingv1alpha1.Device{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						LabelGPUPartitionAllocatePolicy: string(GPUPartitionAllocatePolicyHonor),
+					},
+				},
+			},
+			expected: GPUPartitionAllocatePolicyHonor,
+		},
+		{
+			name: "Node with Prefer policy",
+			node: &schedulingv1alpha1.Device{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						LabelGPUPartitionAllocatePolicy: string(GPUPartitionAllocatePolicyPrefer),
+					},
+				},
+			},
+			expected: GPUPartitionAllocatePolicyPrefer,
+		},
+		{
+			name: "Node without policy label",
+			node: &schedulingv1alpha1.Device{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{},
+				},
+			},
+			expected: GPUPartitionAllocatePolicyPrefer,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := GetNodeLevelGPUAllocatePolicy(tt.node); got != tt.expected {
+				t.Errorf("GetNodeLevelGPUAllocatePolicy() = %v, want %v", got, tt.expected)
 			}
 		})
 	}
