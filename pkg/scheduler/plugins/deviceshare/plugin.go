@@ -27,6 +27,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	k8sfeature "k8s.io/apiserver/pkg/util/feature"
+	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
@@ -525,10 +526,52 @@ func (p *Plugin) preBindObject(ctx context.Context, cycleState *framework.CycleS
 		return nil
 	}
 
+	//Fill the field busID for the assignment result
+	var deviceAllocs *apiext.DeviceAllocations
+	deviceAllocs, err := fillBDFInfo(p.nodeDeviceCache, &state.allocationResult, nodeName)
+	if err != nil {
+		klog.V(4).Info("preBindObject: fillBDFInfo error: %s", err)
+	}
+	state.allocationResult = *deviceAllocs
+
 	if err := apiext.SetDeviceAllocations(object, state.allocationResult); err != nil {
 		return framework.NewStatus(framework.Error, err.Error())
 	}
 	return nil
+}
+
+func fillBDFInfo(nodeDeviceCache *nodeDeviceCache, deviceAllocations *apiext.DeviceAllocations, nodeName string) (*apiext.DeviceAllocations, error) {
+	klog.V(5).Info("fillBDFInfo:", "nodeDeviceCache", nodeDeviceCache, "deviceAllocations", deviceAllocations, "nodeName", nodeName)
+	if nodeDeviceCache == nil || deviceAllocations == nil {
+		return deviceAllocations, nil
+	}
+	klog.V(5).Info("fillBDFInfo: start to get deviceInfos")
+	var deviceInfos []*schedulingv1alpha1.DeviceInfo
+	if nodeDeviceCache.nodeDeviceInfos[nodeName] != nil {
+		if nodeDeviceCache.nodeDeviceInfos[nodeName].deviceInfos != nil {
+			deviceInfos = nodeDeviceCache.nodeDeviceInfos[nodeName].deviceInfos[schedulingv1alpha1.RDMA]
+		}
+	}
+	klog.V(4).Info("fillBDFInfo:", "deviceInfos", deviceInfos)
+	if deviceInfos == nil {
+		return deviceAllocations, nil
+	}
+
+	deviceAllocMap := *deviceAllocations
+	rdmaAllocations, ok := deviceAllocMap[schedulingv1alpha1.RDMA]
+	if !ok {
+		return deviceAllocations, nil
+	}
+
+	for i, dev := range rdmaAllocations {
+		for _, devTmp := range deviceInfos {
+			if dev.Minor == *devTmp.Minor {
+				rdmaAllocations[i].BusID = devTmp.Topology.BusID
+			}
+		}
+	}
+	klog.V(4).Info("fillBDFInfo: return ", "deviceAllocations", deviceAllocations)
+	return deviceAllocations, nil
 }
 
 func updateReservationAllocatable(cycleState *framework.CycleState, reservation *schedulingv1alpha1.Reservation) *framework.Status {
