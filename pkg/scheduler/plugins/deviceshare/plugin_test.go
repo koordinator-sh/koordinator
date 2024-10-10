@@ -630,6 +630,13 @@ func Test_Plugin_PreFilter(t *testing.T) {
 						apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
 					},
 				},
+				gpuRequirements: &GPURequirements{
+					numberOfGPUs: 1,
+					requestsPerGPU: corev1.ResourceList{
+						apiext.ResourceGPUCore:        resource.MustParse("100"),
+						apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+					},
+				},
 				preemptibleDevices: map[string]map[schedulingv1alpha1.DeviceType]deviceResources{},
 				preemptibleInRRs:   map[string]map[types.UID]map[schedulingv1alpha1.DeviceType]deviceResources{},
 			},
@@ -663,6 +670,12 @@ func Test_Plugin_PreFilter(t *testing.T) {
 						apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
 					},
 				},
+				gpuRequirements: &GPURequirements{
+					numberOfGPUs: 1,
+					requestsPerGPU: corev1.ResourceList{
+						apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+					},
+				},
 				preemptibleDevices: map[string]map[schedulingv1alpha1.DeviceType]deviceResources{},
 				preemptibleInRRs:   map[string]map[types.UID]map[schedulingv1alpha1.DeviceType]deviceResources{},
 			},
@@ -693,6 +706,12 @@ func Test_Plugin_PreFilter(t *testing.T) {
 				skip: false,
 				podRequests: map[schedulingv1alpha1.DeviceType]corev1.ResourceList{
 					schedulingv1alpha1.GPU: {
+						apiext.ResourceGPUMemory: resource.MustParse("8Gi"),
+					},
+				},
+				gpuRequirements: &GPURequirements{
+					numberOfGPUs: 1,
+					requestsPerGPU: corev1.ResourceList{
 						apiext.ResourceGPUMemory: resource.MustParse("8Gi"),
 					},
 				},
@@ -731,6 +750,13 @@ func Test_Plugin_PreFilter(t *testing.T) {
 						apiext.ResourceGPUMemory: resource.MustParse("8Gi"),
 					},
 				},
+				gpuRequirements: &GPURequirements{
+					numberOfGPUs: 1,
+					requestsPerGPU: corev1.ResourceList{
+						apiext.ResourceGPUCore:   resource.MustParse("100"),
+						apiext.ResourceGPUMemory: resource.MustParse("8Gi"),
+					},
+				},
 				preemptibleDevices: map[string]map[schedulingv1alpha1.DeviceType]deviceResources{},
 				preemptibleInRRs:   map[string]map[types.UID]map[schedulingv1alpha1.DeviceType]deviceResources{},
 			},
@@ -762,6 +788,13 @@ func Test_Plugin_PreFilter(t *testing.T) {
 				skip: false,
 				podRequests: map[schedulingv1alpha1.DeviceType]corev1.ResourceList{
 					schedulingv1alpha1.GPU: {
+						apiext.ResourceGPUCore:        resource.MustParse("100"),
+						apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+					},
+				},
+				gpuRequirements: &GPURequirements{
+					numberOfGPUs: 1,
+					requestsPerGPU: corev1.ResourceList{
 						apiext.ResourceGPUCore:        resource.MustParse("100"),
 						apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
 					},
@@ -835,6 +868,13 @@ func Test_Plugin_PreFilter(t *testing.T) {
 					},
 					schedulingv1alpha1.RDMA: {
 						apiext.ResourceRDMA: resource.MustParse("100"),
+					},
+				},
+				gpuRequirements: &GPURequirements{
+					numberOfGPUs: 1,
+					requestsPerGPU: corev1.ResourceList{
+						apiext.ResourceGPUCore:        resource.MustParse("100"),
+						apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
 					},
 				},
 				preemptibleDevices: map[string]map[schedulingv1alpha1.DeviceType]deviceResources{},
@@ -3256,6 +3296,7 @@ func Test_Plugin_Reserve(t *testing.T) {
 			pl.nodeDeviceCache = tt.args.nodeDeviceCache
 			cycleState := framework.NewCycleState()
 			if tt.args.state != nil {
+				tt.args.state.gpuRequirements, _ = parseGPURequirements(&corev1.Pod{}, tt.args.state.podRequests, nil)
 				cycleState.Write(stateKey, tt.args.state)
 			}
 

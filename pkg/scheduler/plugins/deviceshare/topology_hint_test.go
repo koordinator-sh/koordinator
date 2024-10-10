@@ -246,6 +246,7 @@ func TestPlugin_GetPodTopologyHints(t *testing.T) {
 			hintSelectors, err := newHintSelectors(tt.hints)
 			assert.NoError(t, err)
 
+			pod := &corev1.Pod{}
 			state := &preFilterState{
 				skip:          false,
 				podRequests:   tt.podRequests,
@@ -253,9 +254,9 @@ func TestPlugin_GetPodTopologyHints(t *testing.T) {
 				hintSelectors: hintSelectors,
 				jointAllocate: tt.jointAllocate,
 			}
+			state.gpuRequirements, _ = parseGPURequirements(pod, state.podRequests, state.hints[schedulingv1alpha1.GPU])
 			cycleState := framework.NewCycleState()
 			cycleState.Write(stateKey, state)
-			pod := &corev1.Pod{}
 
 			got, status := pl.GetPodTopologyHints(context.TODO(), cycleState, pod, node.Name)
 			assert.Equal(t, tt.want, got)
@@ -395,6 +396,7 @@ func TestPlugin_Allocate(t *testing.T) {
 			hintSelectors, err := newHintSelectors(tt.hints)
 			assert.NoError(t, err)
 
+			pod := &corev1.Pod{}
 			state := &preFilterState{
 				skip:          false,
 				podRequests:   tt.podRequests,
@@ -402,9 +404,9 @@ func TestPlugin_Allocate(t *testing.T) {
 				hintSelectors: hintSelectors,
 				jointAllocate: tt.jointAllocate,
 			}
+			state.gpuRequirements, _ = parseGPURequirements(pod, tt.podRequests, state.hints[schedulingv1alpha1.GPU])
 			cycleState := framework.NewCycleState()
 			cycleState.Write(stateKey, state)
-			pod := &corev1.Pod{}
 			pl := p.(*Plugin)
 			status := pl.Allocate(context.TODO(), cycleState, tt.affinity, pod, node.Name)
 			if !tt.wantErr != status.IsSuccess() {

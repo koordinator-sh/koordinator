@@ -175,7 +175,7 @@ func TestDefaultDeviceHandler_CalcDesiredRequestsAndCount(t *testing.T) {
 				resourceName: apiext.ResourceRDMA,
 			}
 			nodeDevice := cache.getNodeDevice(fakeDeviceCRCopy.Name, false)
-			requests, desiredCount, status := handler.CalcDesiredRequestsAndCount(nil, nil, tt.podRequests, nodeDevice, tt.hint)
+			requests, desiredCount, status := handler.CalcDesiredRequestsAndCount(nil, nil, tt.podRequests, nodeDevice, tt.hint, nil)
 			assert.Equal(t, tt.wantRequests, requests)
 			assert.Equal(t, tt.wantDesiredCount, desiredCount)
 			assert.Equal(t, tt.wantStatusSuccess, status.IsSuccess())
