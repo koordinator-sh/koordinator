@@ -18,8 +18,10 @@ package extension
 
 import (
 	"encoding/json"
+	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
@@ -32,6 +34,10 @@ const (
 	AnnotationDeviceAllocateHint = SchedulingDomainPrefix + "/device-allocate-hint"
 	// AnnotationDeviceJointAllocate guides the scheduler joint-allocates devices
 	AnnotationDeviceJointAllocate = SchedulingDomainPrefix + "/device-joint-allocate"
+	// AnnotationGPUPartitionSpec represents the GPU partition spec that pod requests
+	AnnotationGPUPartitionSpec = SchedulingDomainPrefix + "/gpu-partition-spec"
+	// AnnotationGPUPartitions represents the GPU partitions supported on the node
+	AnnotationGPUPartitions = SchedulingDomainPrefix + "/gpu-partitions"
 )
 
 const (
@@ -48,8 +54,9 @@ const (
 )
 
 const (
-	LabelGPUModel         string = NodeDomainPrefix + "/gpu-model"
-	LabelGPUDriverVersion string = NodeDomainPrefix + "/gpu-driver-version"
+	LabelGPUPartitionPolicy string = NodeDomainPrefix + "/gpu-partition-policy"
+	LabelGPUModel           string = NodeDomainPrefix + "/gpu-model"
+	LabelGPUDriverVersion   string = NodeDomainPrefix + "/gpu-driver-version"
 )
 
 // DeviceAllocations would be injected into Pod as form of annotation during Pre-bind stage.
@@ -132,9 +139,18 @@ const (
 type DeviceTopologyScope string
 
 const (
+	DeviceTopologyScopeDevice   DeviceTopologyScope = "Device"
 	DeviceTopologyScopePCIe     DeviceTopologyScope = "PCIe"
 	DeviceTopologyScopeNUMANode DeviceTopologyScope = "NUMANode"
+	DeviceTopologyScopeNode     DeviceTopologyScope = "Node"
 )
+
+var DeviceTopologyScopeLevel = map[DeviceTopologyScope]int{
+	DeviceTopologyScopeDevice:   4,
+	DeviceTopologyScopePCIe:     3,
+	DeviceTopologyScopeNUMANode: 2,
+	DeviceTopologyScopeNode:     1,
+}
 
 type DeviceExclusivePolicy string
 
@@ -143,6 +159,47 @@ const (
 	DeviceLevelDeviceExclusivePolicy DeviceExclusivePolicy = "DeviceLevel"
 	// PCIExpressLevelDeviceExclusivePolicy represents mutual exclusion in the PCIe dimension
 	PCIExpressLevelDeviceExclusivePolicy DeviceExclusivePolicy = "PCIeLevel"
+)
+
+type GPUPartitionSpec struct {
+	AllocatePolicy   GPUPartitionAllocatePolicy `json:"allocatePolicy,omitempty"`
+	RingBusBandwidth *resource.Quantity         `json:"ringBusBandwidth,omitempty"`
+}
+
+type GPUPartitionAllocatePolicy string
+
+const (
+	// GPUPartitionAllocatePolicyRestricted indicates that only partitions with the most allocationScore will be considered.
+	GPUPartitionAllocatePolicyRestricted GPUPartitionAllocatePolicy = "Restricted"
+	// GPUPartitionAllocatePolicyBestEffort indicates that try best to pursue partition with more allocationScore.
+	GPUPartitionAllocatePolicyBestEffort GPUPartitionAllocatePolicy = "BestEffort"
+)
+
+type GPULinkType string
+
+const (
+	GPUNVLink GPULinkType = "NVLink"
+)
+
+type GPUPartition struct {
+	Minors           []int              `json:"minors"`
+	GPULinkType      GPULinkType        `json:"gpuLinkType,omitempty"`
+	RingBusBandwidth *resource.Quantity `json:"ringBusBandwidth,omitempty"`
+	AllocationScore  int                `json:"allocationScore,omitempty"`
+	MinorsHash       int                `json:"-"`
+	BinPackScore     int                `json:"-"`
+}
+
+// GPUPartitionTable will be annotated on Device
+type GPUPartitionTable map[int][]GPUPartition
+
+type GPUPartitionPolicy string
+
+const (
+	// GPUPartitionPolicyHonor indicates that the partitions annotated to the Device CR should be honored.
+	GPUPartitionPolicyHonor GPUPartitionPolicy = "Honor"
+	// GPUPartitionPolicyPrefer indicates that the partitions annotated to the Device CR are preferred.
+	GPUPartitionPolicyPrefer GPUPartitionPolicy = "Prefer"
 )
 
 func GetDeviceAllocations(podAnnotations map[string]string) (DeviceAllocations, error) {
@@ -233,4 +290,45 @@ func GetDeviceJointAllocate(annotations map[string]string) (*DeviceJointAllocate
 		return nil, err
 	}
 	return &jointAllocate, nil
+}
+
+func GetGPUPartitionSpec(annotations map[string]string) (*GPUPartitionSpec, error) {
+	val, ok := annotations[AnnotationGPUPartitionSpec]
+	if !ok {
+		return nil, nil
+	}
+	var spec GPUPartitionSpec
+	err := json.Unmarshal([]byte(val), &spec)
+	if err != nil {
+		return nil, err
+	}
+	if spec.AllocatePolicy == "" {
+		spec.AllocatePolicy = GPUPartitionAllocatePolicyBestEffort
+	}
+	return &spec, nil
+}
+
+func GetGPUPartitionTable(device *schedulingv1alpha1.Device) (GPUPartitionTable, error) {
+	if rawGPUPartitionTable, ok := device.Annotations[AnnotationGPUPartitions]; ok && rawGPUPartitionTable != "" {
+		gpuPartitionTable := GPUPartitionTable{}
+		err := json.Unmarshal([]byte(rawGPUPartitionTable), &gpuPartitionTable)
+		if err != nil {
+			return nil, err
+		}
+		if gpuPartitionTable == nil {
+			return nil, fmt.Errorf("invalid gpu partitions in device cr: %s", rawGPUPartitionTable)
+		}
+		return gpuPartitionTable, nil
+	}
+	return nil, nil
+}
+
+func GetGPUPartitionPolicy(device *schedulingv1alpha1.Device) GPUPartitionPolicy {
+	if device == nil {
+		return GPUPartitionPolicyPrefer
+	}
+	if allocatePolicy := device.Labels[LabelGPUPartitionPolicy]; GPUPartitionPolicy(allocatePolicy) == GPUPartitionPolicyHonor {
+		return GPUPartitionPolicyHonor
+	}
+	return GPUPartitionPolicyPrefer
 }
