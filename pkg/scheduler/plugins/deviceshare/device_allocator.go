@@ -143,7 +143,7 @@ func (a *AutopilotAllocator) filterNodeDevice(
 		for _, deviceInfo := range deviceInfos {
 			// TODO if a.numaNodes == nil && selector == nil return all device of this deviceType
 			if a.numaNodes != nil {
-				if deviceInfo.Topology == nil || !a.numaNodes.IsSet(int(deviceInfo.Topology.NodeID)) {
+				if deviceInfo.Topology == nil || (deviceInfo.Topology.NodeID != -1 && !a.numaNodes.IsSet(int(deviceInfo.Topology.NodeID))) {
 					continue
 				}
 			}

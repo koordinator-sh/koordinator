@@ -147,7 +147,7 @@ func (p *Plugin) generateTopologyHints(cycleState *framework.CycleState, state *
 		maskNodes := mask.GetBits()
 		totalDevices := calcTotalDevicesByNUMA(nodeDevice, maskNodes)
 		for deviceType, wanted := range allocator.desiredCountPerDeviceType {
-			if totalDevices[deviceType] < wanted {
+			if totalCount, exists := totalDevices[deviceType]; exists && totalCount < wanted {
 				return
 			}
 		}

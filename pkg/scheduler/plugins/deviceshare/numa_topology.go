@@ -43,7 +43,7 @@ func newNUMATopology(deviceObj *schedulingv1alpha1.Device) *NUMATopology {
 	devicesInPCIe := map[PCIeIndex]map[schedulingv1alpha1.DeviceType][]int{}
 	for i := range deviceObj.Spec.Devices {
 		deviceInfo := &deviceObj.Spec.Devices[i]
-		if deviceInfo.Topology == nil {
+		if deviceInfo.Topology == nil || deviceInfo.Topology.NodeID == -1 {
 			//
 			// NOTE: By default, it must be assigned according to the topology,
 			// and the Required/Preferred strategy should be provided later.
