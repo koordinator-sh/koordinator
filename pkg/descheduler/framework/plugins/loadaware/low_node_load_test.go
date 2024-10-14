@@ -1300,6 +1300,64 @@ func TestLowNodeLoad(t *testing.T) {
 			expectedPodsEvicted: 3,
 			evictedPods:         []string{},
 		},
+		{
+			name: "stop prod pod eviction when the node recovers to normal.",
+			thresholds: ResourceThresholds{
+				corev1.ResourceCPU:  0,
+				corev1.ResourcePods: 0,
+			},
+			targetThresholds: ResourceThresholds{
+				corev1.ResourceCPU:  100,
+				corev1.ResourcePods: 100,
+			},
+			prodLowThresholds: ResourceThresholds{
+				corev1.ResourceCPU:  60,
+				corev1.ResourcePods: 60,
+			},
+			prodHighThresholds: ResourceThresholds{
+				corev1.ResourceCPU:  70,
+				corev1.ResourcePods: 70,
+			},
+			nodes: []*corev1.Node{
+				test.BuildTestNode(n1NodeName, 4000, 3000, 20, nil),
+				test.BuildTestNode(n2NodeName, 4000, 3000, 20, nil),
+			},
+			pods: []*corev1.Pod{
+				test.BuildTestPod("p1", 400, 0, n1NodeName, test.SetRSOwnerRef),
+				test.BuildTestPod("p2", 400, 0, n1NodeName, test.SetRSOwnerRef),
+				test.BuildTestPod("p3", 400, 0, n1NodeName, test.SetRSOwnerRef),
+				test.BuildTestPod("p4", 400, 0, n1NodeName, test.SetRSOwnerRef),
+				test.BuildTestPod("p5", 400, 0, n1NodeName, test.SetRSOwnerRef),
+				// These won't be evicted.
+				test.BuildTestPod("p6", 400, 0, n1NodeName, test.SetDSOwnerRef),
+				test.BuildTestPod("p7", 400, 0, n1NodeName, func(pod *corev1.Pod) {
+					// A pod with local storage.
+					test.SetNormalOwnerRef(pod)
+					pod.Spec.Volumes = []corev1.Volume{
+						{
+							Name: "sample",
+							VolumeSource: corev1.VolumeSource{
+								HostPath: &corev1.HostPathVolumeSource{Path: "somePath"},
+								EmptyDir: &corev1.EmptyDirVolumeSource{
+									SizeLimit: resource.NewQuantity(int64(10), resource.BinarySI),
+								},
+							},
+						},
+					}
+					// A Mirror Pod.
+					pod.Annotations = test.GetMirrorPodAnnotation()
+				}),
+				test.BuildTestPod("p8", 400, 0, n1NodeName, func(pod *corev1.Pod) {
+					// A Critical Pod.
+					pod.Namespace = "kube-system"
+					priority := utils.SystemCriticalPriority
+					pod.Spec.Priority = &priority
+				}),
+				test.BuildTestPod("p9", 400, 0, n2NodeName, test.SetRSOwnerRef),
+			},
+			expectedPodsEvicted: 1,
+			evictedPods:         []string{},
+		},
 	}
 
 	for _, tt := range testCases {
