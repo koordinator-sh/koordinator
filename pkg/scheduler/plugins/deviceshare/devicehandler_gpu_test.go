@@ -153,3 +153,62 @@ func Test_fillGPUTotalMem(t *testing.T) {
 		})
 	}
 }
+
+func Test_calcDesiredRequestsAndCountForGPU(t *testing.T) {
+	tests := []struct {
+		name                    string
+		podRequests             corev1.ResourceList
+		wantRequestPerInstance  corev1.ResourceList
+		wantDesiredNumberOfGPUs int
+		wantGPUShared           bool
+	}{
+		{
+			name: "gpu share mode",
+			podRequests: corev1.ResourceList{
+				apiext.ResourceGPUShared:      *resource.NewQuantity(2, resource.DecimalSI),
+				apiext.ResourceGPUCore:        *resource.NewQuantity(100, resource.DecimalSI),
+				apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(100, resource.DecimalSI),
+			},
+			wantRequestPerInstance: corev1.ResourceList{
+				apiext.ResourceGPUCore:        *resource.NewQuantity(50, resource.DecimalSI),
+				apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(50, resource.DecimalSI),
+			},
+			wantDesiredNumberOfGPUs: 2,
+			wantGPUShared:           true,
+		},
+		{
+			name: "gpu memory ratio mode",
+			podRequests: corev1.ResourceList{
+				apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(200, resource.DecimalSI),
+				apiext.ResourceGPUCore:        *resource.NewQuantity(200, resource.DecimalSI),
+			},
+			wantRequestPerInstance: corev1.ResourceList{
+				apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(100, resource.DecimalSI),
+				apiext.ResourceGPUCore:        *resource.NewQuantity(100, resource.DecimalSI),
+			},
+			wantDesiredNumberOfGPUs: 2,
+			wantGPUShared:           false,
+		},
+		{
+			name: "gpu memory mode",
+			podRequests: corev1.ResourceList{
+				apiext.ResourceGPUMemory: *resource.NewQuantity(1024, resource.BinarySI),
+				apiext.ResourceGPUCore:   *resource.NewQuantity(100, resource.DecimalSI),
+			},
+			wantRequestPerInstance: corev1.ResourceList{
+				apiext.ResourceGPUMemory: *resource.NewQuantity(1024, resource.BinarySI),
+				apiext.ResourceGPUCore:   *resource.NewQuantity(100, resource.DecimalSI),
+			},
+			wantDesiredNumberOfGPUs: 1,
+			wantGPUShared:           false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotRequestPerInstance, gotDesiredNumberOfGPUs, gotGPUShared := calcDesiredRequestsAndCountForGPU(tt.podRequests)
+			assert.Equal(t, tt.wantRequestPerInstance, gotRequestPerInstance)
+			assert.Equal(t, tt.wantDesiredNumberOfGPUs, gotDesiredNumberOfGPUs)
+			assert.Equal(t, tt.wantGPUShared, gotGPUShared)
+		})
+	}
+}

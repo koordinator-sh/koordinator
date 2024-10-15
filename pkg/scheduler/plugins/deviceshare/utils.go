@@ -271,6 +271,7 @@ func ConvertDeviceRequest(podRequest corev1.ResourceList, combination uint) core
 }
 
 func hasVirtualFunctions(nodeDevice *nodeDevice, deviceType schedulingv1alpha1.DeviceType) bool {
+	// TODO 这里可以异步掉，虽然计算量也不多
 	deviceInfos := nodeDevice.deviceInfos[deviceType]
 	for _, v := range deviceInfos {
 		if len(v.VFGroups) > 0 {
@@ -300,6 +301,10 @@ func preparePod(pod *corev1.Pod) (state *preFilterState, status *framework.Statu
 	state.skip = len(requests) == 0
 	if !state.skip {
 		err = parsePodDeviceShareExtensions(pod, requests, state)
+		if err != nil {
+			return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, err.Error())
+		}
+		state.gpuRequirements, err = parseGPURequirements(pod, requests, state.hints[schedulingv1alpha1.GPU])
 		if err != nil {
 			return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, err.Error())
 		}
@@ -396,4 +401,31 @@ func newHintSelectors(hints apiext.DeviceAllocateHints) (map[schedulingv1alpha1.
 		hintSelectors[deviceType] = [2]labels.Selector{selector, vfSelector}
 	}
 	return hintSelectors, nil
+}
+
+func parseGPURequirements(pod *corev1.Pod, podRequests map[schedulingv1alpha1.DeviceType]corev1.ResourceList, gpuHints *apiext.DeviceHint) (*GPURequirements, error) {
+	gpuRequests := podRequests[schedulingv1alpha1.GPU]
+	if quotav1.IsZero(gpuRequests) {
+		return nil, nil
+	}
+	gpuPartitionSpec, err := apiext.GetGPUPartitionSpec(pod.Annotations)
+	if err != nil {
+		return nil, fmt.Errorf("invalid GPUPartitionSpec annotation, err: %s", err.Error())
+	}
+	requestsPerGPU, numberOfGPUs, isShared := calcDesiredRequestsAndCountForGPU(gpuRequests)
+	gpuRequirements := &GPURequirements{
+		numberOfGPUs:   numberOfGPUs,
+		requestsPerGPU: requestsPerGPU,
+		gpuShared:      isShared,
+	}
+	if gpuPartitionSpec != nil {
+		gpuRequirements.honorGPUPartition = true
+		gpuRequirements.restrictedGPUPartition = gpuPartitionSpec.AllocatePolicy == apiext.GPUPartitionAllocatePolicyRestricted
+		gpuRequirements.rindBusBandwidth = gpuPartitionSpec.RingBusBandwidth
+	}
+	if gpuHints != nil {
+		gpuRequirements.requiredTopologyScope = gpuHints.RequiredTopologyScope
+		gpuRequirements.requiredTopologyScopeLevel = apiext.DeviceTopologyScopeLevel[gpuRequirements.requiredTopologyScope]
+	}
+	return gpuRequirements, nil
 }
