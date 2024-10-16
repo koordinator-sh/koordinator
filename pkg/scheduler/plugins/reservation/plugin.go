@@ -317,10 +317,11 @@ func (pl *Plugin) PreFilterExtensions() framework.PreFilterExtensions {
 
 func (pl *Plugin) AddPod(ctx context.Context, cycleState *framework.CycleState, podToSchedule *corev1.Pod, podInfoToAdd *framework.PodInfo, nodeInfo *framework.NodeInfo) *framework.Status {
 	podRequests := resourceapi.PodRequests(podInfoToAdd.Pod, resourceapi.PodResourcesOptions{})
-	if quotav1.IsZero(podRequests) {
+	if quotav1.IsZero(podRequests) { // TODO: support zero request pod in reservation
 		return nil
 	}
 
+	podRequests[corev1.ResourcePods] = *resource.NewQuantity(1, resource.DecimalSI) // count pods resources
 	state := getStateData(cycleState)
 	node := nodeInfo.Node()
 	rInfo := pl.reservationCache.GetReservationInfoByPod(podInfoToAdd.Pod, node.Name)
@@ -348,10 +349,11 @@ func (pl *Plugin) AddPod(ctx context.Context, cycleState *framework.CycleState, 
 
 func (pl *Plugin) RemovePod(ctx context.Context, cycleState *framework.CycleState, podToSchedule *corev1.Pod, podInfoToRemove *framework.PodInfo, nodeInfo *framework.NodeInfo) *framework.Status {
 	podRequests := resourceapi.PodRequests(podInfoToRemove.Pod, resourceapi.PodResourcesOptions{})
-	if quotav1.IsZero(podRequests) {
+	if quotav1.IsZero(podRequests) { // TODO: support zero request pod in reservation
 		return nil
 	}
 
+	podRequests[corev1.ResourcePods] = *resource.NewQuantity(1, resource.DecimalSI) // count pods resources
 	state := getStateData(cycleState)
 	node := nodeInfo.Node()
 	rInfo := pl.reservationCache.GetReservationInfoByPod(podInfoToRemove.Pod, node.Name)
@@ -583,6 +585,25 @@ func fitsReservation(podRequest corev1.ResourceList, rInfo *frameworkext.Reserva
 	allocatable := rInfo.Allocatable
 
 	var insufficientResourceReasons []string
+
+	// check "pods" resource in the reservation when reserved explicitly
+	if maxPods, found := allocatable[corev1.ResourcePods]; found {
+		allocatedPods := rInfo.GetAllocatedPods()
+		if preemptiblePodsInRR, found := preemptibleInRR[corev1.ResourcePods]; found {
+			allocatedPods += int(preemptiblePodsInRR.Value()) // assert no overflow
+		}
+		if int64(allocatedPods)+1 > maxPods.Value() {
+			if !isDetailed {
+				insufficientResourceReasons = append(insufficientResourceReasons,
+					reservationutil.NewReservationReason("Too many pods"))
+			} else { // print a reason with resource amounts if needed
+				insufficientResourceReasons = append(insufficientResourceReasons,
+					reservationutil.NewReservationReason("Too many pods, requested: 1, used: %d, capacity: %d",
+						allocatedPods, maxPods.Value()))
+			}
+		}
+	}
+
 	for resourceName, requested := range requests {
 		if requested.IsZero() {
 			continue
@@ -769,7 +790,7 @@ func (pl *Plugin) FilterReservation(ctx context.Context, cycleState *framework.C
 		return framework.AsStatus(fmt.Errorf("impossible, there is no relevant Reservation information"))
 	}
 
-	if rInfo.IsAllocateOnce() && len(rInfo.AssignedPods) > 0 {
+	if rInfo.IsAllocateOnce() && rInfo.GetAllocatedPods() > 0 {
 		return framework.NewStatus(framework.Unschedulable, "reservation has allocateOnce enabled and has already been allocated")
 	}
 

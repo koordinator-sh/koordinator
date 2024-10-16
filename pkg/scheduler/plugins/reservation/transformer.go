@@ -184,7 +184,7 @@ func (pl *Plugin) prepareMatchReservationState(ctx context.Context, cycleState *
 
 			// In this case, the Controller has not yet updated the status of the Reservation to Succeeded,
 			// but in fact it can no longer be used for allocation. So it's better to skip first.
-			if rInfo.IsAllocateOnce() && len(rInfo.AssignedPods) > 0 {
+			if rInfo.IsAllocateOnce() && rInfo.GetAllocatedPods() > 0 {
 				return true, nil
 			}
 
@@ -193,7 +193,7 @@ func (pl *Plugin) prepareMatchReservationState(ctx context.Context, cycleState *
 
 			if isMatchedOrIgnored { // reservation is matched or ignored for the pod
 				matchedOrIgnored = append(matchedOrIgnored, rInfo.Clone())
-			} else if len(rInfo.AssignedPods) > 0 { // reservation is unmatched and not ignored
+			} else if rInfo.GetAllocatedPods() > 0 { // reservation is unmatched and not ignored
 				unmatched = append(unmatched, rInfo.Clone())
 			}
 
@@ -359,7 +359,7 @@ func restoreMatchedReservation(nodeInfo *framework.NodeInfo, rInfo *frameworkext
 
 func restoreUnmatchedReservations(nodeInfo *framework.NodeInfo, rInfo *frameworkext.ReservationInfo) error {
 	// Here len(rInfo.AssignedPods) == 0 is always false because it was checked before.
-	if len(rInfo.AssignedPods) == 0 {
+	if rInfo.GetAllocatedPods() == 0 {
 		return nil
 	}
 

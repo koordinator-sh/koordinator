@@ -1343,6 +1343,13 @@ func Test_generatePodEventOnReservationLevel(t *testing.T) {
 			wantIsReserve: true,
 		},
 		{
+			name: "reservation too many pods",
+			errorMsg: "0/21 nodes are available: 2 Reservation(s) Too many pods. " +
+				"1 Reservation(s) is unschedulable, 3 Reservation(s) matched owner total",
+			wantMsg:       "0/3 reservations are available: 2 Reservation(s) Too many pods, 1 Reservation(s) is unschedulable.",
+			wantIsReserve: true,
+		},
+		{
 			name: "pod topology spread constraints missing required label errors",
 			errorMsg: "0/5 nodes are available: 3 node(s) didn't match pod topology spread constraints (missing required label), " +
 				"1 Insufficient cpu, 1 Insufficient memory, " +

@@ -243,6 +243,10 @@ func (ri *ReservationInfo) GetPriority() int32 {
 	return 0
 }
 
+func (ri *ReservationInfo) GetAllocatedPods() int {
+	return len(ri.AssignedPods)
+}
+
 func (ri *ReservationInfo) GetPodOwners() []schedulingv1alpha1.ReservationOwner {
 	if ri.Reservation != nil {
 		return ri.Reservation.Spec.Owners
