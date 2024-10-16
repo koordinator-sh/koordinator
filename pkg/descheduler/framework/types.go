@@ -45,6 +45,8 @@ type Handle interface {
 	GetPodsAssignedToNodeFunc() GetPodsAssignedToNodeFunc
 
 	SharedInformerFactory() informers.SharedInformerFactory
+
+	NodeSelector() *metav1.LabelSelector
 }
 
 type PluginsRunner interface {

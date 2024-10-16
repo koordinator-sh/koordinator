@@ -24,6 +24,8 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/dynamic/dynamicinformer"
 	"k8s.io/client-go/informers"
@@ -269,14 +271,24 @@ func (d *Descheduler) deschedulerOnce(ctx context.Context) error {
 	d.evictionLimiter.Reset()
 
 	for _, p := range d.Profiles {
-		status := p.RunDeschedulePlugins(ctx, nodes)
+		processedNodes := sets.NewString()
+		selectedNodes, filterErr := filterNodes(p.NodeSelector(), nodes, processedNodes)
+		if filterErr != nil {
+			return filterErr
+		}
+		status := p.RunDeschedulePlugins(ctx, selectedNodes)
 		if status != nil && status.Err != nil {
 			return status.Err
 		}
 	}
 
 	for _, p := range d.Profiles {
-		status := p.RunBalancePlugins(ctx, nodes)
+		processedNodes := sets.NewString()
+		selectedNodes, filterErr := filterNodes(p.NodeSelector(), nodes, processedNodes)
+		if filterErr != nil {
+			return filterErr
+		}
+		status := p.RunBalancePlugins(ctx, selectedNodes)
 		if status != nil && status.Err != nil {
 			return status.Err
 		}
@@ -305,4 +317,24 @@ func podAssignedToNodeAdaptor(fn PodAssignedToNodeFn) framework.GetPodsAssignedT
 		}
 		return result, nil
 	}
+}
+
+func filterNodes(nodeSelector *metav1.LabelSelector, nodes []*corev1.Node, processedNodes sets.String) ([]*corev1.Node, error) {
+	if nodeSelector == nil {
+		return nodes, nil
+	}
+	selector, err := metav1.LabelSelectorAsSelector(nodeSelector)
+	if err != nil {
+		return nil, err
+	}
+	r := make([]*corev1.Node, 0, len(nodes))
+	for _, v := range nodes {
+		if processedNodes.Has(v.Name) {
+			continue
+		}
+		if selector.Matches(labels.Set(v.Labels)) {
+			r = append(r, v)
+		}
+	}
+	return r, nil
 }

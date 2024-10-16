@@ -301,6 +301,7 @@ func autoConvert_v1alpha2_DeschedulerProfile_To_config_DeschedulerProfile(in *De
 		out.PluginConfig = nil
 	}
 	out.Plugins = (*config.Plugins)(unsafe.Pointer(in.Plugins))
+	out.NodeSelector = (*v1.LabelSelector)(unsafe.Pointer(in.NodeSelector))
 	return nil
 }
 
@@ -323,6 +324,7 @@ func autoConvert_config_DeschedulerProfile_To_v1alpha2_DeschedulerProfile(in *co
 		out.PluginConfig = nil
 	}
 	out.Plugins = (*Plugins)(unsafe.Pointer(in.Plugins))
+	out.NodeSelector = (*v1.LabelSelector)(unsafe.Pointer(in.NodeSelector))
 	return nil
 }
 
