@@ -247,7 +247,6 @@ func TestGetGPUPartitionTable(t *testing.T) {
 						RingBusBandwidth: &bandWidthOf200Gi,
 						AllocationScore:  10,
 						MinorsHash:       0, // This would be calculated.
-						BinPackScore:     0, // This would also be calculated if needed in actual implementation.
 					},
 				},
 			},

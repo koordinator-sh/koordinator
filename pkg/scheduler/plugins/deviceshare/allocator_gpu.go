@@ -203,12 +203,18 @@ func hashMinors(minors []int) int {
 	return hash
 }
 
+type partitionOfBinPackScore struct {
+	Partition    *apiext.GPUPartition
+	BinPackScore int
+}
+
 func selectPartitionByBinPack(deviceUsedMinorsHash int, feasiblePartitions []*apiext.GPUPartition, partitionIndexer GPUPartitionIndexer, desiredNumberOfGPU int) *apiext.GPUPartition {
 	if len(feasiblePartitions) == 1 {
 		return feasiblePartitions[0]
 	}
 	scoreOfNumOfGPUs := map[int]int{8: 10000, 4: 100, 2: 1}
 	listOfNumberOfGPU := []int{8, 4, 2}
+	var partitionsWithBinPackScore []*partitionOfBinPackScore
 	for _, feasiblePartition := range feasiblePartitions {
 		score := 0
 		allocatedMinorsHash := deviceUsedMinorsHash | feasiblePartition.MinorsHash
@@ -227,13 +233,16 @@ func selectPartitionByBinPack(deviceUsedMinorsHash int, feasiblePartitions []*ap
 				score += scoreOfNumOfGPUs[numberOfGPUs] * partition.AllocationScore
 			}
 		}
-		feasiblePartition.BinPackScore = score
+		partitionsWithBinPackScore = append(partitionsWithBinPackScore, &partitionOfBinPackScore{
+			Partition:    feasiblePartition,
+			BinPackScore: score,
+		})
 	}
 
-	sort.Slice(feasiblePartitions, func(i, j int) bool {
-		return feasiblePartitions[i].BinPackScore > feasiblePartitions[j].BinPackScore
+	sort.Slice(partitionsWithBinPackScore, func(i, j int) bool {
+		return partitionsWithBinPackScore[i].BinPackScore > partitionsWithBinPackScore[j].BinPackScore
 	})
-	return feasiblePartitions[0]
+	return partitionsWithBinPackScore[0].Partition
 }
 
 type GPUTopologyScope struct {
