@@ -19,7 +19,8 @@ package util
 type DeviceType string
 
 const (
-	GPUDeviceType DeviceType = "GPU"
+	GPUDeviceType  DeviceType = "GPU"
+	RDMADeviceType DeviceType = "RDMA"
 )
 
 type Devices interface {
@@ -41,4 +42,34 @@ type GPUDeviceInfo struct {
 	NodeID      int32  `json:"nodeID"`
 	PCIE        string `json:"pcie,omitempty"`
 	BusID       string `json:"busID,omitempty"`
+}
+
+type RDMADevices []RDMADeviceInfo
+
+func (r RDMADevices) Type() DeviceType {
+	return RDMADeviceType
+}
+
+type RDMADeviceInfo struct {
+	ID            string                      `json:"id,omitempty"`
+	NetDev        string                      `json:"netDev,omitempty"`
+	MasterNetDev  *string                     `json:"masterNetDev,omitempty"`
+	RDMAResources []string                    `json:"rdmaResources"`
+	DevicePaths   []string                    `json:"devicePaths,omitempty"`
+	VFEnabled     bool                        `json:"vfEnabled,omitempty"`
+	VFMap         map[string]*VirtualFunction `json:"vfMap,omitempty"` // busId:VirtualFunction
+	Labels        map[string]string           `json:"labels,omitempty"`
+	Minor         int32                       `json:"minor"`
+	VendorCode    string                      `json:"vendorCode,omitempty"`
+	DeviceCode    string                      `json:"deviceCode,omitempty"`
+	NodeID        int32                       `json:"nodeID,omitempty"`
+	PCIE          string                      `json:"pcie,omitempty"`
+	BusID         string                      `json:"busID,omitempty"`
+}
+
+type VirtualFunction struct {
+	ID          string            `json:"id,omitempty"`
+	DevicePaths []string          `json:"devicePaths,omitempty"`
+	Labels      map[string]string `json:"labels,omitempty"`
+	CustomInfo  interface{}       `json:"customInfo,omitempty"`
 }
