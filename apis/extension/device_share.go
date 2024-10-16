@@ -187,7 +187,6 @@ type GPUPartition struct {
 	RingBusBandwidth *resource.Quantity `json:"ringBusBandwidth,omitempty"`
 	AllocationScore  int                `json:"allocationScore,omitempty"`
 	MinorsHash       int                `json:"-"`
-	BinPackScore     int                `json:"-"`
 }
 
 // GPUPartitionTable will be annotated on Device

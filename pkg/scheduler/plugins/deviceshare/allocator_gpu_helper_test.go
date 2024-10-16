@@ -34,55 +34,47 @@ func TestGetGPUPartitionIndexer(t *testing.T) {
 		want  GPUPartitionIndexer
 	}{
 		{
-			name: "normal flow",
+			name: "normal flow ",
 			table: apiext.GPUPartitionTable{
 				1: {
 					{
 						Minors:          []int{0},
 						GPULinkType:     apiext.GPUNVLink,
-						MinorsHash:      hashMinors([]int{0}),
 						AllocationScore: 1,
 					},
 					{
 						Minors:          []int{1},
 						GPULinkType:     apiext.GPUNVLink,
-						MinorsHash:      hashMinors([]int{1}),
 						AllocationScore: 1,
 					},
 					{
 						Minors:          []int{2},
 						GPULinkType:     apiext.GPUNVLink,
-						MinorsHash:      hashMinors([]int{2}),
 						AllocationScore: 1,
 					},
 					{
 						Minors:          []int{3},
 						GPULinkType:     apiext.GPUNVLink,
-						MinorsHash:      hashMinors([]int{3}),
 						AllocationScore: 1,
 					},
 					{
 						Minors:          []int{4},
 						GPULinkType:     apiext.GPUNVLink,
-						MinorsHash:      hashMinors([]int{4}),
 						AllocationScore: 1,
 					},
 					{
 						Minors:          []int{5},
 						GPULinkType:     apiext.GPUNVLink,
-						MinorsHash:      hashMinors([]int{5}),
 						AllocationScore: 1,
 					},
 					{
 						Minors:          []int{6},
 						GPULinkType:     apiext.GPUNVLink,
-						MinorsHash:      hashMinors([]int{6}),
 						AllocationScore: 1,
 					},
 					{
 						Minors:          []int{7},
 						GPULinkType:     apiext.GPUNVLink,
-						MinorsHash:      hashMinors([]int{7}),
 						AllocationScore: 1,
 					},
 				},
@@ -90,25 +82,21 @@ func TestGetGPUPartitionIndexer(t *testing.T) {
 					{
 						Minors:          []int{0, 1},
 						GPULinkType:     apiext.GPUNVLink,
-						MinorsHash:      hashMinors([]int{0, 1}),
 						AllocationScore: 1,
 					},
 					{
 						Minors:          []int{2, 3},
 						GPULinkType:     apiext.GPUNVLink,
-						MinorsHash:      hashMinors([]int{2, 3}),
 						AllocationScore: 1,
 					},
 					{
 						Minors:          []int{4, 5},
 						GPULinkType:     apiext.GPUNVLink,
-						MinorsHash:      hashMinors([]int{4, 5}),
 						AllocationScore: 1,
 					},
 					{
 						Minors:          []int{6, 7},
 						GPULinkType:     apiext.GPUNVLink,
-						MinorsHash:      hashMinors([]int{6, 7}),
 						AllocationScore: 1,
 					},
 				},
@@ -116,13 +104,11 @@ func TestGetGPUPartitionIndexer(t *testing.T) {
 					{
 						Minors:          []int{0, 1, 2, 3},
 						GPULinkType:     apiext.GPUNVLink,
-						MinorsHash:      hashMinors([]int{0, 1, 2, 3}),
 						AllocationScore: 1,
 					},
 					{
 						Minors:          []int{4, 5, 6, 7},
 						GPULinkType:     apiext.GPUNVLink,
-						MinorsHash:      hashMinors([]int{4, 5, 6, 7}),
 						AllocationScore: 1,
 					},
 				},
@@ -130,7 +116,6 @@ func TestGetGPUPartitionIndexer(t *testing.T) {
 					{
 						Minors:          []int{0, 1, 2, 3, 4, 5, 6, 7},
 						GPULinkType:     apiext.GPUNVLink,
-						MinorsHash:      hashMinors([]int{0, 1, 2, 3, 4, 5, 6, 7}),
 						AllocationScore: 1,
 					},
 				},
