@@ -36,6 +36,7 @@ import (
 	schedulerconfig "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/validation"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/schedulingphase"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/topologymanager"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/reservation"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
@@ -81,6 +82,7 @@ type preFilterState struct {
 	hints              apiext.DeviceAllocateHints
 	hintSelectors      map[schedulingv1alpha1.DeviceType][2]labels.Selector
 	jointAllocate      *apiext.DeviceJointAllocate
+	primaryDeviceType  schedulingv1alpha1.DeviceType
 	gpuRequirements    *GPURequirements
 	allocationResult   apiext.DeviceAllocations
 	preemptibleDevices map[string]map[schedulingv1alpha1.DeviceType]deviceResources
@@ -108,6 +110,7 @@ func (s *preFilterState) Clone() framework.StateData {
 		gpuRequirements:        s.gpuRequirements,
 		hintSelectors:          s.hintSelectors,
 		jointAllocate:          s.jointAllocate,
+		primaryDeviceType:      s.primaryDeviceType,
 		allocationResult:       s.allocationResult,
 		hasReservationAffinity: s.hasReservationAffinity,
 	}
@@ -437,12 +440,13 @@ func (p *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState, 
 	}
 
 	allocator := &AutopilotAllocator{
-		state:      state,
-		nodeDevice: nodeDeviceInfo,
-		node:       nodeInfo.Node(),
-		pod:        pod,
-		scorer:     p.scorer,
-		numaNodes:  affinity.NUMANodeAffinity,
+		state:              state,
+		nodeDevice:         nodeDeviceInfo,
+		phaseBeingExecuted: schedulingphase.GetExtensionPointBeingExecuted(cycleState),
+		node:               nodeInfo.Node(),
+		pod:                pod,
+		scorer:             p.scorer,
+		numaNodes:          affinity.NUMANodeAffinity,
 	}
 
 	// TODO: de-duplicate logic done by the Filter phase and move head the pre-process of the resource options

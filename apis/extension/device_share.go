@@ -54,9 +54,10 @@ const (
 )
 
 const (
-	LabelGPUPartitionPolicy string = NodeDomainPrefix + "/gpu-partition-policy"
-	LabelGPUModel           string = NodeDomainPrefix + "/gpu-model"
-	LabelGPUDriverVersion   string = NodeDomainPrefix + "/gpu-driver-version"
+	LabelGPUPartitionPolicy         string = NodeDomainPrefix + "/gpu-partition-policy"
+	LabelGPUModel                   string = NodeDomainPrefix + "/gpu-model"
+	LabelGPUDriverVersion           string = NodeDomainPrefix + "/gpu-driver-version"
+	LabelSecondaryDeviceWellPlanned string = NodeDomainPrefix + "/secondary-device-well-planned"
 )
 
 // DeviceAllocations would be injected into Pod as form of annotation during Pre-bind stage.
@@ -330,4 +331,11 @@ func GetGPUPartitionPolicy(device *schedulingv1alpha1.Device) GPUPartitionPolicy
 		return GPUPartitionPolicyHonor
 	}
 	return GPUPartitionPolicyPrefer
+}
+
+func IsSecondaryDeviceWellPlanned(device *schedulingv1alpha1.Device) bool {
+	if device == nil {
+		return false
+	}
+	return device.Labels[LabelSecondaryDeviceWellPlanned] == "true"
 }

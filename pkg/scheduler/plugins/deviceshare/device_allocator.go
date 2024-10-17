@@ -30,6 +30,7 @@ import (
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/schedulingphase"
 	"github.com/koordinator-sh/koordinator/pkg/util/bitmask"
 )
 
@@ -60,6 +61,7 @@ type requestContext struct {
 
 type AutopilotAllocator struct {
 	state                     *preFilterState
+	phaseBeingExecuted        string
 	nodeDevice                *nodeDevice
 	node                      *corev1.Node
 	pod                       *corev1.Pod
@@ -75,7 +77,7 @@ func (a *AutopilotAllocator) Prepare() *framework.Status {
 	}
 	state := a.state
 	nodeDevice := a.nodeDevice
-	requestsPerInstance, desiredCountPerDeviceType, status := a.calcRequestsAndCountByDeviceType(state.podRequests, nodeDevice, state.hints)
+	requestsPerInstance, desiredCountPerDeviceType, status := a.calcRequestsAndCountByDeviceType(state.podRequests, nodeDevice, state.hints, state.primaryDeviceType)
 	if !status.IsSuccess() {
 		return status
 	}
@@ -113,10 +115,13 @@ func (a *AutopilotAllocator) Allocate(
 		preferred:                 preferred,
 		nodeDevice:                a.nodeDevice,
 	}
-
-	deviceAllocations, status := a.tryJointAllocate(requestCtx, a.state.jointAllocate, nodeDevice)
-	if !status.IsSuccess() {
-		return nil, status
+	var deviceAllocations apiext.DeviceAllocations
+	var status *framework.Status
+	if len(a.requestsPerInstance) > 1 {
+		deviceAllocations, status = a.tryJointAllocate(requestCtx, a.state.jointAllocate, nodeDevice)
+		if !status.IsSuccess() {
+			return nil, status
+		}
 	}
 	deviceAllocations, status = a.allocateDevices(requestCtx, nodeDevice, deviceAllocations)
 	if !status.IsSuccess() {
@@ -161,7 +166,7 @@ func (a *AutopilotAllocator) filterNodeDevice(
 
 func (a *AutopilotAllocator) calcRequestsAndCountByDeviceType(
 	podRequests map[schedulingv1alpha1.DeviceType]corev1.ResourceList,
-	nodeDevice *nodeDevice, hints apiext.DeviceAllocateHints,
+	nodeDevice *nodeDevice, hints apiext.DeviceAllocateHints, primaryDeviceType schedulingv1alpha1.DeviceType,
 ) (map[schedulingv1alpha1.DeviceType]corev1.ResourceList, map[schedulingv1alpha1.DeviceType]int, *framework.Status) {
 	requestPerInstance := map[schedulingv1alpha1.DeviceType]corev1.ResourceList{}
 	desiredCountPerDeviceType := map[schedulingv1alpha1.DeviceType]int{}
@@ -174,6 +179,11 @@ func (a *AutopilotAllocator) calcRequestsAndCountByDeviceType(
 		if handler == nil {
 			continue
 		}
+
+		if primaryDeviceType != "" && deviceType != primaryDeviceType && nodeDevice.secondaryDeviceWellPlanned && a.phaseBeingExecuted != schedulingphase.Reserve {
+			continue
+		}
+
 		requests, desiredCount, status := handler.CalcDesiredRequestsAndCount(a.node, a.pod, requests, nodeDevice, hints[deviceType], a.state)
 		if !status.IsSuccess() {
 			if status.Code() == framework.Skip {
@@ -359,6 +369,7 @@ func defaultAllocateDevices(
 	var allocations []*apiext.DeviceAllocation
 	resourceMinorPairs := scoreDevices(podRequestPerInstance, nodeDeviceTotal, freeDevices, requestCtx.allocationScorer)
 	resourceMinorPairs = sortDeviceResourcesByPreferredPCIe(resourceMinorPairs, preferredPCIEs, deviceInfos)
+	// TODO 这里多执行了一次排序算法
 	resourceMinorPairs = sortDeviceResourcesByMinor(resourceMinorPairs, requestCtx.preferred[deviceType])
 	for _, resourceMinorPair := range resourceMinorPairs {
 		if required.Len() > 0 && !required.Has(resourceMinorPair.minor) {
