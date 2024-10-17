@@ -27,7 +27,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/grpc"
 
-	mockv1alpha2_client "github.com/koordinator-sh/koordinator/pkg/koordlet/util/runtime/handler/mockv1alpha2client"
+	mockclient "github.com/koordinator-sh/koordinator/pkg/koordlet/util/runtime/handler/mockclient"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 )
 
@@ -83,11 +83,11 @@ func TestPouchRuntimeHandler_StopContainer(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			ctl := gomock.NewController(t)
 			defer ctl.Finish()
-			mockRuntimeClient := mockv1alpha2_client.NewMockRuntimeServiceClient(ctl)
+			mockRuntimeClient := mockclient.NewMockRuntimeServiceClient(ctl)
 			mockRuntimeClient.EXPECT().StopContainer(gomock.Any(), gomock.Any()).Return(nil, tt.runtimeError)
 
 			runtimeHandler := PouchRuntimeHandler{runtimeServiceClient: mockRuntimeClient, timeout: 1, endpoint: GetContainerdEndpoint()}
-			gotErr := runtimeHandler.StopContainer(tt.containerId, 1)
+			gotErr := runtimeHandler.StopContainer(context.TODO(), tt.containerId, 1)
 			assert.Equal(t, gotErr != nil, tt.expectError)
 
 		})
@@ -119,7 +119,7 @@ func TestPouchRuntimeHandler_UpdateContainerResources(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			ctl := gomock.NewController(t)
 			defer ctl.Finish()
-			mockRuntimeClient := mockv1alpha2_client.NewMockRuntimeServiceClient(ctl)
+			mockRuntimeClient := mockclient.NewMockRuntimeServiceClient(ctl)
 			mockRuntimeClient.EXPECT().UpdateContainerResources(gomock.Any(), gomock.Any()).Return(nil, tt.runtimeError)
 
 			runtimeHandler := PouchRuntimeHandler{runtimeServiceClient: mockRuntimeClient, timeout: 1, endpoint: GetContainerdEndpoint()}

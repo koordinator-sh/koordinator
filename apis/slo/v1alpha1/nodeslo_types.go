@@ -50,6 +50,15 @@ const (
 	CPUQOSPolicyCoreSched CPUQOSPolicy = "coreSched"
 )
 
+type NETQOSPolicy string
+
+const (
+	// NETQOSPolicyTC indicates implement netqos by tc.
+	NETQOSPolicyTC NETQOSPolicy = "tc"
+	// NETQOSPolicyTerwayQos indicates implement netqos by terway-qos.
+	NETQOSPolicyTerwayQos NETQOSPolicy = "terway-qos"
+)
+
 // MemoryQOS enables memory qos features.
 type MemoryQOS struct {
 	// memcg qos
@@ -182,6 +191,35 @@ type IOCfg struct {
 	ReadLatency *int64 `json:"readLatency,omitempty"`
 	// the write latency threshold. Unit: microseconds.
 	WriteLatency *int64 `json:"writeLatency,omitempty"`
+	// the read latency percentile
+	// +kubebuilder:validation:Maximum=100
+	// +kubebuilder:validation:Minimum=0
+	ReadLatencyPercent *int64 `json:"readLatencyPercent,omitempty"`
+	// the write latency percentile
+	// +kubebuilder:validation:Maximum=100
+	// +kubebuilder:validation:Minimum=0
+	WriteLatencyPercent *int64 `json:"writeLatencyPercent,omitempty"`
+	// configure the cost model of blkio-cost manually
+	// whether the user model is enabled. Default value: false
+	EnableUserModel *bool `json:"enableUserModel,omitempty"`
+	// the read BPS of user model
+	// +kubebuilder:validation:Minimum=1
+	ModelReadBPS *int64 `json:"modelReadBPS,omitempty"`
+	// the write BPS of user model
+	// +kubebuilder:validation:Minimum=1
+	ModelWriteBPS *int64 `json:"modelWriteBPS,omitempty"`
+	// the sequential read iops of user model
+	// +kubebuilder:validation:Minimum=1
+	ModelReadSeqIOPS *int64 `json:"modelReadSeqIOPS,omitempty"`
+	// the sequential write iops of user model
+	// +kubebuilder:validation:Minimum=1
+	ModelWriteSeqIOPS *int64 `json:"modelWriteSeqIOPS,omitempty"`
+	// the random read iops of user model
+	// +kubebuilder:validation:Minimum=1
+	ModelReadRandIOPS *int64 `json:"modelReadRandIOPS,omitempty"`
+	// the random write iops of user model
+	// +kubebuilder:validation:Minimum=1
+	ModelWriteRandIOPS *int64 `json:"modelWriteRandIOPS,omitempty"`
 }
 
 type BlockCfg struct {
@@ -243,6 +281,9 @@ type NetworkQOS struct {
 type ResourceQOSPolicies struct {
 	// applied policy for the CPU QoS, default = "groupIdentity"
 	CPUPolicy *CPUQOSPolicy `json:"cpuPolicy,omitempty"`
+
+	// applied policy for the Net QoS, default = "tc"
+	NETQOSPolicy *NETQOSPolicy `json:"netQOSPolicy,omitempty"`
 }
 
 type ResourceQOSStrategy struct {

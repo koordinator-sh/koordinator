@@ -36,6 +36,10 @@ type ResctrlSchemataResourceUpdater struct {
 	schemataRaw *sysutil.ResctrlSchemataRaw
 }
 
+func (r *ResctrlSchemataResourceUpdater) Name() string {
+	return "resctrl-schema"
+}
+
 func (r *ResctrlSchemataResourceUpdater) Key() string {
 	return r.schemataRaw.Prefix() + r.file
 }
@@ -49,6 +53,64 @@ func (r *ResctrlSchemataResourceUpdater) Clone() ResourceUpdater {
 		DefaultResourceUpdater: *(r.DefaultResourceUpdater.Clone().(*DefaultResourceUpdater)),
 		schemataRaw:            r.schemataRaw.DeepCopy(),
 	}
+}
+
+func NewResctrlSchemataResource(group, schemata string, e *audit.EventHelper) (ResourceUpdater, error) {
+	if schemata == "" {
+		return nil, fmt.Errorf("schemata is nil")
+	}
+	schemataFile := sysutil.ResctrlSchemata.Path(group)
+	schemataKey := sysutil.ResctrlSchemataName + ":" + schemataFile
+	// The current assumption is that the cache ids obtained through
+	// resctrl schemata will not go wrong. TODO: Use the ability of node info
+	// to obtain cache ids to replace the current method.
+	ids, _ := sysutil.CacheIdsCacheFunc()
+	schemataRaw := sysutil.NewResctrlSchemataRaw(ids).WithL3Num(len(ids))
+	err := schemataRaw.ParseResctrlSchemata(schemata, -1)
+	if err != nil {
+		klog.Errorf("failed to parse %v", err)
+	}
+	items := []string{}
+	for _, item := range []struct {
+		validFunc func() (bool, string)
+		value     func() string
+	}{
+		{validFunc: schemataRaw.ValidateL3, value: schemataRaw.L3String},
+		{validFunc: schemataRaw.ValidateMB, value: schemataRaw.MBString},
+	} {
+		if valid, _ := item.validFunc(); valid {
+			items = append(items, item.value())
+		}
+	}
+	schemataStr := strings.Join(items, "")
+	klog.V(6).Infof("generate new resctrl schemata resource, file %s, key %s, value %s, schemata %s",
+		schemataFile, schemataKey, schemataStr, schemata)
+	return &ResctrlSchemataResourceUpdater{
+		DefaultResourceUpdater: DefaultResourceUpdater{
+			key:         schemataKey,
+			file:        schemataFile,
+			value:       schemataStr,
+			updateFunc:  UpdateResctrlSchemataFunc,
+			eventHelper: e,
+		},
+		schemataRaw: schemataRaw,
+	}, err
+}
+
+func NewCatGroupResource(group string, e *audit.EventHelper) (ResourceUpdater, error) {
+	if group == "" {
+		return nil, fmt.Errorf("group is nil")
+	}
+	schemataFile := sysutil.ResctrlSchemata.Path(group)
+
+	klog.V(6).Infof("generate new cat group resource, file %s", schemataFile)
+	return &DefaultResourceUpdater{
+		key:         group,
+		file:        schemataFile,
+		value:       "",
+		updateFunc:  InitCatGroupFunc,
+		eventHelper: e,
+	}, nil
 }
 
 func NewResctrlL3SchemataResource(group, schemataDelta string, l3Num int) ResourceUpdater {
@@ -110,6 +172,25 @@ func CalculateResctrlL3TasksResource(group string, taskIds []int32) (ResourceUpd
 	}
 	eventHelper := audit.V(5).Reason("ApplyCatL3GroupTasks").Message("update Resctrl L3Tasks for group : %v to : %v", group, builder.String())
 	return NewCommonDefaultUpdaterWithUpdateFunc(tasksPath, tasksPath, builder.String(), UpdateResctrlTasksFunc, eventHelper)
+}
+
+func InitCatGroupFunc(u ResourceUpdater) error {
+	r, ok := u.(*DefaultResourceUpdater)
+	if !ok {
+		return fmt.Errorf("not a DefaultResourceUpdater")
+	}
+
+	if updated, err := sysutil.InitCatGroupIfNotExist(r.key); err != nil {
+		klog.Errorf("init cat group dir %v failed, error %v", r.key, err)
+		return err
+	} else if updated {
+		klog.V(4).Infof("create cat dir for group %v successfully", r.key)
+	} else {
+		klog.V(6).Infof("cat dir for group %v is already created", r.key)
+	}
+
+	_ = audit.V(3).Reason(CreateCATGroup).Message("Create %v to %v", u.Key(), u.Value()).Do()
+	return nil
 }
 
 func UpdateResctrlSchemataFunc(u ResourceUpdater) error {

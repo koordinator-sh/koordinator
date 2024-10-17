@@ -19,13 +19,17 @@ package metriccache
 import (
 	"context"
 	"fmt"
+	"os"
 	"time"
 
+	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
 	promstorage "github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"k8s.io/klog/v2"
+
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
 )
 
 // TSDBStorage defines time-series type DB, providing insert and query interface
@@ -66,6 +70,12 @@ type Querier interface {
 	// It allows passing hints that can help in optimizing select,
 	// but it's up to implementation of MetricResult how to use it.
 	Query(meta MetricMeta, hints *QueryHints, result MetricResult) error
+
+	// QueryAndClose is same with Query, but close the querier after return the result
+	QueryAndClose(meta MetricMeta, hints *QueryHints, result MetricResult) error
+
+	// Close closes the querier and releases its resources.
+	Close()
 }
 
 // SelectHints specifies hints passed for query.
@@ -122,9 +132,10 @@ func NewTSDBStorage(conf *Config) (TSDBStorage, error) {
 
 	var promReg prometheus.Registerer
 	if conf.TSDBEnablePromMetrics {
-		promReg = prometheus.DefaultRegisterer
+		promReg = metrics.ExternalRegistry
 	}
-	db, err := tsdb.Open(conf.TSDBPath, nil, promReg, tsdbOpt, nil)
+	logger := log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
+	db, err := tsdb.Open(conf.TSDBPath, log.With(logger, "component", "tsdb"), promReg, tsdbOpt, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -167,7 +178,6 @@ type tsdbQuerier struct {
 }
 
 func (t *tsdbQuerier) Query(meta MetricMeta, hints *QueryHints, result MetricResult) error {
-	defer t.querier.Close()
 	properties := meta.GetProperties()
 	labelMatchers := make([]*labels.Matcher, 0, len(properties)+1)
 
@@ -196,4 +206,15 @@ func (t *tsdbQuerier) Query(meta MetricMeta, hints *QueryHints, result MetricRes
 		}
 	}
 	return nil
+}
+
+func (t *tsdbQuerier) QueryAndClose(meta MetricMeta, hints *QueryHints, result MetricResult) error {
+	defer t.Close()
+	return t.Query(meta, hints, result)
+}
+
+func (t *tsdbQuerier) Close() {
+	if err := t.querier.Close(); err != nil {
+		klog.Warningf("close querier error %v", err)
+	}
 }

@@ -72,11 +72,6 @@ func TestPlugin_GetPodTopologyHints(t *testing.T) {
 					{NUMANodeAffinity: newBitMask(1), Preferred: true},
 					{NUMANodeAffinity: newBitMask(0, 1), Preferred: false},
 				},
-				string(apiext.ResourceGPUMemory): {
-					{NUMANodeAffinity: newBitMask(0), Preferred: true},
-					{NUMANodeAffinity: newBitMask(1), Preferred: true},
-					{NUMANodeAffinity: newBitMask(0, 1), Preferred: false},
-				},
 				string(apiext.ResourceGPUMemoryRatio): {
 					{NUMANodeAffinity: newBitMask(0), Preferred: true},
 					{NUMANodeAffinity: newBitMask(1), Preferred: true},
@@ -107,10 +102,6 @@ func TestPlugin_GetPodTopologyHints(t *testing.T) {
 			},
 			want: map[string][]topologymanager.NUMATopologyHint{
 				string(apiext.ResourceGPUCore): {
-					{NUMANodeAffinity: newBitMask(1), Preferred: true},
-					{NUMANodeAffinity: newBitMask(0, 1), Preferred: false},
-				},
-				string(apiext.ResourceGPUMemory): {
 					{NUMANodeAffinity: newBitMask(1), Preferred: true},
 					{NUMANodeAffinity: newBitMask(0, 1), Preferred: false},
 				},
@@ -205,11 +196,6 @@ func TestPlugin_GetPodTopologyHints(t *testing.T) {
 					{NUMANodeAffinity: newBitMask(1), Preferred: true},
 					{NUMANodeAffinity: newBitMask(0, 1), Preferred: false},
 				},
-				string(apiext.ResourceGPUMemory): {
-					{NUMANodeAffinity: newBitMask(0), Preferred: true},
-					{NUMANodeAffinity: newBitMask(1), Preferred: true},
-					{NUMANodeAffinity: newBitMask(0, 1), Preferred: false},
-				},
 				string(apiext.ResourceGPUMemoryRatio): {
 					{NUMANodeAffinity: newBitMask(0), Preferred: true},
 					{NUMANodeAffinity: newBitMask(1), Preferred: true},
@@ -260,6 +246,7 @@ func TestPlugin_GetPodTopologyHints(t *testing.T) {
 			hintSelectors, err := newHintSelectors(tt.hints)
 			assert.NoError(t, err)
 
+			pod := &corev1.Pod{}
 			state := &preFilterState{
 				skip:          false,
 				podRequests:   tt.podRequests,
@@ -267,9 +254,9 @@ func TestPlugin_GetPodTopologyHints(t *testing.T) {
 				hintSelectors: hintSelectors,
 				jointAllocate: tt.jointAllocate,
 			}
+			state.gpuRequirements, _ = parseGPURequirements(pod, state.podRequests, state.hints[schedulingv1alpha1.GPU])
 			cycleState := framework.NewCycleState()
 			cycleState.Write(stateKey, state)
-			pod := &corev1.Pod{}
 
 			got, status := pl.GetPodTopologyHints(context.TODO(), cycleState, pod, node.Name)
 			assert.Equal(t, tt.want, got)
@@ -409,6 +396,7 @@ func TestPlugin_Allocate(t *testing.T) {
 			hintSelectors, err := newHintSelectors(tt.hints)
 			assert.NoError(t, err)
 
+			pod := &corev1.Pod{}
 			state := &preFilterState{
 				skip:          false,
 				podRequests:   tt.podRequests,
@@ -416,9 +404,9 @@ func TestPlugin_Allocate(t *testing.T) {
 				hintSelectors: hintSelectors,
 				jointAllocate: tt.jointAllocate,
 			}
+			state.gpuRequirements, _ = parseGPURequirements(pod, tt.podRequests, state.hints[schedulingv1alpha1.GPU])
 			cycleState := framework.NewCycleState()
 			cycleState.Write(stateKey, state)
-			pod := &corev1.Pod{}
 			pl := p.(*Plugin)
 			status := pl.Allocate(context.TODO(), cycleState, tt.affinity, pod, node.Name)
 			if !tt.wantErr != status.IsSuccess() {

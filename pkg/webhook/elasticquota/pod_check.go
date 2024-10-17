@@ -26,7 +26,8 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
+
+	"github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/features"
@@ -40,6 +41,11 @@ import (
 func (qt *quotaTopology) ValidateAddPod(pod *corev1.Pod) error {
 	qt.lock.Lock()
 	defer qt.lock.Unlock()
+
+	featureGate := utilfeature.DefaultFeatureGate
+	if featureGate.Enabled(features.SupportParentQuotaSubmitPod) {
+		return nil
+	}
 
 	quotaName := qt.getQuotaNameFromPodNoLock(pod)
 	if quotaName == "" || quotaName == extension.DefaultQuotaName {

@@ -210,6 +210,7 @@ func (h *PodMutatingHandler) doMutateByColocationProfile(ctx context.Context, po
 		}
 		pod.Spec.PriorityClassName = profile.Spec.PriorityClassName
 		pod.Spec.Priority = pointer.Int32(priorityClass.Value)
+		pod.Spec.PreemptionPolicy = priorityClass.PreemptionPolicy
 	}
 
 	if profile.Spec.KoordinatorPriority != nil {

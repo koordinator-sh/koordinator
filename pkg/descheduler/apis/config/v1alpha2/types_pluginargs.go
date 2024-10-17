@@ -39,6 +39,9 @@ type MigrationControllerArgs struct {
 	// EvictFailedBarePods allows pods without ownerReferences and in failed phase to be evicted.
 	EvictFailedBarePods bool `json:"evictFailedBarePods"`
 
+	// EvictAllBarePods allows all pods without ownerReferences to be evicted.
+	EvictAllBarePods bool `json:"evictAllBarePods"`
+
 	// EvictLocalStoragePods allows pods using local storage to be evicted.
 	EvictLocalStoragePods bool `json:"evictLocalStoragePods"`
 
@@ -64,6 +67,9 @@ type MigrationControllerArgs struct {
 
 	// NodeSelector for a set of nodes to operate over
 	NodeSelector string `json:"nodeSelector,omitempty"`
+
+	// MaxMigratingGlobally represents the maximum number of pods that can be migrating during migrate globally.
+	MaxMigratingGlobally *int32 `json:"maxMigratingGlobally,omitempty"`
 
 	// MaxMigratingPerNode represents he maximum number of pods that can be migrating during migrate per node.
 	MaxMigratingPerNode *int32 `json:"maxMigratingPerNode,omitempty"`
@@ -130,6 +136,8 @@ type MigrationObjectLimiter struct {
 	// MaxMigrating indicates the maximum number of migrations/evictions allowed within the window time.
 	// If configured as 0, the maximum number will be calculated according to MaxMigratingPerWorkload.
 	MaxMigrating *intstr.IntOrString `json:"maxMigrating,omitempty"`
+	// Burst indicates the limiter allows bursts of up to 'burst' to exceed within the time window.
+	Burst int `json:"burst,omitempty"`
 }
 
 // ArbitrationArgs holds arguments used to configure the Arbitration Mechanism.

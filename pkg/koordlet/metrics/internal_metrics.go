@@ -41,4 +41,7 @@ func init() {
 	internalMustRegister(CPUBurstCollector...)
 	internalMustRegister(PredictionCollectors...)
 	internalMustRegister(CoreSchedCollector...)
+	internalMustRegister(ResourceExecutorCollector...)
+	internalMustRegister(KubeletStubCollector...)
+	internalMustRegister(RuntimeHookCollectors...)
 }

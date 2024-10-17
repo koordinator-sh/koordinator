@@ -22,7 +22,6 @@ import (
 
 	"github.com/spf13/pflag"
 	apiserveroptions "k8s.io/apiserver/pkg/server/options"
-	schedulerconfig "k8s.io/kubernetes/pkg/scheduler/apis/config"
 
 	schedulerappconfig "github.com/koordinator-sh/koordinator/cmd/koord-scheduler/app/config"
 )
@@ -30,7 +29,7 @@ import (
 // CombinedInsecureServingOptions sets up to two insecure listeners for healthz and metrics. The flags
 // override the ComponentConfig and DeprecatedInsecureServingOptions values for both.
 type CombinedInsecureServingOptions struct {
-	Healthz *apiserveroptions.DeprecatedInsecureServingOptionsWithLoopback
+	Healthz *apiserveroptions.DeprecatedInsecureServingOptions
 
 	BindPort    int
 	BindAddress string
@@ -47,7 +46,7 @@ func (o *CombinedInsecureServingOptions) AddFlags(fs *pflag.FlagSet) {
 }
 
 // ApplyTo applies the insecure serving options to the given scheduler app configuration, and updates the componentConfig.
-func (o *CombinedInsecureServingOptions) ApplyTo(c *schedulerappconfig.Config, componentConfig *schedulerconfig.KubeSchedulerConfiguration) error {
+func (o *CombinedInsecureServingOptions) ApplyTo(c *schedulerappconfig.Config) error {
 	if o == nil {
 		return nil
 	}
@@ -57,7 +56,7 @@ func (o *CombinedInsecureServingOptions) ApplyTo(c *schedulerappconfig.Config, c
 		o.Healthz.BindAddress = net.ParseIP(o.BindAddress)
 	}
 
-	if err := o.Healthz.ApplyTo(&c.InsecureServing, &c.LoopbackClientConfig); err != nil {
+	if err := o.Healthz.ApplyTo(&c.InsecureServing); err != nil {
 		return err
 	}
 	return nil

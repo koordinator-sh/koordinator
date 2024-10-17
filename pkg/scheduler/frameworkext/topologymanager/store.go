@@ -44,23 +44,18 @@ func GetStore(cycleState *framework.CycleState) *Store {
 }
 
 func (s *Store) Clone() framework.StateData {
-	ss := &Store{}
-	s.affinityMap.Range(func(key, value any) bool {
-		ss.affinityMap.Store(key, value)
-		return true
-	})
-	return ss
+	return s
 }
 
 func (s *Store) SetAffinity(nodeName string, affinity NUMATopologyHint) {
 	s.affinityMap.Store(nodeName, &affinity)
 }
 
-func (s *Store) GetAffinity(nodeName string) NUMATopologyHint {
+func (s *Store) GetAffinity(nodeName string) (NUMATopologyHint, bool) {
 	val, ok := s.affinityMap.Load(nodeName)
 	if !ok {
-		return NUMATopologyHint{}
+		return NUMATopologyHint{}, false
 	}
 	hint := val.(*NUMATopologyHint)
-	return *hint
+	return *hint, true
 }

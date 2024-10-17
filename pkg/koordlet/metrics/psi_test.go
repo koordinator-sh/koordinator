@@ -21,24 +21,24 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 )
 
 func TestGetPSIRecords(t *testing.T) {
-	testingRecords := &resourceexecutor.PSIByResource{
-		CPU: resourceexecutor.PSIStats{
-			Some:          &resourceexecutor.PSILine{},
-			Full:          &resourceexecutor.PSILine{},
+	testingRecords := &system.PSIByResource{
+		CPU: system.PSIStats{
+			Some:          &system.PSILine{},
+			Full:          &system.PSILine{},
 			FullSupported: true,
 		},
-		Mem: resourceexecutor.PSIStats{
-			Some:          &resourceexecutor.PSILine{},
-			Full:          &resourceexecutor.PSILine{},
+		Mem: system.PSIStats{
+			Some:          &system.PSILine{},
+			Full:          &system.PSILine{},
 			FullSupported: true,
 		},
-		IO: resourceexecutor.PSIStats{
-			Some:          &resourceexecutor.PSILine{},
-			Full:          &resourceexecutor.PSILine{},
+		IO: system.PSIStats{
+			Some:          &system.PSILine{},
+			Full:          &system.PSILine{},
 			FullSupported: true,
 		},
 	}

@@ -27,7 +27,8 @@ import (
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
+
+	"github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	utilclient "github.com/koordinator-sh/koordinator/pkg/util/client"
@@ -196,6 +197,13 @@ func (qt *quotaTopology) ValidDeleteQuota(quota *v1alpha1.ElasticQuota) error {
 
 // fillQuotaDefaultInformation fills quota with default information if not configure
 func (qt *quotaTopology) fillQuotaDefaultInformation(quota *v1alpha1.ElasticQuota) error {
+	if quota.Name == extension.RootQuotaName {
+		return nil
+	}
+
+	qt.lock.Lock()
+	defer qt.lock.Unlock()
+
 	if quota.Labels == nil {
 		quota.Labels = make(map[string]string)
 	}
@@ -203,7 +211,7 @@ func (qt *quotaTopology) fillQuotaDefaultInformation(quota *v1alpha1.ElasticQuot
 		quota.Annotations = make(map[string]string)
 	}
 
-	if parentName, exist := quota.Labels[extension.LabelQuotaParent]; (!exist || len(parentName) == 0) && quota.Name != extension.RootQuotaName {
+	if parentName, exist := quota.Labels[extension.LabelQuotaParent]; !exist || len(parentName) == 0 {
 		quota.Labels[extension.LabelQuotaParent] = extension.RootQuotaName
 		klog.V(5).Infof("fill quota %v parent as root", quota.Name)
 	}

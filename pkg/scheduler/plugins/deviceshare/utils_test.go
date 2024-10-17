@@ -22,8 +22,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
+	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 )
 
 func TestValidateDeviceRequest(t *testing.T) {
@@ -132,6 +135,82 @@ func TestValidateDeviceRequest(t *testing.T) {
 				apiext.ResourceGPUMemory: resource.MustParse("64Gi"),
 			},
 			want:    GPUMemory,
+			wantErr: false,
+		},
+		{
+			name: "invalid gpu request 8",
+			podRequest: corev1.ResourceList{
+				apiext.ResourceGPUMemoryRatio: resource.MustParse("101"),
+				apiext.ResourceGPUShared:      resource.MustParse("1"),
+			},
+			want:    0,
+			wantErr: true,
+		},
+		{
+			name: "invalid gpu request 9",
+			podRequest: corev1.ResourceList{
+				apiext.ResourceGPUMemoryRatio: resource.MustParse("101"),
+				apiext.ResourceGPUShared:      resource.MustParse("2"),
+			},
+			want:    0,
+			wantErr: true,
+		},
+		{
+			name: "invalid gpu request 10",
+			podRequest: corev1.ResourceList{
+				apiext.ResourceGPUCore:   resource.MustParse("101"),
+				apiext.ResourceGPUMemory: resource.MustParse("64Gi"),
+				apiext.ResourceGPUShared: resource.MustParse("1"),
+			},
+			want:    0,
+			wantErr: true,
+		},
+		{
+			name: "invalid gpu request 11",
+			podRequest: corev1.ResourceList{
+				apiext.ResourceGPUCore:   resource.MustParse("101"),
+				apiext.ResourceGPUMemory: resource.MustParse("64Gi"),
+				apiext.ResourceGPUShared: resource.MustParse("2"),
+			},
+			want:    0,
+			wantErr: true,
+		},
+		{
+			name: "valid gpu request 12",
+			podRequest: corev1.ResourceList{
+				apiext.ResourceGPUMemoryRatio: resource.MustParse("200"),
+				apiext.ResourceGPUShared:      resource.MustParse("2"),
+			},
+			want:    GPUShared | GPUMemoryRatio,
+			wantErr: false,
+		},
+		{
+			name: "valid gpu request 13",
+			podRequest: corev1.ResourceList{
+				apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+				apiext.ResourceGPUShared:      resource.MustParse("2"),
+			},
+			want:    GPUShared | GPUMemoryRatio,
+			wantErr: false,
+		},
+		{
+			name: "invalid gpu request 14",
+			podRequest: corev1.ResourceList{
+				apiext.ResourceGPUCore:   resource.MustParse("100"),
+				apiext.ResourceGPUMemory: resource.MustParse("64Gi"),
+				apiext.ResourceGPUShared: resource.MustParse("1"),
+			},
+			want:    GPUShared | GPUMemory | GPUCore,
+			wantErr: false,
+		},
+		{
+			name: "invalid gpu request 15",
+			podRequest: corev1.ResourceList{
+				apiext.ResourceGPUCore:   resource.MustParse("100"),
+				apiext.ResourceGPUMemory: resource.MustParse("64Gi"),
+				apiext.ResourceGPUShared: resource.MustParse("2"),
+			},
+			want:    GPUShared | GPUMemory | GPUCore,
 			wantErr: false,
 		},
 		{
@@ -320,4 +399,123 @@ func Test_memoryBytesToRatio(t *testing.T) {
 	expectRatio := *resource.NewQuantity(50, resource.DecimalSI)
 	newRatio := memoryBytesToRatio(currentBytes, totalMemory)
 	assert.Equal(t, expectRatio, newRatio)
+}
+
+func Test_parseGPURequirements(t *testing.T) {
+	bandWidthOf200Gi := resource.MustParse("200Gi")
+
+	tests := []struct {
+		name        string
+		pod         *corev1.Pod
+		podRequests map[schedulingv1alpha1.DeviceType]corev1.ResourceList
+		gpuHints    *apiext.DeviceHint
+		want        *GPURequirements
+		wantErr     assert.ErrorAssertionFunc
+	}{
+		{
+			name: "No GPU requests",
+			pod:  &corev1.Pod{},
+			podRequests: map[schedulingv1alpha1.DeviceType]corev1.ResourceList{
+				schedulingv1alpha1.GPU: {},
+			},
+			gpuHints: nil,
+			want:     nil,
+			wantErr:  assert.NoError,
+		},
+		{
+			name: "Invalid GPU partition spec",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						apiext.AnnotationGPUPartitionSpec: `invalid GPU Partition Spec`,
+					},
+				},
+			},
+			podRequests: map[schedulingv1alpha1.DeviceType]corev1.ResourceList{
+				schedulingv1alpha1.GPU: {
+					apiext.ResourceGPUMemoryRatio: resource.MustParse("200"),
+					apiext.ResourceGPUCore:        resource.MustParse("200"),
+				},
+			},
+			want:    nil,
+			wantErr: assert.Error,
+		},
+		{
+			name: "Valid GPU requests without hints",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						apiext.AnnotationGPUPartitionSpec: `{"allocatePolicy":"Restricted","ringBusBandwidth":"200Gi"}`,
+					},
+				},
+			},
+			podRequests: map[schedulingv1alpha1.DeviceType]corev1.ResourceList{
+				schedulingv1alpha1.GPU: {
+					apiext.ResourceGPUMemoryRatio: resource.MustParse("200"),
+					apiext.ResourceGPUCore:        resource.MustParse("200"),
+				},
+			},
+			gpuHints: nil,
+			want: &GPURequirements{
+				numberOfGPUs: 2,
+				requestsPerGPU: corev1.ResourceList{
+					apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+					apiext.ResourceGPUCore:        resource.MustParse("100"),
+				},
+				gpuShared:              false,
+				honorGPUPartition:      true,
+				rindBusBandwidth:       &bandWidthOf200Gi,
+				restrictedGPUPartition: true,
+			},
+			wantErr: assert.NoError,
+		},
+		{
+			name: "Valid GPU requests with hints",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						apiext.AnnotationGPUPartitionSpec: `{"allocatePolicy":"Restricted","ringBusBandwidth":"200Gi"}`,
+					},
+				},
+			},
+			podRequests: map[schedulingv1alpha1.DeviceType]corev1.ResourceList{
+				schedulingv1alpha1.GPU: {
+					apiext.ResourceGPUMemoryRatio: resource.MustParse("200"),
+					apiext.ResourceGPUCore:        resource.MustParse("200"),
+				},
+			},
+			gpuHints: &apiext.DeviceHint{
+				RequiredTopologyScope: apiext.DeviceTopologyScopeNUMANode,
+			},
+			want: &GPURequirements{
+				numberOfGPUs: 2,
+				requestsPerGPU: corev1.ResourceList{
+					apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+					apiext.ResourceGPUCore:        resource.MustParse("100"),
+				},
+				gpuShared:                  false,
+				honorGPUPartition:          true,
+				rindBusBandwidth:           &bandWidthOf200Gi,
+				restrictedGPUPartition:     true,
+				requiredTopologyScopeLevel: 2,
+				requiredTopologyScope:      apiext.DeviceTopologyScopeNUMANode,
+			},
+			wantErr: assert.NoError,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := parseGPURequirements(tt.pod, tt.podRequests, tt.gpuHints)
+			if !tt.wantErr(t, err) {
+				return
+			}
+			if tt.want != nil {
+				assert.True(t, quotav1.Equals(tt.want.requestsPerGPU, got.requestsPerGPU))
+				tt.want.requestsPerGPU = nil
+				got.requestsPerGPU = nil
+			}
+			assert.Equal(t, tt.want, got)
+
+		})
+	}
 }

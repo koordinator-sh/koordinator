@@ -52,6 +52,7 @@ const (
 	DefaultWriteBPS           = 0
 	DefaultIOWeightPercentage = 100
 	DefaultIOLatency          = 3000
+	DefaultLatencyPercent     = 95
 )
 
 var _ framework.QOSStrategy = &blkIOReconcile{}
@@ -295,7 +296,7 @@ func (b *blkIOReconcile) getDiskNumberFromVolumeGroup(vgName string) (string, er
 // diskNumber: 253:16
 func (b *blkIOReconcile) getDiskNumberFromPodVolume(podMeta *statesinformer.PodMeta, volumeName string) (string, error) {
 	podUUID := podMeta.Pod.UID
-	mountpoint := filepath.Join(system.Conf.CgroupKubePath, "pods", string(podUUID), "volumes/kubernetes.io~csi", volumeName, "mount")
+	mountpoint := filepath.Join(system.Conf.VarLibKubeletRootDir, "pods", string(podUUID), "volumes/kubernetes.io~csi", volumeName, "mount")
 	disk := getDiskByMountPoint(b.storageInfo, mountpoint)
 	diskNumber := getDiskNumber(b.storageInfo, disk)
 	if diskNumber == "" {
@@ -419,7 +420,12 @@ func (b *blkIOReconcile) getDiskNumberFromBlockCfg(block *slov1alpha1.BlockCfg, 
 // configure cgroup root
 // dynamicPath for root: ""
 func getDiskConfigUpdaterFromBlockCfg(block *slov1alpha1.BlockCfg, diskNumber string, dynamicPath string) (resources []resourceexecutor.ResourceUpdater) {
-	var readlat, writelat int64 = DefaultIOLatency, DefaultIOLatency
+	var (
+		readlat, writelat                                                                                       int64 = DefaultIOLatency, DefaultIOLatency
+		readlatPercent, writelatPercent                                                                         int64 = DefaultLatencyPercent, DefaultLatencyPercent
+		enableUserModel                                                                                         bool  = false
+		modelReadBPS, modelWriteBPS, modelReadSeqIOPS, modelWriteSeqIOPS, modelReadRandIOPS, modelWriteRandIOPS int64 = 0, 0, 0, 0, 0, 0
+	)
 	// disk io weight latency
 	if value := block.IOCfg.ReadLatency; value != nil {
 		readlat = *value
@@ -428,14 +434,67 @@ func getDiskConfigUpdaterFromBlockCfg(block *slov1alpha1.BlockCfg, diskNumber st
 		writelat = *value
 	}
 
+	// disk io latency percent
+	if value := block.IOCfg.ReadLatencyPercent; value != nil {
+		readlatPercent = *value
+	}
+	if value := block.IOCfg.WriteLatencyPercent; value != nil {
+		writelatPercent = *value
+	}
+
+	// user cost model configuration
+	if value := block.IOCfg.EnableUserModel; value != nil {
+		enableUserModel = *value
+	}
+	if enableUserModel {
+		if value := block.IOCfg.ModelReadBPS; value != nil {
+			modelReadBPS = *value
+		}
+		if value := block.IOCfg.ModelWriteBPS; value != nil {
+			modelWriteBPS = *value
+		}
+		if value := block.IOCfg.ModelReadSeqIOPS; value != nil {
+			modelReadSeqIOPS = *value
+		}
+		if value := block.IOCfg.ModelWriteSeqIOPS; value != nil {
+			modelWriteSeqIOPS = *value
+		}
+		if value := block.IOCfg.ModelReadRandIOPS; value != nil {
+			modelReadRandIOPS = *value
+		}
+		if value := block.IOCfg.ModelWriteRandIOPS; value != nil {
+			modelWriteRandIOPS = *value
+		}
+	}
+
 	ioQoSUpdater, _ := resourceexecutor.NewBlkIOResourceUpdater(
 		system.BlkioIOQoSName,
 		dynamicPath,
-		fmt.Sprintf("%s enable=1 ctrl=user rlat=%d wlat=%d", diskNumber, readlat, writelat),
-		audit.V(3).Group("blkio").Reason("UpdateBlkIO").Message("update %s/%s to %s", dynamicPath, system.BlkioIOQoSName, fmt.Sprintf("%s enable=1 ctrl=user rlat=%d wlat=%d", diskNumber, readlat, writelat)),
+		fmt.Sprintf("%s enable=1 ctrl=user rpct=%d rlat=%d wpct=%d wlat=%d", diskNumber, readlatPercent, readlat, writelatPercent, writelat),
+		audit.V(3).Group("blkio").Reason("UpdateBlkIO").Message("update %s/%s to %s", dynamicPath, system.BlkioIOQoSName, fmt.Sprintf("%s enable=1 ctrl=user rpct=%d rlat=%d wpct=%d wlat=%d", diskNumber, readlatPercent, readlat, writelatPercent, writelat)),
 	)
 
 	resources = append(resources, ioQoSUpdater)
+
+	if enableUserModel {
+		ioModelUpdater, _ := resourceexecutor.NewBlkIOResourceUpdater(
+			system.BlkioIOModelName,
+			dynamicPath,
+			fmt.Sprintf("%s ctrl=user rbps=%d rseqiops=%d rrandiops=%d wbps=%d wseqiops=%d wrandiops=%d", diskNumber, modelReadBPS, modelReadSeqIOPS, modelReadRandIOPS, modelWriteBPS, modelWriteSeqIOPS, modelWriteRandIOPS),
+			audit.V(3).Group("blkio").Reason("UpdateBlkIO").Message("update %s/%s to %s", dynamicPath, system.BlkioIOModelName, fmt.Sprintf("%s ctrl=user rbps=%d rseqiops=%d rrandiops=%d wbps=%d wseqiops=%d wrandiops=%d", diskNumber, modelReadBPS, modelReadSeqIOPS, modelReadRandIOPS, modelWriteBPS, modelWriteSeqIOPS, modelWriteRandIOPS)),
+		)
+
+		resources = append(resources, ioModelUpdater)
+	} else {
+		ioModelUpdater, _ := resourceexecutor.NewBlkIOResourceUpdater(
+			system.BlkioIOModelName,
+			dynamicPath,
+			fmt.Sprintf("%s ctrl=auto", diskNumber),
+			audit.V(3).Group("blkio").Reason("UpdateBlkIO").Message("update %s/%s to %s", dynamicPath, system.BlkioIOModelName, fmt.Sprintf("%s ctrl=auto", diskNumber)),
+		)
+
+		resources = append(resources, ioModelUpdater)
+	}
 
 	return
 }
@@ -471,6 +530,7 @@ func getDiskNumbersFromCgroupFile(filePath string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	defer file.Close()
 	fileScanner := bufio.NewScanner(file)
 	for fileScanner.Scan() {
 		output := strings.Split(fileScanner.Text(), " ")

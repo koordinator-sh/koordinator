@@ -27,14 +27,37 @@ import (
 )
 
 type PodMeta struct {
-	Pod       *corev1.Pod
-	CgroupDir string
+	Pod              *corev1.Pod
+	CgroupDir        string
+	ContainerTaskIds map[string][]int32
+}
+
+// DeepCopyContainerTaskIds creates a deep copy of ContainerTaskIds
+func DeepCopyContainerTaskIds(in map[string][]int32) map[string][]int32 {
+	if in == nil {
+		return nil
+	}
+
+	out := make(map[string][]int32, len(in))
+
+	for key, value := range in {
+		if value == nil {
+			out[key] = nil
+		} else {
+			copyValue := make([]int32, len(value))
+			copy(copyValue, value)
+			out[key] = copyValue
+		}
+	}
+
+	return out
 }
 
 func (in *PodMeta) DeepCopy() *PodMeta {
 	out := new(PodMeta)
 	out.Pod = in.Pod.DeepCopy()
 	out.CgroupDir = in.CgroupDir
+	out.ContainerTaskIds = DeepCopyContainerTaskIds(in.ContainerTaskIds)
 	return out
 }
 

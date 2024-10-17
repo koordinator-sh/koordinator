@@ -24,10 +24,11 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/schedulingphase"
 )
 
 type Interface interface {
-	Admit(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string, numaNodes []int, policyType apiext.NUMATopologyPolicy) *framework.Status
+	Admit(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string, numaNodes []int, policyType apiext.NUMATopologyPolicy, exclusivePolicy apiext.NumaTopologyExclusive, allNUMANodeStatus []apiext.NumaNodeStatus) *framework.Status
 }
 
 type NUMATopologyHintProvider interface {
@@ -55,7 +56,7 @@ func New(hintProviderFactory NUMATopologyHintProviderFactory) Interface {
 	}
 }
 
-func (m *topologyManager) Admit(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string, numaNodes []int, policyType apiext.NUMATopologyPolicy) *framework.Status {
+func (m *topologyManager) Admit(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string, numaNodes []int, policyType apiext.NUMATopologyPolicy, exclusivePolicy apiext.NumaTopologyExclusive, allNUMANodeStatus []apiext.NumaNodeStatus) *framework.Status {
 	s, err := cycleState.Read(affinityStateKey)
 	if err != nil {
 		return framework.AsStatus(err)
@@ -63,25 +64,37 @@ func (m *topologyManager) Admit(ctx context.Context, cycleState *framework.Cycle
 	store := s.(*Store)
 
 	policy := createNUMATopologyPolicy(policyType, numaNodes)
-
-	bestHint, admit := m.calculateAffinity(ctx, cycleState, policy, pod, nodeName)
-	klog.V(5).Infof("Best TopologyHint for (pod: %v): %v on node: %v", klog.KObj(pod), bestHint, nodeName)
-	if !admit {
-		return framework.NewStatus(framework.Unschedulable, "node(s) NUMA Topology affinity error")
-	}
-
-	store.SetAffinity(nodeName, bestHint)
-
-	status := m.allocateResources(ctx, cycleState, bestHint, pod, nodeName)
-	if !status.IsSuccess() {
-		return status
+	bestHint, ok := store.GetAffinity(nodeName)
+	extensionPointBeingExecuted := schedulingphase.GetExtensionPointBeingExecuted(cycleState)
+	klog.V(5).Infof("extensionPointBeingExecuted: %v, bestHint: %v, nodeName: %v, pod: %v", extensionPointBeingExecuted, bestHint, nodeName, pod.Name)
+	if !ok || extensionPointBeingExecuted == schedulingphase.PostFilter {
+		var admit bool
+		bestHint, admit = m.calculateAffinity(ctx, cycleState, policy, pod, nodeName, exclusivePolicy, allNUMANodeStatus)
+		klog.V(5).Infof("Best TopologyHint for (pod: %v): %v on node: %v", klog.KObj(pod), bestHint, nodeName)
+		if !admit {
+			return framework.NewStatus(framework.Unschedulable, "node(s) NUMA Topology affinity error")
+		}
+		status := m.allocateResources(ctx, cycleState, bestHint, pod, nodeName)
+		if !status.IsSuccess() {
+			return status
+		}
+		store.SetAffinity(nodeName, bestHint)
+	} else {
+		status := m.allocateResources(ctx, cycleState, bestHint, pod, nodeName)
+		if !status.IsSuccess() {
+			return status
+		}
 	}
 	return nil
 }
 
-func (m *topologyManager) calculateAffinity(ctx context.Context, cycleState *framework.CycleState, policy Policy, pod *corev1.Pod, nodeName string) (NUMATopologyHint, bool) {
+func (m *topologyManager) calculateAffinity(ctx context.Context, cycleState *framework.CycleState, policy Policy, pod *corev1.Pod, nodeName string, exclusivePolicy apiext.NumaTopologyExclusive, allNUMANodeStatus []apiext.NumaNodeStatus) (NUMATopologyHint, bool) {
 	providersHints := m.accumulateProvidersHints(ctx, cycleState, pod, nodeName)
-	bestHint, admit := policy.Merge(providersHints)
+	bestHint, admit := policy.Merge(providersHints, exclusivePolicy, allNUMANodeStatus)
+	if !checkExclusivePolicy(bestHint, exclusivePolicy, allNUMANodeStatus) {
+		klog.V(5).Infof("bestHint violated the exclusivePolicy requirement: bestHint: %v, policy: %v, numaStatus: %v, nodeName: %v, pod: %v",
+			bestHint, exclusivePolicy, allNUMANodeStatus, nodeName, pod.Name)
+	}
 	klog.V(5).Infof("PodTopologyHint: %v", bestHint)
 	return bestHint, admit
 }

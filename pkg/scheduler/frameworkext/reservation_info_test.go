@@ -26,6 +26,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
@@ -383,7 +384,6 @@ func TestReservationInfoUpdateReservation(t *testing.T) {
 			want: &ReservationInfo{
 				ResourceNames: []corev1.ResourceName{corev1.ResourceCPU, corev1.ResourceMemory},
 				Allocatable:   allocatable.DeepCopy(),
-				Allocated:     corev1.ResourceList{},
 				AssignedPods:  map[types.UID]*PodRequirement{},
 				OwnerMatchers: ownerMatchers,
 				ParseError:    parseError,
@@ -406,7 +406,6 @@ func TestReservationInfoUpdateReservation(t *testing.T) {
 			want: &ReservationInfo{
 				ResourceNames: []corev1.ResourceName{corev1.ResourceCPU, corev1.ResourceMemory},
 				Allocatable:   allocatable.DeepCopy(),
-				Allocated:     corev1.ResourceList{},
 				AssignedPods:  map[types.UID]*PodRequirement{},
 				OwnerMatchers: func() []reservationutil.ReservationOwnerMatcher {
 					m, _ := reservationutil.ParseReservationOwnerMatchers([]schedulingv1alpha1.ReservationOwner{
@@ -443,7 +442,6 @@ func TestReservationInfoUpdateReservation(t *testing.T) {
 			want: &ReservationInfo{
 				ResourceNames: []corev1.ResourceName{corev1.ResourceCPU, corev1.ResourceMemory},
 				Allocatable:   allocatable.DeepCopy(),
-				Allocated:     corev1.ResourceList{},
 				AssignedPods:  map[types.UID]*PodRequirement{},
 				OwnerMatchers: nil,
 				ParseError: func() error {
@@ -459,7 +457,7 @@ func TestReservationInfoUpdateReservation(t *testing.T) {
 							},
 						},
 					})
-					return err
+					return utilerrors.NewAggregate([]error{err})
 				}(),
 			},
 		},
@@ -480,7 +478,6 @@ func TestReservationInfoUpdateReservation(t *testing.T) {
 					corev1.ResourceCPU:    resource.MustParse("8"),
 					corev1.ResourceMemory: resource.MustParse("16Gi"),
 				},
-				Allocated:     corev1.ResourceList{},
 				AssignedPods:  map[types.UID]*PodRequirement{},
 				OwnerMatchers: ownerMatchers,
 				ParseError:    nil,
@@ -628,7 +625,7 @@ func TestReservationInfoUpdatePod(t *testing.T) {
 							},
 						},
 					})
-					return err
+					return utilerrors.NewAggregate([]error{err})
 				}(),
 			},
 		},

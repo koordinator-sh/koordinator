@@ -46,7 +46,6 @@ var enqueueLog = klog.Background().WithName("eventHandler").WithName("arbitrator
 type MigrationFilter interface {
 	Filter(pod *corev1.Pod) bool
 	PreEvictionFilter(pod *corev1.Pod) bool
-	TrackEvictedPod(pod *corev1.Pod)
 }
 
 type Arbitrator interface {
@@ -124,10 +123,12 @@ func (a *arbitratorImpl) Start(ctx context.Context) error {
 // Filter checks if a pod can be evicted
 func (a *arbitratorImpl) Filter(pod *corev1.Pod) bool {
 	if !a.filter.filterExistingPodMigrationJob(pod) {
+		klog.V(4).InfoS("Pod fails the following checks", "pod", klog.KObj(pod), "checks", "filterExistingPodMigrationJob")
 		return false
 	}
 
 	if !a.filter.reservationFilter(pod) {
+		klog.V(4).InfoS("Pod fails the following checks", "pod", klog.KObj(pod), "checks", "reservationFilter")
 		return false
 	}
 
@@ -142,10 +143,6 @@ func (a *arbitratorImpl) Filter(pod *corev1.Pod) bool {
 
 func (a *arbitratorImpl) PreEvictionFilter(pod *corev1.Pod) bool {
 	return a.filter.defaultFilterPlugin.PreEvictionFilter(pod)
-}
-
-func (a *arbitratorImpl) TrackEvictedPod(pod *corev1.Pod) {
-	a.filter.trackEvictedPod(pod)
 }
 
 // sort stably sorts jobs, outputs the sorted results and corresponding ranking map.

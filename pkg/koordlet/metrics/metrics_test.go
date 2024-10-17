@@ -28,7 +28,7 @@ import (
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
@@ -77,30 +77,15 @@ func TestCommonCollectors(t *testing.T) {
 			UID:       "test01",
 		},
 	}
-	testingPSI := &resourceexecutor.PSIByResource{
-		CPU: resourceexecutor.PSIStats{
-			Some: &resourceexecutor.PSILine{
+	testingPSI := &system.PSIByResource{
+		CPU: system.PSIStats{
+			Some: &system.PSILine{
 				Avg10:  1,
 				Avg60:  1,
 				Avg300: 1,
 				Total:  1,
 			},
-			Full: &resourceexecutor.PSILine{
-				Avg10:  1,
-				Avg60:  1,
-				Avg300: 1,
-				Total:  1,
-			},
-			FullSupported: true,
-		},
-		Mem: resourceexecutor.PSIStats{
-			Some: &resourceexecutor.PSILine{
-				Avg10:  1,
-				Avg60:  1,
-				Avg300: 1,
-				Total:  1,
-			},
-			Full: &resourceexecutor.PSILine{
+			Full: &system.PSILine{
 				Avg10:  1,
 				Avg60:  1,
 				Avg300: 1,
@@ -108,14 +93,29 @@ func TestCommonCollectors(t *testing.T) {
 			},
 			FullSupported: true,
 		},
-		IO: resourceexecutor.PSIStats{
-			Some: &resourceexecutor.PSILine{
+		Mem: system.PSIStats{
+			Some: &system.PSILine{
 				Avg10:  1,
 				Avg60:  1,
 				Avg300: 1,
 				Total:  1,
 			},
-			Full: &resourceexecutor.PSILine{
+			Full: &system.PSILine{
+				Avg10:  1,
+				Avg60:  1,
+				Avg300: 1,
+				Total:  1,
+			},
+			FullSupported: true,
+		},
+		IO: system.PSIStats{
+			Some: &system.PSILine{
+				Avg10:  1,
+				Avg60:  1,
+				Avg300: 1,
+				Total:  1,
+			},
+			Full: &system.PSILine{
 				Avg10:  1,
 				Avg60:  1,
 				Avg300: 1,
@@ -378,5 +378,37 @@ func TestCoreSchedCollector(t *testing.T) {
 		RecordContainerCoreSchedCookie(testingPod.Namespace, testingPod.Name, string(testingPod.UID),
 			testingPod.Status.ContainerStatuses[0].Name, testingPod.Status.ContainerStatuses[0].ContainerID,
 			testCoreSchedGroup, testCoreSchedCookie)
+	})
+}
+
+func TestRuntimeHookCollector(t *testing.T) {
+	testingNode := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   "test-node",
+			Labels: map[string]string{},
+		},
+		Status: corev1.NodeStatus{
+			Allocatable: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("100"),
+				corev1.ResourceMemory: resource.MustParse("200Gi"),
+				apiext.BatchCPU:       resource.MustParse("50000"),
+				apiext.BatchMemory:    resource.MustParse("80Gi"),
+			},
+			Capacity: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("100"),
+				corev1.ResourceMemory: resource.MustParse("200Gi"),
+				apiext.BatchCPU:       resource.MustParse("50000"),
+				apiext.BatchMemory:    resource.MustParse("80Gi"),
+			},
+		},
+	}
+	testErr := fmt.Errorf("expected error")
+	t.Run("test", func(t *testing.T) {
+		Register(testingNode)
+		defer Register(nil)
+		RecordRuntimeHookInvokedDurationMilliSeconds("testHook", "testStage", nil, 10.0)
+		RecordRuntimeHookInvokedDurationMilliSeconds("testHook", "testStage", testErr, 5.0)
+		RecordRuntimeHookReconcilerInvokedDurationMilliSeconds("pod", "cpu.cfs_quota_us", nil, 10.0)
+		RecordRuntimeHookReconcilerInvokedDurationMilliSeconds("pod", "cpu.cfs_quota_us", testErr, 5.0)
 	})
 }

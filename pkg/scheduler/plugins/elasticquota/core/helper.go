@@ -24,9 +24,11 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/features"
 )
 
-func PodRequestsAndLimits(pod *corev1.Pod) (reqs, limits corev1.ResourceList) {
+func PodRequests(pod *corev1.Pod) (reqs corev1.ResourceList) {
 	if k8sfeature.DefaultFeatureGate.Enabled(features.ElasticQuotaIgnorePodOverhead) {
-		return apiresource.PodRequestsAndLimitsWithoutOverhead(pod)
+		return apiresource.PodRequests(pod, apiresource.PodResourcesOptions{
+			ExcludeOverhead: true,
+		})
 	}
-	return apiresource.PodRequestsAndLimits(pod)
+	return apiresource.PodRequests(pod, apiresource.PodResourcesOptions{})
 }

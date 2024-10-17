@@ -75,7 +75,7 @@ func createDockerClient(httpClient *http.Client, endPoint string) (*dclient.Clie
 	return dclient.NewClientWithOpts(dclient.WithHost(endPoint), dclient.WithHTTPClient(httpClient))
 }
 
-func (d *DockerRuntimeHandler) StopContainer(containerID string, timeout int64) error {
+func (d *DockerRuntimeHandler) StopContainer(c context.Context, containerID string, timeout int64) error {
 	if d == nil || d.dockerClient == nil {
 		return fmt.Errorf("stop container fail! docker client is nil! containerID=%v", containerID)
 	}

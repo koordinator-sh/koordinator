@@ -87,7 +87,7 @@ func Test_Containerd_StopContainer(t *testing.T) {
 			mockRuntimeClient.EXPECT().StopContainer(gomock.Any(), gomock.Any()).Return(nil, tt.runtimeError)
 
 			runtimeHandler := ContainerdRuntimeHandler{runtimeServiceClient: mockRuntimeClient, timeout: 1, endpoint: GetContainerdEndpoint()}
-			gotErr := runtimeHandler.StopContainer(tt.containerId, 1)
+			gotErr := runtimeHandler.StopContainer(context.TODO(), tt.containerId, 1)
 			assert.Equal(t, gotErr != nil, tt.expectError)
 
 		})

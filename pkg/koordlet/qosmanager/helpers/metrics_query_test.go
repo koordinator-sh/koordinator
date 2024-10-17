@@ -64,7 +64,7 @@ func Test_collectAllPodMetricsLast(t *testing.T) {
 				cpuResult.EXPECT().Value(metriccache.AggregationTypeLast).Return(float64(0), errors.New("empty value")).AnyTimes()
 				cpuResult.EXPECT().Count().Return(0).AnyTimes()
 				mockResultFactory.EXPECT().New(gomock.Any()).Return(cpuResult).AnyTimes()
-				mockQuerier.EXPECT().Query(gomock.Any(), gomock.Any(), cpuResult).SetArg(2, *cpuResult).Return(nil).AnyTimes()
+				mockQuerier.EXPECT().QueryAndClose(gomock.Any(), gomock.Any(), cpuResult).SetArg(2, *cpuResult).Return(nil).AnyTimes()
 				return mockMetricCache
 			}},
 			metricResource:  metriccache.PodCPUUsageMetric,
@@ -88,7 +88,7 @@ func Test_collectAllPodMetricsLast(t *testing.T) {
 					cpuQueryMeta, err := metriccache.PodCPUUsageMetric.BuildQueryMeta(metriccache.MetricPropertiesFunc.Pod("test_pod"))
 					assert.NoError(t, err)
 					mockResultFactory.EXPECT().New(cpuQueryMeta).Return(cpuResult).AnyTimes()
-					mockQuerier.EXPECT().Query(cpuQueryMeta, gomock.Any(), cpuResult).SetArg(2, *cpuResult).Return(nil).AnyTimes()
+					mockQuerier.EXPECT().QueryAndClose(cpuQueryMeta, gomock.Any(), cpuResult).SetArg(2, *cpuResult).Return(nil).AnyTimes()
 					return mockMetricCache
 				},
 			},
@@ -112,7 +112,7 @@ func Test_collectAllPodMetricsLast(t *testing.T) {
 					memQueryMeta, err := metriccache.PodMemUsageMetric.BuildQueryMeta(metriccache.MetricPropertiesFunc.Pod("test_pod"))
 					assert.NoError(t, err)
 					mockResultFactory.EXPECT().New(memQueryMeta).Return(memResult).AnyTimes()
-					mockQuerier.EXPECT().Query(memQueryMeta, gomock.Any(), memResult).SetArg(2, *memResult).Return(nil).AnyTimes()
+					mockQuerier.EXPECT().QueryAndClose(memQueryMeta, gomock.Any(), memResult).SetArg(2, *memResult).Return(nil).AnyTimes()
 					return mockMetricCache
 				},
 			},
@@ -168,7 +168,7 @@ func Test_resmanager_collectorNodeMetricLast(t *testing.T) {
 					cpuResult.EXPECT().Value(metriccache.AggregationTypeLast).Return(float64(16), nil).AnyTimes()
 					cpuResult.EXPECT().Count().Return(1).AnyTimes()
 					mockResultFactory.EXPECT().New(cpuQueryMeta).Return(cpuResult).AnyTimes()
-					mockQuerier.EXPECT().Query(cpuQueryMeta, gomock.Any(), cpuResult).SetArg(2, *cpuResult).Return(nil).AnyTimes()
+					mockQuerier.EXPECT().QueryAndClose(cpuQueryMeta, gomock.Any(), cpuResult).SetArg(2, *cpuResult).Return(nil).AnyTimes()
 
 					return mockMetricCache
 				},
@@ -193,7 +193,7 @@ func Test_resmanager_collectorNodeMetricLast(t *testing.T) {
 					memResult.EXPECT().Value(metriccache.AggregationTypeLast).Return(float64(10), nil).AnyTimes()
 					memResult.EXPECT().Count().Return(1).AnyTimes()
 					mockResultFactory.EXPECT().New(memQueryMeta).Return(memResult).AnyTimes()
-					mockQuerier.EXPECT().Query(memQueryMeta, gomock.Any(), memResult).SetArg(2, *memResult).Return(nil).AnyTimes()
+					mockQuerier.EXPECT().QueryAndClose(memQueryMeta, gomock.Any(), memResult).SetArg(2, *memResult).Return(nil).AnyTimes()
 
 					return mockMetricCache
 				},

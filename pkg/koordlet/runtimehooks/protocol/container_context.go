@@ -21,6 +21,8 @@ import (
 	"strings"
 
 	"github.com/containerd/nri/pkg/api"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/klog/v2"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
@@ -92,7 +94,7 @@ func (c *ContainerRequest) FromNri(pod *api.PodSandbox, container *api.Container
 
 	spec, err := apiext.GetExtendedResourceSpec(pod.GetAnnotations())
 	if err != nil {
-		klog.V(4).Infof("failed to get ExtendedResourceSpec from nri via annotation, container %s/%s, err: %s",
+		klog.V(4).Infof("failed to get ExtendedResourceSpec from nri via annotation, container %s/%s, name: %s, err: %s",
 			c.PodMeta.Namespace, c.PodMeta.Name, c.ContainerMeta.Name, err)
 	}
 	if spec != nil && spec.Containers != nil {
@@ -112,7 +114,7 @@ func (c *ContainerRequest) FromProxy(req *runtimeapi.ContainerResourceHookReques
 	// retrieve ExtendedResources from pod annotations
 	spec, err := apiext.GetExtendedResourceSpec(req.GetPodAnnotations())
 	if err != nil {
-		klog.V(4).Infof("failed to get ExtendedResourceSpec from proxy via annotation, container %s/%s, err: %s",
+		klog.V(4).Infof("failed to get ExtendedResourceSpec from proxy via annotation, container %s/%s, name: %s, err: %s",
 			c.PodMeta.Namespace, c.PodMeta.Name, c.ContainerMeta.Name, err)
 	}
 	if spec != nil && spec.Containers != nil {
@@ -166,7 +168,7 @@ func (c *ContainerRequest) FromReconciler(podMeta *statesinformer.PodMeta, conta
 	// retrieve ExtendedResources from container spec and pod annotations (prefer container spec)
 	specFromAnnotations, err := apiext.GetExtendedResourceSpec(podMeta.Pod.Annotations)
 	if err != nil {
-		klog.V(4).Infof("failed to get ExtendedResourceSpec from reconciler via annotation, container %s/%s, err: %s",
+		klog.V(4).Infof("failed to get ExtendedResourceSpec from reconciler via annotation, container %s/%s, name: %s, err: %s",
 			c.PodMeta.Namespace, c.PodMeta.Name, c.ContainerMeta.Name, err)
 	}
 	if specFromContainer != nil {
@@ -217,6 +219,10 @@ type ContainerContext struct {
 	updaters []resourceexecutor.ResourceUpdater
 }
 
+func (c *ContainerContext) RecordEvent(r record.EventRecorder, pod *corev1.Pod) {
+	//TODO: Don't record pod by container level
+}
+
 func (c *ContainerContext) FromNri(pod *api.PodSandbox, container *api.Container) {
 	c.Request.FromNri(pod, container)
 }
@@ -260,6 +266,11 @@ func (c *ContainerContext) NriDone(executor resourceexecutor.ResourceUpdateExecu
 	if c.Response.Resources.MemoryLimit != nil {
 		adjust.SetLinuxMemoryLimit(*c.Response.Resources.MemoryLimit)
 		update.SetLinuxMemoryLimit(*c.Response.Resources.MemoryLimit)
+	}
+
+	if c.Response.Resources.Resctrl != nil {
+		adjust.SetLinuxRDTClass((*(c.Response.Resources.Resctrl)).Closid)
+		update.SetLinuxRDTClass((*(c.Response.Resources.Resctrl)).Closid)
 	}
 
 	if c.Response.AddContainerEnvs != nil {

@@ -68,6 +68,9 @@ func DefaultColocationStrategy() configuration.ColocationStrategy {
 		DegradeTimeMinutes:            pointer.Int64(15),
 		UpdateTimeThresholdSeconds:    pointer.Int64(300),
 		ResourceDiffThreshold:         pointer.Float64(0.1),
+		MidCPUThresholdPercent:        pointer.Int64(100),
+		MidMemoryThresholdPercent:     pointer.Int64(100),
+		MidUnallocatedPercent:         pointer.Int64(0),
 	}
 	cfg.ColocationStrategyExtender = defaultColocationStrategyExtender
 	return cfg
@@ -82,7 +85,10 @@ func IsColocationStrategyValid(strategy *configuration.ColocationStrategy) bool 
 		(strategy.DegradeTimeMinutes == nil || *strategy.DegradeTimeMinutes > 0) &&
 		(strategy.UpdateTimeThresholdSeconds == nil || *strategy.UpdateTimeThresholdSeconds > 0) &&
 		(strategy.ResourceDiffThreshold == nil || *strategy.ResourceDiffThreshold > 0) &&
-		(strategy.MetricMemoryCollectPolicy == nil || len(*strategy.MetricMemoryCollectPolicy) > 0)
+		(strategy.MetricMemoryCollectPolicy == nil || len(*strategy.MetricMemoryCollectPolicy) > 0) &&
+		(strategy.MidCPUThresholdPercent == nil || (*strategy.MidCPUThresholdPercent >= 0 && *strategy.MidCPUThresholdPercent <= 100)) &&
+		(strategy.MidMemoryThresholdPercent == nil || (*strategy.MidMemoryThresholdPercent >= 0 && *strategy.MidMemoryThresholdPercent <= 100)) &&
+		(strategy.MidUnallocatedPercent == nil || (*strategy.MidUnallocatedPercent >= 0 && *strategy.MidUnallocatedPercent <= 100))
 }
 
 func IsNodeColocationCfgValid(nodeCfg *configuration.NodeColocationCfg) bool {

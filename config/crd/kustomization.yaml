@@ -12,6 +12,7 @@ resources:
 - bases/scheduling.sigs.k8s.io_podgroups.yaml
 - bases/topology.node.k8s.io_noderesourcetopologies.yaml
 - bases/quota.koordinator.sh_elasticquotaprofiles.yaml
+- bases/analysis.koordinator.sh_recommendations.yaml
 #+kubebuilder:scaffold:crdkustomizeresource
 
 patchesStrategicMerge:

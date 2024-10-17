@@ -17,6 +17,8 @@ limitations under the License.
 package handler
 
 import (
+	"context"
+
 	"k8s.io/cri-api/pkg/apis/testing"
 
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
@@ -31,8 +33,8 @@ func NewFakeRuntimeHandler() ContainerRuntimeHandler {
 	return &FakeRuntimeHandler{fakeRuntimeService: testing.NewFakeRuntimeService(), PodMetas: make(map[string]*statesinformer.PodMeta)}
 }
 
-func (f *FakeRuntimeHandler) StopContainer(containerID string, timeout int64) error {
-	return f.fakeRuntimeService.StopContainer(containerID, timeout)
+func (f *FakeRuntimeHandler) StopContainer(ctx context.Context, containerID string, timeout int64) error {
+	return f.fakeRuntimeService.StopContainer(ctx, containerID, timeout)
 }
 
 func (f *FakeRuntimeHandler) SetFakeContainers(containers []*testing.FakeContainer) {

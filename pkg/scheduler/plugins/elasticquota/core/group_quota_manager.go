@@ -20,14 +20,15 @@ import (
 	"fmt"
 	"reflect"
 	"sync"
+	"time"
 
 	v1 "k8s.io/api/core/v1"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	utilfeature "k8s.io/apiserver/pkg/util/feature"
 	"k8s.io/klog/v2"
-	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
@@ -185,7 +186,8 @@ func (gqm *GroupQuotaManager) recursiveUpdateGroupTreeWithDeltaRequest(deltaReq,
 	for i := 0; i < len(curToAllParInfos); i++ {
 		curQuotaInfo := curToAllParInfos[i]
 		oldSubLimitReq := curQuotaInfo.getLimitRequestNoLock()
-		curQuotaInfo.addRequestNonNegativeNoLock(deltaReq, deltaNonPreemptibleRequest)
+		isSelfRequest := i == 0
+		curQuotaInfo.addRequestNonNegativeNoLock(deltaReq, deltaNonPreemptibleRequest, isSelfRequest)
 		if curQuotaInfo.Name == extension.RootQuotaName {
 			return
 		}
@@ -234,7 +236,8 @@ func (gqm *GroupQuotaManager) updateGroupDeltaUsedNoLock(quotaName string, delta
 	defer gqm.scopedLockForQuotaInfo(curToAllParInfos)()
 	for i := 0; i < allQuotaInfoLen; i++ {
 		quotaInfo := curToAllParInfos[i]
-		quotaInfo.addUsedNonNegativeNoLock(delta, deltaNonPreemptibleUsed)
+		isSelfUsed := i == 0
+		quotaInfo.addUsedNonNegativeNoLock(delta, deltaNonPreemptibleUsed, isSelfUsed)
 	}
 
 	if utilfeature.DefaultFeatureGate.Enabled(features.ElasticQuotaGuaranteeUsage) {
@@ -338,7 +341,7 @@ func (gqm *GroupQuotaManager) getCurToAllParentGroupQuotaInfoNoLock(quotaName st
 		return curToAllParInfos
 	}
 
-	for true {
+	for {
 		curToAllParInfos = append(curToAllParInfos, quotaInfo)
 		if quotaInfo.Name == extension.RootQuotaName {
 			break
@@ -472,7 +475,7 @@ func (gqm *GroupQuotaManager) buildSubParGroupTopoNoLock() {
 
 // ResetAllGroupQuotaNoLock no need to lock gqm.lock
 func (gqm *GroupQuotaManager) resetAllGroupQuotaNoLock() {
-	childRequestMap, childNonPreemptibleUsedMap, childUsedMap, childNonPreemptibleRequestMap :=
+	toUpdateRequestMap, toUpdateNonPreemptibleUsedMap, toUpdateUsedMap, toUpdateNonPreemptibleRequestMap :=
 		make(quotaResMapType), make(quotaResMapType), make(quotaResMapType), make(quotaResMapType)
 	for quotaName, topoNode := range gqm.quotaTopoNodeMap {
 		if quotaName == extension.RootQuotaName {
@@ -481,10 +484,15 @@ func (gqm *GroupQuotaManager) resetAllGroupQuotaNoLock() {
 		}
 		topoNode.quotaInfo.lock.Lock()
 		if !topoNode.quotaInfo.IsParent {
-			childRequestMap[quotaName] = topoNode.quotaInfo.CalculateInfo.ChildRequest.DeepCopy()
-			childNonPreemptibleRequestMap[quotaName] = topoNode.quotaInfo.CalculateInfo.NonPreemptibleRequest.DeepCopy()
-			childNonPreemptibleUsedMap[quotaName] = topoNode.quotaInfo.CalculateInfo.NonPreemptibleUsed.DeepCopy()
-			childUsedMap[quotaName] = topoNode.quotaInfo.CalculateInfo.Used.DeepCopy()
+			toUpdateRequestMap[quotaName] = topoNode.quotaInfo.CalculateInfo.ChildRequest.DeepCopy()
+			toUpdateNonPreemptibleRequestMap[quotaName] = topoNode.quotaInfo.CalculateInfo.NonPreemptibleRequest.DeepCopy()
+			toUpdateNonPreemptibleUsedMap[quotaName] = topoNode.quotaInfo.CalculateInfo.NonPreemptibleUsed.DeepCopy()
+			toUpdateUsedMap[quotaName] = topoNode.quotaInfo.CalculateInfo.Used.DeepCopy()
+		} else {
+			toUpdateRequestMap[quotaName] = topoNode.quotaInfo.CalculateInfo.SelfRequest.DeepCopy()
+			toUpdateNonPreemptibleRequestMap[quotaName] = topoNode.quotaInfo.CalculateInfo.SelfNonPreemptibleRequest.DeepCopy()
+			toUpdateNonPreemptibleUsedMap[quotaName] = topoNode.quotaInfo.CalculateInfo.SelfNonPreemptibleUsed.DeepCopy()
+			toUpdateUsedMap[quotaName] = topoNode.quotaInfo.CalculateInfo.SelfUsed.DeepCopy()
 		}
 		topoNode.quotaInfo.clearForResetNoLock()
 		topoNode.quotaInfo.lock.Unlock()
@@ -501,9 +509,9 @@ func (gqm *GroupQuotaManager) resetAllGroupQuotaNoLock() {
 
 	// subGroup's topo relation may change; refresh the request/used from bottom to top
 	for quotaName, topoNode := range gqm.quotaTopoNodeMap {
-		if !topoNode.quotaInfo.IsParent {
-			gqm.updateGroupDeltaRequestNoLock(quotaName, childRequestMap[quotaName], childNonPreemptibleRequestMap[quotaName])
-			gqm.updateGroupDeltaUsedNoLock(quotaName, childUsedMap[quotaName], childNonPreemptibleUsedMap[quotaName])
+		if _, ok := toUpdateRequestMap[topoNode.quotaInfo.Name]; ok {
+			gqm.updateGroupDeltaRequestNoLock(quotaName, toUpdateRequestMap[quotaName], toUpdateNonPreemptibleRequestMap[quotaName])
+			gqm.updateGroupDeltaUsedNoLock(quotaName, toUpdateUsedMap[quotaName], toUpdateNonPreemptibleUsedMap[quotaName])
 		}
 	}
 }
@@ -587,23 +595,29 @@ func (gqm *GroupQuotaManager) GetAllQuotaNames() map[string]struct{} {
 }
 
 func (gqm *GroupQuotaManager) updatePodRequestNoLock(quotaName string, oldPod, newPod *v1.Pod) {
+	quotaInfo := gqm.getQuotaInfoByNameNoLock(quotaName)
+	if quotaInfo == nil {
+		return
+	}
+
 	var oldPodReq, newPodReq, oldNonPreemptibleRequest, newNonPreemptibleRequest v1.ResourceList
 	if oldPod != nil {
-		oldPodReq, _ = PodRequestsAndLimits(oldPod)
+		oldPodReq = PodRequests(oldPod)
 		if extension.IsPodNonPreemptible(oldPod) {
 			oldNonPreemptibleRequest = oldPodReq
 		}
 	}
 
 	if newPod != nil {
-		newPodReq, _ = PodRequestsAndLimits(newPod)
+		newPodReq = PodRequests(newPod)
 		if extension.IsPodNonPreemptible(newPod) {
 			newNonPreemptibleRequest = newPodReq
 		}
 	}
 
-	deltaReq := quotav1.Subtract(newPodReq, oldPodReq)
-	deltaNonPreemptibleRequest := quotav1.Subtract(newNonPreemptibleRequest, oldNonPreemptibleRequest)
+	resourceNames := quotav1.ResourceNames(quotaInfo.CalculateInfo.Max)
+	deltaReq := quotav1.Mask(quotav1.Subtract(newPodReq, oldPodReq), resourceNames)
+	deltaNonPreemptibleRequest := quotav1.Mask(quotav1.Subtract(newNonPreemptibleRequest, oldNonPreemptibleRequest), resourceNames)
 	if quotav1.IsZero(deltaReq) && quotav1.IsZero(deltaNonPreemptibleRequest) {
 		return
 	}
@@ -623,21 +637,22 @@ func (gqm *GroupQuotaManager) updatePodUsedNoLock(quotaName string, oldPod, newP
 
 	var oldPodUsed, newPodUsed, oldNonPreemptibleUsed, newNonPreemptibleUsed v1.ResourceList
 	if oldPod != nil {
-		oldPodUsed, _ = PodRequestsAndLimits(oldPod)
+		oldPodUsed = PodRequests(oldPod)
 		if extension.IsPodNonPreemptible(oldPod) {
 			oldNonPreemptibleUsed = oldPodUsed
 		}
 	}
 
 	if newPod != nil {
-		newPodUsed, _ = PodRequestsAndLimits(newPod)
+		newPodUsed = PodRequests(newPod)
 		if extension.IsPodNonPreemptible(newPod) {
 			newNonPreemptibleUsed = newPodUsed
 		}
 	}
 
-	deltaUsed := quotav1.Subtract(newPodUsed, oldPodUsed)
-	deltaNonPreemptibleUsed := quotav1.Subtract(newNonPreemptibleUsed, oldNonPreemptibleUsed)
+	resourceNames := quotav1.ResourceNames(quotaInfo.CalculateInfo.Max)
+	deltaUsed := quotav1.Mask(quotav1.Subtract(newPodUsed, oldPodUsed), resourceNames)
+	deltaNonPreemptibleUsed := quotav1.Mask(quotav1.Subtract(newNonPreemptibleUsed, oldNonPreemptibleUsed), resourceNames)
 	if quotav1.IsZero(deltaUsed) && quotav1.IsZero(deltaNonPreemptibleUsed) {
 		if klog.V(5).Enabled() {
 			klog.Infof("updatePodUsed, deltaUsedIsZero and deltaNonPreemptibleUsedIsZero, quotaName: %v, podName: %v, podUsed: %v, podNonPreemptibleUsed: %v",
@@ -727,11 +742,16 @@ func (gqm *GroupQuotaManager) GetQuotaSummaries(includePods bool) map[string]*Qu
 }
 
 func (gqm *GroupQuotaManager) OnPodAdd(quotaName string, pod *v1.Pod) {
+	if shouldBeIgnored(pod) {
+		return
+	}
+
 	gqm.hierarchyUpdateLock.RLock()
 	defer gqm.hierarchyUpdateLock.RUnlock()
 
+	// if the quotaInfo is nil or include the pod, skip it.
 	quotaInfo := gqm.getQuotaInfoByNameNoLock(quotaName)
-	if quotaInfo != nil && quotaInfo.IsPodExist(pod) {
+	if quotaInfo == nil || quotaInfo.IsPodExist(pod) {
 		return
 	}
 
@@ -749,32 +769,59 @@ func (gqm *GroupQuotaManager) OnPodUpdate(newQuotaName, oldQuotaName string, new
 	defer gqm.hierarchyUpdateLock.RUnlock()
 
 	if oldQuotaName == newQuotaName {
-		isAssigned := gqm.getPodIsAssignedNoLock(newQuotaName, newPod)
-		if isAssigned {
-			// reserve phase will assign the pod. Just update it.
-			// upgrade will change the resource.
-			gqm.updatePodUsedNoLock(newQuotaName, oldPod, newPod)
+		quotaInfo := gqm.getQuotaInfoByNameNoLock(newQuotaName)
+		if quotaInfo == nil {
+			return
+		}
+
+		if !shouldBeIgnored(newPod) {
+			if quotaInfo.IsPodExist(newPod) {
+				gqm.updatePodRequestNoLock(newQuotaName, oldPod, newPod)
+			} else {
+				// it's means the pod creation is before quota creation.
+				gqm.updatePodCacheNoLock(newQuotaName, newPod, true)
+				gqm.updatePodRequestNoLock(newQuotaName, nil, newPod)
+			}
+
+			isAssigned := gqm.getPodIsAssignedNoLock(newQuotaName, newPod)
+			if isAssigned {
+				// reserve phase will assign the pod. Just update it.
+				// upgrade will change the resource.
+				gqm.updatePodUsedNoLock(newQuotaName, oldPod, newPod)
+			} else {
+				if newPod.Spec.NodeName != "" && !util.IsPodTerminated(newPod) {
+					// assign it
+					gqm.updatePodIsAssignedNoLock(newQuotaName, newPod, true)
+					gqm.updatePodUsedNoLock(newQuotaName, nil, newPod)
+				}
+			}
 		} else {
+			if quotaInfo.IsPodExist(oldPod) {
+				// remove the old resource.
+				gqm.updatePodRequestNoLock(oldQuotaName, oldPod, nil)
+				gqm.updatePodUsedNoLock(oldQuotaName, oldPod, nil)
+				gqm.updatePodCacheNoLock(oldQuotaName, oldPod, false)
+			}
+		}
+	} else {
+		oldQuotaInfo := gqm.getQuotaInfoByNameNoLock(oldQuotaName)
+		if oldQuotaInfo != nil && oldQuotaInfo.IsPodExist(oldPod) {
+			isAssigned := gqm.getPodIsAssignedNoLock(oldQuotaName, oldPod)
+			if isAssigned {
+				gqm.updatePodUsedNoLock(oldQuotaName, oldPod, nil)
+			}
+			gqm.updatePodRequestNoLock(oldQuotaName, oldPod, nil)
+			gqm.updatePodCacheNoLock(oldQuotaName, oldPod, false)
+		}
+
+		newQuotaInfo := gqm.getQuotaInfoByNameNoLock(newQuotaName)
+		if newQuotaInfo != nil && !newQuotaInfo.IsPodExist(newPod) && !shouldBeIgnored(newPod) {
+			gqm.updatePodCacheNoLock(newQuotaName, newPod, true)
+			gqm.updatePodRequestNoLock(newQuotaName, nil, newPod)
 			if newPod.Spec.NodeName != "" && !util.IsPodTerminated(newPod) {
-				// assign it
 				gqm.updatePodIsAssignedNoLock(newQuotaName, newPod, true)
 				gqm.updatePodUsedNoLock(newQuotaName, nil, newPod)
 			}
-		}
-		gqm.updatePodRequestNoLock(newQuotaName, oldPod, newPod)
-	} else {
-		isAssigned := gqm.getPodIsAssignedNoLock(oldQuotaName, oldPod)
-		if isAssigned {
-			gqm.updatePodUsedNoLock(oldQuotaName, oldPod, nil)
-		}
-		gqm.updatePodRequestNoLock(oldQuotaName, oldPod, nil)
-		gqm.updatePodCacheNoLock(oldQuotaName, oldPod, false)
-
-		gqm.updatePodCacheNoLock(newQuotaName, newPod, true)
-		gqm.updatePodRequestNoLock(newQuotaName, nil, newPod)
-		if newPod.Spec.NodeName != "" && !util.IsPodTerminated(newPod) {
-			gqm.updatePodIsAssignedNoLock(newQuotaName, newPod, true)
-			gqm.updatePodUsedNoLock(newQuotaName, nil, newPod)
 		}
 	}
 }
@@ -782,6 +829,11 @@ func (gqm *GroupQuotaManager) OnPodUpdate(newQuotaName, oldQuotaName string, new
 func (gqm *GroupQuotaManager) OnPodDelete(quotaName string, pod *v1.Pod) {
 	gqm.hierarchyUpdateLock.RLock()
 	defer gqm.hierarchyUpdateLock.RUnlock()
+
+	quotaInfo := gqm.getQuotaInfoByNameNoLock(quotaName)
+	if quotaInfo == nil || !quotaInfo.IsPodExist(pod) {
+		return
+	}
 
 	gqm.updatePodRequestNoLock(quotaName, pod, nil)
 	gqm.updatePodUsedNoLock(quotaName, pod, nil)
@@ -792,6 +844,11 @@ func (gqm *GroupQuotaManager) ReservePod(quotaName string, p *v1.Pod) {
 	gqm.hierarchyUpdateLock.RLock()
 	defer gqm.hierarchyUpdateLock.RUnlock()
 
+	quotaInfo := gqm.getQuotaInfoByNameNoLock(quotaName)
+	if quotaInfo == nil || !quotaInfo.IsPodExist(p) {
+		return
+	}
+
 	gqm.updatePodIsAssignedNoLock(quotaName, p, true)
 	gqm.updatePodUsedNoLock(quotaName, nil, p)
 }
@@ -799,6 +856,11 @@ func (gqm *GroupQuotaManager) ReservePod(quotaName string, p *v1.Pod) {
 func (gqm *GroupQuotaManager) UnreservePod(quotaName string, p *v1.Pod) {
 	gqm.hierarchyUpdateLock.RLock()
 	defer gqm.hierarchyUpdateLock.RUnlock()
+
+	quotaInfo := gqm.getQuotaInfoByNameNoLock(quotaName)
+	if quotaInfo == nil || !quotaInfo.IsPodExist(p) {
+		return
+	}
 
 	gqm.updatePodUsedNoLock(quotaName, p, nil)
 	gqm.updatePodIsAssignedNoLock(quotaName, p, false)
@@ -1039,4 +1101,24 @@ func (gqm *GroupQuotaManager) doUpdateOneGroupSharedWeightNoLock(quotaName strin
 	quotaInfo.setSharedWeightNoLock(newSharedWeight)
 
 	gqm.updateOneGroupSharedWeightNoLock(quotaInfo)
+}
+
+func shouldBeIgnored(pod *v1.Pod) bool {
+	if pod.DeletionTimestamp == nil {
+		return false
+	}
+
+	if utilfeature.DefaultFeatureGate.Enabled(features.ElasticQuotaImmediateIgnoreTerminatingPod) {
+		return true
+	}
+
+	if !utilfeature.DefaultFeatureGate.Enabled(features.ElasticQuotaIgnoreTerminatingPod) {
+		return false
+	}
+
+	if pod.DeletionGracePeriodSeconds == nil {
+		return time.Now().After(pod.DeletionTimestamp.Time)
+	} else {
+		return time.Now().After(pod.DeletionTimestamp.Time.Add(time.Duration(*pod.DeletionGracePeriodSeconds) * time.Second))
+	}
 }

@@ -32,9 +32,9 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	testing2 "k8s.io/kubernetes/pkg/scheduler/testing"
-	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/elasticquota/core"
 )
 
@@ -367,6 +367,14 @@ func Test_updateElasticQuotaStatusIfChanged(t *testing.T) {
 
 func Test_syncElasticQuotaMetrics(t *testing.T) {
 	eq := &v1alpha1.ElasticQuota{
+		ObjectMeta: metav1.ObjectMeta{
+			Labels: map[string]string{
+				"quota.scheduling.koordinator.sh/is-root": "true",
+			},
+			Annotations: map[string]string{
+				"quota.scheduling.koordinator.sh/unschedulable-resource": `{"cpu":"4","memory":"8"}`,
+			},
+		},
 		Spec: v1alpha1.ElasticQuotaSpec{
 			Max: MakeResourceList().CPU(4).Mem(200).Obj(),
 			Min: MakeResourceList().CPU(2).Mem(100).Obj(),
@@ -407,40 +415,44 @@ loopChan:
 		}
 	}
 
-	var dtoMetrics []dto.Metric
+	var dtoMetrics []*dto.Metric
 	for _, v := range ms {
 		m := dto.Metric{}
 		assert.NoError(t, v.Write(&m))
-		dtoMetrics = append(dtoMetrics, m)
+		dtoMetrics = append(dtoMetrics, &m)
 	}
 	sort.Slice(dtoMetrics, func(i, j int) bool {
 		return dtoMetrics[i].String() < dtoMetrics[j].String()
 	})
 	expect := []string{
-		`label:<name:"field" value:"allocated" > label:<name:"is_parent" value:"true" > label:<name:"name" value:"test-eq" > label:<name:"parent" value:"root" > label:<name:"resource" value:"cpu" > label:<name:"tree" value:"tree-1" > gauge:<value:7000 > `,
-		`label:<name:"field" value:"allocated" > label:<name:"is_parent" value:"true" > label:<name:"name" value:"test-eq" > label:<name:"parent" value:"root" > label:<name:"resource" value:"memory" > label:<name:"tree" value:"tree-1" > gauge:<value:50 > `,
-		`label:<name:"field" value:"child-request" > label:<name:"is_parent" value:"true" > label:<name:"name" value:"test-eq" > label:<name:"parent" value:"root" > label:<name:"resource" value:"cpu" > label:<name:"tree" value:"tree-1" > gauge:<value:6000 > `,
-		`label:<name:"field" value:"child-request" > label:<name:"is_parent" value:"true" > label:<name:"name" value:"test-eq" > label:<name:"parent" value:"root" > label:<name:"resource" value:"memory" > label:<name:"tree" value:"tree-1" > gauge:<value:50 > `,
-		`label:<name:"field" value:"guaranteed" > label:<name:"is_parent" value:"true" > label:<name:"name" value:"test-eq" > label:<name:"parent" value:"root" > label:<name:"resource" value:"cpu" > label:<name:"tree" value:"tree-1" > gauge:<value:8000 > `,
-		`label:<name:"field" value:"guaranteed" > label:<name:"is_parent" value:"true" > label:<name:"name" value:"test-eq" > label:<name:"parent" value:"root" > label:<name:"resource" value:"memory" > label:<name:"tree" value:"tree-1" > gauge:<value:50 > `,
-		`label:<name:"field" value:"max" > label:<name:"is_parent" value:"true" > label:<name:"name" value:"test-eq" > label:<name:"parent" value:"root" > label:<name:"resource" value:"cpu" > label:<name:"tree" value:"tree-1" > gauge:<value:4000 > `,
-		`label:<name:"field" value:"max" > label:<name:"is_parent" value:"true" > label:<name:"name" value:"test-eq" > label:<name:"parent" value:"root" > label:<name:"resource" value:"memory" > label:<name:"tree" value:"tree-1" > gauge:<value:200 > `,
-		`label:<name:"field" value:"min" > label:<name:"is_parent" value:"true" > label:<name:"name" value:"test-eq" > label:<name:"parent" value:"root" > label:<name:"resource" value:"cpu" > label:<name:"tree" value:"tree-1" > gauge:<value:2000 > `,
-		`label:<name:"field" value:"min" > label:<name:"is_parent" value:"true" > label:<name:"name" value:"test-eq" > label:<name:"parent" value:"root" > label:<name:"resource" value:"memory" > label:<name:"tree" value:"tree-1" > gauge:<value:100 > `,
-		`label:<name:"field" value:"non-preemptible-request" > label:<name:"is_parent" value:"true" > label:<name:"name" value:"test-eq" > label:<name:"parent" value:"root" > label:<name:"resource" value:"cpu" > label:<name:"tree" value:"tree-1" > gauge:<value:3000 > `,
-		`label:<name:"field" value:"non-preemptible-request" > label:<name:"is_parent" value:"true" > label:<name:"name" value:"test-eq" > label:<name:"parent" value:"root" > label:<name:"resource" value:"memory" > label:<name:"tree" value:"tree-1" > gauge:<value:50 > `,
-		`label:<name:"field" value:"non-preemptible-used" > label:<name:"is_parent" value:"true" > label:<name:"name" value:"test-eq" > label:<name:"parent" value:"root" > label:<name:"resource" value:"cpu" > label:<name:"tree" value:"tree-1" > gauge:<value:2000 > `,
-		`label:<name:"field" value:"non-preemptible-used" > label:<name:"is_parent" value:"true" > label:<name:"name" value:"test-eq" > label:<name:"parent" value:"root" > label:<name:"resource" value:"memory" > label:<name:"tree" value:"tree-1" > gauge:<value:50 > `,
-		`label:<name:"field" value:"request" > label:<name:"is_parent" value:"true" > label:<name:"name" value:"test-eq" > label:<name:"parent" value:"root" > label:<name:"resource" value:"cpu" > label:<name:"tree" value:"tree-1" > gauge:<value:4000 > `,
-		`label:<name:"field" value:"request" > label:<name:"is_parent" value:"true" > label:<name:"name" value:"test-eq" > label:<name:"parent" value:"root" > label:<name:"resource" value:"memory" > label:<name:"tree" value:"tree-1" > gauge:<value:50 > `,
-		`label:<name:"field" value:"runtime" > label:<name:"is_parent" value:"true" > label:<name:"name" value:"test-eq" > label:<name:"parent" value:"root" > label:<name:"resource" value:"cpu" > label:<name:"tree" value:"tree-1" > gauge:<value:5000 > `,
-		`label:<name:"field" value:"runtime" > label:<name:"is_parent" value:"true" > label:<name:"name" value:"test-eq" > label:<name:"parent" value:"root" > label:<name:"resource" value:"memory" > label:<name:"tree" value:"tree-1" > gauge:<value:50 > `,
-		`label:<name:"field" value:"used" > label:<name:"is_parent" value:"true" > label:<name:"name" value:"test-eq" > label:<name:"parent" value:"root" > label:<name:"resource" value:"cpu" > label:<name:"tree" value:"tree-1" > gauge:<value:1000 > `,
-		`label:<name:"field" value:"used" > label:<name:"is_parent" value:"true" > label:<name:"name" value:"test-eq" > label:<name:"parent" value:"root" > label:<name:"resource" value:"memory" > label:<name:"tree" value:"tree-1" > gauge:<value:50 > `,
+		`{"label":[{"name":"field","value":"allocated"},{"name":"is_parent","value":"true"},{"name":"name","value":"test-eq"},{"name":"parent","value":"root"},{"name":"resource","value":"cpu"},{"name":"tree","value":"tree-1"}],"gauge":{"value":7000}}`,
+		`{"label":[{"name":"field","value":"allocated"},{"name":"is_parent","value":"true"},{"name":"name","value":"test-eq"},{"name":"parent","value":"root"},{"name":"resource","value":"memory"},{"name":"tree","value":"tree-1"}],"gauge":{"value":50}}`,
+		`{"label":[{"name":"field","value":"child-request"},{"name":"is_parent","value":"true"},{"name":"name","value":"test-eq"},{"name":"parent","value":"root"},{"name":"resource","value":"cpu"},{"name":"tree","value":"tree-1"}],"gauge":{"value":6000}}`,
+		`{"label":[{"name":"field","value":"child-request"},{"name":"is_parent","value":"true"},{"name":"name","value":"test-eq"},{"name":"parent","value":"root"},{"name":"resource","value":"memory"},{"name":"tree","value":"tree-1"}],"gauge":{"value":50}}`,
+		`{"label":[{"name":"field","value":"guaranteed"},{"name":"is_parent","value":"true"},{"name":"name","value":"test-eq"},{"name":"parent","value":"root"},{"name":"resource","value":"cpu"},{"name":"tree","value":"tree-1"}],"gauge":{"value":8000}}`,
+		`{"label":[{"name":"field","value":"guaranteed"},{"name":"is_parent","value":"true"},{"name":"name","value":"test-eq"},{"name":"parent","value":"root"},{"name":"resource","value":"memory"},{"name":"tree","value":"tree-1"}],"gauge":{"value":50}}`,
+		`{"label":[{"name":"field","value":"max"},{"name":"is_parent","value":"true"},{"name":"name","value":"test-eq"},{"name":"parent","value":"root"},{"name":"resource","value":"cpu"},{"name":"tree","value":"tree-1"}],"gauge":{"value":4000}}`,
+		`{"label":[{"name":"field","value":"max"},{"name":"is_parent","value":"true"},{"name":"name","value":"test-eq"},{"name":"parent","value":"root"},{"name":"resource","value":"memory"},{"name":"tree","value":"tree-1"}],"gauge":{"value":200}}`,
+		`{"label":[{"name":"field","value":"min"},{"name":"is_parent","value":"true"},{"name":"name","value":"test-eq"},{"name":"parent","value":"root"},{"name":"resource","value":"cpu"},{"name":"tree","value":"tree-1"}],"gauge":{"value":2000}}`,
+		`{"label":[{"name":"field","value":"min"},{"name":"is_parent","value":"true"},{"name":"name","value":"test-eq"},{"name":"parent","value":"root"},{"name":"resource","value":"memory"},{"name":"tree","value":"tree-1"}],"gauge":{"value":100}}`,
+		`{"label":[{"name":"field","value":"non-preemptible-request"},{"name":"is_parent","value":"true"},{"name":"name","value":"test-eq"},{"name":"parent","value":"root"},{"name":"resource","value":"cpu"},{"name":"tree","value":"tree-1"}],"gauge":{"value":3000}}`,
+		`{"label":[{"name":"field","value":"non-preemptible-request"},{"name":"is_parent","value":"true"},{"name":"name","value":"test-eq"},{"name":"parent","value":"root"},{"name":"resource","value":"memory"},{"name":"tree","value":"tree-1"}],"gauge":{"value":50}}`,
+		`{"label":[{"name":"field","value":"non-preemptible-used"},{"name":"is_parent","value":"true"},{"name":"name","value":"test-eq"},{"name":"parent","value":"root"},{"name":"resource","value":"cpu"},{"name":"tree","value":"tree-1"}],"gauge":{"value":2000}}`,
+		`{"label":[{"name":"field","value":"non-preemptible-used"},{"name":"is_parent","value":"true"},{"name":"name","value":"test-eq"},{"name":"parent","value":"root"},{"name":"resource","value":"memory"},{"name":"tree","value":"tree-1"}],"gauge":{"value":50}}`,
+		`{"label":[{"name":"field","value":"request"},{"name":"is_parent","value":"true"},{"name":"name","value":"test-eq"},{"name":"parent","value":"root"},{"name":"resource","value":"cpu"},{"name":"tree","value":"tree-1"}],"gauge":{"value":4000}}`,
+		`{"label":[{"name":"field","value":"request"},{"name":"is_parent","value":"true"},{"name":"name","value":"test-eq"},{"name":"parent","value":"root"},{"name":"resource","value":"memory"},{"name":"tree","value":"tree-1"}],"gauge":{"value":50}}`,
+		`{"label":[{"name":"field","value":"runtime"},{"name":"is_parent","value":"true"},{"name":"name","value":"test-eq"},{"name":"parent","value":"root"},{"name":"resource","value":"cpu"},{"name":"tree","value":"tree-1"}],"gauge":{"value":5000}}`,
+		`{"label":[{"name":"field","value":"runtime"},{"name":"is_parent","value":"true"},{"name":"name","value":"test-eq"},{"name":"parent","value":"root"},{"name":"resource","value":"memory"},{"name":"tree","value":"tree-1"}],"gauge":{"value":50}}`,
+		`{"label":[{"name":"field","value":"unschedulable-resource"},{"name":"is_parent","value":"true"},{"name":"name","value":"test-eq"},{"name":"parent","value":"root"},{"name":"resource","value":"cpu"},{"name":"tree","value":"tree-1"}],"gauge":{"value":4000}}`,
+		`{"label":[{"name":"field","value":"unschedulable-resource"},{"name":"is_parent","value":"true"},{"name":"name","value":"test-eq"},{"name":"parent","value":"root"},{"name":"resource","value":"memory"},{"name":"tree","value":"tree-1"}],"gauge":{"value":8}}`,
+		`{"label":[{"name":"field","value":"used"},{"name":"is_parent","value":"true"},{"name":"name","value":"test-eq"},{"name":"parent","value":"root"},{"name":"resource","value":"cpu"},{"name":"tree","value":"tree-1"}],"gauge":{"value":1000}}`,
+		`{"label":[{"name":"field","value":"used"},{"name":"is_parent","value":"true"},{"name":"name","value":"test-eq"},{"name":"parent","value":"root"},{"name":"resource","value":"memory"},{"name":"tree","value":"tree-1"}],"gauge":{"value":50}}`,
 	}
 	assert.Equal(t, len(expect), len(dtoMetrics))
-	for i, v := range dtoMetrics {
-		assert.Equal(t, expect[i], v.String())
+	for i := range dtoMetrics {
+		v := dtoMetrics[i]
+		jsonStrBytes, _ := json.Marshal(v)
+		assert.Equal(t, expect[i], string(jsonStrBytes))
 	}
 }
 

@@ -24,8 +24,10 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/uuid"
+	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
 
 func TestEventHandlerOnAdd(t *testing.T) {
@@ -100,7 +102,7 @@ func TestEventHandlerOnAdd(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cache := newReservationCache(nil)
 			eh := &reservationEventHandler{cache: cache}
-			eh.OnAdd(tt.reservation)
+			eh.OnAdd(tt.reservation, true)
 			if tt.wantReservation == nil {
 				rInfo := cache.getReservationInfoByUID(tt.reservation.UID)
 				assert.Nil(t, rInfo)
@@ -194,7 +196,7 @@ func TestEventHandlerUpdate(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cache := newReservationCache(nil)
-			eh := &reservationEventHandler{cache: cache}
+			eh := &reservationEventHandler{cache: cache, rrNominator: newNominator(nil, nil)}
 			eh.OnUpdate(tt.oldReservation, tt.newReservation)
 			if tt.wantReservation == nil {
 				rInfo := cache.getReservationInfoByUID(tt.newReservation.UID)
@@ -239,12 +241,17 @@ func TestEventHandlerDelete(t *testing.T) {
 		},
 	}
 	cache := newReservationCache(nil)
-	eh := &reservationEventHandler{cache: cache}
-	eh.OnAdd(activeReservation)
+	eh := &reservationEventHandler{cache: cache, rrNominator: newNominator(nil, nil)}
+	eh.OnAdd(activeReservation, true)
 	rInfo := cache.getReservationInfoByUID(activeReservation.UID)
 	assert.NotNil(t, rInfo)
+	reservePodInfo, _ := framework.NewPodInfo(reservation.NewReservePod(activeReservation))
+	eh.rrNominator.AddNominatedReservePod(reservePodInfo, "test-node")
+	reservePodInfo, _ = framework.NewPodInfo(reservation.NewReservePod(activeReservation))
+	assert.Equal(t, []*framework.PodInfo{reservePodInfo}, eh.rrNominator.NominatedReservePodForNode("test-node"))
 	eh.OnDelete(activeReservation)
 	rInfo = cache.getReservationInfoByUID(activeReservation.UID)
 	assert.NotNil(t, rInfo)
 	assert.False(t, rInfo.IsAvailable())
+	assert.Equal(t, []*framework.PodInfo{}, eh.rrNominator.NominatedReservePodForNode("test-node"))
 }

@@ -32,10 +32,8 @@ import (
 func makeTestHandler() *ConfigMapValidatingHandler {
 	client := fake.NewClientBuilder().Build()
 	sche := client.Scheme()
-	decoder, _ := admission.NewDecoder(sche)
-	handler := NewConfigMapValidatingHandler()
-	handler.InjectClient(client)
-	handler.InjectDecoder(decoder)
+	decoder := admission.NewDecoder(sche)
+	handler := NewConfigMapValidatingHandler(client, decoder)
 
 	return handler
 }

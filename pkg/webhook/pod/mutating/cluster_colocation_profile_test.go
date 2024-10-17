@@ -68,6 +68,7 @@ func newAdmissionRequest(op admissionv1.Operation, object, oldObject runtime.Raw
 }
 
 func TestClusterColocationProfileMutatingPod(t *testing.T) {
+	preemptionPolicy := corev1.PreemptionPolicy("fakePreemptionPolicy")
 	testCases := []struct {
 		name                      string
 		pod                       *corev1.Pod
@@ -210,6 +211,7 @@ func TestClusterColocationProfileMutatingPod(t *testing.T) {
 					SchedulerName:     "koordinator-scheduler",
 					Priority:          pointer.Int32(extension.PriorityBatchValueMax),
 					PriorityClassName: "koordinator-batch",
+					PreemptionPolicy:  &preemptionPolicy,
 				},
 			},
 		},
@@ -304,6 +306,7 @@ func TestClusterColocationProfileMutatingPod(t *testing.T) {
 					SchedulerName:     "koordinator-scheduler",
 					Priority:          pointer.Int32(extension.PriorityBatchValueMax),
 					PriorityClassName: "koordinator-batch",
+					PreemptionPolicy:  &preemptionPolicy,
 				},
 			},
 		},
@@ -394,6 +397,7 @@ func TestClusterColocationProfileMutatingPod(t *testing.T) {
 					SchedulerName:     "koordinator-scheduler",
 					Priority:          pointer.Int32(extension.PriorityBatchValueMax),
 					PriorityClassName: "koordinator-batch",
+					PreemptionPolicy:  &preemptionPolicy,
 				},
 			},
 		},
@@ -531,6 +535,7 @@ func TestClusterColocationProfileMutatingPod(t *testing.T) {
 					SchedulerName:     "koordinator-scheduler",
 					Priority:          pointer.Int32(extension.PriorityBatchValueMax),
 					PriorityClassName: "koordinator-batch",
+					PreemptionPolicy:  &preemptionPolicy,
 				},
 			},
 		},
@@ -930,6 +935,7 @@ func TestClusterColocationProfileMutatingPod(t *testing.T) {
 					SchedulerName:     "koordinator-scheduler",
 					Priority:          pointer.Int32(extension.PriorityBatchValueMax),
 					PriorityClassName: "koordinator-batch",
+					PreemptionPolicy:  &preemptionPolicy,
 				},
 			},
 		},
@@ -1069,6 +1075,7 @@ func TestClusterColocationProfileMutatingPod(t *testing.T) {
 					SchedulerName:     "koordinator-scheduler",
 					Priority:          pointer.Int32(extension.PriorityBatchValueMax),
 					PriorityClassName: "koordinator-batch",
+					PreemptionPolicy:  &preemptionPolicy,
 				},
 			},
 		},
@@ -1208,6 +1215,7 @@ func TestClusterColocationProfileMutatingPod(t *testing.T) {
 					SchedulerName:     "koordinator-scheduler",
 					Priority:          pointer.Int32(extension.PriorityBatchValueMax),
 					PriorityClassName: "koordinator-batch",
+					PreemptionPolicy:  &preemptionPolicy,
 				},
 			},
 		},
@@ -1350,6 +1358,7 @@ func TestClusterColocationProfileMutatingPod(t *testing.T) {
 					SchedulerName:     "koordinator-scheduler",
 					Priority:          pointer.Int32(extension.PriorityBatchValueMax),
 					PriorityClassName: "koordinator-batch",
+					PreemptionPolicy:  &preemptionPolicy,
 				},
 			},
 		},
@@ -1494,6 +1503,7 @@ func TestClusterColocationProfileMutatingPod(t *testing.T) {
 					SchedulerName:     "koordinator-scheduler",
 					Priority:          pointer.Int32(extension.PriorityBatchValueMax),
 					PriorityClassName: "koordinator-batch",
+					PreemptionPolicy:  &preemptionPolicy,
 				},
 			},
 		},
@@ -1638,6 +1648,7 @@ func TestClusterColocationProfileMutatingPod(t *testing.T) {
 					SchedulerName:     "koordinator-scheduler",
 					Priority:          pointer.Int32(extension.PriorityBatchValueMax),
 					PriorityClassName: "koordinator-batch",
+					PreemptionPolicy:  &preemptionPolicy,
 				},
 			},
 		},
@@ -1649,7 +1660,7 @@ func TestClusterColocationProfileMutatingPod(t *testing.T) {
 			assert := assert.New(t)
 
 			client := fake.NewClientBuilder().Build()
-			decoder, _ := admission.NewDecoder(scheme.Scheme)
+			decoder := admission.NewDecoder(scheme.Scheme)
 			handler := &PodMutatingHandler{
 				Client:  client,
 				Decoder: decoder,
@@ -1670,7 +1681,8 @@ func TestClusterColocationProfileMutatingPod(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "koordinator-batch",
 				},
-				Value: extension.PriorityBatchValueMax,
+				Value:            extension.PriorityBatchValueMax,
+				PreemptionPolicy: &preemptionPolicy,
 			}
 			err = client.Create(context.TODO(), batchPriorityClass)
 			assert.NoError(err)

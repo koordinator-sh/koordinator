@@ -16,11 +16,22 @@ limitations under the License.
 
 package extension
 
-import corev1 "k8s.io/api/core/v1"
+import (
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/utils/pointer"
+)
 
 // NOTE: functions in this file can be overwritten for extension
 
-var DefaultPriorityClass = PriorityNone
+var (
+	DefaultPriorityClass = PriorityNone
+
+	PriorityProdValueDefault  int32 = 9500
+	PriorityMidValueDefault   int32 = 7500
+	PriorityBatchValueDefault int32 = 5500
+	PriorityFreeValueDefault  int32 = 3500
+	PriorityNoneValueDefault  int32 = 0
+)
 
 // GetPodPriorityClassWithDefault gets the pod's PriorityClass with the default config.
 func GetPodPriorityClassWithDefault(pod *corev1.Pod) PriorityClass {
@@ -44,4 +55,37 @@ func GetPodPriorityClassWithQoS(qos QoSClass) PriorityClass {
 		return PriorityBatch
 	}
 	return DefaultPriorityClass
+}
+
+// GetPodPriorityValueWithDefault returns a priority value for the pod according to its koordinator priority classes.
+// If the pod has a non-zero priority value, it directly returns. If the pod has a koordinator priority class but
+// priority value not set, it returns the default value of the class. If the pod neither sets a non-zero priority
+// value nor has a valid koordinator priority class, it uses the default value of the DefaultPriorityClass.
+func GetPodPriorityValueWithDefault(pod *corev1.Pod) *int32 {
+	if pod == nil {
+		return pointer.Int32(PriorityNoneValueDefault)
+	}
+
+	// if there is a non-default priority value, use it
+	if p := pod.Spec.Priority; p != nil && *p != PriorityNoneValueDefault {
+		return p
+	}
+
+	priorityClass := GetPodPriorityClassWithDefault(pod)
+	return pointer.Int32(GetDefaultPriorityByPriorityClass(priorityClass))
+}
+
+func GetDefaultPriorityByPriorityClass(priorityClass PriorityClass) int32 {
+	switch priorityClass {
+	case PriorityProd:
+		return PriorityProdValueDefault
+	case PriorityMid:
+		return PriorityMidValueDefault
+	case PriorityBatch:
+		return PriorityBatchValueDefault
+	case PriorityFree:
+		return PriorityFreeValueDefault
+	default:
+		return PriorityNoneValueDefault
+	}
 }

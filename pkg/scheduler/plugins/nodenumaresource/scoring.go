@@ -52,10 +52,24 @@ var resourceStrategyTypeMap = map[schedulingconfig.ScoringStrategyType]scorer{
 	},
 }
 
+func (p *Plugin) PreScore(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodes []*corev1.Node) *framework.Status {
+	state, status := getPreFilterState(cycleState)
+	if !status.IsSuccess() {
+		return status
+	}
+	if state.skip {
+		return framework.NewStatus(framework.Skip)
+	}
+	return nil
+}
+
 func (p *Plugin) Score(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) (int64, *framework.Status) {
 	state, status := getPreFilterState(cycleState)
 	if !status.IsSuccess() {
 		return 0, status
+	}
+	if state.skip {
+		return 0, nil
 	}
 
 	nodeInfo, err := p.handle.SnapshotSharedLister().NodeInfos().Get(nodeName)
@@ -64,53 +78,58 @@ func (p *Plugin) Score(ctx context.Context, cycleState *framework.CycleState, po
 	}
 	node := nodeInfo.Node()
 	topologyOptions := p.topologyOptionsManager.GetTopologyOptions(node.Name)
+	nodeCPUBindPolicy := extension.GetNodeCPUBindPolicy(node.Labels, topologyOptions.Policy)
+	podNUMATopologyPolicy := state.podNUMATopologyPolicy
 	numaTopologyPolicy := getNUMATopologyPolicy(node.Labels, topologyOptions.NUMATopologyPolicy)
-
-	if skipTheNode(state, numaTopologyPolicy) {
-		if state.skip {
-			return 0, nil
-		}
-		return p.scoreWithAmplifiedCPUs(cycleState, state, pod, nodeInfo, topologyOptions)
+	// we have check in filter, so we will not get error in reserve
+	numaTopologyPolicy, _ = mergeTopologyPolicy(numaTopologyPolicy, podNUMATopologyPolicy)
+	requestCPUBind, status := requestCPUBind(state, nodeCPUBindPolicy)
+	if !status.IsSuccess() {
+		return 0, status
 	}
-
-	if state.requestCPUBind && (topologyOptions.CPUTopology == nil || !topologyOptions.CPUTopology.IsValid()) {
+	if requestCPUBind && !topologyOptions.CPUTopology.IsValid() {
 		return 0, nil
 	}
 
 	store := topologymanager.GetStore(cycleState)
-	affinity := store.GetAffinity(nodeName)
-	resourceOptions, err := p.getResourceOptions(cycleState, state, node, pod, affinity, topologyOptions)
+	affinity, _ := store.GetAffinity(nodeName)
+	resourceOptions, err := p.getResourceOptions(state, node, pod, requestCPUBind, affinity, topologyOptions)
 	if err != nil {
 		return 0, nil
 	}
-	podAllocation, err := p.resourceManager.Allocate(node, pod, resourceOptions)
-	if err != nil {
-		return 0, nil
+
+	if numaTopologyPolicy == extension.NUMATopologyPolicyNone {
+		return p.scoreWithAmplifiedCPUs(state, nodeInfo, resourceOptions)
+	}
+
+	reservationRestoreState := getReservationRestoreState(cycleState)
+	restoreState := reservationRestoreState.getNodeState(nodeName)
+	podAllocation, status := p.allocateWithNominatedReservation(restoreState, resourceOptions, pod, node)
+	if !status.IsSuccess() {
+		return 0, status
+	}
+	if podAllocation == nil {
+		podAllocation, status = tryAllocateFromNode(p.resourceManager, restoreState, resourceOptions, pod, node)
+		if !status.IsSuccess() {
+			return 0, status
+		}
 	}
 
 	allocatable, requested := p.calculateAllocatableAndRequested(node.Name, nodeInfo, podAllocation, resourceOptions)
 	return p.scorer.score(requested, allocatable, framework.NewResource(resourceOptions.requests))
 }
 
-func (p *Plugin) scoreWithAmplifiedCPUs(cycleState *framework.CycleState, state *preFilterState, pod *corev1.Pod, nodeInfo *framework.NodeInfo, topologyOptions TopologyOptions) (int64, *framework.Status) {
-	node := nodeInfo.Node()
-	resourceOptions, err := p.getResourceOptions(cycleState, state, node, pod, topologymanager.NUMATopologyHint{}, topologyOptions)
-	if err != nil {
-		return 0, nil
-	}
-
+func (p *Plugin) scoreWithAmplifiedCPUs(state *preFilterState, nodeInfo *framework.NodeInfo, resourceOptions *ResourceOptions) (int64, *framework.Status) {
 	quantity := state.requests[corev1.ResourceCPU]
 	cpuAmplificationRatio := resourceOptions.topologyOptions.AmplificationRatios[corev1.ResourceCPU]
 	if quantity.IsZero() || cpuAmplificationRatio <= 1 {
 		return p.scorer.score(nodeInfo.Requested, nodeInfo.Allocatable, framework.NewResource(resourceOptions.requests))
 	}
 
+	node := nodeInfo.Node()
 	_, allocated, err := p.resourceManager.GetAvailableCPUs(node.Name, resourceOptions.preferredCPUs)
 	if err != nil {
-		if err.Error() != ErrNotFoundCPUTopology {
-			return 0, nil
-		}
-		return p.scorer.score(nodeInfo.Requested, nodeInfo.Allocatable, framework.NewResource(resourceOptions.requests))
+		return 0, nil
 	}
 	allocatedMilliCPU := int64(allocated.CPUs().Size() * 1000)
 	requested := nodeInfo.Requested.Clone()

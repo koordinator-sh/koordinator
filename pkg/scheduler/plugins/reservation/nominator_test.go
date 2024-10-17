@@ -287,11 +287,13 @@ func TestNominateReservation(t *testing.T) {
 			assert.NoError(t, err)
 			pl := plugin.(*Plugin)
 			cycleState := framework.NewCycleState()
-			requests, _ := apiresource.PodRequestsAndLimits(tt.pod)
+			requests := apiresource.PodRequests(tt.pod, apiresource.PodResourcesOptions{})
 			state := &stateData{
-				nodeReservationStates: map[string]nodeReservationState{},
-				podRequests:           requests,
-				podRequestsResources:  framework.NewResource(requests),
+				schedulingStateData: schedulingStateData{
+					nodeReservationStates: map[string]nodeReservationState{},
+					podRequests:           requests,
+					podRequestsResources:  framework.NewResource(requests),
+				},
 			}
 			for _, reservation := range tt.reservations {
 				rInfo := frameworkext.NewReservationInfo(reservation)
@@ -300,7 +302,7 @@ func TestNominateReservation(t *testing.T) {
 				}
 				nodeRState := state.nodeReservationStates[reservation.Status.NodeName]
 				nodeRState.nodeName = reservation.Status.NodeName
-				nodeRState.matched = append(nodeRState.matched, rInfo)
+				nodeRState.matchedOrIgnored = append(nodeRState.matchedOrIgnored, rInfo)
 				state.nodeReservationStates[reservation.Status.NodeName] = nodeRState
 				pl.reservationCache.updateReservation(reservation)
 			}
@@ -407,6 +409,8 @@ func TestMultiReservationsOnSameNode(t *testing.T) {
 		ReservationSelector: labels,
 	}
 	assert.NoError(t, apiext.SetReservationAffinity(pod, affinity))
+	_, err = suit.fw.ClientSet().CoreV1().Pods(pod.Namespace).Create(context.TODO(), pod, metav1.CreateOptions{})
+	assert.NoError(t, err)
 
 	p, err := suit.pluginFactory()
 	assert.NoError(t, err)
@@ -418,19 +422,75 @@ func TestMultiReservationsOnSameNode(t *testing.T) {
 		cycleState := framework.NewCycleState()
 		pl.BeforePreFilter(context.TODO(), cycleState, pod)
 		pl.PreFilter(context.TODO(), cycleState, pod)
-		nominator := pl.handle.(frameworkext.FrameworkExtender).GetReservationNominator()
-		rInfo, status := nominator.NominateReservation(context.TODO(), cycleState, pod, node.Name)
+		nm := pl.handle.(frameworkext.FrameworkExtender).GetReservationNominator()
+		rInfo, status := nm.NominateReservation(context.TODO(), cycleState, pod, node.Name)
 		assert.True(t, status.IsSuccess())
-		nominator.AddNominatedReservation(pod, node.Name, rInfo)
+		nm.AddNominatedReservation(pod, node.Name, rInfo)
 		rInfo = pl.handle.GetReservationNominator().GetNominatedReservation(pod, node.Name)
 		assert.NotNil(t, rInfo)
 		pl.Reserve(context.TODO(), cycleState, pod, node.Name)
 		nominatedReservationCount[rInfo.UID()]++
-		nominator.RemoveNominatedReservations(pod)
+		nm.RemoveNominatedReservations(pod)
 	}
 
 	assert.Len(t, nominatedReservationCount, len(reservations))
 	for _, v := range nominatedReservationCount {
 		assert.Equal(t, 1, v)
 	}
+}
+
+func TestReservationsNominator(t *testing.T) {
+	node := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "node-1",
+		},
+		Status: corev1.NodeStatus{
+			Allocatable: map[corev1.ResourceName]resource.Quantity{
+				corev1.ResourceCPU:    resource.MustParse("96"),
+				corev1.ResourceMemory: resource.MustParse("1886495404Ki"),
+			},
+		},
+	}
+
+	resourceList := corev1.ResourceList{
+		corev1.ResourceCPU:    resource.MustParse("16"),
+		corev1.ResourceMemory: resource.MustParse("32Gi"),
+	}
+	labels := map[string]string{
+		"foo": "bar",
+	}
+	suit := newPluginTestSuitWith(t, nil, []*corev1.Node{node})
+	var pods []*corev1.Pod
+	for i := 0; i < 3; i++ {
+		r := newTestReservation(t, fmt.Sprintf("test-r-%d", i), labels, labels, node.Name, resourceList)
+		r.Status.Phase = "" // set to inactive
+		pods = append(pods, reservationutil.NewReservePod(r))
+		_, err := suit.extenderFactory.KoordinatorClientSet().SchedulingV1alpha1().Reservations().Create(context.TODO(), r, metav1.CreateOptions{})
+		assert.NoError(t, err)
+	}
+	nodeInfo, err := suit.fw.SnapshotSharedLister().NodeInfos().Get(node.Name)
+	assert.NoError(t, err)
+	assert.Equal(t, 0, len(nodeInfo.Pods))
+
+	p, err := suit.pluginFactory()
+	assert.NoError(t, err)
+	pl := p.(*Plugin)
+
+	nominatorImpl := pl.handle.(frameworkext.FrameworkExtender).GetReservationNominator()
+
+	nominatorImpl.AddNominatedReservePod(pods[0], "node-1")
+	ctx := context.TODO()
+	state := framework.NewCycleState()
+	pod, nodeInfoOut, update, status := pl.BeforeFilter(ctx, state, pods[2], nodeInfo)
+	assert.Equal(t, pod, pods[2])
+	assert.True(t, update)
+	assert.True(t, status.IsSuccess())
+	assert.Equal(t, 1, len(nodeInfoOut.Pods))
+
+	nominatorImpl.AddNominatedReservePod(pods[1], "node-1")
+	pod, nodeInfoOut, update, status = pl.BeforeFilter(ctx, state, pods[2], nodeInfo)
+	assert.Equal(t, pod, pods[2])
+	assert.True(t, update)
+	assert.True(t, status.IsSuccess())
+	assert.Equal(t, 2, len(nodeInfoOut.Pods))
 }

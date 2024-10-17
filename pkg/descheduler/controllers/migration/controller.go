@@ -20,18 +20,22 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"sync"
 	"time"
 
+	gocache "github.com/patrickmn/go-cache"
+	"golang.org/x/time/rate"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/clock"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/client-go/tools/events"
 	"k8s.io/klog/v2"
 	k8spodutil "k8s.io/kubernetes/pkg/api/v1/pod"
+	"k8s.io/utils/clock"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/event"
@@ -45,11 +49,13 @@ import (
 	deschedulerconfig "github.com/koordinator-sh/koordinator/pkg/descheduler/apis/config"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/apis/config/validation"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/controllers/migration/arbitrator"
+	"github.com/koordinator-sh/koordinator/pkg/descheduler/controllers/migration/controllerfinder"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/controllers/migration/evictor"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/controllers/migration/reservation"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/controllers/migration/util"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/controllers/names"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/controllers/options"
+	evictionsutil "github.com/koordinator-sh/koordinator/pkg/descheduler/evictions"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/framework"
 	utilclient "github.com/koordinator-sh/koordinator/pkg/util/client"
 )
@@ -72,10 +78,15 @@ type Reconciler struct {
 	eventRecorder          events.EventRecorder
 	reservationInterpreter reservation.Interpreter
 	evictorInterpreter     evictor.Interpreter
+	controllerFinder       controllerfinder.Interface
 	assumedCache           *assumedCache
 	clock                  clock.Clock
 
 	arbitrator arbitrator.Arbitrator
+
+	limiterMap      map[deschedulerconfig.MigrationLimitObjectType]map[string]*rate.Limiter
+	limiterCacheMap map[deschedulerconfig.MigrationLimitObjectType]*gocache.Cache
+	limiterLock     sync.Mutex
 }
 
 func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error) {
@@ -110,7 +121,7 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 	r.arbitrator = a
 	arbitrationEventHandler := arbitrator.NewHandler(a, r.Client)
 
-	if err = c.Watch(&source.Kind{Type: &sev1alpha1.PodMigrationJob{}}, arbitrationEventHandler, &predicate.Funcs{
+	if err = c.Watch(source.Kind(options.Manager.GetCache(), &sev1alpha1.PodMigrationJob{}), arbitrationEventHandler, &predicate.Funcs{
 		DeleteFunc: func(event event.DeleteEvent) bool {
 			job := event.Object.(*sev1alpha1.PodMigrationJob)
 			r.assumedCache.delete(job)
@@ -122,7 +133,7 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 		}}); err != nil {
 		return nil, err
 	}
-	if err = c.Watch(&source.Kind{Type: r.reservationInterpreter.GetReservationType()}, &handler.Funcs{}); err != nil {
+	if err = c.Watch(source.Kind(options.Manager.GetCache(), r.reservationInterpreter.GetReservationType()), &handler.Funcs{}); err != nil {
 		return nil, err
 	}
 	return r, nil
@@ -135,7 +146,7 @@ func newReconciler(args *deschedulerconfig.MigrationControllerArgs, handle frame
 	if err != nil {
 		return nil, err
 	}
-
+	controllerFinder, err := controllerfinder.New(manager)
 	if err != nil {
 		return nil, err
 	}
@@ -146,10 +157,11 @@ func newReconciler(args *deschedulerconfig.MigrationControllerArgs, handle frame
 		eventRecorder:          handle.EventRecorder(),
 		reservationInterpreter: reservationInterpreter,
 		evictorInterpreter:     evictorInterpreter,
+		controllerFinder:       controllerFinder,
 		assumedCache:           newAssumedCache(),
 		clock:                  clock.RealClock{},
 	}
-
+	r.initObjectLimiters()
 	if err := manager.Add(r); err != nil {
 		return nil, err
 	}
@@ -238,6 +250,23 @@ func (r *Reconciler) Reconcile(ctx context.Context, request reconcile.Request) (
 	return result, err
 }
 
+func (r *Reconciler) getPodByJob(ctx context.Context, job *sev1alpha1.PodMigrationJob) (*corev1.Pod, error) {
+	if job.Spec.PodRef.Namespace == "" || job.Spec.PodRef.Name == "" {
+		return nil, fmt.Errorf("get pod failed for invalid podRef")
+	}
+
+	podNamespacedName := types.NamespacedName{
+		Namespace: job.Spec.PodRef.Namespace,
+		Name:      job.Spec.PodRef.Name,
+	}
+	var pod corev1.Pod
+	err := r.Client.Get(ctx, podNamespacedName, &pod)
+	if err != nil {
+		return nil, err
+	}
+	return &pod, nil
+}
+
 func (r *Reconciler) doMigrate(ctx context.Context, job *sev1alpha1.PodMigrationJob) (reconcile.Result, error) {
 	klog.V(4).Infof("begin process MigrationJob %s", job.Name)
 	if job.Spec.Paused {
@@ -261,6 +290,10 @@ func (r *Reconciler) doMigrate(ctx context.Context, job *sev1alpha1.PodMigration
 		if result, err := r.preparePendingJob(ctx, job); err != nil || !result.IsZero() {
 			return result, err
 		}
+	}
+
+	if requeue := r.requeueJobIfObjectLimiterFailed(ctx, job); requeue {
+		return reconcile.Result{RequeueAfter: defaultRequeueAfter}, nil
 	}
 
 	if job.Spec.Mode == sev1alpha1.PodMigrationJobModeEvictionDirectly ||
@@ -417,6 +450,79 @@ func (r *Reconciler) preparePodRef(ctx context.Context, job *sev1alpha1.PodMigra
 	}
 	job.Spec.PodRef.UID = pod.UID
 	return true, &pod, nil
+}
+
+func (r *Reconciler) checkPodExceedObjectLimiter(pod *corev1.Pod) bool {
+	if r.limiterMap == nil || len(r.limiterMap) == 0 || r.limiterCacheMap == nil || len(r.limiterCacheMap) == 0 {
+		return false
+	}
+	for limiterType, objectLimiterArgs := range r.args.ObjectLimiters {
+		if objectLimiterArgs.Duration.Duration == 0 {
+			continue
+		}
+		limiterKey, processScope := getLimiterKeyAndProcessScope(pod, limiterType)
+		if limiterKey == "" {
+			continue
+		}
+		logInfo := getLogInfo(pod, limiterType, processScope)
+		if r.exceeded(limiterKey, limiterType) {
+			klog.V(4).InfoS("Pod fails the following checks", logInfo...)
+			return true
+		}
+	}
+	return false
+}
+
+func (r *Reconciler) exceeded(limiterKey string, limiterType deschedulerconfig.MigrationLimitObjectType) bool {
+	r.limiterLock.Lock()
+	defer r.limiterLock.Unlock()
+	limiters, ok := r.limiterMap[limiterType]
+	if !ok {
+		return false
+	}
+	limiter := limiters[limiterKey]
+	if limiter != nil {
+		if remainTokens := limiter.Tokens() - float64(1); remainTokens < 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func getLimiterKeyAndProcessScope(pod *corev1.Pod, limiterType deschedulerconfig.MigrationLimitObjectType) (limiterKey, processScope string) {
+	switch limiterType {
+	case deschedulerconfig.MigrationLimitObjectWorkload:
+		if ownerRef := metav1.GetControllerOf(pod); ownerRef != nil {
+			limiterKey = string(ownerRef.UID)
+			processScope = fmt.Sprintf("%s/%s/%s", ownerRef.Name, ownerRef.Kind, ownerRef.APIVersion)
+		}
+	case deschedulerconfig.MigrationLimitObjectNamespace:
+		limiterKey = pod.Namespace
+		processScope = fmt.Sprintf("%s", pod.Namespace)
+	}
+	return limiterKey, processScope
+}
+
+func getLogInfo(pod *corev1.Pod, limiterType deschedulerconfig.MigrationLimitObjectType, processScope string) []interface{} {
+	logInfo := []interface{}{"pod", klog.KObj(pod), "checks", fmt.Sprintf("limitedObject: %s", limiterType)}
+	switch limiterType {
+	case deschedulerconfig.MigrationLimitObjectWorkload:
+		logInfo = append(logInfo, "owner", processScope)
+	case deschedulerconfig.MigrationLimitObjectNamespace:
+		logInfo = append(logInfo, "namespace", processScope)
+	}
+	return logInfo
+}
+
+func (r *Reconciler) requeueJobIfObjectLimiterFailed(ctx context.Context, job *sev1alpha1.PodMigrationJob) bool {
+	if evictionsutil.HaveEvictAnnotation(job) {
+		return false
+	}
+	pod, err := r.getPodByJob(ctx, job)
+	if err != nil {
+		return false
+	}
+	return r.checkPodExceedObjectLimiter(pod)
 }
 
 func (r *Reconciler) abortJobIfTimeout(ctx context.Context, job *sev1alpha1.PodMigrationJob) (bool, error) {
@@ -706,7 +812,7 @@ func (r *Reconciler) evictPod(ctx context.Context, job *sev1alpha1.PodMigrationJ
 		r.eventRecorder.Eventf(job, nil, corev1.EventTypeWarning, sev1alpha1.PodMigrationJobReasonEvicting, "Migrating", "Failed evict Pod %q caused by %v", podNamespacedName, err)
 		return false, reconcile.Result{}, err
 	}
-	r.arbitrator.TrackEvictedPod(pod)
+	r.trackEvictedPod(pod)
 
 	_, reason := evictor.GetEvictionTriggerAndReason(job.Annotations)
 	cond = &sev1alpha1.PodMigrationJobCondition{
@@ -751,6 +857,68 @@ func (r *Reconciler) prepareJobWithReservationScheduleSuccess(ctx context.Contex
 		r.eventRecorder.Eventf(job, nil, corev1.EventTypeNormal, string(sev1alpha1.PodMigrationJobConditionReservationScheduled), "Migrating", "Assigned Reservation %q to node %q", reservationObj, scheduledNodeName)
 	}
 	return err
+}
+
+func (r *Reconciler) trackEvictedPod(pod *corev1.Pod) {
+	if r.limiterMap == nil || len(r.limiterMap) == 0 || r.limiterCacheMap == nil || len(r.limiterCacheMap) == 0 {
+		return
+	}
+	for limiterType, objectLimiterArgs := range r.args.ObjectLimiters {
+		if objectLimiterArgs.Duration.Seconds() == 0 {
+			continue
+		}
+		limiterKey, processScope := getLimiterKeyAndProcessScope(pod, limiterType)
+		if limiterKey == "" {
+			continue
+		}
+		var maxMigratingReplicas int
+		maxMigrating := objectLimiterArgs.MaxMigrating
+		// namespace limiter should only accept int value. If a percent value is provided, it will be parsed as 0, thus just return.
+		if limiterType == deschedulerconfig.MigrationLimitObjectNamespace {
+			if maxMigrating != nil {
+				maxMigratingReplicas = maxMigrating.IntValue()
+			}
+		} else if expectedReplicas, err := r.controllerFinder.GetExpectedScaleForPod(pod); err == nil {
+			if maxMigrating == nil {
+				maxMigrating = r.args.MaxMigratingPerWorkload
+			}
+			maxMigratingReplicas, _ = util.GetMaxMigrating(int(expectedReplicas), maxMigrating)
+		}
+		if maxMigratingReplicas == 0 {
+			return
+		}
+		limit := rate.Limit(maxMigratingReplicas) / rate.Limit(objectLimiterArgs.Duration.Seconds())
+		burst := util.GetLimiterBurst(objectLimiterArgs.Burst)
+
+		r.track(limit, limiterKey, processScope, limiterType, burst)
+	}
+}
+
+func (r *Reconciler) track(limit rate.Limit, limiterKey, processScope string, limiterType deschedulerconfig.MigrationLimitObjectType, burst int) {
+	r.limiterLock.Lock()
+	defer r.limiterLock.Unlock()
+
+	limiters, ok := r.limiterMap[limiterType]
+	if !ok {
+		klog.Errorf("failed to find limiters for type %s", limiterType)
+		return
+	}
+	limiter := limiters[limiterKey]
+	if limiter == nil {
+		limiter = rate.NewLimiter(limit, burst)
+		limiters[limiterKey] = limiter
+	} else if limiter.Limit() != limit {
+		limiter.SetLimit(limit)
+	}
+
+	if !limiter.AllowN(r.clock.Now(), 1) {
+		klog.Infof("The %s %s has been frequently descheduled recently and needs to be limited for f period of time", limiterType, processScope)
+	}
+	limiterCache, ok := r.limiterCacheMap[limiterType]
+	if !ok {
+		klog.Errorf("failed to find limiterCache for type %s", limiterType)
+	}
+	limiterCache.Set(limiterKey, 0, gocache.DefaultExpiration)
 }
 
 func (r *Reconciler) deleteReservation(ctx context.Context, job *sev1alpha1.PodMigrationJob) error {
@@ -927,4 +1095,26 @@ func (r *Reconciler) Filter(pod *corev1.Pod) bool {
 
 func (r *Reconciler) PreEvictionFilter(pod *corev1.Pod) bool {
 	return r.arbitrator.PreEvictionFilter(pod)
+}
+
+func (r *Reconciler) initObjectLimiters() {
+	r.limiterMap = make(map[deschedulerconfig.MigrationLimitObjectType]map[string]*rate.Limiter)
+	r.limiterCacheMap = make(map[deschedulerconfig.MigrationLimitObjectType]*gocache.Cache)
+
+	for limiterType, limiterConfig := range r.args.ObjectLimiters {
+		var trackExpiration time.Duration
+		if limiterConfig.Duration.Duration > trackExpiration {
+			trackExpiration = limiterConfig.Duration.Duration
+		}
+		if trackExpiration > 0 {
+			r.limiterMap[limiterType] = make(map[string]*rate.Limiter)
+			limiterExpiration := trackExpiration + trackExpiration/2
+			r.limiterCacheMap[limiterType] = gocache.New(limiterExpiration, limiterExpiration)
+			r.limiterCacheMap[limiterType].OnEvicted(func(s string, _ interface{}) {
+				r.limiterLock.Lock()
+				defer r.limiterLock.Unlock()
+				delete(r.limiterMap[limiterType], s)
+			})
+		}
+	}
 }

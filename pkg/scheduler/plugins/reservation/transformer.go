@@ -18,6 +18,7 @@ package reservation
 
 import (
 	"context"
+	"fmt"
 	"sync/atomic"
 
 	corev1 "k8s.io/api/core/v1"
@@ -25,6 +26,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
+	schedulingcorev1 "k8s.io/component-helpers/scheduling/corev1"
 	"k8s.io/component-helpers/scheduling/corev1/nodeaffinity"
 	"k8s.io/klog/v2"
 	resourceapi "k8s.io/kubernetes/pkg/api/v1/resource"
@@ -32,6 +34,7 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework/parallelize"
 	schedutil "k8s.io/kubernetes/pkg/scheduler/util"
 
+	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
@@ -47,11 +50,14 @@ func (pl *Plugin) BeforePreFilter(ctx context.Context, cycleState *framework.Cyc
 }
 
 func (pl *Plugin) prepareMatchReservationState(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod) (*stateData, bool, *framework.Status) {
+	logger := klog.FromContext(ctx)
 	reservationAffinity, err := reservationutil.GetRequiredReservationAffinity(pod)
 	if err != nil {
 		klog.ErrorS(err, "Failed to parse reservation affinity", "pod", klog.KObj(pod))
 		return nil, false, framework.AsStatus(err)
 	}
+	affinityReservationName := reservationAffinity.GetName()
+	isReservationIgnored := extension.IsReservationIgnored(pod)
 
 	specificNodes, status := parseSpecificNodesFromAffinity(pod)
 	if !status.IsSuccess() {
@@ -59,9 +65,17 @@ func (pl *Plugin) prepareMatchReservationState(ctx context.Context, cycleState *
 	}
 	requiredNodeAffinity := nodeaffinity.GetRequiredNodeAffinity(pod)
 
-	var stateIndex int32
+	podRequests := resourceapi.PodRequests(pod, resourceapi.PodResourcesOptions{})
+	exactMatchReservationSpec, err := extension.GetExactMatchReservationSpec(pod.Annotations)
+	if err != nil {
+		klog.ErrorS(err, "Failed to parse exact match reservation spec", "pod", klog.KObj(pod))
+		return nil, false, framework.AsStatus(err)
+	}
+
+	var stateIndex, diagnosisIndex int32
 	allNodes := pl.reservationCache.listAllNodes()
 	allNodeReservationStates := make([]*nodeReservationState, len(allNodes))
+	allNodeDiagnosisStates := make([]*nodeDiagnosisState, len(allNodes))
 	allPluginToRestoreState := make([]frameworkext.PluginToReservationRestoreStates, len(allNodes))
 
 	isReservedPod := reservationutil.IsReservePod(pod)
@@ -75,6 +89,59 @@ func (pl *Plugin) prepareMatchReservationState(ctx context.Context, cycleState *
 		if !status.IsSuccess() {
 			return nil, false, status
 		}
+	}
+
+	// checkReservationMatchedOrIgnored checks if the reservation is matched or can be ignored by the pod and
+	// updates the node diagnosis states.
+	checkReservationMatchedOrIgnored := func(rInfo *frameworkext.ReservationInfo, node *corev1.Node, diagnosisState *nodeDiagnosisState) bool {
+		// Since nest reservation is not supported, a reserve pod cannot match a reservation.
+		if isReservedPod {
+			return false
+		}
+
+		// pod specifies reservation ignored
+		if isReservationIgnored {
+			diagnosisState.ignored++
+			return true
+		}
+
+		// pod matches the reservation owners
+		if rInfo.MatchOwners(pod) {
+			diagnosisState.ownerMatched++
+			// Check the conditions by the following order:
+			// 1. check the condition if it has a higher priority than others
+			// 2. check the more common and fast conditions
+			// 3. check the more complex conditions
+			if len(affinityReservationName) > 0 {
+				// If reservation name is specified, no longer check the unschedulable, affinity and taints.
+				if !reservationAffinity.MatchName(rInfo.GetName()) {
+					// Actually, the reservation name should be unique in the cluster. So if the pod specifies the
+					// name, only the name matched reservation will check the conditions below.
+					diagnosisState.nameUnmatched++
+				} else if !extension.ExactMatchReservation(podRequests, rInfo.Allocatable, exactMatchReservationSpec) { // exactMatchSpec unmatched
+					diagnosisState.notExactMatched++
+				} else { // name matched
+					diagnosisState.nameMatched++
+					return true
+				}
+			} else if rInfo.IsUnschedulable() { // isUnschedulable
+				diagnosisState.isUnschedulableUnmatched++
+			} else if firstUnmatchedTaint, isTaintsUntolerated := reservationAffinity.FindMatchingUntoleratedTaint(rInfo.GetTaints(),
+				reservationutil.DoNotScheduleTaintsFilter); isTaintsUntolerated { // taints not tolerated
+				// TODO: support effect=PreferNoSchedule
+				diagnosisState.taintsUnmatched++
+				taintKey := getDiagnosisTaintKey(&firstUnmatchedTaint)
+				diagnosisState.taintsUnmatchedReasons[taintKey]++
+			} else if !matchReservationAffinity(node, rInfo, reservationAffinity) { // ReservationAffinity unmatched
+				diagnosisState.affinityUnmatched++
+			} else if !extension.ExactMatchReservation(podRequests, rInfo.Allocatable, exactMatchReservationSpec) { // exactMatchSpec unmatched
+				diagnosisState.notExactMatched++
+			} else { // matched
+				return true
+			}
+		}
+
+		return false
 	}
 
 	processNode := func(i int) {
@@ -97,7 +164,19 @@ func (pl *Plugin) prepareMatchReservationState(ctx context.Context, cycleState *
 			return
 		}
 
-		var unmatched, matched []*frameworkext.ReservationInfo
+		var unmatched, matchedOrIgnored []*frameworkext.ReservationInfo
+		diagnosisState := &nodeDiagnosisState{
+			nodeName:                 node.Name,
+			ignored:                  0,
+			ownerMatched:             0,
+			nameUnmatched:            0,
+			isUnschedulableUnmatched: 0,
+			affinityUnmatched:        0,
+			notExactMatched:          0,
+			taintsUnmatched:          0,
+			taintsUnmatchedReasons:   map[string]int{},
+		}
+
 		status := pl.reservationCache.forEachAvailableReservationOnNode(node.Name, func(rInfo *frameworkext.ReservationInfo) (bool, *framework.Status) {
 			if !rInfo.IsAvailable() || rInfo.ParseError != nil {
 				return true, nil
@@ -105,16 +184,19 @@ func (pl *Plugin) prepareMatchReservationState(ctx context.Context, cycleState *
 
 			// In this case, the Controller has not yet updated the status of the Reservation to Succeeded,
 			// but in fact it can no longer be used for allocation. So it's better to skip first.
-			if rInfo.IsAllocateOnce() && len(rInfo.AssignedPods) > 0 {
+			if rInfo.IsAllocateOnce() && rInfo.GetAllocatedPods() > 0 {
 				return true, nil
 			}
 
-			if !isReservedPod && !rInfo.IsUnschedulable() && matchReservation(pod, node, rInfo, reservationAffinity) {
-				matched = append(matched, rInfo.Clone())
+			// check if the reservation matches or can be ignored by the pod
+			isMatchedOrIgnored := checkReservationMatchedOrIgnored(rInfo, node, diagnosisState)
 
-			} else if len(rInfo.AssignedPods) > 0 {
+			if isMatchedOrIgnored { // reservation is matched or ignored for the pod
+				matchedOrIgnored = append(matchedOrIgnored, rInfo.Clone())
+			} else if rInfo.GetAllocatedPods() > 0 { // reservation is unmatched and not ignored
 				unmatched = append(unmatched, rInfo.Clone())
 			}
+
 			return true, nil
 		})
 		if !status.IsSuccess() {
@@ -124,18 +206,23 @@ func (pl *Plugin) prepareMatchReservationState(ctx context.Context, cycleState *
 			return
 		}
 
-		if len(matched) == 0 && len(unmatched) == 0 {
+		if diagnosisState.ignored > 0 || diagnosisState.ownerMatched > 0 {
+			idx := atomic.AddInt32(&diagnosisIndex, 1)
+			allNodeDiagnosisStates[idx-1] = diagnosisState
+		}
+
+		if len(matchedOrIgnored) == 0 && len(unmatched) == 0 {
 			return
 		}
 
 		// The Pod declares a ReservationAffinity, which means that the Pod must reuse the Reservation resources,
 		// but there are no matching Reservations, which means that the node itself does not need to be processed.
 		// We can end early to avoid meaningless operations.
-		if reservationAffinity != nil && len(matched) == 0 {
+		if reservationAffinity != nil && len(matchedOrIgnored) == 0 {
 			return
 		}
 
-		if err := extender.Scheduler().GetCache().InvalidNodeInfo(node.Name); err != nil {
+		if err := extender.Scheduler().GetCache().InvalidNodeInfo(logger, node.Name); err != nil {
 			klog.ErrorS(err, "Failed to InvalidNodeInfo", "pod", klog.KObj(pod), "node", node.Name)
 			errCh.SendErrorWithCancel(err, cancel)
 			return
@@ -158,7 +245,7 @@ func (pl *Plugin) prepareMatchReservationState(ctx context.Context, cycleState *
 		}
 
 		rAllocated := corev1.ResourceList{}
-		for _, rInfo := range matched {
+		for _, rInfo := range matchedOrIgnored {
 			if err = restoreMatchedReservation(nodeInfo, rInfo, podInfoMap); err != nil {
 				errCh.SendErrorWithCancel(err, cancel)
 				return
@@ -170,25 +257,25 @@ func (pl *Plugin) prepareMatchReservationState(ctx context.Context, cycleState *
 		var pluginToRestoreState frameworkext.PluginToReservationRestoreStates
 		if extender != nil {
 			var status *framework.Status
-			pluginToRestoreState, status = extender.RunReservationExtensionRestoreReservation(ctx, cycleState, pod, matched, unmatched, nodeInfo)
+			pluginToRestoreState, status = extender.RunReservationExtensionRestoreReservation(ctx, cycleState, pod, matchedOrIgnored, unmatched, nodeInfo)
 			if !status.IsSuccess() {
 				errCh.SendErrorWithCancel(err, cancel)
 				return
 			}
 		}
 
-		if len(matched) > 0 || len(unmatched) > 0 {
+		if len(matchedOrIgnored) > 0 || len(unmatched) > 0 {
 			index := atomic.AddInt32(&stateIndex, 1)
 			allNodeReservationStates[index-1] = &nodeReservationState{
-				nodeName:     node.Name,
-				matched:      matched,
-				podRequested: podRequested,
-				rAllocated:   framework.NewResource(rAllocated),
+				nodeName:         node.Name,
+				matchedOrIgnored: matchedOrIgnored,
+				podRequested:     podRequested,
+				rAllocated:       framework.NewResource(rAllocated),
 			}
 			allPluginToRestoreState[index-1] = pluginToRestoreState
 		}
 	}
-	pl.handle.Parallelizer().Until(parallelCtx, len(allNodes), processNode)
+	pl.handle.Parallelizer().Until(parallelCtx, len(allNodes), processNode, "transformNodesWithReservation")
 	err = errCh.ReceiveError()
 	if err != nil {
 		klog.ErrorS(err, "Failed to find matched or unmatched reservations", "pod", klog.KObj(pod))
@@ -197,19 +284,23 @@ func (pl *Plugin) prepareMatchReservationState(ctx context.Context, cycleState *
 
 	allNodeReservationStates = allNodeReservationStates[:stateIndex]
 	allPluginToRestoreState = allPluginToRestoreState[:stateIndex]
-
-	podRequests, _ := resourceapi.PodRequestsAndLimits(pod)
+	allNodeDiagnosisStates = allNodeDiagnosisStates[:diagnosisIndex]
 	podRequestResources := framework.NewResource(podRequests)
 	state := &stateData{
-		hasAffinity:           reservationAffinity != nil,
-		podRequests:           podRequests,
-		podRequestsResources:  podRequestResources,
-		preemptible:           map[string]corev1.ResourceList{},
-		preemptibleInRRs:      map[string]map[types.UID]corev1.ResourceList{},
-		nodeReservationStates: map[string]nodeReservationState{},
+		schedulingStateData: schedulingStateData{
+			hasAffinity:              reservationAffinity != nil,
+			reservationName:          affinityReservationName,
+			podRequests:              podRequests,
+			podRequestsResources:     podRequestResources,
+			preemptible:              map[string]corev1.ResourceList{},
+			preemptibleInRRs:         map[string]map[types.UID]corev1.ResourceList{},
+			nodeReservationStates:    map[string]nodeReservationState{},
+			nodeReservationDiagnosis: map[string]*nodeDiagnosisState{},
+		},
 	}
 	pluginToNodeReservationRestoreState := frameworkext.PluginToNodeReservationRestoreStates{}
-	for index, v := range allNodeReservationStates {
+	for index := range allNodeReservationStates {
+		v := allNodeReservationStates[index]
 		state.nodeReservationStates[v.nodeName] = *v
 		for pluginName, pluginState := range allPluginToRestoreState[index] {
 			if pluginState == nil {
@@ -222,6 +313,10 @@ func (pl *Plugin) prepareMatchReservationState(ctx context.Context, cycleState *
 			}
 			nodeRestoreStates[v.nodeName] = pluginState
 		}
+	}
+	for i := range allNodeDiagnosisStates {
+		v := allNodeDiagnosisStates[i]
+		state.nodeReservationDiagnosis[v.nodeName] = v
 	}
 	if extender != nil {
 		status := extender.RunReservationExtensionFinalRestoreReservation(ctx, cycleState, pod, pluginToNodeReservationRestoreState)
@@ -264,7 +359,7 @@ func restoreMatchedReservation(nodeInfo *framework.NodeInfo, rInfo *frameworkext
 
 func restoreUnmatchedReservations(nodeInfo *framework.NodeInfo, rInfo *frameworkext.ReservationInfo) error {
 	// Here len(rInfo.AssignedPods) == 0 is always false because it was checked before.
-	if len(rInfo.AssignedPods) == 0 {
+	if rInfo.GetAllocatedPods() == 0 {
 		return nil
 	}
 
@@ -345,15 +440,15 @@ func calculateResource(pod *corev1.Pod) (res framework.Resource, non0CPU int64, 
 	return
 }
 
-func matchReservation(pod *corev1.Pod, node *corev1.Node, reservation *frameworkext.ReservationInfo, reservationAffinity *reservationutil.RequiredReservationAffinity) bool {
-	if !reservation.Match(pod) {
-		return false
-	}
-
+// matchReservationAffinity returns the statuses of whether the reservation affinity matches, whether the reservation
+// taints are tolerated, and whether the reservation name matches.
+func matchReservationAffinity(node *corev1.Node, reservation *frameworkext.ReservationInfo, reservationAffinity *reservationutil.RequiredReservationAffinity) bool {
 	if reservationAffinity != nil {
 		// NOTE: There are some special scenarios.
 		// For example, the AZ where the Pod wants to select the Reservation is cn-hangzhou, but the Reservation itself
 		// does not have this information, so it needs to perceive the label of the Node when Matching Affinity.
+		// FIXME(saintube): clean up the default node labels casting and preserve optional labels
+		// https://github.com/koordinator-sh/koordinator/issues/2208
 		fakeNode := &corev1.Node{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:   reservation.GetName(),
@@ -366,7 +461,7 @@ func matchReservation(pod *corev1.Pod, node *corev1.Node, reservation *framework
 		for k, v := range reservation.GetObject().GetLabels() {
 			fakeNode.Labels[k] = v
 		}
-		return reservationAffinity.Match(fakeNode)
+		return reservationAffinity.MatchAffinity(fakeNode)
 	}
 	return true
 }
@@ -410,4 +505,40 @@ func parseSpecificNodesFromAffinity(pod *corev1.Pod) (sets.String, *framework.St
 		nodeNames = nodeNames.Union(termNodeNames)
 	}
 	return nodeNames, nil
+}
+
+func getDiagnosisTaintKey(taint *corev1.Taint) string {
+	return fmt.Sprintf("{%s: %s}", taint.Key, taint.Value)
+}
+
+func (pl *Plugin) BeforeFilter(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeInfo *framework.NodeInfo) (*corev1.Pod, *framework.NodeInfo, bool, *framework.Status) {
+	// Both the reserve pod or the normal pod should consider the nominated reserve pods.
+	nominatedReservationInfos := pl.nominator.NominatedReservePodForNode(nodeInfo.Node().Name)
+	if len(nominatedReservationInfos) == 0 {
+		return pod, nodeInfo, false, nil
+	}
+
+	if nodeInfo.Node() == nil {
+		// This may happen only in tests.
+		return pod, nodeInfo, false, nil
+	}
+
+	nodeInfoOut := nodeInfo.Clone()
+
+	for _, rInfo := range nominatedReservationInfos {
+		if schedulingcorev1.PodPriority(rInfo.Pod) >= schedulingcorev1.PodPriority(pod) && rInfo.Pod.UID != pod.UID {
+			pInfo, _ := framework.NewPodInfo(rInfo.Pod)
+			nodeInfoOut.AddPodInfo(pInfo)
+			status := pl.handle.RunPreFilterExtensionAddPod(ctx, cycleState, pod, pInfo, nodeInfoOut)
+			if !status.IsSuccess() {
+				return pod, nodeInfo, false, status
+			}
+			klog.V(4).Infof("nodeName %s, to schedule pod %s (reserve pod %s) with nominated reservation %s",
+				nodeInfo.Node().Name, klog.KObj(pod),
+				reservationutil.GetReservationNameFromReservePod(pod),
+				reservationutil.GetReservationNameFromReservePod(rInfo.Pod))
+		}
+	}
+
+	return pod, nodeInfoOut, true, nil
 }

@@ -150,7 +150,7 @@ type fakePodHandler struct {
 	t *testing.T
 }
 
-func (f *fakePodHandler) OnAdd(obj interface{}) {
+func (f *fakePodHandler) OnAdd(obj interface{}, isInInitialList bool) {
 	_, ok := obj.(*corev1.Pod)
 	if !ok {
 		f.t.Errorf("OnAdd got object %T, but not a pod", obj)
@@ -216,7 +216,7 @@ func TestReservationToPodEventHandler(t *testing.T) {
 			},
 		)
 
-		h.OnAdd(testReservation)
+		h.OnAdd(testReservation, false)
 
 		h.OnUpdate(testReservation, testReservation)
 
@@ -230,7 +230,7 @@ func TestReservationToPodEventHandler(t *testing.T) {
 			},
 		)
 
-		h.OnAdd(testReservation)
+		h.OnAdd(testReservation, false)
 		h.OnUpdate(testReservation, testReservation)
 		h.OnDelete(testReservation)
 	})

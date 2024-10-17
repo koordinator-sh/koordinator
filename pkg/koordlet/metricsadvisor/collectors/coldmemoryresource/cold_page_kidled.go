@@ -64,12 +64,12 @@ func (k *kidledcoldPageCollector) Enabled() bool {
 		kidledConfig := system.NewDefaultKidledConfig()
 		err := system.SetKidledScanPeriodInSeconds(kidledConfig.ScanPeriodInseconds)
 		if err != nil {
-			klog.V(4).Infof("cold page collector start kidled err:", err)
+			klog.V(4).Infof("cold page collector start kidled err: %v", err)
 			return false
 		}
 		err = system.SetKidledUseHierarchy(kidledConfig.UseHierarchy)
 		if err != nil {
-			klog.V(4).Infof("cold page collector start kidled err:", err)
+			klog.V(4).Infof("cold page collector start kidled err: %v", err)
 			return false
 		}
 		system.SetIsStartColdMemory(true)

@@ -19,9 +19,13 @@ package reservation
 import (
 	"context"
 	"fmt"
+	"strconv"
+	"strings"
+	"sync"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -85,7 +89,8 @@ type Plugin struct {
 	client           clientschedulingv1alpha1.SchedulingV1alpha1Interface
 	reservationCache *reservationCache
 
-	nominator *nominator
+	nominator     *nominator
+	preemptionMgr *PreemptionMgr
 }
 
 func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error) {
@@ -99,12 +104,13 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 	}
 
 	sharedInformerFactory := handle.SharedInformerFactory()
+	podLister := handle.SharedInformerFactory().Core().V1().Pods().Lister()
 	koordSharedInformerFactory := extendedHandle.KoordinatorSharedInformerFactory()
 	reservationLister := koordSharedInformerFactory.Scheduling().V1alpha1().Reservations().Lister()
 	cache := newReservationCache(reservationLister)
-	registerReservationEventHandler(cache, koordSharedInformerFactory)
-	nominator := newNominator()
-	registerPodEventHandler(cache, nominator, sharedInformerFactory)
+	nm := newNominator(podLister, reservationLister)
+	registerReservationEventHandler(cache, koordSharedInformerFactory, nm)
+	registerPodEventHandler(cache, nm, sharedInformerFactory)
 
 	// TODO(joseph): Considering the amount of changed code,
 	// temporarily use global variable to store ReservationCache instance,
@@ -117,7 +123,15 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 		rLister:          reservationLister,
 		client:           extendedHandle.KoordinatorClientSet().SchedulingV1alpha1(),
 		reservationCache: cache,
-		nominator:        nominator,
+		nominator:        nm,
+	}
+
+	if pluginArgs.EnablePreemption {
+		preemptionMgr, err := newPreemptionMgr(pluginArgs, extendedHandle, podLister, reservationLister)
+		if err != nil {
+			return nil, fmt.Errorf("failed to new preemption, err: %w", err)
+		}
+		p.preemptionMgr = preemptionMgr
 	}
 
 	return p, nil
@@ -134,32 +148,49 @@ func (pl *Plugin) NewControllers() ([]frameworkext.Controller, error) {
 	return []frameworkext.Controller{reservationController}, nil
 }
 
-func (pl *Plugin) EventsToRegister() []framework.ClusterEvent {
+func (pl *Plugin) EventsToRegister() []framework.ClusterEventWithHint {
 	// To register a custom event, follow the naming convention at:
 	// https://github.com/kubernetes/kubernetes/blob/e1ad9bee5bba8fbe85a6bf6201379ce8b1a611b1/pkg/scheduler/eventhandlers.go#L415-L422
 	gvk := fmt.Sprintf("reservations.%v.%v", schedulingv1alpha1.GroupVersion.Version, schedulingv1alpha1.GroupVersion.Group)
-	return []framework.ClusterEvent{
-		{Resource: framework.GVK(gvk), ActionType: framework.Add | framework.Update | framework.Delete},
+	return []framework.ClusterEventWithHint{
+		{Event: framework.ClusterEvent{Resource: framework.GVK(gvk), ActionType: framework.Add | framework.Update | framework.Delete}},
 	}
 }
 
 var _ framework.StateData = &stateData{}
 
 type stateData struct {
+	// scheduling cycle data
+	schedulingStateData
+
+	// all cycle data
+	// NOTE: The part of data is kept during both the scheduling cycle and the binding cycle. In case too many
+	// binding goroutines reference the data causing OOM issues, the memory overhead of this part should be
+	// small and its space complexity should be no more than O(1) for pods, reservations and nodes.
+	assumed *frameworkext.ReservationInfo
+}
+
+// schedulingStateData is the data only kept in the scheduling cycle. It could be cleaned up
+// before entering the binding cycle to reduce memory cost.
+type schedulingStateData struct {
+	preemptLock          sync.RWMutex
 	hasAffinity          bool
+	reservationName      string
 	podRequests          corev1.ResourceList
 	podRequestsResources *framework.Resource
 	preemptible          map[string]corev1.ResourceList
 	preemptibleInRRs     map[string]map[types.UID]corev1.ResourceList
 
-	nodeReservationStates map[string]nodeReservationState
-	preferredNode         string
-	assumed               *frameworkext.ReservationInfo
+	nodeReservationStates    map[string]nodeReservationState
+	nodeReservationDiagnosis map[string]*nodeDiagnosisState
+	preferredNode            string
 }
 
 type nodeReservationState struct {
 	nodeName string
-	matched  []*frameworkext.ReservationInfo
+	// matchedOrIgnored represents all matched or ignored reservations for the scheduling pod.
+	matchedOrIgnored []*frameworkext.ReservationInfo
+
 	// podRequested represents all Pods(including matched reservation) requested resources
 	// but excluding the already allocated from unmatched reservations
 	podRequested *framework.Resource
@@ -167,15 +198,38 @@ type nodeReservationState struct {
 	rAllocated *framework.Resource
 }
 
+type nodeDiagnosisState struct {
+	nodeName string
+
+	ignored int // resource reservations are ignored due to the pod label
+
+	ownerMatched             int // owner matched
+	nameMatched              int // owner matched and reservation name matched
+	nameUnmatched            int // owner matched but BeforePreFilter unmatched due to reservation name
+	isUnschedulableUnmatched int // owner matched but BeforePreFilter unmatched due to unschedulable
+	affinityUnmatched        int // owner matched but BeforePreFilter unmatched due to affinity
+	notExactMatched          int // owner matched but BeforePreFilter unmatched due to not exact match
+	taintsUnmatched          int // owner matched but BeforePreFilter unmatched due to reservation taints
+	taintsUnmatchedReasons   map[string]int
+}
+
 func (s *stateData) Clone() framework.StateData {
 	ns := &stateData{
-		hasAffinity:           s.hasAffinity,
-		podRequests:           s.podRequests,
-		podRequestsResources:  s.podRequestsResources,
-		nodeReservationStates: s.nodeReservationStates,
-		preferredNode:         s.preferredNode,
-		assumed:               s.assumed,
+		schedulingStateData: schedulingStateData{
+			hasAffinity:              s.hasAffinity,
+			reservationName:          s.reservationName,
+			podRequests:              s.podRequests,
+			podRequestsResources:     s.podRequestsResources,
+			nodeReservationStates:    s.nodeReservationStates,
+			nodeReservationDiagnosis: s.nodeReservationDiagnosis,
+			preferredNode:            s.preferredNode,
+		},
+		assumed: s.assumed,
 	}
+
+	s.preemptLock.RLock()
+	defer s.preemptLock.RUnlock()
+
 	preemptible := map[string]corev1.ResourceList{}
 	for nodeName, returned := range s.preemptible {
 		preemptible[nodeName] = returned.DeepCopy()
@@ -196,6 +250,12 @@ func (s *stateData) Clone() framework.StateData {
 	ns.preemptibleInRRs = preemptibleInRRs
 
 	return ns
+}
+
+// CleanSchedulingData clears the scheduling cycle data in the stateData to reduce memory cost before entering
+// the binding cycle.
+func (s *stateData) CleanSchedulingData() {
+	s.schedulingStateData = schedulingStateData{}
 }
 
 func getStateData(cycleState *framework.CycleState) *stateData {
@@ -232,18 +292,22 @@ func (pl *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleStat
 	}
 
 	var preResult *framework.PreFilterResult
+
 	state := getStateData(cycleState)
 	if state.hasAffinity {
 		if len(state.nodeReservationStates) == 0 {
 			return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrReasonReservationAffinity)
 		}
 		preResult = &framework.PreFilterResult{
-			NodeNames: sets.NewString(),
+			NodeNames: sets.Set[string]{},
 		}
 		for nodeName := range state.nodeReservationStates {
 			preResult.NodeNames.Insert(nodeName)
 		}
+	} else if len(state.nodeReservationStates) <= 0 { // nor available reservation neither a reserve pod
+		return nil, framework.NewStatus(framework.Skip)
 	}
+
 	return preResult, nil
 }
 
@@ -252,20 +316,21 @@ func (pl *Plugin) PreFilterExtensions() framework.PreFilterExtensions {
 }
 
 func (pl *Plugin) AddPod(ctx context.Context, cycleState *framework.CycleState, podToSchedule *corev1.Pod, podInfoToAdd *framework.PodInfo, nodeInfo *framework.NodeInfo) *framework.Status {
-	if reservationutil.IsReservePod(podInfoToAdd.Pod) || nodeInfo.Node() == nil {
-		return nil
-	}
-	podRequests, _ := resourceapi.PodRequestsAndLimits(podInfoToAdd.Pod)
-	if quotav1.IsZero(podRequests) {
+	podRequests := resourceapi.PodRequests(podInfoToAdd.Pod, resourceapi.PodResourcesOptions{})
+	if quotav1.IsZero(podRequests) { // TODO: support zero request pod in reservation
 		return nil
 	}
 
+	podRequests[corev1.ResourcePods] = *resource.NewQuantity(1, resource.DecimalSI) // count pods resources
 	state := getStateData(cycleState)
 	node := nodeInfo.Node()
 	rInfo := pl.reservationCache.GetReservationInfoByPod(podInfoToAdd.Pod, node.Name)
 	if rInfo == nil {
 		rInfo = pl.GetNominatedReservation(podInfoToAdd.Pod, node.Name)
 	}
+
+	state.preemptLock.Lock()
+	defer state.preemptLock.Unlock()
 	if rInfo == nil {
 		preemptible := state.preemptible[node.Name]
 		state.preemptible[node.Name] = quotav1.Subtract(preemptible, podRequests)
@@ -283,21 +348,21 @@ func (pl *Plugin) AddPod(ctx context.Context, cycleState *framework.CycleState, 
 }
 
 func (pl *Plugin) RemovePod(ctx context.Context, cycleState *framework.CycleState, podToSchedule *corev1.Pod, podInfoToRemove *framework.PodInfo, nodeInfo *framework.NodeInfo) *framework.Status {
-	if reservationutil.IsReservePod(podInfoToRemove.Pod) || nodeInfo.Node() == nil {
+	podRequests := resourceapi.PodRequests(podInfoToRemove.Pod, resourceapi.PodResourcesOptions{})
+	if quotav1.IsZero(podRequests) { // TODO: support zero request pod in reservation
 		return nil
 	}
 
-	podRequests, _ := resourceapi.PodRequestsAndLimits(podInfoToRemove.Pod)
-	if quotav1.IsZero(podRequests) {
-		return nil
-	}
-
+	podRequests[corev1.ResourcePods] = *resource.NewQuantity(1, resource.DecimalSI) // count pods resources
 	state := getStateData(cycleState)
 	node := nodeInfo.Node()
 	rInfo := pl.reservationCache.GetReservationInfoByPod(podInfoToRemove.Pod, node.Name)
 	if rInfo == nil {
 		rInfo = pl.GetNominatedReservation(podInfoToRemove.Pod, node.Name)
 	}
+
+	state.preemptLock.Lock()
+	defer state.preemptLock.Unlock()
 	if rInfo == nil {
 		preemptible := state.preemptible[node.Name]
 		state.preemptible[node.Name] = quotav1.Add(preemptible, podRequests)
@@ -354,98 +419,127 @@ func (pl *Plugin) Filter(ctx context.Context, cycleState *framework.CycleState, 
 		}
 	}
 
-	if !reservationutil.IsReservePod(pod) {
-		state := getStateData(cycleState)
-		nodeRState := state.nodeReservationStates[node.Name]
-		matchedReservations := nodeRState.matched
-		if len(matchedReservations) == 0 {
-			if state.hasAffinity {
-				return framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrReasonReservationAffinity)
-			}
+	if reservationutil.IsReservePod(pod) {
+		// TODO: handle pre-allocation cases
+		return nil
+	}
+
+	state := getStateData(cycleState)
+	nodeRState := state.nodeReservationStates[node.Name]
+	matchedReservations := nodeRState.matchedOrIgnored
+	if len(matchedReservations) == 0 {
+		if state.hasAffinity {
+			return framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrReasonReservationAffinity)
+		}
+
+		status := func() *framework.Status {
+			state.preemptLock.RLock()
+			defer state.preemptLock.RUnlock()
 
 			if len(state.preemptible[node.Name]) > 0 || len(state.preemptibleInRRs[node.Name]) > 0 {
 				preemptible := state.preemptible[node.Name]
 				preemptibleResource := framework.NewResource(preemptible)
-				nodeFits := fitsNode(state.podRequestsResources, nodeInfo, &nodeRState, nil, preemptibleResource)
-				if !nodeFits {
+				insufficientResources := fitsNode(state.podRequestsResources, nodeInfo, &nodeRState, nil, preemptibleResource)
+				if len(insufficientResources) != 0 {
 					return framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrReasonPreemptionFailed)
 				}
 			}
 			return nil
+		}()
+		if !status.IsSuccess() {
+			return status
 		}
 
-		return pl.filterWithReservations(ctx, cycleState, pod, nodeInfo, matchedReservations, state.hasAffinity)
+		return nil
 	}
 
-	// TODO: handle pre-allocation cases
-	return nil
+	return pl.filterWithReservations(ctx, cycleState, pod, nodeInfo, matchedReservations, state.hasAffinity)
 }
 
 func (pl *Plugin) filterWithReservations(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeInfo *framework.NodeInfo, matchedReservations []*frameworkext.ReservationInfo, requiredFromReservation bool) *framework.Status {
+	if !requiredFromReservation { // no need to filter out resources
+		return nil
+	}
+
 	node := nodeInfo.Node()
 	state := getStateData(cycleState)
 	nodeRState := state.nodeReservationStates[node.Name]
-	podRequests, _ := resourceapi.PodRequestsAndLimits(pod)
-	podRequestsResourceNames := quotav1.ResourceNames(podRequests)
+	podRequestsResourceNames := quotav1.ResourceNames(state.podRequests)
 
-	var hasSatisfiedReservation bool
+	allInsufficientResourcesByNode := sets.NewString()
+	var allInsufficientResourceReasonsByReservation []string
 	for _, rInfo := range matchedReservations {
 		resourceNames := quotav1.Intersection(rInfo.ResourceNames, podRequestsResourceNames)
 		if len(resourceNames) == 0 {
 			continue
 		}
+		// When the pod specifies a reservation name, we record the admission reasons.
+		if len(state.reservationName) > 0 && state.reservationName != rInfo.GetName() {
+			continue
+		}
+		requireDetailReasons := len(state.reservationName) > 0 && state.reservationName == rInfo.GetName()
 
+		state.preemptLock.RLock()
 		preemptibleInRR := state.preemptibleInRRs[node.Name][rInfo.UID()]
 		preemptible := framework.NewResource(preemptibleInRR)
 		preemptible.Add(state.preemptible[node.Name])
-		nodeFits := fitsNode(state.podRequestsResources, nodeInfo, &nodeRState, rInfo, preemptible)
+		insufficientResourcesByNode := fitsNode(state.podRequestsResources, nodeInfo, &nodeRState, rInfo, preemptible)
+		state.preemptLock.RUnlock()
+
+		nodeFits := len(insufficientResourcesByNode) == 0
 		allocatePolicy := rInfo.GetAllocatePolicy()
 		if allocatePolicy == schedulingv1alpha1.ReservationAllocatePolicyDefault ||
 			allocatePolicy == schedulingv1alpha1.ReservationAllocatePolicyAligned {
 			if nodeFits {
-				hasSatisfiedReservation = true
-				break
+				return nil
 			}
+			allInsufficientResourcesByNode.Insert(insufficientResourcesByNode...)
 		} else if allocatePolicy == schedulingv1alpha1.ReservationAllocatePolicyRestricted {
-			allocated := rInfo.Allocated
-			if len(preemptibleInRR) > 0 {
-				allocated = quotav1.SubtractWithNonNegativeResult(allocated, preemptibleInRR)
-				allocated = quotav1.Mask(allocated, rInfo.ResourceNames)
+			insufficientResourceReasonsByReservation := fitsReservation(state.podRequests, rInfo, preemptibleInRR, requireDetailReasons)
+			if nodeFits && len(insufficientResourceReasonsByReservation) <= 0 { // fit the reservation
+				return nil
 			}
-			rRemained := quotav1.SubtractWithNonNegativeResult(rInfo.Allocatable, allocated)
-			fits, _ := quotav1.LessThanOrEqual(state.podRequests, rRemained)
-			if fits && nodeFits {
-				hasSatisfiedReservation = true
-				break
-			}
+			allInsufficientResourcesByNode.Insert(insufficientResourcesByNode...)
+			allInsufficientResourceReasonsByReservation = append(allInsufficientResourceReasonsByReservation, insufficientResourceReasonsByReservation...)
 		}
 	}
-	// The Pod requirement must be allocated from Reservation, but currently no Reservation meets the requirement
-	if !hasSatisfiedReservation && requiredFromReservation {
-		return framework.NewStatus(framework.Unschedulable, ErrReasonNoReservationsMeetRequirements)
+
+	// The Pod requirement must be allocated from Reservation, but currently no Reservation meets the requirement.
+	// We will keep all failure reasons.
+	failureReasons := make([]string, 0, len(allInsufficientResourcesByNode)+len(allInsufficientResourceReasonsByReservation)+1)
+	for insufficientResourceByNode := range allInsufficientResourcesByNode {
+		failureReasons = append(failureReasons, fmt.Sprintf("Insufficient %s by node", insufficientResourceByNode))
 	}
-	return nil
+	failureReasons = append(failureReasons, allInsufficientResourceReasonsByReservation...)
+
+	if len(failureReasons) == 0 {
+		failureReasons = append(failureReasons, ErrReasonNoReservationsMeetRequirements)
+	}
+
+	return framework.NewStatus(framework.Unschedulable, failureReasons...)
 }
 
 var dummyResource = framework.NewResource(nil)
 
 // fitsNode checks if node have enough resources to host the pod.
-func fitsNode(podRequest *framework.Resource, nodeInfo *framework.NodeInfo, nodeRState *nodeReservationState, rInfo *frameworkext.ReservationInfo, preemptible *framework.Resource) bool {
+func fitsNode(podRequest *framework.Resource, nodeInfo *framework.NodeInfo, nodeRState *nodeReservationState, rInfo *frameworkext.ReservationInfo, preemptible *framework.Resource) []string {
+	var insufficientResources []string
+
 	allowedPodNumber := nodeInfo.Allocatable.AllowedPodNumber
-	if len(nodeInfo.Pods)-len(nodeRState.matched)+1 > allowedPodNumber {
-		return false
+	if len(nodeInfo.Pods)-len(nodeRState.matchedOrIgnored)+1 > allowedPodNumber {
+		insufficientResources = append(insufficientResources, string(corev1.ResourcePods))
 	}
 
 	if podRequest.MilliCPU == 0 &&
 		podRequest.Memory == 0 &&
 		podRequest.EphemeralStorage == 0 &&
 		len(podRequest.ScalarResources) == 0 {
-		return true
+		return insufficientResources
 	}
 
 	var rRemained *framework.Resource
 	if rInfo != nil {
-		resources := quotav1.SubtractWithNonNegativeResult(rInfo.Allocatable, rInfo.Allocated)
+		resources := quotav1.Subtract(rInfo.Allocatable, rInfo.Allocated)
 		rRemained = framework.NewResource(resources)
 	} else {
 		rRemained = dummyResource
@@ -463,30 +557,220 @@ func fitsNode(podRequest *framework.Resource, nodeInfo *framework.NodeInfo, node
 	}
 
 	if podRequest.MilliCPU > (nodeInfo.Allocatable.MilliCPU - (podRequested.MilliCPU - rRemained.MilliCPU - allRAllocated.MilliCPU - preemptible.MilliCPU)) {
-		return false
+		insufficientResources = append(insufficientResources, string(corev1.ResourceCPU))
 	}
 	if podRequest.Memory > (nodeInfo.Allocatable.Memory - (podRequested.Memory - rRemained.Memory - allRAllocated.Memory - preemptible.Memory)) {
-		return false
+		insufficientResources = append(insufficientResources, string(corev1.ResourceMemory))
 	}
 	if podRequest.EphemeralStorage > (nodeInfo.Allocatable.EphemeralStorage - (podRequested.EphemeralStorage - rRemained.EphemeralStorage - allRAllocated.EphemeralStorage - preemptible.EphemeralStorage)) {
-		return false
+		insufficientResources = append(insufficientResources, string(corev1.ResourceEphemeralStorage))
 	}
 
 	for rName, rQuant := range podRequest.ScalarResources {
 		if rQuant > (nodeInfo.Allocatable.ScalarResources[rName] - (podRequested.ScalarResources[rName] - rRemained.ScalarResources[rName] - allRAllocated.ScalarResources[rName] - preemptible.ScalarResources[rName])) {
-			return false
+			insufficientResources = append(insufficientResources, string(rName))
 		}
 	}
 
-	return true
+	return insufficientResources
 }
 
-func (pl *Plugin) PostFilter(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, _ framework.NodeToStatusMap) (*framework.PostFilterResult, *framework.Status) {
-	if reservationutil.IsReservePod(pod) {
-		// return err to stop default preemption
-		return nil, framework.NewStatus(framework.Error)
+func fitsReservation(podRequest corev1.ResourceList, rInfo *frameworkext.ReservationInfo, preemptibleInRR corev1.ResourceList, isDetailed bool) []string {
+	allocated := rInfo.Allocated
+	if len(preemptibleInRR) > 0 {
+		allocated = quotav1.SubtractWithNonNegativeResult(allocated, preemptibleInRR)
 	}
-	return nil, framework.NewStatus(framework.Unschedulable)
+	allocated = quotav1.Mask(allocated, rInfo.ResourceNames)
+	requests := quotav1.Mask(podRequest, rInfo.ResourceNames)
+	allocatable := rInfo.Allocatable
+
+	var insufficientResourceReasons []string
+
+	// check "pods" resource in the reservation when reserved explicitly
+	if maxPods, found := allocatable[corev1.ResourcePods]; found {
+		allocatedPods := rInfo.GetAllocatedPods()
+		if preemptiblePodsInRR, found := preemptibleInRR[corev1.ResourcePods]; found {
+			allocatedPods += int(preemptiblePodsInRR.Value()) // assert no overflow
+		}
+		if int64(allocatedPods)+1 > maxPods.Value() {
+			if !isDetailed {
+				insufficientResourceReasons = append(insufficientResourceReasons,
+					reservationutil.NewReservationReason("Too many pods"))
+			} else { // print a reason with resource amounts if needed
+				insufficientResourceReasons = append(insufficientResourceReasons,
+					reservationutil.NewReservationReason("Too many pods, requested: 1, used: %d, capacity: %d",
+						allocatedPods, maxPods.Value()))
+			}
+		}
+	}
+
+	for resourceName, requested := range requests {
+		if requested.IsZero() {
+			continue
+		}
+
+		capacity, found := allocatable[resourceName]
+		if !found {
+			capacity = *resource.NewQuantity(0, resource.DecimalSI)
+		}
+		used, found := allocated[resourceName]
+		if !found {
+			used = *resource.NewQuantity(0, resource.DecimalSI)
+		}
+		remained := capacity.DeepCopy()
+		remained.Sub(used)
+
+		if requested.Cmp(remained) <= 0 {
+			continue
+		}
+
+		if !isDetailed { // just give the resource name
+			insufficientResourceReasons = append(insufficientResourceReasons,
+				reservationutil.NewReservationReason("Insufficient "+string(resourceName)))
+		} else if resourceName == corev1.ResourceCPU { // print a reason with resource amounts if needed
+			insufficientResourceReasons = append(insufficientResourceReasons,
+				reservationutil.NewReservationReason("Insufficient %s, requested: %d, used: %d, capacity: %d",
+					resourceName, requested.MilliValue(), used.MilliValue(), capacity.MilliValue()))
+		} else { // print a reason with resource amounts if needed
+			insufficientResourceReasons = append(insufficientResourceReasons,
+				reservationutil.NewReservationReason("Insufficient %s, requested: %d, used: %d, capacity: %d",
+					resourceName, requested.Value(), used.Value(), capacity.Value()))
+		}
+	}
+
+	return insufficientResourceReasons
+}
+
+func (pl *Plugin) PostFilter(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, filteredNodeStatusMap framework.NodeToStatusMap) (*framework.PostFilterResult, *framework.Status) {
+	var result *framework.PostFilterResult
+	var reasons []string
+
+	// If Reservation Preemption is enabled, try preemption before aggregating failure reasons.
+	if pl.preemptionMgr != nil {
+		preemptionResult, preemptionStatus := pl.preemptionMgr.PostFilter(ctx, cycleState, pod, filteredNodeStatusMap)
+		if preemptionStatus.IsSuccess() ||
+			preemptionStatus.Code() == framework.UnschedulableAndUnresolvable ||
+			!preemptionStatus.IsUnschedulable() {
+			return preemptionResult, preemptionStatus
+		}
+		if preemptionResult != nil && preemptionResult.Mode() != framework.ModeNoop {
+			result = preemptionResult
+		}
+
+		reasons = append(reasons, preemptionStatus.Reasons()...)
+	}
+
+	state := getStateData(cycleState)
+	postFilterReasons := pl.makePostFilterReasons(state, filteredNodeStatusMap)
+	reasons = append(reasons, postFilterReasons...)
+	return result, framework.NewStatus(framework.Unschedulable, reasons...)
+}
+
+func (pl *Plugin) makePostFilterReasons(state *stateData, filteredNodeStatusMap framework.NodeToStatusMap) []string {
+	var (
+		ownerMatched             = 0
+		nameMatched              = 0
+		affinityUnmatched        = 0
+		isUnSchedulableUnmatched = 0
+		notExactMatched          = 0
+		nameUnmatched            = 0
+		taintsUnmatchedReasons   = map[string]int{}
+	)
+	// failure reasons and counts for the nodes which have not been handled by the Reservation's Filter
+	reasonsByNode := map[string]int{}
+
+	for nodeName, diagnosisState := range state.nodeReservationDiagnosis {
+		// summarize node diagnosis states
+		ownerMatched += diagnosisState.ownerMatched
+		nameMatched += diagnosisState.nameMatched
+		isUnSchedulableUnmatched += diagnosisState.isUnschedulableUnmatched
+		affinityUnmatched += diagnosisState.affinityUnmatched
+		notExactMatched += diagnosisState.notExactMatched
+		nameUnmatched += diagnosisState.nameUnmatched
+		for taintKey, nodeCount := range diagnosisState.taintsUnmatchedReasons {
+			taintsUnmatchedReasons[taintKey] += nodeCount
+		}
+
+		// calculate the remaining unmatched which is owner-matched and Reservation BeforePreFilter matched
+		remainUnmatched := diagnosisState.ownerMatched - diagnosisState.nameUnmatched - diagnosisState.isUnschedulableUnmatched - diagnosisState.affinityUnmatched - diagnosisState.notExactMatched - diagnosisState.taintsUnmatched
+		if remainUnmatched <= 0 { // no need to check other reasons
+			continue
+		}
+		// count the failure reasons which is neither counted by the PreFilterTransformer nor by the Reservation Filter.
+		nodeReasons := map[string]int{}
+		if failureStatus, ok := filteredNodeStatusMap[nodeName]; ok {
+			for _, reason := range failureStatus.Reasons() {
+				if reservationutil.IsReservationReason(reason) { // reservation-level reasons are not counted
+					remainUnmatched--
+					continue
+				}
+				nodeReasons[reason]++
+			}
+		}
+		if remainUnmatched <= 0 { // capped with zero
+			continue
+		}
+		for reason, count := range nodeReasons {
+			reasonsByNode[reason] += remainUnmatched * count
+		}
+	}
+	// if the pod specifies an affinity, we always show the owner matched reason
+	if ownerMatched <= 0 && !state.hasAffinity {
+		return nil
+	}
+
+	// Make the error messages: The framework does not aggregate the same reasons for the PostFilter, so we need
+	// to prepare the exact messages by ourselves.
+	var reasons []string
+	var b strings.Builder
+	if nameMatched > 0 {
+		b.WriteString(strconv.Itoa(nameMatched))
+		b.WriteString(" Reservation(s) exactly matches the requested reservation name")
+		reasons = append(reasons, b.String())
+		b.Reset()
+	}
+	if nameUnmatched > 0 {
+		b.WriteString(strconv.Itoa(nameUnmatched))
+		b.WriteString(" Reservation(s) didn't match the requested reservation name")
+		reasons = append(reasons, b.String())
+		b.Reset()
+	}
+	if affinityUnmatched > 0 {
+		b.WriteString(strconv.Itoa(affinityUnmatched))
+		b.WriteString(" Reservation(s) didn't match affinity rules")
+		reasons = append(reasons, b.String())
+		b.Reset()
+	}
+	if isUnSchedulableUnmatched > 0 {
+		b.WriteString(strconv.Itoa(isUnSchedulableUnmatched))
+		b.WriteString(" Reservation(s) is unschedulable")
+		reasons = append(reasons, b.String())
+		b.Reset()
+	}
+	if notExactMatched > 0 {
+		b.WriteString(strconv.Itoa(notExactMatched))
+		b.WriteString(" Reservation(s) is not exact matched")
+		reasons = append(reasons, b.String())
+		b.Reset()
+	}
+	for taintKey, count := range taintsUnmatchedReasons {
+		b.WriteString(strconv.Itoa(count))
+		b.WriteString(" Reservation(s) had untolerated taint ")
+		b.WriteString(taintKey)
+		reasons = append(reasons, b.String())
+		b.Reset()
+	}
+	for nodeReason, count := range reasonsByNode { // node reason Filter failed
+		b.WriteString(strconv.Itoa(count))
+		b.WriteString(" Reservation(s) for node reason that ")
+		b.WriteString(nodeReason)
+		reasons = append(reasons, b.String())
+		b.Reset()
+	}
+	b.WriteString(strconv.Itoa(ownerMatched))
+	b.WriteString(" Reservation(s) matched owner total")
+	reasons = append(reasons, b.String())
+	return reasons
 }
 
 func (pl *Plugin) FilterReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, reservationInfo *frameworkext.ReservationInfo, nodeName string) *framework.Status {
@@ -495,7 +779,7 @@ func (pl *Plugin) FilterReservation(ctx context.Context, cycleState *framework.C
 	nodeRState := state.nodeReservationStates[nodeName]
 
 	var rInfo *frameworkext.ReservationInfo
-	for _, v := range nodeRState.matched {
+	for _, v := range nodeRState.matchedOrIgnored {
 		if v.UID() == reservationInfo.UID() {
 			rInfo = v
 			break
@@ -506,7 +790,7 @@ func (pl *Plugin) FilterReservation(ctx context.Context, cycleState *framework.C
 		return framework.AsStatus(fmt.Errorf("impossible, there is no relevant Reservation information"))
 	}
 
-	if rInfo.IsAllocateOnce() && len(rInfo.AssignedPods) > 0 {
+	if rInfo.IsAllocateOnce() && rInfo.GetAllocatedPods() > 0 {
 		return framework.NewStatus(framework.Unschedulable, "reservation has allocateOnce enabled and has already been allocated")
 	}
 
@@ -531,6 +815,16 @@ func (pl *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState,
 		return nil
 	}
 
+	state := getStateData(cycleState)
+
+	if apiext.IsReservationIgnored(pod) {
+		// clean scheduling cycle to avoid unnecessary memory cost before entering the binding
+		state.CleanSchedulingData()
+		klog.V(4).InfoS("Reserve pod to node and reservations are ignored",
+			"pod", klog.KObj(pod), "node", nodeName)
+		return nil
+	}
+
 	nominatedReservation := pl.handle.GetReservationNominator().GetNominatedReservation(pod, nodeName)
 	if nominatedReservation == nil {
 		// The scheduleOne skip scores and reservation nomination if there is only one node available.
@@ -540,7 +834,12 @@ func (pl *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState,
 			return status
 		}
 		if nominatedReservation == nil {
+			if state.hasAffinity {
+				return framework.NewStatus(framework.Unschedulable, ErrReasonReservationAffinity)
+			}
 			klog.V(5).Infof("Skip reserve with reservation since there are no matched reservations, pod %v, node: %v", klog.KObj(pod), nodeName)
+			// clean scheduling cycle to avoid unnecessary memory cost before entering the binding
+			state.CleanSchedulingData()
 			return nil
 		}
 		pl.handle.GetReservationNominator().AddNominatedReservation(pod, nodeName, nominatedReservation)
@@ -551,9 +850,9 @@ func (pl *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState,
 		klog.ErrorS(err, "Failed to assume pod in reservationCache", "pod", klog.KObj(pod), "reservation", klog.KObj(nominatedReservation))
 		return framework.AsStatus(err)
 	}
-
-	state := getStateData(cycleState)
 	state.assumed = nominatedReservation.Clone()
+	// clean scheduling cycle to avoid unnecessary memory cost before entering the binding
+	state.CleanSchedulingData()
 	klog.V(4).InfoS("Reserve pod to node with reservations", "pod", klog.KObj(pod), "node", nodeName, "assumed", klog.KObj(nominatedReservation))
 	return nil
 }
@@ -572,6 +871,12 @@ func (pl *Plugin) Unreserve(ctx context.Context, cycleState *framework.CycleStat
 		return
 	}
 
+	if apiext.IsReservationIgnored(pod) {
+		klog.V(5).InfoS("Unreserve pod to node and reservations are ignored",
+			"pod", klog.KObj(pod), "node", nodeName)
+		return
+	}
+
 	state := getStateData(cycleState)
 	if state.assumed != nil {
 		klog.V(4).InfoS("Attempting to unreserve pod to node with reservations", "pod", klog.KObj(pod), "node", nodeName, "assumed", klog.KObj(state.assumed))
@@ -583,12 +888,16 @@ func (pl *Plugin) Unreserve(ctx context.Context, cycleState *framework.CycleStat
 }
 
 func (pl *Plugin) PreBind(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) *framework.Status {
-	if reservationutil.IsReservePod(pod) {
+	if reservationutil.IsReservePod(pod) ||
+		apiext.IsReservationIgnored(pod) {
 		return nil
 	}
 
 	state := getStateData(cycleState)
 	if state.assumed == nil {
+		if state.hasAffinity {
+			return framework.NewStatus(framework.Unschedulable, ErrReasonReservationAffinity)
+		}
 		klog.V(5).Infof("Skip the Reservation PreBind since no reservation allocated for the pod %s on node %s", klog.KObj(pod), nodeName)
 		return nil
 	}

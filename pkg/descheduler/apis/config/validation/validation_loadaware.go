@@ -68,6 +68,23 @@ func ValidateLowLoadUtilizationArgs(path *field.Path, args *deschedulerconfig.Lo
 			}
 		}
 
+		for resourceName, percentage := range nodePool.ProdHighThresholds {
+			if percentage < 0 {
+				allErrs = append(allErrs, field.Invalid(nodePoolPath.Child("ProdHighThresholds").Key(string(resourceName)), percentage, "percentage must be greater than or equal to 0"))
+			}
+			if nodeHighPercentage, ok := nodePool.HighThresholds[resourceName]; ok && percentage > nodeHighPercentage {
+				allErrs = append(allErrs, field.Invalid(nodePoolPath.Child("ProdHighThresholds").Key(string(resourceName)), percentage, "node percentage must be greater than or equal to prodHighThresholds"))
+			}
+		}
+		for resourceName, percentage := range nodePool.ProdLowThresholds {
+			if percentage < 0 {
+				allErrs = append(allErrs, field.Invalid(nodePoolPath.Child("ProdLowThresholds").Key(string(resourceName)), percentage, "percentage must be greater than or equal to 0"))
+			}
+			if highProdPercentage, ok := nodePool.ProdHighThresholds[resourceName]; ok && percentage > highProdPercentage {
+				allErrs = append(allErrs, field.Invalid(nodePoolPath.Child("ProdLowThresholds").Key(string(resourceName)), percentage, "low percentage must be less than or equal to prodHighThresholds"))
+			}
+		}
+
 		if nodePool.AnomalyCondition.ConsecutiveAbnormalities <= 0 {
 			fieldPath := nodePoolPath.Child("anomalyDetectionThresholds").Child("consecutiveAbnormalities")
 			allErrs = append(allErrs, field.Invalid(fieldPath, nodePool.AnomalyCondition.ConsecutiveAbnormalities, "consecutiveAbnormalities must be greater than 0"))

@@ -86,11 +86,18 @@ func (r *BlkIORangeValidator) Validate(value string) (bool, string) {
 			newValues = append(newValues, rst[1])
 		}
 	case BlkioIOQoSName:
-		// 253:16 enable=1 ctrl=user rlat=3000 wlat=4000
+		// 253:16 enable=1 ctrl=user rpct=95 rlat=3000 wpct=95 wlat=4000
 		// 253:16 enable=0
 		rst := strings.Split(value, " ")
-		if len(rst) == 5 {
-			newValues = append(newValues, []string{rst[3][5:], rst[4][5:]}...)
+		if len(rst) == 7 {
+			newValues = append(newValues, []string{rst[3][5:], rst[4][5:], rst[5][5:], rst[6][5:]}...)
+		}
+	case BlkioIOModelName:
+		// 253:16 ctrl=user rbps=3324911720 rseqiops=168274 rrandiops=352545 wbps=2765819289 wseqiops=367565 wrandiops=339390
+		// 253:16 ctrl=auto
+		rst := strings.Split(value, " ")
+		if len(rst) == 8 {
+			newValues = append(newValues, []string{rst[2][5:], rst[3][9:], rst[4][10:], rst[5][5:], rst[6][9:], rst[7][10:]}...)
 		}
 	default:
 		return false, "unknown blkio resource name"
@@ -109,6 +116,49 @@ func (r *BlkIORangeValidator) Validate(value string) (bool, string) {
 		}
 		if v < r.min || v > r.max {
 			return false, fmt.Sprintf("value %v is not in [min:%d, max:%d]", newValue, r.min, r.max)
+		}
+	}
+
+	return true, ""
+}
+
+type NetClsRangeValidator struct {
+	resource string
+}
+
+const (
+	maxClassIdDecimal = 41231686041
+	maxClassIdHex     = 99999999
+)
+
+func (r *NetClsRangeValidator) Validate(value string) (bool, string) {
+	if value == "" {
+		return false, "value is nil"
+	}
+
+	if r.resource == NetClsClassIdName {
+		if strings.HasPrefix(value, "0x") {
+			value = value[2:]
+			// You can write hexadecimal values to net_cls.classid; the format for these values is 0xAAAABBBB;
+			// AAAA is the major handle number and BBBB is the minor handle number. Reading net_cls.classid yields a decimal result.
+			// so, the max length of this value is 8.
+			hexVal, err := strconv.Atoi(value)
+			if err != nil {
+				return false, err.Error()
+			}
+
+			if hexVal < 0 || hexVal > maxClassIdHex {
+				return false, "class id is invalid, decimal value must in 0~0x99999999"
+			}
+		} else {
+			decimalVal, err := strconv.ParseInt(value, 10, 32)
+			if err != nil {
+				return false, err.Error()
+			}
+
+			if decimalVal > maxClassIdDecimal || decimalVal < 0 {
+				return false, fmt.Sprintf("class id is invaild, decimal vaule must in 0~%d", maxClassIdDecimal)
+			}
 		}
 	}
 

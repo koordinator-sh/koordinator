@@ -26,7 +26,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/runtime/inject"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	"github.com/koordinator-sh/koordinator/pkg/webhook/node/plugins"
@@ -69,10 +68,12 @@ func shouldIgnoreIfNotNode(req admission.Request) bool {
 }
 */
 
-// NewNodeMutatingHandler creates a new handler for node/status.
-func NewNodeStatusMutatingHandler() *NodeMutatingHandler {
+// NewNodeStatusMutatingHandler creates a new handler for node/status.
+func NewNodeStatusMutatingHandler(c client.Client, d *admission.Decoder) *NodeMutatingHandler {
 	handler := &NodeMutatingHandler{
 		ignoreFilter: shouldIgnoreIfNotNodeStatus,
+		Client:       c,
+		Decoder:      d,
 	}
 	return handler
 }
@@ -131,10 +132,14 @@ func (h *NodeMutatingHandler) Handle(ctx context.Context, req admission.Request)
 		klog.Errorf("Failed to marshal mutated Node %s, err: %v", obj.Name, err)
 		return admission.Errored(http.StatusInternalServerError, err)
 	}
-	return admission.PatchResponseFromRaw(req.AdmissionRequest.Object.Raw, marshaled)
+	original, err := json.Marshal(clone)
+	if err != nil {
+		return admission.Errored(http.StatusInternalServerError, err)
+	}
+	return admission.PatchResponseFromRaw(original, marshaled)
 }
 
-var _ inject.Client = &NodeMutatingHandler{}
+// var _ inject.Client = &NodeMutatingHandler{}
 
 // InjectClient injects the client into the PodMutatingHandler
 func (n *NodeMutatingHandler) InjectClient(c client.Client) error {
@@ -142,7 +147,7 @@ func (n *NodeMutatingHandler) InjectClient(c client.Client) error {
 	return nil
 }
 
-var _ admission.DecoderInjector = &NodeMutatingHandler{}
+// var _ admission.DecoderInjector = &NodeMutatingHandler{}
 
 // InjectDecoder injects the decoder into the PodMutatingHandler
 func (n *NodeMutatingHandler) InjectDecoder(d *admission.Decoder) error {

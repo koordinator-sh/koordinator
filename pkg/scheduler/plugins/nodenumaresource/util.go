@@ -17,7 +17,14 @@ limitations under the License.
 package nodenumaresource
 
 import (
+	"errors"
+	"fmt"
+	"reflect"
+	"strings"
+
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/klog/v2"
+	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingconfig "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
@@ -48,16 +55,22 @@ func AllowUseCPUSet(pod *corev1.Pod) bool {
 	return (qosClass == extension.QoSLSE || qosClass == extension.QoSLSR) && priorityClass == extension.PriorityProd
 }
 
+func mergeTopologyPolicy(nodePolicy, podPolicy extension.NUMATopologyPolicy) (extension.NUMATopologyPolicy, error) {
+	if nodePolicy != "" && podPolicy != "" && podPolicy != nodePolicy {
+		return "", errors.New(ErrNotMatchNUMATopology)
+	}
+	if podPolicy != "" {
+		nodePolicy = podPolicy
+	}
+	return nodePolicy, nil
+}
+
 func getNUMATopologyPolicy(nodeLabels map[string]string, kubeletTopologyManagerPolicy extension.NUMATopologyPolicy) extension.NUMATopologyPolicy {
 	policyType := extension.GetNodeNUMATopologyPolicy(nodeLabels)
 	if policyType != extension.NUMATopologyPolicyNone {
 		return policyType
 	}
 	return kubeletTopologyManagerPolicy
-}
-
-func skipTheNode(state *preFilterState, numaTopologyPolicy extension.NUMATopologyPolicy) bool {
-	return state.skip || (!state.requestCPUBind && numaTopologyPolicy == extension.NUMATopologyPolicyNone)
 }
 
 // amplifyNUMANodeResources amplifies the resources per NUMA Node.
@@ -83,4 +96,84 @@ func amplifyNUMANodeResources(node *corev1.Node, topologyOptions *TopologyOption
 	}
 	topologyOptions.NUMANodeResources = numaNodeResources
 	return nil
+}
+
+func getCPUBindPolicy(topologyOptions *TopologyOptions, node *corev1.Node, requiredCPUBindPolicy, preferredCPUBindPolicy schedulingconfig.CPUBindPolicy) (schedulingconfig.CPUBindPolicy, bool, error) {
+	if requiredCPUBindPolicy != "" {
+		return requiredCPUBindPolicy, true, nil
+	}
+
+	cpuBindPolicy := preferredCPUBindPolicy
+	required := false
+	kubeletCPUPolicy := topologyOptions.Policy
+	nodeCPUBindPolicy := extension.GetNodeCPUBindPolicy(node.Labels, kubeletCPUPolicy)
+	switch nodeCPUBindPolicy {
+	case extension.NodeCPUBindPolicySpreadByPCPUs:
+		cpuBindPolicy = schedulingconfig.CPUBindPolicySpreadByPCPUs
+		required = true
+	case extension.NodeCPUBindPolicyFullPCPUsOnly:
+		cpuBindPolicy = schedulingconfig.CPUBindPolicyFullPCPUs
+		required = true
+	}
+	return cpuBindPolicy, required, nil
+}
+
+func requestCPUBind(state *preFilterState, nodeCPUBindPolicy extension.NodeCPUBindPolicy) (bool, *framework.Status) {
+	if state.requestCPUBind {
+		return true, nil
+	}
+
+	requestedCPU := state.requests.Cpu().MilliValue()
+	if requestedCPU == 0 {
+		return false, nil
+	}
+
+	if nodeCPUBindPolicy != "" && nodeCPUBindPolicy != extension.NodeCPUBindPolicyNone {
+		if requestedCPU%1000 != 0 {
+			return false, framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrInvalidRequestedCPUs)
+		}
+		return true, nil
+	}
+	return false, nil
+}
+
+func logStruct(v reflect.Value, key string, verbosity klog.Level) {
+	rawStr := &strings.Builder{}
+	logValue(v, 0, rawStr)
+	klog.V(verbosity).Infof("key: %s, value: %s", key, rawStr.String())
+}
+
+// logValue is a recursive function that prints the contents of any value.
+// For pointers to structs, it recursively unwraps until it reaches the underlying struct.
+func logValue(v reflect.Value, depth int, builder *strings.Builder) {
+	// Indent for pretty printing
+	indent := strings.Repeat(" ", depth)
+	switch v.Kind() {
+	case reflect.Ptr:
+		// For pointers, obtain the value being pointed to
+		elem := v.Elem()
+		if !elem.IsValid() {
+			builder.WriteString(fmt.Sprintf("%s<nil>\t", indent)) // Appends "nil" representation for nil pointers
+		} else {
+			logValue(elem, depth+1, builder) // Recursively log the pointer element
+		}
+	case reflect.Struct:
+		// For structs, iterate through all fields
+		builder.WriteString("\t")
+		for i := 0; i < v.NumField(); i++ {
+			field := v.Field(i)
+			fieldType := v.Type().Field(i)
+			builder.WriteString(fmt.Sprintf("%s%s:\t", indent, fieldType.Name)) // Appends the field name
+			logValue(field, depth+2, builder)                                   // Recursively log each struct field
+		}
+	case reflect.Slice, reflect.Array:
+		// For slices or arrays, iterate through each element
+		for i := 0; i < v.Len(); i++ {
+			builder.WriteString(fmt.Sprintf("%s[%d]:\t", indent, i)) // Appends the index of the element
+			logValue(v.Index(i), depth+2, builder)                   // Recursively log each element
+		}
+	default:
+		// For other types, print the value directly
+		builder.WriteString(fmt.Sprintf("%s%v\t", indent, v)) // Appends the value
+	}
 }

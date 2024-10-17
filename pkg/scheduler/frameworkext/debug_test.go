@@ -17,6 +17,7 @@ limitations under the License.
 package frameworkext
 
 import (
+	"sort"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -165,7 +166,32 @@ func TestDebugScores(t *testing.T) {
 		},
 	}
 
-	w := debugScores(4, pod, pluginToNodeScores, nodes)
+	m := map[string][]framework.PluginScore{}
+	for pluginName, nodeScores := range pluginToNodeScores {
+		for _, v := range nodeScores {
+			m[v.Name] = append(m[v.Name], framework.PluginScore{
+				Name:  pluginName,
+				Score: v.Score,
+			})
+		}
+	}
+	allNodePluginScores := make([]framework.NodePluginScores, 0, len(m))
+	for nodeName, pluginScores := range m {
+		sort.Slice(pluginScores, func(i, j int) bool {
+			return pluginScores[i].Name < pluginScores[j].Name
+		})
+		var totalScore int64
+		for _, v := range pluginScores {
+			totalScore += v.Score
+		}
+		allNodePluginScores = append(allNodePluginScores, framework.NodePluginScores{
+			Name:       nodeName,
+			Scores:     pluginScores,
+			TotalScore: totalScore,
+		})
+	}
+
+	w := debugScores(4, pod, allNodePluginScores, nodes)
 	expectedResult := `| # | Pod | Node | Score | ImageLocality | InterPodAffinity | LoadAwareScheduling | NodeAffinity | NodeNUMAResource | NodeResourcesBalancedAllocation | NodeResourcesFit | PodTopologySpread | Reservation | TaintToleration |
 | --- | --- | --- | ---:| ---:| ---:| ---:| ---:| ---:| ---:| ---:| ---:| ---:| ---:|
 | 0 | default/curlimage-545745d8f8-rngp7 | cn-hangzhou.10.0.4.51 | 577 | 0 | 0 | 87 | 0 | 0 | 96 | 94 | 200 | 0 | 100 |

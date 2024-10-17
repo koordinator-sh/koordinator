@@ -27,6 +27,7 @@ import (
 type EvictionLimiter struct {
 	maxPodsToEvictPerNode      *uint
 	maxPodsToEvictPerNamespace *uint
+	maxPodsToEvictTotal        *uint
 	lock                       sync.Mutex
 	totalCount                 uint
 	nodePodCount               nodePodEvictedCount
@@ -36,10 +37,12 @@ type EvictionLimiter struct {
 func NewEvictionLimiter(
 	maxPodsToEvictPerNode *uint,
 	maxPodsToEvictPerNamespace *uint,
+	maxPodsToEvictTotal *uint,
 ) *EvictionLimiter {
 	return &EvictionLimiter{
 		maxPodsToEvictPerNode:      maxPodsToEvictPerNode,
 		maxPodsToEvictPerNamespace: maxPodsToEvictPerNamespace,
+		maxPodsToEvictTotal:        maxPodsToEvictTotal,
 		nodePodCount:               make(nodePodEvictedCount),
 		namespacePodCount:          make(namespacePodEvictCount),
 	}
@@ -112,6 +115,11 @@ func (pe *EvictionLimiter) AllowEvict(pod *corev1.Pod) bool {
 
 	if pe.maxPodsToEvictPerNamespace != nil && pe.namespacePodCount[pod.Namespace]+1 > *pe.maxPodsToEvictPerNamespace {
 		klog.ErrorS(fmt.Errorf("maximum number of evicted pods per namespace reached"), "Error evicting pod", "limit", *pe.maxPodsToEvictPerNamespace, "namespace", pod.Namespace)
+		return false
+	}
+
+	if pe.maxPodsToEvictTotal != nil && pe.totalCount+1 > *pe.maxPodsToEvictTotal {
+		klog.ErrorS(fmt.Errorf("maximum number of evicted pods total reached"), "Error evicting pod", "limit", *pe.maxPodsToEvictTotal)
 		return false
 	}
 	return true

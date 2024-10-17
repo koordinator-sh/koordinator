@@ -17,6 +17,8 @@ limitations under the License.
 package arbitrator
 
 import (
+	"context"
+
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/workqueue"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -43,7 +45,7 @@ func NewHandler(arbitrator Arbitrator, client client.Client) handler.EventHandle
 }
 
 // Create call Arbitrator.Create
-func (h *arbitrationHandler) Create(evt event.CreateEvent, q workqueue.RateLimitingInterface) {
+func (h *arbitrationHandler) Create(ctx context.Context, evt event.CreateEvent, q workqueue.RateLimitingInterface) {
 	if evt.Object == nil {
 		enqueueLog.Error(nil, "CreateEvent received with no metadata", "event", evt)
 		return
@@ -53,7 +55,7 @@ func (h *arbitrationHandler) Create(evt event.CreateEvent, q workqueue.RateLimit
 }
 
 // Update implements EventHandler.
-func (h *arbitrationHandler) Update(evt event.UpdateEvent, q workqueue.RateLimitingInterface) {
+func (h *arbitrationHandler) Update(ctx context.Context, evt event.UpdateEvent, q workqueue.RateLimitingInterface) {
 	switch {
 	case evt.ObjectNew != nil:
 		q.Add(reconcile.Request{NamespacedName: types.NamespacedName{
@@ -77,7 +79,7 @@ func (h *arbitrationHandler) Update(evt event.UpdateEvent, q workqueue.RateLimit
 }
 
 // Delete implements EventHandler.
-func (h *arbitrationHandler) Delete(evt event.DeleteEvent, q workqueue.RateLimitingInterface) {
+func (h *arbitrationHandler) Delete(ctx context.Context, evt event.DeleteEvent, q workqueue.RateLimitingInterface) {
 	if evt.Object == nil {
 		enqueueLog.Error(nil, "DeleteEvent received with no metadata", "event", evt)
 		return

@@ -59,10 +59,8 @@ func (n *mockNodePlugin) Admit(ctx context.Context, req admission.Request, node,
 }
 
 func TestNodeMutatingHandler_Handle(t *testing.T) {
-	decoder, _ := admission.NewDecoder(scheme.Scheme)
-	handler := NewNodeStatusMutatingHandler()
-	handler.InjectDecoder(decoder)
-	handler.InjectClient(fake.NewClientBuilder().Build())
+	decoder := admission.NewDecoder(scheme.Scheme)
+	handler := NewNodeStatusMutatingHandler(fake.NewClientBuilder().Build(), decoder)
 
 	mockRequest := admission.Request{
 		AdmissionRequest: admissionv1.AdmissionRequest{

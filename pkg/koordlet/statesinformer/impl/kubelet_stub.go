@@ -28,10 +28,13 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/rest"
+	"k8s.io/klog/v2"
 	kubeletconfigv1beta1 "k8s.io/kubelet/config/v1beta1"
 	"k8s.io/kubernetes/cmd/kubelet/app/options"
 	kubeletconfiginternal "k8s.io/kubernetes/pkg/kubelet/apis/config"
 	kubeletscheme "k8s.io/kubernetes/pkg/kubelet/apis/config/scheme"
+
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
 )
 
 type KubeletStub interface {
@@ -67,19 +70,25 @@ func NewKubeletStub(addr string, port int, scheme string, timeout time.Duration,
 }
 
 func (k *kubeletStub) GetAllPods() (corev1.PodList, error) {
-	url := url.URL{
+	path := "/pods/"
+	podsURL := url.URL{
 		Scheme: k.scheme,
 		Host:   net.JoinHostPort(k.addr, strconv.Itoa(k.port)),
-		Path:   "/pods/",
+		Path:   path,
 	}
 	podList := corev1.PodList{}
-	rsp, err := k.httpClient.Get(url.String())
+	start := time.Now()
+	rsp, err := k.httpClient.Get(podsURL.String())
+	if rsp != nil {
+		metrics.RecordKubeletRequestDuration(metrics.HTTPVerbGet, path, strconv.Itoa(rsp.StatusCode), metrics.SinceInSeconds(start))
+	}
 	if err != nil {
 		return podList, err
 	}
 	defer rsp.Body.Close()
+
 	if rsp.StatusCode != http.StatusOK {
-		return podList, fmt.Errorf("request %s failed, code %d", url.String(), rsp.StatusCode)
+		return podList, fmt.Errorf("request %s failed, code %d", podsURL.String(), rsp.StatusCode)
 	}
 
 	body, err := io.ReadAll(rsp.Body)
@@ -99,13 +108,19 @@ type kubeletConfigz struct {
 	ComponentConfig kubeletconfigv1beta1.KubeletConfiguration `json:"kubeletconfig"`
 }
 
+// GetKubeletConfiguration removes the logging field from the configz during unmarshall to make sure the configz is compatible
 func (k *kubeletStub) GetKubeletConfiguration() (*kubeletconfiginternal.KubeletConfiguration, error) {
+	path := "/configz"
 	configzURL := url.URL{
 		Scheme: k.scheme,
 		Host:   net.JoinHostPort(k.addr, strconv.Itoa(k.port)),
-		Path:   "/configz",
+		Path:   path,
 	}
+	start := time.Now()
 	rsp, err := k.httpClient.Get(configzURL.String())
+	if rsp != nil {
+		metrics.RecordKubeletRequestDuration(metrics.HTTPVerbGet, path, strconv.Itoa(rsp.StatusCode), metrics.SinceInSeconds(start))
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -119,10 +134,15 @@ func (k *kubeletStub) GetKubeletConfiguration() (*kubeletconfiginternal.KubeletC
 	if err != nil {
 		return nil, err
 	}
+	klog.V(6).Infof("get kubelet configz: %s", string(body))
 
 	var configz kubeletConfigz
 	if err = json.Unmarshal(body, &configz); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal kubeletConfigz: %v", err)
+		// TODO remove unmarshalFromNewVersionConfig after upgrade k8s dependency to 1.28
+		if newVersionErr := unmarshalFromNewVersionConfig(body, &configz); newVersionErr != nil {
+			return nil, fmt.Errorf("failed to unmarshal new version kubeletConfigz, error %v, origin error :%v",
+				newVersionErr, err)
+		}
 	}
 
 	kubeletConfiguration, err := options.NewKubeletConfiguration()
@@ -138,4 +158,29 @@ func (k *kubeletStub) GetKubeletConfiguration() (*kubeletconfiginternal.KubeletC
 		return nil, err
 	}
 	return kubeletConfiguration, nil
+}
+
+// In the Kubernetes 1.28, the Kubelet configuration introduces an API change that is not forward-compatible:
+// v1.24: https://github.com/kubernetes/component-base/blob/release-1.24/config/types.go#L99
+// v1.26: https://github.com/kubernetes/component-base/blob/release-1.26/logs/api/v1/types.go#L45
+// v1.28: https://github.com/kubernetes/component-base/blob/release-1.28/logs/api/v1/types.go#L48
+// unmarshalFromNewVersionConfig removes the logging field from the configz
+func unmarshalFromNewVersionConfig(body []byte, configz *kubeletConfigz) error {
+	rawConfig := struct {
+		KubeletConfig map[string]interface{} `json:"kubeletconfig"`
+	}{}
+	if err := json.Unmarshal(body, &rawConfig); err != nil {
+		return fmt.Errorf("failed to unmarshal kubeletConfigz to raw map: %v", err)
+	}
+	delete(rawConfig.KubeletConfig, "logging")
+	scrubbedBody, err := json.Marshal(rawConfig)
+	if err != nil {
+		return fmt.Errorf("failed to marshal scrubbed kubeletConfigz %v, error: %v", rawConfig, err)
+	}
+
+	if err = json.Unmarshal(scrubbedBody, &configz); err != nil {
+		return fmt.Errorf("failed to unmarshal scrubbed kubeletConfigz: %v", err)
+	}
+
+	return nil
 }

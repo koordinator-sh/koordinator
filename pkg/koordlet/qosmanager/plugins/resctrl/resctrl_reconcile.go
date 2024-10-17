@@ -459,6 +459,11 @@ func (r *resctrlReconcile) reconcileResctrlGroups(qosStrategy *slov1alpha1.Resou
 	podsMeta := r.statesInformer.GetAllPods()
 	for _, podMeta := range podsMeta {
 		pod := podMeta.Pod
+		// only QoS class level pod are considered
+		if _, ok := pod.Annotations[extension.AnnotationResctrl]; ok {
+			continue
+		}
+
 		// only Running and Pending pods are considered
 		if pod.Status.Phase != corev1.PodRunning && pod.Status.Phase != corev1.PodPending {
 			continue

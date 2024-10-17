@@ -18,6 +18,7 @@ package sorter
 
 import (
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/types"
 	schedulingcorev1helper "k8s.io/component-helpers/scheduling/corev1"
 	apiscorehelper "k8s.io/kubernetes/pkg/apis/core/helper"
@@ -103,16 +104,17 @@ func KoordinatorPriorityClass(p1, p2 *corev1.Pod) int {
 }
 
 // PodUsage compares pods by the actual usage
-func PodUsage(podMetrics map[types.NamespacedName]*slov1alpha1.ResourceMap, nodeAllocatableMap map[string]corev1.ResourceList, resourceToWeightMap map[corev1.ResourceName]int64) CompareFn {
-	scorer := ResourceUsageScorer(resourceToWeightMap)
+func PodUsage(resourcesThatExceedThresholds map[corev1.ResourceName]resource.Quantity, podMetrics map[types.NamespacedName]*slov1alpha1.ResourceMap, resourceToWeightMap map[corev1.ResourceName]int64) CompareFn {
+	scorer := ResourceUsageScorerPod(resourceToWeightMap)
 	return func(p1, p2 *corev1.Pod) int {
 		p1Metric, p1Found := podMetrics[types.NamespacedName{Namespace: p1.Namespace, Name: p1.Name}]
 		p2Metric, p2Found := podMetrics[types.NamespacedName{Namespace: p2.Namespace, Name: p2.Name}]
 		if !p1Found || !p2Found {
 			return cmpBool(!p1Found, !p2Found)
 		}
-		p1Score := scorer(p1Metric.ResourceList, nodeAllocatableMap[p1.Spec.NodeName])
-		p2Score := scorer(p2Metric.ResourceList, nodeAllocatableMap[p2.Spec.NodeName])
+		p1Score := scorer(p1Metric.ResourceList, resourcesThatExceedThresholds)
+		p2Score := scorer(p2Metric.ResourceList, resourcesThatExceedThresholds)
+
 		if p1Score == p2Score {
 			return 0
 		}
@@ -172,6 +174,6 @@ func PodSorter(cmp ...CompareFn) *MultiSorter {
 	return OrderedBy(comparators...)
 }
 
-func SortPodsByUsage(pods []*corev1.Pod, podMetrics map[types.NamespacedName]*slov1alpha1.ResourceMap, nodeAllocatableMap map[string]corev1.ResourceList, resourceToWeightMap map[corev1.ResourceName]int64) {
-	PodSorter(Reverse(PodUsage(podMetrics, nodeAllocatableMap, resourceToWeightMap))).Sort(pods)
+func SortPodsByUsage(resourcesThatExceedThresholds map[corev1.ResourceName]resource.Quantity, pods []*corev1.Pod, podMetrics map[types.NamespacedName]*slov1alpha1.ResourceMap, nodeAllocatableMap map[string]corev1.ResourceList, resourceToWeightMap map[corev1.ResourceName]int64) {
+	PodSorter(Reverse(PodUsage(resourcesThatExceedThresholds, podMetrics, resourceToWeightMap))).Sort(pods)
 }

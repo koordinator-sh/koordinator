@@ -247,6 +247,7 @@ func autoConvert_v1alpha2_DeschedulerConfiguration_To_config_DeschedulerConfigur
 	out.NodeSelector = (*v1.LabelSelector)(unsafe.Pointer(in.NodeSelector))
 	out.MaxNoOfPodsToEvictPerNode = (*uint)(unsafe.Pointer(in.MaxNoOfPodsToEvictPerNode))
 	out.MaxNoOfPodsToEvictPerNamespace = (*uint)(unsafe.Pointer(in.MaxNoOfPodsToEvictPerNamespace))
+	out.MaxNoOfPodsToEvictTotal = (*uint)(unsafe.Pointer(in.MaxNoOfPodsToEvictTotal))
 	return nil
 }
 
@@ -282,6 +283,7 @@ func autoConvert_config_DeschedulerConfiguration_To_v1alpha2_DeschedulerConfigur
 	out.NodeSelector = (*v1.LabelSelector)(unsafe.Pointer(in.NodeSelector))
 	out.MaxNoOfPodsToEvictPerNode = (*uint)(unsafe.Pointer(in.MaxNoOfPodsToEvictPerNode))
 	out.MaxNoOfPodsToEvictPerNamespace = (*uint)(unsafe.Pointer(in.MaxNoOfPodsToEvictPerNamespace))
+	out.MaxNoOfPodsToEvictTotal = (*uint)(unsafe.Pointer(in.MaxNoOfPodsToEvictTotal))
 	return nil
 }
 
@@ -379,6 +381,8 @@ func autoConvert_v1alpha2_LowNodeLoadArgs_To_config_LowNodeLoadArgs(in *LowNodeL
 	}
 	out.HighThresholds = *(*config.ResourceThresholds)(unsafe.Pointer(&in.HighThresholds))
 	out.LowThresholds = *(*config.ResourceThresholds)(unsafe.Pointer(&in.LowThresholds))
+	out.ProdHighThresholds = *(*config.ResourceThresholds)(unsafe.Pointer(&in.ProdHighThresholds))
+	out.ProdLowThresholds = *(*config.ResourceThresholds)(unsafe.Pointer(&in.ProdLowThresholds))
 	out.ResourceWeights = *(*map[corev1.ResourceName]int64)(unsafe.Pointer(&in.ResourceWeights))
 	if in.AnomalyCondition != nil {
 		in, out := &in.AnomalyCondition, &out.AnomalyCondition
@@ -389,6 +393,7 @@ func autoConvert_v1alpha2_LowNodeLoadArgs_To_config_LowNodeLoadArgs(in *LowNodeL
 	} else {
 		out.AnomalyCondition = nil
 	}
+	out.DetectorCacheTimeout = (*v1.Duration)(unsafe.Pointer(in.DetectorCacheTimeout))
 	if in.NodePools != nil {
 		in, out := &in.NodePools, &out.NodePools
 		*out = make([]config.LowNodeLoadNodePool, len(*in))
@@ -425,6 +430,8 @@ func autoConvert_config_LowNodeLoadArgs_To_v1alpha2_LowNodeLoadArgs(in *config.L
 	}
 	out.HighThresholds = *(*ResourceThresholds)(unsafe.Pointer(&in.HighThresholds))
 	out.LowThresholds = *(*ResourceThresholds)(unsafe.Pointer(&in.LowThresholds))
+	out.ProdHighThresholds = *(*ResourceThresholds)(unsafe.Pointer(&in.ProdHighThresholds))
+	out.ProdLowThresholds = *(*ResourceThresholds)(unsafe.Pointer(&in.ProdLowThresholds))
 	out.ResourceWeights = *(*map[corev1.ResourceName]int64)(unsafe.Pointer(&in.ResourceWeights))
 	if in.AnomalyCondition != nil {
 		in, out := &in.AnomalyCondition, &out.AnomalyCondition
@@ -435,6 +442,7 @@ func autoConvert_config_LowNodeLoadArgs_To_v1alpha2_LowNodeLoadArgs(in *config.L
 	} else {
 		out.AnomalyCondition = nil
 	}
+	out.DetectorCacheTimeout = (*v1.Duration)(unsafe.Pointer(in.DetectorCacheTimeout))
 	if in.NodePools != nil {
 		in, out := &in.NodePools, &out.NodePools
 		*out = make([]LowNodeLoadNodePool, len(*in))
@@ -460,6 +468,8 @@ func autoConvert_v1alpha2_LowNodeLoadNodePool_To_config_LowNodeLoadNodePool(in *
 	out.UseDeviationThresholds = in.UseDeviationThresholds
 	out.HighThresholds = *(*config.ResourceThresholds)(unsafe.Pointer(&in.HighThresholds))
 	out.LowThresholds = *(*config.ResourceThresholds)(unsafe.Pointer(&in.LowThresholds))
+	out.ProdHighThresholds = *(*config.ResourceThresholds)(unsafe.Pointer(&in.ProdHighThresholds))
+	out.ProdLowThresholds = *(*config.ResourceThresholds)(unsafe.Pointer(&in.ProdLowThresholds))
 	out.ResourceWeights = *(*map[corev1.ResourceName]int64)(unsafe.Pointer(&in.ResourceWeights))
 	if in.AnomalyCondition != nil {
 		in, out := &in.AnomalyCondition, &out.AnomalyCondition
@@ -484,6 +494,8 @@ func autoConvert_config_LowNodeLoadNodePool_To_v1alpha2_LowNodeLoadNodePool(in *
 	out.UseDeviationThresholds = in.UseDeviationThresholds
 	out.HighThresholds = *(*ResourceThresholds)(unsafe.Pointer(&in.HighThresholds))
 	out.LowThresholds = *(*ResourceThresholds)(unsafe.Pointer(&in.LowThresholds))
+	out.ProdHighThresholds = *(*ResourceThresholds)(unsafe.Pointer(&in.ProdHighThresholds))
+	out.ProdLowThresholds = *(*ResourceThresholds)(unsafe.Pointer(&in.ProdLowThresholds))
 	out.ResourceWeights = *(*map[corev1.ResourceName]int64)(unsafe.Pointer(&in.ResourceWeights))
 	if in.AnomalyCondition != nil {
 		in, out := &in.AnomalyCondition, &out.AnomalyCondition
@@ -530,6 +542,7 @@ func autoConvert_v1alpha2_MigrationControllerArgs_To_config_MigrationControllerA
 		return err
 	}
 	out.EvictFailedBarePods = in.EvictFailedBarePods
+	out.EvictAllBarePods = in.EvictAllBarePods
 	out.EvictLocalStoragePods = in.EvictLocalStoragePods
 	out.EvictSystemCriticalPods = in.EvictSystemCriticalPods
 	out.IgnorePvcPods = in.IgnorePvcPods
@@ -538,6 +551,7 @@ func autoConvert_v1alpha2_MigrationControllerArgs_To_config_MigrationControllerA
 	out.Namespaces = (*config.Namespaces)(unsafe.Pointer(in.Namespaces))
 	out.NodeFit = in.NodeFit
 	out.NodeSelector = in.NodeSelector
+	out.MaxMigratingGlobally = (*int32)(unsafe.Pointer(in.MaxMigratingGlobally))
 	out.MaxMigratingPerNode = (*int32)(unsafe.Pointer(in.MaxMigratingPerNode))
 	out.MaxMigratingPerNamespace = (*int32)(unsafe.Pointer(in.MaxMigratingPerNamespace))
 	out.MaxMigratingPerWorkload = (*intstr.IntOrString)(unsafe.Pointer(in.MaxMigratingPerWorkload))
@@ -570,6 +584,7 @@ func autoConvert_config_MigrationControllerArgs_To_v1alpha2_MigrationControllerA
 		return err
 	}
 	out.EvictFailedBarePods = in.EvictFailedBarePods
+	out.EvictAllBarePods = in.EvictAllBarePods
 	out.EvictLocalStoragePods = in.EvictLocalStoragePods
 	out.EvictSystemCriticalPods = in.EvictSystemCriticalPods
 	out.IgnorePvcPods = in.IgnorePvcPods
@@ -578,6 +593,7 @@ func autoConvert_config_MigrationControllerArgs_To_v1alpha2_MigrationControllerA
 	out.Namespaces = (*Namespaces)(unsafe.Pointer(in.Namespaces))
 	out.NodeFit = in.NodeFit
 	out.NodeSelector = in.NodeSelector
+	out.MaxMigratingGlobally = (*int32)(unsafe.Pointer(in.MaxMigratingGlobally))
 	out.MaxMigratingPerNode = (*int32)(unsafe.Pointer(in.MaxMigratingPerNode))
 	out.MaxMigratingPerNamespace = (*int32)(unsafe.Pointer(in.MaxMigratingPerNamespace))
 	out.MaxMigratingPerWorkload = (*intstr.IntOrString)(unsafe.Pointer(in.MaxMigratingPerWorkload))
@@ -607,6 +623,7 @@ func Convert_config_MigrationControllerArgs_To_v1alpha2_MigrationControllerArgs(
 func autoConvert_v1alpha2_MigrationObjectLimiter_To_config_MigrationObjectLimiter(in *MigrationObjectLimiter, out *config.MigrationObjectLimiter, s conversion.Scope) error {
 	out.Duration = in.Duration
 	out.MaxMigrating = (*intstr.IntOrString)(unsafe.Pointer(in.MaxMigrating))
+	out.Burst = in.Burst
 	return nil
 }
 
@@ -618,6 +635,7 @@ func Convert_v1alpha2_MigrationObjectLimiter_To_config_MigrationObjectLimiter(in
 func autoConvert_config_MigrationObjectLimiter_To_v1alpha2_MigrationObjectLimiter(in *config.MigrationObjectLimiter, out *MigrationObjectLimiter, s conversion.Scope) error {
 	out.Duration = in.Duration
 	out.MaxMigrating = (*intstr.IntOrString)(unsafe.Pointer(in.MaxMigrating))
+	out.Burst = in.Burst
 	return nil
 }
 

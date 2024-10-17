@@ -32,10 +32,100 @@ import (
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/qosmanager/helpers"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	mock_statesinformer "github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer/mockstatesinformer"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/testutil"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
+
+func Test_EvictPodIfNotEvicted(t *testing.T) {
+	testpod := testutil.MockTestPod(apiext.QoSBE, "test_be_pod")
+	testnode := testutil.MockTestNode("80", "120G")
+
+	type args struct {
+		pod    *corev1.Pod
+		node   *corev1.Node
+		reason string
+	}
+	type wants struct {
+		result           bool
+		evictObjectError bool
+		eventReason      string
+	}
+
+	tests := []struct {
+		name   string
+		pod    *corev1.Pod
+		node   *corev1.Node
+		args   args
+		wanted wants
+	}{
+		{
+			name: "evict ok",
+			pod:  testpod,
+			node: testnode,
+			args: args{
+				pod:    testpod,
+				node:   testnode,
+				reason: resourceexecutor.EvictPodByNodeMemoryUsage,
+			},
+			wanted: wants{
+				result:           true,
+				evictObjectError: false,
+				eventReason:      helpers.EvictPodSuccess,
+			},
+		},
+		{
+			name: "evict not found",
+			node: testnode,
+			args: args{
+				pod:    testpod,
+				node:   testnode,
+				reason: resourceexecutor.EvictPodByNodeMemoryUsage,
+			},
+			wanted: wants{
+				result:           false,
+				evictObjectError: true,
+				eventReason:      helpers.EvictPodFail,
+			},
+		},
+		// TODO add test for evict failed by forbidden
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// prepare
+			ctl := gomock.NewController(t)
+			defer ctl.Finish()
+			fakeRecorder := &testutil.FakeRecorder{}
+			client := clientsetfake.NewSimpleClientset()
+			r := NewEvictor(client, fakeRecorder, policyv1beta1.SchemeGroupVersion.Version)
+			stop := make(chan struct{})
+			err := r.podsEvicted.Run(stop)
+			assert.NoError(t, err)
+			defer func() { stop <- struct{}{} }()
+
+			if tt.pod != nil {
+				_, err = client.CoreV1().Pods(tt.pod.Namespace).Create(context.TODO(), tt.pod, metav1.CreateOptions{})
+				assert.NoError(t, err)
+			}
+
+			got := r.EvictPodIfNotEvicted(tt.args.pod, tt.args.node, tt.args.reason, "")
+			assert.Equal(t, tt.wanted.result, got)
+
+			getEvictObject, err := client.Tracker().Get(testutil.PodsResource, tt.args.pod.Namespace, tt.args.pod.Name)
+			if tt.wanted.evictObjectError {
+				assert.Error(t, err)
+				assert.Nil(t, getEvictObject)
+				assert.Equal(t, tt.wanted.eventReason, fakeRecorder.EventReason, "expect evict failed event! but got %s", fakeRecorder.EventReason)
+			} else {
+				assert.NoError(t, err)
+				assert.NotNil(t, getEvictObject)
+				assert.Equal(t, tt.wanted.eventReason, fakeRecorder.EventReason, "expect evict success event! but got %s", fakeRecorder.EventReason)
+			}
+		})
+	}
+}
 
 func Test_EvictPodsIfNotEvicted(t *testing.T) {
 	// test data

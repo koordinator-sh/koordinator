@@ -18,7 +18,11 @@ package eventhandlers
 
 import (
 	"context"
-	"math"
+	"fmt"
+	"regexp"
+	"strconv"
+	"strings"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -30,8 +34,8 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/profile"
-	"k8s.io/utils/pointer"
 
+	"github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	koordclientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
 	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
@@ -53,7 +57,7 @@ func MakeReservationErrorHandler(
 ) frameworkext.PreErrorHandlerFilter {
 	reservationLister := koordSharedInformerFactory.Scheduling().V1alpha1().Reservations().Lister()
 	reservationErrorFn := makeReservationErrorFunc(schedAdapter, reservationLister)
-	return func(podInfo *framework.QueuedPodInfo, schedulingErr error) bool {
+	return func(ctx context.Context, f framework.Framework, podInfo *framework.QueuedPodInfo, status *framework.Status, nominatingInfo *framework.NominatingInfo, start time.Time) bool {
 		pod := podInfo.Pod
 		fwk, ok := sched.Profiles[pod.Spec.SchedulerName]
 		if !ok {
@@ -62,34 +66,170 @@ func MakeReservationErrorHandler(
 		}
 
 		// if the pod is not a reserve pod, use the default error handler
-		if !reservationutil.IsReservePod(pod) {
-			// If the Pod failed to schedule or no post-filter plugins, should remove exist NominatedReservation of the Pod.
-			if _, ok := schedulingErr.(*framework.FitError); !ok || !fwk.HasPostFilterPlugins() {
-				extendedHandle := fwk.(frameworkext.ExtendedHandle)
+		// If the Pod failed to schedule or no post-filter plugins, should remove exist NominatedReservation of the Pod.
+		if extendedHandle, ok := fwk.(frameworkext.ExtendedHandle); ok {
+			if !reservationutil.IsReservePod(pod) {
 				extendedHandle.GetReservationNominator().RemoveNominatedReservations(pod)
+			} else {
+				extendedHandle.GetReservationNominator().DeleteNominatedReservePod(pod)
 			}
-			return false
 		}
 
-		reservationErrorFn(podInfo, schedulingErr)
+		schedulingErr := status.AsError()
 
-		rName := reservationutil.GetReservationNameFromReservePod(pod)
-		r, err := reservationLister.Get(rName)
-		if err != nil {
+		if _, reserveAffExist := pod.Annotations[extension.AnnotationReservationAffinity]; reserveAffExist {
+			// export event on reservation level asynchronously
+			go func() {
+				// for pod specified reservation affinity, export new event on reservation level
+				reservationLevelMsg, hasReservation := generatePodEventOnReservationLevel(schedulingErr.Error())
+				klog.V(7).Infof("origin scheduling error info: %s. hasReservation %v. reservation msg: %s",
+					schedulingErr.Error(), hasReservation, reservationLevelMsg)
+				if hasReservation {
+					msg := truncateMessage(reservationLevelMsg)
+					// user reason=FailedScheduling-Reservation to avoid event being auto-merged
+					fwk.EventRecorder().Eventf(pod, nil, corev1.EventTypeWarning, "FailedScheduling-Reservation", "Scheduling", msg)
+				}
+			}()
+			return false
+		} else if reservationutil.IsReservePod(pod) {
+			// NOTE: Since the failure handler is asynchronous and not locked with the reservation event handler,
+			// please make sure the status of the object is expected before adding or updating it.
+			// for reservation CR, which is treated as pod internal
+			reservationErrorFn(ctx, fwk, podInfo, status, nominatingInfo, start)
+
+			rName := reservationutil.GetReservationNameFromReservePod(pod)
+			r, err := reservationLister.Get(rName)
+			if err != nil {
+				return true
+			}
+
+			// nominate for the reserve pod if it is
+			// TODO: use the default nominator
+			addNominatedReservation(f, podInfo, nominatingInfo)
+
+			msg := truncateMessage(schedulingErr.Error())
+			fwk.EventRecorder().Eventf(r, nil, corev1.EventTypeWarning, "FailedScheduling", "Scheduling", msg)
+
+			updateReservationStatus(koordClientSet, reservationLister, rName, schedulingErr)
 			return true
 		}
-
-		msg := truncateMessage(schedulingErr.Error())
-		fwk.EventRecorder().Eventf(r, nil, corev1.EventTypeWarning, "FailedScheduling", "Scheduling", msg)
-
-		updateReservationStatus(koordClientSet, reservationLister, rName, schedulingErr)
-		return true
+		// not reservation CR, not pod with reservation affinity
+		return false
 	}
 }
 
-func makeReservationErrorFunc(sched frameworkext.Scheduler, reservationLister schedulingv1alpha1lister.ReservationLister) func(*framework.QueuedPodInfo, error) {
-	return func(podInfo *framework.QueuedPodInfo, err error) {
+func addNominatedReservation(f framework.Framework, podInfo *framework.QueuedPodInfo, nominatingInfo *framework.NominatingInfo) {
+	frameworkExtender, ok := f.(frameworkext.FrameworkExtender)
+	if !ok {
+		return
+	}
+
+	reservationNominator := frameworkExtender.GetReservationNominator()
+	if reservationNominator == nil {
+		return
+	}
+	var nodeName string
+	if nominatingInfo.Mode() == framework.ModeOverride {
+		nodeName = nominatingInfo.NominatedNodeName
+	} else if nominatingInfo.Mode() == framework.ModeNoop {
+		nodeName = podInfo.Pod.Status.NominatedNodeName
+	}
+	reservationNominator.AddNominatedReservePod(podInfo.Pod, nodeName)
+}
+
+// input:
+// "0/1 nodes are available: 3 Reservation(s) didn't match affinity rules, 1 Reservation(s) is unshedulable, 1 Reservation(s) is unavailable,
+// 2 Reservation(s) Insufficient cpu, 1 Reservation(s) Insufficient memory, 1 Insufficient cpu, 1 Insufficient memory.
+// 8 Reservation(s) matched owner total, Gang "default/demo-job-podgroup" gets rejected due to pod is unschedulable."
+// output:
+// "0/8 reservations are available: 3 Reservation(s) didn't match affinity rules, 1 Reservation(s) is unschedulable, 1 Reservation(s) is unavailable,
+// 2 Reservation(s) Insufficient cpu, 1 Reservation(s) Insufficient memory."
+func generatePodEventOnReservationLevel(errorMsg string) (string, bool) {
+	trimErrorMsg := strings.TrimSpace(errorMsg)
+	fitErrPrefix := regexp.MustCompile("^0/[0-9]+ nodes are available: ")
+
+	// expect: ["", "3 Reservation(s) ..."]
+	prefixSplit := fitErrPrefix.Split(trimErrorMsg, -1)
+	if len(prefixSplit) != 2 || prefixSplit[0] != "" {
+		return "", false
+	}
+
+	// "3 Reservations ..., 1 Reservation xxx. 1 Reservation ..."
+	detailedMsg := prefixSplit[1]
+	// "3 Reservations ..., 1 Reservation xxx, 1 Reservation ..."
+	detailedMsg = strings.ReplaceAll(detailedMsg, ". ", ", ")
+	// ["3 Reservation(s) ...", " 1 Reservation(s) ...", ..., " 8 Reservation(s) matched owner total.", " Gang rejected..."]
+	detailSplit := strings.FieldsFunc(detailedMsg, func(c rune) bool {
+		return c == ','
+	})
+
+	total := int64(-1)
+	resultDetails := make([]string, 0, len(detailSplit))
+	nodeRelatedDetails := make([]string, 0, len(detailSplit))
+	var reservationNameDetail []string
+
+	// for reservation total item
+	reserveTotalRe := regexp.MustCompile("^([0-9]+) Reservation\\(s\\) matched owner total$")
+
+	// for reservation name matched item
+	reserveNameTotalRe := regexp.MustCompile("^([0-9]+) Reservation\\(s\\) exactly matches the requested reservation name$")
+
+	// for node related item
+	reserveNodeDetailRe := regexp.MustCompile("^([0-9]+ Reservation\\(s\\)) (for node reason that .*)$")
+
+	// for reservation detail item
+	reserveDetailRe := regexp.MustCompile("^([0-9]+) Reservation\\(s\\) .*$")
+
+	for _, item := range detailSplit {
+		trimItem := strings.Trim(item, ". ")
+		totalStr := reserveTotalRe.FindAllStringSubmatch(trimItem, -1)
+
+		if len(totalStr) > 0 && len(totalStr[0]) == 2 {
+			// matched total item "8 Reservation(s) matched owner total"
+			var err error
+			if total, err = strconv.ParseInt(totalStr[0][1], 10, 64); err != nil {
+				return "", false
+			}
+		} else if reserveNodeDetailRe.MatchString(trimItem) {
+			// node related item, e.g. "2 Reservation(s) for node reason that node(s) didn't match pod affinity rules"
+			reserveNodeSubMatch := reserveNodeDetailRe.FindStringSubmatch(trimItem)
+			if len(reserveNodeSubMatch) <= 1 {
+				continue
+			}
+			// expect: ["2 Reservation(s)", "didn't match pod affinity rules"]
+			nodeReasonWords := make([]string, 0, len(reserveNodeSubMatch)-1)
+			for _, vv := range reserveNodeSubMatch[1:] {
+				if vv == "" {
+					continue
+				}
+				nodeReasonWords = append(nodeReasonWords, vv)
+			}
+			nodeRelatedDetails = append(nodeRelatedDetails, strings.Join(nodeReasonWords, " "))
+		} else if reserveNameTotalRe.MatchString(trimItem) {
+			reservationNameDetail = append(reservationNameDetail, trimItem)
+		} else if reserveDetailRe.MatchString(trimItem) {
+			// reservation itself item, append to details, e.g. " 1 Reservation(s) ..."
+			resultDetails = append(resultDetails, trimItem)
+		}
+	}
+
+	// put the reservation name at the front, and put the node-related details at the end
+	if d := len(reservationNameDetail); d > 0 {
+		resultDetails = append(resultDetails, reservationNameDetail...)
+		copy(resultDetails[d:], resultDetails[:len(resultDetails)-d])
+		copy(resultDetails[:d], reservationNameDetail)
+	}
+	resultDetails = append(resultDetails, nodeRelatedDetails...)
+
+	reserveLevelMsgFmt := "0/%d reservations are available: %s."
+
+	return fmt.Sprintf(reserveLevelMsgFmt, total, strings.Join(resultDetails, ", ")), total >= 0
+}
+
+func makeReservationErrorFunc(sched frameworkext.Scheduler, reservationLister schedulingv1alpha1lister.ReservationLister) scheduler.FailureHandlerFn {
+	return func(ctx context.Context, fwk framework.Framework, podInfo *framework.QueuedPodInfo, status *framework.Status, nominatingInfo *framework.NominatingInfo, start time.Time) {
 		pod := podInfo.Pod
+		err := status.AsError()
 		// NOTE: If the pod is a reserve pod, we simply check the corresponding reservation status if the reserve pod
 		// need requeue for the next scheduling cycle.
 		if err == scheduler.ErrNoNodesAvailable {
@@ -117,8 +257,9 @@ func makeReservationErrorFunc(sched frameworkext.Scheduler, reservationLister sc
 				"pod", klog.KObj(pod), "reservation", rName, "node", nodeName)
 			return
 		}
-		podInfo.PodInfo = framework.NewPodInfo(reservationutil.NewReservePod(cachedR))
-		if err = sched.GetSchedulingQueue().AddUnschedulableIfNotPresent(podInfo, sched.GetSchedulingQueue().SchedulingCycle()); err != nil {
+		podInfo.PodInfo, _ = framework.NewPodInfo(reservationutil.NewReservePod(cachedR))
+		logger := klog.FromContext(ctx)
+		if err = sched.GetSchedulingQueue().AddUnschedulableIfNotPresent(logger, podInfo, sched.GetSchedulingQueue().SchedulingCycle()); err != nil {
 			klog.ErrorS(err, "Error occurred")
 		}
 	}
@@ -274,14 +415,12 @@ func addReservationToSchedulerCache(sched frameworkext.Scheduler, obj interface{
 
 	// update pod cache and trigger pod assigned event for scheduling queue
 	reservePod := reservationutil.NewReservePod(r)
-	// Forces priority to be set to maximum to prevent preemption.
-	reservePod.Spec.Priority = pointer.Int32(math.MaxInt32)
-	if err = sched.GetCache().AddPod(reservePod); err != nil {
+	if err = sched.GetCache().AddPod(klog.Background(), reservePod); err != nil {
 		klog.ErrorS(err, "Failed to add reservation into SchedulerCache", "reservation", klog.KObj(reservePod))
 	} else {
 		klog.V(4).InfoS("Successfully add reservation into SchedulerCache", "reservation", klog.KObj(r))
 	}
-	sched.GetSchedulingQueue().AssignedPodAdded(reservePod)
+	sched.GetSchedulingQueue().AssignedPodAdded(klog.Background(), reservePod)
 }
 
 func updateReservationInSchedulerCache(sched frameworkext.Scheduler, oldObj, newObj interface{}) {
@@ -338,15 +477,12 @@ func updateReservationInSchedulerCache(sched frameworkext.Scheduler, oldObj, new
 	}
 	oldReservePod := reservationutil.NewReservePod(oldR)
 	newReservePod := reservationutil.NewReservePod(newR)
-	// Forces priority to be set to maximum to prevent preemption.
-	oldReservePod.Spec.Priority = pointer.Int32(math.MaxInt32)
-	newReservePod.Spec.Priority = pointer.Int32(math.MaxInt32)
-	if err := sched.GetCache().UpdatePod(oldReservePod, newReservePod); err != nil {
+	if err := sched.GetCache().UpdatePod(klog.Background(), oldReservePod, newReservePod); err != nil {
 		klog.ErrorS(err, "Failed to update reservation into SchedulerCache", "reservation", klog.KObj(newR))
 	} else {
 		klog.V(4).InfoS("Successfully update reservation into SchedulerCache", "reservation", klog.KObj(newR))
 	}
-	sched.GetSchedulingQueue().AssignedPodUpdated(newReservePod)
+	sched.GetSchedulingQueue().AssignedPodUpdated(klog.Background(), oldReservePod, newReservePod)
 }
 
 func deleteReservationFromSchedulerCache(sched frameworkext.Scheduler, obj interface{}) {
@@ -380,8 +516,6 @@ func deleteReservationFromSchedulerCache(sched frameworkext.Scheduler, obj inter
 	}
 
 	reservePod := reservationutil.NewReservePod(r)
-	// Forces priority to be set to maximum to prevent preemption.
-	reservePod.Spec.Priority = pointer.Int32(math.MaxInt32)
 	if _, err = sched.GetCache().GetPod(reservePod); err == nil {
 		if len(rInfo.AllocatedPorts) > 0 {
 			allocatablePorts := util.RequestedHostPorts(reservePod)
@@ -389,18 +523,18 @@ func deleteReservationFromSchedulerCache(sched frameworkext.Scheduler, obj inter
 			util.ResetHostPorts(reservePod, allocatablePorts)
 
 			// The Pod status in the Cache must be refreshed once to ensure that subsequent deletions are valid.
-			if err := sched.GetCache().UpdatePod(reservePod, reservePod); err != nil {
+			if err := sched.GetCache().UpdatePod(klog.Background(), reservePod, reservePod); err != nil {
 				klog.ErrorS(err, "Failed update reservation into SchedulerCache in delete stage", "reservation", klog.KObj(r))
 			}
 		}
 
-		if err := sched.GetCache().RemovePod(reservePod); err != nil {
+		if err := sched.GetCache().RemovePod(klog.Background(), reservePod); err != nil {
 			klog.ErrorS(err, "Failed to remove reservation from SchedulerCache", "reservation", klog.KObj(r))
 		} else {
 			klog.V(4).InfoS("Successfully delete reservation from SchedulerCache", "reservation", klog.KObj(r))
 		}
 
-		sched.GetSchedulingQueue().MoveAllToActiveOrBackoffQueue(frameworkext.AssignedPodDelete, nil)
+		sched.GetSchedulingQueue().MoveAllToActiveOrBackoffQueue(klog.Background(), frameworkext.AssignedPodDelete, nil, nil, nil)
 	}
 }
 
@@ -413,7 +547,7 @@ func addReservationToSchedulingQueue(sched frameworkext.Scheduler, obj interface
 	klog.V(3).InfoS("Add event for unscheduled reservation", "reservation", klog.KObj(r))
 
 	reservePod := reservationutil.NewReservePod(r)
-	if err := sched.GetSchedulingQueue().Add(reservePod); err != nil {
+	if err := sched.GetSchedulingQueue().Add(klog.Background(), reservePod); err != nil {
 		klog.Errorf("failed to add reserve pod into scheduling queue, reservation %v, err: %v", klog.KObj(reservePod), err)
 	}
 }
@@ -441,7 +575,7 @@ func updateReservationInSchedulingQueue(sched frameworkext.Scheduler, oldObj, ne
 	}
 
 	oldReservePod := reservationutil.NewReservePod(oldR)
-	if err = sched.GetSchedulingQueue().Update(oldReservePod, newReservePod); err != nil {
+	if err = sched.GetSchedulingQueue().Update(klog.Background(), oldReservePod, newReservePod); err != nil {
 		klog.Errorf("failed to update reserve pod in scheduling queue, old %s, new %s, err: %v", klog.KObj(oldReservePod), klog.KObj(newReservePod), err)
 	}
 }

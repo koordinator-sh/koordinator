@@ -34,6 +34,7 @@ import (
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/scheme"
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/noderesource/framework"
+	"github.com/koordinator-sh/koordinator/pkg/util/testutil"
 )
 
 func TestPlugin(t *testing.T) {
@@ -45,7 +46,7 @@ func TestPlugin(t *testing.T) {
 		testOpt := &framework.Option{
 			Scheme:   testScheme,
 			Client:   fake.NewClientBuilder().WithScheme(testScheme).Build(),
-			Builder:  &builder.Builder{},
+			Builder:  builder.ControllerManagedBy(&testutil.FakeManager{}),
 			Recorder: &record.FakeRecorder{},
 		}
 		err := p.Setup(testOpt)
@@ -887,6 +888,90 @@ func Test_getCPUNormalizationRatioFromModel(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got, gotErr := getCPUNormalizationRatioFromModel(tt.args.info, tt.args.strategy)
+			assert.Equal(t, tt.want, got)
+			assert.Equal(t, tt.wantErr, gotErr != nil)
+		})
+	}
+}
+
+func Test_getCPUNormalizationRatio(t *testing.T) {
+	type args struct {
+		info     *extension.CPUBasicInfo
+		strategy *configuration.CPUNormalizationStrategy
+	}
+	tests := []struct {
+		name    string
+		args    args
+		want    float64
+		wantErr bool
+	}{
+		{
+			name: "nil model and nil default ratio",
+			args: args{
+				strategy: &configuration.CPUNormalizationStrategy{
+					Enable:       pointer.Bool(true),
+					DefaultRatio: nil,
+					RatioModel:   nil,
+				},
+			},
+			want:    -1,
+			wantErr: true,
+		},
+		{
+			name: "nil model and valid default ratio",
+			args: args{
+				strategy: &configuration.CPUNormalizationStrategy{
+					Enable:       pointer.Bool(true),
+					DefaultRatio: pointer.Float64(2.5),
+					RatioModel:   nil,
+				},
+			},
+			want:    2.5,
+			wantErr: false,
+		},
+		{
+			name: "model takes precedence over the default ratio",
+			args: args{
+				info: &extension.CPUBasicInfo{
+					CPUModel: "CPU XXX",
+				},
+				strategy: &configuration.CPUNormalizationStrategy{
+					Enable:       pointer.Bool(true),
+					DefaultRatio: pointer.Float64(3.5),
+					RatioModel: map[string]configuration.ModelRatioCfg{
+						"CPU XXX": {
+							BaseRatio:                    pointer.Float64(1.9),
+							TurboEnabledRatio:            pointer.Float64(1.65),
+							HyperThreadEnabledRatio:      pointer.Float64(1.0),
+							HyperThreadTurboEnabledRatio: pointer.Float64(1.1),
+						},
+					},
+				},
+			},
+			want:    1.9,
+			wantErr: false,
+		},
+		{
+			name: "use the default ratio with invalid model",
+			args: args{
+				info: &extension.CPUBasicInfo{
+					CPUModel: "CPU XXX",
+				},
+				strategy: &configuration.CPUNormalizationStrategy{
+					Enable:       pointer.Bool(true),
+					DefaultRatio: pointer.Float64(2.2),
+					RatioModel: map[string]configuration.ModelRatioCfg{
+						"CPU XXX": {},
+					},
+				},
+			},
+			want:    2.2,
+			wantErr: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, gotErr := getCPUNormalizationRatio(tt.args.info, tt.args.strategy)
 			assert.Equal(t, tt.want, got)
 			assert.Equal(t, tt.wantErr, gotErr != nil)
 		})

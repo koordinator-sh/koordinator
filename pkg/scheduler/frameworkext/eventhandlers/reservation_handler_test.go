@@ -31,6 +31,7 @@ import (
 	"k8s.io/client-go/informers"
 	kubefake "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/apis/core/validation"
 	"k8s.io/kubernetes/pkg/scheduler"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
@@ -97,7 +98,7 @@ func TestAddReservationErrorHandler(t *testing.T) {
 		fakeRecorder := record.NewFakeRecorder(1024)
 		eventRecorder := record.NewEventRecorderAdapter(fakeRecorder)
 
-		fh, err := schedulertesting.NewFramework(registeredPlugins, "koord-scheduler",
+		fh, err := schedulertesting.NewFramework(context.TODO(), registeredPlugins, "koord-scheduler",
 			frameworkruntime.WithEventRecorder(eventRecorder),
 			frameworkruntime.WithClientSet(kubefake.NewSimpleClientset()),
 			frameworkruntime.WithInformerFactory(informers.NewSharedInformerFactory(kubefake.NewSimpleClientset(), 0)),
@@ -117,12 +118,13 @@ func TestAddReservationErrorHandler(t *testing.T) {
 		koordSharedInformerFactory.Start(nil)
 		koordSharedInformerFactory.WaitForCacheSync(nil)
 
+		podInfo, _ := framework.NewPodInfo(testPod)
 		queuedPodInfo := &framework.QueuedPodInfo{
-			PodInfo: framework.NewPodInfo(testPod),
+			PodInfo: podInfo,
 		}
 
 		expectedErr := errors.New(strings.Repeat("test error", validation.NoteLengthLimit))
-		handler(queuedPodInfo, expectedErr)
+		handler(context.TODO(), fh, queuedPodInfo, framework.AsStatus(expectedErr), nil, time.Now())
 
 		r, err := koordClientSet.SchedulingV1alpha1().Reservations().Get(context.TODO(), testR.Name, metav1.GetOptions{})
 		assert.NoError(t, err)
@@ -667,7 +669,7 @@ func Test_deleteReservationFromCache(t *testing.T) {
 			reservation.SetReservationCache(&fakeReservationCache{})
 			sched := frameworkext.NewFakeScheduler()
 			if reservationutil.ValidateReservation(tt.obj) == nil {
-				sched.AddPod(reservationutil.NewReservePod(tt.obj))
+				sched.AddPod(klog.Background(), reservationutil.NewReservePod(tt.obj))
 			}
 			deleteReservationFromSchedulerCache(sched, tt.obj)
 			pod, err := sched.GetPod(&corev1.Pod{
@@ -948,7 +950,7 @@ func Test_deleteReservationFromSchedulingQueue(t *testing.T) {
 					return &fakePermitPlugin{}, nil
 				}),
 			}
-			fh, err := schedulertesting.NewFramework(registeredPlugins, corev1.DefaultSchedulerName)
+			fh, err := schedulertesting.NewFramework(context.TODO(), registeredPlugins, corev1.DefaultSchedulerName)
 			assert.NoError(t, err)
 
 			sched := &scheduler.Scheduler{
@@ -1016,7 +1018,7 @@ func Test_unscheduledReservationEventHandler(t *testing.T) {
 			},
 		},
 	}
-	handler.OnAdd(reservation)
+	handler.OnAdd(reservation, true)
 	assert.NotNil(t, adapt.Queue.Pods[string(reservation.UID)])
 	reservationCopy := reservation.DeepCopy()
 	reservationCopy.ResourceVersion = "2"
@@ -1306,5 +1308,173 @@ func assertEqualReservationCondition(t *testing.T, expect, got *schedulingv1alph
 		assert.Equal(t, e.Status, condition.Status, msg)
 		assert.Equal(t, e.Message, condition.Message, msg)
 		assert.Equal(t, e.Reason, condition.Reason, msg)
+	}
+}
+
+func Test_generatePodEventOnReservationLevel(t *testing.T) {
+	tests := []struct {
+		name          string
+		errorMsg      string
+		wantMsg       string
+		wantIsReserve bool
+	}{
+		{
+			name:          "simple reservation errors",
+			errorMsg:      "0/3 nodes are available: 1 Reservation(s) Insufficient cpu. 1 Reservation(s) matched owner total.",
+			wantMsg:       "0/1 reservations are available: 1 Reservation(s) Insufficient cpu.",
+			wantIsReserve: true,
+		},
+		{
+			name: "extract reservation errors ",
+			errorMsg: "0/1 nodes are available: 3 Reservation(s) didn't match affinity rules, 1 Reservation(s) is unschedulable, " +
+				"1 Reservation(s) is unavailable, 2 Reservation(s) Insufficient cpu, 1 Reservation(s) Insufficient memory, " +
+				"1 Insufficient cpu, 1 Insufficient memory. 8 Reservation(s) matched owner total, " +
+				"Gang \"default/demo-job-podgroup\" gets rejected due to pod is unschedulable.",
+			wantMsg: "0/8 reservations are available: 3 Reservation(s) didn't match affinity rules, " +
+				"1 Reservation(s) is unschedulable, 1 Reservation(s) is unavailable, " +
+				"2 Reservation(s) Insufficient cpu, 1 Reservation(s) Insufficient memory.",
+			wantIsReserve: true,
+		},
+		{
+			name: "reservation gpu resource not enough",
+			errorMsg: "0/21 nodes are available: 1 Insufficient nvidia.com/gpu by node, 4 Reservation(s) Insufficient nvidia.com/gpu. " +
+				"1 Reservation(s) is unschedulable, 5 Reservation(s) matched owner total",
+			wantMsg:       "0/5 reservations are available: 4 Reservation(s) Insufficient nvidia.com/gpu, 1 Reservation(s) is unschedulable.",
+			wantIsReserve: true,
+		},
+		{
+			name: "reservation too many pods",
+			errorMsg: "0/21 nodes are available: 2 Reservation(s) Too many pods. " +
+				"1 Reservation(s) is unschedulable, 3 Reservation(s) matched owner total",
+			wantMsg:       "0/3 reservations are available: 2 Reservation(s) Too many pods, 1 Reservation(s) is unschedulable.",
+			wantIsReserve: true,
+		},
+		{
+			name: "pod topology spread constraints missing required label errors",
+			errorMsg: "0/5 nodes are available: 3 node(s) didn't match pod topology spread constraints (missing required label), " +
+				"1 Insufficient cpu, 1 Insufficient memory, " +
+				"3 Reservation(s) for node reason that didn't match pod topology spread constraints (missing required label), " +
+				"2 Reservation(s) Insufficient cpu, 1 Reservation(s) Insufficient memory, " +
+				"8 Reservation(s) matched owner total.",
+			wantMsg: "0/8 reservations are available: 2 Reservation(s) Insufficient cpu, 1 Reservation(s) Insufficient memory, " +
+				"3 Reservation(s) for node reason that didn't match pod topology spread constraints (missing required label).",
+			wantIsReserve: true,
+		},
+		{
+			name: "pod topology spread constraints errors",
+			errorMsg: "0/5 nodes are available: 3 node(s) didn't match pod topology spread constraints," +
+				"1 Insufficient cpu, 1 Insufficient memory, " +
+				"3 Reservation(s) for node reason that didn't match pod topology spread constraints," +
+				"2 Reservation(s) Insufficient cpu, 1 Reservation(s) Insufficient memory. " +
+				"8 Reservation(s) matched owner total.",
+			wantMsg: "0/8 reservations are available: 2 Reservation(s) Insufficient cpu, 1 Reservation(s) Insufficient memory, " +
+				"3 Reservation(s) for node reason that didn't match pod topology spread constraints.",
+			wantIsReserve: true,
+		},
+		{
+			name: "satisfy existing pods anti-affinity rules, errors",
+			errorMsg: "0/5 nodes are available: 3 node(s) didn't satisfy existing pods anti-affinity rules," +
+				"1 Insufficient cpu, 1 Insufficient memory, " +
+				"3 Reservation(s) for node reason that didn't satisfy existing pods anti-affinity rules," +
+				"2 Reservation(s) Insufficient cpu, 1 Reservation(s) Insufficient memory. " +
+				"8 Reservation(s) matched owner total.",
+			wantMsg: "0/8 reservations are available: 2 Reservation(s) Insufficient cpu, 1 Reservation(s) Insufficient memory, " +
+				"3 Reservation(s) for node reason that didn't satisfy existing pods anti-affinity rules.",
+			wantIsReserve: true,
+		},
+		{
+			name: "match pod affinity rules errors",
+			errorMsg: "0/5 nodes are available: 3 node(s) didn't match pod affinity rules," +
+				"1 Insufficient cpu, 1 Insufficient memory, " +
+				"3 Reservation(s) for node reason that didn't match pod affinity rules, " +
+				"2 Reservation(s) Insufficient cpu, 1 Reservation(s) Insufficient memory. " +
+				"8 Reservation(s) matched owner total.",
+			wantMsg: "0/8 reservations are available: 2 Reservation(s) Insufficient cpu, 1 Reservation(s) Insufficient memory, " +
+				"3 Reservation(s) for node reason that didn't match pod affinity rules.",
+			wantIsReserve: true,
+		},
+		{
+			name: "match pod anti-affinity rules errors",
+			errorMsg: "0/5 nodes are available: 3 node(s) didn't match pod anti-affinity rules," +
+				"1 Insufficient cpu, 1 Insufficient memory, " +
+				"3 Reservation(s) for node reason that didn't match pod anti-affinity rules, " +
+				"2 Reservation(s) Insufficient cpu, 1 Reservation(s) Insufficient memory. " +
+				"8 Reservation(s) matched owner total.",
+			wantMsg: "0/8 reservations are available: 2 Reservation(s) Insufficient cpu, 1 Reservation(s) Insufficient memory, " +
+				"3 Reservation(s) for node reason that didn't match pod anti-affinity rules.",
+			wantIsReserve: true,
+		},
+		{
+			name: "mix affinity errors of 'match pod topology spread constraints' and 'match pod affinity rules'",
+			errorMsg: "0/5 nodes are available: 3 node(s) didn't match pod topology spread constraints, " +
+				"1 node(s) didn't match pod affinity rules, " +
+				"1 Insufficient memory, " +
+				"3 Reservation(s) for node reason that didn't match pod topology spread constraints, " +
+				"1 Reservation(s) for node reason that didn't match pod affinity rules, " +
+				"2 Reservation(s) Insufficient cpu, 1 Reservation(s) Insufficient memory. " +
+				"8 Reservation(s) matched owner total.",
+			wantMsg: "0/8 reservations are available: 2 Reservation(s) Insufficient cpu, 1 Reservation(s) Insufficient memory, " +
+				"3 Reservation(s) for node reason that didn't match pod topology spread constraints, " +
+				"1 Reservation(s) for node reason that didn't match pod affinity rules.",
+			wantIsReserve: true,
+		},
+		{
+			name: "reservation taints errors",
+			errorMsg: "0/5 nodes are available: 3 node(s) didn't match pod topology spread constraints," +
+				"1 Insufficient cpu, 1 Insufficient memory, " +
+				"3 Reservation(s) for node reason that didn't match pod topology spread constraints," +
+				"2 Reservation(s) had untolerated taint {koordinator.sh/reservation-pool: test}, 1 Reservation(s) Insufficient memory. " +
+				"8 Reservation(s) matched owner total.",
+			wantMsg: "0/8 reservations are available: 2 Reservation(s) had untolerated taint {koordinator.sh/reservation-pool: test}, " +
+				"1 Reservation(s) Insufficient memory, " +
+				"3 Reservation(s) for node reason that didn't match pod topology spread constraints.",
+			wantIsReserve: true,
+		},
+		{
+			name: "reservation of node reason",
+			errorMsg: "0/5 nodes are available: 2 node(s) didn't match pod topology spread constraints, " +
+				"1 node(s) didn't match pod affinity rules, 1 Insufficient memory, " +
+				"3 Reservation(s) for node reason that didn't match pod topology spread constraints, " +
+				"2 Reservation(s) for node reason that didn't match pod affinity rules," +
+				"2 Reservation(s) Insufficient cpu, 1 Reservation(s) Insufficient memory. " +
+				"8 Reservation(s) matched owner total.",
+			wantMsg: "0/8 reservations are available: 2 Reservation(s) Insufficient cpu, " +
+				"1 Reservation(s) Insufficient memory, " +
+				"3 Reservation(s) for node reason that didn't match pod topology spread constraints, " +
+				"2 Reservation(s) for node reason that didn't match pod affinity rules.",
+			wantIsReserve: true,
+		},
+		{
+			name: "only gang errors",
+			errorMsg: "Gang \"default/demo-job-podgroup\" gets rejected due to member Pod \"demo-job-kfqfs\" is" +
+				"unschedulable with reason \"0/3 nodes are available: 3 Insufficient cpu.\"",
+			wantIsReserve: false,
+		},
+		{
+			name:          "only node errors",
+			errorMsg:      `0/5 nodes are available: 3 Insufficient cpu, 2 Insufficient memory.`,
+			wantIsReserve: false,
+		},
+		{
+			name: "reservation name specified with insufficient resource",
+			errorMsg: "0/10 nodes are available: 1 Reservation(s) Insufficient cpu, requested: 4000, used: 30000, capacity: 32000, " +
+				"4 Insufficient cpu, 5 Insufficient memory, " +
+				"1 Reservation(s) exactly matches the requested reservation name, " +
+				"3 Reservation(s) didn't match the requested reservation name, " +
+				"4 Reservation(s) matched owner total.",
+			wantMsg: "0/4 reservations are available: 1 Reservation(s) exactly matches the requested reservation name, " +
+				"1 Reservation(s) Insufficient cpu, " +
+				"3 Reservation(s) didn't match the requested reservation name.",
+			wantIsReserve: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotMsg, hasReserveMsg := generatePodEventOnReservationLevel(tt.errorMsg)
+			assert.Equal(t, tt.wantIsReserve, hasReserveMsg)
+			if hasReserveMsg {
+				assert.Equalf(t, tt.wantMsg, gotMsg, "generatePodEventOnReservationLevel(%v)", tt.errorMsg)
+			}
+		})
 	}
 }

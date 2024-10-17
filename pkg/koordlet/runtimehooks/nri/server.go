@@ -21,9 +21,13 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/containerd/nri/pkg/api"
 	"github.com/containerd/nri/pkg/stub"
+	"go.uber.org/atomic"
+	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/yaml"
 
@@ -39,12 +43,17 @@ type nriConfig struct {
 }
 
 type Options struct {
-	NriSocketPath string
+	NriPluginName     string
+	NriPluginIdx      string
+	NriSocketPath     string
+	NriConnectTimeout time.Duration
 	// support stop running other hooks once someone failed
 	PluginFailurePolicy rmconfig.FailurePolicyType
 	// todo: add support for disable stages
 	DisableStages map[string]struct{}
 	Executor      resourceexecutor.ResourceUpdateExecutor
+	BackOff       wait.Backoff
+	EventRecorder record.EventRecorder
 }
 
 func (o Options) Validate() error {
@@ -58,22 +67,23 @@ func (o Options) Validate() error {
 }
 
 type NriServer struct {
-	cfg     nriConfig
-	stub    stub.Stub
-	mask    stub.EventMask
-	options Options // server options
+	cfg      nriConfig
+	stub     stub.Stub
+	mask     stub.EventMask
+	options  Options       // server options
+	stubOpts []stub.Option // nri stub options
+	stopped  *atomic.Bool  // if false, the stub will try to reconnect when stub.OnClose is invoked
 }
 
 const (
-	events     = "RunPodSandbox,CreateContainer,UpdateContainer"
-	pluginName = "koordlet_nri"
-	pluginIdx  = "00"
+	events = "RunPodSandbox,RemovePodSandbox,CreateContainer,UpdateContainer"
 )
 
 var (
 	_ = stub.ConfigureInterface(&NriServer{})
 	_ = stub.SynchronizeInterface(&NriServer{})
 	_ = stub.RunPodInterface(&NriServer{})
+	_ = stub.RemovePodInterface(&NriServer{})
 	_ = stub.CreateContainerInterface(&NriServer{})
 	_ = stub.UpdateContainerInterface(&NriServer{})
 )
@@ -84,18 +94,23 @@ func NewNriServer(opt Options) (*NriServer, error) {
 		return nil, fmt.Errorf("failed to validate nri server, err: %w", err)
 	}
 
-	var opts []stub.Option
-	opts = append(opts, stub.WithPluginName(pluginName))
-	opts = append(opts, stub.WithPluginIdx(pluginIdx))
-	opts = append(opts, stub.WithSocketPath(filepath.Join(system.Conf.VarRunRootDir, opt.NriSocketPath)))
-	p := &NriServer{options: opt}
+	stubOpts := []stub.Option{
+		stub.WithPluginName(opt.NriPluginName),
+		stub.WithPluginIdx(opt.NriPluginIdx),
+		stub.WithSocketPath(filepath.Join(system.Conf.VarRunRootDir, opt.NriSocketPath)),
+	}
+	p := &NriServer{
+		options:  opt,
+		stubOpts: stubOpts,
+		stopped:  atomic.NewBool(false),
+	}
 	if p.mask, err = api.ParseEventMask(events); err != nil {
 		klog.Errorf("failed to parse events %v", err)
 		return p, err
 	}
 	p.cfg.Events = strings.Split(events, ",")
 
-	if p.stub, err = stub.New(p, append(opts, stub.WithOnClose(p.onClose))...); err != nil {
+	if p.stub, err = stub.New(p, append(p.stubOpts, stub.WithOnClose(p.onClose))...); err != nil {
 		klog.Errorf("failed to create plugin stub: %v", err)
 		return nil, err
 	}
@@ -104,22 +119,42 @@ func NewNriServer(opt Options) (*NriServer, error) {
 }
 
 func (p *NriServer) Start() error {
-	go func() {
+	err := p.options.Validate()
+	if err != nil {
+		return err
+	}
+	success := time.After(p.options.NriConnectTimeout)
+	errorChan := make(chan error)
+
+	go func(chan error) {
 		if p.stub != nil {
 			err := p.stub.Run(context.Background())
 			if err != nil {
 				klog.Errorf("nri server exited with error: %v", err)
+				errorChan <- err
 			} else {
 				klog.V(4).Info("nri server started")
 			}
 		} else {
-			klog.V(4).Info("nri stub is nil")
+			err := fmt.Errorf("nri stub is nil")
+			errorChan <- err
 		}
-	}()
-	return nil
+	}(errorChan)
+
+	select {
+	case <-success:
+		return nil
+	case <-errorChan:
+		return fmt.Errorf("nri start fail, err: %w", err)
+	}
 }
 
-func (p *NriServer) Configure(config, runtime, version string) (stub.EventMask, error) {
+func (p *NriServer) Stop() {
+	p.stopped.Store(true)
+	p.stub.Stop()
+}
+
+func (p *NriServer) Configure(_ context.Context, config, runtime, version string) (stub.EventMask, error) {
 	klog.V(4).Infof("got configuration data: %q from runtime %s %s", config, runtime, version)
 	if config == "" {
 		return p.mask, nil
@@ -140,12 +175,12 @@ func (p *NriServer) Configure(config, runtime, version string) (stub.EventMask, 
 	return p.mask, nil
 }
 
-func (p *NriServer) Synchronize(pods []*api.PodSandbox, containers []*api.Container) ([]*api.ContainerUpdate, error) {
+func (p *NriServer) Synchronize(_ context.Context, pods []*api.PodSandbox, containers []*api.Container) ([]*api.ContainerUpdate, error) {
 	// todo: update existed containers configure
 	return nil, nil
 }
 
-func (p *NriServer) RunPodSandbox(pod *api.PodSandbox) error {
+func (p *NriServer) RunPodSandbox(_ context.Context, pod *api.PodSandbox) error {
 	podCtx := &protocol.PodContext{}
 	podCtx.FromNri(pod)
 	// todo: return error or bypass error based on PluginFailurePolicy
@@ -162,7 +197,7 @@ func (p *NriServer) RunPodSandbox(pod *api.PodSandbox) error {
 	return nil
 }
 
-func (p *NriServer) CreateContainer(pod *api.PodSandbox, container *api.Container) (*api.ContainerAdjustment, []*api.ContainerUpdate, error) {
+func (p *NriServer) CreateContainer(_ context.Context, pod *api.PodSandbox, container *api.Container) (*api.ContainerAdjustment, []*api.ContainerUpdate, error) {
 	containerCtx := &protocol.ContainerContext{}
 	containerCtx.FromNri(pod, container)
 	// todo: return error or bypass error based on PluginFailurePolicy
@@ -185,7 +220,7 @@ func (p *NriServer) CreateContainer(pod *api.PodSandbox, container *api.Containe
 	return adjust, nil, nil
 }
 
-func (p *NriServer) UpdateContainer(pod *api.PodSandbox, container *api.Container) ([]*api.ContainerUpdate, error) {
+func (p *NriServer) UpdateContainer(_ context.Context, pod *api.PodSandbox, container *api.Container, r *api.LinuxResources) ([]*api.ContainerUpdate, error) {
 	containerCtx := &protocol.ContainerContext{}
 	containerCtx.FromNri(pod, container)
 	// todo: return error or bypass error based on PluginFailurePolicy
@@ -208,7 +243,56 @@ func (p *NriServer) UpdateContainer(pod *api.PodSandbox, container *api.Containe
 	return []*api.ContainerUpdate{update}, nil
 }
 
+func (p *NriServer) RemovePodSandbox(_ context.Context, pod *api.PodSandbox) error {
+	podCtx := &protocol.PodContext{}
+	podCtx.FromNri(pod)
+	// todo: return error or bypass error based on PluginFailurePolicy
+	err := hooks.RunHooks(p.options.PluginFailurePolicy, rmconfig.PreRemoveRunPodSandbox, podCtx)
+	if err != nil {
+		klog.Errorf("nri hooks run error: %v", err)
+		if p.options.PluginFailurePolicy == rmconfig.PolicyFail {
+			return err
+		}
+	}
+	podCtx.NriRemoveDone(p.options.Executor)
+
+	klog.V(6).Infof("handle NRI RemovePodSandbox successfully, pod %s/%s", pod.GetNamespace(), pod.GetName())
+	return nil
+}
+
 func (p *NriServer) onClose() {
-	p.stub.Stop()
-	klog.V(6).Infof("NRI server closes")
+	//TODO: consider the pod status during restart
+	retryFunc := func() (bool, error) {
+		if p.stopped.Load() { // if set to stopped, no longer reconnect
+			return true, nil
+		}
+
+		newStub, err := stub.New(p, append(p.stubOpts, stub.WithOnClose(p.onClose))...)
+		if err != nil {
+			klog.Errorf("failed to create plugin stub: %v", err)
+			return false, nil
+		}
+
+		p.stub = newStub
+		err = p.Start()
+		if err != nil {
+			completeNriSocketPath := filepath.Join(system.Conf.VarRunRootDir, p.options.NriSocketPath)
+			targetErr := fmt.Errorf("nri socket path %q does not exist", completeNriSocketPath)
+			if err.Error() == targetErr.Error() {
+				return false, err
+			}
+			//TODO: check the error type, if nri server disable nri, we should also break backoff
+			klog.Warningf("nri reconnect failed, err: %s", err)
+			return false, nil
+		} else {
+			klog.V(4).Info("nri server restart success")
+			return true, nil
+		}
+	}
+
+	// TODO: high version wait not support BackoffUntil with BackOffManger as parameters, when updated to v0.27.0 version wait, we can refine ExponentialBackoff.
+	err := wait.ExponentialBackoff(p.options.BackOff, retryFunc)
+	if err != nil {
+		klog.Errorf("nri server restart failed after several times retry")
+	}
 }

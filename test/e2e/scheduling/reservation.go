@@ -109,7 +109,7 @@ var _ = SIGDescribe("Reservation", func() {
 			reservationRequests := reservationutil.ReservationRequests(reservation)
 			gomega.Expect(reservation.Status.Allocatable).Should(gomega.Equal(reservationRequests))
 
-			podRequests, _ := resourceapi.PodRequestsAndLimits(pod)
+			podRequests := resourceapi.PodRequests(pod, resourceapi.PodResourcesOptions{})
 			podRequests = quotav1.Mask(podRequests, quotav1.ResourceNames(reservation.Status.Allocatable))
 			gomega.Expect(reservation.Status.Allocated).Should(gomega.Equal(podRequests))
 			gomega.Expect(reservation.Status.CurrentOwners).Should(gomega.Equal([]corev1.ObjectReference{
@@ -193,7 +193,7 @@ var _ = SIGDescribe("Reservation", func() {
 			reservationRequests := reservationutil.ReservationRequests(r)
 			gomega.Expect(r.Status.Allocatable).Should(gomega.Equal(reservationRequests))
 
-			podRequests, _ := resourceapi.PodRequestsAndLimits(pod)
+			podRequests := resourceapi.PodRequests(pod, resourceapi.PodResourcesOptions{})
 			podRequests = quotav1.Mask(podRequests, quotav1.ResourceNames(r.Status.Allocatable))
 			for k, v := range podRequests {
 				vv := v.DeepCopy()
@@ -609,7 +609,7 @@ var _ = SIGDescribe("Reservation", func() {
 				var totalRequests corev1.ResourceList
 				var currentOwners []corev1.ObjectReference
 				for _, pod := range podUsingReservations {
-					podRequests, _ := resourceapi.PodRequestsAndLimits(pod)
+					podRequests := resourceapi.PodRequests(pod, resourceapi.PodResourcesOptions{})
 					podRequests = quotav1.Mask(podRequests, quotav1.ResourceNames(reservation.Status.Allocatable))
 					totalRequests = quotav1.Add(totalRequests, podRequests)
 					currentOwners = append(currentOwners, corev1.ObjectReference{
@@ -774,7 +774,7 @@ var _ = SIGDescribe("Reservation", func() {
 				var totalRequests corev1.ResourceList
 				var currentOwners []corev1.ObjectReference
 				for _, pod := range podUsingReservations {
-					podRequests, _ := resourceapi.PodRequestsAndLimits(pod)
+					podRequests := resourceapi.PodRequests(pod, resourceapi.PodResourcesOptions{})
 					podRequests = quotav1.Mask(podRequests, quotav1.ResourceNames(reservation.Status.Allocatable))
 					totalRequests = quotav1.Add(totalRequests, podRequests)
 					currentOwners = append(currentOwners, corev1.ObjectReference{

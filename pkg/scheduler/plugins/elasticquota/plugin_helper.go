@@ -29,9 +29,9 @@ import (
 	k8sfeature "k8s.io/apiserver/pkg/util/feature"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
-	schedulerv1alpha1 "sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
+	schedulerv1alpha1 "github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/elasticquota/core"
 )
@@ -154,9 +154,13 @@ func (g *Plugin) migratePods(out, in string) {
 
 // createDefaultQuotaIfNotPresent create DefaultQuotaGroup's CRD
 func (g *Plugin) createDefaultQuotaIfNotPresent() {
-	eq, _ := g.client.SchedulingV1alpha1().ElasticQuotas(g.pluginArgs.QuotaGroupNamespace).Get(context.TODO(), extension.DefaultQuotaName, metav1.GetOptions{ResourceVersion: "0"})
-	if eq != nil {
+	eq, err := g.client.SchedulingV1alpha1().ElasticQuotas(g.pluginArgs.QuotaGroupNamespace).Get(context.TODO(), extension.DefaultQuotaName, metav1.GetOptions{ResourceVersion: "0"})
+	if err == nil && eq != nil {
 		klog.Infof("DefaultQuota already exists, skip create it.")
+		return
+	}
+	if err != nil && !errors.IsNotFound(err) {
+		klog.Errorf("failed to get DefaultQuota, err: %v", err)
 		return
 	}
 
@@ -170,7 +174,7 @@ func (g *Plugin) createDefaultQuotaIfNotPresent() {
 			Max: g.pluginArgs.DefaultQuotaGroupMax.DeepCopy(),
 		},
 	}
-	_, err := g.client.SchedulingV1alpha1().ElasticQuotas(g.pluginArgs.QuotaGroupNamespace).
+	_, err = g.client.SchedulingV1alpha1().ElasticQuotas(g.pluginArgs.QuotaGroupNamespace).
 		Create(context.TODO(), defaultElasticQuota, metav1.CreateOptions{})
 	if err != nil {
 		klog.Errorf("create default group fail, err:%v", err.Error())
@@ -182,9 +186,13 @@ func (g *Plugin) createDefaultQuotaIfNotPresent() {
 // defaultQuotaInfo and systemQuotaInfo are created once the groupQuotaManager is created, but we also want to see
 // the used/request of the two quotaGroups, so we create the two quota's CRD if not present.
 func (g *Plugin) createSystemQuotaIfNotPresent() {
-	eq, _ := g.client.SchedulingV1alpha1().ElasticQuotas(g.pluginArgs.QuotaGroupNamespace).Get(context.TODO(), extension.SystemQuotaName, metav1.GetOptions{ResourceVersion: "0"})
-	if eq != nil {
+	eq, err := g.client.SchedulingV1alpha1().ElasticQuotas(g.pluginArgs.QuotaGroupNamespace).Get(context.TODO(), extension.SystemQuotaName, metav1.GetOptions{ResourceVersion: "0"})
+	if err == nil && eq != nil {
 		klog.Infof("SystemQuota already exists, skip create it.")
+		return
+	}
+	if err != nil && !errors.IsNotFound(err) {
+		klog.Errorf("failed to get SystemQuota, err: %v", err)
 		return
 	}
 
@@ -198,7 +206,7 @@ func (g *Plugin) createSystemQuotaIfNotPresent() {
 			Max: g.pluginArgs.SystemQuotaGroupMax.DeepCopy(),
 		},
 	}
-	_, err := g.client.SchedulingV1alpha1().ElasticQuotas(g.pluginArgs.QuotaGroupNamespace).
+	_, err = g.client.SchedulingV1alpha1().ElasticQuotas(g.pluginArgs.QuotaGroupNamespace).
 		Create(context.TODO(), systemElasticQuota, metav1.CreateOptions{})
 	if err != nil {
 		klog.Errorf("create system group fail, err:%v", err.Error())
@@ -209,11 +217,16 @@ func (g *Plugin) createSystemQuotaIfNotPresent() {
 
 // createRootQuotaIfNotPresent create RootQuotaGroup's CRD
 func (g *Plugin) createRootQuotaIfNotPresent() {
-	eq, _ := g.client.SchedulingV1alpha1().ElasticQuotas(g.pluginArgs.QuotaGroupNamespace).Get(context.TODO(), extension.RootQuotaName, metav1.GetOptions{ResourceVersion: "0"})
-	if eq != nil {
+	eq, err := g.client.SchedulingV1alpha1().ElasticQuotas(g.pluginArgs.QuotaGroupNamespace).Get(context.TODO(), extension.RootQuotaName, metav1.GetOptions{ResourceVersion: "0"})
+	if err == nil && eq != nil {
 		klog.Infof("RootQuota already exists, skip create it.")
 		return
 	}
+	if err != nil && !errors.IsNotFound(err) {
+		klog.Errorf("failed to get RootQuota, err: %v", err)
+		return
+	}
+
 	rootElasticQuota := &schedulerv1alpha1.ElasticQuota{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        extension.RootQuotaName,
@@ -225,7 +238,7 @@ func (g *Plugin) createRootQuotaIfNotPresent() {
 	rootElasticQuota.Labels[extension.LabelQuotaIsParent] = "true"
 	rootElasticQuota.Labels[extension.LabelAllowLentResource] = "false"
 	rootElasticQuota.Labels[extension.LabelQuotaParent] = ""
-	_, err := g.client.SchedulingV1alpha1().ElasticQuotas(g.pluginArgs.QuotaGroupNamespace).
+	_, err = g.client.SchedulingV1alpha1().ElasticQuotas(g.pluginArgs.QuotaGroupNamespace).
 		Create(context.TODO(), rootElasticQuota, metav1.CreateOptions{})
 	if err != nil {
 		klog.Errorf("create root group fail, err:%v", err.Error())

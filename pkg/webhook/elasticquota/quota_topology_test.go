@@ -24,17 +24,16 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	v1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	testing2 "k8s.io/kubernetes/pkg/scheduler/testing"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
-	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
+
+	"github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
-	//"github.com/koordinator-sh/koordinator/pkg/features"
+	koordfeatures "github.com/koordinator-sh/koordinator/pkg/features"
 	utilclient "github.com/koordinator-sh/koordinator/pkg/util/client"
-	//utilfeature "github.com/koordinator-sh/koordinator/pkg/util/feature"
+	utilfeature "github.com/koordinator-sh/koordinator/pkg/util/feature"
 )
 
 func newFakeQuotaTopology() *quotaTopology {
@@ -505,7 +504,9 @@ func TestQuotaTopology_ValidUpdateQuota(t *testing.T) {
 	assert.Equal(t, fmt.Sprintf("quota has children, isParent is forbidden to modify as false, quotaName:%v", quota1.Name), err.Error())
 
 	pod1 := MakePod("", "pod1").Label(extension.LabelQuotaName, "sub-1").Obj()
-	client := fake.NewClientBuilder().Build()
+	client := fake.NewClientBuilder().WithIndex(&v1.Pod{}, "label.quotaName", func(object client.Object) []string {
+		return []string{object.(*v1.Pod).Labels[extension.LabelQuotaName]}
+	}).Build()
 	v1alpha1.AddToScheme(client.Scheme())
 	qt.client = client
 	qt.client.Create(context.TODO(), pod1)
@@ -525,7 +526,7 @@ func TestQuotaTopology_ValidUpdateQuota(t *testing.T) {
 	assert.Equal(t, fmt.Sprintf("quota has bound pods, isParent is forbidden to modify as true, quotaName: sub-1"), err.Error())
 
 	qt.client.Delete(context.TODO(), pod2)
-	pod3 := MakePod("sub-2", "pod3").Obj()
+	pod3 := MakePod("sub-2", "pod3").Label(extension.LabelQuotaName, "sub-1").Obj()
 	qt.client.Create(context.TODO(), pod3)
 
 	sub1.Annotations[extension.AnnotationQuotaNamespaces] = "[\"namespace1\",\"namespace2\"]"
@@ -575,7 +576,9 @@ func TestQuotaTopology_ListQuotaPods(t *testing.T) {
 func TestQuotaTopology_AnnotationNamespaces(t *testing.T) {
 	quota := MakeQuota("temp").Annotations(map[string]string{extension.AnnotationQuotaNamespaces: "[\"test1\",\"test2\"]"}).Obj()
 	qt := newFakeQuotaTopology()
-	client := fake.NewClientBuilder().Build()
+	client := fake.NewClientBuilder().WithIndex(&v1.Pod{}, "label.quotaName", func(object client.Object) []string {
+		return []string{object.(*v1.Pod).Labels["label.quotaName"]}
+	}).Build()
 	v1alpha1.AddToScheme(client.Scheme())
 	qt.client = client
 
@@ -619,7 +622,9 @@ func TestQuotaTopology_AnnotationNamespaces(t *testing.T) {
 func TestQuotaTopology_ValidDeleteQuota(t *testing.T) {
 	qt := newFakeQuotaTopology()
 
-	client := fake.NewClientBuilder().Build()
+	client := fake.NewClientBuilder().WithIndex(&v1.Pod{}, "label.quotaName", func(object client.Object) []string {
+		return []string{object.(*v1.Pod).Labels[extension.LabelQuotaName]}
+	}).Build()
 	v1alpha1.AddToScheme(client.Scheme())
 	qt.client = client
 
@@ -649,26 +654,26 @@ func TestQuotaTopology_ValidDeleteQuota(t *testing.T) {
 	assert.Equal(t, 0, len(qt.quotaHierarchyInfo["temp2"]))
 
 	err = qt.ValidDeleteQuota(quota1)
-	assert.True(t, err == nil)
+	assert.NoError(t, err)
 	assert.Equal(t, 2, len(qt.quotaInfoMap))
 	assert.Equal(t, 3, len(qt.quotaHierarchyInfo))
 	assert.Equal(t, 1, len(qt.quotaHierarchyInfo["temp"]))
 
 	// add pod to quota sub-1
-	pod := MakePod("sub-1", "pod1").Obj()
+	pod := MakePod("sub-1", "pod1").Label(extension.LabelQuotaName, "sub-1").Obj()
 	err = qt.client.Create(context.TODO(), pod)
 	assert.Nil(t, err)
 
 	// forbidden delete quota with pods
 	err = qt.ValidDeleteQuota(sub1)
-	assert.True(t, err != nil)
+	assert.Error(t, err)
 
 	// delete pod
 	err = qt.client.Delete(context.TODO(), pod)
 	assert.Nil(t, err)
 
 	err = qt.ValidDeleteQuota(sub1)
-	assert.True(t, err == nil)
+	assert.NoError(t, err)
 	assert.Equal(t, 1, len(qt.quotaInfoMap))
 	assert.Equal(t, 2, len(qt.quotaHierarchyInfo))
 	assert.Equal(t, 0, len(qt.quotaHierarchyInfo["temp"]))
@@ -767,6 +772,11 @@ func TestQuotaTopology_AddPod_UpdatePod(t *testing.T) {
 
 	err = qt.ValidateUpdatePod(pod2, oldPod2)
 	assert.NotNil(t, err)
+
+	defer utilfeature.SetFeatureGateDuringTest(t, utilfeature.DefaultMutableFeatureGate, koordfeatures.SupportParentQuotaSubmitPod, true)()
+
+	err = qt.ValidateUpdatePod(pod2, oldPod2)
+	assert.Nil(t, err)
 
 	pod2.Labels[extension.LabelQuotaName] = "default"
 	err = qt.ValidateUpdatePod(oldPod2, pod2)
@@ -912,131 +922,4 @@ func TestQuotaTopology_checkGuaranteeForMin(t *testing.T) {
 			}
 		})
 	}
-}
-
-type podWrapper struct{ *v1.Pod }
-
-func MakePod(namespace, name string) *podWrapper {
-	pod := testing2.MakePod().Namespace(namespace).Name(name).Obj()
-
-	return &podWrapper{pod}
-}
-
-func (p *podWrapper) Label(string1, string2 string) *podWrapper {
-	if p.Labels == nil {
-		p.Labels = make(map[string]string)
-	}
-	p.Labels[string1] = string2
-	return p
-}
-
-func (p *podWrapper) Obj() *v1.Pod {
-	return p.Pod
-}
-
-type quotaWrapper struct {
-	*v1alpha1.ElasticQuota
-}
-
-func MakeQuota(name string) *quotaWrapper {
-	eq := &v1alpha1.ElasticQuota{
-		TypeMeta: metav1.TypeMeta{Kind: "ElasticQuota", APIVersion: "scheduling.sigs.k8s.io/v1alpha1"},
-		ObjectMeta: metav1.ObjectMeta{
-			Name:        name,
-			Labels:      make(map[string]string),
-			Annotations: make(map[string]string),
-		},
-	}
-	return &quotaWrapper{eq}
-}
-
-func (q *quotaWrapper) Namespace(ns string) *quotaWrapper {
-	q.ElasticQuota.Namespace = ns
-	return q
-}
-
-func (q *quotaWrapper) Min(min v1.ResourceList) *quotaWrapper {
-	q.ElasticQuota.Spec.Min = min
-	return q
-}
-
-func (q *quotaWrapper) Max(max v1.ResourceList) *quotaWrapper {
-	q.ElasticQuota.Spec.Max = max
-	return q
-}
-
-func (q *quotaWrapper) TreeID(tree string) *quotaWrapper {
-	q.ElasticQuota.Labels[extension.LabelQuotaTreeID] = tree
-	return q
-}
-
-func (q *quotaWrapper) Guaranteed(guaranteed v1.ResourceList) *quotaWrapper {
-	raw, err := json.Marshal(guaranteed)
-	if err == nil {
-		q.ElasticQuota.Annotations[extension.AnnotationGuaranteed] = string(raw)
-	}
-	return q
-}
-
-func (q *quotaWrapper) IsRoot(isRoot bool) *quotaWrapper {
-	if isRoot {
-		q.Labels[extension.LabelQuotaIsRoot] = "true"
-	}
-	return q
-}
-
-func (q *quotaWrapper) sharedWeight(sharedWeight v1.ResourceList) *quotaWrapper {
-	sharedWeightBytes, _ := json.Marshal(sharedWeight)
-	q.ElasticQuota.Annotations[extension.AnnotationSharedWeight] = string(sharedWeightBytes)
-	return q
-}
-
-func (q *quotaWrapper) IsParent(isParent bool) *quotaWrapper {
-	if isParent {
-		q.Labels[extension.LabelQuotaIsParent] = "true"
-	} else {
-		q.Labels[extension.LabelQuotaIsParent] = "false"
-	}
-	return q
-}
-
-func (q *quotaWrapper) ParentName(parentName string) *quotaWrapper {
-	q.Labels[extension.LabelQuotaParent] = parentName
-	return q
-}
-
-func (q *quotaWrapper) Annotations(annotations map[string]string) *quotaWrapper {
-	for k, v := range annotations {
-		q.ElasticQuota.Annotations[k] = v
-	}
-	return q
-}
-
-func (q *quotaWrapper) Obj() *v1alpha1.ElasticQuota {
-	return q.ElasticQuota
-}
-
-type resourceWrapper struct{ v1.ResourceList }
-
-func MakeResourceList() *resourceWrapper {
-	return &resourceWrapper{v1.ResourceList{}}
-}
-
-func (r *resourceWrapper) CPU(val int64) *resourceWrapper {
-	r.ResourceList[v1.ResourceCPU] = *resource.NewQuantity(val, resource.DecimalSI)
-	return r
-}
-
-func (r *resourceWrapper) Mem(val int64) *resourceWrapper {
-	r.ResourceList[v1.ResourceMemory] = *resource.NewQuantity(val, resource.DecimalSI)
-	return r
-}
-
-func (r *resourceWrapper) GPU(val int64) *resourceWrapper {
-	r.ResourceList["nvidia.com/gpu"] = *resource.NewQuantity(val, resource.DecimalSI)
-	return r
-}
-
-func (r *resourceWrapper) Obj() v1.ResourceList {
-	return r.ResourceList
 }

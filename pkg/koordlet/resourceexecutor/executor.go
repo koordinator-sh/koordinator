@@ -23,6 +23,7 @@ import (
 
 	"k8s.io/klog/v2"
 
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
 	sysutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 	"github.com/koordinator-sh/koordinator/pkg/util/cache"
 )
@@ -220,30 +221,36 @@ func (e *ResourceUpdateExecutorImpl) needUpdate(updater ResourceUpdater) bool {
 }
 
 func (e *ResourceUpdateExecutorImpl) update(updater ResourceUpdater) error {
+	start := time.Now()
 	err := updater.update()
-	if err != nil && e.isUpdateErrIgnored(err) {
-		klog.V(5).Infof("failed to update resource %s to %v, ignored err: %v", updater.Key(), updater.Value(), err)
-		return nil
-	}
-	if err != nil {
+	if err != nil && !e.isUpdateErrIgnored(err) {
+		metrics.RecordResourceUpdateDuration(updater.Name(), metrics.ResourceUpdateStatusFailed, metrics.SinceInSeconds(start))
 		klog.V(5).Infof("failed to update resource %s to %v, err: %v", updater.Key(), updater.Value(), err)
 		return err
+	} else if err != nil {
+		// error can be ignored
+		klog.V(5).Infof("failed to update resource %s to %v, ignored err: %v", updater.Key(), updater.Value(), err)
+	} else {
+		metrics.RecordResourceUpdateDuration(updater.Name(), metrics.ResourceUpdateStatusSuccess, metrics.SinceInSeconds(start))
+		klog.V(6).Infof("successfully update resource %s to %v", updater.Key(), updater.Value())
 	}
-	klog.V(6).Infof("successfully update resource %s to %v", updater.Key(), updater.Value())
 	return nil
 }
 
 func (e *ResourceUpdateExecutorImpl) updateByCache(updater ResourceUpdater) (bool, error) {
 	if e.needUpdate(updater) {
+		start := time.Now()
 		err := updater.update()
 		if err != nil && e.isUpdateErrIgnored(err) {
 			klog.V(5).Infof("failed to cacheable update resource %s to %v, ignored err: %v", updater.Key(), updater.Value(), err)
 			return false, nil
 		}
 		if err != nil {
+			metrics.RecordResourceUpdateDuration(updater.Name(), metrics.ResourceUpdateStatusFailed, metrics.SinceInSeconds(start))
 			klog.V(5).Infof("failed to cacheable update resource %s to %v, err: %v", updater.Key(), updater.Value(), err)
 			return false, err
 		}
+		metrics.RecordResourceUpdateDuration(updater.Name(), metrics.ResourceUpdateStatusSuccess, metrics.SinceInSeconds(start))
 		updater.UpdateLastUpdateTimestamp(time.Now())
 		err = e.ResourceCache.SetDefault(updater.Key(), updater)
 		if err != nil {

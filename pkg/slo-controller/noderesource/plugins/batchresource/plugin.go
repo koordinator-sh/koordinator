@@ -32,7 +32,6 @@ import (
 	"k8s.io/klog/v2"
 	"k8s.io/utils/clock"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	"github.com/koordinator-sh/koordinator/apis/configuration"
 	"github.com/koordinator-sh/koordinator/apis/extension"
@@ -79,7 +78,7 @@ func (p *Plugin) Setup(opt *framework.Option) error {
 	}
 
 	nrtHandler = &NRTHandler{syncContext: nrtSyncContext}
-	opt.Builder = opt.Builder.Watches(&source.Kind{Type: &topologyv1alpha1.NodeResourceTopology{}}, nrtHandler)
+	opt.Builder = opt.Builder.Watches(&topologyv1alpha1.NodeResourceTopology{}, nrtHandler)
 
 	return nil
 }
@@ -211,6 +210,18 @@ func (p *Plugin) calculate(strategy *configuration.ColocationStrategy, node *cor
 	}, nil
 }
 
+// In order to support the colocation requirements of different enterprise environments, a configurable colocation strategy is provided.
+// The resource view from the node perspective is as follows:
+//
+//	https://github.com/koordinator-sh/koordinator/blob/main/docs/images/node-resource-model.png
+//
+// Typical colocation scenario:
+//  1. default policy, and the CPU and memory that can be collocated are automatically calculated based on the load level of the node.
+//  2. default policy on CPU, and the Memory is configured not to be overcommitted. This can reduce the probability of batch pods
+//     being killed due to high memory water levels (reduce the kill rate)
+//
+// In each scenario, users can also adjust the resource water level configuration according to your own needs and control the deployment
+// density of batch pods.
 func (p *Plugin) calculateOnNode(strategy *configuration.ColocationStrategy, node *corev1.Node, podList *corev1.PodList,
 	resourceMetrics *framework.ResourceMetrics) (corev1.ResourceList, string, string) {
 	// compute the requests and usages according to the pods' priority classes.
@@ -293,7 +304,7 @@ func (p *Plugin) calculateOnNode(strategy *configuration.ColocationStrategy, nod
 		"cpu", podsDanglingUsed.Cpu().String(), "memory", podsDanglingUsed.Memory().String())
 
 	nodeCapacity := getNodeCapacity(node)
-	nodeReservation := getNodeReservation(strategy, nodeCapacity)
+	nodeSafetyMargin := getNodeSafetyMargin(strategy, nodeCapacity)
 
 	systemUsed := getResourceListForCPUAndMemory(nodeMetric.Status.NodeMetric.SystemUsage.ResourceList)
 	// resource usage of host applications with prod priority will be count as host system usage since they consumes the
@@ -303,9 +314,10 @@ func (p *Plugin) calculateOnNode(strategy *configuration.ColocationStrategy, nod
 	// System.Reserved = Node.Anno.Reserved, Node.Kubelet.Reserved)
 	nodeAnnoReserved := util.GetNodeReservationFromAnnotation(node.Annotations)
 	nodeKubeletReserved := util.GetNodeReservationFromKubelet(node)
-	systemReserved := quotav1.Max(nodeKubeletReserved, nodeAnnoReserved)
+	// FIXME: resource reservation taking max is rather confusing.
+	nodeReserved := quotav1.Max(nodeKubeletReserved, nodeAnnoReserved)
 
-	batchAllocatable, cpuMsg, memMsg := calculateBatchResourceByPolicy(strategy, nodeCapacity, nodeReservation, systemReserved,
+	batchAllocatable, cpuMsg, memMsg := calculateBatchResourceByPolicy(strategy, nodeCapacity, nodeSafetyMargin, nodeReserved,
 		systemUsed, podsHPRequest, podsHPUsed, podsHPMaxUsedReq)
 	metrics.RecordNodeExtendedResourceAllocatableInternal(node, string(extension.BatchCPU), metrics.UnitInteger, float64(batchAllocatable.Cpu().MilliValue())/1000)
 	metrics.RecordNodeExtendedResourceAllocatableInternal(node, string(extension.BatchMemory), metrics.UnitByte, float64(batchAllocatable.Memory().Value()))
@@ -366,7 +378,7 @@ func (p *Plugin) calculateOnNUMALevel(strategy *configuration.ColocationStrategy
 	systemUsed = quotav1.Add(systemUsed, hostAppHPUsed)
 	nodeAnnoReserved := util.GetNodeReservationFromAnnotation(node.Annotations)
 	nodeKubeletReserved := util.GetNodeReservationFromKubelet(node)
-	systemReserved := quotav1.Max(nodeKubeletReserved, nodeAnnoReserved)
+	nodeReserved := quotav1.Max(nodeKubeletReserved, nodeAnnoReserved)
 
 	for i, zone := range nrt.Zones {
 		zoneIdxMap[i] = zone.Name
@@ -380,9 +392,9 @@ func (p *Plugin) calculateOnNUMALevel(strategy *configuration.ColocationStrategy
 				nodeZoneAllocatable[i][corev1.ResourceName(resourceInfo.Name)] = resourceInfo.Allocatable.DeepCopy()
 			}
 		}
-		nodeZoneReserve[i] = getNodeReservation(strategy, nodeZoneAllocatable[i])
+		nodeZoneReserve[i] = getNodeSafetyMargin(strategy, nodeZoneAllocatable[i])
 		systemZoneUsed[i] = divideResourceList(systemUsed, float64(zoneNum))
-		systemZoneReserved[i] = divideResourceList(systemReserved, float64(zoneNum))
+		systemZoneReserved[i] = divideResourceList(nodeReserved, float64(zoneNum))
 	}
 	podMetricMap := make(map[string]*slov1alpha1.PodMetricInfo)
 	podMetricUnknownMap := make(map[string]*slov1alpha1.PodMetricInfo)

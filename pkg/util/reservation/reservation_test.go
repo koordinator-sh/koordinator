@@ -17,6 +17,7 @@ limitations under the License.
 package reservation
 
 import (
+	"math"
 	"testing"
 	"time"
 
@@ -28,6 +29,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/utils/pointer"
 
+	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 )
 
@@ -623,7 +625,7 @@ func TestReservePod(t *testing.T) {
 					},
 				},
 			},
-			Priority: pointer.Int32(0),
+			Priority: pointer.Int32(math.MaxInt32),
 			InitContainers: []corev1.Container{
 				{
 					Name:      "test-init-container",
@@ -643,6 +645,20 @@ func TestReservePod(t *testing.T) {
 			name:           "convert to reserve pod",
 			reservation:    reservation,
 			wantReservePod: expectReservePod,
+		},
+		{
+			name: "custom priority",
+			reservation: func() *schedulingv1alpha1.Reservation {
+				r := reservation.DeepCopy()
+				r.Labels[apiext.LabelPodPriority] = "1000"
+				return r
+			}(),
+			wantReservePod: func() *corev1.Pod {
+				p := expectReservePod.DeepCopy()
+				p.Labels[apiext.LabelPodPriority] = "1000"
+				p.Spec.Priority = pointer.Int32(1000)
+				return p
+			}(),
 		},
 	}
 	for _, tt := range tests {
@@ -746,4 +762,58 @@ func TestReservationRequests(t *testing.T) {
 			assert.True(t, equality.Semantic.DeepEqual(tt.want, got))
 		})
 	}
+}
+
+func TestGetReservationRestrictedResources(t *testing.T) {
+	tests := []struct {
+		name          string
+		resourceNames []corev1.ResourceName
+		options       *apiext.ReservationRestrictedOptions
+		want          []corev1.ResourceName
+	}{
+		{
+			name:          "no options, got all allocatable resources",
+			resourceNames: []corev1.ResourceName{"cpu", "memory"},
+			options:       nil,
+			want:          []corev1.ResourceName{"cpu", "memory"},
+		},
+		{
+			name:          "has options and same as resourceNames",
+			resourceNames: []corev1.ResourceName{"cpu", "memory"},
+			options: &apiext.ReservationRestrictedOptions{
+				Resources: []corev1.ResourceName{"cpu", "memory"},
+			},
+			want: []corev1.ResourceName{"cpu", "memory"},
+		},
+		{
+			name:          "has options but different resourceNames",
+			resourceNames: []corev1.ResourceName{"cpu", "memory"},
+			options: &apiext.ReservationRestrictedOptions{
+				Resources: []corev1.ResourceName{"cpu"},
+			},
+			want: []corev1.ResourceName{"cpu"},
+		},
+		{
+			name:          "has options but no resourceNames",
+			resourceNames: []corev1.ResourceName{"cpu", "memory"},
+			options: &apiext.ReservationRestrictedOptions{
+				Resources: []corev1.ResourceName{},
+			},
+			want: []corev1.ResourceName{"cpu", "memory"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := GetReservationRestrictedResources(tt.resourceNames, tt.options)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestNewReservationReason(t *testing.T) {
+	t.Run("test", func(t *testing.T) {
+		reasonMsg := "node(s) didn't match the requested node name"
+		got := NewReservationReason(reasonMsg)
+		assert.True(t, IsReservationReason(got))
+	})
 }

@@ -16,7 +16,10 @@ limitations under the License.
 
 package handler
 
-import "time"
+import (
+	"context"
+	"time"
+)
 
 const (
 	// unixProtocol is the network protocol of unix socket.
@@ -25,7 +28,7 @@ const (
 )
 
 type ContainerRuntimeHandler interface {
-	StopContainer(containerID string, timeout int64) error
+	StopContainer(ctx context.Context, containerID string, timeout int64) error
 	UpdateContainerResources(containerID string, opts UpdateOptions) error
 }
 

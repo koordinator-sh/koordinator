@@ -39,15 +39,17 @@ func init() {
 	flag.BoolVar(&disableNoDeepCopy, "disable-no-deepcopy", false, "If you are going to disable NoDeepCopy List in some controllers and webhooks.")
 }
 
+var _ client.NewClientFunc = NewClient
+
 // NewClient creates the default caching client with disable deepcopy list from cache.
-func NewClient(cache cache.Cache, config *rest.Config, options client.Options, uncachedObjects ...client.Object) (client.Client, error) {
+func NewClient(config *rest.Config, options client.Options) (client.Client, error) {
 	c, err := client.New(config, options)
 	if err != nil {
 		return nil, err
 	}
 
 	uncachedGVKs := map[schema.GroupVersionKind]struct{}{}
-	for _, obj := range uncachedObjects {
+	for _, obj := range options.Cache.DisableFor {
 		gvk, err := apiutil.GVKForObject(obj, c.Scheme())
 		if err != nil {
 			return nil, err
@@ -55,18 +57,22 @@ func NewClient(cache cache.Cache, config *rest.Config, options client.Options, u
 		uncachedGVKs[gvk] = struct{}{}
 	}
 
+	mgrCache := options.Cache.Reader.(cache.Cache)
+
 	return &delegatingClient{
 		scheme: c.Scheme(),
 		mapper: c.RESTMapper(),
 		Reader: &delegatingReader{
-			CacheReader:      cache,
+			CacheReader:      options.Cache.Reader,
 			ClientReader:     c,
-			noDeepCopyLister: &noDeepCopyLister{cache: cache, scheme: c.Scheme()},
+			noDeepCopyLister: &noDeepCopyLister{cache: mgrCache, scheme: c.Scheme()},
 			scheme:           c.Scheme(),
 			uncachedGVKs:     uncachedGVKs,
 		},
-		Writer:       c,
-		StatusClient: c,
+		Writer:                       c,
+		StatusClient:                 c,
+		SubResourceClientConstructor: c,
+		originClient:                 c,
 	}, nil
 }
 
@@ -74,9 +80,11 @@ type delegatingClient struct {
 	client.Reader
 	client.Writer
 	client.StatusClient
+	client.SubResourceClientConstructor
 
-	scheme *runtime.Scheme
-	mapper meta.RESTMapper
+	originClient client.Client
+	scheme       *runtime.Scheme
+	mapper       meta.RESTMapper
 }
 
 // Scheme returns the scheme this client is using.
@@ -88,6 +96,18 @@ func (d *delegatingClient) Scheme() *runtime.Scheme {
 func (d *delegatingClient) RESTMapper() meta.RESTMapper {
 	return d.mapper
 }
+
+// GroupVersionKindFor returns the GroupVersionKind for the given object.
+func (d *delegatingClient) GroupVersionKindFor(obj runtime.Object) (schema.GroupVersionKind, error) {
+	return d.originClient.GroupVersionKindFor(obj)
+}
+
+// IsObjectNamespaced returns true if the object is namespaced.
+func (d *delegatingClient) IsObjectNamespaced(obj runtime.Object) (bool, error) {
+	return d.originClient.IsObjectNamespaced(obj)
+}
+
+var _ client.Reader = &delegatingReader{}
 
 // delegatingReader forms a Reader that will cause Get and List requests for
 // unstructured types to use the ClientReader while requests for any other type
@@ -127,13 +147,13 @@ func (d *delegatingReader) shouldBypassCache(obj runtime.Object) (bool, error) {
 }
 
 // Get retrieves an obj for a given object key from the Kubernetes Cluster.
-func (d *delegatingReader) Get(ctx context.Context, key client.ObjectKey, obj client.Object) error {
+func (d *delegatingReader) Get(ctx context.Context, key client.ObjectKey, obj client.Object, option ...client.GetOption) error {
 	if isUncached, err := d.shouldBypassCache(obj); err != nil {
 		return err
 	} else if isUncached {
-		return d.ClientReader.Get(ctx, key, obj)
+		return d.ClientReader.Get(ctx, key, obj, option...)
 	}
-	return d.CacheReader.Get(ctx, key, obj)
+	return d.CacheReader.Get(ctx, key, obj, option...)
 }
 
 // List retrieves list of objects for a given namespace and list options.

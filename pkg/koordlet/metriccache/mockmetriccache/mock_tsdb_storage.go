@@ -244,6 +244,18 @@ func (m *MockQuerier) EXPECT() *MockQuerierMockRecorder {
 	return m.recorder
 }
 
+// Close mocks base method.
+func (m *MockQuerier) Close() {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "Close")
+}
+
+// Close indicates an expected call of Close.
+func (mr *MockQuerierMockRecorder) Close() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Close", reflect.TypeOf((*MockQuerier)(nil).Close))
+}
+
 // Query mocks base method.
 func (m *MockQuerier) Query(meta metriccache.MetricMeta, hints *metriccache.QueryHints, result metriccache.MetricResult) error {
 	m.ctrl.T.Helper()
@@ -256,4 +268,18 @@ func (m *MockQuerier) Query(meta metriccache.MetricMeta, hints *metriccache.Quer
 func (mr *MockQuerierMockRecorder) Query(meta, hints, result interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Query", reflect.TypeOf((*MockQuerier)(nil).Query), meta, hints, result)
+}
+
+// QueryAndClose mocks base method.
+func (m *MockQuerier) QueryAndClose(meta metriccache.MetricMeta, hints *metriccache.QueryHints, result metriccache.MetricResult) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "QueryAndClose", meta, hints, result)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// QueryAndClose indicates an expected call of QueryAndClose.
+func (mr *MockQuerierMockRecorder) QueryAndClose(meta, hints, result interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "QueryAndClose", reflect.TypeOf((*MockQuerier)(nil).QueryAndClose), meta, hints, result)
 }

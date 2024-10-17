@@ -27,14 +27,15 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
-	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
+
+	"github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 )
 
 func makeTestHandler(t *testing.T) *ElasticQuotaMutatingHandler {
 	client := fake.NewClientBuilder().Build()
 	sche := client.Scheme()
 	v1alpha1.AddToScheme(sche)
-	decoder, _ := admission.NewDecoder(sche)
+	decoder := admission.NewDecoder(sche)
 	handler := &ElasticQuotaMutatingHandler{}
 	handler.InjectClient(client)
 	handler.InjectDecoder(decoder)
@@ -113,6 +114,19 @@ func TestElasticQuotaMutatingHandler_Handle(t *testing.T) {
 					Operation: admissionv1.Create,
 					Object: runtime.RawExtension{
 						Raw: []byte(`{"metadata":{"name":"quota1"}}`),
+					},
+				},
+			},
+			allowed: true,
+		},
+		{
+			name: "create root quota",
+			request: admission.Request{
+				AdmissionRequest: admissionv1.AdmissionRequest{
+					Resource:  gvr("elasticquotas"),
+					Operation: admissionv1.Create,
+					Object: runtime.RawExtension{
+						Raw: []byte(`{"metadata":{"name":"koordinator-root-quota"}}`),
 					},
 				},
 			},

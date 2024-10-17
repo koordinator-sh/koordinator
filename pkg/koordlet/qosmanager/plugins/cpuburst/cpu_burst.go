@@ -258,7 +258,7 @@ func (b *cpuBurst) start() {
 // return isOverload, share pool usage ratio and message detail
 func (b *cpuBurst) getNodeStateForBurst(sharePoolThresholdPercent int64,
 	podsMeta []*statesinformer.PodMeta) nodeStateForBurst {
-	overloadMetricDuration := util.MinInt64(int64(b.reconcileInterval*5), int64(10*time.Second))
+	overloadMetricDuration := time.Duration(util.MinInt64(int64(b.reconcileInterval*5), int64(10*time.Second)))
 	queryParam := helpers.GenerateQueryParamsAvg(overloadMetricDuration)
 
 	queryMeta, err := metriccache.NodeCPUUsageMetric.BuildQueryMeta(nil)
@@ -352,6 +352,11 @@ func (b *cpuBurst) applyCFSQuotaBurst(burstCfg *slov1alpha1.CPUBurstConfig, podM
 		container, exist := containerMap[containerStat.Name]
 		if !exist || container == nil {
 			klog.Warningf("container %s/%s/%s not found in pod spec", pod.Namespace, pod.Name, containerStat.Name)
+			continue
+		}
+
+		if containerStat.State.Running == nil {
+			klog.V(6).Infof("skip container %s/%s/%s, because it is not running", pod.Namespace, pod.Name, containerStat.Name)
 			continue
 		}
 

@@ -28,6 +28,7 @@ import (
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	koordfeatures "github.com/koordinator-sh/koordinator/pkg/features"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/elasticquota/core"
 	utilfeature "github.com/koordinator-sh/koordinator/pkg/util/feature"
 )
 
@@ -184,9 +185,14 @@ func TestPlugin_OnPodDelete(t *testing.T) {
 
 	suit.AddQuota("test", "", 10, 40, 10, 40, 10, 40, false, "")
 
-	testQuotaInfo := plugin.groupQuotaManager.GetQuotaInfoByName("test")
-
-	assert.True(t, quotav1.Equals(testQuotaInfo.GetUsed(), v1.ResourceList{}))
+	var testQuotaInfo *core.QuotaInfo
+	for {
+		testQuotaInfo = plugin.groupQuotaManager.GetQuotaInfoByName("test")
+		if testQuotaInfo != nil {
+			assert.True(t, quotav1.Equals(testQuotaInfo.GetUsed(), v1.ResourceList{}))
+			break
+		}
+	}
 
 	pod := makePod2("pod", MakeResourceList().CPU(1).Mem(2).Obj())
 	pod.Labels[extension.LabelQuotaName] = "test"

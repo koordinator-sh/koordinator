@@ -58,6 +58,7 @@ type cpuEvictor struct {
 	metricCache           metriccache.MetricCache
 	evictor               *framework.Evictor
 	lastEvictTime         time.Time
+	onlyEvictByAPI        bool
 }
 
 func New(opt *framework.Options) framework.QOSStrategy {
@@ -68,6 +69,7 @@ func New(opt *framework.Options) framework.QOSStrategy {
 		statesInformer:        opt.StatesInformer,
 		metricCache:           opt.MetricCache,
 		lastEvictTime:         time.Now(),
+		onlyEvictByAPI:        opt.Config.OnlyEvictByAPI,
 	}
 }
 
@@ -131,18 +133,19 @@ func (c *cpuEvictor) cpuEvict() {
 
 func (c *cpuEvictor) calculateMilliRelease(thresholdConfig *slov1alpha1.ResourceThresholdStrategy, windowSeconds int64) int64 {
 	// Step1: Calculate release resource by BECPUResourceMetric in window
-	queryparam := helpers.GenerateQueryParamsAvg(windowSeconds)
-	querier, err := c.metricCache.Querier(*queryparam.Start, *queryparam.End)
+	queryParam := helpers.GenerateQueryParamsAvg(time.Duration(windowSeconds) * time.Second)
+	querier, err := c.metricCache.Querier(*queryParam.Start, *queryParam.End)
 	if err != nil {
 		klog.Warningf("get query failed, error %v", err)
 		return 0
 	}
+	defer querier.Close()
 	// BECPUUsage
-	avgBECPUMilliUsage, count01 := getBECPUMetric(metriccache.BEResourceAllocationUsage, querier, queryparam.Aggregate)
+	avgBECPUMilliUsage, count01 := getBECPUMetric(metriccache.BEResourceAllocationUsage, querier, queryParam.Aggregate)
 	// BECPURequest
-	avgBECPUMilliRequest, count02 := getBECPUMetric(metriccache.BEResourceAllocationRequest, querier, queryparam.Aggregate)
+	avgBECPUMilliRequest, count02 := getBECPUMetric(metriccache.BEResourceAllocationRequest, querier, queryParam.Aggregate)
 	// BECPULimit
-	avgBECPUMilliRealLimit, count03 := getBECPUMetric(metriccache.BEResourceAllocationRealLimit, querier, queryparam.Aggregate)
+	avgBECPUMilliRealLimit, count03 := getBECPUMetric(metriccache.BEResourceAllocationRealLimit, querier, queryParam.Aggregate)
 
 	// CPU Satisfaction considers the allocatable when policy=evictByAllocatable.
 	avgBECPUMilliLimit := avgBECPUMilliRealLimit
@@ -172,18 +175,19 @@ func (c *cpuEvictor) calculateMilliRelease(thresholdConfig *slov1alpha1.Resource
 	}
 
 	// Step2: Calculate release resource current
-	queryparam = helpers.GenerateQueryParamsLast(c.metricCollectInterval * 2)
-	querier, err = c.metricCache.Querier(*queryparam.Start, *queryparam.End)
+	queryParam = helpers.GenerateQueryParamsLast(c.metricCollectInterval * 2)
+	querier, err = c.metricCache.Querier(*queryParam.Start, *queryParam.End)
 	if err != nil {
 		klog.Warningf("get query failed, error %v", err)
 		return 0
 	}
+	defer querier.Close()
 	// BECPUUsage
-	currentBECPUMilliUsage, _ := getBECPUMetric(metriccache.BEResourceAllocationUsage, querier, queryparam.Aggregate)
+	currentBECPUMilliUsage, _ := getBECPUMetric(metriccache.BEResourceAllocationUsage, querier, queryParam.Aggregate)
 	// BECPURequest
-	currentBECPUMilliRequest, _ := getBECPUMetric(metriccache.BEResourceAllocationRequest, querier, queryparam.Aggregate)
+	currentBECPUMilliRequest, _ := getBECPUMetric(metriccache.BEResourceAllocationRequest, querier, queryParam.Aggregate)
 	// BECPULimit
-	currentBECPUMilliRealLimit, _ := getBECPUMetric(metriccache.BEResourceAllocationRealLimit, querier, queryparam.Aggregate)
+	currentBECPUMilliRealLimit, _ := getBECPUMetric(metriccache.BEResourceAllocationRealLimit, querier, queryParam.Aggregate)
 
 	// CPU Satisfaction considers the allocatable when policy=evictByAllocatable.
 	currentBECPUMilliLimit := currentBECPUMilliRealLimit
@@ -218,7 +222,7 @@ func (c *cpuEvictor) calculateMilliRelease(thresholdConfig *slov1alpha1.Resource
 	if milliRelease > 0 {
 		klog.V(4).Infof("cpuEvict by ResourceSatisfaction start to evict, milliRelease: %v,"+
 			"current status (BEUsage:%v, BERequest:%v, BELimit:%v, BERealLimit:%v, BEAllocatable:%v)",
-			currentBECPUMilliUsage, currentBECPUMilliRequest, currentBECPUMilliLimit, currentBECPUMilliRealLimit,
+			milliRelease, currentBECPUMilliUsage, currentBECPUMilliRequest, currentBECPUMilliLimit, currentBECPUMilliRealLimit,
 			beCPUMilliAllocatable)
 	}
 	return milliRelease
@@ -293,24 +297,30 @@ func (c *cpuEvictor) killAndEvictBEPodsRelease(node *corev1.Node, bePodInfos []*
 		node.Name, cpuNeedMilliRelease)
 
 	cpuMilliReleased := int64(0)
-	var killedPods []*corev1.Pod
+	hasKillPods := false
 	for _, bePod := range bePodInfos {
 		if cpuMilliReleased >= cpuNeedMilliRelease {
 			break
 		}
 
-		podKillMsg := fmt.Sprintf("%s, kill pod: %s", message, util.GetPodKey(bePod.pod))
-		helpers.KillContainers(bePod.pod, podKillMsg)
-
-		killedPods = append(killedPods, bePod.pod)
-		cpuMilliReleased = cpuMilliReleased + bePod.milliRequest
-
-		klog.V(5).Infof("cpuEvict pick pod %s/%s to evict", util.GetPodKey(bePod.pod))
+		if c.onlyEvictByAPI {
+			if c.evictor.EvictPodIfNotEvicted(bePod.pod, node, resourceexecutor.EvictPodByBECPUSatisfaction, message) {
+				cpuMilliReleased = cpuMilliReleased + bePod.milliRequest
+				klog.V(5).Infof("cpuEvict pick pod %s to evict", util.GetPodKey(bePod.pod))
+				hasKillPods = true
+			} else {
+				klog.V(5).Infof("cpuEvict pick pod %s to evict, failed", util.GetPodKey(bePod.pod))
+			}
+		} else {
+			podKillMsg := fmt.Sprintf("%s, kill pod: %s", message, util.GetPodKey(bePod.pod))
+			helpers.KillContainers(bePod.pod, podKillMsg)
+			cpuMilliReleased = cpuMilliReleased + bePod.milliRequest
+			klog.V(5).Infof("cpuEvict pick pod %s to evict", util.GetPodKey(bePod.pod))
+			hasKillPods = true
+		}
 	}
 
-	c.evictor.EvictPodsIfNotEvicted(killedPods, node, resourceexecutor.EvictPodByBECPUSatisfaction, message)
-
-	if len(killedPods) > 0 {
+	if hasKillPods {
 		c.lastEvictTime = time.Now()
 	}
 	klog.V(5).Infof("killAndEvictBEPodsRelease finished! cpuNeedMilliRelease(%d) cpuMilliReleased(%d)",

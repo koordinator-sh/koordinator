@@ -31,6 +31,9 @@ import (
 )
 
 func (p *Plugin) GetPodTopologyHints(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) (map[string][]topologymanager.NUMATopologyHint, *framework.Status) {
+	if p.disableDeviceNUMATopologyAlignment {
+		return nil, nil
+	}
 	state, status := getPreFilterState(cycleState)
 	if !status.IsSuccess() {
 		return nil, status
@@ -55,6 +58,9 @@ func (p *Plugin) GetPodTopologyHints(ctx context.Context, cycleState *framework.
 }
 
 func (p *Plugin) Allocate(ctx context.Context, cycleState *framework.CycleState, affinity topologymanager.NUMATopologyHint, pod *corev1.Pod, nodeName string) *framework.Status {
+	if p.disableDeviceNUMATopologyAlignment {
+		return nil
+	}
 	state, status := getPreFilterState(cycleState)
 	if !status.IsSuccess() {
 		return status
@@ -89,7 +95,7 @@ func (p *Plugin) Allocate(ctx context.Context, cycleState *framework.CycleState,
 
 	nodeDeviceInfo.lock.RLock()
 	defer nodeDeviceInfo.lock.RUnlock()
-	allocateResult, status := p.tryAllocateFromReservation(allocator, state, restoreState, restoreState.matched, node, preemptible, false)
+	allocateResult, status := p.tryAllocateFromReservation(allocator, state, restoreState, restoreState.matched, pod, node, preemptible, state.hasReservationAffinity)
 	if !status.IsSuccess() {
 		return status
 	}
@@ -141,7 +147,7 @@ func (p *Plugin) generateTopologyHints(cycleState *framework.CycleState, state *
 		maskNodes := mask.GetBits()
 		totalDevices := calcTotalDevicesByNUMA(nodeDevice, maskNodes)
 		for deviceType, wanted := range allocator.desiredCountPerDeviceType {
-			if totalDevices[deviceType] < wanted {
+			if totalCount, exists := totalDevices[deviceType]; exists && totalCount < wanted {
 				return
 			}
 		}
@@ -157,13 +163,7 @@ func (p *Plugin) generateTopologyHints(cycleState *framework.CycleState, state *
 			}
 		}
 
-		for resourceName, affinitySize := range minAffinitySize {
-			if nodeCount < affinitySize {
-				minAffinitySize[resourceName] = nodeCount
-			}
-		}
-
-		allocateResult, status := p.tryAllocateFromReservation(allocator, state, restoreState, restoreState.matched, node, preemptible, false)
+		allocateResult, status := p.tryAllocateFromReservation(allocator, state, restoreState, restoreState.matched, pod, node, preemptible, state.hasReservationAffinity)
 		if !status.IsSuccess() {
 			return
 		}
@@ -175,7 +175,10 @@ func (p *Plugin) generateTopologyHints(cycleState *framework.CycleState, state *
 			}
 		}
 
-		for resourceName := range minAffinitySize {
+		for resourceName, affinitySize := range minAffinitySize {
+			if nodeCount < affinitySize {
+				minAffinitySize[resourceName] = nodeCount
+			}
 			if _, ok := hints[string(resourceName)]; !ok {
 				hints[string(resourceName)] = []topologymanager.NUMATopologyHint{}
 			}

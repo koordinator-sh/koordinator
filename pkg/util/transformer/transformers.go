@@ -30,9 +30,14 @@ import (
 
 var transformers = map[schema.GroupVersionResource]cache.TransformFunc{
 	corev1.SchemeGroupVersion.WithResource("nodes"):               TransformNode,
-	corev1.SchemeGroupVersion.WithResource("pods"):                TransformPod,
 	schedulingv1alpha1.SchemeGroupVersion.WithResource("devices"): TransformDevice,
 	metav1.SchemeGroupVersion.WithResource("metas"):               TransformMeta,
+}
+
+type TransformFactory func() cache.TransformFunc
+
+var transformerFactories = map[schema.GroupVersionResource]TransformFactory{
+	corev1.SchemeGroupVersion.WithResource("pods"): TransformPodFactory,
 }
 
 func SetupTransformers(informerFactory informers.SharedInformerFactory, koordInformerFactory koordinformers.SharedInformerFactory) {
@@ -44,6 +49,20 @@ func SetupTransformers(informerFactory informers.SharedInformerFactory, koordInf
 				klog.Fatalf("Failed to create informer for resource %v, err: %v", resource.String(), err)
 			}
 		}
+		if err := informer.Informer().SetTransform(transformFn); err != nil {
+			klog.Fatalf("Failed to SetTransform in informer, resource: %v, err: %v", resource, err)
+		}
+	}
+	for resource, transformFactory := range transformerFactories {
+		informer, err := informerFactory.ForResource(resource)
+		if err != nil {
+			informer, err = koordInformerFactory.ForResource(resource)
+			if err != nil {
+				klog.Fatalf("Failed to create informer for resource %v, err: %v", resource.String(), err)
+			}
+		}
+		// new transformFunc after initialization
+		transformFn := transformFactory()
 		if err := informer.Informer().SetTransform(transformFn); err != nil {
 			klog.Fatalf("Failed to SetTransform in informer, resource: %v, err: %v", resource, err)
 		}

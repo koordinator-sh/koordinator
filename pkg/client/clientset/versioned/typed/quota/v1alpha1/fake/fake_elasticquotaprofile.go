@@ -24,7 +24,6 @@ import (
 	v1alpha1 "github.com/koordinator-sh/koordinator/apis/quota/v1alpha1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	labels "k8s.io/apimachinery/pkg/labels"
-	schema "k8s.io/apimachinery/pkg/runtime/schema"
 	types "k8s.io/apimachinery/pkg/types"
 	watch "k8s.io/apimachinery/pkg/watch"
 	testing "k8s.io/client-go/testing"
@@ -36,9 +35,9 @@ type FakeElasticQuotaProfiles struct {
 	ns   string
 }
 
-var elasticquotaprofilesResource = schema.GroupVersionResource{Group: "quota.koordinator.sh", Version: "v1alpha1", Resource: "elasticquotaprofiles"}
+var elasticquotaprofilesResource = v1alpha1.SchemeGroupVersion.WithResource("elasticquotaprofiles")
 
-var elasticquotaprofilesKind = schema.GroupVersionKind{Group: "quota.koordinator.sh", Version: "v1alpha1", Kind: "ElasticQuotaProfile"}
+var elasticquotaprofilesKind = v1alpha1.SchemeGroupVersion.WithKind("ElasticQuotaProfile")
 
 // Get takes name of the elasticQuotaProfile, and returns the corresponding elasticQuotaProfile object, and an error if there is any.
 func (c *FakeElasticQuotaProfiles) Get(ctx context.Context, name string, options v1.GetOptions) (result *v1alpha1.ElasticQuotaProfile, err error) {

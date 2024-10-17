@@ -24,77 +24,191 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
+	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 )
 
 func Test_fillGPUTotalMem(t *testing.T) {
 	tests := []struct {
-		name           string
-		gpuTotal       deviceResources
-		podRequest     corev1.ResourceList
-		wantPodRequest corev1.ResourceList
-		wantErr        bool
+		name            string
+		allocations     apiext.DeviceAllocations
+		nodeDeviceInfo  *nodeDevice
+		wantAllocations apiext.DeviceAllocations
+		wantErr         bool
 	}{
 		{
 			name: "ratio to mem",
-			gpuTotal: deviceResources{
-				0: corev1.ResourceList{
-					apiext.ResourceGPUCore:        resource.MustParse("100"),
-					apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
-					apiext.ResourceGPUMemory:      resource.MustParse("32Gi"),
+			allocations: map[schedulingv1alpha1.DeviceType][]*apiext.DeviceAllocation{
+				schedulingv1alpha1.GPU: {
+					{
+						Minor: 0,
+						Resources: corev1.ResourceList{
+							apiext.ResourceGPUCore:        resource.MustParse("50"),
+							apiext.ResourceGPUMemoryRatio: resource.MustParse("50"),
+						},
+					},
 				},
 			},
-			podRequest: corev1.ResourceList{
-				apiext.ResourceGPUCore:        resource.MustParse("50"),
-				apiext.ResourceGPUMemoryRatio: resource.MustParse("50"),
+			nodeDeviceInfo: &nodeDevice{
+				deviceTotal: map[schedulingv1alpha1.DeviceType]deviceResources{
+					schedulingv1alpha1.GPU: {
+						0: corev1.ResourceList{
+							apiext.ResourceGPUCore:        resource.MustParse("100"),
+							apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+							apiext.ResourceGPUMemory:      resource.MustParse("32Gi"),
+						},
+					},
+				},
 			},
-			wantPodRequest: corev1.ResourceList{
-				apiext.ResourceGPUCore:        resource.MustParse("50"),
-				apiext.ResourceGPUMemoryRatio: resource.MustParse("50"),
-				apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
+			wantAllocations: map[schedulingv1alpha1.DeviceType][]*apiext.DeviceAllocation{
+				schedulingv1alpha1.GPU: {
+					{
+						Minor: 0,
+						Resources: corev1.ResourceList{
+							apiext.ResourceGPUCore:        resource.MustParse("50"),
+							apiext.ResourceGPUMemoryRatio: resource.MustParse("50"),
+							apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
+						},
+					},
+				},
 			},
 		},
 		{
 			name: "mem to ratio",
-			gpuTotal: deviceResources{
-				0: corev1.ResourceList{
-					apiext.ResourceGPUCore:        resource.MustParse("100"),
-					apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
-					apiext.ResourceGPUMemory:      resource.MustParse("32Gi"),
+			allocations: map[schedulingv1alpha1.DeviceType][]*apiext.DeviceAllocation{
+				schedulingv1alpha1.GPU: {
+					{
+						Minor: 0,
+						Resources: corev1.ResourceList{
+							apiext.ResourceGPUCore:   resource.MustParse("50"),
+							apiext.ResourceGPUMemory: resource.MustParse("16Gi"),
+						},
+					},
 				},
 			},
-			podRequest: corev1.ResourceList{
-				apiext.ResourceGPUCore:   resource.MustParse("50"),
-				apiext.ResourceGPUMemory: resource.MustParse("16Gi"),
+			nodeDeviceInfo: &nodeDevice{
+				deviceTotal: map[schedulingv1alpha1.DeviceType]deviceResources{
+					schedulingv1alpha1.GPU: {
+						0: corev1.ResourceList{
+							apiext.ResourceGPUCore:        resource.MustParse("100"),
+							apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+							apiext.ResourceGPUMemory:      resource.MustParse("32Gi"),
+						},
+					},
+				},
 			},
-			wantPodRequest: corev1.ResourceList{
-				apiext.ResourceGPUCore:        resource.MustParse("50"),
-				apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(50, resource.DecimalSI),
-				apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
+			wantAllocations: map[schedulingv1alpha1.DeviceType][]*apiext.DeviceAllocation{
+				schedulingv1alpha1.GPU: {
+					{
+						Minor: 0,
+						Resources: corev1.ResourceList{
+							apiext.ResourceGPUCore:        resource.MustParse("50"),
+							apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(50, resource.DecimalSI),
+							apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
+						},
+					},
+				},
 			},
 		},
 		{
 			name: "missing total",
-			gpuTotal: deviceResources{
-				0: corev1.ResourceList{},
+			allocations: map[schedulingv1alpha1.DeviceType][]*apiext.DeviceAllocation{
+				schedulingv1alpha1.GPU: {
+					{
+						Minor: 0,
+						Resources: corev1.ResourceList{
+							apiext.ResourceGPUCore:        resource.MustParse("50"),
+							apiext.ResourceGPUMemoryRatio: resource.MustParse("50"),
+						},
+					},
+				},
 			},
-			podRequest: corev1.ResourceList{
-				apiext.ResourceGPUCore:        resource.MustParse("50"),
-				apiext.ResourceGPUMemoryRatio: resource.MustParse("50"),
+			nodeDeviceInfo: &nodeDevice{
+				deviceTotal: map[schedulingv1alpha1.DeviceType]deviceResources{
+					schedulingv1alpha1.GPU: {
+						0: corev1.ResourceList{},
+					},
+				},
 			},
-			wantPodRequest: corev1.ResourceList{
-				apiext.ResourceGPUCore:        resource.MustParse("50"),
-				apiext.ResourceGPUMemoryRatio: resource.MustParse("50"),
+			wantAllocations: map[schedulingv1alpha1.DeviceType][]*apiext.DeviceAllocation{
+				schedulingv1alpha1.GPU: {
+					{
+						Minor: 0,
+						Resources: corev1.ResourceList{
+							apiext.ResourceGPUCore:        resource.MustParse("50"),
+							apiext.ResourceGPUMemoryRatio: resource.MustParse("50"),
+						},
+					},
+				},
 			},
 			wantErr: true,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := fillGPUTotalMem(tt.gpuTotal, tt.podRequest)
+			err := fillGPUTotalMem(tt.allocations, tt.nodeDeviceInfo)
 			if tt.wantErr != (err != nil) {
 				t.Errorf("wantErr %v but got %v", tt.wantErr, err != nil)
 			}
-			assert.Equal(t, tt.wantPodRequest, tt.podRequest)
+			assert.Equal(t, tt.wantAllocations, tt.allocations)
+		})
+	}
+}
+
+func Test_calcDesiredRequestsAndCountForGPU(t *testing.T) {
+	tests := []struct {
+		name                    string
+		podRequests             corev1.ResourceList
+		wantRequestPerInstance  corev1.ResourceList
+		wantDesiredNumberOfGPUs int
+		wantGPUShared           bool
+	}{
+		{
+			name: "gpu share mode",
+			podRequests: corev1.ResourceList{
+				apiext.ResourceGPUShared:      *resource.NewQuantity(2, resource.DecimalSI),
+				apiext.ResourceGPUCore:        *resource.NewQuantity(100, resource.DecimalSI),
+				apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(100, resource.DecimalSI),
+			},
+			wantRequestPerInstance: corev1.ResourceList{
+				apiext.ResourceGPUCore:        *resource.NewQuantity(50, resource.DecimalSI),
+				apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(50, resource.DecimalSI),
+			},
+			wantDesiredNumberOfGPUs: 2,
+			wantGPUShared:           true,
+		},
+		{
+			name: "gpu memory ratio mode",
+			podRequests: corev1.ResourceList{
+				apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(200, resource.DecimalSI),
+				apiext.ResourceGPUCore:        *resource.NewQuantity(200, resource.DecimalSI),
+			},
+			wantRequestPerInstance: corev1.ResourceList{
+				apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(100, resource.DecimalSI),
+				apiext.ResourceGPUCore:        *resource.NewQuantity(100, resource.DecimalSI),
+			},
+			wantDesiredNumberOfGPUs: 2,
+			wantGPUShared:           false,
+		},
+		{
+			name: "gpu memory mode",
+			podRequests: corev1.ResourceList{
+				apiext.ResourceGPUMemory: *resource.NewQuantity(1024, resource.BinarySI),
+				apiext.ResourceGPUCore:   *resource.NewQuantity(100, resource.DecimalSI),
+			},
+			wantRequestPerInstance: corev1.ResourceList{
+				apiext.ResourceGPUMemory: *resource.NewQuantity(1024, resource.BinarySI),
+				apiext.ResourceGPUCore:   *resource.NewQuantity(100, resource.DecimalSI),
+			},
+			wantDesiredNumberOfGPUs: 1,
+			wantGPUShared:           false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotRequestPerInstance, gotDesiredNumberOfGPUs, gotGPUShared := calcDesiredRequestsAndCountForGPU(tt.podRequests)
+			assert.Equal(t, tt.wantRequestPerInstance, gotRequestPerInstance)
+			assert.Equal(t, tt.wantDesiredNumberOfGPUs, gotDesiredNumberOfGPUs)
+			assert.Equal(t, tt.wantGPUShared, gotGPUShared)
 		})
 	}
 }
