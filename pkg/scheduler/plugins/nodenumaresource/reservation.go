@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"sync"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -38,6 +39,7 @@ import (
 const reservationRestoreStateKey = Name + "/reservationRestoreState"
 
 type reservationRestoreStateData struct {
+	lock        sync.RWMutex
 	nodeToState frameworkext.NodeReservationRestoreStates
 }
 
@@ -70,17 +72,23 @@ func getReservationRestoreState(cycleState *framework.CycleState) *reservationRe
 	if err == nil {
 		state, _ = value.(*reservationRestoreStateData)
 	}
-	if state == nil {
-		state = &reservationRestoreStateData{}
+	if state == nil || state.nodeToState == nil {
+		state = &reservationRestoreStateData{
+			nodeToState: map[string]interface{}{},
+		}
 	}
 	return state
 }
 
 func (s *reservationRestoreStateData) Clone() framework.StateData {
+	s.lock.RLock()
+	defer s.lock.RUnlock()
 	return s
 }
 
 func (s *reservationRestoreStateData) getNodeState(nodeName string) *nodeReservationRestoreStateData {
+	s.lock.RLock()
+	defer s.lock.RUnlock()
 	val := s.nodeToState[nodeName]
 	ns, ok := val.(*nodeReservationRestoreStateData)
 	if !ok {
@@ -89,7 +97,15 @@ func (s *reservationRestoreStateData) getNodeState(nodeName string) *nodeReserva
 	return ns
 }
 
+func (s *reservationRestoreStateData) setNodeState(nodeName string, nodeState interface{}) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	s.nodeToState[nodeName] = nodeState
+}
+
 func (s *reservationRestoreStateData) clearData() {
+	s.lock.Lock()
+	defer s.lock.Unlock()
 	s.nodeToState = map[string]interface{}{}
 }
 
@@ -162,6 +178,8 @@ func appendAllocated(m map[int]corev1.ResourceList, allocatedList ...map[int]cor
 }
 
 func (p *Plugin) PreRestoreReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod) *framework.Status {
+	state := getReservationRestoreState(cycleState)
+	cycleState.Write(reservationRestoreStateKey, state)
 	return nil
 }
 
@@ -232,9 +250,16 @@ func (p *Plugin) RestoreReservation(ctx context.Context, cycleState *framework.C
 		unmatched: filteredUnmatched,
 	}
 	s.mergeReservationAllocations()
+
+	// also complete the nodeRestoreState in cycleState
+	state := getReservationRestoreState(cycleState)
+	state.setNodeState(nodeName, s)
+	cycleState.Write(reservationRestoreStateKey, state)
+
 	return s, nil
 }
 
+// DEPRECATED
 func (p *Plugin) FinalRestoreReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeToStates frameworkext.NodeReservationRestoreStates) *framework.Status {
 	state := &reservationRestoreStateData{
 		nodeToState: nodeToStates,

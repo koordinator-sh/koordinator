@@ -199,7 +199,12 @@ func (pl *Plugin) NominateReservation(ctx context.Context, cycleState *framework
 	}
 
 	state := getStateData(cycleState)
-	reservationInfos := state.nodeReservationStates[nodeName].matchedOrIgnored
+
+	var reservationInfos []*frameworkext.ReservationInfo
+	if nodeRState := state.nodeReservationStates[nodeName]; nodeRState != nil {
+		reservationInfos = nodeRState.matchedOrIgnored
+	}
+
 	if len(reservationInfos) == 0 {
 		return nil, nil
 	}

@@ -58,6 +58,12 @@ const (
 	// ResizePod is used to enable resize pod feature
 	ResizePod featuregate.Feature = "ResizePod"
 
+	// owner: @saintube @ZiMengSheng
+	// alpha: v1.5
+	//
+	// LazyReservationRestore is used to restore reserved resources lazily to improve the scheduling performance.
+	LazyReservationRestore featuregate.Feature = "LazyReservationRestore"
+
 	CSIStorageCapacity featuregate.Feature = "CSIStorageCapacity"
 
 	GenericEphemeralVolume featuregate.Feature = "GenericEphemeralVolume"
@@ -78,6 +84,7 @@ var defaultSchedulerFeatureGates = map[featuregate.Feature]featuregate.FeatureSp
 	ElasticQuotaGuaranteeUsage:                {Default: false, PreRelease: featuregate.Alpha},
 	DisableDefaultQuota:                       {Default: false, PreRelease: featuregate.Alpha},
 	SupportParentQuotaSubmitPod:               {Default: false, PreRelease: featuregate.Alpha},
+	LazyReservationRestore:                    {Default: false, PreRelease: featuregate.Alpha},
 	CSIStorageCapacity:                        {Default: true, PreRelease: featuregate.GA}, // remove in 1.26
 	GenericEphemeralVolume:                    {Default: true, PreRelease: featuregate.GA},
 	PodDisruptionBudget:                       {Default: true, PreRelease: featuregate.GA},

@@ -219,7 +219,7 @@ func (ext *frameworkExtenderImpl) RunPreFilterPlugins(ctx context.Context, cycle
 
 	for _, transformer := range ext.preFilterTransformersEnabled {
 		startTime := time.Now()
-		status = transformer.AfterPreFilter(ctx, cycleState, pod)
+		status = transformer.AfterPreFilter(ctx, cycleState, pod, result)
 		ext.metricsRecorder.ObservePluginDurationAsync("AfterPreFilter", transformer.Name(), status.Code().String(), metrics.SinceInSeconds(startTime))
 		if !status.IsSuccess() {
 			klog.ErrorS(status.AsError(), "Failed to run AfterPreFilter", "pod", klog.KObj(pod), "plugin", transformer.Name())

@@ -115,6 +115,7 @@ func (pm *PreemptionMgr) PostFilter(ctx context.Context, state *framework.CycleS
 		State:      state,
 		Interface:  pm,
 	}
+	klog.V(4).InfoS("Attempt to do reservation preemption in the PostFilter", "pod", klog.KObj(pod))
 
 	result, status := pe.Preempt(ctx, pod, m)
 	if status.Message() != "" {

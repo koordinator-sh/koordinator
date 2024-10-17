@@ -64,7 +64,10 @@ func (pl *Plugin) PreScore(ctx context.Context, cycleState *framework.CycleState
 	errCh := parallelize.NewErrorChannel()
 	pl.handle.Parallelizer().Until(ctx, len(nodes), func(piece int) {
 		node := nodes[piece]
-		reservationInfos := state.nodeReservationStates[node.Name].matchedOrIgnored
+		var reservationInfos []*frameworkext.ReservationInfo
+		if nodeRState := state.nodeReservationStates[node.Name]; nodeRState != nil {
+			reservationInfos = nodeRState.matchedOrIgnored
+		}
 		if len(reservationInfos) == 0 {
 			return
 		}
