@@ -51,9 +51,6 @@ func (h *GPUHandler) CalcDesiredRequestsAndCount(node *corev1.Node, pod *corev1.
 }
 
 func calcDesiredRequestsAndCountForGPU(podRequests corev1.ResourceList) (corev1.ResourceList, int, bool) {
-	podRequests = podRequests.DeepCopy()
-
-	requests := podRequests
 	desiredCount := int64(1)
 	isShared := false
 
@@ -69,23 +66,20 @@ func calcDesiredRequestsAndCountForGPU(podRequests corev1.ResourceList) (corev1.
 		}
 	}
 
-	if desiredCount > 1 {
-		requests = corev1.ResourceList{}
-		if coreExists {
-			requests[apiext.ResourceGPUCore] = *resource.NewQuantity(gpuCore.Value()/desiredCount, resource.DecimalSI)
-		}
-		if memoryRatioExists {
-			gpuMemoryRatioPerGPU := gpuMemoryRatio.Value() / desiredCount
-			if gpuMemoryRatioPerGPU < 100 {
-				isShared = true
-			}
-			requests[apiext.ResourceGPUMemoryRatio] = *resource.NewQuantity(gpuMemoryRatioPerGPU, resource.DecimalSI)
-		} else if gpuMem, memExists := podRequests[apiext.ResourceGPUMemory]; memExists {
-			isShared = true
-			requests[apiext.ResourceGPUMemory] = *resource.NewQuantity(gpuMem.Value()/desiredCount, resource.BinarySI)
-		}
+	requests := corev1.ResourceList{}
+	if coreExists {
+		requests[apiext.ResourceGPUCore] = *resource.NewQuantity(gpuCore.Value()/desiredCount, resource.DecimalSI)
 	}
-	delete(requests, apiext.ResourceGPUShared)
+	if memoryRatioExists {
+		gpuMemoryRatioPerGPU := gpuMemoryRatio.Value() / desiredCount
+		if gpuMemoryRatioPerGPU < 100 {
+			isShared = true
+		}
+		requests[apiext.ResourceGPUMemoryRatio] = *resource.NewQuantity(gpuMemoryRatioPerGPU, resource.DecimalSI)
+	} else if gpuMem, memExists := podRequests[apiext.ResourceGPUMemory]; memExists {
+		isShared = true
+		requests[apiext.ResourceGPUMemory] = *resource.NewQuantity(gpuMem.Value()/desiredCount, resource.BinarySI)
+	}
 	return requests, int(desiredCount), isShared
 }
 

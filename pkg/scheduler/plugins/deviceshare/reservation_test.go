@@ -689,6 +689,14 @@ func Test_tryAllocateFromReservation(t *testing.T) {
 				tt.requiredFromReservation,
 			)
 			err := fillGPUTotalMem(result, nodeDeviceInfo)
+			if tt.wantResult != nil {
+				for deviceType := range tt.wantResult {
+					for i := range tt.wantResult[deviceType] {
+						tt.wantResult[deviceType][i].Resources = removeFormat(tt.wantResult[deviceType][i].Resources)
+						result[deviceType][i].Resources = removeFormat(result[deviceType][i].Resources)
+					}
+				}
+			}
 			assert.NoError(t, err)
 			assert.Equal(t, tt.wantStatus, status)
 			assert.Equal(t, tt.wantResult, result)

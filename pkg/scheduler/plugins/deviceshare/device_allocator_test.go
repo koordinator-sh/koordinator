@@ -1877,6 +1877,7 @@ func Test_allocateGPU(t *testing.T) {
 			},
 		},
 	}
+	assert.NoError(t, fillGPUTotalMem(allocateResult, nd))
 	assert.True(t, equality.Semantic.DeepEqual(expectAllocations, allocateResult[schedulingv1alpha1.GPU]))
 }
 
@@ -2219,6 +2220,7 @@ func Test_allocateGPUWithUnhealthyInstance(t *testing.T) {
 			},
 		},
 	}
+	assert.NoError(t, fillGPUTotalMem(allocateResult, nd))
 	assert.True(t, equality.Semantic.DeepEqual(expectAllocations, allocateResult[schedulingv1alpha1.GPU]))
 }
 

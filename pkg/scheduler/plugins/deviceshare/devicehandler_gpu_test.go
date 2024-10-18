@@ -163,7 +163,7 @@ func Test_calcDesiredRequestsAndCountForGPU(t *testing.T) {
 		wantGPUShared           bool
 	}{
 		{
-			name: "gpu share mode",
+			name: "multi gpu share mode",
 			podRequests: corev1.ResourceList{
 				apiext.ResourceGPUShared:      *resource.NewQuantity(2, resource.DecimalSI),
 				apiext.ResourceGPUCore:        *resource.NewQuantity(100, resource.DecimalSI),
@@ -174,6 +174,20 @@ func Test_calcDesiredRequestsAndCountForGPU(t *testing.T) {
 				apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(50, resource.DecimalSI),
 			},
 			wantDesiredNumberOfGPUs: 2,
+			wantGPUShared:           true,
+		},
+		{
+			name: "gpu share mode",
+			podRequests: corev1.ResourceList{
+				apiext.ResourceGPUShared:      *resource.NewQuantity(1, resource.DecimalSI),
+				apiext.ResourceGPUCore:        *resource.NewQuantity(50, resource.DecimalSI),
+				apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(50, resource.DecimalSI),
+			},
+			wantRequestPerInstance: corev1.ResourceList{
+				apiext.ResourceGPUCore:        *resource.NewQuantity(50, resource.DecimalSI),
+				apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(50, resource.DecimalSI),
+			},
+			wantDesiredNumberOfGPUs: 1,
 			wantGPUShared:           true,
 		},
 		{
@@ -200,7 +214,7 @@ func Test_calcDesiredRequestsAndCountForGPU(t *testing.T) {
 				apiext.ResourceGPUCore:   *resource.NewQuantity(100, resource.DecimalSI),
 			},
 			wantDesiredNumberOfGPUs: 1,
-			wantGPUShared:           false,
+			wantGPUShared:           true,
 		},
 	}
 	for _, tt := range tests {
