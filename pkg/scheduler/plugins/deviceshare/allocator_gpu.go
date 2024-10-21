@@ -346,7 +346,7 @@ func allocateFromScope(requirements *GPURequirements, scope *GPUTopologyScope, a
 
 	var candidateMinors []int
 	bestMinorWhenShared := -1
-	var bestScoreWhenShared int64
+	bestScoreWhenShared := int64(-1)
 	var satisfied bool
 	for _, minor := range scope.minors {
 		totalResources := scope.minorsResources[minor]
