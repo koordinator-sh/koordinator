@@ -315,6 +315,9 @@ func preparePod(pod *corev1.Pod) (state *preFilterState, status *framework.Statu
 		if err != nil {
 			return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, err.Error())
 		}
+		if state.jointAllocate != nil && len(state.jointAllocate.DeviceTypes) >= 1 {
+			state.primaryDeviceType = state.jointAllocate.DeviceTypes[0]
+		}
 		state.gpuRequirements, err = parseGPURequirements(pod, requests, state.hints[schedulingv1alpha1.GPU])
 		if err != nil {
 			return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, err.Error())

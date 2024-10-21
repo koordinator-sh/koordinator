@@ -142,13 +142,14 @@ func setDefaultTestDeviceJointAllocate(t *testing.T, pod *corev1.Pod, options ..
 
 func TestAutopilotAllocator(t *testing.T) {
 	tests := []struct {
-		name            string
-		deviceCR        *schedulingv1alpha1.Device
-		gpuWanted       int
-		hostNetwork     bool
-		assignedDevices apiext.DeviceAllocations
-		want            apiext.DeviceAllocations
-		wantErr         bool
+		name                       string
+		deviceCR                   *schedulingv1alpha1.Device
+		gpuWanted                  int
+		hostNetwork                bool
+		secondaryDeviceWellPlanned bool
+		assignedDevices            apiext.DeviceAllocations
+		want                       apiext.DeviceAllocations
+		wantErr                    bool
 	}{
 		{
 			name:      "request 1 GPU and 1 VF but invalid Device Topology",
@@ -862,12 +863,57 @@ func TestAutopilotAllocator(t *testing.T) {
 				},
 			},
 		},
+		{
+			name:                       "allocate 8 GPU and 4 VF; secondary device well planned",
+			deviceCR:                   fakeDeviceCR,
+			gpuWanted:                  8,
+			secondaryDeviceWellPlanned: true,
+			want: apiext.DeviceAllocations{
+				schedulingv1alpha1.GPU: []*apiext.DeviceAllocation{
+					{
+						Minor:     0,
+						Resources: gpuResourceList,
+					},
+					{
+						Minor:     1,
+						Resources: gpuResourceList,
+					},
+					{
+						Minor:     2,
+						Resources: gpuResourceList,
+					},
+					{
+						Minor:     3,
+						Resources: gpuResourceList,
+					},
+					{
+						Minor:     4,
+						Resources: gpuResourceList,
+					},
+					{
+						Minor:     5,
+						Resources: gpuResourceList,
+					},
+					{
+						Minor:     6,
+						Resources: gpuResourceList,
+					},
+					{
+						Minor:     7,
+						Resources: gpuResourceList,
+					},
+				},
+			},
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			deviceCR := tt.deviceCR.DeepCopy()
 			deviceCR.ResourceVersion = "1"
+			deviceCR.Labels = map[string]string{
+				apiext.LabelSecondaryDeviceWellPlanned: fmt.Sprintf("%t", tt.secondaryDeviceWellPlanned),
+			}
 			koordFakeClient := koordfake.NewSimpleClientset()
 			_, err := koordFakeClient.SchedulingV1alpha1().Devices().Create(context.TODO(), deviceCR, metav1.CreateOptions{})
 			assert.NoError(t, err)

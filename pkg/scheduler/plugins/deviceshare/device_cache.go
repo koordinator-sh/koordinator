@@ -49,7 +49,8 @@ type nodeDevice struct {
 	allocateSet   map[schedulingv1alpha1.DeviceType]map[types.NamespacedName]deviceResources
 	deviceInfos   map[schedulingv1alpha1.DeviceType][]*schedulingv1alpha1.DeviceInfo
 
-	numaTopology *NUMATopology
+	numaTopology               *NUMATopology
+	secondaryDeviceWellPlanned bool
 
 	nodeHonorGPUPartition bool
 	gpuPartitionIndexer   GPUPartitionIndexer
@@ -398,6 +399,7 @@ func (n *nodeDevice) filter(
 	r.deviceInfos = n.deviceInfos
 	r.gpuPartitionIndexer = n.gpuPartitionIndexer
 	r.nodeHonorGPUPartition = n.nodeHonorGPUPartition
+	r.secondaryDeviceWellPlanned = n.secondaryDeviceWellPlanned
 	r.gpuTopologyScope = n.gpuTopologyScope
 	return r
 }
@@ -520,6 +522,7 @@ func (n *nodeDeviceCache) updateNodeDevice(nodeName string, device *schedulingv1
 	info.deviceInfos = deviceInfos
 	info.gpuPartitionIndexer = gpuPartitionIndexer
 	info.nodeHonorGPUPartition = apiext.GetGPUPartitionPolicy(device) == apiext.GPUPartitionPolicyHonor
+	info.secondaryDeviceWellPlanned = apiext.IsSecondaryDeviceWellPlanned(device)
 	info.gpuTopologyScope = gpuTopologyScope
 }
 
