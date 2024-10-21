@@ -471,7 +471,7 @@ func (p *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState, 
 	}
 	err = fillGPUTotalMem(result, nodeDeviceInfo)
 	if err != nil {
-		return framework.AsStatus(err)
+		return framework.NewStatus(framework.Error, fmt.Sprintf("fillGPUTotalMem failed: %v, node: %v", err, nodeName))
 	}
 	nodeDeviceInfo.updateCacheUsed(result, pod, true)
 	state.allocationResult = result
