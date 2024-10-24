@@ -44,6 +44,7 @@ func Test_NoneResourceQOSStrategy(t *testing.T) {
 		LSClass:     NoneResourceQOS(apiext.QoSLS),
 		BEClass:     NoneResourceQOS(apiext.QoSBE),
 		SystemClass: NoneResourceQOS(apiext.QoSSystem),
+		CgroupRoot:  NoneResourceQOS(apiext.QoSNone),
 	}
 	got := NoneResourceQOSStrategy()
 	assert.Equal(t, expect, got)
