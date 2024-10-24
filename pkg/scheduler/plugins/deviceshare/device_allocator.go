@@ -265,8 +265,8 @@ func (a *AutopilotAllocator) jointAllocate(nodeDevice *nodeDevice, requestCtx *r
 		pcieIDs := newPreferredPCIes(nodeDevice, primaryDeviceType, primaryAllocations)
 		secondaryDeviceAllocations = apiext.DeviceAllocations{}
 		for _, deviceType := range secondaryDeviceTypes {
-			desiredCount := 1
-			if jointAllocate != nil && jointAllocate.RequiredScope == apiext.SamePCIeDeviceJointAllocateScope {
+			desiredCount := a.desiredCountPerDeviceType[deviceType]
+			if jointAllocate != nil && jointAllocate.RequiredScope == apiext.SamePCIeDeviceJointAllocateScope && desiredCount < pcieIDs.Len() {
 				desiredCount = pcieIDs.Len()
 			}
 			allocations, status := allocateDevices(
