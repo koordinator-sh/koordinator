@@ -21,7 +21,6 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	"k8s.io/klog/v2"
 	"k8s.io/utils/clock"
@@ -31,17 +30,11 @@ import (
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/metrics"
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/noderesource/framework"
+	resutil "github.com/koordinator-sh/koordinator/pkg/slo-controller/noderesource/plugins/util"
 	"github.com/koordinator-sh/koordinator/pkg/util"
-	"github.com/koordinator-sh/koordinator/pkg/util/sloconfig"
 )
 
 const PluginName = "MidResource"
-
-const (
-	MidCPUThreshold       = "midCPUThreshold"
-	MidMemoryThreshold    = "midMemoryThreshold"
-	MidUnallocatedPercent = "midUnallocatedPercent"
-)
 
 // ResourceNames defines the Mid-tier extended resource names to update.
 var ResourceNames = []corev1.ResourceName{extension.MidCPU, extension.MidMemory}
@@ -71,7 +64,7 @@ func (p *Plugin) NeedSync(strategy *configuration.ColocationStrategy, oldNode, n
 
 func (p *Plugin) Prepare(_ *configuration.ColocationStrategy, node *corev1.Node, nr *framework.NodeResource) error {
 	for _, resourceName := range ResourceNames {
-		prepareNodeForResource(node, nr, resourceName)
+		resutil.PrepareNodeForResource(node, nr, resourceName)
 	}
 	return nil
 }
@@ -160,7 +153,7 @@ func (p *Plugin) calculate(strategy *configuration.ColocationStrategy, node *cor
 	// Allocatable[Mid]' := min(Reclaimable[Mid], NodeAllocatable * thresholdRatio) + Unallocated[Mid] * midUnallocatedRatio
 	// Unallocated[Mid] = max(NodeAllocatable - Allocated[Prod], 0)
 
-	var allocatableMilliCPU, allocatableMemory, prodReclaimableCPU int64
+	var allocatableMilliCPU, allocatableMemory, prodReclaimableMilliCPU int64
 	var prodReclaimableMemory string = "0"
 	prodReclaimableMetic := resourceMetrics.NodeMetric.Status.ProdReclaimableMetric
 
@@ -172,44 +165,16 @@ func (p *Plugin) calculate(strategy *configuration.ColocationStrategy, node *cor
 		prodReclaimable := resourceMetrics.NodeMetric.Status.ProdReclaimableMetric.Resource
 		allocatableMilliCPU = prodReclaimable.Cpu().MilliValue()
 		allocatableMemory = prodReclaimable.Memory().Value()
-		prodReclaimableCPU = allocatableMilliCPU
+		prodReclaimableMilliCPU = allocatableMilliCPU
 		prodReclaimableMemory = prodReclaimable.Memory().String()
 	}
 
 	nodeAllocatable := node.Status.Allocatable
-	defaultStrategy := sloconfig.DefaultColocationStrategy()
-	cpuThresholdRatio := getPercentFromStrategy(strategy, &defaultStrategy, MidCPUThreshold)
-	if maxMilliCPU := float64(nodeAllocatable.Cpu().MilliValue()) * cpuThresholdRatio; allocatableMilliCPU > int64(maxMilliCPU) {
-		allocatableMilliCPU = int64(maxMilliCPU)
-	}
-	if allocatableMilliCPU < 0 {
-		klog.V(5).Infof("mid allocatable cpu of node %s is %v less than zero, set to zero",
-			node.Name, allocatableMilliCPU)
-		allocatableMilliCPU = 0
-	}
-	cpuInMilliCores := resource.NewQuantity(allocatableMilliCPU, resource.DecimalSI)
 
-	memThresholdRatio := getPercentFromStrategy(strategy, &defaultStrategy, MidMemoryThreshold)
-	if maxMemory := float64(nodeAllocatable.Memory().Value()) * memThresholdRatio; allocatableMemory > int64(maxMemory) {
-		allocatableMemory = int64(maxMemory)
-	}
-	if allocatableMemory < 0 {
-		klog.V(5).Infof("mid allocatable memory of node %s is %v less than zero, set to zero",
-			node.Name, allocatableMemory)
-		allocatableMemory = 0
-	}
-	memory := resource.NewQuantity(allocatableMemory, resource.BinarySI)
-
-	// add unallocated
+	// TODO: consider SafetyMargin and NodeReserved
 	unallocated := p.getUnallocated(node, podList)
-	// CPU need turn into milli value
-	unallocatedMilliCPU, unallocatedMemory := resource.NewQuantity(unallocated.Cpu().MilliValue(), resource.DecimalSI), unallocated.Memory()
-	midUnallocatedRatio := getPercentFromStrategy(strategy, &defaultStrategy, MidUnallocatedPercent)
-	adjustedUnallocatedCPU := resource.NewQuantity(int64(float64(unallocatedMilliCPU.Value())*midUnallocatedRatio), resource.DecimalSI)
-	adjustedUnallocatedMemory := resource.NewQuantity(int64(float64(unallocatedMemory.Value())*midUnallocatedRatio), resource.BinarySI)
 
-	cpuInMilliCores.Add(*adjustedUnallocatedCPU)
-	memory.Add(*adjustedUnallocatedMemory)
+	cpuInMilliCores, memory, cpuMsg, memMsg := resutil.CalculateMidResourceByPolicy(strategy, nodeAllocatable, unallocated, allocatableMilliCPU, allocatableMemory, prodReclaimableMilliCPU, prodReclaimableMemory, node.Name)
 
 	metrics.RecordNodeExtendedResourceAllocatableInternal(node, string(extension.MidCPU), metrics.UnitInteger, float64(cpuInMilliCores.MilliValue())/1000)
 	metrics.RecordNodeExtendedResourceAllocatableInternal(node, string(extension.MidMemory), metrics.UnitByte, float64(memory.Value()))
@@ -220,51 +185,12 @@ func (p *Plugin) calculate(strategy *configuration.ColocationStrategy, node *cor
 		{
 			Name:     extension.MidCPU,
 			Quantity: cpuInMilliCores, // in milli-cores
-			Message: fmt.Sprintf("midAllocatable[CPU(milli-core)]:%v = min(nodeAllocatable:%v * thresholdRatio:%v, ProdReclaimable:%v) + Unallocated:%v * midUnallocatedRatio:%v",
-				cpuInMilliCores.Value(), nodeAllocatable.Cpu().MilliValue(), cpuThresholdRatio, prodReclaimableCPU, unallocatedMilliCPU.Value(), midUnallocatedRatio),
+			Message:  cpuMsg,
 		},
 		{
 			Name:     extension.MidMemory,
 			Quantity: memory,
-			Message: fmt.Sprintf("midAllocatable[Memory(byte)]:%s = min(nodeAllocatable:%s * thresholdRatio:%v, ProdReclaimable:%s) + Unallocated:%v * midUnallocatedRatio:%v",
-				memory.String(), nodeAllocatable.Memory().String(), memThresholdRatio, prodReclaimableMemory, unallocatedMemory.String(), midUnallocatedRatio),
+			Message:  memMsg,
 		},
-	}
-}
-
-func prepareNodeForResource(node *corev1.Node, nr *framework.NodeResource, name corev1.ResourceName) {
-	if q := nr.Resources[name]; nr.Resets[name] || q == nil {
-		delete(node.Status.Capacity, name)
-		delete(node.Status.Allocatable, name)
-	} else {
-		if _, ok := q.AsInt64(); !ok {
-			klog.V(4).InfoS("node mid resource's quantity is not int64 and will be rounded",
-				"node", node.Name, "resource", name, "original", *q, "rounded", q.Value())
-			q.Set(q.Value())
-		}
-		node.Status.Capacity[name] = *q
-		node.Status.Allocatable[name] = *q
-	}
-}
-
-func getPercentFromStrategy(strategy, defaultStrategy *configuration.ColocationStrategy, strategyType string) float64 {
-	switch strategyType {
-	case MidCPUThreshold:
-		if strategy == nil || strategy.MidCPUThresholdPercent == nil {
-			return float64(*defaultStrategy.MidCPUThresholdPercent) / 100
-		}
-		return float64(*strategy.MidCPUThresholdPercent) / 100
-	case MidMemoryThreshold:
-		if strategy == nil || strategy.MidMemoryThresholdPercent == nil {
-			return float64(*defaultStrategy.MidMemoryThresholdPercent) / 100
-		}
-		return float64(*strategy.MidMemoryThresholdPercent) / 100
-	case MidUnallocatedPercent:
-		if strategy == nil || strategy.MidUnallocatedPercent == nil {
-			return float64(*defaultStrategy.MidUnallocatedPercent) / 100
-		}
-		return float64(*strategy.MidUnallocatedPercent) / 100
-	default:
-		return 0
 	}
 }

@@ -34,10 +34,17 @@ import (
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/noderesource/framework"
 	"github.com/koordinator-sh/koordinator/pkg/util"
+	"github.com/koordinator-sh/koordinator/pkg/util/sloconfig"
 )
 
 var (
 	updateNRTResourceSet = sets.NewString(string(extension.BatchCPU), string(extension.BatchMemory))
+)
+
+const (
+	MidCPUThreshold       = "midCPUThreshold"
+	MidMemoryThreshold    = "midMemoryThreshold"
+	MidUnallocatedPercent = "midUnallocatedPercent"
 )
 
 func CalculateBatchResourceByPolicy(strategy *configuration.ColocationStrategy, nodeCapacity, nodeSafetyMargin, nodeReserved,
@@ -93,6 +100,48 @@ func CalculateBatchResourceByPolicy(strategy *configuration.ColocationStrategy, 
 			podHPUsed.Memory().ScaledValue(resource.Giga))
 	}
 	return batchAllocatable, cpuMsg, memMsg
+}
+
+func CalculateMidResourceByPolicy(strategy *configuration.ColocationStrategy, nodeAllocatable, unallocated corev1.ResourceList, allocatableMilliCPU, allocatableMemory, prodReclaimableMilliCPU int64, prodReclaimableMemory, nodeName string) (*resource.Quantity, *resource.Quantity, string, string) {
+	defaultStrategy := sloconfig.DefaultColocationStrategy()
+	cpuThresholdRatio := getPercentFromStrategy(strategy, &defaultStrategy, MidCPUThreshold)
+	if maxMilliCPU := float64(nodeAllocatable.Cpu().MilliValue()) * cpuThresholdRatio; allocatableMilliCPU > int64(maxMilliCPU) {
+		allocatableMilliCPU = int64(maxMilliCPU)
+	}
+	if allocatableMilliCPU < 0 {
+		klog.V(5).Infof("mid allocatable milli cpu of node %s is %v less than zero, set to zero",
+			nodeName, allocatableMilliCPU)
+		allocatableMilliCPU = 0
+	}
+	cpuInMilliCores := resource.NewQuantity(allocatableMilliCPU, resource.DecimalSI)
+
+	memThresholdRatio := getPercentFromStrategy(strategy, &defaultStrategy, MidMemoryThreshold)
+	if maxMemory := float64(nodeAllocatable.Memory().Value()) * memThresholdRatio; allocatableMemory > int64(maxMemory) {
+		allocatableMemory = int64(maxMemory)
+	}
+	if allocatableMemory < 0 {
+		klog.V(5).Infof("mid allocatable memory of node %s is %v less than zero, set to zero",
+			nodeName, allocatableMemory)
+		allocatableMemory = 0
+	}
+	memory := resource.NewQuantity(allocatableMemory, resource.BinarySI)
+
+	// CPU need turn into milli value
+	unallocatedMilliCPU, unallocatedMemory := resource.NewQuantity(unallocated.Cpu().MilliValue(), resource.DecimalSI), unallocated.Memory()
+	midUnallocatedRatio := getPercentFromStrategy(strategy, &defaultStrategy, MidUnallocatedPercent)
+	adjustedUnallocatedMilliCPU := resource.NewQuantity(int64(float64(unallocatedMilliCPU.Value())*midUnallocatedRatio), resource.DecimalSI)
+	adjustedUnallocatedMemory := resource.NewQuantity(int64(float64(unallocatedMemory.Value())*midUnallocatedRatio), resource.BinarySI)
+
+	cpuInMilliCores.Add(*adjustedUnallocatedMilliCPU)
+	memory.Add(*adjustedUnallocatedMemory)
+
+	cpuMsg := fmt.Sprintf("midAllocatable[CPU(milli-core)]:%v = min(nodeAllocatable:%v * thresholdRatio:%v, ProdReclaimable:%v) + Unallocated:%v * midUnallocatedRatio:%v",
+		cpuInMilliCores.Value(), nodeAllocatable.Cpu().MilliValue(), cpuThresholdRatio, prodReclaimableMilliCPU, unallocatedMilliCPU.Value(), midUnallocatedRatio)
+
+	memMsg := fmt.Sprintf("midAllocatable[Memory(byte)]:%s = min(nodeAllocatable:%s * thresholdRatio:%v, ProdReclaimable:%s) + Unallocated:%v * midUnallocatedRatio:%v",
+		memory.String(), nodeAllocatable.Memory().String(), memThresholdRatio, prodReclaimableMemory, unallocatedMemory.String(), midUnallocatedRatio)
+
+	return cpuInMilliCores, memory, cpuMsg, memMsg
 }
 
 func PrepareNodeForResource(node *corev1.Node, nr *framework.NodeResource, name corev1.ResourceName) {
@@ -376,4 +425,26 @@ func getCPUNormalizationRatio(nr *framework.NodeResource) (float64, error) {
 		return -1, fmt.Errorf("failed to parse ratio in NodeResource, err: %w", err)
 	}
 	return ratio, nil
+}
+
+func getPercentFromStrategy(strategy, defaultStrategy *configuration.ColocationStrategy, strategyType string) float64 {
+	switch strategyType {
+	case MidCPUThreshold:
+		if strategy == nil || strategy.MidCPUThresholdPercent == nil {
+			return float64(*defaultStrategy.MidCPUThresholdPercent) / 100
+		}
+		return float64(*strategy.MidCPUThresholdPercent) / 100
+	case MidMemoryThreshold:
+		if strategy == nil || strategy.MidMemoryThresholdPercent == nil {
+			return float64(*defaultStrategy.MidMemoryThresholdPercent) / 100
+		}
+		return float64(*strategy.MidMemoryThresholdPercent) / 100
+	case MidUnallocatedPercent:
+		if strategy == nil || strategy.MidUnallocatedPercent == nil {
+			return float64(*defaultStrategy.MidUnallocatedPercent) / 100
+		}
+		return float64(*strategy.MidUnallocatedPercent) / 100
+	default:
+		return 0
+	}
 }
