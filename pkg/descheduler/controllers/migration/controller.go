@@ -87,6 +87,8 @@ type Reconciler struct {
 	limiterMap      map[deschedulerconfig.MigrationLimitObjectType]map[string]*rate.Limiter
 	limiterCacheMap map[deschedulerconfig.MigrationLimitObjectType]*gocache.Cache
 	limiterLock     sync.Mutex
+
+	reconcilerUID types.UID
 }
 
 func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error) {
@@ -136,6 +138,7 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 	if err = c.Watch(source.Kind(options.Manager.GetCache(), r.reservationInterpreter.GetReservationType()), &handler.Funcs{}); err != nil {
 		return nil, err
 	}
+	r.reconcilerUID = UUIDGenerateFn()
 	return r, nil
 }
 
@@ -239,6 +242,16 @@ func (r *Reconciler) Reconcile(ctx context.Context, request reconcile.Request) (
 	}
 
 	if !r.assumedCache.isNewOrSameObj(job) {
+		return reconcile.Result{}, nil
+	}
+
+	// handle the case that the job is created by other reconciler
+	// NOTE:
+	// 1. only the PMJs created by MigrationController have annotation AnnotationJobCreatedBy, if a PMJ was created
+	//    manually by users, we should handle it anyway.
+	// 2. if a PMJ was indeed created by MigrationController but koord-descheduler has restarted(new UUID generated),
+	//    we just ignore it.
+	if jobUID, ok := job.Annotations[AnnotationJobCreatedBy]; ok && jobUID != string(r.reconcilerUID) {
 		return reconcile.Result{}, nil
 	}
 
