@@ -1100,6 +1100,16 @@ func TestLessThanOrEqualEnhanced(t *testing.T) {
 			expect: true,
 		},
 		{
+			name: "a < b, special case: deltaValue.Value() may overflow",
+			a: corev1.ResourceList{
+				corev1.ResourceMemory: resource.MustParse("1000Gi"),
+			},
+			b: corev1.ResourceList{
+				corev1.ResourceMemory: resource.MustParse("39999996Gi"),
+			},
+			expect: true,
+		},
+		{
 			name: "a > b",
 			a: corev1.ResourceList{
 				corev1.ResourceCPU:    *resource.NewQuantity(20, resource.DecimalSI),
