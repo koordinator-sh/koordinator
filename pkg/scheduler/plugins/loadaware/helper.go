@@ -60,20 +60,26 @@ func getTargetAggregatedUsage(nodeMetric *slov1alpha1.NodeMetric, aggregatedDura
 		return nil
 	}
 
-	// If no specific period is set, the maximum period recorded by NodeMetrics will be used by default.
+	// If no specific period is set, the non-empty maximum period recorded by NodeMetrics will be used by default.
 	// This is a default policy.
 	if aggregatedDuration == nil || aggregatedDuration.Duration == 0 {
 		var maxDuration time.Duration
-		var maxIndex int
+		var maxIndex int = -1
 		for i, v := range nodeMetric.Status.NodeMetric.AggregatedNodeUsages {
-			if v.Duration.Duration > maxDuration {
+			if len(v.Usage[aggregationType].ResourceList) > 0 && v.Duration.Duration > maxDuration {
 				maxDuration = v.Duration.Duration
 				maxIndex = i
 			}
 		}
-		aggregatedNodeUsage := &nodeMetric.Status.NodeMetric.AggregatedNodeUsages[maxIndex]
-		usage := aggregatedNodeUsage.Usage[aggregationType]
-		if len(usage.ResourceList) > 0 {
+
+		if maxIndex == -1 {
+			// All values in aggregatedDuration are empty, downgrade to use the values in NodeUsage
+			usage := nodeMetric.Status.NodeMetric.NodeUsage
+			if len(usage.ResourceList) > 0 {
+				return &usage
+			}
+		} else {
+			usage := nodeMetric.Status.NodeMetric.AggregatedNodeUsages[maxIndex].Usage[aggregationType]
 			return &usage
 		}
 	} else if aggregatedDuration != nil {
