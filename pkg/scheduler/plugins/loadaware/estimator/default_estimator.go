@@ -75,7 +75,6 @@ func estimatedUsedByResource(requests, limits corev1.ResourceList, resourceName 
 	requestQuantity := requests[resourceName]
 	var quantity resource.Quantity
 	if limitQuantity.Cmp(requestQuantity) > 0 {
-		scalingFactor = 100
 		quantity = limitQuantity
 	} else {
 		quantity = requestQuantity

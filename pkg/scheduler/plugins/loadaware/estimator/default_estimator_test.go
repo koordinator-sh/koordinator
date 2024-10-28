@@ -102,7 +102,7 @@ func TestDefaultEstimatorEstimatePod(t *testing.T) {
 				},
 			},
 			want: map[corev1.ResourceName]int64{
-				corev1.ResourceCPU:    8000,
+				corev1.ResourceCPU:    6800,
 				corev1.ResourceMemory: 6012954214, // 5.6Gi
 			},
 		},

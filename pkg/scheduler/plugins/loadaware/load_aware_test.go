@@ -2277,7 +2277,7 @@ func TestScore(t *testing.T) {
 					},
 				},
 			},
-			wantScore:  88,
+			wantScore:  90,
 			wantStatus: nil,
 		},
 		{
