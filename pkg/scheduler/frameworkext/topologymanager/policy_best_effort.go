@@ -17,7 +17,10 @@ limitations under the License.
 
 package topologymanager
 
-import apiext "github.com/koordinator-sh/koordinator/apis/extension"
+import (
+	apiext "github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/pkg/util/bitmask"
+)
 
 type bestEffortPolicy struct {
 	//List of NUMA Nodes available on the underlying machine
@@ -45,6 +48,16 @@ func (p *bestEffortPolicy) canAdmitPodResult(hint *NUMATopologyHint) bool {
 func (p *bestEffortPolicy) Merge(providersHints []map[string][]NUMATopologyHint, exclusivePolicy apiext.NumaTopologyExclusive, allNUMANodeStatus []apiext.NumaNodeStatus) (NUMATopologyHint, bool) {
 	filteredProvidersHints := filterProvidersHints(providersHints)
 	bestHint := mergeFilteredHints(p.numaNodes, filteredProvidersHints, exclusivePolicy, allNUMANodeStatus)
+	// 如果 bestHint 不是一个所有资源都可分的 numa affinity，则应该返回 bestHint 为亲和所有 NUMANode，即放弃任何 NUMA 倾向
+	if bestHint.Unsatisfied {
+		affinityAllNUMANodes, _ := bitmask.NewBitMask(p.numaNodes...)
+		bestHint = NUMATopologyHint{
+			NUMANodeAffinity: affinityAllNUMANodes,
+			Unsatisfied:      false,
+			Preferred:        bestHint.Preferred,
+			Score:            0,
+		}
+	}
 	admit := p.canAdmitPodResult(&bestHint)
 	return bestHint, admit
 }

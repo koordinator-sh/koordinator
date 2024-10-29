@@ -300,11 +300,16 @@ func (p *Plugin) Filter(ctx context.Context, cycleState *framework.CycleState, p
 		return nil
 	}
 
-	// TODO 如果最终的 NUMATopologyPolicy 不为空，则此处 Filter 直接返回成功而无需后续逻辑
-
 	node := nodeInfo.Node()
 	if node == nil {
 		return framework.NewStatus(framework.Error, "node not found")
+	}
+
+	store := topologymanager.GetStore(cycleState)
+	_, ok := store.GetAffinity(node.Name)
+	if ok {
+		// 当 Pod 在该节点上的 NUMA Affinity 已经算好，表明：Pod 在该节点上开启了 NUMA，且以算好的 NUMA Affinity 资源可分配，所以后续 Filter 逻辑可以忽略
+		return nil
 	}
 
 	nodeDeviceInfo := p.nodeDeviceCache.getNodeDevice(node.Name, false)
@@ -316,21 +321,11 @@ func (p *Plugin) Filter(ctx context.Context, cycleState *framework.CycleState, p
 	restoreState := reservationRestoreState.getNodeState(node.Name)
 	preemptible := appendAllocated(nil, restoreState.mergedUnmatchedUsed, state.preemptibleDevices[node.Name])
 
-	var affinity topologymanager.NUMATopologyHint
-	if !p.disableDeviceNUMATopologyAlignment {
-		store := topologymanager.GetStore(cycleState)
-		affinity, _ = store.GetAffinity(nodeInfo.Node().Name)
-	}
-
 	allocator := &AutopilotAllocator{
 		state:      state,
 		nodeDevice: nodeDeviceInfo,
 		node:       node,
 		pod:        pod,
-		numaNodes:  affinity.NUMANodeAffinity,
-	}
-	if !p.disableDeviceNUMATopologyAlignment {
-		allocator.numaNodes = nil
 	}
 
 	nodeDeviceInfo.lock.RLock()
