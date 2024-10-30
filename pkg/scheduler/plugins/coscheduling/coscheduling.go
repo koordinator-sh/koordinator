@@ -189,7 +189,7 @@ func (cs *Coscheduling) PreFilter(ctx context.Context, state *framework.CycleSta
 	return nil, nil
 }
 
-func (cs *Coscheduling) AfterPreFilter(ctx context.Context, state *framework.CycleState, pod *v1.Pod) *framework.Status {
+func (cs *Coscheduling) AfterPreFilter(ctx context.Context, state *framework.CycleState, pod *v1.Pod, preFilterResult *framework.PreFilterResult) *framework.Status {
 	return nil
 }
 

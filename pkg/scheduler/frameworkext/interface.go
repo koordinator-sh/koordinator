@@ -60,6 +60,8 @@ type FrameworkExtender interface {
 
 	RunReservationExtensionPreRestoreReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod) *framework.Status
 	RunReservationExtensionRestoreReservation(ctx context.Context, cycleState *framework.CycleState, podToSchedule *corev1.Pod, matched []*ReservationInfo, unmatched []*ReservationInfo, nodeInfo *framework.NodeInfo) (PluginToReservationRestoreStates, *framework.Status)
+	// RunReservationExtensionFinalRestoreReservation is deprecated, and will be removed next version.
+	// DEPRECATED: use RunReservationExtensionRestoreReservation instead.
 	RunReservationExtensionFinalRestoreReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, states PluginToNodeReservationRestoreStates) *framework.Status
 
 	RunReservationFilterPlugins(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, reservationInfo *ReservationInfo, nodeName string) *framework.Status
@@ -82,7 +84,7 @@ type PreFilterTransformer interface {
 	BeforePreFilter(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod) (*corev1.Pod, bool, *framework.Status)
 	// AfterPreFilter is executed after PreFilter.
 	// There is a chance to trigger the correction of the State data of each plugin after the PreFilter.
-	AfterPreFilter(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod) *framework.Status
+	AfterPreFilter(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, preFilterResult *framework.PreFilterResult) *framework.Status
 }
 
 // FilterTransformer is executed before Filter.
@@ -103,7 +105,7 @@ type PluginToReservationRestoreStates map[string]interface{}
 // PluginToNodeReservationRestoreStates declares a map from plugin name to its NodeReservationRestoreStates.
 type PluginToNodeReservationRestoreStates map[string]NodeReservationRestoreStates
 
-// NodeReservationRestoreStates declares a map from plugin name to its ReservationRestoreState.
+// NodeReservationRestoreStates declares a map from node name to its ReservationRestoreState.
 type NodeReservationRestoreStates map[string]interface{}
 
 // ReservationRestorePlugin is used to support the return of fine-grained resources
@@ -113,6 +115,7 @@ type ReservationRestorePlugin interface {
 	framework.Plugin
 	PreRestoreReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod) *framework.Status
 	RestoreReservation(ctx context.Context, cycleState *framework.CycleState, podToSchedule *corev1.Pod, matched []*ReservationInfo, unmatched []*ReservationInfo, nodeInfo *framework.NodeInfo) (interface{}, *framework.Status)
+	// DEPRECATED
 	FinalRestoreReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, states NodeReservationRestoreStates) *framework.Status
 }
 

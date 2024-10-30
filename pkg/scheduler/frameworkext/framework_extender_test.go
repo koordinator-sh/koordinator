@@ -80,7 +80,7 @@ func (h *TestTransformer) PreFilterExtensions() framework.PreFilterExtensions {
 	return nil
 }
 
-func (h *TestTransformer) AfterPreFilter(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod) *framework.Status {
+func (h *TestTransformer) AfterPreFilter(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, preFilterResult *framework.PreFilterResult) *framework.Status {
 	if pod.Annotations == nil {
 		pod.Annotations = map[string]string{}
 	}
@@ -721,6 +721,7 @@ func TestReservationRestorePlugin(t *testing.T) {
 				nodeRestoreStates["test-node-1"] = pluginState
 			}
 
+			// TODO: remove deprecated methods
 			status = extender.RunReservationExtensionFinalRestoreReservation(context.TODO(), cycleState, &corev1.Pod{}, pluginToNodeReservationRestoreState)
 			assert.Equal(t, tt.wantStatus2, status.IsSuccess())
 			val, err := cycleState.Read(fakeReservationRestoreStateKey)

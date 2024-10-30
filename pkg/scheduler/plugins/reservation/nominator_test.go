@@ -290,7 +290,7 @@ func TestNominateReservation(t *testing.T) {
 			requests := apiresource.PodRequests(tt.pod, apiresource.PodResourcesOptions{})
 			state := &stateData{
 				schedulingStateData: schedulingStateData{
-					nodeReservationStates: map[string]nodeReservationState{},
+					nodeReservationStates: map[string]*nodeReservationState{},
 					podRequests:           requests,
 					podRequestsResources:  framework.NewResource(requests),
 				},
@@ -301,6 +301,9 @@ func TestNominateReservation(t *testing.T) {
 					rInfo.Allocated = allocated
 				}
 				nodeRState := state.nodeReservationStates[reservation.Status.NodeName]
+				if nodeRState == nil {
+					nodeRState = &nodeReservationState{}
+				}
 				nodeRState.nodeName = reservation.Status.NodeName
 				nodeRState.matchedOrIgnored = append(nodeRState.matchedOrIgnored, rInfo)
 				state.nodeReservationStates[reservation.Status.NodeName] = nodeRState
@@ -422,12 +425,13 @@ func TestMultiReservationsOnSameNode(t *testing.T) {
 		cycleState := framework.NewCycleState()
 		pl.BeforePreFilter(context.TODO(), cycleState, pod)
 		pl.PreFilter(context.TODO(), cycleState, pod)
+		pl.Filter(context.TODO(), cycleState, pod, nodeInfo)
 		nm := pl.handle.(frameworkext.FrameworkExtender).GetReservationNominator()
 		rInfo, status := nm.NominateReservation(context.TODO(), cycleState, pod, node.Name)
 		assert.True(t, status.IsSuccess())
 		nm.AddNominatedReservation(pod, node.Name, rInfo)
 		rInfo = pl.handle.GetReservationNominator().GetNominatedReservation(pod, node.Name)
-		assert.NotNil(t, rInfo)
+		assert.NotNil(t, rInfo, rInfo)
 		pl.Reserve(context.TODO(), cycleState, pod, node.Name)
 		nominatedReservationCount[rInfo.UID()]++
 		nm.RemoveNominatedReservations(pod)
