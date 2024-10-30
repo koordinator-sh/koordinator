@@ -266,7 +266,7 @@ func LessThanOrEqualCompletely(a corev1.ResourceList, b corev1.ResourceList) boo
 	result := true
 	delta := quotav1.Subtract(a, b)
 	for _, value := range delta {
-		if value.Value() > 0 {
+		if value.CmpInt64(0) > 0 {
 			result = false
 			break
 		}
