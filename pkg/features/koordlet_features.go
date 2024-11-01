@@ -104,6 +104,9 @@ const (
 	// Accelerators enables GPU related feature in koordlet. Only Nvidia GPUs supported.
 	Accelerators featuregate.Feature = "Accelerators"
 
+	// owner: @ZiMengSheng
+	NetDevices featuregate.Feature = "NetDevices"
+
 	// owner: @songtao98 @zwzhang0107
 	// alpha: v1.0
 	//
@@ -164,6 +167,7 @@ var (
 		CgroupReconcile:        {Default: false, PreRelease: featuregate.Alpha},
 		NodeTopologyReport:     {Default: true, PreRelease: featuregate.Beta},
 		Accelerators:           {Default: false, PreRelease: featuregate.Alpha},
+		NetDevices:             {Default: false, PreRelease: featuregate.Alpha},
 		CPICollector:           {Default: false, PreRelease: featuregate.Alpha},
 		Libpfm4:                {Default: false, PreRelease: featuregate.Alpha},
 		PSICollector:           {Default: false, PreRelease: featuregate.Alpha},
