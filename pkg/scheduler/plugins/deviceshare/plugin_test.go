@@ -630,6 +630,13 @@ func Test_Plugin_PreFilter(t *testing.T) {
 						apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
 					},
 				},
+				gpuRequirements: &GPURequirements{
+					numberOfGPUs: 1,
+					requestsPerGPU: corev1.ResourceList{
+						apiext.ResourceGPUCore:        resource.MustParse("100"),
+						apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+					},
+				},
 				preemptibleDevices: map[string]map[schedulingv1alpha1.DeviceType]deviceResources{},
 				preemptibleInRRs:   map[string]map[types.UID]map[schedulingv1alpha1.DeviceType]deviceResources{},
 			},
@@ -660,6 +667,12 @@ func Test_Plugin_PreFilter(t *testing.T) {
 				skip: false,
 				podRequests: map[schedulingv1alpha1.DeviceType]corev1.ResourceList{
 					schedulingv1alpha1.GPU: {
+						apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+					},
+				},
+				gpuRequirements: &GPURequirements{
+					numberOfGPUs: 1,
+					requestsPerGPU: corev1.ResourceList{
 						apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
 					},
 				},
@@ -696,6 +709,13 @@ func Test_Plugin_PreFilter(t *testing.T) {
 						apiext.ResourceGPUMemory: resource.MustParse("8Gi"),
 					},
 				},
+				gpuRequirements: &GPURequirements{
+					numberOfGPUs: 1,
+					requestsPerGPU: corev1.ResourceList{
+						apiext.ResourceGPUMemory: resource.MustParse("8Gi"),
+					},
+					gpuShared: true,
+				},
 				preemptibleDevices: map[string]map[schedulingv1alpha1.DeviceType]deviceResources{},
 				preemptibleInRRs:   map[string]map[types.UID]map[schedulingv1alpha1.DeviceType]deviceResources{},
 			},
@@ -731,6 +751,14 @@ func Test_Plugin_PreFilter(t *testing.T) {
 						apiext.ResourceGPUMemory: resource.MustParse("8Gi"),
 					},
 				},
+				gpuRequirements: &GPURequirements{
+					numberOfGPUs: 1,
+					requestsPerGPU: corev1.ResourceList{
+						apiext.ResourceGPUCore:   resource.MustParse("100"),
+						apiext.ResourceGPUMemory: resource.MustParse("8Gi"),
+					},
+					gpuShared: true,
+				},
 				preemptibleDevices: map[string]map[schedulingv1alpha1.DeviceType]deviceResources{},
 				preemptibleInRRs:   map[string]map[types.UID]map[schedulingv1alpha1.DeviceType]deviceResources{},
 			},
@@ -762,6 +790,13 @@ func Test_Plugin_PreFilter(t *testing.T) {
 				skip: false,
 				podRequests: map[schedulingv1alpha1.DeviceType]corev1.ResourceList{
 					schedulingv1alpha1.GPU: {
+						apiext.ResourceGPUCore:        resource.MustParse("100"),
+						apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+					},
+				},
+				gpuRequirements: &GPURequirements{
+					numberOfGPUs: 1,
+					requestsPerGPU: corev1.ResourceList{
 						apiext.ResourceGPUCore:        resource.MustParse("100"),
 						apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
 					},
@@ -837,6 +872,13 @@ func Test_Plugin_PreFilter(t *testing.T) {
 						apiext.ResourceRDMA: resource.MustParse("100"),
 					},
 				},
+				gpuRequirements: &GPURequirements{
+					numberOfGPUs: 1,
+					requestsPerGPU: corev1.ResourceList{
+						apiext.ResourceGPUCore:        resource.MustParse("100"),
+						apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+					},
+				},
 				preemptibleDevices: map[string]map[schedulingv1alpha1.DeviceType]deviceResources{},
 				preemptibleInRRs:   map[string]map[types.UID]map[schedulingv1alpha1.DeviceType]deviceResources{},
 			},
@@ -878,9 +920,27 @@ func Test_Plugin_PreFilter(t *testing.T) {
 			_, status := p.PreFilter(context.TODO(), cycleState, tt.pod)
 			assert.Equal(t, tt.wantStatus, status)
 			state, _ := getPreFilterState(cycleState)
+			if tt.wantState != nil && tt.wantState.podRequests != nil {
+				for deviceType := range tt.wantState.podRequests {
+					tt.wantState.podRequests[deviceType] = removeFormat(tt.wantState.podRequests[deviceType])
+					state.podRequests[deviceType] = removeFormat(state.podRequests[deviceType])
+				}
+			}
+			if tt.wantState != nil && tt.wantState.gpuRequirements != nil {
+				tt.wantState.gpuRequirements.requestsPerGPU = removeFormat(tt.wantState.gpuRequirements.requestsPerGPU)
+				state.gpuRequirements.requestsPerGPU = removeFormat(state.gpuRequirements.requestsPerGPU)
+			}
 			assert.Equal(t, tt.wantState, state)
 		})
 	}
+}
+
+func removeFormat(list corev1.ResourceList) corev1.ResourceList {
+	newList := corev1.ResourceList{}
+	for name, quantity := range list {
+		newList[name] = *resource.NewQuantity(quantity.Value(), quantity.Format)
+	}
+	return newList
 }
 
 func Test_Plugin_Filter(t *testing.T) {
@@ -3256,6 +3316,7 @@ func Test_Plugin_Reserve(t *testing.T) {
 			pl.nodeDeviceCache = tt.args.nodeDeviceCache
 			cycleState := framework.NewCycleState()
 			if tt.args.state != nil {
+				tt.args.state.gpuRequirements, _ = parseGPURequirements(&corev1.Pod{}, tt.args.state.podRequests, nil)
 				cycleState.Write(stateKey, tt.args.state)
 			}
 

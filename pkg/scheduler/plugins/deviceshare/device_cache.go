@@ -47,8 +47,14 @@ type nodeDevice struct {
 	deviceUsed    map[schedulingv1alpha1.DeviceType]deviceResources
 	vfAllocations map[schedulingv1alpha1.DeviceType]*VFAllocation
 	allocateSet   map[schedulingv1alpha1.DeviceType]map[types.NamespacedName]deviceResources
-	numaTopology  *NUMATopology
 	deviceInfos   map[schedulingv1alpha1.DeviceType][]*schedulingv1alpha1.DeviceInfo
+
+	numaTopology               *NUMATopology
+	secondaryDeviceWellPlanned bool
+
+	nodeHonorGPUPartition bool
+	gpuPartitionIndexer   GPUPartitionIndexer
+	gpuTopologyScope      *GPUTopologyScope
 }
 
 type VFAllocation struct {
@@ -391,6 +397,10 @@ func (n *nodeDevice) filter(
 	r.vfAllocations = n.vfAllocations
 	r.numaTopology = n.numaTopology
 	r.deviceInfos = n.deviceInfos
+	r.gpuPartitionIndexer = n.gpuPartitionIndexer
+	r.nodeHonorGPUPartition = n.nodeHonorGPUPartition
+	r.secondaryDeviceWellPlanned = n.secondaryDeviceWellPlanned
+	r.gpuTopologyScope = n.gpuTopologyScope
 	return r
 }
 
@@ -498,12 +508,22 @@ func (n *nodeDeviceCache) updateNodeDevice(nodeName string, device *schedulingv1
 		info := &device.Spec.Devices[i]
 		deviceInfos[info.Type] = append(deviceInfos[info.Type], info)
 	}
+	gpuPartitionTable, err := apiext.GetGPUPartitionTable(device)
+	if err != nil {
+		klog.Errorf("invalid gpu partition table, err: %s", err.Error())
+	}
+	gpuPartitionIndexer := GetGPUPartitionIndexer(gpuPartitionTable)
+	gpuTopologyScope := GetGPUTopologyScope(deviceInfos[schedulingv1alpha1.GPU], nodeDeviceResource[schedulingv1alpha1.GPU])
 	info := n.getNodeDevice(nodeName, true)
 	info.lock.Lock()
 	defer info.lock.Unlock()
 	info.resetDeviceTotal(nodeDeviceResource)
 	info.numaTopology = numaTopology
 	info.deviceInfos = deviceInfos
+	info.gpuPartitionIndexer = gpuPartitionIndexer
+	info.nodeHonorGPUPartition = apiext.GetGPUPartitionPolicy(device) == apiext.GPUPartitionPolicyHonor
+	info.secondaryDeviceWellPlanned = apiext.IsSecondaryDeviceWellPlanned(device)
+	info.gpuTopologyScope = gpuTopologyScope
 }
 
 func buildDeviceResources(device *schedulingv1alpha1.Device) map[schedulingv1alpha1.DeviceType]deviceResources {

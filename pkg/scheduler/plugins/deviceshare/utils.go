@@ -36,6 +36,7 @@ import (
 
 const (
 	NvidiaGPU = 1 << iota
+	AMDGPU
 	HygonDCU
 	KoordGPU
 	GPUShared
@@ -49,6 +50,7 @@ const (
 var DeviceResourceNames = map[schedulingv1alpha1.DeviceType][]corev1.ResourceName{
 	schedulingv1alpha1.GPU: {
 		apiext.ResourceNvidiaGPU,
+		apiext.ResourceAMDGPU,
 		apiext.ResourceHygonDCU,
 		apiext.ResourceGPU,
 		apiext.ResourceGPUShared,
@@ -62,6 +64,7 @@ var DeviceResourceNames = map[schedulingv1alpha1.DeviceType][]corev1.ResourceNam
 
 var DeviceResourceFlags = map[corev1.ResourceName]uint{
 	apiext.ResourceNvidiaGPU:      NvidiaGPU,
+	apiext.ResourceAMDGPU:         AMDGPU,
 	apiext.ResourceHygonDCU:       HygonDCU,
 	apiext.ResourceGPU:            KoordGPU,
 	apiext.ResourceGPUCore:        GPUCore,
@@ -74,6 +77,7 @@ var DeviceResourceFlags = map[corev1.ResourceName]uint{
 
 var ValidDeviceResourceCombinations = map[uint]func(resources corev1.ResourceList) bool{
 	NvidiaGPU:                            ValidDeviceResourceCombinationsDefaultTrue,
+	AMDGPU:                               ValidDeviceResourceCombinationsDefaultTrue,
 	HygonDCU:                             ValidDeviceResourceCombinationsDefaultTrue,
 	KoordGPU:                             ValidDeviceResourceCombinationsDefaultTrue,
 	GPUMemory:                            ValidDeviceResourceCombinationsGPUPercentage,
@@ -154,6 +158,13 @@ var ResourceCombinationsMapper = map[uint]func(podRequest corev1.ResourceList) c
 		return corev1.ResourceList{
 			apiext.ResourceGPUCore:        *resource.NewQuantity(nvidiaGPU.Value()*100, resource.DecimalSI),
 			apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(nvidiaGPU.Value()*100, resource.DecimalSI),
+		}
+	},
+	AMDGPU: func(podRequest corev1.ResourceList) corev1.ResourceList {
+		amdGPU := podRequest[apiext.ResourceAMDGPU]
+		return corev1.ResourceList{
+			apiext.ResourceGPUCore:        *resource.NewQuantity(amdGPU.Value()*100, resource.DecimalSI),
+			apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(amdGPU.Value()*100, resource.DecimalSI),
 		}
 	},
 	HygonDCU: func(podRequest corev1.ResourceList) corev1.ResourceList {
@@ -271,6 +282,7 @@ func ConvertDeviceRequest(podRequest corev1.ResourceList, combination uint) core
 }
 
 func hasVirtualFunctions(nodeDevice *nodeDevice, deviceType schedulingv1alpha1.DeviceType) bool {
+	// TODO 这里可以异步掉，虽然计算量也不多
 	deviceInfos := nodeDevice.deviceInfos[deviceType]
 	for _, v := range deviceInfos {
 		if len(v.VFGroups) > 0 {
@@ -300,6 +312,13 @@ func preparePod(pod *corev1.Pod) (state *preFilterState, status *framework.Statu
 	state.skip = len(requests) == 0
 	if !state.skip {
 		err = parsePodDeviceShareExtensions(pod, requests, state)
+		if err != nil {
+			return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, err.Error())
+		}
+		if state.jointAllocate != nil && len(state.jointAllocate.DeviceTypes) >= 1 {
+			state.primaryDeviceType = state.jointAllocate.DeviceTypes[0]
+		}
+		state.gpuRequirements, err = parseGPURequirements(pod, requests, state.hints[schedulingv1alpha1.GPU])
 		if err != nil {
 			return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, err.Error())
 		}
@@ -396,4 +415,31 @@ func newHintSelectors(hints apiext.DeviceAllocateHints) (map[schedulingv1alpha1.
 		hintSelectors[deviceType] = [2]labels.Selector{selector, vfSelector}
 	}
 	return hintSelectors, nil
+}
+
+func parseGPURequirements(pod *corev1.Pod, podRequests map[schedulingv1alpha1.DeviceType]corev1.ResourceList, gpuHints *apiext.DeviceHint) (*GPURequirements, error) {
+	gpuRequests := podRequests[schedulingv1alpha1.GPU]
+	if quotav1.IsZero(gpuRequests) {
+		return nil, nil
+	}
+	gpuPartitionSpec, err := apiext.GetGPUPartitionSpec(pod.Annotations)
+	if err != nil {
+		return nil, fmt.Errorf("invalid GPUPartitionSpec annotation, err: %s", err.Error())
+	}
+	requestsPerGPU, numberOfGPUs, isShared := calcDesiredRequestsAndCountForGPU(gpuRequests)
+	gpuRequirements := &GPURequirements{
+		numberOfGPUs:   numberOfGPUs,
+		requestsPerGPU: requestsPerGPU,
+		gpuShared:      isShared,
+	}
+	if gpuPartitionSpec != nil {
+		gpuRequirements.honorGPUPartition = true
+		gpuRequirements.restrictedGPUPartition = gpuPartitionSpec.AllocatePolicy == apiext.GPUPartitionAllocatePolicyRestricted
+		gpuRequirements.rindBusBandwidth = gpuPartitionSpec.RingBusBandwidth
+	}
+	if gpuHints != nil {
+		gpuRequirements.requiredTopologyScope = gpuHints.RequiredTopologyScope
+		gpuRequirements.requiredTopologyScopeLevel = apiext.DeviceTopologyScopeLevel[gpuRequirements.requiredTopologyScope]
+	}
+	return gpuRequirements, nil
 }

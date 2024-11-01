@@ -21,6 +21,7 @@ import (
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -36,6 +37,7 @@ import (
 	schedulerconfig "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/validation"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/schedulingphase"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/topologymanager"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/reservation"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
@@ -81,6 +83,8 @@ type preFilterState struct {
 	hints              apiext.DeviceAllocateHints
 	hintSelectors      map[schedulingv1alpha1.DeviceType][2]labels.Selector
 	jointAllocate      *apiext.DeviceJointAllocate
+	primaryDeviceType  schedulingv1alpha1.DeviceType
+	gpuRequirements    *GPURequirements
 	allocationResult   apiext.DeviceAllocations
 	preemptibleDevices map[string]map[schedulingv1alpha1.DeviceType]deviceResources
 	preemptibleInRRs   map[string]map[types.UID]map[schedulingv1alpha1.DeviceType]deviceResources
@@ -88,13 +92,26 @@ type preFilterState struct {
 	hasReservationAffinity bool
 }
 
+type GPURequirements struct {
+	numberOfGPUs               int
+	requestsPerGPU             corev1.ResourceList
+	gpuShared                  bool
+	honorGPUPartition          bool
+	restrictedGPUPartition     bool
+	rindBusBandwidth           *resource.Quantity
+	requiredTopologyScopeLevel int
+	requiredTopologyScope      apiext.DeviceTopologyScope
+}
+
 func (s *preFilterState) Clone() framework.StateData {
 	ns := &preFilterState{
 		skip:                   s.skip,
 		podRequests:            s.podRequests,
 		hints:                  s.hints,
+		gpuRequirements:        s.gpuRequirements,
 		hintSelectors:          s.hintSelectors,
 		jointAllocate:          s.jointAllocate,
+		primaryDeviceType:      s.primaryDeviceType,
 		allocationResult:       s.allocationResult,
 		hasReservationAffinity: s.hasReservationAffinity,
 	}
@@ -284,6 +301,8 @@ func (p *Plugin) Filter(ctx context.Context, cycleState *framework.CycleState, p
 		return nil
 	}
 
+	// TODO 如果最终的 NUMATopologyPolicy 不为空，则此处 Filter 直接返回成功而无需后续逻辑
+
 	node := nodeInfo.Node()
 	if node == nil {
 		return framework.NewStatus(framework.Error, "node not found")
@@ -317,7 +336,6 @@ func (p *Plugin) Filter(ctx context.Context, cycleState *framework.CycleState, p
 
 	nodeDeviceInfo.lock.RLock()
 	defer nodeDeviceInfo.lock.RUnlock()
-	// TODO 当 NUMA 策略不为空时，关于 NUMA 下设备是否能分配其实已经在 NodeNUMAResource 的 FilterByNUMANode 中调用过，这里存在重复调用，待优化
 	allocateResult, status := p.tryAllocateFromReservation(allocator, state, restoreState, restoreState.matched, pod, node, preemptible, state.hasReservationAffinity)
 	if !status.IsSuccess() {
 		return status
@@ -326,6 +344,7 @@ func (p *Plugin) Filter(ctx context.Context, cycleState *framework.CycleState, p
 		return nil
 	}
 
+	// TODO 这里应该表示从节点剩余资源分，但是这里看起来不是这个意思
 	preemptible = appendAllocated(preemptible, restoreState.mergedMatchedAllocatable)
 	_, status = allocator.Allocate(nil, nil, nil, preemptible)
 	if status.IsSuccess() {
@@ -422,12 +441,13 @@ func (p *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState, 
 	}
 
 	allocator := &AutopilotAllocator{
-		state:      state,
-		nodeDevice: nodeDeviceInfo,
-		node:       nodeInfo.Node(),
-		pod:        pod,
-		scorer:     p.scorer,
-		numaNodes:  affinity.NUMANodeAffinity,
+		state:              state,
+		nodeDevice:         nodeDeviceInfo,
+		phaseBeingExecuted: schedulingphase.GetExtensionPointBeingExecuted(cycleState),
+		node:               nodeInfo.Node(),
+		pod:                pod,
+		scorer:             p.scorer,
+		numaNodes:          affinity.NUMANodeAffinity,
 	}
 
 	// TODO: de-duplicate logic done by the Filter phase and move head the pre-process of the resource options
@@ -452,7 +472,7 @@ func (p *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState, 
 	}
 	err = fillGPUTotalMem(result, nodeDeviceInfo)
 	if err != nil {
-		return framework.AsStatus(err)
+		return framework.NewStatus(framework.Error, fmt.Sprintf("fillGPUTotalMem failed: %v, node: %v", err, nodeName))
 	}
 	nodeDeviceInfo.updateCacheUsed(result, pod, true)
 	state.allocationResult = result

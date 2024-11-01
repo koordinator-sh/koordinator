@@ -155,6 +155,7 @@ func Test_Plugin_ReservationRestore(t *testing.T) {
 	nodeRestoreState, status := pl.RestoreReservation(context.TODO(), cycleState, pod, []*frameworkext.ReservationInfo{reservationInfo}, nil, nodeInfo)
 	assert.True(t, status.IsSuccess())
 	assert.NotNil(t, nodeRestoreState)
+	// TODO: remove deprecated methods
 	pl.FinalRestoreReservation(context.TODO(), cycleState, pod, frameworkext.NodeReservationRestoreStates{
 		"test-node-1": nodeRestoreState,
 	})
@@ -676,6 +677,7 @@ func Test_tryAllocateFromReservation(t *testing.T) {
 				node:       node,
 				pod:        &corev1.Pod{},
 			}
+			tt.state.gpuRequirements, _ = parseGPURequirements(allocator.pod, tt.state.podRequests, nil)
 
 			result, status := pl.tryAllocateFromReservation(
 				allocator,
@@ -688,6 +690,14 @@ func Test_tryAllocateFromReservation(t *testing.T) {
 				tt.requiredFromReservation,
 			)
 			err := fillGPUTotalMem(result, nodeDeviceInfo)
+			if tt.wantResult != nil {
+				for deviceType := range tt.wantResult {
+					for i := range tt.wantResult[deviceType] {
+						tt.wantResult[deviceType][i].Resources = removeFormat(tt.wantResult[deviceType][i].Resources)
+						result[deviceType][i].Resources = removeFormat(result[deviceType][i].Resources)
+					}
+				}
+			}
 			assert.NoError(t, err)
 			assert.Equal(t, tt.wantStatus, status)
 			assert.Equal(t, tt.wantResult, result)

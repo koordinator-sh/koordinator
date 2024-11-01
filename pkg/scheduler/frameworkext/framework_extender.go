@@ -219,7 +219,7 @@ func (ext *frameworkExtenderImpl) RunPreFilterPlugins(ctx context.Context, cycle
 
 	for _, transformer := range ext.preFilterTransformersEnabled {
 		startTime := time.Now()
-		status = transformer.AfterPreFilter(ctx, cycleState, pod)
+		status = transformer.AfterPreFilter(ctx, cycleState, pod, result)
 		ext.metricsRecorder.ObservePluginDurationAsync("AfterPreFilter", transformer.Name(), status.Code().String(), metrics.SinceInSeconds(startTime))
 		if !status.IsSuccess() {
 			klog.ErrorS(status.AsError(), "Failed to run AfterPreFilter", "pod", klog.KObj(pod), "plugin", transformer.Name())
@@ -277,6 +277,7 @@ func (ext *frameworkExtenderImpl) RunScorePlugins(ctx context.Context, state *fr
 
 func (ext *frameworkExtenderImpl) RunPostFilterPlugins(ctx context.Context, state *framework.CycleState, pod *corev1.Pod, filteredNodeStatusMap framework.NodeToStatusMap) (_ *framework.PostFilterResult, status *framework.Status) {
 	schedulingphase.RecordPhase(state, schedulingphase.PostFilter)
+	defer func() { schedulingphase.RecordPhase(state, "") }()
 	return ext.Framework.RunPostFilterPlugins(ctx, state, pod, filteredNodeStatusMap)
 }
 
@@ -484,6 +485,8 @@ func (ext *frameworkExtenderImpl) RunReservePluginsReserve(ctx context.Context, 
 			return nil
 		}
 	}
+	schedulingphase.RecordPhase(cycleState, schedulingphase.Reserve)
+	defer func() { schedulingphase.RecordPhase(cycleState, "") }()
 	status := ext.Framework.RunReservePluginsReserve(ctx, cycleState, pod, nodeName)
 	ext.GetReservationNominator().RemoveNominatedReservations(pod)
 	ext.GetReservationNominator().DeleteNominatedReservePod(pod)

@@ -28,6 +28,7 @@ const (
 
 const (
 	PostFilter = "PostFilter"
+	Reserve    = "Reserve"
 )
 
 type SchedulingPhase struct {
@@ -40,7 +41,7 @@ func (s *SchedulingPhase) Clone() framework.StateData {
 
 func RecordPhase(cycleState *framework.CycleState, extensionPoint string) {
 	cycleState.Write(phaseStateKey, &SchedulingPhase{
-		extensionPoint: PostFilter,
+		extensionPoint: extensionPoint,
 	})
 }
 

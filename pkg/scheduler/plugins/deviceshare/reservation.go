@@ -19,6 +19,7 @@ package deviceshare
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/klog/v2"
@@ -33,6 +34,7 @@ import (
 const reservationRestoreStateKey = Name + "/reservationRestoreState"
 
 type reservationRestoreStateData struct {
+	lock        sync.RWMutex
 	skip        bool
 	nodeToState frameworkext.NodeReservationRestoreStates
 }
@@ -59,9 +61,10 @@ func getReservationRestoreState(cycleState *framework.CycleState) *reservationRe
 	if err == nil {
 		state, _ = value.(*reservationRestoreStateData)
 	}
-	if state == nil {
+	if state == nil || state.nodeToState == nil {
 		state = &reservationRestoreStateData{
-			skip: true,
+			skip:        true,
+			nodeToState: map[string]interface{}{},
 		}
 	}
 	return state
@@ -72,16 +75,26 @@ func cleanReservationRestoreState(cycleState *framework.CycleState) {
 }
 
 func (s *reservationRestoreStateData) Clone() framework.StateData {
+	s.lock.RLock()
+	defer s.lock.RUnlock()
 	return s
 }
 
 func (s *reservationRestoreStateData) getNodeState(nodeName string) *nodeReservationRestoreStateData {
+	s.lock.RLock()
+	defer s.lock.RUnlock()
 	val := s.nodeToState[nodeName]
 	ns, ok := val.(*nodeReservationRestoreStateData)
 	if !ok {
 		ns = &nodeReservationRestoreStateData{}
 	}
 	return ns
+}
+
+func (s *reservationRestoreStateData) setNodeState(nodeName string, nodeState interface{}) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	s.nodeToState[nodeName] = nodeState
 }
 
 func (rs *nodeReservationRestoreStateData) mergeReservationAllocations() {
@@ -115,7 +128,9 @@ func (p *Plugin) PreRestoreReservation(ctx context.Context, cycleState *framewor
 	if err != nil {
 		return framework.NewStatus(framework.UnschedulableAndUnresolvable, err.Error())
 	}
-	cycleState.Write(reservationRestoreStateKey, &reservationRestoreStateData{skip: len(requests) == 0})
+	state := getReservationRestoreState(cycleState)
+	state.skip = len(requests) == 0
+	cycleState.Write(reservationRestoreStateKey, state)
 	return nil
 }
 
@@ -131,13 +146,14 @@ func (p *Plugin) RestoreReservation(ctx context.Context, cycleState *framework.C
 		return nil, nil
 	}
 
-	nd.lock.RLock()
-	defer nd.lock.RUnlock()
-
 	filterFn := func(reservations []*frameworkext.ReservationInfo) []reservationAlloc {
 		if len(reservations) == 0 {
 			return nil
 		}
+
+		nd.lock.RLock()
+		defer nd.lock.RUnlock()
+
 		result := make([]reservationAlloc, 0, len(reservations))
 		for _, rInfo := range reservations {
 			reservePod := rInfo.GetReservePod()
@@ -171,9 +187,15 @@ func (p *Plugin) RestoreReservation(ctx context.Context, cycleState *framework.C
 		unmatched: filteredUnmatched,
 	}
 	s.mergeReservationAllocations()
+
+	// also complete the nodeRestoreState in cycleState
+	state.setNodeState(nodeName, s)
+	cycleState.Write(reservationRestoreStateKey, state)
+
 	return s, nil
 }
 
+// DEPRECATED
 func (p *Plugin) FinalRestoreReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeToStates frameworkext.NodeReservationRestoreStates) *framework.Status {
 	state := getReservationRestoreState(cycleState)
 	if state.skip {

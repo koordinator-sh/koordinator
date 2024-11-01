@@ -540,20 +540,31 @@ func evictPods(
 			if nodeUsage := nodeInfo.usage[resourceName]; nodeUsage != nil {
 				nodeUsage.Sub(quantity)
 			}
+			if prodUsage := nodeInfo.prodUsage[resourceName]; prod && prodUsage != nil {
+				prodUsage.Sub(quantity)
+			}
 		}
 
 		keysAndValues := []interface{}{
 			"node", nodeInfo.node.Name,
 			"nodePool", nodePoolName,
 		}
-		for k, v := range nodeInfo.usage {
+		usage := nodeInfo.usage
+		if prod {
+			usage = nodeInfo.prodUsage
+		}
+		for k, v := range usage {
 			keysAndValues = append(keysAndValues, k.String(), v.String())
 		}
 		for resourceName, quantity := range totalAvailableUsages {
 			keysAndValues = append(keysAndValues, fmt.Sprintf("%s/totalAvailable", resourceName), quantity.String())
 		}
 
-		klog.V(4).InfoS("Updated node usage", keysAndValues...)
+		if prod {
+			klog.V(4).InfoS("Updated node prodUsage", keysAndValues...)
+		} else {
+			klog.V(4).InfoS("Updated node usage", keysAndValues...)
+		}
 	}
 }
 

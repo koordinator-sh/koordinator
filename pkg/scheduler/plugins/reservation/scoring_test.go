@@ -249,7 +249,7 @@ func TestScore(t *testing.T) {
 			cycleState := framework.NewCycleState()
 			state := &stateData{
 				schedulingStateData: schedulingStateData{
-					nodeReservationStates: map[string]nodeReservationState{},
+					nodeReservationStates: map[string]*nodeReservationState{},
 				},
 			}
 			state.podRequests = apiresource.PodRequests(tt.pod, apiresource.PodResourcesOptions{})
@@ -260,6 +260,9 @@ func TestScore(t *testing.T) {
 					rInfo.Allocated = allocated
 				}
 				nodeRState := state.nodeReservationStates[reservation.Status.NodeName]
+				if nodeRState == nil {
+					nodeRState = &nodeReservationState{}
+				}
 				nodeRState.nodeName = reservation.Status.NodeName
 				nodeRState.matchedOrIgnored = append(nodeRState.matchedOrIgnored, rInfo)
 				state.nodeReservationStates[reservation.Status.NodeName] = nodeRState
@@ -353,7 +356,7 @@ func TestScoreWithOrder(t *testing.T) {
 
 		state := &stateData{
 			schedulingStateData: schedulingStateData{
-				nodeReservationStates: map[string]nodeReservationState{},
+				nodeReservationStates: map[string]*nodeReservationState{},
 			},
 		}
 		state.podRequests = apiresource.PodRequests(normalPod, apiresource.PodResourcesOptions{})
@@ -369,6 +372,9 @@ func TestScoreWithOrder(t *testing.T) {
 			pl.reservationCache.updateReservation(reservation)
 			rInfo := pl.reservationCache.getReservationInfoByUID(reservation.UID)
 			nodeRState := state.nodeReservationStates[reservation.Status.NodeName]
+			if nodeRState == nil {
+				nodeRState = &nodeReservationState{}
+			}
 			nodeRState.nodeName = reservation.Status.NodeName
 			nodeRState.matchedOrIgnored = append(nodeRState.matchedOrIgnored, rInfo)
 			state.nodeReservationStates[reservation.Status.NodeName] = nodeRState
@@ -386,6 +392,9 @@ func TestScoreWithOrder(t *testing.T) {
 		pl.reservationCache.updateReservation(reservationWithOrder)
 		rInfo := pl.reservationCache.getReservationInfoByUID(reservationWithOrder.UID)
 		nodeRState := state.nodeReservationStates[reservationWithOrder.Status.NodeName]
+		if nodeRState == nil {
+			nodeRState = &nodeReservationState{}
+		}
 		nodeRState.nodeName = reservationWithOrder.Status.NodeName
 		nodeRState.matchedOrIgnored = append(nodeRState.matchedOrIgnored, rInfo)
 		state.nodeReservationStates[reservationWithOrder.Status.NodeName] = nodeRState
@@ -820,7 +829,7 @@ func TestPreScoreWithNominateReservation(t *testing.T) {
 			cycleState := framework.NewCycleState()
 			state := &stateData{
 				schedulingStateData: schedulingStateData{
-					nodeReservationStates: map[string]nodeReservationState{},
+					nodeReservationStates: map[string]*nodeReservationState{},
 				},
 			}
 			state.podRequests = apiresource.PodRequests(tt.pod, apiresource.PodResourcesOptions{})
@@ -832,6 +841,9 @@ func TestPreScoreWithNominateReservation(t *testing.T) {
 					rInfo.Allocated = allocated
 				}
 				nodeRState := state.nodeReservationStates[reservation.Status.NodeName]
+				if nodeRState == nil {
+					nodeRState = &nodeReservationState{}
+				}
 				nodeRState.nodeName = reservation.Status.NodeName
 				nodeRState.matchedOrIgnored = append(nodeRState.matchedOrIgnored, rInfo)
 				state.nodeReservationStates[reservation.Status.NodeName] = nodeRState
