@@ -283,8 +283,9 @@ func (pgMgr *PodGroupManager) PreFilter(ctx context.Context, state *framework.Cy
 		return fmt.Errorf("gang has not init, gangName: %v, podName: %v", gang.Name,
 			util.GetId(pod.Namespace, pod.Name))
 	}
+
 	// resourceSatisfied means pod will directly pass the PreFilter
-	if gang.getGangMatchPolicy() == extension.GangMatchPolicyOnceSatisfied && gang.isGangOnceResourceSatisfied() {
+	if gang.getGangMatchPolicy() == extension.GangMatchPolicyOnceSatisfied && gang.isGangOnceResourceSatisfied() && !gang.CloseHistoryEvaluate {
 		return nil
 	}
 

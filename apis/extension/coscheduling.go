@@ -37,6 +37,9 @@ const (
 	// If not specified,it will be set with the AnnotationGangMinNum
 	AnnotationGangTotalNum = AnnotationGangPrefix + "/total-number"
 
+	// AnnotationGangCloseHistoryEvaluate If AnnotationGangCloseHistoryEvaluate is true, it means that the pod that was destroyed and rebuilt will again comply with the gang policy restrictions.
+	AnnotationGangCloseHistoryEvaluate = AnnotationGangPrefix + "/close-history-evaluate"
+
 	// AnnotationGangMode defines the Gang Scheduling operation when failed scheduling
 	// Support GangModeStrict and GangModeNonStrict, default is GangModeStrict
 	AnnotationGangMode = AnnotationGangPrefix + "/mode"
@@ -51,6 +54,8 @@ const (
 
 	GangModeStrict    = "Strict"
 	GangModeNonStrict = "NonStrict"
+
+	GangCloseHistoryEvaluate = "true"
 
 	// AnnotationGangMatchPolicy defines the Gang Scheduling operation of taking which status pod into account
 	// Support GangMatchPolicyOnlyWaiting, GangMatchPolicyWaitingAndRunning, GangMatchPolicyOnceSatisfied, default is GangMatchPolicyOnceSatisfied

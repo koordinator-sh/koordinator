@@ -46,13 +46,15 @@ type Gang struct {
 	CreateTime time.Time
 
 	// strict-mode or non-strict-mode
-	Mode              string
-	MinRequiredNumber int
-	TotalChildrenNum  int
-	GangGroupId       string
-	GangGroup         []string
-	GangGroupInfo     *GangGroupInfo
-	Children          map[string]*v1.Pod
+	Mode string
+	// If CloseHistoryEvaluate is true, it means that the pod that was destroyed and rebuilt will again comply with the gang policy restrictions.
+	CloseHistoryEvaluate bool
+	MinRequiredNumber    int
+	TotalChildrenNum     int
+	GangGroupId          string
+	GangGroup            []string
+	GangGroupInfo        *GangGroupInfo
+	Children             map[string]*v1.Pod
 	// pods that have already assumed(waiting in Permit stage)
 	WaitingForBindChildren map[string]*v1.Pod
 	// pods that have already bound
@@ -188,6 +190,13 @@ func (gang *Gang) tryInitByPodGroup(pg *v1alpha1.PodGroup, args *config.Coschedu
 		mode = extension.GangModeStrict
 	}
 	gang.Mode = mode
+
+	closeHistoryEvaluate := pg.Annotations[extension.AnnotationGangCloseHistoryEvaluate]
+	if closeHistoryEvaluate == extension.GangCloseHistoryEvaluate {
+		klog.Infof("podGroup's annotation GangCloseHistoryEvaluateAnnotation is true, gangName: %v, value: %v",
+			gang.Name, pg.Annotations[extension.AnnotationGangCloseHistoryEvaluate])
+		gang.CloseHistoryEvaluate = true
+	}
 
 	matchPolicy := pg.Annotations[extension.AnnotationGangMatchPolicy]
 	if matchPolicy != extension.GangMatchPolicyOnlyWaiting && matchPolicy != extension.GangMatchPolicyWaitingAndRunning &&

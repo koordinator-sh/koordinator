@@ -81,6 +81,21 @@ func makePg(name, namespace string, min int32, creationTime *time.Time, minResou
 	return pg
 }
 
+func makeCloseHistoryEvaluatePg(name, namespace string, min int32, creationTime *time.Time, minResource corev1.ResourceList) *v1alpha1.PodGroup {
+	var ti int32 = 10
+	pg := &v1alpha1.PodGroup{
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace, Annotations: map[string]string{"gang.scheduling.koordinator.sh/close-history-evaluate": "true"}},
+		Spec:       v1alpha1.PodGroupSpec{MinMember: min, ScheduleTimeoutSeconds: &ti},
+	}
+	if creationTime != nil {
+		pg.CreationTimestamp = metav1.Time{Time: *creationTime}
+	}
+	if minResource != nil {
+		pg.Spec.MinResources = minResource
+	}
+	return pg
+}
+
 func TestPlugin_PreFilter_ResetScheduleTime(t *testing.T) {
 	mgr := NewManagerForTest().pgMgr
 
@@ -421,6 +436,17 @@ func TestPlugin_PreFilter(t *testing.T) {
 			expectedScheduleCycle:      1,
 			resourceSatisfied:          true,
 			expectStateData:            &stateData{},
+		},
+		{
+			name:                       "gang ResourceSatisfied CloseHistoryEvaluate",
+			pod:                        st.MakePod().Name("podqq").UID("podqq").Namespace("gangq_ns").Label(v1alpha1.PodGroupLabel, "gangqq").Obj(),
+			expectedChildCycleMap:      map[string]int{},
+			pgs:                        makeCloseHistoryEvaluatePg("gangqq", "gangq_ns", 4, &gangACreatedTime, nil),
+			expectedErrorMessage:       "gang child pod not collect enough, gangName: gangq_ns/gangqq, podName: gangq_ns/podqq",
+			expectedScheduleCycleValid: true,
+			expectedScheduleCycle:      1,
+			resourceSatisfied:          true,
+			expectStateData:            &stateData{skipSetCycleInvalid: true},
 		},
 		{
 			name: "pod count less than minMember",
