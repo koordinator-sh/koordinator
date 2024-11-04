@@ -741,6 +741,119 @@ func TestCgroupReader_ReadCPUSet(t *testing.T) {
 	}
 }
 
+func TestCgroupReader_ReadMemoryUsage(t *testing.T) {
+	type fields struct {
+		UseCgroupsV2     bool
+		MemoryUsageValue string
+		MemoryCurrent    string
+	}
+	type args struct {
+		parentDir string
+	}
+	tests := []struct {
+		name    string
+		fields  fields
+		args    args
+		want    uint64
+		wantErr bool
+	}{
+		{
+			name:   "v1 path not exist",
+			fields: fields{},
+			args: args{
+				parentDir: "/kubepods.slice",
+			},
+			want:    0,
+			wantErr: true,
+		},
+		{
+			name: "parse v1 value successfully",
+			fields: fields{
+				MemoryUsageValue: "2451485323",
+			},
+			args: args{
+				parentDir: "/kubepods.slice",
+			},
+			want:    2451485323,
+			wantErr: false,
+		},
+		{
+			name: "parse v1 value successfully 1",
+			fields: fields{
+				MemoryUsageValue: "5558576",
+			},
+			args: args{
+				parentDir: "/kubepods.slice",
+			},
+			want:    5558576,
+			wantErr: false,
+		},
+		{
+			name: "parse v1 value successfully 2",
+			fields: fields{
+				MemoryUsageValue: "9223372036854771712",
+			},
+			args: args{
+				parentDir: "/kubepods.slice",
+			},
+			want:    9223372036854771712,
+			wantErr: false,
+		},
+		{
+			name: "v2 path not exist",
+			fields: fields{
+				UseCgroupsV2: true,
+			},
+			args: args{
+				parentDir: "/kubepods.slice",
+			},
+			want:    0,
+			wantErr: true,
+		},
+		{
+			name: "parse v2 value successfully",
+			fields: fields{
+				UseCgroupsV2:  true,
+				MemoryCurrent: "1",
+			},
+			args: args{
+				parentDir: "/kubepods.slice",
+			},
+			want:    1,
+			wantErr: false,
+		},
+		{
+			name: "parse v2 value successfully 1",
+			fields: fields{
+				UseCgroupsV2:  true,
+				MemoryCurrent: "9223372036854771712",
+			},
+			args: args{
+				parentDir: "/kubepods.slice",
+			},
+			want:    9223372036854771712,
+			wantErr: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			helper := sysutil.NewFileTestUtil(t)
+			defer helper.Cleanup()
+			helper.SetCgroupsV2(tt.fields.UseCgroupsV2)
+			if tt.fields.MemoryUsageValue != "" {
+				helper.WriteCgroupFileContents(tt.args.parentDir, sysutil.MemoryUsage, tt.fields.MemoryUsageValue)
+			}
+			if tt.fields.MemoryCurrent != "" {
+				helper.WriteCgroupFileContents(tt.args.parentDir, sysutil.MemoryUsageV2, tt.fields.MemoryCurrent)
+			}
+
+			got, gotErr := NewCgroupReader().ReadMemoryUsage(tt.args.parentDir)
+			assert.Equal(t, tt.wantErr, gotErr != nil)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
 func TestCgroupReader_ReadMemoryLimit(t *testing.T) {
 	type fields struct {
 		UseCgroupsV2     bool
