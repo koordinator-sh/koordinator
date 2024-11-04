@@ -71,7 +71,7 @@ func (p *singleNumaNodePolicy) Merge(providersHints []map[string][]NUMATopologyH
 
 	defaultAffinity, _ := bitmask.NewBitMask(p.numaNodes...)
 	if bestHint.NUMANodeAffinity.IsEqual(defaultAffinity) {
-		bestHint = NUMATopologyHint{nil, bestHint.Preferred, 0}
+		bestHint = NUMATopologyHint{nil, false, bestHint.Preferred, 0}
 	}
 
 	admit := p.canAdmitPodResult(&bestHint)

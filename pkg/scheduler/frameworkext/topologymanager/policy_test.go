@@ -579,7 +579,313 @@ func (p *bestEffortPolicy) mergeTestCases(numaNodes []int) []policyMergeTestCase
 				},
 			},
 			expected: NUMATopologyHint{
+				NUMANodeAffinity: NewTestBitMask(0, 1, 2, 3),
+				Preferred:        false,
+			},
+		},
+		{
+			name: "Two providers, 1 with 2 hints, 1 with single non-preferred hint matching",
+			hp: []NUMATopologyHintProvider{
+				&mockNUMATopologyHintProvider{
+					map[string][]NUMATopologyHint{
+						"resource1": {
+							{
+								NUMANodeAffinity: NewTestBitMask(0),
+								Preferred:        true,
+							},
+							{
+								NUMANodeAffinity: NewTestBitMask(1),
+								Preferred:        true,
+							},
+						},
+					},
+				},
+				&mockNUMATopologyHintProvider{
+					map[string][]NUMATopologyHint{
+						"resource2": {
+							{
+								NUMANodeAffinity: NewTestBitMask(0, 1),
+								Preferred:        false,
+							},
+						},
+					},
+				},
+			},
+			expected: NUMATopologyHint{
+				NUMANodeAffinity: NewTestBitMask(0, 1, 2, 3),
+				Preferred:        false,
+			},
+		},
+		{
+			name: "Two providers, 1 hint each, 1 wider mask, both preferred 2/2",
+			hp: []NUMATopologyHintProvider{
+				&mockNUMATopologyHintProvider{
+					map[string][]NUMATopologyHint{
+						"resource1": {
+							{
+								NUMANodeAffinity: NewTestBitMask(1),
+								Preferred:        true,
+							},
+						},
+					},
+				},
+				&mockNUMATopologyHintProvider{
+					map[string][]NUMATopologyHint{
+						"resource2": {
+							{
+								NUMANodeAffinity: NewTestBitMask(0, 1),
+								Preferred:        true,
+							},
+						},
+					},
+				},
+			},
+			expected: NUMATopologyHint{
+				NUMANodeAffinity: NewTestBitMask(0, 1, 2, 3),
+				Preferred:        false,
+			},
+		},
+	}
+}
+
+func (p *restrictedPolicy) mergeTestCases(numaNodes []int) []policyMergeTestCase {
+	return []policyMergeTestCase{
+		{
+			name: "Two providers, 2 hints each, same mask (some with different bits), same preferred",
+			hp: []NUMATopologyHintProvider{
+				&mockNUMATopologyHintProvider{
+					map[string][]NUMATopologyHint{
+						"resource1": {
+							{
+								NUMANodeAffinity: NewTestBitMask(0, 1),
+								Preferred:        true,
+							},
+							{
+								NUMANodeAffinity: NewTestBitMask(0, 2),
+								Preferred:        true,
+							},
+						},
+					},
+				},
+				&mockNUMATopologyHintProvider{
+					map[string][]NUMATopologyHint{
+						"resource2": {
+							{
+								NUMANodeAffinity: NewTestBitMask(0, 1),
+								Preferred:        true,
+							},
+							{
+								NUMANodeAffinity: NewTestBitMask(0, 2),
+								Preferred:        true,
+							},
+						},
+					},
+				},
+			},
+			expected: NUMATopologyHint{
+				NUMANodeAffinity: NewTestBitMask(0, 1),
+				Preferred:        true,
+			},
+		},
+		{
+			name: "NUMATopologyHint not set",
+			hp:   []NUMATopologyHintProvider{},
+			expected: NUMATopologyHint{
+				NUMANodeAffinity: NewTestBitMask(numaNodes...),
+				Preferred:        true,
+			},
+		},
+		{
+			name: "NUMATopologyHintProvider returns empty non-nil map[string][]NUMATopologyHint",
+			hp: []NUMATopologyHintProvider{
+				&mockNUMATopologyHintProvider{
+					map[string][]NUMATopologyHint{},
+				},
+			},
+			expected: NUMATopologyHint{
+				NUMANodeAffinity: NewTestBitMask(numaNodes...),
+				Preferred:        true,
+			},
+		},
+		{
+			name: "NUMATopologyHintProvider returns -nil map[string][]NUMATopologyHint from provider",
+			hp: []NUMATopologyHintProvider{
+				&mockNUMATopologyHintProvider{
+					map[string][]NUMATopologyHint{
+						"resource": nil,
+					},
+				},
+			},
+			expected: NUMATopologyHint{
+				NUMANodeAffinity: NewTestBitMask(numaNodes...),
+				Preferred:        true,
+			},
+		},
+		{
+			name: "NUMATopologyHintProvider returns empty non-nil map[string][]NUMATopologyHint from provider", hp: []NUMATopologyHintProvider{
+				&mockNUMATopologyHintProvider{
+					map[string][]NUMATopologyHint{
+						"resource": {},
+					},
+				},
+			},
+			expected: NUMATopologyHint{
+				NUMANodeAffinity: NewTestBitMask(numaNodes...),
+				Preferred:        false,
+			},
+		},
+		{
+			name: "Single NUMATopologyHint with Preferred as true and NUMANodeAffinity as nil",
+			hp: []NUMATopologyHintProvider{
+				&mockNUMATopologyHintProvider{
+					map[string][]NUMATopologyHint{
+						"resource": {
+							{
+								NUMANodeAffinity: nil,
+								Preferred:        true,
+							},
+						},
+					},
+				},
+			},
+			expected: NUMATopologyHint{
+				NUMANodeAffinity: NewTestBitMask(numaNodes...),
+				Preferred:        true,
+			},
+		},
+		{
+			name: "Single NUMATopologyHint with Preferred as false and NUMANodeAffinity as nil",
+			hp: []NUMATopologyHintProvider{
+				&mockNUMATopologyHintProvider{
+					map[string][]NUMATopologyHint{
+						"resource": {
+							{
+								NUMANodeAffinity: nil,
+								Preferred:        false,
+							},
+						},
+					},
+				},
+			},
+			expected: NUMATopologyHint{
+				NUMANodeAffinity: NewTestBitMask(numaNodes...),
+				Preferred:        false,
+			},
+		},
+		{
+			name: "Two providers, 1 hint each, no common mask",
+			hp: []NUMATopologyHintProvider{
+				&mockNUMATopologyHintProvider{
+					map[string][]NUMATopologyHint{
+						"resource1": {
+							{
+								NUMANodeAffinity: NewTestBitMask(0),
+								Preferred:        true,
+							},
+						},
+					},
+				},
+				&mockNUMATopologyHintProvider{
+					map[string][]NUMATopologyHint{
+						"resource2": {
+							{
+								NUMANodeAffinity: NewTestBitMask(1),
+								Preferred:        true,
+							},
+						},
+					},
+				},
+			},
+			expected: NUMATopologyHint{
+				NUMANodeAffinity: NewTestBitMask(numaNodes...),
+				Preferred:        false,
+			},
+		},
+		{
+			name: "Two providers, 1 hint each, same mask, 1 preferred, 1 not 1/2",
+			hp: []NUMATopologyHintProvider{
+				&mockNUMATopologyHintProvider{
+					map[string][]NUMATopologyHint{
+						"resource1": {
+							{
+								NUMANodeAffinity: NewTestBitMask(0),
+								Preferred:        true,
+							},
+						},
+					},
+				},
+				&mockNUMATopologyHintProvider{
+					map[string][]NUMATopologyHint{
+						"resource2": {
+							{
+								NUMANodeAffinity: NewTestBitMask(0),
+								Preferred:        false,
+							},
+						},
+					},
+				},
+			},
+			expected: NUMATopologyHint{
 				NUMANodeAffinity: NewTestBitMask(0),
+				Preferred:        false,
+			},
+		},
+		{
+			name: "Two providers, 1 hint each, same mask, 1 preferred, 1 not 2/2",
+			hp: []NUMATopologyHintProvider{
+				&mockNUMATopologyHintProvider{
+					map[string][]NUMATopologyHint{
+						"resource1": {
+							{
+								NUMANodeAffinity: NewTestBitMask(1),
+								Preferred:        true,
+							},
+						},
+					},
+				},
+				&mockNUMATopologyHintProvider{
+					map[string][]NUMATopologyHint{
+						"resource2": {
+							{
+								NUMANodeAffinity: NewTestBitMask(1),
+								Preferred:        false,
+							},
+						},
+					},
+				},
+			},
+			expected: NUMATopologyHint{
+				NUMANodeAffinity: NewTestBitMask(1),
+				Preferred:        false,
+			},
+		},
+		{
+			name: "Two providers, 1 hint each, 1 wider mask, both preferred 1/2",
+			hp: []NUMATopologyHintProvider{
+				&mockNUMATopologyHintProvider{
+					map[string][]NUMATopologyHint{
+						"resource1": {
+							{
+								NUMANodeAffinity: NewTestBitMask(0),
+								Preferred:        true,
+							},
+						},
+					},
+				},
+				&mockNUMATopologyHintProvider{
+					map[string][]NUMATopologyHint{
+						"resource2": {
+							{
+								NUMANodeAffinity: NewTestBitMask(0, 1),
+								Preferred:        true,
+							},
+						},
+					},
+				},
+			},
+			expected: NUMATopologyHint{
+				NUMANodeAffinity: NewTestBitMask(0),
+				Unsatisfied:      true,
 				Preferred:        false,
 			},
 		},
@@ -613,6 +919,7 @@ func (p *bestEffortPolicy) mergeTestCases(numaNodes []int) []policyMergeTestCase
 			},
 			expected: NUMATopologyHint{
 				NUMANodeAffinity: NewTestBitMask(0),
+				Unsatisfied:      true,
 				Preferred:        false,
 			},
 		},
@@ -642,6 +949,7 @@ func (p *bestEffortPolicy) mergeTestCases(numaNodes []int) []policyMergeTestCase
 			},
 			expected: NUMATopologyHint{
 				NUMANodeAffinity: NewTestBitMask(1),
+				Unsatisfied:      true,
 				Preferred:        false,
 			},
 		},

@@ -34,6 +34,8 @@ type Policy interface {
 // NUMATopologyHint is a struct containing the NUMANodeAffinity for a Container
 type NUMATopologyHint struct {
 	NUMANodeAffinity bitmask.BitMask
+	// Unsatisfied is set to true when the NUMANodeAffinity is insufficient to satisfy the resource request.
+	Unsatisfied bool
 	// Preferred is set to true when the NUMANodeAffinity encodes a preferred
 	// allocation for the Pod. It is set to false otherwise.
 	Preferred bool
@@ -94,6 +96,8 @@ func mergePermutation(numaNodes []int, permutation []NUMATopologyHint) NUMATopol
 	// of them encode unpreferred allocations.
 	preferred := true
 	defaultAffinity, _ := bitmask.NewBitMask(numaNodes...)
+	maxNUMANodeNum := 0
+	satisfied := true
 	var numaAffinities []bitmask.BitMask
 	for _, hint := range permutation {
 		// Only consider hints that have an actual NUMANodeAffinity set.
@@ -103,18 +107,25 @@ func mergePermutation(numaNodes []int, permutation []NUMATopologyHint) NUMATopol
 			if !hint.NUMANodeAffinity.IsEqual(numaAffinities[0]) {
 				preferred = false
 			}
+			if maxNUMANodeNum < hint.NUMANodeAffinity.Count() {
+				maxNUMANodeNum = hint.NUMANodeAffinity.Count()
+			}
 		}
 		// Only mark preferred if all affinities are preferred.
 		if !hint.Preferred {
 			preferred = false
 		}
+		if hint.Unsatisfied {
+			satisfied = false
+		}
 	}
 
 	// Merge the affinities using a bitwise-and operation.
 	mergedAffinity := bitmask.And(defaultAffinity, numaAffinities...)
+	satisfied = ((len(numaAffinities) == 0) || maxNUMANodeNum == mergedAffinity.Count()) && satisfied
 	// Build a mergedHint from the merged affinity mask, indicating if an
 	// preferred allocation was used to generate the affinity mask or not.
-	return NUMATopologyHint{mergedAffinity, preferred, 0}
+	return NUMATopologyHint{mergedAffinity, !satisfied, preferred, 0}
 }
 
 func filterProvidersHints(providersHints []map[string][]NUMATopologyHint) [][]NUMATopologyHint {
@@ -126,7 +137,7 @@ func filterProvidersHints(providersHints []map[string][]NUMATopologyHint) [][]NU
 		// If hints is nil, insert a single, preferred any-numa hint into allProviderHints.
 		if len(hints) == 0 {
 			klog.V(5).Infof("[topologymanager] Hint Provider has no preference for NUMA affinity with any resource")
-			allProviderHints = append(allProviderHints, []NUMATopologyHint{{nil, true, 0}})
+			allProviderHints = append(allProviderHints, []NUMATopologyHint{{nil, false, true, 0}})
 			continue
 		}
 
@@ -134,13 +145,13 @@ func filterProvidersHints(providersHints []map[string][]NUMATopologyHint) [][]NU
 		for resource := range hints {
 			if hints[resource] == nil {
 				klog.V(5).Infof("[topologymanager] Hint Provider has no preference for NUMA affinity with resource '%s'", resource)
-				allProviderHints = append(allProviderHints, []NUMATopologyHint{{nil, true, 0}})
+				allProviderHints = append(allProviderHints, []NUMATopologyHint{{nil, false, true, 0}})
 				continue
 			}
 
 			if len(hints[resource]) == 0 {
 				klog.V(5).Infof("[topologymanager] Hint Provider has no possible NUMA affinities for resource '%s'", resource)
-				allProviderHints = append(allProviderHints, []NUMATopologyHint{{nil, false, 0}})
+				allProviderHints = append(allProviderHints, []NUMATopologyHint{{nil, true, false, 0}})
 				continue
 			}
 
@@ -158,7 +169,7 @@ func mergeFilteredHints(numaNodes []int, filteredHints [][]NUMATopologyHint, exc
 	// Set the bestHint to return from this function as {nil false}.
 	// This will only be returned if no better hint can be found when
 	// merging hints from each hint provider.
-	bestHint := NUMATopologyHint{defaultAffinity, false, 0}
+	bestHint := NUMATopologyHint{defaultAffinity, false, false, 0}
 	iterateAllProviderTopologyHints(filteredHints, func(permutation []NUMATopologyHint) {
 		// Get the NUMANodeAffinity from each hint in the permutation and see if any
 		// of them encode unpreferred allocations.
