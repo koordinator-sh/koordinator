@@ -76,10 +76,7 @@ func (a *GPUAllocator) Allocate(requestCtx *requestContext, nodeDevice *nodeDevi
 	nodeHonorPartition := nodeDevice.nodeHonorGPUPartition
 	gpuPartitionIndexer := nodeDevice.gpuPartitionIndexer
 	if gpuPartitionIndexer == nil {
-		gpuPartitionIndexer = GetDesignatedGPUPartitionIndexer(requestCtx.node)
-		if gpuPartitionIndexer != nil {
-			nodeHonorPartition = true
-		}
+		gpuPartitionIndexer, nodeHonorPartition = GetDesignatedGPUPartitionIndexer(requestCtx.node)
 	}
 	honorGPUPartition := gpuRequirements.honorGPUPartition || nodeHonorPartition
 	realUsed := getRealUsed(requestCtx.nodeDevice.deviceUsed[schedulingv1alpha1.GPU], nodeDevice.deviceTotal[schedulingv1alpha1.GPU], nodeDevice.deviceUsed[schedulingv1alpha1.GPU])

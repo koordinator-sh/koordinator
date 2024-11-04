@@ -147,13 +147,15 @@ var (
 		},
 	}
 
-	GetDesignatedGPUPartitionIndexer = func(node *corev1.Node) GPUPartitionIndexer {
+	GetDesignatedGPUPartitionIndexer = func(node *corev1.Node) (GPUPartitionIndexer, bool) {
+		var partitionIndexer GPUPartitionIndexer
+		partitionPolicy := apiext.GetGPUPartitionPolicy(node)
 		model := node.Labels[apiext.LabelGPUModel]
 		switch model {
 		case "H100", "H800", "H20":
-			return gpuPartitionIndexOfNVIDIAHopper
+			partitionIndexer = gpuPartitionIndexOfNVIDIAHopper
 		}
-		return nil
+		return partitionIndexer, partitionPolicy == apiext.GPUPartitionPolicyHonor
 	}
 )
 

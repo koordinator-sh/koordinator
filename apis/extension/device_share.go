@@ -323,11 +323,11 @@ func GetGPUPartitionTable(device *schedulingv1alpha1.Device) (GPUPartitionTable,
 	return nil, nil
 }
 
-func GetGPUPartitionPolicy(device *schedulingv1alpha1.Device) GPUPartitionPolicy {
-	if device == nil {
+func GetGPUPartitionPolicy(nodeOrDevice metav1.Object) GPUPartitionPolicy {
+	if nodeOrDevice == nil {
 		return GPUPartitionPolicyPrefer
 	}
-	if allocatePolicy := device.Labels[LabelGPUPartitionPolicy]; GPUPartitionPolicy(allocatePolicy) == GPUPartitionPolicyHonor {
+	if allocatePolicy := nodeOrDevice.GetLabels()[LabelGPUPartitionPolicy]; GPUPartitionPolicy(allocatePolicy) == GPUPartitionPolicyHonor {
 		return GPUPartitionPolicyHonor
 	}
 	return GPUPartitionPolicyPrefer

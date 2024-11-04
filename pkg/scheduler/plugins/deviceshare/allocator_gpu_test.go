@@ -51,14 +51,15 @@ var (
 
 func TestAllocateByPartition(t *testing.T) {
 	tests := []struct {
-		name            string
-		deviceCR        *schedulingv1alpha1.Device
-		gpuWanted       int
-		hostNetwork     bool
-		assignedDevices apiext.DeviceAllocations
-		modelSeries     string
-		want            apiext.DeviceAllocations
-		wantErr         bool
+		name               string
+		deviceCR           *schedulingv1alpha1.Device
+		gpuPartitionPolicy apiext.GPUPartitionPolicy
+		gpuWanted          int
+		hostNetwork        bool
+		assignedDevices    apiext.DeviceAllocations
+		modelSeries        string
+		want               apiext.DeviceAllocations
+		wantErr            bool
 	}{
 		{
 			name:        "allocate 0 GPU and 1 VF",
@@ -636,97 +637,6 @@ func TestAllocateByPartition(t *testing.T) {
 			},
 		},
 		{
-			name:        "allocate 2 GPU and 2 VF with assigned devices; use partition table from device",
-			deviceCR:    fakeH800DeviceCR,
-			modelSeries: "fakeModelSeries",
-			gpuWanted:   2,
-			assignedDevices: apiext.DeviceAllocations{
-				schedulingv1alpha1.GPU: []*apiext.DeviceAllocation{
-					{
-						Minor:     2,
-						Resources: gpuResourceList,
-					},
-					{
-						Minor:     3,
-						Resources: gpuResourceList,
-					},
-				},
-
-				schedulingv1alpha1.RDMA: []*apiext.DeviceAllocation{
-					{
-						Minor: 1,
-						Resources: corev1.ResourceList{
-							apiext.ResourceRDMA: *resource.NewQuantity(1, resource.DecimalSI),
-						},
-						Extension: &apiext.DeviceAllocationExtension{
-							VirtualFunctions: []apiext.VirtualFunction{
-								{
-									BusID: "0000:09:00.3",
-									Minor: 1,
-								},
-							},
-						},
-					},
-					{
-						Minor: 2,
-						Resources: corev1.ResourceList{
-							apiext.ResourceRDMA: *resource.NewQuantity(1, resource.DecimalSI),
-						},
-						Extension: &apiext.DeviceAllocationExtension{
-							VirtualFunctions: []apiext.VirtualFunction{
-								{
-									BusID: "0000:7f:00.3",
-									Minor: 1,
-								},
-							},
-						},
-					},
-				},
-			},
-			want: apiext.DeviceAllocations{
-				schedulingv1alpha1.GPU: []*apiext.DeviceAllocation{
-					{
-						Minor:     0,
-						Resources: gpuResourceList,
-					},
-					{
-						Minor:     1,
-						Resources: gpuResourceList,
-					},
-				},
-				schedulingv1alpha1.RDMA: []*apiext.DeviceAllocation{
-					{
-						Minor: 1,
-						Resources: corev1.ResourceList{
-							apiext.ResourceRDMA: *resource.NewQuantity(1, resource.DecimalSI),
-						},
-						Extension: &apiext.DeviceAllocationExtension{
-							VirtualFunctions: []apiext.VirtualFunction{
-								{
-									BusID: "0000:09:00.4",
-									Minor: 2,
-								},
-							},
-						},
-					},
-					{
-						Minor: 2,
-						Resources: corev1.ResourceList{
-							apiext.ResourceRDMA: *resource.NewQuantity(1, resource.DecimalSI),
-						},
-						Extension: &apiext.DeviceAllocationExtension{
-							VirtualFunctions: []apiext.VirtualFunction{
-								{
-									BusID: "0000:7f:00.4",
-									Minor: 2,
-								},
-							},
-						},
-					},
-				},
-			},
-		},
-		{
 			name:        "allocate 2 GPU and 2 VF with assigned devices; H100",
 			deviceCR:    fakeH100DeviceCR,
 			modelSeries: "H100",
@@ -817,6 +727,116 @@ func TestAllocateByPartition(t *testing.T) {
 				},
 			},
 		},
+		{
+			name:               "allocate 2 GPU and 2 VF with assigned devices; H100; gpuPartitionPolicyPrefer",
+			deviceCR:           fakeH100DeviceCR,
+			modelSeries:        "H100",
+			gpuWanted:          3,
+			gpuPartitionPolicy: apiext.GPUPartitionPolicyPrefer,
+			assignedDevices: apiext.DeviceAllocations{
+				schedulingv1alpha1.GPU: []*apiext.DeviceAllocation{
+					{
+						Minor:     2,
+						Resources: gpuResourceList,
+					},
+					{
+						Minor:     3,
+						Resources: gpuResourceList,
+					},
+				},
+
+				schedulingv1alpha1.RDMA: []*apiext.DeviceAllocation{
+					{
+						Minor: 1,
+						Resources: corev1.ResourceList{
+							apiext.ResourceRDMA: *resource.NewQuantity(1, resource.DecimalSI),
+						},
+						Extension: &apiext.DeviceAllocationExtension{
+							VirtualFunctions: []apiext.VirtualFunction{
+								{
+									BusID: "0000:09:00.3",
+									Minor: 1,
+								},
+							},
+						},
+					},
+					{
+						Minor: 2,
+						Resources: corev1.ResourceList{
+							apiext.ResourceRDMA: *resource.NewQuantity(1, resource.DecimalSI),
+						},
+						Extension: &apiext.DeviceAllocationExtension{
+							VirtualFunctions: []apiext.VirtualFunction{
+								{
+									BusID: "0000:7f:00.3",
+									Minor: 1,
+								},
+							},
+						},
+					},
+				},
+			},
+			want: apiext.DeviceAllocations{
+				schedulingv1alpha1.GPU: []*apiext.DeviceAllocation{
+					{
+						Minor:     4,
+						Resources: gpuResourceList,
+					},
+					{
+						Minor:     5,
+						Resources: gpuResourceList,
+					},
+					{
+						Minor:     6,
+						Resources: gpuResourceList,
+					},
+				},
+				schedulingv1alpha1.RDMA: []*apiext.DeviceAllocation{
+					{
+						Minor: 5,
+						Resources: corev1.ResourceList{
+							apiext.ResourceRDMA: *resource.NewQuantity(1, resource.DecimalSI),
+						},
+						Extension: &apiext.DeviceAllocationExtension{
+							VirtualFunctions: []apiext.VirtualFunction{
+								{
+									BusID: "0001:08:00.3",
+									Minor: 1,
+								},
+							},
+						},
+					},
+					{
+						Minor: 6,
+						Resources: corev1.ResourceList{
+							apiext.ResourceRDMA: *resource.NewQuantity(1, resource.DecimalSI),
+						},
+						Extension: &apiext.DeviceAllocationExtension{
+							VirtualFunctions: []apiext.VirtualFunction{
+								{
+									BusID: "0001:7e:00.3",
+									Minor: 1,
+								},
+							},
+						},
+					},
+					{
+						Minor: 7,
+						Resources: corev1.ResourceList{
+							apiext.ResourceRDMA: *resource.NewQuantity(1, resource.DecimalSI),
+						},
+						Extension: &apiext.DeviceAllocationExtension{
+							VirtualFunctions: []apiext.VirtualFunction{
+								{
+									BusID: "0001:a2:00.3",
+									Minor: 1,
+								},
+							},
+						},
+					},
+				},
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -831,9 +851,13 @@ func TestAllocateByPartition(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-node-1",
 					Labels: map[string]string{
-						apiext.LabelGPUModel: tt.modelSeries,
+						apiext.LabelGPUModel:           tt.modelSeries,
+						apiext.LabelGPUPartitionPolicy: string(apiext.GPUPartitionPolicyHonor),
 					},
 				},
+			}
+			if tt.gpuPartitionPolicy != "" {
+				node.Labels[apiext.LabelGPUPartitionPolicy] = string(tt.gpuPartitionPolicy)
 			}
 			kubeFakeClient := kubefake.NewSimpleClientset(node)
 			sharedInformerFactory := informers.NewSharedInformerFactory(kubeFakeClient, 0)

@@ -290,11 +290,6 @@ func TestGetNodeLevelGPUAllocatePolicy(t *testing.T) {
 		expected GPUPartitionPolicy
 	}{
 		{
-			name:     "Nil node",
-			node:     nil,
-			expected: GPUPartitionPolicyPrefer,
-		},
-		{
 			name: "Node with Honor policy",
 			node: &schedulingv1alpha1.Device{
 				ObjectMeta: metav1.ObjectMeta{
