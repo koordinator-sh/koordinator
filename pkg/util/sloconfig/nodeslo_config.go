@@ -223,6 +223,10 @@ func DefaultResourceQOSStrategy() *slov1alpha1.ResourceQOSStrategy {
 				Enable:    pointer.Bool(false),
 				MemoryQOS: *DefaultMemoryQOS(apiext.QoSLSR),
 			},
+			BlkIOQOS: &slov1alpha1.BlkIOQOSCfg{
+				Enable:   pointer.Bool(false),
+				BlkIOQOS: *NoneBlkIOQOS(),
+			},
 			NetworkQOS: &slov1alpha1.NetworkQOSCfg{
 				Enable:     pointer.Bool(false),
 				NetworkQOS: *NoneNetworkQOS(),
@@ -240,6 +244,10 @@ func DefaultResourceQOSStrategy() *slov1alpha1.ResourceQOSStrategy {
 			MemoryQOS: &slov1alpha1.MemoryQOSCfg{
 				Enable:    pointer.Bool(false),
 				MemoryQOS: *DefaultMemoryQOS(apiext.QoSLS),
+			},
+			BlkIOQOS: &slov1alpha1.BlkIOQOSCfg{
+				Enable:   pointer.Bool(false),
+				BlkIOQOS: *NoneBlkIOQOS(),
 			},
 			NetworkQOS: &slov1alpha1.NetworkQOSCfg{
 				Enable:     pointer.Bool(false),
@@ -259,6 +267,10 @@ func DefaultResourceQOSStrategy() *slov1alpha1.ResourceQOSStrategy {
 				Enable:    pointer.Bool(false),
 				MemoryQOS: *DefaultMemoryQOS(apiext.QoSBE),
 			},
+			BlkIOQOS: &slov1alpha1.BlkIOQOSCfg{
+				Enable:   pointer.Bool(false),
+				BlkIOQOS: *NoneBlkIOQOS(),
+			},
 			NetworkQOS: &slov1alpha1.NetworkQOSCfg{
 				Enable:     pointer.Bool(false),
 				NetworkQOS: *NoneNetworkQOS(),
@@ -277,15 +289,34 @@ func DefaultResourceQOSStrategy() *slov1alpha1.ResourceQOSStrategy {
 				Enable:    pointer.Bool(false),
 				MemoryQOS: *DefaultMemoryQOS(apiext.QoSSystem),
 			},
+			BlkIOQOS: &slov1alpha1.BlkIOQOSCfg{
+				Enable:   pointer.Bool(false),
+				BlkIOQOS: *NoneBlkIOQOS(),
+			},
 			NetworkQOS: &slov1alpha1.NetworkQOSCfg{
 				Enable:     pointer.Bool(false),
 				NetworkQOS: *NoneNetworkQOS(),
+			},
+		},
+		CgroupRoot: &slov1alpha1.ResourceQOS{
+			BlkIOQOS: &slov1alpha1.BlkIOQOSCfg{
+				Enable:   pointer.Bool(false),
+				BlkIOQOS: *NoneBlkIOQOS(),
 			},
 		},
 	}
 }
 
 func NoneResourceQOS(qos apiext.QoSClass) *slov1alpha1.ResourceQOS {
+	// cgroup root case: only used by blkio qos
+	if qos == apiext.QoSNone {
+		return &slov1alpha1.ResourceQOS{
+			BlkIOQOS: &slov1alpha1.BlkIOQOSCfg{
+				Enable:   pointer.Bool(false),
+				BlkIOQOS: *NoneBlkIOQOS(),
+			},
+		}
+	}
 	return &slov1alpha1.ResourceQOS{
 		CPUQOS: &slov1alpha1.CPUQOSCfg{
 			Enable: pointer.Bool(false),
@@ -298,6 +329,10 @@ func NoneResourceQOS(qos apiext.QoSClass) *slov1alpha1.ResourceQOS {
 		MemoryQOS: &slov1alpha1.MemoryQOSCfg{
 			Enable:    pointer.Bool(false),
 			MemoryQOS: *NoneMemoryQOS(),
+		},
+		BlkIOQOS: &slov1alpha1.BlkIOQOSCfg{
+			Enable:   pointer.Bool(false),
+			BlkIOQOS: *NoneBlkIOQOS(),
 		},
 		NetworkQOS: &slov1alpha1.NetworkQOSCfg{
 			Enable:     pointer.Bool(false),
@@ -337,6 +372,20 @@ func NoneMemoryQOS() *slov1alpha1.MemoryQOS {
 	}
 }
 
+func NoneBlkIOQOS() *slov1alpha1.BlkIOQOS {
+	return &slov1alpha1.BlkIOQOS{}
+}
+
+func NoneNetworkQOS() *slov1alpha1.NetworkQOS {
+	zero := intstr.FromInt32(0)
+	return &slov1alpha1.NetworkQOS{
+		IngressRequest: &zero,
+		IngressLimit:   &zero,
+		EgressRequest:  &zero,
+		EgressLimit:    &zero,
+	}
+}
+
 func NoneResourceQOSPolicies() *slov1alpha1.ResourceQOSPolicies {
 	noneCPUPolicy := slov1alpha1.CPUQOSPolicyGroupIdentity
 	defaultNetQoSPolicy := slov1alpha1.NETQOSPolicyTC
@@ -354,6 +403,7 @@ func NoneResourceQOSStrategy() *slov1alpha1.ResourceQOSStrategy {
 		LSClass:     NoneResourceQOS(apiext.QoSLS),
 		BEClass:     NoneResourceQOS(apiext.QoSBE),
 		SystemClass: NoneResourceQOS(apiext.QoSSystem),
+		CgroupRoot:  NoneResourceQOS(apiext.QoSNone),
 	}
 }
 
@@ -384,14 +434,4 @@ func DefaultSystemStrategy() *slov1alpha1.SystemStrategy {
 
 func DefaultExtensions() *slov1alpha1.ExtensionsMap {
 	return getDefaultExtensionsMap()
-}
-
-func NoneNetworkQOS() *slov1alpha1.NetworkQOS {
-	zero := intstr.FromInt(0)
-	return &slov1alpha1.NetworkQOS{
-		IngressRequest: &zero,
-		IngressLimit:   &zero,
-		EgressRequest:  &zero,
-		EgressLimit:    &zero,
-	}
 }
