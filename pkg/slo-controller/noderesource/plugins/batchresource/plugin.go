@@ -26,7 +26,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/sets"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/klog/v2"
@@ -38,14 +37,14 @@ import (
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/metrics"
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/noderesource/framework"
+	resutil "github.com/koordinator-sh/koordinator/pkg/slo-controller/noderesource/plugins/util"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
 const PluginName = "BatchResource"
 
 var (
-	ResourceNames        = []corev1.ResourceName{extension.BatchCPU, extension.BatchMemory}
-	updateNRTResourceSet = sets.NewString(string(extension.BatchCPU), string(extension.BatchMemory))
+	ResourceNames = []corev1.ResourceName{extension.BatchCPU, extension.BatchMemory}
 )
 
 var (
@@ -110,7 +109,7 @@ func (p *Plugin) NeedSync(strategy *configuration.ColocationStrategy, oldNode, n
 func (p *Plugin) Prepare(_ *configuration.ColocationStrategy, node *corev1.Node, nr *framework.NodeResource) error {
 	// prepare for node extended resources
 	for _, resourceName := range ResourceNames {
-		prepareNodeForResource(node, nr, resourceName)
+		resutil.PrepareNodeForResource(node, nr, resourceName)
 	}
 
 	// set origin batch allocatable
@@ -241,7 +240,7 @@ func (p *Plugin) calculateOnNode(strategy *configuration.ColocationStrategy, nod
 		podMetricMap[podKey] = podMetric
 		podMetricDanglingMap[podKey] = podMetric
 
-		podUsage := getPodMetricUsage(podMetric)
+		podUsage := resutil.GetPodMetricUsage(podMetric)
 		podsAllUsed = quotav1.Add(podsAllUsed, podUsage)
 	}
 
@@ -270,43 +269,34 @@ func (p *Plugin) calculateOnNode(strategy *configuration.ColocationStrategy, nod
 			podsHPUsed = quotav1.Add(podsHPUsed, podRequest)
 		} else if qos := extension.GetPodQoSClassWithDefault(pod); qos == extension.QoSLSE {
 			// NOTE: Currently qos=LSE pods does not reclaim CPU resource.
-			podUsed := getPodMetricUsage(podMetric)
-			podsHPUsed = quotav1.Add(podsHPUsed, mixResourceListCPUAndMemory(podRequest, podUsed))
+			podUsed := resutil.GetPodMetricUsage(podMetric)
+			podsHPUsed = quotav1.Add(podsHPUsed, resutil.MixResourceListCPUAndMemory(podRequest, podUsed))
 			podsHPMaxUsedReq = quotav1.Add(podsHPMaxUsedReq, quotav1.Max(podRequest, podUsed))
 		} else {
-			podUsed := getPodMetricUsage(podMetric)
+			podUsed := resutil.GetPodMetricUsage(podMetric)
 			podsHPUsed = quotav1.Add(podsHPUsed, podUsed)
 			podsHPMaxUsedReq = quotav1.Add(podsHPMaxUsedReq, quotav1.Max(podRequest, podUsed))
 		}
 	}
 
-	hostAppHPUsed := util.NewZeroResourceList()
-	for _, hostAppMetric := range resourceMetrics.NodeMetric.Status.HostApplicationMetric {
-		if hostAppMetric.Priority == extension.PriorityBatch || hostAppMetric.Priority == extension.PriorityFree {
-			// only consider higher priority usage for batch allocatable
-			// now only support product and batch(hadoop-yarn) priority for host application
-			continue
-		}
-		hostAppHPUsed = quotav1.Add(hostAppHPUsed, getHostAppMetricUsage(hostAppMetric))
-	}
-
+	hostAppHPUsed := resutil.GetHostAppHPUsed(resourceMetrics)
 	// For the pods reported metrics but not shown in current list, count them according to the metric priority.
 	podsDanglingUsed := util.NewZeroResourceList()
 	for _, podMetric := range podMetricDanglingMap {
 		if priority := podMetric.Priority; priority == extension.PriorityBatch || priority == extension.PriorityFree {
 			continue
 		}
-		podsDanglingUsed = quotav1.Add(podsDanglingUsed, getPodMetricUsage(podMetric))
+		podsDanglingUsed = quotav1.Add(podsDanglingUsed, resutil.GetPodMetricUsage(podMetric))
 	}
 	podsHPUsed = quotav1.Add(podsHPUsed, podsDanglingUsed)
 	podsHPMaxUsedReq = quotav1.Add(podsHPMaxUsedReq, podsDanglingUsed)
 	klog.V(6).InfoS("batch resource got dangling HP pods used", "node", node.Name,
 		"cpu", podsDanglingUsed.Cpu().String(), "memory", podsDanglingUsed.Memory().String())
 
-	nodeCapacity := getNodeCapacity(node)
-	nodeSafetyMargin := getNodeSafetyMargin(strategy, nodeCapacity)
+	nodeCapacity := resutil.GetNodeCapacity(node)
+	nodeSafetyMargin := resutil.GetNodeSafetyMargin(strategy, nodeCapacity)
 
-	systemUsed := getResourceListForCPUAndMemory(nodeMetric.Status.NodeMetric.SystemUsage.ResourceList)
+	systemUsed := resutil.GetResourceListForCPUAndMemory(nodeMetric.Status.NodeMetric.SystemUsage.ResourceList)
 	// resource usage of host applications with prod priority will be count as host system usage since they consumes the
 	// node reserved resource.
 	systemUsed = quotav1.Add(systemUsed, hostAppHPUsed)
@@ -317,7 +307,7 @@ func (p *Plugin) calculateOnNode(strategy *configuration.ColocationStrategy, nod
 	// FIXME: resource reservation taking max is rather confusing.
 	nodeReserved := quotav1.Max(nodeKubeletReserved, nodeAnnoReserved)
 
-	batchAllocatable, cpuMsg, memMsg := calculateBatchResourceByPolicy(strategy, nodeCapacity, nodeSafetyMargin, nodeReserved,
+	batchAllocatable, cpuMsg, memMsg := resutil.CalculateBatchResourceByPolicy(strategy, nodeCapacity, nodeSafetyMargin, nodeReserved,
 		systemUsed, podsHPRequest, podsHPUsed, podsHPMaxUsedReq)
 	metrics.RecordNodeExtendedResourceAllocatableInternal(node, string(extension.BatchCPU), metrics.UnitInteger, float64(batchAllocatable.Cpu().MilliValue())/1000)
 	metrics.RecordNodeExtendedResourceAllocatableInternal(node, string(extension.BatchMemory), metrics.UnitByte, float64(batchAllocatable.Memory().Value()))
@@ -362,17 +352,8 @@ func (p *Plugin) calculateOnNUMALevel(strategy *configuration.ColocationStrategy
 	podsHPZoneMaxUsedReq := make([]corev1.ResourceList, zoneNum)
 	batchZoneAllocatable := make([]corev1.ResourceList, zoneNum)
 
-	hostAppHPUsed := util.NewZeroResourceList()
-	for _, hostAppMetric := range resourceMetrics.NodeMetric.Status.HostApplicationMetric {
-		if hostAppMetric.Priority == extension.PriorityBatch || hostAppMetric.Priority == extension.PriorityFree {
-			// only consider higher priority usage for batch allocatable
-			// now only support product and batch(hadoop-yarn) priority for host application
-			continue
-		}
-		hostAppHPUsed = quotav1.Add(hostAppHPUsed, getHostAppMetricUsage(hostAppMetric))
-	}
-
-	systemUsed := getResourceListForCPUAndMemory(nodeMetric.Status.NodeMetric.SystemUsage.ResourceList)
+	hostAppHPUsed := resutil.GetHostAppHPUsed(resourceMetrics)
+	systemUsed := resutil.GetResourceListForCPUAndMemory(nodeMetric.Status.NodeMetric.SystemUsage.ResourceList)
 	// resource usage of host applications with prod priority will be count as host system usage since they consumes the
 	// node reserved resource. bind host app on single numa node is not supported yet. divide the usage by numa node number.
 	systemUsed = quotav1.Add(systemUsed, hostAppHPUsed)
@@ -392,9 +373,9 @@ func (p *Plugin) calculateOnNUMALevel(strategy *configuration.ColocationStrategy
 				nodeZoneAllocatable[i][corev1.ResourceName(resourceInfo.Name)] = resourceInfo.Allocatable.DeepCopy()
 			}
 		}
-		nodeZoneReserve[i] = getNodeSafetyMargin(strategy, nodeZoneAllocatable[i])
-		systemZoneUsed[i] = divideResourceList(systemUsed, float64(zoneNum))
-		systemZoneReserved[i] = divideResourceList(nodeReserved, float64(zoneNum))
+		nodeZoneReserve[i] = resutil.GetNodeSafetyMargin(strategy, nodeZoneAllocatable[i])
+		systemZoneUsed[i] = resutil.DivideResourceList(systemUsed, float64(zoneNum))
+		systemZoneReserved[i] = resutil.DivideResourceList(nodeReserved, float64(zoneNum))
 	}
 	podMetricMap := make(map[string]*slov1alpha1.PodMetricInfo)
 	podMetricUnknownMap := make(map[string]*slov1alpha1.PodMetricInfo)
@@ -417,11 +398,11 @@ func (p *Plugin) calculateOnNUMALevel(strategy *configuration.ColocationStrategy
 		var podZoneRequests, podZoneUsages []corev1.ResourceList
 		if hasMetric {
 			delete(podMetricUnknownMap, podKey)
-			podUsage = getPodMetricUsage(podMetric)
-			podZoneRequests, podZoneUsages = getPodNUMARequestAndUsage(pod, podRequest, podUsage, zoneNum)
+			podUsage = resutil.GetPodMetricUsage(podMetric)
+			podZoneRequests, podZoneUsages = resutil.GetPodNUMARequestAndUsage(pod, podRequest, podUsage, zoneNum)
 		} else {
 			podUsage = podRequest
-			podZoneRequests, podZoneUsages = getPodNUMARequestAndUsage(pod, podRequest, podUsage, zoneNum)
+			podZoneRequests, podZoneUsages = resutil.GetPodNUMARequestAndUsage(pod, podRequest, podUsage, zoneNum)
 		}
 
 		// count the high-priority usage
@@ -430,20 +411,20 @@ func (p *Plugin) calculateOnNUMALevel(strategy *configuration.ColocationStrategy
 			continue
 		}
 
-		podsHPZoneRequested = addZoneResourceList(podsHPZoneRequested, podZoneRequests, zoneNum)
+		podsHPZoneRequested = resutil.AddZoneResourceList(podsHPZoneRequested, podZoneRequests, zoneNum)
 		if !hasMetric {
-			podsHPZoneUsed = addZoneResourceList(podsHPZoneUsed, podZoneRequests, zoneNum)
-			podsHPZoneMaxUsedReq = addZoneResourceList(podsHPZoneMaxUsedReq, podZoneRequests, zoneNum)
+			podsHPZoneUsed = resutil.AddZoneResourceList(podsHPZoneUsed, podZoneRequests, zoneNum)
+			podsHPZoneMaxUsedReq = resutil.AddZoneResourceList(podsHPZoneMaxUsedReq, podZoneRequests, zoneNum)
 		} else if qos := extension.GetPodQoSClassWithDefault(pod); qos == extension.QoSLSE {
 			// NOTE: Currently qos=LSE pods does not reclaim CPU resource.
-			podsHPZoneUsed = addZoneResourceList(podsHPZoneUsed,
-				minxZoneResourceListCPUAndMemory(podZoneRequests, podZoneUsages, zoneNum), zoneNum)
-			podsHPZoneMaxUsedReq = addZoneResourceList(podsHPZoneMaxUsedReq,
-				maxZoneResourceList(podZoneUsages, podZoneRequests, zoneNum), zoneNum)
+			podsHPZoneUsed = resutil.AddZoneResourceList(podsHPZoneUsed,
+				resutil.MinxZoneResourceListCPUAndMemory(podZoneRequests, podZoneUsages, zoneNum), zoneNum)
+			podsHPZoneMaxUsedReq = resutil.AddZoneResourceList(podsHPZoneMaxUsedReq,
+				resutil.MaxZoneResourceList(podZoneUsages, podZoneRequests, zoneNum), zoneNum)
 		} else {
-			podsHPZoneUsed = addZoneResourceList(podsHPZoneUsed, podZoneUsages, zoneNum)
-			podsHPZoneMaxUsedReq = addZoneResourceList(podsHPZoneMaxUsedReq,
-				maxZoneResourceList(podZoneUsages, podZoneRequests, zoneNum), zoneNum)
+			podsHPZoneUsed = resutil.AddZoneResourceList(podsHPZoneUsed, podZoneUsages, zoneNum)
+			podsHPZoneMaxUsedReq = resutil.AddZoneResourceList(podsHPZoneMaxUsedReq,
+				resutil.MaxZoneResourceList(podZoneUsages, podZoneRequests, zoneNum), zoneNum)
 		}
 	}
 
@@ -452,18 +433,18 @@ func (p *Plugin) calculateOnNUMALevel(strategy *configuration.ColocationStrategy
 		if priority := podMetric.Priority; priority == extension.PriorityBatch || priority == extension.PriorityFree {
 			continue
 		}
-		podNUMAUsage := getPodUnknownNUMAUsage(getPodMetricUsage(podMetric), zoneNum)
-		podsUnknownUsed = addZoneResourceList(podsUnknownUsed, podNUMAUsage, zoneNum)
+		podNUMAUsage := resutil.GetPodUnknownNUMAUsage(resutil.GetPodMetricUsage(podMetric), zoneNum)
+		podsUnknownUsed = resutil.AddZoneResourceList(podsUnknownUsed, podNUMAUsage, zoneNum)
 	}
-	podsHPZoneUsed = addZoneResourceList(podsHPZoneUsed, podsUnknownUsed, zoneNum)
-	podsHPZoneMaxUsedReq = addZoneResourceList(podsHPZoneMaxUsedReq, podsUnknownUsed, zoneNum)
+	podsHPZoneUsed = resutil.AddZoneResourceList(podsHPZoneUsed, podsUnknownUsed, zoneNum)
+	podsHPZoneMaxUsedReq = resutil.AddZoneResourceList(podsHPZoneMaxUsedReq, podsUnknownUsed, zoneNum)
 
 	batchZoneCPU := map[string]resource.Quantity{}
 	batchZoneMemory := map[string]resource.Quantity{}
 	var cpuMsg, memMsg string
 	for i := range batchZoneAllocatable {
 		zoneName := zoneIdxMap[i]
-		batchZoneAllocatable[i], cpuMsg, memMsg = calculateBatchResourceByPolicy(strategy, nodeZoneAllocatable[i],
+		batchZoneAllocatable[i], cpuMsg, memMsg = resutil.CalculateBatchResourceByPolicy(strategy, nodeZoneAllocatable[i],
 			nodeZoneReserve[i], systemZoneReserved[i], systemZoneUsed[i],
 			podsHPZoneRequested[i], podsHPZoneUsed[i], podsHPZoneMaxUsedReq[i])
 		klog.V(6).InfoS("calculate batch resource in NUMA level", "node", node.Name, "zone", zoneName,
@@ -545,7 +526,7 @@ func (p *Plugin) prepareForNodeResourceTopology(strategy *configuration.Colocati
 
 func (p *Plugin) updateNRTIfNeeded(strategy *configuration.ColocationStrategy, node *corev1.Node,
 	nrt *topologyv1alpha1.NodeResourceTopology, nr *framework.NodeResource) bool {
-	resourceDiffChanged := updateNRTZoneListIfNeeded(node, nrt.Zones, nr, *strategy.ResourceDiffThreshold)
+	resourceDiffChanged := resutil.UpdateNRTZoneListIfNeeded(node, nrt.Zones, nr, *strategy.ResourceDiffThreshold)
 	if resourceDiffChanged {
 		klog.V(4).InfoS("NRT batch resources diff threshold reached, need sync",
 			"node", node.Name, "diffThreshold", *strategy.ResourceDiffThreshold, "ZoneList", nrt.Zones)

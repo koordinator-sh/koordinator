@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package batchresource
+package util
 
 import (
 	"fmt"
@@ -25,6 +25,7 @@ import (
 	topologyv1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/apimachinery/pkg/util/sets"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	"k8s.io/klog/v2"
 
@@ -33,9 +34,20 @@ import (
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/noderesource/framework"
 	"github.com/koordinator-sh/koordinator/pkg/util"
+	"github.com/koordinator-sh/koordinator/pkg/util/sloconfig"
 )
 
-func calculateBatchResourceByPolicy(strategy *configuration.ColocationStrategy, nodeCapacity, nodeSafetyMargin, nodeReserved,
+var (
+	updateNRTResourceSet = sets.NewString(string(extension.BatchCPU), string(extension.BatchMemory))
+)
+
+const (
+	MidCPUThreshold       = "midCPUThreshold"
+	MidMemoryThreshold    = "midMemoryThreshold"
+	MidUnallocatedPercent = "midUnallocatedPercent"
+)
+
+func CalculateBatchResourceByPolicy(strategy *configuration.ColocationStrategy, nodeCapacity, nodeSafetyMargin, nodeReserved,
 	systemUsed, podHPReq, podHPUsed, podHPMaxUsedReq corev1.ResourceList) (corev1.ResourceList, string, string) {
 	// Node(Batch).Alloc[usage] := Node.Total - Node.SafetyMargin - System.Used - sum(Pod(Prod/Mid).Used)
 	// System.Used = max(Node.Used - Pod(All).Used, Node.Anno.Reserved, Node.Kubelet.Reserved)
@@ -90,7 +102,49 @@ func calculateBatchResourceByPolicy(strategy *configuration.ColocationStrategy, 
 	return batchAllocatable, cpuMsg, memMsg
 }
 
-func prepareNodeForResource(node *corev1.Node, nr *framework.NodeResource, name corev1.ResourceName) {
+func CalculateMidResourceByPolicy(strategy *configuration.ColocationStrategy, nodeAllocatable, unallocated corev1.ResourceList, allocatableMilliCPU, allocatableMemory, prodReclaimableMilliCPU int64, prodReclaimableMemory, nodeName string) (*resource.Quantity, *resource.Quantity, string, string) {
+	defaultStrategy := sloconfig.DefaultColocationStrategy()
+	cpuThresholdRatio := getPercentFromStrategy(strategy, &defaultStrategy, MidCPUThreshold)
+	if maxMilliCPU := float64(nodeAllocatable.Cpu().MilliValue()) * cpuThresholdRatio; allocatableMilliCPU > int64(maxMilliCPU) {
+		allocatableMilliCPU = int64(maxMilliCPU)
+	}
+	if allocatableMilliCPU < 0 {
+		klog.V(5).Infof("mid allocatable milli cpu of node %s is %v less than zero, set to zero",
+			nodeName, allocatableMilliCPU)
+		allocatableMilliCPU = 0
+	}
+	cpuInMilliCores := resource.NewQuantity(allocatableMilliCPU, resource.DecimalSI)
+
+	memThresholdRatio := getPercentFromStrategy(strategy, &defaultStrategy, MidMemoryThreshold)
+	if maxMemory := float64(nodeAllocatable.Memory().Value()) * memThresholdRatio; allocatableMemory > int64(maxMemory) {
+		allocatableMemory = int64(maxMemory)
+	}
+	if allocatableMemory < 0 {
+		klog.V(5).Infof("mid allocatable memory of node %s is %v less than zero, set to zero",
+			nodeName, allocatableMemory)
+		allocatableMemory = 0
+	}
+	memory := resource.NewQuantity(allocatableMemory, resource.BinarySI)
+
+	// CPU need turn into milli value
+	unallocatedMilliCPU, unallocatedMemory := resource.NewQuantity(unallocated.Cpu().MilliValue(), resource.DecimalSI), unallocated.Memory()
+	midUnallocatedRatio := getPercentFromStrategy(strategy, &defaultStrategy, MidUnallocatedPercent)
+	adjustedUnallocatedMilliCPU := resource.NewQuantity(int64(float64(unallocatedMilliCPU.Value())*midUnallocatedRatio), resource.DecimalSI)
+	adjustedUnallocatedMemory := resource.NewQuantity(int64(float64(unallocatedMemory.Value())*midUnallocatedRatio), resource.BinarySI)
+
+	cpuInMilliCores.Add(*adjustedUnallocatedMilliCPU)
+	memory.Add(*adjustedUnallocatedMemory)
+
+	cpuMsg := fmt.Sprintf("midAllocatable[CPU(milli-core)]:%v = min(nodeAllocatable:%v * thresholdRatio:%v, ProdReclaimable:%v) + Unallocated:%v * midUnallocatedRatio:%v",
+		cpuInMilliCores.Value(), nodeAllocatable.Cpu().MilliValue(), cpuThresholdRatio, prodReclaimableMilliCPU, unallocatedMilliCPU.Value(), midUnallocatedRatio)
+
+	memMsg := fmt.Sprintf("midAllocatable[Memory(byte)]:%s = min(nodeAllocatable:%s * thresholdRatio:%v, ProdReclaimable:%s) + Unallocated:%v * midUnallocatedRatio:%v",
+		memory.String(), nodeAllocatable.Memory().String(), memThresholdRatio, prodReclaimableMemory, unallocatedMemory.String(), midUnallocatedRatio)
+
+	return cpuInMilliCores, memory, cpuMsg, memMsg
+}
+
+func PrepareNodeForResource(node *corev1.Node, nr *framework.NodeResource, name corev1.ResourceName) {
 	q := nr.Resources[name]
 	if q == nil || nr.Resets[name] { // if the specified resource has no quantity
 		delete(node.Status.Capacity, name)
@@ -122,19 +176,32 @@ func prepareNodeForResource(node *corev1.Node, nr *framework.NodeResource, name 
 	node.Status.Allocatable[name] = *q
 }
 
-// getPodMetricUsage gets pod usage from the PodMetricInfo
-func getPodMetricUsage(info *slov1alpha1.PodMetricInfo) corev1.ResourceList {
-	return getResourceListForCPUAndMemory(info.PodUsage.ResourceList)
+// GetPodMetricUsage gets pod usage from the PodMetricInfo
+func GetPodMetricUsage(info *slov1alpha1.PodMetricInfo) corev1.ResourceList {
+	return GetResourceListForCPUAndMemory(info.PodUsage.ResourceList)
 }
 
-// getHostAppMetricUsage gets host application usage from HostApplicationMetricInfo
-func getHostAppMetricUsage(info *slov1alpha1.HostApplicationMetricInfo) corev1.ResourceList {
-	return getResourceListForCPUAndMemory(info.Usage.ResourceList)
+func GetHostAppHPUsed(resourceMetrics *framework.ResourceMetrics) corev1.ResourceList {
+	hostAppHPUsed := util.NewZeroResourceList()
+	for _, hostAppMetric := range resourceMetrics.NodeMetric.Status.HostApplicationMetric {
+		if hostAppMetric.Priority == extension.PriorityBatch || hostAppMetric.Priority == extension.PriorityFree {
+			// only consider higher priority usage for batch allocatable
+			// now only support product and batch(hadoop-yarn) priority for host application
+			continue
+		}
+		hostAppHPUsed = quotav1.Add(hostAppHPUsed, GetHostAppMetricUsage(hostAppMetric))
+	}
+	return hostAppHPUsed
 }
 
-// getPodNUMARequestAndUsage returns the pod request and usage on each NUMA nodes.
+// GetHostAppMetricUsage gets host application usage from HostApplicationMetricInfo
+func GetHostAppMetricUsage(info *slov1alpha1.HostApplicationMetricInfo) corev1.ResourceList {
+	return GetResourceListForCPUAndMemory(info.Usage.ResourceList)
+}
+
+// GetPodNUMARequestAndUsage returns the pod request and usage on each NUMA nodes.
 // It averages the metrics over all sharepools when the pod does not allocate any sharepool or use all sharepools.
-func getPodNUMARequestAndUsage(pod *corev1.Pod, podRequest, podUsage corev1.ResourceList, numaNum int) ([]corev1.ResourceList, []corev1.ResourceList) {
+func GetPodNUMARequestAndUsage(pod *corev1.Pod, podRequest, podUsage corev1.ResourceList, numaNum int) ([]corev1.ResourceList, []corev1.ResourceList) {
 	// get pod NUMA allocation
 	var podAlloc *extension.ResourceStatus
 	if pod.Annotations == nil {
@@ -165,8 +232,8 @@ func getPodNUMARequestAndUsage(pod *corev1.Pod, podRequest, podUsage corev1.Reso
 
 	if allocatedNUMANum <= 0 { // share all NUMAs
 		for i := 0; i < numaNum; i++ {
-			podNUMARequest[i] = divideResourceList(podRequest, float64(numaNum))
-			podNUMAUsage[i] = divideResourceList(podUsage, float64(numaNum))
+			podNUMARequest[i] = DivideResourceList(podRequest, float64(numaNum))
+			podNUMAUsage[i] = DivideResourceList(podUsage, float64(numaNum))
 		}
 	} else {
 		for i := 0; i < numaNum; i++ {
@@ -177,32 +244,32 @@ func getPodNUMARequestAndUsage(pod *corev1.Pod, podRequest, podUsage corev1.Reso
 				continue
 			}
 
-			podNUMARequest[i] = divideResourceList(podRequest, float64(allocatedNUMANum))
-			podNUMAUsage[i] = divideResourceList(podUsage, float64(allocatedNUMANum))
+			podNUMARequest[i] = DivideResourceList(podRequest, float64(allocatedNUMANum))
+			podNUMAUsage[i] = DivideResourceList(podUsage, float64(allocatedNUMANum))
 		}
 	}
 
 	return podNUMARequest, podNUMAUsage
 }
 
-func getPodUnknownNUMAUsage(podUsage corev1.ResourceList, numaNum int) []corev1.ResourceList {
+func GetPodUnknownNUMAUsage(podUsage corev1.ResourceList, numaNum int) []corev1.ResourceList {
 	if numaNum <= 0 {
 		return nil
 	}
 	podNUMAUsage := make([]corev1.ResourceList, numaNum)
 	for i := 0; i < numaNum; i++ {
-		podNUMAUsage[i] = divideResourceList(podUsage, float64(numaNum))
+		podNUMAUsage[i] = DivideResourceList(podUsage, float64(numaNum))
 	}
 	return podNUMAUsage
 }
 
-// getNodeCapacity gets node capacity and filters out non-CPU and non-Mem resources
-func getNodeCapacity(node *corev1.Node) corev1.ResourceList {
-	return getResourceListForCPUAndMemory(node.Status.Capacity)
+// GetNodeCapacity gets node capacity and filters out non-CPU and non-Mem resources
+func GetNodeCapacity(node *corev1.Node) corev1.ResourceList {
+	return GetResourceListForCPUAndMemory(node.Status.Capacity)
 }
 
-// getNodeSafetyMargin gets node-level safe-guarding reservation with the node's allocatable
-func getNodeSafetyMargin(strategy *configuration.ColocationStrategy, nodeCapacity corev1.ResourceList) corev1.ResourceList {
+// GetNodeSafetyMargin gets node-level safe-guarding reservation with the node's allocatable
+func GetNodeSafetyMargin(strategy *configuration.ColocationStrategy, nodeCapacity corev1.ResourceList) corev1.ResourceList {
 	cpuReserveQuant := util.MultiplyMilliQuant(nodeCapacity[corev1.ResourceCPU], getReserveRatio(*strategy.CPUReclaimThresholdPercent))
 	memReserveQuant := util.MultiplyQuant(nodeCapacity[corev1.ResourceMemory], getReserveRatio(*strategy.MemoryReclaimThresholdPercent))
 
@@ -212,7 +279,7 @@ func getNodeSafetyMargin(strategy *configuration.ColocationStrategy, nodeCapacit
 	}
 }
 
-func divideResourceList(rl corev1.ResourceList, divisor float64) corev1.ResourceList {
+func DivideResourceList(rl corev1.ResourceList, divisor float64) corev1.ResourceList {
 	if divisor == 0 {
 		return rl
 	}
@@ -233,30 +300,30 @@ func zoneResourceListHandler(a, b []corev1.ResourceList, zoneNum int,
 	return result
 }
 
-func addZoneResourceList(a, b []corev1.ResourceList, zoneNum int) []corev1.ResourceList {
+func AddZoneResourceList(a, b []corev1.ResourceList, zoneNum int) []corev1.ResourceList {
 	return zoneResourceListHandler(a, b, zoneNum, quotav1.Add)
 }
 
-func maxZoneResourceList(a, b []corev1.ResourceList, zoneNum int) []corev1.ResourceList {
+func MaxZoneResourceList(a, b []corev1.ResourceList, zoneNum int) []corev1.ResourceList {
 	return zoneResourceListHandler(a, b, zoneNum, quotav1.Max)
 }
 
-func getResourceListForCPUAndMemory(rl corev1.ResourceList) corev1.ResourceList {
+func GetResourceListForCPUAndMemory(rl corev1.ResourceList) corev1.ResourceList {
 	return quotav1.Mask(rl, []corev1.ResourceName{corev1.ResourceCPU, corev1.ResourceMemory})
 }
 
-func mixResourceListCPUAndMemory(resourcesForCPU, resourcesForMemory corev1.ResourceList) corev1.ResourceList {
+func MixResourceListCPUAndMemory(resourcesForCPU, resourcesForMemory corev1.ResourceList) corev1.ResourceList {
 	return corev1.ResourceList{
 		corev1.ResourceCPU:    resourcesForCPU[corev1.ResourceCPU],
 		corev1.ResourceMemory: resourcesForMemory[corev1.ResourceMemory],
 	}
 }
 
-func minxZoneResourceListCPUAndMemory(resourcesForCPU, resourcesForMemory []corev1.ResourceList, zoneNum int) []corev1.ResourceList {
+func MinxZoneResourceListCPUAndMemory(resourcesForCPU, resourcesForMemory []corev1.ResourceList, zoneNum int) []corev1.ResourceList {
 	// assert len(a) == len(b) == zoneNum
 	result := make([]corev1.ResourceList, zoneNum)
 	for i := 0; i < zoneNum; i++ {
-		result[i] = mixResourceListCPUAndMemory(resourcesForCPU[i], resourcesForMemory[i])
+		result[i] = MixResourceListCPUAndMemory(resourcesForCPU[i], resourcesForMemory[i])
 	}
 	return result
 }
@@ -266,7 +333,7 @@ func getReserveRatio(reclaimThreshold int64) float64 {
 	return float64(100-reclaimThreshold) / 100.0
 }
 
-func updateNRTZoneListIfNeeded(node *corev1.Node, zoneList topologyv1alpha1.ZoneList, nr *framework.NodeResource, diffThreshold float64) bool {
+func UpdateNRTZoneListIfNeeded(node *corev1.Node, zoneList topologyv1alpha1.ZoneList, nr *framework.NodeResource, diffThreshold float64) bool {
 	ratio, err := getCPUNormalizationRatio(nr)
 	if err != nil {
 		klog.V(5).InfoS("failed to get cpu normalization ratio for zone resources",
@@ -358,4 +425,26 @@ func getCPUNormalizationRatio(nr *framework.NodeResource) (float64, error) {
 		return -1, fmt.Errorf("failed to parse ratio in NodeResource, err: %w", err)
 	}
 	return ratio, nil
+}
+
+func getPercentFromStrategy(strategy, defaultStrategy *configuration.ColocationStrategy, strategyType string) float64 {
+	switch strategyType {
+	case MidCPUThreshold:
+		if strategy == nil || strategy.MidCPUThresholdPercent == nil {
+			return float64(*defaultStrategy.MidCPUThresholdPercent) / 100
+		}
+		return float64(*strategy.MidCPUThresholdPercent) / 100
+	case MidMemoryThreshold:
+		if strategy == nil || strategy.MidMemoryThresholdPercent == nil {
+			return float64(*defaultStrategy.MidMemoryThresholdPercent) / 100
+		}
+		return float64(*strategy.MidMemoryThresholdPercent) / 100
+	case MidUnallocatedPercent:
+		if strategy == nil || strategy.MidUnallocatedPercent == nil {
+			return float64(*defaultStrategy.MidUnallocatedPercent) / 100
+		}
+		return float64(*strategy.MidUnallocatedPercent) / 100
+	default:
+		return 0
+	}
 }

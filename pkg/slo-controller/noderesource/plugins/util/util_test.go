@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package batchresource
+package util
 
 import (
 	"testing"
@@ -30,6 +30,20 @@ import (
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
+
+func makeResourceList(cpu, memory string) corev1.ResourceList {
+	return corev1.ResourceList{
+		corev1.ResourceCPU:    resource.MustParse(cpu),
+		corev1.ResourceMemory: resource.MustParse(memory),
+	}
+}
+
+func makeResourceReq(cpu, memory string) corev1.ResourceRequirements {
+	return corev1.ResourceRequirements{
+		Requests: makeResourceList(cpu, memory),
+		Limits:   makeResourceList(cpu, memory),
+	}
+}
 
 func Test_getPodMetricUsage(t *testing.T) {
 	type args struct {
@@ -58,7 +72,7 @@ func Test_getPodMetricUsage(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := getPodMetricUsage(tt.args.info)
+			got := GetPodMetricUsage(tt.args.info)
 			testingCorrectResourceList(t, &tt.want, &got)
 		})
 	}
@@ -87,7 +101,7 @@ func Test_getResourceListForCPUAndMemory(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := getResourceListForCPUAndMemory(tt.args.rl)
+			got := GetResourceListForCPUAndMemory(tt.args.rl)
 			testingCorrectResourceList(t, &tt.want, &got)
 		})
 	}
@@ -121,7 +135,7 @@ func Test_getNodeReservation(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := getNodeSafetyMargin(tt.args.strategy, tt.args.nodeAllocatable)
+			got := GetNodeSafetyMargin(tt.args.strategy, tt.args.nodeAllocatable)
 			testingCorrectResourceList(t, &tt.want, &got)
 		})
 	}
@@ -379,7 +393,7 @@ func Test_getPodNUMARequestAndUsage(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, got1 := getPodNUMARequestAndUsage(tt.args.pod, tt.args.podRequest, tt.args.podUsage, tt.args.numaNum)
+			got, got1 := GetPodNUMARequestAndUsage(tt.args.pod, tt.args.podRequest, tt.args.podUsage, tt.args.numaNum)
 			assertEqualNUMAResourceList(t, tt.want, got)
 			assertEqualNUMAResourceList(t, tt.want1, got1)
 		})
@@ -514,7 +528,7 @@ func Test_addZoneResourceList(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := addZoneResourceList(tt.args.a, tt.args.b, tt.args.zoneNum)
+			got := AddZoneResourceList(tt.args.a, tt.args.b, tt.args.zoneNum)
 			assertEqualNUMAResourceList(t, tt.want, got)
 		})
 	}
@@ -579,7 +593,7 @@ func Test_getPodUnknownNUMAUsage(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := getPodUnknownNUMAUsage(tt.arg, tt.arg1)
+			got := GetPodUnknownNUMAUsage(tt.arg, tt.arg1)
 			assertEqualNUMAResourceList(t, tt.want, got)
 		})
 	}
@@ -643,7 +657,7 @@ func Test_divideResourceList(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := divideResourceList(tt.arg, tt.arg1)
+			got := DivideResourceList(tt.arg, tt.arg1)
 			assert.True(t, util.IsResourceListEqual(tt.want, got))
 		})
 	}
@@ -683,8 +697,21 @@ func Test_getHostAppMetricUsage(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := getHostAppMetricUsage(tt.args.info)
+			got := GetHostAppMetricUsage(tt.args.info)
 			testingCorrectResourceList(t, &tt.want, &got)
 		})
+	}
+}
+
+func testingCorrectResourceList(t *testing.T, want, got *corev1.ResourceList) {
+	assert.Equal(t, want.Cpu().MilliValue(), got.Cpu().MilliValue(), "should get correct cpu request")
+	assert.Equal(t, want.Memory().Value(), got.Memory().Value(), "should get correct memory request")
+	if _, ok := (*want)[extension.BatchCPU]; ok {
+		qWant, qGot := (*want)[extension.BatchCPU], (*got)[extension.BatchCPU]
+		assert.Equal(t, qWant.MilliValue(), qGot.MilliValue(), "should get correct batch-cpu")
+	}
+	if _, ok := (*want)[extension.BatchMemory]; ok {
+		qWant, qGot := (*want)[extension.BatchMemory], (*got)[extension.BatchMemory]
+		assert.Equal(t, qWant.Value(), qGot.Value(), "should get correct batch-memory")
 	}
 }
