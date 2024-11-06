@@ -44,15 +44,15 @@ func TestPluginNeedSync(t *testing.T) {
 	testNode := getTestNode(nil)
 	testNodeMidNotChange := getTestNode(corev1.ResourceList{
 		extension.BatchCPU:    resource.MustParse("50000"),
-		extension.BatchMemory: resource.MustParse("90Gi"),
+		extension.BatchMemory: resource.MustParse("90G"),
 		extension.MidCPU:      resource.MustParse("20000"),
-		extension.MidMemory:   resource.MustParse("40Gi"),
+		extension.MidMemory:   resource.MustParse("40G"),
 	})
 	testNodeMidChanged := getTestNode(corev1.ResourceList{
 		extension.BatchCPU:    resource.MustParse("40000"),
-		extension.BatchMemory: resource.MustParse("80Gi"),
+		extension.BatchMemory: resource.MustParse("80G"),
 		extension.MidCPU:      resource.MustParse("10000"),
-		extension.MidMemory:   resource.MustParse("30Gi"),
+		extension.MidMemory:   resource.MustParse("30G"),
 	})
 	type args struct {
 		strategy *configuration.ColocationStrategy
@@ -223,11 +223,11 @@ func TestPluginCalculate(t *testing.T) {
 					Resources: corev1.ResourceRequirements{
 						Requests: corev1.ResourceList{
 							corev1.ResourceCPU:    resource.MustParse("20"),
-							corev1.ResourceMemory: resource.MustParse("40Gi"),
+							corev1.ResourceMemory: resource.MustParse("40G"),
 						},
 						Limits: corev1.ResourceList{
 							corev1.ResourceCPU:    resource.MustParse("20"),
-							corev1.ResourceMemory: resource.MustParse("40Gi"),
+							corev1.ResourceMemory: resource.MustParse("40G"),
 						},
 					},
 				},
@@ -254,11 +254,11 @@ func TestPluginCalculate(t *testing.T) {
 					Resources: corev1.ResourceRequirements{
 						Requests: corev1.ResourceList{
 							corev1.ResourceCPU:    resource.MustParse("15"),
-							corev1.ResourceMemory: resource.MustParse("30Gi"),
+							corev1.ResourceMemory: resource.MustParse("30G"),
 						},
 						Limits: corev1.ResourceList{
 							corev1.ResourceCPU:    resource.MustParse("15"),
-							corev1.ResourceMemory: resource.MustParse("30Gi"),
+							corev1.ResourceMemory: resource.MustParse("30G"),
 						},
 					},
 				},
@@ -268,18 +268,6 @@ func TestPluginCalculate(t *testing.T) {
 			Phase: corev1.PodRunning,
 		},
 	}
-	testCPUQuant := resource.MustParse("10000")
-	testCPUQuant2 := resource.MustParse("18000")
-	testCPUQuant3 := resource.MustParse("0")
-
-	//NOTE: if not call String, cpu String will be diff
-	_ = testCPUQuant.String()
-	_ = testCPUQuant2.String()
-	_ = testCPUQuant3.String()
-	testMemoryQuant := resource.MustParse("15Gi")
-	testMemoryQuant2 := resource.MustParse("46Gi")
-	testMemoryQuant3 := resource.MustParse("0Gi")
-	_ = testMemoryQuant3.String()
 
 	type args struct {
 		strategy *configuration.ColocationStrategy
@@ -324,7 +312,7 @@ func TestPluginCalculate(t *testing.T) {
 								NodeUsage: slov1alpha1.ResourceMap{
 									ResourceList: corev1.ResourceList{
 										corev1.ResourceCPU:    resource.MustParse("20"),
-										corev1.ResourceMemory: resource.MustParse("45Gi"),
+										corev1.ResourceMemory: resource.MustParse("45G"),
 									},
 								},
 							},
@@ -335,7 +323,7 @@ func TestPluginCalculate(t *testing.T) {
 									PodUsage: slov1alpha1.ResourceMap{
 										ResourceList: corev1.ResourceList{
 											corev1.ResourceCPU:    resource.MustParse("10"),
-											corev1.ResourceMemory: resource.MustParse("20Gi"),
+											corev1.ResourceMemory: resource.MustParse("20G"),
 										},
 									},
 								},
@@ -345,7 +333,7 @@ func TestPluginCalculate(t *testing.T) {
 									PodUsage: slov1alpha1.ResourceMap{
 										ResourceList: corev1.ResourceList{
 											corev1.ResourceCPU:    resource.MustParse("15"),
-											corev1.ResourceMemory: resource.MustParse("20Gi"),
+											corev1.ResourceMemory: resource.MustParse("20G"),
 										},
 									},
 								},
@@ -393,7 +381,7 @@ func TestPluginCalculate(t *testing.T) {
 								NodeUsage: slov1alpha1.ResourceMap{
 									ResourceList: corev1.ResourceList{
 										corev1.ResourceCPU:    resource.MustParse("20"),
-										corev1.ResourceMemory: resource.MustParse("45Gi"),
+										corev1.ResourceMemory: resource.MustParse("45G"),
 									},
 								},
 							},
@@ -404,7 +392,7 @@ func TestPluginCalculate(t *testing.T) {
 									PodUsage: slov1alpha1.ResourceMap{
 										ResourceList: corev1.ResourceList{
 											corev1.ResourceCPU:    resource.MustParse("10"),
-											corev1.ResourceMemory: resource.MustParse("20Gi"),
+											corev1.ResourceMemory: resource.MustParse("20G"),
 										},
 									},
 								},
@@ -414,7 +402,7 @@ func TestPluginCalculate(t *testing.T) {
 									PodUsage: slov1alpha1.ResourceMap{
 										ResourceList: corev1.ResourceList{
 											corev1.ResourceCPU:    resource.MustParse("15"),
-											corev1.ResourceMemory: resource.MustParse("20Gi"),
+											corev1.ResourceMemory: resource.MustParse("20G"),
 										},
 									},
 								},
@@ -423,7 +411,7 @@ func TestPluginCalculate(t *testing.T) {
 								Resource: slov1alpha1.ResourceMap{
 									ResourceList: corev1.ResourceList{
 										corev1.ResourceCPU:    resource.MustParse("10"),
-										corev1.ResourceMemory: resource.MustParse("15Gi"),
+										corev1.ResourceMemory: resource.MustParse("15G"),
 									},
 								},
 							},
@@ -434,13 +422,13 @@ func TestPluginCalculate(t *testing.T) {
 			want: []framework.ResourceItem{
 				{
 					Name:     extension.MidCPU,
-					Message:  "midAllocatable[CPU(milli-core)]:10000 = min(nodeAllocatable:100000 * thresholdRatio:1, ProdReclaimable:10000) + Unallocated:80000 * midUnallocatedRatio:0",
-					Quantity: &testCPUQuant,
+					Message:  "midAllocatable[CPU(milli-core)]:10000 = min(nodeCapacity:100000 * thresholdRatio:1, ProdReclaimable:10000) + Unallocated:80000 * midUnallocatedRatio:0",
+					Quantity: resource.NewQuantity(10000, resource.DecimalSI),
 				},
 				{
 					Name:     extension.MidMemory,
-					Message:  "midAllocatable[Memory(byte)]:15Gi = min(nodeAllocatable:200Gi * thresholdRatio:1, ProdReclaimable:15Gi) + Unallocated:160Gi * midUnallocatedRatio:0",
-					Quantity: &testMemoryQuant,
+					Message:  "midAllocatable[Memory(GB)]:15 = min(nodeCapacity:210 * thresholdRatio:1, ProdReclaimable:15) + Unallocated:160 * midUnallocatedRatio:0",
+					Quantity: resource.NewScaledQuantity(15, 9),
 				},
 			},
 			wantErr: false,
@@ -473,7 +461,7 @@ func TestPluginCalculate(t *testing.T) {
 								NodeUsage: slov1alpha1.ResourceMap{
 									ResourceList: corev1.ResourceList{
 										corev1.ResourceCPU:    resource.MustParse("30"),
-										corev1.ResourceMemory: resource.MustParse("50Gi"),
+										corev1.ResourceMemory: resource.MustParse("50G"),
 									},
 								},
 							},
@@ -484,7 +472,7 @@ func TestPluginCalculate(t *testing.T) {
 									PodUsage: slov1alpha1.ResourceMap{
 										ResourceList: corev1.ResourceList{
 											corev1.ResourceCPU:    resource.MustParse("5"),
-											corev1.ResourceMemory: resource.MustParse("10Gi"),
+											corev1.ResourceMemory: resource.MustParse("10G"),
 										},
 									},
 								},
@@ -494,7 +482,7 @@ func TestPluginCalculate(t *testing.T) {
 									PodUsage: slov1alpha1.ResourceMap{
 										ResourceList: corev1.ResourceList{
 											corev1.ResourceCPU:    resource.MustParse("15"),
-											corev1.ResourceMemory: resource.MustParse("30Gi"),
+											corev1.ResourceMemory: resource.MustParse("30G"),
 										},
 									},
 								},
@@ -503,7 +491,7 @@ func TestPluginCalculate(t *testing.T) {
 								Resource: slov1alpha1.ResourceMap{
 									ResourceList: corev1.ResourceList{
 										corev1.ResourceCPU:    resource.MustParse("15"),
-										corev1.ResourceMemory: resource.MustParse("30Gi"),
+										corev1.ResourceMemory: resource.MustParse("30G"),
 									},
 								},
 							},
@@ -514,13 +502,12 @@ func TestPluginCalculate(t *testing.T) {
 			want: []framework.ResourceItem{
 				{
 					Name:     extension.MidCPU,
-					Message:  "midAllocatable[CPU(milli-core)]:18000 = min(nodeAllocatable:100000 * thresholdRatio:0.1, ProdReclaimable:15000) + Unallocated:80000 * midUnallocatedRatio:0.1",
-					Quantity: &testCPUQuant2,
-				},
+					Message:  "midAllocatable[CPU(milli-core)]:18000 = min(nodeCapacity:100000 * thresholdRatio:0.1, ProdReclaimable:15000) + Unallocated:80000 * midUnallocatedRatio:0.1",
+					Quantity: resource.NewQuantity(18000, resource.DecimalSI)},
 				{
 					Name:     extension.MidMemory,
-					Message:  "midAllocatable[Memory(byte)]:46Gi = min(nodeAllocatable:200Gi * thresholdRatio:0.2, ProdReclaimable:30Gi) + Unallocated:160Gi * midUnallocatedRatio:0.1",
-					Quantity: &testMemoryQuant2,
+					Message:  "midAllocatable[Memory(GB)]:46 = min(nodeCapacity:210 * thresholdRatio:0.2, ProdReclaimable:30) + Unallocated:160 * midUnallocatedRatio:0.1",
+					Quantity: resource.NewScaledQuantity(46, 9),
 				},
 			},
 			wantErr: false,
@@ -550,7 +537,7 @@ func TestPluginCalculate(t *testing.T) {
 								NodeUsage: slov1alpha1.ResourceMap{
 									ResourceList: corev1.ResourceList{
 										corev1.ResourceCPU:    resource.MustParse("30"),
-										corev1.ResourceMemory: resource.MustParse("50Gi"),
+										corev1.ResourceMemory: resource.MustParse("50G"),
 									},
 								},
 							},
@@ -561,7 +548,7 @@ func TestPluginCalculate(t *testing.T) {
 									PodUsage: slov1alpha1.ResourceMap{
 										ResourceList: corev1.ResourceList{
 											corev1.ResourceCPU:    resource.MustParse("5"),
-											corev1.ResourceMemory: resource.MustParse("10Gi"),
+											corev1.ResourceMemory: resource.MustParse("10G"),
 										},
 									},
 								},
@@ -571,7 +558,7 @@ func TestPluginCalculate(t *testing.T) {
 									PodUsage: slov1alpha1.ResourceMap{
 										ResourceList: corev1.ResourceList{
 											corev1.ResourceCPU:    resource.MustParse("15"),
-											corev1.ResourceMemory: resource.MustParse("30Gi"),
+											corev1.ResourceMemory: resource.MustParse("30G"),
 										},
 									},
 								},
@@ -584,13 +571,259 @@ func TestPluginCalculate(t *testing.T) {
 			want: []framework.ResourceItem{
 				{
 					Name:     extension.MidCPU,
-					Message:  "midAllocatable[CPU(milli-core)]:0 = min(nodeAllocatable:100000 * thresholdRatio:1, ProdReclaimable:0) + Unallocated:80000 * midUnallocatedRatio:0",
-					Quantity: &testCPUQuant3,
+					Message:  "midAllocatable[CPU(milli-core)]:0 = min(nodeCapacity:100000 * thresholdRatio:1, ProdReclaimable:0) + Unallocated:80000 * midUnallocatedRatio:0",
+					Quantity: resource.NewQuantity(0, resource.DecimalSI),
 				},
 				{
 					Name:     extension.MidMemory,
-					Message:  "midAllocatable[Memory(byte)]:0 = min(nodeAllocatable:200Gi * thresholdRatio:1, ProdReclaimable:0) + Unallocated:160Gi * midUnallocatedRatio:0",
-					Quantity: &testMemoryQuant3,
+					Message:  "midAllocatable[Memory(GB)]:0 = min(nodeCapacity:210 * thresholdRatio:1, ProdReclaimable:0) + Unallocated:160 * midUnallocatedRatio:0",
+					Quantity: resource.NewScaledQuantity(0, 0),
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "including product host application usage",
+			args: args{
+				strategy: &configuration.ColocationStrategy{
+					Enable:             pointer.Bool(true),
+					DegradeTimeMinutes: pointer.Int64(10),
+				},
+				node: testNode,
+				podList: &corev1.PodList{
+					Items: []corev1.Pod{
+						*testProdLSPod,
+						*testBatchBEPod,
+					},
+				},
+				metrics: &framework.ResourceMetrics{
+					NodeMetric: &slov1alpha1.NodeMetric{
+						ObjectMeta: metav1.ObjectMeta{
+							Name: "test-node",
+						},
+						Status: slov1alpha1.NodeMetricStatus{
+							UpdateTime: &metav1.Time{Time: time.Now().Add(-20 * time.Second)},
+							NodeMetric: &slov1alpha1.NodeMetricInfo{
+								NodeUsage: slov1alpha1.ResourceMap{
+									ResourceList: corev1.ResourceList{
+										corev1.ResourceCPU:    resource.MustParse("30"),
+										corev1.ResourceMemory: resource.MustParse("50G"),
+									},
+								},
+							},
+							PodsMetric: []*slov1alpha1.PodMetricInfo{
+								{
+									Name:      testProdLSPod.Name,
+									Namespace: testProdLSPod.Namespace,
+									PodUsage: slov1alpha1.ResourceMap{
+										ResourceList: corev1.ResourceList{
+											corev1.ResourceCPU:    resource.MustParse("5"),
+											corev1.ResourceMemory: resource.MustParse("10G"),
+										},
+									},
+								},
+								{
+									Name:      testBatchBEPod.Name,
+									Namespace: testBatchBEPod.Namespace,
+									PodUsage: slov1alpha1.ResourceMap{
+										ResourceList: corev1.ResourceList{
+											corev1.ResourceCPU:    resource.MustParse("15"),
+											corev1.ResourceMemory: resource.MustParse("30G"),
+										},
+									},
+								},
+							},
+							HostApplicationMetric: []*slov1alpha1.HostApplicationMetricInfo{
+								{
+									Name: "test-prod-host-application",
+									Usage: slov1alpha1.ResourceMap{
+										ResourceList: corev1.ResourceList{
+											corev1.ResourceCPU:    resource.MustParse("5"),
+											corev1.ResourceMemory: resource.MustParse("15G"),
+										},
+									},
+									Priority: extension.PriorityProd,
+								},
+							},
+							ProdReclaimableMetric: &slov1alpha1.ReclaimableMetric{},
+						},
+					},
+				},
+			},
+			want: []framework.ResourceItem{
+				{
+					Name:     extension.MidCPU,
+					Message:  "midAllocatable[CPU(milli-core)]:0 = min(nodeCapacity:100000 * thresholdRatio:1, ProdReclaimable:0) + Unallocated:75000 * midUnallocatedRatio:0",
+					Quantity: resource.NewQuantity(0, resource.DecimalSI),
+				},
+				{
+					Name:     extension.MidMemory,
+					Message:  "midAllocatable[Memory(GB)]:0 = min(nodeCapacity:210 * thresholdRatio:1, ProdReclaimable:0) + Unallocated:155 * midUnallocatedRatio:0",
+					Quantity: resource.NewScaledQuantity(0, 0),
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "including mid host application usage",
+			args: args{
+				strategy: &configuration.ColocationStrategy{
+					Enable:             pointer.Bool(true),
+					DegradeTimeMinutes: pointer.Int64(10),
+				},
+				node: testNode,
+				podList: &corev1.PodList{
+					Items: []corev1.Pod{
+						*testProdLSPod,
+						*testBatchBEPod,
+					},
+				},
+				metrics: &framework.ResourceMetrics{
+					NodeMetric: &slov1alpha1.NodeMetric{
+						ObjectMeta: metav1.ObjectMeta{
+							Name: "test-node",
+						},
+						Status: slov1alpha1.NodeMetricStatus{
+							UpdateTime: &metav1.Time{Time: time.Now().Add(-20 * time.Second)},
+							NodeMetric: &slov1alpha1.NodeMetricInfo{
+								NodeUsage: slov1alpha1.ResourceMap{
+									ResourceList: corev1.ResourceList{
+										corev1.ResourceCPU:    resource.MustParse("30"),
+										corev1.ResourceMemory: resource.MustParse("50G"),
+									},
+								},
+							},
+							PodsMetric: []*slov1alpha1.PodMetricInfo{
+								{
+									Name:      testProdLSPod.Name,
+									Namespace: testProdLSPod.Namespace,
+									PodUsage: slov1alpha1.ResourceMap{
+										ResourceList: corev1.ResourceList{
+											corev1.ResourceCPU:    resource.MustParse("5"),
+											corev1.ResourceMemory: resource.MustParse("10G"),
+										},
+									},
+								},
+								{
+									Name:      testBatchBEPod.Name,
+									Namespace: testBatchBEPod.Namespace,
+									PodUsage: slov1alpha1.ResourceMap{
+										ResourceList: corev1.ResourceList{
+											corev1.ResourceCPU:    resource.MustParse("15"),
+											corev1.ResourceMemory: resource.MustParse("30G"),
+										},
+									},
+								},
+							},
+							HostApplicationMetric: []*slov1alpha1.HostApplicationMetricInfo{
+								{
+									Name: "test-mid-host-application",
+									Usage: slov1alpha1.ResourceMap{
+										ResourceList: corev1.ResourceList{
+											corev1.ResourceCPU:    resource.MustParse("5"),
+											corev1.ResourceMemory: resource.MustParse("15G"),
+										},
+									},
+									Priority: extension.PriorityMid,
+								},
+							},
+							ProdReclaimableMetric: &slov1alpha1.ReclaimableMetric{},
+						},
+					},
+				},
+			},
+			want: []framework.ResourceItem{
+				{
+					Name:     extension.MidCPU,
+					Message:  "midAllocatable[CPU(milli-core)]:0 = min(nodeCapacity:100000 * thresholdRatio:1, ProdReclaimable:0) + Unallocated:80000 * midUnallocatedRatio:0",
+					Quantity: resource.NewQuantity(0, resource.DecimalSI),
+				},
+				{
+					Name:     extension.MidMemory,
+					Message:  "midAllocatable[Memory(GB)]:0 = min(nodeCapacity:210 * thresholdRatio:1, ProdReclaimable:0) + Unallocated:160 * midUnallocatedRatio:0",
+					Quantity: resource.NewScaledQuantity(0, 0),
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "including batch host application usage",
+			args: args{
+				strategy: &configuration.ColocationStrategy{
+					Enable:             pointer.Bool(true),
+					DegradeTimeMinutes: pointer.Int64(10),
+				},
+				node: testNode,
+				podList: &corev1.PodList{
+					Items: []corev1.Pod{
+						*testProdLSPod,
+						*testBatchBEPod,
+					},
+				},
+				metrics: &framework.ResourceMetrics{
+					NodeMetric: &slov1alpha1.NodeMetric{
+						ObjectMeta: metav1.ObjectMeta{
+							Name: "test-node",
+						},
+						Status: slov1alpha1.NodeMetricStatus{
+							UpdateTime: &metav1.Time{Time: time.Now().Add(-20 * time.Second)},
+							NodeMetric: &slov1alpha1.NodeMetricInfo{
+								NodeUsage: slov1alpha1.ResourceMap{
+									ResourceList: corev1.ResourceList{
+										corev1.ResourceCPU:    resource.MustParse("30"),
+										corev1.ResourceMemory: resource.MustParse("50G"),
+									},
+								},
+							},
+							PodsMetric: []*slov1alpha1.PodMetricInfo{
+								{
+									Name:      testProdLSPod.Name,
+									Namespace: testProdLSPod.Namespace,
+									PodUsage: slov1alpha1.ResourceMap{
+										ResourceList: corev1.ResourceList{
+											corev1.ResourceCPU:    resource.MustParse("5"),
+											corev1.ResourceMemory: resource.MustParse("10G"),
+										},
+									},
+								},
+								{
+									Name:      testBatchBEPod.Name,
+									Namespace: testBatchBEPod.Namespace,
+									PodUsage: slov1alpha1.ResourceMap{
+										ResourceList: corev1.ResourceList{
+											corev1.ResourceCPU:    resource.MustParse("15"),
+											corev1.ResourceMemory: resource.MustParse("30G"),
+										},
+									},
+								},
+							},
+							HostApplicationMetric: []*slov1alpha1.HostApplicationMetricInfo{
+								{
+									Name: "test-batch-host-application",
+									Usage: slov1alpha1.ResourceMap{
+										ResourceList: corev1.ResourceList{
+											corev1.ResourceCPU:    resource.MustParse("2"),
+											corev1.ResourceMemory: resource.MustParse("10G"),
+										},
+									},
+									Priority: extension.PriorityBatch,
+								},
+							},
+							ProdReclaimableMetric: &slov1alpha1.ReclaimableMetric{},
+						},
+					},
+				},
+			},
+			want: []framework.ResourceItem{
+				{
+					Name:     extension.MidCPU,
+					Message:  "midAllocatable[CPU(milli-core)]:0 = min(nodeCapacity:100000 * thresholdRatio:1, ProdReclaimable:0) + Unallocated:80000 * midUnallocatedRatio:0",
+					Quantity: resource.NewQuantity(0, resource.DecimalSI),
+				},
+				{
+					Name:     extension.MidMemory,
+					Message:  "midAllocatable[Memory(GB)]:0 = min(nodeCapacity:210 * thresholdRatio:1, ProdReclaimable:0) + Unallocated:160 * midUnallocatedRatio:0",
+					Quantity: resource.NewScaledQuantity(0, 0),
 				},
 			},
 			wantErr: false,
@@ -600,8 +833,8 @@ func TestPluginCalculate(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			p := &Plugin{}
 			got, gotErr := p.Calculate(tt.args.strategy, tt.args.node, tt.args.podList, tt.args.metrics)
-			assert.Equal(t, tt.want, got)
 			assert.Equal(t, tt.wantErr, gotErr != nil)
+			testingCorrectResourceItems(t, tt.want, got)
 		})
 	}
 }
@@ -798,19 +1031,19 @@ func getTestNode(resourceList corev1.ResourceList, resetResources ...corev1.Reso
 		Status: corev1.NodeStatus{
 			Allocatable: corev1.ResourceList{
 				corev1.ResourceCPU:    resource.MustParse("100"),
-				corev1.ResourceMemory: resource.MustParse("200Gi"),
+				corev1.ResourceMemory: resource.MustParse("200G"),
 				extension.BatchCPU:    resource.MustParse("40000"),
-				extension.BatchMemory: resource.MustParse("80Gi"),
+				extension.BatchMemory: resource.MustParse("80G"),
 				extension.MidCPU:      resource.MustParse("20000"),
-				extension.MidMemory:   resource.MustParse("40Gi"),
+				extension.MidMemory:   resource.MustParse("40G"),
 			},
 			Capacity: corev1.ResourceList{
 				corev1.ResourceCPU:    resource.MustParse("100"),
-				corev1.ResourceMemory: resource.MustParse("210Gi"),
+				corev1.ResourceMemory: resource.MustParse("210G"),
 				extension.BatchCPU:    resource.MustParse("40000"),
-				extension.BatchMemory: resource.MustParse("80Gi"),
+				extension.BatchMemory: resource.MustParse("80G"),
 				extension.MidCPU:      resource.MustParse("20000"),
-				extension.MidMemory:   resource.MustParse("40Gi"),
+				extension.MidMemory:   resource.MustParse("40G"),
 			},
 		},
 	}
@@ -823,4 +1056,18 @@ func getTestNode(resourceList corev1.ResourceList, resetResources ...corev1.Reso
 		delete(testNode.Status.Capacity, resourceName)
 	}
 	return testNode
+}
+
+func testingCorrectResourceItems(t *testing.T, want, got []framework.ResourceItem) {
+	assert.Equal(t, len(want), len(got))
+	for i := range want {
+		qWant, qGot := want[i].Quantity, got[i].Quantity
+		want[i].Quantity, got[i].Quantity = nil, nil
+		assert.Equal(t, want[i], got[i], "equal fields for resource "+want[i].Name)
+		if qWant == nil && qGot == nil {
+			continue
+		}
+		assert.Equal(t, qWant.MilliValue(), qGot.MilliValue(), "equal values for resource "+want[i].Name)
+		want[i].Quantity, got[i].Quantity = qWant, qGot
+	}
 }

@@ -279,7 +279,7 @@ func (p *Plugin) calculateOnNode(strategy *configuration.ColocationStrategy, nod
 		}
 	}
 
-	hostAppHPUsed := resutil.GetHostAppHPUsed(resourceMetrics)
+	hostAppHPUsed := resutil.GetHostAppHPUsed(resourceMetrics, extension.PriorityBatch)
 	// For the pods reported metrics but not shown in current list, count them according to the metric priority.
 	podsDanglingUsed := util.NewZeroResourceList()
 	for _, podMetric := range podMetricDanglingMap {
@@ -352,7 +352,7 @@ func (p *Plugin) calculateOnNUMALevel(strategy *configuration.ColocationStrategy
 	podsHPZoneMaxUsedReq := make([]corev1.ResourceList, zoneNum)
 	batchZoneAllocatable := make([]corev1.ResourceList, zoneNum)
 
-	hostAppHPUsed := resutil.GetHostAppHPUsed(resourceMetrics)
+	hostAppHPUsed := resutil.GetHostAppHPUsed(resourceMetrics, extension.PriorityBatch)
 	systemUsed := resutil.GetResourceListForCPUAndMemory(nodeMetric.Status.NodeMetric.SystemUsage.ResourceList)
 	// resource usage of host applications with prod priority will be count as host system usage since they consumes the
 	// node reserved resource. bind host app on single numa node is not supported yet. divide the usage by numa node number.
