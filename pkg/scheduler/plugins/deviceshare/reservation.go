@@ -261,17 +261,15 @@ func (p *Plugin) tryAllocateFromReservation(
 			break
 
 		} else if allocatePolicy == schedulingv1alpha1.ReservationAllocatePolicyRestricted {
-			_, status = allocator.Allocate(preferred, preferred, nil, preemptible)
-			if !status.IsSuccess() {
-				reservationReasons = append(reservationReasons, status)
-				continue
-			}
-
 			//
 			// It is necessary to check separately whether the remaining resources of the device instance
 			// reserved by the Restricted Reservation meet the requirements of the Pod, to ensure that
 			// the intersecting resources do not exceed the reserved range of the Restricted Reservation.
 			//
+			// Example: the node has reservation-ignored pod, matched reservations R1, R2, ..., Ri,
+			// unmatched reservations U1, U2, ..., Uj, and pods P1, P2, ..., Pk.
+			// The free device resources for the scheduling pod P0 is:
+			// min(NodeTotal - P1 - P2 - ... - Pk - U1 - U2 - ... - Uj, R1)
 			requiredDeviceResources := calcRequiredDeviceResources(&alloc, preemptibleInRR)
 			result, status = allocator.Allocate(preferred, preferred, requiredDeviceResources, preemptible)
 			if !status.IsSuccess() {

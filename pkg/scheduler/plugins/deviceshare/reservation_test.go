@@ -276,6 +276,20 @@ func Test_tryAllocateFromReservation(t *testing.T) {
 		},
 	}
 
+	reservationOne := map[schedulingv1alpha1.DeviceType]deviceResources{
+		schedulingv1alpha1.GPU: {
+			0: {
+				apiext.ResourceGPUCore:        resource.MustParse("100"),
+				apiext.ResourceGPUMemory:      resource.MustParse("8Gi"),
+				apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+			},
+			1: {
+				apiext.ResourceGPUCore:        resource.MustParse("100"),
+				apiext.ResourceGPUMemory:      resource.MustParse("8Gi"),
+				apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+			},
+		},
+	}
 	reservationHalf := map[schedulingv1alpha1.DeviceType]deviceResources{
 		schedulingv1alpha1.GPU: {
 			0: {
@@ -285,13 +299,35 @@ func Test_tryAllocateFromReservation(t *testing.T) {
 			},
 		},
 	}
-
+	reservation75Percent := map[schedulingv1alpha1.DeviceType]deviceResources{
+		schedulingv1alpha1.GPU: {
+			0: {
+				apiext.ResourceGPUCore:        resource.MustParse("75"),
+				apiext.ResourceGPUMemory:      resource.MustParse("6Gi"),
+				apiext.ResourceGPUMemoryRatio: resource.MustParse("75"),
+			},
+		},
+	}
 	reservation25Percent := map[schedulingv1alpha1.DeviceType]deviceResources{
 		schedulingv1alpha1.GPU: {
 			0: {
 				apiext.ResourceGPUCore:        resource.MustParse("25"),
 				apiext.ResourceGPUMemory:      resource.MustParse("2Gi"),
 				apiext.ResourceGPUMemoryRatio: resource.MustParse("25"),
+			},
+		},
+	}
+	reservation25Percent1 := map[schedulingv1alpha1.DeviceType]deviceResources{
+		schedulingv1alpha1.GPU: {
+			0: {
+				apiext.ResourceGPUCore:        resource.MustParse("25"),
+				apiext.ResourceGPUMemory:      resource.MustParse("2Gi"),
+				apiext.ResourceGPUMemoryRatio: resource.MustParse("25"),
+			},
+			1: {
+				apiext.ResourceGPUCore:        resource.MustParse("100"),
+				apiext.ResourceGPUMemory:      resource.MustParse("8Gi"),
+				apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
 			},
 		},
 	}
@@ -302,6 +338,7 @@ func Test_tryAllocateFromReservation(t *testing.T) {
 		restoreState            *nodeReservationRestoreStateData
 		deviceUsed              deviceResources
 		requiredFromReservation bool
+		pod                     *corev1.Pod
 		wantResult              apiext.DeviceAllocations
 		wantStatus              *framework.Status
 	}{
@@ -653,6 +690,151 @@ func Test_tryAllocateFromReservation(t *testing.T) {
 			wantResult:              nil,
 			wantStatus:              framework.NewStatus(framework.Unschedulable, "Reservation(s) Insufficient gpu devices"),
 		},
+		{
+			name: "allocate from Restricted policy reservation with reservation-ignored pods",
+			state: &preFilterState{
+				podRequests: podRequestsHalfGPU,
+			},
+			restoreState: &nodeReservationRestoreStateData{
+				matched: []reservationAlloc{
+					{
+						rInfo:       frameworkext.NewReservationInfo(restrictedReservation),
+						allocatable: reservationOne,
+						allocated:   nil,
+						remained:    reservationOne,
+					},
+				},
+				mergedUnmatchedUsed: map[schedulingv1alpha1.DeviceType]deviceResources{},
+				mergedMatchedAllocatable: map[schedulingv1alpha1.DeviceType]deviceResources{
+					schedulingv1alpha1.GPU: reservationHalf[schedulingv1alpha1.GPU],
+				},
+				mergedMatchedAllocated: nil,
+			},
+			deviceUsed: deviceResources{
+				0: corev1.ResourceList{
+					apiext.ResourceGPUCore:        resource.MustParse("175"),
+					apiext.ResourceGPUMemory:      resource.MustParse("14Gi"),
+					apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(175, resource.DecimalSI),
+				},
+				1: corev1.ResourceList{
+					apiext.ResourceGPUCore:        resource.MustParse("150"),
+					apiext.ResourceGPUMemory:      resource.MustParse("12Gi"),
+					apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(150, resource.DecimalSI),
+				},
+			},
+			wantResult: apiext.DeviceAllocations{
+				schedulingv1alpha1.GPU: {
+					{
+						Minor: 1,
+						Resources: corev1.ResourceList{
+							apiext.ResourceGPUCore:        resource.MustParse("50"),
+							apiext.ResourceGPUMemory:      resource.MustParse("4Gi"),
+							apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(50, resource.DecimalSI),
+						},
+					},
+				},
+			},
+			wantStatus: nil,
+		},
+		{
+			name: "allocate with a reservation-ignored pod",
+			state: &preFilterState{
+				podRequests: podRequestsHalfGPU,
+			},
+			restoreState: &nodeReservationRestoreStateData{
+				matched: []reservationAlloc{
+					{
+						rInfo:       frameworkext.NewReservationInfo(restrictedReservation),
+						allocatable: reservationOne,
+						allocated:   reservation75Percent,
+						remained:    reservation25Percent1,
+					},
+				},
+				mergedUnmatchedUsed: map[schedulingv1alpha1.DeviceType]deviceResources{},
+				mergedMatchedAllocatable: map[schedulingv1alpha1.DeviceType]deviceResources{
+					schedulingv1alpha1.GPU: reservationOne[schedulingv1alpha1.GPU],
+				},
+				mergedMatchedAllocated: map[schedulingv1alpha1.DeviceType]deviceResources{
+					schedulingv1alpha1.GPU: reservation75Percent[schedulingv1alpha1.GPU],
+				},
+			},
+			deviceUsed: deviceResources{
+				0: corev1.ResourceList{
+					apiext.ResourceGPUCore:        resource.MustParse("175"),
+					apiext.ResourceGPUMemory:      resource.MustParse("14Gi"),
+					apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(175, resource.DecimalSI),
+				},
+				1: corev1.ResourceList{
+					apiext.ResourceGPUCore:        resource.MustParse("100"),
+					apiext.ResourceGPUMemory:      resource.MustParse("8Gi"),
+					apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(100, resource.DecimalSI),
+				},
+			},
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						apiext.LabelReservationIgnored: "true",
+					},
+				},
+			},
+			wantResult: apiext.DeviceAllocations{
+				schedulingv1alpha1.GPU: {
+					{
+						Minor: 1,
+						Resources: corev1.ResourceList{
+							apiext.ResourceGPUCore:        resource.MustParse("50"),
+							apiext.ResourceGPUMemory:      resource.MustParse("4Gi"),
+							apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(50, resource.DecimalSI),
+						},
+					},
+				},
+			},
+			wantStatus: nil,
+		},
+		{
+			name: "failed to allocate with a reservation-ignored pod",
+			state: &preFilterState{
+				podRequests: podRequestsHalfGPU,
+			},
+			restoreState: &nodeReservationRestoreStateData{
+				matched: []reservationAlloc{
+					{
+						rInfo:       frameworkext.NewReservationInfo(restrictedReservation),
+						allocatable: reservationOne,
+						allocated:   reservationOne,
+						remained:    nil,
+					},
+				},
+				mergedUnmatchedUsed: map[schedulingv1alpha1.DeviceType]deviceResources{},
+				mergedMatchedAllocatable: map[schedulingv1alpha1.DeviceType]deviceResources{
+					schedulingv1alpha1.GPU: reservationOne[schedulingv1alpha1.GPU],
+				},
+				mergedMatchedAllocated: map[schedulingv1alpha1.DeviceType]deviceResources{
+					schedulingv1alpha1.GPU: reservationOne[schedulingv1alpha1.GPU],
+				},
+			},
+			deviceUsed: deviceResources{
+				0: corev1.ResourceList{
+					apiext.ResourceGPUCore:        resource.MustParse("200"),
+					apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
+					apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(200, resource.DecimalSI),
+				},
+				1: corev1.ResourceList{
+					apiext.ResourceGPUCore:        resource.MustParse("200"),
+					apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
+					apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(200, resource.DecimalSI),
+				},
+			},
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						apiext.LabelReservationIgnored: "true",
+					},
+				},
+			},
+			wantResult: nil,
+			wantStatus: framework.NewStatus(framework.Unschedulable, "Insufficient gpu devices"),
+		},
 	}
 
 	for _, tt := range tests {
@@ -684,12 +866,13 @@ func Test_tryAllocateFromReservation(t *testing.T) {
 				tt.state,
 				tt.restoreState,
 				tt.restoreState.matched,
-				nil,
+				tt.pod,
 				node,
 				basicPreemptible,
 				tt.requiredFromReservation,
 			)
 			err := fillGPUTotalMem(result, nodeDeviceInfo)
+			assert.Equal(t, tt.wantStatus, status)
 			if tt.wantResult != nil {
 				for deviceType := range tt.wantResult {
 					for i := range tt.wantResult[deviceType] {
@@ -699,7 +882,6 @@ func Test_tryAllocateFromReservation(t *testing.T) {
 				}
 			}
 			assert.NoError(t, err)
-			assert.Equal(t, tt.wantStatus, status)
 			assert.Equal(t, tt.wantResult, result)
 		})
 	}
