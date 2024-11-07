@@ -250,6 +250,82 @@ func TestEvalucateQuota(t *testing.T) {
 			wantErr:     true,
 			wantUsed:    corev1.ResourceList{},
 		},
+		{
+			name:      "admission not set, use max by default",
+			operation: admissionv1.Create,
+			newPod: elasticquota.MakePod("ns1", "pod1").Label("quota.scheduling.koordinator.sh/name", "quota1").
+				Container(corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("2"),
+					corev1.ResourceMemory: resource.MustParse("4Gi"),
+				}).Obj(),
+			quota: elasticquota.MakeQuota("quota1").Namespace("kube-system").Max(corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("1"),
+				corev1.ResourceMemory: resource.MustParse("2Gi"),
+			}).Obj(),
+			wantAllowed: false,
+			wantReason:  "exceeded quota: kube-system/quota1, requested: cpu=2,memory=4Gi, used: , limited: cpu=1,memory=2Gi",
+			wantErr:     true,
+			wantUsed:    corev1.ResourceList{},
+		},
+		{
+			name:      "admission set empty, use max by default",
+			operation: admissionv1.Create,
+			newPod: elasticquota.MakePod("ns1", "pod1").Label("quota.scheduling.koordinator.sh/name", "quota1").
+				Container(corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("2"),
+					corev1.ResourceMemory: resource.MustParse("4Gi"),
+				}).Obj(),
+			quota: elasticquota.MakeQuota("quota1").Namespace("kube-system").Max(corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("1"),
+				corev1.ResourceMemory: resource.MustParse("2Gi"),
+			}).Admission(corev1.ResourceList{}).Obj(),
+			wantAllowed: false,
+			wantReason:  "exceeded quota: kube-system/quota1, requested: cpu=2,memory=4Gi, used: , limited: cpu=1,memory=2Gi",
+			wantErr:     true,
+			wantUsed:    corev1.ResourceList{},
+		},
+		{
+			name:      "admission set zero explicitly",
+			operation: admissionv1.Create,
+			newPod: elasticquota.MakePod("ns1", "pod1").Label("quota.scheduling.koordinator.sh/name", "quota1").
+				Container(corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("2"),
+					corev1.ResourceMemory: resource.MustParse("4Gi"),
+				}).Obj(),
+			quota: elasticquota.MakeQuota("quota1").Namespace("kube-system").Max(corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("4"),
+				corev1.ResourceMemory: resource.MustParse("8Gi"),
+			}).Admission(corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("0"),
+				corev1.ResourceMemory: resource.MustParse("0Gi"),
+			}).Obj(),
+			wantAllowed: false,
+			wantReason:  "exceeded quota: kube-system/quota1, requested: cpu=2,memory=4Gi, used: , limited: cpu=0,memory=0",
+			wantErr:     true,
+			wantUsed:    corev1.ResourceList{},
+		},
+		{
+			name:      "admission set zero for non-related resource",
+			operation: admissionv1.Create,
+			newPod: elasticquota.MakePod("ns1", "pod1").Label("quota.scheduling.koordinator.sh/name", "quota1").
+				Container(corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("2"),
+					corev1.ResourceMemory: resource.MustParse("4Gi"),
+				}).Obj(),
+			quota: elasticquota.MakeQuota("quota1").Namespace("kube-system").Max(corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("4"),
+				corev1.ResourceMemory: resource.MustParse("8Gi"),
+			}).Admission(corev1.ResourceList{
+				extension.BatchCPU: resource.MustParse("0"),
+			}).Obj(),
+			wantAllowed: true,
+			wantReason:  "",
+			wantErr:     false,
+			wantUsed: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("2"),
+				corev1.ResourceMemory: resource.MustParse("4Gi"),
+			},
+		},
 	}
 
 	for _, tc := range testCases {

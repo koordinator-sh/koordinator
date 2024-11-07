@@ -18,7 +18,6 @@ package quotaevaluate
 
 import (
 	corev1 "k8s.io/api/core/v1"
-	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
@@ -30,8 +29,8 @@ func GetQuotaAdmission(quota *v1alpha1.ElasticQuota) (corev1.ResourceList, error
 		return nil, err
 	}
 
-	// admission is zero, return max
-	if quotav1.IsZero(admission) {
+	// admission is empty (it may not be configured or may have no content), return max
+	if len(admission) == 0 {
 		return quota.Spec.Max, nil
 	}
 
