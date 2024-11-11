@@ -21,11 +21,13 @@ import (
 
 	gocache "github.com/patrickmn/go-cache"
 	"go.uber.org/atomic"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor/framework"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
@@ -92,9 +94,10 @@ func (h *hostAppCollector) collectHostAppResUsed() {
 		return
 	}
 	count := 0
-	metrics := make([]metriccache.MetricSample, 0)
+	resourceMetrics := make([]metriccache.MetricSample, 0)
 	allCPUUsageCores := metriccache.Point{Timestamp: timeNow(), Value: 0}
 	allMemoryUsage := metriccache.Point{Timestamp: timeNow(), Value: 0}
+	metrics.ResetHostApplicationResourceUsage()
 	for _, hostApp := range nodeSLO.Spec.HostApplications {
 		collectTime := timeNow()
 		cgroupDir := util.GetHostAppCgroupRelativePath(&hostApp)
@@ -139,7 +142,9 @@ func (h *hostAppCollector) collectHostAppResUsed() {
 			return
 		}
 
-		metrics = append(metrics, cpuUsageMetric, memUsageMetric)
+		metrics.RecordHostApplicationResourceUsage(string(corev1.ResourceCPU), &hostApp, cpuUsageValue)
+		metrics.RecordHostApplicationResourceUsage(string(corev1.ResourceMemory), &hostApp, float64(memoryUsageValue))
+		resourceMetrics = append(resourceMetrics, cpuUsageMetric, memUsageMetric)
 		klog.V(6).Infof("collect host application %v finished, metric cpu=%v, memory=%v", hostApp.Name, cpuUsageValue, memoryUsageValue)
 		count++
 		allCPUUsageCores.Value += cpuUsageValue
@@ -147,7 +152,7 @@ func (h *hostAppCollector) collectHostAppResUsed() {
 	}
 
 	appender := h.appendableDB.Appender()
-	if err := appender.Append(metrics); err != nil {
+	if err := appender.Append(resourceMetrics); err != nil {
 		klog.Warningf("Append host application metrics error: %v", err)
 		return
 	}

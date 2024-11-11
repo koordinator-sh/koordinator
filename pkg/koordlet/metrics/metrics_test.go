@@ -412,3 +412,35 @@ func TestRuntimeHookCollector(t *testing.T) {
 		RecordRuntimeHookReconcilerInvokedDurationMilliSeconds("pod", "cpu.cfs_quota_us", testErr, 5.0)
 	})
 }
+
+func TestHostApplicationCollectors(t *testing.T) {
+	type resourceUsage struct {
+		cpu float64
+		mem float64
+	}
+	testingNode := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   "test-node",
+			Labels: map[string]string{},
+		},
+	}
+	testingHostApplication := &slov1alpha1.HostApplicationSpec{
+		Name:     "test-app",
+		QoS:      apiext.QoSBE,
+		Priority: apiext.PriorityBatch,
+	}
+	testingResourceUsage := resourceUsage{
+		cpu: 33740549972770,
+		mem: 7806574592,
+	}
+
+	t.Run("test", func(t *testing.T) {
+		Register(testingNode)
+		defer Register(nil)
+
+		RecordHostApplicationResourceUsage(string(corev1.ResourceCPU), testingHostApplication, testingResourceUsage.cpu)
+		RecordHostApplicationResourceUsage(string(corev1.ResourceMemory), testingHostApplication, testingResourceUsage.mem)
+
+		ResetHostApplicationResourceUsage()
+	})
+}

@@ -44,4 +44,5 @@ func init() {
 	internalMustRegister(ResourceExecutorCollector...)
 	internalMustRegister(KubeletStubCollector...)
 	internalMustRegister(RuntimeHookCollectors...)
+	internalMustRegister(HostApplicationCollectors...)
 }
