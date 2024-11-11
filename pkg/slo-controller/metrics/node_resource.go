@@ -21,10 +21,11 @@ import (
 	corev1 "k8s.io/api/core/v1"
 
 	"github.com/koordinator-sh/koordinator/pkg/util/metrics"
+	"github.com/koordinator-sh/koordinator/pkg/util/metrics/koordmanager"
 )
 
 func init() {
-	InternalMustRegister(NodeResourceCollectors...)
+	koordmanager.InternalMustRegister(NodeResourceCollectors...)
 }
 
 var (

@@ -14,13 +14,12 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package leadership
+package koordmanager
 
 import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"k8s.io/client-go/tools/leaderelection"
-	"sigs.k8s.io/controller-runtime/pkg/metrics"
 )
 
 var leaderMetric = promauto.NewGauge(
@@ -31,7 +30,7 @@ var leaderMetric = promauto.NewGauge(
 )
 
 func init() {
-	metrics.Registry.MustRegister(leaderMetric)
+	InternalMustRegister(leaderMetric)
 	leaderelection.SetProvider(newMetricProvider())
 }
 

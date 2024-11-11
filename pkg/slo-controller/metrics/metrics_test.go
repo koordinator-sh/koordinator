@@ -26,6 +26,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/pkg/util/metrics/koordmanager"
 )
 
 func TestMustRegister(t *testing.T) {
@@ -35,7 +36,7 @@ func TestMustRegister(t *testing.T) {
 		Help:      "test counter",
 	}, []string{StatusKey, ReasonKey})
 	assert.NotPanics(t, func() {
-		InternalMustRegister(testMetricVec)
+		koordmanager.InternalMustRegister(testMetricVec)
 	})
 
 	testExternalMetricVec := prometheus.NewCounterVec(prometheus.CounterOpts{
@@ -44,7 +45,7 @@ func TestMustRegister(t *testing.T) {
 		Help:      "test counter",
 	}, []string{StatusKey, ReasonKey})
 	assert.NotPanics(t, func() {
-		ExternalMustRegister(testExternalMetricVec)
+		koordmanager.ExternalMustRegister(testExternalMetricVec)
 	})
 }
 
