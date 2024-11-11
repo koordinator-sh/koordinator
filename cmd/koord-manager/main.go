@@ -41,12 +41,11 @@ import (
 	"github.com/koordinator-sh/koordinator/cmd/koord-manager/options"
 	extclient "github.com/koordinator-sh/koordinator/pkg/client"
 	"github.com/koordinator-sh/koordinator/pkg/features"
-	"github.com/koordinator-sh/koordinator/pkg/slo-controller/metrics"
 	utilclient "github.com/koordinator-sh/koordinator/pkg/util/client"
 	utilfeature "github.com/koordinator-sh/koordinator/pkg/util/feature"
 	"github.com/koordinator-sh/koordinator/pkg/util/fieldindex"
 	metricsutil "github.com/koordinator-sh/koordinator/pkg/util/metrics"
-	_ "github.com/koordinator-sh/koordinator/pkg/util/metrics/leadership"
+	kmmetrics "github.com/koordinator-sh/koordinator/pkg/util/metrics/koordmanager"
 	"github.com/koordinator-sh/koordinator/pkg/util/sloconfig"
 	"github.com/koordinator-sh/koordinator/pkg/webhook"
 	// +kubebuilder:scaffold:imports
@@ -212,10 +211,10 @@ func installMetricsHandler(mgr *ctrl.Options) {
 		mgr.Metrics.ExtraHandlers = map[string]http.Handler{}
 	}
 	for path, handler := range map[string]http.Handler{
-		metrics.InternalHTTPPath: promhttp.HandlerFor(metrics.InternalRegistry, promhttp.HandlerOpts{}),
-		metrics.ExternalHTTPPath: promhttp.HandlerFor(metrics.ExternalRegistry, promhttp.HandlerOpts{}),
-		metrics.DefaultHTTPPath: promhttp.HandlerFor(
-			metricsutil.MergedGatherFunc(metrics.InternalRegistry, metrics.ExternalRegistry, ctrlmetrics.Registry), promhttp.HandlerOpts{}),
+		kmmetrics.InternalHTTPPath: promhttp.HandlerFor(kmmetrics.InternalRegistry, promhttp.HandlerOpts{}),
+		kmmetrics.ExternalHTTPPath: promhttp.HandlerFor(kmmetrics.ExternalRegistry, promhttp.HandlerOpts{}),
+		kmmetrics.DefaultHTTPPath: promhttp.HandlerFor(
+			metricsutil.MergedGatherFunc(kmmetrics.InternalRegistry, kmmetrics.ExternalRegistry, ctrlmetrics.Registry), promhttp.HandlerOpts{}),
 	} {
 		mgr.Metrics.ExtraHandlers[path] = handler
 	}

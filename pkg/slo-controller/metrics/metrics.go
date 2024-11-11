@@ -19,7 +19,6 @@ package metrics
 import (
 	"github.com/prometheus/client_golang/prometheus"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/component-base/metrics/legacyregistry"
 	_ "k8s.io/component-base/metrics/prometheus/clientgo" // load restclient and workqueue metrics
 )
 
@@ -41,29 +40,6 @@ const (
 	UnitByte    = "byte"
 	UnitInteger = "integer"
 )
-
-const (
-	// DefaultHTTPPath use /all-metrics since /metrics is occupied by controller manager default registry
-	DefaultHTTPPath  = "/all-metrics"
-	ExternalHTTPPath = "/external-metrics"
-	InternalHTTPPath = "/internal-metrics"
-)
-
-var (
-	// ExternalRegistry	register metrics for users
-	ExternalRegistry = prometheus.NewRegistry()
-
-	// InternalRegistry only register metrics of koord-manager itself for performance and functional monitor
-	InternalRegistry = legacyregistry.DefaultGatherer
-)
-
-func ExternalMustRegister(cs ...prometheus.Collector) {
-	ExternalRegistry.MustRegister(cs...)
-}
-
-func InternalMustRegister(cs ...prometheus.Collector) {
-	legacyregistry.RawMustRegister(cs...)
-}
 
 func genNodeLabels(node *corev1.Node) prometheus.Labels {
 	ls := prometheus.Labels{}

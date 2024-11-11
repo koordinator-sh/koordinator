@@ -16,10 +16,14 @@ limitations under the License.
 
 package metrics
 
-import "github.com/prometheus/client_golang/prometheus"
+import (
+	"github.com/prometheus/client_golang/prometheus"
+
+	"github.com/koordinator-sh/koordinator/pkg/util/metrics/koordmanager"
+)
 
 func init() {
-	InternalMustRegister(CommonCollectors...)
+	koordmanager.InternalMustRegister(CommonCollectors...)
 }
 
 var (
