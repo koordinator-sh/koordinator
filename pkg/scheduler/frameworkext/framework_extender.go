@@ -203,6 +203,7 @@ func (ext *frameworkExtenderImpl) RunPreFilterPlugins(ctx context.Context, cycle
 		newPod, transformed, status := transformer.BeforePreFilter(ctx, cycleState, pod)
 		ext.metricsRecorder.ObservePluginDurationAsync("BeforePreFilter", transformer.Name(), status.Code().String(), metrics.SinceInSeconds(startTime))
 		if !status.IsSuccess() {
+			status.SetFailedPlugin(transformer.Name())
 			klog.ErrorS(status.AsError(), "Failed to run BeforePreFilter", "pod", klog.KObj(pod), "plugin", transformer.Name())
 			return nil, status
 		}
@@ -222,6 +223,7 @@ func (ext *frameworkExtenderImpl) RunPreFilterPlugins(ctx context.Context, cycle
 		status = transformer.AfterPreFilter(ctx, cycleState, pod, result)
 		ext.metricsRecorder.ObservePluginDurationAsync("AfterPreFilter", transformer.Name(), status.Code().String(), metrics.SinceInSeconds(startTime))
 		if !status.IsSuccess() {
+			status.SetFailedPlugin(transformer.Name())
 			klog.ErrorS(status.AsError(), "Failed to run AfterPreFilter", "pod", klog.KObj(pod), "plugin", transformer.Name())
 			return nil, status
 		}
@@ -237,6 +239,7 @@ func (ext *frameworkExtenderImpl) RunFilterPluginsWithNominatedPods(ctx context.
 		newPod, newNodeInfo, transformed, status := transformer.BeforeFilter(ctx, cycleState, pod, nodeInfo)
 		ext.metricsRecorder.ObservePluginDurationAsync("BeforeFilter", transformer.Name(), status.Code().String(), metrics.SinceInSeconds(startTime))
 		if !status.IsSuccess() {
+			status.SetFailedPlugin(transformer.Name())
 			klog.ErrorS(status.AsError(), "Failed to run BeforeFilter", "pod", klog.KObj(pod), "plugin", transformer.Name())
 			return status
 		}
@@ -308,6 +311,7 @@ func (ext *frameworkExtenderImpl) RunPreBindPlugins(ctx context.Context, state *
 		status := pl.PreBindReservation(ctx, state, reservation, nodeName)
 		ext.metricsRecorder.ObservePluginDurationAsync("PreBindReservation", pl.Name(), status.Code().String(), metrics.SinceInSeconds(startTime))
 		if !status.IsSuccess() {
+			status.SetFailedPlugin(pl.Name())
 			err := status.AsError()
 			klog.ErrorS(err, "Failed running ReservationPreBindPlugin plugin", "plugin", pl.Name(), "reservation", klog.KObj(reservation))
 			return framework.AsStatus(fmt.Errorf("running ReservationPreBindPlugin plugin %q: %w", pl.Name(), err))
@@ -329,6 +333,7 @@ func (ext *frameworkExtenderImpl) runPreBindExtensionPlugins(ctx context.Context
 		}
 		if !status.IsSuccess() {
 			err := status.AsError()
+			status.SetFailedPlugin(pl.Name())
 			klog.ErrorS(err, "Failed running PreBindExtension plugin", "plugin", pl.Name(), "pod", klog.KObj(originalObj))
 			return framework.AsStatus(fmt.Errorf("running PreBindExtension plugin %q: %w", pl.Name(), err))
 		}
