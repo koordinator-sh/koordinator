@@ -77,12 +77,18 @@ func TestClusterColocationProfileValidatingPod(t *testing.T) {
 						extension.LabelPodQoS: string(extension.QoSLS),
 					},
 				},
+				Spec: corev1.PodSpec{
+					Priority: pointer.Int32(extension.PriorityMidValueMin),
+				},
 			},
 			oldPod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: map[string]string{
 						extension.LabelPodQoS: string(extension.QoSBE),
 					},
+				},
+				Spec: corev1.PodSpec{
+					Priority: pointer.Int32(extension.PriorityMidValueMin),
 				},
 			},
 			wantAllowed: false,
@@ -355,7 +361,7 @@ func TestClusterColocationProfileValidatingPod(t *testing.T) {
 			wantReason:  `Pod: Forbidden: koordinator.sh/qosClass=LSR and priorityClass=koord-free cannot be used in combination`,
 		},
 		{
-			name:      "validate resources - LSR And Prod",
+			name:      "validate resources - LS And Prod",
 			operation: admissionv1.Create,
 			newPod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
@@ -382,6 +388,69 @@ func TestClusterColocationProfileValidatingPod(t *testing.T) {
 				},
 			},
 			wantAllowed: true,
+		},
+		{
+			name:      "forbidden resources - LS And Batch",
+			operation: admissionv1.Create,
+			newPod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						extension.LabelPodQoS: string(extension.QoSLS),
+					},
+				},
+				Spec: corev1.PodSpec{
+					Priority: pointer.Int32(extension.PriorityBatchValueMax),
+				},
+			},
+			wantAllowed: false,
+			wantReason:  `Pod: Forbidden: koordinator.sh/qosClass=LS and priorityClass=koord-batch cannot be used in combination`,
+		},
+		{
+			name:      "forbidden resources - LS And Free",
+			operation: admissionv1.Create,
+			newPod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						extension.LabelPodQoS: string(extension.QoSLS),
+					},
+				},
+				Spec: corev1.PodSpec{
+					Priority: pointer.Int32(extension.PriorityFreeValueMax),
+				},
+			},
+			wantAllowed: false,
+			wantReason:  `Pod: Forbidden: koordinator.sh/qosClass=LS and priorityClass=koord-free cannot be used in combination`,
+		},
+		{
+			name:      "forbidden resources - LSE And Free",
+			operation: admissionv1.Create,
+			newPod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						extension.LabelPodQoS: string(extension.QoSLSE),
+					},
+				},
+				Spec: corev1.PodSpec{
+					Priority: pointer.Int32(extension.PriorityFreeValueMax),
+					Containers: []corev1.Container{
+						{
+							Name: "test-container-skip",
+							Resources: corev1.ResourceRequirements{
+								Limits: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("1000m"),
+									corev1.ResourceMemory: resource.MustParse("4Gi"),
+								},
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("1000m"),
+									corev1.ResourceMemory: resource.MustParse("0Gi"),
+								},
+							},
+						},
+					},
+				},
+			},
+			wantAllowed: false,
+			wantReason:  `Pod: Forbidden: koordinator.sh/qosClass=LSE and priorityClass=koord-free cannot be used in combination`,
 		},
 		{
 			name:      "forbidden resources - LSR And Prod: unset CPUs",
@@ -442,6 +511,36 @@ func TestClusterColocationProfileValidatingPod(t *testing.T) {
 			},
 			wantAllowed: false,
 			wantReason:  `pod.spec.containers[*].resources.requests: Invalid value: "100m": the requested CPUs of LSR Pod must be integer`,
+		},
+		{
+			name:      "validate resources - LSE And Prod",
+			operation: admissionv1.Create,
+			newPod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						extension.LabelPodQoS: string(extension.QoSLSE),
+					},
+				},
+				Spec: corev1.PodSpec{
+					Priority: pointer.Int32(extension.PriorityProdValueMax),
+					Containers: []corev1.Container{
+						{
+							Name: "test-container-skip",
+							Resources: corev1.ResourceRequirements{
+								Limits: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("1000m"),
+									corev1.ResourceMemory: resource.MustParse("4Gi"),
+								},
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("1000m"),
+									corev1.ResourceMemory: resource.MustParse("0Gi"),
+								},
+							},
+						},
+					},
+				},
+			},
+			wantAllowed: true,
 		},
 	}
 
