@@ -34,6 +34,7 @@ import (
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	frameworkexthelper "github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/helper"
+	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
 const (
@@ -317,7 +318,7 @@ func getVFAllocations(allocations []*apiext.DeviceAllocation) *VFAllocation {
 	return vfAllocation
 }
 
-func (n *nodeDevice) calcFreeWithPreemptible(deviceType schedulingv1alpha1.DeviceType, preemptible deviceResources) deviceResources {
+func (n *nodeDevice) calcFreeWithPreemptible(deviceType schedulingv1alpha1.DeviceType, preemptible, requiredDeviceResources deviceResources) deviceResources {
 	deviceFree := n.deviceFree[deviceType]
 	deviceUsed := n.deviceUsed[deviceType]
 	deviceTotal := n.deviceTotal[deviceType]
@@ -344,6 +345,20 @@ func (n *nodeDevice) calcFreeWithPreemptible(deviceType schedulingv1alpha1.Devic
 		}
 		deviceFree = mergedFreeDevices
 	}
+
+	// If allocating from a required resources, e.g. a reservation, the free should be no larger than the reserved free.
+	if len(requiredDeviceResources) > 0 {
+		for minor, v := range deviceFree {
+			required, ok := requiredDeviceResources[minor]
+			if !ok {
+				delete(deviceFree, minor)
+				continue
+			}
+			v = util.MinResourceList(v, required)
+			deviceFree[minor] = v
+		}
+	}
+
 	return deviceFree
 }
 
@@ -355,13 +370,7 @@ func (n *nodeDevice) filter(
 	total := map[schedulingv1alpha1.DeviceType]deviceResources{}
 	used := map[schedulingv1alpha1.DeviceType]deviceResources{}
 	for deviceType, deviceMinors := range devices {
-		var freeDevices deviceResources
-		requiredResources := requiredDeviceResources[deviceType]
-		if len(requiredResources) > 0 {
-			freeDevices = requiredResources
-		} else {
-			freeDevices = n.calcFreeWithPreemptible(deviceType, preemptibleDeviceResources[deviceType])
-		}
+		freeDevices := n.calcFreeWithPreemptible(deviceType, preemptibleDeviceResources[deviceType], requiredDeviceResources[deviceType])
 
 		if freeDevices.isZero() {
 			continue
