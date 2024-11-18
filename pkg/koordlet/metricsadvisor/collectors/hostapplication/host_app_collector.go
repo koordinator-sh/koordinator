@@ -103,9 +103,10 @@ func (h *hostAppCollector) collectHostAppResUsed() {
 		cgroupDir := util.GetHostAppCgroupRelativePath(&hostApp)
 		currentCPUUsage, errCPU := h.cgroupReader.ReadCPUAcctUsage(cgroupDir)
 		memStat, errMem := h.cgroupReader.ReadMemoryStat(cgroupDir)
-		if errCPU != nil || errMem != nil {
-			klog.V(4).Infof("cannot collect host application resource usage, cpu reason %v, memory reason %v",
-				errCPU, errMem)
+		memUsageWithPageCache, errMem2 := h.cgroupReader.ReadMemoryUsage(cgroupDir)
+		if errCPU != nil || errMem != nil || errMem2 != nil {
+			klog.V(4).Infof("cannot collect host application resource usage, cpu reason %v, memoryStat reason %v, memoryUsage reason %v",
+				errCPU, errMem, errMem2)
 			continue
 		}
 		if memStat == nil {
@@ -138,13 +139,21 @@ func (h *hostAppCollector) collectHostAppResUsed() {
 			metriccache.MetricPropertiesFunc.HostApplication(hostApp.Name),
 			collectTime, float64(memoryUsageValue))
 		if err != nil {
-			klog.V(4).Infof("failed to generate memory metrics for host application %s , err %v", hostApp.Name, err)
+			klog.V(4).Infof("failed to generate memoryUsage metrics for host application %s , err %v", hostApp.Name, err)
+			return
+		}
+
+		memUsageWithPageCacheMetric, err := metriccache.HostAppMemoryUsageWithPageCacheMetric.GenerateSample(
+			metriccache.MetricPropertiesFunc.HostApplication(hostApp.Name),
+			collectTime, float64(memUsageWithPageCache))
+		if err != nil {
+			klog.V(4).Infof("failed to generate memoryUsageWithPageCache metrics for host application %s , err %v", hostApp.Name, err)
 			return
 		}
 
 		metrics.RecordHostApplicationResourceUsage(string(corev1.ResourceCPU), &hostApp, cpuUsageValue)
 		metrics.RecordHostApplicationResourceUsage(string(corev1.ResourceMemory), &hostApp, float64(memoryUsageValue))
-		resourceMetrics = append(resourceMetrics, cpuUsageMetric, memUsageMetric)
+		resourceMetrics = append(resourceMetrics, cpuUsageMetric, memUsageMetric, memUsageWithPageCacheMetric)
 		klog.V(6).Infof("collect host application %v finished, metric cpu=%v, memory=%v", hostApp.Name, cpuUsageValue, memoryUsageValue)
 		count++
 		allCPUUsageCores.Value += cpuUsageValue
