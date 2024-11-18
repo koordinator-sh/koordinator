@@ -34,19 +34,28 @@ import (
 )
 
 func Test_hostAppCollector_collectHostAppResUsed(t *testing.T) {
+	var (
+		policy1 = slov1alpha1.UsageWithPageCache
+		policy2 = slov1alpha1.UsageWithoutPageCache
+	)
+
 	testNow := time.Now()
 	timeNow = func() time.Time {
 		return testNow
 	}
 	testParentDir := "kubepods.slice/kubepods-besteffort.slice/test-host-app/"
 	type fields struct {
-		SetSysUtil   func(helper *system.FileTestUtil)
-		getNodeSLO   *slov1alpha1.NodeSLO
-		initLastStat func(lastState *gocache.Cache)
+		SetSysUtil        func(helper *system.FileTestUtil)
+		getNodeSLO        *slov1alpha1.NodeSLO
+		getNodeMetricSpec *slov1alpha1.NodeMetricSpec
+		initLastStat      func(lastState *gocache.Cache)
 	}
 	type wants struct {
-		hostAppCPU    map[string]float64
-		hostAppMemory map[string]float64
+		hostAppCPU                 map[string]float64
+		hostAppMemory              map[string]float64
+		hostAppMemoryWithPageCache map[string]float64
+		hostAppCPUUsage            *metriccache.Point
+		hostAPpMemoryUsage         *metriccache.Point
 	}
 	tests := []struct {
 		name   string
@@ -59,6 +68,167 @@ func Test_hostAppCollector_collectHostAppResUsed(t *testing.T) {
 				getNodeSLO: nil,
 			},
 			wants: wants{},
+		},
+		{
+			name: "nil nodeMetricSpec with default policy usageWithoutPageCache",
+			fields: fields{
+				SetSysUtil: func(helper *system.FileTestUtil) {
+					helper.WriteCgroupFileContents(testParentDir, system.CPUAcctUsage, `1000000000`)
+					helper.WriteCgroupFileContents(testParentDir, system.MemoryStat, `
+total_cache 104857600
+total_rss 104857600
+total_inactive_anon 104857600
+total_active_anon 0
+total_inactive_file 104857600
+total_active_file 0
+total_unevictable 0
+`)
+					helper.WriteCgroupFileContents(testParentDir, system.MemoryUsage, `209715200`)
+				},
+				getNodeMetricSpec: nil,
+				getNodeSLO: &slov1alpha1.NodeSLO{
+					Spec: slov1alpha1.NodeSLOSpec{
+						HostApplications: []slov1alpha1.HostApplicationSpec{
+							{
+								Name: "test-host-app",
+								CgroupPath: &slov1alpha1.CgroupPath{
+									Base:         slov1alpha1.CgroupBaseTypeKubeBesteffort,
+									RelativePath: "test-host-app/",
+								},
+							},
+						},
+					},
+				},
+				initLastStat: func(lastState *gocache.Cache) {
+					lastState.Set("test-host-app", framework.CPUStat{
+						CPUUsage:  0,
+						Timestamp: testNow.Add(-time.Second),
+					}, gocache.DefaultExpiration)
+				},
+			},
+			wants: wants{
+				hostAppCPU: map[string]float64{
+					"test-host-app": 1,
+				},
+				hostAppMemory: map[string]float64{
+					"test-host-app": 104857600,
+				},
+				hostAppMemoryWithPageCache: map[string]float64{
+					"test-host-app": 209715200,
+				},
+				hostAppCPUUsage:    &metriccache.Point{Value: 1},
+				hostAPpMemoryUsage: &metriccache.Point{Value: 104857600},
+			},
+		},
+		{
+			name: "collect with policy UsageWithPageCache",
+			fields: fields{
+				SetSysUtil: func(helper *system.FileTestUtil) {
+					helper.WriteCgroupFileContents(testParentDir, system.CPUAcctUsage, `1000000000`)
+					helper.WriteCgroupFileContents(testParentDir, system.MemoryStat, `
+total_cache 104857600
+total_rss 104857600
+total_inactive_anon 104857600
+total_active_anon 0
+total_inactive_file 104857600
+total_active_file 0
+total_unevictable 0
+`)
+					helper.WriteCgroupFileContents(testParentDir, system.MemoryUsage, `209715200`)
+				},
+				getNodeMetricSpec: &slov1alpha1.NodeMetricSpec{
+					CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
+						NodeMemoryCollectPolicy: &policy1,
+					},
+				},
+				getNodeSLO: &slov1alpha1.NodeSLO{
+					Spec: slov1alpha1.NodeSLOSpec{
+						HostApplications: []slov1alpha1.HostApplicationSpec{
+							{
+								Name: "test-host-app",
+								CgroupPath: &slov1alpha1.CgroupPath{
+									Base:         slov1alpha1.CgroupBaseTypeKubeBesteffort,
+									RelativePath: "test-host-app/",
+								},
+							},
+						},
+					},
+				},
+				initLastStat: func(lastState *gocache.Cache) {
+					lastState.Set("test-host-app", framework.CPUStat{
+						CPUUsage:  0,
+						Timestamp: testNow.Add(-time.Second),
+					}, gocache.DefaultExpiration)
+				},
+			},
+			wants: wants{
+				hostAppCPU: map[string]float64{
+					"test-host-app": 1,
+				},
+				hostAppMemory: map[string]float64{
+					"test-host-app": 104857600,
+				},
+				hostAppMemoryWithPageCache: map[string]float64{
+					"test-host-app": 209715200,
+				},
+				hostAppCPUUsage:    &metriccache.Point{Value: 1},
+				hostAPpMemoryUsage: &metriccache.Point{Value: 209715200},
+			},
+		},
+		{
+			name: "collect with policy UsageWithoutPageCache",
+			fields: fields{
+				SetSysUtil: func(helper *system.FileTestUtil) {
+					helper.WriteCgroupFileContents(testParentDir, system.CPUAcctUsage, `1000000000`)
+					helper.WriteCgroupFileContents(testParentDir, system.MemoryStat, `
+total_cache 104857600
+total_rss 104857600
+total_inactive_anon 104857600
+total_active_anon 0
+total_inactive_file 104857600
+total_active_file 0
+total_unevictable 0
+`)
+					helper.WriteCgroupFileContents(testParentDir, system.MemoryUsage, `209715200`)
+				},
+				getNodeMetricSpec: &slov1alpha1.NodeMetricSpec{
+					CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
+						NodeMemoryCollectPolicy: &policy2,
+					},
+				},
+				getNodeSLO: &slov1alpha1.NodeSLO{
+					Spec: slov1alpha1.NodeSLOSpec{
+						HostApplications: []slov1alpha1.HostApplicationSpec{
+							{
+								Name: "test-host-app",
+								CgroupPath: &slov1alpha1.CgroupPath{
+									Base:         slov1alpha1.CgroupBaseTypeKubeBesteffort,
+									RelativePath: "test-host-app/",
+								},
+							},
+						},
+					},
+				},
+				initLastStat: func(lastState *gocache.Cache) {
+					lastState.Set("test-host-app", framework.CPUStat{
+						CPUUsage:  0,
+						Timestamp: testNow.Add(-time.Second),
+					}, gocache.DefaultExpiration)
+				},
+			},
+			wants: wants{
+				hostAppCPU: map[string]float64{
+					"test-host-app": 1,
+				},
+				hostAppMemory: map[string]float64{
+					"test-host-app": 104857600,
+				},
+				hostAppMemoryWithPageCache: map[string]float64{
+					"test-host-app": 209715200,
+				},
+				hostAppCPUUsage:    &metriccache.Point{Value: 1},
+				hostAPpMemoryUsage: &metriccache.Point{Value: 104857600},
+			},
 		},
 		{
 			name: "host app metric with bad cpu format",
@@ -74,6 +244,77 @@ total_inactive_file 104857600
 total_active_file 0
 total_unevictable 0
 `)
+					helper.WriteCgroupFileContents(testParentDir, system.MemoryUsage, `209715200`)
+				},
+				getNodeSLO: &slov1alpha1.NodeSLO{
+					Spec: slov1alpha1.NodeSLOSpec{
+						HostApplications: []slov1alpha1.HostApplicationSpec{
+							{
+								Name: "test-host-app",
+								CgroupPath: &slov1alpha1.CgroupPath{
+									Base:         slov1alpha1.CgroupBaseTypeKubeBesteffort,
+									RelativePath: "test-host-app/",
+								},
+							},
+						},
+					},
+				},
+				initLastStat: func(lastState *gocache.Cache) {
+					lastState.Set("test-host-app", framework.CPUStat{
+						CPUUsage:  0,
+						Timestamp: testNow.Add(-time.Second),
+					}, gocache.DefaultExpiration)
+				},
+			},
+			wants: wants{},
+		},
+		{
+			name: "host app metric with bad memory stat format",
+			fields: fields{
+				SetSysUtil: func(helper *system.FileTestUtil) {
+					helper.WriteCgroupFileContents(testParentDir, system.CPUAcctUsage, `1000000000`)
+					helper.WriteCgroupFileContents(testParentDir, system.MemoryStat, `
+bad format
+`)
+					helper.WriteCgroupFileContents(testParentDir, system.MemoryUsage, `209715200`)
+				},
+				getNodeSLO: &slov1alpha1.NodeSLO{
+					Spec: slov1alpha1.NodeSLOSpec{
+						HostApplications: []slov1alpha1.HostApplicationSpec{
+							{
+								Name: "test-host-app",
+								CgroupPath: &slov1alpha1.CgroupPath{
+									Base:         slov1alpha1.CgroupBaseTypeKubeBesteffort,
+									RelativePath: "test-host-app/",
+								},
+							},
+						},
+					},
+				},
+				initLastStat: func(lastState *gocache.Cache) {
+					lastState.Set("test-host-app", framework.CPUStat{
+						CPUUsage:  0,
+						Timestamp: testNow.Add(-time.Second),
+					}, gocache.DefaultExpiration)
+				},
+			},
+			wants: wants{},
+		},
+		{
+			name: "host app metric with bad memory usage format",
+			fields: fields{
+				SetSysUtil: func(helper *system.FileTestUtil) {
+					helper.WriteCgroupFileContents(testParentDir, system.CPUAcctUsage, `1000000000`)
+					helper.WriteCgroupFileContents(testParentDir, system.MemoryStat, `
+total_cache 104857600
+total_rss 104857600
+total_inactive_anon 104857600
+total_active_anon 0
+total_inactive_file 104857600
+total_active_file 0
+total_unevictable 0
+`)
+					helper.WriteCgroupFileContents(testParentDir, system.MemoryUsage, `bad format`)
 				},
 				getNodeSLO: &slov1alpha1.NodeSLO{
 					Spec: slov1alpha1.NodeSLOSpec{
@@ -111,6 +352,7 @@ total_inactive_file 104857600
 total_active_file 0
 total_unevictable 0
 `)
+					helper.WriteCgroupFileContents(testParentDir, system.MemoryUsage, `209715200`)
 				},
 				getNodeSLO: &slov1alpha1.NodeSLO{
 					Spec: slov1alpha1.NodeSLOSpec{
@@ -142,6 +384,7 @@ total_inactive_file 104857600
 total_active_file 0
 total_unevictable 0
 `)
+					helper.WriteCgroupFileContents(testParentDir, system.MemoryUsage, `209715200`)
 				},
 				getNodeSLO: &slov1alpha1.NodeSLO{
 					Spec: slov1alpha1.NodeSLOSpec{
@@ -170,6 +413,11 @@ total_unevictable 0
 				hostAppMemory: map[string]float64{
 					"test-host-app": 104857600,
 				},
+				hostAppMemoryWithPageCache: map[string]float64{
+					"test-host-app": 209715200,
+				},
+				hostAppCPUUsage:    &metriccache.Point{Value: 1},
+				hostAPpMemoryUsage: &metriccache.Point{Value: 104857600},
 			},
 		},
 	}
@@ -196,6 +444,8 @@ total_unevictable 0
 			statesInformer := mock_statesinformer.NewMockStatesInformer(ctrl)
 			statesInformer.EXPECT().HasSynced().Return(true).AnyTimes()
 			statesInformer.EXPECT().GetNodeSLO().Return(tt.fields.getNodeSLO).Times(1)
+			// when NodeSLO == nil will skip call GetNodeMetricSpec
+			statesInformer.EXPECT().GetNodeMetricSpec().Return(tt.fields.getNodeMetricSpec).AnyTimes()
 
 			collector := New(&framework.Options{
 				Config: &framework.Config{
@@ -237,6 +487,22 @@ total_unevictable 0
 				gotMemory, err := aggregateResult.Value(metriccache.AggregationTypeLast)
 				assert.NoError(t, err)
 				assert.Equal(t, wantMemory, gotMemory)
+			}
+			for appName, wantMemory := range tt.wants.hostAppMemoryWithPageCache {
+				queryMeta, err := metriccache.HostAppMemoryUsageWithPageCacheMetric.BuildQueryMeta(metriccache.MetricPropertiesFunc.HostApplication(appName))
+				assert.NoError(t, err)
+				aggregateResult := metriccache.DefaultAggregateResultFactory.New(queryMeta)
+				assert.NoError(t, querier.Query(queryMeta, nil, aggregateResult))
+				gotMemoryWithPageCache, err := aggregateResult.Value(metriccache.AggregationTypeLast)
+				assert.NoError(t, err)
+				assert.Equal(t, wantMemory, gotMemoryWithPageCache)
+			}
+
+			if tt.wants.hostAppCPUUsage != nil || tt.wants.hostAPpMemoryUsage != nil {
+				cpuUsage, memoryUsage := c.sharedState.GetHostAppUsage()
+				// TODO mock time
+				assert.Equal(t, tt.wants.hostAppCPUUsage.Value, cpuUsage.Value)
+				assert.Equal(t, tt.wants.hostAPpMemoryUsage.Value, memoryUsage.Value)
 			}
 		})
 	}
@@ -305,6 +571,7 @@ func Test_hostAppCollector_Run(t *testing.T) {
 	mockStatesInformer := mock_statesinformer.NewMockStatesInformer(ctrl)
 	mockStatesInformer.EXPECT().HasSynced().Return(true).AnyTimes()
 	mockStatesInformer.EXPECT().GetNodeSLO().Return(&slov1alpha1.NodeSLO{}).AnyTimes()
+	mockStatesInformer.EXPECT().GetNodeMetricSpec().Return(&slov1alpha1.NodeMetricSpec{}).AnyTimes()
 	c := New(&framework.Options{
 		Config:         framework.NewDefaultConfig(),
 		StatesInformer: mockStatesInformer,
