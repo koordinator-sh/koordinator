@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package gpudeviceresource
+package rdmadeviceresource
 
 import (
 	"context"
@@ -31,21 +31,23 @@ import (
 	"github.com/koordinator-sh/koordinator/apis/configuration"
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
-	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/noderesource/framework"
 	"github.com/koordinator-sh/koordinator/pkg/util"
-	utilfeature "github.com/koordinator-sh/koordinator/pkg/util/feature"
 )
 
-const PluginName = "GPUDeviceResource"
+const PluginName = "RDMADeviceResource"
 
 const (
-	ResetResourcesMsg  = "reset node gpu resources"
-	UpdateResourcesMsg = "node gpu resources from device"
-	UpdateLabelsMsg    = "node gpu labels from device"
+	ResetResourcesMsg  = "reset node rdma resources"
+	UpdateResourcesMsg = "node rdma resources from device"
 
-	NeedSyncForResourceDiffMsg = "gpu resource diff is big than threshold"
-	NeedSyncForGPUModelMsgFmt  = "gpu device label %s changed"
+	NeedSyncForResourceDiffMsg = "rdma resource diff is big than threshold"
+)
+
+var (
+	ResourceNames = []corev1.ResourceName{
+		extension.ResourceRDMA,
+	}
 )
 
 var client ctrlclient.Client
@@ -66,7 +68,6 @@ func (p *Plugin) Name() string {
 func (p *Plugin) Setup(opt *framework.Option) error {
 	client = opt.Client
 
-	// schedulingv1alpha1.AddToScheme(opt.Scheme)
 	opt.Builder = opt.Builder.Watches(&schedulingv1alpha1.Device{}, &DeviceHandler{})
 
 	return nil
@@ -79,18 +80,6 @@ func (p *Plugin) NeedSync(strategy *configuration.ColocationStrategy, oldNode, n
 			klog.V(4).InfoS("need sync node since resource diff bigger than threshold", "node", newNode.Name,
 				"resource", resourceName, "threshold", *strategy.ResourceDiffThreshold)
 			return true, NeedSyncForResourceDiffMsg
-		}
-	}
-
-	return false, ""
-}
-
-func (p *Plugin) NeedSyncMeta(_ *configuration.ColocationStrategy, oldNode, newNode *corev1.Node) (bool, string) {
-	for _, label := range Labels {
-		if oldNode.Labels[label] != newNode.Labels[label] {
-			klog.V(4).InfoS("need sync node metadata since label change", "node", newNode.Name,
-				"label", label, "old", oldNode.Labels[label], "new", newNode.Labels[label])
-			return true, fmt.Sprintf(NeedSyncForGPUModelMsgFmt, label)
 		}
 	}
 
@@ -115,18 +104,6 @@ func (p *Plugin) Prepare(_ *configuration.ColocationStrategy, node *corev1.Node,
 		node.Status.Allocatable[resourceName] = *q
 		node.Status.Capacity[resourceName] = *q
 	}
-
-	// prepare node labels
-	// TBD: shall we reset labels if not exist in the NR
-	if nr.Labels != nil {
-		if _, ok := nr.Labels[extension.LabelGPUModel]; ok {
-			node.Labels[extension.LabelGPUModel] = nr.Labels[extension.LabelGPUModel]
-		}
-		if _, ok := nr.Labels[extension.LabelGPUDriverVersion]; ok {
-			node.Labels[extension.LabelGPUDriverVersion] = nr.Labels[extension.LabelGPUDriverVersion]
-		}
-	}
-
 	return nil
 }
 
@@ -147,19 +124,20 @@ func (p *Plugin) Calculate(_ *configuration.ColocationStrategy, node *corev1.Nod
 			return nil, fmt.Errorf("failed to get device resources: %w", err)
 		}
 
-		// device not found, reset gpu resources on node
-		return p.resetGPUNodeResource()
+		// device not found, reset rdma resources on node
+		return p.resetRDMANodeResource()
 	}
 
-	existsGPU := false
+	// Check whether the rdma device exists
+	existsRDMA := false
 	for _, d := range device.Spec.Devices {
-		if d.Type == schedulingv1alpha1.GPU && d.Health {
-			existsGPU = true
+		if d.Type == schedulingv1alpha1.RDMA && d.Health {
+			existsRDMA = true
 		}
 	}
-	if !existsGPU {
-		klog.V(5).InfoS("gpu not found in device, reset gpu resources on node", "node", node.Name)
-		return p.resetGPUNodeResource()
+	if !existsRDMA {
+		klog.V(5).InfoS("rdma not found in device, reset rdma resources on node", "node", node.Name)
+		return p.resetRDMANodeResource()
 	}
 
 	// TODO: calculate NUMA-level resources against NRT
@@ -171,29 +149,20 @@ func (p *Plugin) calculate(node *corev1.Node, device *schedulingv1alpha1.Device)
 		return nil, fmt.Errorf("invalid device")
 	}
 
-	// calculate gpu resources
-	gpuResources := make(corev1.ResourceList)
-	totalKoordGPU := resource.NewQuantity(0, resource.DecimalSI)
-	healthGPUNum := 0
+	// calculate rdma resources
+	rdmaPFNum := 0
 	for _, d := range device.Spec.Devices {
-		if d.Type != schedulingv1alpha1.GPU || !d.Health {
+		if d.Type != schedulingv1alpha1.RDMA || !d.Health {
 			continue
 		}
-
-		healthGPUNum++
-		util.AddResourceList(gpuResources, d.Resources)
-		totalKoordGPU.Add(d.Resources[extension.ResourceGPUCore])
+		rdmaPFNum++
 	}
-
-	gpuResources[extension.ResourceGPU] = *totalKoordGPU
-	if utilfeature.DefaultFeatureGate.Enabled(features.EnableSyncGPUSharedResource) {
-		gpuResources[extension.ResourceGPUShared] = *resource.NewQuantity(int64(healthGPUNum)*100, resource.DecimalSI)
-	}
-
+	rdmaResources := make(corev1.ResourceList)
+	rdmaResources[extension.ResourceRDMA] = *resource.NewQuantity(int64(rdmaPFNum)*100, resource.DecimalSI)
 	var items []framework.ResourceItem
 	// FIXME: shall we add node resources in devices but not in ResourceNames?
-	for resourceName := range gpuResources {
-		q := gpuResources[resourceName]
+	for resourceName := range rdmaResources {
+		q := rdmaResources[resourceName]
 		items = append(items, framework.ResourceItem{
 			Name:     resourceName,
 			Quantity: &q,
@@ -201,29 +170,12 @@ func (p *Plugin) calculate(node *corev1.Node, device *schedulingv1alpha1.Device)
 		})
 	}
 	sort.Slice(items, func(i, j int) bool { return items[i].Name < items[j].Name })
-	klog.V(5).InfoS("calculate gpu resources", "node", node.Name, "resources", gpuResources)
-
-	// calculate labels about gpu driver and model
-	updatedLabels := map[string]string{}
-	if gpuModel, ok := device.Labels[extension.LabelGPUModel]; ok {
-		updatedLabels[extension.LabelGPUModel] = gpuModel
-	}
-	if gpuDriverVersion, ok := device.Labels[extension.LabelGPUDriverVersion]; ok {
-		updatedLabels[extension.LabelGPUDriverVersion] = gpuDriverVersion
-	}
-	if len(updatedLabels) != 0 {
-		items = append(items, framework.ResourceItem{
-			Name:    PluginName,
-			Labels:  updatedLabels,
-			Message: UpdateLabelsMsg,
-		})
-	}
-	klog.V(5).InfoS("calculate gpu labels", "node", node.Name, "labels", device.Labels)
+	klog.V(5).InfoS("calculate rdma resources", "node", node.Name, "resources", rdmaResources)
 
 	return items, nil
 }
 
-func (p *Plugin) resetGPUNodeResource() ([]framework.ResourceItem, error) {
+func (p *Plugin) resetRDMANodeResource() ([]framework.ResourceItem, error) {
 	items := make([]framework.ResourceItem, len(ResourceNames))
 	// FIXME: shall we reset node resources in devices but not in ResourceNames?
 	for i := range ResourceNames {
