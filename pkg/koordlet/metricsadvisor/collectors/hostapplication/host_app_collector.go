@@ -26,6 +26,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 
+	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor/framework"
@@ -86,6 +87,10 @@ func (h *hostAppCollector) Started() bool {
 	return h.started.Load()
 }
 
+var (
+	defaultMemoryCollectPolicy slov1alpha1.NodeMemoryCollectPolicy = slov1alpha1.UsageWithoutPageCache
+)
+
 func (h *hostAppCollector) collectHostAppResUsed() {
 	klog.V(6).Info("start collectHostAppResUsed")
 	nodeSLO := h.statesInformer.GetNodeSLO()
@@ -93,6 +98,15 @@ func (h *hostAppCollector) collectHostAppResUsed() {
 		klog.Warningf("get nil node slo during collect host application resource usage")
 		return
 	}
+
+	nodeMetricSpec := h.statesInformer.GetNodeMetricSpec()
+	nodeMemoryCollectPolicy := defaultMemoryCollectPolicy
+	if nodeMetricSpec == nil {
+		klog.Warningf("get nil nodemetric, use default node memory collect policy: %v", defaultMemoryCollectPolicy)
+	} else if nodeMetricSpec.CollectPolicy != nil && nodeMetricSpec.CollectPolicy.NodeMemoryCollectPolicy != nil {
+		nodeMemoryCollectPolicy = *nodeMetricSpec.CollectPolicy.NodeMemoryCollectPolicy
+	}
+
 	count := 0
 	resourceMetrics := make([]metriccache.MetricSample, 0)
 	allCPUUsageCores := metriccache.Point{Timestamp: timeNow(), Value: 0}
@@ -157,7 +171,16 @@ func (h *hostAppCollector) collectHostAppResUsed() {
 		klog.V(6).Infof("collect host application %v finished, metric cpu=%v, memory=%v", hostApp.Name, cpuUsageValue, memoryUsageValue)
 		count++
 		allCPUUsageCores.Value += cpuUsageValue
-		allMemoryUsage.Value += float64(memoryUsageValue)
+		// sum memory usage according to NodeMemoryCollectPolicy
+		switch nodeMemoryCollectPolicy {
+		case slov1alpha1.UsageWithoutPageCache:
+			allMemoryUsage.Value += float64(memoryUsageValue)
+		case slov1alpha1.UsageWithPageCache:
+			allMemoryUsage.Value += float64(memUsageWithPageCache)
+		default:
+			klog.Warning("unrecognized node memory collect policy, use UsageWithoutPageCache as default")
+			allMemoryUsage.Value += float64(memoryUsageValue)
+		}
 	}
 
 	appender := h.appendableDB.Appender()
