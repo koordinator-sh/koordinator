@@ -51,6 +51,7 @@ type StatesInformer interface {
 
 	GetNode() *corev1.Node
 	GetNodeSLO() *slov1alpha1.NodeSLO
+	GetNodeMetricSpec() *slov1alpha1.NodeMetricSpec
 
 	GetAllPods() []*statesinformer.PodMeta
 
@@ -100,6 +101,8 @@ type informerPlugin interface {
 	Start(stopCh <-chan struct{})
 	HasSynced() bool
 }
+
+var _ StatesInformer = &statesInformer{}
 
 // TODO merge all clients into one struct
 func NewStatesInformer(config *Config, kubeClient clientset.Interface, crdClient koordclientset.Interface, topologyClient topologyclientset.Interface,
@@ -223,6 +226,16 @@ func (s *statesInformer) GetNodeSLO() *slov1alpha1.NodeSLO {
 		return nil
 	}
 	return nodeSLOInformer.GetNodeSLO()
+}
+
+func (s *statesInformer) GetNodeMetricSpec() *slov1alpha1.NodeMetricSpec {
+	nodeMetricInformerIf := s.states.informerPlugins[nodeMetricInformerName]
+	nodeMetricInformer, ok := nodeMetricInformerIf.(*nodeMetricInformer)
+	if !ok {
+		klog.Errorf("node metric informer format error")
+		return nil
+	}
+	return nodeMetricInformer.getNodeMetricSpec()
 }
 
 func (s *statesInformer) GetNodeTopo() *topov1alpha1.NodeResourceTopology {

@@ -83,6 +83,20 @@ func (mr *MockStatesInformerMockRecorder) GetNode() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetNode", reflect.TypeOf((*MockStatesInformer)(nil).GetNode))
 }
 
+// GetNodeMetricSpec mocks base method.
+func (m *MockStatesInformer) GetNodeMetricSpec() *v1alpha10.NodeMetricSpec {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetNodeMetricSpec")
+	ret0, _ := ret[0].(*v1alpha10.NodeMetricSpec)
+	return ret0
+}
+
+// GetNodeMetricSpec indicates an expected call of GetNodeMetricSpec.
+func (mr *MockStatesInformerMockRecorder) GetNodeMetricSpec() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetNodeMetricSpec", reflect.TypeOf((*MockStatesInformer)(nil).GetNodeMetricSpec))
+}
+
 // GetNodeSLO mocks base method.
 func (m *MockStatesInformer) GetNodeSLO() *v1alpha10.NodeSLO {
 	m.ctrl.T.Helper()

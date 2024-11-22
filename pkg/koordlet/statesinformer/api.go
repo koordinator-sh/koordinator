@@ -120,6 +120,7 @@ type StatesInformer interface {
 
 	GetNode() *corev1.Node
 	GetNodeSLO() *slov1alpha1.NodeSLO
+	GetNodeMetricSpec() *slov1alpha1.NodeMetricSpec
 
 	GetAllPods() []*PodMeta
 
