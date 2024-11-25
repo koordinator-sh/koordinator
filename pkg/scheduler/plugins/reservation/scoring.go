@@ -189,7 +189,6 @@ func findMostPreferredReservationByOrder(rOnNode []*frameworkext.ReservationInfo
 }
 
 func scoreReservation(pod *corev1.Pod, rInfo *frameworkext.ReservationInfo, allocated corev1.ResourceList) int64 {
-	// TODO(joseph): we should support zero-request pods
 	requested := resourceapi.PodRequests(pod, resourceapi.PodResourcesOptions{})
 	requested = quotav1.Add(requested, allocated)
 	resources := quotav1.RemoveZeros(rInfo.Allocatable)

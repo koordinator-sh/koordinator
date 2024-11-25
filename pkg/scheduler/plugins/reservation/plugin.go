@@ -324,9 +324,6 @@ func (pl *Plugin) PreFilterExtensions() framework.PreFilterExtensions {
 
 func (pl *Plugin) AddPod(ctx context.Context, cycleState *framework.CycleState, podToSchedule *corev1.Pod, podInfoToAdd *framework.PodInfo, nodeInfo *framework.NodeInfo) *framework.Status {
 	podRequests := resourceapi.PodRequests(podInfoToAdd.Pod, resourceapi.PodResourcesOptions{})
-	if quotav1.IsZero(podRequests) { // TODO: support zero request pod in reservation
-		return nil
-	}
 
 	podRequests[corev1.ResourcePods] = *resource.NewQuantity(1, resource.DecimalSI) // count pods resources
 	state := getStateData(cycleState)
@@ -356,9 +353,6 @@ func (pl *Plugin) AddPod(ctx context.Context, cycleState *framework.CycleState, 
 
 func (pl *Plugin) RemovePod(ctx context.Context, cycleState *framework.CycleState, podToSchedule *corev1.Pod, podInfoToRemove *framework.PodInfo, nodeInfo *framework.NodeInfo) *framework.Status {
 	podRequests := resourceapi.PodRequests(podInfoToRemove.Pod, resourceapi.PodResourcesOptions{})
-	if quotav1.IsZero(podRequests) { // TODO: support zero request pod in reservation
-		return nil
-	}
 
 	podRequests[corev1.ResourcePods] = *resource.NewQuantity(1, resource.DecimalSI) // count pods resources
 	state := getStateData(cycleState)
@@ -481,7 +475,10 @@ func (pl *Plugin) filterWithReservations(ctx context.Context, cycleState *framew
 	var allInsufficientResourceReasonsByReservation []string
 	for _, rInfo := range matchedReservations {
 		resourceNames := quotav1.Intersection(rInfo.ResourceNames, podRequestsResourceNames)
-		if len(resourceNames) == 0 {
+		// NOTE: The reservation may not consider the irrelevant pods that have no matched resource names since it makes
+		// no sense in most cases but introduces a performance overhead. However, we allow pods to allocate reserved
+		// resources to accomplish their reservation affinities.
+		if len(resourceNames) == 0 && !state.hasAffinity {
 			continue
 		}
 		// When the pod specifies a reservation name, we record the admission reasons.

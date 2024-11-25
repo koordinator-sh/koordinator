@@ -70,7 +70,8 @@ func (m *topologyManager) Admit(ctx context.Context, cycleState *framework.Cycle
 	if !ok || extensionPointBeingExecuted == schedulingphase.PostFilter {
 		var admit bool
 		bestHint, admit = m.calculateAffinity(ctx, cycleState, policy, pod, nodeName, exclusivePolicy, allNUMANodeStatus)
-		klog.V(5).Infof("Best TopologyHint for (pod: %v): %v on node: %v", klog.KObj(pod), bestHint, nodeName)
+		klog.V(4).Infof("Best TopologyHint for (pod: %v): %+v on node %s, policy %s, exclusivePolicy %s, admit %v",
+			klog.KObj(pod), bestHint, nodeName, policy, exclusivePolicy, admit)
 		if !admit {
 			return framework.NewStatus(framework.Unschedulable, "node(s) NUMA Topology affinity error")
 		}
@@ -107,7 +108,7 @@ func (m *topologyManager) accumulateProvidersHints(ctx context.Context, cycleSta
 		// Get the TopologyHints for a Pod from a provider.
 		hints, _ := provider.GetPodTopologyHints(ctx, cycleState, pod, nodeName)
 		providersHints = append(providersHints, hints)
-		klog.V(5).Infof("TopologyHints for pod '%v': %v on node: %v", klog.KObj(pod), hints, nodeName)
+		klog.V(4).Infof("TopologyHints for pod '%v' by provider %T: %v on node: %v", klog.KObj(pod), provider, hints, nodeName)
 	}
 	return providersHints
 }
