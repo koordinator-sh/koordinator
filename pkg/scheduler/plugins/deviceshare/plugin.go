@@ -28,6 +28,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	k8sfeature "k8s.io/apiserver/pkg/util/feature"
+	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
@@ -540,8 +541,41 @@ func (p *Plugin) preBindObject(ctx context.Context, cycleState *framework.CycleS
 		return nil
 	}
 
+	err := p.fillID(state.allocationResult, nodeName)
+	if err != nil {
+		return framework.AsStatus(err)
+	}
+
 	if err := apiext.SetDeviceAllocations(object, state.allocationResult); err != nil {
 		return framework.NewStatus(framework.Error, err.Error())
+	}
+	return nil
+}
+
+func (p *Plugin) fillID(allocationResult apiext.DeviceAllocations, nodeName string) error {
+	extendedHandle, ok := p.handle.(frameworkext.ExtendedHandle)
+	if !ok {
+		return fmt.Errorf("expect handle to be type frameworkext.ExtendedHandle, got %T", p.handle)
+	}
+	deviceLister := extendedHandle.KoordinatorSharedInformerFactory().Scheduling().V1alpha1().Devices().Lister()
+	device, err := deviceLister.Get(nodeName)
+	if err != nil {
+		klog.ErrorS(err, "Failed to get Device", "node", nodeName)
+		return err
+	}
+	for deviceType, allocations := range allocationResult {
+		if deviceType == schedulingv1alpha1.GPU {
+			// because gpu minor is well known, ID isn't needed
+			continue
+		}
+		for i, allocation := range allocations {
+			for _, info := range device.Spec.Devices {
+				if info.Minor != nil && *info.Minor == allocation.Minor && info.Type == deviceType {
+					allocationResult[deviceType][i].ID = info.UUID
+					break
+				}
+			}
+		}
 	}
 	return nil
 }

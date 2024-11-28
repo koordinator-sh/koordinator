@@ -89,6 +89,33 @@ func Test_GetDeviceAllocations(t *testing.T) {
 			},
 			wantErr: false,
 		},
+		{
+			name: "correct annotations with busID",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					UID:       "123456789",
+					Namespace: "default",
+					Name:      "test",
+					Annotations: map[string]string{
+						AnnotationDeviceAllocated: `{"gpu":[{"minor":1,"id": "0000:08.00.0","resources":{"koordinator.sh/gpu-core":"100","koordinator.sh/gpu-memory":"16Gi","koordinator.sh/gpu-memory-ratio":"100"}}]}`,
+					},
+				},
+			},
+			want: DeviceAllocations{
+				schedulingv1alpha1.GPU: []*DeviceAllocation{
+					{
+						Minor: 1,
+						ID:    "0000:08.00.0",
+						Resources: corev1.ResourceList{
+							ResourceGPUCore:        resource.MustParse("100"),
+							ResourceGPUMemoryRatio: resource.MustParse("100"),
+							ResourceGPUMemory:      resource.MustParse("16Gi"),
+						},
+					},
+				},
+			},
+			wantErr: false,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
