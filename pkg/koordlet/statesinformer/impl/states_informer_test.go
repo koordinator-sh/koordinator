@@ -130,6 +130,81 @@ func Test_statesInformer_GetNodeSLO(t *testing.T) {
 	}
 }
 
+func Test_statesInformer_GetNodeMetricSpec(t *testing.T) {
+	type fields struct {
+		nodeMetric *slov1alpha1.NodeMetric
+	}
+	collectPolicy := slov1alpha1.UsageWithoutPageCache
+	tests := []struct {
+		name   string
+		fields fields
+		want   *slov1alpha1.NodeMetricSpec
+	}{
+		{
+			name: "get node metric spec with default",
+			fields: fields{
+				nodeMetric: nil,
+			},
+			want: &defaultNodeMetricSpec,
+		},
+		{
+			name: "get node metric spec",
+			fields: fields{
+				nodeMetric: &slov1alpha1.NodeMetric{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node-slo-name",
+						UID:  "test-node-slo-uid",
+					},
+					Spec: slov1alpha1.NodeMetricSpec{
+						CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{},
+					},
+				},
+			},
+			want: &slov1alpha1.NodeMetricSpec{
+				CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{},
+			},
+		},
+		{
+			name: "get node metric spec",
+			fields: fields{
+				nodeMetric: &slov1alpha1.NodeMetric{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node-slo-name",
+						UID:  "test-node-slo-uid",
+					},
+					Spec: slov1alpha1.NodeMetricSpec{
+						CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
+							NodeMemoryCollectPolicy: &collectPolicy,
+						},
+					},
+				},
+			},
+			want: &slov1alpha1.NodeMetricSpec{
+				CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
+					NodeMemoryCollectPolicy: &collectPolicy,
+				},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			nodeMetricInformer := &nodeMetricInformer{
+				nodeMetric: tt.fields.nodeMetric,
+			}
+			s := &statesInformer{
+				states: &PluginState{
+					informerPlugins: map[PluginName]informerPlugin{
+						nodeMetricInformerName: nodeMetricInformer,
+					},
+				},
+			}
+			if got := s.GetNodeMetricSpec(); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("GetNodeMetricSpec() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func Test_statesInformer_GetNodeTopo(t *testing.T) {
 	type fields struct {
 		nodeTopo *topov1alpha1.NodeResourceTopology

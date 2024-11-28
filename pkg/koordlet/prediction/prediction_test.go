@@ -43,7 +43,12 @@ func (m *mockStatesInformer) HasSynced() bool {
 func (m *mockStatesInformer) GetNode() *v1.Node {
 	return m.node
 }
+
 func (m *mockStatesInformer) GetNodeSLO() *slov1alpha1.NodeSLO {
+	return nil
+}
+
+func (m *mockStatesInformer) GetNodeMetricSpec() *slov1alpha1.NodeMetricSpec {
 	return nil
 }
 
