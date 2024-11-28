@@ -33,7 +33,7 @@ type UpdateCbCtx struct{}
 type callbackRunner struct {
 	callbackChans        map[statesinformer.RegisterType]chan UpdateCbCtx
 	stateUpdateCallbacks map[statesinformer.RegisterType][]updateCallback
-	statesInformer       StatesInformer
+	statesInformer       statesinformer.StatesInformer
 }
 
 func NewCallbackRunner() *callbackRunner {
@@ -53,7 +53,7 @@ func NewCallbackRunner() *callbackRunner {
 	return c
 }
 
-func (s *callbackRunner) Setup(i StatesInformer) {
+func (s *callbackRunner) Setup(i statesinformer.StatesInformer) {
 	s.statesInformer = i
 }
 
