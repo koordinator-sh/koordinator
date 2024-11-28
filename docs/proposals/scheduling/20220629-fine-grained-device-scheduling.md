@@ -218,7 +218,7 @@ resources:
 
 ##### DeviceAllocation
 
-In the PreBind stage, the scheduler will update the device (including GPU) allocation results, including the device's Minor and resource allocation information, to the Pod in the form of annotations.
+In the PreBind stage, the scheduler will update the device (including GPU) allocation results, including the device's Minor, ID, resource allocation information, to the Pod in the form of annotations.
 
 ```go
 /*
@@ -226,7 +226,7 @@ In the PreBind stage, the scheduler will update the device (including GPU) alloc
   "gpu": [
     {
       "minor": 0,
-      "resouurces": {
+      "resources": {
         "koordinator.sh/gpu-core": 100,
         "koordinator.sh/gpu-memory-ratio": 100,
         "koordinator.sh/gpu-memory": "16Gi"
@@ -234,18 +234,38 @@ In the PreBind stage, the scheduler will update the device (including GPU) alloc
     },
     {
       "minor": 1,
-      "resouurces": {
+      "resources": {
         "koordinator.sh/gpu-core": 100,
         "koordinator.sh/gpu-memory-ratio": 100,
         "koordinator.sh/gpu-memory": "16Gi"
       }
     }
+  ],
+  "rdma": [
+    {
+      "minor": 0,
+      "id": "0000:09:00.0",
+      "resources": {
+        "koordinator.sh/rdma": 100,
+      }
+    },
+    {
+      "minor": 1,
+      "id": "0000:10:00.0",
+      "resources": {
+        "koordinator.sh/rdma": 100,
+      }
+    }
   ]
 }
 */
+
 type DeviceAllocation struct {
-    Minor     int32
-    Resources map[string]resource.Quantity
+    Minor     int32               `json:"minor"`
+    Resources corev1.ResourceList `json:"resources"`
+    // ID is the well known identifier for device, because for some device, such as rdma, Minor is meaningless
+    ID        string                     `json:"id,omitempty"`
+    Extension *DeviceAllocationExtension `json:"extension,omitempty"`
 }
 
 type DeviceAllocations map[DeviceType][]*DeviceAllocation
