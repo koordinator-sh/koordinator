@@ -31,9 +31,16 @@ var (
 		Help:      "Number of cpu cores used by LS. We consider non-BE pods and podMeta-missing pods as LS.",
 	}, []string{NodeKey})
 
+	BESuppressBEUsedCPU = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Subsystem: KoordletSubsystem,
+		Name:      "be_suppress_be_used_cpu_cores",
+		Help:      "Number of cpu cores used by BE.",
+	}, []string{NodeKey})
+
 	CPUSuppressCollector = []prometheus.Collector{
 		BESuppressCPU,
 		BESuppressLSUsedCPU,
+		BESuppressBEUsedCPU,
 	}
 )
 
@@ -52,4 +59,12 @@ func RecordBESuppressLSUsedCPU(value float64) {
 		return
 	}
 	BESuppressLSUsedCPU.With(labels).Set(value)
+}
+
+func RecordBESuppressBEUsedCPU(value float64) {
+	labels := genNodeLabels()
+	if labels == nil {
+		return
+	}
+	BESuppressBEUsedCPU.With(labels).Set(value)
 }
