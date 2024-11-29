@@ -34,7 +34,7 @@ import (
 
 	imageutils "github.com/koordinator-sh/koordinator/test/utils/image"
 
-	"github.com/onsi/ginkgo"
+	"github.com/onsi/ginkgo/v2"
 
 	// TODO: Remove the following imports (ref: https://github.com/kubernetes/kubernetes/issues/81245)
 	e2eauth "github.com/koordinator-sh/koordinator/test/e2e/framework/auth"

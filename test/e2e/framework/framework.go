@@ -48,7 +48,7 @@ import (
 	"k8s.io/client-go/restmapper"
 	scaleclient "k8s.io/client-go/scale"
 
-	"github.com/onsi/ginkgo"
+	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
 
 	koordinatorclientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
@@ -634,7 +634,7 @@ func (kc *KubeConfig) FindCluster(name string) *KubeCluster {
 
 // ConformanceIt is wrapper function for ginkgo It.  Adds "[Conformance]" tag and makes static analysis easier.
 func ConformanceIt(text string, body interface{}, timeout ...float64) bool {
-	return ginkgo.It(text+" [Conformance]", body, timeout...)
+	return ginkgo.It(text+" [Conformance]", body, timeout)
 }
 
 // KoordinatorDescribe is a wrapper function for ginkgo describe.  Adds namespacing.
