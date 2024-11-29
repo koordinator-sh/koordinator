@@ -181,8 +181,9 @@ func (c *ContainerRequest) FromReconciler(podMeta *statesinformer.PodMeta, conta
 }
 
 type ContainerResponse struct {
-	Resources        Resources
-	AddContainerEnvs map[string]string
+	Resources           Resources
+	AddContainerEnvs    map[string]string
+	AddContainerDevices []*api.LinuxDevice
 }
 
 func (c *ContainerResponse) ProxyDone(resp *runtimeapi.ContainerResourceHookResponse) {
@@ -277,6 +278,13 @@ func (c *ContainerContext) NriDone(executor resourceexecutor.ResourceUpdateExecu
 		for k, v := range c.Response.AddContainerEnvs {
 			adjust.AddEnv(k, v)
 		}
+	}
+
+	if len(c.Response.AddContainerDevices) != 0 {
+		for i := range c.Response.AddContainerDevices {
+			adjust.AddDevice(c.Response.AddContainerDevices[i])
+		}
+
 	}
 
 	c.Update()
