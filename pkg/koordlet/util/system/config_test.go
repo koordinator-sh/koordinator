@@ -33,6 +33,7 @@ func Test_NewDsModeConfig(t *testing.T) {
 		RunRootDir:            "/host-run/",
 		RuntimeHooksConfigDir: "/host-etc-hookserver/",
 		DefaultRuntimeType:    "containerd",
+		HAMICoreLibraryPath:   "/data/bin/libvgpu.so",
 	}
 	defaultConfig := NewDsModeConfig()
 	assert.Equal(t, expectConfig, defaultConfig)
@@ -49,6 +50,7 @@ func Test_NewHostModeConfig(t *testing.T) {
 		RunRootDir:            "/run/",
 		RuntimeHooksConfigDir: "/etc/runtime/hookserver.d",
 		DefaultRuntimeType:    "containerd",
+		HAMICoreLibraryPath:   "/data/bin/libvgpu.so",
 	}
 	defaultConfig := NewHostModeConfig()
 	assert.Equal(t, expectConfig, defaultConfig)
