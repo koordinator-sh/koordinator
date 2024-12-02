@@ -58,6 +58,8 @@ const (
 	LabelGPUModel                   string = NodeDomainPrefix + "/gpu-model"
 	LabelGPUDriverVersion           string = NodeDomainPrefix + "/gpu-driver-version"
 	LabelSecondaryDeviceWellPlanned string = NodeDomainPrefix + "/secondary-device-well-planned"
+
+	LabelGPUIsolationProvider = DomainPrefix + "gpu-isolation-provider"
 )
 
 // DeviceAllocations would be injected into Pod as form of annotation during Pre-bind stage.
@@ -218,6 +220,12 @@ const (
 	GPUPartitionPolicyHonor GPUPartitionPolicy = "Honor"
 	// GPUPartitionPolicyPrefer indicates that the partitions annotated to the Device CR are preferred.
 	GPUPartitionPolicyPrefer GPUPartitionPolicy = "Prefer"
+)
+
+type GPUIsolationProvider string
+
+const (
+	GPUIsolationProviderHAMICore GPUIsolationProvider = "HAMi-core"
 )
 
 func GetDeviceAllocations(podAnnotations map[string]string) (DeviceAllocations, error) {

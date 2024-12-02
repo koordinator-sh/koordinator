@@ -183,6 +183,7 @@ func (c *ContainerRequest) FromReconciler(podMeta *statesinformer.PodMeta, conta
 type ContainerResponse struct {
 	Resources           Resources
 	AddContainerEnvs    map[string]string
+	AddContainerMounts  []*Mount
 	AddContainerDevices []*LinuxDevice
 }
 
@@ -286,6 +287,15 @@ func (c *ContainerContext) NriDone(executor resourceexecutor.ResourceUpdateExecu
 		for k, v := range c.Response.AddContainerEnvs {
 			adjust.AddEnv(k, v)
 		}
+	}
+
+	for _, m := range c.Response.AddContainerMounts {
+		adjust.AddMount(&api.Mount{
+			Destination: m.Destination,
+			Type:        m.Type,
+			Source:      m.Source,
+			Options:     m.Options,
+		})
 	}
 
 	if len(c.Response.AddContainerDevices) != 0 {

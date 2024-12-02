@@ -44,11 +44,12 @@ type Config struct {
 	RunRootDir            string
 	RuntimeHooksConfigDir string
 
-	ContainerdEndPoint string
-	PouchEndpoint      string
-	DockerEndPoint     string
-	CrioEndPoint       string
-	DefaultRuntimeType string
+	ContainerdEndPoint           string
+	PouchEndpoint                string
+	DockerEndPoint               string
+	CrioEndPoint                 string
+	DefaultRuntimeType           string
+	HAMICoreLibraryDirectoryPath string
 }
 
 func init() {
@@ -77,15 +78,16 @@ func InitSupportConfigs() {
 
 func NewHostModeConfig() *Config {
 	return &Config{
-		CgroupRootDir:         "/sys/fs/cgroup/",
-		ProcRootDir:           "/proc/",
-		SysRootDir:            "/sys/",
-		SysFSRootDir:          "/sys/fs/",
-		VarRunRootDir:         "/var/run/",
-		VarLibKubeletRootDir:  "/var/lib/kubelet/",
-		RunRootDir:            "/run/",
-		RuntimeHooksConfigDir: "/etc/runtime/hookserver.d",
-		DefaultRuntimeType:    "containerd",
+		CgroupRootDir:                "/sys/fs/cgroup/",
+		ProcRootDir:                  "/proc/",
+		SysRootDir:                   "/sys/",
+		SysFSRootDir:                 "/sys/fs/",
+		VarRunRootDir:                "/var/run/",
+		VarLibKubeletRootDir:         "/var/lib/kubelet/",
+		RunRootDir:                   "/run/",
+		RuntimeHooksConfigDir:        "/etc/runtime/hookserver.d",
+		DefaultRuntimeType:           "containerd",
+		HAMICoreLibraryDirectoryPath: "/usr/local/vgpu/libvgpu.so",
 	}
 }
 
@@ -93,14 +95,15 @@ func NewDsModeConfig() *Config {
 	return &Config{
 		CgroupRootDir: "/host-cgroup/",
 		// some dirs are not covered by ns, or unused with `hostPID` is on
-		ProcRootDir:           "/proc/",
-		SysRootDir:            "/host-sys/",
-		SysFSRootDir:          "/host-sys-fs/",
-		VarRunRootDir:         "/host-var-run/",
-		VarLibKubeletRootDir:  "/var/lib/kubelet/",
-		RunRootDir:            "/host-run/",
-		RuntimeHooksConfigDir: "/host-etc-hookserver/",
-		DefaultRuntimeType:    "containerd",
+		ProcRootDir:                  "/proc/",
+		SysRootDir:                   "/host-sys/",
+		SysFSRootDir:                 "/host-sys-fs/",
+		VarRunRootDir:                "/host-var-run/",
+		VarLibKubeletRootDir:         "/var/lib/kubelet/",
+		RunRootDir:                   "/host-run/",
+		RuntimeHooksConfigDir:        "/host-etc-hookserver/",
+		DefaultRuntimeType:           "containerd",
+		HAMICoreLibraryDirectoryPath: "/usr/local/vgpu/libvgpu.so",
 	}
 }
 
@@ -122,4 +125,5 @@ func (c *Config) InitFlags(fs *flag.FlagSet) {
 	fs.StringVar(&c.PouchEndpoint, "pouch-endpoint", c.PouchEndpoint, "pouch endPoint")
 
 	fs.StringVar(&c.DefaultRuntimeType, "default-runtime-type", c.DefaultRuntimeType, "default runtime type during runtime hooks handle request, candidates are containerd/docker/pouch.")
+	fs.StringVar(&c.HAMICoreLibraryDirectoryPath, "hami-core-library-directory-path", c.HAMICoreLibraryDirectoryPath, "path of hami core library")
 }
