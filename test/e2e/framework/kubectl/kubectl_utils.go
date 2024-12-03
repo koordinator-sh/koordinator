@@ -35,7 +35,7 @@ import (
 	e2elog "github.com/koordinator-sh/koordinator/test/e2e/framework/log"
 	e2epod "github.com/koordinator-sh/koordinator/test/e2e/framework/pod"
 
-	"github.com/onsi/ginkgo"
+	"github.com/onsi/ginkgo/v2"
 )
 
 const (

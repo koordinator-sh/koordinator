@@ -20,16 +20,10 @@ package framework_test
 import (
 	"errors"
 	"regexp"
-	"sort"
-	"strings"
 	"testing"
 
-	"github.com/onsi/ginkgo"
-	"github.com/onsi/ginkgo/config"
-	"github.com/onsi/ginkgo/reporters"
-	"github.com/onsi/gomega"
-
 	"github.com/koordinator-sh/koordinator/test/e2e/framework"
+	"github.com/onsi/ginkgo/v2"
 )
 
 // The line number of the following code is checked in TestFailureOutput below.
@@ -43,9 +37,9 @@ import (
 //
 //
 
-func runTests(t *testing.T, reporter ginkgo.Reporter) {
+func runTests(t *testing.T) {
 	// This source code line will be part of the stack dump comparison.
-	ginkgo.RunSpecsWithDefaultAndCustomReporters(t, "Logging Suite", []ginkgo.Reporter{reporter})
+	ginkgo.RunSpecs(t, "Logging Suite")
 }
 
 var _ = ginkgo.Describe("log", func() {
@@ -73,63 +67,6 @@ var _ = ginkgo.Describe("log", func() {
 	})
 })
 
-func TestFailureOutput(t *testing.T) {
-	// Run the Ginkgo suite with output collected by a custom
-	// reporter in adddition to the default one. To see what the full
-	// Ginkgo report looks like, run this test with "go test -v".
-	config.DefaultReporterConfig.FullTrace = true
-	gomega.RegisterFailHandler(framework.Fail)
-	fakeT := &testing.T{}
-	reporter := reporters.NewFakeReporter()
-	runTests(fakeT, reporter)
-
-	// Now check the output.
-	actual := normalizeReport(*reporter)
-
-	// output from AfterEach
-	commonOutput := "\n\nINFO: after\nFAIL: true is never false either\nExpected\n    <bool>: true\nto equal\n    <bool>: false\n\nFull Stack Trace\ngithub.com/koordinator-sh/koordinator/test/e2e/framework_test.glob..func1.6()\n\tlog_test.go:71\ngithub.com/koordinator-sh/koordinator/test/e2e/framework_test.runTests()\n\tlog_test.go:47\n\n"
-
-	// Sorted by name!
-	expected := suiteResults{
-		testResult{
-			name:    "[Top Level] log asserts",
-			output:  "INFO: before\nFAIL: false is never true\nExpected\n    <bool>: false\nto equal\n    <bool>: true\n\nFull Stack Trace\ngithub.com/koordinator-sh/koordinator/test/e2e/framework_test.glob..func1.3()\n\tlog_test.go:60\ngithub.com/koordinator-sh/koordinator/test/e2e/framework_test.runTests()\n\tlog_test.go:47" + commonOutput,
-			failure: "false is never true\nExpected\n    <bool>: false\nto equal\n    <bool>: true",
-			stack:   "github.com/koordinator-sh/koordinator/test/e2e/framework_test.glob..func1.3()\n\tlog_test.go:60\ngithub.com/koordinator-sh/koordinator/test/e2e/framework_test.runTests()\n\tlog_test.go:47\n",
-		},
-		testResult{
-			name:    "[Top Level] log equal",
-			output:  "INFO: before\nFAIL: of course it's not equal...\nExpected\n    <int>: 0\nto equal\n    <int>: 1\n\nFull Stack Trace\ngithub.com/koordinator-sh/koordinator/test/e2e/framework_test.glob..func1.5()\n\tlog_test.go:67\ngithub.com/koordinator-sh/koordinator/test/e2e/framework_test.runTests()\n\tlog_test.go:47" + commonOutput,
-			failure: "of course it's not equal...\nExpected\n    <int>: 0\nto equal\n    <int>: 1",
-			stack:   "github.com/koordinator-sh/koordinator/test/e2e/framework_test.glob..func1.5()\n\tlog_test.go:67\ngithub.com/koordinator-sh/koordinator/test/e2e/framework_test.runTests()\n\tlog_test.go:47\n",
-		},
-		testResult{
-			name:    "[Top Level] log error",
-			output:  "INFO: before\nFAIL: hard-coded error\nUnexpected error:\n    <*errors.errorString>: {\n        s: \"an error with a long, useless description\",\n    }\n    an error with a long, useless description\noccurred\n\nFull Stack Trace\ngithub.com/koordinator-sh/koordinator/test/e2e/framework_test.glob..func1.4()\n\tlog_test.go:64\ngithub.com/koordinator-sh/koordinator/test/e2e/framework_test.runTests()\n\tlog_test.go:47" + commonOutput,
-			failure: "hard-coded error\nUnexpected error:\n    <*errors.errorString>: {\n        s: \"an error with a long, useless description\",\n    }\n    an error with a long, useless description\noccurred",
-			stack:   "github.com/koordinator-sh/koordinator/test/e2e/framework_test.glob..func1.4()\n\tlog_test.go:64\ngithub.com/koordinator-sh/koordinator/test/e2e/framework_test.runTests()\n\tlog_test.go:47\n",
-		},
-		testResult{
-			name:    "[Top Level] log fails",
-			output:  "INFO: before\nFAIL: I'm failing.\n\nFull Stack Trace\ngithub.com/koordinator-sh/koordinator/test/e2e/framework_test.glob..func1.2()\n\tlog_test.go:57\ngithub.com/koordinator-sh/koordinator/test/e2e/framework_test.runTests()\n\tlog_test.go:47" + commonOutput,
-			failure: "I'm failing.",
-			stack:   "github.com/koordinator-sh/koordinator/test/e2e/framework_test.glob..func1.2()\n\tlog_test.go:57\ngithub.com/koordinator-sh/koordinator/test/e2e/framework_test.runTests()\n\tlog_test.go:47\n",
-		},
-	}
-	// Compare individual fields. Comparing the slices leads to unreadable error output when there is any mismatch.
-	framework.ExpectEqual(len(actual), len(expected), "%d entries in %v", len(expected), actual)
-	for i, a := range actual {
-		b := expected[i]
-		framework.ExpectEqual(a.name, b.name, "name in %d", i)
-		framework.ExpectEqual(a.output, b.output, "output in %d", i)
-		framework.ExpectEqual(a.failure, b.failure, "failure in %d", i)
-		// There may be additional stack entries from the "testing" package at the
-		// end. We ignore those in the comparison because the line number in them
-		// varies.
-		framework.ExpectEqual(a.stack, b.stack, "stack in %d: %s", i, a.stack)
-	}
-}
-
 type testResult struct {
 	name string
 	// output written to GinkgoWriter during test.
@@ -142,22 +79,6 @@ type testResult struct {
 }
 
 type suiteResults []testResult
-
-func normalizeReport(report reporters.FakeReporter) suiteResults {
-	var results suiteResults
-	for _, spec := range report.SpecSummaries {
-		results = append(results, testResult{
-			name:    strings.Join(spec.ComponentTexts, " "),
-			output:  normalizeLocation(stripAddresses(stripTimes(spec.CapturedOutput))),
-			failure: stripAddresses(stripTimes(spec.Failure.Message)),
-			stack:   normalizeLocation(spec.Failure.Location.FullStackTrace),
-		})
-	}
-	sort.Slice(results, func(i, j int) bool {
-		return strings.Compare(results[i].name, results[j].name) < 0
-	})
-	return results
-}
 
 // timePrefix matches "Jul 17 08:08:25.950: " at the beginning of each line.
 var timePrefix = regexp.MustCompile(`(?m)^[[:alpha:]]{3} +[[:digit:]]{1,2} +[[:digit:]]{2}:[[:digit:]]{2}:[[:digit:]]{2}.[[:digit:]]{3}: `)

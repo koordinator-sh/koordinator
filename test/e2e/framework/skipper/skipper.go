@@ -27,7 +27,7 @@ import (
 	"runtime/debug"
 	"strings"
 
-	"github.com/onsi/ginkgo"
+	"github.com/onsi/ginkgo/v2"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -69,7 +69,10 @@ type SkipPanic struct {
 }
 
 // String makes SkipPanic look like the old Ginkgo panic when printed.
-func (SkipPanic) String() string { return ginkgo.GINKGO_PANIC }
+func (SkipPanic) String() string {
+	ginkgo.Fail("Test failed due to panic", 1)
+	return "panic"
+}
 
 // Skip wraps ginkgo.Skip so that it panics with more useful
 // information about why the test is being skipped. This function will
