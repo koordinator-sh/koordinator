@@ -49,6 +49,8 @@ type QuotaInfoSummary struct {
 	SelfNonPreemptibleUsed    v1.ResourceList `json:"selfNonPreemptibleUsed"`
 	SelfRequest               v1.ResourceList `json:"selfRequest"`
 	SelfNonPreemptibleRequest v1.ResourceList `json:"selfNonPreemptibleRequest"`
+	MinExcess                 v1.ResourceList `json:"minExcess"`
+	MinExcessUsed             v1.ResourceList `json:"minExcessUsed"`
 
 	PodCache map[string]*SimplePodInfo `json:"podCache,omitempty"`
 }

@@ -64,6 +64,11 @@ func (qt *quotaTopology) validateQuotaSelfItem(quota *v1alpha1.ElasticQuota) err
 		}
 	}
 
+	// sanity check for min-excess
+	if _, err := extension.GetMinExcess(quota); err != nil {
+		return err
+	}
+
 	return nil
 }
 

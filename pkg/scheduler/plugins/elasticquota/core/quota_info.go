@@ -65,6 +65,12 @@ type QuotaCalculateInfo struct {
 	// Allocated is the allocated resource. It's the sum of children quota guarantee. If the quota is leaf, it's
 	// the sum of scheduled pods
 	Allocated v1.ResourceList
+
+	// The semantics of "min-excess" is the quota group's upper limit of min-excess resources.
+	MinExcess v1.ResourceList
+	// MinExcessUsed is the sum of MinExcessUsed of all children if the quota is parent.
+	// If the quota is leaf, it's the sum of used - min
+	MinExcessUsed v1.ResourceList
 }
 
 type QuotaInfo struct {
@@ -108,6 +114,8 @@ func NewQuotaInfo(isParent, allowLentResource bool, name, parentName string) *Qu
 			SelfUsed:                  v1.ResourceList{},
 			SelfNonPreemptibleRequest: v1.ResourceList{},
 			SelfNonPreemptibleUsed:    v1.ResourceList{},
+			MinExcess:                 v1.ResourceList{},
+			MinExcessUsed:             v1.ResourceList{},
 		},
 	}
 }
@@ -143,6 +151,8 @@ func (qi *QuotaInfo) DeepCopy() *QuotaInfo {
 			SelfUsed:                  qi.CalculateInfo.SelfUsed.DeepCopy(),
 			SelfNonPreemptibleRequest: qi.CalculateInfo.SelfNonPreemptibleRequest.DeepCopy(),
 			SelfNonPreemptibleUsed:    qi.CalculateInfo.SelfNonPreemptibleUsed.DeepCopy(),
+			MinExcess:                 qi.CalculateInfo.MinExcess.DeepCopy(),
+			MinExcessUsed:             qi.CalculateInfo.MinExcessUsed.DeepCopy(),
 		},
 	}
 	for name, pod := range qi.PodCache {
@@ -178,6 +188,8 @@ func (qi *QuotaInfo) GetQuotaSummary(treeID string, includePods bool) *QuotaInfo
 	quotaInfoSummary.SelfRequest = qi.CalculateInfo.SelfRequest.DeepCopy()
 	quotaInfoSummary.SelfNonPreemptibleUsed = qi.CalculateInfo.SelfNonPreemptibleUsed.DeepCopy()
 	quotaInfoSummary.SelfNonPreemptibleRequest = qi.CalculateInfo.SelfNonPreemptibleRequest.DeepCopy()
+	quotaInfoSummary.MinExcess = qi.CalculateInfo.MinExcess.DeepCopy()
+	quotaInfoSummary.MinExcessUsed = qi.CalculateInfo.MinExcessUsed.DeepCopy()
 
 	if includePods {
 		for podName, podInfo := range qi.PodCache {
@@ -207,6 +219,7 @@ func (qi *QuotaInfo) updateQuotaInfoFromRemote(quotaInfo *QuotaInfo) {
 	qi.AllowLentResource = quotaInfo.AllowLentResource
 	qi.IsParent = quotaInfo.IsParent
 	qi.ParentName = quotaInfo.ParentName
+	qi.setMinExcessNoLock(quotaInfo.CalculateInfo.MinExcess)
 }
 
 // getLimitRequestNoLock returns the min value of request and max, as max is the quotaGroup's upper limit of resources.
@@ -276,8 +289,10 @@ func (qi *QuotaInfo) GetAllocated() v1.ResourceList {
 	return qi.CalculateInfo.Allocated.DeepCopy()
 }
 
-func (qi *QuotaInfo) addUsedNonNegativeNoLock(delta, deltaNonPreemptibleUsed v1.ResourceList, isSelfUsed bool) {
-	qi.CalculateInfo.Used = quotav1.Add(qi.CalculateInfo.Used, delta)
+func (qi *QuotaInfo) addUsedNonNegativeNoLock(delta, deltaNonPreemptibleUsed v1.ResourceList,
+	recursiveState *addUsedRecursiveState) {
+	usedBefore := qi.CalculateInfo.Used
+	qi.CalculateInfo.Used = quotav1.Add(usedBefore, delta)
 	qi.CalculateInfo.NonPreemptibleUsed = quotav1.Add(qi.CalculateInfo.NonPreemptibleUsed, deltaNonPreemptibleUsed)
 	for _, resName := range quotav1.IsNegative(qi.CalculateInfo.Used) {
 		qi.CalculateInfo.Used[resName] = createQuantity(0, resName)
@@ -286,7 +301,7 @@ func (qi *QuotaInfo) addUsedNonNegativeNoLock(delta, deltaNonPreemptibleUsed v1.
 		qi.CalculateInfo.NonPreemptibleUsed[resName] = createQuantity(0, resName)
 	}
 
-	if isSelfUsed {
+	if recursiveState.isSelfUsed {
 		qi.CalculateInfo.SelfUsed = quotav1.Add(qi.CalculateInfo.SelfUsed, delta)
 		for _, resName := range quotav1.IsNegative(qi.CalculateInfo.SelfUsed) {
 			qi.CalculateInfo.SelfUsed[resName] = createQuantity(0, resName)
@@ -295,6 +310,15 @@ func (qi *QuotaInfo) addUsedNonNegativeNoLock(delta, deltaNonPreemptibleUsed v1.
 		for _, resName := range quotav1.IsNegative(qi.CalculateInfo.SelfNonPreemptibleUsed) {
 			qi.CalculateInfo.SelfNonPreemptibleUsed[resName] = createQuantity(0, resName)
 		}
+		if recursiveState.minExcessEnabled && !quotav1.IsZero(delta) {
+			// calculate only for leaf quota
+			recursiveState.minExcessUsedDelta = CalculateMinExcessUsedDelta(
+				qi.CalculateInfo.Min, usedBefore, delta)
+		}
+	}
+	// update min-excess-used
+	if recursiveState.minExcessEnabled && !quotav1.IsZero(recursiveState.minExcessUsedDelta) {
+		qi.CalculateInfo.MinExcessUsed = quotav1.Add(qi.CalculateInfo.MinExcessUsed, recursiveState.minExcessUsedDelta)
 	}
 }
 
@@ -311,6 +335,10 @@ func (qi *QuotaInfo) setMaxQuotaNoLock(res v1.ResourceList) {
 
 func (qi *QuotaInfo) setMinQuotaNoLock(res v1.ResourceList) {
 	qi.CalculateInfo.Min = res.DeepCopy()
+}
+
+func (qi *QuotaInfo) setMinExcessNoLock(res v1.ResourceList) {
+	qi.CalculateInfo.MinExcess = res.DeepCopy()
 }
 
 func (qi *QuotaInfo) setAutoScaleMinQuotaNoLock(res v1.ResourceList) {
@@ -375,6 +403,18 @@ func (qi *QuotaInfo) GetSelfNonPreemptibleRequest() v1.ResourceList {
 	return qi.CalculateInfo.SelfNonPreemptibleRequest.DeepCopy()
 }
 
+func (qi *QuotaInfo) GetMinExcess() v1.ResourceList {
+	qi.lock.Lock()
+	defer qi.lock.Unlock()
+	return qi.CalculateInfo.MinExcess.DeepCopy()
+}
+
+func (qi *QuotaInfo) GetMinExcessUsed() v1.ResourceList {
+	qi.lock.Lock()
+	defer qi.lock.Unlock()
+	return qi.CalculateInfo.MinExcessUsed.DeepCopy()
+}
+
 func (qi *QuotaInfo) GetRuntime() v1.ResourceList {
 	qi.lock.Lock()
 	defer qi.lock.Unlock()
@@ -407,6 +447,8 @@ func NewQuotaInfoFromQuota(quota *v1alpha1.ElasticQuota) *QuotaInfo {
 	quotaInfo.setMaxQuotaNoLock(quota.Spec.Max)
 	newSharedWeight := extension.GetSharedWeight(quota)
 	quotaInfo.setSharedWeightNoLock(newSharedWeight)
+	minExcess, _ := extension.GetMinExcess(quota)
+	quotaInfo.setMinExcessNoLock(minExcess)
 
 	return quotaInfo
 }
@@ -428,6 +470,7 @@ func (qi *QuotaInfo) clearForResetNoLock() {
 	qi.CalculateInfo.SelfRequest = v1.ResourceList{}
 	qi.CalculateInfo.SelfNonPreemptibleUsed = v1.ResourceList{}
 	qi.CalculateInfo.SelfNonPreemptibleRequest = v1.ResourceList{}
+	qi.CalculateInfo.MinExcessUsed = v1.ResourceList{}
 	qi.RuntimeVersion = 0
 }
 
