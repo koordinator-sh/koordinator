@@ -26,6 +26,7 @@ import (
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/hooks"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/protocol"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 	rmconfig "github.com/koordinator-sh/koordinator/pkg/runtimeproxy/config"
 )
 
@@ -70,5 +71,30 @@ func (p *gpuPlugin) InjectContainerGPUEnv(proto protocol.HooksProtocol) error {
 		containerCtx.Response.AddContainerEnvs = make(map[string]string)
 	}
 	containerCtx.Response.AddContainerEnvs[GpuAllocEnv] = strings.Join(gpuIDs, ",")
+	if containerReq.PodAnnotations[ext.LabelGPUIsolationProvider] == string(ext.GPUIsolationProviderHAMICore) {
+		gpuResources := devices[0].Resources
+		gpuMemoryRatio, ok := gpuResources[ext.ResourceGPUMemoryRatio]
+		if !ok {
+			return fmt.Errorf("gpu memory ratio not found in gpu resource")
+		}
+		if gpuMemoryRatio.Value() < 100 {
+			gpuMemory, ok := gpuResources[ext.ResourceGPUMemory]
+			if !ok {
+				return fmt.Errorf("gpu memory not found in gpu resource")
+			}
+			containerCtx.Response.AddContainerEnvs["CUDA_DEVICE_MEMORY_LIMIT"] = fmt.Sprintf("%d", gpuMemory.Value())
+			gpuCore, ok := gpuResources[ext.ResourceGPUCore]
+			if ok {
+				containerCtx.Response.AddContainerEnvs["CUDA_DEVICE_SM_LIMIT"] = fmt.Sprintf("%d", gpuCore.Value())
+			}
+			containerCtx.Response.AddContainerEnvs["LD_PRELOAD"] = "/libvgpu.so"
+			containerCtx.Response.AddContainerMounts = append(containerCtx.Response.AddContainerMounts, &protocol.Mount{
+				Destination: "/libvgpu.so",
+				Type:        "bind",
+				Source:      system.Conf.HAMICoreLibraryPath,
+			})
+		}
+	}
+
 	return nil
 }

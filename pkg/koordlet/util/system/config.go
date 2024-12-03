@@ -44,11 +44,12 @@ type Config struct {
 	RunRootDir            string
 	RuntimeHooksConfigDir string
 
-	ContainerdEndPoint string
-	PouchEndpoint      string
-	DockerEndPoint     string
-	CrioEndPoint       string
-	DefaultRuntimeType string
+	ContainerdEndPoint  string
+	PouchEndpoint       string
+	DockerEndPoint      string
+	CrioEndPoint        string
+	DefaultRuntimeType  string
+	HAMICoreLibraryPath string
 }
 
 func init() {
@@ -86,6 +87,7 @@ func NewHostModeConfig() *Config {
 		RunRootDir:            "/run/",
 		RuntimeHooksConfigDir: "/etc/runtime/hookserver.d",
 		DefaultRuntimeType:    "containerd",
+		HAMICoreLibraryPath:   "/data/bin/libvgpu.so",
 	}
 }
 
@@ -101,6 +103,7 @@ func NewDsModeConfig() *Config {
 		RunRootDir:            "/host-run/",
 		RuntimeHooksConfigDir: "/host-etc-hookserver/",
 		DefaultRuntimeType:    "containerd",
+		HAMICoreLibraryPath:   "/data/bin/libvgpu.so",
 	}
 }
 
@@ -122,4 +125,5 @@ func (c *Config) InitFlags(fs *flag.FlagSet) {
 	fs.StringVar(&c.PouchEndpoint, "pouch-endpoint", c.PouchEndpoint, "pouch endPoint")
 
 	fs.StringVar(&c.DefaultRuntimeType, "default-runtime-type", c.DefaultRuntimeType, "default runtime type during runtime hooks handle request, candidates are containerd/docker/pouch.")
+	fs.StringVar(&c.HAMICoreLibraryPath, "hami-core-library-path", c.HAMICoreLibraryPath, "path of hami core library")
 }
