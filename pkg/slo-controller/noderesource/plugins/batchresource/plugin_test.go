@@ -3732,6 +3732,67 @@ func TestPluginCalculate(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name: "calculate with memory usage, including mid host application usage",
+			args: args{
+				strategy: &configuration.ColocationStrategy{
+					Enable:                        pointer.Bool(true),
+					CPUReclaimThresholdPercent:    pointer.Int64(65),
+					MemoryReclaimThresholdPercent: pointer.Int64(65),
+					DegradeTimeMinutes:            pointer.Int64(15),
+					UpdateTimeThresholdSeconds:    pointer.Int64(300),
+					ResourceDiffThreshold:         pointer.Float64(0.1),
+				},
+				node: &corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node1",
+					},
+					Status: makeNodeStat("100", "120G"),
+				},
+				resourceMetrics: &framework.ResourceMetrics{
+					NodeMetric: &slov1alpha1.NodeMetric{
+						Status: slov1alpha1.NodeMetricStatus{
+							UpdateTime: &metav1.Time{Time: time.Now()},
+							NodeMetric: &slov1alpha1.NodeMetricInfo{
+								NodeUsage: slov1alpha1.ResourceMap{
+									ResourceList: makeResourceList("50", "55G"),
+								},
+								SystemUsage: slov1alpha1.ResourceMap{
+									ResourceList: makeResourceList("4", "6G"),
+								},
+							},
+							PodsMetric: []*slov1alpha1.PodMetricInfo{
+								genPodMetric("test", "podA", "11", "11G"),
+								genPodMetric("test", "podB", "10", "10G"),
+								genPodMetric("test", "podC", "22", "22G"),
+							},
+							HostApplicationMetric: []*slov1alpha1.HostApplicationMetricInfo{
+								{
+									Name: "test-mid-host-application",
+									Usage: slov1alpha1.ResourceMap{
+										ResourceList: makeResourceList("3", "6G"),
+									},
+									Priority: extension.PriorityMid,
+								},
+							},
+						},
+					},
+				},
+			},
+			want: []framework.ResourceItem{
+				{
+					Name:     extension.BatchCPU,
+					Quantity: resource.NewQuantity(25000, resource.DecimalSI),
+					Message:  "batchAllocatable[CPU(Milli-Core)]:25000 = nodeCapacity:100000 - nodeSafetyMargin:35000 - systemUsageOrNodeReserved:7000 - podHPUsed:33000",
+				},
+				{
+					Name:     extension.BatchMemory,
+					Quantity: resource.NewScaledQuantity(33, 9),
+					Message:  "batchAllocatable[Mem(GB)]:33 = nodeCapacity:120 - nodeSafetyMargin:42 - systemUsage:12 - podHPUsed:33",
+				},
+			},
+			wantErr: false,
+		},
+		{
 			name: "calculate with memory usage, including batch host application usage",
 			args: args{
 				strategy: &configuration.ColocationStrategy{

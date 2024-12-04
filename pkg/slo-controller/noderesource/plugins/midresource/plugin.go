@@ -21,6 +21,7 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	"k8s.io/klog/v2"
 	"k8s.io/utils/clock"
@@ -126,9 +127,9 @@ func (p *Plugin) degradeCalculate(node *corev1.Node, message string) []framework
 	return p.Reset(node, message)
 }
 
-// Unallocated[Mid] = max(NodeAllocatable - Allocated[Prod], 0)
-func (p *Plugin) getUnallocated(node *corev1.Node, podList *corev1.PodList) corev1.ResourceList {
-	allocated := corev1.ResourceList{}
+// Unallocated[Mid] = max(NodeCapacity - NodeReserved - Allocated[Prod], 0)
+func (p *Plugin) getUnallocated(nodeName string, podList *corev1.PodList, nodeCapacity, nodeReserved corev1.ResourceList) corev1.ResourceList {
+	prodPodAllocated := corev1.ResourceList{}
 	for i := range podList.Items {
 		pod := &podList.Items[i]
 		priorityClass := extension.GetPodPriorityClassWithDefault(pod)
@@ -142,19 +143,27 @@ func (p *Plugin) getUnallocated(node *corev1.Node, podList *corev1.PodList) core
 			continue
 		}
 		podRequest := util.GetPodRequest(pod, corev1.ResourceCPU, corev1.ResourceMemory)
-		allocated = quotav1.Add(allocated, podRequest)
+		prodPodAllocated = quotav1.Add(prodPodAllocated, podRequest)
 	}
 
-	return quotav1.SubtractWithNonNegativeResult(node.Status.Allocatable, allocated)
+	midUnallocated := quotav1.Max(quotav1.Subtract(quotav1.Subtract(nodeCapacity, nodeReserved), prodPodAllocated), util.NewZeroResourceList())
+	cpuMsg := fmt.Sprintf("midUnallocatedCPU[core]:%v = max(nodeCapacity:%v - nodeReserved:%v - prodPodAllocated:%v, 0)",
+		midUnallocated.Cpu(), nodeCapacity.Cpu(), nodeReserved.Cpu(), prodPodAllocated.Cpu())
+	memMsg := fmt.Sprintf("midUnallocatedMem[GB]:%v = max(nodeCapacity:%v - nodeReserved:%v - prodPodAllocated:%v, 0)",
+		midUnallocated.Memory().ScaledValue(resource.Giga), nodeCapacity.Memory().ScaledValue(resource.Giga),
+		nodeReserved.Memory().ScaledValue(resource.Giga), prodPodAllocated.Memory().ScaledValue(resource.Giga))
+
+	klog.V(6).Infof("calculated mid unallocated for node %s, cpu(core) %v, memory(GB) %v", nodeName, cpuMsg, memMsg)
+	return midUnallocated
 }
 
 func (p *Plugin) calculate(strategy *configuration.ColocationStrategy, node *corev1.Node, podList *corev1.PodList,
 	resourceMetrics *framework.ResourceMetrics) []framework.ResourceItem {
 	// Allocatable[Mid]' := min(Reclaimable[Mid], NodeAllocatable * thresholdRatio) + Unallocated[Mid] * midUnallocatedRatio
-	// Unallocated[Mid] = max(NodeAllocatable - Allocated[Prod], 0)
+	// Unallocated[Mid] = max(NodeCapacity - NodeReserved - Allocated[Prod], 0)
 
-	var allocatableMilliCPU, allocatableMemory, prodReclaimableMilliCPU int64
-	var prodReclaimableMemory string = "0"
+	var allocatableMilliCPU, allocatableMemory int64
+	prodReclaimableCPU, prodReclaimableMemory := resource.NewQuantity(0, resource.DecimalSI), resource.NewQuantity(0, resource.BinarySI)
 	prodReclaimableMetic := resourceMetrics.NodeMetric.Status.ProdReclaimableMetric
 
 	if prodReclaimableMetic == nil || prodReclaimableMetic.Resource.ResourceList == nil {
@@ -163,18 +172,34 @@ func (p *Plugin) calculate(strategy *configuration.ColocationStrategy, node *cor
 		allocatableMemory = 0
 	} else {
 		prodReclaimable := resourceMetrics.NodeMetric.Status.ProdReclaimableMetric.Resource
-		allocatableMilliCPU = prodReclaimable.Cpu().MilliValue()
-		allocatableMemory = prodReclaimable.Memory().Value()
-		prodReclaimableMilliCPU = allocatableMilliCPU
-		prodReclaimableMemory = prodReclaimable.Memory().String()
+		prodReclaimableCPU = prodReclaimable.Cpu()
+		prodReclaimableMemory = prodReclaimable.Memory()
+		allocatableMilliCPU = prodReclaimableCPU.MilliValue()
+		allocatableMemory = prodReclaimableMemory.Value()
 	}
 
-	nodeAllocatable := node.Status.Allocatable
+	nodeMetric := resourceMetrics.NodeMetric
 
-	// TODO: consider SafetyMargin and NodeReserved
-	unallocated := p.getUnallocated(node, podList)
+	hostAppHPUsed := resutil.GetHostAppHPUsed(resourceMetrics, extension.PriorityMid)
 
-	cpuInMilliCores, memory, cpuMsg, memMsg := resutil.CalculateMidResourceByPolicy(strategy, nodeAllocatable, unallocated, allocatableMilliCPU, allocatableMemory, prodReclaimableMilliCPU, prodReclaimableMemory, node.Name)
+	nodeCapacity := resutil.GetNodeCapacity(node)
+
+	systemUsed := resutil.GetResourceListForCPUAndMemory(nodeMetric.Status.NodeMetric.SystemUsage.ResourceList)
+	// resource usage of host applications with prod priority will be count as host system usage since they consumes the
+	// node reserved resource.
+	systemUsed = quotav1.Add(systemUsed, hostAppHPUsed)
+
+	// System.Reserved = Node.Anno.Reserved, Node.Kubelet.Reserved)
+	nodeAnnoReserved := util.GetNodeReservationFromAnnotation(node.Annotations)
+	nodeKubeletReserved := util.GetNodeReservationFromKubelet(node)
+	// FIXME: resource reservation taking max is rather confusing.
+	nodeReserved := quotav1.Max(nodeKubeletReserved, nodeAnnoReserved)
+	nodeReserved = quotav1.Max(systemUsed, nodeReserved)
+
+	unallocated := p.getUnallocated(node.Name, podList, nodeCapacity, nodeReserved)
+
+	cpuInMilliCores, memory, cpuMsg, memMsg := resutil.CalculateMidResourceByPolicy(strategy, nodeCapacity,
+		unallocated, allocatableMilliCPU, allocatableMemory, prodReclaimableCPU, prodReclaimableMemory, node.Name)
 
 	metrics.RecordNodeExtendedResourceAllocatableInternal(node, string(extension.MidCPU), metrics.UnitInteger, float64(cpuInMilliCores.MilliValue())/1000)
 	metrics.RecordNodeExtendedResourceAllocatableInternal(node, string(extension.MidMemory), metrics.UnitByte, float64(memory.Value()))

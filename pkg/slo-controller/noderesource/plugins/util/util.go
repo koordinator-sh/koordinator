@@ -102,10 +102,11 @@ func CalculateBatchResourceByPolicy(strategy *configuration.ColocationStrategy, 
 	return batchAllocatable, cpuMsg, memMsg
 }
 
-func CalculateMidResourceByPolicy(strategy *configuration.ColocationStrategy, nodeAllocatable, unallocated corev1.ResourceList, allocatableMilliCPU, allocatableMemory, prodReclaimableMilliCPU int64, prodReclaimableMemory, nodeName string) (*resource.Quantity, *resource.Quantity, string, string) {
+func CalculateMidResourceByPolicy(strategy *configuration.ColocationStrategy, nodeCapacity, unallocated corev1.ResourceList, allocatableMilliCPU, allocatableMemory int64,
+	prodReclaimableCPU, prodReclaimableMemory *resource.Quantity, nodeName string) (*resource.Quantity, *resource.Quantity, string, string) {
 	defaultStrategy := sloconfig.DefaultColocationStrategy()
 	cpuThresholdRatio := getPercentFromStrategy(strategy, &defaultStrategy, MidCPUThreshold)
-	if maxMilliCPU := float64(nodeAllocatable.Cpu().MilliValue()) * cpuThresholdRatio; allocatableMilliCPU > int64(maxMilliCPU) {
+	if maxMilliCPU := float64(nodeCapacity.Cpu().MilliValue()) * cpuThresholdRatio; allocatableMilliCPU > int64(maxMilliCPU) {
 		allocatableMilliCPU = int64(maxMilliCPU)
 	}
 	if allocatableMilliCPU < 0 {
@@ -116,7 +117,7 @@ func CalculateMidResourceByPolicy(strategy *configuration.ColocationStrategy, no
 	cpuInMilliCores := resource.NewQuantity(allocatableMilliCPU, resource.DecimalSI)
 
 	memThresholdRatio := getPercentFromStrategy(strategy, &defaultStrategy, MidMemoryThreshold)
-	if maxMemory := float64(nodeAllocatable.Memory().Value()) * memThresholdRatio; allocatableMemory > int64(maxMemory) {
+	if maxMemory := float64(nodeCapacity.Memory().Value()) * memThresholdRatio; allocatableMemory > int64(maxMemory) {
 		allocatableMemory = int64(maxMemory)
 	}
 	if allocatableMemory < 0 {
@@ -135,11 +136,15 @@ func CalculateMidResourceByPolicy(strategy *configuration.ColocationStrategy, no
 	cpuInMilliCores.Add(*adjustedUnallocatedMilliCPU)
 	memory.Add(*adjustedUnallocatedMemory)
 
-	cpuMsg := fmt.Sprintf("midAllocatable[CPU(milli-core)]:%v = min(nodeAllocatable:%v * thresholdRatio:%v, ProdReclaimable:%v) + Unallocated:%v * midUnallocatedRatio:%v",
-		cpuInMilliCores.Value(), nodeAllocatable.Cpu().MilliValue(), cpuThresholdRatio, prodReclaimableMilliCPU, unallocatedMilliCPU.Value(), midUnallocatedRatio)
+	cpuMsg := fmt.Sprintf("midAllocatable[CPU(milli-core)]:%v = min(nodeCapacity:%v * thresholdRatio:%v, ProdReclaimable:%v) + Unallocated:%v * midUnallocatedRatio:%v",
+		cpuInMilliCores.Value(), nodeCapacity.Cpu().MilliValue(),
+		cpuThresholdRatio, prodReclaimableCPU.MilliValue(),
+		unallocatedMilliCPU.Value(), midUnallocatedRatio)
 
-	memMsg := fmt.Sprintf("midAllocatable[Memory(byte)]:%s = min(nodeAllocatable:%s * thresholdRatio:%v, ProdReclaimable:%s) + Unallocated:%v * midUnallocatedRatio:%v",
-		memory.String(), nodeAllocatable.Memory().String(), memThresholdRatio, prodReclaimableMemory, unallocatedMemory.String(), midUnallocatedRatio)
+	memMsg := fmt.Sprintf("midAllocatable[Memory(GB)]:%v = min(nodeCapacity:%v * thresholdRatio:%v, ProdReclaimable:%v) + Unallocated:%v * midUnallocatedRatio:%v",
+		memory.ScaledValue(resource.Giga), nodeCapacity.Memory().ScaledValue(resource.Giga),
+		memThresholdRatio, prodReclaimableMemory.ScaledValue(resource.Giga),
+		unallocatedMemory.ScaledValue(resource.Giga), midUnallocatedRatio)
 
 	return cpuInMilliCores, memory, cpuMsg, memMsg
 }
@@ -181,11 +186,11 @@ func GetPodMetricUsage(info *slov1alpha1.PodMetricInfo) corev1.ResourceList {
 	return GetResourceListForCPUAndMemory(info.PodUsage.ResourceList)
 }
 
-func GetHostAppHPUsed(resourceMetrics *framework.ResourceMetrics) corev1.ResourceList {
+func GetHostAppHPUsed(resourceMetrics *framework.ResourceMetrics, resPriority extension.PriorityClass) corev1.ResourceList {
 	hostAppHPUsed := util.NewZeroResourceList()
 	for _, hostAppMetric := range resourceMetrics.NodeMetric.Status.HostApplicationMetric {
-		if hostAppMetric.Priority == extension.PriorityBatch || hostAppMetric.Priority == extension.PriorityFree {
-			// only consider higher priority usage for batch allocatable
+		if extension.GetDefaultPriorityByPriorityClass(hostAppMetric.Priority) <= extension.GetDefaultPriorityByPriorityClass(resPriority) {
+			// consider higher priority usage for mid or batch allocatable
 			// now only support product and batch(hadoop-yarn) priority for host application
 			continue
 		}
