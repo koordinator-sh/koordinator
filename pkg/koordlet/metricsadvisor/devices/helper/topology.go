@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package gpu
+package helper
 
 import (
 	"bytes"
@@ -23,7 +23,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"strconv"
-	"strings"
 
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 )
@@ -32,14 +31,7 @@ var (
 	pcieRegexp = regexp.MustCompile(`pci\d{4}:[0-9a-fA-F]{2}`)
 )
 
-func parseGPUPCIInfo(busIdLegacy [16]int8) (int32, string, string, error) {
-	busIDBuilder := &strings.Builder{}
-	for _, v := range busIdLegacy {
-		if v != 0 {
-			busIDBuilder.WriteByte(byte(v))
-		}
-	}
-	busID := strings.ToLower(busIDBuilder.String())
+func ParsePCIInfo(busID string) (int32, string, string, error) {
 	nodeID, err := getNUMANodeID(busID)
 	if err != nil {
 		return 0, "", "", fmt.Errorf("failed to parse NUMA Node ID, err: %w", err)

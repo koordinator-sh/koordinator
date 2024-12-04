@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -30,6 +31,7 @@ import (
 
 	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor/devices/helper"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util"
 )
 
@@ -121,7 +123,14 @@ func (g *gpuDeviceManager) initGPUData() error {
 		if ret != nvml.SUCCESS {
 			return fmt.Errorf("unable to get pci info: %v", nvml.ErrorString(ret))
 		}
-		nodeID, pcie, busID, err := parseGPUPCIInfo(pciInfo.BusIdLegacy)
+		busIDBuilder := &strings.Builder{}
+		for _, v := range pciInfo.BusIdLegacy {
+			if v != 0 {
+				busIDBuilder.WriteByte(byte(v))
+			}
+		}
+		busID := strings.ToLower(busIDBuilder.String())
+		nodeID, pcie, busID, err := helper.ParsePCIInfo(busID)
 		if err != nil {
 			return err
 		}
