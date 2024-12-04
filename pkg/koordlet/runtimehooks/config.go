@@ -32,6 +32,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/hooks/cpuset"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/hooks/gpu"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/hooks/groupidentity"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/hooks/rdma"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/hooks/resctrl"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/hooks/tc"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/hooks/terwayqos"
@@ -59,6 +60,12 @@ const (
 	// alpha: v0.3
 	// beta: v1.1
 	GPUEnvInject featuregate.Feature = "GPUEnvInject"
+
+	// RDMADeviceInject injects rdma device info according to allocate result from koord-scheduler.
+	//
+	// owner: @ZiMengSheng
+	// alpha: v1.6
+	RDMADeviceInject featuregate.Feature = "RDMADeviceInject"
 
 	// BatchResource sets request and limits of cpu and memory on cgroup file according batch resources.
 	//
@@ -101,6 +108,7 @@ var (
 		GroupIdentity:    {Default: true, PreRelease: featuregate.Beta},
 		CPUSetAllocator:  {Default: true, PreRelease: featuregate.Beta},
 		GPUEnvInject:     {Default: false, PreRelease: featuregate.Alpha},
+		RDMADeviceInject: {Default: false, PreRelease: featuregate.Alpha},
 		BatchResource:    {Default: true, PreRelease: featuregate.Beta},
 		CPUNormalization: {Default: false, PreRelease: featuregate.Alpha},
 		CoreSched:        {Default: false, PreRelease: featuregate.Alpha},
@@ -113,6 +121,7 @@ var (
 		GroupIdentity:    groupidentity.Object(),
 		CPUSetAllocator:  cpuset.Object(),
 		GPUEnvInject:     gpu.Object(),
+		RDMADeviceInject: rdma.Object(),
 		BatchResource:    batchresource.Object(),
 		CPUNormalization: cpunormalization.Object(),
 		CoreSched:        coresched.Object(),

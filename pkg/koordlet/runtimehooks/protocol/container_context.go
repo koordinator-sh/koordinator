@@ -181,8 +181,17 @@ func (c *ContainerRequest) FromReconciler(podMeta *statesinformer.PodMeta, conta
 }
 
 type ContainerResponse struct {
-	Resources        Resources
-	AddContainerEnvs map[string]string
+	Resources           Resources
+	AddContainerEnvs    map[string]string
+	AddContainerDevices []*LinuxDevice
+}
+
+type LinuxDevice struct {
+	Path          string
+	Type          string
+	Major         int64
+	Minor         int64
+	FileModeValue uint32
 }
 
 func (c *ContainerResponse) ProxyDone(resp *runtimeapi.ContainerResourceHookResponse) {
@@ -277,6 +286,21 @@ func (c *ContainerContext) NriDone(executor resourceexecutor.ResourceUpdateExecu
 		for k, v := range c.Response.AddContainerEnvs {
 			adjust.AddEnv(k, v)
 		}
+	}
+
+	if len(c.Response.AddContainerDevices) != 0 {
+		for i := range c.Response.AddContainerDevices {
+			adjust.AddDevice(&api.LinuxDevice{
+				Path:  c.Response.AddContainerDevices[i].Path,
+				Type:  c.Response.AddContainerDevices[i].Type,
+				Major: c.Response.AddContainerDevices[i].Major,
+				Minor: c.Response.AddContainerDevices[i].Minor,
+				FileMode: &api.OptionalFileMode{
+					Value: c.Response.AddContainerDevices[i].FileModeValue,
+				},
+			})
+		}
+
 	}
 
 	c.Update()
