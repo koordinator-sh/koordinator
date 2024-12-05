@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package gpu
+package helper
 
 import (
 	"fmt"
@@ -74,7 +74,7 @@ func Test_parseGPUPCIInfo(t *testing.T) {
 			for i, v := range tt.busID {
 				busIdLegacy[i] = int8(v)
 			}
-			nodeID, pcie, busID, err := parseGPUPCIInfo(busIdLegacy)
+			nodeID, pcie, busID, err := ParsePCIInfo(tt.busID)
 			if (err != nil) && !tt.wantErr {
 				t.Errorf("expect wantErr=%v but got err=%v", tt.wantErr, err)
 				return

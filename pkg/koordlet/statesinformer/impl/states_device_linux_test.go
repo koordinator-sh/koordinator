@@ -51,6 +51,7 @@ func Test_reportGPUDevice(t *testing.T) {
 		{UUID: "3", Minor: 3, MemoryTotal: 8000, BusID: "0000:00:08.0", NodeID: 0, PCIE: "pci0000:00"},
 	}
 	mockMetricCache.EXPECT().Get(koordletutil.GPUDeviceType).Return(gpuDeviceInfo, true)
+	mockMetricCache.EXPECT().Get(koordletutil.RDMADeviceType).Return(nil, false)
 	r := &statesInformer{
 		deviceClient: fakeClient,
 		metricsCache: mockMetricCache,
@@ -116,8 +117,19 @@ func Test_reportGPUDevice(t *testing.T) {
 		Minor:       4,
 		MemoryTotal: 10000,
 	})
-
+	rdmaDeviceInfo := koordletutil.RDMADevices{
+		{
+			BusID:      "0000:00:09.0",
+			DeviceCode: "0000",
+			ID:         "0000:00:09.0",
+			Labels:     map[string]string{"label1": "value1"},
+			Minor:      0,
+			NetDev:     "ib0",
+			NodeID:     0,
+		},
+	}
 	mockMetricCache.EXPECT().Get(koordletutil.GPUDeviceType).Return(gpuDeviceInfo, true)
+	mockMetricCache.EXPECT().Get(koordletutil.RDMADeviceType).Return(rdmaDeviceInfo, true)
 	r.reportDevice()
 
 	expectedDevices = append(expectedDevices, schedulingv1alpha1.DeviceInfo{
@@ -129,6 +141,21 @@ func Test_reportGPUDevice(t *testing.T) {
 			extension.ResourceGPUCore:        *resource.NewQuantity(100, resource.DecimalSI),
 			extension.ResourceGPUMemory:      *resource.NewQuantity(10000, resource.BinarySI),
 			extension.ResourceGPUMemoryRatio: *resource.NewQuantity(100, resource.DecimalSI),
+		},
+	})
+	expectedDevices = append(expectedDevices, schedulingv1alpha1.DeviceInfo{
+		UUID:   "0000:00:09.0",
+		Minor:  pointer.Int32(0),
+		Type:   schedulingv1alpha1.RDMA,
+		Health: true,
+		Resources: map[corev1.ResourceName]resource.Quantity{
+			extension.ResourceRDMA: *resource.NewQuantity(100, resource.DecimalSI),
+		},
+		Topology: &schedulingv1alpha1.DeviceTopology{
+			SocketID: -1,
+			NodeID:   0,
+			PCIEID:   "",
+			BusID:    "0000:00:09.0",
 		},
 	})
 	device, err = fakeClient.Get(context.TODO(), "test", metav1.GetOptions{})
