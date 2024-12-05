@@ -64,7 +64,7 @@ var globalCgroupReconcilers = struct {
 
 type cgroupReconciler struct {
 	cgroupFile  system.Resource
-	description string
+	description map[string]string
 	level       ReconcilerLevel
 	filter      Filter
 	fn          map[string]reconcileFunc
@@ -202,19 +202,20 @@ func RegisterCgroupReconciler4AllPods(level ReconcilerLevel, cgroupFile system.R
 			continue
 		}
 
-		// if reconciler exist
-		if r.filter.Name() != filter.Name() {
-			klog.Fatalf("%v of level %v is already registered with filter %v by %v, cannot change to %v by %v",
-				cgroupFile.ResourceType(), level, r.filter.Name(), r.description, filter.Name(), description)
-		}
-
 		for _, condition := range conditions {
+			// if reconciler exist
+			if r.filter.Name() != filter.Name() {
+				klog.Fatalf("%v of level %v is already registered with filter %v by %v, cannot change to %v by %v",
+					cgroupFile.ResourceType(), level, r.filter.Name(), r.description[condition], filter.Name(), description)
+			}
+
 			if _, ok := r.fn[condition]; ok {
 				klog.Fatalf("%v of level %v is already registered with condition %v by %v, cannot change by %v",
-					cgroupFile.ResourceType(), level, condition, r.description, description)
+					cgroupFile.ResourceType(), level, condition, r.description[condition], description)
 			}
 
 			r.fn4AllPods[condition] = fn
+			r.description[condition] = description
 		}
 		klog.V(1).Infof("register reconcile function %v finished, info: level=%v, resourceType=%v, add conditions=%v",
 			description, level, cgroupFile.ResourceType(), conditions)
@@ -224,7 +225,7 @@ func RegisterCgroupReconciler4AllPods(level ReconcilerLevel, cgroupFile system.R
 	// if reconciler not exist
 	r := &cgroupReconciler{
 		cgroupFile:  cgroupFile,
-		description: description,
+		description: map[string]string{},
 		level:       level,
 		fn:          map[string]reconcileFunc{},
 		fn4AllPods:  map[string]reconcileFunc4AllPods{},
@@ -263,19 +264,20 @@ func RegisterCgroupReconciler(level ReconcilerLevel, cgroupFile system.Resource,
 			continue
 		}
 
-		// if reconciler exist
-		if r.filter.Name() != filter.Name() {
-			klog.Fatalf("%v of level %v is already registered with filter %v by %v, cannot change to %v by %v",
-				cgroupFile.ResourceType(), level, r.filter.Name(), r.description, filter.Name(), description)
-		}
-
 		for _, condition := range conditions {
+			// if reconciler exist
+			if r.filter.Name() != filter.Name() {
+				klog.Fatalf("%v of level %v is already registered with filter %v by %v, cannot change to %v by %v",
+					cgroupFile.ResourceType(), level, r.filter.Name(), r.description[condition], filter.Name(), description)
+			}
+
 			if _, ok := r.fn[condition]; ok {
 				klog.Fatalf("%v of level %v is already registered with condition %v by %v, cannot change by %v",
-					cgroupFile.ResourceType(), level, condition, r.description, description)
+					cgroupFile.ResourceType(), level, condition, r.description[condition], description)
 			}
 
 			r.fn[condition] = fn
+			r.description[condition] = description
 		}
 		klog.V(1).Infof("register reconcile function %v finished, info: level=%v, resourceType=%v, add conditions=%v",
 			description, level, cgroupFile.ResourceType(), conditions)
@@ -285,7 +287,7 @@ func RegisterCgroupReconciler(level ReconcilerLevel, cgroupFile system.Resource,
 	// if reconciler not exist
 	r := &cgroupReconciler{
 		cgroupFile:  cgroupFile,
-		description: description,
+		description: map[string]string{},
 		level:       level,
 		fn:          map[string]reconcileFunc{},
 		fn4AllPods:  map[string]reconcileFunc4AllPods{},
@@ -296,23 +298,27 @@ func RegisterCgroupReconciler(level ReconcilerLevel, cgroupFile system.Resource,
 	case KubeQOSLevel:
 		r.filter = NoneFilter()
 		r.fn[NoneFilterCondition] = fn
+		r.description[NoneFilterCondition] = description
 		globalCgroupReconcilers.kubeQOSLevel[string(r.cgroupFile.ResourceType())] = r
 	case PodLevel:
 		r.filter = filter
 		for _, condition := range conditions {
 			r.fn[condition] = fn
+			r.description[condition] = description
 		}
 		globalCgroupReconcilers.podLevel[string(r.cgroupFile.ResourceType())] = r
 	case ContainerLevel:
 		r.filter = filter
 		for _, condition := range conditions {
 			r.fn[condition] = fn
+			r.description[condition] = description
 		}
 		globalCgroupReconcilers.containerLevel[string(r.cgroupFile.ResourceType())] = r
 	case SandboxLevel:
 		r.filter = filter
 		for _, condition := range conditions {
 			r.fn[condition] = fn
+			r.description[condition] = description
 		}
 		globalCgroupReconcilers.sandboxContainerLevel[string(r.cgroupFile.ResourceType())] = r
 	default:
@@ -406,19 +412,19 @@ func doKubeQOSCgroup(e resourceexecutor.ResourceUpdateExecutor) {
 			reconcileFn, ok := r.fn[NoneFilterCondition]
 			if !ok { // all kube qos reconcilers should register in this condition
 				klog.Warningf("calling reconcile function %v failed, error condition %s not registered",
-					r.description, NoneFilterCondition)
+					r.description[NoneFilterCondition], NoneFilterCondition)
 				continue
 			}
 			start := time.Now()
 			if err := reconcileFn(kubeQOSCtx); err != nil {
 				metrics.RecordRuntimeHookReconcilerInvokedDurationMilliSeconds(string(KubeQOSLevel), resourceType, err, metrics.SinceInSeconds(start))
 				klog.Warningf("calling reconcile function %v for kube qos %v failed, error %v",
-					r.description, kubeQOS, err)
+					r.description[NoneFilterCondition], kubeQOS, err)
 			} else {
 				kubeQOSCtx.ReconcilerDone(e)
 				metrics.RecordRuntimeHookReconcilerInvokedDurationMilliSeconds(string(KubeQOSLevel), resourceType, nil, metrics.SinceInSeconds(start))
 				klog.V(5).Infof("calling reconcile function %v for kube qos %v finish",
-					r.description, kubeQOS)
+					r.description[NoneFilterCondition], kubeQOS)
 			}
 		}
 	}
@@ -433,10 +439,11 @@ func (c *reconciler) reconcilePodCgroup(stopCh <-chan struct{}) {
 			podsMeta := c.getPodsMeta()
 			for _, podMeta := range podsMeta {
 				for resourceType, r := range globalCgroupReconcilers.podLevel {
-					reconcileFn, ok := r.fn[r.filter.Filter(podMeta)]
+					condition := r.filter.Filter(podMeta)
+					reconcileFn, ok := r.fn[condition]
 					if !ok {
 						klog.V(5).Infof("calling reconcile function %v aborted for pod %v, condition %s not registered",
-							r.description, podMeta.Key(), r.filter.Filter(podMeta))
+							r.description[condition], podMeta.Key(), condition)
 						continue
 					}
 
@@ -445,21 +452,22 @@ func (c *reconciler) reconcilePodCgroup(stopCh <-chan struct{}) {
 					if err := reconcileFn(podCtx); err != nil {
 						metrics.RecordRuntimeHookReconcilerInvokedDurationMilliSeconds(string(PodLevel), resourceType, err, metrics.SinceInSeconds(start))
 						klog.Warningf("calling reconcile function %v for pod %v failed, error %v",
-							r.description, podMeta.Key(), err)
+							r.description[condition], podMeta.Key(), err)
 					} else {
 						podCtx.ReconcilerDone(c.executor)
 						metrics.RecordRuntimeHookReconcilerInvokedDurationMilliSeconds(string(PodLevel), resourceType, nil, metrics.SinceInSeconds(start))
 						klog.V(5).Infof("calling reconcile function %v for pod %v finished",
-							r.description, podMeta.Key())
+							r.description[condition], podMeta.Key())
 					}
 					podCtx.RecordEvent(c.eventRecorder, podMeta.Pod)
 				}
 
 				for resourceType, r := range globalCgroupReconcilers.sandboxContainerLevel {
-					reconcileFn, ok := r.fn[r.filter.Filter(podMeta)]
+					condition := r.filter.Filter(podMeta)
+					reconcileFn, ok := r.fn[condition]
 					if !ok {
 						klog.V(5).Infof("calling reconcile function %v aborted for pod %v, condition %s not registered",
-							r.description, podMeta.Key(), r.filter.Filter(podMeta))
+							r.description[condition], podMeta.Key(), condition)
 						continue
 					}
 					sandboxContainerCtx := protocol.HooksProtocolBuilder.Sandbox(podMeta)
@@ -467,21 +475,22 @@ func (c *reconciler) reconcilePodCgroup(stopCh <-chan struct{}) {
 					if err := reconcileFn(sandboxContainerCtx); err != nil {
 						metrics.RecordRuntimeHookReconcilerInvokedDurationMilliSeconds(string(SandboxLevel), resourceType, err, metrics.SinceInSeconds(start))
 						klog.Warningf("calling reconcile function %v failed for sandbox %v, error %v",
-							r.description, podMeta.Key(), err)
+							r.description[condition], podMeta.Key(), err)
 					} else {
 						sandboxContainerCtx.ReconcilerDone(c.executor)
 						metrics.RecordRuntimeHookReconcilerInvokedDurationMilliSeconds(string(SandboxLevel), resourceType, nil, metrics.SinceInSeconds(start))
 						klog.V(5).Infof("calling reconcile function %v for pod sandbox %v finished",
-							r.description, podMeta.Key())
+							r.description[condition], podMeta.Key())
 					}
 				}
 
 				for _, containerStat := range podMeta.Pod.Status.ContainerStatuses {
 					for resourceType, r := range globalCgroupReconcilers.containerLevel {
-						reconcileFn, ok := r.fn[r.filter.Filter(podMeta)]
+						condition := r.filter.Filter(podMeta)
+						reconcileFn, ok := r.fn[condition]
 						if !ok {
 							klog.V(5).Infof("calling reconcile function %v aborted for container %v/%v, condition %s not registered",
-								r.description, podMeta.Key(), containerStat.Name, r.filter.Filter(podMeta))
+								r.description[condition], podMeta.Key(), containerStat.Name, condition)
 							continue
 						}
 
@@ -490,12 +499,12 @@ func (c *reconciler) reconcilePodCgroup(stopCh <-chan struct{}) {
 						if err := reconcileFn(containerCtx); err != nil {
 							metrics.RecordRuntimeHookReconcilerInvokedDurationMilliSeconds(string(ContainerLevel), resourceType, err, metrics.SinceInSeconds(start))
 							klog.Warningf("calling reconcile function %v for container %v/%v failed, error %v",
-								r.description, podMeta.Key(), containerStat.Name, err)
+								r.description[condition], podMeta.Key(), containerStat.Name, err)
 						} else {
 							containerCtx.ReconcilerDone(c.executor)
 							metrics.RecordRuntimeHookReconcilerInvokedDurationMilliSeconds(string(ContainerLevel), resourceType, nil, metrics.SinceInSeconds(start))
 							klog.V(5).Infof("calling reconcile function %v for container %v/%v finish",
-								r.description, podMeta.Key(), containerStat.Name)
+								r.description[condition], podMeta.Key(), containerStat.Name)
 						}
 					}
 				}
@@ -512,13 +521,13 @@ func (c *reconciler) reconcilePodCgroup(stopCh <-chan struct{}) {
 					reconcileFn, ok := r.fn4AllPods[r.filter.Name()]
 					if !ok {
 						klog.V(5).Infof("calling reconcile function %v aborted, condition %s not registered",
-							r.description, r.filter.Name())
+							r.description[r.filter.Name()], r.filter.Name())
 						continue
 					}
 
 					if err := reconcileFn(currentPods); err != nil {
 						klog.Warningf("calling reconcile function %v for pod %v failed, error %v",
-							r.description, err)
+							r.description[r.filter.Name()], err)
 					}
 				}
 			}
@@ -538,14 +547,14 @@ func (c *reconciler) reconcilePodCgroup(stopCh <-chan struct{}) {
 				if len(currentPods) > 0 {
 					if len(fns) == 0 {
 						klog.V(5).Infof("calling reconcile function %v aborted, condition %s not registered",
-							r.description, r.filter.Name())
+							r.description[r.filter.Name()], r.filter.Name())
 						continue
 					}
 
 					for k, fn := range fns {
 						if err := fn(currentPods); err != nil {
 							klog.Warningf("calling reconcile function %v for pod %v failed, error %v, condition %s",
-								r.description, err, k)
+								r.description[r.filter.Name()], err, k)
 						}
 					}
 				}
