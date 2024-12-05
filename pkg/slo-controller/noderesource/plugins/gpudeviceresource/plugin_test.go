@@ -602,6 +602,14 @@ func TestPluginCalculate(t *testing.T) {
 			},
 		},
 	}
+	deviceMissingGPU := &schedulingv1alpha1.Device{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: testNode.Name,
+		},
+		Spec: schedulingv1alpha1.DeviceSpec{
+			Devices: []schedulingv1alpha1.DeviceInfo{},
+		},
+	}
 	type fields struct {
 		client ctrlclient.Client
 	}
@@ -805,6 +813,43 @@ func TestPluginCalculate(t *testing.T) {
 			name: "calculate resetting device resources",
 			fields: fields{
 				client: fake.NewClientBuilder().WithScheme(testScheme).WithObjects(testNode).Build(),
+			},
+			args: args{
+				node: testNode,
+			},
+			want: []framework.ResourceItem{
+				{
+					Name:    extension.ResourceGPU,
+					Reset:   true,
+					Message: ResetResourcesMsg,
+				},
+				{
+					Name:    extension.ResourceGPUCore,
+					Reset:   true,
+					Message: ResetResourcesMsg,
+				},
+				{
+					Name:    extension.ResourceGPUMemory,
+					Reset:   true,
+					Message: ResetResourcesMsg,
+				},
+				{
+					Name:    extension.ResourceGPUMemoryRatio,
+					Reset:   true,
+					Message: ResetResourcesMsg,
+				},
+				{
+					Name:    extension.ResourceGPUShared,
+					Reset:   true,
+					Message: ResetResourcesMsg,
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "calculate resetting device resources",
+			fields: fields{
+				client: fake.NewClientBuilder().WithScheme(testScheme).WithObjects(testNode, deviceMissingGPU).Build(),
 			},
 			args: args{
 				node: testNode,
