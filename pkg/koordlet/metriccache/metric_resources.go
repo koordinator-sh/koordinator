@@ -72,4 +72,7 @@ var (
 	HostAppCPUUsageMetric                 = defaultMetricFactory.New(HostAppCPUUsage).withPropertySchema(MetricPropertyHostAppName)
 	HostAppMemoryUsageMetric              = defaultMetricFactory.New(HostAppMemoryUsage).withPropertySchema(MetricPropertyHostAppName)
 	HostAppMemoryUsageWithPageCacheMetric = defaultMetricFactory.New(HostAppMemoryWithPageCacheUsage).withPropertySchema(MetricPropertyHostAppName)
+
+	// Resctrl
+	QosResctrl = defaultMetricFactory.New(ResctrlQos).withPropertySchema(MetricPropertyNodeQos, MetricPropertyResctrlType, MetricPropertyResctrlCacheId, MetricPropertyResctrlMbType)
 )

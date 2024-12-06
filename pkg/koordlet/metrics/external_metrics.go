@@ -35,4 +35,5 @@ func init() {
 	ExternalMustRegister(ResourceSummaryCollectors...)
 	ExternalMustRegister(CPICollectors...)
 	ExternalMustRegister(PSICollectors...)
+	ExternalMustRegister(ResctrlCollectors...)
 }
