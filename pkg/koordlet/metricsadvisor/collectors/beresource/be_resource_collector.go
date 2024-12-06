@@ -27,6 +27,7 @@ import (
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor/framework"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
@@ -107,7 +108,7 @@ func (b *beResourceCollector) collectBECPUResourceMetric() {
 		klog.Errorf("failed to collect node BECPU, beLimitGenerateSampleErr: %v, beRequestGenerateSampleErr: %v, beUsageGenerateSampleErr: %v", err01, err02, err03)
 		return
 	}
-
+	metrics.RecordBESuppressBEUsedCPU(float64(beCPUUsageMilliCores) / 1000)
 	beMetrics := make([]metriccache.MetricSample, 0)
 	beMetrics = append(beMetrics, beLimit, beRequest, beUsage)
 

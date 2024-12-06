@@ -159,6 +159,7 @@ func (n *nodeResourceCollector) collectNodeResUsed() {
 	// update collect time
 	n.started.Store(true)
 	metrics.RecordNodeUsedCPU(cpuUsageValue) // in cpu cores
+	metrics.RecordNodeUsedMemory(memUsageValue)
 
 	klog.V(4).Infof("collectNodeResUsed finished, count %v, cpu[%v], mem[%v]",
 		len(nodeMetrics), cpuUsageValue, memUsageValue)
