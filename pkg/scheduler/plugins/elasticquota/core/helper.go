@@ -18,6 +18,7 @@ package core
 
 import (
 	corev1 "k8s.io/api/core/v1"
+	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	k8sfeature "k8s.io/apiserver/pkg/util/feature"
 	apiresource "k8s.io/kubernetes/pkg/api/v1/resource"
 
@@ -31,4 +32,12 @@ func PodRequests(pod *corev1.Pod) (reqs corev1.ResourceList) {
 		})
 	}
 	return apiresource.PodRequests(pod, apiresource.PodResourcesOptions{})
+}
+
+func CalculateMinExcessUsedDelta(min, used, delta corev1.ResourceList) (minExcessUsedDelta corev1.ResourceList) {
+	minResourceNames := quotav1.ResourceNames(min)
+	minExcessUsed := quotav1.SubtractWithNonNegativeResult(quotav1.Mask(used, minResourceNames), min)
+	newUsed := quotav1.Add(quotav1.Mask(used, minResourceNames), quotav1.Mask(delta, minResourceNames))
+	newMinExcessUsed := quotav1.SubtractWithNonNegativeResult(quotav1.Mask(newUsed, minResourceNames), min)
+	return quotav1.Subtract(newMinExcessUsed, minExcessUsed)
 }
