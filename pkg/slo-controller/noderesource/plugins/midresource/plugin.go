@@ -159,14 +159,14 @@ func (p *Plugin) getUnallocated(nodeName string, podList *corev1.PodList, nodeCa
 
 func (p *Plugin) calculate(strategy *configuration.ColocationStrategy, node *corev1.Node, podList *corev1.PodList,
 	resourceMetrics *framework.ResourceMetrics) []framework.ResourceItem {
-	// Allocatable[Mid]' := min(Reclaimable[Mid], NodeAllocatable * thresholdRatio) + Unallocated[Mid] * midUnallocatedRatio
+	// Allocatable[Mid]' := min(Reclaimable[Mid], NodeAllocatable * thresholdRatio, FreeResourceOnNode) + Unallocated[Mid] * midUnallocatedRatio
 	// Unallocated[Mid] = max(NodeCapacity - NodeReserved - Allocated[Prod], 0)
 
 	var allocatableMilliCPU, allocatableMemory int64
 	prodReclaimableCPU, prodReclaimableMemory := resource.NewQuantity(0, resource.DecimalSI), resource.NewQuantity(0, resource.BinarySI)
-	prodReclaimableMetic := resourceMetrics.NodeMetric.Status.ProdReclaimableMetric
+	prodReclaimableMetric := resourceMetrics.NodeMetric.Status.ProdReclaimableMetric
 
-	if prodReclaimableMetic == nil || prodReclaimableMetic.Resource.ResourceList == nil {
+	if prodReclaimableMetric == nil || prodReclaimableMetric.Resource.ResourceList == nil {
 		klog.V(4).Infof("no valid prod reclaimable, so use default zero value")
 		allocatableMilliCPU = 0
 		allocatableMemory = 0
@@ -185,7 +185,7 @@ func (p *Plugin) calculate(strategy *configuration.ColocationStrategy, node *cor
 	nodeCapacity := resutil.GetNodeCapacity(node)
 
 	systemUsed := resutil.GetResourceListForCPUAndMemory(nodeMetric.Status.NodeMetric.SystemUsage.ResourceList)
-	// resource usage of host applications with prod priority will be count as host system usage since they consumes the
+	// resource usage of host applications with prod priority will be count as host system usage since they consume the
 	// node reserved resource.
 	systemUsed = quotav1.Add(systemUsed, hostAppHPUsed)
 
@@ -198,8 +198,9 @@ func (p *Plugin) calculate(strategy *configuration.ColocationStrategy, node *cor
 
 	unallocated := p.getUnallocated(node.Name, podList, nodeCapacity, nodeReserved)
 
+	freeOnNode := getFreePhysicalResourceOnNode(node, resourceMetrics.NodeMetric)
 	cpuInMilliCores, memory, cpuMsg, memMsg := resutil.CalculateMidResourceByPolicy(strategy, nodeCapacity,
-		unallocated, allocatableMilliCPU, allocatableMemory, prodReclaimableCPU, prodReclaimableMemory, node.Name)
+		unallocated, allocatableMilliCPU, allocatableMemory, prodReclaimableCPU, prodReclaimableMemory, freeOnNode, node.Name)
 
 	metrics.RecordNodeExtendedResourceAllocatableInternal(node, string(extension.MidCPU), metrics.UnitInteger, float64(cpuInMilliCores.MilliValue())/1000)
 	metrics.RecordNodeExtendedResourceAllocatableInternal(node, string(extension.MidMemory), metrics.UnitByte, float64(memory.Value()))
@@ -218,4 +219,12 @@ func (p *Plugin) calculate(strategy *configuration.ColocationStrategy, node *cor
 			Message:  memMsg,
 		},
 	}
+}
+
+func getFreePhysicalResourceOnNode(node *corev1.Node, nodeMetrics *slov1alpha1.NodeMetric) *corev1.ResourceList {
+	// Capacity - nodeUsed
+	nodeCapacity := resutil.GetNodeCapacity(node)
+	nodeUsed := nodeMetrics.Status.NodeMetric.NodeUsage.ResourceList
+	res := quotav1.Subtract(nodeCapacity, nodeUsed)
+	return &res
 }

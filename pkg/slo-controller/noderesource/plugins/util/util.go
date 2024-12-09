@@ -103,11 +103,14 @@ func CalculateBatchResourceByPolicy(strategy *configuration.ColocationStrategy, 
 }
 
 func CalculateMidResourceByPolicy(strategy *configuration.ColocationStrategy, nodeCapacity, unallocated corev1.ResourceList, allocatableMilliCPU, allocatableMemory int64,
-	prodReclaimableCPU, prodReclaimableMemory *resource.Quantity, nodeName string) (*resource.Quantity, *resource.Quantity, string, string) {
+	prodReclaimableCPU, prodReclaimableMemory *resource.Quantity, freeOnNode *corev1.ResourceList, nodeName string) (*resource.Quantity, *resource.Quantity, string, string) {
 	defaultStrategy := sloconfig.DefaultColocationStrategy()
 	cpuThresholdRatio := getPercentFromStrategy(strategy, &defaultStrategy, MidCPUThreshold)
 	if maxMilliCPU := float64(nodeCapacity.Cpu().MilliValue()) * cpuThresholdRatio; allocatableMilliCPU > int64(maxMilliCPU) {
 		allocatableMilliCPU = int64(maxMilliCPU)
+	}
+	if allocatableMilliCPU > freeOnNode.Cpu().MilliValue() {
+		allocatableMilliCPU = freeOnNode.Cpu().MilliValue()
 	}
 	if allocatableMilliCPU < 0 {
 		klog.V(5).Infof("mid allocatable milli cpu of node %s is %v less than zero, set to zero",
@@ -119,6 +122,9 @@ func CalculateMidResourceByPolicy(strategy *configuration.ColocationStrategy, no
 	memThresholdRatio := getPercentFromStrategy(strategy, &defaultStrategy, MidMemoryThreshold)
 	if maxMemory := float64(nodeCapacity.Memory().Value()) * memThresholdRatio; allocatableMemory > int64(maxMemory) {
 		allocatableMemory = int64(maxMemory)
+	}
+	if allocatableMemory > freeOnNode.Memory().Value() {
+		allocatableMemory = freeOnNode.Memory().Value()
 	}
 	if allocatableMemory < 0 {
 		klog.V(5).Infof("mid allocatable memory of node %s is %v less than zero, set to zero",
@@ -136,14 +142,14 @@ func CalculateMidResourceByPolicy(strategy *configuration.ColocationStrategy, no
 	cpuInMilliCores.Add(*adjustedUnallocatedMilliCPU)
 	memory.Add(*adjustedUnallocatedMemory)
 
-	cpuMsg := fmt.Sprintf("midAllocatable[CPU(milli-core)]:%v = min(nodeCapacity:%v * thresholdRatio:%v, ProdReclaimable:%v) + Unallocated:%v * midUnallocatedRatio:%v",
+	cpuMsg := fmt.Sprintf("midAllocatable[CPU(milli-core)]:%v = min(nodeCapacity:%v * thresholdRatio:%v, ProdReclaimable:%v, FreePhysicalOnNode:%v) + Unallocated:%v * midUnallocatedRatio:%v",
 		cpuInMilliCores.Value(), nodeCapacity.Cpu().MilliValue(),
-		cpuThresholdRatio, prodReclaimableCPU.MilliValue(),
+		cpuThresholdRatio, prodReclaimableCPU.MilliValue(), freeOnNode.Cpu().MilliValue(),
 		unallocatedMilliCPU.Value(), midUnallocatedRatio)
 
-	memMsg := fmt.Sprintf("midAllocatable[Memory(GB)]:%v = min(nodeCapacity:%v * thresholdRatio:%v, ProdReclaimable:%v) + Unallocated:%v * midUnallocatedRatio:%v",
+	memMsg := fmt.Sprintf("midAllocatable[Memory(GB)]:%v = min(nodeCapacity:%v * thresholdRatio:%v, ProdReclaimable:%v, FreePhysicalOnNode:%v) + Unallocated:%v * midUnallocatedRatio:%v",
 		memory.ScaledValue(resource.Giga), nodeCapacity.Memory().ScaledValue(resource.Giga),
-		memThresholdRatio, prodReclaimableMemory.ScaledValue(resource.Giga),
+		memThresholdRatio, prodReclaimableMemory.ScaledValue(resource.Giga), freeOnNode.Memory().ScaledValue(resource.Giga),
 		unallocatedMemory.ScaledValue(resource.Giga), midUnallocatedRatio)
 
 	return cpuInMilliCores, memory, cpuMsg, memMsg
