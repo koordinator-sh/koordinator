@@ -82,6 +82,7 @@ var defaultSchedulerFeatureGates = map[featuregate.Feature]featuregate.FeatureSp
 	ElasticQuotaIgnoreTerminatingPod:          {Default: false, PreRelease: featuregate.Alpha},
 	ElasticQuotaImmediateIgnoreTerminatingPod: {Default: false, PreRelease: featuregate.Alpha},
 	ElasticQuotaGuaranteeUsage:                {Default: false, PreRelease: featuregate.Alpha},
+	ElasticQuotaMinExcess:                     {Default: false, PreRelease: featuregate.Alpha},
 	DisableDefaultQuota:                       {Default: false, PreRelease: featuregate.Alpha},
 	SupportParentQuotaSubmitPod:               {Default: false, PreRelease: featuregate.Alpha},
 	LazyReservationRestore:                    {Default: false, PreRelease: featuregate.Alpha},

@@ -224,6 +224,12 @@ func (gqm *GroupQuotaManager) recursiveUpdateGroupTreeWithDeltaRequest(deltaReq,
 	}
 }
 
+type addUsedRecursiveState struct {
+	isSelfUsed         bool
+	minExcessEnabled   bool
+	minExcessUsedDelta v1.ResourceList
+}
+
 // updateGroupDeltaUsedNoLock updates the usedQuota of a node, it also updates all parent nodes
 // no need to lock gqm.hierarchyUpdateLock
 func (gqm *GroupQuotaManager) updateGroupDeltaUsedNoLock(quotaName string, delta, deltaNonPreemptibleUsed v1.ResourceList) {
@@ -234,10 +240,13 @@ func (gqm *GroupQuotaManager) updateGroupDeltaUsedNoLock(quotaName string, delta
 	}
 
 	defer gqm.scopedLockForQuotaInfo(curToAllParInfos)()
+	recursiveState := &addUsedRecursiveState{
+		minExcessEnabled: utilfeature.DefaultFeatureGate.Enabled(features.ElasticQuotaMinExcess),
+	}
 	for i := 0; i < allQuotaInfoLen; i++ {
 		quotaInfo := curToAllParInfos[i]
-		isSelfUsed := i == 0
-		quotaInfo.addUsedNonNegativeNoLock(delta, deltaNonPreemptibleUsed, isSelfUsed)
+		recursiveState.isSelfUsed = i == 0
+		quotaInfo.addUsedNonNegativeNoLock(delta, deltaNonPreemptibleUsed, recursiveState)
 	}
 
 	if utilfeature.DefaultFeatureGate.Enabled(features.ElasticQuotaGuaranteeUsage) {
@@ -1009,6 +1018,10 @@ func (gqm *GroupQuotaManager) updateQuotaInternalNoLock(newQuotaInfo, oldQuotaIn
 		gqm.doUpdateOneGroupSharedWeightNoLock(newQuotaInfo.Name, newQuotaInfo.CalculateInfo.SharedWeight)
 	}
 
+	// min-excess changed
+	if !quotav1.Equals(newQuotaInfo.CalculateInfo.MinExcess, oldQuotaInfo.CalculateInfo.MinExcess) {
+		oldQuotaInfo.setMinExcessNoLock(newQuotaInfo.CalculateInfo.MinExcess)
+	}
 }
 
 func (gqm *GroupQuotaManager) doUpdateOneGroupMaxQuotaNoLock(quotaName string, newMax v1.ResourceList) {

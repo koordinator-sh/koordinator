@@ -26,6 +26,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
+	k8sfeature "k8s.io/apiserver/pkg/util/feature"
 	v1 "k8s.io/client-go/listers/core/v1"
 	policylisters "k8s.io/client-go/listers/policy/v1"
 	"k8s.io/client-go/tools/cache"
@@ -40,6 +41,7 @@ import (
 	"github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/generated/clientset/versioned"
 	"github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/generated/informers/externalversions"
 	"github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/generated/listers/scheduling/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/validation"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
@@ -249,7 +251,10 @@ func (g *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleState
 	}
 
 	if g.pluginArgs.EnableCheckParentQuota {
-		return nil, g.checkQuotaRecursive(quotaName, []string{quotaName}, podRequest)
+		recursiveState := &checkQuotaRecursiveState{
+			minExcessEnabled: k8sfeature.DefaultFeatureGate.Enabled(features.ElasticQuotaMinExcess),
+		}
+		return nil, g.checkQuotaRecursive(quotaName, []string{quotaName}, podRequest, recursiveState)
 	}
 
 	return nil, framework.NewStatus(framework.Success, "")
