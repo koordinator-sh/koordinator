@@ -425,3 +425,169 @@ func Test_isResctrlAvailableByKernelCmd(t *testing.T) {
 		})
 	}
 }
+
+func Test_isResctrlMBMAvailableByCpuInfo(t *testing.T) {
+	type field struct {
+		cpuInfoContents string
+	}
+
+	tests := []struct {
+		name           string
+		field          field
+		expectIsMBMSet bool
+	}{
+		{
+			name: "testMBMDisable",
+			field: field{
+				cpuInfoContents: "flags		: fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush mmx fxsr sse sse2 ss ht syscall nx pdpe1gb rdtscp lm constant_tsc rep_good nopl nonstop_tsc cpuid tsc_known_freq pni pclmulqdq monitor ssse3 fma cx16 pcid sse4_1 sse4_2 x2apic movbe popcnt aes xsave avx f16c rdrand hypervisor lahf_lm abm 3dnowprefetch cpuid_fault invpcid_single ibrs_enhanced tsc_adjust bmi1 avx2 smep bmi2 erms invpcid avx512f avx512dq rdseed adx smap avx512ifma clflushopt clwb avx512cd sha_ni avx512bw avx512vl xsaveopt xsavec xgetbv1 xsaves wbnoinvd arat avx512vbmi pku ospke avx512_vbmi2 gfni vaes vpclmulqdq avx512_vnni avx512_bitalg avx512_vpopcntdq rdpid fsrm arch_capabilities",
+			},
+			expectIsMBMSet: false,
+		},
+		{
+			name: "testMBMEnable",
+			field: field{
+				cpuInfoContents: "flags           : fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush dts acpi mmx fxsr sse sse2 ss ht tm pbe syscall nx pdpe1gb rdtscp lm constant_tsc art arch_perfmon pebs bts rep_good nopl xtopology nonstop_tsc cpuid aperfmperf pni pclmulqdq dtes64 ds_cpl vmx smx est tm2 ssse3 sdbg fma cx16 xtpr pdcm pcid dca sse4_1 sse4_2 x2apic movbe popcnt tsc_deadline_timer aes xsave avx f16c rdrand lahf_lm abm 3dnowprefetch cpuid_fault epb cat_l3 invpcid_single intel_ppin ssbd mba ibrs ibpb stibp ibrs_enhanced tpr_shadow vnmi flexpriority ept vpid ept_ad fsgsbase tsc_adjust bmi1 avx2 smep bmi2 erms invpcid cqm rdt_a avx512f avx512dq rdseed adx smap avx512ifma clflushopt clwb intel_pt avx512cd sha_ni avx512bw avx512vl xsaveopt xsavec xgetbv1 xsaves cqm_llc cqm_occup_llc cqm_mbm_total cqm_mbm_local split_lock_detect wbnoinvd dtherm ida arat pln pts avx512vbmi umip pku ospke avx512_vbmi2 gfni vaes vpclmulqdq avx512_vnni avx512_bitalg tme avx512_vpopcntdq la57 rdpid fsrm md_clear pconfig flush_l1d arch_capabilities",
+			},
+			expectIsMBMSet: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			helper := NewFileTestUtil(t)
+			defer helper.Cleanup()
+			helper.WriteProcSubFileContents("cpuinfo", tt.field.cpuInfoContents)
+
+			isMBMAvailable, err := isResctrlMBMAvailableByCpuInfo(GetCPUInfoPath())
+			assert.NoError(t, err)
+			assert.Equal(t, tt.expectIsMBMSet, isMBMAvailable)
+		})
+	}
+}
+
+func Test_isResctrlCQMAvailableByCpuInfo(t *testing.T) {
+	type field struct {
+		cpuInfoContents string
+	}
+
+	tests := []struct {
+		name           string
+		field          field
+		expectIsCQMSet bool
+	}{
+		{
+			name: "testMBMDisable",
+			field: field{
+				cpuInfoContents: "flags		: fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush mmx fxsr sse sse2 ss ht syscall nx pdpe1gb rdtscp lm constant_tsc rep_good nopl nonstop_tsc cpuid tsc_known_freq pni pclmulqdq monitor ssse3 fma cx16 pcid sse4_1 sse4_2 x2apic movbe popcnt aes xsave avx f16c rdrand hypervisor lahf_lm abm 3dnowprefetch cpuid_fault invpcid_single ibrs_enhanced tsc_adjust bmi1 avx2 smep bmi2 erms invpcid avx512f avx512dq rdseed adx smap avx512ifma clflushopt clwb avx512cd sha_ni avx512bw avx512vl xsaveopt xsavec xgetbv1 xsaves wbnoinvd arat avx512vbmi pku ospke avx512_vbmi2 gfni vaes vpclmulqdq avx512_vnni avx512_bitalg avx512_vpopcntdq rdpid fsrm arch_capabilities",
+			},
+			expectIsCQMSet: false,
+		},
+		{
+			name: "testMBMEnable",
+			field: field{
+				cpuInfoContents: "flags           : fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush dts acpi mmx fxsr sse sse2 ss ht tm pbe syscall nx pdpe1gb rdtscp lm constant_tsc art arch_perfmon pebs bts rep_good nopl xtopology nonstop_tsc cpuid aperfmperf pni pclmulqdq dtes64 ds_cpl vmx smx est tm2 ssse3 sdbg fma cx16 xtpr pdcm pcid dca sse4_1 sse4_2 x2apic movbe popcnt tsc_deadline_timer aes xsave avx f16c rdrand lahf_lm abm 3dnowprefetch cpuid_fault epb cat_l3 invpcid_single intel_ppin ssbd mba ibrs ibpb stibp ibrs_enhanced tpr_shadow vnmi flexpriority ept vpid ept_ad fsgsbase tsc_adjust bmi1 avx2 smep bmi2 erms invpcid cqm rdt_a avx512f avx512dq rdseed adx smap avx512ifma clflushopt clwb intel_pt avx512cd sha_ni avx512bw avx512vl xsaveopt xsavec xgetbv1 xsaves cqm_llc cqm_occup_llc cqm_mbm_total cqm_mbm_local split_lock_detect wbnoinvd dtherm ida arat pln pts avx512vbmi umip pku ospke avx512_vbmi2 gfni vaes vpclmulqdq avx512_vnni avx512_bitalg tme avx512_vpopcntdq la57 rdpid fsrm md_clear pconfig flush_l1d arch_capabilities",
+			},
+			expectIsCQMSet: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			helper := NewFileTestUtil(t)
+			defer helper.Cleanup()
+			helper.WriteProcSubFileContents("cpuinfo", tt.field.cpuInfoContents)
+
+			isMBMAvailable, err := isResctrlCQMAvailableByCpuInfo(GetCPUInfoPath())
+			assert.NoError(t, err)
+			assert.Equal(t, tt.expectIsCQMSet, isMBMAvailable)
+		})
+	}
+}
+
+func TestGetResctrlMonDataPath(t *testing.T) {
+	type args struct {
+		groupPath string
+	}
+	tests := []struct {
+		name string
+		args args
+		want string
+	}{
+		{
+			name: "testResctrlMonDataPath",
+			want: "/resctrl/mon_data",
+			args: args{groupPath: ""},
+		},
+		{
+			name: "testResctrlMonDataPath_QoS",
+			want: "/resctrl/BE/mon_data",
+			args: args{groupPath: "BE"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			helper := NewFileTestUtil(t)
+			defer helper.Cleanup()
+			Conf = &Config{
+				SysFSRootDir: helper.TempDir,
+			}
+			got := GetResctrlMonDataPath(tt.args.groupPath)
+
+			assert.Equal(t, filepath.Join(Conf.SysFSRootDir, tt.want), got)
+		})
+	}
+}
+
+func TestIsVendorSupportResctrl(t *testing.T) {
+	// use HiSilicon for example
+	ARM_VENDOR_ID_MAP["HiSilicon"] = struct{}{}
+	type args struct {
+		vendorID string
+	}
+	tests := []struct {
+		name string
+		args args
+		want bool
+	}{
+		{
+			name: "intel",
+			args: args{
+				vendorID: "GenuineIntel",
+			},
+			want: true,
+		},
+		{
+			name: "AMD",
+			args: args{
+				vendorID: "AuthenticAMD",
+			},
+			want: true,
+		},
+		{
+			name: "HiSilicon",
+			args: args{
+				vendorID: "HiSilicon",
+			},
+			want: true,
+		},
+		{
+			name: "NVIDIA",
+			args: args{
+				vendorID: "NVIDIA",
+			},
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			helper := NewFileTestUtil(t)
+			defer helper.Cleanup()
+			p := GetCPUInfoPath()
+			helper.WriteFileContents(p, "vendor_id       : "+tt.args.vendorID)
+
+			got := IsVendorSupportResctrl()
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
