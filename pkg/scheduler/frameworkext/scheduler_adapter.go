@@ -71,6 +71,7 @@ type SchedulingQueue interface {
 	AssignedPodAdded(logger klog.Logger, pod *corev1.Pod)
 	AssignedPodUpdated(logger klog.Logger, oldPod, newPod *corev1.Pod)
 	MoveAllToActiveOrBackoffQueue(logger klog.Logger, event framework.ClusterEvent, oldObj, newObj interface{}, preCheck PreEnqueueCheck)
+	Activate(logger klog.Logger, pods map[string]*corev1.Pod)
 }
 
 var _ Scheduler = &SchedulerAdapter{}
@@ -182,6 +183,10 @@ func (q *queueAdapter) MoveAllToActiveOrBackoffQueue(logger klog.Logger, event f
 		}
 		return false
 	})
+}
+
+func (q *queueAdapter) Activate(logger klog.Logger, pods map[string]*corev1.Pod) {
+	q.scheduler.SchedulingQueue.Activate(logger, pods)
 }
 
 var _ Scheduler = &FakeScheduler{}
@@ -325,4 +330,7 @@ func (f *FakeQueue) AssignedPodUpdated(logger klog.Logger, oldPod, newPod *corev
 
 func (f *FakeQueue) MoveAllToActiveOrBackoffQueue(logger klog.Logger, event framework.ClusterEvent, oldObj, newObj interface{}, preCheck PreEnqueueCheck) {
 
+}
+
+func (f *FakeQueue) Activate(logger klog.Logger, pods map[string]*corev1.Pod) {
 }

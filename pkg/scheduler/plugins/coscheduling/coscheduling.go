@@ -23,19 +23,23 @@ import (
 	"time"
 
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	corev1helpers "k8s.io/component-helpers/scheduling/corev1"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
+	schedutil "k8s.io/kubernetes/pkg/scheduler/util"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/apis/scheduling"
+	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 	pgclientset "github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/generated/clientset/versioned"
 	pgformers "github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/generated/informers/externalversions"
 	schedinformers "github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/generated/informers/externalversions/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/validation"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/coscheduling/controller"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/coscheduling/core"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/coscheduling/util"
 )
@@ -47,6 +51,7 @@ type Coscheduling struct {
 	pgClient         pgclientset.Interface
 	pgInformer       schedinformers.PodGroupInformer
 	pgMgr            core.Manager
+	pgBuffer         *controller.PodGroupBuffer
 }
 
 var _ framework.PreEnqueuePlugin = &Coscheduling{}
@@ -87,12 +92,17 @@ func New(obj runtime.Object, handle framework.Handle) (framework.Plugin, error) 
 	extendedHandle := handle.(frameworkext.ExtendedHandle)
 	koordInformerFactory := extendedHandle.KoordinatorSharedInformerFactory()
 	pgMgr := core.NewPodGroupManager(args, pgClient, pgInformerFactory, informerFactory, koordInformerFactory)
+	activatePodsFunc := func(pods map[string]*v1.Pod) {
+		extendedHandle.Scheduler().GetSchedulingQueue().Activate(klog.Background(), pods)
+	}
+	pgBuffer := controller.NewPodGroupBuffer(pgMgr, handle.SharedInformerFactory().Core().V1().Pods().Lister(), activatePodsFunc)
 	plugin := &Coscheduling{
 		args:             args,
 		frameworkHandler: handle,
 		pgClient:         pgClient,
 		pgInformer:       pgInformer,
 		pgMgr:            pgMgr,
+		pgBuffer:         pgBuffer,
 	}
 	return plugin, nil
 }
@@ -102,8 +112,37 @@ func (cs *Coscheduling) EventsToRegister() []framework.ClusterEventWithHint {
 	// https://git.k8s.io/kubernetes/pkg/scheduler/eventhandlers.go#L403-L410
 	pgGVK := fmt.Sprintf("podgroups.v1alpha1.%v", scheduling.GroupName)
 	return []framework.ClusterEventWithHint{
-		{Event: framework.ClusterEvent{Resource: framework.Pod, ActionType: framework.Add}},
-		{Event: framework.ClusterEvent{Resource: framework.GVK(pgGVK), ActionType: framework.Add | framework.Update}},
+		{
+			Event: framework.ClusterEvent{Resource: framework.Pod, ActionType: framework.Add},
+			QueueingHintFn: func(logger klog.Logger, pod *v1.Pod, oldObj, newObj interface{}) framework.QueueingHint {
+				_, updatedPod, err := schedutil.As[*v1.Pod](nil, newObj)
+				if err != nil {
+					// Shouldn't happen.
+					logger.Error(err, "unexpected new object in isSchedulableAfterPodAdd")
+					return framework.QueueAfterBackoff
+				}
+				if util.GetGangNameByPod(pod) == util.GetGangNameByPod(updatedPod) && pod.Namespace == updatedPod.Namespace {
+					return framework.QueueAfterBackoff
+				}
+				return framework.QueueSkip
+			},
+		},
+		{
+			Event: framework.ClusterEvent{Resource: framework.GVK(pgGVK), ActionType: framework.Add | framework.Update},
+			QueueingHintFn: func(logger klog.Logger, pod *v1.Pod, oldObj, newObj interface{}) framework.QueueingHint {
+				podGroup := &schedulingv1alpha1.PodGroup{}
+				err := runtime.DefaultUnstructuredConverter.FromUnstructured(newObj.(*unstructured.Unstructured).Object, podGroup)
+				if err != nil {
+					// Shouldn't happen.
+					logger.Error(err, "unexpected new object in isSchedulableAfterPodGroupChanged")
+					return framework.QueueAfterBackoff
+				}
+				if util.GetGangNameByPod(pod) == podGroup.Name && pod.Namespace == podGroup.Namespace {
+					return framework.QueueAfterBackoff
+				}
+				return framework.QueueSkip
+			},
+		},
 	}
 }
 
@@ -116,7 +155,13 @@ func (cs *Coscheduling) Name() string {
 // i.Check whether childes in Gang has met the requirements of minimum number under each Gang, and reject the pod if negative.
 // ii.Check whether the Gang has been timeout(check the pod's annotation,later introduced at Permit section) or is inited, and reject the pod if positive.
 func (cs *Coscheduling) PreEnqueue(ctx context.Context, pod *v1.Pod) *framework.Status {
-	if err := cs.pgMgr.PreEnqueue(ctx, pod); err != nil {
+	if gangGroupIdToBuffer, err := cs.pgMgr.PreEnqueue(ctx, pod); err != nil {
+		if gangGroupIdToBuffer != "" {
+			// Because Gang min num isn't satisfied or Gang has invalid cycle but receive events which may make it schedulable, we go here.
+			// In these cases, we buffer the gang, check gang status asynchronously, once gang ready for scheduling, we activate all its member.
+			// Moreover, for gang with a invalid cycle, we activate its unscheduled member pods to make it valid as soon as possible.
+			cs.pgBuffer.BufferGangGroupIfNot(gangGroupIdToBuffer)
+		}
 		klog.ErrorS(err, "PreEnqueue failed", "pod", klog.KObj(pod))
 		return framework.NewStatus(framework.UnschedulableAndUnresolvable, err.Error())
 	}

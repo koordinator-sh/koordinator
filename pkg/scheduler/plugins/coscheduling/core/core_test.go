@@ -353,7 +353,7 @@ func TestPlugin_PreEnqueue(t *testing.T) {
 			// run the case
 			// cycleState := framework.NewCycleState()
 			// err := mgr.PreFilter(ctx, cycleState, tt.pod)
-			err := mgr.PreEnqueue(ctx, tt.pod)
+			_, err := mgr.PreEnqueue(ctx, tt.pod)
 			var returnMessage string
 			if err == nil {
 				returnMessage = ""
