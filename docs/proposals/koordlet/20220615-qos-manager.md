@@ -51,7 +51,7 @@ Currently, plugins from resmanager in Koordlet are mixed together, they should b
 ## Proposal
 ### Design
 
-![image](../../images/qos-manager.svg)
+_![image](../../images/qos-manager.svg)_
 
  The below is directory tree of qos-manager inside koordlet, all existing dynamic plugins(as built-in plugins) will be move into sub-directory `plugins`.
  
