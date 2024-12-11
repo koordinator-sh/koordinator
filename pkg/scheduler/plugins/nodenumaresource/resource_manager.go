@@ -19,6 +19,7 @@ package nodenumaresource
 import (
 	"errors"
 	"fmt"
+	"reflect"
 	"sort"
 	"sync"
 
@@ -201,6 +202,7 @@ func (c *resourceManager) Allocate(node *corev1.Node, pod *corev1.Pod, options *
 	if options.hint.NUMANodeAffinity != nil {
 		resources, err := c.allocateResourcesByHint(node, pod, options)
 		if err != nil {
+			klog.Errorf("allocateResourcesByHint for pod %s on node %s, failed: %v", util.GetNamespacedName(pod.Namespace, pod.Name), node.Name, err)
 			return nil, err
 		}
 		if len(resources) == 0 {
@@ -226,7 +228,9 @@ func (c *resourceManager) allocateResourcesByHint(node *corev1.Node, pod *corev1
 	if len(options.topologyOptions.NUMANodeResources) == 0 {
 		return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, "insufficient resources on NUMA Node")
 	}
-
+	if klog.V(6).Enabled() {
+		logStruct(reflect.ValueOf(options), fmt.Sprintf("options for pod pod %s/%s on node %s", pod.Namespace, pod.Name, node.Name), 6)
+	}
 	totalAvailable := options.requiredResources
 	if len(totalAvailable) == 0 {
 		var err error
