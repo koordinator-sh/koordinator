@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"syscall"
 
 	"k8s.io/klog/v2"
 
@@ -28,6 +27,7 @@ import (
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/hooks"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/protocol"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 	rmconfig "github.com/koordinator-sh/koordinator/pkg/runtimeproxy/config"
 )
 
@@ -70,7 +70,7 @@ func (p *rdmaPlugin) InjectDevice(proto protocol.HooksProtocol) error {
 		return nil
 	}
 
-	deviceInfoCM, err := getDeviceNumbers(RdmaCmDir)
+	deviceInfoCM, err := system.GetDeviceNumbers(RdmaCmDir)
 	if err != nil {
 		klog.Errorf("InjectDevice: GetDeviceNumbers deviceinfoCM from %s error:%v", RdmaCmDir, err)
 		return err
@@ -96,7 +96,7 @@ func (p *rdmaPlugin) InjectDevice(proto protocol.HooksProtocol) error {
 					return err
 				}
 
-				deviceInfoVf, err := getDeviceNumbers(uverbsOfVF)
+				deviceInfoVf, err := system.GetDeviceNumbers(uverbsOfVF)
 				if err != nil {
 					klog.Errorf("InjectDevice: GetDeviceNumbers deviceinfoVf from %s error:%v", uverbsOfVF, err)
 					return err
@@ -118,7 +118,7 @@ func (p *rdmaPlugin) InjectDevice(proto protocol.HooksProtocol) error {
 			klog.Errorf("InjectDevice: getUVerbsViaPciAdd error:%v", err)
 			return err
 		}
-		deviceInfoPf, err := getDeviceNumbers(uverbs)
+		deviceInfoPf, err := system.GetDeviceNumbers(uverbs)
 		if err != nil {
 			klog.Errorf("InjectDevice: GetDeviceNumbers deviceinfoPf from %s error:%v", uverbs, err)
 			return err
@@ -143,23 +143,4 @@ func getUVerbsViaPciAdd(pciAddress string) (string, error) {
 		return "", fmt.Errorf("failed to get uverbs: %s", err.Error())
 	}
 	return filepath.Join(IBDevDir, files[0].Name()), nil
-}
-
-func major(dev uint64) int64 {
-	return int64((dev>>8)&0xff) | int64((dev>>12)&0xfff00)
-}
-
-func minor(dev uint64) int64 {
-	return int64(dev&0xff) | int64((dev>>12)&0xffffff00)
-}
-
-func getDeviceNumbers(devicePath string) ([]int64, error) {
-	fileInfo, err := os.Stat(devicePath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to stat device file: %v", err)
-	}
-	deviceNumber := fileInfo.Sys().(*syscall.Stat_t).Rdev
-	major := major(deviceNumber)
-	minor := minor(deviceNumber)
-	return []int64{major, minor}, nil
 }
