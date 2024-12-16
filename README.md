@@ -75,9 +75,13 @@ Active communication channels:
 Koordinator is licensed under the Apache License, Version 2.0. See [LICENSE](./LICENSE) for the full license text.
 <!--
 
+
+[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fkoordinator-sh%2Fkoordinator.svg?type=large)](https://app.fossa.com/projects/git%2Bgithub.com%2Fkoordinator-sh%2Fkoordinator?ref=badge_large)
+
 ## Star History
 
 [![Star History Chart](https://api.star-history.com/svg?repos=koordinator-sh/koordinator&type=Date)](https://star-history.com/#koordinator-sh/koordinator&Date)
+[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fkoordinator-sh%2Fkoordinator.svg?type=shield)](https://app.fossa.com/projects/git%2Bgithub.com%2Fkoordinator-sh%2Fkoordinator?ref=badge_shield)
 -->
 
 ## Security
