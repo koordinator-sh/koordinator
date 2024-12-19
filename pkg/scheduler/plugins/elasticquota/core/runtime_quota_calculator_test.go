@@ -58,7 +58,8 @@ func TestQuotaInfo_AddRequestNonNegativeNoLock(t *testing.T) {
 		},
 	}
 	quotaInfo.addRequestNonNegativeNoLock(req1, req1, false)
-	quotaInfo.addUsedNonNegativeNoLock(req1, createResourceList(0, 0), false)
+	quotaInfo.addUsedNonNegativeNoLock(req1, createResourceList(0, 0),
+		&addUsedRecursiveState{isSelfUsed: false})
 	assert.Equal(t, quotaInfo.CalculateInfo.Request, createResourceList(0, 0))
 	assert.Equal(t, quotaInfo.CalculateInfo.Used, createResourceList(0, 0))
 }

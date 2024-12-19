@@ -278,7 +278,13 @@ func getPostFilterState(cycleState *framework.CycleState) (*PostFilterState, err
 	return s, nil
 }
 
-func (g *Plugin) checkQuotaRecursive(curQuotaName string, quotaNameTopo []string, podRequest v1.ResourceList) *framework.Status {
+type checkQuotaRecursiveState struct {
+	minExcessEnabled   bool
+	minExcessUsedDelta v1.ResourceList
+}
+
+func (g *Plugin) checkQuotaRecursive(curQuotaName string, quotaNameTopo []string, podRequest v1.ResourceList,
+	recursiveState *checkQuotaRecursiveState) *framework.Status {
 	quotaInfo := g.groupQuotaManager.GetQuotaInfoByName(curQuotaName)
 	quotaUsed := quotaInfo.GetUsed()
 	quotaUsedLimit := g.getQuotaInfoUsedLimit(quotaInfo)
@@ -289,9 +295,31 @@ func (g *Plugin) checkQuotaRecursive(curQuotaName string, quotaNameTopo []string
 			"quotaNameTopo: %v, runtime: %v, used: %v, pod's request: %v, exceedDimensions: %v", quotaNameTopo,
 			printResourceList(quotaUsedLimit), printResourceList(quotaUsed), printResourceList(podRequest), exceedDimensions))
 	}
+	if recursiveState.minExcessEnabled {
+		if len(quotaNameTopo) == 1 {
+			// calculate only for leaf quota
+			recursiveState.minExcessUsedDelta = core.CalculateMinExcessUsedDelta(
+				quotaInfo.GetMin(), quotaUsed, podRequest)
+		}
+		// check min-excess limit if configured min-excess and min-excess-used-delta is not zero
+		if len(quotaInfo.GetMinExcess()) > 0 && !quotav1.IsZero(recursiveState.minExcessUsedDelta) {
+			minExcess := quotaInfo.GetMinExcess()
+			// calculate new min-excess-used then check for current quota
+			minExcessUsed := quotaInfo.GetMinExcessUsed()
+			newMinExcessUsed := quotav1.Add(minExcessUsed, recursiveState.minExcessUsedDelta)
+			if isLessEqual, exceedDimensions := quotav1.LessThanOrEqual(newMinExcessUsed, minExcess); !isLessEqual {
+				return framework.NewStatus(framework.Unschedulable, fmt.Sprintf("Insufficient min-excess quotas, "+
+					"quotaNameTopo: %v, min-excess: %v, min-excess-used: %v, min-excess-used-delta: %v,"+
+					" pod's request: %v, exceedDimensions: %v",
+					quotaNameTopo, printResourceList(minExcess), printResourceList(minExcessUsed),
+					printResourceList(recursiveState.minExcessUsedDelta),
+					printResourceList(podRequest), exceedDimensions))
+			}
+		}
+	}
 	if quotaInfo.ParentName != extension.RootQuotaName {
 		quotaNameTopo = append([]string{quotaInfo.ParentName}, quotaNameTopo...)
-		return g.checkQuotaRecursive(quotaInfo.ParentName, quotaNameTopo, podRequest)
+		return g.checkQuotaRecursive(quotaInfo.ParentName, quotaNameTopo, podRequest, recursiveState)
 	}
 	return framework.NewStatus(framework.Success, "")
 }

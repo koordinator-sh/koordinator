@@ -68,6 +68,9 @@ const (
 	// to belong to the users and will not be preempted back.
 	ElasticQuotaGuaranteeUsage featuregate.Feature = "ElasticQuotaGuaranteeUsage"
 
+	// ElasticQuotaMinExcess enable control the upper limit of the min-excess resources
+	ElasticQuotaMinExcess featuregate.Feature = "ElasticQuotaMinExcess"
+
 	// DisableDefaultQuota disable default quota.
 	DisableDefaultQuota featuregate.Feature = "DisableDefaultQuota"
 
