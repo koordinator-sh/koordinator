@@ -135,6 +135,13 @@ func (r *Resources) FromContainer(container *corev1.Container) {
 	}
 }
 
+type Mount struct {
+	Destination string   `protobuf:"bytes,1,opt,name=destination,proto3" json:"destination,omitempty"`
+	Type        string   `protobuf:"bytes,2,opt,name=type,proto3" json:"type,omitempty"`
+	Source      string   `protobuf:"bytes,3,opt,name=source,proto3" json:"source,omitempty"`
+	Options     []string `protobuf:"bytes,4,rep,name=options,proto3" json:"options,omitempty"`
+}
+
 func injectCPUShares(cgroupParent string, cpuShares int64, a *audit.EventHelper, e resourceexecutor.ResourceUpdateExecutor) (resourceexecutor.ResourceUpdater, error) {
 	cpuShareStr := strconv.FormatInt(cpuShares, 10)
 	updater, err := resourceexecutor.DefaultCgroupUpdaterFactory.New(sysutil.CPUSharesName, cgroupParent, cpuShareStr, a)
