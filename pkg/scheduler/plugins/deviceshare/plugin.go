@@ -564,10 +564,10 @@ func (p *Plugin) fillID(allocationResult apiext.DeviceAllocations, nodeName stri
 		return err
 	}
 	for deviceType, allocations := range allocationResult {
-		if deviceType == schedulingv1alpha1.GPU {
+		/*if deviceType == schedulingv1alpha1.GPU {
 			// because gpu minor is well known, ID isn't needed
 			continue
-		}
+		}*/
 		for i, allocation := range allocations {
 			for _, info := range device.Spec.Devices {
 				if info.Minor != nil && *info.Minor == allocation.Minor && info.Type == deviceType {
