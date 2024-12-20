@@ -19,9 +19,11 @@ package config
 import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/kubernetes/pkg/scheduler/apis/config"
 	schedconfig "k8s.io/kubernetes/pkg/scheduler/apis/config"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
+	v1 "k8s.io/api/core/v1"
 )
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -236,4 +238,25 @@ type DeviceShareArgs struct {
 	ScoringStrategy *ScoringStrategy
 	// DisableDeviceNUMATopologyAlignment indicates device don't need to align with other resources' numa topology
 	DisableDeviceNUMATopologyAlignment bool
+}
+
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+// ScarceResourceAvoidanceArgs defines the parameters for ScarceResourceAvoidance plugin.
+type ScarceResourceAvoidanceArgs struct {
+	metav1.TypeMeta
+	Resources []v1.ResourceName
+}
+
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+// NodeResourcesFitPlusArgs defines the parameters for NodeResourcesFitPlus plugin.
+type NodeResourcesFitPlusArgs struct {
+	metav1.TypeMeta
+	Resources map[v1.ResourceName]ResourcesType
+}
+
+type ResourcesType struct {
+	Type   config.ScoringStrategyType
+	Weight int64
 }
