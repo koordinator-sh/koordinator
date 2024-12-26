@@ -30,6 +30,10 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/util/bitmask"
 )
 
+const (
+	ErrInsufficientNUMAScopedDevices = "Insufficient NUMA Scoped Devices"
+)
+
 func (p *Plugin) GetPodTopologyHints(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) (map[string][]topologymanager.NUMATopologyHint, *framework.Status) {
 	if p.disableDeviceNUMATopologyAlignment {
 		return nil, nil
@@ -135,12 +139,19 @@ func (p *Plugin) generateTopologyHints(cycleState *framework.CycleState, state *
 	var minAffinitySize map[corev1.ResourceName]int
 	hints := map[string][]topologymanager.NUMATopologyHint{}
 
+	var statusUnsatisfied *framework.Status
+
 	bitmask.IterateBitMasks(numaNodes, func(mask bitmask.BitMask) {
 		nodeDevice.lock.RLock()
 		defer nodeDevice.lock.RUnlock()
 
+		var status *framework.Status
+		if mask.Count() == len(numaNodes) {
+			defer func() { statusUnsatisfied = status }()
+		}
+
 		allocator.numaNodes = mask
-		if status := allocator.Prepare(); !status.IsSuccess() {
+		if status = allocator.Prepare(); !status.IsSuccess() {
 			return
 		}
 
@@ -148,6 +159,7 @@ func (p *Plugin) generateTopologyHints(cycleState *framework.CycleState, state *
 		totalDevices := calcTotalDevicesByNUMA(nodeDevice, maskNodes)
 		for deviceType, wanted := range allocator.desiredCountPerDeviceType {
 			if totalCount, exists := totalDevices[deviceType]; exists && totalCount < wanted {
+				status = framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrInsufficientNUMAScopedDevices)
 				return
 			}
 		}
@@ -155,11 +167,8 @@ func (p *Plugin) generateTopologyHints(cycleState *framework.CycleState, state *
 		nodeCount := len(maskNodes)
 		if minAffinitySize == nil {
 			minAffinitySize = map[corev1.ResourceName]int{}
-			for _, requests := range allocator.requestsPerInstance {
-				resourceNames := quotav1.ResourceNames(requests)
-				for _, name := range resourceNames {
-					minAffinitySize[name] = len(numaNodes)
-				}
+			for deviceType := range allocator.requestsPerInstance {
+				minAffinitySize[corev1.ResourceName(deviceType)] = len(numaNodes)
 			}
 		}
 
@@ -208,11 +217,13 @@ func (p *Plugin) generateTopologyHints(cycleState *framework.CycleState, state *
 
 		h := hints[string(resourceName)]
 		if h == nil {
-			// no possible NUMA affinities for resource
-			hints[string(resourceName)] = []topologymanager.NUMATopologyHint{}
+			// no possible NUMA affinities for resource, just return status
+			return nil, statusUnsatisfied
 		}
 	}
-
+	if !statusUnsatisfied.IsSuccess() {
+		return nil, statusUnsatisfied
+	}
 	return hints, nil
 }
 

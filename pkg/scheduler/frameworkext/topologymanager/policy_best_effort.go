@@ -45,19 +45,16 @@ func (p *bestEffortPolicy) canAdmitPodResult(hint *NUMATopologyHint) bool {
 	return true
 }
 
-func (p *bestEffortPolicy) Merge(providersHints []map[string][]NUMATopologyHint, exclusivePolicy apiext.NumaTopologyExclusive, allNUMANodeStatus []apiext.NumaNodeStatus) (NUMATopologyHint, bool) {
-	filteredProvidersHints := filterProvidersHints(providersHints)
+func (p *bestEffortPolicy) Merge(providersHints []map[string][]NUMATopologyHint, exclusivePolicy apiext.NumaTopologyExclusive, allNUMANodeStatus []apiext.NumaNodeStatus) (NUMATopologyHint, bool, []string) {
+	filteredProvidersHints, _, _ := filterProvidersHints(providersHints)
 	bestHint := mergeFilteredHints(p.numaNodes, filteredProvidersHints, exclusivePolicy, allNUMANodeStatus)
 	// 如果 bestHint 不是一个所有资源都可分的 numa affinity，则应该返回 bestHint 为亲和所有 NUMANode，即放弃任何 NUMA 倾向
 	if bestHint.Unsatisfied {
 		affinityAllNUMANodes, _ := bitmask.NewBitMask(p.numaNodes...)
 		bestHint = NUMATopologyHint{
 			NUMANodeAffinity: affinityAllNUMANodes,
-			Unsatisfied:      false,
-			Preferred:        bestHint.Preferred,
-			Score:            0,
 		}
 	}
 	admit := p.canAdmitPodResult(&bestHint)
-	return bestHint, admit
+	return bestHint, admit, nil
 }
