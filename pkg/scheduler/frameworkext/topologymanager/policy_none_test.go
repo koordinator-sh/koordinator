@@ -106,7 +106,7 @@ func TestPolicyNoneMerge(t *testing.T) {
 
 	for _, tc := range tcases {
 		policy := NewNonePolicy()
-		result, admit := policy.Merge(tc.providersHints, apiext.NumaTopologyExclusivePreferred, []apiext.NumaNodeStatus{})
+		result, admit, _ := policy.Merge(tc.providersHints, apiext.NumaTopologyExclusivePreferred, []apiext.NumaNodeStatus{})
 		if !result.IsEqual(tc.expectedHint) || admit != tc.expectedAdmit {
 			t.Errorf("Test Case: %s: Expected merge hint to be %v, got %v", tc.name, tc.expectedHint, result)
 		}

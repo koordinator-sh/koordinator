@@ -17,7 +17,13 @@ limitations under the License.
 
 package topologymanager
 
-import apiext "github.com/koordinator-sh/koordinator/apis/extension"
+import (
+	"fmt"
+	"strings"
+
+	apiext "github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/pkg/util/bitmask"
+)
 
 type restrictedPolicy struct {
 	bestEffortPolicy
@@ -41,9 +47,16 @@ func (p *restrictedPolicy) canAdmitPodResult(hint *NUMATopologyHint) bool {
 	return hint.Preferred
 }
 
-func (p *restrictedPolicy) Merge(providersHints []map[string][]NUMATopologyHint, exclusivePolicy apiext.NumaTopologyExclusive, allNUMANodeStatus []apiext.NumaNodeStatus) (NUMATopologyHint, bool) {
-	filteredHints := filterProvidersHints(providersHints)
+func (p *restrictedPolicy) Merge(providersHints []map[string][]NUMATopologyHint, exclusivePolicy apiext.NumaTopologyExclusive, allNUMANodeStatus []apiext.NumaNodeStatus) (NUMATopologyHint, bool, []string) {
+	filteredHints, reasons, summary := filterProvidersHints(providersHints)
+	if len(reasons) != 0 {
+		affinityAllNUMANodes, _ := bitmask.NewBitMask(p.numaNodes...)
+		return NUMATopologyHint{NUMANodeAffinity: affinityAllNUMANodes}, false, reasons
+	}
 	hint := mergeFilteredHints(p.numaNodes, filteredHints, exclusivePolicy, allNUMANodeStatus)
 	admit := p.canAdmitPodResult(&hint)
-	return hint, admit
+	if !admit {
+		return hint, false, []string{fmt.Sprintf(ErrNUMAHintCannotAligned, strings.Join(summary, " & "))}
+	}
+	return hint, admit, nil
 }

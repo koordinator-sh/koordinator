@@ -48,6 +48,10 @@ func TestPlugin_GetPodTopologyHints(t *testing.T) {
 		apiext.ResourceGPUCore:        resource.MustParse("100"),
 		apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
 	}
+	largeGPURequets := corev1.ResourceList{
+		apiext.ResourceGPUCore:        resource.MustParse("1700"),
+		apiext.ResourceGPUMemoryRatio: resource.MustParse("1700"),
+	}
 	rdmaRequests := corev1.ResourceList{
 		apiext.ResourceRDMA: resource.MustParse("2"),
 	}
@@ -67,22 +71,26 @@ func TestPlugin_GetPodTopologyHints(t *testing.T) {
 				schedulingv1alpha1.RDMA: rdmaRequests,
 			},
 			want: map[string][]topologymanager.NUMATopologyHint{
-				string(apiext.ResourceGPUCore): {
+				string(schedulingv1alpha1.GPU): {
 					{NUMANodeAffinity: newBitMask(0), Preferred: true},
 					{NUMANodeAffinity: newBitMask(1), Preferred: true},
 					{NUMANodeAffinity: newBitMask(0, 1), Preferred: false},
 				},
-				string(apiext.ResourceGPUMemoryRatio): {
-					{NUMANodeAffinity: newBitMask(0), Preferred: true},
-					{NUMANodeAffinity: newBitMask(1), Preferred: true},
-					{NUMANodeAffinity: newBitMask(0, 1), Preferred: false},
-				},
-				string(apiext.ResourceRDMA): {
+				string(schedulingv1alpha1.RDMA): {
 					{NUMANodeAffinity: newBitMask(0), Preferred: true},
 					{NUMANodeAffinity: newBitMask(1), Preferred: true},
 					{NUMANodeAffinity: newBitMask(0, 1), Preferred: false},
 				},
 			},
+		},
+		{
+			name: "generate gpu&rdma hints but large gpu requests",
+			podRequests: map[schedulingv1alpha1.DeviceType]corev1.ResourceList{
+				schedulingv1alpha1.GPU:  largeGPURequets,
+				schedulingv1alpha1.RDMA: rdmaRequests,
+			},
+			want:    nil,
+			wantErr: true,
 		},
 		{
 			name: "generate gpu hints with assigned devices",
@@ -101,11 +109,7 @@ func TestPlugin_GetPodTopologyHints(t *testing.T) {
 				},
 			},
 			want: map[string][]topologymanager.NUMATopologyHint{
-				string(apiext.ResourceGPUCore): {
-					{NUMANodeAffinity: newBitMask(1), Preferred: true},
-					{NUMANodeAffinity: newBitMask(0, 1), Preferred: false},
-				},
-				string(apiext.ResourceGPUMemoryRatio): {
+				string(schedulingv1alpha1.GPU): {
 					{NUMANodeAffinity: newBitMask(1), Preferred: true},
 					{NUMANodeAffinity: newBitMask(0, 1), Preferred: false},
 				},
@@ -118,7 +122,8 @@ func TestPlugin_GetPodTopologyHints(t *testing.T) {
 					apiext.ResourceFPGA: resource.MustParse("100"),
 				},
 			},
-			want: map[string][]topologymanager.NUMATopologyHint{},
+			want:    nil,
+			wantErr: true,
 		},
 		{
 			name: "generate 2 rdma hints",
@@ -131,7 +136,7 @@ func TestPlugin_GetPodTopologyHints(t *testing.T) {
 				},
 			},
 			want: map[string][]topologymanager.NUMATopologyHint{
-				string(apiext.ResourceRDMA): {
+				string(schedulingv1alpha1.RDMA): {
 					{NUMANodeAffinity: newBitMask(0), Preferred: true},
 					{NUMANodeAffinity: newBitMask(1), Preferred: true},
 					{NUMANodeAffinity: newBitMask(0, 1), Preferred: false},
@@ -150,7 +155,7 @@ func TestPlugin_GetPodTopologyHints(t *testing.T) {
 				},
 			},
 			want: map[string][]topologymanager.NUMATopologyHint{
-				string(apiext.ResourceRDMA): {
+				string(schedulingv1alpha1.RDMA): {
 					{NUMANodeAffinity: newBitMask(0), Preferred: true},
 					{NUMANodeAffinity: newBitMask(1), Preferred: true},
 					{NUMANodeAffinity: newBitMask(0, 1), Preferred: false},
@@ -171,7 +176,7 @@ func TestPlugin_GetPodTopologyHints(t *testing.T) {
 				},
 			},
 			want: map[string][]topologymanager.NUMATopologyHint{
-				string(apiext.ResourceRDMA): {
+				string(schedulingv1alpha1.RDMA): {
 					{NUMANodeAffinity: newBitMask(0, 1), Preferred: true},
 				},
 			},
@@ -191,17 +196,12 @@ func TestPlugin_GetPodTopologyHints(t *testing.T) {
 				DeviceTypes: []schedulingv1alpha1.DeviceType{schedulingv1alpha1.GPU, schedulingv1alpha1.RDMA},
 			},
 			want: map[string][]topologymanager.NUMATopologyHint{
-				string(apiext.ResourceGPUCore): {
+				string(schedulingv1alpha1.RDMA): {
 					{NUMANodeAffinity: newBitMask(0), Preferred: true},
 					{NUMANodeAffinity: newBitMask(1), Preferred: true},
 					{NUMANodeAffinity: newBitMask(0, 1), Preferred: false},
 				},
-				string(apiext.ResourceGPUMemoryRatio): {
-					{NUMANodeAffinity: newBitMask(0), Preferred: true},
-					{NUMANodeAffinity: newBitMask(1), Preferred: true},
-					{NUMANodeAffinity: newBitMask(0, 1), Preferred: false},
-				},
-				string(apiext.ResourceRDMA): {
+				string(schedulingv1alpha1.GPU): {
 					{NUMANodeAffinity: newBitMask(0), Preferred: true},
 					{NUMANodeAffinity: newBitMask(1), Preferred: true},
 					{NUMANodeAffinity: newBitMask(0, 1), Preferred: false},

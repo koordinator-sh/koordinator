@@ -18,6 +18,9 @@ limitations under the License.
 package topologymanager
 
 import (
+	"fmt"
+	"strings"
+
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/util/bitmask"
 )
@@ -63,17 +66,25 @@ func filterSingleNumaHints(allResourcesHints [][]NUMATopologyHint) [][]NUMATopol
 	return filteredResourcesHints
 }
 
-func (p *singleNumaNodePolicy) Merge(providersHints []map[string][]NUMATopologyHint, exclusivePolicy apiext.NumaTopologyExclusive, allNUMANodeStatus []apiext.NumaNodeStatus) (NUMATopologyHint, bool) {
-	filteredHints := filterProvidersHints(providersHints)
+func (p *singleNumaNodePolicy) Merge(providersHints []map[string][]NUMATopologyHint, exclusivePolicy apiext.NumaTopologyExclusive, allNUMANodeStatus []apiext.NumaNodeStatus) (NUMATopologyHint, bool, []string) {
+	filteredHints, reasons, summary := filterProvidersHints(providersHints)
+	if len(reasons) != 0 {
+		return NUMATopologyHint{}, false, reasons
+	}
 	// Filter to only include don't care and hints with a single NUMA node.
 	singleNumaHints := filterSingleNumaHints(filteredHints)
 	bestHint := mergeFilteredHints(p.numaNodes, singleNumaHints, exclusivePolicy, allNUMANodeStatus)
 
 	defaultAffinity, _ := bitmask.NewBitMask(p.numaNodes...)
 	if bestHint.NUMANodeAffinity.IsEqual(defaultAffinity) {
-		bestHint = NUMATopologyHint{nil, false, bestHint.Preferred, 0}
+		bestHint = NUMATopologyHint{
+			Preferred: bestHint.Preferred,
+		}
 	}
 
 	admit := p.canAdmitPodResult(&bestHint)
-	return bestHint, admit
+	if !admit {
+		return bestHint, false, []string{fmt.Sprintf(ErrNUMAHintCannotAligned, strings.Join(summary, ","))}
+	}
+	return bestHint, admit, nil
 }
