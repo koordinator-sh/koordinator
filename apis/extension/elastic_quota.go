@@ -55,6 +55,7 @@ const (
 	AnnotationNonPreemptibleRequest = QuotaKoordinatorPrefix + "/non-preemptible-request"
 	AnnotationNonPreemptibleUsed    = QuotaKoordinatorPrefix + "/non-preemptible-used"
 	AnnotationAdmission             = QuotaKoordinatorPrefix + "/admission"
+	AnnotationMinExcess             = QuotaKoordinatorPrefix + "/min-excess"
 )
 
 func GetParentQuotaName(quota *v1alpha1.ElasticQuota) string {
@@ -217,4 +218,14 @@ func GetAdmission(quota *v1alpha1.ElasticQuota) (corev1.ResourceList, error) {
 		}
 	}
 	return admission, nil
+}
+
+func GetMinExcess(quota *v1alpha1.ElasticQuota) (corev1.ResourceList, error) {
+	minExcess := corev1.ResourceList{}
+	if quota.Annotations[AnnotationMinExcess] != "" {
+		if err := json.Unmarshal([]byte(quota.Annotations[AnnotationMinExcess]), &minExcess); err != nil {
+			return minExcess, fmt.Errorf("failed to unmarshal min-excess, err=%v", err)
+		}
+	}
+	return minExcess, nil
 }

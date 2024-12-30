@@ -119,6 +119,7 @@ func TestGroupQuotaManager_UpdateQuotaInternal(t *testing.T) {
 	AddQuotaToManager(t, gqm, "test1", extension.RootQuotaName, 96, 160*GigaByte, 50, 80*GigaByte, true, false)
 
 	quota := CreateQuota("test1", extension.RootQuotaName, 64, 100*GigaByte, 50, 80*GigaByte, true, false)
+	quota.Annotations[extension.AnnotationMinExcess] = `{"cpu":10, "memory": "40Gi"}`
 	gqm.UpdateQuota(quota, false)
 	quotaInfo := gqm.quotaInfoMap["test1"]
 	assert.True(t, quotaInfo != nil)
@@ -127,11 +128,13 @@ func TestGroupQuotaManager_UpdateQuotaInternal(t *testing.T) {
 	assert.Equal(t, createResourceList(50, 80*GigaByte), quotaInfo.CalculateInfo.AutoScaleMin)
 	assert.Equal(t, int64(64), quotaInfo.CalculateInfo.SharedWeight.Cpu().Value())
 	assert.Equal(t, int64(100*GigaByte), quotaInfo.CalculateInfo.SharedWeight.Memory().Value())
+	assert.True(t, quotav1.Equals(createResourceList(10, 40*GigaByte), quotaInfo.CalculateInfo.MinExcess))
 
 	AddQuotaToManager(t, gqm, "test2", extension.RootQuotaName, 96, 160*GigaByte, 80, 80*GigaByte, true, false)
 
 	quota = CreateQuota("test1", extension.RootQuotaName, 84, 120*GigaByte, 60, 100*GigaByte, true, false)
 	quota.Labels[extension.LabelQuotaIsParent] = "true"
+	quota.Annotations[extension.AnnotationMinExcess] = `{"cpu":30, "memory": "120Gi"}`
 	err := gqm.UpdateQuota(quota, false)
 	assert.Nil(t, err)
 	quotaInfo = gqm.quotaInfoMap["test1"]
@@ -142,6 +145,7 @@ func TestGroupQuotaManager_UpdateQuotaInternal(t *testing.T) {
 	assert.Equal(t, createResourceList(60, 100*GigaByte), quotaInfo.CalculateInfo.AutoScaleMin)
 	assert.Equal(t, int64(84), quotaInfo.CalculateInfo.SharedWeight.Cpu().Value())
 	assert.Equal(t, int64(120*GigaByte), quotaInfo.CalculateInfo.SharedWeight.Memory().Value())
+	assert.True(t, quotav1.Equals(createResourceList(30, 120*GigaByte), quotaInfo.CalculateInfo.MinExcess))
 }
 
 func TestGroupQuotaManager_UpdateQuota(t *testing.T) {
@@ -2107,4 +2111,85 @@ func TestGroupQuotaManager_ImmediateIgnoreTerminatingPod(t *testing.T) {
 	gqm.OnPodDelete("1", pod2)
 	assert.Equal(t, createResourceList(0, 0), gqm.GetQuotaInfoByName("1").GetRequest())
 	assert.Equal(t, createResourceList(0, 0), gqm.GetQuotaInfoByName("1").GetUsed())
+}
+
+func TestGroupQuotaManager_UpdateGroupDeltaUsedAndMinExcessUsed(t *testing.T) {
+	defer utilfeature.SetFeatureGateDuringTest(t, k8sfeature.DefaultFeatureGate,
+		features.ElasticQuotaMinExcess, true)()
+	gqm := NewGroupQuotaManagerForTest()
+
+	// quota1 Max[40, 40]  Min[20,20] Used[0,0]  MinExcess[20,20]
+	//   |-- quota2 Max[30, 30]  Min[10,10] Used[0,0]  MinExcess[10,10]
+	//   |-- quota3 Max[20, 20]  Min[5,5]   Used[0,0]  MinExcess[15,15]
+	q1 := createQuota("1", extension.RootQuotaName, 40, 40, 20, 20)
+	q1.Annotations[extension.AnnotationMinExcess] = `{"cpu":20,"memory":20}`
+	q2 := createQuota("2", "1", 30, 30, 10, 10)
+	q2.Annotations[extension.AnnotationMinExcess] = `{"cpu":10,"memory":10}`
+	q3 := createQuota("3", "1", 20, 20, 5, 5)
+	q3.Annotations[extension.AnnotationMinExcess] = `{"cpu":15,"memory":15}`
+	gqm.UpdateQuota(q1, false)
+	gqm.UpdateQuota(q2, false)
+	gqm.UpdateQuota(q3, false)
+
+	qi1 := gqm.GetQuotaInfoByName("1")
+	qi2 := gqm.GetQuotaInfoByName("2")
+	qi3 := gqm.GetQuotaInfoByName("3")
+	assert.NotNil(t, qi1)
+	assert.NotNil(t, qi2)
+	assert.NotNil(t, qi3)
+
+	// 1. quota2 used [15,20]
+	//    expected: quota2 minExcessUsed [5, 10], quota1 minExcessUsed [5,10]
+	delta := createResourceList(15, 20)
+	nonPreemptibleUsed := createResourceList(0, 0)
+	gqm.updateGroupDeltaUsedNoLock("2", delta, nonPreemptibleUsed)
+	assert.Equal(t, createResourceList(15, 20), qi1.CalculateInfo.Used)
+	assert.Equal(t, createResourceList(5, 10), qi1.CalculateInfo.MinExcessUsed)
+	assert.Equal(t, createResourceList(15, 20), qi2.CalculateInfo.Used)
+	assert.Equal(t, createResourceList(5, 10), qi2.CalculateInfo.MinExcessUsed)
+
+	// 2. quota3 used [10,10]
+	//    expected: quota3 minExcessUsed [5,5], quota1 minExcessUsed [10,15]
+	delta = createResourceList(10, 10)
+	gqm.updateGroupDeltaUsedNoLock("3", delta, nonPreemptibleUsed)
+	assert.Equal(t, createResourceList(10, 10), qi3.CalculateInfo.Used)
+	assert.Equal(t, createResourceList(5, 5), qi3.CalculateInfo.MinExcessUsed)
+	assert.Equal(t, createResourceList(10, 15), qi1.CalculateInfo.MinExcessUsed)
+
+	// 3. quota2 used decreases to [5,15]
+	//    expected: quota2 minExcessUsed [0,5], quota1 minExcessUsed [5,10]
+	delta = createResourceList(-10, -5)
+	gqm.updateGroupDeltaUsedNoLock("2", delta, nonPreemptibleUsed)
+	assert.Equal(t, createResourceList(5, 15), qi2.CalculateInfo.Used)
+	assert.Equal(t, createResourceList(0, 5), qi2.CalculateInfo.MinExcessUsed)
+	assert.Equal(t, createResourceList(5, 10), qi1.CalculateInfo.MinExcessUsed)
+
+	// 4. quota3 used decreases to [2,2]
+	//    expected: quota3 minExcessUsed [0,0], quota1 minExcessUsed [0,5]
+	delta = createResourceList(-8, -8)
+	gqm.updateGroupDeltaUsedNoLock("3", delta, nonPreemptibleUsed)
+	assert.Equal(t, createResourceList(2, 2), qi3.CalculateInfo.Used)
+	assert.Equal(t, createResourceList(0, 0), qi3.CalculateInfo.MinExcessUsed)
+	assert.Equal(t, createResourceList(0, 5), qi1.CalculateInfo.MinExcessUsed)
+
+	// 5. quota2 used increases to [20,20]
+	//    expected: quota2 minExcessUsed [10,10], quota1 minExcessUsed [10,10]
+	delta = createResourceList(15, 5)
+	gqm.updateGroupDeltaUsedNoLock("2", delta, nonPreemptibleUsed)
+	assert.Equal(t, createResourceList(20, 20), qi2.CalculateInfo.Used)
+	assert.Equal(t, createResourceList(10, 10), qi2.CalculateInfo.MinExcessUsed)
+	assert.Equal(t, createResourceList(10, 10), qi1.CalculateInfo.MinExcessUsed)
+
+	// 6. quota2 and quota3 decrease to [0,0]
+	//    expected: minExcessUsed [0,0] for all quotas
+	delta = createResourceList(-20, -20)
+	gqm.updateGroupDeltaUsedNoLock("2", delta, nonPreemptibleUsed)
+	delta = createResourceList(-2, -2)
+	gqm.updateGroupDeltaUsedNoLock("3", delta, nonPreemptibleUsed)
+	assert.Equal(t, createResourceList(0, 0), qi1.CalculateInfo.Used)
+	assert.Equal(t, createResourceList(0, 0), qi2.CalculateInfo.Used)
+	assert.Equal(t, createResourceList(0, 0), qi3.CalculateInfo.Used)
+	assert.Equal(t, createResourceList(0, 0), qi1.CalculateInfo.MinExcessUsed)
+	assert.Equal(t, createResourceList(0, 0), qi2.CalculateInfo.MinExcessUsed)
+	assert.Equal(t, createResourceList(0, 0), qi3.CalculateInfo.MinExcessUsed)
 }

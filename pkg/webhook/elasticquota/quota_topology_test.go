@@ -94,6 +94,13 @@ func TestQuotaTopology_basicItemCheck(t *testing.T) {
 			quota: MakeQuota("temp").sharedWeight(MakeResourceList().CPU(-1).Mem(1048576).Obj()).Obj(),
 			err:   fmt.Errorf("%v quota.Annotation[%v]'s value < 0, in dimension :%v", "temp", extension.AnnotationSharedWeight, "[cpu]"),
 		},
+		{
+			name: "invalid min-excess",
+			quota: MakeQuota("temp").Annotations(map[string]string{
+				extension.AnnotationMinExcess: "invalid-min-excess",
+			}).Obj(),
+			err: fmt.Errorf("failed to unmarshal min-excess, err=invalid character 'i' looking for beginning of value"),
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

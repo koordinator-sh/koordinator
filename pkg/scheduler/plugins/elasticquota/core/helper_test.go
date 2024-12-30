@@ -22,6 +22,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	k8sfeature "k8s.io/apiserver/pkg/util/feature"
 
 	koordfeatures "github.com/koordinator-sh/koordinator/pkg/features"
@@ -87,4 +88,194 @@ func TestPodRequestsAndLimits(t *testing.T) {
 		})
 	}
 
+}
+
+func TestCalculateMinExcessUsedDelta(t *testing.T) {
+	tests := []struct {
+		name      string
+		min       corev1.ResourceList
+		used      corev1.ResourceList
+		usedDelta corev1.ResourceList
+		expected  corev1.ResourceList
+	}{
+		{
+			name: "min > used + usedDelta, used = 0, usedDelta > 0 ==> min-excess-used-delta = 0",
+			min: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewMilliQuantity(1000, resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(1024*1024*1024, resource.BinarySI),
+			},
+			used: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewMilliQuantity(0, resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(0, resource.BinarySI),
+			},
+			usedDelta: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewMilliQuantity(500, resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(512*1024*1024, resource.BinarySI),
+			},
+			expected: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewMilliQuantity(0, resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(0, resource.BinarySI),
+			},
+		},
+		{
+			name: "min > used + usedDelta, used > 0, usedDelta > 0 ==> min-excess-used-delta = 0",
+			min: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewMilliQuantity(1000, resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(1024*1024*1024, resource.BinarySI),
+			},
+			used: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewMilliQuantity(500, resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(512*1024*1024, resource.BinarySI),
+			},
+			usedDelta: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewMilliQuantity(500, resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(512*1024*1024, resource.BinarySI),
+			},
+			expected: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewMilliQuantity(0, resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(0, resource.BinarySI),
+			},
+		},
+		{
+			name: "min < used + usedDelta, used > 0, usedDelta > 0 ==> min-excess-used-delta > 0",
+			min: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewMilliQuantity(1000, resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(1024*1024*1024, resource.BinarySI),
+			},
+			used: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewMilliQuantity(500, resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(512*1024*1024, resource.BinarySI),
+			},
+			usedDelta: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewMilliQuantity(501, resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(513*1024*1024, resource.BinarySI),
+			},
+			expected: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewMilliQuantity(1, resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(1024*1024, resource.BinarySI),
+			},
+		},
+		{
+			name: "min < used, usedDelta > 0 ==> min-excess-used-delta = usedDelta",
+			min: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewMilliQuantity(1000, resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(1024*1024*1024, resource.BinarySI),
+			},
+			used: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewMilliQuantity(1100, resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(1124*1024*1024, resource.BinarySI),
+			},
+			usedDelta: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewMilliQuantity(100, resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(100*1024*1024, resource.BinarySI),
+			},
+			expected: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewMilliQuantity(100, resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(100*1024*1024, resource.BinarySI),
+			},
+		},
+		{
+			name: "min(cpu) < used(cpu), usedDelta > 0 ==> min-excess-used-delta(cpu) = usedDelta(cpu)",
+			min: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewMilliQuantity(1000, resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(1024*1024*1024, resource.BinarySI),
+			},
+			used: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewMilliQuantity(1100, resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(512*1024*1024, resource.BinarySI),
+			},
+			usedDelta: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewMilliQuantity(100, resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(100*1024*1024, resource.BinarySI),
+			},
+			expected: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewMilliQuantity(100, resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(0, resource.BinarySI),
+			},
+		},
+		{
+			name: "min < used, usedDelta > 0 ==> min-excess-used-delta = usedDelta (exclude other resources: pods)",
+			min: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewMilliQuantity(1000, resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(1024*1024*1024, resource.BinarySI),
+			},
+			used: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewMilliQuantity(1100, resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(1024*1024*1024, resource.BinarySI),
+				corev1.ResourcePods:   *resource.NewQuantity(10, resource.BinarySI),
+			},
+			usedDelta: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewMilliQuantity(100, resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(100*1024*1024, resource.BinarySI),
+				corev1.ResourcePods:   *resource.NewQuantity(1, resource.BinarySI),
+			},
+			expected: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewMilliQuantity(100, resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(100*1024*1024, resource.BinarySI),
+			},
+		},
+		{
+			name: "min > used, usedDelta < 0 ==> min-excess-used-delta = 0",
+			min: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewMilliQuantity(1000, resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(1024*1024*1024, resource.BinarySI),
+			},
+			used: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewMilliQuantity(100, resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(100*1024*1024, resource.BinarySI),
+			},
+			usedDelta: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewMilliQuantity(-100, resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(-100*1024*1024, resource.BinarySI),
+			},
+			expected: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewMilliQuantity(0, resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(0, resource.BinarySI),
+			},
+		},
+		{
+			name: "min < used, usedDelta < 0 ==> min-excess-used-delta = usedDelta",
+			min: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewMilliQuantity(1000, resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(1024*1024*1024, resource.BinarySI),
+			},
+			used: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewMilliQuantity(1100, resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(1124*1024*1024, resource.BinarySI),
+			},
+			usedDelta: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewMilliQuantity(-100, resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(-100*1024*1024, resource.BinarySI),
+			},
+			expected: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewMilliQuantity(-100, resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(-100*1024*1024, resource.BinarySI),
+			},
+		},
+		{
+			name: "min < used, usedDelta < 0 ==> min-excess-used-delta = <ratio> * usedDelta",
+			min: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewMilliQuantity(1000, resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(1024*1024*1024, resource.BinarySI),
+			},
+			used: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewMilliQuantity(1050, resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(1074*1024*1024, resource.BinarySI),
+			},
+			usedDelta: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewMilliQuantity(-100, resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(-100*1024*1024, resource.BinarySI),
+			},
+			expected: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewMilliQuantity(-50, resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(-50*1024*1024, resource.BinarySI),
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			delta := CalculateMinExcessUsedDelta(tt.min, tt.used, tt.usedDelta)
+			assert.True(t, quotav1.Equals(tt.expected, delta), "expected=%+v\n  actual=%+v", tt.expected, delta)
+		})
+	}
 }

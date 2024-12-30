@@ -770,7 +770,8 @@ func TestPlugin_PreFilter_CheckParent(t *testing.T) {
 			qi1.CalculateInfo.Runtime = tt.parentRuntime.DeepCopy()
 			qi1.UnLock()
 			podRequests := core.PodRequests(tt.pod)
-			status := *gp.checkQuotaRecursive(tt.quotaInfo.Name, []string{tt.quotaInfo.Name}, podRequests)
+			status := *gp.checkQuotaRecursive(tt.quotaInfo.Name, []string{tt.quotaInfo.Name}, podRequests,
+				&checkQuotaRecursiveState{})
 			assert.Equal(t, tt.expectedStatus, status)
 		})
 	}
@@ -1362,4 +1363,132 @@ func TestPostFilterState(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, got, got1)
 	})
+}
+
+func TestPlugin_PreFilter_CheckParentMinExcess(t *testing.T) {
+	test := []struct {
+		name            string
+		pod             *corev1.Pod
+		quotaInfo       *v1alpha1.ElasticQuota
+		parentQuotaInfo *v1alpha1.ElasticQuota
+		expectedStatus  framework.Status
+	}{
+		{
+			name: "accept",
+			pod: MakePod("t1-ns1", "pod1").Label(extension.LabelQuotaName, "test-child").Container(
+				MakeResourceList().CPU(2).Mem(2).Obj()).Obj(),
+			quotaInfo: &v1alpha1.ElasticQuota{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-child",
+					Labels: map[string]string{
+						extension.LabelQuotaParent: "test",
+					},
+				},
+				Spec: v1alpha1.ElasticQuotaSpec{
+					Max: MakeResourceList().CPU(10).Mem(10).Obj(),
+					Min: MakeResourceList().CPU(1).Mem(1).Obj(),
+				},
+			},
+			parentQuotaInfo: &v1alpha1.ElasticQuota{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test",
+					Annotations: map[string]string{
+						extension.AnnotationMinExcess: `{"cpu":1,"memory":1}`,
+					},
+				},
+				Spec: v1alpha1.ElasticQuotaSpec{
+					Max: MakeResourceList().CPU(10).Mem(10).Obj(),
+					Min: MakeResourceList().CPU(5).Mem(5).Obj(),
+				},
+			},
+			expectedStatus: *framework.NewStatus(framework.Success, ""),
+		}, {
+			name: "reject when cpu reach the min-excess limit",
+			pod: MakePod("t1-ns1", "pod1").Label(extension.LabelQuotaName, "test-child").Container(
+				MakeResourceList().CPU(3).Mem(3).Obj()).Obj(),
+			quotaInfo: &v1alpha1.ElasticQuota{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-child",
+					Labels: map[string]string{
+						extension.LabelQuotaParent: "test",
+					},
+				},
+				Spec: v1alpha1.ElasticQuotaSpec{
+					Max: MakeResourceList().CPU(10).Mem(10).Obj(),
+					Min: MakeResourceList().CPU(1).Mem(1).Obj(),
+				},
+			},
+			parentQuotaInfo: &v1alpha1.ElasticQuota{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test",
+					Annotations: map[string]string{
+						extension.AnnotationMinExcess: `{"cpu":1,"memory":10}`,
+					},
+				},
+				Spec: v1alpha1.ElasticQuotaSpec{
+					Max: MakeResourceList().CPU(30).Mem(30).Obj(),
+					Min: MakeResourceList().CPU(5).Mem(5).Obj(),
+				},
+			},
+			expectedStatus: *framework.NewStatus(framework.Unschedulable,
+				fmt.Sprintf("Insufficient min-excess quotas, "+
+					"quotaNameTopo: %v, min-excess: %v, min-excess-used: %v, min-excess-used-delta: %v, "+
+					"pod's request: %v, exceedDimensions: [cpu]",
+					[]string{"test", "test-child"}, printResourceList(MakeResourceList().CPU(1).Mem(10).Obj()),
+					printResourceList(corev1.ResourceList{}),
+					printResourceList(MakeResourceList().CPU(2).Mem(2).Obj()),
+					printResourceList(MakeResourceList().CPU(3).Mem(3).Obj()))),
+		}, {
+			name: "reject when memory reach the min-excess limit",
+			pod: MakePod("t1-ns1", "pod1").Label(extension.LabelQuotaName, "test-child").Container(
+				MakeResourceList().CPU(3).Mem(3).Obj()).Obj(),
+			quotaInfo: &v1alpha1.ElasticQuota{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-child",
+					Labels: map[string]string{
+						extension.LabelQuotaParent: "test",
+					},
+				},
+				Spec: v1alpha1.ElasticQuotaSpec{
+					Max: MakeResourceList().CPU(10).Mem(10).Obj(),
+					Min: MakeResourceList().CPU(1).Mem(1).Obj(),
+				},
+			},
+			parentQuotaInfo: &v1alpha1.ElasticQuota{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test",
+					Annotations: map[string]string{
+						extension.AnnotationMinExcess: `{"cpu":10,"memory":1}`,
+					},
+				},
+				Spec: v1alpha1.ElasticQuotaSpec{
+					Max: MakeResourceList().CPU(30).Mem(30).Obj(),
+					Min: MakeResourceList().CPU(5).Mem(5).Obj(),
+				},
+			},
+			expectedStatus: *framework.NewStatus(framework.Unschedulable,
+				fmt.Sprintf("Insufficient min-excess quotas, "+
+					"quotaNameTopo: %v, min-excess: %v, min-excess-used: %v, min-excess-used-delta: %v, "+
+					"pod's request: %v, exceedDimensions: [memory]",
+					[]string{"test", "test-child"}, printResourceList(MakeResourceList().CPU(10).Mem(1).Obj()),
+					printResourceList(corev1.ResourceList{}),
+					printResourceList(MakeResourceList().CPU(2).Mem(2).Obj()),
+					printResourceList(MakeResourceList().CPU(3).Mem(3).Obj()))),
+		},
+	}
+	for _, tt := range test {
+		t.Run(tt.name, func(t *testing.T) {
+			suit := newPluginTestSuit(t, nil)
+			p, err := suit.proxyNew(suit.elasticQuotaArgs, suit.Handle)
+			assert.Nil(t, err)
+			gp := p.(*Plugin)
+			gp.pluginArgs.EnableCheckParentQuota = true
+			gp.OnQuotaAdd(tt.parentQuotaInfo)
+			gp.OnQuotaAdd(tt.quotaInfo)
+			podRequests := core.PodRequests(tt.pod)
+			status := *gp.checkQuotaRecursive(tt.quotaInfo.Name, []string{tt.quotaInfo.Name}, podRequests,
+				&checkQuotaRecursiveState{minExcessEnabled: true})
+			assert.Equal(t, tt.expectedStatus, status)
+		})
+	}
 }
