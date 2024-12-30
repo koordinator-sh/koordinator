@@ -18,6 +18,7 @@ package runtimehooks
 
 import (
 	"flag"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/hooks/podgpu"
 	"math"
 	"time"
 
@@ -60,6 +61,13 @@ const (
 	// alpha: v0.3
 	// beta: v1.1
 	GPUEnvInject featuregate.Feature = "GPUEnvInject"
+
+	// PODGpuDelete delete nodePodResourcese's gpu data when pod which use gpu is deleted.
+	//
+	// owner: @Stone
+	// alpha: v0.3
+	// beta: v1.1
+	PODGpuDelete featuregate.Feature = "PODGpuDelete"
 
 	// RDMADeviceInject injects rdma device info according to allocate result from koord-scheduler.
 	//
@@ -108,6 +116,7 @@ var (
 		GroupIdentity:    {Default: true, PreRelease: featuregate.Beta},
 		CPUSetAllocator:  {Default: true, PreRelease: featuregate.Beta},
 		GPUEnvInject:     {Default: false, PreRelease: featuregate.Alpha},
+		PODGpuDelete:     {Default: false, PreRelease: featuregate.Alpha},
 		RDMADeviceInject: {Default: false, PreRelease: featuregate.Alpha},
 		BatchResource:    {Default: true, PreRelease: featuregate.Beta},
 		CPUNormalization: {Default: false, PreRelease: featuregate.Alpha},
@@ -121,6 +130,7 @@ var (
 		GroupIdentity:    groupidentity.Object(),
 		CPUSetAllocator:  cpuset.Object(),
 		GPUEnvInject:     gpu.Object(),
+		PODGpuDelete:     podgpu.Object(),
 		RDMADeviceInject: rdma.Object(),
 		BatchResource:    batchresource.Object(),
 		CPUNormalization: cpunormalization.Object(),

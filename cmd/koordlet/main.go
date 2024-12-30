@@ -18,6 +18,7 @@ package main
 
 import (
 	"flag"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/hooks/gpu"
 	"net/http"
 	_ "net/http/pprof"
 	"time"
@@ -79,6 +80,8 @@ func main() {
 
 	// Expose the Prometheus http endpoint
 	go installHTTPHandler()
+
+	go gpu.StartGrpc()
 
 	// Start the Cmd
 	klog.Info("Starting the koordlet daemon")
