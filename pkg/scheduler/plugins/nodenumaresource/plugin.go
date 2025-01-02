@@ -208,6 +208,7 @@ func (s *preFilterState) Clone() framework.StateData {
 		requiredCPUBindPolicy:       s.requiredCPUBindPolicy,
 		preferredCPUBindPolicy:      s.preferredCPUBindPolicy,
 		podNUMATopologyPolicy:       s.podNUMATopologyPolicy,
+		podNUMAExclusive:            s.podNUMAExclusive,
 		preferredCPUExclusivePolicy: s.preferredCPUExclusivePolicy,
 		numCPUsNeeded:               s.numCPUsNeeded,
 		allocation:                  s.allocation,
