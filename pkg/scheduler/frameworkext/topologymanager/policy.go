@@ -19,6 +19,7 @@ package topologymanager
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"k8s.io/klog/v2"
@@ -175,6 +176,7 @@ func filterProvidersHints(providersHints []map[string][]NUMATopologyHint) ([][]N
 			allProviderHints = append(allProviderHints, hints[resource])
 		}
 	}
+	sort.Strings(summary)
 	return allProviderHints, reasons, summary
 }
 
