@@ -34,6 +34,8 @@ import (
 const (
 	// Name is plugin name
 	Name = "NodeResourcesFitPlus"
+
+	preScoreStateKey = "PreScore" + Name
 )
 
 var (
@@ -63,6 +65,11 @@ func (s *Plugin) Name() string {
 	return Name
 }
 
+func (s *Plugin) PreScore(ctx context.Context, cycleState *framework.CycleState, pod *v1.Pod, nodes []*v1.Node) *framework.Status {
+	cycleState.Write(preScoreStateKey, computePodResourceRequest(pod))
+	return nil
+}
+
 func (s *Plugin) Score(ctx context.Context, state *framework.CycleState, p *v1.Pod, nodeName string) (int64, *framework.Status) {
 
 	nodeInfo, err := s.handle.SnapshotSharedLister().NodeInfos().Get(nodeName)
@@ -73,7 +80,12 @@ func (s *Plugin) Score(ctx context.Context, state *framework.CycleState, p *v1.P
 	var nodeScore int64
 	var weightSum int64
 
-	podRequest, _ := fitsRequest(computePodResourceRequest(p).Resource, nodeInfo)
+	scoreState, err := getPreScoreState(state)
+	if err != nil {
+		return 0, framework.NewStatus(framework.Error, fmt.Sprintf("get State node %q from PreScore: %v", nodeName, err))
+	}
+
+	podRequest, _ := fitsRequest(scoreState.Resource, nodeInfo)
 
 	for _, requestSourceName := range podRequest {
 		v, ok := s.args.Resources[requestSourceName]
@@ -115,14 +127,19 @@ func (p *Plugin) ScoreExtensions() framework.ScoreExtensions {
 	return nil
 }
 
-type preFilterState struct {
+type preScoreState struct {
 	framework.Resource
 }
 
-func computePodResourceRequest(pod *v1.Pod) *preFilterState {
+// Clone the prefilter state.
+func (s *preScoreState) Clone() framework.StateData {
+	return s
+}
+
+func computePodResourceRequest(pod *v1.Pod) *preScoreState {
 	// pod hasn't scheduled yet so we don't need to worry about InPlacePodVerticalScalingEnabled
 	reqs := resource.PodRequests(pod, resource.PodResourcesOptions{})
-	result := &preFilterState{}
+	result := &preScoreState{}
 	result.SetMaxResource(reqs)
 	return result
 }
@@ -168,4 +185,18 @@ func fitsRequest(podRequest framework.Resource, nodeInfo *framework.NodeInfo) ([
 	}
 
 	return podRequestResource, nodeRequestResource
+}
+
+func getPreScoreState(cycleState *framework.CycleState) (*preScoreState, error) {
+	c, err := cycleState.Read(preScoreStateKey)
+	if err != nil {
+		// preFilterState doesn't exist, likely PreFilter wasn't invoked.
+		return nil, fmt.Errorf("error reading %q from cycleState: %w", preScoreStateKey, err)
+	}
+
+	s, ok := c.(*preScoreState)
+	if !ok {
+		return nil, fmt.Errorf("%+v  convert to NodeResourcesFit.preFilterState error", c)
+	}
+	return s, nil
 }

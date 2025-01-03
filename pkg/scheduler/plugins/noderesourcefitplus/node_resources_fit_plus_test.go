@@ -251,6 +251,12 @@ func TestPlugin_Score(t *testing.T) {
 			},
 		},
 	}
+
+	status := p.(framework.PreScorePlugin).PreScore(context.TODO(), cycleState, pod, nodes)
+	if status != nil {
+		t.Fatal("PreScore run err")
+	}
+
 	scoreNode1, _ := p.(*Plugin).Score(context.TODO(), cycleState, pod, "testNode1")
 	scoreNode2, _ := p.(*Plugin).Score(context.TODO(), cycleState, pod, "testNode2")
 	if scoreNode1 <= scoreNode2 {
