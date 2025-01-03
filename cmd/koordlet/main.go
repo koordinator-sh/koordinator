@@ -18,8 +18,12 @@ package main
 
 import (
 	"flag"
+	"google.golang.org/grpc"
+	pb "k8s.io/kubelet/pkg/apis/podresources/v1alpha1"
+	"net"
 	"net/http"
 	_ "net/http/pprof"
+	"os"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -35,6 +39,8 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
 	metricsutil "github.com/koordinator-sh/koordinator/pkg/util/metrics"
 )
+
+const ServerPodResourcesKubeletSocket = "/pod-resources/koordlet.sock"
 
 func main() {
 	cfg := config.NewConfiguration()
@@ -100,4 +106,77 @@ func installHTTPHandler() {
 	options.InstallExtendedHTTPHandler(mux)
 	// http.HandleFunc("/healthz", d.HealthzHandler())
 	klog.Fatalf("Prometheus monitoring failed: %v", http.ListenAndServe(*options.ServerAddr, mux))
+}
+
+type PodResourcesServer struct{}
+
+var nodePodResources = []*pb.PodResources{
+	{
+		Name:      "pod-1",
+		Namespace: "default",
+		Containers: []*pb.ContainerResources{
+			{
+				Name: "container-1",
+				Devices: []*pb.ContainerDevices{
+					{
+						ResourceName: "nvidia.com/gpu",
+						DeviceIds:    []string{"GPU-32e51276-4ddd-5d40-b63a-7bf69ea08b2e", "GPU-6638b0e5-0708-3bef-74d1-5b75b85f6e75"},
+					},
+				},
+			},
+		},
+	},
+	{
+		Name:      "pod-2",
+		Namespace: "kube-system",
+		Containers: []*pb.ContainerResources{
+			{
+				Name: "container-2",
+				Devices: []*pb.ContainerDevices{
+					{
+						ResourceName: "nvidia.com/gpu",
+						DeviceIds:    []string{"GPU-68d4072a-f4b8-46e5-c76f-66ce3d02cc38"},
+					},
+				},
+			},
+		},
+	},
+}
+
+func (s *PodResourcesServer) List(ctx context.Context, req *pb.ListPodResourcesRequest) (*pb.ListPodResourcesResponse, error) {
+	//var pods []*pb.PodResources
+	klog.V(1).Infof("List(): start to list pod")
+
+	return &pb.ListPodResourcesResponse{PodResources: nodePodResources}, nil
+}
+
+func startGrpc() error {
+	lis, err := net.Listen("unix", ServerPodResourcesKubeletSocket)
+	if err != nil {
+		klog.Errorf("failed to listen: %v", err)
+		return err
+	}
+	klog.V(1).Infof("setSocketPermissions...")
+	if err := setSocketPermissions(ServerPodResourcesKubeletSocket); err != nil {
+		klog.Errorf("failed to set socket permissions: %v", err)
+		return err
+	}
+	klog.V(1).Infof("NewServer...")
+	server := grpc.NewServer()
+	klog.V(1).Infof("RegisterPodResourcesListerServer...")
+	pb.RegisterPodResourcesListerServer(server, &PodResourcesServer{})
+
+	klog.V(1).Infof("Starting gRPC server on %s", ServerPodResourcesKubeletSocket)
+	if err := server.Serve(lis); err != nil {
+		klog.Errorf("failed to serve: %v", err)
+		return err
+	}
+	return nil
+}
+
+func setSocketPermissions(socketPath string) error {
+	// In a real application, you would set the correct permissions here.
+	// For example:
+	return os.Chmod(socketPath, 0660)
+	//return nil
 }
