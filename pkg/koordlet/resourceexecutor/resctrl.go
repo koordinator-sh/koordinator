@@ -89,12 +89,14 @@ func NewResctrlQoSReader() ResctrlReader {
 	return &ResctrlAMDReader{}
 }
 
+// ReadResctrlL3Stat: Reads the resctrl L3 cache statistics based on NUMA domain.
+// For more information about x86 resctrl, refer to: https://docs.kernel.org/arch/x86/resctrl.html
 func (rr *ResctrlBaseReader) ReadResctrlL3Stat(parent string) (map[CacheId]uint64, error) {
 	l3Stat := make(map[CacheId]uint64)
 	monDataPath := system.GetResctrlMonDataPath(parent)
 	fd, err := os.Open(monDataPath)
 	if err != nil {
-		return nil, fmt.Errorf(ErrResctrlDir)
+		return nil, errors.New(ErrResctrlDir)
 	}
 	defer fd.Close()
 	// read all l3-memory domains
@@ -103,31 +105,36 @@ func (rr *ResctrlBaseReader) ReadResctrlL3Stat(parent string) (map[CacheId]uint6
 		return nil, fmt.Errorf("%s, cannot find L3 domains, err: %w", ErrResctrlDir, err)
 	}
 	for _, domain := range domains {
+		// Convert the cache ID from the domain name string to an integer.
 		cacheId, err := strconv.Atoi(strings.Split(domain.Name(), "_")[CacheIdIndex])
 		if err != nil {
 			return nil, fmt.Errorf("%s, cannot get cacheid, err: %w", ErrResctrlDir, err)
 		}
+		// Construct the path to the resctrl L3 cache occupancy file.
 		path := system.ResctrlLLCOccupancy.Path(filepath.Join(parent, system.ResctrlMonData, domain.Name()))
 		l3Byte, err := os.ReadFile(path)
 		if err != nil {
 			return nil, fmt.Errorf("%s, cannot read from resctrl file system, err: %w",
 				ErrResctrlDir, err)
 		}
+		// Parse the L3 cache usage data from the file content.
 		l3Usage, err := strconv.ParseUint(string(l3Byte), 10, 64)
 		if err != nil {
-			return nil, fmt.Errorf("cannot parse result, err: %w", err)
+			return nil, fmt.Errorf("cannot parse L3 cache usage, err: %w", err)
 		}
 		l3Stat[CacheId(cacheId)] = l3Usage
 	}
 	return l3Stat, nil
 }
 
+// ReadResctrlMBStat: Reads the resctrl memory bandwidth statistics based on NUMA domain.
+// For more information about x86 resctrl, refer to: https://docs.kernel.org/arch/x86/resctrl.html
 func (rr *ResctrlBaseReader) ReadResctrlMBStat(parent string) (map[CacheId]system.MBStatData, error) {
 	mbStat := make(map[CacheId]system.MBStatData)
 	monDataPath := system.GetResctrlMonDataPath(parent)
 	fd, err := os.Open(monDataPath)
 	if err != nil {
-		return nil, fmt.Errorf(ErrResctrlDir)
+		return nil, errors.New(ErrResctrlDir)
 	}
 	// read all l3-memory domains
 	domains, err := fd.ReadDir(-1)
@@ -135,11 +142,15 @@ func (rr *ResctrlBaseReader) ReadResctrlMBStat(parent string) (map[CacheId]syste
 		return nil, fmt.Errorf("%s, cannot find L3 domains, err: %w", ErrResctrlDir, err)
 	}
 	for _, domain := range domains {
+		// Parse the L3 cache usage data from the file content.
 		cacheId, err := strconv.Atoi(strings.Split(domain.Name(), "_")[CacheIdIndex])
 		if err != nil {
 			return nil, fmt.Errorf("%s, cannot get cacheid, err: %w", ErrResctrlDir, err)
 		}
 		mbStat[CacheId(cacheId)] = make(system.MBStatData)
+		// Read the memory bandwidth statistics for the local and total memory bandwidth.
+		// The local memory bandwidth is the memory bandwidth consumed by the domain itself.
+		// The total memory bandwidth is the memory bandwidth consumed by the domain and accessed by other domains.
 		for _, mbResource := range []system.Resource{
 			system.ResctrlMBLocal, system.ResctrlMBTotal,
 		} {

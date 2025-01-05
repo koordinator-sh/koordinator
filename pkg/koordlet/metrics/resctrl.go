@@ -33,26 +33,42 @@ const (
 )
 
 var (
-	QosResctrl = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+	ResctrlLLC = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Subsystem: KoordletSubsystem,
-		Name:      "qos_resctrl",
-		Help:      "qos resctrl collected by koordlet",
-	}, []string{NodeKey, ResctrlResourceType, ResctrlCacheId, ResctrlQos, ResctrlMbType})
+		Name:      "resctrl_llc_occupancy",
+		Help:      "resctrl default qos(LSR, LS, BE) llc occupancy collected by koordlet",
+	}, []string{NodeKey, ResctrlCacheId, ResctrlQos})
+	ResctrlMB = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Subsystem: KoordletSubsystem,
+		Name:      "resctrl_memory_bandwidth",
+		Help:      "resctrl default qos(LSR, LS, BE) memory bandwidth collected by koordlet",
+	}, []string{NodeKey, ResctrlCacheId, ResctrlQos, ResctrlMbType})
 
 	ResctrlCollectors = []prometheus.Collector{
-		QosResctrl,
+		ResctrlLLC,
+		ResctrlMB,
 	}
 )
 
-func ResetQosResctrl() {
-	QosResctrl.Reset()
+func ResetResctrlLLCQos() {
+	ResctrlLLC.Reset()
 }
 
-func RecordQosResctrl(resourceType string, cacheId int, qos, mbType string, value uint64) {
+func ResetResctrlMBQos() {
+	ResctrlMB.Reset()
+}
+
+func RecordResctrlLLC(cacheId int, qos string, value uint64) {
 	labels := genNodeLabels()
-	labels[ResctrlResourceType] = resourceType
+	labels[ResctrlCacheId] = strconv.Itoa(cacheId)
+	labels[ResctrlQos] = qos
+	ResctrlLLC.With(labels).Set(float64(value))
+}
+
+func RecordResctrlMB(cacheId int, qos, mbType string, value uint64) {
+	labels := genNodeLabels()
 	labels[ResctrlCacheId] = strconv.Itoa(cacheId)
 	labels[ResctrlQos] = qos
 	labels[ResctrlMbType] = mbType
-	QosResctrl.With(labels).Set(float64(value))
+	ResctrlMB.With(labels).Set(float64(value))
 }

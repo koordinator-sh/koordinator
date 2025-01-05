@@ -34,7 +34,7 @@ func Test_NewDefaultConfig(t *testing.T) {
 		PSICollectorInterval:             10 * time.Second,
 		CPICollectorTimeWindow:           10 * time.Second,
 		ColdPageCollectorInterval:        5 * time.Second,
-		ResctrlCollectorInterval:         1 * time.Second,
+		ResctrlCollectorInterval:         10 * time.Second,
 		EnablePageCacheCollector:         false,
 	}
 	defaultConfig := NewDefaultConfig()

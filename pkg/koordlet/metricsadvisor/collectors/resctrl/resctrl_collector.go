@@ -100,8 +100,8 @@ func (r *resctrlCollector) collectQoSResctrlStat() {
 			continue
 		}
 		for cacheId, value := range l3Map {
-			metrics.RecordQosResctrl(metrics.ResourceTypeLLC, int(cacheId), qos, "", value)
-			llcSample, err := metriccache.QosResctrl.GenerateSample(metriccache.MetricPropertiesFunc.QosResctrl(qos, int(cacheId), metrics.ResourceTypeLLC, ""), collectTime, float64(value))
+			metrics.RecordResctrlLLC(int(cacheId), qos, value)
+			llcSample, err := metriccache.ResctrlLLCMetric.GenerateSample(metriccache.MetricPropertiesFunc.ResctrlLLC(qos, int(cacheId)), collectTime, float64(value))
 			if err != nil {
 				klog.Warningf("generate QoS %s resctrl llc sample error: %v", qos, err)
 			}
@@ -114,8 +114,8 @@ func (r *resctrlCollector) collectQoSResctrlStat() {
 		}
 		for cacheId, value := range mbMap {
 			for mbType, mbValue := range value {
-				metrics.RecordQosResctrl(metrics.ResourceTypeMB, int(cacheId), qos, mbType, mbValue)
-				mbSample, err := metriccache.QosResctrl.GenerateSample(metriccache.MetricPropertiesFunc.QosResctrl(qos, int(cacheId), metrics.ResourceTypeMB, mbType), collectTime, float64(mbValue))
+				metrics.RecordResctrlMB(int(cacheId), qos, mbType, mbValue)
+				mbSample, err := metriccache.ResctrlMBMetric.GenerateSample(metriccache.MetricPropertiesFunc.ResctrlMB(qos, int(cacheId), mbType), collectTime, float64(mbValue))
 				if err != nil {
 					klog.V(4).Infof("generate QoS %s resctrl mb sample error: %v", qos, err)
 				}
