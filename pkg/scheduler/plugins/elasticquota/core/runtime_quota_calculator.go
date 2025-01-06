@@ -98,6 +98,12 @@ func (qt *quotaTree) updateGuaranteed(groupName string, guarantee int64) {
 	}
 }
 
+func (qt *quotaTree) erase(groupName string) {
+	if _, exist := qt.quotaNodes[groupName]; exist {
+		delete(qt.quotaNodes, groupName)
+	}
+}
+
 func (qt *quotaTree) find(groupName string) (bool, *quotaNode) {
 	if nodeValue, exist := qt.quotaNodes[groupName]; exist {
 		return exist, nodeValue
@@ -515,4 +521,23 @@ func createQuantity(value int64, resName v1.ResourceName) resource.Quantity {
 		q = *resource.NewQuantity(value, resource.DecimalSI)
 	}
 	return q
+}
+
+func (qtw *RuntimeQuotaCalculator) deleteOneGroup(quotaInfo *QuotaInfo) {
+	qtw.lock.Lock()
+	defer qtw.lock.Unlock()
+
+	for resKey := range qtw.resourceKeys {
+		if exist, _ := qtw.quotaTree[resKey].find(quotaInfo.Name); exist {
+			qtw.quotaTree[resKey].erase(quotaInfo.Name)
+		}
+	}
+	delete(qtw.groupReqLimit, quotaInfo.Name)
+	delete(qtw.groupGuaranteed, quotaInfo.Name)
+
+	qtw.globalRuntimeVersion++
+
+	if klog.V(5).Enabled() {
+		qtw.logQuotaInfoNoLock("deleteOneGroup finish", quotaInfo)
+	}
 }

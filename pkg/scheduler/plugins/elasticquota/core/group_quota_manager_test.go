@@ -211,6 +211,74 @@ func TestGroupQuotaManager_DeleteOneGroup(t *testing.T) {
 	assert.Equal(t, 4, len(gqm.quotaInfoMap))
 }
 
+func TestGroupQuotaManager_DeleteQuotaInternal(t *testing.T) {
+	gqm := NewGroupQuotaManagerForTest()
+	gqm.UpdateClusterTotalResource(createResourceList(1000, 1000*GigaByte))
+	parent1 := AddQuotaToManager(t, gqm, "parent1", extension.RootQuotaName, 200, 200*GigaByte, 200, 200*GigaByte, true, true)
+	// test1 allow lent min
+	test1 := AddQuotaToManager(t, gqm, "test1", "parent1", 96, 160*GigaByte, 50, 80*GigaByte, true, false)
+	// test2 not allow lent min
+	test2 := AddQuotaToManager(t, gqm, "test2", "parent1", 96, 160*GigaByte, 80, 80*GigaByte, false, false)
+	assert.Equal(t, 4, len(gqm.runtimeQuotaCalculatorMap))
+	assert.Equal(t, 4, len(gqm.quotaTopoNodeMap))
+	assert.Equal(t, 6, len(gqm.quotaInfoMap))
+	assert.Equal(t, 2, len(gqm.quotaTopoNodeMap["parent1"].childGroupQuotaInfos))
+
+	parent1Info := gqm.GetQuotaInfoByName("parent1")
+	assert.Equal(t, createResourceList(80, 80*GigaByte), parent1Info.CalculateInfo.Request)
+	assert.Equal(t, createResourceList(80, 80*GigaByte), parent1Info.CalculateInfo.ChildRequest)
+
+	test1Info := gqm.GetQuotaInfoByName("test1")
+	assert.Equal(t, v1.ResourceList{}, test1Info.CalculateInfo.Request)
+	assert.Equal(t, v1.ResourceList{}, test1Info.CalculateInfo.ChildRequest)
+
+	test2Info := gqm.GetQuotaInfoByName("test2")
+	assert.Equal(t, createResourceList(80, 80*GigaByte), test2Info.CalculateInfo.Request)
+	assert.Equal(t, v1.ResourceList{}, test2Info.CalculateInfo.ChildRequest)
+
+	// delete test1 quota
+	err := gqm.deleteQuotaNoLock(test1)
+	assert.Nil(t, err)
+	test1Info = gqm.GetQuotaInfoByName("test1")
+	assert.True(t, test1Info == nil)
+
+	assert.Equal(t, 3, len(gqm.runtimeQuotaCalculatorMap))
+	assert.Equal(t, 3, len(gqm.quotaTopoNodeMap))
+	assert.Equal(t, 5, len(gqm.quotaInfoMap))
+
+	// check parent requests
+	parent1Info = gqm.GetQuotaInfoByName("parent1")
+	assert.Equal(t, createResourceList(80, 80*GigaByte), parent1Info.CalculateInfo.Request)
+	assert.Equal(t, createResourceList(80, 80*GigaByte), parent1Info.CalculateInfo.ChildRequest)
+	assert.Equal(t, 1, len(gqm.quotaTopoNodeMap["parent1"].childGroupQuotaInfos))
+
+	// delete test2 quota
+	err = gqm.deleteQuotaNoLock(test2)
+	assert.Nil(t, err)
+	test2Info = gqm.GetQuotaInfoByName("test2")
+	assert.True(t, test2Info == nil)
+
+	assert.Equal(t, 2, len(gqm.runtimeQuotaCalculatorMap))
+	assert.Equal(t, 2, len(gqm.quotaTopoNodeMap))
+	assert.Equal(t, 4, len(gqm.quotaInfoMap))
+
+	// check parent requests
+	parent1Info = gqm.GetQuotaInfoByName("parent1")
+	assert.Equal(t, createResourceList(0, 0), parent1Info.CalculateInfo.Request)
+	assert.Equal(t, createResourceList(0, 0), parent1Info.CalculateInfo.ChildRequest)
+	assert.Equal(t, 0, len(gqm.quotaTopoNodeMap["parent1"].childGroupQuotaInfos))
+
+	// delete parent1 quota
+	err = gqm.deleteQuotaNoLock(parent1)
+	assert.Nil(t, err)
+	parent1Info = gqm.GetQuotaInfoByName("parent1")
+	assert.True(t, parent1Info == nil)
+
+	assert.Equal(t, 1, len(gqm.runtimeQuotaCalculatorMap))
+	assert.Equal(t, 1, len(gqm.quotaTopoNodeMap))
+	assert.Equal(t, 3, len(gqm.quotaInfoMap))
+}
+
 func TestGroupQuotaManager_UpdateQuotaDeltaRequest(t *testing.T) {
 	gqm := NewGroupQuotaManagerForTest()
 

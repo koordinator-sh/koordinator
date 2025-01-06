@@ -388,12 +388,7 @@ func (gqm *GroupQuotaManager) UpdateQuota(quota *v1alpha1.ElasticQuota, isDelete
 
 	quotaName := quota.Name
 	if isDelete {
-		// TODO: inplace delete
-		_, exist := gqm.quotaInfoMap[quotaName]
-		if !exist {
-			return fmt.Errorf("get quota info failed, quotaName:%v", quotaName)
-		}
-		delete(gqm.quotaInfoMap, quotaName)
+		return gqm.deleteQuotaNoLock(quota)
 	} else {
 		newQuotaInfo := NewQuotaInfoFromQuota(quota)
 		// update the local quotaInfo's crd
@@ -1108,4 +1103,50 @@ func shouldBeIgnored(pod *v1.Pod) bool {
 	} else {
 		return time.Now().After(pod.DeletionTimestamp.Time.Add(time.Duration(*pod.DeletionGracePeriodSeconds) * time.Second))
 	}
+}
+
+func (gqm *GroupQuotaManager) deleteQuotaNoLock(quota *v1alpha1.ElasticQuota) error {
+	quotaInfo, exist := gqm.quotaInfoMap[quota.Name]
+	if !exist {
+		return fmt.Errorf("get quota info failed, quotaName:%v", quota.Name)
+	}
+	delete(gqm.quotaInfoMap, quota.Name)
+
+	// handle runtimeQuotaCalculator.
+	quotaInfo.lock.Lock()
+	defer quotaInfo.lock.Unlock()
+	if runtimeQuotaCalculator, exist := gqm.runtimeQuotaCalculatorMap[quotaInfo.ParentName]; exist {
+		runtimeQuotaCalculator.deleteOneGroup(quotaInfo)
+	}
+	delete(gqm.runtimeQuotaCalculatorMap, quota.Name)
+
+	// remove scale min.
+	gqm.scaleMinQuotaManager.remove(quotaInfo.ParentName, quotaInfo.Name)
+
+	// remove topology node.
+	delete(gqm.quotaTopoNodeMap, quota.Name)
+	if parentNode, exist := gqm.quotaTopoNodeMap[quotaInfo.ParentName]; exist {
+		delete(parentNode.childGroupQuotaInfos, quota.Name)
+	}
+
+	// update resource keys
+	gqm.updateResourceKeyNoLock()
+
+	// update request
+	deltaReq := quotav1.Subtract(v1.ResourceList{}, quotaInfo.CalculateInfo.Request)
+	deltaNonPreemptibleRequest := quotav1.Subtract(v1.ResourceList{}, quotaInfo.CalculateInfo.NonPreemptibleRequest)
+	if !quotav1.IsZero(deltaReq) || !quotav1.IsZero(deltaNonPreemptibleRequest) {
+		gqm.updateGroupDeltaRequestNoLock(quotaInfo.ParentName, deltaReq, deltaNonPreemptibleRequest, -1)
+	}
+
+	// update used
+	deltaUsed := quotav1.Subtract(v1.ResourceList{}, quotaInfo.CalculateInfo.Used)
+	deltaNonPreemptibleUsed := quotav1.Subtract(v1.ResourceList{}, quotaInfo.CalculateInfo.NonPreemptibleUsed)
+	if !quotav1.IsZero(deltaUsed) || !quotav1.IsZero(deltaNonPreemptibleUsed) {
+		gqm.updateGroupDeltaUsedNoLock(quotaInfo.ParentName, deltaUsed, deltaNonPreemptibleUsed, -1)
+	}
+
+	klog.Infof("delete quota %v for quota tree %v", quota.Name, gqm.treeID)
+
+	return nil
 }

@@ -96,6 +96,30 @@ func (s *ScaleMinQuotaManager) update(parQuotaName, subQuotaName string, subMinQ
 	s.quotaEnableMinQuotaScaleMap[subQuotaName] = enableScaleMinQuota
 }
 
+func (s *ScaleMinQuotaManager) remove(parQuotaName, subQuotaName string) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	if !s.quotaEnableMinQuotaScaleMap[subQuotaName] {
+		if _, ok := s.disableScaleSubsSumMinQuotaMap[parQuotaName]; ok {
+			s.disableScaleSubsSumMinQuotaMap[parQuotaName] = quotav1.SubtractWithNonNegativeResult(s.disableScaleSubsSumMinQuotaMap[parQuotaName],
+				s.originalMinQuotaMap[subQuotaName])
+		}
+	} else {
+		if _, ok := s.enableScaleSubsSumMinQuotaMap[parQuotaName]; ok {
+			s.enableScaleSubsSumMinQuotaMap[parQuotaName] = quotav1.SubtractWithNonNegativeResult(s.enableScaleSubsSumMinQuotaMap[parQuotaName],
+				s.originalMinQuotaMap[subQuotaName])
+		}
+	}
+
+	delete(s.originalMinQuotaMap, subQuotaName)
+	delete(s.quotaEnableMinQuotaScaleMap, subQuotaName)
+
+	if klog.V(5).Enabled() {
+		klog.Infof("ScaleMinQuotaManager remove, parQuota: %v, subQuota: %v  ", parQuotaName, subQuotaName)
+	}
+}
+
 func (s *ScaleMinQuotaManager) getScaledMinQuota(newTotalRes v1.ResourceList, parQuotaName, subQuotaName string) (bool, v1.ResourceList) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
