@@ -82,7 +82,9 @@ func NewGroupQuotaManager(treeID string, systemGroupMax, defaultGroupMax v1.Reso
 		quotaManager.quotaInfoMap[extension.DefaultQuotaName].setMaxQuotaNoLock(defaultGroupMax)
 	}
 
-	quotaManager.quotaInfoMap[extension.RootQuotaName] = NewQuotaInfo(true, false, extension.RootQuotaName, "")
+	rootQuotaInfo := NewQuotaInfo(true, false, extension.RootQuotaName, "")
+	quotaManager.quotaInfoMap[extension.RootQuotaName] = rootQuotaInfo
+	quotaManager.quotaTopoNodeMap[extension.RootQuotaName] = NewQuotaTopoNode(extension.RootQuotaName, rootQuotaInfo)
 	quotaManager.runtimeQuotaCalculatorMap[extension.RootQuotaName] = NewRuntimeQuotaCalculator(extension.RootQuotaName)
 	quotaManager.setScaleMinQuotaEnabled(true)
 	return quotaManager
@@ -406,8 +408,8 @@ func (gqm *GroupQuotaManager) UpdateQuota(quota *v1alpha1.ElasticQuota, isDelete
 			}
 			localQuotaInfo.updateQuotaInfoFromRemote(newQuotaInfo)
 		} else {
-			// TODO: inplace add
-			gqm.quotaInfoMap[quotaName] = newQuotaInfo
+			gqm.updateQuotaInternalNoLock(newQuotaInfo, nil)
+			return nil
 		}
 	}
 
@@ -417,10 +419,25 @@ func (gqm *GroupQuotaManager) UpdateQuota(quota *v1alpha1.ElasticQuota, isDelete
 	return nil
 }
 
+func (gqm *GroupQuotaManager) UpdateQuotaInfo(quota *v1alpha1.ElasticQuota) {
+	gqm.hierarchyUpdateLock.Lock()
+	defer gqm.hierarchyUpdateLock.Unlock()
+
+	newQuotaInfo := NewQuotaInfoFromQuota(quota)
+	gqm.quotaInfoMap[quota.Name] = newQuotaInfo
+}
+
+func (gqm *GroupQuotaManager) ResetQuota() {
+	gqm.hierarchyUpdateLock.Lock()
+	defer gqm.hierarchyUpdateLock.Unlock()
+
+	gqm.resetQuotaNoLock()
+}
+
 func (gqm *GroupQuotaManager) resetQuotaNoLock() {
 	start := time.Now()
 	defer func() {
-		klog.Infof("reset quota tree %v take %v", time.Since(start))
+		klog.Infof("reset quota tree %v take %v", gqm.treeID, time.Since(start))
 	}()
 	// rebuild gqm.quotaTopoNodeMap
 	gqm.rebuildQuotaTopoNodeMapNoLock()
@@ -432,7 +449,7 @@ func (gqm *GroupQuotaManager) resetQuotaNoLock() {
 func (gqm *GroupQuotaManager) rebuildQuotaTopoNodeMapNoLock() {
 	// rebuild QuotaTopoNodeMap
 	gqm.quotaTopoNodeMap = make(map[string]*QuotaTopoNode)
-	rootNode := NewQuotaTopoNode(extension.RootQuotaName, NewQuotaInfo(true, true, extension.RootQuotaName, extension.RootQuotaName))
+	rootNode := NewQuotaTopoNode(extension.RootQuotaName, NewQuotaInfo(true, false, extension.RootQuotaName, ""))
 	gqm.quotaTopoNodeMap[extension.RootQuotaName] = rootNode
 
 	// add node according to the quotaInfoMap
@@ -454,6 +471,7 @@ func (gqm *GroupQuotaManager) rebuildQuotaTopoNodeMapNoLock() {
 			parQuotaTopoNode = NewQuotaTopoNode(topoNode.quotaInfo.ParentName, &QuotaInfo{
 				Name: topoNode.quotaInfo.ParentName,
 			})
+			gqm.quotaTopoNodeMap[topoNode.quotaInfo.ParentName] = parQuotaTopoNode
 		}
 		topoNode.parQuotaTopoNode = parQuotaTopoNode
 		parQuotaTopoNode.addChildGroupQuotaInfo(topoNode)
@@ -981,21 +999,80 @@ func (gqm *GroupQuotaManager) recursiveUpdateGroupTreeWithDeltaAllocated(deltaAl
 }
 
 func (gqm *GroupQuotaManager) updateQuotaInternalNoLock(newQuotaInfo, oldQuotaInfo *QuotaInfo) {
+	// update topogy node map
+	gqm.updateQuotaTopoNodeNoLock(newQuotaInfo, oldQuotaInfo)
+
+	// update quota info map
+	if oldQuotaInfo == nil {
+		gqm.runtimeQuotaCalculatorMap[newQuotaInfo.Name] = NewRuntimeQuotaCalculator(newQuotaInfo.Name)
+		if gqm.runtimeQuotaCalculatorMap[newQuotaInfo.ParentName] == nil {
+			gqm.runtimeQuotaCalculatorMap[newQuotaInfo.ParentName] = NewRuntimeQuotaCalculator(newQuotaInfo.ParentName)
+		}
+		gqm.quotaInfoMap[newQuotaInfo.Name] = NewQuotaInfo(newQuotaInfo.IsParent, newQuotaInfo.AllowLentResource, newQuotaInfo.Name, newQuotaInfo.ParentName)
+	}
+
+	oldMax := v1.ResourceList{}
+	if oldQuotaInfo != nil {
+		oldMax = oldQuotaInfo.CalculateInfo.Max
+	}
 	// max changed
-	if !quotav1.Equals(newQuotaInfo.CalculateInfo.Max, oldQuotaInfo.CalculateInfo.Max) {
+	if !quotav1.Equals(newQuotaInfo.CalculateInfo.Max, oldMax) {
+		klog.V(4).Infof("[updateQuotaInternalNoLock] quota %v max change, oldMax: %v, newMax: %v",
+			newQuotaInfo.Name, util.DumpJSON(oldMax), util.DumpJSON(newQuotaInfo.CalculateInfo.Max))
 		gqm.doUpdateOneGroupMaxQuotaNoLock(newQuotaInfo.Name, newQuotaInfo.CalculateInfo.Max)
 	}
 
+	// update resource keys
+	gqm.updateResourceKeyNoLock()
+
+	oldMin := v1.ResourceList{}
+	if oldQuotaInfo != nil {
+		oldMin = oldQuotaInfo.CalculateInfo.Min
+	}
 	// min changed
-	if !quotav1.Equals(newQuotaInfo.CalculateInfo.Min, oldQuotaInfo.CalculateInfo.Min) {
+	if !quotav1.Equals(newQuotaInfo.CalculateInfo.Min, oldMin) {
+		klog.V(4).Infof("[updateQuotaInternalNoLock] quota %v min change, oldMin: %v, newMin: %v",
+			newQuotaInfo.Name, util.DumpJSON(oldMin), util.DumpJSON(newQuotaInfo.CalculateInfo.Min))
 		gqm.doUpdateOneGroupMinQuotaNoLock(newQuotaInfo.Name, newQuotaInfo.CalculateInfo.Min)
 	}
 
+	oldSharedWeight := v1.ResourceList{}
+	if oldQuotaInfo != nil {
+		oldSharedWeight = oldQuotaInfo.CalculateInfo.SharedWeight
+	}
 	// sharedweight changed
-	if !quotav1.Equals(newQuotaInfo.CalculateInfo.SharedWeight, oldQuotaInfo.CalculateInfo.SharedWeight) {
+	if !quotav1.Equals(newQuotaInfo.CalculateInfo.SharedWeight, oldSharedWeight) {
+		klog.V(4).Infof("[updateQuotaInternalNoLock] quota %v sharedWeight change, oldMin: %v, newMin: %v",
+			newQuotaInfo.Name, util.DumpJSON(oldSharedWeight), util.DumpJSON(newQuotaInfo.CalculateInfo.SharedWeight))
 		gqm.doUpdateOneGroupSharedWeightNoLock(newQuotaInfo.Name, newQuotaInfo.CalculateInfo.SharedWeight)
 	}
 
+}
+
+func (gqm *GroupQuotaManager) updateQuotaTopoNodeNoLock(newQuotaInfo, oldQuotaInfo *QuotaInfo) {
+	if oldQuotaInfo != nil {
+		parentNode, ok := gqm.quotaTopoNodeMap[oldQuotaInfo.ParentName]
+		if ok {
+			delete(parentNode.childGroupQuotaInfos, oldQuotaInfo.Name)
+		}
+	}
+
+	node, ok := gqm.quotaTopoNodeMap[newQuotaInfo.Name]
+	if !ok {
+		node = NewQuotaTopoNode(newQuotaInfo.Name, newQuotaInfo)
+		gqm.quotaTopoNodeMap[newQuotaInfo.Name] = node
+	} else {
+		node.quotaInfo = newQuotaInfo
+	}
+
+	parentNode, ok := gqm.quotaTopoNodeMap[newQuotaInfo.ParentName]
+	if !ok {
+		parentNode = NewQuotaTopoNode(newQuotaInfo.ParentName, &QuotaInfo{
+			Name: newQuotaInfo.ParentName,
+		})
+		gqm.quotaTopoNodeMap[newQuotaInfo.ParentName] = parentNode
+	}
+	parentNode.childGroupQuotaInfos[newQuotaInfo.Name] = node
 }
 
 func (gqm *GroupQuotaManager) doUpdateOneGroupMaxQuotaNoLock(quotaName string, newMax v1.ResourceList) {

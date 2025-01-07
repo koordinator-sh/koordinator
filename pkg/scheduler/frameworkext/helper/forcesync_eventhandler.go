@@ -138,3 +138,35 @@ func ForceSyncFromInformer(stopCh <-chan struct{}, cacheSyncer CacheSyncer, info
 	syncEventHandler.syncDone()
 	return registration, err
 }
+
+func ForceSyncFromInformerWithReplace(stopCh <-chan struct{}, cacheSyncer CacheSyncer, informer cache.SharedInformer, handler cache.ResourceEventHandler, replaceHandler func([]interface{}) error, options ...Option) (cache.ResourceEventHandlerRegistration, error) {
+	syncEventHandler := newForceSyncEventHandler(handler, options...)
+	registration, err := informer.AddEventHandlerWithResyncPeriod(syncEventHandler, syncEventHandler.resyncPeriod)
+	if err != nil {
+		return nil, err
+	}
+
+	if cacheSyncer != nil {
+		cacheSyncer.Start(stopCh)
+		cacheSyncer.WaitForCacheSync(stopCh)
+	}
+
+	allObjects := informer.GetStore().List()
+	// record object uid.
+	for _, obj := range allObjects {
+		if metaAccessor, ok := obj.(metav1.ObjectMetaAccessor); ok {
+			objectMeta := metaAccessor.GetObjectMeta()
+			resourceVersion, err := strconv.ParseInt(objectMeta.GetResourceVersion(), 10, 64)
+			if err == nil {
+				syncEventHandler.objects[objectMeta.GetUID()] = resourceVersion
+			}
+		}
+	}
+	// replace objects
+	err = replaceHandler(allObjects)
+	if err != nil {
+		return nil, err
+	}
+	syncEventHandler.syncDone()
+	return registration, err
+}

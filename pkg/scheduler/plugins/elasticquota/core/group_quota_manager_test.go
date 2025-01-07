@@ -1322,7 +1322,9 @@ func NewGroupQuotaManagerForTest() *GroupQuotaManager {
 	}
 	quotaManager.quotaInfoMap[extension.SystemQuotaName] = systemQuotaInfo
 	quotaManager.quotaInfoMap[extension.DefaultQuotaName] = defaultQuotaInfo
-	quotaManager.quotaInfoMap[extension.RootQuotaName] = NewQuotaInfo(true, false, extension.RootQuotaName, "")
+	rootQuotaInfo := NewQuotaInfo(true, false, extension.RootQuotaName, "")
+	quotaManager.quotaInfoMap[extension.RootQuotaName] = rootQuotaInfo
+	quotaManager.quotaTopoNodeMap[extension.RootQuotaName] = NewQuotaTopoNode(extension.RootQuotaName, rootQuotaInfo)
 	quotaManager.runtimeQuotaCalculatorMap[extension.RootQuotaName] = NewRuntimeQuotaCalculator(extension.RootQuotaName)
 	return quotaManager
 }
@@ -2100,4 +2102,97 @@ func TestGroupQuotaManager_ImmediateIgnoreTerminatingPod(t *testing.T) {
 	gqm.OnPodDelete("1", pod2)
 	assert.Equal(t, createResourceList(0, 0), gqm.GetQuotaInfoByName("1").GetRequest())
 	assert.Equal(t, createResourceList(0, 0), gqm.GetQuotaInfoByName("1").GetUsed())
+}
+
+func TestGroupQuotaManager_UpdateQuotaInternalNoLock(t *testing.T) {
+	gqm := NewGroupQuotaManagerForTest()
+	gqm.UpdateClusterTotalResource(createResourceList(1000, 1000))
+	assert.Equal(t, 1, len(gqm.runtimeQuotaCalculatorMap))
+	assert.Equal(t, 1, len(gqm.quotaTopoNodeMap))
+	assert.Equal(t, 3, len(gqm.quotaInfoMap))
+
+	quota := CreateQuota("test1", extension.RootQuotaName, 64, 100, 50, 80, true, false)
+	quotaInfo := NewQuotaInfoFromQuota(quota)
+
+	// quota not exist, add quota info
+	// rootQuota requests[0,0]
+	//   |-- test1 Max[64, 100]  Min[50,80] request[0,0]
+	gqm.updateQuotaInternalNoLock(quotaInfo, nil)
+	assert.Equal(t, 2, len(gqm.runtimeQuotaCalculatorMap))
+	assert.Equal(t, 2, len(gqm.quotaTopoNodeMap))
+	assert.Equal(t, 4, len(gqm.quotaInfoMap))
+
+	quotaInfo = gqm.getQuotaInfoByNameNoLock("test1")
+	assert.True(t, quotaInfo != nil)
+	assert.False(t, quotaInfo.IsParent)
+	assert.True(t, quotaInfo.AllowLentResource)
+	assert.Equal(t, createResourceList(64, 100), quotaInfo.CalculateInfo.Max)
+	assert.Equal(t, createResourceList(50, 80), quotaInfo.CalculateInfo.Min)
+	assert.Equal(t, createResourceList(50, 80), quotaInfo.CalculateInfo.AutoScaleMin)
+	assert.Equal(t, v1.ResourceList{}, quotaInfo.CalculateInfo.ChildRequest)
+	assert.Equal(t, v1.ResourceList{}, quotaInfo.CalculateInfo.Request)
+
+	rootQuotaInfo := gqm.getQuotaInfoByNameNoLock(extension.RootQuotaName)
+	assert.Equal(t, v1.ResourceList{}, rootQuotaInfo.CalculateInfo.Request)
+
+	// add requests
+	// rootQuota requests[64,100]
+	//   |-- test1 Max[64, 100]  Min[50,80] request[100,100]
+	request := createResourceList(100, 100)
+	gqm.updateGroupDeltaRequestNoLock("test1", request, request, 0)
+	quotaInfo = gqm.getQuotaInfoByNameNoLock("test1")
+	assert.Equal(t, createResourceList(100, 100), quotaInfo.CalculateInfo.ChildRequest)
+	assert.Equal(t, createResourceList(100, 100), quotaInfo.CalculateInfo.Request)
+
+	rootQuotaInfo = gqm.getQuotaInfoByNameNoLock(extension.RootQuotaName)
+	assert.Equal(t, createResourceList(64, 100), rootQuotaInfo.CalculateInfo.Request)
+
+	// change test1 min and max
+	// rootQuota requests[100,100]
+	//   |-- test1 Max[200, 200]  Min[60,100] request[100,100]
+	quota = CreateQuota("test1", extension.RootQuotaName, 200, 200, 60, 100, true, false)
+	newQuotaInfo := NewQuotaInfoFromQuota(quota)
+	gqm.updateQuotaInternalNoLock(newQuotaInfo, quotaInfo)
+	quotaInfo = gqm.getQuotaInfoByNameNoLock("test1")
+	assert.Equal(t, createResourceList(200, 200), quotaInfo.CalculateInfo.Max)
+	assert.Equal(t, createResourceList(60, 100), quotaInfo.CalculateInfo.Min)
+	assert.Equal(t, createResourceList(60, 100), quotaInfo.CalculateInfo.AutoScaleMin)
+	assert.Equal(t, createResourceList(100, 100), quotaInfo.CalculateInfo.ChildRequest)
+	assert.Equal(t, createResourceList(100, 100), quotaInfo.CalculateInfo.Request)
+
+	rootQuotaInfo = gqm.getQuotaInfoByNameNoLock(extension.RootQuotaName)
+	assert.Equal(t, createResourceList(100, 100), rootQuotaInfo.CalculateInfo.Request)
+}
+
+func TestGroupQuotaManager_UpdateQuotaTopoNodeNoLock(t *testing.T) {
+	gqm := NewGroupQuotaManagerForTest()
+
+	test1 := NewQuotaInfo(true, true, "test1", extension.RootQuotaName)
+	test2 := NewQuotaInfo(true, true, "test2", extension.RootQuotaName)
+	test11 := NewQuotaInfo(false, true, "test11", "test1")
+
+	// add test1
+	gqm.updateQuotaTopoNodeNoLock(test1, nil)
+	assert.Equal(t, 2, len(gqm.quotaTopoNodeMap))
+	assert.Equal(t, 1, len(gqm.quotaTopoNodeMap[extension.RootQuotaName].childGroupQuotaInfos))
+
+	// add test2
+	gqm.updateQuotaTopoNodeNoLock(test2, nil)
+	assert.Equal(t, 3, len(gqm.quotaTopoNodeMap))
+	assert.Equal(t, 2, len(gqm.quotaTopoNodeMap[extension.RootQuotaName].childGroupQuotaInfos))
+
+	// add test11
+	gqm.updateQuotaTopoNodeNoLock(test11, nil)
+	assert.Equal(t, 4, len(gqm.quotaTopoNodeMap))
+	assert.Equal(t, 2, len(gqm.quotaTopoNodeMap[extension.RootQuotaName].childGroupQuotaInfos))
+	assert.Equal(t, 1, len(gqm.quotaTopoNodeMap["test1"].childGroupQuotaInfos))
+	assert.Equal(t, 0, len(gqm.quotaTopoNodeMap["test2"].childGroupQuotaInfos))
+
+	// change test11 parent to test2
+	test12 := NewQuotaInfo(false, true, "test11", "test2")
+	gqm.updateQuotaTopoNodeNoLock(test12, test11)
+	assert.Equal(t, 4, len(gqm.quotaTopoNodeMap))
+	assert.Equal(t, 2, len(gqm.quotaTopoNodeMap[extension.RootQuotaName].childGroupQuotaInfos))
+	assert.Equal(t, 0, len(gqm.quotaTopoNodeMap["test1"].childGroupQuotaInfos))
+	assert.Equal(t, 1, len(gqm.quotaTopoNodeMap["test2"].childGroupQuotaInfos))
 }
