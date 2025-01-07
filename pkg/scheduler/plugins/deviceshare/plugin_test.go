@@ -2194,7 +2194,7 @@ func Test_Plugin_Filter(t *testing.T) {
 	}
 }
 
-func Test_Plugin_FilterReservation(t *testing.T) {
+func Test_Plugin_FilterNominateReservation(t *testing.T) {
 	node := &corev1.Node{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "test-node-1",
@@ -2294,7 +2294,7 @@ func Test_Plugin_FilterReservation(t *testing.T) {
 	})
 	assert.True(t, status.IsSuccess())
 
-	status = pl.FilterReservation(context.TODO(), cycleState, pod, reservationInfo, "test-node-1")
+	status = pl.FilterNominateReservation(context.TODO(), cycleState, pod, reservationInfo, "test-node-1")
 	assert.True(t, status.IsSuccess())
 
 	allocatedPod := &corev1.Pod{
@@ -2334,7 +2334,7 @@ func Test_Plugin_FilterReservation(t *testing.T) {
 	})
 	assert.True(t, status.IsSuccess())
 
-	status = pl.FilterReservation(context.TODO(), cycleState, pod, reservationInfo, "test-node-1")
+	status = pl.FilterNominateReservation(context.TODO(), cycleState, pod, reservationInfo, "test-node-1")
 	assert.Equal(t, framework.NewStatus(framework.Unschedulable, "Reservation(s) Insufficient gpu devices"), status)
 }
 

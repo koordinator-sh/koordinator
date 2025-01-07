@@ -1907,7 +1907,11 @@ func Test_filterWithReservations(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			pl := &Plugin{}
+			suit := newPluginTestSuit(t)
+			p, err := suit.pluginFactory()
+			assert.NoError(t, err)
+			pl := p.(*Plugin)
+			suit.start()
 			cycleState := framework.NewCycleState()
 			if tt.stateData.podRequestsResources == nil {
 				resources := framework.NewResource(tt.stateData.podRequests)
@@ -2224,7 +2228,7 @@ func TestPreFilterExtensionRemovePod(t *testing.T) {
 	}
 }
 
-func TestFilterReservation(t *testing.T) {
+func TestFilterNominateReservation(t *testing.T) {
 	reservation4C8G := &schedulingv1alpha1.Reservation{
 		ObjectMeta: metav1.ObjectMeta{
 			UID:  uuid.NewUUID(),
@@ -2415,7 +2419,7 @@ func TestFilterReservation(t *testing.T) {
 			cycleState.Write(stateKey, state)
 
 			rInfo := frameworkext.NewReservationInfo(tt.targetReservation)
-			status := pl.FilterReservation(context.TODO(), cycleState, pod, rInfo, node.Name)
+			status := pl.FilterNominateReservation(context.TODO(), cycleState, pod, rInfo, node.Name)
 			assert.Equal(t, tt.wantStatus, status)
 		})
 	}

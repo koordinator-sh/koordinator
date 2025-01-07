@@ -393,9 +393,23 @@ func (ext *frameworkExtenderImpl) RunReservationExtensionFinalRestoreReservation
 }
 
 // RunReservationFilterPlugins determines whether the Reservation can participate in the Reserve
-func (ext *frameworkExtenderImpl) RunReservationFilterPlugins(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, reservationInfo *ReservationInfo, nodeName string) *framework.Status {
+func (ext *frameworkExtenderImpl) RunReservationFilterPlugins(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, reservationInfo *ReservationInfo, nodeInfo *framework.NodeInfo) *framework.Status {
 	for _, pl := range ext.reservationFilterPlugins {
-		status := pl.FilterReservation(ctx, cycleState, pod, reservationInfo, nodeName)
+		status := pl.FilterReservation(ctx, cycleState, pod, reservationInfo, nodeInfo)
+		if !status.IsSuccess() {
+			if debugFilterFailure {
+				klog.Infof("Failed to FilterWithReservation for Pod %q with Reservation %q on Node %q, failedPlugin: %s, reason: %s", klog.KObj(pod), klog.KObj(reservationInfo), nodeInfo.Node().Name, pl.Name(), status.Message())
+			}
+			return status
+		}
+	}
+	return nil
+}
+
+// RunNominateReservationFilterPlugins determines whether the Reservation can participate in the Reserve.
+func (ext *frameworkExtenderImpl) RunNominateReservationFilterPlugins(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, reservationInfo *ReservationInfo, nodeName string) *framework.Status {
+	for _, pl := range ext.reservationFilterPlugins {
+		status := pl.FilterNominateReservation(ctx, cycleState, pod, reservationInfo, nodeName)
 		if !status.IsSuccess() {
 			if debugFilterFailure {
 				klog.Infof("Failed to FilterReservation for Pod %q with Reservation %q on Node %q, failedPlugin: %s, reason: %s", klog.KObj(pod), klog.KObj(reservationInfo), nodeName, pl.Name(), status.Message())

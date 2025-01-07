@@ -466,6 +466,11 @@ func (pl *Plugin) filterWithReservations(ctx context.Context, cycleState *framew
 		return nil
 	}
 
+	extender, ok := pl.handle.(frameworkext.FrameworkExtender)
+	if !ok {
+		return framework.AsStatus(fmt.Errorf("not implemented frameworkext.FrameworkExtender"))
+	}
+
 	node := nodeInfo.Node()
 	state := getStateData(cycleState)
 	nodeRState := state.nodeReservationStates[node.Name]
@@ -494,21 +499,31 @@ func (pl *Plugin) filterWithReservations(ctx context.Context, cycleState *framew
 		insufficientResourcesByNode := fitsNode(state.podRequestsResources, nodeInfo, nodeRState, rInfo, preemptible)
 		state.preemptLock.RUnlock()
 
-		nodeFits := len(insufficientResourcesByNode) == 0
+		nodeFits := len(insufficientResourcesByNode) <= 0
+		allInsufficientResourcesByNode.Insert(insufficientResourcesByNode...)
+
+		reservationFits := false
 		allocatePolicy := rInfo.GetAllocatePolicy()
 		if allocatePolicy == schedulingv1alpha1.ReservationAllocatePolicyDefault ||
 			allocatePolicy == schedulingv1alpha1.ReservationAllocatePolicyAligned {
-			if nodeFits {
-				return nil
-			}
-			allInsufficientResourcesByNode.Insert(insufficientResourcesByNode...)
+			reservationFits = nodeFits
 		} else if allocatePolicy == schedulingv1alpha1.ReservationAllocatePolicyRestricted {
 			insufficientResourceReasonsByReservation := fitsReservation(state.podRequests, rInfo, preemptibleInRR, requireDetailReasons)
-			if nodeFits && len(insufficientResourceReasonsByReservation) <= 0 { // fit the reservation
-				return nil
-			}
-			allInsufficientResourcesByNode.Insert(insufficientResourcesByNode...)
+
+			reservationFits = len(insufficientResourceReasonsByReservation) <= 0
 			allInsufficientResourceReasonsByReservation = append(allInsufficientResourceReasonsByReservation, insufficientResourceReasonsByReservation...)
+		}
+
+		// Before nominating a reservation in PreScore or Reserve, check the reservation by multiple plugins to make
+		// the Filter phase give a more accurate result. It is extensible to support more policies.
+		status := extender.RunReservationFilterPlugins(ctx, cycleState, pod, rInfo, nodeInfo)
+		if !status.IsSuccess() {
+			allInsufficientResourceReasonsByReservation = append(allInsufficientResourceReasonsByReservation, status.Reasons()...)
+			continue
+		}
+
+		if nodeFits && reservationFits {
+			return nil
 		}
 	}
 
@@ -781,7 +796,11 @@ func (pl *Plugin) makePostFilterReasons(state *stateData, filteredNodeStatusMap 
 	return reasons
 }
 
-func (pl *Plugin) FilterReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, reservationInfo *frameworkext.ReservationInfo, nodeName string) *framework.Status {
+func (pl *Plugin) FilterReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, reservationInfo *frameworkext.ReservationInfo, nodeInfo *framework.NodeInfo) *framework.Status {
+	return nil
+}
+
+func (pl *Plugin) FilterNominateReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, reservationInfo *frameworkext.ReservationInfo, nodeName string) *framework.Status {
 	// TODO(joseph): We can consider optimizing these codes. It seems that there is no need to exist at present.
 	state := getStateData(cycleState)
 

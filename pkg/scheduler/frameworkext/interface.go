@@ -64,7 +64,8 @@ type FrameworkExtender interface {
 	// DEPRECATED: use RunReservationExtensionRestoreReservation instead.
 	RunReservationExtensionFinalRestoreReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, states PluginToNodeReservationRestoreStates) *framework.Status
 
-	RunReservationFilterPlugins(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, reservationInfo *ReservationInfo, nodeName string) *framework.Status
+	RunReservationFilterPlugins(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, reservationInfo *ReservationInfo, nodeInfo *framework.NodeInfo) *framework.Status
+	RunNominateReservationFilterPlugins(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, reservationInfo *ReservationInfo, nodeName string) *framework.Status
 	RunReservationScorePlugins(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, reservationInfos []*ReservationInfo, nodeName string) (PluginToReservationScores, *framework.Status)
 
 	RunNUMATopologyManagerAdmit(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string, numaNodes []int, policyType apiext.NUMATopologyPolicy, exclusivePolicy apiext.NumaTopologyExclusive, allNUMANodeStatus []apiext.NumaNodeStatus) *framework.Status
@@ -120,10 +121,14 @@ type ReservationRestorePlugin interface {
 }
 
 // ReservationFilterPlugin is an interface for Filter Reservation plugins.
-// These plugins will be called during the Reserve phase to determine whether the Reservation can participate in the Reserve
+// FilterReservation will be called in the Filter phase for determining which reservations are available.
+// FilterNominateReservation will be called in the PreScore or the Reserve phase to nominate a reservation whether it
+// can participate the Reserve.
+// TODO: Looking forward a merged method.
 type ReservationFilterPlugin interface {
 	framework.Plugin
-	FilterReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, reservationInfo *ReservationInfo, nodeName string) *framework.Status
+	FilterReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, reservationInfo *ReservationInfo, nodeInfo *framework.NodeInfo) *framework.Status
+	FilterNominateReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, reservationInfo *ReservationInfo, nodeName string) *framework.Status
 }
 
 // ReservationNominator nominates a more suitable Reservation in the Reserve stage and Pod will bind this Reservation.
