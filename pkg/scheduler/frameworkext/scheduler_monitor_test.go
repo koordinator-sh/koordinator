@@ -26,6 +26,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/klog/v2"
+	"k8s.io/kubernetes/pkg/scheduler/framework"
 )
 
 func TestSchedulerMonitor_Timeout(t *testing.T) {
@@ -56,7 +57,7 @@ func TestSchedulerMonitor_Timeout(t *testing.T) {
 	if len(capturedLog) == 0 || !strings.Contains(capturedLog, "!!!CRITICAL TIMEOUT!!!") {
 		t.Errorf("Expected a timeout log to be recorded, but got: %s", capturedLog)
 	}
-	monitor.Complete(pod)
+	monitor.Complete(pod, nil)
 }
 
 func TestSchedulerMonitor_NoTimeout(t *testing.T) {
@@ -86,7 +87,7 @@ func TestSchedulerMonitor_NoTimeout(t *testing.T) {
 	if len(capturedLog) > 0 {
 		t.Errorf("Expected no timeout log to be recorded, but got: %s", capturedLog)
 	}
-	monitor.Complete(pod)
+	monitor.Complete(pod, nil)
 }
 
 func TestSchedulerMonitor_StartAndCompleteMonitoring(t *testing.T) {
@@ -101,6 +102,15 @@ func TestSchedulerMonitor_StartAndCompleteMonitoring(t *testing.T) {
 			UID:       types.UID("test-uid"),
 		},
 	}
+	podInfo, err := framework.NewPodInfo(pod)
+	if err != nil {
+		t.Errorf("Failed to create podInfo for pod, err: %s", err)
+	}
+	queuePodInfo := &framework.QueuedPodInfo{
+		Timestamp: time.Now(),
+		PodInfo:   podInfo,
+	}
+	monitor.RecordNextPod(queuePodInfo)
 
 	monitor.StartMonitoring(pod)
 	state, ok := monitor.schedulingPods[pod.UID]
@@ -111,7 +121,7 @@ func TestSchedulerMonitor_StartAndCompleteMonitoring(t *testing.T) {
 		t.Errorf("Start time should not be zero after StartMonitoring")
 	}
 	time.Sleep(2 * timeout)
-	monitor.Complete(pod)
+	monitor.Complete(pod, framework.NewStatus(framework.Unschedulable, "node(s) is unschedulable"))
 	if _, exists := monitor.schedulingPods[pod.UID]; exists {
 		t.Errorf("Pod should be removed from schedulingPods after Complete")
 	}

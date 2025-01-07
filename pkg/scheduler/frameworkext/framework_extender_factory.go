@@ -151,6 +151,7 @@ func (f *FrameworkExtenderFactory) InitScheduler(sched Scheduler) {
 				}
 				// Deep copy podInfo to allow pod modification during scheduling
 				podInfo = podInfo.DeepCopy()
+				f.monitor.RecordNextPod(podInfo)
 				return podInfo, nil
 			}
 		}
@@ -192,7 +193,7 @@ func (f *FrameworkExtenderFactory) InterceptSchedulerError(sched *scheduler.Sche
 	f.errorHandlerDispatcher.setDefaultHandler(sched.FailureHandler)
 	sched.FailureHandler = func(ctx context.Context, fwk framework.Framework, podInfo *framework.QueuedPodInfo, status *framework.Status, nominatingInfo *framework.NominatingInfo, start time.Time) {
 		f.errorHandlerDispatcher.Error(ctx, fwk, podInfo, status, nominatingInfo, start)
-		f.monitor.Complete(podInfo.Pod)
+		f.monitor.Complete(podInfo.Pod, status)
 	}
 }
 
