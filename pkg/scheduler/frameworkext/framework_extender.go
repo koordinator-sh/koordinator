@@ -344,7 +344,7 @@ func (ext *frameworkExtenderImpl) runPreBindExtensionPlugins(ctx context.Context
 
 func (ext *frameworkExtenderImpl) RunPostBindPlugins(ctx context.Context, state *framework.CycleState, pod *corev1.Pod, nodeName string) {
 	if ext.monitor != nil {
-		defer ext.monitor.Complete(pod)
+		defer ext.monitor.Complete(pod, nil)
 	}
 	ext.Framework.RunPostBindPlugins(ctx, state, pod, nodeName)
 }

@@ -25,6 +25,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/klog/v2"
+	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/metrics"
 )
@@ -41,6 +42,12 @@ func init() {
 	pflag.DurationVar(&schedulingTimeout, "scheduling-timeout", schedulingTimeout, "The maximum acceptable scheduling time interval. After timeout, the metric will be updated and the log will be printed.")
 }
 
+var (
+	StartMonitor       = defaultStartMonitor
+	CompleteMonitor    = defaultCompleteMonitor
+	RecordQueuePodInfo = func(podInfo *framework.QueuedPodInfo, state *podScheduleState) {}
+)
+
 type SchedulerMonitor struct {
 	timeout        time.Duration
 	lock           sync.Mutex
@@ -48,10 +55,16 @@ type SchedulerMonitor struct {
 }
 
 type podScheduleState struct {
-	start         time.Time
 	namespace     string
 	name          string
 	schedulerName string
+	// scheduling info
+	start time.Time
+	// queue info
+	dequeued        time.Time
+	lastEnqueued    time.Time
+	attempts        int
+	initialEnqueued *time.Time
 }
 
 func NewSchedulerMonitor(period time.Duration, timeout time.Duration) *SchedulerMonitor {
@@ -73,31 +86,68 @@ func (m *SchedulerMonitor) monitor() {
 	}
 }
 
-func (m *SchedulerMonitor) StartMonitoring(pod *corev1.Pod) {
-	klog.Infof("start monitoring pod %v(%s)", klog.KObj(pod), pod.UID)
+func (m *SchedulerMonitor) RecordNextPod(podInfo *framework.QueuedPodInfo) {
+	if podInfo == nil || podInfo.Pod == nil {
+		return
+	}
+	pod := podInfo.Pod
+	now := time.Now()
+	scheduleState := podScheduleState{
+		namespace:       pod.Namespace,
+		name:            pod.Name,
+		schedulerName:   pod.Spec.SchedulerName,
+		dequeued:        now,
+		lastEnqueued:    podInfo.Timestamp,
+		attempts:        podInfo.Attempts,
+		initialEnqueued: podInfo.InitialAttemptTimestamp,
+	}
+	RecordQueuePodInfo(podInfo, &scheduleState)
 
 	m.lock.Lock()
-	defer m.lock.Unlock()
-	m.schedulingPods[pod.UID] = podScheduleState{
-		start:         time.Now(),
-		namespace:     pod.Namespace,
-		name:          pod.Name,
-		schedulerName: pod.Spec.SchedulerName,
+	m.schedulingPods[pod.UID] = scheduleState
+	m.lock.Unlock()
+}
+
+func (m *SchedulerMonitor) StartMonitoring(pod *corev1.Pod) {
+	now := time.Now()
+
+	m.lock.Lock()
+	scheduleState, exists := m.schedulingPods[pod.UID]
+	if !exists {
+		scheduleState = podScheduleState{
+			start:         now,
+			namespace:     pod.Namespace,
+			name:          pod.Name,
+			schedulerName: pod.Spec.SchedulerName,
+		}
+	} else {
+		scheduleState.start = now
+	}
+	m.schedulingPods[pod.UID] = scheduleState
+	m.lock.Unlock()
+
+	StartMonitor(pod, &scheduleState)
+}
+
+func (m *SchedulerMonitor) Complete(pod *corev1.Pod, status *framework.Status) {
+	m.lock.Lock()
+	state, ok := m.schedulingPods[pod.UID]
+	delete(m.schedulingPods, pod.UID)
+	m.lock.Unlock()
+
+	if ok {
+		now := time.Now()
+		CompleteMonitor(pod, &state, now, m.timeout, status)
 	}
 }
 
-func (m *SchedulerMonitor) Complete(pod *corev1.Pod) {
+func defaultStartMonitor(pod *corev1.Pod, state *podScheduleState) {
+	klog.Infof("start monitoring pod %v(%s)", klog.KObj(pod), pod.UID)
+}
+
+func defaultCompleteMonitor(pod *corev1.Pod, state *podScheduleState, end time.Time, timeout time.Duration, status *framework.Status) {
 	klog.Infof("pod %v(%s) scheduled complete", klog.KObj(pod), pod.UID)
-
-	m.lock.Lock()
-	defer m.lock.Unlock()
-
-	state, ok := m.schedulingPods[pod.UID]
-	if ok {
-		now := time.Now()
-		recordIfSchedulingTimeout(pod.UID, &state, now, m.timeout)
-		delete(m.schedulingPods, pod.UID)
-	}
+	recordIfSchedulingTimeout(pod.UID, state, end, timeout)
 }
 
 func recordIfSchedulingTimeout(uid types.UID, state *podScheduleState, now time.Time, timeout time.Duration) {
