@@ -231,3 +231,74 @@ func TestScaleMinQuotaWhenOverRootResInfo_Update(t *testing.T) {
 		}
 	}
 }
+
+func TestScaleMinQuotaWhenOverRootResInfo_Remove(t *testing.T) {
+	info := NewScaleMinQuotaManager()
+	if len(info.enableScaleSubsSumMinQuotaMap) != 0 ||
+		len(info.disableScaleSubsSumMinQuotaMap) != 0 || len(info.originalMinQuotaMap) != 0 || len(info.quotaEnableMinQuotaScaleMap) != 0 {
+		t.Errorf("error")
+	}
+	{
+		parQuotaName := "100"
+		subQuotaName := "1"
+		subMinQuota := createResourceList(50, 50)
+		enableScaleMinQuota := false
+		info.update(parQuotaName, subQuotaName, subMinQuota, enableScaleMinQuota)
+
+		if len(info.enableScaleSubsSumMinQuotaMap) != 1 ||
+			len(info.disableScaleSubsSumMinQuotaMap) != 1 || len(info.originalMinQuotaMap) != 1 || len(info.quotaEnableMinQuotaScaleMap) != 1 {
+			t.Errorf("error")
+		}
+		if !quotav1.Equals(info.enableScaleSubsSumMinQuotaMap["100"], v1.ResourceList{}) ||
+			!quotav1.Equals(info.disableScaleSubsSumMinQuotaMap["100"], createResourceList(50, 50)) ||
+			!quotav1.Equals(info.originalMinQuotaMap["1"], createResourceList(50, 50)) || info.quotaEnableMinQuotaScaleMap["1"] != false {
+			t.Error("error")
+		}
+	}
+	{
+		parQuotaName := "100"
+		subQuotaName := "2"
+		subMinQuota := createResourceList(60, 60)
+		enableScaleMinQuota := true
+		info.update(parQuotaName, subQuotaName, subMinQuota, enableScaleMinQuota)
+
+		if len(info.enableScaleSubsSumMinQuotaMap) != 1 ||
+			len(info.disableScaleSubsSumMinQuotaMap) != 1 || len(info.originalMinQuotaMap) != 2 || len(info.quotaEnableMinQuotaScaleMap) != 2 {
+			t.Errorf("error")
+		}
+
+		if !quotav1.Equals(info.enableScaleSubsSumMinQuotaMap["100"], createResourceList(60, 60)) ||
+			!quotav1.Equals(info.disableScaleSubsSumMinQuotaMap["100"], createResourceList(50, 50)) ||
+			!quotav1.Equals(info.originalMinQuotaMap["1"], createResourceList(50, 50)) || info.quotaEnableMinQuotaScaleMap["1"] != false ||
+			!quotav1.Equals(info.originalMinQuotaMap["2"], createResourceList(60, 60)) || info.quotaEnableMinQuotaScaleMap["2"] != true {
+			t.Error("error")
+		}
+	}
+	{
+		info.remove("100", "1")
+
+		if len(info.enableScaleSubsSumMinQuotaMap) != 1 ||
+			len(info.disableScaleSubsSumMinQuotaMap) != 1 || len(info.originalMinQuotaMap) != 1 || len(info.quotaEnableMinQuotaScaleMap) != 1 {
+			t.Errorf("error")
+		}
+
+		if !quotav1.Equals(info.enableScaleSubsSumMinQuotaMap["100"], createResourceList(60, 60)) ||
+			!quotav1.Equals(info.disableScaleSubsSumMinQuotaMap["100"], createResourceList(0, 0)) ||
+			!quotav1.Equals(info.originalMinQuotaMap["2"], createResourceList(60, 60)) || info.quotaEnableMinQuotaScaleMap["2"] != true {
+			t.Error("error")
+		}
+	}
+	{
+		info.remove("100", "2")
+
+		if len(info.enableScaleSubsSumMinQuotaMap) != 1 ||
+			len(info.disableScaleSubsSumMinQuotaMap) != 1 || len(info.originalMinQuotaMap) != 0 || len(info.quotaEnableMinQuotaScaleMap) != 0 {
+			t.Errorf("error")
+		}
+
+		if !quotav1.Equals(info.enableScaleSubsSumMinQuotaMap["100"], createResourceList(0, 0)) ||
+			!quotav1.Equals(info.disableScaleSubsSumMinQuotaMap["100"], createResourceList(0, 0)) {
+			t.Error("error")
+		}
+	}
+}
