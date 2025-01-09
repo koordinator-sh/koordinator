@@ -21,10 +21,9 @@ import (
 	"sort"
 
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/util/sets"
-	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
+	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/topologymanager"
 	"github.com/koordinator-sh/koordinator/pkg/util/bitmask"
@@ -32,6 +31,8 @@ import (
 
 const (
 	ErrInsufficientNUMAScopedDevices = "Insufficient NUMA Scoped Devices"
+
+	defaultNUMAScore = 500
 )
 
 func (p *Plugin) GetPodTopologyHints(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) (map[string][]topologymanager.NUMATopologyHint, *framework.Status) {
@@ -137,17 +138,21 @@ func (p *Plugin) generateTopologyHints(cycleState *framework.CycleState, state *
 	sort.Ints(numaNodes)
 
 	var minAffinitySize map[corev1.ResourceName]int
-	hints := map[string][]topologymanager.NUMATopologyHint{}
-
 	var statusUnsatisfied *framework.Status
+	var bestAllocationResult apiext.DeviceAllocations
+	var feasibleAllocationResults []*numaScopedAllocation
 
 	bitmask.IterateBitMasks(numaNodes, func(mask bitmask.BitMask) {
 		nodeDevice.lock.RLock()
 		defer nodeDevice.lock.RUnlock()
 
 		var status *framework.Status
+		var allocateResult apiext.DeviceAllocations
 		if mask.Count() == len(numaNodes) {
-			defer func() { statusUnsatisfied = status }()
+			defer func() {
+				statusUnsatisfied = status
+				bestAllocationResult = allocateResult
+			}()
 		}
 
 		allocator.numaNodes = mask
@@ -163,8 +168,6 @@ func (p *Plugin) generateTopologyHints(cycleState *framework.CycleState, state *
 				return
 			}
 		}
-
-		nodeCount := len(maskNodes)
 		if minAffinitySize == nil {
 			minAffinitySize = map[corev1.ResourceName]int{}
 			for deviceType := range allocator.requestsPerInstance {
@@ -172,39 +175,44 @@ func (p *Plugin) generateTopologyHints(cycleState *framework.CycleState, state *
 			}
 		}
 
-		allocateResult, status := p.tryAllocateFromReservation(allocator, state, restoreState, restoreState.matched, pod, node, preemptible, state.hasReservationAffinity)
+		allocateResult, status = p.tryAllocateFromReservation(allocator, state, restoreState, restoreState.matched, pod, node, preemptible, state.hasReservationAffinity)
 		if !status.IsSuccess() {
 			return
 		}
 		if len(allocateResult) == 0 {
 			preemptible := appendAllocated(preemptible, restoreState.mergedMatchedAllocatable)
-			_, status = allocator.Allocate(nil, nil, nil, preemptible)
-			if !status.IsSuccess() {
+			allocateResult, status = allocator.Allocate(nil, nil, nil, preemptible)
+			if !status.IsSuccess() || len(allocateResult) == 0 {
 				return
 			}
 		}
 
+		nodeCount := mask.Count()
 		for resourceName, affinitySize := range minAffinitySize {
 			if nodeCount < affinitySize {
 				minAffinitySize[resourceName] = nodeCount
 			}
-			if _, ok := hints[string(resourceName)]; !ok {
-				hints[string(resourceName)] = []topologymanager.NUMATopologyHint{}
-			}
-			hints[string(resourceName)] = append(hints[string(resourceName)], topologymanager.NUMATopologyHint{
-				NUMANodeAffinity: mask,
-				Preferred:        false,
-				Score:            0,
-			})
 		}
+		feasibleAllocationResults = append(feasibleAllocationResults, &numaScopedAllocation{
+			mask:             mask,
+			allocationResult: allocateResult,
+		})
 	})
 
-	totalResourceNames := sets.NewString()
-	for _, deviceInfos := range nodeDevice.deviceInfos {
-		if len(deviceInfos) > 0 {
-			for _, name := range quotav1.ResourceNames(deviceInfos[0].Resources) {
-				totalResourceNames.Insert(string(name))
-			}
+	bestAllocationHash := hashAllocateResult(bestAllocationResult)
+	hints := map[string][]topologymanager.NUMATopologyHint{}
+
+	for _, feasibleAllocationResult := range feasibleAllocationResults {
+		score := 0
+		if hashAllocateResult(feasibleAllocationResult.allocationResult) == bestAllocationHash {
+			// we just use a score bigger than 100 to make that device numa preference take precedence over cpu
+			score = defaultNUMAScore
+		}
+		for resourceName := range minAffinitySize {
+			hints[string(resourceName)] = append(hints[string(resourceName)], topologymanager.NUMATopologyHint{
+				NUMANodeAffinity: feasibleAllocationResult.mask,
+				Score:            int64(score),
+			})
 		}
 	}
 
@@ -225,6 +233,20 @@ func (p *Plugin) generateTopologyHints(cycleState *framework.CycleState, state *
 		return nil, statusUnsatisfied
 	}
 	return hints, nil
+}
+
+type numaScopedAllocation struct {
+	mask             bitmask.BitMask
+	allocationResult apiext.DeviceAllocations
+}
+
+func hashAllocateResult(allocations apiext.DeviceAllocations) int {
+	gpuAllocations := allocations[schedulingv1alpha1.GPU]
+	var minor []int
+	for _, gpu := range gpuAllocations {
+		minor = append(minor, int(gpu.Minor))
+	}
+	return hashMinors(minor)
 }
 
 func calcTotalDevicesByNUMA(nd *nodeDevice, numaNodes []int) map[schedulingv1alpha1.DeviceType]int {
