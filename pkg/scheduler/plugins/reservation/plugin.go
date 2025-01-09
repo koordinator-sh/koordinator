@@ -562,7 +562,8 @@ func fitsNode(podRequest *framework.Resource, nodeInfo *framework.NodeInfo, node
 
 	var rRemained *framework.Resource
 	if rInfo != nil {
-		resources := quotav1.Subtract(rInfo.Allocatable, rInfo.Allocated)
+		// Reservation available = Allocatable - Allocated - InnerReserved
+		resources := quotav1.Subtract(quotav1.Subtract(rInfo.Allocatable, rInfo.Allocated), rInfo.Reserved)
 		rRemained = framework.NewResource(resources)
 	} else {
 		rRemained = dummyResource
@@ -603,9 +604,10 @@ func fitsReservation(podRequest corev1.ResourceList, rInfo *frameworkext.Reserva
 	if len(preemptibleInRR) > 0 {
 		allocated = quotav1.SubtractWithNonNegativeResult(allocated, preemptibleInRR)
 	}
-	allocated = quotav1.Mask(allocated, rInfo.ResourceNames)
-	requests := quotav1.Mask(podRequest, rInfo.ResourceNames)
 	allocatable := rInfo.Allocatable
+	allocated = quotav1.Mask(allocated, rInfo.ResourceNames)
+	reserved := quotav1.Mask(rInfo.Reserved, rInfo.ResourceNames)
+	requests := quotav1.Mask(podRequest, rInfo.ResourceNames)
 
 	var insufficientResourceReasons []string
 
@@ -613,7 +615,7 @@ func fitsReservation(podRequest corev1.ResourceList, rInfo *frameworkext.Reserva
 	if maxPods, found := allocatable[corev1.ResourcePods]; found {
 		allocatedPods := rInfo.GetAllocatedPods()
 		if preemptiblePodsInRR, found := preemptibleInRR[corev1.ResourcePods]; found {
-			allocatedPods += int(preemptiblePodsInRR.Value()) // assert no overflow
+			allocatedPods -= int(preemptiblePodsInRR.Value()) // assert no overflow
 		}
 		if int64(allocatedPods)+1 > maxPods.Value() {
 			if !isDetailed {
@@ -639,6 +641,11 @@ func fitsReservation(podRequest corev1.ResourceList, rInfo *frameworkext.Reserva
 		used, found := allocated[resourceName]
 		if !found {
 			used = *resource.NewQuantity(0, resource.DecimalSI)
+		}
+		reservedQ, found := reserved[resourceName]
+		if found {
+			// NOTE: capacity excludes the reserved resource
+			capacity.Sub(reservedQ)
 		}
 		remained := capacity.DeepCopy()
 		remained.Sub(used)

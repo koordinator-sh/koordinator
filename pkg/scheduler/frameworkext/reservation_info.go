@@ -40,6 +40,7 @@ type ReservationInfo struct {
 	ResourceNames    []corev1.ResourceName
 	Allocatable      corev1.ResourceList
 	Allocated        corev1.ResourceList
+	Reserved         corev1.ResourceList // reserved inside the reservation
 	AllocatablePorts framework.HostPortInfo
 	AllocatedPorts   framework.HostPortInfo
 	AssignedPods     map[types.UID]*PodRequirement
@@ -80,6 +81,7 @@ func (p *PodRequirement) Clone() *PodRequirement {
 func NewReservationInfo(r *schedulingv1alpha1.Reservation) *ReservationInfo {
 	var parseErrors []error
 	allocatable := reservationutil.ReservationRequests(r)
+	reserved := util.GetNodeReservationFromAnnotation(r.Annotations)
 	resourceNames := quotav1.ResourceNames(allocatable)
 	if r.Spec.AllocatePolicy == schedulingv1alpha1.ReservationAllocatePolicyRestricted {
 		options, err := apiext.GetReservationRestrictedOptions(r.Annotations)
@@ -107,6 +109,7 @@ func NewReservationInfo(r *schedulingv1alpha1.Reservation) *ReservationInfo {
 		Pod:              reservedPod,
 		ResourceNames:    resourceNames,
 		Allocatable:      allocatable,
+		Reserved:         reserved,
 		AllocatablePorts: util.RequestedHostPorts(reservedPod),
 		AssignedPods:     map[types.UID]*PodRequirement{},
 		OwnerMatchers:    ownerMatchers,
@@ -118,6 +121,7 @@ func NewReservationInfoFromPod(pod *corev1.Pod) *ReservationInfo {
 	var parseErrors []error
 
 	allocatable := resource.PodRequests(pod, resource.PodResourcesOptions{})
+	reserved := util.GetNodeReservationFromAnnotation(pod.Annotations)
 	resourceNames := quotav1.ResourceNames(allocatable)
 	options, err := apiext.GetReservationRestrictedOptions(pod.Annotations)
 	if err == nil {
@@ -148,6 +152,7 @@ func NewReservationInfoFromPod(pod *corev1.Pod) *ReservationInfo {
 		Pod:              pod,
 		ResourceNames:    resourceNames,
 		Allocatable:      allocatable,
+		Reserved:         reserved,
 		AllocatablePorts: util.RequestedHostPorts(pod),
 		AssignedPods:     map[types.UID]*PodRequirement{},
 		OwnerMatchers:    ownerMatchers,
@@ -344,6 +349,7 @@ func (ri *ReservationInfo) Clone() *ReservationInfo {
 		ResourceNames:    resourceNames,
 		Allocatable:      ri.Allocatable.DeepCopy(),
 		Allocated:        ri.Allocated.DeepCopy(),
+		Reserved:         ri.Reserved.DeepCopy(),
 		AllocatablePorts: util.CloneHostPorts(ri.AllocatablePorts),
 		AllocatedPorts:   util.CloneHostPorts(ri.AllocatedPorts),
 		AssignedPods:     assignedPods,

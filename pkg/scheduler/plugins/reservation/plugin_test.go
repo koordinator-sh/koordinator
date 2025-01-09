@@ -788,6 +788,9 @@ func Test_filterWithReservations(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "test-r",
 			UID:  "123456",
+			Annotations: map[string]string{
+				apiext.AnnotationNodeReservation: `{"resources": {"cpu": "1"}}`,
+			},
 		},
 		Spec: schedulingv1alpha1.ReservationSpec{
 			AllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyRestricted,
@@ -797,7 +800,7 @@ func Test_filterWithReservations(t *testing.T) {
 						{
 							Resources: corev1.ResourceRequirements{
 								Requests: corev1.ResourceList{
-									corev1.ResourceCPU:  resource.MustParse("6"),
+									corev1.ResourceCPU:  resource.MustParse("7"),
 									corev1.ResourcePods: resource.MustParse("2"),
 								},
 							},
@@ -808,7 +811,7 @@ func Test_filterWithReservations(t *testing.T) {
 		},
 		Status: schedulingv1alpha1.ReservationStatus{
 			Allocatable: corev1.ResourceList{
-				corev1.ResourceCPU:  resource.MustParse("6"),
+				corev1.ResourceCPU:  resource.MustParse("7"),
 				corev1.ResourcePods: resource.MustParse("2"),
 			},
 		},
@@ -968,6 +971,53 @@ func Test_filterWithReservations(t *testing.T) {
 			name: "filter restricted reservation with nodeInfo",
 			stateData: &stateData{
 				schedulingStateData: schedulingStateData{
+					podRequests: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("6"),
+						corev1.ResourceMemory: resource.MustParse("8Gi"),
+					},
+					nodeReservationStates: map[string]*nodeReservationState{
+						node.Name: {
+							podRequested: &framework.Resource{
+								MilliCPU: 30 * 1000,
+								Memory:   24 * 1024 * 1024 * 1024,
+							},
+							rAllocated: &framework.Resource{
+								MilliCPU: 0,
+							},
+							matchedOrIgnored: []*frameworkext.ReservationInfo{
+								frameworkext.NewReservationInfo(&schedulingv1alpha1.Reservation{
+									ObjectMeta: metav1.ObjectMeta{
+										Name: "test-r",
+									},
+									Spec: schedulingv1alpha1.ReservationSpec{
+										AllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyRestricted,
+										Template: &corev1.PodTemplateSpec{
+											Spec: corev1.PodSpec{
+												Containers: []corev1.Container{
+													{
+														Resources: corev1.ResourceRequirements{
+															Requests: corev1.ResourceList{
+																corev1.ResourceCPU: resource.MustParse("6"),
+															},
+														},
+													},
+												},
+											},
+										},
+									},
+								}),
+							},
+						},
+					},
+				},
+			},
+			wantStatus: nil,
+		},
+		{
+			name: "filter restricted reservation with affinity",
+			stateData: &stateData{
+				schedulingStateData: schedulingStateData{
+					hasAffinity: true,
 					podRequests: corev1.ResourceList{
 						corev1.ResourceCPU:    resource.MustParse("6"),
 						corev1.ResourceMemory: resource.MustParse("8Gi"),
@@ -1236,6 +1286,56 @@ func Test_filterWithReservations(t *testing.T) {
 				},
 			},
 			wantStatus: nil,
+		},
+		{
+			name: "failed to filter restricted reservation due to reserved",
+			stateData: &stateData{
+				schedulingStateData: schedulingStateData{
+					hasAffinity: true,
+					podRequests: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("6"),
+						corev1.ResourceMemory: resource.MustParse("8Gi"),
+					},
+					nodeReservationStates: map[string]*nodeReservationState{
+						node.Name: {
+							podRequested: &framework.Resource{
+								MilliCPU: 30 * 1000,
+								Memory:   24 * 1024 * 1024 * 1024,
+							},
+							rAllocated: &framework.Resource{
+								MilliCPU: 0,
+							},
+							matchedOrIgnored: []*frameworkext.ReservationInfo{
+								frameworkext.NewReservationInfo(&schedulingv1alpha1.Reservation{
+									ObjectMeta: metav1.ObjectMeta{
+										Name: "test-r",
+										Annotations: map[string]string{
+											apiext.AnnotationNodeReservation: `{"resources": {"cpu": "2"}}`,
+										},
+									},
+									Spec: schedulingv1alpha1.ReservationSpec{
+										AllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyRestricted,
+										Template: &corev1.PodTemplateSpec{
+											Spec: corev1.PodSpec{
+												Containers: []corev1.Container{
+													{
+														Resources: corev1.ResourceRequirements{
+															Requests: corev1.ResourceList{
+																corev1.ResourceCPU: resource.MustParse("6"),
+															},
+														},
+													},
+												},
+											},
+										},
+									},
+								}),
+							},
+						},
+					},
+				},
+			},
+			wantStatus: framework.NewStatus(framework.Unschedulable, "Reservation(s) Insufficient cpu"),
 		},
 		{
 			name: "filter default reservations with preemption",
@@ -1853,8 +1953,8 @@ func Test_filterWithReservations(t *testing.T) {
 					preemptibleInRRs: map[string]map[types.UID]corev1.ResourceList{
 						node.Name: {
 							"123456": {
-								corev1.ResourceCPU:  resource.MustParse("-1"),
-								corev1.ResourcePods: resource.MustParse("-1"),
+								corev1.ResourceCPU:  resource.MustParse("1"),
+								corev1.ResourcePods: resource.MustParse("1"),
 							},
 						},
 					},
@@ -1903,6 +2003,42 @@ func Test_filterWithReservations(t *testing.T) {
 			},
 			wantStatus: framework.NewStatus(framework.Unschedulable, "Reservation(s) Too many pods, "+
 				"requested: 1, used: 2, capacity: 2"),
+		},
+		{
+			name: "failed to filter restricted reservation with name and reserved since insufficient resource",
+			stateData: &stateData{
+				schedulingStateData: schedulingStateData{
+					hasAffinity:     true,
+					reservationName: "test-r",
+					podRequests: corev1.ResourceList{
+						corev1.ResourceCPU: resource.MustParse("6"),
+					},
+					preemptibleInRRs: map[string]map[types.UID]corev1.ResourceList{
+						node.Name: {
+							"123456": {
+								corev1.ResourceCPU:  resource.MustParse("1"),
+								corev1.ResourcePods: resource.MustParse("1"),
+							},
+						},
+					},
+					nodeReservationStates: map[string]*nodeReservationState{
+						node.Name: {
+							podRequested: &framework.Resource{
+								MilliCPU: 30 * 1000,
+								Memory:   24 * 1024 * 1024 * 1024,
+							},
+							rAllocated: &framework.Resource{
+								MilliCPU: 2000,
+							},
+							matchedOrIgnored: []*frameworkext.ReservationInfo{
+								testRInfo.Clone(),
+							},
+						},
+					},
+				},
+			},
+			wantStatus: framework.NewStatus(framework.Unschedulable, "Reservation(s) Insufficient cpu, "+
+				"requested: 6000, used: 1000, capacity: 6000"),
 		},
 	}
 	for _, tt := range tests {
