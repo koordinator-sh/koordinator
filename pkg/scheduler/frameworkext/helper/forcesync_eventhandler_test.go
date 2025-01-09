@@ -81,3 +81,52 @@ func TestSyncedEventHandler(t *testing.T) {
 	}, wait.NeverStop)
 	assert.NoError(t, err)
 }
+
+func TestSyncedEventHandlerWithReplace(t *testing.T) {
+	var objects []runtime.Object
+	for i := 0; i < 10; i++ {
+		node := &corev1.Node{
+			ObjectMeta: metav1.ObjectMeta{
+				UID:             uuid.NewUUID(),
+				Name:            fmt.Sprintf("node-%d", i),
+				ResourceVersion: fmt.Sprintf("%d", i+1),
+			},
+		}
+		objects = append(objects, node)
+	}
+	fakeClientSet := kubefake.NewSimpleClientset(objects...)
+	sharedInformerFactory := informers.NewSharedInformerFactory(fakeClientSet, 0)
+	nodeInformer := sharedInformerFactory.Core().V1().Nodes()
+	addTimes := map[string]int{}
+	var wg sync.WaitGroup
+	wg.Add(10)
+	ForceSyncFromInformerWithReplace(context.TODO().Done(), sharedInformerFactory, nodeInformer.Informer(), cache.ResourceEventHandlerFuncs{}, func(objs []interface{}) error {
+		for _, obj := range objs {
+			node := obj.(*corev1.Node)
+			addTimes[node.Name]++
+			wg.Done()
+		}
+		return nil
+	})
+	wg.Wait()
+	for _, v := range addTimes {
+		if v > 1 {
+			t.Errorf("unexpected add times, want 1 but got %d", v)
+			break
+		}
+	}
+	node, err := nodeInformer.Lister().Get("node-0")
+	assert.NoError(t, err)
+	assert.NotNil(t, node)
+	node = node.DeepCopy()
+	node.ResourceVersion = "100"
+	_, err = fakeClientSet.CoreV1().Nodes().Update(context.TODO(), node, metav1.UpdateOptions{})
+	assert.NoError(t, err)
+	err = wait.PollUntil(1*time.Second, func() (done bool, err error) {
+		node, err := nodeInformer.Lister().Get("node-0")
+		assert.NoError(t, err)
+		assert.NotNil(t, node)
+		return node.ResourceVersion == "100", nil
+	}, wait.NeverStop)
+	assert.NoError(t, err)
+}

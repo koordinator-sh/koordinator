@@ -18,6 +18,7 @@ package elasticquota
 
 import (
 	"encoding/json"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
@@ -111,6 +112,43 @@ func (g *Plugin) OnQuotaDelete(obj interface{}) {
 
 	klog.V(5).Infof("OnQuotaDeleteFunc failed: %v, tree: %v", quota.Name, treeID)
 
+}
+
+func (g *Plugin) ReplaceQuotas(objs []interface{}) error {
+	quotas := make([]*schedulerv1alpha1.ElasticQuota, 0, len(objs))
+	for _, obj := range objs {
+		quota := obj.(*schedulerv1alpha1.ElasticQuota)
+		quotas = append(quotas, quota)
+	}
+
+	start := time.Now()
+	defer func() {
+		klog.Infof("ReplaceQuotas replace %v quotas take %v", len(quotas), time.Since(start))
+	}()
+
+	g.groupQuotaManagersForQuotaTree = make(map[string]*core.GroupQuotaManager)
+	g.groupQuotaManager = core.NewGroupQuotaManager("", g.pluginArgs.SystemQuotaGroupMax, g.pluginArgs.DefaultQuotaGroupMax)
+	g.quotaToTreeMap = make(map[string]string)
+	g.quotaToTreeMap[extension.DefaultQuotaName] = ""
+	g.quotaToTreeMap[extension.SystemQuotaName] = ""
+
+	for _, quota := range quotas {
+		if quota.DeletionTimestamp != nil {
+			continue
+		}
+		mgr := g.GetOrCreateGroupQuotaManagerForTree(quota.Labels[extension.LabelQuotaTreeID])
+		treeID := mgr.GetTreeID()
+		g.updateQuotaToTreeMap(quota.Name, treeID)
+		g.handlerQuotaWhenRoot(quota, mgr, false)
+		mgr.UpdateQuotaInfo(quota)
+	}
+
+	g.groupQuotaManager.ResetQuota()
+	for _, mgr := range g.groupQuotaManagersForQuotaTree {
+		mgr.ResetQuota()
+	}
+
+	return nil
 }
 
 func (g *Plugin) GetQuotaSummary(quotaName string, includePods bool) (*core.QuotaInfoSummary, bool) {

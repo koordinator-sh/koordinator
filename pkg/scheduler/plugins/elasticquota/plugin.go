@@ -158,11 +158,14 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 	elasticQuota.createRootQuotaIfNotPresent()
 	elasticQuota.createSystemQuotaIfNotPresent()
 	elasticQuota.createDefaultQuotaIfNotPresent()
-	frameworkexthelper.ForceSyncFromInformer(ctx.Done(), scheSharedInformerFactory, informer, cache.ResourceEventHandlerFuncs{
+	_, err := frameworkexthelper.ForceSyncFromInformerWithReplace(ctx.Done(), scheSharedInformerFactory, informer, cache.ResourceEventHandlerFuncs{
 		AddFunc:    elasticQuota.OnQuotaAdd,
 		UpdateFunc: elasticQuota.OnQuotaUpdate,
 		DeleteFunc: elasticQuota.OnQuotaDelete,
-	})
+	}, elasticQuota.ReplaceQuotas)
+	if err != nil {
+		return nil, err
+	}
 
 	nodeInformer := handle.SharedInformerFactory().Core().V1().Nodes().Informer()
 	frameworkexthelper.ForceSyncFromInformer(ctx.Done(), handle.SharedInformerFactory(), nodeInformer, cache.ResourceEventHandlerFuncs{
