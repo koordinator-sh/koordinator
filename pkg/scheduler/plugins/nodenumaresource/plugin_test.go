@@ -1023,7 +1023,7 @@ func TestFilterWithAmplifiedCPUs(t *testing.T) {
 	}
 }
 
-func TestPlugin_FilterReservation(t *testing.T) {
+func TestPlugin_FilterNominateReservation(t *testing.T) {
 	skipState := framework.NewCycleState()
 	skipState.Write(stateKey, &preFilterState{
 		skip: true,
@@ -1077,7 +1077,7 @@ func TestPlugin_FilterReservation(t *testing.T) {
 			assert.NotNil(t, p)
 			assert.Nil(t, err)
 			pl := p.(*Plugin)
-			got := pl.FilterReservation(context.TODO(), tt.args.cycleState, tt.args.pod, tt.args.reservationInfo, tt.args.nodeName)
+			got := pl.FilterNominateReservation(context.TODO(), tt.args.cycleState, tt.args.pod, tt.args.reservationInfo, tt.args.nodeName)
 			assert.Equal(t, tt.want, got)
 		})
 	}

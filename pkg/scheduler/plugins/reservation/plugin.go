@@ -467,6 +467,11 @@ func (pl *Plugin) filterWithReservations(ctx context.Context, cycleState *framew
 		return nil
 	}
 
+	extender, ok := pl.handle.(frameworkext.FrameworkExtender)
+	if !ok {
+		return framework.AsStatus(fmt.Errorf("not implemented frameworkext.FrameworkExtender"))
+	}
+
 	node := nodeInfo.Node()
 	state := getStateData(cycleState)
 	nodeRState := state.nodeReservationStates[node.Name]
@@ -495,21 +500,31 @@ func (pl *Plugin) filterWithReservations(ctx context.Context, cycleState *framew
 		insufficientResourcesByNode := fitsNode(state.podRequestsResources, nodeInfo, nodeRState, rInfo, preemptible)
 		state.preemptLock.RUnlock()
 
-		nodeFits := len(insufficientResourcesByNode) == 0
+		nodeFits := len(insufficientResourcesByNode) <= 0
+		allInsufficientResourcesByNode.Insert(insufficientResourcesByNode...)
+
+		reservationFits := false
 		allocatePolicy := rInfo.GetAllocatePolicy()
 		if allocatePolicy == schedulingv1alpha1.ReservationAllocatePolicyDefault ||
 			allocatePolicy == schedulingv1alpha1.ReservationAllocatePolicyAligned {
-			if nodeFits {
-				return nil
-			}
-			allInsufficientResourcesByNode.Insert(insufficientResourcesByNode...)
+			reservationFits = nodeFits
 		} else if allocatePolicy == schedulingv1alpha1.ReservationAllocatePolicyRestricted {
 			insufficientResourceReasonsByReservation := fitsReservation(state.podRequests, rInfo, preemptibleInRR, requireDetailReasons)
-			if nodeFits && len(insufficientResourceReasonsByReservation) <= 0 { // fit the reservation
-				return nil
-			}
-			allInsufficientResourcesByNode.Insert(insufficientResourcesByNode...)
+
+			reservationFits = len(insufficientResourceReasonsByReservation) <= 0
 			allInsufficientResourceReasonsByReservation = append(allInsufficientResourceReasonsByReservation, insufficientResourceReasonsByReservation...)
+		}
+
+		// Before nominating a reservation in PreScore or Reserve, check the reservation by multiple plugins to make
+		// the Filter phase give a more accurate result. It is extensible to support more policies.
+		status := extender.RunReservationFilterPlugins(ctx, cycleState, pod, rInfo, nodeInfo)
+		if !status.IsSuccess() {
+			allInsufficientResourceReasonsByReservation = append(allInsufficientResourceReasonsByReservation, status.Reasons()...)
+			continue
+		}
+
+		if nodeFits && reservationFits {
+			return nil
 		}
 	}
 
@@ -548,7 +563,8 @@ func fitsNode(podRequest *framework.Resource, nodeInfo *framework.NodeInfo, node
 
 	var rRemained *framework.Resource
 	if rInfo != nil {
-		resources := quotav1.Subtract(rInfo.Allocatable, rInfo.Allocated)
+		// Reservation available = Allocatable - Allocated - InnerReserved
+		resources := quotav1.Subtract(quotav1.Subtract(rInfo.Allocatable, rInfo.Allocated), rInfo.Reserved)
 		rRemained = framework.NewResource(resources)
 	} else {
 		rRemained = dummyResource
@@ -589,9 +605,10 @@ func fitsReservation(podRequest corev1.ResourceList, rInfo *frameworkext.Reserva
 	if len(preemptibleInRR) > 0 {
 		allocated = quotav1.SubtractWithNonNegativeResult(allocated, preemptibleInRR)
 	}
-	allocated = quotav1.Mask(allocated, rInfo.ResourceNames)
-	requests := quotav1.Mask(podRequest, rInfo.ResourceNames)
 	allocatable := rInfo.Allocatable
+	allocated = quotav1.Mask(allocated, rInfo.ResourceNames)
+	reserved := quotav1.Mask(rInfo.Reserved, rInfo.ResourceNames)
+	requests := quotav1.Mask(podRequest, rInfo.ResourceNames)
 
 	var insufficientResourceReasons []string
 
@@ -599,7 +616,7 @@ func fitsReservation(podRequest corev1.ResourceList, rInfo *frameworkext.Reserva
 	if maxPods, found := allocatable[corev1.ResourcePods]; found {
 		allocatedPods := rInfo.GetAllocatedPods()
 		if preemptiblePodsInRR, found := preemptibleInRR[corev1.ResourcePods]; found {
-			allocatedPods += int(preemptiblePodsInRR.Value()) // assert no overflow
+			allocatedPods -= int(preemptiblePodsInRR.Value()) // assert no overflow
 		}
 		if int64(allocatedPods)+1 > maxPods.Value() {
 			if !isDetailed {
@@ -625,6 +642,11 @@ func fitsReservation(podRequest corev1.ResourceList, rInfo *frameworkext.Reserva
 		used, found := allocated[resourceName]
 		if !found {
 			used = *resource.NewQuantity(0, resource.DecimalSI)
+		}
+		reservedQ, found := reserved[resourceName]
+		if found {
+			// NOTE: capacity excludes the reserved resource
+			capacity.Sub(reservedQ)
 		}
 		remained := capacity.DeepCopy()
 		remained.Sub(used)
@@ -782,7 +804,11 @@ func (pl *Plugin) makePostFilterReasons(state *stateData, filteredNodeStatusMap 
 	return reasons
 }
 
-func (pl *Plugin) FilterReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, reservationInfo *frameworkext.ReservationInfo, nodeName string) *framework.Status {
+func (pl *Plugin) FilterReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, reservationInfo *frameworkext.ReservationInfo, nodeInfo *framework.NodeInfo) *framework.Status {
+	return nil
+}
+
+func (pl *Plugin) FilterNominateReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, reservationInfo *frameworkext.ReservationInfo, nodeName string) *framework.Status {
 	// TODO(joseph): We can consider optimizing these codes. It seems that there is no need to exist at present.
 	state := getStateData(cycleState)
 

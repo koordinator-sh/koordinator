@@ -225,7 +225,7 @@ func (pl *Plugin) NominateReservation(ctx context.Context, cycleState *framework
 
 	reservations := make([]*frameworkext.ReservationInfo, 0, len(reservationInfos))
 	for i := range reservationInfos {
-		status := extender.RunReservationFilterPlugins(ctx, cycleState, pod, reservationInfos[i], nodeName)
+		status := extender.RunNominateReservationFilterPlugins(ctx, cycleState, pod, reservationInfos[i], nodeName)
 		if !status.IsSuccess() {
 			continue
 		}

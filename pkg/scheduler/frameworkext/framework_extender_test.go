@@ -739,7 +739,18 @@ type fakeReservationFilterPlugin struct {
 
 func (f *fakeReservationFilterPlugin) Name() string { return "fakeReservationFilterPlugin" }
 
-func (f *fakeReservationFilterPlugin) FilterReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, reservationInfo *ReservationInfo, nodeName string) *framework.Status {
+func (f *fakeReservationFilterPlugin) FilterReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, reservationInfo *ReservationInfo, nodeInfo *framework.NodeInfo) *framework.Status {
+	if reservationInfo.Reservation.Annotations == nil {
+		reservationInfo.Reservation.Annotations = map[string]string{}
+	}
+	reservationInfo.Reservation.Annotations[fmt.Sprintf("reservationFilterWithPlugin-%d", f.index)] = fmt.Sprintf("%d", f.index)
+	if f.err != nil {
+		return framework.AsStatus(f.err)
+	}
+	return nil
+}
+
+func (f *fakeReservationFilterPlugin) FilterNominateReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, reservationInfo *ReservationInfo, nodeName string) *framework.Status {
 	if reservationInfo.Reservation.Annotations == nil {
 		reservationInfo.Reservation.Annotations = map[string]string{}
 	}
@@ -750,7 +761,87 @@ func (f *fakeReservationFilterPlugin) FilterReservation(ctx context.Context, cyc
 	return nil
 }
 
-func TestReservationFilterPlugin(t *testing.T) {
+func TestRunReservationFilterPlugins(t *testing.T) {
+	testNode := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-node-1",
+		},
+	}
+	testNodeInfo := framework.NewNodeInfo()
+	testNodeInfo.SetNode(testNode)
+	tests := []struct {
+		name            string
+		reservation     *schedulingv1alpha1.Reservation
+		plugins         []*fakeReservationFilterPlugin
+		wantAnnotations map[string]string
+		wantStatus      bool
+	}{
+		{
+			name: "filter reservation succeeded",
+			reservation: &schedulingv1alpha1.Reservation{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-reservation",
+				},
+			},
+			plugins: []*fakeReservationFilterPlugin{
+				{index: 1},
+				{index: 2},
+			},
+			wantAnnotations: map[string]string{
+				"reservationFilterWithPlugin-1": "1",
+				"reservationFilterWithPlugin-2": "2",
+			},
+			wantStatus: true,
+		},
+		{
+			name: "first plugin failed",
+			reservation: &schedulingv1alpha1.Reservation{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-reservation",
+				},
+			},
+			plugins: []*fakeReservationFilterPlugin{
+				{index: 1, err: errors.New("failed")},
+				{index: 2},
+			},
+			wantAnnotations: map[string]string{
+				"reservationFilterWithPlugin-1": "1",
+			},
+			wantStatus: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			registeredPlugins := []schedulertesting.RegisterPluginFunc{
+				schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
+				schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
+			}
+			fh, err := schedulertesting.NewFramework(
+				context.TODO(),
+				registeredPlugins,
+				"koord-scheduler",
+			)
+			assert.NoError(t, err)
+
+			extenderFactory, _ := NewFrameworkExtenderFactory()
+
+			extender := NewFrameworkExtender(extenderFactory, fh)
+			impl := extender.(*frameworkExtenderImpl)
+			for _, pl := range tt.plugins {
+				impl.updatePlugins(pl)
+			}
+
+			cycleState := framework.NewCycleState()
+
+			reservationInfo := NewReservationInfo(tt.reservation)
+			status := extender.RunReservationFilterPlugins(context.TODO(), cycleState, &corev1.Pod{}, reservationInfo, testNodeInfo)
+			assert.Equal(t, tt.wantStatus, status.IsSuccess())
+			assert.Equal(t, tt.wantAnnotations, reservationInfo.Reservation.Annotations)
+		})
+	}
+}
+
+func TestRunNominateReservationFilterPlugins(t *testing.T) {
 	tests := []struct {
 		name            string
 		reservation     *schedulingv1alpha1.Reservation
@@ -816,7 +907,7 @@ func TestReservationFilterPlugin(t *testing.T) {
 			cycleState := framework.NewCycleState()
 
 			reservationInfo := NewReservationInfo(tt.reservation)
-			status := extender.RunReservationFilterPlugins(context.TODO(), cycleState, &corev1.Pod{}, reservationInfo, "test-node-1")
+			status := extender.RunNominateReservationFilterPlugins(context.TODO(), cycleState, &corev1.Pod{}, reservationInfo, "test-node-1")
 			assert.Equal(t, tt.wantStatus, status.IsSuccess())
 			assert.Equal(t, tt.wantAnnotations, reservationInfo.Reservation.Annotations)
 		})
