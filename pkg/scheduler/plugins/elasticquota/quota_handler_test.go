@@ -346,6 +346,8 @@ func TestPlugin_ReplaceQuotas(t *testing.T) {
 	assert.Nil(t, err)
 	plugin := p.(*Plugin)
 
+	// ReplaceQuotas will conflict with QuotaEventHandler. sleep 1 seconds to avoid it.
+	time.Sleep(time.Second)
 	plugin.ReplaceQuotas(quotas)
 
 	plugin.groupQuotaManager.UpdateClusterTotalResource(createResourceList(1000, 1000))
