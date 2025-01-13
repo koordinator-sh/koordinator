@@ -22,6 +22,7 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	"k8s.io/kubernetes/pkg/api/v1/resource"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
@@ -45,16 +46,15 @@ type Plugin struct {
 }
 
 func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error) {
-
-	sampleArgs2, ok := args.(*config.ScarceResourceAvoidanceArgs)
+	scarceResourceAvoidanceArgs, ok := args.(*config.ScarceResourceAvoidanceArgs)
 
 	if !ok {
-		return nil, fmt.Errorf("want args to be of type ResourceTypesArgs, got %T", args)
+		return nil, fmt.Errorf("want args to be of type ResourceTypesArgs, got %T", scarceResourceAvoidanceArgs)
 	}
 
 	return &Plugin{
 		handle: handle,
-		args:   sampleArgs2,
+		args:   scarceResourceAvoidanceArgs,
 	}, nil
 }
 
@@ -78,8 +78,8 @@ func (s *Plugin) Score(ctx context.Context, state *framework.CycleState, p *v1.P
 		return 0, framework.NewStatus(framework.Error, fmt.Sprintf("get State node %q from PreScore: %v", nodeName, err))
 	}
 	podRequestResource, nodeAllocatableResource := fitsRequest(scoreState.Resource, nodeInfo)
-	diffNames := difference(nodeAllocatableResource, podRequestResource)
-	intersectNames := intersection(diffNames, s.args.Resources)
+	diffNames := quotav1.Difference(nodeAllocatableResource, podRequestResource)
+	intersectNames := quotav1.Intersection(diffNames, s.args.Resources)
 
 	if len(diffNames) == 0 || len(intersectNames) == 0 {
 		return framework.MaxNodeScore, framework.NewStatus(framework.Success, "")
@@ -87,39 +87,6 @@ func (s *Plugin) Score(ctx context.Context, state *framework.CycleState, p *v1.P
 	scores := resourceTypesScore(int64(len(intersectNames)), int64(len(diffNames)))
 
 	return scores, framework.NewStatus(framework.Success, "")
-}
-
-func intersection(slice1, slice2 []v1.ResourceName) []v1.ResourceName {
-	m := make(map[v1.ResourceName]struct{})
-	result := []v1.ResourceName{}
-
-	for _, v := range slice2 {
-		m[v] = struct{}{}
-	}
-
-	for _, v := range slice1 {
-		if _, found := m[v]; found {
-			result = append(result, v)
-		}
-	}
-
-	return result
-}
-
-func difference(slice1, slice2 []v1.ResourceName) []v1.ResourceName {
-	var result []v1.ResourceName
-	m := make(map[v1.ResourceName]struct{})
-	for _, v := range slice2 {
-		m[v] = struct{}{}
-	}
-
-	for _, v := range slice1 {
-		if _, found := m[v]; !found {
-			result = append(result, v)
-		}
-	}
-
-	return result
 }
 
 func (p *Plugin) ScoreExtensions() framework.ScoreExtensions {

@@ -260,7 +260,7 @@ func TestPlugin_Score(t *testing.T) {
 	scoreNode1, _ := p.(*Plugin).Score(context.TODO(), cycleState, pod, "testNode1")
 	scoreNode2, _ := p.(*Plugin).Score(context.TODO(), cycleState, pod, "testNode2")
 	if scoreNode1 <= scoreNode2 {
-		t.Fatal("scoreNode1 must <= scoreNode2")
+		t.Fatal("scoreNode1 must more than scoreNode2")
 	}
 }
 
