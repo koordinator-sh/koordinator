@@ -87,7 +87,7 @@ func (s *Plugin) Score(ctx context.Context, state *framework.CycleState, p *v1.P
 
 	scoreState, err := getPreScoreState(state)
 	if err != nil {
-		return 0, framework.NewStatus(framework.Error, fmt.Sprintf("get State node %q from PreScore: %v", nodeName, err))
+		return 0, framework.NewStatus(framework.Error, fmt.Sprintf("get state node %q from PreScore: %v", nodeName, err))
 	}
 	scores := r.getResourceScore(s.args, scoreState.ResourceName, p, nodeInfo, nodeName)
 
