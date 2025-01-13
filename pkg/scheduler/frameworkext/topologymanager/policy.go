@@ -222,9 +222,7 @@ func mergeFilteredHints(numaNodes []int, filteredHints [][]NUMATopologyHint, exc
 
 		for _, v := range permutation {
 			if v.NUMANodeAffinity != nil && mergedHint.NUMANodeAffinity.IsEqual(v.NUMANodeAffinity) {
-				if v.Score > mergedHint.Score {
-					mergedHint.Score = v.Score
-				}
+				mergedHint.Score += v.Score
 			}
 		}
 

@@ -72,14 +72,14 @@ func TestPlugin_GetPodTopologyHints(t *testing.T) {
 			},
 			want: map[string][]topologymanager.NUMATopologyHint{
 				string(schedulingv1alpha1.GPU): {
-					{NUMANodeAffinity: newBitMask(0), Preferred: true},
+					{NUMANodeAffinity: newBitMask(0), Preferred: true, Score: defaultNUMAScore},
 					{NUMANodeAffinity: newBitMask(1), Preferred: true},
-					{NUMANodeAffinity: newBitMask(0, 1), Preferred: false},
+					{NUMANodeAffinity: newBitMask(0, 1), Preferred: false, Score: defaultNUMAScore},
 				},
 				string(schedulingv1alpha1.RDMA): {
-					{NUMANodeAffinity: newBitMask(0), Preferred: true},
+					{NUMANodeAffinity: newBitMask(0), Preferred: true, Score: defaultNUMAScore},
 					{NUMANodeAffinity: newBitMask(1), Preferred: true},
-					{NUMANodeAffinity: newBitMask(0, 1), Preferred: false},
+					{NUMANodeAffinity: newBitMask(0, 1), Preferred: false, Score: defaultNUMAScore},
 				},
 			},
 		},
@@ -110,8 +110,8 @@ func TestPlugin_GetPodTopologyHints(t *testing.T) {
 			},
 			want: map[string][]topologymanager.NUMATopologyHint{
 				string(schedulingv1alpha1.GPU): {
-					{NUMANodeAffinity: newBitMask(1), Preferred: true},
-					{NUMANodeAffinity: newBitMask(0, 1), Preferred: false},
+					{NUMANodeAffinity: newBitMask(1), Preferred: true, Score: defaultNUMAScore},
+					{NUMANodeAffinity: newBitMask(0, 1), Preferred: false, Score: defaultNUMAScore},
 				},
 			},
 		},
@@ -137,9 +137,9 @@ func TestPlugin_GetPodTopologyHints(t *testing.T) {
 			},
 			want: map[string][]topologymanager.NUMATopologyHint{
 				string(schedulingv1alpha1.RDMA): {
-					{NUMANodeAffinity: newBitMask(0), Preferred: true},
-					{NUMANodeAffinity: newBitMask(1), Preferred: true},
-					{NUMANodeAffinity: newBitMask(0, 1), Preferred: false},
+					{NUMANodeAffinity: newBitMask(0), Preferred: true, Score: defaultNUMAScore},
+					{NUMANodeAffinity: newBitMask(1), Preferred: true, Score: defaultNUMAScore},
+					{NUMANodeAffinity: newBitMask(0, 1), Preferred: false, Score: defaultNUMAScore},
 				},
 			},
 		},
@@ -156,9 +156,9 @@ func TestPlugin_GetPodTopologyHints(t *testing.T) {
 			},
 			want: map[string][]topologymanager.NUMATopologyHint{
 				string(schedulingv1alpha1.RDMA): {
-					{NUMANodeAffinity: newBitMask(0), Preferred: true},
-					{NUMANodeAffinity: newBitMask(1), Preferred: true},
-					{NUMANodeAffinity: newBitMask(0, 1), Preferred: false},
+					{NUMANodeAffinity: newBitMask(0), Preferred: true, Score: defaultNUMAScore},
+					{NUMANodeAffinity: newBitMask(1), Preferred: true, Score: defaultNUMAScore},
+					{NUMANodeAffinity: newBitMask(0, 1), Preferred: false, Score: defaultNUMAScore},
 				},
 			},
 		},
@@ -177,7 +177,7 @@ func TestPlugin_GetPodTopologyHints(t *testing.T) {
 			},
 			want: map[string][]topologymanager.NUMATopologyHint{
 				string(schedulingv1alpha1.RDMA): {
-					{NUMANodeAffinity: newBitMask(0, 1), Preferred: true},
+					{NUMANodeAffinity: newBitMask(0, 1), Preferred: true, Score: defaultNUMAScore},
 				},
 			},
 		},
@@ -197,14 +197,14 @@ func TestPlugin_GetPodTopologyHints(t *testing.T) {
 			},
 			want: map[string][]topologymanager.NUMATopologyHint{
 				string(schedulingv1alpha1.RDMA): {
-					{NUMANodeAffinity: newBitMask(0), Preferred: true},
+					{NUMANodeAffinity: newBitMask(0), Preferred: true, Score: defaultNUMAScore},
 					{NUMANodeAffinity: newBitMask(1), Preferred: true},
-					{NUMANodeAffinity: newBitMask(0, 1), Preferred: false},
+					{NUMANodeAffinity: newBitMask(0, 1), Preferred: false, Score: defaultNUMAScore},
 				},
 				string(schedulingv1alpha1.GPU): {
-					{NUMANodeAffinity: newBitMask(0), Preferred: true},
+					{NUMANodeAffinity: newBitMask(0), Preferred: true, Score: defaultNUMAScore},
 					{NUMANodeAffinity: newBitMask(1), Preferred: true},
-					{NUMANodeAffinity: newBitMask(0, 1), Preferred: false},
+					{NUMANodeAffinity: newBitMask(0, 1), Preferred: false, Score: defaultNUMAScore},
 				},
 			},
 		},
