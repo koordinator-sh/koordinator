@@ -147,61 +147,133 @@ func TestQuotaTopology_fillDefaultQuotaInfoWithTreeID(t *testing.T) {
 
 func TestQuotaTopology_checkSubAndParentGroupMaxQuotaKeySame(t *testing.T) {
 	tests := []struct {
-		name     string
-		parQuota *v1alpha1.ElasticQuota
-		quota    *v1alpha1.ElasticQuota
-		subQuota *v1alpha1.ElasticQuota
-		err      error
-		eraseSub bool
+		name                     string
+		parQuota                 *v1alpha1.ElasticQuota
+		quota                    *v1alpha1.ElasticQuota
+		subQuota                 *v1alpha1.ElasticQuota
+		enableResourceTypeUpdate bool
+		err                      error
+		eraseSub                 bool
 	}{
 		{
 			name:  "no tree",
 			quota: MakeQuota("temp").Max(MakeResourceList().CPU(120).Mem(1048576).Obj()).IsParent(true).Obj(),
 			subQuota: MakeQuota("temp-bu1").ParentName("temp").
 				Max(MakeResourceList().CPU(120).Mem(1048576).Obj()).IsParent(false).Obj(),
-			err: nil,
+			enableResourceTypeUpdate: false,
+			err:                      nil,
 		},
 		{
 			name: "parent is root",
 			quota: MakeQuota("temp-bu1").ParentName(extension.RootQuotaName).
 				Max(MakeResourceList().CPU(120).Mem(1048576).Obj()).IsParent(false).Obj(),
-			err: nil,
+			enableResourceTypeUpdate: false,
+			err:                      nil,
 		},
 		{
-			name:  "parent's key size > child's key size",
+			name:  "child's max has different dimension with its,but be included, enableResourceTypeUpdate = false",
 			quota: MakeQuota("temp").Max(MakeResourceList().CPU(10).Mem(120).Obj()).IsParent(true).Obj(),
 			subQuota: MakeQuota("temp-bu1").ParentName("temp").
 				Max(MakeResourceList().CPU(120).Obj()).IsParent(false).Obj(),
-			err: fmt.Errorf("error"),
+			enableResourceTypeUpdate: false,
+			err:                      fmt.Errorf("error"),
 		},
 		{
-			name:  "size same, dimension is different",
+			name:  "child's max has same dimension with its,but be included, enableResourceTypeUpdate = false",
+			quota: MakeQuota("temp").Max(MakeResourceList().CPU(10).Obj()).IsParent(true).Obj(),
+			subQuota: MakeQuota("temp-bu1").ParentName("temp").
+				Max(MakeResourceList().CPU(120).Obj()).IsParent(false).Obj(),
+			enableResourceTypeUpdate: false,
+			err:                      nil,
+		},
+		{
+			name:  "child's max has different dimension with its,but be included, enableResourceTypeUpdate = true",
+			quota: MakeQuota("temp").Max(MakeResourceList().CPU(10).Mem(120).Obj()).IsParent(true).Obj(),
+			subQuota: MakeQuota("temp-bu1").ParentName("temp").
+				Max(MakeResourceList().CPU(120).Obj()).IsParent(false).Obj(),
+			enableResourceTypeUpdate: true,
+			err:                      nil,
+		},
+		{
+			name:  "child's max has different dimension with its,not be included, enableResourceTypeUpdate = true",
 			quota: MakeQuota("temp").Max(MakeResourceList().Mem(120).Obj()).IsParent(true).Obj(),
 			subQuota: MakeQuota("temp-bu1").ParentName("temp").
 				Max(MakeResourceList().CPU(120).Obj()).IsParent(false).Obj(),
-			err: fmt.Errorf("error"),
+			enableResourceTypeUpdate: true,
+			err:                      fmt.Errorf("error"),
 		},
 		{
-			name:  "child's key size > parent's key size",
-			quota: MakeQuota("temp").Max(MakeResourceList().CPU(10).Obj()).IsParent(true).Obj(),
-			subQuota: MakeQuota("temp-bu1").ParentName("temp").
-				Max(MakeResourceList().CPU(120).Mem(120).Obj()).IsParent(false).Obj(),
-			err: fmt.Errorf("error"),
+			name:     "its max has different dimension with parent's,but be included, enableResourceTypeUpdate = false",
+			parQuota: MakeQuota("temp").Max(MakeResourceList().CPU(10).Mem(120).Obj()).IsParent(true).Obj(),
+			quota: MakeQuota("temp-bu1").ParentName("temp").
+				Max(MakeResourceList().CPU(120).Obj()).IsParent(false).Obj(),
+			enableResourceTypeUpdate: false,
+			err:                      fmt.Errorf("error"),
 		},
 		{
-			name:     "quotaInfo not satisfy",
+			name:     "its max has same dimension with parent's,but be included, enableResourceTypeUpdate = false",
 			parQuota: MakeQuota("temp").Max(MakeResourceList().CPU(10).Obj()).IsParent(true).Obj(),
 			quota: MakeQuota("temp-bu1").ParentName("temp").
-				Max(MakeResourceList().CPU(120).Mem(120).Obj()).IsParent(false).Obj(),
-			err: fmt.Errorf("error"),
+				Max(MakeResourceList().CPU(120).Obj()).IsParent(false).Obj(),
+			enableResourceTypeUpdate: false,
+			err:                      nil,
+		},
+		{
+			name:     "its max has different dimension with parent's,but be included, enableResourceTypeUpdate = true",
+			parQuota: MakeQuota("temp").Max(MakeResourceList().CPU(10).Mem(120).Obj()).IsParent(true).Obj(),
+			quota: MakeQuota("temp-bu1").ParentName("temp").
+				Max(MakeResourceList().CPU(120).Obj()).IsParent(false).Obj(),
+			enableResourceTypeUpdate: true,
+			err:                      nil,
+		},
+		{
+			name:     "its max has different dimension with parent's,not be included, enableResourceTypeUpdate = true",
+			parQuota: MakeQuota("temp").Max(MakeResourceList().Mem(120).Obj()).IsParent(true).Obj(),
+			quota: MakeQuota("temp-bu1").ParentName("temp").
+				Max(MakeResourceList().CPU(120).Obj()).IsParent(false).Obj(),
+			enableResourceTypeUpdate: true,
+			err:                      fmt.Errorf("error"),
+		},
+		{
+			name:     "its min has different dimension with parent's,but be included, enableResourceTypeUpdate = false",
+			parQuota: MakeQuota("temp").Min(MakeResourceList().CPU(10).Mem(120).Obj()).IsParent(true).Obj(),
+			quota: MakeQuota("temp-bu1").ParentName("temp").
+				Min(MakeResourceList().CPU(120).Obj()).IsParent(false).Obj(),
+			enableResourceTypeUpdate: false,
+			err:                      nil,
+		},
+		{
+			name:     "its min has different dimension with parent's,not be all included, enableResourceTypeUpdate = false",
+			parQuota: MakeQuota("temp").Min(MakeResourceList().CPU(10).Obj()).IsParent(true).Obj(),
+			quota: MakeQuota("temp-bu1").ParentName("temp").
+				Min(MakeResourceList().CPU(120).Mem(120).Obj()).IsParent(false).Obj(),
+			enableResourceTypeUpdate: false,
+			err:                      fmt.Errorf("error"),
+		},
+		{
+			name:     "its min has different dimension with parent's,but be all included, enableResourceTypeUpdate = true",
+			parQuota: MakeQuota("temp").Min(MakeResourceList().CPU(10).Mem(120).Obj()).IsParent(true).Obj(),
+			quota: MakeQuota("temp-bu1").ParentName("temp").
+				Min(MakeResourceList().CPU(120).Obj()).IsParent(false).Obj(),
+			enableResourceTypeUpdate: true,
+			err:                      nil,
+		},
+		{
+			name:     "its min has different dimension with parent's,not be included, enableResourceTypeUpdate = true",
+			parQuota: MakeQuota("temp").Min(MakeResourceList().CPU(10).Obj()).IsParent(true).Obj(),
+			quota: MakeQuota("temp-bu1").ParentName("temp").
+				Min(MakeResourceList().CPU(120).Mem(120).Obj()).IsParent(false).Obj(),
+			enableResourceTypeUpdate: true,
+			err:                      fmt.Errorf("error"),
 		},
 		{
 			name:  "bug",
 			quota: MakeQuota("temp").Max(MakeResourceList().CPU(120).Mem(1048576).Obj()).IsParent(true).Obj(),
 			subQuota: MakeQuota("temp-bu1").ParentName("temp").
 				Max(MakeResourceList().CPU(120).Mem(1048576).Obj()).IsParent(false).Obj(),
-			err:      fmt.Errorf("error"),
-			eraseSub: true,
+			enableResourceTypeUpdate: false,
+			err:                      fmt.Errorf("error"),
+			eraseSub:                 true,
 		},
 	}
 	for _, tt := range tests {
@@ -214,7 +286,7 @@ func TestQuotaTopology_checkSubAndParentGroupMaxQuotaKeySame(t *testing.T) {
 			if tt.eraseSub {
 				delete(qt.quotaInfoMap, tt.subQuota.Name)
 			}
-			err := qt.checkSubAndParentGroupMaxQuotaKeySame(quotaInfo)
+			err := qt.checkSubAndParentGroupQuotaKey(quotaInfo, tt.enableResourceTypeUpdate)
 			if (tt.err != nil && err == nil) || (tt.err == nil && err != nil) {
 				t.Errorf("error")
 			}

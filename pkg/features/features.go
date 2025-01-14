@@ -68,6 +68,11 @@ const (
 	// to belong to the users and will not be preempted back.
 	ElasticQuotaGuaranteeUsage featuregate.Feature = "ElasticQuotaGuaranteeUsage"
 
+	// ElasticQuotaEnableUpdateResourceKey allows to update resource key in standard operation
+	// when delete resource type: from child to parent
+	// when add resource type: from parent to child
+	ElasticQuotaEnableUpdateResourceKey featuregate.Feature = "ElasticQuotaEnableUpdateResourceKey"
+
 	// DisableDefaultQuota disable default quota.
 	DisableDefaultQuota featuregate.Feature = "DisableDefaultQuota"
 
@@ -94,6 +99,7 @@ var defaultFeatureGates = map[featuregate.Feature]featuregate.FeatureSpec{
 	MultiQuotaTree:                         {Default: false, PreRelease: featuregate.Alpha},
 	ElasticQuotaIgnorePodOverhead:          {Default: false, PreRelease: featuregate.Alpha},
 	ElasticQuotaGuaranteeUsage:             {Default: false, PreRelease: featuregate.Alpha},
+	ElasticQuotaEnableUpdateResourceKey:    {Default: false, PreRelease: featuregate.Alpha},
 	DisableDefaultQuota:                    {Default: false, PreRelease: featuregate.Alpha},
 	SupportParentQuotaSubmitPod:            {Default: false, PreRelease: featuregate.Alpha},
 	EnableQuotaAdmission:                   {Default: false, PreRelease: featuregate.Alpha},
