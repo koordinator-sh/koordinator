@@ -280,6 +280,9 @@ func getPostFilterState(cycleState *framework.CycleState) (*PostFilterState, err
 
 func (g *Plugin) checkQuotaRecursive(curQuotaName string, quotaNameTopo []string, podRequest v1.ResourceList) *framework.Status {
 	quotaInfo := g.groupQuotaManager.GetQuotaInfoByName(curQuotaName)
+	if quotaInfo == nil {
+		return framework.NewStatus(framework.Error, fmt.Sprintf("Could not find the elasticQuota %v, quotaNameTopo: %v", curQuotaName, quotaNameTopo))
+	}
 	quotaUsed := quotaInfo.GetUsed()
 	quotaUsedLimit := g.getQuotaInfoUsedLimit(quotaInfo)
 
