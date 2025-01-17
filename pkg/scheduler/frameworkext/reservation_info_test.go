@@ -483,6 +483,28 @@ func TestReservationInfoUpdateReservation(t *testing.T) {
 				ParseError:    nil,
 			},
 		},
+		{
+			name:        "reservation's reserved has changed",
+			reservation: reservation,
+			newReservation: func() *schedulingv1alpha1.Reservation {
+				r := reservation.DeepCopy()
+				if r.Annotations == nil {
+					r.Annotations = map[string]string{}
+				}
+				r.Annotations[apiext.AnnotationNodeReservation] = `{"resources": {"cpu": "1"}}`
+				return r
+			}(),
+			want: &ReservationInfo{
+				ResourceNames: []corev1.ResourceName{corev1.ResourceCPU, corev1.ResourceMemory},
+				Allocatable:   allocatable.DeepCopy(),
+				Reserved: map[corev1.ResourceName]resource.Quantity{
+					corev1.ResourceCPU: resource.MustParse("1"),
+				},
+				AssignedPods:  map[types.UID]*PodRequirement{},
+				OwnerMatchers: ownerMatchers,
+				ParseError:    nil,
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
