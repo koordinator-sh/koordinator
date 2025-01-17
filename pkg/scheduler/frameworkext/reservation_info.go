@@ -378,6 +378,9 @@ func (ri *ReservationInfo) UpdateReservation(r *schedulingv1alpha1.Reservation) 
 	if ri.Allocated != nil {
 		ri.Allocated = quotav1.Mask(ri.Allocated, ri.ResourceNames)
 	}
+	reserved := util.GetNodeReservationFromAnnotation(r.Annotations)
+	ri.Reserved = reserved
+
 	ownerMatchers, err := reservationutil.ParseReservationOwnerMatchers(r.Spec.Owners)
 	if err != nil {
 		klog.ErrorS(err, "Failed to parse reservation owner matchers", "reservation", klog.KObj(r))
@@ -407,6 +410,8 @@ func (ri *ReservationInfo) UpdatePod(pod *corev1.Pod) {
 	ri.Pod = pod
 	ri.AllocatablePorts = util.RequestedHostPorts(pod)
 	ri.Allocated = quotav1.Mask(ri.Allocated, ri.ResourceNames)
+	reserved := util.GetNodeReservationFromAnnotation(pod.Annotations)
+	ri.Reserved = reserved
 
 	owners, err := apiext.GetReservationOwners(pod.Annotations)
 	if err != nil {
