@@ -97,6 +97,7 @@ type nodeMetricInformer struct {
 	statusUpdater      *statusUpdater
 
 	podsInformer     *podsInformer
+	nodeInformer     *nodeInformer
 	nodeSLOInformer  *nodeSLOInformer
 	metricCache      metriccache.MetricCache
 	predictorFactory prediction.PredictorFactory
@@ -140,6 +141,14 @@ func (r *nodeMetricInformer) Setup(ctx *PluginOption, state *PluginState) {
 	} else {
 		r.podsInformer = podsInformer
 	}
+
+	nodeInformerIf := state.informerPlugins[nodeInformerName]
+	if nodeInformer, ok := nodeInformerIf.(*nodeInformer); !ok {
+		klog.Fatalf("node informer format error")
+	} else {
+		r.nodeInformer = nodeInformer
+	}
+
 	nodeSLOInformerIf := state.informerPlugins[nodeSLOInformerName]
 	if nodeSLOInformer, ok := nodeSLOInformerIf.(*nodeSLOInformer); !ok {
 		klog.Fatalf("node slo informer format error")
@@ -189,7 +198,7 @@ func (r *nodeMetricInformer) Start(stopCh <-chan struct{}) {
 	}
 
 	go r.nodeMetricInformer.Run(stopCh)
-	if !cache.WaitForCacheSync(stopCh, r.nodeMetricInformer.HasSynced, r.podsInformer.HasSynced, r.nodeSLOInformer.HasSynced) {
+	if !cache.WaitForCacheSync(stopCh, r.nodeMetricInformer.HasSynced, r.podsInformer.HasSynced, r.nodeInformer.HasSynced, r.nodeSLOInformer.HasSynced) {
 		klog.Errorf("timed out waiting for node metric caches to sync")
 	}
 	go r.syncNodeMetricWorker(stopCh)
@@ -360,8 +369,8 @@ func (r *nodeMetricInformer) collectMetric() (*slov1alpha1.NodeMetricInfo, []*sl
 		Start:     &startTime,
 		End:       &endTime,
 	}
-	prodPredictor := r.predictorFactory.New(prediction.ProdReclaimablePredictor)
-
+	node := r.nodeInformer.GetNode()
+	prodPredictor := r.predictorFactory.New(prediction.ProdReclaimablePredictor, prediction.PredictorContext{Node: node})
 	for _, podMeta := range podsMeta {
 		podMetric, err := r.collectPodMetric(podMeta, queryParam)
 		if err != nil {
@@ -394,10 +403,13 @@ func (r *nodeMetricInformer) collectMetric() (*slov1alpha1.NodeMetricInfo, []*sl
 		klog.Errorf("failed to get prediction, err %v", err)
 		metrics.RecordNodeResourcePriorityReclaimable(string(corev1.ResourceCPU), metrics.UnitCore, string(apiext.PriorityProd), 0)
 		metrics.RecordNodeResourcePriorityReclaimable(string(corev1.ResourceMemory), metrics.UnitByte, string(apiext.PriorityProd), 0)
+		// Todo: expose status in nodeMetrics
+		metrics.RecordNodeResourcePriorityReclaimableStatus(string(apiext.PriorityProd), 1)
 	} else {
 		prodReclaimable.Resource = slov1alpha1.ResourceMap{ResourceList: p}
 		metrics.RecordNodeResourcePriorityReclaimable(string(corev1.ResourceCPU), metrics.UnitCore, string(apiext.PriorityProd), float64(p.Cpu().MilliValue())/1000)
 		metrics.RecordNodeResourcePriorityReclaimable(string(corev1.ResourceMemory), metrics.UnitByte, string(apiext.PriorityProd), float64(p.Memory().Value()))
+		metrics.RecordNodeResourcePriorityReclaimableStatus(string(apiext.PriorityProd), 0)
 	}
 
 	return nodeMetricInfo, podsMetricInfo, hostAppMetricInfo, prodReclaimable
