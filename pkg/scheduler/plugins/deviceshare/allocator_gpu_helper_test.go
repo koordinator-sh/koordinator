@@ -120,7 +120,7 @@ func TestGetGPUPartitionIndexer(t *testing.T) {
 					},
 				},
 			},
-			want: gpuPartitionIndexOfNVIDIAHopper,
+			want: GPUPartitionIndexOfNVIDIAHopper,
 		},
 	}
 	for _, tt := range tests {
