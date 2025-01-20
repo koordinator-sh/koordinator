@@ -22,6 +22,8 @@ import (
 	schedconfigv1beta3 "k8s.io/kube-scheduler/config/v1beta3"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
+	v1 "k8s.io/api/core/v1"
+	"k8s.io/kubernetes/pkg/scheduler/apis/config"
 )
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -231,4 +233,25 @@ type DeviceShareArgs struct {
 	ScoringStrategy *ScoringStrategy `json:"scoringStrategy,omitempty"`
 	// DisableDeviceNUMATopologyAlignment indicates device don't need to align with other resources' numa topology
 	DisableDeviceNUMATopologyAlignment bool `json:"disableDeviceNUMATopologyAlignment,omitempty"`
+}
+
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+// ScarceResourceAvoidanceArgs defines the parameters for ScarceResourceAvoidance plugin.
+type ScarceResourceAvoidanceArgs struct {
+	metav1.TypeMeta
+	Resources []v1.ResourceName `json:"resources,omitempty"`
+}
+
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+// NodeResourcesFitPlusArgs defines the parameters for NodeResourcesFitPlus plugin.
+type NodeResourcesFitPlusArgs struct {
+	metav1.TypeMeta
+	Resources map[v1.ResourceName]ResourcesType `json:"resources"`
+}
+
+type ResourcesType struct {
+	Type   config.ScoringStrategyType `json:"type"`
+	Weight int64                      `json:"weight"`
 }
