@@ -24,6 +24,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	"k8s.io/utils/pointer"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
@@ -81,6 +82,27 @@ func (m *mockPredictServer) GetPrediction(desc MetricDesc) (Result, error) {
 }
 
 func TestProdReclaimablePredictor_AddPod(t *testing.T) {
+	node := &v1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-node",
+		},
+		Status: v1.NodeStatus{
+			Capacity: v1.ResourceList{
+				v1.ResourceCPU:    *resource.NewMilliQuantity(3000, resource.DecimalSI),
+				v1.ResourceMemory: *resource.NewQuantity(3*1024*1024*1024, resource.BinarySI),
+			},
+		},
+	}
+	node_huge := node.DeepCopy()
+	node_huge.Status.Capacity = v1.ResourceList{
+		v1.ResourceCPU:    *resource.NewMilliQuantity(8000, resource.DecimalSI),
+		v1.ResourceMemory: *resource.NewQuantity(8*1024*1024*1024, resource.BinarySI),
+	}
+	node_small := node.DeepCopy()
+	node_small.Status.Capacity = v1.ResourceList{
+		v1.ResourceCPU:    *resource.NewMilliQuantity(1000, resource.DecimalSI),
+		v1.ResourceMemory: *resource.NewQuantity(1*1024*1024*1024, resource.BinarySI),
+	}
 	priority := extension.PriorityProdValueMin
 	sysPrediction := Result{
 		Data: map[string]v1.ResourceList{
@@ -189,44 +211,80 @@ func TestProdReclaimablePredictor_AddPod(t *testing.T) {
 	coldStartDuration := time.Hour
 
 	factory := NewPredictorFactory(predictServer, coldStartDuration, 10)
-	predictor := factory.New(ProdReclaimablePredictor)
-	assert.Equal(t, 2, len(predictor.(*minPredictor).predictors))
 
-	err := predictor.AddPod(pod1)
-	assert.NoError(t, err)
-
-	err = predictor.AddPod(pod2)
-	assert.NoError(t, err)
-
-	err = predictor.AddPod(pod3)
-	assert.NoError(t, err)
-
-	result, err := predictor.GetResult()
-	assert.NoError(t, err)
-
-	podMemPeak := 1.1 * 1024 * 1024 * 1024
-	podPredictResult := v1.ResourceList{
-		v1.ResourceCPU:    *resource.NewMilliQuantity(2000-500*1.1, resource.DecimalSI),
-		v1.ResourceMemory: *resource.NewQuantity(2*1024*1024*1024-int64(podMemPeak), resource.BinarySI),
+	number1 := 1.1 * 1024 * 1024 * 1024
+	number2 := 1.1 * 1536 * 1024 * 1024
+	testCases := []struct {
+		name                          string
+		predictor                     Predictor
+		podsList                      []*v1.Pod
+		expectedPodPredictResult      v1.ResourceList
+		expectedPriorityPredictResult v1.ResourceList
+	}{
+		{
+			name:      "node capacity == pods' requests",
+			predictor: factory.New(ProdReclaimablePredictor, &ProdReclaimablePredictorOptions{node}),
+			podsList:  []*v1.Pod{pod1, pod2, pod3},
+			expectedPodPredictResult: v1.ResourceList{
+				v1.ResourceCPU:    *resource.NewMilliQuantity(2000-500*1.1, resource.DecimalSI),
+				v1.ResourceMemory: *resource.NewQuantity(2*1024*1024*1024-int64(number1), resource.BinarySI),
+			},
+			expectedPriorityPredictResult: v1.ResourceList{
+				v1.ResourceCPU:    *resource.NewMilliQuantity(3000-1300*1.1, resource.DecimalSI),
+				v1.ResourceMemory: *resource.NewQuantity(3*1024*1024*1024-int64(number2), resource.BinarySI),
+			},
+		},
+		{
+			name:      "node capacity > pods' requests",
+			predictor: factory.New(ProdReclaimablePredictor, &ProdReclaimablePredictorOptions{node_huge}),
+			podsList:  []*v1.Pod{pod1, pod2, pod3},
+			expectedPodPredictResult: v1.ResourceList{
+				v1.ResourceCPU:    *resource.NewMilliQuantity(2000-500*1.1, resource.DecimalSI),
+				v1.ResourceMemory: *resource.NewQuantity(2*1024*1024*1024-int64(number1), resource.BinarySI),
+			},
+			expectedPriorityPredictResult: v1.ResourceList{
+				v1.ResourceCPU:    *resource.NewMilliQuantity(3000-1300*1.1, resource.DecimalSI),
+				v1.ResourceMemory: *resource.NewQuantity(3*1024*1024*1024-int64(number2), resource.BinarySI),
+			},
+		},
+		{
+			name:      "node capacity < pods' requests",
+			predictor: factory.New(ProdReclaimablePredictor, &ProdReclaimablePredictorOptions{node_small}),
+			podsList:  []*v1.Pod{pod1, pod2, pod3},
+			expectedPodPredictResult: v1.ResourceList{
+				v1.ResourceCPU:    *resource.NewMilliQuantity(1000-500*1.1, resource.DecimalSI),
+				v1.ResourceMemory: resource.MustParse("0"),
+			},
+			expectedPriorityPredictResult: v1.ResourceList{
+				v1.ResourceCPU:    resource.MustParse("0"),
+				v1.ResourceMemory: resource.MustParse("0"),
+			},
+		},
 	}
-	gotPodResult, err := predictor.(*minPredictor).predictors[0].GetResult()
-	assert.NoError(t, err)
-	assert.Equal(t, podPredictResult, gotPodResult)
-	prodMemPeak := 1.1 * 1536 * 1024 * 1024
-	priorityPredictResult := v1.ResourceList{
-		v1.ResourceCPU:    *resource.NewMilliQuantity(3000-1300*1.1, resource.DecimalSI),
-		v1.ResourceMemory: *resource.NewQuantity(3*1024*1024*1024-int64(prodMemPeak), resource.BinarySI),
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			predictor := tc.predictor
+			assert.Equal(t, 2, len(predictor.(*minPredictor).predictors))
+			for _, pod := range tc.podsList {
+				err := predictor.AddPod(pod)
+				assert.NoError(t, err)
+			}
+			result, err := predictor.GetResult()
+			assert.NoError(t, err)
+			gotPodResult, err := predictor.(*minPredictor).predictors[0].GetResult()
+			assert.NoError(t, err)
+			assert.Equal(t, true, quotav1.Equals(tc.expectedPodPredictResult, gotPodResult))
+			gotPriorityResult, err := predictor.(*minPredictor).predictors[1].GetResult()
+			assert.NoError(t, err)
+			assert.Equal(t, true, quotav1.Equals(tc.expectedPriorityPredictResult, gotPriorityResult))
+			expected := util.MinResourceList(tc.expectedPodPredictResult, tc.expectedPriorityPredictResult)
+			assert.Equal(t, expected, result)
+			assert.Equal(t, true, quotav1.Equals(expected, result))
+		})
 	}
-	gotPriorityResult, err := predictor.(*minPredictor).predictors[1].GetResult()
-	assert.NoError(t, err)
-	assert.Equal(t, priorityPredictResult, gotPriorityResult)
-
-	// min()
-	expected := util.MinResourceList(podPredictResult, priorityPredictResult)
-	assert.Equal(t, expected, result)
 }
 
-func Test_podReclaimablePredictor(t *testing.T) {
+func TestPodReclaimablePredictor(t *testing.T) {
 	predictServer := &mockPredictServer{
 		DefaultResult: testPredictionResult,
 	}
@@ -234,16 +292,7 @@ func Test_podReclaimablePredictor(t *testing.T) {
 	priority := extension.PriorityProdValueMin
 	priorityBatch := extension.PriorityBatchValueMin
 
-	predictor := &podReclaimablePredictor{
-		predictServer:       predictServer,
-		coldStartDuration:   coldStartDuration,
-		safetyMarginPercent: 10,
-		podFilterFn:         isPodReclaimableForProd,
-		reclaimable:         util.NewZeroResourceList(),
-		pods:                make(map[string]bool),
-	}
-
-	pod1 := &v1.Pod{
+	pod1 := &v1.Pod{ // cool start
 		ObjectMeta: metav1.ObjectMeta{
 			UID:               "pod-1-uid",
 			CreationTimestamp: metav1.Time{Time: time.Now().Add(-time.Minute)},
@@ -263,7 +312,7 @@ func Test_podReclaimablePredictor(t *testing.T) {
 		},
 	}
 
-	pod2 := &v1.Pod{
+	pod2 := &v1.Pod{ // normal
 		ObjectMeta: metav1.ObjectMeta{
 			UID:               "pod-2-uid",
 			CreationTimestamp: metav1.Time{Time: time.Now().Add(-2 * time.Hour)},
@@ -283,7 +332,7 @@ func Test_podReclaimablePredictor(t *testing.T) {
 		},
 	}
 
-	pod3 := &v1.Pod{
+	pod3 := &v1.Pod{ // deleted
 		ObjectMeta: metav1.ObjectMeta{
 			UID:               "pod-3-uid",
 			CreationTimestamp: metav1.Time{Time: time.Now().Add(-2 * time.Hour)},
@@ -304,7 +353,7 @@ func Test_podReclaimablePredictor(t *testing.T) {
 		},
 	}
 
-	pod4 := &v1.Pod{
+	pod4 := &v1.Pod{ // batch
 		ObjectMeta: metav1.ObjectMeta{
 			UID:               "pod-4-uid",
 			CreationTimestamp: metav1.Time{Time: time.Now().Add(-2 * time.Hour)},
@@ -324,28 +373,76 @@ func Test_podReclaimablePredictor(t *testing.T) {
 		},
 	}
 
-	err := predictor.AddPod(pod1)
-	assert.NoError(t, err)
-
-	err = predictor.AddPod(pod2)
-	assert.NoError(t, err)
-
-	err = predictor.AddPod(pod3)
-	assert.NoError(t, err)
-
-	err = predictor.AddPod(pod4)
-	assert.NoError(t, err)
-
-	result, err := predictor.GetResult()
-	assert.NoError(t, err)
-
-	peak := 1.1 * 768 * 1024 * 1024
-	expected := v1.ResourceList{
-		v1.ResourceCPU:    *resource.NewMilliQuantity(2000-550, resource.DecimalSI),
-		v1.ResourceMemory: *resource.NewQuantity(2*1024*1024*1024-int64(peak), resource.BinarySI),
+	newPodReclaimablePredictor := func(node *v1.Node) *podReclaimablePredictor {
+		return &podReclaimablePredictor{
+			predictServer:       predictServer,
+			coldStartDuration:   coldStartDuration,
+			safetyMarginPercent: 10,
+			podFilterFn:         isPodReclaimableForProd,
+			reclaimable:         util.NewZeroResourceList(),
+			unReclaimable:       util.NewZeroResourceList(),
+			node:                node,
+			pods:                make(map[string]bool),
+		}
 	}
-
-	assert.Equal(t, expected, result)
+	peak := 1.1 * 768 * 1024 * 1024
+	testCase := []struct {
+		name                string
+		predictor           Predictor
+		podList             []*v1.Pod
+		expectedReclaimable v1.ResourceList
+	}{
+		{
+			name: "node capacity > pods' requests ",
+			predictor: newPodReclaimablePredictor(&v1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "node-1",
+				},
+				Status: v1.NodeStatus{
+					Capacity: v1.ResourceList{
+						v1.ResourceCPU:    *resource.NewMilliQuantity(3000, resource.DecimalSI),
+						v1.ResourceMemory: *resource.NewQuantity(3*1024*1024*1024, resource.BinarySI),
+					},
+				},
+			}),
+			podList: []*v1.Pod{pod1, pod2, pod3, pod4},
+			expectedReclaimable: v1.ResourceList{
+				v1.ResourceCPU:    *resource.NewMilliQuantity(2000-550, resource.DecimalSI),
+				v1.ResourceMemory: *resource.NewQuantity(2*1024*1024*1024-int64(peak), resource.BinarySI),
+			},
+		},
+		{
+			name: "node capacity  < pods' requests ",
+			predictor: newPodReclaimablePredictor(&v1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "node-2",
+				},
+				Status: v1.NodeStatus{
+					Capacity: v1.ResourceList{
+						v1.ResourceCPU:    *resource.NewMilliQuantity(1000, resource.DecimalSI),
+						v1.ResourceMemory: *resource.NewQuantity(1024*1024*1024, resource.BinarySI),
+					},
+				},
+			}),
+			podList: []*v1.Pod{pod1, pod2, pod3, pod4},
+			expectedReclaimable: v1.ResourceList{
+				v1.ResourceCPU:    *resource.NewMilliQuantity(1000-550, resource.DecimalSI),
+				v1.ResourceMemory: *resource.NewQuantity(1024*1024*1024-int64(peak), resource.BinarySI),
+			},
+		},
+	}
+	for _, tc := range testCase {
+		t.Run(tc.name, func(t *testing.T) {
+			predictor := tc.predictor
+			for _, pod := range tc.podList {
+				err := predictor.AddPod(pod)
+				assert.NoError(t, err)
+			}
+			result, err := predictor.GetResult()
+			assert.NoError(t, err)
+			assert.Equal(t, true, quotav1.Equals(tc.expectedReclaimable, result))
+		})
+	}
 }
 
 func Test_priorityReclaimablePredictor(t *testing.T) {
@@ -435,25 +532,70 @@ func Test_priorityReclaimablePredictor(t *testing.T) {
 			UIDType(podBatch.UID):                           batchPrediction,
 		},
 	}
-
-	predictor := &priorityReclaimablePredictor{
-		predictServer:         predictServer,
-		safetyMarginPercent:   0,
-		priorityClassFilterFn: isPriorityClassReclaimableForProd,
-		reclaimRequest:        util.NewZeroResourceList(),
+	newPodReclaimablePredictor := func(node *v1.Node) *priorityReclaimablePredictor {
+		return &priorityReclaimablePredictor{
+			predictServer:         predictServer,
+			node:                  node,
+			safetyMarginPercent:   0,
+			priorityClassFilterFn: isPriorityClassReclaimableForProd,
+			reclaimRequest:        util.NewZeroResourceList(),
+		}
 	}
-
-	err := predictor.AddPod(podProd)
-	assert.NoError(t, err)
-
-	err = predictor.AddPod(podBatch)
-	assert.NoError(t, err)
-
-	got, err := predictor.GetResult()
-	assert.NoError(t, err)
-	expected := v1.ResourceList{
-		v1.ResourceCPU:    *resource.NewMilliQuantity(1000-(300+500)*1.0, resource.DecimalSI),
-		v1.ResourceMemory: *resource.NewQuantity((2048-(512+1024)*1.0)*1024*1024, resource.BinarySI),
+	testCase := []struct {
+		name                string
+		predictor           Predictor
+		podList             []*v1.Pod
+		expectedReclaimable v1.ResourceList
+	}{
+		{
+			name: "node capacity > pods' requests ",
+			predictor: newPodReclaimablePredictor(&v1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "node-1",
+				},
+				Status: v1.NodeStatus{
+					Capacity: v1.ResourceList{
+						v1.ResourceCPU:    *resource.NewMilliQuantity(3000, resource.DecimalSI),
+						v1.ResourceMemory: *resource.NewQuantity(3*1024*1024*1024, resource.BinarySI),
+					},
+				},
+			}),
+			podList: []*v1.Pod{podProd, podBatch},
+			expectedReclaimable: v1.ResourceList{
+				v1.ResourceCPU:    *resource.NewMilliQuantity(1000-(300+500)*1.0, resource.DecimalSI),
+				v1.ResourceMemory: *resource.NewQuantity((2048-(512+1024)*1.0)*1024*1024, resource.BinarySI),
+			},
+		},
+		{
+			name: "node capacity < pods' requests ",
+			predictor: newPodReclaimablePredictor(&v1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "node-1",
+				},
+				Status: v1.NodeStatus{
+					Capacity: v1.ResourceList{
+						v1.ResourceCPU:    *resource.NewMilliQuantity(900, resource.DecimalSI),
+						v1.ResourceMemory: *resource.NewQuantity(1024*1024*1024, resource.BinarySI),
+					},
+				},
+			}),
+			podList: []*v1.Pod{podProd, podBatch},
+			expectedReclaimable: v1.ResourceList{
+				v1.ResourceCPU:    *resource.NewMilliQuantity(900-(300+500)*1.0, resource.DecimalSI),
+				v1.ResourceMemory: resource.MustParse("0"),
+			},
+		},
 	}
-	assert.Equal(t, expected, got)
+	for _, tc := range testCase {
+		t.Run(tc.name, func(t *testing.T) {
+			predictor := tc.predictor
+			for _, pod := range tc.podList {
+				err := predictor.AddPod(pod)
+				assert.NoError(t, err)
+			}
+			got, err := predictor.GetResult()
+			assert.NoError(t, err)
+			assert.Equal(t, true, quotav1.Equals(tc.expectedReclaimable, got))
+		})
+	}
 }

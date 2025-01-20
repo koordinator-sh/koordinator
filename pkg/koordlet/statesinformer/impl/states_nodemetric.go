@@ -360,8 +360,8 @@ func (r *nodeMetricInformer) collectMetric() (*slov1alpha1.NodeMetricInfo, []*sl
 		Start:     &startTime,
 		End:       &endTime,
 	}
-	prodPredictor := r.predictorFactory.New(prediction.ProdReclaimablePredictor)
-
+	node := r.nodeSLOInformer.callbackRunner.statesInformer.GetNode()
+	prodPredictor := r.predictorFactory.New(prediction.ProdReclaimablePredictor, prediction.ProdReclaimablePredictorOptions{Node: node})
 	for _, podMeta := range podsMeta {
 		podMetric, err := r.collectPodMetric(podMeta, queryParam)
 		if err != nil {

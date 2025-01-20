@@ -25,6 +25,7 @@ import (
 
 	"github.com/golang/mock/gomock"
 	faketopologyclientset "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/clientset/versioned/fake"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer/impl/mock"
 	"github.com/stretchr/testify/assert"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -163,6 +164,29 @@ func (c *fakeNodeMetricClient) UpdateStatus(ctx context.Context, nodeMetric *slo
 func Test_reporter_sync_with_single_node_metric(t *testing.T) {
 	endTime := time.Now()
 	startTime := endTime.Add(-30 * time.Second)
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+	node := &v1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "testNode",
+		},
+		Status: v1.NodeStatus{
+			Capacity: v1.ResourceList{
+				v1.ResourceCPU:    resource.MustParse("4"),
+				v1.ResourceMemory: resource.MustParse("16Gi"),
+			},
+		},
+	}
+	mockStatesInformer := mock.NewMockStatesInformer(ctrl)
+	mockStatesInformer.EXPECT().GetNode().Return(node).AnyTimes()
+	testNodeSLOInformer := &nodeSLOInformer{
+		nodeSLO: &slov1alpha1.NodeSLO{
+			Spec: slov1alpha1.NodeSLOSpec{},
+		},
+		callbackRunner: &callbackRunner{
+			statesInformer: mockStatesInformer,
+		},
+	}
 
 	type fields struct {
 		nodeName         string
@@ -203,7 +227,7 @@ func Test_reporter_sync_with_single_node_metric(t *testing.T) {
 			wantErr:            true,
 		},
 		{
-			name: "successfully report nodeMetric",
+			name: "successfully report nodeMetric - sum of pods request < node.capacity",
 			fields: fields{
 				nodeName: "test",
 				nodeMetric: &slov1alpha1.NodeMetric{
@@ -315,11 +339,7 @@ func Test_reporter_sync_with_single_node_metric(t *testing.T) {
 						},
 					},
 				},
-				nodeSLOInformer: &nodeSLOInformer{
-					nodeSLO: &slov1alpha1.NodeSLO{
-						Spec: slov1alpha1.NodeSLOSpec{},
-					},
-				},
+				nodeSLOInformer: testNodeSLOInformer,
 				nodeMetricLister: &fakeNodeMetricLister{
 					nodeMetrics: &slov1alpha1.NodeMetric{
 						ObjectMeta: metav1.ObjectMeta{
@@ -427,12 +447,8 @@ func Test_reporter_sync_with_single_node_metric(t *testing.T) {
 					c.EXPECT().Get(gomock.Any()).Return(nil, false).AnyTimes()
 					return c
 				},
-				podsInformer: NewPodsInformer(),
-				nodeSLOInformer: &nodeSLOInformer{
-					nodeSLO: &slov1alpha1.NodeSLO{
-						Spec: slov1alpha1.NodeSLOSpec{},
-					},
-				},
+				podsInformer:    NewPodsInformer(),
+				nodeSLOInformer: testNodeSLOInformer,
 				nodeMetricLister: &fakeNodeMetricLister{
 					nodeMetrics: &slov1alpha1.NodeMetric{
 						ObjectMeta: metav1.ObjectMeta{
