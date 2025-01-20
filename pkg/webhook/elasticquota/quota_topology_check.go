@@ -68,7 +68,7 @@ func (qt *quotaTopology) validateQuotaSelfItem(quota *v1alpha1.ElasticQuota) err
 }
 
 // validateQuotaTopology checks the quotaInfo's topology with its parent and its children.
-// oldQuotaInfo is null wben validate a new create request, and is the current quotaInfo when validate a update request.
+// oldQuotaInfo is null when validate a new create request, and is the current quotaInfo when validate a update request.
 func (qt *quotaTopology) validateQuotaTopology(oldQuotaInfo, newQuotaInfo *QuotaInfo, oldNamespaces []string) error {
 	if newQuotaInfo.Name == extension.RootQuotaName {
 		return nil
@@ -91,8 +91,12 @@ func (qt *quotaTopology) validateQuotaTopology(oldQuotaInfo, newQuotaInfo *Quota
 		return err
 	}
 
-	if err := qt.checkSubAndParentGroupMaxQuotaKeySame(newQuotaInfo); err != nil {
-		return err
+	enableUpdateResourceKey := false
+	if utilfeature.DefaultFeatureGate.Enabled(features.ElasticQuotaEnableUpdateResourceKey) {
+		enableUpdateResourceKey = true
+	}
+	if err := qt.checkSubAndParentGroupQuotaKey(newQuotaInfo, enableUpdateResourceKey); err != nil {
+		return fmt.Errorf("failed to check sub and parent group quotaKey")
 	}
 
 	if err := qt.checkMinQuotaValidate(newQuotaInfo); err != nil {
@@ -180,15 +184,32 @@ func (qt *quotaTopology) checkParentQuotaInfo(quotaName, parentName string) erro
 	return nil
 }
 
-func (qt *quotaTopology) checkSubAndParentGroupMaxQuotaKeySame(quotaInfo *QuotaInfo) error {
+// checkSubAndParentGroupQuotaKey check the quotaInfo's quota with its parent and its children
+//
+//	while enableResourceTypeUpdate=false, the quotaInfo's max quota key must be same as its children and parent's quota key
+//	while enableResourceTypeUpdate=true, the quotaInfo's max quota key only need be included in its parent's quota key
+//
+// the quotaInfo's min quota key only need be included in its parent's quota key no matter when
+func (qt *quotaTopology) checkSubAndParentGroupQuotaKey(quotaInfo *QuotaInfo, enableUpdateResourceKey bool) error {
 	if quotaInfo.Name == extension.RootQuotaName {
 		return nil
 	}
 	if quotaInfo.ParentName != extension.RootQuotaName {
 		parentInfo := qt.quotaInfoMap[quotaInfo.ParentName]
-		if !checkQuotaKeySame(parentInfo.CalculateInfo.Max, quotaInfo.CalculateInfo.Max) {
-			return fmt.Errorf("checkSubAndParentGroupMaxQuotaKeySame failed: %v's key is not the same with %v",
-				quotaInfo.ParentName, quotaInfo.Name)
+		if enableUpdateResourceKey {
+			if !checkQuotaKeyIncluded(parentInfo.CalculateInfo.Max, quotaInfo.CalculateInfo.Max) {
+				return fmt.Errorf("%v's max keys are not all included in %v's",
+					quotaInfo.Name, quotaInfo.ParentName)
+			}
+		} else {
+			if !checkQuotaKeySame(parentInfo.CalculateInfo.Max, quotaInfo.CalculateInfo.Max) {
+				return fmt.Errorf("%v's max keys are not the same with %v's",
+					quotaInfo.ParentName, quotaInfo.Name)
+			}
+		}
+		if !checkQuotaKeyIncluded(parentInfo.CalculateInfo.Min, quotaInfo.CalculateInfo.Min) {
+			return fmt.Errorf("%v's min keys are not all included in %v's",
+				quotaInfo.Name, quotaInfo.ParentName)
 		}
 	}
 
@@ -199,9 +220,20 @@ func (qt *quotaTopology) checkSubAndParentGroupMaxQuotaKeySame(quotaInfo *QuotaI
 
 	for name := range children {
 		if child, exist := qt.quotaInfoMap[name]; exist {
-			if !checkQuotaKeySame(quotaInfo.CalculateInfo.Max, child.CalculateInfo.Max) {
-				return fmt.Errorf("checkSubAndParentGroupMaxQuotaKeySame failed: %v's key is not the same with %v",
-					quotaInfo.Name, name)
+			if enableUpdateResourceKey {
+				if !checkQuotaKeyIncluded(quotaInfo.CalculateInfo.Max, child.CalculateInfo.Max) {
+					return fmt.Errorf("%v's max keys are not all included in %v's",
+						name, quotaInfo.Name)
+				}
+			} else {
+				if !checkQuotaKeySame(quotaInfo.CalculateInfo.Max, child.CalculateInfo.Max) {
+					return fmt.Errorf("%v's max keys are not the same with %v's",
+						name, quotaInfo.Name)
+				}
+			}
+			if !checkQuotaKeyIncluded(quotaInfo.CalculateInfo.Min, child.CalculateInfo.Min) {
+				return fmt.Errorf("%v's min keys are not all included in %v's",
+					name, quotaInfo.Name)
 			}
 		} else {
 			return fmt.Errorf("internal error: quotaInfoMap and quotaTree information out of sync, losed :%v", name)
@@ -224,7 +256,6 @@ func (qt *quotaTopology) checkMinQuotaValidate(newQuotaInfo *QuotaInfo) error {
 		return nil
 	}
 
-	// check brothers' minquota sum
 	if newQuotaInfo.ParentName != extension.RootQuotaName {
 		childMinSumNotIncludeSelf, err := qt.getChildMinQuotaSumExceptSpecificChild(newQuotaInfo.ParentName, newQuotaInfo.Name)
 		if err != nil {
@@ -336,6 +367,16 @@ func checkQuotaKeySame(parent, child v1.ResourceList) bool {
 			return false
 		}
 	}
+	for k := range child {
+		if _, ok := parent[k]; !ok {
+			return false
+		}
+	}
+	return true
+}
+
+// checkQuotaKeyIncluded will check whether the parent quota includes all keys of child quota.
+func checkQuotaKeyIncluded(parent, child v1.ResourceList) bool {
 	for k := range child {
 		if _, ok := parent[k]; !ok {
 			return false
