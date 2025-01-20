@@ -26,7 +26,7 @@ import (
 )
 
 var (
-	gpuPartitionIndexOfNVIDIAHopper = GPUPartitionIndexer{
+	GPUPartitionIndexOfNVIDIAHopper = GPUPartitionIndexer{
 		1: []*PartitionsOfAllocationScore{
 			{
 				Partitions: []*apiext.GPUPartition{
@@ -153,7 +153,7 @@ var (
 		model := node.Labels[apiext.LabelGPUModel]
 		switch model {
 		case "H100", "H800", "H20":
-			partitionIndexer = gpuPartitionIndexOfNVIDIAHopper
+			partitionIndexer = GPUPartitionIndexOfNVIDIAHopper
 		}
 		return partitionIndexer, partitionPolicy == apiext.GPUPartitionPolicyHonor
 	}
