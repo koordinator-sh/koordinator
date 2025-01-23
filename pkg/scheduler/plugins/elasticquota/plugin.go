@@ -91,6 +91,8 @@ type Plugin struct {
 	// quotaToTreeMap store the relationship of quota and quota tree
 	// the key is the quota name, the value is the tree id
 	quotaToTreeMap map[string]string
+
+	customLimiters map[string]core.CustomLimiter
 }
 
 var (
@@ -136,6 +138,11 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 		return nil, err
 	}
 
+	customLimiters, err := core.GetCustomLimiters(pluginArgs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to init custom limiters, err=%v", err)
+	}
+
 	elasticQuota := &Plugin{
 		handle:                         handle,
 		client:                         client,
@@ -147,8 +154,10 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 		nodeLister:                     handle.SharedInformerFactory().Core().V1().Nodes().Lister(),
 		groupQuotaManagersForQuotaTree: make(map[string]*core.GroupQuotaManager),
 		quotaToTreeMap:                 make(map[string]string),
+		customLimiters:                 customLimiters,
 	}
-	elasticQuota.groupQuotaManager = core.NewGroupQuotaManager("", pluginArgs.SystemQuotaGroupMax, pluginArgs.DefaultQuotaGroupMax)
+	elasticQuota.groupQuotaManager = core.NewGroupQuotaManager("", pluginArgs.SystemQuotaGroupMax,
+		pluginArgs.DefaultQuotaGroupMax, customLimiters)
 
 	elasticQuota.quotaToTreeMap[extension.DefaultQuotaName] = ""
 	elasticQuota.quotaToTreeMap[extension.SystemQuotaName] = ""
@@ -158,7 +167,7 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 	elasticQuota.createRootQuotaIfNotPresent()
 	elasticQuota.createSystemQuotaIfNotPresent()
 	elasticQuota.createDefaultQuotaIfNotPresent()
-	_, err := frameworkexthelper.ForceSyncFromInformerWithReplace(ctx.Done(), scheSharedInformerFactory, informer, cache.ResourceEventHandlerFuncs{
+	_, err = frameworkexthelper.ForceSyncFromInformerWithReplace(ctx.Done(), scheSharedInformerFactory, informer, cache.ResourceEventHandlerFuncs{
 		AddFunc:    elasticQuota.OnQuotaAdd,
 		UpdateFunc: elasticQuota.OnQuotaUpdate,
 		DeleteFunc: elasticQuota.OnQuotaDelete,
@@ -248,6 +257,14 @@ func (g *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleState
 			return nil, framework.NewStatus(framework.Unschedulable, fmt.Sprintf("Insufficient non-preemptible quotas, "+
 				"quotaName: %v, min: %v, nonPreemptibleUsed: %v, pod's request: %v, exceedDimensions: %v",
 				quotaName, printResourceList(quotaMin), printResourceList(nonPreemptibleUsed), printResourceList(podRequest), exceedDimensions))
+		}
+	}
+
+	if len(g.customLimiters) > 0 {
+		recursiveState := core.NewCustomLimiterState().WithPod(pod)
+		// check custom limiters
+		if errStatus := g.checkQuotaCustomLimitsRecursive(quotaInfo.Name, podRequest, recursiveState); errStatus != nil {
+			return nil, errStatus
 		}
 	}
 

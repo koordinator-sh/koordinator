@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"strings"
 
 	"github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
@@ -273,4 +274,19 @@ func LessThanOrEqualCompletely(a corev1.ResourceList, b corev1.ResourceList) boo
 	}
 
 	return result
+}
+
+func PrintResourceList(rl corev1.ResourceList) string {
+	if len(rl) == 0 {
+		return "<empty>"
+	}
+	res := make([]string, 0)
+	for k, v := range rl {
+		tmp := string(k) + ":" + v.String()
+		res = append(res, tmp)
+	}
+	sort.Slice(res, func(i, j int) bool {
+		return res[i] < res[j]
+	})
+	return strings.Join(res, ",")
 }

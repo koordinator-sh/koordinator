@@ -148,6 +148,12 @@ func updateElasticQuotaStatusIfChanged(eq *v1alpha1.ElasticQuota, summary *core.
 		extension.AnnotationNonPreemptibleRequest: summary.NonPreemptibleRequest,
 		extension.AnnotationNonPreemptibleUsed:    summary.NonPreemptibleUsed,
 	}
+	for k, v := range summary.CustomLimits {
+		m[fmt.Sprintf(extension.AnnotationCustomLimiterLimitFmt, k)] = v.Limit
+	}
+	for k, v := range summary.CustomUsed {
+		m[fmt.Sprintf(extension.AnnotationCustomLimiterUsedFmt, k)] = v
+	}
 	var newElasticQuota *v1alpha1.ElasticQuota
 	var changes []traceChange
 	for k, v := range m {

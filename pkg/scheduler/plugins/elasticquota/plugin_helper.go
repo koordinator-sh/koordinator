@@ -278,6 +278,36 @@ func getPostFilterState(cycleState *framework.CycleState) (*PostFilterState, err
 	return s, nil
 }
 
+func (g *Plugin) checkQuotaCustomLimitsRecursive(curQuotaName string, podRequest v1.ResourceList,
+	recursiveState *core.CustomLimiterState) (errStatus *framework.Status) {
+	quotaInfo := g.groupQuotaManager.GetQuotaInfoByName(curQuotaName)
+	if quotaInfo == nil {
+		return framework.NewStatus(framework.Error, fmt.Sprintf("Could not find the elasticQuota %v", curQuotaName))
+	}
+	enabledKeys := quotaInfo.GetEnabledCustomKeys()
+	if len(enabledKeys) == 0 {
+		return nil
+	}
+	for _, customKey := range enabledKeys {
+		customLimiter := g.customLimiters[customKey]
+		if customLimiter == nil {
+			// should not happen
+			klog.Errorf("custom-limiter %s not found", customKey)
+			continue
+		}
+		err := customLimiter.Check(quotaInfo, podRequest, recursiveState)
+		if err != nil {
+			return framework.NewStatus(framework.Unschedulable,
+				fmt.Sprintf("check failed for quota %s by custom-limiter %s: %v",
+					quotaInfo.Name, customKey, err))
+		}
+	}
+	if quotaInfo.ParentName != extension.RootQuotaName {
+		return g.checkQuotaCustomLimitsRecursive(quotaInfo.ParentName, podRequest, recursiveState)
+	}
+	return nil
+}
+
 func (g *Plugin) checkQuotaRecursive(curQuotaName string, quotaNameTopo []string, podRequest v1.ResourceList) *framework.Status {
 	quotaInfo := g.groupQuotaManager.GetQuotaInfoByName(curQuotaName)
 	if quotaInfo == nil {
