@@ -163,12 +163,25 @@ func (c *fakeNodeMetricClient) UpdateStatus(ctx context.Context, nodeMetric *slo
 func Test_reporter_sync_with_single_node_metric(t *testing.T) {
 	endTime := time.Now()
 	startTime := endTime.Add(-30 * time.Second)
-
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+	node := &v1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "testNode",
+		},
+		Status: v1.NodeStatus{
+			Capacity: v1.ResourceList{
+				v1.ResourceCPU:    resource.MustParse("4"),
+				v1.ResourceMemory: resource.MustParse("16Gi"),
+			},
+		},
+	}
 	type fields struct {
 		nodeName         string
 		nodeMetric       *slov1alpha1.NodeMetric
 		metricCache      func(ctrl *gomock.Controller) metriccache.MetricCache
 		podsInformer     *podsInformer
+		nodeInformer     *nodeInformer
 		nodeSLOInformer  *nodeSLOInformer
 		nodeMetricLister listerv1alpha1.NodeMetricLister
 		nodeMetricClient clientsetv1alpha1.NodeMetricInterface
@@ -191,6 +204,7 @@ func Test_reporter_sync_with_single_node_metric(t *testing.T) {
 					return nil
 				},
 				podsInformer:     NewPodsInformer(),
+				nodeInformer:     NewNodeInformer(),
 				nodeSLOInformer:  NewNodeSLOInformer(),
 				nodeMetricLister: nil,
 				nodeMetricClient: &fakeNodeMetricClient{},
@@ -203,7 +217,7 @@ func Test_reporter_sync_with_single_node_metric(t *testing.T) {
 			wantErr:            true,
 		},
 		{
-			name: "successfully report nodeMetric",
+			name: "successfully report nodeMetric - sum of pods request < node.allocatable",
 			fields: fields{
 				nodeName: "test",
 				nodeMetric: &slov1alpha1.NodeMetric{
@@ -314,6 +328,9 @@ func Test_reporter_sync_with_single_node_metric(t *testing.T) {
 							},
 						},
 					},
+				},
+				nodeInformer: &nodeInformer{
+					node: node,
 				},
 				nodeSLOInformer: &nodeSLOInformer{
 					nodeSLO: &slov1alpha1.NodeSLO{
@@ -428,6 +445,7 @@ func Test_reporter_sync_with_single_node_metric(t *testing.T) {
 					return c
 				},
 				podsInformer: NewPodsInformer(),
+				nodeInformer: NewNodeInformer(),
 				nodeSLOInformer: &nodeSLOInformer{
 					nodeSLO: &slov1alpha1.NodeSLO{
 						Spec: slov1alpha1.NodeSLOSpec{},
@@ -466,6 +484,7 @@ func Test_reporter_sync_with_single_node_metric(t *testing.T) {
 				nodeMetric:       tt.fields.nodeMetric,
 				metricCache:      tt.fields.metricCache(ctrl),
 				podsInformer:     tt.fields.podsInformer,
+				nodeInformer:     tt.fields.nodeInformer,
 				nodeSLOInformer:  tt.fields.nodeSLOInformer,
 				nodeMetricLister: tt.fields.nodeMetricLister,
 				statusUpdater:    newStatusUpdater(tt.fields.nodeMetricClient),
@@ -704,6 +723,7 @@ func Test_nodeMetricInformer_NewAndSetup(t *testing.T) {
 					metricCache: mockmetriccache.NewMockMetricCache(ctrl),
 					informerPlugins: map[PluginName]informerPlugin{
 						podsInformerName:    NewPodsInformer(),
+						nodeInformerName:    NewNodeInformer(),
 						nodeSLOInformerName: NewNodeSLOInformer(),
 					},
 				},

@@ -35,6 +35,12 @@ var (
 		Help:      "the node reclaimable of different priorities resources updated by koordinator",
 	}, []string{NodeKey, PriorityKey, ResourceKey, UnitKey})
 
+	NodeResourcePriorityReclaimableStatus = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Subsystem: KoordletSubsystem,
+		Name:      "node_resource_priority_reclaimable_status",
+		Help:      "status of node reclaimable of different priorities resources updated by koordinator",
+	}, []string{NodeKey, PriorityKey})
+
 	ContainerResourceRequests = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Subsystem: KoordletSubsystem,
 		Name:      "container_resource_requests",
@@ -50,6 +56,7 @@ var (
 	ResourceSummaryCollectors = []prometheus.Collector{
 		NodeResourceAllocatable,
 		NodeResourcePriorityReclaimable,
+		NodeResourcePriorityReclaimableStatus,
 		ContainerResourceRequests,
 		ContainerResourceLimits,
 	}
@@ -74,6 +81,15 @@ func RecordNodeResourcePriorityReclaimable(resourceName string, unit string, pri
 	labels[ResourceKey] = resourceName
 	labels[UnitKey] = unit
 	NodeResourcePriorityReclaimable.With(labels).Set(value)
+}
+
+func RecordNodeResourcePriorityReclaimableStatus(priority string, value float64) {
+	labels := genNodeLabels()
+	if labels == nil {
+		return
+	}
+	labels[PriorityKey] = priority
+	NodeResourcePriorityReclaimableStatus.With(labels).Set(value)
 }
 
 func RecordContainerResourceRequests(resourceName string, unit string, status *corev1.ContainerStatus, pod *corev1.Pod, value float64) {
