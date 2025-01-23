@@ -55,6 +55,8 @@ const (
 	AnnotationNonPreemptibleRequest = QuotaKoordinatorPrefix + "/non-preemptible-request"
 	AnnotationNonPreemptibleUsed    = QuotaKoordinatorPrefix + "/non-preemptible-used"
 	AnnotationAdmission             = QuotaKoordinatorPrefix + "/admission"
+	AnnotationCustomLimiterLimitFmt = QuotaKoordinatorPrefix + "/custom-%s-limit"
+	AnnotationCustomLimiterUsedFmt  = QuotaKoordinatorPrefix + "/custom-%s-used"
 )
 
 func GetParentQuotaName(quota *v1alpha1.ElasticQuota) string {
