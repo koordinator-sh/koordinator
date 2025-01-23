@@ -21,10 +21,12 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+	"strconv"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"golang.org/x/exp/maps"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -32,6 +34,7 @@ import (
 	k8sfeature "k8s.io/apiserver/pkg/util/feature"
 	"k8s.io/klog/v2"
 	schetesting "k8s.io/kubernetes/pkg/scheduler/testing"
+	"k8s.io/utils/set"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
@@ -1483,7 +1486,15 @@ func TestGroupQuotaManager_DeleteOneGroup_UpdateQuota(t *testing.T) {
 	assert.Nil(t, gqm.quotaInfoMap["1"])
 }
 
-func NewGroupQuotaManagerForTest() *GroupQuotaManager {
+type GroupQuotaManagerOption func(*GroupQuotaManager)
+
+func WithCustomLimiter(customLimiters map[string]CustomLimiter) GroupQuotaManagerOption {
+	return func(gqm *GroupQuotaManager) {
+		gqm.customLimitersManager = NewCustomLimitersManager(customLimiters)
+	}
+}
+
+func NewGroupQuotaManagerForTest(opts ...GroupQuotaManagerOption) *GroupQuotaManager {
 	quotaManager := &GroupQuotaManager{
 		totalResourceExceptSystemAndDefaultUsed: v1.ResourceList{},
 		totalResource:                           v1.ResourceList{},
@@ -1492,6 +1503,9 @@ func NewGroupQuotaManagerForTest() *GroupQuotaManager {
 		runtimeQuotaCalculatorMap:               make(map[string]*RuntimeQuotaCalculator),
 		scaleMinQuotaManager:                    NewScaleMinQuotaManager(),
 		quotaTopoNodeMap:                        make(map[string]*QuotaTopoNode),
+	}
+	for _, opt := range opts {
+		opt(quotaManager)
 	}
 	systemQuotaInfo := NewQuotaInfo(false, true, extension.SystemQuotaName, extension.RootQuotaName)
 	systemQuotaInfo.CalculateInfo.Max = v1.ResourceList{
@@ -1772,7 +1786,7 @@ func TestGroupQuotaManager_OnTerminatingPodAdd(t *testing.T) {
 }
 
 func TestNewGroupQuotaManager(t *testing.T) {
-	gqm := NewGroupQuotaManager("", createResourceList(100, 100), createResourceList(300, 300))
+	gqm := NewGroupQuotaManager("", createResourceList(100, 100), createResourceList(300, 300), nil)
 	assert.Equal(t, createResourceList(100, 100), gqm.GetQuotaInfoByName(extension.SystemQuotaName).GetMax())
 	assert.Equal(t, createResourceList(300, 300), gqm.GetQuotaInfoByName(extension.DefaultQuotaName).GetMax())
 	assert.True(t, gqm.scaleMinQuotaEnabled)
@@ -2690,4 +2704,1125 @@ func TestGroupQuotaManager_UpdateQuotaNoLockWhenParentChange(t *testing.T) {
 	assert.Equal(t, 0, len(gqm.quotaTopoNodeMap["1"].childGroupQuotaInfos))
 	assert.Equal(t, 0, len(gqm.quotaTopoNodeMap["11"].childGroupQuotaInfos))
 	assert.Equal(t, 2, len(gqm.quotaTopoNodeMap["21"].childGroupQuotaInfos))
+}
+
+func TestGroupQuotaManager_MockCustomLimiter_ConfUpdate(t *testing.T) {
+	gqm := NewGroupQuotaManagerForTest(WithCustomLimiter(map[string]CustomLimiter{
+		CustomKeyMock: &MockCustomLimiter{
+			key: CustomKeyMock,
+		},
+	}))
+	annotationKeyLimit := fmt.Sprintf(AnnotationKeyMockLimitFmt, CustomKeyMock)
+	annotationKeyArgs := fmt.Sprintf(AnnotationKeyMockArgsFmt, CustomKeyMock)
+	/*
+	 * invalid updates
+	 */
+	// invalid limit
+	q1 := CreateQuota("1", extension.RootQuotaName, 40, 40, 20, 20, false, false)
+	q1.Annotations[annotationKeyLimit] = `{`
+	err := gqm.UpdateQuota(q1, false)
+	assert.NoError(t, err)
+	q1Info := gqm.GetQuotaInfoByName(q1.Name)
+	assert.Equal(t, 0, len(q1Info.CalculateInfo.CustomLimits))
+
+	// invalid args
+	q1.Annotations[annotationKeyLimit] = `{"cpu":20,"memory":20}`
+	q1.Annotations[annotationKeyArgs] = `invalid`
+	err = gqm.UpdateQuota(q1, false)
+	assert.NoError(t, err)
+	assert.Equal(t, 0, len(q1Info.CalculateInfo.CustomLimits))
+
+	// required argument with invalid format
+	q1.Annotations[annotationKeyLimit] = `{"cpu":20,"memory":20}`
+	q1.Annotations[annotationKeyArgs] = `{"debugEnabled":"true"}`
+	err = gqm.UpdateQuota(q1, false)
+	assert.NoError(t, err)
+	assert.Equal(t, 0, len(q1Info.CalculateInfo.CustomLimits))
+
+	/*
+	 * valid updates
+	 */
+	q1.Annotations[annotationKeyLimit] = `{"cpu":20,"memory":20}`
+	q1.Annotations[annotationKeyArgs] = `{"debugEnabled":true}`
+	err = gqm.UpdateQuota(q1, false)
+	assert.NoError(t, err)
+	assert.Equal(t, len(q1Info.CalculateInfo.CustomLimits), 1)
+	AssertCustomLimitEqual(t, createResourceList(20, 20), CustomKeyMock, q1Info)
+
+	args, ok := q1Info.GetCustomArgs(CustomKeyMock).(*MockCustomArgs)
+	assert.True(t, ok)
+	assert.True(t, args.DebugEnabled)
+
+	// update limit
+	q1.Annotations[annotationKeyLimit] = `{"cpu":20,"memory":50}`
+	err = gqm.UpdateQuota(q1, false)
+	assert.NoError(t, err)
+	assert.Equal(t, len(q1Info.CalculateInfo.CustomLimits), 1)
+	AssertCustomLimitEqual(t, createResourceList(20, 50), CustomKeyMock, q1Info)
+
+	// update args
+	q1.Annotations[annotationKeyArgs] = `{"debugEnabled":false}`
+	err = gqm.UpdateQuota(q1, false)
+	assert.NoError(t, err)
+	args, ok = q1Info.GetCustomArgs(CustomKeyMock).(*MockCustomArgs)
+	assert.True(t, ok)
+	assert.False(t, args.DebugEnabled)
+
+	// remove limit, args should be ignored if limit is not configured
+	delete(q1.Annotations, annotationKeyLimit)
+	err = gqm.UpdateQuota(q1, false)
+	assert.NoError(t, err)
+	assert.Equal(t, len(q1Info.CalculateInfo.CustomLimits), 0)
+}
+
+func TestGroupQuotaManager_CustomLimiter_PodUpdate(t *testing.T) {
+	testCustomKey := CustomKeyMock
+	customLimiter, err := NewMockLimiter(testCustomKey, `{"labelSelector":"app=test"}`)
+	assert.NoError(t, err)
+	gqm := NewGroupQuotaManagerForTest(WithCustomLimiter(map[string]CustomLimiter{
+		testCustomKey: customLimiter,
+	}))
+	annoKeyLimitConf, annoKeyArgs := fmt.Sprintf(AnnotationKeyMockLimitFmt, testCustomKey),
+		fmt.Sprintf(AnnotationKeyMockArgsFmt, testCustomKey)
+	limitResList := createResourceList(15, 15)
+
+	// create test quotas
+	testQuotas, testQuotaMap := GetTestQuotasForCustomLimiters()
+	err = UpdateQuotas(gqm, func(quotasMap map[string]*v1alpha1.ElasticQuota) {
+		quotasMap["12"].Annotations[annoKeyLimitConf] = `{"cpu":15,"memory":15}`
+		quotasMap["12"].Annotations[annoKeyArgs] = `{"debugEnabled":true}`
+		quotasMap["2"].Annotations[annoKeyLimitConf] = `{"cpu":15,"memory":15}`
+		quotasMap["2"].Annotations[annoKeyArgs] = `{"debugEnabled":true}`
+		quotasMap["211"].Annotations[annoKeyLimitConf] = `{"cpu":15,"memory":15}`
+		quotasMap["211"].Annotations[annoKeyArgs] = `{"debugEnabled":true}`
+	}, testQuotas...)
+	assert.NoError(t, err)
+
+	q111, q121, q122, q211 := testQuotaMap["111"], testQuotaMap["121"], testQuotaMap["122"], testQuotaMap["211"]
+
+	// add unmatched pod1
+	pod1 := schetesting.MakePod().Name("1").Label(extension.LabelQuotaName, q121.Name).Containers(
+		[]v1.Container{schetesting.MakeContainer().Name("0").Resources(map[v1.ResourceName]string{
+			v1.ResourceCPU: "2", v1.ResourceMemory: "8", "test": "1"}).Obj()}).Node("node0").Obj()
+	gqm.OnPodAdd(q111.Name, pod1)
+
+	// expected quotas
+	// quota1									mock-used[]
+	//   |-- quota11
+	//       |-- quota111
+	//   |-- quota12		mock-limit[15,15] 	mock-used[]
+	//       |-- quota121						mock-used[]
+	//       |-- quota122						mock-used[]
+	// quota2				mock-limit[15,15]	mock-used[]
+	//   |-- quota21							mock-used[]
+	//       |-- quota211   mock-limit[15,15]	mock-used[]
+	limitQuotaNames := []string{"12", "2", "211"}
+	enabledQuotaNames := []string{"1", "12", "121", "122", "2", "21", "211"}
+	checkCustomState(t, testCustomKey, gqm.quotaInfoMap, limitResList,
+		limitQuotaNames, enabledQuotaNames)
+	AssertCustomUsedEqual(t, v1.ResourceList{}, testCustomKey,
+		GetQuotaInfos(gqm.quotaInfoMap, enabledQuotaNames...)...)
+
+	// update pod1: unmatched --> matched
+	newPod1 := pod1.DeepCopy()
+	newPod1.Labels["app"] = "test"
+	gqm.OnPodUpdate(q121.Name, q121.Name, newPod1, pod1)
+
+	// expected quotas
+	// quota1									mock-used[2,8] (update: +mock-used[2,8])
+	//   |-- quota11
+	//       |-- quota111
+	//   |-- quota12		mock-limit[15,15] 	mock-used[2,8] (update: +mock-used[2,8])
+	//       |-- quota121						mock-used[2,8] (update: +mock-used[2,8])
+	//       |-- quota122						mock-used[]
+	// quota2				mock-limit[15,15]	mock-used[]
+	//   |-- quota21							mock-used[]
+	//       |-- quota211   mock-limit[15,15]	mock-used[]
+
+	// no changes on custom-limiter enabled state and custom-limit conf
+	checkCustomState(t, testCustomKey, gqm.quotaInfoMap, limitResList,
+		limitQuotaNames, enabledQuotaNames)
+	AssertCustomUsedEqual(t, v1.ResourceList{}, testCustomKey,
+		GetQuotaInfos(gqm.quotaInfoMap, "122", "2", "21", "211")...)
+	// check custom-used updated for quota chain: q121 -> q12 -> q1
+	AssertCustomUsedEqual(t, createResourceList(2, 8), testCustomKey,
+		GetQuotaInfos(gqm.quotaInfoMap, "1", "12", "121")...)
+
+	// update pod1 resource: <cpu:2, memory:8> --> <cpu:5, memory:5>
+	pod1, newPod1 = newPod1, newPod1.DeepCopy()
+	newPod1.Spec.Containers[0].Resources.Requests = map[v1.ResourceName]resource.Quantity{
+		v1.ResourceCPU: resource.MustParse("5"), v1.ResourceMemory: resource.MustParse("5")}
+	gqm.OnPodUpdate(q121.Name, q121.Name, newPod1, pod1)
+
+	// check custom-used updated for quota chain: q121 -> q12 -> q1
+	AssertCustomUsedEqual(t, createResourceList(5, 5), testCustomKey,
+		GetQuotaInfos(gqm.quotaInfoMap, "1", "12", "121")...)
+
+	// update pod1 quota-name label: q121 --> q211
+	pod1, newPod1 = newPod1, newPod1.DeepCopy()
+	newPod1.Labels[extension.LabelQuotaName] = q211.Name
+	gqm.OnPodUpdate(q211.Name, q121.Name, newPod1, pod1)
+
+	// expected quotas
+	// quota1									mock-used[0,0] (update: -mock-used[5,5])
+	//   |-- quota11
+	//       |-- quota111
+	//   |-- quota12		mock-limit[15,15] 	mock-used[0,0] (update: -mock-used[5,5])
+	//       |-- quota121						mock-used[0,0] (update: -mock-used[5,5])
+	//       |-- quota122						mock-used[]
+	// quota2				mock-limit[15,15]	mock-used[5,5] (update: +mock-used[5,5])
+	//   |-- quota21							mock-used[5,5] (update: +mock-used[5,5])
+	//       |-- quota211   mock-limit[15,15]	mock-used[5,5] (update: +mock-used[5,5])
+	checkCustomState(t, testCustomKey, gqm.quotaInfoMap, limitResList,
+		limitQuotaNames, enabledQuotaNames)
+	AssertCustomUsedEqual(t, v1.ResourceList{}, testCustomKey,
+		GetQuotaInfos(gqm.quotaInfoMap, "122")...)
+	AssertCustomUsedEqual(t, createResourceList(0, 0), testCustomKey,
+		GetQuotaInfos(gqm.quotaInfoMap, "1", "12", "121")...)
+	AssertCustomUsedEqual(t, createResourceList(5, 5), testCustomKey,
+		GetQuotaInfos(gqm.quotaInfoMap, "2", "21", "211")...)
+
+	// add matched pod to q122
+	pod2 := schetesting.MakePod().Name("2").Label(extension.LabelQuotaName, q111.Name).Containers(
+		[]v1.Container{schetesting.MakeContainer().Name("0").Resources(map[v1.ResourceName]string{
+			v1.ResourceCPU: "1", v1.ResourceMemory: "2"}).Obj()}).Node("node0").Obj()
+	pod2.Labels["app"] = "test"
+	gqm.OnPodAdd(q122.Name, pod2)
+
+	// expected quotas
+	// quota1									mock-used[1,2] (update: +mock-used[1,2])
+	//   |-- quota11
+	//       |-- quota111
+	//   |-- quota12		mock-limit[15,15] 	mock-used[1,2] (update: +mock-used[1,2])
+	//       |-- quota121						mock-used[0,0]
+	//       |-- quota122						mock-used[1,2] (update: +mock-used[1,2])
+	// quota2				mock-limit[15,15]	mock-used[5,5]
+	//   |-- quota21							mock-used[5,5]
+	//       |-- quota211   mock-limit[15,15]	mock-used[5,5]
+	checkCustomState(t, testCustomKey, gqm.quotaInfoMap, limitResList,
+		limitQuotaNames, enabledQuotaNames)
+	AssertCustomUsedEqual(t, createResourceList(0, 0), testCustomKey,
+		GetQuotaInfos(gqm.quotaInfoMap, "121")...)
+	AssertCustomUsedEqual(t, createResourceList(1, 2), testCustomKey,
+		GetQuotaInfos(gqm.quotaInfoMap, "1", "12", "122")...)
+	AssertCustomUsedEqual(t, createResourceList(5, 5), testCustomKey,
+		GetQuotaInfos(gqm.quotaInfoMap, "2", "21", "211")...)
+
+	// update pod1: matched --> unmatched
+	pod1 = newPod1
+	newPod1 = newPod1.DeepCopy()
+	delete(newPod1.Labels, "app")
+	gqm.OnPodUpdate(q211.Name, q211.Name, newPod1, pod1)
+
+	// expected quotas
+	// quota1									mock-used[1,2]
+	//   |-- quota11
+	//       |-- quota111
+	//   |-- quota12		mock-limit[15,15] 	mock-used[1,2]
+	//       |-- quota121						mock-used[0,0]
+	//       |-- quota122						mock-used[1,2]
+	// quota2				mock-limit[15,15]	mock-used[0,0] (update: -mock-used[5,5])
+	//   |-- quota21							mock-used[0,0] (update: -mock-used[5,5])
+	//       |-- quota211   mock-limit[15,15]	mock-used[0,0] (update: -mock-used[5,5])
+	checkCustomState(t, testCustomKey, gqm.quotaInfoMap, limitResList,
+		limitQuotaNames, enabledQuotaNames)
+	AssertCustomUsedEqual(t, createResourceList(0, 0), testCustomKey,
+		GetQuotaInfos(gqm.quotaInfoMap, "121", "2", "21", "211")...)
+	AssertCustomUsedEqual(t, createResourceList(1, 2), testCustomKey,
+		GetQuotaInfos(gqm.quotaInfoMap, "1", "12", "122")...)
+
+	// delete pod2
+	gqm.OnPodDelete(q122.Name, pod2)
+
+	// expected quotas
+	// quota1									mock-used[0,0] (update: -mock-used[1,2])
+	//   |-- quota11
+	//       |-- quota111
+	//   |-- quota12		mock-limit[15,15] 	mock-used[0,0] (update: -mock-used[1,2])
+	//       |-- quota121						mock-used[0,0]
+	//       |-- quota122						mock-used[0,0] (update: -mock-used[1,2])
+	// quota2				mock-limit[15,15]	mock-used[0,0]
+	//   |-- quota21							mock-used[0,0]
+	//       |-- quota211   mock-limit[15,15]	mock-used[0,0]
+	checkCustomState(t, testCustomKey, gqm.quotaInfoMap, limitResList,
+		limitQuotaNames, enabledQuotaNames)
+	AssertCustomUsedEqual(t, createResourceList(0, 0), testCustomKey,
+		GetQuotaInfos(gqm.quotaInfoMap, "1", "12", "121", "122", "2", "21", "211")...)
+}
+
+func TestGroupQuotaManager_CustomLimiter_QuotaUpdate(t *testing.T) {
+	testCustomKey := CustomKeyMock
+	customLimiter, err := NewMockLimiter(testCustomKey, `{"labelSelector":"app=test"}`)
+	assert.NoError(t, err)
+	gqm := NewGroupQuotaManagerForTest(WithCustomLimiter(map[string]CustomLimiter{
+		testCustomKey: customLimiter,
+	}))
+	annoKeyLimitConf, annoKeyArgs := fmt.Sprintf(AnnotationKeyMockLimitFmt, testCustomKey),
+		fmt.Sprintf(AnnotationKeyMockArgsFmt, testCustomKey)
+	limitConfV := `{"cpu":20,"memory":20}`
+	limitResList := createResourceList(20, 20)
+
+	// create test quotas
+	testQuotas, testQuotaMap := GetTestQuotasForCustomLimiters()
+	err = UpdateQuotas(gqm, nil, testQuotas...)
+	assert.NoError(t, err)
+
+	q1, q11, q111, q121, q2, q21, q211 := testQuotaMap["1"], testQuotaMap["11"], testQuotaMap["111"],
+		testQuotaMap["121"], testQuotaMap["2"], testQuotaMap["21"], testQuotaMap["211"]
+	q11Info := gqm.getQuotaInfoByNameNoLock(q11.Name)
+
+	// add matched pod with quota=q111, no custom-used
+	pod1 := schetesting.MakePod().Name("1").Label(extension.LabelQuotaName, q111.Name).Label(
+		"app", "test").Containers([]v1.Container{schetesting.MakeContainer().Name("0").Resources(
+		map[v1.ResourceName]string{v1.ResourceCPU: "5", v1.ResourceMemory: "5"}).Obj()}).Node("node0").Obj()
+	gqm.OnPodAdd(q111.Name, pod1)
+
+	// check no quotas with enabled custom-limiter and custom-limit conf
+	checkCustomState(t, testCustomKey, gqm.quotaInfoMap, limitResList, nil, nil)
+
+	// add custom limit for q11, rebuild and have custom-used
+	q11.Annotations[annoKeyLimitConf] = limitConfV
+	q11.Annotations[annoKeyArgs] = `{"debugEnabled":true}`
+	err = gqm.UpdateQuota(q11, false)
+	assert.NoError(t, err)
+
+	// expected quotas
+	// quota1     								mock-used[5,5] (updated: mock-used +[5,5])
+	//   |-- quota11		mock-limit[20,20]  	mock-used[5,5] (updated: mock-used +[5,5])
+	//       |-- quota111						mock-used[5,5] (updated: mock-used +[5,5])
+	//   |-- quota12
+	//       |-- quota121
+	//       |-- quota122
+	// quota2
+	//   |-- quota21
+	//       |-- quota211
+	limitQuotaNames := []string{"11"}
+	enabledQuotaNames := []string{"1", "11", "111"}
+	checkCustomState(t, testCustomKey, gqm.quotaInfoMap, limitResList,
+		limitQuotaNames, enabledQuotaNames)
+	AssertCustomUsedEqual(t, createResourceList(5, 5), testCustomKey,
+		GetQuotaInfos(gqm.quotaInfoMap, enabledQuotaNames...)...)
+
+	customArgs := q11Info.GetCustomArgs(testCustomKey)
+	assert.NotNil(t, customArgs)
+	assert.True(t, customArgs.(*MockCustomArgs).DebugEnabled)
+
+	// add custom limit for q211
+	q211.Annotations[annoKeyLimitConf] = limitConfV
+	err = gqm.UpdateQuota(q211, false)
+	assert.NoError(t, err)
+
+	// expected quotas
+	// quota1     								mock-used[5,5]
+	//   |-- quota11		mock-limit[20,20]  	mock-used[5,5]
+	//       |-- quota111						mock-used[5,5]
+	//   |-- quota12
+	//       |-- quota121
+	//       |-- quota122
+	// quota2									mock-used[0,0] (updated: mock-used +[0,0])
+	//   |-- quota21							mock-used[0,0] (updated: mock-used +[0,0])
+	//       |-- quota211 	mock-limit[15,15]  	mock-used[0,0] (updated: mock-used +[0,0])
+	limitQuotaNames = []string{"11", "211"}
+	enabledQuotaNames = []string{"1", "11", "111", "2", "21", "211"}
+	checkCustomState(t, testCustomKey, gqm.quotaInfoMap, limitResList,
+		limitQuotaNames, enabledQuotaNames)
+	AssertCustomUsedEqual(t, createResourceList(5, 5), testCustomKey,
+		GetQuotaInfos(gqm.quotaInfoMap, "1", "11", "111")...)
+	AssertCustomUsedEqual(t, v1.ResourceList{}, testCustomKey,
+		GetQuotaInfos(gqm.quotaInfoMap, "2", "21", "211")...)
+
+	// add matched pod with quota=211
+	pod2 := schetesting.MakePod().Name("2").Label(extension.LabelQuotaName, q211.Name).Label(
+		"app", "test").Containers([]v1.Container{schetesting.MakeContainer().Name("0").Resources(
+		map[v1.ResourceName]string{v1.ResourceCPU: "12", v1.ResourceMemory: "12"}).Obj()}).Node("node0").Obj()
+	gqm.OnPodAdd(q211.Name, pod2)
+
+	// expected quotas
+	// quota1     								mock-used[5,5]
+	//   |-- quota11		mock-limit[20,20]  	mock-used[5,5]
+	//       |-- quota111						mock-used[5,5]
+	//   |-- quota12
+	//       |-- quota121
+	//       |-- quota122
+	// quota2									mock-used[12,12] (updated: mock-used +[12,12])
+	//   |-- quota21							mock-used[12,12] (updated: mock-used +[12,12])
+	//       |-- quota211 	mock-limit[15,15]  	mock-used[12,12] (updated: mock-used +[12,12])
+	checkCustomState(t, testCustomKey, gqm.quotaInfoMap, limitResList,
+		limitQuotaNames, enabledQuotaNames)
+	AssertCustomUsedEqual(t, createResourceList(5, 5), testCustomKey,
+		GetQuotaInfos(gqm.quotaInfoMap, "1", "11", "111")...)
+	AssertCustomUsedEqual(t, createResourceList(12, 12), testCustomKey,
+		GetQuotaInfos(gqm.quotaInfoMap, "2", "21", "211")...)
+
+	// add matched pod with quota=q121, no custom-used
+	pod3 := schetesting.MakePod().Name("3").Label(extension.LabelQuotaName, q121.Name).Label(
+		"app", "test").Containers([]v1.Container{schetesting.MakeContainer().Name("0").Resources(
+		map[v1.ResourceName]string{v1.ResourceCPU: "3", v1.ResourceMemory: "3"}).Obj()}).Node("node0").Obj()
+	gqm.OnPodAdd(q121.Name, pod3)
+	// verify: no changes on custom-used
+	checkCustomState(t, testCustomKey, gqm.quotaInfoMap, limitResList,
+		limitQuotaNames, enabledQuotaNames)
+	AssertCustomUsedEqual(t, createResourceList(5, 5), testCustomKey,
+		GetQuotaInfos(gqm.quotaInfoMap, "1", "11", "111")...)
+	AssertCustomUsedEqual(t, createResourceList(12, 12), testCustomKey,
+		GetQuotaInfos(gqm.quotaInfoMap, "2", "21", "211")...)
+
+	// add custom limit for quota 121
+	q121.Annotations[annoKeyLimitConf] = limitConfV
+	err = gqm.UpdateQuota(q121, false)
+	assert.NoError(t, err)
+
+	// expected quotas
+	// quota1     								mock-used[8,8] (updated: mock-used +[3,3])
+	//   |-- quota11		mock-limit[20,20]  	mock-used[5,5]
+	//       |-- quota111						mock-used[5,5]
+	//   |-- quota12							mock-used[3,3] (updated: mock-used +[3,3])
+	//       |-- quota121	mock-limit[20,20]	mock-used[3,3] (updated: mock-used +[3,3])
+	//       |-- quota122
+	// quota2									mock-used[12,12]
+	//   |-- quota21							mock-used[12,12]
+	//       |-- quota211 	mock-limit[20,20]  	mock-used[12,12]
+
+	// quota chain will be rebuilt: q121 -> q12 -> q1
+	limitQuotaNames = append(limitQuotaNames, "121")
+	enabledQuotaNames = append(enabledQuotaNames, "121", "12")
+	checkCustomState(t, testCustomKey, gqm.quotaInfoMap, limitResList,
+		limitQuotaNames, enabledQuotaNames)
+	AssertCustomUsedEqual(t, createResourceList(3, 3), testCustomKey,
+		GetQuotaInfos(gqm.quotaInfoMap, "121", "12")...)
+	AssertCustomUsedEqual(t, createResourceList(5, 5), testCustomKey,
+		GetQuotaInfos(gqm.quotaInfoMap, "11", "111")...)
+	AssertCustomUsedEqual(t, createResourceList(8, 8), testCustomKey,
+		GetQuotaInfos(gqm.quotaInfoMap, "1")...)
+	AssertCustomUsedEqual(t, createResourceList(12, 12), testCustomKey,
+		GetQuotaInfos(gqm.quotaInfoMap, "2", "21", "211")...)
+
+	// move quota 21 to be a child of quota 1
+	q21.Labels[extension.LabelQuotaParent] = q1.Name
+	err = gqm.UpdateQuota(q21, false)
+	assert.NoError(t, err)
+
+	// expected quotas
+	// quota1     								mock-used[20,20] (updated: mock-used +[12,12])
+	//   |-- quota11		mock-limit[20,20]  	mock-used[5,5]
+	//       |-- quota111						mock-used[5,5]
+	//   |-- quota12							mock-used[3,3]
+	//       |-- quota121	mock-limit[10,10]	mock-used[3,3]
+	//       |-- quota122
+	//   |-- quota21							mock-used[12,12]
+	//       |-- quota211 	mock-limit[15,15]  	mock-used[12,12]
+	// quota2													 (updated: remove mock-used)
+
+	// no changes on custom-limit
+	// quota chain will be rebuilt: q211 -> q21 -> q1  (remove mock-used from q2)
+	enabledQuotaNames = []string{"1", "11", "111", "12", "121", "21", "211"}
+	checkCustomState(t, testCustomKey, gqm.quotaInfoMap, limitResList,
+		limitQuotaNames, enabledQuotaNames)
+
+	AssertCustomUsedEqual(t, createResourceList(3, 3), testCustomKey,
+		GetQuotaInfos(gqm.quotaInfoMap, "12", "121")...)
+	AssertCustomUsedEqual(t, createResourceList(5, 5), testCustomKey,
+		GetQuotaInfos(gqm.quotaInfoMap, "11", "111")...)
+	AssertCustomUsedEqual(t, createResourceList(20, 20), testCustomKey,
+		GetQuotaInfos(gqm.quotaInfoMap, "1")...)
+	AssertCustomUsedEqual(t, createResourceList(12, 12), testCustomKey,
+		GetQuotaInfos(gqm.quotaInfoMap, "21", "211")...)
+
+	// move quota 11 to be a child of quota 2
+	q11.Labels[extension.LabelQuotaParent] = q2.Name
+	err = gqm.UpdateQuota(q11, false)
+	assert.NoError(t, err)
+
+	// expected quotas
+	// quota1     								mock-used[15,15] (updated: mock-used -[5,5])
+	//   |-- quota12							mock-used[3,3]
+	//       |-- quota121	mock-limit[10,10]	mock-used[3,3]
+	//       |-- quota122
+	//   |-- quota21							mock-used[12,12]
+	//       |-- quota211 	mock-limit[15,15]  	mock-used[12,12]
+	// quota2									mock-used[5,5]	 (updated: + mock-used [5,5])
+	//   |-- quota11		mock-limit[20,20]  	mock-used[5,5]
+	//       |-- quota111						mock-used[5,5]
+
+	// no changes on custom-limit
+	// quota chain will be rebuilt: q211 -> q21 -> q1  (remove mock-used from q2)
+	enabledQuotaNames = []string{"1", "12", "121", "21", "211", "2", "11", "111"}
+	checkCustomState(t, testCustomKey, gqm.quotaInfoMap, limitResList,
+		limitQuotaNames, enabledQuotaNames)
+
+	AssertCustomUsedEqual(t, createResourceList(3, 3), testCustomKey,
+		GetQuotaInfos(gqm.quotaInfoMap, "12", "121")...)
+	AssertCustomUsedEqual(t, createResourceList(5, 5), testCustomKey,
+		GetQuotaInfos(gqm.quotaInfoMap, "2", "11", "111")...)
+	AssertCustomUsedEqual(t, createResourceList(15, 15), testCustomKey,
+		GetQuotaInfos(gqm.quotaInfoMap, "1")...)
+	AssertCustomUsedEqual(t, createResourceList(12, 12), testCustomKey,
+		GetQuotaInfos(gqm.quotaInfoMap, "21", "211")...)
+}
+
+func TestGroupQuotaManager_CustomLimiter_QuotaUpdateScenarios(t *testing.T) {
+	testCustomKey1, testCustomKey2 := CustomKeyMock, CustomKeyMock+"2"
+	annoKeyLimitConf1, annoKeyLimitConf2 := fmt.Sprintf(AnnotationKeyMockLimitFmt, testCustomKey1),
+		fmt.Sprintf(AnnotationKeyMockLimitFmt, testCustomKey2)
+	limitResConfV1, limitResConfV2 := `{"cpu":15,"memory":15}`, `{"cpu":10,"memory":10}`
+	limitResList1, limitResList2 := createResourceList(15, 15), createResourceList(10, 10)
+	customLimiter, err := NewMockLimiter(testCustomKey1, `{"labelSelector":"app=test"}`)
+	assert.NoError(t, err)
+	customLimiter2, err := NewMockLimiter(testCustomKey2, `{"labelSelector":"app=test"}`)
+	assert.NoError(t, err)
+
+	// init function to add matched pod
+	addMatchedPodFn := func(gqm *GroupQuotaManager, podName, quotaName string, cpu, memory int) {
+		pod := schetesting.MakePod().Name(podName).Label(extension.LabelQuotaName, quotaName).Label(
+			"app", "test").Containers([]v1.Container{schetesting.MakeContainer().Name("0").Resources(
+			map[v1.ResourceName]string{v1.ResourceCPU: strconv.Itoa(cpu),
+				v1.ResourceMemory: strconv.Itoa(memory), "test": "2"}).Obj()}).Node("node0").Obj()
+		gqm.OnPodAdd(quotaName, pod)
+	}
+	// init preHook function to set limit conf for quota 12, 2, 211
+	preHookFn1 := func(quotas map[string]*v1alpha1.ElasticQuota) {
+		quotas["12"].Annotations[annoKeyLimitConf1] = limitResConfV1
+		quotas["2"].Annotations[annoKeyLimitConf1] = limitResConfV1
+		quotas["211"].Annotations[annoKeyLimitConf1] = limitResConfV1
+	}
+	preHookFn2 := func(quotas map[string]*v1alpha1.ElasticQuota) {
+		quotas["12"].Annotations[annoKeyLimitConf1] = limitResConfV1
+		quotas["2"].Annotations[annoKeyLimitConf1] = limitResConfV1
+		quotas["211"].Annotations[annoKeyLimitConf1] = limitResConfV1
+		quotas["12"].Annotations[annoKeyLimitConf2] = limitResConfV2
+		quotas["111"].Annotations[annoKeyLimitConf2] = limitResConfV2
+
+	}
+	// test cases
+	cases := []struct {
+		name      string
+		preHookFn func(quotas map[string]*v1alpha1.ElasticQuota)
+		updateFn  func(gqm *GroupQuotaManager, quotas map[string]*v1alpha1.ElasticQuota)
+		checkFn   func(quotaInfos map[string]*QuotaInfo)
+	}{
+		{
+			// expected quotas
+			// quota1									mock-used[]
+			//   |-- quota11
+			//       |-- quota111
+			//   |-- quota12		mock-limit[15,15] 	mock-used[]
+			//       |-- quota121						mock-used[]
+			//       |-- quota122						mock-used[]
+			// quota2				mock-limit[15,15]	mock-used[]
+			//   |-- quota21							mock-used[]
+			//       |-- quota211   mock-limit[15,15]	mock-used[]
+			name:      "no update",
+			preHookFn: preHookFn1,
+			checkFn: func(quotaInfos map[string]*QuotaInfo) {
+				limitQuotaNames := []string{"12", "2", "211"}
+				enabledQuotaNames := []string{"1", "12", "121", "122", "2", "21", "211"}
+				checkCustomState(t, testCustomKey1, quotaInfos, limitResList1,
+					limitQuotaNames, enabledQuotaNames)
+				AssertCustomUsedEqual(t, v1.ResourceList{}, testCustomKey1,
+					GetQuotaInfos(quotaInfos, enabledQuotaNames...)...)
+			},
+		},
+		{
+			// expected quotas
+			// quota1									mock-used[1,1]	(updated: +mock-used[1,1])
+			//   |-- quota11
+			//       |-- quota111
+			//       |-- quota112									  	// add quota 112, add pod2 [2,2]
+			//   |-- quota12		mock-limit[15,15] 	mock-used[1,1]  (updated: +mock-used[1,1])
+			//       |-- quota121						mock-used[]
+			//       |-- quota122						mock-used[1,1]	(updated: +mock-used[1,1]) // add pod1 [1,1]
+			// quota2				mock-limit[15,15]	mock-used[]
+			//   |-- quota21							mock-used[]
+			//       |-- quota211   mock-limit[15,15]	mock-used[]
+			name:      "add quota 112 without limit conf",
+			preHookFn: preHookFn1,
+			updateFn: func(gqm *GroupQuotaManager, quotas map[string]*v1alpha1.ElasticQuota) {
+				q112 := CreateQuota("112", "11", 100, 100, 0, 0, true, false)
+				err = gqm.UpdateQuota(q112, false)
+				assert.NoError(t, err)
+				// add pod to quota 122 and 112
+				addMatchedPodFn(gqm, "1", "122", 1, 1)
+				addMatchedPodFn(gqm, "2", "112", 2, 2)
+			},
+			checkFn: func(quotaInfos map[string]*QuotaInfo) {
+				limitQuotaNames := []string{"12", "2", "211"}
+				enabledQuotaNames := []string{"1", "12", "121", "122", "2", "21", "211"}
+				checkCustomState(t, testCustomKey1, quotaInfos, limitResList1,
+					limitQuotaNames, enabledQuotaNames)
+				AssertCustomUsedEqual(t, v1.ResourceList{}, testCustomKey1,
+					GetQuotaInfos(quotaInfos, "121", "2", "21", "211")...)
+				AssertCustomUsedEqual(t, createResourceList(1, 1), testCustomKey1,
+					GetQuotaInfos(quotaInfos, "1", "12", "122")...)
+			},
+		},
+		{
+			// expected quotas
+			// quota1									mock-used[3,3]  (updated: +mock-used[3,3])
+			//   |-- quota11							mock-used[2,2]  (updated: +mock-used[2,2])
+			//       |-- quota111
+			//       |-- quota112	mock-limit[15,15]	mock-used[2,2]	 // add quota 112, add pod2 [2,2]
+			//   |-- quota12		mock-limit[15,15] 	mock-used[1,1]
+			//       |-- quota121						mock-used[]
+			//       |-- quota122						mock-used[1,1]   (updated: +mock-used[1,1]) // add pod1 [1,1]
+			// quota2				mock-limit[15,15]	mock-used[]
+			//   |-- quota21							mock-used[]
+			//       |-- quota211   mock-limit[15,15]	mock-used[]
+			name:      "add quota 112 with limit conf",
+			preHookFn: preHookFn1,
+			updateFn: func(gqm *GroupQuotaManager, quotas map[string]*v1alpha1.ElasticQuota) {
+				q112 := CreateQuota("112", "11", 100, 100, 0, 0, true, false)
+				q112.Annotations[annoKeyLimitConf1] = limitResConfV1
+				err = gqm.UpdateQuota(q112, false)
+				assert.NoError(t, err)
+				// add pod to quota 122 and 112
+				addMatchedPodFn(gqm, "1", "122", 1, 1)
+				addMatchedPodFn(gqm, "2", "112", 2, 2)
+			},
+			checkFn: func(quotaInfos map[string]*QuotaInfo) {
+				limitQuotaNames := []string{"12", "2", "211", "112"}
+				enabledQuotaNames := []string{"1", "11", "112", "12", "121", "122", "12", "2", "21", "211"}
+				checkCustomState(t, testCustomKey1, quotaInfos, limitResList1,
+					limitQuotaNames, enabledQuotaNames)
+				AssertCustomUsedEqual(t, v1.ResourceList{}, testCustomKey1,
+					GetQuotaInfos(quotaInfos, "121", "2", "21", "211")...)
+				AssertCustomUsedEqual(t, createResourceList(1, 1), testCustomKey1,
+					GetQuotaInfos(quotaInfos, "122", "12")...)
+				AssertCustomUsedEqual(t, createResourceList(2, 2), testCustomKey1,
+					GetQuotaInfos(quotaInfos, "112", "11")...)
+				AssertCustomUsedEqual(t, createResourceList(3, 3), testCustomKey1,
+					GetQuotaInfos(quotaInfos, "1")...)
+			},
+		},
+		{
+			// expected quotas
+			// quota1									mock-used[1,1]	(updated +mock-used[1,1])
+			//   |-- quota11
+			//       |-- quota111
+			//   |-- quota12		mock-limit[15,15] 	mock-used[1,1]	(updated +mock-used[1,1])
+			//       |-- quota121						mock-used[]
+			//       |-- quota122						mock-used[]
+			//       |-- quota123						mock-used[1,1]  (updated +mock-used[1,1]) // add quota 123, add pod1 [1,1]
+			// quota2				mock-limit[15,15]	mock-used[2,2]	(updated +mock-used[2,2])
+			//   |-- quota21							mock-used[2,2]	(updated +mock-used[2,2])
+			//       |-- quota211   mock-limit[15,15]	mock-used[2,2] 	(updated +mock-used[2,2]) // add pod2 [2,2]
+			name:      "add quota 123 without limit conf",
+			preHookFn: preHookFn1,
+			updateFn: func(gqm *GroupQuotaManager, quotas map[string]*v1alpha1.ElasticQuota) {
+				q123 := CreateQuota("123", "12", 100, 100, 0, 0, true, false)
+				err = gqm.UpdateQuota(q123, false)
+				assert.NoError(t, err)
+				// add pod to quota 123 and 211
+				addMatchedPodFn(gqm, "1", "123", 1, 1)
+				addMatchedPodFn(gqm, "2", "211", 2, 2)
+			},
+			checkFn: func(quotaInfos map[string]*QuotaInfo) {
+				limitQuotaNames := []string{"12", "2", "211"}
+				enabledQuotaNames := []string{"1", "12", "121", "122", "123", "2", "21", "211"}
+				checkCustomState(t, testCustomKey1, quotaInfos, limitResList1,
+					limitQuotaNames, enabledQuotaNames)
+				AssertCustomUsedEqual(t, v1.ResourceList{}, testCustomKey1,
+					GetQuotaInfos(quotaInfos, "121", "122")...)
+				AssertCustomUsedEqual(t, createResourceList(1, 1), testCustomKey1,
+					GetQuotaInfos(quotaInfos, "1", "12", "123")...)
+				AssertCustomUsedEqual(t, createResourceList(2, 2), testCustomKey1,
+					GetQuotaInfos(quotaInfos, "2", "21", "211")...)
+			},
+		},
+		{
+			// expected quotas
+			// quota1									mock-used[5,5]	(updated: + mock-used[5,5])
+			//   |-- quota11							mock-used[2,2]	(updated: + mock-used[2,2])
+			//       |-- quota111
+			//       |-- quota112	mock-limit[15,15]	mock-used[2,2]	 // add quota 113, add pod2 [2,2]
+			//   |-- quota12		mock-limit[15,15] 	mock-used[3,3]
+			//       |-- quota121						mock-used[]
+			//       |-- quota122						mock-used[3,3]	(updated: + mock-used[3,3]) //add pod1 [3,3]
+			// quota2				mock-limit[15,15]	mock-used[]
+			//   |-- quota21							mock-used[]
+			//       |-- quota211   mock-limit[15,15]	mock-used[]
+			name:      "add quota 112 with limit conf",
+			preHookFn: preHookFn1,
+			updateFn: func(gqm *GroupQuotaManager, quotas map[string]*v1alpha1.ElasticQuota) {
+				q112 := CreateQuota("112", "11", 100, 100, 0, 0, true, false)
+				q112.Annotations[annoKeyLimitConf1] = limitResConfV1
+				err = gqm.UpdateQuota(q112, false)
+				assert.NoError(t, err)
+				// add pod to quota 123 and 211
+				addMatchedPodFn(gqm, "1", "122", 3, 3)
+				addMatchedPodFn(gqm, "2", "112", 2, 2)
+
+			},
+			checkFn: func(quotaInfos map[string]*QuotaInfo) {
+				limitQuotaNames := []string{"12", "2", "211", "112"}
+				enabledQuotaNames := []string{"1", "11", "112", "12", "121", "122", "12", "2", "21", "211"}
+				checkCustomState(t, testCustomKey1, quotaInfos, limitResList1,
+					limitQuotaNames, enabledQuotaNames)
+				AssertCustomUsedEqual(t, v1.ResourceList{}, testCustomKey1,
+					GetQuotaInfos(quotaInfos, "121", "2", "21", "211")...)
+				AssertCustomUsedEqual(t, createResourceList(2, 2), testCustomKey1,
+					GetQuotaInfos(quotaInfos, "11", "112")...)
+				AssertCustomUsedEqual(t, createResourceList(3, 3), testCustomKey1,
+					GetQuotaInfos(quotaInfos, "12", "122")...)
+				AssertCustomUsedEqual(t, createResourceList(5, 5), testCustomKey1,
+					GetQuotaInfos(quotaInfos, "1")...)
+			},
+		},
+		{
+			// expected quotas
+			// quota1									mock-used[]
+			//   |-- quota11
+			//       |-- quota111 										// delete quota 111
+			//   |-- quota12		mock-limit[15,15] 	mock-used[]
+			//       |-- quota121						mock-used[]
+			//       |-- quota122						mock-used[]
+			// quota2				mock-limit[15,15]	mock-used[]
+			//   |-- quota21							mock-used[]
+			//       |-- quota211   mock-limit[15,15]	mock-used[]
+			name:      "delete quota 111",
+			preHookFn: preHookFn1,
+			updateFn: func(gqm *GroupQuotaManager, quotas map[string]*v1alpha1.ElasticQuota) {
+				err = gqm.UpdateQuota(quotas["111"], true)
+				assert.NoError(t, err)
+			},
+			checkFn: func(quotaInfos map[string]*QuotaInfo) {
+				limitQuotaNames := []string{"12", "2", "211"}
+				enabledQuotaNames := []string{"1", "12", "121", "122", "2", "21", "211"}
+				checkCustomState(t, testCustomKey1, quotaInfos, limitResList1,
+					limitQuotaNames, enabledQuotaNames)
+				AssertCustomUsedEqual(t, v1.ResourceList{}, testCustomKey1,
+					GetQuotaInfos(quotaInfos, enabledQuotaNames...)...)
+			},
+		},
+		{
+			// expected quotas
+			// quota1									mock-used[]
+			//   |-- quota11
+			//       |-- quota111
+			//   |-- quota12		mock-limit[15,15] 	mock-used[]
+			//       |-- quota121						mock-used[]
+			//       |-- quota122						mock-used[]	  	// delete quota 122
+			// quota2				mock-limit[15,15]	mock-used[]
+			//   |-- quota21							mock-used[]
+			//       |-- quota211   mock-limit[15,15]	mock-used[]
+			name:      "delete quota 122",
+			preHookFn: preHookFn1,
+			updateFn: func(gqm *GroupQuotaManager, quotas map[string]*v1alpha1.ElasticQuota) {
+				err = gqm.UpdateQuota(quotas["122"], true)
+				assert.NoError(t, err)
+			},
+			checkFn: func(quotaInfos map[string]*QuotaInfo) {
+				limitQuotaNames := []string{"12", "2", "211"}
+				enabledQuotaNames := []string{"1", "12", "121", "2", "21", "211"}
+				checkCustomState(t, testCustomKey1, quotaInfos, limitResList1,
+					limitQuotaNames, enabledQuotaNames)
+				AssertCustomUsedEqual(t, v1.ResourceList{}, testCustomKey1,
+					GetQuotaInfos(quotaInfos, enabledQuotaNames...)...)
+			},
+		},
+		{
+			// expected quotas
+			// quota1									mock-used[]
+			//   |-- quota11
+			//       |-- quota111
+			//   |-- quota12		mock-limit[15,15] 	mock-used[]
+			//       |-- quota121						mock-used[]
+			//       |-- quota122						mock-used[]
+			// quota2				mock-limit[15,15]	mock-used[]
+			//   |-- quota21							mock-used[]
+			//       |-- quota211   mock-limit[15,15]	mock-used[]	  	// delete quota 211
+			name:      "delete quota 211",
+			preHookFn: preHookFn1,
+			updateFn: func(gqm *GroupQuotaManager, quotas map[string]*v1alpha1.ElasticQuota) {
+				err = gqm.UpdateQuota(quotas["211"], true)
+				assert.NoError(t, err)
+			},
+			checkFn: func(quotaInfos map[string]*QuotaInfo) {
+				limitQuotaNames := []string{"12", "2"}
+				enabledQuotaNames := []string{"1", "12", "121", "122", "2", "21"}
+				checkCustomState(t, testCustomKey1, quotaInfos, limitResList1,
+					limitQuotaNames, enabledQuotaNames)
+				AssertCustomUsedEqual(t, v1.ResourceList{}, testCustomKey1,
+					GetQuotaInfos(quotaInfos, enabledQuotaNames...)...)
+			},
+		},
+		{
+			// expected quotas
+			// quota1									mock-used[]  (updated: - mock-used[])
+			//   |-- quota11
+			//       |-- quota111
+			//   |-- quota12		mock-limit[15,15] 	mock-used[]	  	// delete quota 12
+			//       |-- quota121						mock-used[]	  	// delete quota 121
+			//       |-- quota122						mock-used[]	  	// delete quota 122
+			// quota2				mock-limit[15,15]	mock-used[]
+			//   |-- quota21							mock-used[]
+			//       |-- quota211   mock-limit[15,15]	mock-used[]
+			name:      "delete quota 12",
+			preHookFn: preHookFn1,
+			updateFn: func(gqm *GroupQuotaManager, quotas map[string]*v1alpha1.ElasticQuota) {
+				err = gqm.UpdateQuota(quotas["122"], true)
+				assert.NoError(t, err)
+				err = gqm.UpdateQuota(quotas["121"], true)
+				assert.NoError(t, err)
+				err = gqm.UpdateQuota(quotas["12"], true)
+				assert.NoError(t, err)
+			},
+			checkFn: func(quotaInfos map[string]*QuotaInfo) {
+				limitQuotaNames := []string{"211", "2"}
+				enabledQuotaNames := []string{"12", "121", "122", "2", "21", "211"}
+				checkCustomState(t, testCustomKey1, quotaInfos, limitResList1,
+					limitQuotaNames, enabledQuotaNames)
+				AssertCustomUsedEqual(t, v1.ResourceList{}, testCustomKey1,
+					GetQuotaInfos(quotaInfos, enabledQuotaNames...)...)
+			},
+		},
+		{
+			// expected quotas
+			// quota1									mock-used[]
+			// 											mock2-used[]
+			//   |-- quota11
+			// 											mock2-used[]
+			//       |-- quota111
+			// 						mock2-limit[10,10] 	mock2-used[]
+			//   |-- quota12		mock-limit[15,15] 	mock-used[]
+			// 						mock2-limit[10,10] 	mock2-used[]
+			//       |-- quota121						mock-used[]
+			// 											mock2-used[]
+			//       |-- quota122						mock-used[]
+			// 											mock2-used[]
+			// quota2				mock-limit[15,15]	mock-used[]
+			//   |-- quota21							mock-used[]
+			//       |-- quota211   mock-limit[15,15]	mock-used[]
+			name:      "2 custom-limiter",
+			preHookFn: preHookFn2,
+			checkFn: func(quotaInfos map[string]*QuotaInfo) {
+				// for custom-key: mock
+				limitQuotaNames := []string{"12", "2", "211"}
+				enabledQuotaNames := []string{"1", "12", "121", "122", "2", "21", "211"}
+				checkCustomState(t, testCustomKey1, quotaInfos, limitResList1,
+					limitQuotaNames, enabledQuotaNames)
+				AssertCustomUsedEqual(t, v1.ResourceList{}, testCustomKey1,
+					GetQuotaInfos(quotaInfos, enabledQuotaNames...)...)
+
+				// for custom-key: mock2
+				limitQuotaNames = []string{"111", "12"}
+				enabledQuotaNames = []string{"1", "11", "111", "12", "121", "122"}
+				checkCustomState(t, testCustomKey2, quotaInfos, limitResList2,
+					limitQuotaNames, enabledQuotaNames)
+				AssertCustomUsedEqual(t, v1.ResourceList{}, testCustomKey2,
+					GetQuotaInfos(quotaInfos, enabledQuotaNames...)...)
+			},
+		},
+		{
+			// expected quotas
+			// quota1									(updated: - mock-used)
+			// 											mock2-used[]
+			//   |-- quota11
+			// 											mock2-used[]
+			//       |-- quota111
+			// 						mock2-limit[10,10] 	mock2-used[]
+			//   |-- quota12							(updated: - mock-limit, - mock-used) // remove mock-limit
+			// 											(updated: - mock2-limit, - mock2-used) // remove mock2-limit
+			//       |-- quota121						(updated: - mock-used)
+			// 											(updated: - mock2-used)
+			//       |-- quota122						(updated: - mock-used)
+			// 											(updated: - mock2-used)
+			// quota2				mock-limit[15,15]	mock-used[]
+			//   |-- quota21							mock-used[]
+			//       |-- quota211   					mock-used[]		// remove mock-limit
+			name:      "2 custom-limiter: update quota 211 & 12: remove mock-limit / mock2-limit",
+			preHookFn: preHookFn2,
+			updateFn: func(gqm *GroupQuotaManager, quotas map[string]*v1alpha1.ElasticQuota) {
+				q211 := quotas["211"].DeepCopy()
+				delete(q211.Annotations, annoKeyLimitConf1)
+				err = gqm.UpdateQuota(q211, false)
+				assert.NoError(t, err)
+				q12 := quotas["12"].DeepCopy()
+				delete(q12.Annotations, annoKeyLimitConf1)
+				delete(q12.Annotations, annoKeyLimitConf2)
+				err = gqm.UpdateQuota(q12, false)
+				assert.NoError(t, err)
+			},
+			checkFn: func(quotaInfos map[string]*QuotaInfo) {
+				// for custom-key: mock
+				limitQuotaNames := []string{"2"}
+				enabledQuotaNames := []string{"2", "21", "211"}
+				checkCustomState(t, testCustomKey1, quotaInfos, limitResList1,
+					limitQuotaNames, enabledQuotaNames)
+				AssertCustomUsedEqual(t, v1.ResourceList{}, testCustomKey1,
+					GetQuotaInfos(quotaInfos, enabledQuotaNames...)...)
+
+				// for custom-key: mock2
+				limitQuotaNames = []string{"111"}
+				enabledQuotaNames = []string{"1", "11", "111"}
+				checkCustomState(t, testCustomKey2, quotaInfos, limitResList2,
+					limitQuotaNames, enabledQuotaNames)
+				AssertCustomUsedEqual(t, v1.ResourceList{}, testCustomKey2,
+					GetQuotaInfos(quotaInfos, enabledQuotaNames...)...)
+			},
+		},
+		{
+			// expected quotas
+			// quota1									mock-used[]
+			// 											mock2-used[]
+			//   |-- quota11
+			// 						mock-limit[15,15]	mock-used[]  (updated: + mock-limit mock-used) // add mock-limit
+			// 											mock2-used[]
+			//       |-- quota111						mock-used[]  (updated: + mock-used)
+			// 						mock2-limit[10,10] 	mock2-used[]
+			//   |-- quota12		mock-limit[15,15] 	mock-used[]
+			// 						mock2-limit[10,10] 	mock2-used[]
+			//       |-- quota121						mock-used[]
+			// 											mock2-used[]
+			//       |-- quota122						mock-used[]
+			// 											mock2-used[]
+			// quota2				mock-limit[15,15]	mock-used[]
+			// 											mock2-used[] (updated: + mock2-used)
+			//   |-- quota21							mock-used[]
+			// 						mock2-limit[10,10] 	mock2-used[] (updated: + mock2-limit mock2-used) // add mock2-limit
+			//       |-- quota211   mock-limit[15,15]	mock-used[]
+			// 											mock2-used[] (updated: + mock2-used)
+			name:      "2 custom-limiter: update quota 21 & 11: add mock-limit / mock2-limit",
+			preHookFn: preHookFn2,
+			updateFn: func(gqm *GroupQuotaManager, quotas map[string]*v1alpha1.ElasticQuota) {
+				q11 := quotas["11"].DeepCopy()
+				delete(q11.Annotations, annoKeyLimitConf1)
+				q11.Annotations[annoKeyLimitConf1] = limitResConfV1
+				err = gqm.UpdateQuota(q11, false)
+				assert.NoError(t, err)
+				q21 := quotas["21"].DeepCopy()
+				q21.Annotations[annoKeyLimitConf2] = limitResConfV2
+				err = gqm.UpdateQuota(q21, false)
+				assert.NoError(t, err)
+			},
+			checkFn: func(quotaInfos map[string]*QuotaInfo) {
+				// for custom-key: mock
+				limitQuotaNames := []string{"11", "12", "2", "211"}
+				enabledQuotaNames := []string{"1", "11", "111", "12", "121", "122", "2", "21", "211"}
+				checkCustomState(t, testCustomKey1, quotaInfos, limitResList1,
+					limitQuotaNames, enabledQuotaNames)
+				AssertCustomUsedEqual(t, v1.ResourceList{}, testCustomKey1,
+					GetQuotaInfos(quotaInfos, enabledQuotaNames...)...)
+
+				// for custom-key: mock2
+				limitQuotaNames = []string{"111", "12", "21"}
+				enabledQuotaNames = []string{"1", "11", "111", "12", "121", "122", "2", "21", "211"}
+				checkCustomState(t, testCustomKey2, quotaInfos, limitResList2,
+					limitQuotaNames, enabledQuotaNames)
+				AssertCustomUsedEqual(t, v1.ResourceList{}, testCustomKey2,
+					GetQuotaInfos(quotaInfos, enabledQuotaNames...)...)
+			},
+		},
+		{
+			// expected quotas before moving:
+			// quota1									mock-used[]
+			// 											mock2-used[1,1]
+			//   |-- quota11
+			// 											mock2-used[1,1]
+			//       |-- quota111
+			// 						mock2-limit[10,10] 	mock2-used[1,1]
+			//   |-- quota12		mock-limit[15,15] 	mock-used[]
+			// 						mock2-limit[10,10] 	mock2-used[]
+			//       |-- quota121						mock-used[]
+			// 											mock2-used[]
+			//       |-- quota122						mock-used[]
+			// 											mock2-used[]
+			// quota2				mock-limit[15,15]	mock-used[2,3]
+			//   |-- quota21							mock-used[2,3]
+			//       |-- quota211   mock-limit[15,15]	mock-used[2,3]
+
+			// expected quotas after moving:
+			// quota1									mock-used[]
+			// 											mock2-used[] (update: - mock2-used [1,1])
+			//   |-- quota11
+			// 													  	(updated: - mock2-used)
+			//   |-- quota12		mock-limit[15,15] 	mock-used[]
+			// 						mock2-limit[10,10] 	mock2-used[]
+			//       |-- quota121						mock-used[]
+			// 											mock2-used[]
+			//       |-- quota122						mock-used[]
+			// 											mock2-used[]
+			// quota2				mock-limit[15,15]	mock-used[2,3]
+			// 											mock2-used[1,1] (updated: + mock2-used[1,1])
+			//   |-- quota21							mock-used[2,3]
+			// 											mock2-used[1,1] (updated: + mock2-used[1,1])
+			//       |-- quota211   mock-limit[15,15]	mock-used[2,3]
+			//       |-- quota111						mock-used[]  (updated: + mock-used)
+			// 						mock2-limit[10,10] 	mock2-used[1,1] // move 111 to 21
+			name:      "2 custom-limiter: add pods to quota 111 and 211",
+			preHookFn: preHookFn2,
+			updateFn: func(gqm *GroupQuotaManager, quotas map[string]*v1alpha1.ElasticQuota) {
+				// add pods to quota 111 and 211
+				addMatchedPodFn(gqm, "1", "111", 1, 1)
+				addMatchedPodFn(gqm, "2", "211", 2, 3)
+			},
+			checkFn: func(quotaInfos map[string]*QuotaInfo) {
+				// check state before moving
+				limitQuotaNames1 := []string{"12", "2", "211"}
+				enabledQuotaNames1 := []string{"1", "12", "121", "122", "2", "21", "211"}
+				checkCustomState(t, testCustomKey1, quotaInfos, limitResList1,
+					limitQuotaNames1, enabledQuotaNames1)
+				AssertCustomUsedEqual(t, createResourceList(2, 3), testCustomKey1,
+					GetQuotaInfos(quotaInfos, "2", "21", "211")...)
+
+				limitQuotaNames2 := []string{"12", "111"}
+				enabledQuotaNames2 := []string{"1", "11", "111", "12", "121", "122"}
+				checkCustomState(t, testCustomKey2, quotaInfos, limitResList2,
+					limitQuotaNames2, enabledQuotaNames2)
+				AssertCustomUsedEqual(t, createResourceList(1, 1), testCustomKey2,
+					GetQuotaInfos(quotaInfos, "1", "11", "111")...)
+			},
+		},
+		{
+			// expected quotas after moving:
+			// quota1									mock-used[]
+			// 											mock2-used[0,0] (update: - mock2-used [1,1])
+			//   |-- quota11
+			// 													  	(updated: - mock2-used)
+			//   |-- quota12		mock-limit[15,15] 	mock-used[]
+			// 						mock2-limit[10,10] 	mock2-used[]
+			//       |-- quota121						mock-used[]
+			// 											mock2-used[]
+			//       |-- quota122						mock-used[]
+			// 											mock2-used[]
+			// quota2				mock-limit[15,15]	mock-used[3,4] (updated: + mock-used[1,1])
+			// 											mock2-used[1,1] (updated: + mock2-used[1,1])
+			//   |-- quota21							mock-used[3,4]  (updated: + mock-used[1,1])
+			// 											mock2-used[1,1] (updated: + mock2-used[1,1])
+			//       |-- quota211   mock-limit[15,15]	mock-used[2,3]
+			//       |-- quota111						mock-used[1,1]  (updated: + mock-used[1,1])
+			// 						mock2-limit[10,10] 	mock2-used[1,1] // move 111 to 21
+			name:      "2 custom-limiter: add pods to quota 111 and 211, then move quota 111 to 21",
+			preHookFn: preHookFn2,
+			updateFn: func(gqm *GroupQuotaManager, quotas map[string]*v1alpha1.ElasticQuota) {
+				// add pods to quota 111 and 211
+				addMatchedPodFn(gqm, "1", "111", 1, 1)
+				addMatchedPodFn(gqm, "2", "211", 2, 3)
+
+				// move 111 to 21
+				q111 := quotas["111"].DeepCopy()
+				q111.Labels[extension.LabelQuotaParent] = "21"
+				err = gqm.UpdateQuota(q111, false)
+				assert.NoError(t, err)
+			},
+			checkFn: func(quotaInfos map[string]*QuotaInfo) {
+				// for custom-key: mock
+				limitQuotaNames := []string{"12", "2", "211"}
+				enabledQuotaNames := []string{"1", "12", "121", "122", "2", "21", "211", "111"}
+				checkCustomState(t, testCustomKey1, quotaInfos, limitResList1,
+					limitQuotaNames, enabledQuotaNames)
+				AssertCustomUsedEqual(t, v1.ResourceList{}, testCustomKey1,
+					GetQuotaInfos(quotaInfos, "1", "12", "121", "122")...)
+				AssertCustomUsedEqual(t, createResourceList(1, 1), testCustomKey1,
+					GetQuotaInfos(quotaInfos, "111")...)
+				AssertCustomUsedEqual(t, createResourceList(2, 3), testCustomKey1,
+					GetQuotaInfos(quotaInfos, "211")...)
+				AssertCustomUsedEqual(t, createResourceList(3, 4), testCustomKey1,
+					GetQuotaInfos(quotaInfos, "2", "21")...)
+
+				// for custom-key: mock2
+				limitQuotaNames = []string{"111", "12"}
+				enabledQuotaNames = []string{"1", "12", "121", "122", "2", "21", "111"}
+				checkCustomState(t, testCustomKey2, quotaInfos, limitResList2,
+					limitQuotaNames, enabledQuotaNames)
+				AssertCustomUsedEqual(t, v1.ResourceList{}, testCustomKey2,
+					GetQuotaInfos(quotaInfos, "12", "121", "122")...)
+				AssertCustomUsedEqual(t, createResourceList(0, 0), testCustomKey2,
+					GetQuotaInfos(quotaInfos, "1")...)
+				AssertCustomUsedEqual(t, createResourceList(1, 1), testCustomKey2,
+					GetQuotaInfos(quotaInfos, "2", "21", "111")...)
+			},
+		},
+		{
+			// expected quotas
+			// quota1												(updated: - mock-used)
+			// 											mock2-used[]
+			//   |-- quota11
+			// 											mock2-used[]
+			//       |-- quota111
+			// 						mock2-limit[10,10] 	mock2-used[]
+			// quota2				mock-limit[15,15]	mock-used[]
+			// 											mock2-used[] (updated: + mock2-used)
+			//   |-- quota21							mock-used[]
+			//       |-- quota211   mock-limit[15,15]	mock-used[]
+			//   |-- quota12		mock-limit[15,15] 	mock-used[]  // move 12 to 2
+			// 						mock2-limit[10,10] 	mock2-used[]
+			//       |-- quota121						mock-used[]
+			// 											mock2-used[]
+			//       |-- quota122						mock-used[]
+			// 											mock2-used[]
+			name:      "move quota 12 to 2",
+			preHookFn: preHookFn2,
+			updateFn: func(gqm *GroupQuotaManager, quotas map[string]*v1alpha1.ElasticQuota) {
+				q12 := quotas["12"].DeepCopy()
+				q12.Labels[extension.LabelQuotaParent] = "2"
+				err = gqm.UpdateQuota(q12, false)
+				assert.NoError(t, err)
+			},
+			checkFn: func(quotaInfos map[string]*QuotaInfo) {
+				// for custom-key: mock
+				limitQuotaNames := []string{"12", "2", "211"}
+				enabledQuotaNames := []string{"12", "121", "122", "2", "21", "211"}
+				checkCustomState(t, testCustomKey1, quotaInfos, limitResList1,
+					limitQuotaNames, enabledQuotaNames)
+				AssertCustomUsedEqual(t, v1.ResourceList{}, testCustomKey1,
+					GetQuotaInfos(quotaInfos, enabledQuotaNames...)...)
+
+				// for custom-key: mock2
+				limitQuotaNames = []string{"111", "12"}
+				enabledQuotaNames = []string{"1", "11", "111", "12", "121", "122", "2"}
+				checkCustomState(t, testCustomKey2, quotaInfos, limitResList2,
+					limitQuotaNames, enabledQuotaNames)
+				AssertCustomUsedEqual(t, v1.ResourceList{}, testCustomKey2,
+					GetQuotaInfos(quotaInfos, enabledQuotaNames...)...)
+			},
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			gqm := NewGroupQuotaManagerForTest(WithCustomLimiter(map[string]CustomLimiter{
+				testCustomKey1: customLimiter,
+				testCustomKey2: customLimiter2,
+			}))
+			// create test quotas
+			testQuotas, testQuotaMap := GetTestQuotasForCustomLimiters()
+			err = UpdateQuotas(gqm, c.preHookFn, testQuotas...)
+			assert.NoError(t, err)
+			// update
+			if c.updateFn != nil {
+				c.updateFn(gqm, testQuotaMap)
+			}
+			// check
+			c.checkFn(gqm.quotaInfoMap)
+		})
+	}
+}
+
+func getOthers(allItems, excludeItems []string) (rst []string) {
+	excludeSet := set.New[string](excludeItems...)
+	for _, e := range allItems {
+		if excludeSet.Has(e) {
+			continue
+		}
+		rst = append(rst, e)
+	}
+	return
+}
+
+func checkCustomState(t *testing.T, customKey string, quotaInfos map[string]*QuotaInfo,
+	expectedLimitResList v1.ResourceList, limitQuotaNames, enabledQuotaNames []string) {
+	noLimitQuotaNames := getOthers(maps.Keys(quotaInfos), limitQuotaNames)
+	disabledQuotaNames := getOthers(maps.Keys(quotaInfos), enabledQuotaNames)
+
+	AssertCustomLimitEqual(t, expectedLimitResList, customKey,
+		GetQuotaInfos(quotaInfos, limitQuotaNames...)...)
+	AssertCustomLimitEqual(t, nil, customKey, GetQuotaInfos(quotaInfos, noLimitQuotaNames...)...)
+
+	AssertCustomLimiterState(t, customKey, true,
+		GetQuotaInfos(quotaInfos, enabledQuotaNames...)...)
+	AssertCustomLimiterState(t, customKey, false,
+		GetQuotaInfos(quotaInfos, disabledQuotaNames...)...)
+
+	AssertCustomUsedEqual(t, nil, customKey,
+		GetQuotaInfos(quotaInfos, disabledQuotaNames...)...)
 }
