@@ -210,18 +210,6 @@ func Test_New(t *testing.T) {
 	assert.Equal(t, Name, p.Name())
 }
 
-type fakeReservationCache struct {
-	rInfo *frameworkext.ReservationInfo
-}
-
-func (f *fakeReservationCache) DeleteReservation(r *schedulingv1alpha1.Reservation) *frameworkext.ReservationInfo {
-	return frameworkext.NewReservationInfo(r)
-}
-
-func (f *fakeReservationCache) GetReservationInfoByPod(pod *corev1.Pod, nodeName string) *frameworkext.ReservationInfo {
-	return f.rInfo
-}
-
 func Test_Plugin_PreFilterExtensions(t *testing.T) {
 	node := &corev1.Node{
 		ObjectMeta: metav1.ObjectMeta{
@@ -231,7 +219,7 @@ func Test_Plugin_PreFilterExtensions(t *testing.T) {
 	nodeInfo := framework.NewNodeInfo()
 	nodeInfo.SetNode(node)
 
-	reservation.SetReservationCache(&fakeReservationCache{})
+	reservation.SetReservationCache(&reservation.FakeReservationCache{})
 
 	suit := newPluginTestSuit(t, nil)
 	p, err := suit.proxyNew(getDefaultArgs(), suit.Framework)
@@ -353,8 +341,8 @@ func Test_Plugin_PreFilterExtensionsWithReservation(t *testing.T) {
 		},
 	}
 	assert.NoError(t, reservationutil.SetReservationAvailable(testReservation, node.Name))
-	reservationCache := &fakeReservationCache{
-		rInfo: frameworkext.NewReservationInfo(testReservation),
+	reservationCache := &reservation.FakeReservationCache{
+		RInfo: frameworkext.NewReservationInfo(testReservation),
 	}
 	reservation.SetReservationCache(reservationCache)
 
@@ -434,7 +422,7 @@ func Test_Plugin_PreFilterExtensionsWithReservation(t *testing.T) {
 		},
 	}
 	nd.updateCacheUsed(allocations, allocatedPod, true)
-	reservationCache.rInfo.AddAssignedPod(allocatedPod)
+	reservationCache.RInfo.AddAssignedPod(allocatedPod)
 
 	podInfo, _ := framework.NewPodInfo(allocatedPod)
 	status = pl.PreFilterExtensions().RemovePod(context.TODO(), cycleState, pod, podInfo, nodeInfo)

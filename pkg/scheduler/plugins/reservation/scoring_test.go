@@ -266,7 +266,7 @@ func TestScore(t *testing.T) {
 				nodeRState.nodeName = reservation.Status.NodeName
 				nodeRState.matchedOrIgnored = append(nodeRState.matchedOrIgnored, rInfo)
 				state.nodeReservationStates[reservation.Status.NodeName] = nodeRState
-				pl.reservationCache.updateReservation(reservation)
+				pl.reservationCache.UpdateReservation(reservation)
 			}
 			cycleState.Write(stateKey, state)
 
@@ -369,8 +369,8 @@ func TestScoreWithOrder(t *testing.T) {
 		var reservations []*schedulingv1alpha1.Reservation
 		for i := 0; i < 3; i++ {
 			reservation := reservationTemplateFn(i + 1)
-			pl.reservationCache.updateReservation(reservation)
-			rInfo := pl.reservationCache.getReservationInfoByUID(reservation.UID)
+			pl.reservationCache.UpdateReservation(reservation)
+			rInfo := pl.reservationCache.GetReservationInfoByUID(reservation.UID)
 			nodeRState := state.nodeReservationStates[reservation.Status.NodeName]
 			if nodeRState == nil {
 				nodeRState = &nodeReservationState{}
@@ -389,8 +389,8 @@ func TestScoreWithOrder(t *testing.T) {
 		reservationWithOrder.Labels = map[string]string{
 			apiext.LabelReservationOrder: "123456",
 		}
-		pl.reservationCache.updateReservation(reservationWithOrder)
-		rInfo := pl.reservationCache.getReservationInfoByUID(reservationWithOrder.UID)
+		pl.reservationCache.UpdateReservation(reservationWithOrder)
+		rInfo := pl.reservationCache.GetReservationInfoByUID(reservationWithOrder.UID)
 		nodeRState := state.nodeReservationStates[reservationWithOrder.Status.NodeName]
 		if nodeRState == nil {
 			nodeRState = &nodeReservationState{}
@@ -847,7 +847,7 @@ func TestPreScoreWithNominateReservation(t *testing.T) {
 				nodeRState.nodeName = reservation.Status.NodeName
 				nodeRState.matchedOrIgnored = append(nodeRState.matchedOrIgnored, rInfo)
 				state.nodeReservationStates[reservation.Status.NodeName] = nodeRState
-				pl.reservationCache.updateReservation(reservation)
+				pl.reservationCache.UpdateReservation(reservation)
 			}
 			cycleState.Write(stateKey, state)
 

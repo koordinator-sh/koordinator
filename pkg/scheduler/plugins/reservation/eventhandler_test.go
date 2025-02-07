@@ -104,10 +104,10 @@ func TestEventHandlerOnAdd(t *testing.T) {
 			eh := &reservationEventHandler{cache: cache}
 			eh.OnAdd(tt.reservation, true)
 			if tt.wantReservation == nil {
-				rInfo := cache.getReservationInfoByUID(tt.reservation.UID)
+				rInfo := cache.GetReservationInfoByUID(tt.reservation.UID)
 				assert.Nil(t, rInfo)
 			} else {
-				rInfo := cache.getReservationInfoByUID(tt.wantReservation.UID)
+				rInfo := cache.GetReservationInfoByUID(tt.wantReservation.UID)
 				assert.Equal(t, tt.wantReservation, rInfo.Reservation)
 			}
 		})
@@ -199,10 +199,10 @@ func TestEventHandlerUpdate(t *testing.T) {
 			eh := &reservationEventHandler{cache: cache, rrNominator: newNominator(nil, nil)}
 			eh.OnUpdate(tt.oldReservation, tt.newReservation)
 			if tt.wantReservation == nil {
-				rInfo := cache.getReservationInfoByUID(tt.newReservation.UID)
+				rInfo := cache.GetReservationInfoByUID(tt.newReservation.UID)
 				assert.Nil(t, rInfo)
 			} else {
-				rInfo := cache.getReservationInfoByUID(tt.wantReservation.UID)
+				rInfo := cache.GetReservationInfoByUID(tt.wantReservation.UID)
 				assert.Equal(t, tt.wantReservation, rInfo.Reservation)
 			}
 		})
@@ -243,14 +243,14 @@ func TestEventHandlerDelete(t *testing.T) {
 	cache := newReservationCache(nil)
 	eh := &reservationEventHandler{cache: cache, rrNominator: newNominator(nil, nil)}
 	eh.OnAdd(activeReservation, true)
-	rInfo := cache.getReservationInfoByUID(activeReservation.UID)
+	rInfo := cache.GetReservationInfoByUID(activeReservation.UID)
 	assert.NotNil(t, rInfo)
 	reservePodInfo, _ := framework.NewPodInfo(reservation.NewReservePod(activeReservation))
 	eh.rrNominator.AddNominatedReservePod(reservePodInfo, "test-node")
 	reservePodInfo, _ = framework.NewPodInfo(reservation.NewReservePod(activeReservation))
 	assert.Equal(t, []*framework.PodInfo{reservePodInfo}, eh.rrNominator.NominatedReservePodForNode("test-node"))
 	eh.OnDelete(activeReservation)
-	rInfo = cache.getReservationInfoByUID(activeReservation.UID)
+	rInfo = cache.GetReservationInfoByUID(activeReservation.UID)
 	assert.NotNil(t, rInfo)
 	assert.False(t, rInfo.IsAvailable())
 	assert.Equal(t, []*framework.PodInfo{}, eh.rrNominator.NominatedReservePodForNode("test-node"))

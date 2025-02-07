@@ -50,16 +50,6 @@ import (
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
 
-type fakeReservationCache struct{}
-
-func (f *fakeReservationCache) DeleteReservation(r *schedulingv1alpha1.Reservation) *frameworkext.ReservationInfo {
-	return frameworkext.NewReservationInfo(r)
-}
-
-func (f *fakeReservationCache) GetReservationInfoByPod(pod *corev1.Pod, nodeName string) *frameworkext.ReservationInfo {
-	return nil
-}
-
 func TestAddReservationErrorHandler(t *testing.T) {
 	testNodeName := "test-node-0"
 	testR := &schedulingv1alpha1.Reservation{
@@ -136,7 +126,6 @@ func TestAddReservationErrorHandler(t *testing.T) {
 			}
 		}
 		assert.Equal(t, expectedErr.Error(), message)
-
 	})
 }
 
@@ -546,7 +535,7 @@ func Test_updateReservationInCache(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			reservation.SetReservationCache(&fakeReservationCache{})
+			reservation.SetReservationCache(&reservation.FakeReservationCache{})
 			sched := frameworkext.NewFakeScheduler()
 			updateReservationInSchedulerCache(sched, tt.oldObj, tt.newObj)
 			pod, err := sched.GetPod(&corev1.Pod{
@@ -666,7 +655,7 @@ func Test_deleteReservationFromCache(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			reservation.SetReservationCache(&fakeReservationCache{})
+			reservation.SetReservationCache(&reservation.FakeReservationCache{})
 			sched := frameworkext.NewFakeScheduler()
 			if reservationutil.ValidateReservation(tt.obj) == nil {
 				sched.AddPod(klog.Background(), reservationutil.NewReservePod(tt.obj))

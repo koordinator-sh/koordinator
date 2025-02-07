@@ -41,7 +41,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
-var (
+const (
 	// AnnotationReservePod indicates whether the pod is a reserved pod.
 	AnnotationReservePod = extension.SchedulingDomainPrefix + "/reserve-pod"
 	// AnnotationReservationName indicates the name of the reservation.
@@ -50,6 +50,8 @@ var (
 	AnnotationReservationNode = extension.SchedulingDomainPrefix + "/reservation-node"
 	// AnnotationReservationResizeAllocatable indicates the desired allocatable are to be updated.
 	AnnotationReservationResizeAllocatable = extension.SchedulingDomainPrefix + "/reservation-resize-allocatable"
+	// AnnotationIsPreAllocation indicates whether the pod is a reserve pod and enables the pre-allocation.
+	AnnotationIsPreAllocation = extension.SchedulingDomainPrefix + "/is-pre-allocation"
 )
 
 // ErrReasonPrefix is the prefix of the reservation-level scheduling errors.
@@ -88,6 +90,11 @@ func NewReservePod(r *schedulingv1alpha1.Reservation) *corev1.Pod {
 	// annotate the reservePod
 	reservePod.Annotations[AnnotationReservePod] = "true"
 	reservePod.Annotations[AnnotationReservationName] = r.Name // for search inversely
+
+	// annotate the pre-allocation info
+	if r.Spec.PreAllocation {
+		reservePod.Annotations[AnnotationIsPreAllocation] = "true"
+	}
 
 	// annotate node name specified
 	if len(reservePod.Spec.NodeName) > 0 {
@@ -347,6 +354,10 @@ func SetReservationAvailable(r *schedulingv1alpha1.Reservation, nodeName string)
 		},
 	}
 	return nil
+}
+
+func IsReservePodPreAllocation(pod *corev1.Pod) bool {
+	return pod != nil && pod.Annotations != nil && pod.Annotations[AnnotationIsPreAllocation] == "true"
 }
 
 func ReservationRequests(r *schedulingv1alpha1.Reservation) corev1.ResourceList {

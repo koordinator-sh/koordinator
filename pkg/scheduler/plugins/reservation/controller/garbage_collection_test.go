@@ -102,7 +102,7 @@ func TestGC(t *testing.T) {
 	_, err := fakeClientSet.CoreV1().Nodes().Create(context.TODO(), node, metav1.CreateOptions{})
 	assert.NoError(t, err)
 
-	controller := New(sharedInformerFactory, koordSharedInformerFactory, fakeKoordClientSet, 0)
+	controller := New(sharedInformerFactory, koordSharedInformerFactory, fakeClientSet, fakeKoordClientSet, 0)
 
 	sharedInformerFactory.Start(nil)
 	koordSharedInformerFactory.Start(nil)

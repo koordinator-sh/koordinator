@@ -66,7 +66,7 @@ func (nm *FakeNominator) AddNominatedReservation(pod *corev1.Pod, nodeName strin
 	nm.reservations[rInfo.UID()] = rInfo
 }
 
-func (nm *FakeNominator) RemoveNominatedReservations(pod *corev1.Pod) {
+func (nm *FakeNominator) RemoveNominatedReservationsAndReservePod(pod *corev1.Pod) {
 	nm.lock.Lock()
 	defer nm.lock.Unlock()
 
@@ -75,6 +75,8 @@ func (nm *FakeNominator) RemoveNominatedReservations(pod *corev1.Pod) {
 	for _, reservationUID := range nodeToReservation {
 		delete(nm.reservations, reservationUID)
 	}
+
+	nm.deleteReservePod(pod)
 }
 
 func (nm *FakeNominator) GetNominatedReservation(pod *corev1.Pod, nodeName string) *frameworkext.ReservationInfo {
@@ -111,20 +113,20 @@ func (nm *FakeNominator) AddNominatedReservePod(rInfo *corev1.Pod, nodeName stri
 	nm.nominatedReservePod[nodeName] = append(nm.nominatedReservePod[nodeName], podInfo)
 }
 
-func (nm *FakeNominator) DeleteNominatedReservePod(rInfo *corev1.Pod) {
+func (nm *FakeNominator) DeleteNominatedReservePod(pod *corev1.Pod) {
 	nm.lock.Lock()
 	defer nm.lock.Unlock()
 
-	nm.deleteReservePod(rInfo)
+	nm.deleteReservePod(pod)
 }
 
-func (nm *FakeNominator) deleteReservePod(rInfo *corev1.Pod) {
-	nnn, ok := nm.nominatedReservePodToNode[rInfo.UID]
+func (nm *FakeNominator) deleteReservePod(pod *corev1.Pod) {
+	nnn, ok := nm.nominatedReservePodToNode[pod.UID]
 	if !ok {
 		return
 	}
 	for i, np := range nm.nominatedReservePod[nnn] {
-		if np.Pod.UID == rInfo.UID {
+		if np.Pod.UID == pod.UID {
 			nm.nominatedReservePod[nnn] = append(nm.nominatedReservePod[nnn][:i], nm.nominatedReservePod[nnn][i+1:]...)
 			if len(nm.nominatedReservePod[nnn]) == 0 {
 				delete(nm.nominatedReservePod, nnn)
@@ -132,5 +134,5 @@ func (nm *FakeNominator) deleteReservePod(rInfo *corev1.Pod) {
 			break
 		}
 	}
-	delete(nm.nominatedReservePodToNode, rInfo.UID)
+	delete(nm.nominatedReservePodToNode, pod.UID)
 }

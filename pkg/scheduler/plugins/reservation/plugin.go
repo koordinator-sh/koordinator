@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-	"sync"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -32,6 +31,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	k8sfeature "k8s.io/apiserver/pkg/util/feature"
+	corelister "k8s.io/client-go/listers/core/v1"
 	"k8s.io/klog/v2"
 	resourceapi "k8s.io/kubernetes/pkg/api/v1/resource"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
@@ -88,6 +88,7 @@ type Plugin struct {
 	handle                       frameworkext.ExtendedHandle
 	args                         *config.ReservationArgs
 	rLister                      listerschedulingv1alpha1.ReservationLister
+	podLister                    corelister.PodLister
 	client                       clientschedulingv1alpha1.SchedulingV1alpha1Interface
 	reservationCache             *reservationCache
 	nominator                    *nominator
@@ -123,6 +124,7 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 		handle:                       extendedHandle,
 		args:                         pluginArgs,
 		rLister:                      reservationLister,
+		podLister:                    podLister,
 		client:                       extendedHandle.KoordinatorClientSet().SchedulingV1alpha1(),
 		reservationCache:             cache,
 		nominator:                    nm,
@@ -146,6 +148,7 @@ func (pl *Plugin) NewControllers() ([]frameworkext.Controller, error) {
 	reservationController := controller.New(
 		pl.handle.SharedInformerFactory(),
 		pl.handle.KoordinatorSharedInformerFactory(),
+		pl.handle.ClientSet(),
 		pl.handle.KoordinatorClientSet(),
 		1)
 	return []frameworkext.Controller{reservationController}, nil
@@ -161,126 +164,12 @@ func (pl *Plugin) EventsToRegister() []framework.ClusterEventWithHint {
 	}
 }
 
-var _ framework.StateData = &stateData{}
-
-type stateData struct {
-	// scheduling cycle data
-	schedulingStateData
-
-	// all cycle data
-	// NOTE: The part of data is kept during both the scheduling cycle and the binding cycle. In case too many
-	// binding goroutines reference the data causing OOM issues, the memory overhead of this part should be
-	// small and its space complexity should be no more than O(1) for pods, reservations and nodes.
-	assumed *frameworkext.ReservationInfo
-}
-
-// schedulingStateData is the data only kept in the scheduling cycle. It could be cleaned up
-// before entering the binding cycle to reduce memory cost.
-type schedulingStateData struct {
-	preemptLock          sync.RWMutex
-	hasAffinity          bool
-	reservationName      string
-	podRequests          corev1.ResourceList
-	podRequestsResources *framework.Resource
-	preemptible          map[string]corev1.ResourceList
-	preemptibleInRRs     map[string]map[types.UID]corev1.ResourceList
-
-	nodeReservationStates    map[string]*nodeReservationState
-	nodeReservationDiagnosis map[string]*nodeDiagnosisState
-	preferredNode            string
-}
-
-type nodeReservationState struct {
-	nodeName string
-	// matchedOrIgnored represents all matched or ignored reservations for the scheduling pod.
-	matchedOrIgnored []*frameworkext.ReservationInfo
-
-	// podRequested represents all Pods(including matched reservation) requested resources
-	// but excluding the already allocated from unmatched reservations
-	podRequested *framework.Resource
-	// rAllocated represents the allocated resources of matched reservations
-	rAllocated *framework.Resource
-
-	unmatched     []*frameworkext.ReservationInfo
-	preRestored   bool // restore in PreFilter or Filter
-	finalRestored bool // restore in Filter
-}
-
-type nodeDiagnosisState struct {
-	nodeName string
-
-	ignored int // resource reservations are ignored due to the pod label
-
-	ownerMatched             int // owner matched
-	nameMatched              int // owner matched and reservation name matched
-	nameUnmatched            int // owner matched but BeforePreFilter unmatched due to reservation name
-	isUnschedulableUnmatched int // owner matched but BeforePreFilter unmatched due to unschedulable
-	affinityUnmatched        int // owner matched but BeforePreFilter unmatched due to affinity
-	notExactMatched          int // owner matched but BeforePreFilter unmatched due to not exact match
-	taintsUnmatched          int // owner matched but BeforePreFilter unmatched due to reservation taints
-	taintsUnmatchedReasons   map[string]int
-}
-
-func (s *stateData) Clone() framework.StateData {
-	ns := &stateData{
-		schedulingStateData: schedulingStateData{
-			hasAffinity:              s.hasAffinity,
-			reservationName:          s.reservationName,
-			podRequests:              s.podRequests,
-			podRequestsResources:     s.podRequestsResources,
-			nodeReservationStates:    s.nodeReservationStates,
-			nodeReservationDiagnosis: s.nodeReservationDiagnosis,
-			preferredNode:            s.preferredNode,
-		},
-		assumed: s.assumed,
-	}
-
-	s.preemptLock.RLock()
-	defer s.preemptLock.RUnlock()
-
-	preemptible := map[string]corev1.ResourceList{}
-	for nodeName, returned := range s.preemptible {
-		preemptible[nodeName] = returned.DeepCopy()
-	}
-	ns.preemptible = preemptible
-
-	preemptibleInRRs := map[string]map[types.UID]corev1.ResourceList{}
-	for nodeName, rrs := range s.preemptibleInRRs {
-		rrInNode := preemptibleInRRs[nodeName]
-		if rrInNode == nil {
-			rrInNode = map[types.UID]corev1.ResourceList{}
-			preemptibleInRRs[nodeName] = rrInNode
-		}
-		for reservationUID, returned := range rrs {
-			rrInNode[reservationUID] = returned.DeepCopy()
-		}
-	}
-	ns.preemptibleInRRs = preemptibleInRRs
-
-	return ns
-}
-
-// CleanSchedulingData clears the scheduling cycle data in the stateData to reduce memory cost before entering
-// the binding cycle.
-func (s *stateData) CleanSchedulingData() {
-	s.schedulingStateData = schedulingStateData{}
-}
-
-func getStateData(cycleState *framework.CycleState) *stateData {
-	v, err := cycleState.Read(stateKey)
-	if err != nil {
-		return &stateData{}
-	}
-	s, ok := v.(*stateData)
-	if !ok || s == nil {
-		return &stateData{}
-	}
-	return s
-}
-
 // PreFilter checks if the pod is a reserve pod. If it is, update cycle state to annotate reservation scheduling.
 // Also do validations in this phase.
 func (pl *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod) (*framework.PreFilterResult, *framework.Status) {
+	var preResult *framework.PreFilterResult
+	state := getStateData(cycleState)
+
 	if reservationutil.IsReservePod(pod) {
 		// validate reserve pod and reservation
 		klog.V(4).InfoS("Attempting to pre-filter reserve pod", "pod", klog.KObj(pod))
@@ -296,12 +185,10 @@ func (pl *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleStat
 		if err != nil {
 			return nil, framework.NewStatus(framework.Error, err.Error())
 		}
+		// TODO: handle pre-allocation cases
 		return nil, nil
 	}
 
-	var preResult *framework.PreFilterResult
-
-	state := getStateData(cycleState)
 	if state.hasAffinity {
 		if len(state.nodeReservationStates) == 0 {
 			return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrReasonReservationAffinity)
@@ -407,7 +294,7 @@ func (pl *Plugin) Filter(ctx context.Context, cycleState *framework.CycleState, 
 			allocatePolicy = schedulingv1alpha1.ReservationAllocatePolicyAligned
 		}
 
-		status := pl.reservationCache.forEachAvailableReservationOnNode(node.Name, func(rInfo *frameworkext.ReservationInfo) (bool, *framework.Status) {
+		status := pl.reservationCache.ForEachAvailableReservationOnNode(node.Name, func(rInfo *frameworkext.ReservationInfo) (bool, *framework.Status) {
 			// ReservationAllocatePolicyDefault cannot coexist with other allocate policies
 			if (allocatePolicy == schedulingv1alpha1.ReservationAllocatePolicyDefault ||
 				rInfo.GetAllocatePolicy() == schedulingv1alpha1.ReservationAllocatePolicyDefault) &&
@@ -850,7 +737,7 @@ func (pl *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState,
 		}
 		assumedReservation = assumedReservation.DeepCopy()
 		assumedReservation.Status.NodeName = nodeName
-		pl.reservationCache.assumeReservation(assumedReservation)
+		pl.reservationCache.AssumeReservation(assumedReservation)
 		return nil
 	}
 
@@ -884,7 +771,7 @@ func (pl *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState,
 		pl.handle.GetReservationNominator().AddNominatedReservation(pod, nodeName, nominatedReservation)
 	}
 
-	err := pl.reservationCache.assumePod(nominatedReservation.UID(), pod)
+	err := pl.reservationCache.AssumePod(nominatedReservation.UID(), pod)
 	if err != nil {
 		klog.ErrorS(err, "Failed to assume pod in reservationCache", "pod", klog.KObj(pod), "reservation", klog.KObj(nominatedReservation))
 		return framework.AsStatus(err)
@@ -906,7 +793,7 @@ func (pl *Plugin) Unreserve(ctx context.Context, cycleState *framework.CycleStat
 		}
 		assumedReservation = assumedReservation.DeepCopy()
 		assumedReservation.Status.NodeName = nodeName
-		pl.reservationCache.forgetReservation(assumedReservation)
+		pl.reservationCache.ForgetReservation(assumedReservation)
 		return
 	}
 
@@ -919,7 +806,7 @@ func (pl *Plugin) Unreserve(ctx context.Context, cycleState *framework.CycleStat
 	state := getStateData(cycleState)
 	if state.assumed != nil {
 		klog.V(4).InfoS("Attempting to unreserve pod to node with reservations", "pod", klog.KObj(pod), "node", nodeName, "assumed", klog.KObj(state.assumed))
-		pl.reservationCache.forgetPod(state.assumed.UID(), pod)
+		pl.reservationCache.ForgetPod(state.assumed.UID(), pod)
 	} else {
 		klog.V(5).InfoS("Skip the Reservation Unreserve, no assumed reservation", "pod", klog.KObj(pod), "node", nodeName)
 	}

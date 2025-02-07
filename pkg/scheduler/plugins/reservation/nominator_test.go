@@ -307,7 +307,7 @@ func TestNominateReservation(t *testing.T) {
 				nodeRState.nodeName = reservation.Status.NodeName
 				nodeRState.matchedOrIgnored = append(nodeRState.matchedOrIgnored, rInfo)
 				state.nodeReservationStates[reservation.Status.NodeName] = nodeRState
-				pl.reservationCache.updateReservation(reservation)
+				pl.reservationCache.UpdateReservation(reservation)
 			}
 			cycleState.Write(stateKey, state)
 			nominateRInfo, status := pl.NominateReservation(context.TODO(), cycleState, tt.pod, node.Name)
@@ -434,7 +434,7 @@ func TestMultiReservationsOnSameNode(t *testing.T) {
 		assert.NotNil(t, rInfo, rInfo)
 		pl.Reserve(context.TODO(), cycleState, pod, node.Name)
 		nominatedReservationCount[rInfo.UID()]++
-		nm.RemoveNominatedReservations(pod)
+		nm.RemoveNominatedReservationsAndReservePod(pod)
 	}
 
 	assert.Len(t, nominatedReservationCount, len(reservations))

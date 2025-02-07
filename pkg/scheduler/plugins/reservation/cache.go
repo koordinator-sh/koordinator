@@ -34,11 +34,13 @@ import (
 // TODO(joseph): Considering the amount of changed code,
 // temporarily use global variable to store ReservationCache instance,
 // and then refactor to separate ReservationCache later.
+// TODO: move to the frameworkext
 var theReservationCache atomic.Value
 
 type ReservationCache interface {
 	DeleteReservation(r *schedulingv1alpha1.Reservation) *frameworkext.ReservationInfo
 	GetReservationInfoByPod(pod *corev1.Pod, nodeName string) *frameworkext.ReservationInfo
+	GetReservationInfo(uid types.UID) *frameworkext.ReservationInfo
 }
 
 func GetReservationCache() ReservationCache {
@@ -53,11 +55,31 @@ func SetReservationCache(cache ReservationCache) {
 	theReservationCache.Store(cache)
 }
 
+type FakeReservationCache struct {
+	RInfo *frameworkext.ReservationInfo
+}
+
+func (f *FakeReservationCache) DeleteReservation(r *schedulingv1alpha1.Reservation) *frameworkext.ReservationInfo {
+	if f.RInfo != nil {
+		return f.RInfo
+	}
+	return frameworkext.NewReservationInfo(r)
+}
+
+func (f *FakeReservationCache) GetReservationInfoByPod(pod *corev1.Pod, nodeName string) *frameworkext.ReservationInfo {
+	return f.RInfo
+}
+
+func (f *FakeReservationCache) GetReservationInfo(uid types.UID) *frameworkext.ReservationInfo {
+	return f.RInfo
+}
+
 type reservationCache struct {
 	reservationLister  schedulinglister.ReservationLister
 	lock               sync.RWMutex
 	reservationInfos   map[types.UID]*frameworkext.ReservationInfo
 	reservationsOnNode map[string]map[types.UID]struct{}
+	podsToR            map[types.UID]types.UID
 }
 
 func newReservationCache(reservationLister schedulinglister.ReservationLister) *reservationCache {
@@ -65,8 +87,243 @@ func newReservationCache(reservationLister schedulinglister.ReservationLister) *
 		reservationLister:  reservationLister,
 		reservationInfos:   map[types.UID]*frameworkext.ReservationInfo{},
 		reservationsOnNode: map[string]map[types.UID]struct{}{},
+		podsToR:            map[types.UID]types.UID{},
 	}
 	return cache
+}
+
+func (cache *reservationCache) AssumeReservation(r *schedulingv1alpha1.Reservation) {
+	cache.UpdateReservation(r)
+}
+
+func (cache *reservationCache) ForgetReservation(r *schedulingv1alpha1.Reservation) {
+	cache.DeleteReservation(r)
+}
+
+func (cache *reservationCache) UpdateReservation(newR *schedulingv1alpha1.Reservation) {
+	cache.lock.Lock()
+	defer cache.lock.Unlock()
+	rInfo := cache.reservationInfos[newR.UID]
+	if rInfo == nil {
+		rInfo = frameworkext.NewReservationInfo(newR)
+		cache.reservationInfos[newR.UID] = rInfo
+	} else {
+		rInfo.UpdateReservation(newR)
+	}
+	if newR.Status.NodeName != "" {
+		cache.updateReservationsOnNode(newR.Status.NodeName, newR.UID)
+	}
+}
+
+func (cache *reservationCache) UpdateReservationIfExists(newR *schedulingv1alpha1.Reservation) {
+	cache.lock.Lock()
+	defer cache.lock.Unlock()
+	rInfo := cache.reservationInfos[newR.UID]
+	if rInfo != nil {
+		rInfo.UpdateReservation(newR)
+		if newR.Status.NodeName != "" {
+			cache.updateReservationsOnNode(newR.Status.NodeName, newR.UID)
+		}
+	}
+}
+
+func (cache *reservationCache) DeleteReservation(r *schedulingv1alpha1.Reservation) *frameworkext.ReservationInfo {
+	cache.lock.Lock()
+	defer cache.lock.Unlock()
+	rInfo := cache.reservationInfos[r.UID]
+	delete(cache.reservationInfos, r.UID)
+	cache.deleteReservationOnNode(r.Status.NodeName, r.UID)
+	for podUID := range rInfo.AssignedPods {
+		delete(cache.podsToR, podUID)
+	}
+	return rInfo
+}
+
+func (cache *reservationCache) UpdateReservationOperatingPod(newPod *corev1.Pod, currentOwner *corev1.ObjectReference) {
+	cache.lock.Lock()
+	defer cache.lock.Unlock()
+	rInfo := cache.reservationInfos[newPod.UID]
+	if rInfo == nil {
+		rInfo = frameworkext.NewReservationInfoFromPod(newPod)
+		cache.reservationInfos[newPod.UID] = rInfo
+	} else {
+		rInfo.UpdatePod(newPod)
+	}
+	if newPod.Spec.NodeName != "" {
+		cache.updateReservationsOnNode(newPod.Spec.NodeName, newPod.UID)
+	}
+	if currentOwner != nil {
+		rInfo.AddAssignedPod(&corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      currentOwner.Name,
+				Namespace: currentOwner.Namespace,
+				UID:       currentOwner.UID,
+			},
+		})
+		cache.podsToR[currentOwner.UID] = newPod.UID
+	}
+}
+
+func (cache *reservationCache) DeleteReservationOperatingPod(pod *corev1.Pod) {
+	cache.lock.Lock()
+	defer cache.lock.Unlock()
+	rInfo := cache.reservationInfos[pod.UID]
+	delete(cache.reservationInfos, pod.UID)
+	cache.deleteReservationOnNode(pod.Spec.NodeName, pod.UID)
+	if rInfo != nil {
+		for podUID := range rInfo.AssignedPods {
+			delete(cache.podsToR, podUID)
+		}
+	}
+}
+
+func (cache *reservationCache) SetReservationInfo(rInfo *frameworkext.ReservationInfo) {
+	cache.lock.Lock()
+	defer cache.lock.Unlock()
+	cache.reservationInfos[rInfo.UID()] = rInfo
+	if rInfo.GetNodeName() != "" {
+		cache.updateReservationsOnNode(rInfo.GetNodeName(), rInfo.UID())
+	}
+}
+
+func (cache *reservationCache) AssumePod(reservationUID types.UID, pod *corev1.Pod) error {
+	return cache.AddPod(reservationUID, pod)
+}
+
+func (cache *reservationCache) ForgetPod(reservationUID types.UID, pod *corev1.Pod) {
+	cache.DeletePod(reservationUID, pod)
+}
+
+func (cache *reservationCache) AddPod(reservationUID types.UID, pod *corev1.Pod) error {
+	cache.lock.Lock()
+	defer cache.lock.Unlock()
+
+	rInfo := cache.reservationInfos[reservationUID]
+	if rInfo == nil {
+		return fmt.Errorf("cannot find target reservation")
+	}
+	if rInfo.IsTerminating() {
+		return fmt.Errorf("target reservation is terminating")
+	}
+	rInfo.AddAssignedPod(pod)
+	cache.podsToR[pod.UID] = reservationUID
+	return nil
+}
+
+func (cache *reservationCache) UpdatePod(reservationUID types.UID, oldPod, newPod *corev1.Pod) {
+	cache.lock.Lock()
+	defer cache.lock.Unlock()
+
+	rInfo := cache.reservationInfos[reservationUID]
+	if rInfo != nil {
+		if oldPod != nil {
+			rInfo.RemoveAssignedPod(oldPod)
+			delete(cache.podsToR, oldPod.UID)
+		}
+		if newPod != nil {
+			rInfo.AddAssignedPod(newPod)
+			cache.podsToR[newPod.UID] = reservationUID
+		}
+	}
+}
+
+func (cache *reservationCache) DeletePod(reservationUID types.UID, pod *corev1.Pod) {
+	cache.lock.Lock()
+	defer cache.lock.Unlock()
+
+	rInfo := cache.reservationInfos[reservationUID]
+	if rInfo != nil {
+		rInfo.RemoveAssignedPod(pod)
+		delete(cache.podsToR, pod.UID)
+	}
+}
+
+func (cache *reservationCache) GetReservationInfoByUID(uid types.UID) *frameworkext.ReservationInfo {
+	cache.lock.RLock()
+	defer cache.lock.RUnlock()
+	rInfo := cache.reservationInfos[uid]
+	if rInfo != nil {
+		return rInfo.Clone()
+	}
+	return nil
+}
+
+func (cache *reservationCache) GetReservationInfoByPod(pod *corev1.Pod, nodeName string) *frameworkext.ReservationInfo {
+	target := cache.GetReservationInfoByPodUID(pod.UID)
+	if target != nil {
+		return target
+	}
+
+	cache.ForEachAvailableReservationOnNode(nodeName, func(rInfo *frameworkext.ReservationInfo) (bool, *framework.Status) {
+		if _, ok := rInfo.AssignedPods[pod.UID]; ok {
+			target = rInfo
+			return false, nil
+		}
+		return true, nil
+	})
+	return target
+}
+
+func (cache *reservationCache) GetReservationInfo(uid types.UID) *frameworkext.ReservationInfo {
+	return cache.GetReservationInfoByUID(uid)
+}
+
+func (cache *reservationCache) GetReservationInfoByPodUID(podUID types.UID) *frameworkext.ReservationInfo {
+	cache.lock.RLock()
+	defer cache.lock.RUnlock()
+	reservationUID, ok := cache.podsToR[podUID]
+	if !ok {
+		return nil
+	}
+	rInfo := cache.reservationInfos[reservationUID]
+	if rInfo != nil {
+		return rInfo.Clone()
+	}
+	return nil
+}
+
+func (cache *reservationCache) ForEachAvailableReservationOnNode(nodeName string, fn func(rInfo *frameworkext.ReservationInfo) (bool, *framework.Status)) *framework.Status {
+	cache.lock.RLock()
+	defer cache.lock.RUnlock()
+	rOnNode := cache.reservationsOnNode[nodeName]
+	if len(rOnNode) == 0 {
+		return nil
+	}
+	for uid := range rOnNode {
+		rInfo := cache.reservationInfos[uid]
+		if rInfo != nil && rInfo.IsAvailable() {
+			beContinue, status := fn(rInfo)
+			if !status.IsSuccess() {
+				return status
+			}
+			if !beContinue {
+				return nil
+			}
+		}
+	}
+	return nil
+}
+
+func (cache *reservationCache) ListAvailableReservationInfosOnNode(nodeName string) []*frameworkext.ReservationInfo {
+	var result []*frameworkext.ReservationInfo
+	cache.ForEachAvailableReservationOnNode(nodeName, func(rInfo *frameworkext.ReservationInfo) (bool, *framework.Status) {
+		result = append(result, rInfo.Clone())
+		return true, nil
+	})
+	return result
+}
+
+func (cache *reservationCache) ListAllNodes() []string {
+	cache.lock.RLock()
+	defer cache.lock.RUnlock()
+	if len(cache.reservationsOnNode) == 0 {
+		return nil
+	}
+	nodes := make([]string, 0, len(cache.reservationsOnNode))
+	for k := range cache.reservationsOnNode {
+		nodes = append(nodes, k)
+	}
+	return nodes
 }
 
 func (cache *reservationCache) updateReservationsOnNode(nodeName string, uid types.UID) {
@@ -91,201 +348,4 @@ func (cache *reservationCache) deleteReservationOnNode(nodeName string, uid type
 	if len(reservations) == 0 {
 		delete(cache.reservationsOnNode, nodeName)
 	}
-}
-
-func (cache *reservationCache) assumeReservation(r *schedulingv1alpha1.Reservation) {
-	cache.updateReservation(r)
-}
-
-func (cache *reservationCache) forgetReservation(r *schedulingv1alpha1.Reservation) {
-	cache.DeleteReservation(r)
-}
-
-func (cache *reservationCache) updateReservation(newR *schedulingv1alpha1.Reservation) {
-	cache.lock.Lock()
-	defer cache.lock.Unlock()
-	rInfo := cache.reservationInfos[newR.UID]
-	if rInfo == nil {
-		rInfo = frameworkext.NewReservationInfo(newR)
-		cache.reservationInfos[newR.UID] = rInfo
-	} else {
-		rInfo.UpdateReservation(newR)
-	}
-	if newR.Status.NodeName != "" {
-		cache.updateReservationsOnNode(newR.Status.NodeName, newR.UID)
-	}
-}
-
-func (cache *reservationCache) updateReservationIfExists(newR *schedulingv1alpha1.Reservation) {
-	cache.lock.Lock()
-	defer cache.lock.Unlock()
-	rInfo := cache.reservationInfos[newR.UID]
-	if rInfo != nil {
-		rInfo.UpdateReservation(newR)
-		if newR.Status.NodeName != "" {
-			cache.updateReservationsOnNode(newR.Status.NodeName, newR.UID)
-		}
-	}
-}
-
-func (cache *reservationCache) DeleteReservation(r *schedulingv1alpha1.Reservation) *frameworkext.ReservationInfo {
-	cache.lock.Lock()
-	defer cache.lock.Unlock()
-	rInfo := cache.reservationInfos[r.UID]
-	delete(cache.reservationInfos, r.UID)
-	cache.deleteReservationOnNode(r.Status.NodeName, r.UID)
-	return rInfo
-}
-
-func (cache *reservationCache) updateReservationOperatingPod(newPod *corev1.Pod, currentOwner *corev1.ObjectReference) {
-	cache.lock.Lock()
-	defer cache.lock.Unlock()
-	rInfo := cache.reservationInfos[newPod.UID]
-	if rInfo == nil {
-		rInfo = frameworkext.NewReservationInfoFromPod(newPod)
-		cache.reservationInfos[newPod.UID] = rInfo
-	} else {
-		rInfo.UpdatePod(newPod)
-	}
-	if newPod.Spec.NodeName != "" {
-		cache.updateReservationsOnNode(newPod.Spec.NodeName, newPod.UID)
-	}
-	if currentOwner != nil {
-		rInfo.AddAssignedPod(&corev1.Pod{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      currentOwner.Name,
-				Namespace: currentOwner.Namespace,
-				UID:       currentOwner.UID,
-			},
-		})
-	}
-}
-
-func (cache *reservationCache) deleteReservationOperatingPod(pod *corev1.Pod) {
-	cache.lock.Lock()
-	defer cache.lock.Unlock()
-	delete(cache.reservationInfos, pod.UID)
-	cache.deleteReservationOnNode(pod.Spec.NodeName, pod.UID)
-}
-
-func (cache *reservationCache) assumePod(reservationUID types.UID, pod *corev1.Pod) error {
-	return cache.addPod(reservationUID, pod)
-}
-
-func (cache *reservationCache) forgetPod(reservationUID types.UID, pod *corev1.Pod) {
-	cache.deletePod(reservationUID, pod)
-}
-
-func (cache *reservationCache) addPod(reservationUID types.UID, pod *corev1.Pod) error {
-	cache.lock.Lock()
-	defer cache.lock.Unlock()
-
-	rInfo := cache.reservationInfos[reservationUID]
-	if rInfo == nil {
-		return fmt.Errorf("cannot find target reservation")
-	}
-	if rInfo.IsTerminating() {
-		return fmt.Errorf("target reservation is terminating")
-	}
-	rInfo.AddAssignedPod(pod)
-	return nil
-}
-
-func (cache *reservationCache) updatePod(reservationUID types.UID, oldPod, newPod *corev1.Pod) {
-	cache.lock.Lock()
-	defer cache.lock.Unlock()
-
-	rInfo := cache.reservationInfos[reservationUID]
-	if rInfo != nil {
-		if oldPod != nil {
-			rInfo.RemoveAssignedPod(oldPod)
-		}
-		if newPod != nil {
-			rInfo.AddAssignedPod(newPod)
-		}
-	}
-}
-
-func (cache *reservationCache) deletePod(reservationUID types.UID, pod *corev1.Pod) {
-	cache.lock.Lock()
-	defer cache.lock.Unlock()
-
-	rInfo := cache.reservationInfos[reservationUID]
-	if rInfo != nil {
-		rInfo.RemoveAssignedPod(pod)
-	}
-}
-
-func (cache *reservationCache) getReservationInfo(name string) *frameworkext.ReservationInfo {
-	reservation, err := cache.reservationLister.Get(name)
-	if err != nil {
-		return nil
-	}
-	return cache.getReservationInfoByUID(reservation.UID)
-}
-
-func (cache *reservationCache) getReservationInfoByUID(uid types.UID) *frameworkext.ReservationInfo {
-	cache.lock.RLock()
-	defer cache.lock.RUnlock()
-	rInfo := cache.reservationInfos[uid]
-	if rInfo != nil {
-		return rInfo.Clone()
-	}
-	return nil
-}
-
-func (cache *reservationCache) GetReservationInfoByPod(pod *corev1.Pod, nodeName string) *frameworkext.ReservationInfo {
-	var target *frameworkext.ReservationInfo
-	cache.forEachAvailableReservationOnNode(nodeName, func(rInfo *frameworkext.ReservationInfo) (bool, *framework.Status) {
-		if _, ok := rInfo.AssignedPods[pod.UID]; ok {
-			target = rInfo
-			return false, nil
-		}
-		return true, nil
-	})
-	return target
-}
-
-func (cache *reservationCache) forEachAvailableReservationOnNode(nodeName string, fn func(rInfo *frameworkext.ReservationInfo) (bool, *framework.Status)) *framework.Status {
-	cache.lock.RLock()
-	defer cache.lock.RUnlock()
-	rOnNode := cache.reservationsOnNode[nodeName]
-	if len(rOnNode) == 0 {
-		return nil
-	}
-	for uid := range rOnNode {
-		rInfo := cache.reservationInfos[uid]
-		if rInfo != nil && rInfo.IsAvailable() {
-			beContinue, status := fn(rInfo)
-			if !status.IsSuccess() {
-				return status
-			}
-			if !beContinue {
-				return nil
-			}
-		}
-	}
-	return nil
-}
-
-func (cache *reservationCache) listAvailableReservationInfosOnNode(nodeName string) []*frameworkext.ReservationInfo {
-	var result []*frameworkext.ReservationInfo
-	cache.forEachAvailableReservationOnNode(nodeName, func(rInfo *frameworkext.ReservationInfo) (bool, *framework.Status) {
-		result = append(result, rInfo.Clone())
-		return true, nil
-	})
-	return result
-}
-
-func (cache *reservationCache) listAllNodes() []string {
-	cache.lock.RLock()
-	defer cache.lock.RUnlock()
-	if len(cache.reservationsOnNode) == 0 {
-		return nil
-	}
-	nodes := make([]string, 0, len(cache.reservationsOnNode))
-	for k := range cache.reservationsOnNode {
-		nodes = append(nodes, k)
-	}
-	return nodes
 }

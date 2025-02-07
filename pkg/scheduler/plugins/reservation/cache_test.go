@@ -69,8 +69,8 @@ func TestCacheUpdateReservation(t *testing.T) {
 			},
 		},
 	}
-	cache.updateReservation(reservation)
-	reservationInfos := cache.listAvailableReservationInfosOnNode(reservation.Status.NodeName)
+	cache.UpdateReservation(reservation)
+	reservationInfos := cache.ListAvailableReservationInfosOnNode(reservation.Status.NodeName)
 	assert.Len(t, reservationInfos, 1)
 	rInfo := reservationInfos[0]
 	expectReservationInfo := &frameworkext.ReservationInfo{
@@ -92,8 +92,8 @@ func TestCacheUpdateReservation(t *testing.T) {
 	})
 	assert.Equal(t, expectReservationInfo, rInfo)
 
-	cache.updateReservation(reservation)
-	reservationInfos = cache.listAvailableReservationInfosOnNode(reservation.Status.NodeName)
+	cache.UpdateReservation(reservation)
+	reservationInfos = cache.ListAvailableReservationInfosOnNode(reservation.Status.NodeName)
 	assert.Len(t, reservationInfos, 1)
 	rInfo = reservationInfos[0]
 	sort.Slice(rInfo.ResourceNames, func(i, j int) bool {
@@ -137,9 +137,9 @@ func TestCacheDeleteReservation(t *testing.T) {
 			},
 		},
 	}
-	cache.updateReservation(reservation)
+	cache.UpdateReservation(reservation)
 
-	rInfo := cache.getReservationInfoByUID(reservation.UID)
+	rInfo := cache.GetReservationInfoByUID(reservation.UID)
 	assert.NotNil(t, rInfo)
 
 	expectReservationInfo := &frameworkext.ReservationInfo{
@@ -162,7 +162,7 @@ func TestCacheDeleteReservation(t *testing.T) {
 	assert.Equal(t, expectReservationInfo, rInfo)
 
 	cache.DeleteReservation(reservation)
-	rInfo = cache.getReservationInfoByUID(reservation.UID)
+	rInfo = cache.GetReservationInfoByUID(reservation.UID)
 	assert.Nil(t, rInfo)
 }
 
@@ -201,9 +201,9 @@ func TestCacheAddOrUpdateOrDeletePod(t *testing.T) {
 			},
 		},
 	}
-	cache.updateReservation(reservation)
+	cache.UpdateReservation(reservation)
 
-	rInfo := cache.getReservationInfoByUID(reservation.UID)
+	rInfo := cache.GetReservationInfoByUID(reservation.UID)
 	assert.NotNil(t, rInfo)
 
 	pod := &corev1.Pod{
@@ -226,9 +226,10 @@ func TestCacheAddOrUpdateOrDeletePod(t *testing.T) {
 		},
 	}
 
-	cache.addPod(reservation.UID, pod)
+	err := cache.AddPod(reservation.UID, pod)
+	assert.NoError(t, err)
 
-	rInfo = cache.getReservationInfoByUID(reservation.UID)
+	rInfo = cache.GetReservationInfoByUID(reservation.UID)
 	sort.Slice(rInfo.ResourceNames, func(i, j int) bool {
 		return rInfo.ResourceNames[i] < rInfo.ResourceNames[j]
 	})
@@ -261,8 +262,8 @@ func TestCacheAddOrUpdateOrDeletePod(t *testing.T) {
 	}
 	assert.Equal(t, expectReservationInfo, rInfo)
 
-	cache.updatePod(reservation.UID, pod, pod)
-	rInfo = cache.getReservationInfoByUID(reservation.UID)
+	cache.UpdatePod(reservation.UID, pod, pod)
+	rInfo = cache.GetReservationInfoByUID(reservation.UID)
 	sort.Slice(rInfo.ResourceNames, func(i, j int) bool {
 		return rInfo.ResourceNames[i] < rInfo.ResourceNames[j]
 	})
@@ -272,8 +273,8 @@ func TestCacheAddOrUpdateOrDeletePod(t *testing.T) {
 	})
 	assert.Equal(t, expectReservationInfo, rInfo)
 
-	cache.deletePod(reservation.UID, pod)
-	rInfo = cache.getReservationInfoByUID(reservation.UID)
+	cache.DeletePod(reservation.UID, pod)
+	rInfo = cache.GetReservationInfoByUID(reservation.UID)
 	sort.Slice(rInfo.ResourceNames, func(i, j int) bool {
 		return rInfo.ResourceNames[i] < rInfo.ResourceNames[j]
 	})

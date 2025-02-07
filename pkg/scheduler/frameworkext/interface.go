@@ -139,7 +139,7 @@ type ReservationNominator interface {
 	framework.Plugin
 	NominateReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) (*ReservationInfo, *framework.Status)
 	AddNominatedReservation(pod *corev1.Pod, nodeName string, rInfo *ReservationInfo)
-	RemoveNominatedReservations(pod *corev1.Pod)
+	RemoveNominatedReservationsAndReservePod(pod *corev1.Pod)
 	GetNominatedReservation(pod *corev1.Pod, nodeName string) *ReservationInfo
 	AddNominatedReservePod(reservePod *corev1.Pod, nodeName string)
 	DeleteNominatedReservePod(reservePod *corev1.Pod)
