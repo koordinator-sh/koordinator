@@ -89,6 +89,9 @@ spec:
               mountPropagation: HostToContainer
             - mountPath: /metric-data/
               name: metric-db-path
+            - mountPath: /var/run/koordlet/pod-resources/
+              mountPropagation: Bidirectional
+              name: pod-resources-proxy
       hostNetwork: true
       hostPID: true
       restartPolicy: Always
@@ -148,3 +151,7 @@ spec:
         - emptyDir:
             sizeLimit: 150Mi
           name: metric-db-path
+        - hostPath:
+            path: /var/run/koordlet/pod-resources/
+            type: DirectoryOrCreate
+          name: pod-resources-proxy

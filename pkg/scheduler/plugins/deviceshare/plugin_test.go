@@ -3821,7 +3821,7 @@ func Test_Plugin_PreBind(t *testing.T) {
 					Namespace: "default",
 					Name:      "test",
 					Annotations: map[string]string{
-						apiext.AnnotationDeviceAllocated: `{"gpu":[{"minor":0,"resources":{"koordinator.sh/gpu-core":"100","koordinator.sh/gpu-memory":"16Gi","koordinator.sh/gpu-memory-ratio":"100"}},{"minor":1,"resources":{"koordinator.sh/gpu-core":"100","koordinator.sh/gpu-memory":"16Gi","koordinator.sh/gpu-memory-ratio":"100"}}],"rdma":[{"minor":1,"resources":{"koordinator.sh/rdma":"100"},"id":"0000:1f:00.0"}]}`,
+						apiext.AnnotationDeviceAllocated: `{"gpu":[{"minor":0,"resources":{"koordinator.sh/gpu-core":"100","koordinator.sh/gpu-memory":"16Gi","koordinator.sh/gpu-memory-ratio":"100"},"id":"GPU-8c25ea37-2909-6e62-b7bf-e2fcadebea8d"},{"minor":1,"resources":{"koordinator.sh/gpu-core":"100","koordinator.sh/gpu-memory":"16Gi","koordinator.sh/gpu-memory-ratio":"100"},"id":"GPU-befd76c3-8a36-7b8a-179c-eae75aa7d9f2"}],"rdma":[{"minor":1,"resources":{"koordinator.sh/rdma":"100"},"id":"0000:1f:00.0"}]}`,
 					},
 				},
 				Spec: corev1.PodSpec{
@@ -3953,6 +3953,7 @@ func Test_Plugin_PreBindReservation(t *testing.T) {
 					apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
 					apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
 				},
+				ID: "GPU-8c25ea37-2909-6e62-b7bf-e2fcadebea8d",
 			},
 		},
 	}
