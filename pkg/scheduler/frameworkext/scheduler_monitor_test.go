@@ -125,4 +125,17 @@ func TestSchedulerMonitor_StartAndCompleteMonitoring(t *testing.T) {
 	if _, exists := monitor.schedulingPods[pod.UID]; exists {
 		t.Errorf("Pod should be removed from schedulingPods after Complete")
 	}
+
+	terminatingPod := podInfo.DeepCopy()
+	deleted := metav1.Now()
+	terminatingPod.Pod.DeletionTimestamp = &deleted
+	queuePodInfo = &framework.QueuedPodInfo{
+		Timestamp: time.Now(),
+		PodInfo:   terminatingPod,
+	}
+	monitor.RecordNextPod(queuePodInfo)
+	_, ok = monitor.schedulingPods[pod.UID]
+	if ok {
+		t.Fatal("Pod should be removed in schedulingPods when terminating")
+	}
 }

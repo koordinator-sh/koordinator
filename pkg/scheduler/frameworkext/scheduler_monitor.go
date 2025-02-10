@@ -91,6 +91,15 @@ func (m *SchedulerMonitor) RecordNextPod(podInfo *framework.QueuedPodInfo) {
 		return
 	}
 	pod := podInfo.Pod
+
+	// clean up from the cache when the pod is terminating
+	if pod.DeletionTimestamp != nil {
+		m.lock.Lock()
+		delete(m.schedulingPods, pod.UID)
+		m.lock.Unlock()
+		return
+	}
+
 	now := time.Now()
 	scheduleState := podScheduleState{
 		namespace:       pod.Namespace,
