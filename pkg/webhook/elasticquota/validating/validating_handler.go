@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"time"
 
 	v1 "k8s.io/api/admission/v1"
 	"k8s.io/klog/v2"
@@ -31,6 +32,7 @@ import (
 
 	"github.com/koordinator-sh/koordinator/pkg/util"
 	"github.com/koordinator-sh/koordinator/pkg/webhook/elasticquota"
+	"github.com/koordinator-sh/koordinator/pkg/webhook/metrics"
 )
 
 // +kubebuilder:rbac:groups=scheduling.sigs.k8s.io,resources=elasticquotas,verbs=get;list;watch
@@ -81,9 +83,14 @@ func (h *ElasticQuotaValidatingHandler) Handle(ctx context.Context, request admi
 	}()
 
 	plugin := elasticquota.NewPlugin(h.Decoder, h.Client)
+	start := time.Now()
 	if err = plugin.ValidateQuota(ctx, request, obj); err != nil {
+		metrics.RecordWebhookDurationMilliseconds(metrics.ValidatingWebhook,
+			metrics.ElasticQuota, string(request.Operation), err, plugin.Name(), time.Since(start).Seconds())
 		return admission.Errored(http.StatusBadRequest, err)
 	}
+	metrics.RecordWebhookDurationMilliseconds(metrics.ValidatingWebhook,
+		metrics.ElasticQuota, string(request.Operation), nil, plugin.Name(), time.Since(start).Seconds())
 
 	return admission.ValidationResponse(true, "")
 }

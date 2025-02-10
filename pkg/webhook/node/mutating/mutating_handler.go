@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"reflect"
+	"time"
 
 	admissionv1 "k8s.io/api/admission/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -28,6 +29,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
+	"github.com/koordinator-sh/koordinator/pkg/webhook/metrics"
 	"github.com/koordinator-sh/koordinator/pkg/webhook/node/plugins"
 	"github.com/koordinator-sh/koordinator/pkg/webhook/node/plugins/resourceamplification"
 )
@@ -119,9 +121,14 @@ func (h *NodeMutatingHandler) Handle(ctx context.Context, req admission.Request)
 	clone := obj.DeepCopy()
 
 	for _, plugin := range nodeMutatingPlugins {
+		start := time.Now()
 		if err := plugin.Admit(ctx, req, obj, oldObj); err != nil {
+			metrics.RecordWebhookDurationMilliseconds(metrics.MutatingWebhook,
+				metrics.Node, string(req.Operation), err, plugin.Name(), time.Since(start).Seconds())
 			return admission.Errored(http.StatusInternalServerError, err)
 		}
+		metrics.RecordWebhookDurationMilliseconds(metrics.MutatingWebhook,
+			metrics.Node, string(req.Operation), nil, plugin.Name(), time.Since(start).Seconds())
 	}
 
 	if reflect.DeepEqual(obj, clone) {
