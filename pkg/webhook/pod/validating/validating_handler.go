@@ -19,14 +19,24 @@ package validating
 import (
 	"context"
 	"net/http"
+	"time"
 
 	admissionv1 "k8s.io/api/admission/v1"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	"github.com/koordinator-sh/koordinator/pkg/webhook/elasticquota"
+	"github.com/koordinator-sh/koordinator/pkg/webhook/metrics"
 	"github.com/koordinator-sh/koordinator/pkg/webhook/quotaevaluate"
+)
+
+const (
+	ClusterReservation       = "ClusterReservation"
+	ClusterColocationProfile = "ClusterColocationProfile"
+	EvaluateQuota            = "EvaluateQuota"
+	DeviceResource           = "DeviceResource"
 )
 
 // PodValidatingHandler handles Pod
@@ -60,27 +70,50 @@ func (h *PodValidatingHandler) validatingPodFn(ctx context.Context, req admissio
 		klog.Warningf("Skip to validate pod %s/%s deletion for no old object, maybe because of Kubernetes version < 1.16", req.Namespace, req.Name)
 		return
 	}
-	_, reason, err = h.clusterReservationValidatingPod(ctx, req)
-	if err != nil {
-		return false, reason, err
-	}
-
-	_, reason, err = h.clusterColocationProfileValidatingPod(ctx, req)
-	if err != nil {
-		return false, reason, err
-	}
-
-	plugin := elasticquota.NewPlugin(h.Decoder, h.Client)
-	if err = plugin.ValidatePod(ctx, req); err != nil {
+	pod := &corev1.Pod{}
+	if err = h.Decoder.DecodeRaw(req.Object, pod); err != nil {
 		return false, "", err
 	}
 
-	_, reason, err = h.evaluateQuota(ctx, req)
+	start := time.Now()
+	_, reason, err = h.clusterReservationValidatingPod(ctx, req)
+	metrics.RecordWebhookDurationMilliseconds(metrics.ValidatingWebhook,
+		metrics.Pod, string(req.Operation), err, ClusterReservation, time.Since(start).Seconds())
 	if err != nil {
 		return false, reason, err
 	}
 
+	start = time.Now()
+	_, reason, err = h.clusterColocationProfileValidatingPod(ctx, req)
+	metrics.RecordWebhookDurationMilliseconds(metrics.ValidatingWebhook,
+		metrics.Pod, string(req.Operation), err, ClusterColocationProfile, time.Since(start).Seconds())
+	if err != nil {
+		return false, reason, err
+	}
+
+	start = time.Now()
+	plugin := elasticquota.NewPlugin(h.Decoder, h.Client)
+	if err = plugin.ValidatePod(ctx, req); err != nil {
+		metrics.RecordWebhookDurationMilliseconds(metrics.ValidatingWebhook,
+			metrics.Pod, string(req.Operation), err, plugin.Name(), time.Since(start).Seconds())
+		return false, "", err
+	}
+	metrics.RecordWebhookDurationMilliseconds(metrics.ValidatingWebhook,
+		metrics.Pod, string(req.Operation), nil, plugin.Name(), time.Since(start).Seconds())
+
+	start = time.Now()
+	_, reason, err = h.evaluateQuota(ctx, req)
+	metrics.RecordWebhookDurationMilliseconds(metrics.ValidatingWebhook,
+		metrics.Pod, string(req.Operation), err, EvaluateQuota, time.Since(start).Seconds())
+
+	if err != nil {
+		return false, reason, err
+	}
+
+	start = time.Now()
 	allowed, reason, err = h.deviceResourceValidatingPod(ctx, req)
+	metrics.RecordWebhookDurationMilliseconds(metrics.ValidatingWebhook,
+		metrics.Pod, string(req.Operation), err, DeviceResource, time.Since(start).Seconds())
 	if err != nil {
 		return false, reason, err
 	}

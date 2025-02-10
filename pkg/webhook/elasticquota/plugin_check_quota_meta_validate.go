@@ -46,6 +46,10 @@ var (
 	}
 )
 
+func (c *QuotaMetaChecker) Name() string {
+	return "QuotaMetaChecker"
+}
+
 func NewPlugin(decoder *admission.Decoder, client client.Client) *QuotaMetaChecker {
 	quotaMetaCheck.Client = client
 	quotaMetaCheck.Decoder = decoder

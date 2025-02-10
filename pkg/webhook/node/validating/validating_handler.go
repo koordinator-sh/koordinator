@@ -19,6 +19,7 @@ package validating
 import (
 	"context"
 	"net/http"
+	"time"
 
 	admissionv1 "k8s.io/api/admission/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -27,6 +28,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	"github.com/koordinator-sh/koordinator/pkg/util"
+	"github.com/koordinator-sh/koordinator/pkg/webhook/metrics"
 	"github.com/koordinator-sh/koordinator/pkg/webhook/node/plugins"
 	nodesloconfig "github.com/koordinator-sh/koordinator/pkg/webhook/node/plugins/sloconfig"
 )
@@ -98,9 +100,14 @@ func (h *NodeValidatingHandler) Handle(ctx context.Context, req admission.Reques
 	pls := h.getPlugins()
 
 	for _, plugin := range pls {
+		start := time.Now()
 		if err = plugin.Validate(ctx, req, obj, oldObj); err != nil {
+			metrics.RecordWebhookDurationMilliseconds(metrics.ValidatingWebhook,
+				metrics.Node, string(req.Operation), err, plugin.Name(), time.Since(start).Seconds())
 			return admission.Errored(http.StatusBadRequest, err)
 		}
+		metrics.RecordWebhookDurationMilliseconds(metrics.ValidatingWebhook,
+			metrics.Node, string(req.Operation), nil, plugin.Name(), time.Since(start).Seconds())
 	}
 
 	return admission.ValidationResponse(true, "")

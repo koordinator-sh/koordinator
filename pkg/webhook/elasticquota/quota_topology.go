@@ -32,6 +32,7 @@ import (
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	utilclient "github.com/koordinator-sh/koordinator/pkg/util/client"
+	"github.com/koordinator-sh/koordinator/pkg/webhook/metrics"
 )
 
 type quotaTopology struct {
@@ -234,6 +235,7 @@ func (qt *quotaTopology) fillQuotaDefaultInformation(quota *v1alpha1.ElasticQuot
 	}
 	if sharedWeight, exist := quota.Annotations[extension.AnnotationSharedWeight]; !exist || len(sharedWeight) == 0 {
 		quota.Annotations[extension.AnnotationSharedWeight] = string(maxQuota)
+		metrics.RecordQuotaSharedWeight(quota.Name, quota.Spec.Max)
 		klog.V(5).Infof("fill quota %v sharedWeight as max", quota.Name)
 	}
 

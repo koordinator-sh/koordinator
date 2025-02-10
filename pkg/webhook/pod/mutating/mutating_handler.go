@@ -21,12 +21,22 @@ import (
 	"encoding/json"
 	"net/http"
 	"reflect"
+	"time"
 
 	admissionv1 "k8s.io/api/admission/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
+
+	"github.com/koordinator-sh/koordinator/pkg/webhook/metrics"
+)
+
+const (
+	ClusterColocationProfile = "ClusterColocationProfile"
+	ExtendedResourceSpec     = "ExtendedResourceSpec"
+	MultiQuotaTree           = "MultiQuotaTree"
+	DeviceResourceSpec       = "DeviceResourceSpec"
 )
 
 // PodMutatingHandler handles Pod
@@ -101,25 +111,45 @@ func (h *PodMutatingHandler) Handle(ctx context.Context, req admission.Request) 
 }
 
 func (h *PodMutatingHandler) handleCreate(ctx context.Context, req admission.Request, obj *corev1.Pod) error {
+	start := time.Now()
 	if err := h.clusterColocationProfileMutatingPod(ctx, req, obj); err != nil {
 		klog.Errorf("Failed to mutating Pod %s/%s by ClusterColocationProfile, err: %v", obj.Namespace, obj.Name, err)
+		metrics.RecordWebhookDurationMilliseconds(metrics.MutatingWebhook,
+			metrics.Pod, string(req.Operation), err, ClusterColocationProfile, time.Since(start).Seconds())
 		return err
 	}
+	metrics.RecordWebhookDurationMilliseconds(metrics.MutatingWebhook,
+		metrics.Pod, string(req.Operation), nil, ClusterColocationProfile, time.Since(start).Seconds())
 
+	start = time.Now()
 	if err := h.extendedResourceSpecMutatingPod(ctx, req, obj); err != nil {
 		klog.Errorf("Failed to mutating Pod %s/%s by ExtendedResourceSpec, err: %v", obj.Namespace, obj.Name, err)
+		metrics.RecordWebhookDurationMilliseconds(metrics.MutatingWebhook,
+			metrics.Pod, string(req.Operation), err, ExtendedResourceSpec, time.Since(start).Seconds())
 		return err
 	}
+	metrics.RecordWebhookDurationMilliseconds(metrics.MutatingWebhook,
+		metrics.Pod, string(req.Operation), nil, ExtendedResourceSpec, time.Since(start).Seconds())
 
+	start = time.Now()
 	if err := h.addNodeAffinityForMultiQuotaTree(ctx, req, obj); err != nil {
 		klog.Errorf("Failed to mutating Pod %s/%s by MultiQuotaTree, err: %v", obj.Namespace, obj.Name, err)
+		metrics.RecordWebhookDurationMilliseconds(metrics.MutatingWebhook,
+			metrics.Pod, string(req.Operation), err, MultiQuotaTree, time.Since(start).Seconds())
 		return err
 	}
+	metrics.RecordWebhookDurationMilliseconds(metrics.MutatingWebhook,
+		metrics.Pod, string(req.Operation), nil, MultiQuotaTree, time.Since(start).Seconds())
 
+	start = time.Now()
 	if err := h.deviceResourceSpecMutatingPod(ctx, req, obj); err != nil {
 		klog.Errorf("Failed to mutating Pod %s/%s by DeviceResourceSpec, err: %v", obj.Namespace, obj.Name, err)
+		metrics.RecordWebhookDurationMilliseconds(metrics.MutatingWebhook,
+			metrics.Pod, string(req.Operation), err, DeviceResourceSpec, time.Since(start).Seconds())
 		return err
 	}
+	metrics.RecordWebhookDurationMilliseconds(metrics.MutatingWebhook,
+		metrics.Pod, string(req.Operation), nil, DeviceResourceSpec, time.Since(start).Seconds())
 
 	return nil
 }
