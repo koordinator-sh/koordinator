@@ -19,10 +19,11 @@ package impl
 // NOTE: variables in this file can be overwritten for extension
 
 var DefaultPluginRegistry = map[PluginName]informerPlugin{
-	nodeSLOInformerName:    NewNodeSLOInformer(),
-	pvcInformerName:        NewPVCInformer(),
-	nodeTopoInformerName:   NewNodeTopoInformer(),
-	nodeInformerName:       NewNodeInformer(),
-	podsInformerName:       NewPodsInformer(),
-	nodeMetricInformerName: NewNodeMetricInformer(),
+	nodeSLOInformerName:      NewNodeSLOInformer(),
+	pvcInformerName:          NewPVCInformer(),
+	nodeTopoInformerName:     NewNodeTopoInformer(),
+	nodeInformerName:         NewNodeInformer(),
+	podsInformerName:         NewPodsInformer(),
+	podResourcesInformerName: newPodResourcesInformer(),
+	nodeMetricInformerName:   NewNodeMetricInformer(),
 }

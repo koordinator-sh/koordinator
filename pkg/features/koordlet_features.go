@@ -147,6 +147,13 @@ const (
 	// Backend applications can enable the hugepages based on the allocation results.
 	// For example, the CSI mounts the pre-allocated hugepages into the pod.
 	HugePageReport featuregate.Feature = "HugePageReport"
+
+	// owner: @ZiMengSheng
+	// alpha: v1.6
+	//
+	// PodResourcesProxy enabled hooked podResources of kubelet provided by koordlet.
+	// It provides a grpc service to enable discovery of pod resources allocated by koordinator system.
+	PodResourcesProxy featuregate.Feature = "PodResourcesProxy"
 )
 
 func init() {
@@ -177,6 +184,7 @@ var (
 		BlkIOReconcile:         {Default: false, PreRelease: featuregate.Alpha},
 		ColdPageCollector:      {Default: false, PreRelease: featuregate.Alpha},
 		HugePageReport:         {Default: false, PreRelease: featuregate.Alpha},
+		PodResourcesProxy:      {Default: false, PreRelease: featuregate.Alpha},
 	}
 )
 

@@ -34,6 +34,7 @@ func Test_NewDsModeConfig(t *testing.T) {
 		RuntimeHooksConfigDir:        "/host-etc-hookserver/",
 		DefaultRuntimeType:           "containerd",
 		HAMICoreLibraryDirectoryPath: "/usr/local/vgpu/libvgpu.so",
+		PodResourcesProxyPath:        "/var/run/koordlet/pod-resources",
 	}
 	defaultConfig := NewDsModeConfig()
 	assert.Equal(t, expectConfig, defaultConfig)
@@ -51,6 +52,7 @@ func Test_NewHostModeConfig(t *testing.T) {
 		RuntimeHooksConfigDir:        "/etc/runtime/hookserver.d",
 		DefaultRuntimeType:           "containerd",
 		HAMICoreLibraryDirectoryPath: "/usr/local/vgpu/libvgpu.so",
+		PodResourcesProxyPath:        "/var/run/koordlet/pod-resources",
 	}
 	defaultConfig := NewHostModeConfig()
 	assert.Equal(t, expectConfig, defaultConfig)

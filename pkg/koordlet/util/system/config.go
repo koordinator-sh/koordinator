@@ -50,6 +50,7 @@ type Config struct {
 	CrioEndPoint                 string
 	DefaultRuntimeType           string
 	HAMICoreLibraryDirectoryPath string
+	PodResourcesProxyPath        string
 }
 
 func init() {
@@ -88,6 +89,7 @@ func NewHostModeConfig() *Config {
 		RuntimeHooksConfigDir:        "/etc/runtime/hookserver.d",
 		DefaultRuntimeType:           "containerd",
 		HAMICoreLibraryDirectoryPath: "/usr/local/vgpu/libvgpu.so",
+		PodResourcesProxyPath:        "/var/run/koordlet/pod-resources",
 	}
 }
 
@@ -104,6 +106,7 @@ func NewDsModeConfig() *Config {
 		RuntimeHooksConfigDir:        "/host-etc-hookserver/",
 		DefaultRuntimeType:           "containerd",
 		HAMICoreLibraryDirectoryPath: "/usr/local/vgpu/libvgpu.so",
+		PodResourcesProxyPath:        "/var/run/koordlet/pod-resources",
 	}
 }
 
@@ -126,4 +129,6 @@ func (c *Config) InitFlags(fs *flag.FlagSet) {
 
 	fs.StringVar(&c.DefaultRuntimeType, "default-runtime-type", c.DefaultRuntimeType, "default runtime type during runtime hooks handle request, candidates are containerd/docker/pouch.")
 	fs.StringVar(&c.HAMICoreLibraryDirectoryPath, "hami-core-library-directory-path", c.HAMICoreLibraryDirectoryPath, "path of hami core library")
+
+	fs.StringVar(&c.PodResourcesProxyPath, "pod-resources-proxy-path", c.PodResourcesProxyPath, "The path of the socket file for the pod resource proxy")
 }
