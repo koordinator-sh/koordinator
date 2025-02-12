@@ -57,6 +57,8 @@ func (h *PodValidatingHandler) clusterColocationProfileValidatingPod(ctx context
 	allErrs = append(allErrs, validateRequiredQoSClass(newPod)...)
 	allErrs = append(allErrs, forbidSpecialQoSClassAndPriorityClass(newPod, extension.QoSBE, extension.PriorityNone, extension.PriorityProd)...)
 	allErrs = append(allErrs, forbidSpecialQoSClassAndPriorityClass(newPod, extension.QoSLSR, extension.PriorityNone, extension.PriorityMid, extension.PriorityBatch, extension.PriorityFree)...)
+	allErrs = append(allErrs, forbidSpecialQoSClassAndPriorityClass(newPod, extension.QoSLSE, extension.PriorityNone, extension.PriorityMid, extension.PriorityBatch, extension.PriorityFree)...)
+	allErrs = append(allErrs, forbidSpecialQoSClassAndPriorityClass(newPod, extension.QoSSystem, extension.PriorityMid, extension.PriorityBatch, extension.PriorityFree)...)
 	allErrs = append(allErrs, validateResources(newPod)...)
 	err := allErrs.ToAggregate()
 	allowed := true

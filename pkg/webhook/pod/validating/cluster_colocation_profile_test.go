@@ -384,6 +384,156 @@ func TestClusterColocationProfileValidatingPod(t *testing.T) {
 			wantAllowed: true,
 		},
 		{
+			name:      "forbidden QoS and priorityClass combination: LSE And batch",
+			operation: admissionv1.Create,
+			newPod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						extension.LabelPodQoS: string(extension.QoSLSE),
+					},
+				},
+				Spec: corev1.PodSpec{
+					Priority: pointer.Int32(extension.PriorityBatchValueMax),
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU: resource.MustParse("1"),
+								},
+							},
+						},
+					},
+				},
+			},
+			wantAllowed: false,
+			wantReason:  `Pod: Forbidden: koordinator.sh/qosClass=LSE and priorityClass=koord-batch cannot be used in combination`,
+		},
+		{
+			name:      "forbidden QoS and priorityClass combination: LSE And Mid",
+			operation: admissionv1.Create,
+			newPod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						extension.LabelPodQoS: string(extension.QoSLSE),
+					},
+				},
+				Spec: corev1.PodSpec{
+					Priority: pointer.Int32(extension.PriorityMidValueMax),
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU: resource.MustParse("1"),
+								},
+							},
+						},
+					},
+				},
+			},
+			wantAllowed: false,
+			wantReason:  `Pod: Forbidden: koordinator.sh/qosClass=LSE and priorityClass=koord-mid cannot be used in combination`,
+		},
+		{
+			name:      "forbidden QoS and priorityClass combination: LSE And free",
+			operation: admissionv1.Create,
+			newPod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						extension.LabelPodQoS: string(extension.QoSLSE),
+					},
+				},
+				Spec: corev1.PodSpec{
+					Priority: pointer.Int32(extension.PriorityFreeValueMax),
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU: resource.MustParse("1"),
+								},
+							},
+						},
+					},
+				},
+			},
+			wantAllowed: false,
+			wantReason:  `Pod: Forbidden: koordinator.sh/qosClass=LSE and priorityClass=koord-free cannot be used in combination`,
+		},
+		{
+			name:      "forbidden QoS and priorityClass combination: SYSTEM And batch",
+			operation: admissionv1.Create,
+			newPod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						extension.LabelPodQoS: string(extension.QoSSystem),
+					},
+				},
+				Spec: corev1.PodSpec{
+					Priority: pointer.Int32(extension.PriorityBatchValueMax),
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU: resource.MustParse("1"),
+								},
+							},
+						},
+					},
+				},
+			},
+			wantAllowed: false,
+			wantReason:  `Pod: Forbidden: koordinator.sh/qosClass=SYSTEM and priorityClass=koord-batch cannot be used in combination`,
+		},
+		{
+			name:      "forbidden QoS and priorityClass combination: SYSTEM And Mid",
+			operation: admissionv1.Create,
+			newPod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						extension.LabelPodQoS: string(extension.QoSSystem),
+					},
+				},
+				Spec: corev1.PodSpec{
+					Priority: pointer.Int32(extension.PriorityMidValueMax),
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU: resource.MustParse("1"),
+								},
+							},
+						},
+					},
+				},
+			},
+			wantAllowed: false,
+			wantReason:  `Pod: Forbidden: koordinator.sh/qosClass=SYSTEM and priorityClass=koord-mid cannot be used in combination`,
+		},
+		{
+			name:      "forbidden QoS and priorityClass combination: SYSTEM And free",
+			operation: admissionv1.Create,
+			newPod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						extension.LabelPodQoS: string(extension.QoSSystem),
+					},
+				},
+				Spec: corev1.PodSpec{
+					Priority: pointer.Int32(extension.PriorityFreeValueMax),
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU: resource.MustParse("1"),
+								},
+							},
+						},
+					},
+				},
+			},
+			wantAllowed: false,
+			wantReason:  `Pod: Forbidden: koordinator.sh/qosClass=SYSTEM and priorityClass=koord-free cannot be used in combination`,
+		},
+		{
 			name:      "forbidden resources - LSR And Prod: unset CPUs",
 			operation: admissionv1.Create,
 			newPod: &corev1.Pod{
@@ -442,6 +592,36 @@ func TestClusterColocationProfileValidatingPod(t *testing.T) {
 			},
 			wantAllowed: false,
 			wantReason:  `pod.spec.containers[*].resources.requests: Invalid value: "100m": the requested CPUs of LSR Pod must be integer`,
+		},
+		{
+			name:      "validate resources - LSE And Prod",
+			operation: admissionv1.Create,
+			newPod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						extension.LabelPodQoS: string(extension.QoSLSE),
+					},
+				},
+				Spec: corev1.PodSpec{
+					Priority: pointer.Int32(extension.PriorityProdValueMax),
+					Containers: []corev1.Container{
+						{
+							Name: "test-container-skip",
+							Resources: corev1.ResourceRequirements{
+								Limits: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("1000m"),
+									corev1.ResourceMemory: resource.MustParse("4Gi"),
+								},
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("1000m"),
+									corev1.ResourceMemory: resource.MustParse("4Gi"),
+								},
+							},
+						},
+					},
+				},
+			},
+			wantAllowed: true,
 		},
 	}
 
