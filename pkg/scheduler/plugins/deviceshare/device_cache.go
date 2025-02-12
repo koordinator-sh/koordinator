@@ -154,7 +154,7 @@ func (n *nodeDevice) getUsed(namespace, name string) map[schedulingv1alpha1.Devi
 		}
 		resourcesCopy := make(map[int]corev1.ResourceList, len(resources))
 		for minor, res := range resources {
-			resourcesCopy[minor] = res.DeepCopy()
+			resourcesCopy[minor] = res // use a shallow copy to reduce overhead
 		}
 		allocations[deviceType] = resourcesCopy
 	}
