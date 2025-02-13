@@ -545,16 +545,17 @@ func matchReservationAffinity(node *corev1.Node, reservation *frameworkext.Reser
 		// does not have this information, so it needs to perceive the label of the Node when Matching Affinity.
 		// FIXME(saintube): clean up the default node labels casting and preserve optional labels
 		// https://github.com/koordinator-sh/koordinator/issues/2208
+		reservationLabels := reservation.GetObject().GetLabels()
 		fakeNode := &corev1.Node{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:   reservation.GetName(),
-				Labels: map[string]string{},
+				Labels: make(map[string]string, len(node.Labels)+len(reservationLabels)),
 			},
 		}
 		for k, v := range node.Labels {
 			fakeNode.Labels[k] = v
 		}
-		for k, v := range reservation.GetObject().GetLabels() {
+		for k, v := range reservationLabels {
 			fakeNode.Labels[k] = v
 		}
 		return reservationAffinity.MatchAffinity(fakeNode)

@@ -343,13 +343,14 @@ func (ri *ReservationInfo) Clone() *ReservationInfo {
 		assignedPods[k] = v
 	}
 
+	// use a shallow copy to reduce overhead
 	return &ReservationInfo{
 		Reservation:      ri.Reservation,
 		Pod:              ri.Pod,
 		ResourceNames:    resourceNames,
-		Allocatable:      ri.Allocatable.DeepCopy(),
-		Allocated:        ri.Allocated.DeepCopy(),
-		Reserved:         ri.Reserved.DeepCopy(),
+		Allocatable:      ri.Allocatable,
+		Allocated:        ri.Allocated,
+		Reserved:         ri.Reserved,
 		AllocatablePorts: util.CloneHostPorts(ri.AllocatablePorts),
 		AllocatedPorts:   util.CloneHostPorts(ri.AllocatedPorts),
 		AssignedPods:     assignedPods,
