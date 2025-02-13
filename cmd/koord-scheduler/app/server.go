@@ -67,6 +67,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/defaultprofile"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/eventhandlers"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/informer"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/services"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/metrics"
 	"github.com/koordinator-sh/koordinator/pkg/util/asynclog"
@@ -373,7 +374,7 @@ func Setup(ctx context.Context, opts *options.Options, outOfTreeRegistryOptions 
 
 	defaultprofile.AppendDefaultPlugins(cc.ComponentConfig.Profiles)
 
-	frameworkext.SetupCustomInformers(cc.InformerFactory)
+	informer.SetupCustomInformers(cc.InformerFactory)
 	transformer.SetupTransformers(cc.InformerFactory, cc.KoordinatorSharedInformerFactory)
 
 	metrics.Register()
