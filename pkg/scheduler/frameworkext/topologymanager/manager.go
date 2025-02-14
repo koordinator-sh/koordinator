@@ -74,7 +74,7 @@ func (m *topologyManager) Admit(ctx context.Context, cycleState *framework.Cycle
 	klog.V(5).Infof("extensionPointBeingExecuted: %v, bestHint: %v, nodeName: %v, pod: %v", extensionPointBeingExecuted, bestHint, nodeName, pod.Name)
 	if !ok || extensionPointBeingExecuted == schedulingphase.PostFilter {
 		bestHint, admit, reasons := m.calculateAffinity(ctx, cycleState, policy, pod, nodeName, exclusivePolicy, allNUMANodeStatus)
-		klog.V(4).Infof("Best TopologyHint for (pod: %v): %+v on node %s, policy %s, exclusivePolicy %s, admit %v, reasons %v",
+		klog.V(4).Infof("Best TopologyHint for (pod: %v): %+v on node %s, policy %T, exclusivePolicy %s, admit %v, reasons %v",
 			klog.KObj(pod), bestHint, nodeName, policy, exclusivePolicy, admit, reasons)
 		if !admit {
 			if len(reasons) != 0 {
@@ -123,7 +123,7 @@ func (m *topologyManager) accumulateProvidersHints(ctx context.Context, cycleSta
 			continue
 		}
 		providersHints = append(providersHints, hints)
-		klog.V(4).Infof("TopologyHints for pod '%v' by provider %T: %v on node: %v, status: %s/%s", klog.KObj(pod), provider, hints, nodeName, status.Code, status.Message())
+		klog.V(4).Infof("TopologyHints for pod '%v' by provider %T: %v on node: %v, status: %s/%s", klog.KObj(pod), provider, hints, nodeName, status.Code(), status.Message())
 	}
 	return providersHints, reasons
 }

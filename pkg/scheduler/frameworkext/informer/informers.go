@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package frameworkext
+package informer
 
 import (
 	"time"
@@ -44,7 +44,19 @@ import (
 	koordfeatures "github.com/koordinator-sh/koordinator/pkg/features"
 )
 
+type SetupInformerFn func(informerFactory informers.SharedInformerFactory)
+
+var setupInformers = []SetupInformerFn{
+	setupCompatibleInformers,
+}
+
 func SetupCustomInformers(informerFactory informers.SharedInformerFactory) {
+	for _, setupInformer := range setupInformers {
+		setupInformer(informerFactory)
+	}
+}
+
+func setupCompatibleInformers(informerFactory informers.SharedInformerFactory) {
 	if k8sfeature.DefaultFeatureGate.Enabled(koordfeatures.DisableCSIStorageCapacityInformer) {
 		// Versions below k8s v1.22 need to disable CSIStorageCapacity
 		disableCSIStorageCapacityInformer(informerFactory)
