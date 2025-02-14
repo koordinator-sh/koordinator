@@ -152,7 +152,6 @@ func (qt *quotaTree) iterationForRedistribution(totalRes, totalSharedWeight int6
 		// if totalSharedWeight is not larger than 0, no need to iterate anymore.
 		return
 	}
-
 	needAdjustQuotaNodes := make([]*quotaNode, 0)
 	toPartitionResource, needAdjustTotalSharedWeight := int64(0), int64(0)
 	for _, node := range nodes {

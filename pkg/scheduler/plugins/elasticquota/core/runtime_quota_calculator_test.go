@@ -31,6 +31,13 @@ import (
 	"github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 )
 
+const (
+	TestNode1 = "node1"
+	TestNode2 = "node2"
+	TestNode3 = "node3"
+	TestNode4 = "node4"
+)
+
 func TestQuotaInfo_GetLimitRequest(t *testing.T) {
 	max := createResourceList(100, 10000)
 	req := createResourceList(1000, 1000)
@@ -129,29 +136,134 @@ func createElasticQuota() *v1alpha1.ElasticQuota {
 	return eQ
 }
 
-func TestRuntimeQuotaCalculator_Iteration4AdjustQuota(t *testing.T) {
-	qtw := NewRuntimeQuotaCalculator("testTreeName")
-	resourceKey := make(map[corev1.ResourceName]struct{})
-	cpu := corev1.ResourceCPU
-	resourceKey[cpu] = struct{}{}
-	qtw.updateResourceKeys(resourceKey)
-	qtw.quotaTree[cpu].insert("node1", 40, 5, 10, 0, true)
-	qtw.quotaTree[cpu].insert("node2", 60, 20, 15, 0, true)
-	qtw.quotaTree[cpu].insert("node3", 50, 40, 20, 0, true)
-	qtw.quotaTree[cpu].insert("node4", 80, 70, 15, 0, true)
-	qtw.totalResource = corev1.ResourceList{}
-	qtw.totalResource[corev1.ResourceCPU] = *resource.NewMilliQuantity(100, resource.DecimalSI)
-	qtw.calculateRuntimeNoLock()
-	if qtw.globalRuntimeVersion == 0 {
-		t.Error("error")
+func TestRuntimeQuotaCalculator_IterationAdjustQuota(t *testing.T) {
+	type quotaNodeInfo = struct {
+		groupName         string
+		sharedWeight      int64
+		request           int64
+		min               int64
+		guarantee         int64
+		allowLentResource bool
 	}
-	if qtw.quotaTree[cpu].quotaNodes["node1"].runtimeQuota != 5 ||
-		qtw.quotaTree[cpu].quotaNodes["node2"].runtimeQuota != 20 ||
-		qtw.quotaTree[cpu].quotaNodes["node3"].runtimeQuota != 35 ||
-		qtw.quotaTree[cpu].quotaNodes["node4"].runtimeQuota != 40 {
-		t.Error("error")
+	node1 := &quotaNodeInfo{
+		groupName:         TestNode1,
+		sharedWeight:      40,
+		request:           5,
+		min:               10,
+		guarantee:         0,
+		allowLentResource: true,
+	}
+	node2 := &quotaNodeInfo{
+		groupName:         TestNode2,
+		sharedWeight:      60,
+		request:           20,
+		min:               15,
+		guarantee:         0,
+		allowLentResource: true,
+	}
+	node3 := &quotaNodeInfo{
+		groupName:         TestNode3,
+		sharedWeight:      50,
+		request:           40,
+		min:               20,
+		guarantee:         0,
+		allowLentResource: true,
+	}
+	node4 := &quotaNodeInfo{
+		groupName:         TestNode4,
+		sharedWeight:      80,
+		request:           70,
+		min:               15,
+		guarantee:         0,
+		allowLentResource: true,
+	}
+	node4_1 := &quotaNodeInfo{
+		groupName:         TestNode4,
+		sharedWeight:      0,
+		request:           70,
+		min:               15,
+		guarantee:         0,
+		allowLentResource: true,
+	}
+	node4_2 := &quotaNodeInfo{
+		groupName:         TestNode4,
+		sharedWeight:      0,
+		request:           70,
+		min:               15,
+		guarantee:         45,
+		allowLentResource: true,
 	}
 
+	testCases := []struct {
+		name              string
+		totalResource     corev1.ResourceList
+		nodes             []*quotaNodeInfo
+		expectedRuntimeMp map[string]map[corev1.ResourceName]int64
+	}{
+		{
+			name: "case1-no-guarantee",
+			totalResource: corev1.ResourceList{
+				corev1.ResourceCPU: *resource.NewMilliQuantity(100, resource.DecimalSI),
+			},
+			nodes: []*quotaNodeInfo{node1, node2, node3, node4},
+			expectedRuntimeMp: map[string]map[corev1.ResourceName]int64{
+				TestNode1: {corev1.ResourceCPU: 5},
+				TestNode2: {corev1.ResourceCPU: 20},
+				TestNode3: {corev1.ResourceCPU: 35},
+				TestNode4: {corev1.ResourceCPU: 40},
+			},
+		},
+		{
+			name: "case2-node4.sharedWeight=0",
+			totalResource: corev1.ResourceList{
+				corev1.ResourceCPU: *resource.NewMilliQuantity(100, resource.DecimalSI),
+			},
+			nodes: []*quotaNodeInfo{node1, node2, node3, node4_1},
+			expectedRuntimeMp: map[string]map[corev1.ResourceName]int64{
+				TestNode1: {corev1.ResourceCPU: 5},
+				TestNode2: {corev1.ResourceCPU: 20},
+				TestNode3: {corev1.ResourceCPU: 40},
+				TestNode4: {corev1.ResourceCPU: 15},
+			},
+		},
+		{
+			name: "case3-node4.guarantee>min",
+			totalResource: corev1.ResourceList{
+				corev1.ResourceCPU: *resource.NewMilliQuantity(100, resource.DecimalSI),
+			},
+			nodes: []*quotaNodeInfo{node1, node2, node3, node4_2},
+			expectedRuntimeMp: map[string]map[corev1.ResourceName]int64{
+				TestNode1: {corev1.ResourceCPU: 5},
+				TestNode2: {corev1.ResourceCPU: 20},
+				TestNode3: {corev1.ResourceCPU: 30},
+				TestNode4: {corev1.ResourceCPU: 45},
+			},
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			qtw := NewRuntimeQuotaCalculator("testTreeName")
+			resourceKey := make(map[corev1.ResourceName]struct{})
+			for key, value := range tc.totalResource {
+				if !value.IsZero() {
+					resourceKey[key] = struct{}{}
+				}
+			}
+			qtw.updateResourceKeys(resourceKey)
+			qtw.totalResource = tc.totalResource
+			for _, node := range tc.nodes {
+				for resKey := range resourceKey {
+					qtw.quotaTree[resKey].insert(node.groupName, node.sharedWeight, node.request, node.min, node.guarantee, node.allowLentResource)
+				}
+			}
+			qtw.calculateRuntimeNoLock()
+			for node, rq := range tc.expectedRuntimeMp {
+				for resKey, q := range rq {
+					assert.Equal(t, q, qtw.quotaTree[resKey].quotaNodes[node].runtimeQuota)
+				}
+			}
+		})
+	}
 }
 
 func createQuotaInfoWithRes(name string, max, min corev1.ResourceList) *QuotaInfo {

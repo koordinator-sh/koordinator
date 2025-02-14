@@ -196,7 +196,7 @@ func (qt *quotaTopology) ValidDeleteQuota(quota *v1alpha1.ElasticQuota) error {
 	return nil
 }
 
-// fillQuotaDefaultInformation fills quota with default information if not configure
+// fillQuotaDefaultInformation fills quota with default information if not be configured
 func (qt *quotaTopology) fillQuotaDefaultInformation(quota *v1alpha1.ElasticQuota) error {
 	if quota.Name == extension.RootQuotaName {
 		return nil
@@ -237,8 +237,20 @@ func (qt *quotaTopology) fillQuotaDefaultInformation(quota *v1alpha1.ElasticQuot
 		quota.Annotations[extension.AnnotationSharedWeight] = string(maxQuota)
 		metrics.RecordQuotaSharedWeight(quota.Name, quota.Spec.Max)
 		klog.V(5).Infof("fill quota %v sharedWeight as max", quota.Name)
+	} else {
+		sharedWeightRL := make(corev1.ResourceList)
+		err = json.Unmarshal([]byte(sharedWeight), &sharedWeightRL)
+		if err != nil {
+			return fmt.Errorf("fillDefaultQuotaInfo unmarshal sharedWeight failed:%v", err)
+		}
+		if fixedSharedWeight(sharedWeightRL, quota.Spec.Max) {
+			fixedSharedWeightRL, err := json.Marshal(&sharedWeightRL)
+			if err != nil {
+				return fmt.Errorf("fillDefaultQuotaInfo marshal fixedSharedWeight max failed:%v", err)
+			}
+			quota.Annotations[extension.AnnotationSharedWeight] = string(fixedSharedWeightRL)
+		}
 	}
-
 	return nil
 }
 
@@ -287,4 +299,29 @@ func (qt *quotaTopology) getQuotaInfo(name, namespace string) *QuotaInfo {
 		return qt.quotaInfoMap[quotaName]
 	}
 	return nil
+}
+
+// fixedSharedWeight keep keys in sharedWeight and maxQuota same
+// if key in maxQuota not included in sharedWeight, add key/value in sharedWeight
+// if key in sharedWeight not included in maxQuota, delete key/value in sharedWeight
+// if fixed, return true
+func fixedSharedWeight(sharedWeight, maxQuota corev1.ResourceList) bool {
+	fixed := false
+	for key, value := range maxQuota {
+		if _, ok := sharedWeight[key]; !ok {
+			sharedWeight[key] = value
+			fixed = true
+		}
+	}
+	toDeleted := make([]corev1.ResourceName, 0)
+	for key := range sharedWeight {
+		if _, ok := maxQuota[key]; !ok {
+			toDeleted = append(toDeleted, key)
+		}
+	}
+	for _, key := range toDeleted {
+		fixed = true
+		delete(sharedWeight, key)
+	}
+	return fixed
 }
