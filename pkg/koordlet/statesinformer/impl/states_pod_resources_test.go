@@ -35,6 +35,134 @@ func TestFillPodDevicesAllocatedByKoord(t *testing.T) {
 		expectedResult *podresourcesapi.ListPodResourcesResponse
 	}{
 		{
+			name: "MatchingPodWithDeviceAllocationsWithVf",
+			response: &podresourcesapi.ListPodResourcesResponse{
+				PodResources: []*podresourcesapi.PodResources{
+					{
+						Name:      "test-pod",
+						Namespace: "test-namespace",
+						Containers: []*podresourcesapi.ContainerResources{
+							{
+								Name: "test-container",
+							},
+						},
+					},
+				},
+			},
+			podList: &corev1.PodList{
+				Items: []corev1.Pod{
+					{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "test-pod",
+							Namespace: "test-namespace",
+							Annotations: map[string]string{
+								apiext.AnnotationDeviceAllocated: `{"gpu":[{"minor":0,"resources":{"koordinator.sh/gpu-core":"100","koordinator.sh/gpu-memory":"23040Mi","koordinator.sh/gpu-memory-ratio":"100"},"id":"0"}],"rdma":[{"minor":0,"resources":{"koordinator.sh/rdma":"1"},"id":"0000:01:00.0","extension":{"vfs":[{"minor":-1,"busID":"0000:01:00.2"}]}}]}`,
+							},
+						},
+					},
+				},
+			},
+			expectedResult: &podresourcesapi.ListPodResourcesResponse{
+				PodResources: []*podresourcesapi.PodResources{
+					{
+						Name:      "test-pod",
+						Namespace: "test-namespace",
+						Containers: []*podresourcesapi.ContainerResources{
+							{
+								Name: "test-container",
+								Devices: []*podresourcesapi.ContainerDevices{
+									{
+										ResourceName: string(apiext.ResourceNvidiaGPU),
+										DeviceIds:    []string{"0"},
+									},
+									{
+										ResourceName: string(apiext.ResourceRDMA),
+										DeviceIds:    []string{"0000:01:00.2"},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "MatchingPodWithDeviceAllocationsWithVfAndMMultiplePod",
+			response: &podresourcesapi.ListPodResourcesResponse{
+				PodResources: []*podresourcesapi.PodResources{
+					{
+						Name:      "test-pod-1",
+						Namespace: "test-namespace",
+						Containers: []*podresourcesapi.ContainerResources{
+							{
+								Name: "test-container",
+							},
+						},
+					},
+					{
+						Name:      "test-pod",
+						Namespace: "test-namespace",
+						Containers: []*podresourcesapi.ContainerResources{
+							{
+								Name: "test-container",
+							},
+						},
+					},
+				},
+			},
+			podList: &corev1.PodList{
+				Items: []corev1.Pod{
+					{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "test-pod-1",
+							Namespace: "test-namespace",
+						},
+					},
+					{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "test-pod",
+							Namespace: "test-namespace",
+							Annotations: map[string]string{
+								apiext.AnnotationDeviceAllocated: `{"gpu":[{"minor":0,"resources":{"koordinator.sh/gpu-core":"100","koordinator.sh/gpu-memory":"23040Mi","koordinator.sh/gpu-memory-ratio":"100"},"id":"0"}],"rdma":[{"minor":0,"resources":{"koordinator.sh/rdma":"1"},"id":"0000:01:00.0","extension":{"vfs":[{"minor":-1,"busID":"0000:01:00.2"}]}}]}`,
+							},
+						},
+					},
+				},
+			},
+			expectedResult: &podresourcesapi.ListPodResourcesResponse{
+				PodResources: []*podresourcesapi.PodResources{
+					{
+						Name:      "test-pod-1",
+						Namespace: "test-namespace",
+						Containers: []*podresourcesapi.ContainerResources{
+							{
+								Name: "test-container",
+							},
+						},
+					},
+					{
+						Name:      "test-pod",
+						Namespace: "test-namespace",
+						Containers: []*podresourcesapi.ContainerResources{
+							{
+								Name: "test-container",
+								Devices: []*podresourcesapi.ContainerDevices{
+									{
+										ResourceName: string(apiext.ResourceNvidiaGPU),
+										DeviceIds:    []string{"0"},
+									},
+									{
+										ResourceName: string(apiext.ResourceRDMA),
+										DeviceIds:    []string{"0000:01:00.2"},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
 			name: "MatchingPodWithDeviceAllocations",
 			response: &podresourcesapi.ListPodResourcesResponse{
 				PodResources: []*podresourcesapi.PodResources{
@@ -168,7 +296,7 @@ func TestFillPodDevicesAllocatedByKoord(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			fillPodDevicesAllocatedByKoord(test.response, test.podList)
-			assert.Equal(t, test.response, test.expectedResult)
+			assert.Equal(t, test.expectedResult, test.response)
 		})
 	}
 }
