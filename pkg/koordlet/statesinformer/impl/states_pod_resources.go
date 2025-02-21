@@ -21,6 +21,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"sort"
 
 	"google.golang.org/grpc"
 	corev1 "k8s.io/api/core/v1"
@@ -191,6 +192,9 @@ func fillPodDevicesAllocatedByKoord(response *podresourcesapi.ListPodResourcesRe
 				DeviceIds:    deviceIDs,
 			})
 		}
+		sort.Slice(podResource.Containers[0].Devices, func(i, j int) bool {
+			return podResource.Containers[0].Devices[i].ResourceName < podResource.Containers[0].Devices[j].ResourceName
+		})
 	}
 }
 
