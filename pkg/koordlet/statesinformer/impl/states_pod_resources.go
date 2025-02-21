@@ -140,11 +140,13 @@ func (p *podResourcesServer) List(ctx context.Context, request *podresourcesapi.
 	if err != nil {
 		return nil, err
 	}
+	klog.V(5).Infof("pod resources proxy List original response: %v", response)
 	allPods, err := p.kubeletStub.GetAllPods()
 	if err != nil {
 		return nil, err
 	}
 	fillPodDevicesAllocatedByKoord(response, &allPods)
+	klog.V(5).Infof("pod resources proxy List response: %v", response)
 	return response, nil
 }
 
@@ -155,11 +157,12 @@ func fillPodDevicesAllocatedByKoord(response *podresourcesapi.ListPodResourcesRe
 	}
 
 	podsMap := make(map[string]*corev1.Pod, len(allPods.Items))
-	for _, item := range allPods.Items {
-		podsMap[util.GetNamespacedName(item.Namespace, item.Name)] = &item
+	for i, item := range allPods.Items {
+		podsMap[util.GetNamespacedName(item.Namespace, item.Name)] = &allPods.Items[i]
 	}
 
-	for _, podResource := range response.PodResources {
+	for i := range response.PodResources {
+		podResource := response.PodResources[i]
 		if podResource == nil || len(podResource.Containers) == 0 {
 			continue
 		}
@@ -175,6 +178,12 @@ func fillPodDevicesAllocatedByKoord(response *podresourcesapi.ListPodResourcesRe
 		for deviceType, deviceAllocation := range deviceAllocations {
 			var deviceIDs []string
 			for _, device := range deviceAllocation {
+				if device.Extension != nil {
+					for _, vf := range device.Extension.VirtualFunctions {
+						deviceIDs = append(deviceIDs, vf.BusID)
+					}
+					continue
+				}
 				deviceIDs = append(deviceIDs, device.ID)
 			}
 			podResource.Containers[0].Devices = append(podResource.Containers[0].Devices, &podresourcesapi.ContainerDevices{
@@ -182,7 +191,6 @@ func fillPodDevicesAllocatedByKoord(response *podresourcesapi.ListPodResourcesRe
 				DeviceIds:    deviceIDs,
 			})
 		}
-		break
 	}
 }
 
