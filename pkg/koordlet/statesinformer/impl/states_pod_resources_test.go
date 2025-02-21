@@ -17,6 +17,7 @@ limitations under the License.
 package impl
 
 import (
+	"sort"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -72,12 +73,11 @@ func TestFillPodDevicesAllocatedByKoord(t *testing.T) {
 								Name: "test-container",
 								Devices: []*podresourcesapi.ContainerDevices{
 									{
-										ResourceName: string(apiext.ResourceNvidiaGPU),
-										DeviceIds:    []string{"0"},
-									},
-									{
 										ResourceName: string(apiext.ResourceRDMA),
 										DeviceIds:    []string{"0000:01:00.2"},
+									}, {
+										ResourceName: string(apiext.ResourceNvidiaGPU),
+										DeviceIds:    []string{"0"},
 									},
 								},
 							},
@@ -148,12 +148,12 @@ func TestFillPodDevicesAllocatedByKoord(t *testing.T) {
 								Name: "test-container",
 								Devices: []*podresourcesapi.ContainerDevices{
 									{
-										ResourceName: string(apiext.ResourceNvidiaGPU),
-										DeviceIds:    []string{"0"},
-									},
-									{
 										ResourceName: string(apiext.ResourceRDMA),
 										DeviceIds:    []string{"0000:01:00.2"},
+									},
+									{
+										ResourceName: string(apiext.ResourceNvidiaGPU),
+										DeviceIds:    []string{"0"},
 									},
 								},
 							},
@@ -296,6 +296,12 @@ func TestFillPodDevicesAllocatedByKoord(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			fillPodDevicesAllocatedByKoord(test.response, test.podList)
+			sort.Slice(test.response.PodResources, func(i, j int) bool {
+				return test.response.PodResources[i].Name < test.response.PodResources[j].Name
+			})
+			sort.Slice(test.expectedResult.PodResources, func(i, j int) bool {
+				return test.expectedResult.PodResources[i].Name < test.expectedResult.PodResources[j].Name
+			})
 			assert.Equal(t, test.expectedResult, test.response)
 		})
 	}
