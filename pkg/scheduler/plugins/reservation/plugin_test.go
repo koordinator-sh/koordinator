@@ -2229,8 +2229,8 @@ func TestPreFilterExtensionAddPod(t *testing.T) {
 					Spec: schedulingv1alpha1.ReservationSpec{},
 				}
 				assert.NoError(t, reservationutil.SetReservationAvailable(reservation, node.Name))
-				pl.reservationCache.updateReservation(reservation)
-				assert.NoError(t, pl.reservationCache.assumePod(reservation.UID, tt.pod))
+				pl.reservationCache.UpdateReservation(reservation)
+				assert.NoError(t, pl.reservationCache.AssumePod(reservation.UID, tt.pod))
 			}
 			podInfo, _ := framework.NewPodInfo(tt.pod)
 			nodeInfo := framework.NewNodeInfo()
@@ -2349,8 +2349,8 @@ func TestPreFilterExtensionRemovePod(t *testing.T) {
 					Spec: schedulingv1alpha1.ReservationSpec{},
 				}
 				assert.NoError(t, reservationutil.SetReservationAvailable(reservation, node.Name))
-				pl.reservationCache.updateReservation(reservation)
-				assert.NoError(t, pl.reservationCache.assumePod(reservation.UID, tt.pod))
+				pl.reservationCache.UpdateReservation(reservation)
+				assert.NoError(t, pl.reservationCache.AssumePod(reservation.UID, tt.pod))
 			}
 			podInfo, _ := framework.NewPodInfo(tt.pod)
 			nodeInfo := framework.NewNodeInfo()
@@ -2538,11 +2538,11 @@ func TestFilterNominateReservation(t *testing.T) {
 				},
 			}
 			for _, v := range tt.reservations {
-				pl.reservationCache.updateReservation(v)
+				pl.reservationCache.UpdateReservation(v)
 				if apiext.IsReservationAllocateOnce(v) && len(v.Status.Allocated) > 0 {
-					pl.reservationCache.addPod(v.UID, &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "allocated-pod", UID: uuid.NewUUID()}})
+					pl.reservationCache.AddPod(v.UID, &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "allocated-pod", UID: uuid.NewUUID()}})
 				}
-				rInfo := pl.reservationCache.getReservationInfoByUID(v.UID)
+				rInfo := pl.reservationCache.GetReservationInfoByUID(v.UID)
 				nodeRState := state.nodeReservationStates[v.Status.NodeName]
 				if nodeRState == nil {
 					nodeRState = &nodeReservationState{}
@@ -3025,7 +3025,7 @@ func TestReserve(t *testing.T) {
 				assert.Equal(t, tt.wantReservation, state.assumed.Reservation)
 			}
 			if tt.reservation != nil {
-				rInfo = pl.reservationCache.getReservationInfoByUID(tt.reservation.UID)
+				rInfo = pl.reservationCache.GetReservationInfoByUID(tt.reservation.UID)
 				assert.Equal(t, tt.wantPods, rInfo.AssignedPods)
 				assert.Equal(t, &schedulingStateData{}, &state.schedulingStateData)
 			}
@@ -3142,7 +3142,7 @@ func TestUnreserve(t *testing.T) {
 			pl.Unreserve(context.TODO(), cycleState, tt.pod, "test-node")
 			assert.Equal(t, tt.wantStatus, status)
 			if tt.reservation != nil {
-				rInfo := pl.reservationCache.getReservationInfoByUID(tt.reservation.UID)
+				rInfo := pl.reservationCache.GetReservationInfoByUID(tt.reservation.UID)
 				if reservationutil.IsReservePod(tt.pod) {
 					assert.Nil(t, rInfo)
 				} else {
