@@ -233,6 +233,7 @@ func TestGetPodSandboxContainerID(t *testing.T) {
 			fields: fields{
 				otherContaienrIDs: []string{
 					"containerd://testPodSandboxHashID",
+					"containerd://testInitContainerHashID",
 					"containerd://testContainerHashID",
 				},
 			},
@@ -243,6 +244,13 @@ func TestGetPodSandboxContainerID(t *testing.T) {
 						UID:  "test-pod-uid",
 					},
 					Status: corev1.PodStatus{
+						InitContainerStatuses: []corev1.ContainerStatus{
+							{
+								Name:        "test-init-container-name",
+								ContainerID: "containerd://testInitContainerHashID",
+								Started:     nil,
+							},
+						},
 						ContainerStatuses: []corev1.ContainerStatus{
 							{
 								Name:        "test-container-name",
@@ -261,6 +269,7 @@ func TestGetPodSandboxContainerID(t *testing.T) {
 			fields: fields{
 				otherContaienrIDs: []string{
 					"docker://testPodSandboxHashID",
+					"docker://testInitContainerHashID",
 					"docker://testContainerHashID",
 				},
 			},
@@ -271,6 +280,13 @@ func TestGetPodSandboxContainerID(t *testing.T) {
 						UID:  "test-pod-uid",
 					},
 					Status: corev1.PodStatus{
+						InitContainerStatuses: []corev1.ContainerStatus{
+							{
+								Name:        "test-container-name",
+								ContainerID: "docker://testInitContainerHashID",
+								Started:     nil,
+							},
+						},
 						ContainerStatuses: []corev1.ContainerStatus{
 							{
 								Name:        "test-container-name",
