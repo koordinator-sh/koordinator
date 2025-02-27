@@ -1054,14 +1054,14 @@ func TestGroupQuotaManager_UpdateQuotaParentName(t *testing.T) {
 
 	quotaInfo := gqm.GetQuotaInfoByName("test1-a")
 	gqm.RefreshRuntime("test1-a")
-	assert.Equal(t, v1.ResourceList{}, quotaInfo.CalculateInfo.Request)
-	assert.Equal(t, v1.ResourceList{}, quotaInfo.CalculateInfo.Used)
+	assert.Equal(t, createResourceList(0, 0), quotaInfo.CalculateInfo.Request)
+	assert.Equal(t, createResourceList(0, 0), quotaInfo.CalculateInfo.Used)
 	assert.Equal(t, createResourceList(0, 0), quotaInfo.CalculateInfo.Runtime)
 
 	quotaInfo = gqm.GetQuotaInfoByName("test1")
 	gqm.RefreshRuntime("test1")
-	assert.Equal(t, v1.ResourceList{}, quotaInfo.CalculateInfo.Request)
-	assert.Equal(t, v1.ResourceList{}, quotaInfo.CalculateInfo.Used)
+	assert.Equal(t, createResourceList(0, 0), quotaInfo.CalculateInfo.Request)
+	assert.Equal(t, createResourceList(0, 0), quotaInfo.CalculateInfo.Used)
 	assert.Equal(t, createResourceList(0, 0), quotaInfo.CalculateInfo.Runtime)
 
 	quotaInfo = gqm.GetQuotaInfoByName("a-123")
@@ -2442,4 +2442,252 @@ func TestGroupQuotaManager_UpdateQuotaTopoNodeNoLock(t *testing.T) {
 	assert.Equal(t, 2, len(gqm.quotaTopoNodeMap[extension.RootQuotaName].childGroupQuotaInfos))
 	assert.Equal(t, 0, len(gqm.quotaTopoNodeMap["test1"].childGroupQuotaInfos))
 	assert.Equal(t, 1, len(gqm.quotaTopoNodeMap["test2"].childGroupQuotaInfos))
+}
+
+func TestGroupQuotaManager_UpdateQuotaNoLockWhenParentChange(t *testing.T) {
+	gqm := NewGroupQuotaManagerForTest()
+	gqm.scaleMinQuotaEnabled = true
+	gqm.UpdateClusterTotalResource(createResourceList(200, 200))
+
+	// quota1 Max[100, 100]  Min[80,80] request[0,0]
+	//   |-- quota11 Max[50, 50]  Min[30,30] request[0,0]
+	//       |-- quota111 Max[50, 50]  Min[20,20] request[0,0]
+	// quota2 Max[100, 100]  Min[60,60] request[0,0]
+	//   |-- quota21 Max[50, 50]  Min[40,40] request[0,0]
+	//       |-- quota211 Max[50, 50]  Min[15,15] request[0,0]
+	eq1 := CreateQuota("1", extension.RootQuotaName, 100, 100, 80, 80, true, true)
+	eq2 := CreateQuota("2", extension.RootQuotaName, 100, 100, 60, 60, true, true)
+	eq11 := CreateQuota("11", "1", 50, 50, 30, 30, true, true)
+	eq21 := CreateQuota("21", "2", 50, 50, 40, 40, true, true)
+	eq111 := CreateQuota("111", "11", 50, 50, 20, 20, true, true)
+	eq211 := CreateQuota("211", "21", 50, 50, 15, 15, true, true)
+	gqm.UpdateQuota(eq1, false)
+	gqm.UpdateQuota(eq2, false)
+	gqm.UpdateQuota(eq11, false)
+	gqm.UpdateQuota(eq21, false)
+	gqm.UpdateQuota(eq111, false)
+	gqm.UpdateQuota(eq211, false)
+
+	// add pod1 to eq111
+	pod1 := schetesting.MakePod().Name("1").Obj()
+	pod1.Spec.Containers = []v1.Container{
+		{
+			Resources: v1.ResourceRequirements{
+				Requests: createResourceList(10, 10),
+			},
+		},
+	}
+	pod1.Spec.NodeName = "node1"
+	gqm.OnPodAdd(eq111.Name, pod1)
+
+	// add pod2 to eq111, pod2 is NonPreemptible
+	pod2 := schetesting.MakePod().Name("2").Label(extension.LabelPreemptible, "false").Obj()
+	pod2.Spec.Containers = []v1.Container{
+		{
+			Resources: v1.ResourceRequirements{
+				Requests: createResourceList(5, 5),
+			},
+		},
+	}
+	pod2.Spec.NodeName = "node1"
+	gqm.OnPodAdd(eq111.Name, pod2)
+
+	// add pod3 to eq11. the eq11 is parent quota
+	pod3 := schetesting.MakePod().Name("3").Obj()
+	pod3.Spec.Containers = []v1.Container{
+		{
+			Resources: v1.ResourceRequirements{
+				Requests: createResourceList(20, 20),
+			},
+		},
+	}
+	pod3.Spec.NodeName = "node3"
+	gqm.OnPodAdd(eq11.Name, pod3)
+
+	gqm.RefreshRuntime(eq111.Name)
+	gqm.RefreshRuntime(eq211.Name)
+
+	// quota1 Max[100, 100]  Min[80,80] request[35,35] selfRequest[0, 0]
+	//   |-- quota11 Max[50, 50]  Min[30,30] request[35,35] selfRequest[20,20]
+	//       |-- quota111 Max[50, 50]  Min[20,20] request[15,15] selfRequest[15,15]
+	// quota2 Max[100, 100]  Min[100,100] request[0,0]
+	//   |-- quota21 Max[50, 50]  Min[40,40] request[0,0]
+	//       |-- quota211 Max[50, 50]  Min[15,15] request[0,0]
+	assert.Equal(t, createResourceList(15, 15), gqm.GetQuotaInfoByName("111").GetRequest())
+	assert.Equal(t, createResourceList(15, 15), gqm.GetQuotaInfoByName("111").GetChildRequest())
+	assert.Equal(t, createResourceList(15, 15), gqm.GetQuotaInfoByName("111").GetSelfRequest())
+	assert.Equal(t, createResourceList(5, 5), gqm.GetQuotaInfoByName("111").GetNonPreemptibleRequest())
+	assert.Equal(t, createResourceList(5, 5), gqm.GetQuotaInfoByName("111").GetSelfNonPreemptibleRequest())
+	assert.Equal(t, createResourceList(15, 15), gqm.GetQuotaInfoByName("111").GetUsed())
+	assert.Equal(t, createResourceList(15, 15), gqm.GetQuotaInfoByName("111").GetSelfUsed())
+	assert.Equal(t, createResourceList(5, 5), gqm.GetQuotaInfoByName("111").GetNonPreemptibleUsed())
+	assert.Equal(t, createResourceList(5, 5), gqm.GetQuotaInfoByName("111").GetSelfNonPreemptibleUsed())
+	assert.Equal(t, createResourceList(15, 15), gqm.GetQuotaInfoByName("111").GetRuntime())
+
+	assert.Equal(t, createResourceList(35, 35), gqm.GetQuotaInfoByName("11").GetRequest())
+	assert.Equal(t, createResourceList(35, 35), gqm.GetQuotaInfoByName("11").GetChildRequest())
+	assert.Equal(t, createResourceList(20, 20), gqm.GetQuotaInfoByName("11").GetSelfRequest())
+	assert.Equal(t, createResourceList(5, 5), gqm.GetQuotaInfoByName("11").GetNonPreemptibleRequest())
+	assert.Equal(t, v1.ResourceList{}, gqm.GetQuotaInfoByName("11").GetSelfNonPreemptibleRequest())
+	assert.Equal(t, createResourceList(35, 35), gqm.GetQuotaInfoByName("11").GetUsed())
+	assert.Equal(t, createResourceList(20, 20), gqm.GetQuotaInfoByName("11").GetSelfUsed())
+	assert.Equal(t, createResourceList(5, 5), gqm.GetQuotaInfoByName("11").GetNonPreemptibleUsed())
+	assert.Equal(t, v1.ResourceList{}, gqm.GetQuotaInfoByName("11").GetSelfNonPreemptibleUsed())
+	assert.Equal(t, createResourceList(35, 35), gqm.GetQuotaInfoByName("11").GetRuntime())
+
+	assert.Equal(t, createResourceList(35, 35), gqm.GetQuotaInfoByName("1").GetRequest())
+	assert.Equal(t, createResourceList(35, 35), gqm.GetQuotaInfoByName("1").GetChildRequest())
+	assert.Equal(t, v1.ResourceList{}, gqm.GetQuotaInfoByName("1").GetSelfRequest())
+	assert.Equal(t, createResourceList(5, 5), gqm.GetQuotaInfoByName("1").GetNonPreemptibleRequest())
+	assert.Equal(t, v1.ResourceList{}, gqm.GetQuotaInfoByName("1").GetSelfNonPreemptibleRequest())
+	assert.Equal(t, createResourceList(35, 35), gqm.GetQuotaInfoByName("1").GetUsed())
+	assert.Equal(t, v1.ResourceList{}, gqm.GetQuotaInfoByName("1").GetSelfUsed())
+	assert.Equal(t, createResourceList(5, 5), gqm.GetQuotaInfoByName("1").GetNonPreemptibleUsed())
+	assert.Equal(t, v1.ResourceList{}, gqm.GetQuotaInfoByName("1").GetSelfNonPreemptibleUsed())
+	assert.Equal(t, createResourceList(35, 35), gqm.GetQuotaInfoByName("1").GetRuntime())
+
+	assert.True(t, gqm.GetQuotaInfoByName("111").IsPodExist(pod1))
+	assert.True(t, gqm.GetQuotaInfoByName("111").IsPodExist(pod2))
+	assert.True(t, gqm.GetQuotaInfoByName("11").IsPodExist(pod3))
+
+	assert.Equal(t, 7, len(gqm.quotaTopoNodeMap))
+	assert.Equal(t, 1, len(gqm.quotaTopoNodeMap["2"].childGroupQuotaInfos))
+	assert.Equal(t, 1, len(gqm.quotaTopoNodeMap["1"].childGroupQuotaInfos))
+	assert.Equal(t, 1, len(gqm.quotaTopoNodeMap["11"].childGroupQuotaInfos))
+	assert.Equal(t, 1, len(gqm.quotaTopoNodeMap["21"].childGroupQuotaInfos))
+
+	// move eq11 to eq2
+	eq11.Labels[extension.LabelQuotaParent] = eq2.Name
+	gqm.UpdateQuota(eq11, false)
+
+	gqm.RefreshRuntime(eq1.Name)
+	gqm.RefreshRuntime(eq111.Name)
+	gqm.RefreshRuntime(eq211.Name)
+
+	// quota1 Max[100, 100]  Min[80,80] request[0,0] selfRequest[0, 0]
+	// quota2 Max[100, 100]  Min[60,60] request[35,35]
+	//   |-- quota21 Max[50, 50]  Min[20,20] request[0,0]
+	//       |-- quota211 Max[50, 50]  Min[15,15] request[0,0]
+	//   |-- quota11 Max[50, 50]  Min[30,30] request[35,35] selfRequest[20,20]
+	//       |-- quota111 Max[50, 50]  Min[20,20] request[15,15] selfRequest[15,15]
+	assert.Equal(t, createResourceList(15, 15), gqm.GetQuotaInfoByName("111").GetRequest())
+	assert.Equal(t, createResourceList(15, 15), gqm.GetQuotaInfoByName("111").GetChildRequest())
+	assert.Equal(t, createResourceList(15, 15), gqm.GetQuotaInfoByName("111").GetSelfRequest())
+	assert.Equal(t, createResourceList(5, 5), gqm.GetQuotaInfoByName("111").GetNonPreemptibleRequest())
+	assert.Equal(t, createResourceList(5, 5), gqm.GetQuotaInfoByName("111").GetSelfNonPreemptibleRequest())
+	assert.Equal(t, createResourceList(15, 15), gqm.GetQuotaInfoByName("111").GetUsed())
+	assert.Equal(t, createResourceList(15, 15), gqm.GetQuotaInfoByName("111").GetSelfUsed())
+	assert.Equal(t, createResourceList(5, 5), gqm.GetQuotaInfoByName("111").GetNonPreemptibleUsed())
+	assert.Equal(t, createResourceList(5, 5), gqm.GetQuotaInfoByName("111").GetSelfNonPreemptibleUsed())
+	assert.Equal(t, createResourceList(15, 15), gqm.GetQuotaInfoByName("111").GetRuntime())
+
+	assert.Equal(t, createResourceList(35, 35), gqm.GetQuotaInfoByName("11").GetRequest())
+	assert.Equal(t, createResourceList(35, 35), gqm.GetQuotaInfoByName("11").GetChildRequest())
+	assert.Equal(t, createResourceList(20, 20), gqm.GetQuotaInfoByName("11").GetSelfRequest())
+	assert.Equal(t, createResourceList(5, 5), gqm.GetQuotaInfoByName("11").GetNonPreemptibleRequest())
+	assert.Equal(t, v1.ResourceList{}, gqm.GetQuotaInfoByName("11").GetSelfNonPreemptibleRequest())
+	assert.Equal(t, createResourceList(35, 35), gqm.GetQuotaInfoByName("11").GetUsed())
+	assert.Equal(t, createResourceList(20, 20), gqm.GetQuotaInfoByName("11").GetSelfUsed())
+	assert.Equal(t, createResourceList(5, 5), gqm.GetQuotaInfoByName("11").GetNonPreemptibleUsed())
+	assert.Equal(t, v1.ResourceList{}, gqm.GetQuotaInfoByName("11").GetSelfNonPreemptibleUsed())
+	assert.Equal(t, createResourceList(35, 35), gqm.GetQuotaInfoByName("11").GetRuntime())
+
+	assert.Equal(t, createResourceList(35, 35), gqm.GetQuotaInfoByName("2").GetRequest())
+	assert.Equal(t, createResourceList(35, 35), gqm.GetQuotaInfoByName("2").GetChildRequest())
+	assert.Equal(t, v1.ResourceList{}, gqm.GetQuotaInfoByName("2").GetSelfRequest())
+	assert.Equal(t, createResourceList(5, 5), gqm.GetQuotaInfoByName("2").GetNonPreemptibleRequest())
+	assert.Equal(t, v1.ResourceList{}, gqm.GetQuotaInfoByName("2").GetSelfNonPreemptibleRequest())
+	assert.Equal(t, createResourceList(35, 35), gqm.GetQuotaInfoByName("2").GetUsed())
+	assert.Equal(t, v1.ResourceList{}, gqm.GetQuotaInfoByName("2").GetSelfUsed())
+	assert.Equal(t, createResourceList(5, 5), gqm.GetQuotaInfoByName("2").GetNonPreemptibleUsed())
+	assert.Equal(t, v1.ResourceList{}, gqm.GetQuotaInfoByName("2").GetSelfNonPreemptibleUsed())
+	assert.Equal(t, createResourceList(35, 35), gqm.GetQuotaInfoByName("2").GetRuntime())
+
+	assert.Equal(t, createResourceList(0, 0), gqm.GetQuotaInfoByName("1").GetRequest())
+	assert.Equal(t, createResourceList(0, 0), gqm.GetQuotaInfoByName("1").GetChildRequest())
+	assert.Equal(t, v1.ResourceList{}, gqm.GetQuotaInfoByName("1").GetSelfRequest())
+	assert.Equal(t, createResourceList(0, 0), gqm.GetQuotaInfoByName("1").GetNonPreemptibleRequest())
+	assert.Equal(t, v1.ResourceList{}, gqm.GetQuotaInfoByName("1").GetSelfNonPreemptibleRequest())
+	assert.Equal(t, createResourceList(0, 0), gqm.GetQuotaInfoByName("1").GetUsed())
+	assert.Equal(t, v1.ResourceList{}, gqm.GetQuotaInfoByName("1").GetSelfUsed())
+	assert.Equal(t, createResourceList(0, 0), gqm.GetQuotaInfoByName("1").GetNonPreemptibleUsed())
+	assert.Equal(t, v1.ResourceList{}, gqm.GetQuotaInfoByName("1").GetSelfNonPreemptibleUsed())
+	assert.Equal(t, createResourceList(0, 0), gqm.GetQuotaInfoByName("1").GetRuntime())
+
+	assert.True(t, gqm.GetQuotaInfoByName("111").IsPodExist(pod1))
+	assert.True(t, gqm.GetQuotaInfoByName("111").IsPodExist(pod2))
+	assert.True(t, gqm.GetQuotaInfoByName("11").IsPodExist(pod3))
+
+	assert.Equal(t, 2, len(gqm.quotaTopoNodeMap["2"].childGroupQuotaInfos))
+	assert.Equal(t, 0, len(gqm.quotaTopoNodeMap["1"].childGroupQuotaInfos))
+	assert.Equal(t, 1, len(gqm.quotaTopoNodeMap["11"].childGroupQuotaInfos))
+	assert.Equal(t, 1, len(gqm.quotaTopoNodeMap["21"].childGroupQuotaInfos))
+
+	// move eq111 to eq21
+	eq111.Labels[extension.LabelQuotaParent] = eq21.Name
+	gqm.UpdateQuota(eq111, false)
+
+	gqm.RefreshRuntime(eq11.Name)
+	gqm.RefreshRuntime(eq111.Name)
+	gqm.RefreshRuntime(eq211.Name)
+
+	// quota1 Max[100, 100]  Min[80,80] request[0,0] selfRequest[0, 0]
+	// quota2 Max[100, 100]  Min[60,60] request[35,35]
+	//   |-- quota21 Max[50, 50]  Min[40,40] request[15,15]
+	//       |-- quota211 Max[50, 50]  Min[15,15] request[0,0]
+	//       |-- quota111 Max[50, 50]  Min[20,20] request[15,15] selfRequest[15,15]
+	//   |-- quota11 Max[50, 50]  Min[30,30] request[20,20] selfRequest[20,20]
+
+	assert.Equal(t, createResourceList(15, 15), gqm.GetQuotaInfoByName("111").GetRequest())
+	assert.Equal(t, createResourceList(15, 15), gqm.GetQuotaInfoByName("111").GetChildRequest())
+	assert.Equal(t, createResourceList(15, 15), gqm.GetQuotaInfoByName("111").GetSelfRequest())
+	assert.Equal(t, createResourceList(5, 5), gqm.GetQuotaInfoByName("111").GetNonPreemptibleRequest())
+	assert.Equal(t, createResourceList(5, 5), gqm.GetQuotaInfoByName("111").GetSelfNonPreemptibleRequest())
+	assert.Equal(t, createResourceList(15, 15), gqm.GetQuotaInfoByName("111").GetUsed())
+	assert.Equal(t, createResourceList(15, 15), gqm.GetQuotaInfoByName("111").GetSelfUsed())
+	assert.Equal(t, createResourceList(5, 5), gqm.GetQuotaInfoByName("111").GetNonPreemptibleUsed())
+	assert.Equal(t, createResourceList(5, 5), gqm.GetQuotaInfoByName("111").GetSelfNonPreemptibleUsed())
+	assert.Equal(t, createResourceList(15, 15), gqm.GetQuotaInfoByName("111").GetRuntime())
+
+	assert.Equal(t, createResourceList(20, 20), gqm.GetQuotaInfoByName("11").GetRequest())
+	assert.Equal(t, createResourceList(20, 20), gqm.GetQuotaInfoByName("11").GetChildRequest())
+	assert.Equal(t, createResourceList(20, 20), gqm.GetQuotaInfoByName("11").GetSelfRequest())
+	assert.Equal(t, createResourceList(0, 0), gqm.GetQuotaInfoByName("11").GetNonPreemptibleRequest())
+	assert.Equal(t, v1.ResourceList{}, gqm.GetQuotaInfoByName("11").GetSelfNonPreemptibleRequest())
+	assert.Equal(t, createResourceList(20, 20), gqm.GetQuotaInfoByName("11").GetUsed())
+	assert.Equal(t, createResourceList(20, 20), gqm.GetQuotaInfoByName("11").GetSelfUsed())
+	assert.Equal(t, createResourceList(0, 0), gqm.GetQuotaInfoByName("11").GetNonPreemptibleUsed())
+	assert.Equal(t, v1.ResourceList{}, gqm.GetQuotaInfoByName("11").GetSelfNonPreemptibleUsed())
+	assert.Equal(t, createResourceList(20, 20), gqm.GetQuotaInfoByName("11").GetRuntime())
+
+	assert.Equal(t, createResourceList(35, 35), gqm.GetQuotaInfoByName("2").GetRequest())
+	assert.Equal(t, createResourceList(35, 35), gqm.GetQuotaInfoByName("2").GetChildRequest())
+	assert.Equal(t, v1.ResourceList{}, gqm.GetQuotaInfoByName("2").GetSelfRequest())
+	assert.Equal(t, createResourceList(5, 5), gqm.GetQuotaInfoByName("2").GetNonPreemptibleRequest())
+	assert.Equal(t, v1.ResourceList{}, gqm.GetQuotaInfoByName("2").GetSelfNonPreemptibleRequest())
+	assert.Equal(t, createResourceList(35, 35), gqm.GetQuotaInfoByName("2").GetUsed())
+	assert.Equal(t, v1.ResourceList{}, gqm.GetQuotaInfoByName("2").GetSelfUsed())
+	assert.Equal(t, createResourceList(5, 5), gqm.GetQuotaInfoByName("2").GetNonPreemptibleUsed())
+	assert.Equal(t, v1.ResourceList{}, gqm.GetQuotaInfoByName("2").GetSelfNonPreemptibleUsed())
+	assert.Equal(t, createResourceList(35, 35), gqm.GetQuotaInfoByName("2").GetRuntime())
+
+	assert.Equal(t, createResourceList(15, 15), gqm.GetQuotaInfoByName("21").GetRequest())
+	assert.Equal(t, createResourceList(15, 15), gqm.GetQuotaInfoByName("21").GetChildRequest())
+	assert.Equal(t, v1.ResourceList{}, gqm.GetQuotaInfoByName("21").GetSelfRequest())
+	assert.Equal(t, createResourceList(5, 5), gqm.GetQuotaInfoByName("21").GetNonPreemptibleRequest())
+	assert.Equal(t, v1.ResourceList{}, gqm.GetQuotaInfoByName("21").GetSelfNonPreemptibleRequest())
+	assert.Equal(t, createResourceList(15, 15), gqm.GetQuotaInfoByName("21").GetUsed())
+	assert.Equal(t, v1.ResourceList{}, gqm.GetQuotaInfoByName("21").GetSelfUsed())
+	assert.Equal(t, createResourceList(5, 5), gqm.GetQuotaInfoByName("21").GetNonPreemptibleUsed())
+	assert.Equal(t, v1.ResourceList{}, gqm.GetQuotaInfoByName("21").GetSelfNonPreemptibleUsed())
+	assert.Equal(t, createResourceList(15, 15), gqm.GetQuotaInfoByName("21").GetRuntime())
+
+	assert.True(t, gqm.GetQuotaInfoByName("111").IsPodExist(pod1))
+	assert.True(t, gqm.GetQuotaInfoByName("111").IsPodExist(pod2))
+	assert.True(t, gqm.GetQuotaInfoByName("11").IsPodExist(pod3))
+
+	assert.Equal(t, 2, len(gqm.quotaTopoNodeMap["2"].childGroupQuotaInfos))
+	assert.Equal(t, 0, len(gqm.quotaTopoNodeMap["1"].childGroupQuotaInfos))
+	assert.Equal(t, 0, len(gqm.quotaTopoNodeMap["11"].childGroupQuotaInfos))
+	assert.Equal(t, 2, len(gqm.quotaTopoNodeMap["21"].childGroupQuotaInfos))
 }

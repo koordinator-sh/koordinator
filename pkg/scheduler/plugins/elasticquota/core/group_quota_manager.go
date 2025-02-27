@@ -400,6 +400,9 @@ func (gqm *GroupQuotaManager) UpdateQuota(quota *v1alpha1.ElasticQuota, isDelete
 			if !localQuotaInfo.isQuotaMetaChange(newQuotaInfo) {
 				gqm.updateQuotaInternalNoLock(newQuotaInfo, localQuotaInfo)
 				return nil
+			} else if localQuotaInfo.isQuotaParentChange(newQuotaInfo) {
+				gqm.updateQuotaNoLockWhenParentChange(quota)
+				return nil
 			}
 			localQuotaInfo.updateQuotaInfoFromRemote(newQuotaInfo)
 		} else {
@@ -1045,9 +1048,96 @@ func (gqm *GroupQuotaManager) updateQuotaInternalNoLock(newQuotaInfo, oldQuotaIn
 	}
 	// sharedweight changed
 	if !quotav1.Equals(newQuotaInfo.CalculateInfo.SharedWeight, oldSharedWeight) {
-		klog.V(4).Infof("[updateQuotaInternalNoLock] quota %v sharedWeight change, oldMin: %v, newMin: %v",
+		klog.V(4).Infof("[updateQuotaInternalNoLock] quota %v sharedWeight change, oldSharedWeight: %v, newSharedWeight: %v",
 			newQuotaInfo.Name, util.DumpJSON(oldSharedWeight), util.DumpJSON(newQuotaInfo.CalculateInfo.SharedWeight))
 		gqm.doUpdateOneGroupSharedWeightNoLock(newQuotaInfo.Name, newQuotaInfo.CalculateInfo.SharedWeight)
+	}
+}
+
+func (gqm *GroupQuotaManager) updateQuotaNoLockWhenParentChange(newQuota *v1alpha1.ElasticQuota) {
+	// 1. save old quotaInfo and quotaCalculator and quotaTopoNode
+	var (
+		oldQuotaInfo              = gqm.quotaInfoMap[newQuota.Name].DeepCopy()
+		oldRuntimeQuotaCalculator = gqm.runtimeQuotaCalculatorMap[newQuota.Name]
+		oldQuotaTopoNode          = gqm.quotaTopoNodeMap[newQuota.Name]
+	)
+
+	if oldQuotaInfo == nil {
+		return
+	}
+
+	// 2. delete old quota
+	gqm.deleteQuotaNoLock(newQuota)
+
+	// 3. add new quota info
+	newQuotaInfo := NewQuotaInfoFromQuota(newQuota)
+	newMax := newQuotaInfo.CalculateInfo.Max
+	newMin := newQuotaInfo.CalculateInfo.Min
+	newSharedWeight := newQuotaInfo.CalculateInfo.SharedWeight
+
+	// clean the min/max/shared weight
+	newQuotaInfo.CalculateInfo.Max = v1.ResourceList{}
+	newQuotaInfo.CalculateInfo.Min = v1.ResourceList{}
+	newQuotaInfo.CalculateInfo.SharedWeight = v1.ResourceList{}
+	// copy pod cache
+	newQuotaInfo.PodCache = oldQuotaInfo.PodCache
+	gqm.quotaInfoMap[newQuotaInfo.Name] = newQuotaInfo
+
+	if oldRuntimeQuotaCalculator != nil {
+		// reuse runtimeQuotaCalculator
+		gqm.runtimeQuotaCalculatorMap[newQuotaInfo.Name] = oldRuntimeQuotaCalculator
+	} else {
+		gqm.runtimeQuotaCalculatorMap[newQuotaInfo.Name] = NewRuntimeQuotaCalculator(newQuotaInfo.Name)
+	}
+	if gqm.runtimeQuotaCalculatorMap[newQuotaInfo.ParentName] == nil {
+		gqm.runtimeQuotaCalculatorMap[newQuotaInfo.ParentName] = NewRuntimeQuotaCalculator(newQuotaInfo.ParentName)
+	}
+
+	gqm.quotaTopoNodeMap[newQuotaInfo.Name] = oldQuotaTopoNode
+	gqm.updateQuotaTopoNodeNoLock(newQuotaInfo, nil)
+
+	// 4. update max/min/shared weight
+	klog.V(4).Infof("[updateQuotaNoLockWhenParentChange] quota %v max change, newMax: %v",
+		newQuotaInfo.Name, util.DumpJSON(newMax))
+	gqm.doUpdateOneGroupMaxQuotaNoLock(newQuotaInfo.Name, newMax)
+
+	gqm.updateResourceKeyNoLock()
+
+	klog.V(4).Infof("[updateQuotaNoLockWhenParentChange] quota %v min change, newMin: %v",
+		newQuotaInfo.Name, util.DumpJSON(newMin))
+	gqm.doUpdateOneGroupMinQuotaNoLock(newQuotaInfo.Name, newMin)
+
+	klog.V(4).Infof("[updateQuotaNoLockWhenParentChange] quota %v sharedWeight change, newSharedWeight: %v",
+		newQuotaInfo.Name, util.DumpJSON(newSharedWeight))
+	gqm.doUpdateOneGroupSharedWeightNoLock(newQuotaInfo.Name, newSharedWeight)
+
+	// 5. add requests and used
+	delSelfRequest := oldQuotaInfo.CalculateInfo.SelfRequest
+	delSelfNonPreemptibleRequest := oldQuotaInfo.CalculateInfo.SelfNonPreemptibleRequest
+	if !quotav1.IsZero(delSelfRequest) || !quotav1.IsZero(delSelfNonPreemptibleRequest) {
+		gqm.updateGroupDeltaRequestNoLock(newQuotaInfo.Name, delSelfRequest, delSelfNonPreemptibleRequest, 0)
+	}
+
+	if oldQuotaInfo.IsParent {
+		delChildRequest := quotav1.Subtract(oldQuotaInfo.CalculateInfo.ChildRequest, oldQuotaInfo.CalculateInfo.SelfRequest)
+		delChildNonPreemptibleRequest := quotav1.Subtract(oldQuotaInfo.CalculateInfo.NonPreemptibleRequest, oldQuotaInfo.CalculateInfo.SelfNonPreemptibleRequest)
+		if !quotav1.IsZero(delChildRequest) || !quotav1.IsZero(delChildNonPreemptibleRequest) {
+			gqm.updateGroupDeltaRequestNoLock(newQuotaInfo.Name, delChildRequest, delChildNonPreemptibleRequest, -1)
+		}
+	}
+
+	delSelfUsed := oldQuotaInfo.CalculateInfo.SelfUsed
+	delSelfNonPreemptibleUsed := oldQuotaInfo.CalculateInfo.SelfNonPreemptibleUsed
+	if !quotav1.IsZero(delSelfUsed) || !quotav1.IsZero(delSelfNonPreemptibleUsed) {
+		gqm.updateGroupDeltaUsedNoLock(newQuotaInfo.Name, delSelfUsed, delSelfNonPreemptibleUsed, 0)
+	}
+
+	if oldQuotaInfo.IsParent {
+		delChildUsed := quotav1.Subtract(oldQuotaInfo.CalculateInfo.Used, oldQuotaInfo.CalculateInfo.SelfUsed)
+		delChildNonPreemptibleUsed := quotav1.Subtract(oldQuotaInfo.CalculateInfo.NonPreemptibleUsed, oldQuotaInfo.CalculateInfo.SelfNonPreemptibleUsed)
+		if !quotav1.IsZero(delChildUsed) || !quotav1.IsZero(delChildNonPreemptibleUsed) {
+			gqm.updateGroupDeltaUsedNoLock(newQuotaInfo.Name, delChildUsed, delChildNonPreemptibleUsed, -1)
+		}
 	}
 
 }

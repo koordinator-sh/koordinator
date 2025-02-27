@@ -443,6 +443,13 @@ func (qi *QuotaInfo) isQuotaMetaChange(quotaInfo *QuotaInfo) bool {
 	return false
 }
 
+func (qi *QuotaInfo) isQuotaParentChange(quotaInfo *QuotaInfo) bool {
+	qi.lock.Lock()
+	defer qi.lock.Unlock()
+
+	return qi.ParentName != quotaInfo.ParentName
+}
+
 func (qi *QuotaInfo) IsPodExist(pod *v1.Pod) bool {
 	qi.lock.Lock()
 	defer qi.lock.Unlock()
