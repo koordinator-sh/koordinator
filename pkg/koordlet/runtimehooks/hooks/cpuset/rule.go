@@ -208,7 +208,11 @@ func (p *cpusetPlugin) ruleUpdateCb(target *statesinformer.CallbackTarget) error
 		return nil
 	}
 	for _, podMeta := range target.Pods {
-		for _, containerStat := range podMeta.Pod.Status.ContainerStatuses {
+		allContainerStatus := make([]corev1.ContainerStatus, 0, len(podMeta.Pod.Status.ContainerStatuses)+len(podMeta.Pod.Status.InitContainerStatuses))
+		allContainerStatus = append(allContainerStatus, podMeta.Pod.Status.ContainerStatuses...)
+		allContainerStatus = append(allContainerStatus, podMeta.Pod.Status.InitContainerStatuses...)
+		for _, containerStat := range allContainerStatus {
+			// TODO exclude some init containers, e.g. restartPolicy != Always
 			containerCtx := &protocol.ContainerContext{}
 			containerCtx.FromReconciler(podMeta, containerStat.Name, false)
 			if err := p.SetContainerCPUSet(containerCtx); err != nil {

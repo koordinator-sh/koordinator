@@ -195,6 +195,11 @@ func Test_reconciler_reconcilePodCgroup(t *testing.T) {
 							UID:       "test1-pod-uid",
 						},
 						Spec: corev1.PodSpec{
+							InitContainers: []corev1.Container{
+								{
+									Name: "test1-init-container-name",
+								},
+							},
 							Containers: []corev1.Container{
 								{
 									Name: "test1-container-name",
@@ -202,6 +207,12 @@ func Test_reconciler_reconcilePodCgroup(t *testing.T) {
 							},
 						},
 						Status: corev1.PodStatus{
+							InitContainerStatuses: []corev1.ContainerStatus{
+								{
+									Name:        "test1-init-container-name",
+									ContainerID: "test1-init-container-id",
+								},
+							},
 							ContainerStatuses: []corev1.ContainerStatus{
 								{
 									Name:        "test1-container-name",
@@ -219,6 +230,11 @@ func Test_reconciler_reconcilePodCgroup(t *testing.T) {
 							UID:       "test2-pod-uid",
 						},
 						Spec: corev1.PodSpec{
+							InitContainers: []corev1.Container{
+								{
+									Name: "test2-init-container-name",
+								},
+							},
 							Containers: []corev1.Container{
 								{
 									Name: "test2-container-name",
@@ -226,6 +242,12 @@ func Test_reconciler_reconcilePodCgroup(t *testing.T) {
 							},
 						},
 						Status: corev1.PodStatus{
+							InitContainerStatuses: []corev1.ContainerStatus{
+								{
+									Name:        "test2-init-container-name",
+									ContainerID: "test2-init-container-id",
+								},
+							},
 							ContainerStatuses: []corev1.ContainerStatus{
 								{
 									Name:        "test2-container-name",
@@ -243,6 +265,11 @@ func Test_reconciler_reconcilePodCgroup(t *testing.T) {
 							UID:       "test3-pod-uid",
 						},
 						Spec: corev1.PodSpec{
+							InitContainers: []corev1.Container{
+								{
+									Name: "test3-init-container-name",
+								},
+							},
 							Containers: []corev1.Container{
 								{
 									Name: "test3-container-name",
@@ -250,6 +277,12 @@ func Test_reconciler_reconcilePodCgroup(t *testing.T) {
 							},
 						},
 						Status: corev1.PodStatus{
+							InitContainerStatuses: []corev1.ContainerStatus{
+								{
+									Name:        "test3-init-container-name",
+									ContainerID: "test3-init-container-id",
+								},
+							},
 							ContainerStatuses: []corev1.ContainerStatus{
 								{
 									Name:        "test3-container-name",
@@ -268,9 +301,12 @@ func Test_reconciler_reconcilePodCgroup(t *testing.T) {
 				genPodKey("test-ns", "test3-pod-name"): "test3-pod-uid",
 			},
 			wantContainers: map[string]string{
-				genContainerKey("test-ns", "test1-pod-name", "test1-container-name"): "test1-container-id",
-				genContainerKey("test-ns", "test2-pod-name", "test2-container-name"): "test2-container-id",
-				genContainerKey("test-ns", "test3-pod-name", "test3-container-name"): "test3-container-id",
+				genContainerKey("test-ns", "test1-pod-name", "test1-container-name"):      "test1-container-id",
+				genContainerKey("test-ns", "test1-pod-name", "test1-init-container-name"): "test1-init-container-id",
+				genContainerKey("test-ns", "test2-pod-name", "test2-container-name"):      "test2-container-id",
+				genContainerKey("test-ns", "test2-pod-name", "test2-init-container-name"): "test2-init-container-id",
+				genContainerKey("test-ns", "test3-pod-name", "test3-container-name"):      "test3-container-id",
+				genContainerKey("test-ns", "test3-pod-name", "test3-init-container-name"): "test3-init-container-id",
 			},
 			wantPods4AllPods: map[string]string{
 				genPodKey("test-ns", "test1-pod-name"): "test1-pod-uid",

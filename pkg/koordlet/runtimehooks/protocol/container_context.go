@@ -128,27 +128,55 @@ func (c *ContainerRequest) FromReconciler(podMeta *statesinformer.PodMeta, conta
 	c.PodMeta.FromReconciler(podMeta.Pod.ObjectMeta)
 	c.ContainerMeta.Name = containerName
 	c.ContainerMeta.Sandbox = sandbox
+	c.PodLabels = podMeta.Pod.Labels
+	c.PodAnnotations = podMeta.Pod.Annotations
+
 	if sandbox {
 		var err error
 		if c.ContainerMeta.ID, err = koordletutil.GetPodSandboxContainerID(podMeta.Pod); err != nil {
 			klog.V(4).Infof("failed to get sandbox container ID for pod %s, err: %s",
 				podMeta.Key(), err)
-			return
 		} else if c.ContainerMeta.ID == "" {
 			klog.V(4).Infof("container ID is empty for pod %s, pod may not start, skip", podMeta.Key())
-			return
+		} else {
+			c.CgroupParent, _ = koordletutil.GetContainerCgroupParentDirByID(podMeta.CgroupDir, c.ContainerMeta.ID)
+			klog.V(5).Infof("got sandbox %s cgroup parent %s for pod %s", c.ContainerMeta.ID, c.CgroupParent, podMeta.Key())
 		}
-	} else {
-		for _, containerStat := range podMeta.Pod.Status.ContainerStatuses {
-			if containerStat.Name == containerName {
-				c.ContainerMeta.ID = containerStat.ContainerID
+		return
+	}
+
+	foundInContainer := false
+	for _, containerStat := range podMeta.Pod.Status.ContainerStatuses {
+		if containerStat.Name == containerName {
+			c.ContainerMeta.ID = containerStat.ContainerID
+			foundInContainer = true
+			break
+		}
+	}
+	if !foundInContainer {
+		for _, initContainerStat := range podMeta.Pod.Status.InitContainerStatuses {
+			if initContainerStat.Name == containerName {
+				c.ContainerMeta.ID = initContainerStat.ContainerID
 				break
 			}
 		}
 	}
+	if c.ContainerMeta.ID == "" {
+		klog.V(4).Infof("container ID not found in container and init container status for pod %s, pod may not start, skip", podMeta.Key())
+		return
+	}
+	c.CgroupParent, _ = koordletutil.GetContainerCgroupParentDirByID(podMeta.CgroupDir, c.ContainerMeta.ID)
+
+	var containerCandidates []corev1.Container
+	if foundInContainer {
+		containerCandidates = podMeta.Pod.Spec.Containers
+	} else {
+		containerCandidates = podMeta.Pod.Spec.InitContainers
+	}
+
 	var specFromContainer *apiext.ExtendedResourceContainerSpec
-	for i := range podMeta.Pod.Spec.Containers {
-		containerSpec := podMeta.Pod.Spec.Containers[i]
+	for i := range containerCandidates {
+		containerSpec := containerCandidates[i]
 		if containerSpec.Name == containerName {
 			if c.ContainerEnvs == nil {
 				c.ContainerEnvs = map[string]string{}
@@ -162,9 +190,7 @@ func (c *ContainerRequest) FromReconciler(podMeta *statesinformer.PodMeta, conta
 			break
 		}
 	}
-	c.PodLabels = podMeta.Pod.Labels
-	c.PodAnnotations = podMeta.Pod.Annotations
-	c.CgroupParent, _ = koordletutil.GetContainerCgroupParentDirByID(podMeta.CgroupDir, c.ContainerMeta.ID)
+
 	// retrieve ExtendedResources from container spec and pod annotations (prefer container spec)
 	specFromAnnotations, err := apiext.GetExtendedResourceSpec(podMeta.Pod.Annotations)
 	if err != nil {
