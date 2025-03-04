@@ -521,14 +521,14 @@ func TestPlugin_OnQuotaUpdate(t *testing.T) {
 	plugin.OnQuotaUpdate(oldQuota, changeQuota)
 	quotaInfo := gqm.GetQuotaInfoByName("test1-a")
 	gqm.RefreshRuntime("test1-a")
-	assert.Equal(t, corev1.ResourceList{}, quotaInfo.GetRequest())
-	assert.Equal(t, corev1.ResourceList{}, quotaInfo.GetUsed())
+	assert.Equal(t, createResourceList(0, 0), quotaInfo.GetRequest())
+	assert.Equal(t, createResourceList(0, 0), quotaInfo.GetUsed())
 	assert.Equal(t, createResourceList(0, 0), quotaInfo.GetRuntime())
 
 	quotaInfo = gqm.GetQuotaInfoByName("test1")
 	gqm.RefreshRuntime("test1")
-	assert.Equal(t, corev1.ResourceList{}, quotaInfo.GetRequest())
-	assert.Equal(t, corev1.ResourceList{}, quotaInfo.GetUsed())
+	assert.Equal(t, createResourceList(0, 0), quotaInfo.GetRequest())
+	assert.Equal(t, createResourceList(0, 0), quotaInfo.GetUsed())
 	assert.Equal(t, createResourceList(0, 0), quotaInfo.GetRuntime())
 
 	quotaInfo = gqm.GetQuotaInfoByName("a-123")
