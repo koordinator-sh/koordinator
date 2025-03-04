@@ -24,6 +24,8 @@ import (
 
 	nrtv1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
 	"github.com/stretchr/testify/assert"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/uuid"
 
@@ -94,6 +96,32 @@ func TestTopologyOptionsManager(t *testing.T) {
 				extension.AnnotationNodeReservation:         string(nodeReservationData),
 			},
 		},
+		Zones: nrtv1alpha1.ZoneList{
+			{
+				Name: "node-0",
+				Type: "Node",
+				Resources: nrtv1alpha1.ResourceInfoList{
+					{
+						Name:        string(corev1.ResourceCPU),
+						Capacity:    resource.MustParse("8"),
+						Allocatable: resource.MustParse("8"),
+						Available:   resource.MustParse("8"),
+					},
+				},
+			},
+			{
+				Name: "node-1",
+				Type: "Node",
+				Resources: nrtv1alpha1.ResourceInfoList{
+					{
+						Name:        string(corev1.ResourceCPU),
+						Capacity:    resource.MustParse("8"),
+						Allocatable: resource.MustParse("8"),
+						Available:   resource.MustParse("8"),
+					},
+				},
+			},
+		},
 	}
 
 	_, err = suit.NRTClientset.TopologyV1alpha1().NodeResourceTopologies().Create(context.TODO(), topology, metav1.CreateOptions{})
@@ -129,6 +157,20 @@ func TestTopologyOptionsManager(t *testing.T) {
 
 	expectReservedCPUs := cpuset.MustParse("0-7")
 	assert.Equal(t, expectReservedCPUs, topologyOptions.ReservedCPUs)
+	assert.Equal(t, []NUMANodeResource{
+		{
+			Node: 0,
+			Resources: corev1.ResourceList{
+				corev1.ResourceCPU: *resource.NewMilliQuantity(0, resource.DecimalSI),
+			},
+		},
+		{
+			Node: 1,
+			Resources: corev1.ResourceList{
+				corev1.ResourceCPU: *resource.NewMilliQuantity(8000, resource.DecimalSI),
+			},
+		},
+	}, topologyOptions.NUMANodeResources)
 
 	delete(topology.Annotations, extension.AnnotationNodeCPUAllocs)
 	_, err = suit.NRTClientset.TopologyV1alpha1().NodeResourceTopologies().Update(context.TODO(), topology, metav1.UpdateOptions{})
