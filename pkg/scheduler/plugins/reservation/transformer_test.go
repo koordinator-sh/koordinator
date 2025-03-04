@@ -289,13 +289,14 @@ func TestRestoreReservation(t *testing.T) {
 	}
 	assert.Equal(t, expectedRequestedResources, nodeInfo.Requested)
 
-	pl.reservationCache.updateReservation(unmatchedReservation)
-	pl.reservationCache.updateReservation(matchedReservation)
+	pl.reservationCache.UpdateReservation(unmatchedReservation)
+	pl.reservationCache.UpdateReservation(matchedReservation)
 
-	pl.reservationCache.addPod(unmatchedReservation.UID, podAllocatedWithUnmatchedReservation)
+	err = pl.reservationCache.AddPod(unmatchedReservation.UID, podAllocatedWithUnmatchedReservation)
+	assert.NoError(t, err)
 
-	matchRInfo := pl.reservationCache.getReservationInfoByUID(matchedReservation.UID)
-	unmatchedRInfo := pl.reservationCache.getReservationInfoByUID(unmatchedReservation.UID)
+	matchRInfo := pl.reservationCache.GetReservationInfoByUID(matchedReservation.UID)
+	unmatchedRInfo := pl.reservationCache.GetReservationInfoByUID(unmatchedReservation.UID)
 
 	cycleState := framework.NewCycleState()
 	_, restored, status := pl.BeforePreFilter(context.TODO(), cycleState, &corev1.Pod{
@@ -620,13 +621,14 @@ func TestRestoreReservationWithLazyReservationRestore(t *testing.T) {
 	}
 	assert.Equal(t, expectedRequestedResources, nodeInfo.Requested)
 
-	pl.reservationCache.updateReservation(unmatchedReservation)
-	pl.reservationCache.updateReservation(matchedReservation)
+	pl.reservationCache.UpdateReservation(unmatchedReservation)
+	pl.reservationCache.UpdateReservation(matchedReservation)
 
-	pl.reservationCache.addPod(unmatchedReservation.UID, podAllocatedWithUnmatchedReservation)
+	err = pl.reservationCache.AddPod(unmatchedReservation.UID, podAllocatedWithUnmatchedReservation)
+	assert.NoError(t, err)
 
-	matchRInfo := pl.reservationCache.getReservationInfoByUID(matchedReservation.UID)
-	unmatchedRInfo := pl.reservationCache.getReservationInfoByUID(unmatchedReservation.UID)
+	matchRInfo := pl.reservationCache.GetReservationInfoByUID(matchedReservation.UID)
+	unmatchedRInfo := pl.reservationCache.GetReservationInfoByUID(unmatchedReservation.UID)
 
 	cycleState := framework.NewCycleState()
 	_, restored, status := pl.BeforePreFilter(context.TODO(), cycleState, &corev1.Pod{
@@ -951,7 +953,7 @@ func TestBeforePreFilterWithReservationAffinity(t *testing.T) {
 			assert.NoError(t, err)
 			pl := p.(*Plugin)
 
-			pl.reservationCache.updateReservation(matchedReservation)
+			pl.reservationCache.UpdateReservation(matchedReservation)
 
 			testPod := &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
@@ -1162,7 +1164,7 @@ func TestBeforePreFilterWithNodeAffinity(t *testing.T) {
 			assert.NoError(t, err)
 			pl := p.(*Plugin)
 
-			pl.reservationCache.updateReservation(matchedReservation)
+			pl.reservationCache.UpdateReservation(matchedReservation)
 			testPod.Spec.Affinity = &corev1.Affinity{
 				NodeAffinity: tt.nodeAffinity,
 			}

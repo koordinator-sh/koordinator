@@ -130,7 +130,7 @@ func BenchmarkBeforePrefilterWithMatchedPod(b *testing.B) {
 				},
 			},
 		}
-		pl.reservationCache.updateReservation(reservation)
+		pl.reservationCache.UpdateReservation(reservation)
 		nodeInfo, err := pl.handle.SnapshotSharedLister().NodeInfos().Get(node.Name)
 		assert.NoError(b, err)
 		reservePod := reservationutil.NewReservePod(reservation)
@@ -312,7 +312,7 @@ func BenchmarkBeforePrefilterWithUnmatchedPod(b *testing.B) {
 				},
 			},
 		}
-		pl.reservationCache.updateReservation(reservation)
+		pl.reservationCache.UpdateReservation(reservation)
 		nodeInfo, err := pl.handle.SnapshotSharedLister().NodeInfos().Get(node.Name)
 		assert.NoError(b, err)
 		reservePod := reservationutil.NewReservePod(reservation)
@@ -340,7 +340,7 @@ func BenchmarkBeforePrefilterWithUnmatchedPod(b *testing.B) {
 					},
 				},
 			}
-			pl.reservationCache.updatePod(reservation.UID, nil, pod)
+			pl.reservationCache.UpdatePod(reservation.UID, nil, pod)
 			nodeInfo.AddPod(pod)
 			assert.NoError(b, pl.handle.Scheduler().GetCache().AddPod(klog.Background(), pod))
 		}
@@ -498,7 +498,7 @@ func BenchmarkBeforePrefilterWithMatchedPodEnableLazyReservationRestore(b *testi
 				},
 			},
 		}
-		pl.reservationCache.updateReservation(reservation)
+		pl.reservationCache.UpdateReservation(reservation)
 		nodeInfo, err := pl.handle.SnapshotSharedLister().NodeInfos().Get(node.Name)
 		assert.NoError(b, err)
 		reservePod := reservationutil.NewReservePod(reservation)
@@ -681,7 +681,7 @@ func BenchmarkBeforePrefilterWithUnmatchedPodEnableLazyReservationRestore(b *tes
 				},
 			},
 		}
-		pl.reservationCache.updateReservation(reservation)
+		pl.reservationCache.UpdateReservation(reservation)
 		nodeInfo, err := pl.handle.SnapshotSharedLister().NodeInfos().Get(node.Name)
 		assert.NoError(b, err)
 		reservePod := reservationutil.NewReservePod(reservation)
@@ -709,7 +709,7 @@ func BenchmarkBeforePrefilterWithUnmatchedPodEnableLazyReservationRestore(b *tes
 					},
 				},
 			}
-			pl.reservationCache.updatePod(reservation.UID, nil, pod)
+			pl.reservationCache.UpdatePod(reservation.UID, nil, pod)
 			nodeInfo.AddPod(pod)
 			assert.NoError(b, pl.handle.Scheduler().GetCache().AddPod(klog.Background(), pod))
 		}

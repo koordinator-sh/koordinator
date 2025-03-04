@@ -24,7 +24,6 @@ import (
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
-	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	frameworkexthelper "github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/helper"
@@ -95,9 +94,7 @@ func (h *podEventHandler) updatePod(oldPod, newPod *corev1.Pod) {
 		return
 	}
 
-	h.nominator.RemoveNominatedReservation(newPod)
-	podInfo, _ := framework.NewPodInfo(newPod)
-	h.nominator.DeleteReservePod(podInfo)
+	h.nominator.RemoveNominatedReservationAndReservePod(newPod)
 
 	var reservationUID types.UID
 	if oldPod != nil {
@@ -114,7 +111,7 @@ func (h *podEventHandler) updatePod(oldPod, newPod *corev1.Pod) {
 	}
 
 	if reservationUID != "" {
-		h.cache.updatePod(reservationUID, oldPod, newPod)
+		h.cache.UpdatePod(reservationUID, oldPod, newPod)
 	}
 
 	if newPod != nil && apiext.IsReservationOperatingMode(newPod) {
@@ -125,21 +122,19 @@ func (h *podEventHandler) updatePod(oldPod, newPod *corev1.Pod) {
 		if err != nil {
 			klog.ErrorS(err, "Invalid reservation current owner in Pod", "pod", klog.KObj(newPod))
 		}
-		h.cache.updateReservationOperatingPod(newPod, currentOwner)
+		h.cache.UpdateReservationOperatingPod(newPod, currentOwner)
 	}
 }
 
 func (h *podEventHandler) deletePod(pod *corev1.Pod) {
-	h.nominator.RemoveNominatedReservation(pod)
-	podInfo, _ := framework.NewPodInfo(pod)
-	h.nominator.DeleteReservePod(podInfo)
+	h.nominator.RemoveNominatedReservationAndReservePod(pod)
 
 	reservationAllocated, err := apiext.GetReservationAllocated(pod)
 	if err == nil && reservationAllocated != nil && reservationAllocated.UID != "" {
-		h.cache.deletePod(reservationAllocated.UID, pod)
+		h.cache.DeletePod(reservationAllocated.UID, pod)
 	}
 
 	if apiext.IsReservationOperatingMode(pod) {
-		h.cache.deleteReservationOperatingPod(pod)
+		h.cache.DeleteReservationOperatingPod(pod)
 	}
 }

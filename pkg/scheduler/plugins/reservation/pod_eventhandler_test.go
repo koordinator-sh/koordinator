@@ -55,7 +55,7 @@ func TestPodEventHandler(t *testing.T) {
 			},
 		},
 	}
-	handler.cache.updateReservation(reservation)
+	handler.cache.UpdateReservation(reservation)
 
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
@@ -86,7 +86,7 @@ func TestPodEventHandler(t *testing.T) {
 	assert.Equal(t, "test-node-1", handler.nominator.nominatedReservePodToNode[pod.UID])
 	assert.Equal(t, []*framework.PodInfo{podInfo}, handler.nominator.nominatedReservePod["test-node-1"])
 	handler.OnAdd(pod, true)
-	rInfo := handler.cache.getReservationInfoByUID(reservationUID)
+	rInfo := handler.cache.GetReservationInfoByUID(reservationUID)
 	assert.Empty(t, rInfo.AssignedPods)
 	// pod not assigned, no need to delete reservation nominated node
 	assert.Equal(t, "test-node-1", handler.nominator.nominatedReservePodToNode[pod.UID])
@@ -95,7 +95,7 @@ func TestPodEventHandler(t *testing.T) {
 	newPod := pod.DeepCopy()
 	apiext.SetReservationAllocated(newPod, reservation)
 	handler.OnUpdate(pod, newPod)
-	rInfo = handler.cache.getReservationInfoByUID(reservationUID)
+	rInfo = handler.cache.GetReservationInfoByUID(reservationUID)
 	assert.Len(t, rInfo.AssignedPods, 0)
 	// pod not assigned, no need to delete reservation nominated node
 	assert.Equal(t, "test-node-1", handler.nominator.nominatedReservePodToNode[pod.UID])
@@ -103,7 +103,7 @@ func TestPodEventHandler(t *testing.T) {
 
 	newPod.Spec.NodeName = reservation.Status.NodeName
 	handler.OnUpdate(pod, newPod)
-	rInfo = handler.cache.getReservationInfoByUID(reservationUID)
+	rInfo = handler.cache.GetReservationInfoByUID(reservationUID)
 	assert.Len(t, rInfo.AssignedPods, 1)
 	// pod assigned, delete reservation nominated node
 	assert.Equal(t, "", handler.nominator.nominatedReservePodToNode[pod.UID])
@@ -139,7 +139,7 @@ func TestPodEventHandler(t *testing.T) {
 	assert.Equal(t, []*framework.PodInfo{podInfo1, podInfo2}, handler.nominator.nominatedReservePod["test-node-1"])
 
 	handler.OnDelete(newPod)
-	rInfo = handler.cache.getReservationInfoByUID(reservationUID)
+	rInfo = handler.cache.GetReservationInfoByUID(reservationUID)
 	assert.Empty(t, rInfo.AssignedPods)
 	assert.Equal(t, "", handler.nominator.nominatedReservePodToNode[newPod.UID])
 	podInfo, _ = framework.NewPodInfo(&corev1.Pod{
@@ -193,7 +193,7 @@ func TestPodEventHandlerWithOperatingPod(t *testing.T) {
 		},
 	}
 	handler.OnAdd(pod, true)
-	rInfo := handler.cache.getReservationInfoByUID(operatingReservationPod.UID)
+	rInfo := handler.cache.GetReservationInfoByUID(operatingReservationPod.UID)
 	assert.NotNil(t, rInfo)
 
 	p := operatingReservationPod.DeepCopy()
@@ -204,7 +204,7 @@ func TestPodEventHandlerWithOperatingPod(t *testing.T) {
 	})
 	assert.NoError(t, err)
 	handler.OnUpdate(operatingReservationPod, p)
-	rInfo = handler.cache.getReservationInfoByUID(reservationUID)
+	rInfo = handler.cache.GetReservationInfoByUID(reservationUID)
 	assert.Len(t, rInfo.AssignedPods, 1)
 	expectPodRequirement := &frameworkext.PodRequirement{
 		Name:      pod.Name,
@@ -215,6 +215,6 @@ func TestPodEventHandlerWithOperatingPod(t *testing.T) {
 	assert.Equal(t, expectPodRequirement, rInfo.AssignedPods[pod.UID])
 
 	handler.OnDelete(operatingReservationPod)
-	rInfo = handler.cache.getReservationInfoByUID(reservationUID)
+	rInfo = handler.cache.GetReservationInfoByUID(reservationUID)
 	assert.Nil(t, rInfo)
 }
