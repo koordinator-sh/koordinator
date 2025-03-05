@@ -657,15 +657,22 @@ func filterCPUsByRequiredCPUBindPolicy(policy schedulingconfig.CPUBindPolicy, av
 	cpuDetails = cpuDetails.KeepOnly(availableCPUs)
 	switch policy {
 	case schedulingconfig.CPUBindPolicyFullPCPUs:
-		for _, core := range cpuDetails.Cores().ToSliceNoSort() {
-			cpus := cpuDetails.CPUsInCores(core)
-			if cpus.Size() == cpusPerCore {
-				builder.Add(cpus.ToSliceNoSort()...)
+		cpusInCore := map[int][]int{}
+		for _, info := range cpuDetails {
+			cpusInCore[info.CoreID] = append(cpusInCore[info.CoreID], info.CPUID)
+		}
+		for _, cpus := range cpusInCore {
+			if len(cpus) == cpusPerCore {
+				builder.Add(cpus...)
 			}
 		}
 		availableCPUs = builder.Result()
 	case schedulingconfig.CPUBindPolicySpreadByPCPUs:
-		for _, core := range cpuDetails.Cores().ToSliceNoSort() {
+		cpusInCore := map[int][]int{}
+		for _, info := range cpuDetails {
+			cpusInCore[info.CoreID] = append(cpusInCore[info.CoreID], info.CPUID)
+		}
+		for _, cpus := range cpusInCore {
 			// TODO(joseph): Maybe we should support required exclusive policy as following
 			//	allocated := allocatedCPUs.CPUsInCores(core)
 			//	if allocated.Size() > 0 {
@@ -676,9 +683,10 @@ func filterCPUsByRequiredCPUBindPolicy(policy schedulingconfig.CPUBindPolicy, av
 			//			continue
 			//		}
 			//	}
-
 			// Using only one CPU per core ensures correct hints are generated
-			cpus := cpuDetails.CPUsInCores(core).ToSlice()
+			sort.Slice(cpus, func(i, j int) bool {
+				return cpus[i] < cpus[j]
+			})
 			builder.Add(cpus[0])
 		}
 		availableCPUs = builder.Result()

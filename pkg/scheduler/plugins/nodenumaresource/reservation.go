@@ -214,8 +214,8 @@ func (p *Plugin) RestoreReservation(ctx context.Context, cycleState *framework.C
 				if !ok || reservedCPUs.IsEmpty() {
 					return
 				}
-				allocatableCPUs = reservedCPUs.Clone()
-				allocatedCPUs = reservedCPUs.Clone()
+				allocatableCPUs = reservedCPUs
+				allocatedCPUs = reservedCPUs
 				for _, pod := range rInfo.AssignedPods {
 					podCPUs, ok := p.resourceManager.GetAllocatedCPUSet(nodeName, pod.UID)
 					if !ok || podCPUs.IsEmpty() {
@@ -289,7 +289,7 @@ func tryAllocateFromReservation(
 	var status *framework.Status
 
 	reusableResource := appendAllocated(nil, restoreState.mergedUnmatchedUsed, restoreState.mergedMatchedAllocated)
-	preferredCPUs := restoreState.mergedMatchedAllocatedCPUs.Clone()
+	preferredCPUs := restoreState.mergedMatchedAllocatedCPUs
 	preemptibleCPUs := cpuset.NewCPUSet()
 
 	// update with node preemption state
