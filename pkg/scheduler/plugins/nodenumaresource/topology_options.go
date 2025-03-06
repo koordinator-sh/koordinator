@@ -136,6 +136,17 @@ func NewTopologyOptions(nrt *nrtv1alpha1.NodeResourceTopology) TopologyOptions {
 	policy := convertToNUMATopologyPolicy(nrt)
 	numaNodeResources := extractNUMANodeResources(nrt)
 
+	cpuDetails := cpuTopology.CPUDetails.KeepOnly(reservedCPUs)
+	for i, numaNode := range numaNodeResources {
+		cpuQuantity := numaNode.Resources[corev1.ResourceCPU]
+		if cpuQuantity.IsZero() {
+			continue
+		}
+		cpusInNUMANode := cpuDetails.CPUsInNUMANodes(numaNode.Node)
+		cpuQuantity.SetMilli(cpuQuantity.MilliValue() - int64(cpusInNUMANode.Size())*1000)
+		numaNodeResources[i].Resources[corev1.ResourceCPU] = cpuQuantity
+	}
+
 	amplificationRatios, err := extension.GetNodeResourceAmplificationRatios(nrt.Annotations)
 	if err != nil {
 		klog.Errorf("Failed to GetNodeResourceAmplificationRatios, name: %s, err: %v", nrt.Name, err)
