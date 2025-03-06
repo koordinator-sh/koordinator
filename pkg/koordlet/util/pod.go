@@ -59,7 +59,7 @@ func GetPodSandboxContainerID(pod *corev1.Pod) (string, error) {
 	}
 
 	// get runtime type and dir names of known containers
-	containerSubDirNames := make(map[string]struct{}, len(pod.Status.ContainerStatuses))
+	containerSubDirNames := make(map[string]struct{}, len(pod.Status.ContainerStatuses)+len(pod.Status.InitContainerStatuses))
 	containerRuntime := system.RuntimeTypeUnknown
 	for _, containerStat := range pod.Status.InitContainerStatuses {
 		runtimeType, containerDirName, err := system.CgroupPathFormatter.ContainerDirFn(containerStat.ContainerID)

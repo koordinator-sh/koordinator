@@ -484,39 +484,37 @@ func (c *reconciler) reconcilePodCgroup(stopCh <-chan struct{}) {
 					}
 				}
 
-				for _, initContainerStat := range podMeta.Pod.Status.InitContainerStatuses {
-					// TODO exclude some init containers, e.g. restartPolicy != Always
-					for resourceType, r := range globalCgroupReconcilers.containerLevel {
-						condition := r.filter.Filter(podMeta)
-						reconcileFn, ok := r.fn[condition]
-						if !ok {
-							klog.V(5).Infof("calling reconcile function %v aborted for init container %v/%v, condition %s not registered",
-								r.description[condition], podMeta.Key(), initContainerStat.Name, condition)
-							continue
-						}
-
-						containerCtx := protocol.HooksProtocolBuilder.Container(podMeta, initContainerStat.Name)
-						start := time.Now()
-						if err := reconcileFn(containerCtx); err != nil {
-							metrics.RecordRuntimeHookReconcilerInvokedDurationMilliSeconds(string(ContainerLevel), resourceType, err, metrics.SinceInSeconds(start))
-							klog.Warningf("calling reconcile function %v for init container %v/%v failed, error %v",
-								r.description[condition], podMeta.Key(), initContainerStat.Name, err)
-						} else {
-							containerCtx.ReconcilerDone(c.executor)
-							metrics.RecordRuntimeHookReconcilerInvokedDurationMilliSeconds(string(ContainerLevel), resourceType, nil, metrics.SinceInSeconds(start))
-							klog.V(5).Infof("calling reconcile function %v for init container %v/%v finish",
-								r.description[condition], podMeta.Key(), initContainerStat.Name)
-						}
-					}
+				allContainersSpec := make(map[string]*corev1.Container, len(podMeta.Pod.Spec.Containers)+len(podMeta.Pod.Spec.InitContainers))
+				for i := range podMeta.Pod.Spec.InitContainers {
+					initContainer := &podMeta.Pod.Spec.InitContainers[i]
+					allContainersSpec[initContainer.Name] = initContainer
 				}
-
-				for _, containerStat := range podMeta.Pod.Status.ContainerStatuses {
+				for i := range podMeta.Pod.Spec.Containers {
+					container := &podMeta.Pod.Spec.Containers[i]
+					allContainersSpec[container.Name] = container
+				}
+				allContainerStatus := make([]corev1.ContainerStatus, 0, len(podMeta.Pod.Status.ContainerStatuses)+len(podMeta.Pod.Status.InitContainerStatuses))
+				allContainerStatus = append(allContainerStatus, podMeta.Pod.Status.ContainerStatuses...)
+				allContainerStatus = append(allContainerStatus, podMeta.Pod.Status.InitContainerStatuses...)
+				for _, containerStat := range allContainerStatus {
 					for resourceType, r := range globalCgroupReconcilers.containerLevel {
 						condition := r.filter.Filter(podMeta)
 						reconcileFn, ok := r.fn[condition]
 						if !ok {
 							klog.V(5).Infof("calling reconcile function %v aborted for container %v/%v, condition %s not registered",
 								r.description[condition], podMeta.Key(), containerStat.Name, condition)
+							continue
+						}
+
+						containerSpec, exist := allContainersSpec[containerStat.Name]
+						if !exist || containerSpec == nil {
+							klog.Warningf("container %v not found in pod %v/%v, skip reconcile",
+								containerStat.Name, podMeta.Pod.Namespace, podMeta.Pod.Name)
+							continue
+						}
+						if protocol.ContainerReconcileIgnoreFilter(podMeta.Pod, containerSpec, &containerStat) {
+							klog.V(5).Infof("container %v is ignored in pod %v/%v, skip reconcile",
+								containerStat.Name, podMeta.Pod.Namespace, podMeta.Pod.Name)
 							continue
 						}
 

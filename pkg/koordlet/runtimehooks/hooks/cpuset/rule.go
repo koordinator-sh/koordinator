@@ -208,11 +208,32 @@ func (p *cpusetPlugin) ruleUpdateCb(target *statesinformer.CallbackTarget) error
 		return nil
 	}
 	for _, podMeta := range target.Pods {
+		allContainersSpec := make(map[string]*corev1.Container, len(podMeta.Pod.Spec.Containers)+len(podMeta.Pod.Spec.InitContainers))
+		for i := range podMeta.Pod.Spec.InitContainers {
+			initContainer := &podMeta.Pod.Spec.InitContainers[i]
+			allContainersSpec[initContainer.Name] = initContainer
+		}
+		for i := range podMeta.Pod.Spec.Containers {
+			container := &podMeta.Pod.Spec.Containers[i]
+			allContainersSpec[container.Name] = container
+		}
+
 		allContainerStatus := make([]corev1.ContainerStatus, 0, len(podMeta.Pod.Status.ContainerStatuses)+len(podMeta.Pod.Status.InitContainerStatuses))
 		allContainerStatus = append(allContainerStatus, podMeta.Pod.Status.ContainerStatuses...)
 		allContainerStatus = append(allContainerStatus, podMeta.Pod.Status.InitContainerStatuses...)
 		for _, containerStat := range allContainerStatus {
-			// TODO exclude some init containers, e.g. restartPolicy != Always
+			containerSpec, exist := allContainersSpec[containerStat.Name]
+			if !exist || containerSpec == nil {
+				klog.Warningf("container %v not found in pod %v/%v, skip reconcile",
+					containerStat.Name, podMeta.Pod.Namespace, podMeta.Pod.Name)
+				continue
+			}
+			if protocol.ContainerReconcileIgnoreFilter(podMeta.Pod, containerSpec, &containerStat) {
+				klog.V(5).Infof("container %v is ignored in pod %v/%v, skip reconcile",
+					containerStat.Name, podMeta.Pod.Namespace, podMeta.Pod.Name)
+				continue
+			}
+
 			containerCtx := &protocol.ContainerContext{}
 			containerCtx.FromReconciler(podMeta, containerStat.Name, false)
 			if err := p.SetContainerCPUSet(containerCtx); err != nil {
