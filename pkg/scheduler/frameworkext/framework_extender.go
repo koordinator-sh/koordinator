@@ -507,8 +507,10 @@ func (ext *frameworkExtenderImpl) RunReservePluginsReserve(ctx context.Context, 
 	schedulingphase.RecordPhase(cycleState, schedulingphase.Reserve)
 	defer func() { schedulingphase.RecordPhase(cycleState, "") }()
 	status := ext.Framework.RunReservePluginsReserve(ctx, cycleState, pod, nodeName)
-	ext.GetReservationNominator().RemoveNominatedReservations(pod)
-	ext.GetReservationNominator().DeleteNominatedReservePod(pod)
+	// FIXME: keep consistent with the assume cache for the reservation
+	if reservationNominator := ext.GetReservationNominator(); reservationNominator != nil {
+		reservationNominator.RemoveNominatedReservationsAndReservePod(pod)
+	}
 	return status
 }
 

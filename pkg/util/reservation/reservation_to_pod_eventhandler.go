@@ -108,7 +108,7 @@ func IsObjValidActiveReservation(obj interface{}) bool {
 		return false
 	}
 	if !IsReservationActive(reservation) {
-		klog.V(6).InfoS("ignore reservation obj since it is not active",
+		klog.V(7).InfoS("ignore reservation obj since it is not active",
 			"reservation", klog.KObj(reservation), "phase", reservation.Status.Phase)
 		return false
 	}

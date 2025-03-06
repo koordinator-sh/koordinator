@@ -64,6 +64,12 @@ const (
 	// LazyReservationRestore is used to restore reserved resources lazily to improve the scheduling performance.
 	LazyReservationRestore featuregate.Feature = "LazyReservationRestore"
 
+	// owner: @saintube
+	// alpha: v1.6
+	//
+	// SyncReservationDeletion enables the pod ownership reconciliation when the reservation is deleted.
+	SyncReservationDeletion featuregate.Feature = "SyncReservationDeletion"
+
 	CSIStorageCapacity featuregate.Feature = "CSIStorageCapacity"
 
 	GenericEphemeralVolume featuregate.Feature = "GenericEphemeralVolume"
@@ -85,6 +91,7 @@ var defaultSchedulerFeatureGates = map[featuregate.Feature]featuregate.FeatureSp
 	DisableDefaultQuota:                       {Default: false, PreRelease: featuregate.Alpha},
 	SupportParentQuotaSubmitPod:               {Default: false, PreRelease: featuregate.Alpha},
 	LazyReservationRestore:                    {Default: false, PreRelease: featuregate.Alpha},
+	SyncReservationDeletion:                   {Default: false, PreRelease: featuregate.Alpha},
 	CSIStorageCapacity:                        {Default: true, PreRelease: featuregate.GA}, // remove in 1.26
 	GenericEphemeralVolume:                    {Default: true, PreRelease: featuregate.GA},
 	PodDisruptionBudget:                       {Default: true, PreRelease: featuregate.GA},

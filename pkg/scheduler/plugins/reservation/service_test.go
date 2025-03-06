@@ -83,7 +83,7 @@ func TestQueryNodeReservations(t *testing.T) {
 			},
 		},
 	}
-	pl.reservationCache.updateReservation(reservation)
+	pl.reservationCache.UpdateReservation(reservation)
 	assignedPod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "test-pod-1",
@@ -104,7 +104,8 @@ func TestQueryNodeReservations(t *testing.T) {
 			},
 		},
 	}
-	pl.reservationCache.addPod(reservation.UID, assignedPod)
+	err := pl.reservationCache.AddPod(reservation.UID, assignedPod)
+	assert.NoError(t, err)
 
 	owners := []schedulingv1alpha1.ReservationOwner{
 		{
@@ -154,7 +155,7 @@ func TestQueryNodeReservations(t *testing.T) {
 		},
 	}
 
-	pl.reservationCache.updateReservationOperatingPod(operatingPod, &corev1.ObjectReference{
+	pl.reservationCache.UpdateReservationOperatingPod(operatingPod, &corev1.ObjectReference{
 		Name:      "assigned-pod-1",
 		Namespace: "default",
 		UID:       "123456",
