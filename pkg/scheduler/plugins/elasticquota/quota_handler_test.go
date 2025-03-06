@@ -164,8 +164,8 @@ func TestPlugin_OnQuotaUpdateAndDeleteWithTreeID(t *testing.T) {
 	plugin.OnQuotaUpdate(oldQuota, changeQuota)
 	quotaInfo := gqmA.GetQuotaInfoByName("test1-b")
 	gqmA.RefreshRuntime("test1-b")
-	assert.Equal(t, corev1.ResourceList{}, quotaInfo.GetRequest())
-	assert.Equal(t, corev1.ResourceList{}, quotaInfo.GetUsed())
+	assert.Equal(t, createResourceList(0, 0), quotaInfo.GetRequest())
+	assert.Equal(t, createResourceList(0, 0), quotaInfo.GetUsed())
 	assert.Equal(t, createResourceList(0, 0), quotaInfo.GetRuntime())
 
 	quotaInfo = gqmA.GetQuotaInfoByName("test1-a")
@@ -212,8 +212,8 @@ func TestPlugin_OnQuotaUpdateAndDeleteWithTreeID(t *testing.T) {
 
 	gqmA.RefreshRuntime("test1-b")
 	quotaInfo = gqmA.GetQuotaInfoByName("test1-b")
-	assert.Equal(t, corev1.ResourceList{}, quotaInfo.GetRequest())
-	assert.Equal(t, corev1.ResourceList{}, quotaInfo.GetUsed())
+	assert.Equal(t, createResourceList(0, 0), quotaInfo.GetRequest())
+	assert.Equal(t, createResourceList(0, 0), quotaInfo.GetUsed())
 	assert.Equal(t, createResourceList(0, 0), quotaInfo.GetRuntime())
 
 	quotaInfo = gqmA.GetQuotaInfoByName("test1")
