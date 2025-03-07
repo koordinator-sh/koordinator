@@ -395,6 +395,10 @@ func (gqm *GroupQuotaManager) UpdateQuota(quota *v1alpha1.ElasticQuota, isDelete
 		newQuotaInfo := NewQuotaInfoFromQuota(quota)
 		// update the local quotaInfo's crd
 		if localQuotaInfo, exist := gqm.quotaInfoMap[quotaName]; exist {
+			if !localQuotaInfo.isQuotaChange(newQuotaInfo) {
+				return nil
+			}
+
 			// if the quotaMeta doesn't change, only runtime/used/request/min/max/sharedWeight change causes update,
 			// no need to call updateQuotaGroupConfigNoLock.
 			if !localQuotaInfo.isQuotaMetaChange(newQuotaInfo) {
