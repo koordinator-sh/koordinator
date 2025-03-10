@@ -443,6 +443,30 @@ func (qi *QuotaInfo) isQuotaMetaChange(quotaInfo *QuotaInfo) bool {
 	return false
 }
 
+func (qi *QuotaInfo) isQuotaChange(quotaInfo *QuotaInfo) bool {
+	qi.lock.Lock()
+	defer qi.lock.Unlock()
+
+	if qi.AllowLentResource != quotaInfo.AllowLentResource ||
+		qi.IsParent != quotaInfo.IsParent ||
+		qi.ParentName != quotaInfo.ParentName {
+		return true
+	}
+
+	if !quotav1.Equals(qi.CalculateInfo.Max, quotaInfo.CalculateInfo.Max) {
+		return true
+	}
+
+	if !quotav1.Equals(qi.CalculateInfo.Min, quotaInfo.CalculateInfo.Min) {
+		return true
+	}
+
+	if !quotav1.Equals(qi.CalculateInfo.SharedWeight, quotaInfo.CalculateInfo.SharedWeight) {
+		return true
+	}
+	return false
+}
+
 func (qi *QuotaInfo) isQuotaParentChange(quotaInfo *QuotaInfo) bool {
 	qi.lock.Lock()
 	defer qi.lock.Unlock()
