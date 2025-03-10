@@ -75,6 +75,11 @@ func InitSupportConfigs() {
 	} else {
 		klog.V(4).Infof("resctrl supported: %v", isResctrlSupported)
 	}
+	if isResctrlCollectorSupported, err := IsSupportResctrlCollector(); err != nil {
+		klog.Warningf("failed to check resctrl collector support status, use %v, err: %v", isResctrlCollectorSupported, err)
+	} else {
+		klog.V(4).Infof("resctrl collector supported: %v", isResctrlCollectorSupported)
+	}
 }
 
 func NewHostModeConfig() *Config {
