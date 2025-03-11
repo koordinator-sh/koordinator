@@ -407,7 +407,7 @@ func ParseReservationOwnerMatchers(owners []schedulingv1alpha1.ReservationOwner)
 func (m *ReservationOwnerMatcher) Match(pod *corev1.Pod) bool {
 	if MatchObjectRef(pod, m.Object) &&
 		MatchReservationControllerReference(pod, m.Controller) &&
-		(m.Selector == nil || m.Selector.Matches(labels.Set(pod.Labels))) {
+		MatchLabels(pod.Labels, m.Selector) {
 		return true
 	}
 	return false
@@ -457,6 +457,13 @@ func MatchReservationControllerReference(pod *corev1.Pod, controllerRef *schedul
 		}
 	}
 	return false
+}
+
+func MatchLabels(podLabels map[string]string, selector labels.Selector) bool {
+	if selector == nil {
+		return true
+	}
+	return selector.Matches(labels.Set(podLabels))
 }
 
 type RequiredReservationAffinity struct {
