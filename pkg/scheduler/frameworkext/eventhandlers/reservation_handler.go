@@ -277,7 +277,7 @@ func updateReservationStatus(client koordclientset.Interface, reservationLister 
 		}
 
 		curR := r.DeepCopy()
-		setReservationUnschedulable(curR, schedulingErr.Error())
+		reservationutil.SetReservationUnschedulable(curR, schedulingErr.Error())
 		_, err = client.SchedulingV1alpha1().Reservations().UpdateStatus(context.TODO(), curR, metav1.UpdateOptions{})
 		if err != nil {
 			klog.V(4).ErrorS(err, "failed to UpdateStatus for unschedulable", "reservation", klog.KObj(curR))
@@ -286,36 +286,6 @@ func updateReservationStatus(client koordclientset.Interface, reservationLister 
 	})
 	if err != nil {
 		klog.Warningf("failed to UpdateStatus reservation %s, err: %v", rName, err)
-	}
-}
-
-func setReservationUnschedulable(r *schedulingv1alpha1.Reservation, msg string) {
-	// unschedule reservations can try scheduling in next cycles, so we does not update its phase
-	// not duplicate condition info
-	idx := -1
-	isScheduled := false
-	for i, condition := range r.Status.Conditions {
-		if condition.Type == schedulingv1alpha1.ReservationConditionScheduled {
-			idx = i
-			isScheduled = condition.Status == schedulingv1alpha1.ConditionStatusTrue
-		}
-	}
-	if idx < 0 { // if not set condition
-		condition := schedulingv1alpha1.ReservationCondition{
-			Type:               schedulingv1alpha1.ReservationConditionScheduled,
-			Status:             schedulingv1alpha1.ConditionStatusFalse,
-			Reason:             schedulingv1alpha1.ReasonReservationUnschedulable,
-			Message:            msg,
-			LastProbeTime:      metav1.Now(),
-			LastTransitionTime: metav1.Now(),
-		}
-		r.Status.Conditions = append(r.Status.Conditions, condition)
-	} else if isScheduled { // if is scheduled, keep the condition status
-		r.Status.Conditions[idx].LastProbeTime = metav1.Now()
-	} else { // if already unschedulable, update the message
-		r.Status.Conditions[idx].Reason = schedulingv1alpha1.ReasonReservationUnschedulable
-		r.Status.Conditions[idx].Message = msg
-		r.Status.Conditions[idx].LastProbeTime = metav1.Now()
 	}
 }
 

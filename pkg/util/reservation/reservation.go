@@ -257,6 +257,36 @@ func GetReservationNodeName(r *schedulingv1alpha1.Reservation) string {
 	return r.Status.NodeName
 }
 
+func SetReservationUnschedulable(r *schedulingv1alpha1.Reservation, msg string) {
+	// unschedule reservations can try scheduling in next cycles, so we does not update its phase
+	// not duplicate condition info
+	idx := -1
+	isScheduled := false
+	for i, condition := range r.Status.Conditions {
+		if condition.Type == schedulingv1alpha1.ReservationConditionScheduled {
+			idx = i
+			isScheduled = condition.Status == schedulingv1alpha1.ConditionStatusTrue
+		}
+	}
+	if idx < 0 { // if not set condition
+		condition := schedulingv1alpha1.ReservationCondition{
+			Type:               schedulingv1alpha1.ReservationConditionScheduled,
+			Status:             schedulingv1alpha1.ConditionStatusFalse,
+			Reason:             schedulingv1alpha1.ReasonReservationUnschedulable,
+			Message:            msg,
+			LastProbeTime:      metav1.Now(),
+			LastTransitionTime: metav1.Now(),
+		}
+		r.Status.Conditions = append(r.Status.Conditions, condition)
+	} else if isScheduled { // if is scheduled, keep the condition status
+		r.Status.Conditions[idx].LastProbeTime = metav1.Now()
+	} else { // if already unschedulable, update the message
+		r.Status.Conditions[idx].Reason = schedulingv1alpha1.ReasonReservationUnschedulable
+		r.Status.Conditions[idx].Message = msg
+		r.Status.Conditions[idx].LastProbeTime = metav1.Now()
+	}
+}
+
 func SetReservationExpired(r *schedulingv1alpha1.Reservation) {
 	r.Status.Phase = schedulingv1alpha1.ReservationFailed
 	// not duplicate expired info
