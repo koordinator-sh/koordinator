@@ -73,6 +73,7 @@ func TestCacheUpdateReservation(t *testing.T) {
 	reservationInfos := cache.listAvailableReservationInfosOnNode(reservation.Status.NodeName)
 	assert.Len(t, reservationInfos, 1)
 	rInfo := reservationInfos[0]
+	rInfo.RefreshAvailable()
 	expectReservationInfo := &frameworkext.ReservationInfo{
 		Reservation: reservation,
 		Pod:         reservationutil.NewReservePod(reservation),
@@ -87,6 +88,7 @@ func TestCacheUpdateReservation(t *testing.T) {
 		Allocated:    nil,
 		AssignedPods: map[types.UID]*frameworkext.PodRequirement{},
 	}
+	expectReservationInfo.RefreshAvailable()
 	sort.Slice(rInfo.ResourceNames, func(i, j int) bool {
 		return rInfo.ResourceNames[i] < rInfo.ResourceNames[j]
 	})
@@ -259,6 +261,7 @@ func TestCacheAddOrUpdateOrDeletePod(t *testing.T) {
 			},
 		},
 	}
+	expectReservationInfo.RefreshAvailable()
 	assert.Equal(t, expectReservationInfo, rInfo)
 
 	cache.updatePod(reservation.UID, pod, pod)
@@ -282,5 +285,6 @@ func TestCacheAddOrUpdateOrDeletePod(t *testing.T) {
 		corev1.ResourceMemory: resource.MustParse("0"),
 	}
 	expectReservationInfo.AssignedPods = map[types.UID]*frameworkext.PodRequirement{}
+	expectReservationInfo.RefreshAvailable()
 	assert.Equal(t, expectReservationInfo, rInfo)
 }
