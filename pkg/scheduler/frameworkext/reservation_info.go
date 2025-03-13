@@ -41,6 +41,7 @@ type ReservationInfo struct {
 	Allocatable      corev1.ResourceList
 	Allocated        corev1.ResourceList
 	Reserved         corev1.ResourceList // reserved inside the reservation
+	Available        *framework.Resource // Allocatable - Reserved - Allocated
 	AllocatablePorts framework.HostPortInfo
 	AllocatedPorts   framework.HostPortInfo
 	AssignedPods     map[types.UID]*PodRequirement
@@ -351,6 +352,7 @@ func (ri *ReservationInfo) Clone() *ReservationInfo {
 		Allocatable:      ri.Allocatable,
 		Allocated:        ri.Allocated,
 		Reserved:         ri.Reserved,
+		Available:        ri.Available,
 		AllocatablePorts: util.CloneHostPorts(ri.AllocatablePorts),
 		AllocatedPorts:   util.CloneHostPorts(ri.AllocatedPorts),
 		AssignedPods:     assignedPods,
@@ -380,7 +382,11 @@ func (ri *ReservationInfo) UpdateReservation(r *schedulingv1alpha1.Reservation) 
 		ri.Allocated = quotav1.Mask(ri.Allocated, ri.ResourceNames)
 	}
 	reserved := util.GetNodeReservationFromAnnotation(r.Annotations)
+	if len(reserved) > 0 {
+		reserved = quotav1.Mask(reserved, ri.ResourceNames)
+	}
 	ri.Reserved = reserved
+	ri.RefreshAvailable()
 
 	ownerMatchers, err := reservationutil.ParseReservationOwnerMatchers(r.Spec.Owners)
 	if err != nil {
@@ -412,7 +418,11 @@ func (ri *ReservationInfo) UpdatePod(pod *corev1.Pod) {
 	ri.AllocatablePorts = util.RequestedHostPorts(pod)
 	ri.Allocated = quotav1.Mask(ri.Allocated, ri.ResourceNames)
 	reserved := util.GetNodeReservationFromAnnotation(pod.Annotations)
+	if len(reserved) > 0 {
+		reserved = quotav1.Mask(reserved, ri.ResourceNames)
+	}
 	ri.Reserved = reserved
+	ri.RefreshAvailable()
 
 	owners, err := apiext.GetReservationOwners(pod.Annotations)
 	if err != nil {
@@ -444,12 +454,14 @@ func (ri *ReservationInfo) AddAssignedPod(pod *corev1.Pod) {
 	ri.Allocated = quotav1.Add(ri.Allocated, quotav1.Mask(requirement.Requests, ri.ResourceNames))
 	ri.AllocatedPorts = util.AppendHostPorts(ri.AllocatedPorts, requirement.Ports)
 	ri.AssignedPods[pod.UID] = requirement
+	ri.RefreshAvailable()
 }
 
 func (ri *ReservationInfo) RemoveAssignedPod(pod *corev1.Pod) {
 	if requirement, ok := ri.AssignedPods[pod.UID]; ok {
 		if len(requirement.Requests) > 0 {
 			ri.Allocated = quotav1.SubtractWithNonNegativeResult(ri.Allocated, quotav1.Mask(requirement.Requests, ri.ResourceNames))
+			ri.RefreshAvailable()
 		}
 		if len(requirement.Ports) > 0 {
 			util.RemoveHostPorts(ri.AllocatedPorts, requirement.Ports)
@@ -457,4 +469,17 @@ func (ri *ReservationInfo) RemoveAssignedPod(pod *corev1.Pod) {
 
 		delete(ri.AssignedPods, pod.UID)
 	}
+}
+
+func (ri *ReservationInfo) RefreshAvailable() {
+	// Reservation available = Allocatable - Allocated - InnerReserved
+	resources := quotav1.SubtractWithNonNegativeResult(quotav1.Subtract(ri.Allocatable, ri.Allocated), ri.Reserved)
+	ri.Available = framework.NewResource(resources)
+}
+
+func (ri *ReservationInfo) GetAvailable() *framework.Resource {
+	if ri.Available == nil {
+		ri.RefreshAvailable()
+	}
+	return ri.Available
 }

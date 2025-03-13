@@ -563,9 +563,7 @@ func fitsNode(podRequest *framework.Resource, nodeInfo *framework.NodeInfo, node
 
 	var rRemained *framework.Resource
 	if rInfo != nil {
-		// Reservation available = Allocatable - Allocated - InnerReserved
-		resources := quotav1.Subtract(quotav1.Subtract(rInfo.Allocatable, rInfo.Allocated), rInfo.Reserved)
-		rRemained = framework.NewResource(resources)
+		rRemained = rInfo.GetAvailable() // pre-calculate in cache
 	} else {
 		rRemained = dummyResource
 	}
@@ -603,11 +601,11 @@ func fitsNode(podRequest *framework.Resource, nodeInfo *framework.NodeInfo, node
 func fitsReservation(podRequest corev1.ResourceList, rInfo *frameworkext.ReservationInfo, preemptibleInRR corev1.ResourceList, isDetailed bool) []string {
 	allocated := rInfo.Allocated
 	if len(preemptibleInRR) > 0 {
+		preemptibleInRR = quotav1.Mask(preemptibleInRR, rInfo.ResourceNames)
 		allocated = quotav1.SubtractWithNonNegativeResult(allocated, preemptibleInRR)
 	}
 	allocatable := rInfo.Allocatable
-	allocated = quotav1.Mask(allocated, rInfo.ResourceNames)
-	reserved := quotav1.Mask(rInfo.Reserved, rInfo.ResourceNames)
+	reserved := rInfo.Reserved
 	requests := quotav1.Mask(podRequest, rInfo.ResourceNames)
 
 	var insufficientResourceReasons []string
