@@ -21,6 +21,8 @@ import (
 	"strings"
 	"testing"
 
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/util/validation"
 
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
@@ -181,6 +183,220 @@ func TestGetCustomLimiters(t *testing.T) {
 				if _, ok := rst[key]; !ok {
 					t.Errorf("expected custom limiter %s not found", key)
 				}
+			}
+		})
+	}
+}
+
+// TestCustomLimitConfMapEquals tests the customLimitConfMapEquals function.
+func TestCustomLimitConfMapEquals(t *testing.T) {
+	tests := []struct {
+		name     string
+		a        CustomLimitConfMap
+		b        CustomLimitConfMap
+		expected bool
+	}{
+		{
+			name:     "both nil",
+			a:        nil,
+			b:        nil,
+			expected: true,
+		},
+		{
+			name:     "first is nil",
+			a:        nil,
+			b:        CustomLimitConfMap{},
+			expected: false,
+		},
+		{
+			name:     "second is nil",
+			a:        CustomLimitConfMap{},
+			b:        nil,
+			expected: false,
+		},
+		{
+			name:     "both empty",
+			a:        CustomLimitConfMap{},
+			b:        CustomLimitConfMap{},
+			expected: true,
+		},
+		{
+			name: "same content",
+			a: CustomLimitConfMap{
+				"key1": &CustomLimitConf{
+					Limit: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("100m"),
+						corev1.ResourceMemory: resource.MustParse("200Mi"),
+					},
+					Args: &MockCustomArgs{
+						DebugEnabled:     true,
+						RebuildTriggerID: "123",
+					},
+				},
+				"key2": &CustomLimitConf{
+					Limit: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("200m"),
+						corev1.ResourceMemory: resource.MustParse("400Mi"),
+					},
+					Args: &MockCustomArgs{
+						DebugEnabled:     false,
+						RebuildTriggerID: "456",
+					},
+				},
+			},
+			b: CustomLimitConfMap{
+				"key1": &CustomLimitConf{
+					Limit: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("100m"),
+						corev1.ResourceMemory: resource.MustParse("200Mi"),
+					},
+					Args: &MockCustomArgs{
+						DebugEnabled:     true,
+						RebuildTriggerID: "123",
+					},
+				},
+				"key2": &CustomLimitConf{
+					Limit: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("200m"),
+						corev1.ResourceMemory: resource.MustParse("400Mi"),
+					},
+					Args: &MockCustomArgs{
+						DebugEnabled:     false,
+						RebuildTriggerID: "456",
+					},
+				},
+			},
+			expected: true,
+		},
+		{
+			name: "different keys",
+			a: CustomLimitConfMap{
+				"key1": &CustomLimitConf{
+					Limit: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("100m"),
+						corev1.ResourceMemory: resource.MustParse("200Mi"),
+					},
+					Args: &MockCustomArgs{
+						DebugEnabled:     true,
+						RebuildTriggerID: "123",
+					},
+				},
+			},
+			b: CustomLimitConfMap{
+				"key2": &CustomLimitConf{
+					Limit: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("100m"),
+						corev1.ResourceMemory: resource.MustParse("200Mi"),
+					},
+					Args: &MockCustomArgs{
+						DebugEnabled:     true,
+						RebuildTriggerID: "123",
+					},
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "different limits",
+			a: CustomLimitConfMap{
+				"key1": &CustomLimitConf{
+					Limit: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("100m"),
+						corev1.ResourceMemory: resource.MustParse("200Mi"),
+					},
+					Args: &MockCustomArgs{
+						DebugEnabled:     true,
+						RebuildTriggerID: "123",
+					},
+				},
+			},
+			b: CustomLimitConfMap{
+				"key1": &CustomLimitConf{
+					Limit: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("200m"),
+						corev1.ResourceMemory: resource.MustParse("400Mi"),
+					},
+					Args: &MockCustomArgs{
+						DebugEnabled:     true,
+						RebuildTriggerID: "123",
+					},
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "different args",
+			a: CustomLimitConfMap{
+				"key1": &CustomLimitConf{
+					Limit: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("100m"),
+						corev1.ResourceMemory: resource.MustParse("200Mi"),
+					},
+					Args: &MockCustomArgs{
+						DebugEnabled:     true,
+						RebuildTriggerID: "123",
+					},
+				},
+			},
+			b: CustomLimitConfMap{
+				"key1": &CustomLimitConf{
+					Limit: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("100m"),
+						corev1.ResourceMemory: resource.MustParse("200Mi"),
+					},
+					Args: &MockCustomArgs{
+						DebugEnabled:     false,
+						RebuildTriggerID: "123",
+					},
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "different lengths",
+			a: CustomLimitConfMap{
+				"key1": &CustomLimitConf{
+					Limit: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("100m"),
+						corev1.ResourceMemory: resource.MustParse("200Mi"),
+					},
+					Args: &MockCustomArgs{
+						DebugEnabled:     true,
+						RebuildTriggerID: "123",
+					},
+				},
+			},
+			b: CustomLimitConfMap{
+				"key1": &CustomLimitConf{
+					Limit: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("100m"),
+						corev1.ResourceMemory: resource.MustParse("200Mi"),
+					},
+					Args: &MockCustomArgs{
+						DebugEnabled:     true,
+						RebuildTriggerID: "123",
+					},
+				},
+				"key2": &CustomLimitConf{
+					Limit: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("200m"),
+						corev1.ResourceMemory: resource.MustParse("400Mi"),
+					},
+					Args: &MockCustomArgs{
+						DebugEnabled:     false,
+						RebuildTriggerID: "456",
+					},
+				},
+			},
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			actual := customLimitConfMapEquals(tt.a, tt.b)
+			if actual != tt.expected {
+				t.Errorf("customLimitConfMapEquals(%v, %v) = %v, want %v", tt.a, tt.b, actual, tt.expected)
 			}
 		})
 	}

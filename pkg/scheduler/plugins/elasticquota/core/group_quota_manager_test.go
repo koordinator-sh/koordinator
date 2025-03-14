@@ -3041,3 +3041,211 @@ func assertResListEquals(t *testing.T, expected, actual v1.ResourceList) {
 		assert.Fail(t, fmt.Sprintf("expected: %v\n  actual: %v", expected, actual))
 	}
 }
+
+// TestHasCustomLimitForDescendants tests the hasCustomLimitForDescendants function.
+func TestHasCustomLimitForDescendants(t *testing.T) {
+	testResource := v1.ResourceList{
+		v1.ResourceCPU:    resource.MustParse("100m"),
+		v1.ResourceMemory: resource.MustParse("200Mi"),
+	}
+	testCustomKey := "test"
+	tests := []struct {
+		name      string
+		node      *QuotaTopoNode
+		customKey string
+		expected  bool
+	}{
+		{
+			name:      "no descendants",
+			node:      newQuotaTopoNodeForTest("root", ""),
+			customKey: testCustomKey,
+			expected:  false,
+		},
+		{
+			name: "descendant has custom limit",
+			node: func() *QuotaTopoNode {
+				root := newQuotaTopoNodeForTest("root", "")
+				child := newQuotaTopoNodeWithCustomLimitsForTest("child", "root", testCustomKey, testResource)
+				root.addChildGroupQuotaInfo(child)
+				return root
+			}(),
+			customKey: testCustomKey,
+			expected:  true,
+		},
+		{
+			name: "descendant does not have custom limit",
+			node: func() *QuotaTopoNode {
+				root := newQuotaTopoNodeForTest("root", "")
+				child := newQuotaTopoNodeForTest("child", "root")
+				root.addChildGroupQuotaInfo(child)
+				return root
+			}(),
+			customKey: testCustomKey,
+			expected:  false,
+		},
+		{
+			name: "multiple descendants, one has custom limit",
+			node: func() *QuotaTopoNode {
+				root := newQuotaTopoNodeForTest("root", "")
+				parent1 := newQuotaTopoNodeForTest("parent1", "root")
+				parent2 := newQuotaTopoNodeForTest("parent2", "root")
+				root.addChildGroupQuotaInfo(parent1)
+				root.addChildGroupQuotaInfo(parent2)
+				child1 := newQuotaTopoNodeForTest("child1", "parent1")
+				parent1.addChildGroupQuotaInfo(child1)
+				child2 := newQuotaTopoNodeWithCustomLimitsForTest("child2", "parent2", testCustomKey, testResource)
+				parent2.addChildGroupQuotaInfo(child2)
+				return root
+			}(),
+			customKey: testCustomKey,
+			expected:  true,
+		},
+		{
+			name: "multiple descendants, none have custom limit",
+			node: func() *QuotaTopoNode {
+				root := newQuotaTopoNodeForTest("root", "")
+				parent1 := newQuotaTopoNodeForTest("parent1", "root")
+				parent2 := newQuotaTopoNodeForTest("parent2", "root")
+				root.addChildGroupQuotaInfo(parent1)
+				root.addChildGroupQuotaInfo(parent2)
+				child1 := newQuotaTopoNodeForTest("child1", "parent1")
+				parent1.addChildGroupQuotaInfo(child1)
+				child2 := newQuotaTopoNodeForTest("child2", "parent2")
+				parent2.addChildGroupQuotaInfo(child2)
+				return root
+			}(),
+			customKey: testCustomKey,
+			expected:  false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			actual := hasCustomLimitForDescendants(tt.node, tt.customKey)
+			if actual != tt.expected {
+				t.Errorf("hasCustomLimitForDescendants(%v, %q) = %v, want %v", tt.node, tt.customKey, actual, tt.expected)
+			}
+		})
+	}
+}
+
+// TestHasCustomLimitForParents tests the hasCustomLimitForParents function.
+func TestHasCustomLimitForParents(t *testing.T) {
+	testResource := v1.ResourceList{
+		v1.ResourceCPU:    resource.MustParse("100m"),
+		v1.ResourceMemory: resource.MustParse("200Mi"),
+	}
+	testCustomKey := "test"
+	tests := []struct {
+		name      string
+		node      *QuotaTopoNode
+		customKey string
+		expected  bool
+	}{
+		{
+			name: "no parents",
+			node: NewQuotaTopoNode("root", &QuotaInfo{
+				Name: "root",
+			}),
+			customKey: testCustomKey,
+			expected:  false,
+		},
+		{
+			name: "parent has custom limit",
+			node: func() *QuotaTopoNode {
+				root := newQuotaTopoNodeWithCustomLimitsForTest("root", "", testCustomKey, testResource)
+				child := newQuotaTopoNodeForTest("child", "root")
+				child.parQuotaTopoNode = root
+				return child
+			}(),
+			customKey: testCustomKey,
+			expected:  true,
+		},
+		{
+			name: "parent does not have custom limit",
+			node: func() *QuotaTopoNode {
+				root := newQuotaTopoNodeForTest("root", "")
+				child := newQuotaTopoNodeForTest("child", "root")
+				child.parQuotaTopoNode = root
+				return child
+			}(),
+			customKey: testCustomKey,
+			expected:  false,
+		},
+		{
+			name: "multiple parents, parent has custom limit",
+			node: func() *QuotaTopoNode {
+				grandparent := newQuotaTopoNodeForTest("grandparent", "")
+				parent := newQuotaTopoNodeWithCustomLimitsForTest("parent", grandparent.name,
+					testCustomKey, testResource)
+				parent.parQuotaTopoNode = grandparent
+				child := newQuotaTopoNodeForTest("child", "parent")
+				child.parQuotaTopoNode = parent
+				return child
+			}(),
+			customKey: testCustomKey,
+			expected:  true,
+		},
+		{
+			name: "multiple parents, grandparent has custom limit",
+			node: func() *QuotaTopoNode {
+				grandparent := newQuotaTopoNodeWithCustomLimitsForTest("grandparent", "", testCustomKey, testResource)
+				parent := newQuotaTopoNodeForTest("parent", grandparent.name)
+				parent.parQuotaTopoNode = grandparent
+				child := newQuotaTopoNodeForTest("child", "parent")
+				child.parQuotaTopoNode = parent
+				return child
+			}(),
+			customKey: testCustomKey,
+			expected:  true,
+		},
+		{
+			name: "multiple parents, none have custom limit",
+			node: func() *QuotaTopoNode {
+				grandparent := newQuotaTopoNodeForTest("grandparent", "")
+				parent := newQuotaTopoNodeForTest("parent", "grandparent")
+				parent.parQuotaTopoNode = grandparent
+				child := newQuotaTopoNodeForTest("child", "parent")
+				child.parQuotaTopoNode = parent
+				return child
+			}(),
+			customKey: testCustomKey,
+			expected:  false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			actual := hasCustomLimitForParents(tt.node, tt.customKey)
+			if actual != tt.expected {
+				t.Errorf("hasCustomLimitForParents(%v, %q) = %v, want %v", tt.node, tt.customKey, actual, tt.expected)
+			}
+		})
+	}
+}
+
+// Helper function to create a QuotaTopoNode with custom limits
+func newQuotaTopoNodeForTest(name, parentName string) *QuotaTopoNode {
+	return &QuotaTopoNode{
+		name: name,
+		quotaInfo: &QuotaInfo{
+			Name:       name,
+			ParentName: parentName,
+		},
+		childGroupQuotaInfos: make(map[string]*QuotaTopoNode),
+	}
+}
+
+// Helper function to create a QuotaTopoNode with custom limits
+func newQuotaTopoNodeWithCustomLimitsForTest(name, parentName, customKey string,
+	customLimit v1.ResourceList) *QuotaTopoNode {
+	topoNode := newQuotaTopoNodeForTest(name, parentName)
+	if customKey != "" {
+		topoNode.quotaInfo.CalculateInfo.CustomLimits = CustomLimitConfMap{
+			customKey: &CustomLimitConf{
+				Limit: customLimit,
+			},
+		}
+	}
+	return topoNode
+}
