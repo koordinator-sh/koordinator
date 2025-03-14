@@ -33,22 +33,24 @@ type QuotaInfoSummary struct {
 	AllowLentResource bool   `json:"allowLentResource"`
 	Tree              string `json:"tree"`
 
-	Max                       v1.ResourceList `json:"max"`
-	Min                       v1.ResourceList `json:"min"`
-	AutoScaleMin              v1.ResourceList `json:"autoScaleMin"`
-	Used                      v1.ResourceList `json:"used"`
-	NonPreemptibleUsed        v1.ResourceList `json:"nonPreemptibleUsed"`
-	Request                   v1.ResourceList `json:"request"`
-	NonPreemptibleRequest     v1.ResourceList `json:"nonPreemptibleRequest"`
-	SharedWeight              v1.ResourceList `json:"sharedWeight"`
-	Runtime                   v1.ResourceList `json:"runtime"`
-	ChildRequest              v1.ResourceList `json:"childRequest"`
-	Allocated                 v1.ResourceList `json:"allocated"`
-	Guaranteed                v1.ResourceList `json:"guaranteed"`
-	SelfUsed                  v1.ResourceList `json:"selfUsed"`
-	SelfNonPreemptibleUsed    v1.ResourceList `json:"selfNonPreemptibleUsed"`
-	SelfRequest               v1.ResourceList `json:"selfRequest"`
-	SelfNonPreemptibleRequest v1.ResourceList `json:"selfNonPreemptibleRequest"`
+	Max                       v1.ResourceList     `json:"max"`
+	Min                       v1.ResourceList     `json:"min"`
+	AutoScaleMin              v1.ResourceList     `json:"autoScaleMin"`
+	Used                      v1.ResourceList     `json:"used"`
+	NonPreemptibleUsed        v1.ResourceList     `json:"nonPreemptibleUsed"`
+	Request                   v1.ResourceList     `json:"request"`
+	NonPreemptibleRequest     v1.ResourceList     `json:"nonPreemptibleRequest"`
+	SharedWeight              v1.ResourceList     `json:"sharedWeight"`
+	Runtime                   v1.ResourceList     `json:"runtime"`
+	ChildRequest              v1.ResourceList     `json:"childRequest"`
+	Allocated                 v1.ResourceList     `json:"allocated"`
+	Guaranteed                v1.ResourceList     `json:"guaranteed"`
+	SelfUsed                  v1.ResourceList     `json:"selfUsed"`
+	SelfNonPreemptibleUsed    v1.ResourceList     `json:"selfNonPreemptibleUsed"`
+	SelfRequest               v1.ResourceList     `json:"selfRequest"`
+	SelfNonPreemptibleRequest v1.ResourceList     `json:"selfNonPreemptibleRequest"`
+	CustomLimits              CustomLimitConfMap  `json:"customLimits"`
+	CustomUsed                CustomResourceLists `json:"customUsed"`
 
 	PodCache map[string]*SimplePodInfo `json:"podCache,omitempty"`
 }
