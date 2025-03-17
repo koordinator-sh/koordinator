@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 
@@ -31,12 +32,15 @@ import (
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/client-go/informers"
 	kubefake "k8s.io/client-go/kubernetes/fake"
+	basemetrics "k8s.io/component-base/metrics"
+	"k8s.io/component-base/metrics/testutil"
 	"k8s.io/utils/pointer"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	koordfake "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/fake"
 	koordinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/metrics"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
 
@@ -95,6 +99,10 @@ func TestExpireActiveReservation(t *testing.T) {
 	fakeKoordClientSet := koordfake.NewSimpleClientset()
 	sharedInformerFactory := informers.NewSharedInformerFactory(fakeClientSet, 0)
 	koordSharedInformerFactory := koordinformers.NewSharedInformerFactory(fakeKoordClientSet, 0)
+	// register metrics
+	metricsRegistry := basemetrics.NewKubeRegistry()
+	metricsRegistry.MustRegister(metrics.ReservationFailedTotal, metrics.ReservationSucceededTotal)
+	metricsRegistry.Reset()
 
 	shouldExpireReservation := &schedulingv1alpha1.Reservation{
 		ObjectMeta: metav1.ObjectMeta{
@@ -209,6 +217,22 @@ func TestExpireActiveReservation(t *testing.T) {
 	got, err = fakeKoordClientSet.SchedulingV1alpha1().Reservations().Get(context.TODO(), missingNodeReservation.Name, metav1.GetOptions{})
 	assert.NoError(t, err)
 	assert.True(t, reservationutil.IsReservationExpired(got))
+	// check metrics
+	expectedFailedMetricsCount := 1
+	expectedFailedMetrics := fmt.Sprintf(`
+				# HELP scheduler_reservation_failed_total [ALPHA] The total number of failed Reservation
+				# TYPE scheduler_reservation_failed_total counter
+				scheduler_reservation_failed_total{name="%s"} %v
+                scheduler_reservation_failed_total{name="%s"} %v
+                scheduler_reservation_failed_total{name="%s"} %v
+				`,
+		"missingNodeReservation", expectedFailedMetricsCount,
+		"pendingReservation", expectedFailedMetricsCount,
+		"shouldExpireReservation", expectedFailedMetricsCount,
+	)
+	if err := testutil.GatherAndCompare(metricsRegistry, strings.NewReader(expectedFailedMetrics), "scheduler_reservation_failed_total"); err != nil {
+		t.Error(err)
+	}
 }
 
 func TestSyncStatus(t *testing.T) {
@@ -216,6 +240,10 @@ func TestSyncStatus(t *testing.T) {
 	fakeKoordClientSet := koordfake.NewSimpleClientset()
 	sharedInformerFactory := informers.NewSharedInformerFactory(fakeClientSet, 0)
 	koordSharedInformerFactory := koordinformers.NewSharedInformerFactory(fakeKoordClientSet, 0)
+	// register metrics
+	metricsRegistry := basemetrics.NewKubeRegistry()
+	metricsRegistry.MustRegister(metrics.ReservationFailedTotal, metrics.ReservationSucceededTotal)
+	metricsRegistry.Reset()
 
 	reservation := &schedulingv1alpha1.Reservation{
 		ObjectMeta: metav1.ObjectMeta{
@@ -297,6 +325,7 @@ func TestSyncStatus(t *testing.T) {
 	assert.NoError(t, err)
 
 	expectReservation := reservation.DeepCopy()
+	expectReservation.Status.Phase = schedulingv1alpha1.ReasonReservationSucceeded
 	reservationutil.SetReservationSucceeded(expectReservation)
 	expectReservation.Status.Allocated = corev1.ResourceList{
 		corev1.ResourceCPU:    resource.MustParse("8000m"),
@@ -317,4 +346,14 @@ func TestSyncStatus(t *testing.T) {
 		cond.LastTransitionTime = metav1.Time{}
 	}
 	assert.Equal(t, expectReservation, got)
+	// check metrics
+	expectSuccessedMetricCount := 1
+	expectedSuccessedMetrics := fmt.Sprintf(`
+				# HELP scheduler_reservation_successed_total [ALPHA] The total number of successed Reservation
+				# TYPE scheduler_reservation_successed_total counter
+				scheduler_reservation_successed_total{name="%s"} %v
+				`, "normalReservation", expectSuccessedMetricCount)
+	if err := testutil.GatherAndCompare(metricsRegistry, strings.NewReader(expectedSuccessedMetrics), "scheduler_reservation_successed_total"); err != nil {
+		t.Error(err)
+	}
 }

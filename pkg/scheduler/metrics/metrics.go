@@ -34,8 +34,26 @@ var (
 			StabilityLevel: metrics.STABLE,
 		}, []string{"profile"})
 
+	ReservationFailedTotal = metrics.NewCounterVec(
+		&metrics.CounterOpts{
+			Subsystem: schedulermetrics.SchedulerSubsystem,
+			Name:      "reservation_failed_total",
+			Help:      `The total number of failed Reservation`,
+		}, []string{"name"},
+	)
+
+	ReservationSucceededTotal = metrics.NewCounterVec(
+		&metrics.CounterOpts{
+			Subsystem: schedulermetrics.SchedulerSubsystem,
+			Name:      "reservation_successed_total",
+			Help:      `The total number of successed Reservation`,
+		}, []string{"name"},
+	)
+
 	metricsList = []metrics.Registerable{
 		SchedulingTimeout,
+		ReservationSucceededTotal,
+		ReservationFailedTotal,
 	}
 )
 
