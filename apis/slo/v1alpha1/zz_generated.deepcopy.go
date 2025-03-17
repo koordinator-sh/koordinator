@@ -1133,6 +1133,11 @@ func (in *ResourceThresholdStrategy) DeepCopyInto(out *ResourceThresholdStrategy
 		*out = new(int64)
 		**out = **in
 	}
+	if in.CPUSuppressMinPercent != nil {
+		in, out := &in.CPUSuppressMinPercent, &out.CPUSuppressMinPercent
+		*out = new(int64)
+		**out = **in
+	}
 	if in.MemoryEvictThresholdPercent != nil {
 		in, out := &in.MemoryEvictThresholdPercent, &out.MemoryEvictThresholdPercent
 		*out = new(int64)

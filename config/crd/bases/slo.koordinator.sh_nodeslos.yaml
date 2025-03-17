@@ -1691,6 +1691,12 @@ spec:
                       and avg(cpuusage) is calculated based on the most recent CPUEvictTimeWindowSeconds data
                     format: int64
                     type: integer
+                  cpuSuppressMinPercent:
+                    description: cpu suppress min percentage (0,100)
+                    format: int64
+                    maximum: 100
+                    minimum: 0
+                    type: integer
                   cpuSuppressPolicy:
                     description: CPUSuppressPolicy
                     type: string

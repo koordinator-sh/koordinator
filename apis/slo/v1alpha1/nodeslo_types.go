@@ -328,6 +328,10 @@ type ResourceThresholdStrategy struct {
 	// +kubebuilder:validation:Maximum=100
 	// +kubebuilder:validation:Minimum=0
 	CPUSuppressThresholdPercent *int64 `json:"cpuSuppressThresholdPercent,omitempty" validate:"omitempty,min=0,max=100"`
+	// cpu suppress min percentage (0,100)
+	// +kubebuilder:validation:Maximum=100
+	// +kubebuilder:validation:Minimum=0
+	CPUSuppressMinPercent *int64 `json:"cpuSuppressMinPercent,omitempty" validate:"omitempty,min=0,max=100"`
 	// CPUSuppressPolicy
 	CPUSuppressPolicy CPUSuppressPolicy `json:"cpuSuppressPolicy,omitempty"`
 

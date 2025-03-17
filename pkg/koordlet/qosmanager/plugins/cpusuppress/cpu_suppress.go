@@ -47,15 +47,13 @@ import (
 
 const (
 	CPUSuppressName = "CPUSuppresss"
-)
 
-var (
 	// if destQuota - currentQuota < suppressMinQuotaDeltaRatio * totalCpu; then bypass;
 	suppressBypassQuotaDeltaRatio = 0.01
 
-	cfsPeriod               int64 = 100000
-	beMinQuota              int64 = 2000
-	beMaxIncreaseCPUPercent       = 0.1 // scale up slow
+	beMinCPUSetCores        = 2
+	beMinQuota              = 2000
+	beMaxIncreaseCPUPercent = 0.1 // scale up slow
 )
 
 type suppressPolicyStatus string
@@ -137,7 +135,7 @@ func (r *CPUSuppress) writeBECgroupsCPUSet(paths []string, cpusetStr string, isR
 // calculateBESuppressCPU calculates the quantity of cpuset cpus for suppressing BE pods.
 func (r *CPUSuppress) calculateBESuppressCPU(node *corev1.Node, nodeMetric float64, podMetrics map[string]float64,
 	podMetas []*statesinformer.PodMeta, hostApps []slov1alpha1.HostApplicationSpec,
-	hostAppMetrics map[string]float64, beCPUUsedThreshold int64) *resource.Quantity {
+	hostAppMetrics map[string]float64, beCPUUsedThreshold int64, beCPUMinThreshold *int64) *resource.Quantity {
 	nodeReserved := helpers.GetNodeResourceReserved(node)
 	nodeReservedCPU := float64(nodeReserved.Cpu().MilliValue()) / 1000
 
@@ -155,10 +153,18 @@ func (r *CPUSuppress) calculateBESuppressCPU(node *corev1.Node, nodeMetric float
 	nodeBESuppress.Sub(*hostAppNonBEUsed)
 	nodeBESuppress.Sub(*systemUsed)
 
+	beMinMilli := int64(-1)
+	if beCPUMinThreshold != nil {
+		beMinMilli = node.Status.Capacity.Cpu().MilliValue() * *beCPUMinThreshold / 100
+		if nodeBESuppress.MilliValue() < beMinMilli {
+			nodeBESuppress = resource.NewMilliQuantity(beMinMilli, resource.DecimalSI)
+		}
+	}
+
 	metrics.RecordBESuppressLSUsedCPU(podNonBEUsedCPU)
-	klog.V(6).Infof("nodeSuppressBE[CPU(Core)]:%v = node.Capacity:%v * SLOPercent:%v%% - systemUsage:%v - podLSUsed:%v - hostAppLSUsed:%v, upper to %v\n",
+	klog.V(6).Infof("nodeSuppressBE[CPU(Core)]:%v = node.Capacity:%v * SLOPercent:%v%% - systemUsage:%v - podLSUsed:%v - hostAppLSUsed:%v, min:%v, upper to %v\n",
 		nodeBESuppress.AsApproximateFloat64(), node.Status.Capacity.Cpu().Value(), beCPUUsedThreshold, systemUsedCPU,
-		podNonBEUsedCPU, hostAppNonBEUsedCPU, nodeBESuppress.Value())
+		podNonBEUsedCPU, hostAppNonBEUsedCPU, beMinMilli, nodeBESuppress.Value())
 
 	return nodeBESuppress
 }
@@ -297,7 +303,8 @@ func (r *CPUSuppress) suppressBECPU() {
 
 	suppressCPUQuantity := r.calculateBESuppressCPU(node, nodeCPUUsage, podMetrics, podMetas,
 		nodeSLO.Spec.HostApplications, hostAppMetrics,
-		*nodeSLO.Spec.ResourceUsedThresholdWithBE.CPUSuppressThresholdPercent)
+		*nodeSLO.Spec.ResourceUsedThresholdWithBE.CPUSuppressThresholdPercent,
+		nodeSLO.Spec.ResourceUsedThresholdWithBE.CPUSuppressMinPercent)
 
 	// Step 2.
 	nodeCPUInfoRaw, exist := r.metricCache.Get(metriccache.NodeCPUInfoKey)
@@ -386,8 +393,8 @@ func (r *CPUSuppress) adjustByCPUSet(cpusetQuantity *resource.Quantity, nodeCPUI
 
 	// set the number of cpuset cpus no less than 2
 	cpus := int32(math.Ceil(float64(cpusetQuantity.MilliValue()) / 1000))
-	if cpus < 2 {
-		cpus = 2
+	if cpus < beMinCPUSetCores {
+		cpus = beMinCPUSetCores
 	}
 	beMaxIncreaseCpuNum := int32(math.Ceil(float64(len(nodeCPUInfo.ProcessorInfos)) * beMaxIncreaseCPUPercent))
 	if cpus-int32(len(oldCPUSet)) > beMaxIncreaseCpuNum {
@@ -587,7 +594,7 @@ func (r *CPUSuppress) calcBECPUSet() (*cpuset.CPUSet, error) {
 }
 
 func (r *CPUSuppress) adjustByCfsQuota(cpuQuantity *resource.Quantity, node *corev1.Node) {
-	newBeQuota := cpuQuantity.MilliValue() * cfsPeriod / 1000
+	newBeQuota := cpuQuantity.MilliValue() * system.DefaultCPUCFSPeriod / 1000
 	newBeQuota = int64(math.Max(float64(newBeQuota), float64(beMinQuota)))
 
 	beCgroupPath := koordletutil.GetPodQoSRelativePath(corev1.PodQOSBestEffort)
@@ -598,7 +605,7 @@ func (r *CPUSuppress) adjustByCfsQuota(cpuQuantity *resource.Quantity, node *cor
 		return
 	}
 
-	minQuotaDelta := float64(node.Status.Capacity.Cpu().Value()) * float64(cfsPeriod) * suppressBypassQuotaDeltaRatio
+	minQuotaDelta := float64(node.Status.Capacity.Cpu().Value()) * float64(system.DefaultCPUCFSPeriod) * suppressBypassQuotaDeltaRatio
 	//  delta is large enough
 	if math.Abs(float64(newBeQuota)-float64(currentBeQuota)) < minQuotaDelta && newBeQuota != beMinQuota {
 		klog.Infof("suppressBECPU: quota delta is too small, bypass suppress.reason: current quota: %d, target quota: %d, min quota delta: %f",
@@ -606,7 +613,7 @@ func (r *CPUSuppress) adjustByCfsQuota(cpuQuantity *resource.Quantity, node *cor
 		return
 	}
 
-	beMaxIncreaseCPUQuota := float64(node.Status.Capacity.Cpu().Value()) * float64(cfsPeriod) * beMaxIncreaseCPUPercent
+	beMaxIncreaseCPUQuota := float64(node.Status.Capacity.Cpu().Value()) * float64(system.DefaultCPUCFSPeriod) * beMaxIncreaseCPUPercent
 	if float64(newBeQuota)-float64(currentBeQuota) > beMaxIncreaseCPUQuota {
 		newBeQuota = currentBeQuota + int64(beMaxIncreaseCPUQuota)
 	}
@@ -622,7 +629,7 @@ func (r *CPUSuppress) adjustByCfsQuota(cpuQuantity *resource.Quantity, node *cor
 		klog.Errorf("suppressBECPU: failed to write cfs_quota_us for be pods, error: %v", err)
 		return
 	}
-	metrics.RecordBESuppressCores(string(slov1alpha1.CPUCfsQuotaPolicy), float64(newBeQuota)/float64(cfsPeriod))
+	metrics.RecordBESuppressCores(string(slov1alpha1.CPUCfsQuotaPolicy), float64(newBeQuota)/float64(system.DefaultCPUCFSPeriod))
 	_ = audit.V(1).Node().Reason(resourceexecutor.AdjustBEByNodeCPUUsage).Message("update BE group to cfs_quota: %v", newBeQuota).Do()
 	klog.Infof("suppressBECPU: succeeded to write cfs_quota_us for offline pods, isUpdated %v, new value: %d", isUpdated, newBeQuota)
 }
