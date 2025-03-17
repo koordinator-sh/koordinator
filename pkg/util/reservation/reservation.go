@@ -38,6 +38,7 @@ import (
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/metrics"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
@@ -288,7 +289,13 @@ func SetReservationUnschedulable(r *schedulingv1alpha1.Reservation, msg string) 
 }
 
 func SetReservationExpired(r *schedulingv1alpha1.Reservation) {
-	r.Status.Phase = schedulingv1alpha1.ReservationFailed
+	// Check if the Reservation is already in failed phase,
+	// if not, set the phase  and increment metric
+	wasFailed := r.Status.Phase == schedulingv1alpha1.ReservationFailed
+	if !wasFailed {
+		r.Status.Phase = schedulingv1alpha1.ReservationFailed
+		metrics.RecordReservationPhase(r.Name, string(r.Status.Phase))
+	}
 	// not duplicate expired info
 	idx := -1
 	isReady := false
@@ -323,7 +330,13 @@ func SetReservationExpired(r *schedulingv1alpha1.Reservation) {
 }
 
 func SetReservationSucceeded(r *schedulingv1alpha1.Reservation) {
-	r.Status.Phase = schedulingv1alpha1.ReservationSucceeded
+	// Check if the Reservation is already in succeeded phase,
+	// if not, set the phase  and increment metric
+	wasSucceeded := r.Status.Phase == schedulingv1alpha1.ReservationSucceeded
+	if !wasSucceeded {
+		r.Status.Phase = schedulingv1alpha1.ReservationSucceeded
+		metrics.RecordReservationPhase(r.Name, string(r.Status.Phase))
+	}
 	idx := -1
 	for i, condition := range r.Status.Conditions {
 		if condition.Type == schedulingv1alpha1.ReservationConditionReady {
