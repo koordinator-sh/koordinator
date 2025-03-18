@@ -69,6 +69,8 @@ const (
 	GenericEphemeralVolume featuregate.Feature = "GenericEphemeralVolume"
 
 	PodDisruptionBudget featuregate.Feature = "PodDisruptionBudget"
+
+	BufferGangGroups featuregate.Feature = "BufferGangGroups"
 )
 
 var defaultSchedulerFeatureGates = map[featuregate.Feature]featuregate.FeatureSpec{
@@ -88,6 +90,7 @@ var defaultSchedulerFeatureGates = map[featuregate.Feature]featuregate.FeatureSp
 	CSIStorageCapacity:                        {Default: true, PreRelease: featuregate.GA}, // remove in 1.26
 	GenericEphemeralVolume:                    {Default: true, PreRelease: featuregate.GA},
 	PodDisruptionBudget:                       {Default: true, PreRelease: featuregate.GA},
+	BufferGangGroups:                          {Default: false, PreRelease: featuregate.Alpha},
 }
 
 func init() {

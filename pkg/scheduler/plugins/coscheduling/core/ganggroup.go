@@ -132,6 +132,41 @@ func (gg *GangGroupInfo) trySetScheduleCycleValid() {
 	}
 }
 
+func (gg *GangGroupInfo) GetBlockPodsIfNotValid() ([]string, bool) {
+	gg.lock.Lock()
+	defer gg.lock.Unlock()
+	if gg.ScheduleCycleValid {
+		return nil, true
+	}
+	var blockingPods []string
+	for podID, childScheduleCycle := range gg.ChildrenScheduleRoundMap {
+		if childScheduleCycle < gg.ScheduleCycle {
+			blockingPods = append(blockingPods, podID)
+		}
+	}
+	return blockingPods, len(blockingPods) == 0
+}
+
+func (gg *GangGroupInfo) GetAllPodsIfValid() ([]string, bool) {
+	gg.lock.Lock()
+	defer gg.lock.Unlock()
+	var blockingPods, allPods []string
+	for podID, childScheduleCycle := range gg.ChildrenScheduleRoundMap {
+		if childScheduleCycle != gg.ScheduleCycle {
+			blockingPods = append(blockingPods, podID)
+		}
+		allPods = append(allPods, podID)
+	}
+	totalChildrenNum := 0
+	for _, gangTotalNum := range gg.GangTotalChildrenNumMap {
+		totalChildrenNum += gangTotalNum
+	}
+	if len(allPods) == totalChildrenNum && (gg.ScheduleCycleValid || len(blockingPods) == 0) {
+		return allPods, true
+	}
+	return nil, false
+}
+
 func (gg *GangGroupInfo) setChildScheduleCycle(pod *corev1.Pod, childCycle int) {
 	gg.lock.Lock()
 	defer gg.lock.Unlock()
