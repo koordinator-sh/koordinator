@@ -394,6 +394,10 @@ func (qi *QuotaInfo) GetSelfNonPreemptibleRequest() v1.ResourceList {
 func (qi *QuotaInfo) HasCustomLimit(customKey string) bool {
 	qi.lock.Lock()
 	defer qi.lock.Unlock()
+	return qi.HasCustomLimitNoLock(customKey)
+}
+
+func (qi *QuotaInfo) HasCustomLimitNoLock(customKey string) bool {
 	_, ok := qi.CalculateInfo.CustomLimits[customKey]
 	return ok
 }
@@ -401,15 +405,23 @@ func (qi *QuotaInfo) HasCustomLimit(customKey string) bool {
 func (qi *QuotaInfo) GetCustomLimit(customKey string) v1.ResourceList {
 	qi.lock.Lock()
 	defer qi.lock.Unlock()
+	return qi.GetCustomLimitNoLock(customKey)
+}
+
+func (qi *QuotaInfo) GetCustomLimitNoLock(customKey string) v1.ResourceList {
 	if customLimit, ok := qi.CalculateInfo.CustomLimits[customKey]; ok {
 		return customLimit.Limit.DeepCopy()
 	}
-	return v1.ResourceList{}
+	return nil
 }
 
 func (qi *QuotaInfo) GetCustomArgs(customKey string) CustomArgs {
 	qi.lock.Lock()
 	defer qi.lock.Unlock()
+	return qi.GetCustomArgsNoLock(customKey)
+}
+
+func (qi *QuotaInfo) GetCustomArgsNoLock(customKey string) CustomArgs {
 	if customLimit, ok := qi.CalculateInfo.CustomLimits[customKey]; ok && customLimit.Args != nil {
 		return customLimit.Args.DeepCopy()
 	}

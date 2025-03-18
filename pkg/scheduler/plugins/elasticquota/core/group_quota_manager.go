@@ -285,17 +285,12 @@ func (gqm *GroupQuotaManager) updateGroupCustomUsedWhenPodChanged(leafQuotaName 
 		var usedDelta v1.ResourceList
 		for _, quotaInfo := range curToAllParInfos {
 			// calculate used-delta from pod only for the lowest quota with configured limit in this quota chain.
-			if usedDelta == nil {
-				usedDelta = customLimiter.CalculatePodUsedDelta(quotaInfo, newPod, oldPod)
-			}
+			usedDelta = customLimiter.CalculatePodUsedDelta(quotaInfo, newPod, oldPod)
 			// skip updating used if no configured limit (used-delta is nil)
 			if usedDelta == nil {
 				continue
 			}
-			// break the update chain if used-delta is zero
-			if quotav1.IsZero(usedDelta) {
-				break
-			}
+			break
 		}
 		// skip updating custom-used resource if used-delta is zero
 		if quotav1.IsZero(usedDelta) {
@@ -1440,15 +1435,15 @@ func (gqm *GroupQuotaManager) updateCustomLimitsAndArgsNoLock(newQuotaInfo, loca
 			newCustomLimitConfMap[key] = newLimitConf
 		}
 	}
-	// update custom limits and args for quotaInfo in cache
+	// update custom limits for quotaInfo in cache
 	quotaInfo := gqm.getQuotaInfoByNameNoLock(newQuotaInfo.Name)
 	if quotaInfo == nil {
 		klog.Errorf("quota %v not found", newQuotaInfo.Name)
 		return
 	}
-	quotaInfo.CalculateInfo.CustomLimits = newCustomLimitConfMap
-	klog.Infof("updated custom limits or arguments for quota %v, limits=%+v",
-		newQuotaInfo.Name, newCustomLimitConfMap)
+	quotaInfo.setCustomLimitsNoLock(newCustomLimitConfMap)
+	klog.Infof("updated custom limits or arguments for quota %v, limits=%s",
+		newQuotaInfo.Name, util.DumpJSON(newCustomLimitConfMap))
 	// rebuild custom-used
 	if len(toBeRebuiltKeys) > 0 {
 		gqm.rebuildCustomUsedNoLock(quotaInfo, toBeRebuiltKeys)

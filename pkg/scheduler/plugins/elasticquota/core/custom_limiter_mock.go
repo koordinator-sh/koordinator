@@ -24,7 +24,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/apimachinery/pkg/runtime"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	"k8s.io/klog/v2"
 
@@ -39,8 +38,6 @@ const (
 
 	MockLimiterFactoryKey = "mock-limiter-factory"
 )
-
-type MockLimiterFactory func(args runtime.Object) (CustomLimiter, error)
 
 type MockLimiterFactoryArgs struct {
 	LabelSelector string `json:"labelSelector"`
@@ -114,28 +111,30 @@ func (m *MockCustomLimiter) CalculatePodUsedDelta(quotaInfo *QuotaInfo, newPod, 
 	if newPod == nil && oldPod == nil {
 		return
 	}
-	// skip updating used if no configured limit
-	customLimit, ok := quotaInfo.CalculateInfo.CustomLimits[m.GetKey()]
-	if !ok {
-		return
+	key := m.GetKey()
+	// skip calculating used if no configured limit
+	limit := quotaInfo.GetCustomLimitNoLock(key)
+	if limit == nil {
+		return nil
 	}
+	args := quotaInfo.GetCustomArgsNoLock(key)
 	// debug log
-	if m.isDebugEnabled(customLimit.Args) || klog.V(5).Enabled() {
+	if m.isDebugEnabled(args) || klog.V(5).Enabled() {
 		podKey := GetPodKey(newPod, oldPod)
 		defer func() {
 			klog.Infof("calculated custom-used-delta for pod %s, quota=%s, key=%s, usedDelta=%v",
-				podKey, quotaInfo.Name, m.GetKey(), util.PrintResourceList(usedDelta))
+				podKey, quotaInfo.Name, key, util.PrintResourceList(usedDelta))
 		}()
 	}
 	// get request resource for matched pod
 	var oldReq, newReq corev1.ResourceList
-	if oldPod != nil && m.selector.Matches(labels.Set(oldPod.Labels)) {
+	if oldPod != nil {
 		oldReq = m.getPodRequest(oldPod)
 	}
-	if newPod != nil && m.selector.Matches(labels.Set(newPod.Labels)) {
+	if newPod != nil {
 		newReq = m.getPodRequest(newPod)
 	}
-	usedDelta = quotav1.Mask(quotav1.Subtract(newReq, oldReq), quotav1.ResourceNames(customLimit.Limit))
+	usedDelta = quotav1.Mask(quotav1.Subtract(newReq, oldReq), quotav1.ResourceNames(limit))
 	return
 }
 
@@ -157,16 +156,18 @@ func (m *MockCustomLimiter) isDebugEnabled(args CustomArgs) bool {
 
 func (m *MockCustomLimiter) Check(quotaInfo *QuotaInfo, requestDelta corev1.ResourceList,
 	state *CustomLimiterState) error {
-	customLimitConf, ok := quotaInfo.CalculateInfo.CustomLimits[m.GetKey()]
-	if !ok {
+	key := m.GetKey()
+	// skip checking if no configured limit
+	limit := quotaInfo.GetCustomLimit(key)
+	if limit == nil {
 		return nil
 	}
-	curLimit := customLimitConf.Limit
+	// verify pod is required
 	pod := state.GetPod()
 	if pod == nil {
 		return fmt.Errorf("pod is required but not found")
 	}
-	debugEnabled := m.isDebugEnabled(customLimitConf.Args)
+	debugEnabled := m.isDebugEnabled(quotaInfo.GetCustomArgs(key))
 
 	// filter out unmatched pod
 	matched := m.selector.Matches(labels.Set(pod.Labels))
@@ -180,11 +181,11 @@ func (m *MockCustomLimiter) Check(quotaInfo *QuotaInfo, requestDelta corev1.Reso
 
 	// check if the pod is allowed by the custom limiter
 	curUsed := quotaInfo.CalculateInfo.CustomUsed[m.GetKey()]
-	requestDelta = quotav1.Mask(requestDelta, quotav1.ResourceNames(curLimit))
+	requestDelta = quotav1.Mask(requestDelta, quotav1.ResourceNames(limit))
 	newUsed := quotav1.Add(curUsed, requestDelta)
-	if notExceeded, exceededResourceNames := quotav1.LessThanOrEqual(newUsed, curLimit); !notExceeded {
+	if notExceeded, exceededResourceNames := quotav1.LessThanOrEqual(newUsed, limit); !notExceeded {
 		msg := fmt.Sprintf("insufficient resource, limit=%v, used=%v, request=%v, exceededResourceNames=%v",
-			util.PrintResourceList(curLimit), util.PrintResourceList(curUsed),
+			util.PrintResourceList(limit), util.PrintResourceList(curUsed),
 			util.PrintResourceList(requestDelta), exceededResourceNames)
 		if debugEnabled || klog.V(5).Enabled() {
 			klog.Infof("check failed for quota %s by custom-limiter %s: %s", quotaInfo.Name, m.GetKey(), msg)
@@ -193,7 +194,7 @@ func (m *MockCustomLimiter) Check(quotaInfo *QuotaInfo, requestDelta corev1.Reso
 	}
 	if debugEnabled || klog.V(5).Enabled() {
 		klog.Infof("pod %s is allowed, quota=%s, customKey=%s, limit=%v, used=%v, request=%v",
-			util.GetPodKey(pod), quotaInfo.Name, m.GetKey(), util.PrintResourceList(curLimit),
+			util.GetPodKey(pod), quotaInfo.Name, m.GetKey(), util.PrintResourceList(limit),
 			util.PrintResourceList(curUsed), util.PrintResourceList(requestDelta))
 	}
 

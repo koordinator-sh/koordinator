@@ -114,6 +114,24 @@ func TestMockCustomLimiter_GetLimitConf(t *testing.T) {
 			expectedErr:  fmt.Errorf("failed to unmarshal custom limit for quota test-quota, key=mock, err=invalid character"),
 		},
 		{
+			name: "valid limit annotation",
+			quota: &v1alpha1.ElasticQuota{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-quota",
+					Annotations: map[string]string{
+						"custom-mock-limit-conf": `{"cpu": "100m", "memory": "200Mi"}`,
+					},
+				},
+			},
+			expectedConf: &CustomLimitConf{
+				Limit: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("100m"),
+					corev1.ResourceMemory: resource.MustParse("200Mi"),
+				},
+			},
+			expectedErr: nil,
+		},
+		{
 			name: "valid limit and args annotations",
 			quota: &v1alpha1.ElasticQuota{
 				ObjectMeta: metav1.ObjectMeta{
@@ -153,14 +171,14 @@ func TestMockCustomLimiter_GetLimitConf(t *testing.T) {
 				return
 			}
 			if conf == nil || tt.expectedConf == nil {
-				t.Errorf("GetLimitConf() returned unexpected conf\nexpected: %v\n  actual: %v",
+				t.Fatalf("GetLimitConf() returned unexpected conf\nexpected: %v\n  actual: %v",
 					tt.expectedConf, conf)
 			}
 			if !v1.Equals(conf.Limit, tt.expectedConf.Limit) {
 				t.Errorf("GetLimitConf() returned unexpected limit\nexpected: %v\n  actual: %v",
 					conf.Limit, tt.expectedConf.Limit)
 			}
-			if !conf.Args.DeepEquals(tt.expectedConf.Args) {
+			if !customArgsDeepEqual(conf.Args, tt.expectedConf.Args) {
 				t.Errorf("GetLimitConf() returned unexpected args\nexpected: %v  actual: %v",
 					tt.expectedConf.Args, conf.Args)
 			}

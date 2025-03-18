@@ -51,10 +51,12 @@ type CustomLimiter interface {
 	// Returns the delta of used resource, adhering to the following rules:
 	// - nil if no limit is configured for this quota
 	// - non-nil resource if current custom limiter is configured for this quota
-	CalculatePodUsedDelta(quotaInfo *QuotaInfo, newPod, oldPod *corev1.Pod) (customUsed corev1.ResourceList)
+	// Called with the quotaInfo lock held, please ensure to access quotaInfo without acquiring the lock again.
+	CalculatePodUsedDelta(quotaInfo *QuotaInfo, newPod, oldPod *corev1.Pod) (usedDelta corev1.ResourceList)
 
 	// Check checks custom limit for a quota by providing pod-request resource and the shared state of this quota
 	// chain, the check process should start from the leaf quota and proceed to parents.
+	// Called without holding the quotaInfo lock, ensure to acquire the lock when accessing quotaInfo.
 	Check(quotaInfo *QuotaInfo, podRequest corev1.ResourceList, quotaChainSharedState *CustomLimiterState) error
 }
 
