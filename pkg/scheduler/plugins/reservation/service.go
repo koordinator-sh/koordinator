@@ -41,6 +41,7 @@ type ReservationItem struct {
 	AllocateOnce     bool                                         `json:"allocateOnce,omitempty"`
 	Allocatable      corev1.ResourceList                          `json:"allocatable,omitempty"`
 	Allocated        corev1.ResourceList                          `json:"allocated,omitempty"`
+	Reserved         corev1.ResourceList                          `json:"reserved,omitempty"`
 	AllocatablePorts framework.HostPortInfo                       `json:"allocatablePorts,omitempty"`
 	AllocatedPorts   framework.HostPortInfo                       `json:"allocatedPorts,omitempty"`
 	Owners           []schedulingv1alpha1.ReservationOwner        `json:"owners,omitempty"`
@@ -55,7 +56,7 @@ type NodeReservations struct {
 func (pl *Plugin) RegisterEndpoints(group *gin.RouterGroup) {
 	group.GET("/nodeReservations/:nodeName", func(c *gin.Context) {
 		nodeName := c.Param("nodeName")
-		rInfos := pl.reservationCache.listAvailableReservationInfosOnNode(nodeName)
+		rInfos := pl.reservationCache.ListAvailableReservationInfosOnNode(nodeName)
 		if len(rInfos) == 0 {
 			c.JSON(http.StatusOK, &NodeReservations{Items: []ReservationItem{}})
 			return
@@ -76,6 +77,7 @@ func (pl *Plugin) RegisterEndpoints(group *gin.RouterGroup) {
 				AllocatePolicy:   r.GetAllocatePolicy(),
 				Allocatable:      r.Allocatable,
 				Allocated:        r.Allocated,
+				Reserved:         r.Reserved,
 				AllocatablePorts: r.AllocatablePorts,
 				AllocatedPorts:   r.AllocatedPorts,
 			}
