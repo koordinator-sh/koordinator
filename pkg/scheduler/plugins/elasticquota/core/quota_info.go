@@ -65,6 +65,11 @@ type QuotaCalculateInfo struct {
 	// Allocated is the allocated resource. It's the sum of children quota guarantee. If the quota is leaf, it's
 	// the sum of scheduled pods
 	Allocated v1.ResourceList
+
+	// CustomLimits stores configured limits for custom limiters
+	CustomLimits CustomLimitConfMap
+	// CustomUsed stores the used resources calculated by custom limiters
+	CustomUsed CustomResourceLists
 }
 
 type QuotaInfo struct {
@@ -108,6 +113,8 @@ func NewQuotaInfo(isParent, allowLentResource bool, name, parentName string) *Qu
 			SelfUsed:                  v1.ResourceList{},
 			SelfNonPreemptibleRequest: v1.ResourceList{},
 			SelfNonPreemptibleUsed:    v1.ResourceList{},
+			CustomLimits:              make(CustomLimitConfMap),
+			CustomUsed:                make(CustomResourceLists),
 		},
 	}
 }
@@ -143,6 +150,8 @@ func (qi *QuotaInfo) DeepCopy() *QuotaInfo {
 			SelfUsed:                  qi.CalculateInfo.SelfUsed.DeepCopy(),
 			SelfNonPreemptibleRequest: qi.CalculateInfo.SelfNonPreemptibleRequest.DeepCopy(),
 			SelfNonPreemptibleUsed:    qi.CalculateInfo.SelfNonPreemptibleUsed.DeepCopy(),
+			CustomLimits:              qi.CalculateInfo.CustomLimits.DeepCopy(),
+			CustomUsed:                qi.CalculateInfo.CustomUsed.DeepCopy(),
 		},
 	}
 	for name, pod := range qi.PodCache {
@@ -178,6 +187,8 @@ func (qi *QuotaInfo) GetQuotaSummary(treeID string, includePods bool) *QuotaInfo
 	quotaInfoSummary.SelfRequest = qi.CalculateInfo.SelfRequest.DeepCopy()
 	quotaInfoSummary.SelfNonPreemptibleUsed = qi.CalculateInfo.SelfNonPreemptibleUsed.DeepCopy()
 	quotaInfoSummary.SelfNonPreemptibleRequest = qi.CalculateInfo.SelfNonPreemptibleRequest.DeepCopy()
+	quotaInfoSummary.CustomLimits = qi.CalculateInfo.CustomLimits.DeepCopy()
+	quotaInfoSummary.CustomUsed = qi.CalculateInfo.CustomUsed.DeepCopy()
 
 	if includePods {
 		for podName, podInfo := range qi.PodCache {
@@ -207,6 +218,7 @@ func (qi *QuotaInfo) updateQuotaInfoFromRemote(quotaInfo *QuotaInfo) {
 	qi.AllowLentResource = quotaInfo.AllowLentResource
 	qi.IsParent = quotaInfo.IsParent
 	qi.ParentName = quotaInfo.ParentName
+	qi.setCustomLimitsNoLock(quotaInfo.CalculateInfo.CustomLimits)
 }
 
 // getLimitRequestNoLock returns the min value of request and max, as max is the quotaGroup's upper limit of resources.
@@ -313,6 +325,10 @@ func (qi *QuotaInfo) setMinQuotaNoLock(res v1.ResourceList) {
 	qi.CalculateInfo.Min = res.DeepCopy()
 }
 
+func (qi *QuotaInfo) setCustomLimitsNoLock(customLimits CustomLimitConfMap) {
+	qi.CalculateInfo.CustomLimits = customLimits
+}
+
 func (qi *QuotaInfo) setAutoScaleMinQuotaNoLock(res v1.ResourceList) {
 	qi.CalculateInfo.AutoScaleMin = res.DeepCopy()
 }
@@ -375,6 +391,52 @@ func (qi *QuotaInfo) GetSelfNonPreemptibleRequest() v1.ResourceList {
 	return qi.CalculateInfo.SelfNonPreemptibleRequest.DeepCopy()
 }
 
+func (qi *QuotaInfo) HasCustomLimit(customKey string) bool {
+	qi.lock.Lock()
+	defer qi.lock.Unlock()
+	return qi.HasCustomLimitNoLock(customKey)
+}
+
+func (qi *QuotaInfo) HasCustomLimitNoLock(customKey string) bool {
+	_, ok := qi.CalculateInfo.CustomLimits[customKey]
+	return ok
+}
+
+func (qi *QuotaInfo) GetCustomLimit(customKey string) v1.ResourceList {
+	qi.lock.Lock()
+	defer qi.lock.Unlock()
+	return qi.GetCustomLimitNoLock(customKey)
+}
+
+func (qi *QuotaInfo) GetCustomLimitNoLock(customKey string) v1.ResourceList {
+	if customLimit, ok := qi.CalculateInfo.CustomLimits[customKey]; ok {
+		return customLimit.Limit.DeepCopy()
+	}
+	return nil
+}
+
+func (qi *QuotaInfo) GetCustomArgs(customKey string) CustomArgs {
+	qi.lock.Lock()
+	defer qi.lock.Unlock()
+	return qi.GetCustomArgsNoLock(customKey)
+}
+
+func (qi *QuotaInfo) GetCustomArgsNoLock(customKey string) CustomArgs {
+	if customLimit, ok := qi.CalculateInfo.CustomLimits[customKey]; ok && customLimit.Args != nil {
+		return customLimit.Args.DeepCopy()
+	}
+	return nil
+}
+
+func (qi *QuotaInfo) GetCustomUsed(customKey string) v1.ResourceList {
+	qi.lock.Lock()
+	defer qi.lock.Unlock()
+	if customUsed, ok := qi.CalculateInfo.CustomUsed[customKey]; ok {
+		return customUsed.DeepCopy()
+	}
+	return v1.ResourceList{}
+}
+
 func (qi *QuotaInfo) GetRuntime() v1.ResourceList {
 	qi.lock.Lock()
 	defer qi.lock.Unlock()
@@ -428,6 +490,7 @@ func (qi *QuotaInfo) clearForResetNoLock() {
 	qi.CalculateInfo.SelfRequest = v1.ResourceList{}
 	qi.CalculateInfo.SelfNonPreemptibleUsed = v1.ResourceList{}
 	qi.CalculateInfo.SelfNonPreemptibleRequest = v1.ResourceList{}
+	qi.CalculateInfo.CustomUsed = make(map[string]v1.ResourceList)
 	qi.RuntimeVersion = 0
 }
 
@@ -462,6 +525,9 @@ func (qi *QuotaInfo) isQuotaChange(quotaInfo *QuotaInfo) bool {
 	}
 
 	if !quotav1.Equals(qi.CalculateInfo.SharedWeight, quotaInfo.CalculateInfo.SharedWeight) {
+		return true
+	}
+	if !customLimitConfMapEquals(qi.CalculateInfo.CustomLimits, quotaInfo.CalculateInfo.CustomLimits) {
 		return true
 	}
 	return false
@@ -595,6 +661,17 @@ func (qtn *QuotaTopoNode) getChildGroupQuotaInfos() map[string]*QuotaTopoNode {
 		group[key] = v
 	}
 	return group
+}
+
+func (qtn *QuotaTopoNode) getLeafQuotaNames() (rst []string) {
+	if len(qtn.childGroupQuotaInfos) == 0 {
+		rst = append(rst, qtn.name)
+		return
+	}
+	for _, v := range qtn.childGroupQuotaInfos {
+		rst = append(rst, v.getLeafQuotaNames()...)
+	}
+	return
 }
 
 type PodInfo struct {

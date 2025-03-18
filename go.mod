@@ -39,6 +39,7 @@ require (
 	go.uber.org/atomic v1.11.0
 	go.uber.org/multierr v1.11.0
 	golang.org/x/crypto v0.16.0
+	golang.org/x/exp v0.0.0-20220827204233-334a2380cb91
 	golang.org/x/net v0.19.0
 	golang.org/x/sys v0.15.0
 	golang.org/x/time v0.3.0
@@ -86,7 +87,6 @@ require (
 	github.com/jaypipes/pcidb v1.0.0 // indirect
 	github.com/mitchellh/go-homedir v1.1.0 // indirect
 	github.com/stoewer/go-strcase v1.2.0 // indirect
-	golang.org/x/exp v0.0.0-20220827204233-334a2380cb91 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20230525234035-dd9d682886f9 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20230731190214-cbb8c96f2d6d // indirect
 	howett.net/plist v1.0.0 // indirect
