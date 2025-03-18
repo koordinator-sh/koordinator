@@ -793,6 +793,7 @@ func Test_cpuSuppress_calculateBESuppressCPU(t *testing.T) {
 		hostApps           []slov1alpha1.HostApplicationSpec
 		hostMetrics        map[string]float64
 		beCPUUsedThreshold int64
+		beCPUMinThreshold  *int64
 	}
 	tests := []struct {
 		name string
@@ -1157,6 +1158,96 @@ func Test_cpuSuppress_calculateBESuppressCPU(t *testing.T) {
 			// 20*0.7-(12-8-2-1)-8
 			want: resource.NewQuantity(5, resource.DecimalSI),
 		},
+		{
+			name: "calculate be suppress cpus with min",
+			args: args{
+				node: &corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node0",
+					},
+					Status: corev1.NodeStatus{
+						Allocatable: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("20"),
+							corev1.ResourceMemory: resource.MustParse("40G"),
+						},
+						Capacity: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("20"),
+							corev1.ResourceMemory: resource.MustParse("40G"),
+						},
+					},
+				},
+				nodeUsedCPU: 12,
+				podMetrics:  map[string]float64{"abc": 8, "def": 2},
+				podMetas: []*statesinformer.PodMeta{
+					{
+						Pod: &corev1.Pod{
+							ObjectMeta: metav1.ObjectMeta{
+								Name: "podA",
+								UID:  "abc",
+								Labels: map[string]string{
+									apiext.LabelPodQoS: string(apiext.QoSLS),
+								},
+							},
+							Spec: corev1.PodSpec{
+								NodeName: "test-node",
+								Containers: []corev1.Container{
+									{
+										Resources: corev1.ResourceRequirements{
+											Requests: corev1.ResourceList{
+												corev1.ResourceCPU:    resource.MustParse("10"),
+												corev1.ResourceMemory: resource.MustParse("20G"),
+											},
+											Limits: corev1.ResourceList{
+												corev1.ResourceCPU:    resource.MustParse("10"),
+												corev1.ResourceMemory: resource.MustParse("20G"),
+											},
+										},
+									},
+								},
+							},
+							Status: corev1.PodStatus{
+								Phase: corev1.PodRunning,
+							},
+						},
+					},
+					{
+						Pod: &corev1.Pod{
+							ObjectMeta: metav1.ObjectMeta{
+								Name: "podB",
+								UID:  "def",
+								Labels: map[string]string{
+									apiext.LabelPodQoS: string(apiext.QoSBE),
+								},
+							},
+							Spec: corev1.PodSpec{
+								NodeName: "test-node",
+								Containers: []corev1.Container{
+									{
+										Resources: corev1.ResourceRequirements{
+											Requests: corev1.ResourceList{
+												apiext.BatchCPU:    resource.MustParse("4"),
+												apiext.BatchMemory: resource.MustParse("6G"),
+											},
+											Limits: corev1.ResourceList{
+												apiext.BatchCPU:    resource.MustParse("4"),
+												apiext.BatchMemory: resource.MustParse("6G"),
+											},
+										},
+									},
+								},
+							},
+							Status: corev1.PodStatus{
+								Phase: corev1.PodRunning,
+							},
+						},
+					},
+				},
+				beCPUUsedThreshold: 70,
+				beCPUMinThreshold:  pointer.Int64(60),
+			},
+			// 20*0.6
+			want: resource.NewQuantity(12, resource.DecimalSI),
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1166,7 +1257,7 @@ func Test_cpuSuppress_calculateBESuppressCPU(t *testing.T) {
 			}
 			cpuSuppress := newTestCPUSuppress(opt)
 			got := cpuSuppress.calculateBESuppressCPU(tt.args.node, tt.args.nodeUsedCPU, tt.args.podMetrics, tt.args.podMetas,
-				tt.args.hostApps, tt.args.hostMetrics, tt.args.beCPUUsedThreshold)
+				tt.args.hostApps, tt.args.hostMetrics, tt.args.beCPUUsedThreshold, tt.args.beCPUMinThreshold)
 			assert.Equal(t, tt.want.MilliValue(), got.MilliValue())
 		})
 	}
@@ -1319,22 +1410,22 @@ func Test_cpuSuppress_recoverCFSQuotaIfNeed(t *testing.T) {
 	testCases := []args{
 		{
 			name:             "test need recover. currentPolicyStatus is nil",
-			preBECfsQuota:    10 * cfsPeriod,
+			preBECfsQuota:    10 * system.DefaultCPUCFSPeriod,
 			wantBECfsQuota:   -1,
 			wantPolicyStatus: &policyRecovered,
 		},
 		{
 			name:                "test need recover. currentPolicyStatus is policyUsing",
-			preBECfsQuota:       10 * cfsPeriod,
+			preBECfsQuota:       10 * system.DefaultCPUCFSPeriod,
 			currentPolicyStatus: &policyUsing,
 			wantBECfsQuota:      -1,
 			wantPolicyStatus:    &policyRecovered,
 		},
 		{
 			name:                "test not need recover. currentPolicyStatus is policyRecovered",
-			preBECfsQuota:       10 * cfsPeriod,
+			preBECfsQuota:       10 * system.DefaultCPUCFSPeriod,
 			currentPolicyStatus: &policyRecovered,
-			wantBECfsQuota:      10 * cfsPeriod,
+			wantBECfsQuota:      10 * system.DefaultCPUCFSPeriod,
 			wantPolicyStatus:    &policyRecovered,
 		},
 	}
@@ -1890,31 +1981,31 @@ func Test_cpuSuppress_adjustByCfsQuota(t *testing.T) {
 		{
 			name:           "increase CFSQuota: cpuQuantity > preBECPU + maxIncreaseCPU",
 			cpuQuantity:    resource.NewMilliQuantity(20*1000, resource.BinarySI),
-			preBECfsQuota:  10 * cfsPeriod,
-			wantBECfsQuota: 10*cfsPeriod + int64(beMaxIncreaseCPUPercent*80*float64(cfsPeriod)),
+			preBECfsQuota:  10 * system.DefaultCPUCFSPeriod,
+			wantBECfsQuota: 10*system.DefaultCPUCFSPeriod + int64(beMaxIncreaseCPUPercent*80*float64(system.DefaultCPUCFSPeriod)),
 		},
 		{
 			name:           "increase CFSQuota: preBECPU < cpuQuantity < preBECPU + maxIncreaseCPU",
 			cpuQuantity:    resource.NewMilliQuantity(20*1000, resource.BinarySI),
-			preBECfsQuota:  19 * cfsPeriod,
-			wantBECfsQuota: 20 * cfsPeriod,
+			preBECfsQuota:  19 * system.DefaultCPUCFSPeriod,
+			wantBECfsQuota: 20 * system.DefaultCPUCFSPeriod,
 		},
 		{
 			name:           "suppress beCPU: preBECPU > cpuQuantity",
 			cpuQuantity:    resource.NewMilliQuantity(20*1000, resource.BinarySI),
-			preBECfsQuota:  24 * cfsPeriod,
-			wantBECfsQuota: 20 * cfsPeriod,
+			preBECfsQuota:  24 * system.DefaultCPUCFSPeriod,
+			wantBECfsQuota: 20 * system.DefaultCPUCFSPeriod,
 		},
 		{
 			name:           "bypass minDeltaQuota!",
 			cpuQuantity:    resource.NewMilliQuantity(20*1000, resource.BinarySI),
-			preBECfsQuota:  int64(19.8 * float64(cfsPeriod)),
-			wantBECfsQuota: int64(19.8 * float64(cfsPeriod)),
+			preBECfsQuota:  int64(19.8 * float64(system.DefaultCPUCFSPeriod)),
+			wantBECfsQuota: int64(19.8 * float64(system.DefaultCPUCFSPeriod)),
 		},
 		{
 			name:           "minQuota 2000 not bypass!",
 			cpuQuantity:    resource.NewMilliQuantity(1, resource.BinarySI),
-			preBECfsQuota:  int64(0.8 * float64(cfsPeriod)),
+			preBECfsQuota:  int64(0.8 * float64(system.DefaultCPUCFSPeriod)),
 			wantBECfsQuota: 2000,
 		},
 	}
