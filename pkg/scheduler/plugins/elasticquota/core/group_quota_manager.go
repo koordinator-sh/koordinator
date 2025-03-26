@@ -23,9 +23,11 @@ import (
 	"time"
 
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/util/errors"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	utilfeature "k8s.io/apiserver/pkg/util/feature"
 	"k8s.io/klog/v2"
+	"k8s.io/utils/set"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
@@ -60,9 +62,13 @@ type GroupQuotaManager struct {
 
 	// treeID is the quota tree id
 	treeID string
+
+	// customLimiters stores the enabled custom limiters
+	customLimiters map[string]CustomLimiter
 }
 
-func NewGroupQuotaManager(treeID string, systemGroupMax, defaultGroupMax v1.ResourceList) *GroupQuotaManager {
+func NewGroupQuotaManager(treeID string, systemGroupMax, defaultGroupMax v1.ResourceList,
+	customLimiters map[string]CustomLimiter) *GroupQuotaManager {
 	quotaManager := &GroupQuotaManager{
 		totalResourceExceptSystemAndDefaultUsed: v1.ResourceList{},
 		totalResource:                           v1.ResourceList{},
@@ -73,6 +79,7 @@ func NewGroupQuotaManager(treeID string, systemGroupMax, defaultGroupMax v1.Reso
 		scaleMinQuotaManager:                    NewScaleMinQuotaManager(),
 		nodeResourceMap:                         make(map[string]struct{}),
 		treeID:                                  treeID,
+		customLimiters:                          customLimiters,
 	}
 	// only default GroupQuotaManager need system quota and deault quota.
 	if treeID == "" {
@@ -257,6 +264,102 @@ func (gqm *GroupQuotaManager) updateGroupDeltaUsedNoLock(quotaName string, delta
 	}
 }
 
+func (gqm *GroupQuotaManager) updateGroupCustomUsedWhenPodChanged(leafQuotaName string, oldPod, newPod *v1.Pod) {
+	if len(gqm.customLimiters) == 0 {
+		return
+	}
+	if oldPod == nil && newPod == nil {
+		return
+	}
+	// get all quotaInfos from current node to all parents
+	curToAllParInfos := gqm.getCurToAllParentGroupQuotaInfoNoLock(leafQuotaName)
+	allQuotaInfoLen := len(curToAllParInfos)
+	if allQuotaInfoLen <= 0 {
+		return
+	}
+
+	defer gqm.scopedLockForQuotaInfo(curToAllParInfos)()
+	// calculate and update custom-used by custom limiters
+	for customKey, customLimiter := range gqm.customLimiters {
+		// calculate used-delta resource
+		var usedDelta v1.ResourceList
+		for _, quotaInfo := range curToAllParInfos {
+			// calculate used-delta from pod only for the lowest quota with configured limit in this quota chain.
+			usedDelta = customLimiter.CalculatePodUsedDelta(quotaInfo, newPod, oldPod)
+			// skip updating used if no configured limit (used-delta is nil)
+			if usedDelta == nil {
+				continue
+			}
+			break
+		}
+		// skip updating custom-used resource if used-delta is zero
+		if quotav1.IsZero(usedDelta) {
+			continue
+		}
+		// update custom-used resource for this quota chain
+		for _, quotaInfo := range curToAllParInfos {
+			if quotaInfo.Name == extension.RootQuotaName {
+				break
+			}
+			curUsed := quotaInfo.CalculateInfo.CustomUsed[customKey]
+			newUsed := quotav1.Add(curUsed, usedDelta)
+			quotaInfo.CalculateInfo.CustomUsed[customKey] = newUsed
+			klog.Infof("updated custom-used resource for quota %v, pod=%v, customKey=%v, usedDelta=%v, newUsed=%v",
+				quotaInfo.Name, GetPodKey(newPod, oldPod), customKey, util.PrintResourceList(usedDelta),
+				util.PrintResourceList(newUsed))
+		}
+	}
+}
+
+func (gqm *GroupQuotaManager) updateGroupCustomUsedWhenQuotaChanged(quotaName string,
+	customUsedDeltas CustomResourceLists, isDeduct bool) {
+	if len(gqm.customLimiters) == 0 || len(customUsedDeltas) == 0 {
+		return
+	}
+	// filter zero used-deltas
+	filteredCustomUsedDeltas := make(CustomResourceLists)
+	for customKey, customUsed := range customUsedDeltas {
+		if quotav1.IsZero(customUsed) {
+			continue
+		}
+		if isDeduct {
+			filteredCustomUsedDeltas[customKey] = quotav1.Subtract(v1.ResourceList{}, customUsed)
+		} else {
+			filteredCustomUsedDeltas[customKey] = customUsed
+		}
+	}
+	if len(filteredCustomUsedDeltas) == 0 {
+		return
+	}
+	// get all quotaInfos from current node to all parents
+	curToAllParInfos := gqm.getCurToAllParentGroupQuotaInfoNoLock(quotaName)
+	allQuotaInfoLen := len(curToAllParInfos)
+	if allQuotaInfoLen <= 0 {
+		return
+	}
+
+	defer gqm.scopedLockForQuotaInfo(curToAllParInfos)()
+	// update custom used by custom limiters
+	for customKey := range gqm.customLimiters {
+		usedDelta := filteredCustomUsedDeltas[customKey]
+		// skip unnecessary update
+		if usedDelta == nil || quotav1.IsZero(usedDelta) {
+			continue
+		}
+		for i := 0; i < allQuotaInfoLen; i++ {
+			quotaInfo := curToAllParInfos[i]
+			curUsed := quotaInfo.CalculateInfo.CustomUsed[customKey]
+			newUsed := quotav1.Add(curUsed, usedDelta)
+			quotaInfo.CalculateInfo.CustomUsed[customKey] = newUsed
+			if klog.V(5).Enabled() {
+				klog.Infof(
+					"updated custom-used for quota %v when quota changed, customKey=%v, usedDelta=%v, newUsed=%v",
+					quotaInfo.Name, customKey, util.PrintResourceList(usedDelta), util.PrintResourceList(newUsed))
+			}
+		}
+	}
+}
+
 func (gqm *GroupQuotaManager) RefreshRuntime(quotaName string) v1.ResourceList {
 	gqm.hierarchyUpdateLock.RLock()
 	defer gqm.hierarchyUpdateLock.RUnlock()
@@ -393,6 +496,13 @@ func (gqm *GroupQuotaManager) UpdateQuota(quota *v1alpha1.ElasticQuota, isDelete
 		return gqm.deleteQuotaNoLock(quota)
 	} else {
 		newQuotaInfo := NewQuotaInfoFromQuota(quota)
+
+		// attach custom limit conf to quotaInfo
+		err := gqm.attachCustomLimitConf(newQuotaInfo, quota)
+		if err != nil {
+			return err
+		}
+
 		// update the local quotaInfo's crd
 		if localQuotaInfo, exist := gqm.quotaInfoMap[quotaName]; exist {
 			if !localQuotaInfo.isQuotaChange(newQuotaInfo) {
@@ -484,6 +594,7 @@ func (gqm *GroupQuotaManager) rebuildQuotaTopoNodeMapNoLock() {
 func (gqm *GroupQuotaManager) rebuildAllGroupQuotaNoLock() {
 	toUpdateRequestMap, toUpdateNonPreemptibleUsedMap, toUpdateUsedMap, toUpdateNonPreemptibleRequestMap :=
 		make(quotaResMapType), make(quotaResMapType), make(quotaResMapType), make(quotaResMapType)
+	toUpdateCustomUsedMap := make(map[string]CustomResourceLists)
 	for quotaName, topoNode := range gqm.quotaTopoNodeMap {
 		if quotaName == extension.RootQuotaName {
 			gqm.resetRootQuotaUsedAndRequest()
@@ -495,6 +606,7 @@ func (gqm *GroupQuotaManager) rebuildAllGroupQuotaNoLock() {
 			toUpdateNonPreemptibleRequestMap[quotaName] = topoNode.quotaInfo.CalculateInfo.NonPreemptibleRequest.DeepCopy()
 			toUpdateNonPreemptibleUsedMap[quotaName] = topoNode.quotaInfo.CalculateInfo.NonPreemptibleUsed.DeepCopy()
 			toUpdateUsedMap[quotaName] = topoNode.quotaInfo.CalculateInfo.Used.DeepCopy()
+			toUpdateCustomUsedMap[quotaName] = topoNode.quotaInfo.CalculateInfo.CustomUsed.DeepCopy()
 		} else {
 			toUpdateRequestMap[quotaName] = topoNode.quotaInfo.CalculateInfo.SelfRequest.DeepCopy()
 			toUpdateNonPreemptibleRequestMap[quotaName] = topoNode.quotaInfo.CalculateInfo.SelfNonPreemptibleRequest.DeepCopy()
@@ -514,11 +626,14 @@ func (gqm *GroupQuotaManager) rebuildAllGroupQuotaNoLock() {
 	gqm.resetAllGroupQuotaRecursiveNoLock(rootNode)
 	gqm.updateResourceKeyNoLock()
 
-	// subGroup's topo relation may change; refresh the request/used from bottom to top
+	// subGroup's topo relation may change; refresh the request/used/custom-used from bottom to top
 	for quotaName, topoNode := range gqm.quotaTopoNodeMap {
 		if _, ok := toUpdateRequestMap[topoNode.quotaInfo.Name]; ok {
 			gqm.updateGroupDeltaRequestNoLock(quotaName, toUpdateRequestMap[quotaName], toUpdateNonPreemptibleRequestMap[quotaName], 0)
 			gqm.updateGroupDeltaUsedNoLock(quotaName, toUpdateUsedMap[quotaName], toUpdateNonPreemptibleUsedMap[quotaName], 0)
+		}
+		if customUsed, ok := toUpdateCustomUsedMap[quotaName]; ok {
+			gqm.updateGroupCustomUsedWhenQuotaChanged(quotaName, customUsed, false)
 		}
 	}
 }
@@ -676,6 +791,7 @@ func (gqm *GroupQuotaManager) updatePodUsedNoLock(quotaName string, oldPod, newP
 		}
 	}
 	gqm.updateGroupDeltaUsedNoLock(quotaName, deltaUsed, deltaNonPreemptibleUsed, 0)
+	gqm.updateGroupCustomUsedWhenPodChanged(quotaName, oldPod, newPod)
 }
 
 func (gqm *GroupQuotaManager) updatePodCacheNoLock(quotaName string, pod *v1.Pod, isAdd bool) {
@@ -1056,6 +1172,8 @@ func (gqm *GroupQuotaManager) updateQuotaInternalNoLock(newQuotaInfo, oldQuotaIn
 			newQuotaInfo.Name, util.DumpJSON(oldSharedWeight), util.DumpJSON(newQuotaInfo.CalculateInfo.SharedWeight))
 		gqm.doUpdateOneGroupSharedWeightNoLock(newQuotaInfo.Name, newQuotaInfo.CalculateInfo.SharedWeight)
 	}
+	// update custom limits and args
+	gqm.updateCustomLimitsAndArgsNoLock(newQuotaInfo, oldQuotaInfo)
 }
 
 func (gqm *GroupQuotaManager) updateQuotaNoLockWhenParentChange(newQuota *v1alpha1.ElasticQuota) {
@@ -1144,6 +1262,8 @@ func (gqm *GroupQuotaManager) updateQuotaNoLockWhenParentChange(newQuota *v1alph
 		}
 	}
 
+	// add custom-used for new parents
+	gqm.updateGroupCustomUsedWhenQuotaChanged(newQuotaInfo.ParentName, oldQuotaInfo.CalculateInfo.CustomUsed, false)
 }
 
 func (gqm *GroupQuotaManager) updateQuotaTopoNodeNoLock(newQuotaInfo, oldQuotaInfo *QuotaInfo) {
@@ -1264,6 +1384,166 @@ func (gqm *GroupQuotaManager) doUpdateOneGroupSharedWeightNoLock(quotaName strin
 	gqm.updateOneGroupSharedWeightNoLock(quotaInfo)
 }
 
+func (gqm *GroupQuotaManager) updateCustomLimitsAndArgsNoLock(newQuotaInfo, localQuotaInfo *QuotaInfo) {
+	if len(gqm.customLimiters) == 0 {
+		return
+	}
+	// check if custom conf changed
+	var updatedKeys, toBeRebuiltKeys []string
+	for key := range gqm.customLimiters {
+		newLimitConf := newQuotaInfo.CalculateInfo.CustomLimits[key]
+		var oldLimitConf *CustomLimitConf
+		if localQuotaInfo != nil {
+			oldLimitConf = localQuotaInfo.CalculateInfo.CustomLimits[key]
+		}
+		if !customLimitConfEquals(oldLimitConf, newLimitConf) {
+			updatedKeys = append(updatedKeys, key)
+			// append toBeRebuiltKeys in following cases:
+			// 1. to-be-removed or to-be-added
+			//      if there is a limit on descendants or parent quotas, no need to rebuild since custom-used has already been set.
+			// 		otherwise, rebuild is needed to set custom-used for current quota.
+			// 2. rebuild-trigger
+			if newLimitConf == nil || oldLimitConf == nil {
+				// append to-be-added/to-be-removed key if no limit on descendants and parents
+				if topoNode := gqm.quotaTopoNodeMap[newQuotaInfo.Name]; topoNode != nil &&
+					!hasCustomLimitForDescendants(topoNode, key) && !hasCustomLimitForParents(topoNode, key) {
+					toBeRebuiltKeys = append(toBeRebuiltKeys, key)
+				}
+			} else {
+				// append custom key with rebuild-trigger-id
+				var oldTriggerID string
+				if oldLimitConf.Args != nil {
+					oldTriggerID = oldLimitConf.Args.GetRebuildTriggerID()
+				}
+				if newLimitConf.Args != nil && newLimitConf.Args.GetRebuildTriggerID() != "" &&
+					newLimitConf.Args.GetRebuildTriggerID() != oldTriggerID {
+					toBeRebuiltKeys = append(toBeRebuiltKeys, key)
+				}
+			}
+		}
+	}
+	// skip updating if no custom conf changed
+	if len(updatedKeys) == 0 {
+		klog.Infof("no changes detected in custom limits and args for quota %s", newQuotaInfo.Name)
+		return
+	}
+	// get new limits and args
+	newCustomLimitConfMap := make(CustomLimitConfMap)
+	for key := range gqm.customLimiters {
+		newLimitConf := newQuotaInfo.CalculateInfo.CustomLimits[key]
+		if newLimitConf != nil {
+			newCustomLimitConfMap[key] = newLimitConf
+		}
+	}
+	// update custom limits for quotaInfo in cache
+	quotaInfo := gqm.getQuotaInfoByNameNoLock(newQuotaInfo.Name)
+	if quotaInfo == nil {
+		klog.Errorf("quota %v not found", newQuotaInfo.Name)
+		return
+	}
+	quotaInfo.setCustomLimitsNoLock(newCustomLimitConfMap)
+	klog.Infof("updated custom limits or arguments for quota %v, limits=%s",
+		newQuotaInfo.Name, util.DumpJSON(newCustomLimitConfMap))
+	// rebuild custom-used
+	if len(toBeRebuiltKeys) > 0 {
+		gqm.rebuildCustomUsedNoLock(quotaInfo, toBeRebuiltKeys)
+	}
+}
+
+// rebuildCustomUsedNoLock rebuilds custom-used for quota.
+func (gqm *GroupQuotaManager) rebuildCustomUsedNoLock(quotaInfo *QuotaInfo, toBeRebuildKeys []string) {
+	// get leaf quotas
+	quotaTopoNode := gqm.quotaTopoNodeMap[quotaInfo.Name]
+	if quotaTopoNode == nil {
+		return
+	}
+	startTime := time.Now()
+	leafQuotaNames := quotaTopoNode.getLeafQuotaNames()
+	klog.Infof("start rebuilding custom-used resource for quota %v, leafQuotaNames=%+v, toBeRebuildKeys=%+v",
+		quotaInfo.Name, leafQuotaNames, toBeRebuildKeys)
+	// deduct custom-used resource for current and parent quotas
+	deductUsed := make(CustomResourceLists)
+	for _, customKey := range toBeRebuildKeys {
+		customUsed := quotaInfo.CalculateInfo.CustomUsed[customKey]
+		if customUsed == nil || quotav1.IsZero(customUsed) {
+			continue
+		}
+		deductUsed[customKey] = customUsed
+	}
+	gqm.updateGroupCustomUsedWhenQuotaChanged(quotaInfo.Name, deductUsed, true)
+	// reset custom-used resource for all descendants
+	gqm.resetCustomUsedForDescendentsNoLock(quotaTopoNode, toBeRebuildKeys...)
+	// update custom-used for related quota chains
+	for _, leafQuotaName := range leafQuotaNames {
+		leafQuotaInfo := gqm.getQuotaInfoByNameNoLock(leafQuotaName)
+		if leafQuotaInfo == nil {
+			continue
+		}
+		// update custom-used for related quota chains
+		for _, podInfo := range leafQuotaInfo.PodCache {
+			gqm.updateGroupCustomUsedWhenPodChanged(leafQuotaName, nil, podInfo.pod)
+		}
+		klog.Infof("rebuilt custom-used resource for leaf quota %v, numPods=%d",
+			leafQuotaName, len(leafQuotaInfo.PodCache))
+	}
+	klog.Infof("done rebuilding custom-used resource for quota %v, take %v", quotaInfo.Name, time.Since(startTime))
+}
+
+func (gqm *GroupQuotaManager) resetCustomUsedForDescendentsNoLock(quotaNode *QuotaTopoNode,
+	selectedCustomKeys ...string) {
+	quotaNames := make(set.Set[string])
+	fetchDescendentQuotaNamesRecursive(quotaNode, quotaNames)
+	if len(quotaNames) == 0 {
+		return
+	}
+	var partQuotaInfos []*QuotaInfo
+	for quotaName := range quotaNames {
+		quotaInfo := gqm.getQuotaInfoByNameNoLock(quotaName)
+		partQuotaInfos = append(partQuotaInfos, quotaInfo)
+	}
+	defer gqm.scopedLockForQuotaInfo(partQuotaInfos)()
+	for _, quotaInfo := range partQuotaInfos {
+		for _, key := range selectedCustomKeys {
+			delete(quotaInfo.CalculateInfo.CustomUsed, key)
+			klog.Infof("reset custom-used resource for quota %v, key=%v, customUsed=%+v",
+				quotaInfo.Name, key, quotaInfo.CalculateInfo.CustomUsed)
+		}
+	}
+}
+
+// fetchDescendentQuotaNamesRecursive fetches names of descendent quotas.
+func fetchDescendentQuotaNamesRecursive(node *QuotaTopoNode, quotaNames set.Set[string]) {
+	for name, subNode := range node.getChildGroupQuotaInfos() {
+		quotaNames.Insert(name)
+		fetchDescendentQuotaNamesRecursive(subNode, quotaNames)
+	}
+}
+
+// hasCustomLimitForDescendants checks if the descendants of the specified quota has specified custom limit.
+func hasCustomLimitForDescendants(node *QuotaTopoNode, customKey string) bool {
+	for _, subNode := range node.getChildGroupQuotaInfos() {
+		if subNode.quotaInfo.HasCustomLimit(customKey) {
+			return true
+		}
+		rst := hasCustomLimitForDescendants(subNode, customKey)
+		if rst {
+			return true
+		}
+	}
+	return false
+}
+
+// hasCustomLimitForParents checks if the parents of the specified quota has specified custom limit.
+func hasCustomLimitForParents(node *QuotaTopoNode, customKey string) bool {
+	if node.parQuotaTopoNode == nil {
+		return false
+	}
+	if node.parQuotaTopoNode.quotaInfo.HasCustomLimit(customKey) {
+		return true
+	}
+	return hasCustomLimitForParents(node.parQuotaTopoNode, customKey)
+}
+
 func shouldBeIgnored(pod *v1.Pod) bool {
 	if pod.DeletionTimestamp == nil {
 		return false
@@ -1325,7 +1605,38 @@ func (gqm *GroupQuotaManager) deleteQuotaNoLock(quota *v1alpha1.ElasticQuota) er
 		gqm.updateGroupDeltaUsedNoLock(quotaInfo.ParentName, deltaUsed, deltaNonPreemptibleUsed, -1)
 	}
 
+	// deduct custom-used for parents
+	gqm.updateGroupCustomUsedWhenQuotaChanged(quotaInfo.ParentName, quotaInfo.CalculateInfo.CustomUsed, true)
+
 	klog.Infof("delete quota %v for quota tree %v", quota.Name, gqm.treeID)
 
+	return nil
+}
+
+func (gqm *GroupQuotaManager) attachCustomLimitConf(quotaInfo *QuotaInfo, quota *v1alpha1.ElasticQuota) error {
+	if len(gqm.customLimiters) == 0 {
+		return nil
+	}
+	customLimitConfs := make(CustomLimitConfMap)
+	var errs []error
+	for key, limiter := range gqm.customLimiters {
+		limitConf, err := limiter.GetLimitConf(quota)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("key=%s, err=%v", key, err))
+			continue
+		}
+		// skip if no limit configured
+		if limitConf == nil || limitConf.Limit == nil {
+			continue
+		}
+		customLimitConfs[key] = limitConf
+	}
+	if len(errs) > 0 {
+		return fmt.Errorf("failed to parse custom limits or arguments for quota %s, err=%s",
+			quota.Name, errors.NewAggregate(errs).Error())
+	}
+	if len(customLimitConfs) > 0 {
+		quotaInfo.setCustomLimitsNoLock(customLimitConfs)
+	}
 	return nil
 }

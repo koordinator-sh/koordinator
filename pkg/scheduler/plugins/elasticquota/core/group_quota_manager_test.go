@@ -1483,7 +1483,15 @@ func TestGroupQuotaManager_DeleteOneGroup_UpdateQuota(t *testing.T) {
 	assert.Nil(t, gqm.quotaInfoMap["1"])
 }
 
-func NewGroupQuotaManagerForTest() *GroupQuotaManager {
+type GroupQuotaManagerOption func(*GroupQuotaManager)
+
+func WithCustomLimiter(customLimiters map[string]CustomLimiter) GroupQuotaManagerOption {
+	return func(gqm *GroupQuotaManager) {
+		gqm.customLimiters = customLimiters
+	}
+}
+
+func NewGroupQuotaManagerForTest(opts ...GroupQuotaManagerOption) *GroupQuotaManager {
 	quotaManager := &GroupQuotaManager{
 		totalResourceExceptSystemAndDefaultUsed: v1.ResourceList{},
 		totalResource:                           v1.ResourceList{},
@@ -1492,6 +1500,9 @@ func NewGroupQuotaManagerForTest() *GroupQuotaManager {
 		runtimeQuotaCalculatorMap:               make(map[string]*RuntimeQuotaCalculator),
 		scaleMinQuotaManager:                    NewScaleMinQuotaManager(),
 		quotaTopoNodeMap:                        make(map[string]*QuotaTopoNode),
+	}
+	for _, opt := range opts {
+		opt(quotaManager)
 	}
 	systemQuotaInfo := NewQuotaInfo(false, true, extension.SystemQuotaName, extension.RootQuotaName)
 	systemQuotaInfo.CalculateInfo.Max = v1.ResourceList{
@@ -1772,7 +1783,7 @@ func TestGroupQuotaManager_OnTerminatingPodAdd(t *testing.T) {
 }
 
 func TestNewGroupQuotaManager(t *testing.T) {
-	gqm := NewGroupQuotaManager("", createResourceList(100, 100), createResourceList(300, 300))
+	gqm := NewGroupQuotaManager("", createResourceList(100, 100), createResourceList(300, 300), nil)
 	assert.Equal(t, createResourceList(100, 100), gqm.GetQuotaInfoByName(extension.SystemQuotaName).GetMax())
 	assert.Equal(t, createResourceList(300, 300), gqm.GetQuotaInfoByName(extension.DefaultQuotaName).GetMax())
 	assert.True(t, gqm.scaleMinQuotaEnabled)
@@ -2690,4 +2701,551 @@ func TestGroupQuotaManager_UpdateQuotaNoLockWhenParentChange(t *testing.T) {
 	assert.Equal(t, 0, len(gqm.quotaTopoNodeMap["1"].childGroupQuotaInfos))
 	assert.Equal(t, 0, len(gqm.quotaTopoNodeMap["11"].childGroupQuotaInfos))
 	assert.Equal(t, 2, len(gqm.quotaTopoNodeMap["21"].childGroupQuotaInfos))
+}
+
+func TestGroupQuotaManager_MockCustomLimiter_SingleQuotaUpdate(t *testing.T) {
+	gqm := NewGroupQuotaManagerForTest(WithCustomLimiter(map[string]CustomLimiter{
+		CustomKeyMock: &MockCustomLimiter{
+			key: CustomKeyMock,
+		},
+	}))
+	annotationKeyLimit := fmt.Sprintf(AnnotationKeyMockLimitFmt, CustomKeyMock)
+	annotationKeyArgs := fmt.Sprintf(AnnotationKeyMockArgsFmt, CustomKeyMock)
+	/*
+	 * invalid updates
+	 */
+	// invalid limit
+	q1 := CreateQuota("1", extension.RootQuotaName, 40, 40, 20, 20, false, false)
+	q1.Annotations[annotationKeyLimit] = `{`
+	err := gqm.UpdateQuota(q1, false)
+	assert.NotNil(t, err)
+	assert.ErrorContains(t, err, "failed to unmarshal custom limit")
+
+	// invalid args
+	q1.Annotations[annotationKeyLimit] = `{"cpu":20,"memory":20}`
+	q1.Annotations[annotationKeyArgs] = `invalid`
+	err = gqm.UpdateQuota(q1, false)
+	assert.NotNil(t, err)
+	assert.ErrorContains(t, err, "failed to unmarshal custom args")
+
+	// required argument with invalid format
+	q1.Annotations[annotationKeyLimit] = `{"cpu":20,"memory":20}`
+	q1.Annotations[annotationKeyArgs] = `{"debugEnabled":"true"}`
+	err = gqm.UpdateQuota(q1, false)
+	assert.NotNil(t, err)
+	assert.ErrorContains(t, err, "failed to unmarshal custom args for quota")
+
+	/*
+	 * valid updates
+	 */
+	q1 = CreateQuota("1", extension.RootQuotaName, 40, 40, 20, 20, false, false)
+	q1.Annotations[annotationKeyLimit] = `{"cpu":20,"memory":20}`
+	q1.Annotations[annotationKeyArgs] = `{"debugEnabled":true}`
+	err = gqm.UpdateQuota(q1, false)
+	assert.NoError(t, err)
+	quotaInfo := gqm.GetQuotaInfoByName(q1.Name)
+	assert.Equal(t, len(quotaInfo.CalculateInfo.CustomLimits), 1)
+	assertResListEquals(t, createResourceList(20, 20), quotaInfo.GetCustomLimit(CustomKeyMock))
+	args, ok := quotaInfo.GetCustomArgs(CustomKeyMock).(*MockCustomArgs)
+	assert.True(t, ok)
+	assert.True(t, args.DebugEnabled)
+
+	// update limit
+	q1.Annotations[annotationKeyLimit] = `{"cpu":20,"memory":50}`
+	err = gqm.UpdateQuota(q1, false)
+	assert.NoError(t, err)
+	assert.Equal(t, len(quotaInfo.CalculateInfo.CustomLimits), 1)
+	assertResListEquals(t, createResourceList(20, 50), quotaInfo.GetCustomLimit(CustomKeyMock))
+
+	// update args
+	q1.Annotations[annotationKeyArgs] = `{"debugEnabled":false}`
+	err = gqm.UpdateQuota(q1, false)
+	assert.NoError(t, err)
+	args, ok = quotaInfo.GetCustomArgs(CustomKeyMock).(*MockCustomArgs)
+	assert.True(t, ok)
+	assert.False(t, args.DebugEnabled)
+
+	// remove limit, args should be ignored if limit is not configured
+	delete(q1.Annotations, annotationKeyLimit)
+	err = gqm.UpdateQuota(q1, false)
+	assert.NoError(t, err)
+	assert.Equal(t, len(quotaInfo.CalculateInfo.CustomLimits), 0)
+}
+
+func TestGroupQuotaManager_CustomLimiter_QuotaUpdate(t *testing.T) {
+	testCustomKey := CustomKeyMock
+	customLimiter, err := NewMockLimiter(testCustomKey, `{"labelSelector":"app=test"}`)
+	assert.NoError(t, err)
+	gqm := NewGroupQuotaManagerForTest(WithCustomLimiter(map[string]CustomLimiter{
+		testCustomKey: customLimiter,
+	}))
+	annoKeyLimitConf, annoKeyArgs := fmt.Sprintf(AnnotationKeyMockLimitFmt, testCustomKey),
+		fmt.Sprintf(AnnotationKeyMockArgsFmt, testCustomKey)
+
+	// quota1 Max[100, 100]  Min[80,80] request[0,0]
+	//   |-- quota11 Max[50, 50]  Min[30,30] request[0,0]
+	//       |-- quota111 Max[50, 50]  Min[20,20] request[0,0]
+	// quota2 Max[100, 100]  Min[60,60] request[0,0]
+	//   |-- quota21 Max[50, 50]  Min[40,40] request[0,0]
+	//       |-- quota211 Max[50, 50]  Min[15,15] request[0,0]
+	q1 := CreateQuota("1", extension.RootQuotaName, 100, 100, 80, 80, true, true)
+	q2 := CreateQuota("2", extension.RootQuotaName, 100, 100, 60, 60, true, true)
+	q11 := CreateQuota("11", "1", 50, 50, 30, 30, true, true)
+	q21 := CreateQuota("21", "2", 50, 50, 40, 40, true, true)
+	q111 := CreateQuota("111", "11", 50, 50, 20, 20, true, false)
+	q211 := CreateQuota("211", "21", 50, 50, 15, 15, true, false)
+
+	err = gqm.UpdateQuota(q1, false)
+	assert.NoError(t, err)
+	err = gqm.UpdateQuota(q11, false)
+	assert.NoError(t, err)
+	err = gqm.UpdateQuota(q111, false)
+	assert.NoError(t, err)
+	err = gqm.UpdateQuota(q2, false)
+	assert.NoError(t, err)
+	err = gqm.UpdateQuota(q21, false)
+	assert.NoError(t, err)
+	err = gqm.UpdateQuota(q211, false)
+	assert.NoError(t, err)
+	q111Info, q11Info, q1Info, q211Info, q21Info, q2Info :=
+		gqm.getQuotaInfoByNameNoLock(q111.Name), gqm.getQuotaInfoByNameNoLock(q11.Name),
+		gqm.getQuotaInfoByNameNoLock(q1.Name), gqm.getQuotaInfoByNameNoLock(q211.Name),
+		gqm.getQuotaInfoByNameNoLock(q21.Name), gqm.getQuotaInfoByNameNoLock(q2.Name)
+
+	// add matched pod with quota=q111, no custom-used
+	pod1 := schetesting.MakePod().Name("1").Label(extension.LabelQuotaName, q111.Name).Label(
+		"app", "test").Containers([]v1.Container{schetesting.MakeContainer().Name("0").Resources(
+		map[v1.ResourceName]string{v1.ResourceCPU: "5", v1.ResourceMemory: "5"}).Obj()}).Node("node0").Obj()
+	gqm.OnPodAdd(q111.Name, pod1)
+	assert.Equal(t, v1.ResourceList{}, q111Info.GetCustomUsed(testCustomKey))
+	assert.Equal(t, v1.ResourceList{}, q11Info.GetCustomUsed(testCustomKey))
+	assert.Equal(t, v1.ResourceList{}, q1Info.GetCustomUsed(testCustomKey))
+
+	// add custom limit for q1, rebuild and have custom-used
+	q1.Annotations[annoKeyLimitConf] = `{"cpu":20,"memory":20}`
+	q1.Annotations[annoKeyArgs] = `{"debugEnabled":true}`
+	err = gqm.UpdateQuota(q1, false)
+	assert.NoError(t, err)
+
+	// expected quota chain:
+	// quota1     			mock-limit[20,20]  	mock-used[5,5]
+	//   |-- quota11							mock-used[5,5]
+	//       |-- quota111						mock-used[5,5]
+	assertResListEquals(t, createResourceList(20, 20), q1Info.GetCustomLimit(testCustomKey))
+	assertResListEquals(t, createResourceList(5, 5), q111Info.GetCustomUsed(testCustomKey))
+	assertResListEquals(t, createResourceList(5, 5), q11Info.GetCustomUsed(testCustomKey))
+	assertResListEquals(t, createResourceList(5, 5), q1Info.GetCustomUsed(testCustomKey))
+	customArgs := q1Info.GetCustomArgs(testCustomKey)
+	assert.NotNil(t, customArgs)
+	assert.True(t, customArgs.(*MockCustomArgs).DebugEnabled)
+
+	// add custom limit for q211
+	q211.Annotations[annoKeyLimitConf] = `{"cpu":15,"memory":15}`
+	err = gqm.UpdateQuota(q211, false)
+	assert.NoError(t, err)
+
+	// expected q211: mock-limit[15,15]  	mock-used[0,0]
+	assertResListEquals(t, createResourceList(15, 15), q211Info.GetCustomLimit(testCustomKey))
+	assert.Equal(t, v1.ResourceList{}, q211Info.GetCustomUsed(testCustomKey))
+	assert.Nil(t, q211Info.GetCustomArgs(testCustomKey))
+	assert.Equal(t, v1.ResourceList{}, q21Info.GetCustomUsed(testCustomKey))
+	assert.Nil(t, q21Info.GetCustomArgs(testCustomKey))
+	assert.Equal(t, v1.ResourceList{}, q2Info.GetCustomUsed(testCustomKey))
+	assert.Nil(t, q2Info.GetCustomArgs(testCustomKey))
+
+	// add matched pod with quota=211
+	pod2 := schetesting.MakePod().Name("2").Label(extension.LabelQuotaName, q211.Name).Label(
+		"app", "test").Containers([]v1.Container{schetesting.MakeContainer().Name("0").Resources(
+		map[v1.ResourceName]string{v1.ResourceCPU: "12", v1.ResourceMemory: "12"}).Obj()}).Node("node0").Obj()
+	gqm.OnPodAdd(q211.Name, pod2)
+
+	// expected quota chain:
+	// quota2   								mock-used[12,12]
+	//   |-- quota21 							mock-used[12,12]
+	//       |-- quota211 	mock-limit[15,15]  	mock-used[12,12]
+	assertResListEquals(t, createResourceList(12, 12), q211Info.GetCustomUsed(testCustomKey))
+	assertResListEquals(t, createResourceList(12, 12), q21Info.GetCustomUsed(testCustomKey))
+	assertResListEquals(t, createResourceList(12, 12), q2Info.GetCustomUsed(testCustomKey))
+
+	// add custom limit for q2: mock-limit[30,30], won't rebuild
+	q2.Annotations[annoKeyLimitConf] = `{"cpu":30,"memory":30}`
+	err = gqm.UpdateQuota(q2, false)
+	assert.NoError(t, err)
+	assertResListEquals(t, createResourceList(30, 30), q2Info.GetCustomLimit(testCustomKey))
+
+	// add custom limit for q11: mock-used[10,10], rebuild
+	// quota1     			mock-limit[20,20]  	mock-used[5,5]
+	//   |-- quota11		mock-limit[10,10]	mock-used[5,5]
+	//       |-- quota111						mock-used[5,5]
+	q11.Annotations[annoKeyLimitConf] = `{"cpu":10,"memory":10}`
+	q11.Annotations[annoKeyArgs] = `{"debugEnabled":true}`
+	err = gqm.UpdateQuota(q11, false)
+	assert.NoError(t, err)
+	assertResListEquals(t, createResourceList(10, 10), q11Info.GetCustomLimit(testCustomKey))
+	assertResListEquals(t, createResourceList(5, 5), q11Info.GetCustomUsed(testCustomKey))
+	assertResListEquals(t, createResourceList(5, 5), q1Info.GetCustomUsed(testCustomKey))
+	assertResListEquals(t, createResourceList(5, 5), q111Info.GetCustomUsed(testCustomKey))
+
+	// current states
+	// quota1 				mock-limit[20,20]  	mock-used[5,5]
+	//   |-- quota11 		mock-limit[10,10]  	mock-used[5,5]
+	//       |-- quota111						mock-used[5,5]
+	// quota2 				mock-limit[30,30]  	mock-used[12,12]
+	//   |-- quota21						   	mock-used[12,12]
+	//       |-- quota211 	mock-limit[15,15]  	mock-used[12,12]
+
+	// move q21 to q1
+	q21.Labels[extension.LabelQuotaParent] = q1.Name
+	gqm.UpdateQuota(q21, false)
+
+	// check custom-used after move
+	// quota1 				mock-limit[20,20]  	mock-used[17,17]
+	//   |-- quota11 		mock-limit[10,10]  	mock-used[5,5]
+	//       |-- quota111						mock-used[5,5]
+	//   |-- quota21						   	mock-used[12,12]
+	//       |-- quota211 	mock-limit[15,15]  	mock-used[12,12]
+	// quota2 				mock-limit[30,30]  	mock-used[0,0]
+	assertResListEquals(t, createResourceList(12, 12), q211Info.GetCustomUsed(testCustomKey))
+	assertResListEquals(t, createResourceList(12, 12), q21Info.GetCustomUsed(testCustomKey))
+	assertResListEquals(t, createResourceList(0, 0), q2Info.GetCustomUsed(testCustomKey))
+	assertResListEquals(t, createResourceList(5, 5), q111Info.GetCustomUsed(testCustomKey))
+	assertResListEquals(t, createResourceList(5, 5), q11Info.GetCustomUsed(testCustomKey))
+	assertResListEquals(t, createResourceList(17, 17), q1Info.GetCustomUsed(testCustomKey))
+}
+
+func TestGroupQuotaManager_CustomLimiter_PodUpdate(t *testing.T) {
+	testCustomKey := CustomKeyMock
+	customLimiter, err := NewMockLimiter(testCustomKey, `{"labelSelector":"app=test"}`)
+	assert.NoError(t, err)
+	gqm := NewGroupQuotaManagerForTest(WithCustomLimiter(map[string]CustomLimiter{
+		testCustomKey: customLimiter,
+	}))
+	annoKeyLimitConf, annoKeyArgs := fmt.Sprintf(AnnotationKeyMockLimitFmt, testCustomKey),
+		fmt.Sprintf(AnnotationKeyMockArgsFmt, testCustomKey)
+
+	// quota1 Max[100, 100]  Min[80,80] request[0,0]  			mock-limit[20,20]  	mock-used[5,5]
+	//   |-- quota11 Max[50, 50]  Min[30,30] request[0,0]  		mock-limit[10,10]  	mock-used[5,5]
+	//       |-- quota111 Max[50, 50]  Min[20,20] request[0,0]
+	// quota2 Max[100, 100]  Min[60,60] request[0,0]  			mock-limit[30,30]  	mock-used[12,12]
+	//   |-- quota21 Max[50, 50]  Min[40,40] request[0,0]							mock-used[12,12]
+	//       |-- quota211 Max[50, 50]  Min[15,15] request[0,0]  mock-limit[15,15]  	mock-used[12,12]
+	q1 := CreateQuota("1", extension.RootQuotaName, 100, 100, 80, 80, true, true)
+	q2 := CreateQuota("2", extension.RootQuotaName, 100, 100, 60, 60, true, true)
+	q11 := CreateQuota("11", "1", 50, 50, 30, 30, true, true)
+	q21 := CreateQuota("21", "2", 50, 50, 40, 40, true, true)
+	q111 := CreateQuota("111", "11", 50, 50, 20, 20, true, false)
+	q211 := CreateQuota("211", "21", 50, 50, 15, 15, true, false)
+	q1.Annotations[annoKeyLimitConf] = `{"cpu":20,"memory":20}`
+	q1.Annotations[annoKeyArgs] = `{"debugEnabled":true}`
+	q11.Annotations[annoKeyLimitConf] = `{"cpu":10,"memory":10}`
+	q11.Annotations[annoKeyArgs] = `{"debugEnabled":true}`
+	q2.Annotations[annoKeyLimitConf] = `{"cpu":30,"memory":30}`
+	q2.Annotations[annoKeyArgs] = `{"debugEnabled":true}`
+	q211.Annotations[annoKeyLimitConf] = `{"cpu":15,"memory":15}`
+	q211.Annotations[annoKeyArgs] = `{"debugEnabled":true}`
+
+	err = gqm.UpdateQuota(q1, false)
+	assert.NoError(t, err)
+	err = gqm.UpdateQuota(q11, false)
+	assert.NoError(t, err)
+	err = gqm.UpdateQuota(q111, false)
+	assert.NoError(t, err)
+	err = gqm.UpdateQuota(q2, false)
+	assert.NoError(t, err)
+	err = gqm.UpdateQuota(q21, false)
+	assert.NoError(t, err)
+	err = gqm.UpdateQuota(q211, false)
+	assert.NoError(t, err)
+
+	// add unmatched pod1
+	pod1 := schetesting.MakePod().Name("1").Label(extension.LabelQuotaName, q111.Name).Containers(
+		[]v1.Container{schetesting.MakeContainer().Name("0").Resources(map[v1.ResourceName]string{
+			v1.ResourceCPU: "2", v1.ResourceMemory: "8", "test": "1"}).Obj()}).Node("node0").Obj()
+	gqm.OnPodAdd(q111.Name, pod1)
+
+	q111Info, q11Info, q1Info := gqm.getQuotaInfoByNameNoLock(q111.Name), gqm.getQuotaInfoByNameNoLock(q11.Name),
+		gqm.getQuotaInfoByNameNoLock(q1.Name)
+	assert.Equal(t, v1.ResourceList{}, q111Info.GetCustomUsed(testCustomKey))
+	assert.Equal(t, v1.ResourceList{}, q11Info.GetCustomUsed(testCustomKey))
+	assert.Equal(t, v1.ResourceList{}, q1Info.GetCustomUsed(testCustomKey))
+
+	// update pod1: unmatched --> matched
+	newPod1 := pod1.DeepCopy()
+	newPod1.Labels["app"] = "test"
+	gqm.OnPodUpdate(q111.Name, q111.Name, newPod1, pod1)
+	// check custom-used updated
+	assertResListEquals(t, createResourceList(2, 8), q111Info.GetCustomUsed(testCustomKey))
+	assertResListEquals(t, createResourceList(2, 8), q11Info.GetCustomUsed(testCustomKey))
+	assertResListEquals(t, createResourceList(2, 8), q1Info.GetCustomUsed(testCustomKey))
+
+	// update pod1 resource: <cpu:2, memory:8> --> <cpu:5, memory:5>
+	pod1 = newPod1
+	newPod1 = newPod1.DeepCopy()
+	newPod1.Spec.Containers[0].Resources.Requests = map[v1.ResourceName]resource.Quantity{
+		v1.ResourceCPU: resource.MustParse("5"), v1.ResourceMemory: resource.MustParse("5")}
+	gqm.OnPodUpdate(q111.Name, q111.Name, newPod1, pod1)
+	// check custom-used updated
+	assertResListEquals(t, createResourceList(5, 5), q111Info.GetCustomUsed(testCustomKey))
+	assertResListEquals(t, createResourceList(5, 5), q11Info.GetCustomUsed(testCustomKey))
+	assertResListEquals(t, createResourceList(5, 5), q1Info.GetCustomUsed(testCustomKey))
+
+	// update pod1 quota-name label: q111 --> q211
+	pod1 = newPod1
+	newPod1 = newPod1.DeepCopy()
+	newPod1.Labels[extension.LabelQuotaName] = q211.Name
+	gqm.OnPodUpdate(q211.Name, q111.Name, newPod1, pod1)
+	// check custom-used updated
+	// quota1 				mock-limit[20,20]  	mock-used[0,0]
+	//   |-- quota11 		mock-limit[10,10]  	mock-used[0,0]
+	//       |-- quota111						mock-used[0,0]
+	// quota2 				mock-limit[30,30]  	mock-used[5,5]
+	//   |-- quota21						   	mock-used[5,5]
+	//       |-- quota211 	mock-limit[15,15]  	mock-used[5,5]
+	assertResListEquals(t, createResourceList(0, 0), q111Info.GetCustomUsed(testCustomKey))
+	assertResListEquals(t, createResourceList(0, 0), q11Info.GetCustomUsed(testCustomKey))
+	assertResListEquals(t, createResourceList(0, 0), q1Info.GetCustomUsed(testCustomKey))
+	q211Info, q21Info, q2Info := gqm.getQuotaInfoByNameNoLock(q211.Name), gqm.getQuotaInfoByNameNoLock(q21.Name),
+		gqm.getQuotaInfoByNameNoLock(q2.Name)
+	assertResListEquals(t, createResourceList(5, 5), q211Info.GetCustomUsed(testCustomKey))
+	assertResListEquals(t, createResourceList(5, 5), q21Info.GetCustomUsed(testCustomKey))
+	assertResListEquals(t, createResourceList(5, 5), q2Info.GetCustomUsed(testCustomKey))
+
+	// add matched pod to q111
+	pod2 := schetesting.MakePod().Name("2").Label(extension.LabelQuotaName, q111.Name).Containers(
+		[]v1.Container{schetesting.MakeContainer().Name("0").Resources(map[v1.ResourceName]string{
+			v1.ResourceCPU: "1", v1.ResourceMemory: "2"}).Obj()}).Node("node0").Obj()
+	pod2.Labels["app"] = "test"
+	gqm.OnPodAdd(q111.Name, pod2)
+	assertResListEquals(t, createResourceList(1, 2), q111Info.GetCustomUsed(testCustomKey))
+	assertResListEquals(t, createResourceList(1, 2), q11Info.GetCustomUsed(testCustomKey))
+	assertResListEquals(t, createResourceList(1, 2), q1Info.GetCustomUsed(testCustomKey))
+
+	// update pod1: matched --> unmatched
+	pod1 = newPod1
+	newPod1 = newPod1.DeepCopy()
+	delete(newPod1.Labels, "app")
+	gqm.OnPodUpdate(q211.Name, q211.Name, newPod1, pod1)
+	assertResListEquals(t, createResourceList(0, 0), q211Info.GetCustomUsed(testCustomKey))
+	assertResListEquals(t, createResourceList(0, 0), q21Info.GetCustomUsed(testCustomKey))
+	assertResListEquals(t, createResourceList(0, 0), q2Info.GetCustomUsed(testCustomKey))
+
+	// delete pod2
+	gqm.OnPodDelete(q111.Name, pod2)
+	assertResListEquals(t, createResourceList(0, 0), q111Info.GetCustomUsed(testCustomKey))
+	assertResListEquals(t, createResourceList(0, 0), q11Info.GetCustomUsed(testCustomKey))
+	assertResListEquals(t, createResourceList(0, 0), q1Info.GetCustomUsed(testCustomKey))
+}
+
+func assertResListEquals(t *testing.T, expected, actual v1.ResourceList) {
+	if !quotav1.Equals(expected, actual) {
+		assert.Fail(t, fmt.Sprintf("expected: %v\n  actual: %v", expected, actual))
+	}
+}
+
+// TestHasCustomLimitForDescendants tests the hasCustomLimitForDescendants function.
+func TestHasCustomLimitForDescendants(t *testing.T) {
+	testResource := v1.ResourceList{
+		v1.ResourceCPU:    resource.MustParse("100m"),
+		v1.ResourceMemory: resource.MustParse("200Mi"),
+	}
+	testCustomKey := "test"
+	tests := []struct {
+		name      string
+		node      *QuotaTopoNode
+		customKey string
+		expected  bool
+	}{
+		{
+			name:      "no descendants",
+			node:      newQuotaTopoNodeForTest("root", ""),
+			customKey: testCustomKey,
+			expected:  false,
+		},
+		{
+			name: "descendant has custom limit",
+			node: func() *QuotaTopoNode {
+				root := newQuotaTopoNodeForTest("root", "")
+				child := newQuotaTopoNodeWithCustomLimitsForTest("child", "root", testCustomKey, testResource)
+				root.addChildGroupQuotaInfo(child)
+				return root
+			}(),
+			customKey: testCustomKey,
+			expected:  true,
+		},
+		{
+			name: "descendant does not have custom limit",
+			node: func() *QuotaTopoNode {
+				root := newQuotaTopoNodeForTest("root", "")
+				child := newQuotaTopoNodeForTest("child", "root")
+				root.addChildGroupQuotaInfo(child)
+				return root
+			}(),
+			customKey: testCustomKey,
+			expected:  false,
+		},
+		{
+			name: "multiple descendants, one has custom limit",
+			node: func() *QuotaTopoNode {
+				root := newQuotaTopoNodeForTest("root", "")
+				parent1 := newQuotaTopoNodeForTest("parent1", "root")
+				parent2 := newQuotaTopoNodeForTest("parent2", "root")
+				root.addChildGroupQuotaInfo(parent1)
+				root.addChildGroupQuotaInfo(parent2)
+				child1 := newQuotaTopoNodeForTest("child1", "parent1")
+				parent1.addChildGroupQuotaInfo(child1)
+				child2 := newQuotaTopoNodeWithCustomLimitsForTest("child2", "parent2", testCustomKey, testResource)
+				parent2.addChildGroupQuotaInfo(child2)
+				return root
+			}(),
+			customKey: testCustomKey,
+			expected:  true,
+		},
+		{
+			name: "multiple descendants, none have custom limit",
+			node: func() *QuotaTopoNode {
+				root := newQuotaTopoNodeForTest("root", "")
+				parent1 := newQuotaTopoNodeForTest("parent1", "root")
+				parent2 := newQuotaTopoNodeForTest("parent2", "root")
+				root.addChildGroupQuotaInfo(parent1)
+				root.addChildGroupQuotaInfo(parent2)
+				child1 := newQuotaTopoNodeForTest("child1", "parent1")
+				parent1.addChildGroupQuotaInfo(child1)
+				child2 := newQuotaTopoNodeForTest("child2", "parent2")
+				parent2.addChildGroupQuotaInfo(child2)
+				return root
+			}(),
+			customKey: testCustomKey,
+			expected:  false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			actual := hasCustomLimitForDescendants(tt.node, tt.customKey)
+			if actual != tt.expected {
+				t.Errorf("hasCustomLimitForDescendants(%v, %q) = %v, want %v", tt.node, tt.customKey, actual, tt.expected)
+			}
+		})
+	}
+}
+
+// TestHasCustomLimitForParents tests the hasCustomLimitForParents function.
+func TestHasCustomLimitForParents(t *testing.T) {
+	testResource := v1.ResourceList{
+		v1.ResourceCPU:    resource.MustParse("100m"),
+		v1.ResourceMemory: resource.MustParse("200Mi"),
+	}
+	testCustomKey := "test"
+	tests := []struct {
+		name      string
+		node      *QuotaTopoNode
+		customKey string
+		expected  bool
+	}{
+		{
+			name: "no parents",
+			node: NewQuotaTopoNode("root", &QuotaInfo{
+				Name: "root",
+			}),
+			customKey: testCustomKey,
+			expected:  false,
+		},
+		{
+			name: "parent has custom limit",
+			node: func() *QuotaTopoNode {
+				root := newQuotaTopoNodeWithCustomLimitsForTest("root", "", testCustomKey, testResource)
+				child := newQuotaTopoNodeForTest("child", "root")
+				child.parQuotaTopoNode = root
+				return child
+			}(),
+			customKey: testCustomKey,
+			expected:  true,
+		},
+		{
+			name: "parent does not have custom limit",
+			node: func() *QuotaTopoNode {
+				root := newQuotaTopoNodeForTest("root", "")
+				child := newQuotaTopoNodeForTest("child", "root")
+				child.parQuotaTopoNode = root
+				return child
+			}(),
+			customKey: testCustomKey,
+			expected:  false,
+		},
+		{
+			name: "multiple parents, parent has custom limit",
+			node: func() *QuotaTopoNode {
+				grandparent := newQuotaTopoNodeForTest("grandparent", "")
+				parent := newQuotaTopoNodeWithCustomLimitsForTest("parent", grandparent.name,
+					testCustomKey, testResource)
+				parent.parQuotaTopoNode = grandparent
+				child := newQuotaTopoNodeForTest("child", "parent")
+				child.parQuotaTopoNode = parent
+				return child
+			}(),
+			customKey: testCustomKey,
+			expected:  true,
+		},
+		{
+			name: "multiple parents, grandparent has custom limit",
+			node: func() *QuotaTopoNode {
+				grandparent := newQuotaTopoNodeWithCustomLimitsForTest("grandparent", "", testCustomKey, testResource)
+				parent := newQuotaTopoNodeForTest("parent", grandparent.name)
+				parent.parQuotaTopoNode = grandparent
+				child := newQuotaTopoNodeForTest("child", "parent")
+				child.parQuotaTopoNode = parent
+				return child
+			}(),
+			customKey: testCustomKey,
+			expected:  true,
+		},
+		{
+			name: "multiple parents, none have custom limit",
+			node: func() *QuotaTopoNode {
+				grandparent := newQuotaTopoNodeForTest("grandparent", "")
+				parent := newQuotaTopoNodeForTest("parent", "grandparent")
+				parent.parQuotaTopoNode = grandparent
+				child := newQuotaTopoNodeForTest("child", "parent")
+				child.parQuotaTopoNode = parent
+				return child
+			}(),
+			customKey: testCustomKey,
+			expected:  false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			actual := hasCustomLimitForParents(tt.node, tt.customKey)
+			if actual != tt.expected {
+				t.Errorf("hasCustomLimitForParents(%v, %q) = %v, want %v", tt.node, tt.customKey, actual, tt.expected)
+			}
+		})
+	}
+}
+
+// Helper function to create a QuotaTopoNode with custom limits
+func newQuotaTopoNodeForTest(name, parentName string) *QuotaTopoNode {
+	return &QuotaTopoNode{
+		name: name,
+		quotaInfo: &QuotaInfo{
+			Name:       name,
+			ParentName: parentName,
+		},
+		childGroupQuotaInfos: make(map[string]*QuotaTopoNode),
+	}
+}
+
+// Helper function to create a QuotaTopoNode with custom limits
+func newQuotaTopoNodeWithCustomLimitsForTest(name, parentName, customKey string,
+	customLimit v1.ResourceList) *QuotaTopoNode {
+	topoNode := newQuotaTopoNodeForTest(name, parentName)
+	if customKey != "" {
+		topoNode.quotaInfo.CalculateInfo.CustomLimits = CustomLimitConfMap{
+			customKey: &CustomLimitConf{
+				Limit: customLimit,
+			},
+		}
+	}
+	return topoNode
 }
