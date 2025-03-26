@@ -92,6 +92,38 @@ func (g *GCCounterVec) Delete(labels prometheus.Labels) {
 	g.expireStatus.RemoveStatus(g.name, labels)
 }
 
+// GCHistogramVec wraps a prometheus.HistogramVec and integrates with MetricGC for expiration handling.
+type GCHistogramVec struct {
+	name         string
+	vec          *prometheus.HistogramVec
+	expireStatus MetricGC
+}
+
+func NewGCHistogramVec(name string, vec *prometheus.HistogramVec) *GCHistogramVec {
+	return newGCHistogramVec(name, vec, defaultMetricGC)
+}
+
+func newGCHistogramVec(name string, vec *prometheus.HistogramVec, metricGC MetricGC) *GCHistogramVec {
+	metricGC.AddMetric(name, vec.MetricVec)
+	return &GCHistogramVec{name: name, vec: vec, expireStatus: metricGC}
+}
+
+func (g *GCHistogramVec) GetHistogramVec() *prometheus.HistogramVec {
+	return g.vec
+}
+
+// WithObserve records a value in the histogram and updates the expiration status.
+func (g *GCHistogramVec) WithObserve(labels prometheus.Labels, value float64) {
+	g.vec.With(labels).Observe(value)
+	g.expireStatus.UpdateStatus(g.name, labels)
+}
+
+// Delete removes the metric with the given labels and updates the expiration status.
+func (g *GCHistogramVec) Delete(labels prometheus.Labels) {
+	g.vec.Delete(labels)
+	g.expireStatus.RemoveStatus(g.name, labels)
+}
+
 type MetricVecGC interface {
 	// Len returns the length of the alive metric statuses.
 	Len() int
