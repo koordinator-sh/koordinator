@@ -69,7 +69,7 @@ func TestFailedOrSucceededReservation(t *testing.T) {
 	_, err = fakeKoordClientSet.SchedulingV1alpha1().Reservations().Create(context.TODO(), succededReservation, metav1.CreateOptions{})
 	assert.NoError(t, err)
 
-	controller := New(sharedInformerFactory, koordSharedInformerFactory, fakeKoordClientSet, 0)
+	controller := New(sharedInformerFactory, koordSharedInformerFactory, fakeClientSet, fakeKoordClientSet, 0)
 
 	sharedInformerFactory.Start(nil)
 	koordSharedInformerFactory.Start(nil)
@@ -178,7 +178,7 @@ func TestExpireActiveReservation(t *testing.T) {
 	_, err := fakeClientSet.CoreV1().Nodes().Create(context.TODO(), node, metav1.CreateOptions{})
 	assert.NoError(t, err)
 
-	controller := New(sharedInformerFactory, koordSharedInformerFactory, fakeKoordClientSet, 0)
+	controller := New(sharedInformerFactory, koordSharedInformerFactory, fakeClientSet, fakeKoordClientSet, 0)
 
 	sharedInformerFactory.Start(nil)
 	koordSharedInformerFactory.Start(nil)
@@ -284,10 +284,10 @@ func TestSyncStatus(t *testing.T) {
 		assert.NoError(t, err)
 	}
 
-	controller := New(sharedInformerFactory, koordSharedInformerFactory, fakeKoordClientSet, 0)
+	controller := New(sharedInformerFactory, koordSharedInformerFactory, fakeClientSet, fakeKoordClientSet, 0)
 	controller.Start()
 
-	time.Sleep(1 * time.Second)
+	time.Sleep(200 * time.Millisecond)
 
 	r, err := controller.sync(reservation.Name)
 	assert.NoError(t, err)
@@ -317,4 +317,291 @@ func TestSyncStatus(t *testing.T) {
 		cond.LastTransitionTime = metav1.Time{}
 	}
 	assert.Equal(t, expectReservation, got)
+}
+
+func TestSyncDeletedReservation(t *testing.T) {
+	fakeClientSet := kubefake.NewSimpleClientset()
+	fakeKoordClientSet := koordfake.NewSimpleClientset()
+	sharedInformerFactory := informers.NewSharedInformerFactory(fakeClientSet, 0)
+	koordSharedInformerFactory := koordinformers.NewSharedInformerFactory(fakeKoordClientSet, 0)
+
+	reservation := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{
+			UID:               uuid.NewUUID(),
+			Name:              "normalReservation",
+			CreationTimestamp: metav1.Now(),
+		},
+		Spec: schedulingv1alpha1.ReservationSpec{
+			TTL: &metav1.Duration{
+				Duration: 30 * time.Minute,
+			},
+			AllocateOnce: pointer.Bool(false),
+			Template:     &corev1.PodTemplateSpec{},
+		},
+		Status: schedulingv1alpha1.ReservationStatus{
+			Phase:    schedulingv1alpha1.ReservationAvailable,
+			NodeName: "test-node",
+			Allocatable: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("10000m"),
+				corev1.ResourceMemory: resource.MustParse("10Gi"),
+			},
+		},
+	}
+
+	_, err := fakeKoordClientSet.SchedulingV1alpha1().Reservations().Create(context.TODO(), reservation, metav1.CreateOptions{})
+	assert.NoError(t, err)
+
+	node := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-node",
+		},
+	}
+	_, err = fakeClientSet.CoreV1().Nodes().Create(context.TODO(), node, metav1.CreateOptions{})
+	assert.NoError(t, err)
+
+	var owners []corev1.ObjectReference
+	for i := 0; i < 4; i++ {
+		owners = append(owners, corev1.ObjectReference{
+			UID:       types.UID(fmt.Sprintf("%d", i)),
+			Namespace: "default",
+			Name:      fmt.Sprintf("pod-%d", i),
+		})
+		pod := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				UID:       types.UID(fmt.Sprintf("%d", i)),
+				Namespace: "default",
+				Name:      fmt.Sprintf("pod-%d", i),
+			},
+			Spec: corev1.PodSpec{
+				NodeName: node.Name,
+				Containers: []corev1.Container{
+					{
+						Resources: corev1.ResourceRequirements{
+							Requests: corev1.ResourceList{
+								corev1.ResourceCPU:              resource.MustParse("2000m"),
+								corev1.ResourceMemory:           resource.MustParse("2Gi"),
+								corev1.ResourceEphemeralStorage: resource.MustParse("10Gi"),
+							},
+						},
+					},
+				},
+			},
+		}
+		apiext.SetReservationAllocated(pod, reservation)
+		_, err := fakeClientSet.CoreV1().Pods(pod.Namespace).Create(context.TODO(), pod, metav1.CreateOptions{})
+		assert.NoError(t, err)
+	}
+
+	controller := New(sharedInformerFactory, koordSharedInformerFactory, fakeClientSet, fakeKoordClientSet, 0)
+	controller.enableSyncReservationDeletion = true
+	controller.Start()
+
+	time.Sleep(200 * time.Millisecond)
+
+	r, err := controller.sync(reservation.Name)
+	assert.NoError(t, err)
+	assert.Equal(t, maxRetryAfterTime, r.requeueAfter)
+
+	got, err := fakeKoordClientSet.SchedulingV1alpha1().Reservations().Get(context.TODO(), reservation.Name, metav1.GetOptions{})
+	assert.NoError(t, err)
+
+	expectReservation := reservation.DeepCopy()
+	expectReservation.Status.Allocated = corev1.ResourceList{
+		corev1.ResourceCPU:    resource.MustParse("8000m"),
+		corev1.ResourceMemory: resource.MustParse("8Gi"),
+	}
+	sort.Slice(owners, func(i, j int) bool {
+		return owners[i].UID < owners[j].UID
+	})
+	expectReservation.Status.CurrentOwners = owners
+	for i := range expectReservation.Status.Conditions {
+		cond := &expectReservation.Status.Conditions[i]
+		cond.LastProbeTime = metav1.Time{}
+		cond.LastTransitionTime = metav1.Time{}
+	}
+	for i := range got.Status.Conditions {
+		cond := &got.Status.Conditions[i]
+		cond.LastProbeTime = metav1.Time{}
+		cond.LastTransitionTime = metav1.Time{}
+	}
+	assert.Equal(t, expectReservation, got)
+
+	for i := 0; i < 4; i++ {
+		gotPod, err := fakeClientSet.CoreV1().Pods("default").Get(context.TODO(), fmt.Sprintf("pod-%d", i), metav1.GetOptions{})
+		assert.NoError(t, err)
+		assert.NotNil(t, gotPod)
+		expectedRAllocated := &apiext.ReservationAllocated{
+			Name: reservation.Name,
+			UID:  reservation.UID,
+		}
+		rAllocated, err := apiext.GetReservationAllocated(gotPod)
+		assert.NoError(t, err)
+		assert.Equal(t, expectedRAllocated, rAllocated)
+	}
+
+	// reservation is deleted
+	err = fakeKoordClientSet.SchedulingV1alpha1().Reservations().Delete(context.TODO(), reservation.Name, metav1.DeleteOptions{})
+	assert.NoError(t, err)
+
+	time.Sleep(200 * time.Millisecond)
+
+	r, err = controller.sync(reservation.Name)
+	assert.NoError(t, err)
+	assert.Equal(t, time.Duration(0), r.requeueAfter)
+
+	// expect the reservation-allocated are cleared
+	for i := 0; i < 4; i++ {
+		gotPod, err := fakeClientSet.CoreV1().Pods("default").Get(context.TODO(), fmt.Sprintf("pod-%d", i), metav1.GetOptions{})
+		assert.NoError(t, err)
+		assert.NotNil(t, gotPod)
+
+		rAllocated, err := apiext.GetReservationAllocated(gotPod)
+		assert.NoError(t, err)
+		assert.Nil(t, rAllocated)
+	}
+}
+
+func TestSyncDeletedReservationDisabled(t *testing.T) {
+	fakeClientSet := kubefake.NewSimpleClientset()
+	fakeKoordClientSet := koordfake.NewSimpleClientset()
+	sharedInformerFactory := informers.NewSharedInformerFactory(fakeClientSet, 0)
+	koordSharedInformerFactory := koordinformers.NewSharedInformerFactory(fakeKoordClientSet, 0)
+
+	reservation := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{
+			UID:               uuid.NewUUID(),
+			Name:              "normalReservation",
+			CreationTimestamp: metav1.Now(),
+		},
+		Spec: schedulingv1alpha1.ReservationSpec{
+			TTL: &metav1.Duration{
+				Duration: 30 * time.Minute,
+			},
+			AllocateOnce: pointer.Bool(false),
+			Template:     &corev1.PodTemplateSpec{},
+		},
+		Status: schedulingv1alpha1.ReservationStatus{
+			Phase:    schedulingv1alpha1.ReservationAvailable,
+			NodeName: "test-node",
+			Allocatable: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("10000m"),
+				corev1.ResourceMemory: resource.MustParse("10Gi"),
+			},
+		},
+	}
+
+	_, err := fakeKoordClientSet.SchedulingV1alpha1().Reservations().Create(context.TODO(), reservation, metav1.CreateOptions{})
+	assert.NoError(t, err)
+
+	node := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-node",
+		},
+	}
+	_, err = fakeClientSet.CoreV1().Nodes().Create(context.TODO(), node, metav1.CreateOptions{})
+	assert.NoError(t, err)
+
+	var owners []corev1.ObjectReference
+	for i := 0; i < 4; i++ {
+		owners = append(owners, corev1.ObjectReference{
+			UID:       types.UID(fmt.Sprintf("%d", i)),
+			Namespace: "default",
+			Name:      fmt.Sprintf("pod-%d", i),
+		})
+		pod := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				UID:       types.UID(fmt.Sprintf("%d", i)),
+				Namespace: "default",
+				Name:      fmt.Sprintf("pod-%d", i),
+			},
+			Spec: corev1.PodSpec{
+				NodeName: node.Name,
+				Containers: []corev1.Container{
+					{
+						Resources: corev1.ResourceRequirements{
+							Requests: corev1.ResourceList{
+								corev1.ResourceCPU:              resource.MustParse("2000m"),
+								corev1.ResourceMemory:           resource.MustParse("2Gi"),
+								corev1.ResourceEphemeralStorage: resource.MustParse("10Gi"),
+							},
+						},
+					},
+				},
+			},
+		}
+		apiext.SetReservationAllocated(pod, reservation)
+		_, err := fakeClientSet.CoreV1().Pods(pod.Namespace).Create(context.TODO(), pod, metav1.CreateOptions{})
+		assert.NoError(t, err)
+	}
+
+	controller := New(sharedInformerFactory, koordSharedInformerFactory, fakeClientSet, fakeKoordClientSet, 0)
+	controller.enableSyncReservationDeletion = false
+	controller.Start()
+
+	time.Sleep(200 * time.Millisecond)
+
+	r, err := controller.sync(reservation.Name)
+	assert.NoError(t, err)
+	assert.Equal(t, maxRetryAfterTime, r.requeueAfter)
+
+	got, err := fakeKoordClientSet.SchedulingV1alpha1().Reservations().Get(context.TODO(), reservation.Name, metav1.GetOptions{})
+	assert.NoError(t, err)
+
+	expectReservation := reservation.DeepCopy()
+	expectReservation.Status.Allocated = corev1.ResourceList{
+		corev1.ResourceCPU:    resource.MustParse("8000m"),
+		corev1.ResourceMemory: resource.MustParse("8Gi"),
+	}
+	sort.Slice(owners, func(i, j int) bool {
+		return owners[i].UID < owners[j].UID
+	})
+	expectReservation.Status.CurrentOwners = owners
+	for i := range expectReservation.Status.Conditions {
+		cond := &expectReservation.Status.Conditions[i]
+		cond.LastProbeTime = metav1.Time{}
+		cond.LastTransitionTime = metav1.Time{}
+	}
+	for i := range got.Status.Conditions {
+		cond := &got.Status.Conditions[i]
+		cond.LastProbeTime = metav1.Time{}
+		cond.LastTransitionTime = metav1.Time{}
+	}
+	assert.Equal(t, expectReservation, got)
+
+	for i := 0; i < 4; i++ {
+		gotPod, err := fakeClientSet.CoreV1().Pods("default").Get(context.TODO(), fmt.Sprintf("pod-%d", i), metav1.GetOptions{})
+		assert.NoError(t, err)
+		assert.NotNil(t, gotPod)
+		expectedRAllocated := &apiext.ReservationAllocated{
+			Name: reservation.Name,
+			UID:  reservation.UID,
+		}
+		rAllocated, err := apiext.GetReservationAllocated(gotPod)
+		assert.NoError(t, err)
+		assert.Equal(t, expectedRAllocated, rAllocated)
+	}
+
+	// reservation is deleted
+	err = fakeKoordClientSet.SchedulingV1alpha1().Reservations().Delete(context.TODO(), reservation.Name, metav1.DeleteOptions{})
+	assert.NoError(t, err)
+
+	time.Sleep(200 * time.Millisecond)
+
+	r, err = controller.sync(reservation.Name)
+	assert.NoError(t, err)
+	assert.Equal(t, time.Duration(0), r.requeueAfter)
+
+	// expect the reservation-allocated exist
+	for i := 0; i < 4; i++ {
+		gotPod, err := fakeClientSet.CoreV1().Pods("default").Get(context.TODO(), fmt.Sprintf("pod-%d", i), metav1.GetOptions{})
+		assert.NoError(t, err)
+		assert.NotNil(t, gotPod)
+		expectedRAllocated := &apiext.ReservationAllocated{
+			Name: reservation.Name,
+			UID:  reservation.UID,
+		}
+		rAllocated, err := apiext.GetReservationAllocated(gotPod)
+		assert.NoError(t, err)
+		assert.Equal(t, expectedRAllocated, rAllocated)
+	}
 }
