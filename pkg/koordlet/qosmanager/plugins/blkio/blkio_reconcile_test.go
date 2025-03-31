@@ -126,6 +126,7 @@ func TestBlkIOReconcile_reconcile(t *testing.T) {
 			testingPodMeta2}).AnyTimes()
 		statesInformer.EXPECT().GetNodeSLO().Return(testingNodeSLO).AnyTimes()
 		statesInformer.EXPECT().GetVolumeName("default", PVCName).Return(PVName).AnyTimes()
+		statesInformer.EXPECT().HasSynced().Return(true).AnyTimes()
 
 		mockMetricCache := mock_metriccache.NewMockMetricCache(ctrl)
 		mockMetricCache.EXPECT().Get(metriccache.NodeLocalStorageInfoKey).Return(localStorageInfo, true).AnyTimes()
