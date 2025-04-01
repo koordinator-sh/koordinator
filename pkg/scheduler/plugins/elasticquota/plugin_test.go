@@ -113,13 +113,39 @@ var (
 	token string
 )
 
-func newPluginTestSuit(t *testing.T, nodes []*corev1.Node) *pluginTestSuit {
+type PluginTestOption func(elasticQuotaArgs *config.ElasticQuotaArgs)
+
+func newPluginTestSuit(t *testing.T, nodes []*corev1.Node, pluginTestOpts ...PluginTestOption) *pluginTestSuit {
+	testSuit, err := newPluginTestSuitCommon(nodes, pluginTestOpts...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return testSuit
+}
+
+func newPluginTestSuitForBenchmark(nodes []*corev1.Node,
+	pluginTestOpts ...PluginTestOption) (*pluginTestSuit, error) {
+	testSuit, err := newPluginTestSuitCommon(nodes, pluginTestOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return testSuit, nil
+}
+
+func newPluginTestSuitCommon(nodes []*corev1.Node, pluginTestOpts ...PluginTestOption) (
+	testSuit *pluginTestSuit, err error) {
 	setLoglevel("5")
 	var v1beta3args v1beta3.ElasticQuotaArgs
 	v1beta3.SetDefaults_ElasticQuotaArgs(&v1beta3args)
 	var elasticQuotaArgs config.ElasticQuotaArgs
-	err := v1beta3.Convert_v1beta3_ElasticQuotaArgs_To_config_ElasticQuotaArgs(&v1beta3args, &elasticQuotaArgs, nil)
-	assert.NoError(t, err)
+	err = v1beta3.Convert_v1beta3_ElasticQuotaArgs_To_config_ElasticQuotaArgs(&v1beta3args, &elasticQuotaArgs, nil)
+	if err != nil {
+		return
+	}
+
+	for _, pluginTestOpt := range pluginTestOpts {
+		pluginTestOpt(&elasticQuotaArgs)
+	}
 
 	elasticQuotaPluginConfig := schedulerconfig.PluginConfig{
 		Name: Name,
@@ -132,7 +158,9 @@ func newPluginTestSuit(t *testing.T, nodes []*corev1.Node) *pluginTestSuit {
 		frameworkext.WithKoordinatorClientSet(koordClientSet),
 		frameworkext.WithKoordinatorSharedInformerFactory(koordSharedInformerFactory),
 	)
-	assert.Nil(t, err)
+	if err != nil {
+		return
+	}
 	pgClientSet := pgfake.NewSimpleClientset()
 	proxyNew := frameworkext.PluginFactoryProxy(extenderFactory, func(configuration apiruntime.Object, f framework.Handle) (framework.Plugin, error) {
 		return New(configuration, &ElasticQuotaSetAndHandle{
@@ -161,7 +189,7 @@ func newPluginTestSuit(t *testing.T, nodes []*corev1.Node) *pluginTestSuit {
 
 	address, portStr, err := parseHostAndPort(server.URL)
 	if err != nil {
-		t.Fatal(err)
+		return
 	}
 	cfg := &rest.Config{
 		Host:        net.JoinHostPort(address, portStr),
@@ -183,14 +211,16 @@ func newPluginTestSuit(t *testing.T, nodes []*corev1.Node) *pluginTestSuit {
 		runtime.WithSnapshotSharedLister(snapshot),
 		runtime.WithKubeConfig(cfg),
 	)
-	assert.Nil(t, err)
+	if err != nil {
+		return
+	}
 	return &pluginTestSuit{
 		Handle:                           fh,
 		koordinatorSharedInformerFactory: koordSharedInformerFactory,
 		proxyNew:                         proxyNew,
 		elasticQuotaArgs:                 &elasticQuotaArgs,
 		client:                           pgClientSet,
-	}
+	}, nil
 }
 
 func newPluginTestSuitWithPod(t *testing.T, nodes []*corev1.Node, pods []*corev1.Pod) *pluginTestSuit {
