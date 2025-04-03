@@ -313,7 +313,7 @@ func (c *cpuEvictor) killAndEvictBEPodsRelease(node *corev1.Node, bePodInfos []*
 			}
 		} else {
 			podKillMsg := fmt.Sprintf("%s, kill pod: %s", message, util.GetPodKey(bePod.pod))
-			helpers.KillContainers(bePod.pod, podKillMsg)
+			helpers.KillContainers(bePod.pod, resourceexecutor.EvictPodByBECPUSatisfaction, podKillMsg)
 			cpuMilliReleased = cpuMilliReleased + bePod.milliRequest
 			klog.V(5).Infof("cpuEvict pick pod %s to evict", util.GetPodKey(bePod.pod))
 			hasKillPods = true

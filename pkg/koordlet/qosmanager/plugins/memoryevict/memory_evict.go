@@ -185,7 +185,7 @@ func (m *memoryEvictor) killAndEvictBEPods(node *corev1.Node, podMetrics map[str
 			}
 		} else {
 			killMsg := fmt.Sprintf("%v, kill pod: %v", message, bePod.pod.Name)
-			helpers.KillContainers(bePod.pod, killMsg)
+			helpers.KillContainers(bePod.pod, resourceexecutor.EvictPodByNodeMemoryUsage, killMsg)
 			hasKillPods = true
 			if bePod.memUsed != 0 {
 				memoryReleased += int64(bePod.memUsed)

@@ -22,12 +22,13 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/klog/v2"
 
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/runtime"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
 // KillContainers kills containers inside the pod
-func KillContainers(pod *corev1.Pod, message string) {
+func KillContainers(pod *corev1.Pod, reason string, message string) {
 	for _, container := range pod.Spec.Containers {
 		containerID, containerStatus, err := util.FindContainerIdAndStatusByName(&pod.Status, container.Name)
 		if err != nil {
@@ -53,4 +54,5 @@ func KillContainers(pod *corev1.Pod, message string) {
 			klog.Warningf("%s, get container ID failed, pod %s/%s containerName %s status: %v", message, pod.Namespace, pod.Name, container.Name, pod.Status.ContainerStatuses)
 		}
 	}
+	metrics.RecordPodEviction(pod.Namespace, pod.Name, reason)
 }
