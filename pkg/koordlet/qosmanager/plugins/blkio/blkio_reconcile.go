@@ -97,7 +97,7 @@ func New(opt *framework.Options) framework.QOSStrategy {
 
 func (b *blkIOReconcile) init(stopCh <-chan struct{}) error {
 	b.executor.Run(stopCh)
-	if !cache.WaitForCacheSync(stopCh) {
+	if !cache.WaitForCacheSync(stopCh, b.statesInformer.HasSynced) {
 		return fmt.Errorf("%s: timed out waiting for pvc caches to sync", BlkIOReconcileName)
 	}
 	return nil
