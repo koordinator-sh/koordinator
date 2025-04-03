@@ -115,6 +115,7 @@ type ReservationStatus struct {
 	// The `phase` indicates whether is reservation is waiting for process, available to allocate or failed/expired to
 	// get cleanup.
 	// +optional
+	// +kubebuilder:default="Pending"
 	Phase ReservationPhase `json:"phase,omitempty" protobuf:"bytes,1,opt,name=phase,casttype=ReservationPhase"`
 	// The `conditions` indicate the messages of reason why the reservation is still pending.
 	// +optional
