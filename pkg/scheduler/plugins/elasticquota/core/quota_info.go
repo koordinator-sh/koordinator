@@ -431,7 +431,7 @@ func (qi *QuotaInfo) clearForResetNoLock() {
 	qi.RuntimeVersion = 0
 }
 
-func (qi *QuotaInfo) isQuotaMetaChange(quotaInfo *QuotaInfo) bool {
+func (qi *QuotaInfo) IsQuotaMetaChange(quotaInfo *QuotaInfo) bool {
 	qi.lock.Lock()
 	defer qi.lock.Unlock()
 
@@ -443,7 +443,7 @@ func (qi *QuotaInfo) isQuotaMetaChange(quotaInfo *QuotaInfo) bool {
 	return false
 }
 
-func (qi *QuotaInfo) isQuotaChange(quotaInfo *QuotaInfo) bool {
+func (qi *QuotaInfo) IsQuotaChange(quotaInfo *QuotaInfo) bool {
 	qi.lock.Lock()
 	defer qi.lock.Unlock()
 
@@ -467,7 +467,7 @@ func (qi *QuotaInfo) isQuotaChange(quotaInfo *QuotaInfo) bool {
 	return false
 }
 
-func (qi *QuotaInfo) isQuotaParentChange(quotaInfo *QuotaInfo) bool {
+func (qi *QuotaInfo) IsQuotaParentChange(quotaInfo *QuotaInfo) bool {
 	qi.lock.Lock()
 	defer qi.lock.Unlock()
 

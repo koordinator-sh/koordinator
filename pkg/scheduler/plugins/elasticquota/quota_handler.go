@@ -55,7 +55,7 @@ func (g *Plugin) OnQuotaAdd(obj interface{}) {
 		return
 	}
 
-	err := mgr.UpdateQuota(quota, false)
+	err := mgr.UpdateQuota(quota)
 	if err != nil {
 		klog.V(5).Infof("OnQuotaAddFunc failed: %v, tree: %v, err: %v", quota.Name, treeID, err)
 		return
@@ -79,7 +79,17 @@ func (g *Plugin) OnQuotaUpdate(oldObj, newObj interface{}) {
 
 	g.handlerQuotaWhenRoot(newQuota, mgr, false)
 
-	err := mgr.UpdateQuota(newQuota, false)
+	oldQuotaInfo := mgr.GetQuotaInfoByName(newQuota.Name)
+	if oldQuotaInfo != nil {
+		// quota spec not change. return
+		newQuotaInfo := core.NewQuotaInfoFromQuota(newQuota)
+		if !oldQuotaInfo.IsQuotaChange(newQuotaInfo) {
+			klog.V(5).Infof("OnQuotaUpdateFunc success: %v, tree: %v, quota not change", newQuota.Name, treeID)
+			return
+		}
+	}
+
+	err := mgr.UpdateQuota(newQuota)
 	if err != nil {
 		klog.V(5).Infof("OnQuotaUpdateFunc failed: %v, tree: %v, err: %v", newQuota.Name, treeID, err)
 		return
@@ -102,7 +112,7 @@ func (g *Plugin) OnQuotaDelete(obj interface{}) {
 		return
 	}
 	treeID := mgr.GetTreeID()
-	err := mgr.UpdateQuota(quota, true)
+	err := mgr.DeleteQuota(quota)
 	if err != nil {
 		klog.Errorf("OnQuotaDeleteFunc failed: %v, tree: %v, err: %v", quota.Name, treeID, err)
 		return
