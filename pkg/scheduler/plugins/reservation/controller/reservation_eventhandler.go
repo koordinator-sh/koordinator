@@ -17,6 +17,8 @@ limitations under the License.
 package controller
 
 import (
+	"k8s.io/client-go/tools/cache"
+
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 )
 
@@ -31,11 +33,24 @@ func (c *Controller) onReservationUpdate(oldObj, newObj interface{}) {
 	oldReservation, _ := oldObj.(*schedulingv1alpha1.Reservation)
 	newReservation, _ := newObj.(*schedulingv1alpha1.Reservation)
 	if oldReservation != nil && newReservation != nil {
-		if oldReservation.Generation != newReservation.Generation {
+		if oldReservation.Generation != newReservation.Generation ||
+			oldReservation.Status.Phase != newReservation.Status.Phase ||
+			oldReservation.Status.NodeName != newReservation.Status.NodeName {
 			c.queue.Add(newReservation.Name)
 		}
 	}
 }
 
 func (c *Controller) onReservationDelete(obj interface{}) {
+	var r *schedulingv1alpha1.Reservation
+	switch t := obj.(type) {
+	case *schedulingv1alpha1.Reservation:
+		r = t
+	case cache.DeletedFinalStateUnknown:
+		r, _ = t.Obj.(*schedulingv1alpha1.Reservation)
+	}
+	if r == nil {
+		return
+	}
+	c.queue.Add(r.Name)
 }

@@ -21,7 +21,6 @@ import (
 
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
-	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
@@ -50,7 +49,7 @@ func (h *reservationEventHandler) OnAdd(obj interface{}, isInInitialList bool) {
 		return
 	}
 	if reservationutil.IsReservationActive(r) {
-		h.cache.updateReservation(r)
+		h.cache.UpdateReservation(r)
 		klog.V(4).InfoS("add reservation into reservationCache", "reservation", klog.KObj(r))
 	}
 }
@@ -65,11 +64,14 @@ func (h *reservationEventHandler) OnUpdate(oldObj, newObj interface{}) {
 		return
 	}
 
-	if reservationutil.IsReservationActive(newR) || reservationutil.IsReservationFailed(newR) || reservationutil.IsReservationSucceeded(newR) {
-		h.cache.updateReservation(newR)
-		podInfo, _ := framework.NewPodInfo(reservationutil.NewReservePod(newR))
-		h.rrNominator.DeleteReservePod(podInfo)
-		klog.V(4).InfoS("update reservation into reservationCache", "reservation", klog.KObj(newR))
+	if reservationutil.IsReservationActive(newR) {
+		h.cache.UpdateReservation(newR)
+		h.rrNominator.DeleteReservePod(reservationutil.NewReservePod(newR))
+		klog.V(4).InfoS("update reservation in reservationCache", "reservation", klog.KObj(newR))
+	} else if reservationutil.IsReservationFailed(newR) || reservationutil.IsReservationSucceeded(newR) {
+		h.cache.UpdateReservation(newR)
+		h.rrNominator.RemoveNominatedReservationAndReservePod(reservationutil.NewReservePod(newR))
+		klog.V(4).InfoS("update terminated reservation into reservationCache", "reservation", klog.KObj(newR))
 	}
 }
 
@@ -88,8 +90,8 @@ func (h *reservationEventHandler) OnDelete(obj interface{}) {
 		klog.V(4).InfoS("reservation cache delete failed to parse, obj %T", obj)
 		return
 	}
-	podInfo, _ := framework.NewPodInfo(reservationutil.NewReservePod(r))
-	h.rrNominator.DeleteReservePod(podInfo)
+
+	h.rrNominator.RemoveNominatedReservationAndReservePod(reservationutil.NewReservePod(r))
 
 	// Here it is only marked that ReservationInfo is unavailable,
 	// and the real deletion operation is executed in deleteReservationFromCache(pkg/scheduler/frameworkext/eventhandlers/reservation_handler.go).
@@ -99,6 +101,6 @@ func (h *reservationEventHandler) OnDelete(obj interface{}) {
 		r = r.DeepCopy()
 		r.Status.Phase = schedulingv1alpha1.ReservationFailed
 	}
-	h.cache.updateReservationIfExists(r)
+	h.cache.UpdateReservationIfExists(r)
 	klog.V(4).InfoS("got delete reservation event but just update it if exists", "reservation", klog.KObj(r))
 }
