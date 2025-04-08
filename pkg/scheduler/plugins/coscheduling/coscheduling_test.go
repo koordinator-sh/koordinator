@@ -553,6 +553,57 @@ func TestLess(t *testing.T) {
 		assert.Equal(t, true, gp.Less(q1, q2))
 		assert.Equal(t, false, gp.Less(q2, q1))
 	}
+	{
+		//same gang, Pod Qos Class diff
+		pgClientSet := fakepgclientset.NewSimpleClientset()
+		cs := kubefake.NewSimpleClientset()
+		suit := newPluginTestSuit(t, nil, pgClientSet, cs)
+		gp := suit.plugin.(*Coscheduling)
+
+		pod1 := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: "default",
+				Name:      "pod1",
+				Annotations: map[string]string{
+					extension.AnnotationGangName:   "gangB",
+					extension.AnnotationGangMinNum: "2",
+				},
+				Labels: map[string]string{
+					extension.LabelPodQoS: "BE",
+				},
+			},
+		}
+
+		pod2 := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: "default",
+				Name:      "pod2",
+				Annotations: map[string]string{
+					extension.AnnotationGangName:   "gangB",
+					extension.AnnotationGangMinNum: "2",
+				},
+				Labels: map[string]string{
+					extension.LabelPodQoS: "LS",
+				},
+			},
+		}
+
+		suit.Handle.ClientSet().CoreV1().Pods("default").Create(context.TODO(), pod1, metav1.CreateOptions{})
+		time.Sleep(time.Millisecond * 100)
+		suit.Handle.ClientSet().CoreV1().Pods("default").Create(context.TODO(), pod2, metav1.CreateOptions{})
+		time.Sleep(time.Millisecond * 100)
+
+		q1 := &framework.QueuedPodInfo{}
+		q1.PodInfo = &framework.PodInfo{}
+		q1.Pod = pod1
+
+		q2 := &framework.QueuedPodInfo{}
+		q2.PodInfo = &framework.PodInfo{}
+		q2.Pod = pod2
+
+		assert.Equal(t, true, gp.Less(q1, q2))
+		assert.Equal(t, false, gp.Less(q2, q1))
+	}
 }
 
 func TestPostFilter(t *testing.T) {

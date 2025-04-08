@@ -76,3 +76,27 @@ func GetKubeQosClass(pod *corev1.Pod) corev1.PodQOSClass {
 	}
 	return v1qos.GetPodQOS(pod)
 }
+
+// CompQosClass compares the QoS classes and returns:
+//
+//	 1 if q1 has a higher precedence QoS class than q2,
+//	-1 if q2 has a higher precedence QoS class than q1,
+//	 0 if both have the same QoS class.
+func CompQosClass(q1, q2 QoSClass) int {
+	// Define the precedence order of QoS classes using a map
+	qosOrder := map[QoSClass]int{
+		QoSNone:   1,
+		QoSBE:     2,
+		QoSLS:     3,
+		QoSLSR:    4,
+		QoSLSE:    5,
+		QoSSystem: 6,
+	}
+
+	if qosOrder[q1] > qosOrder[q2] {
+		return 1
+	} else if qosOrder[q1] < qosOrder[q2] {
+		return -1
+	}
+	return 0
+}

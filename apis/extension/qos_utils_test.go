@@ -109,3 +109,46 @@ func TestGetQoSClassByAttrs(t *testing.T) {
 		})
 	}
 }
+
+func TestCompQosClass(t *testing.T) {
+	type args struct {
+		Qos1 QoSClass
+		Qos2 QoSClass
+	}
+	tests := []struct {
+		name string
+		args args
+		want int
+	}{
+		{
+			name: "koord qos class equal",
+			args: args{
+				Qos1: QoSLS,
+				Qos2: QoSLS,
+			},
+			want: 0,
+		},
+		{
+			name: "koord qos class equal: Qos1<Qos2",
+			args: args{
+				Qos1: QoSBE,
+				Qos2: QoSLSE,
+			},
+			want: -1,
+		},
+		{
+			name: "koord qos class equal: Qos1>Qos2",
+			args: args{
+				Qos1: QoSSystem,
+				Qos2: QoSLSR,
+			},
+			want: 1,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := CompQosClass(tt.args.Qos1, tt.args.Qos2)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}

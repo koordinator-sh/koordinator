@@ -170,6 +170,12 @@ func (cs *Coscheduling) Less(podInfo1, podInfo2 *framework.QueuedPodInfo) bool {
 		return childScheduleCycle1 < childScheduleCycle2
 	}
 
+	kubeQoS1 := extension.GetPodQoSClassWithDefault(podInfo1.Pod)
+	kubeQoS2 := extension.GetPodQoSClassWithDefault(podInfo2.Pod)
+	if kubeQoS1 != kubeQoS2 {
+		return extension.CompQosClass(kubeQoS1, kubeQoS2) < 0
+	}
+
 	return podInfo1.Pod.Name < podInfo2.Pod.Name
 }
 
