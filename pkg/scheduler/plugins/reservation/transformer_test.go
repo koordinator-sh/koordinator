@@ -635,6 +635,20 @@ func TestRestoreReservationWithLazyReservationRestore(t *testing.T) {
 				"test-reservation": "true",
 			},
 		},
+		Spec: corev1.PodSpec{
+			TopologySpreadConstraints: []corev1.TopologySpreadConstraint{
+				{
+					MaxSkew:           1,
+					TopologyKey:       corev1.LabelHostname,
+					WhenUnsatisfiable: corev1.ScheduleAnyway,
+					LabelSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							"test-reservation": "true",
+						},
+					},
+				},
+			},
+		},
 	})
 	assert.True(t, restored)
 	assert.True(t, status.IsSuccess())
@@ -643,6 +657,20 @@ func TestRestoreReservationWithLazyReservationRestore(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{
 			Labels: map[string]string{
 				"test-reservation": "true",
+			},
+		},
+		Spec: corev1.PodSpec{
+			TopologySpreadConstraints: []corev1.TopologySpreadConstraint{
+				{
+					MaxSkew:           1,
+					TopologyKey:       corev1.LabelTopologyZone,
+					WhenUnsatisfiable: corev1.ScheduleAnyway,
+					LabelSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							"test-reservation": "true",
+						},
+					},
+				},
 			},
 		},
 	}, &framework.PreFilterResult{})

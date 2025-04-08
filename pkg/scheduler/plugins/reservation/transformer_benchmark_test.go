@@ -26,10 +26,11 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
-	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/nodeaffinity"
+	schedulertesting "k8s.io/kubernetes/pkg/scheduler/testing"
 	"k8s.io/utils/pointer"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
@@ -40,8 +41,9 @@ import (
 func BenchmarkBeforePrefilterWithMatchedPod(b *testing.B) {
 	var nodes []*corev1.Node
 	var pods []*corev1.Pod
+	var preFilterNodeNames []string
 	for i := 0; i < 1024; i++ {
-		nodes = append(nodes, &corev1.Node{
+		node := &corev1.Node{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: fmt.Sprintf("node-%d", i),
 				Labels: map[string]string{
@@ -54,7 +56,11 @@ func BenchmarkBeforePrefilterWithMatchedPod(b *testing.B) {
 					corev1.ResourceMemory: resource.MustParse("80Gi"),
 				},
 			},
-		})
+		}
+		nodes = append(nodes, node)
+		if i%16 == 0 {
+			preFilterNodeNames = append(preFilterNodeNames, node.Name)
+		}
 
 		for j := 0; j < 8; j++ {
 			pod := &corev1.Pod{
@@ -84,6 +90,11 @@ func BenchmarkBeforePrefilterWithMatchedPod(b *testing.B) {
 	p, err := suit.pluginFactory()
 	assert.NoError(b, err)
 	pl := p.(*Plugin)
+	fakePreFilterPl := schedulertesting.FakePreFilterPlugin{
+		Result: &framework.PreFilterResult{
+			NodeNames: sets.New[string](preFilterNodeNames...),
+		},
+	}
 
 	reservePods := map[string]*corev1.Pod{}
 	for i, node := range nodes {
@@ -177,6 +188,18 @@ func BenchmarkBeforePrefilterWithMatchedPod(b *testing.B) {
 					},
 				},
 			},
+			TopologySpreadConstraints: []corev1.TopologySpreadConstraint{
+				{
+					MaxSkew:           1,
+					TopologyKey:       corev1.LabelHostname,
+					WhenUnsatisfiable: corev1.ScheduleAnyway,
+					LabelSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							"test-reservation": "true",
+						},
+					},
+				},
+			},
 		},
 	}
 	err = apiext.SetReservationAffinity(pod, &apiext.ReservationAffinity{
@@ -196,8 +219,7 @@ func BenchmarkBeforePrefilterWithMatchedPod(b *testing.B) {
 		preFilterResult, status := pl.PreFilter(context.TODO(), cycleState, pod)
 		assert.True(b, status.IsSuccess())
 
-		affinityPl := &nodeaffinity.NodeAffinity{}
-		preFilterResult1, status := affinityPl.PreFilter(context.TODO(), cycleState, pod)
+		preFilterResult1, status := fakePreFilterPl.PreFilter(context.TODO(), cycleState, pod)
 		assert.True(b, status.IsSuccess())
 		preFilterResult = preFilterResult.Merge(preFilterResult1)
 
@@ -223,8 +245,9 @@ func BenchmarkBeforePrefilterWithMatchedPod(b *testing.B) {
 func BenchmarkBeforePrefilterWithUnmatchedPod(b *testing.B) {
 	var nodes []*corev1.Node
 	var pods []*corev1.Pod
+	var preFilterNodeNames []string
 	for i := 0; i < 1024; i++ {
-		nodes = append(nodes, &corev1.Node{
+		node := &corev1.Node{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: fmt.Sprintf("node-%d", i),
 				Labels: map[string]string{
@@ -237,7 +260,11 @@ func BenchmarkBeforePrefilterWithUnmatchedPod(b *testing.B) {
 					corev1.ResourceMemory: resource.MustParse("80Gi"),
 				},
 			},
-		})
+		}
+		nodes = append(nodes, node)
+		if i%16 == 0 {
+			preFilterNodeNames = append(preFilterNodeNames, node.Name)
+		}
 
 		for j := 0; j < 8; j++ {
 			pod := &corev1.Pod{
@@ -267,6 +294,11 @@ func BenchmarkBeforePrefilterWithUnmatchedPod(b *testing.B) {
 	p, err := suit.pluginFactory()
 	assert.NoError(b, err)
 	pl := p.(*Plugin)
+	fakePreFilterPl := schedulertesting.FakePreFilterPlugin{
+		Result: &framework.PreFilterResult{
+			NodeNames: sets.New[string](preFilterNodeNames...),
+		},
+	}
 
 	for i, node := range nodes {
 		reservation := &schedulingv1alpha1.Reservation{
@@ -381,6 +413,18 @@ func BenchmarkBeforePrefilterWithUnmatchedPod(b *testing.B) {
 					},
 				},
 			},
+			TopologySpreadConstraints: []corev1.TopologySpreadConstraint{
+				{
+					MaxSkew:           1,
+					TopologyKey:       corev1.LabelHostname,
+					WhenUnsatisfiable: corev1.ScheduleAnyway,
+					LabelSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							"test-reservation": "true",
+						},
+					},
+				},
+			},
 		},
 	}
 
@@ -394,8 +438,7 @@ func BenchmarkBeforePrefilterWithUnmatchedPod(b *testing.B) {
 		preFilterResult, status := pl.PreFilter(context.TODO(), cycleState, pod)
 		assert.True(b, status.IsSuccess())
 
-		affinityPl := &nodeaffinity.NodeAffinity{}
-		preFilterResult1, status := affinityPl.PreFilter(context.TODO(), cycleState, pod)
+		preFilterResult1, status := fakePreFilterPl.PreFilter(context.TODO(), cycleState, pod)
 		assert.True(b, status.IsSuccess())
 		preFilterResult = preFilterResult.Merge(preFilterResult1)
 
@@ -407,8 +450,9 @@ func BenchmarkBeforePrefilterWithUnmatchedPod(b *testing.B) {
 func BenchmarkBeforePrefilterWithMatchedPodEnableLazyReservationRestore(b *testing.B) {
 	var nodes []*corev1.Node
 	var pods []*corev1.Pod
+	var preFilterNodeNames []string
 	for i := 0; i < 1024; i++ {
-		nodes = append(nodes, &corev1.Node{
+		node := &corev1.Node{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: fmt.Sprintf("node-%d", i),
 				Labels: map[string]string{
@@ -421,7 +465,11 @@ func BenchmarkBeforePrefilterWithMatchedPodEnableLazyReservationRestore(b *testi
 					corev1.ResourceMemory: resource.MustParse("80Gi"),
 				},
 			},
-		})
+		}
+		nodes = append(nodes, node)
+		if i%16 == 0 {
+			preFilterNodeNames = append(preFilterNodeNames, node.Name)
+		}
 
 		for j := 0; j < 8; j++ {
 			pod := &corev1.Pod{
@@ -452,6 +500,11 @@ func BenchmarkBeforePrefilterWithMatchedPodEnableLazyReservationRestore(b *testi
 	assert.NoError(b, err)
 	pl := p.(*Plugin)
 	pl.enableLazyReservationRestore = true
+	fakePreFilterPl := schedulertesting.FakePreFilterPlugin{
+		Result: &framework.PreFilterResult{
+			NodeNames: sets.New[string](preFilterNodeNames...),
+		},
+	}
 
 	reservePods := map[string]*corev1.Pod{}
 	for i, node := range nodes {
@@ -545,6 +598,18 @@ func BenchmarkBeforePrefilterWithMatchedPodEnableLazyReservationRestore(b *testi
 					},
 				},
 			},
+			TopologySpreadConstraints: []corev1.TopologySpreadConstraint{
+				{
+					MaxSkew:           1,
+					TopologyKey:       corev1.LabelHostname,
+					WhenUnsatisfiable: corev1.ScheduleAnyway,
+					LabelSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							"test-reservation": "true",
+						},
+					},
+				},
+			},
 		},
 	}
 	err = apiext.SetReservationAffinity(pod, &apiext.ReservationAffinity{
@@ -564,8 +629,7 @@ func BenchmarkBeforePrefilterWithMatchedPodEnableLazyReservationRestore(b *testi
 		preFilterResult, status := pl.PreFilter(context.TODO(), cycleState, pod)
 		assert.True(b, status.IsSuccess())
 
-		affinityPl := &nodeaffinity.NodeAffinity{}
-		preFilterResult1, status := affinityPl.PreFilter(context.TODO(), cycleState, pod)
+		preFilterResult1, status := fakePreFilterPl.PreFilter(context.TODO(), cycleState, pod)
 		assert.True(b, status.IsSuccess())
 		preFilterResult = preFilterResult.Merge(preFilterResult1)
 
@@ -591,8 +655,9 @@ func BenchmarkBeforePrefilterWithMatchedPodEnableLazyReservationRestore(b *testi
 func BenchmarkBeforePrefilterWithUnmatchedPodEnableLazyReservationRestore(b *testing.B) {
 	var nodes []*corev1.Node
 	var pods []*corev1.Pod
+	var preFilterNodeNames []string
 	for i := 0; i < 1024; i++ {
-		nodes = append(nodes, &corev1.Node{
+		node := &corev1.Node{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: fmt.Sprintf("node-%d", i),
 				Labels: map[string]string{
@@ -605,7 +670,11 @@ func BenchmarkBeforePrefilterWithUnmatchedPodEnableLazyReservationRestore(b *tes
 					corev1.ResourceMemory: resource.MustParse("80Gi"),
 				},
 			},
-		})
+		}
+		nodes = append(nodes, node)
+		if i%16 == 0 {
+			preFilterNodeNames = append(preFilterNodeNames, node.Name)
+		}
 
 		for j := 0; j < 8; j++ {
 			pod := &corev1.Pod{
@@ -636,6 +705,11 @@ func BenchmarkBeforePrefilterWithUnmatchedPodEnableLazyReservationRestore(b *tes
 	assert.NoError(b, err)
 	pl := p.(*Plugin)
 	pl.enableLazyReservationRestore = true
+	fakePreFilterPl := schedulertesting.FakePreFilterPlugin{
+		Result: &framework.PreFilterResult{
+			NodeNames: sets.New[string](preFilterNodeNames...),
+		},
+	}
 
 	for i, node := range nodes {
 		reservation := &schedulingv1alpha1.Reservation{
@@ -750,6 +824,18 @@ func BenchmarkBeforePrefilterWithUnmatchedPodEnableLazyReservationRestore(b *tes
 					},
 				},
 			},
+			TopologySpreadConstraints: []corev1.TopologySpreadConstraint{
+				{
+					MaxSkew:           1,
+					TopologyKey:       corev1.LabelHostname,
+					WhenUnsatisfiable: corev1.ScheduleAnyway,
+					LabelSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							"test-reservation": "true",
+						},
+					},
+				},
+			},
 		},
 	}
 
@@ -763,8 +849,7 @@ func BenchmarkBeforePrefilterWithUnmatchedPodEnableLazyReservationRestore(b *tes
 		preFilterResult, status := pl.PreFilter(context.TODO(), cycleState, pod)
 		assert.True(b, status.IsSuccess())
 
-		affinityPl := &nodeaffinity.NodeAffinity{}
-		preFilterResult1, status := affinityPl.PreFilter(context.TODO(), cycleState, pod)
+		preFilterResult1, status := fakePreFilterPl.PreFilter(context.TODO(), cycleState, pod)
 		assert.True(b, status.IsSuccess())
 		preFilterResult = preFilterResult.Merge(preFilterResult1)
 
