@@ -498,6 +498,18 @@ func (pl *Plugin) filterWithReservations(ctx context.Context, cycleState *framew
 		preemptible := framework.NewResource(preemptibleInRR)
 		preemptible.Add(state.preemptible[node.Name])
 		insufficientResourcesByNode := fitsNode(state.podRequestsResources, nodeInfo, nodeRState, rInfo, preemptible)
+		if len(insufficientResourcesByNode) > 0 && klog.V(5).Enabled() {
+			var podRequested framework.Resource
+			if nodeRState.podRequested != nil {
+				podRequested = *nodeRState.podRequested
+			}
+			var rAllocated framework.Resource
+			if nodeRState.rAllocated != nil {
+				rAllocated = *nodeRState.rAllocated
+			}
+			klog.V(5).Infof("node %s doesn't have sufficient resources: %+v for pod: %s/%s, nodeRState.PodRequested: %+v, rAllocated: %+v, rInfo.Allocatable: %+v, rInfo.Allocated: %+v, rInfo.Reserved: %+v, preemptible: %+v",
+				node.Name, insufficientResourcesByNode, pod.Namespace, pod.Name, podRequested, rAllocated, rInfo.Allocatable, rInfo.Allocated, rInfo.Reserved, preemptible)
+		}
 		state.preemptLock.RUnlock()
 
 		nodeFits := len(insufficientResourcesByNode) <= 0
