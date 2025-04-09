@@ -31,6 +31,7 @@ import (
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	koordfake "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/fake"
 	koordinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 )
 
 func TestGC(t *testing.T) {
@@ -102,7 +103,7 @@ func TestGC(t *testing.T) {
 	_, err := fakeClientSet.CoreV1().Nodes().Create(context.TODO(), node, metav1.CreateOptions{})
 	assert.NoError(t, err)
 
-	controller := New(sharedInformerFactory, koordSharedInformerFactory, fakeKoordClientSet, 0)
+	controller := New(sharedInformerFactory, koordSharedInformerFactory, fakeKoordClientSet, &config.ReservationArgs{})
 
 	sharedInformerFactory.Start(nil)
 	koordSharedInformerFactory.Start(nil)

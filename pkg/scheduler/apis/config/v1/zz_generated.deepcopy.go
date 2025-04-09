@@ -364,6 +364,11 @@ func (in *ReservationArgs) DeepCopyInto(out *ReservationArgs) {
 		*out = new(int32)
 		**out = **in
 	}
+	if in.ControllerWorkers != nil {
+		in, out := &in.ControllerWorkers, &out.ControllerWorkers
+		*out = new(int32)
+		**out = **in
+	}
 	return
 }
 

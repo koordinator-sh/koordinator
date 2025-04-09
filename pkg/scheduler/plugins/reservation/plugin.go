@@ -147,7 +147,7 @@ func (pl *Plugin) NewControllers() ([]frameworkext.Controller, error) {
 		pl.handle.SharedInformerFactory(),
 		pl.handle.KoordinatorSharedInformerFactory(),
 		pl.handle.KoordinatorClientSet(),
-		1)
+		pl.args)
 	return []frameworkext.Controller{reservationController}, nil
 }
 

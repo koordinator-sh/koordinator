@@ -170,6 +170,9 @@ type ReservationArgs struct {
 	// that play a role in the number of candidates shortlisted. Must be at least
 	// 0 nodes. Defaults to 100 nodes if unspecified.
 	MinCandidateNodesAbsolute *int32 `json:"minCandidateNodesAbsolute,omitempty"`
+	// Workers number of reservation controller.
+	// Defaults to 1 if unspecified.
+	ControllerWorkers *int32 `json:"controllerWorkers,omitempty"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
