@@ -103,7 +103,7 @@ var (
 func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error) {
 	pluginArgs, ok := args.(*config.ElasticQuotaArgs)
 	if !ok {
-		return nil, fmt.Errorf("want args to be of type GangSchedulingArgs, got %T", args)
+		return nil, fmt.Errorf("want args to be of type ElasticQuotaArgs, got %T", args)
 	}
 	if err := validation.ValidateElasticQuotaArgs(pluginArgs); err != nil {
 		return nil, err
@@ -180,6 +180,10 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 		UpdateFunc: elasticQuota.OnPodUpdate,
 		DeleteFunc: elasticQuota.OnPodDelete,
 	})
+
+	if extendedHandle, ok := handle.(frameworkext.ExtendedHandle); ok {
+		extendedHandle.RegisterForgetPodHandler(elasticQuota.handlePodDelete)
+	}
 
 	elasticQuota.migrateDefaultQuotaGroupsPod()
 

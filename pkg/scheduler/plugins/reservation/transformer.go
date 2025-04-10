@@ -476,9 +476,16 @@ func isPodAllNodesPreRestoreRequired(pod *corev1.Pod) bool {
 	// If a pod specifies required topologySpreadConstraints, podAffinities and podAntiAffinities, we should do the
 	// node-level preRestore in the BeforePreFilter for each node, even when the LazyReservationRestore is enabled.
 	// FIXME: The existing podAffinities/podAntiAffinities on nodes are not considered.
-	return len(pod.Spec.TopologySpreadConstraints) > 0 ||
-		pod.Spec.Affinity != nil && (pod.Spec.Affinity.PodAffinity != nil && pod.Spec.Affinity.PodAffinity.RequiredDuringSchedulingIgnoredDuringExecution != nil ||
-			pod.Spec.Affinity.PodAntiAffinity != nil && pod.Spec.Affinity.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution != nil)
+	if pod.Spec.Affinity != nil && (pod.Spec.Affinity.PodAffinity != nil && pod.Spec.Affinity.PodAffinity.RequiredDuringSchedulingIgnoredDuringExecution != nil ||
+		pod.Spec.Affinity.PodAntiAffinity != nil && pod.Spec.Affinity.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution != nil) {
+		return true
+	}
+	for _, c := range pod.Spec.TopologySpreadConstraints {
+		if c.WhenUnsatisfiable == corev1.DoNotSchedule {
+			return true
+		}
+	}
+	return false
 }
 
 func updateNodeInfoRequested(n *framework.NodeInfo, pod *corev1.Pod, sign int64) {
