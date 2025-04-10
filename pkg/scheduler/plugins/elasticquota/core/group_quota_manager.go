@@ -22,10 +22,13 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/exp/maps"
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/util/sets"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	utilfeature "k8s.io/apiserver/pkg/util/feature"
 	"k8s.io/klog/v2"
+	"k8s.io/utils/set"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
@@ -60,9 +63,13 @@ type GroupQuotaManager struct {
 
 	// treeID is the quota tree id
 	treeID string
+
+	// customLimitersManager helps to manage common operations of custom limiters for quotas
+	customLimitersManager *CustomLimitersManager
 }
 
-func NewGroupQuotaManager(treeID string, systemGroupMax, defaultGroupMax v1.ResourceList) *GroupQuotaManager {
+func NewGroupQuotaManager(treeID string, systemGroupMax, defaultGroupMax v1.ResourceList,
+	customLimiters map[string]CustomLimiter) *GroupQuotaManager {
 	quotaManager := &GroupQuotaManager{
 		totalResourceExceptSystemAndDefaultUsed: v1.ResourceList{},
 		totalResource:                           v1.ResourceList{},
@@ -73,6 +80,7 @@ func NewGroupQuotaManager(treeID string, systemGroupMax, defaultGroupMax v1.Reso
 		scaleMinQuotaManager:                    NewScaleMinQuotaManager(),
 		nodeResourceMap:                         make(map[string]struct{}),
 		treeID:                                  treeID,
+		customLimitersManager:                   NewCustomLimitersManager(customLimiters),
 	}
 	// only default GroupQuotaManager need system quota and deault quota.
 	if treeID == "" {
@@ -390,9 +398,24 @@ func (gqm *GroupQuotaManager) UpdateQuota(quota *v1alpha1.ElasticQuota, isDelete
 
 	quotaName := quota.Name
 	if isDelete {
-		return gqm.deleteQuotaNoLock(quota)
+		// backup the old custom state
+		oldCustomState := gqm.parseOldCustomStateByNameNoLock(quotaName)
+
+		err := gqm.deleteQuotaNoLock(quota)
+		if err != nil {
+			return err
+		}
+
+		// handle custom changes
+		if gqm.customLimitersManager.enabled() {
+			// no need to update custom-limits conf for deleted quota,
+			// just rebuild custom-used for this quota tree if needed
+			gqm.rebuildCustomStateIfNeededNoLock(quota.Name, nil, oldCustomState)
+		}
+		return nil
 	} else {
-		newQuotaInfo := NewQuotaInfoFromQuota(quota)
+		newQuotaInfo := gqm.newQuotaInfoFromQuotaNoLock(quota)
+
 		// update the local quotaInfo's crd
 		if localQuotaInfo, exist := gqm.quotaInfoMap[quotaName]; exist {
 			if !localQuotaInfo.isQuotaChange(newQuotaInfo) {
@@ -425,7 +448,7 @@ func (gqm *GroupQuotaManager) UpdateQuotaInfo(quota *v1alpha1.ElasticQuota) {
 	gqm.hierarchyUpdateLock.Lock()
 	defer gqm.hierarchyUpdateLock.Unlock()
 
-	newQuotaInfo := NewQuotaInfoFromQuota(quota)
+	newQuotaInfo := gqm.newQuotaInfoFromQuotaNoLock(quota)
 	gqm.quotaInfoMap[quota.Name] = newQuotaInfo
 }
 
@@ -484,6 +507,7 @@ func (gqm *GroupQuotaManager) rebuildQuotaTopoNodeMapNoLock() {
 func (gqm *GroupQuotaManager) rebuildAllGroupQuotaNoLock() {
 	toUpdateRequestMap, toUpdateNonPreemptibleUsedMap, toUpdateUsedMap, toUpdateNonPreemptibleRequestMap :=
 		make(quotaResMapType), make(quotaResMapType), make(quotaResMapType), make(quotaResMapType)
+	toUpdateCustomUsedMap := make(map[string]CustomResourceLists)
 	for quotaName, topoNode := range gqm.quotaTopoNodeMap {
 		if quotaName == extension.RootQuotaName {
 			gqm.resetRootQuotaUsedAndRequest()
@@ -495,6 +519,7 @@ func (gqm *GroupQuotaManager) rebuildAllGroupQuotaNoLock() {
 			toUpdateNonPreemptibleRequestMap[quotaName] = topoNode.quotaInfo.CalculateInfo.NonPreemptibleRequest.DeepCopy()
 			toUpdateNonPreemptibleUsedMap[quotaName] = topoNode.quotaInfo.CalculateInfo.NonPreemptibleUsed.DeepCopy()
 			toUpdateUsedMap[quotaName] = topoNode.quotaInfo.CalculateInfo.Used.DeepCopy()
+			toUpdateCustomUsedMap[quotaName] = topoNode.quotaInfo.CalculateInfo.CustomUsed.DeepCopy()
 		} else {
 			toUpdateRequestMap[quotaName] = topoNode.quotaInfo.CalculateInfo.SelfRequest.DeepCopy()
 			toUpdateNonPreemptibleRequestMap[quotaName] = topoNode.quotaInfo.CalculateInfo.SelfNonPreemptibleRequest.DeepCopy()
@@ -514,11 +539,16 @@ func (gqm *GroupQuotaManager) rebuildAllGroupQuotaNoLock() {
 	gqm.resetAllGroupQuotaRecursiveNoLock(rootNode)
 	gqm.updateResourceKeyNoLock()
 
-	// subGroup's topo relation may change; refresh the request/used from bottom to top
+	// subGroup's topo relation may change; refresh the request/used/custom-used from bottom to top
 	for quotaName, topoNode := range gqm.quotaTopoNodeMap {
 		if _, ok := toUpdateRequestMap[topoNode.quotaInfo.Name]; ok {
 			gqm.updateGroupDeltaRequestNoLock(quotaName, toUpdateRequestMap[quotaName], toUpdateNonPreemptibleRequestMap[quotaName], 0)
 			gqm.updateGroupDeltaUsedNoLock(quotaName, toUpdateUsedMap[quotaName], toUpdateNonPreemptibleUsedMap[quotaName], 0)
+		}
+		if gqm.customLimitersManager.enabled() {
+			if customUsed, ok := toUpdateCustomUsedMap[quotaName]; ok {
+				gqm.updateGroupCustomUsedWhenQuotaChangedNoLock(quotaName, "", customUsed, false)
+			}
 		}
 	}
 }
@@ -676,6 +706,9 @@ func (gqm *GroupQuotaManager) updatePodUsedNoLock(quotaName string, oldPod, newP
 		}
 	}
 	gqm.updateGroupDeltaUsedNoLock(quotaName, deltaUsed, deltaNonPreemptibleUsed, 0)
+	if gqm.customLimitersManager.enabled() {
+		gqm.updateGroupCustomUsedWhenPodChangedNoLock(quotaName, oldPod, newPod, nil)
+	}
 }
 
 func (gqm *GroupQuotaManager) updatePodCacheNoLock(quotaName string, pod *v1.Pod, isAdd bool) {
@@ -1010,6 +1043,9 @@ func (gqm *GroupQuotaManager) recursiveUpdateGroupTreeWithDeltaAllocated(deltaAl
 }
 
 func (gqm *GroupQuotaManager) updateQuotaInternalNoLock(newQuotaInfo, oldQuotaInfo *QuotaInfo) {
+	// backup the old custom state
+	oldCustomState := gqm.parseOldCustomStateNoLock(newQuotaInfo, oldQuotaInfo)
+
 	// update topogy node map
 	gqm.updateQuotaTopoNodeNoLock(newQuotaInfo, oldQuotaInfo)
 
@@ -1056,6 +1092,12 @@ func (gqm *GroupQuotaManager) updateQuotaInternalNoLock(newQuotaInfo, oldQuotaIn
 			newQuotaInfo.Name, util.DumpJSON(oldSharedWeight), util.DumpJSON(newQuotaInfo.CalculateInfo.SharedWeight))
 		gqm.doUpdateOneGroupSharedWeightNoLock(newQuotaInfo.Name, newQuotaInfo.CalculateInfo.SharedWeight)
 	}
+	if gqm.customLimitersManager.enabled() {
+		// update custom-limits conf
+		gqm.updateCustomLimitsConfNoLock(oldQuotaInfo, newQuotaInfo)
+		// rebuild custom-used for this quota tree if needed
+		gqm.rebuildCustomStateIfNeededNoLock(newQuotaInfo.Name, newQuotaInfo, oldCustomState)
+	}
 }
 
 func (gqm *GroupQuotaManager) updateQuotaNoLockWhenParentChange(newQuota *v1alpha1.ElasticQuota) {
@@ -1071,10 +1113,21 @@ func (gqm *GroupQuotaManager) updateQuotaNoLockWhenParentChange(newQuota *v1alph
 	}
 
 	// 2. delete old quota
+
+	// backup the old custom state
+	oldCustomState := gqm.parseOldCustomStateNoLock(oldQuotaInfo, oldQuotaInfo)
+
 	gqm.deleteQuotaNoLock(newQuota)
 
+	// handle custom changes for deleted quota
+	if gqm.customLimitersManager.enabled() {
+		// no need to update custom-limits conf for deleted quota,
+		// just rebuild custom-used for this quota tree if needed
+		gqm.rebuildCustomStateIfNeededNoLock(newQuota.Name, nil, oldCustomState)
+	}
+
 	// 3. add new quota info
-	newQuotaInfo := NewQuotaInfoFromQuota(newQuota)
+	newQuotaInfo := gqm.newQuotaInfoFromQuotaNoLock(newQuota)
 	newMax := newQuotaInfo.CalculateInfo.Max
 	newMin := newQuotaInfo.CalculateInfo.Min
 	newSharedWeight := newQuotaInfo.CalculateInfo.SharedWeight
@@ -1144,6 +1197,11 @@ func (gqm *GroupQuotaManager) updateQuotaNoLockWhenParentChange(newQuota *v1alph
 		}
 	}
 
+	// add custom-used for new parents
+	//gqm.updateGroupCustomUsedWhenQuotaChangedNoLock(newQuotaInfo.ParentName, oldQuotaInfo.CalculateInfo.CustomUsed, false)
+	if gqm.customLimitersManager.enabled() {
+		gqm.rebuildCustomStateIfNeededNoLock(newQuotaInfo.Name, newQuotaInfo, nil)
+	}
 }
 
 func (gqm *GroupQuotaManager) updateQuotaTopoNodeNoLock(newQuotaInfo, oldQuotaInfo *QuotaInfo) {
@@ -1264,6 +1322,168 @@ func (gqm *GroupQuotaManager) doUpdateOneGroupSharedWeightNoLock(quotaName strin
 	gqm.updateOneGroupSharedWeightNoLock(quotaInfo)
 }
 
+// Notice: must be called when holding hierarchyUpdateLock of group-quota-manager and not holding locks of quotaInfo
+func (gqm *GroupQuotaManager) updateCustomLimitsConfNoLock(oldQuotaInfo, newQuotaInfo *QuotaInfo) {
+	// check if custom conf changed
+	newCustomLimits, toBeUpdatedKeys :=
+		gqm.customLimitersManager.getToBeUpdateCustomInfo(oldQuotaInfo, newQuotaInfo)
+	if len(toBeUpdatedKeys) == 0 {
+		if klog.V(5).Enabled() {
+			klog.Infof("no changes detected in custom limits and args for quota %s", newQuotaInfo.Name)
+		}
+		return
+	}
+
+	// update custom limits for quotaInfo in cache
+	quotaInfo := gqm.getQuotaInfoByNameNoLock(newQuotaInfo.Name)
+	if quotaInfo == nil {
+		klog.Errorf("quota %v not found", newQuotaInfo.Name)
+		return
+	}
+	quotaInfo.setCustomLimits(newCustomLimits)
+	if klog.V(2).Enabled() {
+		klog.Infof("updated custom limits or arguments for quota %v, toBeUpdatedKeys=%+v, limits=%s",
+			newQuotaInfo.Name, toBeUpdatedKeys, util.DumpJSON(newCustomLimits))
+	}
+}
+
+// rebuildCustomStateIfNeededNoLock will rebuild the custom state for the quota tree
+// Notice:
+// 1. must be called with holding hierarchyUpdateLock of group-quota-manager and not holding lock of the quotaInfo.
+// 2. must be called after the quota topology updated.
+// 3. the input oldState must be generated before the quota topology updated.
+func (gqm *GroupQuotaManager) rebuildCustomStateIfNeededNoLock(quotaName string, newQuotaInfo *QuotaInfo,
+	oldState *CustomState) {
+	startTime := time.Now()
+	// get new custom state for the quota tree
+	// 		for deleted or updated quota, check the same quota tree within oldState
+	// 		for newly added quota, check the new quota tree
+	var topNode *QuotaTopoNode
+	if oldState != nil {
+		topNode = oldState.topNode
+	} else {
+		topNode = gqm.getTopNodeNoLock(newQuotaInfo)
+	}
+	if topNode == nil {
+		// should not happen
+		klog.Errorf("skip rebuilding custom-state for quota %v since topNode is not found", quotaName)
+		return
+	}
+	if newQuotaInfo == nil && quotaName == topNode.name {
+		// normal: deleted quota is a child of root quota
+		klog.Info("skip rebuilding custom-state for quota %v as it is the top node and will be deleted", quotaName)
+		return
+	}
+	// newQuotaInfo could be nil for deleted quota, not nil for newly added or updated quota
+	// topNode won't be nil
+	newState := gqm.customLimitersManager.parseCustomState(newQuotaInfo, topNode)
+	toBeUpdatedQuotaNames := gqm.customLimitersManager.parseToBeUpdatedQuotaNames(oldState, newState)
+	if len(toBeUpdatedQuotaNames) == 0 {
+		if klog.V(5).Enabled() {
+			klog.Infof("skip rebuilding custom-state for quota %v since no changes detected, take %v",
+				quotaName, time.Since(startTime))
+		}
+		return
+	}
+	var numLeafQuotas int
+	defer func() {
+		if klog.V(3).Enabled() {
+			klog.Infof("rebuilt custom-state resource for quota %v with %d leaf quotas, take %v",
+				quotaName, numLeafQuotas, time.Since(startTime))
+		}
+	}()
+	// 1. rebuild custom-used for this quota tree
+	//	  just make sure custom-used is existing or not, won't change the value of custom-used resource
+	gqm.rebuildCustomStateRecursiveNoLock(toBeUpdatedQuotaNames)
+	// 2. deduct custom-used resource according to oldState
+	var toBeDeductCustomUsed CustomResourceLists
+	if oldState != nil && oldState.customUsed != nil {
+		toBeDeductCustomUsed = make(CustomResourceLists)
+		for customKey := range toBeUpdatedQuotaNames {
+			customUsed := oldState.customUsed[customKey]
+			if customUsed == nil || quotav1.IsZero(customUsed) {
+				continue
+			}
+			toBeDeductCustomUsed[customKey] = customUsed
+		}
+		gqm.updateGroupCustomUsedWhenQuotaChangedNoLock(quotaName, oldState.parentQuotaName, toBeDeductCustomUsed, true)
+	}
+
+	quotaTopoNode := gqm.quotaTopoNodeMap[quotaName]
+	if quotaTopoNode == nil {
+		// directly return for deleted quota
+		return
+	}
+	// 3. reset custom-used resource for all descendants with custom-used
+	diffCustomKeys := maps.Keys(toBeUpdatedQuotaNames)
+	gqm.resetCustomUsedForDescendentsNoLock(quotaTopoNode, diffCustomKeys...)
+	// 4. update custom-used for related quota chains
+	leafQuotaNames := quotaTopoNode.getLeafQuotaNames()
+	numLeafQuotas = len(leafQuotaNames)
+	for _, leafQuotaName := range leafQuotaNames {
+		leafQuotaInfo := gqm.getQuotaInfoByNameNoLock(leafQuotaName)
+		if leafQuotaInfo == nil {
+			continue
+		}
+		// update custom-used for related quota chains
+		for _, podInfo := range leafQuotaInfo.PodCache {
+			gqm.updateGroupCustomUsedWhenPodChangedNoLock(leafQuotaName, nil, podInfo.pod,
+				sets.New[string](diffCustomKeys...))
+		}
+		if klog.V(5).Enabled() {
+			klog.Infof("rebuilt custom-used resource for leaf quota %v, numPods=%d",
+				leafQuotaName, len(leafQuotaInfo.PodCache))
+		}
+	}
+}
+
+func (gqm *GroupQuotaManager) rebuildCustomStateRecursiveNoLock(toBeUpdatedQuotaNames map[string]map[string]bool) {
+	for customKey, toBeUpdatedQuotaNamesPerKey := range toBeUpdatedQuotaNames {
+		for quotaName, enabled := range toBeUpdatedQuotaNamesPerKey {
+			quotaInfo := gqm.getQuotaInfoByNameNoLock(quotaName)
+			if quotaInfo == nil {
+				continue
+			}
+			quotaInfo.updateCustomStateIfNeeded(customKey, enabled)
+		}
+	}
+}
+
+func (gqm *GroupQuotaManager) resetCustomUsedForDescendentsNoLock(quotaNode *QuotaTopoNode,
+	selectedCustomKeys ...string) {
+	quotaNames := make(set.Set[string])
+	fetchDescendentQuotaNamesRecursive(quotaNode, quotaNames)
+	if len(quotaNames) == 0 {
+		return
+	}
+	var partQuotaInfos []*QuotaInfo
+	for quotaName := range quotaNames {
+		quotaInfo := gqm.getQuotaInfoByNameNoLock(quotaName)
+		partQuotaInfos = append(partQuotaInfos, quotaInfo)
+	}
+	defer gqm.scopedLockForQuotaInfo(partQuotaInfos)()
+	for _, quotaInfo := range partQuotaInfos {
+		for _, key := range selectedCustomKeys {
+			oldCustomUsed, ok := quotaInfo.CalculateInfo.CustomUsed[key]
+			if ok {
+				quotaInfo.CalculateInfo.CustomUsed[key] = v1.ResourceList{}
+				if klog.V(4).Enabled() {
+					klog.Infof("reset custom-used resource for quota %v, key=%v, oldCustomUsed=%+v",
+						quotaInfo.Name, key, util.PrintResourceList(oldCustomUsed))
+				}
+			}
+		}
+	}
+}
+
+// fetchDescendentQuotaNamesRecursive fetches names of descendent quotas.
+func fetchDescendentQuotaNamesRecursive(node *QuotaTopoNode, quotaNames set.Set[string]) {
+	for name, subNode := range node.getChildGroupQuotaInfos() {
+		quotaNames.Insert(name)
+		fetchDescendentQuotaNamesRecursive(subNode, quotaNames)
+	}
+}
+
 func shouldBeIgnored(pod *v1.Pod) bool {
 	if pod.DeletionTimestamp == nil {
 		return false
@@ -1328,4 +1548,124 @@ func (gqm *GroupQuotaManager) deleteQuotaNoLock(quota *v1alpha1.ElasticQuota) er
 	klog.Infof("delete quota %v for quota tree %v", quota.Name, gqm.treeID)
 
 	return nil
+}
+
+// updateGroupCustomUsedWhenPodChangedNoLock updates the customUsed of the specified quota
+// and all parent quotas when pod changed.
+// customKeysOpt is used to filter matched custom limiters, if it is nil, all custom limiters will be matched.
+func (gqm *GroupQuotaManager) updateGroupCustomUsedWhenPodChangedNoLock(leafQuotaName string, oldPod, newPod *v1.Pod,
+	customKeysOpt sets.Set[string]) {
+	if !gqm.customLimitersManager.enabled() {
+		return
+	}
+	if oldPod == nil && newPod == nil {
+		return
+	}
+	// get all quotaInfos from current node to all parents
+	curToAllParInfos := gqm.getCurToAllParentGroupQuotaInfoNoLock(leafQuotaName)
+	allQuotaInfoLen := len(curToAllParInfos)
+	if allQuotaInfoLen <= 0 {
+		return
+	}
+
+	defer gqm.scopedLockForQuotaInfo(curToAllParInfos)()
+	gqm.customLimitersManager.updateGroupCustomUsedWhenPodChanged(curToAllParInfos, oldPod, newPod, customKeysOpt)
+}
+
+// updateGroupCustomUsedWhenQuotaChangedNoLock updates the customUsed of the specified quota
+// and all parent quotas when quota changed.
+func (gqm *GroupQuotaManager) updateGroupCustomUsedWhenQuotaChangedNoLock(quotaName, parentQuotaName string,
+	customUsedDeltas CustomResourceLists, isDeduct bool) {
+	if len(customUsedDeltas) == 0 {
+		return
+	}
+	var updated bool
+	var filteredCustomUsedDeltas CustomResourceLists
+	defer func() {
+		if klog.V(4).Enabled() {
+			klog.Infof("update custom-used when quota changed: quotaName=%v, parentQuotaName=%v, "+
+				"filteredCustomUsedDeltas=%v, updated=%v", quotaName, parentQuotaName,
+				util.DumpJSON(filteredCustomUsedDeltas), updated)
+		}
+	}()
+	// filter zero used-deltas
+	filteredCustomUsedDeltas = make(CustomResourceLists)
+	for customKey, customUsed := range customUsedDeltas {
+		if quotav1.IsZero(customUsed) {
+			continue
+		}
+		if isDeduct {
+			filteredCustomUsedDeltas[customKey] = quotav1.Subtract(v1.ResourceList{}, customUsed)
+		} else {
+			filteredCustomUsedDeltas[customKey] = customUsed
+		}
+	}
+	if len(filteredCustomUsedDeltas) == 0 {
+		return
+	}
+	// get all quotaInfos from current node to all parents
+	curToAllParInfos := gqm.getCurToAllParentGroupQuotaInfoNoLock(quotaName)
+	if len(curToAllParInfos) == 0 {
+		// if quota not exist (has been deleted), try to update custom-used for parents
+		if parentQuotaName != "" && parentQuotaName != extension.RootQuotaName {
+			curToAllParInfos = gqm.getCurToAllParentGroupQuotaInfoNoLock(parentQuotaName)
+		}
+		if len(curToAllParInfos) == 0 {
+			return
+		}
+	}
+	updated = true
+	defer gqm.scopedLockForQuotaInfo(curToAllParInfos)()
+	gqm.customLimitersManager.updateGroupCustomUsedWhenQuotaChanged(curToAllParInfos, filteredCustomUsedDeltas)
+}
+
+// getTopNodeNoLock returns the top node (a child of root quota) of the quota tree.
+func (gqm *GroupQuotaManager) getTopNodeNoLock(quotaInfo *QuotaInfo) *QuotaTopoNode {
+	if quotaInfo == nil {
+		return nil
+	}
+	for {
+		if quotaInfo.ParentName == extension.RootQuotaName {
+			break
+		}
+		quotaInfo = gqm.getQuotaInfoByNameNoLock(quotaInfo.ParentName)
+		if quotaInfo == nil {
+			return nil
+		}
+	}
+	return gqm.quotaTopoNodeMap[quotaInfo.Name]
+}
+
+// newQuotaInfoFromQuotaNoLock returns a new QuotaInfo parsed from provided ElasticQuota.
+func (gqm *GroupQuotaManager) newQuotaInfoFromQuotaNoLock(quota *v1alpha1.ElasticQuota) (quotaInfo *QuotaInfo) {
+	quotaInfo = NewQuotaInfoFromQuota(quota)
+	// attach custom limit conf to quotaInfo
+	if gqm.customLimitersManager.enabled() {
+		// skip error if failed to attach custom limits
+		err := gqm.customLimitersManager.attachCustomLimitsInfo(quotaInfo, quota)
+		if err != nil {
+			klog.Errorf(err.Error())
+		}
+	}
+	return
+}
+
+func (gqm *GroupQuotaManager) parseOldCustomStateByNameNoLock(quotaName string) *CustomState {
+	if !gqm.customLimitersManager.enabled() {
+		return nil
+	}
+	quotaInfo := gqm.getQuotaInfoByNameNoLock(quotaName)
+	if quotaInfo == nil {
+		return nil
+	}
+	return gqm.parseOldCustomStateNoLock(quotaInfo, quotaInfo)
+}
+
+// updatedQuotaInfo and oldQuotaInfo may be different when quota is newly created.
+func (gqm *GroupQuotaManager) parseOldCustomStateNoLock(updatedQuotaInfo, oldQuotaInfo *QuotaInfo) *CustomState {
+	if !gqm.customLimitersManager.enabled() {
+		return nil
+	}
+	topNode := gqm.getTopNodeNoLock(updatedQuotaInfo)
+	return gqm.customLimitersManager.parseCustomState(oldQuotaInfo, topNode)
 }
