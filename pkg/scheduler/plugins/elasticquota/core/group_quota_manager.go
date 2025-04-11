@@ -30,6 +30,7 @@ import (
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/features"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/metrics"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
@@ -171,6 +172,11 @@ func (gqm *GroupQuotaManager) SetTotalResourceForTree(total v1.ResourceList) v1.
 
 // updateGroupDeltaRequestNoLock no need lock gqm.lock
 func (gqm *GroupQuotaManager) updateGroupDeltaRequestNoLock(quotaName string, deltaReq, deltaNonPreemptibleRequest v1.ResourceList, selfQuotaIndex int) {
+	start := time.Now()
+	defer func() {
+		metrics.RecordElasticQuotaProcessLatency("UpdateGroupDeltaRequestNoLock", time.Since(start))
+	}()
+
 	curToAllParInfos := gqm.getCurToAllParentGroupQuotaInfoNoLock(quotaName)
 	allQuotaInfoLen := len(curToAllParInfos)
 	if allQuotaInfoLen <= 0 {
@@ -228,6 +234,11 @@ func (gqm *GroupQuotaManager) recursiveUpdateGroupTreeWithDeltaRequest(deltaReq,
 // updateGroupDeltaUsedNoLock updates the usedQuota of a node, it also updates all parent nodes
 // no need to lock gqm.hierarchyUpdateLock
 func (gqm *GroupQuotaManager) updateGroupDeltaUsedNoLock(quotaName string, delta, deltaNonPreemptibleUsed v1.ResourceList, selfQuotaIndex int) {
+	start := time.Now()
+	defer func() {
+		metrics.RecordElasticQuotaProcessLatency("UpdateGroupDeltaUsedNoLock", time.Since(start))
+	}()
+
 	curToAllParInfos := gqm.getCurToAllParentGroupQuotaInfoNoLock(quotaName)
 	allQuotaInfoLen := len(curToAllParInfos)
 	if allQuotaInfoLen <= 0 {
@@ -258,6 +269,11 @@ func (gqm *GroupQuotaManager) updateGroupDeltaUsedNoLock(quotaName string, delta
 }
 
 func (gqm *GroupQuotaManager) RefreshRuntime(quotaName string) v1.ResourceList {
+	start := time.Now()
+	defer func() {
+		metrics.RecordElasticQuotaProcessLatency("RefreshRuntime", time.Since(start))
+	}()
+
 	gqm.hierarchyUpdateLock.RLock()
 	defer gqm.hierarchyUpdateLock.RUnlock()
 
@@ -384,41 +400,55 @@ func (gqm *GroupQuotaManager) scopedLockForQuotaInfo(quotaList []*QuotaInfo) fun
 	}
 }
 
-func (gqm *GroupQuotaManager) UpdateQuota(quota *v1alpha1.ElasticQuota, isDelete bool) error {
+func (gqm *GroupQuotaManager) UpdateQuota(quota *v1alpha1.ElasticQuota) error {
+	start := time.Now()
+	defer func() {
+		metrics.RecordElasticQuotaProcessLatency("UpdateQuota", time.Since(start))
+	}()
+
 	gqm.hierarchyUpdateLock.Lock()
 	defer gqm.hierarchyUpdateLock.Unlock()
 
 	quotaName := quota.Name
-	if isDelete {
-		return gqm.deleteQuotaNoLock(quota)
-	} else {
-		newQuotaInfo := NewQuotaInfoFromQuota(quota)
-		// update the local quotaInfo's crd
-		if localQuotaInfo, exist := gqm.quotaInfoMap[quotaName]; exist {
-			if !localQuotaInfo.isQuotaChange(newQuotaInfo) {
-				return nil
-			}
 
-			// if the quotaMeta doesn't change, only runtime/used/request/min/max/sharedWeight change causes update,
-			// no need to call updateQuotaGroupConfigNoLock.
-			if !localQuotaInfo.isQuotaMetaChange(newQuotaInfo) {
-				gqm.updateQuotaInternalNoLock(newQuotaInfo, localQuotaInfo)
-				return nil
-			} else if localQuotaInfo.isQuotaParentChange(newQuotaInfo) {
-				gqm.updateQuotaNoLockWhenParentChange(quota)
-				return nil
-			}
-			localQuotaInfo.updateQuotaInfoFromRemote(newQuotaInfo)
-		} else {
-			gqm.updateQuotaInternalNoLock(newQuotaInfo, nil)
+	newQuotaInfo := NewQuotaInfoFromQuota(quota)
+	// update the local quotaInfo's crd
+	if localQuotaInfo, exist := gqm.quotaInfoMap[quotaName]; exist {
+		if !localQuotaInfo.IsQuotaChange(newQuotaInfo) {
 			return nil
 		}
+
+		// if the quotaMeta doesn't change, only runtime/used/request/min/max/sharedWeight change causes update,
+		// no need to call updateQuotaGroupConfigNoLock.
+		if !localQuotaInfo.IsQuotaMetaChange(newQuotaInfo) {
+			gqm.updateQuotaInternalNoLock(newQuotaInfo, localQuotaInfo)
+			return nil
+		} else if localQuotaInfo.IsQuotaParentChange(newQuotaInfo) {
+			gqm.updateQuotaNoLockWhenParentChange(quota)
+			return nil
+		}
+		localQuotaInfo.updateQuotaInfoFromRemote(newQuotaInfo)
+	} else {
+		gqm.updateQuotaInternalNoLock(newQuotaInfo, nil)
+		return nil
 	}
 
 	klog.Infof("reset quota tree %v, for quota %v updated", gqm.treeID, quota.Name)
 	gqm.resetQuotaNoLock()
 
 	return nil
+}
+
+func (gqm *GroupQuotaManager) DeleteQuota(quota *v1alpha1.ElasticQuota) error {
+	start := time.Now()
+	defer func() {
+		metrics.RecordElasticQuotaProcessLatency("DeleteQuota", time.Since(start))
+	}()
+
+	gqm.hierarchyUpdateLock.Lock()
+	defer gqm.hierarchyUpdateLock.Unlock()
+
+	return gqm.deleteQuotaNoLock(quota)
 }
 
 func (gqm *GroupQuotaManager) UpdateQuotaInfo(quota *v1alpha1.ElasticQuota) {
@@ -440,7 +470,9 @@ func (gqm *GroupQuotaManager) resetQuotaNoLock() {
 	start := time.Now()
 	defer func() {
 		klog.Infof("reset quota tree %v take %v", gqm.treeID, time.Since(start))
+		metrics.RecordElasticQuotaProcessLatency("resetQuotaNoLock", time.Since(start))
 	}()
+
 	// rebuild gqm.quotaTopoNodeMap
 	gqm.rebuildQuotaTopoNodeMapNoLock()
 	// reset gqm.runtimeQuotaCalculator
@@ -762,6 +794,11 @@ func (gqm *GroupQuotaManager) OnPodAdd(quotaName string, pod *v1.Pod) {
 		return
 	}
 
+	start := time.Now()
+	defer func() {
+		metrics.RecordElasticQuotaProcessLatency("OnPodAdd", time.Since(start))
+	}()
+
 	gqm.hierarchyUpdateLock.RLock()
 	defer gqm.hierarchyUpdateLock.RUnlock()
 
@@ -781,6 +818,11 @@ func (gqm *GroupQuotaManager) OnPodAdd(quotaName string, pod *v1.Pod) {
 }
 
 func (gqm *GroupQuotaManager) OnPodUpdate(newQuotaName, oldQuotaName string, newPod, oldPod *v1.Pod) {
+	start := time.Now()
+	defer func() {
+		metrics.RecordElasticQuotaProcessLatency("OnPodUpdate", time.Since(start))
+	}()
+
 	gqm.hierarchyUpdateLock.RLock()
 	defer gqm.hierarchyUpdateLock.RUnlock()
 
@@ -843,6 +885,11 @@ func (gqm *GroupQuotaManager) OnPodUpdate(newQuotaName, oldQuotaName string, new
 }
 
 func (gqm *GroupQuotaManager) OnPodDelete(quotaName string, pod *v1.Pod) {
+	start := time.Now()
+	defer func() {
+		metrics.RecordElasticQuotaProcessLatency("OnPodDelete", time.Since(start))
+	}()
+
 	gqm.hierarchyUpdateLock.RLock()
 	defer gqm.hierarchyUpdateLock.RUnlock()
 
@@ -857,6 +904,11 @@ func (gqm *GroupQuotaManager) OnPodDelete(quotaName string, pod *v1.Pod) {
 }
 
 func (gqm *GroupQuotaManager) ReservePod(quotaName string, p *v1.Pod) {
+	start := time.Now()
+	defer func() {
+		metrics.RecordElasticQuotaProcessLatency("ReservePod", time.Since(start))
+	}()
+
 	gqm.hierarchyUpdateLock.RLock()
 	defer gqm.hierarchyUpdateLock.RUnlock()
 
@@ -870,6 +922,11 @@ func (gqm *GroupQuotaManager) ReservePod(quotaName string, p *v1.Pod) {
 }
 
 func (gqm *GroupQuotaManager) UnreservePod(quotaName string, p *v1.Pod) {
+	start := time.Now()
+	defer func() {
+		metrics.RecordElasticQuotaProcessLatency("UnreservePod", time.Since(start))
+	}()
+
 	gqm.hierarchyUpdateLock.RLock()
 	defer gqm.hierarchyUpdateLock.RUnlock()
 
