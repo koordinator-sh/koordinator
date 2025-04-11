@@ -199,10 +199,6 @@ func (c *Controller) expireReservation(reservation *schedulingv1alpha1.Reservati
 }
 
 func (c *Controller) syncStatus(reservation *schedulingv1alpha1.Reservation) error {
-	if reservation.Status.NodeName == "" {
-		RecordReservationPhases(reservation)
-		return nil
-	}
 	if isReservationNeedExpiration(reservation) {
 		return c.expireReservation(reservation)
 	}
@@ -210,6 +206,12 @@ func (c *Controller) syncStatus(reservation *schedulingv1alpha1.Reservation) err
 	if reservation.Status.NodeName != "" && missingNode(reservation, c.nodeLister) {
 		return c.expireReservation(reservation)
 	}
+
+	if reservation.Status.NodeName == "" {
+		RecordReservationPhases(reservation)
+		return nil
+	}
+
 	var actualOwners []corev1.ObjectReference
 	var actualAllocated corev1.ResourceList
 	pods := c.getPods(reservation.Status.NodeName)
