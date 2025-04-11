@@ -49,9 +49,10 @@ var (
 
 	defaultPreferredCPUBindPolicy = CPUBindPolicyFullPCPUs
 
-	defaultEnablePreemption            = pointer.Bool(false)
-	defaultMinCandidateNodesPercentage = pointer.Int32(10)
-	defaultMinCandidateNodesAbsolute   = pointer.Int32(100)
+	defaultEnablePreemption             = pointer.Bool(false)
+	defaultMinCandidateNodesPercentage  = pointer.Int32(10)
+	defaultMinCandidateNodesAbsolute    = pointer.Int32(100)
+	defaultReservationControllerWorkers = pointer.Int32(1)
 
 	defaultDelayEvictTime       = 120 * time.Second
 	defaultRevokePodInterval    = 1 * time.Second
@@ -150,6 +151,9 @@ func SetDefaults_ReservationArgs(obj *ReservationArgs) {
 	}
 	if obj.MinCandidateNodesAbsolute == nil {
 		obj.MinCandidateNodesAbsolute = defaultMinCandidateNodesAbsolute
+	}
+	if obj.ControllerWorkers == nil {
+		obj.ControllerWorkers = defaultReservationControllerWorkers
 	}
 }
 

@@ -17,6 +17,7 @@ limitations under the License.
 package loadaware
 
 import (
+	"reflect"
 	"sync"
 	"time"
 
@@ -48,6 +49,36 @@ func newPodAssignCache() *podAssignCache {
 	return &podAssignCache{
 		podInfoItems: map[string]map[types.UID]*podAssignInfo{},
 	}
+}
+
+func (p *podAssignCache) getPodAssignInfo(nodeName string, pod *corev1.Pod) *podAssignInfo {
+	if nodeName == "" {
+		return nil
+	}
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+	m := p.podInfoItems[nodeName]
+	if m == nil {
+		return nil
+	}
+	if info, ok := m[pod.UID]; ok {
+		return info
+	}
+	return nil
+}
+
+func (p *podAssignCache) getPodsAssignInfoOnNode(nodeName string) []*podAssignInfo {
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+	m := p.podInfoItems[nodeName]
+	if m == nil {
+		return nil
+	}
+	podInfos := make([]*podAssignInfo, 0, len(m))
+	for _, info := range m {
+		podInfos = append(podInfos, info)
+	}
+	return podInfos
 }
 
 func (p *podAssignCache) assign(nodeName string, pod *corev1.Pod) {
@@ -94,13 +125,21 @@ func (p *podAssignCache) OnAdd(obj interface{}, isInInitialList bool) {
 
 func (p *podAssignCache) OnUpdate(oldObj, newObj interface{}) {
 	pod, ok := newObj.(*corev1.Pod)
-	if !ok {
+	if !ok || pod == nil {
 		return
 	}
-	if util.IsPodTerminated(pod) {
-		p.unAssign(pod.Spec.NodeName, pod)
+	oldPodInfo := p.getPodAssignInfo(pod.Spec.NodeName, pod)
+	if oldPodInfo == nil { // pod was not cached
+		if pod.Spec.NodeName != "" && !util.IsPodTerminated(pod) { // pod is assigned and not terminated
+			p.assign(pod.Spec.NodeName, pod)
+		}
 	} else {
-		p.assign(pod.Spec.NodeName, pod)
+		if util.IsPodTerminated(pod) { // pod become terminated
+			p.unAssign(pod.Spec.NodeName, pod)
+		}
+		if !reflect.DeepEqual(pod.Spec, oldPodInfo.pod.Spec) { // pod spec changed
+			p.assign(pod.Spec.NodeName, pod)
+		}
 	}
 }
 

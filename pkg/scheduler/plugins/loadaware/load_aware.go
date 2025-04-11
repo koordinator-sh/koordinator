@@ -320,9 +320,8 @@ func (p *Plugin) estimatedAssignedPodUsed(nodeName string, nodeMetric *slov1alph
 	}
 	nodeMetricReportInterval := getNodeMetricReportInterval(nodeMetric)
 
-	p.podAssignCache.lock.RLock()
-	defer p.podAssignCache.lock.RUnlock()
-	for _, assignInfo := range p.podAssignCache.podInfoItems[nodeName] {
+	assignedPodsOnNode := p.podAssignCache.getPodsAssignInfoOnNode(nodeName)
+	for _, assignInfo := range assignedPodsOnNode {
 		if filterProdPod && extension.GetPodPriorityClassWithDefault(assignInfo.pod) != extension.PriorityProd {
 			continue
 		}
