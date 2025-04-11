@@ -40,6 +40,7 @@ import (
 	apiresource "k8s.io/kubernetes/pkg/api/v1/resource"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultbinder"
+	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/nodeaffinity"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/nodename"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/queuesort"
 	frameworkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
@@ -152,6 +153,7 @@ func newPluginTestSuitWith(t testing.TB, pods []*corev1.Pod, nodes []*corev1.Nod
 	proxyNew := frameworkext.PluginFactoryProxy(extenderFactory, New)
 
 	registeredPlugins := []schedulertesting.RegisterPluginFunc{
+		schedulertesting.RegisterPreFilterPlugin(nodeaffinity.Name, nodeaffinity.New),
 		schedulertesting.RegisterFilterPlugin(nodename.Name, nodename.New),
 		schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
 		schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),

@@ -111,6 +111,10 @@ func (g *Plugin) OnPodDelete(obj interface{}) {
 		return
 	}
 
+	g.handlePodDelete(pod)
+}
+
+func (g *Plugin) handlePodDelete(pod *corev1.Pod) {
 	quotaName, treeID := g.getPodAssociateQuotaNameAndTreeID(pod)
 	if quotaName == "" {
 		return

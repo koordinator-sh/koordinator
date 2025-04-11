@@ -395,6 +395,7 @@ spec:
                 description: Name of node the reservation is scheduled on.
                 type: string
               phase:
+                default: Pending
                 description: |-
                   The `phase` indicates whether is reservation is waiting for process, available to allocate or failed/expired to
                   get cleanup.

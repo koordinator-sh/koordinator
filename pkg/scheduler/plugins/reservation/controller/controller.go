@@ -41,6 +41,7 @@ import (
 	koordclientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
 	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
 	schedulinglister "github.com/koordinator-sh/koordinator/pkg/client/listers/scheduling/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	frameworkexthelper "github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/helper"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/metrics"
@@ -74,7 +75,7 @@ func New(
 	sharedInformerFactory informers.SharedInformerFactory,
 	koordSharedInformerFactory koordinatorinformers.SharedInformerFactory,
 	koordClientSet koordclientset.Interface,
-	numWorker int,
+	args *config.ReservationArgs,
 ) *Controller {
 	nodeLister := sharedInformerFactory.Core().V1().Nodes().Lister()
 	podLister := sharedInformerFactory.Core().V1().Pods().Lister()
@@ -83,8 +84,9 @@ func New(
 	rateLimiter := workqueue.DefaultControllerRateLimiter()
 	queue := workqueue.NewNamedRateLimitingQueue(rateLimiter, Name)
 
-	if numWorker <= 0 {
-		numWorker = 1
+	numWorker := 1
+	if args != nil && args.ControllerWorkers > 0 {
+		numWorker = int(args.ControllerWorkers)
 	}
 	return &Controller{
 		sharedInformerFactory:      sharedInformerFactory,

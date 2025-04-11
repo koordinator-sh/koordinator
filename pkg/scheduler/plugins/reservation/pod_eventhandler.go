@@ -98,7 +98,6 @@ func (h *podEventHandler) updatePod(oldPod, newPod *corev1.Pod) {
 	h.nominator.RemoveNominatedReservation(newPod)
 	podInfo, _ := framework.NewPodInfo(newPod)
 	h.nominator.DeleteReservePod(podInfo)
-
 	var reservationUID types.UID
 	if oldPod != nil {
 		reservationAllocated, err := apiext.GetReservationAllocated(oldPod)

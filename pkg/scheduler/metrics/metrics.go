@@ -18,6 +18,7 @@ package metrics
 
 import (
 	"sync"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 
@@ -37,16 +38,25 @@ var (
 			Help:           "The currently scheduled Pod exceeds the maximum acceptable time interval",
 			StabilityLevel: metrics.STABLE,
 		}, []string{"profile"})
-
 	ReservationStatusPhase = utilmetrics.NewGCGaugeVec("reservation_status_phase", prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Subsystem: schedulermetrics.SchedulerSubsystem,
 			Name:      "reservation_status_phase",
 			Help:      `The current number of reservations in each status phase (e.g. Pending, Available, Succeeded, Failed)`,
 		}, []string{"name", "phase"}))
+	ElasticQuotaProcessLatency = metrics.NewHistogramVec(
+		&metrics.HistogramOpts{
+			Subsystem: schedulermetrics.SchedulerSubsystem,
+			Name:      "elastic_quota_process_latency",
+			Help:      "elastic quota process latency in second",
+			Buckets:   metrics.ExponentialBuckets(0.00001, 2, 24),
+		},
+		[]string{"operation"},
+	)
 
 	metricsList = []metrics.Registerable{
 		SchedulingTimeout,
+		ElasticQuotaProcessLatency,
 	}
 
 	gcMetricsList = []prometheus.Collector{
@@ -87,4 +97,8 @@ func RegisterStandardAndGCMetrics(standardMetrics []metrics.Registerable, gcMetr
 	for _, metric := range gcMetrics {
 		legacyregistry.RawMustRegister(metric)
 	}
+}
+
+func RecordElasticQuotaProcessLatency(operation string, latency time.Duration) {
+	ElasticQuotaProcessLatency.WithLabelValues(operation).Observe(latency.Seconds())
 }
