@@ -42,6 +42,7 @@ import (
 	listerschedulingv1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/listers/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/validation"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/reservation/controller"
 	"github.com/koordinator-sh/koordinator/pkg/util"
@@ -99,6 +100,9 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 	pluginArgs, ok := args.(*config.ReservationArgs)
 	if !ok {
 		return nil, fmt.Errorf("want args to be of type ReservationArgs, got %T", args)
+	}
+	if err := validation.ValidateReservationArgs(nil, pluginArgs); err != nil {
+		return nil, err
 	}
 	extendedHandle, ok := handle.(frameworkext.ExtendedHandle)
 	if !ok {

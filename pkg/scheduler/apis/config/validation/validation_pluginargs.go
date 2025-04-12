@@ -153,6 +153,39 @@ func ValidateDeviceShareArgs(path *field.Path, args *config.DeviceShareArgs) err
 	return allErrs.ToAggregate()
 }
 
+func ValidateReservationArgs(path *field.Path, args *config.ReservationArgs) error {
+	var allErrs field.ErrorList
+
+	if args.MinCandidateNodesPercentage < 0 || args.MinCandidateNodesPercentage > 100 {
+		allErrs = append(allErrs, field.Invalid(
+			path.Child("MinCandidateNodesPercentage"),
+			args.MinCandidateNodesPercentage,
+			"must be in the range [0, 100]",
+		))
+	}
+
+	if args.MinCandidateNodesAbsolute < 0 {
+		allErrs = append(allErrs, field.Invalid(
+			path.Child("MinCandidateNodesAbsolute"),
+			args.MinCandidateNodesAbsolute,
+			"must be non-negative",
+		))
+	}
+
+	if args.GCDurationSeconds < 0 {
+		allErrs = append(allErrs, field.Invalid(
+			path.Child("GcDuration"),
+			args.GCDurationSeconds,
+			"must be non-negative",
+		))
+	}
+
+	if len(allErrs) == 0 {
+		return nil
+	}
+	return allErrs.ToAggregate()
+}
+
 func ValidateNodeNUMAResourceArgs(path *field.Path, args *config.NodeNUMAResourceArgs) error {
 	var allErrs field.ErrorList
 	if args.DefaultCPUBindPolicy != "" &&

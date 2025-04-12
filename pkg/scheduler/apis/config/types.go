@@ -178,6 +178,10 @@ type ReservationArgs struct {
 	// Workers number of reservation controller.
 	// Defaults to 1 if unspecified.
 	ControllerWorkers int32
+	// GCDurationSeconds is the duration in seconds after which expired or succeeded reservations
+	// will be garbage collected. Defaults to 24 hours (86400 seconds) if unspecified.
+	// This value should be provided in seconds.
+	GCDurationSeconds int64
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object

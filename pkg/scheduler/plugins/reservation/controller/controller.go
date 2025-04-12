@@ -65,6 +65,7 @@ type Controller struct {
 	koordClientSet             koordclientset.Interface
 	queue                      workqueue.RateLimitingInterface
 	numWorker                  int
+	gcDuration                 time.Duration
 
 	lock sync.Mutex
 	pods map[string]map[types.UID]*corev1.Pod
@@ -87,6 +88,11 @@ func New(
 	if args != nil && args.ControllerWorkers > 0 {
 		numWorker = int(args.ControllerWorkers)
 	}
+
+	gcDuration := defaultGCDuration
+	if args != nil && args.GCDurationSeconds > 0 {
+		gcDuration = time.Duration(args.GCDurationSeconds) * time.Second
+	}
 	return &Controller{
 		sharedInformerFactory:      sharedInformerFactory,
 		koordSharedInformerFactory: koordSharedInformerFactory,
@@ -96,6 +102,7 @@ func New(
 		koordClientSet:             koordClientSet,
 		queue:                      queue,
 		numWorker:                  numWorker,
+		gcDuration:                 gcDuration,
 		pods:                       map[string]map[types.UID]*corev1.Pod{},
 	}
 }

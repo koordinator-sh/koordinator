@@ -285,7 +285,7 @@ func TestSyncStatus(t *testing.T) {
 		assert.NoError(t, err)
 	}
 
-	controller := New(sharedInformerFactory, koordSharedInformerFactory, fakeKoordClientSet, &config.ReservationArgs{})
+	controller := New(sharedInformerFactory, koordSharedInformerFactory, fakeKoordClientSet, &config.ReservationArgs{ControllerWorkers: 2, GCDurationSeconds: 3600})
 	controller.Start()
 
 	time.Sleep(1 * time.Second)

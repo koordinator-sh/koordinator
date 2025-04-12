@@ -58,6 +58,24 @@ func TestGC(t *testing.T) {
 			NodeName: "test-node",
 		},
 	}
+	succeededReservation := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{
+			UID:  uuid.NewUUID(),
+			Name: "succededReservation",
+		},
+		Status: schedulingv1alpha1.ReservationStatus{
+			Phase: schedulingv1alpha1.ReservationSucceeded,
+			Conditions: []schedulingv1alpha1.ReservationCondition{
+				{
+					Type:               schedulingv1alpha1.ReservationConditionReady,
+					Status:             schedulingv1alpha1.ConditionStatusFalse,
+					Reason:             schedulingv1alpha1.ReasonReservationSucceeded,
+					LastProbeTime:      metav1.Time{Time: metav1.Now().Add(-48 * time.Hour)},
+					LastTransitionTime: metav1.Time{Time: metav1.Now().Add(-48 * time.Hour)},
+				},
+			},
+		},
+	}
 	normalReservation := &schedulingv1alpha1.Reservation{
 		ObjectMeta: metav1.ObjectMeta{
 			UID:               uuid.NewUUID(),
@@ -87,6 +105,7 @@ func TestGC(t *testing.T) {
 
 	reservations := []*schedulingv1alpha1.Reservation{
 		shouldExpireReservation,
+		succeededReservation,
 		normalReservation,
 		missingNodeReservation,
 	}
