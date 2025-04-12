@@ -62,7 +62,7 @@ func TestFailedOrSucceededReservation(t *testing.T) {
 			Name: "succededReservation",
 		},
 		Status: schedulingv1alpha1.ReservationStatus{
-			Phase: schedulingv1alpha1.ReservationFailed,
+			Phase: schedulingv1alpha1.ReservationSucceeded,
 		},
 	}
 	_, err := fakeKoordClientSet.SchedulingV1alpha1().Reservations().Create(context.TODO(), failedReservation, metav1.CreateOptions{})
