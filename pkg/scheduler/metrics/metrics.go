@@ -85,15 +85,21 @@ var registerMetrics sync.Once
 func Register() {
 	// Register the metrics.
 	registerMetrics.Do(func() {
-		RegisterStandardAndGCMetrics(metricsList, gcMetricsList)
+		RegisterMetrics(metricsList...)
+		RegisterGCMetrics(gcMetricsList...)
 	})
 }
 
-// RegisterStandardAndGCMetrics registers both standard and garbage collection metrics.
-func RegisterStandardAndGCMetrics(standardMetrics []metrics.Registerable, gcMetrics []prometheus.Collector) {
-	for _, metric := range standardMetrics {
+// RegisterMetrics registers a list of metrics.
+// This function is exported because it is intended to be used by out-of-tree plugins to register their custom metrics.
+func RegisterMetrics(extraMetrics ...metrics.Registerable) {
+	for _, metric := range extraMetrics {
 		legacyregistry.MustRegister(metric)
 	}
+}
+
+// RegisterGCMetrics registers garbage collection metrics.
+func RegisterGCMetrics(gcMetrics ...prometheus.Collector) {
 	for _, metric := range gcMetrics {
 		legacyregistry.RawMustRegister(metric)
 	}

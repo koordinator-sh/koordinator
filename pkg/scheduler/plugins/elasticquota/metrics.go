@@ -51,16 +51,14 @@ var (
 			Buckets:   metrics.ExponentialBuckets(0.001, 2, 15),
 		},
 	)
-
-	metricsList = []metrics.Registerable{
-		ElasticQuotaSpecMetric,
-		ElasticQuotaStatusMetric,
-		UpdateElasticQuotaStatusLatency,
-	}
 )
 
 func init() {
-	koordschedulermetrics.RegisterStandardAndGCMetrics(metricsList, nil)
+	koordschedulermetrics.RegisterMetrics(
+		ElasticQuotaSpecMetric,
+		ElasticQuotaStatusMetric,
+		UpdateElasticQuotaStatusLatency,
+	)
 }
 
 func RecordElasticQuotaMetric(gaugeVec *metrics.GaugeVec, resources corev1.ResourceList, field string, labels map[string]string) {
