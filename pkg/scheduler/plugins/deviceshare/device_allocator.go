@@ -160,6 +160,7 @@ func (a *AutopilotAllocator) filterNodeDevice(
 			devices[deviceType] = minors.UnsortedList()
 		}
 	}
+	// TODO Device allocation logic hotspots discovered through flame graphs
 	nodeDevice := a.nodeDevice.filter(devices, a.state.hints, requiredDeviceResources, preemptibleDeviceResources)
 	return nodeDevice
 }
@@ -369,7 +370,7 @@ func defaultAllocateDevices(
 	var allocations []*apiext.DeviceAllocation
 	resourceMinorPairs := scoreDevices(podRequestPerInstance, nodeDeviceTotal, freeDevices, requestCtx.allocationScorer)
 	resourceMinorPairs = sortDeviceResourcesByPreferredPCIe(resourceMinorPairs, preferredPCIEs, deviceInfos)
-	// TODO 这里多执行了一次排序算法
+	// TODO Device allocation logic hotspots discovered through flame graphs
 	resourceMinorPairs = sortDeviceResourcesByMinor(resourceMinorPairs, requestCtx.preferred[deviceType])
 	for _, resourceMinorPair := range resourceMinorPairs {
 		if required.Len() > 0 && !required.Has(resourceMinorPair.minor) {
@@ -389,6 +390,7 @@ func defaultAllocateDevices(
 			Resources: podRequestPerInstance,
 		}
 		if mustAllocateVF(hint) {
+			// TODO Device allocation logic hotspots discovered through flame graphs
 			vf := allocateVF(vfAllocation, deviceInfos, resourceMinorPair.minor, vfSelector)
 			if vf == nil {
 				continue

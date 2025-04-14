@@ -371,7 +371,6 @@ func (n *nodeDevice) filter(
 	used := map[schedulingv1alpha1.DeviceType]deviceResources{}
 	for deviceType, deviceMinors := range devices {
 		freeDevices := n.calcFreeWithPreemptible(deviceType, preemptibleDeviceResources[deviceType], requiredDeviceResources[deviceType])
-
 		if freeDevices.isZero() {
 			continue
 		}
