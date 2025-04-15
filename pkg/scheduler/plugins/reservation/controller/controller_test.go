@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 
@@ -31,6 +32,8 @@ import (
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/client-go/informers"
 	kubefake "k8s.io/client-go/kubernetes/fake"
+	basemetrics "k8s.io/component-base/metrics"
+	"k8s.io/component-base/metrics/testutil"
 	"k8s.io/utils/pointer"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
@@ -38,6 +41,7 @@ import (
 	koordfake "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/fake"
 	koordinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/metrics"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
 
@@ -217,6 +221,10 @@ func TestSyncStatus(t *testing.T) {
 	fakeKoordClientSet := koordfake.NewSimpleClientset()
 	sharedInformerFactory := informers.NewSharedInformerFactory(fakeClientSet, 0)
 	koordSharedInformerFactory := koordinformers.NewSharedInformerFactory(fakeKoordClientSet, 0)
+	// register metrics
+	metricsRegistry := basemetrics.NewKubeRegistry()
+	metrics.ReservationStatusPhase.GetGaugeVec().Reset()
+	metricsRegistry.Registerer().MustRegister(metrics.ReservationStatusPhase.GetGaugeVec())
 
 	reservation := &schedulingv1alpha1.Reservation{
 		ObjectMeta: metav1.ObjectMeta{
@@ -298,6 +306,7 @@ func TestSyncStatus(t *testing.T) {
 	assert.NoError(t, err)
 
 	expectReservation := reservation.DeepCopy()
+	expectReservation.Status.Phase = schedulingv1alpha1.ReasonReservationSucceeded
 	reservationutil.SetReservationSucceeded(expectReservation)
 	expectReservation.Status.Allocated = corev1.ResourceList{
 		corev1.ResourceCPU:    resource.MustParse("8000m"),
@@ -318,4 +327,25 @@ func TestSyncStatus(t *testing.T) {
 		cond.LastTransitionTime = metav1.Time{}
 	}
 	assert.Equal(t, expectReservation, got)
+	// check metrics
+	expectAvailableMetricCount := 0
+	expectFailedMetricCount := 0
+	expectPendingMetricCount := 0
+	expectSucceededMetricCount := 1
+	expectedSuccessedMetrics := fmt.Sprintf(`
+				# HELP scheduler_reservation_status_phase The current number of reservations in each status phase (e.g. Pending, Available, Succeeded, Failed)
+				# TYPE scheduler_reservation_status_phase gauge
+				scheduler_reservation_status_phase{name="%s",phase="Available"} %v
+				scheduler_reservation_status_phase{name="%s",phase="Failed"} %v
+				scheduler_reservation_status_phase{name="%s",phase="Pending"} %v
+				scheduler_reservation_status_phase{name="%s",phase="Succeeded"} %v
+				`,
+		"normalReservation", expectAvailableMetricCount,
+		"normalReservation", expectFailedMetricCount,
+		"normalReservation", expectPendingMetricCount,
+		"normalReservation", expectSucceededMetricCount,
+	)
+	if err := testutil.GatherAndCompare(metricsRegistry, strings.NewReader(expectedSuccessedMetrics), "scheduler_reservation_status_phase"); err != nil {
+		t.Error(err)
+	}
 }

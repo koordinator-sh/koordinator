@@ -20,9 +20,13 @@ import (
 	"sync"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+
 	"k8s.io/component-base/metrics"
 	"k8s.io/component-base/metrics/legacyregistry"
 	schedulermetrics "k8s.io/kubernetes/pkg/scheduler/metrics"
+
+	utilmetrics "github.com/koordinator-sh/koordinator/pkg/util/metrics"
 )
 
 // All the histogram based metrics have 1ms as size for the smallest bucket.
@@ -34,7 +38,12 @@ var (
 			Help:           "The currently scheduled Pod exceeds the maximum acceptable time interval",
 			StabilityLevel: metrics.STABLE,
 		}, []string{"profile"})
-
+	ReservationStatusPhase = utilmetrics.NewGCGaugeVec("reservation_status_phase", prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Subsystem: schedulermetrics.SchedulerSubsystem,
+			Name:      "reservation_status_phase",
+			Help:      `The current number of reservations in each status phase (e.g. Pending, Available, Succeeded, Failed)`,
+		}, []string{"name", "phase"}))
 	ElasticQuotaProcessLatency = metrics.NewHistogramVec(
 		&metrics.HistogramOpts{
 			Subsystem: schedulermetrics.SchedulerSubsystem,
@@ -49,7 +58,26 @@ var (
 		SchedulingTimeout,
 		ElasticQuotaProcessLatency,
 	}
+
+	gcMetricsList = []prometheus.Collector{
+		ReservationStatusPhase.GetGaugeVec(),
+	}
 )
+
+const (
+	reservationNameKey  = "name"
+	reservationPhaseKey = "phase"
+)
+
+// RecordReservationPhase records the phase of a reservation as a metric.
+// It uses the provided name, phase, and value to set the metric with specific labels.
+func RecordReservationPhase(name string, phase string, value float64) {
+	labels := prometheus.Labels{
+		reservationNameKey:  name,
+		reservationPhaseKey: phase,
+	}
+	ReservationStatusPhase.WithSet(labels, value)
+}
 
 var registerMetrics sync.Once
 
@@ -58,6 +86,7 @@ func Register() {
 	// Register the metrics.
 	registerMetrics.Do(func() {
 		RegisterMetrics(metricsList...)
+		RegisterGCMetrics(gcMetricsList...)
 	})
 }
 
@@ -66,6 +95,13 @@ func Register() {
 func RegisterMetrics(extraMetrics ...metrics.Registerable) {
 	for _, metric := range extraMetrics {
 		legacyregistry.MustRegister(metric)
+	}
+}
+
+// RegisterGCMetrics registers garbage collection metrics.
+func RegisterGCMetrics(gcMetrics ...prometheus.Collector) {
+	for _, metric := range gcMetrics {
+		legacyregistry.RawMustRegister(metric)
 	}
 }
 

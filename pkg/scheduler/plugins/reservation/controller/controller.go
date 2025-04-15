@@ -44,6 +44,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	frameworkexthelper "github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/helper"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/metrics"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
 
@@ -185,15 +186,6 @@ func (c *Controller) sync(reservationName string) (result, error) {
 	}
 
 	reservation = reservation.DeepCopy()
-
-	if isReservationNeedExpiration(reservation) {
-		return result{}, c.expireReservation(reservation)
-	}
-
-	if reservation.Status.NodeName != "" && missingNode(reservation, c.nodeLister) {
-		return result{}, c.expireReservation(reservation)
-	}
-
 	if err := c.syncStatus(reservation); err != nil {
 		return result{}, err
 	}
@@ -203,14 +195,23 @@ func (c *Controller) sync(reservationName string) (result, error) {
 
 func (c *Controller) expireReservation(reservation *schedulingv1alpha1.Reservation) error {
 	reservationutil.SetReservationExpired(reservation)
-	_, err := c.koordClientSet.SchedulingV1alpha1().Reservations().UpdateStatus(context.TODO(), reservation, metav1.UpdateOptions{})
-	return err
+	return c.updateReservationStatus(reservation)
 }
 
 func (c *Controller) syncStatus(reservation *schedulingv1alpha1.Reservation) error {
+	if isReservationNeedExpiration(reservation) {
+		return c.expireReservation(reservation)
+	}
+
+	if reservation.Status.NodeName != "" && missingNode(reservation, c.nodeLister) {
+		return c.expireReservation(reservation)
+	}
+
 	if reservation.Status.NodeName == "" {
+		RecordReservationPhases(reservation)
 		return nil
 	}
+
 	var actualOwners []corev1.ObjectReference
 	var actualAllocated corev1.ResourceList
 	pods := c.getPods(reservation.Status.NodeName)
@@ -248,6 +249,11 @@ func (c *Controller) syncStatus(reservation *schedulingv1alpha1.Reservation) err
 		reservationutil.SetReservationSucceeded(reservation)
 	}
 
+	return c.updateReservationStatus(reservation)
+}
+
+func (c *Controller) updateReservationStatus(reservation *schedulingv1alpha1.Reservation) error {
+	RecordReservationPhases(reservation)
 	_, err := c.koordClientSet.SchedulingV1alpha1().Reservations().UpdateStatus(context.TODO(), reservation, metav1.UpdateOptions{})
 	if err == nil {
 		klog.V(4).InfoS("Successfully sync reservation status", "reservation", klog.KObj(reservation))
@@ -288,4 +294,39 @@ func nextSyncTime(r *schedulingv1alpha1.Reservation) time.Duration {
 		duration = maxRetryAfterTime
 	}
 	return duration
+}
+
+// RecordReservationPhases records all possible phases of a reservation as metrics.
+// For each phase, it sets the value to 1.0 if it matches the current phase of the reservation,
+// otherwise, it sets the value to 0.0.
+func RecordReservationPhases(reservation *schedulingv1alpha1.Reservation) {
+	allPhases := []struct {
+		name string
+	}{
+		{string(schedulingv1alpha1.ReservationPending)},
+		{string(schedulingv1alpha1.ReservationAvailable)},
+		{string(schedulingv1alpha1.ReservationSucceeded)},
+		{string(schedulingv1alpha1.ReservationFailed)},
+	}
+
+	boolFloat64 := func(b bool) float64 {
+		if b {
+			return 1.0
+		}
+		return 0.0
+	}
+
+	currentPhase := reservation.Status.Phase
+	for _, phase := range allPhases {
+		isCurrentPhase := false
+		if currentPhase == "" {
+			// If the reservation doesn't have a phase yet,
+			// consider the pending phase to be the current phase.
+			isCurrentPhase = phase.name == string(schedulingv1alpha1.ReservationPending)
+		} else {
+			isCurrentPhase = currentPhase == schedulingv1alpha1.ReservationPhase(phase.name)
+		}
+		// Record the phase with a value of 1.0 if it's the current phase, otherwise 0.0.
+		metrics.RecordReservationPhase(reservation.Name, phase.name, boolFloat64(isCurrentPhase))
+	}
 }
