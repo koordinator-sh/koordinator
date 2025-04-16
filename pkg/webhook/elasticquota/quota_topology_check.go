@@ -98,7 +98,7 @@ func (qt *quotaTopology) validateQuotaTopology(oldQuotaInfo, newQuotaInfo *Quota
 	}
 
 	if err := qt.checkSubAndParentGroupQuotaKey(newQuotaInfo, utilfeature.DefaultFeatureGate.Enabled(features.ElasticQuotaEnableUpdateResourceKey)); err != nil {
-		return fmt.Errorf("failed to check sub and parent group quotaKey")
+		return fmt.Errorf("failed to check sub and parent group quotaKey, err: %w", err)
 	}
 
 	if err := qt.checkMinQuotaValidate(newQuotaInfo); err != nil {
