@@ -434,6 +434,7 @@ func Test_Plugin_PreFilterExtensionsWithReservation(t *testing.T) {
 		},
 	}
 	nd.updateCacheUsed(allocations, allocatedPod, true)
+	nd.updateCacheUsed(allocations, reservationutil.NewReservePod(testReservation), true)
 	reservationCache.rInfo.AddAssignedPod(allocatedPod)
 
 	podInfo, _ := framework.NewPodInfo(allocatedPod)

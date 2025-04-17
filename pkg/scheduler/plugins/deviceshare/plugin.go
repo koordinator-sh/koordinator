@@ -214,7 +214,8 @@ func (p *Plugin) AddPod(ctx context.Context, cycleState *framework.CycleState, p
 			rInfo = nominator.GetNominatedReservation(podInfoToAdd.Pod, node.Name)
 		}
 	}
-	if rInfo == nil {
+
+	if rInfo == nil || len(nd.getUsed(rInfo.Pod.Namespace, rInfo.Pod.Name)) == 0 {
 		preemptibleDevices := state.preemptibleDevices[node.Name]
 		if preemptibleDevices == nil {
 			preemptibleDevices = map[schedulingv1alpha1.DeviceType]deviceResources{}
@@ -269,7 +270,7 @@ func (p *Plugin) RemovePod(ctx context.Context, cycleState *framework.CycleState
 			rInfo = nominator.GetNominatedReservation(podInfoToRemove.Pod, node.Name)
 		}
 	}
-	if rInfo == nil {
+	if rInfo == nil || len(nd.getUsed(rInfo.Pod.Namespace, rInfo.Pod.Name)) == 0 {
 		preemptibleDevices := state.preemptibleDevices[node.Name]
 		if preemptibleDevices == nil {
 			preemptibleDevices = map[schedulingv1alpha1.DeviceType]deviceResources{}
@@ -378,7 +379,8 @@ func (p *Plugin) FilterNominateReservation(ctx context.Context, cycleState *fram
 		}
 	}
 	if allocIndex == -1 {
-		return framework.AsStatus(fmt.Errorf("impossible, there is no relevant Reservation information in deviceShare"))
+		klog.V(5).Infof("nominated reservation %v doesn't reserve any device resource", klog.KObj(reservationInfo.Reservation))
+		return nil
 	}
 
 	nodeDeviceInfo := p.nodeDeviceCache.getNodeDevice(nodeName, false)

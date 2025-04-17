@@ -18,7 +18,6 @@ package deviceshare
 
 import (
 	"context"
-	"fmt"
 	"sync"
 
 	corev1 "k8s.io/api/core/v1"
@@ -398,7 +397,8 @@ func (p *Plugin) allocateWithNominatedReservation(
 		}
 	}
 	if allocIndex == -1 {
-		return nil, framework.AsStatus(fmt.Errorf("missing nominated reservation %v", klog.KObj(reservation)))
+		klog.V(5).Infof("nominated reservation %v doesn't reserve any device resource", klog.KObj(reservation))
+		return nil, nil
 	}
 
 	result, status := p.tryAllocateFromReservation(
