@@ -70,6 +70,20 @@ func (qt *quotaTopology) validateQuotaSelfItem(quota *v1alpha1.ElasticQuota) err
 		}
 	}
 
+	// 1. check if all key in AnnotationCheckMaxGeUsedResourceKeys in max >= that in used
+	resourceKeys, err := extension.GetCheckMaxGeUsedResourceKeys(quota)
+	if err != nil {
+		return fmt.Errorf("%v quota.Annotation[%v]'s value is invalid: %w", quota.Name, extension.AnnotationCheckMaxGeUsedResourceKeys, err)
+	}
+	for _, key := range resourceKeys {
+		if usedVal, exist := quota.Status.Used[key]; !exist {
+			continue // check should be skipped if current used never counts
+		} else if maxVal, exist := quota.Spec.Max[key]; !exist {
+			return fmt.Errorf("resourceKey %v of quota %v is included in used, which is not included in max but should check max >= used", key, quota.Name)
+		} else if maxVal.Cmp(usedVal) == -1 {
+			return fmt.Errorf("resourceKey %v of quota %v used,%v > max,%v", key, quota.Name, usedVal.String(), maxVal.String())
+		}
+	}
 	return nil
 }
 
