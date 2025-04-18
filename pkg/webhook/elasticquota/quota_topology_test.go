@@ -97,7 +97,7 @@ func TestQuotaTopology_basicItemCheck(t *testing.T) {
 			name: "annotation check max >= used",
 			quota: MakeQuota("temp").Annotations(map[string]string{extension.AnnotationCheckMaxGeUsedResourceKeys: `["cpu","memory"]`}).
 				Max(MakeResourceList().CPU(0).Mem(1048576).Obj()).Used(MakeResourceList().CPU(0).Mem(10485760).Obj()).Obj(),
-			err: fmt.Errorf("resourceKey memory of quota temp used,10485760 > max,1048576"),
+			err: fmt.Errorf("resourceKey memory of quota temp max 1048576 < used 10485760"),
 		},
 		{
 			name: "annotation check max >= used, ignore other resources",

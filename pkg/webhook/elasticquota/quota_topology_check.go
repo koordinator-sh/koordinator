@@ -81,7 +81,7 @@ func (qt *quotaTopology) validateQuotaSelfItem(quota *v1alpha1.ElasticQuota) err
 		} else if maxVal, exist := quota.Spec.Max[key]; !exist {
 			return fmt.Errorf("resourceKey %v of quota %v is included in used, which is not included in max but should check max >= used", key, quota.Name)
 		} else if maxVal.Cmp(usedVal) == -1 {
-			return fmt.Errorf("resourceKey %v of quota %v used,%v > max,%v", key, quota.Name, usedVal.String(), maxVal.String())
+			return fmt.Errorf("resourceKey %v of quota %v max %v < used %v", key, quota.Name, maxVal.String(), usedVal.String())
 		}
 	}
 	return nil
