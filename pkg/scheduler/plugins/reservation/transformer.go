@@ -133,7 +133,7 @@ func (pl *Plugin) prepareMatchReservationState(ctx context.Context, cycleState *
 				diagnosisState.taintsUnmatched++
 				taintKey := getDiagnosisTaintKey(&firstUnmatchedTaint)
 				diagnosisState.taintsUnmatchedReasons[taintKey]++
-			} else if !matchReservationAffinity(node, rInfo, reservationAffinity) { // ReservationAffinity unmatched
+			} else if !rInfo.MatchReservationAffinity(reservationAffinity, node) { // ReservationAffinity unmatched
 				diagnosisState.affinityUnmatched++
 			} else if !extension.ExactMatchReservation(podRequests, rInfo.Allocatable, exactMatchReservationSpec) { // exactMatchSpec unmatched
 				diagnosisState.notExactMatched++
@@ -541,33 +541,6 @@ func calculateResource(pod *corev1.Pod) (res framework.Resource, non0CPU int64, 
 	}
 
 	return
-}
-
-// matchReservationAffinity returns the statuses of whether the reservation affinity matches, whether the reservation
-// taints are tolerated, and whether the reservation name matches.
-func matchReservationAffinity(node *corev1.Node, reservation *frameworkext.ReservationInfo, reservationAffinity *reservationutil.RequiredReservationAffinity) bool {
-	if reservationAffinity != nil {
-		// NOTE: There are some special scenarios.
-		// For example, the AZ where the Pod wants to select the Reservation is cn-hangzhou, but the Reservation itself
-		// does not have this information, so it needs to perceive the label of the Node when Matching Affinity.
-		// FIXME(saintube): clean up the default node labels casting and preserve optional labels
-		// https://github.com/koordinator-sh/koordinator/issues/2208
-		reservationLabels := reservation.GetObject().GetLabels()
-		fakeNode := &corev1.Node{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:   reservation.GetName(),
-				Labels: make(map[string]string, len(node.Labels)+len(reservationLabels)),
-			},
-		}
-		for k, v := range node.Labels {
-			fakeNode.Labels[k] = v
-		}
-		for k, v := range reservationLabels {
-			fakeNode.Labels[k] = v
-		}
-		return reservationAffinity.MatchAffinity(fakeNode)
-	}
-	return true
 }
 
 func parseSpecificNodesFromAffinity(pod *corev1.Pod) (sets.String, *framework.Status) {

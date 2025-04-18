@@ -359,3 +359,7 @@ func (g *Plugin) Unreserve(ctx context.Context, state *framework.CycleState, p *
 	}
 	mgr.UnreservePod(quotaName, p)
 }
+
+func (g *Plugin) GetQuotaInformer() cache.SharedIndexInformer { // expose for extensions
+	return g.quotaInformer
+}

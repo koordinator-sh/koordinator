@@ -68,7 +68,7 @@ func CloneHostPorts(ports framework.HostPortInfo) framework.HostPortInfo {
 	if len(ports) == 0 {
 		return nil
 	}
-	r := framework.HostPortInfo{}
+	r := make(framework.HostPortInfo, len(ports))
 	for ip, protocolPorts := range ports {
 		for v := range protocolPorts {
 			r.Add(ip, v.Protocol, v.Port)
