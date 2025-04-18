@@ -29,6 +29,7 @@ import (
 	"strings"
 	"sync"
 
+	"go.uber.org/multierr"
 	"k8s.io/klog/v2"
 
 	"github.com/koordinator-sh/koordinator/pkg/util"
@@ -50,16 +51,24 @@ const (
 	// MbSchemataPrefix is the prefix of mba schemata
 	MbSchemataPrefix = "MB"
 
+	ResctrlMonData          = "mon_data"
+	ResctrlLLCOccupancyName = "llc_occupancy"
+	ResctrlMBMLocalName     = "mbm_local_bytes"
+	ResctrlMBMTotalName     = "mbm_total_bytes"
+
 	// other cpu vendor like "GenuineIntel"
 	AMD_VENDOR_ID   = "AuthenticAMD"
 	INTEL_VENDOR_ID = "GenuineIntel"
 )
 
 var (
-	initLock          sync.Mutex
-	isInit            bool
-	isSupportResctrl  bool
-	CacheIdsCacheFunc func() ([]int, error)
+	initLock                  sync.Mutex
+	isInit                    bool
+	isSupportResctrl          bool
+	isSupportResctrlCollector bool
+	collectorOnceFunc         sync.Once
+	CacheIdsCacheFunc         func() ([]int, error)
+	ARM_VENDOR_ID_MAP         = map[string]struct{}{} // support MPAM ARM vendor ids
 )
 
 func init() {
@@ -91,6 +100,18 @@ func isKernelSupportResctrl() (bool, error) {
 	return isCatFlagSet && isMbaFlagSet, nil
 }
 
+func IsVendorSupportResctrl() bool {
+	vendorID, err := GetVendorIDByCPUInfo(GetCPUInfoPath())
+	if err != nil {
+		klog.V(4).Infof("GetVendorIDByCPUInfo error: %v", err)
+		return false
+	}
+	if _, ok := ARM_VENDOR_ID_MAP[vendorID]; ok {
+		return true
+	}
+	return vendorID == AMD_VENDOR_ID || vendorID == INTEL_VENDOR_ID
+}
+
 func IsSupportResctrl() (bool, error) {
 	initLock.Lock()
 	defer initLock.Unlock()
@@ -104,7 +125,7 @@ func IsSupportResctrl() (bool, error) {
 			return false, err
 		}
 		// Kernel cmdline not set resctrl features does not ensure feature must be disabled.
-		klog.Infof("IsSupportResctrl result, cpuSupport: %v, kernelSupport: %v",
+		klog.V(4).Infof("isResctrlAvailableByKernelCmd result, cpuSupport: %v, kernelSupport: %v",
 			cpuSupport, kernelCmdSupport)
 		isSupportResctrl = cpuSupport
 		isInit = true
@@ -112,11 +133,26 @@ func IsSupportResctrl() (bool, error) {
 	return isSupportResctrl, nil
 }
 
+func IsSupportResctrlCollector() (bool, error) {
+	var err error
+	collectorOnceFunc.Do(func() {
+		path := GetCPUInfoPath()
+		mbm, err1 := isResctrlMBMAvailableByCpuInfo(path)
+		cqm, err2 := isResctrlCQMAvailableByCpuInfo(path)
+		isSupportResctrlCollector = mbm && cqm
+		err = multierr.Append(err1, err2)
+	})
+	return isSupportResctrlCollector, err
+}
+
 var (
-	ResctrlRoot      = NewCommonResctrlResource("", "")
-	ResctrlSchemata  = NewCommonResctrlResource(ResctrlSchemataName, "")
-	ResctrlTasks     = NewCommonResctrlResource(ResctrlTasksName, "")
-	ResctrlL3CbmMask = NewCommonResctrlResource(ResctrlCbmMaskName, filepath.Join(RdtInfoDir, L3CatDir))
+	ResctrlRoot         = NewCommonResctrlResource("", "")
+	ResctrlSchemata     = NewCommonResctrlResource(ResctrlSchemataName, "")
+	ResctrlTasks        = NewCommonResctrlResource(ResctrlTasksName, "")
+	ResctrlL3CbmMask    = NewCommonResctrlResource(ResctrlCbmMaskName, filepath.Join(RdtInfoDir, L3CatDir))
+	ResctrlLLCOccupancy = NewCommonResctrlResource(ResctrlLLCOccupancyName, "")
+	ResctrlMBLocal      = NewCommonResctrlResource(ResctrlMBMLocalName, "")
+	ResctrlMBTotal      = NewCommonResctrlResource(ResctrlMBMTotalName, "")
 )
 
 var _ Resource = &ResctrlResource{}
@@ -445,6 +481,12 @@ func GetResctrlTasksFilePath(groupPath string) string {
 	return ResctrlTasks.Path(groupPath)
 }
 
+// @parentDir BE
+// @return /sys/fs/resctrl/BE/mon_data
+func GetResctrlMonDataPath(parentDir string) string {
+	return filepath.Join(Conf.SysFSRootDir, ResctrlDir, parentDir, ResctrlMonData)
+}
+
 func ReadResctrlSchemataRaw(schemataFile string, l3Num int) (*ResctrlSchemataRaw, error) {
 	content, err := os.ReadFile(schemataFile)
 	if err != nil {
@@ -666,36 +708,72 @@ func isResctrlAvailableByCpuInfo(path string) (bool, bool, error) {
 	isCatFlagSet := false
 	isMbaFlagSet := false
 
-	f, err := os.Open(path)
+	flagMap, err := getCPUFlags(path)
 	if err != nil {
 		return false, false, err
 	}
-	defer f.Close()
 
+	if _, exist := flagMap["cat_l3"]; exist {
+		isCatFlagSet = true
+	}
+	if _, exist := flagMap["mba"]; exist {
+		isMbaFlagSet = true
+	}
+
+	return isCatFlagSet, isMbaFlagSet, nil
+}
+
+func isResctrlMBMAvailableByCpuInfo(path string) (bool, error) {
+	flagMap, err := getCPUFlags(path)
+	if err != nil {
+		return false, err
+	}
+
+	isMBMTotalFlagSet, isMBMLocalFlagSet := false, false
+
+	if _, exist := flagMap["cqm_mbm_total"]; exist {
+		isMBMTotalFlagSet = true
+	}
+	if _, exist := flagMap["cqm_mbm_local"]; exist {
+		isMBMLocalFlagSet = true
+	}
+
+	return isMBMLocalFlagSet && isMBMTotalFlagSet, nil
+}
+
+func isResctrlCQMAvailableByCpuInfo(path string) (bool, error) {
+	flagMap, err := getCPUFlags(path)
+	if err != nil {
+		return false, err
+	}
+
+	_, existFlag1 := flagMap["cqm_llc"]
+	_, existFlag2 := flagMap["cqm_occup_llc"]
+	return existFlag1 && existFlag2, nil
+}
+
+func getCPUFlags(path string) (map[string]struct{}, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	flagsMap := make(map[string]struct{})
 	s := bufio.NewScanner(f)
 	for s.Scan() {
 		if err := s.Err(); err != nil {
-			return false, false, err
+			return nil, err
 		}
 
 		line := s.Text()
-
-		// Search "cat_l3" and "mba" flags in first "flags" line
 		if strings.Contains(line, "flags") {
 			flags := strings.Split(line, " ")
-			// "cat_l3" flag for CAT and "mba" flag for MBA
 			for _, flag := range flags {
-				switch flag {
-				case "cat_l3":
-					isCatFlagSet = true
-				case "mba":
-					isMbaFlagSet = true
-				}
+				flagsMap[flag] = struct{}{}
 			}
-			return isCatFlagSet, isMbaFlagSet, nil
 		}
 	}
-	return isCatFlagSet, isMbaFlagSet, nil
+	return flagsMap, nil
 }
 
 // file content example:
@@ -729,3 +807,5 @@ func isResctrlAvailableByKernelCmd(path string) (bool, bool, error) {
 	}
 	return isCatFlagSet, isMbaFlagSet, nil
 }
+
+type MBStatData map[string]uint64
