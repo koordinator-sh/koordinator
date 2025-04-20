@@ -80,7 +80,7 @@ type QuotaInfo struct {
 	AllowLentResource bool
 	CalculateInfo     QuotaCalculateInfo
 	PodCache          map[string]*PodInfo
-	lock              sync.Mutex
+	lock              sync.RWMutex
 }
 
 func NewQuotaInfo(isParent, allowLentResource bool, name, parentName string) *QuotaInfo {
@@ -116,8 +116,8 @@ func (qi *QuotaInfo) DeepCopy() *QuotaInfo {
 	if qi == nil {
 		return nil
 	}
-	qi.lock.Lock()
-	defer qi.lock.Unlock()
+	qi.lock.RLock()
+	defer qi.lock.RUnlock()
 
 	quotaInfo := &QuotaInfo{
 		Name:              qi.Name,
@@ -152,8 +152,8 @@ func (qi *QuotaInfo) DeepCopy() *QuotaInfo {
 }
 
 func (qi *QuotaInfo) GetQuotaSummary(treeID string, includePods bool) *QuotaInfoSummary {
-	qi.lock.Lock()
-	defer qi.lock.Unlock()
+	qi.lock.RLock()
+	defer qi.lock.RUnlock()
 
 	quotaInfoSummary := NewQuotaInfoSummary()
 	quotaInfoSummary.Name = qi.Name
@@ -265,14 +265,14 @@ func (qi *QuotaInfo) addChildRequestNonNegativeNoLock(delta v1.ResourceList) {
 }
 
 func (qi *QuotaInfo) GetGuaranteed() v1.ResourceList {
-	qi.lock.Lock()
-	defer qi.lock.Unlock()
+	qi.lock.RLock()
+	defer qi.lock.RUnlock()
 	return qi.CalculateInfo.Guaranteed.DeepCopy()
 }
 
 func (qi *QuotaInfo) GetAllocated() v1.ResourceList {
-	qi.lock.Lock()
-	defer qi.lock.Unlock()
+	qi.lock.RLock()
+	defer qi.lock.RUnlock()
 	return qi.CalculateInfo.Allocated.DeepCopy()
 }
 
@@ -322,74 +322,74 @@ func (qi *QuotaInfo) setSharedWeightNoLock(res v1.ResourceList) {
 }
 
 func (qi *QuotaInfo) GetRequest() v1.ResourceList {
-	qi.lock.Lock()
-	defer qi.lock.Unlock()
+	qi.lock.RLock()
+	defer qi.lock.RUnlock()
 	return qi.CalculateInfo.Request.DeepCopy()
 }
 
 func (qi *QuotaInfo) GetChildRequest() v1.ResourceList {
-	qi.lock.Lock()
-	defer qi.lock.Unlock()
+	qi.lock.RLock()
+	defer qi.lock.RUnlock()
 	return qi.CalculateInfo.ChildRequest.DeepCopy()
 }
 
 func (qi *QuotaInfo) GetUsed() v1.ResourceList {
-	qi.lock.Lock()
-	defer qi.lock.Unlock()
+	qi.lock.RLock()
+	defer qi.lock.RUnlock()
 	return qi.CalculateInfo.Used.DeepCopy()
 }
 
 func (qi *QuotaInfo) GetNonPreemptibleUsed() v1.ResourceList {
-	qi.lock.Lock()
-	defer qi.lock.Unlock()
+	qi.lock.RLock()
+	defer qi.lock.RUnlock()
 	return qi.CalculateInfo.NonPreemptibleUsed.DeepCopy()
 }
 
 func (qi *QuotaInfo) GetNonPreemptibleRequest() v1.ResourceList {
-	qi.lock.Lock()
-	defer qi.lock.Unlock()
+	qi.lock.RLock()
+	defer qi.lock.RUnlock()
 	return qi.CalculateInfo.NonPreemptibleRequest.DeepCopy()
 }
 
 func (qi *QuotaInfo) GetSelfRequest() v1.ResourceList {
-	qi.lock.Lock()
-	defer qi.lock.Unlock()
+	qi.lock.RLock()
+	defer qi.lock.RUnlock()
 	return qi.CalculateInfo.SelfRequest.DeepCopy()
 }
 
 func (qi *QuotaInfo) GetSelfUsed() v1.ResourceList {
-	qi.lock.Lock()
-	defer qi.lock.Unlock()
+	qi.lock.RLock()
+	defer qi.lock.RUnlock()
 	return qi.CalculateInfo.SelfUsed.DeepCopy()
 }
 
 func (qi *QuotaInfo) GetSelfNonPreemptibleUsed() v1.ResourceList {
-	qi.lock.Lock()
-	defer qi.lock.Unlock()
+	qi.lock.RLock()
+	defer qi.lock.RUnlock()
 	return qi.CalculateInfo.SelfNonPreemptibleUsed.DeepCopy()
 }
 
 func (qi *QuotaInfo) GetSelfNonPreemptibleRequest() v1.ResourceList {
-	qi.lock.Lock()
-	defer qi.lock.Unlock()
+	qi.lock.RLock()
+	defer qi.lock.RUnlock()
 	return qi.CalculateInfo.SelfNonPreemptibleRequest.DeepCopy()
 }
 
 func (qi *QuotaInfo) GetRuntime() v1.ResourceList {
-	qi.lock.Lock()
-	defer qi.lock.Unlock()
+	qi.lock.RLock()
+	defer qi.lock.RUnlock()
 	return qi.CalculateInfo.Runtime.DeepCopy()
 }
 
 func (qi *QuotaInfo) GetMax() v1.ResourceList {
-	qi.lock.Lock()
-	defer qi.lock.Unlock()
+	qi.lock.RLock()
+	defer qi.lock.RUnlock()
 	return qi.CalculateInfo.Max.DeepCopy()
 }
 
 func (qi *QuotaInfo) GetMin() v1.ResourceList {
-	qi.lock.Lock()
-	defer qi.lock.Unlock()
+	qi.lock.RLock()
+	defer qi.lock.RUnlock()
 	return qi.CalculateInfo.Min.DeepCopy()
 }
 
@@ -432,8 +432,8 @@ func (qi *QuotaInfo) clearForResetNoLock() {
 }
 
 func (qi *QuotaInfo) IsQuotaMetaChange(quotaInfo *QuotaInfo) bool {
-	qi.lock.Lock()
-	defer qi.lock.Unlock()
+	qi.lock.RLock()
+	defer qi.lock.RUnlock()
 
 	if qi.AllowLentResource != quotaInfo.AllowLentResource ||
 		qi.IsParent != quotaInfo.IsParent ||
@@ -444,8 +444,8 @@ func (qi *QuotaInfo) IsQuotaMetaChange(quotaInfo *QuotaInfo) bool {
 }
 
 func (qi *QuotaInfo) IsQuotaChange(quotaInfo *QuotaInfo) bool {
-	qi.lock.Lock()
-	defer qi.lock.Unlock()
+	qi.lock.RLock()
+	defer qi.lock.RUnlock()
 
 	if qi.AllowLentResource != quotaInfo.AllowLentResource ||
 		qi.IsParent != quotaInfo.IsParent ||
@@ -468,15 +468,15 @@ func (qi *QuotaInfo) IsQuotaChange(quotaInfo *QuotaInfo) bool {
 }
 
 func (qi *QuotaInfo) IsQuotaParentChange(quotaInfo *QuotaInfo) bool {
-	qi.lock.Lock()
-	defer qi.lock.Unlock()
+	qi.lock.RLock()
+	defer qi.lock.RUnlock()
 
 	return qi.ParentName != quotaInfo.ParentName
 }
 
 func (qi *QuotaInfo) IsPodExist(pod *v1.Pod) bool {
-	qi.lock.Lock()
-	defer qi.lock.Unlock()
+	qi.lock.RLock()
+	defer qi.lock.RUnlock()
 	_, exist := qi.PodCache[generatePodCacheKey(pod)]
 	return exist
 }
@@ -523,8 +523,8 @@ func (qi *QuotaInfo) UpdatePodIsAssigned(pod *v1.Pod, isAssigned bool) error {
 }
 
 func (qi *QuotaInfo) GetPodCache() map[string]*v1.Pod {
-	qi.lock.Lock()
-	defer qi.lock.Unlock()
+	qi.lock.RLock()
+	defer qi.lock.RUnlock()
 
 	pods := make(map[string]*v1.Pod)
 	for name, podInfo := range qi.PodCache {
@@ -534,8 +534,8 @@ func (qi *QuotaInfo) GetPodCache() map[string]*v1.Pod {
 }
 
 func (qi *QuotaInfo) CheckPodIsAssigned(pod *v1.Pod) bool {
-	qi.lock.Lock()
-	defer qi.lock.Unlock()
+	qi.lock.RLock()
+	defer qi.lock.RUnlock()
 
 	if pod == nil {
 		return false
@@ -548,8 +548,8 @@ func (qi *QuotaInfo) CheckPodIsAssigned(pod *v1.Pod) bool {
 }
 
 func (qi *QuotaInfo) GetPodThatIsAssigned() []*v1.Pod {
-	qi.lock.Lock()
-	defer qi.lock.Unlock()
+	qi.lock.RLock()
+	defer qi.lock.RUnlock()
 
 	pods := make([]*v1.Pod, 0)
 	for _, podInfo := range qi.PodCache {
