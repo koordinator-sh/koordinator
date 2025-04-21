@@ -55,7 +55,7 @@ const (
 	AnnotationNonPreemptibleRequest      = QuotaKoordinatorPrefix + "/non-preemptible-request"
 	AnnotationNonPreemptibleUsed         = QuotaKoordinatorPrefix + "/non-preemptible-used"
 	AnnotationAdmission                  = QuotaKoordinatorPrefix + "/admission"
-	AnnotationCheckMaxGeUsedResourceKeys = QuotaKoordinatorPrefix + "/check-max-ge-used-resource-keys"
+	AnnotationMaxStrictCheckResourceKeys = QuotaKoordinatorPrefix + "/max-strict-check-resource-keys"
 )
 
 func GetParentQuotaName(quota *v1alpha1.ElasticQuota) string {
@@ -220,12 +220,12 @@ func GetAdmission(quota *v1alpha1.ElasticQuota) (corev1.ResourceList, error) {
 	return admission, nil
 }
 
-func GetCheckMaxGeUsedResourceKeys(quota *v1alpha1.ElasticQuota) ([]corev1.ResourceName, error) {
-	if quota.Annotations[AnnotationCheckMaxGeUsedResourceKeys] == "" {
+func GetMaxStrictCheckResourceKeys(quota *v1alpha1.ElasticQuota) ([]corev1.ResourceName, error) {
+	if quota.Annotations[AnnotationMaxStrictCheckResourceKeys] == "" {
 		return nil, nil
 	}
 	resources := []corev1.ResourceName{}
-	if err := json.Unmarshal([]byte(quota.Annotations[AnnotationCheckMaxGeUsedResourceKeys]), &resources); err != nil {
+	if err := json.Unmarshal([]byte(quota.Annotations[AnnotationMaxStrictCheckResourceKeys]), &resources); err != nil {
 		return nil, err
 	}
 	return resources, nil
