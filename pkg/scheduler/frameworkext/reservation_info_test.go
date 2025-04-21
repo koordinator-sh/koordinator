@@ -17,6 +17,7 @@ limitations under the License.
 package frameworkext
 
 import (
+	"encoding/json"
 	"sort"
 	"testing"
 	"time"
@@ -733,6 +734,7 @@ func TestReservationInfoRefreshAvailable(t *testing.T) {
 						},
 					},
 				},
+
 				Owners: []schedulingv1alpha1.ReservationOwner{
 					{
 						LabelSelector: &metav1.LabelSelector{
@@ -743,6 +745,7 @@ func TestReservationInfoRefreshAvailable(t *testing.T) {
 					},
 				},
 			},
+
 			Status: schedulingv1alpha1.ReservationStatus{
 				NodeName:    "test-node",
 				Phase:       schedulingv1alpha1.ReasonReservationAvailable,
@@ -791,4 +794,127 @@ func TestReservationInfoRefreshAvailable(t *testing.T) {
 		})
 		assert.Equal(t, expectedRInfo, rInfo)
 	})
+}
+
+func TestReservationInfoMatchReservationAffinity(t *testing.T) {
+	tests := []struct {
+		name                string
+		reservation         *schedulingv1alpha1.Reservation
+		reservationAffinity *apiext.ReservationAffinity
+		want                bool
+	}{
+		{
+			name: "nothing to match",
+			reservation: &schedulingv1alpha1.Reservation{
+				Spec: schedulingv1alpha1.ReservationSpec{
+					Owners: []schedulingv1alpha1.ReservationOwner{
+						{
+							LabelSelector: &metav1.LabelSelector{
+								MatchLabels: map[string]string{
+									"app": "test",
+								},
+							},
+						},
+					},
+				},
+			},
+			want: true,
+		},
+		{
+			name: "match reservation affinity",
+			reservation: &schedulingv1alpha1.Reservation{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						"reservation-type": "reservation-test",
+					},
+				},
+				Spec: schedulingv1alpha1.ReservationSpec{
+					Owners: []schedulingv1alpha1.ReservationOwner{
+						{
+							LabelSelector: &metav1.LabelSelector{
+								MatchLabels: map[string]string{
+									"app": "test",
+								},
+							},
+						},
+					},
+				},
+			},
+			reservationAffinity: &apiext.ReservationAffinity{
+				RequiredDuringSchedulingIgnoredDuringExecution: &apiext.ReservationAffinitySelector{
+					ReservationSelectorTerms: []corev1.NodeSelectorTerm{
+						{
+							MatchExpressions: []corev1.NodeSelectorRequirement{
+								{
+									Key:      "reservation-type",
+									Operator: corev1.NodeSelectorOpIn,
+									Values:   []string{"reservation-test"},
+								},
+							},
+						},
+					},
+				},
+			},
+			want: true,
+		},
+		{
+			name: "not match reservation affinity",
+			reservation: &schedulingv1alpha1.Reservation{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						"reservation-type": "reservation-test-not-match",
+					},
+				},
+				Spec: schedulingv1alpha1.ReservationSpec{
+					Owners: []schedulingv1alpha1.ReservationOwner{
+						{
+							LabelSelector: &metav1.LabelSelector{
+								MatchLabels: map[string]string{
+									"app": "test",
+								},
+							},
+						},
+					},
+				},
+			},
+			reservationAffinity: &apiext.ReservationAffinity{
+				RequiredDuringSchedulingIgnoredDuringExecution: &apiext.ReservationAffinitySelector{
+					ReservationSelectorTerms: []corev1.NodeSelectorTerm{
+						{
+							MatchExpressions: []corev1.NodeSelectorRequirement{
+								{
+									Key:      "reservation-type",
+									Operator: corev1.NodeSelectorOpIn,
+									Values:   []string{"reservation-test"},
+								},
+							},
+						},
+					},
+				},
+			},
+			want: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pod := &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-pod",
+				},
+			}
+			if tt.reservationAffinity != nil {
+				affinityData, err := json.Marshal(tt.reservationAffinity)
+				assert.NoError(t, err)
+				if pod.Annotations == nil {
+					pod.Annotations = map[string]string{}
+				}
+				pod.Annotations[apiext.AnnotationReservationAffinity] = string(affinityData)
+			}
+			reservationAffinity, err := reservationutil.GetRequiredReservationAffinity(pod)
+			assert.NoError(t, err)
+			rInfo := NewReservationInfo(tt.reservation)
+			got := rInfo.MatchReservationAffinity(reservationAffinity, &corev1.Node{})
+			assert.Equal(t, tt.want, got)
+		})
+	}
 }

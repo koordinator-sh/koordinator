@@ -307,7 +307,7 @@ func (pl *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleStat
 			return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrReasonReservationAffinity)
 		}
 		preResult = &framework.PreFilterResult{
-			NodeNames: sets.Set[string]{},
+			NodeNames: make(sets.Set[string], len(state.nodeReservationStates)),
 		}
 		for nodeName := range state.nodeReservationStates {
 			preResult.NodeNames.Insert(nodeName)

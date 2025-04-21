@@ -22,6 +22,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
+	k8sfeature "k8s.io/apiserver/pkg/util/feature"
 	corev1helpers "k8s.io/component-helpers/scheduling/corev1"
 	"k8s.io/klog/v2"
 	k8spodutil "k8s.io/kubernetes/pkg/api/v1/pod"
@@ -30,6 +31,7 @@ import (
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
@@ -47,6 +49,7 @@ type ReservationInfo struct {
 	AssignedPods     map[types.UID]*PodRequirement
 	OwnerMatchers    []reservationutil.ReservationOwnerMatcher
 	ParseError       error
+	Labels           map[string]string
 }
 
 type PodRequirement struct {
@@ -303,22 +306,29 @@ func (ri *ReservationInfo) GetTaints() []corev1.Taint {
 
 // MatchReservationAffinity returns the statuses of whether the reservation affinity matches, whether the reservation
 // taints are tolerated, and whether the reservation name matches.
-func (ri *ReservationInfo) MatchReservationAffinity(reservationAffinity *reservationutil.RequiredReservationAffinity, nodeLabels map[string]string) bool {
+func (ri *ReservationInfo) MatchReservationAffinity(reservationAffinity *reservationutil.RequiredReservationAffinity, node *corev1.Node) bool {
 	if reservationAffinity != nil {
-		// NOTE: There are some special scenarios.
-		// For example, the AZ where the Pod wants to select the Reservation is cn-hangzhou, but the Reservation itself
-		// does not have this information, so it needs to perceive the label of the Node when Matching Affinity.
 		fakeNode := &corev1.Node{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:   ri.GetName(),
-				Labels: map[string]string{},
+				Name: ri.GetName(),
 			},
 		}
-		for k, v := range nodeLabels {
-			fakeNode.Labels[k] = v
-		}
-		for k, v := range ri.GetObject().GetLabels() {
-			fakeNode.Labels[k] = v
+		reservationLabels := ri.GetObject().GetLabels()
+		if k8sfeature.DefaultFeatureGate.Enabled(features.OmitNodeLabelsForReservation) {
+			// In this case, we suppose the necessary node labels have been patched to the reservation.
+			fakeNode.Labels = reservationLabels
+		} else {
+			// NOTE: There are some special scenarios.
+			// For example, the AZ where the Pod wants to select the Reservation is cn-hangzhou, but the Reservation itself
+			// does not have this information, so it needs to perceive the label of the Node when Matching Affinity.
+			nodeLabels := node.GetLabels()
+			fakeNode.Labels = make(map[string]string, len(nodeLabels)+len(reservationLabels))
+			for k, v := range nodeLabels {
+				fakeNode.Labels[k] = v
+			}
+			for k, v := range reservationLabels {
+				fakeNode.Labels[k] = v
+			}
 		}
 		return reservationAffinity.MatchAffinity(fakeNode)
 	}
