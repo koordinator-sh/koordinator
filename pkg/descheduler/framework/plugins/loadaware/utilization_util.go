@@ -440,6 +440,10 @@ func balancePods(ctx context.Context,
 				}
 				podNamespacedName := types.NamespacedName{Namespace: pod.Namespace, Name: pod.Name}
 				podMetric := srcNode.podMetrics[podNamespacedName]
+				if podMetric == nil {
+					klog.V(4).InfoS("Failed to find PodMetric", "pod", klog.KObj(pod), "node", klog.KObj(srcNode.node), "nodePool", nodePoolName)
+					return false
+				}
 				return podFitsAnyNodeWithThreshold(nodeIndexer, pod, targetNodes, nodeUsages, nodeThresholds, prod, podMetric)
 			}),
 		)
