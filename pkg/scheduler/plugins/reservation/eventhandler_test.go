@@ -184,25 +184,28 @@ func TestEventHandlerUpdate(t *testing.T) {
 			name:            "pending to failed",
 			oldReservation:  pendingReservation,
 			newReservation:  failedReservation,
-			wantReservation: failedReservation,
+			wantReservation: nil,
 		},
 		{
 			name:            "pending to succeeded",
 			oldReservation:  pendingReservation,
 			newReservation:  succeededReservation,
-			wantReservation: succeededReservation,
+			wantReservation: nil,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cache := newReservationCache(nil)
 			eh := &reservationEventHandler{cache: cache, rrNominator: newNominator(nil, nil)}
+			eh.OnAdd(tt.oldReservation, false)
+
 			eh.OnUpdate(tt.oldReservation, tt.newReservation)
 			if tt.wantReservation == nil {
 				rInfo := cache.getReservationInfoByUID(tt.newReservation.UID)
 				assert.Nil(t, rInfo)
 			} else {
 				rInfo := cache.getReservationInfoByUID(tt.wantReservation.UID)
+				assert.NotNil(t, rInfo)
 				assert.Equal(t, tt.wantReservation, rInfo.Reservation)
 			}
 		})
