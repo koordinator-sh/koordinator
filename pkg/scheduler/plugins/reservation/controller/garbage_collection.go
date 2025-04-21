@@ -43,7 +43,7 @@ func (c *Controller) gcReservations() {
 	}
 	for _, reservation := range reservations {
 		if reservationutil.IsReservationExpired(reservation) || reservationutil.IsReservationSucceeded(reservation) {
-			if isReservationNeedCleanup(reservation) || missingNode(reservation, c.nodeLister) {
+			if isReservationNeedCleanup(reservation, c.gcDuration) || missingNode(reservation, c.nodeLister) {
 				if err = c.koordClientSet.SchedulingV1alpha1().Reservations().Delete(context.TODO(), reservation.Name, metav1.DeleteOptions{}); err != nil {
 					klog.V(3).InfoS("failed to delete reservation", "reservation", klog.KObj(reservation), "err", err)
 				} else {
@@ -65,20 +65,20 @@ func missingNode(reservation *schedulingv1alpha1.Reservation, nodeLister corelis
 	return false
 }
 
-func isReservationNeedCleanup(r *schedulingv1alpha1.Reservation) bool {
+func isReservationNeedCleanup(r *schedulingv1alpha1.Reservation, gcDuration time.Duration) bool {
 	if r == nil {
 		return true
 	}
 	if reservationutil.IsReservationExpired(r) {
 		for _, condition := range r.Status.Conditions {
 			if condition.Reason == schedulingv1alpha1.ReasonReservationExpired {
-				return time.Since(condition.LastTransitionTime.Time) > defaultGCDuration
+				return time.Since(condition.LastTransitionTime.Time) > gcDuration
 			}
 		}
 	} else if reservationutil.IsReservationSucceeded(r) {
 		for _, condition := range r.Status.Conditions {
 			if condition.Reason == schedulingv1alpha1.ReasonReservationSucceeded {
-				return time.Since(condition.LastProbeTime.Time) > defaultGCDuration
+				return time.Since(condition.LastProbeTime.Time) > gcDuration
 			}
 		}
 	}

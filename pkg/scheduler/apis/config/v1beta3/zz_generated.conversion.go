@@ -418,6 +418,7 @@ func autoConvert_v1beta3_ReservationArgs_To_config_ReservationArgs(in *Reservati
 	if err := v1.Convert_Pointer_int32_To_int32(&in.ControllerWorkers, &out.ControllerWorkers, s); err != nil {
 		return err
 	}
+	out.GCDurationSeconds = in.GCDurationSeconds
 	return nil
 }
 
@@ -439,6 +440,7 @@ func autoConvert_config_ReservationArgs_To_v1beta3_ReservationArgs(in *config.Re
 	if err := v1.Convert_int32_To_Pointer_int32(&in.ControllerWorkers, &out.ControllerWorkers, s); err != nil {
 		return err
 	}
+	out.GCDurationSeconds = in.GCDurationSeconds
 	return nil
 }
 
