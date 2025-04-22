@@ -93,6 +93,28 @@ func TestQuotaTopology_basicItemCheck(t *testing.T) {
 			quota: MakeQuota("temp").sharedWeight(MakeResourceList().CPU(-1).Mem(1048576).Obj()).Max(MakeResourceList().CPU(0).Mem(1048576).Obj()).Obj(),
 			err:   fmt.Errorf("%v quota.Annotation[%v]'s value < 0, in dimension :%v", "temp", extension.AnnotationSharedWeight, "[cpu]"),
 		},
+		{
+			name: "annotation check max >= used",
+			quota: MakeQuota("temp").Annotations(map[string]string{extension.AnnotationMaxStrictCheckResourceKeys: `["cpu","memory"]`}).
+				Max(MakeResourceList().CPU(0).Mem(1048576).Obj()).Used(MakeResourceList().CPU(0).Mem(10485760).Obj()).Obj(),
+			err: fmt.Errorf("resourceKey memory of quota temp max 1048576 < used 10485760"),
+		},
+		{
+			name: "annotation check max >= used, ignore other resources",
+			quota: MakeQuota("temp").Annotations(map[string]string{extension.AnnotationMaxStrictCheckResourceKeys: `["cpu"]`}).
+				Max(MakeResourceList().CPU(0).Mem(1048576).Obj()).Used(MakeResourceList().CPU(0).Mem(10485760).Obj()).Obj(),
+		},
+		{
+			name: "annotation check max >= used, ignore empty used",
+			quota: MakeQuota("temp").Annotations(map[string]string{extension.AnnotationMaxStrictCheckResourceKeys: `["cpu","memory"]`}).
+				Max(MakeResourceList().CPU(0).Mem(1048576).Obj()).Used(MakeResourceList().CPU(0).Obj()).Obj(),
+		},
+		{
+			name: "annotation check max >= used, check empty max",
+			quota: MakeQuota("temp").Annotations(map[string]string{extension.AnnotationMaxStrictCheckResourceKeys: `["cpu","memory"]`}).
+				Max(MakeResourceList().CPU(0).Obj()).Used(MakeResourceList().CPU(0).Mem(10485760).Obj()).Obj(),
+			err: fmt.Errorf("resourceKey memory of quota temp is included in used, which is not included in max but should check max >= used"),
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

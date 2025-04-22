@@ -28,33 +28,34 @@ import (
 
 // RootQuotaName means quotaTree's root\head.
 const (
-	SystemQuotaName                 = "koordinator-system-quota"
-	RootQuotaName                   = "koordinator-root-quota"
-	DefaultQuotaName                = "koordinator-default-quota"
-	QuotaKoordinatorPrefix          = "quota.scheduling.koordinator.sh"
-	LabelQuotaIsParent              = QuotaKoordinatorPrefix + "/is-parent"
-	LabelQuotaParent                = QuotaKoordinatorPrefix + "/parent"
-	LabelAllowLentResource          = QuotaKoordinatorPrefix + "/allow-lent-resource"
-	LabelQuotaName                  = QuotaKoordinatorPrefix + "/name"
-	LabelQuotaProfile               = QuotaKoordinatorPrefix + "/profile"
-	LabelQuotaIsRoot                = QuotaKoordinatorPrefix + "/is-root"
-	LabelQuotaTreeID                = QuotaKoordinatorPrefix + "/tree-id"
-	LabelQuotaIgnoreDefaultTree     = QuotaKoordinatorPrefix + "/ignore-default-tree"
-	LabelPreemptible                = QuotaKoordinatorPrefix + "/preemptible"
-	LabelAllowForceUpdate           = QuotaKoordinatorPrefix + "/allow-force-update"
-	AnnotationSharedWeight          = QuotaKoordinatorPrefix + "/shared-weight"
-	AnnotationRuntime               = QuotaKoordinatorPrefix + "/runtime"
-	AnnotationRequest               = QuotaKoordinatorPrefix + "/request"
-	AnnotationChildRequest          = QuotaKoordinatorPrefix + "/child-request"
-	AnnotationResourceKeys          = QuotaKoordinatorPrefix + "/resource-keys"
-	AnnotationTotalResource         = QuotaKoordinatorPrefix + "/total-resource"
-	AnnotationUnschedulableResource = QuotaKoordinatorPrefix + "/unschedulable-resource"
-	AnnotationQuotaNamespaces       = QuotaKoordinatorPrefix + "/namespaces"
-	AnnotationGuaranteed            = QuotaKoordinatorPrefix + "/guaranteed"
-	AnnotationAllocated             = QuotaKoordinatorPrefix + "/allocated"
-	AnnotationNonPreemptibleRequest = QuotaKoordinatorPrefix + "/non-preemptible-request"
-	AnnotationNonPreemptibleUsed    = QuotaKoordinatorPrefix + "/non-preemptible-used"
-	AnnotationAdmission             = QuotaKoordinatorPrefix + "/admission"
+	SystemQuotaName                      = "koordinator-system-quota"
+	RootQuotaName                        = "koordinator-root-quota"
+	DefaultQuotaName                     = "koordinator-default-quota"
+	QuotaKoordinatorPrefix               = "quota.scheduling.koordinator.sh"
+	LabelQuotaIsParent                   = QuotaKoordinatorPrefix + "/is-parent"
+	LabelQuotaParent                     = QuotaKoordinatorPrefix + "/parent"
+	LabelAllowLentResource               = QuotaKoordinatorPrefix + "/allow-lent-resource"
+	LabelQuotaName                       = QuotaKoordinatorPrefix + "/name"
+	LabelQuotaProfile                    = QuotaKoordinatorPrefix + "/profile"
+	LabelQuotaIsRoot                     = QuotaKoordinatorPrefix + "/is-root"
+	LabelQuotaTreeID                     = QuotaKoordinatorPrefix + "/tree-id"
+	LabelQuotaIgnoreDefaultTree          = QuotaKoordinatorPrefix + "/ignore-default-tree"
+	LabelPreemptible                     = QuotaKoordinatorPrefix + "/preemptible"
+	LabelAllowForceUpdate                = QuotaKoordinatorPrefix + "/allow-force-update"
+	AnnotationSharedWeight               = QuotaKoordinatorPrefix + "/shared-weight"
+	AnnotationRuntime                    = QuotaKoordinatorPrefix + "/runtime"
+	AnnotationRequest                    = QuotaKoordinatorPrefix + "/request"
+	AnnotationChildRequest               = QuotaKoordinatorPrefix + "/child-request"
+	AnnotationResourceKeys               = QuotaKoordinatorPrefix + "/resource-keys"
+	AnnotationTotalResource              = QuotaKoordinatorPrefix + "/total-resource"
+	AnnotationUnschedulableResource      = QuotaKoordinatorPrefix + "/unschedulable-resource"
+	AnnotationQuotaNamespaces            = QuotaKoordinatorPrefix + "/namespaces"
+	AnnotationGuaranteed                 = QuotaKoordinatorPrefix + "/guaranteed"
+	AnnotationAllocated                  = QuotaKoordinatorPrefix + "/allocated"
+	AnnotationNonPreemptibleRequest      = QuotaKoordinatorPrefix + "/non-preemptible-request"
+	AnnotationNonPreemptibleUsed         = QuotaKoordinatorPrefix + "/non-preemptible-used"
+	AnnotationAdmission                  = QuotaKoordinatorPrefix + "/admission"
+	AnnotationMaxStrictCheckResourceKeys = QuotaKoordinatorPrefix + "/max-strict-check-resource-keys"
 )
 
 func GetParentQuotaName(quota *v1alpha1.ElasticQuota) string {
@@ -217,4 +218,15 @@ func GetAdmission(quota *v1alpha1.ElasticQuota) (corev1.ResourceList, error) {
 		}
 	}
 	return admission, nil
+}
+
+func GetMaxStrictCheckResourceKeys(quota *v1alpha1.ElasticQuota) ([]corev1.ResourceName, error) {
+	if quota.Annotations[AnnotationMaxStrictCheckResourceKeys] == "" {
+		return nil, nil
+	}
+	resources := []corev1.ResourceName{}
+	if err := json.Unmarshal([]byte(quota.Annotations[AnnotationMaxStrictCheckResourceKeys]), &resources); err != nil {
+		return nil, err
+	}
+	return resources, nil
 }
