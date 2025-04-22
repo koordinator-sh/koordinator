@@ -612,12 +612,13 @@ func setLoglevel(logLevel string) {
 
 func TestPlugin_PreFilter(t *testing.T) {
 	test := []struct {
-		name                string
-		pod                 *corev1.Pod
-		quotaInfo           *core.QuotaInfo
-		expectedStatus      *framework.Status
-		checkParent         bool
-		disableRuntimeQuota bool
+		name                         string
+		pod                          *corev1.Pod
+		quotaInfo                    *core.QuotaInfo
+		expectedStatus               *framework.Status
+		expectedAfterPreFilterStatus *framework.Status
+		checkParent                  bool
+		disableRuntimeQuota          bool
 	}{
 		{
 			name: "default",
@@ -629,7 +630,8 @@ func TestPlugin_PreFilter(t *testing.T) {
 					Runtime: MakeResourceList().CPU(0).Mem(20).Obj(),
 				},
 			},
-			expectedStatus: framework.NewStatus(framework.Unschedulable, fmt.Sprintf("Insufficient quotas, "+
+			expectedStatus: nil,
+			expectedAfterPreFilterStatus: framework.NewStatus(framework.Unschedulable, fmt.Sprintf("Insufficient quotas, "+
 				"quotaName: %v, runtime: %v, used: %v, pod's request: %v, exceedDimensions: [cpu]",
 				extension.DefaultQuotaName, printResourceList(MakeResourceList().CPU(0).Mem(20).Obj()),
 				printResourceList(corev1.ResourceList{}), printResourceList(MakeResourceList().CPU(1).Mem(2).Obj()))),
@@ -644,7 +646,8 @@ func TestPlugin_PreFilter(t *testing.T) {
 					Runtime: MakeResourceList().CPU(10).Mem(20).Obj(),
 				},
 			},
-			expectedStatus: framework.NewStatus(framework.Success, ""),
+			expectedStatus:               nil,
+			expectedAfterPreFilterStatus: nil,
 		},
 		{
 			name: "value not enough",
@@ -657,7 +660,8 @@ func TestPlugin_PreFilter(t *testing.T) {
 					Runtime: MakeResourceList().CPU(1).Mem(2).Obj(),
 				},
 			},
-			expectedStatus: framework.NewStatus(framework.Unschedulable,
+			expectedStatus: nil,
+			expectedAfterPreFilterStatus: framework.NewStatus(framework.Unschedulable,
 				fmt.Sprintf("Insufficient quotas, "+
 					"quotaName: %v, runtime: %v, used: %v, pod's request: %v, exceedDimensions: [memory]",
 					extension.DefaultQuotaName, printResourceList(MakeResourceList().CPU(1).Mem(2).Obj()),
@@ -673,7 +677,8 @@ func TestPlugin_PreFilter(t *testing.T) {
 					Runtime: MakeResourceList().CPU(10).Mem(20).Obj(),
 				},
 			},
-			expectedStatus: framework.NewStatus(framework.Success, ""),
+			expectedStatus:               nil,
+			expectedAfterPreFilterStatus: nil,
 		},
 		{
 			name: "runtime not enough, but disable runtime",
@@ -685,8 +690,9 @@ func TestPlugin_PreFilter(t *testing.T) {
 					Runtime: MakeResourceList().CPU(1).Mem(2).Obj(),
 				},
 			},
-			disableRuntimeQuota: true,
-			expectedStatus:      framework.NewStatus(framework.Success, ""),
+			disableRuntimeQuota:          true,
+			expectedStatus:               nil,
+			expectedAfterPreFilterStatus: nil,
 		},
 	}
 	for _, tt := range test {
@@ -702,8 +708,11 @@ func TestPlugin_PreFilter(t *testing.T) {
 			qi.UnLock()
 			state := framework.NewCycleState()
 			ctx := context.TODO()
+			_, _, _ = gp.BeforePreFilter(ctx, state, tt.pod)
 			_, status := gp.PreFilter(ctx, state, tt.pod)
-			assert.Equal(t, status, tt.expectedStatus)
+			assert.Equal(t, tt.expectedStatus, status)
+			afterPreFilterStatus := gp.AfterPreFilter(ctx, state, tt.pod, nil)
+			assert.Equal(t, tt.expectedAfterPreFilterStatus, afterPreFilterStatus)
 		})
 	}
 }
@@ -716,7 +725,8 @@ func TestPlugin_PreFilter_CheckParent(t *testing.T) {
 		childRuntime   corev1.ResourceList
 		parQuotaInfo   *v1alpha1.ElasticQuota
 		parentRuntime  corev1.ResourceList
-		expectedStatus framework.Status
+		preemptedUsed  corev1.ResourceList
+		expectedStatus *framework.Status
 	}{
 		{
 			name: "parent reject",
@@ -745,11 +755,41 @@ func TestPlugin_PreFilter_CheckParent(t *testing.T) {
 					Min: MakeResourceList().CPU(0).Mem(0).GPU(0).Obj(),
 				},
 			},
-			expectedStatus: *framework.NewStatus(framework.Unschedulable,
+			expectedStatus: framework.NewStatus(framework.Unschedulable,
 				fmt.Sprintf("Insufficient quotas, "+
 					"quotaNameTopo: %v, runtime: %v, used: %v, pod's request: %v, exceedDimensions: [memory]",
-					[]string{"test", "test-child"}, printResourceList(MakeResourceList().CPU(1).Mem(2).GPU(1).Obj()),
+					[]string{"test-child", "test"}, printResourceList(MakeResourceList().CPU(1).Mem(2).GPU(1).Obj()),
 					printResourceList(corev1.ResourceList{}), printResourceList(MakeResourceList().CPU(1).Mem(3).GPU(1).Obj()))),
+		},
+		{
+			name: "parent allow with preempted",
+			pod: MakePod("t1-ns1", "pod1").Label(extension.LabelQuotaName, "test-child").Container(
+				MakeResourceList().CPU(1).Mem(3).GPU(1).Obj()).Obj(),
+			quotaInfo: &v1alpha1.ElasticQuota{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-child",
+					Labels: map[string]string{
+						extension.LabelQuotaParent: "test",
+					},
+				},
+				Spec: v1alpha1.ElasticQuotaSpec{
+					Max: MakeResourceList().CPU(10).Mem(30).GPU(10).Obj(),
+					Min: MakeResourceList().CPU(0).Mem(0).GPU(0).Obj(),
+				},
+			},
+			childRuntime:  MakeResourceList().CPU(1).Mem(3).GPU(1).Obj(),
+			parentRuntime: MakeResourceList().CPU(1).Mem(2).GPU(1).Obj(),
+			parQuotaInfo: &v1alpha1.ElasticQuota{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test",
+				},
+				Spec: v1alpha1.ElasticQuotaSpec{
+					Max: MakeResourceList().CPU(10).Mem(30).GPU(10).Obj(),
+					Min: MakeResourceList().CPU(0).Mem(0).GPU(0).Obj(),
+				},
+			},
+			preemptedUsed:  MakeResourceList().CPU(-1).Mem(-1).GPU(0).Obj(),
+			expectedStatus: nil,
 		},
 	}
 	for _, tt := range test {
@@ -770,7 +810,7 @@ func TestPlugin_PreFilter_CheckParent(t *testing.T) {
 			qi1.CalculateInfo.Runtime = tt.parentRuntime.DeepCopy()
 			qi1.UnLock()
 			podRequests := core.PodRequests(tt.pod)
-			status := *gp.checkQuotaRecursive(tt.quotaInfo.Name, []string{tt.quotaInfo.Name}, podRequests)
+			status := gp.checkQuotaRecursive(tt.quotaInfo.Name, []string{tt.quotaInfo.Name}, podRequests, tt.preemptedUsed)
 			assert.Equal(t, tt.expectedStatus, status)
 		})
 	}
@@ -778,12 +818,13 @@ func TestPlugin_PreFilter_CheckParent(t *testing.T) {
 
 func TestPlugin_Prefilter_QuotaNonPreempt(t *testing.T) {
 	test := []struct {
-		name           string
-		pod            *corev1.Pod
-		initPods       []*corev1.Pod
-		quotaInfos     []*v1alpha1.ElasticQuota
-		totalResource  corev1.ResourceList
-		expectedStatus *framework.Status
+		name                         string
+		pod                          *corev1.Pod
+		initPods                     []*corev1.Pod
+		quotaInfos                   []*v1alpha1.ElasticQuota
+		totalResource                corev1.ResourceList
+		expectedStatus               *framework.Status
+		expectedAfterPreFilterStatus *framework.Status
 	}{
 		{
 			name: "default",
@@ -804,8 +845,9 @@ func TestPlugin_Prefilter_QuotaNonPreempt(t *testing.T) {
 					},
 				},
 			},
-			totalResource:  createResourceList(10, 10),
-			expectedStatus: framework.NewStatus(framework.Success, ""),
+			totalResource:                createResourceList(10, 10),
+			expectedStatus:               nil,
+			expectedAfterPreFilterStatus: nil,
 		},
 		{
 			name: "non-preemptible pod used larger than min",
@@ -826,8 +868,9 @@ func TestPlugin_Prefilter_QuotaNonPreempt(t *testing.T) {
 					},
 				},
 			},
-			totalResource: createResourceList(8, 5),
-			expectedStatus: framework.NewStatus(framework.Unschedulable,
+			totalResource:  createResourceList(8, 5),
+			expectedStatus: nil,
+			expectedAfterPreFilterStatus: framework.NewStatus(framework.Unschedulable,
 				fmt.Sprintf("Insufficient non-preemptible quotas, "+
 					"quotaName: %v, min: %v, nonPreemptibleUsed: %v, pod's request: %v, exceedDimensions: [cpu]",
 					"test1", printResourceList(MakeResourceList().CPU(5).Mem(5).Obj()),
@@ -852,8 +895,9 @@ func TestPlugin_Prefilter_QuotaNonPreempt(t *testing.T) {
 					},
 				},
 			},
-			totalResource: createResourceList(7, 5),
-			expectedStatus: framework.NewStatus(framework.Unschedulable,
+			totalResource:  createResourceList(7, 5),
+			expectedStatus: nil,
+			expectedAfterPreFilterStatus: framework.NewStatus(framework.Unschedulable,
 				fmt.Sprintf("Insufficient quotas, "+
 					"quotaName: %v, runtime: %v, used: %v, pod's request: %v, exceedDimensions: [cpu]",
 					"test1", printResourceList(MakeResourceList().CPU(7).Mem(5).Obj()),
@@ -878,8 +922,11 @@ func TestPlugin_Prefilter_QuotaNonPreempt(t *testing.T) {
 
 			state := framework.NewCycleState()
 			ctx := context.TODO()
+			_, _, _ = gp.BeforePreFilter(ctx, state, tt.pod)
 			_, status := gp.PreFilter(ctx, state, tt.pod)
-			assert.Equal(t, status, tt.expectedStatus)
+			assert.Equal(t, tt.expectedStatus, status)
+			afterPreFilterStatus := gp.AfterPreFilter(ctx, state, tt.pod, nil)
+			assert.Equal(t, tt.expectedAfterPreFilterStatus, afterPreFilterStatus)
 		})
 	}
 }

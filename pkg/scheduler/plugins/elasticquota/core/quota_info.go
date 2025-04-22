@@ -125,7 +125,7 @@ func (qi *QuotaInfo) DeepCopy() *QuotaInfo {
 		IsParent:          qi.IsParent,
 		AllowLentResource: qi.AllowLentResource,
 		RuntimeVersion:    qi.RuntimeVersion,
-		PodCache:          make(map[string]*PodInfo),
+		PodCache:          make(map[string]*PodInfo, len(qi.PodCache)),
 		CalculateInfo: QuotaCalculateInfo{
 			Max:                       qi.CalculateInfo.Max.DeepCopy(),
 			AutoScaleMin:              qi.CalculateInfo.AutoScaleMin.DeepCopy(),
@@ -180,6 +180,7 @@ func (qi *QuotaInfo) GetQuotaSummary(treeID string, includePods bool) *QuotaInfo
 	quotaInfoSummary.SelfNonPreemptibleRequest = qi.CalculateInfo.SelfNonPreemptibleRequest.DeepCopy()
 
 	if includePods {
+		quotaInfoSummary.PodCache = make(map[string]*SimplePodInfo, len(qi.PodCache))
 		for podName, podInfo := range qi.PodCache {
 			quotaInfoSummary.PodCache[podName] = &SimplePodInfo{
 				IsAssigned: podInfo.isAssigned,
@@ -526,7 +527,7 @@ func (qi *QuotaInfo) GetPodCache() map[string]*v1.Pod {
 	qi.lock.RLock()
 	defer qi.lock.RUnlock()
 
-	pods := make(map[string]*v1.Pod)
+	pods := make(map[string]*v1.Pod, len(qi.PodCache))
 	for name, podInfo := range qi.PodCache {
 		pods[name] = podInfo.pod
 	}
@@ -551,7 +552,7 @@ func (qi *QuotaInfo) GetPodThatIsAssigned() []*v1.Pod {
 	qi.lock.RLock()
 	defer qi.lock.RUnlock()
 
-	pods := make([]*v1.Pod, 0)
+	pods := make([]*v1.Pod, 0, len(qi.PodCache))
 	for _, podInfo := range qi.PodCache {
 		if podInfo.isAssigned {
 			pods = append(pods, podInfo.pod)

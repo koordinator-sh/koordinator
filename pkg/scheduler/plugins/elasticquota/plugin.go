@@ -98,6 +98,8 @@ var (
 	_ framework.PreFilterPlugin   = &Plugin{}
 	_ framework.PostFilterPlugin  = &Plugin{}
 	_ framework.ReservePlugin     = &Plugin{}
+
+	_ frameworkext.PreFilterTransformer = &Plugin{}
 )
 
 func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error) {
@@ -215,6 +217,54 @@ func (g *Plugin) EventsToRegister() []framework.ClusterEventWithHint {
 	}
 }
 
+func (g *Plugin) BeforePreFilter(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod) (*corev1.Pod, bool, *framework.Status) {
+	return pod, false, nil
+}
+
+func (g *Plugin) AfterPreFilter(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, preFilterResult *framework.PreFilterResult) *framework.Status {
+	state, err := getPostFilterState(cycleState)
+	if err != nil {
+		klog.ErrorS(err, "Failed to read postFilterState from cycleState", "elasticQuotaSnapshotKey", state)
+		return framework.NewStatus(framework.Error, err.Error())
+	}
+	if state.skip {
+		return nil
+	}
+
+	quotaInfo := state.quotaInfo
+	quotaName := quotaInfo.Name
+	podRequest := core.PodRequests(pod)
+	podRequest = quotav1.Mask(podRequest, quotav1.ResourceNames(quotaInfo.CalculateInfo.Max))
+	used := quotav1.Add(podRequest, state.used)
+	if isLessEqual, exceedDimensions := quotav1.LessThanOrEqual(used, state.usedLimit); !isLessEqual {
+		return framework.NewStatus(framework.Unschedulable, fmt.Sprintf("Insufficient quotas, "+
+			"quotaName: %v, runtime: %v, used: %v, pod's request: %v, exceedDimensions: %v",
+			quotaName, printResourceList(state.usedLimit), printResourceList(state.used), printResourceList(podRequest), exceedDimensions))
+	}
+
+	if extension.IsPodNonPreemptible(pod) {
+		quotaMin := state.quotaInfo.CalculateInfo.Min
+		nonPreemptibleUsed := state.nonPreemptibleUsed
+		addNonPreemptibleUsed := quotav1.Add(podRequest, nonPreemptibleUsed)
+		if isLessEqual, exceedDimensions := quotav1.LessThanOrEqual(addNonPreemptibleUsed, quotaMin); !isLessEqual {
+			return framework.NewStatus(framework.Unschedulable, fmt.Sprintf("Insufficient non-preemptible quotas, "+
+				"quotaName: %v, min: %v, nonPreemptibleUsed: %v, pod's request: %v, exceedDimensions: %v",
+				quotaName, printResourceList(quotaMin), printResourceList(nonPreemptibleUsed), printResourceList(podRequest), exceedDimensions))
+		}
+	}
+
+	if g.pluginArgs.EnableCheckParentQuota {
+		var preemptedUsed corev1.ResourceList
+		if originalUsed := quotaInfo.GetUsed(); !quotav1.Equals(state.used, originalUsed) {
+			preemptedUsed = quotav1.Subtract(state.used, originalUsed)
+		}
+		// recursively check from the parent
+		return g.checkQuotaRecursive(quotaInfo.ParentName, []string{quotaName, quotaInfo.ParentName}, podRequest, preemptedUsed)
+	}
+
+	return nil
+}
+
 func (g *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod) (*framework.PreFilterResult, *framework.Status) {
 	quotaName, treeID := g.getPodAssociateQuotaNameAndTreeID(pod)
 	if quotaName == "" {
@@ -233,33 +283,10 @@ func (g *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleState
 	if quotaInfo == nil {
 		return nil, framework.NewStatus(framework.Error, fmt.Sprintf("Could not find the specified ElasticQuota"))
 	}
-	state := g.snapshotPostFilterState(quotaInfo, cycleState)
 
-	podRequest := core.PodRequests(pod)
-	podRequest = quotav1.Mask(podRequest, quotav1.ResourceNames(quotaInfo.CalculateInfo.Max))
-	used := quotav1.Add(podRequest, state.used)
-	if isLessEqual, exceedDimensions := quotav1.LessThanOrEqual(used, state.usedLimit); !isLessEqual {
-		return nil, framework.NewStatus(framework.Unschedulable, fmt.Sprintf("Insufficient quotas, "+
-			"quotaName: %v, runtime: %v, used: %v, pod's request: %v, exceedDimensions: %v",
-			quotaName, printResourceList(state.usedLimit), printResourceList(state.used), printResourceList(podRequest), exceedDimensions))
-	}
-
-	if extension.IsPodNonPreemptible(pod) {
-		quotaMin := state.quotaInfo.CalculateInfo.Min
-		nonPreemptibleUsed := state.nonPreemptibleUsed
-		addNonPreemptibleUsed := quotav1.Add(podRequest, nonPreemptibleUsed)
-		if isLessEqual, exceedDimensions := quotav1.LessThanOrEqual(addNonPreemptibleUsed, quotaMin); !isLessEqual {
-			return nil, framework.NewStatus(framework.Unschedulable, fmt.Sprintf("Insufficient non-preemptible quotas, "+
-				"quotaName: %v, min: %v, nonPreemptibleUsed: %v, pod's request: %v, exceedDimensions: %v",
-				quotaName, printResourceList(quotaMin), printResourceList(nonPreemptibleUsed), printResourceList(podRequest), exceedDimensions))
-		}
-	}
-
-	if g.pluginArgs.EnableCheckParentQuota {
-		return nil, g.checkQuotaRecursive(quotaName, []string{quotaName}, podRequest)
-	}
-
-	return nil, framework.NewStatus(framework.Success, "")
+	_ = g.snapshotPostFilterState(quotaInfo, cycleState)
+	// Split the quota check to AfterPreFilter so that the quota stats can be adjusted outside the PreFilter.
+	return nil, nil
 }
 
 func (g *Plugin) PreFilterExtensions() framework.PreFilterExtensions {
@@ -268,42 +295,56 @@ func (g *Plugin) PreFilterExtensions() framework.PreFilterExtensions {
 
 // AddPod is called by the framework while trying to evaluate the impact
 // of adding podToAdd to the node while scheduling podToSchedule.
-func (g *Plugin) AddPod(ctx context.Context, state *framework.CycleState, podToSchedule *corev1.Pod, podInfoToAdd *framework.PodInfo, nodeInfo *framework.NodeInfo) *framework.Status {
-	postFilterState, err := getPostFilterState(state)
+func (g *Plugin) AddPod(ctx context.Context, cycleState *framework.CycleState, podToSchedule *corev1.Pod, podInfoToAdd *framework.PodInfo, nodeInfo *framework.NodeInfo) *framework.Status {
+	state, err := getPostFilterState(cycleState)
 	if err != nil {
-		klog.ErrorS(err, "Failed to read postFilterState from cycleState", "elasticQuotaSnapshotKey", postFilterState)
+		klog.ErrorS(err, "Failed to read postFilterState from cycleState", "elasticQuotaSnapshotKey", state)
 		return framework.NewStatus(framework.Error, err.Error())
 	}
 
-	if postFilterState.skip {
+	if state.skip {
 		return framework.NewStatus(framework.Success, "")
 	}
 
-	if postFilterState.quotaInfo.IsPodExist(podInfoToAdd.Pod) {
+	if state.quotaInfo.IsPodExist(podInfoToAdd.Pod) {
 		podReq := core.PodRequests(podInfoToAdd.Pod)
-		podReq = quotav1.Mask(podReq, quotav1.ResourceNames(postFilterState.quotaInfo.CalculateInfo.Max))
-		postFilterState.used = quotav1.Add(postFilterState.used, podReq)
+		podReq = quotav1.Mask(podReq, quotav1.ResourceNames(state.quotaInfo.CalculateInfo.Max))
+		state.used = quotav1.Add(state.used, podReq)
+		if extension.IsPodNonPreemptible(podInfoToAdd.Pod) {
+			state.nonPreemptibleUsed = quotav1.Add(state.nonPreemptibleUsed, podReq)
+		}
+		if klog.V(5).Enabled() {
+			klog.InfoS("add pod for quota", "pod", klog.KObj(podToSchedule), "quota", state.quotaInfo.Name, "podInfoToAdd", klog.KObj(podInfoToAdd.Pod),
+				"used", printResourceList(state.used), "nonPreemptibleUsed", printResourceList(state.nonPreemptibleUsed))
+		}
 	}
 	return framework.NewStatus(framework.Success, "")
 }
 
 // RemovePod is called by the framework while trying to evaluate the impact
 // of removing podToRemove from the node while scheduling podToSchedule.
-func (g *Plugin) RemovePod(ctx context.Context, state *framework.CycleState, podToSchedule *corev1.Pod, podInfoToRemove *framework.PodInfo, nodeInfo *framework.NodeInfo) *framework.Status {
-	postFilterState, err := getPostFilterState(state)
+func (g *Plugin) RemovePod(ctx context.Context, cycleState *framework.CycleState, podToSchedule *corev1.Pod, podInfoToRemove *framework.PodInfo, nodeInfo *framework.NodeInfo) *framework.Status {
+	state, err := getPostFilterState(cycleState)
 	if err != nil {
-		klog.ErrorS(err, "Failed to read postFilterState from cycleState", "elasticQuotaSnapshotKey", postFilterState)
+		klog.ErrorS(err, "Failed to read postFilterState from cycleState", "elasticQuotaSnapshotKey", state)
 		return framework.NewStatus(framework.Error, err.Error())
 	}
 
-	if postFilterState.skip {
+	if state.skip {
 		return framework.NewStatus(framework.Success, "")
 	}
 
-	if postFilterState.quotaInfo.IsPodExist(podInfoToRemove.Pod) {
+	if state.quotaInfo.IsPodExist(podInfoToRemove.Pod) {
 		podReq := core.PodRequests(podInfoToRemove.Pod)
-		podReq = quotav1.Mask(podReq, quotav1.ResourceNames(postFilterState.quotaInfo.CalculateInfo.Max))
-		postFilterState.used = quotav1.SubtractWithNonNegativeResult(postFilterState.used, podReq)
+		podReq = quotav1.Mask(podReq, quotav1.ResourceNames(state.quotaInfo.CalculateInfo.Max))
+		state.used = quotav1.SubtractWithNonNegativeResult(state.used, podReq)
+		if extension.IsPodNonPreemptible(podInfoToRemove.Pod) {
+			state.nonPreemptibleUsed = quotav1.SubtractWithNonNegativeResult(state.nonPreemptibleUsed, podReq)
+		}
+		if klog.V(5).Enabled() {
+			klog.InfoS("add pod for quota", "pod", klog.KObj(podToSchedule), "quota", state.quotaInfo.Name, "podInfoToRemove", klog.KObj(podInfoToRemove.Pod),
+				"used", printResourceList(state.used), "nonPreemptibleUsed", printResourceList(state.nonPreemptibleUsed))
+		}
 	}
 	return framework.NewStatus(framework.Success, "")
 }

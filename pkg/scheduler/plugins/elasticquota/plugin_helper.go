@@ -278,13 +278,21 @@ func getPostFilterState(cycleState *framework.CycleState) (*PostFilterState, err
 	return s, nil
 }
 
-func (g *Plugin) checkQuotaRecursive(curQuotaName string, quotaNameTopo []string, podRequest v1.ResourceList) *framework.Status {
+func (g *Plugin) checkQuotaRecursive(curQuotaName string, quotaNameTopo []string, podRequest, preemptedUsed v1.ResourceList) *framework.Status {
+	if curQuotaName == extension.RootQuotaName {
+		return nil
+	}
+
 	quotaInfo := g.groupQuotaManager.GetQuotaInfoByName(curQuotaName)
 	if quotaInfo == nil {
 		return framework.NewStatus(framework.Error, fmt.Sprintf("Could not find the elasticQuota %v, quotaNameTopo: %v", curQuotaName, quotaNameTopo))
 	}
-	quotaUsed := quotaInfo.GetUsed()
+
 	quotaUsedLimit := g.getQuotaInfoUsedLimit(quotaInfo)
+	quotaUsed := quotaInfo.GetUsed()
+	if len(preemptedUsed) > 0 {
+		quotaUsed = quotav1.Add(quotaUsed, preemptedUsed)
+	}
 
 	newUsed := quotav1.Mask(quotav1.Add(podRequest, quotaUsed), quotav1.ResourceNames(podRequest))
 	if isLessEqual, exceedDimensions := quotav1.LessThanOrEqual(newUsed, quotaUsedLimit); !isLessEqual {
@@ -292,11 +300,9 @@ func (g *Plugin) checkQuotaRecursive(curQuotaName string, quotaNameTopo []string
 			"quotaNameTopo: %v, runtime: %v, used: %v, pod's request: %v, exceedDimensions: %v", quotaNameTopo,
 			printResourceList(quotaUsedLimit), printResourceList(quotaUsed), printResourceList(podRequest), exceedDimensions))
 	}
-	if quotaInfo.ParentName != extension.RootQuotaName {
-		quotaNameTopo = append([]string{quotaInfo.ParentName}, quotaNameTopo...)
-		return g.checkQuotaRecursive(quotaInfo.ParentName, quotaNameTopo, podRequest)
-	}
-	return framework.NewStatus(framework.Success, "")
+
+	quotaNameTopo = append(quotaNameTopo, quotaInfo.ParentName)
+	return g.checkQuotaRecursive(quotaInfo.ParentName, quotaNameTopo, podRequest, preemptedUsed)
 }
 
 func printResourceList(rl v1.ResourceList) string {
