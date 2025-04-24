@@ -17,6 +17,7 @@ limitations under the License.
 package core
 
 import (
+	"fmt"
 	"strconv"
 	"sync"
 	"time"
@@ -28,6 +29,11 @@ import (
 	"github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/coscheduling/util"
+)
+
+const (
+	ErrRepresentativePodAlreadyExists = "representative pod %s of gangGroupID %s already exists"
+	ErrPodIsNotExistsInGangCache      = "pod %s is not exists in gangCache"
 )
 
 var (
@@ -51,8 +57,11 @@ type Gang struct {
 	TotalChildrenNum  int
 	GangGroupId       string
 	GangGroup         []string
-	GangGroupInfo     *GangGroupInfo
-	Children          map[string]*v1.Pod
+
+	GangGroupInfo *GangGroupInfo
+
+	Children        map[string]*v1.Pod
+	PendingChildren map[string]*v1.Pod
 	// pods that have already assumed(waiting in Permit stage)
 	WaitingForBindChildren map[string]*v1.Pod
 	// pods that have already bound
@@ -60,7 +69,6 @@ type Gang struct {
 
 	// only-waiting, only consider waiting pods
 	// waiting-and-running, consider waiting and running pods
-	// waiting-running-succeed, consider waiting, running and succeed pods
 	// once-satisfied, once gang is satisfied, no need to consider any status pods
 	GangMatchPolicy string
 
@@ -80,6 +88,7 @@ func NewGang(gangName string) *Gang {
 		Mode:                   extension.GangModeStrict,
 		GangMatchPolicy:        extension.GangMatchPolicyOnceSatisfied,
 		Children:               make(map[string]*v1.Pod),
+		PendingChildren:        make(map[string]*v1.Pod),
 		WaitingForBindChildren: make(map[string]*v1.Pod),
 		BoundChildren:          make(map[string]*v1.Pod),
 		GangFrom:               GangFromPodAnnotation,
@@ -233,8 +242,6 @@ func (gang *Gang) SetGangGroupInfo(gangGroupInfo *GangGroupInfo) {
 		klog.Infof("SetGangGroupInfo done, gangName: %v, groupSlice: %v, gangGroupId: %v",
 			gang.Name, gang.GangGroup, gang.GangGroupId)
 	}
-
-	gang.GangGroupInfo.SetGangTotalChildrenNum(gang.Name, gang.TotalChildrenNum)
 }
 
 func (gang *Gang) deletePod(pod *v1.Pod) bool {
@@ -249,10 +256,14 @@ func (gang *Gang) deletePod(pod *v1.Pod) bool {
 	klog.Infof("Delete pod from gang: %v, podName: %v", gang.Name, podId)
 
 	delete(gang.Children, podId)
+	delete(gang.PendingChildren, podId)
+	gang.GangGroupInfo.DeleteIfRepresentative(pod, ReasonPodDeleted)
 	delete(gang.WaitingForBindChildren, podId)
+	if len(gang.WaitingForBindChildren) == 0 {
+		gang.GangGroupInfo.RemoveWaitingGang(gang.Name)
+	}
+
 	delete(gang.BoundChildren, podId)
-	gang.GangGroupInfo.deleteChildScheduleCycle(podId)
-	gang.GangGroupInfo.deletePodLastScheduleTime(podId)
 	if gang.GangFrom == GangFromPodAnnotation {
 		if len(gang.Children) == 0 {
 			return true
@@ -353,78 +364,10 @@ func (gang *Gang) setChild(pod *v1.Pod) {
 		gang.Children[podId] = pod
 		klog.Infof("SetChild, gangName: %v, childName: %v", gang.Name, podId)
 	}
-}
-
-func (gang *Gang) initAllChildrenPodLastScheduleTime() {
-	gang.lock.Lock()
-	defer gang.lock.Unlock()
-
-	for _, pod := range gang.Children {
-		gang.GangGroupInfo.initPodLastScheduleTime(pod)
+	if _, ok := gang.PendingChildren[podId]; !ok && pod.Spec.NodeName == "" && gang.WaitingForBindChildren[podId] == nil {
+		gang.PendingChildren[podId] = pod
+		klog.Infof("SetPendingChild, gangName: %v, childName: %v", gang.Name, podId)
 	}
-}
-
-func (gang *Gang) initPodLastScheduleTime(pod *v1.Pod) {
-	gang.lock.Lock()
-	defer gang.lock.Unlock()
-
-	gang.GangGroupInfo.initPodLastScheduleTime(pod)
-}
-
-func (gang *Gang) getPodLastScheduleTime(pod *v1.Pod) time.Time {
-	gang.lock.Lock()
-	defer gang.lock.Unlock()
-
-	return gang.GangGroupInfo.getPodLastScheduleTime(pod)
-}
-
-func (gang *Gang) resetPodLastScheduleTime(pod *v1.Pod) {
-	gang.lock.Lock()
-	defer gang.lock.Unlock()
-
-	gang.GangGroupInfo.resetPodLastScheduleTime(pod)
-}
-
-func (gang *Gang) setScheduleCycleInvalid() {
-	gang.lock.Lock()
-	defer gang.lock.Unlock()
-
-	gang.GangGroupInfo.setScheduleCycleInvalid()
-}
-
-func (gang *Gang) isScheduleCycleValid() bool {
-	gang.lock.Lock()
-	defer gang.lock.Unlock()
-
-	return gang.GangGroupInfo.IsScheduleCycleValid()
-}
-
-func (gang *Gang) setChildScheduleCycle(pod *v1.Pod, childCycle int) {
-	gang.lock.Lock()
-	defer gang.lock.Unlock()
-
-	gang.GangGroupInfo.setChildScheduleCycle(pod, childCycle)
-}
-
-func (gang *Gang) getChildScheduleCycle(pod *v1.Pod) int {
-	gang.lock.Lock()
-	defer gang.lock.Unlock()
-
-	return gang.GangGroupInfo.getChildScheduleCycle(pod)
-}
-
-func (gang *Gang) getScheduleCycle() int {
-	gang.lock.Lock()
-	defer gang.lock.Unlock()
-
-	return gang.GangGroupInfo.GetScheduleCycle()
-}
-
-func (gang *Gang) trySetScheduleCycleValid() {
-	gang.lock.Lock()
-	defer gang.lock.Unlock()
-
-	gang.GangGroupInfo.trySetScheduleCycleValid()
 }
 
 func (gang *Gang) addAssumedPod(pod *v1.Pod) {
@@ -436,6 +379,7 @@ func (gang *Gang) addAssumedPod(pod *v1.Pod) {
 		gang.WaitingForBindChildren[podId] = pod
 		klog.Infof("AddAssumedPod, gangName: %v, podName: %v", gang.Name, podId)
 	}
+	delete(gang.PendingChildren, podId)
 }
 
 func (gang *Gang) delAssumedPod(pod *v1.Pod) {
@@ -445,6 +389,10 @@ func (gang *Gang) delAssumedPod(pod *v1.Pod) {
 	podId := util.GetId(pod.Namespace, pod.Name)
 	if _, ok := gang.WaitingForBindChildren[podId]; ok {
 		delete(gang.WaitingForBindChildren, podId)
+		gang.PendingChildren[podId] = pod
+		if len(gang.WaitingForBindChildren) == 0 {
+			gang.GangGroupInfo.RemoveWaitingGang(gang.Name)
+		}
 		klog.Infof("delAssumedPod, gangName: %v, podName: %v", gang.Name, podId)
 	}
 }
@@ -454,6 +402,16 @@ func (gang *Gang) getChildrenFromGang() (children []*v1.Pod) {
 	defer gang.lock.Unlock()
 	children = make([]*v1.Pod, 0)
 	for _, pod := range gang.Children {
+		children = append(children, pod)
+	}
+	return
+}
+
+func (gang *Gang) getPendingChildrenFromGang() (children []*v1.Pod) {
+	gang.lock.Lock()
+	defer gang.lock.Unlock()
+	children = make([]*v1.Pod, 0)
+	for _, pod := range gang.PendingChildren {
 		children = append(children, pod)
 	}
 	return
@@ -478,6 +436,11 @@ func (gang *Gang) addBoundPod(pod *v1.Pod) {
 
 	podId := util.GetId(pod.Namespace, pod.Name)
 	delete(gang.WaitingForBindChildren, podId)
+	if len(gang.WaitingForBindChildren) == 0 {
+		gang.GangGroupInfo.RemoveWaitingGang(gang.Name)
+	}
+	delete(gang.PendingChildren, podId)
+	gang.GangGroupInfo.DeleteIfRepresentative(pod, ReasonPodBound)
 	gang.BoundChildren[podId] = pod
 
 	klog.Infof("AddBoundPod, gangName: %v, podName: %v", gang.Name, podId)
@@ -485,6 +448,24 @@ func (gang *Gang) addBoundPod(pod *v1.Pod) {
 		gang.GangGroupInfo.setResourceSatisfied()
 		klog.Infof("Gang ResourceSatisfied due to addBoundPod, gangName: %v", gang.Name)
 	}
+}
+
+func (gang *Gang) addWaitingGang() {
+	gang.lock.Lock()
+	defer gang.lock.Unlock()
+	gang.GangGroupInfo.AddWaitingGang()
+}
+
+func (gang *Gang) clearWaitingGang() {
+	gang.lock.Lock()
+	defer gang.lock.Unlock()
+	gang.GangGroupInfo.ClearWaitingGang()
+}
+
+func (gang *Gang) removeWaitingGang() {
+	gang.lock.Lock()
+	defer gang.lock.Unlock()
+	gang.GangGroupInfo.RemoveWaitingGang(gang.Name)
 }
 
 func (gang *Gang) isGangValidForPermit() bool {
@@ -503,4 +484,39 @@ func (gang *Gang) isGangValidForPermit() bool {
 	default:
 		return len(gang.WaitingForBindChildren) >= gang.MinRequiredNumber || gang.GangGroupInfo.isGangOnceResourceSatisfied()
 	}
+}
+
+func (gang *Gang) RecordIfNoRepresentatives(pod *v1.Pod) error {
+	gang.lock.Lock()
+	defer gang.lock.Unlock()
+	podKey := util.GetId(pod.Namespace, pod.Name)
+	if gang.PendingChildren[podKey] == nil {
+		// avoid pod is not exists in gang cache, resulting representativePodKey leak
+		return fmt.Errorf(ErrPodIsNotExistsInGangCache, podKey)
+	}
+
+	representativePodKey := gang.GangGroupInfo.RecordIfNoRepresentatives(pod)
+	if representativePodKey != podKey {
+		return fmt.Errorf(ErrRepresentativePodAlreadyExists, representativePodKey, gang.GangGroupId)
+	}
+	return nil
+}
+
+func (gang *Gang) ReplaceRepresentative(pod *v1.Pod, reason string) {
+	gang.lock.Lock()
+	defer gang.lock.Unlock()
+	podKey := util.GetId(pod.Namespace, pod.Name)
+	if gang.PendingChildren[podKey] == nil {
+		// avoid pod is not exists in gang cache, resulting representativePodKey leak
+		/*
+			FIXME
+				The original Representative will continue to be retained until it is deleted.
+				However, its UnschedulablePlugins are not set correctly, which may cause the next queue to be late.
+				The reason we did not try to fix it here is that we assume that all pending Pods of the GangGroup will be deleted or rebuilt together.
+		*/
+		klog.Warningf("ReplaceRepresentative find pod %v is not exists in gang cache, gang: %v, reaon: %s", podKey, gang.Name, reason)
+		return
+	}
+
+	gang.GangGroupInfo.ReplaceRepresentative(pod, reason)
 }

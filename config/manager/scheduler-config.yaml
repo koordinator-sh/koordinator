@@ -57,7 +57,7 @@ data:
             disabled:
               - name: "*"
             enabled:
-              - name: Coscheduling
+              - name: PrioritySort
           preFilter:
             enabled:
               - name: Reservation

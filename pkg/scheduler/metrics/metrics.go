@@ -65,11 +65,27 @@ var (
 		},
 		[]string{NodeNameKey},
 	)
+	WaitingGangGroupNumber = metrics.NewGaugeVec(
+		&metrics.GaugeOpts{
+			Subsystem:      schedulermetrics.SchedulerSubsystem,
+			Name:           "waiting_gang_group_number",
+			Help:           "The number of GangGroups in Waiting",
+			StabilityLevel: metrics.STABLE,
+		}, nil)
+	NextPodDeleteFromQueueLatency = metrics.NewHistogramVec(
+		&metrics.HistogramOpts{
+			Subsystem: schedulermetrics.SchedulerSubsystem,
+			Name:      "next_pod_delete_from_queue_latency",
+			Help:      "run next pod plugins, the latency of deleting pod from queue",
+			Buckets:   metrics.ExponentialBuckets(0.00001, 2, 24),
+		}, nil)
 
 	metricsList = []metrics.Registerable{
 		SchedulingTimeout,
 		ElasticQuotaProcessLatency,
 		SecondaryDeviceNotWellPlannedNodes,
+		WaitingGangGroupNumber,
+		NextPodDeleteFromQueueLatency,
 	}
 
 	gcMetricsList = []prometheus.Collector{
@@ -132,4 +148,8 @@ func RecordSecondaryDeviceNotWellPlanned(nodeName string, notWellPlanned bool) {
 		return
 	}
 	SecondaryDeviceNotWellPlannedNodes.DeleteLabelValues(nodeName)
+}
+
+func RecordNextPodPluginsDeletePodFromQueue(latency time.Duration) {
+	NextPodDeleteFromQueueLatency.WithLabelValues().Observe(latency.Seconds())
 }
