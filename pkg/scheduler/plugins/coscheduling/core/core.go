@@ -315,10 +315,7 @@ func (pgMgr *PodGroupManager) PostFilter(ctx context.Context, state *framework.C
 	}
 
 	if gang.getGangMode() == extension.GangModeStrict {
-<<<<<<< HEAD
-=======
 		gang.clearWaitingGang()
->>>>>>> 296ed16c6 (scheduler: abstract nextPod and gang inplements it)
 		pgMgr.rejectGangGroupById(handle, pluginName, gang.Name, message)
 		return &framework.PostFilterResult{}, framework.NewStatus(framework.Unschedulable,
 			fmt.Sprintf("Gang %q gets rejected due to pod is unschedulable", gang.Name))
