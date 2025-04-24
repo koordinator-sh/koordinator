@@ -23,13 +23,16 @@ import (
 	"time"
 
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
-	corev1helpers "k8s.io/component-helpers/scheduling/corev1"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
+	schedutil "k8s.io/kubernetes/pkg/scheduler/util"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/apis/scheduling"
+	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 	pgclientset "github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/generated/clientset/versioned"
 	pgformers "github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/generated/informers/externalversions"
 	schedinformers "github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/generated/informers/externalversions/scheduling/v1alpha1"
@@ -50,7 +53,7 @@ type Coscheduling struct {
 }
 
 var _ framework.PreEnqueuePlugin = &Coscheduling{}
-var _ framework.QueueSortPlugin = &Coscheduling{}
+var _ frameworkext.NextPodPlugin = &Coscheduling{}
 var _ frameworkext.PreFilterTransformer = &Coscheduling{}
 var _ framework.PreFilterPlugin = &Coscheduling{}
 var _ framework.PostFilterPlugin = &Coscheduling{}
@@ -61,7 +64,7 @@ var _ framework.EnqueueExtensions = &Coscheduling{}
 
 const (
 	// Name is the name of the plugin used in Registry and configurations.
-	Name = "Coscheduling"
+	Name = core.Name
 )
 
 // New initializes and returns a new Coscheduling plugin.
@@ -86,7 +89,7 @@ func New(obj runtime.Object, handle framework.Handle) (framework.Plugin, error) 
 	informerFactory := handle.SharedInformerFactory()
 	extendedHandle := handle.(frameworkext.ExtendedHandle)
 	koordInformerFactory := extendedHandle.KoordinatorSharedInformerFactory()
-	pgMgr := core.NewPodGroupManager(args, pgClient, pgInformerFactory, informerFactory, koordInformerFactory)
+	pgMgr := core.NewPodGroupManager(handle, args, pgClient, pgInformerFactory, informerFactory, koordInformerFactory)
 	plugin := &Coscheduling{
 		args:             args,
 		frameworkHandler: handle,
@@ -98,12 +101,48 @@ func New(obj runtime.Object, handle framework.Handle) (framework.Plugin, error) 
 }
 
 func (cs *Coscheduling) EventsToRegister() []framework.ClusterEventWithHint {
-	// To register a custom event, follow the naming convention at:
 	// https://git.k8s.io/kubernetes/pkg/scheduler/eventhandlers.go#L403-L410
 	pgGVK := fmt.Sprintf("podgroups.v1alpha1.%v", scheduling.GroupName)
 	return []framework.ClusterEventWithHint{
-		{Event: framework.ClusterEvent{Resource: framework.Pod, ActionType: framework.Add}},
-		{Event: framework.ClusterEvent{Resource: framework.GVK(pgGVK), ActionType: framework.Add | framework.Update}},
+		{
+			Event: framework.ClusterEvent{Resource: framework.Pod, ActionType: framework.Add},
+			QueueingHintFn: func(logger klog.Logger, pod *v1.Pod, _, newObj interface{}) framework.QueueingHint {
+				_, updatedPod, err := schedutil.As[*v1.Pod](nil, newObj)
+				if err != nil {
+					// Shouldn't happen.
+					logger.Error(err, "unexpected new object in isSchedulableAfterPodAdd")
+					return framework.QueueAfterBackoff
+				}
+				if util.GetGangNameByPod(pod) == util.GetGangNameByPod(updatedPod) && pod.Namespace == updatedPod.Namespace {
+					return framework.QueueAfterBackoff
+				}
+				return framework.QueueSkip
+			},
+		},
+		{
+			// once gang collect enough pod, the podGroup CR will turn info PreScheduling from Pending
+			Event: framework.ClusterEvent{Resource: framework.GVK(pgGVK), ActionType: framework.Add | framework.Update},
+			QueueingHintFn: func(logger klog.Logger, pod *v1.Pod, oldObj, newObj interface{}) framework.QueueingHint {
+				podGroup := &schedulingv1alpha1.PodGroup{}
+				err := runtime.DefaultUnstructuredConverter.FromUnstructured(newObj.(*unstructured.Unstructured).Object, podGroup)
+				if err != nil {
+					// Shouldn't happen.
+					logger.Error(err, "unexpected new object in isSchedulableAfterPodGroupChanged")
+					return framework.QueueAfterBackoff
+				}
+				groupSlice, _ := util.StringToGangGroupSlice(podGroup.Annotations[extension.AnnotationGangGroups])
+				if len(groupSlice) == 0 {
+					eventGangID := util.GetId(podGroup.Namespace, podGroup.Name)
+					groupSlice = append(groupSlice, eventGangID)
+				}
+				gangSet := sets.New[string](groupSlice...)
+				podGang := util.GetId(pod.Namespace, util.GetGangNameByPod(pod))
+				if gangSet.Has(podGang) {
+					return framework.QueueAfterBackoff
+				}
+				return framework.QueueSkip
+			},
+		},
 	}
 }
 
@@ -123,54 +162,8 @@ func (cs *Coscheduling) PreEnqueue(ctx context.Context, pod *v1.Pod) *framework.
 	return framework.NewStatus(framework.Success, "")
 }
 
-// Less is sorting pods in the scheduling queue in the following order.
-// Firstly, compare the priorities of the two pods, the higher priority (if pod's priority is equal,then compare their KoordinatorPriority at labels )is at the front of the queue,
-// Secondly, compare Gang group ID of the two pods, pods that NOT belong to a Gang will have higher priority than pods that belongs to a Gang,
-// Thirdly, compare the creationTimestamp of two pods, if pod belongs to a Gang, then we compare creationTimestamp of the Gang, the one created first will be at the front of the queue
-// Finally, compare pod's namespaced name.
-func (cs *Coscheduling) Less(podInfo1, podInfo2 *framework.QueuedPodInfo) bool {
-	prio1 := corev1helpers.PodPriority(podInfo1.Pod)
-	prio2 := corev1helpers.PodPriority(podInfo2.Pod)
-	if prio1 != prio2 {
-		return prio1 > prio2
-	}
-	subPrio1, err := extension.GetPodSubPriority(podInfo1.Pod.Labels)
-	if err != nil {
-		klog.ErrorS(err, "GetSubPriority of the pod error", "pod", klog.KObj(podInfo1.Pod))
-	}
-	subPrio2, err := extension.GetPodSubPriority(podInfo2.Pod.Labels)
-	if err != nil {
-		klog.ErrorS(err, "GetSubPriority of the pod error", "pod", klog.KObj(podInfo2.Pod))
-	}
-	if subPrio1 != subPrio2 {
-		return subPrio1 > subPrio2
-	}
-
-	lastScheduleTime1 := cs.pgMgr.GetLastScheduleTime(podInfo1.Pod, podInfo1.Timestamp)
-	lastScheduleTime2 := cs.pgMgr.GetLastScheduleTime(podInfo2.Pod, podInfo2.Timestamp)
-	if !lastScheduleTime1.Equal(lastScheduleTime2) {
-		return lastScheduleTime1.Before(lastScheduleTime2)
-	}
-
-	gangGroup1, _ := cs.pgMgr.GetGangGroupId(podInfo1.Pod)
-	gangGroup2, _ := cs.pgMgr.GetGangGroupId(podInfo2.Pod)
-	if gangGroup1 != gangGroup2 {
-		return gangGroup1 < gangGroup2
-	}
-
-	gang1 := util.GetId(podInfo1.Pod.Namespace, util.GetGangNameByPod(podInfo1.Pod))
-	gang2 := util.GetId(podInfo2.Pod.Namespace, util.GetGangNameByPod(podInfo2.Pod))
-	if gang1 != gang2 {
-		return gang1 < gang2
-	}
-
-	childScheduleCycle1 := cs.pgMgr.GetChildScheduleCycle(podInfo1.Pod)
-	childScheduleCycle2 := cs.pgMgr.GetChildScheduleCycle(podInfo2.Pod)
-	if childScheduleCycle1 != childScheduleCycle2 {
-		return childScheduleCycle1 < childScheduleCycle2
-	}
-
-	return podInfo1.Pod.Name < podInfo2.Pod.Name
+func (cs *Coscheduling) NextPod() *v1.Pod {
+	return cs.pgMgr.NextPod()
 }
 
 // BeforePreFilter
@@ -220,10 +213,9 @@ func (cs *Coscheduling) Permit(ctx context.Context, state *framework.CycleState,
 		klog.InfoS("Pod is waiting to be scheduled at Permit stage", "gang",
 			util.GetId(pod.Namespace, util.GetGangNameByPod(pod)), "pod", klog.KObj(pod))
 		retStatus = framework.NewStatus(framework.Wait)
-		// We will also request to move the sibling pods back to activeQ.
-		cs.pgMgr.ActivateSiblings(pod, state)
 	case core.Success:
 		cs.pgMgr.AllowGangGroup(pod, cs.frameworkHandler, Name)
+		cs.pgMgr.SucceedGangScheduling()
 		retStatus = framework.NewStatus(framework.Success)
 		waitTime = 0
 	}
