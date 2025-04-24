@@ -354,20 +354,20 @@ func (p *Plugin) estimatedAssignedPodUsed(nodeName string, nodeMetric *slov1alph
 func loadAwareSchedulingScorer(resToWeightMap, used map[corev1.ResourceName]int64, allocatable corev1.ResourceList) int64 {
 	var nodeScore, weightSum int64
 	for resourceName, weight := range resToWeightMap {
-		resourceScore := leastRequestedScore(used[resourceName], getResourceValue(resourceName, allocatable[resourceName]))
+		resourceScore := leastUsedScore(used[resourceName], getResourceValue(resourceName, allocatable[resourceName]))
 		nodeScore += resourceScore * weight
 		weightSum += weight
 	}
 	return nodeScore / weightSum
 }
 
-func leastRequestedScore(requested, capacity int64) int64 {
+func leastUsedScore(used, capacity int64) int64 {
 	if capacity == 0 {
 		return 0
 	}
-	if requested > capacity {
+	if used > capacity {
 		return 0
 	}
 
-	return ((capacity - requested) * framework.MaxNodeScore) / capacity
+	return ((capacity - used) * framework.MaxNodeScore) / capacity
 }
