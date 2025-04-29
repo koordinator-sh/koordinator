@@ -29,6 +29,10 @@ import (
 	utilmetrics "github.com/koordinator-sh/koordinator/pkg/util/metrics"
 )
 
+const (
+	NodeNameKey = "node_name"
+)
+
 // All the histogram based metrics have 1ms as size for the smallest bucket.
 var (
 	SchedulingTimeout = metrics.NewCounterVec(
@@ -53,6 +57,12 @@ var (
 		},
 		[]string{"operation"},
 	)
+	SecondaryDeviceNotWellPlannedNodes = utilmetrics.NewGCGaugeVec("secondary_device_not_well_planned", prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Subsystem: schedulermetrics.SchedulerSubsystem,
+			Name:      "secondary_device_not_well_planned",
+			Help:      "The number of secondary device not well planned",
+		}, []string{NodeNameKey}))
 
 	metricsList = []metrics.Registerable{
 		SchedulingTimeout,
@@ -61,6 +71,7 @@ var (
 
 	gcMetricsList = []prometheus.Collector{
 		ReservationStatusPhase.GetGaugeVec(),
+		SecondaryDeviceNotWellPlannedNodes.GetGaugeVec(),
 	}
 )
 
@@ -107,4 +118,8 @@ func RegisterGCMetrics(gcMetrics ...prometheus.Collector) {
 
 func RecordElasticQuotaProcessLatency(operation string, latency time.Duration) {
 	ElasticQuotaProcessLatency.WithLabelValues(operation).Observe(latency.Seconds())
+}
+
+func RecordSecondaryDeviceNotWellPlanned(nodeName string) {
+	SecondaryDeviceNotWellPlannedNodes.WithSet(prometheus.Labels{NodeNameKey: nodeName}, 1.0)
 }
