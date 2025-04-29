@@ -34,6 +34,7 @@ import (
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	frameworkexthelper "github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/helper"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/metrics"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
@@ -531,6 +532,9 @@ func (n *nodeDeviceCache) updateNodeDevice(nodeName string, device *schedulingv1
 	info.gpuPartitionIndexer = gpuPartitionIndexer
 	info.nodeHonorGPUPartition = apiext.GetGPUPartitionPolicy(device) == apiext.GPUPartitionPolicyHonor
 	info.secondaryDeviceWellPlanned = apiext.IsSecondaryDeviceWellPlanned(device)
+	if apiext.IsSecondaryDeviceNotWellPlanned(device) {
+		metrics.RecordSecondaryDeviceNotWellPlanned(device.Name)
+	}
 	info.gpuTopologyScope = gpuTopologyScope
 }
 
