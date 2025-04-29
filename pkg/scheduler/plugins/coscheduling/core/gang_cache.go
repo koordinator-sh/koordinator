@@ -139,15 +139,6 @@ func (gangCache *GangCache) onPodAddInternal(obj interface{}, action string) {
 		gangGroupId := util.GetGangGroupId(gangGroup)
 		gangGroupInfo := gangCache.getGangGroupInfo(gangGroupId, gangGroup, true)
 		gang.SetGangGroupInfo(gangGroupInfo)
-		gang.initPodLastScheduleTime(pod)
-	} else {
-		//only podGroup added then can initPodLastScheduleTime
-		gangGroup := gang.getGangGroup()
-		gangGroupId := util.GetGangGroupId(gangGroup)
-		gangGroupInfo := gangCache.getGangGroupInfo(gangGroupId, gangGroup, false)
-		if gangGroupInfo != nil {
-			gang.initPodLastScheduleTime(pod)
-		}
 	}
 
 	gang.setChild(pod)
@@ -229,8 +220,6 @@ func (gangCache *GangCache) onPodGroupAdd(obj interface{}) {
 	gangGroupId := util.GetGangGroupId(gangGroup)
 	gangGroupInfo := gangCache.getGangGroupInfo(gangGroupId, gangGroup, true)
 	gang.SetGangGroupInfo(gangGroupInfo)
-	//reset already connected pods lastScheduleTime
-	gang.initAllChildrenPodLastScheduleTime()
 
 	klog.Infof("watch podGroup created, Name:%v", pg.Name)
 }

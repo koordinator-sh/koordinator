@@ -18,10 +18,15 @@ package frameworkext
 
 import (
 	"context"
+	"fmt"
+	"strconv"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	frameworkfake "k8s.io/kubernetes/pkg/scheduler/framework/fake"
@@ -73,4 +78,139 @@ func TestExtenderFactory(t *testing.T) {
 	assert.Len(t, impl.preFilterTransformers, 1)
 	assert.Len(t, impl.filterTransformers, 1)
 	assert.Len(t, impl.scoreTransformers, 1)
+}
+
+func TestCopyQueueInfoToPod(t *testing.T) {
+	tests := []struct {
+		name             string
+		podHasQueueInfo  *corev1.Pod
+		podNeedQueueInfo *corev1.Pod
+		wantOriginal     *corev1.Pod
+		want             *corev1.Pod
+	}{
+		{
+			name: "normal flow",
+			podHasQueueInfo: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					ManagedFields: []metav1.ManagedFieldsEntry{
+						{Manager: initialTimestampManager, Time: &metav1.Time{}},
+						{Manager: attemptsManager, Subresource: strconv.Itoa(1)},
+					},
+				},
+			},
+			podNeedQueueInfo: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					ManagedFields: []metav1.ManagedFieldsEntry{
+						{Manager: "original manager"},
+					},
+				},
+			},
+			wantOriginal: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					ManagedFields: []metav1.ManagedFieldsEntry{
+						{Manager: "original manager"},
+					},
+				},
+			},
+			want: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					ManagedFields: []metav1.ManagedFieldsEntry{
+						{Manager: initialTimestampManager, Time: &metav1.Time{}},
+						{Manager: attemptsManager, Subresource: strconv.Itoa(1)},
+					},
+				},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := CopyQueueInfoToPod(tt.podHasQueueInfo, tt.podNeedQueueInfo)
+			assert.Equal(t, tt.wantOriginal, tt.podNeedQueueInfo)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestRecordPodQueueInfoToPod(t *testing.T) {
+	initialTimestamp := time.Now()
+	tests := []struct {
+		name            string
+		originalPod     *corev1.Pod
+		podInfo         *framework.QueuedPodInfo
+		wantPod         *corev1.Pod
+		wantOriginalPod *corev1.Pod
+	}{
+		{
+			name:        "normal flow",
+			originalPod: &corev1.Pod{},
+			podInfo: &framework.QueuedPodInfo{
+				PodInfo:                 &framework.PodInfo{},
+				Attempts:                1,
+				InitialAttemptTimestamp: &initialTimestamp,
+			},
+			wantPod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					ManagedFields: []metav1.ManagedFieldsEntry{
+						{Manager: initialTimestampManager, Time: &metav1.Time{Time: initialTimestamp}},
+						{Manager: attemptsManager, Subresource: strconv.Itoa(1)},
+					},
+				},
+			},
+			wantOriginalPod: &corev1.Pod{},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.podInfo.Pod = tt.originalPod
+			RecordPodQueueInfoToPod(tt.podInfo)
+			assert.Equal(t, tt.wantOriginalPod, tt.originalPod)
+			assert.Equal(t, tt.wantPod, tt.podInfo.PodInfo.Pod)
+		})
+	}
+}
+
+func Test_makePodInfoFromPod(t *testing.T) {
+	initialTimestamp := time.Now()
+	tests := []struct {
+		name    string
+		pod     *corev1.Pod
+		want    *framework.QueuedPodInfo
+		wantErr assert.ErrorAssertionFunc
+	}{
+		{
+			name: "normal flow",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					ManagedFields: []metav1.ManagedFieldsEntry{
+						{Manager: initialTimestampManager, Time: &metav1.Time{Time: initialTimestamp}},
+						{Manager: attemptsManager, Subresource: strconv.Itoa(1)},
+					},
+				},
+			},
+			want: &framework.QueuedPodInfo{
+				PodInfo: &framework.PodInfo{
+					Pod: &corev1.Pod{
+						ObjectMeta: metav1.ObjectMeta{
+							ManagedFields: []metav1.ManagedFieldsEntry{
+								{Manager: initialTimestampManager, Time: &metav1.Time{Time: initialTimestamp}},
+								{Manager: attemptsManager, Subresource: strconv.Itoa(1)},
+							},
+						},
+					},
+				},
+				InitialAttemptTimestamp: &initialTimestamp,
+				Attempts:                1,
+			},
+			wantErr: assert.NoError,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := makePodInfoFromPod(tt.pod)
+			if !tt.wantErr(t, err, fmt.Sprintf("makePodInfoFromPod(%v)", tt.pod)) {
+				return
+			}
+			assert.Equalf(t, tt.want, got, "makePodInfoFromPod(%v)", tt.pod)
+		})
+	}
 }

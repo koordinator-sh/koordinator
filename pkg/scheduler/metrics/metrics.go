@@ -53,10 +53,26 @@ var (
 		},
 		[]string{"operation"},
 	)
+	WaitingGangGroupNumber = metrics.NewGaugeVec(
+		&metrics.GaugeOpts{
+			Subsystem:      schedulermetrics.SchedulerSubsystem,
+			Name:           "waiting_gang_group_number",
+			Help:           "The number of GangGroups in Waiting",
+			StabilityLevel: metrics.STABLE,
+		}, nil)
+	RunNextPodPluginsDeletePodFromQueue = metrics.NewHistogramVec(
+		&metrics.HistogramOpts{
+			Subsystem: schedulermetrics.SchedulerSubsystem,
+			Name:      "run_next_pod_plugins_delete_pod_from_queue",
+			Help:      "run next pod plugins, delete pod from queue",
+			Buckets:   metrics.ExponentialBuckets(0.00001, 2, 24),
+		}, nil)
 
 	metricsList = []metrics.Registerable{
 		SchedulingTimeout,
 		ElasticQuotaProcessLatency,
+		WaitingGangGroupNumber,
+		RunNextPodPluginsDeletePodFromQueue,
 	}
 
 	gcMetricsList = []prometheus.Collector{
@@ -107,4 +123,8 @@ func RegisterGCMetrics(gcMetrics ...prometheus.Collector) {
 
 func RecordElasticQuotaProcessLatency(operation string, latency time.Duration) {
 	ElasticQuotaProcessLatency.WithLabelValues(operation).Observe(latency.Seconds())
+}
+
+func RecordNextPodPluginsDeletePodFromQueue(latency time.Duration) {
+	RunNextPodPluginsDeletePodFromQueue.WithLabelValues().Observe(latency.Seconds())
 }

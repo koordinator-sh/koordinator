@@ -18,20 +18,28 @@ package frameworkext
 
 import (
 	"context"
+	"fmt"
+	"strconv"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/uuid"
+	"k8s.io/apimachinery/pkg/util/wait"
 	k8sfeature "k8s.io/apiserver/pkg/util/feature"
+	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	frameworkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
+	"k8s.io/kubernetes/pkg/scheduler/metrics"
 
 	koordinatorclientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
 	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
 	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/indexer"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/services"
+	koordschedulermetrics "github.com/koordinator-sh/koordinator/pkg/scheduler/metrics"
 )
 
 type extendedHandleOptions struct {
@@ -73,11 +81,14 @@ type FrameworkExtenderFactory struct {
 	koordinatorClientSet             koordinatorclientset.Interface
 	koordinatorSharedInformerFactory koordinatorinformers.SharedInformerFactory
 	reservationNominator             ReservationNominator
+	nextPodPlugin                    NextPodPlugin
 	profiles                         map[string]FrameworkExtender
 	monitor                          *SchedulerMonitor
 	scheduler                        Scheduler
 	schedulePod                      func(ctx context.Context, fwk framework.Framework, state *framework.CycleState, pod *corev1.Pod) (scheduler.ScheduleResult, error)
 	*errorHandlerDispatcher
+
+	metricsRecorder *metrics.MetricAsyncRecorder
 }
 
 func NewFrameworkExtenderFactory(options ...Option) (*FrameworkExtenderFactory, error) {
@@ -99,6 +110,7 @@ func NewFrameworkExtenderFactory(options ...Option) (*FrameworkExtenderFactory, 
 		profiles:                         map[string]FrameworkExtender{},
 		monitor:                          NewSchedulerMonitor(schedulerMonitorPeriod, schedulingTimeout),
 		errorHandlerDispatcher:           newErrorHandlerDispatcher(),
+		metricsRecorder:                  metrics.NewMetricsAsyncRecorder(1000, time.Second, wait.NeverStop),
 	}, nil
 }
 
@@ -136,26 +148,115 @@ func (f *FrameworkExtenderFactory) Scheduler() Scheduler {
 
 func (f *FrameworkExtenderFactory) InitScheduler(sched Scheduler) {
 	f.scheduler = sched
-	if k8sfeature.DefaultFeatureGate.Enabled(features.ResizePod) {
-		adaptor, ok := sched.(*SchedulerAdapter)
-		if ok {
+	adaptor, ok := sched.(*SchedulerAdapter)
+	if ok {
+		if k8sfeature.DefaultFeatureGate.Enabled(features.ResizePod) {
 			schedulePod := adaptor.Scheduler.SchedulePod
 			f.schedulePod = schedulePod
 			adaptor.Scheduler.SchedulePod = f.scheduleOne
-
-			nextPod := adaptor.Scheduler.NextPod
-			adaptor.Scheduler.NextPod = func() (*framework.QueuedPodInfo, error) {
-				podInfo, err := nextPod()
+		}
+		nextPod := adaptor.Scheduler.NextPod
+		adaptor.Scheduler.NextPod = func() (*framework.QueuedPodInfo, error) {
+			podInfo, err := f.runNextPodPlugin()
+			if err != nil {
+				klog.Errorf("run next pod plugin failed, err: %v", err)
+				return podInfo, err
+			}
+			// NextPodPlugin but has no suggestion for which Pod to dequeue next and falls back to the original nextPod logic
+			if podInfo == nil {
+				podInfo, err = nextPod()
 				if err != nil {
 					return podInfo, err
 				}
+				// just for plugins to get Pod queue information
+				RecordPodQueueInfoToPod(podInfo)
+			}
+			f.monitor.RecordNextPod(podInfo)
+			if k8sfeature.DefaultFeatureGate.Enabled(features.ResizePod) {
 				// Deep copy podInfo to allow pod modification during scheduling
 				podInfo = podInfo.DeepCopy()
-				f.monitor.RecordNextPod(podInfo)
-				return podInfo, nil
 			}
+			return podInfo, nil
 		}
 	}
+}
+
+func (f *FrameworkExtenderFactory) runNextPodPlugin() (*framework.QueuedPodInfo, error) {
+	if f.nextPodPlugin != nil {
+		startTime := time.Now()
+		pod := f.nextPodPlugin.NextPod()
+		f.metricsRecorder.ObservePluginDurationAsync("NextPod", f.nextPodPlugin.Name(), strconv.FormatBool(pod != nil), metrics.SinceInSeconds(startTime))
+		if pod != nil {
+			klog.Infof("run next pod plugin, pod: %s/%s", pod.Namespace, pod.Name)
+			startTime = time.Now()
+			_ = f.scheduler.GetSchedulingQueue().Delete(&corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					// should not delete it from nominator, so use a fake UID
+					UID:       uuid.NewUUID(),
+					Namespace: pod.Namespace,
+					Name:      pod.Name,
+				},
+			})
+			koordschedulermetrics.RecordNextPodPluginsDeletePodFromQueue(time.Since(startTime))
+			return makePodInfoFromPod(pod)
+		}
+	}
+	return nil, nil
+}
+
+const (
+	initialTimestampManager = "scheduler.scheduling.koordinator.sh/initialTimestamp"
+	attemptsManager         = "scheduler.scheduling.koordinator.sh/attempts"
+)
+
+func CopyQueueInfoToPod(podHasQueueInfo, podNeedQueueInfo *corev1.Pod) *corev1.Pod {
+	resultPod := &corev1.Pod{
+		TypeMeta:   podNeedQueueInfo.TypeMeta,
+		ObjectMeta: podNeedQueueInfo.ObjectMeta,
+		Spec:       podNeedQueueInfo.Spec,
+		Status:     podHasQueueInfo.Status,
+	}
+	// avoid directly modifying the original Pod and only copy the fields that are needed
+	resultPod.ManagedFields = podHasQueueInfo.ManagedFields
+	return resultPod
+}
+
+func RecordPodQueueInfoToPod(podInfo *framework.QueuedPodInfo) {
+	var initialTimestamp *metav1.Time
+	if podInfo.InitialAttemptTimestamp != nil {
+		initialTimestamp = &metav1.Time{Time: *podInfo.InitialAttemptTimestamp}
+	}
+	podInfo.Pod = &corev1.Pod{
+		TypeMeta:   podInfo.Pod.TypeMeta,
+		ObjectMeta: podInfo.Pod.ObjectMeta,
+		Spec:       podInfo.Pod.Spec,
+		Status:     podInfo.Pod.Status,
+	}
+	// avoid directly modifying the original Pod and only copy the fields that are needed
+	podInfo.Pod.ManagedFields = []metav1.ManagedFieldsEntry{
+		{Manager: initialTimestampManager, Time: initialTimestamp},
+		{Manager: attemptsManager, Subresource: strconv.Itoa(podInfo.Attempts)},
+	}
+}
+
+func makePodInfoFromPod(pod *corev1.Pod) (*framework.QueuedPodInfo, error) {
+	if len(pod.ManagedFields) == 0 {
+		now := time.Now()
+		return &framework.QueuedPodInfo{PodInfo: &framework.PodInfo{Pod: pod}, InitialAttemptTimestamp: &now, Attempts: 0}, fmt.Errorf("pod %s/%s has no podQueueInfo in pod.managedFields", pod.Namespace, pod.Name)
+	}
+	var initialTimestamp *time.Time
+	if pod.ManagedFields[0].Time != nil {
+		initialTimestamp = &pod.ManagedFields[0].Time.Time
+	}
+	var attempts int
+	if len(pod.ManagedFields) > 1 {
+		attempts, _ = strconv.Atoi(pod.ManagedFields[1].Subresource)
+	}
+	return &framework.QueuedPodInfo{
+		PodInfo:                 &framework.PodInfo{Pod: pod},
+		InitialAttemptTimestamp: initialTimestamp,
+		Attempts:                attempts,
+	}, nil
 }
 
 func (f *FrameworkExtenderFactory) scheduleOne(ctx context.Context, fwk framework.Framework, cycleState *framework.CycleState, pod *corev1.Pod) (scheduler.ScheduleResult, error) {
@@ -218,6 +319,12 @@ func PluginFactoryProxy(extenderFactory *FrameworkExtenderFactory, factoryFn fra
 		plugin, err := factoryFn(args, frameworkExtender)
 		if err != nil {
 			return nil, err
+		}
+		if nextPodPlugin, ok := plugin.(NextPodPlugin); ok {
+			if extenderFactory.nextPodPlugin != nil && extenderFactory.nextPodPlugin.Name() != nextPodPlugin.Name() {
+				return nil, fmt.Errorf("duplicate NextPodPlugin: %s, %s", nextPodPlugin.Name(), extenderFactory.nextPodPlugin.Name())
+			}
+			extenderFactory.nextPodPlugin = nextPodPlugin
 		}
 		extenderFactory.updatePlugins(plugin)
 		frameworkExtender.(*frameworkExtenderImpl).updatePlugins(plugin)
