@@ -82,6 +82,7 @@ type preFilterState struct {
 	podRequests        map[schedulingv1alpha1.DeviceType]corev1.ResourceList
 	hints              apiext.DeviceAllocateHints
 	hintSelectors      map[schedulingv1alpha1.DeviceType][2]labels.Selector
+	hasSelectors       bool
 	jointAllocate      *apiext.DeviceJointAllocate
 	primaryDeviceType  schedulingv1alpha1.DeviceType
 	gpuRequirements    *GPURequirements
@@ -108,6 +109,7 @@ func (s *preFilterState) Clone() framework.StateData {
 		skip:                   s.skip,
 		podRequests:            s.podRequests,
 		hints:                  s.hints,
+		hasSelectors:           s.hasSelectors,
 		gpuRequirements:        s.gpuRequirements,
 		hintSelectors:          s.hintSelectors,
 		jointAllocate:          s.jointAllocate,
