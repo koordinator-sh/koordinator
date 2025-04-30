@@ -25,8 +25,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
-	corev1listers "k8s.io/client-go/listers/core/v1"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
@@ -68,7 +68,6 @@ var (
 type Plugin struct {
 	handle           framework.Handle
 	args             *config.LoadAwareSchedulingArgs
-	podLister        corev1listers.PodLister
 	nodeMetricLister slolisters.NodeMetricLister
 	estimator        estimator.Estimator
 	podAssignCache   *podAssignCache
@@ -92,7 +91,6 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 	assignCache := newPodAssignCache()
 	podInformer := frameworkExtender.SharedInformerFactory().Core().V1().Pods()
 	frameworkexthelper.ForceSyncFromInformer(context.TODO().Done(), frameworkExtender.SharedInformerFactory(), podInformer.Informer(), assignCache)
-	podLister := podInformer.Lister()
 	nodeMetricLister := frameworkExtender.KoordinatorSharedInformerFactory().Slo().V1alpha1().NodeMetrics().Lister()
 
 	estimator, err := estimator.NewEstimator(pluginArgs, handle)
@@ -103,7 +101,6 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 	return &Plugin{
 		handle:           handle,
 		args:             pluginArgs,
-		podLister:        podLister,
 		nodeMetricLister: nodeMetricLister,
 		estimator:        estimator,
 		podAssignCache:   assignCache,
@@ -255,7 +252,7 @@ func (p *Plugin) GetEstimatedUsed(nodeName string, nodeMetric *slov1alpha1.NodeM
 	if nodeMetric == nil {
 		return nil, nil
 	}
-	podMetrics := buildPodMetricMap(p.podLister, nodeMetric, prodPod)
+	podMetrics := buildPodMetricMap(nodeMetric, prodPod)
 
 	estimatedUsed, err := p.estimator.EstimatePod(pod)
 	if err != nil {
@@ -311,9 +308,9 @@ func filterNodeUsage(usageThresholds, estimatedUsed map[corev1.ResourceName]int6
 	return nil
 }
 
-func (p *Plugin) estimatedAssignedPodUsed(nodeName string, nodeMetric *slov1alpha1.NodeMetric, podMetrics map[string]corev1.ResourceList, filterProdPod bool) (map[corev1.ResourceName]int64, sets.String) {
+func (p *Plugin) estimatedAssignedPodUsed(nodeName string, nodeMetric *slov1alpha1.NodeMetric, podMetrics map[types.NamespacedName]corev1.ResourceList, filterProdPod bool) (map[corev1.ResourceName]int64, sets.Set[types.NamespacedName]) {
 	estimatedUsed := make(map[corev1.ResourceName]int64)
-	estimatedPods := sets.NewString()
+	estimatedPods := make(sets.Set[types.NamespacedName])
 	var nodeMetricUpdateTime time.Time
 	if nodeMetric.Status.UpdateTime != nil {
 		nodeMetricUpdateTime = nodeMetric.Status.UpdateTime.Time
@@ -325,7 +322,10 @@ func (p *Plugin) estimatedAssignedPodUsed(nodeName string, nodeMetric *slov1alph
 		if filterProdPod && extension.GetPodPriorityClassWithDefault(assignInfo.pod) != extension.PriorityProd {
 			continue
 		}
-		podName := getPodNamespacedName(assignInfo.pod.Namespace, assignInfo.pod.Name)
+		podName := types.NamespacedName{
+			Namespace: assignInfo.pod.Namespace,
+			Name:      assignInfo.pod.Name,
+		}
 		podUsage := podMetrics[podName]
 		if len(podUsage) == 0 ||
 			missedLatestUpdateTime(assignInfo.timestamp, nodeMetricUpdateTime) ||

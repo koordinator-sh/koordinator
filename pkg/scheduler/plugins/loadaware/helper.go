@@ -17,14 +17,13 @@ limitations under the License.
 package loadaware
 
 import (
-	"fmt"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
-	corev1listers "k8s.io/client-go/listers/core/v1"
 	"k8s.io/klog/v2"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
@@ -145,10 +144,6 @@ func generateUsageThresholdsFilterProfile(node *corev1.Node, args *schedulingcon
 	return customUsageThresholds
 }
 
-func getPodNamespacedName(namespace, name string) string {
-	return fmt.Sprintf("%s/%s", namespace, name)
-}
-
 func getResourceValue(resourceName corev1.ResourceName, quantity resource.Quantity) int64 {
 	if resourceName == corev1.ResourceCPU {
 		return quantity.MilliValue()
@@ -156,26 +151,25 @@ func getResourceValue(resourceName corev1.ResourceName, quantity resource.Quanti
 	return quantity.Value()
 }
 
-func buildPodMetricMap(podLister corev1listers.PodLister, nodeMetric *slov1alpha1.NodeMetric, filterProdPod bool) map[string]corev1.ResourceList {
+func buildPodMetricMap(nodeMetric *slov1alpha1.NodeMetric, filterProdPod bool) map[types.NamespacedName]corev1.ResourceList {
 	if len(nodeMetric.Status.PodsMetric) == 0 {
 		return nil
 	}
-	podMetrics := make(map[string]corev1.ResourceList)
+	podMetrics := make(map[types.NamespacedName]corev1.ResourceList)
 	for _, podMetric := range nodeMetric.Status.PodsMetric {
-		pod, err := podLister.Pods(podMetric.Namespace).Get(podMetric.Name)
-		if err != nil {
+		if filterProdPod && podMetric.Priority != extension.PriorityProd {
 			continue
 		}
-		if filterProdPod && extension.GetPodPriorityClassWithDefault(pod) != extension.PriorityProd {
-			continue
+		name := types.NamespacedName{
+			Namespace: podMetric.Namespace,
+			Name:      podMetric.Name,
 		}
-		name := getPodNamespacedName(podMetric.Namespace, podMetric.Name)
 		podMetrics[name] = podMetric.PodUsage.ResourceList
 	}
 	return podMetrics
 }
 
-func sumPodUsages(podMetrics map[string]corev1.ResourceList, estimatedPods sets.String) (podUsages, estimatedPodsUsages corev1.ResourceList) {
+func sumPodUsages(podMetrics map[types.NamespacedName]corev1.ResourceList, estimatedPods sets.Set[types.NamespacedName]) (podUsages, estimatedPodsUsages corev1.ResourceList) {
 	if len(podMetrics) == 0 {
 		return nil, nil
 	}
