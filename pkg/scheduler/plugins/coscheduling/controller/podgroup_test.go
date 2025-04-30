@@ -181,8 +181,8 @@ func Test_Run(t *testing.T) {
 					kubeClient.CoreV1().Pods(p.Namespace).UpdateStatus(ctx, p, metav1.UpdateOptions{})
 				}
 			}
-			go ctrl.Start()
-			err := wait.Poll(200*time.Millisecond, 1*time.Second, func() (done bool, err error) {
+			ctrl.Start()
+			err := wait.PollUntilContextTimeout(ctx, 200*time.Millisecond, 1*time.Second, false, func(ctx context.Context) (done bool, err error) {
 				pg, err := pgClient.SchedulingV1alpha1().PodGroups("default").Get(ctx, c.pgName, metav1.GetOptions{})
 				if err != nil {
 					return false, err
@@ -257,8 +257,8 @@ func TestFillGroupStatusOccupied(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			ctrl, _, pgClient := setUp(ctx, c.podNames, c.pgName, c.podPhase, c.minMember, c.groupPhase, nil, c.podOwnerReference)
-			go ctrl.Start()
-			err := wait.Poll(200*time.Millisecond, 1*time.Second, func() (done bool, err error) {
+			ctrl.Start()
+			err := wait.PollUntilContextTimeout(ctx, 200*time.Millisecond, 1*time.Second, false, func(ctx context.Context) (done bool, err error) {
 				pg, err := pgClient.SchedulingV1alpha1().PodGroups("default").Get(ctx, c.pgName, metav1.GetOptions{})
 				if err != nil {
 					return false, err
