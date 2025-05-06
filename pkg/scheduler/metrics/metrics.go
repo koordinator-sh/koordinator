@@ -57,21 +57,23 @@ var (
 		},
 		[]string{"operation"},
 	)
-	SecondaryDeviceNotWellPlannedNodes = utilmetrics.NewGCGaugeVec("secondary_device_not_well_planned", prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
+	SecondaryDeviceNotWellPlannedNodes = metrics.NewGaugeVec(
+		&metrics.GaugeOpts{
 			Subsystem: schedulermetrics.SchedulerSubsystem,
 			Name:      "secondary_device_not_well_planned",
 			Help:      "The number of secondary device not well planned",
-		}, []string{NodeNameKey}))
+		},
+		[]string{NodeNameKey},
+	)
 
 	metricsList = []metrics.Registerable{
 		SchedulingTimeout,
 		ElasticQuotaProcessLatency,
+		SecondaryDeviceNotWellPlannedNodes,
 	}
 
 	gcMetricsList = []prometheus.Collector{
 		ReservationStatusPhase.GetGaugeVec(),
-		SecondaryDeviceNotWellPlannedNodes.GetGaugeVec(),
 	}
 )
 
@@ -120,6 +122,14 @@ func RecordElasticQuotaProcessLatency(operation string, latency time.Duration) {
 	ElasticQuotaProcessLatency.WithLabelValues(operation).Observe(latency.Seconds())
 }
 
-func RecordSecondaryDeviceNotWellPlanned(nodeName string) {
-	SecondaryDeviceNotWellPlannedNodes.WithSet(prometheus.Labels{NodeNameKey: nodeName}, 1.0)
+func RecordSecondaryDeviceNotWellPlanned(nodeName string, notWellPlanned bool) {
+	if SecondaryDeviceNotWellPlannedNodes.MetricVec == nil {
+		// only for UT
+		return
+	}
+	if notWellPlanned {
+		SecondaryDeviceNotWellPlannedNodes.WithLabelValues(nodeName).Set(1.0)
+		return
+	}
+	SecondaryDeviceNotWellPlannedNodes.DeleteLabelValues(nodeName)
 }

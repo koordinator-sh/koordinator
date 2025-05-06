@@ -486,12 +486,15 @@ func (n *nodeDeviceCache) removeNodeDevice(nodeName string) {
 	if nodeName == "" {
 		return
 	}
+	metrics.RecordSecondaryDeviceNotWellPlanned(nodeName, false)
 	n.lock.Lock()
 	defer n.lock.Unlock()
 	delete(n.nodeDeviceInfos, nodeName)
 }
 
 func (n *nodeDeviceCache) invalidateNodeDevice(device *schedulingv1alpha1.Device) {
+	metrics.RecordSecondaryDeviceNotWellPlanned(device.Name, false)
+
 	device = device.DeepCopy()
 	for i := range device.Spec.Devices {
 		info := &device.Spec.Devices[i]
@@ -516,6 +519,8 @@ func (n *nodeDeviceCache) updateNodeDevice(nodeName string, device *schedulingv1
 		return
 	}
 
+	metrics.RecordSecondaryDeviceNotWellPlanned(device.Name, apiext.IsSecondaryDeviceNotWellPlanned(device))
+
 	nodeDeviceResource := buildDeviceResources(device)
 	numaTopology := newNUMATopology(device)
 	deviceInfos := map[schedulingv1alpha1.DeviceType][]*schedulingv1alpha1.DeviceInfo{}
@@ -538,9 +543,6 @@ func (n *nodeDeviceCache) updateNodeDevice(nodeName string, device *schedulingv1
 	info.gpuPartitionIndexer = gpuPartitionIndexer
 	info.nodeHonorGPUPartition = apiext.GetGPUPartitionPolicy(device) == apiext.GPUPartitionPolicyHonor
 	info.secondaryDeviceWellPlanned = apiext.IsSecondaryDeviceWellPlanned(device)
-	if apiext.IsSecondaryDeviceNotWellPlanned(device) {
-		metrics.RecordSecondaryDeviceNotWellPlanned(device.Name)
-	}
 	info.gpuTopologyScope = gpuTopologyScope
 }
 
@@ -607,6 +609,7 @@ func (n *nodeDeviceCache) gcNodeDevice(ctx context.Context, informerFactory info
 		defer n.lock.Unlock()
 		for name := range n.nodeDeviceInfos {
 			if !nodeNames.Has(name) {
+				metrics.RecordSecondaryDeviceNotWellPlanned(name, false)
 				delete(n.nodeDeviceInfos, name)
 				klog.InfoS("nodeDevice has been removed since missing Node object", "node", name)
 			}
