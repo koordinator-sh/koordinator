@@ -452,7 +452,7 @@ func (n *nodeDevice) split(requestsPerInstance corev1.ResourceList, deviceType s
 }
 
 type nodeDeviceCache struct {
-	lock sync.Mutex
+	lock sync.RWMutex
 	// nodeDeviceInfos stores nodeDevice for each node.
 	nodeDeviceInfos map[string]*nodeDevice
 }
@@ -464,11 +464,17 @@ func newNodeDeviceCache() *nodeDeviceCache {
 }
 
 func (n *nodeDeviceCache) getNodeDevice(nodeName string, needInit bool) *nodeDevice {
+	if !needInit {
+		n.lock.RLock()
+		defer n.lock.RUnlock()
+		return n.nodeDeviceInfos[nodeName]
+	}
+
 	n.lock.Lock()
 	defer n.lock.Unlock()
 
 	// getNodeDevice will create new `nodeDevice` if needInit is true and nodeDeviceInfos[nodeName] is nil
-	if n.nodeDeviceInfos[nodeName] == nil && needInit {
+	if n.nodeDeviceInfos[nodeName] == nil {
 		klog.V(5).Infof("node device cache not found, nodeName: %v, createNodeDevice", nodeName)
 		n.nodeDeviceInfos[nodeName] = newNodeDevice()
 	}
@@ -559,8 +565,8 @@ func buildDeviceResources(device *schedulingv1alpha1.Device) map[schedulingv1alp
 }
 
 func (n *nodeDeviceCache) getNodeDeviceSummary(nodeName string) (*NodeDeviceSummary, bool) {
-	n.lock.Lock()
-	defer n.lock.Unlock()
+	n.lock.RLock()
+	defer n.lock.RUnlock()
 
 	if _, exist := n.nodeDeviceInfos[nodeName]; !exist {
 		return nil, false
@@ -571,8 +577,8 @@ func (n *nodeDeviceCache) getNodeDeviceSummary(nodeName string) (*NodeDeviceSumm
 }
 
 func (n *nodeDeviceCache) getAllNodeDeviceSummary() map[string]*NodeDeviceSummary {
-	n.lock.Lock()
-	defer n.lock.Unlock()
+	n.lock.RLock()
+	defer n.lock.RUnlock()
 
 	nodeDeviceSummaries := make(map[string]*NodeDeviceSummary)
 	for nodeName, nodeDeviceInfo := range n.nodeDeviceInfos {

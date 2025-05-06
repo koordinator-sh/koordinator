@@ -140,6 +140,9 @@ func (a *AutopilotAllocator) Allocate(
 func (a *AutopilotAllocator) filterNodeDevice(
 	requiredDeviceResources, preemptibleDeviceResources map[schedulingv1alpha1.DeviceType]deviceResources,
 ) *nodeDevice {
+	if requiredDeviceResources == nil && preemptibleDeviceResources == nil && a.numaNodes == nil && !a.state.hasSelectors {
+		return a.nodeDevice
+	}
 	devices := map[schedulingv1alpha1.DeviceType][]int{}
 	for deviceType := range a.requestsPerInstance {
 		deviceInfos := a.nodeDevice.deviceInfos[deviceType]
