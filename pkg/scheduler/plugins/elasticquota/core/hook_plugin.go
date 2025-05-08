@@ -23,33 +23,12 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	apierror "k8s.io/apimachinery/pkg/util/errors"
-	"k8s.io/component-base/metrics"
 	"k8s.io/klog/v2"
-	schedulermetrics2 "k8s.io/kubernetes/pkg/scheduler/metrics"
 
 	"github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
-	schedulermetrics "github.com/koordinator-sh/koordinator/pkg/scheduler/metrics"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/metrics"
 )
-
-var (
-	hookPluginLatency = metrics.NewHistogramVec(
-		&metrics.HistogramOpts{
-			Subsystem:      schedulermetrics2.SchedulerSubsystem,
-			Name:           "elastic_quota_hook_plugin_latency",
-			Help:           "Latency of hook plugin operations in seconds",
-			Buckets:        metrics.ExponentialBuckets(0.000001, 2, 20),
-			StabilityLevel: metrics.ALPHA,
-		},
-		[]string{"plugin", "operation"},
-	)
-)
-
-func init() {
-	schedulermetrics.RegisterMetrics(
-		hookPluginLatency,
-	)
-}
 
 // QuotaUpdateState provides a shared state storage for hookPlugins during quota updates
 type QuotaUpdateState struct {
@@ -183,39 +162,40 @@ func (w *MetricsWrapper) GetKey() string {
 func (w *MetricsWrapper) IsQuotaUpdated(oldQuotaInfo, newQuotaInfo *QuotaInfo, newQuota *v1alpha1.ElasticQuota) bool {
 	start := time.Now()
 	result := w.plugin.IsQuotaUpdated(oldQuotaInfo, newQuotaInfo, newQuota)
-	hookPluginLatency.WithLabelValues(w.GetKey(), "is_quota_updated").Observe(time.Since(start).Seconds())
+	metrics.RecordElasticQuotaHookPluginLatency(w.GetKey(), "is_quota_updated", time.Since(start))
 	return result
 }
 
 func (w *MetricsWrapper) PreQuotaUpdate(oldQuotaInfo, newQuotaInfo *QuotaInfo, quota *v1alpha1.ElasticQuota, state *QuotaUpdateState) {
 	start := time.Now()
 	w.plugin.PreQuotaUpdate(oldQuotaInfo, newQuotaInfo, quota, state)
-	hookPluginLatency.WithLabelValues(w.GetKey(), "pre_quota_update").Observe(time.Since(start).Seconds())
+	metrics.RecordElasticQuotaHookPluginLatency(w.GetKey(), "pre_quota_update", time.Since(start))
 }
 
 func (w *MetricsWrapper) PostQuotaUpdate(oldQuotaInfo, newQuotaInfo *QuotaInfo, quota *v1alpha1.ElasticQuota, state *QuotaUpdateState) {
 	start := time.Now()
 	w.plugin.PostQuotaUpdate(oldQuotaInfo, newQuotaInfo, quota, state)
-	hookPluginLatency.WithLabelValues(w.GetKey(), "post_quota_update").Observe(time.Since(start).Seconds())
+	metrics.RecordElasticQuotaHookPluginLatency(w.GetKey(), "post_quota_update", time.Since(start))
 }
 
 func (w *MetricsWrapper) OnPodUpdated(quotaName string, oldPod, newPod *v1.Pod) {
 	start := time.Now()
 	w.plugin.OnPodUpdated(quotaName, oldPod, newPod)
-	hookPluginLatency.WithLabelValues(w.GetKey(), "on_pod_update").Observe(time.Since(start).Seconds())
+	metrics.RecordElasticQuotaHookPluginLatency(w.GetKey(), "on_pod_update", time.Since(start))
 }
 
 func (w *MetricsWrapper) UpdateQuotaStatus(oldQuota, newQuota *v1alpha1.ElasticQuota) *v1alpha1.ElasticQuota {
 	start := time.Now()
 	result := w.plugin.UpdateQuotaStatus(oldQuota, newQuota)
-	hookPluginLatency.WithLabelValues(w.GetKey(), "update_quota_status").Observe(time.Since(start).Seconds())
+	metrics.RecordElasticQuotaHookPluginLatency(w.GetKey(), "update_quota_status", time.Since(start))
 	return result
 }
 
 func (w *MetricsWrapper) CheckPod(quotaName string, pod *v1.Pod) error {
 	start := time.Now()
 	err := w.plugin.CheckPod(quotaName, pod)
-	hookPluginLatency.WithLabelValues(w.GetKey(), "check_pod").Observe(time.Since(start).Seconds())
+	metrics.RecordElasticQuotaHookPluginLatency(w.GetKey(), "check_pod", time.Since(start))
+
 	return err
 }
 

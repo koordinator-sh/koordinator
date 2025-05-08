@@ -262,7 +262,8 @@ func (g *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleState
 
 	for _, hookPlugin := range mgr.GetHookPlugins() {
 		if err := hookPlugin.CheckPod(quotaName, pod); err != nil {
-			return nil, framework.NewStatus(framework.Unschedulable, err.Error())
+			return nil, framework.NewStatus(framework.Unschedulable,
+				fmt.Sprintf("CheckPod failed for hook plugin %v, err: %v", hookPlugin.GetKey(), err))
 		}
 	}
 

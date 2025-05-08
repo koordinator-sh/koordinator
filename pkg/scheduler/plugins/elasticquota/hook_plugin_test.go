@@ -109,7 +109,7 @@ func TestCheckPodHook(t *testing.T) {
 			v1.ResourceCPU: "2"}).Obj()}).Obj()
 	_, status := plugin.PreFilter(context.TODO(), framework.NewCycleState(), pod1)
 	assert.True(t, status.IsUnschedulable(), "Pod should be unschedulable")
-	assert.Equal(t, "test error", status.Message())
+	assert.Equal(t, "CheckPod failed for hook plugin mockFactory, err: test error", status.Message())
 }
 
 func initPluginSuit(t *testing.T) (*pluginTestSuit, *Plugin) {
