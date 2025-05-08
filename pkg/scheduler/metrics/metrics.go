@@ -79,6 +79,16 @@ var (
 			Help:      "run next pod plugins, the latency of deleting pod from queue",
 			Buckets:   metrics.ExponentialBuckets(0.00001, 2, 24),
 		}, nil)
+	ElasticQuotaHookPluginLatency = metrics.NewHistogramVec(
+		&metrics.HistogramOpts{
+			Subsystem:      schedulermetrics.SchedulerSubsystem,
+			Name:           "elastic_quota_hook_plugin_latency",
+			Help:           "elastic quota hook plugin latency in seconds",
+			Buckets:        metrics.ExponentialBuckets(0.000001, 2, 24),
+			StabilityLevel: metrics.ALPHA,
+		},
+		[]string{"plugin", "operation"},
+	)
 
 	metricsList = []metrics.Registerable{
 		SchedulingTimeout,
@@ -86,6 +96,7 @@ var (
 		SecondaryDeviceNotWellPlannedNodes,
 		WaitingGangGroupNumber,
 		NextPodDeleteFromQueueLatency,
+		ElasticQuotaHookPluginLatency,
 	}
 
 	gcMetricsList = []prometheus.Collector{
@@ -152,4 +163,8 @@ func RecordSecondaryDeviceNotWellPlanned(nodeName string, notWellPlanned bool) {
 
 func RecordNextPodPluginsDeletePodFromQueue(latency time.Duration) {
 	NextPodDeleteFromQueueLatency.WithLabelValues().Observe(latency.Seconds())
+}
+
+func RecordElasticQuotaHookPluginLatency(plugin, operation string, latency time.Duration) {
+	ElasticQuotaHookPluginLatency.WithLabelValues(plugin, operation).Observe(latency.Seconds())
 }
