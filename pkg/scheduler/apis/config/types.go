@@ -211,7 +211,7 @@ type ElasticQuotaArgs struct {
 	// EnableCheckParentQuota check parentQuotaGroups' used and runtime Quota in PreFilter
 	EnableCheckParentQuota bool
 
-	// EnableRuntimeQuota if true, use max instead of runtime for all checks.
+	// EnableRuntimeQuota if false, use max instead of runtime for all checks.
 	EnableRuntimeQuota bool
 }
 
