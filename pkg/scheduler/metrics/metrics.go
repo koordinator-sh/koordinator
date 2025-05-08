@@ -65,11 +65,22 @@ var (
 		},
 		[]string{NodeNameKey},
 	)
+	ElasticQuotaHookPluginLatency = metrics.NewHistogramVec(
+		&metrics.HistogramOpts{
+			Subsystem:      schedulermetrics.SchedulerSubsystem,
+			Name:           "elastic_quota_hook_plugin_latency",
+			Help:           "elastic quota hook plugin latency in seconds",
+			Buckets:        metrics.ExponentialBuckets(0.000001, 2, 24),
+			StabilityLevel: metrics.ALPHA,
+		},
+		[]string{"plugin", "operation"},
+	)
 
 	metricsList = []metrics.Registerable{
 		SchedulingTimeout,
 		ElasticQuotaProcessLatency,
 		SecondaryDeviceNotWellPlannedNodes,
+		ElasticQuotaHookPluginLatency,
 	}
 
 	gcMetricsList = []prometheus.Collector{
@@ -132,4 +143,8 @@ func RecordSecondaryDeviceNotWellPlanned(nodeName string, notWellPlanned bool) {
 		return
 	}
 	SecondaryDeviceNotWellPlannedNodes.DeleteLabelValues(nodeName)
+}
+
+func RecordElasticQuotaHookPluginLatency(plugin, operation string, latency time.Duration) {
+	ElasticQuotaHookPluginLatency.WithLabelValues(plugin, operation).Observe(latency.Seconds())
 }
