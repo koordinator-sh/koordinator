@@ -187,6 +187,7 @@ func (g *Plugin) SelectVictimsOnNode(
 			klog.V(5).InfoS("Pod is a potential preemption victim on node", "pod", klog.KObj(rpi), "node", klog.KObj(nodeInfo.Node()))
 		}
 
+		// TODO: support quota recursive check
 		newUsed := quotav1.Mask(quotav1.Add(postFilterState.used, podReq), quotav1.ResourceNames(podReq))
 		if isLessEqual, _ := quotav1.LessThanOrEqual(newUsed, postFilterState.usedLimit); !isLessEqual {
 			if err := removePod(pi); err != nil {
