@@ -97,9 +97,6 @@ func (o *Options) BuildFilterFunc() (FilterFunc, error) {
 		}
 	}
 	return func(pod *corev1.Pod) bool {
-		if o.filter != nil && !o.filter(pod) {
-			return false
-		}
 		if len(o.includedNamespaces) > 0 && !o.includedNamespaces.Has(pod.Namespace) {
 			klog.V(4).InfoS("Pod fails the following checks", "pod", klog.KObj(pod), "checks", "includedNamespaces")
 			return false
@@ -110,6 +107,9 @@ func (o *Options) BuildFilterFunc() (FilterFunc, error) {
 		}
 		if s != nil && !s.Matches(labels.Set(pod.GetLabels())) {
 			klog.V(4).InfoS("Pod fails the following checks", "pod", klog.KObj(pod), "checks", "labelSelector")
+			return false
+		}
+		if o.filter != nil && !o.filter(pod) {
 			return false
 		}
 		return true
