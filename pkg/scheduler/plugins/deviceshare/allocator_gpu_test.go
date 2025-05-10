@@ -28,11 +28,13 @@ import (
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/client-go/informers"
 	kubefake "k8s.io/client-go/kubernetes/fake"
+	schedconfig "k8s.io/kubernetes/pkg/scheduler/apis/config"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	koordfake "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/fake"
 	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
+	schedulerconfig "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 )
 
 var fakeH800DeviceCR = func() *schedulingv1alpha1.Device {
@@ -1466,6 +1468,64 @@ func TestAllocateSharedGPU(t *testing.T) {
 				},
 			},
 		},
+		{
+			name:            "two scope, both not empty, shared binpack take Precedence",
+			deviceCR:        fakeDeviceCR,
+			gpuWanted:       1,
+			exclusivePolicy: apiext.PCIExpressLevelDeviceExclusivePolicy,
+			assignedDevices: apiext.DeviceAllocations{
+				schedulingv1alpha1.GPU: []*apiext.DeviceAllocation{
+					{
+						Minor:     5,
+						Resources: gpuResourceList,
+					},
+					{
+						Minor:     7,
+						Resources: gpuSharedResourceList,
+					},
+				},
+				schedulingv1alpha1.RDMA: []*apiext.DeviceAllocation{
+					{
+						Minor: 3,
+						Resources: corev1.ResourceList{
+							apiext.ResourceRDMA: *resource.NewQuantity(1, resource.DecimalSI),
+						},
+						Extension: &apiext.DeviceAllocationExtension{
+							VirtualFunctions: []apiext.VirtualFunction{
+								{
+									BusID: "0000:51:00.2",
+									Minor: 0,
+								},
+							},
+						},
+					},
+				},
+			},
+			want: apiext.DeviceAllocations{
+				schedulingv1alpha1.GPU: []*apiext.DeviceAllocation{
+					{
+						Minor:     7,
+						Resources: gpuSharedResourceList,
+					},
+				},
+				schedulingv1alpha1.RDMA: []*apiext.DeviceAllocation{
+					{
+						Minor: 4,
+						Resources: corev1.ResourceList{
+							apiext.ResourceRDMA: *resource.NewQuantity(1, resource.DecimalSI),
+						},
+						Extension: &apiext.DeviceAllocationExtension{
+							VirtualFunctions: []apiext.VirtualFunction{
+								{
+									BusID: "0000:b9:00.2",
+									Minor: 0,
+								},
+							},
+						},
+					},
+				},
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -1574,11 +1634,23 @@ func TestAllocateSharedGPU(t *testing.T) {
 				},
 			}
 
+			scorer := deviceResourceStrategyTypeMap[schedulerconfig.MostAllocated](&schedulerconfig.DeviceShareArgs{
+				ScoringStrategy: &schedulerconfig.ScoringStrategy{
+					Type: schedulerconfig.MostAllocated,
+					Resources: []schedconfig.ResourceSpec{
+						{
+							Name:   string(apiext.ResourceGPUMemoryRatio),
+							Weight: 1,
+						},
+					},
+				},
+			})
 			allocator := &AutopilotAllocator{
 				state:      state,
 				nodeDevice: nodeDevice,
 				node:       node,
 				pod:        pod,
+				scorer:     scorer,
 			}
 
 			allocations, status := allocator.Allocate(nil, nil, nil, nil)
