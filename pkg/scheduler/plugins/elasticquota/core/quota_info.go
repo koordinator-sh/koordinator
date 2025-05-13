@@ -620,6 +620,10 @@ func (pInfo *PodInfo) DeepCopy() *PodInfo {
 	return newPodInfo
 }
 
+func (pInfo *PodInfo) GetPod() *v1.Pod {
+	return pInfo.pod
+}
+
 func generatePodCacheKey(pod *v1.Pod) string {
 	return pod.Namespace + "/" + pod.Name
 }

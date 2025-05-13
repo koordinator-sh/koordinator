@@ -148,7 +148,12 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 		groupQuotaManagersForQuotaTree: make(map[string]*core.GroupQuotaManager),
 		quotaToTreeMap:                 make(map[string]string),
 	}
-	elasticQuota.groupQuotaManager = core.NewGroupQuotaManager("", pluginArgs.SystemQuotaGroupMax, pluginArgs.DefaultQuotaGroupMax)
+	elasticQuota.groupQuotaManager = core.NewGroupQuotaManager("", pluginArgs.SystemQuotaGroupMax,
+		pluginArgs.DefaultQuotaGroupMax)
+	err := elasticQuota.groupQuotaManager.InitHookPlugins(pluginArgs)
+	if err != nil {
+		return nil, err
+	}
 
 	elasticQuota.quotaToTreeMap[extension.DefaultQuotaName] = ""
 	elasticQuota.quotaToTreeMap[extension.SystemQuotaName] = ""
@@ -158,7 +163,7 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 	elasticQuota.createRootQuotaIfNotPresent()
 	elasticQuota.createSystemQuotaIfNotPresent()
 	elasticQuota.createDefaultQuotaIfNotPresent()
-	_, err := frameworkexthelper.ForceSyncFromInformerWithReplace(ctx.Done(), scheSharedInformerFactory, informer, cache.ResourceEventHandlerFuncs{
+	_, err = frameworkexthelper.ForceSyncFromInformerWithReplace(ctx.Done(), scheSharedInformerFactory, informer, cache.ResourceEventHandlerFuncs{
 		AddFunc:    elasticQuota.OnQuotaAdd,
 		UpdateFunc: elasticQuota.OnQuotaUpdate,
 		DeleteFunc: elasticQuota.OnQuotaDelete,
@@ -252,6 +257,13 @@ func (g *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleState
 			return nil, framework.NewStatus(framework.Unschedulable, fmt.Sprintf("Insufficient non-preemptible quotas, "+
 				"quotaName: %v, min: %v, nonPreemptibleUsed: %v, pod's request: %v, exceedDimensions: %v",
 				quotaName, printResourceList(quotaMin), printResourceList(nonPreemptibleUsed), printResourceList(podRequest), exceedDimensions))
+		}
+	}
+
+	for _, hookPlugin := range mgr.GetHookPlugins() {
+		if err := hookPlugin.CheckPod(quotaName, pod); err != nil {
+			return nil, framework.NewStatus(framework.Unschedulable,
+				fmt.Sprintf("CheckPod failed for hook plugin %v, err: %v", hookPlugin.GetKey(), err))
 		}
 	}
 
