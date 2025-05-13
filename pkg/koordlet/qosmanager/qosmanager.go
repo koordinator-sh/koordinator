@@ -118,7 +118,7 @@ func (r *qosManager) Run(stopCh <-chan struct{}) error {
 			klog.V(4).Infof("qos strategy %v is not enabled, skip running", name)
 			continue
 		}
-		go strategy.Run(stopCh)
+		strategy.Run(stopCh)
 		klog.V(4).Infof("qos strategy %v start", name)
 	}
 
