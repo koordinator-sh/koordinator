@@ -770,7 +770,7 @@ func TestPlugin_PreFilter_CheckParent(t *testing.T) {
 			qi1.CalculateInfo.Runtime = tt.parentRuntime.DeepCopy()
 			qi1.UnLock()
 			podRequests := core.PodRequests(tt.pod)
-			status := *gp.checkQuotaRecursive(tt.quotaInfo.Name, []string{tt.quotaInfo.Name}, podRequests)
+			status := *gp.checkQuotaRecursive(gp.groupQuotaManager, tt.quotaInfo.Name, []string{tt.quotaInfo.Name}, podRequests)
 			assert.Equal(t, tt.expectedStatus, status)
 		})
 	}
