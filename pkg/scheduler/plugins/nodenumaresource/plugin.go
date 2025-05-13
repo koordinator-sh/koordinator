@@ -111,9 +111,6 @@ func NewWithOptions(args runtime.Object, handle framework.Handle, opts ...Option
 	if err := validation.ValidateNodeNUMAResourceArgs(nil, pluginArgs); err != nil {
 		return nil, err
 	}
-	if pluginArgs.ScoringStrategy == nil {
-		return nil, fmt.Errorf("scoring strategy not specified")
-	}
 	strategy := pluginArgs.ScoringStrategy.Type
 	scorePlugin, exists := resourceStrategyTypeMap[strategy]
 	if !exists {
