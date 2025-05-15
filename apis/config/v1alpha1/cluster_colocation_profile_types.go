@@ -88,6 +88,11 @@ type ClusterColocationProfileSpec struct {
 	// +optional
 	SchedulerName string `json:"schedulerName,omitempty"`
 
+	// KoordinatorSchedulerName indicates the internal schedulerName that will be used by Koordinator.
+	// It overwrites the schedulerName in the Pod.SchedulerName.
+	// +optional
+	KoordinatorSchedulerName string `json:"koordinatorSchedulerName,omitempty"`
+
 	// Patch indicates patching podTemplate that will be injected to the Pod.
 	// +optional
 	// +kubebuilder:pruning:PreserveUnknownFields

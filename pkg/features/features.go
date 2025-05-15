@@ -45,6 +45,9 @@ const (
 	// ConfigMapValidatingWebhook enables validating webhook for configmap Creation or updates
 	ConfigMapValidatingWebhook featuregate.Feature = "ConfigMapValidatingWebhook"
 
+	// ReservationMutatingWebhook enables mutating webhook for Reservations creations.
+	ReservationMutatingWebhook featuregate.Feature = "ReservationMutatingWebhook"
+
 	// ColocationProfileSkipMutatingResources config whether to update resourceName according to priority by default
 	ColocationProfileSkipMutatingResources featuregate.Feature = "ColocationProfileSkipMutatingResources"
 
@@ -84,6 +87,9 @@ const (
 
 	// Enable sync GPU shared resource from Device CRD
 	EnableSyncGPUSharedResource featuregate.Feature = "EnableSyncGPUSharedResource"
+
+	// ColocationProfileController enables the reconciliation for ClusterColocationProfile.
+	ColocationProfileController featuregate.Feature = "ColocationProfileController"
 )
 
 var defaultFeatureGates = map[featuregate.Feature]featuregate.FeatureSpec{
@@ -94,6 +100,7 @@ var defaultFeatureGates = map[featuregate.Feature]featuregate.FeatureSpec{
 	NodeMutatingWebhook:                    {Default: false, PreRelease: featuregate.Alpha},
 	NodeValidatingWebhook:                  {Default: false, PreRelease: featuregate.Alpha},
 	ConfigMapValidatingWebhook:             {Default: false, PreRelease: featuregate.Alpha},
+	ReservationMutatingWebhook:             {Default: false, PreRelease: featuregate.Alpha},
 	WebhookFramework:                       {Default: true, PreRelease: featuregate.Beta},
 	ColocationProfileSkipMutatingResources: {Default: false, PreRelease: featuregate.Alpha},
 	MultiQuotaTree:                         {Default: false, PreRelease: featuregate.Alpha},
@@ -104,6 +111,7 @@ var defaultFeatureGates = map[featuregate.Feature]featuregate.FeatureSpec{
 	SupportParentQuotaSubmitPod:            {Default: false, PreRelease: featuregate.Alpha},
 	EnableQuotaAdmission:                   {Default: false, PreRelease: featuregate.Alpha},
 	EnableSyncGPUSharedResource:            {Default: true, PreRelease: featuregate.Alpha},
+	ColocationProfileController:            {Default: false, PreRelease: featuregate.Alpha},
 }
 
 const (
