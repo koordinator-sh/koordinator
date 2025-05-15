@@ -62,6 +62,11 @@ spec:
                   The higher the value, the higher the priority.
                 format: int32
                 type: integer
+              koordinatorSchedulerName:
+                description: |-
+                  KoordinatorSchedulerName indicates the internal schedulerName that will be used by Koordinator.
+                  It overwrites the schedulerName in the Pod.SchedulerName.
+                type: string
               labelKeysMapping:
                 additionalProperties:
                   type: string

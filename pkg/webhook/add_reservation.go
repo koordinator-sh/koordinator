@@ -14,20 +14,16 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package extension
+package webhook
 
 import (
-	corev1 "k8s.io/api/core/v1"
+	"github.com/koordinator-sh/koordinator/pkg/features"
+	utilfeature "github.com/koordinator-sh/koordinator/pkg/util/feature"
+	"github.com/koordinator-sh/koordinator/pkg/webhook/reservation/mutating"
 )
 
-const (
-	// LabelSchedulerName is used to specify the internal scheduler name for a pod, overriding the spec.schedulerName.
-	LabelSchedulerName = SchedulingDomainPrefix + "/scheduler-name"
-)
-
-func GetSchedulerName(pod *corev1.Pod) string {
-	if schedulerName, ok := pod.Labels[LabelSchedulerName]; ok {
-		return schedulerName
-	}
-	return pod.Spec.SchedulerName
+func init() {
+	addHandlersWithGate(mutating.HandlerBuilderMap, func() (enabled bool) {
+		return utilfeature.DefaultFeatureGate.Enabled(features.ReservationMutatingWebhook)
+	})
 }
