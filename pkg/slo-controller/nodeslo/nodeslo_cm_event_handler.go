@@ -129,27 +129,27 @@ func (p *SLOCfgHandlerForConfigMapEvent) syncConfig(configMap *corev1.ConfigMap)
 	newSLOCfg.ThresholdCfgMerged, err = calculateResourceThresholdCfgMerged(oldSLOCfgCopy.ThresholdCfgMerged, configMap)
 	if err != nil {
 		klog.V(5).Infof("failed to get ThresholdCfg, err: %s", err)
-		p.recorder.Eventf(configMap, "Warning", config.ReasonSLOConfigUnmarshalFailed, "failed to unmarshal ThresholdCfg, err: %s", err)
+		p.recorder.Eventf(configMap, corev1.EventTypeWarning, config.ReasonSLOConfigUnmarshalFailed, "failed to unmarshal ThresholdCfg, err: %s", err)
 	}
 	newSLOCfg.ResourceQOSCfgMerged, err = calculateResourceQOSCfgMerged(oldSLOCfgCopy.ResourceQOSCfgMerged, configMap)
 	if err != nil {
 		klog.V(5).Infof("failed to get ResourceQOSCfg, err: %s", err)
-		p.recorder.Eventf(configMap, "Warning", config.ReasonSLOConfigUnmarshalFailed, "failed to unmarshal ResourceQOSCfg, err: %s", err)
+		p.recorder.Eventf(configMap, corev1.EventTypeWarning, config.ReasonSLOConfigUnmarshalFailed, "failed to unmarshal ResourceQOSCfg, err: %s", err)
 	}
 	newSLOCfg.CPUBurstCfgMerged, err = calculateCPUBurstCfgMerged(oldSLOCfgCopy.CPUBurstCfgMerged, configMap)
 	if err != nil {
 		klog.V(5).Infof("failed to get CPUBurstCfg, err: %s", err)
-		p.recorder.Eventf(configMap, "Warning", config.ReasonSLOConfigUnmarshalFailed, "failed to unmarshal CPUBurstCfg, err: %s", err)
+		p.recorder.Eventf(configMap, corev1.EventTypeWarning, config.ReasonSLOConfigUnmarshalFailed, "failed to unmarshal CPUBurstCfg, err: %s", err)
 	}
 	newSLOCfg.SystemCfgMerged, err = calculateSystemConfigMerged(oldSLOCfgCopy.SystemCfgMerged, configMap)
 	if err != nil {
 		klog.V(5).Infof("failed to get SystemCfg, err: %s", err)
-		p.recorder.Eventf(configMap, "Warning", config.ReasonSLOConfigUnmarshalFailed, "failed to unmarshal SystemCfg, err: %s", err)
+		p.recorder.Eventf(configMap, corev1.EventTypeWarning, config.ReasonSLOConfigUnmarshalFailed, "failed to unmarshal SystemCfg, err: %s", err)
 	}
 	newSLOCfg.HostAppCfgMerged, err = calculateHostAppConfigMerged(oldSLOCfgCopy.HostAppCfgMerged, configMap)
 	if err != nil {
 		klog.V(5).Infof("failed to get HostApplicationCfg, err: %s", err)
-		p.recorder.Eventf(configMap, "Warning", config.ReasonSLOConfigUnmarshalFailed, "failed to unmarshal HostApplicationCfg, err: %s", err)
+		p.recorder.Eventf(configMap, corev1.EventTypeWarning, config.ReasonSLOConfigUnmarshalFailed, "failed to unmarshal HostApplicationCfg, err: %s", err)
 	}
 	newSLOCfg.ExtensionCfgMerged = calculateExtensionsCfgMerged(oldSLOCfgCopy.ExtensionCfgMerged, configMap, p.recorder)
 	return p.updateCacheIfChanged(newSLOCfg)
