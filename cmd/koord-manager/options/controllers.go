@@ -21,6 +21,7 @@ import (
 
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
+	"github.com/koordinator-sh/koordinator/pkg/controller/colocationprofile"
 	"github.com/koordinator-sh/koordinator/pkg/quota-controller/profile"
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/nodemetric"
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/noderesource"
@@ -28,12 +29,14 @@ import (
 )
 
 var controllerInitFlags = map[string]func(*flag.FlagSet){
-	noderesource.Name: noderesource.InitFlags,
+	noderesource.Name:      noderesource.InitFlags,
+	colocationprofile.Name: colocationprofile.InitFlags,
 }
 
 var controllerAddFuncs = map[string]func(manager.Manager) error{
-	nodemetric.Name:   nodemetric.Add,
-	noderesource.Name: noderesource.Add,
-	nodeslo.Name:      nodeslo.Add,
-	profile.Name:      profile.Add,
+	nodemetric.Name:        nodemetric.Add,
+	noderesource.Name:      noderesource.Add,
+	nodeslo.Name:           nodeslo.Add,
+	profile.Name:           profile.Add,
+	colocationprofile.Name: colocationprofile.Add,
 }
