@@ -22,8 +22,9 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/apis/config"
 	schedconfig "k8s.io/kubernetes/pkg/scheduler/apis/config"
 
-	"github.com/koordinator-sh/koordinator/apis/extension"
 	v1 "k8s.io/api/core/v1"
+
+	"github.com/koordinator-sh/koordinator/apis/extension"
 )
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -227,7 +228,7 @@ type CoschedulingArgs struct {
 	// Workers number of controller
 	// default is 1
 	ControllerWorkers int64
-	// Skip check schedule cycle
+	// Skip check schedule cycle [Deprecated]
 	// default is false
 	SkipCheckScheduleCycle bool
 }
