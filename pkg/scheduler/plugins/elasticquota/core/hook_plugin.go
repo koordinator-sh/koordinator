@@ -245,8 +245,10 @@ func (gqm *GroupQuotaManager) getChildGroupQuotaInfosNoLock(quotaName string) ma
 		return nil
 	}
 	childQuotaInfos := make(map[string]*QuotaInfo)
-	for childName, childTopoNode := range quotaTopoNode.getChildGroupQuotaInfos() {
-		childQuotaInfos[childName] = childTopoNode.quotaInfo
+	for childName := range quotaTopoNode.getChildGroupQuotaInfos() {
+		if quotaInfo, ok := gqm.quotaInfoMap[childName]; ok {
+			childQuotaInfos[childName] = quotaInfo
+		}
 	}
 	return childQuotaInfos
 }
