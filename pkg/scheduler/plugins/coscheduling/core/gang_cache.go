@@ -19,14 +19,17 @@ package core
 import (
 	"sync"
 
+	"github.com/go-logr/logr"
 	v1 "k8s.io/api/core/v1"
 	listerv1 "k8s.io/client-go/listers/core/v1"
 	"k8s.io/klog/v2"
+	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	"github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 	pgclientset "github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/generated/clientset/versioned"
 	pglister "github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/generated/listers/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/coscheduling/util"
 	koordutil "github.com/koordinator-sh/koordinator/pkg/util"
 )
@@ -39,9 +42,10 @@ type GangCache struct {
 	podLister        listerv1.PodLister
 	pgLister         pglister.PodGroupLister
 	pgClient         pgclientset.Interface
+	handle           framework.Handle
 }
 
-func NewGangCache(args *config.CoschedulingArgs, podLister listerv1.PodLister, pgLister pglister.PodGroupLister, client pgclientset.Interface) *GangCache {
+func NewGangCache(args *config.CoschedulingArgs, podLister listerv1.PodLister, pgLister pglister.PodGroupLister, client pgclientset.Interface, handle framework.Handle) *GangCache {
 	return &GangCache{
 		gangItems:        make(map[string]*Gang),
 		gangGroupInfoMap: make(map[string]*GangGroupInfo),
@@ -50,6 +54,7 @@ func NewGangCache(args *config.CoschedulingArgs, podLister listerv1.PodLister, p
 		podLister:        podLister,
 		pgLister:         pgLister,
 		pgClient:         client,
+		handle:           handle,
 	}
 }
 
@@ -139,21 +144,25 @@ func (gangCache *GangCache) onPodAddInternal(obj interface{}, action string) {
 		gangGroupId := util.GetGangGroupId(gangGroup)
 		gangGroupInfo := gangCache.getGangGroupInfo(gangGroupId, gangGroup, true)
 		gang.SetGangGroupInfo(gangGroupInfo)
-		gang.initPodLastScheduleTime(pod)
-	} else {
-		//only podGroup added then can initPodLastScheduleTime
-		gangGroup := gang.getGangGroup()
-		gangGroupId := util.GetGangGroupId(gangGroup)
-		gangGroupInfo := gangCache.getGangGroupInfo(gangGroupId, gangGroup, false)
-		if gangGroupInfo != nil {
-			gang.initPodLastScheduleTime(pod)
-		}
 	}
 
 	gang.setChild(pod)
 	if pod.Spec.NodeName != "" {
 		gang.addBoundPod(pod)
 		gang.setResourceSatisfied()
+	} else if action == "create" && gang.getChildrenNum() >= gang.getGangMinNum() {
+		if gangCache.handle == nil {
+			// only UT will go here
+			return
+		}
+		if extendedHandle := gangCache.handle.(frameworkext.ExtendedHandle); extendedHandle != nil && extendedHandle.Scheduler() != nil && extendedHandle.Scheduler().GetSchedulingQueue() != nil {
+			addedPod, ok := obj.(*v1.Pod)
+			if !ok {
+				return
+			}
+			klog.V(4).Infof("gang basic check pass, delivery an activate for gang: %s, pod: %s", gangId, addedPod.Name)
+			extendedHandle.Scheduler().GetSchedulingQueue().Activate(logr.Discard(), map[string]*v1.Pod{util.GetId(addedPod.Namespace, addedPod.Name): addedPod})
+		}
 	}
 
 	klog.Infof("watch pod %v, Name:%v, pgLabel:%v", action, pod.Name, pod.Labels[v1alpha1.PodGroupLabel])
@@ -229,8 +238,6 @@ func (gangCache *GangCache) onPodGroupAdd(obj interface{}) {
 	gangGroupId := util.GetGangGroupId(gangGroup)
 	gangGroupInfo := gangCache.getGangGroupInfo(gangGroupId, gangGroup, true)
 	gang.SetGangGroupInfo(gangGroupInfo)
-	//reset already connected pods lastScheduleTime
-	gang.initAllChildrenPodLastScheduleTime()
 
 	klog.Infof("watch podGroup created, Name:%v", pg.Name)
 }
@@ -270,6 +277,7 @@ func (gangCache *GangCache) onPodGroupDelete(obj interface{}) {
 	if gang == nil {
 		return
 	}
+	gang.removeWaitingGang()
 	gangCache.deleteGangFromCacheByGangId(gangId)
 
 	allGangDeleted := true
