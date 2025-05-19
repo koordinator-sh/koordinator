@@ -106,20 +106,25 @@ func initHookPlugins(qiProvider *QuotaInfoReader, args *config.ElasticQuotaArgs)
 	plugins []QuotaHookPlugin, err error) {
 	var errs []error
 	for i, pluginConf := range args.HookPlugins {
+		if pluginConf.Key == "" {
+			errs = append(errs, fmt.Errorf("failed to initialize index-%d hook plugin: key is empty", i))
+			continue
+		}
 		if pluginConf.FactoryKey == "" {
-			errs = append(errs, fmt.Errorf("failed to initialize index-%d hook plugin: factory key is empty", i))
+			errs = append(errs, fmt.Errorf("failed to initialize hook plugin %s: factory key is empty",
+				pluginConf.Key))
 			continue
 		}
 		factory, err := GetHookPluginFactory(pluginConf.FactoryKey)
 		if err != nil {
-			errs = append(errs, fmt.Errorf("failed to initialize index-%d hook plugin: factory %s not found",
-				i, pluginConf.FactoryKey))
+			errs = append(errs, fmt.Errorf("failed to initialize hook plugin %s: factory %s not found",
+				pluginConf.Key, pluginConf.FactoryKey))
 			continue
 		}
-		plugin, err := factory(qiProvider, pluginConf.FactoryKey, pluginConf.FactoryArgs)
+		plugin, err := factory(qiProvider, pluginConf.Key, pluginConf.FactoryArgs)
 		if err != nil {
-			errs = append(errs, fmt.Errorf("failed to initialize index-%d hook-plugin by factory %s, err=%v",
-				i, pluginConf.FactoryKey, err))
+			errs = append(errs, fmt.Errorf("failed to initialize hook-plugin %s by factory %s, err=%v",
+				pluginConf.Key, pluginConf.FactoryKey, err))
 			continue
 		}
 		plugins = append(plugins, plugin)

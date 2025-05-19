@@ -17,6 +17,7 @@ limitations under the License.
 package core
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -43,59 +44,69 @@ func TestInitHookPlugins(t *testing.T) {
 		name          string
 		args          *config.ElasticQuotaArgs
 		expectedError bool
+		expectedErr   error
 		expectedCount int
 	}{
 		{
 			name: "valid plugin configuration",
 			args: &config.ElasticQuotaArgs{
 				HookPlugins: []config.HookPluginConf{
-					{FactoryKey: testFactoryKey},
+					{Key: "mockPlugin1", FactoryKey: testFactoryKey},
 				},
 			},
-			expectedError: false,
 			expectedCount: 1,
 		},
 		{
 			name: "valid plugin configuration with 2 plugins",
 			args: &config.ElasticQuotaArgs{
 				HookPlugins: []config.HookPluginConf{
-					{FactoryKey: testFactoryKey},
-					{FactoryKey: testFactoryKey},
+					{Key: "mockPlugin1", FactoryKey: testFactoryKey},
+					{Key: "mockPlugin2", FactoryKey: testFactoryKey},
 				},
 			},
-			expectedError: false,
 			expectedCount: 2,
 		},
 		{
-			name: "invalid plugin configuration with empty factory key",
+			name: "invalid plugin configuration with empty plugin key",
 			args: &config.ElasticQuotaArgs{
 				HookPlugins: []config.HookPluginConf{
-					{FactoryKey: ""},
+					{Key: ""},
 				},
 			},
-			expectedError: true,
 			expectedCount: 0,
+			expectedErr:   fmt.Errorf("failed to initialize index-0 hook plugin: key is empty"),
+		},
+		{
+			name: "invalid plugin configuration with valid and empty factory key",
+			args: &config.ElasticQuotaArgs{
+				HookPlugins: []config.HookPluginConf{
+					{Key: "mockPlugin1", FactoryKey: testFactoryKey},
+					{Key: "mockPlugin2", FactoryKey: ""},
+				},
+			},
+			expectedCount: 0,
+			expectedErr:   fmt.Errorf("failed to initialize hook plugin mockPlugin2: factory key is empty"),
 		},
 		{
 			name: "invalid plugin configuration with unknown factory key",
 			args: &config.ElasticQuotaArgs{
 				HookPlugins: []config.HookPluginConf{
-					{FactoryKey: "unknownFactory"},
+					{Key: "mockPlugin1", FactoryKey: "unknownFactory"},
 				},
 			},
-			expectedError: true,
 			expectedCount: 0,
+			expectedErr:   fmt.Errorf("failed to initialize hook plugin mockPlugin1: factory unknownFactory not found"),
 		},
 		{
 			name: "invalid plugin configuration with valid and unknown factory keys",
 			args: &config.ElasticQuotaArgs{
 				HookPlugins: []config.HookPluginConf{
-					{FactoryKey: testFactoryKey},
-					{FactoryKey: "unknownFactory"},
+					{Key: "mockPlugin1", FactoryKey: testFactoryKey},
+					{Key: "mockPlugin2", FactoryKey: "unknownFactory"},
 				},
 			},
-			expectedError: true,
 			expectedCount: 0,
+			expectedErr:   fmt.Errorf("failed to initialize hook plugin mockPlugin2: factory unknownFactory not found"),
 		},
 	}
 
@@ -103,8 +114,8 @@ func TestInitHookPlugins(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			gqm := NewGroupQuotaManager("", nil, nil)
 			err := gqm.InitHookPlugins(tt.args)
-			if tt.expectedError {
-				assert.Error(t, err)
+			if tt.expectedErr != nil {
+				assert.ErrorContains(t, err, tt.expectedErr.Error(), "Error message should match")
 			} else {
 				assert.NoError(t, err)
 			}
@@ -323,6 +334,7 @@ func initGQMForTesting(t *testing.T) *GroupQuotaManager {
 	pluginArgs := &config.ElasticQuotaArgs{
 		HookPlugins: []config.HookPluginConf{
 			{
+				Key:        "mockPlugin",
 				FactoryKey: "mockFactory",
 			},
 		},

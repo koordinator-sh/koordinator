@@ -221,6 +221,9 @@ type ElasticQuotaArgs struct {
 
 // HookPluginConf define configuration for a single hook plugin
 type HookPluginConf struct {
+	// Key is the key of the hook plugin
+	Key string
+
 	// FactoryKey is the key of the hook plugin factory
 	FactoryKey string
 

@@ -281,6 +281,7 @@ func Convert_config_ElasticQuotaArgs_To_v1beta3_ElasticQuotaArgs(in *config.Elas
 }
 
 func autoConvert_v1beta3_HookPluginConf_To_config_HookPluginConf(in *HookPluginConf, out *config.HookPluginConf, s conversion.Scope) error {
+	out.Key = in.Key
 	out.FactoryKey = in.FactoryKey
 	out.FactoryArgs = in.FactoryArgs
 	return nil
@@ -292,6 +293,7 @@ func Convert_v1beta3_HookPluginConf_To_config_HookPluginConf(in *HookPluginConf,
 }
 
 func autoConvert_config_HookPluginConf_To_v1beta3_HookPluginConf(in *config.HookPluginConf, out *HookPluginConf, s conversion.Scope) error {
+	out.Key = in.Key
 	out.FactoryKey = in.FactoryKey
 	out.FactoryArgs = in.FactoryArgs
 	return nil
