@@ -373,6 +373,7 @@ func allocateFromScope(requirements *GPURequirements, scope *GPUTopologyScope, a
 		satisfied = true
 		if contextOfDevice.score > bestScoreWhenShared {
 			bestMinorWhenShared = minor
+			bestScoreWhenShared = contextOfDevice.score
 		}
 	}
 	if !satisfied {

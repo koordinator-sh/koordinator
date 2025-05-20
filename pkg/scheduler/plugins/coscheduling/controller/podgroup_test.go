@@ -303,7 +303,7 @@ func setUp(ctx context.Context, podNames []string, pgName string, podPhase v1.Po
 	koordInformerFactory := koordinformers.NewSharedInformerFactory(koordClient, 0)
 
 	args := &config.CoschedulingArgs{DefaultTimeout: metav1.Duration{Duration: time.Second}}
-	pgMgr := core.NewPodGroupManager(args, pgClient, pgInformerFactory, informerFactory, koordInformerFactory)
+	pgMgr := core.NewPodGroupManager(nil, args, pgClient, pgInformerFactory, informerFactory, koordInformerFactory)
 	ctrl := NewPodGroupController(pgInformer, podInformer, pgClient, pgMgr, 1)
 	return ctrl, kubeClient, pgClient
 }
