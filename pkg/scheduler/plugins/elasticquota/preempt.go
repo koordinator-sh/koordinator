@@ -290,5 +290,15 @@ func (g *Plugin) canPreempt(pod, victim *corev1.Pod) bool {
 	podQuotaName := g.getPodAssociateQuotaName(pod)
 	vicQuotaName := g.getPodAssociateQuotaName(victim)
 
+	// The quota of pods that do not actively set through annotation will be recognized as the default quota.
+	// In some scenarios, many important pods are not scheduled by Koordinator, and their quotas are
+	// also recognized as default quota, this will cause the eviction operation to identify these important
+	// pods as victim pods, which is risky. When DisableDefaultQuotaPreemption is set to true, these pods can
+	// be avoided from being evicted.
+	if g.pluginArgs.DisableDefaultQuotaPreemption &&
+		extension.DefaultQuotaName == vicQuotaName {
+		return false
+	}
+
 	return podPri > vicPri && podQuotaName == vicQuotaName
 }
