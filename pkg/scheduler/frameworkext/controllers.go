@@ -17,9 +17,11 @@ limitations under the License.
 package frameworkext
 
 import (
+	k8sfeature "k8s.io/apiserver/pkg/util/feature"
 	"k8s.io/klog/v2"
+	"k8s.io/kubernetes/pkg/scheduler/framework"
 
-	"github.com/koordinator-sh/koordinator/pkg/descheduler/framework"
+	"github.com/koordinator-sh/koordinator/pkg/features"
 )
 
 type ControllerProvider interface {
@@ -67,6 +69,10 @@ func (cm *ControllersMap) RegisterControllers(plugin framework.Plugin) {
 }
 
 func (cm *ControllersMap) Start() {
+	if k8sfeature.DefaultFeatureGate.Enabled(features.DisableSchedulerControllers) {
+		klog.V(0).Infof("Controllers feature is disabled, controllers %+v are skipped", cm.controllers)
+		return
+	}
 	for _, plugin := range cm.controllers {
 		for _, controller := range plugin {
 			controller.Start()
