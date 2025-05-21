@@ -349,15 +349,16 @@ func (n *nodeDevice) calcFreeWithPreemptible(deviceType schedulingv1alpha1.Devic
 
 	// If allocating from a required resources, e.g. a reservation, the free should be no larger than the reserved free.
 	if len(requiredDeviceResources) > 0 {
+		requiredDeviceFree := deviceResources{}
 		for minor, v := range deviceFree {
 			required, ok := requiredDeviceResources[minor]
 			if !ok {
-				delete(deviceFree, minor)
 				continue
 			}
 			v = util.MinResourceList(v, required)
-			deviceFree[minor] = v
+			requiredDeviceFree[minor] = v
 		}
+		return requiredDeviceFree
 	}
 
 	return deviceFree

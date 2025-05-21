@@ -142,3 +142,92 @@ func Test_gcNodeDevices(t *testing.T) {
 	nodeNames := sets.StringKeySet(cache.nodeDeviceInfos)
 	assert.Equal(t, expectedNodeNames, nodeNames)
 }
+
+func Test_nodeDevice_calcFreeWithPreemptible(t *testing.T) {
+	tests := []struct {
+		name                    string
+		deviceFree              map[schedulingv1alpha1.DeviceType]deviceResources
+		requiredDeviceResources deviceResources
+		wantFree                deviceResources
+		wantOriginalFree        map[schedulingv1alpha1.DeviceType]deviceResources
+	}{
+		{
+			name: "assure free not changed",
+			deviceFree: map[schedulingv1alpha1.DeviceType]deviceResources{
+				schedulingv1alpha1.GPU: {
+					0: corev1.ResourceList{
+						apiext.ResourceGPUMemory: resource.MustParse("8Gi"),
+					},
+					1: corev1.ResourceList{
+						apiext.ResourceGPUMemory: resource.MustParse("8Gi"),
+					},
+					2: corev1.ResourceList{
+						apiext.ResourceGPUMemory: resource.MustParse("8Gi"),
+					},
+					3: corev1.ResourceList{
+						apiext.ResourceGPUMemory: resource.MustParse("8Gi"),
+					},
+					4: corev1.ResourceList{
+						apiext.ResourceGPUMemory: resource.MustParse("8Gi"),
+					},
+					5: corev1.ResourceList{
+						apiext.ResourceGPUMemory: resource.MustParse("8Gi"),
+					},
+					6: corev1.ResourceList{
+						apiext.ResourceGPUMemory: resource.MustParse("8Gi"),
+					},
+					7: corev1.ResourceList{
+						apiext.ResourceGPUMemory: resource.MustParse("8Gi"),
+					},
+				},
+			},
+			requiredDeviceResources: deviceResources{
+				0: corev1.ResourceList{
+					apiext.ResourceGPUMemory: resource.MustParse("8Gi"),
+				},
+			},
+			wantFree: deviceResources{
+				0: corev1.ResourceList{
+					apiext.ResourceGPUMemory: resource.MustParse("8Gi"),
+				},
+			},
+			wantOriginalFree: map[schedulingv1alpha1.DeviceType]deviceResources{
+				schedulingv1alpha1.GPU: {
+					0: corev1.ResourceList{
+						apiext.ResourceGPUMemory: resource.MustParse("8Gi"),
+					},
+					1: corev1.ResourceList{
+						apiext.ResourceGPUMemory: resource.MustParse("8Gi"),
+					},
+					2: corev1.ResourceList{
+						apiext.ResourceGPUMemory: resource.MustParse("8Gi"),
+					},
+					3: corev1.ResourceList{
+						apiext.ResourceGPUMemory: resource.MustParse("8Gi"),
+					},
+					4: corev1.ResourceList{
+						apiext.ResourceGPUMemory: resource.MustParse("8Gi"),
+					},
+					5: corev1.ResourceList{
+						apiext.ResourceGPUMemory: resource.MustParse("8Gi"),
+					},
+					6: corev1.ResourceList{
+						apiext.ResourceGPUMemory: resource.MustParse("8Gi"),
+					},
+					7: corev1.ResourceList{
+						apiext.ResourceGPUMemory: resource.MustParse("8Gi"),
+					},
+				},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			n := &nodeDevice{
+				deviceFree: tt.deviceFree,
+			}
+			assert.Equal(t, tt.wantFree, n.calcFreeWithPreemptible(schedulingv1alpha1.GPU, nil, tt.requiredDeviceResources))
+			assert.Equal(t, tt.wantOriginalFree, n.deviceFree)
+		})
+	}
+}
