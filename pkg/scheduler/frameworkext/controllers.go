@@ -41,6 +41,14 @@ func isControllerPluginEnabled(pluginName string) bool {
 	return hasStar
 }
 
+func getPluginControllerNames(pluginControllers map[string]Controller) []string {
+	s := make([]string, 0, len(pluginControllers))
+	for name := range pluginControllers {
+		s = append(s, name)
+	}
+	return s
+}
+
 type ControllerProvider interface {
 	NewControllers() ([]Controller, error)
 }
@@ -86,12 +94,13 @@ func (cm *ControllersMap) RegisterControllers(plugin framework.Plugin) {
 }
 
 func (cm *ControllersMap) Start() {
-	for pluginName, plugin := range cm.controllers {
+	for pluginName, pluginControllers := range cm.controllers {
 		if !isControllerPluginEnabled(pluginName) {
-			klog.V(0).Infof("controller plugin %v is disabled, controllers %v are skipped", pluginName, plugin)
+			klog.V(0).Infof("controller plugin %v is disabled, controllers %v are skipped",
+				pluginName, getPluginControllerNames(pluginControllers))
 			continue
 		}
-		for _, controller := range plugin {
+		for _, controller := range pluginControllers {
 			controller.Start()
 		}
 	}
