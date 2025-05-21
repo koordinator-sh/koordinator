@@ -78,17 +78,18 @@ type Plugin struct {
 }
 
 type preFilterState struct {
-	skip               bool
-	podRequests        map[schedulingv1alpha1.DeviceType]corev1.ResourceList
-	hints              apiext.DeviceAllocateHints
-	hintSelectors      map[schedulingv1alpha1.DeviceType][2]labels.Selector
-	hasSelectors       bool
-	jointAllocate      *apiext.DeviceJointAllocate
-	primaryDeviceType  schedulingv1alpha1.DeviceType
-	gpuRequirements    *GPURequirements
-	allocationResult   apiext.DeviceAllocations
-	preemptibleDevices map[string]map[schedulingv1alpha1.DeviceType]deviceResources
-	preemptibleInRRs   map[string]map[types.UID]map[schedulingv1alpha1.DeviceType]deviceResources
+	skip                              bool
+	podRequests                       map[schedulingv1alpha1.DeviceType]corev1.ResourceList
+	hints                             apiext.DeviceAllocateHints
+	hintSelectors                     map[schedulingv1alpha1.DeviceType][2]labels.Selector
+	hasSelectors                      bool
+	jointAllocate                     *apiext.DeviceJointAllocate
+	primaryDeviceType                 schedulingv1alpha1.DeviceType
+	podFitsSecondaryDeviceWellPlanned bool
+	gpuRequirements                   *GPURequirements
+	allocationResult                  apiext.DeviceAllocations
+	preemptibleDevices                map[string]map[schedulingv1alpha1.DeviceType]deviceResources
+	preemptibleInRRs                  map[string]map[types.UID]map[schedulingv1alpha1.DeviceType]deviceResources
 
 	hasReservationAffinity bool
 }
@@ -106,16 +107,17 @@ type GPURequirements struct {
 
 func (s *preFilterState) Clone() framework.StateData {
 	ns := &preFilterState{
-		skip:                   s.skip,
-		podRequests:            s.podRequests,
-		hints:                  s.hints,
-		hasSelectors:           s.hasSelectors,
-		gpuRequirements:        s.gpuRequirements,
-		hintSelectors:          s.hintSelectors,
-		jointAllocate:          s.jointAllocate,
-		primaryDeviceType:      s.primaryDeviceType,
-		allocationResult:       s.allocationResult,
-		hasReservationAffinity: s.hasReservationAffinity,
+		skip:                              s.skip,
+		podRequests:                       s.podRequests,
+		hints:                             s.hints,
+		hasSelectors:                      s.hasSelectors,
+		gpuRequirements:                   s.gpuRequirements,
+		hintSelectors:                     s.hintSelectors,
+		jointAllocate:                     s.jointAllocate,
+		primaryDeviceType:                 s.primaryDeviceType,
+		podFitsSecondaryDeviceWellPlanned: s.podFitsSecondaryDeviceWellPlanned,
+		allocationResult:                  s.allocationResult,
+		hasReservationAffinity:            s.hasReservationAffinity,
 	}
 
 	preemptibleDevices := map[string]map[schedulingv1alpha1.DeviceType]deviceResources{}

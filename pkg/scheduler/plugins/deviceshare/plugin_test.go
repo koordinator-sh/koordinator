@@ -638,8 +638,9 @@ func Test_Plugin_PreFilter(t *testing.T) {
 						apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
 					},
 				},
-				preemptibleDevices: map[string]map[schedulingv1alpha1.DeviceType]deviceResources{},
-				preemptibleInRRs:   map[string]map[types.UID]map[schedulingv1alpha1.DeviceType]deviceResources{},
+				podFitsSecondaryDeviceWellPlanned: true,
+				preemptibleDevices:                map[string]map[schedulingv1alpha1.DeviceType]deviceResources{},
+				preemptibleInRRs:                  map[string]map[types.UID]map[schedulingv1alpha1.DeviceType]deviceResources{},
 			},
 		},
 		{
@@ -677,8 +678,9 @@ func Test_Plugin_PreFilter(t *testing.T) {
 						apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
 					},
 				},
-				preemptibleDevices: map[string]map[schedulingv1alpha1.DeviceType]deviceResources{},
-				preemptibleInRRs:   map[string]map[types.UID]map[schedulingv1alpha1.DeviceType]deviceResources{},
+				podFitsSecondaryDeviceWellPlanned: true,
+				preemptibleDevices:                map[string]map[schedulingv1alpha1.DeviceType]deviceResources{},
+				preemptibleInRRs:                  map[string]map[types.UID]map[schedulingv1alpha1.DeviceType]deviceResources{},
 			},
 		},
 		{
@@ -802,8 +804,9 @@ func Test_Plugin_PreFilter(t *testing.T) {
 						apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
 					},
 				},
-				preemptibleDevices: map[string]map[schedulingv1alpha1.DeviceType]deviceResources{},
-				preemptibleInRRs:   map[string]map[types.UID]map[schedulingv1alpha1.DeviceType]deviceResources{},
+				podFitsSecondaryDeviceWellPlanned: true,
+				preemptibleDevices:                map[string]map[schedulingv1alpha1.DeviceType]deviceResources{},
+				preemptibleInRRs:                  map[string]map[types.UID]map[schedulingv1alpha1.DeviceType]deviceResources{},
 			},
 		},
 		{
@@ -873,6 +876,7 @@ func Test_Plugin_PreFilter(t *testing.T) {
 						apiext.ResourceRDMA: resource.MustParse("100"),
 					},
 				},
+				podFitsSecondaryDeviceWellPlanned: true,
 				gpuRequirements: &GPURequirements{
 					numberOfGPUs: 1,
 					requestsPerGPU: corev1.ResourceList{
