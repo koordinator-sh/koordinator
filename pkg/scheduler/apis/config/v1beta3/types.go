@@ -209,6 +209,9 @@ type ElasticQuotaArgs struct {
 	// EnableRuntimeQuota if false, use max instead of runtime for all checks.
 	EnableRuntimeQuota *bool `json:"enableRuntimeQuota,omitempty"`
 
+	// DisableDefaultQuotaPreemption if true, will not preempt pods in default quota.
+	DisableDefaultQuotaPreemption *bool `json:"disableDefaultQuotaPreemption,omitempty"`
+
 	// HookPlugins is expected to be configured with enabled hook plugins
 	HookPlugins []HookPluginConf `json:"hookPlugins,omitempty"`
 }

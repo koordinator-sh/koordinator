@@ -141,6 +141,11 @@ func (in *ElasticQuotaArgs) DeepCopyInto(out *ElasticQuotaArgs) {
 		*out = new(bool)
 		**out = **in
 	}
+	if in.DisableDefaultQuotaPreemption != nil {
+		in, out := &in.DisableDefaultQuotaPreemption, &out.DisableDefaultQuotaPreemption
+		*out = new(bool)
+		**out = **in
+	}
 	if in.HookPlugins != nil {
 		in, out := &in.HookPlugins, &out.HookPlugins
 		*out = make([]HookPluginConf, len(*in))
