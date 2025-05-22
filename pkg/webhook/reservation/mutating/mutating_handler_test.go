@@ -29,7 +29,9 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/kubernetes/scheme"
 	clientcache "k8s.io/client-go/tools/cache"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache/informertest"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
@@ -195,4 +197,24 @@ func TestMutatingHandler(t *testing.T) {
 			}
 		})
 	}
+}
+
+type fakeManager struct {
+	ctrl.Manager
+}
+
+func (f *fakeManager) GetClient() client.Client {
+	return nil
+}
+
+func (f *fakeManager) GetScheme() *runtime.Scheme {
+	return runtime.NewScheme()
+}
+
+func Test_reservationMutateBuilder(t *testing.T) {
+	t.Run("test", func(t *testing.T) {
+		b := &reservationMutateBuilder{}
+		got := b.WithControllerManager(&fakeManager{}).Build()
+		assert.NotNil(t, got)
+	})
 }

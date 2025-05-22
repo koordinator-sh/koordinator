@@ -40,9 +40,11 @@ import (
 const Name = "colocationprofile"
 
 var (
-	ReconcileInterval    = 30 * time.Second
-	MaxUpdatePodQPS      = 5.0
-	MaxUpdatePodQPSBurst = 10
+	ReconcileInterval      = 30 * time.Second
+	ForceUpdatePodDuration = 5 * time.Minute
+	ExpirePodCacheDuration = 10 * time.Minute
+	MaxUpdatePodQPS        = 5.0
+	MaxUpdatePodQPSBurst   = 10
 )
 
 type Reconciler struct {
@@ -60,7 +62,7 @@ func newReconciler(mgr ctrl.Manager) *Reconciler {
 		Recorder:       mgr.GetEventRecorderFor(Name),
 		Scheme:         mgr.GetScheme(),
 		rateLimiter:    rate.NewLimiter(rate.Limit(MaxUpdatePodQPS), MaxUpdatePodQPSBurst),
-		podUpdateCache: *gocache.New(2*ReconcileInterval, 5*time.Minute),
+		podUpdateCache: *gocache.New(ForceUpdatePodDuration, ExpirePodCacheDuration),
 	}
 }
 
@@ -107,7 +109,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 			klog.V(5).InfoS("skip update Pod by clusterColocationProfile", "profile", profile.Name, "pod", klog.KObj(pod))
 			continue
 		}
-		_, exists := r.podUpdateCache.Get(string(pod.UID))
+		_, exists := r.podUpdateCache.Get(getPodUpdateKey(profile, pod))
 		if exists {
 			summary.Cached++
 			klog.V(5).InfoS("skip update Pod by clusterColocationProfile, already updated", "profile", profile.Name, "pod", klog.KObj(pod))
@@ -127,7 +129,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		}
 		summary.Succeeded++
 		if isUpdated {
-			r.podUpdateCache.SetDefault(string(pod.UID), struct{}{})
+			r.podUpdateCache.SetDefault(getPodUpdateKey(profile, pod), struct{}{})
 			summary.Changed++
 		}
 	}
@@ -148,6 +150,8 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 
 func InitFlags(fs *flag.FlagSet) {
 	pflag.DurationVar(&ReconcileInterval, "colocation-profile-reconcile-interval", ReconcileInterval, "The interval to reconcile ClusterColocationProfile.")
+	pflag.DurationVar(&ForceUpdatePodDuration, "colocation-profile-force-update-pod-duration", ForceUpdatePodDuration, "The duration for colocation-profile controller to force update pods.")
+	pflag.DurationVar(&ExpirePodCacheDuration, "colocation-profile-expire-pod-cache-duration", ExpirePodCacheDuration, "The duration for colocation-profile controller to expire pod cache.")
 	pflag.Float64Var(&MaxUpdatePodQPS, "colocation-profile-update-pod-qps", MaxUpdatePodQPS, "The QPS for colocation-profile controller to update pods.")
 	pflag.IntVar(&MaxUpdatePodQPSBurst, "colocation-profile-update-pod-qps-burst", MaxUpdatePodQPSBurst, "The QPS burst for colocation-profile controller to update pods.")
 }

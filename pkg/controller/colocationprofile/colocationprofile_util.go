@@ -198,3 +198,7 @@ func shouldSkipProfile(profile *configv1alpha1.ClusterColocationProfile) (bool, 
 	}
 	return percent == 0 || (percent != 100 && randIntnFn(100) > percent), nil
 }
+
+func getPodUpdateKey(profile *configv1alpha1.ClusterColocationProfile, pod *corev1.Pod) string {
+	return profile.ResourceVersion + "/" + string(pod.UID)
+}

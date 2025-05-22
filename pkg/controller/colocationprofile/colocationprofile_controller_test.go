@@ -327,6 +327,11 @@ func TestReconciler_Reconcile(t *testing.T) {
 		testProfile1.Spec.Labels[extension.LabelSchedulerName] = "koordinator-scheduler"
 		err = r.Client.Patch(context.TODO(), testProfile1, client.MergeFrom(gotProfile))
 		assert.NoError(t, err)
+		gotProfile = &configv1alpha1.ClusterColocationProfile{}
+		err = r.Client.Get(context.TODO(), client.ObjectKey{Name: testProfile.Name}, gotProfile)
+		assert.NoError(t, err)
+		// fake an update
+		r.podUpdateCache.SetDefault(getPodUpdateKey(gotProfile, got), struct{}{})
 		result, err = r.Reconcile(context.TODO(), ctrl.Request{
 			NamespacedName: types.NamespacedName{
 				Name: testProfile.Name,
@@ -341,7 +346,10 @@ func TestReconciler_Reconcile(t *testing.T) {
 		assert.Equal(t, wantPod, got)
 
 		// update pod since cache expired
-		r.podUpdateCache.Delete(string(testPod.UID))
+		gotProfile = &configv1alpha1.ClusterColocationProfile{}
+		err = r.Client.Get(context.TODO(), client.ObjectKey{Name: testProfile.Name}, gotProfile)
+		assert.NoError(t, err)
+		r.podUpdateCache.Delete(getPodUpdateKey(gotProfile, testPod))
 		result, err = r.Reconcile(context.TODO(), ctrl.Request{
 			NamespacedName: types.NamespacedName{
 				Name: testProfile.Name,
@@ -356,7 +364,10 @@ func TestReconciler_Reconcile(t *testing.T) {
 		assert.Equal(t, wantPod1, got)
 
 		// reconcile should be idempotent
-		r.podUpdateCache.Delete(string(testPod.UID))
+		gotProfile = &configv1alpha1.ClusterColocationProfile{}
+		err = r.Client.Get(context.TODO(), client.ObjectKey{Name: testProfile.Name}, gotProfile)
+		assert.NoError(t, err)
+		r.podUpdateCache.Delete(getPodUpdateKey(gotProfile, testPod))
 		result, err = r.Reconcile(context.TODO(), ctrl.Request{
 			NamespacedName: types.NamespacedName{
 				Name: testProfile.Name,
@@ -378,7 +389,10 @@ func TestReconciler_Reconcile(t *testing.T) {
 		testProfile2.Spec.Labels[extension.LabelSchedulerName] = "koordinator-scheduler-1"
 		err = r.Client.Patch(context.TODO(), testProfile2, client.MergeFrom(gotProfile))
 		assert.NoError(t, err)
-		r.podUpdateCache.Delete(string(testPod.UID))
+		gotProfile = &configv1alpha1.ClusterColocationProfile{}
+		err = r.Client.Get(context.TODO(), client.ObjectKey{Name: testProfile.Name}, gotProfile)
+		assert.NoError(t, err)
+		r.podUpdateCache.Delete(getPodUpdateKey(gotProfile, testPod))
 		r.rateLimiter = rate.NewLimiter(rate.Limit(0), 0)
 		result, err = r.Reconcile(context.TODO(), ctrl.Request{
 			NamespacedName: types.NamespacedName{
