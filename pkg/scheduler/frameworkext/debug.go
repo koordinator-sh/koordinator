@@ -22,7 +22,6 @@ import (
 	"strconv"
 
 	prettytable "github.com/jedib0t/go-pretty/v6/table"
-	"github.com/spf13/pflag"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
@@ -32,11 +31,6 @@ var (
 	debugTopNScores    = 0
 	debugFilterFailure = false
 )
-
-func AddFlags(fs *pflag.FlagSet) {
-	fs.IntVarP(&debugTopNScores, "debug-scores", "s", debugTopNScores, "logging topN nodes score and scores for each plugin after running the score extension, disable if set to 0")
-	fs.BoolVarP(&debugFilterFailure, "debug-filters", "f", debugFilterFailure, "logging filter failures")
-}
 
 // DebugScoresSetter updates debugTopNScores to specified value
 func DebugScoresSetter(val string) (string, error) {
