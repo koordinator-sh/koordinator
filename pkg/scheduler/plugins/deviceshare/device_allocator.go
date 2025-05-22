@@ -77,7 +77,7 @@ func (a *AutopilotAllocator) Prepare() *framework.Status {
 	}
 	state := a.state
 	nodeDevice := a.nodeDevice
-	requestsPerInstance, desiredCountPerDeviceType, status := a.calcRequestsAndCountByDeviceType(state.podRequests, nodeDevice, state.hints, state.primaryDeviceType)
+	requestsPerInstance, desiredCountPerDeviceType, status := a.calcRequestsAndCountByDeviceType(state.podRequests, nodeDevice, state.hints, state.primaryDeviceType, state.podFitsSecondaryDeviceWellPlanned)
 	if !status.IsSuccess() {
 		return status
 	}
@@ -169,8 +169,9 @@ func (a *AutopilotAllocator) filterNodeDevice(
 }
 
 func (a *AutopilotAllocator) calcRequestsAndCountByDeviceType(
-	podRequests map[schedulingv1alpha1.DeviceType]corev1.ResourceList,
-	nodeDevice *nodeDevice, hints apiext.DeviceAllocateHints, primaryDeviceType schedulingv1alpha1.DeviceType,
+	podRequests map[schedulingv1alpha1.DeviceType]corev1.ResourceList, nodeDevice *nodeDevice,
+	hints apiext.DeviceAllocateHints, primaryDeviceType schedulingv1alpha1.DeviceType,
+	podFitsSecondaryDeviceWellPlanned bool,
 ) (map[schedulingv1alpha1.DeviceType]corev1.ResourceList, map[schedulingv1alpha1.DeviceType]int, *framework.Status) {
 	requestPerInstance := map[schedulingv1alpha1.DeviceType]corev1.ResourceList{}
 	desiredCountPerDeviceType := map[schedulingv1alpha1.DeviceType]int{}
@@ -184,7 +185,7 @@ func (a *AutopilotAllocator) calcRequestsAndCountByDeviceType(
 			continue
 		}
 
-		if primaryDeviceType != "" && deviceType != primaryDeviceType && nodeDevice.secondaryDeviceWellPlanned && a.phaseBeingExecuted != schedulingphase.Reserve {
+		if primaryDeviceType != "" && deviceType != primaryDeviceType && podFitsSecondaryDeviceWellPlanned && nodeDevice.secondaryDeviceWellPlanned && a.phaseBeingExecuted != schedulingphase.Reserve {
 			continue
 		}
 
