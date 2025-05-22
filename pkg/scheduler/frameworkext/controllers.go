@@ -18,9 +18,36 @@ package frameworkext
 
 import (
 	"k8s.io/klog/v2"
-
-	"github.com/koordinator-sh/koordinator/pkg/descheduler/framework"
+	"k8s.io/kubernetes/pkg/scheduler/framework"
 )
+
+var (
+	ControllerPlugins = []string{"*"}
+)
+
+func isControllerPluginEnabled(pluginName string) bool {
+	hasStar := false
+	for _, p := range ControllerPlugins {
+		if p == pluginName {
+			return true
+		}
+		if p == "-"+pluginName {
+			return false
+		}
+		if p == "*" {
+			hasStar = true
+		}
+	}
+	return hasStar
+}
+
+func getPluginControllerNames(pluginControllers map[string]Controller) []string {
+	s := make([]string, 0, len(pluginControllers))
+	for name := range pluginControllers {
+		s = append(s, name)
+	}
+	return s
+}
 
 type ControllerProvider interface {
 	NewControllers() ([]Controller, error)
@@ -67,8 +94,13 @@ func (cm *ControllersMap) RegisterControllers(plugin framework.Plugin) {
 }
 
 func (cm *ControllersMap) Start() {
-	for _, plugin := range cm.controllers {
-		for _, controller := range plugin {
+	for pluginName, pluginControllers := range cm.controllers {
+		if !isControllerPluginEnabled(pluginName) {
+			klog.V(0).Infof("controller plugin %v is disabled, controllers %v are skipped",
+				pluginName, getPluginControllerNames(pluginControllers))
+			continue
+		}
+		for _, controller := range pluginControllers {
 			controller.Start()
 		}
 	}

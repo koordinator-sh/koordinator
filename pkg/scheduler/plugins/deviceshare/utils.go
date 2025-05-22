@@ -322,6 +322,7 @@ func preparePod(pod *corev1.Pod) (state *preFilterState, status *framework.Statu
 		if err != nil {
 			return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, err.Error())
 		}
+		state.podFitsSecondaryDeviceWellPlanned = state.gpuRequirements != nil && !state.gpuRequirements.gpuShared
 		reservationAffinity, err := reservationutil.GetRequiredReservationAffinity(pod)
 		if err != nil {
 			return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, err.Error())
