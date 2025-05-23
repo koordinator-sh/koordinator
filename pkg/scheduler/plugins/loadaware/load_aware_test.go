@@ -720,6 +720,7 @@ func TestFilterUsage(t *testing.T) {
 						{
 							Namespace: "default",
 							Name:      "prod-pod-1",
+							Priority:  extension.PriorityProd,
 							PodUsage: slov1alpha1.ResourceMap{
 								ResourceList: corev1.ResourceList{
 									corev1.ResourceCPU:    resource.MustParse("30"),
@@ -730,6 +731,7 @@ func TestFilterUsage(t *testing.T) {
 						{
 							Namespace: "default",
 							Name:      "prod-pod-2",
+							Priority:  extension.PriorityProd,
 							PodUsage: slov1alpha1.ResourceMap{
 								ResourceList: corev1.ResourceList{
 									corev1.ResourceCPU:    resource.MustParse("33"),
@@ -782,6 +784,7 @@ func TestFilterUsage(t *testing.T) {
 						{
 							Namespace: "default",
 							Name:      "prod-pod-1",
+							Priority:  extension.PriorityProd,
 							PodUsage: slov1alpha1.ResourceMap{
 								ResourceList: corev1.ResourceList{
 									corev1.ResourceCPU:    resource.MustParse("30"),
@@ -792,6 +795,7 @@ func TestFilterUsage(t *testing.T) {
 						{
 							Namespace: "default",
 							Name:      "prod-pod-2",
+							Priority:  extension.PriorityProd,
 							PodUsage: slov1alpha1.ResourceMap{
 								ResourceList: corev1.ResourceList{
 									corev1.ResourceCPU:    resource.MustParse("33"),
@@ -845,6 +849,7 @@ func TestFilterUsage(t *testing.T) {
 						{
 							Namespace: "default",
 							Name:      "prod-pod-1",
+							Priority:  extension.PriorityProd,
 							PodUsage: slov1alpha1.ResourceMap{
 								ResourceList: corev1.ResourceList{
 									corev1.ResourceCPU:    resource.MustParse("30"),
@@ -855,6 +860,7 @@ func TestFilterUsage(t *testing.T) {
 						{
 							Namespace: "default",
 							Name:      "prod-pod-2",
+							Priority:  extension.PriorityProd,
 							PodUsage: slov1alpha1.ResourceMap{
 								ResourceList: corev1.ResourceList{
 									corev1.ResourceCPU:    resource.MustParse("33"),
@@ -912,6 +918,7 @@ func TestFilterUsage(t *testing.T) {
 						{
 							Namespace: "default",
 							Name:      "prod-pod-1",
+							Priority:  extension.PriorityProd,
 							PodUsage: slov1alpha1.ResourceMap{
 								ResourceList: corev1.ResourceList{
 									corev1.ResourceCPU:    resource.MustParse("30"),
@@ -922,6 +929,7 @@ func TestFilterUsage(t *testing.T) {
 						{
 							Namespace: "default",
 							Name:      "prod-pod-2",
+							Priority:  extension.PriorityProd,
 							PodUsage: slov1alpha1.ResourceMap{
 								ResourceList: corev1.ResourceList{
 									corev1.ResourceCPU:    resource.MustParse("33"),
@@ -1004,6 +1012,7 @@ func TestFilterUsage(t *testing.T) {
 						{
 							Namespace: "default",
 							Name:      "prod-pod-1",
+							Priority:  extension.PriorityProd,
 							PodUsage: slov1alpha1.ResourceMap{
 								ResourceList: corev1.ResourceList{
 									corev1.ResourceCPU:    resource.MustParse("30"),
@@ -1014,6 +1023,7 @@ func TestFilterUsage(t *testing.T) {
 						{
 							Namespace: "default",
 							Name:      "prod-pod-2",
+							Priority:  extension.PriorityProd,
 							PodUsage: slov1alpha1.ResourceMap{
 								ResourceList: corev1.ResourceList{
 									corev1.ResourceCPU:    resource.MustParse("23"),
@@ -1067,6 +1077,7 @@ func TestFilterUsage(t *testing.T) {
 						{
 							Namespace: "default",
 							Name:      "prod-pod-1",
+							Priority:  extension.PriorityProd,
 							PodUsage: slov1alpha1.ResourceMap{
 								ResourceList: corev1.ResourceList{
 									corev1.ResourceCPU:    resource.MustParse("30"),
@@ -1130,6 +1141,7 @@ func TestFilterUsage(t *testing.T) {
 						{
 							Namespace: "default",
 							Name:      "prod-pod-1",
+							Priority:  extension.PriorityProd,
 							PodUsage: slov1alpha1.ResourceMap{
 								ResourceList: corev1.ResourceList{
 									corev1.ResourceCPU:    resource.MustParse("30"),
@@ -1140,6 +1152,7 @@ func TestFilterUsage(t *testing.T) {
 						{
 							Namespace: "default",
 							Name:      "prod-pod-2",
+							Priority:  extension.PriorityProd,
 							PodUsage: slov1alpha1.ResourceMap{
 								ResourceList: corev1.ResourceList{
 									corev1.ResourceCPU:    resource.MustParse("23"),
@@ -1193,6 +1206,7 @@ func TestFilterUsage(t *testing.T) {
 						{
 							Namespace: "default",
 							Name:      "prod-pod-1",
+							Priority:  extension.PriorityProd,
 							PodUsage: slov1alpha1.ResourceMap{
 								ResourceList: corev1.ResourceList{
 									corev1.ResourceCPU:    resource.MustParse("30"),
@@ -1256,6 +1270,7 @@ func TestFilterUsage(t *testing.T) {
 						{
 							Namespace: "default",
 							Name:      "prod-pod-1",
+							Priority:  extension.PriorityProd,
 							PodUsage: slov1alpha1.ResourceMap{
 								ResourceList: corev1.ResourceList{
 									corev1.ResourceCPU:    resource.MustParse("30"),
@@ -1309,6 +1324,7 @@ func TestFilterUsage(t *testing.T) {
 						{
 							Namespace: "default",
 							Name:      "prod-pod-1",
+							Priority:  extension.PriorityProd,
 							PodUsage: slov1alpha1.ResourceMap{
 								ResourceList: corev1.ResourceList{
 									corev1.ResourceCPU:    resource.MustParse("30"),
@@ -2218,6 +2234,7 @@ func TestScore(t *testing.T) {
 						{
 							Namespace: "default",
 							Name:      "assign-prod-pod-1",
+							Priority:  extension.PriorityProd,
 							PodUsage: slov1alpha1.ResourceMap{
 								ResourceList: corev1.ResourceList{
 									corev1.ResourceCPU:    resource.MustParse("30"),

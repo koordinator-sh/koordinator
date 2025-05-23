@@ -36,6 +36,7 @@ var podTransformers = []func(pod *corev1.Pod){
 var podTransformerFactories = []func() func(pod *corev1.Pod){
 	TransformKoordPriorityClassFunc,
 	TransformKoordPreemptionPolicyFunc,
+	TransformSchedulerName,
 }
 
 func InstallPodTransformer(informer cache.SharedIndexInformer) {
@@ -186,4 +187,10 @@ func replaceAndEraseWithResourcesMapper(resList corev1.ResourceList, mapper map[
 		}
 	}
 	return transformed
+}
+
+func TransformSchedulerName() func(pod *corev1.Pod) {
+	return func(pod *corev1.Pod) {
+		pod.Spec.SchedulerName = apiext.GetSchedulerName(pod)
+	}
 }

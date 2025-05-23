@@ -322,6 +322,7 @@ func preparePod(pod *corev1.Pod) (state *preFilterState, status *framework.Statu
 		if err != nil {
 			return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, err.Error())
 		}
+		state.podFitsSecondaryDeviceWellPlanned = state.gpuRequirements != nil && !state.gpuRequirements.gpuShared
 		reservationAffinity, err := reservationutil.GetRequiredReservationAffinity(pod)
 		if err != nil {
 			return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, err.Error())
@@ -386,6 +387,13 @@ func parsePodDeviceShareExtensions(pod *corev1.Pod, podRequests map[schedulingv1
 
 	state.hints = hints
 	state.hintSelectors = hintSelectors
+	for _, selectors := range hintSelectors {
+		// selectors is type of [2]labels.Selector, so we don't need to worry it is nil or len != 2
+		if selectors[0] != nil {
+			state.hasSelectors = true
+			break
+		}
+	}
 	state.jointAllocate = jointAllocate
 	return nil
 }

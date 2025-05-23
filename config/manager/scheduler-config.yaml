@@ -39,8 +39,8 @@ data:
               cpu: 1
               memory: 1
             usageThresholds:
-              cpu: 65
-              memory: 95
+              cpu: 0
+              memory: 0
             estimatedScalingFactors:
               cpu: 85
               memory: 70
@@ -57,7 +57,7 @@ data:
             disabled:
               - name: "*"
             enabled:
-              - name: Coscheduling
+              - name: PrioritySort
           preFilter:
             enabled:
               - name: Reservation

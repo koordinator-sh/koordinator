@@ -113,13 +113,19 @@ var (
 	token string
 )
 
-func newPluginTestSuit(t *testing.T, nodes []*corev1.Node) *pluginTestSuit {
+type PluginTestOption func(elasticQuotaArgs *config.ElasticQuotaArgs)
+
+func newPluginTestSuit(t *testing.T, nodes []*corev1.Node, pluginTestOpts ...PluginTestOption) *pluginTestSuit {
 	setLoglevel("5")
 	var v1beta3args v1beta3.ElasticQuotaArgs
 	v1beta3.SetDefaults_ElasticQuotaArgs(&v1beta3args)
 	var elasticQuotaArgs config.ElasticQuotaArgs
 	err := v1beta3.Convert_v1beta3_ElasticQuotaArgs_To_config_ElasticQuotaArgs(&v1beta3args, &elasticQuotaArgs, nil)
 	assert.NoError(t, err)
+
+	for _, pluginTestOpt := range pluginTestOpts {
+		pluginTestOpt(&elasticQuotaArgs)
+	}
 
 	elasticQuotaPluginConfig := schedulerconfig.PluginConfig{
 		Name: Name,
@@ -770,7 +776,7 @@ func TestPlugin_PreFilter_CheckParent(t *testing.T) {
 			qi1.CalculateInfo.Runtime = tt.parentRuntime.DeepCopy()
 			qi1.UnLock()
 			podRequests := core.PodRequests(tt.pod)
-			status := *gp.checkQuotaRecursive(tt.quotaInfo.Name, []string{tt.quotaInfo.Name}, podRequests)
+			status := *gp.checkQuotaRecursive(gp.groupQuotaManager, tt.quotaInfo.Name, []string{tt.quotaInfo.Name}, podRequests)
 			assert.Equal(t, tt.expectedStatus, status)
 		})
 	}

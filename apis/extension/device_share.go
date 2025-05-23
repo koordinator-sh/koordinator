@@ -365,3 +365,10 @@ func IsSecondaryDeviceWellPlanned(device *schedulingv1alpha1.Device) bool {
 	}
 	return device.Labels[LabelSecondaryDeviceWellPlanned] == "true"
 }
+
+func IsSecondaryDeviceNotWellPlanned(device *schedulingv1alpha1.Device) bool {
+	if device == nil {
+		return false
+	}
+	return device.Labels[LabelSecondaryDeviceWellPlanned] == "false"
+}

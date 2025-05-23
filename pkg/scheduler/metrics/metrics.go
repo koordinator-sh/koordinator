@@ -29,6 +29,10 @@ import (
 	utilmetrics "github.com/koordinator-sh/koordinator/pkg/util/metrics"
 )
 
+const (
+	NodeNameKey = "node_name"
+)
+
 // All the histogram based metrics have 1ms as size for the smallest bucket.
 var (
 	SchedulingTimeout = metrics.NewCounterVec(
@@ -53,10 +57,46 @@ var (
 		},
 		[]string{"operation"},
 	)
+	SecondaryDeviceNotWellPlannedNodes = metrics.NewGaugeVec(
+		&metrics.GaugeOpts{
+			Subsystem: schedulermetrics.SchedulerSubsystem,
+			Name:      "secondary_device_not_well_planned",
+			Help:      "The number of secondary device not well planned",
+		},
+		[]string{NodeNameKey},
+	)
+	WaitingGangGroupNumber = metrics.NewGaugeVec(
+		&metrics.GaugeOpts{
+			Subsystem:      schedulermetrics.SchedulerSubsystem,
+			Name:           "waiting_gang_group_number",
+			Help:           "The number of GangGroups in Waiting",
+			StabilityLevel: metrics.STABLE,
+		}, nil)
+	NextPodDeleteFromQueueLatency = metrics.NewHistogramVec(
+		&metrics.HistogramOpts{
+			Subsystem: schedulermetrics.SchedulerSubsystem,
+			Name:      "next_pod_delete_from_queue_latency",
+			Help:      "run next pod plugins, the latency of deleting pod from queue",
+			Buckets:   metrics.ExponentialBuckets(0.00001, 2, 24),
+		}, nil)
+	ElasticQuotaHookPluginLatency = metrics.NewHistogramVec(
+		&metrics.HistogramOpts{
+			Subsystem:      schedulermetrics.SchedulerSubsystem,
+			Name:           "elastic_quota_hook_plugin_latency",
+			Help:           "elastic quota hook plugin latency in seconds",
+			Buckets:        metrics.ExponentialBuckets(0.000001, 2, 24),
+			StabilityLevel: metrics.ALPHA,
+		},
+		[]string{"plugin", "operation"},
+	)
 
 	metricsList = []metrics.Registerable{
 		SchedulingTimeout,
 		ElasticQuotaProcessLatency,
+		SecondaryDeviceNotWellPlannedNodes,
+		WaitingGangGroupNumber,
+		NextPodDeleteFromQueueLatency,
+		ElasticQuotaHookPluginLatency,
 	}
 
 	gcMetricsList = []prometheus.Collector{
@@ -107,4 +147,24 @@ func RegisterGCMetrics(gcMetrics ...prometheus.Collector) {
 
 func RecordElasticQuotaProcessLatency(operation string, latency time.Duration) {
 	ElasticQuotaProcessLatency.WithLabelValues(operation).Observe(latency.Seconds())
+}
+
+func RecordSecondaryDeviceNotWellPlanned(nodeName string, notWellPlanned bool) {
+	if SecondaryDeviceNotWellPlannedNodes.MetricVec == nil {
+		// only for UT
+		return
+	}
+	if notWellPlanned {
+		SecondaryDeviceNotWellPlannedNodes.WithLabelValues(nodeName).Set(1.0)
+		return
+	}
+	SecondaryDeviceNotWellPlannedNodes.DeleteLabelValues(nodeName)
+}
+
+func RecordNextPodPluginsDeletePodFromQueue(latency time.Duration) {
+	NextPodDeleteFromQueueLatency.WithLabelValues().Observe(latency.Seconds())
+}
+
+func RecordElasticQuotaHookPluginLatency(plugin, operation string, latency time.Duration) {
+	ElasticQuotaHookPluginLatency.WithLabelValues(plugin, operation).Observe(latency.Seconds())
 }

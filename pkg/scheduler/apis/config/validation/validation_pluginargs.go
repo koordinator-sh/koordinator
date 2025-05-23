@@ -194,8 +194,16 @@ func ValidateNodeNUMAResourceArgs(path *field.Path, args *config.NodeNUMAResourc
 		allErrs = append(allErrs, field.Invalid(path.Child("defaultCPUBindPolicy"), args.DefaultCPUBindPolicy, "must specified CPU bind policy FullPCPUs or SpreadByPCPUs"))
 	}
 
-	if args.ScoringStrategy != nil {
+	if args.ScoringStrategy == nil {
+		allErrs = append(allErrs, field.Required(path.Child("scoringStrategy"), "scoring strategy must be specified"))
+	} else {
 		allErrs = append(allErrs, validateResources(args.ScoringStrategy.Resources, path.Child("resources"))...)
+	}
+
+	if args.NUMAScoringStrategy == nil {
+		allErrs = append(allErrs, field.Required(path.Child("numaScoringStrategy"), "NUMA scoring strategy must be specified"))
+	} else {
+		allErrs = append(allErrs, validateResources(args.NUMAScoringStrategy.Resources, path.Child("resources"))...)
 	}
 
 	if len(allErrs) == 0 {
