@@ -33,4 +33,5 @@ const (
 	ElasticQuota                 = "elasticquota"
 	Node                         = "node"
 	Pod                          = "pod"
+	Reservation                  = "reservation"
 )

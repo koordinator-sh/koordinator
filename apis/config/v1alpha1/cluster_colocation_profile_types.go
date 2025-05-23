@@ -63,6 +63,7 @@ type ClusterColocationProfileSpec struct {
 	// Various Koordinator components determine the priority of the Pod
 	// in the Koordinator through KoordinatorPriority and the priority value in PriorityClassName.
 	// The higher the value, the higher the priority.
+	// TODO: remove this field, use Labels instead.
 	// +optional
 	KoordinatorPriority *int32 `json:"koordinatorPriority,omitempty"`
 
