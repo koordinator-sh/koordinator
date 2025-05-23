@@ -102,7 +102,7 @@ func (p *ColocationHandlerForConfigMapEvent) syncConfig(configMap *corev1.Config
 		//if controller restart ,cache will unavailable, else use old cfg
 		klog.Errorf("syncConfig failed since parse colocation error, use old Cfg ,configmap %s/%s, err: %s",
 			sloconfig.ConfigNameSpace, sloconfig.SLOCtrlConfigMap, err)
-		p.recorder.Eventf(configMap, "Warning", ReasonColocationConfigUnmarshalFailed, "failed to unmarshal colocation config, err: %s", err)
+		p.recorder.Eventf(configMap, corev1.EventTypeWarning, ReasonColocationConfigUnmarshalFailed, "failed to unmarshal colocation config, err: %s", err)
 		p.cfgCache.errorStatus = true
 		return false
 	}

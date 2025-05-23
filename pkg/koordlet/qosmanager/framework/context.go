@@ -95,7 +95,7 @@ func (r *Evictor) evictPod(evictPod *corev1.Pod, reason string, message string) 
 	if err := util.EvictPodByVersion(context.TODO(), r.kubeClient, evictPod.Namespace, evictPod.Name, metav1.DeleteOptions{
 		GracePeriodSeconds: nil,
 		Preconditions:      metav1.NewUIDPreconditions(string(evictPod.UID))}, r.evictVersion); err == nil {
-		r.eventRecorder.Eventf(evictPod, corev1.EventTypeWarning, helpers.EvictPodSuccess, podEvictMessage)
+		r.eventRecorder.Eventf(evictPod, corev1.EventTypeNormal, helpers.EvictPodSuccess, podEvictMessage)
 		metrics.RecordPodEviction(evictPod.Namespace, evictPod.Name, reason)
 		klog.Infof("evict pod %v/%v success, reason: %v", evictPod.Namespace, evictPod.Name, reason)
 		return true
