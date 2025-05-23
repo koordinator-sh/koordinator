@@ -22,8 +22,9 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/apis/config"
 	schedconfig "k8s.io/kubernetes/pkg/scheduler/apis/config"
 
-	"github.com/koordinator-sh/koordinator/apis/extension"
 	v1 "k8s.io/api/core/v1"
+
+	"github.com/koordinator-sh/koordinator/apis/extension"
 )
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -211,8 +212,26 @@ type ElasticQuotaArgs struct {
 	// EnableCheckParentQuota check parentQuotaGroups' used and runtime Quota in PreFilter
 	EnableCheckParentQuota bool
 
-	// EnableRuntimeQuota if true, use max instead of runtime for all checks.
+	// EnableRuntimeQuota if false, use max instead of runtime for all checks.
 	EnableRuntimeQuota bool
+
+	// DisableDefaultQuotaPreemption if true, will not preempt pods in default quota.
+	DisableDefaultQuotaPreemption bool
+
+	// HookPlugins is expected to be configured with enabled hook plugins
+	HookPlugins []HookPluginConf
+}
+
+// HookPluginConf define configuration for a single hook plugin
+type HookPluginConf struct {
+	// Key is the key of the hook plugin
+	Key string
+
+	// FactoryKey is the key of the hook plugin factory
+	FactoryKey string
+
+	// FactoryArgs is the arguments of the hook plugin factory
+	FactoryArgs string
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -227,7 +246,7 @@ type CoschedulingArgs struct {
 	// Workers number of controller
 	// default is 1
 	ControllerWorkers int64
-	// Skip check schedule cycle
+	// Skip check schedule cycle [Deprecated]
 	// default is false
 	SkipCheckScheduleCycle bool
 }

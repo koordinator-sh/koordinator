@@ -278,8 +278,12 @@ func getPostFilterState(cycleState *framework.CycleState) (*PostFilterState, err
 	return s, nil
 }
 
-func (g *Plugin) checkQuotaRecursive(curQuotaName string, quotaNameTopo []string, podRequest v1.ResourceList) *framework.Status {
-	quotaInfo := g.groupQuotaManager.GetQuotaInfoByName(curQuotaName)
+func (g *Plugin) checkQuotaRecursive(mgr *core.GroupQuotaManager, curQuotaName string, quotaNameTopo []string, podRequest v1.ResourceList) *framework.Status {
+	if curQuotaName == extension.RootQuotaName {
+		return framework.NewStatus(framework.Success, "")
+	}
+
+	quotaInfo := mgr.GetQuotaInfoByName(curQuotaName)
 	if quotaInfo == nil {
 		return framework.NewStatus(framework.Error, fmt.Sprintf("Could not find the elasticQuota %v, quotaNameTopo: %v", curQuotaName, quotaNameTopo))
 	}
@@ -292,11 +296,8 @@ func (g *Plugin) checkQuotaRecursive(curQuotaName string, quotaNameTopo []string
 			"quotaNameTopo: %v, runtime: %v, used: %v, pod's request: %v, exceedDimensions: %v", quotaNameTopo,
 			printResourceList(quotaUsedLimit), printResourceList(quotaUsed), printResourceList(podRequest), exceedDimensions))
 	}
-	if quotaInfo.ParentName != extension.RootQuotaName {
-		quotaNameTopo = append([]string{quotaInfo.ParentName}, quotaNameTopo...)
-		return g.checkQuotaRecursive(quotaInfo.ParentName, quotaNameTopo, podRequest)
-	}
-	return framework.NewStatus(framework.Success, "")
+	quotaNameTopo = append([]string{quotaInfo.ParentName}, quotaNameTopo...)
+	return g.checkQuotaRecursive(mgr, quotaInfo.ParentName, quotaNameTopo, podRequest)
 }
 
 func printResourceList(rl v1.ResourceList) string {

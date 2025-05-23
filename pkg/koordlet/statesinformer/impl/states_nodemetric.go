@@ -341,9 +341,7 @@ func (r *nodeMetricInformer) generateQueryDuration() (start time.Time, end time.
 func (r *nodeMetricInformer) collectMetric() (*slov1alpha1.NodeMetricInfo, []*slov1alpha1.PodMetricInfo,
 	[]*slov1alpha1.HostApplicationMetricInfo, *slov1alpha1.ReclaimableMetric) {
 	spec := r.getNodeMetricSpec()
-	endTime := time.Now()
-	startTime := endTime.Add(-time.Duration(*spec.CollectPolicy.AggregateDurationSeconds) * time.Second)
-
+	startTime, endTime := r.generateQueryDuration()
 	nodeMetricInfo := &slov1alpha1.NodeMetricInfo{
 		NodeUsage:              r.queryNodeMetric(startTime, endTime, metriccache.AggregationTypeAVG, false),
 		AggregatedNodeUsages:   r.collectNodeAggregateMetric(endTime, spec.CollectPolicy.NodeAggregatePolicy),

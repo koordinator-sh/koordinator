@@ -69,9 +69,10 @@ var (
 
 	defaultQuotaGroupNamespace = "koordinator-system"
 
-	defaultMonitorAllQuotas       = pointer.Bool(false)
-	defaultEnableCheckParentQuota = pointer.Bool(false)
-	defaultEnableRuntimeQuota     = pointer.Bool(true)
+	defaultMonitorAllQuotas              = pointer.Bool(false)
+	defaultEnableCheckParentQuota        = pointer.Bool(false)
+	defaultEnableRuntimeQuota            = pointer.Bool(true)
+	defaultDisableDefaultQuotaPreemption = pointer.Bool(true)
 
 	defaultTimeout           = 600 * time.Second
 	defaultControllerWorkers = 1
@@ -189,6 +190,9 @@ func SetDefaults_ElasticQuotaArgs(obj *ElasticQuotaArgs) {
 	}
 	if obj.EnableRuntimeQuota == nil {
 		obj.EnableRuntimeQuota = defaultEnableRuntimeQuota
+	}
+	if obj.DisableDefaultQuotaPreemption == nil {
+		obj.DisableDefaultQuotaPreemption = defaultDisableDefaultQuotaPreemption
 	}
 }
 

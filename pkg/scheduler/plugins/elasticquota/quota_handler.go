@@ -137,7 +137,13 @@ func (g *Plugin) ReplaceQuotas(objs []interface{}) error {
 	}()
 
 	g.groupQuotaManagersForQuotaTree = make(map[string]*core.GroupQuotaManager)
-	g.groupQuotaManager = core.NewGroupQuotaManager("", g.pluginArgs.SystemQuotaGroupMax, g.pluginArgs.DefaultQuotaGroupMax)
+	g.groupQuotaManager = core.NewGroupQuotaManager("", g.pluginArgs.SystemQuotaGroupMax,
+		g.pluginArgs.DefaultQuotaGroupMax)
+	err := g.groupQuotaManager.InitHookPlugins(g.pluginArgs)
+	if err != nil {
+		return err
+	}
+
 	g.quotaToTreeMap = make(map[string]string)
 	g.quotaToTreeMap[extension.DefaultQuotaName] = ""
 	g.quotaToTreeMap[extension.SystemQuotaName] = ""
@@ -212,6 +218,10 @@ func (g *Plugin) GetOrCreateGroupQuotaManagerForTree(treeID string) *core.GroupQ
 	if !ok {
 		mgr = core.NewGroupQuotaManager(treeID, g.pluginArgs.SystemQuotaGroupMax, g.pluginArgs.DefaultQuotaGroupMax)
 		g.groupQuotaManagersForQuotaTree[treeID] = mgr
+		err := mgr.InitHookPlugins(g.pluginArgs)
+		if err != nil {
+			klog.Error(err.Error())
+		}
 	}
 	g.quotaManagerLock.Unlock()
 	return mgr

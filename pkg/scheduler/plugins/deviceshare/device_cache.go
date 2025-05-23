@@ -349,15 +349,16 @@ func (n *nodeDevice) calcFreeWithPreemptible(deviceType schedulingv1alpha1.Devic
 
 	// If allocating from a required resources, e.g. a reservation, the free should be no larger than the reserved free.
 	if len(requiredDeviceResources) > 0 {
+		requiredDeviceFree := deviceResources{}
 		for minor, v := range deviceFree {
 			required, ok := requiredDeviceResources[minor]
 			if !ok {
-				delete(deviceFree, minor)
 				continue
 			}
 			v = util.MinResourceList(v, required)
-			deviceFree[minor] = v
+			requiredDeviceFree[minor] = v
 		}
+		return requiredDeviceFree
 	}
 
 	return deviceFree
@@ -452,7 +453,7 @@ func (n *nodeDevice) split(requestsPerInstance corev1.ResourceList, deviceType s
 }
 
 type nodeDeviceCache struct {
-	lock sync.Mutex
+	lock sync.RWMutex
 	// nodeDeviceInfos stores nodeDevice for each node.
 	nodeDeviceInfos map[string]*nodeDevice
 }
@@ -464,11 +465,17 @@ func newNodeDeviceCache() *nodeDeviceCache {
 }
 
 func (n *nodeDeviceCache) getNodeDevice(nodeName string, needInit bool) *nodeDevice {
+	if !needInit {
+		n.lock.RLock()
+		defer n.lock.RUnlock()
+		return n.nodeDeviceInfos[nodeName]
+	}
+
 	n.lock.Lock()
 	defer n.lock.Unlock()
 
 	// getNodeDevice will create new `nodeDevice` if needInit is true and nodeDeviceInfos[nodeName] is nil
-	if n.nodeDeviceInfos[nodeName] == nil && needInit {
+	if n.nodeDeviceInfos[nodeName] == nil {
 		klog.V(5).Infof("node device cache not found, nodeName: %v, createNodeDevice", nodeName)
 		n.nodeDeviceInfos[nodeName] = newNodeDevice()
 	}
@@ -480,12 +487,15 @@ func (n *nodeDeviceCache) removeNodeDevice(nodeName string) {
 	if nodeName == "" {
 		return
 	}
+	metrics.RecordSecondaryDeviceNotWellPlanned(nodeName, false)
 	n.lock.Lock()
 	defer n.lock.Unlock()
 	delete(n.nodeDeviceInfos, nodeName)
 }
 
 func (n *nodeDeviceCache) invalidateNodeDevice(device *schedulingv1alpha1.Device) {
+	metrics.RecordSecondaryDeviceNotWellPlanned(device.Name, false)
+
 	device = device.DeepCopy()
 	for i := range device.Spec.Devices {
 		info := &device.Spec.Devices[i]
@@ -510,6 +520,8 @@ func (n *nodeDeviceCache) updateNodeDevice(nodeName string, device *schedulingv1
 		return
 	}
 
+	metrics.RecordSecondaryDeviceNotWellPlanned(device.Name, apiext.IsSecondaryDeviceNotWellPlanned(device))
+
 	nodeDeviceResource := buildDeviceResources(device)
 	numaTopology := newNUMATopology(device)
 	deviceInfos := map[schedulingv1alpha1.DeviceType][]*schedulingv1alpha1.DeviceInfo{}
@@ -532,9 +544,6 @@ func (n *nodeDeviceCache) updateNodeDevice(nodeName string, device *schedulingv1
 	info.gpuPartitionIndexer = gpuPartitionIndexer
 	info.nodeHonorGPUPartition = apiext.GetGPUPartitionPolicy(device) == apiext.GPUPartitionPolicyHonor
 	info.secondaryDeviceWellPlanned = apiext.IsSecondaryDeviceWellPlanned(device)
-	if apiext.IsSecondaryDeviceNotWellPlanned(device) {
-		metrics.RecordSecondaryDeviceNotWellPlanned(device.Name)
-	}
 	info.gpuTopologyScope = gpuTopologyScope
 }
 
@@ -559,8 +568,8 @@ func buildDeviceResources(device *schedulingv1alpha1.Device) map[schedulingv1alp
 }
 
 func (n *nodeDeviceCache) getNodeDeviceSummary(nodeName string) (*NodeDeviceSummary, bool) {
-	n.lock.Lock()
-	defer n.lock.Unlock()
+	n.lock.RLock()
+	defer n.lock.RUnlock()
 
 	if _, exist := n.nodeDeviceInfos[nodeName]; !exist {
 		return nil, false
@@ -571,8 +580,8 @@ func (n *nodeDeviceCache) getNodeDeviceSummary(nodeName string) (*NodeDeviceSumm
 }
 
 func (n *nodeDeviceCache) getAllNodeDeviceSummary() map[string]*NodeDeviceSummary {
-	n.lock.Lock()
-	defer n.lock.Unlock()
+	n.lock.RLock()
+	defer n.lock.RUnlock()
 
 	nodeDeviceSummaries := make(map[string]*NodeDeviceSummary)
 	for nodeName, nodeDeviceInfo := range n.nodeDeviceInfos {
@@ -601,6 +610,7 @@ func (n *nodeDeviceCache) gcNodeDevice(ctx context.Context, informerFactory info
 		defer n.lock.Unlock()
 		for name := range n.nodeDeviceInfos {
 			if !nodeNames.Has(name) {
+				metrics.RecordSecondaryDeviceNotWellPlanned(name, false)
 				delete(n.nodeDeviceInfos, name)
 				klog.InfoS("nodeDevice has been removed since missing Node object", "node", name)
 			}

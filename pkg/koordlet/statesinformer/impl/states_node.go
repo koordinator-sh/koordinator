@@ -127,32 +127,6 @@ func newNodeInformer(client clientset.Interface, nodeName string) cache.SharedIn
 	)
 }
 
-func (s *nodeInformer) setupNodeInformer() {
-	s.nodeInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: func(obj interface{}) {
-			node, ok := obj.(*corev1.Node)
-			if ok {
-				s.syncNode(node)
-			} else {
-				klog.Errorf("node informer add func parse Node failed, obj %T", obj)
-			}
-		},
-		UpdateFunc: func(oldObj, newObj interface{}) {
-			oldNode, oldOK := oldObj.(*corev1.Node)
-			newNode, newOK := newObj.(*corev1.Node)
-			if !oldOK || !newOK {
-				klog.Errorf("unable to convert object to *corev1.Node, old %T, new %T", oldObj, newObj)
-				return
-			}
-			if reflect.DeepEqual(oldNode, newNode) {
-				klog.V(5).Infof("find node %s has not changed", newNode.Name)
-				return
-			}
-			s.syncNode(newNode)
-		},
-	})
-}
-
 func (s *nodeInformer) syncNode(newNode *corev1.Node) {
 	klog.V(5).Infof("node update detail %v", newNode)
 	s.nodeRWMutex.Lock()

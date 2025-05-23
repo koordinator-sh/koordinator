@@ -208,4 +208,10 @@ type PreBindExtensions interface {
 	ApplyPatch(ctx context.Context, cycleState *framework.CycleState, originalObj, modifiedObj metav1.Object) *framework.Status
 }
 
+type NextPodPlugin interface {
+	framework.Plugin
+	// NextPod returns nil directly if NextPodPlugin has no suggestion for which Pod to dequeue next.
+	NextPod() *corev1.Pod
+}
+
 type ForgetPodHandler func(pod *corev1.Pod)
