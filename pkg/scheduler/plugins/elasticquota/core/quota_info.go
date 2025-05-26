@@ -184,6 +184,7 @@ func (qi *QuotaInfo) GetQuotaSummary(treeID string, includePods bool) *QuotaInfo
 			quotaInfoSummary.PodCache[podName] = &SimplePodInfo{
 				IsAssigned: podInfo.isAssigned,
 				Resource:   podInfo.resource,
+				Pod:        podInfo.pod,
 			}
 		}
 	}
