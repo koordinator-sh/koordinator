@@ -90,6 +90,50 @@ func TestSchedulerMonitor_NoTimeout(t *testing.T) {
 	monitor.Complete(pod, nil)
 }
 
+func TestSchedulerMonitor_DropUnhandledTimeout(t *testing.T) {
+	monitor := NewSchedulerMonitor(schedulerMonitorPeriod, schedulingTimeout)
+	monitor.unhandledTimeout = 10 * time.Millisecond
+
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-pod",
+			Namespace: "test-ns",
+			UID:       types.UID("test-uid"),
+		},
+	}
+
+	monitor.RecordNextPod(&framework.QueuedPodInfo{
+		PodInfo: &framework.PodInfo{
+			Pod: pod,
+		},
+	})
+	monitor.lock.Lock()
+	state, ok := monitor.schedulingPods[pod.UID]
+	monitor.lock.Unlock()
+	if !ok {
+		t.Errorf("failed to record NextPod, expect QueuedPodInfo exists")
+		return
+	}
+	if state.dequeued.IsZero() {
+		t.Errorf("failed to record NextPod, expect dequeued is set")
+		return
+	}
+	if !state.start.IsZero() {
+		t.Errorf("failed to record NextPod, expect start is not set")
+		return
+	}
+
+	time.Sleep(2 * monitor.unhandledTimeout)
+	monitor.monitor()
+	monitor.lock.Lock()
+	_, ok = monitor.schedulingPods[pod.UID]
+	monitor.lock.Unlock()
+	if ok {
+		t.Errorf("failed to drop unhandled pod, expect QueuedPodInfo is deleted")
+		return
+	}
+}
+
 func TestSchedulerMonitor_StartAndCompleteMonitoring(t *testing.T) {
 	timeout := 10 * time.Millisecond
 
