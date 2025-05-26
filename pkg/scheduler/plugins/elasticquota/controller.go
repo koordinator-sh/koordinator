@@ -133,21 +133,21 @@ func (ctrl *Controller) syncElasticQuotaStatus(eq *v1alpha1.ElasticQuota) {
 	} else {
 		if klog.V(5).Enabled() {
 			klog.InfoS("Successfully patch elasticQuota", "elasticQuota", eq.Name)
+		}
 
-			var pods []*v1.Pod
-			if quotaInfoSummary, ok := ctrl.plugin.groupQuotaManager.GetQuotaSummary(eq.Name, false); ok {
-				for _, simplePodInfo := range quotaInfoSummary.PodCache {
-					if !simplePodInfo.IsAssigned {
-						pods = append(pods, simplePodInfo.Pod)
-					}
+		var pods []*v1.Pod
+		if quotaInfoSummary, ok := ctrl.plugin.groupQuotaManager.GetQuotaSummary(eq.Name, false); ok {
+			for _, simplePodInfo := range quotaInfoSummary.PodCache {
+				if !simplePodInfo.IsAssigned {
+					pods = append(pods, simplePodInfo.Pod)
 				}
 			}
+		}
 
-			// reActivate the pending pod when Q is changed
-			if extendedHandle := ctrl.plugin.handle.(frameworkext.ExtendedHandle); extendedHandle != nil && extendedHandle.Scheduler() != nil && extendedHandle.Scheduler().GetSchedulingQueue() != nil {
-				for _, pod := range pods {
-					extendedHandle.Scheduler().GetSchedulingQueue().Activate(logr.Discard(), map[string]*v1.Pod{pod.Namespace + "/" + pod.Name: pod})
-				}
+		// reActivate the pending pod when Q is changed
+		if extendedHandle := ctrl.plugin.handle.(frameworkext.ExtendedHandle); extendedHandle != nil && extendedHandle.Scheduler() != nil && extendedHandle.Scheduler().GetSchedulingQueue() != nil {
+			for _, pod := range pods {
+				extendedHandle.Scheduler().GetSchedulingQueue().Activate(logr.Discard(), map[string]*v1.Pod{pod.Namespace + "/" + pod.Name: pod})
 			}
 		}
 	}
