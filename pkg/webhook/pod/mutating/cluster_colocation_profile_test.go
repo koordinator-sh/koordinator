@@ -1428,7 +1428,8 @@ func TestClusterColocationProfileMutatingPod(t *testing.T) {
 						},
 					},
 					Labels: map[string]string{
-						"testLabelA": "valueA",
+						"testLabelA":                 "valueA",
+						extension.LabelSchedulerName: "koordinator-scheduler",
 					},
 					LabelKeysMapping: map[string]string{
 						"label-key-to-load":           "label-key-to-store",
@@ -1437,7 +1438,6 @@ func TestClusterColocationProfileMutatingPod(t *testing.T) {
 					Annotations: map[string]string{
 						"testAnnotationA": "valueA",
 					},
-					SchedulerName:       "koordinator-scheduler",
 					QoSClass:            string(extension.QoSBE),
 					PriorityClassName:   "koordinator-batch",
 					KoordinatorPriority: pointer.Int32(1111),
@@ -1459,6 +1459,7 @@ func TestClusterColocationProfileMutatingPod(t *testing.T) {
 						"label-key-to-store-not-exist": "",
 						extension.LabelPodQoS:          string(extension.QoSBE),
 						extension.LabelPodPriority:     "1111",
+						extension.LabelSchedulerName:   "koordinator-scheduler",
 					},
 					Annotations: map[string]string{
 						"testAnnotationA":       "valueA",
@@ -1500,7 +1501,7 @@ func TestClusterColocationProfileMutatingPod(t *testing.T) {
 						extension.BatchCPU:    *resource.NewQuantity(1000, resource.DecimalSI),
 						extension.BatchMemory: resource.MustParse("2Gi"),
 					},
-					SchedulerName:     "koordinator-scheduler",
+					SchedulerName:     "nonExistSchedulerName",
 					Priority:          pointer.Int32(extension.PriorityBatchValueMax),
 					PriorityClassName: "koordinator-batch",
 					PreemptionPolicy:  &preemptionPolicy,

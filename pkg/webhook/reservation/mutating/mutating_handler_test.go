@@ -18,27 +18,30 @@ package mutating
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	admissionv1 "k8s.io/api/admission/v1"
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/kubernetes/scheme"
 	clientcache "k8s.io/client-go/tools/cache"
-	sigcache "sigs.k8s.io/controller-runtime/pkg/cache"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache/informertest"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	configv1alpha1 "github.com/koordinator-sh/koordinator/apis/config/v1alpha1"
+	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
-	"github.com/koordinator-sh/koordinator/pkg/webhook/elasticquota"
 )
 
-func makeTestHandler() (*PodMutatingHandler, *informertest.FakeInformers) {
+func makeTestHandler() (*ReservationMutatingHandler, *informertest.FakeInformers) {
+	schedulingv1alpha1.AddToScheme(scheme.Scheme)
 	client := fake.NewClientBuilder().Build()
 	sche := client.Scheme()
 	sche.AddKnownTypes(schema.GroupVersion{
@@ -46,7 +49,7 @@ func makeTestHandler() (*PodMutatingHandler, *informertest.FakeInformers) {
 		Version: "v1alpha1",
 	}, &v1alpha1.ElasticQuota{}, &v1alpha1.ElasticQuotaList{})
 	decoder := admission.NewDecoder(sche)
-	handler := &PodMutatingHandler{}
+	handler := &ReservationMutatingHandler{}
 	handler.InjectClient(client)
 	handler.InjectDecoder(decoder)
 
@@ -54,15 +57,14 @@ func makeTestHandler() (*PodMutatingHandler, *informertest.FakeInformers) {
 		InformersByGVK: map[schema.GroupVersionKind]clientcache.SharedIndexInformer{},
 		Scheme:         sche,
 	}
-	handler.InjectCache(cacheTmp)
 
 	return handler, cacheTmp
 }
 
 func gvr(resource string) metav1.GroupVersionResource {
 	return metav1.GroupVersionResource{
-		Group:    corev1.SchemeGroupVersion.Group,
-		Version:  corev1.SchemeGroupVersion.Version,
+		Group:    schedulingv1alpha1.SchemeGroupVersion.Group,
+		Version:  schedulingv1alpha1.SchemeGroupVersion.Version,
 		Resource: resource,
 	}
 }
@@ -112,7 +114,7 @@ func TestMutatingHandler(t *testing.T) {
 		code    int32
 	}{
 		{
-			name: "not a pod",
+			name: "not a reservation",
 			request: admission.Request{
 				AdmissionRequest: admissionv1.AdmissionRequest{
 					Resource:  gvr("configmaps"),
@@ -122,10 +124,10 @@ func TestMutatingHandler(t *testing.T) {
 			allowed: true,
 		},
 		{
-			name: "pod with subresource",
+			name: "reservation with subresource",
 			request: admission.Request{
 				AdmissionRequest: admissionv1.AdmissionRequest{
-					Resource:    gvr("pods"),
+					Resource:    gvr("reservations"),
 					Operation:   admissionv1.Create,
 					SubResource: "status",
 				},
@@ -133,10 +135,10 @@ func TestMutatingHandler(t *testing.T) {
 			allowed: true,
 		},
 		{
-			name: "pod with empty object",
+			name: "reservation with empty object",
 			request: admission.Request{
 				AdmissionRequest: admissionv1.AdmissionRequest{
-					Resource:  gvr("pods"),
+					Resource:  gvr("reservations"),
 					Operation: admissionv1.Create,
 					Object:    runtime.RawExtension{},
 				},
@@ -145,26 +147,40 @@ func TestMutatingHandler(t *testing.T) {
 			code:    http.StatusBadRequest,
 		},
 		{
-			name: "pod with object unmatched",
+			name: "reservation not create",
 			request: admission.Request{
 				AdmissionRequest: admissionv1.AdmissionRequest{
-					Resource:  gvr("pods"),
+					Resource:  gvr("reservations"),
+					Operation: admissionv1.Update,
+					Object: runtime.RawExtension{
+						Raw: []byte(`{"metadata":{"name":"reservation1"}}`),
+					},
+				},
+			},
+			allowed: true,
+			code:    http.StatusOK,
+		},
+		{
+			name: "reservation with object unmatched",
+			request: admission.Request{
+				AdmissionRequest: admissionv1.AdmissionRequest{
+					Resource:  gvr("reservations"),
 					Operation: admissionv1.Create,
 					Object: runtime.RawExtension{
-						Raw: []byte(`{"metadata":{"name":"pod1", "labels": {"koordinator-colocation-reservation": "false"}}}`),
+						Raw: []byte(`{"metadata":{"name":"reservation1", "labels": {"koordinator-colocation-reservation": "false"}}}`),
 					},
 				},
 			},
 			allowed: true,
 		},
 		{
-			name: "pod with object matched",
+			name: "reservation with object matched",
 			request: admission.Request{
 				AdmissionRequest: admissionv1.AdmissionRequest{
-					Resource:  gvr("pods"),
+					Resource:  gvr("reservations"),
 					Operation: admissionv1.Create,
 					Object: runtime.RawExtension{
-						Raw: []byte(`{"metadata":{"name":"pod1", "labels": {"koordinator-colocation-reservation": "true"}}}`),
+						Raw: []byte(`{"metadata":{"name":"reservation1", "labels": {"koordinator-colocation-reservation": "true"}}}`),
 					},
 				},
 			},
@@ -175,30 +191,30 @@ func TestMutatingHandler(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			response := handler.Handle(ctx, tc.request)
-			if tc.allowed && !response.Allowed {
-				t.Errorf("unexpeced failed to handler %#v", response)
-			}
-			if !tc.allowed && response.AdmissionResponse.Result.Code != tc.code {
-				t.Errorf("unexpected code, got %v expected %v", response.AdmissionResponse.Result.Code, tc.code)
+			assert.Equal(t, tc.allowed, response.Allowed, fmt.Sprintf("unexpeced failed to handler %#v", response))
+			if !tc.allowed {
+				assert.Equal(t, tc.code, response.AdmissionResponse.Result.Code, fmt.Sprintf("unexpected code, got %v expected %v", response.AdmissionResponse.Result.Code, tc.code))
 			}
 		})
 	}
 }
 
-// var _ inject.Cache = &PodMutatingHandler{}
+type fakeManager struct {
+	ctrl.Manager
+}
 
-func (h *PodMutatingHandler) InjectCache(cache sigcache.Cache) error {
-	ctx := context.TODO()
-	quotaInformer, err := cache.GetInformer(ctx, &v1alpha1.ElasticQuota{})
-	if err != nil {
-		return err
-	}
-	plugin := elasticquota.NewPlugin(h.Decoder, h.Client)
-	qt := plugin.QuotaTopo
-	quotaInformer.AddEventHandler(clientcache.ResourceEventHandlerFuncs{
-		AddFunc:    qt.OnQuotaAdd,
-		UpdateFunc: qt.OnQuotaUpdate,
-		DeleteFunc: qt.OnQuotaDelete,
-	})
+func (f *fakeManager) GetClient() client.Client {
 	return nil
+}
+
+func (f *fakeManager) GetScheme() *runtime.Scheme {
+	return runtime.NewScheme()
+}
+
+func Test_reservationMutateBuilder(t *testing.T) {
+	t.Run("test", func(t *testing.T) {
+		b := &reservationMutateBuilder{}
+		got := b.WithControllerManager(&fakeManager{}).Build()
+		assert.NotNil(t, got)
+	})
 }

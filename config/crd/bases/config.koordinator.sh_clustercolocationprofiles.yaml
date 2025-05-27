@@ -60,6 +60,7 @@ spec:
                   Various Koordinator components determine the priority of the Pod
                   in the Koordinator through KoordinatorPriority and the priority value in PriorityClassName.
                   The higher the value, the higher the priority.
+                  TODO: remove this field, use Labels instead.
                 format: int32
                 type: integer
               labelKeysMapping:
