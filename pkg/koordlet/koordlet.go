@@ -32,6 +32,7 @@ import (
 	clientsetbeta1 "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
 	"github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/typed/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/config"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/extension"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor"
@@ -47,6 +48,8 @@ import (
 
 var (
 	scheme = apiruntime.NewScheme()
+
+	extensionControllerInitFuncs = map[string]extension.ControllerInitFunc{}
 )
 
 func init() {
@@ -65,6 +68,8 @@ type daemon struct {
 	runtimeHook    runtimehooks.RuntimeHook
 	predictServer  prediction.PredictServer
 	executor       resourceexecutor.ResourceUpdateExecutor
+
+	extensionControllers []extension.Controller
 }
 
 func NewDaemon(config *config.Configuration) (Daemon, error) {
@@ -111,6 +116,11 @@ func NewDaemon(config *config.Configuration) (Daemon, error) {
 		return nil, err
 	}
 
+	extensionControllers := []extension.Controller{}
+	for _, initFunc := range extensionControllerInitFuncs {
+		extensionControllers = append(extensionControllers, initFunc(nodeName, kubeClient, statesInformer))
+	}
+
 	d := &daemon{
 		metricAdvisor:  collectorService,
 		statesInformer: statesInformer,
@@ -119,6 +129,8 @@ func NewDaemon(config *config.Configuration) (Daemon, error) {
 		runtimeHook:    runtimeHook,
 		predictServer:  predictServer,
 		executor:       resourceexecutor.NewResourceUpdateExecutor(),
+
+		extensionControllers: extensionControllers,
 	}
 
 	return d, nil
@@ -181,6 +193,16 @@ func (d *daemon) Run(stopCh <-chan struct{}) {
 			klog.Fatal("Unable to run the runtimeHook: ", err)
 		}
 	}()
+
+	for _, c := range d.extensionControllers {
+		go func(controller extension.Controller) {
+			name := controller.Name()
+			klog.Infof("starting extension controller %v", name)
+			if err := controller.Run(stopCh); err != nil {
+				klog.Fatalf("Unable to start the extension controller %v, err: %v", name, err)
+			}
+		}(c)
+	}
 
 	klog.Info("Start daemon successfully")
 	<-stopCh
