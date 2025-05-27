@@ -23,6 +23,7 @@ import (
 type SimplePodInfo struct {
 	IsAssigned bool            `json:"isAssigned"`
 	Resource   v1.ResourceList `json:"resource"`
+	Pod        *v1.Pod         `json:"pod"`
 }
 
 type QuotaInfoSummary struct {
