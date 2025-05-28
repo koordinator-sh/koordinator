@@ -28,6 +28,8 @@ type Config struct {
 	MemoryEvictCoolTimeSeconds int
 	CPUEvictCoolTimeSeconds    int
 	OnlyEvictByAPI             bool
+	EvictByCopilotAgent        bool
+	EvictByCopilotEndPoint     string
 	QOSExtensionCfg            *QOSExtensionConfig
 }
 
@@ -40,6 +42,8 @@ func NewDefaultConfig() *Config {
 		MemoryEvictCoolTimeSeconds: 4,
 		CPUEvictCoolTimeSeconds:    20,
 		OnlyEvictByAPI:             false,
+		EvictByCopilotAgent:        false,
+		EvictByCopilotEndPoint:     "/var/run/yarn-copilot/yarn-copilot.sock",
 		QOSExtensionCfg:            &QOSExtensionConfig{FeatureGates: map[string]bool{}},
 	}
 }
@@ -52,5 +56,7 @@ func (c *Config) InitFlags(fs *flag.FlagSet) {
 	fs.IntVar(&c.MemoryEvictCoolTimeSeconds, "memory-evict-cool-time-seconds", c.MemoryEvictCoolTimeSeconds, "cooling time: memory next evict time should after lastEvictTime + MemoryEvictCoolTimeSeconds")
 	fs.IntVar(&c.CPUEvictCoolTimeSeconds, "cpu-evict-cool-time-seconds", c.CPUEvictCoolTimeSeconds, "cooltime: CPU next evict time should after lastEvictTime + CPUEvictCoolTimeSeconds")
 	fs.BoolVar(&c.OnlyEvictByAPI, "only-evict-by-api", c.OnlyEvictByAPI, "only evict pod if call eviction api successed")
+	fs.BoolVar(&c.EvictByCopilotAgent, "evict-by-copilot-agent", c.EvictByCopilotAgent, "if evict container by copilot agent")
+	fs.StringVar(&c.EvictByCopilotEndPoint, "evict-by-copilot-endpoint", c.EvictByCopilotEndPoint, "endpoint of evicting container by copilot agent")
 	c.QOSExtensionCfg.InitFlags(fs)
 }

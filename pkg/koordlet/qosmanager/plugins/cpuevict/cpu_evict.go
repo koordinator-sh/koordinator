@@ -18,6 +18,8 @@ package cpuevict
 
 import (
 	"fmt"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/qosmanager/plugins/copilot"
+	"k8s.io/apimachinery/pkg/api/resource"
 	"math"
 	"sort"
 	"time"
@@ -59,6 +61,8 @@ type cpuEvictor struct {
 	evictor               *framework.Evictor
 	lastEvictTime         time.Time
 	onlyEvictByAPI        bool
+	evictByCopilotAgent   bool
+	copilotAgent          *copilot.CopilotAgent
 }
 
 func New(opt *framework.Options) framework.QOSStrategy {
@@ -70,6 +74,8 @@ func New(opt *framework.Options) framework.QOSStrategy {
 		metricCache:           opt.MetricCache,
 		lastEvictTime:         time.Now(),
 		onlyEvictByAPI:        opt.Config.OnlyEvictByAPI,
+		evictByCopilotAgent:   opt.Config.EvictByCopilotAgent,
+		copilotAgent:          opt.CopilotAgent,
 	}
 }
 
@@ -302,21 +308,32 @@ func (c *cpuEvictor) killAndEvictBEPodsRelease(node *corev1.Node, bePodInfos []*
 		if cpuMilliReleased >= cpuNeedMilliRelease {
 			break
 		}
-
-		if c.onlyEvictByAPI {
-			if c.evictor.EvictPodIfNotEvicted(bePod.pod, node, resourceexecutor.EvictPodByBECPUSatisfaction, message) {
+		if c.evictByCopilotAgent && isYarnNodeManager(bePod) {
+			currentNodeCpuUsage, _ := c.getCurrentNodeCpuUsage()
+			needReleasedResource := corev1.ResourceList{apiext.BatchCPU: *resource.NewMilliQuantity(cpuNeedMilliRelease, resource.DecimalSI),
+				apiext.BatchMemory: *resource.NewQuantity(0, resource.BinarySI)}
+			res := c.copilotAgent.KillContainerByResource(currentNodeCpuUsage, -1, &needReleasedResource)
+			if cpu, ok := res[apiext.BatchCPU]; ok {
+				cpuMilliReleased = cpuMilliReleased + cpu.MilliValue()
+			} else {
+				klog.Warningf("BatchCPU resource not found in resource list")
+			}
+		} else {
+			if c.onlyEvictByAPI {
+				if c.evictor.EvictPodIfNotEvicted(bePod.pod, node, resourceexecutor.EvictPodByBECPUSatisfaction, message) {
+					cpuMilliReleased = cpuMilliReleased + bePod.milliRequest
+					klog.V(5).Infof("cpuEvict pick pod %s to evict", util.GetPodKey(bePod.pod))
+					hasKillPods = true
+				} else {
+					klog.V(5).Infof("cpuEvict pick pod %s to evict, failed", util.GetPodKey(bePod.pod))
+				}
+			} else {
+				podKillMsg := fmt.Sprintf("%s, kill pod: %s", message, util.GetPodKey(bePod.pod))
+				helpers.KillContainers(bePod.pod, resourceexecutor.EvictPodByBECPUSatisfaction, podKillMsg)
 				cpuMilliReleased = cpuMilliReleased + bePod.milliRequest
 				klog.V(5).Infof("cpuEvict pick pod %s to evict", util.GetPodKey(bePod.pod))
 				hasKillPods = true
-			} else {
-				klog.V(5).Infof("cpuEvict pick pod %s to evict, failed", util.GetPodKey(bePod.pod))
 			}
-		} else {
-			podKillMsg := fmt.Sprintf("%s, kill pod: %s", message, util.GetPodKey(bePod.pod))
-			helpers.KillContainers(bePod.pod, resourceexecutor.EvictPodByBECPUSatisfaction, podKillMsg)
-			cpuMilliReleased = cpuMilliReleased + bePod.milliRequest
-			klog.V(5).Infof("cpuEvict pick pod %s to evict", util.GetPodKey(bePod.pod))
-			hasKillPods = true
 		}
 	}
 
@@ -325,6 +342,55 @@ func (c *cpuEvictor) killAndEvictBEPodsRelease(node *corev1.Node, bePodInfos []*
 	}
 	klog.V(5).Infof("killAndEvictBEPodsRelease finished! cpuNeedMilliRelease(%d) cpuMilliReleased(%d)",
 		cpuNeedMilliRelease, cpuMilliReleased)
+}
+
+func (c *cpuEvictor) calculateCurrentCpuUsage() float64 {
+	// Step2: Calculate release resource current
+	queryParam := helpers.GenerateQueryParamsLast(c.metricCollectInterval * 2)
+	querier, err := c.metricCache.Querier(*queryParam.Start, *queryParam.End)
+	if err != nil {
+		klog.Warningf("get query failed, error %v", err)
+		return 0
+	}
+	defer querier.Close()
+	// BECPUUsage
+	currentBECPUMilliUsage, _ := getBECPUMetric(metriccache.BEResourceAllocationUsage, querier, queryParam.Aggregate)
+	return currentBECPUMilliUsage
+}
+
+func (c *cpuEvictor) getCurrentNodeCpuUsage() (float64, error) {
+	queryMeta, err := metriccache.NodeCPUUsageMetric.BuildQueryMeta(nil)
+	if err != nil {
+		klog.Warningf("skip cpu evict, get node query failed, error: %v", err)
+		return -1, err
+	}
+	nodeCpuUsage, err := helpers.CollectorNodeMetricLast(c.metricCache, queryMeta, c.metricCollectInterval)
+	if err != nil {
+		klog.Warningf("get node cpu usage failed, error: %v", err)
+		return -1, err
+	}
+	klog.V(5).Infof("getCurrentNodeCpuUsage finished! nodeCpuUsage(%d)", nodeCpuUsage)
+	return nodeCpuUsage, nil
+}
+
+func isYarnNodeManager(pod *podEvictCPUInfo) bool {
+	targetKey := "app.kubernetes.io/component"
+	targetValue := "node-manager"
+	// 检查Labels是否存在目标键值
+	if hasLabel(pod.pod.Labels, targetKey, targetValue) {
+		klog.V(6).Infof("Pod %s 包含标签 %s=%s\n", pod.pod.Name, targetKey, targetValue)
+		return true
+	}
+	return false
+}
+
+// 检查Labels中是否存在指定的键值对
+func hasLabel(labels map[string]string, key, value string) bool {
+	if labels == nil {
+		return false
+	}
+	val, exists := labels[key]
+	return exists && val == value
 }
 
 func (c *cpuEvictor) getPodEvictInfoAndSort() []*podEvictCPUInfo {

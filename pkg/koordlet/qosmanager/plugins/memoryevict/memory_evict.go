@@ -18,6 +18,8 @@ package memoryevict
 
 import (
 	"fmt"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/qosmanager/plugins/copilot"
+	"k8s.io/apimachinery/pkg/api/resource"
 	"sort"
 	"time"
 
@@ -52,6 +54,8 @@ type memoryEvictor struct {
 	evictor               *framework.Evictor
 	lastEvictTime         time.Time
 	onlyEvictByAPI        bool
+	evictByCopilotAgent   bool
+	copilotAgent          copilot.CopilotAgent
 }
 
 type podInfo struct {
@@ -67,6 +71,8 @@ func New(opt *framework.Options) framework.QOSStrategy {
 		statesInformer:        opt.StatesInformer,
 		metricCache:           opt.MetricCache,
 		onlyEvictByAPI:        opt.Config.OnlyEvictByAPI,
+		evictByCopilotAgent:   opt.Config.EvictByCopilotAgent,
+		copilotAgent:          *opt.CopilotAgent,
 	}
 }
 
@@ -160,10 +166,10 @@ func (m *memoryEvictor) memoryEvict() {
 	)
 
 	memoryNeedRelease := memoryCapacity * (nodeMemoryUsage - lowerPercent) / 100
-	m.killAndEvictBEPods(node, podMetrics, memoryNeedRelease)
+	m.killAndEvictBEPods(float64(nodeMemoryUsage)/100, node, podMetrics, memoryNeedRelease)
 }
 
-func (m *memoryEvictor) killAndEvictBEPods(node *corev1.Node, podMetrics map[string]float64, memoryNeedRelease int64) {
+func (m *memoryEvictor) killAndEvictBEPods(nodeMemoryUsage float64, node *corev1.Node, podMetrics map[string]float64, memoryNeedRelease int64) {
 	bePodInfos := m.getSortedBEPodInfos(podMetrics)
 	message := fmt.Sprintf("killAndEvictBEPods for node, need to release memory: %v", memoryNeedRelease)
 	memoryReleased := int64(0)
@@ -172,25 +178,35 @@ func (m *memoryEvictor) killAndEvictBEPods(node *corev1.Node, podMetrics map[str
 		if memoryReleased >= memoryNeedRelease {
 			break
 		}
-
-		if m.onlyEvictByAPI {
-			if m.evictor.EvictPodIfNotEvicted(bePod.pod, node, resourceexecutor.EvictPodByNodeMemoryUsage, message) {
+		if m.evictByCopilotAgent && isYarnNodeManager(bePod) {
+			needReleasedResource := corev1.ResourceList{extension.BatchCPU: *resource.NewMilliQuantity(0, resource.DecimalSI),
+				extension.BatchMemory: *resource.NewQuantity(memoryNeedRelease, resource.BinarySI)}
+			res := m.copilotAgent.KillContainerByResource(-1, nodeMemoryUsage, &needReleasedResource)
+			if mem, ok := res[extension.BatchMemory]; ok {
+				memoryReleased += mem.Value()
+			} else {
+				klog.Warningf("BatchMemory resource not found in resource list")
+			}
+		} else {
+			if m.onlyEvictByAPI {
+				if m.evictor.EvictPodIfNotEvicted(bePod.pod, node, resourceexecutor.EvictPodByNodeMemoryUsage, message) {
+					hasKillPods = true
+					if bePod.memUsed != 0 {
+						memoryReleased += int64(bePod.memUsed)
+					}
+					klog.V(5).Infof("memoryEvict pick pod %s to evict", util.GetPodKey(bePod.pod))
+				} else {
+					klog.V(5).Infof("memoryEvict pick pod %s to evict", util.GetPodKey(bePod.pod))
+				}
+			} else {
+				killMsg := fmt.Sprintf("%v, kill pod: %v", message, bePod.pod.Name)
+				helpers.KillContainers(bePod.pod, resourceexecutor.EvictPodByNodeMemoryUsage, killMsg)
 				hasKillPods = true
 				if bePod.memUsed != 0 {
 					memoryReleased += int64(bePod.memUsed)
 				}
 				klog.V(5).Infof("memoryEvict pick pod %s to evict", util.GetPodKey(bePod.pod))
-			} else {
-				klog.V(5).Infof("memoryEvict pick pod %s to evict", util.GetPodKey(bePod.pod))
 			}
-		} else {
-			killMsg := fmt.Sprintf("%v, kill pod: %v", message, bePod.pod.Name)
-			helpers.KillContainers(bePod.pod, resourceexecutor.EvictPodByNodeMemoryUsage, killMsg)
-			hasKillPods = true
-			if bePod.memUsed != 0 {
-				memoryReleased += int64(bePod.memUsed)
-			}
-			klog.V(5).Infof("memoryEvict pick pod %s to evict", util.GetPodKey(bePod.pod))
 		}
 	}
 	if hasKillPods {
@@ -198,6 +214,26 @@ func (m *memoryEvictor) killAndEvictBEPods(node *corev1.Node, podMetrics map[str
 	}
 
 	klog.Infof("killAndEvictBEPods completed, memoryNeedRelease(%v) memoryReleased(%v)", memoryNeedRelease, memoryReleased)
+}
+
+func isYarnNodeManager(pod *podInfo) bool {
+	targetKey := "app.kubernetes.io/component"
+	targetValue := "node-manager"
+	// 检查Labels是否存在目标键值
+	if hasLabel(pod.pod.Labels, targetKey, targetValue) {
+		klog.V(6).Infof("Pod %s 包含标签 %s=%s\n", pod.pod.Name, targetKey, targetValue)
+		return true
+	}
+	return false
+}
+
+// 检查Labels中是否存在指定的键值对
+func hasLabel(labels map[string]string, key, value string) bool {
+	if labels == nil {
+		return false
+	}
+	val, exists := labels[key]
+	return exists && val == value
 }
 
 func (m *memoryEvictor) getSortedBEPodInfos(podMetricMap map[string]float64) []*podInfo {

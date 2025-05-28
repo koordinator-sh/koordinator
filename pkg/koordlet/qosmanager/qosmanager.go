@@ -18,6 +18,7 @@ package qosmanager
 
 import (
 	"fmt"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/qosmanager/plugins/copilot"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -55,6 +56,10 @@ func NewQOSManager(cfg *framework.Config, schema *apiruntime.Scheme, kubeClient 
 	recorder := eventBroadcaster.NewRecorder(schema, corev1.EventSource{Component: "koordlet-qosManager", Host: nodeName})
 	cgroupReader := resourceexecutor.NewCgroupReader()
 	evictor := framework.NewEvictor(kubeClient, recorder, evictVersion)
+	var copilotAgent *copilot.CopilotAgent
+	if cfg.EvictByCopilotAgent {
+		copilotAgent = copilot.NewCopilotAgent(cfg.EvictByCopilotEndPoint)
+	}
 
 	opt := &framework.Options{
 		CgroupReader:        cgroupReader,
@@ -65,6 +70,7 @@ func NewQOSManager(cfg *framework.Config, schema *apiruntime.Scheme, kubeClient 
 		EvictVersion:        evictVersion,
 		Config:              cfg,
 		MetricAdvisorConfig: metricAdvisorConfig,
+		CopilotAgent:        copilotAgent,
 	}
 
 	ctx := &framework.Context{

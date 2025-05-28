@@ -17,6 +17,7 @@ limitations under the License.
 package framework
 
 import (
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/qosmanager/plugins/copilot"
 	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/record"
 
@@ -35,4 +36,5 @@ type Options struct {
 	EvictVersion        string
 	Config              *Config
 	MetricAdvisorConfig *ma.Config
+	CopilotAgent        *copilot.CopilotAgent
 }
