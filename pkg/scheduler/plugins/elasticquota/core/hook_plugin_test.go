@@ -286,7 +286,7 @@ func TestOnPodUpdateHook(t *testing.T) {
 		assert.True(t, updatedPod1 == newPod, "New pod should match")
 	}
 	gqm.OnPodUpdate(q1.Name, q1.Name, updatedPod1, pod1)
-	assert.False(t, mockHook.OnPodUpdatedCalled, "OnPodUpdated should be called")
+	assert.True(t, mockHook.OnPodUpdatedCalled, "OnPodUpdated should be called")
 
 	// validate Pod Delete operation
 	mockHook.Reset()
