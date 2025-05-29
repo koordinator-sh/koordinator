@@ -707,6 +707,8 @@ func (gqm *GroupQuotaManager) updatePodUsedNoLock(quotaName string, oldPod, newP
 			quotaName, getPodName(oldPod, newPod))
 		return
 	}
+	// run pod-update hooks regardless of whether used resources have changed.
+	gqm.runPodUpdateHooks(quotaName, oldPod, newPod)
 
 	var oldPodUsed, newPodUsed, oldNonPreemptibleUsed, newNonPreemptibleUsed v1.ResourceList
 	if oldPod != nil {
@@ -735,7 +737,6 @@ func (gqm *GroupQuotaManager) updatePodUsedNoLock(quotaName string, oldPod, newP
 			quotaName, getPodName(oldPod, newPod), util.DumpJSON(newPodUsed), util.DumpJSON(newNonPreemptibleUsed))
 	}
 	gqm.updateGroupDeltaUsedNoLock(quotaName, deltaUsed, deltaNonPreemptibleUsed, 0)
-	gqm.runPodUpdateHooks(quotaName, oldPod, newPod)
 }
 
 func (gqm *GroupQuotaManager) updatePodCacheNoLock(quotaName string, pod *v1.Pod, isAdd bool) {
