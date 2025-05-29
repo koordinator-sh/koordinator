@@ -214,7 +214,7 @@ func (r *QuotaProfileReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	if !quotaExist {
 		err = r.Client.Create(context.TODO(), quota)
 		if err != nil {
-			r.Recorder.Eventf(profile, "Warning", ReasonCreateQuotaFailed, "failed to create quota, err: %s", err)
+			r.Recorder.Eventf(profile, corev1.EventTypeWarning, ReasonCreateQuotaFailed, "failed to create quota, err: %s", err)
 			klog.Errorf("failed create quota for profile %v, error: %v", req.NamespacedName, err)
 			return ctrl.Result{RequeueAfter: 2 * time.Second}, nil
 		}
@@ -222,7 +222,7 @@ func (r *QuotaProfileReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		if !reflect.DeepEqual(quota.Labels, oldQuota.Labels) || !reflect.DeepEqual(quota.Annotations, oldQuota.Annotations) || !reflect.DeepEqual(quota.Spec, oldQuota.Spec) {
 			err = r.Client.Update(context.TODO(), quota)
 			if err != nil {
-				r.Recorder.Eventf(profile, "Warning", ReasonUpdateQuotaFailed, "failed to update quota, err: %s", err)
+				r.Recorder.Eventf(profile, corev1.EventTypeWarning, ReasonUpdateQuotaFailed, "failed to update quota, err: %s", err)
 				klog.Errorf("failed update quota for profile %v, error: %v", req.NamespacedName, err)
 				return ctrl.Result{RequeueAfter: 2 * time.Second}, nil
 			}
