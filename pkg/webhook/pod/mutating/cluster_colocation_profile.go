@@ -19,8 +19,9 @@ package mutating
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"math/rand"
+	"sort"
+	"strconv"
 
 	admissionv1 "k8s.io/api/admission/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -85,6 +86,11 @@ func (h *PodMutatingHandler) clusterColocationProfileMutatingPod(ctx context.Con
 	if len(matchedProfiles) == 0 {
 		return nil
 	}
+
+	// sort the profile in lexicographic order
+	sort.Slice(matchedProfiles, func(i, j int) bool {
+		return matchedProfiles[i].Name < matchedProfiles[j].Name
+	})
 	skipUpdateResourceFromProfile := false
 	for _, profile := range matchedProfiles {
 		if extension.ShouldSkipUpdateResource(profile) {
@@ -217,7 +223,7 @@ func (h *PodMutatingHandler) doMutateByColocationProfile(ctx context.Context, po
 		if pod.Labels == nil {
 			pod.Labels = make(map[string]string)
 		}
-		pod.Labels[extension.LabelPodPriority] = fmt.Sprintf("%d", *profile.Spec.KoordinatorPriority)
+		pod.Labels[extension.LabelPodPriority] = strconv.FormatInt(int64(*profile.Spec.KoordinatorPriority), 10)
 	}
 
 	if profile.Spec.Patch.Raw != nil {

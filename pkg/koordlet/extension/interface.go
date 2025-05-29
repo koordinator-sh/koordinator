@@ -17,17 +17,14 @@ limitations under the License.
 package extension
 
 import (
-	corev1 "k8s.io/api/core/v1"
+	clientset "k8s.io/client-go/kubernetes"
+
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 )
 
-const (
-	// LabelSchedulerName is used to specify the internal scheduler name for a pod, overriding the spec.schedulerName.
-	LabelSchedulerName = SchedulingDomainPrefix + "/scheduler-name"
-)
-
-func GetSchedulerName(pod *corev1.Pod) string {
-	if schedulerName, ok := pod.Labels[LabelSchedulerName]; ok {
-		return schedulerName
-	}
-	return pod.Spec.SchedulerName
+type Controller interface {
+	Run(stopCh <-chan struct{}) error
+	Name() string
 }
+
+type ControllerInitFunc = func(nodeName string, kubeClient clientset.Interface, statesInformer statesinformer.StatesInformer) Controller

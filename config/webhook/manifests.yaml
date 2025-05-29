@@ -85,6 +85,26 @@ webhooks:
     resources:
     - pods
   sideEffects: None
+- admissionReviewVersions:
+  - v1
+  - v1beta1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
+      path: /mutate-reservation
+  failurePolicy: Fail
+  name: mreservation-create.koordinator.sh
+  rules:
+  - apiGroups:
+    - scheduling.koordinator.sh
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    resources:
+    - reservations
+  sideEffects: None
 ---
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingWebhookConfiguration

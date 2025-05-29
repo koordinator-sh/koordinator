@@ -40,3 +40,7 @@ func InstallExtendedHTTPHandler(mux *http.ServeMux) {
 		klog.V(4).Infof("extended HTTP handler is registered on path %s", path)
 	}
 }
+
+func RegisterHTTPHandler(path string, handler func() http.HandlerFunc) {
+	ExtendedHTTPHandlerRegistry[path] = handler
+}
