@@ -344,20 +344,6 @@ func (c *cpuEvictor) killAndEvictBEPodsRelease(node *corev1.Node, bePodInfos []*
 		cpuNeedMilliRelease, cpuMilliReleased)
 }
 
-func (c *cpuEvictor) calculateCurrentCpuUsage() float64 {
-	// Step2: Calculate release resource current
-	queryParam := helpers.GenerateQueryParamsLast(c.metricCollectInterval * 2)
-	querier, err := c.metricCache.Querier(*queryParam.Start, *queryParam.End)
-	if err != nil {
-		klog.Warningf("get query failed, error %v", err)
-		return 0
-	}
-	defer querier.Close()
-	// BECPUUsage
-	currentBECPUMilliUsage, _ := getBECPUMetric(metriccache.BEResourceAllocationUsage, querier, queryParam.Aggregate)
-	return currentBECPUMilliUsage
-}
-
 func (c *cpuEvictor) getCurrentNodeCpuUsage() (float64, error) {
 	queryMeta, err := metriccache.NodeCPUUsageMetric.BuildQueryMeta(nil)
 	if err != nil {

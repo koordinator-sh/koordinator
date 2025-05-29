@@ -688,7 +688,6 @@ func Test_killAndEvictYarnContainerWithCopilotAgent(t *testing.T) {
 	assert.NoError(t, err)
 	result := buildMockQueryResultAndCount(ctl, mockQuerier, mockResultFactory, nodeCpuUsageQueryMeta)
 	result.EXPECT().Value(metriccache.AggregationTypeLast).Return(float64(0.5), nil).Times(1)
-	result.EXPECT().Count().Return(1).Times(1)
 	assert.NoError(t, err)
 	fakeRecorder := &testutil.FakeRecorder{}
 	client := clientsetfake.NewSimpleClientset()
