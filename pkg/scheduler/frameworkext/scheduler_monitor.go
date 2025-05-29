@@ -31,8 +31,9 @@ import (
 )
 
 var (
-	schedulerMonitorPeriod = 10 * time.Second
-	schedulingTimeout      = 30 * time.Second
+	schedulerMonitorPeriod         = 10 * time.Second
+	schedulingTimeout              = 30 * time.Second
+	schedulingDropUnhandledTimeout = 5 * time.Second
 
 	logWarningF = klog.Warningf
 )
@@ -40,6 +41,7 @@ var (
 func init() {
 	pflag.DurationVar(&schedulerMonitorPeriod, "scheduler-monitor-period", schedulerMonitorPeriod, "Execution period of scheduler monitor")
 	pflag.DurationVar(&schedulingTimeout, "scheduling-timeout", schedulingTimeout, "The maximum acceptable scheduling time interval. After timeout, the metric will be updated and the log will be printed.")
+	pflag.DurationVar(&schedulingDropUnhandledTimeout, "scheduling-drop-unhandled-timeout", schedulingDropUnhandledTimeout, "The maximum acceptable scheduling time interval to drop the invalid pod context when the pod is dequeued but has not handled to schedule.")
 }
 
 var (
@@ -49,9 +51,10 @@ var (
 )
 
 type SchedulerMonitor struct {
-	timeout        time.Duration
-	lock           sync.Mutex
-	schedulingPods map[types.UID]podScheduleState
+	timeout          time.Duration
+	unhandledTimeout time.Duration
+	lock             sync.Mutex
+	schedulingPods   map[types.UID]podScheduleState
 }
 
 type podScheduleState struct {
@@ -69,8 +72,9 @@ type podScheduleState struct {
 
 func NewSchedulerMonitor(period time.Duration, timeout time.Duration) *SchedulerMonitor {
 	m := &SchedulerMonitor{
-		timeout:        timeout,
-		schedulingPods: map[types.UID]podScheduleState{},
+		timeout:          timeout,
+		unhandledTimeout: schedulingDropUnhandledTimeout,
+		schedulingPods:   map[types.UID]podScheduleState{},
 	}
 	go wait.Forever(m.monitor, period)
 	return m
@@ -82,6 +86,10 @@ func (m *SchedulerMonitor) monitor() {
 
 	now := time.Now()
 	for uid, v := range m.schedulingPods {
+		if isPodUnhandledExceedingTimeout(&v, now, m.unhandledTimeout) {
+			delete(m.schedulingPods, uid)
+			continue
+		}
 		recordIfSchedulingTimeout(uid, &v, now, m.timeout)
 	}
 }
@@ -148,6 +156,17 @@ func (m *SchedulerMonitor) Complete(pod *corev1.Pod, status *framework.Status) {
 		now := time.Now()
 		CompleteMonitor(pod, &state, now, m.timeout, status)
 	}
+}
+
+func isPodUnhandledExceedingTimeout(state *podScheduleState, now time.Time, timeout time.Duration) bool {
+	if !state.start.IsZero() { // pod is handled
+		return false
+	}
+	if interval := now.Sub(state.dequeued); interval > timeout {
+		klog.V(4).Infof("pod %s/%s is dropped due to handled interval %v exceeding timeout %v", state.namespace, state.name, interval, timeout)
+		return true
+	}
+	return false
 }
 
 func defaultStartMonitor(pod *corev1.Pod, state *podScheduleState) {

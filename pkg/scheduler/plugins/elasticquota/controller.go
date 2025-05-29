@@ -88,6 +88,17 @@ func (ctrl *Controller) syncElasticQuotaStatus(eq *v1alpha1.ElasticQuota) {
 		klog.ErrorS(err, "failed to updateElasticQuotaStatusIfChanged", "elasticQuota", eq.Name)
 		return
 	}
+	// Update the status of the elastic quota by hook plugins
+	gqm := ctrl.plugin.GetGroupQuotaManagerForQuota(eq.Name)
+	for _, hookPlugin := range gqm.GetHookPlugins() {
+		if updatedEQ := hookPlugin.UpdateQuotaStatus(eq, newEQ); updatedEQ != nil {
+			if klog.V(5).Enabled() {
+				klog.InfoS("Hook plugin updated elasticQuota status", "elasticQuota", eq.Name,
+					"pluginKey", hookPlugin.GetKey())
+			}
+			newEQ = updatedEQ
+		}
+	}
 	if newEQ == nil {
 		if klog.V(5).Enabled() {
 			klog.InfoS("Skip updating elasticQuota because there are no changes", "elasticQuota", eq.Name)

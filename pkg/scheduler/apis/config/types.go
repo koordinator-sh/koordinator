@@ -214,6 +214,24 @@ type ElasticQuotaArgs struct {
 
 	// EnableRuntimeQuota if false, use max instead of runtime for all checks.
 	EnableRuntimeQuota bool
+
+	// DisableDefaultQuotaPreemption if true, will not preempt pods in default quota.
+	DisableDefaultQuotaPreemption bool
+
+	// HookPlugins is expected to be configured with enabled hook plugins
+	HookPlugins []HookPluginConf
+}
+
+// HookPluginConf define configuration for a single hook plugin
+type HookPluginConf struct {
+	// Key is the key of the hook plugin
+	Key string
+
+	// FactoryKey is the key of the hook plugin factory
+	FactoryKey string
+
+	// FactoryArgs is the arguments of the hook plugin factory
+	FactoryArgs string
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object

@@ -41,7 +41,7 @@ func ValidateLoadAwareSchedulingArgs(args *config.LoadAwareSchedulingArgs) error
 	if err := validateResourceThresholds(args.UsageThresholds); err != nil {
 		allErrs = append(allErrs, field.Invalid(field.NewPath("usageThresholds"), args.UsageThresholds, err.Error()))
 	}
-	if err := validateEstimatedResourceThresholds(args.EstimatedScalingFactors); err != nil {
+	if err := validateEstimatedScalingFactors(args.EstimatedScalingFactors); err != nil {
 		allErrs = append(allErrs, field.Invalid(field.NewPath("estimatedScalingFactors"), args.EstimatedScalingFactors, err.Error()))
 	}
 
@@ -82,13 +82,13 @@ func validateResourceThresholds(thresholds map[corev1.ResourceName]int64) error 
 	return nil
 }
 
-func validateEstimatedResourceThresholds(thresholds map[corev1.ResourceName]int64) error {
-	for resourceName, thresholdPercent := range thresholds {
-		if thresholdPercent <= 0 {
-			return fmt.Errorf("estimated resource Threshold of %v should be a positive value, got %v", resourceName, thresholdPercent)
+func validateEstimatedScalingFactors(scalingFactors map[corev1.ResourceName]int64) error {
+	for resourceName, scalingFactor := range scalingFactors {
+		if scalingFactor <= 0 {
+			return fmt.Errorf("estimated resource ScalingFactor of %v should be a positive value, got %v", resourceName, scalingFactor)
 		}
-		if thresholdPercent > 100 {
-			return fmt.Errorf("estimated  resource Threshold of %v should be less than 100, got %v", resourceName, thresholdPercent)
+		if scalingFactor > 100 {
+			return fmt.Errorf("estimated resource ScalingFactor of %v should be less than 100, got %v", resourceName, scalingFactor)
 		}
 	}
 	return nil
@@ -194,8 +194,16 @@ func ValidateNodeNUMAResourceArgs(path *field.Path, args *config.NodeNUMAResourc
 		allErrs = append(allErrs, field.Invalid(path.Child("defaultCPUBindPolicy"), args.DefaultCPUBindPolicy, "must specified CPU bind policy FullPCPUs or SpreadByPCPUs"))
 	}
 
-	if args.ScoringStrategy != nil {
+	if args.ScoringStrategy == nil {
+		allErrs = append(allErrs, field.Required(path.Child("scoringStrategy"), "scoring strategy must be specified"))
+	} else {
 		allErrs = append(allErrs, validateResources(args.ScoringStrategy.Resources, path.Child("resources"))...)
+	}
+
+	if args.NUMAScoringStrategy == nil {
+		allErrs = append(allErrs, field.Required(path.Child("numaScoringStrategy"), "NUMA scoring strategy must be specified"))
+	} else {
+		allErrs = append(allErrs, validateResources(args.NUMAScoringStrategy.Resources, path.Child("resources"))...)
 	}
 
 	if len(allErrs) == 0 {

@@ -22,6 +22,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/spf13/pflag"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -41,6 +42,15 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/services"
 	koordschedulermetrics "github.com/koordinator-sh/koordinator/pkg/scheduler/metrics"
 )
+
+func AddFlags(fs *pflag.FlagSet) {
+	fs.IntVarP(&debugTopNScores, "debug-scores", "s", debugTopNScores, "logging topN nodes score and scores for each plugin after running the score extension, disable if set to 0")
+	fs.BoolVarP(&debugFilterFailure, "debug-filters", "f", debugFilterFailure, "logging filter failures")
+	fs.StringSliceVar(&ControllerPlugins, "controller-plugins", ControllerPlugins, "A list of Controller plugins to enable. "+
+		"'-controller-plugins=*' enables all controller plugins. "+
+		"'-controller-plugins=Reservation' means only the controller plugin 'Reservation' is enabled. "+
+		"'-controller-plugins=*,-Reservation' means all controller plugins except the 'Reservation' plugin are enabled.")
+}
 
 type extendedHandleOptions struct {
 	servicesEngine                   *services.Engine
