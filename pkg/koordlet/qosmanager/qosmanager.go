@@ -18,8 +18,9 @@ package qosmanager
 
 import (
 	"fmt"
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/qosmanager/plugins/copilot"
 	"time"
+
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/qosmanager/plugins/copilot"
 
 	corev1 "k8s.io/api/core/v1"
 	apiruntime "k8s.io/apimachinery/pkg/runtime"

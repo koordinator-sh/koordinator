@@ -19,11 +19,13 @@ package cpuevict
 import (
 	"context"
 	"fmt"
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/qosmanager/plugins/copilot"
-	"k8s.io/klog/v2"
-	"sigs.k8s.io/controller-runtime/pkg/manager/signals"
 	"testing"
 	"time"
+
+	"k8s.io/klog/v2"
+	"sigs.k8s.io/controller-runtime/pkg/manager/signals"
+
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/qosmanager/plugins/copilot"
 
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"

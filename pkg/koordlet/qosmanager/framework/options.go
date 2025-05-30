@@ -17,9 +17,10 @@ limitations under the License.
 package framework
 
 import (
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/qosmanager/plugins/copilot"
 	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/record"
+
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/qosmanager/plugins/copilot"
 
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	ma "github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor/framework"

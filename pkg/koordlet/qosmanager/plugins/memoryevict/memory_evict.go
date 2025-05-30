@@ -18,10 +18,12 @@ package memoryevict
 
 import (
 	"fmt"
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/qosmanager/plugins/copilot"
-	"k8s.io/apimachinery/pkg/api/resource"
 	"sort"
 	"time"
+
+	"k8s.io/apimachinery/pkg/api/resource"
+
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/qosmanager/plugins/copilot"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/wait"

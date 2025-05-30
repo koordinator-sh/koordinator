@@ -19,10 +19,12 @@ package memoryevict
 import (
 	"context"
 	"fmt"
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/qosmanager/plugins/copilot"
-	"sigs.k8s.io/controller-runtime/pkg/manager/signals"
 	"testing"
 	"time"
+
+	"sigs.k8s.io/controller-runtime/pkg/manager/signals"
+
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/qosmanager/plugins/copilot"
 
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
