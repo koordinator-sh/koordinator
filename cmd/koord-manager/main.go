@@ -48,6 +48,7 @@ import (
 	kmmetrics "github.com/koordinator-sh/koordinator/pkg/util/metrics/koordmanager"
 	"github.com/koordinator-sh/koordinator/pkg/util/sloconfig"
 	"github.com/koordinator-sh/koordinator/pkg/webhook"
+	podvalidating "github.com/koordinator-sh/koordinator/pkg/webhook/pod/validating"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -81,6 +82,7 @@ func main() {
 	opts := options.NewOptions()
 	opts.InitFlags(flag.CommandLine)
 	sloconfig.InitFlags(flag.CommandLine)
+	podvalidating.InitFlags(flag.CommandLine)
 	utilfeature.DefaultMutableFeatureGate.AddFlag(pflag.CommandLine)
 	klog.InitFlags(nil)
 	pflag.CommandLine.AddGoFlagSet(flag.CommandLine)

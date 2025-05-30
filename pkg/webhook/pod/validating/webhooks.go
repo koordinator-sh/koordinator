@@ -17,10 +17,14 @@ limitations under the License.
 package validating
 
 import (
+	"context"
+
+	"k8s.io/klog/v2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
+	extclient "github.com/koordinator-sh/koordinator/pkg/client"
 	"github.com/koordinator-sh/koordinator/pkg/webhook/quotaevaluate"
 	"github.com/koordinator-sh/koordinator/pkg/webhook/util/framework"
 )
@@ -52,6 +56,13 @@ func (b *podValidateBuilder) Build() admission.Handler {
 	}
 	quotaAccessor := quotaevaluate.NewQuotaAccessor(h.Client)
 	h.QuotaEvaluator = quotaevaluate.NewQuotaEvaluator(quotaAccessor, 16, make(chan struct{}))
+
+	// initialize PodEnhancedValidator
+	kubeClient := extclient.GetGenericClientWithName(ClientNamePodEnhancedValidator).KubeClient
+	h.PodEnhancedValidator = NewPodEnhancedValidator(kubeClient)
+	if err := h.PodEnhancedValidator.Start(context.Background()); err != nil {
+		klog.Fatalf("failed to start pod-enhanced-validator, err=%v", err)
+	}
 
 	return h
 }
