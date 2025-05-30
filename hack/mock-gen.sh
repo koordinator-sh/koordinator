@@ -51,6 +51,3 @@ mockgen -source vendor/k8s.io/cri-api/pkg/apis/runtime/v1alpha2/api.pb.go \
   -imports github.com/koordinator-sh/koordinator/vendor/k8s.io/cri-api/pkg/apis/runtime/v1alpha2=k8s.io/cri-api/pkg/apis/runtime/v1alpha2 \
   -copyright_file ${LICENSE_HEADER_PATH} \
   -package mockv1alpha2_client RuntimeServiceClient
-mockgen -source pkg/koordlet/qosmanager/plugins/copilot/CopilotAgent.go \
-  -destination pkg/koordlet/qosmanager/plugins/copilot/mockcopilotagent/mock.go \
-  -copyright_file ${LICENSE_HEADER_PATH}

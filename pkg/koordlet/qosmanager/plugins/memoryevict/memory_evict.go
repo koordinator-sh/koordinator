@@ -55,7 +55,7 @@ type memoryEvictor struct {
 	lastEvictTime         time.Time
 	onlyEvictByAPI        bool
 	evictByCopilotAgent   bool
-	copilotAgent          copilot.CopilotAgent
+	copilotAgent          *copilot.CopilotAgent
 }
 
 type podInfo struct {
@@ -72,7 +72,7 @@ func New(opt *framework.Options) framework.QOSStrategy {
 		metricCache:           opt.MetricCache,
 		onlyEvictByAPI:        opt.Config.OnlyEvictByAPI,
 		evictByCopilotAgent:   opt.Config.EvictByCopilotAgent,
-		copilotAgent:          *opt.CopilotAgent,
+		copilotAgent:          opt.CopilotAgent,
 	}
 }
 
@@ -180,7 +180,7 @@ func (m *memoryEvictor) killAndEvictBEPods(nodeMemoryUsage float64, node *corev1
 		}
 		if m.evictByCopilotAgent && isYarnNodeManager(bePod) {
 			needReleasedResource := corev1.ResourceList{extension.BatchCPU: *resource.NewMilliQuantity(0, resource.DecimalSI),
-				extension.BatchMemory: *resource.NewQuantity(memoryNeedRelease, resource.BinarySI)}
+				extension.BatchMemory: *resource.NewQuantity((memoryNeedRelease - memoryReleased), resource.BinarySI)}
 			res := m.copilotAgent.KillContainerByResource(-1, nodeMemoryUsage, &needReleasedResource)
 			if mem, ok := res[extension.BatchMemory]; ok {
 				memoryReleased += mem.Value()

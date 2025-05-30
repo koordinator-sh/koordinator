@@ -310,7 +310,7 @@ func (c *cpuEvictor) killAndEvictBEPodsRelease(node *corev1.Node, bePodInfos []*
 		}
 		if c.evictByCopilotAgent && isYarnNodeManager(bePod) {
 			currentNodeCpuUsage, _ := c.getCurrentNodeCpuUsage()
-			needReleasedResource := corev1.ResourceList{apiext.BatchCPU: *resource.NewMilliQuantity(cpuNeedMilliRelease, resource.DecimalSI),
+			needReleasedResource := corev1.ResourceList{apiext.BatchCPU: *resource.NewMilliQuantity((cpuNeedMilliRelease - cpuMilliReleased), resource.DecimalSI),
 				apiext.BatchMemory: *resource.NewQuantity(0, resource.BinarySI)}
 			res := c.copilotAgent.KillContainerByResource(currentNodeCpuUsage, -1, &needReleasedResource)
 			if cpu, ok := res[apiext.BatchCPU]; ok {

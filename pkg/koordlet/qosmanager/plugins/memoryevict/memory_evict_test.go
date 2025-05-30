@@ -521,7 +521,7 @@ func Test_killAndEvictYarnContainerWithCopilotAgent(t *testing.T) {
 	memoryEvictor.memoryEvict()
 	assert.True(t, memoryEvictor.evictor.IsPodEvicted(pods[0]))
 	assert.False(t, memoryEvictor.evictor.IsPodEvicted(pods[1]))
-	assert.True(t, memoryEvictor.evictor.IsPodEvicted(pods[2]))
+	assert.False(t, memoryEvictor.evictor.IsPodEvicted(pods[2]))
 
 }
 

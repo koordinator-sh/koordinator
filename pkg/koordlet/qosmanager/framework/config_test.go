@@ -32,6 +32,8 @@ func Test_NewDefaultConfig(t *testing.T) {
 		MemoryEvictCoolTimeSeconds: 4,
 		CPUEvictCoolTimeSeconds:    20,
 		OnlyEvictByAPI:             false,
+		EvictByCopilotAgent:        false,
+		EvictByCopilotEndPoint:     "/var/run/yarn-copilot/yarn-copilot.sock",
 		QOSExtensionCfg:            &QOSExtensionConfig{FeatureGates: map[string]bool{}},
 	}
 	defaultConfig := NewDefaultConfig()
@@ -49,6 +51,8 @@ func Test_InitFlags(t *testing.T) {
 		"--cpu-evict-cool-time-seconds=40",
 		"--qos-extension-plugins=test-plugin=true",
 		"--only-evict-by-api=false",
+		"--evict-by-copilot-agent=true",
+		"--evict-by-copilot-endpoint=/var/run/yarn-copilot/yarn-copilot.sock",
 	}
 	fs := flag.NewFlagSet(cmdArgs[0], flag.ExitOnError)
 
@@ -60,6 +64,8 @@ func Test_InitFlags(t *testing.T) {
 		MemoryEvictCoolTimeSeconds int
 		CPUEvictCoolTimeSeconds    int
 		OnlyEvictByAPI             bool
+		EvictByCopilotAgent        bool
+		EvictByCopilotEndPoint     string
 		QOSExtensionCfg            *QOSExtensionConfig
 	}
 	type args struct {
@@ -80,6 +86,8 @@ func Test_InitFlags(t *testing.T) {
 				MemoryEvictCoolTimeSeconds: 8,
 				CPUEvictCoolTimeSeconds:    40,
 				OnlyEvictByAPI:             false,
+				EvictByCopilotAgent:        true,
+				EvictByCopilotEndPoint:     "/var/run/yarn-copilot/yarn-copilot.sock",
 				QOSExtensionCfg:            &QOSExtensionConfig{FeatureGates: map[string]bool{"test-plugin": true}},
 			},
 			args: args{fs: fs},
@@ -95,6 +103,8 @@ func Test_InitFlags(t *testing.T) {
 				MemoryEvictCoolTimeSeconds: tt.fields.MemoryEvictCoolTimeSeconds,
 				CPUEvictCoolTimeSeconds:    tt.fields.CPUEvictCoolTimeSeconds,
 				OnlyEvictByAPI:             tt.fields.OnlyEvictByAPI,
+				EvictByCopilotAgent:        tt.fields.EvictByCopilotAgent,
+				EvictByCopilotEndPoint:     tt.fields.EvictByCopilotEndPoint,
 				QOSExtensionCfg:            tt.fields.QOSExtensionCfg,
 			}
 			c := NewDefaultConfig()
