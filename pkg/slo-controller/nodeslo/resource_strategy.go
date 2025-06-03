@@ -116,6 +116,21 @@ func getSystemConfigSpec(node *corev1.Node, cfg *configuration.SystemCfg) (*slov
 	return nodeSystemConfig, nil
 }
 
+func getPSIConfigSpec(node *corev1.Node, cfg *configuration.PSICfg) (*slov1alpha1.PSIStrategy, error) {
+	nodeLabels := labels.Set(node.Labels)
+	for _, nodeStrategy := range cfg.NodeStrategies {
+		selector, err := metav1.LabelSelectorAsSelector(nodeStrategy.NodeSelector)
+		if err != nil {
+			klog.Errorf("failed to parse node selector %v for PSI, err: %v", nodeStrategy.NodeSelector, err)
+			continue
+		}
+		if selector.Matches(nodeLabels) {
+			return nodeStrategy.PSIStrategy.DeepCopy(), nil
+		}
+	}
+	return cfg.ClusterStrategy.DeepCopy(), nil
+}
+
 func getHostApplicationConfig(node *corev1.Node, cfg *configuration.HostApplicationCfg) ([]slov1alpha1.HostApplicationSpec, error) {
 	nodeLabels := labels.Set(node.Labels)
 	for _, nodeCfg := range cfg.NodeConfigs {
@@ -276,6 +291,39 @@ func calculateSystemConfigMerged(oldCfg configuration.SystemCfg, configMap *core
 			mergedCfg.NodeStrategies[index].SystemStrategy = clusterCfgCopy
 		}
 
+	}
+
+	return mergedCfg, nil
+}
+
+func calculatePSIConfigMerged(oldCfg configuration.PSICfg, configMap *corev1.ConfigMap) (configuration.PSICfg, error) {
+	cfgStr, ok := configMap.Data[configuration.PSIConfigKey]
+	if !ok {
+		return DefaultSLOCfg().PSICfgMerged, nil
+	}
+	mergedCfg := configuration.PSICfg{}
+	if err := json.Unmarshal([]byte(cfgStr), &mergedCfg); err != nil {
+		klog.Warningf("failed to unmarshal config %s, error: %v", configuration.PSIConfigKey, err)
+		return oldCfg, err
+	}
+
+	// merge ClusterStrategy
+	clusterMerged := DefaultSLOCfg().PSICfgMerged.ClusterStrategy.DeepCopy()
+	if mergedCfg.ClusterStrategy != nil {
+		mergedStrategyInterface, _ := util.MergeCfg(clusterMerged, mergedCfg.ClusterStrategy)
+		clusterMerged = mergedStrategyInterface.(*slov1alpha1.PSIStrategy)
+	}
+	mergedCfg.ClusterStrategy = clusterMerged
+
+	for index, nodeStrategy := range mergedCfg.NodeStrategies {
+		// merge with clusterStrategy
+		clusterCfgCopy := mergedCfg.ClusterStrategy.DeepCopy()
+		if nodeStrategy.PSIStrategy != nil {
+			mergedStrategyInterface, _ := util.MergeCfg(clusterCfgCopy, nodeStrategy.PSIStrategy)
+			mergedCfg.NodeStrategies[index].PSIStrategy = mergedStrategyInterface.(*slov1alpha1.PSIStrategy)
+		} else {
+			mergedCfg.NodeStrategies[index].PSIStrategy = clusterCfgCopy
+		}
 	}
 
 	return mergedCfg, nil

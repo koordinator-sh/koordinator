@@ -34,6 +34,7 @@ const (
 	HostApplicationConfigKey       = "host-application-config"
 	CPUNormalizationConfigKey      = "cpu-normalization-config"
 	ResourceAmplificationConfigKey = "resource-amplification-config"
+	PSIConfigKey                   = "psi-config"
 )
 
 // +k8s:deepcopy-gen=true
@@ -84,6 +85,18 @@ type CPUBurstCfg struct {
 type NodeSystemStrategy struct {
 	NodeCfgProfile `json:",inline"`
 	*slov1alpha1.SystemStrategy
+}
+
+// +k8s:deepcopy-gen=true
+type PSICfg struct {
+	ClusterStrategy *slov1alpha1.PSIStrategy `json:"clusterStrategy,omitempty"`
+	NodeStrategies  []NodePSIStrategy        `json:"nodeStrategies,omitempty" validate:"dive"`
+}
+
+// +k8s:deepcopy-gen=true
+type NodePSIStrategy struct {
+	NodeCfgProfile `json:",inline"`
+	*slov1alpha1.PSIStrategy
 }
 
 // +k8s:deepcopy-gen=true

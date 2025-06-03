@@ -1120,6 +1120,281 @@ func Test_calculateSystemConfigMerged(t *testing.T) {
 	}
 }
 
+func Test_getPSIConfigSpec(t *testing.T) {
+	type args struct {
+		node *corev1.Node
+		cfg  *configuration.PSICfg
+	}
+	testPSI := &configuration.PSICfg{
+		ClusterStrategy: &slov1alpha1.PSIStrategy{
+			MemorySuppress: &slov1alpha1.MemorySuppressConfig{
+				MinSpot: pointer.Int64(4000),
+			},
+		},
+		NodeStrategies: []configuration.NodePSIStrategy{
+			{
+				NodeCfgProfile: configuration.NodeCfgProfile{
+					NodeSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							"test-node-key": "test-node-value-A",
+						},
+					},
+				},
+				PSIStrategy: &slov1alpha1.PSIStrategy{
+					MemorySuppress: &slov1alpha1.MemorySuppressConfig{
+						MinSpot: pointer.Int64(1000),
+					},
+				},
+			},
+		},
+	}
+	testPSIMultiNodes := &configuration.PSICfg{
+		ClusterStrategy: &slov1alpha1.PSIStrategy{
+			MemorySuppress: &slov1alpha1.MemorySuppressConfig{
+				MinSpot: pointer.Int64(4000),
+			},
+		},
+		NodeStrategies: []configuration.NodePSIStrategy{
+			{
+				NodeCfgProfile: configuration.NodeCfgProfile{
+					NodeSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							"test-node-key-A": "test-node-value-A",
+						},
+					},
+				},
+				PSIStrategy: &slov1alpha1.PSIStrategy{
+					MemorySuppress: &slov1alpha1.MemorySuppressConfig{
+						MinSpot: pointer.Int64(1000),
+					},
+				},
+			},
+			{
+				NodeCfgProfile: configuration.NodeCfgProfile{
+					NodeSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							"test-node-key-B": "test-node-value-B",
+						},
+					},
+				},
+				PSIStrategy: &slov1alpha1.PSIStrategy{
+					MemorySuppress: &slov1alpha1.MemorySuppressConfig{
+						MinSpot: pointer.Int64(2000),
+					},
+				},
+			},
+		},
+	}
+	tests := []struct {
+		name    string
+		args    args
+		want    *slov1alpha1.PSIStrategy
+		wantErr bool
+	}{
+		{
+			name: "invalid node, use cluster config",
+			args: args{
+				node: &corev1.Node{},
+				cfg:  testPSI,
+			},
+			want:    testPSI.ClusterStrategy,
+			wantErr: false,
+		},
+		{
+			name: "use cluster config",
+			args: args{
+				node: &corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node",
+					},
+				},
+				cfg: testPSI,
+			},
+			want:    testPSI.ClusterStrategy,
+			wantErr: false,
+		},
+		{
+			name: "use first matched node config",
+			args: args{
+				node: &corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node",
+						Labels: map[string]string{
+							"test-node-key-A": "test-node-value-A",
+							"test-node-key-B": "test-node-value-B",
+						},
+					},
+				},
+				cfg: testPSIMultiNodes,
+			},
+			want:    testPSIMultiNodes.NodeStrategies[0].PSIStrategy,
+			wantErr: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := getPSIConfigSpec(tt.args.node, tt.args.cfg)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("getPSIConfigSpec() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("getPSIConfigSpec() got = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func Test_calculatePSIConfigMerged(t *testing.T) {
+	defaultSLOCfg := DefaultSLOCfg()
+
+	oldSLOConfig := DefaultSLOCfg()
+	oldSLOConfig.PSICfgMerged.ClusterStrategy.MemorySuppress.MinSpot = pointer.Int64(3000)
+
+	testingCfgClusterOnly := &configuration.PSICfg{
+		ClusterStrategy: &slov1alpha1.PSIStrategy{
+			MemorySuppress: &slov1alpha1.MemorySuppressConfig{
+				MaxSpot: pointer.Int64(8000),
+			},
+		},
+	}
+	testingCfgClusterOnlyStr, _ := json.Marshal(testingCfgClusterOnly)
+
+	expectTestingCfgClusterOnly := defaultSLOCfg.PSICfgMerged.DeepCopy()
+	expectTestingCfgClusterOnly.ClusterStrategy.MemorySuppress.MaxSpot = testingCfgClusterOnly.ClusterStrategy.MemorySuppress.MaxSpot
+
+	testingPSICfg1 := &configuration.PSICfg{
+		ClusterStrategy: testingCfgClusterOnly.ClusterStrategy,
+		NodeStrategies: []configuration.NodePSIStrategy{
+			{
+				NodeCfgProfile: configuration.NodeCfgProfile{
+					NodeSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							"xxx": "yyy",
+						},
+					},
+				},
+				PSIStrategy: &slov1alpha1.PSIStrategy{
+					MemorySuppress: &slov1alpha1.MemorySuppressConfig{
+						GrowPeriods: pointer.Int64(1),
+					},
+				},
+			},
+			{
+				NodeCfgProfile: configuration.NodeCfgProfile{
+					NodeSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							"zzz": "zzz",
+						},
+					},
+				},
+				PSIStrategy: &slov1alpha1.PSIStrategy{
+					MemorySuppress: &slov1alpha1.MemorySuppressConfig{
+						GrowPeriods: pointer.Int64(2),
+					},
+				},
+			},
+		},
+	}
+	testingPSICfgStr1, _ := json.Marshal(testingPSICfg1)
+
+	expectTestingPSICfg1 := &configuration.PSICfg{
+		ClusterStrategy: expectTestingCfgClusterOnly.ClusterStrategy.DeepCopy(),
+		NodeStrategies: []configuration.NodePSIStrategy{
+			{
+				NodeCfgProfile: configuration.NodeCfgProfile{
+					NodeSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							"xxx": "yyy",
+						},
+					},
+				},
+				PSIStrategy: expectTestingCfgClusterOnly.ClusterStrategy.DeepCopy(),
+			},
+			{
+				NodeCfgProfile: configuration.NodeCfgProfile{
+					NodeSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							"zzz": "zzz",
+						},
+					},
+				},
+				PSIStrategy: expectTestingCfgClusterOnly.ClusterStrategy.DeepCopy(),
+			},
+		},
+	}
+	expectTestingPSICfg1.NodeStrategies[0].MemorySuppress.GrowPeriods = testingPSICfg1.NodeStrategies[0].MemorySuppress.GrowPeriods
+	expectTestingPSICfg1.NodeStrategies[1].MemorySuppress.GrowPeriods = testingPSICfg1.NodeStrategies[1].MemorySuppress.GrowPeriods
+
+	type args struct {
+		configMap *corev1.ConfigMap
+	}
+	tests := []struct {
+		name    string
+		args    args
+		want    *configuration.PSICfg
+		wantErr bool
+	}{
+		{
+			name: "config is null! use cluster config",
+			args: args{
+				configMap: &corev1.ConfigMap{},
+			},
+			want:    &defaultSLOCfg.PSICfgMerged,
+			wantErr: false,
+		},
+		{
+			name: "throw error for configmap unmarshal failed",
+			args: args{
+				configMap: &corev1.ConfigMap{
+					Data: map[string]string{
+						configuration.PSIConfigKey: "invalid_content",
+					},
+				},
+			},
+			want:    &oldSLOConfig.PSICfgMerged,
+			wantErr: true,
+		},
+		{
+			name: "get cluster config correctly",
+			args: args{
+				configMap: &corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      sloconfig.SLOCtrlConfigMap,
+						Namespace: sloconfig.ConfigNameSpace,
+					},
+					Data: map[string]string{
+						configuration.PSIConfigKey: string(testingCfgClusterOnlyStr),
+					},
+				},
+			},
+			want: expectTestingCfgClusterOnly,
+		},
+		{
+			name: "get config merged correctly",
+			args: args{
+				configMap: &corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      sloconfig.SLOCtrlConfigMap,
+						Namespace: sloconfig.ConfigNameSpace,
+					},
+					Data: map[string]string{
+						configuration.PSIConfigKey: string(testingPSICfgStr1),
+					},
+				},
+			},
+			want: expectTestingPSICfg1,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, gotErr := calculatePSIConfigMerged(oldSLOConfig.PSICfgMerged, tt.args.configMap)
+			assert.Equal(t, tt.wantErr, gotErr != nil)
+			assert.Equal(t, tt.want, &got)
+		})
+	}
+}
+
 func Test_getHostApplicationConfig(t *testing.T) {
 	type args struct {
 		node *corev1.Node
