@@ -105,6 +105,143 @@ spec:
                       type: object
                   type: object
                 type: array
+              psiStrategy:
+                description: PSI config strategy
+                properties:
+                  budgetBalance:
+                    properties:
+                      basePrice:
+                        description: BasePrice indicates the base price of budget
+                          balance, range [0,10000] indicating [0,100], default is
+                          50 (0.5)
+                        format: int64
+                        type: integer
+                      enable:
+                        description: Enable indicates whether the budget balance is
+                          enabled.
+                        type: boolean
+                      lowerBound:
+                        description: LowerBound indicates the lower bound of weight
+                          a pod will keep from budget balance, range [0,10000] indicating
+                          [0%,100%], default is 5000 (0.5)
+                        format: int64
+                        type: integer
+                    type: object
+                  groupShare:
+                    properties:
+                      enable:
+                        description: Enable indicates whether the group share is enabled.
+                        type: boolean
+                      groupingAnnotationKey:
+                        description: GroupingAnnotationKey indicates the annotation
+                          key used to group pods, default is "koordinator.sh/grouping-hash"
+                        type: string
+                      lowerBound:
+                        description: LowerBound indicates the lower bound of weight
+                          a pod will keep from group share, range [0,10000] indicating
+                          [0%,100%], default is 5000 (0.5)
+                        format: int64
+                        type: integer
+                    type: object
+                  memorySuppress:
+                    properties:
+                      enable:
+                        description: Enable indicates whether the memory suppress
+                          is enabled.
+                        type: boolean
+                      growPeriods:
+                        description: GrowPeriods indicates the number of periods to
+                          grow memory from MinSpot to MaxSpot, default is 10
+                        format: int64
+                        type: integer
+                      killPeriods:
+                        description: KillPeriods indicates the number of periods to
+                          kill memory after MaxSpot is reached, default is 60
+                        format: int64
+                        type: integer
+                      maxSpot:
+                        description: MaxSpot indicates the pressure spot (ratio [0,10000]
+                          indicating [request,limit]) at which a pod bears max memory
+                          pressure, default is 9000 (0.9)
+                        format: int64
+                        type: integer
+                      minSpot:
+                        description: MinSpot indicates the pressure spot (ratio [0,10000]
+                          indicating [request,limit]) at which a pod begins to bear
+                          memory pressure, default is 5000 (0.5)
+                        format: int64
+                        type: integer
+                    type: object
+                  psiExport:
+                    properties:
+                      enable:
+                        description: Enable indicates whether the psi exporter is
+                          enabled.
+                        type: boolean
+                      threshold:
+                        description: Threshold indicates the report threshold for
+                          PSI, default is 2000 (20%) for each resource.
+                        properties:
+                          cpu:
+                            description: CPU PSI threshold
+                            properties:
+                              avg10:
+                                description: Avg10 indicates the average 10-second
+                                  PSI threshold, range [0,10000] indicating [0%,100%].
+                                format: int64
+                                type: integer
+                              avg60:
+                                description: Avg60 indicates the average 60-second
+                                  PSI threshold, range [0,10000] indicating [0%,100%].
+                                format: int64
+                                type: integer
+                              avg300:
+                                description: Avg300 indicates the average 300-second
+                                  PSI threshold, range [0,10000] indicating [0%,100%].
+                                format: int64
+                                type: integer
+                            type: object
+                          io:
+                            description: IO PSI threshold
+                            properties:
+                              avg10:
+                                description: Avg10 indicates the average 10-second
+                                  PSI threshold, range [0,10000] indicating [0%,100%].
+                                format: int64
+                                type: integer
+                              avg60:
+                                description: Avg60 indicates the average 60-second
+                                  PSI threshold, range [0,10000] indicating [0%,100%].
+                                format: int64
+                                type: integer
+                              avg300:
+                                description: Avg300 indicates the average 300-second
+                                  PSI threshold, range [0,10000] indicating [0%,100%].
+                                format: int64
+                                type: integer
+                            type: object
+                          memory:
+                            description: Memory PSI threshold
+                            properties:
+                              avg10:
+                                description: Avg10 indicates the average 10-second
+                                  PSI threshold, range [0,10000] indicating [0%,100%].
+                                format: int64
+                                type: integer
+                              avg60:
+                                description: Avg60 indicates the average 60-second
+                                  PSI threshold, range [0,10000] indicating [0%,100%].
+                                format: int64
+                                type: integer
+                              avg300:
+                                description: Avg300 indicates the average 300-second
+                                  PSI threshold, range [0,10000] indicating [0%,100%].
+                                format: int64
+                                type: integer
+                            type: object
+                        type: object
+                    type: object
+                type: object
               resourceQOSStrategy:
                 description: QoS config strategy for pods of different qos-class
                 properties:

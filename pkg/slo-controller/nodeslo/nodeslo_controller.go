@@ -106,6 +106,14 @@ func (r *NodeSLOReconciler) getNodeSLOSpec(node *corev1.Node, oldSpec *slov1alph
 		metrics.RecordNodeSLOSpecParseCount(true, "getSystemConfigSpec")
 	}
 
+	nodeSLOSpec.PSIStrategy, err = getPSIConfigSpec(node, &sloCfg.PSICfgMerged)
+	if err != nil {
+		metrics.RecordNodeSLOSpecParseCount(false, "getPSIConfigSpec")
+		klog.Warningf("getNodeSLOSpec(): failed to get psiConfig spec for node %s,error: %v", node.Name, err)
+	} else {
+		metrics.RecordNodeSLOSpecParseCount(true, "getPSIConfigSpec")
+	}
+
 	nodeSLOSpec.HostApplications, err = getHostApplicationConfig(node, &sloCfg.HostAppCfgMerged)
 	if err != nil {
 		metrics.RecordNodeSLOSpecParseCount(false, "getHostApplicationConfig")

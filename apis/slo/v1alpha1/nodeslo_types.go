@@ -426,6 +426,69 @@ type SystemStrategy struct {
 	TotalNetworkBandwidth resource.Quantity `json:"totalNetworkBandwidth,omitempty"`
 }
 
+type PSIStrategy struct {
+	PSIExport      *PSIExportConfig      `json:"psiExport,omitempty"`
+	MemorySuppress *MemorySuppressConfig `json:"memorySuppress,omitempty"`
+	GroupShare     *GroupShareConfig     `json:"groupShare,omitempty"`
+	BudgetBalance  *BudgetBalanceConfig  `json:"budgetBalance,omitempty"`
+}
+
+type PSIExportConfig struct {
+	// Enable indicates whether the psi exporter is enabled.
+	Enable *bool `json:"enable,omitempty"`
+	// Threshold indicates the report threshold for PSI, default is 2000 (20%) for each resource.
+	Threshold *PSIExporterThresholdConfig `json:"threshold,omitempty"`
+}
+
+type PSIExporterThresholdConfig struct {
+	// CPU PSI threshold
+	CPU *PSIThreshold `json:"cpu,omitempty"`
+	// Memory PSI threshold
+	Memory *PSIThreshold `json:"memory,omitempty"`
+	// IO PSI threshold
+	IO *PSIThreshold `json:"io,omitempty"`
+}
+
+type PSIThreshold struct {
+	// Avg10 indicates the average 10-second PSI threshold, range [0,10000] indicating [0%,100%].
+	Avg10 int64 `json:"avg10,omitempty" validate:"min=0,max=10000"`
+	// Avg60 indicates the average 60-second PSI threshold, range [0,10000] indicating [0%,100%].
+	Avg60 int64 `json:"avg60,omitempty" validate:"min=0,max=10000"`
+	// Avg300 indicates the average 300-second PSI threshold, range [0,10000] indicating [0%,100%].
+	Avg300 int64 `json:"avg300,omitempty" validate:"min=0,max=10000"`
+}
+
+type MemorySuppressConfig struct {
+	// Enable indicates whether the memory suppress is enabled.
+	Enable *bool `json:"enable,omitempty"`
+	// MinSpot indicates the pressure spot (ratio [0,10000] indicating [request,limit]) at which a pod begins to bear memory pressure, default is 5000 (0.5)
+	MinSpot *int64 `json:"minSpot,omitempty" validate:"min=0,max=10000"`
+	// MaxSpot indicates the pressure spot (ratio [0,10000] indicating [request,limit]) at which a pod bears max memory pressure, default is 9000 (0.9)
+	MaxSpot *int64 `json:"maxSpot,omitempty" validate:"min=0,max=10000"`
+	// GrowPeriods indicates the number of periods to grow memory from MinSpot to MaxSpot, default is 10
+	GrowPeriods *int64 `json:"growPeriods,omitempty" validate:"min=1"`
+	// KillPeriods indicates the number of periods to kill memory after MaxSpot is reached, default is 60
+	KillPeriods *int64 `json:"killPeriods,omitempty" validate:"min=1"`
+}
+
+type GroupShareConfig struct {
+	// Enable indicates whether the group share is enabled.
+	Enable *bool `json:"enable,omitempty"`
+	// GroupingAnnotationKey indicates the annotation key used to group pods, default is "koordinator.sh/grouping-hash"
+	GroupingAnnotationKey *string `json:"groupingAnnotationKey,omitempty"`
+	// LowerBound indicates the lower bound of weight a pod will keep from group share, range [0,10000] indicating [0%,100%], default is 5000 (0.5)
+	LowerBound *int64 `json:"lowerBound,omitempty" validate:"min=0,max=10000"`
+}
+
+type BudgetBalanceConfig struct {
+	// Enable indicates whether the budget balance is enabled.
+	Enable *bool `json:"enable,omitempty"`
+	// BasePrice indicates the base price of budget balance, range [0,10000] indicating [0,100], default is 50 (0.5)
+	BasePrice *int64 `json:"basePrice,omitempty" validate:"min=0,max=10000"`
+	// LowerBound indicates the lower bound of weight a pod will keep from budget balance, range [0,10000] indicating [0%,100%], default is 5000 (0.5)
+	LowerBound *int64 `json:"lowerBound,omitempty" validate:"min=0,max=10000"`
+}
+
 // NodeSLOSpec defines the desired state of NodeSLO
 type NodeSLOSpec struct {
 	// BE pods will be limited if node resource usage overload
@@ -436,6 +499,8 @@ type NodeSLOSpec struct {
 	CPUBurstStrategy *CPUBurstStrategy `json:"cpuBurstStrategy,omitempty"`
 	//node global system config
 	SystemStrategy *SystemStrategy `json:"systemStrategy,omitempty"`
+	// PSI config strategy
+	PSIStrategy *PSIStrategy `json:"psiStrategy,omitempty"`
 	// Third party extensions for NodeSLO
 	Extensions *ExtensionsMap `json:"extensions,omitempty"`
 	// QoS management for out-of-band applications
