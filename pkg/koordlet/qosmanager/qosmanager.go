@@ -34,6 +34,7 @@ import (
 	_ "github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
 	ma "github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor/framework"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/qosmanager/framework"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/qosmanager/helpers/copilot"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/qosmanager/plugins"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
@@ -55,6 +56,10 @@ func NewQOSManager(cfg *framework.Config, schema *apiruntime.Scheme, kubeClient 
 	recorder := eventBroadcaster.NewRecorder(schema, corev1.EventSource{Component: "koordlet-qosManager", Host: nodeName})
 	cgroupReader := resourceexecutor.NewCgroupReader()
 	evictor := framework.NewEvictor(kubeClient, recorder, evictVersion)
+	var copilotAgent *copilot.CopilotAgent
+	if cfg.EvictByCopilotAgent {
+		copilotAgent = copilot.NewCopilotAgent(cfg.EvictByCopilotEndPoint)
+	}
 
 	opt := &framework.Options{
 		CgroupReader:        cgroupReader,
@@ -65,6 +70,7 @@ func NewQOSManager(cfg *framework.Config, schema *apiruntime.Scheme, kubeClient 
 		EvictVersion:        evictVersion,
 		Config:              cfg,
 		MetricAdvisorConfig: metricAdvisorConfig,
+		CopilotAgent:        copilotAgent,
 	}
 
 	ctx := &framework.Context{
