@@ -25,8 +25,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	clientfake "k8s.io/client-go/kubernetes/fake"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
@@ -340,18 +340,18 @@ func TestPodEnhancedValidate(t *testing.T) {
 			_ = clientgoscheme.AddToScheme(scheme)
 
 			decoder := admission.NewDecoder(scheme)
+			var fakeClient client.Client
+			if tc.configMap != nil {
+				fakeClient = fake.NewClientBuilder().WithObjects(tc.configMap).Build()
+			} else {
+				fakeClient = fake.NewClientBuilder().Build()
+			}
 			h := &PodValidatingHandler{
-				Client:  fake.NewClientBuilder().Build(),
+				Client:  fakeClient,
 				Decoder: decoder,
 			}
 			// create a validator to build the whitelist set
-			var kubeClient *clientfake.Clientset
-			if tc.configMap != nil {
-				kubeClient = clientfake.NewSimpleClientset(tc.configMap)
-			} else {
-				kubeClient = clientfake.NewSimpleClientset()
-			}
-			h.PodEnhancedValidator = NewPodEnhancedValidator(kubeClient)
+			h.PodEnhancedValidator = NewPodEnhancedValidator(fakeClient)
 			err := h.PodEnhancedValidator.Start(context.Background())
 			assert.NoError(t, err)
 

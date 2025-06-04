@@ -28,17 +28,15 @@ import (
 
 	admissionv1 "k8s.io/api/admission/v1"
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/fields"
+	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
-	"k8s.io/client-go/informers"
-	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/tools/cache"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/klog/v2"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	"github.com/koordinator-sh/koordinator/pkg/features"
-	frameworkexthelper "github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/helper"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 	utilfeature "github.com/koordinator-sh/koordinator/pkg/util/feature"
 )
@@ -47,7 +45,8 @@ const (
 	ConfigKeyEnable = "enable"
 	ConfigKeyRules  = "rules"
 
-	ClientNamePodEnhancedValidator = "pod-enhanced-validator"
+	// DefaultConfReconcileInterval is the default reconcile interval for config
+	DefaultConfReconcileInterval = 5 * time.Minute
 )
 
 var (
@@ -55,6 +54,13 @@ var (
 	PodEnhancedValidatorConfigNamespace = "koordinator-system"
 	// PodEnhancedValidatorConfigName defines the name for the PodEnhancedValidator configuration.
 	PodEnhancedValidatorConfigName = "pod-enhanced-validator-config"
+	// PodEnhancedValidatorReconcileInterval defines the reconcile interval for the PodEnhancedValidator configuration.
+	PodEnhancedValidatorReconcileInterval = DefaultConfReconcileInterval
+
+	DefaultPodEnhancedValidatorConf = &PodEnhancedValidatorConfig{
+		Enable: false,
+		Rules:  []ValidationRule{},
+	}
 )
 
 func (h *PodValidatingHandler) podEnhancedValidate(ctx context.Context, req admission.Request) (string, error) {
@@ -84,6 +90,8 @@ func InitFlags(fs *flag.FlagSet) {
 		PodEnhancedValidatorConfigNamespace, "The namespace for the pod-enhanced-validator configuration.")
 	fs.StringVar(&PodEnhancedValidatorConfigName, "pod-enhanced-validator-config-name",
 		PodEnhancedValidatorConfigName, "The name for the pod-enhanced-validator configuration.")
+	fs.DurationVar(&PodEnhancedValidatorReconcileInterval, "pod-enhanced-validator-reconcile-interval",
+		DefaultConfReconcileInterval, "The reconcile interval for the pod-enhanced-validator configuration.")
 }
 
 // ValidationRule defines a single validation rule
@@ -118,7 +126,7 @@ type PodEnhancedValidatorConfig struct {
 
 // PodEnhancedValidator manages the pod-enhanced-validator configuration with hot reload support
 type PodEnhancedValidator struct {
-	kubeClient      kubernetes.Interface
+	client          client.Client
 	config          *PodEnhancedValidatorConfig
 	configName      string
 	configNamespace string
@@ -126,55 +134,51 @@ type PodEnhancedValidator struct {
 	sync.RWMutex
 }
 
-// NewPodEnhancedValidator creates a new config manager
-func NewPodEnhancedValidator(kubeClient kubernetes.Interface) *PodEnhancedValidator {
+func NewPodEnhancedValidator(client client.Client) *PodEnhancedValidator {
 	return &PodEnhancedValidator{
-		kubeClient:      kubeClient,
+		client:          client,
 		configName:      PodEnhancedValidatorConfigName,
 		configNamespace: PodEnhancedValidatorConfigNamespace,
-		config: &PodEnhancedValidatorConfig{
-			Enable: false,
-			Rules:  []ValidationRule{},
-		},
+		config:          DefaultPodEnhancedValidatorConf,
 	}
 }
 
-// Start initializes and starts the informer for hot reload
+// Start initializes and starts periodic get for config
 func (m *PodEnhancedValidator) Start(ctx context.Context) error {
-	// create informer for hot reload
-	factory := informers.NewSharedInformerFactoryWithOptions(
-		m.kubeClient,
-		time.Minute*5,
-		informers.WithNamespace(m.configNamespace),
-		informers.WithTweakListOptions(func(options *metav1.ListOptions) {
-			options.FieldSelector = fields.OneTermEqualSelector("metadata.name", m.configName).String()
-		}),
-	)
-	informer := factory.Core().V1().ConfigMaps().Informer()
-	handler := cache.ResourceEventHandlerFuncs{
-		AddFunc: func(obj interface{}) {
-			if cm, ok := obj.(*corev1.ConfigMap); ok && cm.Name == m.configName {
-				m.handleConfigMapUpdate(cm)
-			}
-		},
-		UpdateFunc: func(oldObj, newObj interface{}) {
-			if cm, ok := newObj.(*corev1.ConfigMap); ok && cm.Name == m.configName {
-				m.handleConfigMapUpdate(cm)
-			}
-		},
-		DeleteFunc: func(obj interface{}) {
-			if cm, ok := obj.(*corev1.ConfigMap); ok && cm.Name == m.configName {
-				m.handleConfigMapDelete()
-			}
-		},
+	if err := m.loadConfig(ctx); err != nil {
+		return fmt.Errorf("failed to load initial config for pod-enhanced-validator, err=%w", err)
 	}
 
-	_, err := frameworkexthelper.ForceSyncFromInformer(ctx.Done(), factory, informer, handler)
+	go wait.Until(func() {
+		if err := m.loadConfig(context.Background()); err != nil {
+			klog.Errorf("failed to load config for pod-enhanced-validator, err=%v", err)
+		}
+	}, PodEnhancedValidatorReconcileInterval, ctx.Done())
+
+	klog.Infof("pod-enhanced-validator started successfully, reconcileInterval=%v",
+		PodEnhancedValidatorReconcileInterval)
+	return nil
+}
+
+func (m *PodEnhancedValidator) loadConfig(ctx context.Context) error {
+	cm := &corev1.ConfigMap{}
+	key := types.NamespacedName{
+		Namespace: m.configNamespace,
+		Name:      m.configName,
+	}
+
+	err := m.client.Get(ctx, key, cm)
 	if err != nil {
-		return fmt.Errorf("failed to initialize informer, err=%w", err)
+		if errors.IsNotFound(err) {
+			// ConfigMap not found, reset to default config
+			m.updateConfig(DefaultPodEnhancedValidatorConf)
+			klog.Info("pod-enhanced-validator configmap not found, reset to default config")
+			return nil
+		}
+		return err
 	}
 
-	klog.Info("pod-enhanced-validator started successfully")
+	m.handleConfigMapUpdate(cm)
 	return nil
 }
 
@@ -186,6 +190,10 @@ func (m *PodEnhancedValidator) handleConfigMapUpdate(cm *corev1.ConfigMap) {
 		return
 	}
 
+	m.updateConfig(config)
+}
+
+func (m *PodEnhancedValidator) updateConfig(config *PodEnhancedValidatorConfig) {
 	m.Lock()
 	defer m.Unlock()
 
@@ -199,19 +207,6 @@ func (m *PodEnhancedValidator) handleConfigMapUpdate(cm *corev1.ConfigMap) {
 
 	klog.Infof("updated pod-enhanced-validator config with %d rules: enable=%v",
 		len(config.Rules), config.Enable)
-}
-
-// handleConfigMapDelete handles configmap delete events
-func (m *PodEnhancedValidator) handleConfigMapDelete() {
-	m.Lock()
-	defer m.Unlock()
-
-	// reset to default config
-	m.config = &PodEnhancedValidatorConfig{
-		Enable: false,
-		Rules:  []ValidationRule{},
-	}
-	klog.Info("pod-enhanced-validator configmap deleted, reset to default config")
 }
 
 // parseConfig parses configmap data

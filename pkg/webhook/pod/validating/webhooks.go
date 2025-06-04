@@ -24,7 +24,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
-	extclient "github.com/koordinator-sh/koordinator/pkg/client"
 	"github.com/koordinator-sh/koordinator/pkg/features"
 	utilfeature "github.com/koordinator-sh/koordinator/pkg/util/feature"
 	"github.com/koordinator-sh/koordinator/pkg/webhook/quotaevaluate"
@@ -60,8 +59,7 @@ func (b *podValidateBuilder) Build() admission.Handler {
 	h.QuotaEvaluator = quotaevaluate.NewQuotaEvaluator(quotaAccessor, 16, make(chan struct{}))
 
 	if utilfeature.DefaultFeatureGate.Enabled(features.EnablePodEnhancedValidator) {
-		kubeClient := extclient.GetGenericClientWithName(ClientNamePodEnhancedValidator).KubeClient
-		h.PodEnhancedValidator = NewPodEnhancedValidator(kubeClient)
+		h.PodEnhancedValidator = NewPodEnhancedValidator(b.mgr.GetClient())
 		if err := h.PodEnhancedValidator.Start(context.Background()); err != nil {
 			klog.Fatalf("failed to start pod-enhanced-validator, err=%v", err)
 		}
