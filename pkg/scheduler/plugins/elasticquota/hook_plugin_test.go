@@ -144,7 +144,7 @@ func TestUpdateQuota_IsQuotaUpdated(t *testing.T) {
 	// PreQuotaUpdate and PostQuotaUpdate should be called
 	mockHook.Reset()
 	mockHook.IsQuotaUpdatedFn = func(oldQuotaInfo, newQuotaInfo *core.QuotaInfo, newQuota *v1alpha1.ElasticQuota) bool {
-		// Verify that the hook receives correct parameters
+		// verify that the hook receives correct parameters
 		assert.NotNil(t, oldQuotaInfo, "oldQuotaInfo should not be nil")
 		assert.NotNil(t, newQuotaInfo, "newQuotaInfo should not be nil")
 		assert.NotNil(t, newQuota, "newQuota should not be nil")
@@ -231,17 +231,19 @@ func TestReplaceQuotasWithHookPlugins(t *testing.T) {
 		CreateQuota2("test11", "test1", 100, 200, 40, 80, 1, 1, false, ""),
 	}
 
+	// ReplaceQuotas will conflict with QuotaEventHandler. sleep 1 seconds to avoid it.
+	time.Sleep(time.Second)
 	// call ReplaceQuotas which should trigger ResetQuotasForHookPlugins
 	err = plugin.ReplaceQuotas(quotas)
 	assert.Nil(t, err)
 
-	// Verify hook plugins were called
+	// verify hook plugins were called
 	hookPlugins := plugin.groupQuotaManager.GetHookPlugins()
 	assert.Equal(t, 1, len(hookPlugins))
 
 	mockHook := hookPlugins[0].(*core.MetricsWrapper).GetPlugin().(*MockHookPlugin)
 
-	// Verify that the quotas were processed correctly
+	// verify that the quotas were processed correctly
 	expectedQuotaNames := []string{"test1", "test2", "test11"}
 	for _, expectedName := range expectedQuotaNames {
 		assert.Contains(t, mockHook.PreQuotaUpdateQuotas, expectedName,
