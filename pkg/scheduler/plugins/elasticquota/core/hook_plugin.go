@@ -302,6 +302,9 @@ func (gqm *GroupQuotaManager) IsQuotaUpdated(oldQuotaInfo, newQuotaInfo *QuotaIn
 
 // ResetQuotasForHookPlugins resets quotas with pre-update and post-update hooks
 func (gqm *GroupQuotaManager) ResetQuotasForHookPlugins(quotas map[string]*v1alpha1.ElasticQuota) {
+	if len(gqm.hookPlugins) == 0 {
+		return
+	}
 	startTime := time.Now()
 	defer func() {
 		klog.Infof("reset hook plugins for tree %s, took %v", gqm.GetTreeID(), time.Since(startTime))
