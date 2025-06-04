@@ -338,13 +338,12 @@ func TestPodEnhancedValidate(t *testing.T) {
 				features.EnablePodEnhancedValidator, true)()
 			scheme := runtime.NewScheme()
 			_ = clientgoscheme.AddToScheme(scheme)
-
 			decoder := admission.NewDecoder(scheme)
 			var fakeClient client.Client
 			if tc.configMap != nil {
-				fakeClient = fake.NewClientBuilder().WithObjects(tc.configMap).Build()
+				fakeClient = fake.NewClientBuilder().WithScheme(scheme).WithObjects(tc.configMap).Build()
 			} else {
-				fakeClient = fake.NewClientBuilder().Build()
+				fakeClient = fake.NewClientBuilder().WithScheme(scheme).Build()
 			}
 			h := &PodValidatingHandler{
 				Client:  fakeClient,
