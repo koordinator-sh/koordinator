@@ -290,7 +290,7 @@ func (gqm *GroupQuotaManager) runPodUpdateHooks(quotaName string, oldPod, newPod
 	}
 }
 
-func (gqm *GroupQuotaManager) isQuotaUpdated(oldQuotaInfo, newQuotaInfo *QuotaInfo,
+func (gqm *GroupQuotaManager) IsQuotaUpdated(oldQuotaInfo, newQuotaInfo *QuotaInfo,
 	newQuota *v1alpha1.ElasticQuota) bool {
 	for _, hook := range gqm.hookPlugins {
 		if hook.IsQuotaUpdated(oldQuotaInfo, newQuotaInfo, newQuota) {
@@ -298,4 +298,28 @@ func (gqm *GroupQuotaManager) isQuotaUpdated(oldQuotaInfo, newQuotaInfo *QuotaIn
 		}
 	}
 	return false
+}
+
+// ResetQuotasForHookPlugins resets quotas with pre-update and post-update hooks
+func (gqm *GroupQuotaManager) ResetQuotasForHookPlugins(quotas map[string]*v1alpha1.ElasticQuota) {
+	if len(gqm.hookPlugins) == 0 {
+		return
+	}
+	startTime := time.Now()
+	defer func() {
+		klog.Infof("reset hook plugins for tree %s, took %v", gqm.GetTreeID(), time.Since(startTime))
+	}()
+
+	gqm.hierarchyUpdateLock.Lock()
+	defer gqm.hierarchyUpdateLock.Unlock()
+
+	for quotaName, quotaInfo := range gqm.quotaInfoMap {
+		quota := quotas[quotaInfo.Name]
+		if quota == nil {
+			klog.Warningf("skip resetting inconsistent quota %s for hook plugins", quotaName)
+			continue
+		}
+		hookState := gqm.runPreQuotaUpdateHooks(nil, quotaInfo, quota)
+		gqm.runPostQuotaUpdateHooks(nil, quotaInfo, quota, hookState)
+	}
 }

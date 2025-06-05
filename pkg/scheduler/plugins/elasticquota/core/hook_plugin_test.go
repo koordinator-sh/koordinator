@@ -414,3 +414,111 @@ func (m *MockHookPlugin) UpdateQuotaStatus(_, _ *v1alpha1.ElasticQuota) *v1alpha
 func (m *MockHookPlugin) CheckPod(quotaName string, pod *v1.Pod) error {
 	return nil
 }
+
+func TestResetQuotasForHookPlugins(t *testing.T) {
+	gqm := initGQMForTesting(t)
+	hookPlugins := gqm.GetHookPlugins()
+	assert.Equal(t, 1, len(hookPlugins))
+	mockHook := hookPlugins[0].(*MetricsWrapper).GetPlugin().(*MockHookPlugin)
+
+	// create test quotas and add them to GQM
+	parentQuota := CreateQuota("test-parent", extension.RootQuotaName, 100, 100, 0, 0, false, false)
+	err := gqm.UpdateQuota(parentQuota)
+	assert.NoError(t, err, "UpdateQuota should succeed")
+
+	q1 := CreateQuota("q1", parentQuota.Name, 40, 40, 20, 20, false, false)
+	err = gqm.UpdateQuota(q1)
+	assert.NoError(t, err, "UpdateQuota should succeed")
+
+	q2 := CreateQuota("q2", parentQuota.Name, 30, 30, 10, 10, false, false)
+	err = gqm.UpdateQuota(q2)
+	assert.NoError(t, err, "UpdateQuota should succeed")
+
+	// track hook calls for validation
+	var preUpdateCalls []string
+	var postUpdateCalls []string
+
+	validateHookParameters := func(oldQuotaInfo, newQuotaInfo *QuotaInfo, quota *v1alpha1.ElasticQuota, state *QuotaUpdateState) {
+		assert.Nil(t, oldQuotaInfo, "Old quota info should be nil for reset operation")
+		assert.NotNil(t, newQuotaInfo, "New quota info should not be nil")
+		assert.NotNil(t, quota, "Quota should not be nil")
+		assert.NotNil(t, state, "State should not be nil")
+	}
+	preQuotaUpdateValidateFn := func(oldQuotaInfo, newQuotaInfo *QuotaInfo, quota *v1alpha1.ElasticQuota, state *QuotaUpdateState) {
+		preUpdateCalls = append(preUpdateCalls, quota.Name)
+		validateHookParameters(oldQuotaInfo, newQuotaInfo, quota, state)
+	}
+	postQuotaUpdateValidateFn := func(oldQuotaInfo, newQuotaInfo *QuotaInfo, quota *v1alpha1.ElasticQuota, state *QuotaUpdateState) {
+		postUpdateCalls = append(postUpdateCalls, quota.Name)
+		validateHookParameters(oldQuotaInfo, newQuotaInfo, quota, state)
+	}
+	resetHookFn := func() {
+		mockHook.Reset()
+		preUpdateCalls = nil
+		postUpdateCalls = nil
+		mockHook.PreQuotaUpdateValidateFn = preQuotaUpdateValidateFn
+		mockHook.PostQuotaUpdateValidateFn = postQuotaUpdateValidateFn
+	}
+
+	// Test case 1: Reset with all quotas present
+	resetHookFn()
+	quotas := map[string]*v1alpha1.ElasticQuota{
+		parentQuota.Name: parentQuota,
+		q1.Name:          q1,
+		q2.Name:          q2,
+	}
+
+	gqm.ResetQuotasForHookPlugins(quotas)
+
+	// validate that hooks were called for all quotas
+	assert.True(t, mockHook.PreQuotaUpdateCalled, "PreQuotaUpdate should be called")
+	assert.True(t, mockHook.PostQuotaUpdateCalled, "PostQuotaUpdate should be called")
+	assert.Equal(t, 3, len(preUpdateCalls), "PreQuotaUpdate should be called for all 3 quotas")
+	assert.Equal(t, 3, len(postUpdateCalls), "PostQuotaUpdate should be called for all 3 quotas")
+
+	// validate that the correct quotas were processed
+	assert.Contains(t, preUpdateCalls, parentQuota.Name, "Parent quota should be in preUpdateCalls")
+	assert.Contains(t, preUpdateCalls, q1.Name, "Q1 should be in preUpdateCalls")
+	assert.Contains(t, preUpdateCalls, q2.Name, "Q2 should be in preUpdateCalls")
+	assert.Contains(t, postUpdateCalls, parentQuota.Name, "Parent quota should be in postUpdateCalls")
+	assert.Contains(t, postUpdateCalls, q1.Name, "Q1 should be in postUpdateCalls")
+	assert.Contains(t, postUpdateCalls, q2.Name, "Q2 should be in postUpdateCalls")
+
+	// Test case 2: Reset with missing quota (should skip inconsistent quota)
+	resetHookFn()
+
+	// Remove one quota from the input map
+	quotasWithMissing := map[string]*v1alpha1.ElasticQuota{
+		parentQuota.Name: parentQuota,
+		q1.Name:          q1,
+		// q2 is missing
+	}
+
+	gqm.ResetQuotasForHookPlugins(quotasWithMissing)
+
+	// validate that hooks were called only for present quotas
+	assert.True(t, mockHook.PreQuotaUpdateCalled, "PreQuotaUpdate should be called")
+	assert.True(t, mockHook.PostQuotaUpdateCalled, "PostQuotaUpdate should be called")
+	assert.Equal(t, 2, len(preUpdateCalls), "PreQuotaUpdate should be called for 2 present quotas")
+	assert.Equal(t, 2, len(postUpdateCalls), "PostQuotaUpdate should be called for 2 present quotas")
+
+	// validate that only present quotas were processed
+	assert.Contains(t, preUpdateCalls, parentQuota.Name, "Parent quota should be in preUpdateCalls")
+	assert.Contains(t, preUpdateCalls, q1.Name, "Q1 should be in preUpdateCalls")
+	assert.NotContains(t, preUpdateCalls, q2.Name, "Q2 should not be in preUpdateCalls (missing from input)")
+	assert.Contains(t, postUpdateCalls, parentQuota.Name, "Parent quota should be in postUpdateCalls")
+	assert.Contains(t, postUpdateCalls, q1.Name, "Q1 should be in postUpdateCalls")
+	assert.NotContains(t, postUpdateCalls, q2.Name, "Q2 should not be in postUpdateCalls (missing from input)")
+
+	// Test case 3: Reset with empty quotas map
+	resetHookFn()
+
+	emptyQuotas := map[string]*v1alpha1.ElasticQuota{}
+	gqm.ResetQuotasForHookPlugins(emptyQuotas)
+
+	// validate that no hooks were called
+	assert.False(t, mockHook.PreQuotaUpdateCalled, "PreQuotaUpdate should not be called for empty quotas")
+	assert.False(t, mockHook.PostQuotaUpdateCalled, "PostQuotaUpdate should not be called for empty quotas")
+	assert.Equal(t, 0, len(preUpdateCalls), "No PreQuotaUpdate calls expected")
+	assert.Equal(t, 0, len(postUpdateCalls), "No PostQuotaUpdate calls expected")
+}
