@@ -150,10 +150,13 @@ var (
 	GetDesignatedGPUPartitionIndexer = func(node *corev1.Node) (GPUPartitionIndexer, bool) {
 		var partitionIndexer GPUPartitionIndexer
 		partitionPolicy := apiext.GetGPUPartitionPolicy(node)
-		model := node.Labels[apiext.LabelGPUModel]
-		switch model {
-		case "H100", "H800", "H20":
-			partitionIndexer = GPUPartitionIndexOfNVIDIAHopper
+		vendor := node.Labels[apiext.LabelGPUVendor]
+		// treat empty vendor as nvidia for compatibility
+		if vendor == "" || vendor == apiext.GPUVendorNVIDIA {
+			switch node.Labels[apiext.LabelGPUModel] {
+			case "H100", "H800", "H20":
+				partitionIndexer = GPUPartitionIndexOfNVIDIAHopper
+			}
 		}
 		return partitionIndexer, partitionPolicy == apiext.GPUPartitionPolicyHonor
 	}

@@ -58,11 +58,17 @@ const (
 
 const (
 	LabelGPUPartitionPolicy         string = NodeDomainPrefix + "/gpu-partition-policy"
+	LabelGPUVendor                  string = NodeDomainPrefix + "/gpu-vendor"
 	LabelGPUModel                   string = NodeDomainPrefix + "/gpu-model"
 	LabelGPUDriverVersion           string = NodeDomainPrefix + "/gpu-driver-version"
 	LabelSecondaryDeviceWellPlanned string = NodeDomainPrefix + "/secondary-device-well-planned"
 
 	LabelGPUIsolationProvider = DomainPrefix + "gpu-isolation-provider"
+)
+
+const (
+	GPUVendorNVIDIA = "nvidia"
+	GPUVendorHuawei = "huawei"
 )
 
 // DeviceAllocations would be injected into Pod as form of annotation during Pre-bind stage.
