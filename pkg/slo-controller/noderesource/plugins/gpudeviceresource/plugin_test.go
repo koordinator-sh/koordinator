@@ -35,7 +35,9 @@ import (
 	"github.com/koordinator-sh/koordinator/apis/configuration"
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/noderesource/framework"
+	utilfeature "github.com/koordinator-sh/koordinator/pkg/util/feature"
 	"github.com/koordinator-sh/koordinator/pkg/util/testutil"
 )
 
@@ -617,11 +619,12 @@ func TestPluginCalculate(t *testing.T) {
 		node *corev1.Node
 	}
 	tests := []struct {
-		name    string
-		fields  fields
-		args    args
-		want    []framework.ResourceItem
-		wantErr bool
+		name               string
+		fields             fields
+		syncSharedResource bool
+		args               args
+		want               []framework.ResourceItem
+		wantErr            bool
 	}{
 		{
 			name: "args missing essential fields",
@@ -650,6 +653,7 @@ func TestPluginCalculate(t *testing.T) {
 			fields: fields{
 				client: fake.NewClientBuilder().WithScheme(testScheme).WithObjects(testNode, testDevice).Build(),
 			},
+			syncSharedResource: true,
 			args: args{
 				node: testNode,
 			},
@@ -695,6 +699,7 @@ func TestPluginCalculate(t *testing.T) {
 			fields: fields{
 				client: fake.NewClientBuilder().WithScheme(testScheme).WithObjects(testNode, testDevice).Build(),
 			},
+			syncSharedResource: true,
 			args: args{
 				node: testNode,
 			},
@@ -740,6 +745,7 @@ func TestPluginCalculate(t *testing.T) {
 			fields: fields{
 				client: fake.NewClientBuilder().WithScheme(testScheme).WithObjects(testNode, deviceMissingLabels).Build(),
 			},
+			syncSharedResource: true,
 			args: args{
 				node: testNode,
 			},
@@ -777,6 +783,7 @@ func TestPluginCalculate(t *testing.T) {
 			fields: fields{
 				client: fake.NewClientBuilder().WithScheme(testScheme).WithObjects(testNode, deviceMissingGPURelatedLabels).Build(),
 			},
+			syncSharedResource: true,
 			args: args{
 				node: testNode,
 			},
@@ -803,6 +810,150 @@ func TestPluginCalculate(t *testing.T) {
 				},
 				{
 					Name:     extension.ResourceGPUShared,
+					Quantity: resource.NewQuantity(200, resource.DecimalSI),
+					Message:  UpdateResourcesMsg,
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "calculate device resources correctly",
+			fields: fields{
+				client: fake.NewClientBuilder().WithScheme(testScheme).WithObjects(testNode, testDevice).Build(),
+			},
+			args: args{
+				node: testNode,
+			},
+			want: []framework.ResourceItem{
+				{
+					Name:     extension.ResourceGPU,
+					Quantity: resource.NewQuantity(200, resource.DecimalSI),
+					Message:  UpdateResourcesMsg,
+				},
+				{
+					Name:     extension.ResourceGPUCore,
+					Quantity: resource.NewQuantity(200, resource.DecimalSI),
+					Message:  UpdateResourcesMsg,
+				},
+				{
+					Name:     extension.ResourceGPUMemory,
+					Quantity: resource.NewScaledQuantity(18, 3),
+					Message:  UpdateResourcesMsg,
+				},
+				{
+					Name:     extension.ResourceGPUMemoryRatio,
+					Quantity: resource.NewQuantity(200, resource.DecimalSI),
+					Message:  UpdateResourcesMsg,
+				},
+				{
+					Name: PluginName,
+					Labels: map[string]string{
+						extension.LabelGPUModel:         "A100",
+						extension.LabelGPUDriverVersion: "480",
+					},
+					Message: UpdateLabelsMsg,
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "calculate device resources correctly",
+			fields: fields{
+				client: fake.NewClientBuilder().WithScheme(testScheme).WithObjects(testNode, testDevice).Build(),
+			},
+			args: args{
+				node: testNode,
+			},
+			want: []framework.ResourceItem{
+				{
+					Name:     extension.ResourceGPU,
+					Quantity: resource.NewQuantity(200, resource.DecimalSI),
+					Message:  UpdateResourcesMsg,
+				},
+				{
+					Name:     extension.ResourceGPUCore,
+					Quantity: resource.NewQuantity(200, resource.DecimalSI),
+					Message:  UpdateResourcesMsg,
+				},
+				{
+					Name:     extension.ResourceGPUMemory,
+					Quantity: resource.NewScaledQuantity(18, 3),
+					Message:  UpdateResourcesMsg,
+				},
+				{
+					Name:     extension.ResourceGPUMemoryRatio,
+					Quantity: resource.NewQuantity(200, resource.DecimalSI),
+					Message:  UpdateResourcesMsg,
+				},
+				{
+					Name: PluginName,
+					Labels: map[string]string{
+						extension.LabelGPUModel:         "A100",
+						extension.LabelGPUDriverVersion: "480",
+					},
+					Message: UpdateLabelsMsg,
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "calculate device resources correctly",
+			fields: fields{
+				client: fake.NewClientBuilder().WithScheme(testScheme).WithObjects(testNode, deviceMissingLabels).Build(),
+			},
+			args: args{
+				node: testNode,
+			},
+			want: []framework.ResourceItem{
+				{
+					Name:     extension.ResourceGPU,
+					Quantity: resource.NewQuantity(200, resource.DecimalSI),
+					Message:  UpdateResourcesMsg,
+				},
+				{
+					Name:     extension.ResourceGPUCore,
+					Quantity: resource.NewQuantity(200, resource.DecimalSI),
+					Message:  UpdateResourcesMsg,
+				},
+				{
+					Name:     extension.ResourceGPUMemory,
+					Quantity: resource.NewScaledQuantity(18, 3),
+					Message:  UpdateResourcesMsg,
+				},
+				{
+					Name:     extension.ResourceGPUMemoryRatio,
+					Quantity: resource.NewQuantity(200, resource.DecimalSI),
+					Message:  UpdateResourcesMsg,
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "calculate device resources correctly",
+			fields: fields{
+				client: fake.NewClientBuilder().WithScheme(testScheme).WithObjects(testNode, deviceMissingGPURelatedLabels).Build(),
+			},
+			args: args{
+				node: testNode,
+			},
+			want: []framework.ResourceItem{
+				{
+					Name:     extension.ResourceGPU,
+					Quantity: resource.NewQuantity(200, resource.DecimalSI),
+					Message:  UpdateResourcesMsg,
+				},
+				{
+					Name:     extension.ResourceGPUCore,
+					Quantity: resource.NewQuantity(200, resource.DecimalSI),
+					Message:  UpdateResourcesMsg,
+				},
+				{
+					Name:     extension.ResourceGPUMemory,
+					Quantity: resource.NewScaledQuantity(18, 3),
+					Message:  UpdateResourcesMsg,
+				},
+				{
+					Name:     extension.ResourceGPUMemoryRatio,
 					Quantity: resource.NewQuantity(200, resource.DecimalSI),
 					Message:  UpdateResourcesMsg,
 				},
@@ -886,6 +1037,7 @@ func TestPluginCalculate(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			defer utilfeature.SetFeatureGateDuringTest(t, utilfeature.DefaultFeatureGate, features.EnableSyncGPUSharedResource, tt.syncSharedResource)()
 			p := &Plugin{}
 			client = tt.fields.client
 			defer testPluginCleanup()
@@ -897,6 +1049,7 @@ func TestPluginCalculate(t *testing.T) {
 }
 
 func Test_cleanupGPUNodeResource(t *testing.T) {
+
 	testScheme := runtime.NewScheme()
 	err := clientgoscheme.AddToScheme(testScheme)
 	assert.NoError(t, err)
@@ -1016,6 +1169,7 @@ func Test_cleanupGPUNodeResource(t *testing.T) {
 		},
 	}
 	t.Run("updateGPUDriverAndModel success", func(t *testing.T) {
+		defer utilfeature.SetFeatureGateDuringTest(t, utilfeature.DefaultFeatureGate, features.EnableSyncGPUSharedResource, true)()
 		p := &Plugin{}
 		client = fake.NewClientBuilder().WithScheme(testScheme).WithRuntimeObjects(testDevice).Build()
 		defer testPluginCleanup()

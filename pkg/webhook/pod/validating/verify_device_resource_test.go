@@ -30,7 +30,9 @@ import (
 
 	configv1alpha1 "github.com/koordinator-sh/koordinator/apis/config/v1alpha1"
 	"github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/util"
+	utilfeature "github.com/koordinator-sh/koordinator/pkg/util/feature"
 )
 
 func init() {
@@ -39,13 +41,14 @@ func init() {
 
 func TestDeviceResourceValidatingPod(t *testing.T) {
 	tests := []struct {
-		name        string
-		operation   admissionv1.Operation
-		oldPod      *corev1.Pod
-		newPod      *corev1.Pod
-		wantAllowed bool
-		wantReason  string
-		wantErr     bool
+		name                          string
+		disableValidateDeviceResource bool
+		operation                     admissionv1.Operation
+		oldPod                        *corev1.Pod
+		newPod                        *corev1.Pod
+		wantAllowed                   bool
+		wantReason                    string
+		wantErr                       bool
 	}{
 		{
 			name:      "validate gpu resource is percentage",
@@ -154,6 +157,33 @@ func TestDeviceResourceValidatingPod(t *testing.T) {
 			wantReason:  "pod.spec.containers[*].resources.requests: Forbidden: GPU memory and GPU memory ratio all is zero",
 		},
 		{
+			name:                          "validate declain none gpu memory and memoryRatio",
+			disableValidateDeviceResource: true,
+			operation:                     admissionv1.Create,
+			newPod: &corev1.Pod{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name: "test-container-a",
+							Resources: corev1.ResourceRequirements{
+								Limits: corev1.ResourceList{
+									extension.ResourceGPUShared: *resource.NewQuantity(2, resource.DecimalSI),
+								},
+								Requests: corev1.ResourceList{
+									extension.ResourceGPUShared: *resource.NewQuantity(2, resource.DecimalSI),
+								},
+							},
+						},
+					},
+					SchedulerName:     "koordinator-scheduler",
+					PriorityClassName: "koordinator-batch",
+				},
+			},
+			wantErr:     false,
+			wantAllowed: true,
+			wantReason:  "",
+		},
+		{
 			name:      "validate gpu gpuCore greater than 100 multiple of shared",
 			operation: admissionv1.Create,
 			newPod: &corev1.Pod{
@@ -215,6 +245,7 @@ func TestDeviceResourceValidatingPod(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			defer utilfeature.SetFeatureGateDuringTest(t, utilfeature.DefaultFeatureGate, features.ValidatePodDeviceResource, !tt.disableValidateDeviceResource)()
 			client := fake.NewClientBuilder().Build()
 			decoder := admission.NewDecoder(scheme.Scheme)
 			h := &PodValidatingHandler{

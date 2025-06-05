@@ -90,6 +90,9 @@ const (
 
 	// ColocationProfileController enables the reconciliation for ClusterColocationProfile.
 	ColocationProfileController featuregate.Feature = "ColocationProfileController"
+
+	// ValidatePodDeviceResource enables validate pod device resource
+	ValidatePodDeviceResource featuregate.Feature = "ValidatePodDeviceResource"
 )
 
 var defaultFeatureGates = map[featuregate.Feature]featuregate.FeatureSpec{
@@ -110,8 +113,9 @@ var defaultFeatureGates = map[featuregate.Feature]featuregate.FeatureSpec{
 	DisableDefaultQuota:                    {Default: false, PreRelease: featuregate.Alpha},
 	SupportParentQuotaSubmitPod:            {Default: false, PreRelease: featuregate.Alpha},
 	EnableQuotaAdmission:                   {Default: false, PreRelease: featuregate.Alpha},
-	EnableSyncGPUSharedResource:            {Default: true, PreRelease: featuregate.Alpha},
+	EnableSyncGPUSharedResource:            {Default: false, PreRelease: featuregate.Alpha},
 	ColocationProfileController:            {Default: false, PreRelease: featuregate.Alpha},
+	ValidatePodDeviceResource:              {Default: false, PreRelease: featuregate.Alpha},
 }
 
 const (
