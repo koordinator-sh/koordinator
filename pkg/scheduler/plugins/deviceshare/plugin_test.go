@@ -602,6 +602,30 @@ func Test_Plugin_PreFilter(t *testing.T) {
 			wantStatus: framework.NewStatus(framework.UnschedulableAndUnresolvable, fmt.Sprintf("invalid resource device requests: [%s]", apiext.ResourceGPUMemoryRatio)),
 		},
 		{
+			name: "pod has invalid gpu request 4",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					UID:       "123456789",
+					Namespace: "default",
+					Name:      "test",
+				},
+				Spec: corev1.PodSpec{
+					NodeName: "test-node",
+					Containers: []corev1.Container{
+						{
+							Name: "test-container-a",
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									apiext.ResourceHuaweiNPUCore: resource.MustParse("20"),
+								},
+							},
+						},
+					},
+				},
+			},
+			wantStatus: framework.NewStatus(framework.UnschedulableAndUnresolvable, fmt.Sprintf("invalid resource device requests: [%s]", apiext.ResourceHuaweiNPUCore)),
+		},
+		{
 			name: "pod has valid gpu request 1",
 			pod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
@@ -801,6 +825,49 @@ func Test_Plugin_PreFilter(t *testing.T) {
 					numberOfGPUs: 1,
 					requestsPerGPU: corev1.ResourceList{
 						apiext.ResourceGPUCore:        resource.MustParse("100"),
+						apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+					},
+				},
+				podFitsSecondaryDeviceWellPlanned: true,
+				preemptibleDevices:                map[string]map[schedulingv1alpha1.DeviceType]deviceResources{},
+				preemptibleInRRs:                  map[string]map[types.UID]map[schedulingv1alpha1.DeviceType]deviceResources{},
+			},
+		},
+		{
+			name: "pod has valid gpu request 6",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					UID:       "123456789",
+					Namespace: "default",
+					Name:      "test",
+				},
+				Spec: corev1.PodSpec{
+					NodeName: "test-node",
+					Containers: []corev1.Container{
+						{
+							Name: "test-container-a",
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									apiext.ResourceHuaweiNPUCore:  resource.MustParse("20"),
+									apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+								},
+							},
+						},
+					},
+				},
+			},
+			wantState: &preFilterState{
+				skip: false,
+				podRequests: map[schedulingv1alpha1.DeviceType]corev1.ResourceList{
+					schedulingv1alpha1.GPU: {
+						apiext.ResourceHuaweiNPUCore:  resource.MustParse("20"),
+						apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+					},
+				},
+				gpuRequirements: &GPURequirements{
+					numberOfGPUs: 1,
+					requestsPerGPU: corev1.ResourceList{
+						apiext.ResourceHuaweiNPUCore:  resource.MustParse("20"),
 						apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
 					},
 				},
@@ -1245,6 +1312,70 @@ func Test_Plugin_Filter(t *testing.T) {
 			want:     framework.NewStatus(framework.Unschedulable, "Insufficient"),
 		},
 		{
+			name: "insufficient device resource 5",
+			state: &preFilterState{
+				skip: false,
+				podRequests: map[schedulingv1alpha1.DeviceType]corev1.ResourceList{
+					schedulingv1alpha1.GPU: {
+						apiext.ResourceHuaweiNPUCore:  resource.MustParse("20"),
+						apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+					},
+				},
+			},
+			nodeDeviceCache: &nodeDeviceCache{
+				nodeDeviceInfos: map[string]*nodeDevice{
+					"test-node": {
+						deviceFree: map[schedulingv1alpha1.DeviceType]deviceResources{
+							schedulingv1alpha1.GPU: {
+								0: corev1.ResourceList{
+									apiext.ResourceHuaweiNPUCore:  resource.MustParse("15"),
+									apiext.ResourceGPUMemoryRatio: resource.MustParse("75"),
+									apiext.ResourceGPUMemory:      resource.MustParse("12Gi"),
+								},
+							},
+						},
+						deviceTotal: map[schedulingv1alpha1.DeviceType]deviceResources{
+							schedulingv1alpha1.GPU: {
+								0: corev1.ResourceList{
+									apiext.ResourceHuaweiNPUCore:  resource.MustParse("20"),
+									apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+									apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
+								},
+							},
+						},
+						deviceUsed: map[schedulingv1alpha1.DeviceType]deviceResources{
+							schedulingv1alpha1.GPU: {
+								0: corev1.ResourceList{
+									apiext.ResourceHuaweiNPUCore:  resource.MustParse("5"),
+									apiext.ResourceGPUMemoryRatio: resource.MustParse("25"),
+									apiext.ResourceGPUMemory:      resource.MustParse("4Gi"),
+								},
+							},
+						},
+						vfAllocations: map[schedulingv1alpha1.DeviceType]*VFAllocation{},
+						numaTopology:  &NUMATopology{},
+						deviceInfos: map[schedulingv1alpha1.DeviceType][]*schedulingv1alpha1.DeviceInfo{
+							schedulingv1alpha1.GPU: {
+								{
+									Type:   schedulingv1alpha1.GPU,
+									Health: true,
+									UUID:   "123456-1",
+									Minor:  pointer.Int32(0),
+									Resources: corev1.ResourceList{
+										apiext.ResourceHuaweiNPUCore:  resource.MustParse("20"),
+										apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+										apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			nodeInfo: testNodeInfo,
+			want:     framework.NewStatus(framework.Unschedulable, "Insufficient gpu devices"),
+		},
+		{
 			name: "sufficient device resource 1",
 			state: &preFilterState{
 				skip: false,
@@ -1654,6 +1785,71 @@ func Test_Plugin_Filter(t *testing.T) {
 							schedulingv1alpha1.GPU: {
 								0: corev1.ResourceList{
 									apiext.ResourceGPUCore:        resource.MustParse("75"),
+									apiext.ResourceGPUMemoryRatio: resource.MustParse("75"),
+									apiext.ResourceGPUMemory:      resource.MustParse("12Gi"),
+								},
+							},
+						},
+						vfAllocations: map[schedulingv1alpha1.DeviceType]*VFAllocation{},
+						numaTopology:  &NUMATopology{},
+						deviceInfos: map[schedulingv1alpha1.DeviceType][]*schedulingv1alpha1.DeviceInfo{
+							schedulingv1alpha1.GPU: {
+								{Type: schedulingv1alpha1.GPU, Health: true, Minor: pointer.Int32(0)},
+								{Type: schedulingv1alpha1.GPU, Health: true, Minor: pointer.Int32(1)},
+							},
+						},
+					},
+				},
+			},
+			nodeInfo: testNodeInfo,
+			want:     nil,
+		},
+		{
+			name: "sufficient device resource 7",
+			state: &preFilterState{
+				skip: false,
+				podRequests: map[schedulingv1alpha1.DeviceType]corev1.ResourceList{
+					schedulingv1alpha1.GPU: {
+						apiext.ResourceHuaweiNPUCore:  resource.MustParse("20"),
+						apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+					},
+				},
+			},
+			nodeDeviceCache: &nodeDeviceCache{
+				nodeDeviceInfos: map[string]*nodeDevice{
+					"test-node": {
+						deviceFree: map[schedulingv1alpha1.DeviceType]deviceResources{
+							schedulingv1alpha1.GPU: {
+								0: corev1.ResourceList{
+									apiext.ResourceHuaweiNPUCore:  resource.MustParse("5"),
+									apiext.ResourceGPUMemoryRatio: resource.MustParse("25"),
+									apiext.ResourceGPUMemory:      resource.MustParse("4Gi"),
+								},
+								1: corev1.ResourceList{
+									apiext.ResourceHuaweiNPUCore:  resource.MustParse("20"),
+									apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+									apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
+								},
+							},
+						},
+						deviceTotal: map[schedulingv1alpha1.DeviceType]deviceResources{
+							schedulingv1alpha1.GPU: {
+								0: corev1.ResourceList{
+									apiext.ResourceHuaweiNPUCore:  resource.MustParse("20"),
+									apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+									apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
+								},
+								1: corev1.ResourceList{
+									apiext.ResourceHuaweiNPUCore:  resource.MustParse("20"),
+									apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+									apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
+								},
+							},
+						},
+						deviceUsed: map[schedulingv1alpha1.DeviceType]deviceResources{
+							schedulingv1alpha1.GPU: {
+								0: corev1.ResourceList{
+									apiext.ResourceHuaweiNPUCore:  resource.MustParse("15"),
 									apiext.ResourceGPUMemoryRatio: resource.MustParse("75"),
 									apiext.ResourceGPUMemory:      resource.MustParse("12Gi"),
 								},
@@ -2706,6 +2902,70 @@ func Test_Plugin_Reserve(t *testing.T) {
 			},
 		},
 		{
+			name: "insufficient device resource 6",
+			args: args{
+				nodeDeviceCache: &nodeDeviceCache{
+					nodeDeviceInfos: map[string]*nodeDevice{
+						"test-node": {
+							deviceFree: map[schedulingv1alpha1.DeviceType]deviceResources{
+								schedulingv1alpha1.GPU: {
+									0: corev1.ResourceList{
+										apiext.ResourceHuaweiNPUCore:  resource.MustParse("5"),
+										apiext.ResourceGPUMemoryRatio: resource.MustParse("25"),
+										apiext.ResourceGPUMemory:      resource.MustParse("4Gi"),
+									},
+								},
+							},
+							deviceTotal: map[schedulingv1alpha1.DeviceType]deviceResources{
+								schedulingv1alpha1.GPU: {
+									0: corev1.ResourceList{
+										apiext.ResourceHuaweiNPUCore:  resource.MustParse("20"),
+										apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+										apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
+									},
+								},
+							},
+							deviceUsed: map[schedulingv1alpha1.DeviceType]deviceResources{
+								schedulingv1alpha1.GPU: {
+									0: corev1.ResourceList{
+										apiext.ResourceHuaweiNPUCore:  resource.MustParse("15"),
+										apiext.ResourceGPUMemoryRatio: resource.MustParse("75"),
+										apiext.ResourceGPUMemory:      resource.MustParse("12Gi"),
+									},
+								},
+							},
+							vfAllocations: map[schedulingv1alpha1.DeviceType]*VFAllocation{},
+							numaTopology:  &NUMATopology{},
+							deviceInfos: map[schedulingv1alpha1.DeviceType][]*schedulingv1alpha1.DeviceInfo{
+								schedulingv1alpha1.GPU: {
+									{
+										Type:   schedulingv1alpha1.GPU,
+										Health: true,
+										UUID:   "123456-1",
+										Minor:  pointer.Int32(0),
+									},
+								},
+							},
+						},
+					},
+				},
+				pod: &corev1.Pod{},
+				state: &preFilterState{
+					skip: false,
+					podRequests: map[schedulingv1alpha1.DeviceType]corev1.ResourceList{
+						schedulingv1alpha1.GPU: {
+							apiext.ResourceHuaweiNPUCore:  resource.MustParse("40"),
+							apiext.ResourceGPUMemoryRatio: resource.MustParse("200"),
+						},
+					},
+				},
+				nodeName: "test-node",
+			},
+			wants: wants{
+				status: framework.NewStatus(framework.Unschedulable, "Insufficient gpu devices"),
+			},
+		},
+		{
 			name: "sufficient device resource 1",
 			args: args{
 				nodeDeviceCache: &nodeDeviceCache{
@@ -3141,6 +3401,74 @@ func Test_Plugin_Reserve(t *testing.T) {
 						{
 							Minor: 0,
 							Resources: corev1.ResourceList{
+								apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+								apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "sufficient device resource 5",
+			args: args{
+				nodeDeviceCache: &nodeDeviceCache{
+					nodeDeviceInfos: map[string]*nodeDevice{
+						"test-node": {
+							deviceFree: map[schedulingv1alpha1.DeviceType]deviceResources{
+								schedulingv1alpha1.GPU: {
+									0: corev1.ResourceList{
+										apiext.ResourceHuaweiNPUCore:  resource.MustParse("20"),
+										apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+										apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
+									},
+								},
+							},
+							deviceTotal: map[schedulingv1alpha1.DeviceType]deviceResources{
+								schedulingv1alpha1.GPU: {
+									0: corev1.ResourceList{
+										apiext.ResourceHuaweiNPUCore:  resource.MustParse("20"),
+										apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+										apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
+									},
+								},
+							},
+							deviceUsed:    map[schedulingv1alpha1.DeviceType]deviceResources{},
+							allocateSet:   make(map[schedulingv1alpha1.DeviceType]map[types.NamespacedName]deviceResources),
+							vfAllocations: map[schedulingv1alpha1.DeviceType]*VFAllocation{},
+							numaTopology:  &NUMATopology{},
+							deviceInfos: map[schedulingv1alpha1.DeviceType][]*schedulingv1alpha1.DeviceInfo{
+								schedulingv1alpha1.GPU: {
+									{
+										Type:   schedulingv1alpha1.GPU,
+										Health: true,
+										UUID:   "123456-1",
+										Minor:  pointer.Int32(0),
+									},
+								},
+							},
+						},
+					},
+				},
+				pod: &corev1.Pod{},
+				state: &preFilterState{
+					skip: false,
+					podRequests: map[schedulingv1alpha1.DeviceType]corev1.ResourceList{
+						schedulingv1alpha1.GPU: {
+							apiext.ResourceHuaweiNPUCore:  resource.MustParse("20"),
+							apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+						},
+					},
+				},
+				nodeName: "test-node",
+			},
+			wants: wants{
+				allocationResult: apiext.DeviceAllocations{
+					schedulingv1alpha1.GPU: {
+						{
+							Minor: 0,
+							Resources: corev1.ResourceList{
+								apiext.ResourceHuaweiNPUCore:  resource.MustParse("20"),
 								apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
 								apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
 							},
