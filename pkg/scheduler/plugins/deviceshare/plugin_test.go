@@ -20,8 +20,10 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
@@ -41,6 +43,7 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/queuesort"
 	"k8s.io/kubernetes/pkg/scheduler/framework/runtime"
 	schedulertesting "k8s.io/kubernetes/pkg/scheduler/testing"
+	fakeclock "k8s.io/utils/clock/testing"
 	"k8s.io/utils/pointer"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
@@ -4051,6 +4054,11 @@ func Test_Plugin_Unreserve(t *testing.T) {
 }
 
 func Test_Plugin_PreBind(t *testing.T) {
+	now := time.Now()
+	defaultDevicePluginAdapter = &generalDevicePluginAdapter{
+		clock: fakeclock.NewFakeClock(now),
+	}
+
 	testPod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			UID:       "123456789",
@@ -4077,11 +4085,12 @@ func Test_Plugin_PreBind(t *testing.T) {
 		pod   *corev1.Pod
 	}
 	tests := []struct {
-		name       string
-		args       args
-		wantPod    *corev1.Pod
-		deviceCR   *schedulingv1alpha1.Device
-		wantStatus *framework.Status
+		name                               string
+		args                               args
+		wantPod                            *corev1.Pod
+		deviceCR                           *schedulingv1alpha1.Device
+		devicePluginAdaptionFeatureEnabled bool
+		wantStatus                         *framework.Status
 	}{
 		{
 			name: "empty state",
@@ -4173,9 +4182,85 @@ func Test_Plugin_PreBind(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "pre-bind successfully, deviceCR with topology, DevicePluginAdaption feature enabled",
+			args: args{
+				pod: testPod.DeepCopy(),
+				state: &preFilterState{
+					skip: false,
+					allocationResult: apiext.DeviceAllocations{
+						schedulingv1alpha1.GPU: {
+							{
+								Minor: 0,
+								Resources: corev1.ResourceList{
+									apiext.ResourceGPUCore:        resource.MustParse("100"),
+									apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+									apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
+								},
+							},
+							{
+								Minor: 1,
+								Resources: corev1.ResourceList{
+									apiext.ResourceGPUCore:        resource.MustParse("100"),
+									apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+									apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
+								},
+							},
+						},
+						schedulingv1alpha1.RDMA: {
+							{
+								Minor: 1,
+								Resources: corev1.ResourceList{
+									apiext.ResourceRDMA: resource.MustParse("100"),
+								},
+							},
+						},
+					},
+					podRequests: map[schedulingv1alpha1.DeviceType]corev1.ResourceList{
+						schedulingv1alpha1.GPU: {
+							apiext.ResourceGPUCore:        resource.MustParse("200"),
+							apiext.ResourceGPUMemoryRatio: resource.MustParse("200"),
+							apiext.ResourceGPUMemory:      resource.MustParse("32Gi"),
+						},
+						schedulingv1alpha1.RDMA: {
+							apiext.ResourceRDMA: resource.MustParse("100"),
+						},
+					},
+				},
+			},
+			deviceCR:                           fakeDeviceCR,
+			devicePluginAdaptionFeatureEnabled: true,
+			wantPod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					UID:       "123456789",
+					Namespace: "default",
+					Name:      "test",
+					Annotations: map[string]string{
+						apiext.AnnotationDeviceAllocated: `{"gpu":[{"minor":0,"resources":{"koordinator.sh/gpu-core":"100","koordinator.sh/gpu-memory":"16Gi","koordinator.sh/gpu-memory-ratio":"100"},"id":"GPU-8c25ea37-2909-6e62-b7bf-e2fcadebea8d"},{"minor":1,"resources":{"koordinator.sh/gpu-core":"100","koordinator.sh/gpu-memory":"16Gi","koordinator.sh/gpu-memory-ratio":"100"},"id":"GPU-befd76c3-8a36-7b8a-179c-eae75aa7d9f2"}],"rdma":[{"minor":1,"resources":{"koordinator.sh/rdma":"100"},"id":"0000:1f:00.0"}]}`,
+						AnnotationBindTimestamp:          strconv.FormatInt(now.UnixNano(), 10),
+					},
+				},
+				Spec: corev1.PodSpec{
+					NodeName: "test-node",
+					Containers: []corev1.Container{
+						{
+							Name: "test-container-a",
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									apiext.ResourceGPU:  resource.MustParse("2"),
+									apiext.ResourceRDMA: resource.MustParse("100"),
+								},
+							},
+						},
+					},
+				},
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			defer utilfeature.SetFeatureGateDuringTest(t, utilfeature.DefaultMutableFeatureGate, koordfeatures.DevicePluginAdaption, tt.devicePluginAdaptionFeatureEnabled)()
+
 			suit := newPluginTestSuit(t, nil)
 			_, err := suit.ClientSet().CoreV1().Pods(testPod.Namespace).Create(context.TODO(), testPod, metav1.CreateOptions{})
 			assert.NoError(t, err)
