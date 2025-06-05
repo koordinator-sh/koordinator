@@ -93,6 +93,9 @@ const (
 
 	// ValidatePodDeviceResource enables validate pod device resource
 	ValidatePodDeviceResource featuregate.Feature = "ValidatePodDeviceResource"
+
+	// DevicePluginAdaption enables adaption for third party device plugins within device share scheduling.
+	DevicePluginAdaption featuregate.Feature = "DevicePluginAdaption"
 )
 
 var defaultFeatureGates = map[featuregate.Feature]featuregate.FeatureSpec{
@@ -116,6 +119,7 @@ var defaultFeatureGates = map[featuregate.Feature]featuregate.FeatureSpec{
 	EnableSyncGPUSharedResource:            {Default: false, PreRelease: featuregate.Alpha},
 	ColocationProfileController:            {Default: false, PreRelease: featuregate.Alpha},
 	ValidatePodDeviceResource:              {Default: false, PreRelease: featuregate.Alpha},
+	DevicePluginAdaption:                   {Default: false, PreRelease: featuregate.Alpha},
 }
 
 const (
