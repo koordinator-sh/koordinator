@@ -26,9 +26,15 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/pkg/features"
+	utilfeature "github.com/koordinator-sh/koordinator/pkg/util/feature"
 )
 
 func (h *PodValidatingHandler) deviceResourceValidatingPod(ctx context.Context, req admission.Request) (bool, string, error) {
+	if !utilfeature.DefaultFeatureGate.Enabled(features.ValidatePodDeviceResource) {
+		return true, "", nil
+	}
+
 	newPod := &corev1.Pod{}
 	var allErrs field.ErrorList
 	switch req.Operation {
