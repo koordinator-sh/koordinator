@@ -92,6 +92,7 @@ func TestPluginNeedSync(t *testing.T) {
 			Name: "test-node",
 			Labels: map[string]string{
 				"test-label":                    "test-value",
+				extension.LabelGPUVendor:        extension.GPUVendorNVIDIA,
 				extension.LabelGPUModel:         "A100",
 				extension.LabelGPUDriverVersion: "480",
 			},
@@ -120,6 +121,7 @@ func TestPluginNeedSync(t *testing.T) {
 			Name: "test-node",
 			Labels: map[string]string{
 				"test-label":                    "test-value",
+				extension.LabelGPUVendor:        extension.GPUVendorNVIDIA,
 				extension.LabelGPUModel:         "A100",
 				extension.LabelGPUDriverVersion: "486", // only driver version change
 			},
@@ -148,6 +150,7 @@ func TestPluginNeedSync(t *testing.T) {
 			Name: "test-node",
 			Labels: map[string]string{
 				"test-label":                    "test-value",
+				extension.LabelGPUVendor:        extension.GPUVendorNVIDIA,
 				extension.LabelGPUModel:         "A100",
 				extension.LabelGPUDriverVersion: "480",
 			},
@@ -227,6 +230,7 @@ func TestPluginNeedSyncMeta(t *testing.T) {
 			Name: "test-node",
 			Labels: map[string]string{
 				"test-label":                    "test-value",
+				extension.LabelGPUVendor:        extension.GPUVendorNVIDIA,
 				extension.LabelGPUModel:         "A100",
 				extension.LabelGPUDriverVersion: "480",
 			},
@@ -255,6 +259,7 @@ func TestPluginNeedSyncMeta(t *testing.T) {
 			Name: "test-node",
 			Labels: map[string]string{
 				"test-label":                    "test-value",
+				extension.LabelGPUVendor:        extension.GPUVendorNVIDIA,
 				extension.LabelGPUModel:         "A100",
 				extension.LabelGPUDriverVersion: "486", // only driver version change
 			},
@@ -283,6 +288,7 @@ func TestPluginNeedSyncMeta(t *testing.T) {
 			Name: "test-node",
 			Labels: map[string]string{
 				"test-label":                    "test-value",
+				extension.LabelGPUVendor:        extension.GPUVendorNVIDIA,
 				extension.LabelGPUModel:         "A100",
 				extension.LabelGPUDriverVersion: "480",
 			},
@@ -325,7 +331,7 @@ func TestPluginNeedSyncMeta(t *testing.T) {
 		// add labels
 		got, got1 = p.NeedSyncMeta(nil, testNodeWithoutDevice, testNodeWithDevice)
 		assert.True(t, got)
-		assert.Equal(t, fmt.Sprintf(NeedSyncForGPUModelMsgFmt, extension.LabelGPUModel), got1)
+		assert.Equal(t, fmt.Sprintf(NeedSyncForGPUModelMsgFmt, extension.LabelGPUVendor), got1)
 		// driver version update
 		got, got1 = p.NeedSyncMeta(nil, testNodeWithDevice, testNodeWithDeviceDriverUpdate)
 		assert.True(t, got)
@@ -334,7 +340,7 @@ func TestPluginNeedSyncMeta(t *testing.T) {
 		// remove labels
 		got, got1 = p.NeedSyncMeta(nil, testNodeWithDevice, testNodeWithoutDevice)
 		assert.True(t, got)
-		assert.Equal(t, fmt.Sprintf(NeedSyncForGPUModelMsgFmt, extension.LabelGPUModel), got1)
+		assert.Equal(t, fmt.Sprintf(NeedSyncForGPUModelMsgFmt, extension.LabelGPUVendor), got1)
 	})
 }
 
@@ -357,11 +363,12 @@ func TestPluginPrepare(t *testing.T) {
 			},
 		},
 	}
-	testNodeWithDevice := &corev1.Node{
+	testNodeWithDeviceNVIDIA := &corev1.Node{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "test-node",
 			Labels: map[string]string{
 				"test-label":                    "test-value",
+				extension.LabelGPUVendor:        extension.GPUVendorNVIDIA,
 				extension.LabelGPUModel:         "A100",
 				extension.LabelGPUDriverVersion: "480",
 			},
@@ -385,13 +392,60 @@ func TestPluginPrepare(t *testing.T) {
 			},
 		},
 	}
-	testNodeWithoutDeviceResources := &corev1.Node{
+	testNodeWithDeviceHuawei := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-node",
+			Labels: map[string]string{
+				"test-label":             "test-value",
+				extension.LabelGPUVendor: extension.GPUVendorHuawei,
+				extension.LabelGPUModel:  "Ascend-910",
+			},
+		},
+		Status: corev1.NodeStatus{
+			Allocatable: map[corev1.ResourceName]resource.Quantity{
+				corev1.ResourceCPU:               resource.MustParse("100"),
+				corev1.ResourceMemory:            resource.MustParse("400Gi"),
+				extension.ResourceHuaweiNPUCore:  *resource.NewQuantity(160, resource.DecimalSI),
+				extension.ResourceGPUMemory:      *resource.NewQuantity(18000, resource.DecimalSI),
+				extension.ResourceGPUMemoryRatio: *resource.NewQuantity(200, resource.DecimalSI),
+			},
+			Capacity: map[corev1.ResourceName]resource.Quantity{
+				corev1.ResourceCPU:               resource.MustParse("100"),
+				corev1.ResourceMemory:            resource.MustParse("400Gi"),
+				extension.ResourceHuaweiNPUCore:  *resource.NewQuantity(160, resource.DecimalSI),
+				extension.ResourceGPUMemory:      *resource.NewQuantity(18000, resource.DecimalSI),
+				extension.ResourceGPUMemoryRatio: *resource.NewQuantity(200, resource.DecimalSI),
+			},
+		},
+	}
+	testNodeWithoutDeviceResourcesNVIDIA := &corev1.Node{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "test-node",
 			Labels: map[string]string{
 				"test-label":                    "test-value",
+				extension.LabelGPUVendor:        extension.GPUVendorNVIDIA,
 				extension.LabelGPUModel:         "A100",
 				extension.LabelGPUDriverVersion: "480",
+			},
+		},
+		Status: corev1.NodeStatus{
+			Allocatable: map[corev1.ResourceName]resource.Quantity{
+				corev1.ResourceCPU:    resource.MustParse("100"),
+				corev1.ResourceMemory: resource.MustParse("400Gi"),
+			},
+			Capacity: map[corev1.ResourceName]resource.Quantity{
+				corev1.ResourceCPU:    resource.MustParse("100"),
+				corev1.ResourceMemory: resource.MustParse("400Gi"),
+			},
+		},
+	}
+	testNodeWithoutDeviceResourcesHuawei := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-node",
+			Labels: map[string]string{
+				"test-label":             "test-value",
+				extension.LabelGPUVendor: extension.GPUVendorHuawei,
+				extension.LabelGPUModel:  "Ascend-910",
 			},
 		},
 		Status: corev1.NodeStatus{
@@ -425,9 +479,9 @@ func TestPluginPrepare(t *testing.T) {
 			wantField: testNodeWithoutDevice,
 		},
 		{
-			name: "update resources and labels correctly",
+			name: "nvidia: update resources and labels correctly",
 			args: args{
-				node: testNodeWithoutDevice,
+				node: testNodeWithoutDevice.DeepCopy(),
 				nr: &framework.NodeResource{
 					Resources: map[corev1.ResourceName]*resource.Quantity{
 						extension.ResourceGPU:            resource.NewQuantity(200, resource.DecimalSI),
@@ -437,6 +491,7 @@ func TestPluginPrepare(t *testing.T) {
 					},
 					ZoneResources: map[string]corev1.ResourceList{},
 					Labels: map[string]string{
+						extension.LabelGPUVendor:        extension.GPUVendorNVIDIA,
 						extension.LabelGPUModel:         "A100",
 						extension.LabelGPUDriverVersion: "480",
 					},
@@ -448,12 +503,12 @@ func TestPluginPrepare(t *testing.T) {
 				},
 			},
 			wantErr:   false,
-			wantField: testNodeWithDevice,
+			wantField: testNodeWithDeviceNVIDIA,
 		},
 		{
-			name: "reset resources correctly",
+			name: "nvidia: reset resources correctly",
 			args: args{
-				node: testNodeWithDevice,
+				node: testNodeWithDeviceNVIDIA,
 				nr: &framework.NodeResource{
 					Resets: map[corev1.ResourceName]bool{
 						extension.ResourceGPU:            true,
@@ -464,7 +519,47 @@ func TestPluginPrepare(t *testing.T) {
 				},
 			},
 			wantErr:   false,
-			wantField: testNodeWithoutDeviceResources,
+			wantField: testNodeWithoutDeviceResourcesNVIDIA,
+		},
+		{
+			name: "huawei: update resources and labels correctly",
+			args: args{
+				node: testNodeWithoutDevice.DeepCopy(),
+				nr: &framework.NodeResource{
+					Resources: map[corev1.ResourceName]*resource.Quantity{
+						extension.ResourceHuaweiNPUCore:  resource.NewQuantity(160, resource.DecimalSI),
+						extension.ResourceGPUMemory:      resource.NewQuantity(18000, resource.DecimalSI),
+						extension.ResourceGPUMemoryRatio: resource.NewQuantity(200, resource.DecimalSI),
+					},
+					ZoneResources: map[string]corev1.ResourceList{},
+					Labels: map[string]string{
+						extension.LabelGPUVendor: extension.GPUVendorHuawei,
+						extension.LabelGPUModel:  "Ascend-910",
+					},
+					Annotations: map[string]string{
+						"ignored-annotation": "ignored-value",
+					},
+					Messages: map[corev1.ResourceName]string{},
+					Resets:   map[corev1.ResourceName]bool{},
+				},
+			},
+			wantErr:   false,
+			wantField: testNodeWithDeviceHuawei,
+		},
+		{
+			name: "huawei: reset resources correctly",
+			args: args{
+				node: testNodeWithDeviceHuawei,
+				nr: &framework.NodeResource{
+					Resets: map[corev1.ResourceName]bool{
+						extension.ResourceHuaweiNPUCore:  true,
+						extension.ResourceGPUMemory:      true,
+						extension.ResourceGPUMemoryRatio: true,
+					},
+				},
+			},
+			wantErr:   false,
+			wantField: testNodeWithoutDeviceResourcesHuawei,
 		},
 	}
 	for _, tt := range tests {
@@ -503,10 +598,11 @@ func TestPluginCalculate(t *testing.T) {
 			},
 		},
 	}
-	testDevice := &schedulingv1alpha1.Device{
+	testDeviceNVIDIA := &schedulingv1alpha1.Device{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: testNode.Name,
 			Labels: map[string]string{
+				extension.LabelGPUVendor:        extension.GPUVendorNVIDIA,
 				extension.LabelGPUModel:         "A100",
 				extension.LabelGPUDriverVersion: "480",
 			},
@@ -531,6 +627,41 @@ func TestPluginCalculate(t *testing.T) {
 					Type:   schedulingv1alpha1.GPU,
 					Resources: map[corev1.ResourceName]resource.Quantity{
 						extension.ResourceGPUCore:        *resource.NewQuantity(100, resource.DecimalSI),
+						extension.ResourceGPUMemory:      *resource.NewQuantity(10000, resource.DecimalSI),
+						extension.ResourceGPUMemoryRatio: *resource.NewQuantity(100, resource.DecimalSI),
+					},
+				},
+			},
+		},
+	}
+	testDeviceHuawei := &schedulingv1alpha1.Device{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: testNode.Name,
+			Labels: map[string]string{
+				extension.LabelGPUVendor: extension.GPUVendorHuawei,
+				extension.LabelGPUModel:  "Ascend-910",
+			},
+		},
+		Spec: schedulingv1alpha1.DeviceSpec{
+			Devices: []schedulingv1alpha1.DeviceInfo{
+				{
+					UUID:   "1",
+					Minor:  pointer.Int32(0),
+					Health: true,
+					Type:   schedulingv1alpha1.GPU,
+					Resources: map[corev1.ResourceName]resource.Quantity{
+						extension.ResourceHuaweiNPUCore:  *resource.NewQuantity(20, resource.DecimalSI),
+						extension.ResourceGPUMemory:      *resource.NewQuantity(8000, resource.DecimalSI),
+						extension.ResourceGPUMemoryRatio: *resource.NewQuantity(100, resource.DecimalSI),
+					},
+				},
+				{
+					UUID:   "2",
+					Minor:  pointer.Int32(1),
+					Health: true,
+					Type:   schedulingv1alpha1.GPU,
+					Resources: map[corev1.ResourceName]resource.Quantity{
+						extension.ResourceHuaweiNPUCore:  *resource.NewQuantity(20, resource.DecimalSI),
 						extension.ResourceGPUMemory:      *resource.NewQuantity(10000, resource.DecimalSI),
 						extension.ResourceGPUMemoryRatio: *resource.NewQuantity(100, resource.DecimalSI),
 					},
@@ -651,7 +782,7 @@ func TestPluginCalculate(t *testing.T) {
 		{
 			name: "calculate device resources correctly",
 			fields: fields{
-				client: fake.NewClientBuilder().WithScheme(testScheme).WithObjects(testNode, testDevice).Build(),
+				client: fake.NewClientBuilder().WithScheme(testScheme).WithObjects(testNode, testDeviceNVIDIA).Build(),
 			},
 			syncSharedResource: true,
 			args: args{
@@ -686,6 +817,7 @@ func TestPluginCalculate(t *testing.T) {
 				{
 					Name: PluginName,
 					Labels: map[string]string{
+						extension.LabelGPUVendor:        extension.GPUVendorNVIDIA,
 						extension.LabelGPUModel:         "A100",
 						extension.LabelGPUDriverVersion: "480",
 					},
@@ -697,7 +829,7 @@ func TestPluginCalculate(t *testing.T) {
 		{
 			name: "calculate device resources correctly",
 			fields: fields{
-				client: fake.NewClientBuilder().WithScheme(testScheme).WithObjects(testNode, testDevice).Build(),
+				client: fake.NewClientBuilder().WithScheme(testScheme).WithObjects(testNode, testDeviceHuawei).Build(),
 			},
 			syncSharedResource: true,
 			args: args{
@@ -705,13 +837,8 @@ func TestPluginCalculate(t *testing.T) {
 			},
 			want: []framework.ResourceItem{
 				{
-					Name:     extension.ResourceGPU,
-					Quantity: resource.NewQuantity(200, resource.DecimalSI),
-					Message:  UpdateResourcesMsg,
-				},
-				{
-					Name:     extension.ResourceGPUCore,
-					Quantity: resource.NewQuantity(200, resource.DecimalSI),
+					Name:     extension.ResourceHuaweiNPUCore,
+					Quantity: resource.NewQuantity(40, resource.DecimalSI),
 					Message:  UpdateResourcesMsg,
 				},
 				{
@@ -732,8 +859,8 @@ func TestPluginCalculate(t *testing.T) {
 				{
 					Name: PluginName,
 					Labels: map[string]string{
-						extension.LabelGPUModel:         "A100",
-						extension.LabelGPUDriverVersion: "480",
+						extension.LabelGPUVendor: extension.GPUVendorHuawei,
+						extension.LabelGPUModel:  "Ascend-910",
 					},
 					Message: UpdateLabelsMsg,
 				},
@@ -819,7 +946,7 @@ func TestPluginCalculate(t *testing.T) {
 		{
 			name: "calculate device resources correctly",
 			fields: fields{
-				client: fake.NewClientBuilder().WithScheme(testScheme).WithObjects(testNode, testDevice).Build(),
+				client: fake.NewClientBuilder().WithScheme(testScheme).WithObjects(testNode, testDeviceNVIDIA).Build(),
 			},
 			args: args{
 				node: testNode,
@@ -848,6 +975,7 @@ func TestPluginCalculate(t *testing.T) {
 				{
 					Name: PluginName,
 					Labels: map[string]string{
+						extension.LabelGPUVendor:        extension.GPUVendorNVIDIA,
 						extension.LabelGPUModel:         "A100",
 						extension.LabelGPUDriverVersion: "480",
 					},
@@ -859,20 +987,15 @@ func TestPluginCalculate(t *testing.T) {
 		{
 			name: "calculate device resources correctly",
 			fields: fields{
-				client: fake.NewClientBuilder().WithScheme(testScheme).WithObjects(testNode, testDevice).Build(),
+				client: fake.NewClientBuilder().WithScheme(testScheme).WithObjects(testNode, testDeviceHuawei).Build(),
 			},
 			args: args{
 				node: testNode,
 			},
 			want: []framework.ResourceItem{
 				{
-					Name:     extension.ResourceGPU,
-					Quantity: resource.NewQuantity(200, resource.DecimalSI),
-					Message:  UpdateResourcesMsg,
-				},
-				{
-					Name:     extension.ResourceGPUCore,
-					Quantity: resource.NewQuantity(200, resource.DecimalSI),
+					Name:     extension.ResourceHuaweiNPUCore,
+					Quantity: resource.NewQuantity(40, resource.DecimalSI),
 					Message:  UpdateResourcesMsg,
 				},
 				{
@@ -888,8 +1011,8 @@ func TestPluginCalculate(t *testing.T) {
 				{
 					Name: PluginName,
 					Labels: map[string]string{
-						extension.LabelGPUModel:         "A100",
-						extension.LabelGPUDriverVersion: "480",
+						extension.LabelGPUVendor: extension.GPUVendorHuawei,
+						extension.LabelGPUModel:  "Ascend-910",
 					},
 					Message: UpdateLabelsMsg,
 				},
@@ -980,6 +1103,11 @@ func TestPluginCalculate(t *testing.T) {
 					Message: ResetResourcesMsg,
 				},
 				{
+					Name:    extension.ResourceHuaweiNPUCore,
+					Reset:   true,
+					Message: ResetResourcesMsg,
+				},
+				{
 					Name:    extension.ResourceGPUMemory,
 					Reset:   true,
 					Message: ResetResourcesMsg,
@@ -1013,6 +1141,11 @@ func TestPluginCalculate(t *testing.T) {
 				},
 				{
 					Name:    extension.ResourceGPUCore,
+					Reset:   true,
+					Message: ResetResourcesMsg,
+				},
+				{
+					Name:    extension.ResourceHuaweiNPUCore,
 					Reset:   true,
 					Message: ResetResourcesMsg,
 				},
@@ -1080,6 +1213,7 @@ func Test_cleanupGPUNodeResource(t *testing.T) {
 			Name: "test-node",
 			Labels: map[string]string{
 				"test-label":                    "test-value",
+				extension.LabelGPUVendor:        extension.GPUVendorNVIDIA,
 				extension.LabelGPUModel:         "A100",
 				extension.LabelGPUDriverVersion: "480",
 			},
@@ -1137,6 +1271,7 @@ func Test_cleanupGPUNodeResource(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{
 			Name: testNode.Name,
 			Labels: map[string]string{
+				extension.LabelGPUVendor:        extension.GPUVendorNVIDIA,
 				extension.LabelGPUModel:         "A100",
 				extension.LabelGPUDriverVersion: "480",
 			},
