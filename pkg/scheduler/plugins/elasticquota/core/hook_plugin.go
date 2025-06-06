@@ -290,7 +290,7 @@ func (gqm *GroupQuotaManager) runPodUpdateHooks(quotaName string, oldPod, newPod
 	}
 }
 
-func (gqm *GroupQuotaManager) IsQuotaUpdated(oldQuotaInfo, newQuotaInfo *QuotaInfo,
+func (gqm *GroupQuotaManager) isQuotaUpdatedNoLock(oldQuotaInfo, newQuotaInfo *QuotaInfo,
 	newQuota *v1alpha1.ElasticQuota) bool {
 	for _, hook := range gqm.hookPlugins {
 		if hook.IsQuotaUpdated(oldQuotaInfo, newQuotaInfo, newQuota) {
@@ -298,6 +298,14 @@ func (gqm *GroupQuotaManager) IsQuotaUpdated(oldQuotaInfo, newQuotaInfo *QuotaIn
 		}
 	}
 	return false
+}
+
+// IsQuotaUpdated checks if the quota has been updated from the hook plugins' perspective.
+func (gqm *GroupQuotaManager) IsQuotaUpdated(oldQuotaInfo, newQuotaInfo *QuotaInfo,
+	newQuota *v1alpha1.ElasticQuota) bool {
+	gqm.hierarchyUpdateLock.RLock()
+	defer gqm.hierarchyUpdateLock.RUnlock()
+	return gqm.isQuotaUpdatedNoLock(oldQuotaInfo, newQuotaInfo, newQuota)
 }
 
 // ResetQuotasForHookPlugins resets quotas with pre-update and post-update hooks
