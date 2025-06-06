@@ -161,6 +161,7 @@ func Test_reportGPUDevice(t *testing.T) {
 	device, err = fakeClient.Get(context.TODO(), "test", metav1.GetOptions{})
 	assert.Equal(t, nil, err)
 	assert.Equal(t, device.Spec.Devices, expectedDevices)
+	assert.Equal(t, device.Labels[extension.LabelGPUVendor], extension.GPUVendorNVIDIA)
 	assert.Equal(t, device.Labels[extension.LabelGPUModel], "A100")
 	assert.Equal(t, device.Labels[extension.LabelGPUDriverVersion], "470")
 }

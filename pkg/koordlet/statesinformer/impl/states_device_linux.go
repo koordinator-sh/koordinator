@@ -105,6 +105,8 @@ func (s *statesInformer) fillGPUDevice(device *schedulingv1alpha1.Device,
 	if device.Labels == nil {
 		device.Labels = make(map[string]string)
 	}
+	// currently the built-in informer only supports NVIDIA GPUs
+	device.Labels[extension.LabelGPUVendor] = extension.GPUVendorNVIDIA
 	if gpuModel != "" {
 		device.Labels[extension.LabelGPUModel] = gpuModel
 	}

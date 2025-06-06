@@ -214,6 +214,24 @@ func TestValidateDeviceRequest(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name: "valid huawei npu request",
+			podRequest: corev1.ResourceList{
+				apiext.ResourceHuaweiNPUCore:  resource.MustParse("40"),
+				apiext.ResourceGPUMemoryRatio: resource.MustParse("200"),
+			},
+			want:    HuaweiNPUCore | GPUMemoryRatio,
+			wantErr: false,
+		},
+		{
+			name: "invalid huawei npu request",
+			podRequest: corev1.ResourceList{
+				apiext.ResourceHuaweiNPUCore: resource.MustParse("40"),
+				apiext.ResourceGPUMemory:     resource.MustParse("128Gi"),
+			},
+			want:    0,
+			wantErr: true,
+		},
+		{
 			name: "invalid fpga request",
 			podRequest: corev1.ResourceList{
 				apiext.ResourceFPGA: resource.MustParse("201"),
@@ -350,6 +368,20 @@ func TestConvertDeviceRequest(t *testing.T) {
 			want: corev1.ResourceList{
 				apiext.ResourceGPUCore:   resource.MustParse("50"),
 				apiext.ResourceGPUMemory: resource.MustParse("32Gi"),
+			},
+		},
+		{
+			name: "huaweiNPUCore | gpuMemoryRatio",
+			args: args{
+				podRequest: corev1.ResourceList{
+					apiext.ResourceHuaweiNPUCore:  resource.MustParse("20"),
+					apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+				},
+				combination: HuaweiNPUCore | GPUMemoryRatio,
+			},
+			want: corev1.ResourceList{
+				apiext.ResourceHuaweiNPUCore:  resource.MustParse("20"),
+				apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
 			},
 		},
 		{
