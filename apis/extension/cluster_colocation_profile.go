@@ -22,6 +22,10 @@ import (
 
 const (
 	AnnotationSkipUpdateResource = "config.koordinator.sh/skip-update-resources"
+
+	// LabelControllerManaged indicates whether the colocation profile should be reconciled by the controller.
+	// If not specified, the controller only reconciles the profile if ReconcileByDefault is set to true.
+	LabelControllerManaged = "config.koordinator.sh/controller-managed"
 )
 
 func ShouldSkipUpdateResource(profile *configv1alpha1.ClusterColocationProfile) bool {
@@ -30,4 +34,8 @@ func ShouldSkipUpdateResource(profile *configv1alpha1.ClusterColocationProfile) 
 	}
 	_, ok := profile.Annotations[AnnotationSkipUpdateResource]
 	return ok
+}
+
+func ShouldReconcileProfile(profile *configv1alpha1.ClusterColocationProfile) bool {
+	return profile != nil && profile.Labels != nil && profile.Labels[LabelControllerManaged] == "true"
 }
