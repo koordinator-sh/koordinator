@@ -52,6 +52,9 @@ func TestReconciler_Reconcile(t *testing.T) {
 	testProfile := &configv1alpha1.ClusterColocationProfile{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "test-profile",
+			Labels: map[string]string{
+				extension.LabelControllerManaged: "true",
+			},
 		},
 		Spec: configv1alpha1.ClusterColocationProfileSpec{
 			Selector: &metav1.LabelSelector{
@@ -423,7 +426,27 @@ func TestReconciler_Reconcile(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, ctrl.Result{RequeueAfter: ReconcileInterval}, result)
 
-		// skip reconcile for profile
+		// skip reconcile for profile not managed by controller
+		gotProfile = &configv1alpha1.ClusterColocationProfile{}
+		err = r.Client.Get(context.TODO(), client.ObjectKey{Name: testProfile.Name}, gotProfile)
+		assert.NoError(t, err)
+		testProfile4 := gotProfile.DeepCopy()
+		delete(testProfile4.Labels, extension.LabelControllerManaged)
+		err = r.Client.Patch(context.TODO(), testProfile4, client.MergeFrom(gotProfile))
+		assert.NoError(t, err)
+		gotProfile = &configv1alpha1.ClusterColocationProfile{}
+		err = r.Client.Get(context.TODO(), client.ObjectKey{Name: testProfile.Name}, gotProfile)
+		assert.NoError(t, err)
+		r.podUpdateCache.Delete(getPodUpdateKey(gotProfile, testPod))
+		result, err = r.Reconcile(context.TODO(), ctrl.Request{
+			NamespacedName: types.NamespacedName{
+				Name: testProfile.Name,
+			},
+		})
+		assert.NoError(t, err)
+		assert.Equal(t, ctrl.Result{}, result)
+
+		// skip reconcile for deleted profile
 		err = r.Client.Delete(context.TODO(), testProfile3)
 		assert.NoError(t, err)
 		result, err = r.Reconcile(context.TODO(), ctrl.Request{

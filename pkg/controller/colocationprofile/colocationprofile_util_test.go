@@ -40,6 +40,9 @@ func Test_listPodsForProfile(t *testing.T) {
 	testProfileForNothing := &configv1alpha1.ClusterColocationProfile{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "test-profile",
+			Labels: map[string]string{
+				extension.LabelControllerManaged: "true",
+			},
 		},
 		Spec: configv1alpha1.ClusterColocationProfileSpec{
 			Selector: nil,
@@ -59,6 +62,9 @@ func Test_listPodsForProfile(t *testing.T) {
 	testProfile := &configv1alpha1.ClusterColocationProfile{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "test-profile",
+			Labels: map[string]string{
+				extension.LabelControllerManaged: "true",
+			},
 		},
 		Spec: configv1alpha1.ClusterColocationProfileSpec{
 			Selector: &metav1.LabelSelector{
@@ -207,6 +213,9 @@ func Test_updatePodByClusterColocationProfile(t *testing.T) {
 			profile: &configv1alpha1.ClusterColocationProfile{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-profile",
+					Labels: map[string]string{
+						extension.LabelControllerManaged: "true",
+					},
 				},
 				Spec: configv1alpha1.ClusterColocationProfileSpec{
 					NamespaceSelector: &metav1.LabelSelector{
@@ -318,6 +327,9 @@ func Test_updatePodByClusterColocationProfile(t *testing.T) {
 			profile: &configv1alpha1.ClusterColocationProfile{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-profile",
+					Labels: map[string]string{
+						extension.LabelControllerManaged: "true",
+					},
 				},
 				Spec: configv1alpha1.ClusterColocationProfileSpec{
 					NamespaceSelector: &metav1.LabelSelector{
@@ -436,6 +448,10 @@ func Test_updatePodByClusterColocationProfile(t *testing.T) {
 			profile: &configv1alpha1.ClusterColocationProfile{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-profile",
+
+					Labels: map[string]string{
+						extension.LabelControllerManaged: "true",
+					},
 				},
 				Spec: configv1alpha1.ClusterColocationProfileSpec{
 					Selector: &metav1.LabelSelector{},
@@ -549,6 +565,10 @@ func Test_updatePodByClusterColocationProfile(t *testing.T) {
 			profile: &configv1alpha1.ClusterColocationProfile{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-profile",
+
+					Labels: map[string]string{
+						extension.LabelControllerManaged: "true",
+					},
 				},
 				Spec: configv1alpha1.ClusterColocationProfileSpec{
 					NamespaceSelector: &metav1.LabelSelector{
