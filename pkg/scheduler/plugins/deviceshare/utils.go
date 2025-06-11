@@ -43,6 +43,7 @@ const (
 	GPUCore
 	GPUMemory
 	GPUMemoryRatio
+	HuaweiNPUCore
 	FPGA
 	RDMA
 )
@@ -57,6 +58,7 @@ var DeviceResourceNames = map[schedulingv1alpha1.DeviceType][]corev1.ResourceNam
 		apiext.ResourceGPUCore,
 		apiext.ResourceGPUMemory,
 		apiext.ResourceGPUMemoryRatio,
+		apiext.ResourceHuaweiNPUCore,
 	},
 	schedulingv1alpha1.RDMA: {apiext.ResourceRDMA},
 	schedulingv1alpha1.FPGA: {apiext.ResourceFPGA},
@@ -71,6 +73,7 @@ var DeviceResourceFlags = map[corev1.ResourceName]uint{
 	apiext.ResourceGPUMemory:      GPUMemory,
 	apiext.ResourceGPUMemoryRatio: GPUMemoryRatio,
 	apiext.ResourceGPUShared:      GPUShared,
+	apiext.ResourceHuaweiNPUCore:  HuaweiNPUCore,
 	apiext.ResourceFPGA:           FPGA,
 	apiext.ResourceRDMA:           RDMA,
 }
@@ -84,6 +87,7 @@ var ValidDeviceResourceCombinations = map[uint]func(resources corev1.ResourceLis
 	GPUMemoryRatio:                       ValidDeviceResourceCombinationsGPUPercentage,
 	GPUCore | GPUMemory:                  ValidDeviceResourceCombinationsGPUPercentage,
 	GPUCore | GPUMemoryRatio:             ValidDeviceResourceCombinationsGPUPercentage,
+	HuaweiNPUCore | GPUMemoryRatio:       ValidDeviceResourceCombinationsGPUPercentage,
 	GPUShared | GPUMemory:                ValidDeviceResourceCombinationsGPUShared,
 	GPUShared | GPUMemoryRatio:           ValidDeviceResourceCombinationsGPUShared,
 	GPUShared | GPUCore | GPUMemory:      ValidDeviceResourceCombinationsGPUShared,
@@ -118,6 +122,12 @@ var ResourceCombinationsMapper = map[uint]func(podRequest corev1.ResourceList) c
 	GPUCore | GPUMemoryRatio: func(podRequest corev1.ResourceList) corev1.ResourceList {
 		return corev1.ResourceList{
 			apiext.ResourceGPUCore:        podRequest[apiext.ResourceGPUCore],
+			apiext.ResourceGPUMemoryRatio: podRequest[apiext.ResourceGPUMemoryRatio],
+		}
+	},
+	HuaweiNPUCore | GPUMemoryRatio: func(podRequest corev1.ResourceList) corev1.ResourceList {
+		return corev1.ResourceList{
+			apiext.ResourceHuaweiNPUCore:  podRequest[apiext.ResourceHuaweiNPUCore],
 			apiext.ResourceGPUMemoryRatio: podRequest[apiext.ResourceGPUMemoryRatio],
 		}
 	},

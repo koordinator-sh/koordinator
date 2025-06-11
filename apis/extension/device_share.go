@@ -41,9 +41,10 @@ const (
 )
 
 const (
-	ResourceNvidiaGPU      corev1.ResourceName = "nvidia.com/gpu"
-	ResourceHygonDCU       corev1.ResourceName = "dcu.com/gpu"
-	ResourceAMDGPU         corev1.ResourceName = "amd.com/gpu"
+	ResourceNvidiaGPU corev1.ResourceName = "nvidia.com/gpu"
+	ResourceHygonDCU  corev1.ResourceName = "dcu.com/gpu"
+	ResourceAMDGPU    corev1.ResourceName = "amd.com/gpu"
+
 	ResourceRDMA           corev1.ResourceName = DomainPrefix + "rdma"
 	ResourceFPGA           corev1.ResourceName = DomainPrefix + "fpga"
 	ResourceGPU            corev1.ResourceName = DomainPrefix + "gpu"
@@ -51,15 +52,23 @@ const (
 	ResourceGPUCore        corev1.ResourceName = DomainPrefix + "gpu-core"
 	ResourceGPUMemory      corev1.ResourceName = DomainPrefix + "gpu-memory"
 	ResourceGPUMemoryRatio corev1.ResourceName = DomainPrefix + "gpu-memory-ratio"
+
+	ResourceHuaweiNPUCore = "huawei.com/npu-core"
 )
 
 const (
 	LabelGPUPartitionPolicy         string = NodeDomainPrefix + "/gpu-partition-policy"
+	LabelGPUVendor                  string = NodeDomainPrefix + "/gpu-vendor"
 	LabelGPUModel                   string = NodeDomainPrefix + "/gpu-model"
 	LabelGPUDriverVersion           string = NodeDomainPrefix + "/gpu-driver-version"
 	LabelSecondaryDeviceWellPlanned string = NodeDomainPrefix + "/secondary-device-well-planned"
 
 	LabelGPUIsolationProvider = DomainPrefix + "gpu-isolation-provider"
+)
+
+const (
+	GPUVendorNVIDIA = "nvidia"
+	GPUVendorHuawei = "huawei"
 )
 
 // DeviceAllocations would be injected into Pod as form of annotation during Pre-bind stage.

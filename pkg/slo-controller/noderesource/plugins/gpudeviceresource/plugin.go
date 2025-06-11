@@ -119,6 +119,9 @@ func (p *Plugin) Prepare(_ *configuration.ColocationStrategy, node *corev1.Node,
 	// prepare node labels
 	// TBD: shall we reset labels if not exist in the NR
 	if nr.Labels != nil {
+		if _, ok := nr.Labels[extension.LabelGPUVendor]; ok {
+			node.Labels[extension.LabelGPUVendor] = nr.Labels[extension.LabelGPUVendor]
+		}
 		if _, ok := nr.Labels[extension.LabelGPUModel]; ok {
 			node.Labels[extension.LabelGPUModel] = nr.Labels[extension.LabelGPUModel]
 		}
@@ -185,7 +188,12 @@ func (p *Plugin) calculate(node *corev1.Node, device *schedulingv1alpha1.Device)
 		totalKoordGPU.Add(d.Resources[extension.ResourceGPUCore])
 	}
 
-	gpuResources[extension.ResourceGPU] = *totalKoordGPU
+	gpuVendor := device.Labels[extension.LabelGPUVendor]
+	// Currently only nvidia gpu supports the koordinator.sh/gpu wrapper resource,
+	// also keep empty vendor behavior as is for compatibility.
+	if gpuVendor == "" || gpuVendor == extension.GPUVendorNVIDIA {
+		gpuResources[extension.ResourceGPU] = *totalKoordGPU
+	}
 	if utilfeature.DefaultFeatureGate.Enabled(features.EnableSyncGPUSharedResource) {
 		gpuResources[extension.ResourceGPUShared] = *resource.NewQuantity(int64(healthGPUNum)*100, resource.DecimalSI)
 	}
@@ -205,6 +213,9 @@ func (p *Plugin) calculate(node *corev1.Node, device *schedulingv1alpha1.Device)
 
 	// calculate labels about gpu driver and model
 	updatedLabels := map[string]string{}
+	if gpuVendor, ok := device.Labels[extension.LabelGPUVendor]; ok {
+		updatedLabels[extension.LabelGPUVendor] = gpuVendor
+	}
 	if gpuModel, ok := device.Labels[extension.LabelGPUModel]; ok {
 		updatedLabels[extension.LabelGPUModel] = gpuModel
 	}

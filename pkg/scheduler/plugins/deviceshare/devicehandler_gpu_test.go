@@ -216,6 +216,19 @@ func Test_calcDesiredRequestsAndCountForGPU(t *testing.T) {
 			wantDesiredNumberOfGPUs: 1,
 			wantGPUShared:           true,
 		},
+		{
+			name: "huawei npu mode",
+			podRequests: corev1.ResourceList{
+				apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(200, resource.DecimalSI),
+				apiext.ResourceHuaweiNPUCore:  *resource.NewQuantity(40, resource.DecimalSI),
+			},
+			wantRequestPerInstance: corev1.ResourceList{
+				apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(100, resource.DecimalSI),
+				apiext.ResourceHuaweiNPUCore:  *resource.NewQuantity(20, resource.DecimalSI),
+			},
+			wantDesiredNumberOfGPUs: 2,
+			wantGPUShared:           false,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
