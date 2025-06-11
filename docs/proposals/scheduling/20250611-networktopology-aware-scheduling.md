@@ -91,108 +91,212 @@ Koord-Scheduler provides the scheduling semantics of `PodGroup`, so that a group
 
 ### Goals
 
-Therefore, we need a new scheduling capability. The scheduler needs to select M (M=PodGroupMinNumber) nodes in the optimal performance domain from N idle nodes according to the network topology algorithm, and schedule the Pods in the PodGroup in a certain order.
+Therefore, we need a new scheduling capability. For `PodGroups` with network topology requirements or preferences, the scheduler needs to select M (M=PodGroupMinNumber) nodes in the optimal performance domain from N idle nodes according to the network topology algorithm, and schedule the Pods in the PodGroup in a certain order.
 
 - When N>M, that is, when resources are sufficient, according to the scheduling algorithm, the optimal scheduling strategy can be matched for PodGroup.
-- When N<M, that is, when resources are insufficient, if preemption is possible, M-N nodes need to be preempted for scheduling.
-
+- When N<M, that is, when resources are insufficient, if preemption is possible, M-N nodes need to be preempted for scheduling according to network topology.
 
 ## Proposal
 
 ### User stories
+
+#### Cluster configuration
+
+After deploying [topograph](https://github.com/NVIDIA/topograph/blob/main/docs/k8s.md) and other similar tools, you can see the network topology location of the node through the node Labels.
+
+```yaml
+apiVersion: v1
+kind: node
+metadata:
+  name: node-0
+  labels:
+    network.topology.nvidia.com/accelerator: nvl1
+    network.topology.nvidia.com/block: s1
+    network.topology.nvidia.com/spine: s2
+    network.topology.nvidia.com/datacenter: s3
+```
+
+Then, the cluster administrator needs to configure a CR to tell Koord-Scheduler how to build topological relationships based on `NodeLabel`. Taking the topological modeling of [topograph](https://github.com/NVIDIA/topograph/blob/main/docs/k8s.md) as an example, the `ClusterNetwork Topology` hierarchy can be configured as follows:
+
+```yaml
+apiVersion: scheduling.koordinator.sh/v1alpha1
+kind: ClusterNetworkTopology
+metadata:
+  name: default
+spec:
+  hierarchy:
+  - layerName: nodeLayer
+    parentTopologyLayer: acceleratorLayer
+  - layerName: acceleratorLayer
+    labelKey: network.topology.nvidia.com/accelerator
+    parentTopologyLayer: blockLayer
+  - layerName: blockLayer
+    labelKey: network.topology.nvidia.com/block
+    parentTopologyLayer: spineLayer
+  - layerName: spineLayer
+    labelKey: network.topology.nvidia.com/spine
+    parentTopologyLayer: datacenterLayer
+  - layerName: datacenterLayer
+    labelKey: network.topology.nvidia.com/datacenter
+```
+
+#### Submit jobs
+
+Koordinator has provided the concept of `PodGroup` to abstract the all-or-nothing scheduling semantics of Jobs or Tasks. Users can declare a `PodGroup` as follows and mark which Pods belong to it through Pod Label.
+
+```yaml
+apiVersion: scheduling.sigs.k8s.io/v1alpha1
+kind: PodGroup
+metadata:
+  name: gang-example
+  namespace: default
+spec:
+  scheduleTimeoutSeconds: 100
+  minMember: 2
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-example1
+  namespace: default
+  labels:
+    pod-group.scheduling.sigs.k8s.io: gang-example
+spec:
+  schedulerName: koord-scheduler
+  ...
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-example2
+  namespace: default
+  labels:
+    pod-group.scheduling.sigs.k8s.io: gang-example
+spec:
+  schedulerName: koord-scheduler
+  ...
+```
+
+When users want to configure the network topology aggregation strategy for `PodGroup`, `PodGroup` can be modified as follows:
+
+```yaml
+apiVersion: scheduling.koordinator.sh/v1alpha1
+kind: PodGroup
+metadata:
+  name: gang-example
+  namespace: default
+spec:
+  minMember: 2
+  networkTopologyAware:
+    gatherStrategy:
+    - layer: spineLayer
+      strategy: MustGather
+    - layer: blockLayer
+      strategy: PreferGather
+    - layer: acceleratorLayer
+      strategy: PreferGather
+    communicationMode: AllRingDuce
+```
+
+The above `PodGroup` indicates that the Pods belonging to it must be in a Spine network, and then try to be in an accelerator interconnection domain, and then try to be in a Block.
+
+#### Preemptible or Non-Preemptible
+
+GPU resources are very limited, but the number of tasks that want to apply for GPUs is often unlimited. Koordinator has provided `ElasticQuota` to allow cluster resource administrators to set GPU resource quotas for different organizations and users based on the GPU resources they have purchased, and to organize such quotas through a hierarchical structure so that different organizations and users can use GPUs as flexibly and fairly as possible.
+
+Each `ElasticQuota` declares its "`min`" and "`max`". The semantics of "min" is the ElasticQuota's non-preemptible resources. If `ElasticQuota`'s "`request`" is less than or equal to "`min`", the ElasticQuota can obtain equivalent resources to the "`request`". The semantics of "`max`" is the ElasticQuota's upper limit of resources. We require "`min`" should be less than or equal to "`max`". An example of an ElasticQuota is as follows:
+
+```yaml
+apiVersion: scheduling.sigs.k8s.io/v1alpha1
+kind: ElasticQuota
+metadata:
+  name: quota-example
+  namespace: default
+  labels:
+    quota.scheduling.koordinator.sh/parent: ""
+    quota.scheduling.koordinator.sh/is-parent: "false"
+spec:
+  max:
+    nvidia.com/gpu: 40
+  min:
+    nvidia.com/gpu: 16
+```
+
+There are two kind of pods: `non-preemptible` and `preemptible`. `Non-preemptible` pod will be limited by quota's min. `preemptible` pod will be limited by quota's max. If job is preemptible, please fill job's pods with label `quota.scheduling.koordinator.sh/preemptible=true`, if job is non-preemptible, please fill job's pods with label `quota.scheduling.koordinator.sh/preemptible=false`.
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-example-1
+  namespace: default
+  labels:
+    quota.scheduling.koordinator.sh/name: "quota-example"
+    quota.scheduling.koordinator.sh/preemptible: false
+    quota.scheduling.koordinator.sh/can-preempible: true
+spec:
+...
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-example-2
+  namespace: default
+  labels:
+    quota.scheduling.koordinator.sh/name: "quota-example"
+    quota.scheduling.koordinator.sh/preemptible: true
+    quota.scheduling.koordinator.sh/can-preempible: false
+spec:
+...
+```
+
+The above YAML indicates that when pod-example-1 fails to be scheduled due to insufficient resources, it can preempt other Pods on the machines it can see and it cannot be preempted by other Pods. However, pod-example-2 cannot initiate preemption when insufficient resources are scheduled, but it can be preempted by others.
+
+### Workflow
+
+Since this proposal involves concepts such as `ClusterNetworkTopology`, `PodGroup`, and `ElasticQuota`, and the scheduling process involves multiple stages such as Pod dequeueing, scheduling, and preemption, we will sort out a workflow as a whole to illustrate how the logic of each block in the scheduler is connected in series.
+
+Koord-Scheduler and Kube-Scheduler maintain the same framework, so the overall scheduling process is still Pod by Pod scheduling. Under the premise of unchanged framework, Koord-Scheduler supports `PodGroup` scheduling through the following highlights
+
+1. Through the `Permit` mechanism, a member Pod of `PodGroup` will wait for the total number of all successfully scheduled member Pods to exceed `MinMember` before entering binding cycle together after being successfully scheduled.
+2. The first Pod of `PodGroup` is sorted by `LastScheduleTime` and `Priority` in ActiveQ, and subsequent Pods follow the first Pod to be continuously dequeued through the `NextPod` mechanism of the `Coscheduling` plugin.
+
+Therefore, to explain how to implement `network topology-aware scheduling` and `job-level preemption` based on `PodGroup` scheduling, we must explain Job scheduling in two steps. The first step is the scheduling of `FirstPod`, and the second step is the scheduling of `NextPod`.  The following figure describes the scheduling process of `FirstPod`:
+
+![FirstPod](/docs/images/networktopology_firstpod.svg)
+
+The scheduling process of `NextPod` is as follows:
+
+![NextPod](/docs/images/networktopology_nextpod.svg)
+
+## Design Details
+
+### Job level preemption algorithm
+
+The job-level preemption algorithm can generally reuse the previous [Proposal](https://github.com/koordinator-sh/koordinator/blob/main/docs/proposals/scheduling/20240115-support-job-level-preemption.md), except that
+1. PostFilter needs to be implemented in the Coscheduling plug-in to facilitate obtaining the Pod to which the Job belongs
+2. To determine whether the Pod can be successfully scheduled after the Victim is deleted, it is necessary to execute the scheduling process that perceives the network topology instead of simply executing the Filter
+
+### Network topology gather algorithm 
+
+The Network topology gather algorithm is to find the best nodes for the M Pods, given the M member Pods belonging to a PodGroup, all the Nodes that can place the Pods, the network topology location of each node, and the overall topology hierarchy. Due to its complexity, we will describe the output, output, and final calculation process of Step by Step.
+
+#### 0. ClusterNetwork Topology Hierarchy
+
 The network topology architecture of all nodes in the cluster is shown in the following figure, and the nodes are in an idle state.
 
 ![image](/docs/images/networktopo-4-user-story.png)
-|         | Available nodes                        | Create Job                                                           | Scheduling results                                                                                                                                                                                                                                 |
-|---------|----------------------------------------|----------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| Story 1 | Node0~Node11， total 12 available nodes | podGroup.minNumber=4 (DP=2, PP=2)  <br/>priority_class = best-effort | pod-1-0:node0,  <br/>pod-1-1:node1,  <br/>pod-1-2:node2,  <br/>pod-1-3:node3                                                                                                                                                                       |
-| Story 2 | Node4~Node11， total 8 available nodes  | podGroup.minNumber=4( DP=2, PP=2)  <br/>priority_class = best-effort | pod-2-0:node4,  <br/>pod-2-1:node5,  <br/>pod-2-2:node6,  <br/>pod-2-3:node7                                                                                                                                                                       |
-| Story 3 | Node8~Node11， total 4 available nodes  | podGroup.minNumber=8( Dp=2, PP=4)  <br/>priority_class = Guarantee   | pod-2-0, pod-2-1, pod-2-2, pod-2-3 was eviction。  <br/><br/>Scheduling results：<br/>pod-3-0:node4,<br/>pod-3-1:node5,<br/>pod-3-2:node6,  <br/>pod-3-3:node7,  <br/>pod-3-4:node8,  <br/>pod-3-5:node9,  <br/>pod-3-6:node10,  <br/>pod-3-7:node11 |
 
+|         | Available nodes                         | Create Job                                                   | Scheduling results                                           |
+| ------- | --------------------------------------- | ------------------------------------------------------------ | ------------------------------------------------------------ |
+| Story 1 | Node0~Node11， total 12 available nodes | podGroup.minNumber=4 (DP=2, PP=2)  <br/>priority_class = best-effort | pod-1-0:node0,  <br/>pod-1-1:node1,  <br/>pod-1-2:node2,  <br/>pod-1-3:node3 |
+| Story 2 | Node4~Node11， total 8 available nodes  | podGroup.minNumber=4( DP=2, PP=2)  <br/>priority_class = best-effort | pod-2-0:node4,  <br/>pod-2-1:node5,  <br/>pod-2-2:node6,  <br/>pod-2-3:node7 |
+| Story 3 | Node8~Node11， total 4 available nodes  | podGroup.minNumber=8( Dp=2, PP=4)  <br/>priority_class = Guarantee | pod-2-0, pod-2-1, pod-2-2, pod-2-3 was eviction。  <br/><br/>Scheduling results：<br/>pod-3-0:node4,<br/>pod-3-1:node5,<br/>pod-3-2:node6,  <br/>pod-3-3:node7,  <br/>pod-3-4:node8,  <br/>pod-3-5:node9,  <br/>pod-3-6:node10,  <br/>pod-3-7:node11 |
 
-### Implementation Details
-
-#### Design Strategy
-We need to implement a network topology aware plugin to achieve two functions
-- Building the optimal topology: finding the best topology node based on available nodes
-- Assign Node: Assign the optimal Node to the Pod in the PodGroup.
-
-
-##### Scheme-1：PreScore+Score
-**Scheme**
-- PreScore stage: When the first Pod of a PodGroup is scheduled, calculate the optimal topology structure of the entire PodGroup.
-- Score stage: Select the best Node for each Pod in the PodGroup and score it with BestScore.
-  ![image](/docs/images/networktopo-5-framework.png)
-
-**Problem**  
-In a preemptive scenario, this scheme will fail (N=idle node, M=PodGroupMinNumber)
-- Before preemption:
-  - N idle nodes must be allocated to N Pods first, and the remaining M-N Pods will only experience preemption when they perceive insufficient resources during scheduling.
-  - Topology algorithms can only calculate the optimal allocation method for the first N nodes, and the remaining M-N nodes cannot participate in the algorithm's calculations. Unable to achieve optimal network topology.
-- After preemption,
-  - The scheduler will directly schedule the pods to the corresponding nodes based on the Pod.spec.nominated field, and cannot participate in network topology calculations.
-
-Implementing network topology preemption plugin cannot solve the problem：
-- preemption are not atomic operations: When multiple pods simultaneously preempt the same node, it is unknown which pod ultimately obtains the node.
-- After the preemption is completed, all pods are waiting in the Permit stage, and the network topology algorithm can no longer affect the scheduling results. Unless all pods in the entire PodGroup are rejected and rescheduled. When rescheduling, resources may be occupied by other pods.
-
-**Core issues**
-In the scenario of preemption, satisfy the optimal network topology.
-- Implement group preemption: When resources are found to be insufficient for the PodGroup, all required resources are preempted once time.
-- Resource reservation: After the preemption is completed, reserve the node resources for all pods in the PodGroup.
-
-
-##### Scheme-2：Based on AfterPreFilter scheme
-That is, the plan presented in this article.
-
-
-#### Architecture Design
-Network topology aware plugin implementation extension points:
-- AfterPreFilter
-- Filter
-- PostFilter
-
-
-##### AfterPreFilter
-The AfterPreFilter extension point is responsible for building the network topology.
-```
-PodGroupAvailableNode = idleNodes + podGroup's.nominated
-isPodGroupResourceSatisfies =  len(PodGroupAvailableNode) > podGroup.spec.minNumber
-```
-- When resources are sufficient for PodGroup:
-  - Build network topology for PodGroup, find the best node for each Pod, and set pod.nominated=BestNode.
-- When resources are insufficient, notify the Filter stage and return FitError. PostFilter executes preemption logic.
-  - After the preemption is completed, it means that there are enough resources to execute the network topology construction logic.
-  - Set pod.nominated=bestNode。
-
-
-![image](/docs/images/networktopo-6-afterprefilter.png)
-
-
-##### Filter
-Returning insufficient resources, triggering preemption.
-
-
-##### PostFilter
-> The core logic of preemption is: how to reserve resources after preemption is completed. Otherwise, it may be occupied by other PodGroups.
-
-Determine if preemption is possible: There are pods with lower priority, and after preemption, the resources can meet the needs of the Pod Group.
-- Non preemptive: clear all pod.nominated fields of podGroup.
-- Can preemptive:
-  - Preemption: preempt all the resources that podGroup needed at once time. (PodGroupAvailableNode=6, podGroup.spec.minNumber=8, that's mean need preempt 2 nodes once time)
-  - Assign bestNode to all pod.nominated fields of podGroup
-  - Recalculate network topology: idle nodes+preempted nodes,
-  - Assign bestNode to all pod.nominated fields of podGroup
-
-![image](/docs/images/networktopo-7-postfilter.png)
-
-
-#### Detailed Design
-
-##### 1. Management of Network Topology
+#### 1. Management of Network Topology
 Describe the network topology through node labels and generate a configmap of the network topology within the cluster.
 
-##### 2. Definition of the Core Structure of Network Topology
+#### 2. Definition of the Core Structure of Network Topology
 - HyperNode: is a performance domain consisting of a set of nodes or sub performance domains. Within a supernode, the network bandwidth and latency are the same. This custom resource (CRD) is used to describe the network topology in a Kubernetes cluster.
 - Tier: It is a way to distinguish between different energy domains. Within the same level, bandwidth and latency are the same. The smaller the value of the hierarchy, the higher the bandwidth. For example, computing networks and storage networks can be at different levels, or there are several levels (spine, leaf) of switches in the computing network, each level can be identified as a level.
 For example, in network architecture 1 (spine leaf), assuming 8 nodes are connected, as shown in the following figure (both single plane and multi plane can be supported):
@@ -237,12 +341,12 @@ The format of the Config Map is as follows:
 ```
 
 
-##### 3. Creation and updating of network topology
+#### 3. Creation and updating of network topology
 Discovery and detection tools for network topology：
 ![image](/docs/images/networktopo-9-topo-gen.png)
 
 
-##### 4. Network topology algorithm
+#### 4. Network topology algorithm
 ```
 
 // FindBestNode find N best node . （N = minNumberWorker）
@@ -333,10 +437,3 @@ func (nt *NetWorkTopology) FindBestNode(minNumberWorker int, pipelineParallel in
 
 ```
 
-### Compatibility
-
-## Unsolved Problems
-In the actual testing process, it was found that all pods of PodGroup may add to unschedulable queue at the same time and wait for 5 minutes before trying again. 
-During this period, resources may be occupied by other PodGroups.
-
-## Alternatives
