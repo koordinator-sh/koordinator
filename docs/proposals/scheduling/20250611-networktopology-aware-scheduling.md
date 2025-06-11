@@ -116,7 +116,7 @@ metadata:
     network.topology.nvidia.com/datacenter: s3
 ```
 
-Then, the cluster administrator needs to configure a CR to tell Koord-Scheduler how to build topological relationships based on `NodeLabel`. Taking the topological modeling of [topograph](https://github.com/NVIDIA/topograph/blob/main/docs/k8s.md) as an example, the `ClusterNetwork Topology` hierarchy can be configured as follows:
+Then, the cluster administrator needs to configure a CR to tell Koord-Scheduler how to build topological relationships based on `NodeLabel`. Taking the topological modeling of [topograph](https://github.com/NVIDIA/topograph/blob/main/docs/k8s.md) as an example, the `ClusterNetworkTopology` hierarchy can be configured as follows:
 
 ```yaml
 apiVersion: scheduling.koordinator.sh/v1alpha1
@@ -274,9 +274,8 @@ The scheduling process of `NextPod` is as follows:
 ### Job level preemption algorithm
 
 The job-level preemption algorithm can generally reuse the previous [Proposal](https://github.com/koordinator-sh/koordinator/blob/main/docs/proposals/scheduling/20240115-support-job-level-preemption.md), except that
-1. PostFilter needs to be implemented in the Coscheduling plug-in to facilitate obtaining the Pod to which the Job belongs
-2. To determine whether the Pod can be successfully scheduled after the Victim is deleted, it is necessary to execute the scheduling process that perceives the network topology instead of simply executing the Filter
-
+1. PostFilter needs to be implemented in the Coscheduling plug-in to facilitate obtaining the Pod to which the Job belongs.
+2. To determine whether the Pod can be successfully scheduled after the Victim is deleted, you need to execute PlanNodesForPodGroup to determine whether the node can meet both the network topology and resource requirements, rather than executing RunFilterWithNominatedNodes to determine whether the node can meet the resource requirements.
 ### Network topology gather algorithm 
 
 The Network topology gather algorithm is to find the best nodes for the M Pods, given the M member Pods belonging to a PodGroup, all the Nodes that can place the Pods, the network topology location of each node, and the overall topology hierarchy. Due to its complexity, we will describe the output, output, and final calculation process of Step by Step.
