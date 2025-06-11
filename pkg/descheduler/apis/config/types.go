@@ -77,6 +77,7 @@ type DeschedulerProfile struct {
 	Name         string
 	PluginConfig []PluginConfig
 	Plugins      *Plugins
+	NodeSelector *metav1.LabelSelector
 }
 
 type Plugins struct {

@@ -103,9 +103,10 @@ func (c *DeschedulerConfiguration) EncodeNestedObjects(e runtime.Encoder) error 
 
 // DeschedulerProfile is a descheduling profile.
 type DeschedulerProfile struct {
-	Name         string         `json:"name,omitempty"`
-	PluginConfig []PluginConfig `json:"pluginConfig,omitempty"`
-	Plugins      *Plugins       `json:"plugins,omitempty"`
+	Name         string                `json:"name,omitempty"`
+	PluginConfig []PluginConfig        `json:"pluginConfig,omitempty"`
+	Plugins      *Plugins              `json:"plugins,omitempty"`
+	NodeSelector *metav1.LabelSelector `json:"nodeSelector,omitempty"`
 }
 
 type Plugins struct {
