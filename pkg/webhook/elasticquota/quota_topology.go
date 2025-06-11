@@ -89,6 +89,9 @@ func (qt *quotaTopology) ValidAddQuota(quota *v1alpha1.ElasticQuota) error {
 
 	qt.quotaInfoMap[quotaInfo.Name] = quotaInfo
 	qt.quotaHierarchyInfo[quotaInfo.Name] = make(map[string]struct{})
+	if qt.quotaHierarchyInfo[quotaInfo.ParentName] == nil {
+		qt.quotaHierarchyInfo[quotaInfo.ParentName] = make(map[string]struct{})
+	}
 	qt.quotaHierarchyInfo[quotaInfo.ParentName][quotaInfo.Name] = struct{}{}
 	for _, namespace := range annotationNamespaces {
 		qt.namespaceToQuotaMap[namespace] = quota.Name
