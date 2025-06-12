@@ -24,6 +24,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8sfeature "k8s.io/apiserver/pkg/util/feature"
+	listerscorev1 "k8s.io/client-go/listers/core/v1"
 	"k8s.io/klog/v2"
 	schedconfig "k8s.io/kubernetes/pkg/scheduler/apis/config"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
@@ -32,6 +33,7 @@ import (
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	koordinatorclientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
 	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
+	listerschedulingv1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/listers/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/schedulingphase"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/topologymanager"
@@ -40,6 +42,8 @@ import (
 
 var _ FrameworkExtender = &frameworkExtenderImpl{}
 var _ topologymanager.NUMATopologyHintProviderFactory = &frameworkExtenderImpl{}
+
+var ErrSchedulerNameUnmatched = fmt.Errorf("schedulerName unmatched")
 
 type frameworkExtenderImpl struct {
 	framework.Framework
@@ -52,6 +56,8 @@ type frameworkExtenderImpl struct {
 
 	koordinatorClientSet             koordinatorclientset.Interface
 	koordinatorSharedInformerFactory koordinatorinformers.SharedInformerFactory
+	podLister                        listerscorev1.PodLister
+	reservationLister                listerschedulingv1alpha1.ReservationLister
 
 	preFilterTransformers        map[string]PreFilterTransformer
 	filterTransformers           map[string]FilterTransformer
@@ -93,6 +99,8 @@ func NewFrameworkExtender(f *FrameworkExtenderFactory, fw framework.Framework) F
 		scoreTransformers:                map[string]ScoreTransformer{},
 		preBindExtensionsPlugins:         map[string]PreBindExtensions{},
 		metricsRecorder:                  f.metricsRecorder,
+		podLister:                        fw.SharedInformerFactory().Core().V1().Pods().Lister(),
+		reservationLister:                f.koordinatorSharedInformerFactory.Scheduling().V1alpha1().Reservations().Lister(),
 	}
 	frameworkExtender.topologyManager = topologymanager.New(frameworkExtender)
 	return frameworkExtender
@@ -286,6 +294,16 @@ func (ext *frameworkExtenderImpl) RunPostFilterPlugins(ctx context.Context, stat
 // RunPreBindPlugins supports PreBindReservation for Reservation
 func (ext *frameworkExtenderImpl) RunPreBindPlugins(ctx context.Context, state *framework.CycleState, pod *corev1.Pod, nodeName string) *framework.Status {
 	if !reservationutil.IsReservePod(pod) {
+		curPod, err := ext.podLister.Pods(pod.Namespace).Get(pod.Name)
+		if err != nil {
+			return framework.AsStatus(err)
+		}
+		if curPod.Spec.SchedulerName != ext.ProfileName() {
+			klog.V(4).ErrorS(ErrSchedulerNameUnmatched, "failed to PreBind Pod",
+				"pod", klog.KObj(pod), "schedulerName", curPod.Spec.SchedulerName, "profile", ext.ProfileName())
+			return framework.AsStatus(ErrSchedulerNameUnmatched)
+		}
+
 		original := pod
 		pod = pod.DeepCopy()
 		status := ext.Framework.RunPreBindPlugins(ctx, state, pod, nodeName)
@@ -295,11 +313,16 @@ func (ext *frameworkExtenderImpl) RunPreBindPlugins(ctx context.Context, state *
 		return ext.runPreBindExtensionPlugins(ctx, state, original, pod)
 	}
 
-	reservationLister := ext.koordinatorSharedInformerFactory.Scheduling().V1alpha1().Reservations().Lister()
 	rName := reservationutil.GetReservationNameFromReservePod(pod)
-	reservation, err := reservationLister.Get(rName)
+	reservation, err := ext.reservationLister.Get(rName)
 	if err != nil {
 		return framework.AsStatus(err)
+	}
+	// check if schedulerName matched
+	if reservationutil.GetReservationSchedulerName(reservation) != ext.ProfileName() {
+		klog.V(4).ErrorS(ErrSchedulerNameUnmatched, "failed to PreBind Reservation",
+			"reservation", klog.KObj(reservation), "schedulerName", reservationutil.GetReservationSchedulerName(reservation), "profile", ext.ProfileName())
+		return framework.AsStatus(ErrSchedulerNameUnmatched)
 	}
 
 	original := reservation
