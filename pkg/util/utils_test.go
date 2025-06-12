@@ -229,6 +229,7 @@ func Test_GeneratePodPatch(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: "default",
 			Name:      "test-pod-1",
+			UID:       "xxx",
 		},
 		Spec: corev1.PodSpec{
 			Containers: []corev1.Container{
@@ -252,6 +253,13 @@ func Test_GeneratePodPatch(t *testing.T) {
 	metadata, ok := patchMap["metadata"].(map[string]interface{})
 	if !ok {
 		t.Errorf("error converting metadata to version map")
+	}
+	uid, ok := metadata["uid"]
+	if !ok {
+		t.Errorf("expect metadata.uid to be not nil")
+	}
+	if fmt.Sprint(uid) != string(pod1.UID) {
+		t.Errorf("metadata.uid got %s, expect %s", uid, pod1.UID)
 	}
 	annotation, _ := metadata["annotations"].(map[string]interface{})
 	if fmt.Sprint(annotation) != fmt.Sprint(patchAnnotation) {
