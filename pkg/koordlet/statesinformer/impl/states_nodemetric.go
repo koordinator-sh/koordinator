@@ -574,6 +574,7 @@ func (r *nodeMetricInformer) collectNodeAggregateMetric(endTime time.Time, aggre
 		start := endTime.Add(-d.Duration)
 		aggregateUsage := slov1alpha1.AggregatedUsage{
 			Usage: map[apiext.AggregationType]slov1alpha1.ResourceMap{
+				apiext.AVG: r.queryNodeMetric(start, endTime, metriccache.AggregationTypeAVG, true),
 				apiext.P50: r.queryNodeMetric(start, endTime, metriccache.AggregationTypeP50, true),
 				apiext.P90: r.queryNodeMetric(start, endTime, metriccache.AggregationTypeP90, true),
 				apiext.P95: r.queryNodeMetric(start, endTime, metriccache.AggregationTypeP95, true),
@@ -654,6 +655,7 @@ func (r *nodeMetricInformer) collectSystemAggregateMetric(endTime time.Time, agg
 		start := endTime.Add(-d.Duration)
 		aggregateUsage := slov1alpha1.AggregatedUsage{
 			Usage: map[apiext.AggregationType]slov1alpha1.ResourceMap{
+				apiext.AVG: r.querySystemMetric(start, endTime, metriccache.AggregationTypeAVG, true),
 				apiext.P50: r.querySystemMetric(start, endTime, metriccache.AggregationTypeP50, true),
 				apiext.P90: r.querySystemMetric(start, endTime, metriccache.AggregationTypeP90, true),
 				apiext.P95: r.querySystemMetric(start, endTime, metriccache.AggregationTypeP95, true),
