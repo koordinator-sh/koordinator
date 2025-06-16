@@ -166,7 +166,7 @@ func (h *configHandler) syncConfig(configMap *corev1.ConfigMap) bool {
 
 	if err := json.Unmarshal([]byte(cfgStr), &mergedCfg); err != nil {
 		klog.Errorf("failed to unmarshal config %s, keep the old config, err: %s", configuration.CPUNormalizationConfigKey, err)
-		h.recorder.Eventf(configMap, "Warning", ReasonCPUNormalizationConfigUnmarshalFailed, "failed to unmarshal CPUNormalizationCfg, err: %s", err)
+		h.recorder.Eventf(configMap, corev1.EventTypeWarning, ReasonCPUNormalizationConfigUnmarshalFailed, "failed to unmarshal CPUNormalizationCfg, err: %s", err)
 		return false
 	}
 
