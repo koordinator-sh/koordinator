@@ -389,7 +389,9 @@ func (gang *Gang) delAssumedPod(pod *v1.Pod) {
 	podId := util.GetId(pod.Namespace, pod.Name)
 	if _, ok := gang.WaitingForBindChildren[podId]; ok {
 		delete(gang.WaitingForBindChildren, podId)
-		gang.PendingChildren[podId] = pod
+		if pendingPod := gang.Children[podId]; pendingPod != nil {
+			gang.PendingChildren[podId] = pendingPod
+		}
 		if len(gang.WaitingForBindChildren) == 0 {
 			gang.GangGroupInfo.RemoveWaitingGang(gang.Name)
 		}
