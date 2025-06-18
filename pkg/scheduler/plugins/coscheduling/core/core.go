@@ -306,7 +306,7 @@ func (pgMgr *PodGroupManager) PostFilter(ctx context.Context, state *framework.C
 			NodeToStatusMap: filteredNodeStatusMap,
 		},
 	}
-	message := fmt.Sprintf("Gang %q gets rejected due to member Pod %q is unschedulable with reason %q", gang.Name, pod.Name, fitErr)
+	message := fmt.Sprintf("Gang %q gets rejected due to member Pod %q is unschedulable with reason %q, alreadyWaitForBound: %d", gang.Name, pod.Name, fitErr, gang.getGangWaitingPods())
 
 	if gangSchedulingContext := pgMgr.holder.getCurrentGangSchedulingContext(); gangSchedulingContext != nil && gangSchedulingContext.failedMessage == "" {
 		// first failed pod
