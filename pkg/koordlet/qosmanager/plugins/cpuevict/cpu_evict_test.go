@@ -22,6 +22,10 @@ import (
 	"testing"
 	"time"
 
+	"k8s.io/klog/v2"
+
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/qosmanager/helpers/copilot"
+
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
@@ -643,6 +647,93 @@ func Test_killAndEvictBEPodsReleaseWithEvictionAPIOnly(t *testing.T) {
 	assert.False(t, cpuEvictor.evictor.IsPodEvicted(podEvictInfosSorted[2].pod))
 }
 
+func Test_killAndEvictYarnContainerWithCopilotAgent(t *testing.T) {
+	var ttt = resource.NewMilliQuantity(18000, resource.DecimalSI)
+	klog.V(4).Infof("%d", ttt)
+	node := testutil.MockTestNode("100", "500G")
+	socketPath := "/tmp/copilot-test.sock"
+	yarnCopilotServer := copilot.NewYarnCopilotServer(socketPath)
+	ctx, cancel := context.WithCancel(context.Background())
+	go yarnCopilotServer.Run(ctx)
+	defer cancel()
+	time.Sleep(1 * time.Second)
+	labels := map[string]string{}
+	labels[apiext.LabelPodQoS] = string(apiext.QoSBE)
+	labels["app.kubernetes.io/component"] = "node-manager"
+	podEvictInfosSorted := []*podEvictCPUInfo{
+		{
+			pod:          mockBEPodForCPUEvict("pod_be_3_priority10", 16*1000, 10),
+			milliRequest: 16 * 1000,
+		},
+		{
+			pod:          mockBEPodForCPUEvictWithLabels("pod_be_2_priority100", 16*1000, 100, labels),
+			milliRequest: 16 * 1000,
+		},
+		{
+			pod:          mockBEPodForCPUEvict("pod_be_1_priority100", 16*1000, 100),
+			milliRequest: 16 * 1000,
+		},
+	}
+
+	ctl := gomock.NewController(t)
+	defer ctl.Finish()
+
+	mockMetricCache := mock_metriccache.NewMockMetricCache(ctl)
+	mockQuerier := mock_metriccache.NewMockQuerier(ctl)
+	mockMetricCache.EXPECT().Querier(gomock.Any(), gomock.Any()).Return(mockQuerier, nil).AnyTimes()
+	mockResultFactory := mock_metriccache.NewMockAggregateResultFactory(ctl)
+	mockStateInformer := mock_statesinformer.NewMockStatesInformer(ctl)
+	mockStateInformer.EXPECT().GetNode().Return(node).AnyTimes()
+
+	metriccache.DefaultAggregateResultFactory = mockResultFactory
+
+	nodeCpuUsageQueryMeta, err := metriccache.NodeCPUUsageMetric.BuildQueryMeta(nil)
+	assert.NoError(t, err)
+	result := buildMockQueryResultAndCount(ctl, mockQuerier, mockResultFactory, nodeCpuUsageQueryMeta)
+	result.EXPECT().Value(metriccache.AggregationTypeLast).Return(float64(0.5), nil).Times(1)
+	assert.NoError(t, err)
+	fakeRecorder := &testutil.FakeRecorder{}
+	client := clientsetfake.NewSimpleClientset()
+
+	stop := make(chan struct{})
+	evictor := framework.NewEvictor(client, fakeRecorder, policyv1beta1.SchemeGroupVersion.Version)
+	evictor.Start(stop)
+	defer func() { stop <- struct{}{} }()
+
+	runtime.DockerHandler = handler.NewFakeRuntimeHandler()
+	// create pod
+	var containers []*critesting.FakeContainer
+	for _, podInfo := range podEvictInfosSorted {
+		pod := podInfo.pod
+		_, _ = client.CoreV1().Pods(pod.Namespace).Create(context.TODO(), pod, metav1.CreateOptions{})
+		for _, containerStatus := range pod.Status.ContainerStatuses {
+			_, containerId, _ := util.ParseContainerId(containerStatus.ContainerID)
+			fakeContainer := &critesting.FakeContainer{
+				SandboxID:       string(pod.UID),
+				ContainerStatus: runtimeapi.ContainerStatus{Id: containerId},
+			}
+			containers = append(containers, fakeContainer)
+		}
+	}
+	runtime.DockerHandler.(*handler.FakeRuntimeHandler).SetFakeContainers(containers)
+
+	cpuEvictor := &cpuEvictor{
+		evictor:                     evictor,
+		statesInformer:              mockStateInformer,
+		metricCache:                 mockMetricCache,
+		lastEvictTime:               time.Now().Add(-5 * time.Minute),
+		onlyEvictByAPI:              true,
+		evictByCopilotAgent:         true,
+		copilotAgent:                copilot.NewCopilotAgent(socketPath),
+		evictByCopilotPodLabelKey:   "app.kubernetes.io/component",
+		evictByCopilotPodLabelValue: "node-manager",
+	}
+	cpuEvictor.killAndEvictBEPodsRelease(node, podEvictInfosSorted, 18*1000)
+	assert.True(t, cpuEvictor.evictor.IsPodEvicted(podEvictInfosSorted[0].pod))
+	assert.False(t, cpuEvictor.evictor.IsPodEvicted(podEvictInfosSorted[1].pod))
+	assert.True(t, cpuEvictor.evictor.IsPodEvicted(podEvictInfosSorted[2].pod))
+}
+
 func Test_isSatisfactionConfigValid(t *testing.T) {
 	tests := []struct {
 		name            string
@@ -684,15 +775,17 @@ func Test_isSatisfactionConfigValid(t *testing.T) {
 	}
 }
 
-func mockBEPodForCPUEvict(name string, request int64, priority int32) *corev1.Pod {
+func mockBEPodForCPUEvictWithLabels(name string, request int64, priority int32, labels map[string]string) *corev1.Pod {
+	if labels == nil {
+		labels = make(map[string]string)
+	}
+	labels[apiext.LabelPodQoS] = string(apiext.QoSBE)
 	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: "test-ns",
 			Name:      name,
 			UID:       types.UID(name),
-			Labels: map[string]string{
-				apiext.LabelPodQoS: string(apiext.QoSBE),
-			},
+			Labels:    labels,
 		},
 		Spec: corev1.PodSpec{
 			Containers: []corev1.Container{
@@ -722,6 +815,10 @@ func mockBEPodForCPUEvict(name string, request int64, priority int32) *corev1.Po
 			},
 		},
 	}
+}
+
+func mockBEPodForCPUEvict(name string, request int64, priority int32) *corev1.Pod {
+	return mockBEPodForCPUEvictWithLabels(name, request, priority, nil)
 }
 
 func mockNonBEPodForCPUEvict(name string, qosClass apiext.QoSClass, request int64) *corev1.Pod {

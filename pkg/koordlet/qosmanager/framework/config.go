@@ -21,26 +21,34 @@ import (
 )
 
 type Config struct {
-	ReconcileIntervalSeconds   int
-	CPUSuppressIntervalSeconds int
-	CPUEvictIntervalSeconds    int
-	MemoryEvictIntervalSeconds int
-	MemoryEvictCoolTimeSeconds int
-	CPUEvictCoolTimeSeconds    int
-	OnlyEvictByAPI             bool
-	QOSExtensionCfg            *QOSExtensionConfig
+	ReconcileIntervalSeconds    int
+	CPUSuppressIntervalSeconds  int
+	CPUEvictIntervalSeconds     int
+	MemoryEvictIntervalSeconds  int
+	MemoryEvictCoolTimeSeconds  int
+	CPUEvictCoolTimeSeconds     int
+	OnlyEvictByAPI              bool
+	EvictByCopilotAgent         bool
+	EvictByCopilotEndPoint      string
+	EvictByCopilotPodLabelKey   string
+	EvictByCopilotPodLabelValue string
+	QOSExtensionCfg             *QOSExtensionConfig
 }
 
 func NewDefaultConfig() *Config {
 	return &Config{
-		ReconcileIntervalSeconds:   1,
-		CPUSuppressIntervalSeconds: 1,
-		CPUEvictIntervalSeconds:    1,
-		MemoryEvictIntervalSeconds: 1,
-		MemoryEvictCoolTimeSeconds: 4,
-		CPUEvictCoolTimeSeconds:    20,
-		OnlyEvictByAPI:             false,
-		QOSExtensionCfg:            &QOSExtensionConfig{FeatureGates: map[string]bool{}},
+		ReconcileIntervalSeconds:    1,
+		CPUSuppressIntervalSeconds:  1,
+		CPUEvictIntervalSeconds:     1,
+		MemoryEvictIntervalSeconds:  1,
+		MemoryEvictCoolTimeSeconds:  4,
+		CPUEvictCoolTimeSeconds:     20,
+		OnlyEvictByAPI:              false,
+		EvictByCopilotAgent:         false,
+		EvictByCopilotEndPoint:      "/var/run/yarn-copilot/yarn-copilot.sock",
+		EvictByCopilotPodLabelKey:   "app.kubernetes.io/component",
+		EvictByCopilotPodLabelValue: "node-manager",
+		QOSExtensionCfg:             &QOSExtensionConfig{FeatureGates: map[string]bool{}},
 	}
 }
 
@@ -52,5 +60,9 @@ func (c *Config) InitFlags(fs *flag.FlagSet) {
 	fs.IntVar(&c.MemoryEvictCoolTimeSeconds, "memory-evict-cool-time-seconds", c.MemoryEvictCoolTimeSeconds, "cooling time: memory next evict time should after lastEvictTime + MemoryEvictCoolTimeSeconds")
 	fs.IntVar(&c.CPUEvictCoolTimeSeconds, "cpu-evict-cool-time-seconds", c.CPUEvictCoolTimeSeconds, "cooltime: CPU next evict time should after lastEvictTime + CPUEvictCoolTimeSeconds")
 	fs.BoolVar(&c.OnlyEvictByAPI, "only-evict-by-api", c.OnlyEvictByAPI, "only evict pod if call eviction api successed")
+	fs.BoolVar(&c.EvictByCopilotAgent, "evict-by-copilot-agent", c.EvictByCopilotAgent, "if evict container by copilot agent")
+	fs.StringVar(&c.EvictByCopilotEndPoint, "evict-by-copilot-endpoint", c.EvictByCopilotEndPoint, "endpoint of evicting container by copilot agent")
+	fs.StringVar(&c.EvictByCopilotPodLabelKey, "evict-by-copilot-pod-label-key", c.EvictByCopilotPodLabelKey, "pod label key of evicting container by copilot agent")
+	fs.StringVar(&c.EvictByCopilotPodLabelValue, "evict-by-copilot-pod-label-value", c.EvictByCopilotPodLabelValue, "pod label value of evicting container by copilot agent")
 	c.QOSExtensionCfg.InitFlags(fs)
 }
