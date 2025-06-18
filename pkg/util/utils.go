@@ -98,7 +98,21 @@ func RetryOnConflictOrTooManyRequests(fn func() error) error {
 }
 
 func GeneratePodPatch(oldPod, newPod *corev1.Pod) ([]byte, error) {
-	// For safely patch, generate with the object UID
+	oldData, err := json.Marshal(oldPod)
+	if err != nil {
+		return nil, err
+	}
+
+	newData, err := json.Marshal(newPod)
+	if err != nil {
+		return nil, err
+	}
+	return strategicpatch.CreateTwoWayMergePatch(oldData, newData, &corev1.Pod{})
+}
+
+func GeneratePodPatchWithUID(oldPod, newPod *corev1.Pod) ([]byte, error) {
+	// For safely patch, generate with the object UID.
+	// This ensures we will not patch the different object with the same name.
 	oldPod = oldPod.DeepCopy()
 	oldPod.UID = ""
 	oldData, err := json.Marshal(oldPod)
@@ -124,6 +138,34 @@ func PatchPod(ctx context.Context, clientset clientset.Interface, oldPod, newPod
 		klog.V(5).InfoS("failed to generate pod patch", "pod", klog.KObj(oldPod), "err", err)
 		return nil, err
 	}
+	if string(patchBytes) == "{}" { // nothing to patch
+		return oldPod, nil
+	}
+
+	// patch with pod client
+	patched, err := clientset.CoreV1().Pods(oldPod.Namespace).
+		Patch(ctx, oldPod.Name, apimachinerytypes.StrategicMergePatchType, patchBytes, metav1.PatchOptions{})
+	if err != nil {
+		klog.V(5).InfoS("failed to patch pod", "pod", klog.KObj(oldPod), "patch", string(patchBytes), "err", err)
+		return nil, err
+	}
+	klog.V(6).InfoS("successfully patch pod", "pod", klog.KObj(oldPod), "patch", string(patchBytes))
+	return patched, nil
+}
+
+// PatchPodSafe patches the pod with the object UID for safety.
+// This ensures we will not patch the different object with the same name.
+func PatchPodSafe(ctx context.Context, clientset clientset.Interface, oldPod, newPod *corev1.Pod) (*corev1.Pod, error) {
+	if reflect.DeepEqual(oldPod, newPod) {
+		return oldPod, nil
+	}
+
+	// generate patch bytes for the update
+	patchBytes, err := GeneratePodPatchWithUID(oldPod, newPod)
+	if err != nil {
+		klog.V(5).InfoS("failed to generate pod patch", "pod", klog.KObj(oldPod), "err", err)
+		return nil, err
+	}
 
 	// patch with pod client
 	patched, err := clientset.CoreV1().Pods(oldPod.Namespace).
@@ -137,7 +179,21 @@ func PatchPod(ctx context.Context, clientset clientset.Interface, oldPod, newPod
 }
 
 func GenerateReservationPatch(oldReservation, newReservation *schedulingv1alpha1.Reservation) ([]byte, error) {
-	// For safely patch, generate with the object UID
+	oldData, err := json.Marshal(oldReservation)
+	if err != nil {
+		return nil, err
+	}
+
+	newData, err := json.Marshal(newReservation)
+	if err != nil {
+		return nil, err
+	}
+	return jsonpatch.CreateMergePatch(oldData, newData)
+}
+
+func GenerateReservationPatchWithUID(oldReservation, newReservation *schedulingv1alpha1.Reservation) ([]byte, error) {
+	// For safely patch, generate with the object UID.
+	// This ensures we will not patch the different object with the same name.
 	oldReservation = oldReservation.DeepCopy()
 	oldReservation.UID = ""
 	oldData, err := json.Marshal(oldReservation)
@@ -158,6 +214,34 @@ func PatchReservation(ctx context.Context, clientset koordinatorclientset.Interf
 	}
 
 	patchBytes, err := GenerateReservationPatch(oldReservation, newReservation)
+	if err != nil {
+		klog.V(5).InfoS("failed to generate reservation patch", "reservation", klog.KObj(oldReservation), "err", err)
+		return nil, err
+	}
+	if string(patchBytes) == "{}" { // nothing to patch
+		return oldReservation, nil
+	}
+
+	// NOTE: CRDs do not support strategy merge patch, so here falls back to merge patch.
+	// link: https://kubernetes.io/docs/concepts/extend-kubernetes/api-extension/custom-resources/#advanced-features-and-flexibility
+	patched, err := clientset.SchedulingV1alpha1().Reservations().
+		Patch(ctx, oldReservation.Name, apimachinerytypes.MergePatchType, patchBytes, metav1.PatchOptions{})
+	if err != nil {
+		klog.V(5).InfoS("failed to patch pod", "pod", klog.KObj(oldReservation), "patch", string(patchBytes), "err", err)
+		return nil, err
+	}
+	klog.V(6).InfoS("successfully patch pod", "pod", klog.KObj(oldReservation), "patch", string(patchBytes))
+	return patched, nil
+}
+
+// PatchReservationSafe patches the reservation with the object UID for safety.
+// This ensures we will not patch the different object with the same name.
+func PatchReservationSafe(ctx context.Context, clientset koordinatorclientset.Interface, oldReservation, newReservation *schedulingv1alpha1.Reservation) (*schedulingv1alpha1.Reservation, error) {
+	if reflect.DeepEqual(oldReservation, newReservation) {
+		return oldReservation, nil
+	}
+
+	patchBytes, err := GenerateReservationPatchWithUID(oldReservation, newReservation)
 	if err != nil {
 		klog.V(5).InfoS("failed to generate reservation patch", "reservation", klog.KObj(oldReservation), "err", err)
 		return nil, err
