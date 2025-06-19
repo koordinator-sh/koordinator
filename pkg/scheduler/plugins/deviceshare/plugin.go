@@ -553,6 +553,11 @@ func (p *Plugin) preBindObject(ctx context.Context, cycleState *framework.CycleS
 		return nil
 	}
 
+	// indicates we already skip our device allocation logic, leave it to kubelet
+	if state.allocationResult == nil {
+		return nil
+	}
+
 	err := p.fillID(state.allocationResult, nodeName)
 	if err != nil {
 		return framework.AsStatus(err)
