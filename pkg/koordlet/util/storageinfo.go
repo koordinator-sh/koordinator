@@ -90,6 +90,7 @@ func (s *LocalStorageInfo) scanDevices() error {
 func (s *LocalStorageInfo) scanVolumeGroups() error {
 	vgsCommand := exec.Command(
 		"vgs",
+		"--readonly",
 		"--noheadings",
 		"--options", strings.Join(vgsColumns, ","),
 	)
@@ -103,6 +104,7 @@ func (s *LocalStorageInfo) scanVolumeGroups() error {
 func (s *LocalStorageInfo) scanLogicalVolumes() error {
 	lvsCommand := exec.Command(
 		"lvs",
+		"--readonly",
 		"--noheadings",
 		"--options", strings.Join(lvsColumns, ","),
 	)
