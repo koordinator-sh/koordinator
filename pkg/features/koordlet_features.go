@@ -104,6 +104,9 @@ const (
 	// Accelerators enables GPU related feature in koordlet. Only Nvidia GPUs supported.
 	Accelerators featuregate.Feature = "Accelerators"
 
+	// XAccelerators enables heterogeneous GPU devices reporting.
+	XAccelerators featuregate.Feature = "XAccelerators"
+
 	// owner: @ZiMengSheng
 	// alpha: v1.6
 	//
