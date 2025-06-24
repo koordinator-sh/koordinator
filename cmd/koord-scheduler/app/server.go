@@ -440,7 +440,7 @@ func Setup(ctx context.Context, opts *options.Options, outOfTreeRegistryOptions 
 	frameworkExtenderFactory.InitScheduler(&frameworkext.SchedulerAdapter{Scheduler: sched})
 	schedAdapter := frameworkExtenderFactory.Scheduler()
 
-	eventhandlers.AddScheduleEventHandler(sched, schedAdapter, frameworkExtenderFactory.KoordinatorSharedInformerFactory())
+	eventhandlers.AddScheduleEventHandler(sched, schedAdapter, cc.InformerFactory, cc.KoordinatorSharedInformerFactory)
 	reservationErrorHandler := eventhandlers.MakeReservationErrorHandler(
 		sched,
 		schedAdapter,
