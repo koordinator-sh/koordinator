@@ -43,8 +43,10 @@ type FakeNominator struct {
 
 func NewFakeReservationNominator() *FakeNominator {
 	return &FakeNominator{
-		nominatedPodToNode: map[types.UID]map[string]types.UID{},
-		reservations:       map[types.UID]*frameworkext.ReservationInfo{},
+		nominatedPodToNode:        map[types.UID]map[string]types.UID{},
+		nominatedReservePod:       map[string][]*framework.PodInfo{},
+		nominatedReservePodToNode: map[types.UID]string{},
+		reservations:              map[types.UID]*frameworkext.ReservationInfo{},
 	}
 }
 
