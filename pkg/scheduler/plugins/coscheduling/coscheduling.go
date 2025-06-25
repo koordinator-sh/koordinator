@@ -56,6 +56,7 @@ var _ framework.PreEnqueuePlugin = &Coscheduling{}
 var _ frameworkext.NextPodPlugin = &Coscheduling{}
 var _ frameworkext.PreFilterTransformer = &Coscheduling{}
 var _ framework.PreFilterPlugin = &Coscheduling{}
+var _ frameworkext.PostFilterTransformer = &Coscheduling{}
 var _ framework.PostFilterPlugin = &Coscheduling{}
 var _ framework.PermitPlugin = &Coscheduling{}
 var _ framework.ReservePlugin = &Coscheduling{}
@@ -186,11 +187,15 @@ func (cs *Coscheduling) AfterPreFilter(ctx context.Context, state *framework.Cyc
 	return nil
 }
 
+func (cs *Coscheduling) AfterPostFilter(ctx context.Context, state *framework.CycleState, pod *v1.Pod, filteredNodeStatusMap framework.NodeToStatusMap) {
+	cs.pgMgr.PostFilter(ctx, state, pod, cs.frameworkHandler, Name, filteredNodeStatusMap)
+}
+
 // PostFilter
 // i. If strict-mode, we will set scheduleCycleValid to false and release all assumed pods.
 // ii. If non-strict mode, we will do nothing.
 func (cs *Coscheduling) PostFilter(ctx context.Context, state *framework.CycleState, pod *v1.Pod, filteredNodeStatusMap framework.NodeToStatusMap) (*framework.PostFilterResult, *framework.Status) {
-	return cs.pgMgr.PostFilter(ctx, state, pod, cs.frameworkHandler, Name, filteredNodeStatusMap)
+	return &framework.PostFilterResult{}, framework.NewStatus(framework.Unschedulable)
 }
 
 // PreFilterExtensions returns a PreFilterExtensions interface if the plugin implements one.

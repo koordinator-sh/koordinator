@@ -84,6 +84,7 @@ func TestExtenderFactory(t *testing.T) {
 	assert.Len(t, impl.preFilterTransformers, 1)
 	assert.Len(t, impl.filterTransformers, 1)
 	assert.Len(t, impl.scoreTransformers, 1)
+	assert.Len(t, impl.postFilterTransformers, 1)
 }
 
 func TestCopyQueueInfoToPod(t *testing.T) {

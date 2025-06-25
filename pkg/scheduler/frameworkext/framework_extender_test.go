@@ -51,9 +51,10 @@ var (
 	_ framework.FilterPlugin    = &TestTransformer{}
 	_ framework.ScorePlugin     = &TestTransformer{}
 
-	_ PreFilterTransformer = &TestTransformer{}
-	_ FilterTransformer    = &TestTransformer{}
-	_ ScoreTransformer     = &TestTransformer{}
+	_ PreFilterTransformer  = &TestTransformer{}
+	_ FilterTransformer     = &TestTransformer{}
+	_ ScoreTransformer      = &TestTransformer{}
+	_ PostFilterTransformer = &TestTransformer{}
 )
 
 type TestTransformer struct {
@@ -118,6 +119,13 @@ func (h *TestTransformer) Score(ctx context.Context, state *framework.CycleState
 
 func (h *TestTransformer) ScoreExtensions() framework.ScoreExtensions {
 	return nil
+}
+
+func (h *TestTransformer) AfterPostFilter(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, filteredNodeStatusMap framework.NodeToStatusMap) {
+	if pod.Annotations == nil {
+		pod.Annotations = map[string]string{}
+	}
+	pod.Annotations[fmt.Sprintf("AfterPostFilter-%d", h.index)] = fmt.Sprintf("%d", h.index)
 }
 
 type testPreBindReservationState struct {
