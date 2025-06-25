@@ -381,16 +381,14 @@ func unscheduledReservationEventHandler(sched *scheduler.Scheduler, schedAdapter
 }
 
 func irresponsibleUnscheduledReservationEventHandler(sched *scheduler.Scheduler, schedAdapter frameworkext.Scheduler) cache.ResourceEventHandler {
-	return cache.FilteringResourceEventHandler{
-		FilterFunc: func(obj interface{}) bool {
+	return cache.ResourceEventHandlerFuncs{
+		DeleteFunc: func(obj interface{}) {
 			r := toReservation(obj)
-			return r != nil &&
-				!isResponsibleForReservation(sched.Profiles, r)
-		},
-		Handler: cache.ResourceEventHandlerFuncs{
-			DeleteFunc: func(obj interface{}) {
-				deleteReservationFromSchedulingQueue(sched, schedAdapter, obj)
-			},
+			if r == nil ||
+				isResponsibleForReservation(sched.Profiles, r) {
+				return
+			}
+			deleteReservationFromSchedulingQueue(sched, schedAdapter, obj)
 		},
 	}
 }

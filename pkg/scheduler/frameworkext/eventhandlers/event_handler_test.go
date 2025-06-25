@@ -72,10 +72,28 @@ func Test_irresponsibleUnscheduledPodEventHandler(t *testing.T) {
 	assert.NotNil(t, adapt.Queue.Pods[string(pod.UID)])
 	// obj become irresponsible and deleted, dequeue it
 	podCopy = pod.DeepCopy()
-	pod.Spec.SchedulerName = "other-scheduler"
+	podCopy.Spec.SchedulerName = "other-scheduler"
 	handler.OnDelete(podCopy)
 	// the default handler does not handle irresponsible obj
 	assert.Nil(t, adapt.Queue.Pods[string(pod.UID)])
+	// re-create an irresponsible obj
+	podCopy = pod.DeepCopy()
+	podCopy.ResourceVersion = "3"
+	podCopy.Spec.SchedulerName = "other-scheduler"
+	handler.OnAdd(podCopy, true)
+	assert.Nil(t, adapt.Queue.Pods[string(podCopy.UID)])
+	// the default handler does not handle irresponsible obj
+	assert.Nil(t, adapt.Queue.Pods[string(podCopy.UID)])
+	// obj from irresponsible to responsible, keep it
+	podCopy1 := podCopy.DeepCopy()
+	podCopy1.Spec.SchedulerName = corev1.DefaultSchedulerName
+	adapt.Queue.Pods[string(pod.UID)] = podCopy1 // mock an enqueue as the default handler
+	handler.OnUpdate(podCopy, podCopy1)
+	assert.NotNil(t, adapt.Queue.Pods[string(podCopy1.UID)])
+	// obj deleted, dequeue it
+	delete(adapt.Queue.Pods, string(podCopy1.UID)) // mock a dequeue as the default handler
+	handler.OnDelete(podCopy1)
+	assert.Nil(t, adapt.Queue.Pods[string(podCopy1.UID)])
 }
 
 func Test_isResponsibleForPod(t *testing.T) {
