@@ -29,6 +29,8 @@ var (
 		extension.ResourceGPU,
 		extension.ResourceGPUCore,
 		extension.ResourceHuaweiNPUCore,
+		extension.ResourceHuaweiNPUCPU,
+		extension.ResourceHuaweiNPUDVPP,
 		extension.ResourceGPUMemory,
 		extension.ResourceGPUMemoryRatio,
 		extension.ResourceGPUShared,

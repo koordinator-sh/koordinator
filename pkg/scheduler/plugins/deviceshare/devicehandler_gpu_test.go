@@ -220,14 +220,32 @@ func Test_calcDesiredRequestsAndCountForGPU(t *testing.T) {
 			name: "huawei npu mode",
 			podRequests: corev1.ResourceList{
 				apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(200, resource.DecimalSI),
-				apiext.ResourceHuaweiNPUCore:  *resource.NewQuantity(40, resource.DecimalSI),
+				apiext.ResourceHuaweiNPUCore:  *resource.NewQuantity(16, resource.DecimalSI),
 			},
 			wantRequestPerInstance: corev1.ResourceList{
 				apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(100, resource.DecimalSI),
-				apiext.ResourceHuaweiNPUCore:  *resource.NewQuantity(20, resource.DecimalSI),
+				apiext.ResourceHuaweiNPUCore:  *resource.NewQuantity(8, resource.DecimalSI),
 			},
 			wantDesiredNumberOfGPUs: 2,
 			wantGPUShared:           false,
+		},
+		{
+			name: "huawei npu share mode",
+			podRequests: corev1.ResourceList{
+				apiext.ResourceGPUShared:     *resource.NewQuantity(1, resource.DecimalSI),
+				apiext.ResourceGPUMemory:     *resource.NewQuantity(3221225472, resource.BinarySI),
+				apiext.ResourceHuaweiNPUCore: *resource.NewQuantity(1, resource.DecimalSI),
+				apiext.ResourceHuaweiNPUCPU:  *resource.NewQuantity(1, resource.DecimalSI),
+				apiext.ResourceHuaweiNPUDVPP: *resource.NewQuantity(12, resource.DecimalSI),
+			},
+			wantRequestPerInstance: corev1.ResourceList{
+				apiext.ResourceGPUMemory:     *resource.NewQuantity(3221225472, resource.BinarySI),
+				apiext.ResourceHuaweiNPUCore: *resource.NewQuantity(1, resource.DecimalSI),
+				apiext.ResourceHuaweiNPUCPU:  *resource.NewQuantity(1, resource.DecimalSI),
+				apiext.ResourceHuaweiNPUDVPP: *resource.NewQuantity(12, resource.DecimalSI),
+			},
+			wantDesiredNumberOfGPUs: 1,
+			wantGPUShared:           true,
 		},
 	}
 	for _, tt := range tests {

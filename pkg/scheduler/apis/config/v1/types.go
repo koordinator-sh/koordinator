@@ -18,7 +18,6 @@ package v1
 
 import (
 	corev1 "k8s.io/api/core/v1"
-	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	schedconfigv1 "k8s.io/kube-scheduler/config/v1"
 	"k8s.io/kubernetes/pkg/scheduler/apis/config"
@@ -258,6 +257,19 @@ type DeviceShareArgs struct {
 	ScoringStrategy *ScoringStrategy `json:"scoringStrategy,omitempty"`
 	// DisableDeviceNUMATopologyAlignment indicates device don't need to align with other resources' numa topology
 	DisableDeviceNUMATopologyAlignment bool `json:"disableDeviceNUMATopologyAlignment,omitempty"`
+	// GPUSharedResourceTemplatesConfig holds configurations for GPU shared resource templates.
+	GPUSharedResourceTemplatesConfig *GPUSharedResourceTemplatesConfig `json:"gpuSharedResourceTemplatesConfig,omitempty"`
+}
+
+type GPUSharedResourceTemplatesConfig struct {
+	// ConfigMapNamespace is the namespace of the ConfigMap holding GPU shared resource templates data.
+	ConfigMapNamespace string `json:"configMapNamespace,omitempty"`
+	// ConfigMapName is the name of the ConfigMap holding GPU shared resource templates data.
+	ConfigMapName string `json:"configMapName,omitempty"`
+	// MatchedResources are resources matched for GPU shared resource templates.
+	// If a GPU shared pod requests any of the matched resources,
+	// all of its requested GPU resources would be matched for GPU shared resource templates.
+	MatchedResources []corev1.ResourceName `json:"matchedResources,omitempty"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -265,7 +277,7 @@ type DeviceShareArgs struct {
 // ScarceResourceAvoidanceArgs defines the parameters for ScarceResourceAvoidance plugin.
 type ScarceResourceAvoidanceArgs struct {
 	metav1.TypeMeta
-	Resources []v1.ResourceName `json:"resources,omitempty"`
+	Resources []corev1.ResourceName `json:"resources,omitempty"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -273,7 +285,7 @@ type ScarceResourceAvoidanceArgs struct {
 // NodeResourcesFitPlusArgs defines the parameters for NodeResourcesFitPlus plugin.
 type NodeResourcesFitPlusArgs struct {
 	metav1.TypeMeta
-	Resources map[v1.ResourceName]ResourcesType `json:"resources"`
+	Resources map[corev1.ResourceName]ResourcesType `json:"resources"`
 }
 
 type ResourcesType struct {

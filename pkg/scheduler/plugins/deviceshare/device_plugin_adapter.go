@@ -104,11 +104,16 @@ type huaweiGPUDevicePluginAdapter struct {
 
 func (a *huaweiGPUDevicePluginAdapter) Adapt(object metav1.Object, allocation []*apiext.DeviceAllocation) error {
 	object.GetAnnotations()[AnnotationPredicateTime] = strconv.FormatInt(a.clock.Now().UnixNano(), 10)
-	// TODO(zqzten): impl vNPU allocation adaption logic
-	minors := make([]string, 0, len(allocation))
-	for _, alloc := range allocation {
-		minors = append(minors, strconv.Itoa(int(alloc.Minor)))
+	if allocation[0].Extension != nil && allocation[0].Extension.GPUSharedResourceTemplate != "" {
+		// vNPU
+		object.GetAnnotations()[AnnotationHuaweiNPUCore] = fmt.Sprintf("%d-%s", allocation[0].Minor, allocation[0].Extension.GPUSharedResourceTemplate)
+	} else {
+		// full NPU
+		minors := make([]string, 0, len(allocation))
+		for _, alloc := range allocation {
+			minors = append(minors, strconv.Itoa(int(alloc.Minor)))
+		}
+		object.GetAnnotations()[AnnotationHuaweiNPUCore] = strings.Join(minors, ",")
 	}
-	object.GetAnnotations()[AnnotationHuaweiNPUCore] = strings.Join(minors, ",")
 	return nil
 }

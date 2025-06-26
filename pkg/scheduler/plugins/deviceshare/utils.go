@@ -17,6 +17,7 @@ limitations under the License.
 package deviceshare
 
 import (
+	"errors"
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
@@ -44,6 +45,8 @@ const (
 	GPUMemory
 	GPUMemoryRatio
 	HuaweiNPUCore
+	HuaweiNPUCPU
+	HuaweiNPUDVPP
 	FPGA
 	RDMA
 )
@@ -59,6 +62,8 @@ var DeviceResourceNames = map[schedulingv1alpha1.DeviceType][]corev1.ResourceNam
 		apiext.ResourceGPUMemory,
 		apiext.ResourceGPUMemoryRatio,
 		apiext.ResourceHuaweiNPUCore,
+		apiext.ResourceHuaweiNPUCPU,
+		apiext.ResourceHuaweiNPUDVPP,
 	},
 	schedulingv1alpha1.RDMA: {apiext.ResourceRDMA},
 	schedulingv1alpha1.FPGA: {apiext.ResourceFPGA},
@@ -74,6 +79,8 @@ var DeviceResourceFlags = map[corev1.ResourceName]uint{
 	apiext.ResourceGPUMemoryRatio: GPUMemoryRatio,
 	apiext.ResourceGPUShared:      GPUShared,
 	apiext.ResourceHuaweiNPUCore:  HuaweiNPUCore,
+	apiext.ResourceHuaweiNPUCPU:   HuaweiNPUCPU,
+	apiext.ResourceHuaweiNPUDVPP:  HuaweiNPUDVPP,
 	apiext.ResourceFPGA:           FPGA,
 	apiext.ResourceRDMA:           RDMA,
 }
@@ -92,8 +99,10 @@ var ValidDeviceResourceCombinations = map[uint]func(resources corev1.ResourceLis
 	GPUShared | GPUMemoryRatio:           ValidDeviceResourceCombinationsGPUShared,
 	GPUShared | GPUCore | GPUMemory:      ValidDeviceResourceCombinationsGPUShared,
 	GPUShared | GPUCore | GPUMemoryRatio: ValidDeviceResourceCombinationsGPUShared,
-	FPGA:                                 ValidDeviceResourceCombinationsDefaultTrue,
-	RDMA:                                 ValidDeviceResourceCombinationsDefaultTrue,
+	GPUShared | HuaweiNPUCore | HuaweiNPUCPU | GPUMemory:                 ValidDeviceResourceCombinationsHuaweiNPUShared,
+	GPUShared | HuaweiNPUCore | HuaweiNPUCPU | HuaweiNPUDVPP | GPUMemory: ValidDeviceResourceCombinationsHuaweiNPUShared,
+	FPGA: ValidDeviceResourceCombinationsDefaultTrue,
+	RDMA: ValidDeviceResourceCombinationsDefaultTrue,
 }
 
 var DeviceResourceValidators = map[corev1.ResourceName]func(q resource.Quantity) bool{
@@ -161,6 +170,23 @@ var ResourceCombinationsMapper = map[uint]func(podRequest corev1.ResourceList) c
 			apiext.ResourceGPUShared:      podRequest[apiext.ResourceGPUShared],
 			apiext.ResourceGPUCore:        podRequest[apiext.ResourceGPUCore],
 			apiext.ResourceGPUMemoryRatio: podRequest[apiext.ResourceGPUMemoryRatio],
+		}
+	},
+	GPUShared | HuaweiNPUCore | HuaweiNPUCPU | GPUMemory: func(podRequest corev1.ResourceList) corev1.ResourceList {
+		return corev1.ResourceList{
+			apiext.ResourceGPUShared:     podRequest[apiext.ResourceGPUShared],
+			apiext.ResourceHuaweiNPUCore: podRequest[apiext.ResourceHuaweiNPUCore],
+			apiext.ResourceHuaweiNPUCPU:  podRequest[apiext.ResourceHuaweiNPUCPU],
+			apiext.ResourceGPUMemory:     podRequest[apiext.ResourceGPUMemory],
+		}
+	},
+	GPUShared | HuaweiNPUCore | HuaweiNPUCPU | HuaweiNPUDVPP | GPUMemory: func(podRequest corev1.ResourceList) corev1.ResourceList {
+		return corev1.ResourceList{
+			apiext.ResourceGPUShared:     podRequest[apiext.ResourceGPUShared],
+			apiext.ResourceHuaweiNPUCore: podRequest[apiext.ResourceHuaweiNPUCore],
+			apiext.ResourceHuaweiNPUCPU:  podRequest[apiext.ResourceHuaweiNPUCPU],
+			apiext.ResourceHuaweiNPUDVPP: podRequest[apiext.ResourceHuaweiNPUDVPP],
+			apiext.ResourceGPUMemory:     podRequest[apiext.ResourceGPUMemory],
 		}
 	},
 	NvidiaGPU: func(podRequest corev1.ResourceList) corev1.ResourceList {
@@ -238,6 +264,26 @@ func ValidDeviceResourceCombinationsGPUShared(podRequest corev1.ResourceList) bo
 	return true
 }
 
+func ValidDeviceResourceCombinationsHuaweiNPUShared(podRequest corev1.ResourceList) bool {
+	gpuSharedQuantity, gpuSharedExist := podRequest[apiext.ResourceGPUShared]
+	npuDVPPQuantity, npuDVPPExist := podRequest[apiext.ResourceHuaweiNPUDVPP]
+
+	if !gpuSharedExist {
+		return false
+	}
+
+	// multiple npu share is not supported on device side
+	if gpuSharedQuantity.Value() > 1 {
+		return false
+	}
+
+	if npuDVPPExist && npuDVPPQuantity.Value() > 100 {
+		return false
+	}
+
+	return true
+}
+
 func ValidDeviceResourceCombinationsGPUPercentage(podRequest corev1.ResourceList) bool {
 	gpuCoreQuantity, gpuCoreExist := podRequest[apiext.ResourceGPUCore]
 	gpuMemoryRatioQuantity, gpuMemoryRatioExist := podRequest[apiext.ResourceGPUMemoryRatio]
@@ -306,7 +352,7 @@ func mustAllocateVF(hint *apiext.DeviceHint) bool {
 	return hint != nil && hint.VFSelector != nil
 }
 
-func preparePod(pod *corev1.Pod) (state *preFilterState, status *framework.Status) {
+func preparePod(pod *corev1.Pod, gpuSharedResourceTemplatesCache *gpuSharedResourceTemplatesCache, templateMatchedResources []corev1.ResourceName) (state *preFilterState, status *framework.Status) {
 	state = &preFilterState{
 		skip:               true,
 		preemptibleDevices: map[string]map[schedulingv1alpha1.DeviceType]deviceResources{},
@@ -328,7 +374,7 @@ func preparePod(pod *corev1.Pod) (state *preFilterState, status *framework.Statu
 		if state.jointAllocate != nil && len(state.jointAllocate.DeviceTypes) >= 1 {
 			state.primaryDeviceType = state.jointAllocate.DeviceTypes[0]
 		}
-		state.gpuRequirements, err = parseGPURequirements(pod, requests, state.hints[schedulingv1alpha1.GPU])
+		state.gpuRequirements, err = parseGPURequirements(pod, requests, state.hints[schedulingv1alpha1.GPU], gpuSharedResourceTemplatesCache, templateMatchedResources)
 		if err != nil {
 			return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, err.Error())
 		}
@@ -435,7 +481,7 @@ func newHintSelectors(hints apiext.DeviceAllocateHints) (map[schedulingv1alpha1.
 	return hintSelectors, nil
 }
 
-func parseGPURequirements(pod *corev1.Pod, podRequests map[schedulingv1alpha1.DeviceType]corev1.ResourceList, gpuHints *apiext.DeviceHint) (*GPURequirements, error) {
+func parseGPURequirements(pod *corev1.Pod, podRequests map[schedulingv1alpha1.DeviceType]corev1.ResourceList, gpuHints *apiext.DeviceHint, gpuSharedResourceTemplatesCache *gpuSharedResourceTemplatesCache, templateMatchedResources []corev1.ResourceName) (*GPURequirements, error) {
 	gpuRequests := podRequests[schedulingv1alpha1.GPU]
 	if quotav1.IsZero(gpuRequests) {
 		return nil, nil
@@ -458,6 +504,14 @@ func parseGPURequirements(pod *corev1.Pod, podRequests map[schedulingv1alpha1.De
 	if gpuHints != nil {
 		gpuRequirements.requiredTopologyScope = gpuHints.RequiredTopologyScope
 		gpuRequirements.requiredTopologyScopeLevel = apiext.DeviceTopologyScopeLevel[gpuRequirements.requiredTopologyScope]
+	}
+	if isShared && len(quotav1.Intersection(quotav1.ResourceNames(requestsPerGPU), templateMatchedResources)) > 0 {
+		gpuRequirements.enforceGPUSharedResourceTemplate = true
+		// TODO(zqzten): use non-strict finding for volcano style usage of huawei npu
+		gpuRequirements.candidateGPUSharedResourceTemplates = gpuSharedResourceTemplatesCache.findMatchedTemplates(requestsPerGPU, true)
+		if len(gpuRequirements.candidateGPUSharedResourceTemplates) == 0 {
+			return nil, errors.New(ErrNoMatchedGPUSharedResourceTemplate)
+		}
 	}
 	return gpuRequirements, nil
 }

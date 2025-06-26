@@ -254,7 +254,7 @@ func TestPlugin_GetPodTopologyHints(t *testing.T) {
 				hintSelectors: hintSelectors,
 				jointAllocate: tt.jointAllocate,
 			}
-			state.gpuRequirements, _ = parseGPURequirements(pod, state.podRequests, state.hints[schedulingv1alpha1.GPU])
+			state.gpuRequirements, _ = parseGPURequirements(pod, state.podRequests, state.hints[schedulingv1alpha1.GPU], nil, nil)
 			cycleState := framework.NewCycleState()
 			cycleState.Write(stateKey, state)
 
@@ -404,7 +404,7 @@ func TestPlugin_Allocate(t *testing.T) {
 				hintSelectors: hintSelectors,
 				jointAllocate: tt.jointAllocate,
 			}
-			state.gpuRequirements, _ = parseGPURequirements(pod, tt.podRequests, state.hints[schedulingv1alpha1.GPU])
+			state.gpuRequirements, _ = parseGPURequirements(pod, tt.podRequests, state.hints[schedulingv1alpha1.GPU], nil, nil)
 			cycleState := framework.NewCycleState()
 			cycleState.Write(stateKey, state)
 			pl := p.(*Plugin)
