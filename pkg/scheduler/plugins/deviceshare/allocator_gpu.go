@@ -37,15 +37,19 @@ const (
 	ErrUnsupportedGPURequests               = "node(s) Unsupported number of GPU requests"
 	ErrUnsupportedMultiSharedGPU            = "node(s) Unsupported Multi-Shared GPU"
 	ErrNodeMissingGPUDeviceTopologyTree     = "node(s) missing GPU Device Topology Tree"
+	ErrNoMatchedGPUSharedResourceTemplate   = "no matched GPU shared resource template"
 )
 
 func init() {
+	// Actual initialization of gpu allocator would be done during plugin initialization,
+	// keep this just to simplify some test uses.
 	deviceAllocators[schedulingv1alpha1.GPU] = &GPUAllocator{}
 }
 
 var _ DeviceAllocator = &GPUAllocator{}
 
 type GPUAllocator struct {
+	gpuSharedResourceTemplatesCache *gpuSharedResourceTemplatesCache
 }
 
 type AllocateContext struct {
@@ -86,7 +90,17 @@ func (a *GPUAllocator) Allocate(requestCtx *requestContext, nodeDevice *nodeDevi
 		deviceTotal:          removeZeroDevice(nodeDevice.deviceTotal[schedulingv1alpha1.GPU]),
 		allocationScorer:     requestCtx.allocationScorer,
 	}
-	allocations, status := allocateByPartition(honorGPUPartition, gpuRequirements, gpuPartitionIndexer, allocateContext)
+
+	allocations, status := a.allocateByTemplate(requestCtx, nodeDevice, desiredCount, maxDesiredCount, allocateContext)
+	if !status.IsSuccess() {
+		return nil, status
+	}
+	// if pod is not gpu shared or node does not need templating, allocateByTemplate may return (nil, nil), so we should check if allocations is nil
+	if len(allocations) != 0 {
+		return allocations, nil
+	}
+
+	allocations, status = allocateByPartition(honorGPUPartition, gpuRequirements, gpuPartitionIndexer, allocateContext)
 	if !status.IsSuccess() {
 		return nil, status
 	}
@@ -94,16 +108,10 @@ func (a *GPUAllocator) Allocate(requestCtx *requestContext, nodeDevice *nodeDevi
 	if len(allocations) != 0 {
 		return allocations, nil
 	}
-	allocations, status = allocateByDeviceTopology(gpuRequirements, nodeDevice.gpuTopologyScope, allocateContext)
-	if !status.IsSuccess() {
-		return nil, status
-	}
-	// if same NUMANode or PCIE are not required, allocateByDeviceTopology may return (nil, nil), so we should check if allocations is nil
-	if len(allocations) != 0 {
-		return allocations, nil
-	}
-	return defaultAllocateDevices(nodeDevice, requestCtx, gpuRequirements.requestsPerGPU, desiredCount, maxDesiredCount, schedulingv1alpha1.GPU, nil)
+
+	return a.generalAllocate(requestCtx, nodeDevice, desiredCount, maxDesiredCount, allocateContext)
 }
+
 func removeZeroDevice(originalResources deviceResources) deviceResources {
 	refinedResources := deviceResources{}
 	for minor, resource := range originalResources {
@@ -112,6 +120,63 @@ func removeZeroDevice(originalResources deviceResources) deviceResources {
 		}
 	}
 	return refinedResources
+}
+
+func (a *GPUAllocator) generalAllocate(requestCtx *requestContext, nodeDevice *nodeDevice, desiredCount int, maxDesiredCount int, allocateContext *AllocateContext) ([]*apiext.DeviceAllocation, *framework.Status) {
+	allocations, status := allocateByDeviceTopology(requestCtx.gpuRequirements, nodeDevice.gpuTopologyScope, allocateContext)
+	if !status.IsSuccess() {
+		return nil, status
+	}
+	// if same NUMANode or PCIE are not required, allocateByDeviceTopology may return (nil, nil), so we should check if allocations is nil
+	if len(allocations) != 0 {
+		return allocations, nil
+	}
+
+	return defaultAllocateDevices(nodeDevice, requestCtx, requestCtx.gpuRequirements.requestsPerGPU, desiredCount, maxDesiredCount, schedulingv1alpha1.GPU, nil)
+}
+
+func (a *GPUAllocator) allocateByTemplate(requestCtx *requestContext, nodeDevice *nodeDevice, desiredCount int, maxDesiredCount int, allocateContext *AllocateContext) ([]*apiext.DeviceAllocation, *framework.Status) {
+	if !requestCtx.gpuRequirements.gpuShared {
+		return nil, nil
+	}
+	vendor, model := requestCtx.node.Labels[apiext.LabelGPUVendor], requestCtx.node.Labels[apiext.LabelGPUModel]
+	if vendor != apiext.GPUVendorHuawei {
+		return nil, nil
+	}
+
+	requestsPerGPU := requestCtx.gpuRequirements.requestsPerGPU
+	if len(requestsPerGPU) > 1 {
+		// koord style: match a template for accurate resources specified by user
+		templates, err := a.gpuSharedResourceTemplatesCache.getTemplates(vendor, model)
+		if err != nil {
+			return nil, framework.NewStatus(framework.Error, err.Error())
+		}
+		var templateName string
+		for name, template := range templates {
+			if quotav1.Equals(requestsPerGPU, template) {
+				templateName = name
+				break
+			}
+		}
+		if templateName == "" {
+			return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrNoMatchedGPUSharedResourceTemplate)
+		}
+		allocations, status := a.generalAllocate(requestCtx, nodeDevice, desiredCount, maxDesiredCount, allocateContext)
+		appendTemplateInfoToAllocations(allocations, templateName)
+		return allocations, status
+	} else {
+		// TODO(zqzten): volcano style: automatically choose a template which meets user's requirement
+		return nil, nil
+	}
+}
+
+func appendTemplateInfoToAllocations(allocations []*apiext.DeviceAllocation, templateName string) {
+	for _, allocation := range allocations {
+		if allocation.Extension == nil {
+			allocation.Extension = &apiext.DeviceAllocationExtension{}
+		}
+		allocation.Extension.GPUSharedResourceTemplate = templateName
+	}
 }
 
 type GPUPartitionIndexer map[int][]*PartitionsOfAllocationScore

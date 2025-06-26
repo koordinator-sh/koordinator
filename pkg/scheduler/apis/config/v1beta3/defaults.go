@@ -228,4 +228,10 @@ func SetDefaults_DeviceShareArgs(obj *DeviceShareArgs) {
 			},
 		}
 	}
+	if obj.GPUSharedResourceTemplatesConfigMapNamespace == "" {
+		obj.GPUSharedResourceTemplatesConfigMapNamespace = "koordinator-system"
+	}
+	if obj.GPUSharedResourceTemplatesConfigMapName == "" {
+		obj.GPUSharedResourceTemplatesConfigMapName = "gpu-shared-resource-templates"
+	}
 }

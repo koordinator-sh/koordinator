@@ -655,6 +655,14 @@ func New(obj runtime.Object, handle framework.Handle) (framework.Plugin, error) 
 	registerPodEventHandler(deviceCache, handle.SharedInformerFactory(), extendedHandle.KoordinatorSharedInformerFactory())
 	go deviceCache.gcNodeDevice(context.TODO(), handle.SharedInformerFactory(), defaultGCPeriod)
 
+	gpuSharedResourceTemplatesCache := newGPUSharedResourceTemplatesCache()
+	registerGPUSharedResourceTemplatesConfigMapEventHandler(gpuSharedResourceTemplatesCache,
+		args.GPUSharedResourceTemplatesConfigMapNamespace, args.GPUSharedResourceTemplatesConfigMapName,
+		handle.SharedInformerFactory())
+	deviceAllocators[schedulingv1alpha1.GPU] = &GPUAllocator{
+		gpuSharedResourceTemplatesCache: gpuSharedResourceTemplatesCache,
+	}
+
 	return &Plugin{
 		handle:                             extendedHandle,
 		nodeDeviceCache:                    deviceCache,

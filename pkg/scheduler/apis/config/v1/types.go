@@ -258,6 +258,10 @@ type DeviceShareArgs struct {
 	ScoringStrategy *ScoringStrategy `json:"scoringStrategy,omitempty"`
 	// DisableDeviceNUMATopologyAlignment indicates device don't need to align with other resources' numa topology
 	DisableDeviceNUMATopologyAlignment bool `json:"disableDeviceNUMATopologyAlignment,omitempty"`
+	// GPUSharedResourceTemplatesConfigMapNamespace is the namespace of the ConfigMap holding GPU shared resource templates data.
+	GPUSharedResourceTemplatesConfigMapNamespace string `json:"gpuSharedResourceTemplatesConfigMapNamespace,omitempty"`
+	// GPUSharedResourceTemplatesConfigMapNamespace is the name of the ConfigMap holding GPU shared resource templates data.
+	GPUSharedResourceTemplatesConfigMapName string `json:"gpuSharedResourceTemplatesConfigMapName,omitempty"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
