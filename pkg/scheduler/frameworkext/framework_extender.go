@@ -59,12 +59,14 @@ type frameworkExtenderImpl struct {
 	podLister                        listerscorev1.PodLister
 	reservationLister                listerschedulingv1alpha1.ReservationLister
 
-	preFilterTransformers        map[string]PreFilterTransformer
-	filterTransformers           map[string]FilterTransformer
-	scoreTransformers            map[string]ScoreTransformer
-	preFilterTransformersEnabled []PreFilterTransformer
-	filterTransformersEnabled    []FilterTransformer
-	scoreTransformersEnabled     []ScoreTransformer
+	preFilterTransformers         map[string]PreFilterTransformer
+	filterTransformers            map[string]FilterTransformer
+	scoreTransformers             map[string]ScoreTransformer
+	postFilterTransformers        map[string]PostFilterTransformer
+	preFilterTransformersEnabled  []PreFilterTransformer
+	filterTransformersEnabled     []FilterTransformer
+	scoreTransformersEnabled      []ScoreTransformer
+	postFilterTransformersEnabled []PostFilterTransformer
 
 	reservationNominator      ReservationNominator
 	reservationFilterPlugins  []ReservationFilterPlugin
@@ -97,6 +99,7 @@ func NewFrameworkExtender(f *FrameworkExtenderFactory, fw framework.Framework) F
 		preFilterTransformers:            map[string]PreFilterTransformer{},
 		filterTransformers:               map[string]FilterTransformer{},
 		scoreTransformers:                map[string]ScoreTransformer{},
+		postFilterTransformers:           map[string]PostFilterTransformer{},
 		preBindExtensionsPlugins:         map[string]PreBindExtensions{},
 		metricsRecorder:                  f.metricsRecorder,
 		podLister:                        fw.SharedInformerFactory().Core().V1().Pods().Lister(),
@@ -122,6 +125,11 @@ func (ext *frameworkExtenderImpl) updateTransformer(transformers ...SchedulingTr
 		if ok {
 			ext.scoreTransformers[transformer.Name()] = scoreTransformer
 			klog.V(4).InfoS("framework extender got scheduling transformer registered", "score", scoreTransformer.Name())
+		}
+		postFilterTransformer, ok := transformer.(PostFilterTransformer)
+		if ok {
+			ext.postFilterTransformers[transformer.Name()] = postFilterTransformer
+			klog.V(4).InfoS("framework extender got scheduling transformer registered", "postFilter", postFilterTransformer.Name())
 		}
 	}
 }
@@ -178,10 +186,17 @@ func (ext *frameworkExtenderImpl) SetConfiguredPlugins(plugins *schedconfig.Plug
 			ext.scoreTransformersEnabled = append(ext.scoreTransformersEnabled, transformer)
 		}
 	}
+	for _, pl := range ext.configuredPlugins.PostFilter.Enabled {
+		transformer := ext.postFilterTransformers[pl.Name]
+		if transformer != nil {
+			ext.postFilterTransformersEnabled = append(ext.postFilterTransformersEnabled, transformer)
+		}
+	}
 	klog.V(5).InfoS("Set configured transformer plugins",
 		"PreFilterTransformer", len(ext.preFilterTransformersEnabled),
 		"FilterTransformer", len(ext.filterTransformersEnabled),
-		"ScoreTransformer", len(ext.scoreTransformersEnabled))
+		"ScoreTransformer", len(ext.scoreTransformersEnabled),
+		"PostFilterTransformer", len(ext.postFilterTransformersEnabled))
 }
 
 func (ext *frameworkExtenderImpl) KoordinatorClientSet() koordinatorclientset.Interface {
@@ -288,6 +303,14 @@ func (ext *frameworkExtenderImpl) RunScorePlugins(ctx context.Context, state *fr
 func (ext *frameworkExtenderImpl) RunPostFilterPlugins(ctx context.Context, state *framework.CycleState, pod *corev1.Pod, filteredNodeStatusMap framework.NodeToStatusMap) (_ *framework.PostFilterResult, status *framework.Status) {
 	schedulingphase.RecordPhase(state, schedulingphase.PostFilter)
 	defer func() { schedulingphase.RecordPhase(state, "") }()
+	defer func() {
+		for _, transformer := range ext.postFilterTransformersEnabled {
+			startTime := time.Now()
+			transformer.AfterPostFilter(ctx, state, pod, filteredNodeStatusMap)
+			ext.metricsRecorder.ObservePluginDurationAsync("AfterPostFilter", transformer.Name(), "", metrics.SinceInSeconds(startTime))
+		}
+	}()
+
 	return ext.Framework.RunPostFilterPlugins(ctx, state, pod, filteredNodeStatusMap)
 }
 
