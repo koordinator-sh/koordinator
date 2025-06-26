@@ -1123,9 +1123,28 @@ func Test_irresponsibleUnscheduledReservationEventHandler(t *testing.T) {
 	assert.NotNil(t, adapt.Queue.Pods[string(r.UID)])
 	// obj become irresponsible and deleted, dequeue it
 	rCopy = r.DeepCopy()
-	r.Spec.Template.Spec.SchedulerName = "other-scheduler"
+	rCopy.Spec.Template.Spec.SchedulerName = "other-scheduler"
 	handler.OnDelete(rCopy)
 	defaultHandler.OnDelete(rCopy)
+	assert.Nil(t, adapt.Queue.Pods[string(r.UID)])
+	// re-create an irresponsible obj
+	rCopy = r.DeepCopy()
+	rCopy.ResourceVersion = "3"
+	rCopy.Spec.Template.Spec.SchedulerName = "other-scheduler"
+	handler.OnAdd(rCopy, true)
+	assert.Nil(t, adapt.Queue.Pods[string(r.UID)])
+	defaultHandler.OnAdd(rCopy, true)
+	assert.Nil(t, adapt.Queue.Pods[string(r.UID)])
+	// obj from irresponsible to responsible, keep it
+	rCopy1 := rCopy.DeepCopy()
+	rCopy1.ResourceVersion = "4"
+	rCopy1.Spec.Template.Spec.SchedulerName = ""
+	defaultHandler.OnUpdate(rCopy, rCopy1)
+	handler.OnUpdate(rCopy, rCopy1)
+	assert.NotNil(t, adapt.Queue.Pods[string(r.UID)])
+	// obj deleted, dequeue it
+	defaultHandler.OnDelete(rCopy1)
+	handler.OnDelete(rCopy1)
 	assert.Nil(t, adapt.Queue.Pods[string(r.UID)])
 }
 

@@ -64,24 +64,20 @@ func irresponsibleUnscheduledPodEventHandler(sched *scheduler.Scheduler, schedAd
 	// 2. If the pod updates to irresponsible from responsible, the default handler deletes the old obj from the queue.
 	// 3. If the pod updates to responsible from irresponsible, the default handler adds the old obj to the queue.
 	// 4. If an irresponsible deleted after enqueued, the default handler may not handle the obj causing a leak.
-	return cache.FilteringResourceEventHandler{
-		FilterFunc: func(obj interface{}) bool {
+	return cache.ResourceEventHandlerFuncs{
+		DeleteFunc: func(obj interface{}) {
 			pod := toPod(obj)
-			return pod != nil &&
-				!isResponsibleForPod(sched.Profiles, pod)
-		},
-		Handler: cache.ResourceEventHandlerFuncs{
-			DeleteFunc: func(obj interface{}) {
-				pod := toPod(obj)
-				if pod == nil {
-					return
-				}
-				klog.V(3).Info("Delete event for irresponsible unscheduled pod", "pod", klog.KObj(pod))
-				if err := schedAdapter.GetSchedulingQueue().Delete(pod); err != nil {
-					klog.Errorf("failed to dequeue irresponsible pod %s, err: %s", klog.KObj(pod), err)
-				}
-				// FIXME: proactively reject waiting pod if it has handled by a responsible profile
-			},
+			if pod == nil {
+				return
+			}
+			if isResponsibleForPod(sched.Profiles, pod) {
+				return
+			}
+			klog.V(3).InfoS("Delete event for irresponsible unscheduled pod", "pod", klog.KObj(pod))
+			if err := schedAdapter.GetSchedulingQueue().Delete(pod); err != nil {
+				klog.Errorf("failed to dequeue irresponsible pod %s, err: %s", klog.KObj(pod), err)
+			}
+			// FIXME: proactively reject waiting pod if it has handled by a responsible profile
 		},
 	}
 }

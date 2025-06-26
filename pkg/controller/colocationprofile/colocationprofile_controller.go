@@ -45,8 +45,8 @@ var (
 	ReconcileInterval      = 30 * time.Second
 	ForceUpdatePodDuration = 5 * time.Minute
 	ExpirePodCacheDuration = 10 * time.Minute
-	MaxUpdatePodQPS        = 5.0
-	MaxUpdatePodQPSBurst   = 10
+	MaxUpdatePodQPS        = 10.0
+	MaxUpdatePodQPSBurst   = 100
 )
 
 type Reconciler struct {
@@ -137,9 +137,9 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 			klog.ErrorS(err, "failed to patch pod for clusterColocationProfile", "profile", profile.Name, "pod", klog.KObj(pod))
 			continue
 		}
+		r.podUpdateCache.SetDefault(getPodUpdateKey(profile, pod), struct{}{})
 		summary.Succeeded++
 		if isUpdated {
-			r.podUpdateCache.SetDefault(getPodUpdateKey(profile, pod), struct{}{})
 			summary.Changed++
 		}
 	}
