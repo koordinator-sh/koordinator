@@ -406,6 +406,8 @@ func TestPluginPrepare(t *testing.T) {
 				corev1.ResourceCPU:               resource.MustParse("100"),
 				corev1.ResourceMemory:            resource.MustParse("400Gi"),
 				extension.ResourceHuaweiNPUCore:  *resource.NewQuantity(160, resource.DecimalSI),
+				extension.ResourceHuaweiNPUCPU:   *resource.NewQuantity(160, resource.DecimalSI),
+				extension.ResourceHuaweiNPUDVPP:  *resource.NewQuantity(200, resource.DecimalSI),
 				extension.ResourceGPUMemory:      *resource.NewQuantity(18000, resource.DecimalSI),
 				extension.ResourceGPUMemoryRatio: *resource.NewQuantity(200, resource.DecimalSI),
 			},
@@ -413,6 +415,8 @@ func TestPluginPrepare(t *testing.T) {
 				corev1.ResourceCPU:               resource.MustParse("100"),
 				corev1.ResourceMemory:            resource.MustParse("400Gi"),
 				extension.ResourceHuaweiNPUCore:  *resource.NewQuantity(160, resource.DecimalSI),
+				extension.ResourceHuaweiNPUCPU:   *resource.NewQuantity(160, resource.DecimalSI),
+				extension.ResourceHuaweiNPUDVPP:  *resource.NewQuantity(200, resource.DecimalSI),
 				extension.ResourceGPUMemory:      *resource.NewQuantity(18000, resource.DecimalSI),
 				extension.ResourceGPUMemoryRatio: *resource.NewQuantity(200, resource.DecimalSI),
 			},
@@ -528,6 +532,8 @@ func TestPluginPrepare(t *testing.T) {
 				nr: &framework.NodeResource{
 					Resources: map[corev1.ResourceName]*resource.Quantity{
 						extension.ResourceHuaweiNPUCore:  resource.NewQuantity(160, resource.DecimalSI),
+						extension.ResourceHuaweiNPUCPU:   resource.NewQuantity(160, resource.DecimalSI),
+						extension.ResourceHuaweiNPUDVPP:  resource.NewQuantity(200, resource.DecimalSI),
 						extension.ResourceGPUMemory:      resource.NewQuantity(18000, resource.DecimalSI),
 						extension.ResourceGPUMemoryRatio: resource.NewQuantity(200, resource.DecimalSI),
 					},
@@ -553,6 +559,8 @@ func TestPluginPrepare(t *testing.T) {
 				nr: &framework.NodeResource{
 					Resets: map[corev1.ResourceName]bool{
 						extension.ResourceHuaweiNPUCore:  true,
+						extension.ResourceHuaweiNPUCPU:   true,
+						extension.ResourceHuaweiNPUDVPP:  true,
 						extension.ResourceGPUMemory:      true,
 						extension.ResourceGPUMemoryRatio: true,
 					},
@@ -651,6 +659,8 @@ func TestPluginCalculate(t *testing.T) {
 					Type:   schedulingv1alpha1.GPU,
 					Resources: map[corev1.ResourceName]resource.Quantity{
 						extension.ResourceHuaweiNPUCore:  *resource.NewQuantity(20, resource.DecimalSI),
+						extension.ResourceHuaweiNPUCPU:   *resource.NewQuantity(20, resource.DecimalSI),
+						extension.ResourceHuaweiNPUDVPP:  *resource.NewQuantity(100, resource.DecimalSI),
 						extension.ResourceGPUMemory:      *resource.NewQuantity(8000, resource.DecimalSI),
 						extension.ResourceGPUMemoryRatio: *resource.NewQuantity(100, resource.DecimalSI),
 					},
@@ -662,6 +672,8 @@ func TestPluginCalculate(t *testing.T) {
 					Type:   schedulingv1alpha1.GPU,
 					Resources: map[corev1.ResourceName]resource.Quantity{
 						extension.ResourceHuaweiNPUCore:  *resource.NewQuantity(20, resource.DecimalSI),
+						extension.ResourceHuaweiNPUCPU:   *resource.NewQuantity(20, resource.DecimalSI),
+						extension.ResourceHuaweiNPUDVPP:  *resource.NewQuantity(100, resource.DecimalSI),
 						extension.ResourceGPUMemory:      *resource.NewQuantity(10000, resource.DecimalSI),
 						extension.ResourceGPUMemoryRatio: *resource.NewQuantity(100, resource.DecimalSI),
 					},
@@ -842,6 +854,16 @@ func TestPluginCalculate(t *testing.T) {
 					Message:  UpdateResourcesMsg,
 				},
 				{
+					Name:     extension.ResourceHuaweiNPUCPU,
+					Quantity: resource.NewQuantity(40, resource.DecimalSI),
+					Message:  UpdateResourcesMsg,
+				},
+				{
+					Name:     extension.ResourceHuaweiNPUDVPP,
+					Quantity: resource.NewQuantity(200, resource.DecimalSI),
+					Message:  UpdateResourcesMsg,
+				},
+				{
 					Name:     extension.ResourceGPUMemory,
 					Quantity: resource.NewScaledQuantity(18, 3),
 					Message:  UpdateResourcesMsg,
@@ -999,6 +1021,16 @@ func TestPluginCalculate(t *testing.T) {
 					Message:  UpdateResourcesMsg,
 				},
 				{
+					Name:     extension.ResourceHuaweiNPUCPU,
+					Quantity: resource.NewQuantity(40, resource.DecimalSI),
+					Message:  UpdateResourcesMsg,
+				},
+				{
+					Name:     extension.ResourceHuaweiNPUDVPP,
+					Quantity: resource.NewQuantity(200, resource.DecimalSI),
+					Message:  UpdateResourcesMsg,
+				},
+				{
 					Name:     extension.ResourceGPUMemory,
 					Quantity: resource.NewScaledQuantity(18, 3),
 					Message:  UpdateResourcesMsg,
@@ -1108,6 +1140,16 @@ func TestPluginCalculate(t *testing.T) {
 					Message: ResetResourcesMsg,
 				},
 				{
+					Name:    extension.ResourceHuaweiNPUCPU,
+					Reset:   true,
+					Message: ResetResourcesMsg,
+				},
+				{
+					Name:    extension.ResourceHuaweiNPUDVPP,
+					Reset:   true,
+					Message: ResetResourcesMsg,
+				},
+				{
 					Name:    extension.ResourceGPUMemory,
 					Reset:   true,
 					Message: ResetResourcesMsg,
@@ -1146,6 +1188,16 @@ func TestPluginCalculate(t *testing.T) {
 				},
 				{
 					Name:    extension.ResourceHuaweiNPUCore,
+					Reset:   true,
+					Message: ResetResourcesMsg,
+				},
+				{
+					Name:    extension.ResourceHuaweiNPUCPU,
+					Reset:   true,
+					Message: ResetResourcesMsg,
+				},
+				{
+					Name:    extension.ResourceHuaweiNPUDVPP,
 					Reset:   true,
 					Message: ResetResourcesMsg,
 				},

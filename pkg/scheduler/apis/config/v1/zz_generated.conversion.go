@@ -204,6 +204,8 @@ func autoConvert_v1_DeviceShareArgs_To_config_DeviceShareArgs(in *DeviceShareArg
 	out.Allocator = in.Allocator
 	out.ScoringStrategy = (*config.ScoringStrategy)(unsafe.Pointer(in.ScoringStrategy))
 	out.DisableDeviceNUMATopologyAlignment = in.DisableDeviceNUMATopologyAlignment
+	out.GPUSharedResourceTemplatesConfigMapNamespace = in.GPUSharedResourceTemplatesConfigMapNamespace
+	out.GPUSharedResourceTemplatesConfigMapName = in.GPUSharedResourceTemplatesConfigMapName
 	return nil
 }
 
@@ -216,6 +218,8 @@ func autoConvert_config_DeviceShareArgs_To_v1_DeviceShareArgs(in *config.DeviceS
 	out.Allocator = in.Allocator
 	out.ScoringStrategy = (*ScoringStrategy)(unsafe.Pointer(in.ScoringStrategy))
 	out.DisableDeviceNUMATopologyAlignment = in.DisableDeviceNUMATopologyAlignment
+	out.GPUSharedResourceTemplatesConfigMapNamespace = in.GPUSharedResourceTemplatesConfigMapNamespace
+	out.GPUSharedResourceTemplatesConfigMapName = in.GPUSharedResourceTemplatesConfigMapName
 	return nil
 }
 

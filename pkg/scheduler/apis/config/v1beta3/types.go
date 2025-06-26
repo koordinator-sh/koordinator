@@ -21,9 +21,10 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	schedconfigv1beta3 "k8s.io/kube-scheduler/config/v1beta3"
 
-	"github.com/koordinator-sh/koordinator/apis/extension"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/kubernetes/pkg/scheduler/apis/config"
+
+	"github.com/koordinator-sh/koordinator/apis/extension"
 )
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -258,6 +259,10 @@ type DeviceShareArgs struct {
 	ScoringStrategy *ScoringStrategy `json:"scoringStrategy,omitempty"`
 	// DisableDeviceNUMATopologyAlignment indicates device don't need to align with other resources' numa topology
 	DisableDeviceNUMATopologyAlignment bool `json:"disableDeviceNUMATopologyAlignment,omitempty"`
+	// GPUSharedResourceTemplatesConfigMapNamespace is the namespace of the ConfigMap holding GPU shared resource templates data.
+	GPUSharedResourceTemplatesConfigMapNamespace string `json:"gpuSharedResourceTemplatesConfigMapNamespace,omitempty"`
+	// GPUSharedResourceTemplatesConfigMapNamespace is the name of the ConfigMap holding GPU shared resource templates data.
+	GPUSharedResourceTemplatesConfigMapName string `json:"gpuSharedResourceTemplatesConfigMapName,omitempty"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object

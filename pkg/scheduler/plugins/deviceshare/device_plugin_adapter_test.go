@@ -133,6 +133,33 @@ func TestHuaweiGPUDevicePluginAdapter_Adapt(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "minor with template",
+			args: args{
+				object: &corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Annotations: map[string]string{},
+					},
+				},
+				allocation: []*apiext.DeviceAllocation{
+					{
+						Minor: 0,
+						Extension: &apiext.DeviceAllocationExtension{
+							GPUSharedResourceTemplate: "vir02",
+						},
+					},
+				},
+			},
+			wantErr: false,
+			wantObject: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						AnnotationPredicateTime: strconv.FormatInt(now.UnixNano(), 10),
+						AnnotationHuaweiNPUCore: "0-vir02",
+					},
+				},
+			},
+		},
 	}
 
 	adapter := &huaweiGPUDevicePluginAdapter{

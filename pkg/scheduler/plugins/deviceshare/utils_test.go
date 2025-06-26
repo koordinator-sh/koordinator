@@ -232,6 +232,51 @@ func TestValidateDeviceRequest(t *testing.T) {
 			wantErr: true,
 		},
 		{
+			name: "valid shared huawei npu request",
+			podRequest: corev1.ResourceList{
+				apiext.ResourceGPUShared:     resource.MustParse("1"),
+				apiext.ResourceHuaweiNPUCore: resource.MustParse("10"),
+				apiext.ResourceHuaweiNPUCPU:  resource.MustParse("3"),
+				apiext.ResourceGPUMemory:     resource.MustParse("16Gi"),
+			},
+			want:    GPUShared | HuaweiNPUCore | HuaweiNPUCPU | GPUMemory,
+			wantErr: false,
+		},
+		{
+			name: "valid shared huawei npu request",
+			podRequest: corev1.ResourceList{
+				apiext.ResourceGPUShared:     resource.MustParse("1"),
+				apiext.ResourceHuaweiNPUCore: resource.MustParse("10"),
+				apiext.ResourceHuaweiNPUCPU:  resource.MustParse("3"),
+				apiext.ResourceHuaweiNPUDVPP: resource.MustParse("100"),
+				apiext.ResourceGPUMemory:     resource.MustParse("16Gi"),
+			},
+			want:    GPUShared | HuaweiNPUCore | HuaweiNPUCPU | HuaweiNPUDVPP | GPUMemory,
+			wantErr: false,
+		},
+		{
+			name: "invalid shared huawei npu request",
+			podRequest: corev1.ResourceList{
+				apiext.ResourceGPUShared:     resource.MustParse("2"),
+				apiext.ResourceHuaweiNPUCore: resource.MustParse("20"),
+				apiext.ResourceHuaweiNPUCPU:  resource.MustParse("6"),
+				apiext.ResourceHuaweiNPUDVPP: resource.MustParse("200"),
+				apiext.ResourceGPUMemory:     resource.MustParse("32Gi"),
+			},
+			want:    0,
+			wantErr: true,
+		},
+		{
+			name: "invalid shared huawei npu request",
+			podRequest: corev1.ResourceList{
+				apiext.ResourceGPUShared:     resource.MustParse("1"),
+				apiext.ResourceHuaweiNPUCore: resource.MustParse("10"),
+				apiext.ResourceGPUMemory:     resource.MustParse("16Gi"),
+			},
+			want:    0,
+			wantErr: true,
+		},
+		{
 			name: "invalid fpga request",
 			podRequest: corev1.ResourceList{
 				apiext.ResourceFPGA: resource.MustParse("201"),
@@ -382,6 +427,44 @@ func TestConvertDeviceRequest(t *testing.T) {
 			want: corev1.ResourceList{
 				apiext.ResourceHuaweiNPUCore:  resource.MustParse("20"),
 				apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+			},
+		},
+		{
+			name: "gpuShared | huaweiNPUCore | huaweiNPUCPU | gpuMemory",
+			args: args{
+				podRequest: corev1.ResourceList{
+					apiext.ResourceGPUShared:     resource.MustParse("1"),
+					apiext.ResourceHuaweiNPUCore: resource.MustParse("10"),
+					apiext.ResourceHuaweiNPUCPU:  resource.MustParse("3"),
+					apiext.ResourceGPUMemory:     resource.MustParse("16Gi"),
+				},
+				combination: GPUShared | HuaweiNPUCore | HuaweiNPUCPU | GPUMemory,
+			},
+			want: corev1.ResourceList{
+				apiext.ResourceGPUShared:     resource.MustParse("1"),
+				apiext.ResourceHuaweiNPUCore: resource.MustParse("10"),
+				apiext.ResourceHuaweiNPUCPU:  resource.MustParse("3"),
+				apiext.ResourceGPUMemory:     resource.MustParse("16Gi"),
+			},
+		},
+		{
+			name: "gpuShared | huaweiNPUCore | huaweiNPUCPU | huaweiNPUDVPP | gpuMemory",
+			args: args{
+				podRequest: corev1.ResourceList{
+					apiext.ResourceGPUShared:     resource.MustParse("1"),
+					apiext.ResourceHuaweiNPUCore: resource.MustParse("10"),
+					apiext.ResourceHuaweiNPUCPU:  resource.MustParse("3"),
+					apiext.ResourceHuaweiNPUDVPP: resource.MustParse("100"),
+					apiext.ResourceGPUMemory:     resource.MustParse("16Gi"),
+				},
+				combination: GPUShared | HuaweiNPUCore | HuaweiNPUCPU | HuaweiNPUDVPP | GPUMemory,
+			},
+			want: corev1.ResourceList{
+				apiext.ResourceGPUShared:     resource.MustParse("1"),
+				apiext.ResourceHuaweiNPUCore: resource.MustParse("10"),
+				apiext.ResourceHuaweiNPUCPU:  resource.MustParse("3"),
+				apiext.ResourceHuaweiNPUDVPP: resource.MustParse("100"),
+				apiext.ResourceGPUMemory:     resource.MustParse("16Gi"),
 			},
 		},
 		{

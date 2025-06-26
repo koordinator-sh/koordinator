@@ -57,6 +57,8 @@ func calcDesiredRequestsAndCountForGPU(podRequests corev1.ResourceList) (corev1.
 	gpuShare, ok := podRequests[apiext.ResourceGPUShared]
 	gpuCore, coreExists := podRequests[apiext.ResourceGPUCore]
 	huaweiNPUCore, huaweiNPUCoreExists := podRequests[apiext.ResourceHuaweiNPUCore]
+	huaweiNPUCPU, huaweiNPUCPUExists := podRequests[apiext.ResourceHuaweiNPUCPU]
+	huaweiNPUDVPP, huaweiNPUDVPPExists := podRequests[apiext.ResourceHuaweiNPUDVPP]
 	gpuMemoryRatio, memoryRatioExists := podRequests[apiext.ResourceGPUMemoryRatio]
 	// gpu share mode
 	if ok && gpuShare.Value() > 0 {
@@ -73,6 +75,12 @@ func calcDesiredRequestsAndCountForGPU(podRequests corev1.ResourceList) (corev1.
 	}
 	if huaweiNPUCoreExists {
 		requests[apiext.ResourceHuaweiNPUCore] = *resource.NewQuantity(huaweiNPUCore.Value()/desiredCount, resource.DecimalSI)
+	}
+	if huaweiNPUCPUExists {
+		requests[apiext.ResourceHuaweiNPUCPU] = *resource.NewQuantity(huaweiNPUCPU.Value()/desiredCount, resource.DecimalSI)
+	}
+	if huaweiNPUDVPPExists {
+		requests[apiext.ResourceHuaweiNPUDVPP] = *resource.NewQuantity(huaweiNPUDVPP.Value()/desiredCount, resource.DecimalSI)
 	}
 	if memoryRatioExists {
 		gpuMemoryRatioPerGPU := gpuMemoryRatio.Value() / desiredCount

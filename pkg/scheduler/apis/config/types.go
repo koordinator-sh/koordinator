@@ -264,6 +264,10 @@ type DeviceShareArgs struct {
 	ScoringStrategy *ScoringStrategy
 	// DisableDeviceNUMATopologyAlignment indicates device don't need to align with other resources' numa topology
 	DisableDeviceNUMATopologyAlignment bool
+	// GPUSharedResourceTemplatesConfigMapNamespace is the namespace of the ConfigMap holding GPU shared resource templates data.
+	GPUSharedResourceTemplatesConfigMapNamespace string
+	// GPUSharedResourceTemplatesConfigMapNamespace is the name of the ConfigMap holding GPU shared resource templates data.
+	GPUSharedResourceTemplatesConfigMapName string
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
