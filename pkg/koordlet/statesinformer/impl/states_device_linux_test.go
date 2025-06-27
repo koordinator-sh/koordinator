@@ -66,7 +66,8 @@ func Test_reportGPUDevice(t *testing.T) {
 			return "A100", "470"
 		},
 	}
-	r.reportDevice()
+	r.reportGPUDevice()
+	r.reportRDMADevice()
 	expectedDevices := []schedulingv1alpha1.DeviceInfo{
 		{
 			UUID:   "1",
@@ -130,7 +131,8 @@ func Test_reportGPUDevice(t *testing.T) {
 	}
 	mockMetricCache.EXPECT().Get(koordletutil.GPUDeviceType).Return(gpuDeviceInfo, true)
 	mockMetricCache.EXPECT().Get(koordletutil.RDMADeviceType).Return(rdmaDeviceInfo, true)
-	r.reportDevice()
+	r.reportGPUDevice()
+	r.reportRDMADevice()
 
 	expectedDevices = append(expectedDevices, schedulingv1alpha1.DeviceInfo{
 		UUID:   "4",
@@ -164,4 +166,102 @@ func Test_reportGPUDevice(t *testing.T) {
 	assert.Equal(t, device.Labels[extension.LabelGPUVendor], extension.GPUVendorNVIDIA)
 	assert.Equal(t, device.Labels[extension.LabelGPUModel], "A100")
 	assert.Equal(t, device.Labels[extension.LabelGPUDriverVersion], "470")
+}
+
+func Test_reportXPUDevice(t *testing.T) {
+	testNode := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test",
+		},
+	}
+	fakeClient := schedulingfake.NewSimpleClientset().SchedulingV1alpha1().Devices()
+	ctl := gomock.NewController(t)
+	mockMetricCache := mock_metriccache.NewMockMetricCache(ctl)
+	var xpuDeviceInfo koordletutil.XPUDevices
+	xpuDeviceInfo = []koordletutil.XPUDeviceInfo{
+		{
+			Vendor: "huawei",
+			Model:  "Ascend-910B",
+			UUID:   "185011D4-21104518-A0C4ED94-14CC040A-56102003",
+			Minor:  "0",
+			Resources: map[string]string{
+				"huawei.com/npu-core":       "32",
+				"hauwei.com/npu-cpu":        "14",
+				"koordinator.sh/gpu-memory": "32Gi",
+				"huawei.com/npu-vpc":        "16",
+				"huawei.com/npu-vdec":       "16",
+				"huawei.com/npu-jpegd":      "16",
+				"huawei.com/npu-pngd":       "24",
+				"huawei.com/npu-jpege":      "8",
+			},
+			Topology: &koordletutil.DeviceTopology{
+				P2PLinks: []koordletutil.DeviceP2PLink{
+					{
+						PeerMinor: "1,2,3",
+						Type:      "HCCS",
+					},
+				},
+				SocketID: "0",
+				NodeID:   "0",
+				PCIEID:   "0000:00:08.0",
+				BusID:    "0000:00:08.0",
+			},
+			Status: &koordletutil.DeviceStatus{
+				Healthy: true,
+			},
+		},
+	}
+	mockMetricCache.EXPECT().Get(koordletutil.XPUDeviceType).Return(xpuDeviceInfo, true)
+	r := &statesInformer{
+		deviceClient: fakeClient,
+		metricsCache: mockMetricCache,
+		states: &PluginState{
+			informerPlugins: map[PluginName]informerPlugin{
+				nodeInformerName: &nodeInformer{
+					node: testNode,
+				},
+			},
+		},
+		getGPUDriverAndModelFunc: func() (string, string) {
+			return "A100", "470"
+		},
+	}
+	r.reportXPUDevice()
+	expectedDevices := []schedulingv1alpha1.DeviceInfo{
+		{
+			UUID:   "185011D4-21104518-A0C4ED94-14CC040A-56102003",
+			Minor:  pointer.Int32(0),
+			Type:   schedulingv1alpha1.XPU,
+			Health: true,
+			Resources: map[corev1.ResourceName]resource.Quantity{
+				extension.ResourceGPUCore:        *resource.NewQuantity(100, resource.DecimalSI),
+				extension.ResourceGPUMemory:      *resource.NewQuantity(8000, resource.BinarySI),
+				extension.ResourceGPUMemoryRatio: *resource.NewQuantity(100, resource.DecimalSI),
+			},
+		},
+		{
+			UUID:   "2",
+			Minor:  pointer.Int32(2),
+			Type:   schedulingv1alpha1.GPU,
+			Health: true,
+			Resources: map[corev1.ResourceName]resource.Quantity{
+				"huawei.com/npu-core":       *resource.NewQuantity(32, resource.DecimalSI),
+				"hauwei.com/npu-cpu":        *resource.NewQuantity(14, resource.DecimalSI),
+				"koordinator.sh/gpu-memory": *resource.NewQuantity(34359738368, resource.BinarySI),
+				"huawei.com/npu-vpc":        *resource.NewQuantity(16, resource.DecimalSI),
+				"huawei.com/npu-vdec":       *resource.NewQuantity(16, resource.DecimalSI),
+				"huawei.com/npu-jpegd":      *resource.NewQuantity(16, resource.DecimalSI),
+				"huawei.com/npu-pngd":       *resource.NewQuantity(24, resource.DecimalSI),
+				"huawei.com/npu-jpege":      *resource.NewQuantity(8, resource.DecimalSI),
+			},
+		},
+	}
+	device, err := fakeClient.Get(context.TODO(), "test", metav1.GetOptions{})
+	assert.Equal(t, nil, err)
+	assert.Equal(t, device.Spec.Devices, expectedDevices)
+
+	assert.Equal(t, device.Labels[extension.LabelGPUModel], "Ascend-910B")
+	assert.Equal(t, device.Labels[extension.LabelGPUVendor], "huawei")
+	assert.Equal(t, device.Labels[extension.LabelGPUPartitionPolicy], "HONOR")
+	assert.Equal(t, device.Annotations[extension.AnnotationGPUPartitions], "Ascend-910B")
 }
