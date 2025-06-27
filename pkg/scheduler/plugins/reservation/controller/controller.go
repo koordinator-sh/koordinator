@@ -68,7 +68,7 @@ type Controller struct {
 	numWorker                  int
 	gcDuration                 time.Duration
 
-	lock sync.Mutex
+	lock sync.RWMutex
 	pods map[string]map[types.UID]*corev1.Pod
 }
 
