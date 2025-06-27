@@ -56,10 +56,10 @@ func GetXPUDevice() (metriccache.Devices, error) {
 		// Add the device info to the metric cache
 		devices = append(devices, deviceInfos...)
 	}
-
+	return devices, nil
 }
 
-func readDeviceInfosFromFile(filePath string) ([]util.XPUDeviceInfo, error) {
+func readDeviceInfosFromFile(filePath string) (util.XPUDevices, error) {
 	// Read the device info from the file
 	file, err := os.Open(filePath)
 	if err != nil {
@@ -67,8 +67,8 @@ func readDeviceInfosFromFile(filePath string) ([]util.XPUDeviceInfo, error) {
 	}
 	defer file.Close()
 
-	var deviceInfos []util.XPUDeviceInfo
-	if err := json.NewDecoder(file).Decode(deviceInfos); err != nil {
+	var deviceInfos util.XPUDevices
+	if err := json.NewDecoder(file).Decode(&deviceInfos); err != nil {
 		return nil, fmt.Errorf("failed to decode device info from file %s: %v", filePath, err)
 	}
 

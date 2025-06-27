@@ -84,13 +84,17 @@ type XPUDeviceInfo struct {
 	Model     string            `json:"model"`
 	UUID      string            `json:"uuid"`  //the Identifier of the device
 	Minor     string            `json:"minor"` // /dev/xxx0
-	Resources map[string]string `json:"resourece,omitempty"`
+	Resources map[string]string `json:"resources,omitempty"`
 	Topology  *DeviceTopology   `json:"topology,omitempty"`
 	Status    *DeviceStatus     `json:"status,omitempty"`
 }
 
 type DeviceTopology struct {
 	P2PLinks []DeviceP2PLink `json:"p2pLinks,omitempty"`
+	SocketID string          `json:"socketID,omitempty"`
+	NodeID   string          `json:"nodeID,omitempty"`
+	PCIEID   string          `json:"pcieID,omitempty"`
+	BusID    string          `json:"busID,omitempty"`
 }
 
 type DeviceP2PLink struct {
