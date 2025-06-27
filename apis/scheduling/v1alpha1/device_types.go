@@ -27,6 +27,7 @@ const (
 	GPU  DeviceType = "gpu"
 	FPGA DeviceType = "fpga"
 	RDMA DeviceType = "rdma"
+	XPU  DeviceType = "xpu"
 )
 
 type DeviceSpec struct {
@@ -53,6 +54,8 @@ type DeviceInfo struct {
 	Topology *DeviceTopology `json:"topology,omitempty"`
 	// VFGroups represents the virtual function devices
 	VFGroups []VirtualFunctionGroup `json:"vfGroups,omitempty"`
+	// Device health condition
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
 type DeviceTopology struct {

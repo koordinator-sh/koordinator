@@ -62,6 +62,7 @@ const (
 	LabelGPUModel                   string = NodeDomainPrefix + "/gpu-model"
 	LabelGPUDriverVersion           string = NodeDomainPrefix + "/gpu-driver-version"
 	LabelSecondaryDeviceWellPlanned string = NodeDomainPrefix + "/secondary-device-well-planned"
+	LabelGPUVendor                  string = NodeDomainPrefix + "/gpu-vendor"
 
 	LabelGPUIsolationProvider = DomainPrefix + "gpu-isolation-provider"
 )
