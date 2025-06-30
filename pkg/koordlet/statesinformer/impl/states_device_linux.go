@@ -19,6 +19,7 @@ package impl
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"sort"
 	"strconv"
@@ -115,9 +116,10 @@ func (s *statesInformer) reportXPUDevice() {
 	device := s.buildBasicDevice(node)
 
 	func() {
-		xpuDevices := s.buildXPUDevice()
-		annotations := s.buildXPUDeviceAnnotations()
-		labels := s.buildXPUDeviceLabels()
+		xpuRawDevices := getXPUDevices(s.metricsCache)
+		xpuDevices := s.buildXPUDevice(xpuRawDevices)
+		annotations := s.buildXPUDeviceAnnotations(xpuRawDevices)
+		labels := s.buildXPUDeviceLabels(xpuRawDevices)
 		klog.V(4).Infof("Device: annotations: %s, labels %s", annotations, labels)
 		if len(xpuDevices) != 0 {
 
@@ -213,9 +215,17 @@ func (s *statesInformer) updateDevice(device *schedulingv1alpha1.Device) error {
 			return nil
 		}
 
-		latestDevice.Spec.Devices = device.Spec.Devices
-		latestDevice.Labels = device.Labels
-		latestDevice.Annotations = device.Annotations
+		// Consider merging devices for different device types
+		devices := mergeDevices(latestDevice.Spec.Devices, device.Spec.Devices)
+		latestDevice.Spec.Devices = devices
+		sorter(latestDevice.Spec.Devices)
+
+		// Update labels and annotations
+		labels := mergeAnnotationsOrLabels(latestDevice.Labels, device.Labels)
+		latestDevice.Labels = labels
+
+		annotations := mergeAnnotationsOrLabels(latestDevice.Annotations, device.Annotations)
+		latestDevice.Annotations = annotations
 
 		_, err = s.deviceClient.Update(context.TODO(), latestDevice, metav1.UpdateOptions{})
 		return err
@@ -325,8 +335,7 @@ func (s *statesInformer) buildRDMADevice() []schedulingv1alpha1.DeviceInfo {
 	return deviceInfos
 }
 
-func (s *statesInformer) buildXPUDevice() []schedulingv1alpha1.DeviceInfo {
-	xpuDevices := getXPUDevices(s.metricsCache)
+func (s *statesInformer) buildXPUDevice(xpuDevices koordletuti.XPUDevices) []schedulingv1alpha1.DeviceInfo {
 	var deviceInfos []schedulingv1alpha1.DeviceInfo
 	for idx := range xpuDevices {
 		xpu := xpuDevices[idx]
@@ -544,8 +553,7 @@ func checkHealth(stopCh <-chan struct{}, devs []string, xids chan<- string) {
 	}
 }
 
-func (s *statesInformer) buildXPUDeviceLabels() map[string]string {
-	xpuDevices := getXPUDevices(s.metricsCache)
+func (s *statesInformer) buildXPUDeviceLabels(xpuDevices koordletuti.XPUDevices) map[string]string {
 	if len(xpuDevices) == 0 {
 		return nil
 	}
@@ -567,8 +575,7 @@ func (s *statesInformer) buildXPUDeviceLabels() map[string]string {
 	}
 }
 
-func (s *statesInformer) buildXPUDeviceAnnotations() map[string]string {
-	xpuDevices := getXPUDevices(s.metricsCache)
+func (s *statesInformer) buildXPUDeviceAnnotations(xpuDevices koordletuti.XPUDevices) map[string]string {
 	partitionTable := getPartitionTableFromXPUDevices(xpuDevices)
 	rawBytes, err := json.Marshal(partitionTable)
 	if err != nil {
@@ -604,6 +611,8 @@ func getPartitionTableFromXPUDevices(xpus koordletuti.XPUDevices) extension.GPUP
 				}
 				minorsINt = append(minorsINt, minorInt)
 			}
+
+			sort.Ints(minorsINt)
 
 			partition := extension.GPUPartition{
 				Minors:          minorsINt,
@@ -651,4 +660,43 @@ func getXPUDeviceTopology(xpu *koordletuti.XPUDeviceInfo) *schedulingv1alpha1.De
 		PCIEID:   xpu.Topology.PCIEID,
 		BusID:    xpu.Topology.BusID,
 	}
+}
+
+func mergeDevices(lastDevcie []schedulingv1alpha1.DeviceInfo, currentDeivce []schedulingv1alpha1.DeviceInfo) []schedulingv1alpha1.DeviceInfo {
+	deviceMap := make(map[string]schedulingv1alpha1.DeviceInfo)
+
+	for _, device := range lastDevcie {
+		key := fmt.Sprintf("%s-%d", device.Type, *device.Minor)
+		deviceMap[key] = device
+	}
+
+	for _, device := range currentDeivce {
+		key := fmt.Sprintf("%s-%d", device.Type, *device.Minor)
+		deviceMap[key] = device
+	}
+
+	var devices []schedulingv1alpha1.DeviceInfo
+	for _, device := range deviceMap {
+		devices = append(devices, device)
+	}
+
+	return devices
+}
+
+func mergeAnnotationsOrLabels(last, current map[string]string) map[string]string {
+	if last == nil {
+		return current
+	}
+	if current == nil {
+		return last
+	}
+
+	merged := make(map[string]string)
+	for k, v := range last {
+		merged[k] = v
+	}
+	for k, v := range current {
+		merged[k] = v
+	}
+	return merged
 }
