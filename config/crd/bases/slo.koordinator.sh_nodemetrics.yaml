@@ -95,9 +95,7 @@ spec:
                           items:
                             properties:
                               conditions:
-                                description: |-
-                                  Device health condition
-                                  Conditions []corev1.PodCondition `json:"conditions,omitempty"
+                                description: Device health condition
                                 items:
                                   description: "Condition contains details for one
                                     aspect of the current state of this API Resource.\n---\nThis
@@ -305,9 +303,7 @@ spec:
                                 items:
                                   properties:
                                     conditions:
-                                      description: |-
-                                        Device health condition
-                                        Conditions []corev1.PodCondition `json:"conditions,omitempty"
+                                      description: Device health condition
                                       items:
                                         description: "Condition contains details for
                                           one aspect of the current state of this
@@ -518,9 +514,7 @@ spec:
                                 items:
                                   properties:
                                     conditions:
-                                      description: |-
-                                        Device health condition
-                                        Conditions []corev1.PodCondition `json:"conditions,omitempty"
+                                      description: Device health condition
                                       items:
                                         description: "Condition contains details for
                                           one aspect of the current state of this
@@ -723,9 +717,7 @@ spec:
                         items:
                           properties:
                             conditions:
-                              description: |-
-                                Device health condition
-                                Conditions []corev1.PodCondition `json:"conditions,omitempty"
+                              description: Device health condition
                               items:
                                 description: "Condition contains details for one aspect
                                   of the current state of this API Resource.\n---\nThis
@@ -921,9 +913,7 @@ spec:
                         items:
                           properties:
                             conditions:
-                              description: |-
-                                Device health condition
-                                Conditions []corev1.PodCondition `json:"conditions,omitempty"
+                              description: Device health condition
                               items:
                                 description: "Condition contains details for one aspect
                                   of the current state of this API Resource.\n---\nThis
@@ -1131,9 +1121,7 @@ spec:
                           items:
                             properties:
                               conditions:
-                                description: |-
-                                  Device health condition
-                                  Conditions []corev1.PodCondition `json:"conditions,omitempty"
+                                description: Device health condition
                                 items:
                                   description: "Condition contains details for one
                                     aspect of the current state of this API Resource.\n---\nThis
@@ -1341,9 +1329,7 @@ spec:
                         items:
                           properties:
                             conditions:
-                              description: |-
-                                Device health condition
-                                Conditions []corev1.PodCondition `json:"conditions,omitempty"
+                              description: Device health condition
                               items:
                                 description: "Condition contains details for one aspect
                                   of the current state of this API Resource.\n---\nThis
