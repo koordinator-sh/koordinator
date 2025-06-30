@@ -746,9 +746,11 @@ func podFitsAnyNodeWithThreshold(nodeIndexer podutil.GetPodsAssignedToNodeFunc, 
 					thresholds = nodeThreshold.highResourceThreshold
 				}
 				exceeded := false
+				preReducedResources := make([]corev1.ResourceName, 0, len(thresholds))
 				for resourceName, threshold := range thresholds {
 					if used := usage[resourceName]; used != nil {
 						used.Add(podMetric.ResourceList[resourceName])
+						preReducedResources = append(preReducedResources, resourceName)
 						if used.Cmp(*threshold) > 0 {
 							exceeded = true
 							break
@@ -758,6 +760,12 @@ func podFitsAnyNodeWithThreshold(nodeIndexer podutil.GetPodsAssignedToNodeFunc, 
 				}
 				if exceeded {
 					klog.V(4).InfoS("Pod may cause node over-utilized", "pod", klog.KObj(pod), "node", klog.KObj(node))
+					// revert the change
+					for _, resourceName := range preReducedResources {
+						if used := usage[resourceName]; used != nil {
+							used.Sub(podMetric.ResourceList[resourceName])
+						}
+					}
 					continue
 				}
 			}
