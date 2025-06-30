@@ -188,11 +188,7 @@ func Test_reportXPUDevice(t *testing.T) {
 				"huawei.com/npu-core":       "32",
 				"hauwei.com/npu-cpu":        "14",
 				"koordinator.sh/gpu-memory": "32Gi",
-				"huawei.com/npu-vpc":        "16",
-				"huawei.com/npu-vdec":       "16",
-				"huawei.com/npu-jpegd":      "16",
-				"huawei.com/npu-pngd":       "24",
-				"huawei.com/npu-jpege":      "8",
+				"huawei.com/dvpp":           "100",
 			},
 			Topology: &koordletutil.DeviceTopology{
 				P2PLinks: []koordletutil.DeviceP2PLink{
@@ -212,6 +208,8 @@ func Test_reportXPUDevice(t *testing.T) {
 		},
 	}
 	mockMetricCache.EXPECT().Get(koordletutil.XPUDeviceType).Return(xpuDeviceInfo, true)
+	mockMetricCache.EXPECT().Get(koordletutil.RDMADeviceType).Return(nil, false)
+	mockMetricCache.EXPECT().Get(koordletutil.GPUDeviceType).Return(nil, false)
 	r := &statesInformer{
 		deviceClient: fakeClient,
 		metricsCache: mockMetricCache,
@@ -222,11 +220,15 @@ func Test_reportXPUDevice(t *testing.T) {
 				},
 			},
 		},
-		getGPUDriverAndModelFunc: func() (string, string) {
-			return "A100", "470"
-		},
 	}
+	r.reportGPUDevice()
+	r.reportRDMADevice()
 	r.reportXPUDevice()
+
+	npuCoreQuantity, _ := resource.ParseQuantity("32")
+	npuCpuQuantity, _ := resource.ParseQuantity("14")
+	gpuMemQuantity, _ := resource.ParseQuantity("32Gi")
+	dvppQuantity, _ := resource.ParseQuantity("100")
 	expectedDevices := []schedulingv1alpha1.DeviceInfo{
 		{
 			UUID:   "185011D4-21104518-A0C4ED94-14CC040A-56102003",
@@ -234,25 +236,16 @@ func Test_reportXPUDevice(t *testing.T) {
 			Type:   schedulingv1alpha1.XPU,
 			Health: true,
 			Resources: map[corev1.ResourceName]resource.Quantity{
-				extension.ResourceGPUCore:        *resource.NewQuantity(100, resource.DecimalSI),
-				extension.ResourceGPUMemory:      *resource.NewQuantity(8000, resource.BinarySI),
-				extension.ResourceGPUMemoryRatio: *resource.NewQuantity(100, resource.DecimalSI),
+				"huawei.com/npu-core":       npuCoreQuantity,
+				"hauwei.com/npu-cpu":        npuCpuQuantity,
+				"koordinator.sh/gpu-memory": gpuMemQuantity,
+				"huawei.com/dvpp":           dvppQuantity,
 			},
-		},
-		{
-			UUID:   "2",
-			Minor:  pointer.Int32(2),
-			Type:   schedulingv1alpha1.GPU,
-			Health: true,
-			Resources: map[corev1.ResourceName]resource.Quantity{
-				"huawei.com/npu-core":       *resource.NewQuantity(32, resource.DecimalSI),
-				"hauwei.com/npu-cpu":        *resource.NewQuantity(14, resource.DecimalSI),
-				"koordinator.sh/gpu-memory": *resource.NewQuantity(34359738368, resource.BinarySI),
-				"huawei.com/npu-vpc":        *resource.NewQuantity(16, resource.DecimalSI),
-				"huawei.com/npu-vdec":       *resource.NewQuantity(16, resource.DecimalSI),
-				"huawei.com/npu-jpegd":      *resource.NewQuantity(16, resource.DecimalSI),
-				"huawei.com/npu-pngd":       *resource.NewQuantity(24, resource.DecimalSI),
-				"huawei.com/npu-jpege":      *resource.NewQuantity(8, resource.DecimalSI),
+			Topology: &schedulingv1alpha1.DeviceTopology{
+				SocketID: -1,
+				NodeID:   0,
+				PCIEID:   "0000:00:08.0",
+				BusID:    "0000:00:08.0",
 			},
 		},
 	}
@@ -262,6 +255,6 @@ func Test_reportXPUDevice(t *testing.T) {
 
 	assert.Equal(t, device.Labels[extension.LabelGPUModel], "Ascend-910B")
 	assert.Equal(t, device.Labels[extension.LabelGPUVendor], "huawei")
-	assert.Equal(t, device.Labels[extension.LabelGPUPartitionPolicy], "HONOR")
-	assert.Equal(t, device.Annotations[extension.AnnotationGPUPartitions], "Ascend-910B")
+	assert.Equal(t, device.Labels[extension.LabelGPUPartitionPolicy], "Honor")
+	assert.Equal(t, device.Annotations[extension.AnnotationGPUPartitions], "{\"4\":[{\"minors\":[0,1,2,3],\"gpuLinkType\":\"HCCS\",\"allocationScore\":1}]}")
 }
