@@ -54,6 +54,8 @@ const (
 	ResourceGPUMemoryRatio corev1.ResourceName = DomainPrefix + "gpu-memory-ratio"
 
 	ResourceHuaweiNPUCore = "huawei.com/npu-core"
+	ResourceHuaweiNPUCPU  = "huawei.com/npu-cpu"
+	ResourceHuaweiNPUDVPP = "huawei.com/npu-dvpp"
 )
 
 const (
@@ -121,7 +123,8 @@ type DeviceAllocation struct {
 }
 
 type DeviceAllocationExtension struct {
-	VirtualFunctions []VirtualFunction `json:"vfs,omitempty"`
+	VirtualFunctions          []VirtualFunction `json:"vfs,omitempty"`
+	GPUSharedResourceTemplate string            `json:"gpuSharedResourceTemplate,omitempty"`
 }
 
 type VirtualFunction struct {
@@ -236,6 +239,11 @@ type GPUIsolationProvider string
 const (
 	GPUIsolationProviderHAMICore GPUIsolationProvider = "HAMi-core"
 )
+
+// GPUSharedResourceTemplates represents GPU shared resource templates of a specific GPU model.
+// The key is template name and the value is resource list of the template.
+// Background: Some GPU models (e.g. Huawei Ascend series) restrict GPU shared resources to specific templates.
+type GPUSharedResourceTemplates map[string]corev1.ResourceList
 
 func GetDeviceAllocations(podAnnotations map[string]string) (DeviceAllocations, error) {
 	deviceAllocations := DeviceAllocations{}

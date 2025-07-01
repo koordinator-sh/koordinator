@@ -149,6 +149,11 @@ func validateGPUShare(c *corev1.Container) field.ErrorList {
 	gpuMemoryQuantity := c.Resources.Requests[extension.ResourceGPUMemory]
 	gpuMemoryRatioQuantity := c.Resources.Requests[extension.ResourceGPUMemoryRatio]
 	gpuCoreQuantity := c.Resources.Requests[extension.ResourceGPUCore]
+	huaweiNPUCoreQuantity := c.Resources.Requests[extension.ResourceHuaweiNPUCore]
+
+	if !validateZeroResource(huaweiNPUCoreQuantity) {
+		return allErrs
+	}
 
 	if validateZeroResource(gpuMemoryQuantity) && validateZeroResource(gpuMemoryRatioQuantity) {
 		allErrs = append(allErrs, field.Forbidden(field.NewPath("pod.spec.containers[*].resources.requests"), "GPU memory and GPU memory ratio all is zero"))

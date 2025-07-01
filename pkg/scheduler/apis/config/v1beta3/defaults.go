@@ -76,6 +76,14 @@ var (
 
 	defaultTimeout           = 600 * time.Second
 	defaultControllerWorkers = 1
+
+	defaultGPUSharedResourceTemplatesConfig = &GPUSharedResourceTemplatesConfig{
+		ConfigMapNamespace: "koordinator-system",
+		ConfigMapName:      "gpu-shared-resource-templates",
+		MatchedResources: []corev1.ResourceName{
+			extension.ResourceHuaweiNPUCore,
+		},
+	}
 )
 
 // SetDefaults_LoadAwareSchedulingArgs sets the default parameters for LoadAwareScheduling plugin.
@@ -227,5 +235,8 @@ func SetDefaults_DeviceShareArgs(obj *DeviceShareArgs) {
 				},
 			},
 		}
+	}
+	if obj.GPUSharedResourceTemplatesConfig == nil {
+		obj.GPUSharedResourceTemplatesConfig = defaultGPUSharedResourceTemplatesConfig
 	}
 }

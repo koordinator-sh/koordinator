@@ -232,6 +232,51 @@ func TestValidateDeviceRequest(t *testing.T) {
 			wantErr: true,
 		},
 		{
+			name: "valid shared huawei npu request",
+			podRequest: corev1.ResourceList{
+				apiext.ResourceGPUShared:     resource.MustParse("1"),
+				apiext.ResourceHuaweiNPUCore: resource.MustParse("10"),
+				apiext.ResourceHuaweiNPUCPU:  resource.MustParse("3"),
+				apiext.ResourceGPUMemory:     resource.MustParse("16Gi"),
+			},
+			want:    GPUShared | HuaweiNPUCore | HuaweiNPUCPU | GPUMemory,
+			wantErr: false,
+		},
+		{
+			name: "valid shared huawei npu request",
+			podRequest: corev1.ResourceList{
+				apiext.ResourceGPUShared:     resource.MustParse("1"),
+				apiext.ResourceHuaweiNPUCore: resource.MustParse("10"),
+				apiext.ResourceHuaweiNPUCPU:  resource.MustParse("3"),
+				apiext.ResourceHuaweiNPUDVPP: resource.MustParse("100"),
+				apiext.ResourceGPUMemory:     resource.MustParse("16Gi"),
+			},
+			want:    GPUShared | HuaweiNPUCore | HuaweiNPUCPU | HuaweiNPUDVPP | GPUMemory,
+			wantErr: false,
+		},
+		{
+			name: "invalid shared huawei npu request",
+			podRequest: corev1.ResourceList{
+				apiext.ResourceGPUShared:     resource.MustParse("2"),
+				apiext.ResourceHuaweiNPUCore: resource.MustParse("20"),
+				apiext.ResourceHuaweiNPUCPU:  resource.MustParse("6"),
+				apiext.ResourceHuaweiNPUDVPP: resource.MustParse("200"),
+				apiext.ResourceGPUMemory:     resource.MustParse("32Gi"),
+			},
+			want:    0,
+			wantErr: true,
+		},
+		{
+			name: "invalid shared huawei npu request",
+			podRequest: corev1.ResourceList{
+				apiext.ResourceGPUShared:     resource.MustParse("1"),
+				apiext.ResourceHuaweiNPUCore: resource.MustParse("10"),
+				apiext.ResourceGPUMemory:     resource.MustParse("16Gi"),
+			},
+			want:    0,
+			wantErr: true,
+		},
+		{
 			name: "invalid fpga request",
 			podRequest: corev1.ResourceList{
 				apiext.ResourceFPGA: resource.MustParse("201"),
@@ -385,6 +430,44 @@ func TestConvertDeviceRequest(t *testing.T) {
 			},
 		},
 		{
+			name: "gpuShared | huaweiNPUCore | huaweiNPUCPU | gpuMemory",
+			args: args{
+				podRequest: corev1.ResourceList{
+					apiext.ResourceGPUShared:     resource.MustParse("1"),
+					apiext.ResourceHuaweiNPUCore: resource.MustParse("10"),
+					apiext.ResourceHuaweiNPUCPU:  resource.MustParse("3"),
+					apiext.ResourceGPUMemory:     resource.MustParse("16Gi"),
+				},
+				combination: GPUShared | HuaweiNPUCore | HuaweiNPUCPU | GPUMemory,
+			},
+			want: corev1.ResourceList{
+				apiext.ResourceGPUShared:     resource.MustParse("1"),
+				apiext.ResourceHuaweiNPUCore: resource.MustParse("10"),
+				apiext.ResourceHuaweiNPUCPU:  resource.MustParse("3"),
+				apiext.ResourceGPUMemory:     resource.MustParse("16Gi"),
+			},
+		},
+		{
+			name: "gpuShared | huaweiNPUCore | huaweiNPUCPU | huaweiNPUDVPP | gpuMemory",
+			args: args{
+				podRequest: corev1.ResourceList{
+					apiext.ResourceGPUShared:     resource.MustParse("1"),
+					apiext.ResourceHuaweiNPUCore: resource.MustParse("10"),
+					apiext.ResourceHuaweiNPUCPU:  resource.MustParse("3"),
+					apiext.ResourceHuaweiNPUDVPP: resource.MustParse("100"),
+					apiext.ResourceGPUMemory:     resource.MustParse("16Gi"),
+				},
+				combination: GPUShared | HuaweiNPUCore | HuaweiNPUCPU | HuaweiNPUDVPP | GPUMemory,
+			},
+			want: corev1.ResourceList{
+				apiext.ResourceGPUShared:     resource.MustParse("1"),
+				apiext.ResourceHuaweiNPUCore: resource.MustParse("10"),
+				apiext.ResourceHuaweiNPUCPU:  resource.MustParse("3"),
+				apiext.ResourceHuaweiNPUDVPP: resource.MustParse("100"),
+				apiext.ResourceGPUMemory:     resource.MustParse("16Gi"),
+			},
+		},
+		{
 			name: "rdma",
 			args: args{
 				podRequest: corev1.ResourceList{
@@ -534,10 +617,62 @@ func Test_parseGPURequirements(t *testing.T) {
 			},
 			wantErr: assert.NoError,
 		},
+		{
+			name: "Valid GPU share requests with templates found",
+			pod:  &corev1.Pod{},
+			podRequests: map[schedulingv1alpha1.DeviceType]corev1.ResourceList{
+				schedulingv1alpha1.GPU: {
+					apiext.ResourceGPUShared:     resource.MustParse("1"),
+					apiext.ResourceGPUMemory:     resource.MustParse("12Gi"),
+					apiext.ResourceHuaweiNPUCore: resource.MustParse("4"),
+					apiext.ResourceHuaweiNPUCPU:  resource.MustParse("4"),
+					apiext.ResourceHuaweiNPUDVPP: resource.MustParse("50"),
+				},
+			},
+			gpuHints: nil,
+			want: &GPURequirements{
+				numberOfGPUs: 1,
+				requestsPerGPU: corev1.ResourceList{
+					apiext.ResourceGPUMemory:     resource.MustParse("12Gi"),
+					apiext.ResourceHuaweiNPUCore: resource.MustParse("4"),
+					apiext.ResourceHuaweiNPUCPU:  resource.MustParse("4"),
+					apiext.ResourceHuaweiNPUDVPP: resource.MustParse("50"),
+				},
+				gpuShared:                        true,
+				enforceGPUSharedResourceTemplate: true,
+				candidateGPUSharedResourceTemplates: map[string]apiext.GPUSharedResourceTemplates{
+					"huawei-Ascend-310P": {
+						"vir04": corev1.ResourceList{
+							apiext.ResourceGPUMemory:     resource.MustParse("12Gi"),
+							apiext.ResourceHuaweiNPUCore: resource.MustParse("4"),
+							apiext.ResourceHuaweiNPUCPU:  resource.MustParse("4"),
+							apiext.ResourceHuaweiNPUDVPP: resource.MustParse("50"),
+						},
+					},
+				},
+			},
+			wantErr: assert.NoError,
+		},
+		{
+			name: "Invalid GPU share requests with templates not found",
+			pod:  &corev1.Pod{},
+			podRequests: map[schedulingv1alpha1.DeviceType]corev1.ResourceList{
+				schedulingv1alpha1.GPU: {
+					apiext.ResourceGPUShared:     resource.MustParse("1"),
+					apiext.ResourceGPUMemory:     resource.MustParse("12Gi"),
+					apiext.ResourceHuaweiNPUCore: resource.MustParse("5"),
+					apiext.ResourceHuaweiNPUCPU:  resource.MustParse("4"),
+					apiext.ResourceHuaweiNPUDVPP: resource.MustParse("50"),
+				},
+			},
+			gpuHints: nil,
+			want:     nil,
+			wantErr:  assert.Error,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := parseGPURequirements(tt.pod, tt.podRequests, tt.gpuHints)
+			got, err := parseGPURequirements(tt.pod, tt.podRequests, tt.gpuHints, testGPUSharedResourceTemplatesCache, testGPUSharedResourceTemplatesMatchedResources)
 			if !tt.wantErr(t, err) {
 				return
 			}
