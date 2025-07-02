@@ -138,7 +138,7 @@ func TestScore(t *testing.T) {
 					},
 				},
 			},
-			wantScore:  0,
+			wantScore:  50,
 			wantStatus: nil,
 		},
 		{
@@ -177,11 +177,11 @@ func TestScore(t *testing.T) {
 					},
 				},
 			},
-			wantScore:  75,
+			wantScore:  87,
 			wantStatus: nil,
 		},
 		{
-			name: "remaining device resources",
+			name: "remaining device resources 1",
 			state: &preFilterState{
 				skip: false,
 				podRequests: map[schedulingv1alpha1.DeviceType]corev1.ResourceList{
@@ -222,11 +222,56 @@ func TestScore(t *testing.T) {
 					},
 				},
 			},
-			wantScore:  25,
+			wantScore:  50,
 			wantStatus: nil,
 		},
 		{
-			name:     "remaining device resources with MostAllocated strategy",
+			name: "remaining device resources 2",
+			state: &preFilterState{
+				skip: false,
+				podRequests: map[schedulingv1alpha1.DeviceType]corev1.ResourceList{
+					schedulingv1alpha1.GPU: {
+						apiext.ResourceGPUCore:   resource.MustParse("50"),
+						apiext.ResourceGPUMemory: resource.MustParse("8Gi"),
+					},
+				},
+			},
+			nodeDeviceCache: &nodeDeviceCache{
+				nodeDeviceInfos: map[string]*nodeDevice{
+					"test-node": {
+						deviceFree: map[schedulingv1alpha1.DeviceType]deviceResources{
+							schedulingv1alpha1.GPU: {
+								0: corev1.ResourceList{
+									apiext.ResourceGPUCore:        resource.MustParse("75"),
+									apiext.ResourceGPUMemoryRatio: resource.MustParse("75"),
+									apiext.ResourceGPUMemory:      resource.MustParse("12Gi"),
+								},
+							},
+						},
+						deviceTotal: map[schedulingv1alpha1.DeviceType]deviceResources{
+							schedulingv1alpha1.GPU: {0: gpuResources},
+						},
+						deviceUsed: map[schedulingv1alpha1.DeviceType]deviceResources{
+							schedulingv1alpha1.GPU: {
+								0: corev1.ResourceList{
+									apiext.ResourceGPUCore:        resource.MustParse("25"),
+									apiext.ResourceGPUMemoryRatio: resource.MustParse("25"),
+									apiext.ResourceGPUMemory:      resource.MustParse("4Gi"),
+								},
+							},
+						},
+						numaTopology: &NUMATopology{},
+						deviceInfos: map[schedulingv1alpha1.DeviceType][]*schedulingv1alpha1.DeviceInfo{
+							schedulingv1alpha1.GPU: {deviceInfoGenerator(schedulingv1alpha1.GPU, 0, gpuResources)},
+						},
+					},
+				},
+			},
+			wantScore:  50,
+			wantStatus: nil,
+		},
+		{
+			name:     "remaining device resources with MostAllocated strategy 1",
 			strategy: schedulerconfig.MostAllocated,
 			state: &preFilterState{
 				skip: false,
@@ -268,7 +313,53 @@ func TestScore(t *testing.T) {
 					},
 				},
 			},
-			wantScore:  75,
+			wantScore:  50,
+			wantStatus: nil,
+		},
+		{
+			name:     "remaining device resources with MostAllocated strategy 2",
+			strategy: schedulerconfig.MostAllocated,
+			state: &preFilterState{
+				skip: false,
+				podRequests: map[schedulingv1alpha1.DeviceType]corev1.ResourceList{
+					schedulingv1alpha1.GPU: {
+						apiext.ResourceGPUCore:   resource.MustParse("50"),
+						apiext.ResourceGPUMemory: resource.MustParse("8Gi"),
+					},
+				},
+			},
+			nodeDeviceCache: &nodeDeviceCache{
+				nodeDeviceInfos: map[string]*nodeDevice{
+					"test-node": {
+						deviceFree: map[schedulingv1alpha1.DeviceType]deviceResources{
+							schedulingv1alpha1.GPU: {
+								0: corev1.ResourceList{
+									apiext.ResourceGPUCore:        resource.MustParse("75"),
+									apiext.ResourceGPUMemoryRatio: resource.MustParse("75"),
+									apiext.ResourceGPUMemory:      resource.MustParse("12Gi"),
+								},
+							},
+						},
+						deviceTotal: map[schedulingv1alpha1.DeviceType]deviceResources{
+							schedulingv1alpha1.GPU: {0: gpuResources},
+						},
+						deviceUsed: map[schedulingv1alpha1.DeviceType]deviceResources{
+							schedulingv1alpha1.GPU: {
+								0: corev1.ResourceList{
+									apiext.ResourceGPUCore:        resource.MustParse("25"),
+									apiext.ResourceGPUMemoryRatio: resource.MustParse("25"),
+									apiext.ResourceGPUMemory:      resource.MustParse("4Gi"),
+								},
+							},
+						},
+						numaTopology: &NUMATopology{},
+						deviceInfos: map[schedulingv1alpha1.DeviceType][]*schedulingv1alpha1.DeviceInfo{
+							schedulingv1alpha1.GPU: {deviceInfoGenerator(schedulingv1alpha1.GPU, 0, gpuResources)},
+						},
+					},
+				},
+			},
+			wantScore:  50,
 			wantStatus: nil,
 		},
 		{
@@ -346,7 +437,7 @@ func TestScore(t *testing.T) {
 					},
 				},
 			},
-			wantScore:  184,
+			wantScore:  186,
 			wantStatus: nil,
 		},
 		{
@@ -396,7 +487,7 @@ func TestScore(t *testing.T) {
 					},
 				},
 			},
-			wantScore:  50,
+			wantScore:  75,
 			wantStatus: nil,
 		},
 		{
@@ -439,7 +530,7 @@ func TestScore(t *testing.T) {
 					},
 				},
 			},
-			wantScore:  50,
+			wantScore:  75,
 			wantStatus: nil,
 		},
 	}
@@ -644,7 +735,7 @@ func TestScoreReservation(t *testing.T) {
 		wantStatus         *framework.Status
 	}{
 		{
-			name: "score reservation with default allocate policy",
+			name: "score reservation with default allocate policy 1",
 			podRequests: corev1.ResourceList{
 				apiext.ResourceGPUCore:        resource.MustParse("50"),
 				apiext.ResourceGPUMemoryRatio: resource.MustParse("50"),
@@ -674,11 +765,45 @@ func TestScoreReservation(t *testing.T) {
 					},
 				},
 			},
-			wantScore:  25,
+			wantScore:  50,
 			wantStatus: nil,
 		},
 		{
-			name: "score reservation with default allocate policy and MostAllocated",
+			name: "score reservation with default allocate policy 2",
+			podRequests: corev1.ResourceList{
+				apiext.ResourceGPUCore:   resource.MustParse("50"),
+				apiext.ResourceGPUMemory: resource.MustParse("8Gi"),
+			},
+			reserved: apiext.DeviceAllocations{
+				schedulingv1alpha1.GPU: []*apiext.DeviceAllocation{
+					{
+						Minor: 0,
+						Resources: corev1.ResourceList{
+							apiext.ResourceGPUCore:        resource.MustParse("50"),
+							apiext.ResourceGPUMemoryRatio: resource.MustParse("50"),
+							apiext.ResourceGPUMemory:      resource.MustParse("12Gi"),
+						},
+					},
+				},
+			},
+			allocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyDefault,
+			nodeDeviceCache: &nodeDeviceCache{
+				nodeDeviceInfos: map[string]*nodeDevice{
+					"test-node": {
+						deviceTotal:  deviceTotal,
+						deviceUsed:   deviceUsed(),
+						deviceFree:   map[schedulingv1alpha1.DeviceType]deviceResources{},
+						allocateSet:  map[schedulingv1alpha1.DeviceType]map[types.NamespacedName]deviceResources{},
+						numaTopology: &NUMATopology{},
+						deviceInfos:  deviceInfos,
+					},
+				},
+			},
+			wantScore:  50,
+			wantStatus: nil,
+		},
+		{
+			name: "score reservation with default allocate policy and MostAllocated 1",
 			podRequests: corev1.ResourceList{
 				apiext.ResourceGPUCore:        resource.MustParse("50"),
 				apiext.ResourceGPUMemoryRatio: resource.MustParse("50"),
@@ -709,7 +834,42 @@ func TestScoreReservation(t *testing.T) {
 					},
 				},
 			},
-			wantScore:  75,
+			wantScore:  50,
+			wantStatus: nil,
+		},
+		{
+			name: "score reservation with default allocate policy and MostAllocated 2",
+			podRequests: corev1.ResourceList{
+				apiext.ResourceGPUCore:   resource.MustParse("50"),
+				apiext.ResourceGPUMemory: resource.MustParse("8Gi"),
+			},
+			reserved: apiext.DeviceAllocations{
+				schedulingv1alpha1.GPU: []*apiext.DeviceAllocation{
+					{
+						Minor: 0,
+						Resources: corev1.ResourceList{
+							apiext.ResourceGPUCore:        resource.MustParse("50"),
+							apiext.ResourceGPUMemoryRatio: resource.MustParse("50"),
+							apiext.ResourceGPUMemory:      resource.MustParse("8Gi"),
+						},
+					},
+				},
+			},
+			allocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyDefault,
+			scoreStrategy:  schedulerconfig.MostAllocated,
+			nodeDeviceCache: &nodeDeviceCache{
+				nodeDeviceInfos: map[string]*nodeDevice{
+					"test-node": {
+						deviceTotal:  deviceTotal,
+						deviceUsed:   deviceUsed(),
+						deviceFree:   map[schedulingv1alpha1.DeviceType]deviceResources{},
+						allocateSet:  map[schedulingv1alpha1.DeviceType]map[types.NamespacedName]deviceResources{},
+						numaTopology: &NUMATopology{},
+						deviceInfos:  deviceInfos,
+					},
+				},
+			},
+			wantScore:  50,
 			wantStatus: nil,
 		},
 		{
@@ -744,7 +904,7 @@ func TestScoreReservation(t *testing.T) {
 					},
 				},
 			},
-			wantScore:  25,
+			wantScore:  50,
 			wantStatus: nil,
 		},
 		{
@@ -779,7 +939,7 @@ func TestScoreReservation(t *testing.T) {
 					},
 				},
 			},
-			wantScore:  75,
+			wantScore:  50,
 			wantStatus: nil,
 		},
 		{
@@ -814,7 +974,7 @@ func TestScoreReservation(t *testing.T) {
 					},
 				},
 			},
-			wantScore:  0,
+			wantScore:  25,
 			wantStatus: nil,
 		},
 		{
@@ -849,7 +1009,7 @@ func TestScoreReservation(t *testing.T) {
 					},
 				},
 			},
-			wantScore:  100,
+			wantScore:  75,
 			wantStatus: nil,
 		},
 		{
@@ -894,7 +1054,7 @@ func TestScoreReservation(t *testing.T) {
 					},
 				},
 			},
-			wantScore:  50,
+			wantScore:  75,
 			wantStatus: nil,
 		},
 		{
@@ -947,7 +1107,7 @@ func TestScoreReservation(t *testing.T) {
 					},
 				},
 			},
-			wantScore:  50,
+			wantScore:  75,
 			wantStatus: nil,
 		},
 		{
@@ -995,7 +1155,7 @@ func TestScoreReservation(t *testing.T) {
 					},
 				},
 			},
-			wantScore:     120,
+			wantScore:     95,
 			wantNormalize: pointer.Int64(100),
 			wantStatus:    nil,
 		},
