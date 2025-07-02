@@ -226,6 +226,10 @@ func SetDefaults_DeviceShareArgs(obj *DeviceShareArgs) {
 					Weight: 1,
 				},
 				{
+					Name:   string(extension.ResourceGPUMemory),
+					Weight: 1,
+				},
+				{
 					Name:   string(extension.ResourceRDMA),
 					Weight: 1,
 				},
