@@ -70,7 +70,7 @@ spec:
                   LabelKeysMapping describes the labels that needs to inject into Pod.Labels with the same values.
                   It sets the Pod.Labels[LabelKeysMapping[k]] = Pod.Labels[k] for each key k.
                 type: object
-              labelSuffix:
+              labelSuffixes:
                 additionalProperties:
                   type: string
                 description: |-
