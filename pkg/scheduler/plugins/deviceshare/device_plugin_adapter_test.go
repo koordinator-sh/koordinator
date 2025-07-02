@@ -75,6 +75,51 @@ func TestGeneralDevicePluginAdapter_Adapt(t *testing.T) {
 	}
 }
 
+func TestGeneralGPUDevicePluginAdapter_Adapt(t *testing.T) {
+	type args struct {
+		object     metav1.Object
+		allocation []*apiext.DeviceAllocation
+	}
+	tests := []struct {
+		name       string
+		args       args
+		wantErr    bool
+		wantObject metav1.Object
+	}{
+		{
+			name: "normal",
+			args: args{
+				object: &corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Annotations: map[string]string{},
+					},
+				},
+				allocation: []*apiext.DeviceAllocation{
+					{Minor: 0},
+					{Minor: 1},
+				},
+			},
+			wantErr: false,
+			wantObject: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						AnnotationGPUMinors: "0,1",
+					},
+				},
+			},
+		},
+	}
+
+	adapter := &generalGPUDevicePluginAdapter{}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := adapter.Adapt(tt.args.object, tt.args.allocation)
+			assert.Equal(t, tt.wantErr, err != nil, err)
+			assert.Equal(t, tt.wantObject, tt.args.object)
+		})
+	}
+}
+
 func TestHuaweiGPUDevicePluginAdapter_Adapt(t *testing.T) {
 	now := time.Now()
 
@@ -89,29 +134,7 @@ func TestHuaweiGPUDevicePluginAdapter_Adapt(t *testing.T) {
 		wantObject metav1.Object
 	}{
 		{
-			name: "single minor",
-			args: args{
-				object: &corev1.Pod{
-					ObjectMeta: metav1.ObjectMeta{
-						Annotations: map[string]string{},
-					},
-				},
-				allocation: []*apiext.DeviceAllocation{
-					{Minor: 0},
-				},
-			},
-			wantErr: false,
-			wantObject: &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Annotations: map[string]string{
-						AnnotationPredicateTime: strconv.FormatInt(now.UnixNano(), 10),
-						AnnotationHuaweiNPUCore: "0",
-					},
-				},
-			},
-		},
-		{
-			name: "multiple minors",
+			name: "full NPU",
 			args: args{
 				object: &corev1.Pod{
 					ObjectMeta: metav1.ObjectMeta{
@@ -134,7 +157,7 @@ func TestHuaweiGPUDevicePluginAdapter_Adapt(t *testing.T) {
 			},
 		},
 		{
-			name: "minor with template",
+			name: "vNPU",
 			args: args{
 				object: &corev1.Pod{
 					ObjectMeta: metav1.ObjectMeta{
@@ -225,6 +248,7 @@ func TestPlugin_adaptForDevicePlugin(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
 						AnnotationBindTimestamp: strconv.FormatInt(now.UnixNano(), 10),
+						AnnotationGPUMinors:     "0",
 					},
 				},
 			},
@@ -257,6 +281,7 @@ func TestPlugin_adaptForDevicePlugin(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
 						AnnotationBindTimestamp: strconv.FormatInt(now.UnixNano(), 10),
+						AnnotationGPUMinors:     "0",
 						AnnotationPredicateTime: strconv.FormatInt(now.UnixNano(), 10),
 						AnnotationHuaweiNPUCore: "0",
 					},
@@ -291,6 +316,7 @@ func TestPlugin_adaptForDevicePlugin(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
 						AnnotationBindTimestamp: strconv.FormatInt(now.UnixNano(), 10),
+						AnnotationGPUMinors:     "0",
 					},
 				},
 			},
@@ -353,7 +379,10 @@ func TestPlugin_adaptForDevicePlugin(t *testing.T) {
 			wantErr: true,
 			wantObject: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
-					Annotations: map[string]string{},
+					Annotations: map[string]string{
+						AnnotationBindTimestamp: strconv.FormatInt(now.UnixNano(), 10),
+						AnnotationGPUMinors:     "0",
+					},
 				},
 			},
 		},
@@ -378,6 +407,43 @@ func TestPlugin_adaptForDevicePlugin(t *testing.T) {
 			err = pl.(*Plugin).adaptForDevicePlugin(tt.args.object, tt.args.allocationResult, tt.args.nodeName)
 			assert.Equal(t, tt.wantErr, err != nil, err)
 			assert.Equal(t, tt.wantObject, tt.args.object)
+		})
+	}
+}
+
+func Test_buildGPUMinorsStr(t *testing.T) {
+	type args struct {
+		allocation []*apiext.DeviceAllocation
+	}
+	tests := []struct {
+		name string
+		args args
+		want string
+	}{
+		{
+			name: "single minor",
+			args: args{
+				allocation: []*apiext.DeviceAllocation{
+					{Minor: 0},
+				},
+			},
+			want: "0",
+		},
+		{
+			name: "multiple minors",
+			args: args{
+				allocation: []*apiext.DeviceAllocation{
+					{Minor: 0},
+					{Minor: 1},
+				},
+			},
+			want: "0,1",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, buildGPUMinorsStr(tt.args.allocation))
 		})
 	}
 }
