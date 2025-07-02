@@ -88,7 +88,7 @@ type ClusterColocationProfileSpec struct {
 	// LabelSuffixes describes the labels that needs to inject into Pod.Labels with the same values.
 	// It appends the suffix to the Pod.Labels[k] as Pod.Labels[k]+LabelSuffixes[k].
 	// +optional
-	LabelSuffixes map[string]string `json:"labelSuffix,omitempty"`
+	LabelSuffixes map[string]string `json:"labelSuffixes,omitempty"`
 
 	// If specified, the pod will be dispatched by specified scheduler.
 	// +optional
