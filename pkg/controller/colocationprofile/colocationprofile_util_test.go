@@ -526,6 +526,127 @@ func Test_updatePodByClusterColocationProfile(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name: "mutate advanced attributes 2",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace:       "default",
+					Name:            "test-pod-1",
+					ResourceVersion: "1000",
+					Labels: map[string]string{
+						"label-key-to-load": "test-label-value",
+						"label-key-1":       "label-value-1",
+					},
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name: "test-container-a",
+							Resources: corev1.ResourceRequirements{
+								Limits: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("1"),
+									corev1.ResourceMemory: resource.MustParse("4Gi"),
+								},
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("1"),
+									corev1.ResourceMemory: resource.MustParse("4Gi"),
+								},
+							},
+						},
+					},
+					Overhead: map[corev1.ResourceName]resource.Quantity{
+						corev1.ResourceCPU:    resource.MustParse("1"),
+						corev1.ResourceMemory: resource.MustParse("2Gi"),
+					},
+				},
+			},
+			profile: &configv1alpha1.ClusterColocationProfile{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-profile",
+
+					Labels: map[string]string{
+						extension.LabelControllerManaged: "true",
+					},
+				},
+				Spec: configv1alpha1.ClusterColocationProfileSpec{
+					Selector: &metav1.LabelSelector{},
+					Labels: map[string]string{
+						"testLabelA":                 "valueA",
+						extension.LabelSchedulerName: "koordinator-scheduler",
+					},
+					LabelKeysMapping: map[string]string{
+						"label-key-to-load":           "label-key-to-store",
+						"label-key-to-load-not-exist": "label-key-to-store-not-exist",
+					},
+					LabelSuffixes: map[string]string{
+						"label-key-1":        "suffix",
+						"label-key-to-store": "suffix-0",
+						"suffix-label-key-1": "suffix-1",
+					},
+					Annotations: map[string]string{
+						"testAnnotationA": "valueA",
+					},
+					AnnotationKeysMapping: map[string]string{
+						"annotation-key-to-load": "annotation-key-to-store",
+					},
+					QoSClass:            string(extension.QoSBE),
+					KoordinatorPriority: pointer.Int32(1111),
+					Patch: runtime.RawExtension{
+						Raw: []byte(`{"metadata":{"labels":{"test-patch-label":"patch-a"},"annotations":{"test-patch-annotation":"patch-b"}}}`),
+					},
+				},
+			},
+			wantPod: &corev1.Pod{
+				TypeMeta: metav1.TypeMeta{
+					APIVersion: "v1",
+					Kind:       "Pod",
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "default",
+					Name:      "test-pod-1",
+					Labels: map[string]string{
+						"testLabelA":                   "valueA",
+						"label-key-1":                  "label-value-1suffix",
+						"test-patch-label":             "patch-a",
+						"label-key-to-load":            "test-label-value",
+						"label-key-to-store":           "test-label-valuesuffix-0",
+						"label-key-to-store-not-exist": "",
+						extension.LabelPodQoS:          string(extension.QoSBE),
+						extension.LabelPodPriority:     "1111",
+						extension.LabelSchedulerName:   "koordinator-scheduler",
+					},
+					Annotations: map[string]string{
+						"testAnnotationA":         "valueA",
+						"test-patch-annotation":   "patch-b",
+						"annotation-key-to-store": "",
+					},
+					ResourceVersion: "1001",
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name: "test-container-a",
+							Resources: corev1.ResourceRequirements{
+								Limits: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("1"),
+									corev1.ResourceMemory: resource.MustParse("4Gi"),
+								},
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("1"),
+									corev1.ResourceMemory: resource.MustParse("4Gi"),
+								},
+							},
+						},
+					},
+					Overhead: map[corev1.ResourceName]resource.Quantity{
+						corev1.ResourceCPU:    resource.MustParse("1"),
+						corev1.ResourceMemory: resource.MustParse("2Gi"),
+					},
+				},
+			},
+			want:    true,
+			wantErr: false,
+		},
+		{
 			name: "failed due to pod not found",
 			pod: &corev1.Pod{
 				TypeMeta: metav1.TypeMeta{
