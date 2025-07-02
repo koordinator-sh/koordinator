@@ -38,6 +38,13 @@ const (
 	// use the bind time to determine the target pod when multiple pods are assigned to the same node at the same time.
 	AnnotationBindTimestamp = apiext.SchedulingDomainPrefix + "/bind-timestamp"
 
+	// AnnotationGPUMinors represents a comma separated minor list of GPU(s) allocated for the pod.
+	// A typical use case is used as env field ref to override the built-in NVIDIA_VISIBLE_DEVICES=all env of CUDA images.
+	//
+	// Background: The envs injected by device plugin would be overridden by the ones of pod image, so sometimes users
+	// need to explicitly declare the envs in pod template to override the ones of pod image.
+	AnnotationGPUMinors = apiext.SchedulingDomainPrefix + "/gpu-minors"
+
 	// AnnotationPredicateTime represents the bind time (unix nano) of the pod which is used by
 	// Huawei NPU device plugins to determine pod.
 	AnnotationPredicateTime = "predicate-time"
@@ -57,7 +64,8 @@ var (
 	defaultDevicePluginAdapter = &generalDevicePluginAdapter{
 		clock: clock.RealClock{},
 	}
-	gpuDevicePluginAdapterMap = map[string]DevicePluginAdapter{
+	defaultGPUDevicePluginAdapter = &generalGPUDevicePluginAdapter{}
+	gpuDevicePluginAdapterMap     = map[string]DevicePluginAdapter{
 		apiext.GPUVendorHuawei: &huaweiGPUDevicePluginAdapter{
 			clock: clock.RealClock{},
 		},
@@ -65,7 +73,15 @@ var (
 )
 
 func (p *Plugin) adaptForDevicePlugin(object metav1.Object, allocationResult apiext.DeviceAllocations, nodeName string) error {
+	if err := defaultDevicePluginAdapter.Adapt(object, nil); err != nil {
+		return err
+	}
+
 	if gpuAllocation, ok := allocationResult[schedulingv1alpha1.GPU]; ok {
+		if err := defaultGPUDevicePluginAdapter.Adapt(object, gpuAllocation); err != nil {
+			return err
+		}
+
 		extendedHandle, ok := p.handle.(frameworkext.ExtendedHandle)
 		if !ok {
 			return fmt.Errorf("expect handle to be type frameworkext.ExtendedHandle, got %T", p.handle)
@@ -84,7 +100,8 @@ func (p *Plugin) adaptForDevicePlugin(object metav1.Object, allocationResult api
 			}
 		}
 	}
-	return defaultDevicePluginAdapter.Adapt(object, nil)
+
+	return nil
 }
 
 // generalDevicePluginAdapter annotates the bind timestamp to pod which enables users to write their own device plugins
@@ -95,6 +112,16 @@ type generalDevicePluginAdapter struct {
 
 func (a *generalDevicePluginAdapter) Adapt(object metav1.Object, _ []*apiext.DeviceAllocation) error {
 	object.GetAnnotations()[AnnotationBindTimestamp] = strconv.FormatInt(a.clock.Now().UnixNano(), 10)
+	return nil
+}
+
+// generalGPUDevicePluginAdapter annotates necessary information to pod which resolves problems when using device plugin
+// with koord-scheduler.
+type generalGPUDevicePluginAdapter struct {
+}
+
+func (a *generalGPUDevicePluginAdapter) Adapt(object metav1.Object, allocation []*apiext.DeviceAllocation) error {
+	object.GetAnnotations()[AnnotationGPUMinors] = buildGPUMinorsStr(allocation)
 	return nil
 }
 
@@ -109,11 +136,15 @@ func (a *huaweiGPUDevicePluginAdapter) Adapt(object metav1.Object, allocation []
 		object.GetAnnotations()[AnnotationHuaweiNPUCore] = fmt.Sprintf("%d-%s", allocation[0].Minor, allocation[0].Extension.GPUSharedResourceTemplate)
 	} else {
 		// full NPU
-		minors := make([]string, 0, len(allocation))
-		for _, alloc := range allocation {
-			minors = append(minors, strconv.Itoa(int(alloc.Minor)))
-		}
-		object.GetAnnotations()[AnnotationHuaweiNPUCore] = strings.Join(minors, ",")
+		object.GetAnnotations()[AnnotationHuaweiNPUCore] = buildGPUMinorsStr(allocation)
 	}
 	return nil
+}
+
+func buildGPUMinorsStr(allocation []*apiext.DeviceAllocation) string {
+	minors := make([]string, 0, len(allocation))
+	for _, alloc := range allocation {
+		minors = append(minors, strconv.Itoa(int(alloc.Minor)))
+	}
+	return strings.Join(minors, ",")
 }
