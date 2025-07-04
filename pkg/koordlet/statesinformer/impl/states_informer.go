@@ -148,11 +148,19 @@ func (s *statesInformer) Run(stopCh <-chan struct{}) error {
 	}
 
 	if features.DefaultKoordletFeatureGate.Enabled(features.Accelerators) {
-		go wait.Until(s.reportDevice, s.config.NodeTopologySyncInterval, stopCh)
+		go wait.Until(s.reportGPUDevice, s.config.NodeTopologySyncInterval, stopCh)
 		// check is nvml is available
 		if s.initGPU() {
 			go s.gpuHealCheck(stopCh)
 		}
+	}
+
+	if features.DefaultKoordletFeatureGate.Enabled(features.RDMADevices) {
+		go wait.Until(s.reportRDMADevice, s.config.NodeTopologySyncInterval, stopCh)
+	}
+
+	if features.DefaultKoordletFeatureGate.Enabled(features.XAccelerators) {
+		go wait.Until(s.reportXPUDevice, s.config.NodeTopologySyncInterval, stopCh)
 	}
 
 	// start callback runner after informers synced
