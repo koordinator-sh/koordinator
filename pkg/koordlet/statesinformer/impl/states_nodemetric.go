@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"sort"
 	"sync"
 	"time"
 
@@ -387,6 +388,9 @@ func (r *nodeMetricInformer) collectMetric() (*slov1alpha1.NodeMetricInfo, []*sl
 		}
 		podsMetricInfo = append(podsMetricInfo, podMetric)
 	}
+	sort.Slice(podsMetricInfo, func(i, j int) bool {
+		return podsMetricInfo[i].Name < podsMetricInfo[j].Name
+	})
 	for _, hostApp := range nodeSLO.Spec.HostApplications {
 		appMetric, err := r.collectHostAppMetric(&hostApp, queryParam)
 		if err != nil {
@@ -395,6 +399,9 @@ func (r *nodeMetricInformer) collectMetric() (*slov1alpha1.NodeMetricInfo, []*sl
 		}
 		hostAppMetricInfo = append(hostAppMetricInfo, appMetric)
 	}
+	sort.Slice(hostAppMetricInfo, func(i, j int) bool {
+		return hostAppMetricInfo[i].Name < hostAppMetricInfo[j].Name
+	})
 
 	prodReclaimable := &slov1alpha1.ReclaimableMetric{}
 	if p, err := prodPredictor.GetResult(); err != nil {
