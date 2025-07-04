@@ -157,8 +157,11 @@ func (pgMgr *PodGroupManager) NextPod() *corev1.Pod {
 		pods := groupGang.getPendingChildrenFromGang()
 		for _, pod := range pods {
 			podKey := util.GetId(pod.Namespace, pod.Name)
+
 			if !gangSchedulingContext.alreadyAttemptedPods.Has(podKey) {
+				gangSchedulingContext.Lock()
 				gangSchedulingContext.alreadyAttemptedPods.Insert(podKey)
+				gangSchedulingContext.Unlock()
 				// correct podInfo.Time and podInfo.Attempts
 				return frameworkext.CopyQueueInfoToPod(firstPod, pod)
 			}
@@ -198,6 +201,17 @@ func (pgMgr *PodGroupManager) PreEnqueue(ctx context.Context, pod *corev1.Pod) (
 	err = pgMgr.basicGangRequirementsCheck(gang, pod)
 	if err != nil {
 		return err
+	}
+
+	gangSchedulingContext := pgMgr.holder.getCurrentGangSchedulingContext()
+	if gangSchedulingContext != nil && gangSchedulingContext.gangGroup.Has(gang.Name) {
+		podKey := util.GetId(pod.Namespace, pod.Name)
+		gangSchedulingContext.RLock()
+		defer gangSchedulingContext.RUnlock()
+		// Subsequent Pods should be prevented from entering ActiveQ or BackoffQ to avoid the time-consuming deletion of them
+		if !gangSchedulingContext.alreadyAttemptedPods.Has(podKey) {
+			return fmt.Errorf(ErrPodHasNotBeenAttempted, gang.GangGroupId)
+		}
 	}
 
 	return gang.RecordIfNoRepresentatives(pod)
@@ -273,6 +287,8 @@ func (pgMgr *PodGroupManager) PreFilter(ctx context.Context, _ *framework.CycleS
 	if gangSchedulingContext == nil {
 		gangSchedulingContext = &GangSchedulingContext{firstPod: pod, gangGroup: sets.New[string](gang.GangGroup...)}
 		pgMgr.holder.setGangSchedulingContext(gangSchedulingContext, ReasonFirstPodPassPreFilter)
+		// clear the current representative because representative is already enter into scheduling
+		gang.ClearCurrentRepresentative(ReasonGangGroupEnterIntoScheduling)
 		return nil
 	}
 	if gangSchedulingContext.failedMessage != "" {
@@ -310,7 +326,6 @@ func (pgMgr *PodGroupManager) PostFilter(ctx context.Context, state *framework.C
 
 	if gangSchedulingContext := pgMgr.holder.getCurrentGangSchedulingContext(); gangSchedulingContext != nil && gangSchedulingContext.failedMessage == "" {
 		// first failed pod
-		gang.ReplaceRepresentative(pod, ReasonGangGroupFailureCauseThisPod)
 		gangSchedulingContext.failedMessage = message
 	}
 
