@@ -78,8 +78,11 @@ func (h *GangSchedulingContextHolder) setGangSchedulingContext(gangSchedulingCon
 }
 
 type GangSchedulingContext struct {
-	gangGroup            sets.Set[string]
-	firstPod             *corev1.Pod
-	failedMessage        string
+	gangGroup     sets.Set[string]
+	firstPod      *corev1.Pod
+	failedMessage string
+
+	// secure alreadyAttemptedPods to avoid concurrent map read and write
+	sync.RWMutex
 	alreadyAttemptedPods sets.Set[string]
 }

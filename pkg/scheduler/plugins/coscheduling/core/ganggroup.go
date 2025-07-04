@@ -15,7 +15,7 @@ const (
 	ReasonPodDeleted = "PodDeleted"
 	ReasonPodBound   = "PodBound"
 
-	ReasonGangGroupFailureCauseThisPod = "GangGroupFailureCauseThisPod"
+	ReasonGangGroupEnterIntoScheduling = "GangGroupEnterIntoScheduling"
 )
 
 type GangGroupInfo struct {
@@ -141,17 +141,6 @@ func (gg *GangGroupInfo) RecordIfNoRepresentatives(pod *corev1.Pod) string {
 	return gg.RepresentativePodKey
 }
 
-func (gg *GangGroupInfo) ReplaceRepresentative(pod *corev1.Pod, reason string) {
-	gg.lock.Lock()
-	defer gg.lock.Unlock()
-
-	podKey := util.GetId(pod.Namespace, pod.Name)
-	if podKey != gg.RepresentativePodKey {
-		klog.Infof("gangGroupInfo: ReplaceRepresentative, original: %v, now: %s, gangGroup: %v, reason: %s", gg.RepresentativePodKey, podKey, gg.GangGroupId, reason)
-	}
-	gg.RepresentativePodKey = podKey
-}
-
 func (gg *GangGroupInfo) DeleteIfRepresentative(pod *corev1.Pod, reason string) {
 	gg.lock.Lock()
 	defer gg.lock.Unlock()
@@ -160,4 +149,11 @@ func (gg *GangGroupInfo) DeleteIfRepresentative(pod *corev1.Pod, reason string) 
 		gg.RepresentativePodKey = ""
 		klog.Infof("gangGroupInfo: DeleteIfRepresentative, pod: %v, gangGroup: %v, reason: %s", podKey, gg.GangGroupId, reason)
 	}
+}
+
+func (gg *GangGroupInfo) ClearCurrentRepresentative(reason string) {
+	klog.Infof("gangGroupInfo: ClearCurrentRepresentative, pod: %v, gangGroup: %v, reason: %s", gg.RepresentativePodKey, gg.GangGroupId, reason)
+	gg.lock.Lock()
+	defer gg.lock.Unlock()
+	gg.RepresentativePodKey = ""
 }

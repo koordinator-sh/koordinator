@@ -32,6 +32,7 @@ import (
 )
 
 const (
+	ErrPodHasNotBeenAttempted         = "gangGroup %s is scheduling and this pod has not been attempted"
 	ErrRepresentativePodAlreadyExists = "representative pod %s of gangGroupID %s already exists"
 	ErrPodIsNotExistsInGangCache      = "pod %s is not exists in gangCache"
 )
@@ -510,21 +511,8 @@ func (gang *Gang) RecordIfNoRepresentatives(pod *v1.Pod) error {
 	return nil
 }
 
-func (gang *Gang) ReplaceRepresentative(pod *v1.Pod, reason string) {
+func (gang *Gang) ClearCurrentRepresentative(reason string) {
 	gang.lock.Lock()
 	defer gang.lock.Unlock()
-	podKey := util.GetId(pod.Namespace, pod.Name)
-	if gang.PendingChildren[podKey] == nil {
-		// avoid pod is not exists in gang cache, resulting representativePodKey leak
-		/*
-			FIXME
-				The original Representative will continue to be retained until it is deleted.
-				However, its UnschedulablePlugins are not set correctly, which may cause the next queue to be late.
-				The reason we did not try to fix it here is that we assume that all pending Pods of the GangGroup will be deleted or rebuilt together.
-		*/
-		klog.Warningf("ReplaceRepresentative find pod %v is not exists in gang cache, gang: %v, reaon: %s", podKey, gang.Name, reason)
-		return
-	}
-
-	gang.GangGroupInfo.ReplaceRepresentative(pod, reason)
+	gang.GangGroupInfo.ClearCurrentRepresentative(reason)
 }
