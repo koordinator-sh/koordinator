@@ -162,6 +162,7 @@ func (pgMgr *PodGroupManager) NextPod() *corev1.Pod {
 				gangSchedulingContext.Lock()
 				gangSchedulingContext.alreadyAttemptedPods.Insert(podKey)
 				gangSchedulingContext.Unlock()
+				klog.Infof("NextPod: return pod %s/%s/%s, gangGroup: %+v, gangGroupStartTime: %+v", pod.Namespace, pod.Name, pod.UID, gangGroup, gangSchedulingContext.startTime)
 				// correct podInfo.Time and podInfo.Attempts
 				return frameworkext.CopyQueueInfoToPod(firstPod, pod)
 			}
