@@ -36,9 +36,9 @@ import (
 type nominator struct {
 	podLister corelisters.PodLister
 	rLister   listerschedulingv1alpha1.ReservationLister
-	// nominatedPodToNode is map keyed by a Pod UID to the node name where it is nominated.
+	// nominatedPodToNode is map keyed by a Pod UID to the node name where it is nominated to reserve.
 	nominatedPodToNode map[types.UID]map[string]types.UID
-	// nominatedReservePod is map keyed by nodeName, value is the nominated reservation's PodInfo
+	// nominatedReservePod is map keyed by nodeName to the nominated reservation's PodInfo for preemption.
 	nominatedReservePod       map[string][]*framework.PodInfo
 	nominatedReservePodToNode map[types.UID]string
 	lock                      sync.RWMutex
@@ -104,7 +104,7 @@ func (nm *nominator) AddNominatedReservePod(pi *framework.PodInfo, nodeName stri
 
 	// Always delete the reservation if it already exists, to ensure we never store more than
 	// one instance of the reservation.
-	nm.deleteReservePod(pi)
+	nm.deleteReservePod(pi.Pod)
 
 	rName := reservationutil.GetReservationNameFromReservePod(pi.Pod)
 	if len(rName) <= 0 { // not a reserve pod
@@ -154,20 +154,20 @@ func (nm *nominator) NominatedReservePodForNode(nodeName string) []*framework.Po
 	return reservePods
 }
 
-func (nm *nominator) DeleteReservePod(pi *framework.PodInfo) {
+func (nm *nominator) DeleteReservePod(pod *corev1.Pod) {
 	nm.lock.Lock()
 	defer nm.lock.Unlock()
 
-	nm.deleteReservePod(pi)
+	nm.deleteReservePod(pod)
 }
 
-func (nm *nominator) deleteReservePod(pi *framework.PodInfo) {
-	nnn, ok := nm.nominatedReservePodToNode[pi.Pod.UID]
+func (nm *nominator) deleteReservePod(pod *corev1.Pod) {
+	nnn, ok := nm.nominatedReservePodToNode[pod.UID]
 	if !ok {
 		return
 	}
 	for i, np := range nm.nominatedReservePod[nnn] {
-		if np.Pod.UID == pi.Pod.UID {
+		if np.Pod.UID == pod.UID {
 			nm.nominatedReservePod[nnn] = append(nm.nominatedReservePod[nnn][:i], nm.nominatedReservePod[nnn][i+1:]...)
 			if len(nm.nominatedReservePod[nnn]) == 0 {
 				delete(nm.nominatedReservePod, nnn)
@@ -175,14 +175,25 @@ func (nm *nominator) deleteReservePod(pi *framework.PodInfo) {
 			break
 		}
 	}
-	delete(nm.nominatedReservePodToNode, pi.Pod.UID)
+	delete(nm.nominatedReservePodToNode, pod.UID)
 }
 
+// RemoveNominatedReservation removes the nominated reservation of a pod from the nominator.
 func (nm *nominator) RemoveNominatedReservation(pod *corev1.Pod) {
 	nm.lock.Lock()
 	defer nm.lock.Unlock()
 
 	delete(nm.nominatedPodToNode, pod.UID)
+}
+
+// DeleteNominatedReservePodOrReservation is used to delete the nominated reserve pod or
+// the nominated reservation for the pod.
+func (nm *nominator) DeleteNominatedReservePodOrReservation(pod *corev1.Pod) {
+	if reservationutil.IsReservePod(pod) {
+		nm.DeleteReservePod(pod)
+	} else {
+		nm.RemoveNominatedReservation(pod)
+	}
 }
 
 func (nm *nominator) GetNominatedReservation(pod *corev1.Pod, nodeName string) types.UID {
@@ -270,6 +281,8 @@ func (pl *Plugin) AddNominatedReservation(pod *corev1.Pod, nodeName string, rInf
 	pl.nominator.AddNominatedReservation(pod, nodeName, rInfo)
 }
 
+// RemoveNominatedReservations is used to delete the nominated reserve pod.
+// DEPRECATED: use DeleteNominatedReservePodOrReservation instead.
 func (pl *Plugin) RemoveNominatedReservations(pod *corev1.Pod) {
 	pl.nominator.RemoveNominatedReservation(pod)
 }
@@ -279,9 +292,16 @@ func (pl *Plugin) AddNominatedReservePod(pod *corev1.Pod, nodeName string) {
 	pl.nominator.AddNominatedReservePod(podInfo, nodeName)
 }
 
+// DeleteNominatedReservePodOrReservation is used to delete the nominated reserve pod or
+// the nominated reservation for the pod.
+func (pl *Plugin) DeleteNominatedReservePodOrReservation(pod *corev1.Pod) {
+	pl.nominator.DeleteNominatedReservePodOrReservation(pod)
+}
+
+// DeleteNominatedReservePod is used to delete the nominated reserve pod.
+// DEPRECATED: use DeleteNominatedReservePodOrReservation instead.
 func (pl *Plugin) DeleteNominatedReservePod(pod *corev1.Pod) {
-	podInfo, _ := framework.NewPodInfo(pod)
-	pl.nominator.DeleteReservePod(podInfo)
+	pl.nominator.DeleteReservePod(pod)
 }
 
 func (pl *Plugin) GetNominatedReservation(pod *corev1.Pod, nodeName string) *frameworkext.ReservationInfo {

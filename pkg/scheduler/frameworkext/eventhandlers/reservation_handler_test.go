@@ -47,19 +47,8 @@ import (
 	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	frameworkexttesting "github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/testing"
-	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/reservation"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
-
-type fakeReservationCache struct{}
-
-func (f *fakeReservationCache) DeleteReservation(r *schedulingv1alpha1.Reservation) *frameworkext.ReservationInfo {
-	return frameworkext.NewReservationInfo(r)
-}
-
-func (f *fakeReservationCache) GetReservationInfoByPod(pod *corev1.Pod, nodeName string) *frameworkext.ReservationInfo {
-	return nil
-}
 
 func TestAddReservationErrorHandler(t *testing.T) {
 	testR := &schedulingv1alpha1.Reservation{
@@ -603,7 +592,7 @@ func Test_updateReservationInCache(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			reservation.SetReservationCache(&fakeReservationCache{})
+			frameworkext.SetReservationCache(&frameworkext.FakeReservationCache{})
 			sched := frameworkext.NewFakeScheduler()
 			updateReservationInSchedulerCache(sched, tt.oldObj, tt.newObj)
 			pod, err := sched.GetPod(&corev1.Pod{
@@ -723,7 +712,7 @@ func Test_deleteReservationFromCache(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			reservation.SetReservationCache(&fakeReservationCache{})
+			frameworkext.SetReservationCache(&frameworkext.FakeReservationCache{})
 			sched := frameworkext.NewFakeScheduler()
 			if reservationutil.ValidateReservation(tt.obj) == nil {
 				sched.AddPod(klog.Background(), reservationutil.NewReservePod(tt.obj))
