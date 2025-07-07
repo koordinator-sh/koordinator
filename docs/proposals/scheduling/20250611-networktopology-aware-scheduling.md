@@ -54,14 +54,28 @@ When GPUs on different nodes communicate with each other,
 
 ![image](/docs/images/networktopo-2-dp-and-pp.png)
 
-The above figure shows a PytorchJob training task:
+There are three parallel strategies in the above figure
 
-- Create a total of 12 Pods (PP * DP=4 * 3).
-- Each Pod requests all 8 GPU cards on the node.
+- Tensor Parallel: The core idea is to decompose large matrices or tensors into multiple smaller parts and allocate these parts to different GPU devices for parallel computing.
+This can significantly improve computational efficiency and shorten model training time, especially when facing large models with billions of parameters.
+
+- Pipeline Parallel: The core idea is to divide the calculation process of the model into multiple stages, each stage being processed by one or more computing units (such as GPU or TPU). 
+The data flows sequentially between these stages, with each stage processing different batches of data simultaneously. 
+This process is similar to pipeline processing in traditional computers.
+
+- Data Parallel: evenly distribute training data X (such as a batch) to different computing GPUs.
+
+
+communication features
+- Tensor Parallel: Generally used for communication between multiple GPU cards on a single machine, with nvlink for communication.
+- Pipeline Parallel: It involves operations such as FWD and BWD, with a data exchange rate of over GB/s, and communication efficiency directly determines the training speed of the model. The demand for network performance is extremely high.
+- Data Parallel: Typically, data parallel requires the collection, accumulation, and updating of gradients between multiple Pipeline Parallels. The data volume is approximately MB in size, and the requirements for network performance are average.
+
 
 requirements:
 - The communication between the 8 cards in one Pod is conducted through nvlink. No need for scheduler attention.
-- The communication between pods requires RDMA high-speed network for communication, and the scheduler needs to schedule DP * PP pods into a set of high-performance communication domains.
+- Firstly, consider: The communication between pods in one Pipeline Parallel. such as node-1,node-2,node-3,node-4 requires RDMA high-speed network for communication, and the scheduler needs to schedule those pods into a set of high-performance communication domains as far as possible.
+- Secondly, consider: The communication between pods in different Data Parallel. the scheduler needs to schedule those pods into a set of high-performance communication domains
 
 PodGroup schedules according to the following strategy:
 - If all allocatable nodes satisfy strategy 1, bound podgroup's pod to the nodes.
@@ -346,93 +360,138 @@ Discovery and detection tools for network topology：
 
 
 #### 4. Network topology algorithm
+
+4.1 convert multi-layer network topology to hyperNodeTree and sort the hyperNodeTree
 ```
+// multi-layer network topology
+// s3
+//   |
+//   |- s2-0
+//        |- s1-0: {node-0, node-1}
+//        |- s1-1: {node-2, node-3}
+//   |- s2-1
+//        |- s1-2: {node-4, node-5}
+//        |- s1-3: {node-6, node-7, node-8, node-9}
 
-// FindBestNode find N best node . （N = minNumberWorker）
-// 1.all node in the same tor
-// 2.all pipeline parallel node in the same tor, but all node in the same leaf
-// 3.all node in the same leaf
-// 4.all pipeline parallel node in the same tor, but all node in the same spine
-// 4.all pipeline parallel node in the same leaf, but all node in the same spine
-// 5.all node in the same spine
-func (nt *NetWorkTopology) FindBestNode(minNumberWorker int, pipelineParallel int, hyperNodeTree map[string][][]string) ([]string, int) {
-    nt.printHyperNodeTree(hyperNodeTree)
-    // 1.all node in the same tor
-    tieIndex := 0
-    for _, hyperNodes := range hyperNodeTree[tieIndex] {
-       if len(hyperNodes) >= minNumberWorker {
-          return hyperNodes[:minNumberWorker], TorTierIndex
-       }
-    }
-    // 2.all pipeline parallel node in the same tor, but all node in the same leaf
-    resNode := []string{}
-    dataParallel := minNumberWorker / pipelineParallel
-    dpRemainCnt := dataParallel
-    hasFoundAllNode := false
-    for _, hyperNodes := range hyperNodeTree[indexKey] {
-       eachTorCnt := pipelineParallel
-       for beginIndex := 0; eachTorCnt <= len(hyperNodes); beginIndex += pipelineParallel {
-          resNode = append(resNode, hyperNodes[beginIndex:beginIndex+pipelineParallel]...)
-          eachTorCnt += pipelineParallel
-          dpRemainCnt -= 1
-          if dpRemainCnt == 0 {
-             klog.V(3).Infof("get all pipeline parallel node in the same tor: %v", resNode)
-             hasFoundAllNode = true
-             break
-          }
-       }
-       if hasFoundAllNode {
-          break
-       }
-    }
-    if hasFoundAllNode {
-       leafIndexKey := TierKeyWord + strconv.Itoa(LeafTierIndex)
-       for _, hyperNodes := range hyperNodeTree[leafIndexKey] {
-          if resNodeInSameLeaf := nt.isSubHyperNode(hyperNodes, resNode); resNodeInSameLeaf {
-             klog.V(3).Infof("get all pipeline parallel node in the same tor and all node in same leaf: %v", resNode)
-             return resNode, TorTierIndex
-          }
-       }
-    }
 
-    // 3.all node in the same leaf
-    indexKey = TierKeyWord + strconv.Itoa(LeafTierIndex)
-    for _, hyperNodes := range hyperNodeTree[indexKey] {
-       if len(hyperNodes) >= minNumberWorker {
-          klog.V(3).Infof("get node in the same tor: %v", hyperNodes[:minNumberWorker])
-          return hyperNodes[:minNumberWorker], TorTierIndex
-       }
-    }
-    // 4.all pipeline parallel node in the same tor, but all node in the same spine
-    if hasFoundAllNode {
-       klog.V(3).Infof("get all pipeline parallel node in the same tor and all node in same spine: %v", resNode)
-       return resNode, LeafTierIndex
-    }
-    // 5.all pipeline parallel node in the same leaf, but all node in the same spine
-    resNode = []string{}
-    dpRemainCnt = dataParallel
-    for _, hyperNodes := range hyperNodeTree[indexKey] {
-       eachTorCnt := pipelineParallel
-       for beginIndex := 0; eachTorCnt <= len(hyperNodes); beginIndex += pipelineParallel {
-          resNode = append(resNode, hyperNodes[beginIndex:beginIndex+pipelineParallel]...)
-          eachTorCnt += pipelineParallel
-          dpRemainCnt -= 1
-          if dpRemainCnt == 0 {
-             klog.V(3).Infof("get all pipeline parallel node in the same tor: %v", resNode)
-             return resNode, TorTierIndex
-          }
-       }
-    }
-    // 6.all node in the same spine
-    indexKey = TierKeyWord + strconv.Itoa(SpineTierIndex)
-    for _, hyperNodes := range hyperNodeTree[indexKey] {
-       if len(hyperNodes) >= minNumberWorker {
-          klog.V(3).Infof("get node in the same tor: %v", hyperNodes[:minNumberWorker])
-          return hyperNodes[:minNumberWorker], TorTierIndex
-       }
-    }
-    return nil, -1
+// convert multi-layer network topology to hyperNodeTree
+hyperNodeTree := map[string][][]string{
+		"s3": {{"node-0", "node-1", "node-2", "node-3", "node-4", "node-5", "node-6", "node-7", "node-8", "node-9"}},
+		"s2": {{"node-0", "node-1", "node-2", "node-3"}, {"node-4", "node-5", "node-6", "node-7", "node-8", "node-9"}},
+		"s1": {{"node-0", "node-1}", "{node-2", "node-3}", "{node-4", "node-5}", "{node-6", "node-7", "node-8", "node-9"}},
 }
 
+// sort earch layer in hyperNodeTree. 
+hyperNodeTree := map[string][][]string{
+		"s3": {{"node-0", "node-1", "node-2", "node-3", "node-4", "node-5", "node-6", "node-7", "node-8", "node-9"}},       // len(s3)=10
+		"s2": {{"node-0", "node-1", "node-2", "node-3"}, {"node-4", "node-5", "node-6", "node-7", "node-8", "node-9"}},     // len(s2-0)=4, len(s2-1)=6, 
+		"s1": {{"node-0", "node-1"}, {"node-2", "node-3"}, {"node-4", "node-5"},{"node-6", "node-7", "node-8", "node-9"}}, // len(s1-2)=2, len(s1-1)=2,len(s1-0)=2,len(s1-3)=4, 
+}
+```
+
+
+4.2 FindBestNode in sort hyperNodeTree
+```
+// defaultPipelineParallel := 1
+func (nt *NetWorkTopology) FindBestNode(requirements PodGrouprequirements, hyperNodeTree map[string][][]string) ([]string, int) {
+    minNumberWorker := requirements.MinMember
+    pipelineParallel := requirements.PipelineParallel
+    if minNumberWorker%pipelineParallel != 0 {
+        pipelineParallel = defaultPipelineParallel
+    }
+    dataParallel := minNumberWorker / pipelineParallel
+
+    // 1. if all node in the same tor
+    tieIndex := s1
+    for _, hyperNodes := range hyperNodeTree[tieIndex] {
+       if len(hyperNodes) >= minNumberWorker {
+          return hyperNodes[:minNumberWorker], tieIndex
+       }
+    }
+
+	// 2.all pipeline parallel node in the same tor, but all node in the same leaf
+    hasFoundAllNode, resNode := nt.ppSameHyperNode(hyperNodeTree[s1], tieIndex, minNumberWorker, pipelineParallel)
+    if hasFoundAllNode {
+		for _, hyperNodes := range hyperNodeTree[s2] {
+			if ok := isSubHyperNode(hyperNodes, resNode); ok {
+				return resNode, LeafTierIndex
+			}else{
+               
+               return resNode, LeafTierIndex
+            }
+		}
+        return resNode, SpineTierIndex
+    }
+
+    // 3.all node in the same leaf:  try to find a set of nodes in the same leaf that meets the minimum number of workers required
+    indexKey = s2
+	for i := range hyperNodeTree[indexKey] {
+		hyperNodes := hyperNodeTree[indexKey][len(hyperNodeTree[indexKey])-i-1]
+		if len(hyperNodes) >= minNumberWorker {
+			torHyperNodes := getHyperNodeTor(hyperNodes, hyperNodeTree[TierKeyWord+strconv.Itoa(TorTierIndex)])
+			_, resNode, remainNodes := nt.ppSameHyperNode(torHyperNodes, dataParallel, pipelineParallel)
+			for _, nodes := range remainNodes {
+				resNode = append(resNode, nodes...)
+			}
+			return resNode[:minNumberWorker], LeafTierIndex
+		}
+	}
+
+	// 4.all pipeline parallel node in the same tor, but all node in the same spine
+	if hasFoundAllNode {
+		return resNode, SpineTierIndex
+	}
+
+	// 5.all pipeline parallel node in the same leaf, but all node in the same spine
+	hasFoundAllNode, resNode, remainNodes := nt.ppSameHyperNode(hyperNodeTree[indexKey], dataParallel, pipelineParallel)
+	if hasFoundAllNode {
+		return resNode, SpineTierIndex
+	}
+
+	// 6.all node in the same spine
+	indexKey = TierKeyWord + strconv.Itoa(SpineTierIndex)
+	for _, hyperNodes := range hyperNodeTree[indexKey] {
+		if len(hyperNodes) >= minNumberWorker {
+			klog.V(3).Infof("get node in the same spine: %v", hyperNodes[:minNumberWorker])
+			// only have one spine, all nodes in this spine, so resNode and remainNodes are included in spine
+			for _, nodes := range remainNodes {
+				resNode = append(resNode, nodes...)
+			}
+			return resNode[:minNumberWorker], SpineTierIndex
+		}
+	}
+	return nil, -1
+}
+```
+
+```
+func (nt *NetWorkTopology) ppSameHyperNode(hyperNodeList [][]string, dpRemainCnt int, pipelineParallel int) (bool, []string, [][]string) {
+	var resNode []string
+	var remainNodes [][]string
+	hasFoundAllNode := false
+	for _, hyperNodes := range hyperNodeList {
+		eachTorCnt := pipelineParallel
+		beginIndex := 0
+		for ; eachTorCnt <= len(hyperNodes); beginIndex += pipelineParallel {
+			resNode = append(resNode, hyperNodes[beginIndex:beginIndex+pipelineParallel]...)
+			eachTorCnt += pipelineParallel
+			dpRemainCnt -= 1
+			if dpRemainCnt == 0 {
+				hasFoundAllNode = true
+				break
+			}
+		}
+		if beginIndex < len(hyperNodes) {
+			remainNodes = append(remainNodes, hyperNodes[beginIndex:])
+		}
+		if hasFoundAllNode {
+			break
+		}
+	}
+	sort.Slice(remainNodes, func(i, j int) bool {
+		return len(remainNodes[i]) > len(remainNodes[j])
+	})
+	return hasFoundAllNode, resNode, remainNodes
+}
 ```
 
