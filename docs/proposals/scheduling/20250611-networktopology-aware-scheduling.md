@@ -392,7 +392,53 @@ hyperNodeTree := map[string][][]string{
 
 4.2 FindBestNode in sort hyperNodeTree
 ```
-// defaultPipelineParallel := 1
+// Pseudocode
+func (nt *NetWorkTopology) FindBestNode(requirements PodGrouprequirements, hyperNodeTree map[string][][]string) ([]string, int) {
+    // 1. if all node in the same tor
+    tieIndex := s1
+    for _, hyperNodes := range hyperNodeTree[s1] {
+        if len(hyperNodes) >= minNumberWorker {
+            return hyperNodes[:minNumberWorker], tieIndex
+        }
+    }
+
+    // 2.all pipeline parallel node in the same tor, but all node in the same leaf
+    hasFoundAllNode, resNode := findNode in S1 hyperNodeTree
+    if hasFoundAllNode {
+        if resNode isSubHyperNode of one s2 hyperNodeTree {
+            return resNode, LeafTierIndex
+        }else{
+            // 3. get node in each s2 hyperNodeTree
+            torHyperNodes := get node in each s2 hyperNodeTree
+			if len(torHyperNodes) > minNumberWorker {
+                return resNode, LeafTierIndex   
+			}
+        }
+
+		// 4.all pipeline parallel node in the same tor, but all node in the same spine
+        return resNode, SpineTierIndex
+    }
+    
+    // 5.all pipeline parallel node in the same leaf, but all node in the same spine
+    tieIndex = s2
+	hasFoundAllNode, resNode, remainNodes := find node in s2 hyperNodeTree
+	if hasFoundAllNode {
+		return resNode, SpineTierIndex
+	}else{
+	    // 6.all node in the same spine
+	    totalNode := append(resNode,remainNodes)
+	    if len(totalNode) > minNumberWorker {
+	        return totalNode, SpineTierIndex
+	    }
+	}
+	
+}
+```
+
+
+
+```
+// detail
 func (nt *NetWorkTopology) FindBestNode(requirements PodGrouprequirements, hyperNodeTree map[string][][]string) ([]string, int) {
     minNumberWorker := requirements.MinMember
     pipelineParallel := requirements.PipelineParallel
@@ -426,9 +472,9 @@ func (nt *NetWorkTopology) FindBestNode(requirements PodGrouprequirements, hyper
     // 3.all node in the same leaf:  try to find a set of nodes in the same leaf that meets the minimum number of workers required
     indexKey = s2
 	for i := range hyperNodeTree[indexKey] {
-		hyperNodes := hyperNodeTree[indexKey][len(hyperNodeTree[indexKey])-i-1]
+		hyperNodes := hyperNodeTree[indexKey][i]
 		if len(hyperNodes) >= minNumberWorker {
-			torHyperNodes := getHyperNodeTor(hyperNodes, hyperNodeTree[TierKeyWord+strconv.Itoa(TorTierIndex)])
+			torHyperNodes := getHyperNodeTor(hyperNodes, hyperNodeTree[TorTierIndex])
 			_, resNode, remainNodes := nt.ppSameHyperNode(torHyperNodes, dataParallel, pipelineParallel)
 			for _, nodes := range remainNodes {
 				resNode = append(resNode, nodes...)
@@ -449,7 +495,7 @@ func (nt *NetWorkTopology) FindBestNode(requirements PodGrouprequirements, hyper
 	}
 
 	// 6.all node in the same spine
-	indexKey = TierKeyWord + strconv.Itoa(SpineTierIndex)
+	indexKey = s2
 	for _, hyperNodes := range hyperNodeTree[indexKey] {
 		if len(hyperNodes) >= minNumberWorker {
 			klog.V(3).Infof("get node in the same spine: %v", hyperNodes[:minNumberWorker])
