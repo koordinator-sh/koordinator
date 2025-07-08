@@ -365,65 +365,20 @@ func Test_updateElasticQuotaStatusIfChanged(t *testing.T) {
 	}
 }
 
-func Test_syncElasticQuotaMetrics(t *testing.T) {
-	eq := &v1alpha1.ElasticQuota{
-		ObjectMeta: metav1.ObjectMeta{
-			Labels: map[string]string{
-				"quota.scheduling.koordinator.sh/is-root": "true",
-			},
-			Annotations: map[string]string{
-				"quota.scheduling.koordinator.sh/unschedulable-resource": `{"cpu":"4","memory":"8"}`,
-			},
-		},
-		Spec: v1alpha1.ElasticQuotaSpec{
-			Max: MakeResourceList().CPU(4).Mem(200).Obj(),
-			Min: MakeResourceList().CPU(2).Mem(100).Obj(),
-		},
-	}
-	summary := &core.QuotaInfoSummary{
-		Name:                  "test-eq",
-		ParentName:            "root",
-		IsParent:              true,
-		Tree:                  "tree-1",
-		Max:                   MakeResourceList().CPU(4).Mem(200).Obj(),
-		Min:                   MakeResourceList().CPU(2).Mem(100).Obj(),
-		Used:                  MakeResourceList().CPU(1).Mem(50).Obj(),
-		NonPreemptibleUsed:    MakeResourceList().CPU(2).Mem(50).Obj(),
-		NonPreemptibleRequest: MakeResourceList().CPU(3).Mem(50).Obj(),
-		Request:               MakeResourceList().CPU(4).Mem(50).Obj(),
-		Runtime:               MakeResourceList().CPU(5).Mem(50).Obj(),
-		ChildRequest:          MakeResourceList().CPU(6).Mem(50).Obj(),
-		Allocated:             MakeResourceList().CPU(7).Mem(50).Obj(),
-		Guaranteed:            MakeResourceList().CPU(8).Mem(50).Obj(),
-	}
+func Test_deleteElasticQuotaMetrics(t *testing.T) {
+	eq, summary := getEqAndSummary()
 	syncElasticQuotaMetrics(eq, summary)
-	metricsCh := make(chan prometheus.Metric, 10)
-	go func() {
-		ElasticQuotaSpecMetric.Collect(metricsCh)
-		ElasticQuotaStatusMetric.Collect(metricsCh)
-		close(metricsCh)
-	}()
-	var ms []prometheus.Metric
-loopChan:
-	for {
-		select {
-		case metric, ok := <-metricsCh:
-			if !ok {
-				break loopChan
-			}
-			ms = append(ms, metric)
-		}
-	}
+	dtoMetrics := getMetrics(t)
+	assert.Equal(t, 22, len(dtoMetrics))
+	deleteElasticQuotaMetrics(eq, summary)
+	dtoMetricsD := getMetrics(t)
+	assert.Equal(t, 0, len(dtoMetricsD))
+}
 
-	var dtoMetrics []*dto.Metric
-	for _, v := range ms {
-		m := dto.Metric{}
-		assert.NoError(t, v.Write(&m))
-		dtoMetrics = append(dtoMetrics, &m)
-	}
-	sort.Slice(dtoMetrics, func(i, j int) bool {
-		return dtoMetrics[i].String() < dtoMetrics[j].String()
-	})
+func Test_syncElasticQuotaMetrics(t *testing.T) {
+	eq, summary := getEqAndSummary()
+	syncElasticQuotaMetrics(eq, summary)
+	dtoMetrics := getMetrics(t)
 	expect := []string{
 		`{"label":[{"name":"field","value":"allocated"},{"name":"is_parent","value":"true"},{"name":"name","value":"test-eq"},{"name":"parent","value":"root"},{"name":"resource","value":"cpu"},{"name":"tree","value":"tree-1"}],"gauge":{"value":7000}}`,
 		`{"label":[{"name":"field","value":"allocated"},{"name":"is_parent","value":"true"},{"name":"name","value":"test-eq"},{"name":"parent","value":"root"},{"name":"resource","value":"memory"},{"name":"tree","value":"tree-1"}],"gauge":{"value":50}}`,
@@ -454,6 +409,71 @@ loopChan:
 		jsonStrBytes, _ := json.Marshal(v)
 		assert.Equal(t, expect[i], string(jsonStrBytes))
 	}
+}
+
+func getEqAndSummary() (*v1alpha1.ElasticQuota, *core.QuotaInfoSummary) {
+	eq := &v1alpha1.ElasticQuota{
+		ObjectMeta: metav1.ObjectMeta{
+			Labels: map[string]string{
+				"quota.scheduling.koordinator.sh/is-root": "true",
+			},
+			Annotations: map[string]string{
+				"quota.scheduling.koordinator.sh/unschedulable-resource": `{"cpu":"4","memory":"8"}`,
+			},
+		},
+		Spec: v1alpha1.ElasticQuotaSpec{
+			Max: MakeResourceList().CPU(4).Mem(200).Obj(),
+			Min: MakeResourceList().CPU(2).Mem(100).Obj(),
+		},
+	}
+	summary := &core.QuotaInfoSummary{
+		Name:                  "test-eq",
+		ParentName:            "root",
+		IsParent:              true,
+		Tree:                  "tree-1",
+		Max:                   MakeResourceList().CPU(4).Mem(200).Obj(),
+		Min:                   MakeResourceList().CPU(2).Mem(100).Obj(),
+		Used:                  MakeResourceList().CPU(1).Mem(50).Obj(),
+		NonPreemptibleUsed:    MakeResourceList().CPU(2).Mem(50).Obj(),
+		NonPreemptibleRequest: MakeResourceList().CPU(3).Mem(50).Obj(),
+		Request:               MakeResourceList().CPU(4).Mem(50).Obj(),
+		Runtime:               MakeResourceList().CPU(5).Mem(50).Obj(),
+		ChildRequest:          MakeResourceList().CPU(6).Mem(50).Obj(),
+		Allocated:             MakeResourceList().CPU(7).Mem(50).Obj(),
+		Guaranteed:            MakeResourceList().CPU(8).Mem(50).Obj(),
+	}
+	return eq, summary
+}
+
+func getMetrics(t *testing.T) []*dto.Metric {
+	metricsCh := make(chan prometheus.Metric, 10)
+	go func() {
+		ElasticQuotaSpecMetric.Collect(metricsCh)
+		ElasticQuotaStatusMetric.Collect(metricsCh)
+		close(metricsCh)
+	}()
+	var ms []prometheus.Metric
+loopChan:
+	for {
+		select {
+		case metric, ok := <-metricsCh:
+			if !ok {
+				break loopChan
+			}
+			ms = append(ms, metric)
+		}
+	}
+
+	var dtoMetrics []*dto.Metric
+	for _, v := range ms {
+		m := dto.Metric{}
+		assert.NoError(t, v.Write(&m))
+		dtoMetrics = append(dtoMetrics, &m)
+	}
+	sort.Slice(dtoMetrics, func(i, j int) bool {
+		return dtoMetrics[i].String() < dtoMetrics[j].String()
+	})
+	return dtoMetrics
 }
 
 type eqWrapper struct{ *v1alpha1.ElasticQuota }
