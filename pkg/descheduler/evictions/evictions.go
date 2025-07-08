@@ -55,7 +55,7 @@ type PodEvictor struct {
 	dryRun                     bool
 	maxPodsToEvictPerNode      *uint
 	maxPodsToEvictPerNamespace *uint
-	lock                       sync.Mutex
+	lock                       sync.RWMutex
 	totalCount                 int
 	nodepodCount               nodePodEvictedCount
 	namespacePodCount          namespacePodEvictCount
@@ -83,21 +83,21 @@ func NewPodEvictor(
 
 // NodeEvicted gives a number of pods evicted for node
 func (pe *PodEvictor) NodeEvicted(nodeName string) uint {
-	pe.lock.Lock()
-	defer pe.lock.Unlock()
+	pe.lock.RLock()
+	defer pe.lock.RUnlock()
 	return pe.nodepodCount[nodeName]
 }
 
 func (pe *PodEvictor) NamespaceEvicted(namespace string) uint {
-	pe.lock.Lock()
-	defer pe.lock.Unlock()
+	pe.lock.RLock()
+	defer pe.lock.RUnlock()
 	return pe.namespacePodCount[namespace]
 }
 
 // TotalEvicted gives a number of pods evicted through all nodes
 func (pe *PodEvictor) TotalEvicted() int {
-	pe.lock.Lock()
-	defer pe.lock.Unlock()
+	pe.lock.RLock()
+	defer pe.lock.RUnlock()
 	return pe.totalCount
 }
 
