@@ -61,20 +61,24 @@ func init() {
 	)
 }
 
-func RecordElasticQuotaMetric(gaugeVec *metrics.GaugeVec, resources corev1.ResourceList, field string, labels map[string]string) {
+func RecordElasticQuotaMetric(gaugeVec *metrics.GaugeVec, resources corev1.ResourceList, field string, labels map[string]string, isDelete bool) {
 	for resourceName, quantity := range resources {
 		switch resourceName {
 		case corev1.ResourceCPU:
-			recordResourceMetric(gaugeVec, quantity.MilliValue(), string(resourceName), field, labels)
+			recordResourceMetric(gaugeVec, quantity.MilliValue(), string(resourceName), field, labels, isDelete)
 		default:
-			recordResourceMetric(gaugeVec, quantity.Value(), string(resourceName), field, labels)
+			recordResourceMetric(gaugeVec, quantity.Value(), string(resourceName), field, labels, isDelete)
 		}
 	}
 }
 
-func recordResourceMetric(gaugeVec *metrics.GaugeVec, value int64, resourceName, field string, labels map[string]string) {
+func recordResourceMetric(gaugeVec *metrics.GaugeVec, value int64, resourceName, field string, labels map[string]string, isDelete bool) {
 	labels["resource"] = resourceName
 	labels["field"] = field
 
-	gaugeVec.With(labels).Set(float64(value))
+	if isDelete {
+		gaugeVec.Delete(labels)
+	} else {
+		gaugeVec.With(labels).Set(float64(value))
+	}
 }

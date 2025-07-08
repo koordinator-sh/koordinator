@@ -396,34 +396,8 @@ func Test_syncElasticQuotaMetrics(t *testing.T) {
 		Allocated:             MakeResourceList().CPU(7).Mem(50).Obj(),
 		Guaranteed:            MakeResourceList().CPU(8).Mem(50).Obj(),
 	}
-	syncElasticQuotaMetrics(eq, summary)
-	metricsCh := make(chan prometheus.Metric, 10)
-	go func() {
-		ElasticQuotaSpecMetric.Collect(metricsCh)
-		ElasticQuotaStatusMetric.Collect(metricsCh)
-		close(metricsCh)
-	}()
-	var ms []prometheus.Metric
-loopChan:
-	for {
-		select {
-		case metric, ok := <-metricsCh:
-			if !ok {
-				break loopChan
-			}
-			ms = append(ms, metric)
-		}
-	}
-
-	var dtoMetrics []*dto.Metric
-	for _, v := range ms {
-		m := dto.Metric{}
-		assert.NoError(t, v.Write(&m))
-		dtoMetrics = append(dtoMetrics, &m)
-	}
-	sort.Slice(dtoMetrics, func(i, j int) bool {
-		return dtoMetrics[i].String() < dtoMetrics[j].String()
-	})
+	syncElasticQuotaMetrics(eq, summary, false)
+	dtoMetrics := getMetrics(t)
 	expect := []string{
 		`{"label":[{"name":"field","value":"allocated"},{"name":"is_parent","value":"true"},{"name":"name","value":"test-eq"},{"name":"parent","value":"root"},{"name":"resource","value":"cpu"},{"name":"tree","value":"tree-1"}],"gauge":{"value":7000}}`,
 		`{"label":[{"name":"field","value":"allocated"},{"name":"is_parent","value":"true"},{"name":"name","value":"test-eq"},{"name":"parent","value":"root"},{"name":"resource","value":"memory"},{"name":"tree","value":"tree-1"}],"gauge":{"value":50}}`,
@@ -454,6 +428,40 @@ loopChan:
 		jsonStrBytes, _ := json.Marshal(v)
 		assert.Equal(t, expect[i], string(jsonStrBytes))
 	}
+	syncElasticQuotaMetrics(eq, summary, true)
+	dtoMetricsD := getMetrics(t)
+	assert.Equal(t, 0, len(dtoMetricsD))
+}
+
+func getMetrics(t *testing.T) []*dto.Metric {
+	metricsCh := make(chan prometheus.Metric, 10)
+	go func() {
+		ElasticQuotaSpecMetric.Collect(metricsCh)
+		ElasticQuotaStatusMetric.Collect(metricsCh)
+		close(metricsCh)
+	}()
+	var ms []prometheus.Metric
+loopChan:
+	for {
+		select {
+		case metric, ok := <-metricsCh:
+			if !ok {
+				break loopChan
+			}
+			ms = append(ms, metric)
+		}
+	}
+
+	var dtoMetrics []*dto.Metric
+	for _, v := range ms {
+		m := dto.Metric{}
+		assert.NoError(t, v.Write(&m))
+		dtoMetrics = append(dtoMetrics, &m)
+	}
+	sort.Slice(dtoMetrics, func(i, j int) bool {
+		return dtoMetrics[i].String() < dtoMetrics[j].String()
+	})
+	return dtoMetrics
 }
 
 type eqWrapper struct{ *v1alpha1.ElasticQuota }
