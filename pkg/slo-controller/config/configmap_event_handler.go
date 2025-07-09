@@ -59,10 +59,10 @@ func (p *EnqueueRequestForConfigMap) Generic(ctx context.Context, evt event.Gene
 func (p *EnqueueRequestForConfigMap) Update(ctx context.Context, evt event.UpdateEvent, q workqueue.RateLimitingInterface) {
 	newConfigMap := evt.ObjectNew.(*corev1.ConfigMap)
 	oldConfigMap := evt.ObjectOld.(*corev1.ConfigMap)
-	if reflect.DeepEqual(newConfigMap.Data, oldConfigMap.Data) {
+	if newConfigMap.Namespace != sloconfig.ConfigNameSpace || newConfigMap.Name != sloconfig.SLOCtrlConfigMap {
 		return
 	}
-	if newConfigMap.Namespace != sloconfig.ConfigNameSpace || newConfigMap.Name != sloconfig.SLOCtrlConfigMap {
+	if reflect.DeepEqual(newConfigMap.Data, oldConfigMap.Data) {
 		return
 	}
 	if p.SyncCacheIfChanged != nil && !p.SyncCacheIfChanged(newConfigMap) {
