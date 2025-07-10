@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"strings"
 	"sync"
 
 	corev1 "k8s.io/api/core/v1"
@@ -171,7 +172,7 @@ func (qt *quotaTopology) ValidDeleteQuota(quota *v1alpha1.ElasticQuota) error {
 	// check has child quota.
 	if childSet, exist := qt.quotaHierarchyInfo[quotaName]; exist {
 		if len(childSet) > 0 {
-			return fmt.Errorf("delete quota failed, quota%v has child quota", quotaName)
+			return fmt.Errorf("delete quota failed, quota %v has %d child quotas", quotaName, len(childSet))
 		}
 	} else {
 		return fmt.Errorf("BUG quotaMap and quotaTree information out of sync, losed :%v", quotaName)
@@ -186,7 +187,18 @@ func (qt *quotaTopology) ValidDeleteQuota(quota *v1alpha1.ElasticQuota) error {
 		return fmt.Errorf("failed list pods for quota %v, err: %v", quota.Name, err)
 	}
 	if len(podList.Items) > 0 {
-		return fmt.Errorf("delete quota failed, quota %v has child pods", quotaName)
+		podCount := len(podList.Items)
+		var podNames []string
+		if podCount <= 2 {
+			for _, pod := range podList.Items {
+				podNames = append(podNames, pod.Name)
+			}
+		} else {
+			podNames = append(podNames, podList.Items[0].Name, podList.Items[1].Name)
+			podNames = append(podNames, "...")
+		}
+		displayNames := strings.Join(podNames, ", ")
+		return fmt.Errorf("delete quota failed, quota %v has %d child pods: %s", quotaName, podCount, displayNames)
 	}
 
 	delete(qt.quotaHierarchyInfo[quotaInfo.ParentName], quotaName)
