@@ -4,7 +4,7 @@
 
 In the training scenario of large language models, model parallelism requires extremely high network throughput for exchanging data, which makes the network a key bottleneck.
 
-Therefore, workloads are required to be scheduled to the optimal network topology domain with the highest throughput and lowest latency, in order to accelerate the exchange of network data for training. Taking Spine leaf architecture as an example, it is necessary to schedule the pods of PodGroup under the same leaf to meet the requirement of low latency data exchange between pods.
+Therefore, workloads are required to be scheduled to the optimal network topology domain with the highest throughput and lowest latency, in order to accelerate the exchange of network data for training. Taking Spine-Block architecture as an example, it is necessary to schedule the pods of PodGroup under the same block to meet the requirement of low latency data exchange between pods.
 
 In Kubernetes, while the native scheduler uses `PodAffinity` to address topology-based inter pod affinity scheduling, its effectiveness is limited due to single Pod scheduling at a time. Koord-Scheduler improves this with `PodGroup` semantics, allowing for collective scheduling of Pods once all resource demands are met. Despite enhancing topology handling, these schedulers fall short with preferred topology needs. Thus, a new capability is required that employs a network topology algorithm to optimally select and schedule multiple nodes for `PodGroups` with specific network topology requirements.
 
@@ -41,7 +41,7 @@ network.topology.nvidia.com/spine: s2
 network.topology.nvidia.com/datacenter: s3
 ```
 
-Network topology domains can be organized in a tree structure. For example, the following figure shows a typical spine leaf network architecture. 
+Network topology domains can be organized in a tree structure. For example, the following figure shows a typical spine block network architecture. 
 
 ![image](/docs/images/networktopo-1.png)
 
@@ -52,36 +52,29 @@ When GPUs on different nodes communicate with each other,
 
 ### Parallel Strategies
 
-![image](/docs/images/networktopo-2-dp-and-pp.png)
-
-There are three parallel strategies in the above figure:
+With the advent of large language models, the parameters of the model and the amount of data required for training have become extremely large. The previous training mode of running training on one GPU is no longer suitable for large language models. Therefore, in order to accelerate the training process of AI tasks, model developers split the amount of computation required to train the model into different parts and put them on different GPUs of the same machine or different machines to run in parallel. Typically, there are three parallel strategies for the training of large language models:
 
 - Tensor Parallel: The core idea is to decompose large matrices or tensors into multiple smaller parts and allocate these parts to different GPU devices for parallel computing.
-This can significantly improve computational efficiency and shorten model training time, especially when facing large models with billions of parameters.
-
+  This can significantly improve computational efficiency and shorten model training time, especially when facing large models with billions of parameters.
 - Pipeline Parallel: The core idea is to divide the calculation process of the model into multiple stages, each stage being processed by one or more computing units (such as GPU or TPU). 
-The data flows sequentially between these stages, with each stage processing different batches of data simultaneously. 
-This process is similar to pipeline processing in traditional computers.
-
+  The data flows sequentially between these stages, with each stage processing different batches of data simultaneously. 
+  This process is similar to pipeline processing in traditional computers. 
 - Data Parallel: evenly distribute training data X (such as a batch) to different computing GPUs.
 
+In practice, these three parallel strategies are often mixed. For example, we can turn on three parallel strategy for a 12-machine training task at the same time, set the PP parallelism to 4 and the DP parallelism to 3, and the overall parallel model is shown in the following figure:
 
-Different parallel communications have different characteristics:
-- Tensor Parallel: Generally used for communication between multiple GPU cards on a single machine, with nvlink for communication.
-- Pipeline Parallel: It involves operations such as FWD and BWD, with a data exchange rate of over GB/s, and communication efficiency directly determines the training speed of the model. The demand for network performance is extremely high.
-- Data Parallel: Typically, data parallel requires the collection, accumulation, and updating of gradients between multiple Pipeline Parallels. The data volume is approximately MB in size, and the requirements for network performance are average.
+![image](/docs/images/networktopo-2-dp-and-pp.png)
 
-Therefore, different communication methods have different communication bandwidth requirements. The communication between the gpu cards in one Pod is conducted through nvlink and there is no need for scheduler attention. When performing cross-machine communication, the communication bandwidth requirement is the network topology requirement. 
+TP happens inside the machine, and communication between GPUs is done through NVLink. DP and PP occur between different machines and involve the requirements for the network topology. PP involves operations such as FWD and BWD, with a data exchange rate of over GB/s.  DP requires the collection, accumulation, and updating of gradients between multiple pipelines and the data volume is approximately MB/s in size. Therefore, when the entire topology of the job is under the same switch, we prefer to let the machines in the same PP group be in the network topology with better performance. 
 
-Now, we have the following two scheduling strategy for `PodGroup` with network topology requirements:
+![image](/docs/images/pp_over_dp.jpg)
 
-1. Try to schedule member Pods of the same `PodGroup` to a network topology domain with better performance
-2. Pipeline parallism has a larger communication volume than data parallism. Therefore, try to schedule member Pods of the same PP group in the `PodGroup` to a network topology domain with better performance
+For example, in the network topology and parallel training job described in the diagram above, we prefer candidate0 than candidate 1 since candidate0 can make PP perform better.
 
 
 ## Motivation
 
-From the above background information, we can see that the topological location of the node where the member Pods of the training task are located and the relative order between the member Pods will greatly affect the communication performance between the Pods. 
+From the above background information, it can be seen that the network topology location of the training task member Pods and the relative position between the member Pods after parallel grouping will greatly affect the communication performance between the Pods. 
 
 In Kubernetes, the scheduler is responsible for selecting nodes for the Pods. Thus we first check whether the existing scheduling capabilities of the Kubernetes scheduler or Koord-Scheduler can meet the topology requirements. 
 
@@ -95,6 +88,18 @@ Therefore, we need a new scheduling capability. For `PodGroups` with network top
 
 - When N>M, that is, when resources are sufficient, according to the scheduling algorithm, the optimal scheduling strategy can be matched for PodGroup.
 - When N<M, that is, when resources are insufficient, if preemption is possible, M-N nodes need to be preempted for scheduling according to network topology.
+
+### Non-Goals/Future Work
+
+#### Network topology requirements of dual-template inference service
+
+In this proposal, we assume that the member Pods of `PodGroup` are homogeneous, which is applicable in training scenarios. However, in the inference service that adopts the P-D separation architecture, the resources requested by prefilling and decoding are often different. However, at this time, whether the communication bandwidth between prefilling and decoding will become a bottleneck, and whether we need to consider the network topology between prefilling and decoding, remains to be investigated.
+
+If we really need to support dual-mode applications in the future, we need to do something about the network topology aggregation algorithm on this proposal, so the current proposal needs to support the configurable network topology algorithm.
+
+#### Network topology support in elastic scaling
+
+In the current proposal, we only support the scenario where all member Pods of the network topology are scheduled in an all-or-nothing manner. However, in the inference scenario, the number of service instances may scale dynamically as the request tree changes. If we want to support this scenario in the future, we need to provide a scoring plug-in that tries to make the Pod to be scheduled as close to the topological location of the existing Pods in the PodGroup as possible.
 
 ## Proposal
 
@@ -140,7 +145,7 @@ spec:
     labelKey: network.topology.nvidia.com/datacenter
 ```
 
-#### Submit jobs
+#### Submit topology-aware jobs 
 
 Koordinator has provided the concept of `PodGroup` to abstract the all-or-nothing scheduling semantics of Jobs or Tasks. Users can declare a `PodGroup` as follows and mark which Pods belong to it through Pod Label.
 
@@ -177,7 +182,29 @@ spec:
   ...
 ```
 
-When users want to configure the network topology aggregation strategy for `PodGroup`, `PodGroup` can be modified as follows:
+When users want to configure the network topology gather strategy for `PodGroup`, `PodGroup` can be modified as follows:
+
+```yaml
+apiVersion: scheduling.koordinator.sh/v1alpha1
+kind: PodGroup
+metadata:
+  name: gang-example
+  namespace: default
+spec:
+  minMember: 2
+  networkTopologyAware:
+    gatherStrategy:
+    - layer: spineLayer
+      strategy: PreferGather
+    - layer: blockLayer
+      strategy: PreferGather
+    - layer: acceleratorLayer
+      strategy: PreferGather
+```
+
+The above `PodGroup` indicates that the Pods belonging to it firstly try to be in an accelerator interconnection domain, and then try to be in a Block, and then try to be in a Spine network.
+
+Sometimes, due to the strict demand for communication bandwidth, users may want to place all member Pods of a `PodGroup ` under the same Spine. In this case, you can modify the  `PodGroup`as follows:
 
 ```yaml
 apiVersion: scheduling.koordinator.sh/v1alpha1
@@ -191,14 +218,86 @@ spec:
     gatherStrategy:
     - layer: spineLayer
       strategy: MustGather
+```
+
+#### Submit parallel-aware jobs
+
+In addition, in distributed training, users may need to set a index number for each member Pod of the Job. Generally speaking, member Pods with adjacent index numbers are grouped into a PP group. When PP is 1, communication primitives such as DP's AllReduce form a ring according to the index number of the member Pod. 
+
+For example, if the user wants to create a PodGroup with four member Pods, and the DP parameter is equal to 2 and the PP parameter is also equal to 2, the Pod and PodGroup can be written as follows:
+
+```yaml
+apiVersion: scheduling.sigs.k8s.io/v1alpha1
+kind: PodGroup
+metadata:
+  name: gang-example
+  namespace: default
+spec:
+  minMember: 2
+  networkTopologyAware:
+    gatherStrategy:
+    - layer: spineLayer
+      strategy: PreferGather
     - layer: blockLayer
       strategy: PreferGather
     - layer: acceleratorLayer
       strategy: PreferGather
-    communicationMode: AllRingDuce
+    parallelModel:
+    - parallelStrategy: data-parallel
+      parallism: 2
+    - parallelStrategy: pipeline-parallel
+      parallism: 2
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-example1
+  namespace: default
+  labels:
+    pod-group.scheduling.sigs.k8s.io: gang-example
+    pod-group.scheduling.koordinator.sh/index: 1
+spec:
+  schedulerName: koord-scheduler
+  ...
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-example2
+  namespace: default
+  labels:
+    pod-group.scheduling.sigs.k8s.io: gang-example
+    pod-group.scheduling.koordinator.sh/index: 2
+spec:
+  schedulerName: koord-scheduler
+  ...
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-example3
+  namespace: default
+  labels:
+    pod-group.scheduling.sigs.k8s.io: gang-example
+    pod-group.scheduling.koordinator.sh/index: 3
+spec:
+  schedulerName: koord-scheduler
+  ...
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-example4
+  namespace: default
+  labels:
+    pod-group.scheduling.sigs.k8s.io: gang-example
+    pod-group.scheduling.koordinator.sh/index: 4
+spec:
+  schedulerName: koord-scheduler
+  ...
 ```
 
-The above `PodGroup` indicates that the Pods belonging to it must be in a Spine network, and then try to be in an accelerator interconnection domain, and then try to be in a Block.
+The above YAML indicates that pod-example1 and pod-example2 are in a PP group, pod-example3 and pod-example4 are in a PP group, and all four pods are in a DP group.
 
 #### Preemptible or Non-Preemptible
 
@@ -278,52 +377,20 @@ The job-level preemption algorithm can generally reuse the previous [Proposal](h
 2. To determine whether the Pod can be successfully scheduled after the Victim is deleted, we need to execute PlanNodesForPodGroup to determine whether the node can meet both the network topology and resource requirements, rather than executing RunFilterWithNominatedNodes to determine whether the node can meet the resource requirements.
 ### Network topology gather algorithm 
 
-The network topology gather algorithm is to find the best nodes for the M Pods, given the M member Pods belonging to a PodGroup, all the Nodes that can place the Pods, the network topology location of each node. Due to its complexity, we will use an example to describe the input, output, and overall process of the algorithm.
+The network topology gather algorithm is to find the best nodes for the M Pods, given the M member Pods belonging to a parallel-aware `PodGroup`, all the Nodes that can place the Pods, the network topology location of each node. The overall computation process can be described step by step as follows:
 
-#### Network topology hierarchy
+1. The member Pods of the `PodGroup` of the training task are generally homogeneous. We randomly select one from the member Pods as the representative Pod.
 
-First of all, we have a cluster with 12 nodes, named Node0-Node11. The overall network topology of the cluster and the positions of these 12 nodes in the topology are as follows:
-![image](/docs/images/networktopo-4-cluster.png)
+2. From the bottom to the top of the network topology hierarchy, recursively calculate the number of member Pods that each topology node can provide as `offerslots`. The `offerslots` that a Node can accommodate can be achieved by iteratively calling `NodeInfo.AddPod`, `fwk.RunPreFilterExtensionsAddPod`, and `fwk.RunFilterWithNominatedNode`.
 
-After the cluster administrator configures `ClusterNetworkTopology` for the cluster, the scheduler will perceive it and build the above network topology in memory.
-Now we create three jobs in sequence according to the following table. Each member Pod of each job applies for the entire machine resources and prefer to be aggregated into a finer topology domain. 
+3. Among all the topological nodes that can accommodate all the member Pods of the `PodGroup`, select those with the lowest level as our `candidate topological nodes`. 
 
-#### Examples with jobs 
+   ![topology_offerslot_candidatenode](/docs/images/topology_offerslot_candidatenode.jpg)
 
-Demo1, One Job. we create a job with 4 Pods (DP=2, PP=2). The following figure and table shows the details how the scheduler arranges them in different nodes are unavailable.
+4. From the bottom to the top of the network topology hierarchy, recursively calculate the `best pp group placement solution` for each topological node, and select the one with the lowest pp group level among the candidate topological nodes picked in 3 as the new candidate topological node. As shown in the figure below, we select spine-0 and spine-1 as the new candidate topological nodes.
 
-![image](/docs/images/networktopo-3-demo1.png)
+   ![ppgroup_placement](/docs/images/ppgroup_placement.jpg)
 
-|            | Strategy detail                                      | Scheduler Result                                                               |
-|------------|------------------------------------------------------|--------------------------------------------------------------------------------|
-| case-1     | All dp in one block.                                 | all node is available, node8~node11 is best node in one block                  |
-| case-2 | Each dp in same block.     All dp in same spine.     | node0~node7 is available, node0,node1,node3,node4 is best node                 |
-| case-3 | Each dp not in same block. All dp in same spine.     | node0~node3, node5~node7 is available,node0,node1,node2,node3 is best node     |
-| case-4 | Each dp in same block .    All dp in same datacenter | node0,node3~node7 is available,node3,node4,node5,node6 is best node            |
-| case-5 | Each dp in same spine.     All dp in same datacenter | node0,node3~node5 is available,node3,node4,node5,node8 is best node            |
-| case-6 | All pod in same datacenter         | node0,node4,node5,node8 is available, only node0,node4,node5,node8 can be used |
+5. Among the candidate topological nodes selected in 4, according to the `binpack` principle, the candidate topological nodes whose offerslot is closest to the offerslot required by the job are selected as our final topological node solution. As shown in the figure below, we select Node5-Node8 as the final scheduling result of the job.
 
-
-Demo2, multiple Job with Preempt. 
-we create 4 job following blow table shows the details how the scheduler arranges them.
-
-| Job  | PodGroup  | MinMember | Parallelism | Preemptible Or Non-Preemptible |
-|------|-----------|-----------|-------------| ------------------------------ |
-| job1 | PodGroup1 | 2         | DP=1,PP=2   | Preemptible                    |
-| job2 | PodGroup2 | 2         | DP=1,PP=2   | Preemptible                    |
-| job3 | PodGroup3 | 8         | DP=4,PP=2   | Preemptible                |
-| job4 | PodGroup4 | 4         | DP=2,PP=2   | Non-Preemptible                               |
-
-Let's see how the scheduler arranges them. When PodGroup1 enter into scheduling,
-
-1. PodGroup1 enter into scheduling: The scheduler finds all node meet its requirements. 
-- In order to provide it with better performance, the scheduler tends to choose block0,block1,block2,block3
-- In order to reduce network block fragments, the scheduler tends to choose a minimum satisfiability block, is block2.
-2. PodGroup2 enter into scheduling: same as PodGroup1, the scheduler tends to choose block0.
-3. PodGroup3 enter into scheduling: 
-- pod0,pod1,pod2,pod3,pod4,pod5,pod6 will be scheduled to a block3 and block2 in spine-1.
-- pod7 only can be scheduled to block0 in spine-0.
-4. PodGroup4 enter into scheduling:
-- This is no resource in cluster. But PodGroup4 is non-preemptible with high Priority, so it will be preempt PodGroup3 and schedule them to Node8-Node11.
-
-![image](/docs/images/networktopo-preempt.png)
+   ![topology_final_placement](/docs/images/topology_final_placement.jpg)
