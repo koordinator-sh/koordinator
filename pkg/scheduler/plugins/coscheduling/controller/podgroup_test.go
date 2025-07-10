@@ -346,3 +346,70 @@ func makePG(pgName string, minMember int32, previousPhase v1alpha1.PodGroupPhase
 	}
 	return pg
 }
+
+func TestFillOccupiedObj(t *testing.T) {
+	tests := []struct {
+		name           string
+		pod            *v1.Pod
+		expectedResult string
+	}{
+		{
+			name: "Pod has no OwnerReferences",
+			pod: &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "default",
+				},
+				// No OwnerReferences
+			},
+			expectedResult: "",
+		},
+		{
+			name: "Pod has one OwnerReference",
+			pod: &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "default",
+					OwnerReferences: []metav1.OwnerReference{
+						{
+							Name: "owner-1",
+						},
+					},
+				},
+			},
+			expectedResult: "default/owner-1",
+		},
+		{
+			name: "Pod has multiple OwnerReferences (sorted)",
+			pod: &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "kube-system",
+					OwnerReferences: []metav1.OwnerReference{
+						{Name: "owner-b"},
+						{Name: "owner-a"},
+						{Name: "owner-c"},
+					},
+				},
+			},
+			expectedResult: "kube-system/owner-a,kube-system/owner-b,kube-system/owner-c",
+		},
+		{
+			name: "Pod has empty OwnerReferences slice",
+			pod: &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace:       "test",
+					OwnerReferences: []metav1.OwnerReference{},
+				},
+			},
+			expectedResult: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pg := &v1alpha1.PodGroup{}
+			fillOccupiedObj(pg, tt.pod)
+			if pg.Status.OccupiedBy != tt.expectedResult {
+				t.Errorf("expected %q, got %q", tt.expectedResult, pg.Status.OccupiedBy)
+			}
+		})
+	}
+}

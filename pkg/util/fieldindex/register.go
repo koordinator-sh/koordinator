@@ -49,9 +49,7 @@ var indexDescriptors = []fieldIndexDescriptor{
 			if !ok {
 				return []string{}
 			}
-			if len(pod.Spec.NodeName) == 0 {
-				return []string{}
-			}
+			// use "" to index pods without nodeName
 			return []string{pod.Spec.NodeName}
 		},
 	},

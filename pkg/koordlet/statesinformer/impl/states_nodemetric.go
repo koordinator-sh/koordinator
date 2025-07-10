@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"sort"
 	"sync"
 	"time"
 
@@ -387,6 +388,12 @@ func (r *nodeMetricInformer) collectMetric() (*slov1alpha1.NodeMetricInfo, []*sl
 		}
 		podsMetricInfo = append(podsMetricInfo, podMetric)
 	}
+	sort.Slice(podsMetricInfo, func(i, j int) bool {
+		if podsMetricInfo[i].Namespace != podsMetricInfo[j].Namespace {
+			return podsMetricInfo[i].Namespace < podsMetricInfo[j].Namespace
+		}
+		return podsMetricInfo[i].Name < podsMetricInfo[j].Name
+	})
 	for _, hostApp := range nodeSLO.Spec.HostApplications {
 		appMetric, err := r.collectHostAppMetric(&hostApp, queryParam)
 		if err != nil {
@@ -395,6 +402,9 @@ func (r *nodeMetricInformer) collectMetric() (*slov1alpha1.NodeMetricInfo, []*sl
 		}
 		hostAppMetricInfo = append(hostAppMetricInfo, appMetric)
 	}
+	sort.Slice(hostAppMetricInfo, func(i, j int) bool {
+		return hostAppMetricInfo[i].Name < hostAppMetricInfo[j].Name
+	})
 
 	prodReclaimable := &slov1alpha1.ReclaimableMetric{}
 	if p, err := prodPredictor.GetResult(); err != nil {
@@ -574,6 +584,7 @@ func (r *nodeMetricInformer) collectNodeAggregateMetric(endTime time.Time, aggre
 		start := endTime.Add(-d.Duration)
 		aggregateUsage := slov1alpha1.AggregatedUsage{
 			Usage: map[apiext.AggregationType]slov1alpha1.ResourceMap{
+				apiext.AVG: r.queryNodeMetric(start, endTime, metriccache.AggregationTypeAVG, true),
 				apiext.P50: r.queryNodeMetric(start, endTime, metriccache.AggregationTypeP50, true),
 				apiext.P90: r.queryNodeMetric(start, endTime, metriccache.AggregationTypeP90, true),
 				apiext.P95: r.queryNodeMetric(start, endTime, metriccache.AggregationTypeP95, true),
@@ -654,6 +665,7 @@ func (r *nodeMetricInformer) collectSystemAggregateMetric(endTime time.Time, agg
 		start := endTime.Add(-d.Duration)
 		aggregateUsage := slov1alpha1.AggregatedUsage{
 			Usage: map[apiext.AggregationType]slov1alpha1.ResourceMap{
+				apiext.AVG: r.querySystemMetric(start, endTime, metriccache.AggregationTypeAVG, true),
 				apiext.P50: r.querySystemMetric(start, endTime, metriccache.AggregationTypeP50, true),
 				apiext.P90: r.querySystemMetric(start, endTime, metriccache.AggregationTypeP90, true),
 				apiext.P95: r.querySystemMetric(start, endTime, metriccache.AggregationTypeP95, true),

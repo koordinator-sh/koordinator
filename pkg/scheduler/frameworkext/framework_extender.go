@@ -24,6 +24,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8sfeature "k8s.io/apiserver/pkg/util/feature"
+	listerscorev1 "k8s.io/client-go/listers/core/v1"
 	"k8s.io/klog/v2"
 	schedconfig "k8s.io/kubernetes/pkg/scheduler/apis/config"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
@@ -32,6 +33,7 @@ import (
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	koordinatorclientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
 	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
+	listerschedulingv1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/listers/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/schedulingphase"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/topologymanager"
@@ -40,6 +42,8 @@ import (
 
 var _ FrameworkExtender = &frameworkExtenderImpl{}
 var _ topologymanager.NUMATopologyHintProviderFactory = &frameworkExtenderImpl{}
+
+var ErrSchedulerNameUnmatched = fmt.Errorf("schedulerName unmatched")
 
 type frameworkExtenderImpl struct {
 	framework.Framework
@@ -52,13 +56,17 @@ type frameworkExtenderImpl struct {
 
 	koordinatorClientSet             koordinatorclientset.Interface
 	koordinatorSharedInformerFactory koordinatorinformers.SharedInformerFactory
+	podLister                        listerscorev1.PodLister
+	reservationLister                listerschedulingv1alpha1.ReservationLister
 
-	preFilterTransformers        map[string]PreFilterTransformer
-	filterTransformers           map[string]FilterTransformer
-	scoreTransformers            map[string]ScoreTransformer
-	preFilterTransformersEnabled []PreFilterTransformer
-	filterTransformersEnabled    []FilterTransformer
-	scoreTransformersEnabled     []ScoreTransformer
+	preFilterTransformers         map[string]PreFilterTransformer
+	filterTransformers            map[string]FilterTransformer
+	scoreTransformers             map[string]ScoreTransformer
+	postFilterTransformers        map[string]PostFilterTransformer
+	preFilterTransformersEnabled  []PreFilterTransformer
+	filterTransformersEnabled     []FilterTransformer
+	scoreTransformersEnabled      []ScoreTransformer
+	postFilterTransformersEnabled []PostFilterTransformer
 
 	reservationNominator      ReservationNominator
 	reservationFilterPlugins  []ReservationFilterPlugin
@@ -91,8 +99,11 @@ func NewFrameworkExtender(f *FrameworkExtenderFactory, fw framework.Framework) F
 		preFilterTransformers:            map[string]PreFilterTransformer{},
 		filterTransformers:               map[string]FilterTransformer{},
 		scoreTransformers:                map[string]ScoreTransformer{},
+		postFilterTransformers:           map[string]PostFilterTransformer{},
 		preBindExtensionsPlugins:         map[string]PreBindExtensions{},
 		metricsRecorder:                  f.metricsRecorder,
+		podLister:                        fw.SharedInformerFactory().Core().V1().Pods().Lister(),
+		reservationLister:                f.koordinatorSharedInformerFactory.Scheduling().V1alpha1().Reservations().Lister(),
 	}
 	frameworkExtender.topologyManager = topologymanager.New(frameworkExtender)
 	return frameworkExtender
@@ -114,6 +125,11 @@ func (ext *frameworkExtenderImpl) updateTransformer(transformers ...SchedulingTr
 		if ok {
 			ext.scoreTransformers[transformer.Name()] = scoreTransformer
 			klog.V(4).InfoS("framework extender got scheduling transformer registered", "score", scoreTransformer.Name())
+		}
+		postFilterTransformer, ok := transformer.(PostFilterTransformer)
+		if ok {
+			ext.postFilterTransformers[transformer.Name()] = postFilterTransformer
+			klog.V(4).InfoS("framework extender got scheduling transformer registered", "postFilter", postFilterTransformer.Name())
 		}
 	}
 }
@@ -170,10 +186,17 @@ func (ext *frameworkExtenderImpl) SetConfiguredPlugins(plugins *schedconfig.Plug
 			ext.scoreTransformersEnabled = append(ext.scoreTransformersEnabled, transformer)
 		}
 	}
+	for _, pl := range ext.configuredPlugins.PostFilter.Enabled {
+		transformer := ext.postFilterTransformers[pl.Name]
+		if transformer != nil {
+			ext.postFilterTransformersEnabled = append(ext.postFilterTransformersEnabled, transformer)
+		}
+	}
 	klog.V(5).InfoS("Set configured transformer plugins",
 		"PreFilterTransformer", len(ext.preFilterTransformersEnabled),
 		"FilterTransformer", len(ext.filterTransformersEnabled),
-		"ScoreTransformer", len(ext.scoreTransformersEnabled))
+		"ScoreTransformer", len(ext.scoreTransformersEnabled),
+		"PostFilterTransformer", len(ext.postFilterTransformersEnabled))
 }
 
 func (ext *frameworkExtenderImpl) KoordinatorClientSet() koordinatorclientset.Interface {
@@ -280,12 +303,30 @@ func (ext *frameworkExtenderImpl) RunScorePlugins(ctx context.Context, state *fr
 func (ext *frameworkExtenderImpl) RunPostFilterPlugins(ctx context.Context, state *framework.CycleState, pod *corev1.Pod, filteredNodeStatusMap framework.NodeToStatusMap) (_ *framework.PostFilterResult, status *framework.Status) {
 	schedulingphase.RecordPhase(state, schedulingphase.PostFilter)
 	defer func() { schedulingphase.RecordPhase(state, "") }()
+	defer func() {
+		for _, transformer := range ext.postFilterTransformersEnabled {
+			startTime := time.Now()
+			transformer.AfterPostFilter(ctx, state, pod, filteredNodeStatusMap)
+			ext.metricsRecorder.ObservePluginDurationAsync("AfterPostFilter", transformer.Name(), "", metrics.SinceInSeconds(startTime))
+		}
+	}()
+
 	return ext.Framework.RunPostFilterPlugins(ctx, state, pod, filteredNodeStatusMap)
 }
 
 // RunPreBindPlugins supports PreBindReservation for Reservation
 func (ext *frameworkExtenderImpl) RunPreBindPlugins(ctx context.Context, state *framework.CycleState, pod *corev1.Pod, nodeName string) *framework.Status {
 	if !reservationutil.IsReservePod(pod) {
+		curPod, err := ext.podLister.Pods(pod.Namespace).Get(pod.Name)
+		if err != nil {
+			return framework.AsStatus(err)
+		}
+		if curPod.Spec.SchedulerName != ext.ProfileName() {
+			klog.V(4).ErrorS(ErrSchedulerNameUnmatched, "failed to PreBind Pod",
+				"pod", klog.KObj(pod), "schedulerName", curPod.Spec.SchedulerName, "profile", ext.ProfileName())
+			return framework.AsStatus(ErrSchedulerNameUnmatched)
+		}
+
 		original := pod
 		pod = pod.DeepCopy()
 		status := ext.Framework.RunPreBindPlugins(ctx, state, pod, nodeName)
@@ -295,11 +336,16 @@ func (ext *frameworkExtenderImpl) RunPreBindPlugins(ctx context.Context, state *
 		return ext.runPreBindExtensionPlugins(ctx, state, original, pod)
 	}
 
-	reservationLister := ext.koordinatorSharedInformerFactory.Scheduling().V1alpha1().Reservations().Lister()
 	rName := reservationutil.GetReservationNameFromReservePod(pod)
-	reservation, err := reservationLister.Get(rName)
+	reservation, err := ext.reservationLister.Get(rName)
 	if err != nil {
 		return framework.AsStatus(err)
+	}
+	// check if schedulerName matched
+	if reservationutil.GetReservationSchedulerName(reservation) != ext.ProfileName() {
+		klog.V(4).ErrorS(ErrSchedulerNameUnmatched, "failed to PreBind Reservation",
+			"reservation", klog.KObj(reservation), "schedulerName", reservationutil.GetReservationSchedulerName(reservation), "profile", ext.ProfileName())
+		return framework.AsStatus(ErrSchedulerNameUnmatched)
 	}
 
 	original := reservation

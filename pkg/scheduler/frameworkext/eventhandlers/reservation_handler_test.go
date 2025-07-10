@@ -46,6 +46,7 @@ import (
 	koordfake "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/fake"
 	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
+	frameworkexttesting "github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/testing"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/reservation"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
@@ -61,18 +62,13 @@ func (f *fakeReservationCache) GetReservationInfoByPod(pod *corev1.Pod, nodeName
 }
 
 func TestAddReservationErrorHandler(t *testing.T) {
-	testNodeName := "test-node-0"
 	testR := &schedulingv1alpha1.Reservation{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "reserve-pod-1",
-			UID:  "1234",
+			UID:  "xxx",
 		},
 		Spec: schedulingv1alpha1.ReservationSpec{
-			Template: &corev1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "reserve-pod-1",
-				},
-			},
+			Template: &corev1.PodTemplateSpec{},
 			Owners: []schedulingv1alpha1.ReservationOwner{
 				{
 					Object: &corev1.ObjectReference{
@@ -83,71 +79,132 @@ func TestAddReservationErrorHandler(t *testing.T) {
 			TTL: &metav1.Duration{Duration: 30 * time.Minute},
 		},
 		Status: schedulingv1alpha1.ReservationStatus{
-			Phase:    schedulingv1alpha1.ReservationPending,
-			NodeName: testNodeName,
+			Phase: schedulingv1alpha1.ReservationPending,
 		},
 	}
-	testPod := reservationutil.NewReservePod(testR)
-
-	t.Run("test not panic", func(t *testing.T) {
-		registeredPlugins := []schedulertesting.RegisterPluginFunc{
-			schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
-			schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
-		}
-
-		fakeRecorder := record.NewFakeRecorder(1024)
-		eventRecorder := record.NewEventRecorderAdapter(fakeRecorder)
-
-		fh, err := schedulertesting.NewFramework(context.TODO(), registeredPlugins, "koord-scheduler",
-			frameworkruntime.WithEventRecorder(eventRecorder),
-			frameworkruntime.WithClientSet(kubefake.NewSimpleClientset()),
-			frameworkruntime.WithInformerFactory(informers.NewSharedInformerFactory(kubefake.NewSimpleClientset(), 0)),
-		)
-		assert.Nil(t, err)
-		sched := &scheduler.Scheduler{
-			Profiles: profile.Map{
-				"default-scheduler": fh,
+	testRAssigned := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "reserve-pod-2",
+			UID:  "yyy",
+		},
+		Spec: schedulingv1alpha1.ReservationSpec{
+			Template: &corev1.PodTemplateSpec{},
+			Owners: []schedulingv1alpha1.ReservationOwner{
+				{
+					Object: &corev1.ObjectReference{
+						Name: "test-pod-1",
+					},
+				},
 			},
-		}
-		internalHandler := &frameworkext.FakeScheduler{}
-		koordClientSet := koordfake.NewSimpleClientset(testR)
-		koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
+			TTL: &metav1.Duration{Duration: 30 * time.Minute},
+		},
+		Status: schedulingv1alpha1.ReservationStatus{
+			Phase:    schedulingv1alpha1.ReservationAvailable,
+			NodeName: "test-node",
+		},
+	}
+	testRIrresponsible := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "reserve-pod-3",
+			UID:  "zzz",
+		},
+		Spec: schedulingv1alpha1.ReservationSpec{
+			Template: &corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					SchedulerName: "other-scheduler",
+				},
+			},
+			TTL: &metav1.Duration{Duration: 30 * time.Minute},
+		},
+		Status: schedulingv1alpha1.ReservationStatus{
+			Phase: schedulingv1alpha1.ReservationPending,
+		},
+	}
+	testPodResponsible := reservationutil.NewReservePod(testRIrresponsible)
+	testPodResponsible.Spec.SchedulerName = "default-scheduler"
 
-		handler := MakeReservationErrorHandler(sched, internalHandler, koordClientSet, koordSharedInformerFactory)
-
-		koordSharedInformerFactory.Start(nil)
-		koordSharedInformerFactory.WaitForCacheSync(nil)
-
-		podInfo, _ := framework.NewPodInfo(testPod)
-		queuedPodInfo := &framework.QueuedPodInfo{
-			PodInfo: podInfo,
-		}
-
-		expectedErr := errors.New(strings.Repeat("test error", validation.NoteLengthLimit))
-		handler(context.TODO(), fh, queuedPodInfo, framework.AsStatus(expectedErr), nil, time.Now())
-
-		r, err := koordClientSet.SchedulingV1alpha1().Reservations().Get(context.TODO(), testR.Name, metav1.GetOptions{})
-		assert.NoError(t, err)
-		assert.NotNil(t, r)
-		var message string
-		for _, v := range r.Status.Conditions {
-			if v.Type == schedulingv1alpha1.ReservationConditionScheduled && v.Reason == schedulingv1alpha1.ReasonReservationUnschedulable {
-				message = v.Message
+	type tests struct {
+		name string
+		r    *schedulingv1alpha1.Reservation
+		pod  *corev1.Pod
+		want string
+	}
+	for _, tt := range []tests{
+		{
+			name: "normal",
+			r:    testR,
+			pod:  reservationutil.NewReservePod(testR),
+			want: strings.Repeat("test error", validation.NoteLengthLimit),
+		},
+		{
+			name: "obj is assigned",
+			r:    testRAssigned,
+			pod:  reservationutil.NewReservePod(testRAssigned),
+			want: "",
+		},
+		{
+			name: "obj not responsible",
+			r:    testRIrresponsible,
+			pod:  testPodResponsible,
+			want: "",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			registeredPlugins := []schedulertesting.RegisterPluginFunc{
+				schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
+				schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
 			}
-		}
-		assert.Equal(t, expectedErr.Error(), message)
 
-	})
-}
+			fakeRecorder := record.NewFakeRecorder(1024)
+			eventRecorder := record.NewEventRecorderAdapter(fakeRecorder)
 
-func TestAddScheduleEventHandler(t *testing.T) {
-	t.Run("test not panic", func(t *testing.T) {
-		sched := &scheduler.Scheduler{}
-		internalHandler := &frameworkext.FakeScheduler{}
-		koordClientSet := koordfake.NewSimpleClientset()
-		koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
-		AddScheduleEventHandler(sched, internalHandler, koordSharedInformerFactory)
-	})
+			clientSet := kubefake.NewSimpleClientset()
+			fh, err := schedulertesting.NewFramework(context.TODO(), registeredPlugins, "default-scheduler",
+				frameworkruntime.WithEventRecorder(eventRecorder),
+				frameworkruntime.WithClientSet(clientSet),
+				frameworkruntime.WithInformerFactory(informers.NewSharedInformerFactory(clientSet, 0)),
+			)
+			assert.Nil(t, err)
+			koordClientSet := koordfake.NewSimpleClientset(tt.r)
+			koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
+			rNominator := frameworkexttesting.NewFakeReservationNominator()
+			frameworkExtenderFactory, _ := frameworkext.NewFrameworkExtenderFactory(
+				frameworkext.WithKoordinatorClientSet(koordClientSet),
+				frameworkext.WithKoordinatorSharedInformerFactory(koordSharedInformerFactory),
+				frameworkext.WithReservationNominator(rNominator),
+			)
+			extendedHandle := frameworkext.NewFrameworkExtender(frameworkExtenderFactory, fh)
+			sched := &scheduler.Scheduler{
+				Profiles: profile.Map{
+					"default-scheduler": extendedHandle,
+				},
+			}
+
+			internalHandler := frameworkext.NewFakeScheduler()
+			handler := MakeReservationErrorHandler(sched, internalHandler, koordClientSet, koordSharedInformerFactory)
+
+			koordSharedInformerFactory.Start(nil)
+			koordSharedInformerFactory.WaitForCacheSync(nil)
+
+			podInfo, _ := framework.NewPodInfo(tt.pod)
+			queuedPodInfo := &framework.QueuedPodInfo{
+				PodInfo: podInfo,
+			}
+
+			handler(context.TODO(), extendedHandle, queuedPodInfo, framework.AsStatus(errors.New(tt.want)), nil, time.Now())
+
+			r, err := koordClientSet.SchedulingV1alpha1().Reservations().Get(context.TODO(), tt.r.Name, metav1.GetOptions{})
+			assert.NoError(t, err)
+			assert.NotNil(t, r)
+			var message string
+			for _, v := range r.Status.Conditions {
+				if v.Type == schedulingv1alpha1.ReservationConditionScheduled && v.Reason == schedulingv1alpha1.ReasonReservationUnschedulable {
+					message = v.Message
+				}
+			}
+			assert.Equal(t, tt.want, message)
+		})
+	}
 }
 
 func Test_addReservationToCache(t *testing.T) {
@@ -1025,6 +1082,70 @@ func Test_unscheduledReservationEventHandler(t *testing.T) {
 	reservationCopy.Status.Phase = schedulingv1alpha1.ReservationFailed
 	handler.OnUpdate(reservation, reservationCopy)
 	assert.Nil(t, adapt.Queue.Pods[string(reservation.UID)])
+}
+
+func Test_irresponsibleUnscheduledReservationEventHandler(t *testing.T) {
+	sched := &scheduler.Scheduler{
+		Profiles: map[string]framework.Framework{
+			corev1.DefaultSchedulerName: nil,
+		},
+	}
+	adapt := frameworkext.NewFakeScheduler()
+	handler := irresponsibleUnscheduledReservationEventHandler(sched, adapt)
+	defaultHandler := unscheduledReservationEventHandler(sched, adapt)
+	r := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:            "r-0",
+			UID:             "456",
+			ResourceVersion: "1",
+		},
+		Spec: schedulingv1alpha1.ReservationSpec{
+			Template: &corev1.PodTemplateSpec{},
+			Owners: []schedulingv1alpha1.ReservationOwner{
+				{
+					Object: &corev1.ObjectReference{
+						Kind: "Pod",
+						Name: "pod-0",
+					},
+				},
+			},
+		},
+	}
+	// obj is responsible, ignore it
+	handler.OnAdd(r, true)
+	assert.Nil(t, adapt.Queue.Pods[string(r.UID)])
+	defaultHandler.OnAdd(r, true)
+	assert.NotNil(t, adapt.Queue.Pods[string(r.UID)])
+	rCopy := r.DeepCopy()
+	rCopy.ResourceVersion = "2"
+	handler.OnUpdate(r, rCopy)
+	defaultHandler.OnUpdate(r, rCopy)
+	assert.NotNil(t, adapt.Queue.Pods[string(r.UID)])
+	// obj become irresponsible and deleted, dequeue it
+	rCopy = r.DeepCopy()
+	rCopy.Spec.Template.Spec.SchedulerName = "other-scheduler"
+	handler.OnDelete(rCopy)
+	defaultHandler.OnDelete(rCopy)
+	assert.Nil(t, adapt.Queue.Pods[string(r.UID)])
+	// re-create an irresponsible obj
+	rCopy = r.DeepCopy()
+	rCopy.ResourceVersion = "3"
+	rCopy.Spec.Template.Spec.SchedulerName = "other-scheduler"
+	handler.OnAdd(rCopy, true)
+	assert.Nil(t, adapt.Queue.Pods[string(r.UID)])
+	defaultHandler.OnAdd(rCopy, true)
+	assert.Nil(t, adapt.Queue.Pods[string(r.UID)])
+	// obj from irresponsible to responsible, keep it
+	rCopy1 := rCopy.DeepCopy()
+	rCopy1.ResourceVersion = "4"
+	rCopy1.Spec.Template.Spec.SchedulerName = ""
+	defaultHandler.OnUpdate(rCopy, rCopy1)
+	handler.OnUpdate(rCopy, rCopy1)
+	assert.NotNil(t, adapt.Queue.Pods[string(r.UID)])
+	// obj deleted, dequeue it
+	defaultHandler.OnDelete(rCopy1)
+	handler.OnDelete(rCopy1)
+	assert.Nil(t, adapt.Queue.Pods[string(r.UID)])
 }
 
 var _ framework.Framework = &fakeFramework{}

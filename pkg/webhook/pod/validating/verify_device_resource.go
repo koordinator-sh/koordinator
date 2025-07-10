@@ -26,9 +26,15 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/pkg/features"
+	utilfeature "github.com/koordinator-sh/koordinator/pkg/util/feature"
 )
 
 func (h *PodValidatingHandler) deviceResourceValidatingPod(ctx context.Context, req admission.Request) (bool, string, error) {
+	if !utilfeature.DefaultFeatureGate.Enabled(features.ValidatePodDeviceResource) {
+		return true, "", nil
+	}
+
 	newPod := &corev1.Pod{}
 	var allErrs field.ErrorList
 	switch req.Operation {
@@ -143,6 +149,11 @@ func validateGPUShare(c *corev1.Container) field.ErrorList {
 	gpuMemoryQuantity := c.Resources.Requests[extension.ResourceGPUMemory]
 	gpuMemoryRatioQuantity := c.Resources.Requests[extension.ResourceGPUMemoryRatio]
 	gpuCoreQuantity := c.Resources.Requests[extension.ResourceGPUCore]
+	huaweiNPUCoreQuantity := c.Resources.Requests[extension.ResourceHuaweiNPUCore]
+
+	if !validateZeroResource(huaweiNPUCoreQuantity) {
+		return allErrs
+	}
 
 	if validateZeroResource(gpuMemoryQuantity) && validateZeroResource(gpuMemoryRatioQuantity) {
 		allErrs = append(allErrs, field.Forbidden(field.NewPath("pod.spec.containers[*].resources.requests"), "GPU memory and GPU memory ratio all is zero"))

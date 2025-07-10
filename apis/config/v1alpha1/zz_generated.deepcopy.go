@@ -136,6 +136,13 @@ func (in *ClusterColocationProfileSpec) DeepCopyInto(out *ClusterColocationProfi
 			(*out)[key] = val
 		}
 	}
+	if in.LabelSuffixes != nil {
+		in, out := &in.LabelSuffixes, &out.LabelSuffixes
+		*out = make(map[string]string, len(*in))
+		for key, val := range *in {
+			(*out)[key] = val
+		}
+	}
 	in.Patch.DeepCopyInto(&out.Patch)
 }
 

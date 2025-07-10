@@ -61,8 +61,8 @@ Active communication channels:
 
 - Bi-weekly Community Meeting (APAC, *Chinese*):
   - Tuesday 19:30 GMT+8 (Asia/Shanghai)
-  - [Meeting Link(DingTalk)](https://meeting.dingtalk.com/j/cgTTojEI8Zy)
-  - [Notes and agenda](https://alidocs.dingtalk.com/document/edit?docKey=oJGq769vBG4WnAKe&dentryKey=paP7wO3nXFnLzMAa&type=d)
+  - [Meeting Link(DingTalk)](https://meeting.dingtalk.com/j/ptVteJpQx5W)
+  - [Notes and agenda](https://alidocs.dingtalk.com/i/nodes/2Amq4vjg89jyZdNnCLw1Abx0W3kdP0wQ)
 - Slack(English): [koordinator channel](https://kubernetes.slack.com/channels/koordinator) in Kubernetes workspace
 - DingTalk(Chinese): Search Group ID `33383887` or scan the following QR Code
 

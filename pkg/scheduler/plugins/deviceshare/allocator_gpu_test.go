@@ -939,7 +939,7 @@ func TestAllocateByPartition(t *testing.T) {
 				}
 			}
 
-			state, status := preparePod(pod)
+			state, status := preparePod(pod, nil, nil)
 			assert.True(t, status.IsSuccess())
 
 			allocator := &AutopilotAllocator{
@@ -1373,7 +1373,7 @@ func TestAllocateByTopology(t *testing.T) {
 				}
 			}
 
-			state, status := preparePod(pod)
+			state, status := preparePod(pod, nil, nil)
 			assert.True(t, status.IsSuccess())
 
 			node := &corev1.Node{
@@ -1625,7 +1625,7 @@ func TestAllocateSharedGPU(t *testing.T) {
 				}
 			}
 
-			state, status := preparePod(pod)
+			state, status := preparePod(pod, nil, nil)
 			assert.True(t, status.IsSuccess())
 
 			node := &corev1.Node{
@@ -1649,6 +1649,288 @@ func TestAllocateSharedGPU(t *testing.T) {
 				state:      state,
 				nodeDevice: nodeDevice,
 				node:       node,
+				pod:        pod,
+				scorer:     scorer,
+			}
+
+			allocations, status := allocator.Allocate(nil, nil, nil, nil)
+			if !status.IsSuccess() != tt.wantErr {
+				t.Errorf("Allocate() error = %v, wantErr %v", status.AsError(), tt.wantErr)
+				return
+			}
+			sortDeviceAllocations(allocations)
+			sortDeviceAllocations(tt.want)
+			fillGPUTotalMem(allocations, nodeDevice)
+			assert.Equal(t, tt.want, allocations)
+		})
+	}
+}
+
+func TestAllocateByTemplate(t *testing.T) {
+	node := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-node-1",
+		},
+	}
+	huaweiNode := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-node-1",
+			Labels: map[string]string{
+				apiext.LabelGPUVendor: apiext.GPUVendorHuawei,
+				apiext.LabelGPUModel:  "Ascend-310P",
+			},
+		},
+	}
+
+	tests := []struct {
+		name            string
+		node            *corev1.Node
+		deviceCR        *schedulingv1alpha1.Device
+		requests        corev1.ResourceList
+		assignedDevices apiext.DeviceAllocations
+		want            apiext.DeviceAllocations
+		wantErr         bool
+	}{
+		{
+			name:     "resource enough, binpack to the same device",
+			node:     huaweiNode,
+			deviceCR: fakeDeviceCRWithHuaweiNPU,
+			requests: corev1.ResourceList{
+				apiext.ResourceGPUShared:     *resource.NewQuantity(1, resource.DecimalSI),
+				apiext.ResourceGPUMemory:     *resource.NewQuantity(3221225472, resource.BinarySI),
+				apiext.ResourceHuaweiNPUCore: *resource.NewQuantity(1, resource.DecimalSI),
+				apiext.ResourceHuaweiNPUCPU:  *resource.NewQuantity(1, resource.DecimalSI),
+				apiext.ResourceHuaweiNPUDVPP: *resource.NewQuantity(12, resource.DecimalSI),
+			},
+			assignedDevices: apiext.DeviceAllocations{
+				schedulingv1alpha1.GPU: []*apiext.DeviceAllocation{
+					{
+						Minor:     0,
+						Resources: huaweiNPUSharedResourceList,
+						Extension: &apiext.DeviceAllocationExtension{
+							GPUSharedResourceTemplate: "vir04",
+						},
+					},
+				},
+			},
+			want: apiext.DeviceAllocations{
+				schedulingv1alpha1.GPU: []*apiext.DeviceAllocation{
+					{
+						Minor: 0,
+						Resources: corev1.ResourceList{
+							apiext.ResourceGPUMemory:      *resource.NewQuantity(3221225472, resource.BinarySI),
+							apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(12, resource.DecimalSI),
+							apiext.ResourceHuaweiNPUCore:  *resource.NewQuantity(1, resource.DecimalSI),
+							apiext.ResourceHuaweiNPUCPU:   *resource.NewQuantity(1, resource.DecimalSI),
+							apiext.ResourceHuaweiNPUDVPP:  *resource.NewQuantity(12, resource.DecimalSI),
+						},
+						Extension: &apiext.DeviceAllocationExtension{
+							GPUSharedResourceTemplate: "vir01",
+						},
+					},
+				},
+			},
+		},
+		{
+			name:     "resource not enough, allocate to another device",
+			node:     huaweiNode,
+			deviceCR: fakeDeviceCRWithHuaweiNPU,
+			requests: corev1.ResourceList{
+				apiext.ResourceGPUShared:     *resource.NewQuantity(1, resource.DecimalSI),
+				apiext.ResourceGPUMemory:     *resource.NewQuantity(12884901888, resource.BinarySI),
+				apiext.ResourceHuaweiNPUCore: *resource.NewQuantity(4, resource.DecimalSI),
+				apiext.ResourceHuaweiNPUCPU:  *resource.NewQuantity(4, resource.DecimalSI),
+				apiext.ResourceHuaweiNPUDVPP: *resource.NewQuantity(100, resource.DecimalSI),
+			},
+			assignedDevices: apiext.DeviceAllocations{
+				schedulingv1alpha1.GPU: []*apiext.DeviceAllocation{
+					{
+						Minor:     0,
+						Resources: huaweiNPUSharedResourceList,
+						Extension: &apiext.DeviceAllocationExtension{
+							GPUSharedResourceTemplate: "vir04",
+						},
+					},
+				},
+			},
+			want: apiext.DeviceAllocations{
+				schedulingv1alpha1.GPU: []*apiext.DeviceAllocation{
+					{
+						Minor: 1,
+						Resources: corev1.ResourceList{
+							apiext.ResourceGPUMemory:      *resource.NewQuantity(12884901888, resource.BinarySI),
+							apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(50, resource.DecimalSI),
+							apiext.ResourceHuaweiNPUCore:  *resource.NewQuantity(4, resource.DecimalSI),
+							apiext.ResourceHuaweiNPUCPU:   *resource.NewQuantity(4, resource.DecimalSI),
+							apiext.ResourceHuaweiNPUDVPP:  *resource.NewQuantity(100, resource.DecimalSI),
+						},
+						Extension: &apiext.DeviceAllocationExtension{
+							GPUSharedResourceTemplate: "vir04_4c_dvpp",
+						},
+					},
+				},
+			},
+		},
+		{
+			name:     "resource not enough",
+			node:     huaweiNode,
+			deviceCR: fakeDeviceCRWithHuaweiNPU,
+			requests: corev1.ResourceList{
+				apiext.ResourceGPUShared:     *resource.NewQuantity(1, resource.DecimalSI),
+				apiext.ResourceGPUMemory:     *resource.NewQuantity(12884901888, resource.BinarySI),
+				apiext.ResourceHuaweiNPUCore: *resource.NewQuantity(4, resource.DecimalSI),
+				apiext.ResourceHuaweiNPUCPU:  *resource.NewQuantity(4, resource.DecimalSI),
+				apiext.ResourceHuaweiNPUDVPP: *resource.NewQuantity(100, resource.DecimalSI),
+			},
+			assignedDevices: apiext.DeviceAllocations{
+				schedulingv1alpha1.GPU: []*apiext.DeviceAllocation{
+					{
+						Minor:     0,
+						Resources: huaweiNPUSharedResourceList,
+						Extension: &apiext.DeviceAllocationExtension{
+							GPUSharedResourceTemplate: "vir04",
+						},
+					},
+					{
+						Minor:     1,
+						Resources: huaweiNPUSharedResourceList,
+						Extension: &apiext.DeviceAllocationExtension{
+							GPUSharedResourceTemplate: "vir04",
+						},
+					},
+					{
+						Minor:     2,
+						Resources: huaweiNPUSharedResourceList,
+						Extension: &apiext.DeviceAllocationExtension{
+							GPUSharedResourceTemplate: "vir04",
+						},
+					},
+					{
+						Minor:     3,
+						Resources: huaweiNPUSharedResourceList,
+						Extension: &apiext.DeviceAllocationExtension{
+							GPUSharedResourceTemplate: "vir04",
+						},
+					},
+					{
+						Minor:     4,
+						Resources: huaweiNPUSharedResourceList,
+						Extension: &apiext.DeviceAllocationExtension{
+							GPUSharedResourceTemplate: "vir04",
+						},
+					},
+					{
+						Minor:     5,
+						Resources: huaweiNPUSharedResourceList,
+						Extension: &apiext.DeviceAllocationExtension{
+							GPUSharedResourceTemplate: "vir04",
+						},
+					},
+					{
+						Minor:     6,
+						Resources: huaweiNPUSharedResourceList,
+						Extension: &apiext.DeviceAllocationExtension{
+							GPUSharedResourceTemplate: "vir04",
+						},
+					},
+					{
+						Minor:     7,
+						Resources: huaweiNPUSharedResourceList,
+						Extension: &apiext.DeviceAllocationExtension{
+							GPUSharedResourceTemplate: "vir04",
+						},
+					},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name:     "no matched template",
+			node:     node,
+			deviceCR: fakeDeviceCR,
+			requests: corev1.ResourceList{
+				apiext.ResourceGPUShared:     *resource.NewQuantity(1, resource.DecimalSI),
+				apiext.ResourceGPUMemory:     *resource.NewQuantity(12884901888, resource.BinarySI),
+				apiext.ResourceHuaweiNPUCore: *resource.NewQuantity(4, resource.DecimalSI),
+				apiext.ResourceHuaweiNPUCPU:  *resource.NewQuantity(4, resource.DecimalSI),
+				apiext.ResourceHuaweiNPUDVPP: *resource.NewQuantity(100, resource.DecimalSI),
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			deviceCR := tt.deviceCR.DeepCopy()
+			deviceCR.ResourceVersion = "1"
+			koordFakeClient := koordfake.NewSimpleClientset()
+			_, err := koordFakeClient.SchedulingV1alpha1().Devices().Create(context.TODO(), deviceCR, metav1.CreateOptions{})
+			assert.NoError(t, err)
+			koordShareInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordFakeClient, 0)
+
+			kubeFakeClient := kubefake.NewSimpleClientset(tt.node)
+			sharedInformerFactory := informers.NewSharedInformerFactory(kubeFakeClient, 0)
+
+			if tt.assignedDevices != nil {
+				data, err := json.Marshal(tt.assignedDevices)
+				assert.NoError(t, err)
+				pod := &corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: "default",
+						Name:      "assigned-pod",
+						UID:       uuid.NewUUID(),
+						Annotations: map[string]string{
+							apiext.AnnotationDeviceAllocated: string(data),
+						},
+					},
+					Spec: corev1.PodSpec{
+						NodeName: tt.node.Name,
+					},
+				}
+				_, err = kubeFakeClient.CoreV1().Pods(pod.Namespace).Create(context.TODO(), pod, metav1.CreateOptions{})
+				assert.NoError(t, err)
+			}
+
+			deviceCache := newNodeDeviceCache()
+			registerDeviceEventHandler(deviceCache, koordShareInformerFactory)
+			registerPodEventHandler(deviceCache, sharedInformerFactory, koordShareInformerFactory)
+
+			sharedInformerFactory.Start(nil)
+			sharedInformerFactory.WaitForCacheSync(nil)
+
+			nodeDevice := deviceCache.getNodeDevice(tt.node.Name, false)
+			assert.NotNil(t, nodeDevice)
+
+			pod := &corev1.Pod{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: tt.requests,
+							},
+						},
+					},
+				},
+			}
+
+			state, status := preparePod(pod, testGPUSharedResourceTemplatesCache, testGPUSharedResourceTemplatesMatchedResources)
+			assert.True(t, status.IsSuccess())
+
+			scorer := deviceResourceStrategyTypeMap[schedulerconfig.MostAllocated](&schedulerconfig.DeviceShareArgs{
+				ScoringStrategy: &schedulerconfig.ScoringStrategy{
+					Type: schedulerconfig.MostAllocated,
+					Resources: []schedconfig.ResourceSpec{
+						{
+							Name:   string(apiext.ResourceGPUMemory),
+							Weight: 1,
+						},
+					},
+				},
+			})
+			allocator := &AutopilotAllocator{
+				state:      state,
+				nodeDevice: nodeDevice,
+				node:       tt.node,
 				pod:        pod,
 				scorer:     scorer,
 			}

@@ -22,8 +22,6 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/apis/config"
 	schedconfig "k8s.io/kubernetes/pkg/scheduler/apis/config"
 
-	v1 "k8s.io/api/core/v1"
-
 	"github.com/koordinator-sh/koordinator/apis/extension"
 )
 
@@ -264,6 +262,19 @@ type DeviceShareArgs struct {
 	ScoringStrategy *ScoringStrategy
 	// DisableDeviceNUMATopologyAlignment indicates device don't need to align with other resources' numa topology
 	DisableDeviceNUMATopologyAlignment bool
+	// GPUSharedResourceTemplatesConfig holds configurations for GPU shared resource templates.
+	GPUSharedResourceTemplatesConfig *GPUSharedResourceTemplatesConfig
+}
+
+type GPUSharedResourceTemplatesConfig struct {
+	// ConfigMapNamespace is the namespace of the ConfigMap holding GPU shared resource templates data.
+	ConfigMapNamespace string
+	// ConfigMapName is the name of the ConfigMap holding GPU shared resource templates data.
+	ConfigMapName string
+	// MatchedResources are resources matched for GPU shared resource templates.
+	// If a GPU shared pod requests any of the matched resources,
+	// all of its requested GPU resources would be matched for GPU shared resource templates.
+	MatchedResources []corev1.ResourceName
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -271,7 +282,7 @@ type DeviceShareArgs struct {
 // ScarceResourceAvoidanceArgs defines the parameters for ScarceResourceAvoidance plugin.
 type ScarceResourceAvoidanceArgs struct {
 	metav1.TypeMeta
-	Resources []v1.ResourceName
+	Resources []corev1.ResourceName
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -279,7 +290,7 @@ type ScarceResourceAvoidanceArgs struct {
 // NodeResourcesFitPlusArgs defines the parameters for NodeResourcesFitPlus plugin.
 type NodeResourcesFitPlusArgs struct {
 	metav1.TypeMeta
-	Resources map[v1.ResourceName]ResourcesType
+	Resources map[corev1.ResourceName]ResourcesType
 }
 
 type ResourcesType struct {

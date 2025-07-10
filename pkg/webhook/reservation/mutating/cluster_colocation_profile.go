@@ -166,6 +166,17 @@ func (h *ReservationMutatingHandler) doMutateByColocationProfile(ctx context.Con
 		}
 	}
 
+	if len(profile.Spec.LabelSuffixes) > 0 {
+		if reservation.Labels == nil {
+			reservation.Labels = make(map[string]string)
+		}
+		for key, suffix := range profile.Spec.LabelSuffixes {
+			if _, ok := reservation.Labels[key]; ok {
+				reservation.Labels[key] = reservation.Labels[key] + suffix
+			}
+		}
+	}
+
 	if profile.Spec.SchedulerName != "" && reservation.Spec.Template != nil {
 		reservation.Spec.Template.Spec.SchedulerName = profile.Spec.SchedulerName
 	}

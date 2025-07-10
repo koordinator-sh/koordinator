@@ -83,7 +83,7 @@ func (g *Plugin) OnQuotaUpdate(oldObj, newObj interface{}) {
 	if oldQuotaInfo != nil {
 		// quota spec not change. return
 		newQuotaInfo := core.NewQuotaInfoFromQuota(newQuota)
-		if !oldQuotaInfo.IsQuotaChange(newQuotaInfo) {
+		if !oldQuotaInfo.IsQuotaChange(newQuotaInfo) && !mgr.IsQuotaUpdated(oldQuotaInfo, newQuotaInfo, newQuota) {
 			klog.V(5).Infof("OnQuotaUpdateFunc success: %v, tree: %v, quota not change", newQuota.Name, treeID)
 			return
 		}
@@ -125,10 +125,10 @@ func (g *Plugin) OnQuotaDelete(obj interface{}) {
 }
 
 func (g *Plugin) ReplaceQuotas(objs []interface{}) error {
-	quotas := make([]*schedulerv1alpha1.ElasticQuota, 0, len(objs))
+	quotas := make(map[string]*schedulerv1alpha1.ElasticQuota, len(objs))
 	for _, obj := range objs {
 		quota := obj.(*schedulerv1alpha1.ElasticQuota)
-		quotas = append(quotas, quota)
+		quotas[quota.Name] = quota
 	}
 
 	start := time.Now()
@@ -160,8 +160,10 @@ func (g *Plugin) ReplaceQuotas(objs []interface{}) error {
 	}
 
 	g.groupQuotaManager.ResetQuota()
+	g.groupQuotaManager.ResetQuotasForHookPlugins(quotas)
 	for _, mgr := range g.groupQuotaManagersForQuotaTree {
 		mgr.ResetQuota()
+		mgr.ResetQuotasForHookPlugins(quotas)
 	}
 
 	return nil

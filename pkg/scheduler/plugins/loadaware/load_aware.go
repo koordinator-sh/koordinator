@@ -182,7 +182,7 @@ func (p *Plugin) Filter(ctx context.Context, state *framework.CycleState, pod *c
 		klog.ErrorS(err, "GetEstimatedUsed failed!", "node", node.Name)
 		return nil
 	}
-	return filterNodeUsage(usageThresholds, estimatedUsed, allocatable, prodPod, filterProfile)
+	return filterNodeUsage(node.Name, pod, usageThresholds, estimatedUsed, allocatable, prodPod, filterProfile)
 }
 
 func (p *Plugin) ScoreExtensions() framework.ScoreExtensions {
@@ -282,10 +282,12 @@ func (p *Plugin) GetEstimatedUsed(nodeName string, nodeMetric *slov1alpha1.NodeM
 			}
 		}
 	}
+	klog.V(6).Infof("GetEstimatedUsed: node %s, pod %s, estimatedUsed %+v, assignedPodEstimatedUsed %+v, estimatedPods: %+v",
+		nodeName, klog.KObj(pod), estimatedUsed, assignedPodEstimatedUsed, estimatedPods)
 	return estimatedUsed, nil
 }
 
-func filterNodeUsage(usageThresholds, estimatedUsed map[corev1.ResourceName]int64, allocatable corev1.ResourceList, prodPod bool, filterProfile *usageThresholdsFilterProfile) *framework.Status {
+func filterNodeUsage(nodeName string, pod *corev1.Pod, usageThresholds, estimatedUsed map[corev1.ResourceName]int64, allocatable corev1.ResourceList, prodPod bool, filterProfile *usageThresholdsFilterProfile) *framework.Status {
 	for resourceName, value := range usageThresholds {
 		if value == 0 {
 			continue
@@ -303,6 +305,8 @@ func filterNodeUsage(usageThresholds, estimatedUsed map[corev1.ResourceName]int6
 		if !prodPod && filterProfile.AggregatedUsage != nil {
 			reason = ErrReasonAggregatedUsageExceedThreshold
 		}
+		klog.V(5).InfoS("failed to filter node usage for pod", "pod", klog.KObj(pod), "node", nodeName,
+			"resource", resourceName, "total", total, "usage", usage, "threshold", value)
 		return framework.NewStatus(framework.Unschedulable, fmt.Sprintf(reason, resourceName))
 	}
 	return nil

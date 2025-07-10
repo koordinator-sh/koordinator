@@ -19,6 +19,7 @@ package core
 
 import (
 	"sync"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -61,7 +62,7 @@ func (h *GangSchedulingContextHolder) clearGangSchedulingContext(reason string) 
 	defer h.Unlock()
 	if h.gangSchedulingContext != nil {
 		firstPod := h.gangSchedulingContext.firstPod
-		klog.V(4).Infof("gangSchedulingConetxtHolder: clear gang scheduling context, gangGroup: %+v, reason: %s, firstPod: %s/%s/%s, alreadyAttemptedPods: %+v", h.gangSchedulingContext.gangGroup, reason, firstPod.Namespace, firstPod.Name, firstPod.UID, h.gangSchedulingContext.alreadyAttemptedPods)
+		klog.V(4).Infof("gangSchedulingConetxtHolder: clear gang scheduling context, gangGroup: %+v, reason: %s, firstPod: %s/%s/%s, alreadyAttemptedPods: %+v, startTime: %s", h.gangSchedulingContext.gangGroup, reason, firstPod.Namespace, firstPod.Name, firstPod.UID, h.gangSchedulingContext.alreadyAttemptedPods, h.gangSchedulingContext.startTime)
 	}
 	h.gangSchedulingContext = nil
 }
@@ -70,16 +71,21 @@ func (h *GangSchedulingContextHolder) setGangSchedulingContext(gangSchedulingCon
 	firstPod := gangSchedulingContext.firstPod
 	if gangSchedulingContext.alreadyAttemptedPods == nil {
 		gangSchedulingContext.alreadyAttemptedPods = sets.New[string](util.GetId(firstPod.Namespace, firstPod.Name))
+		gangSchedulingContext.startTime = time.Now().String()
 	}
 	h.Lock()
 	defer h.Unlock()
-	klog.V(4).Infof("gangSchedulingConetxtHolder: set gang scheduling context, gangGroup: %+v, reason: %s, firstPod: %s/%s/%s", gangSchedulingContext.gangGroup, reason, firstPod.Namespace, firstPod.Name, firstPod.UID)
+	klog.V(4).Infof("gangSchedulingConetxtHolder: set gang scheduling context, gangGroup: %+v, reason: %s, firstPod: %s/%s/%s, startTime: %s", gangSchedulingContext.gangGroup, reason, firstPod.Namespace, firstPod.Name, firstPod.UID, gangSchedulingContext.startTime)
 	h.gangSchedulingContext = gangSchedulingContext
 }
 
 type GangSchedulingContext struct {
-	gangGroup            sets.Set[string]
-	firstPod             *corev1.Pod
-	failedMessage        string
+	startTime     string
+	gangGroup     sets.Set[string]
+	firstPod      *corev1.Pod
+	failedMessage string
+
+	// secure alreadyAttemptedPods to avoid concurrent map read and write
+	sync.RWMutex
 	alreadyAttemptedPods sets.Set[string]
 }

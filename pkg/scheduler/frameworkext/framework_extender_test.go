@@ -23,11 +23,14 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/informers"
+	kubefake "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	frameworkfake "k8s.io/kubernetes/pkg/scheduler/framework/fake"
@@ -39,6 +42,7 @@ import (
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	koordfake "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/fake"
 	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/services"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
 
@@ -47,9 +51,10 @@ var (
 	_ framework.FilterPlugin    = &TestTransformer{}
 	_ framework.ScorePlugin     = &TestTransformer{}
 
-	_ PreFilterTransformer = &TestTransformer{}
-	_ FilterTransformer    = &TestTransformer{}
-	_ ScoreTransformer     = &TestTransformer{}
+	_ PreFilterTransformer  = &TestTransformer{}
+	_ FilterTransformer     = &TestTransformer{}
+	_ ScoreTransformer      = &TestTransformer{}
+	_ PostFilterTransformer = &TestTransformer{}
 )
 
 type TestTransformer struct {
@@ -114,6 +119,13 @@ func (h *TestTransformer) Score(ctx context.Context, state *framework.CycleState
 
 func (h *TestTransformer) ScoreExtensions() framework.ScoreExtensions {
 	return nil
+}
+
+func (h *TestTransformer) AfterPostFilter(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, filteredNodeStatusMap framework.NodeToStatusMap) {
+	if pod.Annotations == nil {
+		pod.Annotations = map[string]string{}
+	}
+	pod.Annotations[fmt.Sprintf("AfterPostFilter-%d", h.index)] = fmt.Sprintf("%d", h.index)
 }
 
 type testPreBindReservationState struct {
@@ -207,7 +219,17 @@ func Test_frameworkExtenderImpl_RunPreFilterPlugins(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			extenderFactory, _ := NewFrameworkExtenderFactory()
+			koordClientSet := koordfake.NewSimpleClientset()
+			koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
+			extenderFactory, err := NewFrameworkExtenderFactory(
+				WithServicesEngine(services.NewEngine(gin.New())),
+				WithKoordinatorClientSet(koordClientSet),
+				WithKoordinatorSharedInformerFactory(koordSharedInformerFactory),
+			)
+			assert.NoError(t, err)
+			assert.NotNil(t, extenderFactory)
+			assert.Equal(t, koordClientSet, extenderFactory.KoordinatorClientSet())
+			assert.Equal(t, koordSharedInformerFactory, extenderFactory.KoordinatorSharedInformerFactory())
 			registeredPlugins := []schedulertesting.RegisterPluginFunc{
 				schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
 				schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
@@ -218,11 +240,15 @@ func Test_frameworkExtenderImpl_RunPreFilterPlugins(t *testing.T) {
 					return &TestTransformer{name: "T2", index: 2}, nil
 				})),
 			}
+			fakeClient := kubefake.NewSimpleClientset()
+			sharedInformerFactory := informers.NewSharedInformerFactory(fakeClient, 0)
 			fh, err := schedulertesting.NewFramework(
 				context.TODO(),
 				registeredPlugins,
 				"koord-scheduler",
 				frameworkruntime.WithSnapshotSharedLister(fakeNodeInfoLister{NodeInfoLister: frameworkfake.NodeInfoLister{}}),
+				frameworkruntime.WithClientSet(fakeClient),
+				frameworkruntime.WithInformerFactory(sharedInformerFactory),
 			)
 			assert.NoError(t, err)
 			frameworkExtender := extenderFactory.NewFrameworkExtender(fh)
@@ -256,7 +282,17 @@ func Test_frameworkExtenderImpl_RunFilterPluginsWithNominatedPods(t *testing.T) 
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			extenderFactory, _ := NewFrameworkExtenderFactory()
+			koordClientSet := koordfake.NewSimpleClientset()
+			koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
+			extenderFactory, err := NewFrameworkExtenderFactory(
+				WithServicesEngine(services.NewEngine(gin.New())),
+				WithKoordinatorClientSet(koordClientSet),
+				WithKoordinatorSharedInformerFactory(koordSharedInformerFactory),
+			)
+			assert.NoError(t, err)
+			assert.NotNil(t, extenderFactory)
+			assert.Equal(t, koordClientSet, extenderFactory.KoordinatorClientSet())
+			assert.Equal(t, koordSharedInformerFactory, extenderFactory.KoordinatorSharedInformerFactory())
 			registeredPlugins := []schedulertesting.RegisterPluginFunc{
 				schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
 				schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
@@ -267,10 +303,15 @@ func Test_frameworkExtenderImpl_RunFilterPluginsWithNominatedPods(t *testing.T) 
 					return &TestTransformer{name: "T2", index: 2}, nil
 				})),
 			}
+			fakeClient := kubefake.NewSimpleClientset()
+			sharedInformerFactory := informers.NewSharedInformerFactory(fakeClient, 0)
 			fh, err := schedulertesting.NewFramework(
 				context.TODO(),
 				registeredPlugins,
 				"koord-scheduler",
+				frameworkruntime.WithSnapshotSharedLister(fakeNodeInfoLister{NodeInfoLister: frameworkfake.NodeInfoLister{}}),
+				frameworkruntime.WithClientSet(fakeClient),
+				frameworkruntime.WithInformerFactory(sharedInformerFactory),
 				frameworkruntime.WithPodNominator(NewPodNominator()),
 			)
 			assert.NoError(t, err)
@@ -443,7 +484,17 @@ func Test_frameworkExtenderImpl_RunScorePlugins(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			extenderFactory, _ := NewFrameworkExtenderFactory()
+			koordClientSet := koordfake.NewSimpleClientset()
+			koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
+			extenderFactory, err := NewFrameworkExtenderFactory(
+				WithServicesEngine(services.NewEngine(gin.New())),
+				WithKoordinatorClientSet(koordClientSet),
+				WithKoordinatorSharedInformerFactory(koordSharedInformerFactory),
+			)
+			assert.NoError(t, err)
+			assert.NotNil(t, extenderFactory)
+			assert.Equal(t, koordClientSet, extenderFactory.KoordinatorClientSet())
+			assert.Equal(t, koordSharedInformerFactory, extenderFactory.KoordinatorSharedInformerFactory())
 			registeredPlugins := []schedulertesting.RegisterPluginFunc{
 				schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
 				schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
@@ -454,10 +505,14 @@ func Test_frameworkExtenderImpl_RunScorePlugins(t *testing.T) {
 					return &TestTransformer{name: "T2", index: 2}, nil
 				}), 1),
 			}
+			fakeClient := kubefake.NewSimpleClientset()
+			sharedInformerFactory := informers.NewSharedInformerFactory(fakeClient, 0)
 			fh, err := schedulertesting.NewFramework(
 				context.TODO(),
 				registeredPlugins,
 				"koord-scheduler",
+				frameworkruntime.WithClientSet(fakeClient),
+				frameworkruntime.WithInformerFactory(sharedInformerFactory),
 			)
 			assert.NoError(t, err)
 			frameworkExtender := extenderFactory.NewFrameworkExtender(fh)
@@ -478,6 +533,13 @@ func TestPreBind(t *testing.T) {
 	reservation := &schedulingv1alpha1.Reservation{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "fake-reservation",
+		},
+		Spec: schedulingv1alpha1.ReservationSpec{
+			Template: &corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					SchedulerName: "koord-scheduler",
+				},
+			},
 		},
 	}
 	tests := []struct {
@@ -511,10 +573,14 @@ func TestPreBind(t *testing.T) {
 					return &fakePreBindPlugin{err: errors.New("failed")}, nil
 				}),
 			}
+			fakeClient := kubefake.NewSimpleClientset()
+			sharedInformerFactory := informers.NewSharedInformerFactory(fakeClient, 0)
 			fh, err := schedulertesting.NewFramework(
 				context.TODO(),
 				registeredPlugins,
 				"koord-scheduler",
+				frameworkruntime.WithClientSet(fakeClient),
+				frameworkruntime.WithInformerFactory(sharedInformerFactory),
 			)
 			assert.NoError(t, err)
 
@@ -536,10 +602,14 @@ func TestPreBind(t *testing.T) {
 			impl.updatePlugins(&TestTransformer{index: 1})
 			impl.updatePlugins(&TestTransformer{index: 2})
 
-			cycleState := framework.NewCycleState()
+			impl.SharedInformerFactory().Start(nil)
+			impl.KoordinatorSharedInformerFactory().Start(nil)
+			impl.SharedInformerFactory().WaitForCacheSync(nil)
+			impl.KoordinatorSharedInformerFactory().WaitForCacheSync(nil)
 
+			cycleState := framework.NewCycleState()
 			status := extender.RunPreBindPlugins(context.TODO(), cycleState, tt.pod, "test-node-1")
-			assert.Equal(t, tt.wantStatus, status.IsSuccess())
+			assert.Equal(t, tt.wantStatus, status.IsSuccess(), status.Message())
 			if status.IsSuccess() {
 				s, err := cycleState.Read("test-preBind-reservation")
 				assert.NoError(t, err)
@@ -550,6 +620,16 @@ func TestPreBind(t *testing.T) {
 }
 
 func TestPreBindExtensionOrder(t *testing.T) {
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-pod",
+			Namespace: "default",
+			UID:       "xxx",
+		},
+		Spec: corev1.PodSpec{
+			SchedulerName: "koord-scheduler",
+		},
+	}
 	preBindA := &fakePreBindPlugin{name: "fakePreBindPluginA", skipApplyPatch: true}
 	preBindB := &fakePreBindPlugin{name: "fakePreBindPluginB", appendAnnotations: map[string]string{"test": "2"}}
 	registeredPlugins := []schedulertesting.RegisterPluginFunc{
@@ -562,10 +642,14 @@ func TestPreBindExtensionOrder(t *testing.T) {
 			return preBindB, nil
 		}),
 	}
+	fakeClient := kubefake.NewSimpleClientset(pod)
+	sharedInformerFactory := informers.NewSharedInformerFactory(fakeClient, 0)
 	fh, err := schedulertesting.NewFramework(
 		context.TODO(),
 		registeredPlugins,
 		"koord-scheduler",
+		frameworkruntime.WithClientSet(fakeClient),
+		frameworkruntime.WithInformerFactory(sharedInformerFactory),
 	)
 	assert.NoError(t, err)
 
@@ -582,12 +666,21 @@ func TestPreBindExtensionOrder(t *testing.T) {
 	impl.updatePlugins(preBindA)
 	impl.updatePlugins(preBindB)
 
+	impl.SharedInformerFactory().Start(nil)
+	impl.KoordinatorSharedInformerFactory().Start(nil)
+	impl.SharedInformerFactory().WaitForCacheSync(nil)
+	impl.KoordinatorSharedInformerFactory().WaitForCacheSync(nil)
+
+	got, err := extender.ClientSet().CoreV1().Pods(pod.Namespace).Get(context.TODO(), pod.Name, metav1.GetOptions{})
+	assert.NoError(t, err)
+	assert.NotNil(t, got)
+	got, err = impl.podLister.Pods(pod.Namespace).Get(pod.Name)
+	assert.NoError(t, err)
+	assert.NotNil(t, got)
+
 	cycleState := framework.NewCycleState()
-
-	pod := &corev1.Pod{}
-
 	status := extender.RunPreBindPlugins(context.TODO(), cycleState, pod, "test-node-1")
-	assert.True(t, status.IsSuccess())
+	assert.True(t, status.IsSuccess(), status.Message())
 	assert.Nil(t, preBindA.modifiedObj)
 	assert.Equal(t, map[string]string{"test": "2"}, preBindB.modifiedObj.GetAnnotations())
 }
@@ -673,14 +766,23 @@ func TestReservationRestorePlugin(t *testing.T) {
 				schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
 				schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
 			}
+			fakeClient := kubefake.NewSimpleClientset()
+			sharedInformerFactory := informers.NewSharedInformerFactory(fakeClient, 0)
 			fh, err := schedulertesting.NewFramework(
 				context.TODO(),
 				registeredPlugins,
 				"koord-scheduler",
+				frameworkruntime.WithClientSet(fakeClient),
+				frameworkruntime.WithInformerFactory(sharedInformerFactory),
 			)
 			assert.NoError(t, err)
 
-			extenderFactory, _ := NewFrameworkExtenderFactory()
+			koordClientSet := koordfake.NewSimpleClientset()
+			koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
+			extenderFactory, _ := NewFrameworkExtenderFactory(
+				WithKoordinatorClientSet(koordClientSet),
+				WithKoordinatorSharedInformerFactory(koordSharedInformerFactory),
+			)
 
 			extender := NewFrameworkExtender(extenderFactory, fh)
 			pl := &fakeReservationRestorePlugin{
@@ -816,14 +918,23 @@ func TestRunReservationFilterPlugins(t *testing.T) {
 				schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
 				schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
 			}
+			fakeClient := kubefake.NewSimpleClientset()
+			sharedInformerFactory := informers.NewSharedInformerFactory(fakeClient, 0)
 			fh, err := schedulertesting.NewFramework(
 				context.TODO(),
 				registeredPlugins,
 				"koord-scheduler",
+				frameworkruntime.WithClientSet(fakeClient),
+				frameworkruntime.WithInformerFactory(sharedInformerFactory),
 			)
 			assert.NoError(t, err)
 
-			extenderFactory, _ := NewFrameworkExtenderFactory()
+			koordClientSet := koordfake.NewSimpleClientset()
+			koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
+			extenderFactory, _ := NewFrameworkExtenderFactory(
+				WithKoordinatorClientSet(koordClientSet),
+				WithKoordinatorSharedInformerFactory(koordSharedInformerFactory),
+			)
 
 			extender := NewFrameworkExtender(extenderFactory, fh)
 			impl := extender.(*frameworkExtenderImpl)
@@ -889,14 +1000,23 @@ func TestRunNominateReservationFilterPlugins(t *testing.T) {
 				schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
 				schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
 			}
+			fakeClient := kubefake.NewSimpleClientset()
+			sharedInformerFactory := informers.NewSharedInformerFactory(fakeClient, 0)
 			fh, err := schedulertesting.NewFramework(
 				context.TODO(),
 				registeredPlugins,
 				"koord-scheduler",
+				frameworkruntime.WithClientSet(fakeClient),
+				frameworkruntime.WithInformerFactory(sharedInformerFactory),
 			)
 			assert.NoError(t, err)
 
-			extenderFactory, _ := NewFrameworkExtenderFactory()
+			koordClientSet := koordfake.NewSimpleClientset()
+			koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
+			extenderFactory, _ := NewFrameworkExtenderFactory(
+				WithKoordinatorClientSet(koordClientSet),
+				WithKoordinatorSharedInformerFactory(koordSharedInformerFactory),
+			)
 
 			extender := NewFrameworkExtender(extenderFactory, fh)
 			impl := extender.(*frameworkExtenderImpl)
@@ -1042,14 +1162,23 @@ func TestReservationScorePlugin(t *testing.T) {
 				schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
 				schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
 			}
+			fakeClient := kubefake.NewSimpleClientset()
+			sharedInformerFactory := informers.NewSharedInformerFactory(fakeClient, 0)
 			fh, err := schedulertesting.NewFramework(
 				context.TODO(),
 				registeredPlugins,
 				"koord-scheduler",
+				frameworkruntime.WithClientSet(fakeClient),
+				frameworkruntime.WithInformerFactory(sharedInformerFactory),
 			)
 			assert.NoError(t, err)
 
-			extenderFactory, _ := NewFrameworkExtenderFactory()
+			koordClientSet := koordfake.NewSimpleClientset()
+			koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
+			extenderFactory, _ := NewFrameworkExtenderFactory(
+				WithKoordinatorClientSet(koordClientSet),
+				WithKoordinatorSharedInformerFactory(koordSharedInformerFactory),
+			)
 
 			extender := NewFrameworkExtender(extenderFactory, fh)
 			impl := extender.(*frameworkExtenderImpl)

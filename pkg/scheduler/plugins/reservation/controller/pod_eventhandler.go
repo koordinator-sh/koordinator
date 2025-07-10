@@ -100,14 +100,14 @@ func (c *Controller) deletePod(pod *corev1.Pod) {
 }
 
 func (c *Controller) getPods(nodeName string) map[types.UID]*corev1.Pod {
-	c.lock.Lock()
-	defer c.lock.Unlock()
+	c.lock.RLock()
+	defer c.lock.RUnlock()
 
 	pods := c.pods[nodeName]
 	if len(pods) == 0 {
 		return nil
 	}
-	m := make(map[types.UID]*corev1.Pod)
+	m := make(map[types.UID]*corev1.Pod, len(pods))
 	for k, v := range pods {
 		m[k] = v
 	}

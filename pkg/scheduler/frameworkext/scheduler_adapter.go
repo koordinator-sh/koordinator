@@ -21,6 +21,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler"
@@ -72,6 +73,7 @@ type SchedulingQueue interface {
 	AssignedPodUpdated(logger klog.Logger, oldPod, newPod *corev1.Pod)
 	MoveAllToActiveOrBackoffQueue(logger klog.Logger, event framework.ClusterEvent, oldObj, newObj interface{}, preCheck PreEnqueueCheck)
 	Activate(logger klog.Logger, pods map[string]*corev1.Pod)
+	Done(types.UID)
 }
 
 var _ Scheduler = &SchedulerAdapter{}
@@ -187,6 +189,10 @@ func (q *queueAdapter) MoveAllToActiveOrBackoffQueue(logger klog.Logger, event f
 
 func (q *queueAdapter) Activate(logger klog.Logger, pods map[string]*corev1.Pod) {
 	q.scheduler.SchedulingQueue.Activate(logger, pods)
+}
+
+func (q *queueAdapter) Done(pod types.UID) {
+	q.scheduler.SchedulingQueue.Done(pod)
 }
 
 var _ Scheduler = &FakeScheduler{}
@@ -334,3 +340,5 @@ func (f *FakeQueue) MoveAllToActiveOrBackoffQueue(logger klog.Logger, event fram
 
 func (f *FakeQueue) Activate(logger klog.Logger, pods map[string]*corev1.Pod) {
 }
+
+func (f *FakeQueue) Done(pod types.UID) {}

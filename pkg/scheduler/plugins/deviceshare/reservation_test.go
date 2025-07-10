@@ -859,7 +859,7 @@ func Test_tryAllocateFromReservation(t *testing.T) {
 				node:       node,
 				pod:        &corev1.Pod{},
 			}
-			tt.state.gpuRequirements, _ = parseGPURequirements(allocator.pod, tt.state.podRequests, nil)
+			tt.state.gpuRequirements, _ = parseGPURequirements(allocator.pod, tt.state.podRequests, nil, nil, nil)
 
 			result, status := pl.tryAllocateFromReservation(
 				allocator,
