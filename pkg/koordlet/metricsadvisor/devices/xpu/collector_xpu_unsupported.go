@@ -17,24 +17,12 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package impl
+package xpu
 
-func (s *statesInformer) reportGPUDevice() {
-	return
-}
+import (
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
+)
 
-func (s *statesInformer) reportRDMADevice() { return }
-
-func (s *statesInformer) reportXPUDevice() { return }
-
-func (s *statesInformer) initGPU() bool {
-	return false
-}
-
-func (s *statesInformer) gpuHealCheck(stopCh <-chan struct{}) {
-	return
-}
-
-func (s *statesInformer) getGPUDriverAndModel() (string, string) {
-	return "", ""
+func GetXPUDevice() (metriccache.Devices, error) {
+	return nil, nil
 }
