@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-	"sync"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -121,7 +120,7 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 	// TODO(joseph): Considering the amount of changed code,
 	// temporarily use global variable to store ReservationCache instance,
 	// and then refactor to separate ReservationCache later.
-	SetReservationCache(cache)
+	frameworkext.SetReservationCache(cache)
 
 	p := &Plugin{
 		handle:                       extendedHandle,
@@ -163,123 +162,6 @@ func (pl *Plugin) EventsToRegister() []framework.ClusterEventWithHint {
 		{Event: framework.ClusterEvent{Resource: framework.Pod, ActionType: framework.Delete}},
 		{Event: framework.ClusterEvent{Resource: framework.GVK(gvk), ActionType: framework.Add | framework.Update | framework.Delete}},
 	}
-}
-
-var _ framework.StateData = &stateData{}
-
-type stateData struct {
-	// scheduling cycle data
-	schedulingStateData
-
-	// all cycle data
-	// NOTE: The part of data is kept during both the scheduling cycle and the binding cycle. In case too many
-	// binding goroutines reference the data causing OOM issues, the memory overhead of this part should be
-	// small and its space complexity should be no more than O(1) for pods, reservations and nodes.
-	assumed *frameworkext.ReservationInfo
-}
-
-// schedulingStateData is the data only kept in the scheduling cycle. It could be cleaned up
-// before entering the binding cycle to reduce memory cost.
-type schedulingStateData struct {
-	preemptLock          sync.RWMutex
-	hasAffinity          bool
-	reservationName      string
-	podRequests          corev1.ResourceList
-	podRequestsResources *framework.Resource
-	preemptible          map[string]corev1.ResourceList
-	preemptibleInRRs     map[string]map[types.UID]corev1.ResourceList
-
-	nodeReservationStates    map[string]*nodeReservationState
-	nodeReservationDiagnosis map[string]*nodeDiagnosisState
-	preferredNode            string
-}
-
-type nodeReservationState struct {
-	nodeName string
-	// matchedOrIgnored represents all matched or ignored reservations for the scheduling pod.
-	matchedOrIgnored []*frameworkext.ReservationInfo
-
-	// podRequested represents all Pods(including matched reservation) requested resources
-	// but excluding the already allocated from unmatched reservations
-	podRequested *framework.Resource
-	// rAllocated represents the allocated resources of matched reservations
-	rAllocated *framework.Resource
-
-	unmatched     []*frameworkext.ReservationInfo
-	preRestored   bool // restore in PreFilter or Filter
-	finalRestored bool // restore in Filter
-}
-
-type nodeDiagnosisState struct {
-	nodeName string
-
-	ignored int // resource reservations are ignored due to the pod label
-
-	ownerMatched             int // owner matched
-	nameMatched              int // owner matched and reservation name matched
-	nameUnmatched            int // owner matched but BeforePreFilter unmatched due to reservation name
-	isUnschedulableUnmatched int // owner matched but BeforePreFilter unmatched due to unschedulable
-	affinityUnmatched        int // owner matched but BeforePreFilter unmatched due to affinity
-	notExactMatched          int // owner matched but BeforePreFilter unmatched due to not exact match
-	taintsUnmatched          int // owner matched but BeforePreFilter unmatched due to reservation taints
-	taintsUnmatchedReasons   map[string]int
-}
-
-func (s *stateData) Clone() framework.StateData {
-	ns := &stateData{
-		schedulingStateData: schedulingStateData{
-			hasAffinity:              s.hasAffinity,
-			reservationName:          s.reservationName,
-			podRequests:              s.podRequests,
-			podRequestsResources:     s.podRequestsResources,
-			nodeReservationStates:    s.nodeReservationStates,
-			nodeReservationDiagnosis: s.nodeReservationDiagnosis,
-			preferredNode:            s.preferredNode,
-		},
-		assumed: s.assumed,
-	}
-
-	s.preemptLock.RLock()
-	defer s.preemptLock.RUnlock()
-
-	preemptible := map[string]corev1.ResourceList{}
-	for nodeName, returned := range s.preemptible {
-		preemptible[nodeName] = returned.DeepCopy()
-	}
-	ns.preemptible = preemptible
-
-	preemptibleInRRs := map[string]map[types.UID]corev1.ResourceList{}
-	for nodeName, rrs := range s.preemptibleInRRs {
-		rrInNode := preemptibleInRRs[nodeName]
-		if rrInNode == nil {
-			rrInNode = map[types.UID]corev1.ResourceList{}
-			preemptibleInRRs[nodeName] = rrInNode
-		}
-		for reservationUID, returned := range rrs {
-			rrInNode[reservationUID] = returned.DeepCopy()
-		}
-	}
-	ns.preemptibleInRRs = preemptibleInRRs
-
-	return ns
-}
-
-// CleanSchedulingData clears the scheduling cycle data in the stateData to reduce memory cost before entering
-// the binding cycle.
-func (s *stateData) CleanSchedulingData() {
-	s.schedulingStateData = schedulingStateData{}
-}
-
-func getStateData(cycleState *framework.CycleState) *stateData {
-	v, err := cycleState.Read(stateKey)
-	if err != nil {
-		return &stateData{}
-	}
-	s, ok := v.(*stateData)
-	if !ok || s == nil {
-		return &stateData{}
-	}
-	return s
 }
 
 // PreFilter checks if the pod is a reserve pod. If it is, update cycle state to annotate reservation scheduling.

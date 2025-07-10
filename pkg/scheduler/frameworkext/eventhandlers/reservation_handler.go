@@ -42,7 +42,6 @@ import (
 	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
 	schedulingv1alpha1lister "github.com/koordinator-sh/koordinator/pkg/client/listers/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
-	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/reservation"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
@@ -69,10 +68,8 @@ func MakeReservationErrorHandler(
 		// if the pod is not a reserve pod, use the default error handler
 		// If the Pod failed to schedule or no post-filter plugins, should remove exist NominatedReservation of the Pod.
 		if extendedHandle, ok := fwk.(frameworkext.ExtendedHandle); ok {
-			if !reservationutil.IsReservePod(pod) {
-				extendedHandle.GetReservationNominator().RemoveNominatedReservations(pod)
-			} else {
-				extendedHandle.GetReservationNominator().DeleteNominatedReservePod(pod)
+			if reservationNominator := extendedHandle.GetReservationNominator(); reservationNominator != nil {
+				reservationNominator.DeleteNominatedReservePodOrReservation(pod)
 			}
 		}
 
@@ -289,7 +286,9 @@ func handleReservationSchedulingFailure(sched *scheduler.Scheduler,
 		}
 
 		// nominate for the reserve pod if it is
-		// TODO: use the default nominator
+		// FIXME: We expect use the default nominator for a nominated reserve pod, since it makes no benefit to
+		//   maintain another nominator. However, the default nominator relies the podLister to fetch the real pod
+		//   from the informer cache.
 		addNominatedReservation(fwk, podInfo, nominatingInfo)
 
 		errMsg := status.Message()
@@ -517,7 +516,7 @@ func deleteReservationFromSchedulerCache(sched frameworkext.Scheduler, obj inter
 		return
 	}
 
-	reservationCache := reservation.GetReservationCache()
+	reservationCache := frameworkext.GetReservationCache()
 	rInfo := reservationCache.DeleteReservation(r)
 	if rInfo == nil {
 		klog.Warningf("The impossible happened. Missing ReservationInfo in ReservationCache, reservation: %v", klog.KObj(r))

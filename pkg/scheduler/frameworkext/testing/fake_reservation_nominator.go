@@ -136,3 +136,16 @@ func (nm *FakeNominator) deleteReservePod(rInfo *corev1.Pod) {
 	}
 	delete(nm.nominatedReservePodToNode, rInfo.UID)
 }
+
+func (nm *FakeNominator) DeleteNominatedReservePodOrReservation(pod *corev1.Pod) {
+	nm.lock.Lock()
+	defer nm.lock.Unlock()
+
+	nodeToReservation := nm.nominatedPodToNode[pod.UID]
+	delete(nm.nominatedPodToNode, pod.UID)
+	for _, reservationUID := range nodeToReservation {
+		delete(nm.reservations, reservationUID)
+	}
+
+	nm.deleteReservePod(pod)
+}
