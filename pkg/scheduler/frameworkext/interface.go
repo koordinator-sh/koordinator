@@ -48,6 +48,8 @@ type ExtendedHandle interface {
 	RegisterErrorHandlerFilters(preFilter PreErrorHandlerFilter, afterFilter PostErrorHandlerFilter)
 	RegisterForgetPodHandler(handler ForgetPodHandler)
 	ForgetPod(logger klog.Logger, pod *corev1.Pod) error
+	// GetReservationNominator returns the ReservationNominator object to support nominating reservation.
+	// It returns nil when the framework does not support the resource reservation.
 	GetReservationNominator() ReservationNominator
 }
 
@@ -145,10 +147,17 @@ type ReservationNominator interface {
 	framework.Plugin
 	NominateReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) (*ReservationInfo, *framework.Status)
 	AddNominatedReservation(pod *corev1.Pod, nodeName string, rInfo *ReservationInfo)
+	// RemoveNominatedReservations is used to delete the nominated reserve pod.
+	// DEPRECATED: use DeleteNominatedReservePodOrReservation instead.
 	RemoveNominatedReservations(pod *corev1.Pod)
 	GetNominatedReservation(pod *corev1.Pod, nodeName string) *ReservationInfo
 	AddNominatedReservePod(reservePod *corev1.Pod, nodeName string)
+	// DeleteNominatedReservePod is used to delete the nominated reserve pod.
+	// DEPRECATED: use DeleteNominatedReservePodOrReservation instead.
 	DeleteNominatedReservePod(reservePod *corev1.Pod)
+	// DeleteNominatedReservePodOrReservation is used to delete the nominated reserve pod or
+	// the nominated reservation for the pod.
+	DeleteNominatedReservePodOrReservation(pod *corev1.Pod)
 }
 
 const (

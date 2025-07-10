@@ -35,6 +35,11 @@ const (
 	// to block the other pods allocated reserved resources, it should be used with the reservation preemption.
 	LabelReservationIgnored = SchedulingDomainPrefix + "/reservation-ignored"
 
+	// LabelPreAllocationRequired indicates whether the reservation should pre-allocate resources from scheduled pods
+	// on the node. If specified, the reservation must schedule when there is at least one pre-allocatable pod on the
+	// node even if the unallocated resources of the node are sufficient.
+	LabelPreAllocationRequired = SchedulingDomainPrefix + "/pre-allocation-required"
+
 	// LabelReservationOrder controls the preference logic for Reservation.
 	// Reservation with lower order is preferred to be selected before Reservation with higher order.
 	// But if it is 0, Reservation will be selected according to the capacity score.
@@ -91,6 +96,10 @@ type ReservationRestrictedOptions struct {
 
 func IsReservationIgnored(pod *corev1.Pod) bool {
 	return pod != nil && pod.Labels != nil && pod.Labels[LabelReservationIgnored] == "true"
+}
+
+func IsPreAllocationRequired(labels map[string]string) bool {
+	return labels != nil && labels[LabelPreAllocationRequired] == "true"
 }
 
 func GetReservationAllocated(pod *corev1.Pod) (*ReservationAllocated, error) {

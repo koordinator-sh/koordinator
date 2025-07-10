@@ -57,7 +57,6 @@ import (
 	v1beta3schedulerconfig "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/v1beta3"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	frameworkexttesting "github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/testing"
-	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/reservation"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 	utilfeature "github.com/koordinator-sh/koordinator/pkg/util/feature"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
@@ -229,18 +228,6 @@ func Test_New(t *testing.T) {
 	assert.Equal(t, Name, p.Name())
 }
 
-type fakeReservationCache struct {
-	rInfo *frameworkext.ReservationInfo
-}
-
-func (f *fakeReservationCache) DeleteReservation(r *schedulingv1alpha1.Reservation) *frameworkext.ReservationInfo {
-	return frameworkext.NewReservationInfo(r)
-}
-
-func (f *fakeReservationCache) GetReservationInfoByPod(pod *corev1.Pod, nodeName string) *frameworkext.ReservationInfo {
-	return f.rInfo
-}
-
 func Test_Plugin_PreFilterExtensions(t *testing.T) {
 	node := &corev1.Node{
 		ObjectMeta: metav1.ObjectMeta{
@@ -250,7 +237,7 @@ func Test_Plugin_PreFilterExtensions(t *testing.T) {
 	nodeInfo := framework.NewNodeInfo()
 	nodeInfo.SetNode(node)
 
-	reservation.SetReservationCache(&fakeReservationCache{})
+	frameworkext.SetReservationCache(&frameworkext.FakeReservationCache{})
 
 	suit := newPluginTestSuit(t, nil)
 	p, err := suit.proxyNew(getDefaultArgs(), suit.Framework)
@@ -372,10 +359,10 @@ func Test_Plugin_PreFilterExtensionsWithReservation(t *testing.T) {
 		},
 	}
 	assert.NoError(t, reservationutil.SetReservationAvailable(testReservation, node.Name))
-	reservationCache := &fakeReservationCache{
-		rInfo: frameworkext.NewReservationInfo(testReservation),
+	reservationCache := &frameworkext.FakeReservationCache{
+		RInfo: frameworkext.NewReservationInfo(testReservation),
 	}
-	reservation.SetReservationCache(reservationCache)
+	frameworkext.SetReservationCache(reservationCache)
 
 	suit := newPluginTestSuit(t, nil)
 	p, err := suit.proxyNew(getDefaultArgs(), suit.Framework)
@@ -454,7 +441,7 @@ func Test_Plugin_PreFilterExtensionsWithReservation(t *testing.T) {
 	}
 	nd.updateCacheUsed(allocations, allocatedPod, true)
 	nd.updateCacheUsed(allocations, reservationutil.NewReservePod(testReservation), true)
-	reservationCache.rInfo.AddAssignedPod(allocatedPod)
+	reservationCache.RInfo.AddAssignedPod(allocatedPod)
 
 	podInfo, _ := framework.NewPodInfo(allocatedPod)
 	status = pl.PreFilterExtensions().RemovePod(context.TODO(), cycleState, pod, podInfo, nodeInfo)

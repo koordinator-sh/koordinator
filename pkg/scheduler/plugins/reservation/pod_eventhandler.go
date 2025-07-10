@@ -24,7 +24,6 @@ import (
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
-	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	frameworkexthelper "github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/helper"
@@ -95,9 +94,7 @@ func (h *podEventHandler) updatePod(oldPod, newPod *corev1.Pod) {
 		return
 	}
 
-	h.nominator.RemoveNominatedReservation(newPod)
-	podInfo, _ := framework.NewPodInfo(newPod)
-	h.nominator.DeleteReservePod(podInfo)
+	h.nominator.DeleteNominatedReservePodOrReservation(newPod)
 	var reservationUID types.UID
 	if oldPod != nil {
 		reservationAllocated, err := apiext.GetReservationAllocated(oldPod)
@@ -129,9 +126,7 @@ func (h *podEventHandler) updatePod(oldPod, newPod *corev1.Pod) {
 }
 
 func (h *podEventHandler) deletePod(pod *corev1.Pod) {
-	h.nominator.RemoveNominatedReservation(pod)
-	podInfo, _ := framework.NewPodInfo(pod)
-	h.nominator.DeleteReservePod(podInfo)
+	h.nominator.DeleteNominatedReservePodOrReservation(pod)
 
 	reservationAllocated, err := apiext.GetReservationAllocated(pod)
 	if err == nil && reservationAllocated != nil && reservationAllocated.UID != "" {

@@ -434,7 +434,7 @@ func TestMultiReservationsOnSameNode(t *testing.T) {
 		assert.NotNil(t, rInfo, rInfo)
 		pl.Reserve(context.TODO(), cycleState, pod, node.Name)
 		nominatedReservationCount[rInfo.UID()]++
-		nm.RemoveNominatedReservations(pod)
+		nm.DeleteNominatedReservePodOrReservation(pod)
 	}
 
 	assert.Len(t, nominatedReservationCount, len(reservations))

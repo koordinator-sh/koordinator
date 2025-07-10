@@ -39,7 +39,6 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/schedulingphase"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/topologymanager"
-	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/reservation"
 	utilfeature "github.com/koordinator-sh/koordinator/pkg/util/feature"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
@@ -216,7 +215,10 @@ func (p *Plugin) AddPod(ctx context.Context, cycleState *framework.CycleState, p
 		return nil
 	}
 
-	rInfo := reservation.GetReservationCache().GetReservationInfoByPod(podInfoToAdd.Pod, node.Name)
+	var rInfo *frameworkext.ReservationInfo
+	if rCache := frameworkext.GetReservationCache(); rCache != nil {
+		rInfo = rCache.GetReservationInfoByPod(podInfoToAdd.Pod, node.Name)
+	}
 	if rInfo == nil {
 		nominator := p.handle.GetReservationNominator()
 		if nominator != nil {
@@ -272,7 +274,10 @@ func (p *Plugin) RemovePod(ctx context.Context, cycleState *framework.CycleState
 		return nil
 	}
 
-	rInfo := reservation.GetReservationCache().GetReservationInfoByPod(podInfoToRemove.Pod, node.Name)
+	var rInfo *frameworkext.ReservationInfo
+	if rCache := frameworkext.GetReservationCache(); rCache != nil {
+		rInfo = rCache.GetReservationInfoByPod(podInfoToRemove.Pod, node.Name)
+	}
 	if rInfo == nil {
 		nominator := p.handle.GetReservationNominator()
 		if nominator != nil {

@@ -31,7 +31,6 @@ import (
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
-	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/reservation"
 	"github.com/koordinator-sh/koordinator/pkg/util/cpuset"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
@@ -523,7 +522,7 @@ func (p *Plugin) allocateWithNominatedReservation(
 }
 
 func (p *Plugin) getPodNominatedReservationInfo(pod *corev1.Pod, nodeName string) *frameworkext.ReservationInfo {
-	rCache := reservation.GetReservationCache()
+	rCache := frameworkext.GetReservationCache()
 	if rCache == nil {
 		return nil
 	}

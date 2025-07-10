@@ -28,6 +28,7 @@ aliases:
   descheduler-approvers:
     - eahydra
     - FillZpp
+    - songtao98
 
   runtime-proxy-approvers:
     - honpey

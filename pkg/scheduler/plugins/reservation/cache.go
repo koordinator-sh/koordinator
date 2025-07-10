@@ -19,7 +19,6 @@ package reservation
 import (
 	"fmt"
 	"sync"
-	"sync/atomic"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -30,28 +29,6 @@ import (
 	schedulinglister "github.com/koordinator-sh/koordinator/pkg/client/listers/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 )
-
-// TODO(joseph): Considering the amount of changed code,
-// temporarily use global variable to store ReservationCache instance,
-// and then refactor to separate ReservationCache later.
-var theReservationCache atomic.Value
-
-type ReservationCache interface {
-	DeleteReservation(r *schedulingv1alpha1.Reservation) *frameworkext.ReservationInfo
-	GetReservationInfoByPod(pod *corev1.Pod, nodeName string) *frameworkext.ReservationInfo
-}
-
-func GetReservationCache() ReservationCache {
-	cache, _ := theReservationCache.Load().(ReservationCache)
-	if cache == nil {
-		return nil
-	}
-	return cache
-}
-
-func SetReservationCache(cache ReservationCache) {
-	theReservationCache.Store(cache)
-}
 
 type reservationCache struct {
 	reservationLister  schedulinglister.ReservationLister
