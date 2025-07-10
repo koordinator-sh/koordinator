@@ -33,6 +33,7 @@ import (
 	"k8s.io/kubernetes/pkg/apis/core/validation"
 	"k8s.io/kubernetes/pkg/scheduler"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
+	"k8s.io/kubernetes/pkg/scheduler/metrics"
 	"k8s.io/kubernetes/pkg/scheduler/profile"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
@@ -56,12 +57,12 @@ func MakeReservationErrorHandler(
 	koordSharedInformerFactory koordinatorinformers.SharedInformerFactory,
 ) frameworkext.PreErrorHandlerFilter {
 	reservationLister := koordSharedInformerFactory.Scheduling().V1alpha1().Reservations().Lister()
-	reservationErrorFn := makeReservationErrorFunc(schedAdapter, reservationLister)
+	failureHandler := handleReservationSchedulingFailure(sched, schedAdapter, reservationLister, koordClientSet)
 	return func(ctx context.Context, f framework.Framework, podInfo *framework.QueuedPodInfo, status *framework.Status, nominatingInfo *framework.NominatingInfo, start time.Time) bool {
 		pod := podInfo.Pod
 		fwk, ok := sched.Profiles[pod.Spec.SchedulerName]
 		if !ok {
-			klog.Errorf("profile not found for scheduler name %q", pod.Spec.SchedulerName)
+			klog.Errorf("profile not found for scheduler name %q, pod %s", pod.Spec.SchedulerName, klog.KObj(pod))
 			return true
 		}
 
@@ -75,11 +76,10 @@ func MakeReservationErrorHandler(
 			}
 		}
 
-		schedulingErr := status.AsError()
-
+		// export event on reservation level asynchronously if a normal pod specifies the reservation affinity
 		if _, reserveAffExist := pod.Annotations[extension.AnnotationReservationAffinity]; reserveAffExist {
-			// export event on reservation level asynchronously
 			go func() {
+				schedulingErr := status.AsError()
 				// for pod specified reservation affinity, export new event on reservation level
 				reservationLevelMsg, hasReservation := generatePodEventOnReservationLevel(schedulingErr.Error())
 				klog.V(7).Infof("origin scheduling error info: %s. hasReservation %v. reservation msg: %s",
@@ -92,25 +92,8 @@ func MakeReservationErrorHandler(
 			}()
 			return false
 		} else if reservationutil.IsReservePod(pod) {
-			// NOTE: Since the failure handler is asynchronous and not locked with the reservation event handler,
-			// please make sure the status of the object is expected before adding or updating it.
-			// for reservation CR, which is treated as pod internal
-			reservationErrorFn(ctx, fwk, podInfo, status, nominatingInfo, start)
-
-			rName := reservationutil.GetReservationNameFromReservePod(pod)
-			r, err := reservationLister.Get(rName)
-			if err != nil {
-				return true
-			}
-
-			// nominate for the reserve pod if it is
-			// TODO: use the default nominator
-			addNominatedReservation(f, podInfo, nominatingInfo)
-
-			msg := truncateMessage(schedulingErr.Error())
-			fwk.EventRecorder().Eventf(r, nil, corev1.EventTypeWarning, "FailedScheduling", "Scheduling", msg)
-
-			updateReservationStatus(koordClientSet, reservationLister, rName, schedulingErr)
+			// handle failure for the reserve pod
+			failureHandler(ctx, f, podInfo, status, nominatingInfo, start)
 			return true
 		}
 		// not reservation CR, not pod with reservation affinity
@@ -226,42 +209,94 @@ func generatePodEventOnReservationLevel(errorMsg string) (string, bool) {
 	return fmt.Sprintf(reserveLevelMsgFmt, total, strings.Join(resultDetails, ", ")), total >= 0
 }
 
-func makeReservationErrorFunc(sched frameworkext.Scheduler, reservationLister schedulingv1alpha1lister.ReservationLister) scheduler.FailureHandlerFn {
+func handleReservationSchedulingFailure(sched *scheduler.Scheduler,
+	schedAdapter frameworkext.Scheduler,
+	reservationLister schedulingv1alpha1lister.ReservationLister,
+	koordClientSet koordclientset.Interface) scheduler.FailureHandlerFn {
+	// Here we follow the procedure of the normal pod handling in the framework, except using the reservation object.
 	return func(ctx context.Context, fwk framework.Framework, podInfo *framework.QueuedPodInfo, status *framework.Status, nominatingInfo *framework.NominatingInfo, start time.Time) {
+		calledDone := false
+		defer func() {
+			if !calledDone {
+				// Basically, AddUnschedulableIfNotPresent calls DonePod internally.
+				// But, AddUnschedulableIfNotPresent isn't called in some corner cases.
+				// Here, we call DonePod explicitly to avoid leaking the pod.
+				schedAdapter.GetSchedulingQueue().Done(podInfo.Pod.UID)
+			}
+		}()
+
+		logger := klog.FromContext(ctx)
+		reason := corev1.PodReasonSchedulerError
+		if status.IsUnschedulable() {
+			reason = corev1.PodReasonUnschedulable
+		}
+
+		switch reason {
+		case corev1.PodReasonUnschedulable:
+			metrics.PodUnschedulable(fwk.ProfileName(), metrics.SinceInSeconds(start))
+		case corev1.PodReasonSchedulerError:
+			metrics.PodScheduleError(fwk.ProfileName(), metrics.SinceInSeconds(start))
+		}
+
 		pod := podInfo.Pod
 		err := status.AsError()
+		rName := reservationutil.GetReservationNameFromReservePod(pod)
+
 		// NOTE: If the pod is a reserve pod, we simply check the corresponding reservation status if the reserve pod
 		// need requeue for the next scheduling cycle.
 		if err == scheduler.ErrNoNodesAvailable {
-			klog.V(2).InfoS("Unable to schedule reserve pod; no nodes are registered to the cluster; waiting", "pod", klog.KObj(pod))
+			klog.V(2).InfoS("Unable to schedule reserve pod; no nodes are registered to the cluster; waiting",
+				"pod", klog.KObj(pod), "reservation", rName)
 		} else if fitError, ok := err.(*framework.FitError); ok {
 			// Inject UnschedulablePlugins to PodInfo, which will be used later for moving Pods between queues efficiently.
 			podInfo.UnschedulablePlugins = fitError.Diagnosis.UnschedulablePlugins
-			klog.V(2).InfoS("Unable to schedule reserve pod; no fit; waiting", "pod", klog.KObj(pod), "err", err)
+			klog.V(2).InfoS("Unable to schedule reserve pod; no fit; waiting",
+				"pod", klog.KObj(pod), "reservation", rName, "err", err)
 		} else {
-			klog.ErrorS(err, "Error scheduling reserve pod; retrying", "pod", klog.KObj(pod))
+			klog.ErrorS(err, "Error scheduling reserve pod; retrying",
+				"pod", klog.KObj(pod), "reservation", rName)
 		}
 
 		// Check if the corresponding reservation exists in informer cache.
-		rName := reservationutil.GetReservationNameFromReservePod(pod)
-		cachedR, err := reservationLister.Get(rName)
-		if err != nil {
+		cachedR, e := reservationLister.Get(rName)
+		if e != nil {
 			klog.InfoS("Reservation doesn't exist in informer cache",
-				"pod", klog.KObj(pod), "reservation", rName, "err", err)
-			return
+				"pod", klog.KObj(pod), "reservation", rName, "err", e)
+			// We need to call DonePod here because we don't call AddUnschedulableIfNotPresent in this case.
+		} else {
+			// The scheduler name of a reservation can change in-flight, so we need to double-check if the scheduler
+			// is not matched anymore. If unmatched, we should abort the failure handling to avoid applying a
+			// failure state with another scheduler concurrently.
+			if !isResponsibleForReservation(sched.Profiles, cachedR) {
+				klog.InfoS("Reservation doesn't belong to this scheduler, abort the failure handling",
+					"pod", klog.KObj(pod), "reservation", rName, "schedulerName", reservationutil.GetReservationSchedulerName(cachedR))
+				return
+			}
+
+			// In the case of extender, the pod may have been bound successfully, but timed out returning its response to the scheduler.
+			// It could result in the live version to carry .spec.nodeName, and that's inconsistent with the internal-queued version.
+			if nodeName := reservationutil.GetReservationNodeName(cachedR); len(nodeName) != 0 {
+				klog.InfoS("Reservation has been assigned to node. Abort adding it back to queue.",
+					"pod", klog.KObj(pod), "reservation", rName, "node", nodeName)
+				// We need to call DonePod here because we don't call AddUnschedulableIfNotPresent in this case.
+			} else {
+				podInfo.PodInfo, _ = framework.NewPodInfo(reservationutil.NewReservePod(cachedR))
+				if e = schedAdapter.GetSchedulingQueue().AddUnschedulableIfNotPresent(logger, podInfo, schedAdapter.GetSchedulingQueue().SchedulingCycle()); e != nil {
+					klog.ErrorS(e, "Error occurred")
+				}
+				calledDone = true
+			}
 		}
-		// In the case of extender, the pod may have been bound successfully, but timed out returning its response to the scheduler.
-		// It could result in the live version to carry .spec.nodeName, and that's inconsistent with the internal-queued version.
-		if nodeName := reservationutil.GetReservationNodeName(cachedR); len(nodeName) != 0 {
-			klog.InfoS("Reservation has been assigned to node. Abort adding it back to queue.",
-				"pod", klog.KObj(pod), "reservation", rName, "node", nodeName)
-			return
-		}
-		podInfo.PodInfo, _ = framework.NewPodInfo(reservationutil.NewReservePod(cachedR))
-		logger := klog.FromContext(ctx)
-		if err = sched.GetSchedulingQueue().AddUnschedulableIfNotPresent(logger, podInfo, sched.GetSchedulingQueue().SchedulingCycle()); err != nil {
-			klog.ErrorS(err, "Error occurred")
-		}
+
+		// nominate for the reserve pod if it is
+		// TODO: use the default nominator
+		addNominatedReservation(fwk, podInfo, nominatingInfo)
+
+		errMsg := status.Message()
+		msg := truncateMessage(errMsg)
+		fwk.EventRecorder().Eventf(cachedR, nil, corev1.EventTypeWarning, "FailedScheduling", "Scheduling", msg)
+
+		updateReservationStatus(koordClientSet, reservationLister, rName, err)
 	}
 }
 
@@ -298,13 +333,8 @@ func truncateMessage(message string) string {
 	return message[:max-len(suffix)] + suffix
 }
 
-// AddScheduleEventHandler adds reservation event handlers for the scheduler just like pods'.
-// One special case is that reservations have expiration, which the scheduler should cleanup expired ones from the
-// cache and queue.
-func AddScheduleEventHandler(sched *scheduler.Scheduler, schedAdapter frameworkext.Scheduler, koordSharedInformerFactory koordinatorinformers.SharedInformerFactory) {
-	reservationInformer := koordSharedInformerFactory.Scheduling().V1alpha1().Reservations().Informer()
-	// scheduled reservations for pod cache
-	reservationInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+func scheduledReservationEventHandler(sched *scheduler.Scheduler, schedAdapter frameworkext.Scheduler) cache.ResourceEventHandler {
+	return cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
 			addReservationToSchedulerCache(schedAdapter, obj)
 		},
@@ -314,9 +344,7 @@ func AddScheduleEventHandler(sched *scheduler.Scheduler, schedAdapter frameworke
 		DeleteFunc: func(obj interface{}) {
 			deleteReservationFromSchedulerCache(schedAdapter, obj)
 		},
-	})
-	// unscheduled & non-failed reservations for scheduling queue
-	reservationInformer.AddEventHandler(unscheduledReservationEventHandler(sched, schedAdapter))
+	}
 }
 
 func unscheduledReservationEventHandler(sched *scheduler.Scheduler, schedAdapter frameworkext.Scheduler) cache.ResourceEventHandler {
@@ -348,6 +376,19 @@ func unscheduledReservationEventHandler(sched *scheduler.Scheduler, schedAdapter
 			DeleteFunc: func(obj interface{}) {
 				deleteReservationFromSchedulingQueue(sched, schedAdapter, obj)
 			},
+		},
+	}
+}
+
+func irresponsibleUnscheduledReservationEventHandler(sched *scheduler.Scheduler, schedAdapter frameworkext.Scheduler) cache.ResourceEventHandler {
+	return cache.ResourceEventHandlerFuncs{
+		DeleteFunc: func(obj interface{}) {
+			r := toReservation(obj)
+			if r == nil ||
+				isResponsibleForReservation(sched.Profiles, r) {
+				return
+			}
+			deleteReservationFromSchedulingQueue(sched, schedAdapter, obj)
 		},
 	}
 }

@@ -32,6 +32,7 @@ import (
 )
 
 const (
+	ErrPodHasNotBeenAttempted         = "gangGroup %s is scheduling and this pod has not been attempted"
 	ErrRepresentativePodAlreadyExists = "representative pod %s of gangGroupID %s already exists"
 	ErrPodIsNotExistsInGangCache      = "pod %s is not exists in gangCache"
 )
@@ -360,13 +361,19 @@ func (gang *Gang) setChild(pod *v1.Pod) {
 	defer gang.lock.Unlock()
 
 	podId := util.GetId(pod.Namespace, pod.Name)
+	gang.Children[podId] = pod
 	if _, ok := gang.Children[podId]; !ok {
-		gang.Children[podId] = pod
-		klog.Infof("SetChild, gangName: %v, childName: %v", gang.Name, podId)
+		klog.V(6).Infof("SetChild, gangName: %v, childName: %v", gang.Name, podId)
+	} else {
+		klog.V(6).Infof("UpdateChild, gangName: %v, childName: %v", gang.Name, podId)
 	}
-	if _, ok := gang.PendingChildren[podId]; !ok && pod.Spec.NodeName == "" && gang.WaitingForBindChildren[podId] == nil {
+	if pod.Spec.NodeName == "" && gang.WaitingForBindChildren[podId] == nil {
 		gang.PendingChildren[podId] = pod
-		klog.Infof("SetPendingChild, gangName: %v, childName: %v", gang.Name, podId)
+		if _, ok := gang.PendingChildren[podId]; !ok {
+			klog.Infof("SetPendingChild, gangName: %v, childName: %v", gang.Name, podId)
+		} else {
+			klog.Infof("UpdatePendingChild, gangName: %v, childName: %v", gang.Name, podId)
+		}
 	}
 }
 
@@ -389,7 +396,9 @@ func (gang *Gang) delAssumedPod(pod *v1.Pod) {
 	podId := util.GetId(pod.Namespace, pod.Name)
 	if _, ok := gang.WaitingForBindChildren[podId]; ok {
 		delete(gang.WaitingForBindChildren, podId)
-		gang.PendingChildren[podId] = pod
+		if pendingPod := gang.Children[podId]; pendingPod != nil {
+			gang.PendingChildren[podId] = pendingPod
+		}
 		if len(gang.WaitingForBindChildren) == 0 {
 			gang.GangGroupInfo.RemoveWaitingGang(gang.Name)
 		}
@@ -502,21 +511,8 @@ func (gang *Gang) RecordIfNoRepresentatives(pod *v1.Pod) error {
 	return nil
 }
 
-func (gang *Gang) ReplaceRepresentative(pod *v1.Pod, reason string) {
+func (gang *Gang) ClearCurrentRepresentative(reason string) {
 	gang.lock.Lock()
 	defer gang.lock.Unlock()
-	podKey := util.GetId(pod.Namespace, pod.Name)
-	if gang.PendingChildren[podKey] == nil {
-		// avoid pod is not exists in gang cache, resulting representativePodKey leak
-		/*
-			FIXME
-				The original Representative will continue to be retained until it is deleted.
-				However, its UnschedulablePlugins are not set correctly, which may cause the next queue to be late.
-				The reason we did not try to fix it here is that we assume that all pending Pods of the GangGroup will be deleted or rebuilt together.
-		*/
-		klog.Warningf("ReplaceRepresentative find pod %v is not exists in gang cache, gang: %v, reaon: %s", podKey, gang.Name, reason)
-		return
-	}
-
-	gang.GangGroupInfo.ReplaceRepresentative(pod, reason)
+	gang.GangGroupInfo.ClearCurrentRepresentative(reason)
 }

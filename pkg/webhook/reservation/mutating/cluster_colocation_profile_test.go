@@ -715,6 +715,132 @@ func TestClusterColocationProfileMutatingReservation(t *testing.T) {
 			},
 		},
 		{
+			name: "mutate advanced attributes 1",
+			reservation: &schedulingv1alpha1.Reservation{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "default",
+					Name:      "test-reservation-1",
+					Labels: map[string]string{
+						"koordinator-colocation-reservation": "true",
+						"label-key-to-load":                  "test-label-value",
+					},
+					Annotations: map[string]string{
+						"testAnnotationA":        "valueA",
+						"annotation-key-to-load": "test-annotation-value",
+					},
+				},
+				Spec: schedulingv1alpha1.ReservationSpec{
+					Template: &corev1.PodTemplateSpec{
+						Spec: corev1.PodSpec{
+							Containers: []corev1.Container{
+								{
+									Name: "test-container-a",
+									Resources: corev1.ResourceRequirements{
+										Limits: corev1.ResourceList{
+											corev1.ResourceCPU:    resource.MustParse("1"),
+											corev1.ResourceMemory: resource.MustParse("4Gi"),
+										},
+										Requests: corev1.ResourceList{
+											corev1.ResourceCPU:    resource.MustParse("1"),
+											corev1.ResourceMemory: resource.MustParse("4Gi"),
+										},
+									},
+								},
+							},
+							Overhead: map[corev1.ResourceName]resource.Quantity{
+								corev1.ResourceCPU:    resource.MustParse("1"),
+								corev1.ResourceMemory: resource.MustParse("2Gi"),
+							},
+							SchedulerName: "nonExistSchedulerName",
+						},
+					},
+				},
+			},
+			profile: &configv1alpha1.ClusterColocationProfile{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-profile",
+				},
+				Spec: configv1alpha1.ClusterColocationProfileSpec{
+					Selector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							"koordinator-colocation-reservation": "true",
+						},
+					},
+					Labels: map[string]string{
+						"testLabelA":                 "valueA",
+						extension.LabelSchedulerName: "koordinator-scheduler",
+					},
+					LabelKeysMapping: map[string]string{
+						"label-key-to-load": "label-key-to-store",
+					},
+					Annotations: map[string]string{
+						"testAnnotationA": "valueA",
+					},
+					AnnotationKeysMapping: map[string]string{
+						"annotation-key-to-load": "annotation-key-to-store",
+					},
+					LabelSuffixes: map[string]string{
+						"label-key-1":        "suffix",
+						"label-key-to-store": "suffix-0",
+						"suffix-label-key-1": "suffix-1",
+					},
+					QoSClass:            string(extension.QoSBE),
+					KoordinatorPriority: pointer.Int32(1111),
+					Patch: runtime.RawExtension{
+						Raw: []byte(`{"metadata":{"labels":{"test-patch-label":"patch-a"},"annotations":{"test-patch-annotation":"patch-b"}}}`),
+					},
+				},
+			},
+			expected: &schedulingv1alpha1.Reservation{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "default",
+					Name:      "test-reservation-1",
+					Labels: map[string]string{
+						"koordinator-colocation-reservation": "true",
+						"testLabelA":                         "valueA",
+						"test-patch-label":                   "patch-a",
+						"label-key-to-load":                  "test-label-value",
+						"label-key-to-store":                 "test-label-valuesuffix-0",
+						extension.LabelPodQoS:                string(extension.QoSBE),
+						extension.LabelPodPriority:           "1111",
+						extension.LabelSchedulerName:         "koordinator-scheduler",
+					},
+					Annotations: map[string]string{
+						"testAnnotationA":         "valueA",
+						"test-patch-annotation":   "patch-b",
+						"annotation-key-to-load":  "test-annotation-value",
+						"annotation-key-to-store": "test-annotation-value",
+					},
+				},
+				Spec: schedulingv1alpha1.ReservationSpec{
+					Template: &corev1.PodTemplateSpec{
+						Spec: corev1.PodSpec{
+							Containers: []corev1.Container{
+								{
+									Name: "test-container-a",
+									Resources: corev1.ResourceRequirements{
+										Limits: corev1.ResourceList{
+											corev1.ResourceCPU:    resource.MustParse("1"),
+											corev1.ResourceMemory: resource.MustParse("4Gi"),
+										},
+										Requests: corev1.ResourceList{
+											corev1.ResourceCPU:    resource.MustParse("1"),
+											corev1.ResourceMemory: resource.MustParse("4Gi"),
+										},
+									},
+								},
+							},
+							Overhead: map[corev1.ResourceName]resource.Quantity{
+								corev1.ResourceCPU:    resource.MustParse("1"),
+								corev1.ResourceMemory: resource.MustParse("2Gi"),
+							},
+							SchedulerName: "nonExistSchedulerName",
+						},
+					},
+				},
+			},
+		},
+		{
 			name: "mutating failed",
 			reservation: &schedulingv1alpha1.Reservation{
 				ObjectMeta: metav1.ObjectMeta{

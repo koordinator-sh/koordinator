@@ -418,7 +418,7 @@ func (gqm *GroupQuotaManager) UpdateQuota(quota *v1alpha1.ElasticQuota) error {
 	// update the local quotaInfo's crd
 	if localQuotaInfo, exist := gqm.quotaInfoMap[quotaName]; exist {
 		if !localQuotaInfo.IsQuotaChange(newQuotaInfo) &&
-			!gqm.isQuotaUpdated(localQuotaInfo, newQuotaInfo, quota) {
+			!gqm.isQuotaUpdatedNoLock(localQuotaInfo, newQuotaInfo, quota) {
 			return nil
 		}
 

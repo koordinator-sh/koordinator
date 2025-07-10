@@ -154,7 +154,7 @@ func (ctrl *PodGroupController) podAdded(obj interface{}) {
 	}
 	pg, err := ctrl.pgLister.PodGroups(pod.Namespace).Get(pgName)
 	if err != nil {
-		klog.Errorf("Error while adding pod, err: %v", err)
+		klog.V(5).ErrorS(err, "Error while adding pod", "pod", util.GetId(pod.Namespace, pod.Name))
 		return
 	}
 	klog.Infof("Add podGroup when pod gets added, podGroup: %v, pod: %v", util.GetId(pg.Namespace, pg.Name),
@@ -315,14 +315,14 @@ func (ctrl *PodGroupController) patchPodGroup(old, new *schedv1alpha1.PodGroup) 
 }
 
 func fillOccupiedObj(pg *schedv1alpha1.PodGroup, pod *v1.Pod) {
+	if len(pod.OwnerReferences) == 0 {
+		return
+	}
 	var refs []string
 	for _, ownerRef := range pod.OwnerReferences {
 		refs = append(refs, fmt.Sprintf("%s/%s", pod.Namespace, ownerRef.Name))
 	}
-	if len(pg.Status.OccupiedBy) == 0 {
-		return
-	}
-	if len(refs) != 0 {
+	if len(refs) > 0 {
 		sort.Strings(refs)
 		pg.Status.OccupiedBy = strings.Join(refs, ",")
 	}

@@ -33,6 +33,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	configv1alpha1 "github.com/koordinator-sh/koordinator/apis/config/v1alpha1"
+	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/features"
 	utilfeature "github.com/koordinator-sh/koordinator/pkg/util/feature"
 )
@@ -40,11 +41,12 @@ import (
 const Name = "colocationprofile"
 
 var (
+	ReconcileByDefault     = false
 	ReconcileInterval      = 30 * time.Second
 	ForceUpdatePodDuration = 5 * time.Minute
 	ExpirePodCacheDuration = 10 * time.Minute
-	MaxUpdatePodQPS        = 5.0
-	MaxUpdatePodQPSBurst   = 10
+	MaxUpdatePodQPS        = 10.0
+	MaxUpdatePodQPSBurst   = 100
 )
 
 type Reconciler struct {
@@ -78,6 +80,14 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	}
 
 	if profile.DeletionTimestamp != nil { // skip for a terminating profile
+		return ctrl.Result{}, nil
+	}
+
+	profileEnabled := extension.ShouldReconcileProfile(profile)
+	klog.V(5).InfoS("reconcile for clusterColocationProfile",
+		"profile", profile.Name, "defaultEnabled", ReconcileByDefault, "profileEnabled", profileEnabled)
+	if !ReconcileByDefault && !profileEnabled {
+		// should not handle the profile
 		return ctrl.Result{}, nil
 	}
 
@@ -127,9 +137,9 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 			klog.ErrorS(err, "failed to patch pod for clusterColocationProfile", "profile", profile.Name, "pod", klog.KObj(pod))
 			continue
 		}
+		r.podUpdateCache.SetDefault(getPodUpdateKey(profile, pod), struct{}{})
 		summary.Succeeded++
 		if isUpdated {
-			r.podUpdateCache.SetDefault(getPodUpdateKey(profile, pod), struct{}{})
 			summary.Changed++
 		}
 	}
@@ -149,6 +159,7 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 }
 
 func InitFlags(fs *flag.FlagSet) {
+	pflag.BoolVar(&ReconcileByDefault, "colocation-profile-reconcile-by-default", ReconcileByDefault, "Whether the colocation-profile controller reconciles ClusterColocationProfile by default.")
 	pflag.DurationVar(&ReconcileInterval, "colocation-profile-reconcile-interval", ReconcileInterval, "The interval to reconcile ClusterColocationProfile.")
 	pflag.DurationVar(&ForceUpdatePodDuration, "colocation-profile-force-update-pod-duration", ForceUpdatePodDuration, "The duration for colocation-profile controller to force update pods.")
 	pflag.DurationVar(&ExpirePodCacheDuration, "colocation-profile-expire-pod-cache-duration", ExpirePodCacheDuration, "The duration for colocation-profile controller to expire pod cache.")

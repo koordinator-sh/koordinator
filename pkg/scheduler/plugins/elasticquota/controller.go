@@ -62,6 +62,24 @@ func (ctrl *Controller) Name() string {
 func (ctrl *Controller) Start() {
 	go wait.Until(ctrl.syncElasticQuotaStatusWorker, 1*time.Second, context.TODO().Done())
 	go wait.Until(ctrl.syncElasticQuotaStatusMetricsWorker, 10*time.Second, context.TODO().Done())
+	if ctrl.plugin.pluginArgs.EnableRuntimeQuota {
+		go wait.Until(ctrl.syncElasticQuotaRuntimeWorker, 10*time.Second, context.TODO().Done())
+	}
+}
+
+func (ctrl *Controller) syncElasticQuotaRuntimeWorker() {
+	elasticQuotas, err := ctrl.plugin.quotaLister.List(labels.Everything())
+	if err != nil {
+		klog.V(3).ErrorS(err, "Unable to list elastic quota in syncElasticQuotaRuntimeWorker")
+		return
+	}
+	for _, eq := range elasticQuotas {
+		if !extension.IsParentQuota(eq) {
+			if gqm := ctrl.plugin.GetGroupQuotaManagerForQuota(eq.Name); gqm != nil {
+				_ = gqm.RefreshRuntime(eq.Name)
+			}
+		}
+	}
 }
 
 func (ctrl *Controller) syncElasticQuotaStatusWorker() {

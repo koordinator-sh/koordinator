@@ -18,6 +18,7 @@ package core
 
 import (
 	"fmt"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -153,7 +154,7 @@ func TestPrePostQuotaUpdateHooks(t *testing.T) {
 		assert.True(t, ok, "Storage should contain mockHookValue")
 		assert.Equal(t, "testValue", value, "Storage value should match")
 	}
-	mockHook.PreQuotaUpdateValidateFn = func(oldQuotaInfo, newQuotaInfo *QuotaInfo, quota *v1alpha1.ElasticQuota,
+	mockHook.SetPreQuotaUpdateValidateFn(func(oldQuotaInfo, newQuotaInfo *QuotaInfo, quota *v1alpha1.ElasticQuota,
 		state *QuotaUpdateState) {
 		validateInputParametersFn(oldQuotaInfo, newQuotaInfo, quota, state)
 		updateStateFn(state)
@@ -161,8 +162,8 @@ func TestPrePostQuotaUpdateHooks(t *testing.T) {
 		assert.NotNil(t, gqm.GetQuotaInfoReader().GetQuotaInfoNoLock(parentQuota.Name), "parent should not be nil")
 		assert.Nil(t, gqm.GetQuotaInfoReader().GetQuotaInfoNoLock(q1.Name), "q1 should be nil")
 		assert.Equal(t, 0, len(gqm.GetQuotaInfoReader().GetChildQuotaInfosNoLock(parentQuota.Name)))
-	}
-	mockHook.PostQuotaUpdateValidateFn = func(oldQuotaInfo, newQuotaInfo *QuotaInfo, quota *v1alpha1.ElasticQuota,
+	})
+	mockHook.SetPostQuotaUpdateValidateFn(func(oldQuotaInfo, newQuotaInfo *QuotaInfo, quota *v1alpha1.ElasticQuota,
 		state *QuotaUpdateState) {
 		validateInputParametersFn(oldQuotaInfo, newQuotaInfo, quota, state)
 		validateStateUpdated(state)
@@ -171,29 +172,29 @@ func TestPrePostQuotaUpdateHooks(t *testing.T) {
 			"parent should not be nil")
 		assert.NotNil(t, gqm.GetQuotaInfoReader().GetQuotaInfoNoLock(q1.Name), "q1 should not be nil")
 		assert.Equal(t, 1, len(gqm.GetQuotaInfoReader().GetChildQuotaInfosNoLock(parentQuota.Name)))
-	}
+	})
 	err = gqm.UpdateQuota(q1)
 	assert.NoError(t, err, "UpdateQuota should succeed")
-	assert.True(t, mockHook.PreQuotaUpdateCalled, "PreQuotaUpdate should be called")
-	assert.True(t, mockHook.PostQuotaUpdateCalled, "PostQuotaUpdate should be called")
+	assert.True(t, mockHook.IsPreQuotaUpdateCalled(), "PreQuotaUpdate should be called")
+	assert.True(t, mockHook.IsPostQuotaUpdateCalled(), "PostQuotaUpdate should be called")
 
 	// validate Update operation: PreQuotaUpdate and PostQuotaUpdate hooks should not be called when quota has not been updated
 	mockHook.Reset()
 	err = gqm.UpdateQuota(q1)
 	assert.NoError(t, err, "UpdateQuota should succeed")
-	assert.False(t, mockHook.PreQuotaUpdateCalled, "PreQuotaUpdate should not be called")
-	assert.False(t, mockHook.PostQuotaUpdateCalled, "PostQuotaUpdate should not be called")
+	assert.False(t, mockHook.IsPreQuotaUpdateCalled(), "PreQuotaUpdate should not be called")
+	assert.False(t, mockHook.IsPostQuotaUpdateCalled(), "PostQuotaUpdate should not be called")
 
 	// validate Update operation: PreQuotaUpdate and PostQuotaUpdate hooks should be called
 	// (decision is made by hook plugin) even when quota has not been updated.
 	mockHook.Reset()
-	mockHook.IsQuotaUpdatedFn = func(oldQuotaInfo, newQuotaInfo *QuotaInfo, newQuota *v1alpha1.ElasticQuota) bool {
+	mockHook.SetIsQuotaUpdatedFn(func(oldQuotaInfo, newQuotaInfo *QuotaInfo, newQuota *v1alpha1.ElasticQuota) bool {
 		return true
-	}
+	})
 	err = gqm.UpdateQuota(q1)
 	assert.NoError(t, err, "UpdateQuota should succeed")
-	assert.True(t, mockHook.PreQuotaUpdateCalled, "PreQuotaUpdate should be called")
-	assert.True(t, mockHook.PostQuotaUpdateCalled, "PostQuotaUpdate should be called")
+	assert.True(t, mockHook.IsPreQuotaUpdateCalled(), "PreQuotaUpdate should be called")
+	assert.True(t, mockHook.IsPostQuotaUpdateCalled(), "PostQuotaUpdate should be called")
 
 	// validate Update operation: spec.max is updated
 	mockHook.Reset()
@@ -212,20 +213,20 @@ func TestPrePostQuotaUpdateHooks(t *testing.T) {
 		assert.True(t, updatedQ1 == quota, "should be new quota")
 		assert.NotNil(t, state, "State should not be nil")
 	}
-	mockHook.PreQuotaUpdateValidateFn = func(oldQuotaInfo, newQuotaInfo *QuotaInfo, quota *v1alpha1.ElasticQuota,
+	mockHook.SetPreQuotaUpdateValidateFn(func(oldQuotaInfo, newQuotaInfo *QuotaInfo, quota *v1alpha1.ElasticQuota,
 		state *QuotaUpdateState) {
 		validateInputParametersFn(oldQuotaInfo, newQuotaInfo, quota, state)
 		updateStateFn(state)
-	}
-	mockHook.PostQuotaUpdateValidateFn = func(oldQuotaInfo, newQuotaInfo *QuotaInfo, quota *v1alpha1.ElasticQuota,
+	})
+	mockHook.SetPostQuotaUpdateValidateFn(func(oldQuotaInfo, newQuotaInfo *QuotaInfo, quota *v1alpha1.ElasticQuota,
 		state *QuotaUpdateState) {
 		validateInputParametersFn(oldQuotaInfo, newQuotaInfo, quota, state)
 		validateStateUpdated(state)
-	}
+	})
 	err = gqm.UpdateQuota(updatedQ1)
 	assert.NoError(t, err, "UpdateQuota should succeed")
-	assert.True(t, mockHook.PreQuotaUpdateCalled, "PreQuotaUpdate should be called")
-	assert.True(t, mockHook.PostQuotaUpdateCalled, "PostQuotaUpdate should be called")
+	assert.True(t, mockHook.IsPreQuotaUpdateCalled(), "PreQuotaUpdate should be called")
+	assert.True(t, mockHook.IsPostQuotaUpdateCalled(), "PostQuotaUpdate should be called")
 
 	// validate Delete operation
 	mockHook.Reset()
@@ -238,16 +239,16 @@ func TestPrePostQuotaUpdateHooks(t *testing.T) {
 		assert.True(t, updatedQ1 == quota, "Quota should match")
 		assert.NotNil(t, state, "State should not be nil")
 	}
-	mockHook.PreQuotaUpdateValidateFn = func(oldQuotaInfo, newQuotaInfo *QuotaInfo, quota *v1alpha1.ElasticQuota,
+	mockHook.SetPreQuotaUpdateValidateFn(func(oldQuotaInfo, newQuotaInfo *QuotaInfo, quota *v1alpha1.ElasticQuota,
 		state *QuotaUpdateState) {
 		validateInputParametersFn(oldQuotaInfo, newQuotaInfo, quota, state)
 		updateStateFn(state)
-	}
-	mockHook.PostQuotaUpdateValidateFn = func(oldQuotaInfo, newQuotaInfo *QuotaInfo, quota *v1alpha1.ElasticQuota,
+	})
+	mockHook.SetPostQuotaUpdateValidateFn(func(oldQuotaInfo, newQuotaInfo *QuotaInfo, quota *v1alpha1.ElasticQuota,
 		state *QuotaUpdateState) {
 		validateInputParametersFn(oldQuotaInfo, newQuotaInfo, quota, state)
 		validateStateUpdated(state)
-	}
+	})
 }
 
 // TestOnPodUpdateHook tests the OnPodUpdateHook method
@@ -266,38 +267,38 @@ func TestOnPodUpdateHook(t *testing.T) {
 	pod1 := schetesting.MakePod().Name("pod1").Label(extension.LabelQuotaName, q1.Name).Containers(
 		[]v1.Container{schetesting.MakeContainer().Name("0").Resources(map[v1.ResourceName]string{
 			v1.ResourceCPU: "2"}).Obj()}).Node("node0").Obj()
-	mockHook.OnPodUpdatedValidateFn = func(quotaName string, oldPod, newPod *v1.Pod) {
+	mockHook.SetOnPodUpdatedValidateFn(func(quotaName string, oldPod, newPod *v1.Pod) {
 		assert.Equal(t, q1.Name, quotaName, "Quota name should match")
 		assert.Nil(t, oldPod, "Old pod should be nil for create operation")
 		assert.NotNil(t, newPod, "New pod should not be nil")
 		assert.True(t, pod1 == newPod, "New pod should match")
-	}
+	})
 	gqm.OnPodAdd(q1.Name, pod1)
-	assert.True(t, mockHook.OnPodUpdatedCalled, "OnPodUpdated should be called")
+	assert.True(t, mockHook.IsOnPodUpdatedCalled(), "OnPodUpdated should be called")
 
 	// validate Pod Update operation
 	mockHook.Reset()
 	updatedPod1 := pod1.DeepCopy()
-	mockHook.OnPodUpdatedValidateFn = func(quotaName string, oldPod, newPod *v1.Pod) {
+	mockHook.SetOnPodUpdatedValidateFn(func(quotaName string, oldPod, newPod *v1.Pod) {
 		assert.Equal(t, q1.Name, quotaName, "Quota name should match")
 		assert.NotNil(t, oldPod, "Old pod should not be nil")
 		assert.True(t, pod1 == oldPod, "Old pod should match")
 		assert.NotNil(t, newPod, "New pod should not be nil")
 		assert.True(t, updatedPod1 == newPod, "New pod should match")
-	}
+	})
 	gqm.OnPodUpdate(q1.Name, q1.Name, updatedPod1, pod1)
-	assert.True(t, mockHook.OnPodUpdatedCalled, "OnPodUpdated should be called")
+	assert.True(t, mockHook.IsOnPodUpdatedCalled(), "OnPodUpdated should be called")
 
 	// validate Pod Delete operation
 	mockHook.Reset()
-	mockHook.OnPodUpdatedValidateFn = func(quotaName string, oldPod, newPod *v1.Pod) {
+	mockHook.SetOnPodUpdatedValidateFn(func(quotaName string, oldPod, newPod *v1.Pod) {
 		assert.Equal(t, q1.Name, quotaName, "Quota name should match")
 		assert.NotNil(t, oldPod, "Old pod should not be nil")
 		assert.True(t, updatedPod1 == oldPod, "Old pod should match")
 		assert.Nil(t, newPod, "New pod should be nil for delete operation")
-	}
+	})
 	gqm.OnPodDelete(q1.Name, updatedPod1)
-	assert.True(t, mockHook.OnPodUpdatedCalled, "OnPodUpdated should be called")
+	assert.True(t, mockHook.IsOnPodUpdatedCalled(), "OnPodUpdated should be called")
 
 	// validate Pod Reserve operation
 	unassignedPod := pod1.DeepCopy()
@@ -305,25 +306,25 @@ func TestOnPodUpdateHook(t *testing.T) {
 	gqm.OnPodAdd(q1.Name, unassignedPod)
 
 	mockHook.Reset()
-	mockHook.OnPodUpdatedValidateFn = func(quotaName string, oldPod, newPod *v1.Pod) {
+	mockHook.SetOnPodUpdatedValidateFn(func(quotaName string, oldPod, newPod *v1.Pod) {
 		assert.Equal(t, q1.Name, quotaName, "Quota name should match")
 		assert.Nil(t, oldPod, "Old pod should be nil for reserve operation")
 		assert.NotNil(t, newPod, "New pod should not be nil")
 		assert.True(t, unassignedPod == newPod, "New pod should match")
-	}
+	})
 	gqm.ReservePod(q1.Name, unassignedPod)
-	assert.True(t, mockHook.OnPodUpdatedCalled, "OnPodUpdated should be called")
+	assert.True(t, mockHook.IsOnPodUpdatedCalled(), "OnPodUpdated should be called")
 
 	// validate Pod UnReserve operation
 	mockHook.Reset()
-	mockHook.OnPodUpdatedValidateFn = func(quotaName string, oldPod, newPod *v1.Pod) {
+	mockHook.SetOnPodUpdatedValidateFn(func(quotaName string, oldPod, newPod *v1.Pod) {
 		assert.Equal(t, q1.Name, quotaName, "Quota name should match")
 		assert.NotNil(t, oldPod, "Old pod should not be nil")
 		assert.True(t, unassignedPod == oldPod, "Old pod should match")
 		assert.Nil(t, newPod, "New pod should be nil for unreserve operation")
-	}
+	})
 	gqm.UnreservePod(q1.Name, unassignedPod)
-	assert.True(t, mockHook.OnPodUpdatedCalled, "OnPodUpdated should be called")
+	assert.True(t, mockHook.IsOnPodUpdatedCalled(), "OnPodUpdated should be called")
 }
 
 func initGQMForTesting(t *testing.T) *GroupQuotaManager {
@@ -351,58 +352,144 @@ var _ QuotaHookPlugin = &MockHookPlugin{}
 // MockHookPlugin is a mock implementation of QuotaHookPlugin
 type MockHookPlugin struct {
 	key                      string
-	PreQuotaUpdateCalled     bool
-	PreQuotaUpdateValidateFn func(oldQuotaInfo, newQuotaInfo *QuotaInfo, quota *v1alpha1.ElasticQuota, state *QuotaUpdateState)
+	preQuotaUpdateQuotas     []string
+	preQuotaUpdateValidateFn func(oldQuotaInfo, newQuotaInfo *QuotaInfo, quota *v1alpha1.ElasticQuota, state *QuotaUpdateState)
 
-	IsQuotaUpdatedFn func(oldQuotaInfo, newQuotaInfo *QuotaInfo, newQuota *v1alpha1.ElasticQuota) bool
+	isQuotaUpdatedFn func(oldQuotaInfo, newQuotaInfo *QuotaInfo, newQuota *v1alpha1.ElasticQuota) bool
 
-	PostQuotaUpdateCalled     bool
-	PostQuotaUpdateValidateFn func(oldQuotaInfo, newQuotaInfo *QuotaInfo, quota *v1alpha1.ElasticQuota, state *QuotaUpdateState)
+	postQuotaUpdateQuotas     []string
+	postQuotaUpdateValidateFn func(oldQuotaInfo, newQuotaInfo *QuotaInfo, quota *v1alpha1.ElasticQuota, state *QuotaUpdateState)
 
-	OnPodUpdatedCalled     bool
-	OnPodUpdatedValidateFn func(quotaName string, oldPod, newPod *v1.Pod)
+	onPodUpdatedCalled     bool
+	onPodUpdatedValidateFn func(quotaName string, oldPod, newPod *v1.Pod)
+
+	sync.RWMutex
 }
 
 func (m *MockHookPlugin) Reset() {
-	m.PreQuotaUpdateCalled = false
-	m.PreQuotaUpdateValidateFn = nil
-	m.IsQuotaUpdatedFn = nil
-	m.PostQuotaUpdateCalled = false
-	m.PostQuotaUpdateValidateFn = nil
-	m.OnPodUpdatedCalled = false
-	m.OnPodUpdatedValidateFn = nil
+	m.Lock()
+	defer m.Unlock()
+
+	m.preQuotaUpdateQuotas = nil
+	m.preQuotaUpdateValidateFn = nil
+	m.isQuotaUpdatedFn = nil
+	m.postQuotaUpdateQuotas = nil
+	m.postQuotaUpdateValidateFn = nil
+	m.onPodUpdatedCalled = false
+	m.onPodUpdatedValidateFn = nil
+}
+
+// Helper methods to safely set function fields with write lock protection
+func (m *MockHookPlugin) SetPreQuotaUpdateValidateFn(fn func(oldQuotaInfo, newQuotaInfo *QuotaInfo, quota *v1alpha1.ElasticQuota, state *QuotaUpdateState)) {
+	m.Lock()
+	defer m.Unlock()
+	m.preQuotaUpdateValidateFn = fn
+}
+
+func (m *MockHookPlugin) SetIsQuotaUpdatedFn(fn func(oldQuotaInfo, newQuotaInfo *QuotaInfo, newQuota *v1alpha1.ElasticQuota) bool) {
+	m.Lock()
+	defer m.Unlock()
+	m.isQuotaUpdatedFn = fn
+}
+
+func (m *MockHookPlugin) SetPostQuotaUpdateValidateFn(fn func(oldQuotaInfo, newQuotaInfo *QuotaInfo, quota *v1alpha1.ElasticQuota, state *QuotaUpdateState)) {
+	m.Lock()
+	defer m.Unlock()
+	m.postQuotaUpdateValidateFn = fn
+}
+
+func (m *MockHookPlugin) SetOnPodUpdatedValidateFn(fn func(quotaName string, oldPod, newPod *v1.Pod)) {
+	m.Lock()
+	defer m.Unlock()
+	m.onPodUpdatedValidateFn = fn
 }
 
 func (m *MockHookPlugin) GetKey() string {
+	m.RLock()
+	defer m.RUnlock()
 	return m.key
 }
 
 func (m *MockHookPlugin) IsQuotaUpdated(oldQuotaInfo, newQuotaInfo *QuotaInfo, newQuota *v1alpha1.ElasticQuota) bool {
-	if m.IsQuotaUpdatedFn != nil {
-		return m.IsQuotaUpdatedFn(oldQuotaInfo, newQuotaInfo, newQuota)
+	m.RLock()
+	isQuotaUpdatedFn := m.isQuotaUpdatedFn
+	m.RUnlock()
+
+	if isQuotaUpdatedFn != nil {
+		return isQuotaUpdatedFn(oldQuotaInfo, newQuotaInfo, newQuota)
 	}
 	return false
 }
 
 func (m *MockHookPlugin) PreQuotaUpdate(oldQuotaInfo *QuotaInfo, newQuotaInfo *QuotaInfo, quota *v1alpha1.ElasticQuota, state *QuotaUpdateState) {
-	m.PreQuotaUpdateCalled = true
-	if m.PreQuotaUpdateValidateFn != nil {
-		m.PreQuotaUpdateValidateFn(oldQuotaInfo, newQuotaInfo, quota, state)
+	m.Lock()
+	m.preQuotaUpdateQuotas = append(m.preQuotaUpdateQuotas, quota.Name)
+	validateFn := m.preQuotaUpdateValidateFn
+	m.Unlock()
+
+	if validateFn != nil {
+		validateFn(oldQuotaInfo, newQuotaInfo, quota, state)
 	}
 }
 
 func (m *MockHookPlugin) PostQuotaUpdate(oldQuotaInfo *QuotaInfo, newQuotaInfo *QuotaInfo, quota *v1alpha1.ElasticQuota, state *QuotaUpdateState) {
-	m.PostQuotaUpdateCalled = true
-	if m.PostQuotaUpdateValidateFn != nil {
-		m.PostQuotaUpdateValidateFn(oldQuotaInfo, newQuotaInfo, quota, state)
+	m.Lock()
+	m.postQuotaUpdateQuotas = append(m.postQuotaUpdateQuotas, quota.Name)
+	validateFn := m.postQuotaUpdateValidateFn
+	m.Unlock()
+
+	if validateFn != nil {
+		validateFn(oldQuotaInfo, newQuotaInfo, quota, state)
 	}
 }
 
 func (m *MockHookPlugin) OnPodUpdated(quotaName string, oldPod, newPod *v1.Pod) {
-	m.OnPodUpdatedCalled = true
-	if m.OnPodUpdatedValidateFn != nil {
-		m.OnPodUpdatedValidateFn(quotaName, oldPod, newPod)
+	m.Lock()
+	m.onPodUpdatedCalled = true
+	validateFn := m.onPodUpdatedValidateFn
+	m.Unlock()
+
+	if validateFn != nil {
+		validateFn(quotaName, oldPod, newPod)
 	}
+}
+
+// Safe getter methods for boolean fields
+func (m *MockHookPlugin) IsPreQuotaUpdateCalled() bool {
+	m.RLock()
+	defer m.RUnlock()
+	return len(m.preQuotaUpdateQuotas) > 0
+}
+
+func (m *MockHookPlugin) IsPostQuotaUpdateCalled() bool {
+	m.RLock()
+	defer m.RUnlock()
+	return len(m.postQuotaUpdateQuotas) > 0
+}
+
+func (m *MockHookPlugin) IsOnPodUpdatedCalled() bool {
+	m.RLock()
+	defer m.RUnlock()
+	return m.onPodUpdatedCalled
+}
+
+// Safe getter methods for slice fields
+func (m *MockHookPlugin) GetPreQuotaUpdateQuotas() []string {
+	m.RLock()
+	defer m.RUnlock()
+	// Return a copy to prevent external modification
+	result := make([]string, len(m.preQuotaUpdateQuotas))
+	copy(result, m.preQuotaUpdateQuotas)
+	return result
+}
+
+func (m *MockHookPlugin) GetPostQuotaUpdateQuotas() []string {
+	m.RLock()
+	defer m.RUnlock()
+	// Return a copy to prevent external modification
+	result := make([]string, len(m.postQuotaUpdateQuotas))
+	copy(result, m.postQuotaUpdateQuotas)
+	return result
 }
 
 // The following methods of MockHookPlugin are tested in the plugin package instead of this file
@@ -413,4 +500,99 @@ func (m *MockHookPlugin) UpdateQuotaStatus(_, _ *v1alpha1.ElasticQuota) *v1alpha
 
 func (m *MockHookPlugin) CheckPod(quotaName string, pod *v1.Pod) error {
 	return nil
+}
+
+func TestResetQuotasForHookPlugins(t *testing.T) {
+	gqm := initGQMForTesting(t)
+	hookPlugins := gqm.GetHookPlugins()
+	assert.Equal(t, 1, len(hookPlugins))
+	mockHook := hookPlugins[0].(*MetricsWrapper).GetPlugin().(*MockHookPlugin)
+
+	// create test quotas and add them to GQM
+	parentQuota := CreateQuota("test-parent", extension.RootQuotaName, 100, 100, 0, 0, false, false)
+	err := gqm.UpdateQuota(parentQuota)
+	assert.NoError(t, err, "UpdateQuota should succeed")
+
+	q1 := CreateQuota("q1", parentQuota.Name, 40, 40, 20, 20, false, false)
+	err = gqm.UpdateQuota(q1)
+	assert.NoError(t, err, "UpdateQuota should succeed")
+
+	q2 := CreateQuota("q2", parentQuota.Name, 30, 30, 10, 10, false, false)
+	err = gqm.UpdateQuota(q2)
+	assert.NoError(t, err, "UpdateQuota should succeed")
+
+	validateHookParameters := func(oldQuotaInfo, newQuotaInfo *QuotaInfo, quota *v1alpha1.ElasticQuota, state *QuotaUpdateState) {
+		assert.Nil(t, oldQuotaInfo, "Old quota info should be nil for reset operation")
+		assert.NotNil(t, newQuotaInfo, "New quota info should not be nil")
+		assert.NotNil(t, quota, "Quota should not be nil")
+		assert.NotNil(t, state, "State should not be nil")
+	}
+	quotaUpdateValidateFn := func(oldQuotaInfo, newQuotaInfo *QuotaInfo, quota *v1alpha1.ElasticQuota, state *QuotaUpdateState) {
+		validateHookParameters(oldQuotaInfo, newQuotaInfo, quota, state)
+	}
+	resetHookFn := func() {
+		mockHook.Reset()
+		mockHook.SetPreQuotaUpdateValidateFn(quotaUpdateValidateFn)
+		mockHook.SetPostQuotaUpdateValidateFn(quotaUpdateValidateFn)
+	}
+
+	// Test case 1: Reset with all quotas present
+	resetHookFn()
+	quotas := map[string]*v1alpha1.ElasticQuota{
+		parentQuota.Name: parentQuota,
+		q1.Name:          q1,
+		q2.Name:          q2,
+	}
+
+	gqm.ResetQuotasForHookPlugins(quotas)
+
+	// validate that hooks were called for all quotas
+	preUpdateQuotas := mockHook.GetPreQuotaUpdateQuotas()
+	postUpdateQuotas := mockHook.GetPostQuotaUpdateQuotas()
+	assert.Equal(t, 3, len(preUpdateQuotas), "PreQuotaUpdate should be called for all 3 quotas")
+	assert.Equal(t, 3, len(postUpdateQuotas), "PostQuotaUpdate should be called for all 3 quotas")
+
+	// validate that the correct quotas were processed
+	expectedQuotas := []string{parentQuota.Name, q1.Name, q2.Name}
+	for _, quota := range expectedQuotas {
+		assert.Contains(t, preUpdateQuotas, quota, "Quota %s should be in preUpdateQuotas", quota)
+		assert.Contains(t, postUpdateQuotas, quota, "Quota %s should be in postUpdateQuotas", quota)
+	}
+
+	// Test case 2: Reset with missing quota (should skip inconsistent quota)
+	resetHookFn()
+
+	// Remove one quota from the input map
+	quotasWithMissing := map[string]*v1alpha1.ElasticQuota{
+		parentQuota.Name: parentQuota,
+		q1.Name:          q1,
+		// q2 is missing
+	}
+
+	gqm.ResetQuotasForHookPlugins(quotasWithMissing)
+
+	// validate that hooks were called only for present quotas
+	preUpdateQuotas = mockHook.GetPreQuotaUpdateQuotas()
+	postUpdateQuotas = mockHook.GetPostQuotaUpdateQuotas()
+	assert.Equal(t, 2, len(preUpdateQuotas), "PreQuotaUpdate should be called for 2 present quotas")
+	assert.Equal(t, 2, len(postUpdateQuotas), "PostQuotaUpdate should be called for 2 present quotas")
+
+	// validate that only present quotas were processed
+	expectedQuotas = []string{parentQuota.Name, q1.Name}
+	for _, quota := range expectedQuotas {
+		assert.Contains(t, preUpdateQuotas, quota, "Quota %s should be in preUpdateQuotas", quota)
+		assert.Contains(t, postUpdateQuotas, quota, "Quota %s should be in postUpdateQuotas", quota)
+	}
+
+	// Test case 3: Reset with empty quotas map
+	resetHookFn()
+
+	emptyQuotas := map[string]*v1alpha1.ElasticQuota{}
+	gqm.ResetQuotasForHookPlugins(emptyQuotas)
+
+	// validate that no hooks were called
+	preUpdateQuotas = mockHook.GetPreQuotaUpdateQuotas()
+	postUpdateQuotas = mockHook.GetPostQuotaUpdateQuotas()
+	assert.Equal(t, 0, len(preUpdateQuotas), "No PreQuotaUpdate quotas expected")
+	assert.Equal(t, 0, len(postUpdateQuotas), "No PostQuotaUpdate quotas expected")
 }

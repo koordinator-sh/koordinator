@@ -28,6 +28,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/informers"
+	kubefake "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	frameworkfake "k8s.io/kubernetes/pkg/scheduler/framework/fake"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultbinder"
@@ -60,11 +62,15 @@ func TestExtenderFactory(t *testing.T) {
 		schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
 		schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
 	}
+	fakeClient := kubefake.NewSimpleClientset()
+	sharedInformerFactory := informers.NewSharedInformerFactory(fakeClient, 0)
 	fh, err := schedulertesting.NewFramework(
 		context.TODO(),
 		registeredPlugins,
 		"koord-scheduler",
 		frameworkruntime.WithSnapshotSharedLister(fakeNodeInfoLister{NodeInfoLister: frameworkfake.NodeInfoLister{}}),
+		frameworkruntime.WithClientSet(fakeClient),
+		frameworkruntime.WithInformerFactory(sharedInformerFactory),
 	)
 	assert.NoError(t, err)
 	pl, err := proxyNew(nil, fh)
@@ -78,6 +84,7 @@ func TestExtenderFactory(t *testing.T) {
 	assert.Len(t, impl.preFilterTransformers, 1)
 	assert.Len(t, impl.filterTransformers, 1)
 	assert.Len(t, impl.scoreTransformers, 1)
+	assert.Len(t, impl.postFilterTransformers, 1)
 }
 
 func TestCopyQueueInfoToPod(t *testing.T) {

@@ -37,7 +37,6 @@ func TestApplyPatch(t *testing.T) {
 		name        string
 		originalObj metav1.Object
 		modifiedObj metav1.Object
-		wantObj     metav1.Object
 		wantStatus  *framework.Status
 	}{
 		{
@@ -102,6 +101,66 @@ func TestApplyPatch(t *testing.T) {
 								Requests: corev1.ResourceList{
 									corev1.ResourceCPU: resource.MustParse("4"),
 									apiext.ResourceGPU: resource.MustParse("100"),
+								},
+							},
+						},
+					},
+				},
+			},
+			wantStatus: nil,
+		},
+		{
+			name: "skipped to patch pod",
+			originalObj: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pod",
+					Namespace: "default",
+					UID:       "xxxxxx",
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name: "main",
+							Env: []corev1.EnvVar{
+								{
+									Name:  "test",
+									Value: "true",
+								},
+							},
+							Resources: corev1.ResourceRequirements{
+								Limits: corev1.ResourceList{
+									corev1.ResourceCPU: resource.MustParse("4"),
+								},
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU: resource.MustParse("4"),
+								},
+							},
+						},
+					},
+				},
+			},
+			modifiedObj: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pod",
+					Namespace: "default",
+					UID:       "xxxxxx",
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name: "main",
+							Env: []corev1.EnvVar{
+								{
+									Name:  "test",
+									Value: "true",
+								},
+							},
+							Resources: corev1.ResourceRequirements{
+								Limits: corev1.ResourceList{
+									corev1.ResourceCPU: resource.MustParse("4"),
+								},
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU: resource.MustParse("4"),
 								},
 							},
 						},
@@ -176,6 +235,72 @@ func TestApplyPatch(t *testing.T) {
 										Requests: corev1.ResourceList{
 											corev1.ResourceCPU: resource.MustParse("4"),
 											apiext.ResourceGPU: resource.MustParse("100"),
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			wantStatus: nil,
+		},
+		{
+			name: "skipped to patch reservation",
+			originalObj: &schedulingv1alpha1.Reservation{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-reservation",
+					UID:  "yyyyyy",
+				},
+				Spec: schedulingv1alpha1.ReservationSpec{
+					Template: &corev1.PodTemplateSpec{
+						Spec: corev1.PodSpec{
+							Containers: []corev1.Container{
+								{
+									Name: "main",
+									Env: []corev1.EnvVar{
+										{
+											Name:  "test",
+											Value: "true",
+										},
+									},
+									Resources: corev1.ResourceRequirements{
+										Limits: corev1.ResourceList{
+											corev1.ResourceCPU: resource.MustParse("4"),
+										},
+										Requests: corev1.ResourceList{
+											corev1.ResourceCPU: resource.MustParse("4"),
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			modifiedObj: &schedulingv1alpha1.Reservation{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-reservation",
+					UID:  "yyyyyy",
+				},
+				Spec: schedulingv1alpha1.ReservationSpec{
+					Template: &corev1.PodTemplateSpec{
+						Spec: corev1.PodSpec{
+							Containers: []corev1.Container{
+								{
+									Name: "main",
+									Env: []corev1.EnvVar{
+										{
+											Name:  "test",
+											Value: "true",
+										},
+									},
+									Resources: corev1.ResourceRequirements{
+										Limits: corev1.ResourceList{
+											corev1.ResourceCPU: resource.MustParse("4"),
+										},
+										Requests: corev1.ResourceList{
+											corev1.ResourceCPU: resource.MustParse("4"),
 										},
 									},
 								},

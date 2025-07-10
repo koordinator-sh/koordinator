@@ -28,12 +28,16 @@ var (
 	ResourceNames = []corev1.ResourceName{
 		extension.ResourceGPU,
 		extension.ResourceGPUCore,
+		extension.ResourceHuaweiNPUCore,
+		extension.ResourceHuaweiNPUCPU,
+		extension.ResourceHuaweiNPUDVPP,
 		extension.ResourceGPUMemory,
 		extension.ResourceGPUMemoryRatio,
 		extension.ResourceGPUShared,
 	}
 	// Labels are the known labels reconciled by the plugin from devices to nodes.
 	Labels = []string{
+		extension.LabelGPUVendor,
 		extension.LabelGPUModel,
 		extension.LabelGPUDriverVersion,
 	}

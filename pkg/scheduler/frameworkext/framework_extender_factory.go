@@ -224,7 +224,7 @@ func CopyQueueInfoToPod(podHasQueueInfo, podNeedQueueInfo *corev1.Pod) *corev1.P
 		TypeMeta:   podNeedQueueInfo.TypeMeta,
 		ObjectMeta: podNeedQueueInfo.ObjectMeta,
 		Spec:       podNeedQueueInfo.Spec,
-		Status:     podHasQueueInfo.Status,
+		Status:     podNeedQueueInfo.Status,
 	}
 	// avoid directly modifying the original Pod and only copy the fields that are needed
 	resultPod.ManagedFields = podHasQueueInfo.ManagedFields

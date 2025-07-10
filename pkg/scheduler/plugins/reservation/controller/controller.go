@@ -68,7 +68,7 @@ type Controller struct {
 	numWorker                  int
 	gcDuration                 time.Duration
 
-	lock sync.Mutex
+	lock sync.RWMutex
 	pods map[string]map[types.UID]*corev1.Pod
 }
 
@@ -270,7 +270,7 @@ func (c *Controller) updateReservationStatus(reservation *schedulingv1alpha1.Res
 
 func isReservationNeedExpiration(r *schedulingv1alpha1.Reservation) bool {
 	// 1. failed or succeeded reservations does not need to expire
-	if r.Status.Phase == schedulingv1alpha1.ReservationFailed || r.Status.Phase == schedulingv1alpha1.ReservationSucceeded {
+	if reservationutil.IsReservationFailed(r) || reservationutil.IsReservationSucceeded(r) {
 		return false
 	}
 	// 2. disable expiration if TTL is set as 0

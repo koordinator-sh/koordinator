@@ -333,10 +333,43 @@ func TestPodFitsAnyNodeWithThreshold(t *testing.T) {
 
 			sharedInformerFactory.Start(ctx.Done())
 			sharedInformerFactory.WaitForCacheSync(ctx.Done())
-
+			copiedNodesUsage := sumNodeUsage(tt.nodeUsages)
 			if got := podFitsAnyNodeWithThreshold(getPodsAssignedToNode, tt.pod, tt.nodes, tt.nodeUsages, tt.nodeThresholds, false, tt.podMetric); got != tt.want {
 				t.Errorf("PodFitsAnyNode() = %v, want %v", got, tt.want)
+			} else {
+				currentTotalUsage := sumNodeUsage(tt.nodeUsages)
+				if !tt.want {
+					// if the pod not fits, the usage should revert to the original state
+					for resourceName, quantity := range copiedNodesUsage.usage {
+						assert.Equal(t, quantity.Value(), currentTotalUsage.usage[resourceName].Value(), "usage should not change")
+					}
+					for resourceName, quantity := range copiedNodesUsage.prodUsage {
+						assert.Equal(t, quantity.Value(), currentTotalUsage.prodUsage[resourceName].Value(), "prodUsage should not change")
+					}
+				}
 			}
 		})
 	}
+}
+
+func sumNodeUsage(nodeUsages map[string]*NodeUsage) *NodeUsage {
+	totalUsage := &NodeUsage{
+		usage:     make(map[corev1.ResourceName]*resource.Quantity),
+		prodUsage: make(map[corev1.ResourceName]*resource.Quantity),
+	}
+	for _, usage := range nodeUsages {
+		for resourceName, quantity := range usage.usage {
+			if totalUsage.usage[resourceName] == nil {
+				totalUsage.usage[resourceName] = resource.NewQuantity(0, quantity.Format)
+			}
+			totalUsage.usage[resourceName].Add(*quantity)
+		}
+		for resourceName, quantity := range usage.prodUsage {
+			if totalUsage.prodUsage[resourceName] == nil {
+				totalUsage.prodUsage[resourceName] = resource.NewQuantity(0, quantity.Format)
+			}
+			totalUsage.prodUsage[resourceName].Add(*quantity)
+		}
+	}
+	return totalUsage
 }

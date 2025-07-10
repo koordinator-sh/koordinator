@@ -23,6 +23,7 @@ import (
 	"sort"
 
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -47,6 +48,7 @@ type frameworkImpl struct {
 	balancePlugins            []framework.BalancePlugin
 	evictPlugins              []framework.EvictPlugin
 	filterPlugins             []framework.FilterPlugin
+	nodeSelector              *metav1.LabelSelector
 }
 
 // Option for the frameworkImpl.
@@ -147,9 +149,12 @@ func NewFramework(r Registry, profile *deschedulerconfig.DeschedulerProfile, opt
 		pluginConfig[name] = profile.PluginConfig[i].Args
 	}
 	outputProfile := deschedulerconfig.DeschedulerProfile{
-		Name:    profile.Name,
-		Plugins: profile.Plugins,
+		Name:         profile.Name,
+		Plugins:      profile.Plugins,
+		NodeSelector: profile.NodeSelector,
 	}
+
+	f.nodeSelector = profile.NodeSelector
 
 	pluginsMap := make(map[string]framework.Plugin)
 
@@ -305,6 +310,10 @@ func (f *frameworkImpl) GetPodsAssignedToNodeFunc() framework.GetPodsAssignedToN
 
 func (f *frameworkImpl) SharedInformerFactory() informers.SharedInformerFactory {
 	return f.sharedInformerFactory
+}
+
+func (f *frameworkImpl) NodeSelector() *metav1.LabelSelector {
+	return f.nodeSelector
 }
 
 func (f *frameworkImpl) RunDeschedulePlugins(ctx context.Context, nodes []*corev1.Node) *framework.Status {

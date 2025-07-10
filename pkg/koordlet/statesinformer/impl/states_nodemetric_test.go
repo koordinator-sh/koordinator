@@ -603,6 +603,7 @@ func Test_nodeMetricInformer_collectNodeAggregateMetric(t *testing.T) {
 				AggregatedNodeUsages: []slov1alpha1.AggregatedUsage{
 					{
 						Usage: map[apiext.AggregationType]slov1alpha1.ResourceMap{
+							apiext.AVG: tt.fields.nodeResultAVG,
 							apiext.P50: tt.fields.nodeResultP50,
 							apiext.P90: tt.fields.nodeResultP90,
 							apiext.P95: tt.fields.nodeResultP95,
@@ -1251,6 +1252,7 @@ func Test_nodeMetricInformer_collectSystemAggregateMetric(t *testing.T) {
 				AggregatedNodeUsages: []slov1alpha1.AggregatedUsage{
 					{
 						Usage: map[apiext.AggregationType]slov1alpha1.ResourceMap{
+							apiext.AVG: tt.fields.sysResultAVG,
 							apiext.P50: tt.fields.sysResultP50,
 							apiext.P90: tt.fields.sysResultP90,
 							apiext.P95: tt.fields.sysResultP95,
