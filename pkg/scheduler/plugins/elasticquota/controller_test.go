@@ -364,39 +364,18 @@ func Test_updateElasticQuotaStatusIfChanged(t *testing.T) {
 		})
 	}
 }
-
+func Test_deleteElasticQuotaMetrics(t *testing.T) {
+	eq, summary := getEqAndSummary()
+	syncElasticQuotaMetrics(eq, summary)
+	dtoMetrics := getMetrics(t)
+	assert.Equal(t, 22, len(dtoMetrics))
+	deleteElasticQuotaMetrics(eq, summary)
+	dtoMetricsD := getMetrics(t)
+	assert.Equal(t, 0, len(dtoMetricsD))
+}
 func Test_syncElasticQuotaMetrics(t *testing.T) {
-	eq := &v1alpha1.ElasticQuota{
-		ObjectMeta: metav1.ObjectMeta{
-			Labels: map[string]string{
-				"quota.scheduling.koordinator.sh/is-root": "true",
-			},
-			Annotations: map[string]string{
-				"quota.scheduling.koordinator.sh/unschedulable-resource": `{"cpu":"4","memory":"8"}`,
-			},
-		},
-		Spec: v1alpha1.ElasticQuotaSpec{
-			Max: MakeResourceList().CPU(4).Mem(200).Obj(),
-			Min: MakeResourceList().CPU(2).Mem(100).Obj(),
-		},
-	}
-	summary := &core.QuotaInfoSummary{
-		Name:                  "test-eq",
-		ParentName:            "root",
-		IsParent:              true,
-		Tree:                  "tree-1",
-		Max:                   MakeResourceList().CPU(4).Mem(200).Obj(),
-		Min:                   MakeResourceList().CPU(2).Mem(100).Obj(),
-		Used:                  MakeResourceList().CPU(1).Mem(50).Obj(),
-		NonPreemptibleUsed:    MakeResourceList().CPU(2).Mem(50).Obj(),
-		NonPreemptibleRequest: MakeResourceList().CPU(3).Mem(50).Obj(),
-		Request:               MakeResourceList().CPU(4).Mem(50).Obj(),
-		Runtime:               MakeResourceList().CPU(5).Mem(50).Obj(),
-		ChildRequest:          MakeResourceList().CPU(6).Mem(50).Obj(),
-		Allocated:             MakeResourceList().CPU(7).Mem(50).Obj(),
-		Guaranteed:            MakeResourceList().CPU(8).Mem(50).Obj(),
-	}
-	syncElasticQuotaMetrics(eq, summary, false)
+	eq, summary := getEqAndSummary()
+	syncElasticQuotaMetrics(eq, summary)
 	dtoMetrics := getMetrics(t)
 	expect := []string{
 		`{"label":[{"name":"field","value":"allocated"},{"name":"is_parent","value":"true"},{"name":"name","value":"test-eq"},{"name":"parent","value":"root"},{"name":"resource","value":"cpu"},{"name":"tree","value":"tree-1"}],"gauge":{"value":7000}}`,
@@ -428,11 +407,41 @@ func Test_syncElasticQuotaMetrics(t *testing.T) {
 		jsonStrBytes, _ := json.Marshal(v)
 		assert.Equal(t, expect[i], string(jsonStrBytes))
 	}
-	syncElasticQuotaMetrics(eq, summary, true)
-	dtoMetricsD := getMetrics(t)
-	assert.Equal(t, 0, len(dtoMetricsD))
 }
 
+func getEqAndSummary() (*v1alpha1.ElasticQuota, *core.QuotaInfoSummary) {
+	eq := &v1alpha1.ElasticQuota{
+		ObjectMeta: metav1.ObjectMeta{
+			Labels: map[string]string{
+				"quota.scheduling.koordinator.sh/is-root": "true",
+			},
+			Annotations: map[string]string{
+				"quota.scheduling.koordinator.sh/unschedulable-resource": `{"cpu":"4","memory":"8"}`,
+			},
+		},
+		Spec: v1alpha1.ElasticQuotaSpec{
+			Max: MakeResourceList().CPU(4).Mem(200).Obj(),
+			Min: MakeResourceList().CPU(2).Mem(100).Obj(),
+		},
+	}
+	summary := &core.QuotaInfoSummary{
+		Name:                  "test-eq",
+		ParentName:            "root",
+		IsParent:              true,
+		Tree:                  "tree-1",
+		Max:                   MakeResourceList().CPU(4).Mem(200).Obj(),
+		Min:                   MakeResourceList().CPU(2).Mem(100).Obj(),
+		Used:                  MakeResourceList().CPU(1).Mem(50).Obj(),
+		NonPreemptibleUsed:    MakeResourceList().CPU(2).Mem(50).Obj(),
+		NonPreemptibleRequest: MakeResourceList().CPU(3).Mem(50).Obj(),
+		Request:               MakeResourceList().CPU(4).Mem(50).Obj(),
+		Runtime:               MakeResourceList().CPU(5).Mem(50).Obj(),
+		ChildRequest:          MakeResourceList().CPU(6).Mem(50).Obj(),
+		Allocated:             MakeResourceList().CPU(7).Mem(50).Obj(),
+		Guaranteed:            MakeResourceList().CPU(8).Mem(50).Obj(),
+	}
+	return eq, summary
+}
 func getMetrics(t *testing.T) []*dto.Metric {
 	metricsCh := make(chan prometheus.Metric, 10)
 	go func() {

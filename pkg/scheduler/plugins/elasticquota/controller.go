@@ -265,11 +265,29 @@ func (ctrl *Controller) syncElasticQuotaStatusMetricsWorker() {
 		if summary == nil {
 			continue
 		}
-		syncElasticQuotaMetrics(eq, summary, false)
+		syncElasticQuotaMetrics(eq, summary)
 	}
 }
 
-func syncElasticQuotaMetrics(eq *v1alpha1.ElasticQuota, summary *core.QuotaInfoSummary, isDelete bool) {
+func syncElasticQuotaMetrics(eq *v1alpha1.ElasticQuota, summary *core.QuotaInfoSummary) {
+	resourceField, quotaLabels := getResourceFieldAndQuotaLabels(eq, summary)
+	for k, v := range resourceField {
+		decorateResource(eq, v)
+		k = strings.TrimPrefix(k, extension.QuotaKoordinatorPrefix+"/")
+		RecordElasticQuotaMetric(ElasticQuotaStatusMetric, v, k, quotaLabels)
+	}
+}
+
+func deleteElasticQuotaMetrics(eq *v1alpha1.ElasticQuota, summary *core.QuotaInfoSummary) {
+	resourceField, quotaLabels := getResourceFieldAndQuotaLabels(eq, summary)
+	for k, v := range resourceField {
+		decorateResource(eq, v)
+		k = strings.TrimPrefix(k, extension.QuotaKoordinatorPrefix+"/")
+		DeleteElasticQuotaMetric(ElasticQuotaStatusMetric, v, k, quotaLabels)
+	}
+}
+
+func getResourceFieldAndQuotaLabels(eq *v1alpha1.ElasticQuota, summary *core.QuotaInfoSummary) (map[string]v1.ResourceList, map[string]string) {
 	quotaLabels := map[string]string{
 		"name":      summary.Name,
 		"tree":      summary.Tree,
@@ -294,20 +312,9 @@ func syncElasticQuotaMetrics(eq *v1alpha1.ElasticQuota, summary *core.QuotaInfoS
 			m[extension.AnnotationUnschedulableResource] = unschedulable
 		}
 	}
-
-	for k, v := range m {
-		decorateResource(eq, v)
-
-		k = strings.TrimPrefix(k, extension.QuotaKoordinatorPrefix+"/")
-		RecordElasticQuotaMetric(ElasticQuotaStatusMetric, v, k, quotaLabels, isDelete)
-	}
-	decorateResource(eq, summary.Used)
-	RecordElasticQuotaMetric(ElasticQuotaStatusMetric, summary.Used, "used", quotaLabels, isDelete)
-
-	decorateResource(eq, summary.Min)
-	decorateResource(eq, summary.Max)
-	decorateResource(eq, summary.SharedWeight)
-	RecordElasticQuotaMetric(ElasticQuotaSpecMetric, summary.Min, "min", quotaLabels, isDelete)
-	RecordElasticQuotaMetric(ElasticQuotaSpecMetric, summary.Max, "max", quotaLabels, isDelete)
-	RecordElasticQuotaMetric(ElasticQuotaSpecMetric, summary.SharedWeight, "sharedWeight", quotaLabels, isDelete)
+	m["used"] = summary.Used
+	m["min"] = summary.Min
+	m["max"] = summary.Max
+	m["sharedWeight"] = summary.SharedWeight
+	return m, quotaLabels
 }

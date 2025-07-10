@@ -105,8 +105,8 @@ func (g *Plugin) OnQuotaDelete(obj interface{}) {
 		return
 	}
 	summary, _ := g.GetQuotaSummary(quota.Name, false)
-	if summary == nil {
-		syncElasticQuotaMetrics(quota, summary, true)
+	if summary != nil {
+		deleteElasticQuotaMetrics(quota, summary)
 	}
 	klog.V(5).Infof("OnQuotaDeleteFunc delete quota: %v", quota.Name)
 	g.deleteQuotaToTreeMap(quota.Name)
