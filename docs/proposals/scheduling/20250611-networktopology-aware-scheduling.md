@@ -78,23 +78,6 @@ Now, we have the following two scheduling strategy for `PodGroup` with network t
 1. Try to schedule member Pods of the same `PodGroup` to a network topology domain with better performance
 2. Pipeline parallism has a larger communication volume than data parallism. Therefore, try to schedule member Pods of the same PP group in the `PodGroup` to a network topology domain with better performance
 
-Of the two strategies above, strategy 1 is preferred. Among the network topology domains with the best performance selected by strategy 1, the one that best satisfies strategy 2 is selected.
-
-![image](/docs/images/networktopo-3-strategy-demo.png)
-
-The above figure shows some typical cases. Let's describe how we select nodes when the PP and DP parameters are the same.
-
-|            | Strategy detail                                                                                | Demo                                                                                                          |
-|------------|------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------|
-| strategy-1 | All nodes of a task are under the same unit.                                                   | case1： all node of pod under unit0                                                                            |
-| strategy-2 | Nodes within the same DP group are in the same unit, while different DP groups cross units     | case2：pod-2-0, pod-2-1 under unit0。   pod-2-2, pod-2-3 under unit1                                            |
-| strategy-3 | All nodes of a task are under the same leaf                                                    | case3：all node of pod under leaf0                                                                             |
-| strategy-4 | Nodes within the same DP group are in the same unit, while different DP groups cross leaves    | case4：  <br/>pod-4-0,pod-4-1,pod-4-2 under leaf0's unit1。  <br/> pod-4-3,pod-4-4,pod-4-5 under leaf1's unit3。 |
-| strategy-5 | Nodes within the same DP group are under the same leaf, while different DP groups cross leaves | case5：  <br/>pod-5-0,pod-5-1,pod-5-2 under leaf0 。   <br/>pod-5-3,pod-5-4,pod-5-5 under leaf1                 |
-| strategy-6 | All nodes of a task are under the same spine                                                   | case6: all node of pod under spine0                                                                           |
-
-
-
 
 ## Motivation
 
@@ -300,229 +283,47 @@ The network topology gather algorithm is to find the best nodes for the M Pods, 
 #### Network topology hierarchy
 
 First of all, we have a cluster with 12 nodes, named Node0-Node11. The overall network topology of the cluster and the positions of these 12 nodes in the topology are as follows:
+![image](/docs/images/networktopo-4-cluster.png)
 
-![image](/docs/images/networktopo-4-user-story.png)
+After the cluster administrator configures `ClusterNetworkTopology` for the cluster, the scheduler will perceive it and build the above network topology in memory.
+Now we create three jobs in sequence according to the following table. Each member Pod of each job applies for the entire machine resources and prefer to be aggregated into a finer topology domain. 
 
-#### Examples with three jobs 
+#### Examples with jobs 
 
-After the cluster administrator configures `ClusterNetworkTopology` for the cluster, the scheduler will perceive it and build the above network topology in memory. Now we create three jobs in sequence according to the following table. Each member Pod of each job applies for the entire machine resources and prefer to be aggregated into a finer topology domain. 
+Demo1, One Job. we create a job with 4 Pods (DP=2, PP=2). The following figure and table shows the details how the scheduler arranges them in different nodes are unavailable.
 
-| PodGroup  | MinMember | Parallelism | Preemptible Or Non-Preemptible |
-| --------- | --------- | ----------- | ------------------------------ |
-| PodGroup1 | 4         | DP=2,PP=2   | Preemptible                    |
-| PodGroup2 | 4         | DP=2,PP=2   | Preemptible                    |
-| PodGroup3 | 8         | DP=2,PP=4   | Non-Preemptible                |
+![image](/docs/images/networktopo-3-demo1.png)
+
+|            | Strategy detail                                      | Scheduler Result                                                               |
+|------------|------------------------------------------------------|--------------------------------------------------------------------------------|
+| case-1     | All dp in one block.                                 | all node is available, node8~node11 is best node in one block                  |
+| case-2 | Each dp in same block.     All dp in same spine.     | node0~node7 is available, node0,node1,node3,node4 is best node                 |
+| case-3 | Each dp not in same block. All dp in same spine.     | node0~node3, node5~node7 is available,node0,node1,node2,node3 is best node     |
+| case-4 | Each dp in same block .    All dp in same datacenter | node0,node3~node7 is available,node3,node4,node5,node6 is best node            |
+| case-5 | Each dp in same spine.     All dp in same datacenter | node0,node3~node5 is available,node3,node4,node5,node8 is best node            |
+| case-6 | All pod in same datacenter         | node0,node4,node5,node8 is available, only node0,node4,node5,node8 can be used |
+
+
+Demo2, multiple Job with Preempt. 
+we create 4 job following blow table shows the details how the scheduler arranges them.
+
+| Job  | PodGroup  | MinMember | Parallelism | Preemptible Or Non-Preemptible |
+|------|-----------|-----------|-------------| ------------------------------ |
+| job1 | PodGroup1 | 2         | DP=1,PP=2   | Preemptible                    |
+| job2 | PodGroup2 | 2         | DP=1,PP=2   | Preemptible                    |
+| job3 | PodGroup3 | 8         | DP=4,PP=2   | Preemptible                |
+| job4 | PodGroup4 | 4         | DP=2,PP=2   | Non-Preemptible                               |
 
 Let's see how the scheduler arranges them. When PodGroup1 enter into scheduling,
 
-1. The scheduler finds that Leaf0, Unit2, and Unit3 can all meet its requirements. In order to provide it with better performance, the scheduler tends to choose Unit2 or Unit3.
-2. PodGroup1 is a 4-pod Job. It makes no difference whether it is placed in Unit2 or Unit3. The scheduler places it in Unit2.
+1. PodGroup1 enter into scheduling: The scheduler finds all node meet its requirements. 
+- In order to provide it with better performance, the scheduler tends to choose block0,block1,block2,block3
+- In order to reduce network block fragments, the scheduler tends to choose a minimum satisfiability block, is block2.
+2. PodGroup2 enter into scheduling: same as PodGroup1, the scheduler tends to choose block0.
+3. PodGroup3 enter into scheduling: 
+- pod0,pod1,pod2,pod3,pod4,pod5,pod6 will be scheduled to a block3 and block2 in spine-1.
+- pod7 only can be scheduled to block0 in spine-0.
+4. PodGroup4 enter into scheduling:
+- This is no resource in cluster. But PodGroup4 is non-preemptible with high Priority, so it will be preempt PodGroup3 and schedule them to Node8-Node11.
 
-When PodGroup2 enter into scheduling, the scheduler finds that both Unit3 and Leaf0 can meet its needs. In order to provide it with better performance, the scheduler tends to choose Unit3.
-
-When PodGroup3 enter into scheduling, the scheduler finds that the cluster resources are insufficient and enters the preemption process. At this time, the scheduler finds that it has multiple choices:
-
-1. Preempt PodGroup1 and schedule it to Node0-Node7
-
-2. Preempt PodGroup2 and schedule it to Node0-Node3 and Node8-Node11
-
-3. Preempt PodGroup1 and PodGroup2 and schedule them to Node4-Node11
-
-Since 3 has higher performance, it will choose to preempt PodGroup1 and PodGroup2 and schedule them to Node4-Node11
-
-#### Algorithm pseudocode
-
-Now, let's formalize the above process. Firstly, let's give the scheduling requirements of PodGroup as follows
-
-```go
-type PodGroupRequirements struct {
-	MinMember             int
-	DataParallelism       int
-	PipelineParallelism   int
-	RequiredTopologyLayer TopologyLayer
-}
-```
-
-The topological position represented by each parent node on the network topology tree is called a topology node. 
-
-```go
-// multi-layer network topology
-// s3
-//   |
-//   |- s2-0
-//        |- s1-0: {node-0, node-1}
-//        |- s1-1: {node-2, node-3}
-//   |- s2-1
-//        |- s1-2: {node-4, node-5}
-//        |- s1-3: {node-6, node-7, node-8, node-9}
-```
-
-Each topology node has a layer attribute and a part of nodes in the network topology tree. 
-
-```go
-// convert multi-layer network topology to layeredTopologyNodes
-layeredTopologyNodes := map[string][][]string{
-		"s3": {{"node-0", "node-1", "node-2", "node-3", "node-4", "node-5", "node-6", "node-7", "node-8", "node-9"}},
-		"s2": {{"node-0", "node-1", "node-2", "node-3"}, {"node-4", "node-5", "node-6", "node-7", "node-8", "node-9"}},
-		"s1": {{"node-0", "node-1}", "{node-2", "node-3}", "{node-4", "node-5}", "{node-6", "node-7", "node-8", "node-9"}},
-}
-
-// Sort the topological nodes of each layer according to the number of nodes they have
-layeredTopologyNodes := map[string][][]string{
-		"s3": {{"node-0", "node-1", "node-2", "node-3", "node-4", "node-5", "node-6", "node-7", "node-8", "node-9"}},       // len(s3)=10
-		"s2": {{"node-0", "node-1", "node-2", "node-3"}, {"node-4", "node-5", "node-6", "node-7", "node-8", "node-9"}},     // len(s2-0)=4, len(s2-1)=6, 
-		"s1": {{"node-0", "node-1"}, {"node-2", "node-3"}, {"node-4", "node-5"},{"node-6", "node-7", "node-8", "node-9"}}, // len(s1-2)=2, len(s1-1)=2,len(s1-0)=2,len(s1-3)=4, 
-}
-```
-
-The essence of the network topology algorithm is to select the topology node with the lowest layer that can place all the member Pods of the Job.
-
-```go
-// Pseudocode
-func (nt *NetWorkTopology) FindBestNode(requirements PodGroupRequirements, layeredTopologyNodes map[string][][]string) ([]string, int) {
-	// 1. if all node in s1
-	layerIndex := s1
-	for _, nodesOfTopologyNode := range layeredTopologyNodes[s1] {
-		if len(nodesOfTopologyNode) >= minNumberWorker {
-			return nodesOfSomeTopologyNode[:minNumberWorker], layerIndex
-		}
-	}
-
-	// 2.all pipeline parallel node in s1, but all node in s2
-	hasFoundAllNode, resNode := findNode in topologyNodes in s1
-	if hasFoundAllNode {
-		if resNode isChildrenOf one s2 hyperNodeTree {
-			return resNode, s2
-		}else{
-			// 3. get node in each s2 hyperNodeTree
-			nodesOfTopologyNode := get node in each s2 topologyNode
-			if len(nodesOfTopologyNode) > minNumberWorker {
-				return resNode, LeafTierIndex
-			}
-		}
-
-		// 4.all pipeline parallel node in the same tor, but all node in the same spine
-		return resNode, SpineTierIndex
-	}
-
-	// 5.all pipeline parallel node in the same leaf, but all node in the same spine
-	tieIndex = s2
-	hasFoundAllNode, resNode, remainNodes := find node in s2 hyperNodeTree
-	if hasFoundAllNode {
-		return resNode, SpineTierIndex
-	}else{
-		// 6.all node in the same spine
-		totalNode := append(resNode,remainNodes)
-		if len(totalNode) > minNumberWorker {
-			return totalNode, SpineTierIndex
-		}
-	}
-}
-```
-
-
-
-```go
-// detail
-func (nt *NetWorkTopology) FindBestNode(requirements PodGrouprequirements, hyperNodeTree map[string][][]string) ([]string, int) {
-    minNumberWorker := requirements.MinMember
-    pipelineParallel := requirements.PipelineParallel
-    if minNumberWorker%pipelineParallel != 0 {
-        pipelineParallel = defaultPipelineParallel
-    }
-    dataParallel := minNumberWorker / pipelineParallel
-
-    // 1. if all node in the same tor
-    tieIndex := s1
-    for _, hyperNodes := range hyperNodeTree[tieIndex] {
-       if len(hyperNodes) >= minNumberWorker {
-          return hyperNodes[:minNumberWorker], tieIndex
-       }
-    }
-
-	// 2.all pipeline parallel node in the same tor, but all node in the same leaf
-    hasFoundAllNode, resNode := nt.ppSameHyperNode(hyperNodeTree[s1], tieIndex, minNumberWorker, pipelineParallel)
-    if hasFoundAllNode {
-		for _, hyperNodes := range hyperNodeTree[s2] {
-			if ok := isSubHyperNode(hyperNodes, resNode); ok {
-				return resNode, LeafTierIndex
-			}else{
-               
-               return resNode, LeafTierIndex
-            }
-		}
-        return resNode, SpineTierIndex
-    }
-
-    // 3.all node in the same leaf:  try to find a set of nodes in the same leaf that meets the minimum number of workers required
-    indexKey = s2
-	for i := range hyperNodeTree[indexKey] {
-		hyperNodes := hyperNodeTree[indexKey][i]
-		if len(hyperNodes) >= minNumberWorker {
-			torHyperNodes := getHyperNodeTor(hyperNodes, hyperNodeTree[TorTierIndex])
-			_, resNode, remainNodes := nt.ppSameHyperNode(torHyperNodes, dataParallel, pipelineParallel)
-			for _, nodes := range remainNodes {
-				resNode = append(resNode, nodes...)
-			}
-			return resNode[:minNumberWorker], LeafTierIndex
-		}
-	}
-
-	// 4.all pipeline parallel node in the same tor, but all node in the same spine
-	if hasFoundAllNode {
-		return resNode, SpineTierIndex
-	}
-
-	// 5.all pipeline parallel node in the same leaf, but all node in the same spine
-	hasFoundAllNode, resNode, remainNodes := nt.ppSameHyperNode(hyperNodeTree[indexKey], dataParallel, pipelineParallel)
-	if hasFoundAllNode {
-		return resNode, SpineTierIndex
-	}
-
-	// 6.all node in the same spine
-	indexKey = s2
-	for _, hyperNodes := range hyperNodeTree[indexKey] {
-		if len(hyperNodes) >= minNumberWorker {
-			klog.V(3).Infof("get node in the same spine: %v", hyperNodes[:minNumberWorker])
-			// only have one spine, all nodes in this spine, so resNode and remainNodes are included in spine
-			for _, nodes := range remainNodes {
-				resNode = append(resNode, nodes...)
-			}
-			return resNode[:minNumberWorker], SpineTierIndex
-		}
-	}
-	return nil, -1
-}
-```
-
-```go
-func (nt *NetWorkTopology) ppSameHyperNode(hyperNodeList [][]string, dpRemainCnt int, pipelineParallel int) (bool, []string, [][]string) {
-	var resNode []string
-	var remainNodes [][]string
-	hasFoundAllNode := false
-	for _, hyperNodes := range hyperNodeList {
-		eachTorCnt := pipelineParallel
-		beginIndex := 0
-		for ; eachTorCnt <= len(hyperNodes); beginIndex += pipelineParallel {
-			resNode = append(resNode, hyperNodes[beginIndex:beginIndex+pipelineParallel]...)
-			eachTorCnt += pipelineParallel
-			dpRemainCnt -= 1
-			if dpRemainCnt == 0 {
-				hasFoundAllNode = true
-				break
-			}
-		}
-		if beginIndex < len(hyperNodes) {
-			remainNodes = append(remainNodes, hyperNodes[beginIndex:])
-		}
-		if hasFoundAllNode {
-			break
-		}
-	}
-	sort.Slice(remainNodes, func(i, j int) bool {
-		return len(remainNodes[i]) > len(remainNodes[j])
-	})
-	return hasFoundAllNode, resNode, remainNodes
-}
-```
-
+![image](/docs/images/networktopo-preempt.png)
