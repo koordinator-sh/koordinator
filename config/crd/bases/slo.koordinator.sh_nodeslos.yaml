@@ -53,8 +53,9 @@ spec:
                     format: int64
                     type: integer
                   cpuBurstPercent:
-                    description: 'cpu burst percentage for setting cpu.cfs_burst_us,
-                      legal range: [0, 10000], default as 1000 (1000%)'
+                    description: 'cpu burst percentage for setting cpu.cfs_burst_us
+                      in Cgroupv1 or setting cpu.max.burst in Cgroupv2, legal range:
+                      [0, 10000], default as 1000 (1000%)'
                     format: int64
                     maximum: 10000
                     minimum: 0
