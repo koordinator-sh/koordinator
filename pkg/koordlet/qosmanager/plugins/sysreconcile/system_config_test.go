@@ -121,12 +121,32 @@ func Test_systemConfig_reconcile(t *testing.T) {
 				sysutil.MemcgReapBackGround:  "0",
 			},
 		},
+		{
+			name:         "test page cache enable",
+			initStrategy: defaultStrategy,
+			node:         testutil.MockTestNode("80", strconv.FormatInt(nodeValidMemory, 10)),
+			newStrategy: &slov1alpha1.SystemStrategy{MinFreeKbytesFactor: pointer.Int64(400), WatermarkScaleFactor: pointer.Int64(500),
+				MemcgReapBackGround: pointer.Int64(2), MemcgPageCacheLimitEnabled: pointer.Int64(1)},
+			expect: map[sysutil.Resource]string{
+				sysutil.MinFreeKbytes:             strconv.FormatInt(nodeValidMemory/1024**defaultStrategy.MinFreeKbytesFactor/10000, 10),
+				sysutil.WatermarkScaleFactor:      "150",
+				sysutil.MemcgReapBackGround:       "0",
+				sysutil.MemcgPageCacheLimitEnable: "1",
+			},
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			helper := sysutil.NewFileTestUtil(t)
 			defer helper.Cleanup()
+
+			oldIsAnolisOS := sysutil.HostSystemInfo.IsAnolisOS
+			sysutil.HostSystemInfo.IsAnolisOS = true
+			defer func() {
+				sysutil.HostSystemInfo.IsAnolisOS = oldIsAnolisOS
+			}()
+
 			prepareFiles(helper, tt.initStrategy, initNode.Status.Capacity.Memory().Value())
 
 			//prepareData: metaService pods node
@@ -165,6 +185,8 @@ func prepareFiles(helper *sysutil.FileTestUtil, stragegy *slov1alpha1.SystemStra
 	helper.WriteFileContents(sysutil.WatermarkScaleFactor.Path(""), strconv.FormatInt(*stragegy.WatermarkScaleFactor, 10))
 	helper.CreateFile(sysutil.MemcgReapBackGround.Path(""))
 	helper.WriteFileContents(sysutil.MemcgReapBackGround.Path(""), strconv.FormatInt(*stragegy.MemcgReapBackGround, 10))
+	helper.CreateFile(sysutil.MemcgPageCacheLimitEnable.Path(""))
+	helper.WriteFileContents(sysutil.MemcgPageCacheLimitEnable.Path(""), strconv.FormatInt(*stragegy.MemcgPageCacheLimitEnabled, 10))
 
 }
 

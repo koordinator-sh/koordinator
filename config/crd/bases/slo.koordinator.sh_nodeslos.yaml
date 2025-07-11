@@ -285,6 +285,24 @@ spec:
                           oomKillGroup:
                             format: int64
                             type: integer
+                          pageCacheLimitEnable:
+                            description: |-
+                              memory.pagecache_limit.enable (Anolis OS required)
+                              The interface is memcg Switches for setting the memcg Is it enabled? Page Cache Limit function. Value range: 0~1
+                            format: int64
+                            type: integer
+                          pageCacheLimitSize:
+                            description: |-
+                              memory.pagecache_limit.size (Anolis OS required)
+                              This interface limits the current memcg of Page Cache Usage (unit: bytes). Value range: 0~current memcg The memory.limit_in_bytes value is set by you.
+                            format: int64
+                            type: integer
+                          pageCacheLimitSync:
+                            description: |-
+                              memory.pagecache_limit.sync (Anolis OS required)
+                              This interface controls the current memcg of Page Cache When the usage exceeds the limit, use asynchronous or synchronous recycling. Value range: 0~1
+                            format: int64
+                            type: integer
                           priority:
                             format: int64
                             type: integer
@@ -591,6 +609,24 @@ spec:
                             minimum: 0
                             type: integer
                           oomKillGroup:
+                            format: int64
+                            type: integer
+                          pageCacheLimitEnable:
+                            description: |-
+                              memory.pagecache_limit.enable (Anolis OS required)
+                              The interface is memcg Switches for setting the memcg Is it enabled? Page Cache Limit function. Value range: 0~1
+                            format: int64
+                            type: integer
+                          pageCacheLimitSize:
+                            description: |-
+                              memory.pagecache_limit.size (Anolis OS required)
+                              This interface limits the current memcg of Page Cache Usage (unit: bytes). Value range: 0~current memcg The memory.limit_in_bytes value is set by you.
+                            format: int64
+                            type: integer
+                          pageCacheLimitSync:
+                            description: |-
+                              memory.pagecache_limit.sync (Anolis OS required)
+                              This interface controls the current memcg of Page Cache When the usage exceeds the limit, use asynchronous or synchronous recycling. Value range: 0~1
                             format: int64
                             type: integer
                           priority:
@@ -901,6 +937,24 @@ spec:
                           oomKillGroup:
                             format: int64
                             type: integer
+                          pageCacheLimitEnable:
+                            description: |-
+                              memory.pagecache_limit.enable (Anolis OS required)
+                              The interface is memcg Switches for setting the memcg Is it enabled? Page Cache Limit function. Value range: 0~1
+                            format: int64
+                            type: integer
+                          pageCacheLimitSize:
+                            description: |-
+                              memory.pagecache_limit.size (Anolis OS required)
+                              This interface limits the current memcg of Page Cache Usage (unit: bytes). Value range: 0~current memcg The memory.limit_in_bytes value is set by you.
+                            format: int64
+                            type: integer
+                          pageCacheLimitSync:
+                            description: |-
+                              memory.pagecache_limit.sync (Anolis OS required)
+                              This interface controls the current memcg of Page Cache When the usage exceeds the limit, use asynchronous or synchronous recycling. Value range: 0~1
+                            format: int64
+                            type: integer
                           priority:
                             format: int64
                             type: integer
@@ -1207,6 +1261,24 @@ spec:
                             minimum: 0
                             type: integer
                           oomKillGroup:
+                            format: int64
+                            type: integer
+                          pageCacheLimitEnable:
+                            description: |-
+                              memory.pagecache_limit.enable (Anolis OS required)
+                              The interface is memcg Switches for setting the memcg Is it enabled? Page Cache Limit function. Value range: 0~1
+                            format: int64
+                            type: integer
+                          pageCacheLimitSize:
+                            description: |-
+                              memory.pagecache_limit.size (Anolis OS required)
+                              This interface limits the current memcg of Page Cache Usage (unit: bytes). Value range: 0~current memcg The memory.limit_in_bytes value is set by you.
+                            format: int64
+                            type: integer
+                          pageCacheLimitSync:
+                            description: |-
+                              memory.pagecache_limit.sync (Anolis OS required)
+                              This interface controls the current memcg of Page Cache When the usage exceeds the limit, use asynchronous or synchronous recycling. Value range: 0~1
                             format: int64
                             type: integer
                           priority:
@@ -1527,6 +1599,24 @@ spec:
                           oomKillGroup:
                             format: int64
                             type: integer
+                          pageCacheLimitEnable:
+                            description: |-
+                              memory.pagecache_limit.enable (Anolis OS required)
+                              The interface is memcg Switches for setting the memcg Is it enabled? Page Cache Limit function. Value range: 0~1
+                            format: int64
+                            type: integer
+                          pageCacheLimitSize:
+                            description: |-
+                              memory.pagecache_limit.size (Anolis OS required)
+                              This interface limits the current memcg of Page Cache Usage (unit: bytes). Value range: 0~current memcg The memory.limit_in_bytes value is set by you.
+                            format: int64
+                            type: integer
+                          pageCacheLimitSync:
+                            description: |-
+                              memory.pagecache_limit.sync (Anolis OS required)
+                              This interface controls the current memcg of Page Cache When the usage exceeds the limit, use asynchronous or synchronous recycling. Value range: 0~1
+                            format: int64
+                            type: integer
                           priority:
                             format: int64
                             type: integer
@@ -1728,6 +1818,11 @@ spec:
               systemStrategy:
                 description: node global system config
                 properties:
+                  memcgPageCacheLimitEnabled:
+                    description: /sys/kernel/mm/pagecache_limit/enabled (Anolis OS
+                      required)
+                    format: int64
+                    type: integer
                   memcgReapBackGround:
                     description: /sys/kernel/mm/memcg_reaper/reap_background
                     format: int64

@@ -163,6 +163,9 @@ const (
 	MemoryUsePriorityOomName   = "memory.use_priority_oom"
 	MemoryOomGroupName         = "memory.oom.group"
 	MemoryIdlePageStatsName    = "memory.idle_page_stats"
+	MemoryPageCacheSizeName    = "memory.pagecache_limit.size"   // anolis os
+	MemoryPageCacheSyncName    = "memory.pagecache_limit.sync"   // anolis os
+	MemoryPageCacheEnableName  = "memory.pagecache_limit.enable" // anolis os
 
 	BlkioTRIopsName   = "blkio.throttle.read_iops_device"
 	BlkioTRBpsName    = "blkio.throttle.read_bps_device"
@@ -190,6 +193,9 @@ var (
 	MemoryUsePriorityOomValidator           = &RangeValidator{min: 0, max: 1}
 	MemoryWmarkMinAdjValidator              = &RangeValidator{min: -25, max: 50}
 	MemoryWmarkScaleFactorFileNameValidator = &RangeValidator{min: 1, max: 1000}
+	MemoryPageCacheLimitEnableValidator     = &RangeValidator{min: 0, max: 1}
+	MemoryPageCacheLimitSyncValidator       = &RangeValidator{min: 0, max: 1}
+	MemoryPageCacheLimitSizeValidator       = &RangeValidator{min: 0, max: math.MaxInt64}
 	BlkioTRIopsValidator                    = &BlkIORangeValidator{min: 0, max: math.MaxInt64, resource: BlkioTRIopsName}
 	BlkioTRBpsValidator                     = &BlkIORangeValidator{min: 0, max: math.MaxInt64, resource: BlkioTRBpsName}
 	BlkioTWIopsValidator                    = &BlkIORangeValidator{min: 0, max: math.MaxInt64, resource: BlkioTWIopsName}
@@ -239,6 +245,9 @@ var (
 	MemoryUsePriorityOom   = DefaultFactory.New(MemoryUsePriorityOomName, CgroupMemDir).WithValidator(MemoryUsePriorityOomValidator).WithCheckSupported(SupportedIfFileExistsInKubepods).WithCheckOnce(true)
 	MemoryOomGroup         = DefaultFactory.New(MemoryOomGroupName, CgroupMemDir).WithValidator(MemoryOomGroupValidator).WithCheckSupported(SupportedIfFileExistsInKubepods).WithCheckOnce(true)
 	MemoryIdlePageStats    = DefaultFactory.New(MemoryIdlePageStatsName, CgroupMemDir).WithCheckSupported(SupportedIfFileExistsInKubepods).WithCheckOnce(true)
+	MemoryPageCacheEnable  = DefaultFactory.New(MemoryPageCacheEnableName, CgroupMemDir).WithValidator(MemoryPageCacheLimitEnableValidator).WithCheckSupported(SupportedIfFileExistsInKubepods).WithCheckOnce(true)
+	MemoryPageCacheSync    = DefaultFactory.New(MemoryPageCacheSyncName, CgroupMemDir).WithValidator(MemoryPageCacheLimitSyncValidator).WithCheckSupported(SupportedIfFileExistsInKubepods).WithCheckOnce(true)
+	MemoryPageCacheSize    = DefaultFactory.New(MemoryPageCacheSizeName, CgroupMemDir).WithValidator(MemoryPageCacheLimitSizeValidator).WithCheckSupported(SupportedIfFileExistsInKubepods).WithCheckOnce(true)
 
 	BlkioReadIops  = DefaultFactory.New(BlkioTRIopsName, CgroupBlkioDir).WithValidator(BlkioTRIopsValidator).WithCheckSupported(SupportedIfFileExistsInKubepods).WithCheckOnce(true)
 	BlkioReadBps   = DefaultFactory.New(BlkioTRBpsName, CgroupBlkioDir).WithValidator(BlkioTRBpsValidator).WithCheckSupported(SupportedIfFileExistsInKubepods).WithCheckOnce(true)
@@ -280,6 +289,9 @@ var (
 		MemoryUsePriorityOom,
 		MemoryOomGroup,
 		MemoryIdlePageStats,
+		MemoryPageCacheEnable,
+		MemoryPageCacheSync,
+		MemoryPageCacheSize,
 		BlkioReadIops,
 		BlkioReadBps,
 		BlkioWriteIops,
@@ -321,6 +333,9 @@ var (
 	MemoryPriorityV2         = DefaultFactory.NewV2(MemoryPriorityName, MemoryPriorityName).WithValidator(MemoryPriorityValidator).WithCheckSupported(SupportedIfFileExists)
 	MemoryUsePriorityOomV2   = DefaultFactory.NewV2(MemoryUsePriorityOomName, MemoryUsePriorityOomName).WithValidator(MemoryUsePriorityOomValidator).WithCheckSupported(SupportedIfFileExists)
 	MemoryOomGroupV2         = DefaultFactory.NewV2(MemoryOomGroupName, MemoryOomGroupName).WithValidator(MemoryOomGroupValidator).WithCheckSupported(SupportedIfFileExists)
+	MemoryPageCacheEnableV2  = DefaultFactory.NewV2(MemoryPageCacheEnableName, MemoryPageCacheEnableName).WithValidator(MemoryPageCacheLimitEnableValidator).WithCheckSupported(SupportedIfFileExists)
+	MemoryPageCacheSyncV2    = DefaultFactory.NewV2(MemoryPageCacheSyncName, MemoryPageCacheSyncName).WithValidator(MemoryPageCacheLimitSyncValidator).WithCheckSupported(SupportedIfFileExists)
+	MemoryPageCacheSizeV2    = DefaultFactory.NewV2(MemoryPageCacheSizeName, MemoryPageCacheSizeName).WithValidator(MemoryPageCacheLimitSizeValidator).WithCheckSupported(SupportedIfFileExists)
 
 	knownCgroupV2Resources = []Resource{
 		CPUCFSQuotaV2,
@@ -352,6 +367,9 @@ var (
 		MemoryPriorityV2,
 		MemoryUsePriorityOomV2,
 		MemoryOomGroupV2,
+		MemoryPageCacheEnableV2,
+		MemoryPageCacheSyncV2,
+		MemoryPageCacheSizeV2,
 		// TODO: register BlkioIOWeight, BlkioIOQoS and BlkioIOModel
 
 		NetClsClassId,

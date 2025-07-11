@@ -56,7 +56,8 @@ func Test_mergeNodeSLOSpec(t *testing.T) {
 			SharePoolThresholdPercent: nil,
 		},
 		SystemStrategy: &slov1alpha1.SystemStrategy{
-			WatermarkScaleFactor: pointer.Int64(200),
+			WatermarkScaleFactor:       pointer.Int64(200),
+			MemcgPageCacheLimitEnabled: pointer.Int64(1),
 		},
 	}
 	testingMergedNodeSLOSpec := sloconfig.DefaultNodeSLOSpecConfig()

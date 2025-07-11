@@ -488,6 +488,15 @@ func TestCgroupResourceReconcile_calculateResources(t *testing.T) {
 			WmarkMinAdj:       pointer.Int64(50),
 		},
 	})
+	testingPodBEWithMemQoS2 := createPodWithMemoryQOS(corev1.PodQOSBestEffort, apiext.QoSBE, &slov1alpha1.PodMemoryQOSConfig{
+		Policy: slov1alpha1.PodMemoryQOSPolicyAuto,
+		MemoryQOS: slov1alpha1.MemoryQOS{
+			PageCacheLimitEnable: pointer.Int64(1),
+			PageCacheLimitSync:   pointer.Int64(1),
+			PageCacheLimitSize:   pointer.Int64(10000),
+		},
+	})
+
 	podParentDirBE := testingPodBEWithMemQOS.CgroupDir
 	containerDirBE, _ := koordletutil.GetContainerCgroupParentDir(testingPodBEWithMemQOS.CgroupDir, &testingPodBEWithMemQOS.Pod.Status.ContainerStatuses[0])
 	containerDirBE1, _ := koordletutil.GetContainerCgroupParentDir(testingPodBEWithMemQOS.CgroupDir, &testingPodBEWithMemQOS.Pod.Status.ContainerStatuses[1])
@@ -885,12 +894,84 @@ func TestCgroupResourceReconcile_calculateResources(t *testing.T) {
 				createCgroupResourceUpdater(t, system.MemoryOomGroupName, containerDirSYS1, "0", false),
 			},
 		},
+		{
+			name:   "single pod with page cache limit",
+			fields: fields{opt: &framework.Options{Config: framework.NewDefaultConfig()}},
+			args: args{
+				nodeCfg: &slov1alpha1.ResourceQOSStrategy{
+					LSRClass: &slov1alpha1.ResourceQOS{},
+					LSClass:  &slov1alpha1.ResourceQOS{},
+					BEClass:  &slov1alpha1.ResourceQOS{},
+				},
+				node: &corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node",
+					},
+					Status: corev1.NodeStatus{
+						Allocatable: map[corev1.ResourceName]resource.Quantity{
+							corev1.ResourceCPU:    resource.MustParse("1"),
+							corev1.ResourceMemory: resource.MustParse("1Gi"),
+						},
+					},
+				},
+				podMetas: []*statesinformer.PodMeta{
+					testingPodBEWithMemQoS2,
+				},
+			},
+			want: []resourceexecutor.ResourceUpdater{
+				createCgroupResourceUpdater(t, system.MemoryMinName, koordletutil.GetPodQoSRelativePath(corev1.PodQOSGuaranteed), "0", true),
+				createCgroupResourceUpdater(t, system.MemoryLowName, koordletutil.GetPodQoSRelativePath(corev1.PodQOSGuaranteed), "0", true),
+				createCgroupResourceUpdater(t, system.MemoryMinName, koordletutil.GetPodQoSRelativePath(corev1.PodQOSBestEffort), "0", true),
+				createCgroupResourceUpdater(t, system.MemoryLowName, koordletutil.GetPodQoSRelativePath(corev1.PodQOSBestEffort), "0", true),
+			},
+			want1: []resourceexecutor.ResourceUpdater{
+				createCgroupResourceUpdater(t, system.MemoryMinName, podParentDirBE, "0", true),
+				createCgroupResourceUpdater(t, system.MemoryLowName, podParentDirBE, "0", true),
+				createCgroupResourceUpdater(t, system.MemoryWmarkRatioName, podParentDirBE, "95", false),
+				createCgroupResourceUpdater(t, system.MemoryWmarkScaleFactorName, podParentDirBE, "20", false),
+				createCgroupResourceUpdater(t, system.MemoryWmarkMinAdjName, podParentDirBE, "50", false),
+				createCgroupResourceUpdater(t, system.MemoryPriorityName, podParentDirBE, "0", false),
+				createCgroupResourceUpdater(t, system.MemoryUsePriorityOomName, podParentDirBE, "0", false),
+				createCgroupResourceUpdater(t, system.MemoryOomGroupName, podParentDirBE, "0", false),
+				createCgroupResourceUpdater(t, system.MemoryPageCacheEnableName, podParentDirBE, "1", false),
+				createCgroupResourceUpdater(t, system.MemoryPageCacheSyncName, podParentDirBE, "1", false),
+				createCgroupResourceUpdater(t, system.MemoryPageCacheSizeName, podParentDirBE, "10000", false),
+			},
+			want2: []resourceexecutor.ResourceUpdater{
+				createCgroupResourceUpdater(t, system.MemoryMinName, containerDirBE, "0", true),
+				createCgroupResourceUpdater(t, system.MemoryLowName, containerDirBE, "0", true),
+				createCgroupResourceUpdater(t, system.MemoryHighName, containerDirBE, strconv.FormatInt(math.MaxInt64, 10), true),
+				createCgroupResourceUpdater(t, system.MemoryWmarkRatioName, containerDirBE, "95", false),
+				createCgroupResourceUpdater(t, system.MemoryWmarkScaleFactorName, containerDirBE, "20", false),
+				createCgroupResourceUpdater(t, system.MemoryWmarkMinAdjName, containerDirBE, "50", false),
+				createCgroupResourceUpdater(t, system.MemoryPriorityName, containerDirBE, "0", false),
+				createCgroupResourceUpdater(t, system.MemoryUsePriorityOomName, containerDirBE, "0", false),
+				createCgroupResourceUpdater(t, system.MemoryOomGroupName, containerDirBE, "0", false),
+				createCgroupResourceUpdater(t, system.MemoryPageCacheEnableName, containerDirBE, "1", false),
+				createCgroupResourceUpdater(t, system.MemoryMinName, containerDirBE1, "0", true),
+				createCgroupResourceUpdater(t, system.MemoryLowName, containerDirBE1, "0", true),
+				createCgroupResourceUpdater(t, system.MemoryHighName, containerDirBE1, strconv.FormatInt(math.MaxInt64, 10), true),
+				createCgroupResourceUpdater(t, system.MemoryWmarkRatioName, containerDirBE1, "95", false),
+				createCgroupResourceUpdater(t, system.MemoryWmarkScaleFactorName, containerDirBE1, "20", false),
+				createCgroupResourceUpdater(t, system.MemoryWmarkMinAdjName, containerDirBE1, "50", false),
+				createCgroupResourceUpdater(t, system.MemoryPriorityName, containerDirBE1, "0", false),
+				createCgroupResourceUpdater(t, system.MemoryUsePriorityOomName, containerDirBE1, "0", false),
+				createCgroupResourceUpdater(t, system.MemoryOomGroupName, containerDirBE1, "0", false),
+				createCgroupResourceUpdater(t, system.MemoryPageCacheEnableName, containerDirBE1, "1", false),
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			helper := system.NewFileTestUtil(t)
 			helper.SetCgroupsV2(false)
 			defer helper.Cleanup()
+
+			oldIsAnolisOS := system.HostSystemInfo.IsAnolisOS
+			system.HostSystemInfo.IsAnolisOS = true
+			defer func() {
+				system.HostSystemInfo.IsAnolisOS = oldIsAnolisOS
+			}()
 
 			m := newTestCgroupResourcesReconcile(tt.fields.opt)
 			stop := make(chan struct{})
@@ -925,6 +1006,15 @@ func TestCgroupResourcesReconcile_getMergedPodResourceQoS(t *testing.T) {
 		},
 	}
 	testingMemoryQoSAutoResourceQoS2.MemoryQOS.ThrottlingPercent = pointer.Int64(90)
+	testingMemoryQoSAutoResourceQoS3 := &slov1alpha1.ResourceQOS{
+		MemoryQOS: &slov1alpha1.MemoryQOSCfg{
+			MemoryQOS: *sloconfig.DefaultMemoryQOS(apiext.QoSBE),
+		},
+	}
+	testingMemoryQoSAutoResourceQoS3.MemoryQOS.PageCacheLimitEnable = pointer.Int64(1)
+	testingMemoryQoSAutoResourceQoS3.MemoryQOS.PageCacheLimitSync = pointer.Int64(1)
+	testingMemoryQoSAutoResourceQoS3.MemoryQOS.PageCacheLimitSize = pointer.Int64(10000)
+
 	type args struct {
 		pod *corev1.Pod
 		cfg *slov1alpha1.ResourceQOS
@@ -1059,6 +1149,29 @@ func TestCgroupResourcesReconcile_getMergedPodResourceQoS(t *testing.T) {
 			},
 			want: testingMemoryQoSAutoResourceQoS2,
 		},
+		{
+			name: "pod policy is Auto, use merged pod config when qos=None, kubeQoS=Besteffort",
+			fields: fields{
+				opt: &framework.Options{Config: framework.NewDefaultConfig()},
+			},
+			args: args{
+				pod: &corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-pod",
+						Namespace: "default",
+						Annotations: map[string]string{
+							// qosNone
+							slov1alpha1.AnnotationPodMemoryQoS: `{"policy":"auto","pageCacheLimitEnable": 1, "pageCacheLimitSync": 1, "pageCacheLimitSize": 10000}`,
+						},
+					},
+					Status: corev1.PodStatus{
+						Phase: corev1.PodRunning,
+					},
+				},
+				cfg: &slov1alpha1.ResourceQOS{},
+			},
+			want: testingMemoryQoSAutoResourceQoS3,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1160,6 +1273,24 @@ func Test_makeCgroupResources(t *testing.T) {
 					createCgroupResourceUpdater(t, system.MemoryWmarkRatioName, "pod1/container0", "95", false),
 					createCgroupResourceUpdater(t, system.MemoryWmarkScaleFactorName, "pod1/container0", "20", false),
 					createCgroupResourceUpdater(t, system.MemoryWmarkMinAdjName, "pod1/container0", "-25", false),
+				}
+			},
+		},
+		{
+			name: "make pod page cache resources",
+			args: args{
+				parentDir: "pod0",
+				summary: &cgroupResourceSummary{
+					memoryPageCacheEnable: pointer.Int64(1),
+					memoryPageCacheSync:   pointer.Int64(1),
+					memoryPageCacheSize:   pointer.Int64(1000),
+				},
+			},
+			want: func() []resourceexecutor.ResourceUpdater {
+				return []resourceexecutor.ResourceUpdater{
+					createCgroupResourceUpdater(t, system.MemoryPageCacheEnableName, "pod0", "1", false),
+					createCgroupResourceUpdater(t, system.MemoryPageCacheSyncName, "pod0", "1", false),
+					createCgroupResourceUpdater(t, system.MemoryPageCacheSizeName, "pod0", "1000", false),
 				}
 			},
 		},

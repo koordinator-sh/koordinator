@@ -436,6 +436,21 @@ func (in *MemoryQOS) DeepCopyInto(out *MemoryQOS) {
 		*out = new(int64)
 		**out = **in
 	}
+	if in.PageCacheLimitEnable != nil {
+		in, out := &in.PageCacheLimitEnable, &out.PageCacheLimitEnable
+		*out = new(int64)
+		**out = **in
+	}
+	if in.PageCacheLimitSync != nil {
+		in, out := &in.PageCacheLimitSync, &out.PageCacheLimitSync
+		*out = new(int64)
+		**out = **in
+	}
+	if in.PageCacheLimitSize != nil {
+		in, out := &in.PageCacheLimitSize, &out.PageCacheLimitSize
+		*out = new(int64)
+		**out = **in
+	}
 	if in.PriorityEnable != nil {
 		in, out := &in.PriorityEnable, &out.PriorityEnable
 		*out = new(int64)
@@ -1195,6 +1210,11 @@ func (in *SystemStrategy) DeepCopyInto(out *SystemStrategy) {
 	}
 	if in.MemcgReapBackGround != nil {
 		in, out := &in.MemcgReapBackGround, &out.MemcgReapBackGround
+		*out = new(int64)
+		**out = **in
+	}
+	if in.MemcgPageCacheLimitEnabled != nil {
+		in, out := &in.MemcgPageCacheLimitEnabled, &out.MemcgPageCacheLimitEnabled
 		*out = new(int64)
 		**out = **in
 	}

@@ -116,6 +116,16 @@ type MemoryQOS struct {
 	// +kubebuilder:validation:Minimum=-25
 	WmarkMinAdj *int64 `json:"wmarkMinAdj,omitempty" validate:"omitempty,min=-25,max=50"`
 
+	// memory.pagecache_limit.enable (Anolis OS required)
+	// The interface is memcg Switches for setting the memcg Is it enabled? Page Cache Limit function. Value range: 0~1
+	PageCacheLimitEnable *int64 `json:"pageCacheLimitEnable,omitempty" validate:"omitempty,min=0,max=1"`
+	// memory.pagecache_limit.sync (Anolis OS required)
+	// This interface controls the current memcg of Page Cache When the usage exceeds the limit, use asynchronous or synchronous recycling. Value range: 0~1
+	PageCacheLimitSync *int64 `json:"pageCacheLimitSync,omitempty" validate:"omitempty,min=0,max=1"`
+	// memory.pagecache_limit.size (Anolis OS required)
+	// This interface limits the current memcg of Page Cache Usage (unit: bytes). Value range: 0~current memcg The memory.limit_in_bytes value is set by you.
+	PageCacheLimitSize *int64 `json:"pageCacheLimitSize,omitempty" validate:"omitempty,min=0,max=1"`
+
 	// TODO: enhance the usages of oom priority and oom kill group
 	PriorityEnable *int64 `json:"priorityEnable,omitempty" validate:"omitempty,min=0,max=1"`
 	Priority       *int64 `json:"priority,omitempty" validate:"omitempty,min=0,max=12"`
@@ -421,7 +431,8 @@ type SystemStrategy struct {
 	WatermarkScaleFactor *int64 `json:"watermarkScaleFactor,omitempty" validate:"omitempty,gt=0,max=400"`
 	// /sys/kernel/mm/memcg_reaper/reap_background
 	MemcgReapBackGround *int64 `json:"memcgReapBackGround,omitempty" validate:"omitempty,min=0,max=1"`
-
+	// /sys/kernel/mm/pagecache_limit/enabled (Anolis OS required)
+	MemcgPageCacheLimitEnabled *int64 `json:"memcgPageCacheLimitEnabled,omitempty" validate:"omitempty,min=0,max=1"`
 	// TotalNetworkBandwidth indicates the overall network bandwidth, cluster manager can set this field, and default value taken from /sys/class/net/${NIC_NAME}/speed, unit: Mbps
 	TotalNetworkBandwidth resource.Quantity `json:"totalNetworkBandwidth,omitempty"`
 }
