@@ -136,5 +136,17 @@ func caculateMemoryConfig(strategy *slov1alpha1.SystemStrategy, nodeMemory int64
 		}
 		resources = append(resources, resource)
 	}
+
+	if sysutil.ValidateResourceValue(strategy.PageCacheLimitEnabled, "", sysutil.PageCacheLimitEnabled) && sysutil.HostSystemInfo.IsAnolisOS {
+		valueStr := strconv.FormatInt(*strategy.PageCacheLimitEnabled, 10)
+		file := sysutil.PageCacheLimitEnabled.Path("")
+		eventHelper := audit.V(3).Node().Reason("systemConfig reconcile").Message("update calculated mem config page cache limit enabled to : %v", valueStr)
+		resource, err := resourceexecutor.NewCommonDefaultUpdater(file, file, valueStr, eventHelper)
+		if err != nil {
+			return resources
+		}
+		resources = append(resources, resource)
+	}
+
 	return resources
 }

@@ -55,7 +55,9 @@ func init() {
 		sysutil.MemoryPriorityName,
 		sysutil.MemoryUsePriorityOomName,
 		sysutil.MemoryOomGroupName,
-		sysutil.NetClsClassIdName,
+		sysutil.MemoryPageCacheEnableName,
+		sysutil.MemoryPageCacheSyncName,
+		sysutil.MemoryPageCacheSizeName,
 	)
 	// special cases
 	DefaultCgroupUpdaterFactory.Register(NewCgroupUpdaterWithUpdateFunc(CgroupUpdateCPUSharesFunc), sysutil.CPUSharesName)

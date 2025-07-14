@@ -64,6 +64,9 @@ type cgroupResourceSummary struct {
 	memoryUsePriorityOom   *int64
 	memoryPriority         *int64
 	memoryOomKillGroup     *int64
+	memoryPageCacheEnable  *int64
+	memoryPageCacheSync    *int64
+	memoryPageCacheSize    *int64
 }
 
 type cgroupResourceUpdaterMeta struct {
@@ -275,6 +278,15 @@ func (m *cgroupResourcesReconcile) calculatePodResources(pod *corev1.Pod, parent
 			klog.V(5).Infof("correct calculated memory.low for pod since it is lower than memory.min, "+
 				"pod %s, current value %v", util.GetPodKey(pod), summary.memoryLow)
 		}
+		if podCfg.MemoryQOS.PageCacheLimitEnable != nil && system.HostSystemInfo.IsAnolisOS {
+			summary.memoryPageCacheEnable = podCfg.MemoryQOS.PageCacheLimitEnable
+			if podCfg.MemoryQOS.PageCacheLimitSync != nil {
+				summary.memoryPageCacheSync = podCfg.MemoryQOS.PageCacheLimitSync
+			}
+			if podCfg.MemoryQOS.PageCacheLimitSize != nil {
+				summary.memoryPageCacheSize = podCfg.MemoryQOS.PageCacheLimitSize
+			}
+		}
 	}
 
 	return makeCgroupResources(parentDir, summary)
@@ -344,6 +356,10 @@ func (m *cgroupResourcesReconcile) calculateContainerResources(container *corev1
 			*summary.memoryHigh = *summary.memoryMin
 			klog.V(5).Infof("correct calculated memory.high for container since it is lower than memory.min,"+
 				" pod %s, container %s, current value %v", util.GetPodKey(pod), container.Name, *summary.memoryHigh)
+		}
+
+		if podCfg.MemoryQOS.PageCacheLimitEnable != nil && system.HostSystemInfo.IsAnolisOS {
+			summary.memoryPageCacheEnable = podCfg.MemoryQOS.PageCacheLimitEnable
 		}
 	}
 
@@ -520,6 +536,18 @@ func makeCgroupResources(parentDir string, summary *cgroupResourceSummary) []res
 		{
 			resourceType: system.MemoryOomGroupName,
 			value:        summary.memoryOomKillGroup,
+		},
+		{
+			resourceType: system.MemoryPageCacheEnableName,
+			value:        summary.memoryPageCacheEnable,
+		},
+		{
+			resourceType: system.MemoryPageCacheSyncName,
+			value:        summary.memoryPageCacheSync,
+		},
+		{
+			resourceType: system.MemoryPageCacheSizeName,
+			value:        summary.memoryPageCacheSize,
 		},
 	} {
 		if t.value == nil {

@@ -1016,6 +1016,7 @@ func Test_calculateSystemConfigMerged(t *testing.T) {
 			MinFreeKbytesFactor:   oldSLOCfg.SystemCfgMerged.ClusterStrategy.MinFreeKbytesFactor,
 			WatermarkScaleFactor:  pointer.Int64(151),
 			MemcgReapBackGround:   oldSLOCfg.SystemCfgMerged.ClusterStrategy.MemcgReapBackGround,
+			PageCacheLimitEnabled: pointer.Int64(1),
 			TotalNetworkBandwidth: resource.MustParse("0"),
 		},
 		NodeStrategies: []configuration.NodeSystemStrategy{
@@ -1031,6 +1032,7 @@ func Test_calculateSystemConfigMerged(t *testing.T) {
 					MinFreeKbytesFactor:   pointer.Int64(130),
 					WatermarkScaleFactor:  pointer.Int64(151),
 					MemcgReapBackGround:   pointer.Int64(1),
+					PageCacheLimitEnabled: pointer.Int64(1),
 					TotalNetworkBandwidth: resource.MustParse("0"),
 				},
 			},
@@ -1045,6 +1047,7 @@ func Test_calculateSystemConfigMerged(t *testing.T) {
 					MinFreeKbytesFactor:   pointer.Int64(140),
 					WatermarkScaleFactor:  pointer.Int64(151),
 					MemcgReapBackGround:   pointer.Int64(0),
+					PageCacheLimitEnabled: pointer.Int64(1),
 					TotalNetworkBandwidth: resource.MustParse("0"),
 				},
 			},

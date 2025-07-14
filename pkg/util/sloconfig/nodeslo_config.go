@@ -428,6 +428,7 @@ func DefaultSystemStrategy() *slov1alpha1.SystemStrategy {
 		MinFreeKbytesFactor:   pointer.Int64(100), // 1 means 1/10000
 		WatermarkScaleFactor:  pointer.Int64(150), // 1 means 1/10000
 		MemcgReapBackGround:   pointer.Int64(0),
+		PageCacheLimitEnabled: pointer.Int64(1),
 		TotalNetworkBandwidth: resource.MustParse("0"),
 	}
 }
