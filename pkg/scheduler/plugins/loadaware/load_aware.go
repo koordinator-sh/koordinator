@@ -29,6 +29,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
+	podutil "k8s.io/kubernetes/pkg/api/v1/pod"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
@@ -322,6 +323,7 @@ func (p *Plugin) estimatedAssignedPodUsed(nodeName string, nodeMetric *slov1alph
 	nodeMetricReportInterval := getNodeMetricReportInterval(nodeMetric)
 
 	assignedPodsOnNode := p.podAssignCache.getPodsAssignInfoOnNode(nodeName)
+	now := time.Now()
 	for _, assignInfo := range assignedPodsOnNode {
 		if filterProdPod && extension.GetPodPriorityClassWithDefault(assignInfo.pod) != extension.PriorityProd {
 			continue
@@ -335,7 +337,8 @@ func (p *Plugin) estimatedAssignedPodUsed(nodeName string, nodeMetric *slov1alph
 			missedLatestUpdateTime(assignInfo.timestamp, nodeMetricUpdateTime) ||
 			stillInTheReportInterval(assignInfo.timestamp, nodeMetricUpdateTime, nodeMetricReportInterval) ||
 			(scoreWithAggregation(p.args.Aggregated) &&
-				getTargetAggregatedUsage(nodeMetric, &p.args.Aggregated.ScoreAggregatedDuration, p.args.Aggregated.ScoreAggregationType) == nil) {
+				getTargetAggregatedUsage(nodeMetric, &p.args.Aggregated.ScoreAggregatedDuration, p.args.Aggregated.ScoreAggregationType) == nil) ||
+			p.shouldForceEstimatePod(assignInfo, now) {
 			estimated, err := p.estimator.EstimatePod(assignInfo.pod)
 			if err != nil {
 				continue
@@ -353,6 +356,46 @@ func (p *Plugin) estimatedAssignedPodUsed(nodeName string, nodeMetric *slov1alph
 		}
 	}
 	return estimatedUsed, estimatedPods
+}
+
+func (p *Plugin) shouldForceEstimatePod(info *podAssignInfo, now time.Time) bool {
+	var forceAfterPodScheduled, forceAfterInitialized int64 = -1, -1
+	if p.args.AllowForceEstimationFromMetadata {
+		forceAfterPodScheduled = extension.GetCustomForceEstimationSecondsAfterPodScheduled(info.pod)
+		forceAfterInitialized = extension.GetCustomForceEstimationSecondsAfterInitialized(info.pod)
+	}
+	if s := p.args.ForceEstimationSecondsAfterPodScheduled; s != nil && forceAfterPodScheduled < 0 {
+		forceAfterPodScheduled = *s
+	}
+	if s := p.args.ForceEstimationSecondsAfterInitialized; s != nil && forceAfterInitialized < 0 {
+		forceAfterInitialized = *s
+	}
+	if forceAfterPodScheduled <= 0 && forceAfterInitialized <= 0 {
+		return false
+	}
+	if forceAfterPodScheduled > 0 {
+		// try to use pod conditions
+		var st time.Time
+		if _, c := podutil.GetPodCondition(&info.pod.Status, corev1.PodScheduled); c != nil && c.Status == corev1.ConditionTrue {
+			st = c.LastTransitionTime.Time
+		}
+		if st.IsZero() {
+			st = info.timestamp
+		}
+		if st.Add(time.Duration(forceAfterPodScheduled) * time.Second).After(now) {
+			return true
+		}
+	}
+	if forceAfterInitialized > 0 {
+		var it time.Time
+		if _, c := podutil.GetPodCondition(&info.pod.Status, corev1.PodInitialized); c != nil && c.Status == corev1.ConditionTrue {
+			it = c.LastTransitionTime.Time
+		}
+		if !it.IsZero() && it.Add(time.Duration(forceAfterInitialized) * time.Second).After(now) {
+			return true
+		}
+	}
+	return false
 }
 
 func loadAwareSchedulingScorer(resToWeightMap, used map[corev1.ResourceName]int64, allocatable corev1.ResourceList) int64 {

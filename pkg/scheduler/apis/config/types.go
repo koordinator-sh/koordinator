@@ -56,6 +56,14 @@ type LoadAwareSchedulingArgs struct {
 	// EstimatedScalingFactors indicates the factor when estimating resource usage.
 	// The default value of CPU is 85%, and the default value of Memory is 70%.
 	EstimatedScalingFactors map[corev1.ResourceName]int64
+	// ForceEstimationSecondsAfterPodScheduled indicates the force estimation duration
+	// after pod condition PodScheduled transition to True in seconds.
+	ForceEstimationSecondsAfterPodScheduled *int64
+	// ForceEstimationSecondsAfterInitialized indicates the force estimation duration
+	// after pod condition Initialized transition to True in seconds.
+	ForceEstimationSecondsAfterInitialized *int64
+	// AllowForceEstimationFromMetadata indicates whether to allow reading force estimation args from pod's metadata.
+	AllowForceEstimationFromMetadata bool
 	// Aggregated supports resource utilization filtering and scoring based on percentile statistics
 	Aggregated *LoadAwareSchedulingAggregatedArgs
 }
