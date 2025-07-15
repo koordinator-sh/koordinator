@@ -370,9 +370,6 @@ func (p *Plugin) shouldForceEstimatePod(info *podAssignInfo, now time.Time) bool
 	if s := p.args.ForceEstimationSecondsAfterInitialized; s != nil && forceAfterInitialized < 0 {
 		forceAfterInitialized = *s
 	}
-	if forceAfterPodScheduled <= 0 && forceAfterInitialized <= 0 {
-		return false
-	}
 	if forceAfterPodScheduled > 0 {
 		// try to use pod conditions
 		var st time.Time

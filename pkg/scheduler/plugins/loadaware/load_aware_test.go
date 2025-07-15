@@ -38,6 +38,7 @@ import (
 	frameworkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
 	schedulertesting "k8s.io/kubernetes/pkg/scheduler/testing"
 	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
@@ -421,6 +422,129 @@ func TestEnableScheduleWhenNodeMetricsExpired(t *testing.T) {
 
 			status := p.(*Plugin).Filter(context.TODO(), cycleState, &corev1.Pod{}, nodeInfo)
 			assert.True(t, tt.wantStatus.Equal(status), "want status: %s, but got %s", tt.wantStatus.Message(), status.Message())
+		})
+	}
+}
+
+func TestShouldForceEstimatePod(t *testing.T) {
+	now := time.Now()
+	tests := []struct {
+		name                                    string
+		forceEstimationSecondsAfterPodScheduled *int64
+		forceEstimationSecondsAfterInitialized  *int64
+		allowForceEstimationFromMetadata        bool
+		info                                    *podAssignInfo
+		want                                    bool
+	}{
+		{
+			name: "disabled",
+			info: &podAssignInfo{},
+		},
+		{
+			name:                                    "enabled for pod scheduled",
+			forceEstimationSecondsAfterPodScheduled: ptr.To((int64(180))),
+			info: &podAssignInfo{
+				pod: schedulertesting.MakePod().Namespace("default").Name("pod").Conditions([]corev1.PodCondition{
+					{Type: corev1.PodScheduled, Status: corev1.ConditionTrue, LastTransitionTime: metav1.NewTime(now.Add(-time.Minute))},
+				}).Obj(),
+			},
+			want: true,
+		},
+		{
+			name:                                    "enabled for pod scheduled but use internal assign time",
+			forceEstimationSecondsAfterPodScheduled: ptr.To((int64(180))),
+			info: &podAssignInfo{
+				pod: schedulertesting.MakePod().Namespace("default").Name("pod").Conditions([]corev1.PodCondition{
+					{Type: corev1.PodScheduled, Status: corev1.ConditionFalse, LastTransitionTime: metav1.NewTime(now.Add(-time.Minute))},
+				}).Obj(),
+				timestamp: now.Add(-time.Minute),
+			},
+			want: true,
+		},
+		{
+			name:                                   "enabled for pod initialized",
+			forceEstimationSecondsAfterInitialized: ptr.To((int64(180))),
+			info: &podAssignInfo{
+				pod: schedulertesting.MakePod().Namespace("default").Name("pod").Conditions([]corev1.PodCondition{
+					{Type: corev1.PodInitialized, Status: corev1.ConditionTrue, LastTransitionTime: metav1.NewTime(now.Add(-time.Minute))},
+				}).Obj(),
+			},
+			want: true,
+		},
+		{
+			name:                                   "disabled for pod initialized when condition is not satisfied",
+			forceEstimationSecondsAfterInitialized: ptr.To((int64(180))),
+			info: &podAssignInfo{
+				pod: schedulertesting.MakePod().Namespace("default").Name("pod").Conditions([]corev1.PodCondition{
+					{Type: corev1.PodInitialized, Status: corev1.ConditionFalse, LastTransitionTime: metav1.NewTime(now.Add(-time.Minute))},
+				}).Obj(),
+			},
+		},
+		{
+			name:                             "after pod scheduled from metadata",
+			allowForceEstimationFromMetadata: true,
+			info: &podAssignInfo{
+				pod: schedulertesting.MakePod().Namespace("default").
+					Annotation(extension.AnnotationCustomForceEstimationSecondsAfterPodScheduled, "180").
+					Name("pod").Conditions([]corev1.PodCondition{
+					{Type: corev1.PodScheduled, Status: corev1.ConditionTrue, LastTransitionTime: metav1.NewTime(now.Add(-time.Minute))},
+				}).Obj(),
+			},
+			want: true,
+		},
+		{
+			name:                             "after initialized from metadata",
+			allowForceEstimationFromMetadata: true,
+			info: &podAssignInfo{
+				pod: schedulertesting.MakePod().Namespace("default").
+					Annotation(extension.AnnotationCustomForceEstimationSecondsAfterInitialized, "180").
+					Name("pod").Conditions([]corev1.PodCondition{
+					{Type: corev1.PodInitialized, Status: corev1.ConditionTrue, LastTransitionTime: metav1.NewTime(now.Add(-time.Minute))},
+				}).Obj(),
+			},
+			want: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var v1beta3args v1beta3.LoadAwareSchedulingArgs
+			v1beta3.SetDefaults_LoadAwareSchedulingArgs(&v1beta3args)
+			v1beta3args.ForceEstimationSecondsAfterPodScheduled = tt.forceEstimationSecondsAfterPodScheduled
+			v1beta3args.ForceEstimationSecondsAfterInitialized = tt.forceEstimationSecondsAfterInitialized
+			v1beta3args.AllowForceEstimationFromMetadata = tt.allowForceEstimationFromMetadata
+			var loadAwareSchedulingArgs config.LoadAwareSchedulingArgs
+			err := v1beta3.Convert_v1beta3_LoadAwareSchedulingArgs_To_config_LoadAwareSchedulingArgs(&v1beta3args, &loadAwareSchedulingArgs, nil)
+			assert.NoError(t, err)
+
+			koordClientSet := koordfake.NewSimpleClientset()
+			koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
+			extenderFactory, _ := frameworkext.NewFrameworkExtenderFactory(
+				frameworkext.WithKoordinatorClientSet(koordClientSet),
+				frameworkext.WithKoordinatorSharedInformerFactory(koordSharedInformerFactory),
+			)
+			proxyNew := frameworkext.PluginFactoryProxy(extenderFactory, New)
+
+			cs := kubefake.NewSimpleClientset()
+			informerFactory := informers.NewSharedInformerFactory(cs, 0)
+			snapshot := newTestSharedLister(nil, nil)
+			registeredPlugins := []schedulertesting.RegisterPluginFunc{
+				schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
+				schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
+			}
+			fh, err := schedulertesting.NewFramework(context.TODO(), registeredPlugins, "koord-scheduler",
+				frameworkruntime.WithClientSet(cs),
+				frameworkruntime.WithInformerFactory(informerFactory),
+				frameworkruntime.WithSnapshotSharedLister(snapshot),
+			)
+			assert.Nil(t, err)
+
+			p, err := proxyNew(&loadAwareSchedulingArgs, fh)
+			assert.NotNil(t, p)
+			assert.Nil(t, err)
+			koordSharedInformerFactory.Start(context.TODO().Done())
+			koordSharedInformerFactory.WaitForCacheSync(context.TODO().Done())
+			actual := p.(*Plugin).shouldForceEstimatePod(tt.info, now)
+			assert.Equal(t, tt.want, actual)
 		})
 	}
 }
