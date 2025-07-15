@@ -398,7 +398,7 @@ type CPUBurstPolicy string
 const (
 	// CPUBurstNone disables cpu burst policy
 	CPUBurstNone CPUBurstPolicy = "none"
-	// CPUBurstOnly enables cpu burst policy by setting cpu.cfs_burst_us
+	// CPUBurstOnly enables cpu burst policy by setting cpu.cfs_burst_us or cpu.max.burst
 	CPUBurstOnly CPUBurstPolicy = "cpuBurstOnly"
 	// CFSQuotaBurstOnly enables cfs quota burst policy by scale up cpu.cfs_quota_us if pod throttled
 	CFSQuotaBurstOnly CPUBurstPolicy = "cfsQuotaBurstOnly"
@@ -408,7 +408,7 @@ const (
 
 type CPUBurstConfig struct {
 	Policy CPUBurstPolicy `json:"policy,omitempty"`
-	// cpu burst percentage for setting cpu.cfs_burst_us, legal range: [0, 10000], default as 1000 (1000%)
+	// cpu burst percentage for setting cpu.cfs_burst_us in Cgroupv1 or setting cpu.max.burst in Cgroupv2, legal range: [0, 10000], default as 1000 (1000%)
 	// +kubebuilder:validation:Maximum=10000
 	// +kubebuilder:validation:Minimum=0
 	CPUBurstPercent *int64 `json:"cpuBurstPercent,omitempty" validate:"omitempty,min=1,max=10000"`
