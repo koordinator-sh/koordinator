@@ -61,7 +61,7 @@ type LoadAwareSchedulingArgs struct {
 	// ForceEstimationSecondsAfterInitialized indicates the force estimation duration
 	// after pod condition Initialized transition to True in seconds.
 	ForceEstimationSecondsAfterInitialized *int64 `json:"forceEstimationSecondsAfterInitialized,omitempty"`
-	// AllowCustomizeEstimationFromMetadata indicates whether to allow reading force estimation args from pod's metadata.
+	// AllowCustomizeEstimationFromMetadata indicates whether to allow reading estimation args from pod's metadata.
 	AllowCustomizeEstimationFromMetadata bool `json:"allowCustomizeEstimationFromMetadata,omitempty"`
 	// Aggregated supports resource utilization filtering and scoring based on percentile statistics
 	Aggregated *LoadAwareSchedulingAggregatedArgs `json:"aggregated,omitempty"`
