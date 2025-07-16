@@ -351,8 +351,6 @@ func TestPodEnhancedValidate(t *testing.T) {
 			}
 			// create a validator to build the whitelist set
 			h.PodEnhancedValidator = NewPodEnhancedValidator(fakeClient)
-			err := h.PodEnhancedValidator.Start(context.Background())
-			assert.NoError(t, err)
 
 			var objRawExt, oldObjRawExt runtime.RawExtension
 			if tc.newPod != nil {

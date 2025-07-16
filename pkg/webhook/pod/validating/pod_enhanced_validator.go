@@ -131,6 +131,7 @@ type PodEnhancedValidator struct {
 	configName      string
 	configNamespace string
 
+	startOnce sync.Once
 	sync.RWMutex
 }
 
@@ -143,31 +144,34 @@ func NewPodEnhancedValidator(client client.Client) *PodEnhancedValidator {
 	}
 }
 
-// Start initializes and starts periodic get for config
-func (m *PodEnhancedValidator) Start(ctx context.Context) error {
-	if err := m.loadConfig(ctx); err != nil {
-		return fmt.Errorf("failed to load initial config for pod-enhanced-validator, err=%w", err)
-	}
+// ensureConfigSynced ensures the config synchronization is started (lazy loading)
+func (m *PodEnhancedValidator) ensureConfigSynced() {
+	m.startOnce.Do(func() {
+		klog.V(4).Infof("Starting PodEnhancedValidator with lazy initialization")
 
-	go wait.Until(func() {
-		if err := m.loadConfig(context.Background()); err != nil {
-			klog.Errorf("failed to load config for pod-enhanced-validator, err=%v", err)
+		// sync configuration immediately
+		if err := m.syncConfig(); err != nil {
+			klog.Errorf("Failed to sync config during initialization: %v", err)
 		}
-	}, PodEnhancedValidatorReconcileInterval, ctx.Done())
 
-	klog.Infof("pod-enhanced-validator started successfully, reconcileInterval=%v",
-		PodEnhancedValidatorReconcileInterval)
-	return nil
+		// start periodic configuration synchronization
+		go wait.Until(func() {
+			if err := m.syncConfig(); err != nil {
+				klog.Errorf("Failed to sync config for pod-enhanced-validator: %v", err)
+			}
+		}, PodEnhancedValidatorReconcileInterval, wait.NeverStop)
+	})
 }
 
-func (m *PodEnhancedValidator) loadConfig(ctx context.Context) error {
+// syncConfig synchronizes the configuration from the ConfigMap
+func (m *PodEnhancedValidator) syncConfig() error {
 	cm := &corev1.ConfigMap{}
 	key := types.NamespacedName{
 		Namespace: m.configNamespace,
 		Name:      m.configName,
 	}
 
-	err := m.client.Get(ctx, key, cm)
+	err := m.client.Get(context.Background(), key, cm)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			// ConfigMap not found, reset to default config
@@ -255,6 +259,9 @@ func (m *PodEnhancedValidator) buildNamespaceWhitelistSet(config *PodEnhancedVal
 
 // GetConfig returns the current configuration
 func (m *PodEnhancedValidator) GetConfig() *PodEnhancedValidatorConfig {
+	// lazy loading: start only when actually needed
+	m.ensureConfigSynced()
+
 	m.RLock()
 	defer m.RUnlock()
 	return m.config
