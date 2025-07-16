@@ -89,15 +89,14 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 		return nil, fmt.Errorf("want handle to be of type frameworkext.ExtendedHandle, got %T", handle)
 	}
 
-	assignCache := newPodAssignCache()
-	podInformer := frameworkExtender.SharedInformerFactory().Core().V1().Pods()
-	frameworkexthelper.ForceSyncFromInformer(context.TODO().Done(), frameworkExtender.SharedInformerFactory(), podInformer.Informer(), assignCache)
-	nodeMetricLister := frameworkExtender.KoordinatorSharedInformerFactory().Slo().V1alpha1().NodeMetrics().Lister()
-
 	estimator, err := estimator.NewEstimator(pluginArgs, handle)
 	if err != nil {
 		return nil, err
 	}
+	assignCache := newPodAssignCache(estimator)
+	podInformer := frameworkExtender.SharedInformerFactory().Core().V1().Pods()
+	frameworkexthelper.ForceSyncFromInformer(context.TODO().Done(), frameworkExtender.SharedInformerFactory(), podInformer.Informer(), assignCache)
+	nodeMetricLister := frameworkExtender.KoordinatorSharedInformerFactory().Slo().V1alpha1().NodeMetrics().Lister()
 
 	return &Plugin{
 		handle:           handle,
@@ -339,8 +338,8 @@ func (p *Plugin) estimatedAssignedPodUsed(nodeName string, nodeMetric *slov1alph
 			(scoreWithAggregation(p.args.Aggregated) &&
 				getTargetAggregatedUsage(nodeMetric, &p.args.Aggregated.ScoreAggregatedDuration, p.args.Aggregated.ScoreAggregationType) == nil) ||
 			p.shouldForceEstimatePod(assignInfo, now) {
-			estimated, err := p.estimator.EstimatePod(assignInfo.pod)
-			if err != nil {
+			estimated := assignInfo.estimated
+			if estimated == nil {
 				continue
 			}
 			for resourceName, value := range estimated {
@@ -360,7 +359,7 @@ func (p *Plugin) estimatedAssignedPodUsed(nodeName string, nodeMetric *slov1alph
 
 func (p *Plugin) shouldForceEstimatePod(info *podAssignInfo, now time.Time) bool {
 	var forceAfterPodScheduled, forceAfterInitialized int64 = -1, -1
-	if p.args.AllowForceEstimationFromMetadata {
+	if p.args.AllowCustomizeEstimationFromMetadata {
 		forceAfterPodScheduled = extension.GetCustomForceEstimationSecondsAfterPodScheduled(info.pod)
 		forceAfterInitialized = extension.GetCustomForceEstimationSecondsAfterInitialized(info.pod)
 	}
@@ -370,27 +369,17 @@ func (p *Plugin) shouldForceEstimatePod(info *podAssignInfo, now time.Time) bool
 	if s := p.args.ForceEstimationSecondsAfterInitialized; s != nil && forceAfterInitialized < 0 {
 		forceAfterInitialized = *s
 	}
-	if forceAfterPodScheduled > 0 {
-		// try to use pod conditions
-		var st time.Time
-		if _, c := podutil.GetPodCondition(&info.pod.Status, corev1.PodScheduled); c != nil && c.Status == corev1.ConditionTrue {
-			st = c.LastTransitionTime.Time
-		}
-		if st.IsZero() {
-			st = info.timestamp
-		}
-		if st.Add(time.Duration(forceAfterPodScheduled) * time.Second).After(now) {
-			return true
+	if forceAfterInitialized > 0 {
+		if _, c := podutil.GetPodCondition(&info.pod.Status, corev1.PodInitialized); c != nil && c.Status == corev1.ConditionTrue {
+			// if ForceEstimationSecondsAfterPodScheduled is set and pod is initialized, ignore ForceEstimationSecondsAfterPodScheduled
+			// ForceEstimationSecondsAfterPodScheduled might be set to a long duration to wait for time consuming init containers in pod.
+			if t := c.LastTransitionTime; !t.IsZero() {
+				return t.Add(time.Duration(forceAfterInitialized) * time.Second).After(now)
+			}
 		}
 	}
-	if forceAfterInitialized > 0 {
-		var it time.Time
-		if _, c := podutil.GetPodCondition(&info.pod.Status, corev1.PodInitialized); c != nil && c.Status == corev1.ConditionTrue {
-			it = c.LastTransitionTime.Time
-		}
-		if !it.IsZero() && it.Add(time.Duration(forceAfterInitialized)*time.Second).After(now) {
-			return true
-		}
+	if forceAfterPodScheduled > 0 && info.timestamp.Add(time.Duration(forceAfterPodScheduled)*time.Second).After(now) {
+		return true
 	}
 	return false
 }

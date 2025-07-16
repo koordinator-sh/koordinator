@@ -23,7 +23,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
@@ -32,10 +32,11 @@ import (
 
 func TestDefaultEstimatorEstimatePod(t *testing.T) {
 	tests := []struct {
-		name          string
-		pod           *corev1.Pod
-		scalarFactors map[corev1.ResourceName]int64
-		want          map[corev1.ResourceName]int64
+		name           string
+		pod            *corev1.Pod
+		scalarFactors  map[corev1.ResourceName]int64
+		allowCustomize bool
+		want           map[corev1.ResourceName]int64
 	}{
 		{
 			name: "estimate empty pod",
@@ -173,7 +174,7 @@ func TestDefaultEstimatorEstimatePod(t *testing.T) {
 					},
 				},
 				Spec: corev1.PodSpec{
-					Priority: pointer.Int32(extension.PriorityBatchValueMin),
+					Priority: ptr.To(extension.PriorityBatchValueMin),
 					Containers: []corev1.Container{
 						{
 							Name: "main",
@@ -205,7 +206,7 @@ func TestDefaultEstimatorEstimatePod(t *testing.T) {
 					},
 				},
 				Spec: corev1.PodSpec{
-					Priority: pointer.Int32(extension.PriorityProdValueMax),
+					Priority: ptr.To(extension.PriorityProdValueMax),
 					Containers: []corev1.Container{
 						{
 							Name: "main",
@@ -228,12 +229,49 @@ func TestDefaultEstimatorEstimatePod(t *testing.T) {
 				corev1.ResourceMemory: 6871947674,
 			},
 		},
+		{
+			name: "estimate pod with customized factors",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						extension.LabelPodQoS: string(extension.QoSLS),
+					},
+					Annotations: map[string]string{
+						extension.AnnotationCustomEstimatedScalingFactors: `{"cpu":100}`,
+					},
+				},
+				Spec: corev1.PodSpec{
+					Priority: ptr.To(extension.PriorityProdValueMax),
+					Containers: []corev1.Container{
+						{
+							Name: "main",
+							Resources: corev1.ResourceRequirements{
+								Requests: map[corev1.ResourceName]resource.Quantity{
+									corev1.ResourceCPU:    resource.MustParse("4"),
+									corev1.ResourceMemory: resource.MustParse("8Gi"),
+								},
+							},
+						},
+					},
+				},
+			},
+			allowCustomize: true,
+			scalarFactors: map[corev1.ResourceName]int64{
+				corev1.ResourceCPU:    80,
+				corev1.ResourceMemory: 80,
+			},
+			want: map[corev1.ResourceName]int64{
+				corev1.ResourceCPU:    4000,
+				corev1.ResourceMemory: 6871947674,
+			},
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var v1beta3args v1beta3.LoadAwareSchedulingArgs
 			v1beta3args.EstimatedScalingFactors = tt.scalarFactors
+			v1beta3args.AllowCustomizeEstimationFromMetadata = tt.allowCustomize
 			v1beta3.SetDefaults_LoadAwareSchedulingArgs(&v1beta3args)
 			var loadAwareSchedulingArgs config.LoadAwareSchedulingArgs
 			err := v1beta3.Convert_v1beta3_LoadAwareSchedulingArgs_To_config_LoadAwareSchedulingArgs(&v1beta3args, &loadAwareSchedulingArgs, nil)

@@ -62,8 +62,8 @@ type LoadAwareSchedulingArgs struct {
 	// ForceEstimationSecondsAfterInitialized indicates the force estimation duration
 	// after pod condition Initialized transition to True in seconds.
 	ForceEstimationSecondsAfterInitialized *int64
-	// AllowForceEstimationFromMetadata indicates whether to allow reading force estimation args from pod's metadata.
-	AllowForceEstimationFromMetadata bool
+	// AllowCustomizeEstimationFromMetadata indicates whether to allow reading force estimation args from pod's metadata.
+	AllowCustomizeEstimationFromMetadata bool
 	// Aggregated supports resource utilization filtering and scoring based on percentile statistics
 	Aggregated *LoadAwareSchedulingAggregatedArgs
 }

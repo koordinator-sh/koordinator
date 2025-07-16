@@ -23,6 +23,8 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/loadaware/estimator"
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -38,9 +40,9 @@ func TestQueryNode(t *testing.T) {
 			timeNowFn = preTimeNowFn
 		}()
 		timeNowFn = fakeTimeNowFn
-
+		e, _ := estimator.NewDefaultEstimator(&config.LoadAwareSchedulingArgs{}, nil)
 		pl := &Plugin{
-			podAssignCache: newPodAssignCache(),
+			podAssignCache: newPodAssignCache(e),
 		}
 		testNodeName := "test-node"
 		pendingPod := &corev1.Pod{

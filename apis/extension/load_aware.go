@@ -28,6 +28,8 @@ const (
 	// AnnotationCustomUsageThresholds represents the user-defined resource utilization threshold.
 	// For specific value definitions, see CustomUsageThresholds
 	AnnotationCustomUsageThresholds = SchedulingDomainPrefix + "/usage-thresholds"
+	// AnnotationCustomEstimatedScalingFactors represents the user-defined factor when estimating resource usage.
+	AnnotationCustomEstimatedScalingFactors = SchedulingDomainPrefix + "/load-estimated-scaling-factors"
 	// AnnotationCustomForceEstimationSecondsAfterPodScheduled represents the user-defined
 	// force estimation seconds after pod scheduled.
 	AnnotationCustomForceEstimationSecondsAfterPodScheduled = SchedulingDomainPrefix + "/force-load-estimation-seconds-after-pod-scheduled"
@@ -66,6 +68,17 @@ func GetCustomUsageThresholds(node *corev1.Node) (*CustomUsageThresholds, error)
 		return nil, err
 	}
 	return usageThresholds, nil
+}
+
+// also returns nil if unmarshal error
+func GetCustomEstimatedScalingFactors(pod *corev1.Pod) map[corev1.ResourceName]int64 {
+	if s := pod.Annotations[AnnotationCustomEstimatedScalingFactors]; s != "" {
+		factors := make(map[corev1.ResourceName]int64)
+		if err := json.Unmarshal([]byte(s), &factors); err == nil {
+			return factors
+		}
+	}
+	return nil
 }
 
 func GetCustomForceEstimationSecondsAfterPodScheduled(pod *corev1.Pod) int64 {

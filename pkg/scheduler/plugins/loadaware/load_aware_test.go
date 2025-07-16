@@ -28,7 +28,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/client-go/informers"
 	kubefake "k8s.io/client-go/kubernetes/fake"
@@ -432,7 +431,7 @@ func TestShouldForceEstimatePod(t *testing.T) {
 		name                                    string
 		forceEstimationSecondsAfterPodScheduled *int64
 		forceEstimationSecondsAfterInitialized  *int64
-		allowForceEstimationFromMetadata        bool
+		allowCustomizeEstimationFromMetadata    bool
 		info                                    *podAssignInfo
 		want                                    bool
 	}{
@@ -447,19 +446,21 @@ func TestShouldForceEstimatePod(t *testing.T) {
 				pod: schedulertesting.MakePod().Namespace("default").Name("pod").Conditions([]corev1.PodCondition{
 					{Type: corev1.PodScheduled, Status: corev1.ConditionTrue, LastTransitionTime: metav1.NewTime(now.Add(-time.Minute))},
 				}).Obj(),
+				timestamp: now.Add(-time.Minute),
 			},
 			want: true,
 		},
 		{
-			name:                                    "enabled for pod scheduled but use internal assign time",
+			name:                                    "disabled pod scheduled when pod initialized",
 			forceEstimationSecondsAfterPodScheduled: ptr.To((int64(180))),
+			forceEstimationSecondsAfterInitialized:  ptr.To((int64(10))),
 			info: &podAssignInfo{
 				pod: schedulertesting.MakePod().Namespace("default").Name("pod").Conditions([]corev1.PodCondition{
-					{Type: corev1.PodScheduled, Status: corev1.ConditionFalse, LastTransitionTime: metav1.NewTime(now.Add(-time.Minute))},
+					{Type: corev1.PodScheduled, Status: corev1.ConditionTrue, LastTransitionTime: metav1.NewTime(now.Add(-time.Minute))},
+					{Type: corev1.PodInitialized, Status: corev1.ConditionTrue, LastTransitionTime: metav1.NewTime(now.Add(-30 * time.Second))},
 				}).Obj(),
 				timestamp: now.Add(-time.Minute),
 			},
-			want: true,
 		},
 		{
 			name:                                   "enabled for pod initialized",
@@ -481,20 +482,21 @@ func TestShouldForceEstimatePod(t *testing.T) {
 			},
 		},
 		{
-			name:                             "after pod scheduled from metadata",
-			allowForceEstimationFromMetadata: true,
+			name:                                 "after pod scheduled from metadata",
+			allowCustomizeEstimationFromMetadata: true,
 			info: &podAssignInfo{
 				pod: schedulertesting.MakePod().Namespace("default").
 					Annotation(extension.AnnotationCustomForceEstimationSecondsAfterPodScheduled, "180").
 					Name("pod").Conditions([]corev1.PodCondition{
 					{Type: corev1.PodScheduled, Status: corev1.ConditionTrue, LastTransitionTime: metav1.NewTime(now.Add(-time.Minute))},
 				}).Obj(),
+				timestamp: now.Add(-time.Minute),
 			},
 			want: true,
 		},
 		{
-			name:                             "after initialized from metadata",
-			allowForceEstimationFromMetadata: true,
+			name:                                 "after initialized from metadata",
+			allowCustomizeEstimationFromMetadata: true,
 			info: &podAssignInfo{
 				pod: schedulertesting.MakePod().Namespace("default").
 					Annotation(extension.AnnotationCustomForceEstimationSecondsAfterInitialized, "180").
@@ -511,7 +513,7 @@ func TestShouldForceEstimatePod(t *testing.T) {
 			v1beta3.SetDefaults_LoadAwareSchedulingArgs(&v1beta3args)
 			v1beta3args.ForceEstimationSecondsAfterPodScheduled = tt.forceEstimationSecondsAfterPodScheduled
 			v1beta3args.ForceEstimationSecondsAfterInitialized = tt.forceEstimationSecondsAfterInitialized
-			v1beta3args.AllowForceEstimationFromMetadata = tt.allowForceEstimationFromMetadata
+			v1beta3args.AllowCustomizeEstimationFromMetadata = tt.allowCustomizeEstimationFromMetadata
 			var loadAwareSchedulingArgs config.LoadAwareSchedulingArgs
 			err := v1beta3.Convert_v1beta3_LoadAwareSchedulingArgs_To_config_LoadAwareSchedulingArgs(&v1beta3args, &loadAwareSchedulingArgs, nil)
 			assert.NoError(t, err)
@@ -1497,6 +1499,11 @@ func TestFilterUsage(t *testing.T) {
 			informerFactory := informers.NewSharedInformerFactory(cs, 0)
 
 			for _, v := range tt.pods {
+				v.Spec.NodeName = tt.nodeName
+				v.UID = uuid.NewUUID()
+				v.Status.Conditions = []corev1.PodCondition{
+					{Type: corev1.PodScheduled, Status: corev1.ConditionTrue, LastTransitionTime: metav1.Time{Time: time.Now().Add(-10 * time.Second)}},
+				}
 				_, err = cs.CoreV1().Pods(v.Namespace).Create(context.TODO(), v, metav1.CreateOptions{})
 				assert.Nil(t, err)
 			}
@@ -1569,20 +1576,6 @@ func TestFilterUsage(t *testing.T) {
 			if testPod == nil {
 				testPod = &corev1.Pod{}
 			}
-			assignCache := p.(*Plugin).podAssignCache
-			for _, v := range tt.pods {
-				m := assignCache.podInfoItems[tt.nodeName]
-				if m == nil {
-					m = map[types.UID]*podAssignInfo{}
-					assignCache.podInfoItems[tt.nodeName] = m
-				}
-				podUid := uuid.NewUUID()
-				m[podUid] = &podAssignInfo{
-					timestamp: time.Now().Add(-10 * time.Second),
-					pod:       v,
-				}
-			}
-
 			status := p.(*Plugin).Filter(context.TODO(), cycleState, testPod, nodeInfo)
 			assert.True(t, tt.wantStatus.Equal(status), "want status: %s, but got %s", tt.wantStatus.Message(), status.Message())
 		})
@@ -2523,6 +2516,7 @@ func TestScore(t *testing.T) {
 				assert.NoError(t, err)
 			}
 			for _, v := range tt.assignedPod {
+				v.pod.Spec.NodeName = tt.nodeName
 				v.pod.UID = uuid.NewUUID()
 				v.pod.ResourceVersion = "111"
 				_, err = cs.CoreV1().Pods(v.pod.Namespace).Create(context.TODO(), v.pod, metav1.CreateOptions{})
@@ -2538,16 +2532,6 @@ func TestScore(t *testing.T) {
 
 			koordSharedInformerFactory.Start(context.TODO().Done())
 			koordSharedInformerFactory.WaitForCacheSync(context.TODO().Done())
-
-			assignCache := p.(*Plugin).podAssignCache
-			for _, v := range tt.assignedPod {
-				m := assignCache.podInfoItems[tt.nodeName]
-				if m == nil {
-					m = map[types.UID]*podAssignInfo{}
-					assignCache.podInfoItems[tt.nodeName] = m
-				}
-				m[v.pod.UID] = v
-			}
 
 			cycleState := framework.NewCycleState()
 
