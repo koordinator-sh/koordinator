@@ -28,8 +28,8 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/klog/v2"
-	"k8s.io/kubernetes/pkg/scheduler/framework"
 	podutil "k8s.io/kubernetes/pkg/api/v1/pod"
+	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
@@ -388,7 +388,7 @@ func (p *Plugin) shouldForceEstimatePod(info *podAssignInfo, now time.Time) bool
 		if _, c := podutil.GetPodCondition(&info.pod.Status, corev1.PodInitialized); c != nil && c.Status == corev1.ConditionTrue {
 			it = c.LastTransitionTime.Time
 		}
-		if !it.IsZero() && it.Add(time.Duration(forceAfterInitialized) * time.Second).After(now) {
+		if !it.IsZero() && it.Add(time.Duration(forceAfterInitialized)*time.Second).After(now) {
 			return true
 		}
 	}
