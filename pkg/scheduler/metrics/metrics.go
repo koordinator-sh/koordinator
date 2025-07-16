@@ -48,6 +48,12 @@ var (
 			Name:      "reservation_status_phase",
 			Help:      `The current number of reservations in each status phase (e.g. Pending, Available, Succeeded, Failed)`,
 		}, []string{"name", "phase"}))
+	ReservationResourceAllocated = utilmetrics.NewGCGaugeVec("reservation_resource_allocated", prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Subsystem: schedulermetrics.SchedulerSubsystem,
+			Name:      "reservation_resource_allocated",
+			Help:      `Utilization of a specific resource in a reservation (allocated / allocatable).`,
+		}, []string{"name", "resource"}))
 	ElasticQuotaProcessLatency = metrics.NewHistogramVec(
 		&metrics.HistogramOpts{
 			Subsystem: schedulermetrics.SchedulerSubsystem,
@@ -101,12 +107,14 @@ var (
 
 	gcMetricsList = []prometheus.Collector{
 		ReservationStatusPhase.GetGaugeVec(),
+		ReservationResourceAllocated.GetGaugeVec(),
 	}
 )
 
 const (
-	reservationNameKey  = "name"
-	reservationPhaseKey = "phase"
+	reservationNameKey     = "name"
+	reservationPhaseKey    = "phase"
+	reservationResourceKey = "resource"
 )
 
 // RecordReservationPhase records the phase of a reservation as a metric.
@@ -117,6 +125,15 @@ func RecordReservationPhase(name string, phase string, value float64) {
 		reservationPhaseKey: phase,
 	}
 	ReservationStatusPhase.WithSet(labels, value)
+}
+
+// RecordReservationResourceAllocated records the allocated resource of a reservation as a metric.
+func RecordReservationResourceAllocated(name, resource string, value float64) {
+	labels := prometheus.Labels{
+		reservationNameKey:     name,
+		reservationResourceKey: resource,
+	}
+	ReservationResourceAllocated.WithSet(labels, value)
 }
 
 var registerMetrics sync.Once
