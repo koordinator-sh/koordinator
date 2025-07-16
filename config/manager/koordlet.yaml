@@ -53,6 +53,9 @@ spec:
                 - SYS_ADMIN
             privileged: true
           volumeMounts:
+            - mountPath: /var/run/koordlet/xpu-device-infos/
+              mountPropagation: Bidirectional
+              name: device-infos
             - mountPath: /etc/localtime
               name: host-time
               readOnly: true
@@ -100,6 +103,10 @@ spec:
       tolerations:
         - operator: Exists
       volumes:
+        - hostPath:
+              path: /var/run/koordlet/xpu-device-infos/
+              type: DirectoryOrCreate
+          name: device-infos
         - hostPath:
             path: /etc/localtime
             type: ""
