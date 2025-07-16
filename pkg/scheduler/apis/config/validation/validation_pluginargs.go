@@ -24,6 +24,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	schedconfig "k8s.io/kubernetes/pkg/scheduler/apis/config"
 
+	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 )
 
@@ -52,10 +53,68 @@ func ValidateLoadAwareSchedulingArgs(args *config.LoadAwareSchedulingArgs) error
 		}
 	}
 
+	if err := validateAggregatedArgs(args.Aggregated, field.NewPath("aggregated")); err != nil {
+		allErrs = append(allErrs, err...)
+	}
+
 	if len(allErrs) == 0 {
 		return nil
 	}
 	return allErrs.ToAggregate()
+}
+
+func validateAggregatedArgs(
+	aggregated *config.LoadAwareSchedulingAggregatedArgs,
+	fldPath *field.Path,
+) field.ErrorList {
+	var allErrs field.ErrorList
+
+	if aggregated == nil {
+		return nil
+	}
+
+	if err := validateResourceThresholds(aggregated.UsageThresholds); err != nil {
+		allErrs = append(allErrs, field.Invalid(fldPath.Child("usageThresholds"), aggregated.UsageThresholds, err.Error()))
+	}
+
+	if aggregated.UsageAggregationType != "" {
+		if err := validateAggregationType(aggregated.UsageAggregationType, fldPath.Child("usageAggregationType")); err != nil {
+			allErrs = append(allErrs, err)
+		}
+	}
+
+	if aggregated.UsageAggregatedDuration.Duration < 0 {
+		allErrs = append(allErrs, field.Invalid(fldPath.Child("usageAggregatedDuration"),
+			aggregated.UsageAggregatedDuration, "duration must be >= 0"))
+	}
+
+	if aggregated.ScoreAggregationType != "" {
+		if err := validateAggregationType(aggregated.ScoreAggregationType, fldPath.Child("scoreAggregationType")); err != nil {
+			allErrs = append(allErrs, err)
+		}
+	}
+
+	if aggregated.ScoreAggregatedDuration.Duration < 0 {
+		allErrs = append(allErrs, field.Invalid(fldPath.Child("scoreAggregatedDuration"),
+			aggregated.ScoreAggregatedDuration, "duration must be >= 0"))
+	}
+
+	return allErrs
+}
+
+func validateAggregationType(aggType extension.AggregationType, fldPath *field.Path) *field.Error {
+	validTypes := []string{
+		string(extension.AVG),
+		string(extension.P50), string(extension.P90),
+		string(extension.P95), string(extension.P99),
+	}
+
+	for _, t := range validTypes {
+		if string(aggType) == t {
+			return nil
+		}
+	}
+	return field.NotSupported(fldPath, aggType, validTypes)
 }
 
 func validateResourceWeights(resources map[corev1.ResourceName]int64) error {
