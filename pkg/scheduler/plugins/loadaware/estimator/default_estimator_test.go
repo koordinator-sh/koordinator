@@ -271,7 +271,7 @@ func TestDefaultEstimatorEstimatePod(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			var v1beta3args v1beta3.LoadAwareSchedulingArgs
 			v1beta3args.EstimatedScalingFactors = tt.scalarFactors
-			v1beta3args.AllowCustomizeEstimationFromMetadata = tt.allowCustomize
+			v1beta3args.AllowCustomizeEstimation = tt.allowCustomize
 			v1beta3.SetDefaults_LoadAwareSchedulingArgs(&v1beta3args)
 			var loadAwareSchedulingArgs config.LoadAwareSchedulingArgs
 			err := v1beta3.Convert_v1beta3_LoadAwareSchedulingArgs_To_config_LoadAwareSchedulingArgs(&v1beta3args, &loadAwareSchedulingArgs, nil)

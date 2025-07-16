@@ -337,7 +337,7 @@ func (p *Plugin) estimatedAssignedPodUsed(nodeName string, nodeMetric *slov1alph
 			stillInTheReportInterval(assignInfo.timestamp, nodeMetricUpdateTime, nodeMetricReportInterval) ||
 			(scoreWithAggregation(p.args.Aggregated) &&
 				getTargetAggregatedUsage(nodeMetric, &p.args.Aggregated.ScoreAggregatedDuration, p.args.Aggregated.ScoreAggregationType) == nil) ||
-			p.shouldForceEstimatePod(assignInfo, now) {
+			p.shouldEstimatePodByConfig(assignInfo, now) {
 			estimated := assignInfo.estimated
 			if estimated == nil {
 				continue
@@ -357,28 +357,28 @@ func (p *Plugin) estimatedAssignedPodUsed(nodeName string, nodeMetric *slov1alph
 	return estimatedUsed, estimatedPods
 }
 
-func (p *Plugin) shouldForceEstimatePod(info *podAssignInfo, now time.Time) bool {
-	var forceAfterPodScheduled, forceAfterInitialized int64 = -1, -1
-	if p.args.AllowCustomizeEstimationFromMetadata {
-		forceAfterPodScheduled = extension.GetCustomForceEstimationSecondsAfterPodScheduled(info.pod)
-		forceAfterInitialized = extension.GetCustomForceEstimationSecondsAfterInitialized(info.pod)
+func (p *Plugin) shouldEstimatePodByConfig(info *podAssignInfo, now time.Time) bool {
+	var afterPodScheduled, afterInitialized int64 = -1, -1
+	if p.args.AllowCustomizeEstimation {
+		afterPodScheduled = extension.GetCustomEstimatedSecondsAfterPodScheduled(info.pod)
+		afterInitialized = extension.GetCustomEstimatedSecondsAfterInitialized(info.pod)
 	}
-	if s := p.args.ForceEstimationSecondsAfterPodScheduled; s != nil && forceAfterPodScheduled < 0 {
-		forceAfterPodScheduled = *s
+	if s := p.args.EstimatedSecondsAfterPodScheduled; s != nil && afterPodScheduled < 0 {
+		afterPodScheduled = *s
 	}
-	if s := p.args.ForceEstimationSecondsAfterInitialized; s != nil && forceAfterInitialized < 0 {
-		forceAfterInitialized = *s
+	if s := p.args.EstimatedSecondsAfterInitialized; s != nil && afterInitialized < 0 {
+		afterInitialized = *s
 	}
-	if forceAfterInitialized > 0 {
+	if afterInitialized > 0 {
 		if _, c := podutil.GetPodCondition(&info.pod.Status, corev1.PodInitialized); c != nil && c.Status == corev1.ConditionTrue {
-			// if ForceEstimationSecondsAfterPodScheduled is set and pod is initialized, ignore ForceEstimationSecondsAfterPodScheduled
-			// ForceEstimationSecondsAfterPodScheduled might be set to a long duration to wait for time consuming init containers in pod.
+			// if EstimatedSecondsAfterPodScheduled is set and pod is initialized, ignore EstimatedSecondsAfterPodScheduled
+			// EstimatedSecondsAfterPodScheduled might be set to a long duration to wait for time consuming init containers in pod.
 			if t := c.LastTransitionTime; !t.IsZero() {
-				return t.Add(time.Duration(forceAfterInitialized) * time.Second).After(now)
+				return t.Add(time.Duration(afterInitialized) * time.Second).After(now)
 			}
 		}
 	}
-	if forceAfterPodScheduled > 0 && info.timestamp.Add(time.Duration(forceAfterPodScheduled)*time.Second).After(now) {
+	if afterPodScheduled > 0 && info.timestamp.Add(time.Duration(afterPodScheduled)*time.Second).After(now) {
 		return true
 	}
 	return false

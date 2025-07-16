@@ -394,9 +394,9 @@ func autoConvert_v1beta3_LoadAwareSchedulingArgs_To_config_LoadAwareSchedulingAr
 	}
 	out.Estimator = in.Estimator
 	out.EstimatedScalingFactors = *(*map[corev1.ResourceName]int64)(unsafe.Pointer(&in.EstimatedScalingFactors))
-	out.ForceEstimationSecondsAfterPodScheduled = (*int64)(unsafe.Pointer(in.ForceEstimationSecondsAfterPodScheduled))
-	out.ForceEstimationSecondsAfterInitialized = (*int64)(unsafe.Pointer(in.ForceEstimationSecondsAfterInitialized))
-	out.AllowCustomizeEstimationFromMetadata = in.AllowCustomizeEstimationFromMetadata
+	out.EstimatedSecondsAfterPodScheduled = (*int64)(unsafe.Pointer(in.EstimatedSecondsAfterPodScheduled))
+	out.EstimatedSecondsAfterInitialized = (*int64)(unsafe.Pointer(in.EstimatedSecondsAfterInitialized))
+	out.AllowCustomizeEstimation = in.AllowCustomizeEstimation
 	if in.Aggregated != nil {
 		in, out := &in.Aggregated, &out.Aggregated
 		*out = new(config.LoadAwareSchedulingAggregatedArgs)
@@ -421,9 +421,9 @@ func autoConvert_config_LoadAwareSchedulingArgs_To_v1beta3_LoadAwareSchedulingAr
 	}
 	out.Estimator = in.Estimator
 	out.EstimatedScalingFactors = *(*map[corev1.ResourceName]int64)(unsafe.Pointer(&in.EstimatedScalingFactors))
-	out.ForceEstimationSecondsAfterPodScheduled = (*int64)(unsafe.Pointer(in.ForceEstimationSecondsAfterPodScheduled))
-	out.ForceEstimationSecondsAfterInitialized = (*int64)(unsafe.Pointer(in.ForceEstimationSecondsAfterInitialized))
-	out.AllowCustomizeEstimationFromMetadata = in.AllowCustomizeEstimationFromMetadata
+	out.EstimatedSecondsAfterPodScheduled = (*int64)(unsafe.Pointer(in.EstimatedSecondsAfterPodScheduled))
+	out.EstimatedSecondsAfterInitialized = (*int64)(unsafe.Pointer(in.EstimatedSecondsAfterInitialized))
+	out.AllowCustomizeEstimation = in.AllowCustomizeEstimation
 	if in.Aggregated != nil {
 		in, out := &in.Aggregated, &out.Aggregated
 		*out = new(LoadAwareSchedulingAggregatedArgs)

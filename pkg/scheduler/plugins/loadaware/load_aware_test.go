@@ -425,23 +425,23 @@ func TestEnableScheduleWhenNodeMetricsExpired(t *testing.T) {
 	}
 }
 
-func TestShouldForceEstimatePod(t *testing.T) {
+func TestShouldEstimatePodByConfig(t *testing.T) {
 	now := time.Now()
 	tests := []struct {
-		name                                    string
-		forceEstimationSecondsAfterPodScheduled *int64
-		forceEstimationSecondsAfterInitialized  *int64
-		allowCustomizeEstimationFromMetadata    bool
-		info                                    *podAssignInfo
-		want                                    bool
+		name                              string
+		estimatedSecondsAfterPodScheduled *int64
+		estimatedSecondsAfterInitialized  *int64
+		allowCustomizeEstimation          bool
+		info                              *podAssignInfo
+		want                              bool
 	}{
 		{
 			name: "disabled",
 			info: &podAssignInfo{},
 		},
 		{
-			name:                                    "enabled for pod scheduled",
-			forceEstimationSecondsAfterPodScheduled: ptr.To((int64(180))),
+			name:                              "enabled for pod scheduled",
+			estimatedSecondsAfterPodScheduled: ptr.To((int64(180))),
 			info: &podAssignInfo{
 				pod: schedulertesting.MakePod().Namespace("default").Name("pod").Conditions([]corev1.PodCondition{
 					{Type: corev1.PodScheduled, Status: corev1.ConditionTrue, LastTransitionTime: metav1.NewTime(now.Add(-time.Minute))},
@@ -451,9 +451,9 @@ func TestShouldForceEstimatePod(t *testing.T) {
 			want: true,
 		},
 		{
-			name:                                    "disabled pod scheduled when pod initialized",
-			forceEstimationSecondsAfterPodScheduled: ptr.To((int64(180))),
-			forceEstimationSecondsAfterInitialized:  ptr.To((int64(10))),
+			name:                              "disabled pod scheduled when pod initialized",
+			estimatedSecondsAfterPodScheduled: ptr.To((int64(180))),
+			estimatedSecondsAfterInitialized:  ptr.To((int64(10))),
 			info: &podAssignInfo{
 				pod: schedulertesting.MakePod().Namespace("default").Name("pod").Conditions([]corev1.PodCondition{
 					{Type: corev1.PodScheduled, Status: corev1.ConditionTrue, LastTransitionTime: metav1.NewTime(now.Add(-time.Minute))},
@@ -463,8 +463,8 @@ func TestShouldForceEstimatePod(t *testing.T) {
 			},
 		},
 		{
-			name:                                   "enabled for pod initialized",
-			forceEstimationSecondsAfterInitialized: ptr.To((int64(180))),
+			name:                             "enabled for pod initialized",
+			estimatedSecondsAfterInitialized: ptr.To((int64(180))),
 			info: &podAssignInfo{
 				pod: schedulertesting.MakePod().Namespace("default").Name("pod").Conditions([]corev1.PodCondition{
 					{Type: corev1.PodInitialized, Status: corev1.ConditionTrue, LastTransitionTime: metav1.NewTime(now.Add(-time.Minute))},
@@ -473,8 +473,8 @@ func TestShouldForceEstimatePod(t *testing.T) {
 			want: true,
 		},
 		{
-			name:                                   "disabled for pod initialized when condition is not satisfied",
-			forceEstimationSecondsAfterInitialized: ptr.To((int64(180))),
+			name:                             "disabled for pod initialized when condition is not satisfied",
+			estimatedSecondsAfterInitialized: ptr.To((int64(180))),
 			info: &podAssignInfo{
 				pod: schedulertesting.MakePod().Namespace("default").Name("pod").Conditions([]corev1.PodCondition{
 					{Type: corev1.PodInitialized, Status: corev1.ConditionFalse, LastTransitionTime: metav1.NewTime(now.Add(-time.Minute))},
@@ -482,11 +482,11 @@ func TestShouldForceEstimatePod(t *testing.T) {
 			},
 		},
 		{
-			name:                                 "after pod scheduled from metadata",
-			allowCustomizeEstimationFromMetadata: true,
+			name:                     "after pod scheduled from metadata",
+			allowCustomizeEstimation: true,
 			info: &podAssignInfo{
 				pod: schedulertesting.MakePod().Namespace("default").
-					Annotation(extension.AnnotationCustomForceEstimationSecondsAfterPodScheduled, "180").
+					Annotation(extension.AnnotationCustomEstimatedSecondsAfterPodScheduled, "180").
 					Name("pod").Conditions([]corev1.PodCondition{
 					{Type: corev1.PodScheduled, Status: corev1.ConditionTrue, LastTransitionTime: metav1.NewTime(now.Add(-time.Minute))},
 				}).Obj(),
@@ -495,11 +495,11 @@ func TestShouldForceEstimatePod(t *testing.T) {
 			want: true,
 		},
 		{
-			name:                                 "after initialized from metadata",
-			allowCustomizeEstimationFromMetadata: true,
+			name:                     "after initialized from metadata",
+			allowCustomizeEstimation: true,
 			info: &podAssignInfo{
 				pod: schedulertesting.MakePod().Namespace("default").
-					Annotation(extension.AnnotationCustomForceEstimationSecondsAfterInitialized, "180").
+					Annotation(extension.AnnotationCustomEstimatedSecondsAfterInitialized, "180").
 					Name("pod").Conditions([]corev1.PodCondition{
 					{Type: corev1.PodInitialized, Status: corev1.ConditionTrue, LastTransitionTime: metav1.NewTime(now.Add(-time.Minute))},
 				}).Obj(),
@@ -511,9 +511,9 @@ func TestShouldForceEstimatePod(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			var v1beta3args v1beta3.LoadAwareSchedulingArgs
 			v1beta3.SetDefaults_LoadAwareSchedulingArgs(&v1beta3args)
-			v1beta3args.ForceEstimationSecondsAfterPodScheduled = tt.forceEstimationSecondsAfterPodScheduled
-			v1beta3args.ForceEstimationSecondsAfterInitialized = tt.forceEstimationSecondsAfterInitialized
-			v1beta3args.AllowCustomizeEstimationFromMetadata = tt.allowCustomizeEstimationFromMetadata
+			v1beta3args.EstimatedSecondsAfterPodScheduled = tt.estimatedSecondsAfterPodScheduled
+			v1beta3args.EstimatedSecondsAfterInitialized = tt.estimatedSecondsAfterInitialized
+			v1beta3args.AllowCustomizeEstimation = tt.allowCustomizeEstimation
 			var loadAwareSchedulingArgs config.LoadAwareSchedulingArgs
 			err := v1beta3.Convert_v1beta3_LoadAwareSchedulingArgs_To_config_LoadAwareSchedulingArgs(&v1beta3args, &loadAwareSchedulingArgs, nil)
 			assert.NoError(t, err)
@@ -545,7 +545,7 @@ func TestShouldForceEstimatePod(t *testing.T) {
 			assert.Nil(t, err)
 			koordSharedInformerFactory.Start(context.TODO().Done())
 			koordSharedInformerFactory.WaitForCacheSync(context.TODO().Done())
-			actual := p.(*Plugin).shouldForceEstimatePod(tt.info, now)
+			actual := p.(*Plugin).shouldEstimatePodByConfig(tt.info, now)
 			assert.Equal(t, tt.want, actual)
 		})
 	}

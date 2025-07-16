@@ -243,13 +243,13 @@ func (in *LoadAwareSchedulingArgs) DeepCopyInto(out *LoadAwareSchedulingArgs) {
 			(*out)[key] = val
 		}
 	}
-	if in.ForceEstimationSecondsAfterPodScheduled != nil {
-		in, out := &in.ForceEstimationSecondsAfterPodScheduled, &out.ForceEstimationSecondsAfterPodScheduled
+	if in.EstimatedSecondsAfterPodScheduled != nil {
+		in, out := &in.EstimatedSecondsAfterPodScheduled, &out.EstimatedSecondsAfterPodScheduled
 		*out = new(int64)
 		**out = **in
 	}
-	if in.ForceEstimationSecondsAfterInitialized != nil {
-		in, out := &in.ForceEstimationSecondsAfterInitialized, &out.ForceEstimationSecondsAfterInitialized
+	if in.EstimatedSecondsAfterInitialized != nil {
+		in, out := &in.EstimatedSecondsAfterInitialized, &out.EstimatedSecondsAfterInitialized
 		*out = new(int64)
 		**out = **in
 	}

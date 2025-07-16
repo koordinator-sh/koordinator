@@ -30,12 +30,12 @@ const (
 	AnnotationCustomUsageThresholds = SchedulingDomainPrefix + "/usage-thresholds"
 	// AnnotationCustomEstimatedScalingFactors represents the user-defined factor when estimating resource usage.
 	AnnotationCustomEstimatedScalingFactors = SchedulingDomainPrefix + "/load-estimated-scaling-factors"
-	// AnnotationCustomForceEstimationSecondsAfterPodScheduled represents the user-defined
+	// AnnotationCustomEstimatedSecondsAfterPodScheduled represents the user-defined
 	// force estimation seconds after pod scheduled.
-	AnnotationCustomForceEstimationSecondsAfterPodScheduled = SchedulingDomainPrefix + "/force-load-estimation-seconds-after-pod-scheduled"
-	// AnnotationCustomForceEstimationSecondsAfterInitialized represents the user-defined
+	AnnotationCustomEstimatedSecondsAfterPodScheduled = SchedulingDomainPrefix + "/load-estimated-seconds-after-pod-scheduled"
+	// AnnotationCustomEstimatedSecondsAfterInitialized represents the user-defined
 	// force estimation seconds after initialized.
-	AnnotationCustomForceEstimationSecondsAfterInitialized = SchedulingDomainPrefix + "/force-load-estimation-seconds-after-initialized"
+	AnnotationCustomEstimatedSecondsAfterInitialized = SchedulingDomainPrefix + "/load-estimated-seconds-after-initialized"
 )
 
 // CustomUsageThresholds supports user-defined node resource utilization thresholds.
@@ -81,8 +81,8 @@ func GetCustomEstimatedScalingFactors(pod *corev1.Pod) map[corev1.ResourceName]i
 	return nil
 }
 
-func GetCustomForceEstimationSecondsAfterPodScheduled(pod *corev1.Pod) int64 {
-	if s := pod.Annotations[AnnotationCustomForceEstimationSecondsAfterPodScheduled]; s != "" {
+func GetCustomEstimatedSecondsAfterPodScheduled(pod *corev1.Pod) int64 {
+	if s := pod.Annotations[AnnotationCustomEstimatedSecondsAfterPodScheduled]; s != "" {
 		if i, err := strconv.ParseInt(s, 10, 64); err == nil {
 			return i
 		}
@@ -90,8 +90,8 @@ func GetCustomForceEstimationSecondsAfterPodScheduled(pod *corev1.Pod) int64 {
 	return -1
 }
 
-func GetCustomForceEstimationSecondsAfterInitialized(pod *corev1.Pod) int64 {
-	if s := pod.Annotations[AnnotationCustomForceEstimationSecondsAfterInitialized]; s != "" {
+func GetCustomEstimatedSecondsAfterInitialized(pod *corev1.Pod) int64 {
+	if s := pod.Annotations[AnnotationCustomEstimatedSecondsAfterInitialized]; s != "" {
 		if i, err := strconv.ParseInt(s, 10, 64); err == nil {
 			return i
 		}

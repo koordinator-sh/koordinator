@@ -48,7 +48,7 @@ func NewDefaultEstimator(args *config.LoadAwareSchedulingArgs, handle framework.
 	return &DefaultEstimator{
 		resourceWeights: args.ResourceWeights,
 		scalingFactors:  args.EstimatedScalingFactors,
-		allowCustomize:  args.AllowCustomizeEstimationFromMetadata,
+		allowCustomize:  args.AllowCustomizeEstimation,
 	}, nil
 }
 
