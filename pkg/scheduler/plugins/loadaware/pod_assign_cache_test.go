@@ -24,6 +24,9 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/loadaware/estimator"
 )
 
 var fakeTimeNowFn = func() time.Time {
@@ -99,7 +102,8 @@ func TestPodAssignCache_OnAdd(t *testing.T) {
 				timeNowFn = preTimeNowFn
 			}()
 			timeNowFn = fakeTimeNowFn
-			assignCache := newPodAssignCache()
+			e, _ := estimator.NewDefaultEstimator(&config.LoadAwareSchedulingArgs{}, nil)
+			assignCache := newPodAssignCache(e)
 			assignCache.OnAdd(tt.pod, true)
 			assert.Equal(t, tt.wantCache, assignCache.podInfoItems)
 		})
@@ -261,7 +265,8 @@ func TestPodAssignCache_OnUpdate(t *testing.T) {
 			timeNowFn = fakeTimeNowFn
 			assignCache := tt.assignCache
 			if assignCache == nil {
-				assignCache = newPodAssignCache()
+				e, _ := estimator.NewDefaultEstimator(&config.LoadAwareSchedulingArgs{}, nil)
+				assignCache = newPodAssignCache(e)
 			}
 			assignCache.OnUpdate(nil, tt.pod)
 			assert.Equal(t, tt.wantCache, assignCache.podInfoItems)

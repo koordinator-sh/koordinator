@@ -24,7 +24,9 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/cache"
+	podutil "k8s.io/kubernetes/pkg/api/v1/pod"
 
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/loadaware/estimator"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
@@ -38,16 +40,19 @@ type podAssignCache struct {
 	// podInfoItems stores podAssignInfo according to each node.
 	// podAssignInfo is indexed using the Pod's types.UID
 	podInfoItems map[string]map[types.UID]*podAssignInfo
+	estimator    estimator.Estimator
 }
 
 type podAssignInfo struct {
 	timestamp time.Time
 	pod       *corev1.Pod
+	estimated map[corev1.ResourceName]int64
 }
 
-func newPodAssignCache() *podAssignCache {
+func newPodAssignCache(estimator estimator.Estimator) *podAssignCache {
 	return &podAssignCache{
 		podInfoItems: map[string]map[types.UID]*podAssignInfo{},
+		estimator:    estimator,
 	}
 }
 
@@ -85,6 +90,15 @@ func (p *podAssignCache) assign(nodeName string, pod *corev1.Pod) {
 	if nodeName == "" || util.IsPodTerminated(pod) {
 		return
 	}
+	estimated, err := p.estimator.EstimatePod(pod)
+	if err != nil || len(estimated) == 0 {
+		estimated = nil
+	}
+	// try to use time from PodScheduled condition first
+	var timestamp time.Time
+	if _, c := podutil.GetPodCondition(&pod.Status, corev1.PodScheduled); c != nil && c.Status == corev1.ConditionTrue {
+		timestamp = c.LastTransitionTime.Time
+	}
 	p.lock.Lock()
 	defer p.lock.Unlock()
 	m := p.podInfoItems[nodeName]
@@ -95,10 +109,16 @@ func (p *podAssignCache) assign(nodeName string, pod *corev1.Pod) {
 
 	if _, ok := m[pod.UID]; ok {
 		m[pod.UID].pod = pod
+		m[pod.UID].estimated = estimated
 	} else {
+		// if PodScheduled condition not found, fallback to use assign timestamp from scheduler internal, which cannot be zero.
+		if timestamp.IsZero() {
+			timestamp = timeNowFn()
+		}
 		m[pod.UID] = &podAssignInfo{
-			timestamp: timeNowFn(),
+			timestamp: timestamp,
 			pod:       pod,
+			estimated: estimated,
 		}
 	}
 }
