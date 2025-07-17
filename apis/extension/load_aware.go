@@ -18,6 +18,7 @@ package extension
 
 import (
 	"encoding/json"
+	"strconv"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -27,6 +28,14 @@ const (
 	// AnnotationCustomUsageThresholds represents the user-defined resource utilization threshold.
 	// For specific value definitions, see CustomUsageThresholds
 	AnnotationCustomUsageThresholds = SchedulingDomainPrefix + "/usage-thresholds"
+	// AnnotationCustomEstimatedScalingFactors represents the user-defined factor when estimating resource usage.
+	AnnotationCustomEstimatedScalingFactors = SchedulingDomainPrefix + "/load-estimated-scaling-factors"
+	// AnnotationCustomEstimatedSecondsAfterPodScheduled represents the user-defined
+	// force estimation seconds after pod scheduled.
+	AnnotationCustomEstimatedSecondsAfterPodScheduled = SchedulingDomainPrefix + "/load-estimated-seconds-after-pod-scheduled"
+	// AnnotationCustomEstimatedSecondsAfterInitialized represents the user-defined
+	// force estimation seconds after initialized.
+	AnnotationCustomEstimatedSecondsAfterInitialized = SchedulingDomainPrefix + "/load-estimated-seconds-after-initialized"
 )
 
 // CustomUsageThresholds supports user-defined node resource utilization thresholds.
@@ -59,4 +68,33 @@ func GetCustomUsageThresholds(node *corev1.Node) (*CustomUsageThresholds, error)
 		return nil, err
 	}
 	return usageThresholds, nil
+}
+
+// also returns nil if unmarshal error
+func GetCustomEstimatedScalingFactors(pod *corev1.Pod) map[corev1.ResourceName]int64 {
+	if s := pod.Annotations[AnnotationCustomEstimatedScalingFactors]; s != "" {
+		factors := make(map[corev1.ResourceName]int64)
+		if err := json.Unmarshal([]byte(s), &factors); err == nil {
+			return factors
+		}
+	}
+	return nil
+}
+
+func GetCustomEstimatedSecondsAfterPodScheduled(pod *corev1.Pod) int64 {
+	if s := pod.Annotations[AnnotationCustomEstimatedSecondsAfterPodScheduled]; s != "" {
+		if i, err := strconv.ParseInt(s, 10, 64); err == nil {
+			return i
+		}
+	}
+	return -1
+}
+
+func GetCustomEstimatedSecondsAfterInitialized(pod *corev1.Pod) int64 {
+	if s := pod.Annotations[AnnotationCustomEstimatedSecondsAfterInitialized]; s != "" {
+		if i, err := strconv.ParseInt(s, 10, 64); err == nil {
+			return i
+		}
+	}
+	return -1
 }

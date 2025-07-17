@@ -26,8 +26,11 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
+	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/strategicpatch"
 	"k8s.io/klog/v2"
@@ -44,7 +47,6 @@ var (
 )
 
 func (r *Reconciler) listPodsForProfile(profile *configv1alpha1.ClusterColocationProfile) (*corev1.PodList, error) {
-	// TODO: support namespaceSelector and merge the matched pods
 	if profile.Spec.Selector == nil { // match nothing
 		return nil, nil
 	}
@@ -65,7 +67,48 @@ func (r *Reconciler) listPodsForProfile(profile *configv1alpha1.ClusterColocatio
 		return nil, fmt.Errorf("list pods failed for selector %+v, err: %w", ps, err)
 	}
 
-	return podList, nil
+	nsSelector := profile.Spec.NamespaceSelector
+	if nsSelector == nil {
+		return podList, nil
+	}
+
+	var filteredPods []corev1.Pod
+	for _, pod := range podList.Items {
+		matched, err := r.isPodNamespaceMatched(context.TODO(), &pod, nsSelector)
+		if err != nil {
+			return nil, err
+		}
+		if matched {
+			filteredPods = append(filteredPods, pod)
+		}
+	}
+	if len(filteredPods) == 0 {
+		return nil, nil
+	}
+	return &corev1.PodList{Items: filteredPods}, nil
+}
+
+func (r *Reconciler) isPodNamespaceMatched(ctx context.Context, pod *corev1.Pod, nsSelector *metav1.LabelSelector) (bool, error) {
+	if nsSelector == nil {
+		return true, nil // no selector means match all
+	}
+
+	selector, err := metav1.LabelSelectorAsSelector(nsSelector)
+	if err != nil {
+		return false, fmt.Errorf("invalid namespace selector: %w", err)
+	}
+	if selector.Empty() {
+		return true, nil // empty selector means match all
+	}
+
+	namespace := &corev1.Namespace{}
+	if err := r.Client.Get(ctx, types.NamespacedName{Name: pod.Namespace}, namespace); err != nil {
+		if apierrors.IsNotFound(err) {
+			return false, nil // namespace not found, so not match
+		}
+		return false, fmt.Errorf("failed to get namespace %q: %w", pod.Namespace, err)
+	}
+	return selector.Matches(labels.Set(namespace.Labels)), nil
 }
 
 func (r *Reconciler) updatePodByClusterColocationProfile(ctx context.Context, profile *configv1alpha1.ClusterColocationProfile, pod *corev1.Pod) (bool, error) {

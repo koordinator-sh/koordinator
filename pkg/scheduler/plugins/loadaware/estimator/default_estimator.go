@@ -41,12 +41,14 @@ const (
 type DefaultEstimator struct {
 	resourceWeights map[corev1.ResourceName]int64
 	scalingFactors  map[corev1.ResourceName]int64
+	allowCustomize  bool
 }
 
 func NewDefaultEstimator(args *config.LoadAwareSchedulingArgs, handle framework.Handle) (Estimator, error) {
 	return &DefaultEstimator{
 		resourceWeights: args.ResourceWeights,
 		scalingFactors:  args.EstimatedScalingFactors,
+		allowCustomize:  args.AllowCustomizeEstimation,
 	}, nil
 }
 
@@ -55,7 +57,20 @@ func (e *DefaultEstimator) Name() string {
 }
 
 func (e *DefaultEstimator) EstimatePod(pod *corev1.Pod) (map[corev1.ResourceName]int64, error) {
-	return estimatedPodUsed(pod, e.resourceWeights, e.scalingFactors), nil
+	var factors map[corev1.ResourceName]int64
+	if e.allowCustomize {
+		factors = extension.GetCustomEstimatedScalingFactors(pod)
+	}
+	if len(factors) == 0 {
+		factors = e.scalingFactors
+	} else {
+		for k, v := range e.scalingFactors {
+			if _, ok := factors[k]; !ok {
+				factors[k] = v
+			}
+		}
+	}
+	return estimatedPodUsed(pod, e.resourceWeights, factors), nil
 }
 
 func estimatedPodUsed(pod *corev1.Pod, resourceWeights map[corev1.ResourceName]int64, scalingFactors map[corev1.ResourceName]int64) map[corev1.ResourceName]int64 {

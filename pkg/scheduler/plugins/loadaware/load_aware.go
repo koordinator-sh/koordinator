@@ -28,6 +28,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/klog/v2"
+	podutil "k8s.io/kubernetes/pkg/api/v1/pod"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
@@ -88,15 +89,14 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 		return nil, fmt.Errorf("want handle to be of type frameworkext.ExtendedHandle, got %T", handle)
 	}
 
-	assignCache := newPodAssignCache()
-	podInformer := frameworkExtender.SharedInformerFactory().Core().V1().Pods()
-	frameworkexthelper.ForceSyncFromInformer(context.TODO().Done(), frameworkExtender.SharedInformerFactory(), podInformer.Informer(), assignCache)
-	nodeMetricLister := frameworkExtender.KoordinatorSharedInformerFactory().Slo().V1alpha1().NodeMetrics().Lister()
-
 	estimator, err := estimator.NewEstimator(pluginArgs, handle)
 	if err != nil {
 		return nil, err
 	}
+	assignCache := newPodAssignCache(estimator)
+	podInformer := frameworkExtender.SharedInformerFactory().Core().V1().Pods()
+	frameworkexthelper.ForceSyncFromInformer(context.TODO().Done(), frameworkExtender.SharedInformerFactory(), podInformer.Informer(), assignCache)
+	nodeMetricLister := frameworkExtender.KoordinatorSharedInformerFactory().Slo().V1alpha1().NodeMetrics().Lister()
 
 	return &Plugin{
 		handle:           handle,
@@ -322,6 +322,7 @@ func (p *Plugin) estimatedAssignedPodUsed(nodeName string, nodeMetric *slov1alph
 	nodeMetricReportInterval := getNodeMetricReportInterval(nodeMetric)
 
 	assignedPodsOnNode := p.podAssignCache.getPodsAssignInfoOnNode(nodeName)
+	now := time.Now()
 	for _, assignInfo := range assignedPodsOnNode {
 		if filterProdPod && extension.GetPodPriorityClassWithDefault(assignInfo.pod) != extension.PriorityProd {
 			continue
@@ -335,9 +336,10 @@ func (p *Plugin) estimatedAssignedPodUsed(nodeName string, nodeMetric *slov1alph
 			missedLatestUpdateTime(assignInfo.timestamp, nodeMetricUpdateTime) ||
 			stillInTheReportInterval(assignInfo.timestamp, nodeMetricUpdateTime, nodeMetricReportInterval) ||
 			(scoreWithAggregation(p.args.Aggregated) &&
-				getTargetAggregatedUsage(nodeMetric, &p.args.Aggregated.ScoreAggregatedDuration, p.args.Aggregated.ScoreAggregationType) == nil) {
-			estimated, err := p.estimator.EstimatePod(assignInfo.pod)
-			if err != nil {
+				getTargetAggregatedUsage(nodeMetric, &p.args.Aggregated.ScoreAggregatedDuration, p.args.Aggregated.ScoreAggregationType) == nil) ||
+			p.shouldEstimatePodByConfig(assignInfo, now) {
+			estimated := assignInfo.estimated
+			if estimated == nil {
 				continue
 			}
 			for resourceName, value := range estimated {
@@ -353,6 +355,33 @@ func (p *Plugin) estimatedAssignedPodUsed(nodeName string, nodeMetric *slov1alph
 		}
 	}
 	return estimatedUsed, estimatedPods
+}
+
+func (p *Plugin) shouldEstimatePodByConfig(info *podAssignInfo, now time.Time) bool {
+	var afterPodScheduled, afterInitialized int64 = -1, -1
+	if p.args.AllowCustomizeEstimation {
+		afterPodScheduled = extension.GetCustomEstimatedSecondsAfterPodScheduled(info.pod)
+		afterInitialized = extension.GetCustomEstimatedSecondsAfterInitialized(info.pod)
+	}
+	if s := p.args.EstimatedSecondsAfterPodScheduled; s != nil && afterPodScheduled < 0 {
+		afterPodScheduled = *s
+	}
+	if s := p.args.EstimatedSecondsAfterInitialized; s != nil && afterInitialized < 0 {
+		afterInitialized = *s
+	}
+	if afterInitialized > 0 {
+		if _, c := podutil.GetPodCondition(&info.pod.Status, corev1.PodInitialized); c != nil && c.Status == corev1.ConditionTrue {
+			// if EstimatedSecondsAfterPodScheduled is set and pod is initialized, ignore EstimatedSecondsAfterPodScheduled
+			// EstimatedSecondsAfterPodScheduled might be set to a long duration to wait for time consuming init containers in pod.
+			if t := c.LastTransitionTime; !t.IsZero() {
+				return t.Add(time.Duration(afterInitialized) * time.Second).After(now)
+			}
+		}
+	}
+	if afterPodScheduled > 0 && info.timestamp.Add(time.Duration(afterPodScheduled)*time.Second).After(now) {
+		return true
+	}
+	return false
 }
 
 func loadAwareSchedulingScorer(resToWeightMap, used map[corev1.ResourceName]int64, allocatable corev1.ResourceList) int64 {

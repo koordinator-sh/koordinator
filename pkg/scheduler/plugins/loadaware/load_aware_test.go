@@ -28,7 +28,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/client-go/informers"
 	kubefake "k8s.io/client-go/kubernetes/fake"
@@ -38,6 +37,7 @@ import (
 	frameworkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
 	schedulertesting "k8s.io/kubernetes/pkg/scheduler/testing"
 	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
@@ -421,6 +421,132 @@ func TestEnableScheduleWhenNodeMetricsExpired(t *testing.T) {
 
 			status := p.(*Plugin).Filter(context.TODO(), cycleState, &corev1.Pod{}, nodeInfo)
 			assert.True(t, tt.wantStatus.Equal(status), "want status: %s, but got %s", tt.wantStatus.Message(), status.Message())
+		})
+	}
+}
+
+func TestShouldEstimatePodByConfig(t *testing.T) {
+	now := time.Now()
+	tests := []struct {
+		name                              string
+		estimatedSecondsAfterPodScheduled *int64
+		estimatedSecondsAfterInitialized  *int64
+		allowCustomizeEstimation          bool
+		info                              *podAssignInfo
+		want                              bool
+	}{
+		{
+			name: "disabled",
+			info: &podAssignInfo{},
+		},
+		{
+			name:                              "enabled for pod scheduled",
+			estimatedSecondsAfterPodScheduled: ptr.To((int64(180))),
+			info: &podAssignInfo{
+				pod: schedulertesting.MakePod().Namespace("default").Name("pod").Conditions([]corev1.PodCondition{
+					{Type: corev1.PodScheduled, Status: corev1.ConditionTrue, LastTransitionTime: metav1.NewTime(now.Add(-time.Minute))},
+				}).Obj(),
+				timestamp: now.Add(-time.Minute),
+			},
+			want: true,
+		},
+		{
+			name:                              "disabled pod scheduled when pod initialized",
+			estimatedSecondsAfterPodScheduled: ptr.To((int64(180))),
+			estimatedSecondsAfterInitialized:  ptr.To((int64(10))),
+			info: &podAssignInfo{
+				pod: schedulertesting.MakePod().Namespace("default").Name("pod").Conditions([]corev1.PodCondition{
+					{Type: corev1.PodScheduled, Status: corev1.ConditionTrue, LastTransitionTime: metav1.NewTime(now.Add(-time.Minute))},
+					{Type: corev1.PodInitialized, Status: corev1.ConditionTrue, LastTransitionTime: metav1.NewTime(now.Add(-30 * time.Second))},
+				}).Obj(),
+				timestamp: now.Add(-time.Minute),
+			},
+		},
+		{
+			name:                             "enabled for pod initialized",
+			estimatedSecondsAfterInitialized: ptr.To((int64(180))),
+			info: &podAssignInfo{
+				pod: schedulertesting.MakePod().Namespace("default").Name("pod").Conditions([]corev1.PodCondition{
+					{Type: corev1.PodInitialized, Status: corev1.ConditionTrue, LastTransitionTime: metav1.NewTime(now.Add(-time.Minute))},
+				}).Obj(),
+			},
+			want: true,
+		},
+		{
+			name:                             "disabled for pod initialized when condition is not satisfied",
+			estimatedSecondsAfterInitialized: ptr.To((int64(180))),
+			info: &podAssignInfo{
+				pod: schedulertesting.MakePod().Namespace("default").Name("pod").Conditions([]corev1.PodCondition{
+					{Type: corev1.PodInitialized, Status: corev1.ConditionFalse, LastTransitionTime: metav1.NewTime(now.Add(-time.Minute))},
+				}).Obj(),
+			},
+		},
+		{
+			name:                     "after pod scheduled from metadata",
+			allowCustomizeEstimation: true,
+			info: &podAssignInfo{
+				pod: schedulertesting.MakePod().Namespace("default").
+					Annotation(extension.AnnotationCustomEstimatedSecondsAfterPodScheduled, "180").
+					Name("pod").Conditions([]corev1.PodCondition{
+					{Type: corev1.PodScheduled, Status: corev1.ConditionTrue, LastTransitionTime: metav1.NewTime(now.Add(-time.Minute))},
+				}).Obj(),
+				timestamp: now.Add(-time.Minute),
+			},
+			want: true,
+		},
+		{
+			name:                     "after initialized from metadata",
+			allowCustomizeEstimation: true,
+			info: &podAssignInfo{
+				pod: schedulertesting.MakePod().Namespace("default").
+					Annotation(extension.AnnotationCustomEstimatedSecondsAfterInitialized, "180").
+					Name("pod").Conditions([]corev1.PodCondition{
+					{Type: corev1.PodInitialized, Status: corev1.ConditionTrue, LastTransitionTime: metav1.NewTime(now.Add(-time.Minute))},
+				}).Obj(),
+			},
+			want: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var v1beta3args v1beta3.LoadAwareSchedulingArgs
+			v1beta3.SetDefaults_LoadAwareSchedulingArgs(&v1beta3args)
+			v1beta3args.EstimatedSecondsAfterPodScheduled = tt.estimatedSecondsAfterPodScheduled
+			v1beta3args.EstimatedSecondsAfterInitialized = tt.estimatedSecondsAfterInitialized
+			v1beta3args.AllowCustomizeEstimation = tt.allowCustomizeEstimation
+			var loadAwareSchedulingArgs config.LoadAwareSchedulingArgs
+			err := v1beta3.Convert_v1beta3_LoadAwareSchedulingArgs_To_config_LoadAwareSchedulingArgs(&v1beta3args, &loadAwareSchedulingArgs, nil)
+			assert.NoError(t, err)
+
+			koordClientSet := koordfake.NewSimpleClientset()
+			koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
+			extenderFactory, _ := frameworkext.NewFrameworkExtenderFactory(
+				frameworkext.WithKoordinatorClientSet(koordClientSet),
+				frameworkext.WithKoordinatorSharedInformerFactory(koordSharedInformerFactory),
+			)
+			proxyNew := frameworkext.PluginFactoryProxy(extenderFactory, New)
+
+			cs := kubefake.NewSimpleClientset()
+			informerFactory := informers.NewSharedInformerFactory(cs, 0)
+			snapshot := newTestSharedLister(nil, nil)
+			registeredPlugins := []schedulertesting.RegisterPluginFunc{
+				schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
+				schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
+			}
+			fh, err := schedulertesting.NewFramework(context.TODO(), registeredPlugins, "koord-scheduler",
+				frameworkruntime.WithClientSet(cs),
+				frameworkruntime.WithInformerFactory(informerFactory),
+				frameworkruntime.WithSnapshotSharedLister(snapshot),
+			)
+			assert.Nil(t, err)
+
+			p, err := proxyNew(&loadAwareSchedulingArgs, fh)
+			assert.NotNil(t, p)
+			assert.Nil(t, err)
+			koordSharedInformerFactory.Start(context.TODO().Done())
+			koordSharedInformerFactory.WaitForCacheSync(context.TODO().Done())
+			actual := p.(*Plugin).shouldEstimatePodByConfig(tt.info, now)
+			assert.Equal(t, tt.want, actual)
 		})
 	}
 }
@@ -1373,6 +1499,11 @@ func TestFilterUsage(t *testing.T) {
 			informerFactory := informers.NewSharedInformerFactory(cs, 0)
 
 			for _, v := range tt.pods {
+				v.Spec.NodeName = tt.nodeName
+				v.UID = uuid.NewUUID()
+				v.Status.Conditions = []corev1.PodCondition{
+					{Type: corev1.PodScheduled, Status: corev1.ConditionTrue, LastTransitionTime: metav1.Time{Time: time.Now().Add(-10 * time.Second)}},
+				}
 				_, err = cs.CoreV1().Pods(v.Namespace).Create(context.TODO(), v, metav1.CreateOptions{})
 				assert.Nil(t, err)
 			}
@@ -1445,20 +1576,6 @@ func TestFilterUsage(t *testing.T) {
 			if testPod == nil {
 				testPod = &corev1.Pod{}
 			}
-			assignCache := p.(*Plugin).podAssignCache
-			for _, v := range tt.pods {
-				m := assignCache.podInfoItems[tt.nodeName]
-				if m == nil {
-					m = map[types.UID]*podAssignInfo{}
-					assignCache.podInfoItems[tt.nodeName] = m
-				}
-				podUid := uuid.NewUUID()
-				m[podUid] = &podAssignInfo{
-					timestamp: time.Now().Add(-10 * time.Second),
-					pod:       v,
-				}
-			}
-
 			status := p.(*Plugin).Filter(context.TODO(), cycleState, testPod, nodeInfo)
 			assert.True(t, tt.wantStatus.Equal(status), "want status: %s, but got %s", tt.wantStatus.Message(), status.Message())
 		})
@@ -2399,6 +2516,7 @@ func TestScore(t *testing.T) {
 				assert.NoError(t, err)
 			}
 			for _, v := range tt.assignedPod {
+				v.pod.Spec.NodeName = tt.nodeName
 				v.pod.UID = uuid.NewUUID()
 				v.pod.ResourceVersion = "111"
 				_, err = cs.CoreV1().Pods(v.pod.Namespace).Create(context.TODO(), v.pod, metav1.CreateOptions{})
@@ -2414,16 +2532,6 @@ func TestScore(t *testing.T) {
 
 			koordSharedInformerFactory.Start(context.TODO().Done())
 			koordSharedInformerFactory.WaitForCacheSync(context.TODO().Done())
-
-			assignCache := p.(*Plugin).podAssignCache
-			for _, v := range tt.assignedPod {
-				m := assignCache.podInfoItems[tt.nodeName]
-				if m == nil {
-					m = map[types.UID]*podAssignInfo{}
-					assignCache.podInfoItems[tt.nodeName] = m
-				}
-				m[v.pod.UID] = v
-			}
 
 			cycleState := framework.NewCycleState()
 

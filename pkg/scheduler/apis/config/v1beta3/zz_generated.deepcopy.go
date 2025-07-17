@@ -299,6 +299,16 @@ func (in *LoadAwareSchedulingArgs) DeepCopyInto(out *LoadAwareSchedulingArgs) {
 			(*out)[key] = val
 		}
 	}
+	if in.EstimatedSecondsAfterPodScheduled != nil {
+		in, out := &in.EstimatedSecondsAfterPodScheduled, &out.EstimatedSecondsAfterPodScheduled
+		*out = new(int64)
+		**out = **in
+	}
+	if in.EstimatedSecondsAfterInitialized != nil {
+		in, out := &in.EstimatedSecondsAfterInitialized, &out.EstimatedSecondsAfterInitialized
+		*out = new(int64)
+		**out = **in
+	}
 	if in.Aggregated != nil {
 		in, out := &in.Aggregated, &out.Aggregated
 		*out = new(LoadAwareSchedulingAggregatedArgs)

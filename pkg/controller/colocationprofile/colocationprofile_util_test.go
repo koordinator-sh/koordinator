@@ -37,6 +37,22 @@ import (
 
 func Test_listPodsForProfile(t *testing.T) {
 	scheme := getTestScheme()
+	testNs := &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-ns",
+			Labels: map[string]string{
+				"env": "prod",
+			},
+		},
+	}
+	testNsDev := &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-ns-dev",
+			Labels: map[string]string{
+				"env": "dev",
+			},
+		},
+	}
 	testProfileForNothing := &configv1alpha1.ClusterColocationProfile{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "test-profile",
@@ -85,6 +101,26 @@ func Test_listPodsForProfile(t *testing.T) {
 			},
 		},
 	}
+	testProfileWithNamespaceSelector := &configv1alpha1.ClusterColocationProfile{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-profile-ns",
+			Labels: map[string]string{
+				extension.LabelControllerManaged: "true",
+			},
+		},
+		Spec: configv1alpha1.ClusterColocationProfileSpec{
+			Selector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					"test-selector-key": "test",
+				},
+			},
+			NamespaceSelector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					"env": "prod",
+				},
+			},
+		},
+	}
 	testPod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "test-pod",
@@ -105,6 +141,19 @@ func Test_listPodsForProfile(t *testing.T) {
 		},
 		Spec: corev1.PodSpec{
 			Priority: pointer.Int32(9000),
+		},
+	}
+	testPodInDev := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-pod-in-dev",
+			Namespace: "test-ns-dev",
+			Labels: map[string]string{
+				"test-selector-key": "test",
+			},
+		},
+		Spec: corev1.PodSpec{
+			NodeName: "",
+			Priority: pointer.Int32(0),
 		},
 	}
 	type fields struct {
@@ -147,6 +196,34 @@ func Test_listPodsForProfile(t *testing.T) {
 					*testPod,
 				},
 			},
+			wantErr: false,
+		},
+		{
+			name: "select matched pods with namespace selector",
+			fields: fields{
+				client: fake.NewClientBuilder().WithScheme(scheme).
+					WithObjects(testNs, testNsDev, testPod, testPodInDev).
+					WithIndex(&corev1.Pod{}, "spec.nodeName", func(obj client.Object) []string {
+						return []string{obj.(*corev1.Pod).Spec.NodeName}
+					}).Build(),
+			},
+			arg: testProfileWithNamespaceSelector,
+			want: &corev1.PodList{
+				Items: []corev1.Pod{*testPod},
+			},
+			wantErr: false,
+		},
+		{
+			name: "no pods match namespace selector",
+			fields: fields{
+				client: fake.NewClientBuilder().WithScheme(scheme).
+					WithObjects(testNsDev, testPodInDev).
+					WithIndex(&corev1.Pod{}, "spec.nodeName", func(obj client.Object) []string {
+						return []string{obj.(*corev1.Pod).Spec.NodeName}
+					}).Build(),
+			},
+			arg:     testProfileWithNamespaceSelector,
+			want:    nil,
 			wantErr: false,
 		},
 	}
