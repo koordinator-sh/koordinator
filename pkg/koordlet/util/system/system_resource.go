@@ -27,6 +27,7 @@ const (
 	ProcSysVmRelativePath     = "sys/vm/"
 	MemcgReaperRelativePath   = "kernel/mm/memcg_reaper/"
 	KidledRelativePath        = "kernel/mm/kidled/"
+	PageCacheLimitEnabledPath = "kernel/mm/pagecache_limit/"
 	SchedFeaturesRelativePath = "kernel/debug/"
 
 	MinFreeKbytesFileName             = "min_free_kbytes"
@@ -34,6 +35,7 @@ const (
 	MemcgReapBackGroundFileName       = "reap_background"
 	KidledScanPeriodInSecondsFileName = "scan_period_in_seconds"
 	KidledUseHierarchyFileFileName    = "use_hierarchy"
+	PageCacheLimitEnabledFileName     = "enabled"
 	SchedFeaturesFileName             = "sched_features"
 )
 
@@ -43,6 +45,7 @@ var (
 	MemcgReapBackGroundValidator       = &RangeValidator{min: 0, max: 1}
 	KidledScanPeriodInSecondsValidator = &RangeValidator{min: 0, max: math.MaxInt64}
 	KidledUseHierarchyValidator        = &RangeValidator{min: 0, max: 1}
+	PageCacheLimitEnabledValidator     = &RangeValidator{min: 0, max: 1}
 )
 
 var (
@@ -51,6 +54,7 @@ var (
 	MemcgReapBackGround       = NewCommonSystemResource(MemcgReaperRelativePath, MemcgReapBackGroundFileName, GetSysRootDir).WithValidator(MemcgReapBackGroundValidator).WithCheckSupported(SupportedIfFileExists)
 	KidledScanPeriodInSeconds = NewCommonSystemResource(KidledRelativePath, KidledScanPeriodInSecondsFileName, GetSysRootDir).WithValidator(KidledScanPeriodInSecondsValidator).WithCheckSupported(SupportedIfFileExists)
 	KidledUseHierarchy        = NewCommonSystemResource(KidledRelativePath, KidledUseHierarchyFileFileName, GetSysRootDir).WithValidator(KidledUseHierarchyValidator).WithCheckSupported(SupportedIfFileExists)
+	PageCacheLimitEnabled     = NewCommonSystemResource(PageCacheLimitEnabledPath, PageCacheLimitEnabledFileName, GetSysRootDir).WithValidator(PageCacheLimitEnabledValidator).WithCheckSupported(SupportedIfFileExists)
 	// SchedFeatures is the system file which shows the enabled features of the kernel scheduling.
 	SchedFeatures = NewCommonSystemResource(SchedFeaturesRelativePath, SchedFeaturesFileName, GetSysRootDir).WithCheckSupported(SupportedIfFileExists)
 )
