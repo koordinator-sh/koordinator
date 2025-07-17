@@ -255,6 +255,7 @@ func (c *Controller) syncStatus(reservation *schedulingv1alpha1.Reservation) err
 	if apiext.IsReservationAllocateOnce(reservation) {
 		reservationutil.SetReservationSucceeded(reservation)
 	}
+	RecordReservationResourceUtilization(reservation) // must be called after actualAllocated
 
 	return c.updateReservationStatus(reservation)
 }
@@ -335,5 +336,40 @@ func RecordReservationPhases(reservation *schedulingv1alpha1.Reservation) {
 		}
 		// Record the phase with a value of 1.0 if it's the current phase, otherwise 0.0.
 		metrics.RecordReservationPhase(reservation.Name, phase.name, boolFloat64(isCurrentPhase))
+	}
+}
+
+// RecordReservationResourceUtilization records the resource utilization of a reservation.
+func RecordReservationResourceUtilization(reservation *schedulingv1alpha1.Reservation) {
+	if reservation.Status.Allocatable == nil {
+		return
+	}
+
+	resources := quotav1.ResourceNames(reservation.Status.Allocatable)
+	for _, resourceName := range resources {
+		allocatable := reservation.Status.Allocatable[resourceName]
+		allocated := reservation.Status.Allocated[resourceName]
+
+		var allocatableVal, allocatedVal int64
+
+		switch resourceName {
+		case corev1.ResourceCPU:
+			allocatableVal = allocatable.MilliValue()
+			allocatedVal = allocated.MilliValue()
+		default:
+			allocatableVal = allocatable.Value()
+			allocatedVal = allocated.Value()
+		}
+
+		if allocatableVal == 0 {
+			continue
+		}
+
+		utilization := float64(allocatedVal) / float64(allocatableVal)
+		metrics.RecordReservationResourceAllocated(
+			reservation.Name,
+			string(resourceName),
+			utilization,
+		)
 	}
 }
