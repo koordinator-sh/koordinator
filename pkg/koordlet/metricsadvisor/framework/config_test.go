@@ -36,6 +36,7 @@ func Test_NewDefaultConfig(t *testing.T) {
 		ColdPageCollectorInterval:        5 * time.Second,
 		ResctrlCollectorInterval:         10 * time.Second,
 		EnablePageCacheCollector:         false,
+		XPUDeviceInfosDir:                "/var/run/koordlet/xpu-device-infos/",
 	}
 	defaultConfig := NewDefaultConfig()
 	assert.Equal(t, expectConfig, defaultConfig)
@@ -53,6 +54,7 @@ func Test_InitFlags(t *testing.T) {
 		"--collect-cpi-timewindow=15s",
 		"--coldpage-collector-interval=15s",
 		"--resctrl-collector-interval=90s",
+		"--xpu-device-infos-dir=/var/run/koordlet/xpu-device-infos/",
 	}
 	fs := flag.NewFlagSet(cmdArgs[0], flag.ExitOnError)
 
@@ -66,6 +68,7 @@ func Test_InitFlags(t *testing.T) {
 		CPICollectorTimeWindow           time.Duration
 		ColdPageCollectorInterval        time.Duration
 		ResctrlCollectorInterval         time.Duration
+		XPUDeviceInfosDir                string
 	}
 	type args struct {
 		fs *flag.FlagSet
@@ -87,6 +90,7 @@ func Test_InitFlags(t *testing.T) {
 				CPICollectorTimeWindow:           15 * time.Second,
 				ColdPageCollectorInterval:        15 * time.Second,
 				ResctrlCollectorInterval:         90 * time.Second,
+				XPUDeviceInfosDir:                "/var/run/koordlet/xpu-device-infos/",
 			},
 			args: args{fs: fs},
 		},
@@ -103,6 +107,7 @@ func Test_InitFlags(t *testing.T) {
 				CPICollectorTimeWindow:           tt.fields.CPICollectorTimeWindow,
 				ColdPageCollectorInterval:        tt.fields.ColdPageCollectorInterval,
 				ResctrlCollectorInterval:         tt.fields.ResctrlCollectorInterval,
+				XPUDeviceInfosDir:                tt.fields.XPUDeviceInfosDir,
 			}
 			c := NewDefaultConfig()
 			c.InitFlags(tt.args.fs)
