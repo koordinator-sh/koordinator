@@ -17,8 +17,11 @@ limitations under the License.
 package noderesourcesfitplus
 
 import (
+	"strings"
+
 	v1 "k8s.io/api/core/v1"
 	utilfeature "k8s.io/apiserver/pkg/util/feature"
+	utilfeaturegate "k8s.io/component-base/featuregate"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/api/v1/resource"
 	k8sConfig "k8s.io/kubernetes/pkg/scheduler/apis/config"
@@ -92,8 +95,7 @@ func (r *ResourceAllocationPriority) getResourceScore(args *config.NodeResources
 		allocatable[resourceName], requested[resourceName] = calculateResourceAllocatableRequest(nodeInfo, pod, resourceName)
 	}
 
-	var score int64
-	score = r.scorer(nodeName, args, requested, allocatable)
+	score := r.scorer(nodeName, args, requested, allocatable)
 
 	return score
 }
@@ -181,7 +183,7 @@ func GetNonzeroRequestForResource(resource v1.ResourceName, requests *v1.Resourc
 		return requests.Memory().Value()
 	case v1.ResourceEphemeralStorage:
 		// if the local storage capacity isolation feature gate is disabled, pods request 0 disk.
-		if !utilfeature.DefaultFeatureGate.Enabled("LocalStorageCapacityIsolation") {
+		if !defaultFeatureGateEnabled("LocalStorageCapacityIsolation") {
 			return 0
 		}
 
@@ -200,4 +202,15 @@ func GetNonzeroRequestForResource(resource v1.ResourceName, requests *v1.Resourc
 		}
 	}
 	return 0
+}
+
+// defaultFeatureGateEnabled returns true if the featureGate is enabled or does not exist.
+func defaultFeatureGateEnabled(featureGate string) bool {
+	for _, v := range utilfeature.DefaultFeatureGate.KnownFeatures() {
+		FGDes := strings.Split(v, "=")
+		if len(FGDes) > 0 && FGDes[0] == featureGate {
+			return utilfeature.DefaultFeatureGate.Enabled(utilfeaturegate.Feature(featureGate))
+		}
+	}
+	return true
 }
