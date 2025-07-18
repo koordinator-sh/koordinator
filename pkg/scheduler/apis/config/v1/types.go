@@ -31,6 +31,9 @@ import (
 type LoadAwareSchedulingArgs struct {
 	metav1.TypeMeta `json:",inline"`
 
+	// DisableFilterWhenHighLoad controls whether to skip filtering based on node load.
+	// If true, the filter will not consider node usage thresholds.
+	DisableFilterWhenHighLoad *bool
 	// FilterExpiredNodeMetrics indicates whether to filter nodes where koordlet fails to update NodeMetric.
 	FilterExpiredNodeMetrics *bool `json:"filterExpiredNodeMetrics,omitempty"`
 	// NodeMetricExpirationSeconds indicates the NodeMetric expiration in seconds.

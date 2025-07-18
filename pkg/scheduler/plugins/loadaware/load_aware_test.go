@@ -554,6 +554,7 @@ func TestShouldEstimatePodByConfig(t *testing.T) {
 func TestFilterUsage(t *testing.T) {
 	tests := []struct {
 		name                      string
+		disableFilterWhenHighLoad bool
 		usageThresholds           map[corev1.ResourceName]int64
 		prodUsageThresholds       map[corev1.ResourceName]int64
 		aggregated                *v1beta3.LoadAwareSchedulingAggregatedArgs
@@ -1103,6 +1104,36 @@ func TestFilterUsage(t *testing.T) {
 			wantStatus: nil,
 		},
 		{
+			name:                      "not filter pod when exceed cpu usage",
+			disableFilterWhenHighLoad: true,
+			nodeName:                  "test-node-1",
+			nodeMetric: &slov1alpha1.NodeMetric{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node-1",
+				},
+				Spec: slov1alpha1.NodeMetricSpec{
+					CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
+						ReportIntervalSeconds: pointer.Int64(60),
+					},
+				},
+				Status: slov1alpha1.NodeMetricStatus{
+					UpdateTime: &metav1.Time{
+						Time: time.Now(),
+					},
+					NodeMetric: &slov1alpha1.NodeMetricInfo{
+						NodeUsage: slov1alpha1.ResourceMap{
+							ResourceList: corev1.ResourceList{
+								corev1.ResourceCPU:    resource.MustParse("70"),
+								corev1.ResourceMemory: resource.MustParse("256Gi"),
+							},
+						},
+					},
+				},
+			},
+			testPod:    schedulertesting.MakePod().Namespace("default").Name("test-pod").Priority(extension.PriorityProdValueMax).Obj(),
+			wantStatus: nil,
+		},
+		{
 			name:     "filter prod cpu usage with new pod request configuration",
 			nodeName: "test-node-1",
 			usageThresholds: map[corev1.ResourceName]int64{
@@ -1481,6 +1512,9 @@ func TestFilterUsage(t *testing.T) {
 			}
 			if tt.aggregated != nil {
 				v1beta3args.Aggregated = tt.aggregated
+			}
+			if tt.disableFilterWhenHighLoad {
+				v1beta3args.DisableFilterWhenHighLoad = &tt.disableFilterWhenHighLoad
 			}
 			v1beta3.SetDefaults_LoadAwareSchedulingArgs(&v1beta3args)
 			var loadAwareSchedulingArgs config.LoadAwareSchedulingArgs
