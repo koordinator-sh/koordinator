@@ -477,6 +477,21 @@ func (gang *Gang) removeWaitingGang() {
 	gang.GangGroupInfo.RemoveWaitingGang(gang.Name)
 }
 
+func (gang *Gang) isGangWorthRequeue() bool {
+	gang.lock.Lock()
+	defer gang.lock.Unlock()
+	return gang.HasGangInit && len(gang.Children) >= gang.MinRequiredNumber
+}
+
+func (gang *Gang) pickSomeChildren() *v1.Pod {
+	gang.lock.Lock()
+	defer gang.lock.Unlock()
+	for _, pod := range gang.PendingChildren {
+		return pod
+	}
+	return nil
+}
+
 func (gang *Gang) isGangValidForPermit() bool {
 	gang.lock.Lock()
 	defer gang.lock.Unlock()
