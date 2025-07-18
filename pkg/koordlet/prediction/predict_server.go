@@ -214,7 +214,7 @@ func (p *peakPredictServer) defaultCPUHistogram() histogram.Histogram {
 
 // From 10M to 2T, maintain the bucket of the Memory histogram at a rate of 5%
 func (p *peakPredictServer) defaultMemoryHistogram() histogram.Histogram {
-	options, err := histogram.NewExponentialHistogramOptions(1<<31, 5<<20, 1.+DefaultHistogramBucketSizeGrowth, epsilon)
+	options, err := histogram.NewExponentialHistogramOptions(1<<41, 5<<20, 1.+DefaultHistogramBucketSizeGrowth, epsilon)
 	if err != nil {
 		klog.Fatal("failed to create Memory HistogramOptions")
 	}
