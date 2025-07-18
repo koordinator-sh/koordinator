@@ -88,6 +88,9 @@ var (
 
 // SetDefaults_LoadAwareSchedulingArgs sets the default parameters for LoadAwareScheduling plugin.
 func SetDefaults_LoadAwareSchedulingArgs(obj *LoadAwareSchedulingArgs) {
+	if obj.DisableFilterWhenHighLoad == nil {
+		obj.DisableFilterWhenHighLoad = pointer.Bool(false)
+	}
 	if obj.FilterExpiredNodeMetrics == nil {
 		obj.FilterExpiredNodeMetrics = pointer.Bool(true)
 	}

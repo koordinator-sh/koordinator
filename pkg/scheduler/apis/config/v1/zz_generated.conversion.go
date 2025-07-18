@@ -383,6 +383,7 @@ func Convert_config_LoadAwareSchedulingAggregatedArgs_To_v1_LoadAwareSchedulingA
 }
 
 func autoConvert_v1_LoadAwareSchedulingArgs_To_config_LoadAwareSchedulingArgs(in *LoadAwareSchedulingArgs, out *config.LoadAwareSchedulingArgs, s conversion.Scope) error {
+	out.DisableFilterWhenHighLoad = (*bool)(unsafe.Pointer(in.DisableFilterWhenHighLoad))
 	out.FilterExpiredNodeMetrics = (*bool)(unsafe.Pointer(in.FilterExpiredNodeMetrics))
 	out.NodeMetricExpirationSeconds = (*int64)(unsafe.Pointer(in.NodeMetricExpirationSeconds))
 	out.EnableScheduleWhenNodeMetricsExpired = (*bool)(unsafe.Pointer(in.EnableScheduleWhenNodeMetricsExpired))
@@ -415,6 +416,7 @@ func Convert_v1_LoadAwareSchedulingArgs_To_config_LoadAwareSchedulingArgs(in *Lo
 }
 
 func autoConvert_config_LoadAwareSchedulingArgs_To_v1_LoadAwareSchedulingArgs(in *config.LoadAwareSchedulingArgs, out *LoadAwareSchedulingArgs, s conversion.Scope) error {
+	out.DisableFilterWhenHighLoad = (*bool)(unsafe.Pointer(in.DisableFilterWhenHighLoad))
 	out.FilterExpiredNodeMetrics = (*bool)(unsafe.Pointer(in.FilterExpiredNodeMetrics))
 	out.NodeMetricExpirationSeconds = (*int64)(unsafe.Pointer(in.NodeMetricExpirationSeconds))
 	out.EnableScheduleWhenNodeMetricsExpired = (*bool)(unsafe.Pointer(in.EnableScheduleWhenNodeMetricsExpired))

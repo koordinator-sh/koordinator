@@ -129,6 +129,11 @@ func (p *Plugin) Filter(ctx context.Context, state *framework.CycleState, pod *c
 		return nil
 	}
 
+	if p.args.DisableFilterWhenHighLoad != nil && *p.args.DisableFilterWhenHighLoad {
+		klog.V(4).Infof("LoadAwareScheduling filter is disabled for node %s", node.Name)
+		return nil
+	}
+
 	nodeMetric, err := p.nodeMetricLister.Get(node.Name)
 	if err != nil {
 		// For nodes that lack load information, fall back to the situation where there is no load-aware scheduling.

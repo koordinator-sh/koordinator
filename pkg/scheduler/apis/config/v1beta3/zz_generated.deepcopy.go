@@ -251,6 +251,11 @@ func (in *LoadAwareSchedulingAggregatedArgs) DeepCopy() *LoadAwareSchedulingAggr
 func (in *LoadAwareSchedulingArgs) DeepCopyInto(out *LoadAwareSchedulingArgs) {
 	*out = *in
 	out.TypeMeta = in.TypeMeta
+	if in.DisableFilterWhenHighLoad != nil {
+		in, out := &in.DisableFilterWhenHighLoad, &out.DisableFilterWhenHighLoad
+		*out = new(bool)
+		**out = **in
+	}
 	if in.FilterExpiredNodeMetrics != nil {
 		in, out := &in.FilterExpiredNodeMetrics, &out.FilterExpiredNodeMetrics
 		*out = new(bool)
