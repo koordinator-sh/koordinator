@@ -23,16 +23,10 @@ import (
 	"time"
 
 	v1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
-	schedutil "k8s.io/kubernetes/pkg/scheduler/util"
 
-	"github.com/koordinator-sh/koordinator/apis/extension"
-	"github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/apis/scheduling"
-	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 	pgclientset "github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/generated/clientset/versioned"
 	pgformers "github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/generated/informers/externalversions"
 	schedinformers "github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/generated/informers/externalversions/scheduling/v1alpha1"
@@ -102,49 +96,8 @@ func New(obj runtime.Object, handle framework.Handle) (framework.Plugin, error) 
 }
 
 func (cs *Coscheduling) EventsToRegister() []framework.ClusterEventWithHint {
-	// https://git.k8s.io/kubernetes/pkg/scheduler/eventhandlers.go#L403-L410
-	pgGVK := fmt.Sprintf("podgroups.v1alpha1.%v", scheduling.GroupName)
-	return []framework.ClusterEventWithHint{
-		{
-			Event: framework.ClusterEvent{Resource: framework.Pod, ActionType: framework.Add},
-			QueueingHintFn: func(logger klog.Logger, pod *v1.Pod, _, newObj interface{}) framework.QueueingHint {
-				_, updatedPod, err := schedutil.As[*v1.Pod](nil, newObj)
-				if err != nil {
-					// Shouldn't happen.
-					logger.Error(err, "unexpected new object in isSchedulableAfterPodAdd")
-					return framework.QueueAfterBackoff
-				}
-				if util.GetGangNameByPod(pod) == util.GetGangNameByPod(updatedPod) && pod.Namespace == updatedPod.Namespace {
-					return framework.QueueAfterBackoff
-				}
-				return framework.QueueSkip
-			},
-		},
-		{
-			// once gang collect enough pod, the podGroup CR will turn info PreScheduling from Pending
-			Event: framework.ClusterEvent{Resource: framework.GVK(pgGVK), ActionType: framework.Add | framework.Update},
-			QueueingHintFn: func(logger klog.Logger, pod *v1.Pod, oldObj, newObj interface{}) framework.QueueingHint {
-				podGroup := &schedulingv1alpha1.PodGroup{}
-				err := runtime.DefaultUnstructuredConverter.FromUnstructured(newObj.(*unstructured.Unstructured).Object, podGroup)
-				if err != nil {
-					// Shouldn't happen.
-					logger.Error(err, "unexpected new object in isSchedulableAfterPodGroupChanged")
-					return framework.QueueAfterBackoff
-				}
-				groupSlice, _ := util.StringToGangGroupSlice(podGroup.Annotations[extension.AnnotationGangGroups])
-				if len(groupSlice) == 0 {
-					eventGangID := util.GetId(podGroup.Namespace, podGroup.Name)
-					groupSlice = append(groupSlice, eventGangID)
-				}
-				gangSet := sets.New[string](groupSlice...)
-				podGang := util.GetId(pod.Namespace, util.GetGangNameByPod(pod))
-				if gangSet.Has(podGang) {
-					return framework.QueueAfterBackoff
-				}
-				return framework.QueueSkip
-			},
-		},
-	}
+	// indicates that we are not interested in any events
+	return nil
 }
 
 // Name returns name of the plugin. It is used in logs, etc.
