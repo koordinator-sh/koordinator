@@ -37,8 +37,8 @@ func (gang *Gang) GetGangSummary() *GangSummary {
 		return gangSummary
 	}
 
-	gang.lock.Lock()
-	defer gang.lock.Unlock()
+	gang.lock.RLock()
+	defer gang.lock.RUnlock()
 
 	gangSummary.Name = gang.Name
 	gangSummary.WaitTime = gang.WaitTime
