@@ -221,6 +221,9 @@ type ElasticQuotaArgs struct {
 	// EnableRuntimeQuota if false, use max instead of runtime for all checks.
 	EnableRuntimeQuota bool
 
+	// EnableMinQuotaScale if true, min will be scaled when minQuotaSum > totalRes.
+	EnableMinQuotaScale bool
+
 	// DisableDefaultQuotaPreemption if true, will not preempt pods in default quota.
 	DisableDefaultQuotaPreemption bool
 

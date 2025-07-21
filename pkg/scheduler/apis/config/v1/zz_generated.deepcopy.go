@@ -146,6 +146,11 @@ func (in *ElasticQuotaArgs) DeepCopyInto(out *ElasticQuotaArgs) {
 		*out = new(bool)
 		**out = **in
 	}
+	if in.EnableMinQuotaScale != nil {
+		in, out := &in.EnableMinQuotaScale, &out.EnableMinQuotaScale
+		*out = new(bool)
+		**out = **in
+	}
 	if in.DisableDefaultQuotaPreemption != nil {
 		in, out := &in.DisableDefaultQuotaPreemption, &out.DisableDefaultQuotaPreemption
 		*out = new(bool)

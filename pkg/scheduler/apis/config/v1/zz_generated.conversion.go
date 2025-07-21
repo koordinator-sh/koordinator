@@ -255,6 +255,9 @@ func autoConvert_v1_ElasticQuotaArgs_To_config_ElasticQuotaArgs(in *ElasticQuota
 	if err := metav1.Convert_Pointer_bool_To_bool(&in.EnableRuntimeQuota, &out.EnableRuntimeQuota, s); err != nil {
 		return err
 	}
+	if err := metav1.Convert_Pointer_bool_To_bool(&in.EnableMinQuotaScale, &out.EnableMinQuotaScale, s); err != nil {
+		return err
+	}
 	if err := metav1.Convert_Pointer_bool_To_bool(&in.DisableDefaultQuotaPreemption, &out.DisableDefaultQuotaPreemption, s); err != nil {
 		return err
 	}
@@ -284,6 +287,9 @@ func autoConvert_config_ElasticQuotaArgs_To_v1_ElasticQuotaArgs(in *config.Elast
 		return err
 	}
 	if err := metav1.Convert_bool_To_Pointer_bool(&in.EnableRuntimeQuota, &out.EnableRuntimeQuota, s); err != nil {
+		return err
+	}
+	if err := metav1.Convert_bool_To_Pointer_bool(&in.EnableMinQuotaScale, &out.EnableMinQuotaScale, s); err != nil {
 		return err
 	}
 	if err := metav1.Convert_bool_To_Pointer_bool(&in.DisableDefaultQuotaPreemption, &out.DisableDefaultQuotaPreemption, s); err != nil {
