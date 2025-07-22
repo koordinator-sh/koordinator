@@ -76,7 +76,7 @@ type Gang struct {
 	GangFrom    string
 	HasGangInit bool
 
-	lock sync.Mutex
+	lock sync.RWMutex
 }
 
 func NewGang(gangName string) *Gang {
@@ -274,84 +274,84 @@ func (gang *Gang) deletePod(pod *v1.Pod) bool {
 }
 
 func (gang *Gang) getGangWaitTime() time.Duration {
-	gang.lock.Lock()
-	defer gang.lock.Unlock()
+	gang.lock.RLock()
+	defer gang.lock.RUnlock()
 
 	return gang.WaitTime
 }
 
 func (gang *Gang) getChildrenNum() int {
-	gang.lock.Lock()
-	defer gang.lock.Unlock()
+	gang.lock.RLock()
+	defer gang.lock.RUnlock()
 
 	return len(gang.Children)
 }
 
 func (gang *Gang) getGangMinNum() int {
-	gang.lock.Lock()
-	defer gang.lock.Unlock()
+	gang.lock.RLock()
+	defer gang.lock.RUnlock()
 
 	return gang.MinRequiredNumber
 }
 
 func (gang *Gang) getGangTotalNum() int {
-	gang.lock.Lock()
-	defer gang.lock.Unlock()
+	gang.lock.RLock()
+	defer gang.lock.RUnlock()
 
 	return gang.TotalChildrenNum
 }
 
 func (gang *Gang) getBoundPodNum() int32 {
-	gang.lock.Lock()
-	defer gang.lock.Unlock()
+	gang.lock.RLock()
+	defer gang.lock.RUnlock()
 	return int32(len(gang.BoundChildren))
 }
 
 func (gang *Gang) getGangMode() string {
-	gang.lock.Lock()
-	defer gang.lock.Unlock()
+	gang.lock.RLock()
+	defer gang.lock.RUnlock()
 
 	return gang.Mode
 }
 
 func (gang *Gang) getGangMatchPolicy() string {
-	gang.lock.Lock()
-	defer gang.lock.Unlock()
+	gang.lock.RLock()
+	defer gang.lock.RUnlock()
 
 	return gang.GangMatchPolicy
 }
 
 func (gang *Gang) getGangAssumedPods() int {
-	gang.lock.Lock()
-	defer gang.lock.Unlock()
+	gang.lock.RLock()
+	defer gang.lock.RUnlock()
 
 	return len(gang.WaitingForBindChildren) + len(gang.BoundChildren)
 }
 
 func (gang *Gang) getGangWaitingPods() int {
-	gang.lock.Lock()
-	defer gang.lock.Unlock()
+	gang.lock.RLock()
+	defer gang.lock.RUnlock()
 
 	return len(gang.WaitingForBindChildren)
 }
 
 func (gang *Gang) getCreateTime() time.Time {
-	gang.lock.Lock()
-	defer gang.lock.Unlock()
+	gang.lock.RLock()
+	defer gang.lock.RUnlock()
 
 	return gang.CreateTime
 }
 
 func (gang *Gang) getGangGroup() []string {
-	gang.lock.Lock()
-	defer gang.lock.Unlock()
+	gang.lock.RLock()
+	defer gang.lock.RUnlock()
 
 	return gang.GangGroup
 }
 
 func (gang *Gang) isGangOnceResourceSatisfied() bool {
-	gang.lock.Lock()
-	defer gang.lock.Unlock()
+	gang.lock.RLock()
+	defer gang.lock.RUnlock()
 
 	return gang.GangGroupInfo.isGangOnceResourceSatisfied()
 }
@@ -407,8 +407,8 @@ func (gang *Gang) delAssumedPod(pod *v1.Pod) {
 }
 
 func (gang *Gang) getChildrenFromGang() (children []*v1.Pod) {
-	gang.lock.Lock()
-	defer gang.lock.Unlock()
+	gang.lock.RLock()
+	defer gang.lock.RUnlock()
 	children = make([]*v1.Pod, 0)
 	for _, pod := range gang.Children {
 		children = append(children, pod)
@@ -417,8 +417,8 @@ func (gang *Gang) getChildrenFromGang() (children []*v1.Pod) {
 }
 
 func (gang *Gang) getPendingChildrenFromGang() (children []*v1.Pod) {
-	gang.lock.Lock()
-	defer gang.lock.Unlock()
+	gang.lock.RLock()
+	defer gang.lock.RUnlock()
 	children = make([]*v1.Pod, 0)
 	for _, pod := range gang.PendingChildren {
 		children = append(children, pod)
@@ -427,8 +427,8 @@ func (gang *Gang) getPendingChildrenFromGang() (children []*v1.Pod) {
 }
 
 func (gang *Gang) isGangFromAnnotation() bool {
-	gang.lock.Lock()
-	defer gang.lock.Unlock()
+	gang.lock.RLock()
+	defer gang.lock.RUnlock()
 	return gang.GangFrom == GangFromPodAnnotation
 }
 
@@ -477,9 +477,24 @@ func (gang *Gang) removeWaitingGang() {
 	gang.GangGroupInfo.RemoveWaitingGang(gang.Name)
 }
 
+func (gang *Gang) isGangWorthRequeue() bool {
+	gang.lock.RLock()
+	defer gang.lock.RUnlock()
+	return gang.HasGangInit && len(gang.Children) >= gang.MinRequiredNumber
+}
+
+func (gang *Gang) pickSomeChildren() *v1.Pod {
+	gang.lock.RLock()
+	defer gang.lock.RUnlock()
+	for _, pod := range gang.PendingChildren {
+		return pod
+	}
+	return nil
+}
+
 func (gang *Gang) isGangValidForPermit() bool {
-	gang.lock.Lock()
-	defer gang.lock.Unlock()
+	gang.lock.RLock()
+	defer gang.lock.RUnlock()
 	if !gang.HasGangInit {
 		klog.Infof("isGangValidForPermit find gang hasn't inited ,gang: %v", gang.Name)
 		return false

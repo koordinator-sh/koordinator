@@ -208,11 +208,12 @@ func (pgMgr *PodGroupManager) PreEnqueue(ctx context.Context, pod *corev1.Pod) (
 	if gangSchedulingContext != nil && gangSchedulingContext.gangGroup.Has(gang.Name) {
 		podKey := util.GetId(pod.Namespace, pod.Name)
 		gangSchedulingContext.RLock()
-		defer gangSchedulingContext.RUnlock()
 		// Subsequent Pods should be prevented from entering ActiveQ or BackoffQ to avoid the time-consuming deletion of them
 		if !gangSchedulingContext.alreadyAttemptedPods.Has(podKey) {
+			gangSchedulingContext.RUnlock()
 			return fmt.Errorf(ErrPodHasNotBeenAttempted, gang.GangGroupId)
 		}
+		gangSchedulingContext.RUnlock()
 	}
 
 	return gang.RecordIfNoRepresentatives(pod)
