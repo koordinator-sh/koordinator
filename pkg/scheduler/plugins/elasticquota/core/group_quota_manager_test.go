@@ -860,7 +860,7 @@ func TestGroupQuotaManager_MultiUpdateQuotaRequest_WithScaledMinQuota1(t *testin
 	assert.Equal(t, createResourceList(100, 100*GigaByte), quotaInfo.CalculateInfo.AutoScaleMin)
 }
 
-// TestGroupQuotaManager_MultiUpdateQuotaRequest_WithScaledMinQuota1 test scaledMinQuota when quotaGroup's sum of the
+// TestGroupQuotaManager_MultiUpdateQuotaRequest_WithScaledMinQuota2 test scaledMinQuota when quotaGroup's sum of the
 // minQuota is larger than totalRes, with one of the quotaGroup's request is zero.
 func TestGroupQuotaManager_MultiUpdateQuotaRequest_WithScaledMinQuota2(t *testing.T) {
 	gqm := NewGroupQuotaManagerForTest()
@@ -905,6 +905,36 @@ func TestGroupQuotaManager_MultiUpdateQuotaRequest_WithScaledMinQuota2(t *testin
 
 	quotaInfo = gqm.GetQuotaInfoByName("c")
 	assert.Equal(t, createResourceList2(66666, 200*GigaByte/3), quotaInfo.CalculateInfo.AutoScaleMin)
+}
+
+// TestGroupQuotaManager_MultiUpdateQuotaRequest_WithScaledMinQuota3 test scaledMinQuota is off when quotaGroup's sum of the
+// minQuota is larger than totalRes.
+func TestGroupQuotaManager_MultiUpdateQuotaRequest_WithScaledMinQuota3(t *testing.T) {
+	gqm := NewGroupQuotaManagerForTest()
+	gqm.scaleMinQuotaEnabled = false
+
+	AddQuotaToManager(t, gqm, "p", extension.RootQuotaName, 1000, 1000*GigaByte, 300, 300*GigaByte, true, true)
+	AddQuotaToManager(t, gqm, "a", "p", 1000, 1000*GigaByte, 100, 100*GigaByte, true, false)
+	AddQuotaToManager(t, gqm, "b", "p", 1000, 1000*GigaByte, 100, 100*GigaByte, true, false)
+	AddQuotaToManager(t, gqm, "c", "p", 1000, 1000*GigaByte, 100, 100*GigaByte, true, false)
+
+	request := createResourceList(200, 200*GigaByte)
+	gqm.updateGroupDeltaRequestNoLock("a", request, request, 0)
+	gqm.updateGroupDeltaRequestNoLock("b", request, request, 0)
+	gqm.updateGroupDeltaRequestNoLock("c", request, request, 0)
+
+	deltaRes := createResourceList(200, 200*GigaByte)
+	gqm.updateClusterTotalResourceNoLock(deltaRes)
+
+	assert.Equal(t, createResourceList(300, 300*GigaByte), gqm.RefreshRuntime("p"))
+	assert.Equal(t, createResourceList(100, 100*GigaByte), gqm.RefreshRuntime("a"))
+	assert.Equal(t, createResourceList(100, 100*GigaByte), gqm.RefreshRuntime("b"))
+	assert.Equal(t, createResourceList(100, 100*GigaByte), gqm.RefreshRuntime("c"))
+
+	assert.Equal(t, createResourceList(300, 300*GigaByte), gqm.GetQuotaInfoByName("p").CalculateInfo.AutoScaleMin)
+	assert.Equal(t, createResourceList(100, 100*GigaByte), gqm.GetQuotaInfoByName("a").CalculateInfo.AutoScaleMin)
+	assert.Equal(t, createResourceList(100, 100*GigaByte), gqm.GetQuotaInfoByName("b").CalculateInfo.AutoScaleMin)
+	assert.Equal(t, createResourceList(100, 100*GigaByte), gqm.GetQuotaInfoByName("c").CalculateInfo.AutoScaleMin)
 }
 
 func TestGroupQuotaManager_MultiUpdateQuotaUsedAndNonPreemptibleUsed(t *testing.T) {
@@ -1772,7 +1802,7 @@ func TestGroupQuotaManager_OnTerminatingPodAdd(t *testing.T) {
 }
 
 func TestNewGroupQuotaManager(t *testing.T) {
-	gqm := NewGroupQuotaManager("", createResourceList(100, 100), createResourceList(300, 300))
+	gqm := NewGroupQuotaManager("", true, createResourceList(100, 100), createResourceList(300, 300))
 	assert.Equal(t, createResourceList(100, 100), gqm.GetQuotaInfoByName(extension.SystemQuotaName).GetMax())
 	assert.Equal(t, createResourceList(300, 300), gqm.GetQuotaInfoByName(extension.DefaultQuotaName).GetMax())
 	assert.True(t, gqm.scaleMinQuotaEnabled)
