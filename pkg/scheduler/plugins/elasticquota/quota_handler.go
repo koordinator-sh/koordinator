@@ -104,7 +104,10 @@ func (g *Plugin) OnQuotaDelete(obj interface{}) {
 		klog.Errorf("quota is nil")
 		return
 	}
-
+	summary, _ := g.GetQuotaSummary(quota.Name, false)
+	if summary != nil {
+		deleteElasticQuotaMetrics(quota, summary)
+	}
 	klog.V(5).Infof("OnQuotaDeleteFunc delete quota: %v", quota.Name)
 	g.deleteQuotaToTreeMap(quota.Name)
 	mgr := g.GetGroupQuotaManagerForTree(quota.Labels[extension.LabelQuotaTreeID])
