@@ -92,8 +92,7 @@ func (r *ResourceAllocationPriority) getResourceScore(args *config.NodeResources
 		allocatable[resourceName], requested[resourceName] = calculateResourceAllocatableRequest(nodeInfo, pod, resourceName)
 	}
 
-	var score int64
-	score = r.scorer(nodeName, args, requested, allocatable)
+	score := r.scorer(nodeName, args, requested, allocatable)
 
 	return score
 }
@@ -180,11 +179,6 @@ func GetNonzeroRequestForResource(resource v1.ResourceName, requests *v1.Resourc
 		}
 		return requests.Memory().Value()
 	case v1.ResourceEphemeralStorage:
-		// if the local storage capacity isolation feature gate is disabled, pods request 0 disk.
-		if !utilfeature.DefaultFeatureGate.Enabled("LocalStorageCapacityIsolation") {
-			return 0
-		}
-
 		quantity, found := (*requests)[v1.ResourceEphemeralStorage]
 		if !found {
 			return 0
