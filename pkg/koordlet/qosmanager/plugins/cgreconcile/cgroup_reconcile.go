@@ -150,7 +150,7 @@ func (m *cgroupResourcesReconcile) calculateResources(nodeCfg *slov1alpha1.Resou
 	for _, podMeta := range podMetas {
 		pod := podMeta.Pod
 		// ignore non-running pods
-		if pod.Status.Phase != corev1.PodRunning && pod.Status.Phase != corev1.PodPending {
+		if util.IsPodInactive(pod) {
 			klog.V(5).Infof("skip calculate cgroup summary for non-running pod %s", util.GetPodKey(pod))
 			continue
 		}

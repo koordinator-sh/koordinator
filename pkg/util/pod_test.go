@@ -21,6 +21,9 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 )
 
@@ -56,6 +59,67 @@ func Test_GetCPUSetFromPod(t *testing.T) {
 			got, err := GetCPUSetFromPod(tt.args.podAnnotations)
 			assert.Equal(t, tt.wantErr, err != nil)
 			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestIsPodInactive(t *testing.T) {
+	tests := []struct {
+		name     string
+		pod      *corev1.Pod
+		expected bool
+	}{
+		{
+			name:     "Pod is nil",
+			pod:      nil,
+			expected: true,
+		},
+		{
+			name: "Pod is Pending",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{Name: "pod-pending"},
+				Status:     corev1.PodStatus{Phase: corev1.PodPending},
+			},
+			expected: false,
+		},
+		{
+			name: "Pod is Running",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{Name: "pod-running"},
+				Status:     corev1.PodStatus{Phase: corev1.PodRunning},
+			},
+			expected: false,
+		},
+		{
+			name: "Pod is Succeeded",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{Name: "pod-succeeded"},
+				Status:     corev1.PodStatus{Phase: corev1.PodSucceeded},
+			},
+			expected: true,
+		},
+		{
+			name: "Pod is Failed",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{Name: "pod-failed"},
+				Status:     corev1.PodStatus{Phase: corev1.PodFailed},
+			},
+			expected: true,
+		},
+		{
+			name: "Pod is Unknown",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{Name: "pod-unknown"},
+				Status:     corev1.PodStatus{Phase: "Unknown"},
+			},
+			expected: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := IsPodInactive(tt.pod)
+			assert.Equal(t, tt.expected, result)
 		})
 	}
 }
