@@ -73,6 +73,21 @@ func IsPodTerminated(pod *corev1.Pod) bool {
 	return pod.Status.Phase == corev1.PodSucceeded || pod.Status.Phase == corev1.PodFailed
 }
 
+// IsPodInactive returns true if the pod is not in Pending or Running phase.
+// Pods in other states (Succeeded, Failed, Unknown) typically do not have any running containers
+// and therefore do not have an associated cgroup directory.
+//
+// Note: A PodPhase of Pending does NOT mean the pod has not been scheduled.
+// It may have already been assigned to this node, but its regular containers
+// have not started yet (e.g., still running initContainers).
+//
+// Also, podMetas are retrieved from Kubelet's /pods endpoint, which only returns
+// Pods that have been successfully scheduled to this node.
+func IsPodInactive(pod *corev1.Pod) bool {
+	return pod == nil ||
+		(pod.Status.Phase != corev1.PodPending && pod.Status.Phase != corev1.PodRunning)
+}
+
 func GetCPUSetFromPod(podAnnotations map[string]string) (string, error) {
 	if podAnnotations == nil {
 		return "", nil
