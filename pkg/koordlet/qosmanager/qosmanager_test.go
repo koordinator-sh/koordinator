@@ -42,6 +42,7 @@ func TestNewResManager(t *testing.T) {
 		crdClient := &clientsetalpha1.Clientset{}
 		nodeName := "test-node"
 		statesInformer := mock_statesinformer.NewMockStatesInformer(ctrl)
+		statesInformer.EXPECT().RegisterCallbacks(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 		metricCache := mock_metriccache.NewMockMetricCache(ctrl)
 
 		r := NewQOSManager(framework.NewDefaultConfig(), scheme, kubeClient, crdClient, nodeName, statesInformer, metricCache, maframework.NewDefaultConfig(), policyv1beta1.SchemeGroupVersion.String())
