@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"os"
 	goruntime "runtime"
+	"time"
 
 	"github.com/spf13/cobra"
 	corev1 "k8s.io/api/core/v1"
@@ -176,12 +177,23 @@ func Run(ctx context.Context, cc *deschedulerappconfig.CompletedConfig, desched 
 	}
 
 	// Start up the healthz server.
+	gracefulShutdownSecureServer := func() {}
 	if cc.SecureServing != nil {
 		handler := buildHandlerChain(newHealthzAndMetricsHandler(&cc.ComponentConfig, checks...))
-		// TODO: handle stoppedCh and listenerStoppedCh returned by c.SecureServing.Serve
-		if _, _, err := cc.SecureServing.Serve(handler, 0, ctx.Done()); err != nil {
+		internalStopCh := make(chan struct{})
+		shutdownTimeout := 5 * time.Second
+		stoppedCh, listenerStoppedCh, err := cc.SecureServing.Serve(handler, shutdownTimeout, internalStopCh)
+		if err != nil {
 			// fail early for secure handlers, removing the old error loop from above
+			close(internalStopCh)
 			return fmt.Errorf("failed to start secure server: %v", err)
+		}
+		gracefulShutdownSecureServer = func() {
+			close(internalStopCh)
+			<-listenerStoppedCh
+			klog.Info("[graceful-termination] secure server has stopped listening")
+			<-stoppedCh
+			klog.Info("[graceful-termination] secure server is exiting")
 		}
 	}
 
@@ -194,6 +206,7 @@ func Run(ctx context.Context, cc *deschedulerappconfig.CompletedConfig, desched 
 				StartDescheduler(ctx, cc)
 			},
 			OnStoppedLeading: func() {
+				gracefulShutdownSecureServer()
 				select {
 				case <-ctx.Done():
 					// We were asked to terminate. Exit 0.
@@ -217,6 +230,7 @@ func Run(ctx context.Context, cc *deschedulerappconfig.CompletedConfig, desched 
 	}
 
 	StartDescheduler(ctx, cc)
+	gracefulShutdownSecureServer()
 	return fmt.Errorf("finished without leader elect")
 }
 
