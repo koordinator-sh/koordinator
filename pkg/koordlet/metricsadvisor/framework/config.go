@@ -38,6 +38,7 @@ type Config struct {
 	ResctrlCollectorInterval         time.Duration
 	EnablePageCacheCollector         bool
 	EnableResctrlCollector           bool
+	XPUDeviceInfosDir                string
 }
 
 func NewDefaultConfig() *Config {
@@ -53,6 +54,7 @@ func NewDefaultConfig() *Config {
 		ResctrlCollectorInterval:         10 * time.Second,
 		EnablePageCacheCollector:         false,
 		EnableResctrlCollector:           false,
+		XPUDeviceInfosDir:                "/var/run/koordlet/xpu-device-infos/",
 	}
 }
 
@@ -68,4 +70,6 @@ func (c *Config) InitFlags(fs *flag.FlagSet) {
 	fs.BoolVar(&c.EnablePageCacheCollector, "enable-pagecache-collector", c.EnablePageCacheCollector, "Enable cache collector of node, pods and containers")
 	fs.BoolVar(&c.EnableResctrlCollector, "enable-resctrl-collector", c.EnableResctrlCollector, "Enable RDT(resource director technology) collector for QoS groups (LSR/LS/BE)")
 	fs.DurationVar(&c.ResctrlCollectorInterval, "resctrl-collector-interval", c.ResctrlCollectorInterval, "Collect RDT metrics interval. Non-zero values should contain a corresponding time unit (e.g. 1s, 2m, 3h).")
+	//TODO zz check it
+	fs.StringVar(&c.XPUDeviceInfosDir, "xpu-device-infos-dir", c.XPUDeviceInfosDir, "The directory where xpu device infos are stored, such as nvidia gpu, ascend npu, etc. Default: /var/run/koordlet/xpu-device-infos/")
 }
