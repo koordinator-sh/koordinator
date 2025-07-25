@@ -224,7 +224,10 @@ func TestSyncStatus(t *testing.T) {
 	// register metrics
 	metricsRegistry := basemetrics.NewKubeRegistry()
 	metrics.ReservationStatusPhase.GetGaugeVec().Reset()
-	metricsRegistry.Registerer().MustRegister(metrics.ReservationStatusPhase.GetGaugeVec())
+	metrics.ReservationResource.GetGaugeVec().Reset()
+	metricsRegistry.Registerer().MustRegister(
+		metrics.ReservationStatusPhase.GetGaugeVec(),
+		metrics.ReservationResource.GetGaugeVec())
 
 	reservation := &schedulingv1alpha1.Reservation{
 		ObjectMeta: metav1.ObjectMeta{
@@ -346,6 +349,26 @@ func TestSyncStatus(t *testing.T) {
 		"normalReservation", expectSucceededMetricCount,
 	)
 	if err := testutil.GatherAndCompare(metricsRegistry, strings.NewReader(expectedSuccessedMetrics), "scheduler_reservation_status_phase"); err != nil {
+		t.Error(err)
+	}
+
+	expectedUtilizationMetrics := fmt.Sprintf(`
+# HELP scheduler_reservation_resource Resource metrics for a reservation, including allocatable, allocated, and utilization with unit.
+# TYPE scheduler_reservation_resource gauge
+scheduler_reservation_resource{name="%s",resource="cpu",type="allocatable",unit="core"} 10
+scheduler_reservation_resource{name="%s",resource="cpu",type="allocated",unit="core"} 8
+scheduler_reservation_resource{name="%s",resource="cpu",type="utilization",unit="ratio"} 0.8
+scheduler_reservation_resource{name="%s",resource="memory",type="allocatable",unit="Gi"} 10
+scheduler_reservation_resource{name="%s",resource="memory",type="allocated",unit="Gi"} 8
+scheduler_reservation_resource{name="%s",resource="memory",type="utilization",unit="ratio"} 0.8
+`,
+		"normalReservation", "normalReservation",
+		"normalReservation", "normalReservation",
+		"normalReservation", "normalReservation",
+	)
+
+	if err := testutil.GatherAndCompare(metricsRegistry, strings.NewReader(expectedUtilizationMetrics),
+		"scheduler_reservation_resource"); err != nil {
 		t.Error(err)
 	}
 }
