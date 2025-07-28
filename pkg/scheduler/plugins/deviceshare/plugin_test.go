@@ -4725,7 +4725,7 @@ func Test_Plugin_PreBind(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			defer utilfeature.SetFeatureGateDuringTest(t, utilfeature.DefaultMutableFeatureGate, koordfeatures.DevicePluginAdaption, tt.devicePluginAdaptionFeatureEnabled)()
+			defer utilfeature.SetFeatureGateDuringTest(t, k8sfeature.DefaultMutableFeatureGate, koordfeatures.DevicePluginAdaption, tt.devicePluginAdaptionFeatureEnabled)()
 
 			suit := newPluginTestSuit(t, nil)
 			_, err := suit.ClientSet().CoreV1().Pods(testPod.Namespace).Create(context.TODO(), testPod, metav1.CreateOptions{})

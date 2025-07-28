@@ -39,7 +39,6 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/schedulingphase"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/topologymanager"
-	utilfeature "github.com/koordinator-sh/koordinator/pkg/util/feature"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
 
@@ -618,7 +617,7 @@ func (p *Plugin) preBindObject(ctx context.Context, cycleState *framework.CycleS
 		return framework.NewStatus(framework.Error, err.Error())
 	}
 
-	if utilfeature.DefaultMutableFeatureGate.Enabled(features.DevicePluginAdaption) {
+	if k8sfeature.DefaultMutableFeatureGate.Enabled(features.DevicePluginAdaption) {
 		if err := p.adaptForDevicePlugin(object, state.allocationResult, nodeName); err != nil {
 			return framework.AsStatus(err)
 		}
