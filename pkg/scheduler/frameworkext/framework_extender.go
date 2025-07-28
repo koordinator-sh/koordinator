@@ -23,7 +23,6 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	k8sfeature "k8s.io/apiserver/pkg/util/feature"
 	listerscorev1 "k8s.io/client-go/listers/core/v1"
 	"k8s.io/klog/v2"
 	schedconfig "k8s.io/kubernetes/pkg/scheduler/apis/config"
@@ -34,7 +33,6 @@ import (
 	koordinatorclientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
 	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
 	listerschedulingv1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/listers/scheduling/v1alpha1"
-	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/schedulingphase"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/topologymanager"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
@@ -544,11 +542,6 @@ func (ext *frameworkExtenderImpl) GetNUMATopologyHintProvider() []topologymanage
 }
 
 func (ext *frameworkExtenderImpl) RunReservePluginsReserve(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) *framework.Status {
-	if k8sfeature.DefaultFeatureGate.Enabled(features.ResizePod) {
-		if isPodAssumed(cycleState) {
-			return nil
-		}
-	}
 	schedulingphase.RecordPhase(cycleState, schedulingphase.Reserve)
 	defer func() { schedulingphase.RecordPhase(cycleState, "") }()
 	status := ext.Framework.RunReservePluginsReserve(ctx, cycleState, pod, nodeName)
@@ -569,21 +562,4 @@ func (ext *frameworkExtenderImpl) RunResizePod(ctx context.Context, cycleState *
 		}
 	}
 	return nil
-}
-
-const podAssumedStateKey = "koordinator.sh/assumed"
-
-type assumedState struct{}
-
-func (s *assumedState) Clone() framework.StateData {
-	return s
-}
-
-func markPodAssumed(cycleState *framework.CycleState) {
-	cycleState.Write(podAssumedStateKey, &assumedState{})
-}
-
-func isPodAssumed(cycleState *framework.CycleState) bool {
-	assumed, _ := cycleState.Read(podAssumedStateKey)
-	return assumed != nil
 }

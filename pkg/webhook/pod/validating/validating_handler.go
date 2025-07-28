@@ -37,6 +37,7 @@ const (
 	ClusterColocationProfile = "ClusterColocationProfile"
 	EvaluateQuota            = "EvaluateQuota"
 	DeviceResource           = "DeviceResource"
+	EnhancedValidation       = "EnhancedValidation"
 )
 
 // PodValidatingHandler handles Pod
@@ -48,6 +49,9 @@ type PodValidatingHandler struct {
 
 	// QuotaEvaluator evaluate pod quota usage
 	QuotaEvaluator quotaevaluate.Evaluator
+
+	// PodEnhancedValidator manages pod enhanced validation configuration
+	PodEnhancedValidator *PodEnhancedValidator
 }
 
 var _ admission.Handler = &PodValidatingHandler{}
@@ -114,6 +118,14 @@ func (h *PodValidatingHandler) validatingPodFn(ctx context.Context, req admissio
 	allowed, reason, err = h.deviceResourceValidatingPod(ctx, req)
 	metrics.RecordWebhookDurationMilliseconds(metrics.ValidatingWebhook,
 		metrics.Pod, string(req.Operation), err, DeviceResource, time.Since(start).Seconds())
+	if err != nil {
+		return false, reason, err
+	}
+
+	start = time.Now()
+	reason, err = h.podEnhancedValidate(ctx, req)
+	metrics.RecordWebhookDurationMilliseconds(metrics.ValidatingWebhook,
+		metrics.Pod, string(req.Operation), err, EnhancedValidation, time.Since(start).Seconds())
 	if err != nil {
 		return false, reason, err
 	}
