@@ -115,10 +115,10 @@ func TestPodAssignCache_OnAdd(t *testing.T) {
 
 func TestPodAssignCache_OnUpdate(t *testing.T) {
 	tests := []struct {
-		name        string
-		pod         *corev1.Pod
-		assignCache *podAssignCache
-		wantCache   map[string]map[types.UID]*podAssignInfo
+		name         string
+		pod          *corev1.Pod
+		podInfoItems map[string]map[types.UID]*podAssignInfo
+		wantCache    map[string]map[types.UID]*podAssignInfo
 	}{
 		{
 			name:      "update pending pod",
@@ -140,25 +140,23 @@ func TestPodAssignCache_OnUpdate(t *testing.T) {
 					Phase: corev1.PodFailed,
 				},
 			},
-			assignCache: &podAssignCache{
-				podInfoItems: map[string]map[types.UID]*podAssignInfo{
-					"test-node": {
-						"123456789": &podAssignInfo{
-							pod: &corev1.Pod{
-								ObjectMeta: metav1.ObjectMeta{
-									UID:       "123456789",
-									Namespace: "default",
-									Name:      "test",
-								},
-								Spec: corev1.PodSpec{
-									NodeName: "test-node",
-								},
-								Status: corev1.PodStatus{
-									Phase: corev1.PodRunning,
-								},
+			podInfoItems: map[string]map[types.UID]*podAssignInfo{
+				"test-node": {
+					"123456789": &podAssignInfo{
+						pod: &corev1.Pod{
+							ObjectMeta: metav1.ObjectMeta{
+								UID:       "123456789",
+								Namespace: "default",
+								Name:      "test",
 							},
-							timestamp: fakeTimeNowFn(),
+							Spec: corev1.PodSpec{
+								NodeName: "test-node",
+							},
+							Status: corev1.PodStatus{
+								Phase: corev1.PodRunning,
+							},
 						},
+						timestamp: fakeTimeNowFn(),
 					},
 				},
 			},
@@ -201,7 +199,7 @@ func TestPodAssignCache_OnUpdate(t *testing.T) {
 			},
 		},
 		{
-			name: "update scheduled running pod, timestamp won't be updated",
+			name: "update pod metadata only, cache won't be updated",
 			pod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					UID:       "123456789",
@@ -215,25 +213,23 @@ func TestPodAssignCache_OnUpdate(t *testing.T) {
 					Phase: corev1.PodRunning,
 				},
 			},
-			assignCache: &podAssignCache{
-				podInfoItems: map[string]map[types.UID]*podAssignInfo{
-					"test-node": {
-						"123456789": &podAssignInfo{
-							pod: &corev1.Pod{
-								ObjectMeta: metav1.ObjectMeta{
-									UID:       "123456789",
-									Namespace: "default",
-									Name:      "test",
-								},
-								Spec: corev1.PodSpec{
-									NodeName: "test-node",
-								},
-								Status: corev1.PodStatus{
-									Phase: corev1.PodRunning,
-								},
+			podInfoItems: map[string]map[types.UID]*podAssignInfo{
+				"test-node": {
+					"123456789": &podAssignInfo{
+						pod: &corev1.Pod{
+							ObjectMeta: metav1.ObjectMeta{
+								UID:       "123456789",
+								Namespace: "default",
+								Name:      "test",
 							},
-							timestamp: fakeTimeNowFn().Add(1000),
+							Spec: corev1.PodSpec{
+								NodeName: "test-node",
+							},
+							Status: corev1.PodStatus{
+								Phase: corev1.PodRunning,
+							},
 						},
+						timestamp: fakeTimeNowFn().Add(1000),
 					},
 				},
 			},
@@ -258,6 +254,73 @@ func TestPodAssignCache_OnUpdate(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "update pod conditions, cache will be updated",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					UID:       "123456789",
+					Namespace: "default",
+					Name:      "test",
+				},
+				Spec: corev1.PodSpec{
+					NodeName: "test-node",
+				},
+				Status: corev1.PodStatus{
+					Phase: corev1.PodRunning,
+					Conditions: []corev1.PodCondition{
+						{Type: corev1.PodScheduled, Status: corev1.ConditionTrue, LastTransitionTime: metav1.NewTime(fakeTimeNowFn().Add(1000))},
+						{Type: corev1.PodInitialized, Status: corev1.ConditionTrue, LastTransitionTime: metav1.NewTime(fakeTimeNowFn().Add(3000))},
+					},
+				},
+			},
+			podInfoItems: map[string]map[types.UID]*podAssignInfo{
+				"test-node": {
+					"123456789": &podAssignInfo{
+						pod: &corev1.Pod{
+							ObjectMeta: metav1.ObjectMeta{
+								UID:       "123456789",
+								Namespace: "default",
+								Name:      "test",
+							},
+							Spec: corev1.PodSpec{
+								NodeName: "test-node",
+							},
+							Status: corev1.PodStatus{
+								Phase: corev1.PodRunning,
+								Conditions: []corev1.PodCondition{
+									{Type: corev1.PodScheduled, Status: corev1.ConditionTrue, LastTransitionTime: metav1.NewTime(fakeTimeNowFn().Add(1000))},
+								},
+							},
+						},
+						timestamp: fakeTimeNowFn().Add(1000),
+					},
+				},
+			},
+			wantCache: map[string]map[types.UID]*podAssignInfo{
+				"test-node": {
+					"123456789": &podAssignInfo{
+						pod: &corev1.Pod{
+							ObjectMeta: metav1.ObjectMeta{
+								UID:       "123456789",
+								Namespace: "default",
+								Name:      "test",
+							},
+							Spec: corev1.PodSpec{
+								NodeName: "test-node",
+							},
+							Status: corev1.PodStatus{
+								Phase: corev1.PodRunning,
+								Conditions: []corev1.PodCondition{
+									{Type: corev1.PodScheduled, Status: corev1.ConditionTrue, LastTransitionTime: metav1.NewTime(fakeTimeNowFn().Add(1000))},
+									{Type: corev1.PodInitialized, Status: corev1.ConditionTrue, LastTransitionTime: metav1.NewTime(fakeTimeNowFn().Add(3000))},
+								},
+							},
+						},
+						timestamp: fakeTimeNowFn().Add(1000),
+					},
+				},
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -266,10 +329,10 @@ func TestPodAssignCache_OnUpdate(t *testing.T) {
 				timeNowFn = preTimeNowFn
 			}()
 			timeNowFn = fakeTimeNowFn
-			assignCache := tt.assignCache
-			if assignCache == nil {
-				e, _ := estimator.NewDefaultEstimator(&config.LoadAwareSchedulingArgs{}, nil)
-				assignCache = newPodAssignCache(e, &config.LoadAwareSchedulingArgs{})
+			e, _ := estimator.NewDefaultEstimator(&config.LoadAwareSchedulingArgs{}, nil)
+			assignCache := newPodAssignCache(e, &config.LoadAwareSchedulingArgs{})
+			if len(tt.podInfoItems) > 0 {
+				assignCache.podInfoItems = tt.podInfoItems
 			}
 			assignCache.OnUpdate(nil, tt.pod)
 			assert.Equal(t, tt.wantCache, assignCache.podInfoItems)
@@ -291,25 +354,25 @@ func TestPodAssignCache_OnDelete(t *testing.T) {
 			Phase: corev1.PodFailed,
 		},
 	}
-	assignCache := &podAssignCache{
-		podInfoItems: map[string]map[types.UID]*podAssignInfo{
-			"test-node": {
-				"123456789": &podAssignInfo{
-					pod: &corev1.Pod{
-						ObjectMeta: metav1.ObjectMeta{
-							UID:       "123456789",
-							Namespace: "default",
-							Name:      "test",
-						},
-						Spec: corev1.PodSpec{
-							NodeName: "test-node",
-						},
-						Status: corev1.PodStatus{
-							Phase: corev1.PodRunning,
-						},
+	e, _ := estimator.NewDefaultEstimator(&config.LoadAwareSchedulingArgs{}, nil)
+	assignCache := newPodAssignCache(e, &config.LoadAwareSchedulingArgs{})
+	assignCache.podInfoItems = map[string]map[types.UID]*podAssignInfo{
+		"test-node": {
+			"123456789": &podAssignInfo{
+				pod: &corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						UID:       "123456789",
+						Namespace: "default",
+						Name:      "test",
 					},
-					timestamp: fakeTimeNowFn(),
+					Spec: corev1.PodSpec{
+						NodeName: "test-node",
+					},
+					Status: corev1.PodStatus{
+						Phase: corev1.PodRunning,
+					},
 				},
+				timestamp: fakeTimeNowFn(),
 			},
 		},
 	}
