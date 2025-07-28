@@ -279,17 +279,12 @@ func (f *FrameworkExtenderFactory) scheduleOne(ctx context.Context, fwk framewor
 
 	if k8sfeature.DefaultFeatureGate.Enabled(features.ResizePod) {
 		// NOTE(joseph): We can modify the Pod because we have cloned the Pod in the NextPod function.
-		pod.Spec.NodeName = scheduleResult.SuggestedHost
-		status := fwk.RunReservePluginsReserve(ctx, cycleState, pod, scheduleResult.SuggestedHost)
-		if !status.IsSuccess() {
-			fwk.RunReservePluginsUnreserve(ctx, cycleState, pod, scheduleResult.SuggestedHost)
-			return scheduleResult, status.AsError()
-		}
-		markPodAssumed(cycleState)
-
+		// Make sure to modify the Pod only related to AssumePod, and do not modify the plugins' cache, since
+		// when the assume failure would not do Unreserve the plugins' cache.
+		// Other resizing logic about the plugins' cache can be convergent to its Reserve phase.
 		extender, ok := fwk.(*frameworkExtenderImpl)
 		if ok {
-			status = extender.RunResizePod(ctx, cycleState, pod, scheduleResult.SuggestedHost)
+			status := extender.RunResizePod(ctx, cycleState, pod, scheduleResult.SuggestedHost)
 			if !status.IsSuccess() {
 				fwk.RunReservePluginsUnreserve(ctx, cycleState, pod, scheduleResult.SuggestedHost)
 				return scheduleResult, status.AsError()

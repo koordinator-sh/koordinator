@@ -260,29 +260,30 @@ func handleReservationSchedulingFailure(sched *scheduler.Scheduler,
 			klog.InfoS("Reservation doesn't exist in informer cache",
 				"pod", klog.KObj(pod), "reservation", rName, "err", e)
 			// We need to call DonePod here because we don't call AddUnschedulableIfNotPresent in this case.
-		} else {
-			// The scheduler name of a reservation can change in-flight, so we need to double-check if the scheduler
-			// is not matched anymore. If unmatched, we should abort the failure handling to avoid applying a
-			// failure state with another scheduler concurrently.
-			if !isResponsibleForReservation(sched.Profiles, cachedR) {
-				klog.InfoS("Reservation doesn't belong to this scheduler, abort the failure handling",
-					"pod", klog.KObj(pod), "reservation", rName, "schedulerName", reservationutil.GetReservationSchedulerName(cachedR))
-				return
-			}
+			return
+		}
 
-			// In the case of extender, the pod may have been bound successfully, but timed out returning its response to the scheduler.
-			// It could result in the live version to carry .spec.nodeName, and that's inconsistent with the internal-queued version.
-			if nodeName := reservationutil.GetReservationNodeName(cachedR); len(nodeName) != 0 {
-				klog.InfoS("Reservation has been assigned to node. Abort adding it back to queue.",
-					"pod", klog.KObj(pod), "reservation", rName, "node", nodeName)
-				// We need to call DonePod here because we don't call AddUnschedulableIfNotPresent in this case.
-			} else {
-				podInfo.PodInfo, _ = framework.NewPodInfo(reservationutil.NewReservePod(cachedR))
-				if e = schedAdapter.GetSchedulingQueue().AddUnschedulableIfNotPresent(logger, podInfo, schedAdapter.GetSchedulingQueue().SchedulingCycle()); e != nil {
-					klog.ErrorS(e, "Error occurred")
-				}
-				calledDone = true
+		// The scheduler name of a reservation can change in-flight, so we need to double-check if the scheduler
+		// is not matched anymore. If unmatched, we should abort the failure handling to avoid applying a
+		// failure state with another scheduler concurrently.
+		if !isResponsibleForReservation(sched.Profiles, cachedR) {
+			klog.InfoS("Reservation doesn't belong to this scheduler, abort the failure handling",
+				"pod", klog.KObj(pod), "reservation", rName, "schedulerName", reservationutil.GetReservationSchedulerName(cachedR))
+			return
+		}
+
+		// In the case of extender, the pod may have been bound successfully, but timed out returning its response to the scheduler.
+		// It could result in the live version to carry .spec.nodeName, and that's inconsistent with the internal-queued version.
+		if nodeName := reservationutil.GetReservationNodeName(cachedR); len(nodeName) != 0 {
+			klog.InfoS("Reservation has been assigned to node. Abort adding it back to queue.",
+				"pod", klog.KObj(pod), "reservation", rName, "node", nodeName)
+			// We need to call DonePod here because we don't call AddUnschedulableIfNotPresent in this case.
+		} else {
+			podInfo.PodInfo, _ = framework.NewPodInfo(reservationutil.NewReservePod(cachedR))
+			if e = schedAdapter.GetSchedulingQueue().AddUnschedulableIfNotPresent(logger, podInfo, schedAdapter.GetSchedulingQueue().SchedulingCycle()); e != nil {
+				klog.ErrorS(e, "Error occurred")
 			}
+			calledDone = true
 		}
 
 		// nominate for the reserve pod if it is

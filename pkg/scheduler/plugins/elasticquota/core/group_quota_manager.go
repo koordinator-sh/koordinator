@@ -66,7 +66,7 @@ type GroupQuotaManager struct {
 	hookPlugins []QuotaHookPlugin
 }
 
-func NewGroupQuotaManager(treeID string, systemGroupMax, defaultGroupMax v1.ResourceList) *GroupQuotaManager {
+func NewGroupQuotaManager(treeID string, enableMinQuotaScale bool, systemGroupMax, defaultGroupMax v1.ResourceList) *GroupQuotaManager {
 	quotaManager := &GroupQuotaManager{
 		totalResourceExceptSystemAndDefaultUsed: v1.ResourceList{},
 		totalResource:                           v1.ResourceList{},
@@ -90,7 +90,7 @@ func NewGroupQuotaManager(treeID string, systemGroupMax, defaultGroupMax v1.Reso
 	quotaManager.quotaInfoMap[extension.RootQuotaName] = rootQuotaInfo
 	quotaManager.quotaTopoNodeMap[extension.RootQuotaName] = NewQuotaTopoNode(extension.RootQuotaName, rootQuotaInfo)
 	quotaManager.runtimeQuotaCalculatorMap[extension.RootQuotaName] = NewRuntimeQuotaCalculator(extension.RootQuotaName)
-	quotaManager.setScaleMinQuotaEnabled(true)
+	quotaManager.setScaleMinQuotaEnabled(enableMinQuotaScale)
 	return quotaManager
 }
 

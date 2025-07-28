@@ -72,6 +72,7 @@ var (
 	defaultMonitorAllQuotas              = pointer.Bool(false)
 	defaultEnableCheckParentQuota        = pointer.Bool(false)
 	defaultEnableRuntimeQuota            = pointer.Bool(true)
+	defaultEnableMinQuotaScale           = pointer.Bool(true)
 	defaultDisableDefaultQuotaPreemption = pointer.Bool(true)
 
 	defaultTimeout           = 600 * time.Second
@@ -198,6 +199,9 @@ func SetDefaults_ElasticQuotaArgs(obj *ElasticQuotaArgs) {
 	}
 	if obj.EnableRuntimeQuota == nil {
 		obj.EnableRuntimeQuota = defaultEnableRuntimeQuota
+	}
+	if obj.EnableMinQuotaScale == nil {
+		obj.EnableMinQuotaScale = defaultEnableMinQuotaScale
 	}
 	if obj.DisableDefaultQuotaPreemption == nil {
 		obj.DisableDefaultQuotaPreemption = defaultDisableDefaultQuotaPreemption

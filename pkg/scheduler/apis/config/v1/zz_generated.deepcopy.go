@@ -146,6 +146,11 @@ func (in *ElasticQuotaArgs) DeepCopyInto(out *ElasticQuotaArgs) {
 		*out = new(bool)
 		**out = **in
 	}
+	if in.EnableMinQuotaScale != nil {
+		in, out := &in.EnableMinQuotaScale, &out.EnableMinQuotaScale
+		*out = new(bool)
+		**out = **in
+	}
 	if in.DisableDefaultQuotaPreemption != nil {
 		in, out := &in.DisableDefaultQuotaPreemption, &out.DisableDefaultQuotaPreemption
 		*out = new(bool)
@@ -298,6 +303,16 @@ func (in *LoadAwareSchedulingArgs) DeepCopyInto(out *LoadAwareSchedulingArgs) {
 		for key, val := range *in {
 			(*out)[key] = val
 		}
+	}
+	if in.EstimatedSecondsAfterPodScheduled != nil {
+		in, out := &in.EstimatedSecondsAfterPodScheduled, &out.EstimatedSecondsAfterPodScheduled
+		*out = new(int64)
+		**out = **in
+	}
+	if in.EstimatedSecondsAfterInitialized != nil {
+		in, out := &in.EstimatedSecondsAfterInitialized, &out.EstimatedSecondsAfterInitialized
+		*out = new(int64)
+		**out = **in
 	}
 	if in.Aggregated != nil {
 		in, out := &in.Aggregated, &out.Aggregated

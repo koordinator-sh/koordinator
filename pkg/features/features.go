@@ -85,6 +85,9 @@ const (
 	// EnableQuotaAdmission enables quota admission.
 	EnableQuotaAdmission featuregate.Feature = "EnableQuotaAdmission"
 
+	// EnablePodEnhancedValidator enables enhanced validator for pods with configurable rules.
+	EnablePodEnhancedValidator featuregate.Feature = "EnablePodEnhancedValidator"
+
 	// Enable sync GPU shared resource from Device CRD
 	EnableSyncGPUSharedResource featuregate.Feature = "EnableSyncGPUSharedResource"
 
@@ -120,6 +123,7 @@ var defaultFeatureGates = map[featuregate.Feature]featuregate.FeatureSpec{
 	ColocationProfileController:            {Default: false, PreRelease: featuregate.Alpha},
 	ValidatePodDeviceResource:              {Default: false, PreRelease: featuregate.Alpha},
 	DevicePluginAdaption:                   {Default: false, PreRelease: featuregate.Alpha},
+	EnablePodEnhancedValidator:             {Default: false, PreRelease: featuregate.Alpha},
 }
 
 const (

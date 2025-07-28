@@ -148,7 +148,7 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 		groupQuotaManagersForQuotaTree: make(map[string]*core.GroupQuotaManager),
 		quotaToTreeMap:                 make(map[string]string),
 	}
-	elasticQuota.groupQuotaManager = core.NewGroupQuotaManager("", pluginArgs.SystemQuotaGroupMax,
+	elasticQuota.groupQuotaManager = core.NewGroupQuotaManager("", pluginArgs.EnableMinQuotaScale, pluginArgs.SystemQuotaGroupMax,
 		pluginArgs.DefaultQuotaGroupMax)
 	err := elasticQuota.groupQuotaManager.InitHookPlugins(pluginArgs)
 	if err != nil {

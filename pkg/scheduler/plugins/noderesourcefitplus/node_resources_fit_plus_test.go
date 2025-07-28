@@ -22,7 +22,6 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
-	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	apiruntime "k8s.io/apimachinery/pkg/runtime"
@@ -108,7 +107,7 @@ func NodeResourcesPluginFactoryProxy(factoryFn frameworkruntime.PluginFactory, p
 func TestPlugin_Score(t *testing.T) {
 
 	var v1beta2args v1beta3.NodeResourcesFitPlusArgs
-	v1beta2args.Resources = map[v1.ResourceName]v1beta3.ResourcesType{
+	v1beta2args.Resources = map[corev1.ResourceName]v1beta3.ResourcesType{
 		"nvidia.com/gpu": {Type: k8sConfig.MostAllocated, Weight: 2},
 		"cpu":            {Type: k8sConfig.LeastAllocated, Weight: 1},
 		"memory":         {Type: k8sConfig.LeastAllocated, Weight: 1},
@@ -131,14 +130,16 @@ func TestPlugin_Score(t *testing.T) {
 			},
 			Status: corev1.NodeStatus{
 				Allocatable: corev1.ResourceList{
-					corev1.ResourceCPU:    resource.MustParse("96"),
-					corev1.ResourceMemory: resource.MustParse("512Gi"),
-					"nvidia.com/gpu":      resource.MustParse("8"),
+					corev1.ResourceCPU:              resource.MustParse("96"),
+					corev1.ResourceMemory:           resource.MustParse("512Gi"),
+					"nvidia.com/gpu":                resource.MustParse("8"),
+					corev1.ResourceEphemeralStorage: resource.MustParse("100Gi"),
 				},
 				Capacity: corev1.ResourceList{
-					corev1.ResourceCPU:    resource.MustParse("96"),
-					corev1.ResourceMemory: resource.MustParse("512Gi"),
-					"nvidia.com/gpu":      resource.MustParse("8"),
+					corev1.ResourceCPU:              resource.MustParse("96"),
+					corev1.ResourceMemory:           resource.MustParse("512Gi"),
+					"nvidia.com/gpu":                resource.MustParse("8"),
+					corev1.ResourceEphemeralStorage: resource.MustParse("100Gi"),
 				},
 			},
 		},
@@ -148,16 +149,18 @@ func TestPlugin_Score(t *testing.T) {
 			},
 			Status: corev1.NodeStatus{
 				Allocatable: corev1.ResourceList{
-					corev1.ResourceCPU:    resource.MustParse("96"),
-					corev1.ResourceMemory: resource.MustParse("512Gi"),
-					"nvidia.com/gpu":      resource.MustParse("8"),
-					"xx.xx/xx":            resource.MustParse("8"),
+					corev1.ResourceCPU:              resource.MustParse("96"),
+					corev1.ResourceMemory:           resource.MustParse("512Gi"),
+					"nvidia.com/gpu":                resource.MustParse("8"),
+					"xx.xx/xx":                      resource.MustParse("8"),
+					corev1.ResourceEphemeralStorage: resource.MustParse("100Gi"),
 				},
 				Capacity: corev1.ResourceList{
-					corev1.ResourceCPU:    resource.MustParse("96"),
-					corev1.ResourceMemory: resource.MustParse("512Gi"),
-					"nvidia.com/gpu":      resource.MustParse("8"),
-					"xx.xx/xx":            resource.MustParse("8"),
+					corev1.ResourceCPU:              resource.MustParse("96"),
+					corev1.ResourceMemory:           resource.MustParse("512Gi"),
+					"nvidia.com/gpu":                resource.MustParse("8"),
+					"xx.xx/xx":                      resource.MustParse("8"),
+					corev1.ResourceEphemeralStorage: resource.MustParse("100Gi"),
 				},
 			},
 		},
@@ -237,14 +240,16 @@ func TestPlugin_Score(t *testing.T) {
 					Name: "test-container",
 					Resources: corev1.ResourceRequirements{
 						Limits: corev1.ResourceList{
-							corev1.ResourceCPU:    resource.MustParse("16"),
-							corev1.ResourceMemory: resource.MustParse("32Gi"),
-							"nvidia.com/gpu":      resource.MustParse("2"),
+							corev1.ResourceCPU:              resource.MustParse("16"),
+							corev1.ResourceMemory:           resource.MustParse("32Gi"),
+							"nvidia.com/gpu":                resource.MustParse("2"),
+							corev1.ResourceEphemeralStorage: resource.MustParse("10Gi"),
 						},
 						Requests: corev1.ResourceList{
-							corev1.ResourceCPU:    resource.MustParse("16"),
-							corev1.ResourceMemory: resource.MustParse("32Gi"),
-							"nvidia.com/gpu":      resource.MustParse("2"),
+							corev1.ResourceCPU:              resource.MustParse("16"),
+							corev1.ResourceMemory:           resource.MustParse("32Gi"),
+							"nvidia.com/gpu":                resource.MustParse("2"),
+							corev1.ResourceEphemeralStorage: resource.MustParse("10Gi"),
 						},
 					},
 				},

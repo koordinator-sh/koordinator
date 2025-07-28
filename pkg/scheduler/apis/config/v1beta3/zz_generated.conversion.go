@@ -255,6 +255,9 @@ func autoConvert_v1beta3_ElasticQuotaArgs_To_config_ElasticQuotaArgs(in *Elastic
 	if err := v1.Convert_Pointer_bool_To_bool(&in.EnableRuntimeQuota, &out.EnableRuntimeQuota, s); err != nil {
 		return err
 	}
+	if err := v1.Convert_Pointer_bool_To_bool(&in.EnableMinQuotaScale, &out.EnableMinQuotaScale, s); err != nil {
+		return err
+	}
 	if err := v1.Convert_Pointer_bool_To_bool(&in.DisableDefaultQuotaPreemption, &out.DisableDefaultQuotaPreemption, s); err != nil {
 		return err
 	}
@@ -284,6 +287,9 @@ func autoConvert_config_ElasticQuotaArgs_To_v1beta3_ElasticQuotaArgs(in *config.
 		return err
 	}
 	if err := v1.Convert_bool_To_Pointer_bool(&in.EnableRuntimeQuota, &out.EnableRuntimeQuota, s); err != nil {
+		return err
+	}
+	if err := v1.Convert_bool_To_Pointer_bool(&in.EnableMinQuotaScale, &out.EnableMinQuotaScale, s); err != nil {
 		return err
 	}
 	if err := v1.Convert_bool_To_Pointer_bool(&in.DisableDefaultQuotaPreemption, &out.DisableDefaultQuotaPreemption, s); err != nil {
@@ -394,6 +400,9 @@ func autoConvert_v1beta3_LoadAwareSchedulingArgs_To_config_LoadAwareSchedulingAr
 	}
 	out.Estimator = in.Estimator
 	out.EstimatedScalingFactors = *(*map[corev1.ResourceName]int64)(unsafe.Pointer(&in.EstimatedScalingFactors))
+	out.EstimatedSecondsAfterPodScheduled = (*int64)(unsafe.Pointer(in.EstimatedSecondsAfterPodScheduled))
+	out.EstimatedSecondsAfterInitialized = (*int64)(unsafe.Pointer(in.EstimatedSecondsAfterInitialized))
+	out.AllowCustomizeEstimation = in.AllowCustomizeEstimation
 	if in.Aggregated != nil {
 		in, out := &in.Aggregated, &out.Aggregated
 		*out = new(config.LoadAwareSchedulingAggregatedArgs)
@@ -418,6 +427,9 @@ func autoConvert_config_LoadAwareSchedulingArgs_To_v1beta3_LoadAwareSchedulingAr
 	}
 	out.Estimator = in.Estimator
 	out.EstimatedScalingFactors = *(*map[corev1.ResourceName]int64)(unsafe.Pointer(&in.EstimatedScalingFactors))
+	out.EstimatedSecondsAfterPodScheduled = (*int64)(unsafe.Pointer(in.EstimatedSecondsAfterPodScheduled))
+	out.EstimatedSecondsAfterInitialized = (*int64)(unsafe.Pointer(in.EstimatedSecondsAfterInitialized))
+	out.AllowCustomizeEstimation = in.AllowCustomizeEstimation
 	if in.Aggregated != nil {
 		in, out := &in.Aggregated, &out.Aggregated
 		*out = new(LoadAwareSchedulingAggregatedArgs)

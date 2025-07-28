@@ -150,7 +150,7 @@ func (gangCache *GangCache) onPodAddInternal(obj interface{}, action string) {
 	if pod.Spec.NodeName != "" {
 		gang.addBoundPod(pod)
 		gang.setResourceSatisfied()
-	} else if action == "create" && gang.getChildrenNum() >= gang.getGangMinNum() {
+	} else if action == "create" && gang.isGangWorthRequeue() {
 		if gangCache.handle == nil {
 			// only UT will go here
 			return
@@ -233,6 +233,20 @@ func (gangCache *GangCache) onPodGroupAdd(obj interface{}) {
 	gangId := util.GetId(gangNamespace, gangName)
 	gang := gangCache.getGangFromCacheByGangId(gangId, true)
 	gang.tryInitByPodGroup(pg, gangCache.pluginArgs)
+	if gang.isGangWorthRequeue() {
+		if gangCache.handle == nil {
+			// only UT will go here
+			return
+		}
+		if extendedHandle := gangCache.handle.(frameworkext.ExtendedHandle); extendedHandle != nil && extendedHandle.Scheduler() != nil && extendedHandle.Scheduler().GetSchedulingQueue() != nil {
+			someChildren := gang.pickSomeChildren()
+			if someChildren == nil {
+				return
+			}
+			klog.V(4).Infof("gang basic check pass, delivery an activate for gang: %s, pod: %s", gangId, someChildren.Name)
+			extendedHandle.Scheduler().GetSchedulingQueue().Activate(logr.Discard(), map[string]*v1.Pod{util.GetId(someChildren.Namespace, someChildren.Name): someChildren})
+		}
+	}
 
 	gangGroup := gang.getGangGroup()
 	gangGroupId := util.GetGangGroupId(gangGroup)
@@ -256,8 +270,22 @@ func (gangCache *GangCache) onPodGroupUpdate(oldObj interface{}, newObj interfac
 		klog.Errorf("Gang object isn't exist when got Update Event")
 		return
 	}
+	isGangWorthRequeueBefore := gang.isGangWorthRequeue()
 	gang.tryInitByPodGroup(pg, gangCache.pluginArgs)
-
+	if !isGangWorthRequeueBefore && gang.isGangWorthRequeue() {
+		if gangCache.handle == nil {
+			// only UT will go here
+			return
+		}
+		if extendedHandle := gangCache.handle.(frameworkext.ExtendedHandle); extendedHandle != nil && extendedHandle.Scheduler() != nil && extendedHandle.Scheduler().GetSchedulingQueue() != nil {
+			someChildren := gang.pickSomeChildren()
+			if someChildren == nil {
+				return
+			}
+			klog.V(4).Infof("gang basic check pass, delivery an activate for gang: %s, pod: %s", gangId, someChildren.Name)
+			extendedHandle.Scheduler().GetSchedulingQueue().Activate(logr.Discard(), map[string]*v1.Pod{util.GetId(someChildren.Namespace, someChildren.Name): someChildren})
+		}
+	}
 	gangGroup := gang.getGangGroup()
 	gangGroupId := util.GetGangGroupId(gangGroup)
 	gangGroupInfo := gangCache.getGangGroupInfo(gangGroupId, gangGroup, true)
