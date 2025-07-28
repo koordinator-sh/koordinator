@@ -255,6 +255,7 @@ func (c *Controller) syncStatus(reservation *schedulingv1alpha1.Reservation) err
 	if apiext.IsReservationAllocateOnce(reservation) {
 		reservationutil.SetReservationSucceeded(reservation)
 	}
+	RecordReservationResource(reservation) // must be called after actualAllocated
 
 	return c.updateReservationStatus(reservation)
 }
@@ -335,5 +336,56 @@ func RecordReservationPhases(reservation *schedulingv1alpha1.Reservation) {
 		}
 		// Record the phase with a value of 1.0 if it's the current phase, otherwise 0.0.
 		metrics.RecordReservationPhase(reservation.Name, phase.name, boolFloat64(isCurrentPhase))
+	}
+}
+
+func RecordReservationResource(reservation *schedulingv1alpha1.Reservation) {
+	if reservation.Status.Allocatable == nil {
+		return
+	}
+	const (
+		MilliCorePerCore = 1000
+		BytesPerGiB      = 1024 * 1024 * 1024
+	)
+
+	resources := quotav1.ResourceNames(reservation.Status.Allocatable)
+	for _, resourceName := range resources {
+		allocatable := reservation.Status.Allocatable[resourceName]
+		allocated := reservation.Status.Allocated[resourceName]
+
+		var allocatableVal, allocatedVal float64
+		var unit string
+
+		switch resourceName {
+		case corev1.ResourceCPU:
+			// mCPU -> Core
+			allocatableVal = float64(allocatable.MilliValue()) / MilliCorePerCore
+			allocatedVal = float64(allocated.MilliValue()) / MilliCorePerCore
+			unit = metrics.UnitCore
+		case corev1.ResourceMemory:
+			// bytes -> GiB
+			allocatableVal = float64(allocatable.Value()) / BytesPerGiB
+			allocatedVal = float64(allocated.Value()) / BytesPerGiB
+			unit = metrics.UnitGiB
+		default:
+			allocatableVal = float64(allocatable.Value())
+			allocatedVal = float64(allocated.Value())
+			unit = metrics.UnitRaw
+		}
+
+		// allocatable
+		metrics.RecordReservationResourceByTypeWithUnit(
+			reservation.Name, string(resourceName), metrics.TypeAllocatable, unit, allocatableVal)
+
+		// allocated
+		metrics.RecordReservationResourceByTypeWithUnit(
+			reservation.Name, string(resourceName), metrics.TypeAllocated, unit, allocatedVal)
+
+		// utilization
+		if allocatableVal > 0 {
+			utilization := allocatedVal / allocatableVal
+			metrics.RecordReservationResourceByTypeWithUnit(
+				reservation.Name, string(resourceName), metrics.TypeUtilization, metrics.UnitRatio, utilization)
+		}
 	}
 }
