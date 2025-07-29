@@ -43,6 +43,7 @@ func registerPodEventHandler(handle framework.Handle, resourceManager ResourceMa
 	frameworkexthelper.ForceSyncFromInformer(context.TODO().Done(), handle.SharedInformerFactory(), podInformer, eventHandler)
 	extendedHandle, ok := handle.(frameworkext.ExtendedHandle)
 	if ok {
+		extendedHandle.RegisterForgetPodHandler(eventHandler.deletePod)
 		reservationInformer := extendedHandle.KoordinatorSharedInformerFactory().Scheduling().V1alpha1().Reservations()
 		reservationEventHandler := reservationutil.NewReservationToPodEventHandler(eventHandler, reservationutil.IsObjValidActiveReservation)
 		frameworkexthelper.ForceSyncFromInformer(context.TODO().Done(), extendedHandle.KoordinatorSharedInformerFactory(), reservationInformer.Informer(), reservationEventHandler)

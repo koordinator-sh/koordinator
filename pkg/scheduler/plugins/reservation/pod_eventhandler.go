@@ -26,6 +26,7 @@ import (
 	"k8s.io/klog/v2"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	frameworkexthelper "github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/helper"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
@@ -35,11 +36,12 @@ type podEventHandler struct {
 	nominator *nominator
 }
 
-func registerPodEventHandler(cache *reservationCache, nominator *nominator, factory informers.SharedInformerFactory) {
+func registerPodEventHandler(handle frameworkext.ExtendedHandle, cache *reservationCache, nominator *nominator, factory informers.SharedInformerFactory) {
 	eventHandler := &podEventHandler{
 		cache:     cache,
 		nominator: nominator,
 	}
+	handle.RegisterForgetPodHandler(eventHandler.deletePod)
 	informer := factory.Core().V1().Pods().Informer()
 	frameworkexthelper.ForceSyncFromInformer(context.TODO().Done(), factory, informer, eventHandler)
 }
