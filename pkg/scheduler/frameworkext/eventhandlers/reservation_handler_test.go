@@ -113,10 +113,12 @@ func TestAddReservationErrorHandler(t *testing.T) {
 	testPodResponsible.Spec.SchedulerName = "default-scheduler"
 
 	type tests struct {
-		name string
-		r    *schedulingv1alpha1.Reservation
-		pod  *corev1.Pod
-		want string
+		name     string
+		r        *schedulingv1alpha1.Reservation
+		pod      *corev1.Pod
+		rDeleted bool
+		want     string
+		wantErr  bool
 	}
 	for _, tt := range []tests{
 		{
@@ -136,6 +138,14 @@ func TestAddReservationErrorHandler(t *testing.T) {
 			r:    testRIrresponsible,
 			pod:  testPodResponsible,
 			want: "",
+		},
+		{
+			name:     "obj does not exist anymore",
+			r:        testRIrresponsible,
+			pod:      testPodResponsible,
+			rDeleted: true,
+			want:     "",
+			wantErr:  true,
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -172,6 +182,11 @@ func TestAddReservationErrorHandler(t *testing.T) {
 			internalHandler := frameworkext.NewFakeScheduler()
 			handler := MakeReservationErrorHandler(sched, internalHandler, koordClientSet, koordSharedInformerFactory)
 
+			if tt.rDeleted {
+				err = koordClientSet.SchedulingV1alpha1().Reservations().Delete(context.TODO(), tt.r.Name, metav1.DeleteOptions{})
+				assert.NoError(t, err)
+			}
+
 			koordSharedInformerFactory.Start(nil)
 			koordSharedInformerFactory.WaitForCacheSync(nil)
 
@@ -183,15 +198,17 @@ func TestAddReservationErrorHandler(t *testing.T) {
 			handler(context.TODO(), extendedHandle, queuedPodInfo, framework.AsStatus(errors.New(tt.want)), nil, time.Now())
 
 			r, err := koordClientSet.SchedulingV1alpha1().Reservations().Get(context.TODO(), tt.r.Name, metav1.GetOptions{})
-			assert.NoError(t, err)
-			assert.NotNil(t, r)
-			var message string
-			for _, v := range r.Status.Conditions {
-				if v.Type == schedulingv1alpha1.ReservationConditionScheduled && v.Reason == schedulingv1alpha1.ReasonReservationUnschedulable {
-					message = v.Message
+			assert.Equal(t, tt.wantErr, err != nil, err)
+			if !tt.wantErr {
+				assert.NotNil(t, r)
+				var message string
+				for _, v := range r.Status.Conditions {
+					if v.Type == schedulingv1alpha1.ReservationConditionScheduled && v.Reason == schedulingv1alpha1.ReasonReservationUnschedulable {
+						message = v.Message
+					}
 				}
+				assert.Equal(t, tt.want, message)
 			}
-			assert.Equal(t, tt.want, message)
 		})
 	}
 }

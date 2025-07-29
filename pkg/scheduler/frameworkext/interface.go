@@ -199,7 +199,7 @@ type ReservationScoreExtensions interface {
 	NormalizeReservationScore(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, scores ReservationScoreList) *framework.Status
 }
 
-// ResizePodPlugin is an interface that resize the pod resource spec after reserve.
+// ResizePodPlugin is an interface that resize the pod resource spec before the Assume phase.
 // If you want to use the feature, must enable the feature gate ResizePod=true
 type ResizePodPlugin interface {
 	framework.Plugin

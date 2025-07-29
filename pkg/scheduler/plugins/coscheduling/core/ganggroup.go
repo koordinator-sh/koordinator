@@ -19,7 +19,7 @@ const (
 )
 
 type GangGroupInfo struct {
-	lock sync.Mutex
+	lock sync.RWMutex
 
 	Initialized bool
 	GangGroupId string
@@ -73,15 +73,15 @@ func (gg *GangGroupInfo) SetInitialized() {
 }
 
 func (gg *GangGroupInfo) IsInitialized() bool {
-	gg.lock.Lock()
-	defer gg.lock.Unlock()
+	gg.lock.RLock()
+	defer gg.lock.RUnlock()
 
 	return gg.Initialized
 }
 
 func (gg *GangGroupInfo) isGangOnceResourceSatisfied() bool {
-	gg.lock.Lock()
-	defer gg.lock.Unlock()
+	gg.lock.RLock()
+	defer gg.lock.RUnlock()
 
 	return gg.OnceResourceSatisfied
 }
