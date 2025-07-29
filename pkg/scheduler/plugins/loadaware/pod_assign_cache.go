@@ -183,19 +183,15 @@ func (p *podAssignCache) OnUpdate(oldObj, newObj interface{}) {
 	if !ok || pod == nil {
 		return
 	}
-	oldPodInfo := p.getPodAssignInfo(pod.Spec.NodeName, pod)
-	if oldPodInfo == nil { // pod was not cached
-		if pod.Spec.NodeName != "" && !util.IsPodTerminated(pod) { // pod is assigned and not terminated
-			p.assign(pod.Spec.NodeName, pod)
-		}
-	} else {
-		if util.IsPodTerminated(pod) { // pod become terminated
-			p.unAssign(pod.Spec.NodeName, pod)
-		}
+	switch oldPodInfo := p.getPodAssignInfo(pod.Spec.NodeName, pod); {
+	case oldPodInfo == nil: // pod was not cached
+		p.assign(pod.Spec.NodeName, pod)
+	case util.IsPodTerminated(pod): // pod has nodeName & pod become terminated
+		p.unAssign(pod.Spec.NodeName, pod)
+	case !reflect.DeepEqual(&pod.Spec, &oldPodInfo.pod.Spec) ||
+		!reflect.DeepEqual(pod.Status.Conditions, oldPodInfo.pod.Status.Conditions):
 		// pod spec or pod conditions changed, renew cached pod
-		if !reflect.DeepEqual(&pod.Spec, &oldPodInfo.pod.Spec) || !reflect.DeepEqual(pod.Status.Conditions, oldPodInfo.pod.Status.Conditions) {
-			p.assign(pod.Spec.NodeName, pod)
-		}
+		p.assign(pod.Spec.NodeName, pod)
 	}
 }
 
