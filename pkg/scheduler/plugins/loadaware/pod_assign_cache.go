@@ -26,6 +26,8 @@ import (
 	"k8s.io/client-go/tools/cache"
 	podutil "k8s.io/kubernetes/pkg/api/v1/pod"
 
+	"github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/loadaware/estimator"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
@@ -41,18 +43,21 @@ type podAssignCache struct {
 	// podAssignInfo is indexed using the Pod's types.UID
 	podInfoItems map[string]map[types.UID]*podAssignInfo
 	estimator    estimator.Estimator
+	args         *config.LoadAwareSchedulingArgs
 }
 
 type podAssignInfo struct {
-	timestamp time.Time
-	pod       *corev1.Pod
-	estimated map[corev1.ResourceName]int64
+	timestamp         time.Time
+	pod               *corev1.Pod
+	estimated         map[corev1.ResourceName]int64
+	estimatedDeadline time.Time
 }
 
-func newPodAssignCache(estimator estimator.Estimator) *podAssignCache {
+func newPodAssignCache(estimator estimator.Estimator, args *config.LoadAwareSchedulingArgs) *podAssignCache {
 	return &podAssignCache{
 		podInfoItems: map[string]map[types.UID]*podAssignInfo{},
 		estimator:    estimator,
+		args:         args,
 	}
 }
 
@@ -94,11 +99,15 @@ func (p *podAssignCache) assign(nodeName string, pod *corev1.Pod) {
 	if err != nil || len(estimated) == 0 {
 		estimated = nil
 	}
-	// try to use time from PodScheduled condition first
 	var timestamp time.Time
-	if _, c := podutil.GetPodCondition(&pod.Status, corev1.PodScheduled); c != nil && c.Status == corev1.ConditionTrue {
+	// try to use time from PodScheduled condition first
+	if _, c := podutil.GetPodCondition(&pod.Status, corev1.PodScheduled); c != nil && c.Status == corev1.ConditionTrue && !c.LastTransitionTime.IsZero() {
 		timestamp = c.LastTransitionTime.Time
+	} else {
+		// if PodScheduled condition not found, fallback to use assign timestamp from scheduler internal, which cannot be zero.
+		timestamp = timeNowFn()
 	}
+	estimatedDeadline := p.shouldEstimatePodDeadline(pod, timestamp)
 	p.lock.Lock()
 	defer p.lock.Unlock()
 	m := p.podInfoItems[nodeName]
@@ -107,20 +116,46 @@ func (p *podAssignCache) assign(nodeName string, pod *corev1.Pod) {
 		p.podInfoItems[nodeName] = m
 	}
 
-	if _, ok := m[pod.UID]; ok {
-		m[pod.UID].pod = pod
-		m[pod.UID].estimated = estimated
+	if info, ok := m[pod.UID]; ok {
+		info.timestamp = timestamp
+		info.pod = pod
+		info.estimated = estimated
+		info.estimatedDeadline = estimatedDeadline
 	} else {
-		// if PodScheduled condition not found, fallback to use assign timestamp from scheduler internal, which cannot be zero.
-		if timestamp.IsZero() {
-			timestamp = timeNowFn()
-		}
 		m[pod.UID] = &podAssignInfo{
-			timestamp: timestamp,
-			pod:       pod,
-			estimated: estimated,
+			timestamp:         timestamp,
+			pod:               pod,
+			estimated:         estimated,
+			estimatedDeadline: estimatedDeadline,
 		}
 	}
+}
+
+func (p *podAssignCache) shouldEstimatePodDeadline(pod *corev1.Pod, timestamp time.Time) time.Time {
+	var afterPodScheduled, afterInitialized int64 = -1, -1
+	if p.args.AllowCustomizeEstimation {
+		afterPodScheduled = extension.GetCustomEstimatedSecondsAfterPodScheduled(pod)
+		afterInitialized = extension.GetCustomEstimatedSecondsAfterInitialized(pod)
+	}
+	if s := p.args.EstimatedSecondsAfterPodScheduled; s != nil && afterPodScheduled < 0 {
+		afterPodScheduled = *s
+	}
+	if s := p.args.EstimatedSecondsAfterInitialized; s != nil && afterInitialized < 0 {
+		afterInitialized = *s
+	}
+	if afterInitialized > 0 {
+		if _, c := podutil.GetPodCondition(&pod.Status, corev1.PodInitialized); c != nil && c.Status == corev1.ConditionTrue {
+			// if EstimatedSecondsAfterPodScheduled is set and pod is initialized, ignore EstimatedSecondsAfterPodScheduled
+			// EstimatedSecondsAfterPodScheduled might be set to a long duration to wait for time consuming init containers in pod.
+			if t := c.LastTransitionTime; !t.IsZero() {
+				return t.Add(time.Duration(afterInitialized) * time.Second)
+			}
+		}
+	}
+	if afterPodScheduled > 0 && !timestamp.IsZero() {
+		return timestamp.Add(time.Duration(afterPodScheduled) * time.Second)
+	}
+	return time.Time{}
 }
 
 func (p *podAssignCache) unAssign(nodeName string, pod *corev1.Pod) {
@@ -148,18 +183,15 @@ func (p *podAssignCache) OnUpdate(oldObj, newObj interface{}) {
 	if !ok || pod == nil {
 		return
 	}
-	oldPodInfo := p.getPodAssignInfo(pod.Spec.NodeName, pod)
-	if oldPodInfo == nil { // pod was not cached
-		if pod.Spec.NodeName != "" && !util.IsPodTerminated(pod) { // pod is assigned and not terminated
-			p.assign(pod.Spec.NodeName, pod)
-		}
-	} else {
-		if util.IsPodTerminated(pod) { // pod become terminated
-			p.unAssign(pod.Spec.NodeName, pod)
-		}
-		if !reflect.DeepEqual(pod.Spec, oldPodInfo.pod.Spec) { // pod spec changed
-			p.assign(pod.Spec.NodeName, pod)
-		}
+	switch oldPodInfo := p.getPodAssignInfo(pod.Spec.NodeName, pod); {
+	case oldPodInfo == nil: // pod was not cached
+		p.assign(pod.Spec.NodeName, pod)
+	case util.IsPodTerminated(pod): // pod has nodeName & pod become terminated
+		p.unAssign(pod.Spec.NodeName, pod)
+	case !reflect.DeepEqual(&pod.Spec, &oldPodInfo.pod.Spec) ||
+		!reflect.DeepEqual(pod.Status.Conditions, oldPodInfo.pod.Status.Conditions):
+		// pod spec or pod conditions changed, renew cached pod
+		p.assign(pod.Spec.NodeName, pod)
 	}
 }
 
