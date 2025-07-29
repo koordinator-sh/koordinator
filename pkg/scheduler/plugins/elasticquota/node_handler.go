@@ -18,6 +18,7 @@ package elasticquota
 
 import (
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 )
 
@@ -51,9 +52,14 @@ func (g *Plugin) OnNodeUpdate(oldObj, newObj interface{}) {
 }
 
 func (g *Plugin) OnNodeDelete(obj interface{}) {
-	node, ok := obj.(*corev1.Node)
-	if !ok {
-		klog.Errorf("node is nil")
+	var node *corev1.Node
+	switch t := obj.(type) {
+	case *corev1.Node:
+		node = t
+	case cache.DeletedFinalStateUnknown:
+		node, _ = t.Obj.(*corev1.Node)
+	}
+	if node == nil {
 		return
 	}
 
