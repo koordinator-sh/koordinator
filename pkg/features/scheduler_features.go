@@ -70,6 +70,12 @@ const (
 	// OmitNodeLabelsForReservation is used to omit node labels while matching reservation affinity.
 	OmitNodeLabelsForReservation featuregate.Feature = "OmitNodeLabelsForReservation"
 
+	// owner: @zqzten
+	// alpha: v1.7
+	//
+	// DevicePluginAdaption enables adaption for third party device plugins within device share scheduling.
+	DevicePluginAdaption featuregate.Feature = "DevicePluginAdaption"
+
 	CSIStorageCapacity featuregate.Feature = "CSIStorageCapacity"
 
 	GenericEphemeralVolume featuregate.Feature = "GenericEphemeralVolume"
@@ -92,6 +98,7 @@ var defaultSchedulerFeatureGates = map[featuregate.Feature]featuregate.FeatureSp
 	SupportParentQuotaSubmitPod:               {Default: false, PreRelease: featuregate.Alpha},
 	LazyReservationRestore:                    {Default: false, PreRelease: featuregate.Alpha},
 	OmitNodeLabelsForReservation:              {Default: false, PreRelease: featuregate.Alpha},
+	DevicePluginAdaption:                      {Default: false, PreRelease: featuregate.Alpha},
 	CSIStorageCapacity:                        {Default: true, PreRelease: featuregate.GA}, // remove in 1.26
 	GenericEphemeralVolume:                    {Default: true, PreRelease: featuregate.GA},
 	PodDisruptionBudget:                       {Default: true, PreRelease: featuregate.GA},

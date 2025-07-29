@@ -48,6 +48,18 @@ var (
 			Name:      "reservation_status_phase",
 			Help:      `The current number of reservations in each status phase (e.g. Pending, Available, Succeeded, Failed)`,
 		}, []string{"name", "phase"}))
+	ReservationResource = utilmetrics.NewGCGaugeVec(
+		"reservation_resource",
+		prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Subsystem: schedulermetrics.SchedulerSubsystem,
+				Name:      "reservation_resource",
+				Help:      "Resource metrics for a reservation, including allocatable, allocated, and utilization with unit.",
+			},
+			[]string{"type", "name", "resource", "unit"},
+		),
+	)
+
 	ElasticQuotaProcessLatency = metrics.NewHistogramVec(
 		&metrics.HistogramOpts{
 			Subsystem: schedulermetrics.SchedulerSubsystem,
@@ -101,12 +113,29 @@ var (
 
 	gcMetricsList = []prometheus.Collector{
 		ReservationStatusPhase.GetGaugeVec(),
+		ReservationResource.GetGaugeVec(),
 	}
 )
 
 const (
-	reservationNameKey  = "name"
-	reservationPhaseKey = "phase"
+	reservationNameKey         = "name"
+	reservationPhaseKey        = "phase"
+	reservationResourceKey     = "resource"
+	reservationResourceTypeKey = "type"
+	reservationResourceUnitKey = "unit"
+)
+
+const (
+	UnitCore  = "core"
+	UnitGiB   = "Gi"
+	UnitRaw   = "raw"
+	UnitRatio = "ratio"
+)
+
+const (
+	TypeAllocatable = "allocatable"
+	TypeAllocated   = "allocated"
+	TypeUtilization = "utilization"
 )
 
 // RecordReservationPhase records the phase of a reservation as a metric.
@@ -117,6 +146,17 @@ func RecordReservationPhase(name string, phase string, value float64) {
 		reservationPhaseKey: phase,
 	}
 	ReservationStatusPhase.WithSet(labels, value)
+}
+
+// RecordReservationResourceByTypeWithUnit records the resource record of a reservation as a metric.
+func RecordReservationResourceByTypeWithUnit(name, resource, typ, unit string, value float64) {
+	labels := prometheus.Labels{
+		reservationResourceTypeKey: typ,
+		reservationNameKey:         name,
+		reservationResourceKey:     resource,
+		reservationResourceUnitKey: unit,
+	}
+	ReservationResource.WithSet(labels, value)
 }
 
 var registerMetrics sync.Once
