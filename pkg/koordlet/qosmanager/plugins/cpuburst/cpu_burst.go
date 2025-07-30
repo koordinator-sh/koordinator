@@ -19,12 +19,13 @@ package cpuburst
 import (
 	"encoding/json"
 	"fmt"
-
 	"math/rand"
 	"strconv"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/klog/v2"
 
@@ -172,6 +173,7 @@ type cpuBurst struct {
 	executor              resourceexecutor.ResourceUpdateExecutor
 	cgroupReader          resourceexecutor.CgroupReader
 	nodeCPUBurstStrategy  *slov1alpha1.CPUBurstStrategy
+	podCPUBurstStrategies []slov1alpha1.PodCPUBurstStrategy
 	containerLimiter      map[string]*burstLimiter
 }
 
@@ -215,6 +217,7 @@ func (b *cpuBurst) start() {
 		return
 	}
 	b.nodeCPUBurstStrategy = nodeSLO.Spec.CPUBurstStrategy
+	b.podCPUBurstStrategies = nodeSLO.Spec.PodCPUBurstStrategies
 	podsMeta := b.statesInformer.GetAllPods()
 
 	// get node state by node share pool usage
@@ -236,7 +239,7 @@ func (b *cpuBurst) start() {
 		}
 
 		// merge burst config from pod and node
-		cpuBurstCfg := genPodBurstConfig(podMeta.Pod, &b.nodeCPUBurstStrategy.CPUBurstConfig)
+		cpuBurstCfg := genPodBurstConfig(podMeta.Pod, &b.nodeCPUBurstStrategy.CPUBurstConfig, b.podCPUBurstStrategies)
 		if cpuBurstCfg == nil {
 			klog.Warningf("pod %v/%v burst config illegal, burst config %v",
 				podMeta.Pod.Namespace, podMeta.Pod.Name, cpuBurstCfg)
@@ -664,11 +667,39 @@ func calcStaticCPUBurstVal(container *corev1.Container, burstCfg *slov1alpha1.CP
 }
 
 // use node config by default, overlap if pod specify config
-func genPodBurstConfig(pod *corev1.Pod, nodeCfg *slov1alpha1.CPUBurstConfig) *slov1alpha1.CPUBurstConfig {
+func genPodBurstConfig(pod *corev1.Pod, nodeCfg *slov1alpha1.CPUBurstConfig, podStrategies []slov1alpha1.PodCPUBurstStrategy) *slov1alpha1.CPUBurstConfig {
 	podCPUBurstCfg, err := slov1alpha1.GetPodCPUBurstConfig(pod)
 	if err != nil {
 		klog.Infof("parse pod %s/%s cpu burst config failed, reason %v", pod.Namespace, pod.Name, err)
 		return nodeCfg
+	}
+
+	if pod != nil {
+		matchSelector := func(selector *v1.LabelSelector) bool {
+			if selector == nil {
+				return true
+			}
+			s, err := v1.LabelSelectorAsSelector(selector)
+			if err != nil {
+				klog.Warningf("parse pod %s/%s cpu burst config selector failed, reason %v", pod.Namespace, pod.Name, err)
+				return false
+			}
+			return s.Matches(labels.Set(pod.Labels))
+		}
+		matchNamespace := func(targetNS string) bool {
+			return targetNS == "" || targetNS == pod.Namespace
+		}
+		// find pod specific cpu burst config
+		for i, p := range podStrategies {
+			if p.Namespace == "" && p.PodSelector == nil {
+				klog.Warningf("pod strategy [%d] is invalid, namespace and podSelector are both empty, skipped", i)
+				continue
+			}
+			if matchNamespace(p.Namespace) && matchSelector(p.PodSelector) && (podCPUBurstCfg == nil || p.OverridePod) {
+				podCPUBurstCfg = p.CPUBurstConfig.DeepCopy()
+				break
+			}
+		}
 	}
 
 	if podCPUBurstCfg == nil {

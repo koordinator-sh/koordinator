@@ -602,15 +602,50 @@ func Test_getCPBurstConfigSpec(t *testing.T) {
 			},
 		},
 	}
+	testingCPUBurstCfg2 := &configuration.CPUBurstCfg{
+		ClusterStrategy: &slov1alpha1.CPUBurstStrategy{
+			CPUBurstConfig: slov1alpha1.CPUBurstConfig{
+				CPUBurstPercent: pointer.Int64(200),
+			},
+		},
+		NodeStrategies: []configuration.NodeCPUBurstCfg{
+			{
+				NodeCfgProfile: configuration.NodeCfgProfile{
+					NodeSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							"aaa": "a",
+						},
+					},
+				},
+				CPUBurstStrategy: &slov1alpha1.CPUBurstStrategy{
+					CPUBurstConfig: slov1alpha1.CPUBurstConfig{
+						CPUBurstPercent: pointer.Int64(100),
+					},
+				},
+			},
+		},
+		PodStrategies: []slov1alpha1.PodCPUBurstStrategy{
+			{
+				PodCfgProfile: slov1alpha1.PodCfgProfile{
+					Namespace: "ns",
+				},
+				OverridePod: true,
+				CPUBurstConfig: slov1alpha1.CPUBurstConfig{
+					CPUBurstPercent: pointer.Int64(300),
+				},
+			},
+		},
+	}
 	type args struct {
 		node *corev1.Node
 		cfg  *configuration.CPUBurstCfg
 	}
 	tests := []struct {
-		name    string
-		args    args
-		want    *slov1alpha1.CPUBurstStrategy
-		wantErr bool
+		name     string
+		args     args
+		wantNode *slov1alpha1.CPUBurstStrategy
+		wantPod  []slov1alpha1.PodCPUBurstStrategy
+		wantErr  bool
 	}{
 		{
 			name: "default value for empty config",
@@ -618,8 +653,8 @@ func Test_getCPBurstConfigSpec(t *testing.T) {
 				node: &corev1.Node{},
 				cfg:  &defaultConfig.CPUBurstCfgMerged,
 			},
-			want:    sloconfig.DefaultCPUBurstStrategy(),
-			wantErr: false,
+			wantNode: sloconfig.DefaultCPUBurstStrategy(),
+			wantErr:  false,
 		},
 		{
 			name: "get cluster config correctly",
@@ -631,7 +666,7 @@ func Test_getCPBurstConfigSpec(t *testing.T) {
 				},
 				cfg: testingCPUBurstCfg,
 			},
-			want: testingCPUBurstCfg.ClusterStrategy,
+			wantNode: testingCPUBurstCfg.ClusterStrategy,
 		},
 		{
 			name: "get node config correctly",
@@ -646,20 +681,36 @@ func Test_getCPBurstConfigSpec(t *testing.T) {
 				},
 				cfg: testingCPUBurstCfg1,
 			},
-			want: testingCPUBurstCfg1.NodeStrategies[0].CPUBurstStrategy,
+			wantNode: testingCPUBurstCfg1.NodeStrategies[0].CPUBurstStrategy,
+		},
+		{
+			name: "get node config correctly, including pod config",
+			args: args{
+				node: &corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node",
+						Labels: map[string]string{
+							"aaa": "a",
+						},
+					},
+				},
+				cfg: testingCPUBurstCfg2,
+			},
+			wantNode: testingCPUBurstCfg2.NodeStrategies[0].CPUBurstStrategy,
+			wantPod:  testingCPUBurstCfg2.PodStrategies,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, gotErr := getCPUBurstConfigSpec(tt.args.node, tt.args.cfg)
+			gotNode, gotPod, gotErr := getCPUBurstConfigSpec(tt.args.node, tt.args.cfg)
 			assert.Equal(t, tt.wantErr, gotErr != nil)
-			assert.Equal(t, tt.want, got)
+			assert.Equal(t, tt.wantNode, gotNode)
+			assert.Equal(t, tt.wantPod, gotPod)
 		})
 	}
 }
 
 func Test_calculateCPUBurstCfgMerged(t *testing.T) {
-
 	defaultSLOCfg := DefaultSLOCfg()
 
 	oldSLOConfig := DefaultSLOCfg()
