@@ -51,6 +51,7 @@ type Config struct {
 	DefaultRuntimeType           string
 	HAMICoreLibraryDirectoryPath string
 	PodResourcesProxyPath        string
+	XPUDeviceInfosDir            string
 }
 
 func init() {
@@ -95,6 +96,7 @@ func NewHostModeConfig() *Config {
 		DefaultRuntimeType:           "containerd",
 		HAMICoreLibraryDirectoryPath: "/usr/local/vgpu/libvgpu.so",
 		PodResourcesProxyPath:        "/var/run/koordlet/pod-resources",
+		XPUDeviceInfosDir:            "/var/run/koordlet/xpu-device-infos/",
 	}
 }
 
@@ -112,6 +114,7 @@ func NewDsModeConfig() *Config {
 		DefaultRuntimeType:           "containerd",
 		HAMICoreLibraryDirectoryPath: "/usr/local/vgpu/libvgpu.so",
 		PodResourcesProxyPath:        "/var/run/koordlet/pod-resources",
+		XPUDeviceInfosDir:            "/var/run/koordlet/xpu-device-infos/",
 	}
 }
 
@@ -136,4 +139,6 @@ func (c *Config) InitFlags(fs *flag.FlagSet) {
 	fs.StringVar(&c.HAMICoreLibraryDirectoryPath, "hami-core-library-directory-path", c.HAMICoreLibraryDirectoryPath, "path of hami core library")
 
 	fs.StringVar(&c.PodResourcesProxyPath, "pod-resources-proxy-path", c.PodResourcesProxyPath, "The path of the socket file for the pod resource proxy")
+
+	fs.StringVar(&c.XPUDeviceInfosDir, "xpu-device-infos-dir", c.XPUDeviceInfosDir, "The directory where xpu device infos are stored, such as nvidia gpu, ascend npu, etc. Default: /var/run/koordlet/xpu-device-infos/")
 }

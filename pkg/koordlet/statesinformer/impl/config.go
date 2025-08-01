@@ -24,29 +24,31 @@ import (
 )
 
 type Config struct {
-	KubeletPreferredAddressType string
-	KubeletSyncInterval         time.Duration
-	KubeletSyncTimeout          time.Duration
-	InsecureKubeletTLS          bool
-	KubeletReadOnlyPort         uint
-	NodeTopologySyncInterval    time.Duration
-	DisableQueryKubeletConfig   bool
-	EnableNodeMetricReport      bool
-	MetricReportInterval        time.Duration // Deprecated
-	EnablePodTaskIds            bool
+	KubeletPreferredAddressType      string
+	KubeletSyncInterval              time.Duration
+	KubeletSyncTimeout               time.Duration
+	InsecureKubeletTLS               bool
+	KubeletReadOnlyPort              uint
+	NodeTopologySyncInterval         time.Duration
+	DisableQueryKubeletConfig        bool
+	EnableNodeMetricReport           bool
+	MetricReportInterval             time.Duration // Deprecated
+	EnablePodTaskIds                 bool
+	XPUEnforceCollectFromDeviceInfos bool
 }
 
 func NewDefaultConfig() *Config {
 	return &Config{
-		KubeletPreferredAddressType: string(corev1.NodeInternalIP),
-		KubeletSyncInterval:         10 * time.Second,
-		KubeletSyncTimeout:          3 * time.Second,
-		InsecureKubeletTLS:          false,
-		KubeletReadOnlyPort:         10255,
-		NodeTopologySyncInterval:    3 * time.Second,
-		DisableQueryKubeletConfig:   false,
-		EnableNodeMetricReport:      true,
-		EnablePodTaskIds:            false,
+		KubeletPreferredAddressType:      string(corev1.NodeInternalIP),
+		KubeletSyncInterval:              10 * time.Second,
+		KubeletSyncTimeout:               3 * time.Second,
+		InsecureKubeletTLS:               false,
+		KubeletReadOnlyPort:              10255,
+		NodeTopologySyncInterval:         3 * time.Second,
+		DisableQueryKubeletConfig:        false,
+		EnableNodeMetricReport:           true,
+		EnablePodTaskIds:                 false,
+		XPUEnforceCollectFromDeviceInfos: false,
 	}
 }
 
@@ -61,4 +63,5 @@ func (c *Config) InitFlags(fs *flag.FlagSet) {
 	fs.DurationVar(&c.MetricReportInterval, "report-interval", c.MetricReportInterval, "Deprecated since v1.1, use ColocationStrategy.MetricReportIntervalSeconds in config map of slo-controller")
 	fs.BoolVar(&c.EnableNodeMetricReport, "enable-node-metric-report", c.EnableNodeMetricReport, "Enable status update of node metric crd.")
 	fs.BoolVar(&c.EnablePodTaskIds, "enable-pod-taskids", c.EnablePodTaskIds, "Enable pod taskids in statesinformer.")
+	fs.BoolVar(&c.XPUEnforceCollectFromDeviceInfos, "xpu-enforce-collect-from-device-infos", c.XPUEnforceCollectFromDeviceInfos, "Enforce the collection of xpu devices from device infos directory, such as nvidia gpu, ascend npu, etc. Default: false")
 }

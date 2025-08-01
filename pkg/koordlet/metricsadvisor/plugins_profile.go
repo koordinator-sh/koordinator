@@ -31,6 +31,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor/collectors/sysresource"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor/devices/gpu"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor/devices/rdma"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor/devices/xpu"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor/framework"
 )
 
@@ -40,6 +41,7 @@ var (
 	devicePlugins = map[string]framework.DeviceFactory{
 		gpu.DeviceCollectorName:  gpu.New,
 		rdma.DeviceCollectorName: rdma.New,
+		xpu.DeviceCollectorName:  xpu.New,
 	}
 
 	collectorPlugins = map[string]framework.CollectorFactory{
