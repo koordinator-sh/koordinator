@@ -53,6 +53,8 @@ type DeviceInfo struct {
 	Topology *DeviceTopology `json:"topology,omitempty"`
 	// VFGroups represents the virtual function devices
 	VFGroups []VirtualFunctionGroup `json:"vfGroups,omitempty"`
+	// Conditions represents current conditions of device
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
 type DeviceTopology struct {
@@ -79,6 +81,12 @@ type VirtualFunction struct {
 	// BusID is the domain:bus:device.function formatted identifier of PCI/PCIE virtual function device
 	BusID string `json:"busID,omitempty"`
 }
+
+type DeviceConditionType string
+
+const (
+	DeviceConditionHealthy DeviceConditionType = "Healthy"
+)
 
 type DeviceStatus struct {
 	Allocations []DeviceAllocation `json:"allocations,omitempty"`
