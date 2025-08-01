@@ -21,6 +21,7 @@ type DeviceType string
 const (
 	GPUDeviceType  DeviceType = "GPU"
 	RDMADeviceType DeviceType = "RDMA"
+	XPUDeviceType  DeviceType = "XPU"
 )
 
 type Devices interface {
@@ -70,4 +71,42 @@ type VirtualFunction struct {
 	ID         string            `json:"id,omitempty"`
 	Labels     map[string]string `json:"labels,omitempty"`
 	CustomInfo interface{}       `json:"customInfo,omitempty"`
+}
+
+type XPUDevices []XPUDeviceInfo
+
+func (x XPUDevices) Type() DeviceType {
+	return XPUDeviceType
+}
+
+type XPUDeviceInfo struct {
+	Vendor    string            `json:"vendor"`
+	Model     string            `json:"model"`
+	UUID      string            `json:"uuid"`  // the Identifier of the device
+	Minor     string            `json:"minor"` // /dev/xxx0
+	Resources map[string]string `json:"resources,omitempty"`
+	Topology  *DeviceTopology   `json:"topology,omitempty"`
+	Status    *DeviceStatus     `json:"status,omitempty"`
+}
+
+type DeviceTopology struct {
+	P2PLinks           []DeviceP2PLink `json:"p2pLinks,omitempty"`
+	MustHonorPartition bool            `json:"mustHonorPartition,omitempty"`
+	SocketID           string          `json:"socketID,omitempty"`
+	NodeID             string          `json:"nodeID,omitempty"`
+	PCIEID             string          `json:"pcieID,omitempty"`
+	BusID              string          `json:"busID,omitempty"`
+}
+
+type DeviceP2PLink struct {
+	PeerMinor string            `json:"peerMinor"`
+	Type      DeviceP2PLinkType `json:"type"`
+}
+
+type DeviceP2PLinkType string // like NVLink/HCCS
+
+type DeviceStatus struct {
+	Healthy    bool   `json:"healthy"`
+	ErrCode    string `json:"errCode,omitempty"`
+	ErrMessage string `json:"errMessage,omitempty"`
 }
