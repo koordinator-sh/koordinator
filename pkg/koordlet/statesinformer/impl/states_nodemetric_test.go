@@ -1495,3 +1495,64 @@ func Test_nodeMetricInformer_collectHostAppMetric(t *testing.T) {
 		})
 	}
 }
+
+func Test_nodeMetricInformer_generateQueryDuration(t *testing.T) {
+	testNow := time.Now()
+	timeNow = func() time.Time {
+		return testNow
+	}
+	type fields struct {
+		nodeMetric *slov1alpha1.NodeMetric
+	}
+	tests := []struct {
+		name      string
+		fields    fields
+		wantStart time.Time
+		wantEnd   time.Time
+	}{
+		{
+			name: "collect policy is nil",
+			fields: fields{
+				nodeMetric: &slov1alpha1.NodeMetric{},
+			},
+			wantStart: timeNow().Add(-time.Second * defaultAggregateDurationSeconds),
+			wantEnd:   timeNow(),
+		},
+		{
+			name: "aggregate duration is nil",
+			fields: fields{
+				nodeMetric: &slov1alpha1.NodeMetric{
+					Spec: slov1alpha1.NodeMetricSpec{
+						CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{},
+					},
+				},
+			},
+			wantStart: timeNow().Add(-time.Second * defaultAggregateDurationSeconds),
+			wantEnd:   timeNow(),
+		},
+		{
+			name: "aggregate duration is not nil",
+			fields: fields{
+				nodeMetric: &slov1alpha1.NodeMetric{
+					Spec: slov1alpha1.NodeMetricSpec{
+						CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
+							AggregateDurationSeconds: pointer.Int64(1200),
+						},
+					},
+				},
+			},
+			wantStart: timeNow().Add(-time.Second * 1200),
+			wantEnd:   timeNow(),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := &nodeMetricInformer{
+				nodeMetric: tt.fields.nodeMetric,
+			}
+			gotStart, gotEnd := r.generateQueryDuration()
+			assert.Equalf(t, tt.wantStart, gotStart, "generateQueryDuration()")
+			assert.Equalf(t, tt.wantEnd, gotEnd, "generateQueryDuration()")
+		})
+	}
+}
