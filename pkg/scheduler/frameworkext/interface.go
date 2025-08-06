@@ -65,6 +65,8 @@ type FrameworkExtender interface {
 	// RunReservationExtensionFinalRestoreReservation is deprecated, and will be removed next version.
 	// DEPRECATED: use RunReservationExtensionRestoreReservation instead.
 	RunReservationExtensionFinalRestoreReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, states PluginToNodeReservationRestoreStates) *framework.Status
+	RunReservationExtensionPreRestoreReservationPreAllocation(ctx context.Context, cycleState *framework.CycleState, rInfo *ReservationInfo) *framework.Status
+	RunReservationExtensionRestoreReservationPreAllocation(ctx context.Context, cycleState *framework.CycleState, rInfo *ReservationInfo, preAllocatable []*corev1.Pod, nodeInfo *framework.NodeInfo) (PluginToReservationRestoreStates, *framework.Status)
 
 	RunReservationFilterPlugins(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, reservationInfo *ReservationInfo, nodeInfo *framework.NodeInfo) *framework.Status
 	RunNominateReservationFilterPlugins(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, reservationInfo *ReservationInfo, nodeName string) *framework.Status
@@ -126,6 +128,15 @@ type ReservationRestorePlugin interface {
 	RestoreReservation(ctx context.Context, cycleState *framework.CycleState, podToSchedule *corev1.Pod, matched []*ReservationInfo, unmatched []*ReservationInfo, nodeInfo *framework.NodeInfo) (interface{}, *framework.Status)
 	// DEPRECATED
 	FinalRestoreReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, states NodeReservationRestoreStates) *framework.Status
+}
+
+// ReservationPreAllocationRestorePlugin is used to support the return of fine-grained resources
+// held by pre-allocatable pods, such as CPU Cores, GPU Devices, etc. During Pod scheduling, resources
+// held by these pre-allocatable pods need to be allocated first, otherwise resources will be wasted.
+type ReservationPreAllocationRestorePlugin interface {
+	framework.Plugin
+	PreRestoreReservationPreAllocation(ctx context.Context, cycleState *framework.CycleState, r *ReservationInfo) *framework.Status
+	RestoreReservationPreAllocation(ctx context.Context, cycleState *framework.CycleState, r *ReservationInfo, preAllocatable []*corev1.Pod, nodeInfo *framework.NodeInfo) (interface{}, *framework.Status)
 }
 
 // ReservationFilterPlugin is an interface for Filter Reservation plugins.
