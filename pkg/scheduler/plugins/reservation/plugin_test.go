@@ -240,16 +240,19 @@ func TestPreFilter(t *testing.T) {
 			TTL: &metav1.Duration{Duration: 30 * time.Minute},
 		},
 	}
+	rInfo := frameworkext.NewReservationInfo(r)
 	missTemplateReservation := r.DeepCopy()
 	missTemplateReservation.Spec.Template = nil
 
 	tests := []struct {
-		name                  string
-		pod                   *corev1.Pod
-		reservation           *schedulingv1alpha1.Reservation
-		nodeReservationStates map[string]*nodeReservationState
-		wantStatus            *framework.Status
-		wantPreRes            *framework.PreFilterResult
+		name                    string
+		pod                     *corev1.Pod
+		reservation             *schedulingv1alpha1.Reservation
+		isPreAllocationRequired bool
+		rInfo                   *frameworkext.ReservationInfo // ready-only
+		nodeReservationStates   map[string]*nodeReservationState
+		wantStatus              *framework.Status
+		wantPreRes              *framework.PreFilterResult
 	}{
 		{
 			name: "skip for non-reserve pod",
@@ -271,6 +274,7 @@ func TestPreFilter(t *testing.T) {
 		{
 			name:        "failed to validate reservation",
 			pod:         reservePod,
+			rInfo:       rInfo,
 			reservation: missTemplateReservation,
 			wantStatus:  framework.NewStatus(framework.Error, "the reservation misses the template spec"),
 			wantPreRes:  nil,
@@ -279,6 +283,7 @@ func TestPreFilter(t *testing.T) {
 			name:        "validate reservation successfully",
 			pod:         reservePod,
 			reservation: r,
+			rInfo:       rInfo,
 			wantStatus:  nil,
 			wantPreRes:  nil,
 		},
@@ -311,6 +316,67 @@ func TestPreFilter(t *testing.T) {
 				NodeNames: sets.New("test-node-1"),
 			},
 		},
+		{
+			name: "reservation pre-allocation",
+			pod: testGetReservePod(&corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "reserve-pod-0",
+					Annotations: map[string]string{
+						reservationutil.AnnotationIsPreAllocation: "true",
+					},
+				},
+			}),
+			reservation: r,
+			rInfo:       rInfo,
+			nodeReservationStates: map[string]*nodeReservationState{
+				"test-node-1": {},
+			},
+			wantStatus: nil,
+			wantPreRes: nil,
+		},
+		{
+			name: "reservation pre-allocation required",
+			pod: testGetReservePod(&corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "reserve-pod-0",
+					Labels: map[string]string{
+						apiext.LabelPreAllocationRequired: "true",
+					},
+					Annotations: map[string]string{
+						reservationutil.AnnotationIsPreAllocation: "true",
+					},
+				},
+			}),
+			reservation:             r,
+			isPreAllocationRequired: true,
+			rInfo:                   rInfo,
+			nodeReservationStates: map[string]*nodeReservationState{
+				"test-node-1": {},
+			},
+			wantStatus: nil,
+			wantPreRes: &framework.PreFilterResult{
+				NodeNames: sets.New("test-node-1"),
+			},
+		},
+		{
+			name: "reservation pre-allocation required not meet",
+			pod: testGetReservePod(&corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "reserve-pod-0",
+					Labels: map[string]string{
+						apiext.LabelPreAllocationRequired: "true",
+					},
+					Annotations: map[string]string{
+						reservationutil.AnnotationIsPreAllocation: "true",
+					},
+				},
+			}),
+			reservation:             r,
+			isPreAllocationRequired: true,
+			rInfo:                   rInfo,
+			wantStatus:              framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrReasonReservationPreAllocationRequired),
+			wantPreRes:              nil,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -330,9 +396,11 @@ func TestPreFilter(t *testing.T) {
 			cycleState := framework.NewCycleState()
 			cycleState.Write(stateKey, &stateData{
 				schedulingStateData: schedulingStateData{
-					hasAffinity:           reservationAffinity != nil,
-					nodeReservationStates: tt.nodeReservationStates,
+					hasAffinity:             reservationAffinity != nil,
+					isPreAllocationRequired: tt.isPreAllocationRequired,
+					nodeReservationStates:   tt.nodeReservationStates,
 				},
+				rInfo: tt.rInfo,
 			})
 			preRes, got := pl.PreFilter(context.TODO(), cycleState, tt.pod)
 			assert.Equal(t, tt.wantStatus, got)
@@ -348,6 +416,7 @@ func TestFilter(t *testing.T) {
 		},
 		Status: corev1.NodeStatus{
 			Allocatable: corev1.ResourceList{
+				corev1.ResourcePods:   resource.MustParse("100"),
 				corev1.ResourceCPU:    resource.MustParse("32"),
 				corev1.ResourceMemory: resource.MustParse("64Gi"),
 			},
@@ -434,7 +503,6 @@ func TestFilter(t *testing.T) {
 			},
 		},
 	}
-
 	restrictedReservation := &schedulingv1alpha1.Reservation{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "restricted-reservation-1",
@@ -461,6 +529,52 @@ func TestFilter(t *testing.T) {
 			NodeName: testNode.Name,
 			Allocatable: corev1.ResourceList{
 				corev1.ResourceCPU: resource.MustParse("4"),
+			},
+		},
+	}
+	preAllocationReservation := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "pre-allocation-reservation-1",
+			UID:  uuid.NewUUID(),
+		},
+		Spec: schedulingv1alpha1.ReservationSpec{
+			PreAllocation:  true,
+			AllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyRestricted,
+			Template: &corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU: resource.MustParse("4"),
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	preAllocationReservation2 := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "pre-allocation-reservation-2",
+			UID:  uuid.NewUUID(),
+		},
+		Spec: schedulingv1alpha1.ReservationSpec{
+			PreAllocation:  true,
+			AllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyRestricted,
+			Template: &corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU: resource.MustParse("100"),
+								},
+							},
+						},
+					},
+				},
 			},
 		},
 	}
@@ -647,11 +761,47 @@ func TestFilter(t *testing.T) {
 			want: nil,
 		},
 		{
-			name: "Aligned policy can coexist with Restricted policy",
+			name: "Aligned policy can coexist with Restricted policy for reservation-ignored",
 			pod:  testReservationIgnoredPod,
 			reservations: []*schedulingv1alpha1.Reservation{
 				alignedReservation,
 				restrictedReservation,
+			},
+			nodeInfo: testNodeInfo,
+			want:     nil,
+		},
+		{
+			name: "filter pre-allocation reservation",
+			pod:  reservationutil.NewReservePod(preAllocationReservation),
+			reservations: []*schedulingv1alpha1.Reservation{
+				restrictedReservation,
+				preAllocationReservation,
+			},
+			stateData: &stateData{
+				schedulingStateData: schedulingStateData{
+					nodeReservationStates: map[string]*nodeReservationState{
+						testNode.Name: {},
+					},
+				},
+				rInfo: frameworkext.NewReservationInfo(preAllocationReservation),
+			},
+			nodeInfo: testNodeInfo,
+			want:     nil,
+		},
+		{
+			name: "ignored to filter pre-allocation reservation when insufficient resource",
+			pod:  reservationutil.NewReservePod(preAllocationReservation2),
+			reservations: []*schedulingv1alpha1.Reservation{
+				restrictedReservation,
+				preAllocationReservation2,
+			},
+			stateData: &stateData{
+				schedulingStateData: schedulingStateData{
+					nodeReservationStates: map[string]*nodeReservationState{
+						testNode.Name: {},
+					},
+				},
+				rInfo: frameworkext.NewReservationInfo(preAllocationReservation),
 			},
 			nodeInfo: testNodeInfo,
 			want:     nil,
@@ -2059,6 +2209,439 @@ func Test_filterWithReservations(t *testing.T) {
 			nodeInfo := framework.NewNodeInfo()
 			nodeInfo.SetNode(node)
 			got := pl.filterWithReservations(context.TODO(), cycleState, &corev1.Pod{}, nodeInfo, tt.stateData.nodeReservationStates[node.Name].matchedOrIgnored, tt.stateData.hasAffinity)
+			assert.Equal(t, tt.wantStatus, got)
+		})
+	}
+}
+
+func Test_filterWithPreAllocatablePods(t *testing.T) {
+	node := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-node",
+		},
+		Status: corev1.NodeStatus{
+			Allocatable: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("32"),
+				corev1.ResourceMemory: resource.MustParse("32Gi"),
+				corev1.ResourcePods:   resource.MustParse("100"),
+				apiext.BatchCPU:       resource.MustParse("7500"),
+				apiext.BatchMemory:    resource.MustParse("10Gi"),
+			},
+		},
+	}
+	tests := []struct {
+		name       string
+		stateData  *stateData
+		wantStatus *framework.Status
+	}{
+		{
+			name: "filter with pre allocation not required",
+			stateData: &stateData{
+				schedulingStateData: schedulingStateData{
+					podRequests: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("4"),
+						corev1.ResourceMemory: resource.MustParse("16Gi"),
+					},
+					podRequestsResources: framework.NewResource(corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("4"),
+						corev1.ResourceMemory: resource.MustParse("16Gi"),
+					}),
+					nodeReservationStates: map[string]*nodeReservationState{
+						node.Name: {
+							podRequested: framework.NewResource(corev1.ResourceList{
+								corev1.ResourceCPU:    resource.MustParse("12"),
+								corev1.ResourceMemory: resource.MustParse("16Gi"),
+							}),
+						},
+					},
+				},
+				rInfo: frameworkext.NewReservationInfo(&schedulingv1alpha1.Reservation{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-pre-allocation-reservation",
+						UID:  uuid.NewUUID(),
+					},
+					Spec: schedulingv1alpha1.ReservationSpec{
+						PreAllocation:  true,
+						AllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyRestricted,
+						Owners: []schedulingv1alpha1.ReservationOwner{
+							{
+								LabelSelector: &metav1.LabelSelector{
+									MatchLabels: map[string]string{
+										"test-reservation": "true",
+									},
+								},
+							},
+						},
+						Template: &corev1.PodTemplateSpec{
+							Spec: corev1.PodSpec{
+								Containers: []corev1.Container{
+									schedulertesting.MakeContainer().Resources(map[corev1.ResourceName]string{
+										corev1.ResourceCPU:    "4",
+										corev1.ResourceMemory: "16Gi",
+									}).Obj(),
+								},
+							},
+						},
+					},
+				}),
+			},
+			wantStatus: nil,
+		},
+		{
+			name: "failed to filter with pre allocation required",
+			stateData: &stateData{
+				schedulingStateData: schedulingStateData{
+					isPreAllocationRequired: true,
+					podRequests: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("4"),
+						corev1.ResourceMemory: resource.MustParse("16Gi"),
+					},
+					podRequestsResources: framework.NewResource(corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("4"),
+						corev1.ResourceMemory: resource.MustParse("16Gi"),
+					}),
+					nodeReservationStates: map[string]*nodeReservationState{
+						node.Name: {
+							podRequested: framework.NewResource(corev1.ResourceList{
+								corev1.ResourceCPU:    resource.MustParse("12"),
+								corev1.ResourceMemory: resource.MustParse("16Gi"),
+							}),
+						},
+					},
+				},
+				rInfo: frameworkext.NewReservationInfo(&schedulingv1alpha1.Reservation{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-pre-allocation-reservation",
+						UID:  uuid.NewUUID(),
+					},
+					Spec: schedulingv1alpha1.ReservationSpec{
+						PreAllocation:  true,
+						AllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyRestricted,
+						Owners: []schedulingv1alpha1.ReservationOwner{
+							{
+								LabelSelector: &metav1.LabelSelector{
+									MatchLabels: map[string]string{
+										"test-reservation": "true",
+									},
+								},
+							},
+						},
+						Template: &corev1.PodTemplateSpec{
+							Spec: corev1.PodSpec{
+								Containers: []corev1.Container{
+									schedulertesting.MakeContainer().Resources(map[corev1.ResourceName]string{
+										corev1.ResourceCPU:    "4",
+										corev1.ResourceMemory: "16Gi",
+									}).Obj(),
+								},
+							},
+						},
+					},
+				}),
+			},
+			wantStatus: framework.NewStatus(framework.Unschedulable, ErrReasonNoPodsMeetPreAllocationRequirements),
+		},
+		{
+			name: "filter with pre allocation pods",
+			stateData: &stateData{
+				schedulingStateData: schedulingStateData{
+					isPreAllocationRequired: true,
+					podRequests: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("4"),
+						corev1.ResourceMemory: resource.MustParse("16Gi"),
+					},
+					podRequestsResources: framework.NewResource(corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("4"),
+						corev1.ResourceMemory: resource.MustParse("16Gi"),
+					}),
+					nodeReservationStates: map[string]*nodeReservationState{
+						node.Name: {
+							podRequested: framework.NewResource(corev1.ResourceList{
+								corev1.ResourceCPU:    resource.MustParse("32"),
+								corev1.ResourceMemory: resource.MustParse("32Gi"),
+							}),
+							preAllocatablePods: []*corev1.Pod{
+								{
+									ObjectMeta: metav1.ObjectMeta{
+										UID:       uuid.NewUUID(),
+										Name:      "test-unfit-pod",
+										Namespace: "test-ns",
+										Labels: map[string]string{
+											"test-reservation": "true",
+										},
+									},
+									Spec: corev1.PodSpec{
+										Containers: []corev1.Container{
+											schedulertesting.MakeContainer().Resources(map[corev1.ResourceName]string{
+												corev1.ResourceCPU:    "8",
+												corev1.ResourceMemory: "32Gi",
+											}).Obj(),
+										},
+									},
+								},
+								{
+									ObjectMeta: metav1.ObjectMeta{
+										UID:       uuid.NewUUID(),
+										Name:      "test-pre-allocation-pod",
+										Namespace: "test-ns",
+										Labels: map[string]string{
+											"test-reservation": "true",
+										},
+									},
+									Spec: corev1.PodSpec{
+										Containers: []corev1.Container{
+											schedulertesting.MakeContainer().Resources(map[corev1.ResourceName]string{
+												corev1.ResourceCPU:    "4",
+												corev1.ResourceMemory: "16Gi",
+											}).Obj(),
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+				rInfo: frameworkext.NewReservationInfo(&schedulingv1alpha1.Reservation{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-pre-allocation-reservation",
+						UID:  uuid.NewUUID(),
+					},
+					Spec: schedulingv1alpha1.ReservationSpec{
+						PreAllocation:  true,
+						AllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyRestricted,
+						Owners: []schedulingv1alpha1.ReservationOwner{
+							{
+								LabelSelector: &metav1.LabelSelector{
+									MatchLabels: map[string]string{
+										"test-reservation": "true",
+									},
+								},
+							},
+						},
+						Template: &corev1.PodTemplateSpec{
+							Spec: corev1.PodSpec{
+								Containers: []corev1.Container{
+									schedulertesting.MakeContainer().Resources(map[corev1.ResourceName]string{
+										corev1.ResourceCPU:    "4",
+										corev1.ResourceMemory: "16Gi",
+									}).Obj(),
+								},
+							},
+						},
+					},
+				}),
+			},
+			wantStatus: nil,
+		},
+		{
+			name: "filter with pre allocation pods with preemptible",
+			stateData: &stateData{
+				schedulingStateData: schedulingStateData{
+					isPreAllocationRequired: true,
+					podRequests: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("4"),
+						corev1.ResourceMemory: resource.MustParse("16Gi"),
+					},
+					podRequestsResources: framework.NewResource(corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("4"),
+						corev1.ResourceMemory: resource.MustParse("16Gi"),
+					}),
+					nodeReservationStates: map[string]*nodeReservationState{
+						node.Name: {
+							podRequested: framework.NewResource(corev1.ResourceList{
+								corev1.ResourceCPU:    resource.MustParse("32"),
+								corev1.ResourceMemory: resource.MustParse("16Gi"),
+							}),
+							preAllocatablePods: []*corev1.Pod{
+								{
+									ObjectMeta: metav1.ObjectMeta{
+										UID:       uuid.NewUUID(),
+										Name:      "test-unfit-pod",
+										Namespace: "test-ns",
+										Labels: map[string]string{
+											"test-reservation": "true",
+										},
+									},
+									Spec: corev1.PodSpec{
+										Containers: []corev1.Container{
+											schedulertesting.MakeContainer().Resources(map[corev1.ResourceName]string{
+												corev1.ResourceCPU:    "8",
+												corev1.ResourceMemory: "8Gi",
+											}).Obj(),
+										},
+									},
+								},
+								{
+									ObjectMeta: metav1.ObjectMeta{
+										UID:       uuid.NewUUID(),
+										Name:      "test-pre-allocation-pod",
+										Namespace: "test-ns",
+										Labels: map[string]string{
+											"test-reservation": "true",
+										},
+									},
+									Spec: corev1.PodSpec{
+										Containers: []corev1.Container{
+											schedulertesting.MakeContainer().Resources(map[corev1.ResourceName]string{
+												corev1.ResourceCPU:    "2",
+												corev1.ResourceMemory: "8Gi",
+											}).Obj(),
+										},
+									},
+								},
+							},
+						},
+					},
+					preemptible: map[string]corev1.ResourceList{
+						node.Name: {
+							corev1.ResourceCPU:    resource.MustParse("2"),
+							corev1.ResourceMemory: resource.MustParse("4Gi"),
+						},
+					},
+				},
+				rInfo: frameworkext.NewReservationInfo(&schedulingv1alpha1.Reservation{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-pre-allocation-reservation",
+						UID:  uuid.NewUUID(),
+					},
+					Spec: schedulingv1alpha1.ReservationSpec{
+						PreAllocation:  true,
+						AllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyRestricted,
+						Owners: []schedulingv1alpha1.ReservationOwner{
+							{
+								LabelSelector: &metav1.LabelSelector{
+									MatchLabels: map[string]string{
+										"test-reservation": "true",
+									},
+								},
+							},
+						},
+						Template: &corev1.PodTemplateSpec{
+							Spec: corev1.PodSpec{
+								Containers: []corev1.Container{
+									schedulertesting.MakeContainer().Resources(map[corev1.ResourceName]string{
+										corev1.ResourceCPU:    "4",
+										corev1.ResourceMemory: "16Gi",
+									}).Obj(),
+								},
+							},
+						},
+					},
+				}),
+			},
+			wantStatus: nil,
+		},
+		{
+			name: "failed to filter with pre allocation pods due to preemptible",
+			stateData: &stateData{
+				schedulingStateData: schedulingStateData{
+					isPreAllocationRequired: true,
+					podRequests: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("4"),
+						corev1.ResourceMemory: resource.MustParse("16Gi"),
+					},
+					podRequestsResources: framework.NewResource(corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("4"),
+						corev1.ResourceMemory: resource.MustParse("16Gi"),
+					}),
+					nodeReservationStates: map[string]*nodeReservationState{
+						node.Name: {
+							podRequested: framework.NewResource(corev1.ResourceList{
+								corev1.ResourceCPU:    resource.MustParse("32"),
+								corev1.ResourceMemory: resource.MustParse("16Gi"),
+							}),
+							preAllocatablePods: []*corev1.Pod{
+								{
+									ObjectMeta: metav1.ObjectMeta{
+										UID:       uuid.NewUUID(),
+										Name:      "test-unfit-pod",
+										Namespace: "test-ns",
+										Labels: map[string]string{
+											"test-reservation": "true",
+										},
+									},
+									Spec: corev1.PodSpec{
+										Containers: []corev1.Container{
+											schedulertesting.MakeContainer().Resources(map[corev1.ResourceName]string{
+												corev1.ResourceCPU:    "8",
+												corev1.ResourceMemory: "8Gi",
+											}).Obj(),
+										},
+									},
+								},
+								{
+									ObjectMeta: metav1.ObjectMeta{
+										UID:       uuid.NewUUID(),
+										Name:      "test-pre-allocation-pod",
+										Namespace: "test-ns",
+										Labels: map[string]string{
+											"test-reservation": "true",
+										},
+									},
+									Spec: corev1.PodSpec{
+										Containers: []corev1.Container{
+											schedulertesting.MakeContainer().Resources(map[corev1.ResourceName]string{
+												corev1.ResourceCPU:    "4",
+												corev1.ResourceMemory: "8Gi",
+											}).Obj(),
+										},
+									},
+								},
+							},
+						},
+					},
+					preemptible: map[string]corev1.ResourceList{
+						node.Name: {
+							corev1.ResourceCPU:    resource.MustParse("-4"),
+							corev1.ResourceMemory: resource.MustParse("-4Gi"),
+						},
+					},
+				},
+				rInfo: frameworkext.NewReservationInfo(&schedulingv1alpha1.Reservation{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-pre-allocation-reservation",
+						UID:  uuid.NewUUID(),
+					},
+					Spec: schedulingv1alpha1.ReservationSpec{
+						PreAllocation:  true,
+						AllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyRestricted,
+						Owners: []schedulingv1alpha1.ReservationOwner{
+							{
+								LabelSelector: &metav1.LabelSelector{
+									MatchLabels: map[string]string{
+										"test-reservation": "true",
+									},
+								},
+							},
+						},
+						Template: &corev1.PodTemplateSpec{
+							Spec: corev1.PodSpec{
+								Containers: []corev1.Container{
+									schedulertesting.MakeContainer().Resources(map[corev1.ResourceName]string{
+										corev1.ResourceCPU:    "4",
+										corev1.ResourceMemory: "16Gi",
+									}).Obj(),
+								},
+							},
+						},
+					},
+				}),
+			},
+			wantStatus: framework.NewStatus(framework.Unschedulable, "Insufficient cpu by node", "Reservation(s) Insufficient cpu"),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			suit := newPluginTestSuit(t)
+			p, err := suit.pluginFactory()
+			assert.NoError(t, err)
+			pl := p.(*Plugin)
+			suit.start()
+			cycleState := framework.NewCycleState()
+			cycleState.Write(stateKey, tt.stateData)
+			nodeInfo := framework.NewNodeInfo()
+			nodeInfo.SetNode(node.DeepCopy())
+			got := pl.filterWithPreAllocatablePods(context.TODO(), cycleState, tt.stateData.rInfo, nodeInfo, tt.stateData.nodeReservationStates[node.Name].preAllocatablePods, tt.stateData.isPreAllocationRequired)
 			assert.Equal(t, tt.wantStatus, got)
 		})
 	}

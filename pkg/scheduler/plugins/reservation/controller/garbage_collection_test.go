@@ -133,7 +133,7 @@ func TestGC(t *testing.T) {
 		_, err := controller.sync(v.Name)
 		assert.NoError(t, err)
 	}
-	time.Sleep(1 * time.Second)
+	time.Sleep(100 * time.Millisecond)
 	controller.gcReservations()
 
 	reservationList, err := fakeKoordClientSet.SchedulingV1alpha1().Reservations().List(context.TODO(), metav1.ListOptions{})
@@ -153,7 +153,7 @@ func TestGC(t *testing.T) {
 	_, err = fakeKoordClientSet.SchedulingV1alpha1().Reservations().UpdateStatus(context.TODO(), expiredReservation, metav1.UpdateOptions{})
 	assert.NoError(t, err)
 
-	time.Sleep(1 * time.Second)
+	time.Sleep(100 * time.Millisecond)
 	controller.gcReservations()
 	reservationList, err = fakeKoordClientSet.SchedulingV1alpha1().Reservations().List(context.TODO(), metav1.ListOptions{})
 	assert.NoError(t, err)
