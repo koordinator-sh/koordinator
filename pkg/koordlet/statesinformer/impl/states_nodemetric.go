@@ -87,6 +87,7 @@ var (
 			NodeMemoryCollectPolicy: &defaultMemoryCollectPolicy,
 		},
 	}
+	timeNow = time.Now
 )
 
 type nodeMetricInformer struct {
@@ -334,8 +335,8 @@ func (r *nodeMetricInformer) updateMetricSpec(newNodeMetric *slov1alpha1.NodeMet
 // generateQueryDuration generate query params. It assumes the nodeMetric is initialized
 func (r *nodeMetricInformer) generateQueryDuration() (start time.Time, end time.Time) {
 	aggregateDuration := r.getNodeMetricAggregateDuration()
-	end = time.Now()
-	start = end.Add(-aggregateDuration * time.Second)
+	end = timeNow()
+	start = end.Add(-aggregateDuration)
 	return
 }
 
