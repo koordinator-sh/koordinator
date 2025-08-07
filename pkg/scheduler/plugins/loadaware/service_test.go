@@ -28,6 +28,9 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/uuid"
+
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/loadaware/estimator"
 )
 
 func TestQueryNode(t *testing.T) {
@@ -38,9 +41,9 @@ func TestQueryNode(t *testing.T) {
 			timeNowFn = preTimeNowFn
 		}()
 		timeNowFn = fakeTimeNowFn
-
+		e, _ := estimator.NewDefaultEstimator(&config.LoadAwareSchedulingArgs{}, nil)
 		pl := &Plugin{
-			podAssignCache: newPodAssignCache(),
+			podAssignCache: newPodAssignCache(e, &config.LoadAwareSchedulingArgs{}),
 		}
 		testNodeName := "test-node"
 		pendingPod := &corev1.Pod{

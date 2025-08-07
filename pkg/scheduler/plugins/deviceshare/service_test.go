@@ -17,6 +17,7 @@ limitations under the License.
 package deviceshare
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -40,7 +41,12 @@ func TestEndpointsQueryNodeDeviceSummary(t *testing.T) {
 	p, err := suit.proxyNew(getDefaultArgs(), suit.Framework)
 	assert.NotNil(t, p)
 	assert.Nil(t, err)
-
+	_, err = suit.ClientSet().CoreV1().Nodes().Create(context.TODO(), &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node1"}}, metav1.CreateOptions{})
+	assert.NoError(t, err)
+	nodeList, err := suit.ClientSet().CoreV1().Nodes().List(context.TODO(), metav1.ListOptions{})
+	assert.NoError(t, err)
+	assert.NotNil(t, nodeList)
+	assert.Len(t, nodeList.Items, 1)
 	ds := p.(*Plugin)
 
 	device := &schedulingv1alpha1.Device{

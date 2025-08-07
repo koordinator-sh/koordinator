@@ -92,6 +92,9 @@ spec:
             - mountPath: /var/run/koordlet/pod-resources/
               mountPropagation: Bidirectional
               name: pod-resources-proxy
+            - mountPath: /var/run/koordlet/xpu-device-infos/
+              mountPropagation: Bidirectional
+              name: xpu-device-infos
       hostNetwork: true
       hostPID: true
       restartPolicy: Always
@@ -155,3 +158,7 @@ spec:
             path: /var/run/koordlet/pod-resources/
             type: DirectoryOrCreate
           name: pod-resources-proxy
+        - hostPath:
+            path: /var/run/koordlet/xpu-device-infos/
+            type: DirectoryOrCreate
+          name: xpu-device-infos

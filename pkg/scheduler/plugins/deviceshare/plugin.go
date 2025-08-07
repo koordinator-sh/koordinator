@@ -39,7 +39,6 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/schedulingphase"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/topologymanager"
-	utilfeature "github.com/koordinator-sh/koordinator/pkg/util/feature"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
 
@@ -440,6 +439,42 @@ func (p *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState, 
 		return nil
 	}
 
+	if state.allocationResult == nil {
+		status = p.allocate(ctx, cycleState, pod, nodeName)
+		if !status.IsSuccess() {
+			return status
+		}
+	}
+	if state.allocationResult == nil {
+		return nil
+	}
+
+	nodeDeviceInfo := p.nodeDeviceCache.getNodeDevice(nodeName, false)
+	if nodeDeviceInfo == nil {
+		return nil
+	}
+
+	nodeDeviceInfo.lock.Lock()
+	defer nodeDeviceInfo.lock.Unlock()
+	nodeDeviceInfo.updateCacheUsed(state.allocationResult, pod, true)
+	return nil
+}
+
+func (p *Plugin) allocate(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) *framework.Status {
+	defer func() {
+		// ReservationRestoreState is O(n) complexity of node number of the cluster.
+		// cleanReservationRestoreState clears ReservationRestoreState in the stateData to reduce memory cost before entering
+		// the binding cycle.
+		cleanReservationRestoreState(cycleState)
+	}()
+	state, status := getPreFilterState(cycleState)
+	if !status.IsSuccess() {
+		return status
+	}
+	if state.skip {
+		return nil
+	}
+
 	nodeInfo, err := p.handle.SnapshotSharedLister().NodeInfos().Get(nodeName)
 	if err != nil {
 		return framework.AsStatus(err)
@@ -471,8 +506,8 @@ func (p *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState, 
 	restoreState := reservationRestoreState.getNodeState(nodeName)
 	preemptible := appendAllocated(nil, restoreState.mergedUnmatchedUsed, state.preemptibleDevices[nodeName])
 
-	nodeDeviceInfo.lock.Lock()
-	defer nodeDeviceInfo.lock.Unlock()
+	nodeDeviceInfo.lock.RLock()
+	defer nodeDeviceInfo.lock.RUnlock()
 
 	result, status := p.allocateWithNominatedReservation(
 		allocator, cycleState, state, restoreState, nodeInfo.Node(), pod, preemptible)
@@ -490,7 +525,6 @@ func (p *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState, 
 	if err != nil {
 		return framework.NewStatus(framework.Error, fmt.Sprintf("fillGPUTotalMem failed: %v, node: %v", err, nodeName))
 	}
-	nodeDeviceInfo.updateCacheUsed(result, pod, true)
 	state.allocationResult = result
 	return nil
 }
@@ -526,6 +560,13 @@ func (p *Plugin) ResizePod(ctx context.Context, cycleState *framework.CycleState
 	}
 	if state.skip {
 		return nil
+	}
+
+	if state.allocationResult == nil {
+		status = p.allocate(ctx, cycleState, pod, nodeName)
+		if !status.IsSuccess() {
+			return status
+		}
 	}
 
 	var allocated corev1.ResourceList
@@ -576,7 +617,7 @@ func (p *Plugin) preBindObject(ctx context.Context, cycleState *framework.CycleS
 		return framework.NewStatus(framework.Error, err.Error())
 	}
 
-	if utilfeature.DefaultMutableFeatureGate.Enabled(features.DevicePluginAdaption) {
+	if k8sfeature.DefaultMutableFeatureGate.Enabled(features.DevicePluginAdaption) {
 		if err := p.adaptForDevicePlugin(object, state.allocationResult, nodeName); err != nil {
 			return framework.AsStatus(err)
 		}
@@ -662,6 +703,7 @@ func New(obj runtime.Object, handle framework.Handle) (framework.Plugin, error) 
 	deviceCache := newNodeDeviceCache()
 	registerDeviceEventHandler(deviceCache, extendedHandle.KoordinatorSharedInformerFactory())
 	registerPodEventHandler(deviceCache, handle.SharedInformerFactory(), extendedHandle.KoordinatorSharedInformerFactory())
+	extendedHandle.RegisterForgetPodHandler(deviceCache.deletePod)
 	go deviceCache.gcNodeDevice(context.TODO(), handle.SharedInformerFactory(), defaultGCPeriod)
 
 	gpuSharedResourceTemplatesCache := newGPUSharedResourceTemplatesCache()

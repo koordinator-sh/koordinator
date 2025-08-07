@@ -75,6 +75,17 @@ func RecordElasticQuotaMetric(gaugeVec *metrics.GaugeVec, resources corev1.Resou
 func recordResourceMetric(gaugeVec *metrics.GaugeVec, value int64, resourceName, field string, labels map[string]string) {
 	labels["resource"] = resourceName
 	labels["field"] = field
-
 	gaugeVec.With(labels).Set(float64(value))
+}
+
+func DeleteElasticQuotaMetric(gaugeVec *metrics.GaugeVec, resources corev1.ResourceList, field string, labels map[string]string) {
+	for resourceName := range resources {
+		deleteResourceMetric(gaugeVec, string(resourceName), field, labels)
+	}
+}
+
+func deleteResourceMetric(gaugeVec *metrics.GaugeVec, resourceName, field string, labels map[string]string) {
+	labels["resource"] = resourceName
+	labels["field"] = field
+	gaugeVec.Delete(labels)
 }

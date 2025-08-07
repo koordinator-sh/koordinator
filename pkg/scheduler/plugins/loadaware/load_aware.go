@@ -88,15 +88,17 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 		return nil, fmt.Errorf("want handle to be of type frameworkext.ExtendedHandle, got %T", handle)
 	}
 
-	assignCache := newPodAssignCache()
-	podInformer := frameworkExtender.SharedInformerFactory().Core().V1().Pods()
-	frameworkexthelper.ForceSyncFromInformer(context.TODO().Done(), frameworkExtender.SharedInformerFactory(), podInformer.Informer(), assignCache)
-	nodeMetricLister := frameworkExtender.KoordinatorSharedInformerFactory().Slo().V1alpha1().NodeMetrics().Lister()
-
 	estimator, err := estimator.NewEstimator(pluginArgs, handle)
 	if err != nil {
 		return nil, err
 	}
+	assignCache := newPodAssignCache(estimator, pluginArgs)
+	podInformer := frameworkExtender.SharedInformerFactory().Core().V1().Pods()
+	frameworkexthelper.ForceSyncFromInformer(context.TODO().Done(), frameworkExtender.SharedInformerFactory(), podInformer.Informer(), assignCache)
+	frameworkExtender.RegisterForgetPodHandler(func(pod *corev1.Pod) {
+		assignCache.unAssign(pod.Spec.NodeName, pod)
+	})
+	nodeMetricLister := frameworkExtender.KoordinatorSharedInformerFactory().Slo().V1alpha1().NodeMetrics().Lister()
 
 	return &Plugin{
 		handle:           handle,
@@ -322,6 +324,7 @@ func (p *Plugin) estimatedAssignedPodUsed(nodeName string, nodeMetric *slov1alph
 	nodeMetricReportInterval := getNodeMetricReportInterval(nodeMetric)
 
 	assignedPodsOnNode := p.podAssignCache.getPodsAssignInfoOnNode(nodeName)
+	now := time.Now()
 	for _, assignInfo := range assignedPodsOnNode {
 		if filterProdPod && extension.GetPodPriorityClassWithDefault(assignInfo.pod) != extension.PriorityProd {
 			continue
@@ -335,9 +338,10 @@ func (p *Plugin) estimatedAssignedPodUsed(nodeName string, nodeMetric *slov1alph
 			missedLatestUpdateTime(assignInfo.timestamp, nodeMetricUpdateTime) ||
 			stillInTheReportInterval(assignInfo.timestamp, nodeMetricUpdateTime, nodeMetricReportInterval) ||
 			(scoreWithAggregation(p.args.Aggregated) &&
-				getTargetAggregatedUsage(nodeMetric, &p.args.Aggregated.ScoreAggregatedDuration, p.args.Aggregated.ScoreAggregationType) == nil) {
-			estimated, err := p.estimator.EstimatePod(assignInfo.pod)
-			if err != nil {
+				getTargetAggregatedUsage(nodeMetric, &p.args.Aggregated.ScoreAggregatedDuration, p.args.Aggregated.ScoreAggregationType) == nil) ||
+			(!assignInfo.estimatedDeadline.IsZero() && assignInfo.estimatedDeadline.After(now)) {
+			estimated := assignInfo.estimated
+			if estimated == nil {
 				continue
 			}
 			for resourceName, value := range estimated {

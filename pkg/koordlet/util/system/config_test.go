@@ -35,6 +35,7 @@ func Test_NewDsModeConfig(t *testing.T) {
 		DefaultRuntimeType:           "containerd",
 		HAMICoreLibraryDirectoryPath: "/usr/local/vgpu/libvgpu.so",
 		PodResourcesProxyPath:        "/var/run/koordlet/pod-resources",
+		XPUDeviceInfosDir:            "/var/run/koordlet/xpu-device-infos/",
 	}
 	defaultConfig := NewDsModeConfig()
 	assert.Equal(t, expectConfig, defaultConfig)
@@ -53,6 +54,7 @@ func Test_NewHostModeConfig(t *testing.T) {
 		DefaultRuntimeType:           "containerd",
 		HAMICoreLibraryDirectoryPath: "/usr/local/vgpu/libvgpu.so",
 		PodResourcesProxyPath:        "/var/run/koordlet/pod-resources",
+		XPUDeviceInfosDir:            "/var/run/koordlet/xpu-device-infos/",
 	}
 	defaultConfig := NewHostModeConfig()
 	assert.Equal(t, expectConfig, defaultConfig)

@@ -113,7 +113,7 @@ func TestInitHookPlugins(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gqm := NewGroupQuotaManager("", nil, nil)
+			gqm := NewGroupQuotaManager("", true, nil, nil)
 			err := gqm.InitHookPlugins(tt.args)
 			if tt.expectedErr != nil {
 				assert.ErrorContains(t, err, tt.expectedErr.Error(), "Error message should match")
@@ -341,7 +341,7 @@ func initGQMForTesting(t *testing.T) *GroupQuotaManager {
 		},
 	}
 	// create a GroupQuotaManager with a mock hook
-	gqm := NewGroupQuotaManager("", nil, nil)
+	gqm := NewGroupQuotaManager("", true, nil, nil)
 	err := gqm.InitHookPlugins(pluginArgs)
 	assert.NoError(t, err)
 	return gqm

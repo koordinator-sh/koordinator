@@ -25,6 +25,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	clientcache "k8s.io/client-go/tools/cache"
 	sigcache "sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/cache/informertest"
@@ -39,7 +40,12 @@ import (
 )
 
 func makeTestHandler() *PodValidatingHandler {
-	client := fake.NewClientBuilder().Build()
+	// Create an independent scheme to avoid race conditions
+	scheme := runtime.NewScheme()
+	_ = v1alpha1.AddToScheme(scheme)
+	_ = clientgoscheme.AddToScheme(scheme)
+
+	client := fake.NewClientBuilder().WithScheme(scheme).Build()
 	sche := client.Scheme()
 	sche.AddKnownTypes(schema.GroupVersion{
 		Group:   "scheduling.sigs.k8s.io",

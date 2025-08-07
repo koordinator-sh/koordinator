@@ -465,7 +465,7 @@ func (r *resctrlReconcile) reconcileResctrlGroups(qosStrategy *slov1alpha1.Resou
 		}
 
 		// only Running and Pending pods are considered
-		if pod.Status.Phase != corev1.PodRunning && pod.Status.Phase != corev1.PodPending {
+		if util.IsPodInactive(pod) {
 			continue
 		}
 

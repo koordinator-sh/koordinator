@@ -56,6 +56,14 @@ type LoadAwareSchedulingArgs struct {
 	// EstimatedScalingFactors indicates the factor when estimating resource usage.
 	// The default value of CPU is 85%, and the default value of Memory is 70%.
 	EstimatedScalingFactors map[corev1.ResourceName]int64
+	// EstimatedSecondsAfterPodScheduled indicates the force estimation duration
+	// after pod condition PodScheduled transition to True in seconds.
+	EstimatedSecondsAfterPodScheduled *int64
+	// EstimatedSecondsAfterInitialized indicates the force estimation duration
+	// after pod condition Initialized transition to True in seconds.
+	EstimatedSecondsAfterInitialized *int64
+	// AllowCustomizeEstimation indicates whether to allow reading estimation args from pod's metadata.
+	AllowCustomizeEstimation bool
 	// Aggregated supports resource utilization filtering and scoring based on percentile statistics
 	Aggregated *LoadAwareSchedulingAggregatedArgs
 }
@@ -212,6 +220,9 @@ type ElasticQuotaArgs struct {
 
 	// EnableRuntimeQuota if false, use max instead of runtime for all checks.
 	EnableRuntimeQuota bool
+
+	// EnableMinQuotaScale if true, min will be scaled when minQuotaSum > totalRes.
+	EnableMinQuotaScale bool
 
 	// DisableDefaultQuotaPreemption if true, will not preempt pods in default quota.
 	DisableDefaultQuotaPreemption bool

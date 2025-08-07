@@ -23,6 +23,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	k8sfeature "k8s.io/apiserver/pkg/util/feature"
+	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
@@ -99,12 +100,21 @@ func (g *Plugin) OnQuotaUpdate(oldObj, newObj interface{}) {
 
 // OnQuotaDelete if a quotaGroup is deleted, the pods should migrate to defaultQuotaGroup.
 func (g *Plugin) OnQuotaDelete(obj interface{}) {
-	quota := obj.(*schedulerv1alpha1.ElasticQuota)
+	var quota *schedulerv1alpha1.ElasticQuota
+	switch t := obj.(type) {
+	case *schedulerv1alpha1.ElasticQuota:
+		quota = t
+	case cache.DeletedFinalStateUnknown:
+		quota, _ = t.Obj.(*schedulerv1alpha1.ElasticQuota)
+	}
 	if quota == nil {
 		klog.Errorf("quota is nil")
 		return
 	}
-
+	summary, _ := g.GetQuotaSummary(quota.Name, false)
+	if summary != nil {
+		deleteElasticQuotaMetrics(quota, summary)
+	}
 	klog.V(5).Infof("OnQuotaDeleteFunc delete quota: %v", quota.Name)
 	g.deleteQuotaToTreeMap(quota.Name)
 	mgr := g.GetGroupQuotaManagerForTree(quota.Labels[extension.LabelQuotaTreeID])
@@ -137,7 +147,7 @@ func (g *Plugin) ReplaceQuotas(objs []interface{}) error {
 	}()
 
 	g.groupQuotaManagersForQuotaTree = make(map[string]*core.GroupQuotaManager)
-	g.groupQuotaManager = core.NewGroupQuotaManager("", g.pluginArgs.SystemQuotaGroupMax,
+	g.groupQuotaManager = core.NewGroupQuotaManager("", g.pluginArgs.EnableMinQuotaScale, g.pluginArgs.SystemQuotaGroupMax,
 		g.pluginArgs.DefaultQuotaGroupMax)
 	err := g.groupQuotaManager.InitHookPlugins(g.pluginArgs)
 	if err != nil {
@@ -218,7 +228,7 @@ func (g *Plugin) GetOrCreateGroupQuotaManagerForTree(treeID string) *core.GroupQ
 	g.quotaManagerLock.Lock()
 	mgr, ok = g.groupQuotaManagersForQuotaTree[treeID]
 	if !ok {
-		mgr = core.NewGroupQuotaManager(treeID, g.pluginArgs.SystemQuotaGroupMax, g.pluginArgs.DefaultQuotaGroupMax)
+		mgr = core.NewGroupQuotaManager(treeID, g.pluginArgs.EnableMinQuotaScale, g.pluginArgs.SystemQuotaGroupMax, g.pluginArgs.DefaultQuotaGroupMax)
 		g.groupQuotaManagersForQuotaTree[treeID] = mgr
 		err := mgr.InitHookPlugins(g.pluginArgs)
 		if err != nil {
