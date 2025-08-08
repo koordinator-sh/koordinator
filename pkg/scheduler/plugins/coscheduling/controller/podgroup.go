@@ -204,7 +204,7 @@ func (ctrl *PodGroupController) syncHandler(key string) error {
 		return nil
 	}
 	defer func() {
-		if err != nil {
+		if err != nil && !apierrs.IsNotFound(err) {
 			ctrl.pgQueue.AddRateLimited(key)
 			return
 		}
