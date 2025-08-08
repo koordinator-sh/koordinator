@@ -834,6 +834,150 @@ func TestReservationRestorePlugin(t *testing.T) {
 	}
 }
 
+type fakeNodeReservationPreAllocationRestoreStateData struct {
+	preAllocatable []*corev1.Pod
+}
+
+type fakeReservationPreAllocationRestorePlugin struct {
+	restoreErr    error
+	preRestoreErr error
+}
+
+var _ ReservationPreAllocationRestorePlugin = &fakeReservationPreAllocationRestorePlugin{}
+
+func (f *fakeReservationPreAllocationRestorePlugin) Name() string {
+	return "fakeReservationPreAllocationRestorePlugin"
+}
+
+func (f *fakeReservationPreAllocationRestorePlugin) PreRestoreReservationPreAllocation(ctx context.Context, cycleState *framework.CycleState, r *ReservationInfo) *framework.Status {
+	if f.preRestoreErr != nil {
+		return framework.AsStatus(f.preRestoreErr)
+	}
+	cycleState.Write(fakeReservationRestoreStateKey, &fakeReservationRestoreStateData{})
+	return nil
+}
+
+func (f *fakeReservationPreAllocationRestorePlugin) RestoreReservationPreAllocation(ctx context.Context, cycleState *framework.CycleState, r *ReservationInfo, preAllocatable []*corev1.Pod, nodeInfo *framework.NodeInfo) (interface{}, *framework.Status) {
+	if f.restoreErr != nil {
+		return nil, framework.AsStatus(f.restoreErr)
+	}
+	return &fakeNodeReservationPreAllocationRestoreStateData{
+		preAllocatable: preAllocatable,
+	}, nil
+}
+
+func TestRunReservationExtensionPreRestoreReservationPreAllocation(t *testing.T) {
+	reservation := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "fake-reservation",
+		},
+		Spec: schedulingv1alpha1.ReservationSpec{
+			Template: &corev1.PodTemplateSpec{},
+		},
+	}
+	rInfo := NewReservationInfo(reservation)
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "fake-pod",
+		},
+	}
+	tests := []struct {
+		name               string
+		rInfo              *ReservationInfo
+		preAllocatable     []*corev1.Pod
+		preRestoreErr      error
+		restoreErr         error
+		wantPreAllocatable []*corev1.Pod
+		wantStatus1        bool
+		wantStatus2        bool
+	}{
+		{
+			name:               "store successfully",
+			rInfo:              rInfo,
+			preAllocatable:     []*corev1.Pod{pod},
+			wantPreAllocatable: []*corev1.Pod{pod},
+			wantStatus1:        true,
+			wantStatus2:        true,
+		},
+		{
+			name:               "pre restore err",
+			rInfo:              rInfo,
+			preAllocatable:     []*corev1.Pod{pod},
+			preRestoreErr:      fmt.Errorf("pre restore err"),
+			wantPreAllocatable: nil,
+			wantStatus1:        false,
+			wantStatus2:        false,
+		},
+		{
+			name:               "restore err",
+			rInfo:              rInfo,
+			preAllocatable:     []*corev1.Pod{pod},
+			restoreErr:         fmt.Errorf("restore err"),
+			wantPreAllocatable: nil,
+			wantStatus1:        true,
+			wantStatus2:        false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			registeredPlugins := []schedulertesting.RegisterPluginFunc{
+				schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
+				schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
+			}
+			fakeClient := kubefake.NewSimpleClientset()
+			sharedInformerFactory := informers.NewSharedInformerFactory(fakeClient, 0)
+			fh, err := schedulertesting.NewFramework(
+				context.TODO(),
+				registeredPlugins,
+				"koord-scheduler",
+				frameworkruntime.WithClientSet(fakeClient),
+				frameworkruntime.WithInformerFactory(sharedInformerFactory),
+			)
+			assert.NoError(t, err)
+
+			koordClientSet := koordfake.NewSimpleClientset()
+			koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
+			extenderFactory, _ := NewFrameworkExtenderFactory(
+				WithKoordinatorClientSet(koordClientSet),
+				WithKoordinatorSharedInformerFactory(koordSharedInformerFactory),
+			)
+
+			extender := NewFrameworkExtender(extenderFactory, fh)
+			pl := &fakeReservationPreAllocationRestorePlugin{
+				preRestoreErr: tt.preRestoreErr,
+				restoreErr:    tt.restoreErr,
+			}
+			impl := extender.(*frameworkExtenderImpl)
+			impl.updatePlugins(pl)
+
+			cycleState := framework.NewCycleState()
+
+			nodeInfo := framework.NewNodeInfo()
+			nodeInfo.SetNode(&corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node-1",
+				},
+			})
+
+			status := extender.RunReservationExtensionPreRestoreReservationPreAllocation(context.TODO(), cycleState, tt.rInfo)
+			assert.Equal(t, tt.wantStatus1, status.IsSuccess())
+			if !tt.wantStatus1 {
+				return
+			}
+			pluginToRestoreState, status := extender.RunReservationExtensionRestoreReservationPreAllocation(context.TODO(), cycleState, tt.rInfo, tt.preAllocatable, nodeInfo)
+			assert.Equal(t, tt.wantStatus2, status.IsSuccess())
+			if !tt.wantStatus2 {
+				return
+			}
+			assert.NotNil(t, pluginToRestoreState)
+			if tt.wantPreAllocatable != nil {
+				assert.NotNil(t, pluginToRestoreState[pl.Name()])
+				assert.Equal(t, tt.wantPreAllocatable, pluginToRestoreState[pl.Name()].(*fakeNodeReservationPreAllocationRestoreStateData).preAllocatable)
+			}
+		})
+	}
+}
+
 type fakeReservationFilterPlugin struct {
 	index int
 	err   error
