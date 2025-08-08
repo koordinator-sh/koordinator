@@ -363,7 +363,6 @@ func (r *nodeMetricInformer) collectMetric() (*slov1alpha1.NodeMetricInfo, []*sl
 	podsMeta := r.podsInformer.GetAllPods()
 	podsMetricInfo := make([]*slov1alpha1.PodMetricInfo, 0, len(podsMeta))
 	nodeSLO := r.nodeSLOInformer.GetNodeSLO()
-	hostAppMetricInfo := make([]*slov1alpha1.HostApplicationMetricInfo, 0, len(nodeSLO.Spec.HostApplications))
 	queryParam := metriccache.QueryParam{
 		Aggregate: metriccache.AggregationTypeAVG,
 		Start:     &startTime,
@@ -395,13 +394,22 @@ func (r *nodeMetricInformer) collectMetric() (*slov1alpha1.NodeMetricInfo, []*sl
 		}
 		return podsMetricInfo[i].Name < podsMetricInfo[j].Name
 	})
-	for _, hostApp := range nodeSLO.Spec.HostApplications {
-		appMetric, err := r.collectHostAppMetric(&hostApp, queryParam)
-		if err != nil {
-			klog.Warningf("query host application %v metric failed, err: %v", hostApp.Name, err)
-			continue
+	var hostAppMetricInfo []*slov1alpha1.HostApplicationMetricInfo
+	if nodeSLO == nil {
+		klog.V(4).InfoS("NodeSLO is nil, skip collecting host application metrics")
+		hostAppMetricInfo = []*slov1alpha1.HostApplicationMetricInfo{}
+	} else {
+		hostApps := nodeSLO.Spec.HostApplications
+		hostAppMetricInfo = make([]*slov1alpha1.HostApplicationMetricInfo, 0, len(hostApps))
+
+		for _, hostApp := range hostApps {
+			appMetric, err := r.collectHostAppMetric(&hostApp, queryParam)
+			if err != nil {
+				klog.Warningf("query host application %v metric failed, err: %v", hostApp.Name, err)
+				continue
+			}
+			hostAppMetricInfo = append(hostAppMetricInfo, appMetric)
 		}
-		hostAppMetricInfo = append(hostAppMetricInfo, appMetric)
 	}
 	sort.Slice(hostAppMetricInfo, func(i, j int) bool {
 		return hostAppMetricInfo[i].Name < hostAppMetricInfo[j].Name
