@@ -76,6 +76,12 @@ const (
 	// DevicePluginAdaption enables adaption for third party device plugins within device share scheduling.
 	DevicePluginAdaption featuregate.Feature = "DevicePluginAdaption"
 
+	// owner: @saintube
+	// alpha: v1.7
+	//
+	// CleanExpiredReservationAllocated is used to clean expired reservation allocated annotations of pods.
+	CleanExpiredReservationAllocated featuregate.Feature = "CleanExpiredReservationAllocated"
+
 	CSIStorageCapacity featuregate.Feature = "CSIStorageCapacity"
 
 	GenericEphemeralVolume featuregate.Feature = "GenericEphemeralVolume"
@@ -99,6 +105,7 @@ var defaultSchedulerFeatureGates = map[featuregate.Feature]featuregate.FeatureSp
 	LazyReservationRestore:                    {Default: false, PreRelease: featuregate.Alpha},
 	OmitNodeLabelsForReservation:              {Default: false, PreRelease: featuregate.Alpha},
 	DevicePluginAdaption:                      {Default: false, PreRelease: featuregate.Alpha},
+	CleanExpiredReservationAllocated:          {Default: false, PreRelease: featuregate.Alpha},
 	CSIStorageCapacity:                        {Default: true, PreRelease: featuregate.GA}, // remove in 1.26
 	GenericEphemeralVolume:                    {Default: true, PreRelease: featuregate.GA},
 	PodDisruptionBudget:                       {Default: true, PreRelease: featuregate.GA},

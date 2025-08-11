@@ -122,7 +122,7 @@ func TestGC(t *testing.T) {
 	_, err := fakeClientSet.CoreV1().Nodes().Create(context.TODO(), node, metav1.CreateOptions{})
 	assert.NoError(t, err)
 
-	controller := New(sharedInformerFactory, koordSharedInformerFactory, fakeKoordClientSet, &config.ReservationArgs{})
+	controller := New(sharedInformerFactory, koordSharedInformerFactory, fakeClientSet, fakeKoordClientSet, &config.ReservationArgs{})
 
 	sharedInformerFactory.Start(nil)
 	koordSharedInformerFactory.Start(nil)
@@ -130,7 +130,7 @@ func TestGC(t *testing.T) {
 	koordSharedInformerFactory.WaitForCacheSync(nil)
 
 	for _, v := range reservations {
-		_, err := controller.sync(v.Name)
+		_, err := controller.sync(getReservationKey(v))
 		assert.NoError(t, err)
 	}
 	time.Sleep(1 * time.Second)
