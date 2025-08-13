@@ -386,6 +386,43 @@ func TestPlugin_adaptForDevicePlugin(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "hami-core",
+			args: args{
+				object: &corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Labels: map[string]string{
+							apiext.LabelGPUIsolationProvider: string(apiext.GPUIsolationProviderHAMICore),
+						},
+						Annotations: map[string]string{},
+					},
+				},
+				allocationResult: apiext.DeviceAllocations{
+					schedulingv1alpha1.GPU: []*apiext.DeviceAllocation{
+						{Minor: 0},
+					},
+				},
+				nodeName: "hami-core",
+			},
+			device: &schedulingv1alpha1.Device{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "hami-core",
+				},
+			},
+			wantErr: false,
+			wantObject: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						apiext.LabelGPUIsolationProvider: string(apiext.GPUIsolationProviderHAMICore),
+						apiext.LabelHAMIVGPUNodeName:     "hami-core",
+					},
+					Annotations: map[string]string{
+						AnnotationBindTimestamp: strconv.FormatInt(now.UnixNano(), 10),
+						AnnotationGPUMinors:     "0",
+					},
+				},
+			},
+		},
 	}
 
 	for _, tt := range tests {
