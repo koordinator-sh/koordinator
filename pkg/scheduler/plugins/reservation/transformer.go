@@ -25,7 +25,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
-	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	schedulingcorev1 "k8s.io/component-helpers/scheduling/corev1"
 	"k8s.io/component-helpers/scheduling/corev1/nodeaffinity"
 	"k8s.io/klog/v2"
@@ -454,21 +453,15 @@ func restoreUnmatchedReservations(nodeInfo *framework.NodeInfo, rInfo *framework
 	// For example, on a 32C machine, ReservationA reserves 8C, and then PodA uses ReservationA to allocate 4C,
 	// then the record on NodeInfo is that 12C is allocated. But in fact it should be calculated according to 8C,
 	// so we need to return some resources.
-	reservePod := rInfo.GetReservePod()
-	updateNodeInfoRequested(nodeInfo, reservePod, -1)
-	remainedResource := quotav1.SubtractWithNonNegativeResult(rInfo.Allocatable, rInfo.Allocated)
-	if !quotav1.IsZero(remainedResource) {
-		reservePod = &corev1.Pod{
-			Spec: corev1.PodSpec{
-				Containers: []corev1.Container{
-					{
-						Resources: corev1.ResourceRequirements{Requests: remainedResource},
-					},
+	updateNodeInfoRequested(nodeInfo, &corev1.Pod{
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{
+				{
+					Resources: corev1.ResourceRequirements{Requests: rInfo.Allocated},
 				},
 			},
-		}
-		updateNodeInfoRequested(nodeInfo, reservePod, 1)
-	}
+		},
+	}, -1)
 	return nil
 }
 

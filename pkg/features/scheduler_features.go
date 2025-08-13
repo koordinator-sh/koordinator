@@ -70,6 +70,12 @@ const (
 	// OmitNodeLabelsForReservation is used to omit node labels while matching reservation affinity.
 	OmitNodeLabelsForReservation featuregate.Feature = "OmitNodeLabelsForReservation"
 
+	// owner: @saintube @ZiMengSheng
+	// alpha: v1.7
+	//
+	// SkipReservationFitsNode is used to skip reservation fits node when the logic is repeated by NodeResourceFits.
+	SkipReservationFitsNode featuregate.Feature = "SkipReservationFitsNode"
+
 	// owner: @zqzten
 	// alpha: v1.7
 	//
@@ -98,6 +104,7 @@ var defaultSchedulerFeatureGates = map[featuregate.Feature]featuregate.FeatureSp
 	SupportParentQuotaSubmitPod:               {Default: false, PreRelease: featuregate.Alpha},
 	LazyReservationRestore:                    {Default: false, PreRelease: featuregate.Alpha},
 	OmitNodeLabelsForReservation:              {Default: false, PreRelease: featuregate.Alpha},
+	SkipReservationFitsNode:                   {Default: false, PreRelease: featuregate.Alpha},
 	DevicePluginAdaption:                      {Default: false, PreRelease: featuregate.Alpha},
 	CSIStorageCapacity:                        {Default: true, PreRelease: featuregate.GA}, // remove in 1.26
 	GenericEphemeralVolume:                    {Default: true, PreRelease: featuregate.GA},
