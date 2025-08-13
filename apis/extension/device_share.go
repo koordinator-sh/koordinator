@@ -66,6 +66,7 @@ const (
 	LabelSecondaryDeviceWellPlanned string = NodeDomainPrefix + "/secondary-device-well-planned"
 
 	LabelGPUIsolationProvider = DomainPrefix + "gpu-isolation-provider"
+	LabelHAMIVGPUNodeName     = "hami.io/vgpu-node"
 )
 
 const (

@@ -18,12 +18,15 @@ package gpu
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"k8s.io/klog/v2"
 
 	ext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/hooks"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/protocol"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
@@ -88,6 +91,7 @@ func (p *gpuPlugin) InjectContainerGPUEnv(proto protocol.HooksProtocol) error {
 				containerCtx.Response.AddContainerEnvs["CUDA_DEVICE_SM_LIMIT"] = fmt.Sprintf("%d", gpuCore.Value())
 			}
 			containerCtx.Response.AddContainerEnvs["LD_PRELOAD"] = system.Conf.HAMICoreLibraryDirectoryPath
+
 			containerCtx.Response.AddContainerMounts = append(containerCtx.Response.AddContainerMounts,
 				&protocol.Mount{
 					Destination: system.Conf.HAMICoreLibraryDirectoryPath,
@@ -103,6 +107,25 @@ func (p *gpuPlugin) InjectContainerGPUEnv(proto protocol.HooksProtocol) error {
 					Options:     []string{"rbind"},
 				},
 			)
+
+			if features.DefaultKoordletFeatureGate.Enabled(features.HamiCoreVGPUMonitor) {
+				hamiDirPath := filepath.Dir(system.Conf.HAMICoreLibraryDirectoryPath)
+				containerCtx.Response.AddContainerEnvs["CUDA_DEVICE_MEMORY_SHARED_CACHE"] = fmt.Sprintf("%s/%s_%s.cache", hamiDirPath, containerReq.PodMeta.UID, containerReq.ContainerMeta.Name)
+				cacheFileHostDirectory := fmt.Sprintf("%s/containers/%s_%s", hamiDirPath, containerReq.PodMeta.UID, containerReq.ContainerMeta.Name)
+				// TODO: Move this operation into the pkg resource-executor.​
+				klog.V(5).Infof("​​create a vgpu monitoring data directory [%s] and grant it 0777 permissions", cacheFileHostDirectory)
+				os.RemoveAll(cacheFileHostDirectory)
+				os.MkdirAll(cacheFileHostDirectory, 0777)
+				os.Chmod(cacheFileHostDirectory, 0777)
+				containerCtx.Response.AddContainerMounts = append(containerCtx.Response.AddContainerMounts,
+					&protocol.Mount{
+						Destination: hamiDirPath,
+						Type:        "bind",
+						Source:      cacheFileHostDirectory,
+						Options:     []string{"rbind"},
+					},
+				)
+			}
 		}
 	}
 

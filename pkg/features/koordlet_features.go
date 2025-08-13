@@ -160,6 +160,12 @@ const (
 	// PodResourcesProxy enabled hooked podResources of kubelet provided by koordlet.
 	// It provides a grpc service to enable discovery of pod resources allocated by koordinator system.
 	PodResourcesProxy featuregate.Feature = "PodResourcesProxy"
+
+	// owner: @qinfustu
+	// alpha v1.7
+	//
+	// HamiCoreVGPUMonitor enables the vGPU monitoring for HAMi-core.
+	HamiCoreVGPUMonitor featuregate.Feature = "HamiCoreVGPUMonitor"
 )
 
 func init() {
@@ -192,6 +198,7 @@ var (
 		ColdPageCollector:      {Default: false, PreRelease: featuregate.Alpha},
 		HugePageReport:         {Default: false, PreRelease: featuregate.Alpha},
 		PodResourcesProxy:      {Default: false, PreRelease: featuregate.Alpha},
+		HamiCoreVGPUMonitor:    {Default: false, PreRelease: featuregate.Alpha},
 	}
 )
 
