@@ -71,6 +71,12 @@ func Test_InjectContainerGPUEnv(t *testing.T) {
 			expectedError:    false,
 			proto: &protocol.ContainerContext{
 				Request: protocol.ContainerRequest{
+					PodMeta: protocol.PodMeta{
+						UID: "pod-uid",
+					},
+					ContainerMeta: protocol.ContainerMeta{
+						Name: "container-name",
+					},
 					PodLabels: map[string]string{
 						ext.LabelGPUIsolationProvider: string(ext.GPUIsolationProviderHAMICore),
 					},
@@ -80,10 +86,11 @@ func Test_InjectContainerGPUEnv(t *testing.T) {
 				},
 			},
 			expectedEnvs: map[string]string{
-				GpuAllocEnv:                "1",
-				"CUDA_DEVICE_MEMORY_LIMIT": "17179869184",
-				"CUDA_DEVICE_SM_LIMIT":     "50",
-				"LD_PRELOAD":               "/usr/local/vgpu/libvgpu.so",
+				GpuAllocEnv:                       "1",
+				"CUDA_DEVICE_MEMORY_LIMIT":        "17179869184",
+				"CUDA_DEVICE_SM_LIMIT":            "50",
+				"LD_PRELOAD":                      "/usr/local/vgpu/libvgpu.so",
+				"CUDA_DEVICE_MEMORY_SHARED_CACHE": "/usr/local/vgpu/pod-uid_container-name.cache",
 			},
 			expectedMounts: []*protocol.Mount{
 				{
@@ -96,6 +103,12 @@ func Test_InjectContainerGPUEnv(t *testing.T) {
 					Destination: "/tmp/vgpulock",
 					Type:        "bind",
 					Source:      "/tmp/vgpulock",
+					Options:     []string{"rbind"},
+				},
+				{
+					Destination: "/usr/local/vgpu",
+					Type:        "bind",
+					Source:      "/usr/local/vgpu/containers/pod-uid_container-name",
 					Options:     []string{"rbind"},
 				},
 			},

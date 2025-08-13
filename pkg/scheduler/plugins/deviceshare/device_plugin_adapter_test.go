@@ -386,6 +386,34 @@ func TestPlugin_adaptForDevicePlugin(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "hami",
+			args: args{
+				object: &corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Labels: map[string]string{
+							apiext.LabelGPUIsolationProvider: string(apiext.GPUIsolationProviderHAMICore),
+						},
+						Annotations: map[string]string{},
+					},
+				},
+				allocationResult: apiext.DeviceAllocations{},
+				nodeName:         "hami",
+			},
+			device:  &schedulingv1alpha1.Device{},
+			wantErr: false,
+			wantObject: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						apiext.LabelGPUIsolationProvider: string(apiext.GPUIsolationProviderHAMICore),
+						apiext.LabelHAMIVGPUNodeName:     "hami",
+					},
+					Annotations: map[string]string{
+						AnnotationBindTimestamp: strconv.FormatInt(now.UnixNano(), 10),
+					},
+				},
+			},
+		},
 	}
 
 	for _, tt := range tests {

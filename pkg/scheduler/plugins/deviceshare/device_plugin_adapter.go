@@ -76,6 +76,12 @@ func (p *Plugin) adaptForDevicePlugin(object metav1.Object, allocationResult api
 	if err := defaultDevicePluginAdapter.Adapt(object, nil); err != nil {
 		return err
 	}
+	hamiDPA := &hamiGPUDevicePluginAdapter{
+		nodeName: nodeName,
+	}
+	if err := hamiDPA.Adapt(object, nil); err != nil {
+		return err
+	}
 
 	if gpuAllocation, ok := allocationResult[schedulingv1alpha1.GPU]; ok {
 		if err := defaultGPUDevicePluginAdapter.Adapt(object, gpuAllocation); err != nil {
@@ -147,4 +153,15 @@ func buildGPUMinorsStr(allocation []*apiext.DeviceAllocation) string {
 		minors = append(minors, strconv.Itoa(int(alloc.Minor)))
 	}
 	return strings.Join(minors, ",")
+}
+
+type hamiGPUDevicePluginAdapter struct {
+	nodeName string
+}
+
+func (a *hamiGPUDevicePluginAdapter) Adapt(object metav1.Object, allocation []*apiext.DeviceAllocation) error {
+	if object.GetLabels() != nil && object.GetLabels()[apiext.LabelGPUIsolationProvider] == string(apiext.GPUIsolationProviderHAMICore) {
+		object.GetLabels()[apiext.LabelHAMIVGPUNodeName] = a.nodeName
+	}
+	return nil
 }
