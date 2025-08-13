@@ -623,7 +623,7 @@ func (p *Plugin) preBindObject(ctx context.Context, cycleState *framework.CycleS
 	}
 
 	if k8sfeature.DefaultMutableFeatureGate.Enabled(features.DevicePluginAdaption) {
-		if err := p.adaptForDevicePlugin(object, state.allocationResult, nodeName); err != nil {
+		if err := p.adaptForDevicePlugin(ctx, object, state.allocationResult, nodeName); err != nil {
 			return framework.AsStatus(err)
 		}
 	}
