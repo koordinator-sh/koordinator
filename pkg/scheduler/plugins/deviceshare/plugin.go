@@ -321,6 +321,11 @@ func (p *Plugin) Filter(ctx context.Context, cycleState *framework.CycleState, p
 		return framework.NewStatus(framework.Error, "node not found")
 	}
 
+	if state.gpuRequirements != nil && state.gpuRequirements.gpuShared &&
+		pod.Labels != nil && pod.Labels[apiext.LabelGPUIsolationProvider] == string(apiext.GPUIsolationProviderHAMICore) &&
+		(node.Labels == nil || node.Labels[apiext.LabelGPUIsolationProvider] != string(apiext.GPUIsolationProviderHAMICore)) {
+		return framework.NewStatus(framework.Error, "GPUIsolationProviderHAMICore not found on the node")
+	}
 	store := topologymanager.GetStore(cycleState)
 	_, ok := store.GetAffinity(node.Name)
 	if ok {
