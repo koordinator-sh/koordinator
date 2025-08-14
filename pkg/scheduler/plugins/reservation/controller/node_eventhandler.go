@@ -45,6 +45,6 @@ func (c *Controller) onNodeDelete(obj interface{}) {
 	}
 	for _, v := range objs {
 		reservation := v.(*schedulingv1alpha1.Reservation)
-		c.queue.Add(reservation.Name)
+		c.queue.Add(getReservationKey(reservation))
 	}
 }
