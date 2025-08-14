@@ -160,6 +160,7 @@ func (pl *Plugin) NewControllers() ([]frameworkext.Controller, error) {
 	reservationController := controller.New(
 		pl.handle.SharedInformerFactory(),
 		pl.handle.KoordinatorSharedInformerFactory(),
+		pl.handle.ClientSet(),
 		pl.handle.KoordinatorClientSet(),
 		pl.args)
 	return []frameworkext.Controller{reservationController}, nil

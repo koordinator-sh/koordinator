@@ -26,10 +26,12 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/uuid"
+	k8sfeature "k8s.io/apiserver/pkg/util/feature"
 	"k8s.io/client-go/informers"
 	kubefake "k8s.io/client-go/kubernetes/fake"
 	basemetrics "k8s.io/component-base/metrics"
@@ -40,8 +42,10 @@ import (
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	koordfake "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/fake"
 	koordinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
+	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/metrics"
+	utilfeature "github.com/koordinator-sh/koordinator/pkg/util/feature"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
 
@@ -74,16 +78,16 @@ func TestFailedOrSucceededReservation(t *testing.T) {
 	_, err = fakeKoordClientSet.SchedulingV1alpha1().Reservations().Create(context.TODO(), succededReservation, metav1.CreateOptions{})
 	assert.NoError(t, err)
 
-	controller := New(sharedInformerFactory, koordSharedInformerFactory, fakeKoordClientSet, &config.ReservationArgs{})
+	controller := New(sharedInformerFactory, koordSharedInformerFactory, fakeClientSet, fakeKoordClientSet, &config.ReservationArgs{})
 
 	sharedInformerFactory.Start(nil)
 	koordSharedInformerFactory.Start(nil)
 	sharedInformerFactory.WaitForCacheSync(nil)
 	koordSharedInformerFactory.WaitForCacheSync(nil)
 
-	_, err = controller.sync(failedReservation.Name)
+	_, err = controller.sync(getReservationKey(failedReservation))
 	assert.NoError(t, err)
-	_, err = controller.sync(succededReservation.Name)
+	_, err = controller.sync(getReservationKey(succededReservation))
 	assert.NoError(t, err)
 
 	got, err := fakeKoordClientSet.SchedulingV1alpha1().Reservations().Get(context.TODO(), failedReservation.Name, metav1.GetOptions{})
@@ -183,7 +187,7 @@ func TestExpireActiveReservation(t *testing.T) {
 	_, err := fakeClientSet.CoreV1().Nodes().Create(context.TODO(), node, metav1.CreateOptions{})
 	assert.NoError(t, err)
 
-	controller := New(sharedInformerFactory, koordSharedInformerFactory, fakeKoordClientSet, &config.ReservationArgs{})
+	controller := New(sharedInformerFactory, koordSharedInformerFactory, fakeClientSet, fakeKoordClientSet, &config.ReservationArgs{})
 
 	sharedInformerFactory.Start(nil)
 	koordSharedInformerFactory.Start(nil)
@@ -191,7 +195,7 @@ func TestExpireActiveReservation(t *testing.T) {
 	koordSharedInformerFactory.WaitForCacheSync(nil)
 
 	for _, v := range reservations {
-		_, err := controller.sync(v.Name)
+		_, err := controller.sync(getReservationKey(v))
 		assert.NoError(t, err)
 	}
 
@@ -203,7 +207,7 @@ func TestExpireActiveReservation(t *testing.T) {
 	assert.NoError(t, err)
 	assert.True(t, reservationutil.IsReservationExpired(got))
 
-	r, err := controller.sync(normalReservation.Name)
+	r, err := controller.sync(getReservationKey(normalReservation))
 	assert.NoError(t, err)
 	assert.Equal(t, maxRetryAfterTime, r.requeueAfter)
 
@@ -296,12 +300,12 @@ func TestSyncStatus(t *testing.T) {
 		assert.NoError(t, err)
 	}
 
-	controller := New(sharedInformerFactory, koordSharedInformerFactory, fakeKoordClientSet, &config.ReservationArgs{ControllerWorkers: 2, GCDurationSeconds: 3600})
+	controller := New(sharedInformerFactory, koordSharedInformerFactory, fakeClientSet, fakeKoordClientSet, &config.ReservationArgs{ControllerWorkers: 2, GCDurationSeconds: 3600})
 	controller.Start()
 
 	time.Sleep(100 * time.Millisecond)
 
-	r, err := controller.sync(reservation.Name)
+	r, err := controller.sync(getReservationKey(reservation))
 	assert.NoError(t, err)
 	assert.Equal(t, time.Duration(0), r.requeueAfter)
 
@@ -371,4 +375,342 @@ scheduler_reservation_resource{name="%s",resource="memory",type="utilization",un
 		"scheduler_reservation_resource"); err != nil {
 		t.Error(err)
 	}
+}
+
+func Test_syncPodsForTerminatedReservation(t *testing.T) {
+	defer utilfeature.SetFeatureGateDuringTest(t, k8sfeature.DefaultFeatureGate, features.CleanExpiredReservationAllocated, true)()
+
+	fakeClientSet := kubefake.NewSimpleClientset()
+	fakeKoordClientSet := koordfake.NewSimpleClientset()
+	sharedInformerFactory := informers.NewSharedInformerFactory(fakeClientSet, 0)
+	koordSharedInformerFactory := koordinformers.NewSharedInformerFactory(fakeKoordClientSet, 0)
+
+	testReservation := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{
+			UID:  "xxxxxx",
+			Name: "test-reservation",
+		},
+		Status: schedulingv1alpha1.ReservationStatus{
+			Phase: schedulingv1alpha1.ReservationAvailable,
+		},
+	}
+	testOwnerPods := []*corev1.Pod{
+		{
+			ObjectMeta: metav1.ObjectMeta{
+				UID:       uuid.NewUUID(),
+				Name:      "test-pod-1",
+				Namespace: "test-ns",
+				Annotations: map[string]string{
+					apiext.AnnotationReservationAllocated: `{"name": "test-reservation", "uid": "xxxxxx"}`,
+				},
+			},
+			Spec: corev1.PodSpec{
+				NodeName: "test-node",
+			},
+		},
+		{
+			ObjectMeta: metav1.ObjectMeta{
+				UID:       uuid.NewUUID(),
+				Name:      "test-pod-2",
+				Namespace: "test-ns-2",
+				Annotations: map[string]string{
+					apiext.AnnotationReservationAllocated: `{"name": "test-reservation", "uid": "xxxxxx"}`,
+				},
+			},
+			Spec: corev1.PodSpec{
+				NodeName: "test-node",
+			},
+		},
+		{
+			ObjectMeta: metav1.ObjectMeta{
+				UID:       uuid.NewUUID(),
+				Name:      "test-pod-3",
+				Namespace: "test-ns-3",
+				Annotations: map[string]string{
+					apiext.AnnotationReservationAllocated: `{"name": "test-reservation", "uid": "xxxxxx"}`,
+				},
+			},
+			Spec: corev1.PodSpec{
+				NodeName: "test-node-1",
+			},
+		},
+	}
+	testNotFoundPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			UID:       uuid.NewUUID(),
+			Name:      "test-not-found-pod",
+			Namespace: "test-ns",
+			Annotations: map[string]string{
+				apiext.AnnotationReservationAllocated: `{"name": "test-reservation", "uid": "xxxxxx"}`,
+			},
+		},
+		Spec: corev1.PodSpec{
+			NodeName: "test-node-1",
+		},
+	}
+	testOtherPods := []*corev1.Pod{
+		{
+			ObjectMeta: metav1.ObjectMeta{
+				UID:       uuid.NewUUID(),
+				Name:      "test-other-pod-1",
+				Namespace: "test-ns-1",
+				Annotations: map[string]string{
+					apiext.AnnotationReservationAllocated: `{"name": "test-other-reservation", "uid": "zzz"}`,
+				},
+			},
+			Spec: corev1.PodSpec{
+				NodeName: "test-node",
+			},
+		},
+		{
+			ObjectMeta: metav1.ObjectMeta{
+				UID:       uuid.NewUUID(),
+				Name:      "test-other-pod-2",
+				Namespace: "test-ns-2",
+				Annotations: map[string]string{
+					apiext.AnnotationReservationAllocated: `{"name": "test-reservation", "uid": "aaaaaa"}`,
+				},
+			},
+			Spec: corev1.PodSpec{
+				NodeName: "test-node-1",
+			},
+		},
+		{
+			ObjectMeta: metav1.ObjectMeta{
+				UID:       uuid.NewUUID(),
+				Name:      "test-other-pod-3",
+				Namespace: "test-ns-3",
+			},
+			Spec: corev1.PodSpec{
+				NodeName: "test-node-3",
+			},
+		},
+	}
+	testErrPods := []*corev1.Pod{
+		{
+			ObjectMeta: metav1.ObjectMeta{
+				UID:       uuid.NewUUID(),
+				Name:      "test-err-pod",
+				Namespace: "test-ns",
+				Annotations: map[string]string{
+					apiext.AnnotationReservationAllocated: `{]`,
+				},
+			},
+			Spec: corev1.PodSpec{
+				NodeName: "test-node-1",
+			},
+		},
+		{
+			ObjectMeta: metav1.ObjectMeta{
+				UID:       uuid.NewUUID(),
+				Name:      "test-err-pod-1",
+				Namespace: "test-ns",
+				Annotations: map[string]string{
+					apiext.AnnotationReservationAllocated: `{]`,
+				},
+			},
+			Spec: corev1.PodSpec{
+				NodeName: "test-node-1",
+			},
+		},
+	}
+
+	_, err := fakeKoordClientSet.SchedulingV1alpha1().Reservations().Create(context.TODO(), testReservation, metav1.CreateOptions{})
+	assert.NoError(t, err)
+	err = fakeKoordClientSet.SchedulingV1alpha1().Reservations().Delete(context.TODO(), testReservation.Name, metav1.DeleteOptions{})
+	assert.NoError(t, err)
+	for _, pod := range append(testOwnerPods, append(testOtherPods, testErrPods...)...) {
+		_, err = fakeClientSet.CoreV1().Pods(pod.Namespace).Create(context.TODO(), pod, metav1.CreateOptions{})
+		assert.NoError(t, err)
+	}
+
+	controller := New(sharedInformerFactory, koordSharedInformerFactory, fakeClientSet, fakeKoordClientSet, &config.ReservationArgs{})
+
+	sharedInformerFactory.Start(nil)
+	koordSharedInformerFactory.Start(nil)
+	sharedInformerFactory.WaitForCacheSync(nil)
+	koordSharedInformerFactory.WaitForCacheSync(nil)
+
+	controller.onReservationAdd(testReservation)
+	controller.onReservationDelete(testReservation)
+	for _, pod := range append(testOwnerPods, testNotFoundPod) {
+		controller.onPodAdd(pod)
+	}
+	for _, pod := range testOtherPods {
+		// force add to mock unexpected cache
+		controller.updatePod(pod, &apiext.ReservationAllocated{UID: testReservation.UID, Name: testReservation.Name})
+	}
+
+	_, err = controller.sync(getReservationKey(testReservation))
+	assert.NoError(t, err)
+
+	_, err = fakeKoordClientSet.SchedulingV1alpha1().Reservations().Get(context.TODO(), testReservation.Name, metav1.GetOptions{})
+	assert.Error(t, err)
+	assert.True(t, errors.IsNotFound(err), err)
+	for _, pod := range testOwnerPods {
+		gotPod, err := fakeClientSet.CoreV1().Pods(pod.Namespace).Get(context.TODO(), pod.Name, metav1.GetOptions{})
+		assert.NoError(t, err)
+		assert.NotNil(t, gotPod)
+		assert.Equal(t, "", gotPod.Annotations[apiext.AnnotationReservationAllocated])
+	}
+	for _, pod := range testOtherPods {
+		gotPod, err := fakeClientSet.CoreV1().Pods(pod.Namespace).Get(context.TODO(), pod.Name, metav1.GetOptions{})
+		assert.NoError(t, err)
+		assert.NotNil(t, gotPod)
+		assert.Equal(t, pod.Annotations, gotPod.Annotations)
+	}
+
+	for _, pod := range testErrPods {
+		// force add to mock unexpected cache
+		controller.updatePod(pod, &apiext.ReservationAllocated{UID: testReservation.UID, Name: testReservation.Name})
+	}
+	_, err = controller.sync(getReservationKey(testReservation))
+	assert.Error(t, err)
+	for _, pod := range testErrPods {
+		gotPod, err := fakeClientSet.CoreV1().Pods(pod.Namespace).Get(context.TODO(), pod.Name, metav1.GetOptions{})
+		assert.NoError(t, err)
+		assert.NotNil(t, gotPod)
+		assert.Equal(t, pod.Annotations, gotPod.Annotations)
+	}
+}
+
+func Test_podEventHandlers(t *testing.T) {
+	fakeClientSet := kubefake.NewSimpleClientset()
+	fakeKoordClientSet := koordfake.NewSimpleClientset()
+	sharedInformerFactory := informers.NewSharedInformerFactory(fakeClientSet, 0)
+	koordSharedInformerFactory := koordinformers.NewSharedInformerFactory(fakeKoordClientSet, 0)
+
+	controller := New(sharedInformerFactory, koordSharedInformerFactory, fakeClientSet, fakeKoordClientSet, &config.ReservationArgs{})
+
+	sharedInformerFactory.Start(nil)
+	koordSharedInformerFactory.Start(nil)
+	sharedInformerFactory.WaitForCacheSync(nil)
+	koordSharedInformerFactory.WaitForCacheSync(nil)
+
+	assert.Equal(t, 0, len(controller.getPodsOnNode("test-node-1")))
+	controller.onPodAdd(&corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			UID:       "aaaaaa",
+			Name:      "test-pod",
+			Namespace: "test-ns",
+			Annotations: map[string]string{
+				apiext.AnnotationReservationAllocated: `{"name": "test-reservation", "uid": "aaaaaa"}`,
+			},
+		},
+		Spec: corev1.PodSpec{
+			NodeName: "test-node-1",
+		},
+	})
+	assert.Equal(t, 1, len(controller.getPodsOnNode("test-node-1")))
+	assert.Equal(t, 0, len(controller.getPodsOnNode("test-node-2")))
+	assert.Equal(t, 1, len(controller.getPodsOnReservation("aaaaaa")))
+	assert.Equal(t, 0, len(controller.getPodsOnReservation("bbb")))
+
+	controller.onPodUpdate(&corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			UID:       "aaaaaa",
+			Name:      "test-pod",
+			Namespace: "test-ns",
+			Annotations: map[string]string{
+				apiext.AnnotationReservationAllocated: `{"name": "test-reservation", "uid": "aaaaaa"}`,
+			},
+		},
+		Spec: corev1.PodSpec{
+			NodeName: "test-node-1",
+		},
+	}, &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			UID:       "aaaaaa",
+			Name:      "test-pod",
+			Namespace: "test-ns",
+			Annotations: map[string]string{
+				apiext.AnnotationReservationAllocated: `{"name": "test-reservation", "uid": "aaaaaa"}`,
+			},
+			Labels: map[string]string{
+				"foor": "bar",
+			},
+		},
+		Spec: corev1.PodSpec{
+			NodeName: "test-node-1",
+		},
+	})
+	assert.Equal(t, 1, len(controller.getPodsOnReservation("aaaaaa")))
+	controller.onPodUpdate(&corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			UID:       "aaaaaa",
+			Name:      "test-pod",
+			Namespace: "test-ns",
+			Annotations: map[string]string{
+				apiext.AnnotationReservationAllocated: `{"name": "test-reservation", "uid": "aaaaaa"}`,
+			},
+			Labels: map[string]string{
+				"foor": "bar",
+			},
+		},
+		Spec: corev1.PodSpec{
+			NodeName: "test-node-1",
+		},
+	}, &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			UID:         "aaaaaa",
+			Name:        "test-pod",
+			Namespace:   "test-ns",
+			Annotations: map[string]string{},
+			Labels: map[string]string{
+				"foor": "bar",
+			},
+		},
+		Spec: corev1.PodSpec{
+			NodeName: "test-node-1",
+		},
+	})
+	assert.Equal(t, 0, len(controller.getPodsOnReservation("aaaaaa")))
+	controller.onPodUpdate(&corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			UID:         "aaaaaa",
+			Name:        "test-pod",
+			Namespace:   "test-ns",
+			Annotations: map[string]string{},
+			Labels: map[string]string{
+				"foor": "bar",
+			},
+		},
+		Spec: corev1.PodSpec{
+			NodeName: "test-node-1",
+		},
+	}, &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			UID:       "aaaaaa",
+			Name:      "test-pod",
+			Namespace: "test-ns",
+			Annotations: map[string]string{
+				apiext.AnnotationReservationAllocated: `{"name": "test-reservation", "uid": "aaaaaa"}`,
+			},
+			Labels: map[string]string{
+				"foor": "bar",
+			},
+		},
+		Spec: corev1.PodSpec{
+			NodeName: "test-node-1",
+		},
+	})
+	assert.Equal(t, 1, len(controller.getPodsOnReservation("aaaaaa")))
+
+	controller.onPodDelete(&corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			UID:       "aaaaaa",
+			Name:      "test-pod",
+			Namespace: "test-ns",
+			Annotations: map[string]string{
+				apiext.AnnotationReservationAllocated: `{"name": "test-reservation", "uid": "aaaaaa"}`,
+			},
+			Labels: map[string]string{
+				"foor": "bar",
+			},
+		},
+		Spec: corev1.PodSpec{
+			NodeName: "test-node-1",
+		},
+	})
+	assert.Equal(t, 0, len(controller.getPodsOnReservation("aaaaaa")))
 }
