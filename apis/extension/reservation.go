@@ -130,6 +130,26 @@ func SetReservationAllocated(pod *corev1.Pod, r metav1.Object) {
 	pod.Annotations[AnnotationReservationAllocated] = string(data)
 }
 
+func RemoveReservationAllocated(pod *corev1.Pod, r metav1.Object) (bool, error) {
+	if pod.Annotations == nil {
+		return false, nil
+	}
+	data, ok := pod.Annotations[AnnotationReservationAllocated]
+	if !ok {
+		return false, nil
+	}
+	reservationAllocated := &ReservationAllocated{}
+	err := json.Unmarshal([]byte(data), reservationAllocated)
+	if err != nil {
+		return false, err
+	}
+	if reservationAllocated.UID != r.GetUID() {
+		return false, nil
+	}
+	delete(pod.Annotations, AnnotationReservationAllocated)
+	return true, nil
+}
+
 func IsReservationAllocateOnce(r *schedulingv1alpha1.Reservation) bool {
 	return pointer.BoolDeref(r.Spec.AllocateOnce, true)
 }

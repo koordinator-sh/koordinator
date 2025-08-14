@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"fmt"
 	"reflect"
 	"sort"
 	"sync"
@@ -27,9 +28,12 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/wait"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
+	k8sfeature "k8s.io/apiserver/pkg/util/feature"
 	"k8s.io/client-go/informers"
+	clientset "k8s.io/client-go/kubernetes"
 	corelister "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
@@ -41,10 +45,12 @@ import (
 	koordclientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
 	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
 	schedulinglister "github.com/koordinator-sh/koordinator/pkg/client/listers/scheduling/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	frameworkexthelper "github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/helper"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/metrics"
+	"github.com/koordinator-sh/koordinator/pkg/util"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
 
@@ -63,18 +69,22 @@ type Controller struct {
 	nodeLister                 corelister.NodeLister
 	podLister                  corelister.PodLister
 	reservationLister          schedulinglister.ReservationLister
+	client                     clientset.Interface
 	koordClientSet             koordclientset.Interface
 	queue                      workqueue.RateLimitingInterface
 	numWorker                  int
 	gcDuration                 time.Duration
 
-	lock sync.RWMutex
-	pods map[string]map[types.UID]*corev1.Pod
+	lock   sync.RWMutex
+	pods   map[string]map[types.UID]*corev1.Pod    // nodeName -> podUID -> pod
+	podToR map[types.UID]types.UID                 // podUID to reservationUID
+	rToPod map[types.UID]map[types.UID]*corev1.Pod // reservationUID -> podUID -> pod
 }
 
 func New(
 	sharedInformerFactory informers.SharedInformerFactory,
 	koordSharedInformerFactory koordinatorinformers.SharedInformerFactory,
+	client clientset.Interface,
 	koordClientSet koordclientset.Interface,
 	args *config.ReservationArgs,
 ) *Controller {
@@ -100,11 +110,14 @@ func New(
 		nodeLister:                 nodeLister,
 		podLister:                  podLister,
 		reservationLister:          reservationLister,
+		client:                     client,
 		koordClientSet:             koordClientSet,
 		queue:                      queue,
 		numWorker:                  numWorker,
 		gcDuration:                 gcDuration,
 		pods:                       map[string]map[types.UID]*corev1.Pod{},
+		podToR:                     map[types.UID]types.UID{},
+		rToPod:                     map[types.UID]map[types.UID]*corev1.Pod{},
 	}
 }
 
@@ -140,7 +153,6 @@ func (c *Controller) Start() {
 		go c.worker()
 	}
 	go wait.Until(c.gcReservations, defaultGCCheckInterval, nil)
-
 }
 
 func (c *Controller) worker() {
@@ -178,26 +190,91 @@ type result struct {
 	requeueAfter time.Duration
 }
 
-func (c *Controller) sync(reservationName string) (result, error) {
+func (c *Controller) sync(key string) (result, error) {
+	reservationName, reservationUID, err := parseReservationKey(key)
+	if err != nil {
+		klog.V(4).ErrorS(err, "failed to parse Reservation key", "key", key)
+		return result{}, err
+	}
 	reservation, err := c.reservationLister.Get(reservationName)
 	if errors.IsNotFound(err) {
+		if k8sfeature.DefaultFeatureGate.Enabled(features.CleanExpiredReservationAllocated) {
+			// Clean the reservation-allocated annotation for owner pods when a reservation is deleted.
+			err = c.syncPodsForTerminatedReservation(reservationName, reservationUID)
+			if err != nil {
+				klog.ErrorS(err, "failed to sync for deleted Reservation", "reservation", reservationName)
+				return result{}, err
+			}
+			klog.V(5).InfoS("sync pods for deleted Reservation finished", "reservation", reservationName, "uid", reservationUID)
+		}
 		return result{}, nil
 	}
 	if err != nil {
+		klog.V(4).ErrorS(err, "failed to get Reservation", "reservation", reservationName, "uid", reservationUID)
 		return result{}, nil
 	}
 
 	if reservationutil.IsReservationFailed(reservation) ||
 		reservationutil.IsReservationSucceeded(reservation) {
+		klog.V(6).InfoS("skipped sync failed or succeeded Reservation", "reservation", reservationName, "uid", reservationUID)
 		return result{}, nil
 	}
 
 	reservation = reservation.DeepCopy()
-	if err := c.syncStatus(reservation); err != nil {
+	if err := c.syncAssignedReservation(reservation); err != nil {
+		klog.V(4).ErrorS(err, "failed to sync assigned Reservation", "reservation", reservationName, "uid", reservationUID)
 		return result{}, err
 	}
 
+	klog.V(5).InfoS("sync Reservation finished", "reservation", reservationName, "uid", reservationUID)
 	return result{requeueAfter: nextSyncTime(reservation)}, nil
+}
+
+func (c *Controller) syncPodsForTerminatedReservation(rName string, rUID types.UID) error {
+	// If the reservation is deleted, remove the reservationAllocation of the owner pods.
+	pods := c.getPodsOnReservation(rUID)
+	if len(pods) <= 0 {
+		return nil
+	}
+	var errs []error
+	for _, pod := range pods {
+		curPod, err := c.podLister.Pods(pod.Namespace).Get(pod.Name)
+		if err != nil && errors.IsNotFound(err) {
+			klog.V(4).InfoS("ignored to remove reservation allocated for pod not found", "reservation", rName, "uid", rUID, "pod", klog.KObj(pod))
+			continue
+		}
+		if err != nil {
+			klog.ErrorS(err, "failed to get reservation allocated pod", "reservation", rName, "uid", rUID, "pod", klog.KObj(curPod))
+			errs = append(errs, err)
+			continue
+		}
+		modifiedPod := curPod.DeepCopy()
+		removed, err := apiext.RemoveReservationAllocated(modifiedPod, &schedulingv1alpha1.Reservation{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: rName,
+				UID:  rUID,
+			},
+		})
+		if err != nil {
+			klog.V(4).ErrorS(err, "failed to remove reservation allocated for the pod",
+				"reservation", rName, "uid", rUID, "pod", klog.KObj(curPod))
+			errs = append(errs, err)
+			continue
+		}
+		if !removed {
+			continue
+		}
+		_, err = util.PatchPodSafe(context.TODO(), c.client, curPod, modifiedPod)
+		if err != nil {
+			klog.ErrorS(err, "failed to patch reservation allocated for pod",
+				"reservation", rName, "uid", rUID, "pod", klog.KObj(curPod))
+			errs = append(errs, err)
+			continue
+		}
+		klog.V(4).InfoS("successfully patch pod to remove reservation allocated",
+			"reservation", rName, "uid", rUID, "pod", klog.KObj(curPod))
+	}
+	return utilerrors.NewAggregate(errs)
 }
 
 func (c *Controller) expireReservation(reservation *schedulingv1alpha1.Reservation) error {
@@ -205,7 +282,19 @@ func (c *Controller) expireReservation(reservation *schedulingv1alpha1.Reservati
 	return c.updateReservationStatus(reservation)
 }
 
-func (c *Controller) syncStatus(reservation *schedulingv1alpha1.Reservation) error {
+func (c *Controller) syncAssignedReservation(reservation *schedulingv1alpha1.Reservation) error {
+	if reservation.Status.NodeName == "" {
+		return nil
+	}
+	// use a pods snapshot to avoid the inconsistency between pods and reservation status
+	pods := c.getPodsOnNode(reservation.Status.NodeName)
+	if err := c.syncStatus(reservation, pods); err != nil {
+		return fmt.Errorf("sync reservation status failed, err: %w", err)
+	}
+	return nil
+}
+
+func (c *Controller) syncStatus(reservation *schedulingv1alpha1.Reservation, pods map[types.UID]*corev1.Pod) error {
 	if isReservationNeedExpiration(reservation) {
 		return c.expireReservation(reservation)
 	}
@@ -221,7 +310,6 @@ func (c *Controller) syncStatus(reservation *schedulingv1alpha1.Reservation) err
 
 	var actualOwners []corev1.ObjectReference
 	var actualAllocated corev1.ResourceList
-	pods := c.getPods(reservation.Status.NodeName)
 	for _, pod := range pods {
 		reservationAllocated, err := apiext.GetReservationAllocated(pod)
 		if err != nil || reservationAllocated == nil || reservationAllocated.UID != reservation.UID {

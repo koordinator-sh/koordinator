@@ -40,8 +40,8 @@ type ReservationInfo struct {
 	Reservation      *schedulingv1alpha1.Reservation
 	Pod              *corev1.Pod
 	ResourceNames    []corev1.ResourceName
-	Allocatable      corev1.ResourceList
-	Allocated        corev1.ResourceList
+	Allocatable      corev1.ResourceList // RO
+	Allocated        corev1.ResourceList // RO
 	Reserved         corev1.ResourceList // reserved inside the reservation
 	Available        *framework.Resource // Allocatable - Reserved - Allocated
 	AllocatablePorts framework.HostPortInfo
@@ -49,7 +49,6 @@ type ReservationInfo struct {
 	AssignedPods     map[types.UID]*PodRequirement
 	OwnerMatchers    []reservationutil.ReservationOwnerMatcher
 	ParseError       error
-	Labels           map[string]string
 }
 
 type PodRequirement struct {

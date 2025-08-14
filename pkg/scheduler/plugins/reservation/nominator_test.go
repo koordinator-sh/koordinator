@@ -27,6 +27,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/uuid"
+	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	apiresource "k8s.io/kubernetes/pkg/api/v1/resource"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/utils/pointer"
@@ -293,6 +294,7 @@ func TestNominateReservation(t *testing.T) {
 					nodeReservationStates: map[string]*nodeReservationState{},
 					podRequests:           requests,
 					podRequestsResources:  framework.NewResource(requests),
+					podResourceNames:      quotav1.ResourceNames(requests),
 				},
 			}
 			for _, reservation := range tt.reservations {
@@ -314,6 +316,7 @@ func TestNominateReservation(t *testing.T) {
 			if tt.wantReservation == nil {
 				assert.Nil(t, nominateRInfo)
 			} else {
+				assert.NotNil(t, nominateRInfo)
 				assert.Equal(t, tt.wantReservation, nominateRInfo.Reservation)
 			}
 			assert.Equal(t, tt.wantStatus, status.IsSuccess())

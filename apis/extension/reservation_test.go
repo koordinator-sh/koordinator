@@ -97,6 +97,43 @@ func TestSetReservationAllocated(t *testing.T) {
 	assert.Equal(t, expectReservationAllocated, reservationAllocated)
 }
 
+func TestRemoveReservationAllocated(t *testing.T) {
+	reservation := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{
+			UID:  uuid.NewUUID(),
+			Name: "test-reservation",
+		},
+	}
+	pod := &corev1.Pod{}
+	SetReservationAllocated(pod, reservation)
+	reservationAllocated, err := GetReservationAllocated(pod)
+	assert.NoError(t, err)
+	expectReservationAllocated := &ReservationAllocated{
+		UID:  reservation.UID,
+		Name: reservation.Name,
+	}
+	assert.Equal(t, expectReservationAllocated, reservationAllocated)
+
+	changed, err := RemoveReservationAllocated(pod, reservation)
+	assert.NoError(t, err)
+	assert.True(t, changed)
+	reservationAllocated, err = GetReservationAllocated(pod)
+	assert.NoError(t, err)
+	assert.Nil(t, reservationAllocated)
+
+	changed, err = RemoveReservationAllocated(pod, reservation)
+	assert.NoError(t, err)
+	assert.False(t, changed)
+	reservationAllocated, err = GetReservationAllocated(pod)
+	assert.NoError(t, err)
+	assert.Nil(t, reservationAllocated)
+
+	pod.Annotations[AnnotationReservationAllocated] = "[}"
+	changed, err = RemoveReservationAllocated(pod, reservation)
+	assert.Error(t, err)
+	assert.False(t, changed)
+}
+
 func TestExactMatchReservation(t *testing.T) {
 	tests := []struct {
 		name                   string

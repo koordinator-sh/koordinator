@@ -29,8 +29,8 @@ func (c *Controller) onPodAdd(obj interface{}) {
 	if pod == nil {
 		return
 	}
-	c.updatePod(pod)
-	c.enqueueIfPodBoundReservation(pod)
+	rAllocated := c.enqueueIfPodBoundReservation(pod)
+	c.updatePod(pod, rAllocated)
 }
 
 func (c *Controller) onPodUpdate(oldObj, newObj interface{}) {
@@ -38,8 +38,8 @@ func (c *Controller) onPodUpdate(oldObj, newObj interface{}) {
 	if newPod == nil {
 		return
 	}
-	c.updatePod(newPod)
-	c.enqueueIfPodBoundReservation(newPod)
+	rAllocated := c.enqueueIfPodBoundReservation(newPod)
+	c.updatePod(newPod, rAllocated)
 }
 
 func (c *Controller) onPodDelete(obj interface{}) {
@@ -53,53 +53,85 @@ func (c *Controller) onPodDelete(obj interface{}) {
 	if pod == nil {
 		return
 	}
+	_ = c.enqueueIfPodBoundReservation(pod)
 	c.deletePod(pod)
-	c.enqueueIfPodBoundReservation(pod)
 }
 
-func (c *Controller) enqueueIfPodBoundReservation(pod *corev1.Pod) {
+// enqueueIfPodBoundReservation will enqueue the reservation and  return the reservation allocated
+// if the pod is bound to the reservation
+func (c *Controller) enqueueIfPodBoundReservation(pod *corev1.Pod) *apiext.ReservationAllocated {
 	if pod.Spec.NodeName == "" {
-		return
+		return nil
 	}
 
 	reservationAllocated, err := apiext.GetReservationAllocated(pod)
 	if err != nil || reservationAllocated == nil || reservationAllocated.Name == "" {
-		return
+		return nil
 	}
 
-	c.queue.Add(reservationAllocated.Name)
+	c.queue.Add(getReservationKeyByAllocated(reservationAllocated))
+	return reservationAllocated
 }
 
-func (c *Controller) updatePod(pod *corev1.Pod) {
-	if pod.Spec.NodeName == "" {
+func (c *Controller) updatePod(pod *corev1.Pod, rAllocated *apiext.ReservationAllocated) {
+	nodeName := pod.Spec.NodeName
+	if nodeName == "" {
 		return
 	}
-
 	c.lock.Lock()
 	defer c.lock.Unlock()
-	pods := c.pods[pod.Spec.NodeName]
-	if pods == nil {
-		pods = map[types.UID]*corev1.Pod{}
-		c.pods[pod.Spec.NodeName] = pods
+	podsOnNode := c.pods[nodeName]
+	if podsOnNode == nil {
+		podsOnNode = map[types.UID]*corev1.Pod{}
+		c.pods[nodeName] = podsOnNode
 	}
-	pods[pod.UID] = pod
+	podsOnNode[pod.UID] = pod
+	if oldR := c.podToR[pod.UID]; oldR != "" {
+		podsOnOldR := c.rToPod[oldR]
+		if len(podsOnOldR) > 0 {
+			delete(podsOnOldR, pod.UID)
+		}
+		if len(podsOnOldR) == 0 {
+			delete(c.rToPod, oldR)
+		}
+	}
+	if rAllocated == nil {
+		return
+	}
+	c.podToR[pod.UID] = rAllocated.UID
+	podsOnReservation := c.rToPod[rAllocated.UID]
+	if podsOnReservation == nil {
+		podsOnReservation = map[types.UID]*corev1.Pod{}
+		c.rToPod[rAllocated.UID] = podsOnReservation
+	}
+	podsOnReservation[pod.UID] = pod
 }
 
 func (c *Controller) deletePod(pod *corev1.Pod) {
+	nodeName := pod.Spec.NodeName
 	if pod.Spec.NodeName == "" {
 		return
 	}
-
 	c.lock.Lock()
 	defer c.lock.Unlock()
-	pods := c.pods[pod.Spec.NodeName]
+	pods := c.pods[nodeName]
 	delete(pods, pod.UID)
 	if len(pods) == 0 {
-		delete(c.pods, pod.Spec.NodeName)
+		delete(c.pods, nodeName)
 	}
+	if oldR := c.podToR[pod.UID]; oldR != "" {
+		podsOnOldR := c.rToPod[oldR]
+		if len(podsOnOldR) > 0 {
+			delete(podsOnOldR, pod.UID)
+		}
+		if len(podsOnOldR) == 0 {
+			delete(c.rToPod, oldR)
+		}
+	}
+	delete(c.podToR, pod.UID)
 }
 
-func (c *Controller) getPods(nodeName string) map[types.UID]*corev1.Pod {
+func (c *Controller) getPodsOnNode(nodeName string) map[types.UID]*corev1.Pod {
 	c.lock.RLock()
 	defer c.lock.RUnlock()
 
@@ -108,6 +140,20 @@ func (c *Controller) getPods(nodeName string) map[types.UID]*corev1.Pod {
 		return nil
 	}
 	m := make(map[types.UID]*corev1.Pod, len(pods))
+	for k, v := range pods {
+		m[k] = v
+	}
+	return m
+}
+
+func (c *Controller) getPodsOnReservation(rUID types.UID) map[types.UID]*corev1.Pod {
+	c.lock.RLock()
+	defer c.lock.RUnlock()
+	pods := c.rToPod[rUID]
+	if len(pods) == 0 {
+		return nil
+	}
+	m := make(map[types.UID]*corev1.Pod)
 	for k, v := range pods {
 		m[k] = v
 	}
