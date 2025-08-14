@@ -871,9 +871,10 @@ func Test_filterWithReservations(t *testing.T) {
 		},
 	}
 	tests := []struct {
-		name       string
-		stateData  *stateData
-		wantStatus *framework.Status
+		name                          string
+		stateData                     *stateData
+		enableSkipReservationFitsNode bool
+		wantStatus                    *framework.Status
 	}{
 		{
 			name: "filter aligned reservation with nodeInfo",
@@ -2042,6 +2043,179 @@ func Test_filterWithReservations(t *testing.T) {
 			wantStatus: framework.NewStatus(framework.Unschedulable, "Reservation(s) Insufficient cpu, "+
 				"requested: 6000, used: 1000, capacity: 6000"),
 		},
+		{
+			name: "failed to filter restricted reservations with enableSkipReservationFitsNode",
+			stateData: &stateData{
+				schedulingStateData: schedulingStateData{
+					hasAffinity: true,
+					podRequests: corev1.ResourceList{
+						corev1.ResourceCPU: resource.MustParse("4"),
+					},
+					podRequestsResources: &framework.Resource{
+						MilliCPU: 4 * 1000,
+					},
+					preemptible: map[string]corev1.ResourceList{
+						node.Name: {
+							corev1.ResourceCPU: resource.MustParse("4"),
+						},
+					},
+					preemptibleInRRs: nil,
+					nodeReservationStates: map[string]*nodeReservationState{
+						node.Name: {
+							podRequested: &framework.Resource{
+								MilliCPU: 38 * 1000,
+							},
+							rAllocated: &framework.Resource{
+								MilliCPU: 6000,
+							},
+							matchedOrIgnored: []*frameworkext.ReservationInfo{
+								{
+									Reservation: &schedulingv1alpha1.Reservation{
+										ObjectMeta: metav1.ObjectMeta{
+											Name: "test-r",
+											UID:  "123456",
+										},
+										Spec: schedulingv1alpha1.ReservationSpec{
+											AllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyRestricted,
+										},
+									},
+									ResourceNames: []corev1.ResourceName{corev1.ResourceCPU},
+									Allocatable: corev1.ResourceList{
+										corev1.ResourceCPU: resource.MustParse("6"),
+									},
+									Allocated: corev1.ResourceList{
+										corev1.ResourceCPU: resource.MustParse("6"),
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			enableSkipReservationFitsNode: true,
+			wantStatus:                    framework.NewStatus(framework.Unschedulable, "Reservation(s) Insufficient cpu"),
+		},
+		{
+			name: "skipped to filter aligned reservations with preempt from node",
+			stateData: &stateData{
+				schedulingStateData: schedulingStateData{
+					hasAffinity: true,
+					podRequests: corev1.ResourceList{
+						corev1.ResourceCPU: resource.MustParse("4"),
+					},
+					podRequestsResources: &framework.Resource{
+						MilliCPU: 4 * 1000,
+					},
+					preemptible: map[string]corev1.ResourceList{
+						node.Name: {
+							corev1.ResourceCPU: resource.MustParse("2"),
+						},
+					},
+					nodeReservationStates: map[string]*nodeReservationState{
+						node.Name: {
+							podRequested: &framework.Resource{
+								MilliCPU: 38 * 1000,
+							},
+							rAllocated: &framework.Resource{
+								MilliCPU: 6000,
+							},
+							matchedOrIgnored: []*frameworkext.ReservationInfo{
+								{
+									Reservation: &schedulingv1alpha1.Reservation{
+										ObjectMeta: metav1.ObjectMeta{
+											Name: "test-r",
+											UID:  "123456",
+										},
+										Spec: schedulingv1alpha1.ReservationSpec{
+											AllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyAligned,
+										},
+									},
+									ResourceNames: []corev1.ResourceName{corev1.ResourceCPU},
+									Allocatable: corev1.ResourceList{
+										corev1.ResourceCPU: resource.MustParse("6"),
+									},
+									Allocated: corev1.ResourceList{
+										corev1.ResourceCPU: resource.MustParse("6"),
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			enableSkipReservationFitsNode: true,
+			wantStatus:                    nil,
+		},
+		{
+			name: "still failed to filter multiple restricted reservations with enableSkipReservationFitsNode",
+			stateData: &stateData{
+				schedulingStateData: schedulingStateData{
+					hasAffinity: true,
+					podRequests: corev1.ResourceList{
+						corev1.ResourceCPU: resource.MustParse("4"),
+					},
+					podRequestsResources: &framework.Resource{
+						MilliCPU: 4 * 1000,
+					},
+					preemptible: map[string]corev1.ResourceList{
+						node.Name: {
+							corev1.ResourceCPU: resource.MustParse("4"),
+						},
+					},
+					preemptibleInRRs: nil,
+					nodeReservationStates: map[string]*nodeReservationState{
+						node.Name: {
+							podRequested: &framework.Resource{
+								MilliCPU: 38 * 1000,
+							},
+							rAllocated: &framework.Resource{
+								MilliCPU: 10000,
+							},
+							matchedOrIgnored: []*frameworkext.ReservationInfo{
+								{
+									Reservation: &schedulingv1alpha1.Reservation{
+										ObjectMeta: metav1.ObjectMeta{
+											Name: "test-r",
+											UID:  "123456",
+										},
+										Spec: schedulingv1alpha1.ReservationSpec{
+											AllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyRestricted,
+										},
+									},
+									ResourceNames: []corev1.ResourceName{corev1.ResourceCPU},
+									Allocatable: corev1.ResourceList{
+										corev1.ResourceCPU: resource.MustParse("6"),
+									},
+									Allocated: corev1.ResourceList{
+										corev1.ResourceCPU: resource.MustParse("6"),
+									},
+								},
+								{
+									Reservation: &schedulingv1alpha1.Reservation{
+										ObjectMeta: metav1.ObjectMeta{
+											Name: "test-r-1",
+											UID:  "7891011",
+										},
+										Spec: schedulingv1alpha1.ReservationSpec{
+											AllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyRestricted,
+										},
+									},
+									ResourceNames: []corev1.ResourceName{corev1.ResourceCPU},
+									Allocatable: corev1.ResourceList{
+										corev1.ResourceCPU: resource.MustParse("4"),
+									},
+									Allocated: corev1.ResourceList{
+										corev1.ResourceCPU: resource.MustParse("1"),
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			enableSkipReservationFitsNode: true,
+			wantStatus:                    framework.NewStatus(framework.Unschedulable, "Reservation(s) Insufficient cpu", "Reservation(s) Insufficient cpu"),
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -2049,6 +2223,7 @@ func Test_filterWithReservations(t *testing.T) {
 			p, err := suit.pluginFactory()
 			assert.NoError(t, err)
 			pl := p.(*Plugin)
+			pl.enableSkipReservationFitsNode = tt.enableSkipReservationFitsNode
 			suit.start()
 			cycleState := framework.NewCycleState()
 			if tt.stateData.podRequestsResources == nil {

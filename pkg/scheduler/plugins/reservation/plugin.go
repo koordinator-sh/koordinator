@@ -85,14 +85,15 @@ var (
 )
 
 type Plugin struct {
-	handle                       frameworkext.ExtendedHandle
-	args                         *config.ReservationArgs
-	rLister                      listerschedulingv1alpha1.ReservationLister
-	client                       clientschedulingv1alpha1.SchedulingV1alpha1Interface
-	reservationCache             *reservationCache
-	nominator                    *nominator
-	preemptionMgr                *PreemptionMgr
-	enableLazyReservationRestore bool
+	handle                        frameworkext.ExtendedHandle
+	args                          *config.ReservationArgs
+	rLister                       listerschedulingv1alpha1.ReservationLister
+	client                        clientschedulingv1alpha1.SchedulingV1alpha1Interface
+	reservationCache              *reservationCache
+	nominator                     *nominator
+	preemptionMgr                 *PreemptionMgr
+	enableLazyReservationRestore  bool
+	enableSkipReservationFitsNode bool
 }
 
 func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error) {
@@ -123,13 +124,14 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 	frameworkext.SetReservationCache(cache)
 
 	p := &Plugin{
-		handle:                       extendedHandle,
-		args:                         pluginArgs,
-		rLister:                      reservationLister,
-		client:                       extendedHandle.KoordinatorClientSet().SchedulingV1alpha1(),
-		reservationCache:             cache,
-		nominator:                    nm,
-		enableLazyReservationRestore: k8sfeature.DefaultFeatureGate.Enabled(features.LazyReservationRestore),
+		handle:                        extendedHandle,
+		args:                          pluginArgs,
+		rLister:                       reservationLister,
+		client:                        extendedHandle.KoordinatorClientSet().SchedulingV1alpha1(),
+		reservationCache:              cache,
+		nominator:                     nm,
+		enableLazyReservationRestore:  k8sfeature.DefaultFeatureGate.Enabled(features.LazyReservationRestore),
+		enableSkipReservationFitsNode: k8sfeature.DefaultFeatureGate.Enabled(features.SkipReservationFitsNode),
 	}
 
 	if pluginArgs.EnablePreemption {
@@ -364,6 +366,9 @@ func (pl *Plugin) filterWithReservations(ctx context.Context, cycleState *framew
 	nodeRState := state.nodeReservationStates[node.Name]
 	podRequestsResourceNames := quotav1.ResourceNames(state.podRequests)
 
+	// Contextualization: If a pod only have one reservation matched, the fitsNode should be equivalent to
+	// the NodeResourceFit's Filter, so we can skip the fitsNode to reduce overhead.
+	isFitsNodeSkipped := pl.enableSkipReservationFitsNode && len(matchedReservations) <= 1
 	allInsufficientResourcesByNode := sets.NewString()
 	var allInsufficientResourceReasonsByReservation []string
 	for _, rInfo := range matchedReservations {
@@ -384,23 +389,26 @@ func (pl *Plugin) filterWithReservations(ctx context.Context, cycleState *framew
 		preemptibleInRR := state.preemptibleInRRs[node.Name][rInfo.UID()]
 		preemptible := framework.NewResource(preemptibleInRR)
 		preemptible.Add(state.preemptible[node.Name])
-		insufficientResourcesByNode := fitsNode(state.podRequestsResources, nodeInfo, nodeRState, rInfo, preemptible)
-		if len(insufficientResourcesByNode) > 0 && klog.V(5).Enabled() {
-			var podRequested framework.Resource
-			if nodeRState.podRequested != nil {
-				podRequested = *nodeRState.podRequested
-			}
-			var rAllocated framework.Resource
-			if nodeRState.rAllocated != nil {
-				rAllocated = *nodeRState.rAllocated
-			}
-			klog.V(5).Infof("node %s doesn't have sufficient resources: %+v for pod: %s/%s, nodeRState.PodRequested: %+v, rAllocated: %+v, rInfo.Allocatable: %+v, rInfo.Allocated: %+v, rInfo.Reserved: %+v, preemptible: %+v",
-				node.Name, insufficientResourcesByNode, pod.Namespace, pod.Name, podRequested, rAllocated, rInfo.Allocatable, rInfo.Allocated, rInfo.Reserved, preemptible)
-		}
 		state.preemptLock.RUnlock()
 
-		nodeFits := len(insufficientResourcesByNode) <= 0
-		allInsufficientResourcesByNode.Insert(insufficientResourcesByNode...)
+		nodeFits := true
+		if !isFitsNodeSkipped {
+			insufficientResourcesByNode := fitsNode(state.podRequestsResources, nodeInfo, nodeRState, rInfo, preemptible)
+			if len(insufficientResourcesByNode) > 0 && klog.V(5).Enabled() {
+				var podRequested framework.Resource
+				if nodeRState.podRequested != nil {
+					podRequested = *nodeRState.podRequested
+				}
+				var rAllocated framework.Resource
+				if nodeRState.rAllocated != nil {
+					rAllocated = *nodeRState.rAllocated
+				}
+				klog.V(5).Infof("node %s doesn't have sufficient resources: %+v for pod: %s/%s, nodeRState.PodRequested: %+v, rAllocated: %+v, rInfo.Allocatable: %+v, rInfo.Allocated: %+v, rInfo.Reserved: %+v, preemptible: %+v",
+					node.Name, insufficientResourcesByNode, pod.Namespace, pod.Name, podRequested, rAllocated, rInfo.Allocatable, rInfo.Allocated, rInfo.Reserved, preemptible)
+			}
+			nodeFits = len(insufficientResourcesByNode) <= 0
+			allInsufficientResourcesByNode.Insert(insufficientResourcesByNode...)
+		}
 
 		reservationFits := false
 		allocatePolicy := rInfo.GetAllocatePolicy()
