@@ -25,14 +25,12 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
-	slolisters "github.com/koordinator-sh/koordinator/pkg/client/listers/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/validation"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
@@ -41,7 +39,12 @@ import (
 )
 
 const (
-	Name                                    = "LoadAwareScheduling"
+	Name = "LoadAwareScheduling"
+
+	// podEstimatedStateKey is the key in CycleState to LoadAwareScheduling Estimated resources for incoming pod.
+	// Using the name of the plugin will likely help us avoid collisions with other plugins.
+	incomingPodEstimatedStateKey = "IncomingPodEstimated" + Name
+
 	ErrReasonNodeMetricExpired              = "node(s) nodeMetric expired"
 	ErrReasonUsageExceedThreshold           = "node(s) %s usage exceed threshold"
 	ErrReasonAggregatedUsageExceedThreshold = "node(s) %s aggregated usage exceed threshold"
@@ -66,11 +69,13 @@ var (
 )
 
 type Plugin struct {
-	handle           framework.Handle
-	args             *config.LoadAwareSchedulingArgs
-	nodeMetricLister slolisters.NodeMetricLister
-	estimator        estimator.Estimator
-	podAssignCache   *podAssignCache
+	handle         framework.Handle
+	args           *config.LoadAwareSchedulingArgs
+	vectorizer     ResourceVectorizer
+	filterProfile  *usageThresholdsFilterProfile
+	scoreWeights   ResourceVector
+	estimator      estimator.Estimator
+	podAssignCache *podAssignCache
 }
 
 func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error) {
@@ -92,20 +97,38 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 	if err != nil {
 		return nil, err
 	}
-	assignCache := newPodAssignCache(estimator, pluginArgs)
+	// cpu and memory are added by default for custom usage thresholds compatibility
+	resourceNames := sets.New(corev1.ResourceCPU, corev1.ResourceMemory)
+	resourceNames = resourceNames.Union(sets.KeySet(pluginArgs.UsageThresholds))
+	resourceNames = resourceNames.Union(sets.KeySet(pluginArgs.ProdUsageThresholds))
+	if aggArgs := pluginArgs.Aggregated; aggArgs != nil {
+		resourceNames = resourceNames.Union(sets.KeySet(aggArgs.UsageThresholds))
+	}
+	resourceNames = resourceNames.Union(sets.KeySet(pluginArgs.ResourceWeights))
+	resourceNames = resourceNames.Union(sets.KeySet(pluginArgs.EstimatedScalingFactors))
+	resourceNames.Insert(pluginArgs.SupportedResources...)
+	vectorizer := NewResourceVectorizer(resourceNames.UnsortedList()...)
+	assignCache := newPodAssignCache(estimator, vectorizer, pluginArgs)
 	podInformer := frameworkExtender.SharedInformerFactory().Core().V1().Pods()
 	frameworkexthelper.ForceSyncFromInformer(context.TODO().Done(), frameworkExtender.SharedInformerFactory(), podInformer.Informer(), assignCache)
 	frameworkExtender.RegisterForgetPodHandler(func(pod *corev1.Pod) {
 		assignCache.unAssign(pod.Spec.NodeName, pod)
 	})
-	nodeMetricLister := frameworkExtender.KoordinatorSharedInformerFactory().Slo().V1alpha1().NodeMetrics().Lister()
-
+	koordInformers := frameworkExtender.KoordinatorSharedInformerFactory()
+	nodeMetricInformer := koordInformers.Slo().V1alpha1().NodeMetrics()
+	frameworkexthelper.ForceSyncFromInformer(context.TODO().Done(), koordInformers, nodeMetricInformer.Informer(), assignCache.NodeMetricHandler())
+	var scoreWeights ResourceVector
+	if len(pluginArgs.ResourceWeights) > 0 {
+		scoreWeights = vectorizer.ToFactorVec(pluginArgs.ResourceWeights)
+	}
 	return &Plugin{
-		handle:           handle,
-		args:             pluginArgs,
-		nodeMetricLister: nodeMetricLister,
-		estimator:        estimator,
-		podAssignCache:   assignCache,
+		handle:         handle,
+		args:           pluginArgs,
+		vectorizer:     vectorizer,
+		filterProfile:  NewUsageThresholdsFilterProfile(pluginArgs, vectorizer),
+		scoreWeights:   scoreWeights,
+		estimator:      estimator,
+		podAssignCache: assignCache,
 	}, nil
 }
 
@@ -131,7 +154,7 @@ func (p *Plugin) Filter(ctx context.Context, state *framework.CycleState, pod *c
 		return nil
 	}
 
-	nodeMetric, err := p.nodeMetricLister.Get(node.Name)
+	cached, err := p.podAssignCache.GetNodeMetric(node.Name)
 	if err != nil {
 		// For nodes that lack load information, fall back to the situation where there is no load-aware scheduling.
 		// Some nodes in the cluster do not install the koordlet, but users newly created Pod use koord-scheduler to schedule,
@@ -141,7 +164,7 @@ func (p *Plugin) Filter(ctx context.Context, state *framework.CycleState, pod *c
 		}
 		return framework.NewStatus(framework.Error, err.Error())
 	}
-
+	nodeMetric := cached.NodeMetric
 	if p.args.FilterExpiredNodeMetrics != nil && *p.args.FilterExpiredNodeMetrics &&
 		p.args.NodeMetricExpirationSeconds != nil && isNodeMetricExpired(nodeMetric, *p.args.NodeMetricExpirationSeconds) {
 		if p.args.EnableScheduleWhenNodeMetricsExpired != nil && !*p.args.EnableScheduleWhenNodeMetricsExpired {
@@ -154,37 +177,43 @@ func (p *Plugin) Filter(ctx context.Context, state *framework.CycleState, pod *c
 		return nil
 	}
 
-	allocatable, err := p.estimator.EstimateNode(node)
+	allocatableList, err := p.estimator.EstimateNode(node)
 	if err != nil {
 		klog.ErrorS(err, "Estimated node allocatable failed!", "node", node.Name)
 		return nil
 	}
-	filterProfile := generateUsageThresholdsFilterProfile(node, p.args)
-	prodPod := len(filterProfile.ProdUsageThresholds) > 0 && extension.GetPodPriorityClassWithDefault(pod) == extension.PriorityProd
+	allocatable := p.vectorizer.ToVec(allocatableList)
 
-	var nodeUsage *slov1alpha1.ResourceMap
-	var usageThresholds map[corev1.ResourceName]int64
+	filterProfile := p.filterProfile.generateUsageThresholdsFilterProfile(node, p.vectorizer)
+	prodPod := !filterProfile.ProdUsageThresholds.Empty() && extension.GetPodPriorityClassWithDefault(pod) == extension.PriorityProd
+	var nodeUsage, usageThresholds ResourceVector
+	isAgg := false
 	if prodPod {
+		nodeUsage = cached.prodUsage
 		usageThresholds = filterProfile.ProdUsageThresholds
+	} else if agg := filterProfile.AggregatedUsage; agg != nil {
+		nodeUsage = cached.getTargetAggregatedUsage(agg.UsageAggregatedDuration, agg.UsageAggregationType)
+		usageThresholds = agg.UsageThresholds
+		isAgg = true
 	} else {
-		if filterProfile.AggregatedUsage != nil {
-			nodeUsage = getTargetAggregatedUsage(
-				nodeMetric,
-				filterProfile.AggregatedUsage.UsageAggregatedDuration,
-				filterProfile.AggregatedUsage.UsageAggregationType,
-			)
-			usageThresholds = filterProfile.AggregatedUsage.UsageThresholds
-		} else {
-			nodeUsage = &nodeMetric.Status.NodeMetric.NodeUsage
-			usageThresholds = filterProfile.UsageThresholds
-		}
+		nodeUsage = cached.nodeUsage
+		usageThresholds = filterProfile.UsageThresholds
 	}
-	estimatedUsed, err := p.GetEstimatedUsed(node.Name, nodeMetric, pod, nodeUsage, prodPod)
-	if err != nil {
-		klog.ErrorS(err, "GetEstimatedUsed failed!", "node", node.Name)
+
+	estimated, estimatedPods := p.getEstimatedOfExisting(cached, nodeUsage, prodPod)
+	if ret := p.filterNodeUsage(node.Name, pod, usageThresholds, estimated, allocatable, isAgg); ret != nil {
+		return ret
+	}
+	if err = p.addEstimatedOfIncoming(estimated, state, pod); err != nil {
+		klog.ErrorS(err, "Failed to estimate incoming pod usage", "pod", klog.KObj(pod))
 		return nil
 	}
-	return filterNodeUsage(node.Name, pod, usageThresholds, estimatedUsed, allocatable, prodPod, filterProfile)
+	if klog.V(6).Enabled() {
+		klog.InfoS("Estimate node usage for filtering", "pod", klog.KObj(pod), "node", nodeMetric.Name,
+			"estimated", klog.Format(p.vectorizer.ToList(estimated)),
+			"estimatedExistingPods", klog.KObjSlice(estimatedPods.UnsortedList()))
+	}
+	return p.filterNodeUsage(node.Name, pod, usageThresholds, estimated, allocatable, isAgg)
 }
 
 func (p *Plugin) ScoreExtensions() framework.ScoreExtensions {
@@ -209,7 +238,8 @@ func (p *Plugin) Score(ctx context.Context, state *framework.CycleState, pod *co
 	if node == nil {
 		return 0, framework.NewStatus(framework.Error, "node not found")
 	}
-	nodeMetric, err := p.nodeMetricLister.Get(nodeName)
+
+	cached, err := p.podAssignCache.GetNodeMetric(nodeName)
 	if err != nil {
 		// caused by load-aware scheduling itself is an optimization,
 		// so we should skip the node and score the node 0
@@ -218,6 +248,7 @@ func (p *Plugin) Score(ctx context.Context, state *framework.CycleState, pod *co
 		}
 		return 0, framework.NewStatus(framework.Error, err.Error())
 	}
+	nodeMetric := cached.NodeMetric
 	if p.args.NodeMetricExpirationSeconds != nil && isNodeMetricExpired(nodeMetric, *p.args.NodeMetricExpirationSeconds) {
 		return 0, nil
 	}
@@ -226,145 +257,116 @@ func (p *Plugin) Score(ctx context.Context, state *framework.CycleState, pod *co
 		return 0, nil
 	}
 
-	prodPod := extension.GetPodPriorityClassWithDefault(pod) == extension.PriorityProd && p.args.ScoreAccordingProdUsage
-	var nodeUsage *slov1alpha1.ResourceMap
-	if !prodPod {
-		if scoreWithAggregation(p.args.Aggregated) {
-			nodeUsage = getTargetAggregatedUsage(nodeMetric, &p.args.Aggregated.ScoreAggregatedDuration, p.args.Aggregated.ScoreAggregationType)
-		} else {
-			nodeUsage = &nodeMetric.Status.NodeMetric.NodeUsage
-		}
-	}
-	estimatedUsed, err := p.GetEstimatedUsed(nodeName, nodeMetric, pod, nodeUsage, prodPod)
-	if err != nil {
-		klog.ErrorS(err, "GetEstimatedUsed failed!", "node", node.Name)
-		return 0, nil
-	}
-
-	allocatable, err := p.estimator.EstimateNode(node)
+	allocatableList, err := p.estimator.EstimateNode(node)
 	if err != nil {
 		klog.ErrorS(err, "Estimated node allocatable failed!", "node", node.Name)
 		return 0, nil
 	}
-	score := loadAwareSchedulingScorer(p.args.ResourceWeights, estimatedUsed, allocatable)
+	allocatable := p.vectorizer.ToVec(allocatableList)
+
+	prodPod := extension.GetPodPriorityClassWithDefault(pod) == extension.PriorityProd && p.args.ScoreAccordingProdUsage
+	var nodeUsage ResourceVector
+	if prodPod {
+		nodeUsage = cached.prodUsage
+	} else if agg := p.args.Aggregated; agg != nil && agg.ScoreAggregationType != "" {
+		nodeUsage = cached.getTargetAggregatedUsage(agg.ScoreAggregatedDuration, agg.ScoreAggregationType)
+	} else {
+		nodeUsage = cached.nodeUsage
+	}
+
+	estimated, estimatedPods := p.getEstimatedOfExisting(cached, nodeUsage, prodPod)
+	if err = p.addEstimatedOfIncoming(estimated, state, pod); err != nil {
+		klog.ErrorS(err, "Failed to estimate incoming pod usage", "pod", klog.KObj(pod))
+		return 0, nil
+	}
+	if klog.V(6).Enabled() {
+		klog.InfoS("Estimate node usage for scoring", "pod", klog.KObj(pod), "node", nodeMetric.Name,
+			"estimated", klog.Format(p.vectorizer.ToList(estimated)),
+			"estimatedExistingPods", klog.KObjSlice(estimatedPods.UnsortedList()))
+	}
+	score := loadAwareSchedulingScorer(p.scoreWeights, estimated, allocatable)
 	return score, nil
 }
 
-func (p *Plugin) GetEstimatedUsed(nodeName string, nodeMetric *slov1alpha1.NodeMetric, pod *corev1.Pod, nodeUsage *slov1alpha1.ResourceMap, prodPod bool) (map[corev1.ResourceName]int64, error) {
-	if nodeMetric == nil {
-		return nil, nil
-	}
-	podMetrics := buildPodMetricMap(nodeMetric, prodPod)
-
-	estimatedUsed, err := p.estimator.EstimatePod(pod)
-	if err != nil {
-		return nil, err
-	}
-	assignedPodEstimatedUsed, estimatedPods := p.estimatedAssignedPodUsed(nodeName, nodeMetric, podMetrics, prodPod)
-	for resourceName, value := range assignedPodEstimatedUsed {
-		estimatedUsed[resourceName] += value
-	}
-	podActualUsages, estimatedPodActualUsages := sumPodUsages(podMetrics, estimatedPods)
-	if prodPod {
-		for resourceName, quantity := range podActualUsages {
-			estimatedUsed[resourceName] += getResourceValue(resourceName, quantity)
+func (p *Plugin) getEstimatedOfExisting(nodeMetric *nodeMetric, nodeUsage ResourceVector, prod bool) (estimated ResourceVector, estimatedPods sets.Set[NamespacedName]) {
+	estimated = p.vectorizer.EmptyVec()
+	if nodeUsage != nil {
+		estimated.Add(nodeUsage)
+		if prod {
+			estimated.Add(nodeMetric.prodDelta)
+			estimatedPods = nodeMetric.prodDeltaPods
+		} else {
+			estimated.Add(nodeMetric.nodeDelta)
+			estimatedPods = nodeMetric.nodeDeltaPods
 		}
 	} else {
-		if nodeMetric.Status.NodeMetric != nil {
-			if nodeUsage != nil {
-				for resourceName, quantity := range nodeUsage.ResourceList {
-					if q := estimatedPodActualUsages[resourceName]; !q.IsZero() {
-						quantity = quantity.DeepCopy()
-						if quantity.Cmp(q) >= 0 {
-							quantity.Sub(q)
-						}
-					}
-					estimatedUsed[resourceName] += getResourceValue(resourceName, quantity)
-				}
-			}
+		if prod {
+			estimated.Add(nodeMetric.prodEstimated)
+			estimatedPods = nodeMetric.prodEstimatedPods
+		} else {
+			estimated.Add(nodeMetric.nodeEstimated)
+			estimatedPods = nodeMetric.nodeEstimatedPods
 		}
 	}
-	klog.V(6).Infof("GetEstimatedUsed: node %s, pod %s, estimatedUsed %+v, assignedPodEstimatedUsed %+v, estimatedPods: %+v",
-		nodeName, klog.KObj(pod), estimatedUsed, assignedPodEstimatedUsed, estimatedPods)
-	return estimatedUsed, nil
+	return
 }
 
-func filterNodeUsage(nodeName string, pod *corev1.Pod, usageThresholds, estimatedUsed map[corev1.ResourceName]int64, allocatable corev1.ResourceList, prodPod bool, filterProfile *usageThresholdsFilterProfile) *framework.Status {
-	for resourceName, value := range usageThresholds {
+// try to use state cache before EstimatePod
+func (p *Plugin) addEstimatedOfIncoming(estimated ResourceVector, cycleState *framework.CycleState, pod *corev1.Pod) error {
+	var podEstimated ResourceVector
+	if c, err := cycleState.Read(incomingPodEstimatedStateKey); err == nil {
+		podEstimated, _ = c.(ResourceVector)
+	}
+	if podEstimated == nil {
+		list, err := p.estimator.EstimatePod(pod)
+		if err != nil {
+			// use len=0 but not empty vector to indicate error occurred
+			cycleState.Write(incomingPodEstimatedStateKey, ResourceVector{})
+			return err
+		}
+		podEstimated = p.vectorizer.ToFactorVec(list)
+		cycleState.Write(incomingPodEstimatedStateKey, podEstimated)
+	} else if len(podEstimated) == 0 {
+		return fmt.Errorf("error occurred in former estimation from cycleState with key %q", incomingPodEstimatedStateKey)
+	}
+	estimated.Add(podEstimated)
+	return nil
+}
+
+func (p *Plugin) filterNodeUsage(nodeName string, pod *corev1.Pod, usageThresholds, estimatedUsed, allocatable ResourceVector, isAgg bool) *framework.Status {
+	for i, value := range usageThresholds {
 		if value == 0 {
 			continue
 		}
-		total := getResourceValue(resourceName, allocatable[resourceName])
+		total := allocatable[i]
 		if total == 0 {
 			continue
 		}
-		usage := int64(math.Round(float64(estimatedUsed[resourceName]) / float64(total) * 100))
+		usage := int64(math.Round(float64(estimatedUsed[i]) / float64(total) * 100))
 		if usage <= value {
 			continue
 		}
 
 		reason := ErrReasonUsageExceedThreshold
-		if !prodPod && filterProfile.AggregatedUsage != nil {
+		if isAgg {
 			reason = ErrReasonAggregatedUsageExceedThreshold
 		}
-		klog.V(5).InfoS("failed to filter node usage for pod", "pod", klog.KObj(pod), "node", nodeName,
+		resourceName := p.vectorizer[i]
+		klog.V(5).InfoS("Node is unschedulable since usage exceeds threshold in filtering", "pod", klog.KObj(pod), "node", nodeName,
 			"resource", resourceName, "total", total, "usage", usage, "threshold", value)
 		return framework.NewStatus(framework.Unschedulable, fmt.Sprintf(reason, resourceName))
 	}
 	return nil
 }
 
-func (p *Plugin) estimatedAssignedPodUsed(nodeName string, nodeMetric *slov1alpha1.NodeMetric, podMetrics map[types.NamespacedName]corev1.ResourceList, filterProdPod bool) (map[corev1.ResourceName]int64, sets.Set[types.NamespacedName]) {
-	estimatedUsed := make(map[corev1.ResourceName]int64)
-	estimatedPods := make(sets.Set[types.NamespacedName])
-	var nodeMetricUpdateTime time.Time
-	if nodeMetric.Status.UpdateTime != nil {
-		nodeMetricUpdateTime = nodeMetric.Status.UpdateTime.Time
-	}
-	nodeMetricReportInterval := getNodeMetricReportInterval(nodeMetric)
-
-	assignedPodsOnNode := p.podAssignCache.getPodsAssignInfoOnNode(nodeName)
-	now := time.Now()
-	for _, assignInfo := range assignedPodsOnNode {
-		if filterProdPod && extension.GetPodPriorityClassWithDefault(assignInfo.pod) != extension.PriorityProd {
-			continue
-		}
-		podName := types.NamespacedName{
-			Namespace: assignInfo.pod.Namespace,
-			Name:      assignInfo.pod.Name,
-		}
-		podUsage := podMetrics[podName]
-		if len(podUsage) == 0 ||
-			missedLatestUpdateTime(assignInfo.timestamp, nodeMetricUpdateTime) ||
-			stillInTheReportInterval(assignInfo.timestamp, nodeMetricUpdateTime, nodeMetricReportInterval) ||
-			(scoreWithAggregation(p.args.Aggregated) &&
-				getTargetAggregatedUsage(nodeMetric, &p.args.Aggregated.ScoreAggregatedDuration, p.args.Aggregated.ScoreAggregationType) == nil) ||
-			(!assignInfo.estimatedDeadline.IsZero() && assignInfo.estimatedDeadline.After(now)) {
-			estimated := assignInfo.estimated
-			if estimated == nil {
-				continue
-			}
-			for resourceName, value := range estimated {
-				if quantity, ok := podUsage[resourceName]; ok {
-					usage := getResourceValue(resourceName, quantity)
-					if usage > value {
-						value = usage
-					}
-				}
-				estimatedUsed[resourceName] += value
-			}
-			estimatedPods.Insert(podName)
-		}
-	}
-	return estimatedUsed, estimatedPods
-}
-
-func loadAwareSchedulingScorer(resToWeightMap, used map[corev1.ResourceName]int64, allocatable corev1.ResourceList) int64 {
+func loadAwareSchedulingScorer(resToWeightMap, used, allocatable ResourceVector) int64 {
 	var nodeScore, weightSum int64
-	for resourceName, weight := range resToWeightMap {
-		resourceScore := leastUsedScore(used[resourceName], getResourceValue(resourceName, allocatable[resourceName]))
-		nodeScore += resourceScore * weight
+	for i, weight := range resToWeightMap {
+		nodeScore += leastUsedScore(used[i], allocatable[i]) * weight
 		weightSum += weight
+	}
+	if weightSum <= 0 {
+		return 0
 	}
 	return nodeScore / weightSum
 }

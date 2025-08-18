@@ -27,6 +27,8 @@ import (
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/loadaware/estimator"
 )
 
 // Test cases description:
@@ -39,7 +41,7 @@ func TestGetTargetAggregatedUsage(t *testing.T) {
 	tests := []struct {
 		name               string
 		nodeMetric         *slov1alpha1.NodeMetric
-		aggregatedDuration *metav1.Duration
+		aggregatedDuration metav1.Duration
 
 		expectedResult *slov1alpha1.ResourceMap
 	}{
@@ -81,7 +83,6 @@ func TestGetTargetAggregatedUsage(t *testing.T) {
 					},
 				},
 			},
-			aggregatedDuration: nil,
 			expectedResult: &slov1alpha1.ResourceMap{
 				ResourceList: corev1.ResourceList{
 					corev1.ResourceCPU: resource.MustParse("50"),
@@ -128,7 +129,7 @@ func TestGetTargetAggregatedUsage(t *testing.T) {
 					},
 				},
 			},
-			aggregatedDuration: &metav1.Duration{Duration: 5 * time.Minute},
+			aggregatedDuration: metav1.Duration{Duration: 5 * time.Minute},
 			expectedResult: &slov1alpha1.ResourceMap{
 				ResourceList: corev1.ResourceList{
 					corev1.ResourceCPU: resource.MustParse("30"),
@@ -158,7 +159,6 @@ func TestGetTargetAggregatedUsage(t *testing.T) {
 					},
 				},
 			},
-			aggregatedDuration: nil,
 			expectedResult: &slov1alpha1.ResourceMap{
 				ResourceList: corev1.ResourceList{
 					corev1.ResourceCPU: resource.MustParse("30"),
@@ -169,8 +169,11 @@ func TestGetTargetAggregatedUsage(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := getTargetAggregatedUsage(tt.nodeMetric, tt.aggregatedDuration, aggregationType)
-			assert.Equal(t, tt.expectedResult, result)
+			e, _ := estimator.NewDefaultEstimator(&config.LoadAwareSchedulingArgs{}, nil)
+			v := NewResourceVectorizer(corev1.ResourceCPU, corev1.ResourceMemory)
+			c := newPodAssignCache(e, v, &config.LoadAwareSchedulingArgs{})
+			result := c.new(tt.nodeMetric).getTargetAggregatedUsage(tt.aggregatedDuration, aggregationType)
+			assert.Equal(t, v.ToVec(tt.expectedResult.ResourceList), result)
 		})
 	}
 }

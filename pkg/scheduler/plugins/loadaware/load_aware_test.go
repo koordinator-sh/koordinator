@@ -223,6 +223,9 @@ func TestFilterExpiredNodeMetric(t *testing.T) {
 			cs := kubefake.NewSimpleClientset()
 			informerFactory := informers.NewSharedInformerFactory(cs, 0)
 
+			_, err = koordClientSet.SloV1alpha1().NodeMetrics().Create(context.TODO(), tt.nodeMetric, metav1.CreateOptions{})
+			assert.NoError(t, err)
+
 			nodes := []*corev1.Node{
 				{
 					ObjectMeta: metav1.ObjectMeta{
@@ -246,9 +249,6 @@ func TestFilterExpiredNodeMetric(t *testing.T) {
 			p, err := proxyNew(&loadAwareSchedulingArgs, fh)
 			assert.NotNil(t, p)
 			assert.Nil(t, err)
-
-			_, err = koordClientSet.SloV1alpha1().NodeMetrics().Create(context.TODO(), tt.nodeMetric, metav1.CreateOptions{})
-			assert.NoError(t, err)
 
 			koordSharedInformerFactory.Start(context.TODO().Done())
 			koordSharedInformerFactory.WaitForCacheSync(context.TODO().Done())
@@ -382,6 +382,9 @@ func TestEnableScheduleWhenNodeMetricsExpired(t *testing.T) {
 			cs := kubefake.NewSimpleClientset()
 			informerFactory := informers.NewSharedInformerFactory(cs, 0)
 
+			_, err = koordClientSet.SloV1alpha1().NodeMetrics().Create(context.TODO(), tt.nodeMetric, metav1.CreateOptions{})
+			assert.NoError(t, err)
+
 			nodes := []*corev1.Node{
 				{
 					ObjectMeta: metav1.ObjectMeta{
@@ -405,9 +408,6 @@ func TestEnableScheduleWhenNodeMetricsExpired(t *testing.T) {
 			p, err := proxyNew(&loadAwareSchedulingArgs, fh)
 			assert.NotNil(t, p)
 			assert.Nil(t, err)
-
-			_, err = koordClientSet.SloV1alpha1().NodeMetrics().Create(context.TODO(), tt.nodeMetric, metav1.CreateOptions{})
-			assert.NoError(t, err)
 
 			koordSharedInformerFactory.Start(context.TODO().Done())
 			koordSharedInformerFactory.WaitForCacheSync(context.TODO().Done())
@@ -1371,6 +1371,11 @@ func TestFilterUsage(t *testing.T) {
 			cs := kubefake.NewSimpleClientset()
 			informerFactory := informers.NewSharedInformerFactory(cs, 0)
 
+			if tt.nodeMetric != nil {
+				_, err = koordClientSet.SloV1alpha1().NodeMetrics().Create(context.TODO(), tt.nodeMetric, metav1.CreateOptions{})
+				assert.NoError(t, err)
+			}
+
 			for _, v := range tt.pods {
 				v.Spec.NodeName = tt.nodeName
 				v.UID = uuid.NewUUID()
@@ -1427,11 +1432,6 @@ func TestFilterUsage(t *testing.T) {
 			p, err := proxyNew(&loadAwareSchedulingArgs, fh)
 			assert.NotNil(t, p)
 			assert.Nil(t, err)
-
-			if tt.nodeMetric != nil {
-				_, err = koordClientSet.SloV1alpha1().NodeMetrics().Create(context.TODO(), tt.nodeMetric, metav1.CreateOptions{})
-				assert.NoError(t, err)
-			}
 
 			informerFactory.Start(context.TODO().Done())
 			informerFactory.WaitForCacheSync(context.TODO().Done())

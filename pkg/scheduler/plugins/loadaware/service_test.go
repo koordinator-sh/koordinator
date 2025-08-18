@@ -43,7 +43,7 @@ func TestQueryNode(t *testing.T) {
 		timeNowFn = fakeTimeNowFn
 		e, _ := estimator.NewDefaultEstimator(&config.LoadAwareSchedulingArgs{}, nil)
 		pl := &Plugin{
-			podAssignCache: newPodAssignCache(e, &config.LoadAwareSchedulingArgs{}),
+			podAssignCache: newPodAssignCache(e, NewResourceVectorizer(corev1.ResourceCPU, corev1.ResourceMemory), &config.LoadAwareSchedulingArgs{}),
 		}
 		testNodeName := "test-node"
 		pendingPod := &corev1.Pod{

@@ -106,7 +106,7 @@ func TestPodAssignCache_OnAdd(t *testing.T) {
 			}()
 			timeNowFn = fakeTimeNowFn
 			e, _ := estimator.NewDefaultEstimator(&config.LoadAwareSchedulingArgs{}, nil)
-			assignCache := newPodAssignCache(e, &config.LoadAwareSchedulingArgs{})
+			assignCache := newPodAssignCache(e, NewResourceVectorizer(corev1.ResourceCPU, corev1.ResourceMemory), &config.LoadAwareSchedulingArgs{})
 			assignCache.OnAdd(tt.pod, true)
 			assert.Equal(t, tt.wantCache, assignCache.podInfoItems)
 		})
@@ -330,7 +330,7 @@ func TestPodAssignCache_OnUpdate(t *testing.T) {
 			}()
 			timeNowFn = fakeTimeNowFn
 			e, _ := estimator.NewDefaultEstimator(&config.LoadAwareSchedulingArgs{}, nil)
-			assignCache := newPodAssignCache(e, &config.LoadAwareSchedulingArgs{})
+			assignCache := newPodAssignCache(e, NewResourceVectorizer(corev1.ResourceCPU, corev1.ResourceMemory), &config.LoadAwareSchedulingArgs{})
 			if len(tt.podInfoItems) > 0 {
 				assignCache.podInfoItems = tt.podInfoItems
 			}
@@ -355,7 +355,7 @@ func TestPodAssignCache_OnDelete(t *testing.T) {
 		},
 	}
 	e, _ := estimator.NewDefaultEstimator(&config.LoadAwareSchedulingArgs{}, nil)
-	assignCache := newPodAssignCache(e, &config.LoadAwareSchedulingArgs{})
+	assignCache := newPodAssignCache(e, NewResourceVectorizer(corev1.ResourceCPU, corev1.ResourceMemory), &config.LoadAwareSchedulingArgs{})
 	assignCache.podInfoItems = map[string]map[types.UID]*podAssignInfo{
 		"test-node": {
 			"123456789": &podAssignInfo{
@@ -461,7 +461,7 @@ func TestShouldEstimatePodDeadline(t *testing.T) {
 				AllowCustomizeEstimation:          tt.allowCustomizeEstimation,
 			}
 			e, _ := estimator.NewDefaultEstimator(args, nil)
-			assignCache := newPodAssignCache(e, args)
+			assignCache := newPodAssignCache(e, NewResourceVectorizer(corev1.ResourceCPU, corev1.ResourceMemory), args)
 			actual := assignCache.shouldEstimatePodDeadline(tt.pod, now.Add(-time.Minute))
 			assert.Equal(t, tt.expected, actual)
 		})
