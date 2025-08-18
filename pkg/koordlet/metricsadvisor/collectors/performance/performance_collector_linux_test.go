@@ -18,7 +18,7 @@ package performance
 
 import (
 	"os"
-	"path"
+	"path/filepath"
 	"syscall"
 	"testing"
 
@@ -344,7 +344,7 @@ func Test_collectPodPSI(t *testing.T) {
 }
 
 func createTestPSIFile(filePath, contents string) error {
-	dir, _ := path.Split(filePath)
+	dir, _ := filepath.Split(filePath)
 	if err := os.MkdirAll(dir, 0777); err != nil {
 		return err
 	}

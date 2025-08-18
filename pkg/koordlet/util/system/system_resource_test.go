@@ -17,7 +17,7 @@ limitations under the License.
 package system
 
 import (
-	"path"
+	"path/filepath"
 	"strconv"
 	"testing"
 
@@ -47,7 +47,7 @@ func TestSystemResource(t *testing.T) {
 				initValue:   5 * 1024 * 1024,
 				newValue:    8 * 1024 * 1024,
 			},
-			wantPath:         path.Join(Conf.ProcRootDir, ProcSysVmRelativePath, MinFreeKbytesFileName),
+			wantPath:         filepath.Join(Conf.ProcRootDir, ProcSysVmRelativePath, MinFreeKbytesFileName),
 			wantSupported:    true,
 			wantValid:        true,
 			wantResourceType: MinFreeKbytesFileName,
@@ -60,7 +60,7 @@ func TestSystemResource(t *testing.T) {
 				initValue:   5 * 1024 * 1024,
 				newValue:    1024,
 			},
-			wantPath:         path.Join(Conf.ProcRootDir, ProcSysVmRelativePath, MinFreeKbytesFileName),
+			wantPath:         filepath.Join(Conf.ProcRootDir, ProcSysVmRelativePath, MinFreeKbytesFileName),
 			wantSupported:    true,
 			wantValid:        false,
 			wantResourceType: MinFreeKbytesFileName,
@@ -73,7 +73,7 @@ func TestSystemResource(t *testing.T) {
 				initValue:   5 * 1024 * 1024,
 				newValue:    8 * 1024 * 1024,
 			},
-			wantPath:         path.Join(Conf.ProcRootDir, ProcSysVmRelativePath, MinFreeKbytesFileName),
+			wantPath:         filepath.Join(Conf.ProcRootDir, ProcSysVmRelativePath, MinFreeKbytesFileName),
 			wantSupported:    false,
 			wantValid:        true,
 			wantResourceType: MinFreeKbytesFileName,
@@ -86,7 +86,7 @@ func TestSystemResource(t *testing.T) {
 				initValue:   5 * 1024 * 1024,
 				newValue:    8 * 1024 * 1024,
 			},
-			wantPath:         path.Join(Conf.ProcRootDir, ProcSysVmRelativePath, MinFreeKbytesFileName),
+			wantPath:         filepath.Join(Conf.ProcRootDir, ProcSysVmRelativePath, MinFreeKbytesFileName),
 			wantSupported:    true,
 			wantValid:        true,
 			wantResourceType: MinFreeKbytesFileName,
@@ -99,7 +99,7 @@ func TestSystemResource(t *testing.T) {
 				initValue:   0,
 				newValue:    1,
 			},
-			wantPath:         path.Join(GetSysRootDir(), MemcgReaperRelativePath, MemcgReapBackGroundFileName),
+			wantPath:         filepath.Join(GetSysRootDir(), MemcgReaperRelativePath, MemcgReapBackGroundFileName),
 			wantSupported:    false,
 			wantValid:        true,
 			wantResourceType: MemcgReapBackGroundFileName,
@@ -112,7 +112,7 @@ func TestSystemResource(t *testing.T) {
 				initValue:   0,
 				newValue:    1,
 			},
-			wantPath:         path.Join(GetSysRootDir(), MemcgReaperRelativePath, MemcgReapBackGroundFileName),
+			wantPath:         filepath.Join(GetSysRootDir(), MemcgReaperRelativePath, MemcgReapBackGroundFileName),
 			wantSupported:    true,
 			wantValid:        true,
 			wantResourceType: MemcgReapBackGroundFileName,
@@ -125,7 +125,7 @@ func TestSystemResource(t *testing.T) {
 				initValue:   0,
 				newValue:    120,
 			},
-			wantPath:         path.Join(GetSysRootDir(), KidledRelativePath, KidledScanPeriodInSecondsFileName),
+			wantPath:         filepath.Join(GetSysRootDir(), KidledRelativePath, KidledScanPeriodInSecondsFileName),
 			wantSupported:    true,
 			wantValid:        true,
 			wantResourceType: KidledScanPeriodInSecondsFileName,
@@ -138,7 +138,7 @@ func TestSystemResource(t *testing.T) {
 				initValue:   0,
 				newValue:    -1,
 			},
-			wantPath:         path.Join(GetSysRootDir(), KidledRelativePath, KidledScanPeriodInSecondsFileName),
+			wantPath:         filepath.Join(GetSysRootDir(), KidledRelativePath, KidledScanPeriodInSecondsFileName),
 			wantSupported:    false,
 			wantValid:        false,
 			wantResourceType: KidledScanPeriodInSecondsFileName,
@@ -151,7 +151,7 @@ func TestSystemResource(t *testing.T) {
 				initValue:   0,
 				newValue:    1,
 			},
-			wantPath:         path.Join(GetSysRootDir(), KidledRelativePath, KidledUseHierarchyFileFileName),
+			wantPath:         filepath.Join(GetSysRootDir(), KidledRelativePath, KidledUseHierarchyFileFileName),
 			wantSupported:    true,
 			wantValid:        true,
 			wantResourceType: KidledUseHierarchyFileFileName,
@@ -164,7 +164,7 @@ func TestSystemResource(t *testing.T) {
 				initValue:   0,
 				newValue:    -1,
 			},
-			wantPath:         path.Join(GetSysRootDir(), KidledRelativePath, KidledUseHierarchyFileFileName),
+			wantPath:         filepath.Join(GetSysRootDir(), KidledRelativePath, KidledUseHierarchyFileFileName),
 			wantSupported:    false,
 			wantValid:        false,
 			wantResourceType: KidledUseHierarchyFileFileName,
