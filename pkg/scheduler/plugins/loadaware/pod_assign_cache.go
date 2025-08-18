@@ -377,7 +377,6 @@ func (p *podAssignCache) new(metric *slov1alpha1.NodeMetric) *nodeMetric {
 			podUsages[key] = vec
 			if info.Priority == extension.PriorityProd {
 				prodPods.Insert(key)
-				prodUsage.Add(vec)
 			}
 		}
 		if p.args.ProdUsageIncludeSys && info != nil {
@@ -407,6 +406,10 @@ func (p *podAssignCache) initPods(m *nodeMetric, pods map[types.UID]*podAssignIn
 }
 
 func (p *podAssignCache) addPod(m *nodeMetric, pod *podAssignInfo) {
+	e := pod.estimated
+	if e == nil {
+		return
+	}
 	key := NamespacedName{Namespace: pod.pod.Namespace, Name: pod.pod.Name}
 	u := m.podUsages[key]
 	// 1. when usage is not collected
@@ -416,7 +419,6 @@ func (p *podAssignCache) addPod(m *nodeMetric, pod *podAssignInfo) {
 	should := u == nil ||
 		m.updateTime.Add(-m.reportInterval).Before(pod.timestamp) ||
 		(!pod.estimatedDeadline.IsZero() && pod.estimatedDeadline.After(m.updateTime))
-	e := pod.estimated
 	if should {
 		if m.nodeDelta.AddDelta(e, u) && m.nodeDeltaPods != nil {
 			m.nodeDeltaPods.Insert(key)
@@ -430,11 +432,14 @@ func (p *podAssignCache) addPod(m *nodeMetric, pod *podAssignInfo) {
 	if extension.GetPodPriorityClassWithDefault(pod.pod) != extension.PriorityProd {
 		return
 	}
-	// in case prod pod is wrongly reported as non-prod in node metrics,
-	// which we don't sum it up in prod node usage cache.
-	// we should estimate this pod as it does not exist.
-	if !m.prodPods.Has(key) {
-		u, should = nil, true
+	// Only use prod pod's usage when both pod claims and node metric reports it as prod.
+	// 1. pod priority class are updated dynamically
+	// 2. prod / non prod pod is wrongly reported or terminated pod is leaked in node metrics status
+	if m.prodPods.Has(key) {
+		m.prodUsage.Add(u)
+	} else if u != nil {
+		m.prodDelta.Add(u)
+		should = true
 	}
 	if should {
 		if m.prodDelta.AddDelta(e, u) && m.prodDeltaPods != nil {
@@ -454,12 +459,15 @@ func (p *podAssignCache) updatePod(m *nodeMetric, oldPod, newPod *podAssignInfo)
 
 // reverse procedure of addPod
 func (p *podAssignCache) deletePod(m *nodeMetric, pod *podAssignInfo) {
+	e := pod.estimated
+	if e == nil {
+		return
+	}
 	key := NamespacedName{Namespace: pod.pod.Namespace, Name: pod.pod.Name}
 	u := m.podUsages[key]
 	should := u == nil ||
 		m.updateTime.Add(-m.reportInterval).Before(pod.timestamp) ||
 		(!pod.estimatedDeadline.IsZero() && pod.estimatedDeadline.After(m.updateTime))
-	e := pod.estimated
 	if should {
 		if m.nodeDelta.SubDelta(e, u) && m.nodeDeltaPods != nil {
 			m.nodeDeltaPods.Delete(key)
@@ -473,8 +481,11 @@ func (p *podAssignCache) deletePod(m *nodeMetric, pod *podAssignInfo) {
 	if extension.GetPodPriorityClassWithDefault(pod.pod) != extension.PriorityProd {
 		return
 	}
-	if !m.prodPods.Has(key) {
-		u, should = nil, true
+	if m.prodPods.Has(key) {
+		m.prodUsage.Sub(u)
+	} else if u != nil {
+		m.prodDelta.Sub(u)
+		should = true
 	}
 	if should {
 		if m.prodDelta.SubDelta(e, u) && m.prodDeltaPods != nil {

@@ -22,12 +22,14 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	schedulertesting "k8s.io/kubernetes/pkg/scheduler/testing"
 	"k8s.io/utils/ptr"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
+	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/loadaware/estimator"
 )
@@ -39,62 +41,70 @@ var fakeTimeNowFn = func() time.Time {
 }
 
 func TestPodAssignCache_OnAdd(t *testing.T) {
+	vectorizer := NewResourceVectorizer(corev1.ResourceCPU, corev1.ResourceMemory)
+	node := "test-node"
+	m := &slov1alpha1.NodeMetric{ObjectMeta: metav1.ObjectMeta{Name: node}}
 	tests := []struct {
-		name      string
-		pod       *corev1.Pod
-		wantCache map[string]map[types.UID]*podAssignInfo
+		name       string
+		pod        *corev1.Pod
+		wantCache  map[string]map[types.UID]*podAssignInfo
+		wantMetric func(*nodeMetric)
 	}{
 		{
-			name:      "update pending pod",
-			pod:       &corev1.Pod{},
+			name:      "add pending pod",
+			pod:       schedulertesting.MakePod().Obj(),
 			wantCache: map[string]map[types.UID]*podAssignInfo{},
 		},
 		{
-			name: "update terminated pod",
-			pod: &corev1.Pod{
-				Spec: corev1.PodSpec{
-					NodeName: "test-node",
-				},
-				Status: corev1.PodStatus{
-					Phase: corev1.PodFailed,
-				},
-			},
+			name:      "add terminated pod",
+			pod:       schedulertesting.MakePod().Node(node).Phase(corev1.PodFailed).Obj(),
 			wantCache: map[string]map[types.UID]*podAssignInfo{},
 		},
 		{
-			name: "update scheduled running pod",
-			pod: &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					UID:       "123456789",
-					Namespace: "default",
-					Name:      "test",
-				},
-				Spec: corev1.PodSpec{
-					NodeName: "test-node",
-				},
-				Status: corev1.PodStatus{
-					Phase: corev1.PodRunning,
-				},
-			},
+			name: "add scheduled running pod without resources",
+			pod:  schedulertesting.MakePod().UID("123456789").Namespace("default").Name("test").Node(node).Phase(corev1.PodRunning).Obj(),
 			wantCache: map[string]map[types.UID]*podAssignInfo{
-				"test-node": {
+				node: {
 					"123456789": &podAssignInfo{
-						pod: &corev1.Pod{
-							ObjectMeta: metav1.ObjectMeta{
-								UID:       "123456789",
-								Namespace: "default",
-								Name:      "test",
-							},
-							Spec: corev1.PodSpec{
-								NodeName: "test-node",
-							},
-							Status: corev1.PodStatus{
-								Phase: corev1.PodRunning,
-							},
-						},
+						pod:       schedulertesting.MakePod().UID("123456789").Namespace("default").Name("test").Node(node).Phase(corev1.PodRunning).Obj(),
 						timestamp: fakeTimeNowFn(),
+						estimated: vectorizer.ToFactorVec(map[corev1.ResourceName]int64{
+							corev1.ResourceCPU:    estimator.DefaultMilliCPURequest,
+							corev1.ResourceMemory: estimator.DefaultMemoryRequest,
+						}),
 					},
 				},
+			},
+			wantMetric: func(nm *nodeMetric) {
+				v := vectorizer.ToFactorVec(map[corev1.ResourceName]int64{
+					corev1.ResourceCPU:    estimator.DefaultMilliCPURequest,
+					corev1.ResourceMemory: estimator.DefaultMemoryRequest,
+				})
+				nm.nodeDelta, nm.nodeEstimated = v, v
+			},
+		},
+		{
+			name: "add prod pod",
+			pod: schedulertesting.MakePod().UID("123456789").Namespace("default").Name("test").Node(node).
+				Req(map[corev1.ResourceName]string{corev1.ResourceCPU: "1", corev1.ResourceMemory: "4Gi"}).Obj(),
+			wantMetric: func(nm *nodeMetric) {
+				v := vectorizer.ToVec(corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("1"),
+					corev1.ResourceMemory: resource.MustParse("4Gi"),
+				})
+				nm.nodeDelta, nm.prodDelta, nm.nodeEstimated, nm.prodEstimated = v, v, v, v
+			},
+		},
+		{
+			name: "add non prod pod",
+			pod: schedulertesting.MakePod().UID("123456789").Namespace("default").Name("test").Node(node).Priority(extension.PriorityMidValueDefault).
+				Req(map[corev1.ResourceName]string{extension.MidCPU: "1k", extension.MidMemory: "4Gi"}).Obj(),
+			wantMetric: func(nm *nodeMetric) {
+				v := vectorizer.ToVec(corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("1"),
+					corev1.ResourceMemory: resource.MustParse("4Gi"),
+				})
+				nm.nodeDelta, nm.nodeEstimated = v, v
 			},
 		},
 	}
@@ -105,220 +115,167 @@ func TestPodAssignCache_OnAdd(t *testing.T) {
 				timeNowFn = preTimeNowFn
 			}()
 			timeNowFn = fakeTimeNowFn
-			e, _ := estimator.NewDefaultEstimator(&config.LoadAwareSchedulingArgs{}, nil)
-			assignCache := newPodAssignCache(e, NewResourceVectorizer(corev1.ResourceCPU, corev1.ResourceMemory), &config.LoadAwareSchedulingArgs{})
+			e, _ := estimator.NewDefaultEstimator(&config.LoadAwareSchedulingArgs{EstimatedScalingFactors: map[corev1.ResourceName]int64{
+				corev1.ResourceCPU:    100,
+				corev1.ResourceMemory: 100,
+			}}, nil)
+			assignCache := newPodAssignCache(e, vectorizer, &config.LoadAwareSchedulingArgs{})
+			assignCache.AddOrUpdate(m)
 			assignCache.OnAdd(tt.pod, true)
-			assert.Equal(t, tt.wantCache, assignCache.podInfoItems)
+			if tt.wantCache != nil {
+				assert.Equal(t, tt.wantCache, assignCache.podInfoItems)
+			}
+			wantMetric := assignCache.new(m)
+			assignCache.initPods(wantMetric, nil)
+			if tt.wantMetric != nil {
+				tt.wantMetric(wantMetric)
+			}
+			assert.Equal(t, wantMetric, assignCache.items[node])
 		})
 	}
 }
 
 func TestPodAssignCache_OnUpdate(t *testing.T) {
+	vectorizer := NewResourceVectorizer(corev1.ResourceCPU, corev1.ResourceMemory)
+	node := "test-node"
+	m := &slov1alpha1.NodeMetric{ObjectMeta: metav1.ObjectMeta{Name: node}}
 	tests := []struct {
 		name         string
 		pod          *corev1.Pod
-		podInfoItems map[string]map[types.UID]*podAssignInfo
+		existingPods []*corev1.Pod
 		wantCache    map[string]map[types.UID]*podAssignInfo
+		wantMetric   func(*nodeMetric)
 	}{
 		{
 			name:      "update pending pod",
-			pod:       &corev1.Pod{},
+			pod:       schedulertesting.MakePod().Obj(),
 			wantCache: map[string]map[types.UID]*podAssignInfo{},
 		},
 		{
 			name: "update terminated pod",
-			pod: &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					UID:       "123456789",
-					Namespace: "default",
-					Name:      "test",
-				},
-				Spec: corev1.PodSpec{
-					NodeName: "test-node",
-				},
-				Status: corev1.PodStatus{
-					Phase: corev1.PodFailed,
-				},
-			},
-			podInfoItems: map[string]map[types.UID]*podAssignInfo{
-				"test-node": {
-					"123456789": &podAssignInfo{
-						pod: &corev1.Pod{
-							ObjectMeta: metav1.ObjectMeta{
-								UID:       "123456789",
-								Namespace: "default",
-								Name:      "test",
-							},
-							Spec: corev1.PodSpec{
-								NodeName: "test-node",
-							},
-							Status: corev1.PodStatus{
-								Phase: corev1.PodRunning,
-							},
-						},
-						timestamp: fakeTimeNowFn(),
-					},
-				},
+			pod:  schedulertesting.MakePod().UID("123456789").Namespace("default").Name("test").Node(node).Phase(corev1.PodFailed).Obj(),
+			existingPods: []*corev1.Pod{
+				schedulertesting.MakePod().UID("123456789").Namespace("default").Name("test").Node(node).Phase(corev1.PodRunning).Obj(),
 			},
 			wantCache: map[string]map[types.UID]*podAssignInfo{},
 		},
 		{
-			name: "update scheduled running pod",
-			pod: &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					UID:       "123456789",
-					Namespace: "default",
-					Name:      "test",
-				},
-				Spec: corev1.PodSpec{
-					NodeName: "test-node",
-				},
-				Status: corev1.PodStatus{
-					Phase: corev1.PodRunning,
-				},
-			},
+			name: "update scheduled running pod without resources",
+			pod:  schedulertesting.MakePod().UID("123456789").Namespace("default").Name("test").Node(node).Phase(corev1.PodRunning).Obj(),
 			wantCache: map[string]map[types.UID]*podAssignInfo{
 				"test-node": {
 					"123456789": &podAssignInfo{
-						pod: &corev1.Pod{
-							ObjectMeta: metav1.ObjectMeta{
-								UID:       "123456789",
-								Namespace: "default",
-								Name:      "test",
-							},
-							Spec: corev1.PodSpec{
-								NodeName: "test-node",
-							},
-							Status: corev1.PodStatus{
-								Phase: corev1.PodRunning,
-							},
-						},
+						pod:       schedulertesting.MakePod().UID("123456789").Namespace("default").Name("test").Node(node).Phase(corev1.PodRunning).Obj(),
 						timestamp: fakeTimeNowFn(),
+						estimated: vectorizer.ToFactorVec(map[corev1.ResourceName]int64{
+							corev1.ResourceCPU:    estimator.DefaultMilliCPURequest,
+							corev1.ResourceMemory: estimator.DefaultMemoryRequest,
+						}),
 					},
 				},
+			},
+			wantMetric: func(nm *nodeMetric) {
+				v := vectorizer.ToFactorVec(map[corev1.ResourceName]int64{
+					corev1.ResourceCPU:    estimator.DefaultMilliCPURequest,
+					corev1.ResourceMemory: estimator.DefaultMemoryRequest,
+				})
+				nm.nodeDelta, nm.nodeEstimated = v, v
 			},
 		},
 		{
 			name: "update pod metadata only, cache won't be updated",
-			pod: &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					UID:       "123456789",
-					Namespace: "default",
-					Name:      "test",
-				},
-				Spec: corev1.PodSpec{
-					NodeName: "test-node",
-				},
-				Status: corev1.PodStatus{
-					Phase: corev1.PodRunning,
-				},
-			},
-			podInfoItems: map[string]map[types.UID]*podAssignInfo{
-				"test-node": {
-					"123456789": &podAssignInfo{
-						pod: &corev1.Pod{
-							ObjectMeta: metav1.ObjectMeta{
-								UID:       "123456789",
-								Namespace: "default",
-								Name:      "test",
-							},
-							Spec: corev1.PodSpec{
-								NodeName: "test-node",
-							},
-							Status: corev1.PodStatus{
-								Phase: corev1.PodRunning,
-							},
-						},
-						timestamp: fakeTimeNowFn().Add(1000),
-					},
-				},
+			pod: schedulertesting.MakePod().UID("123456789").Namespace("default").Name("test").Node(node).Phase(corev1.PodRunning).
+				Annotation("foo", "bar").Label("foo", "bar").Obj(),
+			existingPods: []*corev1.Pod{
+				schedulertesting.MakePod().UID("123456789").Namespace("default").Name("test").Node(node).Phase(corev1.PodRunning).Obj(),
 			},
 			wantCache: map[string]map[types.UID]*podAssignInfo{
 				"test-node": {
 					"123456789": &podAssignInfo{
-						pod: &corev1.Pod{
-							ObjectMeta: metav1.ObjectMeta{
-								UID:       "123456789",
-								Namespace: "default",
-								Name:      "test",
-							},
-							Spec: corev1.PodSpec{
-								NodeName: "test-node",
-							},
-							Status: corev1.PodStatus{
-								Phase: corev1.PodRunning,
-							},
-						},
-						timestamp: fakeTimeNowFn().Add(1000),
+						pod:       schedulertesting.MakePod().UID("123456789").Namespace("default").Name("test").Node(node).Phase(corev1.PodRunning).Obj(),
+						timestamp: fakeTimeNowFn(),
+						estimated: vectorizer.ToFactorVec(map[corev1.ResourceName]int64{
+							corev1.ResourceCPU:    estimator.DefaultMilliCPURequest,
+							corev1.ResourceMemory: estimator.DefaultMemoryRequest,
+						}),
 					},
 				},
+			},
+			wantMetric: func(nm *nodeMetric) {
+				v := vectorizer.ToFactorVec(map[corev1.ResourceName]int64{
+					corev1.ResourceCPU:    estimator.DefaultMilliCPURequest,
+					corev1.ResourceMemory: estimator.DefaultMemoryRequest,
+				})
+				nm.nodeDelta, nm.nodeEstimated = v, v
 			},
 		},
 		{
 			name: "update pod conditions, cache will be updated",
-			pod: &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					UID:       "123456789",
-					Namespace: "default",
-					Name:      "test",
-				},
-				Spec: corev1.PodSpec{
-					NodeName: "test-node",
-				},
-				Status: corev1.PodStatus{
-					Phase: corev1.PodRunning,
-					Conditions: []corev1.PodCondition{
+			pod: schedulertesting.MakePod().UID("123456789").Namespace("default").Name("test").Node(node).Phase(corev1.PodRunning).
+				Conditions([]corev1.PodCondition{
+					{Type: corev1.PodScheduled, Status: corev1.ConditionTrue, LastTransitionTime: metav1.NewTime(fakeTimeNowFn().Add(1000))},
+					{Type: corev1.PodInitialized, Status: corev1.ConditionTrue, LastTransitionTime: metav1.NewTime(fakeTimeNowFn().Add(3000))},
+				}).Obj(),
+			existingPods: []*corev1.Pod{
+				schedulertesting.MakePod().UID("123456789").Namespace("default").Name("test").Node(node).Phase(corev1.PodRunning).
+					Conditions([]corev1.PodCondition{
 						{Type: corev1.PodScheduled, Status: corev1.ConditionTrue, LastTransitionTime: metav1.NewTime(fakeTimeNowFn().Add(1000))},
-						{Type: corev1.PodInitialized, Status: corev1.ConditionTrue, LastTransitionTime: metav1.NewTime(fakeTimeNowFn().Add(3000))},
-					},
-				},
-			},
-			podInfoItems: map[string]map[types.UID]*podAssignInfo{
-				"test-node": {
-					"123456789": &podAssignInfo{
-						pod: &corev1.Pod{
-							ObjectMeta: metav1.ObjectMeta{
-								UID:       "123456789",
-								Namespace: "default",
-								Name:      "test",
-							},
-							Spec: corev1.PodSpec{
-								NodeName: "test-node",
-							},
-							Status: corev1.PodStatus{
-								Phase: corev1.PodRunning,
-								Conditions: []corev1.PodCondition{
-									{Type: corev1.PodScheduled, Status: corev1.ConditionTrue, LastTransitionTime: metav1.NewTime(fakeTimeNowFn().Add(1000))},
-								},
-							},
-						},
-						timestamp: fakeTimeNowFn().Add(1000),
-					},
-				},
+					}).Obj(),
 			},
 			wantCache: map[string]map[types.UID]*podAssignInfo{
 				"test-node": {
 					"123456789": &podAssignInfo{
-						pod: &corev1.Pod{
-							ObjectMeta: metav1.ObjectMeta{
-								UID:       "123456789",
-								Namespace: "default",
-								Name:      "test",
-							},
-							Spec: corev1.PodSpec{
-								NodeName: "test-node",
-							},
-							Status: corev1.PodStatus{
-								Phase: corev1.PodRunning,
-								Conditions: []corev1.PodCondition{
-									{Type: corev1.PodScheduled, Status: corev1.ConditionTrue, LastTransitionTime: metav1.NewTime(fakeTimeNowFn().Add(1000))},
-									{Type: corev1.PodInitialized, Status: corev1.ConditionTrue, LastTransitionTime: metav1.NewTime(fakeTimeNowFn().Add(3000))},
-								},
-							},
-						},
+						pod: schedulertesting.MakePod().UID("123456789").Namespace("default").Name("test").Node(node).Phase(corev1.PodRunning).
+							Conditions([]corev1.PodCondition{
+								{Type: corev1.PodScheduled, Status: corev1.ConditionTrue, LastTransitionTime: metav1.NewTime(fakeTimeNowFn().Add(1000))},
+								{Type: corev1.PodInitialized, Status: corev1.ConditionTrue, LastTransitionTime: metav1.NewTime(fakeTimeNowFn().Add(3000))},
+							}).Obj(),
 						timestamp: fakeTimeNowFn().Add(1000),
+						estimated: vectorizer.ToFactorVec(map[corev1.ResourceName]int64{
+							corev1.ResourceCPU:    estimator.DefaultMilliCPURequest,
+							corev1.ResourceMemory: estimator.DefaultMemoryRequest,
+						}),
 					},
 				},
+			},
+			wantMetric: func(nm *nodeMetric) {
+				v := vectorizer.ToFactorVec(map[corev1.ResourceName]int64{
+					corev1.ResourceCPU:    estimator.DefaultMilliCPURequest,
+					corev1.ResourceMemory: estimator.DefaultMemoryRequest,
+				})
+				nm.nodeDelta, nm.nodeEstimated = v, v
+			},
+		},
+		{
+			name: "update pod resources, cache will be updated",
+			pod: schedulertesting.MakePod().UID("123456789").Namespace("default").Name("test").Node(node).Phase(corev1.PodRunning).
+				Req(map[corev1.ResourceName]string{corev1.ResourceCPU: "1", corev1.ResourceMemory: "4Gi"}).Obj(),
+
+			existingPods: []*corev1.Pod{
+				schedulertesting.MakePod().UID("123456789").Namespace("default").Name("test").Node(node).Phase(corev1.PodRunning).
+					Conditions([]corev1.PodCondition{
+						{Type: corev1.PodScheduled, Status: corev1.ConditionTrue, LastTransitionTime: metav1.NewTime(fakeTimeNowFn().Add(1000))},
+					}).Obj(),
+			},
+			wantCache: map[string]map[types.UID]*podAssignInfo{
+				"test-node": {
+					"123456789": &podAssignInfo{
+						pod: schedulertesting.MakePod().UID("123456789").Namespace("default").Name("test").Node(node).Phase(corev1.PodRunning).
+							Req(map[corev1.ResourceName]string{corev1.ResourceCPU: "1", corev1.ResourceMemory: "4Gi"}).Obj(),
+						timestamp: fakeTimeNowFn(),
+						estimated: vectorizer.ToVec(corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("1"),
+							corev1.ResourceMemory: resource.MustParse("4Gi"),
+						}),
+					},
+				},
+			},
+			wantMetric: func(nm *nodeMetric) {
+				v := vectorizer.ToVec(corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("1"),
+					corev1.ResourceMemory: resource.MustParse("4Gi"),
+				})
+				nm.nodeDelta, nm.prodDelta, nm.nodeEstimated, nm.prodEstimated = v, v, v, v
 			},
 		},
 	}
@@ -329,56 +286,164 @@ func TestPodAssignCache_OnUpdate(t *testing.T) {
 				timeNowFn = preTimeNowFn
 			}()
 			timeNowFn = fakeTimeNowFn
-			e, _ := estimator.NewDefaultEstimator(&config.LoadAwareSchedulingArgs{}, nil)
-			assignCache := newPodAssignCache(e, NewResourceVectorizer(corev1.ResourceCPU, corev1.ResourceMemory), &config.LoadAwareSchedulingArgs{})
-			if len(tt.podInfoItems) > 0 {
-				assignCache.podInfoItems = tt.podInfoItems
+			e, _ := estimator.NewDefaultEstimator(&config.LoadAwareSchedulingArgs{EstimatedScalingFactors: map[corev1.ResourceName]int64{
+				corev1.ResourceCPU:    100,
+				corev1.ResourceMemory: 100,
+			}}, nil)
+			assignCache := newPodAssignCache(e, vectorizer, &config.LoadAwareSchedulingArgs{})
+			assignCache.AddOrUpdate(m)
+			for _, pod := range tt.existingPods {
+				assignCache.OnAdd(pod, true)
 			}
 			assignCache.OnUpdate(nil, tt.pod)
-			assert.Equal(t, tt.wantCache, assignCache.podInfoItems)
+			if tt.wantCache != nil {
+				assert.Equal(t, tt.wantCache, assignCache.podInfoItems)
+			}
+			wantMetric := assignCache.new(m)
+			assignCache.initPods(wantMetric, nil)
+			if tt.wantMetric != nil {
+				tt.wantMetric(wantMetric)
+			}
+			assert.Equal(t, wantMetric, assignCache.items[node])
 		})
 	}
 }
 
 func TestPodAssignCache_OnDelete(t *testing.T) {
-	pod := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			UID:       "123456789",
-			Namespace: "default",
-			Name:      "test",
-		},
-		Spec: corev1.PodSpec{
-			NodeName: "test-node",
-		},
-		Status: corev1.PodStatus{
-			Phase: corev1.PodFailed,
-		},
-	}
-	e, _ := estimator.NewDefaultEstimator(&config.LoadAwareSchedulingArgs{}, nil)
-	assignCache := newPodAssignCache(e, NewResourceVectorizer(corev1.ResourceCPU, corev1.ResourceMemory), &config.LoadAwareSchedulingArgs{})
-	assignCache.podInfoItems = map[string]map[types.UID]*podAssignInfo{
-		"test-node": {
-			"123456789": &podAssignInfo{
-				pod: &corev1.Pod{
-					ObjectMeta: metav1.ObjectMeta{
-						UID:       "123456789",
-						Namespace: "default",
-						Name:      "test",
-					},
-					Spec: corev1.PodSpec{
-						NodeName: "test-node",
-					},
-					Status: corev1.PodStatus{
-						Phase: corev1.PodRunning,
+	vectorizer := NewResourceVectorizer(corev1.ResourceCPU, corev1.ResourceMemory)
+	node := "test-node"
+	m := &slov1alpha1.NodeMetric{
+		ObjectMeta: metav1.ObjectMeta{Name: node},
+		Status: slov1alpha1.NodeMetricStatus{
+			NodeMetric: &slov1alpha1.NodeMetricInfo{
+				NodeUsage: slov1alpha1.ResourceMap{
+					ResourceList: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("70"),
+						corev1.ResourceMemory: resource.MustParse("280Gi"),
 					},
 				},
-				timestamp: fakeTimeNowFn(),
+			},
+			PodsMetric: []*slov1alpha1.PodMetricInfo{
+				{
+					Namespace: "default", Name: "prod-0", Priority: extension.PriorityProd,
+					PodUsage: slov1alpha1.ResourceMap{
+						ResourceList: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("50"),
+							corev1.ResourceMemory: resource.MustParse("200Gi"),
+						},
+					},
+				},
+				{
+					Namespace: "default", Name: "prod-1", Priority: extension.PriorityProd,
+					PodUsage: slov1alpha1.ResourceMap{
+						ResourceList: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("1"),
+							corev1.ResourceMemory: resource.MustParse("6Gi"),
+						},
+					},
+				},
+				{
+					Namespace: "default", Name: "prod-2", Priority: extension.PriorityProd,
+					PodUsage: slov1alpha1.ResourceMap{
+						ResourceList: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("4"),
+							corev1.ResourceMemory: resource.MustParse("2Gi"),
+						},
+					},
+				},
+				{
+					Namespace: "default", Name: "prod-3", Priority: extension.PriorityMid,
+					PodUsage: slov1alpha1.ResourceMap{
+						ResourceList: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("3"),
+							corev1.ResourceMemory: resource.MustParse("6Gi"),
+						},
+					},
+				},
+				{
+					Namespace: "default", Name: "mid-1", Priority: extension.PriorityMid,
+					PodUsage: slov1alpha1.ResourceMap{
+						ResourceList: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("1"),
+							corev1.ResourceMemory: resource.MustParse("6Gi"),
+						},
+					},
+				},
+				{
+					Namespace: "default", Name: "mid-2", Priority: extension.PriorityMid,
+					PodUsage: slov1alpha1.ResourceMap{
+						ResourceList: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("4"),
+							corev1.ResourceMemory: resource.MustParse("2Gi"),
+						},
+					},
+				},
+				{
+					Namespace: "default", Name: "mid-3", Priority: extension.PriorityProd,
+					PodUsage: slov1alpha1.ResourceMap{
+						ResourceList: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("3"),
+							corev1.ResourceMemory: resource.MustParse("6Gi"),
+						},
+					},
+				},
 			},
 		},
 	}
-	assignCache.OnDelete(pod)
+	e, _ := estimator.NewDefaultEstimator(&config.LoadAwareSchedulingArgs{EstimatedScalingFactors: map[corev1.ResourceName]int64{
+		corev1.ResourceCPU:    50,
+		corev1.ResourceMemory: 50,
+	}}, nil)
+	assignCache := newPodAssignCache(e, vectorizer, &config.LoadAwareSchedulingArgs{})
+	assignCache.AddOrUpdate(m)
+	assignCache.OnAdd(schedulertesting.MakePod().UID("1").Namespace("default").Name("prod-1").Node(node).Phase(corev1.PodRunning).
+		Req(map[corev1.ResourceName]string{corev1.ResourceCPU: "4", corev1.ResourceMemory: "8Gi"}).Obj(), false)
+	assignCache.OnAdd(schedulertesting.MakePod().UID("2").Namespace("default").Name("prod-2").Node(node).Phase(corev1.PodRunning).
+		Req(map[corev1.ResourceName]string{corev1.ResourceCPU: "4", corev1.ResourceMemory: "8Gi"}).Obj(), false)
+	assignCache.OnAdd(schedulertesting.MakePod().UID("3").Namespace("default").Name("prod-3").Node(node).Phase(corev1.PodRunning).
+		Req(map[corev1.ResourceName]string{corev1.ResourceCPU: "4", corev1.ResourceMemory: "8Gi"}).Obj(), false)
+	assignCache.OnAdd(schedulertesting.MakePod().UID("4").Namespace("default").Name("mid-1").Node(node).Phase(corev1.PodRunning).Priority(extension.PriorityMidValueDefault).
+		Req(map[corev1.ResourceName]string{extension.MidCPU: "4k", extension.MidMemory: "8Gi"}).Obj(), false)
+	assignCache.OnAdd(schedulertesting.MakePod().UID("5").Namespace("default").Name("mid-2").Node(node).Phase(corev1.PodRunning).Priority(extension.PriorityMidValueDefault).
+		Req(map[corev1.ResourceName]string{extension.MidCPU: "4k", extension.MidMemory: "8Gi"}).Obj(), false)
+	assignCache.OnAdd(schedulertesting.MakePod().UID("6").Namespace("default").Name("mid-3").Node(node).Phase(corev1.PodRunning).Priority(extension.PriorityMidValueDefault).
+		Req(map[corev1.ResourceName]string{extension.MidCPU: "4k", extension.MidMemory: "8Gi"}).Obj(), false)
+	wantMetric := assignCache.new(m)
+	assignCache.initPods(wantMetric, nil)
+	wantMetric.prodUsage = vectorizer.ToVec(corev1.ResourceList{
+		corev1.ResourceCPU:    resource.MustParse("5"),
+		corev1.ResourceMemory: resource.MustParse("8Gi"),
+	})
+	wantMetric.nodeDelta = vectorizer.ToVec(corev1.ResourceList{
+		corev1.ResourceCPU:    resource.MustParse("2"),
+		corev1.ResourceMemory: resource.MustParse("4Gi"),
+	})
+	wantMetric.prodDelta = vectorizer.ToVec(corev1.ResourceList{
+		corev1.ResourceCPU:    resource.MustParse("4"),
+		corev1.ResourceMemory: resource.MustParse("8Gi"),
+	})
+	wantMetric.nodeEstimated = vectorizer.ToVec(corev1.ResourceList{
+		corev1.ResourceCPU:    resource.MustParse("12"),
+		corev1.ResourceMemory: resource.MustParse("24Gi"),
+	})
+	wantMetric.prodEstimated = vectorizer.ToVec(corev1.ResourceList{
+		corev1.ResourceCPU:    resource.MustParse("6"),
+		corev1.ResourceMemory: resource.MustParse("12Gi"),
+	})
+	assert.Equal(t, wantMetric, assignCache.items[node])
+	assignCache.OnDelete(schedulertesting.MakePod().UID("1").Namespace("default").Name("prod-1").Node(node).Phase(corev1.PodFailed).
+		Req(map[corev1.ResourceName]string{corev1.ResourceCPU: "2", corev1.ResourceMemory: "8Gi"}).Obj())
+	assignCache.OnDelete(schedulertesting.MakePod().UID("2").Namespace("default").Name("prod-2").Node(node).Obj())
+	assignCache.OnDelete(schedulertesting.MakePod().UID("3").Namespace("default").Name("prod-3").Node(node).Obj())
+	assignCache.OnDelete(schedulertesting.MakePod().UID("4").Namespace("default").Name("mid-1").Node(node).Obj())
+	assignCache.OnDelete(schedulertesting.MakePod().UID("5").Namespace("default").Name("mid-2").Node(node).Obj())
+	assignCache.OnDelete(schedulertesting.MakePod().UID("6").Namespace("default").Name("mid-3").Node(node).Obj())
+
 	wantCache := map[string]map[types.UID]*podAssignInfo{}
 	assert.Equal(t, wantCache, assignCache.podInfoItems)
+	wantMetric = assignCache.new(m)
+	assignCache.initPods(wantMetric, nil)
+	assert.Equal(t, wantMetric, assignCache.items[node])
 }
 
 func TestShouldEstimatePodDeadline(t *testing.T) {
@@ -464,6 +529,55 @@ func TestShouldEstimatePodDeadline(t *testing.T) {
 			assignCache := newPodAssignCache(e, NewResourceVectorizer(corev1.ResourceCPU, corev1.ResourceMemory), args)
 			actual := assignCache.shouldEstimatePodDeadline(tt.pod, now.Add(-time.Minute))
 			assert.Equal(t, tt.expected, actual)
+		})
+	}
+}
+
+func TestNodeMetric(t *testing.T) {
+	vectorizer := NewResourceVectorizer(corev1.ResourceCPU, corev1.ResourceMemory)
+	node := "test-node"
+	tests := []struct {
+		name         string
+		args         *config.LoadAwareSchedulingArgs
+		nodeMetric   *slov1alpha1.NodeMetric
+		existingPods []*corev1.Pod
+		wantMetric   func(*nodeMetric)
+	}{
+		{
+			name:       "disable estimator",
+			args:       &config.LoadAwareSchedulingArgs{},
+			nodeMetric: &slov1alpha1.NodeMetric{},
+			existingPods: []*corev1.Pod{
+				schedulertesting.MakePod().Namespace("default").Name("test").Node(node).Phase(corev1.PodRunning).Obj(),
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			preTimeNowFn := timeNowFn
+			defer func() {
+				timeNowFn = preTimeNowFn
+			}()
+			timeNowFn = fakeTimeNowFn
+			if tt.args == nil {
+				tt.args = &config.LoadAwareSchedulingArgs{EstimatedScalingFactors: map[corev1.ResourceName]int64{
+					corev1.ResourceCPU:    100,
+					corev1.ResourceMemory: 100,
+				}}
+			}
+			e, _ := estimator.NewDefaultEstimator(tt.args, nil)
+			assignCache := newPodAssignCache(e, vectorizer, tt.args)
+			for _, pod := range tt.existingPods {
+				assignCache.OnAdd(pod, true)
+			}
+			tt.nodeMetric.Name = node
+			assignCache.AddOrUpdate(tt.nodeMetric)
+			wantMetric := assignCache.new(tt.nodeMetric)
+			assignCache.initPods(wantMetric, nil)
+			if tt.wantMetric != nil {
+				tt.wantMetric(wantMetric)
+			}
+			assert.Equal(t, wantMetric, assignCache.items[node])
 		})
 	}
 }
