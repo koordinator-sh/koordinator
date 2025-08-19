@@ -1123,6 +1123,17 @@ func Test_Plugin_Filter(t *testing.T) {
 	testNodeInfo := &framework.NodeInfo{}
 	testNodeInfo.SetNode(testNode)
 
+	testNodeHami := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-node-hami",
+			Labels: map[string]string{
+				apiext.LabelGPUIsolationProvider: string(apiext.GPUIsolationProviderHAMICore),
+			},
+		},
+	}
+	testNodeInfoHami := &framework.NodeInfo{}
+	testNodeInfoHami.SetNode(testNodeHami)
+
 	testHuaweiNode := &corev1.Node{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "test-node",
@@ -2609,6 +2620,30 @@ func Test_Plugin_Filter(t *testing.T) {
 			nodeInfo: testNodeInfo,
 			want:     nil,
 		},
+		{
+			name: "the pod requires hami's GPU isolation capability, but hami-core is not installed on the node",
+			state: &preFilterState{
+				skip: false,
+				gpuRequirements: &GPURequirements{
+					gpuShared: true,
+				},
+			},
+			nodeDeviceCache: newNodeDeviceCache(),
+			nodeInfo:        testNodeInfo,
+			want:            framework.NewStatus(framework.Error, "GPUIsolationProviderHAMICore not found on the node"),
+		},
+		{
+			name: "the pod requires hami's GPU isolation capability, and hami-core is installed on the node",
+			state: &preFilterState{
+				skip: false,
+				gpuRequirements: &GPURequirements{
+					gpuShared: true,
+				},
+			},
+			nodeDeviceCache: newNodeDeviceCache(),
+			nodeInfo:        testNodeInfoHami,
+			want:            nil,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -2670,6 +2705,10 @@ func Test_Plugin_Filter(t *testing.T) {
 					},
 				}
 				cycleState.Write(reservationRestoreStateKey, restoreState)
+			}
+			if strings.Contains(tt.name, "hami-core") {
+				pod.Labels = map[string]string{apiext.LabelGPUIsolationProvider: string(apiext.GPUIsolationProviderHAMICore)}
+				cycleState.Write(stateKey, tt.state)
 			}
 			status := p.Filter(context.TODO(), cycleState, pod, tt.nodeInfo)
 			assert.Equal(t, tt.want.Code(), status.Code())
