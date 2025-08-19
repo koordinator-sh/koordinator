@@ -65,28 +65,28 @@ var (
 			Subsystem: schedulermetrics.SchedulerSubsystem,
 			Name:      "pod_scheduling_evaluated_nodes",
 			Help:      "The number of nodes the scheduler evaluated the pod against in the filtering phase and beyond",
-			Buckets:   metrics.ExponentialBuckets(0.00001, 2, 24),
+			Buckets:   metrics.ExponentialBuckets(1, 2, 24),
 		})
 	PodSchedulingFeasibleNodes = metrics.NewHistogram(
 		&metrics.HistogramOpts{
 			Subsystem: schedulermetrics.SchedulerSubsystem,
 			Name:      "pod_scheduling_feasible_nodes",
 			Help:      "The number of of nodes out of the evaluated ones that fit the pod",
-			Buckets:   metrics.ExponentialBuckets(0.00001, 2, 24),
+			Buckets:   metrics.ExponentialBuckets(1, 2, 24),
 		})
 	PodSchedulingEvaluatedNodesWithSuggested = metrics.NewHistogram(
 		&metrics.HistogramOpts{
 			Subsystem: schedulermetrics.SchedulerSubsystem,
 			Name:      "pod_scheduling_evaluated_nodes_with_suggested",
 			Help:      "The number of nodes the scheduler evaluated the pod against in the filtering phase and beyond when find the suggested node",
-			Buckets:   metrics.ExponentialBuckets(0.00001, 2, 24),
+			Buckets:   metrics.ExponentialBuckets(1, 2, 24),
 		})
 	PodSchedulingFeasibleNodesWithSuggested = metrics.NewHistogram(
 		&metrics.HistogramOpts{
 			Subsystem: schedulermetrics.SchedulerSubsystem,
 			Name:      "pod_scheduling_feasible_nodes_with_suggested",
 			Help:      "The number of of nodes out of the evaluated ones that fit the pod when find the suggested node",
-			Buckets:   metrics.ExponentialBuckets(0.00001, 2, 24),
+			Buckets:   metrics.ExponentialBuckets(1, 2, 24),
 		})
 
 	ElasticQuotaProcessLatency = metrics.NewHistogramVec(
