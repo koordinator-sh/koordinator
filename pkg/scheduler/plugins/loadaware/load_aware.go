@@ -117,9 +117,9 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 	koordInformers := frameworkExtender.KoordinatorSharedInformerFactory()
 	nodeMetricInformer := koordInformers.Slo().V1alpha1().NodeMetrics()
 	frameworkexthelper.ForceSyncFromInformer(context.TODO().Done(), koordInformers, nodeMetricInformer.Informer(), assignCache.NodeMetricHandler())
-	var scoreWeights ResourceVector
-	if len(pluginArgs.ResourceWeights) > 0 {
-		scoreWeights = vectorizer.ToFactorVec(pluginArgs.ResourceWeights)
+	scoreWeights := vectorizer.ToFactorVec(pluginArgs.ResourceWeights)
+	if scoreWeights.Empty() {
+		scoreWeights = nil
 	}
 	return &Plugin{
 		handle:         handle,
@@ -154,6 +154,22 @@ func (p *Plugin) Filter(ctx context.Context, state *framework.CycleState, pod *c
 		return nil
 	}
 
+	filterProfile := p.filterProfile.generateUsageThresholdsFilterProfile(node, p.vectorizer)
+	prodPod := !filterProfile.ProdUsageThresholds.Empty() && extension.GetPodPriorityClassWithDefault(pod) == extension.PriorityProd
+	var usageThresholds ResourceVector
+	isAgg := false
+	if prodPod {
+		usageThresholds = filterProfile.ProdUsageThresholds
+	} else if agg := filterProfile.AggregatedUsage; agg != nil {
+		usageThresholds = agg.UsageThresholds
+		isAgg = true
+	} else {
+		usageThresholds = filterProfile.UsageThresholds
+	}
+	if usageThresholds.Empty() {
+		return nil // skip if filter thresholds are disabled
+	}
+
 	cached, err := p.podAssignCache.GetNodeMetric(node.Name)
 	if err != nil {
 		// For nodes that lack load information, fall back to the situation where there is no load-aware scheduling.
@@ -184,19 +200,14 @@ func (p *Plugin) Filter(ctx context.Context, state *framework.CycleState, pod *c
 	}
 	allocatable := p.vectorizer.ToVec(allocatableList)
 
-	filterProfile := p.filterProfile.generateUsageThresholdsFilterProfile(node, p.vectorizer)
-	prodPod := !filterProfile.ProdUsageThresholds.Empty() && extension.GetPodPriorityClassWithDefault(pod) == extension.PriorityProd
-	var nodeUsage, usageThresholds ResourceVector
-	isAgg := false
-	if prodPod {
-		usageThresholds = filterProfile.ProdUsageThresholds
-	} else if agg := filterProfile.AggregatedUsage; agg != nil {
-		nodeUsage = cached.getTargetAggregatedUsage(agg.UsageAggregatedDuration, agg.UsageAggregationType)
-		usageThresholds = agg.UsageThresholds
-		isAgg = true
-	} else {
-		nodeUsage = cached.nodeUsage
-		usageThresholds = filterProfile.UsageThresholds
+	var nodeUsage ResourceVector
+	if !prodPod {
+		if isAgg {
+			agg := filterProfile.AggregatedUsage
+			nodeUsage = cached.getTargetAggregatedUsage(agg.UsageAggregatedDuration, agg.UsageAggregationType)
+		} else {
+			nodeUsage = cached.nodeUsage
+		}
 	}
 
 	estimated, estimatedPods := p.getEstimatedOfExisting(cached, nodeUsage, prodPod)
@@ -229,6 +240,10 @@ func (p *Plugin) Unreserve(ctx context.Context, state *framework.CycleState, pod
 }
 
 func (p *Plugin) Score(ctx context.Context, state *framework.CycleState, pod *corev1.Pod, nodeName string) (int64, *framework.Status) {
+	if p.scoreWeights == nil {
+		return 0, nil // skip if score weights are disabled
+	}
+
 	nodeInfo, err := p.handle.SnapshotSharedLister().NodeInfos().Get(nodeName)
 	if err != nil {
 		return 0, framework.NewStatus(framework.Error, fmt.Sprintf("getting node %q from Snapshot: %v", nodeName, err))
@@ -263,13 +278,14 @@ func (p *Plugin) Score(ctx context.Context, state *framework.CycleState, pod *co
 	}
 	allocatable := p.vectorizer.ToVec(allocatableList)
 
-	prodPod := extension.GetPodPriorityClassWithDefault(pod) == extension.PriorityProd && p.args.ScoreAccordingProdUsage
+	prodPod := p.args.ScoreAccordingProdUsage && extension.GetPodPriorityClassWithDefault(pod) == extension.PriorityProd
 	var nodeUsage ResourceVector
-	if prodPod {
-	} else if agg := p.args.Aggregated; agg != nil && agg.ScoreAggregationType != "" {
-		nodeUsage = cached.getTargetAggregatedUsage(agg.ScoreAggregatedDuration, agg.ScoreAggregationType)
-	} else {
-		nodeUsage = cached.nodeUsage
+	if !prodPod {
+		if agg := p.args.Aggregated; agg != nil && agg.ScoreAggregationType != "" {
+			nodeUsage = cached.getTargetAggregatedUsage(agg.ScoreAggregatedDuration, agg.ScoreAggregationType)
+		} else {
+			nodeUsage = cached.nodeUsage
+		}
 	}
 
 	estimated, estimatedPods := p.getEstimatedOfExisting(cached, nodeUsage, prodPod)
@@ -334,7 +350,8 @@ func (p *Plugin) filterNodeUsage(nodeName string, pod *corev1.Pod, usageThreshol
 		if total == 0 {
 			continue
 		}
-		usage := int64(math.Round(float64(estimatedUsed[i]) / float64(total) * 100))
+		estimated := estimatedUsed[i]
+		usage := int64(math.Round(float64(estimated) / float64(total) * 100))
 		if usage <= value {
 			continue
 		}
@@ -344,8 +361,12 @@ func (p *Plugin) filterNodeUsage(nodeName string, pod *corev1.Pod, usageThreshol
 			reason = ErrReasonAggregatedUsageExceedThreshold
 		}
 		resourceName := p.vectorizer[i]
-		klog.V(5).InfoS("Node is unschedulable since usage exceeds threshold in filtering", "pod", klog.KObj(pod), "node", nodeName,
-			"resource", resourceName, "total", total, "usage", usage, "threshold", value)
+		if klog.V(5).Enabled() {
+			klog.InfoS("Node is unschedulable since usage exceeds threshold", "pod", klog.KObj(pod), "node", nodeName,
+				"resource", resourceName, "usage", usage, "threshold", value,
+				"estimated", getResourceQuantity(resourceName, estimated),
+				"total", getResourceQuantity(resourceName, total))
+		}
 		return framework.NewStatus(framework.Unschedulable, fmt.Sprintf(reason, resourceName))
 	}
 	return nil
