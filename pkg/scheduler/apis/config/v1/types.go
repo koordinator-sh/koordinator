@@ -75,7 +75,7 @@ type LoadAwareSchedulingArgs struct {
 	// filter thresholds or score weights in plugin args
 	// and only set up in custom node annotations,
 	// we should pass these resource names in plugin args explicitly.
-	SupportedResources []corev1.ResourceName
+	SupportedResources []corev1.ResourceName `json:"supportedResources,omitempty"`
 }
 
 type LoadAwareSchedulingAggregatedArgs struct {
