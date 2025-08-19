@@ -22,6 +22,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -92,7 +93,7 @@ func TestPodAssignCache_OnAdd(t *testing.T) {
 					corev1.ResourceCPU:    resource.MustParse("1"),
 					corev1.ResourceMemory: resource.MustParse("4Gi"),
 				})
-				nm.nodeDelta, nm.prodDelta, nm.nodeEstimated, nm.prodEstimated = v, v, v, v
+				nm.nodeDelta, nm.prodDelta, nm.nodeEstimated = v, v, v
 			},
 		},
 		{
@@ -130,7 +131,9 @@ func TestPodAssignCache_OnAdd(t *testing.T) {
 			if tt.wantMetric != nil {
 				tt.wantMetric(wantMetric)
 			}
-			assert.Equal(t, wantMetric, assignCache.items[node])
+			actual, err := assignCache.GetNodeMetric(node)
+			assert.NoError(t, err)
+			assert.Equal(t, wantMetric, actual)
 		})
 	}
 }
@@ -275,7 +278,7 @@ func TestPodAssignCache_OnUpdate(t *testing.T) {
 					corev1.ResourceCPU:    resource.MustParse("1"),
 					corev1.ResourceMemory: resource.MustParse("4Gi"),
 				})
-				nm.nodeDelta, nm.prodDelta, nm.nodeEstimated, nm.prodEstimated = v, v, v, v
+				nm.nodeDelta, nm.prodDelta, nm.nodeEstimated = v, v, v
 			},
 		},
 	}
@@ -304,7 +307,9 @@ func TestPodAssignCache_OnUpdate(t *testing.T) {
 			if tt.wantMetric != nil {
 				tt.wantMetric(wantMetric)
 			}
-			assert.Equal(t, wantMetric, assignCache.items[node])
+			actual, err := assignCache.GetNodeMetric(node)
+			assert.NoError(t, err)
+			assert.Equal(t, wantMetric, actual)
 		})
 	}
 }
@@ -419,18 +424,16 @@ func TestPodAssignCache_OnDelete(t *testing.T) {
 		corev1.ResourceMemory: resource.MustParse("4Gi"),
 	})
 	wantMetric.prodDelta = vectorizer.ToVec(corev1.ResourceList{
-		corev1.ResourceCPU:    resource.MustParse("4"),
-		corev1.ResourceMemory: resource.MustParse("8Gi"),
+		corev1.ResourceCPU:    resource.MustParse("3"),
+		corev1.ResourceMemory: resource.MustParse("6Gi"),
 	})
 	wantMetric.nodeEstimated = vectorizer.ToVec(corev1.ResourceList{
 		corev1.ResourceCPU:    resource.MustParse("12"),
 		corev1.ResourceMemory: resource.MustParse("24Gi"),
 	})
-	wantMetric.prodEstimated = vectorizer.ToVec(corev1.ResourceList{
-		corev1.ResourceCPU:    resource.MustParse("6"),
-		corev1.ResourceMemory: resource.MustParse("12Gi"),
-	})
-	assert.Equal(t, wantMetric, assignCache.items[node])
+	actual, err := assignCache.GetNodeMetric(node)
+	assert.NoError(t, err)
+	assert.Equal(t, wantMetric, actual)
 	assignCache.OnDelete(schedulertesting.MakePod().UID("1").Namespace("default").Name("prod-1").Node(node).Phase(corev1.PodFailed).
 		Req(map[corev1.ResourceName]string{corev1.ResourceCPU: "2", corev1.ResourceMemory: "8Gi"}).Obj())
 	assignCache.OnDelete(schedulertesting.MakePod().UID("2").Namespace("default").Name("prod-2").Node(node).Obj())
@@ -443,7 +446,9 @@ func TestPodAssignCache_OnDelete(t *testing.T) {
 	assert.Equal(t, wantCache, assignCache.podInfoItems)
 	wantMetric = assignCache.new(m)
 	assignCache.initPods(wantMetric, nil)
-	assert.Equal(t, wantMetric, assignCache.items[node])
+	actual, err = assignCache.GetNodeMetric(node)
+	assert.NoError(t, err)
+	assert.Equal(t, wantMetric, actual)
 }
 
 func TestShouldEstimatePodDeadline(t *testing.T) {
@@ -536,6 +541,7 @@ func TestShouldEstimatePodDeadline(t *testing.T) {
 func TestNodeMetric(t *testing.T) {
 	vectorizer := NewResourceVectorizer(corev1.ResourceCPU, corev1.ResourceMemory)
 	node := "test-node"
+	now := metav1.Now().Rfc3339Copy()
 	tests := []struct {
 		name         string
 		args         *config.LoadAwareSchedulingArgs
@@ -544,16 +550,169 @@ func TestNodeMetric(t *testing.T) {
 		wantMetric   func(*nodeMetric)
 	}{
 		{
-			name:       "disable estimator",
-			args:       &config.LoadAwareSchedulingArgs{},
-			nodeMetric: &slov1alpha1.NodeMetric{},
+			name: "disable estimator",
+			args: &config.LoadAwareSchedulingArgs{},
+			nodeMetric: &slov1alpha1.NodeMetric{
+				Status: slov1alpha1.NodeMetricStatus{
+					NodeMetric: &slov1alpha1.NodeMetricInfo{
+						NodeUsage: slov1alpha1.ResourceMap{
+							ResourceList: corev1.ResourceList{
+								corev1.ResourceCPU:    resource.MustParse("72"),
+								corev1.ResourceMemory: resource.MustParse("280Gi"),
+							},
+						},
+					},
+					PodsMetric: []*slov1alpha1.PodMetricInfo{
+						nil,
+						{Name: "invalid"},
+						{
+							Namespace: "default", Name: "prod-1", Priority: extension.PriorityProd,
+							PodUsage: slov1alpha1.ResourceMap{
+								ResourceList: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("50"),
+									corev1.ResourceMemory: resource.MustParse("200Gi"),
+								},
+							},
+						},
+						{
+							Namespace: "default", Name: "mid-1", Priority: extension.PriorityMid,
+							PodUsage: slov1alpha1.ResourceMap{
+								ResourceList: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("20"),
+									corev1.ResourceMemory: resource.MustParse("75Gi"),
+								},
+							},
+						},
+					},
+				},
+			},
 			existingPods: []*corev1.Pod{
-				schedulertesting.MakePod().Namespace("default").Name("test").Node(node).Phase(corev1.PodRunning).Obj(),
+				schedulertesting.MakePod().Namespace("default").UID("1").Name("prod-1").Node(node).Phase(corev1.PodRunning).
+					Req(map[corev1.ResourceName]string{corev1.ResourceCPU: "40", corev1.ResourceMemory: "160Gi"}).Obj(),
+				schedulertesting.MakePod().Namespace("default").UID("2").Name("mid-1").Node(node).Phase(corev1.PodRunning).Priority(extension.PriorityMidValueDefault).
+					Req(map[corev1.ResourceName]string{extension.MidCPU: "4k", extension.MidMemory: "8Gi"}).Obj(),
+			},
+			wantMetric: func(nm *nodeMetric) {
+				nm.prodUsage = vectorizer.ToVec(corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("50"),
+					corev1.ResourceMemory: resource.MustParse("200Gi"),
+				})
+			},
+		},
+		{
+			name: "enable prod usage include sys",
+			args: &config.LoadAwareSchedulingArgs{ProdUsageIncludeSys: true},
+			nodeMetric: &slov1alpha1.NodeMetric{
+				Spec: slov1alpha1.NodeMetricSpec{
+					CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
+						ReportIntervalSeconds: ptr.To[int64](180),
+					},
+				},
+				Status: slov1alpha1.NodeMetricStatus{
+					UpdateTime: &now,
+					NodeMetric: &slov1alpha1.NodeMetricInfo{
+						NodeUsage: slov1alpha1.ResourceMap{
+							ResourceList: corev1.ResourceList{
+								corev1.ResourceCPU:    resource.MustParse("2"),
+								corev1.ResourceMemory: resource.MustParse("4Gi"),
+							},
+						},
+						SystemUsage: slov1alpha1.ResourceMap{
+							ResourceList: corev1.ResourceList{
+								corev1.ResourceCPU:    resource.MustParse("2"),
+								corev1.ResourceMemory: resource.MustParse("4Gi"),
+							},
+						},
+						AggregatedNodeUsages: []slov1alpha1.AggregatedUsage{
+							{
+								Duration: metav1.Duration{Duration: time.Minute},
+								Usage: map[extension.AggregationType]slov1alpha1.ResourceMap{
+									extension.AVG: {
+										ResourceList: corev1.ResourceList{
+											corev1.ResourceCPU:    resource.MustParse("1"),
+											corev1.ResourceMemory: resource.MustParse("2Gi"),
+										},
+									},
+									extension.P90: {
+										ResourceList: corev1.ResourceList{
+											corev1.ResourceCPU:    resource.MustParse("2"),
+											corev1.ResourceMemory: resource.MustParse("4Gi"),
+										},
+									},
+								},
+							},
+							{
+								Duration: metav1.Duration{Duration: time.Hour},
+								Usage: map[extension.AggregationType]slov1alpha1.ResourceMap{
+									extension.AVG: {
+										ResourceList: corev1.ResourceList{
+											corev1.ResourceCPU:    resource.MustParse("500m"),
+											corev1.ResourceMemory: resource.MustParse("1Gi"),
+										},
+									},
+									extension.P90: {
+										ResourceList: corev1.ResourceList{
+											corev1.ResourceCPU:    resource.MustParse("1500m"),
+											corev1.ResourceMemory: resource.MustParse("3Gi"),
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			wantMetric: func(nm *nodeMetric) {
+				// reset for verify
+				*nm = nodeMetric{
+					NodeMetric:     nm.NodeMetric,
+					updateTime:     now.Time,
+					reportInterval: 180 * time.Second,
+
+					nodeUsage: vectorizer.ToVec(corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("2"),
+						corev1.ResourceMemory: resource.MustParse("4Gi"),
+					}),
+					prodUsage: vectorizer.ToVec(corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("2"),
+						corev1.ResourceMemory: resource.MustParse("4Gi"),
+					}),
+					aggUsages: map[aggUsageKey]ResourceVector{
+						{Type: extension.AVG}: vectorizer.ToVec(corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("500m"),
+							corev1.ResourceMemory: resource.MustParse("1Gi"),
+						}),
+						{Type: extension.P90}: vectorizer.ToVec(corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("1500m"),
+							corev1.ResourceMemory: resource.MustParse("3Gi"),
+						}),
+						{Type: extension.AVG, Duration: time.Minute}: vectorizer.ToVec(corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("1"),
+							corev1.ResourceMemory: resource.MustParse("2Gi"),
+						}),
+						{Type: extension.P90, Duration: time.Minute}: vectorizer.ToVec(corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("2"),
+							corev1.ResourceMemory: resource.MustParse("4Gi"),
+						}),
+						{Type: extension.AVG, Duration: time.Hour}: vectorizer.ToVec(corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("500m"),
+							corev1.ResourceMemory: resource.MustParse("1Gi"),
+						}),
+						{Type: extension.P90, Duration: time.Hour}: vectorizer.ToVec(corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("1500m"),
+							corev1.ResourceMemory: resource.MustParse("3Gi"),
+						}),
+					},
+					nodeDelta:     vectorizer.EmptyVec(),
+					prodDelta:     vectorizer.EmptyVec(),
+					nodeEstimated: vectorizer.EmptyVec(),
+				}
 			},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			tt.nodeMetric.Name = node
 			preTimeNowFn := timeNowFn
 			defer func() {
 				timeNowFn = preTimeNowFn
@@ -570,14 +729,29 @@ func TestNodeMetric(t *testing.T) {
 			for _, pod := range tt.existingPods {
 				assignCache.OnAdd(pod, true)
 			}
-			tt.nodeMetric.Name = node
+			// test add node metrics
 			assignCache.AddOrUpdate(tt.nodeMetric)
 			wantMetric := assignCache.new(tt.nodeMetric)
 			assignCache.initPods(wantMetric, nil)
 			if tt.wantMetric != nil {
 				tt.wantMetric(wantMetric)
 			}
-			assert.Equal(t, wantMetric, assignCache.items[node])
+			actual, err := assignCache.GetNodeMetric(node)
+			assert.NoError(t, err)
+			assert.Equal(t, wantMetric, actual)
+			// test delete all pods
+			for _, pod := range tt.existingPods {
+				assignCache.OnDelete(pod)
+			}
+			wantMetric = assignCache.new(tt.nodeMetric)
+			assignCache.initPods(wantMetric, nil)
+			actual, err = assignCache.GetNodeMetric(node)
+			assert.NoError(t, err)
+			assert.Equal(t, wantMetric, actual)
+			// test delete node metrics
+			assignCache.Delete(node)
+			_, err = assignCache.GetNodeMetric(node)
+			assert.True(t, errors.IsNotFound(err))
 		})
 	}
 }

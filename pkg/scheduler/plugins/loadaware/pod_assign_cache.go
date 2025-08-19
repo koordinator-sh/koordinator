@@ -298,12 +298,10 @@ type nodeMetric struct {
 	nodeDelta     ResourceVector // delta estimated resources of existing pods
 	prodDelta     ResourceVector // delta estimated resources of existing prod pods
 	nodeEstimated ResourceVector // sum of full estimated resources of all existing pods
-	prodEstimated ResourceVector // sum of full estimated resources of all existing pod pods
 
 	nodeDeltaPods     sets.Set[NamespacedName] // pods that is part of delta estimated, used in logging only
 	prodDeltaPods     sets.Set[NamespacedName] // pods that is part of delta estimated for prod, used in logging only
 	nodeEstimatedPods sets.Set[NamespacedName] // pods that is part of full estimated, used in logging only
-	prodEstimatedPods sets.Set[NamespacedName] // pods that is part of full estimated for prod, used in logging only
 }
 
 // implements klog.KMetadata
@@ -330,6 +328,7 @@ func (p *podAssignCache) new(metric *slov1alpha1.NodeMetric) *nodeMetric {
 	m := &nodeMetric{
 		NodeMetric:     metric,
 		reportInterval: getNodeMetricReportInterval(metric),
+		prodUsage:      p.vectorizer.EmptyVec(),
 	}
 	if metric.Status.UpdateTime != nil {
 		m.updateTime = m.Status.UpdateTime.Time
@@ -360,11 +359,13 @@ func (p *podAssignCache) new(metric *slov1alpha1.NodeMetric) *nodeMetric {
 			}
 			m.aggUsages = aggUsages
 		}
+		if p.args.ProdUsageIncludeSys {
+			m.prodUsage.Add(p.vectorizer.ToVec(info.SystemUsage.ResourceList))
+		}
 	}
 	if infos := metric.Status.PodsMetric; len(infos) != 0 {
 		podUsages := make(map[NamespacedName]ResourceVector, len(infos))
 		prodPods := sets.New[NamespacedName]()
-		prodUsage := p.vectorizer.EmptyVec()
 		for _, info := range infos {
 			if info == nil {
 				continue
@@ -379,10 +380,7 @@ func (p *podAssignCache) new(metric *slov1alpha1.NodeMetric) *nodeMetric {
 				prodPods.Insert(key)
 			}
 		}
-		if p.args.ProdUsageIncludeSys && info != nil {
-			prodUsage.Add(p.vectorizer.ToVec(info.SystemUsage.ResourceList))
-		}
-		m.podUsages, m.prodPods, m.prodUsage = podUsages, prodPods, prodUsage
+		m.podUsages, m.prodPods = podUsages, prodPods
 	}
 	return m
 }
@@ -391,13 +389,11 @@ func (p *podAssignCache) initPods(m *nodeMetric, pods map[types.UID]*podAssignIn
 	m.nodeDelta = p.vectorizer.EmptyVec()
 	m.prodDelta = p.vectorizer.EmptyVec()
 	m.nodeEstimated = p.vectorizer.EmptyVec()
-	m.prodEstimated = p.vectorizer.EmptyVec()
 
 	if klog.V(6).Enabled() {
 		m.nodeDeltaPods = sets.New[NamespacedName]()
 		m.prodDeltaPods = sets.New[NamespacedName]()
 		m.nodeEstimatedPods = sets.New[NamespacedName]()
-		m.prodEstimatedPods = sets.New[NamespacedName]()
 	}
 
 	for _, pod := range pods {
@@ -406,12 +402,21 @@ func (p *podAssignCache) initPods(m *nodeMetric, pods map[types.UID]*podAssignIn
 }
 
 func (p *podAssignCache) addPod(m *nodeMetric, pod *podAssignInfo) {
+	key := NamespacedName{Namespace: pod.pod.Namespace, Name: pod.pod.Name}
+	u := m.podUsages[key]
+	prod := extension.GetPodPriorityClassWithDefault(pod.pod) == extension.PriorityProd
+	// Only use prod pod's usage when both pod claims and node metric reports it as prod.
+	// 1. pod priority class are updated dynamically
+	// 2. prod / non prod pod is wrongly reported or terminated pod is leaked in node metrics status
+	activeProd := prod && m.prodPods.Has(key)
+	if activeProd {
+		m.prodUsage.Add(u)
+	}
+
 	e := pod.estimated
 	if e == nil {
 		return
 	}
-	key := NamespacedName{Namespace: pod.pod.Namespace, Name: pod.pod.Name}
-	u := m.podUsages[key]
 	// 1. when usage is not collected
 	// 2. when pod miss lastest metrics update
 	// 3. when pod metrics is still in the report interval
@@ -429,26 +434,16 @@ func (p *podAssignCache) addPod(m *nodeMetric, pod *podAssignInfo) {
 		m.nodeEstimatedPods.Insert(key)
 	}
 
-	if extension.GetPodPriorityClassWithDefault(pod.pod) != extension.PriorityProd {
+	if !prod {
 		return
 	}
-	// Only use prod pod's usage when both pod claims and node metric reports it as prod.
-	// 1. pod priority class are updated dynamically
-	// 2. prod / non prod pod is wrongly reported or terminated pod is leaked in node metrics status
-	if m.prodPods.Has(key) {
-		m.prodUsage.Add(u)
-	} else if u != nil {
-		m.prodDelta.Add(u)
-		should = true
+	if !activeProd && u != nil {
+		u, should = nil, true
 	}
 	if should {
 		if m.prodDelta.AddDelta(e, u) && m.prodDeltaPods != nil {
 			m.prodDeltaPods.Insert(key)
 		}
-	}
-	m.prodEstimated.Add(e)
-	if m.prodEstimatedPods != nil {
-		m.prodEstimatedPods.Insert(key)
 	}
 }
 
@@ -459,12 +454,18 @@ func (p *podAssignCache) updatePod(m *nodeMetric, oldPod, newPod *podAssignInfo)
 
 // reverse procedure of addPod
 func (p *podAssignCache) deletePod(m *nodeMetric, pod *podAssignInfo) {
+	key := NamespacedName{Namespace: pod.pod.Namespace, Name: pod.pod.Name}
+	u := m.podUsages[key]
+	prod := extension.GetPodPriorityClassWithDefault(pod.pod) == extension.PriorityProd
+	activeProd := prod && m.prodPods.Has(key)
+	if activeProd {
+		m.prodUsage.Sub(u)
+	}
+
 	e := pod.estimated
 	if e == nil {
 		return
 	}
-	key := NamespacedName{Namespace: pod.pod.Namespace, Name: pod.pod.Name}
-	u := m.podUsages[key]
 	should := u == nil ||
 		m.updateTime.Add(-m.reportInterval).Before(pod.timestamp) ||
 		(!pod.estimatedDeadline.IsZero() && pod.estimatedDeadline.After(m.updateTime))
@@ -478,22 +479,15 @@ func (p *podAssignCache) deletePod(m *nodeMetric, pod *podAssignInfo) {
 		m.nodeEstimatedPods.Delete(key)
 	}
 
-	if extension.GetPodPriorityClassWithDefault(pod.pod) != extension.PriorityProd {
+	if !prod {
 		return
 	}
-	if m.prodPods.Has(key) {
-		m.prodUsage.Sub(u)
-	} else if u != nil {
-		m.prodDelta.Sub(u)
-		should = true
+	if !activeProd && u != nil {
+		u, should = nil, true
 	}
 	if should {
 		if m.prodDelta.SubDelta(e, u) && m.prodDeltaPods != nil {
 			m.prodDeltaPods.Delete(key)
 		}
-	}
-	m.prodEstimated.Sub(e)
-	if m.prodEstimatedPods != nil {
-		m.prodEstimatedPods.Delete(key)
 	}
 }

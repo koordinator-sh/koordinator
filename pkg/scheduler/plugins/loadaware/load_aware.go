@@ -189,7 +189,6 @@ func (p *Plugin) Filter(ctx context.Context, state *framework.CycleState, pod *c
 	var nodeUsage, usageThresholds ResourceVector
 	isAgg := false
 	if prodPod {
-		nodeUsage = cached.prodUsage
 		usageThresholds = filterProfile.ProdUsageThresholds
 	} else if agg := filterProfile.AggregatedUsage; agg != nil {
 		nodeUsage = cached.getTargetAggregatedUsage(agg.UsageAggregatedDuration, agg.UsageAggregationType)
@@ -267,7 +266,6 @@ func (p *Plugin) Score(ctx context.Context, state *framework.CycleState, pod *co
 	prodPod := extension.GetPodPriorityClassWithDefault(pod) == extension.PriorityProd && p.args.ScoreAccordingProdUsage
 	var nodeUsage ResourceVector
 	if prodPod {
-		nodeUsage = cached.prodUsage
 	} else if agg := p.args.Aggregated; agg != nil && agg.ScoreAggregationType != "" {
 		nodeUsage = cached.getTargetAggregatedUsage(agg.ScoreAggregatedDuration, agg.ScoreAggregationType)
 	} else {
@@ -290,23 +288,17 @@ func (p *Plugin) Score(ctx context.Context, state *framework.CycleState, pod *co
 
 func (p *Plugin) getEstimatedOfExisting(nodeMetric *nodeMetric, nodeUsage ResourceVector, prod bool) (estimated ResourceVector, estimatedPods sets.Set[NamespacedName]) {
 	estimated = p.vectorizer.EmptyVec()
-	if nodeUsage != nil {
+	if prod {
+		estimated.Add(nodeMetric.prodUsage)
+		estimated.Add(nodeMetric.prodDelta)
+		estimatedPods = nodeMetric.prodDeltaPods
+	} else if nodeUsage != nil {
 		estimated.Add(nodeUsage)
-		if prod {
-			estimated.Add(nodeMetric.prodDelta)
-			estimatedPods = nodeMetric.prodDeltaPods
-		} else {
-			estimated.Add(nodeMetric.nodeDelta)
-			estimatedPods = nodeMetric.nodeDeltaPods
-		}
+		estimated.Add(nodeMetric.nodeDelta)
+		estimatedPods = nodeMetric.nodeDeltaPods
 	} else {
-		if prod {
-			estimated.Add(nodeMetric.prodEstimated)
-			estimatedPods = nodeMetric.prodEstimatedPods
-		} else {
-			estimated.Add(nodeMetric.nodeEstimated)
-			estimatedPods = nodeMetric.nodeEstimatedPods
-		}
+		estimated.Add(nodeMetric.nodeEstimated)
+		estimatedPods = nodeMetric.nodeEstimatedPods
 	}
 	return
 }
