@@ -49,6 +49,7 @@ type SLOCfg struct {
 	ResourceQOSCfgMerged configuration.ResourceQOSCfg       `json:"resourceQOSCfgMerged,omitempty"`
 	CPUBurstCfgMerged    configuration.CPUBurstCfg          `json:"cpuBurstCfgMerged,omitempty"`
 	SystemCfgMerged      configuration.SystemCfg            `json:"systemCfgMerged,omitempty"`
+	PSICfgMerged         configuration.PSICfg               `json:"psiCfgMerged,omitempty"`
 	HostAppCfgMerged     configuration.HostApplicationCfg   `json:"hostAppCfgMerged,omitempty"`
 	ExtensionCfgMerged   configuration.ExtensionCfgMap      `json:"extensionCfgMerged,omitempty"` // for third-party extension
 }
@@ -59,6 +60,7 @@ func (in *SLOCfg) DeepCopy() *SLOCfg {
 	out.CPUBurstCfgMerged = *in.CPUBurstCfgMerged.DeepCopy()
 	out.ResourceQOSCfgMerged = *in.ResourceQOSCfgMerged.DeepCopy()
 	out.SystemCfgMerged = *in.SystemCfgMerged.DeepCopy()
+	out.PSICfgMerged = *in.PSICfgMerged.DeepCopy()
 	out.ExtensionCfgMerged = *in.ExtensionCfgMerged.DeepCopy()
 	out.HostAppCfgMerged = *in.HostAppCfgMerged.DeepCopy()
 	return out
@@ -77,6 +79,7 @@ func DefaultSLOCfg() SLOCfg {
 		ResourceQOSCfgMerged: configuration.ResourceQOSCfg{ClusterStrategy: &slov1alpha1.ResourceQOSStrategy{}},
 		CPUBurstCfgMerged:    configuration.CPUBurstCfg{ClusterStrategy: sloconfig.DefaultCPUBurstStrategy()},
 		SystemCfgMerged:      configuration.SystemCfg{ClusterStrategy: sloconfig.DefaultSystemStrategy()},
+		PSICfgMerged:         configuration.PSICfg{ClusterStrategy: sloconfig.DefaultPSIStrategy()},
 		HostAppCfgMerged:     configuration.HostApplicationCfg{},
 		ExtensionCfgMerged:   *getDefaultExtensionCfg(),
 	}
@@ -145,6 +148,11 @@ func (p *SLOCfgHandlerForConfigMapEvent) syncConfig(configMap *corev1.ConfigMap)
 	if err != nil {
 		klog.V(5).Infof("failed to get SystemCfg, err: %s", err)
 		p.recorder.Eventf(configMap, corev1.EventTypeWarning, config.ReasonSLOConfigUnmarshalFailed, "failed to unmarshal SystemCfg, err: %s", err)
+	}
+	newSLOCfg.PSICfgMerged, err = calculatePSIConfigMerged(oldSLOCfgCopy.PSICfgMerged, configMap)
+	if err != nil {
+		klog.V(5).Infof("failed to get PSICfg, err: %s", err)
+		p.recorder.Eventf(configMap, "Warning", config.ReasonSLOConfigUnmarshalFailed, "failed to unmarshal PSICfg, err: %s", err)
 	}
 	newSLOCfg.HostAppCfgMerged, err = calculateHostAppConfigMerged(oldSLOCfgCopy.HostAppCfgMerged, configMap)
 	if err != nil {
