@@ -408,6 +408,17 @@ type CPUBurstConfig struct {
 	CFSQuotaBurstPeriodSeconds *int64 `json:"cfsQuotaBurstPeriodSeconds,omitempty" validate:"omitempty,min=-1"`
 }
 
+type PodCfgProfile struct {
+	Namespace   string                `json:"namespace,omitempty" validate:"omitempty,dns1123label"`
+	PodSelector *metav1.LabelSelector `json:"podSelector,omitempty"`
+}
+
+type PodCPUBurstStrategy struct {
+	PodCfgProfile  `json:",inline"`
+	OverridePod    bool `json:"overridePod,omitempty"`
+	CPUBurstConfig `json:",inline"`
+}
+
 type CPUBurstStrategy struct {
 	CPUBurstConfig `json:",inline"`
 	// scale down cfs quota if node cpu overload, default = 50
@@ -434,6 +445,8 @@ type NodeSLOSpec struct {
 	ResourceQOSStrategy *ResourceQOSStrategy `json:"resourceQOSStrategy,omitempty"`
 	// CPU Burst Strategy
 	CPUBurstStrategy *CPUBurstStrategy `json:"cpuBurstStrategy,omitempty"`
+	// Pod-level CPU burst configuration strategies, allows fine-grained control over
+	PodCPUBurstStrategies []PodCPUBurstStrategy `json:"podCPUBurstStrategies,omitempty"`
 	//node global system config
 	SystemStrategy *SystemStrategy `json:"systemStrategy,omitempty"`
 	// Third party extensions for NodeSLO
