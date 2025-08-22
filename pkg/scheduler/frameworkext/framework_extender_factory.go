@@ -165,6 +165,7 @@ func (f *FrameworkExtenderFactory) InitScheduler(sched Scheduler) {
 			f.schedulePod = schedulePod
 			adaptor.Scheduler.SchedulePod = f.scheduleOne
 		}
+		f.CollectSchedulePodResult(adaptor.Scheduler)
 		nextPod := adaptor.Scheduler.NextPod
 		adaptor.Scheduler.NextPod = func() (*framework.QueuedPodInfo, error) {
 			podInfo, err := f.runNextPodPlugin()
