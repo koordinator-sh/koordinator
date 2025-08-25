@@ -17,19 +17,18 @@ limitations under the License.
 package loadaware
 
 import (
+	"sort"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/klog/v2"
+	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	schedulingconfig "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
-	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
 func isNodeMetricExpired(nodeMetric *slov1alpha1.NodeMetric, nodeMetricExpirationSeconds int64) bool {
@@ -46,102 +45,90 @@ func getNodeMetricReportInterval(nodeMetric *slov1alpha1.NodeMetric) time.Durati
 	return time.Duration(*nodeMetric.Spec.CollectPolicy.ReportIntervalSeconds) * time.Second
 }
 
-func missedLatestUpdateTime(assignedTime, updateTime time.Time) bool {
-	return assignedTime.After(updateTime)
-}
-
-func stillInTheReportInterval(assignedTime, updateTime time.Time, reportInterval time.Duration) bool {
-	return assignedTime.Before(updateTime) && updateTime.Sub(assignedTime) < reportInterval
-}
-
-func getTargetAggregatedUsage(nodeMetric *slov1alpha1.NodeMetric, aggregatedDuration *metav1.Duration, aggregationType extension.AggregationType) *slov1alpha1.ResourceMap {
-	if nodeMetric.Status.NodeMetric == nil || len(nodeMetric.Status.NodeMetric.AggregatedNodeUsages) == 0 {
-		return nil
-	}
-
+func (m *nodeMetric) getTargetAggregatedUsage(aggregatedDuration metav1.Duration, aggregationType extension.AggregationType) ResourceVector {
 	// If no specific period is set, the non-empty maximum period recorded by NodeMetrics will be used by default.
 	// This is a default policy.
-	if aggregatedDuration == nil || aggregatedDuration.Duration == 0 {
-		var maxDuration time.Duration
-		var maxIndex int = -1
-		for i, v := range nodeMetric.Status.NodeMetric.AggregatedNodeUsages {
-			if len(v.Usage[aggregationType].ResourceList) > 0 && v.Duration.Duration > maxDuration {
-				maxDuration = v.Duration.Duration
-				maxIndex = i
-			}
-		}
+	d := aggregatedDuration.Duration
+	vec := m.aggUsages[aggUsageKey{Type: aggregationType, Duration: d}]
+	if vec == nil && d == 0 {
+		// All values in aggregatedDuration are empty, downgrade to use the values in NodeUsage
+		vec = m.nodeUsage
+	}
+	return vec
+}
 
-		if maxIndex == -1 {
-			// All values in aggregatedDuration are empty, downgrade to use the values in NodeUsage
-			usage := nodeMetric.Status.NodeMetric.NodeUsage
-			if len(usage.ResourceList) > 0 {
-				return &usage
-			}
-		} else {
-			usage := nodeMetric.Status.NodeMetric.AggregatedNodeUsages[maxIndex].Usage[aggregationType]
-			return &usage
-		}
-	} else if aggregatedDuration != nil {
-		for _, v := range nodeMetric.Status.NodeMetric.AggregatedNodeUsages {
-			if v.Duration.Duration == aggregatedDuration.Duration {
-				usage := v.Usage[aggregationType]
-				if len(usage.ResourceList) > 0 {
-					return &usage
-				}
-			}
+type usageThresholdsFilterProfile struct {
+	UsageThresholds     ResourceVector
+	ProdUsageThresholds ResourceVector
+	AggregatedUsage     *aggregatedUsageFilterProfile
+}
+
+type aggregatedUsageFilterProfile struct {
+	UsageThresholds         ResourceVector
+	UsageAggregationType    extension.AggregationType
+	UsageAggregatedDuration metav1.Duration
+}
+
+func NewUsageThresholdsFilterProfile(args *schedulingconfig.LoadAwareSchedulingArgs, vectorizer ResourceVectorizer) *usageThresholdsFilterProfile {
+	p := &usageThresholdsFilterProfile{}
+	if len(args.UsageThresholds) > 0 {
+		p.UsageThresholds = vectorizer.ToFactorVec(args.UsageThresholds)
+	}
+	if len(args.ProdUsageThresholds) > 0 {
+		p.ProdUsageThresholds = vectorizer.ToFactorVec(args.ProdUsageThresholds)
+	}
+	if aggArgs := args.Aggregated; aggArgs != nil && len(aggArgs.UsageThresholds) > 0 && aggArgs.UsageAggregationType != "" {
+		p.AggregatedUsage = &aggregatedUsageFilterProfile{
+			UsageThresholds:         vectorizer.ToFactorVec(args.Aggregated.UsageThresholds),
+			UsageAggregationType:    args.Aggregated.UsageAggregationType,
+			UsageAggregatedDuration: args.Aggregated.UsageAggregatedDuration,
 		}
 	}
-	return nil
+	return p
 }
 
-func filterWithAggregation(args *schedulingconfig.LoadAwareSchedulingAggregatedArgs) bool {
-	return args != nil && len(args.UsageThresholds) > 0 && args.UsageAggregationType != ""
-}
-
-func scoreWithAggregation(args *schedulingconfig.LoadAwareSchedulingAggregatedArgs) bool {
-	return args != nil && args.ScoreAggregationType != ""
-}
-
-type usageThresholdsFilterProfile = extension.CustomUsageThresholds
-
-func generateUsageThresholdsFilterProfile(node *corev1.Node, args *schedulingconfig.LoadAwareSchedulingArgs) *usageThresholdsFilterProfile {
-	usageThresholds, prodUsageThresholds := args.UsageThresholds, args.ProdUsageThresholds
-	customUsageThresholds, err := extension.GetCustomUsageThresholds(node)
+// NOTICE: unknown resource name in custom usage thresholds for vectorizer will be skipped in calculation.
+//
+// Currently, we add all supported resources (cpu, memory) collected by koordlet with hard code
+// that can be used in load aware plugin for compatibility.
+func (tfp *usageThresholdsFilterProfile) generateUsageThresholdsFilterProfile(node *corev1.Node, vectorizer ResourceVectorizer) *usageThresholdsFilterProfile {
+	c, err := extension.GetCustomUsageThresholds(node)
 	if err != nil {
 		klog.V(5).ErrorS(err, "failed to GetCustomUsageThresholds from", "node", node.Name)
-		customUsageThresholds = &extension.CustomUsageThresholds{
-			UsageThresholds:     usageThresholds,
-			ProdUsageThresholds: prodUsageThresholds,
-		}
-		if filterWithAggregation(args.Aggregated) {
-			customUsageThresholds.AggregatedUsage = &extension.CustomAggregatedUsage{
-				UsageThresholds:         args.Aggregated.UsageThresholds,
-				UsageAggregationType:    args.Aggregated.UsageAggregationType,
-				UsageAggregatedDuration: &args.Aggregated.UsageAggregatedDuration,
-			}
-		}
+		return tfp
+	}
+	if c == nil {
+		return tfp
+	}
+	if aggArgs := c.AggregatedUsage; aggArgs != nil && !(len(aggArgs.UsageThresholds) > 0 && aggArgs.UsageAggregationType != "") {
+		c.AggregatedUsage = nil
+	}
+	if len(c.UsageThresholds) == 0 && len(c.ProdUsageThresholds) == 0 && c.AggregatedUsage == nil {
+		return tfp
+	}
+	p := &usageThresholdsFilterProfile{}
+	if len(c.UsageThresholds) == 0 {
+		p.UsageThresholds = tfp.UsageThresholds
 	} else {
-		if len(customUsageThresholds.UsageThresholds) == 0 {
-			customUsageThresholds.UsageThresholds = usageThresholds
+		p.UsageThresholds = vectorizer.ToFactorVec(c.UsageThresholds)
+	}
+	if len(c.ProdUsageThresholds) == 0 {
+		p.ProdUsageThresholds = tfp.ProdUsageThresholds
+	} else {
+		p.ProdUsageThresholds = vectorizer.ToFactorVec(c.ProdUsageThresholds)
+	}
+	if c.AggregatedUsage == nil {
+		p.AggregatedUsage = tfp.AggregatedUsage
+	} else {
+		p.AggregatedUsage = &aggregatedUsageFilterProfile{
+			UsageThresholds:      vectorizer.ToFactorVec(c.AggregatedUsage.UsageThresholds),
+			UsageAggregationType: c.AggregatedUsage.UsageAggregationType,
 		}
-		if len(customUsageThresholds.ProdUsageThresholds) == 0 {
-			customUsageThresholds.ProdUsageThresholds = prodUsageThresholds
-		}
-		if customUsageThresholds.AggregatedUsage != nil {
-			if len(customUsageThresholds.AggregatedUsage.UsageThresholds) == 0 ||
-				customUsageThresholds.AggregatedUsage.UsageAggregationType == "" {
-				customUsageThresholds.AggregatedUsage = nil
-			}
-		}
-		if customUsageThresholds.AggregatedUsage == nil && filterWithAggregation(args.Aggregated) {
-			customUsageThresholds.AggregatedUsage = &extension.CustomAggregatedUsage{
-				UsageThresholds:         args.Aggregated.UsageThresholds,
-				UsageAggregationType:    args.Aggregated.UsageAggregationType,
-				UsageAggregatedDuration: &args.Aggregated.UsageAggregatedDuration,
-			}
+		if d := c.AggregatedUsage.UsageAggregatedDuration; d != nil {
+			p.AggregatedUsage.UsageAggregatedDuration = *d
 		}
 	}
-	return customUsageThresholds
+	return p
 }
 
 func getResourceValue(resourceName corev1.ResourceName, quantity resource.Quantity) int64 {
@@ -151,38 +138,15 @@ func getResourceValue(resourceName corev1.ResourceName, quantity resource.Quanti
 	return quantity.Value()
 }
 
-func buildPodMetricMap(nodeMetric *slov1alpha1.NodeMetric, filterProdPod bool) map[types.NamespacedName]corev1.ResourceList {
-	if len(nodeMetric.Status.PodsMetric) == 0 {
-		return nil
+func getResourceQuantity(resourceName corev1.ResourceName, value int64) resource.Quantity {
+	switch {
+	case resourceName == corev1.ResourceCPU:
+		return *resource.NewMilliQuantity(value, resource.DecimalSI)
+	case resourceName == corev1.ResourceMemory && value%1024 == 0:
+		return *resource.NewQuantity(value, resource.BinarySI)
+	default:
+		return *resource.NewQuantity(value, resource.DecimalSI)
 	}
-	podMetrics := make(map[types.NamespacedName]corev1.ResourceList)
-	for _, podMetric := range nodeMetric.Status.PodsMetric {
-		if filterProdPod && podMetric.Priority != extension.PriorityProd {
-			continue
-		}
-		name := types.NamespacedName{
-			Namespace: podMetric.Namespace,
-			Name:      podMetric.Name,
-		}
-		podMetrics[name] = podMetric.PodUsage.ResourceList
-	}
-	return podMetrics
-}
-
-func sumPodUsages(podMetrics map[types.NamespacedName]corev1.ResourceList, estimatedPods sets.Set[types.NamespacedName]) (podUsages, estimatedPodsUsages corev1.ResourceList) {
-	if len(podMetrics) == 0 {
-		return nil, nil
-	}
-	podUsages = make(corev1.ResourceList)
-	estimatedPodsUsages = make(corev1.ResourceList)
-	for podName, usage := range podMetrics {
-		if estimatedPods.Has(podName) {
-			util.AddResourceList(estimatedPodsUsages, usage)
-			continue
-		}
-		util.AddResourceList(podUsages, usage)
-	}
-	return podUsages, estimatedPodsUsages
 }
 
 // isDaemonSetPod returns true if the pod is a IsDaemonSetPod.
@@ -193,4 +157,114 @@ func isDaemonSetPod(ownerRefList []metav1.OwnerReference) bool {
 		}
 	}
 	return false
+}
+
+type ResourceVectorizer []corev1.ResourceName
+type ResourceVector []int64
+
+func NewResourceVectorizer(names ...corev1.ResourceName) ResourceVectorizer {
+	sort.Slice(names, func(i, j int) bool {
+		return names[i] < names[j]
+	})
+	return ResourceVectorizer(names)
+}
+
+// NOTICE: unknown resource name will be ignored in vectorization
+func (rv ResourceVectorizer) ToVec(list corev1.ResourceList) ResourceVector {
+	vec := make(ResourceVector, len(rv))
+	for i, name := range rv {
+		if q, ok := list[name]; ok {
+			vec[i] = getResourceValue(name, q)
+		}
+	}
+	return vec
+}
+
+// NOTICE: unknown resource name will be ignored in vectorization
+func (rv ResourceVectorizer) ToFactorVec(list map[corev1.ResourceName]int64) ResourceVector {
+	vec := make(ResourceVector, len(rv))
+	for i, name := range rv {
+		vec[i] = list[name]
+	}
+	return vec
+}
+
+func (rv ResourceVectorizer) ToList(vec ResourceVector) corev1.ResourceList {
+	list := make(corev1.ResourceList, len(rv))
+	for i, name := range rv {
+		list[name] = getResourceQuantity(name, vec[i])
+	}
+	return list
+}
+
+func (rv ResourceVectorizer) ToFactorList(vec ResourceVector) map[corev1.ResourceName]int64 {
+	list := make(map[corev1.ResourceName]int64, len(rv))
+	for i, name := range rv {
+		list[name] = vec[i]
+	}
+	return list
+}
+
+func (rv ResourceVectorizer) EmptyVec() ResourceVector {
+	return make(ResourceVector, len(rv))
+}
+
+func (v ResourceVector) Empty() bool {
+	for i := range v {
+		if v[i] != 0 {
+			return false
+		}
+	}
+	return true
+}
+
+func (v ResourceVector) Add(y ResourceVector) {
+	for i := range v {
+		v[i] += y[i]
+	}
+}
+
+// v = v + max(0, x - y)
+func (v ResourceVector) AddDelta(x, y ResourceVector) (changed bool) {
+	for i, value := range x {
+		if y != nil {
+			value -= y[i]
+		}
+		if value > 0 {
+			v[i] += value
+			changed = true
+		}
+	}
+	return
+}
+
+func (v ResourceVector) Sub(y ResourceVector) {
+	for i := range v {
+		v[i] -= y[i]
+	}
+}
+
+// v = v - max(0, x - y)
+func (v ResourceVector) SubDelta(x, y ResourceVector) (changed bool) {
+	for i, value := range x {
+		if y != nil {
+			value -= y[i]
+		}
+		if value > 0 {
+			v[i] -= value
+			changed = true
+		}
+	}
+	return
+}
+
+func (v ResourceVector) Clone() framework.StateData {
+	if v == nil {
+		return nil
+	}
+	copy := make(ResourceVector, len(v))
+	for i := range v {
+		copy[i] = v[i]
+	}
+	return copy
 }

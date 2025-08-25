@@ -39,16 +39,14 @@ const (
 )
 
 type DefaultEstimator struct {
-	resourceWeights map[corev1.ResourceName]int64
-	scalingFactors  map[corev1.ResourceName]int64
-	allowCustomize  bool
+	scalingFactors map[corev1.ResourceName]int64
+	allowCustomize bool
 }
 
 func NewDefaultEstimator(args *config.LoadAwareSchedulingArgs, handle framework.Handle) (Estimator, error) {
 	return &DefaultEstimator{
-		resourceWeights: args.ResourceWeights,
-		scalingFactors:  args.EstimatedScalingFactors,
-		allowCustomize:  args.AllowCustomizeEstimation,
+		scalingFactors: args.EstimatedScalingFactors,
+		allowCustomize: args.AllowCustomizeEstimation,
 	}, nil
 }
 
@@ -70,16 +68,16 @@ func (e *DefaultEstimator) EstimatePod(pod *corev1.Pod) (map[corev1.ResourceName
 			}
 		}
 	}
-	return estimatedPodUsed(pod, e.resourceWeights, factors), nil
+	return estimatedPodUsed(pod, factors), nil
 }
 
-func estimatedPodUsed(pod *corev1.Pod, resourceWeights map[corev1.ResourceName]int64, scalingFactors map[corev1.ResourceName]int64) map[corev1.ResourceName]int64 {
+func estimatedPodUsed(pod *corev1.Pod, scalingFactors map[corev1.ResourceName]int64) map[corev1.ResourceName]int64 {
 	requests, limits := resourceapi.PodRequests(pod, resourceapi.PodResourcesOptions{}), resourceapi.PodLimits(pod, resourceapi.PodResourcesOptions{})
 	estimatedUsed := make(map[corev1.ResourceName]int64)
 	priorityClass := extension.GetPodPriorityClassWithDefault(pod)
-	for resourceName := range resourceWeights {
+	for resourceName, factor := range scalingFactors {
 		realResourceName := extension.TranslateResourceNameByPriorityClass(priorityClass, resourceName)
-		estimatedUsed[resourceName] = estimatedUsedByResource(requests, limits, realResourceName, scalingFactors[resourceName])
+		estimatedUsed[resourceName] = estimatedUsedByResource(requests, limits, realResourceName, factor)
 	}
 	return estimatedUsed
 }
