@@ -165,6 +165,7 @@ func (f *FrameworkExtenderFactory) InitScheduler(sched Scheduler) {
 			f.schedulePod = schedulePod
 			adaptor.Scheduler.SchedulePod = f.scheduleOne
 		}
+		f.CollectSchedulePodResult(adaptor.Scheduler)
 		nextPod := adaptor.Scheduler.NextPod
 		adaptor.Scheduler.NextPod = func() (*framework.QueuedPodInfo, error) {
 			podInfo, err := f.runNextPodPlugin()
@@ -293,6 +294,27 @@ func (f *FrameworkExtenderFactory) scheduleOne(ctx context.Context, fwk framewor
 	}
 
 	return scheduleResult, nil
+}
+
+func (f *FrameworkExtenderFactory) CollectSchedulePodResult(sched *scheduler.Scheduler) {
+	schedulePod := sched.SchedulePod
+	sched.SchedulePod = func(ctx context.Context, fwk framework.Framework, state *framework.CycleState, pod *corev1.Pod) (scheduler.ScheduleResult, error) {
+		scheduleResult, err := schedulePod(ctx, fwk, state, pod)
+		evaluatedNodes, feasibleNodes := scheduleResult.EvaluatedNodes, scheduleResult.FeasibleNodes
+		if fitError, ok := err.(*framework.FitError); ok && evaluatedNodes == 0 {
+			evaluatedNodes = fitError.NumAllNodes
+		}
+		// avoid recording metrics when there is no node or internal error in scheduling
+		if evaluatedNodes != 0 {
+			koordschedulermetrics.PodSchedulingEvaluatedNodes.Observe(float64(evaluatedNodes))
+			koordschedulermetrics.PodSchedulingFeasibleNodes.Observe(float64(feasibleNodes))
+		}
+		if scheduleResult.SuggestedHost != "" {
+			koordschedulermetrics.PodSchedulingEvaluatedNodesWithSuggested.Observe(float64(evaluatedNodes))
+			koordschedulermetrics.PodSchedulingFeasibleNodesWithSuggested.Observe(float64(feasibleNodes))
+		}
+		return scheduleResult, err
+	}
 }
 
 func (f *FrameworkExtenderFactory) InterceptSchedulerError(sched *scheduler.Scheduler) {
