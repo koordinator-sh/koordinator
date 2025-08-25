@@ -321,6 +321,10 @@ func (pl *Plugin) prepareMatchReservationStateForReservePod(ctx context.Context,
 	rInfo := frameworkext.NewReservationInfo(r)
 	isPreAllocationRequired := extension.IsPreAllocationRequired(pod.Labels)
 
+	// by default list all nodes existing a reservation
+	// merge with pre-allocatable pods for the pre-allocation
+	allNodes := pl.reservationCache.listAllNodes()
+
 	preAllocatableCandidatesOnNode := map[string][]*corev1.Pod{}
 	extender, _ := pl.handle.(frameworkext.FrameworkExtender)
 	if extender != nil { // global preRestore
@@ -347,11 +351,24 @@ func (pl *Plugin) prepareMatchReservationStateForReservePod(ctx context.Context,
 			if err != nil {
 				return nil, false, framework.AsStatus(err)
 			}
+			if len(preAllocatableCandidatesOnNode) > 0 {
+				nodeMap := make(map[string]struct{}, len(allNodes))
+				for _, node := range allNodes {
+					nodeMap[node] = struct{}{}
+				}
+				for node := range preAllocatableCandidatesOnNode {
+					if _, ok := nodeMap[node]; !ok {
+						allNodes = append(allNodes, node)
+					}
+				}
+				if klog.V(6).Enabled() {
+					klog.InfoS("listPreAllocatableCandidates got candidate pods", "pod", klog.KObj(pod), "reservation", rName, "preAllocatable nodes", len(preAllocatableCandidatesOnNode), "all nodes", len(allNodes))
+				}
+			}
 		}
 	}
 
 	var stateIndex, diagnosisIndex int32
-	allNodes := pl.reservationCache.listAllNodes()
 	allNodeReservationStates := make([]*nodeReservationState, len(allNodes))
 	allNodeDiagnosisStates := make([]*nodeDiagnosisState, len(allNodes))
 	parallelCtx, cancel := context.WithCancel(ctx)
@@ -378,7 +395,7 @@ func (pl *Plugin) prepareMatchReservationStateForReservePod(ctx context.Context,
 			return
 		}
 
-		var unmatched, matchedOrIgnored []*frameworkext.ReservationInfo
+		var unmatched []*frameworkext.ReservationInfo
 		diagnosisState := &nodeDiagnosisState{
 			nodeName:                 nodeName,
 			ignored:                  0,
@@ -431,13 +448,16 @@ func (pl *Plugin) prepareMatchReservationStateForReservePod(ctx context.Context,
 				}
 			}
 		}
+		if klog.V(6).Enabled() {
+			klog.InfoS("filter pre-allocatable pods", "reservation", rInfo.GetName(), "node", nodeName, "candidate", len(preAllocatableCandidatesOnNode[nodeName]), "filtered", len(preAllocatablePods))
+		}
 
-		if diagnosisState.ignored > 0 || diagnosisState.ownerMatched > 0 {
+		if diagnosisState.ownerMatched > 0 {
 			idx := atomic.AddInt32(&diagnosisIndex, 1)
 			allNodeDiagnosisStates[idx-1] = diagnosisState
 		}
 
-		if len(matchedOrIgnored) == 0 && len(unmatched) == 0 && len(preAllocatablePods) == 0 {
+		if len(unmatched) == 0 && len(preAllocatablePods) == 0 {
 			return
 		}
 
@@ -448,7 +468,7 @@ func (pl *Plugin) prepareMatchReservationStateForReservePod(ctx context.Context,
 
 		nodeRState := &nodeReservationState{
 			nodeName:           nodeName,
-			matchedOrIgnored:   matchedOrIgnored,
+			matchedOrIgnored:   nil,
 			unmatched:          unmatched,
 			preAllocatablePods: preAllocatablePods,
 		}
@@ -475,7 +495,7 @@ func (pl *Plugin) prepareMatchReservationStateForReservePod(ctx context.Context,
 			}
 		}
 
-		if len(matchedOrIgnored) > 0 || len(unmatched) > 0 {
+		if len(unmatched) > 0 || len(preAllocatablePods) > 0 {
 			index := atomic.AddInt32(&stateIndex, 1)
 			allNodeReservationStates[index-1] = nodeRState
 		}
@@ -532,8 +552,10 @@ func listPreAllocatableCandidates(podLister listercorev1.PodLister, rInfo *frame
 			if candidatePod.Spec.NodeName == "" {
 				continue
 			}
-			// FIXME: Should check if the annotated reservation has been deleted.
 			if candidatePod.Annotations != nil && candidatePod.Annotations[extension.AnnotationReservationAllocated] != "" {
+				continue
+			}
+			if reservationutil.IsReservePod(candidatePod) {
 				continue
 			}
 			if _, ok := podMap[candidatePod.UID]; ok {

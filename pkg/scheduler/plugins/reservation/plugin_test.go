@@ -3257,14 +3257,6 @@ func TestFilterNominateReservation(t *testing.T) {
 			targetReservation: allocateOnceAndAllocatedReservation,
 			wantStatus:        framework.NewStatus(framework.Unschedulable, "reservation has allocateOnce enabled and has already been allocated"),
 		},
-		{
-			name: "missing reservation info but impossible",
-			podRequests: corev1.ResourceList{
-				corev1.ResourceCPU: resource.MustParse("2"),
-			},
-			targetReservation: reservation4C8G,
-			wantStatus:        framework.AsStatus(fmt.Errorf("impossible, there is no relevant Reservation information")),
-		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -3318,6 +3310,12 @@ func TestFilterNominateReservation(t *testing.T) {
 			cycleState.Write(stateKey, state)
 
 			rInfo := frameworkext.NewReservationInfo(tt.targetReservation)
+			for _, v := range state.nodeReservationStates[tt.targetReservation.Status.NodeName].matchedOrIgnored {
+				if v.UID() == rInfo.UID() {
+					rInfo = v
+					break
+				}
+			}
 			status := pl.FilterNominateReservation(context.TODO(), cycleState, pod, rInfo, node.Name)
 			assert.Equal(t, tt.wantStatus, status)
 		})

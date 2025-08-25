@@ -113,10 +113,46 @@ func TestReservationInfo(t *testing.T) {
 		},
 	}
 	_, testParseInvalidOwnerErr := reservationutil.ParseReservationOwnerMatchers(testInvalidReservation.Spec.Owners)
+	testPreAllocationReservation := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-r",
+			UID:  "123456",
+		},
+		Spec: schedulingv1alpha1.ReservationSpec{
+			Template: &corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name: "test-container",
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("1"),
+									corev1.ResourceMemory: resource.MustParse("1Gi"),
+								},
+							},
+						},
+					},
+				},
+			},
+			Owners: []schedulingv1alpha1.ReservationOwner{
+				{
+					LabelSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							"foo": "bar",
+						},
+					},
+				},
+			},
+			AllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyRestricted,
+			AllocateOnce:   pointer.Bool(false),
+			PreAllocation:  true,
+		},
+	}
 	tests := []struct {
-		name string
-		r    *schedulingv1alpha1.Reservation
-		want *ReservationInfo
+		name   string
+		r      *schedulingv1alpha1.Reservation
+		want   *ReservationInfo
+		wantFn func(*testing.T, *ReservationInfo)
 	}{
 		{
 			name: "normal restricted reservation",
@@ -151,6 +187,25 @@ func TestReservationInfo(t *testing.T) {
 				ParseError:       utilerrors.NewAggregate([]error{testParseInvalidOwnerErr}),
 			},
 		},
+		{
+			name: "pre-allocation reservation",
+			r:    testPreAllocationReservation,
+			want: &ReservationInfo{
+				Reservation: testPreAllocationReservation,
+				Pod:         reservationutil.NewReservePod(testPreAllocationReservation),
+				ResourceNames: []corev1.ResourceName{
+					corev1.ResourceCPU,
+					corev1.ResourceMemory,
+				},
+				Allocatable:      reservationutil.ReservationRequests(testPreAllocationReservation),
+				AllocatablePorts: util.RequestedHostPorts(reservationutil.NewReservePod(testPreAllocationReservation)),
+				AssignedPods:     map[types.UID]*PodRequirement{},
+				OwnerMatchers:    testOwnerMatcher,
+			},
+			wantFn: func(t *testing.T, rInfo *ReservationInfo) {
+				assert.True(t, rInfo.IsPreAllocation())
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -158,6 +213,9 @@ func TestReservationInfo(t *testing.T) {
 			assert.Equal(t, tt.want, got)
 			got1 := got.Clone()
 			assert.Equal(t, tt.want, got1)
+			if tt.wantFn != nil {
+				tt.wantFn(t, got1)
+			}
 		})
 	}
 }
