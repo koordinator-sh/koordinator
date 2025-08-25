@@ -1198,6 +1198,23 @@ func (in *SystemStrategy) DeepCopyInto(out *SystemStrategy) {
 		*out = new(int64)
 		**out = **in
 	}
+	if in.SchedGroupIdentityEnabled != nil {
+		in, out := &in.SchedGroupIdentityEnabled, &out.SchedGroupIdentityEnabled
+		*out = new(int64)
+		**out = **in
+	}
+	if in.SchedIdleSaverWmark != nil {
+		in, out := &in.SchedIdleSaverWmark, &out.SchedIdleSaverWmark
+		*out = new(int64)
+		**out = **in
+	}
+	if in.SchedFeatures != nil {
+		in, out := &in.SchedFeatures, &out.SchedFeatures
+		*out = make(map[string]bool, len(*in))
+		for key, val := range *in {
+			(*out)[key] = val
+		}
+	}
 	out.TotalNetworkBandwidth = in.TotalNetworkBandwidth.DeepCopy()
 }
 

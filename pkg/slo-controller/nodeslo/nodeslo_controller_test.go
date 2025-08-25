@@ -320,7 +320,7 @@ func TestNodeSLOReconciler_Reconcile(t *testing.T) {
 }
 `,
 			configuration.CPUBurstConfigKey:        "{\"clusterStrategy\":{\"cfsQuotaBurstPeriodSeconds\":60}}",
-			configuration.SystemConfigKey:          "{\"clusterStrategy\":{\"minFreeKbytesFactor\":150,\"watermarkScaleFactor\":150}}",
+			configuration.SystemConfigKey:          `{"clusterStrategy":{"minFreeKbytesFactor":150,"watermarkScaleFactor":150,"schedFeatures": {"ID_ABSOLUTE_EXPEL": true, "ID_EXPELLER_SHARE_CORE": false}}}`,
 			configuration.HostApplicationConfigKey: "{\"applications\": [{\"name\": \"test-app\"}]}",
 		},
 	}
@@ -341,7 +341,12 @@ func TestNodeSLOReconciler_Reconcile(t *testing.T) {
 	testingCPUBurstStrategy.CFSQuotaBurstPeriodSeconds = pointer.Int64(60)
 
 	testingSystemStrategy := sloconfig.DefaultSystemStrategy()
+	testingSystemStrategy.WatermarkScaleFactor = pointer.Int64(150)
 	testingSystemStrategy.MinFreeKbytesFactor = pointer.Int64(150)
+	testingSystemStrategy.SchedFeatures = map[string]bool{
+		"ID_ABSOLUTE_EXPEL":      true,
+		"ID_EXPELLER_SHARE_CORE": false,
+	}
 
 	testingHostApplication := []slov1alpha1.HostApplicationSpec{
 		{

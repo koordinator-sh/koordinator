@@ -1730,12 +1730,37 @@ spec:
                 description: node global system config
                 properties:
                   memcgReapBackGround:
-                    description: /sys/kernel/mm/memcg_reaper/reap_background
+                    description: |-
+                      /sys/kernel/mm/memcg_reaper/reap_background
+                      Unset by default.
                     format: int64
                     type: integer
                   minFreeKbytesFactor:
-                    description: for /proc/sys/vm/min_free_kbytes, min_free_kbytes
-                      = minFreeKbytesFactor * nodeTotalMemory /10000
+                    description: |-
+                      for /proc/sys/vm/min_free_kbytes, min_free_kbytes = minFreeKbytesFactor * nodeTotalMemory /10000
+                      Unset by default. 1 means 1/10000. Recommended = 100.
+                    format: int64
+                    type: integer
+                  schedFeatures:
+                    additionalProperties:
+                      type: boolean
+                    description: |-
+                      /sys/kernel/sched_features
+                      Extra scheduling features supported by the kernel.
+                    type: object
+                  schedGroupIdentityEnabled:
+                    description: |-
+                      /sys/kernel/sched_group_identity_enabled
+                      https://github.com/koordinator-sh/koordinator/pull/1172
+                      0 to disable, 1 to enable.
+                      Disable (0) when CPUQoS (Group Identity) is manually disabled.
+                    format: int64
+                    type: integer
+                  schedIdleSaverWmark:
+                    description: |-
+                      /proc/sys/kernel/sched_idle_saver_wmark
+                      https://www.alibabacloud.com/help/en/alinux/user-guide/group-identity-feature
+                      1 means 1ns.
                     format: int64
                     type: integer
                   totalNetworkBandwidth:
@@ -1748,7 +1773,9 @@ spec:
                     pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                     x-kubernetes-int-or-string: true
                   watermarkScaleFactor:
-                    description: /proc/sys/vm/watermark_scale_factor
+                    description: |-
+                      /proc/sys/vm/watermark_scale_factor
+                      Unset by default. 1 means 1/10000. Recommended = 150.
                     format: int64
                     type: integer
                 type: object

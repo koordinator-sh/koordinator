@@ -18,7 +18,6 @@ package blkio
 
 import (
 	"fmt"
-	"path"
 	"path/filepath"
 	"testing"
 
@@ -139,7 +138,7 @@ func TestBlkIOReconcile_reconcile(t *testing.T) {
 
 		helper := system.NewFileTestUtil(t)
 		helper.SetAnolisOSResourcesSupported(true)
-		system.Conf.CgroupRootDir = path.Join(helper.TempDir, sysFSRootDirName)
+		system.Conf.CgroupRootDir = filepath.Join(helper.TempDir, sysFSRootDirName)
 		// root class
 		rootClassDir := ""
 		helper.WriteCgroupFileContents(rootClassDir, system.BlkioIOQoS, "253:16 enable=1 ctrl=user rlat=2000 wlat=2000")

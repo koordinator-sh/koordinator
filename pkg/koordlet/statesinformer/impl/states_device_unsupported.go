@@ -19,7 +19,7 @@ limitations under the License.
 
 package impl
 
-func (s *statesInformer) reportGPUDevice() {
+func (s *statesInformer) reportDevice() {
 	return
 }
 

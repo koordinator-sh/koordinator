@@ -17,7 +17,7 @@ limitations under the License.
 package system
 
 import (
-	"path"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -30,9 +30,9 @@ const (
 func TestGetPSIByResource_CPUErr(t *testing.T) {
 	dir := t.TempDir()
 	psiPath := PSIPath{
-		CPU: path.Join(dir, "cpu.pressure"),
-		Mem: path.Join(dir, "memory.pressure"),
-		IO:  path.Join(dir, "io.pressure"),
+		CPU: filepath.Join(dir, "cpu.pressure"),
+		Mem: filepath.Join(dir, "memory.pressure"),
+		IO:  filepath.Join(dir, "io.pressure"),
 	}
 	assert.NotPanics(t, func() {
 		_, err := GetPSIByResource(psiPath)
@@ -47,9 +47,9 @@ func TestGetPSIByResource_MemErr(t *testing.T) {
 	helper.CreateFile("cpu.pressure")
 	helper.WriteFileContents("cpu.pressure", FullCorrectPSIContents)
 	psiPath := PSIPath{
-		CPU: path.Join(helper.TempDir, "cpu.pressure"),
-		Mem: path.Join(helper.TempDir, "memory.pressure"),
-		IO:  path.Join(helper.TempDir, "io.pressure"),
+		CPU: filepath.Join(helper.TempDir, "cpu.pressure"),
+		Mem: filepath.Join(helper.TempDir, "memory.pressure"),
+		IO:  filepath.Join(helper.TempDir, "io.pressure"),
 	}
 	assert.NotPanics(t, func() {
 		_, err := GetPSIByResource(psiPath)
@@ -66,9 +66,9 @@ func TestGetPSIByResource_IOErr(t *testing.T) {
 	helper.CreateFile("memory.pressure")
 	helper.WriteFileContents("memory.pressure", FullCorrectPSIContents)
 	psiPath := PSIPath{
-		CPU: path.Join(helper.TempDir, "cpu.pressure"),
-		Mem: path.Join(helper.TempDir, "memory.pressure"),
-		IO:  path.Join(helper.TempDir, "io.pressure"),
+		CPU: filepath.Join(helper.TempDir, "cpu.pressure"),
+		Mem: filepath.Join(helper.TempDir, "memory.pressure"),
+		IO:  filepath.Join(helper.TempDir, "io.pressure"),
 	}
 	assert.NotPanics(t, func() {
 		_, err := GetPSIByResource(psiPath)
@@ -87,9 +87,9 @@ func TestGetPSIByResource(t *testing.T) {
 	helper.CreateFile("io.pressure")
 	helper.WriteFileContents("io.pressure", FullCorrectPSIContents)
 	psiPath := PSIPath{
-		CPU: path.Join(helper.TempDir, "cpu.pressure"),
-		Mem: path.Join(helper.TempDir, "memory.pressure"),
-		IO:  path.Join(helper.TempDir, "io.pressure"),
+		CPU: filepath.Join(helper.TempDir, "cpu.pressure"),
+		Mem: filepath.Join(helper.TempDir, "memory.pressure"),
+		IO:  filepath.Join(helper.TempDir, "io.pressure"),
 	}
 	assert.NotPanics(t, func() {
 		_, err := GetPSIByResource(psiPath)

@@ -17,7 +17,7 @@ limitations under the License.
 package runtimehooks
 
 import (
-	"path"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -70,7 +70,7 @@ func Test_runtimeHook_Run(t *testing.T) {
 			fields: fields{
 				config: &Config{
 					RuntimeHooksNetwork:             "unix",
-					RuntimeHooksAddr:                path.Join(tmpDir, "kooordlet.sock"),
+					RuntimeHooksAddr:                filepath.Join(tmpDir, "kooordlet.sock"),
 					RuntimeHooksFailurePolicy:       "Fail",
 					RuntimeHooksPluginFailurePolicy: "Ignore",
 					RuntimeHookDisableStages:        []string{"PreRunPodSandbox"},
@@ -93,7 +93,7 @@ func Test_runtimeHook_Run(t *testing.T) {
 			fields: fields{
 				config: &Config{
 					RuntimeHooksNetwork:             "unix",
-					RuntimeHooksAddr:                path.Join(tmpDir, "kooordlet.sock"),
+					RuntimeHooksAddr:                filepath.Join(tmpDir, "kooordlet.sock"),
 					RuntimeHooksFailurePolicy:       "Fail",
 					RuntimeHooksPluginFailurePolicy: "Ignore",
 					RuntimeHookDisableStages:        []string{"PreRunPodSandbox"},
