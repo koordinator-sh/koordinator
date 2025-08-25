@@ -85,8 +85,7 @@ func TestQuotaTopology_basicItemCheck(t *testing.T) {
 			name: "min > max",
 			quota: MakeQuota("temp").Min(MakeResourceList().CPU(12).Obj()).
 				Max(MakeResourceList().CPU(10).Obj()).Obj(),
-			err: fmt.Errorf("resourceKey %v of quota %v min :%v > max,%v", "cpu", "temp",
-				MakeResourceList().CPU(12).Obj(), MakeResourceList().CPU(10).Obj()),
+			err: fmt.Errorf("resourceKey %v of quota %v min 12 > max 10", "cpu", "temp"),
 		},
 		{
 			name:  "annotation sharedWeight < 0",
