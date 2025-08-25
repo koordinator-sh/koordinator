@@ -386,7 +386,7 @@ func SetCoreSchedFeatureEnabled() (bool, string) {
 	err = os.WriteFile(featurePath, []byte(fmt.Sprintf("%s\n", SchedFeatureCoreSched)), 0666)
 	if err != nil {
 		klog.V(5).Infof("Core Sched is unsupported by sched_features %s, write err: %s", featurePath, err)
-		return false, fmt.Sprintf("failed to write sched_features")
+		return false, fmt.Sprintf("failed to write sched_features, err: %s", err)
 	}
 
 	return true, ""

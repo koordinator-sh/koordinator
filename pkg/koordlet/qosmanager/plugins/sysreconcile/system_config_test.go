@@ -23,6 +23,7 @@ import (
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/utils/pointer"
 
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
@@ -35,7 +36,7 @@ import (
 )
 
 func Test_systemConfig_reconcile(t *testing.T) {
-	defaultStrategy := sloconfig.DefaultSystemStrategy()
+	defaultStrategy := getTestDefaultStrategy()
 	nodeValidMemory := int64(512) * 1024 * 1024 * 1024
 	initNode := testutil.MockTestNode("80", strconv.FormatInt(nodeValidMemory, 10))
 	tests := []struct {
@@ -121,6 +122,47 @@ func Test_systemConfig_reconcile(t *testing.T) {
 				sysutil.MemcgReapBackGround:  "0",
 			},
 		},
+		{
+			name:         "skip unset parameters",
+			initStrategy: sloconfig.DefaultSystemStrategy(),
+			newStrategy:  &slov1alpha1.SystemStrategy{},
+			node:         testutil.MockTestNode("80", strconv.FormatInt(nodeValidMemory, 10)),
+			expect:       map[sysutil.Resource]string{},
+		},
+		{
+			name:         "set part of parameters",
+			initStrategy: sloconfig.DefaultSystemStrategy(),
+			node:         testutil.MockTestNode("80", strconv.FormatInt(nodeValidMemory, 10)),
+			newStrategy: &slov1alpha1.SystemStrategy{
+				MinFreeKbytesFactor: pointer.Int64(88),
+				SchedIdleSaverWmark: pointer.Int64(5000000),
+				SchedFeatures: map[string]bool{
+					"ID_ABSOLUTE_EXPEL": true,
+				},
+			},
+			expect: map[sysutil.Resource]string{
+				sysutil.MinFreeKbytes:       strconv.FormatInt(nodeValidMemory/1024*88/10000, 10),
+				sysutil.SchedIdleSaverWmark: "5000000",
+				sysutil.SchedFeatures:       "ID_ABSOLUTE_EXPEL\n",
+			},
+		},
+		{
+			name:         "set part of parameters 1",
+			initStrategy: sloconfig.DefaultSystemStrategy(),
+			node:         testutil.MockTestNode("80", strconv.FormatInt(nodeValidMemory, 10)),
+			newStrategy: &slov1alpha1.SystemStrategy{
+				SchedGroupIdentityEnabled: pointer.Int64(0),
+				SchedIdleSaverWmark:       pointer.Int64(5000000),
+				SchedFeatures: map[string]bool{
+					"ID_EXPELLER_SHARE_CORE": false,
+				},
+			},
+			expect: map[sysutil.Resource]string{
+				sysutil.SchedGroupIdentityEnabled: "0",
+				sysutil.SchedIdleSaverWmark:       "5000000",
+				sysutil.SchedFeatures:             "NO_ID_EXPELLER_SHARE_CORE\n",
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -158,20 +200,43 @@ func Test_systemConfig_reconcile(t *testing.T) {
 	}
 }
 
-func prepareFiles(helper *sysutil.FileTestUtil, stragegy *slov1alpha1.SystemStrategy, nodeMemory int64) {
+func prepareFiles(helper *sysutil.FileTestUtil, strategy *slov1alpha1.SystemStrategy, nodeMemory int64) {
 	helper.CreateFile(sysutil.MinFreeKbytes.Path(""))
-	helper.WriteFileContents(sysutil.MinFreeKbytes.Path(""), strconv.FormatInt(*stragegy.MinFreeKbytesFactor*nodeMemory/1024/10000, 10))
+	if strategy.MinFreeKbytesFactor != nil {
+		helper.WriteFileContents(sysutil.MinFreeKbytes.Path(""), strconv.FormatInt(*strategy.MinFreeKbytesFactor*nodeMemory/1024/10000, 10))
+	}
 	helper.CreateFile(sysutil.WatermarkScaleFactor.Path(""))
-	helper.WriteFileContents(sysutil.WatermarkScaleFactor.Path(""), strconv.FormatInt(*stragegy.WatermarkScaleFactor, 10))
+	if strategy.WatermarkScaleFactor != nil {
+		helper.WriteFileContents(sysutil.WatermarkScaleFactor.Path(""), strconv.FormatInt(*strategy.WatermarkScaleFactor, 10))
+	}
 	helper.CreateFile(sysutil.MemcgReapBackGround.Path(""))
-	helper.WriteFileContents(sysutil.MemcgReapBackGround.Path(""), strconv.FormatInt(*stragegy.MemcgReapBackGround, 10))
-
+	if strategy.MemcgReapBackGround != nil {
+		helper.WriteFileContents(sysutil.MemcgReapBackGround.Path(""), strconv.FormatInt(*strategy.MemcgReapBackGround, 10))
+	}
+	helper.CreateFile(sysutil.SchedGroupIdentityEnabled.Path(""))
+	if strategy.SchedGroupIdentityEnabled != nil {
+		helper.WriteFileContents(sysutil.SchedGroupIdentityEnabled.Path(""), strconv.FormatInt(*strategy.SchedGroupIdentityEnabled, 10))
+	}
+	helper.CreateFile(sysutil.SchedIdleSaverWmark.Path(""))
+	if strategy.SchedIdleSaverWmark != nil {
+		helper.WriteFileContents(sysutil.SchedIdleSaverWmark.Path(""), strconv.FormatInt(*strategy.SchedIdleSaverWmark, 10))
+	}
+	helper.CreateFile(sysutil.SchedFeatures.Path(""))
 }
 
-func getNodeSLOBySystemStrategy(stragegy *slov1alpha1.SystemStrategy) *slov1alpha1.NodeSLO {
+func getNodeSLOBySystemStrategy(strategy *slov1alpha1.SystemStrategy) *slov1alpha1.NodeSLO {
 	return &slov1alpha1.NodeSLO{
 		Spec: slov1alpha1.NodeSLOSpec{
-			SystemStrategy: stragegy,
+			SystemStrategy: strategy,
 		},
+	}
+}
+
+func getTestDefaultStrategy() *slov1alpha1.SystemStrategy {
+	return &slov1alpha1.SystemStrategy{
+		MinFreeKbytesFactor:   pointer.Int64(100),
+		WatermarkScaleFactor:  pointer.Int64(150),
+		MemcgReapBackGround:   pointer.Int64(0),
+		TotalNetworkBandwidth: resource.MustParse("0"),
 	}
 }
