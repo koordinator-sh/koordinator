@@ -38,6 +38,13 @@ func NewZeroResourceList() corev1.ResourceList {
 	}
 }
 
+func MinQuant(quant1, quant2 resource.Quantity) resource.Quantity {
+	if quant1.Cmp(quant2) >= 0 {
+		return quant2
+	}
+	return quant1
+}
+
 // MultiplyMilliQuant scales quantity by factor
 func MultiplyMilliQuant(quant resource.Quantity, factor float64) resource.Quantity {
 	milliValue := quant.MilliValue()

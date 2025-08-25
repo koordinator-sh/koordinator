@@ -1650,7 +1650,9 @@ func TestPluginCalculate(t *testing.T) {
 	err = topov1alpha1.AddToScheme(testScheme)
 	assert.NoError(t, err)
 	memoryCalculateByReq := configuration.CalculateByPodRequest
+	memoryCalculateByMaxUsageReq := configuration.CalculateByPodMaxUsageRequest
 	cpuCalculateByMaxUsageReq := configuration.CalculateByPodMaxUsageRequest
+	cpuCalculateByUsage := configuration.CalculateByPodUsage
 	type fields struct {
 		client  ctrlclient.Client
 		checkFn func(t *testing.T, client ctrlclient.Client)
@@ -3666,6 +3668,202 @@ func TestPluginCalculate(t *testing.T) {
 					Name:     extension.BatchMemory,
 					Quantity: resource.NewScaledQuantity(84, 9),
 					Message:  "batchAllocatable[Mem(GB)]:84 = nodeCapacity:120 - nodeSafetyMargin:-24 - nodeReserved:0 - podHPRequest:60",
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "calculate with batch cpu threshold percent only",
+			args: args{
+				strategy: &configuration.ColocationStrategy{
+					Enable:                        pointer.Bool(true),
+					DegradeTimeMinutes:            pointer.Int64(15),
+					UpdateTimeThresholdSeconds:    pointer.Int64(300),
+					ResourceDiffThreshold:         pointer.Float64(0.1),
+					CPUReclaimThresholdPercent:    pointer.Int64(150),
+					CPUCalculatePolicy:            &cpuCalculateByMaxUsageReq,
+					MemoryReclaimThresholdPercent: pointer.Int64(120),
+					MemoryCalculatePolicy:         &memoryCalculateByReq,
+					BatchCPUThresholdPercent:      pointer.Int64(100),
+				},
+				node: &corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node1",
+						Labels: map[string]string{
+							"cpu-calculate-by-request":    "true",
+							"memory-calculate-by-request": "true",
+						},
+					},
+					Status: makeNodeStat("100", "120G"),
+				},
+			},
+			want: []framework.ResourceItem{
+				{
+					Name:     extension.BatchCPU,
+					Quantity: resource.NewQuantity(100000, resource.DecimalSI),
+					Message:  "batchAllocatable[CPU(Milli-Core)]:100000 = min(nodeCapacity:100000 * thresholdRatio:1, nodeCapacity:100000 - nodeSafetyMargin:-50000 - systemUsageOrNodeReserved:7000 - podHPMaxUsedRequest:42000)",
+				},
+				{
+					Name:     extension.BatchMemory,
+					Quantity: resource.NewScaledQuantity(84, 9),
+					Message:  "batchAllocatable[Mem(GB)]:84 = nodeCapacity:120 - nodeSafetyMargin:-24 - nodeReserved:0 - podHPRequest:60",
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "calculate with batch memory threshold percent only",
+			args: args{
+				strategy: &configuration.ColocationStrategy{
+					Enable:                        pointer.Bool(true),
+					DegradeTimeMinutes:            pointer.Int64(15),
+					UpdateTimeThresholdSeconds:    pointer.Int64(300),
+					ResourceDiffThreshold:         pointer.Float64(0.1),
+					CPUReclaimThresholdPercent:    pointer.Int64(150),
+					CPUCalculatePolicy:            &cpuCalculateByMaxUsageReq,
+					MemoryReclaimThresholdPercent: pointer.Int64(120),
+					MemoryCalculatePolicy:         &memoryCalculateByReq,
+					BatchMemoryThresholdPercent:   pointer.Int64(100),
+				},
+				node: &corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node1",
+						Labels: map[string]string{
+							"cpu-calculate-by-request":    "true",
+							"memory-calculate-by-request": "true",
+						},
+					},
+					Status: makeNodeStat("100", "120G"),
+				},
+			},
+			want: []framework.ResourceItem{
+				{
+					Name:     extension.BatchCPU,
+					Quantity: resource.NewQuantity(101000, resource.DecimalSI),
+					Message:  "batchAllocatable[CPU(Milli-Core)]:101000 = nodeCapacity:100000 - nodeSafetyMargin:-50000 - systemUsageOrNodeReserved:7000 - podHPMaxUsedRequest:42000",
+				},
+				{
+					Name:     extension.BatchMemory,
+					Quantity: resource.NewScaledQuantity(84, 9),
+					Message:  "batchAllocatable[Mem(GB)]:84 = min(nodeCapacity:120 * thresholdRatio:1, nodeCapacity:120 - nodeSafetyMargin:-24 - nodeReserved:0 - podHPRequest:60)",
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "calculate with both batch cpu/mem threshold percent",
+			args: args{
+				strategy: &configuration.ColocationStrategy{
+					Enable:                        pointer.Bool(true),
+					DegradeTimeMinutes:            pointer.Int64(15),
+					UpdateTimeThresholdSeconds:    pointer.Int64(300),
+					ResourceDiffThreshold:         pointer.Float64(0.1),
+					CPUReclaimThresholdPercent:    pointer.Int64(150),
+					CPUCalculatePolicy:            &cpuCalculateByMaxUsageReq,
+					MemoryReclaimThresholdPercent: pointer.Int64(120),
+					MemoryCalculatePolicy:         &memoryCalculateByReq,
+					BatchCPUThresholdPercent:      pointer.Int64(100),
+					BatchMemoryThresholdPercent:   pointer.Int64(100),
+				},
+				node: &corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node1",
+						Labels: map[string]string{
+							"cpu-calculate-by-request":    "true",
+							"memory-calculate-by-request": "true",
+						},
+					},
+					Status: makeNodeStat("100", "120G"),
+				},
+			},
+			want: []framework.ResourceItem{
+				{
+					Name:     extension.BatchCPU,
+					Quantity: resource.NewQuantity(100000, resource.DecimalSI),
+					Message:  "batchAllocatable[CPU(Milli-Core)]:100000 = min(nodeCapacity:100000 * thresholdRatio:1, nodeCapacity:100000 - nodeSafetyMargin:-50000 - systemUsageOrNodeReserved:7000 - podHPMaxUsedRequest:42000)",
+				},
+				{
+					Name:     extension.BatchMemory,
+					Quantity: resource.NewScaledQuantity(84, 9),
+					Message:  "batchAllocatable[Mem(GB)]:84 = min(nodeCapacity:120 * thresholdRatio:1, nodeCapacity:120 - nodeSafetyMargin:-24 - nodeReserved:0 - podHPRequest:60)",
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "calculate without batch cpu/mem threshold percent-with different xxxCalculatePolicy",
+			args: args{
+				strategy: &configuration.ColocationStrategy{
+					Enable:                        pointer.Bool(true),
+					DegradeTimeMinutes:            pointer.Int64(15),
+					UpdateTimeThresholdSeconds:    pointer.Int64(300),
+					ResourceDiffThreshold:         pointer.Float64(0.1),
+					CPUReclaimThresholdPercent:    pointer.Int64(150),
+					CPUCalculatePolicy:            &cpuCalculateByUsage,
+					MemoryReclaimThresholdPercent: pointer.Int64(120),
+					MemoryCalculatePolicy:         &memoryCalculateByMaxUsageReq,
+				},
+				node: &corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node1",
+						Labels: map[string]string{
+							"cpu-calculate-by-request":    "true",
+							"memory-calculate-by-request": "true",
+						},
+					},
+					Status: makeNodeStat("100", "120G"),
+				},
+			},
+			want: []framework.ResourceItem{
+				{
+					Name:     extension.BatchCPU,
+					Quantity: resource.NewQuantity(110000, resource.DecimalSI),
+					Message:  "batchAllocatable[CPU(Milli-Core)]:110000 = nodeCapacity:100000 - nodeSafetyMargin:-50000 - systemUsageOrNodeReserved:7000 - podHPUsed:33000",
+				},
+				{
+					Name:     extension.BatchMemory,
+					Quantity: resource.NewScaledQuantity(72, 9),
+					Message:  "batchAllocatable[Mem(GB)]:72 = nodeCapacity:120 - nodeSafetyMargin:-24 - systemUsage:12 - podHPMaxUsedRequest:60",
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "calculate with both batch cpu/mem threshold percent-with different xxxCalculatePolicy",
+			args: args{
+				strategy: &configuration.ColocationStrategy{
+					Enable:                        pointer.Bool(true),
+					DegradeTimeMinutes:            pointer.Int64(15),
+					UpdateTimeThresholdSeconds:    pointer.Int64(300),
+					ResourceDiffThreshold:         pointer.Float64(0.1),
+					CPUReclaimThresholdPercent:    pointer.Int64(150),
+					CPUCalculatePolicy:            &cpuCalculateByUsage,
+					MemoryReclaimThresholdPercent: pointer.Int64(120),
+					MemoryCalculatePolicy:         &memoryCalculateByMaxUsageReq,
+					BatchCPUThresholdPercent:      pointer.Int64(100),
+					BatchMemoryThresholdPercent:   pointer.Int64(100),
+				},
+				node: &corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node1",
+						Labels: map[string]string{
+							"cpu-calculate-by-request":    "true",
+							"memory-calculate-by-request": "true",
+						},
+					},
+					Status: makeNodeStat("100", "120G"),
+				},
+			},
+			want: []framework.ResourceItem{
+				{
+					Name:     extension.BatchCPU,
+					Quantity: resource.NewQuantity(100000, resource.DecimalSI),
+					Message:  "batchAllocatable[CPU(Milli-Core)]:100000 = min(nodeCapacity:100000 * thresholdRatio:1, nodeCapacity:100000 - nodeSafetyMargin:-50000 - systemUsageOrNodeReserved:7000 - podHPUsed:33000)",
+				},
+				{
+					Name:     extension.BatchMemory,
+					Quantity: resource.NewScaledQuantity(72, 9),
+					Message:  "batchAllocatable[Mem(GB)]:72 = min(nodeCapacity:120 * thresholdRatio:1, nodeCapacity:120 - nodeSafetyMargin:-24 - systemUsage:12 - podHPMaxUsedRequest:60)",
 				},
 			},
 			wantErr: false,
