@@ -255,6 +255,13 @@ type ColocationStrategy struct {
 	// Allocatable[Mid]' := min(Reclaimable[Mid], NodeAllocatable * thresholdRatio) + Unallocated[Mid] * midUnallocatedRatio.
 	MidUnallocatedPercent *int64 `json:"midUnallocatedPercent,omitempty" validate:"omitempty,min=0,max=100"`
 
+	// when batchCPUThresholdPercent != nil, AllocatableCPU[Batch]' :=  min(Node.Total*BatchCPUThresholdPercent, Node.Total - Node.SafetyMargin - System.Reserved - sum(Pod(Prod/Mid).Request))
+	// when batchCPUThresholdPercent == nil, AllocatableCPU[Batch]' :=  Node.Total - Node.SafetyMargin - System.Reserved - sum(Pod(Prod/Mid).Request)
+	BatchCPUThresholdPercent *int64 `json:"batchCPUThresholdPercent,omitempty" validate:"omitempty,min=0,max=100"`
+	// when batchMemoryThresholdPercent != nil, AllocatableMem[Batch]' :=  min(Node.Total*BatchMemoryThresholdPercent, Node.Total - Node.SafetyMargin - System.Reserved - sum(Pod(Prod/Mid).Request))
+	// when batchMemoryThresholdPercent == nil, AllocatableCPU[Batch]' :=  Node.Total - Node.SafetyMargin - System.Reserved - sum(Pod(Prod/Mid).Request)
+	BatchMemoryThresholdPercent *int64 `json:"batchMemoryThresholdPercent,omitempty" validate:"omitempty,min=0,max=100"`
+
 	ColocationStrategyExtender `json:",inline"` // for third-party extension
 }
 
