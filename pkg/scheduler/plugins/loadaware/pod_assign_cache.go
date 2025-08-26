@@ -86,18 +86,32 @@ func (p *podAssignCache) getPodAssignInfo(nodeName string, pod *corev1.Pod) *pod
 	return nil
 }
 
-func (p *podAssignCache) getPodsAssignInfoOnNode(nodeName string) []*podAssignInfo {
+func (p *podAssignCache) getDataOnNode(nodeName string) (*nodeMetric, []*podAssignInfo) {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
-	m := p.podInfoItems[nodeName]
-	if m == nil {
-		return nil
+	var nodeMetricInfo *nodeMetric
+	var podInfos []*podAssignInfo
+	if nm := p.nodeMetricItems[nodeName]; nm != nil {
+		nodeMetricInfo = &nodeMetric{
+			NodeMetric:        nm.NodeMetric,
+			updateTime:        nm.updateTime,
+			reportInterval:    nm.reportInterval,
+			prodUsage:         nm.prodUsage.Clone().(ResourceVector),
+			nodeDelta:         nm.nodeDelta.Clone().(ResourceVector),
+			prodDelta:         nm.prodDelta.Clone().(ResourceVector),
+			nodeEstimated:     nm.nodeEstimated.Clone().(ResourceVector),
+			nodeDeltaPods:     nm.nodeDeltaPods.Clone(),
+			prodDeltaPods:     nm.prodDeltaPods.Clone(),
+			nodeEstimatedPods: nm.nodeEstimatedPods.Clone(),
+		}
 	}
-	podInfos := make([]*podAssignInfo, 0, len(m))
-	for _, info := range m {
-		podInfos = append(podInfos, info)
+	if pods := p.podInfoItems[nodeName]; len(pods) > 0 {
+		podInfos = make([]*podAssignInfo, 0, len(pods))
+		for _, info := range pods {
+			podInfos = append(podInfos, info)
+		}
 	}
-	return podInfos
+	return nodeMetricInfo, podInfos
 }
 
 func (p *podAssignCache) assign(nodeName string, pod *corev1.Pod) {
