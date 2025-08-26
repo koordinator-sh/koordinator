@@ -865,7 +865,7 @@ func TestPreScoreWithNominateReservation(t *testing.T) {
 				sort.Slice(wantReservationInfo.ResourceNames, func(i, j int) bool {
 					return wantReservationInfo.ResourceNames[i] < wantReservationInfo.ResourceNames[j]
 				})
-				wantReservationInfo.RefreshAvailable()
+				wantReservationInfo.RefreshPreCalculated()
 				rInfo := pl.handle.GetReservationNominator().GetNominatedReservation(tt.pod, nodeName)
 				if rInfo != nil {
 					sort.Slice(rInfo.ResourceNames, func(i, j int) bool {

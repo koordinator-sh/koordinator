@@ -33,7 +33,6 @@ import (
 	resourceapi "k8s.io/kubernetes/pkg/api/v1/resource"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework/parallelize"
-	schedutil "k8s.io/kubernetes/pkg/scheduler/util"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
@@ -775,15 +774,7 @@ func restoreUnmatchedReservations(nodeInfo *framework.NodeInfo, rInfo *framework
 	// For example, on a 32C machine, ReservationA reserves 8C, and then PodA uses ReservationA to allocate 4C,
 	// then the record on NodeInfo is that 12C is allocated. But in fact it should be calculated according to 8C,
 	// so we need to return some resources.
-	updateNodeInfoRequested(nodeInfo, &corev1.Pod{
-		Spec: corev1.PodSpec{
-			Containers: []corev1.Container{
-				{
-					Resources: corev1.ResourceRequirements{Requests: rInfo.Allocated},
-				},
-			},
-		},
-	}, -1)
+	updateNodeInfoRequestedForUnmatched(nodeInfo, rInfo)
 	return nil
 }
 
@@ -811,59 +802,19 @@ func isPodAllNodesPreRestoreRequired(pod *corev1.Pod) bool {
 	return false
 }
 
-func updateNodeInfoRequested(n *framework.NodeInfo, pod *corev1.Pod, sign int64) {
-	res, non0CPU, non0Mem := calculateResource(pod)
-	n.Requested.MilliCPU += sign * res.MilliCPU
-	n.Requested.Memory += sign * res.Memory
-	n.Requested.EphemeralStorage += sign * res.EphemeralStorage
+func updateNodeInfoRequestedForUnmatched(n *framework.NodeInfo, rInfo *frameworkext.ReservationInfo) {
+	res, non0MilliCPU, non0Mem := rInfo.GetAllocatedResource()
+	n.Requested.MilliCPU -= res.MilliCPU
+	n.Requested.Memory -= res.Memory
+	n.Requested.EphemeralStorage -= res.EphemeralStorage
 	if n.Requested.ScalarResources == nil && len(res.ScalarResources) > 0 {
 		n.Requested.ScalarResources = map[corev1.ResourceName]int64{}
 	}
 	for rName, rQuant := range res.ScalarResources {
-		n.Requested.ScalarResources[rName] += sign * rQuant
+		n.Requested.ScalarResources[rName] -= rQuant
 	}
-	n.NonZeroRequested.MilliCPU += sign * non0CPU
-	n.NonZeroRequested.Memory += sign * non0Mem
-}
-
-func max(a, b int64) int64 {
-	if a >= b {
-		return a
-	}
-	return b
-}
-
-// resourceRequest = max(sum(podSpec.Containers), podSpec.InitContainers) + overHead
-func calculateResource(pod *corev1.Pod) (res framework.Resource, non0CPU int64, non0Mem int64) {
-	resPtr := &res
-	for _, c := range pod.Spec.Containers {
-		resPtr.Add(c.Resources.Requests)
-		non0CPUReq, non0MemReq := schedutil.GetNonzeroRequests(&c.Resources.Requests)
-		non0CPU += non0CPUReq
-		non0Mem += non0MemReq
-		// No non-zero resources for GPUs or opaque resources.
-	}
-
-	for _, ic := range pod.Spec.InitContainers {
-		resPtr.SetMaxResource(ic.Resources.Requests)
-		non0CPUReq, non0MemReq := schedutil.GetNonzeroRequests(&ic.Resources.Requests)
-		non0CPU = max(non0CPU, non0CPUReq)
-		non0Mem = max(non0Mem, non0MemReq)
-	}
-
-	// If Overhead is being utilized, add to the total requests for the pod
-	if pod.Spec.Overhead != nil {
-		resPtr.Add(pod.Spec.Overhead)
-		if _, found := pod.Spec.Overhead[corev1.ResourceCPU]; found {
-			non0CPU += pod.Spec.Overhead.Cpu().MilliValue()
-		}
-
-		if _, found := pod.Spec.Overhead[corev1.ResourceMemory]; found {
-			non0Mem += pod.Spec.Overhead.Memory().Value()
-		}
-	}
-
-	return
+	n.NonZeroRequested.MilliCPU -= non0MilliCPU
+	n.NonZeroRequested.Memory -= non0Mem
 }
 
 func parseSpecificNodesFromAffinity(pod *corev1.Pod) (sets.String, *framework.Status) {
