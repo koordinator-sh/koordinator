@@ -23,10 +23,10 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/tools/cache"
-	"k8s.io/klog/v2"
 	podutil "k8s.io/kubernetes/pkg/api/v1/pod"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
@@ -262,14 +262,42 @@ func (p *podAssignCache) NodeMetricHandler() cache.ResourceEventHandler {
 	}
 }
 
-func (p *podAssignCache) GetNodeMetric(name string) (*nodeMetric, error) {
+func (p *podAssignCache) GetNodeMetricAndEstimatedOfExisting(name string, prodPod bool,
+	aggregatedDuration metav1.Duration, aggregationType extension.AggregationType, logEnabled bool) (
+	nodeMetric *slov1alpha1.NodeMetric, estimated ResourceVector, estimatedPods []NamespacedName, _ error) {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
 	item, exists := p.nodeMetricItems[name]
 	if !exists {
-		return nil, errors.NewNotFound(slov1alpha1.Resource("nodemetric"), name)
+		return nil, nil, nil, errors.NewNotFound(slov1alpha1.Resource("nodemetric"), name)
 	}
-	return item, nil
+	nodeMetric = item.NodeMetric
+	estimated = p.vectorizer.EmptyVec()
+	var pods sets.Set[NamespacedName]
+	if prodPod {
+		estimated.Add(item.prodUsage)
+		estimated.Add(item.prodDelta)
+		pods = item.prodDeltaPods
+	} else {
+		var nodeUsage ResourceVector
+		if aggregationType != "" {
+			nodeUsage = item.getTargetAggregatedUsage(aggregatedDuration, aggregationType)
+		} else {
+			nodeUsage = item.nodeUsage
+		}
+		if nodeUsage != nil {
+			estimated.Add(nodeUsage)
+			estimated.Add(item.nodeDelta)
+			pods = item.nodeDeltaPods
+		} else {
+			estimated.Add(item.nodeEstimated)
+			pods = item.nodeEstimatedPods
+		}
+	}
+	if logEnabled {
+		estimatedPods = pods.UnsortedList()
+	}
+	return
 }
 
 func (p *podAssignCache) AddOrUpdateNodeMetric(metric *slov1alpha1.NodeMetric) {
@@ -327,9 +355,15 @@ type aggUsageKey struct {
 
 func (p *podAssignCache) new(metric *slov1alpha1.NodeMetric) *nodeMetric {
 	m := &nodeMetric{
-		NodeMetric:     metric,
-		reportInterval: getNodeMetricReportInterval(metric),
-		prodUsage:      p.vectorizer.EmptyVec(),
+		NodeMetric:        metric,
+		reportInterval:    getNodeMetricReportInterval(metric),
+		prodUsage:         p.vectorizer.EmptyVec(),
+		nodeDelta:         p.vectorizer.EmptyVec(),
+		prodDelta:         p.vectorizer.EmptyVec(),
+		nodeEstimated:     p.vectorizer.EmptyVec(),
+		nodeDeltaPods:     sets.New[NamespacedName](),
+		prodDeltaPods:     sets.New[NamespacedName](),
+		nodeEstimatedPods: sets.New[NamespacedName](),
 	}
 	if metric.Status.UpdateTime != nil {
 		m.updateTime = m.Status.UpdateTime.Time
@@ -387,16 +421,6 @@ func (p *podAssignCache) new(metric *slov1alpha1.NodeMetric) *nodeMetric {
 }
 
 func (p *podAssignCache) initPods(m *nodeMetric, pods map[types.UID]*podAssignInfo) {
-	m.nodeDelta = p.vectorizer.EmptyVec()
-	m.prodDelta = p.vectorizer.EmptyVec()
-	m.nodeEstimated = p.vectorizer.EmptyVec()
-
-	if klog.V(6).Enabled() {
-		m.nodeDeltaPods = sets.New[NamespacedName]()
-		m.prodDeltaPods = sets.New[NamespacedName]()
-		m.nodeEstimatedPods = sets.New[NamespacedName]()
-	}
-
 	for _, pod := range pods {
 		p.addPod(m, pod)
 	}
@@ -491,4 +515,16 @@ func (p *podAssignCache) deletePod(m *nodeMetric, pod *podAssignInfo) {
 			m.prodDeltaPods.Delete(key)
 		}
 	}
+}
+
+func (m *nodeMetric) getTargetAggregatedUsage(aggregatedDuration metav1.Duration, aggregationType extension.AggregationType) ResourceVector {
+	// If no specific period is set, the non-empty maximum period recorded by NodeMetrics will be used by default.
+	// This is a default policy.
+	d := aggregatedDuration.Duration
+	vec := m.aggUsages[aggUsageKey{Type: aggregationType, Duration: d}]
+	if vec == nil && d == 0 {
+		// All values in aggregatedDuration are empty, downgrade to use the values in NodeUsage
+		vec = m.nodeUsage
+	}
+	return vec
 }

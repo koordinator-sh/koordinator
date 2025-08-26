@@ -24,8 +24,8 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
@@ -41,7 +41,7 @@ import (
 const (
 	Name = "LoadAwareScheduling"
 
-	// podEstimatedStateKey is the key in CycleState to LoadAwareScheduling Estimated resources for incoming pod.
+	// incomingPodEstimatedStateKey is the key in CycleState to LoadAwareScheduling estimated resources for incoming pod.
 	// Using the name of the plugin will likely help us avoid collisions with other plugins.
 	incomingPodEstimatedStateKey = "IncomingPodEstimated" + Name
 
@@ -63,9 +63,10 @@ const (
 var (
 	_ framework.EnqueueExtensions = &Plugin{}
 
-	_ framework.FilterPlugin  = &Plugin{}
-	_ framework.ScorePlugin   = &Plugin{}
-	_ framework.ReservePlugin = &Plugin{}
+	_ framework.PreFilterPlugin = &Plugin{}
+	_ framework.FilterPlugin    = &Plugin{}
+	_ framework.ScorePlugin     = &Plugin{}
+	_ framework.ReservePlugin   = &Plugin{}
 )
 
 type Plugin struct {
@@ -135,6 +136,17 @@ func (p *Plugin) EventsToRegister() []framework.ClusterEventWithHint {
 	}
 }
 
+func (p *Plugin) PreFilter(ctx context.Context, state *framework.CycleState, pod *corev1.Pod) (*framework.PreFilterResult, *framework.Status) {
+	// add estimated resources for incoming pod to cache
+	_ = p.addEstimatedOfIncoming(p.vectorizer.EmptyVec(), state, pod)
+	return nil, nil
+}
+
+// PreFilterExtensions returns a PreFilterExtensions interface if the plugin implements one.
+func (p *Plugin) PreFilterExtensions() framework.PreFilterExtensions {
+	return nil
+}
+
 func (p *Plugin) Filter(ctx context.Context, state *framework.CycleState, pod *corev1.Pod, nodeInfo *framework.NodeInfo) *framework.Status {
 	node := nodeInfo.Node()
 	if node == nil {
@@ -161,7 +173,21 @@ func (p *Plugin) Filter(ctx context.Context, state *framework.CycleState, pod *c
 		return nil // skip if filter thresholds are disabled
 	}
 
-	cached, err := p.podAssignCache.GetNodeMetric(node.Name)
+	allocatableList, err := p.estimator.EstimateNode(node)
+	if err != nil {
+		klog.ErrorS(err, "Estimated node allocatable failed!", "node", node.Name)
+		return nil
+	}
+	allocatable := p.vectorizer.ToVec(allocatableList)
+
+	var aggDuration metav1.Duration
+	var aggType extension.AggregationType
+	if !prodPod && isAgg {
+		agg := filterProfile.AggregatedUsage
+		aggDuration, aggType = agg.UsageAggregatedDuration, agg.UsageAggregationType
+	}
+
+	nodeMetric, estimated, estimatedPods, err := p.podAssignCache.GetNodeMetricAndEstimatedOfExisting(node.Name, prodPod, aggDuration, aggType, klog.V(6).Enabled())
 	if err != nil {
 		// For nodes that lack load information, fall back to the situation where there is no load-aware scheduling.
 		// Some nodes in the cluster do not install the koordlet, but users newly created Pod use koord-scheduler to schedule,
@@ -171,7 +197,6 @@ func (p *Plugin) Filter(ctx context.Context, state *framework.CycleState, pod *c
 		}
 		return framework.NewStatus(framework.Error, err.Error())
 	}
-	nodeMetric := cached.NodeMetric
 	if p.args.FilterExpiredNodeMetrics != nil && *p.args.FilterExpiredNodeMetrics &&
 		p.args.NodeMetricExpirationSeconds != nil && isNodeMetricExpired(nodeMetric, *p.args.NodeMetricExpirationSeconds) {
 		if p.args.EnableScheduleWhenNodeMetricsExpired != nil && !*p.args.EnableScheduleWhenNodeMetricsExpired {
@@ -184,24 +209,6 @@ func (p *Plugin) Filter(ctx context.Context, state *framework.CycleState, pod *c
 		return nil
 	}
 
-	allocatableList, err := p.estimator.EstimateNode(node)
-	if err != nil {
-		klog.ErrorS(err, "Estimated node allocatable failed!", "node", node.Name)
-		return nil
-	}
-	allocatable := p.vectorizer.ToVec(allocatableList)
-
-	var nodeUsage ResourceVector
-	if !prodPod {
-		if isAgg {
-			agg := filterProfile.AggregatedUsage
-			nodeUsage = cached.getTargetAggregatedUsage(agg.UsageAggregatedDuration, agg.UsageAggregationType)
-		} else {
-			nodeUsage = cached.nodeUsage
-		}
-	}
-
-	estimated, estimatedPods := p.getEstimatedOfExisting(cached, nodeUsage, prodPod)
 	if ret := p.filterNodeUsage(node.Name, pod, usageThresholds, estimated, allocatable, isAgg); ret != nil {
 		return ret
 	}
@@ -212,7 +219,7 @@ func (p *Plugin) Filter(ctx context.Context, state *framework.CycleState, pod *c
 	if klog.V(6).Enabled() {
 		klog.InfoS("Estimate node usage for filtering", "pod", klog.KObj(pod), "node", nodeMetric.Name,
 			"estimated", klog.Format(p.vectorizer.ToList(estimated)),
-			"estimatedExistingPods", klog.KObjSlice(estimatedPods.UnsortedList()))
+			"estimatedExistingPods", klog.KObjSlice(estimatedPods))
 	}
 	return p.filterNodeUsage(node.Name, pod, usageThresholds, estimated, allocatable, isAgg)
 }
@@ -244,24 +251,6 @@ func (p *Plugin) Score(ctx context.Context, state *framework.CycleState, pod *co
 		return 0, framework.NewStatus(framework.Error, "node not found")
 	}
 
-	cached, err := p.podAssignCache.GetNodeMetric(nodeName)
-	if err != nil {
-		// caused by load-aware scheduling itself is an optimization,
-		// so we should skip the node and score the node 0
-		if errors.IsNotFound(err) {
-			return 0, nil
-		}
-		return 0, framework.NewStatus(framework.Error, err.Error())
-	}
-	nodeMetric := cached.NodeMetric
-	if p.args.NodeMetricExpirationSeconds != nil && isNodeMetricExpired(nodeMetric, *p.args.NodeMetricExpirationSeconds) {
-		return 0, nil
-	}
-	if nodeMetric.Status.NodeMetric == nil {
-		klog.Warningf("nodeMetrics(%s) should not be nil.", node.Name)
-		return 0, nil
-	}
-
 	allocatableList, err := p.estimator.EstimateNode(node)
 	if err != nil {
 		klog.ErrorS(err, "Estimated node allocatable failed!", "node", node.Name)
@@ -270,16 +259,29 @@ func (p *Plugin) Score(ctx context.Context, state *framework.CycleState, pod *co
 	allocatable := p.vectorizer.ToVec(allocatableList)
 
 	prodPod := p.args.ScoreAccordingProdUsage && extension.GetPodPriorityClassWithDefault(pod) == extension.PriorityProd
-	var nodeUsage ResourceVector
-	if !prodPod {
-		if agg := p.args.Aggregated; agg != nil && agg.ScoreAggregationType != "" {
-			nodeUsage = cached.getTargetAggregatedUsage(agg.ScoreAggregatedDuration, agg.ScoreAggregationType)
-		} else {
-			nodeUsage = cached.nodeUsage
-		}
+	var aggDuration metav1.Duration
+	var aggType extension.AggregationType
+	if agg := p.args.Aggregated; !prodPod && agg != nil && agg.ScoreAggregationType != "" {
+		aggDuration, aggType = agg.ScoreAggregatedDuration, agg.ScoreAggregationType
 	}
 
-	estimated, estimatedPods := p.getEstimatedOfExisting(cached, nodeUsage, prodPod)
+	nodeMetric, estimated, estimatedPods, err := p.podAssignCache.GetNodeMetricAndEstimatedOfExisting(nodeName, prodPod, aggDuration, aggType, klog.V(6).Enabled())
+	if err != nil {
+		// caused by load-aware scheduling itself is an optimization,
+		// so we should skip the node and score the node 0
+		if errors.IsNotFound(err) {
+			return 0, nil
+		}
+		return 0, framework.NewStatus(framework.Error, err.Error())
+	}
+	if p.args.NodeMetricExpirationSeconds != nil && isNodeMetricExpired(nodeMetric, *p.args.NodeMetricExpirationSeconds) {
+		return 0, nil
+	}
+	if nodeMetric.Status.NodeMetric == nil {
+		klog.Warningf("nodeMetrics(%s) should not be nil.", node.Name)
+		return 0, nil
+	}
+
 	if err = p.addEstimatedOfIncoming(estimated, state, pod); err != nil {
 		klog.ErrorS(err, "Failed to estimate incoming pod usage", "pod", klog.KObj(pod))
 		return 0, nil
@@ -287,27 +289,10 @@ func (p *Plugin) Score(ctx context.Context, state *framework.CycleState, pod *co
 	if klog.V(6).Enabled() {
 		klog.InfoS("Estimate node usage for scoring", "pod", klog.KObj(pod), "node", nodeMetric.Name,
 			"estimated", klog.Format(p.vectorizer.ToList(estimated)),
-			"estimatedExistingPods", klog.KObjSlice(estimatedPods.UnsortedList()))
+			"estimatedExistingPods", klog.KObjSlice(estimatedPods))
 	}
 	score := loadAwareSchedulingScorer(p.scoreWeights, estimated, allocatable)
 	return score, nil
-}
-
-func (p *Plugin) getEstimatedOfExisting(nodeMetric *nodeMetric, nodeUsage ResourceVector, prod bool) (estimated ResourceVector, estimatedPods sets.Set[NamespacedName]) {
-	estimated = p.vectorizer.EmptyVec()
-	if prod {
-		estimated.Add(nodeMetric.prodUsage)
-		estimated.Add(nodeMetric.prodDelta)
-		estimatedPods = nodeMetric.prodDeltaPods
-	} else if nodeUsage != nil {
-		estimated.Add(nodeUsage)
-		estimated.Add(nodeMetric.nodeDelta)
-		estimatedPods = nodeMetric.nodeDeltaPods
-	} else {
-		estimated.Add(nodeMetric.nodeEstimated)
-		estimatedPods = nodeMetric.nodeEstimatedPods
-	}
-	return
 }
 
 // try to use state cache before EstimatePod

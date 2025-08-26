@@ -26,6 +26,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/sets"
 	schedulertesting "k8s.io/kubernetes/pkg/scheduler/testing"
 	"k8s.io/utils/ptr"
 
@@ -82,6 +83,8 @@ func TestPodAssignCache_OnAdd(t *testing.T) {
 					corev1.ResourceMemory: estimator.DefaultMemoryRequest,
 				})
 				nm.nodeDelta, nm.nodeEstimated = v, v
+				s := sets.New(NamespacedName{Namespace: "default", Name: "test"})
+				nm.nodeDeltaPods, nm.nodeEstimatedPods = s, s
 			},
 		},
 		{
@@ -94,6 +97,8 @@ func TestPodAssignCache_OnAdd(t *testing.T) {
 					corev1.ResourceMemory: resource.MustParse("4Gi"),
 				})
 				nm.nodeDelta, nm.prodDelta, nm.nodeEstimated = v, v, v
+				s := sets.New(NamespacedName{Namespace: "default", Name: "test"})
+				nm.nodeDeltaPods, nm.prodDeltaPods, nm.nodeEstimatedPods = s, s, s
 			},
 		},
 		{
@@ -106,6 +111,8 @@ func TestPodAssignCache_OnAdd(t *testing.T) {
 					corev1.ResourceMemory: resource.MustParse("4Gi"),
 				})
 				nm.nodeDelta, nm.nodeEstimated = v, v
+				s := sets.New(NamespacedName{Namespace: "default", Name: "test"})
+				nm.nodeDeltaPods, nm.nodeEstimatedPods = s, s
 			},
 		},
 	}
@@ -131,8 +138,7 @@ func TestPodAssignCache_OnAdd(t *testing.T) {
 			if tt.wantMetric != nil {
 				tt.wantMetric(wantMetric)
 			}
-			actual, err := assignCache.GetNodeMetric(node)
-			assert.NoError(t, err)
+			actual := assignCache.nodeMetricItems[node]
 			assert.Equal(t, wantMetric, actual)
 		})
 	}
@@ -183,6 +189,8 @@ func TestPodAssignCache_OnUpdate(t *testing.T) {
 					corev1.ResourceMemory: estimator.DefaultMemoryRequest,
 				})
 				nm.nodeDelta, nm.nodeEstimated = v, v
+				s := sets.New(NamespacedName{Namespace: "default", Name: "test"})
+				nm.nodeDeltaPods, nm.nodeEstimatedPods = s, s
 			},
 		},
 		{
@@ -210,6 +218,8 @@ func TestPodAssignCache_OnUpdate(t *testing.T) {
 					corev1.ResourceMemory: estimator.DefaultMemoryRequest,
 				})
 				nm.nodeDelta, nm.nodeEstimated = v, v
+				s := sets.New(NamespacedName{Namespace: "default", Name: "test"})
+				nm.nodeDeltaPods, nm.nodeEstimatedPods = s, s
 			},
 		},
 		{
@@ -247,6 +257,8 @@ func TestPodAssignCache_OnUpdate(t *testing.T) {
 					corev1.ResourceMemory: estimator.DefaultMemoryRequest,
 				})
 				nm.nodeDelta, nm.nodeEstimated = v, v
+				s := sets.New(NamespacedName{Namespace: "default", Name: "test"})
+				nm.nodeDeltaPods, nm.nodeEstimatedPods = s, s
 			},
 		},
 		{
@@ -279,6 +291,8 @@ func TestPodAssignCache_OnUpdate(t *testing.T) {
 					corev1.ResourceMemory: resource.MustParse("4Gi"),
 				})
 				nm.nodeDelta, nm.prodDelta, nm.nodeEstimated = v, v, v
+				s := sets.New(NamespacedName{Namespace: "default", Name: "test"})
+				nm.nodeDeltaPods, nm.prodDeltaPods, nm.nodeEstimatedPods = s, s, s
 			},
 		},
 	}
@@ -307,8 +321,7 @@ func TestPodAssignCache_OnUpdate(t *testing.T) {
 			if tt.wantMetric != nil {
 				tt.wantMetric(wantMetric)
 			}
-			actual, err := assignCache.GetNodeMetric(node)
-			assert.NoError(t, err)
+			actual := assignCache.nodeMetricItems[node]
 			assert.Equal(t, wantMetric, actual)
 		})
 	}
@@ -431,8 +444,20 @@ func TestPodAssignCache_OnDelete(t *testing.T) {
 		corev1.ResourceCPU:    resource.MustParse("12"),
 		corev1.ResourceMemory: resource.MustParse("24Gi"),
 	})
-	actual, err := assignCache.GetNodeMetric(node)
-	assert.NoError(t, err)
+	wantMetric.nodeDeltaPods = sets.New(
+		NamespacedName{Namespace: "default", Name: "prod-1"}, NamespacedName{Namespace: "default", Name: "prod-2"},
+		NamespacedName{Namespace: "default", Name: "mid-1"}, NamespacedName{Namespace: "default", Name: "mid-2"},
+	)
+	wantMetric.prodDeltaPods = sets.New(
+		NamespacedName{Namespace: "default", Name: "prod-1"}, NamespacedName{Namespace: "default", Name: "prod-2"},
+		NamespacedName{Namespace: "default", Name: "prod-3"},
+	)
+	wantMetric.nodeEstimatedPods = sets.New(
+		NamespacedName{Namespace: "default", Name: "prod-1"}, NamespacedName{Namespace: "default", Name: "prod-2"},
+		NamespacedName{Namespace: "default", Name: "prod-3"}, NamespacedName{Namespace: "default", Name: "mid-1"},
+		NamespacedName{Namespace: "default", Name: "mid-2"}, NamespacedName{Namespace: "default", Name: "mid-3"},
+	)
+	actual := assignCache.nodeMetricItems[node]
 	assert.Equal(t, wantMetric, actual)
 	assignCache.OnDelete(schedulertesting.MakePod().UID("1").Namespace("default").Name("prod-1").Node(node).Phase(corev1.PodFailed).
 		Req(map[corev1.ResourceName]string{corev1.ResourceCPU: "2", corev1.ResourceMemory: "8Gi"}).Obj())
@@ -446,8 +471,7 @@ func TestPodAssignCache_OnDelete(t *testing.T) {
 	assert.Equal(t, wantCache, assignCache.podInfoItems)
 	wantMetric = assignCache.new(m)
 	assignCache.initPods(wantMetric, nil)
-	actual, err = assignCache.GetNodeMetric(node)
-	assert.NoError(t, err)
+	actual = assignCache.nodeMetricItems[node]
 	assert.Equal(t, wantMetric, actual)
 }
 
@@ -703,9 +727,12 @@ func TestNodeMetric(t *testing.T) {
 							corev1.ResourceMemory: resource.MustParse("3Gi"),
 						}),
 					},
-					nodeDelta:     vectorizer.EmptyVec(),
-					prodDelta:     vectorizer.EmptyVec(),
-					nodeEstimated: vectorizer.EmptyVec(),
+					nodeDelta:         vectorizer.EmptyVec(),
+					prodDelta:         vectorizer.EmptyVec(),
+					nodeEstimated:     vectorizer.EmptyVec(),
+					nodeDeltaPods:     sets.New[NamespacedName](),
+					prodDeltaPods:     sets.New[NamespacedName](),
+					nodeEstimatedPods: sets.New[NamespacedName](),
 				}
 			},
 		},
@@ -736,8 +763,7 @@ func TestNodeMetric(t *testing.T) {
 			if tt.wantMetric != nil {
 				tt.wantMetric(wantMetric)
 			}
-			actual, err := assignCache.GetNodeMetric(node)
-			assert.NoError(t, err)
+			actual := assignCache.nodeMetricItems[node]
 			assert.Equal(t, wantMetric, actual)
 			// test delete all pods
 			for _, pod := range tt.existingPods {
@@ -745,12 +771,11 @@ func TestNodeMetric(t *testing.T) {
 			}
 			wantMetric = assignCache.new(tt.nodeMetric)
 			assignCache.initPods(wantMetric, nil)
-			actual, err = assignCache.GetNodeMetric(node)
-			assert.NoError(t, err)
+			actual = assignCache.nodeMetricItems[node]
 			assert.Equal(t, wantMetric, actual)
 			// test delete node metrics
 			assignCache.DeleteNodeMetric(node)
-			_, err = assignCache.GetNodeMetric(node)
+			_, _, _, err := assignCache.GetNodeMetricAndEstimatedOfExisting(node, false, metav1.Duration{}, "", false)
 			assert.True(t, errors.IsNotFound(err))
 		})
 	}

@@ -46,18 +46,6 @@ func getNodeMetricReportInterval(nodeMetric *slov1alpha1.NodeMetric) time.Durati
 	return time.Duration(*nodeMetric.Spec.CollectPolicy.ReportIntervalSeconds) * time.Second
 }
 
-func (m *nodeMetric) getTargetAggregatedUsage(aggregatedDuration metav1.Duration, aggregationType extension.AggregationType) ResourceVector {
-	// If no specific period is set, the non-empty maximum period recorded by NodeMetrics will be used by default.
-	// This is a default policy.
-	d := aggregatedDuration.Duration
-	vec := m.aggUsages[aggUsageKey{Type: aggregationType, Duration: d}]
-	if vec == nil && d == 0 {
-		// All values in aggregatedDuration are empty, downgrade to use the values in NodeUsage
-		vec = m.nodeUsage
-	}
-	return vec
-}
-
 type usageThresholdsFilterProfile struct {
 	UsageThresholds     ResourceVector
 	ProdUsageThresholds ResourceVector
