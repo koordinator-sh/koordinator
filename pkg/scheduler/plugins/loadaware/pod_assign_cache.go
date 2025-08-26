@@ -42,8 +42,9 @@ var (
 
 // podAssignCache stores the Pod information that has been successfully scheduled or is about to be bound
 type podAssignCache struct {
-	lock  sync.RWMutex
-	items map[string]*nodeMetric
+	lock sync.RWMutex
+	// podInfoItems storces nodeMetric with cached calculation result for node usage and estimation.
+	nodeMetricItems map[string]*nodeMetric
 	// podInfoItems stores podAssignInfo according to each node.
 	// podAssignInfo is indexed using the Pod's types.UID
 	podInfoItems map[string]map[types.UID]*podAssignInfo
@@ -61,11 +62,11 @@ type podAssignInfo struct {
 
 func newPodAssignCache(estimator estimator.Estimator, vectorizer ResourceVectorizer, args *config.LoadAwareSchedulingArgs) *podAssignCache {
 	return &podAssignCache{
-		items:        map[string]*nodeMetric{},
-		podInfoItems: map[string]map[types.UID]*podAssignInfo{},
-		estimator:    estimator,
-		vectorizer:   vectorizer,
-		args:         args,
+		nodeMetricItems: map[string]*nodeMetric{},
+		podInfoItems:    map[string]map[types.UID]*podAssignInfo{},
+		estimator:       estimator,
+		vectorizer:      vectorizer,
+		args:            args,
 	}
 }
 
@@ -135,7 +136,7 @@ func (p *podAssignCache) assign(nodeName string, pod *corev1.Pod) {
 	if pod, ok := m[pod.UID]; ok {
 		oldPod = pod
 	}
-	if nm := p.items[nodeName]; nm != nil {
+	if nm := p.nodeMetricItems[nodeName]; nm != nil {
 		if oldPod == nil {
 			p.addPod(nm, newPod)
 		} else {
@@ -178,7 +179,7 @@ func (p *podAssignCache) unAssign(nodeName string, pod *corev1.Pod) {
 	}
 	p.lock.Lock()
 	defer p.lock.Unlock()
-	if nm := p.items[nodeName]; nm != nil {
+	if nm := p.nodeMetricItems[nodeName]; nm != nil {
 		if pod := p.podInfoItems[nodeName][pod.UID]; pod != nil {
 			p.deletePod(nm, pod)
 		}
@@ -235,12 +236,12 @@ func (p *podAssignCache) NodeMetricHandler() cache.ResourceEventHandler {
 	return cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj any) {
 			if m, ok := obj.(*slov1alpha1.NodeMetric); ok && m != nil {
-				p.AddOrUpdate(m)
+				p.AddOrUpdateNodeMetric(m)
 			}
 		},
 		UpdateFunc: func(_ any, obj any) {
 			if m, ok := obj.(*slov1alpha1.NodeMetric); ok && m != nil {
-				p.AddOrUpdate(m)
+				p.AddOrUpdateNodeMetric(m)
 			}
 		},
 		DeleteFunc: func(obj any) {
@@ -256,7 +257,7 @@ func (p *podAssignCache) NodeMetricHandler() cache.ResourceEventHandler {
 			default:
 				return
 			}
-			p.Delete(m.Name)
+			p.DeleteNodeMetric(m.Name)
 		},
 	}
 }
@@ -264,25 +265,25 @@ func (p *podAssignCache) NodeMetricHandler() cache.ResourceEventHandler {
 func (p *podAssignCache) GetNodeMetric(name string) (*nodeMetric, error) {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
-	item, exists := p.items[name]
+	item, exists := p.nodeMetricItems[name]
 	if !exists {
 		return nil, errors.NewNotFound(slov1alpha1.Resource("nodemetric"), name)
 	}
 	return item, nil
 }
 
-func (p *podAssignCache) AddOrUpdate(metric *slov1alpha1.NodeMetric) {
+func (p *podAssignCache) AddOrUpdateNodeMetric(metric *slov1alpha1.NodeMetric) {
 	m := p.new(metric)
 	p.lock.Lock()
 	defer p.lock.Unlock()
 	p.initPods(m, p.podInfoItems[metric.Name])
-	p.items[metric.Name] = m
+	p.nodeMetricItems[metric.Name] = m
 }
 
-func (p *podAssignCache) Delete(name string) {
+func (p *podAssignCache) DeleteNodeMetric(name string) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
-	delete(p.items, name)
+	delete(p.nodeMetricItems, name)
 }
 
 type nodeMetric struct {

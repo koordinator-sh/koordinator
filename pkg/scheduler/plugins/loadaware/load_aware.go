@@ -97,17 +97,8 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 	if err != nil {
 		return nil, err
 	}
-	// cpu and memory are added by default for custom usage thresholds compatibility
-	resourceNames := sets.New(corev1.ResourceCPU, corev1.ResourceMemory)
-	resourceNames = resourceNames.Union(sets.KeySet(pluginArgs.UsageThresholds))
-	resourceNames = resourceNames.Union(sets.KeySet(pluginArgs.ProdUsageThresholds))
-	if aggArgs := pluginArgs.Aggregated; aggArgs != nil {
-		resourceNames = resourceNames.Union(sets.KeySet(aggArgs.UsageThresholds))
-	}
-	resourceNames = resourceNames.Union(sets.KeySet(pluginArgs.ResourceWeights))
-	resourceNames = resourceNames.Union(sets.KeySet(pluginArgs.EstimatedScalingFactors))
-	resourceNames.Insert(pluginArgs.SupportedResources...)
-	vectorizer := NewResourceVectorizer(resourceNames.UnsortedList()...)
+
+	vectorizer := NewResourceVectorizerFromArgs(pluginArgs)
 	assignCache := newPodAssignCache(estimator, vectorizer, pluginArgs)
 	podInformer := frameworkExtender.SharedInformerFactory().Core().V1().Pods()
 	frameworkexthelper.ForceSyncFromInformer(context.TODO().Done(), frameworkExtender.SharedInformerFactory(), podInformer.Informer(), assignCache)

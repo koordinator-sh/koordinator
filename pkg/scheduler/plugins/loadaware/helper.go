@@ -23,12 +23,13 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
-	schedulingconfig "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 )
 
 func isNodeMetricExpired(nodeMetric *slov1alpha1.NodeMetric, nodeMetricExpirationSeconds int64) bool {
@@ -69,7 +70,7 @@ type aggregatedUsageFilterProfile struct {
 	UsageAggregatedDuration metav1.Duration
 }
 
-func NewUsageThresholdsFilterProfile(args *schedulingconfig.LoadAwareSchedulingArgs, vectorizer ResourceVectorizer) *usageThresholdsFilterProfile {
+func NewUsageThresholdsFilterProfile(args *config.LoadAwareSchedulingArgs, vectorizer ResourceVectorizer) *usageThresholdsFilterProfile {
 	p := &usageThresholdsFilterProfile{}
 	if len(args.UsageThresholds) > 0 {
 		p.UsageThresholds = vectorizer.ToFactorVec(args.UsageThresholds)
@@ -167,6 +168,20 @@ func NewResourceVectorizer(names ...corev1.ResourceName) ResourceVectorizer {
 		return names[i] < names[j]
 	})
 	return ResourceVectorizer(names)
+}
+
+// cpu and memory are added by default for custom usage thresholds compatibility.
+func NewResourceVectorizerFromArgs(args *config.LoadAwareSchedulingArgs) ResourceVectorizer {
+	resourceNames := sets.New(corev1.ResourceCPU, corev1.ResourceMemory)
+	resourceNames = resourceNames.Union(sets.KeySet(args.UsageThresholds))
+	resourceNames = resourceNames.Union(sets.KeySet(args.ProdUsageThresholds))
+	if aggArgs := args.Aggregated; aggArgs != nil {
+		resourceNames = resourceNames.Union(sets.KeySet(aggArgs.UsageThresholds))
+	}
+	resourceNames = resourceNames.Union(sets.KeySet(args.ResourceWeights))
+	resourceNames = resourceNames.Union(sets.KeySet(args.EstimatedScalingFactors))
+	resourceNames.Insert(args.SupportedResources...)
+	return NewResourceVectorizer(resourceNames.UnsortedList()...)
 }
 
 // NOTICE: unknown resource name will be ignored in vectorization

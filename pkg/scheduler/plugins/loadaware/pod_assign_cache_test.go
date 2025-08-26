@@ -121,7 +121,7 @@ func TestPodAssignCache_OnAdd(t *testing.T) {
 				corev1.ResourceMemory: 100,
 			}}, nil)
 			assignCache := newPodAssignCache(e, vectorizer, &config.LoadAwareSchedulingArgs{})
-			assignCache.AddOrUpdate(m)
+			assignCache.AddOrUpdateNodeMetric(m)
 			assignCache.OnAdd(tt.pod, true)
 			if tt.wantCache != nil {
 				assert.Equal(t, tt.wantCache, assignCache.podInfoItems)
@@ -294,7 +294,7 @@ func TestPodAssignCache_OnUpdate(t *testing.T) {
 				corev1.ResourceMemory: 100,
 			}}, nil)
 			assignCache := newPodAssignCache(e, vectorizer, &config.LoadAwareSchedulingArgs{})
-			assignCache.AddOrUpdate(m)
+			assignCache.AddOrUpdateNodeMetric(m)
 			for _, pod := range tt.existingPods {
 				assignCache.OnAdd(pod, true)
 			}
@@ -400,7 +400,7 @@ func TestPodAssignCache_OnDelete(t *testing.T) {
 		corev1.ResourceMemory: 50,
 	}}, nil)
 	assignCache := newPodAssignCache(e, vectorizer, &config.LoadAwareSchedulingArgs{})
-	assignCache.AddOrUpdate(m)
+	assignCache.AddOrUpdateNodeMetric(m)
 	assignCache.OnAdd(schedulertesting.MakePod().UID("1").Namespace("default").Name("prod-1").Node(node).Phase(corev1.PodRunning).
 		Req(map[corev1.ResourceName]string{corev1.ResourceCPU: "4", corev1.ResourceMemory: "8Gi"}).Obj(), false)
 	assignCache.OnAdd(schedulertesting.MakePod().UID("2").Namespace("default").Name("prod-2").Node(node).Phase(corev1.PodRunning).
@@ -730,7 +730,7 @@ func TestNodeMetric(t *testing.T) {
 				assignCache.OnAdd(pod, true)
 			}
 			// test add node metrics
-			assignCache.AddOrUpdate(tt.nodeMetric)
+			assignCache.AddOrUpdateNodeMetric(tt.nodeMetric)
 			wantMetric := assignCache.new(tt.nodeMetric)
 			assignCache.initPods(wantMetric, nil)
 			if tt.wantMetric != nil {
@@ -749,7 +749,7 @@ func TestNodeMetric(t *testing.T) {
 			assert.NoError(t, err)
 			assert.Equal(t, wantMetric, actual)
 			// test delete node metrics
-			assignCache.Delete(node)
+			assignCache.DeleteNodeMetric(node)
 			_, err = assignCache.GetNodeMetric(node)
 			assert.True(t, errors.IsNotFound(err))
 		})
