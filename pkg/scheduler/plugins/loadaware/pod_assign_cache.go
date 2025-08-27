@@ -117,12 +117,14 @@ func (p *podAssignCache) GetNodeMetricAndEstimatedOfExisting(name string, prodPo
 	aggregatedDuration metav1.Duration, aggregationType extension.AggregationType, logEnabled bool) (
 	nodeMetric *slov1alpha1.NodeMetric, estimated ResourceVector, estimatedPods []NamespacedName, _ error) {
 	n, exists := p.getNodeInfo(name)
-	if !exists || n == nil || n.nodeMetric == nil {
+	if !exists || n == nil {
 		return nil, nil, nil, errors.NewNotFound(slov1alpha1.Resource("nodemetric"), name)
 	}
 	n.RLock()
 	defer n.RUnlock()
-	nodeMetric = n.nodeMetric
+	if nodeMetric = n.nodeMetric; nodeMetric == nil {
+		return nil, nil, nil, errors.NewNotFound(slov1alpha1.Resource("nodemetric"), name)
+	}
 	estimated = p.vectorizer.EmptyVec()
 	var pods sets.Set[NamespacedName]
 	if prodPod {

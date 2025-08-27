@@ -177,7 +177,7 @@ func TestPodAssignCache_OnUpdate(t *testing.T) {
 			pod:  schedulertesting.MakePod().UID("123456789").Namespace("default").Name("test").Node(node).Phase(corev1.PodRunning).Obj(),
 			want: func(t *testing.T, n *nodeInfo) {
 				assert.Equal(t, map[types.UID]*podAssignInfo{
-					"123456789": &podAssignInfo{
+					"123456789": {
 						pod:       schedulertesting.MakePod().UID("123456789").Namespace("default").Name("test").Node(node).Phase(corev1.PodRunning).Obj(),
 						timestamp: fakeTimeNowFn(),
 						estimated: vectorizer.ToFactorVec(map[corev1.ResourceName]int64{
@@ -206,7 +206,7 @@ func TestPodAssignCache_OnUpdate(t *testing.T) {
 			},
 			want: func(t *testing.T, n *nodeInfo) {
 				assert.Equal(t, map[types.UID]*podAssignInfo{
-					"123456789": &podAssignInfo{
+					"123456789": {
 						pod:       schedulertesting.MakePod().UID("123456789").Namespace("default").Name("test").Node(node).Phase(corev1.PodRunning).Obj(),
 						timestamp: fakeTimeNowFn(),
 						estimated: vectorizer.ToFactorVec(map[corev1.ResourceName]int64{
@@ -232,7 +232,7 @@ func TestPodAssignCache_OnUpdate(t *testing.T) {
 			},
 			want: func(t *testing.T, n *nodeInfo) {
 				assert.Equal(t, map[types.UID]*podAssignInfo{
-					"123456789": &podAssignInfo{
+					"123456789": {
 						pod: schedulertesting.MakePod().UID("123456789").Namespace("default").Name("test").Node(node).Phase(corev1.PodRunning).
 							Conditions([]corev1.PodCondition{
 								{Type: corev1.PodScheduled, Status: corev1.ConditionTrue, LastTransitionTime: metav1.NewTime(fakeTimeNowFn().Add(1000))},
@@ -269,7 +269,7 @@ func TestPodAssignCache_OnUpdate(t *testing.T) {
 			},
 			want: func(t *testing.T, n *nodeInfo) {
 				assert.Equal(t, map[types.UID]*podAssignInfo{
-					"123456789": &podAssignInfo{
+					"123456789": {
 						pod: schedulertesting.MakePod().UID("123456789").Namespace("default").Name("test").Node(node).Phase(corev1.PodRunning).
 							Req(map[corev1.ResourceName]string{corev1.ResourceCPU: "1", corev1.ResourceMemory: "4Gi"}).Obj(),
 						timestamp: fakeTimeNowFn(),
