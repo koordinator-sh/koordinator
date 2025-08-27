@@ -209,14 +209,9 @@ func (p *Plugin) Filter(ctx context.Context, state *framework.CycleState, pod *c
 		return nil
 	}
 
-	if ret := p.filterNodeUsage(node.Name, pod, usageThresholds, estimated, allocatable, isAgg); ret != nil {
-		return ret
-	}
 	if err = p.addEstimatedOfIncoming(estimated, state, pod); err != nil {
 		klog.ErrorS(err, "Failed to estimate incoming pod usage", "pod", klog.KObj(pod))
-		return nil
-	}
-	if klog.V(6).Enabled() {
+	} else if klog.V(6).Enabled() {
 		klog.InfoS("Estimate node usage for filtering", "pod", klog.KObj(pod), "node", nodeMetric.Name,
 			"estimated", klog.Format(p.vectorizer.ToList(estimated)),
 			"estimatedExistingPods", klog.KObjSlice(estimatedPods))
