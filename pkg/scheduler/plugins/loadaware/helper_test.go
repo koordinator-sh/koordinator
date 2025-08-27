@@ -172,7 +172,9 @@ func TestGetTargetAggregatedUsage(t *testing.T) {
 			e, _ := estimator.NewDefaultEstimator(&config.LoadAwareSchedulingArgs{}, nil)
 			v := NewResourceVectorizer(corev1.ResourceCPU, corev1.ResourceMemory)
 			c := newPodAssignCache(e, v, &config.LoadAwareSchedulingArgs{})
-			result := c.new(tt.nodeMetric).getTargetAggregatedUsage(tt.aggregatedDuration, aggregationType)
+			c.AddOrUpdateNodeMetric(tt.nodeMetric)
+			n, _ := c.getNodeInfo(tt.nodeMetric.Name)
+			result := n.getTargetAggregatedUsage(tt.aggregatedDuration, aggregationType)
 			assert.Equal(t, v.ToVec(tt.expectedResult.ResourceList), result)
 		})
 	}

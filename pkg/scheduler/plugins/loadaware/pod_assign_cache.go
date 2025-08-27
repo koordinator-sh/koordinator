@@ -42,15 +42,40 @@ var (
 
 // podAssignCache stores the Pod information that has been successfully scheduled or is about to be bound
 type podAssignCache struct {
-	lock sync.RWMutex
-	// podInfoItems storces nodeMetric with cached calculation result for node usage and estimation.
-	nodeMetricItems map[string]*nodeMetric
-	// podInfoItems stores podAssignInfo according to each node.
+	items      sync.Map // items stores nodeInfo, using sync.Map because nodes are not frequently added or deleted.
+	estimator  estimator.Estimator
+	vectorizer ResourceVectorizer
+	args       *config.LoadAwareSchedulingArgs
+}
+
+// nodeInfo stores
+//  1. assigned pods on this node
+//  2. this node's metric collected by koordlet
+//  3. cached calculation result for node usage and estimation.
+type nodeInfo struct {
+	sync.RWMutex
+	// nodeInfo is marked as deleted when podInfos and nodeMetric is empty.
+	// Deleted info should not be updated anymore.
+	deleted bool
 	// podAssignInfo is indexed using the Pod's types.UID
-	podInfoItems map[string]map[types.UID]*podAssignInfo
-	estimator    estimator.Estimator
-	vectorizer   ResourceVectorizer
-	args         *config.LoadAwareSchedulingArgs
+	podInfos map[types.UID]*podAssignInfo
+
+	nodeMetric     *slov1alpha1.NodeMetric
+	updateTime     time.Time
+	reportInterval time.Duration
+
+	podUsages     map[NamespacedName]ResourceVector
+	prodPods      sets.Set[NamespacedName]
+	nodeUsage     ResourceVector
+	prodUsage     ResourceVector
+	aggUsages     map[aggUsageKey]ResourceVector
+	nodeDelta     ResourceVector // delta estimated resources of existing pods
+	prodDelta     ResourceVector // delta estimated resources of existing prod pods
+	nodeEstimated ResourceVector // sum of full estimated resources of all existing pods
+
+	nodeDeltaPods     sets.Set[NamespacedName] // pods that is part of delta estimated, used in logging only
+	prodDeltaPods     sets.Set[NamespacedName] // pods that is part of delta estimated for prod, used in logging only
+	nodeEstimatedPods sets.Set[NamespacedName] // pods that is part of full estimated, used in logging only
 }
 
 type podAssignInfo struct {
@@ -60,60 +85,148 @@ type podAssignInfo struct {
 	estimatedDeadline time.Time
 }
 
+// implements klog.KMetadata
+type NamespacedName struct {
+	Namespace string
+	Name      string
+}
+
+func (n NamespacedName) GetName() string {
+	return n.Name
+}
+
+func (n NamespacedName) GetNamespace() string {
+	return n.Namespace
+}
+
+type aggUsageKey struct {
+	Type extension.AggregationType
+	// aggDuration == 0 means the non-empty maximum period recorded
+	Duration time.Duration
+}
+
 func newPodAssignCache(estimator estimator.Estimator, vectorizer ResourceVectorizer, args *config.LoadAwareSchedulingArgs) *podAssignCache {
 	return &podAssignCache{
-		nodeMetricItems: map[string]*nodeMetric{},
-		podInfoItems:    map[string]map[types.UID]*podAssignInfo{},
-		estimator:       estimator,
-		vectorizer:      vectorizer,
-		args:            args,
+		estimator:  estimator,
+		vectorizer: vectorizer,
+		args:       args,
 	}
 }
 
+func (p *podAssignCache) GetNodeMetricAndEstimatedOfExisting(name string, prodPod bool,
+	aggregatedDuration metav1.Duration, aggregationType extension.AggregationType, logEnabled bool) (
+	nodeMetric *slov1alpha1.NodeMetric, estimated ResourceVector, estimatedPods []NamespacedName, _ error) {
+	n, exists := p.getNodeInfo(name)
+	if !exists || n == nil || n.nodeMetric == nil {
+		return nil, nil, nil, errors.NewNotFound(slov1alpha1.Resource("nodemetric"), name)
+	}
+	n.RLock()
+	defer n.RUnlock()
+	nodeMetric = n.nodeMetric
+	estimated = p.vectorizer.EmptyVec()
+	var pods sets.Set[NamespacedName]
+	if prodPod {
+		estimated.Add(n.prodUsage)
+		estimated.Add(n.prodDelta)
+		pods = n.prodDeltaPods
+	} else {
+		var nodeUsage ResourceVector
+		if aggregationType != "" {
+			nodeUsage = n.getTargetAggregatedUsage(aggregatedDuration, aggregationType)
+		} else {
+			nodeUsage = n.nodeUsage
+		}
+		if nodeUsage != nil {
+			estimated.Add(nodeUsage)
+			estimated.Add(n.nodeDelta)
+			pods = n.nodeDeltaPods
+		} else {
+			estimated.Add(n.nodeEstimated)
+			pods = n.nodeEstimatedPods
+		}
+	}
+	if logEnabled {
+		estimatedPods = pods.UnsortedList()
+	}
+	return
+}
+func (n *nodeInfo) getTargetAggregatedUsage(aggregatedDuration metav1.Duration, aggregationType extension.AggregationType) ResourceVector {
+	// If no specific period is set, the non-empty maximum period recorded by NodeMetrics will be used by default.
+	// This is a default policy.
+	d := aggregatedDuration.Duration
+	vec := n.aggUsages[aggUsageKey{Type: aggregationType, Duration: d}]
+	if vec == nil && d == 0 {
+		// All values in aggregatedDuration are empty, downgrade to use the values in NodeUsage
+		vec = n.nodeUsage
+	}
+	return vec
+}
 func (p *podAssignCache) getPodAssignInfo(nodeName string, pod *corev1.Pod) *podAssignInfo {
 	if nodeName == "" {
 		return nil
 	}
-	p.lock.RLock()
-	defer p.lock.RUnlock()
-	m := p.podInfoItems[nodeName]
-	if m == nil {
+	n, exists := p.getNodeInfo(nodeName)
+	if !exists || n == nil {
 		return nil
 	}
-	if info, ok := m[pod.UID]; ok {
-		return info
-	}
-	return nil
+	n.RLock()
+	defer n.RUnlock()
+	return n.podInfos[pod.UID]
 }
 
-func (p *podAssignCache) getDataOnNode(nodeName string) (*nodeMetric, []*podAssignInfo) {
-	p.lock.RLock()
-	defer p.lock.RUnlock()
-	var nodeMetricInfo *nodeMetric
-	var podInfos []*podAssignInfo
-	if nm := p.nodeMetricItems[nodeName]; nm != nil {
-		nodeMetricInfo = &nodeMetric{
-			NodeMetric:        nm.NodeMetric,
-			updateTime:        nm.updateTime,
-			reportInterval:    nm.reportInterval,
-			prodUsage:         nm.prodUsage.Clone().(ResourceVector),
-			nodeDelta:         nm.nodeDelta.Clone().(ResourceVector),
-			prodDelta:         nm.prodDelta.Clone().(ResourceVector),
-			nodeEstimated:     nm.nodeEstimated.Clone().(ResourceVector),
-			nodeDeltaPods:     nm.nodeDeltaPods.Clone(),
-			prodDeltaPods:     nm.prodDeltaPods.Clone(),
-			nodeEstimatedPods: nm.nodeEstimatedPods.Clone(),
-		}
+func (p *podAssignCache) getClonedNodeInfo(nodeName string) *nodeInfo {
+	ret := &nodeInfo{}
+	if nodeName == "" {
+		return ret
 	}
-	if pods := p.podInfoItems[nodeName]; len(pods) > 0 {
-		podInfos = make([]*podAssignInfo, 0, len(pods))
-		for _, info := range pods {
-			podInfos = append(podInfos, info)
-		}
+	n, exists := p.getNodeInfo(nodeName)
+	if !exists || n == nil {
+		return ret
 	}
-	return nodeMetricInfo, podInfos
+	n.RLock()
+	defer n.RUnlock()
+	*ret = nodeInfo{
+		podInfos:          make(map[types.UID]*podAssignInfo, len(n.podInfos)),
+		nodeMetric:        n.nodeMetric,
+		updateTime:        n.updateTime,
+		reportInterval:    n.reportInterval,
+		prodUsage:         n.prodUsage.Clone().(ResourceVector),
+		nodeDelta:         n.nodeDelta.Clone().(ResourceVector),
+		prodDelta:         n.prodDelta.Clone().(ResourceVector),
+		nodeEstimated:     n.nodeEstimated.Clone().(ResourceVector),
+		nodeDeltaPods:     n.nodeDeltaPods.Clone(),
+		prodDeltaPods:     n.prodDeltaPods.Clone(),
+		nodeEstimatedPods: n.nodeEstimatedPods.Clone(),
+	}
+	for uid, pod := range n.podInfos {
+		ret.podInfos[uid] = pod
+	}
+	return ret
 }
 
+func (p *podAssignCache) getNodeInfo(nodeName string) (*nodeInfo, bool) {
+	v, ok := p.items.Load(nodeName)
+	if !ok {
+		return nil, ok
+	}
+	return v.(*nodeInfo), ok
+}
+func (p *podAssignCache) getOrCreateNodeInfo(nodeName string) *nodeInfo {
+	v, _ := p.items.LoadOrStore(nodeName, &nodeInfo{})
+	return v.(*nodeInfo)
+}
+
+// NOTICE: nodeInfo should be locked before calling this method.
+func (p *podAssignCache) tryCleanup(name string, n *nodeInfo) {
+	if n.nodeMetric == nil && len(n.podInfos) == 0 {
+		n.deleted = true
+		// only delete action has the chance that goroutine holds two locks,
+		// and the order always will be nodeInfo lock first, then podAssignCache.items lock
+		p.items.CompareAndDelete(name, n)
+	}
+}
+
+// add or update pod with node name provided
 func (p *podAssignCache) assign(nodeName string, pod *corev1.Pod) {
 	if nodeName == "" || util.IsPodTerminated(pod) {
 		return
@@ -139,25 +252,12 @@ func (p *podAssignCache) assign(nodeName string, pod *corev1.Pod) {
 		estimated:         estimated,
 		estimatedDeadline: estimatedDeadline,
 	}
-	p.lock.Lock()
-	defer p.lock.Unlock()
-	m := p.podInfoItems[nodeName]
-	if m == nil {
-		m = make(map[types.UID]*podAssignInfo)
-		p.podInfoItems[nodeName] = m
-	}
-	var oldPod *podAssignInfo
-	if pod, ok := m[pod.UID]; ok {
-		oldPod = pod
-	}
-	if nm := p.nodeMetricItems[nodeName]; nm != nil {
-		if oldPod == nil {
-			p.addPod(nm, newPod)
-		} else {
-			p.updatePod(nm, oldPod, newPod)
+	for {
+		n := p.getOrCreateNodeInfo(nodeName)
+		if n.AddOrUpdatePod(newPod) {
+			return
 		}
 	}
-	m[pod.UID] = newPod
 }
 
 func (p *podAssignCache) shouldEstimatePodDeadline(pod *corev1.Pod, timestamp time.Time) time.Time {
@@ -191,16 +291,8 @@ func (p *podAssignCache) unAssign(nodeName string, pod *corev1.Pod) {
 	if nodeName == "" {
 		return
 	}
-	p.lock.Lock()
-	defer p.lock.Unlock()
-	if nm := p.nodeMetricItems[nodeName]; nm != nil {
-		if pod := p.podInfoItems[nodeName][pod.UID]; pod != nil {
-			p.deletePod(nm, pod)
-		}
-	}
-	delete(p.podInfoItems[nodeName], pod.UID)
-	if len(p.podInfoItems[nodeName]) == 0 {
-		delete(p.podInfoItems, nodeName)
+	if n, ok := p.getNodeInfo(nodeName); ok {
+		n.DeletePod(nodeName, pod.UID, p)
 	}
 }
 
@@ -246,6 +338,51 @@ func (p *podAssignCache) OnDelete(obj interface{}) {
 	p.unAssign(pod.Spec.NodeName, pod)
 }
 
+func (n *nodeInfo) AddOrUpdatePod(pod *podAssignInfo) bool {
+	if n.deleted {
+		return false
+	}
+	n.Lock()
+	defer n.Unlock()
+	if n.deleted {
+		return false
+	}
+	var oldPod *podAssignInfo
+	if n.podInfos == nil {
+		n.podInfos = map[types.UID]*podAssignInfo{}
+	} else {
+		oldPod = n.podInfos[pod.pod.UID]
+	}
+	n.podInfos[pod.pod.UID] = pod
+	if n.nodeMetric != nil {
+		if oldPod == nil {
+			n.addPod(pod)
+		} else {
+			n.updatePod(oldPod, pod)
+		}
+	}
+	return true
+}
+
+func (n *nodeInfo) DeletePod(name string, uid types.UID, p *podAssignCache) {
+	if n.deleted {
+		return
+	}
+	n.Lock()
+	defer n.Unlock()
+	if n.deleted {
+		return
+	}
+	oldPod := n.podInfos[uid]
+	if oldPod != nil {
+		delete(n.podInfos, uid)
+	}
+	if n.nodeMetric != nil && oldPod != nil {
+		n.deletePod(oldPod)
+	}
+	p.tryCleanup(name, n)
+}
+
 func (p *podAssignCache) NodeMetricHandler() cache.ResourceEventHandler {
 	return cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj any) {
@@ -276,118 +413,34 @@ func (p *podAssignCache) NodeMetricHandler() cache.ResourceEventHandler {
 	}
 }
 
-func (p *podAssignCache) GetNodeMetricAndEstimatedOfExisting(name string, prodPod bool,
-	aggregatedDuration metav1.Duration, aggregationType extension.AggregationType, logEnabled bool) (
-	nodeMetric *slov1alpha1.NodeMetric, estimated ResourceVector, estimatedPods []NamespacedName, _ error) {
-	p.lock.RLock()
-	defer p.lock.RUnlock()
-	item, exists := p.nodeMetricItems[name]
-	if !exists {
-		return nil, nil, nil, errors.NewNotFound(slov1alpha1.Resource("nodemetric"), name)
-	}
-	nodeMetric = item.NodeMetric
-	estimated = p.vectorizer.EmptyVec()
-	var pods sets.Set[NamespacedName]
-	if prodPod {
-		estimated.Add(item.prodUsage)
-		estimated.Add(item.prodDelta)
-		pods = item.prodDeltaPods
-	} else {
-		var nodeUsage ResourceVector
-		if aggregationType != "" {
-			nodeUsage = item.getTargetAggregatedUsage(aggregatedDuration, aggregationType)
-		} else {
-			nodeUsage = item.nodeUsage
-		}
-		if nodeUsage != nil {
-			estimated.Add(nodeUsage)
-			estimated.Add(item.nodeDelta)
-			pods = item.nodeDeltaPods
-		} else {
-			estimated.Add(item.nodeEstimated)
-			pods = item.nodeEstimatedPods
-		}
-	}
-	if logEnabled {
-		estimatedPods = pods.UnsortedList()
-	}
-	return
-}
-
 func (p *podAssignCache) AddOrUpdateNodeMetric(metric *slov1alpha1.NodeMetric) {
-	m := p.new(metric)
-	p.lock.Lock()
-	defer p.lock.Unlock()
-	p.initPods(m, p.podInfoItems[metric.Name])
-	p.nodeMetricItems[metric.Name] = m
+	for {
+		n := p.getOrCreateNodeInfo(metric.Name)
+		if n.AddOrUpdateNodeMetric(metric, p) {
+			return
+		}
+	}
 }
 
 func (p *podAssignCache) DeleteNodeMetric(name string) {
-	p.lock.Lock()
-	defer p.lock.Unlock()
-	delete(p.nodeMetricItems, name)
-}
-
-type nodeMetric struct {
-	*slov1alpha1.NodeMetric
-	updateTime     time.Time
-	reportInterval time.Duration
-
-	podUsages     map[NamespacedName]ResourceVector
-	prodPods      sets.Set[NamespacedName]
-	nodeUsage     ResourceVector
-	prodUsage     ResourceVector
-	aggUsages     map[aggUsageKey]ResourceVector
-	nodeDelta     ResourceVector // delta estimated resources of existing pods
-	prodDelta     ResourceVector // delta estimated resources of existing prod pods
-	nodeEstimated ResourceVector // sum of full estimated resources of all existing pods
-
-	nodeDeltaPods     sets.Set[NamespacedName] // pods that is part of delta estimated, used in logging only
-	prodDeltaPods     sets.Set[NamespacedName] // pods that is part of delta estimated for prod, used in logging only
-	nodeEstimatedPods sets.Set[NamespacedName] // pods that is part of full estimated, used in logging only
-}
-
-// implements klog.KMetadata
-type NamespacedName struct {
-	Namespace string
-	Name      string
-}
-
-func (n NamespacedName) GetName() string {
-	return n.Name
-}
-
-func (n NamespacedName) GetNamespace() string {
-	return n.Namespace
-}
-
-type aggUsageKey struct {
-	Type extension.AggregationType
-	// aggDuration == 0 means the non-empty maximum period recorded
-	Duration time.Duration
-}
-
-func (p *podAssignCache) new(metric *slov1alpha1.NodeMetric) *nodeMetric {
-	m := &nodeMetric{
-		NodeMetric:        metric,
-		reportInterval:    getNodeMetricReportInterval(metric),
-		prodUsage:         p.vectorizer.EmptyVec(),
-		nodeDelta:         p.vectorizer.EmptyVec(),
-		prodDelta:         p.vectorizer.EmptyVec(),
-		nodeEstimated:     p.vectorizer.EmptyVec(),
-		nodeDeltaPods:     sets.New[NamespacedName](),
-		prodDeltaPods:     sets.New[NamespacedName](),
-		nodeEstimatedPods: sets.New[NamespacedName](),
+	if n, ok := p.getNodeInfo(name); ok {
+		n.DeleteNodeMetric(name, p)
 	}
-	if metric.Status.UpdateTime != nil {
-		m.updateTime = m.Status.UpdateTime.Time
+}
+
+func (n *nodeInfo) AddOrUpdateNodeMetric(metric *slov1alpha1.NodeMetric, p *podAssignCache) bool {
+	if n.deleted {
+		return false
 	}
-	info := metric.Status.NodeMetric
-	if info != nil {
-		m.nodeUsage = p.vectorizer.ToVec(info.NodeUsage.ResourceList)
+	var podUsages map[NamespacedName]ResourceVector
+	var prodPods sets.Set[NamespacedName]
+	var nodeUsage, prodUsage ResourceVector = nil, p.vectorizer.EmptyVec()
+	var aggUsages map[aggUsageKey]ResourceVector
+	if info := metric.Status.NodeMetric; info != nil {
+		nodeUsage = p.vectorizer.ToVec(info.NodeUsage.ResourceList)
 		if aggLen := len(info.AggregatedNodeUsages); aggLen > 0 {
 			typeLen := len(info.AggregatedNodeUsages[0].Usage)
-			aggUsages := make(map[aggUsageKey]ResourceVector, (aggLen+1)*typeLen)
+			aggUsages = make(map[aggUsageKey]ResourceVector, (aggLen+1)*typeLen)
 			maxDurations := make(map[extension.AggregationType]time.Duration, typeLen)
 			for _, aggInfo := range info.AggregatedNodeUsages {
 				d := aggInfo.Duration.Duration
@@ -406,15 +459,14 @@ func (p *podAssignCache) new(metric *slov1alpha1.NodeMetric) *nodeMetric {
 			for t, d := range maxDurations {
 				aggUsages[aggUsageKey{Type: t}] = aggUsages[aggUsageKey{Type: t, Duration: d}]
 			}
-			m.aggUsages = aggUsages
 		}
 		if p.args.ProdUsageIncludeSys {
-			m.prodUsage.Add(p.vectorizer.ToVec(info.SystemUsage.ResourceList))
+			prodUsage.Add(p.vectorizer.ToVec(info.SystemUsage.ResourceList))
 		}
 	}
 	if infos := metric.Status.PodsMetric; len(infos) != 0 {
-		podUsages := make(map[NamespacedName]ResourceVector, len(infos))
-		prodPods := sets.New[NamespacedName]()
+		podUsages = make(map[NamespacedName]ResourceVector, len(infos))
+		prodPods = sets.New[NamespacedName]()
 		for _, info := range infos {
 			if info == nil {
 				continue
@@ -429,27 +481,56 @@ func (p *podAssignCache) new(metric *slov1alpha1.NodeMetric) *nodeMetric {
 				prodPods.Insert(key)
 			}
 		}
-		m.podUsages, m.prodPods = podUsages, prodPods
 	}
-	return m
+	n.Lock()
+	defer n.Unlock()
+	if n.deleted {
+		return false
+	}
+	n.nodeMetric = metric
+	n.reportInterval = getNodeMetricReportInterval(metric)
+	if metric.Status.UpdateTime != nil {
+		n.updateTime = metric.Status.UpdateTime.Time
+	}
+	n.podUsages, n.prodPods = podUsages, prodPods
+	n.nodeUsage = nodeUsage
+	n.prodUsage = prodUsage
+	n.aggUsages = aggUsages
+	n.nodeDelta = p.vectorizer.EmptyVec()
+	n.prodDelta = p.vectorizer.EmptyVec()
+	n.nodeEstimated = p.vectorizer.EmptyVec()
+	n.nodeDeltaPods = sets.New[NamespacedName]()
+	n.prodDeltaPods = sets.New[NamespacedName]()
+	n.nodeEstimatedPods = sets.New[NamespacedName]()
+	for _, pod := range n.podInfos {
+		n.addPod(pod)
+	}
+	return true
 }
 
-func (p *podAssignCache) initPods(m *nodeMetric, pods map[types.UID]*podAssignInfo) {
-	for _, pod := range pods {
-		p.addPod(m, pod)
+func (n *nodeInfo) DeleteNodeMetric(name string, p *podAssignCache) {
+	if n.deleted {
+		return
 	}
+	n.Lock()
+	defer n.Unlock()
+	if n.deleted {
+		return
+	}
+	n.nodeMetric = nil
+	p.tryCleanup(name, n)
 }
 
-func (p *podAssignCache) addPod(m *nodeMetric, pod *podAssignInfo) {
+func (n *nodeInfo) addPod(pod *podAssignInfo) {
 	key := NamespacedName{Namespace: pod.pod.Namespace, Name: pod.pod.Name}
-	u := m.podUsages[key]
+	u := n.podUsages[key]
 	prod := extension.GetPodPriorityClassWithDefault(pod.pod) == extension.PriorityProd
 	// Only use prod pod's usage when both pod claims and node metric reports it as prod.
 	// 1. pod priority class are updated dynamically
 	// 2. prod / non prod pod is wrongly reported or terminated pod is leaked in node metrics status
-	activeProd := prod && m.prodPods.Has(key)
+	activeProd := prod && n.prodPods.Has(key)
 	if activeProd {
-		m.prodUsage.Add(u)
+		n.prodUsage.Add(u)
 	}
 
 	e := pod.estimated
@@ -461,16 +542,16 @@ func (p *podAssignCache) addPod(m *nodeMetric, pod *podAssignInfo) {
 	// 3. when pod metrics is still in the report interval
 	// 4. when pod is configured in estimation
 	should := u == nil ||
-		m.updateTime.Add(-m.reportInterval).Before(pod.timestamp) ||
-		(!pod.estimatedDeadline.IsZero() && pod.estimatedDeadline.After(m.updateTime))
+		n.updateTime.Add(-n.reportInterval).Before(pod.timestamp) ||
+		(!pod.estimatedDeadline.IsZero() && pod.estimatedDeadline.After(n.updateTime))
 	if should {
-		if m.nodeDelta.AddDelta(e, u) && m.nodeDeltaPods != nil {
-			m.nodeDeltaPods.Insert(key)
+		if n.nodeDelta.AddDelta(e, u) && n.nodeDeltaPods != nil {
+			n.nodeDeltaPods.Insert(key)
 		}
 	}
-	m.nodeEstimated.Add(e)
-	if m.nodeEstimatedPods != nil {
-		m.nodeEstimatedPods.Insert(key)
+	n.nodeEstimated.Add(e)
+	if n.nodeEstimatedPods != nil {
+		n.nodeEstimatedPods.Insert(key)
 	}
 
 	if !prod {
@@ -480,25 +561,25 @@ func (p *podAssignCache) addPod(m *nodeMetric, pod *podAssignInfo) {
 		u, should = nil, true
 	}
 	if should {
-		if m.prodDelta.AddDelta(e, u) && m.prodDeltaPods != nil {
-			m.prodDeltaPods.Insert(key)
+		if n.prodDelta.AddDelta(e, u) && n.prodDeltaPods != nil {
+			n.prodDeltaPods.Insert(key)
 		}
 	}
 }
 
-func (p *podAssignCache) updatePod(m *nodeMetric, oldPod, newPod *podAssignInfo) {
-	p.deletePod(m, oldPod)
-	p.addPod(m, newPod)
+func (n *nodeInfo) updatePod(oldPod, newPod *podAssignInfo) {
+	n.deletePod(oldPod)
+	n.addPod(newPod)
 }
 
 // reverse procedure of addPod
-func (p *podAssignCache) deletePod(m *nodeMetric, pod *podAssignInfo) {
+func (n *nodeInfo) deletePod(pod *podAssignInfo) {
 	key := NamespacedName{Namespace: pod.pod.Namespace, Name: pod.pod.Name}
-	u := m.podUsages[key]
+	u := n.podUsages[key]
 	prod := extension.GetPodPriorityClassWithDefault(pod.pod) == extension.PriorityProd
-	activeProd := prod && m.prodPods.Has(key)
+	activeProd := prod && n.prodPods.Has(key)
 	if activeProd {
-		m.prodUsage.Sub(u)
+		n.prodUsage.Sub(u)
 	}
 
 	e := pod.estimated
@@ -506,16 +587,16 @@ func (p *podAssignCache) deletePod(m *nodeMetric, pod *podAssignInfo) {
 		return
 	}
 	should := u == nil ||
-		m.updateTime.Add(-m.reportInterval).Before(pod.timestamp) ||
-		(!pod.estimatedDeadline.IsZero() && pod.estimatedDeadline.After(m.updateTime))
+		n.updateTime.Add(-n.reportInterval).Before(pod.timestamp) ||
+		(!pod.estimatedDeadline.IsZero() && pod.estimatedDeadline.After(n.updateTime))
 	if should {
-		if m.nodeDelta.SubDelta(e, u) && m.nodeDeltaPods != nil {
-			m.nodeDeltaPods.Delete(key)
+		if n.nodeDelta.SubDelta(e, u) && n.nodeDeltaPods != nil {
+			n.nodeDeltaPods.Delete(key)
 		}
 	}
-	m.nodeEstimated.Sub(e)
-	if m.nodeEstimatedPods != nil {
-		m.nodeEstimatedPods.Delete(key)
+	n.nodeEstimated.Sub(e)
+	if n.nodeEstimatedPods != nil {
+		n.nodeEstimatedPods.Delete(key)
 	}
 
 	if !prod {
@@ -525,20 +606,8 @@ func (p *podAssignCache) deletePod(m *nodeMetric, pod *podAssignInfo) {
 		u, should = nil, true
 	}
 	if should {
-		if m.prodDelta.SubDelta(e, u) && m.prodDeltaPods != nil {
-			m.prodDeltaPods.Delete(key)
+		if n.prodDelta.SubDelta(e, u) && n.prodDeltaPods != nil {
+			n.prodDeltaPods.Delete(key)
 		}
 	}
-}
-
-func (m *nodeMetric) getTargetAggregatedUsage(aggregatedDuration metav1.Duration, aggregationType extension.AggregationType) ResourceVector {
-	// If no specific period is set, the non-empty maximum period recorded by NodeMetrics will be used by default.
-	// This is a default policy.
-	d := aggregatedDuration.Duration
-	vec := m.aggUsages[aggUsageKey{Type: aggregationType, Duration: d}]
-	if vec == nil && d == 0 {
-		// All values in aggregatedDuration are empty, downgrade to use the values in NodeUsage
-		vec = m.nodeUsage
-	}
-	return vec
 }

@@ -50,39 +50,42 @@ type PodAssignInfoData struct {
 func (p *Plugin) RegisterEndpoints(group *gin.RouterGroup) {
 	group.GET("/node/:nodeName", func(c *gin.Context) {
 		nodeName := c.Param("nodeName")
-		nodeInfo, assignInfos := p.podAssignCache.getDataOnNode(nodeName)
-		if len(assignInfos) == 0 && nodeInfo == nil {
+		n := p.podAssignCache.getClonedNodeInfo(nodeName)
+		if n == nil || (len(n.podInfos) == 0 && n.nodeMetric == nil) {
 			c.JSON(http.StatusOK, &NodeAssignInfoData{})
 			return
 		}
 
 		resp := &NodeAssignInfoData{
-			Pods: make([]PodAssignInfoData, 0, len(assignInfos)),
+			Pods: make([]PodAssignInfoData, 0, len(n.podInfos)),
 		}
-		for i := range assignInfos {
+		for i := range n.podInfos {
 			resp.Pods = append(resp.Pods, PodAssignInfoData{
-				Timestamp: assignInfos[i].timestamp,
-				Pod:       assignInfos[i].pod,
+				Timestamp: n.podInfos[i].timestamp,
+				Pod:       n.podInfos[i].pod,
 			})
 		}
-		if nodeInfo != nil {
-			resp.ProdUsage = p.vectorizer.ToList(nodeInfo.prodUsage)
-			resp.NodeDelta = p.vectorizer.ToList(nodeInfo.nodeDelta)
-			resp.ProdDelta = p.vectorizer.ToList(nodeInfo.prodDelta)
-			resp.NodeEstimated = p.vectorizer.ToList(nodeInfo.nodeEstimated)
-			for _, pod := range nodeInfo.nodeDeltaPods.UnsortedList() {
+		sort.Slice(resp.Pods, func(i, j int) bool {
+			return resp.Pods[i].Timestamp.Before(resp.Pods[j].Timestamp)
+		})
+		if n.nodeMetric != nil {
+			resp.ProdUsage = p.vectorizer.ToList(n.prodUsage)
+			resp.NodeDelta = p.vectorizer.ToList(n.nodeDelta)
+			resp.ProdDelta = p.vectorizer.ToList(n.prodDelta)
+			resp.NodeEstimated = p.vectorizer.ToList(n.nodeEstimated)
+			for _, pod := range n.nodeDeltaPods.UnsortedList() {
 				resp.NodeDeltaPods = append(resp.NodeDeltaPods, klog.KObj(pod).String())
 			}
 			sort.Slice(resp.NodeDeltaPods, func(i, j int) bool {
 				return resp.NodeDeltaPods[i] < resp.NodeDeltaPods[j]
 			})
-			for _, pod := range nodeInfo.prodDeltaPods.UnsortedList() {
+			for _, pod := range n.prodDeltaPods.UnsortedList() {
 				resp.ProdDeltaPods = append(resp.ProdDeltaPods, klog.KObj(pod).String())
 			}
 			sort.Slice(resp.ProdDeltaPods, func(i, j int) bool {
 				return resp.ProdDeltaPods[i] < resp.ProdDeltaPods[j]
 			})
-			for _, pod := range nodeInfo.nodeEstimatedPods.UnsortedList() {
+			for _, pod := range n.nodeEstimatedPods.UnsortedList() {
 				resp.NodeEstimatedPods = append(resp.NodeEstimatedPods, klog.KObj(pod).String())
 			}
 			sort.Slice(resp.NodeEstimatedPods, func(i, j int) bool {

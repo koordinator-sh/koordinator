@@ -47,27 +47,30 @@ func TestPodAssignCache_OnAdd(t *testing.T) {
 	node := "test-node"
 	m := &slov1alpha1.NodeMetric{ObjectMeta: metav1.ObjectMeta{Name: node}}
 	tests := []struct {
-		name       string
-		pod        *corev1.Pod
-		wantCache  map[string]map[types.UID]*podAssignInfo
-		wantMetric func(*nodeMetric)
+		name string
+		pod  *corev1.Pod
+		want func(*testing.T, *nodeInfo)
 	}{
 		{
-			name:      "add pending pod",
-			pod:       schedulertesting.MakePod().Obj(),
-			wantCache: map[string]map[types.UID]*podAssignInfo{},
+			name: "add pending pod",
+			pod:  schedulertesting.MakePod().Obj(),
+			want: func(t *testing.T, n *nodeInfo) {
+				assert.Equal(t, 0, len(n.podInfos))
+			},
 		},
 		{
-			name:      "add terminated pod",
-			pod:       schedulertesting.MakePod().Node(node).Phase(corev1.PodFailed).Obj(),
-			wantCache: map[string]map[types.UID]*podAssignInfo{},
+			name: "add terminated pod",
+			pod:  schedulertesting.MakePod().Node(node).Phase(corev1.PodFailed).Obj(),
+			want: func(t *testing.T, n *nodeInfo) {
+				assert.Equal(t, 0, len(n.podInfos))
+			},
 		},
 		{
 			name: "add scheduled running pod without resources",
 			pod:  schedulertesting.MakePod().UID("123456789").Namespace("default").Name("test").Node(node).Phase(corev1.PodRunning).Obj(),
-			wantCache: map[string]map[types.UID]*podAssignInfo{
-				node: {
-					"123456789": &podAssignInfo{
+			want: func(t *testing.T, n *nodeInfo) {
+				assert.Equal(t, map[types.UID]*podAssignInfo{
+					"123456789": {
 						pod:       schedulertesting.MakePod().UID("123456789").Namespace("default").Name("test").Node(node).Phase(corev1.PodRunning).Obj(),
 						timestamp: fakeTimeNowFn(),
 						estimated: vectorizer.ToFactorVec(map[corev1.ResourceName]int64{
@@ -75,44 +78,50 @@ func TestPodAssignCache_OnAdd(t *testing.T) {
 							corev1.ResourceMemory: estimator.DefaultMemoryRequest,
 						}),
 					},
-				},
-			},
-			wantMetric: func(nm *nodeMetric) {
+				}, n.podInfos)
 				v := vectorizer.ToFactorVec(map[corev1.ResourceName]int64{
 					corev1.ResourceCPU:    estimator.DefaultMilliCPURequest,
 					corev1.ResourceMemory: estimator.DefaultMemoryRequest,
 				})
-				nm.nodeDelta, nm.nodeEstimated = v, v
+				assert.Equal(t, v, n.nodeDelta)
+				assert.Equal(t, v, n.nodeEstimated)
 				s := sets.New(NamespacedName{Namespace: "default", Name: "test"})
-				nm.nodeDeltaPods, nm.nodeEstimatedPods = s, s
+				assert.Equal(t, s, n.nodeDeltaPods)
+				assert.Equal(t, s, n.nodeEstimatedPods)
 			},
 		},
 		{
 			name: "add prod pod",
 			pod: schedulertesting.MakePod().UID("123456789").Namespace("default").Name("test").Node(node).
 				Req(map[corev1.ResourceName]string{corev1.ResourceCPU: "1", corev1.ResourceMemory: "4Gi"}).Obj(),
-			wantMetric: func(nm *nodeMetric) {
+			want: func(t *testing.T, n *nodeInfo) {
 				v := vectorizer.ToVec(corev1.ResourceList{
 					corev1.ResourceCPU:    resource.MustParse("1"),
 					corev1.ResourceMemory: resource.MustParse("4Gi"),
 				})
-				nm.nodeDelta, nm.prodDelta, nm.nodeEstimated = v, v, v
+				assert.Equal(t, v, n.nodeDelta)
+				assert.Equal(t, v, n.prodDelta)
+				assert.Equal(t, v, n.nodeEstimated)
 				s := sets.New(NamespacedName{Namespace: "default", Name: "test"})
-				nm.nodeDeltaPods, nm.prodDeltaPods, nm.nodeEstimatedPods = s, s, s
+				assert.Equal(t, s, n.nodeDeltaPods)
+				assert.Equal(t, s, n.prodDeltaPods)
+				assert.Equal(t, s, n.nodeEstimatedPods)
 			},
 		},
 		{
 			name: "add non prod pod",
 			pod: schedulertesting.MakePod().UID("123456789").Namespace("default").Name("test").Node(node).Priority(extension.PriorityMidValueDefault).
 				Req(map[corev1.ResourceName]string{extension.MidCPU: "1k", extension.MidMemory: "4Gi"}).Obj(),
-			wantMetric: func(nm *nodeMetric) {
+			want: func(t *testing.T, n *nodeInfo) {
 				v := vectorizer.ToVec(corev1.ResourceList{
 					corev1.ResourceCPU:    resource.MustParse("1"),
 					corev1.ResourceMemory: resource.MustParse("4Gi"),
 				})
-				nm.nodeDelta, nm.nodeEstimated = v, v
+				assert.Equal(t, v, n.nodeDelta)
+				assert.Equal(t, v, n.nodeEstimated)
 				s := sets.New(NamespacedName{Namespace: "default", Name: "test"})
-				nm.nodeDeltaPods, nm.nodeEstimatedPods = s, s
+				assert.Equal(t, s, n.nodeDeltaPods)
+				assert.Equal(t, s, n.nodeEstimatedPods)
 			},
 		},
 	}
@@ -130,16 +139,8 @@ func TestPodAssignCache_OnAdd(t *testing.T) {
 			assignCache := newPodAssignCache(e, vectorizer, &config.LoadAwareSchedulingArgs{})
 			assignCache.AddOrUpdateNodeMetric(m)
 			assignCache.OnAdd(tt.pod, true)
-			if tt.wantCache != nil {
-				assert.Equal(t, tt.wantCache, assignCache.podInfoItems)
-			}
-			wantMetric := assignCache.new(m)
-			assignCache.initPods(wantMetric, nil)
-			if tt.wantMetric != nil {
-				tt.wantMetric(wantMetric)
-			}
-			actual := assignCache.nodeMetricItems[node]
-			assert.Equal(t, wantMetric, actual)
+			actual, _ := assignCache.getNodeInfo(node)
+			tt.want(t, actual)
 		})
 	}
 }
@@ -152,13 +153,14 @@ func TestPodAssignCache_OnUpdate(t *testing.T) {
 		name         string
 		pod          *corev1.Pod
 		existingPods []*corev1.Pod
-		wantCache    map[string]map[types.UID]*podAssignInfo
-		wantMetric   func(*nodeMetric)
+		want         func(*testing.T, *nodeInfo)
 	}{
 		{
-			name:      "update pending pod",
-			pod:       schedulertesting.MakePod().Obj(),
-			wantCache: map[string]map[types.UID]*podAssignInfo{},
+			name: "update pending pod",
+			pod:  schedulertesting.MakePod().Obj(),
+			want: func(t *testing.T, n *nodeInfo) {
+				assert.Equal(t, 0, len(n.podInfos))
+			},
 		},
 		{
 			name: "update terminated pod",
@@ -166,13 +168,15 @@ func TestPodAssignCache_OnUpdate(t *testing.T) {
 			existingPods: []*corev1.Pod{
 				schedulertesting.MakePod().UID("123456789").Namespace("default").Name("test").Node(node).Phase(corev1.PodRunning).Obj(),
 			},
-			wantCache: map[string]map[types.UID]*podAssignInfo{},
+			want: func(t *testing.T, n *nodeInfo) {
+				assert.Equal(t, 0, len(n.podInfos))
+			},
 		},
 		{
 			name: "update scheduled running pod without resources",
 			pod:  schedulertesting.MakePod().UID("123456789").Namespace("default").Name("test").Node(node).Phase(corev1.PodRunning).Obj(),
-			wantCache: map[string]map[types.UID]*podAssignInfo{
-				"test-node": {
+			want: func(t *testing.T, n *nodeInfo) {
+				assert.Equal(t, map[types.UID]*podAssignInfo{
 					"123456789": &podAssignInfo{
 						pod:       schedulertesting.MakePod().UID("123456789").Namespace("default").Name("test").Node(node).Phase(corev1.PodRunning).Obj(),
 						timestamp: fakeTimeNowFn(),
@@ -181,16 +185,16 @@ func TestPodAssignCache_OnUpdate(t *testing.T) {
 							corev1.ResourceMemory: estimator.DefaultMemoryRequest,
 						}),
 					},
-				},
-			},
-			wantMetric: func(nm *nodeMetric) {
+				}, n.podInfos)
 				v := vectorizer.ToFactorVec(map[corev1.ResourceName]int64{
 					corev1.ResourceCPU:    estimator.DefaultMilliCPURequest,
 					corev1.ResourceMemory: estimator.DefaultMemoryRequest,
 				})
-				nm.nodeDelta, nm.nodeEstimated = v, v
+				assert.Equal(t, v, n.nodeDelta)
+				assert.Equal(t, v, n.nodeEstimated)
 				s := sets.New(NamespacedName{Namespace: "default", Name: "test"})
-				nm.nodeDeltaPods, nm.nodeEstimatedPods = s, s
+				assert.Equal(t, s, n.nodeDeltaPods)
+				assert.Equal(t, s, n.nodeEstimatedPods)
 			},
 		},
 		{
@@ -200,8 +204,8 @@ func TestPodAssignCache_OnUpdate(t *testing.T) {
 			existingPods: []*corev1.Pod{
 				schedulertesting.MakePod().UID("123456789").Namespace("default").Name("test").Node(node).Phase(corev1.PodRunning).Obj(),
 			},
-			wantCache: map[string]map[types.UID]*podAssignInfo{
-				"test-node": {
+			want: func(t *testing.T, n *nodeInfo) {
+				assert.Equal(t, map[types.UID]*podAssignInfo{
 					"123456789": &podAssignInfo{
 						pod:       schedulertesting.MakePod().UID("123456789").Namespace("default").Name("test").Node(node).Phase(corev1.PodRunning).Obj(),
 						timestamp: fakeTimeNowFn(),
@@ -210,16 +214,7 @@ func TestPodAssignCache_OnUpdate(t *testing.T) {
 							corev1.ResourceMemory: estimator.DefaultMemoryRequest,
 						}),
 					},
-				},
-			},
-			wantMetric: func(nm *nodeMetric) {
-				v := vectorizer.ToFactorVec(map[corev1.ResourceName]int64{
-					corev1.ResourceCPU:    estimator.DefaultMilliCPURequest,
-					corev1.ResourceMemory: estimator.DefaultMemoryRequest,
-				})
-				nm.nodeDelta, nm.nodeEstimated = v, v
-				s := sets.New(NamespacedName{Namespace: "default", Name: "test"})
-				nm.nodeDeltaPods, nm.nodeEstimatedPods = s, s
+				}, n.podInfos)
 			},
 		},
 		{
@@ -235,8 +230,8 @@ func TestPodAssignCache_OnUpdate(t *testing.T) {
 						{Type: corev1.PodScheduled, Status: corev1.ConditionTrue, LastTransitionTime: metav1.NewTime(fakeTimeNowFn().Add(1000))},
 					}).Obj(),
 			},
-			wantCache: map[string]map[types.UID]*podAssignInfo{
-				"test-node": {
+			want: func(t *testing.T, n *nodeInfo) {
+				assert.Equal(t, map[types.UID]*podAssignInfo{
 					"123456789": &podAssignInfo{
 						pod: schedulertesting.MakePod().UID("123456789").Namespace("default").Name("test").Node(node).Phase(corev1.PodRunning).
 							Conditions([]corev1.PodCondition{
@@ -249,16 +244,16 @@ func TestPodAssignCache_OnUpdate(t *testing.T) {
 							corev1.ResourceMemory: estimator.DefaultMemoryRequest,
 						}),
 					},
-				},
-			},
-			wantMetric: func(nm *nodeMetric) {
+				}, n.podInfos)
 				v := vectorizer.ToFactorVec(map[corev1.ResourceName]int64{
 					corev1.ResourceCPU:    estimator.DefaultMilliCPURequest,
 					corev1.ResourceMemory: estimator.DefaultMemoryRequest,
 				})
-				nm.nodeDelta, nm.nodeEstimated = v, v
+				assert.Equal(t, v, n.nodeDelta)
+				assert.Equal(t, v, n.nodeEstimated)
 				s := sets.New(NamespacedName{Namespace: "default", Name: "test"})
-				nm.nodeDeltaPods, nm.nodeEstimatedPods = s, s
+				assert.Equal(t, s, n.nodeDeltaPods)
+				assert.Equal(t, s, n.nodeEstimatedPods)
 			},
 		},
 		{
@@ -272,8 +267,8 @@ func TestPodAssignCache_OnUpdate(t *testing.T) {
 						{Type: corev1.PodScheduled, Status: corev1.ConditionTrue, LastTransitionTime: metav1.NewTime(fakeTimeNowFn().Add(1000))},
 					}).Obj(),
 			},
-			wantCache: map[string]map[types.UID]*podAssignInfo{
-				"test-node": {
+			want: func(t *testing.T, n *nodeInfo) {
+				assert.Equal(t, map[types.UID]*podAssignInfo{
 					"123456789": &podAssignInfo{
 						pod: schedulertesting.MakePod().UID("123456789").Namespace("default").Name("test").Node(node).Phase(corev1.PodRunning).
 							Req(map[corev1.ResourceName]string{corev1.ResourceCPU: "1", corev1.ResourceMemory: "4Gi"}).Obj(),
@@ -283,16 +278,18 @@ func TestPodAssignCache_OnUpdate(t *testing.T) {
 							corev1.ResourceMemory: resource.MustParse("4Gi"),
 						}),
 					},
-				},
-			},
-			wantMetric: func(nm *nodeMetric) {
+				}, n.podInfos)
 				v := vectorizer.ToVec(corev1.ResourceList{
 					corev1.ResourceCPU:    resource.MustParse("1"),
 					corev1.ResourceMemory: resource.MustParse("4Gi"),
 				})
-				nm.nodeDelta, nm.prodDelta, nm.nodeEstimated = v, v, v
+				assert.Equal(t, v, n.nodeDelta)
+				assert.Equal(t, v, n.prodDelta)
+				assert.Equal(t, v, n.nodeEstimated)
 				s := sets.New(NamespacedName{Namespace: "default", Name: "test"})
-				nm.nodeDeltaPods, nm.prodDeltaPods, nm.nodeEstimatedPods = s, s, s
+				assert.Equal(t, s, n.nodeDeltaPods)
+				assert.Equal(t, s, n.prodDeltaPods)
+				assert.Equal(t, s, n.nodeEstimatedPods)
 			},
 		},
 	}
@@ -313,16 +310,8 @@ func TestPodAssignCache_OnUpdate(t *testing.T) {
 				assignCache.OnAdd(pod, true)
 			}
 			assignCache.OnUpdate(nil, tt.pod)
-			if tt.wantCache != nil {
-				assert.Equal(t, tt.wantCache, assignCache.podInfoItems)
-			}
-			wantMetric := assignCache.new(m)
-			assignCache.initPods(wantMetric, nil)
-			if tt.wantMetric != nil {
-				tt.wantMetric(wantMetric)
-			}
-			actual := assignCache.nodeMetricItems[node]
-			assert.Equal(t, wantMetric, actual)
+			actual, _ := assignCache.getNodeInfo(node)
+			tt.want(t, actual)
 		})
 	}
 }
@@ -426,39 +415,37 @@ func TestPodAssignCache_OnDelete(t *testing.T) {
 		Req(map[corev1.ResourceName]string{extension.MidCPU: "4k", extension.MidMemory: "8Gi"}).Obj(), false)
 	assignCache.OnAdd(schedulertesting.MakePod().UID("6").Namespace("default").Name("mid-3").Node(node).Phase(corev1.PodRunning).Priority(extension.PriorityMidValueDefault).
 		Req(map[corev1.ResourceName]string{extension.MidCPU: "4k", extension.MidMemory: "8Gi"}).Obj(), false)
-	wantMetric := assignCache.new(m)
-	assignCache.initPods(wantMetric, nil)
-	wantMetric.prodUsage = vectorizer.ToVec(corev1.ResourceList{
+	actual, _ := assignCache.getNodeInfo(node)
+	assert.Equal(t, vectorizer.ToVec(corev1.ResourceList{
 		corev1.ResourceCPU:    resource.MustParse("5"),
 		corev1.ResourceMemory: resource.MustParse("8Gi"),
-	})
-	wantMetric.nodeDelta = vectorizer.ToVec(corev1.ResourceList{
+	}), actual.prodUsage)
+	assert.Equal(t, vectorizer.ToVec(corev1.ResourceList{
 		corev1.ResourceCPU:    resource.MustParse("2"),
 		corev1.ResourceMemory: resource.MustParse("4Gi"),
-	})
-	wantMetric.prodDelta = vectorizer.ToVec(corev1.ResourceList{
+	}), actual.nodeDelta)
+	assert.Equal(t, vectorizer.ToVec(corev1.ResourceList{
 		corev1.ResourceCPU:    resource.MustParse("3"),
 		corev1.ResourceMemory: resource.MustParse("6Gi"),
-	})
-	wantMetric.nodeEstimated = vectorizer.ToVec(corev1.ResourceList{
+	}), actual.prodDelta)
+	assert.Equal(t, vectorizer.ToVec(corev1.ResourceList{
 		corev1.ResourceCPU:    resource.MustParse("12"),
 		corev1.ResourceMemory: resource.MustParse("24Gi"),
-	})
-	wantMetric.nodeDeltaPods = sets.New(
+	}), actual.nodeEstimated)
+	assert.Equal(t, sets.New(
 		NamespacedName{Namespace: "default", Name: "prod-1"}, NamespacedName{Namespace: "default", Name: "prod-2"},
 		NamespacedName{Namespace: "default", Name: "mid-1"}, NamespacedName{Namespace: "default", Name: "mid-2"},
-	)
-	wantMetric.prodDeltaPods = sets.New(
+	), actual.nodeDeltaPods)
+	assert.Equal(t, sets.New(
 		NamespacedName{Namespace: "default", Name: "prod-1"}, NamespacedName{Namespace: "default", Name: "prod-2"},
 		NamespacedName{Namespace: "default", Name: "prod-3"},
-	)
-	wantMetric.nodeEstimatedPods = sets.New(
+	), actual.prodDeltaPods)
+	assert.Equal(t, sets.New(
 		NamespacedName{Namespace: "default", Name: "prod-1"}, NamespacedName{Namespace: "default", Name: "prod-2"},
 		NamespacedName{Namespace: "default", Name: "prod-3"}, NamespacedName{Namespace: "default", Name: "mid-1"},
 		NamespacedName{Namespace: "default", Name: "mid-2"}, NamespacedName{Namespace: "default", Name: "mid-3"},
-	)
-	actual := assignCache.nodeMetricItems[node]
-	assert.Equal(t, wantMetric, actual)
+	), actual.nodeEstimatedPods)
+
 	assignCache.OnDelete(schedulertesting.MakePod().UID("1").Namespace("default").Name("prod-1").Node(node).Phase(corev1.PodFailed).
 		Req(map[corev1.ResourceName]string{corev1.ResourceCPU: "2", corev1.ResourceMemory: "8Gi"}).Obj())
 	assignCache.OnDelete(schedulertesting.MakePod().UID("2").Namespace("default").Name("prod-2").Node(node).Obj())
@@ -466,13 +453,15 @@ func TestPodAssignCache_OnDelete(t *testing.T) {
 	assignCache.OnDelete(schedulertesting.MakePod().UID("4").Namespace("default").Name("mid-1").Node(node).Obj())
 	assignCache.OnDelete(schedulertesting.MakePod().UID("5").Namespace("default").Name("mid-2").Node(node).Obj())
 	assignCache.OnDelete(schedulertesting.MakePod().UID("6").Namespace("default").Name("mid-3").Node(node).Obj())
-
-	wantCache := map[string]map[types.UID]*podAssignInfo{}
-	assert.Equal(t, wantCache, assignCache.podInfoItems)
-	wantMetric = assignCache.new(m)
-	assignCache.initPods(wantMetric, nil)
-	actual = assignCache.nodeMetricItems[node]
-	assert.Equal(t, wantMetric, actual)
+	actual, _ = assignCache.getNodeInfo(node)
+	assert.Equal(t, 0, len(actual.podInfos))
+	assert.Equal(t, vectorizer.EmptyVec(), actual.nodeDelta)
+	assert.Equal(t, vectorizer.EmptyVec(), actual.prodDelta)
+	assert.Equal(t, vectorizer.EmptyVec(), actual.nodeEstimated)
+	s := sets.New[NamespacedName]()
+	assert.Equal(t, s, actual.nodeDeltaPods)
+	assert.Equal(t, s, actual.prodDeltaPods)
+	assert.Equal(t, s, actual.nodeEstimatedPods)
 }
 
 func TestShouldEstimatePodDeadline(t *testing.T) {
@@ -571,7 +560,7 @@ func TestNodeMetric(t *testing.T) {
 		args         *config.LoadAwareSchedulingArgs
 		nodeMetric   *slov1alpha1.NodeMetric
 		existingPods []*corev1.Pod
-		wantMetric   func(*nodeMetric)
+		want         func(*testing.T, *nodeInfo)
 	}{
 		{
 			name: "disable estimator",
@@ -616,11 +605,11 @@ func TestNodeMetric(t *testing.T) {
 				schedulertesting.MakePod().Namespace("default").UID("2").Name("mid-1").Node(node).Phase(corev1.PodRunning).Priority(extension.PriorityMidValueDefault).
 					Req(map[corev1.ResourceName]string{extension.MidCPU: "4k", extension.MidMemory: "8Gi"}).Obj(),
 			},
-			wantMetric: func(nm *nodeMetric) {
-				nm.prodUsage = vectorizer.ToVec(corev1.ResourceList{
+			want: func(t *testing.T, n *nodeInfo) {
+				assert.Equal(t, vectorizer.ToVec(corev1.ResourceList{
 					corev1.ResourceCPU:    resource.MustParse("50"),
 					corev1.ResourceMemory: resource.MustParse("200Gi"),
-				})
+				}), n.prodUsage)
 			},
 		},
 		{
@@ -686,54 +675,43 @@ func TestNodeMetric(t *testing.T) {
 					},
 				},
 			},
-			wantMetric: func(nm *nodeMetric) {
-				// reset for verify
-				*nm = nodeMetric{
-					NodeMetric:     nm.NodeMetric,
-					updateTime:     now.Time,
-					reportInterval: 180 * time.Second,
-
-					nodeUsage: vectorizer.ToVec(corev1.ResourceList{
+			want: func(t *testing.T, n *nodeInfo) {
+				assert.Equal(t, now.Time, n.updateTime)
+				assert.Equal(t, 180*time.Second, n.reportInterval)
+				assert.Equal(t, vectorizer.ToVec(corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("2"),
+					corev1.ResourceMemory: resource.MustParse("4Gi"),
+				}), n.nodeUsage)
+				assert.Equal(t, vectorizer.ToVec(corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("2"),
+					corev1.ResourceMemory: resource.MustParse("4Gi"),
+				}), n.prodUsage)
+				assert.Equal(t, map[aggUsageKey]ResourceVector{
+					{Type: extension.AVG}: vectorizer.ToVec(corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("500m"),
+						corev1.ResourceMemory: resource.MustParse("1Gi"),
+					}),
+					{Type: extension.P90}: vectorizer.ToVec(corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("1500m"),
+						corev1.ResourceMemory: resource.MustParse("3Gi"),
+					}),
+					{Type: extension.AVG, Duration: time.Minute}: vectorizer.ToVec(corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("1"),
+						corev1.ResourceMemory: resource.MustParse("2Gi"),
+					}),
+					{Type: extension.P90, Duration: time.Minute}: vectorizer.ToVec(corev1.ResourceList{
 						corev1.ResourceCPU:    resource.MustParse("2"),
 						corev1.ResourceMemory: resource.MustParse("4Gi"),
 					}),
-					prodUsage: vectorizer.ToVec(corev1.ResourceList{
-						corev1.ResourceCPU:    resource.MustParse("2"),
-						corev1.ResourceMemory: resource.MustParse("4Gi"),
+					{Type: extension.AVG, Duration: time.Hour}: vectorizer.ToVec(corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("500m"),
+						corev1.ResourceMemory: resource.MustParse("1Gi"),
 					}),
-					aggUsages: map[aggUsageKey]ResourceVector{
-						{Type: extension.AVG}: vectorizer.ToVec(corev1.ResourceList{
-							corev1.ResourceCPU:    resource.MustParse("500m"),
-							corev1.ResourceMemory: resource.MustParse("1Gi"),
-						}),
-						{Type: extension.P90}: vectorizer.ToVec(corev1.ResourceList{
-							corev1.ResourceCPU:    resource.MustParse("1500m"),
-							corev1.ResourceMemory: resource.MustParse("3Gi"),
-						}),
-						{Type: extension.AVG, Duration: time.Minute}: vectorizer.ToVec(corev1.ResourceList{
-							corev1.ResourceCPU:    resource.MustParse("1"),
-							corev1.ResourceMemory: resource.MustParse("2Gi"),
-						}),
-						{Type: extension.P90, Duration: time.Minute}: vectorizer.ToVec(corev1.ResourceList{
-							corev1.ResourceCPU:    resource.MustParse("2"),
-							corev1.ResourceMemory: resource.MustParse("4Gi"),
-						}),
-						{Type: extension.AVG, Duration: time.Hour}: vectorizer.ToVec(corev1.ResourceList{
-							corev1.ResourceCPU:    resource.MustParse("500m"),
-							corev1.ResourceMemory: resource.MustParse("1Gi"),
-						}),
-						{Type: extension.P90, Duration: time.Hour}: vectorizer.ToVec(corev1.ResourceList{
-							corev1.ResourceCPU:    resource.MustParse("1500m"),
-							corev1.ResourceMemory: resource.MustParse("3Gi"),
-						}),
-					},
-					nodeDelta:         vectorizer.EmptyVec(),
-					prodDelta:         vectorizer.EmptyVec(),
-					nodeEstimated:     vectorizer.EmptyVec(),
-					nodeDeltaPods:     sets.New[NamespacedName](),
-					prodDeltaPods:     sets.New[NamespacedName](),
-					nodeEstimatedPods: sets.New[NamespacedName](),
-				}
+					{Type: extension.P90, Duration: time.Hour}: vectorizer.ToVec(corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("1500m"),
+						corev1.ResourceMemory: resource.MustParse("3Gi"),
+					}),
+				}, n.aggUsages)
 			},
 		},
 	}
@@ -758,23 +736,16 @@ func TestNodeMetric(t *testing.T) {
 			}
 			// test add node metrics
 			assignCache.AddOrUpdateNodeMetric(tt.nodeMetric)
-			wantMetric := assignCache.new(tt.nodeMetric)
-			assignCache.initPods(wantMetric, nil)
-			if tt.wantMetric != nil {
-				tt.wantMetric(wantMetric)
-			}
-			actual := assignCache.nodeMetricItems[node]
-			assert.Equal(t, wantMetric, actual)
+			actual, _ := assignCache.getNodeInfo(node)
+			tt.want(t, actual)
 			// test delete all pods
 			for _, pod := range tt.existingPods {
 				assignCache.OnDelete(pod)
 			}
-			wantMetric = assignCache.new(tt.nodeMetric)
-			assignCache.initPods(wantMetric, nil)
-			actual = assignCache.nodeMetricItems[node]
-			assert.Equal(t, wantMetric, actual)
 			// test delete node metrics
 			assignCache.DeleteNodeMetric(node)
+			_, ok := assignCache.getNodeInfo(node)
+			assert.Equal(t, false, ok)
 			_, _, _, err := assignCache.GetNodeMetricAndEstimatedOfExisting(node, false, metav1.Duration{}, "", false)
 			assert.True(t, errors.IsNotFound(err))
 		})
