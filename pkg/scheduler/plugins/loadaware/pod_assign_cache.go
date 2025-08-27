@@ -214,7 +214,10 @@ func (p *podAssignCache) getNodeInfo(nodeName string) (*nodeInfo, bool) {
 }
 
 // getOrCreateNodeInfo returns the nodeInfo for the given nodeName.
-// If the nodeInfo does not exist, it will be created with a locked mutex.
+// If the nodeInfo does not exist, it will be created with a locked mutex
+// which prevent the empty nodeInfo is read and used by plugin with RLock before objects' updating.
+//
+// NOTICE: it should only be called in objects' add or update methods.
 func (p *podAssignCache) getOrCreateNodeInfo(nodeName string) (_ *nodeInfo, created bool) {
 	n := &nodeInfo{}
 	n.Lock()
@@ -222,6 +225,8 @@ func (p *podAssignCache) getOrCreateNodeInfo(nodeName string) (_ *nodeInfo, crea
 	return v.(*nodeInfo), !loaded
 }
 
+// tryCleanup cleans up the nodeInfo from cache.items if it's empty.
+//
 // NOTICE: nodeInfo should be locked before calling this method.
 func (p *podAssignCache) tryCleanup(name string, n *nodeInfo) {
 	if n.nodeMetric == nil && len(n.podInfos) == 0 {
@@ -260,6 +265,7 @@ func (p *podAssignCache) assign(nodeName string, pod *corev1.Pod) {
 	}
 	for {
 		n, created := p.getOrCreateNodeInfo(nodeName)
+		// if nodeInfo is created in getOrCreate, it is locked already
 		if n.AddOrUpdatePod(newPod, created) {
 			return
 		}
@@ -344,6 +350,9 @@ func (p *podAssignCache) OnDelete(obj interface{}) {
 	p.unAssign(pod.Spec.NodeName, pod)
 }
 
+// AddOrUpdatePod add or update pod to nodeInfo.
+// It returns false is nodeInfo is already deleted and caller should get a new nodeInfo and retry.
+// Unlock is called whether nodeInfo is locked before calling or not.
 func (n *nodeInfo) AddOrUpdatePod(pod *podAssignInfo, locked bool) bool {
 	if locked {
 		defer n.Unlock()
@@ -427,6 +436,7 @@ func (p *podAssignCache) NodeMetricHandler() cache.ResourceEventHandler {
 func (p *podAssignCache) AddOrUpdateNodeMetric(metric *slov1alpha1.NodeMetric) {
 	for {
 		n, created := p.getOrCreateNodeInfo(metric.Name)
+		// if nodeInfo is created in getOrCreate, it is locked already
 		if n.AddOrUpdateNodeMetric(metric, p, created) {
 			return
 		}
@@ -439,6 +449,9 @@ func (p *podAssignCache) DeleteNodeMetric(name string) {
 	}
 }
 
+// AddOrUpdateNodeMetric add or update node metric to nodeInfo.
+// It returns false is nodeInfo is already deleted and caller should get a new nodeInfo and retry.
+// Unlock is called whether nodeInfo is locked before calling or not.
 func (n *nodeInfo) AddOrUpdateNodeMetric(metric *slov1alpha1.NodeMetric, p *podAssignCache, locked bool) bool {
 	if locked {
 		defer n.Unlock()
