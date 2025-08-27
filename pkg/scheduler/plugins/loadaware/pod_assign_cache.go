@@ -354,16 +354,16 @@ func (p *podAssignCache) OnDelete(obj interface{}) {
 // It returns false is nodeInfo is already deleted and caller should get a new nodeInfo and retry.
 // Unlock is called whether nodeInfo is locked before calling or not.
 func (n *nodeInfo) AddOrUpdatePod(pod *podAssignInfo, locked bool) bool {
-	if locked {
-		defer n.Unlock()
-	}
 	if n.deleted {
+		if locked {
+			n.Unlock()
+		}
 		return false
 	}
 	if !locked {
 		n.Lock()
-		defer n.Unlock()
 	}
+	defer n.Unlock()
 	if n.deleted {
 		return false
 	}
@@ -453,10 +453,10 @@ func (p *podAssignCache) DeleteNodeMetric(name string) {
 // It returns false is nodeInfo is already deleted and caller should get a new nodeInfo and retry.
 // Unlock is called whether nodeInfo is locked before calling or not.
 func (n *nodeInfo) AddOrUpdateNodeMetric(metric *slov1alpha1.NodeMetric, p *podAssignCache, locked bool) bool {
-	if locked {
-		defer n.Unlock()
-	}
 	if n.deleted {
+		if locked {
+			n.Unlock()
+		}
 		return false
 	}
 	var podUsages map[NamespacedName]ResourceVector
@@ -511,8 +511,8 @@ func (n *nodeInfo) AddOrUpdateNodeMetric(metric *slov1alpha1.NodeMetric, p *podA
 	}
 	if !locked {
 		n.Lock()
-		defer n.Unlock()
 	}
+	defer n.Unlock()
 	if n.deleted {
 		return false
 	}
