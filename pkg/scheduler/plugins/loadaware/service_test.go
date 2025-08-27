@@ -28,6 +28,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/uuid"
+	clock "k8s.io/utils/clock/testing"
 
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
@@ -36,12 +37,7 @@ import (
 
 func TestQueryNode(t *testing.T) {
 	t.Run("test", func(t *testing.T) {
-
-		preTimeNowFn := timeNowFn
-		defer func() {
-			timeNowFn = preTimeNowFn
-		}()
-		timeNowFn = fakeTimeNowFn
+		now := metav1.Now().Rfc3339Copy().Time
 		args := &config.LoadAwareSchedulingArgs{
 			EstimatedScalingFactors: map[corev1.ResourceName]int64{
 				corev1.ResourceCPU:    100,
@@ -54,6 +50,7 @@ func TestQueryNode(t *testing.T) {
 			vectorizer:     v,
 			podAssignCache: newPodAssignCache(e, v, args),
 		}
+		pl.podAssignCache.clock = clock.NewFakeClock(now)
 		testNodeName := "test-node"
 		pendingPod := &corev1.Pod{
 			ObjectMeta: metav1.ObjectMeta{
@@ -152,7 +149,7 @@ func TestQueryNode(t *testing.T) {
 		expectedResp = &NodeAssignInfoData{
 			Pods: []PodAssignInfoData{
 				{
-					Timestamp: timeNowFn(),
+					Timestamp: now,
 					Pod:       assignedPod,
 				},
 			},

@@ -28,6 +28,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/tools/cache"
 	podutil "k8s.io/kubernetes/pkg/api/v1/pod"
+	"k8s.io/utils/clock"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
@@ -36,15 +37,12 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
-var (
-	timeNowFn = time.Now
-)
-
 // podAssignCache stores the Pod information that has been successfully scheduled or is about to be bound
 type podAssignCache struct {
 	items      sync.Map // items stores nodeInfo, using sync.Map because nodes are not frequently added or deleted.
 	estimator  estimator.Estimator
 	vectorizer ResourceVectorizer
+	clock      clock.Clock
 	args       *config.LoadAwareSchedulingArgs
 }
 
@@ -109,6 +107,7 @@ func newPodAssignCache(estimator estimator.Estimator, vectorizer ResourceVectori
 	return &podAssignCache{
 		estimator:  estimator,
 		vectorizer: vectorizer,
+		clock:      clock.RealClock{},
 		args:       args,
 	}
 }
@@ -250,7 +249,7 @@ func (p *podAssignCache) assign(nodeName string, pod *corev1.Pod) {
 		timestamp = c.LastTransitionTime.Time
 	} else {
 		// if PodScheduled condition not found, fallback to use assign timestamp from scheduler internal, which cannot be zero.
-		timestamp = timeNowFn()
+		timestamp = p.clock.Now()
 	}
 	estimatedDeadline := p.shouldEstimatePodDeadline(pod, timestamp)
 	newPod := &podAssignInfo{

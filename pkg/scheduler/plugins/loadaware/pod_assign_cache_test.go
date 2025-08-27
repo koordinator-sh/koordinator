@@ -28,6 +28,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	schedulertesting "k8s.io/kubernetes/pkg/scheduler/testing"
+	clock "k8s.io/utils/clock/testing"
 	"k8s.io/utils/ptr"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
@@ -36,15 +37,10 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/loadaware/estimator"
 )
 
-var fakeTimeNowFn = func() time.Time {
-	t := time.Time{}
-	_ = t.Add(100 * time.Second)
-	return t
-}
-
 func TestPodAssignCache_OnAdd(t *testing.T) {
 	vectorizer := NewResourceVectorizer(corev1.ResourceCPU, corev1.ResourceMemory)
 	node := "test-node"
+	now := metav1.Now().Rfc3339Copy().Time
 	m := &slov1alpha1.NodeMetric{ObjectMeta: metav1.ObjectMeta{Name: node}}
 	tests := []struct {
 		name string
@@ -72,7 +68,7 @@ func TestPodAssignCache_OnAdd(t *testing.T) {
 				assert.Equal(t, map[types.UID]*podAssignInfo{
 					"123456789": {
 						pod:       schedulertesting.MakePod().UID("123456789").Namespace("default").Name("test").Node(node).Phase(corev1.PodRunning).Obj(),
-						timestamp: fakeTimeNowFn(),
+						timestamp: now,
 						estimated: vectorizer.ToFactorVec(map[corev1.ResourceName]int64{
 							corev1.ResourceCPU:    estimator.DefaultMilliCPURequest,
 							corev1.ResourceMemory: estimator.DefaultMemoryRequest,
@@ -127,16 +123,13 @@ func TestPodAssignCache_OnAdd(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			preTimeNowFn := timeNowFn
-			defer func() {
-				timeNowFn = preTimeNowFn
-			}()
-			timeNowFn = fakeTimeNowFn
-			e, _ := estimator.NewDefaultEstimator(&config.LoadAwareSchedulingArgs{EstimatedScalingFactors: map[corev1.ResourceName]int64{
+			args := &config.LoadAwareSchedulingArgs{EstimatedScalingFactors: map[corev1.ResourceName]int64{
 				corev1.ResourceCPU:    100,
 				corev1.ResourceMemory: 100,
-			}}, nil)
-			assignCache := newPodAssignCache(e, vectorizer, &config.LoadAwareSchedulingArgs{})
+			}}
+			e, _ := estimator.NewDefaultEstimator(args, nil)
+			assignCache := newPodAssignCache(e, vectorizer, args)
+			assignCache.clock = clock.NewFakeClock(now)
 			assignCache.AddOrUpdateNodeMetric(m)
 			assignCache.OnAdd(tt.pod, true)
 			actual, _ := assignCache.getNodeInfo(node)
@@ -148,6 +141,7 @@ func TestPodAssignCache_OnAdd(t *testing.T) {
 func TestPodAssignCache_OnUpdate(t *testing.T) {
 	vectorizer := NewResourceVectorizer(corev1.ResourceCPU, corev1.ResourceMemory)
 	node := "test-node"
+	now := metav1.Now().Rfc3339Copy().Time
 	m := &slov1alpha1.NodeMetric{ObjectMeta: metav1.ObjectMeta{Name: node}}
 	tests := []struct {
 		name         string
@@ -179,7 +173,7 @@ func TestPodAssignCache_OnUpdate(t *testing.T) {
 				assert.Equal(t, map[types.UID]*podAssignInfo{
 					"123456789": {
 						pod:       schedulertesting.MakePod().UID("123456789").Namespace("default").Name("test").Node(node).Phase(corev1.PodRunning).Obj(),
-						timestamp: fakeTimeNowFn(),
+						timestamp: now,
 						estimated: vectorizer.ToFactorVec(map[corev1.ResourceName]int64{
 							corev1.ResourceCPU:    estimator.DefaultMilliCPURequest,
 							corev1.ResourceMemory: estimator.DefaultMemoryRequest,
@@ -208,7 +202,7 @@ func TestPodAssignCache_OnUpdate(t *testing.T) {
 				assert.Equal(t, map[types.UID]*podAssignInfo{
 					"123456789": {
 						pod:       schedulertesting.MakePod().UID("123456789").Namespace("default").Name("test").Node(node).Phase(corev1.PodRunning).Obj(),
-						timestamp: fakeTimeNowFn(),
+						timestamp: now,
 						estimated: vectorizer.ToFactorVec(map[corev1.ResourceName]int64{
 							corev1.ResourceCPU:    estimator.DefaultMilliCPURequest,
 							corev1.ResourceMemory: estimator.DefaultMemoryRequest,
@@ -221,13 +215,13 @@ func TestPodAssignCache_OnUpdate(t *testing.T) {
 			name: "update pod conditions, cache will be updated",
 			pod: schedulertesting.MakePod().UID("123456789").Namespace("default").Name("test").Node(node).Phase(corev1.PodRunning).
 				Conditions([]corev1.PodCondition{
-					{Type: corev1.PodScheduled, Status: corev1.ConditionTrue, LastTransitionTime: metav1.NewTime(fakeTimeNowFn().Add(1000))},
-					{Type: corev1.PodInitialized, Status: corev1.ConditionTrue, LastTransitionTime: metav1.NewTime(fakeTimeNowFn().Add(3000))},
+					{Type: corev1.PodScheduled, Status: corev1.ConditionTrue, LastTransitionTime: metav1.NewTime(now.Add(1000))},
+					{Type: corev1.PodInitialized, Status: corev1.ConditionTrue, LastTransitionTime: metav1.NewTime(now.Add(3000))},
 				}).Obj(),
 			existingPods: []*corev1.Pod{
 				schedulertesting.MakePod().UID("123456789").Namespace("default").Name("test").Node(node).Phase(corev1.PodRunning).
 					Conditions([]corev1.PodCondition{
-						{Type: corev1.PodScheduled, Status: corev1.ConditionTrue, LastTransitionTime: metav1.NewTime(fakeTimeNowFn().Add(1000))},
+						{Type: corev1.PodScheduled, Status: corev1.ConditionTrue, LastTransitionTime: metav1.NewTime(now.Add(1000))},
 					}).Obj(),
 			},
 			want: func(t *testing.T, n *nodeInfo) {
@@ -235,10 +229,10 @@ func TestPodAssignCache_OnUpdate(t *testing.T) {
 					"123456789": {
 						pod: schedulertesting.MakePod().UID("123456789").Namespace("default").Name("test").Node(node).Phase(corev1.PodRunning).
 							Conditions([]corev1.PodCondition{
-								{Type: corev1.PodScheduled, Status: corev1.ConditionTrue, LastTransitionTime: metav1.NewTime(fakeTimeNowFn().Add(1000))},
-								{Type: corev1.PodInitialized, Status: corev1.ConditionTrue, LastTransitionTime: metav1.NewTime(fakeTimeNowFn().Add(3000))},
+								{Type: corev1.PodScheduled, Status: corev1.ConditionTrue, LastTransitionTime: metav1.NewTime(now.Add(1000))},
+								{Type: corev1.PodInitialized, Status: corev1.ConditionTrue, LastTransitionTime: metav1.NewTime(now.Add(3000))},
 							}).Obj(),
-						timestamp: fakeTimeNowFn().Add(1000),
+						timestamp: now.Add(1000),
 						estimated: vectorizer.ToFactorVec(map[corev1.ResourceName]int64{
 							corev1.ResourceCPU:    estimator.DefaultMilliCPURequest,
 							corev1.ResourceMemory: estimator.DefaultMemoryRequest,
@@ -264,7 +258,7 @@ func TestPodAssignCache_OnUpdate(t *testing.T) {
 			existingPods: []*corev1.Pod{
 				schedulertesting.MakePod().UID("123456789").Namespace("default").Name("test").Node(node).Phase(corev1.PodRunning).
 					Conditions([]corev1.PodCondition{
-						{Type: corev1.PodScheduled, Status: corev1.ConditionTrue, LastTransitionTime: metav1.NewTime(fakeTimeNowFn().Add(1000))},
+						{Type: corev1.PodScheduled, Status: corev1.ConditionTrue, LastTransitionTime: metav1.NewTime(now.Add(1000))},
 					}).Obj(),
 			},
 			want: func(t *testing.T, n *nodeInfo) {
@@ -272,7 +266,7 @@ func TestPodAssignCache_OnUpdate(t *testing.T) {
 					"123456789": {
 						pod: schedulertesting.MakePod().UID("123456789").Namespace("default").Name("test").Node(node).Phase(corev1.PodRunning).
 							Req(map[corev1.ResourceName]string{corev1.ResourceCPU: "1", corev1.ResourceMemory: "4Gi"}).Obj(),
-						timestamp: fakeTimeNowFn(),
+						timestamp: now,
 						estimated: vectorizer.ToVec(corev1.ResourceList{
 							corev1.ResourceCPU:    resource.MustParse("1"),
 							corev1.ResourceMemory: resource.MustParse("4Gi"),
@@ -295,16 +289,13 @@ func TestPodAssignCache_OnUpdate(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			preTimeNowFn := timeNowFn
-			defer func() {
-				timeNowFn = preTimeNowFn
-			}()
-			timeNowFn = fakeTimeNowFn
-			e, _ := estimator.NewDefaultEstimator(&config.LoadAwareSchedulingArgs{EstimatedScalingFactors: map[corev1.ResourceName]int64{
+			args := &config.LoadAwareSchedulingArgs{EstimatedScalingFactors: map[corev1.ResourceName]int64{
 				corev1.ResourceCPU:    100,
 				corev1.ResourceMemory: 100,
-			}}, nil)
-			assignCache := newPodAssignCache(e, vectorizer, &config.LoadAwareSchedulingArgs{})
+			}}
+			e, _ := estimator.NewDefaultEstimator(args, nil)
+			assignCache := newPodAssignCache(e, vectorizer, args)
+			assignCache.clock = clock.NewFakeClock(now)
 			assignCache.AddOrUpdateNodeMetric(m)
 			for _, pod := range tt.existingPods {
 				assignCache.OnAdd(pod, true)
@@ -533,11 +524,6 @@ func TestShouldEstimatePodDeadline(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			preTimeNowFn := timeNowFn
-			defer func() {
-				timeNowFn = preTimeNowFn
-			}()
-			timeNowFn = fakeTimeNowFn
 			args := &config.LoadAwareSchedulingArgs{
 				EstimatedSecondsAfterPodScheduled: tt.estimatedSecondsAfterPodScheduled,
 				EstimatedSecondsAfterInitialized:  tt.estimatedSecondsAfterInitialized,
@@ -718,11 +704,6 @@ func TestNodeMetric(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			tt.nodeMetric.Name = node
-			preTimeNowFn := timeNowFn
-			defer func() {
-				timeNowFn = preTimeNowFn
-			}()
-			timeNowFn = fakeTimeNowFn
 			if tt.args == nil {
 				tt.args = &config.LoadAwareSchedulingArgs{EstimatedScalingFactors: map[corev1.ResourceName]int64{
 					corev1.ResourceCPU:    100,
