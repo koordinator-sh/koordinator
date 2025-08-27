@@ -213,9 +213,14 @@ func (p *podAssignCache) getNodeInfo(nodeName string) (*nodeInfo, bool) {
 	}
 	return v.(*nodeInfo), ok
 }
-func (p *podAssignCache) getOrCreateNodeInfo(nodeName string) *nodeInfo {
-	v, _ := p.items.LoadOrStore(nodeName, &nodeInfo{})
-	return v.(*nodeInfo)
+
+// getOrCreateNodeInfo returns the nodeInfo for the given nodeName.
+// If the nodeInfo does not exist, it will be created with a locked mutex.
+func (p *podAssignCache) getOrCreateNodeInfo(nodeName string) (_ *nodeInfo, created bool) {
+	n := &nodeInfo{}
+	n.Lock()
+	v, loaded := p.items.LoadOrStore(nodeName, n)
+	return v.(*nodeInfo), !loaded
 }
 
 // NOTICE: nodeInfo should be locked before calling this method.
@@ -255,8 +260,8 @@ func (p *podAssignCache) assign(nodeName string, pod *corev1.Pod) {
 		estimatedDeadline: estimatedDeadline,
 	}
 	for {
-		n := p.getOrCreateNodeInfo(nodeName)
-		if n.AddOrUpdatePod(newPod) {
+		n, created := p.getOrCreateNodeInfo(nodeName)
+		if n.AddOrUpdatePod(newPod, created) {
 			return
 		}
 	}
@@ -340,12 +345,17 @@ func (p *podAssignCache) OnDelete(obj interface{}) {
 	p.unAssign(pod.Spec.NodeName, pod)
 }
 
-func (n *nodeInfo) AddOrUpdatePod(pod *podAssignInfo) bool {
+func (n *nodeInfo) AddOrUpdatePod(pod *podAssignInfo, locked bool) bool {
+	if locked {
+		defer n.Unlock()
+	}
 	if n.deleted {
 		return false
 	}
-	n.Lock()
-	defer n.Unlock()
+	if !locked {
+		n.Lock()
+		defer n.Unlock()
+	}
 	if n.deleted {
 		return false
 	}
@@ -417,8 +427,8 @@ func (p *podAssignCache) NodeMetricHandler() cache.ResourceEventHandler {
 
 func (p *podAssignCache) AddOrUpdateNodeMetric(metric *slov1alpha1.NodeMetric) {
 	for {
-		n := p.getOrCreateNodeInfo(metric.Name)
-		if n.AddOrUpdateNodeMetric(metric, p) {
+		n, created := p.getOrCreateNodeInfo(metric.Name)
+		if n.AddOrUpdateNodeMetric(metric, p, created) {
 			return
 		}
 	}
@@ -430,7 +440,10 @@ func (p *podAssignCache) DeleteNodeMetric(name string) {
 	}
 }
 
-func (n *nodeInfo) AddOrUpdateNodeMetric(metric *slov1alpha1.NodeMetric, p *podAssignCache) bool {
+func (n *nodeInfo) AddOrUpdateNodeMetric(metric *slov1alpha1.NodeMetric, p *podAssignCache, locked bool) bool {
+	if locked {
+		defer n.Unlock()
+	}
 	if n.deleted {
 		return false
 	}
@@ -484,8 +497,10 @@ func (n *nodeInfo) AddOrUpdateNodeMetric(metric *slov1alpha1.NodeMetric, p *podA
 			}
 		}
 	}
-	n.Lock()
-	defer n.Unlock()
+	if !locked {
+		n.Lock()
+		defer n.Unlock()
+	}
 	if n.deleted {
 		return false
 	}
