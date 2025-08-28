@@ -231,11 +231,11 @@ func TestCollectSchedulePodResult(t *testing.T) {
 		name           string
 		scheduleResult scheduler.ScheduleResult
 		err            error
-		expected       [8]int
+		expected       [4]int
 	}{
 		{
 			name:     "empty return",
-			expected: [8]int{},
+			expected: [4]int{},
 		},
 		{
 			name: "scheduled",
@@ -244,27 +244,25 @@ func TestCollectSchedulePodResult(t *testing.T) {
 				EvaluatedNodes: 10,
 				FeasibleNodes:  5,
 			},
-			expected: [8]int{1, 10, 1, 5, 1, 10, 1, 5},
+			expected: [4]int{1, 10, 1, 5},
 		},
 		{
 			name:     "unschedulable",
 			err:      &framework.FitError{NumAllNodes: 20},
-			expected: [8]int{1, 20, 1, 0},
+			expected: [4]int{},
 		},
 		{
 			name:     "unknown error",
 			err:      fmt.Errorf("unknown error"),
-			expected: [8]int{},
+			expected: [4]int{},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			metricsRegistry := testutil.NewFakeKubeRegistry("0.0.0")
-			histograms := [4]*k8smetrics.Histogram{
+			histograms := [2]*k8smetrics.Histogram{
 				metrics.PodSchedulingEvaluatedNodes,
 				metrics.PodSchedulingFeasibleNodes,
-				metrics.PodSchedulingEvaluatedNodesWithSuggested,
-				metrics.PodSchedulingFeasibleNodesWithSuggested,
 			}
 			for _, h := range histograms {
 				h.ClearState()
