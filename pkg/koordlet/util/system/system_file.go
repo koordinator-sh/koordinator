@@ -26,6 +26,7 @@ import (
 	"strings"
 	"time"
 
+	"k8s.io/apimachinery/pkg/util/errors"
 	utilsysctl "k8s.io/component-helpers/node/util/sysctl"
 	"k8s.io/klog/v2"
 )
@@ -36,8 +37,8 @@ const (
 	HugepageDir           = "hugepages"
 	nrPath                = "nr_hugepages"
 
-	KernelSchedGroupIdentityEnable = "kernel/sched_group_identity_enabled"
-	KernelSchedCore                = "kernel/sched_core"
+	KernelSchedGroupIdentityEnable = SysKernelRelativePath + SchedGroupIdentityEnabledFileName
+	KernelSchedCore                = SysKernelRelativePath + SchedCoreFileName
 
 	SysNUMASubDir   = "bus/node/devices"
 	SysPCIDeviceDir = "bus/pci/devices"
@@ -208,4 +209,67 @@ func SetSchedCore(enable bool) error {
 	}
 	klog.V(4).Infof("SetSchedCore set sysctl config successfully, value %v", v)
 	return nil
+}
+
+func GetSchedFeatures() (map[string]bool, error) {
+	featurePath := SchedFeatures.Path("")
+	content, err := os.ReadFile(featurePath)
+	if err != nil {
+		klog.V(5).Infof("sched_features is unsupported, path %s, read err: %s", featurePath, err)
+		return nil, fmt.Errorf("failed to read sched_features, err: %w", err)
+	}
+
+	var errs []error
+	schedFeatureMap := map[string]bool{}
+	features := strings.Fields(string(content))
+	for _, feature := range features {
+		if strings.HasPrefix(feature, "NO_") {
+			featureName := strings.TrimPrefix(feature, "NO_")
+			if v, ok := schedFeatureMap[featureName]; ok && v {
+				errs = append(errs, fmt.Errorf("failed to read conflict sched_features, feature %s", featureName))
+				continue
+			}
+			schedFeatureMap[featureName] = false
+		} else {
+			if v, ok := schedFeatureMap[feature]; ok && !v {
+				errs = append(errs, fmt.Errorf("failed to read conflict sched_features, feature %s", feature))
+				continue
+			}
+			schedFeatureMap[feature] = true
+		}
+	}
+
+	return schedFeatureMap, errors.NewAggregate(errs)
+}
+
+func SetSchedFeatures(featureMap map[string]bool, valueMap map[string]bool) error {
+	if featureMap == nil && valueMap == nil {
+		return nil
+	}
+	if featureMap == nil {
+		return fmt.Errorf("cannot set to nil featureMap")
+	}
+
+	var errs []error
+	featurePath := SchedFeatures.Path("")
+	for featureName, value := range valueMap {
+		if _, ok := featureMap[featureName]; ok && value == featureMap[featureName] {
+			klog.V(6).Infof("skip to set unchanged sched_feature, feature %s, value %v", featureName, value)
+			continue
+		}
+		if value { // write XXX to sched_features
+			err := os.WriteFile(featurePath, []byte(fmt.Sprintf("%s\n", featureName)), 0666)
+			if err != nil {
+				errs = append(errs, fmt.Errorf("failed to write sched_features, feature %s, value %v, err: %w", featureName, value, err))
+				continue
+			}
+		} else { // write NO_XXX to sched_features
+			err := os.WriteFile(featurePath, []byte(fmt.Sprintf("NO_%s\n", featureName)), 0666)
+			if err != nil {
+				errs = append(errs, fmt.Errorf("failed to write sched_features, feature %s, value %v, err: %w", featureName, value, err))
+				continue
+			}
+		}
+	}
+	return errors.NewAggregate(errs)
 }

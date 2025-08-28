@@ -17,6 +17,8 @@ limitations under the License.
 package frameworkext
 
 import (
+	"sort"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -28,6 +30,7 @@ import (
 	k8spodutil "k8s.io/kubernetes/pkg/api/v1/pod"
 	"k8s.io/kubernetes/pkg/api/v1/resource"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
+	schedutil "k8s.io/kubernetes/pkg/scheduler/util"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
@@ -37,19 +40,21 @@ import (
 )
 
 type ReservationInfo struct {
-	Reservation      *schedulingv1alpha1.Reservation
-	Pod              *corev1.Pod
-	ResourceNames    []corev1.ResourceName
-	Allocatable      corev1.ResourceList
-	Allocated        corev1.ResourceList
-	Reserved         corev1.ResourceList // reserved inside the reservation
-	Available        *framework.Resource // Allocatable - Reserved - Allocated
-	AllocatablePorts framework.HostPortInfo
-	AllocatedPorts   framework.HostPortInfo
-	AssignedPods     map[types.UID]*PodRequirement
-	OwnerMatchers    []reservationutil.ReservationOwnerMatcher
-	ParseError       error
-	Labels           map[string]string
+	Reservation           *schedulingv1alpha1.Reservation
+	Pod                   *corev1.Pod
+	ResourceNames         []corev1.ResourceName
+	Allocatable           corev1.ResourceList // RO
+	Allocated             corev1.ResourceList // RO
+	Reserved              corev1.ResourceList // reserved inside the reservation
+	Available             *framework.Resource // pre-calculated info: Allocatable - Reserved - Allocated
+	AllocatedResource     *framework.Resource // pre-calculated info: Allocated
+	Non0AllocatedMilliCPU int64               // pre-calculated info: non-zero milli-CPU of Allocated
+	Non0AllocatedMem      int64               // pre-calculated info: non-zero Memory of Allocated
+	AllocatablePorts      framework.HostPortInfo
+	AllocatedPorts        framework.HostPortInfo
+	AssignedPods          map[types.UID]*PodRequirement
+	OwnerMatchers         []reservationutil.ReservationOwnerMatcher
+	ParseError            error
 }
 
 type PodRequirement struct {
@@ -87,6 +92,9 @@ func NewReservationInfo(r *schedulingv1alpha1.Reservation) *ReservationInfo {
 	allocatable := reservationutil.ReservationRequests(r)
 	reserved := util.GetNodeReservationFromAnnotation(r.Annotations)
 	resourceNames := quotav1.ResourceNames(allocatable)
+	sort.Slice(resourceNames, func(i, j int) bool {
+		return resourceNames[i] < resourceNames[j]
+	})
 	if r.Spec.AllocatePolicy == schedulingv1alpha1.ReservationAllocatePolicyRestricted {
 		options, err := apiext.GetReservationRestrictedOptions(r.Annotations)
 		if err == nil {
@@ -127,6 +135,9 @@ func NewReservationInfoFromPod(pod *corev1.Pod) *ReservationInfo {
 	allocatable := resource.PodRequests(pod, resource.PodResourcesOptions{})
 	reserved := util.GetNodeReservationFromAnnotation(pod.Annotations)
 	resourceNames := quotav1.ResourceNames(allocatable)
+	sort.Slice(resourceNames, func(i, j int) bool {
+		return resourceNames[i] < resourceNames[j]
+	})
 	options, err := apiext.GetReservationRestrictedOptions(pod.Annotations)
 	if err == nil {
 		resourceNames = reservationutil.GetReservationRestrictedResources(resourceNames, options)
@@ -356,18 +367,21 @@ func (ri *ReservationInfo) Clone() *ReservationInfo {
 
 	// use a shallow copy to reduce overhead
 	return &ReservationInfo{
-		Reservation:      ri.Reservation,
-		Pod:              ri.Pod,
-		ResourceNames:    resourceNames,
-		Allocatable:      ri.Allocatable,
-		Allocated:        ri.Allocated,
-		Reserved:         ri.Reserved,
-		Available:        ri.Available,
-		AllocatablePorts: util.CloneHostPorts(ri.AllocatablePorts),
-		AllocatedPorts:   util.CloneHostPorts(ri.AllocatedPorts),
-		AssignedPods:     assignedPods,
-		OwnerMatchers:    ri.OwnerMatchers,
-		ParseError:       ri.ParseError,
+		Reservation:           ri.Reservation,
+		Pod:                   ri.Pod,
+		ResourceNames:         resourceNames,
+		Allocatable:           ri.Allocatable,
+		Allocated:             ri.Allocated,
+		Reserved:              ri.Reserved,
+		Available:             ri.Available,
+		AllocatedResource:     ri.AllocatedResource,
+		Non0AllocatedMilliCPU: ri.Non0AllocatedMilliCPU,
+		Non0AllocatedMem:      ri.Non0AllocatedMem,
+		AllocatablePorts:      util.CloneHostPorts(ri.AllocatablePorts),
+		AllocatedPorts:        util.CloneHostPorts(ri.AllocatedPorts),
+		AssignedPods:          assignedPods,
+		OwnerMatchers:         ri.OwnerMatchers,
+		ParseError:            ri.ParseError,
 	}
 }
 
@@ -383,6 +397,9 @@ func (ri *ReservationInfo) UpdateReservation(r *schedulingv1alpha1.Reservation) 
 			parseErrors = append(parseErrors, err)
 		}
 	}
+	sort.Slice(resourceNames, func(i, j int) bool {
+		return resourceNames[i] < resourceNames[j]
+	})
 	ri.ResourceNames = resourceNames
 
 	ri.Reservation = r
@@ -396,7 +413,7 @@ func (ri *ReservationInfo) UpdateReservation(r *schedulingv1alpha1.Reservation) 
 		reserved = quotav1.Mask(reserved, ri.ResourceNames)
 	}
 	ri.Reserved = reserved
-	ri.RefreshAvailable()
+	ri.RefreshPreCalculated()
 
 	ownerMatchers, err := reservationutil.ParseReservationOwnerMatchers(r.Spec.Owners)
 	if err != nil {
@@ -422,6 +439,9 @@ func (ri *ReservationInfo) UpdatePod(pod *corev1.Pod) {
 	} else {
 		parseErrors = append(parseErrors, err)
 	}
+	sort.Slice(resourceNames, func(i, j int) bool {
+		return resourceNames[i] < resourceNames[j]
+	})
 	ri.ResourceNames = resourceNames
 
 	ri.Pod = pod
@@ -432,7 +452,7 @@ func (ri *ReservationInfo) UpdatePod(pod *corev1.Pod) {
 		reserved = quotav1.Mask(reserved, ri.ResourceNames)
 	}
 	ri.Reserved = reserved
-	ri.RefreshAvailable()
+	ri.RefreshPreCalculated()
 
 	owners, err := apiext.GetReservationOwners(pod.Annotations)
 	if err != nil {
@@ -464,14 +484,14 @@ func (ri *ReservationInfo) AddAssignedPod(pod *corev1.Pod) {
 	ri.Allocated = quotav1.Add(ri.Allocated, quotav1.Mask(requirement.Requests, ri.ResourceNames))
 	ri.AllocatedPorts = util.AppendHostPorts(ri.AllocatedPorts, requirement.Ports)
 	ri.AssignedPods[pod.UID] = requirement
-	ri.RefreshAvailable()
+	ri.RefreshPreCalculated()
 }
 
 func (ri *ReservationInfo) RemoveAssignedPod(pod *corev1.Pod) {
 	if requirement, ok := ri.AssignedPods[pod.UID]; ok {
 		if len(requirement.Requests) > 0 {
 			ri.Allocated = quotav1.SubtractWithNonNegativeResult(ri.Allocated, quotav1.Mask(requirement.Requests, ri.ResourceNames))
-			ri.RefreshAvailable()
+			ri.RefreshPreCalculated()
 		}
 		if len(requirement.Ports) > 0 {
 			util.RemoveHostPorts(ri.AllocatedPorts, requirement.Ports)
@@ -481,15 +501,30 @@ func (ri *ReservationInfo) RemoveAssignedPod(pod *corev1.Pod) {
 	}
 }
 
-func (ri *ReservationInfo) RefreshAvailable() {
+func (ri *ReservationInfo) RefreshPreCalculated() {
 	// Reservation available = Allocatable - Allocated - InnerReserved
 	resources := quotav1.SubtractWithNonNegativeResult(quotav1.Subtract(ri.Allocatable, ri.Allocated), ri.Reserved)
 	ri.Available = framework.NewResource(resources)
+	allocatedResource := framework.NewResource(ri.Allocated)
+	ri.AllocatedResource = allocatedResource
+	if ri.Allocated != nil {
+		non0MilliCPU, non0Mem := schedutil.GetNonzeroRequests(&ri.Allocated)
+		ri.Non0AllocatedMilliCPU, ri.Non0AllocatedMem = non0MilliCPU, non0Mem
+	} else {
+		ri.Non0AllocatedMilliCPU, ri.Non0AllocatedMem = 0, 0
+	}
 }
 
 func (ri *ReservationInfo) GetAvailable() *framework.Resource {
 	if ri.Available == nil {
-		ri.RefreshAvailable()
+		ri.RefreshPreCalculated()
 	}
 	return ri.Available
+}
+
+func (ri *ReservationInfo) GetAllocatedResource() (*framework.Resource, int64, int64) {
+	if ri.AllocatedResource == nil {
+		ri.RefreshPreCalculated()
+	}
+	return ri.AllocatedResource, ri.Non0AllocatedMilliCPU, ri.Non0AllocatedMem
 }

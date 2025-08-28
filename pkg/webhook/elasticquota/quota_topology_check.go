@@ -63,7 +63,7 @@ func (qt *quotaTopology) validateQuotaSelfItem(quota *v1alpha1.ElasticQuota) err
 	for key, val := range quota.Spec.Min {
 		if maxVal, exist := quota.Spec.Max[key]; exist {
 			if maxVal.Cmp(val) == -1 {
-				return fmt.Errorf("resourceKey %v of quota %v min :%v > max,%v", key, quota.Name, quota.Spec.Min, quota.Spec.Max)
+				return fmt.Errorf("resourceKey %v of quota %v min %v > max %v", key, quota.Name, val.String(), maxVal.String())
 			}
 		} else {
 			return fmt.Errorf("resourceKey %v of quota %v is included in min, which is not included in max", key, quota.Name)

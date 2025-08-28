@@ -18,7 +18,6 @@ package system
 
 import (
 	"fmt"
-	"path"
 	"path/filepath"
 	"strconv"
 	"testing"
@@ -31,12 +30,12 @@ func Test_CommonFileFuncs(t *testing.T) {
 
 	testDir := "test"
 	helper.MkDirAll(testDir)
-	exist, err := PathExists(path.Join(helper.TempDir, testDir))
+	exist, err := PathExists(filepath.Join(helper.TempDir, testDir))
 	assert.True(t, exist, "testMkDirAll", err)
 
-	testFile := path.Join(testDir, "testFile")
+	testFile := filepath.Join(testDir, "testFile")
 	helper.CreateFile(testFile)
-	exist = FileExists(path.Join(helper.TempDir, testFile))
+	exist = FileExists(filepath.Join(helper.TempDir, testFile))
 	assert.True(t, exist, "CreateFile")
 
 	helper.WriteFileContents(testFile, "testContents")
@@ -63,7 +62,7 @@ func Test_ProcFileFuncs(t *testing.T) {
 
 	procFile := "testfile"
 	helper.CreateProcSubFile(procFile)
-	exist := FileExists(path.Join(Conf.ProcRootDir, procFile))
+	exist := FileExists(filepath.Join(Conf.ProcRootDir, procFile))
 	assert.True(t, exist, "CreateProcSubFile")
 
 	helper.WriteProcSubFileContents(procFile, "testContents")

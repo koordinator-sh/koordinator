@@ -416,11 +416,26 @@ type CPUBurstStrategy struct {
 
 type SystemStrategy struct {
 	// for /proc/sys/vm/min_free_kbytes, min_free_kbytes = minFreeKbytesFactor * nodeTotalMemory /10000
+	// Unset by default. 1 means 1/10000. Recommended = 100.
 	MinFreeKbytesFactor *int64 `json:"minFreeKbytesFactor,omitempty" validate:"omitempty,gt=0"`
 	// /proc/sys/vm/watermark_scale_factor
+	// Unset by default. 1 means 1/10000. Recommended = 150.
 	WatermarkScaleFactor *int64 `json:"watermarkScaleFactor,omitempty" validate:"omitempty,gt=0,max=400"`
 	// /sys/kernel/mm/memcg_reaper/reap_background
+	// Unset by default.
 	MemcgReapBackGround *int64 `json:"memcgReapBackGround,omitempty" validate:"omitempty,min=0,max=1"`
+	// /sys/kernel/sched_group_identity_enabled
+	// https://github.com/koordinator-sh/koordinator/pull/1172
+	// 0 to disable, 1 to enable.
+	// Disable (0) when CPUQoS (Group Identity) is manually disabled.
+	SchedGroupIdentityEnabled *int64 `json:"schedGroupIdentityEnabled,omitempty"`
+	// /proc/sys/kernel/sched_idle_saver_wmark
+	// https://www.alibabacloud.com/help/en/alinux/user-guide/group-identity-feature
+	// 1 means 1ns.
+	SchedIdleSaverWmark *int64 `json:"schedIdleSaverWmark,omitempty"`
+	// /sys/kernel/sched_features
+	// Extra scheduling features supported by the kernel.
+	SchedFeatures map[string]bool `json:"schedFeatures,omitempty"`
 
 	// TotalNetworkBandwidth indicates the overall network bandwidth, cluster manager can set this field, and default value taken from /sys/class/net/${NIC_NAME}/speed, unit: Mbps
 	TotalNetworkBandwidth resource.Quantity `json:"totalNetworkBandwidth,omitempty"`

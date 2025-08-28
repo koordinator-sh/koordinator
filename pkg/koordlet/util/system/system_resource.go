@@ -18,23 +18,27 @@ package system
 
 import (
 	"math"
-	"path"
+	"path/filepath"
 
 	"k8s.io/utils/pointer"
 )
 
 const (
 	ProcSysVmRelativePath     = "sys/vm/"
+	SysKernelRelativePath     = "kernel/"
 	MemcgReaperRelativePath   = "kernel/mm/memcg_reaper/"
 	KidledRelativePath        = "kernel/mm/kidled/"
 	SchedFeaturesRelativePath = "kernel/debug/"
 
+	SchedFeaturesFileName             = "sched_features"
 	MinFreeKbytesFileName             = "min_free_kbytes"
 	WatermarkScaleFactorFileName      = "watermark_scale_factor"
 	MemcgReapBackGroundFileName       = "reap_background"
 	KidledScanPeriodInSecondsFileName = "scan_period_in_seconds"
 	KidledUseHierarchyFileFileName    = "use_hierarchy"
-	SchedFeaturesFileName             = "sched_features"
+	SchedGroupIdentityEnabledFileName = "sched_group_identity_enabled"
+	SchedCoreFileName                 = "sched_core"
+	SchedIdleSaverWmarkFileName       = "sched_idle_saver_wmark"
 )
 
 var (
@@ -43,6 +47,7 @@ var (
 	MemcgReapBackGroundValidator       = &RangeValidator{min: 0, max: 1}
 	KidledScanPeriodInSecondsValidator = &RangeValidator{min: 0, max: math.MaxInt64}
 	KidledUseHierarchyValidator        = &RangeValidator{min: 0, max: 1}
+	SchedGroupIdentityEnabledValidator = &RangeValidator{min: 0, max: 1}
 )
 
 var (
@@ -52,7 +57,9 @@ var (
 	KidledScanPeriodInSeconds = NewCommonSystemResource(KidledRelativePath, KidledScanPeriodInSecondsFileName, GetSysRootDir).WithValidator(KidledScanPeriodInSecondsValidator).WithCheckSupported(SupportedIfFileExists)
 	KidledUseHierarchy        = NewCommonSystemResource(KidledRelativePath, KidledUseHierarchyFileFileName, GetSysRootDir).WithValidator(KidledUseHierarchyValidator).WithCheckSupported(SupportedIfFileExists)
 	// SchedFeatures is the system file which shows the enabled features of the kernel scheduling.
-	SchedFeatures = NewCommonSystemResource(SchedFeaturesRelativePath, SchedFeaturesFileName, GetSysRootDir).WithCheckSupported(SupportedIfFileExists)
+	SchedFeatures             = NewCommonSystemResource(SchedFeaturesRelativePath, SchedFeaturesFileName, GetSysRootDir).WithCheckSupported(SupportedIfFileExists)
+	SchedGroupIdentityEnabled = NewCommonSystemResource(SysKernelRelativePath, SchedGroupIdentityEnabledFileName, GetSysRootDir).WithValidator(SchedGroupIdentityEnabledValidator).WithCheckSupported(SupportedIfFileExists)
+	SchedIdleSaverWmark       = NewCommonSystemResource(SysKernelRelativePath, SchedIdleSaverWmarkFileName, GetSysRootDir).WithCheckSupported(SupportedIfFileExists)
 )
 
 var _ Resource = &SystemResource{}
@@ -78,7 +85,7 @@ func (c *SystemResource) ResourceType() ResourceType {
 }
 
 func (c *SystemResource) Path(dynamicPath string) string {
-	return path.Join(c.RootDir(), c.RelativePath, c.FileName)
+	return filepath.Join(c.RootDir(), c.RelativePath, c.FileName)
 }
 
 func (c *SystemResource) IsSupported(dynamicPath string) (bool, string) {

@@ -235,11 +235,11 @@ type ColocationStrategy struct {
 	MetricAggregatePolicy          *slov1alpha1.AggregatePolicy         `json:"metricAggregatePolicy,omitempty"`
 	MetricMemoryCollectPolicy      *slov1alpha1.NodeMemoryCollectPolicy `json:"metricMemoryCollectPolicy,omitempty"`
 
-	CPUReclaimThresholdPercent *int64 `json:"cpuReclaimThresholdPercent,omitempty" validate:"omitempty,min=0,max=100"`
+	CPUReclaimThresholdPercent *int64 `json:"cpuReclaimThresholdPercent,omitempty" validate:"omitempty,min=0"`
 	// CPUCalculatePolicy determines the calculation policy of the CPU resources for the Batch pods.
 	// Supported: "usage" (default), "maxUsageRequest".
 	CPUCalculatePolicy            *CalculatePolicy `json:"cpuCalculatePolicy,omitempty"`
-	MemoryReclaimThresholdPercent *int64           `json:"memoryReclaimThresholdPercent,omitempty" validate:"omitempty,min=0,max=100"`
+	MemoryReclaimThresholdPercent *int64           `json:"memoryReclaimThresholdPercent,omitempty" validate:"omitempty,min=0"`
 	// MemoryCalculatePolicy determines the calculation policy of the memory resources for the Batch pods.
 	// Supported: "usage" (default), "request", "maxUsageRequest".
 	MemoryCalculatePolicy      *CalculatePolicy `json:"memoryCalculatePolicy,omitempty"`
@@ -254,6 +254,13 @@ type ColocationStrategy struct {
 	// MidUnallocatedPercent defines the percentage of unallocated resources in the Mid-tier allocable resources.
 	// Allocatable[Mid]' := min(Reclaimable[Mid], NodeAllocatable * thresholdRatio) + Unallocated[Mid] * midUnallocatedRatio.
 	MidUnallocatedPercent *int64 `json:"midUnallocatedPercent,omitempty" validate:"omitempty,min=0,max=100"`
+
+	// when batchCPUThresholdPercent != nil, AllocatableCPU[Batch]' :=  min(Node.Total*BatchCPUThresholdPercent, Node.Total - Node.SafetyMargin - System.Reserved - sum(Pod(Prod/Mid).Request))
+	// when batchCPUThresholdPercent == nil, AllocatableCPU[Batch]' :=  Node.Total - Node.SafetyMargin - System.Reserved - sum(Pod(Prod/Mid).Request)
+	BatchCPUThresholdPercent *int64 `json:"batchCPUThresholdPercent,omitempty" validate:"omitempty,min=0"`
+	// when batchMemoryThresholdPercent != nil, AllocatableMem[Batch]' :=  min(Node.Total*BatchMemoryThresholdPercent, Node.Total - Node.SafetyMargin - System.Reserved - sum(Pod(Prod/Mid).Request))
+	// when batchMemoryThresholdPercent == nil, AllocatableCPU[Batch]' :=  Node.Total - Node.SafetyMargin - System.Reserved - sum(Pod(Prod/Mid).Request)
+	BatchMemoryThresholdPercent *int64 `json:"batchMemoryThresholdPercent,omitempty" validate:"omitempty,min=0"`
 
 	ColocationStrategyExtender `json:",inline"` // for third-party extension
 }

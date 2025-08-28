@@ -66,11 +66,12 @@ type frameworkExtenderImpl struct {
 	scoreTransformersEnabled      []ScoreTransformer
 	postFilterTransformersEnabled []PostFilterTransformer
 
-	reservationNominator      ReservationNominator
-	reservationFilterPlugins  []ReservationFilterPlugin
-	reservationScorePlugins   []ReservationScorePlugin
-	reservationPreBindPlugins []ReservationPreBindPlugin
-	reservationRestorePlugins []ReservationRestorePlugin
+	reservationNominator                   ReservationNominator
+	reservationFilterPlugins               []ReservationFilterPlugin
+	reservationScorePlugins                []ReservationScorePlugin
+	reservationPreBindPlugins              []ReservationPreBindPlugin
+	reservationRestorePlugins              []ReservationRestorePlugin
+	reservationPreAllocationRestorePlugins []ReservationPreAllocationRestorePlugin
 
 	resizePodPlugins         []ResizePodPlugin
 	preBindExtensionsPlugins map[string]PreBindExtensions
@@ -151,6 +152,9 @@ func (ext *frameworkExtenderImpl) updatePlugins(pl framework.Plugin) {
 	}
 	if r, ok := pl.(ReservationRestorePlugin); ok {
 		ext.reservationRestorePlugins = append(ext.reservationRestorePlugins, r)
+	}
+	if r, ok := pl.(ReservationPreAllocationRestorePlugin); ok {
+		ext.reservationPreAllocationRestorePlugins = append(ext.reservationPreAllocationRestorePlugins, r)
 	}
 	if r, ok := pl.(ResizePodPlugin); ok {
 		ext.resizePodPlugins = append(ext.resizePodPlugins, r)
@@ -433,6 +437,33 @@ func (ext *frameworkExtenderImpl) RunReservationExtensionFinalRestoreReservation
 		}
 	}
 	return nil
+}
+
+func (ext *frameworkExtenderImpl) RunReservationExtensionPreRestoreReservationPreAllocation(ctx context.Context, cycleState *framework.CycleState, rInfo *ReservationInfo) *framework.Status {
+	for _, pl := range ext.reservationPreAllocationRestorePlugins {
+		status := pl.PreRestoreReservationPreAllocation(ctx, cycleState, rInfo)
+		if !status.IsSuccess() {
+			klog.ErrorS(status.AsError(), "Failed running PreRestoreReservationPreAllocation on plugin", "plugin", pl.Name(), "reservation", rInfo.GetName())
+			return status
+		}
+	}
+	return nil
+}
+
+func (ext *frameworkExtenderImpl) RunReservationExtensionRestoreReservationPreAllocation(ctx context.Context, cycleState *framework.CycleState, rInfo *ReservationInfo, preAllocatable []*corev1.Pod, nodeInfo *framework.NodeInfo) (PluginToReservationRestoreStates, *framework.Status) {
+	var pluginToRestoreState PluginToReservationRestoreStates
+	for _, pl := range ext.reservationPreAllocationRestorePlugins {
+		state, status := pl.RestoreReservationPreAllocation(ctx, cycleState, rInfo, preAllocatable, nodeInfo)
+		if !status.IsSuccess() {
+			klog.ErrorS(status.AsError(), "Failed running RestoreReservationPreAllocation on plugin", "plugin", pl.Name(), "reservation", rInfo.GetName())
+			return nil, status
+		}
+		if pluginToRestoreState == nil {
+			pluginToRestoreState = PluginToReservationRestoreStates{}
+		}
+		pluginToRestoreState[pl.Name()] = state
+	}
+	return pluginToRestoreState, nil
 }
 
 // RunReservationFilterPlugins determines whether the Reservation can participate in the Reserve

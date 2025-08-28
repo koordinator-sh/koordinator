@@ -104,3 +104,216 @@ func TestSetSchedCore(t *testing.T) {
 		assert.Equal(t, got, testContent)
 	})
 }
+
+func TestGetSchedFeatures(t *testing.T) {
+	tests := []struct {
+		name      string
+		prepareFn func(helper *FileTestUtil)
+		wantErr   bool
+		want      map[string]bool
+	}{
+		{
+			name:    "read sched_features failed",
+			wantErr: true,
+		},
+		{
+			name: "empty sched_features",
+			prepareFn: func(helper *FileTestUtil) {
+				featurePath := SchedFeatures.Path("")
+				helper.WriteFileContents(featurePath, "")
+			},
+			wantErr: false,
+			want:    map[string]bool{},
+		},
+		{
+			name: "read sched_features correctly",
+			prepareFn: func(helper *FileTestUtil) {
+				featurePath := SchedFeatures.Path("")
+				helper.WriteFileContents(featurePath, "NO_ID_EXPELLER_SHARE_CORE ID_ABSOLUTE_EXPEL")
+			},
+			wantErr: false,
+			want: map[string]bool{
+				"ID_EXPELLER_SHARE_CORE": false,
+				"ID_ABSOLUTE_EXPEL":      true,
+			},
+		},
+		{
+			name: "read invalid sched_features",
+			prepareFn: func(helper *FileTestUtil) {
+				featurePath := SchedFeatures.Path("")
+				helper.WriteFileContents(featurePath, "NO_ID_ABSOLUTE_EXPEL ID_ABSOLUTE_EXPEL")
+			},
+			wantErr: true,
+			want: map[string]bool{
+				"ID_ABSOLUTE_EXPEL": false,
+			},
+		},
+		{
+			name: "read invalid sched_features 1",
+			prepareFn: func(helper *FileTestUtil) {
+				featurePath := SchedFeatures.Path("")
+				helper.WriteFileContents(featurePath, "ID_ABSOLUTE_EXPEL NO_ID_ABSOLUTE_EXPEL")
+			},
+			wantErr: true,
+			want: map[string]bool{
+				"ID_ABSOLUTE_EXPEL": true,
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			helper := NewFileTestUtil(t)
+			if tt.prepareFn != nil {
+				tt.prepareFn(helper)
+			}
+			defer helper.Cleanup()
+			got, gotErr := GetSchedFeatures()
+			assert.Equal(t, tt.wantErr, gotErr != nil, gotErr)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestSetSchedFeatures(t *testing.T) {
+	type args struct {
+		featureMap map[string]bool
+		valueMap   map[string]bool
+	}
+	tests := []struct {
+		name      string
+		prepareFn func(helper *FileTestUtil)
+		args      args
+		wantErr   bool
+		wantFn    func(helper *FileTestUtil)
+	}{
+		{
+			name:    "no feature to set",
+			wantErr: false,
+		},
+		{
+			name: "invalid feature map",
+			args: args{
+				valueMap: map[string]bool{
+					"ID_ABSOLUTE_EXPEL": true,
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "write sched_features failed",
+			args: args{
+				featureMap: map[string]bool{
+					"ID_EXPELLER_SHARE_CORE": false,
+				},
+				valueMap: map[string]bool{
+					"ID_ABSOLUTE_EXPEL": true,
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "write sched_features failed 1",
+			args: args{
+				featureMap: map[string]bool{
+					"ID_EXPELLER_SHARE_CORE": false,
+				},
+				valueMap: map[string]bool{
+					"ID_ABSOLUTE_EXPEL": false,
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "no changed feature to write",
+			args: args{
+				featureMap: map[string]bool{
+					"ID_EXPELLER_SHARE_CORE": false,
+				},
+				valueMap: map[string]bool{
+					"ID_EXPELLER_SHARE_CORE": false,
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "update sched_features correctly",
+			prepareFn: func(helper *FileTestUtil) {
+				featurePath := SchedFeatures.Path("")
+				helper.WriteFileContents(featurePath, "ID_EXPELLER_SHARE_CORE NO_ID_ABSOLUTE_EXPEL")
+			},
+			args: args{
+				featureMap: map[string]bool{
+					"ID_EXPELLER_SHARE_CORE": true,
+					"ID_ABSOLUTE_EXPEL":      false,
+				},
+				valueMap: map[string]bool{
+					"ID_EXPELLER_SHARE_CORE": false,
+				},
+			},
+			wantErr: false,
+			wantFn: func(helper *FileTestUtil) {
+				featurePath := SchedFeatures.Path("")
+				s := helper.ReadFileContents(featurePath)
+				assert.Equal(helper.t, s, "NO_ID_EXPELLER_SHARE_CORE\n")
+			},
+		},
+		{
+			name: "update sched_features correctly",
+			prepareFn: func(helper *FileTestUtil) {
+				featurePath := SchedFeatures.Path("")
+				helper.WriteFileContents(featurePath, "ID_EXPELLER_SHARE_CORE NO_ID_ABSOLUTE_EXPEL")
+			},
+			args: args{
+				featureMap: map[string]bool{
+					"ID_EXPELLER_SHARE_CORE": true,
+					"ID_ABSOLUTE_EXPEL":      false,
+				},
+				valueMap: map[string]bool{
+					"ID_EXPELLER_SHARE_CORE": false,
+				},
+			},
+			wantErr: false,
+			wantFn: func(helper *FileTestUtil) {
+				featurePath := SchedFeatures.Path("")
+				s := helper.ReadFileContents(featurePath)
+				assert.Equal(helper.t, s, "NO_ID_EXPELLER_SHARE_CORE\n")
+			},
+		},
+		{
+			name: "update sched_features correctly 1",
+			prepareFn: func(helper *FileTestUtil) {
+				featurePath := SchedFeatures.Path("")
+				helper.WriteFileContents(featurePath, "ID_EXPELLER_SHARE_CORE NO_ID_ABSOLUTE_EXPEL")
+			},
+			args: args{
+				featureMap: map[string]bool{
+					"ID_EXPELLER_SHARE_CORE": true,
+					"ID_ABSOLUTE_EXPEL":      false,
+				},
+				valueMap: map[string]bool{
+					"ID_ABSOLUTE_EXPEL": true,
+				},
+			},
+			wantErr: false,
+			wantFn: func(helper *FileTestUtil) {
+				featurePath := SchedFeatures.Path("")
+				s := helper.ReadFileContents(featurePath)
+				assert.Equal(helper.t, s, "ID_ABSOLUTE_EXPEL\n")
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			helper := NewFileTestUtil(t)
+			if tt.prepareFn != nil {
+				tt.prepareFn(helper)
+			}
+			defer helper.Cleanup()
+			gotErr := SetSchedFeatures(tt.args.featureMap, tt.args.valueMap)
+			assert.Equal(t, tt.wantErr, gotErr != nil, gotErr)
+			if tt.wantFn != nil {
+				tt.wantFn(helper)
+			}
+		})
+	}
+}

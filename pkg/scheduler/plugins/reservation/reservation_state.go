@@ -37,6 +37,8 @@ type stateData struct {
 	// binding goroutines reference the data causing OOM issues, the memory overhead of this part should be
 	// small and its space complexity should be no more than O(1) for pods, reservations and nodes.
 	assumed *frameworkext.ReservationInfo
+	// reservation of the reserve pod
+	rInfo *frameworkext.ReservationInfo // ready-only
 }
 
 // schedulingStateData is the data only kept in the scheduling cycle. It could be cleaned up
@@ -47,8 +49,12 @@ type schedulingStateData struct {
 	reservationName      string
 	podRequests          corev1.ResourceList
 	podRequestsResources *framework.Resource
-	preemptible          map[string]corev1.ResourceList
-	preemptibleInRRs     map[string]map[types.UID]corev1.ResourceList
+	podResourceNames     []corev1.ResourceName
+
+	isPreAllocationRequired bool
+
+	preemptible      map[string]corev1.ResourceList
+	preemptibleInRRs map[string]map[types.UID]corev1.ResourceList
 
 	nodeReservationStates    map[string]*nodeReservationState
 	nodeReservationDiagnosis map[string]*nodeDiagnosisState
@@ -66,7 +72,10 @@ type nodeReservationState struct {
 	// rAllocated represents the allocated resources of matched reservations
 	rAllocated *framework.Resource
 
-	unmatched     []*frameworkext.ReservationInfo
+	unmatched []*frameworkext.ReservationInfo
+
+	preAllocatablePods []*corev1.Pod
+
 	preRestored   bool // restore in PreFilter or Filter
 	finalRestored bool // restore in Filter
 }
@@ -84,6 +93,7 @@ type nodeDiagnosisState struct {
 	notExactMatched          int // owner matched but BeforePreFilter unmatched due to not exact match
 	taintsUnmatched          int // owner matched but BeforePreFilter unmatched due to reservation taints
 	taintsUnmatchedReasons   map[string]int
+	errUnmatched             int // unmatched due to parse ownership or affinity error
 }
 
 func (s *stateData) Clone() framework.StateData {
@@ -93,11 +103,14 @@ func (s *stateData) Clone() framework.StateData {
 			reservationName:          s.reservationName,
 			podRequests:              s.podRequests,
 			podRequestsResources:     s.podRequestsResources,
+			podResourceNames:         s.podResourceNames,
+			isPreAllocationRequired:  s.isPreAllocationRequired,
 			nodeReservationStates:    s.nodeReservationStates,
 			nodeReservationDiagnosis: s.nodeReservationDiagnosis,
 			preferredNode:            s.preferredNode,
 		},
 		assumed: s.assumed,
+		rInfo:   s.rInfo,
 	}
 
 	s.preemptLock.RLock()

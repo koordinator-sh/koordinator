@@ -20,6 +20,8 @@ import (
 	"context"
 	"testing"
 
+	schedulertesting "k8s.io/kubernetes/pkg/scheduler/testing"
+
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
@@ -320,6 +322,7 @@ func TestRestoreReservation(t *testing.T) {
 		schedulingStateData: schedulingStateData{
 			podRequests:          corev1.ResourceList{},
 			podRequestsResources: framework.NewResource(nil),
+			podResourceNames:     []corev1.ResourceName{},
 			preemptible:          map[string]corev1.ResourceList{},
 			preemptibleInRRs:     map[string]map[types.UID]corev1.ResourceList{},
 			nodeReservationStates: map[string]*nodeReservationState{
@@ -679,6 +682,7 @@ func TestRestoreReservationWithLazyReservationRestore(t *testing.T) {
 		schedulingStateData: schedulingStateData{
 			podRequests:          corev1.ResourceList{},
 			podRequestsResources: framework.NewResource(nil),
+			podResourceNames:     []corev1.ResourceName{},
 			preemptible:          map[string]corev1.ResourceList{},
 			preemptibleInRRs:     map[string]map[types.UID]corev1.ResourceList{},
 			nodeReservationStates: map[string]*nodeReservationState{
@@ -787,9 +791,10 @@ func TestBeforePreFilterWithReservationAffinity(t *testing.T) {
 	pods = append(pods, reservationutil.NewReservePod(matchedReservation))
 
 	tests := []struct {
-		name         string
-		rAffinity    *apiext.ReservationAffinity
-		wantRestored bool
+		name           string
+		rAffinity      *apiext.ReservationAffinity
+		exactMatchSpec *apiext.ExactMatchReservationSpec
+		wantRestored   bool
 	}{
 		{
 			name:         "pod has no reservation affinity",
@@ -834,6 +839,30 @@ func TestBeforePreFilterWithReservationAffinity(t *testing.T) {
 			wantRestored: false,
 		},
 		{
+			name: "pod has reservation affinity but failed to exact match",
+			rAffinity: &apiext.ReservationAffinity{
+				RequiredDuringSchedulingIgnoredDuringExecution: &apiext.ReservationAffinitySelector{
+					ReservationSelectorTerms: []corev1.NodeSelectorTerm{
+						{
+							MatchExpressions: []corev1.NodeSelectorRequirement{
+								{
+									Key:      "reservation-a",
+									Operator: corev1.NodeSelectorOpIn,
+									Values:   []string{"false"},
+								},
+							},
+						},
+					},
+				},
+			},
+			exactMatchSpec: &apiext.ExactMatchReservationSpec{
+				ResourceNames: []corev1.ResourceName{
+					corev1.ResourceCPU,
+				},
+			},
+			wantRestored: false,
+		},
+		{
 			name: "pod specifies a reservation name and matched",
 			rAffinity: &apiext.ReservationAffinity{
 				Name: "reservation8C16G",
@@ -844,6 +873,18 @@ func TestBeforePreFilterWithReservationAffinity(t *testing.T) {
 			name: "pod specifies a reservation name but failed to match",
 			rAffinity: &apiext.ReservationAffinity{
 				Name: "not-reservation8C16G",
+			},
+			wantRestored: false,
+		},
+		{
+			name: "pod specifies a reservation name but failed to exact match",
+			rAffinity: &apiext.ReservationAffinity{
+				Name: "reservation8C16G",
+			},
+			exactMatchSpec: &apiext.ExactMatchReservationSpec{
+				ResourceNames: []corev1.ResourceName{
+					corev1.ResourceCPU,
+				},
 			},
 			wantRestored: false,
 		},
@@ -863,9 +904,20 @@ func TestBeforePreFilterWithReservationAffinity(t *testing.T) {
 						"test-reservation": "true",
 					},
 				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						schedulertesting.MakeContainer().Resources(map[corev1.ResourceName]string{
+							corev1.ResourceCPU:    "4",
+							corev1.ResourceMemory: "8Gi",
+						}).Obj(),
+					},
+				},
 			}
 			if tt.rAffinity != nil {
 				assert.NoError(t, apiext.SetReservationAffinity(testPod, tt.rAffinity))
+			}
+			if tt.exactMatchSpec != nil {
+				assert.NoError(t, apiext.SetExactMatchReservationSpec(testPod, tt.exactMatchSpec))
 			}
 			cycleState := framework.NewCycleState()
 			_, restored, status := pl.BeforePreFilter(context.TODO(), cycleState, testPod)
@@ -1067,14 +1119,681 @@ func TestBeforePreFilterWithNodeAffinity(t *testing.T) {
 			pl := p.(*Plugin)
 
 			pl.reservationCache.updateReservation(matchedReservation)
-			testPod.Spec.Affinity = &corev1.Affinity{
+			tt.pod.Spec.Affinity = &corev1.Affinity{
 				NodeAffinity: tt.nodeAffinity,
 			}
 
 			cycleState := framework.NewCycleState()
-			_, restored, status := pl.BeforePreFilter(context.TODO(), cycleState, testPod)
+			_, restored, status := pl.BeforePreFilter(context.TODO(), cycleState, tt.pod)
 			assert.Equal(t, tt.wantRestored, restored)
 			assert.True(t, status.IsSuccess())
+		})
+	}
+}
+
+func TestBeforePreFilterForReservePod(t *testing.T) {
+	node := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "node1",
+			Labels: map[string]string{
+				"test": "true",
+			},
+		},
+		Status: corev1.NodeStatus{
+			Allocatable: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("32"),
+				corev1.ResourceMemory: resource.MustParse("64Gi"),
+			},
+		},
+	}
+	testReservation := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-reservation",
+			Labels: map[string]string{
+				"test-reservation": "true",
+			},
+			UID: "xxxxxx",
+		},
+	}
+	testPod := reservationutil.NewReservePod(testReservation)
+	availableReservation := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{
+			UID:  uuid.NewUUID(),
+			Name: "reservation8C16G",
+		},
+		Spec: schedulingv1alpha1.ReservationSpec{
+			Owners: []schedulingv1alpha1.ReservationOwner{
+				{
+					LabelSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							"test-available-reservation": "true",
+						},
+					},
+				},
+			},
+			Template: &corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("8"),
+									corev1.ResourceMemory: resource.MustParse("16Gi"),
+								},
+							},
+						},
+					},
+				},
+			},
+			AllocateOnce: pointer.Bool(false),
+		},
+		Status: schedulingv1alpha1.ReservationStatus{
+			Phase:    schedulingv1alpha1.ReservationAvailable,
+			NodeName: node.Name,
+			Allocatable: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("8"),
+				corev1.ResourceMemory: resource.MustParse("16Gi"),
+			},
+		},
+	}
+	testAssignedPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-assigned-pod",
+			Labels: map[string]string{
+				"test-available-reservation": "true",
+			},
+		},
+		Spec: corev1.PodSpec{
+			NodeName: node.Name,
+		},
+	}
+	apiext.SetReservationAllocated(testAssignedPod, availableReservation)
+	pods := []*corev1.Pod{testAssignedPod, reservationutil.NewReservePod(availableReservation)}
+
+	tests := []struct {
+		name         string
+		pod          *corev1.Pod
+		reservation  *schedulingv1alpha1.Reservation
+		nodeAffinity *corev1.NodeAffinity
+		wantRestored bool
+	}{
+		{
+			name:         "pod has no affinity",
+			pod:          testPod.DeepCopy(),
+			reservation:  testReservation.DeepCopy(),
+			nodeAffinity: nil,
+			wantRestored: true,
+		},
+		{
+			name:        "pod has affinity with matchField",
+			pod:         testPod.DeepCopy(),
+			reservation: testReservation.DeepCopy(),
+			nodeAffinity: &corev1.NodeAffinity{
+				RequiredDuringSchedulingIgnoredDuringExecution: &corev1.NodeSelector{
+					NodeSelectorTerms: []corev1.NodeSelectorTerm{
+						{
+							MatchFields: []corev1.NodeSelectorRequirement{
+								{
+									Key:      metav1.ObjectNameField,
+									Operator: corev1.NodeSelectorOpIn,
+									Values:   []string{"node1", "node2"},
+								},
+							},
+						},
+					},
+				},
+			},
+			wantRestored: true,
+		},
+		{
+			name:        "pod has affinity with matchField but failed to match",
+			pod:         testPod.DeepCopy(),
+			reservation: testReservation.DeepCopy(),
+			nodeAffinity: &corev1.NodeAffinity{
+				RequiredDuringSchedulingIgnoredDuringExecution: &corev1.NodeSelector{
+					NodeSelectorTerms: []corev1.NodeSelectorTerm{
+						{
+							MatchFields: []corev1.NodeSelectorRequirement{
+								{
+									Key:      metav1.ObjectNameField,
+									Operator: corev1.NodeSelectorOpIn,
+									Values:   []string{"node2"},
+								},
+							},
+						},
+					},
+				},
+			},
+			wantRestored: false,
+		},
+		{
+			name:        "pod has affinity with matchExpressions",
+			pod:         testPod.DeepCopy(),
+			reservation: testReservation.DeepCopy(),
+			nodeAffinity: &corev1.NodeAffinity{
+				RequiredDuringSchedulingIgnoredDuringExecution: &corev1.NodeSelector{
+					NodeSelectorTerms: []corev1.NodeSelectorTerm{
+						{
+							MatchExpressions: []corev1.NodeSelectorRequirement{
+								{
+									Key:      "test",
+									Operator: corev1.NodeSelectorOpIn,
+									Values:   []string{"true"},
+								},
+							},
+						},
+					},
+				},
+			},
+			wantRestored: true,
+		},
+		{
+			name:        "pod has affinity with matchExpressions but failed to match",
+			pod:         testPod.DeepCopy(),
+			reservation: testReservation.DeepCopy(),
+			nodeAffinity: &corev1.NodeAffinity{
+				RequiredDuringSchedulingIgnoredDuringExecution: &corev1.NodeSelector{
+					NodeSelectorTerms: []corev1.NodeSelectorTerm{
+						{
+							MatchExpressions: []corev1.NodeSelectorRequirement{
+								{
+									Key:      "test",
+									Operator: corev1.NodeSelectorOpIn,
+									Values:   []string{"false"},
+								},
+							},
+						},
+					},
+				},
+			},
+			wantRestored: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			suit := newPluginTestSuitWith(t, pods, []*corev1.Node{node})
+			p, err := suit.pluginFactory()
+			assert.NoError(t, err)
+			pl := p.(*Plugin)
+			_, err = pl.client.Reservations().Create(context.TODO(), tt.reservation, metav1.CreateOptions{})
+			assert.NoError(t, err)
+			_, err = pl.client.Reservations().Create(context.TODO(), availableReservation, metav1.CreateOptions{})
+			assert.NoError(t, err)
+
+			tt.pod.Spec.Affinity = &corev1.Affinity{
+				NodeAffinity: tt.nodeAffinity,
+			}
+			pl.reservationCache.updateReservation(availableReservation)
+			err = pl.reservationCache.assumePod(availableReservation.UID, testAssignedPod)
+			assert.NoError(t, err)
+			suit.start()
+
+			cycleState := framework.NewCycleState()
+			_, restored, status := pl.BeforePreFilter(context.TODO(), cycleState, tt.pod)
+			assert.True(t, status.IsSuccess())
+			assert.Equal(t, tt.wantRestored, restored)
+		})
+	}
+}
+
+func TestBeforePreFilterForReservationPreAllocation(t *testing.T) {
+	node := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "node1",
+			Labels: map[string]string{
+				"test": "true",
+			},
+		},
+		Status: corev1.NodeStatus{
+			Allocatable: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("32"),
+				corev1.ResourceMemory: resource.MustParse("64Gi"),
+			},
+		},
+	}
+	testReservation := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{
+			UID:  uuid.NewUUID(),
+			Name: "test-reservation",
+			Labels: map[string]string{
+				"test-reservation": "true",
+			},
+		},
+		Spec: schedulingv1alpha1.ReservationSpec{
+			Owners: []schedulingv1alpha1.ReservationOwner{
+				{
+					LabelSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							"test-reservation": "true",
+						},
+					},
+				},
+			},
+			Template: &corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					NodeName: node.Name,
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("8"),
+									corev1.ResourceMemory: resource.MustParse("16Gi"),
+								},
+							},
+						},
+					},
+				},
+			},
+			PreAllocation:  true,
+			AllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyRestricted,
+		},
+	}
+	testPod := reservationutil.NewReservePod(testReservation)
+	testPreAllocatablePod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			UID:       uuid.NewUUID(),
+			Name:      "test-pre-allocatable-pod",
+			Namespace: "test-ns",
+			Labels: map[string]string{
+				"test-reservation": "true",
+			},
+		},
+		Spec: corev1.PodSpec{
+			NodeName: node.Name,
+		},
+	}
+	testUnmatchedPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			UID:       uuid.NewUUID(),
+			Name:      "test-unmatched-pod",
+			Namespace: "test-ns",
+			Labels: map[string]string{
+				"test-reservation": "true",
+			},
+			Annotations: map[string]string{
+				apiext.AnnotationReservationAffinity: `{"name":"other-reservation-name"}`,
+			},
+		},
+		Spec: corev1.PodSpec{
+			NodeName: node.Name,
+		},
+	}
+	testUnmatchedPod1 := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			UID:       uuid.NewUUID(),
+			Name:      "test-unmatched-pod-1",
+			Namespace: "test-ns",
+			Labels: map[string]string{
+				"test-reservation": "true",
+			},
+			Annotations: map[string]string{
+				apiext.AnnotationReservationAffinity: `{"reservationSelector": {"reservation-type": "test"}}`,
+			},
+		},
+		Spec: corev1.PodSpec{
+			NodeName: node.Name,
+		},
+	}
+	testUnmatchedPod2 := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			UID:       uuid.NewUUID(),
+			Name:      "test-unmatched-pod-2",
+			Namespace: "test-ns",
+			Labels: map[string]string{
+				"test-other-reservation": "true",
+			},
+		},
+		Spec: corev1.PodSpec{
+			NodeName: node.Name,
+		},
+	}
+	testUnmatchedPod3 := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			UID:       uuid.NewUUID(),
+			Name:      "test-unmatched-pod-3",
+			Namespace: "test-ns",
+			Labels: map[string]string{
+				"test-reservation": "true",
+			},
+			Annotations: map[string]string{
+				apiext.AnnotationExactMatchReservationSpec: `{"resourceNames": ["cpu"]}`,
+			},
+		},
+		Spec: corev1.PodSpec{
+			NodeName: node.Name,
+			Containers: []corev1.Container{
+				{
+					Resources: corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("4"),
+							corev1.ResourceMemory: resource.MustParse("16Gi"),
+						},
+					},
+				},
+			},
+		},
+	}
+	testErrPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			UID:       uuid.NewUUID(),
+			Name:      "test-err-pod",
+			Namespace: "test-ns",
+			Labels: map[string]string{
+				"test-reservation": "true",
+			},
+			Annotations: map[string]string{
+				apiext.AnnotationReservationAffinity: `}`,
+			},
+		},
+		Spec: corev1.PodSpec{
+			NodeName: node.Name,
+		},
+	}
+	testErrPod1 := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			UID:       uuid.NewUUID(),
+			Name:      "test-err-pod-1",
+			Namespace: "test-ns",
+			Labels: map[string]string{
+				"test-reservation": "true",
+			},
+			Annotations: map[string]string{
+				apiext.AnnotationExactMatchReservationSpec: `[`,
+			},
+		},
+		Spec: corev1.PodSpec{
+			NodeName: node.Name,
+			Containers: []corev1.Container{
+				{
+					Resources: corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("8"),
+							corev1.ResourceMemory: resource.MustParse("16Gi"),
+						},
+					},
+				},
+			},
+		},
+	}
+	availableReservation := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{
+			UID:  uuid.NewUUID(),
+			Name: "reservation8C16G",
+		},
+		Spec: schedulingv1alpha1.ReservationSpec{
+			Owners: []schedulingv1alpha1.ReservationOwner{
+				{
+					LabelSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							"test-reservation": "true",
+						},
+					},
+				},
+			},
+			Template: &corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("8"),
+									corev1.ResourceMemory: resource.MustParse("16Gi"),
+								},
+							},
+						},
+					},
+				},
+			},
+			AllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyRestricted,
+			AllocateOnce:   pointer.Bool(false),
+		},
+		Status: schedulingv1alpha1.ReservationStatus{
+			Phase:    schedulingv1alpha1.ReservationAvailable,
+			NodeName: node.Name,
+			Allocatable: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("8"),
+				corev1.ResourceMemory: resource.MustParse("16Gi"),
+			},
+		},
+	}
+	testAssignedPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			UID:       uuid.NewUUID(),
+			Name:      "test-assigned-pod",
+			Namespace: "test-ns",
+			Labels: map[string]string{
+				"test-reservation": "true",
+			},
+		},
+		Spec: corev1.PodSpec{
+			NodeName: node.Name,
+		},
+	}
+	apiext.SetReservationAllocated(testAssignedPod, availableReservation)
+
+	tests := []struct {
+		name               string
+		pod                *corev1.Pod
+		reservation        *schedulingv1alpha1.Reservation
+		assignPods         []*corev1.Pod
+		nodeAffinity       *corev1.NodeAffinity
+		wantPreAllocatable int
+		wantRestored       bool
+	}{
+		{
+			name:               "pod has no affinity",
+			pod:                testPod.DeepCopy(),
+			reservation:        testReservation.DeepCopy(),
+			assignPods:         []*corev1.Pod{testAssignedPod, testPreAllocatablePod, testUnmatchedPod, testUnmatchedPod1, reservationutil.NewReservePod(testReservation)},
+			nodeAffinity:       nil,
+			wantPreAllocatable: 1,
+			wantRestored:       true,
+		},
+		{
+			name:        "pod has affinity with matchField",
+			pod:         testPod.DeepCopy(),
+			reservation: testReservation.DeepCopy(),
+			assignPods:  []*corev1.Pod{testAssignedPod, testPreAllocatablePod, testUnmatchedPod, testUnmatchedPod1, reservationutil.NewReservePod(testReservation)},
+			nodeAffinity: &corev1.NodeAffinity{
+				RequiredDuringSchedulingIgnoredDuringExecution: &corev1.NodeSelector{
+					NodeSelectorTerms: []corev1.NodeSelectorTerm{
+						{
+							MatchFields: []corev1.NodeSelectorRequirement{
+								{
+									Key:      metav1.ObjectNameField,
+									Operator: corev1.NodeSelectorOpIn,
+									Values:   []string{"node1", "node2"},
+								},
+							},
+						},
+					},
+				},
+			},
+			wantPreAllocatable: 1,
+			wantRestored:       true,
+		},
+		{
+			name:        "pod has affinity with matchField but failed to match",
+			pod:         testPod.DeepCopy(),
+			reservation: testReservation.DeepCopy(),
+			assignPods:  []*corev1.Pod{testAssignedPod, testPreAllocatablePod, testUnmatchedPod, testUnmatchedPod1, reservationutil.NewReservePod(testReservation)},
+			nodeAffinity: &corev1.NodeAffinity{
+				RequiredDuringSchedulingIgnoredDuringExecution: &corev1.NodeSelector{
+					NodeSelectorTerms: []corev1.NodeSelectorTerm{
+						{
+							MatchFields: []corev1.NodeSelectorRequirement{
+								{
+									Key:      metav1.ObjectNameField,
+									Operator: corev1.NodeSelectorOpIn,
+									Values:   []string{"node2"},
+								},
+							},
+						},
+					},
+				},
+			},
+			wantPreAllocatable: 0,
+			wantRestored:       false,
+		},
+		{
+			name:        "pod has affinity with matchExpressions",
+			pod:         testPod.DeepCopy(),
+			reservation: testReservation.DeepCopy(),
+			assignPods:  []*corev1.Pod{testAssignedPod, testPreAllocatablePod, testUnmatchedPod, testUnmatchedPod1, reservationutil.NewReservePod(testReservation)},
+			nodeAffinity: &corev1.NodeAffinity{
+				RequiredDuringSchedulingIgnoredDuringExecution: &corev1.NodeSelector{
+					NodeSelectorTerms: []corev1.NodeSelectorTerm{
+						{
+							MatchExpressions: []corev1.NodeSelectorRequirement{
+								{
+									Key:      "test",
+									Operator: corev1.NodeSelectorOpIn,
+									Values:   []string{"true"},
+								},
+							},
+						},
+					},
+				},
+			},
+			wantPreAllocatable: 1,
+			wantRestored:       true,
+		},
+		{
+			name:        "pod has affinity with matchExpressions 1",
+			pod:         testPod.DeepCopy(),
+			reservation: testReservation.DeepCopy(),
+			assignPods: []*corev1.Pod{
+				reservationutil.NewReservePod(testReservation),
+				testAssignedPod,
+				testPreAllocatablePod,
+				testUnmatchedPod,
+				testUnmatchedPod1,
+				testUnmatchedPod2,
+				testUnmatchedPod3,
+				testErrPod,
+				testErrPod1,
+			},
+			nodeAffinity: &corev1.NodeAffinity{
+				RequiredDuringSchedulingIgnoredDuringExecution: &corev1.NodeSelector{
+					NodeSelectorTerms: []corev1.NodeSelectorTerm{
+						{
+							MatchExpressions: []corev1.NodeSelectorRequirement{
+								{
+									Key:      "test",
+									Operator: corev1.NodeSelectorOpIn,
+									Values:   []string{"true"},
+								},
+							},
+						},
+					},
+				},
+			},
+			wantPreAllocatable: 1,
+			wantRestored:       true,
+		},
+		{
+			name:        "pod has affinity with matchExpressions but failed to match",
+			pod:         testPod.DeepCopy(),
+			reservation: testReservation.DeepCopy(),
+			assignPods:  []*corev1.Pod{testAssignedPod, testPreAllocatablePod, testUnmatchedPod, testUnmatchedPod1, reservationutil.NewReservePod(testReservation)},
+			nodeAffinity: &corev1.NodeAffinity{
+				RequiredDuringSchedulingIgnoredDuringExecution: &corev1.NodeSelector{
+					NodeSelectorTerms: []corev1.NodeSelectorTerm{
+						{
+							MatchExpressions: []corev1.NodeSelectorRequirement{
+								{
+									Key:      "test",
+									Operator: corev1.NodeSelectorOpIn,
+									Values:   []string{"false"},
+								},
+							},
+						},
+					},
+				},
+			},
+			wantPreAllocatable: 0,
+			wantRestored:       false,
+		},
+		{
+			name:        "pod has no pre-allocatable",
+			pod:         testPod.DeepCopy(),
+			reservation: testReservation.DeepCopy(),
+			assignPods:  []*corev1.Pod{testAssignedPod, testUnmatchedPod, testUnmatchedPod1, reservationutil.NewReservePod(testReservation)},
+			nodeAffinity: &corev1.NodeAffinity{
+				RequiredDuringSchedulingIgnoredDuringExecution: &corev1.NodeSelector{
+					NodeSelectorTerms: []corev1.NodeSelectorTerm{
+						{
+							MatchExpressions: []corev1.NodeSelectorRequirement{
+								{
+									Key:      "test",
+									Operator: corev1.NodeSelectorOpIn,
+									Values:   []string{"true"},
+								},
+							},
+						},
+					},
+				},
+			},
+			wantPreAllocatable: 0,
+			wantRestored:       true,
+		},
+		{
+			name:        "pod has nothing to restore",
+			pod:         testPod.DeepCopy(),
+			reservation: testReservation.DeepCopy(),
+			assignPods:  []*corev1.Pod{testAssignedPod, testUnmatchedPod, reservationutil.NewReservePod(testReservation)},
+			nodeAffinity: &corev1.NodeAffinity{
+				RequiredDuringSchedulingIgnoredDuringExecution: &corev1.NodeSelector{
+					NodeSelectorTerms: []corev1.NodeSelectorTerm{
+						{
+							MatchExpressions: []corev1.NodeSelectorRequirement{
+								{
+									Key:      "test",
+									Operator: corev1.NodeSelectorOpIn,
+									Values:   []string{"true"},
+								},
+							},
+						},
+					},
+				},
+			},
+			wantPreAllocatable: 0,
+			wantRestored:       true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			suit := newPluginTestSuitWith(t, tt.assignPods, []*corev1.Node{node})
+			p, err := suit.pluginFactory()
+			assert.NoError(t, err)
+			pl := p.(*Plugin)
+			_, err = pl.client.Reservations().Create(context.TODO(), tt.reservation, metav1.CreateOptions{})
+			assert.NoError(t, err)
+			_, err = pl.client.Reservations().Create(context.TODO(), availableReservation, metav1.CreateOptions{})
+			assert.NoError(t, err)
+			for _, pod := range tt.assignPods {
+				_, err = suit.fw.ClientSet().CoreV1().Pods(pod.Namespace).Create(context.TODO(), pod, metav1.CreateOptions{})
+				assert.NoError(t, err)
+			}
+
+			tt.pod.Spec.Affinity = &corev1.Affinity{
+				NodeAffinity: tt.nodeAffinity,
+			}
+			pl.reservationCache.updateReservation(availableReservation)
+			err = pl.reservationCache.assumePod(availableReservation.UID, testAssignedPod)
+			assert.NoError(t, err)
+			suit.start()
+
+			cycleState := framework.NewCycleState()
+			_, restored, status := pl.BeforePreFilter(context.TODO(), cycleState, tt.pod)
+			assert.True(t, status.IsSuccess())
+			assert.Equal(t, tt.wantRestored, restored)
+			if restored {
+				state := getStateData(cycleState)
+				assert.NotNil(t, state)
+				assert.NotNil(t, state.nodeReservationStates[node.Name])
+				assert.Equal(t, tt.wantPreAllocatable, len(state.nodeReservationStates[node.Name].preAllocatablePods), state.nodeReservationStates[node.Name].preAllocatablePods)
+			}
 		})
 	}
 }

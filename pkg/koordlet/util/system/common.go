@@ -19,7 +19,7 @@ package system
 import (
 	"io"
 	"os"
-	"path"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"syscall"
@@ -33,7 +33,7 @@ var (
 )
 
 func CommonFileRead(file string) (string, error) {
-	file = path.Join(CommonRootDir, file)
+	file = filepath.Join(CommonRootDir, file)
 	klog.V(5).Infof("read %s", file)
 	data, err := os.ReadFile(file)
 	return strings.Trim(string(data), "\n"), err
@@ -55,7 +55,7 @@ func CommonFileWriteIfDifferent(file string, value string) (bool, error) {
 }
 
 func CommonFileWrite(file string, data string) error {
-	file = path.Join(CommonRootDir, file)
+	file = filepath.Join(CommonRootDir, file)
 	klog.V(5).Infof("write %s [%s]", file, data)
 	return os.WriteFile(file, []byte(data), 0644)
 }

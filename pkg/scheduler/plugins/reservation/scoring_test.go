@@ -28,6 +28,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/uuid"
+	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	apiresource "k8s.io/kubernetes/pkg/api/v1/resource"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
@@ -254,6 +255,7 @@ func TestScore(t *testing.T) {
 			}
 			state.podRequests = apiresource.PodRequests(tt.pod, apiresource.PodResourcesOptions{})
 			state.podRequestsResources = framework.NewResource(state.podRequests)
+			state.podResourceNames = quotav1.ResourceNames(state.podRequests)
 			for _, reservation := range tt.reservations {
 				rInfo := frameworkext.NewReservationInfo(reservation)
 				if allocated := tt.allocated[reservation.UID]; len(allocated) > 0 {
@@ -361,6 +363,7 @@ func TestScoreWithOrder(t *testing.T) {
 		}
 		state.podRequests = apiresource.PodRequests(normalPod, apiresource.PodResourcesOptions{})
 		state.podRequestsResources = framework.NewResource(state.podRequests)
+		state.podResourceNames = quotav1.ResourceNames(state.podRequests)
 
 		_, err = suit.fw.ClientSet().CoreV1().Pods(normalPod.Namespace).Create(context.TODO(), normalPod.DeepCopy(), metav1.CreateOptions{})
 		assert.NoError(t, err)
@@ -834,6 +837,7 @@ func TestPreScoreWithNominateReservation(t *testing.T) {
 			}
 			state.podRequests = apiresource.PodRequests(tt.pod, apiresource.PodResourcesOptions{})
 			state.podRequestsResources = framework.NewResource(state.podRequests)
+			state.podResourceNames = quotav1.ResourceNames(state.podRequests)
 			for i := range tt.reservations {
 				reservation := tt.reservations[i]
 				rInfo := frameworkext.NewReservationInfo(reservation)
@@ -861,7 +865,7 @@ func TestPreScoreWithNominateReservation(t *testing.T) {
 				sort.Slice(wantReservationInfo.ResourceNames, func(i, j int) bool {
 					return wantReservationInfo.ResourceNames[i] < wantReservationInfo.ResourceNames[j]
 				})
-				wantReservationInfo.RefreshAvailable()
+				wantReservationInfo.RefreshPreCalculated()
 				rInfo := pl.handle.GetReservationNominator().GetNominatedReservation(tt.pod, nodeName)
 				if rInfo != nil {
 					sort.Slice(rInfo.ResourceNames, func(i, j int) bool {

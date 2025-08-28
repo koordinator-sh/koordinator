@@ -94,7 +94,7 @@ func (r RegisterType) String() string {
 	case RegisterTypeNodeTopology:
 		return "RegisterTypeNodeTopology"
 	case RegisterTypeNodeMetadata:
-		return "RegisterNodeMetadata"
+		return "RegisterTypeNodeMetadata"
 	default:
 		return "RegisterTypeUnknown"
 	}

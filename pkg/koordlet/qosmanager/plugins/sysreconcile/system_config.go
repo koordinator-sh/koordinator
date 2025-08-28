@@ -88,13 +88,13 @@ func (s *systemConfig) reconcile() {
 	}
 
 	var resources []resourceexecutor.ResourceUpdater
-	resources = append(resources, caculateMemoryConfig(nodeSLO.Spec.SystemStrategy, memoryCapacity)...)
+	resources = append(resources, calculateMemoryConfig(nodeSLO.Spec.SystemStrategy, memoryCapacity)...)
 
 	s.executor.UpdateBatch(true, resources...)
 	klog.V(5).Infof("finish to reconcile system config!")
 }
 
-func caculateMemoryConfig(strategy *slov1alpha1.SystemStrategy, nodeMemory int64) []resourceexecutor.ResourceUpdater {
+func calculateMemoryConfig(strategy *slov1alpha1.SystemStrategy, nodeMemory int64) []resourceexecutor.ResourceUpdater {
 	var resources []resourceexecutor.ResourceUpdater
 	if strategy.MinFreeKbytesFactor != nil {
 		totalMemory := nodeMemory / 1024 //to kbytes
@@ -109,32 +109,81 @@ func caculateMemoryConfig(strategy *slov1alpha1.SystemStrategy, nodeMemory int64
 			eventHelper := audit.V(3).Node().Reason("systemConfig reconcile").Message("update calculated mem config min_free_kbytes to : %v", valueStr)
 			resource, err := resourceexecutor.NewCommonDefaultUpdater(file, file, valueStr, eventHelper)
 			if err != nil {
+				klog.Errorf("failed to update %s to %v, err: %s", file, valueStr, err)
 				return resources
 			}
 			resources = append(resources, resource)
 		}
 	}
 
-	if sysutil.ValidateResourceValue(strategy.WatermarkScaleFactor, "", sysutil.WatermarkScaleFactor) {
-		valueStr := strconv.FormatInt(*strategy.WatermarkScaleFactor, 10)
-		file := sysutil.WatermarkScaleFactor.Path("")
-		eventHelper := audit.V(3).Node().Reason("systemConfig reconcile").Message("update calculated mem config watermark_scale_factor to : %v", valueStr)
-		resource, err := resourceexecutor.NewCommonDefaultUpdater(file, file, valueStr, eventHelper)
-		if err != nil {
-			return resources
+	if strategy.WatermarkScaleFactor != nil {
+		if sysutil.ValidateResourceValue(strategy.WatermarkScaleFactor, "", sysutil.WatermarkScaleFactor) {
+			valueStr := strconv.FormatInt(*strategy.WatermarkScaleFactor, 10)
+			file := sysutil.WatermarkScaleFactor.Path("")
+			eventHelper := audit.V(3).Node().Reason("systemConfig reconcile").Message("update calculated mem config watermark_scale_factor to : %v", valueStr)
+			resource, err := resourceexecutor.NewCommonDefaultUpdater(file, file, valueStr, eventHelper)
+			if err != nil {
+				klog.Errorf("failed to update %s to %v, err: %s", file, valueStr, err)
+				return resources
+			}
+			resources = append(resources, resource)
 		}
-		resources = append(resources, resource)
 	}
 
-	if sysutil.ValidateResourceValue(strategy.MemcgReapBackGround, "", sysutil.MemcgReapBackGround) {
-		valueStr := strconv.FormatInt(*strategy.MemcgReapBackGround, 10)
-		file := sysutil.MemcgReapBackGround.Path("")
-		eventHelper := audit.V(3).Node().Reason("systemConfig reconcile").Message("update calculated mem config reap_background to : %v", valueStr)
-		resource, err := resourceexecutor.NewCommonDefaultUpdater(file, file, valueStr, eventHelper)
+	if strategy.MemcgReapBackGround != nil {
+		if sysutil.ValidateResourceValue(strategy.MemcgReapBackGround, "", sysutil.MemcgReapBackGround) {
+			valueStr := strconv.FormatInt(*strategy.MemcgReapBackGround, 10)
+			file := sysutil.MemcgReapBackGround.Path("")
+			eventHelper := audit.V(3).Node().Reason("systemConfig reconcile").Message("update calculated mem config reap_background to : %v", valueStr)
+			resource, err := resourceexecutor.NewCommonDefaultUpdater(file, file, valueStr, eventHelper)
+			if err != nil {
+				klog.Errorf("failed to update %s to %v, err: %s", file, valueStr, err)
+				return resources
+			}
+			resources = append(resources, resource)
+		}
+	}
+
+	if strategy.SchedGroupIdentityEnabled != nil {
+		if sysutil.ValidateResourceValue(strategy.SchedGroupIdentityEnabled, "", sysutil.SchedGroupIdentityEnabled) {
+			valueStr := strconv.FormatInt(*strategy.SchedGroupIdentityEnabled, 10)
+			file := sysutil.SchedGroupIdentityEnabled.Path("")
+			eventHelper := audit.V(3).Node().Reason("systemConfig reconcile").Message("update calculated mem config sched_group_identity_enabled to : %v", valueStr)
+			resource, err := resourceexecutor.NewCommonDefaultUpdater(file, file, valueStr, eventHelper)
+			if err != nil {
+				klog.Errorf("failed to update %s to %v, err: %s", file, valueStr, err)
+				return resources
+			}
+			resources = append(resources, resource)
+		}
+	}
+
+	if strategy.SchedIdleSaverWmark != nil {
+		if sysutil.ValidateResourceValue(strategy.SchedIdleSaverWmark, "", sysutil.SchedIdleSaverWmark) {
+			valueStr := strconv.FormatInt(*strategy.SchedIdleSaverWmark, 10)
+			file := sysutil.SchedIdleSaverWmark.Path("")
+			eventHelper := audit.V(3).Node().Reason("systemConfig reconcile").Message("update calculated mem config sched_idle_saver_wmark to :%v", valueStr)
+			resource, err := resourceexecutor.NewCommonDefaultUpdater(file, file, valueStr, eventHelper)
+			if err != nil {
+				klog.Errorf("failed to update %s to %v, err: %s", file, valueStr, err)
+				return resources
+			}
+			resources = append(resources, resource)
+		}
+	}
+
+	if len(strategy.SchedFeatures) > 0 {
+		featureMap, err := sysutil.GetSchedFeatures()
 		if err != nil {
+			klog.Errorf("failed to get sched_features, err: %s", err)
 			return resources
 		}
-		resources = append(resources, resource)
+		err = sysutil.SetSchedFeatures(featureMap, strategy.SchedFeatures)
+		if err != nil {
+			klog.Errorf("failed to set sched_features, err: %s", err)
+			return resources
+		}
 	}
+
 	return resources
 }

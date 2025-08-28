@@ -21,7 +21,7 @@ package pleg
 
 import (
 	"os"
-	"path"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -47,28 +47,28 @@ func TestWatcher(t *testing.T) {
 		{
 			name: "create dir",
 			before: func() {
-				os.Mkdir(path.Join(tempDir, "dir1"), 0644)
+				os.Mkdir(filepath.Join(tempDir, "dir1"), 0644)
 			},
 			expected: DirCreated,
 		},
 		{
 			name: "create file",
 			before: func() {
-				os.Create(path.Join(tempDir, "file1"))
+				os.Create(filepath.Join(tempDir, "file1"))
 			},
 			expected: UnknownType,
 		},
 		{
 			name: "remove file",
 			before: func() {
-				os.Remove(path.Join(tempDir, "file1"))
+				os.Remove(filepath.Join(tempDir, "file1"))
 			},
 			expected: UnknownType,
 		},
 		{
 			name: "remove dir",
 			before: func() {
-				os.Remove(path.Join(tempDir, "dir1"))
+				os.Remove(filepath.Join(tempDir, "dir1"))
 			},
 			expected: DirRemoved,
 		},
@@ -76,7 +76,7 @@ func TestWatcher(t *testing.T) {
 			name: "remove watch",
 			before: func() {
 				watcher.RemoveWatch(tempDir)
-				os.Mkdir(path.Join(tempDir, "dir2"), 0644)
+				os.Mkdir(filepath.Join(tempDir, "dir2"), 0644)
 			},
 			// ingore event after remove watch in some os
 			expected:    UnknownType,

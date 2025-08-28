@@ -26,7 +26,6 @@ import (
 	"net"
 	"os"
 	"os/exec"
-	"path"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -98,7 +97,7 @@ func KubeletPortToPid(port int) (int, error) {
 
 // CmdLine returns the command line args of a process.
 func ProcCmdLine(procRoot string, pid int) ([]string, error) {
-	data, err := ReadFileNoStat(path.Join(procRoot, strconv.Itoa(pid), "cmdline"))
+	data, err := ReadFileNoStat(filepath.Join(procRoot, strconv.Itoa(pid), "cmdline"))
 	if err != nil {
 		return nil, err
 	}
@@ -197,7 +196,7 @@ func execCmdOnHostFn(cmds []string) ([]byte, int, error) {
 	}
 	cmdPrefix := []string{}
 	if AgentMode == DS_MODE {
-		cmdPrefix = append(cmdPrefix, "nsenter", fmt.Sprintf("--mount=%s", path.Join(Conf.ProcRootDir, "/1/ns/mnt")))
+		cmdPrefix = append(cmdPrefix, "nsenter", fmt.Sprintf("--mount=%s", filepath.Join(Conf.ProcRootDir, "/1/ns/mnt")))
 	}
 	cmdPrefix = append(cmdPrefix, cmds...)
 

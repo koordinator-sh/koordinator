@@ -57,7 +57,7 @@ func Test_syncNodeSLOSpecIfChanged(t *testing.T) {
 }
 `,
 			configuration.CPUBurstConfigKey: "{\"clusterStrategy\":{\"cfsQuotaBurstPeriodSeconds\":60}}",
-			configuration.SystemConfigKey:   "{\"clusterStrategy\":{\"minFreeKbytesFactor\":150,\"watermarkScaleFactor\":150}}",
+			configuration.SystemConfigKey:   "{\"clusterStrategy\":{}}",
 		},
 	}
 
@@ -76,7 +76,6 @@ func Test_syncNodeSLOSpecIfChanged(t *testing.T) {
 	}
 
 	expectTestingCfg1.CPUBurstCfgMerged.ClusterStrategy.CFSQuotaBurstPeriodSeconds = pointer.Int64(60)
-	expectTestingCfg1.SystemCfgMerged.ClusterStrategy.MinFreeKbytesFactor = pointer.Int64(150)
 
 	type fields struct {
 		oldCfg *sLOCfgCache
