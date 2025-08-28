@@ -87,6 +87,7 @@ func TestClusterColocationProfileValidatingPod(t *testing.T) {
 			},
 			wantAllowed: false,
 			wantReason:  `labels.koordinator.sh/qosClass: Invalid value: "LS": field is immutable`,
+			wantErr:     true,
 		},
 		{
 			name:      "validate remove QoS",
@@ -103,6 +104,7 @@ func TestClusterColocationProfileValidatingPod(t *testing.T) {
 			},
 			wantAllowed: false,
 			wantReason:  `labels.koordinator.sh/qosClass: Invalid value: "": field is immutable`,
+			wantErr:     true,
 		},
 		{
 			name:      "validate defined QoS",
@@ -159,6 +161,7 @@ func TestClusterColocationProfileValidatingPod(t *testing.T) {
 			},
 			wantAllowed: false,
 			wantReason:  `labels.koordinator.sh/qosClass: Required value: must specify koordinator QoS BE with koordinator colocation resources`,
+			wantErr:     true,
 		},
 		{
 			name:      "validate immutable priorityClass",
@@ -175,6 +178,7 @@ func TestClusterColocationProfileValidatingPod(t *testing.T) {
 			},
 			wantAllowed: false,
 			wantReason:  `spec.priority: Invalid value: "koord-prod": field is immutable`,
+			wantErr:     true,
 		},
 		{
 			name:      "validate remove priorityClass",
@@ -187,6 +191,7 @@ func TestClusterColocationProfileValidatingPod(t *testing.T) {
 			},
 			wantAllowed: false,
 			wantReason:  fmt.Sprintf(`spec.priority: Invalid value: %q: field is immutable`, extension.GetPodPriorityClassRaw(&corev1.Pod{})),
+			wantErr:     true,
 		},
 		{
 			name:      "validate koordinator priority",
@@ -207,6 +212,7 @@ func TestClusterColocationProfileValidatingPod(t *testing.T) {
 			},
 			wantAllowed: false,
 			wantReason:  `labels.koordinator.sh/priority: Invalid value: "8888": field is immutable`,
+			wantErr:     true,
 		},
 		{
 			name:      "validate remove koordinator priority",
@@ -223,6 +229,7 @@ func TestClusterColocationProfileValidatingPod(t *testing.T) {
 			},
 			wantAllowed: false,
 			wantReason:  `labels.koordinator.sh/priority: Invalid value: "": field is immutable`,
+			wantErr:     true,
 		},
 		{
 			name:      "allowed QoS and priorityClass combination: BE And NonProd",
@@ -278,6 +285,7 @@ func TestClusterColocationProfileValidatingPod(t *testing.T) {
 			},
 			wantAllowed: false,
 			wantReason:  `Pod: Forbidden: koordinator.sh/qosClass=BE and priorityClass=koord-prod cannot be used in combination`,
+			wantErr:     true,
 		},
 		{
 			name:      "forbidden QoS and priorityClass combination: LSR And Batch",
@@ -303,6 +311,7 @@ func TestClusterColocationProfileValidatingPod(t *testing.T) {
 			},
 			wantAllowed: false,
 			wantReason:  `Pod: Forbidden: koordinator.sh/qosClass=LSR and priorityClass=koord-batch cannot be used in combination`,
+			wantErr:     true,
 		},
 		{
 			name:      "forbidden QoS and priorityClass combination: LSR And Mid",
@@ -328,6 +337,7 @@ func TestClusterColocationProfileValidatingPod(t *testing.T) {
 			},
 			wantAllowed: false,
 			wantReason:  `Pod: Forbidden: koordinator.sh/qosClass=LSR and priorityClass=koord-mid cannot be used in combination`,
+			wantErr:     true,
 		},
 		{
 			name:      "forbidden QoS and priorityClass combination: LSR And Free",
@@ -353,6 +363,7 @@ func TestClusterColocationProfileValidatingPod(t *testing.T) {
 			},
 			wantAllowed: false,
 			wantReason:  `Pod: Forbidden: koordinator.sh/qosClass=LSR and priorityClass=koord-free cannot be used in combination`,
+			wantErr:     true,
 		},
 		{
 			name:      "validate resources - LSR And Prod",
@@ -411,6 +422,7 @@ func TestClusterColocationProfileValidatingPod(t *testing.T) {
 			},
 			wantAllowed: false,
 			wantReason:  `pod.spec.containers[*].resources.requests: Required value: LSR Pod must declare the requested CPUs`,
+			wantErr:     true,
 		},
 		{
 			name:      "forbidden resources - LSR And Prod: non-integer CPUs",
@@ -442,6 +454,7 @@ func TestClusterColocationProfileValidatingPod(t *testing.T) {
 			},
 			wantAllowed: false,
 			wantReason:  `pod.spec.containers[*].resources.requests: Invalid value: "100m": the requested CPUs of LSR Pod must be integer`,
+			wantErr:     true,
 		},
 	}
 
