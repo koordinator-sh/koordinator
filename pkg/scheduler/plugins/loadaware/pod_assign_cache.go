@@ -37,7 +37,49 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
-// podAssignCache stores the Pod information that has been successfully scheduled or is about to be bound
+// podAssignCache stores the NodeMetric and Pod information that has been successfully scheduled or is about to be bound.
+//
+// The cache must handle multiple goroutines' object delta events concurrently.
+//  1. When NodeMetric or Pod add or update event on a new node is received, a new nodeInfo should be created and stored in the cache.
+//  2. When NodeMetric or Pod event on an existing node in cache is received, the corresponding nodeInfo should be updated.
+//  3. When NodeMetric and Pod on a node are all deleted, the corresponding nodeInfo will be empty and should be deleted.
+//
+// # Implementation
+//
+// We implement the cache with nodeInfo items indexed by nodeName and maintain them in following rules:
+//  1. To delete empty nodeInfo from cache correctly, handlers should hold both the cache lock and this nodeInfo lock when deleting.
+//  2. To minimize event handlers' lock occupation on the entire cache, especially write lock, we choose to lock the nodeInfo
+//     first and the cache then for deletion. We don't need to hold read lock the cache once for update,
+//     release it and write lock the cache again for deletion if events makes nodeInfo empty.
+//  3. To prevent deadlock risk with Rule 2, we MUST not lock any nodeInfo when holding cache lock already,
+//     which means we have to unlock the cache before locking the nodeInfo.
+//  4. Goroutine might get a write locked nodeInfo from cache because of Rule 3, which another goroutine is adding
+//     or deleting object on it. When it grabs the lock, this nodeInfo might be empty and removed from cache.
+//     We add a deleted flag in nodeInfo, which indicates this case. For adding or updating object event, we MUST not use
+//     the deleted nodeInfo, instead, we should retry to get or create a new one from cache to prevent object event missing.
+//     For deleting object event or reading nodeInfo data, we can ignore this flag.
+//  5. When add or update object, we will try to get a loaded nodeInfo from cache, if not exist, we will create and store a new one.
+//     When new nodeInfo is stored, it should be locked already to avoid race conditions on reading brought by Rule 3.
+//
+// # Concurrent Scenarios
+// 
+// Adding on existing nodeInfo
+//  - Alice: <get nodeInfo> - (nodeInfo Lock) - (nodeInfo Update) - (nodeInfo Unlock)
+//  - Bob: <get nodeInfo> - (nodeInfo Lock after Alice Unlock) - (nodeInfo Update) - (nodeInfo Unlock)
+// Adding for not existing nodeInfo
+//  - Alice: <create locked nodeInfo, store, return> - (nodeInfo Update) - (nodeInfo Unlock)
+//  - Bob: <get nodeInfo after Alice Unlock cache> - (nodeInfo Lock after Alice Unlock) - (nodeInfo Update) - (nodeInfo Unlock)
+// Deleting and adding nodeInfo
+//  - Alice: <get nodeInfo> - (nodeInfo Lock) - (nodeInfo Update) - (nodeInfo tag deleted) - <delete nodeInfo> - (nodeInfo Unlock)
+//  - Bob: <get nodeInfo when cache is not locked> - (nodeInfo Lock after Alice Unlock) - (nodeInfo find deleted) - (nodeInfo Unlock) - return failed and retry adding
+// Reading and writing on existing nodeInfo
+//  - Alice: <get nodeInfo> - (nodeInfo Lock) - (nodeInfo Update) - (nodeInfo Unlock)
+//  - Bob: <get nodeInfo> - (nodeInfo RLock after Alice Unlock)- (nodeInfo Read) - (nodeInfo RUnlock)
+// Reading and writing on not existing nodeInfo
+//  - Alice: <create locked nodeInfo, store, return> - (nodeInfo Update) - (nodeInfo Unlock)
+//  - Bob: <get nodeInfo> - (nodeInfo RLock after Alice Unlock)- (nodeInfo Read) - (nodeInfo RUnlock)
+//
+// <...> represents cache is locked before action and unlocked after action
 type podAssignCache struct {
 	items      sync.Map // items stores nodeInfo, using sync.Map because nodes are not frequently added or deleted.
 	estimator  estimator.Estimator
