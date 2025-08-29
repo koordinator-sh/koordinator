@@ -22,6 +22,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/qosmanager/helpers/copilot"
+
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
@@ -47,12 +49,12 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
-func Test_memoryEvict(t *testing.T) {
+type podMemSample struct {
+	UID     string
+	MemUsed resource.Quantity
+}
 
-	type podMemSample struct {
-		UID     string
-		MemUsed resource.Quantity
-	}
+func Test_memoryEvict(t *testing.T) {
 	type args struct {
 		name               string
 		node               *corev1.Node
@@ -424,15 +426,118 @@ func Test_memoryEvict(t *testing.T) {
 	}
 }
 
-func createMemoryEvictTestPod(name string, qosClass apiext.QoSClass, priority int32) *corev1.Pod {
+func Test_killAndEvictYarnContainerWithCopilotAgent(t *testing.T) {
+	socketPath := "/tmp/copilot-test.sock"
+	yarnCopilotServer := copilot.NewYarnCopilotServer(socketPath)
+	ctx, cancel := context.WithCancel(context.Background())
+	go yarnCopilotServer.Run(ctx)
+	defer cancel()
+	time.Sleep(1 * time.Second)
+	labels := map[string]string{}
+	labels[apiext.LabelPodQoS] = string(apiext.QoSBE)
+	labels["app.kubernetes.io/component"] = "node-manager"
+	pods := []*corev1.Pod{
+		createMemoryEvictTestPod("test_be_pod_priority100_2", apiext.QoSBE, 100),
+		createMemoryEvictTestPodWithLabel("test_be_pod_priority100_1", apiext.QoSBE, 100, labels),
+		createMemoryEvictTestPod("test_be_pod_priority120", apiext.QoSBE, 120),
+	}
+	node := testutil.MockTestNode("80", "120G")
+	nodeMemUsed := resource.MustParse("110G")
+	thresholdConfig := &slov1alpha1.ResourceThresholdStrategy{
+		Enable:                      pointer.Bool(true),
+		MemoryEvictThresholdPercent: pointer.Int64(82),
+	}
+	podMetrics := []podMemSample{
+		{UID: "test_be_pod_priority100_1", MemUsed: resource.MustParse("10G")},
+		{UID: "test_be_pod_priority100_2", MemUsed: resource.MustParse("10G")},
+		{UID: "test_be_pod_priority120", MemUsed: resource.MustParse("10G")},
+	}
+	ctl := gomock.NewController(t)
+	defer ctl.Finish()
+	mockStatesInformer := mock_statesinformer.NewMockStatesInformer(ctl)
+	mockStatesInformer.EXPECT().GetAllPods().Return(testutil.GetPodMetas(pods)).AnyTimes()
+	mockStatesInformer.EXPECT().GetNode().Return(node).AnyTimes()
+	mockStatesInformer.EXPECT().GetNodeSLO().Return(testutil.GetNodeSLOByThreshold(thresholdConfig)).AnyTimes()
+
+	mockMetricCache := mock_metriccache.NewMockMetricCache(ctl)
+	mockResultFactory := mock_metriccache.NewMockAggregateResultFactory(ctl)
+	nodeMemQueryMeta, err := metriccache.NodeMemoryUsageMetric.BuildQueryMeta(nil)
+	assert.NoError(t, err)
+	result := mock_metriccache.NewMockAggregateResult(ctl)
+	result.EXPECT().Value(gomock.Any()).Return(float64(nodeMemUsed.Value()), nil).AnyTimes()
+	result.EXPECT().Count().Return(1).AnyTimes()
+	mockResultFactory.EXPECT().New(nodeMemQueryMeta).Return(result).AnyTimes()
+	metriccache.DefaultAggregateResultFactory = mockResultFactory
+	mockQuerier := mock_metriccache.NewMockQuerier(ctl)
+	mockQuerier.EXPECT().QueryAndClose(nodeMemQueryMeta, gomock.Any(), gomock.Any()).SetArg(2, *result).Return(nil).AnyTimes()
+	mockMetricCache.EXPECT().Querier(gomock.Any(), gomock.Any()).Return(mockQuerier, nil).AnyTimes()
+	for _, podMetric := range podMetrics {
+		result := mock_metriccache.NewMockAggregateResult(ctl)
+		result.EXPECT().Value(gomock.Any()).Return(float64(podMetric.MemUsed.Value()), nil).AnyTimes()
+		result.EXPECT().Count().Return(1).AnyTimes()
+		podQueryMeta, err := metriccache.PodMemUsageMetric.BuildQueryMeta(metriccache.MetricPropertiesFunc.Pod(podMetric.UID))
+		assert.NoError(t, err)
+		mockResultFactory.EXPECT().New(podQueryMeta).Return(result).AnyTimes()
+		mockQuerier.EXPECT().QueryAndClose(podQueryMeta, gomock.Any(), gomock.Any()).SetArg(2, *result).Return(nil).AnyTimes()
+		//mockPodQueryResult := metriccache.PodResourceQueryResult{Metric: podMetric}
+		//mockMetricCache.EXPECT().GetPodResourceMetric(&podMetric.PodUID, gomock.Any()).Return(mockPodQueryResult).AnyTimes()
+	}
+	fakeRecorder := &testutil.FakeRecorder{}
+	client := clientsetfake.NewSimpleClientset()
+
+	stop := make(chan struct{})
+	evictor := framework.NewEvictor(client, fakeRecorder, policyv1beta1.SchemeGroupVersion.Version)
+	evictor.Start(stop)
+	defer func() { stop <- struct{}{} }()
+
+	runtime.DockerHandler = handler.NewFakeRuntimeHandler()
+	var containers []*critesting.FakeContainer
+	for _, pod := range pods {
+		_, err := client.CoreV1().Pods(pod.Namespace).Create(context.TODO(), pod, metav1.CreateOptions{})
+		assert.NoError(t, err, "createPod ERROR!")
+		for _, containerStatus := range pod.Status.ContainerStatuses {
+			_, containerId, _ := util.ParseContainerId(containerStatus.ContainerID)
+			fakeContainer := &critesting.FakeContainer{
+				SandboxID:       string(pod.UID),
+				ContainerStatus: runtimeapi.ContainerStatus{Id: containerId},
+			}
+			containers = append(containers, fakeContainer)
+		}
+	}
+	runtime.DockerHandler.(*handler.FakeRuntimeHandler).SetFakeContainers(containers)
+	config := framework.NewDefaultConfig()
+	config.EvictByCopilotAgent = true
+	config.EvictByCopilotEndPoint = socketPath
+	opt := &framework.Options{
+		StatesInformer:      mockStatesInformer,
+		MetricCache:         mockMetricCache,
+		Config:              config,
+		MetricAdvisorConfig: maframework.NewDefaultConfig(),
+		CopilotAgent:        copilot.NewCopilotAgent(socketPath),
+	}
+	m := New(opt)
+	memoryEvictor := m.(*memoryEvictor)
+	memoryEvictor.Setup(&framework.Context{Evictor: evictor})
+	memoryEvictor.lastEvictTime = time.Now().Add(-30 * time.Second)
+	memoryEvictor.onlyEvictByAPI = true
+	memoryEvictor.memoryEvict()
+	assert.True(t, memoryEvictor.evictor.IsPodEvicted(pods[0]))
+	assert.False(t, memoryEvictor.evictor.IsPodEvicted(pods[1]))
+	assert.False(t, memoryEvictor.evictor.IsPodEvicted(pods[2]))
+
+}
+
+func createMemoryEvictTestPodWithLabel(name string, qosClass apiext.QoSClass, priority int32, labels map[string]string) *corev1.Pod {
+	if labels == nil {
+		labels = make(map[string]string)
+	}
+	labels[apiext.LabelPodQoS] = string(qosClass)
 	return &corev1.Pod{
 		TypeMeta: metav1.TypeMeta{Kind: "Pod"},
 		ObjectMeta: metav1.ObjectMeta{
-			Name: name,
-			UID:  types.UID(name),
-			Labels: map[string]string{
-				apiext.LabelPodQoS: string(qosClass),
-			},
+			Name:   name,
+			UID:    types.UID(name),
+			Labels: labels,
 		},
 		Spec: corev1.PodSpec{
 			Containers: []corev1.Container{
@@ -454,4 +559,8 @@ func createMemoryEvictTestPod(name string, qosClass apiext.QoSClass, priority in
 			},
 		},
 	}
+}
+
+func createMemoryEvictTestPod(name string, qosClass apiext.QoSClass, priority int32) *corev1.Pod {
+	return createMemoryEvictTestPodWithLabel(name, qosClass, priority, nil)
 }
