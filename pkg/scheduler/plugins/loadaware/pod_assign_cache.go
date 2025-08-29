@@ -311,16 +311,16 @@ func (p *podAssignCache) assign(nodeName string, pod *corev1.Pod) {
 		estimatedDeadline: estimatedDeadline,
 	}
 
-	// We only retry 5 times here, to avoid any bug in AddOrUpdate that keeps returning false and retrying forever,
+	// We only try 2 times here, to avoid any bug in AddOrUpdate that keeps returning false and retrying forever,
 	// which will block the whole informer event handling procedure.
-	for i := 0; i < 5; i++ {
+	for i := 0; i < 2; i++ {
 		n, created := p.getOrCreateNodeInfo(nodeName)
 		// if nodeInfo is created in getOrCreate, it is locked already
 		if n.AddOrUpdatePod(newPod, created) {
 			return
 		}
 	}
-	klog.ErrorS(nil, "Failed to assign pod in cache, retried 5 times", "pod", klog.KObj(pod), "node", nodeName)
+	klog.ErrorS(nil, "Failed to assign pod in cache after retried", "pod", klog.KObj(pod), "node", nodeName)
 }
 
 func (p *podAssignCache) shouldEstimatePodDeadline(pod *corev1.Pod, timestamp time.Time) time.Time {
@@ -485,16 +485,16 @@ func (p *podAssignCache) NodeMetricHandler() cache.ResourceEventHandler {
 }
 
 func (p *podAssignCache) AddOrUpdateNodeMetric(metric *slov1alpha1.NodeMetric) {
-	// We only retry 5 times here, to avoid any bug in AddOrUpdate that keeps returning false and retrying forever,
+	// We only try 2 times here, to avoid any bug in AddOrUpdate that keeps returning false and retrying forever,
 	// which will block the whole informer event handling procedure.
-	for i := 0; i < 5; i++ {
+	for i := 0; i < 2; i++ {
 		n, created := p.getOrCreateNodeInfo(metric.Name)
 		// if nodeInfo is created in getOrCreate, it is locked already
 		if n.AddOrUpdateNodeMetric(metric, p, created) {
 			return
 		}
 	}
-	klog.ErrorS(nil, "Failed to add or update nodemetric in cache, retried 5 times", "node", klog.KObj(metric))
+	klog.ErrorS(nil, "Failed to add or update nodemetric in cache after retried", "node", klog.KObj(metric))
 }
 
 func (p *podAssignCache) DeleteNodeMetric(name string) {
