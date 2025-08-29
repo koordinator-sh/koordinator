@@ -28,23 +28,29 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/uuid"
+	clock "k8s.io/utils/clock/testing"
 
+	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/loadaware/estimator"
 )
 
 func TestQueryNode(t *testing.T) {
 	t.Run("test", func(t *testing.T) {
-
-		preTimeNowFn := timeNowFn
-		defer func() {
-			timeNowFn = preTimeNowFn
-		}()
-		timeNowFn = fakeTimeNowFn
-		e, _ := estimator.NewDefaultEstimator(&config.LoadAwareSchedulingArgs{}, nil)
-		pl := &Plugin{
-			podAssignCache: newPodAssignCache(e, &config.LoadAwareSchedulingArgs{}),
+		now := metav1.Now().Rfc3339Copy().Time
+		args := &config.LoadAwareSchedulingArgs{
+			EstimatedScalingFactors: map[corev1.ResourceName]int64{
+				corev1.ResourceCPU:    100,
+				corev1.ResourceMemory: 100,
+			},
 		}
+		v := NewResourceVectorizerFromArgs(args)
+		e, _ := estimator.NewDefaultEstimator(args, nil)
+		pl := &Plugin{
+			vectorizer:     v,
+			podAssignCache: newPodAssignCache(e, v, args),
+		}
+		pl.podAssignCache.clock = clock.NewFakeClock(now)
 		testNodeName := "test-node"
 		pendingPod := &corev1.Pod{
 			ObjectMeta: metav1.ObjectMeta{
@@ -117,6 +123,7 @@ func TestQueryNode(t *testing.T) {
 			},
 		}
 		pl.podAssignCache.unAssign(testNodeName, terminatedPod)
+		pl.podAssignCache.AddOrUpdateNodeMetric(&slov1alpha1.NodeMetric{ObjectMeta: metav1.ObjectMeta{Name: testNodeName}})
 
 		// got unknown node
 		engine := gin.Default()
@@ -142,10 +149,17 @@ func TestQueryNode(t *testing.T) {
 		expectedResp = &NodeAssignInfoData{
 			Pods: []PodAssignInfoData{
 				{
-					Timestamp: timeNowFn(),
+					Timestamp: now,
 					Pod:       assignedPod,
 				},
 			},
+			ProdUsage:         corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("0"), corev1.ResourceMemory: resource.MustParse("0")},
+			NodeDelta:         corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("4"), corev1.ResourceMemory: resource.MustParse("8Gi")},
+			ProdDelta:         corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("4"), corev1.ResourceMemory: resource.MustParse("8Gi")},
+			NodeEstimated:     corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("4"), corev1.ResourceMemory: resource.MustParse("8Gi")},
+			NodeDeltaPods:     []string{"test-pod-1"},
+			ProdDeltaPods:     []string{"test-pod-1"},
+			NodeEstimatedPods: []string{"test-pod-1"},
 		}
 		assert.Equal(t, expectedResp, got)
 
@@ -158,7 +172,12 @@ func TestQueryNode(t *testing.T) {
 		got = &NodeAssignInfoData{}
 		err = json.NewDecoder(w.Result().Body).Decode(got)
 		assert.NoError(t, err)
-		expectedResp = &NodeAssignInfoData{}
+		expectedResp = &NodeAssignInfoData{
+			ProdUsage:     corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("0"), corev1.ResourceMemory: resource.MustParse("0")},
+			NodeDelta:     corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("0"), corev1.ResourceMemory: resource.MustParse("0")},
+			ProdDelta:     corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("0"), corev1.ResourceMemory: resource.MustParse("0")},
+			NodeEstimated: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("0"), corev1.ResourceMemory: resource.MustParse("0")},
+		}
 		assert.Equal(t, expectedResp, got)
 	})
 }

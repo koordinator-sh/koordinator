@@ -395,6 +395,7 @@ func autoConvert_v1_LoadAwareSchedulingArgs_To_config_LoadAwareSchedulingArgs(in
 	out.ResourceWeights = *(*map[corev1.ResourceName]int64)(unsafe.Pointer(&in.ResourceWeights))
 	out.UsageThresholds = *(*map[corev1.ResourceName]int64)(unsafe.Pointer(&in.UsageThresholds))
 	out.ProdUsageThresholds = *(*map[corev1.ResourceName]int64)(unsafe.Pointer(&in.ProdUsageThresholds))
+	out.ProdUsageIncludeSys = in.ProdUsageIncludeSys
 	if err := metav1.Convert_Pointer_bool_To_bool(&in.ScoreAccordingProdUsage, &out.ScoreAccordingProdUsage, s); err != nil {
 		return err
 	}
@@ -412,6 +413,7 @@ func autoConvert_v1_LoadAwareSchedulingArgs_To_config_LoadAwareSchedulingArgs(in
 	} else {
 		out.Aggregated = nil
 	}
+	out.SupportedResources = *(*[]corev1.ResourceName)(unsafe.Pointer(&in.SupportedResources))
 	return nil
 }
 
@@ -427,6 +429,7 @@ func autoConvert_config_LoadAwareSchedulingArgs_To_v1_LoadAwareSchedulingArgs(in
 	out.ResourceWeights = *(*map[corev1.ResourceName]int64)(unsafe.Pointer(&in.ResourceWeights))
 	out.UsageThresholds = *(*map[corev1.ResourceName]int64)(unsafe.Pointer(&in.UsageThresholds))
 	out.ProdUsageThresholds = *(*map[corev1.ResourceName]int64)(unsafe.Pointer(&in.ProdUsageThresholds))
+	out.ProdUsageIncludeSys = in.ProdUsageIncludeSys
 	if err := metav1.Convert_bool_To_Pointer_bool(&in.ScoreAccordingProdUsage, &out.ScoreAccordingProdUsage, s); err != nil {
 		return err
 	}
@@ -444,6 +447,7 @@ func autoConvert_config_LoadAwareSchedulingArgs_To_v1_LoadAwareSchedulingArgs(in
 	} else {
 		out.Aggregated = nil
 	}
+	out.SupportedResources = *(*[]corev1.ResourceName)(unsafe.Pointer(&in.SupportedResources))
 	return nil
 }
 

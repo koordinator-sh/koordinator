@@ -49,6 +49,9 @@ type LoadAwareSchedulingArgs struct {
 	// ProdUsageThresholds indicates the resource utilization threshold of Prod Pods compared to the whole machine.
 	// Not enabled by default
 	ProdUsageThresholds map[corev1.ResourceName]int64
+	// ProdUsageIncludeSys indicates whether to include system usage (not used by pods)
+	// when summing up current usage for prod pods.
+	ProdUsageIncludeSys bool
 	// ScoreAccordingProdUsage controls whether to score according to the utilization of Prod Pod
 	ScoreAccordingProdUsage bool
 	// Estimator indicates the expected Estimator to use
@@ -66,6 +69,14 @@ type LoadAwareSchedulingArgs struct {
 	AllowCustomizeEstimation bool
 	// Aggregated supports resource utilization filtering and scoring based on percentile statistics
 	Aggregated *LoadAwareSchedulingAggregatedArgs
+	// SupportedResourceNames is the list of extra resource names that can be used in load-aware scheduling.
+	// cpu, memory and all other resources that show up in args are supported by default.
+	//
+	// If more resource are added in collection, don't show up as
+	// filter thresholds or score weights in plugin args
+	// and only set up in custom node annotations,
+	// we should pass these resource names in plugin args explicitly.
+	SupportedResources []corev1.ResourceName
 }
 
 type LoadAwareSchedulingAggregatedArgs struct {
