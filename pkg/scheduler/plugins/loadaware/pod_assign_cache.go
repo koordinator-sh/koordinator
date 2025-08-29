@@ -62,22 +62,26 @@ import (
 //     When new nodeInfo is stored, it should be locked already to avoid race conditions on reading brought by Rule 3.
 //
 // # Concurrent Scenarios
-// 
+//
 // Adding on existing nodeInfo
-//  - Alice: <get nodeInfo> - (nodeInfo Lock) - (nodeInfo Update) - (nodeInfo Unlock)
-//  - Bob: <get nodeInfo> - (nodeInfo Lock after Alice Unlock) - (nodeInfo Update) - (nodeInfo Unlock)
+//   - Alice: <get nodeInfo> - (nodeInfo Lock) - (nodeInfo Update) - (nodeInfo Unlock)
+//   - Bob: <get nodeInfo> - (nodeInfo Lock after Alice Unlock) - (nodeInfo Update) - (nodeInfo Unlock)
+//
 // Adding for not existing nodeInfo
-//  - Alice: <create locked nodeInfo, store, return> - (nodeInfo Update) - (nodeInfo Unlock)
-//  - Bob: <get nodeInfo after Alice Unlock cache> - (nodeInfo Lock after Alice Unlock) - (nodeInfo Update) - (nodeInfo Unlock)
+//   - Alice: <create locked nodeInfo, store, return> - (nodeInfo Update) - (nodeInfo Unlock)
+//   - Bob: <get nodeInfo after Alice Unlock cache> - (nodeInfo Lock after Alice Unlock) - (nodeInfo Update) - (nodeInfo Unlock)
+//
 // Deleting and adding nodeInfo
-//  - Alice: <get nodeInfo> - (nodeInfo Lock) - (nodeInfo Update) - (nodeInfo tag deleted) - <delete nodeInfo> - (nodeInfo Unlock)
-//  - Bob: <get nodeInfo when cache is not locked> - (nodeInfo Lock after Alice Unlock) - (nodeInfo find deleted) - (nodeInfo Unlock) - return failed and retry adding
+//   - Alice: <get nodeInfo> - (nodeInfo Lock) - (nodeInfo Update) - (nodeInfo tag deleted) - <delete nodeInfo> - (nodeInfo Unlock)
+//   - Bob: <get nodeInfo when cache is not locked> - (nodeInfo Lock after Alice Unlock) - (nodeInfo find deleted) - (nodeInfo Unlock) - return failed and retry adding
+//
 // Reading and writing on existing nodeInfo
-//  - Alice: <get nodeInfo> - (nodeInfo Lock) - (nodeInfo Update) - (nodeInfo Unlock)
-//  - Bob: <get nodeInfo> - (nodeInfo RLock after Alice Unlock)- (nodeInfo Read) - (nodeInfo RUnlock)
+//   - Alice: <get nodeInfo> - (nodeInfo Lock) - (nodeInfo Update) - (nodeInfo Unlock)
+//   - Bob: <get nodeInfo> - (nodeInfo RLock after Alice Unlock)- (nodeInfo Read) - (nodeInfo RUnlock)
+//
 // Reading and writing on not existing nodeInfo
-//  - Alice: <create locked nodeInfo, store, return> - (nodeInfo Update) - (nodeInfo Unlock)
-//  - Bob: <get nodeInfo> - (nodeInfo RLock after Alice Unlock)- (nodeInfo Read) - (nodeInfo RUnlock)
+//   - Alice: <create locked nodeInfo, store, return> - (nodeInfo Update) - (nodeInfo Unlock)
+//   - Bob: <get nodeInfo after Alice Unlock cache> - (nodeInfo RLock after Alice Unlock)- (nodeInfo Read) - (nodeInfo RUnlock)
 //
 // <...> represents cache is locked before action and unlocked after action
 type podAssignCache struct {
