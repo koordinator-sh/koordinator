@@ -78,6 +78,7 @@ func (p *Plugin) adaptForDevicePlugin(object metav1.Object, allocationResult api
 	}
 
 	if gpuAllocation, ok := allocationResult[schedulingv1alpha1.GPU]; ok {
+		defaultGPUDevicePluginAdapter.nodeName = nodeName
 		if err := defaultGPUDevicePluginAdapter.Adapt(object, gpuAllocation); err != nil {
 			return err
 		}
@@ -118,10 +119,14 @@ func (a *generalDevicePluginAdapter) Adapt(object metav1.Object, _ []*apiext.Dev
 // generalGPUDevicePluginAdapter annotates necessary information to pod which resolves problems when using device plugin
 // with koord-scheduler.
 type generalGPUDevicePluginAdapter struct {
+	nodeName string
 }
 
 func (a *generalGPUDevicePluginAdapter) Adapt(object metav1.Object, allocation []*apiext.DeviceAllocation) error {
 	object.GetAnnotations()[AnnotationGPUMinors] = buildGPUMinorsStr(allocation)
+	if object.GetLabels() != nil && object.GetLabels()[apiext.LabelGPUIsolationProvider] == string(apiext.GPUIsolationProviderHAMICore) {
+		object.GetLabels()[apiext.LabelHAMIVGPUNodeName] = a.nodeName
+	}
 	return nil
 }
 
