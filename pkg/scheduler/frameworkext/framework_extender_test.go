@@ -1184,6 +1184,7 @@ type fakeReservationScorePlugin struct {
 	err    error
 
 	enableNormalization bool
+	isPreAllocation     bool
 }
 
 func (f *fakeReservationScorePlugin) Name() string { return f.name }
@@ -1192,6 +1193,9 @@ func (f *fakeReservationScorePlugin) ScoreReservation(ctx context.Context, cycle
 	var status *framework.Status
 	if f.err != nil {
 		status = framework.AsStatus(f.err)
+	}
+	if f.isPreAllocation {
+		return f.scores[pod.GetName()], status
 	}
 	return f.scores[reservationInfo.GetName()], status
 }
@@ -1338,6 +1342,147 @@ func TestReservationScorePlugin(t *testing.T) {
 			}
 
 			pluginToReservationScores, status := extender.RunReservationScorePlugins(context.TODO(), cycleState, &corev1.Pod{}, rInfos, "test-node-1")
+			assert.Equal(t, tt.wantStatus, status.IsSuccess())
+			assert.Equal(t, tt.wantScores, pluginToReservationScores)
+		})
+	}
+}
+
+func TestRunReservationPreAllocationScorePlugins(t *testing.T) {
+	testRInfo := NewReservationInfo(&schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-reservation-1",
+		},
+	})
+	tests := []struct {
+		name       string
+		pods       []*corev1.Pod
+		plugins    []*fakeReservationScorePlugin
+		wantScores PluginToReservationScores
+		wantStatus bool
+	}{
+		{
+			name: "normal score",
+			pods: []*corev1.Pod{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-pod-1",
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-pod-2",
+					},
+				},
+			},
+			plugins: []*fakeReservationScorePlugin{
+				{
+					name: "pl-1", scores: map[string]int64{
+						"test-pod-1": 1,
+						"test-pod-2": 1,
+					},
+					isPreAllocation: true,
+				},
+				{
+					name: "pl-2", scores: map[string]int64{
+						"test-pod-1": 2,
+						"test-pod-2": 2,
+					},
+					isPreAllocation: true,
+				},
+			},
+			wantScores: PluginToReservationScores{
+				"pl-1": {
+					{Name: "test-pod-1", Score: 1},
+					{Name: "test-pod-2", Score: 1},
+				},
+				"pl-2": {
+					{Name: "test-pod-1", Score: 2},
+					{Name: "test-pod-2", Score: 2},
+				},
+			},
+			wantStatus: true,
+		},
+		{
+			name: "normalize score",
+			pods: []*corev1.Pod{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-pod-1",
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-pod-2",
+					},
+				},
+			},
+			plugins: []*fakeReservationScorePlugin{
+				{
+					name: "pl-1",
+					scores: map[string]int64{
+						"test-pod-1": 100,
+						"test-pod-2": 200,
+					},
+					enableNormalization: true,
+					isPreAllocation:     true,
+				},
+				{
+					name: "pl-2",
+					scores: map[string]int64{
+						"test-pod-1": 100,
+						"test-pod-2": 50,
+					},
+					enableNormalization: true,
+					isPreAllocation:     true,
+				},
+			},
+			wantScores: PluginToReservationScores{
+				"pl-1": {
+					{Name: "test-pod-1", Score: 50},
+					{Name: "test-pod-2", Score: 100},
+				},
+				"pl-2": {
+					{Name: "test-pod-1", Score: 100},
+					{Name: "test-pod-2", Score: 50},
+				},
+			},
+			wantStatus: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			registeredPlugins := []schedulertesting.RegisterPluginFunc{
+				schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
+				schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
+			}
+			fakeClient := kubefake.NewSimpleClientset()
+			sharedInformerFactory := informers.NewSharedInformerFactory(fakeClient, 0)
+			fh, err := schedulertesting.NewFramework(
+				context.TODO(),
+				registeredPlugins,
+				"koord-scheduler",
+				frameworkruntime.WithClientSet(fakeClient),
+				frameworkruntime.WithInformerFactory(sharedInformerFactory),
+			)
+			assert.NoError(t, err)
+
+			koordClientSet := koordfake.NewSimpleClientset()
+			koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
+			extenderFactory, _ := NewFrameworkExtenderFactory(
+				WithKoordinatorClientSet(koordClientSet),
+				WithKoordinatorSharedInformerFactory(koordSharedInformerFactory),
+			)
+
+			extender := NewFrameworkExtender(extenderFactory, fh)
+			impl := extender.(*frameworkExtenderImpl)
+			for _, pl := range tt.plugins {
+				impl.updatePlugins(pl)
+			}
+
+			cycleState := framework.NewCycleState()
+
+			pluginToReservationScores, status := extender.RunReservationPreAllocationScorePlugins(context.TODO(), cycleState, testRInfo, tt.pods, "test-node-1")
 			assert.Equal(t, tt.wantStatus, status.IsSuccess())
 			assert.Equal(t, tt.wantScores, pluginToReservationScores)
 		})

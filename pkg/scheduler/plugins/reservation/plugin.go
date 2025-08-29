@@ -846,27 +846,8 @@ func (pl *Plugin) FilterReservation(ctx context.Context, cycleState *framework.C
 	return nil
 }
 
-func (pl *Plugin) FilterNominateReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, reservationInfo *frameworkext.ReservationInfo, nodeName string) *framework.Status {
+func (pl *Plugin) FilterNominateReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, rInfo *frameworkext.ReservationInfo, nodeName string) *framework.Status {
 	// TODO(joseph): We can consider optimizing these codes. It seems that there is no need to exist at present.
-	state := getStateData(cycleState)
-
-	nodeRState := state.nodeReservationStates[nodeName]
-	if nodeRState == nil {
-		nodeRState = &nodeReservationState{}
-	}
-
-	var rInfo *frameworkext.ReservationInfo
-	for _, v := range nodeRState.matchedOrIgnored {
-		if v.UID() == reservationInfo.UID() {
-			rInfo = v
-			break
-		}
-	}
-
-	if rInfo == nil {
-		return framework.AsStatus(fmt.Errorf("impossible, there is no relevant Reservation information"))
-	}
-
 	if rInfo.IsAllocateOnce() && rInfo.GetAllocatedPods() > 0 {
 		return framework.NewStatus(framework.Unschedulable, "reservation has allocateOnce enabled and has already been allocated")
 	}
@@ -876,11 +857,23 @@ func (pl *Plugin) FilterNominateReservation(ctx context.Context, cycleState *fra
 		return framework.NewStatus(framework.UnschedulableAndUnresolvable, "missing node")
 	}
 
+	if rInfo.IsPreAllocation() { // For a PreAllocation, needs to filter the pre-allocatable pod for the reservation.
+		return pl.filterWithPreAllocatablePods(ctx, cycleState, rInfo, nodeInfo, []*corev1.Pod{pod}, true)
+	}
+
 	return pl.filterWithReservations(ctx, cycleState, pod, nodeInfo, []*frameworkext.ReservationInfo{rInfo}, true)
 }
 
 func (pl *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) *framework.Status {
-	if reservationutil.IsReservePod(pod) {
+	state := getStateData(cycleState)
+	// clean scheduling cycle to avoid unnecessary memory cost before entering the binding
+	defer state.CleanSchedulingData()
+
+	var (
+		nominatedPod             *corev1.Pod
+		nominatedReservationInfo *frameworkext.ReservationInfo
+	)
+	if reservationutil.IsReservePod(pod) { // reservation
 		rName := reservationutil.GetReservationNameFromReservePod(pod)
 		assumedReservation, err := pl.rLister.Get(rName)
 		if err != nil {
@@ -889,52 +882,75 @@ func (pl *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState,
 		assumedReservation = assumedReservation.DeepCopy()
 		assumedReservation.Status.NodeName = nodeName
 		pl.reservationCache.assumeReservation(assumedReservation)
-		return nil
-	}
 
-	state := getStateData(cycleState)
-
-	if apiext.IsReservationIgnored(pod) {
-		// clean scheduling cycle to avoid unnecessary memory cost before entering the binding
-		state.CleanSchedulingData()
-		klog.V(4).InfoS("Reserve pod to node and reservations are ignored",
-			"pod", klog.KObj(pod), "node", nodeName)
-		return nil
-	}
-
-	nominatedReservation := pl.handle.GetReservationNominator().GetNominatedReservation(pod, nodeName)
-	if nominatedReservation == nil {
-		// The scheduleOne skip scores and reservation nomination if there is only one node available.
-		var status *framework.Status
-		nominatedReservation, status = pl.handle.GetReservationNominator().NominateReservation(ctx, cycleState, pod, nodeName)
-		if !status.IsSuccess() {
-			return status
-		}
-		if nominatedReservation == nil {
-			if state.hasAffinity {
-				return framework.NewStatus(framework.Unschedulable, ErrReasonReservationAffinity)
-			}
-			klog.V(5).Infof("Skip reserve with reservation since there are no matched reservations, pod %v, node: %v", klog.KObj(pod), nodeName)
-			// clean scheduling cycle to avoid unnecessary memory cost before entering the binding
-			state.CleanSchedulingData()
+		// If the pod represents to a pre-allocation reservation, we need to nominate a pre-allocatable pod for it.
+		// Otherwise, assuming the reservation is enough for a non-pre-allocation reservation.
+		if !reservationutil.IsReservePodPreAllocation(pod) {
 			return nil
 		}
-		pl.handle.GetReservationNominator().AddNominatedReservation(pod, nodeName, nominatedReservation)
+
+		var status *framework.Status
+		nominatedPod = pl.GetNominatedPreAllocation(state.rInfo, nodeName)
+		if nominatedPod == nil {
+			nominatedPod, status = pl.NominatePreAllocation(ctx, cycleState, state.rInfo, nodeName)
+			if !status.IsSuccess() {
+				return status
+			}
+			if nominatedPod == nil {
+				if state.isPreAllocationRequired {
+					return framework.NewStatus(framework.Unschedulable, ErrReasonNoPodsMeetPreAllocationRequirements)
+				}
+				klog.V(5).Infof("Skip reserve with pre-allocation since there are no matched pod, pod %v, reservation %s, node: %v", klog.KObj(pod), rName, nodeName)
+				return status
+			}
+			pl.AddNominatedPreAllocation(state.rInfo, nodeName, nominatedPod)
+		}
+
+		nominatedReservationInfo = state.rInfo
+		state.preAllocated = nominatedPod.DeepCopy()
+	} else { // normal pod
+		if apiext.IsReservationIgnored(pod) {
+			klog.V(4).InfoS("Reserve pod to node and reservations are ignored",
+				"pod", klog.KObj(pod), "node", nodeName)
+			return nil
+		}
+
+		nominatedReservationInfo = pl.handle.GetReservationNominator().GetNominatedReservation(pod, nodeName)
+		if nominatedReservationInfo == nil {
+			// The scheduleOne skip scores and reservation nomination if there is only one node available.
+			var status *framework.Status
+			nominatedReservationInfo, status = pl.handle.GetReservationNominator().NominateReservation(ctx, cycleState, pod, nodeName)
+			if !status.IsSuccess() {
+				return status
+			}
+			if nominatedReservationInfo == nil {
+				if state.hasAffinity {
+					return framework.NewStatus(framework.Unschedulable, ErrReasonReservationAffinity)
+				}
+				klog.V(5).Infof("Skip reserve with reservation since there are no matched reservations, pod %v, node: %v", klog.KObj(pod), nodeName)
+				return nil
+			}
+			pl.handle.GetReservationNominator().AddNominatedReservation(pod, nodeName, nominatedReservationInfo)
+		}
+		nominatedPod = pod
 	}
 
-	err := pl.reservationCache.assumePod(nominatedReservation.UID(), pod)
+	err := pl.reservationCache.assumePod(nominatedReservationInfo.UID(), nominatedPod)
 	if err != nil {
-		klog.ErrorS(err, "Failed to assume pod in reservationCache", "pod", klog.KObj(pod), "reservation", klog.KObj(nominatedReservation))
+		klog.ErrorS(err, "Failed to assume pod in reservationCache", "pod", klog.KObj(nominatedPod), "reservation", nominatedReservationInfo.GetName())
 		return framework.AsStatus(err)
 	}
-	state.assumed = nominatedReservation.Clone()
-	// clean scheduling cycle to avoid unnecessary memory cost before entering the binding
-	state.CleanSchedulingData()
-	klog.V(4).InfoS("Reserve pod to node with reservations", "pod", klog.KObj(pod), "node", nodeName, "assumed", klog.KObj(nominatedReservation))
+	state.assumed = nominatedReservationInfo.Clone()
+	klog.V(4).InfoS("Reserve pod to node with reservations", "pod", klog.KObj(nominatedPod), "node", nodeName, "reservation", nominatedReservationInfo.GetName())
 	return nil
 }
 
 func (pl *Plugin) Unreserve(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) {
+	var (
+		allocatedPod *corev1.Pod
+		rInfo        *frameworkext.ReservationInfo
+	)
+	state := getStateData(cycleState)
 	if reservationutil.IsReservePod(pod) {
 		rName := reservationutil.GetReservationNameFromReservePod(pod)
 		assumedReservation, err := pl.rLister.Get(rName)
@@ -945,7 +961,15 @@ func (pl *Plugin) Unreserve(ctx context.Context, cycleState *framework.CycleStat
 		assumedReservation = assumedReservation.DeepCopy()
 		assumedReservation.Status.NodeName = nodeName
 		pl.reservationCache.forgetReservation(assumedReservation)
-		return
+		if state.preAllocated == nil { // reserve pod without pre-allocation
+			return
+		}
+
+		// If the reserve pod is in pre-allocation, need to clean the nominator and the pod annotation.
+		pl.nominator.RemoveNominatedPreAllocation(pod)
+		allocatedPod = state.preAllocated
+	} else {
+		allocatedPod = pod
 	}
 
 	if apiext.IsReservationIgnored(pod) {
@@ -954,13 +978,63 @@ func (pl *Plugin) Unreserve(ctx context.Context, cycleState *framework.CycleStat
 		return
 	}
 
-	state := getStateData(cycleState)
-	if state.assumed != nil {
-		klog.V(4).InfoS("Attempting to unreserve pod to node with reservations", "pod", klog.KObj(pod), "node", nodeName, "assumed", klog.KObj(state.assumed))
-		pl.reservationCache.forgetPod(state.assumed.UID(), pod)
-	} else {
+	if state.assumed == nil { // no reservation is assumed
 		klog.V(5).InfoS("Skip the Reservation Unreserve, no assumed reservation", "pod", klog.KObj(pod), "node", nodeName)
+		return
 	}
+
+	klog.V(4).InfoS("Attempting to unreserve pod to node with reservations", "pod", klog.KObj(pod), "node", nodeName, "assumed", klog.KObj(state.assumed))
+	// clean the assumed in cache
+	pl.reservationCache.forgetPod(state.assumed.UID(), pod)
+
+	// clean the reservation-allocated annotation of the allocated pod
+	if !state.hasReservationAllocated { // no reservation-allocated has set
+		return
+	}
+	rInfo = state.assumed
+	curPod, err := pl.podLister.Pods(allocatedPod.Namespace).Get(allocatedPod.Name)
+	if err != nil {
+		klog.V(4).InfoS("Aborted to unreserve pod PreAllocation since get pod failed", "err", err, "reservation", rInfo.GetName(), "pod", klog.KObj(allocatedPod), "node", nodeName)
+		return
+	}
+	if curPod.UID != allocatedPod.UID { // avoid modifying a homonymous pod
+		klog.V(4).InfoS("Aborted to PreBindReservation for PreAllocation since pre-allocated pod is invalid",
+			"reservation", rInfo.GetName(), "pod", klog.KObj(pod), "node", nodeName, "current uid", curPod.UID, "preAllocated uid", pod.UID)
+		return
+	}
+	originalPod := curPod
+	modifiedPod := originalPod.DeepCopy()
+	removed, err := apiext.RemoveReservationAllocated(modifiedPod, &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: rInfo.GetName(),
+			UID:  rInfo.UID(),
+		},
+	})
+	if err != nil {
+		klog.ErrorS(err, "Failed to remove reservation allocated for the pod",
+			"reservation", rInfo.GetName(), "uid", rInfo.UID(), "pod", klog.KObj(curPod))
+		return
+	}
+	if !removed { // no need to fix annotation
+		return
+	}
+
+	err = util.RetryOnConflictOrTooManyRequests(func() error {
+		_, err := util.PatchPodSafe(ctx, pl.handle.ClientSet(), originalPod, modifiedPod)
+		if err != nil {
+			klog.V(5).ErrorS(err, "Failed to patch Pod", "pod", klog.KObj(originalPod),
+				"node", nodeName, "reservation", rInfo.GetName())
+		}
+		return err
+	})
+	if err != nil {
+		klog.ErrorS(err, "Failed to apply patch to Pod for PreAllocation Unreserve", "pod", klog.KObj(originalPod),
+			"node", nodeName, "reservation", rInfo.GetName())
+		return
+	}
+	klog.V(4).InfoS("Successfully unreserve pod for reservation allocated",
+		"reservation", rInfo.GetName(), "uid", rInfo.UID(), "pod", klog.KObj(curPod))
+
 	return
 }
 
@@ -982,7 +1056,63 @@ func (pl *Plugin) PreBind(ctx context.Context, cycleState *framework.CycleState,
 	reservation := state.assumed
 	klog.V(4).Infof("Attempting to pre-bind pod %v to node %v with reservation %v", klog.KObj(pod), nodeName, klog.KObj(reservation))
 
+	state.hasReservationAllocated = true
 	apiext.SetReservationAllocated(pod, reservation.GetObject())
+	return nil
+}
+
+func (pl *Plugin) PreBindReservation(ctx context.Context, cycleState *framework.CycleState, reservation *schedulingv1alpha1.Reservation, nodeName string) *framework.Status {
+	state := getStateData(cycleState)
+	if state.preAllocated == nil {
+		klog.V(6).InfoS("Skip the Reservation PreBind since no pre-allocatable pod on nod",
+			"reservation", klog.KObj(reservation), "node", nodeName)
+		return nil
+	}
+	if !reservation.Spec.PreAllocation { // PreAllocation disable but has a preAllocated result
+		klog.V(4).InfoS("failed to PreBindReservation for PreAllocation since reservation disables PreAllocation",
+			"reservation", klog.KObj(reservation), "node", nodeName)
+		return framework.NewStatus(framework.Error, ErrReasonReservationPreAllocationUnsupported)
+	}
+	if state.assumed == nil || state.rInfo == nil {
+		// expect a pre-allocation but no reservation is assumed
+		klog.V(4).InfoS("failed to PreBindReservation for PreAllocation since no assumed reservation",
+			"reservation", klog.KObj(reservation), "node", nodeName)
+		return framework.NewStatus(framework.Error, ErrReasonReservationPreAllocationUnsupported)
+	}
+
+	// Apply PreAllocation result to the pod.
+	klog.V(4).Infof("Attempting to PreBindReservation pre-allocatable pod %v to node %v with reservation %v", klog.KObj(state.preAllocated), nodeName, klog.KObj(reservation))
+	pod := state.preAllocated
+	curPod, err := pl.podLister.Pods(pod.Namespace).Get(pod.Name)
+	if err != nil {
+		klog.V(4).ErrorS(err, "failed to PreBindReservation for PreAllocation since get pod failed",
+			"reservation", klog.KObj(reservation), "node", nodeName, "pod", klog.KObj(pod))
+		return framework.AsStatus(err)
+	}
+	if curPod.UID != pod.UID { // avoid modify a homonymous pod
+		klog.V(4).InfoS("failed to PreBindReservation for PreAllocation since pre-allocated pod is invalid",
+			"reservation", klog.KObj(reservation), "node", nodeName, "pod", klog.KObj(pod), "current uid", curPod.UID, "preAllocated uid", pod.UID)
+		return framework.NewStatus(framework.Error, ErrReasonReservationPreAllocationUnsupported)
+	}
+	originalPod := curPod
+	modifiedPod := originalPod.DeepCopy()
+	apiext.SetReservationAllocated(modifiedPod, state.rInfo.GetObject())
+	err = util.RetryOnConflictOrTooManyRequests(func() error {
+		_, err := util.PatchPodSafe(ctx, pl.handle.ClientSet(), originalPod, modifiedPod)
+		if err != nil {
+			klog.V(5).ErrorS(err, "Failed to patch Pod", "pod", klog.KObj(originalPod),
+				"node", nodeName, "reservation", klog.KObj(reservation))
+		}
+		return err
+	})
+	if err != nil {
+		klog.ErrorS(err, "Failed to apply patch to Pod for PreAllocation", "pod", klog.KObj(originalPod),
+			"node", nodeName, "reservation", klog.KObj(reservation))
+		return framework.AsStatus(err)
+	}
+	state.hasReservationAllocated = true
+	klog.V(4).InfoS("Successfully patch to Pod for PreAllocation",
+		"node", nodeName, "reservation", klog.KObj(reservation), "pod", klog.KObj(modifiedPod))
 	return nil
 }
 

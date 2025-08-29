@@ -39,6 +39,10 @@ type stateData struct {
 	assumed *frameworkext.ReservationInfo
 	// reservation of the reserve pod
 	rInfo *frameworkext.ReservationInfo // ready-only
+	// pre-allocated pod
+	preAllocated *corev1.Pod
+	// whether bind a pod to a reservation
+	hasReservationAllocated bool
 }
 
 // schedulingStateData is the data only kept in the scheduling cycle. It could be cleaned up
@@ -109,8 +113,10 @@ func (s *stateData) Clone() framework.StateData {
 			nodeReservationDiagnosis: s.nodeReservationDiagnosis,
 			preferredNode:            s.preferredNode,
 		},
-		assumed: s.assumed,
-		rInfo:   s.rInfo,
+		assumed:                 s.assumed,
+		rInfo:                   s.rInfo,
+		preAllocated:            s.preAllocated,
+		hasReservationAllocated: s.hasReservationAllocated,
 	}
 
 	s.preemptLock.RLock()

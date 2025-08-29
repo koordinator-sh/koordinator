@@ -79,7 +79,6 @@ func (pl *Plugin) PreScore(ctx context.Context, cycleState *framework.CycleState
 			errCh.SendErrorWithCancel(status.AsError(), cancel)
 			return
 		}
-
 		if nominatedReservationInfo != nil {
 			index := atomic.AddInt32(&nominatedNodeIndex, 1)
 			nominatedReservations[index-1] = nominatedReservationInfo
@@ -123,6 +122,15 @@ func (pl *Plugin) Score(ctx context.Context, cycleState *framework.CycleState, p
 	if reservationInfo == nil {
 		return framework.MinNodeScore, nil
 	}
+	for _, v := range state.nodeReservationStates[nodeName].matchedOrIgnored {
+		if v.UID() == reservationInfo.UID() {
+			reservationInfo = v
+			break
+		}
+	}
+	if reservationInfo == nil {
+		return 0, framework.AsStatus(fmt.Errorf("impossible, there is no relevant Reservation information"))
+	}
 
 	return pl.ScoreReservation(ctx, cycleState, pod, reservationInfo, nodeName)
 }
@@ -138,21 +146,8 @@ func (pl *Plugin) NormalizeScore(ctx context.Context, state *framework.CycleStat
 	return pluginhelper.DefaultNormalizeScore(framework.MaxNodeScore, false, scores)
 }
 
-func (pl *Plugin) ScoreReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, reservationInfo *frameworkext.ReservationInfo, nodeName string) (int64, *framework.Status) {
+func (pl *Plugin) ScoreReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, rInfo *frameworkext.ReservationInfo, nodeName string) (int64, *framework.Status) {
 	state := getStateData(cycleState)
-	reservationInfos := state.nodeReservationStates[nodeName].matchedOrIgnored
-
-	var rInfo *frameworkext.ReservationInfo
-	for _, v := range reservationInfos {
-		if v.UID() == reservationInfo.UID() {
-			rInfo = v
-			break
-		}
-	}
-	if rInfo == nil {
-		return 0, framework.AsStatus(fmt.Errorf("impossible, there is no relevant Reservation information"))
-	}
-
 	preemptibleInRR := state.preemptibleInRRs[nodeName][rInfo.UID()]
 	allocated := rInfo.Allocated
 	if len(preemptibleInRR) > 0 {
@@ -160,7 +155,24 @@ func (pl *Plugin) ScoreReservation(ctx context.Context, cycleState *framework.Cy
 		allocated = quotav1.Mask(allocated, rInfo.ResourceNames)
 	}
 
-	return scoreReservation(pod, rInfo, allocated), nil
+	requested := resourceapi.PodRequests(pod, resourceapi.PodResourcesOptions{})
+	requested = quotav1.Add(requested, allocated)
+	resources := quotav1.RemoveZeros(rInfo.Allocatable)
+
+	w := int64(len(resources))
+	if w <= 0 {
+		return 0, nil
+	}
+
+	// Here we use MostAllocated (simply set all weights as 1.0)
+	var s int64
+	for resource, capacity := range resources {
+		req := requested[resource]
+		if req.Cmp(capacity) <= 0 {
+			s += framework.MaxNodeScore * req.MilliValue() / capacity.MilliValue()
+		}
+	}
+	return s / w, nil
 }
 
 func (pl *Plugin) ReservationScoreExtensions() frameworkext.ReservationScoreExtensions {
@@ -186,25 +198,4 @@ func findMostPreferredReservationByOrder(rOnNode []*frameworkext.ReservationInfo
 		}
 	}
 	return highOrder, selectOrder
-}
-
-func scoreReservation(pod *corev1.Pod, rInfo *frameworkext.ReservationInfo, allocated corev1.ResourceList) int64 {
-	requested := resourceapi.PodRequests(pod, resourceapi.PodResourcesOptions{})
-	requested = quotav1.Add(requested, allocated)
-	resources := quotav1.RemoveZeros(rInfo.Allocatable)
-
-	w := int64(len(resources))
-	if w <= 0 {
-		return 0
-	}
-
-	// Here we use MostAllocated (simply set all weights as 1.0)
-	var s int64
-	for resource, capacity := range resources {
-		req := requested[resource]
-		if req.Cmp(capacity) <= 0 {
-			s += framework.MaxNodeScore * req.MilliValue() / capacity.MilliValue()
-		}
-	}
-	return s / w
 }
