@@ -187,10 +187,10 @@ func Test_reportXPUDevice(t *testing.T) {
 			UUID:   "185011D4-21104518-A0C4ED94-14CC040A-56102003",
 			Minor:  "0",
 			Resources: map[string]string{
-				"huawei.com/npu-core":       "32",
-				"hauwei.com/npu-cpu":        "14",
-				"koordinator.sh/gpu-memory": "32Gi",
-				"huawei.com/dvpp":           "100",
+				extension.ResourceHuaweiNPUCore:     "32",
+				extension.ResourceHuaweiNPUCPU:      "14",
+				string(extension.ResourceGPUMemory): "32Gi",
+				extension.ResourceHuaweiNPUDVPP:     "100",
 			},
 			Topology: &koordletutil.DeviceTopology{
 				P2PLinks: []koordletutil.DeviceP2PLink{
@@ -247,10 +247,11 @@ func Test_reportXPUDevice(t *testing.T) {
 			Type:   schedulingv1alpha1.GPU,
 			Health: true,
 			Resources: map[corev1.ResourceName]resource.Quantity{
-				"huawei.com/npu-core":       npuCoreQuantity,
-				"hauwei.com/npu-cpu":        npuCpuQuantity,
-				"koordinator.sh/gpu-memory": gpuMemQuantity,
-				"huawei.com/dvpp":           dvppQuantity,
+				extension.ResourceGPUMemoryRatio: *resource.NewQuantity(100, resource.DecimalSI),
+				extension.ResourceHuaweiNPUCore:  npuCoreQuantity,
+				extension.ResourceHuaweiNPUCPU:   npuCpuQuantity,
+				extension.ResourceGPUMemory:      gpuMemQuantity,
+				extension.ResourceHuaweiNPUDVPP:  dvppQuantity,
 			},
 			Topology: &schedulingv1alpha1.DeviceTopology{
 				SocketID: -1,
