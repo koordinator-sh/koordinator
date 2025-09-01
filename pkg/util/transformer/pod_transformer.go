@@ -17,6 +17,8 @@ limitations under the License.
 package transformer
 
 import (
+	"strings"
+
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	k8sfeature "k8s.io/apiserver/pkg/util/feature"
@@ -24,7 +26,9 @@ import (
 	"k8s.io/klog/v2"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 	koordfeatures "github.com/koordinator-sh/koordinator/pkg/features"
+	"github.com/koordinator-sh/koordinator/pkg/util"
 	utilfeature "github.com/koordinator-sh/koordinator/pkg/util/feature"
 )
 
@@ -37,6 +41,7 @@ var podTransformerFactories = []func() func(pod *corev1.Pod){
 	TransformKoordPriorityClassFunc,
 	TransformKoordPreemptionPolicyFunc,
 	TransformSchedulerName,
+	TransformScheduleExplanationObjectKey,
 }
 
 func InstallPodTransformer(informer cache.SharedIndexInformer) {
@@ -192,5 +197,27 @@ func replaceAndEraseWithResourcesMapper(resList corev1.ResourceList, mapper map[
 func TransformSchedulerName() func(pod *corev1.Pod) {
 	return func(pod *corev1.Pod) {
 		pod.Spec.SchedulerName = apiext.GetSchedulerName(pod)
+	}
+}
+
+func TransformScheduleExplanationObjectKey() func(pod *corev1.Pod) {
+	return func(pod *corev1.Pod) {
+		if pod.Labels[apiext.LabelQuestionedObjectKey] != "" {
+			return
+		}
+		objectKey := util.GetNamespacedName(pod.Namespace, pod.Name)
+		if podGroupName := pod.Labels[v1alpha1.PodGroupLabel]; podGroupName != "" {
+			// TODO adapt to other gangGroupScheduling approaches and onceResourceSatisfied
+			objectKey = strings.TrimSuffix(strings.TrimSuffix(podGroupName, "-master"), "-worker")
+		} else if gangName := apiext.GetGangName(pod); gangName != "" {
+			objectKey = gangName
+			if pod.Annotations[apiext.AnnotationGangGroups] != "" {
+				objectKey = pod.Annotations[apiext.AnnotationGangGroups]
+			}
+		}
+		if pod.Labels == nil {
+			pod.Labels = make(map[string]string)
+		}
+		pod.Labels[apiext.LabelQuestionedObjectKey] = objectKey
 	}
 }
