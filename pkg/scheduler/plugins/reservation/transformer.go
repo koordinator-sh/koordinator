@@ -153,8 +153,9 @@ func (pl *Plugin) prepareMatchReservationStateForNormalPod(ctx context.Context, 
 	parallelCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	errCh := parallelize.NewErrorChannel()
+	nodeInfoLister := pl.handle.SnapshotSharedLister().NodeInfos()
 	processNode := func(i int) {
-		nodeInfo, err := pl.handle.SnapshotSharedLister().NodeInfos().Get(allNodes[i])
+		nodeInfo, err := nodeInfoLister.Get(allNodes[i])
 		if err != nil {
 			klog.Warningf("Failed to get NodeInfo of %s during reservation's BeforePreFilter for pod: %v, err: %v", allNodes[i], klog.KObj(pod), err)
 			return
@@ -374,8 +375,9 @@ func (pl *Plugin) prepareMatchReservationStateForReservePod(ctx context.Context,
 	parallelCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	errCh := parallelize.NewErrorChannel()
+	nodeInfoLister := pl.handle.SnapshotSharedLister().NodeInfos()
 	processNode := func(i int) {
-		nodeInfo, err := pl.handle.SnapshotSharedLister().NodeInfos().Get(allNodes[i])
+		nodeInfo, err := nodeInfoLister.Get(allNodes[i])
 		if err != nil {
 			klog.Warningf("Failed to get NodeInfo of %s during reservation's BeforePreFilter for pod: %v, err: %v", allNodes[i], klog.KObj(pod), err)
 			return
