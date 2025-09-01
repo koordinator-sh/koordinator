@@ -71,6 +71,7 @@ type FrameworkExtender interface {
 	RunReservationFilterPlugins(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, reservationInfo *ReservationInfo, nodeInfo *framework.NodeInfo) *framework.Status
 	RunNominateReservationFilterPlugins(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, reservationInfo *ReservationInfo, nodeName string) *framework.Status
 	RunReservationScorePlugins(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, reservationInfos []*ReservationInfo, nodeName string) (PluginToReservationScores, *framework.Status)
+	RunReservationPreAllocationScorePlugins(ctx context.Context, cycleState *framework.CycleState, rInfo *ReservationInfo, pods []*corev1.Pod, nodeName string) (PluginToReservationScores, *framework.Status)
 
 	RunNUMATopologyManagerAdmit(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string, numaNodes []int, policyType apiext.NUMATopologyPolicy, exclusivePolicy apiext.NumaTopologyExclusive, allNUMANodeStatus []apiext.NumaNodeStatus) *framework.Status
 
@@ -161,6 +162,8 @@ type ReservationNominator interface {
 	// RemoveNominatedReservations is used to delete the nominated reserve pod.
 	// DEPRECATED: use DeleteNominatedReservePodOrReservation instead.
 	RemoveNominatedReservations(pod *corev1.Pod)
+	// GetNominatedReservation returns the ReservationInfo of the nominated reservation assumed by the pod on the node.
+	// NOTE: It returns the ReservationInfo from the cache instead of the object added to the nominator.
 	GetNominatedReservation(pod *corev1.Pod, nodeName string) *ReservationInfo
 	AddNominatedReservePod(reservePod *corev1.Pod, nodeName string)
 	// DeleteNominatedReservePod is used to delete the nominated reserve pod.
@@ -169,6 +172,9 @@ type ReservationNominator interface {
 	// DeleteNominatedReservePodOrReservation is used to delete the nominated reserve pod or
 	// the nominated reservation for the pod.
 	DeleteNominatedReservePodOrReservation(pod *corev1.Pod)
+	NominatePreAllocation(ctx context.Context, cycleState *framework.CycleState, rInfo *ReservationInfo, nodeName string) (*corev1.Pod, *framework.Status)
+	AddNominatedPreAllocation(rInfo *ReservationInfo, nodeName string, pod *corev1.Pod)
+	GetNominatedPreAllocation(rInfo *ReservationInfo, nodeName string) *corev1.Pod
 }
 
 const (

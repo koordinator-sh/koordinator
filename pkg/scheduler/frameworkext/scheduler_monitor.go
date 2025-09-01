@@ -192,6 +192,10 @@ func defaultGCMonitor(uid types.UID, state *podScheduleState, end time.Time) {
 }
 
 func recordIfSchedulingTimeout(uid types.UID, state *podScheduleState, now time.Time, timeout time.Duration) {
+	if state.start.IsZero() {
+		klog.V(5).Infof("scheduling pod %s/%s(%s) missing a start %v", state.namespace, state.name, uid, state.start)
+		return
+	}
 	if interval := now.Sub(state.start); interval > timeout {
 		logWarningF("!!!CRITICAL TIMEOUT!!! scheduling pod %s/%s(%s) took longer (%s) than the timeout %v", state.namespace, state.name, uid, interval, timeout)
 		metrics.SchedulingTimeout.WithLabelValues(state.schedulerName).Inc()

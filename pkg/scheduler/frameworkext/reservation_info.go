@@ -308,6 +308,16 @@ func (ri *ReservationInfo) IsTerminating() bool {
 	return !ri.GetObject().GetDeletionTimestamp().IsZero()
 }
 
+func (ri *ReservationInfo) IsPreAllocation() bool {
+	if ri.Reservation != nil {
+		return ri.Reservation.Spec.PreAllocation
+	}
+	if ri.Pod != nil {
+		return reservationutil.IsReservePodPreAllocation(ri.Pod)
+	}
+	return false
+}
+
 func (ri *ReservationInfo) GetTaints() []corev1.Taint {
 	if ri.Reservation != nil {
 		return ri.Reservation.Spec.Taints

@@ -486,7 +486,7 @@ func (ext *frameworkExtenderImpl) RunNominateReservationFilterPlugins(ctx contex
 		status := pl.FilterNominateReservation(ctx, cycleState, pod, reservationInfo, nodeName)
 		if !status.IsSuccess() {
 			if debugFilterFailure {
-				klog.Infof("Failed to FilterReservation for Pod %q with Reservation %q on Node %q, failedPlugin: %s, reason: %s", klog.KObj(pod), klog.KObj(reservationInfo), nodeName, pl.Name(), status.Message())
+				klog.Infof("Failed to FilterNominateReservation for Pod %q with Reservation %q on Node %q, failedPlugin: %s, reason: %s", klog.KObj(pod), klog.KObj(reservationInfo), nodeName, pl.Name(), status.Message())
 			}
 			return status
 		}
@@ -547,6 +547,60 @@ func (ext *frameworkExtenderImpl) RunReservationScorePlugins(ctx context.Context
 		}
 	}
 
+	return pluginToReservationScores, nil
+}
+
+func (ext *frameworkExtenderImpl) RunReservationPreAllocationScorePlugins(ctx context.Context, cycleState *framework.CycleState, rInfo *ReservationInfo, pods []*corev1.Pod, nodeName string) (ps PluginToReservationScores, status *framework.Status) {
+	if len(pods) == 0 {
+		return
+	}
+	// each ReservationScore corresponds to a pod
+	pluginToReservationScores := make(PluginToReservationScores, len(ext.reservationScorePlugins))
+	for _, pl := range ext.reservationScorePlugins {
+		pluginToReservationScores[pl.Name()] = make(ReservationScoreList, len(pods))
+	}
+
+	for _, pl := range ext.reservationScorePlugins {
+		for index, pod := range pods {
+			s, status := pl.ScoreReservation(ctx, cycleState, pod, rInfo, nodeName)
+			if !status.IsSuccess() {
+				err := fmt.Errorf("plugin %q for pod %s failed with: %w", pl.Name(), klog.KObj(pod), status.AsError())
+				return nil, framework.AsStatus(err)
+			}
+			pluginToReservationScores[pl.Name()][index] = ReservationScore{
+				Name:      pod.GetName(),
+				Namespace: pod.GetNamespace(),
+				UID:       pod.GetUID(),
+				Score:     s,
+			}
+		}
+	}
+
+	for _, pl := range ext.reservationScorePlugins {
+		scoreExtensions := pl.ReservationScoreExtensions()
+		if scoreExtensions == nil {
+			continue
+		}
+		reservationScoreList := pluginToReservationScores[pl.Name()]
+		status = scoreExtensions.NormalizeReservationScore(ctx, cycleState, rInfo.GetReservePod(), reservationScoreList)
+		if !status.IsSuccess() {
+			return nil, framework.AsStatus(fmt.Errorf("running Normalize on Score plugins: %w", status.AsError()))
+		}
+	}
+	// TODO: Should support configure weight (same as RunReservationScorePlugins)
+	for _, pl := range ext.reservationScorePlugins {
+		weight := 1
+		reservationScoreList := pluginToReservationScores[pl.Name()]
+		for i, reservationScore := range reservationScoreList {
+			// return error if score plugin returns invalid score.
+			if reservationScore.Score > MaxReservationScore || reservationScore.Score < MinReservationScore {
+				err := fmt.Errorf("plugin %q returns an invalid score %v, it should in the range of [%v, %v]",
+					pl.Name(), reservationScore.Score, MinReservationScore, MaxReservationScore)
+				return nil, framework.AsStatus(err)
+			}
+			reservationScoreList[i].Score = reservationScore.Score * int64(weight)
+		}
+	}
 	return pluginToReservationScores, nil
 }
 

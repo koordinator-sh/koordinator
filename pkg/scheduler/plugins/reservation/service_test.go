@@ -29,6 +29,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/uuid"
+	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/utils/pointer"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
@@ -187,6 +188,11 @@ func TestQueryNodeReservations(t *testing.T) {
 					corev1.ResourceCPU:    resource.MustParse("4"),
 					corev1.ResourceMemory: resource.MustParse("8Gi"),
 				},
+				AvailableResource: &framework.Resource{},
+				AllocatedResource: &framework.Resource{
+					MilliCPU: 4000,
+					Memory:   8 << 30,
+				},
 				Owners: []schedulingv1alpha1.ReservationOwner{
 					{
 						LabelSelector: &metav1.LabelSelector{
@@ -220,6 +226,11 @@ func TestQueryNodeReservations(t *testing.T) {
 					corev1.ResourceCPU:    resource.MustParse("4"),
 					corev1.ResourceMemory: resource.MustParse("8Gi"),
 				},
+				AvailableResource: &framework.Resource{
+					MilliCPU: 4000,
+					Memory:   8 << 30,
+				},
+				AllocatedResource: &framework.Resource{},
 				Owners: []schedulingv1alpha1.ReservationOwner{
 					{
 						LabelSelector: &metav1.LabelSelector{
