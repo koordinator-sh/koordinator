@@ -30,6 +30,8 @@ type Interface interface {
 	PodMigrationJobs() PodMigrationJobInformer
 	// Reservations returns a ReservationInformer.
 	Reservations() ReservationInformer
+	// ScheduleExplanations returns a ScheduleExplanationInformer.
+	ScheduleExplanations() ScheduleExplanationInformer
 }
 
 type version struct {
@@ -56,4 +58,9 @@ func (v *version) PodMigrationJobs() PodMigrationJobInformer {
 // Reservations returns a ReservationInformer.
 func (v *version) Reservations() ReservationInformer {
 	return &reservationInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
+}
+
+// ScheduleExplanations returns a ScheduleExplanationInformer.
+func (v *version) ScheduleExplanations() ScheduleExplanationInformer {
+	return &scheduleExplanationInformer{factory: v.factory, namespace: v.namespace, tweakListOptions: v.tweakListOptions}
 }

@@ -23,3 +23,5 @@ type DeviceExpansion interface{}
 type PodMigrationJobExpansion interface{}
 
 type ReservationExpansion interface{}
+
+type ScheduleExplanationExpansion interface{}

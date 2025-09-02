@@ -40,6 +40,10 @@ func (c *FakeSchedulingV1alpha1) Reservations() v1alpha1.ReservationInterface {
 	return &FakeReservations{c}
 }
 
+func (c *FakeSchedulingV1alpha1) ScheduleExplanations(namespace string) v1alpha1.ScheduleExplanationInterface {
+	return &FakeScheduleExplanations{c, namespace}
+}
+
 // RESTClient returns a RESTClient that is used to communicate
 // with API server by this client implementation.
 func (c *FakeSchedulingV1alpha1) RESTClient() rest.Interface {
