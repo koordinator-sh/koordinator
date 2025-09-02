@@ -30,6 +30,9 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/informers"
 	kubefake "k8s.io/client-go/kubernetes/fake"
+	k8smetrics "k8s.io/component-base/metrics"
+	"k8s.io/component-base/metrics/testutil"
+	"k8s.io/kubernetes/pkg/scheduler"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	frameworkfake "k8s.io/kubernetes/pkg/scheduler/framework/fake"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultbinder"
@@ -40,6 +43,7 @@ import (
 	koordfake "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/fake"
 	koordinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/services"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/metrics"
 )
 
 func TestExtenderFactory(t *testing.T) {
@@ -218,6 +222,69 @@ func Test_makePodInfoFromPod(t *testing.T) {
 				return
 			}
 			assert.Equalf(t, tt.want, got, "makePodInfoFromPod(%v)", tt.pod)
+		})
+	}
+}
+
+func TestCollectSchedulePodResult(t *testing.T) {
+	tests := []struct {
+		name           string
+		scheduleResult scheduler.ScheduleResult
+		err            error
+		expected       [4]int
+	}{
+		{
+			name:     "empty return",
+			expected: [4]int{},
+		},
+		{
+			name: "scheduled",
+			scheduleResult: scheduler.ScheduleResult{
+				SuggestedHost:  "test-node",
+				EvaluatedNodes: 10,
+				FeasibleNodes:  5,
+			},
+			expected: [4]int{1, 10, 1, 5},
+		},
+		{
+			name:     "unschedulable",
+			err:      &framework.FitError{NumAllNodes: 20},
+			expected: [4]int{},
+		},
+		{
+			name:     "unknown error",
+			err:      fmt.Errorf("unknown error"),
+			expected: [4]int{},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			metricsRegistry := testutil.NewFakeKubeRegistry("0.0.0")
+			histograms := [2]*k8smetrics.Histogram{
+				metrics.PodSchedulingEvaluatedNodes,
+				metrics.PodSchedulingFeasibleNodes,
+			}
+			for _, h := range histograms {
+				h.ClearState()
+				metricsRegistry.MustRegister(h)
+			}
+			mockSched := &scheduler.Scheduler{
+				SchedulePod: func(ctx context.Context, _ framework.Framework, _ *framework.CycleState, _ *corev1.Pod) (scheduler.ScheduleResult, error) {
+					return tt.scheduleResult, tt.err
+				},
+			}
+			f := &FrameworkExtenderFactory{}
+			f.CollectSchedulePodResult(mockSched)
+			mockSched.SchedulePod(context.TODO(), nil, nil, nil)
+			for i, h := range histograms {
+				m := h.WithContext(context.TODO())
+				count, err := testutil.GetHistogramMetricCount(m)
+				assert.NoError(t, err)
+				assert.Equal(t, tt.expected[i*2], int(count))
+				sum, err := testutil.GetHistogramMetricValue(m)
+				assert.NoError(t, err)
+				assert.Equal(t, tt.expected[i*2+1], int(sum))
+			}
 		})
 	}
 }

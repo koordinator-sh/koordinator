@@ -324,6 +324,274 @@ func TestNominateReservation(t *testing.T) {
 	}
 }
 
+func TestNominatePreAllocation(t *testing.T) {
+	testPreAllocationReservation := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-reservation",
+		},
+		Spec: schedulingv1alpha1.ReservationSpec{
+			Template: &corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("2"),
+									corev1.ResourceMemory: resource.MustParse("4Gi"),
+								},
+							},
+						},
+					},
+				},
+			},
+			AllocateOnce:   pointer.Bool(false),
+			AllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyRestricted,
+			PreAllocation:  true,
+		},
+	}
+	tests := []struct {
+		name           string
+		rInfo          *frameworkext.ReservationInfo
+		preAllocatable []*corev1.Pod
+		wantNominated  *corev1.Pod
+		wantStatus     bool
+	}{
+		{
+			name:       "node without pre-allocatable",
+			rInfo:      &frameworkext.ReservationInfo{},
+			wantStatus: true,
+		},
+		{
+			name:  "preferred pre-allocatable",
+			rInfo: frameworkext.NewReservationInfo(testPreAllocationReservation),
+			preAllocatable: []*corev1.Pod{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:   "preferred-pod",
+						Labels: map[string]string{},
+						UID:    "preferred-pod",
+					},
+					Spec: corev1.PodSpec{
+						Containers: []corev1.Container{
+							{
+								Resources: corev1.ResourceRequirements{
+									Requests: corev1.ResourceList{
+										corev1.ResourceCPU:    resource.MustParse("2"),
+										corev1.ResourceMemory: resource.MustParse("4Gi"),
+									},
+								},
+							},
+						},
+						NodeName: "test-node",
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "normal-pod",
+						UID:  "normal-pod",
+					},
+					Spec: corev1.PodSpec{
+						Containers: []corev1.Container{
+							{
+								Resources: corev1.ResourceRequirements{
+									Requests: corev1.ResourceList{
+										corev1.ResourceCPU:    resource.MustParse("1"),
+										corev1.ResourceMemory: resource.MustParse("1Gi"),
+									},
+								},
+							},
+						},
+						NodeName: "test-node",
+					},
+				},
+			},
+			wantNominated: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:   "preferred-pod",
+					Labels: map[string]string{},
+					UID:    "preferred-pod",
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("2"),
+									corev1.ResourceMemory: resource.MustParse("4Gi"),
+								},
+							},
+						},
+					},
+					NodeName: "test-node",
+				},
+			},
+			wantStatus: true,
+		},
+		{
+			name:  "preferred pre-allocatable 1",
+			rInfo: frameworkext.NewReservationInfo(testPreAllocationReservation),
+			preAllocatable: []*corev1.Pod{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "normal-pod",
+						UID:  "normal-pod",
+					},
+					Spec: corev1.PodSpec{
+						Containers: []corev1.Container{
+							{
+								Resources: corev1.ResourceRequirements{
+									Requests: corev1.ResourceList{
+										corev1.ResourceCPU:    resource.MustParse("1"),
+										corev1.ResourceMemory: resource.MustParse("1Gi"),
+									},
+								},
+							},
+						},
+						NodeName: "test-node",
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:   "preferred-pod",
+						Labels: map[string]string{},
+						UID:    "preferred-pod",
+					},
+					Spec: corev1.PodSpec{
+						Containers: []corev1.Container{
+							{
+								Resources: corev1.ResourceRequirements{
+									Requests: corev1.ResourceList{
+										corev1.ResourceCPU:    resource.MustParse("2"),
+										corev1.ResourceMemory: resource.MustParse("4Gi"),
+									},
+								},
+							},
+						},
+						NodeName: "test-node",
+					},
+				},
+			},
+			wantNominated: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:   "preferred-pod",
+					Labels: map[string]string{},
+					UID:    "preferred-pod",
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("2"),
+									corev1.ResourceMemory: resource.MustParse("4Gi"),
+								},
+							},
+						},
+					},
+					NodeName: "test-node",
+				},
+			},
+			wantStatus: true,
+		},
+		{
+			name:  "no pre-allocatable to nominate",
+			rInfo: frameworkext.NewReservationInfo(testPreAllocationReservation),
+			preAllocatable: []*corev1.Pod{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:   "test-pod",
+						Labels: map[string]string{},
+						UID:    "test-pod",
+					},
+					Spec: corev1.PodSpec{
+						Containers: []corev1.Container{
+							{
+								Resources: corev1.ResourceRequirements{
+									Requests: corev1.ResourceList{
+										corev1.ResourceCPU:    resource.MustParse("6"),
+										corev1.ResourceMemory: resource.MustParse("6Gi"),
+									},
+								},
+							},
+						},
+						NodeName: "test-node",
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "normal-pod",
+					},
+					Spec: corev1.PodSpec{
+						Containers: []corev1.Container{
+							{
+								Resources: corev1.ResourceRequirements{
+									Requests: corev1.ResourceList{
+										corev1.ResourceMemory: resource.MustParse("8Gi"),
+									},
+								},
+							},
+						},
+						NodeName: "test-node",
+					},
+				},
+			},
+			wantNominated: nil,
+			wantStatus:    true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			node := &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node",
+				},
+				Status: corev1.NodeStatus{
+					Allocatable: map[corev1.ResourceName]resource.Quantity{
+						corev1.ResourceCPU:    resource.MustParse("8"),
+						corev1.ResourceMemory: resource.MustParse("16Gi"),
+					},
+				},
+			}
+
+			suit := newPluginTestSuitWith(t, nil, []*corev1.Node{node})
+			plugin, err := suit.pluginFactory()
+			assert.NoError(t, err)
+			pl := plugin.(*Plugin)
+			cycleState := framework.NewCycleState()
+			var requests corev1.ResourceList
+			if reservePod := tt.rInfo.GetReservePod(); reservePod != nil {
+				requests = apiresource.PodRequests(tt.rInfo.GetReservePod(), apiresource.PodResourcesOptions{})
+			}
+			state := &stateData{
+				schedulingStateData: schedulingStateData{
+					nodeReservationStates: map[string]*nodeReservationState{},
+					podRequests:           requests,
+					podRequestsResources:  framework.NewResource(requests),
+					podResourceNames:      quotav1.ResourceNames(requests),
+				},
+			}
+			for _, pod := range tt.preAllocatable {
+				nodeRState := state.nodeReservationStates[pod.Spec.NodeName]
+				if nodeRState == nil {
+					nodeRState = &nodeReservationState{}
+				}
+				nodeRState.nodeName = pod.Spec.NodeName
+				nodeRState.preAllocatablePods = append(nodeRState.preAllocatablePods, pod)
+				state.nodeReservationStates[pod.Spec.NodeName] = nodeRState
+			}
+			cycleState.Write(stateKey, state)
+			nominatedPod, status := pl.NominatePreAllocation(context.TODO(), cycleState, tt.rInfo, node.Name)
+			if tt.wantNominated == nil {
+				assert.Nil(t, nominatedPod)
+			} else {
+				assert.NotNil(t, nominatedPod)
+				assert.Equal(t, tt.wantNominated, nominatedPod)
+			}
+			assert.Equal(t, tt.wantStatus, status.IsSuccess())
+		})
+	}
+}
+
 func newTestReservation(t *testing.T, name string, labels, ownerLabels map[string]string, nodeName string, allocatable corev1.ResourceList) *schedulingv1alpha1.Reservation {
 	reservation := &schedulingv1alpha1.Reservation{
 		ObjectMeta: metav1.ObjectMeta{

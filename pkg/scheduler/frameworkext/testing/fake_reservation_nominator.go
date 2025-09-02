@@ -32,13 +32,14 @@ import (
 var _ frameworkext.ReservationNominator = &FakeNominator{}
 
 type FakeNominator struct {
+	lock sync.RWMutex
 	// nominatedPodToNode is map keyed by a Pod UID to the node name where it is nominated.
 	nominatedPodToNode map[types.UID]map[string]types.UID
 	reservations       map[types.UID]*frameworkext.ReservationInfo
+	preAllocatable     map[types.UID]map[string]*corev1.Pod
 	// nominatedReservePod is map keyed by nodeName, value is the nominated reservations
 	nominatedReservePod       map[string][]*framework.PodInfo
 	nominatedReservePodToNode map[types.UID]string
-	lock                      sync.RWMutex
 }
 
 func NewFakeReservationNominator() *FakeNominator {
@@ -47,6 +48,7 @@ func NewFakeReservationNominator() *FakeNominator {
 		nominatedReservePod:       map[string][]*framework.PodInfo{},
 		nominatedReservePodToNode: map[types.UID]string{},
 		reservations:              map[types.UID]*frameworkext.ReservationInfo{},
+		preAllocatable:            map[types.UID]map[string]*corev1.Pod{},
 	}
 }
 
@@ -94,39 +96,40 @@ func (nm *FakeNominator) NominateReservation(ctx context.Context, cycleState *fr
 	return rInfo, nil
 }
 
-func (nm *FakeNominator) AddNominatedReservePod(rInfo *corev1.Pod, nodeName string) {
+func (nm *FakeNominator) AddNominatedReservePod(pod *corev1.Pod, nodeName string) {
 	nm.lock.Lock()
 	defer nm.lock.Unlock()
 
 	// Always delete the reservation if it already exists, to ensure we never store more than
 	// one instance of the reservation.
-	nm.deleteReservePod(rInfo)
+	nm.deleteReservePod(pod)
 
-	nm.nominatedReservePodToNode[rInfo.UID] = nodeName
+	nm.nominatedReservePodToNode[pod.UID] = nodeName
 	for _, npi := range nm.nominatedReservePod[nodeName] {
-		if npi.Pod.UID == rInfo.UID {
+		if npi.Pod.UID == pod.UID {
 			klog.V(4).InfoS("reservation already exists in the nominator", "pod", klog.KObj(npi.Pod))
 			return
 		}
 	}
-	podInfo, _ := framework.NewPodInfo(rInfo)
+	podInfo, _ := framework.NewPodInfo(pod)
 	nm.nominatedReservePod[nodeName] = append(nm.nominatedReservePod[nodeName], podInfo)
 }
 
-func (nm *FakeNominator) DeleteNominatedReservePod(rInfo *corev1.Pod) {
+func (nm *FakeNominator) DeleteNominatedReservePod(pod *corev1.Pod) {
 	nm.lock.Lock()
 	defer nm.lock.Unlock()
 
-	nm.deleteReservePod(rInfo)
+	nm.deleteReservePod(pod)
+	nm.deletePreAllocation(pod)
 }
 
-func (nm *FakeNominator) deleteReservePod(rInfo *corev1.Pod) {
-	nnn, ok := nm.nominatedReservePodToNode[rInfo.UID]
+func (nm *FakeNominator) deleteReservePod(pod *corev1.Pod) {
+	nnn, ok := nm.nominatedReservePodToNode[pod.UID]
 	if !ok {
 		return
 	}
 	for i, np := range nm.nominatedReservePod[nnn] {
-		if np.Pod.UID == rInfo.UID {
+		if np.Pod.UID == pod.UID {
 			nm.nominatedReservePod[nnn] = append(nm.nominatedReservePod[nnn][:i], nm.nominatedReservePod[nnn][i+1:]...)
 			if len(nm.nominatedReservePod[nnn]) == 0 {
 				delete(nm.nominatedReservePod, nnn)
@@ -134,7 +137,7 @@ func (nm *FakeNominator) deleteReservePod(rInfo *corev1.Pod) {
 			break
 		}
 	}
-	delete(nm.nominatedReservePodToNode, rInfo.UID)
+	delete(nm.nominatedReservePodToNode, pod.UID)
 }
 
 func (nm *FakeNominator) DeleteNominatedReservePodOrReservation(pod *corev1.Pod) {
@@ -148,4 +151,39 @@ func (nm *FakeNominator) DeleteNominatedReservePodOrReservation(pod *corev1.Pod)
 	}
 
 	nm.deleteReservePod(pod)
+}
+
+func (nm *FakeNominator) NominatePreAllocation(ctx context.Context, cycleState *framework.CycleState, rInfo *frameworkext.ReservationInfo, nodeName string) (*corev1.Pod, *framework.Status) {
+	if !rInfo.IsPreAllocation() {
+		return nil, nil
+	}
+	return nm.GetNominatedPreAllocation(rInfo, nodeName), nil
+}
+
+func (nm *FakeNominator) AddNominatedPreAllocation(rInfo *frameworkext.ReservationInfo, nodeName string, pod *corev1.Pod) {
+	if !rInfo.IsPreAllocation() {
+		return
+	}
+	nm.lock.Lock()
+	defer nm.lock.Unlock()
+	nodeToPreAllocatable := nm.preAllocatable[rInfo.UID()]
+	if nodeToPreAllocatable == nil {
+		nodeToPreAllocatable = map[string]*corev1.Pod{}
+		nm.preAllocatable[rInfo.UID()] = nodeToPreAllocatable
+	}
+	nodeToPreAllocatable[nodeName] = pod
+}
+
+func (nm *FakeNominator) GetNominatedPreAllocation(rInfo *frameworkext.ReservationInfo, nodeName string) *corev1.Pod {
+	nm.lock.RLock()
+	defer nm.lock.RUnlock()
+	nodeToPreAllocatable := nm.preAllocatable[rInfo.UID()]
+	if nodeToPreAllocatable == nil {
+		return nil
+	}
+	return nodeToPreAllocatable[nodeName]
+}
+
+func (nm *FakeNominator) deletePreAllocation(pod *corev1.Pod) {
+	delete(nm.preAllocatable, pod.UID)
 }
