@@ -319,6 +319,11 @@ func (in *LoadAwareSchedulingArgs) DeepCopyInto(out *LoadAwareSchedulingArgs) {
 		*out = new(LoadAwareSchedulingAggregatedArgs)
 		(*in).DeepCopyInto(*out)
 	}
+	if in.SupportedResources != nil {
+		in, out := &in.SupportedResources, &out.SupportedResources
+		*out = make([]corev1.ResourceName, len(*in))
+		copy(*out, *in)
+	}
 	return
 }
 
