@@ -100,12 +100,13 @@ func (s *nodeInformer) HasSynced() bool {
 	if s.nodeInformer == nil {
 		return false
 	}
-	synced := s.nodeInformer.HasSynced()
+	// maybe the cache has synced ,but the event handlers haven't beed called yet
+	synced := s.nodeInformer.HasSynced() && s.GetNode() != nil
 	klog.V(5).Infof("node informer has synced %v", synced)
 	return synced
 }
 
-func newNodeInformer(client clientset.Interface, nodeName string) cache.SharedIndexInformer {
+var newNodeInformer = func(client clientset.Interface, nodeName string) cache.SharedIndexInformer {
 	tweakListOptionsFunc := func(opt *metav1.ListOptions) {
 		opt.FieldSelector = "metadata.name=" + nodeName
 	}
