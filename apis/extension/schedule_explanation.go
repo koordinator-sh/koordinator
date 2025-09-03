@@ -1,6 +1,3 @@
-//go:build !linux
-// +build !linux
-
 /*
 Copyright 2022 The Koordinator Authors.
 
@@ -17,24 +14,24 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package impl
+package extension
 
-func (s *statesInformer) reportDevice() {
-	return
+import (
+	corev1 "k8s.io/api/core/v1"
+)
+
+const (
+	LabelQuestionedObjectKey = SchedulingDomainPrefix + "/questioned-object-key"
+)
+
+func GetExplanationKey(labels map[string]string) string {
+	return labels[LabelQuestionedObjectKey]
 }
 
-func (s *statesInformer) reportRDMADevice() { return }
+const (
+	LabelTopologyKeyToExplain = SchedulingDomainPrefix + "/topology-key-to-explain"
+)
 
-func (s *statesInformer) reportXPUDevice() { return }
-
-func (s *statesInformer) initGPU() bool {
-	return false
-}
-
-func (s *statesInformer) gpuHealCheck(stopCh <-chan struct{}) {
-	return
-}
-
-func (s *statesInformer) getGPUDriverAndModel() (string, string) {
-	return "", ""
+func GetTopologyKeyToExplain(pod *corev1.Pod) string {
+	return pod.Labels[LabelTopologyKeyToExplain]
 }

@@ -707,6 +707,56 @@ func Test_IsColocationStrategyValid(t *testing.T) {
 			},
 			want: false,
 		},
+		{
+			name: "batchCPUThresholdPercent more than 100 strategy is invalid",
+			args: args{
+				strategy: &configuration.ColocationStrategy{
+					Enable:                        pointer.Bool(true),
+					CPUReclaimThresholdPercent:    pointer.Int64(65),
+					MemoryReclaimThresholdPercent: pointer.Int64(65),
+					DegradeTimeMinutes:            pointer.Int64(15),
+					UpdateTimeThresholdSeconds:    pointer.Int64(300),
+					ResourceDiffThreshold:         pointer.Float64(0.1),
+					MidUnallocatedPercent:         pointer.Int64(200),
+					BatchCPUThresholdPercent:      pointer.Int64(200),
+					BatchMemoryThresholdPercent:   pointer.Int64(20),
+				},
+			},
+			want: false,
+		},
+		{
+			name: "batchCPUThresholdPercent less than 0 strategy is invalid",
+			args: args{
+				strategy: &configuration.ColocationStrategy{
+					Enable:                        pointer.Bool(true),
+					CPUReclaimThresholdPercent:    pointer.Int64(65),
+					MemoryReclaimThresholdPercent: pointer.Int64(65),
+					DegradeTimeMinutes:            pointer.Int64(15),
+					UpdateTimeThresholdSeconds:    pointer.Int64(300),
+					ResourceDiffThreshold:         pointer.Float64(0.1),
+					MidUnallocatedPercent:         pointer.Int64(200),
+					BatchCPUThresholdPercent:      pointer.Int64(-1),
+					BatchMemoryThresholdPercent:   pointer.Int64(20),
+				},
+			},
+			want: false,
+		},
+		{
+			name: "default strategy + batchXXXThresholdPercent[0,100] is valid",
+			args: args{
+				strategy: &configuration.ColocationStrategy{
+					Enable:                        pointer.Bool(true),
+					CPUReclaimThresholdPercent:    pointer.Int64(65),
+					MemoryReclaimThresholdPercent: pointer.Int64(65),
+					DegradeTimeMinutes:            pointer.Int64(15),
+					UpdateTimeThresholdSeconds:    pointer.Int64(300),
+					ResourceDiffThreshold:         pointer.Float64(0.1),
+					BatchCPUThresholdPercent:      pointer.Int64(100),
+					BatchMemoryThresholdPercent:   pointer.Int64(0),
+				},
+			},
+			want: true,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -181,8 +181,8 @@ func (gang *Gang) tryInitByPodGroup(pg *v1alpha1.PodGroup, args *config.Coschedu
 
 	totalChildrenNum, err := strconv.ParseInt(pg.Annotations[extension.AnnotationGangTotalNum], 10, 32)
 	if err != nil {
-		klog.V(4).ErrorS(err, "podGroup's annotation totalNumber illegal, gangName: %v, value: %v",
-			gang.Name, pg.Annotations[extension.AnnotationGangTotalNum])
+		klog.V(4).ErrorS(err, "podGroup's annotation totalNumber illegal",
+			"gangName", gang.Name, "value", pg.Annotations[extension.AnnotationGangTotalNum])
 		totalChildrenNum = int64(minRequiredNumber)
 	} else if totalChildrenNum != 0 && totalChildrenNum < int64(minRequiredNumber) {
 		klog.V(4).Infof("podGroup's annotation totalNumber cannot less than minRequiredNumber, gangName:%v, totalNumber: %v,minRequiredNumber: %v",
@@ -216,8 +216,8 @@ func (gang *Gang) tryInitByPodGroup(pg *v1alpha1.PodGroup, args *config.Coschedu
 
 	groupSlice, err := util.StringToGangGroupSlice(pg.Annotations[extension.AnnotationGangGroups])
 	if err != nil {
-		klog.V(4).ErrorS(err, "podGroup's annotation GangGroupsAnnotation illegal, gangName: %v, value: %v",
-			gang.Name, pg.Annotations[extension.AnnotationGangGroups])
+		klog.V(4).ErrorS(err, "podGroup's annotation GangGroupsAnnotation illegal",
+			"gangName", gang.Name, "value", pg.Annotations[extension.AnnotationGangGroups])
 	}
 	if len(groupSlice) == 0 {
 		groupSlice = append(groupSlice, gang.Name)

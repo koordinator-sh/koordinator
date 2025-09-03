@@ -18,7 +18,6 @@ package frameworkext
 
 import (
 	"encoding/json"
-	"sort"
 	"testing"
 	"time"
 
@@ -29,11 +28,197 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
+	schedutil "k8s.io/kubernetes/pkg/scheduler/util"
+	"k8s.io/utils/pointer"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/util"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
+
+func TestReservationInfo(t *testing.T) {
+	testRestrictedReservation := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-r",
+			UID:  "123456",
+		},
+		Spec: schedulingv1alpha1.ReservationSpec{
+			Template: &corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name: "test-container",
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("1"),
+									corev1.ResourceMemory: resource.MustParse("1Gi"),
+								},
+							},
+						},
+					},
+				},
+			},
+			Owners: []schedulingv1alpha1.ReservationOwner{
+				{
+					LabelSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							"foo": "bar",
+						},
+					},
+				},
+			},
+			AllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyRestricted,
+			AllocateOnce:   pointer.Bool(false),
+		},
+	}
+	testOwnerMatcher, err := reservationutil.ParseReservationOwnerMatchers(testRestrictedReservation.Spec.Owners)
+	assert.NoError(t, err)
+	testInvalidReservation := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-r",
+			UID:  "123456",
+		},
+		Spec: schedulingv1alpha1.ReservationSpec{
+			Template: &corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name: "test-container",
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("1"),
+									corev1.ResourceMemory: resource.MustParse("1Gi"),
+								},
+							},
+						},
+					},
+				},
+			},
+			Owners: []schedulingv1alpha1.ReservationOwner{
+				{
+					LabelSelector: &metav1.LabelSelector{
+						MatchExpressions: []metav1.LabelSelectorRequirement{
+							{
+								Key:      "foo",
+								Operator: metav1.LabelSelectorOpIn,
+								Values:   nil,
+							},
+						},
+					},
+				},
+			},
+			AllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyRestricted,
+			AllocateOnce:   pointer.Bool(false),
+		},
+	}
+	_, testParseInvalidOwnerErr := reservationutil.ParseReservationOwnerMatchers(testInvalidReservation.Spec.Owners)
+	testPreAllocationReservation := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-r",
+			UID:  "123456",
+		},
+		Spec: schedulingv1alpha1.ReservationSpec{
+			Template: &corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name: "test-container",
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("1"),
+									corev1.ResourceMemory: resource.MustParse("1Gi"),
+								},
+							},
+						},
+					},
+				},
+			},
+			Owners: []schedulingv1alpha1.ReservationOwner{
+				{
+					LabelSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							"foo": "bar",
+						},
+					},
+				},
+			},
+			AllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyRestricted,
+			AllocateOnce:   pointer.Bool(false),
+			PreAllocation:  true,
+		},
+	}
+	tests := []struct {
+		name   string
+		r      *schedulingv1alpha1.Reservation
+		want   *ReservationInfo
+		wantFn func(*testing.T, *ReservationInfo)
+	}{
+		{
+			name: "normal restricted reservation",
+			r:    testRestrictedReservation,
+			want: &ReservationInfo{
+				Reservation: testRestrictedReservation,
+				Pod:         reservationutil.NewReservePod(testRestrictedReservation),
+				ResourceNames: []corev1.ResourceName{
+					corev1.ResourceCPU,
+					corev1.ResourceMemory,
+				},
+				Allocatable:      reservationutil.ReservationRequests(testRestrictedReservation),
+				AllocatablePorts: util.RequestedHostPorts(reservationutil.NewReservePod(testRestrictedReservation)),
+				AssignedPods:     map[types.UID]*PodRequirement{},
+				OwnerMatchers:    testOwnerMatcher,
+			},
+		},
+		{
+			name: "parse error for invalid reservation",
+			r:    testInvalidReservation,
+			want: &ReservationInfo{
+				Reservation: testInvalidReservation,
+				Pod:         reservationutil.NewReservePod(testInvalidReservation),
+				ResourceNames: []corev1.ResourceName{
+					corev1.ResourceCPU,
+					corev1.ResourceMemory,
+				},
+				Allocatable:      reservationutil.ReservationRequests(testInvalidReservation),
+				AllocatablePorts: util.RequestedHostPorts(reservationutil.NewReservePod(testInvalidReservation)),
+				AssignedPods:     map[types.UID]*PodRequirement{},
+				OwnerMatchers:    nil,
+				ParseError:       utilerrors.NewAggregate([]error{testParseInvalidOwnerErr}),
+			},
+		},
+		{
+			name: "pre-allocation reservation",
+			r:    testPreAllocationReservation,
+			want: &ReservationInfo{
+				Reservation: testPreAllocationReservation,
+				Pod:         reservationutil.NewReservePod(testPreAllocationReservation),
+				ResourceNames: []corev1.ResourceName{
+					corev1.ResourceCPU,
+					corev1.ResourceMemory,
+				},
+				Allocatable:      reservationutil.ReservationRequests(testPreAllocationReservation),
+				AllocatablePorts: util.RequestedHostPorts(reservationutil.NewReservePod(testPreAllocationReservation)),
+				AssignedPods:     map[types.UID]*PodRequirement{},
+				OwnerMatchers:    testOwnerMatcher,
+			},
+			wantFn: func(t *testing.T, rInfo *ReservationInfo) {
+				assert.True(t, rInfo.IsPreAllocation())
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := NewReservationInfo(tt.r)
+			assert.Equal(t, tt.want, got)
+			got1 := got.Clone()
+			assert.Equal(t, tt.want, got1)
+			if tt.wantFn != nil {
+				tt.wantFn(t, got1)
+			}
+		})
+	}
+}
 
 func TestIsAvailable(t *testing.T) {
 	tests := []struct {
@@ -384,12 +569,13 @@ func TestReservationInfoUpdateReservation(t *testing.T) {
 			reservation:    reservation,
 			newReservation: reservation,
 			want: &ReservationInfo{
-				ResourceNames: []corev1.ResourceName{corev1.ResourceCPU, corev1.ResourceMemory},
-				Allocatable:   allocatable.DeepCopy(),
-				Available:     framework.NewResource(allocatable),
-				AssignedPods:  map[types.UID]*PodRequirement{},
-				OwnerMatchers: ownerMatchers,
-				ParseError:    parseError,
+				ResourceNames:     []corev1.ResourceName{corev1.ResourceCPU, corev1.ResourceMemory},
+				Allocatable:       allocatable.DeepCopy(),
+				Available:         framework.NewResource(allocatable),
+				AllocatedResource: &framework.Resource{},
+				AssignedPods:      map[types.UID]*PodRequirement{},
+				OwnerMatchers:     ownerMatchers,
+				ParseError:        parseError,
 			},
 		},
 		{
@@ -407,10 +593,11 @@ func TestReservationInfoUpdateReservation(t *testing.T) {
 				return r
 			}(),
 			want: &ReservationInfo{
-				ResourceNames: []corev1.ResourceName{corev1.ResourceCPU, corev1.ResourceMemory},
-				Allocatable:   allocatable.DeepCopy(),
-				Available:     framework.NewResource(allocatable),
-				AssignedPods:  map[types.UID]*PodRequirement{},
+				ResourceNames:     []corev1.ResourceName{corev1.ResourceCPU, corev1.ResourceMemory},
+				Allocatable:       allocatable.DeepCopy(),
+				Available:         framework.NewResource(allocatable),
+				AllocatedResource: &framework.Resource{},
+				AssignedPods:      map[types.UID]*PodRequirement{},
 				OwnerMatchers: func() []reservationutil.ReservationOwnerMatcher {
 					m, _ := reservationutil.ParseReservationOwnerMatchers([]schedulingv1alpha1.ReservationOwner{
 						{
@@ -444,11 +631,12 @@ func TestReservationInfoUpdateReservation(t *testing.T) {
 				return r
 			}(),
 			want: &ReservationInfo{
-				ResourceNames: []corev1.ResourceName{corev1.ResourceCPU, corev1.ResourceMemory},
-				Allocatable:   allocatable.DeepCopy(),
-				Available:     framework.NewResource(allocatable),
-				AssignedPods:  map[types.UID]*PodRequirement{},
-				OwnerMatchers: nil,
+				ResourceNames:     []corev1.ResourceName{corev1.ResourceCPU, corev1.ResourceMemory},
+				Allocatable:       allocatable.DeepCopy(),
+				Available:         framework.NewResource(allocatable),
+				AllocatedResource: &framework.Resource{},
+				AssignedPods:      map[types.UID]*PodRequirement{},
+				OwnerMatchers:     nil,
 				ParseError: func() error {
 					_, err := reservationutil.ParseReservationOwnerMatchers([]schedulingv1alpha1.ReservationOwner{
 						{
@@ -487,9 +675,10 @@ func TestReservationInfoUpdateReservation(t *testing.T) {
 					MilliCPU: 8000,
 					Memory:   16 * 1024 * 1024 * 1024,
 				},
-				AssignedPods:  map[types.UID]*PodRequirement{},
-				OwnerMatchers: ownerMatchers,
-				ParseError:    nil,
+				AllocatedResource: &framework.Resource{},
+				AssignedPods:      map[types.UID]*PodRequirement{},
+				OwnerMatchers:     ownerMatchers,
+				ParseError:        nil,
 			},
 		},
 		{
@@ -513,9 +702,10 @@ func TestReservationInfoUpdateReservation(t *testing.T) {
 					MilliCPU: 3000,
 					Memory:   8 * 1024 * 1024 * 1024,
 				},
-				AssignedPods:  map[types.UID]*PodRequirement{},
-				OwnerMatchers: ownerMatchers,
-				ParseError:    nil,
+				AllocatedResource: &framework.Resource{},
+				AssignedPods:      map[types.UID]*PodRequirement{},
+				OwnerMatchers:     ownerMatchers,
+				ParseError:        nil,
 			},
 		},
 	}
@@ -523,12 +713,6 @@ func TestReservationInfoUpdateReservation(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			reservationInfo := NewReservationInfo(tt.reservation)
 			reservationInfo.UpdateReservation(tt.newReservation)
-			sort.Slice(reservationInfo.ResourceNames, func(i, j int) bool {
-				return reservationInfo.ResourceNames[i] < reservationInfo.ResourceNames[j]
-			})
-			sort.Slice(tt.want.ResourceNames, func(i, j int) bool {
-				return tt.want.ResourceNames[i] < tt.want.ResourceNames[j]
-			})
 			tt.want.Reservation = tt.newReservation
 			tt.want.Pod = reservationutil.NewReservePod(tt.newReservation)
 			assert.Equal(t, tt.want, reservationInfo)
@@ -581,14 +765,17 @@ func TestReservationInfoUpdatePod(t *testing.T) {
 			pod:    pod,
 			newPod: pod,
 			want: &ReservationInfo{
-				Pod:           pod,
-				ResourceNames: []corev1.ResourceName{corev1.ResourceCPU, corev1.ResourceMemory},
-				Allocatable:   allocatable.DeepCopy(),
-				Allocated:     corev1.ResourceList{},
-				Available:     framework.NewResource(allocatable),
-				AssignedPods:  map[types.UID]*PodRequirement{},
-				OwnerMatchers: ownerMatchers,
-				ParseError:    parseError,
+				Pod:                   pod,
+				ResourceNames:         []corev1.ResourceName{corev1.ResourceCPU, corev1.ResourceMemory},
+				Allocatable:           allocatable.DeepCopy(),
+				Allocated:             corev1.ResourceList{},
+				Available:             framework.NewResource(allocatable),
+				AllocatedResource:     &framework.Resource{},
+				Non0AllocatedMilliCPU: schedutil.DefaultMilliCPURequest,
+				Non0AllocatedMem:      schedutil.DefaultMemoryRequest,
+				AssignedPods:          map[types.UID]*PodRequirement{},
+				OwnerMatchers:         ownerMatchers,
+				ParseError:            parseError,
 			},
 		},
 		{
@@ -606,11 +793,14 @@ func TestReservationInfoUpdatePod(t *testing.T) {
 				return p
 			}(),
 			want: &ReservationInfo{
-				ResourceNames: []corev1.ResourceName{corev1.ResourceCPU, corev1.ResourceMemory},
-				Allocatable:   allocatable.DeepCopy(),
-				Allocated:     corev1.ResourceList{},
-				Available:     framework.NewResource(allocatable),
-				AssignedPods:  map[types.UID]*PodRequirement{},
+				ResourceNames:         []corev1.ResourceName{corev1.ResourceCPU, corev1.ResourceMemory},
+				Allocatable:           allocatable.DeepCopy(),
+				Allocated:             corev1.ResourceList{},
+				Available:             framework.NewResource(allocatable),
+				AllocatedResource:     &framework.Resource{},
+				Non0AllocatedMilliCPU: schedutil.DefaultMilliCPURequest,
+				Non0AllocatedMem:      schedutil.DefaultMemoryRequest,
+				AssignedPods:          map[types.UID]*PodRequirement{},
 				OwnerMatchers: func() []reservationutil.ReservationOwnerMatcher {
 					m, _ := reservationutil.ParseReservationOwnerMatchers([]schedulingv1alpha1.ReservationOwner{
 						{
@@ -644,12 +834,15 @@ func TestReservationInfoUpdatePod(t *testing.T) {
 				return p
 			}(),
 			want: &ReservationInfo{
-				ResourceNames: []corev1.ResourceName{corev1.ResourceCPU, corev1.ResourceMemory},
-				Allocatable:   allocatable.DeepCopy(),
-				Allocated:     corev1.ResourceList{},
-				Available:     framework.NewResource(allocatable),
-				AssignedPods:  map[types.UID]*PodRequirement{},
-				OwnerMatchers: nil,
+				ResourceNames:         []corev1.ResourceName{corev1.ResourceCPU, corev1.ResourceMemory},
+				Allocatable:           allocatable.DeepCopy(),
+				Allocated:             corev1.ResourceList{},
+				Available:             framework.NewResource(allocatable),
+				AllocatedResource:     &framework.Resource{},
+				Non0AllocatedMilliCPU: schedutil.DefaultMilliCPURequest,
+				Non0AllocatedMem:      schedutil.DefaultMemoryRequest,
+				AssignedPods:          map[types.UID]*PodRequirement{},
+				OwnerMatchers:         nil,
 				ParseError: func() error {
 					_, err := reservationutil.ParseReservationOwnerMatchers([]schedulingv1alpha1.ReservationOwner{
 						{
@@ -672,12 +865,6 @@ func TestReservationInfoUpdatePod(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			reservationInfo := NewReservationInfoFromPod(tt.pod)
 			reservationInfo.UpdatePod(tt.newPod)
-			sort.Slice(reservationInfo.ResourceNames, func(i, j int) bool {
-				return reservationInfo.ResourceNames[i] < reservationInfo.ResourceNames[j]
-			})
-			sort.Slice(tt.want.ResourceNames, func(i, j int) bool {
-				return tt.want.ResourceNames[i] < tt.want.ResourceNames[j]
-			})
 			tt.want.Pod = tt.newPod
 			assert.Equal(t, tt.want, reservationInfo)
 		})
@@ -775,6 +962,12 @@ func TestReservationInfoRefreshAvailable(t *testing.T) {
 					apiext.ResourceNvidiaGPU: 1,
 				},
 			},
+			AllocatedResource: &framework.Resource{
+				MilliCPU: 1000,
+				Memory:   4 * 1024 * 1024 * 1024,
+			},
+			Non0AllocatedMilliCPU: 1000,
+			Non0AllocatedMem:      4 * 1024 * 1024 * 1024,
 			AssignedPods: map[types.UID]*PodRequirement{
 				testPod.UID: {
 					Namespace: testPod.Namespace,
@@ -786,13 +979,52 @@ func TestReservationInfoRefreshAvailable(t *testing.T) {
 			OwnerMatchers: ownerMatchers,
 			ParseError:    nil,
 		}
+		expectedRInfo1 := &ReservationInfo{
+			Reservation:   testReservation,
+			Pod:           reservationutil.NewReservePod(testReservation),
+			ResourceNames: []corev1.ResourceName{corev1.ResourceCPU, corev1.ResourceMemory, apiext.ResourceNvidiaGPU},
+			Allocatable: corev1.ResourceList{
+				corev1.ResourceCPU:       resource.MustParse("4"),
+				corev1.ResourceMemory:    resource.MustParse("8Gi"),
+				apiext.ResourceNvidiaGPU: resource.MustParse("1"),
+			},
+			Allocated: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("0"),
+				corev1.ResourceMemory: resource.MustParse("0"),
+			},
+			Available: &framework.Resource{
+				MilliCPU: 4000,
+				Memory:   8 * 1024 * 1024 * 1024,
+				ScalarResources: map[corev1.ResourceName]int64{
+					apiext.ResourceNvidiaGPU: 1,
+				},
+			},
+			AllocatedResource:     &framework.Resource{},
+			Non0AllocatedMilliCPU: 0,
+			Non0AllocatedMem:      0,
+			AssignedPods:          map[types.UID]*PodRequirement{},
+			OwnerMatchers:         ownerMatchers,
+			ParseError:            nil,
+		}
+
 		rInfo := NewReservationInfo(testReservation)
 		rInfo.AddAssignedPod(testPod)
-		rInfo.RefreshAvailable()
-		sort.Slice(rInfo.ResourceNames, func(i, j int) bool {
-			return rInfo.ResourceNames[i] < rInfo.ResourceNames[j]
-		})
+		rInfo.RefreshPreCalculated()
 		assert.Equal(t, expectedRInfo, rInfo)
+		gotAvailable := rInfo.GetAvailable()
+		assert.Equal(t, expectedRInfo.Available, gotAvailable)
+		gotAllocatedResource, gotNon0MilliCPU, gotNon0Mem := rInfo.GetAllocatedResource()
+		assert.Equal(t, expectedRInfo.AllocatedResource, gotAllocatedResource)
+		assert.Equal(t, expectedRInfo.Non0AllocatedMilliCPU, gotNon0MilliCPU)
+		assert.Equal(t, expectedRInfo.Non0AllocatedMem, gotNon0Mem)
+		rInfo.RemoveAssignedPod(testPod)
+		assert.Equal(t, expectedRInfo1, rInfo)
+		gotAvailable = rInfo.GetAvailable()
+		assert.Equal(t, expectedRInfo1.Available, gotAvailable)
+		gotAllocatedResource, gotNon0MilliCPU, gotNon0Mem = rInfo.GetAllocatedResource()
+		assert.Equal(t, expectedRInfo1.AllocatedResource, gotAllocatedResource)
+		assert.Equal(t, expectedRInfo1.Non0AllocatedMilliCPU, gotNon0MilliCPU)
+		assert.Equal(t, expectedRInfo1.Non0AllocatedMem, gotNon0Mem)
 	})
 }
 

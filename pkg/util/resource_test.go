@@ -1156,3 +1156,35 @@ func TestLessThanOrEqualEnhanced(t *testing.T) {
 		})
 	}
 }
+func TestMinQuant(t *testing.T) {
+	tests := []struct {
+		name      string
+		a         resource.Quantity
+		b         resource.Quantity
+		expectedQ resource.Quantity
+	}{
+		{
+			name:      "a < b",
+			a:         *resource.NewQuantity(10, resource.DecimalSI),
+			b:         *resource.NewQuantity(20, resource.DecimalSI),
+			expectedQ: *resource.NewQuantity(10, resource.DecimalSI),
+		},
+		{
+			name:      "a > b",
+			a:         *resource.NewQuantity(80, resource.DecimalSI),
+			b:         *resource.NewQuantity(20, resource.DecimalSI),
+			expectedQ: *resource.NewQuantity(20, resource.DecimalSI),
+		},
+		{
+			name:      "a = b",
+			a:         *resource.NewQuantity(20, resource.DecimalSI),
+			b:         *resource.NewQuantity(20, resource.DecimalSI),
+			expectedQ: *resource.NewQuantity(20, resource.DecimalSI),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.expectedQ, MinQuant(tt.a, tt.b))
+		})
+	}
+}

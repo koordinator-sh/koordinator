@@ -33,7 +33,6 @@ import (
 	resourceapi "k8s.io/kubernetes/pkg/api/v1/resource"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework/parallelize"
-	schedutil "k8s.io/kubernetes/pkg/scheduler/util"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
@@ -154,8 +153,9 @@ func (pl *Plugin) prepareMatchReservationStateForNormalPod(ctx context.Context, 
 	parallelCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	errCh := parallelize.NewErrorChannel()
+	nodeInfoLister := pl.handle.SnapshotSharedLister().NodeInfos()
 	processNode := func(i int) {
-		nodeInfo, err := pl.handle.SnapshotSharedLister().NodeInfos().Get(allNodes[i])
+		nodeInfo, err := nodeInfoLister.Get(allNodes[i])
 		if err != nil {
 			klog.Warningf("Failed to get NodeInfo of %s during reservation's BeforePreFilter for pod: %v, err: %v", allNodes[i], klog.KObj(pod), err)
 			return
@@ -322,6 +322,10 @@ func (pl *Plugin) prepareMatchReservationStateForReservePod(ctx context.Context,
 	rInfo := frameworkext.NewReservationInfo(r)
 	isPreAllocationRequired := extension.IsPreAllocationRequired(pod.Labels)
 
+	// by default list all nodes existing a reservation
+	// merge with pre-allocatable pods for the pre-allocation
+	allNodes := pl.reservationCache.listAllNodes()
+
 	preAllocatableCandidatesOnNode := map[string][]*corev1.Pod{}
 	extender, _ := pl.handle.(frameworkext.FrameworkExtender)
 	if extender != nil { // global preRestore
@@ -348,18 +352,32 @@ func (pl *Plugin) prepareMatchReservationStateForReservePod(ctx context.Context,
 			if err != nil {
 				return nil, false, framework.AsStatus(err)
 			}
+			if len(preAllocatableCandidatesOnNode) > 0 {
+				nodeMap := make(map[string]struct{}, len(allNodes))
+				for _, node := range allNodes {
+					nodeMap[node] = struct{}{}
+				}
+				for node := range preAllocatableCandidatesOnNode {
+					if _, ok := nodeMap[node]; !ok {
+						allNodes = append(allNodes, node)
+					}
+				}
+				if klog.V(6).Enabled() {
+					klog.InfoS("listPreAllocatableCandidates got candidate pods", "pod", klog.KObj(pod), "reservation", rName, "preAllocatable nodes", len(preAllocatableCandidatesOnNode), "all nodes", len(allNodes))
+				}
+			}
 		}
 	}
 
 	var stateIndex, diagnosisIndex int32
-	allNodes := pl.reservationCache.listAllNodes()
 	allNodeReservationStates := make([]*nodeReservationState, len(allNodes))
 	allNodeDiagnosisStates := make([]*nodeDiagnosisState, len(allNodes))
 	parallelCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	errCh := parallelize.NewErrorChannel()
+	nodeInfoLister := pl.handle.SnapshotSharedLister().NodeInfos()
 	processNode := func(i int) {
-		nodeInfo, err := pl.handle.SnapshotSharedLister().NodeInfos().Get(allNodes[i])
+		nodeInfo, err := nodeInfoLister.Get(allNodes[i])
 		if err != nil {
 			klog.Warningf("Failed to get NodeInfo of %s during reservation's BeforePreFilter for pod: %v, err: %v", allNodes[i], klog.KObj(pod), err)
 			return
@@ -379,7 +397,7 @@ func (pl *Plugin) prepareMatchReservationStateForReservePod(ctx context.Context,
 			return
 		}
 
-		var unmatched, matchedOrIgnored []*frameworkext.ReservationInfo
+		var unmatched []*frameworkext.ReservationInfo
 		diagnosisState := &nodeDiagnosisState{
 			nodeName:                 nodeName,
 			ignored:                  0,
@@ -432,13 +450,16 @@ func (pl *Plugin) prepareMatchReservationStateForReservePod(ctx context.Context,
 				}
 			}
 		}
+		if klog.V(6).Enabled() {
+			klog.InfoS("filter pre-allocatable pods", "reservation", rInfo.GetName(), "node", nodeName, "candidate", len(preAllocatableCandidatesOnNode[nodeName]), "filtered", len(preAllocatablePods))
+		}
 
-		if diagnosisState.ignored > 0 || diagnosisState.ownerMatched > 0 {
+		if diagnosisState.ownerMatched > 0 {
 			idx := atomic.AddInt32(&diagnosisIndex, 1)
 			allNodeDiagnosisStates[idx-1] = diagnosisState
 		}
 
-		if len(matchedOrIgnored) == 0 && len(unmatched) == 0 && len(preAllocatablePods) == 0 {
+		if len(unmatched) == 0 && len(preAllocatablePods) == 0 {
 			return
 		}
 
@@ -449,7 +470,7 @@ func (pl *Plugin) prepareMatchReservationStateForReservePod(ctx context.Context,
 
 		nodeRState := &nodeReservationState{
 			nodeName:           nodeName,
-			matchedOrIgnored:   matchedOrIgnored,
+			matchedOrIgnored:   nil,
 			unmatched:          unmatched,
 			preAllocatablePods: preAllocatablePods,
 		}
@@ -476,7 +497,7 @@ func (pl *Plugin) prepareMatchReservationStateForReservePod(ctx context.Context,
 			}
 		}
 
-		if len(matchedOrIgnored) > 0 || len(unmatched) > 0 {
+		if len(unmatched) > 0 || len(preAllocatablePods) > 0 {
 			index := atomic.AddInt32(&stateIndex, 1)
 			allNodeReservationStates[index-1] = nodeRState
 		}
@@ -533,8 +554,10 @@ func listPreAllocatableCandidates(podLister listercorev1.PodLister, rInfo *frame
 			if candidatePod.Spec.NodeName == "" {
 				continue
 			}
-			// FIXME: Should check if the annotated reservation has been deleted.
 			if candidatePod.Annotations != nil && candidatePod.Annotations[extension.AnnotationReservationAllocated] != "" {
+				continue
+			}
+			if reservationutil.IsReservePod(candidatePod) {
 				continue
 			}
 			if _, ok := podMap[candidatePod.UID]; ok {
@@ -775,15 +798,7 @@ func restoreUnmatchedReservations(nodeInfo *framework.NodeInfo, rInfo *framework
 	// For example, on a 32C machine, ReservationA reserves 8C, and then PodA uses ReservationA to allocate 4C,
 	// then the record on NodeInfo is that 12C is allocated. But in fact it should be calculated according to 8C,
 	// so we need to return some resources.
-	updateNodeInfoRequested(nodeInfo, &corev1.Pod{
-		Spec: corev1.PodSpec{
-			Containers: []corev1.Container{
-				{
-					Resources: corev1.ResourceRequirements{Requests: rInfo.Allocated},
-				},
-			},
-		},
-	}, -1)
+	updateNodeInfoRequestedForUnmatched(nodeInfo, rInfo)
 	return nil
 }
 
@@ -811,59 +826,19 @@ func isPodAllNodesPreRestoreRequired(pod *corev1.Pod) bool {
 	return false
 }
 
-func updateNodeInfoRequested(n *framework.NodeInfo, pod *corev1.Pod, sign int64) {
-	res, non0CPU, non0Mem := calculateResource(pod)
-	n.Requested.MilliCPU += sign * res.MilliCPU
-	n.Requested.Memory += sign * res.Memory
-	n.Requested.EphemeralStorage += sign * res.EphemeralStorage
+func updateNodeInfoRequestedForUnmatched(n *framework.NodeInfo, rInfo *frameworkext.ReservationInfo) {
+	res, non0MilliCPU, non0Mem := rInfo.GetAllocatedResource()
+	n.Requested.MilliCPU -= res.MilliCPU
+	n.Requested.Memory -= res.Memory
+	n.Requested.EphemeralStorage -= res.EphemeralStorage
 	if n.Requested.ScalarResources == nil && len(res.ScalarResources) > 0 {
 		n.Requested.ScalarResources = map[corev1.ResourceName]int64{}
 	}
 	for rName, rQuant := range res.ScalarResources {
-		n.Requested.ScalarResources[rName] += sign * rQuant
+		n.Requested.ScalarResources[rName] -= rQuant
 	}
-	n.NonZeroRequested.MilliCPU += sign * non0CPU
-	n.NonZeroRequested.Memory += sign * non0Mem
-}
-
-func max(a, b int64) int64 {
-	if a >= b {
-		return a
-	}
-	return b
-}
-
-// resourceRequest = max(sum(podSpec.Containers), podSpec.InitContainers) + overHead
-func calculateResource(pod *corev1.Pod) (res framework.Resource, non0CPU int64, non0Mem int64) {
-	resPtr := &res
-	for _, c := range pod.Spec.Containers {
-		resPtr.Add(c.Resources.Requests)
-		non0CPUReq, non0MemReq := schedutil.GetNonzeroRequests(&c.Resources.Requests)
-		non0CPU += non0CPUReq
-		non0Mem += non0MemReq
-		// No non-zero resources for GPUs or opaque resources.
-	}
-
-	for _, ic := range pod.Spec.InitContainers {
-		resPtr.SetMaxResource(ic.Resources.Requests)
-		non0CPUReq, non0MemReq := schedutil.GetNonzeroRequests(&ic.Resources.Requests)
-		non0CPU = max(non0CPU, non0CPUReq)
-		non0Mem = max(non0Mem, non0MemReq)
-	}
-
-	// If Overhead is being utilized, add to the total requests for the pod
-	if pod.Spec.Overhead != nil {
-		resPtr.Add(pod.Spec.Overhead)
-		if _, found := pod.Spec.Overhead[corev1.ResourceCPU]; found {
-			non0CPU += pod.Spec.Overhead.Cpu().MilliValue()
-		}
-
-		if _, found := pod.Spec.Overhead[corev1.ResourceMemory]; found {
-			non0Mem += pod.Spec.Overhead.Memory().Value()
-		}
-	}
-
-	return
+	n.NonZeroRequested.MilliCPU -= non0MilliCPU
+	n.NonZeroRequested.Memory -= non0Mem
 }
 
 func parseSpecificNodesFromAffinity(pod *corev1.Pod) (sets.String, *framework.Status) {

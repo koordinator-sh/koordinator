@@ -71,6 +71,8 @@ func DefaultColocationStrategy() configuration.ColocationStrategy {
 		MidCPUThresholdPercent:        pointer.Int64(100),
 		MidMemoryThresholdPercent:     pointer.Int64(100),
 		MidUnallocatedPercent:         pointer.Int64(0),
+		BatchCPUThresholdPercent:      nil,
+		BatchMemoryThresholdPercent:   nil,
 	}
 	cfg.ColocationStrategyExtender = defaultColocationStrategyExtender
 	return cfg
@@ -80,15 +82,17 @@ func IsColocationStrategyValid(strategy *configuration.ColocationStrategy) bool 
 	return strategy != nil &&
 		(strategy.MetricAggregateDurationSeconds == nil || *strategy.MetricAggregateDurationSeconds > 0) &&
 		(strategy.MetricReportIntervalSeconds == nil || *strategy.MetricReportIntervalSeconds > 0) &&
-		(strategy.CPUReclaimThresholdPercent == nil || *strategy.CPUReclaimThresholdPercent > 0) &&
-		(strategy.MemoryReclaimThresholdPercent == nil || *strategy.MemoryReclaimThresholdPercent > 0) &&
+		(strategy.CPUReclaimThresholdPercent == nil || *strategy.CPUReclaimThresholdPercent >= 0) &&
+		(strategy.MemoryReclaimThresholdPercent == nil || *strategy.MemoryReclaimThresholdPercent >= 0) &&
 		(strategy.DegradeTimeMinutes == nil || *strategy.DegradeTimeMinutes > 0) &&
 		(strategy.UpdateTimeThresholdSeconds == nil || *strategy.UpdateTimeThresholdSeconds > 0) &&
 		(strategy.ResourceDiffThreshold == nil || *strategy.ResourceDiffThreshold > 0) &&
 		(strategy.MetricMemoryCollectPolicy == nil || len(*strategy.MetricMemoryCollectPolicy) > 0) &&
 		(strategy.MidCPUThresholdPercent == nil || (*strategy.MidCPUThresholdPercent >= 0 && *strategy.MidCPUThresholdPercent <= 100)) &&
 		(strategy.MidMemoryThresholdPercent == nil || (*strategy.MidMemoryThresholdPercent >= 0 && *strategy.MidMemoryThresholdPercent <= 100)) &&
-		(strategy.MidUnallocatedPercent == nil || (*strategy.MidUnallocatedPercent >= 0 && *strategy.MidUnallocatedPercent <= 100))
+		(strategy.MidUnallocatedPercent == nil || (*strategy.MidUnallocatedPercent >= 0 && *strategy.MidUnallocatedPercent <= 100)) &&
+		(strategy.BatchCPUThresholdPercent == nil || *strategy.BatchCPUThresholdPercent >= 0) &&
+		(strategy.BatchMemoryThresholdPercent == nil || *strategy.BatchMemoryThresholdPercent >= 0)
 }
 
 func IsNodeColocationCfgValid(nodeCfg *configuration.NodeColocationCfg) bool {

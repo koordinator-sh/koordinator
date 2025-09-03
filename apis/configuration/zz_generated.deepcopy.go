@@ -209,6 +209,16 @@ func (in *ColocationStrategy) DeepCopyInto(out *ColocationStrategy) {
 		*out = new(int64)
 		**out = **in
 	}
+	if in.BatchCPUThresholdPercent != nil {
+		in, out := &in.BatchCPUThresholdPercent, &out.BatchCPUThresholdPercent
+		*out = new(int64)
+		**out = **in
+	}
+	if in.BatchMemoryThresholdPercent != nil {
+		in, out := &in.BatchMemoryThresholdPercent, &out.BatchMemoryThresholdPercent
+		*out = new(int64)
+		**out = **in
+	}
 	in.ColocationStrategyExtender.DeepCopyInto(&out.ColocationStrategyExtender)
 }
 

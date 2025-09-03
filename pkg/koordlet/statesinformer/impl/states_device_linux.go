@@ -324,6 +324,7 @@ func (s *statesInformer) buildXPUDevice(xpuDevices koordletuti.XPUDevices) []sch
 		}
 
 		resources := make(map[corev1.ResourceName]resource.Quantity)
+		resources[extension.ResourceGPUMemoryRatio] = *resource.NewQuantity(100, resource.DecimalSI)
 		for resourceName, resourceQuantity := range xpu.Resources {
 			quantity, err := resource.ParseQuantity(resourceQuantity)
 			if err != nil {
@@ -338,9 +339,9 @@ func (s *statesInformer) buildXPUDevice(xpuDevices koordletuti.XPUDevices) []sch
 			resources[corev1.ResourceName(resourceName)] = quantity
 		}
 
-		deviceHelathy := true
+		deviceHealthy := true
 		if xpu.Status != nil {
-			deviceHelathy = xpu.Status.Healthy
+			deviceHealthy = xpu.Status.Healthy
 		}
 
 		topo := getXPUDeviceTopology(&xpu)
@@ -350,7 +351,7 @@ func (s *statesInformer) buildXPUDevice(xpuDevices koordletuti.XPUDevices) []sch
 			UUID:       xpu.UUID,
 			Minor:      pointer.Int32(int32(minor)),
 			Type:       schedulingv1alpha1.GPU,
-			Health:     deviceHelathy,
+			Health:     deviceHealthy,
 			Resources:  resources,
 			Topology:   topo,
 			Conditions: conditions,

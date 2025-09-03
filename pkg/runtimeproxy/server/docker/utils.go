@@ -25,7 +25,7 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"path"
+	"path/filepath"
 	"strings"
 
 	"k8s.io/klog/v2"
@@ -145,10 +145,10 @@ func ToCriCgroupPath(cgroupDriver, cgroupParent string) string {
 	prefix := cgroupHierarcy[0]
 	fullPath := "/"
 	for i := 0; i < len(cgroupHierarcy)-1; i++ {
-		fullPath = path.Join(fullPath, fmt.Sprintf("%s.slice", prefix))
+		fullPath = filepath.Join(fullPath, fmt.Sprintf("%s.slice", prefix))
 		prefix = fmt.Sprintf("%s-%s", prefix, cgroupHierarcy[i+1])
 	}
-	fullPath = path.Join(fullPath, prefix)
+	fullPath = filepath.Join(fullPath, prefix)
 	return fullPath
 }
 
@@ -225,7 +225,7 @@ func generateExpectedCgroupParent(cgroupDriver, cgroupParent string) string {
 		// this is a very good thing.
 		if cgroupDriver == "systemd" {
 			// Pass only the last component of the cgroup path to systemd.
-			cgroupParent = path.Base(cgroupParent)
+			cgroupParent = filepath.Base(cgroupParent)
 		}
 	}
 	klog.V(4).Infof("Setting cgroup parent to: %q", cgroupParent)

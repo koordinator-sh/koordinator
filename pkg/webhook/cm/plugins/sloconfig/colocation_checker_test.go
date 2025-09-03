@@ -277,7 +277,7 @@ func Test_Colocation_ConfigContentsValid(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name: "cluster MemoryReclaimThresholdPercent invalid",
+			name: "cluster MemoryReclaimThresholdPercent more than 100 is valid",
 			args: args{
 				cfg: configuration.ColocationCfg{
 					ColocationStrategy: configuration.ColocationStrategy{
@@ -285,7 +285,7 @@ func Test_Colocation_ConfigContentsValid(t *testing.T) {
 					},
 				},
 			},
-			wantErr: true,
+			wantErr: false,
 		},
 		{
 			name: "cluster DegradeTimeMinutes invalid",

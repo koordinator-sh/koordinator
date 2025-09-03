@@ -27,6 +27,7 @@ import (
 	"k8s.io/utils/pointer"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/features"
 	utilfeature "github.com/koordinator-sh/koordinator/pkg/util/feature"
 )
@@ -83,6 +84,9 @@ func TestTransformPod(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
 						apiext.AnnotationDeviceAllocated: `{"gpu":[{"minor":1,"resources":{"koordinator.sh/gpu-core":"60","koordinator.sh/gpu-memory":"8Gi","koordinator.sh/gpu-memory-ratio":"50"}}]}`,
+					},
+					Labels: map[string]string{
+						apiext.LabelQuestionedObjectKey: "/",
 					},
 				},
 				Spec: corev1.PodSpec{
@@ -164,6 +168,9 @@ func TestTransformPod(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
 						apiext.AnnotationDeviceAllocated: `{"gpu":[{"minor":1,"resources":{"koordinator.sh/gpu-core":"60","koordinator.sh/gpu-memory":"8Gi","koordinator.sh/gpu-memory-ratio":"50"}}]}`,
+					},
+					Labels: map[string]string{
+						apiext.LabelQuestionedObjectKey: "/",
 					},
 				},
 				Spec: corev1.PodSpec{
@@ -258,6 +265,7 @@ func TestTransformPod(t *testing.T) {
 					Labels: map[string]string{
 						apiext.LabelPodQoS:              string(apiext.QoSLSR),
 						apiext.LabelPodPreemptionPolicy: string(corev1.PreemptNever),
+						apiext.LabelQuestionedObjectKey: "/",
 					},
 					Annotations: map[string]string{
 						apiext.AnnotationDeviceAllocated: `{"gpu":[{"minor":1,"resources":{"koordinator.sh/gpu-core":"60","koordinator.sh/gpu-memory":"8Gi","koordinator.sh/gpu-memory-ratio":"50"}}]}`,
@@ -354,7 +362,8 @@ func TestTransformPod(t *testing.T) {
 			wantPod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: map[string]string{
-						apiext.LabelPodQoS: string(apiext.QoSLSR),
+						apiext.LabelPodQoS:              string(apiext.QoSLSR),
+						apiext.LabelQuestionedObjectKey: "/",
 					},
 					Annotations: map[string]string{
 						apiext.AnnotationDeviceAllocated: `{"gpu":[{"minor":1,"resources":{"koordinator.sh/gpu-core":"60","koordinator.sh/gpu-memory":"8Gi","koordinator.sh/gpu-memory-ratio":"50"}}]}`,
@@ -404,6 +413,146 @@ func TestTransformPod(t *testing.T) {
 			obj, err := TransformPodFactory()(tt.pod)
 			assert.NoError(t, err)
 			assert.Equal(t, tt.wantPod, obj)
+		})
+	}
+}
+
+func TestTransformScheduleExplanationObjectKey(t *testing.T) {
+	tests := []struct {
+		name    string
+		pod     *corev1.Pod
+		wantPod *corev1.Pod
+	}{
+		{
+			name: "gang-master",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "prefix-master-0",
+					Labels: map[string]string{
+						v1alpha1.PodGroupLabel: "gang-master",
+					},
+				},
+			},
+			wantPod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "prefix-master-0",
+					Labels: map[string]string{
+						v1alpha1.PodGroupLabel:          "gang-master",
+						apiext.LabelQuestionedObjectKey: "gang",
+					},
+				},
+			},
+		},
+		{
+			name: "gang-worker",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "prefix-worker-0",
+					Labels: map[string]string{
+						v1alpha1.PodGroupLabel: "gang-worker",
+					},
+				},
+			},
+			wantPod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "prefix-worker-0",
+					Labels: map[string]string{
+						v1alpha1.PodGroupLabel:          "gang-worker",
+						apiext.LabelQuestionedObjectKey: "gang",
+					},
+				},
+			},
+		},
+		{
+			name: "annotation-gang",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "prefix-worker-0",
+					Annotations: map[string]string{
+						apiext.AnnotationGangName: "annotation-gang",
+					},
+				},
+			},
+			wantPod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "prefix-worker-0",
+					Annotations: map[string]string{
+						apiext.AnnotationGangName: "annotation-gang",
+					},
+					Labels: map[string]string{
+						apiext.LabelQuestionedObjectKey: "annotation-gang",
+					},
+				},
+			},
+		},
+		{
+			name: "annotation-gang-with-gangGroup",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "prefix-worker-0",
+					Annotations: map[string]string{
+						apiext.AnnotationGangName:   "gangA",
+						apiext.AnnotationGangGroups: "[default/gangA, default/gangB]",
+					},
+				},
+			},
+			wantPod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "prefix-worker-0",
+					Annotations: map[string]string{
+						apiext.AnnotationGangName:   "gangA",
+						apiext.AnnotationGangGroups: "[default/gangA, default/gangB]",
+					},
+					Labels: map[string]string{
+						apiext.LabelQuestionedObjectKey: "[default/gangA, default/gangB]",
+					},
+				},
+			},
+		},
+		{
+			name: "bare pod",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "prefix-worker-0",
+					Namespace: "default",
+				},
+			},
+			wantPod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "prefix-worker-0",
+					Namespace: "default",
+					Labels: map[string]string{
+						apiext.LabelQuestionedObjectKey: "default/prefix-worker-0",
+					},
+				},
+			},
+		},
+		{
+			name: "already exists key",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "prefix-worker-0",
+					Namespace: "default",
+					Labels: map[string]string{
+						apiext.LabelQuestionedObjectKey: "default/prefix-worker-c",
+					},
+				},
+			},
+			wantPod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "prefix-worker-0",
+					Namespace: "default",
+					Labels: map[string]string{
+						apiext.LabelQuestionedObjectKey: "default/prefix-worker-c",
+					},
+				},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			TransformScheduleExplanationObjectKey()(tt.pod)
+			assert.Equal(t, tt.wantPod, tt.pod)
 		})
 	}
 }

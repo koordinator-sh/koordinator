@@ -28,6 +28,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	"k8s.io/klog/v2"
+	"k8s.io/utils/ptr"
 
 	"github.com/koordinator-sh/koordinator/apis/configuration"
 	"github.com/koordinator-sh/koordinator/apis/extension"
@@ -45,6 +46,8 @@ const (
 	MidCPUThreshold       = "midCPUThreshold"
 	MidMemoryThreshold    = "midMemoryThreshold"
 	MidUnallocatedPercent = "midUnallocatedPercent"
+	BatchCPUThreshold     = "batchCPUThreshold"
+	BatchMemoryThreshold  = "batchMemoryThreshold"
 )
 
 func CalculateBatchResourceByPolicy(strategy *configuration.ColocationStrategy, nodeCapacity, nodeSafetyMargin, nodeReserved,
@@ -67,37 +70,87 @@ func CalculateBatchResourceByPolicy(strategy *configuration.ColocationStrategy, 
 	batchAllocatable := batchAllocatableByUsage
 
 	var cpuMsg string
+	// while batchCPU/MEMThresholdPercent != nil, use BatchXXXThresholdPercent of nodeCapacity to limit batchAllocatable
+	//       Node(Batch).Alloc = min(nodeCapacity * BatchXXXThresholdPercent, Node(Batch).Alloc[Policy])
+	// while batchCPU/MEMThresholdPercent == nil
+	//       Node(Batch).Alloc = Node(Batch).Alloc[Policy]
+	var batchCPUThresholdPercent *float64
+	if strategy != nil && strategy.BatchCPUThresholdPercent != nil {
+		batchCPUThresholdPercent = ptr.To(float64(*strategy.BatchCPUThresholdPercent) / 100)
+	}
 	// batch cpu support policy "usage" and "maxUsageRequest"
 	if strategy != nil && strategy.CPUCalculatePolicy != nil && *strategy.CPUCalculatePolicy == configuration.CalculateByPodMaxUsageRequest {
-		batchAllocatable[corev1.ResourceCPU] = *batchAllocatableByMaxUsageRequest.Cpu()
-		cpuMsg = fmt.Sprintf("batchAllocatable[CPU(Milli-Core)]:%v = nodeCapacity:%v - nodeSafetyMargin:%v - systemUsageOrNodeReserved:%v - podHPMaxUsedRequest:%v",
-			batchAllocatable.Cpu().MilliValue(), nodeCapacity.Cpu().MilliValue(), nodeSafetyMargin.Cpu().MilliValue(),
-			systemUsed.Cpu().MilliValue(), podHPMaxUsedReq.Cpu().MilliValue())
+		if batchCPUThresholdPercent == nil {
+			batchAllocatable[corev1.ResourceCPU] = *batchAllocatableByMaxUsageRequest.Cpu()
+			cpuMsg = fmt.Sprintf("batchAllocatable[CPU(Milli-Core)]:%v = nodeCapacity:%v - nodeSafetyMargin:%v - systemUsageOrNodeReserved:%v - podHPMaxUsedRequest:%v",
+				batchAllocatable.Cpu().MilliValue(), nodeCapacity.Cpu().MilliValue(), nodeSafetyMargin.Cpu().MilliValue(),
+				systemUsed.Cpu().MilliValue(), podHPMaxUsedReq.Cpu().MilliValue())
+		} else {
+			batchAllocatable[corev1.ResourceCPU] = util.MinQuant(*batchAllocatableByMaxUsageRequest.Cpu(), util.MultiplyMilliQuant(*nodeCapacity.Cpu(), *batchCPUThresholdPercent))
+			cpuMsg = fmt.Sprintf("batchAllocatable[CPU(Milli-Core)]:%v = min(nodeCapacity:%v * thresholdRatio:%v, nodeCapacity:%v - nodeSafetyMargin:%v - systemUsageOrNodeReserved:%v - podHPMaxUsedRequest:%v)",
+				batchAllocatable.Cpu().MilliValue(), nodeCapacity.Cpu().MilliValue(), *batchCPUThresholdPercent, nodeCapacity.Cpu().MilliValue(), nodeSafetyMargin.Cpu().MilliValue(),
+				systemUsed.Cpu().MilliValue(), podHPMaxUsedReq.Cpu().MilliValue())
+		}
 	} else { // use CalculatePolicy "usage" by default
-		cpuMsg = fmt.Sprintf("batchAllocatable[CPU(Milli-Core)]:%v = nodeCapacity:%v - nodeSafetyMargin:%v - systemUsageOrNodeReserved:%v - podHPUsed:%v",
-			batchAllocatable.Cpu().MilliValue(), nodeCapacity.Cpu().MilliValue(), nodeSafetyMargin.Cpu().MilliValue(),
-			systemUsed.Cpu().MilliValue(), podHPUsed.Cpu().MilliValue())
+		if batchCPUThresholdPercent == nil {
+			cpuMsg = fmt.Sprintf("batchAllocatable[CPU(Milli-Core)]:%v = nodeCapacity:%v - nodeSafetyMargin:%v - systemUsageOrNodeReserved:%v - podHPUsed:%v",
+				batchAllocatable.Cpu().MilliValue(), nodeCapacity.Cpu().MilliValue(), nodeSafetyMargin.Cpu().MilliValue(),
+				systemUsed.Cpu().MilliValue(), podHPUsed.Cpu().MilliValue())
+		} else {
+			batchAllocatable[corev1.ResourceCPU] = util.MinQuant(*batchAllocatable.Cpu(), util.MultiplyMilliQuant(*nodeCapacity.Cpu(), float64(*strategy.BatchCPUThresholdPercent)/100))
+			cpuMsg = fmt.Sprintf("batchAllocatable[CPU(Milli-Core)]:%v = min(nodeCapacity:%v * thresholdRatio:%v, nodeCapacity:%v - nodeSafetyMargin:%v - systemUsageOrNodeReserved:%v - podHPUsed:%v)",
+				batchAllocatable.Cpu().MilliValue(), nodeCapacity.Cpu().MilliValue(), *batchCPUThresholdPercent, nodeCapacity.Cpu().MilliValue(), nodeSafetyMargin.Cpu().MilliValue(),
+				systemUsed.Cpu().MilliValue(), podHPUsed.Cpu().MilliValue())
+		}
 	}
 
 	var memMsg string
+	var batchMemThresholdPercent *float64
+	if strategy != nil && strategy.BatchMemoryThresholdPercent != nil {
+		batchMemThresholdPercent = ptr.To(float64(*strategy.BatchMemoryThresholdPercent) / 100)
+	}
 	// batch memory support policy "usage", "request" and "maxUsageRequest"
 	if strategy != nil && strategy.MemoryCalculatePolicy != nil && *strategy.MemoryCalculatePolicy == configuration.CalculateByPodRequest {
-		batchAllocatable[corev1.ResourceMemory] = *batchAllocatableByRequest.Memory()
-		memMsg = fmt.Sprintf("batchAllocatable[Mem(GB)]:%v = nodeCapacity:%v - nodeSafetyMargin:%v - nodeReserved:%v - podHPRequest:%v",
-			batchAllocatable.Memory().ScaledValue(resource.Giga), nodeCapacity.Memory().ScaledValue(resource.Giga),
-			nodeSafetyMargin.Memory().ScaledValue(resource.Giga), nodeReserved.Memory().ScaledValue(resource.Giga),
-			podHPReq.Memory().ScaledValue(resource.Giga))
+		if batchMemThresholdPercent == nil {
+			batchAllocatable[corev1.ResourceMemory] = *batchAllocatableByRequest.Memory()
+			memMsg = fmt.Sprintf("batchAllocatable[Mem(GB)]:%v = nodeCapacity:%v - nodeSafetyMargin:%v - nodeReserved:%v - podHPRequest:%v",
+				batchAllocatable.Memory().ScaledValue(resource.Giga), nodeCapacity.Memory().ScaledValue(resource.Giga),
+				nodeSafetyMargin.Memory().ScaledValue(resource.Giga), nodeReserved.Memory().ScaledValue(resource.Giga),
+				podHPReq.Memory().ScaledValue(resource.Giga))
+		} else {
+			batchAllocatable[corev1.ResourceMemory] = util.MinQuant(*batchAllocatableByRequest.Memory(), util.MultiplyQuant(*nodeCapacity.Memory(), float64(*strategy.BatchMemoryThresholdPercent)/100))
+			memMsg = fmt.Sprintf("batchAllocatable[Mem(GB)]:%v = min(nodeCapacity:%v * thresholdRatio:%v, nodeCapacity:%v - nodeSafetyMargin:%v - nodeReserved:%v - podHPRequest:%v)",
+				batchAllocatable.Memory().ScaledValue(resource.Giga), nodeCapacity.Memory().ScaledValue(resource.Giga), *batchMemThresholdPercent, nodeCapacity.Memory().ScaledValue(resource.Giga),
+				nodeSafetyMargin.Memory().ScaledValue(resource.Giga), nodeReserved.Memory().ScaledValue(resource.Giga),
+				podHPReq.Memory().ScaledValue(resource.Giga))
+		}
 	} else if strategy != nil && strategy.MemoryCalculatePolicy != nil && *strategy.MemoryCalculatePolicy == configuration.CalculateByPodMaxUsageRequest {
-		batchAllocatable[corev1.ResourceMemory] = *batchAllocatableByMaxUsageRequest.Memory()
-		memMsg = fmt.Sprintf("batchAllocatable[Mem(GB)]:%v = nodeCapacity:%v - nodeSafetyMargin:%v - systemUsage:%v - podHPMaxUsedRequest:%v",
-			batchAllocatable.Memory().ScaledValue(resource.Giga), nodeCapacity.Memory().ScaledValue(resource.Giga),
-			nodeSafetyMargin.Memory().ScaledValue(resource.Giga), systemUsed.Memory().ScaledValue(resource.Giga),
-			podHPMaxUsedReq.Memory().ScaledValue(resource.Giga))
+		if batchMemThresholdPercent == nil {
+			batchAllocatable[corev1.ResourceMemory] = *batchAllocatableByMaxUsageRequest.Memory()
+			memMsg = fmt.Sprintf("batchAllocatable[Mem(GB)]:%v = nodeCapacity:%v - nodeSafetyMargin:%v - systemUsage:%v - podHPMaxUsedRequest:%v",
+				batchAllocatable.Memory().ScaledValue(resource.Giga), nodeCapacity.Memory().ScaledValue(resource.Giga),
+				nodeSafetyMargin.Memory().ScaledValue(resource.Giga), systemUsed.Memory().ScaledValue(resource.Giga),
+				podHPMaxUsedReq.Memory().ScaledValue(resource.Giga))
+		} else {
+			batchAllocatable[corev1.ResourceMemory] = util.MinQuant(*batchAllocatableByMaxUsageRequest.Memory(), util.MultiplyQuant(*nodeCapacity.Memory(), float64(*strategy.BatchMemoryThresholdPercent)/100))
+			memMsg = fmt.Sprintf("batchAllocatable[Mem(GB)]:%v = min(nodeCapacity:%v * thresholdRatio:%v, nodeCapacity:%v - nodeSafetyMargin:%v - systemUsage:%v - podHPMaxUsedRequest:%v)",
+				batchAllocatable.Memory().ScaledValue(resource.Giga), nodeCapacity.Memory().ScaledValue(resource.Giga), *batchMemThresholdPercent, nodeCapacity.Memory().ScaledValue(resource.Giga),
+				nodeSafetyMargin.Memory().ScaledValue(resource.Giga), systemUsed.Memory().ScaledValue(resource.Giga),
+				podHPMaxUsedReq.Memory().ScaledValue(resource.Giga))
+		}
 	} else { // use CalculatePolicy "usage" by default
-		memMsg = fmt.Sprintf("batchAllocatable[Mem(GB)]:%v = nodeCapacity:%v - nodeSafetyMargin:%v - systemUsage:%v - podHPUsed:%v",
-			batchAllocatable.Memory().ScaledValue(resource.Giga), nodeCapacity.Memory().ScaledValue(resource.Giga),
-			nodeSafetyMargin.Memory().ScaledValue(resource.Giga), systemUsed.Memory().ScaledValue(resource.Giga),
-			podHPUsed.Memory().ScaledValue(resource.Giga))
+		if batchMemThresholdPercent == nil {
+			memMsg = fmt.Sprintf("batchAllocatable[Mem(GB)]:%v = nodeCapacity:%v - nodeSafetyMargin:%v - systemUsage:%v - podHPUsed:%v",
+				batchAllocatable.Memory().ScaledValue(resource.Giga), nodeCapacity.Memory().ScaledValue(resource.Giga),
+				nodeSafetyMargin.Memory().ScaledValue(resource.Giga), systemUsed.Memory().ScaledValue(resource.Giga),
+				podHPUsed.Memory().ScaledValue(resource.Giga))
+		} else {
+			batchAllocatable[corev1.ResourceMemory] = util.MinQuant(*batchAllocatable.Memory(), util.MultiplyQuant(*nodeCapacity.Memory(), float64(*strategy.BatchMemoryThresholdPercent)/100))
+			memMsg = fmt.Sprintf("batchAllocatable[Mem(GB)]:%v = min(nodeCapacity:%v * thresholdRatio:%v, nodeCapacity:%v - nodeSafetyMargin:%v - systemUsage:%v - podHPMaxUsedRequest:%v)",
+				batchAllocatable.Memory().ScaledValue(resource.Giga), nodeCapacity.Memory().ScaledValue(resource.Giga), *batchMemThresholdPercent, nodeCapacity.Memory().ScaledValue(resource.Giga),
+				nodeSafetyMargin.Memory().ScaledValue(resource.Giga), systemUsed.Memory().ScaledValue(resource.Giga),
+				podHPMaxUsedReq.Memory().ScaledValue(resource.Giga))
+		}
 	}
 	return batchAllocatable, cpuMsg, memMsg
 }

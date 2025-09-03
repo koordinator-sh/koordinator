@@ -37,15 +37,18 @@ type ReservationItem struct {
 	UID       types.UID `json:"uid,omitempty"`
 	Kind      string    `json:"kind,omitempty"`
 
-	Available        bool                                         `json:"available,omitempty"`
-	AllocateOnce     bool                                         `json:"allocateOnce,omitempty"`
-	Allocatable      corev1.ResourceList                          `json:"allocatable,omitempty"`
-	Allocated        corev1.ResourceList                          `json:"allocated,omitempty"`
-	AllocatablePorts framework.HostPortInfo                       `json:"allocatablePorts,omitempty"`
-	AllocatedPorts   framework.HostPortInfo                       `json:"allocatedPorts,omitempty"`
-	Owners           []schedulingv1alpha1.ReservationOwner        `json:"owners,omitempty"`
-	AllocatePolicy   schedulingv1alpha1.ReservationAllocatePolicy `json:"allocatePolicy,omitempty"`
-	AssignedPods     []*frameworkext.PodRequirement               `json:"assignedPods,omitempty"`
+	Available         bool                                         `json:"available,omitempty"`
+	AllocateOnce      bool                                         `json:"allocateOnce,omitempty"`
+	Allocatable       corev1.ResourceList                          `json:"allocatable,omitempty"`
+	Reserved          corev1.ResourceList                          `json:"reserved,omitempty"`
+	Allocated         corev1.ResourceList                          `json:"allocated,omitempty"`
+	AllocatablePorts  framework.HostPortInfo                       `json:"allocatablePorts,omitempty"`
+	AllocatedPorts    framework.HostPortInfo                       `json:"allocatedPorts,omitempty"`
+	AvailableResource *framework.Resource                          `json:"availableResource,omitempty"`
+	AllocatedResource *framework.Resource                          `json:"allocatedResource,omitempty"`
+	Owners            []schedulingv1alpha1.ReservationOwner        `json:"owners,omitempty"`
+	AllocatePolicy    schedulingv1alpha1.ReservationAllocatePolicy `json:"allocatePolicy,omitempty"`
+	AssignedPods      []*frameworkext.PodRequirement               `json:"assignedPods,omitempty"`
 }
 
 type NodeReservations struct {
@@ -67,17 +70,20 @@ func (pl *Plugin) RegisterEndpoints(group *gin.RouterGroup) {
 
 		for _, r := range rInfos {
 			item := ReservationItem{
-				Name:             r.GetName(),
-				Namespace:        r.GetNamespace(),
-				UID:              r.UID(),
-				AllocateOnce:     r.IsAllocateOnce(),
-				Available:        r.IsAvailable(),
-				Owners:           r.GetPodOwners(),
-				AllocatePolicy:   r.GetAllocatePolicy(),
-				Allocatable:      r.Allocatable,
-				Allocated:        r.Allocated,
-				AllocatablePorts: r.AllocatablePorts,
-				AllocatedPorts:   r.AllocatedPorts,
+				Name:              r.GetName(),
+				Namespace:         r.GetNamespace(),
+				UID:               r.UID(),
+				AllocateOnce:      r.IsAllocateOnce(),
+				Available:         r.IsAvailable(),
+				Owners:            r.GetPodOwners(),
+				AllocatePolicy:    r.GetAllocatePolicy(),
+				Allocatable:       r.Allocatable,
+				Reserved:          r.Reserved,
+				Allocated:         r.Allocated,
+				AllocatablePorts:  r.AllocatablePorts,
+				AllocatedPorts:    r.AllocatedPorts,
+				AvailableResource: r.Available,
+				AllocatedResource: r.AllocatedResource,
 			}
 			switch r.GetObject().(type) {
 			case *schedulingv1alpha1.Reservation:
