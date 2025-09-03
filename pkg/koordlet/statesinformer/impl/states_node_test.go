@@ -17,18 +17,21 @@ limitations under the License.
 package impl
 
 import (
+	"context"
 	"testing"
+	"time"
 
 	faketopologyclientset "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/clientset/versioned/fake"
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	clientset "k8s.io/client-go/kubernetes"
 	fakeclientset "k8s.io/client-go/kubernetes/fake"
+	"k8s.io/client-go/tools/cache"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	fakekoordclientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/fake"
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
 )
 
 func TestNodeInformerSetup(t *testing.T) {
@@ -45,6 +48,80 @@ func TestNodeInformerSetup(t *testing.T) {
 		})
 		assert.Nil(t, s.GetNode())
 	})
+}
+
+type hookInformer struct {
+	cache.SharedIndexInformer
+	hook func(handlers cache.ResourceEventHandler)
+}
+
+func (h *hookInformer) AddEventHandler(handlers cache.ResourceEventHandler) (cache.ResourceEventHandlerRegistration, error) {
+	h.hook(handlers)
+	return nil, nil
+}
+
+func TestNodeInformerHasSyncedAndGetNode(t *testing.T) {
+	fk := fakeclientset.NewSimpleClientset()
+	old := newNodeInformer
+	defer func() {
+		newNodeInformer = old
+	}()
+	newNodeInformer = func(client clientset.Interface, nodeName string) cache.SharedIndexInformer {
+		inf := old(client, nodeName)
+		return &hookInformer{
+			SharedIndexInformer: inf,
+			hook: func(handlers cache.ResourceEventHandler) {
+				wrapper := cache.ResourceEventHandlerFuncs{
+					AddFunc: func(obj interface{}) {
+						// delay adding event to confirm HasSynced works correctly
+						time.Sleep(time.Second * 3)
+						handlers.OnAdd(obj, false)
+					},
+					UpdateFunc: func(oldObj, newObj interface{}) {
+						// delay updating event to confirm HasSynced works correctly
+						time.Sleep(time.Second * 3)
+						handlers.OnUpdate(oldObj, newObj)
+					},
+					DeleteFunc: handlers.OnDelete,
+				}
+				inf.AddEventHandler(wrapper)
+			},
+		}
+	}
+	s := NewNodeInformer()
+	s.Setup(&PluginOption{
+		config:      NewDefaultConfig(),
+		KubeClient:  fk,
+		KoordClient: fakekoordclientset.NewSimpleClientset(),
+		TopoClient:  faketopologyclientset.NewSimpleClientset(),
+		NodeName:    "test-node",
+	}, &PluginState{
+		callbackRunner: NewCallbackRunner(),
+	})
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+	s.Start(stopCh)
+	assert.False(t, s.HasSynced())
+	_, err := fk.CoreV1().Nodes().Create(context.Background(), &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-node",
+		},
+	}, metav1.CreateOptions{})
+	assert.NoError(t, err)
+	notSyncedCount := 0
+	for {
+		if s.HasSynced() != s.nodeInformer.HasSynced() {
+			notSyncedCount++
+		}
+		if !s.HasSynced() {
+			time.Sleep(time.Second)
+			continue
+		}
+		// must not be nil
+		assert.NotNil(t, s.GetNode())
+		break
+	}
+	assert.Equal(t, true, notSyncedCount > 0)
 }
 
 func Test_statesInformer_syncNode(t *testing.T) {
@@ -94,8 +171,6 @@ func Test_statesInformer_syncNode(t *testing.T) {
 			m := &nodeInformer{
 				callbackRunner: NewCallbackRunner(),
 			}
-			metrics.Register(tt.arg)
-			defer metrics.Register(nil)
 
 			m.syncNode(tt.arg)
 		})
