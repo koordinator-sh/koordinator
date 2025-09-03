@@ -98,7 +98,7 @@ func SetDefaults_LoadAwareSchedulingArgs(obj *LoadAwareSchedulingArgs) {
 	if obj.NodeMetricExpirationSeconds == nil {
 		obj.NodeMetricExpirationSeconds = pointer.Int64(defaultNodeMetricExpirationSeconds)
 	}
-	if len(obj.ResourceWeights) == 0 {
+	if len(obj.ResourceWeights) == 0 && obj.DominantResourceWeight == 0 {
 		obj.ResourceWeights = defaultResourceWeights
 	}
 	if len(obj.UsageThresholds) == 0 {

@@ -110,7 +110,7 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 	nodeMetricInformer := koordInformers.Slo().V1alpha1().NodeMetrics()
 	frameworkexthelper.ForceSyncFromInformer(context.TODO().Done(), koordInformers, nodeMetricInformer.Informer(), assignCache.NodeMetricHandler())
 	scoreWeights := vectorizer.ToFactorVec(pluginArgs.ResourceWeights)
-	if scoreWeights.Empty() {
+	if pluginArgs.DominantResourceWeight == 0 && scoreWeights.Empty() {
 		scoreWeights = nil
 	}
 	return &Plugin{
@@ -286,7 +286,7 @@ func (p *Plugin) Score(ctx context.Context, state *framework.CycleState, pod *co
 			"estimated", klog.Format(p.vectorizer.ToList(estimated)),
 			"estimatedExistingPods", klog.KObjSlice(estimatedPods))
 	}
-	score := loadAwareSchedulingScorer(p.scoreWeights, estimated, allocatable)
+	score := loadAwareSchedulingScorer(p.args.DominantResourceWeight, p.scoreWeights, estimated, allocatable)
 	return score, nil
 }
 
@@ -343,12 +343,20 @@ func (p *Plugin) filterNodeUsage(nodeName string, pod *corev1.Pod, usageThreshol
 	return nil
 }
 
-func loadAwareSchedulingScorer(resToWeightMap, used, allocatable ResourceVector) int64 {
-	var nodeScore, weightSum int64
-	for i, weight := range resToWeightMap {
-		nodeScore += leastUsedScore(used[i], allocatable[i]) * weight
-		weightSum += weight
+func loadAwareSchedulingScorer(dominantWeight int64, resToWeightMap, used, allocatable ResourceVector) int64 {
+	var nodeScore, dominantScore, weightSum int64
+	if dominantWeight != 0 {
+		dominantScore, weightSum = framework.MaxNodeScore, dominantWeight
 	}
+	for i, weight := range resToWeightMap {
+		score := leastUsedScore(used[i], allocatable[i])
+		nodeScore += score * weight
+		weightSum += weight
+		if dominantScore > score {
+			dominantScore = score
+		}
+	}
+	nodeScore += dominantScore * dominantWeight
 	if weightSum <= 0 {
 		return 0
 	}

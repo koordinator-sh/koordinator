@@ -393,6 +393,7 @@ func autoConvert_v1beta3_LoadAwareSchedulingArgs_To_config_LoadAwareSchedulingAr
 	out.NodeMetricExpirationSeconds = (*int64)(unsafe.Pointer(in.NodeMetricExpirationSeconds))
 	out.EnableScheduleWhenNodeMetricsExpired = (*bool)(unsafe.Pointer(in.EnableScheduleWhenNodeMetricsExpired))
 	out.ResourceWeights = *(*map[corev1.ResourceName]int64)(unsafe.Pointer(&in.ResourceWeights))
+	out.DominantResourceWeight = in.DominantResourceWeight
 	out.UsageThresholds = *(*map[corev1.ResourceName]int64)(unsafe.Pointer(&in.UsageThresholds))
 	out.ProdUsageThresholds = *(*map[corev1.ResourceName]int64)(unsafe.Pointer(&in.ProdUsageThresholds))
 	out.ProdUsageIncludeSys = in.ProdUsageIncludeSys
@@ -422,6 +423,7 @@ func autoConvert_config_LoadAwareSchedulingArgs_To_v1beta3_LoadAwareSchedulingAr
 	out.NodeMetricExpirationSeconds = (*int64)(unsafe.Pointer(in.NodeMetricExpirationSeconds))
 	out.EnableScheduleWhenNodeMetricsExpired = (*bool)(unsafe.Pointer(in.EnableScheduleWhenNodeMetricsExpired))
 	out.ResourceWeights = *(*map[corev1.ResourceName]int64)(unsafe.Pointer(&in.ResourceWeights))
+	out.DominantResourceWeight = in.DominantResourceWeight
 	out.UsageThresholds = *(*map[corev1.ResourceName]int64)(unsafe.Pointer(&in.UsageThresholds))
 	out.ProdUsageThresholds = *(*map[corev1.ResourceName]int64)(unsafe.Pointer(&in.ProdUsageThresholds))
 	out.ProdUsageIncludeSys = in.ProdUsageIncludeSys
