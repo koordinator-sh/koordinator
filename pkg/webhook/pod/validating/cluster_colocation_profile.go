@@ -65,7 +65,7 @@ func (h *PodValidatingHandler) clusterColocationProfileValidatingPod(ctx context
 		allowed = false
 		reason = err.Error()
 	}
-	return allowed, reason, nil
+	return allowed, reason, err
 }
 
 func validateRequiredQoSClass(pod *corev1.Pod) field.ErrorList {
