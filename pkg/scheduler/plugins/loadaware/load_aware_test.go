@@ -1462,6 +1462,7 @@ func TestScore(t *testing.T) {
 		assignedPod             []*podAssignInfo
 		nodeName                string
 		nodeMetric              *slov1alpha1.NodeMetric
+		dominantResourceWeight  int64
 		scoreAccordingProdUsage bool
 		aggregatedArgs          *v1beta3.LoadAwareSchedulingAggregatedArgs
 		wantScore               int64
@@ -2288,6 +2289,56 @@ func TestScore(t *testing.T) {
 			wantStatus: nil,
 		},
 		{
+			name: "score with drf",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "default",
+					Name:      "test-pod-1",
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name: "test-container",
+							Resources: corev1.ResourceRequirements{
+								Limits: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("16"),
+									corev1.ResourceMemory: resource.MustParse("32Gi"),
+								},
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("16"),
+									corev1.ResourceMemory: resource.MustParse("32Gi"),
+								},
+							},
+						},
+					},
+				},
+			},
+			nodeName: "test-node-1",
+			nodeMetric: &slov1alpha1.NodeMetric{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node-1",
+				},
+				Spec: slov1alpha1.NodeMetricSpec{
+					CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
+						ReportIntervalSeconds: pointer.Int64(60),
+					},
+				},
+				Status: slov1alpha1.NodeMetricStatus{
+					UpdateTime: &metav1.Time{
+						Time: time.Now(),
+					},
+					NodeMetric: &slov1alpha1.NodeMetricInfo{
+						NodeUsage: slov1alpha1.ResourceMap{
+							ResourceList: corev1.ResourceList{},
+						},
+					},
+				},
+			},
+			dominantResourceWeight: 10,
+			wantScore:              85,
+			wantStatus:             nil,
+		},
+		{
 			name: "score empty pod",
 			pod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
@@ -2331,6 +2382,7 @@ func TestScore(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			var v1beta3args v1beta3.LoadAwareSchedulingArgs
 			v1beta3args.ScoreAccordingProdUsage = &tt.scoreAccordingProdUsage
+			v1beta3args.DominantResourceWeight = tt.dominantResourceWeight
 			if tt.aggregatedArgs != nil {
 				v1beta3args.Aggregated = tt.aggregatedArgs
 			}

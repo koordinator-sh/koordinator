@@ -39,6 +39,12 @@ func ValidateLoadAwareSchedulingArgs(args *config.LoadAwareSchedulingArgs) error
 	if err := validateResourceWeights(args.ResourceWeights); err != nil {
 		allErrs = append(allErrs, field.Invalid(field.NewPath("resourceWeights"), args.ResourceWeights, err.Error()))
 	}
+	if args.DominantResourceWeight < 0 {
+		allErrs = append(allErrs, field.Invalid(field.NewPath("dominantResourceWeight"), args.DominantResourceWeight, "dominantResourceWeight should not be a negative value"))
+	}
+	if args.DominantResourceWeight > 100 {
+		allErrs = append(allErrs, field.Invalid(field.NewPath("dominantResourceWeight"), args.DominantResourceWeight, "dominantResourceWeight should be less than 100"))
+	}
 	if err := validateResourceThresholds(args.UsageThresholds); err != nil {
 		allErrs = append(allErrs, field.Invalid(field.NewPath("usageThresholds"), args.UsageThresholds, err.Error()))
 	}

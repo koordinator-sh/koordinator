@@ -42,6 +42,9 @@ type LoadAwareSchedulingArgs struct {
 	// ResourceWeights indicates the weights of resources.
 	// The weights of CPU and Memory are both 1 by default.
 	ResourceWeights map[corev1.ResourceName]int64 `json:"resourceWeights,omitempty"`
+	// DominantResourceWeight indicates the weight of the dominant resource.
+	// Dominant resource is the resource with the maximum utilization, which is based on the concept of Dominant Resource Fairness.
+	DominantResourceWeight int64 `json:"dominantResourceWeight,omitempty"`
 	// UsageThresholds indicates the resource utilization threshold of the whole machine.
 	// The default for CPU is 65%, and the default for memory is 95%.
 	UsageThresholds map[corev1.ResourceName]int64 `json:"usageThresholds,omitempty"`
