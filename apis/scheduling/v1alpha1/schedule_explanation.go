@@ -83,6 +83,7 @@ type NodeLevelExplanations struct {
 type NamespacedName struct {
 	Namespace string `json:"namespace,omitempty"`
 	Name      string `json:"name,omitempty"`
+	UID       string `json:"uid,omitempty"`
 }
 
 type SchedulingResult struct {
