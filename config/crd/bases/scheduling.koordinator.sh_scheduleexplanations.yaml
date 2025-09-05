@@ -116,6 +116,8 @@ spec:
                                   type: string
                                 namespace:
                                   type: string
+                                uid:
+                                  type: string
                               type: object
                             type: array
                         type: object
@@ -138,6 +140,8 @@ spec:
                                 type: string
                               nodeName:
                                 type: string
+                              uid:
+                                type: string
                             type: object
                           type: array
                         nodeFailedDetails:
@@ -155,6 +159,8 @@ spec:
                                     name:
                                       type: string
                                     namespace:
+                                      type: string
+                                    uid:
                                       type: string
                                   type: object
                                 type: array
@@ -191,6 +197,8 @@ spec:
                                 type: string
                               nodeName:
                                 type: string
+                              uid:
+                                type: string
                             type: object
                           type: array
                         nodeFailedDetails:
@@ -208,6 +216,8 @@ spec:
                                     name:
                                       type: string
                                     namespace:
+                                      type: string
+                                    uid:
                                       type: string
                                   type: object
                                 type: array
