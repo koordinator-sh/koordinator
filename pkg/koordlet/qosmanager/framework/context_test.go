@@ -67,7 +67,7 @@ func Test_EvictPodIfNotEvicted(t *testing.T) {
 			args: args{
 				pod:    testpod,
 				node:   testnode,
-				reason: resourceexecutor.EvictPodByNodeMemoryUsage,
+				reason: resourceexecutor.EvictBEPodByNodeMemoryUsage,
 			},
 			wanted: wants{
 				result:           true,
@@ -81,7 +81,7 @@ func Test_EvictPodIfNotEvicted(t *testing.T) {
 			args: args{
 				pod:    testpod,
 				node:   testnode,
-				reason: resourceexecutor.EvictPodByNodeMemoryUsage,
+				reason: resourceexecutor.EvictBEPodByNodeMemoryUsage,
 			},
 			wanted: wants{
 				result:           false,

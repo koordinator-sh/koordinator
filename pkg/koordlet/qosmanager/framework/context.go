@@ -19,8 +19,8 @@ package framework
 import (
 	"context"
 	"fmt"
+	"sync/atomic"
 
-	"go.uber.org/atomic"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clientset "k8s.io/client-go/kubernetes"
@@ -35,8 +35,9 @@ import (
 )
 
 type Context struct {
-	Evictor    *Evictor
-	Strategies map[string]QOSStrategy
+	Evictor        *Evictor
+	OnlyEvictByAPI bool
+	Strategies     map[string]QOSStrategy
 }
 
 type Evictor struct {
@@ -105,4 +106,8 @@ func (r *Evictor) evictPod(evictPod *corev1.Pod, reason string, message string) 
 		klog.Errorf("evict pod %v/%v failed, reason: %v, error: %v", evictPod.Namespace, evictPod.Name, reason, err)
 		return false
 	}
+}
+
+func (r *Evictor) GetKubeClient() clientset.Interface {
+	return r.kubeClient
 }
