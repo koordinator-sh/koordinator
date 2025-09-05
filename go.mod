@@ -94,6 +94,7 @@ require (
 	k8s.io/dynamic-resource-allocation v0.28.7 // indirect
 	k8s.io/gengo v0.0.0-20220902162205-c0856e24416d // indirect
 	k8s.io/kms v0.28.7 // indirect
+	k8s.io/pod-security-admission v0.0.0 // indirect
 )
 
 require (
