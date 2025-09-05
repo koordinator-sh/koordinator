@@ -1661,7 +1661,9 @@ spec:
                     type: object
                 type: object
               resourceUsedThresholdWithBE:
-                description: BE pods will be limited if node resource usage overload
+                description: |-
+                  BE pods will be limited if node resource usage overload
+                  TODO: ResourceUsedThresholdWithBE need to rename
                 properties:
                   cpuEvictBESatisfactionLowerPercent:
                     description: |-
@@ -1681,11 +1683,26 @@ spec:
                       then start to calculate the resources need to be released.
                     format: int64
                     type: integer
+                  cpuEvictLowerPercent:
+                    description: 'lower: CPU release util usage under CPUEvictLowerPercent,
+                      default = CPUEvictLowerPercent - 2'
+                    format: int64
+                    maximum: 100
+                    minimum: 0
+                    type: integer
                   cpuEvictPolicy:
                     description: |-
                       CPUEvictPolicy defines the policy for the BECPUEvict feature.
                       Default: `evictByRealLimit`.
                     type: string
+                  cpuEvictThresholdPercent:
+                    description: |-
+                      Note: used for feature: CPUEvict
+                      upper: CPU evict threshold percentage (0,100)
+                    format: int64
+                    maximum: 100
+                    minimum: 0
+                    type: integer
                   cpuEvictTimeWindowSeconds:
                     description: |-
                       when avg(cpuusage) > CPUEvictThresholdPercent, will start to evict pod by cpu,
@@ -1711,6 +1728,11 @@ spec:
                   enable:
                     description: whether the strategy is enabled, default = false
                     type: boolean
+                  evictEnabledPriorityThreshold:
+                    description: EvictEnabledPriorityThreshold defines the highest
+                      priority for the xxxEvict feature.
+                    format: int32
+                    type: integer
                   memoryEvictLowerPercent:
                     description: 'lower: memory release util usage under MemoryEvictLowerPercent,
                       default = MemoryEvictThresholdPercent - 2'
