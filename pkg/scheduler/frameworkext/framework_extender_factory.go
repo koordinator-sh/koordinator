@@ -271,6 +271,7 @@ func makePodInfoFromPod(pod *corev1.Pod) (*framework.QueuedPodInfo, error) {
 }
 
 func (f *FrameworkExtenderFactory) scheduleOne(ctx context.Context, fwk framework.Framework, cycleState *framework.CycleState, pod *corev1.Pod) (scheduler.ScheduleResult, error) {
+	initDiagnosis(cycleState, pod)
 	f.monitor.StartMonitoring(pod)
 
 	scheduleResult, err := f.schedulePod(ctx, fwk, cycleState, pod)

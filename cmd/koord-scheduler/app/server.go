@@ -347,6 +347,8 @@ func newHealthzAndMetricsHandler(config *kubeschedulerconfig.KubeSchedulerConfig
 		debugFlags.Install("v", utilroutes.StringFlagPutHandler(logs.GlogSetter))
 		debugFlags.Install("s", utilroutes.StringFlagPutHandler(frameworkext.DebugScoresSetter))
 		debugFlags.Install("f", utilroutes.StringFlagPutHandler(frameworkext.DebugFiltersSetter))
+		debugFlags.Install("d", utilroutes.StringFlagPutHandler(frameworkext.DumpDiagnosisSetter))
+		debugFlags.Install("db", utilroutes.StringFlagPutHandler(frameworkext.DumpDiagnosisBlockingSetter))
 	}
 	services.InstallAPIHandler(pathRecorderMux, engine, sched, isLeader)
 	return pathRecorderMux
