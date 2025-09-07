@@ -24,6 +24,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/klog/v2"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -31,10 +32,9 @@ import (
 	"github.com/koordinator-sh/koordinator/apis/configuration"
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
-	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/noderesource/framework"
 	"github.com/koordinator-sh/koordinator/pkg/util"
-	utilfeature "github.com/koordinator-sh/koordinator/pkg/util/feature"
+	"github.com/koordinator-sh/koordinator/pkg/util/sloconfig"
 )
 
 const PluginName = "GPUDeviceResource"
@@ -178,26 +178,37 @@ func (p *Plugin) calculate(node *corev1.Node, device *schedulingv1alpha1.Device)
 	gpuResources := make(corev1.ResourceList)
 	totalKoordGPU := resource.NewQuantity(0, resource.DecimalSI)
 	healthGPUNum := 0
+	gpuSharedSelector, err := sloconfig.GetGPUSharedNodeSelector()
+	if err != nil {
+		return nil, err
+	}
+	gpuVendor := device.Labels[extension.LabelGPUVendor]
+	// TODO: support for non-NVIDIA GPUs​
+	isNvGPUAndDisableShare := !gpuSharedSelector.Matches(labels.Set(node.GetLabels())) && (gpuVendor == "" || gpuVendor == extension.GPUVendorNVIDIA)
 	for _, d := range device.Spec.Devices {
 		if d.Type != schedulingv1alpha1.GPU || !d.Health {
 			continue
 		}
 
 		healthGPUNum++
-		util.AddResourceList(gpuResources, d.Resources)
-		totalKoordGPU.Add(d.Resources[extension.ResourceGPUCore])
+		if !isNvGPUAndDisableShare {
+			util.AddResourceList(gpuResources, d.Resources)
+			totalKoordGPU.Add(d.Resources[extension.ResourceGPUCore])
+		}
+
 	}
 
-	gpuVendor := device.Labels[extension.LabelGPUVendor]
-	// Currently only nvidia gpu supports the koordinator.sh/gpu wrapper resource,
-	// also keep empty vendor behavior as is for compatibility.
-	if gpuVendor == "" || gpuVendor == extension.GPUVendorNVIDIA {
-		gpuResources[extension.ResourceGPU] = *totalKoordGPU
-	}
-	if utilfeature.DefaultFeatureGate.Enabled(features.EnableSyncGPUSharedResource) {
+	if isNvGPUAndDisableShare {
+		// TODO: support for non-NVIDIA GPUs​
+		gpuResources[extension.ResourceNvidiaGPU] = *resource.NewQuantity(int64(healthGPUNum), resource.DecimalSI)
+	} else {
+		// Currently only nvidia gpu supports the koordinator.sh/gpu wrapper resource,
+		// also keep empty vendor behavior as is for compatibility.
+		if gpuVendor == "" || gpuVendor == extension.GPUVendorNVIDIA {
+			gpuResources[extension.ResourceGPU] = *totalKoordGPU
+		}
 		gpuResources[extension.ResourceGPUShared] = *resource.NewQuantity(int64(healthGPUNum)*100, resource.DecimalSI)
 	}
-
 	var items []framework.ResourceItem
 	// FIXME: shall we add node resources in devices but not in ResourceNames?
 	for resourceName := range gpuResources {
@@ -206,6 +217,25 @@ func (p *Plugin) calculate(node *corev1.Node, device *schedulingv1alpha1.Device)
 			Name:     resourceName,
 			Quantity: &q,
 			Message:  UpdateResourcesMsg,
+		})
+	}
+	// reset unnecessary resources​
+	if isNvGPUAndDisableShare {
+		for i, v := range ResourceNames {
+			if v == extension.ResourceNvidiaGPU {
+				continue
+			}
+			items = append(items, framework.ResourceItem{
+				Name:    ResourceNames[i],
+				Reset:   true,
+				Message: ResetResourcesMsg,
+			})
+		}
+	} else {
+		items = append(items, framework.ResourceItem{
+			Name:    extension.ResourceNvidiaGPU,
+			Reset:   true,
+			Message: ResetResourcesMsg,
 		})
 	}
 	sort.Slice(items, func(i, j int) bool { return items[i].Name < items[j].Name })
