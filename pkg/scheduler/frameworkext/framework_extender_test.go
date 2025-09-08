@@ -121,7 +121,7 @@ func (h *TestTransformer) ScoreExtensions() framework.ScoreExtensions {
 	return nil
 }
 
-func (h *TestTransformer) AfterPostFilter(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, filteredNodeStatusMap framework.NodeToStatusMap) {
+func (h *TestTransformer) AfterPostFilter(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, filteredNodeStatusMap framework.NodeToStatusMap, postFilterStatus *framework.Status) {
 	if pod.Annotations == nil {
 		pod.Annotations = map[string]string{}
 	}

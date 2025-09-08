@@ -66,7 +66,7 @@ type Manager interface {
 	PreFilter(context.Context, *framework.CycleState, *corev1.Pod) (err error)
 	Permit(context.Context, *corev1.Pod) (time.Duration, Status)
 	PostBind(context.Context, *corev1.Pod, string)
-	PostFilter(context.Context, *framework.CycleState, *corev1.Pod, framework.Handle, string, framework.NodeToStatusMap) (*framework.PostFilterResult, *framework.Status)
+	AfterPostFilter(context.Context, *framework.CycleState, *corev1.Pod, framework.Handle, string, framework.NodeToStatusMap, *framework.Status) (*framework.PostFilterResult, *framework.Status)
 	GetAllPodsFromGang(string) []*corev1.Pod
 	AllowGangGroup(*corev1.Pod, framework.Handle, string)
 	Unreserve(context.Context, *framework.CycleState, *corev1.Pod, string, framework.Handle, string)
@@ -302,7 +302,7 @@ func (pgMgr *PodGroupManager) PreFilter(ctx context.Context, _ *framework.CycleS
 // PostFilter
 // i. If strict-mode, we will set scheduleCycleValid to false and release all assumed pods.
 // ii. If non-strict mode, we will do nothing.
-func (pgMgr *PodGroupManager) PostFilter(ctx context.Context, state *framework.CycleState, pod *corev1.Pod, handle framework.Handle, pluginName string, filteredNodeStatusMap framework.NodeToStatusMap) (*framework.PostFilterResult, *framework.Status) {
+func (pgMgr *PodGroupManager) AfterPostFilter(ctx context.Context, state *framework.CycleState, pod *corev1.Pod, handle framework.Handle, pluginName string, filteredNodeStatusMap framework.NodeToStatusMap, postFilterStatus *framework.Status) (*framework.PostFilterResult, *framework.Status) {
 	if !util.IsPodNeedGang(pod) {
 		return &framework.PostFilterResult{}, framework.NewStatus(framework.Unschedulable)
 	}
@@ -331,7 +331,8 @@ func (pgMgr *PodGroupManager) PostFilter(ctx context.Context, state *framework.C
 		gangSchedulingContext.failedMessage = message
 	}
 
-	if gang.getGangMode() == extension.GangModeStrict {
+	// When Job-level preemption succeeds, the WaitingPod is retained for partial preemption
+	if gang.getGangMode() == extension.GangModeStrict && !postFilterStatus.IsSuccess() {
 		gang.clearWaitingGang()
 		pgMgr.rejectGangGroupById(handle, pluginName, gang.Name, message)
 		return &framework.PostFilterResult{}, framework.NewStatus(framework.Unschedulable,

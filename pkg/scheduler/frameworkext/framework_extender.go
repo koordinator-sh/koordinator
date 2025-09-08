@@ -305,15 +305,15 @@ func (ext *frameworkExtenderImpl) RunScorePlugins(ctx context.Context, state *fr
 func (ext *frameworkExtenderImpl) RunPostFilterPlugins(ctx context.Context, state *framework.CycleState, pod *corev1.Pod, filteredNodeStatusMap framework.NodeToStatusMap) (_ *framework.PostFilterResult, status *framework.Status) {
 	schedulingphase.RecordPhase(state, schedulingphase.PostFilter)
 	defer func() { schedulingphase.RecordPhase(state, "") }()
-	defer func() {
-		for _, transformer := range ext.postFilterTransformersEnabled {
-			startTime := time.Now()
-			transformer.AfterPostFilter(ctx, state, pod, filteredNodeStatusMap)
-			ext.metricsRecorder.ObservePluginDurationAsync("AfterPostFilter", transformer.Name(), "", metrics.SinceInSeconds(startTime))
-		}
-	}()
 
-	return ext.Framework.RunPostFilterPlugins(ctx, state, pod, filteredNodeStatusMap)
+	postFilterResult, postFilterStatus := ext.Framework.RunPostFilterPlugins(ctx, state, pod, filteredNodeStatusMap)
+
+	for _, transformer := range ext.postFilterTransformersEnabled {
+		startTime := time.Now()
+		transformer.AfterPostFilter(ctx, state, pod, filteredNodeStatusMap, postFilterStatus)
+		ext.metricsRecorder.ObservePluginDurationAsync("AfterPostFilter", transformer.Name(), "", metrics.SinceInSeconds(startTime))
+	}
+	return postFilterResult, postFilterStatus
 }
 
 // RunPreBindPlugins supports PreBindReservation for Reservation
