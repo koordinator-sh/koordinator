@@ -26,6 +26,7 @@ import (
 const (
 	ProcSysVmRelativePath     = "sys/vm/"
 	SysKernelRelativePath     = "kernel/"
+	ProcSysKernelRelativePath = "sys/kernel/"
 	MemcgReaperRelativePath   = "kernel/mm/memcg_reaper/"
 	KidledRelativePath        = "kernel/mm/kidled/"
 	SchedFeaturesRelativePath = "kernel/debug/"
@@ -58,8 +59,8 @@ var (
 	KidledUseHierarchy        = NewCommonSystemResource(KidledRelativePath, KidledUseHierarchyFileFileName, GetSysRootDir).WithValidator(KidledUseHierarchyValidator).WithCheckSupported(SupportedIfFileExists)
 	// SchedFeatures is the system file which shows the enabled features of the kernel scheduling.
 	SchedFeatures             = NewCommonSystemResource(SchedFeaturesRelativePath, SchedFeaturesFileName, GetSysRootDir).WithCheckSupported(SupportedIfFileExists)
-	SchedGroupIdentityEnabled = NewCommonSystemResource(SysKernelRelativePath, SchedGroupIdentityEnabledFileName, GetSysRootDir).WithValidator(SchedGroupIdentityEnabledValidator).WithCheckSupported(SupportedIfFileExists)
-	SchedIdleSaverWmark       = NewCommonSystemResource(SysKernelRelativePath, SchedIdleSaverWmarkFileName, GetSysRootDir).WithCheckSupported(SupportedIfFileExists)
+	SchedGroupIdentityEnabled = NewCommonSystemResource(ProcSysKernelRelativePath, SchedGroupIdentityEnabledFileName, GetProcRootDir).WithValidator(SchedGroupIdentityEnabledValidator).WithCheckSupported(SupportedIfFileExists)
+	SchedIdleSaverWmark       = NewCommonSystemResource(ProcSysKernelRelativePath, SchedIdleSaverWmarkFileName, GetProcRootDir).WithCheckSupported(SupportedIfFileExists)
 )
 
 var _ Resource = &SystemResource{}
