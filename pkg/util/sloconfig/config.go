@@ -20,8 +20,9 @@ import (
 	"flag"
 	"fmt"
 
-	"github.com/koordinator-sh/koordinator/apis/extension"
 	"k8s.io/apimachinery/pkg/labels"
+
+	"github.com/koordinator-sh/koordinator/apis/extension"
 )
 
 const (
