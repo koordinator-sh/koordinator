@@ -213,11 +213,11 @@ func prepareFiles(helper *sysutil.FileTestUtil, strategy *slov1alpha1.SystemStra
 	if strategy.MemcgReapBackGround != nil {
 		helper.WriteFileContents(sysutil.MemcgReapBackGround.Path(""), strconv.FormatInt(*strategy.MemcgReapBackGround, 10))
 	}
-	helper.CreateFile(sysutil.SchedGroupIdentityEnabled.Path(""))
+	helper.CreateProcSubFile("sys/kernel/sched_group_identity_enabled")
 	if strategy.SchedGroupIdentityEnabled != nil {
 		helper.WriteFileContents(sysutil.SchedGroupIdentityEnabled.Path(""), strconv.FormatInt(*strategy.SchedGroupIdentityEnabled, 10))
 	}
-	helper.CreateFile(sysutil.SchedIdleSaverWmark.Path(""))
+	helper.CreateProcSubFile("sys/kernel/sched_idle_saver_wmark")
 	if strategy.SchedIdleSaverWmark != nil {
 		helper.WriteFileContents(sysutil.SchedIdleSaverWmark.Path(""), strconv.FormatInt(*strategy.SchedIdleSaverWmark, 10))
 	}
