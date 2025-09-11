@@ -79,6 +79,59 @@ func Test_GetPodRequest(t *testing.T) {
 				corev1.ResourceMemory: resource.MustParse("18Gi"),
 			},
 		},
+		{
+			name: "pod with init containers and overhead",
+			args: args{
+				pod: &corev1.Pod{
+					Spec: corev1.PodSpec{
+						Containers: []corev1.Container{
+							{
+								Resources: corev1.ResourceRequirements{
+									Requests: corev1.ResourceList{
+										corev1.ResourceCPU:    resource.MustParse("2"),
+										corev1.ResourceMemory: resource.MustParse("4Gi"),
+									},
+								},
+							},
+							{
+								Resources: corev1.ResourceRequirements{
+									Requests: corev1.ResourceList{
+										corev1.ResourceCPU:    resource.MustParse("2"),
+										corev1.ResourceMemory: resource.MustParse("4Gi"),
+									},
+								},
+							},
+						},
+						InitContainers: []corev1.Container{
+							{
+								Resources: corev1.ResourceRequirements{
+									Requests: corev1.ResourceList{
+										corev1.ResourceCPU:    resource.MustParse("3"),
+										corev1.ResourceMemory: resource.MustParse("2Gi"),
+									},
+								},
+							},
+							{
+								Resources: corev1.ResourceRequirements{
+									Requests: corev1.ResourceList{
+										corev1.ResourceCPU:    resource.MustParse("1"),
+										corev1.ResourceMemory: resource.MustParse("8Gi"), // > sum(containers)
+									},
+								},
+							},
+						},
+						Overhead: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("100m"),
+							corev1.ResourceMemory: resource.MustParse("512Mi"),
+						},
+					},
+				},
+			},
+			want: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("4.1"),   // max(4, 3) + 0.1 = 4.1
+				corev1.ResourceMemory: resource.MustParse("8.5Gi"), // max(8, 3) + 0.5 = 8.5
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -157,6 +210,42 @@ func Test_GetPodBEMilliCPURequest(t *testing.T) {
 			wantLimit:   8000,
 		},
 		{
+			name: "pod with init containers and overhead",
+			pod: &corev1.Pod{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									apiext.BatchCPU: resource.MustParse("2000"),
+								},
+								Limits: corev1.ResourceList{
+									apiext.BatchCPU: resource.MustParse("3000"),
+								},
+							},
+						},
+					},
+					InitContainers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									apiext.BatchCPU: resource.MustParse("4000"),
+								},
+								Limits: corev1.ResourceList{
+									apiext.BatchCPU: resource.MustParse("5000"),
+								},
+							},
+						},
+					},
+					Overhead: corev1.ResourceList{
+						apiext.BatchCPU: resource.MustParse("100"),
+					},
+				},
+			},
+			wantRequest: 4100, // max(2000, 4000) + 100 =4000 + 100 = 4100 milli
+			wantLimit:   5100, // max(3000,5000) + 100 =5000 + 100 = 5100 milli
+		},
+		{
 			name: "empty resource",
 			pod: &corev1.Pod{
 				Spec: corev1.PodSpec{
@@ -209,6 +298,42 @@ func Test_GetPodBEMemoryRequest(t *testing.T) {
 			},
 			wantRequest: 2097152,
 			wantLimit:   4194304,
+		},
+		{
+			name: "pod with init containers and overhead",
+			pod: &corev1.Pod{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									apiext.BatchMemory: resource.MustParse("2Mi"),
+								},
+								Limits: corev1.ResourceList{
+									apiext.BatchMemory: resource.MustParse("3Mi"),
+								},
+							},
+						},
+					},
+					InitContainers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									apiext.BatchMemory: resource.MustParse("4Mi"),
+								},
+								Limits: corev1.ResourceList{
+									apiext.BatchMemory: resource.MustParse("5Mi"),
+								},
+							},
+						},
+					},
+					Overhead: corev1.ResourceList{
+						apiext.BatchMemory: resource.MustParse("1Mi"),
+					},
+				},
+			},
+			wantRequest: 4*1024*1024 + 1024*1024, // // max(2, 4) + 1Mi = 4Mi + 1Mi = 5Mi
+			wantLimit:   5*1024*1024 + 1024*1024, // max(3, 5) + 1Mi = 5Mi + 1Mi = 6Mi
 		},
 		{
 			name: "multiple container",
