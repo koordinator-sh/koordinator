@@ -420,7 +420,7 @@ func (pgMgr *PodGroupManager) rejectGangGroup(handle framework.Handle, gangSet s
 					"waitingPod", klog.KObj(waitingPod.GetPod()),
 					"message", message,
 				)
-				waitingPod.Reject(Name, message)
+				waitingPod.Reject(frameworkext.JobRejectPlugin, message)
 			}
 		})
 	}
