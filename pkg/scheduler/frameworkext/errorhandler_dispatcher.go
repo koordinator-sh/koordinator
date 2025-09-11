@@ -36,7 +36,9 @@ type errorHandlerDispatcher struct {
 }
 
 func newErrorHandlerDispatcher() *errorHandlerDispatcher {
-	return &errorHandlerDispatcher{}
+	return &errorHandlerDispatcher{
+		preHandlerFilters: []PreErrorHandlerFilter{TakeoverNominatingInfo},
+	}
 }
 
 func (d *errorHandlerDispatcher) setDefaultHandler(handler scheduler.FailureHandlerFn) {
