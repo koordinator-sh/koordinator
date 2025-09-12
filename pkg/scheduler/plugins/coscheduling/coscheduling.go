@@ -20,6 +20,7 @@ package coscheduling
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	v1 "k8s.io/api/core/v1"
@@ -44,6 +45,7 @@ type Coscheduling struct {
 	pgClient         pgclientset.Interface
 	pgInformer       schedinformers.PodGroupInformer
 	pgMgr            core.Manager
+	handleOnce       sync.Once
 }
 
 var _ framework.PreEnqueuePlugin = &Coscheduling{}
