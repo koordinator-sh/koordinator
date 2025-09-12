@@ -25,6 +25,9 @@ import (
 
 	"github.com/containerd/nri/pkg/api"
 	"github.com/containerd/nri/pkg/stub"
+	"github.com/golang/mock/gomock"
+	"github.com/stretchr/testify/assert"
+	"k8s.io/apimachinery/pkg/util/wait"
 
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/hooks"
@@ -632,4 +635,112 @@ func TestNriServer_RemovePodSandbox(t *testing.T) {
 			}
 		})
 	}
+}
+
+type stubConstructor func(p interface{}, opts []stub.Option, onClose func()) (StubInterface, error)
+
+func mockNewStub(fn stubConstructor) func() {
+	old := mockableNewNriStub
+	mockableNewNriStub = fn
+	return func() {
+		mockableNewNriStub = old
+	}
+}
+
+func TestStartNriServerFailed(t *testing.T) {
+	a := assert.New(t)
+	ctr := gomock.NewController(t)
+	defer ctr.Finish()
+	fakeStub := NewMockStubInterface(ctr)
+	fakeStub.EXPECT().Run(gomock.Any()).Return(fmt.Errorf("error")).Times(1)
+	defer mockNewStub(func(p interface{}, opts []stub.Option, onClose func()) (StubInterface, error) {
+		return fakeStub, nil
+	})()
+	helper := system.NewFileTestUtil(t)
+	defer helper.Cleanup()
+	srv, err := NewNriServer(Options{
+		NriSocketPath:       "",
+		NriConnectTimeout:   time.Second,
+		PluginFailurePolicy: "Ignore",
+		DisableStages:       getDisableStagesMap([]string{"PreRunPodSandbox"}),
+		Executor:            nil,
+	})
+	a.Nil(err)
+	a.NotNil(srv)
+	err = srv.Start()
+	a.NotNil(err)
+}
+
+func TestReconnectToNriServer(t *testing.T) {
+	a := assert.New(t)
+	ctr := gomock.NewController(t)
+	defer ctr.Finish()
+	stubs := make(chan struct {
+		Stub    *MockStubInterface
+		RunChan chan error
+		OnClose func()
+	})
+	defer mockNewStub(func(p interface{}, opts []stub.Option, onClose func()) (StubInterface, error) {
+		fakeStub := NewMockStubInterface(ctr)
+		st := struct {
+			Stub    *MockStubInterface
+			RunChan chan error
+			OnClose func()
+		}{
+			Stub:    fakeStub,
+			RunChan: make(chan error),
+			OnClose: onClose,
+		}
+		go func() {
+			stubs <- st
+		}()
+		fakeStub.EXPECT().Run(gomock.Any()).DoAndReturn(func(ctx context.Context) error {
+			return <-st.RunChan
+		}).Times(1)
+		return fakeStub, nil
+	})()
+
+	helper := system.NewFileTestUtil(t)
+	defer helper.Cleanup()
+	srv, err := NewNriServer(Options{
+		NriSocketPath:       "",
+		NriConnectTimeout:   time.Second,
+		PluginFailurePolicy: "Ignore",
+		DisableStages:       getDisableStagesMap([]string{"PreRunPodSandbox"}),
+		Executor:            nil,
+		BackOff: wait.Backoff{
+			Duration: time.Second,
+			Factor:   2,
+			Jitter:   0.1,
+			Steps:    3,
+			Cap:      time.Second * 3,
+		},
+	})
+	a.Nil(err)
+	a.NotNil(srv)
+	err = srv.Start()
+	a.Nil(err)
+	for i := 0; i < 4; i++ {
+		st := <-stubs
+		if i == 0 {
+			// test connection closed ,should reconnect
+			st.Stub.EXPECT().Stop().Return().Times(1)
+			st.Stub.EXPECT().Wait().Return().Times(1)
+			st.OnClose()
+		}
+		if i == 1 {
+			// test run stub failed ,should reconnect
+			st.Stub.EXPECT().Stop().Return().Times(1)
+			st.Stub.EXPECT().Wait().Return().Times(1)
+			time.Sleep(time.Second * 3)
+			st.RunChan <- fmt.Errorf("error")
+		}
+		if i == 2 {
+			time.Sleep(time.Second * 3)
+			break
+		}
+	}
+	srv.mutex.Lock()
+	defer srv.mutex.Unlock()
+	a.NotNil(srv.stub)
 }
