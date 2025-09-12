@@ -18,6 +18,8 @@ package gpu
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"k8s.io/klog/v2"
@@ -88,6 +90,13 @@ func (p *gpuPlugin) InjectContainerGPUEnv(proto protocol.HooksProtocol) error {
 				containerCtx.Response.AddContainerEnvs["CUDA_DEVICE_SM_LIMIT"] = fmt.Sprintf("%d", gpuCore.Value())
 			}
 			containerCtx.Response.AddContainerEnvs["LD_PRELOAD"] = system.Conf.HAMICoreLibraryDirectoryPath
+			hamiDirPath := filepath.Dir(system.Conf.HAMICoreLibraryDirectoryPath)
+			klog.V(5).Infof("hamiDirPath: %s", hamiDirPath)
+			containerCtx.Response.AddContainerEnvs["CUDA_DEVICE_MEMORY_SHARED_CACHE"] = fmt.Sprintf("%s/%s_%s.cache", hamiDirPath, containerReq.PodMeta.UID, containerReq.ContainerMeta.Name)
+			cacheFileHostDirectory := fmt.Sprintf("%s/containers/%s_%s", hamiDirPath, containerReq.PodMeta.UID, containerReq.ContainerMeta.Name)
+			os.RemoveAll(cacheFileHostDirectory)
+			os.MkdirAll(cacheFileHostDirectory, 0777)
+			os.Chmod(cacheFileHostDirectory, 0777)
 			containerCtx.Response.AddContainerMounts = append(containerCtx.Response.AddContainerMounts,
 				&protocol.Mount{
 					Destination: system.Conf.HAMICoreLibraryDirectoryPath,
@@ -100,6 +109,12 @@ func (p *gpuPlugin) InjectContainerGPUEnv(proto protocol.HooksProtocol) error {
 					Destination: "/tmp/vgpulock",
 					Type:        "bind",
 					Source:      "/tmp/vgpulock",
+					Options:     []string{"rbind"},
+				},
+				&protocol.Mount{
+					Destination: hamiDirPath,
+					Type:        "bind",
+					Source:      cacheFileHostDirectory,
 					Options:     []string{"rbind"},
 				},
 			)

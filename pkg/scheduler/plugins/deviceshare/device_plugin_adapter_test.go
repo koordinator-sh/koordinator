@@ -113,7 +113,7 @@ func TestGeneralGPUDevicePluginAdapter_Adapt(t *testing.T) {
 	adapter := &generalGPUDevicePluginAdapter{}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := adapter.Adapt(tt.args.object, tt.args.allocation)
+			err := adapter.Adapt(context.TODO(), tt.args.object, tt.args.allocation)
 			assert.Equal(t, tt.wantErr, err != nil, err)
 			assert.Equal(t, tt.wantObject, tt.args.object)
 		})
@@ -386,13 +386,51 @@ func TestPlugin_adaptForDevicePlugin(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "hami-core",
+			args: args{
+				object: &corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Labels: map[string]string{
+							apiext.LabelGPUIsolationProvider: string(apiext.GPUIsolationProviderHAMICore),
+						},
+						Annotations: map[string]string{},
+					},
+				},
+				allocationResult: apiext.DeviceAllocations{
+					schedulingv1alpha1.GPU: []*apiext.DeviceAllocation{
+						{Minor: 0},
+					},
+				},
+				nodeName: "hami-core",
+			},
+			device: &schedulingv1alpha1.Device{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "hami-core",
+				},
+			},
+			wantErr: false,
+			wantObject: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						apiext.LabelGPUIsolationProvider: string(apiext.GPUIsolationProviderHAMICore),
+						apiext.LabelHAMIVGPUNodeName:     "hami-core",
+					},
+					Annotations: map[string]string{
+						AnnotationBindTimestamp: strconv.FormatInt(now.UnixNano(), 10),
+						AnnotationGPUMinors:     "0",
+					},
+				},
+			},
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			suit := newPluginTestSuit(t, nil)
+			ctx := context.TODO()
 			if tt.device != nil {
-				_, err := suit.koordClientSet.SchedulingV1alpha1().Devices().Create(context.TODO(), tt.device, metav1.CreateOptions{})
+				_, err := suit.koordClientSet.SchedulingV1alpha1().Devices().Create(ctx, tt.device, metav1.CreateOptions{})
 				assert.NoError(t, err)
 			}
 
@@ -404,7 +442,7 @@ func TestPlugin_adaptForDevicePlugin(t *testing.T) {
 			suit.Framework.SharedInformerFactory().WaitForCacheSync(nil)
 			suit.koordinatorSharedInformerFactory.WaitForCacheSync(nil)
 
-			err = pl.(*Plugin).adaptForDevicePlugin(tt.args.object, tt.args.allocationResult, tt.args.nodeName)
+			err = pl.(*Plugin).adaptForDevicePlugin(ctx, tt.args.object, tt.args.allocationResult, tt.args.nodeName)
 			assert.Equal(t, tt.wantErr, err != nil, err)
 			assert.Equal(t, tt.wantObject, tt.args.object)
 		})
