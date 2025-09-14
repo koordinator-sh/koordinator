@@ -266,7 +266,7 @@ func Run(ctx context.Context, cc *schedulerserverconfig.CompletedConfig, sched *
 					logger.Info("Sync completed")
 				}
 				go extenderFactory.Run()
-				sched.Run(ctx)
+				RunWorkflow(ctx, sched, cc.InformerFactory, cc.Client, cc.KoordinatorSharedInformerFactory, cc.KoordinatorClient, getRecorderFactory(cc))
 			},
 			OnStoppedLeading: func() {
 				gracefulShutdownSecureServer()
@@ -296,7 +296,7 @@ func Run(ctx context.Context, cc *schedulerserverconfig.CompletedConfig, sched *
 	// Leader election is disabled, so runCommand inline until done.
 	close(waitingForLeader)
 	go extenderFactory.Run()
-	sched.Run(ctx)
+	RunWorkflow(ctx, sched, cc.InformerFactory, cc.Client, cc.KoordinatorSharedInformerFactory, cc.KoordinatorClient, getRecorderFactory(cc))
 	gracefulShutdownSecureServer()
 	return fmt.Errorf("finished without leader elect")
 }
