@@ -21,58 +21,45 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/containerd/nri/pkg/api"
 	"github.com/containerd/nri/pkg/stub"
 	"go.uber.org/atomic"
 	"k8s.io/apimachinery/pkg/util/wait"
-	"k8s.io/client-go/tools/record"
 	"k8s.io/klog/v2"
-	"sigs.k8s.io/yaml"
 
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/hooks"
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/protocol"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
-	rmconfig "github.com/koordinator-sh/koordinator/pkg/runtimeproxy/config"
 )
 
 type nriConfig struct {
 	Events []string `json:"events"`
 }
 
-type Options struct {
-	NriPluginName     string
-	NriPluginIdx      string
-	NriSocketPath     string
-	NriConnectTimeout time.Duration
-	// support stop running other hooks once someone failed
-	PluginFailurePolicy rmconfig.FailurePolicyType
-	// todo: add support for disable stages
-	DisableStages map[string]struct{}
-	Executor      resourceexecutor.ResourceUpdateExecutor
-	BackOff       wait.Backoff
-	EventRecorder record.EventRecorder
-}
-
-func (o Options) Validate() error {
-	// a fast check for the NRI support status
-	completeNriSocketPath := filepath.Join(system.Conf.VarRunRootDir, o.NriSocketPath)
-	if !system.FileExists(completeNriSocketPath) {
-		return fmt.Errorf("nri socket path %q does not exist", completeNriSocketPath)
-	}
-
-	return nil
+// Stub is the interface of nri stub
+//
+//go:generate mockgen -source=server.go -destination=mock_nri.go -package=nri
+type StubInterface interface {
+	stub.Stub
 }
 
 type NriServer struct {
 	cfg      nriConfig
-	stub     stub.Stub
 	mask     stub.EventMask
 	options  Options       // server options
 	stubOpts []stub.Option // nri stub options
-	stopped  *atomic.Bool  // if false, the stub will try to reconnect when stub.OnClose is invoked
+
+	mutex            sync.Mutex
+	stopped          bool // if false, the stub will try to reconnect when stub.OnClose is invoked
+	stub             StubInterface
+	connID           int64
+	connClosedSignal chan struct{}
+}
+
+// make it testable
+var mockableNewNriStub = func(p interface{}, opts []stub.Option, onClose func()) (StubInterface, error) {
+	return stub.New(p, append(opts, stub.WithOnClose(onClose))...)
 }
 
 const (
@@ -93,206 +80,168 @@ func NewNriServer(opt Options) (*NriServer, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to validate nri server, err: %w", err)
 	}
-
 	stubOpts := []stub.Option{
 		stub.WithPluginName(opt.NriPluginName),
 		stub.WithPluginIdx(opt.NriPluginIdx),
 		stub.WithSocketPath(filepath.Join(system.Conf.VarRunRootDir, opt.NriSocketPath)),
 	}
 	p := &NriServer{
-		options:  opt,
-		stubOpts: stubOpts,
-		stopped:  atomic.NewBool(false),
+		options:          opt,
+		stubOpts:         stubOpts,
+		connClosedSignal: make(chan struct{}, 10),
 	}
 	if p.mask, err = api.ParseEventMask(events); err != nil {
 		klog.Errorf("failed to parse events %v", err)
 		return p, err
 	}
 	p.cfg.Events = strings.Split(events, ",")
-
-	if p.stub, err = stub.New(p, append(p.stubOpts, stub.WithOnClose(p.onClose))...); err != nil {
-		klog.Errorf("failed to create plugin stub: %v", err)
-		return nil, err
-	}
-
 	return p, nil
 }
 
-func (p *NriServer) Start() error {
-	err := p.options.Validate()
+func (p *NriServer) Start() (err error) {
+	klog.V(4).Info("starting nri server")
+	defer func() {
+		klog.V(4).Infof("nri server started with err: %v", err)
+	}()
+
+	err = p.options.Validate()
 	if err != nil {
 		return err
 	}
-	success := time.After(p.options.NriConnectTimeout)
-	errorChan := make(chan error)
-
-	go func(chan error) {
-		if p.stub != nil {
-			err := p.stub.Run(context.Background())
-			if err != nil {
-				klog.Errorf("nri server exited with error: %v", err)
-				errorChan <- err
-			} else {
-				klog.V(4).Info("nri server started")
-			}
-		} else {
-			err := fmt.Errorf("nri stub is nil")
-			errorChan <- err
-		}
-	}(errorChan)
-
-	select {
-	case <-success:
-		return nil
-	case <-errorChan:
-		return fmt.Errorf("nri start fail, err: %w", err)
+	// connect at first when start nri server
+	if _, err := p.connect(); err != nil {
+		return fmt.Errorf("failed to connect to nri servver: %v", err)
 	}
+
+	// then keep connection alive forever until stopped
+	go p.keepAlive()
+	return nil
 }
 
 func (p *NriServer) Stop() {
-	p.stopped.Store(true)
-	p.stub.Stop()
+	if stopped := func() bool {
+		p.mutex.Lock()
+		defer p.mutex.Unlock()
+		ret := p.stopped
+		p.stopped = true
+		return ret
+	}(); stopped {
+		return
+	}
+	p.cleanConnection(-1)
 }
 
-func (p *NriServer) Configure(_ context.Context, config, runtime, version string) (stub.EventMask, error) {
-	klog.V(4).Infof("got configuration data: %q from runtime %s %s", config, runtime, version)
-	if config == "" {
-		return p.mask, nil
+func (p *NriServer) keepAlive() {
+	// this action is important, we should not catch panic
+	// so that we can find the problem
+	defer func() {
+		p.mutex.Lock()
+		defer p.mutex.Unlock()
+		// close channel when no consumer
+		close(p.connClosedSignal)
+		p.connClosedSignal = nil
+	}()
+	for {
+		_, ok := <-p.connClosedSignal
+		if !ok {
+			return
+		}
+		if stopped := func() bool {
+			p.mutex.Lock()
+			defer p.mutex.Unlock()
+			return p.stopped
+		}(); stopped {
+			return
+		}
+		_ = wait.ExponentialBackoff(p.options.BackOff, p.connect)
+		if p.connected() {
+			continue
+		}
+		// still not connected ,retry it in next turn
+		select {
+		case p.connClosedSignal <- struct{}{}:
+		default:
+		}
 	}
-
-	err := yaml.Unmarshal([]byte(config), &p.cfg)
-	if err != nil {
-		return 0, fmt.Errorf("failed to parse provided configuration: %w", err)
-	}
-
-	p.mask, err = api.ParseEventMask(p.cfg.Events...)
-	if err != nil {
-		return 0, fmt.Errorf("failed to parse events in configuration: %w", err)
-	}
-
-	klog.V(6).Infof("handle NRI Configure successfully, config %s, runtime %s, version %s",
-		config, runtime, version)
-	return p.mask, nil
 }
 
-func (p *NriServer) Synchronize(_ context.Context, pods []*api.PodSandbox, containers []*api.Container) ([]*api.ContainerUpdate, error) {
-	// todo: update existed containers configure
-	return nil, nil
+func (p *NriServer) connected() bool {
+	p.mutex.Lock()
+	defer p.mutex.Unlock()
+	return p.stub != nil
 }
 
-func (p *NriServer) RunPodSandbox(_ context.Context, pod *api.PodSandbox) error {
-	podCtx := &protocol.PodContext{}
-	podCtx.FromNri(pod)
-	// todo: return error or bypass error based on PluginFailurePolicy
-	err := hooks.RunHooks(p.options.PluginFailurePolicy, rmconfig.PreRunPodSandbox, podCtx)
-	if err != nil {
-		klog.Errorf("nri hooks run error: %v", err)
-		if p.options.PluginFailurePolicy == rmconfig.PolicyFail {
-			return err
-		}
+func (p *NriServer) connect() (bool, error) {
+	if p.connected() {
+		return true, nil
 	}
-	podCtx.NriDone(p.options.Executor)
-
-	klog.V(6).Infof("handle NRI RunPodSandbox successfully, pod %s/%s", pod.GetNamespace(), pod.GetName())
-	return nil
+	connID := time.Now().UnixNano()
+	klog.Infof("connect to nri server, conn_id: %d", connID)
+	stubIns, err := mockableNewNriStub(p, p.stubOpts, p.reconnect(connID))
+	if err != nil {
+		return false, err
+	}
+	err = p.tryDial(connID, stubIns, p.options.NriConnectTimeout)
+	if err != nil {
+		klog.Errorf("failed to connect to nri server, conn_id: %d, %v", connID, err)
+		return false, err
+	}
+	p.mutex.Lock()
+	p.stub = stubIns
+	p.connID = connID
+	p.mutex.Unlock()
+	klog.Infof("connect to nri server successfully, conn_id: %d", connID)
+	return true, nil
 }
 
-func (p *NriServer) CreateContainer(_ context.Context, pod *api.PodSandbox, container *api.Container) (*api.ContainerAdjustment, []*api.ContainerUpdate, error) {
-	containerCtx := &protocol.ContainerContext{}
-	containerCtx.FromNri(pod, container)
-	// todo: return error or bypass error based on PluginFailurePolicy
-	err := hooks.RunHooks(p.options.PluginFailurePolicy, rmconfig.PreCreateContainer, containerCtx)
-	if err != nil {
-		klog.Errorf("nri run hooks error: %v", err)
-		if p.options.PluginFailurePolicy == rmconfig.PolicyFail {
-			return nil, nil, err
+func (p *NriServer) tryDial(connID int64, stubIns stub.Stub, atLeastLiveTime time.Duration) error {
+	success := time.After(atLeastLiveTime)
+	errChan := make(chan error)
+	returned := atomic.NewBool(false)
+	go func() {
+		err := stubIns.Run(context.Background())
+		if err == nil {
+			return
 		}
+		p.cleanConnection(connID)
+		if !returned.Load() {
+			// make sure the consumer exists, otherwise the goroutine will be blocked
+			// and never exit, which will cause memory leak
+			errChan <- err
+		}
+		close(errChan)
+	}()
+	select {
+	case <-success:
+		returned.Store(true)
+		return nil
+	case err := <-errChan:
+		return err
 	}
-
-	adjust, _, err := containerCtx.NriDone(p.options.Executor)
-	if err != nil {
-		klog.Errorf("containerCtx nri done failed: %v", err)
-		return nil, nil, nil
-	}
-
-	klog.V(6).Infof("handle NRI CreateContainer successfully, container %s/%s/%s",
-		pod.GetNamespace(), pod.GetName(), container.GetName())
-	return adjust, nil, nil
 }
 
-func (p *NriServer) UpdateContainer(_ context.Context, pod *api.PodSandbox, container *api.Container, r *api.LinuxResources) ([]*api.ContainerUpdate, error) {
-	containerCtx := &protocol.ContainerContext{}
-	containerCtx.FromNri(pod, container)
-	// todo: return error or bypass error based on PluginFailurePolicy
-	err := hooks.RunHooks(p.options.PluginFailurePolicy, rmconfig.PreUpdateContainerResources, containerCtx)
-	if err != nil {
-		klog.Errorf("nri run hooks error: %v", err)
-		if p.options.PluginFailurePolicy == rmconfig.PolicyFail {
-			return nil, err
-		}
+func (p *NriServer) reconnect(connID int64) func() {
+	return func() {
+		p.cleanConnection(connID)
 	}
-
-	_, update, err := containerCtx.NriDone(p.options.Executor)
-	if err != nil {
-		klog.Errorf("containerCtx nri done failed: %v", err)
-		return nil, nil
-	}
-
-	klog.V(6).Infof("handle NRI UpdateContainer successfully, container %s/%s/%s",
-		pod.GetNamespace(), pod.GetName(), container.GetName())
-	return []*api.ContainerUpdate{update}, nil
 }
 
-func (p *NriServer) RemovePodSandbox(_ context.Context, pod *api.PodSandbox) error {
-	podCtx := &protocol.PodContext{}
-	podCtx.FromNri(pod)
-	// todo: return error or bypass error based on PluginFailurePolicy
-	err := hooks.RunHooks(p.options.PluginFailurePolicy, rmconfig.PreRemoveRunPodSandbox, podCtx)
-	if err != nil {
-		klog.Errorf("nri hooks run error: %v", err)
-		if p.options.PluginFailurePolicy == rmconfig.PolicyFail {
-			return err
+func (p *NriServer) cleanConnection(connID int64) {
+	klog.Warningf("nri server connection closed, conn_id: %d", connID)
+	defer klog.Infof("clean dead stub successfully, conn_id: %d", connID)
+	p.mutex.Lock()
+	if p.stub != nil && (p.connID == connID || connID == -1) {
+		p.stub.Stop()
+		// wait for the plugin to stop
+		p.stub.Wait()
+		p.stub = nil
+		p.connID = -1
+	}
+	if p.connClosedSignal != nil {
+		select {
+		case p.connClosedSignal <- struct{}{}:
+		default:
 		}
 	}
-	podCtx.NriRemoveDone(p.options.Executor)
-
-	klog.V(6).Infof("handle NRI RemovePodSandbox successfully, pod %s/%s", pod.GetNamespace(), pod.GetName())
-	return nil
-}
-
-func (p *NriServer) onClose() {
-	//TODO: consider the pod status during restart
-	retryFunc := func() (bool, error) {
-		if p.stopped.Load() { // if set to stopped, no longer reconnect
-			return true, nil
-		}
-
-		newStub, err := stub.New(p, append(p.stubOpts, stub.WithOnClose(p.onClose))...)
-		if err != nil {
-			klog.Errorf("failed to create plugin stub: %v", err)
-			return false, nil
-		}
-
-		p.stub = newStub
-		err = p.Start()
-		if err != nil {
-			completeNriSocketPath := filepath.Join(system.Conf.VarRunRootDir, p.options.NriSocketPath)
-			targetErr := fmt.Errorf("nri socket path %q does not exist", completeNriSocketPath)
-			if err.Error() == targetErr.Error() {
-				return false, err
-			}
-			//TODO: check the error type, if nri server disable nri, we should also break backoff
-			klog.Warningf("nri reconnect failed, err: %s", err)
-			return false, nil
-		} else {
-			klog.V(4).Info("nri server restart success")
-			return true, nil
-		}
-	}
-
-	// TODO: high version wait not support BackoffUntil with BackOffManger as parameters, when updated to v0.27.0 version wait, we can refine ExponentialBackoff.
-	err := wait.ExponentialBackoff(p.options.BackOff, retryFunc)
-	if err != nil {
-		klog.Errorf("nri server restart failed after several times retry")
-	}
+	p.mutex.Unlock()
 }
