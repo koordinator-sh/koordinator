@@ -195,7 +195,7 @@ func Test_reportXPUDevice(t *testing.T) {
 			Topology: &koordletutil.DeviceTopology{
 				P2PLinks: []koordletutil.DeviceP2PLink{
 					{
-						PeerMinor: "1,2,3",
+						PeerMinor: "1,2,3,g",
 						Type:      "HCCS",
 					},
 				},
@@ -207,6 +207,81 @@ func Test_reportXPUDevice(t *testing.T) {
 			},
 			Status: &koordletutil.DeviceStatus{
 				Healthy: true,
+			},
+		},
+		{
+			Vendor: "huawei",
+			Model:  "Ascend-910B",
+			UUID:   "185011D4-21104518-A0C4ED94-14CC040A-56102001",
+			Minor:  "1",
+			Resources: map[string]string{
+				extension.ResourceHuaweiNPUCore:     "32",
+				extension.ResourceHuaweiNPUCPU:      "14",
+				string(extension.ResourceGPUMemory): "32Gi",
+				extension.ResourceHuaweiNPUDVPP:     "100",
+			},
+			Topology: &koordletutil.DeviceTopology{
+				P2PLinks: []koordletutil.DeviceP2PLink{
+					{
+						PeerMinor: "0,1,2,3",
+						Type:      "HCCS",
+					},
+				},
+				MustHonorPartition: true,
+				SocketID:           "0",
+				NodeID:             "1",
+				PCIEID:             "0000:00:08.0",
+				BusID:              "0000:00:08.1",
+			},
+			Status: &koordletutil.DeviceStatus{
+				Healthy: true,
+			},
+		},
+		{
+			Vendor: "huawei",
+			Model:  "Ascend-910B",
+			UUID:   "185011D4-21104518-A0C4ED94-14CC040A-56102002",
+			Minor:  "2",
+			Resources: map[string]string{
+				extension.ResourceHuaweiNPUCore:     "32",
+				extension.ResourceHuaweiNPUCPU:      "14",
+				string(extension.ResourceGPUMemory): "32Gi",
+				extension.ResourceHuaweiNPUDVPP:     "100",
+			},
+			Topology: &koordletutil.DeviceTopology{
+				SocketID: "0",
+				NodeID:   "2",
+				PCIEID:   "0000:00:08.0",
+				BusID:    "0000:00:08.2",
+			},
+		},
+		{
+			Vendor: "huawei",
+			Model:  "Ascend-910B",
+			UUID:   "185011D4-21104518-A0C4ED94-14CC040A-56102004",
+			Minor:  "4",
+			Resources: map[string]string{
+				extension.ResourceHuaweiNPUCore:     "32",
+				extension.ResourceHuaweiNPUCPU:      "14",
+				string(extension.ResourceGPUMemory): "32Gi",
+				extension.ResourceHuaweiNPUDVPP:     "100",
+			},
+			Topology: &koordletutil.DeviceTopology{
+				P2PLinks: []koordletutil.DeviceP2PLink{
+					{
+						PeerMinor: "5,6,7,7,g",
+						Type:      "HCCS",
+					},
+				},
+				MustHonorPartition: true,
+				SocketID:           "0",
+				NodeID:             "4",
+				PCIEID:             "0000:00:08.0",
+				BusID:              "0000:00:08.4",
+			},
+			Status: &koordletutil.DeviceStatus{
+				Healthy: false,
+				ErrCode: "-8001",
 			},
 		},
 	}
@@ -263,6 +338,84 @@ func Test_reportXPUDevice(t *testing.T) {
 				{
 					Type:               string(schedulingv1alpha1.DeviceConditionHealthy),
 					Status:             metav1.ConditionTrue,
+					Reason:             "DeviceHealthy",
+					Message:            "device is healthy",
+					LastTransitionTime: fixedTime,
+				},
+			},
+		},
+		{
+			UUID:   "185011D4-21104518-A0C4ED94-14CC040A-56102001",
+			Minor:  pointer.Int32(1),
+			Type:   schedulingv1alpha1.GPU,
+			Health: true,
+			Resources: map[corev1.ResourceName]resource.Quantity{
+				extension.ResourceGPUMemoryRatio: *resource.NewQuantity(100, resource.DecimalSI),
+				extension.ResourceHuaweiNPUCore:  npuCoreQuantity,
+				extension.ResourceHuaweiNPUCPU:   npuCpuQuantity,
+				extension.ResourceGPUMemory:      gpuMemQuantity,
+				extension.ResourceHuaweiNPUDVPP:  dvppQuantity,
+			},
+			Topology: &schedulingv1alpha1.DeviceTopology{
+				SocketID: -1,
+				NodeID:   1,
+				PCIEID:   "0000:00:08.0",
+				BusID:    "0000:00:08.1",
+			},
+			Conditions: []metav1.Condition{
+				{
+					Type:               string(schedulingv1alpha1.DeviceConditionHealthy),
+					Status:             metav1.ConditionTrue,
+					Reason:             "DeviceHealthy",
+					Message:            "device is healthy",
+					LastTransitionTime: fixedTime,
+				},
+			},
+		},
+		{
+			UUID:   "185011D4-21104518-A0C4ED94-14CC040A-56102002",
+			Minor:  pointer.Int32(2),
+			Type:   schedulingv1alpha1.GPU,
+			Health: true,
+			Resources: map[corev1.ResourceName]resource.Quantity{
+				extension.ResourceGPUMemoryRatio: *resource.NewQuantity(100, resource.DecimalSI),
+				extension.ResourceHuaweiNPUCore:  npuCoreQuantity,
+				extension.ResourceHuaweiNPUCPU:   npuCpuQuantity,
+				extension.ResourceGPUMemory:      gpuMemQuantity,
+				extension.ResourceHuaweiNPUDVPP:  dvppQuantity,
+			},
+			Topology: &schedulingv1alpha1.DeviceTopology{
+				SocketID: -1,
+				NodeID:   2,
+				PCIEID:   "0000:00:08.0",
+				BusID:    "0000:00:08.2",
+			},
+		},
+		{
+			UUID:   "185011D4-21104518-A0C4ED94-14CC040A-56102004",
+			Minor:  pointer.Int32(4),
+			Type:   schedulingv1alpha1.GPU,
+			Health: false,
+
+			Resources: map[corev1.ResourceName]resource.Quantity{
+				extension.ResourceGPUMemoryRatio: *resource.NewQuantity(100, resource.DecimalSI),
+				extension.ResourceHuaweiNPUCore:  npuCoreQuantity,
+				extension.ResourceHuaweiNPUCPU:   npuCpuQuantity,
+				extension.ResourceGPUMemory:      gpuMemQuantity,
+				extension.ResourceHuaweiNPUDVPP:  dvppQuantity,
+			},
+			Topology: &schedulingv1alpha1.DeviceTopology{
+				SocketID: -1,
+				NodeID:   4,
+				PCIEID:   "0000:00:08.0",
+				BusID:    "0000:00:08.4",
+			},
+			Conditions: []metav1.Condition{
+				{
+					Type:               string(schedulingv1alpha1.DeviceConditionHealthy),
+					Status:             metav1.ConditionFalse,
+					Reason:             "-8001",
+					Message:            "device is unhealthy",
 					LastTransitionTime: fixedTime,
 				},
 			},
@@ -270,6 +423,8 @@ func Test_reportXPUDevice(t *testing.T) {
 	}
 	device, err := fakeClient.Get(context.TODO(), "test", metav1.GetOptions{})
 	device.Spec.Devices[0].Conditions[0].LastTransitionTime = fixedTime
+	device.Spec.Devices[1].Conditions[0].LastTransitionTime = fixedTime
+	device.Spec.Devices[3].Conditions[0].LastTransitionTime = fixedTime
 
 	assert.Equal(t, nil, err)
 	assert.Equal(t, device.Spec.Devices, expectedDevices)
@@ -277,5 +432,5 @@ func Test_reportXPUDevice(t *testing.T) {
 	assert.Equal(t, device.Labels[extension.LabelGPUModel], "Ascend-910B")
 	assert.Equal(t, device.Labels[extension.LabelGPUVendor], "huawei")
 	assert.Equal(t, device.Labels[extension.LabelGPUPartitionPolicy], "Honor")
-	assert.Equal(t, device.Annotations[extension.AnnotationGPUPartitions], "{\"4\":[{\"minors\":[0,1,2,3],\"gpuLinkType\":\"HCCS\",\"allocationScore\":1}]}")
+	assert.Equal(t, device.Annotations[extension.AnnotationGPUPartitions], "{\"4\":[{\"minors\":[0,1,2,3],\"gpuLinkType\":\"HCCS\",\"allocationScore\":1},{\"minors\":[4,5,6,7],\"gpuLinkType\":\"HCCS\",\"allocationScore\":1}]}")
 }
