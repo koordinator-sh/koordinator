@@ -30,6 +30,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 	sysutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 	"github.com/koordinator-sh/koordinator/pkg/util/sloconfig"
 )
@@ -496,6 +497,7 @@ func Test_ruleUpdateCb(t *testing.T) {
 		plugin          *Plugin
 		preparePluginFn func(p *Plugin)
 		cse             sysutil.CoreSchedExtendedInterface
+		notAnolisOS     bool
 	}
 	type wantFields struct {
 		rule               *Rule
@@ -1663,7 +1665,7 @@ func Test_ruleUpdateCb(t *testing.T) {
 				defer close(stopCh)
 				p.executor.Run(stopCh)
 			}
-
+			system.HostSystemInfo.IsAnolisOS = !tt.fields.notAnolisOS
 			gotErr := p.ruleUpdateCb(tt.arg)
 			assert.Equal(t, tt.wantErr, gotErr != nil, gotErr)
 			assert.Equal(t, tt.wantFields.rule, p.rule)

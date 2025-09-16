@@ -174,7 +174,8 @@ func TestFakeCoreSchedExtended(t *testing.T) {
 
 func TestEnableCoreSchedIfSupported(t *testing.T) {
 	type fields struct {
-		prepareFn func(helper *FileTestUtil)
+		prepareFn   func(helper *FileTestUtil)
+		notAnolisOS bool
 	}
 	tests := []struct {
 		name   string
@@ -283,6 +284,7 @@ func TestEnableCoreSchedIfSupported(t *testing.T) {
 			if tt.fields.prepareFn != nil {
 				tt.fields.prepareFn(helper)
 			}
+			HostSystemInfo.IsAnolisOS = !tt.fields.notAnolisOS
 			got, got1 := EnableCoreSchedIfSupported()
 			assert.Equal(t, tt.want, got)
 			assert.Equal(t, tt.want1, got1)
