@@ -95,6 +95,8 @@ spec:
             - mountPath: /var/run/koordlet/xpu-device-infos/
               mountPropagation: Bidirectional
               name: xpu-device-infos
+            - mountPath: /usr/local/vgpu/containers
+              name: host-vgpu-containers
       hostNetwork: true
       hostPID: true
       restartPolicy: Always
@@ -162,3 +164,7 @@ spec:
             path: /var/run/koordlet/xpu-device-infos/
             type: DirectoryOrCreate
           name: xpu-device-infos
+        - hostPath:
+            path: /usr/local/vgpu/containers
+            type: DirectoryOrCreate
+          name: host-vgpu-containers

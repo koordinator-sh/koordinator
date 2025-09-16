@@ -17,6 +17,7 @@ limitations under the License.
 package deviceshare
 
 import (
+	"context"
 	"fmt"
 	"strconv"
 	"strings"
@@ -24,6 +25,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/klog/v2"
 	"k8s.io/utils/clock"
+	"k8s.io/utils/pointer"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
@@ -70,15 +72,17 @@ var (
 			clock: clock.RealClock{},
 		},
 	}
+	nodeNameContextKey = pointer.String("nodeName")
 )
 
-func (p *Plugin) adaptForDevicePlugin(object metav1.Object, allocationResult apiext.DeviceAllocations, nodeName string) error {
+func (p *Plugin) adaptForDevicePlugin(ctx context.Context, object metav1.Object, allocationResult apiext.DeviceAllocations, nodeName string) error {
 	if err := defaultDevicePluginAdapter.Adapt(object, nil); err != nil {
 		return err
 	}
 
 	if gpuAllocation, ok := allocationResult[schedulingv1alpha1.GPU]; ok {
-		if err := defaultGPUDevicePluginAdapter.Adapt(object, gpuAllocation); err != nil {
+		ctx = context.WithValue(ctx, nodeNameContextKey, nodeName)
+		if err := defaultGPUDevicePluginAdapter.Adapt(ctx, object, gpuAllocation); err != nil {
 			return err
 		}
 
@@ -120,8 +124,15 @@ func (a *generalDevicePluginAdapter) Adapt(object metav1.Object, _ []*apiext.Dev
 type generalGPUDevicePluginAdapter struct {
 }
 
-func (a *generalGPUDevicePluginAdapter) Adapt(object metav1.Object, allocation []*apiext.DeviceAllocation) error {
+func (a *generalGPUDevicePluginAdapter) Adapt(ctx context.Context, object metav1.Object, allocation []*apiext.DeviceAllocation) error {
 	object.GetAnnotations()[AnnotationGPUMinors] = buildGPUMinorsStr(allocation)
+	if object.GetLabels()[apiext.LabelGPUIsolationProvider] == string(apiext.GPUIsolationProviderHAMICore) {
+		if nodeName, ok := ctx.Value(nodeNameContextKey).(string); ok {
+			object.GetLabels()[apiext.LabelHAMIVGPUNodeName] = nodeName
+		} else {
+			return fmt.Errorf("nodeName is not found in context")
+		}
+	}
 	return nil
 }
 
