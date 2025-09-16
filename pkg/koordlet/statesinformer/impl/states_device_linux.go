@@ -19,6 +19,7 @@ package impl
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"sort"
 	"strconv"
@@ -30,6 +31,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/klog/v2"
 	"k8s.io/utils/pointer"
 
@@ -345,7 +347,7 @@ func (s *statesInformer) buildXPUDevice(xpuDevices koordletuti.XPUDevices) []sch
 		}
 
 		topo := getXPUDeviceTopology(&xpu)
-		conditions := getXPUDviceConditions(&xpu)
+		conditions := getXPUDeviceConditions(&xpu)
 
 		deviceInfo := schedulingv1alpha1.DeviceInfo{
 			UUID:       xpu.UUID,
@@ -582,9 +584,11 @@ func (s *statesInformer) buildXPUDeviceAnnotations(xpuDevices koordletuti.XPUDev
 
 func getPartitionTableFromXPUDevices(xpus koordletuti.XPUDevices) extension.GPUPartitionTable {
 	partitions := make(extension.GPUPartitionTable)
+	minorsSet := sets.NewString()
+
 	for _, xpu := range xpus {
 		if xpu.Topology == nil || xpu.Topology.P2PLinks == nil {
-			return nil
+			continue
 		}
 
 		for _, p2pLink := range xpu.Topology.P2PLinks {
@@ -593,26 +597,33 @@ func getPartitionTableFromXPUDevices(xpus koordletuti.XPUDevices) extension.GPUP
 				continue
 			}
 
-			var minorsINt []int
+			minorsIntSet := sets.NewInt()
 			minorsStr := strings.Split(p2pLink.PeerMinor, ",")
 			minorsStr = append(minorsStr, xpu.Minor)
 			for _, minor := range minorsStr {
 				minorInt, err := strconv.Atoi(minor)
 				if err != nil {
 					klog.Errorf("failed to parse peer minor %s, err: %v", p2pLink.PeerMinor, err)
+					continue
 				}
-				minorsINt = append(minorsINt, minorInt)
+				minorsIntSet.Insert(minorInt)
 			}
+			minorsInt := minorsIntSet.UnsortedList()
+			sort.Ints(minorsInt)
 
-			sort.Ints(minorsINt)
+			key := fmt.Sprint(minorsInt)
+			if minorsSet.Has(key) {
+				continue
+			}
+			minorsSet.Insert(key)
 
 			partition := extension.GPUPartition{
-				Minors:          minorsINt,
+				Minors:          minorsInt,
 				GPULinkType:     extension.GPULinkType(p2pLink.Type),
 				AllocationScore: 1,
 			}
 
-			partitions[len(minorsINt)] = append(partitions[len(minorsINt)], partition)
+			partitions[len(minorsInt)] = append(partitions[len(minorsInt)], partition)
 		}
 	}
 
@@ -654,7 +665,7 @@ func getXPUDeviceTopology(xpu *koordletuti.XPUDeviceInfo) *schedulingv1alpha1.De
 	}
 }
 
-func getXPUDviceConditions(xpu *koordletuti.XPUDeviceInfo) []metav1.Condition {
+func getXPUDeviceConditions(xpu *koordletuti.XPUDeviceInfo) []metav1.Condition {
 	if xpu == nil || xpu.Status == nil {
 		return nil
 	}
@@ -664,13 +675,21 @@ func getXPUDviceConditions(xpu *koordletuti.XPUDeviceInfo) []metav1.Condition {
 			Type:               string(schedulingv1alpha1.DeviceConditionHealthy),
 			Status:             metav1.ConditionTrue,
 			LastTransitionTime: metav1.Now(),
+			Reason:             "DeviceHealthy",
+			Message:            "device is healthy",
 		},
 	}
 
 	if !xpu.Status.Healthy {
 		conditions[0].Status = metav1.ConditionFalse
-		conditions[0].Reason = xpu.Status.ErrCode
-		conditions[0].Message = xpu.Status.ErrMessage
+		conditions[0].Reason = "Unknown"
+		if xpu.Status.ErrCode != "" {
+			conditions[0].Reason = xpu.Status.ErrCode
+		}
+		conditions[0].Message = "device is unhealthy"
+		if xpu.Status.ErrMessage != "" {
+			conditions[0].Message = xpu.Status.ErrMessage
+		}
 	}
 
 	return conditions
