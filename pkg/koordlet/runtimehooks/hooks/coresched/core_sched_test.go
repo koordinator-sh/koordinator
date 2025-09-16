@@ -35,6 +35,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/protocol"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 	sysutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 )
 
@@ -50,7 +51,8 @@ func TestPlugin(t *testing.T) {
 
 func TestPluginSystemSupported(t *testing.T) {
 	type fields struct {
-		prepareFn func(helper *sysutil.FileTestUtil)
+		prepareFn   func(helper *sysutil.FileTestUtil)
+		notAnolisOS bool
 	}
 	type wants struct {
 		systemSupported bool
@@ -134,6 +136,7 @@ func TestPluginSystemSupported(t *testing.T) {
 				Reader:   resourceexecutor.NewCgroupReader(),
 				Executor: resourceexecutor.NewTestResourceExecutor(),
 			})
+			system.HostSystemInfo.IsAnolisOS = !tt.fields.notAnolisOS
 			sysSupported := p.SystemSupported()
 			assert.Equal(t, tt.wants.systemSupported, sysSupported)
 			assert.Equal(t, tt.wants.supportMsg, p.supportedMsg)
@@ -145,6 +148,7 @@ func TestPlugin_initSystem(t *testing.T) {
 	type fields struct {
 		prepareFn   func(helper *sysutil.FileTestUtil)
 		giSupported *bool
+		notAnolisOS bool
 	}
 	tests := []struct {
 		name      string
@@ -281,6 +285,7 @@ func TestPlugin_initSystem(t *testing.T) {
 			if tt.fields.prepareFn != nil {
 				tt.fields.prepareFn(helper)
 			}
+			system.HostSystemInfo.IsAnolisOS = !tt.fields.notAnolisOS
 
 			p := newPlugin()
 			p.Setup(hooks.Options{})
@@ -302,6 +307,7 @@ func TestPlugin_SetContainerCookie(t *testing.T) {
 		preparePluginFn func(p *Plugin)
 		cse             sysutil.CoreSchedExtendedInterface
 		groupID         string
+		notAnolisOS     bool
 	}
 	type wantFields struct {
 		cookieToPIDs  map[uint64][]uint32
@@ -1245,6 +1251,7 @@ func TestPlugin_SetContainerCookie(t *testing.T) {
 			if tt.fields.prepareFn != nil {
 				tt.fields.prepareFn(helper)
 			}
+			system.HostSystemInfo.IsAnolisOS = !tt.fields.notAnolisOS
 			p := tt.fields.plugin
 			if tt.fields.cse != nil {
 				p.cse = tt.fields.cse
