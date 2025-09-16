@@ -311,6 +311,7 @@ func (ext *frameworkExtenderImpl) RunPostFilterPlugins(ctx context.Context, stat
 			transformer.AfterPostFilter(ctx, state, pod, filteredNodeStatusMap)
 			ext.metricsRecorder.ObservePluginDurationAsync("AfterPostFilter", transformer.Name(), "", metrics.SinceInSeconds(startTime))
 		}
+		DumpDiagnosis(state)
 	}()
 
 	return ext.Framework.RunPostFilterPlugins(ctx, state, pod, filteredNodeStatusMap)
