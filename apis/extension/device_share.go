@@ -72,6 +72,7 @@ const (
 	GPUVendorNVIDIA    = "nvidia"
 	GPUVendorHuawei    = "huawei"
 	GPUVendorCambricon = "cambricon"
+	GPUVendorBaidu     = "baidu"
 )
 
 // DeviceAllocations would be injected into Pod as form of annotation during Pre-bind stage.
