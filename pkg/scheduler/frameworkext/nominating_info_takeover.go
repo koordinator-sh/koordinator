@@ -25,31 +25,36 @@ import (
 )
 
 var (
-	// JobPreemptionRejectPlugin If the waitingPod is rejected by the Job preemption plug-in, the assumedNodeName is the nominatedNodeName.
-	JobPreemptionRejectPlugin = "JobPreemptionRejectPlugin"
+	// JobPreemptionSuccessPlugin If the waitingPod is rejected by the Job preemption plugin, the assumedNodeName is the nominatedNodeName.
+	JobPreemptionSuccessPlugin = "JobPreemptionSuccessPlugin"
+	// JobPreemptionFailurePlugin If Job preemption fails, the nominatedNodeName of the WaitingPod should be erased.
+	JobPreemptionFailurePlugin = "JobPreemptionFailurePlugin"
 	// JobRejectPlugin If the waitingPod is only recycled by the JobRejectPlugin, the NominatedNodeName should not be modified.
 	JobRejectPlugin = "JobRejectPlugin"
 )
 
-func TakeoverNominatingInfo(
-	ctx context.Context,
-	fwk framework.Framework,
-	podInfo *framework.QueuedPodInfo,
-	status *framework.Status,
-	nominatingInfo *framework.NominatingInfo,
-	start time.Time) bool {
+func TakeoverNominatingInfo(ctx context.Context, fwk framework.Framework, podInfo *framework.QueuedPodInfo, status *framework.Status, nominatingInfo *framework.NominatingInfo, start time.Time) *framework.NominatingInfo {
 	if status == nil || status.Code() != framework.Unschedulable {
-		return false
+		return nominatingInfo
 	}
 	rejecterPlugin := getRejecterPlugin(status)
-	if rejecterPlugin == JobPreemptionRejectPlugin {
-		nominatingInfo.NominatingMode = framework.ModeOverride
-		nominatingInfo.NominatedNodeName = podInfo.Pod.Spec.NodeName
+	if rejecterPlugin == JobPreemptionSuccessPlugin {
+		return &framework.NominatingInfo{
+			NominatingMode:    framework.ModeOverride,
+			NominatedNodeName: podInfo.Pod.Spec.NodeName,
+		}
 	} else if status.FailedPlugin() == JobRejectPlugin {
-		nominatingInfo.NominatingMode = framework.ModeNoop
-		nominatingInfo.NominatedNodeName = ""
+		return &framework.NominatingInfo{
+			NominatingMode:    framework.ModeNoop,
+			NominatedNodeName: "",
+		}
+	} else if status.FailedPlugin() == JobPreemptionFailurePlugin {
+		return &framework.NominatingInfo{
+			NominatingMode:    framework.ModeOverride,
+			NominatedNodeName: "",
+		}
 	}
-	return false
+	return nominatingInfo
 }
 
 func getRejecterPlugin(status *framework.Status) string {
