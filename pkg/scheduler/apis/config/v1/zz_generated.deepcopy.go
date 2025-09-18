@@ -47,6 +47,11 @@ func (in *CoschedulingArgs) DeepCopyInto(out *CoschedulingArgs) {
 		*out = new(bool)
 		**out = **in
 	}
+	if in.EnablePreemption != nil {
+		in, out := &in.EnablePreemption, &out.EnablePreemption
+		*out = new(bool)
+		**out = **in
+	}
 	return
 }
 

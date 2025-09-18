@@ -184,6 +184,7 @@ func autoConvert_v1_CoschedulingArgs_To_config_CoschedulingArgs(in *Coscheduling
 	if err := metav1.Convert_Pointer_bool_To_bool(&in.SkipCheckScheduleCycle, &out.SkipCheckScheduleCycle, s); err != nil {
 		return err
 	}
+	out.EnablePreemption = (*bool)(unsafe.Pointer(in.EnablePreemption))
 	return nil
 }
 
@@ -202,6 +203,7 @@ func autoConvert_config_CoschedulingArgs_To_v1_CoschedulingArgs(in *config.Cosch
 	if err := metav1.Convert_bool_To_Pointer_bool(&in.SkipCheckScheduleCycle, &out.SkipCheckScheduleCycle, s); err != nil {
 		return err
 	}
+	out.EnablePreemption = (*bool)(unsafe.Pointer(in.EnablePreemption))
 	return nil
 }
 

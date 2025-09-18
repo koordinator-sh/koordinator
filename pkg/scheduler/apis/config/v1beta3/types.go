@@ -268,6 +268,9 @@ type CoschedulingArgs struct {
 	// Skip check schedule cycle
 	// default is false
 	SkipCheckScheduleCycle *bool `json:"skipCheckScheduleCycle,omitempty"`
+	// EnablePreemption indicates whether to enable preemption for coscheduling.
+	// default is false
+	EnablePreemption *bool `json:"enablePreemption,omitempty"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
