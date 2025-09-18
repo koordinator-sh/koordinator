@@ -17,17 +17,22 @@ limitations under the License.
 package deviceshare
 
 import (
+	"context"
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/klog/v2"
 	"k8s.io/utils/clock"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
+	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
 const (
@@ -51,34 +56,62 @@ const (
 	// AnnotationHuaweiNPUCore represents the NPU/vNPU allocation result for the pod which is used by
 	// Huawei NPU device plugins to allocate NPU(s)/vNPU for pod.
 	AnnotationHuaweiNPUCore = "huawei.com/npu-core"
+
+	// AnnotationCambriconDsmluAssigned is used by Cambricon dynamic sMLU device plugins to determine pod.
+	AnnotationCambriconDsmluAssigned = "CAMBRICON_DSMLU_ASSIGHED"
+	// AnnotationCambriconDsmluProfile represents the dynamic sMLU allocation result for the pod which is used by
+	// Cambricon dynamic sMLU device plugins to allocate sMLU for pod.
+	AnnotationCambriconDsmluProfile = "CAMBRICON_DSMLU_PROFILE"
+	// AnnotationCambriconDsmluLockTime is annotated to node by scheduler to prevent scheduling multiple pods
+	// with dynamic sMLU to the same node which would make Cambricon device plugin unable to determine pod.
+	// Cambricon dynamic sMLU device plugin will automatically remove it after allocation of a pod.
+	AnnotationCambriconDsmluLockTime = "cambricon.com/dsmlu.lock"
+	// cambriconVMemoryUnit is the minial virtual memory unit of Cambricon dynamic sMLU currently supported.
+	// This should always match the min-dsmlu-unit arg of device plugin.
+	cambriconVMemoryUnit = 256 * 1024 * 1024
 )
 
 // DevicePluginAdapter adapt koord-scheduler's device allocation result to the format that third party vendor's
 // device plugin recognizes, so that user can directly use them as allocators with koord-scheduler without modification.
 // This is especially useful when third party device plugin natively supports fine-grained device allocation or virtualization.
 type DevicePluginAdapter interface {
-	Adapt(object metav1.Object, allocation []*apiext.DeviceAllocation) error
+	Adapt(ctx *DevicePluginAdaptContext, object metav1.Object, allocation []*apiext.DeviceAllocation) error
+}
+
+type DevicePluginAdaptContext struct {
+	context.Context
+	client kubernetes.Interface
+	node   *corev1.Node
 }
 
 var (
-	defaultDevicePluginAdapter = &generalDevicePluginAdapter{
+	defaultDevicePluginAdapter DevicePluginAdapter = &generalDevicePluginAdapter{
 		clock: clock.RealClock{},
 	}
-	defaultGPUDevicePluginAdapter = &generalGPUDevicePluginAdapter{}
-	gpuDevicePluginAdapterMap     = map[string]DevicePluginAdapter{
+	defaultGPUDevicePluginAdapter DevicePluginAdapter = &generalGPUDevicePluginAdapter{}
+	gpuDevicePluginAdapterMap                         = map[string]DevicePluginAdapter{
 		apiext.GPUVendorHuawei: &huaweiGPUDevicePluginAdapter{
+			clock: clock.RealClock{},
+		},
+		apiext.GPUVendorCambricon: &cambriconGPUDevicePluginAdapter{
 			clock: clock.RealClock{},
 		},
 	}
 )
 
-func (p *Plugin) adaptForDevicePlugin(object metav1.Object, allocationResult apiext.DeviceAllocations, nodeName string) error {
-	if err := defaultDevicePluginAdapter.Adapt(object, nil); err != nil {
+func (p *Plugin) adaptForDevicePlugin(ctx context.Context, object metav1.Object, allocationResult apiext.DeviceAllocations, nodeName string) error {
+	if err := defaultDevicePluginAdapter.Adapt(nil, object, nil); err != nil {
 		return err
 	}
 
 	if gpuAllocation, ok := allocationResult[schedulingv1alpha1.GPU]; ok {
-		if err := defaultGPUDevicePluginAdapter.Adapt(object, gpuAllocation); err != nil {
+		if err := defaultGPUDevicePluginAdapter.Adapt(nil, object, gpuAllocation); err != nil {
+			return err
+		}
+
+		nodeInfo, err := p.handle.SnapshotSharedLister().NodeInfos().Get(nodeName)
+		if err != nil {
+			klog.ErrorS(err, "Failed to get NodeInfo", "node", nodeName)
 			return err
 		}
 
@@ -93,9 +126,14 @@ func (p *Plugin) adaptForDevicePlugin(object metav1.Object, allocationResult api
 			return err
 		}
 
+		adaptCtx := &DevicePluginAdaptContext{
+			Context: ctx,
+			client:  p.handle.ClientSet(),
+			node:    nodeInfo.Node(),
+		}
 		vendor := device.Labels[apiext.LabelGPUVendor]
 		if adapter, ok := gpuDevicePluginAdapterMap[vendor]; ok {
-			if err := adapter.Adapt(object, gpuAllocation); err != nil {
+			if err := adapter.Adapt(adaptCtx, object, gpuAllocation); err != nil {
 				return fmt.Errorf("failed to adapt for GPU device plugin of vendor %q: %w", vendor, err)
 			}
 		}
@@ -110,7 +148,7 @@ type generalDevicePluginAdapter struct {
 	clock clock.Clock
 }
 
-func (a *generalDevicePluginAdapter) Adapt(object metav1.Object, _ []*apiext.DeviceAllocation) error {
+func (a *generalDevicePluginAdapter) Adapt(_ *DevicePluginAdaptContext, object metav1.Object, _ []*apiext.DeviceAllocation) error {
 	object.GetAnnotations()[AnnotationBindTimestamp] = strconv.FormatInt(a.clock.Now().UnixNano(), 10)
 	return nil
 }
@@ -120,7 +158,7 @@ func (a *generalDevicePluginAdapter) Adapt(object metav1.Object, _ []*apiext.Dev
 type generalGPUDevicePluginAdapter struct {
 }
 
-func (a *generalGPUDevicePluginAdapter) Adapt(object metav1.Object, allocation []*apiext.DeviceAllocation) error {
+func (a *generalGPUDevicePluginAdapter) Adapt(_ *DevicePluginAdaptContext, object metav1.Object, allocation []*apiext.DeviceAllocation) error {
 	object.GetAnnotations()[AnnotationGPUMinors] = buildGPUMinorsStr(allocation)
 	return nil
 }
@@ -129,7 +167,7 @@ type huaweiGPUDevicePluginAdapter struct {
 	clock clock.Clock
 }
 
-func (a *huaweiGPUDevicePluginAdapter) Adapt(object metav1.Object, allocation []*apiext.DeviceAllocation) error {
+func (a *huaweiGPUDevicePluginAdapter) Adapt(_ *DevicePluginAdaptContext, object metav1.Object, allocation []*apiext.DeviceAllocation) error {
 	object.GetAnnotations()[AnnotationPredicateTime] = strconv.FormatInt(a.clock.Now().UnixNano(), 10)
 	if allocation[0].Extension != nil && allocation[0].Extension.GPUSharedResourceTemplate != "" {
 		// vNPU
@@ -137,6 +175,74 @@ func (a *huaweiGPUDevicePluginAdapter) Adapt(object metav1.Object, allocation []
 	} else {
 		// full NPU
 		object.GetAnnotations()[AnnotationHuaweiNPUCore] = buildGPUMinorsStr(allocation)
+	}
+	return nil
+}
+
+type cambriconGPUDevicePluginAdapter struct {
+	clock clock.Clock
+}
+
+func (a *cambriconGPUDevicePluginAdapter) Adapt(ctx *DevicePluginAdaptContext, object metav1.Object, allocation []*apiext.DeviceAllocation) error {
+	if len(allocation) > 1 {
+		return fmt.Errorf("multiple gpu share is not supported on device side")
+	}
+
+	core, ok := allocation[0].Resources[apiext.ResourceGPUCore]
+	if !ok {
+		return fmt.Errorf("gpu core resource is required")
+	}
+	vcore := core.Value()
+
+	memory := allocation[0].Resources[apiext.ResourceGPUMemory]
+	if memory.Value() < cambriconVMemoryUnit {
+		return fmt.Errorf("gpu memory must not be less than %d bytes", cambriconVMemoryUnit)
+	}
+	vmemory := memory.Value() / cambriconVMemoryUnit
+
+	if err := a.lockNode(ctx, ctx.client, ctx.node); err != nil {
+		return fmt.Errorf("failed to lock node: %v", err)
+	}
+
+	object.GetAnnotations()[AnnotationCambriconDsmluAssigned] = "false"
+	object.GetAnnotations()[AnnotationCambriconDsmluProfile] = fmt.Sprintf("%d_%d_%d", allocation[0].Minor, vcore, vmemory)
+	return nil
+}
+
+func (a *cambriconGPUDevicePluginAdapter) lockNode(ctx context.Context, client kubernetes.Interface, node *corev1.Node) error {
+	if val, ok := node.Annotations[AnnotationCambriconDsmluLockTime]; ok {
+		lockTime, err := time.Parse(time.RFC3339, val)
+		if err != nil {
+			return err
+		}
+		if time.Since(lockTime) > 2*time.Minute {
+			// this should never happen in normal cases, and we don't want to lock the node forever
+			if err := a.unlockNode(ctx, client, node); err != nil {
+				return err
+			}
+		} else {
+			return fmt.Errorf("node %q has been locked", node.Name)
+		}
+	}
+	newNode := node.DeepCopy()
+	if newNode.Annotations == nil {
+		newNode.Annotations = map[string]string{}
+	}
+	newNode.Annotations[AnnotationCambriconDsmluLockTime] = a.clock.Now().Format(time.RFC3339)
+	if _, err := util.PatchNode(ctx, client, node, newNode); err != nil {
+		return fmt.Errorf("failed to patch node %q: %v", node.Name, err)
+	}
+	return nil
+}
+
+func (a *cambriconGPUDevicePluginAdapter) unlockNode(ctx context.Context, client kubernetes.Interface, node *corev1.Node) error {
+	if _, ok := node.Annotations[AnnotationCambriconDsmluLockTime]; !ok {
+		return nil
+	}
+	newNode := node.DeepCopy()
+	delete(newNode.Annotations, AnnotationCambriconDsmluLockTime)
+	if _, err := util.PatchNode(ctx, client, node, newNode); err != nil {
+		return fmt.Errorf("failed to patch node %q: %v", node.Name, err)
 	}
 	return nil
 }

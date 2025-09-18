@@ -259,6 +259,45 @@ func PatchReservationSafe(ctx context.Context, clientset koordinatorclientset.In
 	return patched, nil
 }
 
+func GenerateNodePatch(oldNode, newNode *corev1.Node) ([]byte, error) {
+	oldData, err := json.Marshal(oldNode)
+	if err != nil {
+		return nil, err
+	}
+
+	newData, err := json.Marshal(newNode)
+	if err != nil {
+		return nil, err
+	}
+	return strategicpatch.CreateTwoWayMergePatch(oldData, newData, &corev1.Pod{})
+}
+
+func PatchNode(ctx context.Context, clientset clientset.Interface, oldNode, newNode *corev1.Node) (*corev1.Node, error) {
+	if reflect.DeepEqual(oldNode, newNode) {
+		return oldNode, nil
+	}
+
+	// generate patch bytes for the update
+	patchBytes, err := GenerateNodePatch(oldNode, newNode)
+	if err != nil {
+		klog.V(5).InfoS("failed to generate node patch", "node", klog.KObj(oldNode), "err", err)
+		return nil, err
+	}
+	if string(patchBytes) == "{}" { // nothing to patch
+		return oldNode, nil
+	}
+
+	// patch with node client
+	patched, err := clientset.CoreV1().Nodes().
+		Patch(ctx, oldNode.Name, apimachinerytypes.StrategicMergePatchType, patchBytes, metav1.PatchOptions{})
+	if err != nil {
+		klog.V(5).InfoS("failed to patch node", "node", klog.KObj(oldNode), "patch", string(patchBytes), "err", err)
+		return nil, err
+	}
+	klog.V(6).InfoS("successfully patch node", "node", klog.KObj(oldNode), "patch", string(patchBytes))
+	return patched, nil
+}
+
 func GetNamespacedName(namespace, name string) string {
 	return fmt.Sprintf("%s/%s", namespace, name)
 }
