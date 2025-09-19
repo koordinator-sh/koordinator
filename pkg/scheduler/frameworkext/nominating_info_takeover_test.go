@@ -41,7 +41,7 @@ func TestTakeoverNominatingInfo(t *testing.T) {
 		want               bool
 	}{
 		{
-			name: "job preemption reject waitingPod",
+			name: "job preemption success reject waitingPod",
 			args: args{
 				nominatingInfo: &framework.NominatingInfo{NominatingMode: framework.ModeOverride, NominatedNodeName: ""},
 				podInfo: &framework.QueuedPodInfo{
@@ -56,7 +56,7 @@ func TestTakeoverNominatingInfo(t *testing.T) {
 						},
 					},
 				},
-				status: (framework.NewStatus(framework.Unschedulable)).WithFailedPlugin(JobPreemptionRejectPlugin),
+				status: (framework.NewStatus(framework.Unschedulable)).WithFailedPlugin(JobPreemptionSuccessPlugin),
 			},
 			wantNominatingInfo: &framework.NominatingInfo{NominatingMode: framework.ModeOverride, NominatedNodeName: "test-node"},
 			want:               false,
@@ -83,7 +83,28 @@ func TestTakeoverNominatingInfo(t *testing.T) {
 			want:               false,
 		},
 		{
-			name: "other plugin",
+			name: "job preemption failure reject waitingPod",
+			args: args{
+				nominatingInfo: &framework.NominatingInfo{NominatingMode: framework.ModeOverride, NominatedNodeName: ""},
+				podInfo: &framework.QueuedPodInfo{
+					PodInfo: &framework.PodInfo{
+						Pod: &corev1.Pod{
+							ObjectMeta: metav1.ObjectMeta{
+								Name: "test-pod",
+							},
+							Spec: corev1.PodSpec{
+								NodeName: "test-node",
+							},
+						},
+					},
+				},
+				status: (framework.NewStatus(framework.Unschedulable)).WithFailedPlugin(JobPreemptionFailurePlugin),
+			},
+			wantNominatingInfo: &framework.NominatingInfo{NominatingMode: framework.ModeOverride, NominatedNodeName: ""},
+			want:               false,
+		},
+		{
+			name: "other plugin failure",
 			args: args{
 				nominatingInfo: &framework.NominatingInfo{NominatingMode: framework.ModeOverride, NominatedNodeName: ""},
 				podInfo: &framework.QueuedPodInfo{
@@ -104,7 +125,7 @@ func TestTakeoverNominatingInfo(t *testing.T) {
 			want:               false,
 		},
 		{
-			name: "other plugin",
+			name: "success",
 			args: args{
 				nominatingInfo: &framework.NominatingInfo{NominatingMode: framework.ModeOverride, NominatedNodeName: ""},
 				podInfo: &framework.QueuedPodInfo{

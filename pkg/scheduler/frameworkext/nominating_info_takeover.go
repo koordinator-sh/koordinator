@@ -25,8 +25,10 @@ import (
 )
 
 var (
-	// JobPreemptionRejectPlugin If the waitingPod is rejected by the Job preemption plug-in, the assumedNodeName is the nominatedNodeName.
-	JobPreemptionRejectPlugin = "JobPreemptionRejectPlugin"
+	// JobPreemptionSuccessPlugin If the waitingPod is rejected by the Job preemption plugin, the assumedNodeName is the nominatedNodeName.
+	JobPreemptionSuccessPlugin = "JobPreemptionSuccessPlugin"
+	// JobPreemptionFailurePlugin If Job preemption fails, the nominatedNodeName of the WaitingPod should be erased.
+	JobPreemptionFailurePlugin = "JobPreemptionFailurePlugin"
 	// JobRejectPlugin If the waitingPod is only recycled by the JobRejectPlugin, the NominatedNodeName should not be modified.
 	JobRejectPlugin = "JobRejectPlugin"
 )
@@ -42,11 +44,14 @@ func TakeoverNominatingInfo(
 		return false
 	}
 	rejecterPlugin := getRejecterPlugin(status)
-	if rejecterPlugin == JobPreemptionRejectPlugin {
+	if rejecterPlugin == JobPreemptionSuccessPlugin {
 		nominatingInfo.NominatingMode = framework.ModeOverride
 		nominatingInfo.NominatedNodeName = podInfo.Pod.Spec.NodeName
 	} else if status.FailedPlugin() == JobRejectPlugin {
 		nominatingInfo.NominatingMode = framework.ModeNoop
+		nominatingInfo.NominatedNodeName = ""
+	} else if status.FailedPlugin() == JobPreemptionFailurePlugin {
+		nominatingInfo.NominatingMode = framework.ModeOverride
 		nominatingInfo.NominatedNodeName = ""
 	}
 	return false

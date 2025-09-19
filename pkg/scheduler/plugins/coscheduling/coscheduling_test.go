@@ -352,7 +352,7 @@ func TestPostFilter(t *testing.T) {
 				}
 			}
 			// reject waitingPods
-			_, code := gp.pgMgr.PostFilter(context.Background(), cycleState, tt.pod, suit.Handle, Name, nil)
+			_, code := gp.pgMgr.AfterPostFilter(context.Background(), cycleState, tt.pod, suit.Handle, Name, nil)
 			if code.Message() == "" != tt.expectedEmptyMsg {
 				t.Errorf("expectedEmptyMsg %v, got %v", tt.expectedEmptyMsg, code.Message() == "")
 			}
