@@ -128,7 +128,11 @@ func (f *testSharedLister) HavePodsWithRequiredAntiAffinityList() ([]*framework.
 }
 
 func (f *testSharedLister) Get(nodeName string) (*framework.NodeInfo, error) {
-	return f.nodeInfoMap[nodeName], nil
+	nodeInfo, ok := f.nodeInfoMap[nodeName]
+	if !ok {
+		return nil, fmt.Errorf("unable to find node: %s", nodeName)
+	}
+	return nodeInfo, nil
 }
 
 type pluginTestSuit struct {
@@ -4766,7 +4770,7 @@ func Test_Plugin_PreBind(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			defer utilfeature.SetFeatureGateDuringTest(t, k8sfeature.DefaultMutableFeatureGate, koordfeatures.DevicePluginAdaption, tt.devicePluginAdaptionFeatureEnabled)()
 
-			suit := newPluginTestSuit(t, nil)
+			suit := newPluginTestSuit(t, []*corev1.Node{{ObjectMeta: metav1.ObjectMeta{Name: "test-node-1"}}})
 			_, err := suit.ClientSet().CoreV1().Pods(testPod.Namespace).Create(context.TODO(), testPod, metav1.CreateOptions{})
 			assert.NoError(t, err)
 			if tt.deviceCR != nil {

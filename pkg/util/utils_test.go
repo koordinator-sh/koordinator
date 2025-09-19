@@ -395,7 +395,7 @@ func Test_GenerateReservationPatchWithUID(t *testing.T) {
 	}
 }
 
-func TestPatch(t *testing.T) {
+func TestPatchPod(t *testing.T) {
 	tests := []struct {
 		name        string
 		originalObj metav1.Object
@@ -705,7 +705,7 @@ func TestPatch(t *testing.T) {
 	}
 }
 
-func TestPatchSafe(t *testing.T) {
+func TestPatchPodSafe(t *testing.T) {
 	tests := []struct {
 		name        string
 		originalObj metav1.Object
@@ -1013,6 +1013,107 @@ func TestPatchSafe(t *testing.T) {
 				assert.NoError(t, err)
 				assert.Equal(t, tt.modifiedObj.(*schedulingv1alpha1.Reservation), got)
 			}
+		})
+	}
+}
+
+func Test_GenerateNodePatch(t *testing.T) {
+	node1 := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-node-1",
+			UID:  "xxx",
+		},
+	}
+	patchAnnotation := map[string]string{"test_case": "Test_GenerateNodePatch"}
+	node2 := node1.DeepCopy()
+	node2.SetAnnotations(patchAnnotation)
+	patchBytes, err := GenerateNodePatch(node1, node2)
+	if err != nil {
+		t.Errorf("error creating patch bytes %v", err)
+	}
+	var patchMap map[string]interface{}
+	err = json.Unmarshal(patchBytes, &patchMap)
+	if err != nil {
+		t.Errorf("error unmarshalling json patch : %v", err)
+	}
+	metadata, ok := patchMap["metadata"].(map[string]interface{})
+	if !ok {
+		t.Errorf("error converting metadata to version map")
+	}
+	annotation, _ := metadata["annotations"].(map[string]interface{})
+	if fmt.Sprint(annotation) != fmt.Sprint(patchAnnotation) {
+		t.Errorf("expect patchBytes: %q, got: %q", patchAnnotation, annotation)
+	}
+}
+
+func TestPatchNode(t *testing.T) {
+	tests := []struct {
+		name         string
+		originalNode *corev1.Node
+		modifiedNode *corev1.Node
+		wantErr      bool
+	}{
+		{
+			name: "patch node",
+			originalNode: &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node",
+				},
+			},
+			modifiedNode: &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node",
+					Annotations: map[string]string{
+						"testAnnotation": "1",
+					},
+					Labels: map[string]string{
+						"testLabel": "2",
+					},
+				},
+			},
+		},
+		{
+			name: "skipped to patch node",
+			originalNode: &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node",
+					UID:  "xxxxxx",
+					Annotations: map[string]string{
+						"testAnnotation": "1",
+					},
+					Labels: map[string]string{
+						"testLabel": "2",
+					},
+				},
+			},
+			modifiedNode: &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node",
+					UID:  "xxxxxx",
+					Annotations: map[string]string{
+						"testAnnotation": "1",
+					},
+					Labels: map[string]string{
+						"testLabel": "2",
+					},
+				},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			clientSet := kubefake.NewSimpleClientset()
+
+			_, err := clientSet.CoreV1().Nodes().Create(context.TODO(), tt.originalNode, metav1.CreateOptions{})
+			assert.NoError(t, err)
+
+			original, modified := tt.originalNode, tt.modifiedNode
+			_, err = PatchNode(context.TODO(), clientSet, original, modified)
+			assert.Equal(t, tt.wantErr, err != nil, err)
+
+			got, err := clientSet.CoreV1().Nodes().Get(context.TODO(), tt.originalNode.Name, metav1.GetOptions{})
+			assert.NoError(t, err)
+			assert.Equal(t, modified, got)
 		})
 	}
 }
