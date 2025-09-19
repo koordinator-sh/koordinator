@@ -34,6 +34,7 @@ var (
 		extension.ResourceGPUMemory,
 		extension.ResourceGPUMemoryRatio,
 		extension.ResourceGPUShared,
+		extension.ResourceNvidiaGPU,
 	}
 	// Labels are the known labels reconciled by the plugin from devices to nodes.
 	Labels = []string{
