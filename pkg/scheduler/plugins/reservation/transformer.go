@@ -77,8 +77,9 @@ func (pl *Plugin) AfterPreFilter(ctx context.Context, cycleState *framework.Cycl
 	parallelCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	errCh := parallelize.NewErrorChannel()
+	nodeInfoLister := pl.handle.SnapshotSharedLister().NodeInfos()
 	checkNode := func(i int) {
-		nodeInfo, err := pl.handle.SnapshotSharedLister().NodeInfos().Get(allNodes[i])
+		nodeInfo, err := nodeInfoLister.Get(allNodes[i])
 		if err != nil {
 			klog.Warningf("Failed to get NodeInfo of %s during reservation's AfterPreFilter for pod %v, err: %s", allNodes[i], klog.KObj(pod), err)
 			return
