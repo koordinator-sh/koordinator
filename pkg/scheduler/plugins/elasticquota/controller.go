@@ -28,13 +28,13 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/strategicpatch"
 	"k8s.io/apimachinery/pkg/util/wait"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	"k8s.io/klog/v2"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
-	"github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/util"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/elasticquota/core"
 	koordutil "github.com/koordinator-sh/koordinator/pkg/util"
 )
@@ -128,7 +128,7 @@ func (ctrl *Controller) syncElasticQuotaStatus(eq *v1alpha1.ElasticQuota) {
 		klog.InfoS("Try updating elasticQuota since it has changed", "elasticQuota", eq.Name)
 	}
 
-	patch, err := util.CreateMergePatch(eq, newEQ)
+	patch, err := createMergePatch(eq, newEQ)
 	if err != nil {
 		klog.ErrorS(err, "Failed to create mergePatch", "elasticQuota", eq.Name)
 		return
@@ -151,6 +151,23 @@ func (ctrl *Controller) syncElasticQuotaStatus(eq *v1alpha1.ElasticQuota) {
 			klog.InfoS("Successfully patch elasticQuota", "elasticQuota", eq.Name)
 		}
 	}
+}
+
+// createMergePatch return patch generated from original and new interfaces
+func createMergePatch(original, new interface{}) ([]byte, error) {
+	pvByte, err := json.Marshal(original)
+	if err != nil {
+		return nil, err
+	}
+	cloneByte, err := json.Marshal(new)
+	if err != nil {
+		return nil, err
+	}
+	patch, err := strategicpatch.CreateTwoWayMergePatch(pvByte, cloneByte, original)
+	if err != nil {
+		return nil, err
+	}
+	return patch, nil
 }
 
 var resourceDecorators []func(quota *v1alpha1.ElasticQuota, resource v1.ResourceList)
