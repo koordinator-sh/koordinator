@@ -66,8 +66,15 @@ func TestDumpDiagnosis(t *testing.T) {
 				}
 				diagnosis.ScheduleDiagnosis.AlreadyWaitForBound = 1
 				diagnosis.ScheduleDiagnosis.SchedulingMode = PodSchedulingMode
+				diagnosis.PreemptionDiagnosis = struct {
+					TriggerPodKey string `json:"TriggerPodKey,omitempty"`
+					PreemptorKey  string `json:"preemptorKey,omitempty"`
+				}{
+					TriggerPodKey: "default/test-pod",
+					PreemptorKey:  "default/test-pod",
+				}
 			},
-			wantDumpMessage: `{"timestamp":null,"questionedKey":"default/test-pod","nominatedNode":"nominatedNode","preFilterMessage":"preFilterMessage","topologyKeyToExplain":"topologyKeyToExplain","scheduleDiagnosis":{"schedulingMode":"Pod","alreadyWaitForBound":1,"nodeOfferSlot":{"node1":1,"node2":2},"nodeFailedDetails":[{"nodeName":"node1","preemptMightHelp":true},{"nodeName":"node2","reason":"node2-reason","preemptMightHelp":true}]},"preemptionDiagnosis":{}}`,
+			wantDumpMessage: `{"timestamp":null,"questionedKey":"default/test-pod","nominatedNode":"nominatedNode","preFilterMessage":"preFilterMessage","topologyKeyToExplain":"topologyKeyToExplain","scheduleDiagnosis":{"schedulingMode":"Pod","alreadyWaitForBound":1,"nodeOfferSlot":{"node1":1,"node2":2},"nodeFailedDetails":[{"nodeName":"node1","preemptMightHelp":true},{"nodeName":"node2","reason":"node2-reason","preemptMightHelp":true}]},"preemptionDiagnosis":{"TriggerPodKey":"default/test-pod","preemptorKey":"default/test-pod"}}`,
 		},
 	}
 	for _, tt := range tests {

@@ -87,20 +87,6 @@ func DumpDiagnosis(state *framework.CycleState) string {
 			sort.Slice(scheduleFailedDetails, func(i, j int) bool { return scheduleFailedDetails[i].NodeName < scheduleFailedDetails[j].NodeName })
 			diagnosis.ScheduleDiagnosis.NodeFailedDetails = scheduleFailedDetails
 		}
-		if len(diagnosis.PreemptionDiagnosis.NodeFailedDetails) == 0 {
-			var preemptFailedDetails []v1alpha1.NodeFailedDetail
-			for s, status := range diagnosis.PreemptionDiagnosis.NodeToStatusMap {
-				preemptFailedDetails = append(preemptFailedDetails, v1alpha1.NodeFailedDetail{
-					NodeName:         s,
-					FailedPlugin:     status.FailedPlugin(),
-					Reason:           status.Message(),
-					NominatedPods:    nil,
-					PreemptMightHelp: status.Code() != framework.UnschedulableAndUnresolvable,
-				})
-			}
-			sort.Slice(preemptFailedDetails, func(i, j int) bool { return preemptFailedDetails[i].NodeName < preemptFailedDetails[j].NodeName })
-			diagnosis.PreemptionDiagnosis.NodeFailedDetails = preemptFailedDetails
-		}
 		dumpMessage = util.DumpJSON(diagnosis)
 		klog.Infof("dump diagnosis for %s/%s/%s: %s", diagnosis.TargetPod.Namespace, diagnosis.TargetPod.Name, diagnosis.TargetPod.UID, dumpMessage)
 		// TODO export it to APIServer asynchronously
@@ -151,12 +137,8 @@ type Diagnosis struct {
 	PreFilterMessage     string      `json:"preFilterMessage,omitempty"`
 	TopologyKeyToExplain string      `json:"topologyKeyToExplain,omitempty"`
 	// maybe modify framework.Status to cover addedNominatedPods, corresponding resourceView(such as requested and total) when failed
-	ScheduleDiagnosis ScheduleDiagnosis `json:"scheduleDiagnosis"`
-	// NodePossibleVictims indicates the possible victims for members that can't be scheduled.
-	NodePossibleVictims []v1alpha1.NodePossibleVictim `json:"nodePossibleVictims,omitempty"`
-	PreemptionDiagnosis ScheduleDiagnosis             `json:"preemptionDiagnosis"`
-	NominatedPodToNodes map[string]string             `json:"nominatedPodToNodes,omitempty"`
-	ToRemoveVictims     []v1alpha1.PossibleVictim     `json:"toRemoveVictims,omitempty"`
+	ScheduleDiagnosis   ScheduleDiagnosis `json:"scheduleDiagnosis"`
+	PreemptionDiagnosis interface{}       `json:"preemptionDiagnosis"`
 }
 
 type ScheduleDiagnosis struct {
