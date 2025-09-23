@@ -66,7 +66,8 @@ type Manager interface {
 	PreFilter(context.Context, *framework.CycleState, *corev1.Pod) (err error)
 	Permit(context.Context, *corev1.Pod) (time.Duration, Status)
 	PostBind(context.Context, *corev1.Pod, string)
-	PostFilter(context.Context, *framework.CycleState, *corev1.Pod, framework.Handle, string, framework.NodeToStatusMap) (*framework.PostFilterResult, *framework.Status)
+	PostFilter(ctx context.Context, state *framework.CycleState, pod *corev1.Pod, m framework.NodeToStatusMap) (*framework.PostFilterResult, *framework.Status)
+	AfterPostFilter(context.Context, *framework.CycleState, *corev1.Pod, framework.Handle, string, framework.NodeToStatusMap) (*framework.PostFilterResult, *framework.Status)
 	GetAllPodsFromGang(string) []*corev1.Pod
 	AllowGangGroup(*corev1.Pod, framework.Handle, string)
 	Unreserve(context.Context, *framework.CycleState, *corev1.Pod, string, framework.Handle, string)
@@ -88,8 +89,9 @@ type PodGroupManager struct {
 	// podLister is pod lister
 	podLister listerv1.PodLister
 	// cache stores gang info
-	cache  *GangCache
-	holder GangSchedulingContextHolder
+	cache               *GangCache
+	holder              GangSchedulingContextHolder
+	preemptionEvaluator PreemptionEvaluator
 }
 
 // NewPodGroupManager creates a new operation object.
@@ -112,6 +114,7 @@ func NewPodGroupManager(
 		podLister: podInformer.Lister(),
 		cache:     gangCache,
 	}
+	pgMgr.preemptionEvaluator = NewPreemptionEvaluator(handle, gangCache, &pgMgr.holder)
 
 	podGroupEventHandler := cache.ResourceEventHandlerFuncs{
 		AddFunc:    gangCache.onPodGroupAdd,
@@ -287,7 +290,7 @@ func (pgMgr *PodGroupManager) PreFilter(ctx context.Context, _ *framework.CycleS
 	}
 	gangSchedulingContext := pgMgr.holder.getCurrentGangSchedulingContext()
 	if gangSchedulingContext == nil {
-		gangSchedulingContext = &GangSchedulingContext{firstPod: pod, gangGroup: sets.New[string](gang.GangGroup...)}
+		gangSchedulingContext = &GangSchedulingContext{firstPod: pod, gangGroup: sets.New[string](gang.GangGroup...), gangGroupID: gang.GangGroupId}
 		pgMgr.holder.setGangSchedulingContext(gangSchedulingContext, ReasonFirstPodPassPreFilter)
 		// clear the current representative because representative is already enter into scheduling
 		gang.ClearCurrentRepresentative(ReasonGangGroupEnterIntoScheduling)
@@ -299,10 +302,26 @@ func (pgMgr *PodGroupManager) PreFilter(ctx context.Context, _ *framework.CycleS
 	return nil
 }
 
-// PostFilter
+// PostFilter invoked at the postFilter extension point.
+func (pgMgr *PodGroupManager) PostFilter(ctx context.Context, state *framework.CycleState, pod *corev1.Pod, m framework.NodeToStatusMap) (*framework.PostFilterResult, *framework.Status) {
+	if !*pgMgr.args.EnablePreemption {
+		return &framework.PostFilterResult{}, framework.NewStatus(framework.Unschedulable)
+	}
+
+	pgMgr.summaryAndRecordFailedMessage(pod, m)
+
+	result, status := pgMgr.preemptionEvaluator.Preempt(ctx, state, pod, m)
+	msg := status.Message()
+	if len(msg) > 0 {
+		return result, framework.NewStatus(status.Code(), "preemption: "+msg)
+	}
+	return result, status
+}
+
+// AfterPostFilter
 // i. If strict-mode, we will set scheduleCycleValid to false and release all assumed pods.
 // ii. If non-strict mode, we will do nothing.
-func (pgMgr *PodGroupManager) PostFilter(ctx context.Context, state *framework.CycleState, pod *corev1.Pod, handle framework.Handle, pluginName string, filteredNodeStatusMap framework.NodeToStatusMap) (*framework.PostFilterResult, *framework.Status) {
+func (pgMgr *PodGroupManager) AfterPostFilter(ctx context.Context, state *framework.CycleState, pod *corev1.Pod, handle framework.Handle, pluginName string, filteredNodeStatusMap framework.NodeToStatusMap) (*framework.PostFilterResult, *framework.Status) {
 	if !util.IsPodNeedGang(pod) {
 		return &framework.PostFilterResult{}, framework.NewStatus(framework.Unschedulable)
 	}
@@ -316,21 +335,7 @@ func (pgMgr *PodGroupManager) PostFilter(ctx context.Context, state *framework.C
 		return &framework.PostFilterResult{}, framework.NewStatus(framework.Unschedulable)
 	}
 
-	nodeInfos, _ := handle.SnapshotSharedLister().NodeInfos().List()
-	fitErr := &framework.FitError{
-		Pod:         pod,
-		NumAllNodes: len(nodeInfos),
-		Diagnosis: framework.Diagnosis{
-			NodeToStatusMap: filteredNodeStatusMap,
-		},
-	}
-	message := fmt.Sprintf("Gang %q gets rejected due to member Pod %q is unschedulable with reason %q, alreadyWaitForBound: %d", gang.Name, pod.Name, fitErr, gang.getGangWaitingPods())
-
-	if gangSchedulingContext := pgMgr.holder.getCurrentGangSchedulingContext(); gangSchedulingContext != nil && gangSchedulingContext.failedMessage == "" {
-		// first failed pod
-		gangSchedulingContext.failedMessage = message
-	}
-
+	message := pgMgr.summaryAndRecordFailedMessage(pod, filteredNodeStatusMap)
 	if gang.getGangMode() == extension.GangModeStrict {
 		gang.clearWaitingGang()
 		pgMgr.rejectGangGroupById(handle, pluginName, gang.Name, message)
@@ -339,6 +344,29 @@ func (pgMgr *PodGroupManager) PostFilter(ctx context.Context, state *framework.C
 	}
 
 	return &framework.PostFilterResult{}, framework.NewStatus(framework.Unschedulable)
+}
+
+func (pgMgr *PodGroupManager) summaryAndRecordFailedMessage(triggerPod *corev1.Pod, filteredNodeStatusMap framework.NodeToStatusMap) string {
+	gangSchedulingContext := pgMgr.holder.getCurrentGangSchedulingContext()
+	if gangSchedulingContext == nil {
+		return fmt.Sprintf("gets rejected due to member pod %q is unschedulable", framework.GetNamespacedName(triggerPod.Namespace, triggerPod.Name))
+	}
+	if gangSchedulingContext.failedMessage != "" {
+		return gangSchedulingContext.failedMessage
+	}
+	nodeInfos, _ := pgMgr.handle.SnapshotSharedLister().NodeInfos().List()
+	fitErr := &framework.FitError{
+		Pod:         triggerPod,
+		NumAllNodes: len(nodeInfos),
+		Diagnosis: framework.Diagnosis{
+			NodeToStatusMap: filteredNodeStatusMap,
+		},
+	}
+	waitingPodsNum := pgMgr.cache.getWaitingPodsNum(gangSchedulingContext.gangGroup.UnsortedList())
+	message := fmt.Sprintf("GangGroup %q gets rejected due to member Pod %q is unschedulable with reason %q, alreadyWaitForBound: %d", gangSchedulingContext.gangGroupID, framework.GetNamespacedName(triggerPod.Namespace, triggerPod.Name), fitErr, waitingPodsNum)
+	gangSchedulingContext.failedMessage = message
+	gangSchedulingContext.triggerPod = triggerPod
+	return message
 }
 
 // Permit

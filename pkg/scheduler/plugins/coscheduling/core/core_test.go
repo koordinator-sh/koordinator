@@ -25,9 +25,12 @@ import (
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/informers"
 	clientsetfake "k8s.io/client-go/kubernetes/fake"
+	"k8s.io/kubernetes/pkg/scheduler/framework"
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
+	"k8s.io/utils/pointer"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
@@ -464,6 +467,100 @@ func TestPermit(t *testing.T) {
 			timeout, status := mgr.Permit(ctx, tt.pod)
 			assert.Equal(t, tt.wantWaittime, timeout)
 			assert.Equal(t, tt.wantStatus, status)
+		})
+	}
+}
+
+type fakeEvaluator struct {
+	result *framework.PostFilterResult
+	status *framework.Status
+}
+
+func (f *fakeEvaluator) Preempt(ctx context.Context, state *framework.CycleState, pod *corev1.Pod, m framework.NodeToStatusMap) (*framework.PostFilterResult, *framework.Status) {
+	return f.result, f.status
+}
+
+func TestPodGroupManager_PostFilter(t *testing.T) {
+	type args struct {
+		ctx   context.Context
+		state *framework.CycleState
+		pod   *corev1.Pod
+		m     framework.NodeToStatusMap
+	}
+	tests := []struct {
+		name                  string
+		args                  args
+		enablePreemption      bool
+		preemptionEvaluator   PreemptionEvaluator
+		gangSchedulingContext *GangSchedulingContext
+		wantPostFilterResult  *framework.PostFilterResult
+		wantStatus            *framework.Status
+		wantFailedMessage     string
+	}{
+		{
+			name:                 "preemption not enabled",
+			wantPostFilterResult: &framework.PostFilterResult{},
+			wantStatus:           framework.NewStatus(framework.Unschedulable),
+		},
+		{
+			name: "bare pod",
+			args: args{
+				pod: st.MakePod().Name("pod").UID("pod").Obj(),
+			},
+			enablePreemption: true,
+			preemptionEvaluator: &fakeEvaluator{
+				result: &framework.PostFilterResult{},
+				status: framework.NewStatus(framework.Unschedulable),
+			},
+			wantPostFilterResult: &framework.PostFilterResult{},
+			wantStatus:           framework.NewStatus(framework.Unschedulable),
+		},
+		{
+			name: "gang pod",
+			args: args{
+				pod: &corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: "default",
+						Name:      "pod1",
+						Labels: map[string]string{
+							v1alpha1.PodGroupLabel: "gangA",
+						},
+					},
+				},
+			},
+			enablePreemption: true,
+			gangSchedulingContext: &GangSchedulingContext{
+				gangGroupID: "default/gangA",
+				gangGroup:   sets.New[string]("default/gangA"),
+			},
+			preemptionEvaluator: &fakeEvaluator{
+				result: &framework.PostFilterResult{},
+				status: framework.NewStatus(framework.Unschedulable, "some message"),
+			},
+			wantPostFilterResult: &framework.PostFilterResult{},
+			wantStatus:           framework.NewStatus(framework.Unschedulable, "preemption: some message"),
+			wantFailedMessage:    `GangGroup "default/gangA" gets rejected due to member Pod "default/pod1" is unschedulable with reason "0/0 nodes are available:", alreadyWaitForBound: 0`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pgMgr := &PodGroupManager{
+				handle: NewFakeExtendedFramework(t, []*corev1.Node{}, nil, nil, nil),
+				holder: GangSchedulingContextHolder{
+					gangSchedulingContext: tt.gangSchedulingContext,
+				},
+				args: &config.CoschedulingArgs{
+					EnablePreemption: pointer.Bool(tt.enablePreemption),
+				},
+				cache:               NewGangCache(nil, nil, nil, nil, nil),
+				preemptionEvaluator: tt.preemptionEvaluator,
+			}
+			got, got1 := pgMgr.PostFilter(tt.args.ctx, tt.args.state, tt.args.pod, tt.args.m)
+			assert.Equalf(t, tt.wantPostFilterResult, got, "PostFilter(%v, %v, %v, %v)", tt.args.ctx, tt.args.state, tt.args.pod, tt.args.m)
+			assert.Equalf(t, tt.wantStatus, got1, "PostFilter(%v, %v, %v, %v)", tt.args.ctx, tt.args.state, tt.args.pod, tt.args.m)
+			if tt.gangSchedulingContext != nil {
+				assert.Equalf(t, tt.wantFailedMessage, tt.gangSchedulingContext.failedMessage, "PostFilter(%v, %v, %v, %v)", tt.args.ctx, tt.args.state, tt.args.pod, tt.args.m)
+			}
 		})
 	}
 }

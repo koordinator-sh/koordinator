@@ -321,3 +321,39 @@ func (gangCache *GangCache) onPodGroupDelete(obj interface{}) {
 
 	klog.Infof("watch podGroup deleted, Name:%v", pg.Name)
 }
+
+func (gangCache *GangCache) getPendingPods(gangGroup []string) []*v1.Pod {
+	var pendingPods []*v1.Pod
+	for _, gangID := range gangGroup {
+		gang := gangCache.getGangFromCacheByGangId(gangID, false)
+		if gang == nil {
+			continue
+		}
+		pendingPods = append(pendingPods, gang.getPendingChildrenFromGang()...)
+	}
+	return pendingPods
+}
+
+func (gangCache *GangCache) getWaitingPods(gangGroup []string) []*v1.Pod {
+	var waitingPods []*v1.Pod
+	for _, gangID := range gangGroup {
+		gang := gangCache.getGangFromCacheByGangId(gangID, false)
+		if gang == nil {
+			continue
+		}
+		waitingPods = append(waitingPods, gang.getWaitingChildrenFromGang()...)
+	}
+	return waitingPods
+}
+
+func (gangCache *GangCache) getWaitingPodsNum(gangGroup []string) int {
+	waitingPodsNum := 0
+	for _, gangID := range gangGroup {
+		gang := gangCache.getGangFromCacheByGangId(gangID, false)
+		if gang == nil {
+			continue
+		}
+		waitingPodsNum += gang.getGangWaitingPods()
+	}
+	return waitingPodsNum
+}

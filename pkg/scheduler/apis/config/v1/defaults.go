@@ -217,6 +217,9 @@ func SetDefaults_CoschedulingArgs(obj *CoschedulingArgs) {
 	if obj.ControllerWorkers == nil {
 		obj.ControllerWorkers = pointer.Int64(int64(defaultControllerWorkers))
 	}
+	if obj.EnablePreemption == nil {
+		obj.EnablePreemption = defaultEnablePreemption
+	}
 }
 
 func SetDefaults_DeviceShareArgs(obj *DeviceShareArgs) {
