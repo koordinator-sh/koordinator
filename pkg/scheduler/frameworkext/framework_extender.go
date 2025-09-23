@@ -273,7 +273,14 @@ func (ext *frameworkExtenderImpl) RunFilterPluginsWithNominatedPods(ctx context.
 			nodeInfo = newNodeInfo
 		}
 	}
-	status := ext.Framework.RunFilterPluginsWithNominatedPods(ctx, cycleState, pod, nodeInfo)
+
+	nominatedPodsOfSameJob := getNominatedPodsOfTheSameJob(cycleState)
+	var status *framework.Status
+	if len(nominatedPodsOfSameJob) != 0 {
+		status = ext.runFilterPluginsWithNominatedPodsIgnoreSameJob(ctx, cycleState, pod, nodeInfo, nominatedPodsOfSameJob)
+	} else {
+		status = ext.Framework.RunFilterPluginsWithNominatedPods(ctx, cycleState, pod, nodeInfo)
+	}
 	if !status.IsSuccess() && debugFilterFailure {
 		klog.Infof("Failed to filter for Pod %q on Node %q, failedPlugin: %s, schedulingPhaseBeingInvoked: %s, reason: %s", klog.KObj(pod), klog.KObj(nodeInfo.Node()), status.FailedPlugin(), schedulingphase.GetExtensionPointBeingExecuted(cycleState), status.Message())
 	}
