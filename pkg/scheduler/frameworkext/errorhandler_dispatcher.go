@@ -36,9 +36,7 @@ type errorHandlerDispatcher struct {
 }
 
 func newErrorHandlerDispatcher() *errorHandlerDispatcher {
-	return &errorHandlerDispatcher{
-		preHandlerFilters: []PreErrorHandlerFilter{TakeoverNominatingInfo},
-	}
+	return &errorHandlerDispatcher{}
 }
 
 func (d *errorHandlerDispatcher) setDefaultHandler(handler scheduler.FailureHandlerFn) {
@@ -62,6 +60,9 @@ func (d *errorHandlerDispatcher) Error(ctx context.Context, fwk framework.Framew
 			}
 		}
 	}()
+
+	// FIXME here, we replace nominatingInfo to avoid modifying clearNominatedNode
+	nominatingInfo = TakeoverNominatingInfo(ctx, fwk, podInfo, status, nominatingInfo, start)
 
 	for _, handlerFilter := range d.preHandlerFilters {
 		if handlerFilter(ctx, fwk, podInfo, status, nominatingInfo, start) {
