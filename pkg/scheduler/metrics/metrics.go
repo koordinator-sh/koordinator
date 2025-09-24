@@ -116,6 +116,14 @@ var (
 		},
 		[]string{"plugin", "operation"},
 	)
+	JobPreemptionDuration = utilmetrics.NewGCHistogramVec("job_preemption_duration_seconds", prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Subsystem: schedulermetrics.SchedulerSubsystem,
+			Name:      "job_preemption_duration_seconds",
+			Help:      "Latency for running Coscheduling plugin postFilter.",
+			// Start with 0.1ms with the last bucket being [~200ms, Inf)
+			Buckets: prometheus.ExponentialBuckets(0.001, 2, 20),
+		}, []string{"jobName", "result"}))
 
 	metricsList = []metrics.Registerable{
 		SchedulingTimeout,
@@ -131,6 +139,7 @@ var (
 	gcMetricsList = []prometheus.Collector{
 		ReservationStatusPhase.GetGaugeVec(),
 		ReservationResource.GetGaugeVec(),
+		JobPreemptionDuration.GetHistogramVec(),
 	}
 )
 
@@ -224,4 +233,12 @@ func RecordNextPodPluginsDeletePodFromQueue(latency time.Duration) {
 
 func RecordElasticQuotaHookPluginLatency(plugin, operation string, latency time.Duration) {
 	ElasticQuotaHookPluginLatency.WithLabelValues(plugin, operation).Observe(latency.Seconds())
+}
+
+func RecordJobPreemptionDuration(jobName string, result string, latency time.Duration) {
+	labels := prometheus.Labels{
+		"jobName": jobName,
+		"result":  result,
+	}
+	JobPreemptionDuration.WithObserve(labels, latency.Seconds())
 }
