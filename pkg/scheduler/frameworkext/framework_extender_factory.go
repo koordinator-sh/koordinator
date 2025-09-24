@@ -18,6 +18,7 @@ package frameworkext
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"time"
@@ -160,11 +161,9 @@ func (f *FrameworkExtenderFactory) InitScheduler(sched Scheduler) {
 	f.scheduler = sched
 	adaptor, ok := sched.(*SchedulerAdapter)
 	if ok {
-		if k8sfeature.DefaultFeatureGate.Enabled(features.ResizePod) {
-			schedulePod := adaptor.Scheduler.SchedulePod
-			f.schedulePod = schedulePod
-			adaptor.Scheduler.SchedulePod = f.scheduleOne
-		}
+		schedulePod := adaptor.Scheduler.SchedulePod
+		f.schedulePod = schedulePod
+		adaptor.Scheduler.SchedulePod = f.scheduleOne
 		f.CollectSchedulePodResult(adaptor.Scheduler)
 		nextPod := adaptor.Scheduler.NextPod
 		adaptor.Scheduler.NextPod = func() (*framework.QueuedPodInfo, error) {
@@ -271,11 +270,12 @@ func makePodInfoFromPod(pod *corev1.Pod) (*framework.QueuedPodInfo, error) {
 }
 
 func (f *FrameworkExtenderFactory) scheduleOne(ctx context.Context, fwk framework.Framework, cycleState *framework.CycleState, pod *corev1.Pod) (scheduler.ScheduleResult, error) {
-	initDiagnosis(cycleState, pod)
+	InitDiagnosis(cycleState, pod)
 	f.monitor.StartMonitoring(pod)
 
 	scheduleResult, err := f.schedulePod(ctx, fwk, cycleState, pod)
 	if err != nil {
+		recordScheduleDiagnosis(cycleState, err)
 		return scheduleResult, err
 	}
 
@@ -295,6 +295,22 @@ func (f *FrameworkExtenderFactory) scheduleOne(ctx context.Context, fwk framewor
 	}
 
 	return scheduleResult, nil
+}
+
+func recordScheduleDiagnosis(cycleState *framework.CycleState, err error) {
+	var fitError *framework.FitError
+	if errors.As(err, &fitError) {
+		diagnosis := GetDiagnosis(cycleState)
+		diagnosis.PreFilterMessage = fitError.Diagnosis.PreFilterMsg
+		if diagnosis.ScheduleDiagnosis == nil {
+			diagnosis.ScheduleDiagnosis = &ScheduleDiagnosis{
+				SchedulingMode: PodSchedulingMode,
+			}
+		}
+		if diagnosis.ScheduleDiagnosis.NodeToStatusMap == nil {
+			diagnosis.ScheduleDiagnosis.NodeToStatusMap = fitError.Diagnosis.NodeToStatusMap
+		}
+	}
 }
 
 func (f *FrameworkExtenderFactory) CollectSchedulePodResult(sched *scheduler.Scheduler) {

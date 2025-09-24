@@ -111,7 +111,7 @@ const (
 	diagnosisStateKey = extension.SchedulingDomainPrefix + "/diagnosis"
 )
 
-func initDiagnosis(state *framework.CycleState, pod *corev1.Pod) {
+func InitDiagnosis(state *framework.CycleState, pod *corev1.Pod) {
 	state.Write(diagnosisStateKey, &Diagnosis{
 		Timestamp:     nowFunc(),
 		QuestionedKey: extension.GetExplanationKey(pod.Labels),
@@ -137,8 +137,8 @@ type Diagnosis struct {
 	PreFilterMessage     string      `json:"preFilterMessage,omitempty"`
 	TopologyKeyToExplain string      `json:"topologyKeyToExplain,omitempty"`
 	// maybe modify framework.Status to cover addedNominatedPods, corresponding resourceView(such as requested and total) when failed
-	ScheduleDiagnosis   ScheduleDiagnosis `json:"scheduleDiagnosis"`
-	PreemptionDiagnosis interface{}       `json:"preemptionDiagnosis"`
+	ScheduleDiagnosis   *ScheduleDiagnosis `json:"scheduleDiagnosis"`
+	PreemptionDiagnosis interface{}        `json:"preemptionDiagnosis"`
 }
 
 type ScheduleDiagnosis struct {

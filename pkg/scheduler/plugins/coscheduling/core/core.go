@@ -308,7 +308,7 @@ func (pgMgr *PodGroupManager) PostFilter(ctx context.Context, state *framework.C
 		return &framework.PostFilterResult{}, framework.NewStatus(framework.Unschedulable)
 	}
 
-	pgMgr.summaryAndRecordFailedMessage(pod, m)
+	pgMgr.summaryAndRecordFailedMessage(state, pod, m)
 
 	result, status := pgMgr.preemptionEvaluator.Preempt(ctx, state, pod, m)
 	msg := status.Message()
@@ -335,7 +335,7 @@ func (pgMgr *PodGroupManager) AfterPostFilter(ctx context.Context, state *framew
 		return &framework.PostFilterResult{}, framework.NewStatus(framework.Unschedulable)
 	}
 
-	message := pgMgr.summaryAndRecordFailedMessage(pod, filteredNodeStatusMap)
+	message := pgMgr.summaryAndRecordFailedMessage(state, pod, filteredNodeStatusMap)
 	if gang.getGangMode() == extension.GangModeStrict {
 		gang.clearWaitingGang()
 		pgMgr.rejectGangGroupById(handle, pluginName, gang.Name, message)
@@ -346,7 +346,7 @@ func (pgMgr *PodGroupManager) AfterPostFilter(ctx context.Context, state *framew
 	return &framework.PostFilterResult{}, framework.NewStatus(framework.Unschedulable)
 }
 
-func (pgMgr *PodGroupManager) summaryAndRecordFailedMessage(triggerPod *corev1.Pod, filteredNodeStatusMap framework.NodeToStatusMap) string {
+func (pgMgr *PodGroupManager) summaryAndRecordFailedMessage(state *framework.CycleState, triggerPod *corev1.Pod, filteredNodeStatusMap framework.NodeToStatusMap) string {
 	gangSchedulingContext := pgMgr.holder.getCurrentGangSchedulingContext()
 	if gangSchedulingContext == nil {
 		return fmt.Sprintf("gets rejected due to member pod %q is unschedulable", framework.GetNamespacedName(triggerPod.Namespace, triggerPod.Name))
@@ -363,6 +363,10 @@ func (pgMgr *PodGroupManager) summaryAndRecordFailedMessage(triggerPod *corev1.P
 		},
 	}
 	waitingPodsNum := pgMgr.cache.getWaitingPodsNum(gangSchedulingContext.gangGroup.UnsortedList())
+	diagnosis := frameworkext.GetDiagnosis(state)
+	if diagnosis != nil && diagnosis.ScheduleDiagnosis != nil && diagnosis.ScheduleDiagnosis.SchedulingMode == frameworkext.PodSchedulingMode {
+		diagnosis.ScheduleDiagnosis.AlreadyWaitForBound = waitingPodsNum
+	}
 	message := fmt.Sprintf("GangGroup %q gets rejected due to member Pod %q is unschedulable with reason %q, alreadyWaitForBound: %d", gangSchedulingContext.gangGroupID, framework.GetNamespacedName(triggerPod.Namespace, triggerPod.Name), fitErr, waitingPodsNum)
 	gangSchedulingContext.failedMessage = message
 	gangSchedulingContext.triggerPod = triggerPod

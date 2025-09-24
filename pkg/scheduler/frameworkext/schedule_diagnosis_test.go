@@ -56,6 +56,7 @@ func TestDumpDiagnosis(t *testing.T) {
 				diagnosis := GetDiagnosis(state)
 				diagnosis.PreFilterMessage = "preFilterMessage"
 				diagnosis.TopologyKeyToExplain = "topologyKeyToExplain"
+				diagnosis.ScheduleDiagnosis = &ScheduleDiagnosis{}
 				diagnosis.ScheduleDiagnosis.NodeOfferSlot = map[string]int{
 					"node1": 1,
 					"node2": 2,
@@ -82,7 +83,7 @@ func TestDumpDiagnosis(t *testing.T) {
 			dumpDiagnosis = true
 			dumpDiagnosisBlocking = true
 			cycleState := framework.NewCycleState()
-			initDiagnosis(cycleState, tt.pod)
+			InitDiagnosis(cycleState, tt.pod)
 			tt.setDiagnosisFunc(cycleState)
 			gotDumpMessage := DumpDiagnosis(cycleState)
 			assert.Equal(t, tt.wantDumpMessage, gotDumpMessage)
