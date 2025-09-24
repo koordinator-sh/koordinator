@@ -105,13 +105,19 @@ func (p *Plugin) adaptForDevicePlugin(ctx context.Context, object metav1.Object,
 	}
 
 	if gpuAllocation, ok := allocationResult[schedulingv1alpha1.GPU]; ok {
-		if err := defaultGPUDevicePluginAdapter.Adapt(nil, object, gpuAllocation); err != nil {
-			return err
-		}
-
 		nodeInfo, err := p.handle.SnapshotSharedLister().NodeInfos().Get(nodeName)
 		if err != nil {
 			klog.ErrorS(err, "Failed to get NodeInfo", "node", nodeName)
+			return err
+		}
+
+		adaptCtx := &DevicePluginAdaptContext{
+			Context: ctx,
+			client:  p.handle.ClientSet(),
+			node:    nodeInfo.Node(),
+		}
+
+		if err := defaultGPUDevicePluginAdapter.Adapt(adaptCtx, object, gpuAllocation); err != nil {
 			return err
 		}
 
@@ -126,11 +132,6 @@ func (p *Plugin) adaptForDevicePlugin(ctx context.Context, object metav1.Object,
 			return err
 		}
 
-		adaptCtx := &DevicePluginAdaptContext{
-			Context: ctx,
-			client:  p.handle.ClientSet(),
-			node:    nodeInfo.Node(),
-		}
 		vendor := device.Labels[apiext.LabelGPUVendor]
 		if adapter, ok := gpuDevicePluginAdapterMap[vendor]; ok {
 			if err := adapter.Adapt(adaptCtx, object, gpuAllocation); err != nil {
@@ -158,8 +159,11 @@ func (a *generalDevicePluginAdapter) Adapt(_ *DevicePluginAdaptContext, object m
 type generalGPUDevicePluginAdapter struct {
 }
 
-func (a *generalGPUDevicePluginAdapter) Adapt(_ *DevicePluginAdaptContext, object metav1.Object, allocation []*apiext.DeviceAllocation) error {
+func (a *generalGPUDevicePluginAdapter) Adapt(ctx *DevicePluginAdaptContext, object metav1.Object, allocation []*apiext.DeviceAllocation) error {
 	object.GetAnnotations()[AnnotationGPUMinors] = buildGPUMinorsStr(allocation)
+	if object.GetLabels()[apiext.LabelGPUIsolationProvider] == string(apiext.GPUIsolationProviderHAMICore) {
+		object.GetLabels()[apiext.LabelHAMIVGPUNodeName] = ctx.node.Name
+	}
 	return nil
 }
 

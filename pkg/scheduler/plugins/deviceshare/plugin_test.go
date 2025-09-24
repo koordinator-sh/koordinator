@@ -4765,6 +4765,42 @@ func Test_Plugin_PreBind(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "has the LabelGPUIsolationProvider label",
+			args: args{
+				pod: &corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Labels: map[string]string{
+							apiext.LabelGPUIsolationProvider: string(apiext.GPUIsolationProviderHAMICore),
+						},
+					},
+				},
+
+				state: &preFilterState{
+					skip: false,
+					allocationResult: apiext.DeviceAllocations{
+						schedulingv1alpha1.GPU: {
+							{Minor: 0},
+						},
+					},
+				},
+			},
+			deviceCR:                           fakeDeviceCR,
+			devicePluginAdaptionFeatureEnabled: true,
+			wantPod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						apiext.LabelHAMIVGPUNodeName:     "test-node-1",
+						apiext.LabelGPUIsolationProvider: string(apiext.GPUIsolationProviderHAMICore),
+					},
+					Annotations: map[string]string{
+						apiext.AnnotationDeviceAllocated: `{"gpu":[{"minor":0,"resources":null,"id":"GPU-8c25ea37-2909-6e62-b7bf-e2fcadebea8d"}]}`,
+						AnnotationBindTimestamp:          strconv.FormatInt(now.UnixNano(), 10),
+						AnnotationGPUMinors:              "0",
+					},
+				},
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
