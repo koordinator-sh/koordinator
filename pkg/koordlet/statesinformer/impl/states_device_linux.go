@@ -568,7 +568,7 @@ func (s *statesInformer) buildXPUDeviceLabels(xpuDevices koordletuti.XPUDevices)
 
 func (s *statesInformer) buildXPUDeviceAnnotations(xpuDevices koordletuti.XPUDevices) map[string]string {
 	partitionTable := getPartitionTableFromXPUDevices(xpuDevices)
-	if partitionTable == nil {
+	if len(partitionTable) == 0 {
 		return map[string]string{}
 	}
 	rawBytes, err := json.Marshal(partitionTable)
