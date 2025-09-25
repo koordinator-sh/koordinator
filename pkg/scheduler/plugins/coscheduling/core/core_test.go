@@ -40,6 +40,7 @@ import (
 	koordfake "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/fake"
 	koordinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/coscheduling/util"
 )
 
@@ -498,14 +499,19 @@ func TestPodGroupManager_PostFilter(t *testing.T) {
 		wantFailedMessage     string
 	}{
 		{
-			name:                 "preemption not enabled",
+			name: "preemption not enabled",
+			args: args{
+				state: framework.NewCycleState(),
+				pod:   st.MakePod().Name("pod").UID("pod").Obj(),
+			},
 			wantPostFilterResult: &framework.PostFilterResult{},
 			wantStatus:           framework.NewStatus(framework.Unschedulable),
 		},
 		{
 			name: "bare pod",
 			args: args{
-				pod: st.MakePod().Name("pod").UID("pod").Obj(),
+				state: framework.NewCycleState(),
+				pod:   st.MakePod().Name("pod").UID("pod").Obj(),
 			},
 			enablePreemption: true,
 			preemptionEvaluator: &fakeEvaluator{
@@ -518,6 +524,7 @@ func TestPodGroupManager_PostFilter(t *testing.T) {
 		{
 			name: "gang pod",
 			args: args{
+				state: framework.NewCycleState(),
 				pod: &corev1.Pod{
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace: "default",
@@ -555,6 +562,7 @@ func TestPodGroupManager_PostFilter(t *testing.T) {
 				cache:               NewGangCache(nil, nil, nil, nil, nil),
 				preemptionEvaluator: tt.preemptionEvaluator,
 			}
+			frameworkext.InitDiagnosis(tt.args.state, tt.args.pod)
 			got, got1 := pgMgr.PostFilter(tt.args.ctx, tt.args.state, tt.args.pod, tt.args.m)
 			assert.Equalf(t, tt.wantPostFilterResult, got, "PostFilter(%v, %v, %v, %v)", tt.args.ctx, tt.args.state, tt.args.pod, tt.args.m)
 			assert.Equalf(t, tt.wantStatus, got1, "PostFilter(%v, %v, %v, %v)", tt.args.ctx, tt.args.state, tt.args.pod, tt.args.m)

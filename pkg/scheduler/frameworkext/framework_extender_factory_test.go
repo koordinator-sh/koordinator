@@ -40,6 +40,7 @@ import (
 	frameworkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
 	schedulertesting "k8s.io/kubernetes/pkg/scheduler/testing"
 
+	"github.com/koordinator-sh/koordinator/apis/extension"
 	koordfake "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/fake"
 	koordinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/services"
@@ -285,6 +286,79 @@ func TestCollectSchedulePodResult(t *testing.T) {
 				assert.NoError(t, err)
 				assert.Equal(t, tt.expected[i*2+1], int(sum))
 			}
+		})
+	}
+}
+
+func Test_recordScheduleDiagnosis(t *testing.T) {
+	tests := []struct {
+		name          string
+		pod           *corev1.Pod
+		err           error
+		wantDiagnosis Diagnosis
+	}{
+		{
+			name: "normal flow",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pod",
+					Namespace: "default",
+					Labels: map[string]string{
+						extension.LabelQuestionedObjectKey: "default/test-pod",
+					},
+				},
+				Status: corev1.PodStatus{
+					NominatedNodeName: "nominatedNode",
+				},
+			},
+			err: &framework.FitError{
+				Pod:         nil,
+				NumAllNodes: 0,
+				Diagnosis: framework.Diagnosis{
+					PreFilterMsg: "preFilterMessage",
+					NodeToStatusMap: map[string]*framework.Status{
+						"node1": framework.NewStatus(framework.UnschedulableAndUnresolvable, "node1Message"),
+					},
+				},
+			},
+			wantDiagnosis: Diagnosis{
+				Timestamp:     metav1.Time{},
+				QuestionedKey: "default/test-pod",
+				TargetPod: &corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-pod",
+						Namespace: "default",
+						Labels: map[string]string{
+							extension.LabelQuestionedObjectKey: "default/test-pod",
+						},
+					},
+					Status: corev1.PodStatus{
+						NominatedNodeName: "nominatedNode",
+					},
+				},
+				NominatedNode:        "nominatedNode",
+				PreFilterMessage:     "preFilterMessage",
+				TopologyKeyToExplain: "",
+				ScheduleDiagnosis: &ScheduleDiagnosis{
+					SchedulingMode: PodSchedulingMode,
+					NodeToStatusMap: map[string]*framework.Status{
+						"node1": framework.NewStatus(framework.UnschedulableAndUnresolvable, "node1Message"),
+					},
+				},
+				PreemptionDiagnosis: nil,
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			nowFunc = func() metav1.Time {
+				return metav1.NewTime(time.Time{})
+			}
+			cycleState := framework.NewCycleState()
+			InitDiagnosis(cycleState, tt.pod)
+			recordScheduleDiagnosis(cycleState, tt.err)
+			diagnosis := GetDiagnosis(cycleState)
+			assert.Equal(t, tt.wantDiagnosis, *diagnosis)
 		})
 	}
 }
