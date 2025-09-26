@@ -20,9 +20,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
-	"unsafe"
 
-	"golang.org/x/sys/unix"
 	"k8s.io/klog/v2"
 )
 
@@ -272,19 +270,6 @@ func (f *FakeCoreSchedExtended) Assign(pidTypeFrom CoreSchedScopeType, pidFrom u
 
 func IsCoreSchedSysctlSupported() bool {
 	return FileExists(GetProcSysFilePath(KernelSchedCore))
-}
-
-// ProbeCoreSchedIfEnabled checks if the MAINLINE kernel support the core scheduling.
-// Since there's no direct API, we probe by calling prctl and checking its return value.
-func ProbeCoreSchedIfEnabled() bool {
-	cookie := uint64(0)
-	cookiePtr := &cookie
-	ret, err := unix.PrctlRetInt(unix.PR_SCHED_CORE, unix.PR_SCHED_CORE_GET, uintptr(0), uintptr(CoreSchedScopeThread), uintptr(unsafe.Pointer(cookiePtr)))
-	if err != nil {
-		klog.V(4).Infof("failed to probe core sched status via prctl, err: %s", err)
-		return false
-	}
-	return ret == 0
 }
 
 // IsCoreSchedSupported checks if the kernel supports the core scheduling.

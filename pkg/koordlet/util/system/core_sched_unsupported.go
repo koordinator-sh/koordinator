@@ -58,3 +58,7 @@ func (s *CoreSched) Clear(pidType CoreSchedScopeType, pid ...uint32) ([]uint32, 
 func (s *CoreSched) Assign(pidTypeFrom CoreSchedScopeType, pidFrom uint32, pidTypeTo CoreSchedScopeType, pidsTo ...uint32) ([]uint32, error) {
 	return nil, fmt.Errorf("unsupported platform")
 }
+
+func ProbeCoreSchedIfEnabled() bool {
+	return false
+}
