@@ -68,8 +68,9 @@ func NewQOSManager(cfg *framework.Config, schema *apiruntime.Scheme, kubeClient 
 	}
 
 	ctx := &framework.Context{
-		Evictor:    evictor,
-		Strategies: make(map[string]framework.QOSStrategy, len(plugins.StrategyPlugins)),
+		Evictor:        evictor,
+		OnlyEvictByAPI: cfg.OnlyEvictByAPI,
+		Strategies:     make(map[string]framework.QOSStrategy, len(plugins.StrategyPlugins)),
 	}
 
 	for name, strategyFn := range plugins.StrategyPlugins {
