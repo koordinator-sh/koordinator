@@ -500,6 +500,8 @@ func ReadResctrlSchemataRaw(schemataFile string, l3Num int) (*ResctrlSchemataRaw
 	}
 	if l3Num == -1 {
 		schemataRaw.WithL3Num(len(schemataRaw.L3))
+	} else {
+		schemataRaw.WithL3Num(l3Num)
 	}
 
 	return schemataRaw, nil
