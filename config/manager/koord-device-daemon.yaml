@@ -1,0 +1,86 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: koord-device-daemon
+  labels:
+    koord-app: koord-device-daemon
+spec:
+  updateStrategy:
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+    type: RollingUpdate
+  selector:
+    matchLabels:
+      koord-app: koordlet
+  template:
+    metadata:
+      labels:
+        koord-app: koordlet
+    spec:
+      containers:
+        - name: koord-device-daemon
+          command:
+            - /koord-device-daemon
+          args:
+            - --v=4
+          securityContext:
+            privileged: true
+          image: koord-device-daemon:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: MIG_STRATEGY
+              value: none
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+          resources:
+            limits:
+              cpu: 100m
+              memory: 128Mi
+            requests:
+              cpu: 100m
+              memory: 128Mi
+          volumeMounts:
+            - mountPath: /etc/kubernetes/node-feature-discovery/features.d
+              name: output-dir
+            - mountPath: /hostfs
+              name: host-root
+            - mountPath: /host-sys/
+              name: host-sys
+            - mountPath: /var/run/koordlet/xpu-device-infos/
+              mountPropagation: Bidirectional
+              name: device-infos
+            - mountPath: /dev/
+              name: host-dev
+      hostIPC: true
+      hostNetwork: true
+      hostPID: true
+      restartPolicy: Always
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsUser: 0
+        seccompProfile:
+          type: Unconfined
+      tolerations:
+        - operator: Exists
+      volumes:
+        - hostPath:
+            path: /
+            type: ""
+          name: host-root
+        - hostPath:
+            path: /sys/
+            type: ""
+          name: host-sys
+        - hostPath:
+            path: /var/run/koordlet/xpu-device-infos
+            type: DirectoryOrCreate
+          name: device-infos
+        - hostPath:
+            path: /dev/
+            type: ""
+          name: host-dev
