@@ -40,6 +40,7 @@ import (
 	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
 	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/indexer"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/networktopology"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/services"
 	koordschedulermetrics "github.com/koordinator-sh/koordinator/pkg/scheduler/metrics"
 )
@@ -58,6 +59,7 @@ type extendedHandleOptions struct {
 	koordinatorClientSet             koordinatorclientset.Interface
 	koordinatorSharedInformerFactory koordinatorinformers.SharedInformerFactory
 	reservationNominator             ReservationNominator
+	networkTopologyManager           networktopology.TreeManager
 }
 
 type Option func(*extendedHandleOptions)
@@ -86,6 +88,12 @@ func WithReservationNominator(nominator ReservationNominator) Option {
 	}
 }
 
+func WithNetworkTopologyManager(manager networktopology.TreeManager) Option {
+	return func(options *extendedHandleOptions) {
+		options.networkTopologyManager = manager
+	}
+}
+
 type FrameworkExtenderFactory struct {
 	controllerMaps                   *ControllersMap
 	servicesEngine                   *services.Engine
@@ -98,6 +106,8 @@ type FrameworkExtenderFactory struct {
 	scheduler                        Scheduler
 	schedulePod                      func(ctx context.Context, fwk framework.Framework, state *framework.CycleState, pod *corev1.Pod) (scheduler.ScheduleResult, error)
 	*errorHandlerDispatcher
+
+	networkTopologyTreeManager networktopology.TreeManager
 
 	metricsRecorder *metrics.MetricAsyncRecorder
 }

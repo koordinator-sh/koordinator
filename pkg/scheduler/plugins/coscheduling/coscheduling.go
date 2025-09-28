@@ -50,6 +50,7 @@ var _ framework.PreEnqueuePlugin = &Coscheduling{}
 var _ frameworkext.NextPodPlugin = &Coscheduling{}
 var _ frameworkext.PreFilterTransformer = &Coscheduling{}
 var _ framework.PreFilterPlugin = &Coscheduling{}
+var _ frameworkext.FindOneNodePlugin = &Coscheduling{}
 var _ frameworkext.PostFilterTransformer = &Coscheduling{}
 var _ framework.PostFilterPlugin = &Coscheduling{}
 var _ framework.PermitPlugin = &Coscheduling{}
@@ -120,12 +121,16 @@ func (cs *Coscheduling) NextPod() *v1.Pod {
 	return cs.pgMgr.NextPod()
 }
 
+func (cs *Coscheduling) FindOneNode(ctx context.Context, cycleState *framework.CycleState, pod *v1.Pod, result *framework.PreFilterResult) (string, *framework.Status) {
+	return cs.pgMgr.FindOneNode(ctx, cycleState, pod, result)
+}
+
 // BeforePreFilter
 // i.Check whether the Gang has met the scheduleCycleValid check, and reject the pod if negative.
 // ii.Try update scheduleCycle, scheduleCycleValid, childrenScheduleRoundMap as mentioned above.
 func (cs *Coscheduling) BeforePreFilter(ctx context.Context, state *framework.CycleState, pod *v1.Pod) (*v1.Pod, bool, *framework.Status) {
 	// If PreFilter fails, return framework.UnschedulableAndUnresolvable to avoid any preemption attempts.
-	if err := cs.pgMgr.PreFilter(ctx, state, pod); err != nil {
+	if err := cs.pgMgr.BeforePreFilter(ctx, state, pod); err != nil {
 		klog.ErrorS(err, "PreFilter failed", "pod", klog.KObj(pod))
 		return nil, false, framework.NewStatus(framework.UnschedulableAndUnresolvable, err.Error())
 	}
@@ -136,7 +141,7 @@ func (cs *Coscheduling) PreFilter(ctx context.Context, state *framework.CycleSta
 	return nil, nil
 }
 
-func (cs *Coscheduling) AfterPreFilter(ctx context.Context, state *framework.CycleState, pod *v1.Pod, preFilterResult *framework.PreFilterResult) *framework.Status {
+func (cs *Coscheduling) AfterPreFilter(ctx context.Context, cycleState *framework.CycleState, pod *v1.Pod, preFilterResult *framework.PreFilterResult) *framework.Status {
 	return nil
 }
 

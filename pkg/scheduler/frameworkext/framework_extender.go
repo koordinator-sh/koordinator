@@ -23,6 +23,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/sets"
 	k8sfeature "k8s.io/apiserver/pkg/util/feature"
 	listerscorev1 "k8s.io/client-go/listers/core/v1"
 	"k8s.io/klog/v2"
@@ -35,6 +36,7 @@ import (
 	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
 	listerschedulingv1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/listers/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/features"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/networktopology"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/schedulingphase"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/topologymanager"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
@@ -59,6 +61,8 @@ type frameworkExtenderImpl struct {
 	podLister                        listerscorev1.PodLister
 	reservationLister                listerschedulingv1alpha1.ReservationLister
 
+	networkTopologyTreeManager networktopology.TreeManager
+
 	preFilterTransformers         map[string]PreFilterTransformer
 	filterTransformers            map[string]FilterTransformer
 	scoreTransformers             map[string]ScoreTransformer
@@ -67,6 +71,8 @@ type frameworkExtenderImpl struct {
 	filterTransformersEnabled     []FilterTransformer
 	scoreTransformersEnabled      []ScoreTransformer
 	postFilterTransformersEnabled []PostFilterTransformer
+
+	findOneNodePlugin FindOneNodePlugin
 
 	reservationNominator                   ReservationNominator
 	reservationFilterPlugins               []ReservationFilterPlugin
@@ -106,6 +112,7 @@ func NewFrameworkExtender(f *FrameworkExtenderFactory, fw framework.Framework) F
 		metricsRecorder:                  f.metricsRecorder,
 		podLister:                        fw.SharedInformerFactory().Core().V1().Pods().Lister(),
 		reservationLister:                f.koordinatorSharedInformerFactory.Scheduling().V1alpha1().Reservations().Lister(),
+		networkTopologyTreeManager:       f.networkTopologyTreeManager,
 	}
 	frameworkExtender.topologyManager = topologymanager.New(frameworkExtender)
 	return frameworkExtender
@@ -171,6 +178,13 @@ func (ext *frameworkExtenderImpl) updatePlugins(pl framework.Plugin) {
 	if p, ok := pl.(topologymanager.NUMATopologyHintProvider); ok {
 		ext.numaTopologyHintProviders = append(ext.numaTopologyHintProviders, p)
 	}
+	if p, ok := pl.(FindOneNodePluginProvider); ok && p.FindOneNodePlugin() != nil {
+		if ext.findOneNodePlugin == nil {
+			ext.findOneNodePlugin = p.FindOneNodePlugin()
+		} else {
+			klog.Warningf("framework extender got multiple FindOneNodePlugin registered, using the first one with name: %s", ext.findOneNodePlugin.Name())
+		}
+	}
 }
 
 func (ext *frameworkExtenderImpl) SetConfiguredPlugins(plugins *schedconfig.Plugins) {
@@ -226,6 +240,10 @@ func (ext *frameworkExtenderImpl) GetReservationNominator() ReservationNominator
 	return ext.reservationNominator
 }
 
+func (ext *frameworkExtenderImpl) GetNetworkTopologyTreeManager() networktopology.TreeManager {
+	return ext.networkTopologyTreeManager
+}
+
 // RunPreFilterPlugins transforms the PreFilter phase of framework with pre-filter transformers.
 func (ext *frameworkExtenderImpl) RunPreFilterPlugins(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod) (*framework.PreFilterResult, *framework.Status) {
 	for _, transformer := range ext.preFilterTransformersEnabled {
@@ -258,6 +276,21 @@ func (ext *frameworkExtenderImpl) RunPreFilterPlugins(ctx context.Context, cycle
 			return nil, status
 		}
 	}
+	if ext.findOneNodePlugin != nil {
+		startTime := time.Now()
+		nodeName, status := ext.findOneNodePlugin.FindOneNode(ctx, cycleState, pod, result)
+		ext.metricsRecorder.ObservePluginDurationAsync("FindOneNodePlugin", ext.findOneNodePlugin.Name(), status.Code().String(), metrics.SinceInSeconds(startTime))
+		if status.IsSkip() {
+			return result, nil
+		}
+		if !status.IsSuccess() {
+			status.SetFailedPlugin(ext.findOneNodePlugin.Name())
+			klog.ErrorS(status.AsError(), "Failed to run FindOneNodePlugin", "pod", klog.KObj(pod), "plugin", ext.findOneNodePlugin.Name())
+			return nil, status
+		}
+		return &framework.PreFilterResult{NodeNames: sets.New[string](nodeName)}, nil
+	}
+
 	return result, nil
 }
 

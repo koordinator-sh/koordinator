@@ -24,6 +24,8 @@ import (
 
 // Interface provides access to all the informers in this group version.
 type Interface interface {
+	// ClusterNetworkTopologies returns a ClusterNetworkTopologyInformer.
+	ClusterNetworkTopologies() ClusterNetworkTopologyInformer
 	// Devices returns a DeviceInformer.
 	Devices() DeviceInformer
 	// PodMigrationJobs returns a PodMigrationJobInformer.
@@ -43,6 +45,11 @@ type version struct {
 // New returns a new Interface.
 func New(f internalinterfaces.SharedInformerFactory, namespace string, tweakListOptions internalinterfaces.TweakListOptionsFunc) Interface {
 	return &version{factory: f, namespace: namespace, tweakListOptions: tweakListOptions}
+}
+
+// ClusterNetworkTopologies returns a ClusterNetworkTopologyInformer.
+func (v *version) ClusterNetworkTopologies() ClusterNetworkTopologyInformer {
+	return &clusterNetworkTopologyInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
 }
 
 // Devices returns a DeviceInformer.

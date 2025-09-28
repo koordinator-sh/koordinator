@@ -69,6 +69,8 @@ func (f *sharedInformerFactory) ForResource(resource schema.GroupVersionResource
 		return &genericInformer{resource: resource.GroupResource(), informer: f.Quota().V1alpha1().ElasticQuotaProfiles().Informer()}, nil
 
 		// Group=scheduling, Version=v1alpha1
+	case schedulingv1alpha1.SchemeGroupVersion.WithResource("clusternetworktopologies"):
+		return &genericInformer{resource: resource.GroupResource(), informer: f.Scheduling().V1alpha1().ClusterNetworkTopologies().Informer()}, nil
 	case schedulingv1alpha1.SchemeGroupVersion.WithResource("devices"):
 		return &genericInformer{resource: resource.GroupResource(), informer: f.Scheduling().V1alpha1().Devices().Informer()}, nil
 	case schedulingv1alpha1.SchemeGroupVersion.WithResource("podmigrationjobs"):

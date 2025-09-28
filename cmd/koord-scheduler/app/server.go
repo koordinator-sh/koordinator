@@ -69,6 +69,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/defaultprofile"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/eventhandlers"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/informer"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/networktopology"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/services"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/metrics"
 	"github.com/koordinator-sh/koordinator/pkg/util/asynclog"
@@ -395,12 +396,15 @@ func Setup(ctx context.Context, opts *options.Options, outOfTreeRegistryOptions 
 
 	metrics.Register()
 
+	networkTopologyManager := networktopology.NewTreeManager()
+
 	// NOTE(joseph): K8s scheduling framework does not provide extension point for initialization.
 	// Currently, only by copying the initialization code and implementing custom initialization.
 	frameworkExtenderFactory, err := frameworkext.NewFrameworkExtenderFactory(
 		frameworkext.WithServicesEngine(cc.ServicesEngine),
 		frameworkext.WithKoordinatorClientSet(cc.KoordinatorClient),
 		frameworkext.WithKoordinatorSharedInformerFactory(cc.KoordinatorSharedInformerFactory),
+		frameworkext.WithNetworkTopologyManager(networkTopologyManager),
 	)
 	if err != nil {
 		return nil, nil, nil, nil, err
@@ -457,6 +461,10 @@ func Setup(ctx context.Context, opts *options.Options, outOfTreeRegistryOptions 
 	schedAdapter := frameworkExtenderFactory.Scheduler()
 
 	eventhandlers.AddScheduleEventHandler(sched, schedAdapter, cc.InformerFactory, cc.KoordinatorSharedInformerFactory)
+	err = eventhandlers.AddNetworkTopologyRelated(ctx, networkTopologyManager, cc.KoordinatorSharedInformerFactory, cc.InformerFactory)
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
 	reservationErrorHandler := eventhandlers.MakeReservationErrorHandler(
 		sched,
 		schedAdapter,
