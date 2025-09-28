@@ -56,7 +56,6 @@ import (
 	schedulerconfig "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	v1beta3schedulerconfig "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/v1beta3"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
-	frameworkexttesting "github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/testing"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 	utilfeature "github.com/koordinator-sh/koordinator/pkg/util/feature"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
@@ -148,7 +147,7 @@ func newPluginTestSuit(t *testing.T, nodes []*corev1.Node) *pluginTestSuit {
 	extenderFactory, _ := frameworkext.NewFrameworkExtenderFactory(
 		frameworkext.WithKoordinatorClientSet(koordClientSet),
 		frameworkext.WithKoordinatorSharedInformerFactory(koordSharedInformerFactory),
-		frameworkext.WithReservationNominator(frameworkexttesting.NewFakeReservationNominator()),
+		frameworkext.WithReservationNominator(frameworkext.NewFakeReservationNominator()),
 	)
 	proxyNew := frameworkext.PluginFactoryProxy(extenderFactory, New)
 

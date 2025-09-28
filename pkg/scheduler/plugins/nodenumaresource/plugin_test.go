@@ -50,7 +50,6 @@ import (
 	_ "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/scheme"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/v1beta3"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
-	frameworkexttesting "github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/testing"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/topologymanager"
 	"github.com/koordinator-sh/koordinator/pkg/util/bitmask"
 	"github.com/koordinator-sh/koordinator/pkg/util/cpuset"
@@ -175,7 +174,7 @@ func newPluginTestSuit(t *testing.T, pods []*corev1.Pod, nodes []*corev1.Node) *
 	extenderFactory, err := frameworkext.NewFrameworkExtenderFactory(
 		frameworkext.WithKoordinatorClientSet(koordClientSet),
 		frameworkext.WithKoordinatorSharedInformerFactory(koordSharedInformerFactory),
-		frameworkext.WithReservationNominator(frameworkexttesting.NewFakeReservationNominator()),
+		frameworkext.WithReservationNominator(frameworkext.NewFakeReservationNominator()),
 	)
 	assert.NoError(t, err)
 
