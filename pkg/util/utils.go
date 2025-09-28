@@ -127,7 +127,7 @@ func GeneratePodPatchWithUID(oldPod, newPod *corev1.Pod) ([]byte, error) {
 	return strategicpatch.CreateTwoWayMergePatch(oldData, newData, &corev1.Pod{})
 }
 
-func PatchPod(ctx context.Context, clientset clientset.Interface, oldPod, newPod *corev1.Pod) (*corev1.Pod, error) {
+func PatchPod(ctx context.Context, clientset clientset.Interface, oldPod, newPod *corev1.Pod, subResources ...string) (*corev1.Pod, error) {
 	if reflect.DeepEqual(oldPod, newPod) {
 		return oldPod, nil
 	}
@@ -144,7 +144,7 @@ func PatchPod(ctx context.Context, clientset clientset.Interface, oldPod, newPod
 
 	// patch with pod client
 	patched, err := clientset.CoreV1().Pods(oldPod.Namespace).
-		Patch(ctx, oldPod.Name, apimachinerytypes.StrategicMergePatchType, patchBytes, metav1.PatchOptions{})
+		Patch(ctx, oldPod.Name, apimachinerytypes.StrategicMergePatchType, patchBytes, metav1.PatchOptions{}, subResources...)
 	if err != nil {
 		klog.V(5).InfoS("failed to patch pod", "pod", klog.KObj(oldPod), "patch", string(patchBytes), "err", err)
 		return nil, err
@@ -155,7 +155,7 @@ func PatchPod(ctx context.Context, clientset clientset.Interface, oldPod, newPod
 
 // PatchPodSafe patches the pod with the object UID for safety.
 // This ensures we will not patch the different object with the same name.
-func PatchPodSafe(ctx context.Context, clientset clientset.Interface, oldPod, newPod *corev1.Pod) (*corev1.Pod, error) {
+func PatchPodSafe(ctx context.Context, clientset clientset.Interface, oldPod, newPod *corev1.Pod, subResources ...string) (*corev1.Pod, error) {
 	if reflect.DeepEqual(oldPod, newPod) {
 		return oldPod, nil
 	}
@@ -169,7 +169,7 @@ func PatchPodSafe(ctx context.Context, clientset clientset.Interface, oldPod, ne
 
 	// patch with pod client
 	patched, err := clientset.CoreV1().Pods(oldPod.Namespace).
-		Patch(ctx, oldPod.Name, apimachinerytypes.StrategicMergePatchType, patchBytes, metav1.PatchOptions{})
+		Patch(ctx, oldPod.Name, apimachinerytypes.StrategicMergePatchType, patchBytes, metav1.PatchOptions{}, subResources...)
 	if err != nil {
 		klog.V(5).InfoS("failed to patch pod", "pod", klog.KObj(oldPod), "patch", string(patchBytes), "err", err)
 		return nil, err
@@ -269,10 +269,10 @@ func GenerateNodePatch(oldNode, newNode *corev1.Node) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	return strategicpatch.CreateTwoWayMergePatch(oldData, newData, &corev1.Pod{})
+	return strategicpatch.CreateTwoWayMergePatch(oldData, newData, &corev1.Node{})
 }
 
-func PatchNode(ctx context.Context, clientset clientset.Interface, oldNode, newNode *corev1.Node) (*corev1.Node, error) {
+func PatchNode(ctx context.Context, clientset clientset.Interface, oldNode, newNode *corev1.Node, subResources ...string) (*corev1.Node, error) {
 	if reflect.DeepEqual(oldNode, newNode) {
 		return oldNode, nil
 	}
@@ -289,7 +289,7 @@ func PatchNode(ctx context.Context, clientset clientset.Interface, oldNode, newN
 
 	// patch with node client
 	patched, err := clientset.CoreV1().Nodes().
-		Patch(ctx, oldNode.Name, apimachinerytypes.StrategicMergePatchType, patchBytes, metav1.PatchOptions{})
+		Patch(ctx, oldNode.Name, apimachinerytypes.StrategicMergePatchType, patchBytes, metav1.PatchOptions{}, subResources...)
 	if err != nil {
 		klog.V(5).InfoS("failed to patch node", "node", klog.KObj(oldNode), "patch", string(patchBytes), "err", err)
 		return nil, err

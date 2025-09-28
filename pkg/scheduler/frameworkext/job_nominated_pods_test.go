@@ -290,7 +290,7 @@ func Test_frameworkExtenderImpl_RunFilterPluginsWithNominatedIgnoreSameJob(t *te
 				frameworkruntime.WithSnapshotSharedLister(fakeNodeInfoLister{NodeInfoLister: frameworkfake.NodeInfoLister{nodeInfo}}),
 				frameworkruntime.WithClientSet(fakeClient),
 				frameworkruntime.WithInformerFactory(sharedInformerFactory),
-				frameworkruntime.WithPodNominator(NewPodNominator()),
+				frameworkruntime.WithPodNominator(NewFakePodNominator()),
 			)
 			ctx := context.TODO()
 			logger := klog.FromContext(ctx)

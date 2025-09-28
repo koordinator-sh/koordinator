@@ -397,10 +397,11 @@ func Test_GenerateReservationPatchWithUID(t *testing.T) {
 
 func TestPatchPod(t *testing.T) {
 	tests := []struct {
-		name        string
-		originalObj metav1.Object
-		modifiedObj metav1.Object
-		wantErr     bool
+		name         string
+		originalObj  metav1.Object
+		modifiedObj  metav1.Object
+		subResources []string
+		wantErr      bool
 	}{
 		{
 			name: "patch pod",
@@ -529,6 +530,80 @@ func TestPatchPod(t *testing.T) {
 					},
 				},
 			},
+		},
+		{
+			name: "patch pod status",
+			originalObj: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pod",
+					Namespace: "default",
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name: "main",
+							Env: []corev1.EnvVar{
+								{
+									Name:  "test",
+									Value: "true",
+								},
+							},
+							Resources: corev1.ResourceRequirements{
+								Limits: corev1.ResourceList{
+									corev1.ResourceCPU: resource.MustParse("4"),
+								},
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU: resource.MustParse("4"),
+								},
+							},
+						},
+					},
+				},
+				Status: corev1.PodStatus{},
+			},
+			modifiedObj: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pod",
+					Namespace: "default",
+					Annotations: map[string]string{
+						"testAnnotation": "1",
+					},
+					Labels: map[string]string{
+						"testLabel": "2",
+					},
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name: "main",
+							Env: []corev1.EnvVar{
+								{
+									Name:  "test",
+									Value: "true",
+								},
+								{
+									Name:  "appendEnv",
+									Value: "true",
+								},
+							},
+							Resources: corev1.ResourceRequirements{
+								Limits: corev1.ResourceList{
+									corev1.ResourceCPU: resource.MustParse("4"),
+									apiext.ResourceGPU: resource.MustParse("100"),
+								},
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU: resource.MustParse("4"),
+									apiext.ResourceGPU: resource.MustParse("100"),
+								},
+							},
+						},
+					},
+				},
+				Status: corev1.PodStatus{
+					NominatedNodeName: "test-node",
+				},
+			},
+			subResources: []string{"status"},
 		},
 		{
 			name: "patch reservation",
@@ -686,7 +761,7 @@ func TestPatchPod(t *testing.T) {
 
 			if pod, ok := tt.originalObj.(*corev1.Pod); ok {
 				original, modified := tt.originalObj.(*corev1.Pod), tt.modifiedObj.(*corev1.Pod)
-				_, err := PatchPod(context.TODO(), clientSet, original, modified)
+				_, err := PatchPod(context.TODO(), clientSet, original, modified, tt.subResources...)
 				assert.Equal(t, tt.wantErr, err != nil, err)
 
 				got, err := clientSet.CoreV1().Pods(pod.Namespace).Get(context.TODO(), pod.Name, metav1.GetOptions{})
@@ -707,10 +782,11 @@ func TestPatchPod(t *testing.T) {
 
 func TestPatchPodSafe(t *testing.T) {
 	tests := []struct {
-		name        string
-		originalObj metav1.Object
-		modifiedObj metav1.Object
-		wantErr     bool
+		name         string
+		originalObj  metav1.Object
+		modifiedObj  metav1.Object
+		subResources []string
+		wantErr      bool
 	}{
 		{
 			name: "patch pod",
@@ -838,6 +914,79 @@ func TestPatchPodSafe(t *testing.T) {
 							},
 						},
 					},
+				},
+			},
+		},
+		{
+			name: "patch pod status",
+			originalObj: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pod",
+					Namespace: "default",
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name: "main",
+							Env: []corev1.EnvVar{
+								{
+									Name:  "test",
+									Value: "true",
+								},
+							},
+							Resources: corev1.ResourceRequirements{
+								Limits: corev1.ResourceList{
+									corev1.ResourceCPU: resource.MustParse("4"),
+								},
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU: resource.MustParse("4"),
+								},
+							},
+						},
+					},
+				},
+			},
+			modifiedObj: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pod",
+					Namespace: "default",
+					Annotations: map[string]string{
+						"testAnnotation": "1",
+					},
+					Labels: map[string]string{
+						"testLabel": "2",
+					},
+					UID: "yyyyyy",
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name: "main",
+							Env: []corev1.EnvVar{
+								{
+									Name:  "test",
+									Value: "true",
+								},
+								{
+									Name:  "appendEnv",
+									Value: "true",
+								},
+							},
+							Resources: corev1.ResourceRequirements{
+								Limits: corev1.ResourceList{
+									corev1.ResourceCPU: resource.MustParse("4"),
+									apiext.ResourceGPU: resource.MustParse("100"),
+								},
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU: resource.MustParse("4"),
+									apiext.ResourceGPU: resource.MustParse("100"),
+								},
+							},
+						},
+					},
+				},
+				Status: corev1.PodStatus{
+					NominatedNodeName: "test-node",
 				},
 			},
 		},
@@ -998,7 +1147,7 @@ func TestPatchPodSafe(t *testing.T) {
 
 			if pod, ok := tt.originalObj.(*corev1.Pod); ok {
 				original, modified := tt.originalObj.(*corev1.Pod), tt.modifiedObj.(*corev1.Pod)
-				_, err := PatchPodSafe(context.TODO(), clientSet, original, modified)
+				_, err := PatchPodSafe(context.TODO(), clientSet, original, modified, tt.subResources...)
 				assert.Equal(t, tt.wantErr, err != nil, err)
 
 				got, err := clientSet.CoreV1().Pods(pod.Namespace).Get(context.TODO(), pod.Name, metav1.GetOptions{})
@@ -1051,6 +1200,7 @@ func TestPatchNode(t *testing.T) {
 		name         string
 		originalNode *corev1.Node
 		modifiedNode *corev1.Node
+		subResources []string
 		wantErr      bool
 	}{
 		{
@@ -1099,6 +1249,35 @@ func TestPatchNode(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "patch node status",
+			originalNode: &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node",
+				},
+				Status: corev1.NodeStatus{
+					Allocatable: corev1.ResourceList{
+						corev1.ResourceCPU: resource.MustParse("4"),
+					},
+				},
+			},
+			modifiedNode: &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node",
+					Annotations: map[string]string{
+						"testAnnotation": "1",
+					},
+					Labels: map[string]string{
+						"testLabel": "2",
+					},
+				},
+				Status: corev1.NodeStatus{
+					Allocatable: corev1.ResourceList{
+						corev1.ResourceCPU: resource.MustParse("8")},
+				},
+			},
+			subResources: []string{"status"},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1108,7 +1287,7 @@ func TestPatchNode(t *testing.T) {
 			assert.NoError(t, err)
 
 			original, modified := tt.originalNode, tt.modifiedNode
-			_, err = PatchNode(context.TODO(), clientSet, original, modified)
+			_, err = PatchNode(context.TODO(), clientSet, original, modified, tt.subResources...)
 			assert.Equal(t, tt.wantErr, err != nil, err)
 
 			got, err := clientSet.CoreV1().Nodes().Get(context.TODO(), tt.originalNode.Name, metav1.GetOptions{})

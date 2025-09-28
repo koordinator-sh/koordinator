@@ -46,7 +46,6 @@ import (
 	koordfake "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/fake"
 	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
-	frameworkexttesting "github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/testing"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
 
@@ -166,7 +165,7 @@ func TestAddReservationErrorHandler(t *testing.T) {
 			assert.Nil(t, err)
 			koordClientSet := koordfake.NewSimpleClientset(tt.r)
 			koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
-			rNominator := frameworkexttesting.NewFakeReservationNominator()
+			rNominator := frameworkext.NewFakeReservationNominator()
 			frameworkExtenderFactory, _ := frameworkext.NewFrameworkExtenderFactory(
 				frameworkext.WithKoordinatorClientSet(koordClientSet),
 				frameworkext.WithKoordinatorSharedInformerFactory(koordSharedInformerFactory),
