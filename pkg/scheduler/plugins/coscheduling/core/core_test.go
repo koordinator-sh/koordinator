@@ -552,7 +552,7 @@ func TestPodGroupManager_PostFilter(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			pgMgr := &PodGroupManager{
-				handle: NewFakeExtendedFramework(t, []*corev1.Node{}, nil, nil, nil),
+				handle: NewFakeExtendedFramework(t, []*corev1.Node{}, nil, nil, nil, nil),
 				holder: GangSchedulingContextHolder{
 					gangSchedulingContext: tt.gangSchedulingContext,
 				},

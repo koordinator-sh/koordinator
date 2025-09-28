@@ -28,6 +28,10 @@ type FakeSchedulingV1alpha1 struct {
 	*testing.Fake
 }
 
+func (c *FakeSchedulingV1alpha1) ClusterNetworkTopologies() v1alpha1.ClusterNetworkTopologyInterface {
+	return &FakeClusterNetworkTopologies{c}
+}
+
 func (c *FakeSchedulingV1alpha1) Devices() v1alpha1.DeviceInterface {
 	return &FakeDevices{c}
 }

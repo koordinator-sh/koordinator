@@ -102,6 +102,10 @@ func DumpDiagnosis(state *framework.CycleState) string {
 
 func GetDiagnosis(state *framework.CycleState) *Diagnosis {
 	diagnosis, _ := state.Read(diagnosisStateKey)
+	if diagnosis == nil {
+		// just for test
+		return &Diagnosis{}
+	}
 	return diagnosis.(*Diagnosis)
 }
 

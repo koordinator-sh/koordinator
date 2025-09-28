@@ -1546,6 +1546,64 @@ func TestGangCache_getPendingPods(t *testing.T) {
 	}
 }
 
+func TestGangCache_getPendingPodsNum(t *testing.T) {
+	type args struct {
+		gangGroup []string
+	}
+	tests := []struct {
+		name string
+		args args
+		pods []*corev1.Pod
+		want int
+	}{
+		{
+			name: "normal flow",
+			args: args{
+				gangGroup: []string{"default/gangA", "default/gangB"},
+			},
+			pods: []*corev1.Pod{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: "default",
+						Name:      "pod1",
+						Labels: map[string]string{
+							v1alpha1.PodGroupLabel: "gangA",
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: "default",
+						Name:      "pod2",
+						Labels: map[string]string{
+							v1alpha1.PodGroupLabel: "gangB",
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: "default",
+						Name:      "pod3",
+						Labels: map[string]string{
+							v1alpha1.PodGroupLabel: "gangC",
+						},
+					},
+				},
+			},
+			want: 2,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gangCache := NewGangCache(nil, nil, nil, nil, nil)
+			for _, pod := range tt.pods {
+				gangCache.onPodAdd(pod)
+			}
+			assert.Equalf(t, tt.want, len(gangCache.getPendingPods(tt.args.gangGroup)), "getPendingPods(%v)", tt.args.gangGroup)
+		})
+	}
+}
+
 func TestGangCache_getWaitingPods(t *testing.T) {
 	type args struct {
 		gangGroup []string

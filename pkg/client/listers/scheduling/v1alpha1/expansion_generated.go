@@ -18,6 +18,10 @@ limitations under the License.
 
 package v1alpha1
 
+// ClusterNetworkTopologyListerExpansion allows custom methods to be added to
+// ClusterNetworkTopologyLister.
+type ClusterNetworkTopologyListerExpansion interface{}
+
 // DeviceListerExpansion allows custom methods to be added to
 // DeviceLister.
 type DeviceListerExpansion interface{}

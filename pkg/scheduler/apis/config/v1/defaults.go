@@ -50,6 +50,7 @@ var (
 	defaultPreferredCPUBindPolicy = CPUBindPolicyFullPCPUs
 
 	defaultEnablePreemption             = pointer.Bool(false)
+	defaultAwareNetworkTopology         = pointer.Bool(false)
 	defaultMinCandidateNodesPercentage  = pointer.Int32(10)
 	defaultMinCandidateNodesAbsolute    = pointer.Int32(100)
 	defaultReservationControllerWorkers = pointer.Int32(1)
@@ -219,6 +220,9 @@ func SetDefaults_CoschedulingArgs(obj *CoschedulingArgs) {
 	}
 	if obj.EnablePreemption == nil {
 		obj.EnablePreemption = defaultEnablePreemption
+	}
+	if obj.AwareNetworkTopology == nil {
+		obj.AwareNetworkTopology = defaultAwareNetworkTopology
 	}
 }
 

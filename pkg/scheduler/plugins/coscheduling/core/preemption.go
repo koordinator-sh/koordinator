@@ -70,12 +70,13 @@ type preemptionEvaluatorImpl struct {
 	// to preempt normal pods, to avoid problems if system pods are unable to find space.
 	IsEligiblePod IsEligiblePodFunc
 
-	handle            frameworkext.ExtendedHandle
-	gangCache         *GangCache
-	gangContextHolder *GangSchedulingContextHolder
+	handle                frameworkext.ExtendedHandle
+	gangCache             *GangCache
+	gangContextHolder     *GangSchedulingContextHolder
+	networkTopologySolver NetworkTopologySolver
 }
 
-func NewPreemptionEvaluator(handle framework.Handle, gangCache *GangCache, gangContextHolder *GangSchedulingContextHolder) PreemptionEvaluator {
+func NewPreemptionEvaluator(handle framework.Handle, gangCache *GangCache, gangContextHolder *GangSchedulingContextHolder, networkTopologySolver NetworkTopologySolver) PreemptionEvaluator {
 	if handle == nil {
 		return nil
 	}
@@ -83,9 +84,10 @@ func NewPreemptionEvaluator(handle framework.Handle, gangCache *GangCache, gangC
 		IsEligiblePod: func(nodeInfo *framework.NodeInfo, victim *framework.PodInfo, preemptor *corev1.Pod) bool {
 			return extension.IsPodPreemptible(victim.Pod) && !extension.IsPodNonPreemptible(victim.Pod)
 		},
-		handle:            handle.(frameworkext.ExtendedHandle),
-		gangCache:         gangCache,
-		gangContextHolder: gangContextHolder,
+		handle:                handle.(frameworkext.ExtendedHandle),
+		gangCache:             gangCache,
+		gangContextHolder:     gangContextHolder,
+		networkTopologySolver: networkTopologySolver,
 	}
 }
 
@@ -95,6 +97,8 @@ type JobPreemptionStateContextKey struct {
 type JobPreemptionState struct {
 	TriggerPodKey string `json:"TriggerPodKey,omitempty"`
 	PreemptorKey  string `json:"preemptorKey,omitempty"`
+
+	gangSchedulingContext *GangSchedulingContext
 
 	allPendingPods []*corev1.Pod
 	allWaitingPods []*corev1.Pod
@@ -118,6 +122,9 @@ type JobPreemptionState struct {
 	ClearNominatedNodeFailedMsg     map[string]string `json:"clearNominatedNodeFailedMsg,omitempty"`
 	DurationOfMakeNomination        metav1.Duration   `json:"durationOfMakeNomination,omitempty"`
 	DurationOfCancelNomination      metav1.Duration   `json:"durationOfCancelNomination,omitempty"`
+
+	SchedulingMode  frameworkext.SchedulingMode
+	NodeToOfferSlot map[string]int
 
 	PossibleVictims         []v1alpha1.NodePossibleVictim `json:"possibleVictims,omitempty"`
 	UnschedulablePodsNumber int                           `json:"unschedulablePodsNumber,omitempty"`
@@ -251,6 +258,7 @@ func (ev *preemptionEvaluatorImpl) preempt(ctx context.Context, state *framework
 	preemptionState.TriggerPodKey = triggerPodKey
 	gangContext := ev.gangContextHolder.getCurrentGangSchedulingContext()
 	if gangContext != nil {
+		preemptionState.gangSchedulingContext = gangContext
 		if gangContext.preemptionMessage != "" {
 			preemptionState.Reason = ReasonAlreadyPreempted
 			preemptionState.Message = gangContext.preemptionMessage
@@ -280,6 +288,11 @@ func (ev *preemptionEvaluatorImpl) preempt(ctx context.Context, state *framework
 		return nil, framework.NewStatus(framework.Unschedulable, ReasonNoPendingPods)
 	}
 
+	diagnosis := frameworkext.GetDiagnosis(state)
+	if diagnosis.ScheduleDiagnosis != nil && diagnosis.ScheduleDiagnosis.SchedulingMode == frameworkext.JobSchedulingMode {
+		m = diagnosis.ScheduleDiagnosis.NodeToStatusMap
+	}
+
 	if ok, msg := ev.jobEligibleToPreemptOthers(ctx, pod, preemptionState.allPendingPods, m); !ok {
 		preemptionState.Reason = msg
 		return nil, framework.NewStatus(framework.Unschedulable, msg)
@@ -307,9 +320,11 @@ func (ev *preemptionEvaluatorImpl) preempt(ctx context.Context, state *framework
 	}
 	// Return a FitError only when there are no candidates that fit the pod.
 	if len(podToNominatedNode) != len(preemptionState.allPendingPods) {
-		fitError := &framework.FitError{Pod: pod, NumAllNodes: len(allNodes), Diagnosis: framework.Diagnosis{NodeToStatusMap: nodeToStatusMap}}
-		preemptionState.Reason = ReasonPreemptionNotHelpful
-		preemptionState.Message = fitError.Error()
+		if preemptionState.Message == "" {
+			fitError := &framework.FitError{Pod: pod, NumAllNodes: len(allNodes), Diagnosis: framework.Diagnosis{NodeToStatusMap: nodeToStatusMap}}
+			preemptionState.Reason = ReasonPreemptionNotHelpful
+			preemptionState.Message = fitError.Error()
+		}
 		ev.cancelNomination(ctx)
 		return framework.NewPostFilterResultWithNominatedNode(""), framework.NewStatus(framework.Unschedulable, preemptionState.Message)
 	}
@@ -491,7 +506,7 @@ func (ev *preemptionEvaluatorImpl) dryRunPreemption(
 	preemptionCosts := estimatePreemptionCost(potentialVictims)
 	addPod := func(state *framework.CycleState, toSchedulePod *corev1.Pod, api *framework.PodInfo, nodeInfo *framework.NodeInfo) error {
 		nodeInfo.AddPodInfo(api)
-		status := ev.handle.RunPreFilterExtensionAddPod(ctx, state, triggerPod, api, nodeInfo)
+		status := ev.handle.RunPreFilterExtensionAddPod(ctx, state, toSchedulePod, api, nodeInfo)
 		if !status.IsSuccess() {
 			return status.AsError()
 		}
@@ -499,14 +514,29 @@ func (ev *preemptionEvaluatorImpl) dryRunPreemption(
 	}
 	pendingPods := preemptionState.allPendingPods
 	startTime = time.Now()
-	podToNominatedNode, successPods, unschedulablePods := ev.placeToSchedulePods(ctx, pendingPods, cycleStates, potentialNodes, preemptionCosts, addPod, statusMap)
-	preemptionState.PodToNominatedNode = podToNominatedNode
-	preemptionState.unschedulablePods = unschedulablePods
-	preemptionState.statusMap = statusMap
-	preemptionState.DurationOfPlaceToSchedulePods = metav1.Duration{Duration: time.Since(startTime)}
-	if len(unschedulablePods) > 0 {
-		return nil, nil, statusMap, nil
+	var podToNominatedNode map[string]string
+	var successPods map[string]*Placements
+	if preemptionState.gangSchedulingContext != nil && preemptionState.gangSchedulingContext.networkTopologySpec != nil {
+		networkTopologySpec := preemptionState.gangSchedulingContext.networkTopologySpec
+		var status *framework.Status
+		podToNominatedNode, successPods, statusMap, status = ev.PlanNodes(ctx, networkTopologySpec, pendingPods, potentialNodes, cycleStates, addPod, preemptionCosts)
+		preemptionState.statusMap = statusMap
+		preemptionState.DurationOfPlaceToSchedulePods = metav1.Duration{Duration: time.Since(startTime)}
+		preemptionState.Reason = ReasonPreemptionNotHelpful
+		preemptionState.Message = status.Message()
+		if !status.IsSuccess() {
+			return nil, nil, statusMap, nil
+		}
+	} else {
+		var unschedulablePods []*corev1.Pod
+		podToNominatedNode, successPods, unschedulablePods = ev.placeToSchedulePods(ctx, pendingPods, cycleStates, potentialNodes, preemptionCosts, addPod, statusMap)
+		preemptionState.statusMap = statusMap
+		preemptionState.DurationOfPlaceToSchedulePods = metav1.Duration{Duration: time.Since(startTime)}
+		if len(unschedulablePods) > 0 {
+			return nil, nil, statusMap, nil
+		}
 	}
+	preemptionState.PodToNominatedNode = podToNominatedNode
 	startTime = time.Now()
 	victims, err := ev.selectVictims(ctx, potentialVictims, cycleStates, successPods, addPod, removePod)
 	preemptionState.DurationOfSelectVictimsOnNode = metav1.Duration{Duration: time.Since(startTime)}
@@ -605,6 +635,9 @@ func (ev *preemptionEvaluatorImpl) placeToSchedulePods(
 	addPod podFunc,
 	statusMap framework.NodeToStatusMap,
 ) (podToNominatedNode map[string]string, successPods map[string]*Placements, unschedulablePods []*corev1.Pod) {
+	preemptionState := preemptionStateFromContext(ctx)
+	preemptionState.SchedulingMode = frameworkext.PodSchedulingMode
+
 	podToNominatedNode = make(map[string]string, len(toSchedulePods))
 	successPods = make(map[string]*Placements)
 	feasibleNodes := potentialNodes
@@ -663,6 +696,7 @@ func (ev *preemptionEvaluatorImpl) placeToSchedulePods(
 		successPodsOnNode.pods = append(successPodsOnNode.pods, pod)
 		podToNominatedNode[framework.GetNamespacedName(pod.Namespace, pod.Name)] = selectedNode.Node().Name
 	}
+	preemptionState.unschedulablePods = unschedulablePods
 	return
 }
 

@@ -185,6 +185,7 @@ func autoConvert_v1_CoschedulingArgs_To_config_CoschedulingArgs(in *Coscheduling
 		return err
 	}
 	out.EnablePreemption = (*bool)(unsafe.Pointer(in.EnablePreemption))
+	out.AwareNetworkTopology = (*bool)(unsafe.Pointer(in.AwareNetworkTopology))
 	return nil
 }
 
@@ -204,6 +205,7 @@ func autoConvert_config_CoschedulingArgs_To_v1_CoschedulingArgs(in *config.Cosch
 		return err
 	}
 	out.EnablePreemption = (*bool)(unsafe.Pointer(in.EnablePreemption))
+	out.AwareNetworkTopology = (*bool)(unsafe.Pointer(in.AwareNetworkTopology))
 	return nil
 }
 

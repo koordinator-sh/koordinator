@@ -69,6 +69,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/defaultprofile"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/eventhandlers"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/informer"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/networktopology"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/services"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/metrics"
 	"github.com/koordinator-sh/koordinator/pkg/util/asynclog"
@@ -265,7 +266,7 @@ func Run(ctx context.Context, cc *schedulerserverconfig.CompletedConfig, sched *
 					startInformersAndWaitForSync(ctx)
 					logger.Info("Sync completed")
 				}
-				go extenderFactory.Run()
+				extenderFactory.Run(ctx)
 				RunWorkflow(ctx, sched, customWorkflow)
 			},
 			OnStoppedLeading: func() {
@@ -295,7 +296,7 @@ func Run(ctx context.Context, cc *schedulerserverconfig.CompletedConfig, sched *
 
 	// Leader election is disabled, so runCommand inline until done.
 	close(waitingForLeader)
-	go extenderFactory.Run()
+	extenderFactory.Run(ctx)
 	RunWorkflow(ctx, sched, customWorkflow)
 	gracefulShutdownSecureServer()
 	return fmt.Errorf("finished without leader elect")
@@ -395,12 +396,15 @@ func Setup(ctx context.Context, opts *options.Options, outOfTreeRegistryOptions 
 
 	metrics.Register()
 
+	networkTopologyManager := networktopology.NewTreeManager(cc.KoordinatorSharedInformerFactory, cc.InformerFactory, cc.KoordinatorClient)
+
 	// NOTE(joseph): K8s scheduling framework does not provide extension point for initialization.
 	// Currently, only by copying the initialization code and implementing custom initialization.
 	frameworkExtenderFactory, err := frameworkext.NewFrameworkExtenderFactory(
 		frameworkext.WithServicesEngine(cc.ServicesEngine),
 		frameworkext.WithKoordinatorClientSet(cc.KoordinatorClient),
 		frameworkext.WithKoordinatorSharedInformerFactory(cc.KoordinatorSharedInformerFactory),
+		frameworkext.WithNetworkTopologyManager(networkTopologyManager),
 	)
 	if err != nil {
 		return nil, nil, nil, nil, err
