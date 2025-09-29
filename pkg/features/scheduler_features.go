@@ -88,6 +88,12 @@ const (
 	// CleanExpiredReservationAllocated is used to clean expired reservation allocated annotations of pods.
 	CleanExpiredReservationAllocated featuregate.Feature = "CleanExpiredReservationAllocated"
 
+	// owner: @saintube @ZiMengSheng
+	// alpha: v1.7
+	//
+	// DynamicSchedulerCheck is used to check the scheduler name when a pod or a reservation can change it dynamically.
+	DynamicSchedulerCheck featuregate.Feature = "DynamicSchedulerCheck"
+
 	CSIStorageCapacity featuregate.Feature = "CSIStorageCapacity"
 
 	GenericEphemeralVolume featuregate.Feature = "GenericEphemeralVolume"
@@ -113,7 +119,8 @@ var defaultSchedulerFeatureGates = map[featuregate.Feature]featuregate.FeatureSp
 	SkipReservationFitsNode:                   {Default: false, PreRelease: featuregate.Alpha},
 	DevicePluginAdaption:                      {Default: false, PreRelease: featuregate.Alpha},
 	CleanExpiredReservationAllocated:          {Default: false, PreRelease: featuregate.Alpha},
-	CSIStorageCapacity:                        {Default: true, PreRelease: featuregate.GA}, // remove in 1.26
+	DynamicSchedulerCheck:                     {Default: true, PreRelease: featuregate.Alpha}, // enabled by default
+	CSIStorageCapacity:                        {Default: true, PreRelease: featuregate.GA},    // remove in 1.26
 	GenericEphemeralVolume:                    {Default: true, PreRelease: featuregate.GA},
 	PodDisruptionBudget:                       {Default: true, PreRelease: featuregate.GA},
 }

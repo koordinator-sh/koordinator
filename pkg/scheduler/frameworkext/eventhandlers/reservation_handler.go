@@ -27,6 +27,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	k8sfeature "k8s.io/apiserver/pkg/util/feature"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
@@ -41,6 +42,7 @@ import (
 	koordclientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
 	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
 	schedulingv1alpha1lister "github.com/koordinator-sh/koordinator/pkg/client/listers/scheduling/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
@@ -263,13 +265,16 @@ func handleReservationSchedulingFailure(sched *scheduler.Scheduler,
 			return
 		}
 
-		// The scheduler name of a reservation can change in-flight, so we need to double-check if the scheduler
-		// is not matched anymore. If unmatched, we should abort the failure handling to avoid applying a
-		// failure state with another scheduler concurrently.
-		if !isResponsibleForReservation(sched.Profiles, cachedR) {
-			klog.InfoS("Reservation doesn't belong to this scheduler, abort the failure handling",
-				"pod", klog.KObj(pod), "reservation", rName, "schedulerName", reservationutil.GetReservationSchedulerName(cachedR))
-			return
+		if k8sfeature.DefaultFeatureGate.Enabled(features.DynamicSchedulerCheck) {
+			// The scheduler name of a reservation can change in-flight, so we need to double-check if the scheduler
+			// is not matched anymore. If unmatched, we should abort the failure handling to avoid applying a
+			// failure state with another scheduler concurrently.
+			// TODO: Add same check for pods
+			if !isResponsibleForReservation(sched.Profiles, cachedR) {
+				klog.InfoS("Reservation doesn't belong to this scheduler, abort the failure handling",
+					"pod", klog.KObj(pod), "reservation", rName, "schedulerName", reservationutil.GetReservationSchedulerName(cachedR))
+				return
+			}
 		}
 
 		// In the case of extender, the pod may have been bound successfully, but timed out returning its response to the scheduler.
