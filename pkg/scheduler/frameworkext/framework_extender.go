@@ -23,6 +23,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	k8sfeature "k8s.io/apiserver/pkg/util/feature"
 	listerscorev1 "k8s.io/client-go/listers/core/v1"
 	"k8s.io/klog/v2"
 	schedconfig "k8s.io/kubernetes/pkg/scheduler/apis/config"
@@ -33,6 +34,7 @@ import (
 	koordinatorclientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
 	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
 	listerschedulingv1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/listers/scheduling/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/schedulingphase"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/topologymanager"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
@@ -73,6 +75,7 @@ type frameworkExtenderImpl struct {
 	reservationRestorePlugins              []ReservationRestorePlugin
 	reservationPreAllocationRestorePlugins []ReservationPreAllocationRestorePlugin
 
+	allocatePlugins          []AllocatePlugin
 	resizePodPlugins         []ResizePodPlugin
 	preBindExtensionsPlugins map[string]PreBindExtensions
 
@@ -155,6 +158,9 @@ func (ext *frameworkExtenderImpl) updatePlugins(pl framework.Plugin) {
 	}
 	if r, ok := pl.(ReservationPreAllocationRestorePlugin); ok {
 		ext.reservationPreAllocationRestorePlugins = append(ext.reservationPreAllocationRestorePlugins, r)
+	}
+	if r, ok := pl.(AllocatePlugin); ok {
+		ext.allocatePlugins = append(ext.allocatePlugins, r)
 	}
 	if r, ok := pl.(ResizePodPlugin); ok {
 		ext.resizePodPlugins = append(ext.resizePodPlugins, r)
@@ -327,14 +333,16 @@ func (ext *frameworkExtenderImpl) RunPostFilterPlugins(ctx context.Context, stat
 // RunPreBindPlugins supports PreBindReservation for Reservation
 func (ext *frameworkExtenderImpl) RunPreBindPlugins(ctx context.Context, state *framework.CycleState, pod *corev1.Pod, nodeName string) *framework.Status {
 	if !reservationutil.IsReservePod(pod) {
-		curPod, err := ext.podLister.Pods(pod.Namespace).Get(pod.Name)
-		if err != nil {
-			return framework.AsStatus(err)
-		}
-		if curPod.Spec.SchedulerName != ext.ProfileName() {
-			klog.V(4).ErrorS(ErrSchedulerNameUnmatched, "failed to PreBind Pod",
-				"pod", klog.KObj(pod), "schedulerName", curPod.Spec.SchedulerName, "profile", ext.ProfileName())
-			return framework.AsStatus(ErrSchedulerNameUnmatched)
+		if k8sfeature.DefaultFeatureGate.Enabled(features.DynamicSchedulerCheck) {
+			curPod, err := ext.podLister.Pods(pod.Namespace).Get(pod.Name)
+			if err != nil {
+				return framework.AsStatus(err)
+			}
+			if curPod.Spec.SchedulerName != ext.ProfileName() {
+				klog.V(4).ErrorS(ErrSchedulerNameUnmatched, "failed to PreBind Pod",
+					"pod", klog.KObj(pod), "schedulerName", curPod.Spec.SchedulerName, "profile", ext.ProfileName())
+				return framework.AsStatus(ErrSchedulerNameUnmatched)
+			}
 		}
 
 		original := pod
@@ -351,11 +359,13 @@ func (ext *frameworkExtenderImpl) RunPreBindPlugins(ctx context.Context, state *
 	if err != nil {
 		return framework.AsStatus(err)
 	}
-	// check if schedulerName matched
-	if reservationutil.GetReservationSchedulerName(reservation) != ext.ProfileName() {
-		klog.V(4).ErrorS(ErrSchedulerNameUnmatched, "failed to PreBind Reservation",
-			"reservation", klog.KObj(reservation), "schedulerName", reservationutil.GetReservationSchedulerName(reservation), "profile", ext.ProfileName())
-		return framework.AsStatus(ErrSchedulerNameUnmatched)
+	if k8sfeature.DefaultFeatureGate.Enabled(features.DynamicSchedulerCheck) {
+		// check if schedulerName matched
+		if reservationutil.GetReservationSchedulerName(reservation) != ext.ProfileName() {
+			klog.V(4).ErrorS(ErrSchedulerNameUnmatched, "failed to PreBind Reservation",
+				"reservation", klog.KObj(reservation), "schedulerName", reservationutil.GetReservationSchedulerName(reservation), "profile", ext.ProfileName())
+			return framework.AsStatus(ErrSchedulerNameUnmatched)
+		}
 	}
 
 	original := reservation
@@ -643,6 +653,18 @@ func (ext *frameworkExtenderImpl) RunReservePluginsReserve(ctx context.Context, 
 		reservationNominator.DeleteNominatedReservePodOrReservation(pod)
 	}
 	return status
+}
+
+func (ext *frameworkExtenderImpl) RunAllocatePlugins(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeInfo *framework.NodeInfo) *framework.Status {
+	for _, pl := range ext.allocatePlugins {
+		startTime := time.Now()
+		status := pl.Allocate(ctx, cycleState, pod, nodeInfo)
+		ext.metricsRecorder.ObservePluginDurationAsync("Allocate", pl.Name(), status.Code().String(), metrics.SinceInSeconds(startTime))
+		if !status.IsSuccess() {
+			return status
+		}
+	}
+	return nil
 }
 
 func (ext *frameworkExtenderImpl) RunResizePod(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) *framework.Status {

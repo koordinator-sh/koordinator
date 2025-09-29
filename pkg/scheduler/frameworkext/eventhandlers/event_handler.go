@@ -18,6 +18,7 @@ package eventhandlers
 
 import (
 	corev1 "k8s.io/api/core/v1"
+	k8sfeature "k8s.io/apiserver/pkg/util/feature"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
@@ -25,6 +26,7 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/profile"
 
 	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
+	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 )
 
@@ -34,15 +36,17 @@ import (
 // - Pod and reservation event handlers for multi-scheduler clean up.
 func AddScheduleEventHandler(sched *scheduler.Scheduler, schedAdapter frameworkext.Scheduler, informerFactory informers.SharedInformerFactory, koordSharedInformerFactory koordinatorinformers.SharedInformerFactory) {
 	podInformer := informerFactory.Core().V1().Pods().Informer()
-	// Clean up irresponsible pods for scheduling queue
-	_, err := podInformer.AddEventHandler(irresponsibleUnscheduledPodEventHandler(sched, schedAdapter))
-	if err != nil {
-		klog.Fatalf("failed to add irresponsible pod handler for SchedulingQueue, err: %s", err)
+	if k8sfeature.DefaultFeatureGate.Enabled(features.DynamicSchedulerCheck) {
+		// Clean up irresponsible pods for scheduling queue
+		_, err := podInformer.AddEventHandler(irresponsibleUnscheduledPodEventHandler(sched, schedAdapter))
+		if err != nil {
+			klog.Fatalf("failed to add irresponsible pod handler for SchedulingQueue, err: %s", err)
+		}
 	}
 
 	reservationInformer := koordSharedInformerFactory.Scheduling().V1alpha1().Reservations().Informer()
 	// scheduled reservations for pod cache
-	_, err = reservationInformer.AddEventHandler(scheduledReservationEventHandler(sched, schedAdapter))
+	_, err := reservationInformer.AddEventHandler(scheduledReservationEventHandler(sched, schedAdapter))
 	if err != nil {
 		klog.Fatalf("failed to add scheduled reservation handler for SchedulerCache, err: %s", err)
 	}
@@ -51,10 +55,12 @@ func AddScheduleEventHandler(sched *scheduler.Scheduler, schedAdapter frameworke
 	if err != nil {
 		klog.Fatalf("failed to add unscheduled reservation handler for SchedulingQueue, err: %s", err)
 	}
-	// Clean up irresponsible reservations for scheduling queue
-	_, err = reservationInformer.AddEventHandler(irresponsibleUnscheduledReservationEventHandler(sched, schedAdapter))
-	if err != nil {
-		klog.Fatalf("failed to add irresponsible reservation handler for SchedulingQueue, err: %s", err)
+	if k8sfeature.DefaultFeatureGate.Enabled(features.DynamicSchedulerCheck) {
+		// Clean up irresponsible reservations for scheduling queue
+		_, err = reservationInformer.AddEventHandler(irresponsibleUnscheduledReservationEventHandler(sched, schedAdapter))
+		if err != nil {
+			klog.Fatalf("failed to add irresponsible reservation handler for SchedulingQueue, err: %s", err)
+		}
 	}
 }
 
