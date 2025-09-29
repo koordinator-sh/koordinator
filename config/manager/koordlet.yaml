@@ -84,6 +84,7 @@ spec:
             - mountPath: /var/lib/kubelet
               name: host-kubelet-rootdir
               readOnly: true
+              mountPropagation: HostToContainer
             - mountPath: /dev
               name: host-dev
               mountPropagation: HostToContainer
