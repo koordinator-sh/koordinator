@@ -15,7 +15,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target: [ koordlet, koord-manager, koord-scheduler, koord-descheduler ]
+        target: [ koordlet, koord-manager, koord-scheduler, koord-descheduler, koord-device-daemon ]
     env:
       GITHUB_REG: ghcr.io
       ALIYUN_BJ_REG: registry.cn-beijing.aliyuncs.com
