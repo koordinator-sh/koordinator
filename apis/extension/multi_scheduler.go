@@ -17,6 +17,8 @@ limitations under the License.
 package extension
 
 import (
+	"encoding/json"
+
 	corev1 "k8s.io/api/core/v1"
 )
 
@@ -30,4 +32,30 @@ func GetSchedulerName(pod *corev1.Pod) string {
 		return schedulerName
 	}
 	return pod.Spec.SchedulerName
+}
+
+type SchedulingHint struct {
+	NodeNames  []string               `json:"nodeName,omitempty"`
+	Extensions map[string]interface{} `json:"extensions,omitempty"`
+}
+
+const (
+	// AnnotationSchedulingHint is used to specify a scheduling hint for the pod.
+	// Each plugin can decide whether to use this hint or not.
+	AnnotationSchedulingHint = SchedulingDomainPrefix + "/scheduling-hint"
+)
+
+func GetSchedulingHint(pod *corev1.Pod) (*SchedulingHint, error) {
+	if pod == nil {
+		return nil, nil
+	}
+	hintStr, ok := pod.Annotations[AnnotationSchedulingHint]
+	if !ok {
+		return nil, nil
+	}
+	hint := &SchedulingHint{}
+	if err := json.Unmarshal([]byte(hintStr), hint); err != nil {
+		return nil, err
+	}
+	return hint, nil
 }
