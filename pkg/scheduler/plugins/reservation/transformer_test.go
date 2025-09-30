@@ -20,8 +20,6 @@ import (
 	"context"
 	"testing"
 
-	schedulertesting "k8s.io/kubernetes/pkg/scheduler/testing"
-
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
@@ -31,6 +29,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
+	schedulertesting "k8s.io/kubernetes/pkg/scheduler/testing"
 	"k8s.io/utils/pointer"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
