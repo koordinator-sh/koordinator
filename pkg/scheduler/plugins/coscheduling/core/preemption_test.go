@@ -1432,6 +1432,7 @@ func Test_preemptionEvaluatorImpl_preempt(t *testing.T) {
 					"default/pending-pod-1": "node-1",
 					"default/pending-pod-2": "node-1",
 				},
+				SchedulingMode: frameworkext.PodSchedulingMode,
 			},
 			wantPreemptMessage: "preemption already attempted by default/pending-pod-1 with message preempt success, alreadyWaitingForBound: 0/2",
 			wantResult:         framework.NewPostFilterResultWithNominatedNode("node-1"),
@@ -1675,6 +1676,7 @@ func Test_preemptionEvaluatorImpl_preempt(t *testing.T) {
 				PodToNominatedNode: map[string]string{
 					"default/pending-pod-1": "node-1",
 				},
+				SchedulingMode: frameworkext.PodSchedulingMode,
 			},
 			wantPreemptMessage: "preemption already attempted by default/pending-pod-1 with message preempt success, alreadyWaitingForBound: 1/2",
 			wantResult:         framework.NewPostFilterResultWithNominatedNode("node-1"),
@@ -1774,7 +1776,7 @@ func Test_preemptionEvaluatorImpl_preempt(t *testing.T) {
 				_, _ = extendedFramework.ClientSet().CoreV1().Pods(pod.Namespace).Create(context.TODO(), pod, metav1.CreateOptions{})
 			}
 
-			ev := NewPreemptionEvaluator(extendedFramework, gangCache, gangSchedulingContextHolder).(*preemptionEvaluatorImpl)
+			ev := NewPreemptionEvaluator(extendedFramework, gangCache, gangSchedulingContextHolder, nil).(*preemptionEvaluatorImpl)
 			preemptionState := &JobPreemptionState{
 				TerminatingPodOnNominatedNode: map[string]string{},
 				ClearNominatedNodeFailedMsg:   map[string]string{},
@@ -1855,6 +1857,7 @@ func Test_preemptionEvaluatorImpl_preempt(t *testing.T) {
 				assert.True(t, errors.IsNotFound(err))
 			}
 			preemptionState.victims = nil
+			preemptionState.gangSchedulingContext = nil
 			assert.Equal(t, tt.wantPreemptionState, preemptionState)
 			if tt.gangSchedulingContext != nil {
 				assert.Equal(t, tt.wantPreemptMessage, tt.gangSchedulingContext.preemptionMessage)
@@ -1961,8 +1964,7 @@ func TestJobPreemptionState_addMoreDetailForStateToMarshal(t *testing.T) {
 					},
 				},
 			},
-			wantJSONStr: `{"TriggerPodKey":"triggerPodKey","preemptorKey":"preemptorKey","reason":"failedMessage","message":"message","terminatingPodOnNominatedNode":{"node1":"pod1"},"durationOfNodeInfoClone":"0s","durationOfCycleStateClone":"0s","durationOfRemovePossibleVictims":"0s","podToNominatedNode":{"pendingPod1":"node1","waitingPod1":"node2"},"durationOfPlaceToSchedulePods":"0s","durationOfSelectVictimsOnNode":"0s","durationOfPrepareCandidates":"0s","clearNominatedNodeFailedMsg":{"node1":"clearNominatedNodeFailedMsg1"},"durationOfMakeNomination":"0s","durationOfCancelNomination":"0s","possibleVictims":[{"nodeName":"node1","possibleVictims":[{"namespace":"default","name":"pendingPod1"}]}],"unschedulablePodsNumber":1,"nodeFailedDetail":[{"nodeName":"node1","reason":"unschedulable"},{"nodeName":"node2","reason":"unschedulable"}],"selectVictimError":"selectVictimError","victims":[{"nodeName":"node1","possibleVictims":[{"namespace":"default","name":"pendingPod1"}]}]}`,
-		},
+			wantJSONStr: `{"TriggerPodKey":"triggerPodKey","preemptorKey":"preemptorKey","reason":"failedMessage","message":"message","terminatingPodOnNominatedNode":{"node1":"pod1"},"durationOfNodeInfoClone":"0s","durationOfCycleStateClone":"0s","durationOfRemovePossibleVictims":"0s","podToNominatedNode":{"pendingPod1":"node1","waitingPod1":"node2"},"durationOfPlaceToSchedulePods":"0s","durationOfSelectVictimsOnNode":"0s","durationOfPrepareCandidates":"0s","clearNominatedNodeFailedMsg":{"node1":"clearNominatedNodeFailedMsg1"},"durationOfMakeNomination":"0s","durationOfCancelNomination":"0s","SchedulingMode":"","NodeToOfferSlot":null,"possibleVictims":[{"nodeName":"node1","possibleVictims":[{"namespace":"default","name":"pendingPod1"}]}],"unschedulablePodsNumber":1,"nodeFailedDetail":[{"nodeName":"node1","reason":"unschedulable"},{"nodeName":"node2","reason":"unschedulable"}],"selectVictimError":"selectVictimError","victims":[{"nodeName":"node1","possibleVictims":[{"namespace":"default","name":"pendingPod1"}]}]}`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

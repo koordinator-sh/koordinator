@@ -55,6 +55,7 @@ require (
 	k8s.io/component-base v0.28.7
 	k8s.io/component-helpers v0.28.7
 	k8s.io/cri-api v0.28.7
+	k8s.io/klog v1.0.0
 	k8s.io/klog/v2 v2.100.1
 	k8s.io/kube-scheduler v0.28.7
 	k8s.io/kubectl v0.28.7

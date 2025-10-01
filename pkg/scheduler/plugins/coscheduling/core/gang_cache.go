@@ -334,6 +334,18 @@ func (gangCache *GangCache) getPendingPods(gangGroup []string) []*v1.Pod {
 	return pendingPods
 }
 
+func (gangCache *GangCache) getPendingPodsNum(gangGroup []string) int {
+	pendingPodsNum := 0
+	for _, gangID := range gangGroup {
+		gang := gangCache.getGangFromCacheByGangId(gangID, false)
+		if gang == nil {
+			continue
+		}
+		pendingPodsNum += gang.getPendingChildrenNum()
+	}
+	return pendingPodsNum
+}
+
 func (gangCache *GangCache) getWaitingPods(gangGroup []string) []*v1.Pod {
 	var waitingPods []*v1.Pod
 	for _, gangID := range gangGroup {
