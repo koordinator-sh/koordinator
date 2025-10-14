@@ -95,6 +95,100 @@ func Test_sortDeviceResourcesByMinor(t *testing.T) {
 	}
 }
 
+func Test_sortDeviceResourcesByPreferredPCIe(t *testing.T) {
+	tests := []struct {
+		name          string
+		resources     []deviceResourceMinorPair
+		preferredPCIe sets.String
+		deviceInfos   map[int]*schedulingv1alpha1.DeviceInfo
+		expectOrders  []int
+	}{
+		{
+			name: "without preferred pcie",
+			resources: []deviceResourceMinorPair{
+				{minor: 0},
+				{minor: 1},
+				{minor: 2},
+				{minor: 3},
+			},
+			expectOrders: []int{0, 1, 2, 3},
+		},
+		{
+			name: "with preferred pcie",
+			resources: []deviceResourceMinorPair{
+				{minor: 0},
+				{minor: 1},
+				{minor: 2},
+				{minor: 3},
+				{minor: 4},
+				{minor: 5},
+				{minor: 6},
+				{minor: 7},
+			},
+			preferredPCIe: sets.NewString("0", "1"),
+			deviceInfos: map[int]*schedulingv1alpha1.DeviceInfo{
+				1: {Topology: &schedulingv1alpha1.DeviceTopology{PCIEID: "0"}},
+				2: {Topology: &schedulingv1alpha1.DeviceTopology{PCIEID: "0"}},
+				5: {Topology: &schedulingv1alpha1.DeviceTopology{PCIEID: "1"}},
+				6: {Topology: &schedulingv1alpha1.DeviceTopology{PCIEID: "1"}},
+			},
+			expectOrders: []int{1, 5, 2, 6, 0, 3, 4, 7},
+		},
+		{
+			name: "with preferred pcie and score",
+			resources: []deviceResourceMinorPair{
+				{minor: 0},
+				{minor: 1},
+				{minor: 2},
+				{minor: 3},
+				{minor: 4},
+				{minor: 5, score: 10},
+				{minor: 6, score: 50},
+				{minor: 7},
+			},
+			preferredPCIe: sets.NewString("0", "1"),
+			deviceInfos: map[int]*schedulingv1alpha1.DeviceInfo{
+				1: {Topology: &schedulingv1alpha1.DeviceTopology{PCIEID: "0"}},
+				2: {Topology: &schedulingv1alpha1.DeviceTopology{PCIEID: "0"}},
+				5: {Topology: &schedulingv1alpha1.DeviceTopology{PCIEID: "1"}},
+				6: {Topology: &schedulingv1alpha1.DeviceTopology{PCIEID: "1"}},
+			},
+			expectOrders: []int{6, 1, 5, 2, 0, 3, 4, 7},
+		},
+		{
+			name: "with preferred pcie and same score",
+			resources: []deviceResourceMinorPair{
+				{minor: 0},
+				{minor: 1},
+				{minor: 2},
+				{minor: 3},
+				{minor: 4},
+				{minor: 5, score: 10},
+				{minor: 6, score: 10},
+				{minor: 7},
+			},
+			preferredPCIe: sets.NewString("0", "1"),
+			deviceInfos: map[int]*schedulingv1alpha1.DeviceInfo{
+				1: {Topology: &schedulingv1alpha1.DeviceTopology{PCIEID: "0"}},
+				2: {Topology: &schedulingv1alpha1.DeviceTopology{PCIEID: "0"}},
+				5: {Topology: &schedulingv1alpha1.DeviceTopology{PCIEID: "1"}},
+				6: {Topology: &schedulingv1alpha1.DeviceTopology{PCIEID: "1"}},
+			},
+			expectOrders: []int{5, 1, 6, 2, 0, 3, 4, 7},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := sortDeviceResourcesByPreferredPCIe(tt.resources, tt.preferredPCIe, tt.deviceInfos)
+			var orders []int
+			for _, v := range got {
+				orders = append(orders, v.minor)
+			}
+			assert.Equal(t, tt.expectOrders, orders)
+		})
+	}
+}
+
 func Test_appendAllocatedByHints(t *testing.T) {
 	tests := []struct {
 		name      string
