@@ -53,11 +53,12 @@ type Gang struct {
 	CreateTime time.Time
 
 	// strict-mode or non-strict-mode
-	Mode              string
-	MinRequiredNumber int
-	TotalChildrenNum  int
-	GangGroupId       string
-	GangGroup         []string
+	Mode                string
+	MinRequiredNumber   int
+	TotalChildrenNum    int
+	GangGroupId         string
+	GangGroup           []string
+	NetworkTopologySpec *extension.NetworkTopologySpec
 
 	GangGroupInfo *GangGroupInfo
 
@@ -114,8 +115,8 @@ func (gang *Gang) tryInitByPodConfig(pod *v1.Pod, args *config.CoschedulingArgs)
 
 	totalChildrenNum, err := strconv.ParseInt(pod.Annotations[extension.AnnotationGangTotalNum], 10, 32)
 	if err != nil {
-		klog.V(4).ErrorS(err, "pod's annotation totalNumber illegal, gangName: %v, value: %v",
-			gang.Name, pod.Annotations[extension.AnnotationGangTotalNum])
+		klog.V(4).ErrorS(err, "pod's annotation totalNumber illegal",
+			"gangName", gang.Name, "value", pod.Annotations[extension.AnnotationGangTotalNum])
 		totalChildrenNum = int64(minRequiredNumber)
 	} else if totalChildrenNum != 0 && totalChildrenNum < int64(minRequiredNumber) {
 
@@ -147,24 +148,29 @@ func (gang *Gang) tryInitByPodConfig(pod *v1.Pod, args *config.CoschedulingArgs)
 
 	waitTime, err := time.ParseDuration(pod.Annotations[extension.AnnotationGangWaitTime])
 	if err != nil || waitTime <= 0 {
-		klog.V(4).ErrorS(err, "pod's annotation GangWaitTimeAnnotation illegal, gangName: %v, value: %v",
-			gang.Name, pod.Annotations[extension.AnnotationGangWaitTime])
+		klog.V(4).ErrorS(err, "pod's annotation GangWaitTimeAnnotation illegal",
+			"gangName", gang.Name, "value", pod.Annotations[extension.AnnotationGangWaitTime])
 		waitTime = args.DefaultTimeout.Duration
 	}
 	gang.WaitTime = waitTime
 
 	groupSlice, err := util.StringToGangGroupSlice(pod.Annotations[extension.AnnotationGangGroups])
 	if err != nil {
-		klog.V(4).ErrorS(err, "pod's annotation GangGroupsAnnotation illegal, gangName: %v, value: %v",
-			gang.Name, pod.Annotations[extension.AnnotationGangGroups])
+		klog.V(4).ErrorS(err, "pod's annotation GangGroupsAnnotation illegal",
+			"gangName", gang.Name, "value", pod.Annotations[extension.AnnotationGangGroups])
 	}
 	if len(groupSlice) == 0 {
 		groupSlice = append(groupSlice, gang.Name)
 	}
 	gang.GangGroup = groupSlice
 	gang.GangGroupId = util.GetGangGroupId(groupSlice)
-	gang.GangFrom = GangFromPodAnnotation
 
+	gang.NetworkTopologySpec, err = extension.GetNetworkTopologySpec(pod)
+	if err != nil {
+		klog.V(4).ErrorS(err, "pod's annotation AnnotationGangNetworkTopologySpec illegal",
+			"gangName", gang.Name, "value", pod.Annotations[extension.AnnotationGangNetworkTopologySpec])
+	}
+	gang.GangFrom = GangFromPodAnnotation
 	gang.HasGangInit = true
 
 	klog.Infof("TryInitByPodConfig done, gangName: %v, minRequiredNumber: %v, totalChildrenNum: %v, "+
@@ -225,8 +231,13 @@ func (gang *Gang) tryInitByPodGroup(pg *v1alpha1.PodGroup, args *config.Coschedu
 	gang.GangGroup = groupSlice
 	gang.GangGroupId = util.GetGangGroupId(groupSlice)
 
-	gang.GangFrom = GangFromPodGroupCrd
+	gang.NetworkTopologySpec, err = extension.GetNetworkTopologySpec(pg)
+	if err != nil {
+		klog.V(4).ErrorS(err, "podGroup's annotation AnnotationGangNetworkTopologySpec illegal",
+			"gangName", gang.Name, "value", pg.Annotations[extension.AnnotationGangNetworkTopologySpec])
+	}
 
+	gang.GangFrom = GangFromPodGroupCrd
 	gang.HasGangInit = true
 
 	klog.Infof("TryInitByPodGroup done, gangName: %v, minRequiredNumber: %v, totalChildrenNum: %v, "+
@@ -285,6 +296,13 @@ func (gang *Gang) getChildrenNum() int {
 	defer gang.lock.RUnlock()
 
 	return len(gang.Children)
+}
+
+func (gang *Gang) getPendingChildrenNum() int {
+	gang.lock.RLock()
+	defer gang.lock.RUnlock()
+
+	return len(gang.PendingChildren)
 }
 
 func (gang *Gang) getGangMinNum() int {

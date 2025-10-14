@@ -271,6 +271,9 @@ type CoschedulingArgs struct {
 	// EnablePreemption indicates whether to enable preemption for coscheduling.
 	// default is false
 	EnablePreemption *bool `json:"enablePreemption,omitempty"`
+	// AwareNetworkTopology indicates whether to make coscheduling network topology aware.
+	// default is false
+	AwareNetworkTopology *bool `json:"awareNetworkTopology,omitempty"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object

@@ -40,17 +40,25 @@ import (
 	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
 	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/indexer"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/networktopology"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/services"
 	koordschedulermetrics "github.com/koordinator-sh/koordinator/pkg/scheduler/metrics"
+)
+
+var (
+	EnableNetworkTopologyManager = false
 )
 
 func AddFlags(fs *pflag.FlagSet) {
 	fs.IntVarP(&debugTopNScores, "debug-scores", "s", debugTopNScores, "logging topN nodes score and scores for each plugin after running the score extension, disable if set to 0")
 	fs.BoolVarP(&debugFilterFailure, "debug-filters", "f", debugFilterFailure, "logging filter failures")
+	fs.BoolVarP(&dumpDiagnosis, "debug-diagnosis", "d", dumpDiagnosis, "logging scheduling diagnosis info for debugging")
+	fs.BoolVarP(&dumpDiagnosisBlocking, "debug-diagnosis-blocking", "", dumpDiagnosisBlocking, "logging diagnosis info for debugging, including blocking next scheduling cycle")
 	fs.StringSliceVar(&ControllerPlugins, "controller-plugins", ControllerPlugins, "A list of Controller plugins to enable. "+
 		"'-controller-plugins=*' enables all controller plugins. "+
 		"'-controller-plugins=Reservation' means only the controller plugin 'Reservation' is enabled. "+
 		"'-controller-plugins=*,-Reservation' means all controller plugins except the 'Reservation' plugin are enabled.")
+	fs.BoolVarP(&EnableNetworkTopologyManager, "enable-network-topology-manager", "", EnableNetworkTopologyManager, "enable network topology manager")
 }
 
 type extendedHandleOptions struct {
@@ -58,6 +66,7 @@ type extendedHandleOptions struct {
 	koordinatorClientSet             koordinatorclientset.Interface
 	koordinatorSharedInformerFactory koordinatorinformers.SharedInformerFactory
 	reservationNominator             ReservationNominator
+	networkTopologyManager           networktopology.TreeManager
 }
 
 type Option func(*extendedHandleOptions)
@@ -86,6 +95,12 @@ func WithReservationNominator(nominator ReservationNominator) Option {
 	}
 }
 
+func WithNetworkTopologyManager(manager networktopology.TreeManager) Option {
+	return func(options *extendedHandleOptions) {
+		options.networkTopologyManager = manager
+	}
+}
+
 type FrameworkExtenderFactory struct {
 	controllerMaps                   *ControllersMap
 	servicesEngine                   *services.Engine
@@ -98,6 +113,8 @@ type FrameworkExtenderFactory struct {
 	scheduler                        Scheduler
 	schedulePod                      func(ctx context.Context, fwk framework.Framework, state *framework.CycleState, pod *corev1.Pod) (scheduler.ScheduleResult, error)
 	*errorHandlerDispatcher
+
+	networkTopologyTreeManager networktopology.TreeManager
 
 	metricsRecorder *metrics.MetricAsyncRecorder
 }
@@ -121,6 +138,7 @@ func NewFrameworkExtenderFactory(options ...Option) (*FrameworkExtenderFactory, 
 		profiles:                         map[string]FrameworkExtender{},
 		monitor:                          NewSchedulerMonitor(schedulerMonitorPeriod, schedulingTimeout),
 		errorHandlerDispatcher:           newErrorHandlerDispatcher(),
+		networkTopologyTreeManager:       handleOptions.networkTopologyManager,
 		metricsRecorder:                  metrics.NewMetricsAsyncRecorder(1000, time.Second, wait.NeverStop),
 	}, nil
 }
@@ -334,8 +352,11 @@ func (f *FrameworkExtenderFactory) InterceptSchedulerError(sched *scheduler.Sche
 	}
 }
 
-func (f *FrameworkExtenderFactory) Run() {
+func (f *FrameworkExtenderFactory) Run(ctx context.Context) {
 	f.controllerMaps.Start()
+	if EnableNetworkTopologyManager {
+		f.networkTopologyTreeManager.Run(ctx)
+	}
 }
 
 func (f *FrameworkExtenderFactory) updatePlugins(pl framework.Plugin) {

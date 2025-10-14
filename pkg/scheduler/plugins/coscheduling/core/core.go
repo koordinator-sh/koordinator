@@ -61,9 +61,11 @@ const (
 // Manager defines the interfaces for PodGroup management.
 type Manager interface {
 	NextPod() *corev1.Pod
+	FindOneNode(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, result *framework.PreFilterResult) (string, *framework.Status)
 	SucceedGangScheduling()
 	PreEnqueue(context.Context, *corev1.Pod) (err error)
-	PreFilter(context.Context, *framework.CycleState, *corev1.Pod) (err error)
+	BeforePreFilter(context.Context, *framework.CycleState, *corev1.Pod) (err error)
+	PreFilter(ctx context.Context, state *framework.CycleState, pod *corev1.Pod) (*framework.PreFilterResult, *framework.Status)
 	Permit(context.Context, *corev1.Pod) (time.Duration, Status)
 	PostBind(context.Context, *corev1.Pod, string)
 	PostFilter(ctx context.Context, state *framework.CycleState, pod *corev1.Pod, m framework.NodeToStatusMap) (*framework.PostFilterResult, *framework.Status)
@@ -89,9 +91,10 @@ type PodGroupManager struct {
 	// podLister is pod lister
 	podLister listerv1.PodLister
 	// cache stores gang info
-	cache               *GangCache
-	holder              GangSchedulingContextHolder
-	preemptionEvaluator PreemptionEvaluator
+	cache                 *GangCache
+	holder                GangSchedulingContextHolder
+	preemptionEvaluator   PreemptionEvaluator
+	networkTopologySolver NetworkTopologySolver
 }
 
 // NewPodGroupManager creates a new operation object.
@@ -114,7 +117,10 @@ func NewPodGroupManager(
 		podLister: podInformer.Lister(),
 		cache:     gangCache,
 	}
-	pgMgr.preemptionEvaluator = NewPreemptionEvaluator(handle, gangCache, &pgMgr.holder)
+	if handle != nil {
+		pgMgr.networkTopologySolver = NewNetworkTopologySolver(handle)
+	}
+	pgMgr.preemptionEvaluator = NewPreemptionEvaluator(handle, gangCache, &pgMgr.holder, pgMgr.networkTopologySolver)
 
 	podGroupEventHandler := cache.ResourceEventHandlerFuncs{
 		AddFunc:    gangCache.onPodGroupAdd,
@@ -230,16 +236,16 @@ func (pgMgr *PodGroupManager) basicGangRequirementsCheck(gang *Gang, pod *corev1
 	gangGroup := gang.getGangGroup()
 	var gangsOfMinNumUnSatisfied, gangsOfGangIsNil, gangsOfGangNotInit []string
 	for _, gangID := range gangGroup {
-		gangTmp := pgMgr.cache.getGangFromCacheByGangId(gangID, false)
-		if gangTmp == nil {
+		memberGang := pgMgr.cache.getGangFromCacheByGangId(gangID, false)
+		if memberGang == nil {
 			gangsOfGangIsNil = append(gangsOfGangIsNil, gangID)
 			continue
 		}
-		if !gangTmp.HasGangInit {
+		if !memberGang.HasGangInit {
 			gangsOfGangNotInit = append(gangsOfGangNotInit, gangID)
 			continue
 		}
-		if gang.getChildrenNum() < gang.getGangMinNum() {
+		if memberGang.getChildrenNum() < memberGang.getGangMinNum() {
 			gangsOfMinNumUnSatisfied = append(gangsOfMinNumUnSatisfied, gangID)
 			continue
 		}
@@ -265,7 +271,7 @@ func (pgMgr *PodGroupManager) basicGangRequirementsCheck(gang *Gang, pod *corev1
 	return nil
 }
 
-func (pgMgr *PodGroupManager) PreFilter(ctx context.Context, _ *framework.CycleState, pod *corev1.Pod) (err error) {
+func (pgMgr *PodGroupManager) BeforePreFilter(ctx context.Context, _ *framework.CycleState, pod *corev1.Pod) (err error) {
 	if !util.IsPodNeedGang(pod) {
 		return nil
 	}
@@ -290,7 +296,18 @@ func (pgMgr *PodGroupManager) PreFilter(ctx context.Context, _ *framework.CycleS
 	}
 	gangSchedulingContext := pgMgr.holder.getCurrentGangSchedulingContext()
 	if gangSchedulingContext == nil {
-		gangSchedulingContext = &GangSchedulingContext{firstPod: pod, gangGroup: sets.New[string](gang.GangGroup...), gangGroupID: gang.GangGroupId}
+		gangSchedulingContext = &GangSchedulingContext{
+			firstPod:            pod,
+			gangGroup:           sets.New[string](gang.GangGroup...),
+			gangGroupID:         gang.GangGroupId,
+			networkTopologySpec: gang.NetworkTopologySpec,
+		}
+		if gangSchedulingContext.networkTopologySpec != nil {
+			gangSchedulingContext.networkTopologySnapshot = pgMgr.handle.(frameworkext.ExtendedHandle).GetNetworkTopologyTreeManager().GetSnapshot()
+			if gangSchedulingContext.networkTopologySnapshot == nil {
+				return fmt.Errorf(ErrNoClusterNetworkTopology)
+			}
+		}
 		pgMgr.holder.setGangSchedulingContext(gangSchedulingContext, ReasonFirstPodPassPreFilter)
 		// clear the current representative because representative is already enter into scheduling
 		gang.ClearCurrentRepresentative(ReasonGangGroupEnterIntoScheduling)

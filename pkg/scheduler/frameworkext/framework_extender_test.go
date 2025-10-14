@@ -48,6 +48,8 @@ var (
 	_ framework.FilterPlugin    = &TestTransformer{}
 	_ framework.ScorePlugin     = &TestTransformer{}
 
+	_ FindOneNodePluginProvider = &TestTransformer{}
+
 	_ PreFilterTransformer  = &TestTransformer{}
 	_ FilterTransformer     = &TestTransformer{}
 	_ ScoreTransformer      = &TestTransformer{}
@@ -100,6 +102,19 @@ func (h *TestTransformer) BeforeFilter(ctx context.Context, cycleState *framewor
 
 func (h *TestTransformer) Filter(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeInfo *framework.NodeInfo) *framework.Status {
 	return nil
+}
+
+func (h *TestTransformer) FindOneNodePlugin() FindOneNodePlugin {
+	return h
+}
+
+func (h *TestTransformer) FindOneNode(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, result *framework.PreFilterResult) (string, *framework.Status) {
+	if pod.Annotations == nil {
+		pod.Annotations = map[string]string{}
+	}
+	pod.Annotations[fmt.Sprintf("FindOneNode-%d", h.index)] = fmt.Sprintf("%d", h.index)
+	return "", framework.NewStatus(framework.Skip)
+
 }
 
 func (h *TestTransformer) BeforeScore(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodes []*corev1.Node) (*corev1.Pod, []*corev1.Node, bool, *framework.Status) {
@@ -257,6 +272,7 @@ func Test_frameworkExtenderImpl_RunPreFilterPlugins(t *testing.T) {
 				"AfterPreFilter-1":  "1",
 				"BeforePreFilter-2": "2",
 				"AfterPreFilter-2":  "2",
+				"FindOneNode-1":     "1",
 			}
 			assert.Equal(t, expectedAnnotations, tt.pod.Annotations)
 		})

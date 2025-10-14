@@ -52,6 +52,11 @@ func (in *CoschedulingArgs) DeepCopyInto(out *CoschedulingArgs) {
 		*out = new(bool)
 		**out = **in
 	}
+	if in.AwareNetworkTopology != nil {
+		in, out := &in.AwareNetworkTopology, &out.AwareNetworkTopology
+		*out = new(bool)
+		**out = **in
+	}
 	return
 }
 

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
-	"sync"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -15,9 +14,9 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/informers"
+	clientset "k8s.io/client-go/kubernetes"
 	kubefake "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/tools/events"
 	"k8s.io/component-base/logs"
@@ -33,131 +32,14 @@ import (
 
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
+	koordclientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
 	koordfake "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/fake"
 	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/networktopology"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/services"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/coscheduling/util"
 )
-
-// nominatedPodMap is a structure that stores pods nominated to run on nodes.
-// It exists because nominatedNodeName of pod objects stored in the structure
-// may be different than what scheduler has here. We should be able to find pods
-// by their UID and update/delete them.
-type nominatedPodMap struct {
-	// nominatedPods is a map keyed by a node name and the value is a list of
-	// pods which are nominated to run on the node. These are pods which can be in
-	// the activeQ or unschedulableQ.
-	nominatedPods map[string][]*framework.PodInfo
-	// nominatedPodToNode is map keyed by a Pod UID to the node name where it is
-	// nominated.
-	nominatedPodToNode map[types.UID]string
-
-	sync.RWMutex
-}
-
-func (npm *nominatedPodMap) add(pi *framework.PodInfo, nodeName string) {
-	// always delete the pod if it already exist, to ensure we never store more than
-	// one instance of the pod.
-	npm.delete(pi.Pod)
-
-	nnn := nodeName
-	if len(nnn) == 0 {
-		nnn = NominatedNodeName(pi.Pod)
-		if len(nnn) == 0 {
-			return
-		}
-	}
-	npm.nominatedPodToNode[pi.Pod.UID] = nnn
-	for _, npi := range npm.nominatedPods[nnn] {
-		if npi.Pod.UID == pi.Pod.UID {
-			klog.V(4).InfoS("Pod already exists in the nominated map", "pod", klog.KObj(npi.Pod))
-			return
-		}
-	}
-	npm.nominatedPods[nnn] = append(npm.nominatedPods[nnn], pi)
-}
-
-func (npm *nominatedPodMap) delete(p *corev1.Pod) {
-	nnn, ok := npm.nominatedPodToNode[p.UID]
-	if !ok {
-		return
-	}
-	for i, np := range npm.nominatedPods[nnn] {
-		if np.Pod.UID == p.UID {
-			npm.nominatedPods[nnn] = append(npm.nominatedPods[nnn][:i], npm.nominatedPods[nnn][i+1:]...)
-			if len(npm.nominatedPods[nnn]) == 0 {
-				delete(npm.nominatedPods, nnn)
-			}
-			break
-		}
-	}
-	delete(npm.nominatedPodToNode, p.UID)
-}
-
-// UpdateNominatedPod updates the <oldPod> with <newPod>.
-func (npm *nominatedPodMap) UpdateNominatedPod(logr klog.Logger, oldPod *corev1.Pod, newPodInfo *framework.PodInfo) {
-	npm.Lock()
-	defer npm.Unlock()
-	// In some cases, an Update event with no "NominatedNode" present is received right
-	// after a node("NominatedNode") is reserved for this pod in memory.
-	// In this case, we need to keep reserving the NominatedNode when updating the pod pointer.
-	nodeName := ""
-	// We won't fall into below `if` block if the Update event represents:
-	// (1) NominatedNode info is added
-	// (2) NominatedNode info is updated
-	// (3) NominatedNode info is removed
-	if NominatedNodeName(oldPod) == "" && NominatedNodeName(newPodInfo.Pod) == "" {
-		if nnn, ok := npm.nominatedPodToNode[oldPod.UID]; ok {
-			// This is the only case we should continue reserving the NominatedNode
-			nodeName = nnn
-		}
-	}
-	// We update irrespective of the nominatedNodeName changed or not, to ensure
-	// that pod pointer is updated.
-	npm.delete(oldPod)
-	npm.add(newPodInfo, nodeName)
-}
-
-// NewPodNominator creates a nominatedPodMap as a backing of framework.PodNominator.
-func NewPodNominator() framework.PodNominator {
-	return &nominatedPodMap{
-		nominatedPods:      make(map[string][]*framework.PodInfo),
-		nominatedPodToNode: make(map[types.UID]string),
-	}
-}
-
-// NominatedNodeName returns nominated node name of a Pod.
-func NominatedNodeName(pod *corev1.Pod) string {
-	return pod.Status.NominatedNodeName
-}
-
-// DeleteNominatedPodIfExists deletes <pod> from nominatedPods.
-func (npm *nominatedPodMap) DeleteNominatedPodIfExists(pod *corev1.Pod) {
-	npm.Lock()
-	npm.delete(pod)
-	npm.Unlock()
-}
-
-// AddNominatedPod adds a pod to the nominated pods of the given node.
-// This is called during the preemption process after a node is nominated to run
-// the pod. We update the structure before sending a request to update the pod
-// object to avoid races with the following scheduling cycles.
-func (npm *nominatedPodMap) AddNominatedPod(logger klog.Logger, pi *framework.PodInfo, nominatingInfo *framework.NominatingInfo) {
-	npm.Lock()
-	npm.add(pi, nominatingInfo.NominatedNodeName)
-	npm.Unlock()
-}
-
-// NominatedPodsForNode returns pods that are nominated to run on the given node,
-// but they are waiting for other pods to be removed from the node.
-func (npm *nominatedPodMap) NominatedPodsForNode(nodeName string) []*framework.PodInfo {
-	npm.RLock()
-	defer npm.RUnlock()
-	// TODO: we may need to return a copy of []*Pods to avoid modification
-	// on the caller side.
-	return npm.nominatedPods[nodeName]
-}
 
 type FakeFitPlugin struct {
 }
@@ -193,13 +75,39 @@ func (c fakeNodeInfoLister) IsPVCUsedByPods(key string) bool {
 	return false
 }
 
-func NewFakeExtendedFramework(t *testing.T, nodes []*corev1.Node, existingPods []*corev1.Pod, existingNominatedPods []*corev1.Pod, pluginFunc schedulertesting.RegisterPluginFunc) frameworkext.FrameworkExtender {
-	koordClientSet := koordfake.NewSimpleClientset()
-	koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
+func NewFakeExtendedFramework(
+	t *testing.T,
+	nodes []*corev1.Node,
+	existingPods []*corev1.Pod,
+	existingNominatedPods []*corev1.Pod,
+	pluginFunc schedulertesting.RegisterPluginFunc,
+	clusterNetworkTopology *schedulingv1alpha1.ClusterNetworkTopology,
+) frameworkext.FrameworkExtender {
+	var fakeClient clientset.Interface
+	var sharedInformerFactory informers.SharedInformerFactory
+	var koordClientSet koordclientset.Interface
+	var koordSharedInformerFactory koordinatorinformers.SharedInformerFactory
+	var networkTopologyManager networktopology.TreeManager
+	if clusterNetworkTopology != nil {
+		var fakeTools networktopology.FakeTools
+		networkTopologyManager, fakeTools = networktopology.NewFakeTreeManager(clusterNetworkTopology, nodes)
+		networkTopologyManager.Run(context.TODO())
+		fakeClient = fakeTools.KubeClient
+		sharedInformerFactory = fakeTools.InformerFactory
+		koordClientSet = fakeTools.KoordClient
+		koordSharedInformerFactory = fakeTools.KoordInformerFactory
+	} else {
+		fakeClient = kubefake.NewSimpleClientset()
+		sharedInformerFactory = informers.NewSharedInformerFactory(fakeClient, 0)
+		koordClientSet = koordfake.NewSimpleClientset()
+		koordSharedInformerFactory = koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
+	}
+
 	extenderFactory, err := frameworkext.NewFrameworkExtenderFactory(
 		frameworkext.WithServicesEngine(services.NewEngine(gin.New())),
 		frameworkext.WithKoordinatorClientSet(koordClientSet),
 		frameworkext.WithKoordinatorSharedInformerFactory(koordSharedInformerFactory),
+		frameworkext.WithNetworkTopologyManager(networkTopologyManager),
 	)
 	assert.NoError(t, err)
 	assert.NotNil(t, extenderFactory)
@@ -215,8 +123,6 @@ func NewFakeExtendedFramework(t *testing.T, nodes []*corev1.Node, existingPods [
 		schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
 		pluginFunc,
 	}
-	fakeClient := kubefake.NewSimpleClientset()
-	sharedInformerFactory := informers.NewSharedInformerFactory(fakeClient, 0)
 
 	var nodeInfos []*framework.NodeInfo
 	for _, node := range nodes {
@@ -231,12 +137,12 @@ func NewFakeExtendedFramework(t *testing.T, nodes []*corev1.Node, existingPods [
 		frameworkruntime.WithSnapshotSharedLister(fakeNodeInfoLister{NodeInfoLister: frameworkfake.NodeInfoLister(nodeInfos)}),
 		frameworkruntime.WithClientSet(fakeClient),
 		frameworkruntime.WithInformerFactory(sharedInformerFactory),
-		frameworkruntime.WithPodNominator(NewPodNominator()),
+		frameworkruntime.WithPodNominator(frameworkext.NewFakePodNominator()),
 		frameworkruntime.WithEventRecorder(events.NewFakeRecorder(1000)),
 	)
 	assert.NoError(t, err)
 
-	podStore := sharedInformerFactory.Core().V1().Nodes().Informer().GetStore()
+	podStore := sharedInformerFactory.Core().V1().Pods().Informer().GetStore()
 	for i := range existingPods {
 		existingPod := existingPods[i]
 		nodeInfo, _ := fh.SnapshotSharedLister().NodeInfos().Get(existingPod.Spec.NodeName)
@@ -1432,6 +1338,7 @@ func Test_preemptionEvaluatorImpl_preempt(t *testing.T) {
 					"default/pending-pod-1": "node-1",
 					"default/pending-pod-2": "node-1",
 				},
+				SchedulingMode: frameworkext.PodSchedulingMode,
 			},
 			wantPreemptMessage: "preemption already attempted by default/pending-pod-1 with message preempt success, alreadyWaitingForBound: 0/2",
 			wantResult:         framework.NewPostFilterResultWithNominatedNode("node-1"),
@@ -1675,6 +1582,7 @@ func Test_preemptionEvaluatorImpl_preempt(t *testing.T) {
 				PodToNominatedNode: map[string]string{
 					"default/pending-pod-1": "node-1",
 				},
+				SchedulingMode: frameworkext.PodSchedulingMode,
 			},
 			wantPreemptMessage: "preemption already attempted by default/pending-pod-1 with message preempt success, alreadyWaitingForBound: 1/2",
 			wantResult:         framework.NewPostFilterResultWithNominatedNode("node-1"),
@@ -1741,7 +1649,7 @@ func Test_preemptionEvaluatorImpl_preempt(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			extendedFramework := NewFakeExtendedFramework(t, tt.nodes, tt.existingPods, tt.existingNominatedPods, tt.filterPlugin)
+			extendedFramework := NewFakeExtendedFramework(t, tt.nodes, tt.existingPods, tt.existingNominatedPods, tt.filterPlugin, nil)
 			podStore := extendedFramework.SharedInformerFactory().Core().V1().Pods().Informer().GetStore()
 			logger := klog.FromContext(context.TODO())
 			gangSchedulingContextHolder := &GangSchedulingContextHolder{gangSchedulingContext: tt.gangSchedulingContext}
@@ -1774,7 +1682,7 @@ func Test_preemptionEvaluatorImpl_preempt(t *testing.T) {
 				_, _ = extendedFramework.ClientSet().CoreV1().Pods(pod.Namespace).Create(context.TODO(), pod, metav1.CreateOptions{})
 			}
 
-			ev := NewPreemptionEvaluator(extendedFramework, gangCache, gangSchedulingContextHolder).(*preemptionEvaluatorImpl)
+			ev := NewPreemptionEvaluator(extendedFramework, gangCache, gangSchedulingContextHolder, nil).(*preemptionEvaluatorImpl)
 			preemptionState := &JobPreemptionState{
 				TerminatingPodOnNominatedNode: map[string]string{},
 				ClearNominatedNodeFailedMsg:   map[string]string{},
@@ -1855,6 +1763,7 @@ func Test_preemptionEvaluatorImpl_preempt(t *testing.T) {
 				assert.True(t, errors.IsNotFound(err))
 			}
 			preemptionState.victims = nil
+			preemptionState.gangSchedulingContext = nil
 			assert.Equal(t, tt.wantPreemptionState, preemptionState)
 			if tt.gangSchedulingContext != nil {
 				assert.Equal(t, tt.wantPreemptMessage, tt.gangSchedulingContext.preemptionMessage)
@@ -1961,8 +1870,7 @@ func TestJobPreemptionState_addMoreDetailForStateToMarshal(t *testing.T) {
 					},
 				},
 			},
-			wantJSONStr: `{"TriggerPodKey":"triggerPodKey","preemptorKey":"preemptorKey","reason":"failedMessage","message":"message","terminatingPodOnNominatedNode":{"node1":"pod1"},"durationOfNodeInfoClone":"0s","durationOfCycleStateClone":"0s","durationOfRemovePossibleVictims":"0s","podToNominatedNode":{"pendingPod1":"node1","waitingPod1":"node2"},"durationOfPlaceToSchedulePods":"0s","durationOfSelectVictimsOnNode":"0s","durationOfPrepareCandidates":"0s","clearNominatedNodeFailedMsg":{"node1":"clearNominatedNodeFailedMsg1"},"durationOfMakeNomination":"0s","durationOfCancelNomination":"0s","possibleVictims":[{"nodeName":"node1","possibleVictims":[{"namespace":"default","name":"pendingPod1"}]}],"unschedulablePodsNumber":1,"nodeFailedDetail":[{"nodeName":"node1","reason":"unschedulable"},{"nodeName":"node2","reason":"unschedulable"}],"selectVictimError":"selectVictimError","victims":[{"nodeName":"node1","possibleVictims":[{"namespace":"default","name":"pendingPod1"}]}]}`,
-		},
+			wantJSONStr: `{"TriggerPodKey":"triggerPodKey","preemptorKey":"preemptorKey","reason":"failedMessage","message":"message","terminatingPodOnNominatedNode":{"node1":"pod1"},"durationOfNodeInfoClone":"0s","durationOfCycleStateClone":"0s","durationOfRemovePossibleVictims":"0s","podToNominatedNode":{"pendingPod1":"node1","waitingPod1":"node2"},"durationOfPlaceToSchedulePods":"0s","durationOfSelectVictimsOnNode":"0s","durationOfPrepareCandidates":"0s","clearNominatedNodeFailedMsg":{"node1":"clearNominatedNodeFailedMsg1"},"durationOfMakeNomination":"0s","durationOfCancelNomination":"0s","SchedulingMode":"","NodeToOfferSlot":null,"possibleVictims":[{"nodeName":"node1","possibleVictims":[{"namespace":"default","name":"pendingPod1"}]}],"unschedulablePodsNumber":1,"nodeFailedDetail":[{"nodeName":"node1","reason":"unschedulable"},{"nodeName":"node2","reason":"unschedulable"}],"selectVictimError":"selectVictimError","victims":[{"nodeName":"node1","possibleVictims":[{"namespace":"default","name":"pendingPod1"}]}]}`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
