@@ -300,3 +300,11 @@ func (nm *FakeNominator) GetNominatedPreAllocation(rInfo *ReservationInfo, nodeN
 func (nm *FakeNominator) deletePreAllocation(pod *corev1.Pod) {
 	delete(nm.preAllocatable, pod.UID)
 }
+
+// GetNominatedNodeForReservePod returns the node name that the reserve pod is nominated to.
+// This is only for testing purposes.
+func (nm *FakeNominator) GetNominatedNodeForReservePod(pod *corev1.Pod) string {
+	nm.lock.RLock()
+	defer nm.lock.RUnlock()
+	return nm.nominatedReservePodToNode[pod.UID]
+}
