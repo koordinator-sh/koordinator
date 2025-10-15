@@ -194,7 +194,12 @@ func TestAddReservationErrorHandler(t *testing.T) {
 				PodInfo: podInfo,
 			}
 
-			handler(context.TODO(), extendedHandle, queuedPodInfo, framework.AsStatus(errors.New(tt.want)), nil, time.Now())
+			nominatingInfo := &framework.NominatingInfo{
+				NominatingMode:    framework.ModeNoop,
+				NominatedNodeName: "",
+			}
+
+			handler(context.TODO(), extendedHandle, queuedPodInfo, framework.AsStatus(errors.New(tt.want)), nominatingInfo, time.Now())
 
 			r, err := koordClientSet.SchedulingV1alpha1().Reservations().Get(context.TODO(), tt.r.Name, metav1.GetOptions{})
 			assert.Equal(t, tt.wantErr, err != nil, err)
@@ -207,6 +212,184 @@ func TestAddReservationErrorHandler(t *testing.T) {
 					}
 				}
 				assert.Equal(t, tt.want, message)
+			}
+		})
+	}
+}
+
+func TestMakeReservationErrorHandler_NominationHandling(t *testing.T) {
+	testR := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "reserve-pod-1",
+			UID:  "xxx",
+		},
+		Spec: schedulingv1alpha1.ReservationSpec{
+			Template: &corev1.PodTemplateSpec{},
+			Owners: []schedulingv1alpha1.ReservationOwner{
+				{
+					Object: &corev1.ObjectReference{
+						Name: "test-pod-1",
+					},
+				},
+			},
+			TTL: &metav1.Duration{Duration: 30 * time.Minute},
+		},
+		Status: schedulingv1alpha1.ReservationStatus{
+			Phase: schedulingv1alpha1.ReservationPending,
+		},
+	}
+
+	tests := []struct {
+		name                             string
+		isReservePod                     bool
+		hasReservationAffinity           bool
+		nominatingMode                   framework.NominatingMode
+		nominatedNodeName                string
+		podNominatedNodeName             string
+		expectDeleteNominatedReservation bool
+		expectKeepNomination             bool
+		expectReAddNomination            bool
+	}{
+		{
+			name:                  "reserve pod should re-add nomination by failureHandler",
+			isReservePod:          true,
+			nominatingMode:        framework.ModeOverride,
+			nominatedNodeName:     "test-node",
+			expectReAddNomination: true,
+		},
+		{
+			name:                 "normal pod with ModeOverride and nominated node should keep nomination",
+			isReservePod:         false,
+			nominatingMode:       framework.ModeOverride,
+			nominatedNodeName:    "test-node",
+			expectKeepNomination: true,
+		},
+		{
+			name:                             "normal pod with ModeNoop and empty pod.Status.NominatedNodeName should delete nomination",
+			isReservePod:                     false,
+			nominatingMode:                   framework.ModeNoop,
+			nominatedNodeName:                "",
+			podNominatedNodeName:             "",
+			expectDeleteNominatedReservation: true,
+		},
+		{
+			name:                 "normal pod with ModeNoop and non-empty pod.Status.NominatedNodeName should keep nomination",
+			isReservePod:         false,
+			nominatingMode:       framework.ModeNoop,
+			nominatedNodeName:    "",
+			podNominatedNodeName: "test-node",
+			expectKeepNomination: true,
+		},
+		{
+			name:                             "normal pod with ModeOverride but no nominated node should delete nomination",
+			isReservePod:                     false,
+			nominatingMode:                   framework.ModeOverride,
+			nominatedNodeName:                "",
+			expectDeleteNominatedReservation: true,
+		},
+		{
+			name:                   "pod with reservation affinity should not handle nomination",
+			isReservePod:           false,
+			hasReservationAffinity: true,
+			nominatingMode:         framework.ModeNoop,
+			nominatedNodeName:      "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			registeredPlugins := []schedulertesting.RegisterPluginFunc{
+				schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
+				schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
+			}
+
+			fakeRecorder := record.NewFakeRecorder(1024)
+			eventRecorder := record.NewEventRecorderAdapter(fakeRecorder)
+
+			clientSet := kubefake.NewSimpleClientset()
+			fh, err := schedulertesting.NewFramework(context.TODO(), registeredPlugins, "default-scheduler",
+				frameworkruntime.WithEventRecorder(eventRecorder),
+				frameworkruntime.WithClientSet(clientSet),
+				frameworkruntime.WithInformerFactory(informers.NewSharedInformerFactory(clientSet, 0)),
+			)
+			assert.Nil(t, err)
+
+			koordClientSet := koordfake.NewSimpleClientset(testR)
+			koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
+			rNominator := frameworkext.NewFakeReservationNominator()
+			frameworkExtenderFactory, _ := frameworkext.NewFrameworkExtenderFactory(
+				frameworkext.WithKoordinatorClientSet(koordClientSet),
+				frameworkext.WithKoordinatorSharedInformerFactory(koordSharedInformerFactory),
+				frameworkext.WithReservationNominator(rNominator),
+			)
+			extendedHandle := frameworkext.NewFrameworkExtender(frameworkExtenderFactory, fh)
+			sched := &scheduler.Scheduler{
+				Profiles: profile.Map{
+					"default-scheduler": extendedHandle,
+				},
+			}
+
+			internalHandler := frameworkext.NewFakeScheduler()
+			handler := MakeReservationErrorHandler(sched, internalHandler, koordClientSet, koordSharedInformerFactory)
+
+			koordSharedInformerFactory.Start(nil)
+			koordSharedInformerFactory.WaitForCacheSync(nil)
+
+			var pod *corev1.Pod
+			if tt.isReservePod {
+				pod = reservationutil.NewReservePod(testR)
+			} else {
+				pod = &corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-pod",
+						Namespace: "default",
+						UID:       "test-pod-uid",
+					},
+					Spec: corev1.PodSpec{
+						SchedulerName: "default-scheduler",
+					},
+				}
+				if tt.hasReservationAffinity {
+					pod.Annotations = map[string]string{
+						"scheduling.koordinator.sh/reservation-affinity": `{"reservationSelector":{"reservation-0":"reservation-0"}}`,
+					}
+				}
+				if tt.podNominatedNodeName != "" {
+					pod.Status.NominatedNodeName = tt.podNominatedNodeName
+				}
+			}
+
+			// Add nomination before calling handler
+			if !tt.hasReservationAffinity {
+				rNominator.AddNominatedReservePod(pod, "test-node")
+			}
+
+			podInfo, _ := framework.NewPodInfo(pod)
+			queuedPodInfo := &framework.QueuedPodInfo{
+				PodInfo: podInfo,
+			}
+
+			nominatingInfo := &framework.NominatingInfo{
+				NominatingMode:    tt.nominatingMode,
+				NominatedNodeName: tt.nominatedNodeName,
+			}
+
+			handler(context.TODO(), extendedHandle, queuedPodInfo, framework.NewStatus(framework.Unschedulable, "test error"), nominatingInfo, time.Now())
+
+			// Check if nomination was deleted or kept
+			if tt.expectDeleteNominatedReservation {
+				// Verify nomination was deleted
+				nominatedNode := rNominator.GetNominatedNodeForReservePod(pod)
+				assert.Equal(t, "", nominatedNode, "Expected nomination to be deleted")
+			} else if tt.expectKeepNomination {
+				// Verify nomination was kept
+				nominatedNode := rNominator.GetNominatedNodeForReservePod(pod)
+				assert.Equal(t, "test-node", nominatedNode, "Expected nomination to be kept")
+			} else if tt.expectReAddNomination {
+				// For reserve pod, the nomination is re-added by failureHandler
+				// Since failureHandler calls addNominatedReservation at the end
+				nominatedNode := rNominator.GetNominatedNodeForReservePod(pod)
+				assert.Equal(t, "test-node", nominatedNode, "Expected nomination to be re-added by failureHandler")
 			}
 		})
 	}

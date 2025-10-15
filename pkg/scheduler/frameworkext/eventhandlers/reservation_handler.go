@@ -71,7 +71,13 @@ func MakeReservationErrorHandler(
 		// If the Pod failed to schedule or no post-filter plugins, should remove exist NominatedReservation of the Pod.
 		if extendedHandle, ok := fwk.(frameworkext.ExtendedHandle); ok {
 			if reservationNominator := extendedHandle.GetReservationNominator(); reservationNominator != nil {
-				reservationNominator.DeleteNominatedReservePodOrReservation(pod)
+				// If the pod preempting successfully, we should keep the nomination of the pod to reservation, and other pods can not allocate
+				// the preempted reserved resources in the next cycle.
+				if nominatingInfo.NominatingMode == framework.ModeOverride && nominatingInfo.NominatedNodeName == "" || nominatingInfo.NominatingMode == framework.ModeNoop && pod.Status.NominatedNodeName == "" {
+					reservationNominator.DeleteNominatedReservePodOrReservation(pod)
+				} else {
+					klog.V(5).Infof("Keep the NominatedReservation of the Pod %s, nominatingInfo %+v, nominatedNodeName %s", klog.KObj(pod), nominatingInfo, pod.Status.NominatedNodeName)
+				}
 			}
 		}
 
