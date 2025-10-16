@@ -243,6 +243,7 @@ func TestMakeReservationErrorHandler_NominationHandling(t *testing.T) {
 		name                             string
 		isReservePod                     bool
 		hasReservationAffinity           bool
+		nilNominatingInfo                bool
 		nominatingMode                   framework.NominatingMode
 		nominatedNodeName                string
 		podNominatedNodeName             string
@@ -293,6 +294,12 @@ func TestMakeReservationErrorHandler_NominationHandling(t *testing.T) {
 			hasReservationAffinity: true,
 			nominatingMode:         framework.ModeNoop,
 			nominatedNodeName:      "",
+		},
+		{
+			name:                             "normal pod with nil nominatingInfo should delete nomination",
+			isReservePod:                     false,
+			nilNominatingInfo:                true,
+			expectDeleteNominatedReservation: true,
 		},
 	}
 
@@ -369,9 +376,12 @@ func TestMakeReservationErrorHandler_NominationHandling(t *testing.T) {
 				PodInfo: podInfo,
 			}
 
-			nominatingInfo := &framework.NominatingInfo{
-				NominatingMode:    tt.nominatingMode,
-				NominatedNodeName: tt.nominatedNodeName,
+			var nominatingInfo *framework.NominatingInfo
+			if !tt.nilNominatingInfo {
+				nominatingInfo = &framework.NominatingInfo{
+					NominatingMode:    tt.nominatingMode,
+					NominatedNodeName: tt.nominatedNodeName,
+				}
 			}
 
 			handler(context.TODO(), extendedHandle, queuedPodInfo, framework.NewStatus(framework.Unschedulable, "test error"), nominatingInfo, time.Now())

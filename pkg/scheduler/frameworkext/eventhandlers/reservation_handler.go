@@ -73,7 +73,7 @@ func MakeReservationErrorHandler(
 			if reservationNominator := extendedHandle.GetReservationNominator(); reservationNominator != nil {
 				// If the pod preempting successfully, we should keep the nomination of the pod to reservation, and other pods can not allocate
 				// the preempted reserved resources in the next cycle.
-				if nominatingInfo.NominatingMode == framework.ModeOverride && nominatingInfo.NominatedNodeName == "" || nominatingInfo.NominatingMode == framework.ModeNoop && pod.Status.NominatedNodeName == "" {
+				if nominatingInfo == nil || nominatingInfo.NominatingMode == framework.ModeOverride && nominatingInfo.NominatedNodeName == "" || nominatingInfo.NominatingMode == framework.ModeNoop && pod.Status.NominatedNodeName == "" {
 					reservationNominator.DeleteNominatedReservePodOrReservation(pod)
 				} else {
 					klog.V(5).Infof("Keep the NominatedReservation of the Pod %s, nominatingInfo %+v, nominatedNodeName %s", klog.KObj(pod), nominatingInfo, pod.Status.NominatedNodeName)
