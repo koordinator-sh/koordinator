@@ -39,6 +39,7 @@ func init() {
 	internalMustRegister(CommonCollectors...)
 	internalMustRegister(CPUSuppressCollector...)
 	internalMustRegister(CPUBurstCollector...)
+	internalMustRegister(CPUSetCollector...)
 	internalMustRegister(PredictionCollectors...)
 	internalMustRegister(CoreSchedCollector...)
 	internalMustRegister(ResourceExecutorCollector...)

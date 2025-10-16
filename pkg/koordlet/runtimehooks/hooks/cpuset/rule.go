@@ -28,6 +28,7 @@ import (
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/features"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/protocol"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	koordletutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util"
@@ -112,9 +113,28 @@ func (r *cpusetRule) getContainerCPUSet(containerReq *protocol.ContainerRequest)
 	}
 
 	allSharePoolCPUs := make([]string, 0, len(r.sharePools))
+	var allShareCPUSetCount, beShareCPUSetCount int
 	for _, nodeSharePool := range r.sharePools {
 		allSharePoolCPUs = append(allSharePoolCPUs, nodeSharePool.CPUSet)
+		nodeSharePoolCPUSet, err := cpuset.Parse(nodeSharePool.CPUSet)
+		if err != nil {
+			klog.Errorf("failed to parse cpuset info of all share pool, err: %v", err)
+			continue
+		}
+		allShareCPUSetCount += nodeSharePoolCPUSet.Size()
 	}
+
+	for _, nodeBESharePool := range r.beSharePools {
+		nodeBESharePoolCPUSet, err := cpuset.Parse(nodeBESharePool.CPUSet)
+		if err != nil {
+			klog.Errorf("failed to parse cpuset info of all share pool, err: %v", err)
+			continue
+		}
+		beShareCPUSetCount += nodeBESharePoolCPUSet.Size()
+	}
+
+	metrics.RecordCPUSetSharePoolCores(float64(allShareCPUSetCount))
+	metrics.RecordCPUSetBESharePoolCores(float64(beShareCPUSetCount))
 
 	if podQOSClass == extension.QoSLS {
 		// LS pods use all share pool
