@@ -109,7 +109,7 @@ func (p *Plugin) Allocate(ctx context.Context, cycleState *framework.CycleState,
 		return nil
 	}
 
-	_, status = tryAllocateFromNode(p.resourceManager, restoreState, resourceOptions, pod, node)
+	_, status = tryAllocateFromNode(p.resourceManager, nil, restoreState, resourceOptions, pod, node)
 	if !status.IsSuccess() {
 		return status
 	}

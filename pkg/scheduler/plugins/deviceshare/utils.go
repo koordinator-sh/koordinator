@@ -364,6 +364,20 @@ func preparePod(pod *corev1.Pod, gpuSharedResourceTemplatesCache *gpuSharedResou
 		return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, err.Error())
 	}
 
+	recordedDeviceAllocations, err := apiext.GetDeviceAllocations(pod.Annotations)
+	if err != nil {
+		return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, err.Error())
+	}
+	if len(recordedDeviceAllocations) > 0 {
+		state.designatedAllocation = make(map[schedulingv1alpha1.DeviceType]deviceResources, len(recordedDeviceAllocations))
+	}
+	for deviceType, minorResources := range recordedDeviceAllocations {
+		state.designatedAllocation[deviceType] = make(deviceResources, len(minorResources))
+		for _, minorResource := range minorResources {
+			state.designatedAllocation[deviceType][int(minorResource.Minor)] = minorResource.Resources
+		}
+	}
+
 	state.podRequests = requests
 	state.skip = len(requests) == 0
 	if !state.skip {
