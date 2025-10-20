@@ -23,6 +23,7 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/klog/v2"
 	"k8s.io/utils/pointer"
@@ -33,6 +34,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/qosmanager/framework"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/qosmanager/helpers"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/qosmanager/helpers/copilot"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	"github.com/koordinator-sh/koordinator/pkg/util"
@@ -51,25 +53,33 @@ const (
 var _ framework.QOSStrategy = &cpuEvictor{}
 
 type cpuEvictor struct {
-	evictInterval         time.Duration
-	evictCoolingInterval  time.Duration
-	metricCollectInterval time.Duration
-	statesInformer        statesinformer.StatesInformer
-	metricCache           metriccache.MetricCache
-	evictor               *framework.Evictor
-	lastEvictTime         time.Time
-	onlyEvictByAPI        bool
+	evictInterval               time.Duration
+	evictCoolingInterval        time.Duration
+	metricCollectInterval       time.Duration
+	statesInformer              statesinformer.StatesInformer
+	metricCache                 metriccache.MetricCache
+	evictor                     *framework.Evictor
+	lastEvictTime               time.Time
+	onlyEvictByAPI              bool
+	evictByCopilotAgent         bool
+	copilotAgent                *copilot.CopilotAgent
+	evictByCopilotPodLabelKey   string
+	evictByCopilotPodLabelValue string
 }
 
 func New(opt *framework.Options) framework.QOSStrategy {
 	return &cpuEvictor{
-		evictInterval:         time.Duration(opt.Config.CPUEvictIntervalSeconds) * time.Second,
-		evictCoolingInterval:  time.Duration(opt.Config.CPUEvictCoolTimeSeconds) * time.Second,
-		metricCollectInterval: opt.MetricAdvisorConfig.CollectResUsedInterval,
-		statesInformer:        opt.StatesInformer,
-		metricCache:           opt.MetricCache,
-		lastEvictTime:         time.Now(),
-		onlyEvictByAPI:        opt.Config.OnlyEvictByAPI,
+		evictInterval:               time.Duration(opt.Config.CPUEvictIntervalSeconds) * time.Second,
+		evictCoolingInterval:        time.Duration(opt.Config.CPUEvictCoolTimeSeconds) * time.Second,
+		metricCollectInterval:       opt.MetricAdvisorConfig.CollectResUsedInterval,
+		statesInformer:              opt.StatesInformer,
+		metricCache:                 opt.MetricCache,
+		lastEvictTime:               time.Now(),
+		onlyEvictByAPI:              opt.Config.OnlyEvictByAPI,
+		evictByCopilotAgent:         opt.Config.EvictByCopilotAgent,
+		copilotAgent:                opt.CopilotAgent,
+		evictByCopilotPodLabelKey:   opt.Config.EvictByCopilotPodLabelKey,
+		evictByCopilotPodLabelValue: opt.Config.EvictByCopilotPodLabelValue,
 	}
 }
 
@@ -302,21 +312,33 @@ func (c *cpuEvictor) killAndEvictBEPodsRelease(node *corev1.Node, bePodInfos []*
 		if cpuMilliReleased >= cpuNeedMilliRelease {
 			break
 		}
-
-		if c.onlyEvictByAPI {
-			if c.evictor.EvictPodIfNotEvicted(bePod.pod, node, resourceexecutor.EvictPodByBECPUSatisfaction, message) {
+		if c.evictByCopilotAgent && c.isYarnNodeManager(bePod) {
+			needReleasedResource := corev1.ResourceList{apiext.BatchCPU: *resource.NewMilliQuantity((cpuNeedMilliRelease - cpuMilliReleased), resource.DecimalSI),
+				apiext.BatchMemory: *resource.NewQuantity(0, resource.BinarySI)}
+			res := c.copilotAgent.KillContainerByResource(&needReleasedResource)
+			if cpu, ok := res[apiext.BatchCPU]; ok {
+				cpuMilliReleased = cpuMilliReleased + cpu.MilliValue()
+				hasKillPods = true
+				klog.V(5).Infof("cpuEvict pick of pod %s to evict container", util.GetPodKey(bePod.pod))
+			} else {
+				klog.Warningf("BatchCPU resource not found in resource list of pod %s, util.GetPodKey(bePod.pod)")
+			}
+		} else {
+			if c.onlyEvictByAPI {
+				if c.evictor.EvictPodIfNotEvicted(bePod.pod, node, resourceexecutor.EvictPodByBECPUSatisfaction, message) {
+					cpuMilliReleased = cpuMilliReleased + bePod.milliRequest
+					klog.V(5).Infof("cpuEvict pick pod %s to evict", util.GetPodKey(bePod.pod))
+					hasKillPods = true
+				} else {
+					klog.V(5).Infof("cpuEvict pick pod %s to evict, failed", util.GetPodKey(bePod.pod))
+				}
+			} else {
+				podKillMsg := fmt.Sprintf("%s, kill pod: %s", message, util.GetPodKey(bePod.pod))
+				helpers.KillContainers(bePod.pod, resourceexecutor.EvictPodByBECPUSatisfaction, podKillMsg)
 				cpuMilliReleased = cpuMilliReleased + bePod.milliRequest
 				klog.V(5).Infof("cpuEvict pick pod %s to evict", util.GetPodKey(bePod.pod))
 				hasKillPods = true
-			} else {
-				klog.V(5).Infof("cpuEvict pick pod %s to evict, failed", util.GetPodKey(bePod.pod))
 			}
-		} else {
-			podKillMsg := fmt.Sprintf("%s, kill pod: %s", message, util.GetPodKey(bePod.pod))
-			helpers.KillContainers(bePod.pod, resourceexecutor.EvictPodByBECPUSatisfaction, podKillMsg)
-			cpuMilliReleased = cpuMilliReleased + bePod.milliRequest
-			klog.V(5).Infof("cpuEvict pick pod %s to evict", util.GetPodKey(bePod.pod))
-			hasKillPods = true
 		}
 	}
 
@@ -325,6 +347,24 @@ func (c *cpuEvictor) killAndEvictBEPodsRelease(node *corev1.Node, bePodInfos []*
 	}
 	klog.V(5).Infof("killAndEvictBEPodsRelease finished! cpuNeedMilliRelease(%d) cpuMilliReleased(%d)",
 		cpuNeedMilliRelease, cpuMilliReleased)
+}
+
+func (c *cpuEvictor) isYarnNodeManager(pod *podEvictCPUInfo) bool {
+	targetKey := c.evictByCopilotPodLabelKey
+	targetValue := c.evictByCopilotPodLabelValue
+	if hasLabel(pod.pod.Labels, targetKey, targetValue) {
+		klog.V(6).Infof("Pod %s includes label %s=%s", pod.pod.Name, targetKey, targetValue)
+		return true
+	}
+	return false
+}
+
+func hasLabel(labels map[string]string, key, value string) bool {
+	if labels == nil {
+		return false
+	}
+	val, exists := labels[key]
+	return exists && val == value
 }
 
 func (c *cpuEvictor) getPodEvictInfoAndSort() []*podEvictCPUInfo {
@@ -361,6 +401,15 @@ func (c *cpuEvictor) getPodEvictInfoAndSort() []*podEvictCPUInfo {
 	}
 
 	sort.Slice(bePodInfos, func(i, j int) bool {
+		//evict yarn nodemanager pod first
+		if c.evictByCopilotAgent {
+			isYarnI := c.isYarnNodeManager(bePodInfos[i])
+			isYarnJ := c.isYarnNodeManager(bePodInfos[j])
+
+			if isYarnI != isYarnJ {
+				return isYarnI
+			}
+		}
 		if bePodInfos[i].pod.Spec.Priority == nil || bePodInfos[j].pod.Spec.Priority == nil ||
 			*bePodInfos[i].pod.Spec.Priority == *bePodInfos[j].pod.Spec.Priority {
 			return bePodInfos[i].cpuUsage > bePodInfos[j].cpuUsage

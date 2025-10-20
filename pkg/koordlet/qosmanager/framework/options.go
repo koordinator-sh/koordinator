@@ -20,6 +20,8 @@ import (
 	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/record"
 
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/qosmanager/helpers/copilot"
+
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	ma "github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor/framework"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
@@ -35,4 +37,5 @@ type Options struct {
 	EvictVersion        string
 	Config              *Config
 	MetricAdvisorConfig *ma.Config
+	CopilotAgent        *copilot.CopilotAgent
 }
