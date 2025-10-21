@@ -50,6 +50,7 @@ import (
 	_ "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/scheme"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/v1beta3"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/hinter"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/topologymanager"
 	"github.com/koordinator-sh/koordinator/pkg/util/bitmask"
 	"github.com/koordinator-sh/koordinator/pkg/util/cpuset"
@@ -242,6 +243,50 @@ func TestPlugin_PreFilter(t *testing.T) {
 		want              *framework.Status
 		wantState         *preFilterState
 	}{
+		{
+			name: "cpu set with LSR Prod Pod, designated allocation",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						extension.LabelPodQoS: string(extension.QoSLSR),
+					},
+					Annotations: map[string]string{
+						extension.AnnotationResourceSpec:   `{"preferredCPUBindPolicy": "FullPCPUs"}`,
+						extension.AnnotationResourceStatus: `{"cpuset": "35-36,67-68", "numaNodeResources": [{"node": 1, "resources": {"cpu": 4}}]}`,
+						extension.AnnotationSchedulingHint: `{"nodeNames": ["node-1"], "extensions": {"NodeNUMAResource": {}}}`,
+					},
+				},
+				Spec: corev1.PodSpec{
+					Priority: pointer.Int32(extension.PriorityProdValueMax),
+					Containers: []corev1.Container{
+						{
+							Name: "container-1",
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU: resource.MustParse("4"),
+								},
+							},
+						},
+					},
+				},
+			},
+			wantState: &preFilterState{
+				requestCPUBind: true,
+				requests: corev1.ResourceList{
+					corev1.ResourceCPU: resource.MustParse("4"),
+				},
+				designatedAllocation: &allocation{
+					cpuset: cpuset.NewCPUSet(35, 36, 67, 68),
+					numaNodeResource: map[int]corev1.ResourceList{
+						1: {
+							corev1.ResourceCPU: resource.MustParse("4"),
+						},
+					},
+				},
+				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs,
+				numCPUsNeeded:          4,
+			},
+		},
 		{
 			name: "cpu set with LSR Prod Pod",
 			pod: &corev1.Pod{
@@ -545,8 +590,18 @@ func TestPlugin_PreFilter(t *testing.T) {
 			assert.Nil(t, err)
 
 			suit.start()
-
 			cycleState := framework.NewCycleState()
+
+			if tt.pod.Annotations != nil && tt.pod.Annotations[extension.AnnotationSchedulingHint] != "" {
+				hint, err := extension.GetSchedulingHint(tt.pod)
+				assert.NoError(t, err)
+				assert.NotNil(t, hint)
+				hintStateData := &hinter.SchedulingHintStateData{
+					PreFilterNodes: hint.NodeNames,
+					Extensions:     hint.Extensions,
+				}
+				hinter.SetSchedulingHintState(cycleState, hintStateData)
+			}
 			if _, got := p.(framework.PreFilterPlugin).PreFilter(context.TODO(), cycleState, tt.pod); !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("PreFilter() = %v, want %v", got, tt.want)
 			}
@@ -833,6 +888,57 @@ func TestPlugin_Filter(t *testing.T) {
 			},
 			cpuTopology:     buildCPUTopologyForTest(2, 1, 4, 2),
 			allocationState: NewNodeAllocation("test-node-1"),
+		},
+		{
+			name: "designatedAllocation, success",
+			nodeLabels: map[string]string{
+				extension.LabelNUMATopologyPolicy: string(extension.NUMATopologyPolicySingleNUMANode),
+			},
+			nodeAnnotations: map[string]string{
+				extension.AnnotationNodeResourceAmplificationRatio: `{"cpu": 1.5}`,
+			},
+			state: &preFilterState{
+				requestCPUBind:         true,
+				requiredCPUBindPolicy:  schedulingconfig.CPUBindPolicyFullPCPUs,
+				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs,
+				numCPUsNeeded:          4,
+				designatedAllocation: &allocation{
+					cpuset: cpuset.MustParse("0-3"),
+					numaNodeResource: map[int]corev1.ResourceList{
+						0: {
+							corev1.ResourceCPU: resource.MustParse("4"),
+						},
+					},
+				},
+			},
+			cpuTopology:     buildCPUTopologyForTest(2, 1, 4, 2),
+			allocationState: NewNodeAllocation("test-node-1"),
+		},
+		{
+			name: "designatedAllocation, failure",
+			nodeLabels: map[string]string{
+				extension.LabelNUMATopologyPolicy: string(extension.NUMATopologyPolicySingleNUMANode),
+			},
+			nodeAnnotations: map[string]string{
+				extension.AnnotationNodeResourceAmplificationRatio: `{"cpu": 1.5}`,
+			},
+			state: &preFilterState{
+				requestCPUBind:         true,
+				requiredCPUBindPolicy:  schedulingconfig.CPUBindPolicyFullPCPUs,
+				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs,
+				numCPUsNeeded:          4,
+				designatedAllocation: &allocation{
+					cpuset: cpuset.MustParse("20-23"),
+					numaNodeResource: map[int]corev1.ResourceList{
+						0: {
+							corev1.ResourceCPU: resource.MustParse("4"),
+						},
+					},
+				},
+			},
+			cpuTopology:     buildCPUTopologyForTest(2, 1, 4, 2),
+			allocationState: NewNodeAllocation("test-node-1"),
+			want:            framework.NewStatus(framework.Unschedulable, "not enough cpus available to satisfy request"),
 		},
 	}
 	for _, tt := range tests {

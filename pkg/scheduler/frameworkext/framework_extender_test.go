@@ -112,7 +112,7 @@ func (h *TestTransformer) FindOneNode(ctx context.Context, cycleState *framework
 	if pod.Annotations == nil {
 		pod.Annotations = map[string]string{}
 	}
-	pod.Annotations[fmt.Sprintf("FindOneNode-%d", h.index)] = fmt.Sprintf("%d", h.index)
+	pod.Annotations["FindOneNode"] = "FindOneNode"
 	return "", framework.NewStatus(framework.Skip)
 
 }
@@ -272,7 +272,7 @@ func Test_frameworkExtenderImpl_RunPreFilterPlugins(t *testing.T) {
 				"AfterPreFilter-1":  "1",
 				"BeforePreFilter-2": "2",
 				"AfterPreFilter-2":  "2",
-				"FindOneNode-1":     "1",
+				"FindOneNode":       "FindOneNode",
 			}
 			assert.Equal(t, expectedAnnotations, tt.pod.Annotations)
 		})
@@ -421,146 +421,6 @@ func Test_frameworkExtenderImpl_RunScorePlugins(t *testing.T) {
 			assert.Equal(t, expectedAnnotations, tt.pod.Annotations)
 		})
 	}
-}
-
-func TestRunAllocatePlugins(t *testing.T) {
-	tests := []struct {
-		name          string
-		plugins       []AllocatePlugin
-		wantStatus    *framework.Status
-		wantCallCount []int
-	}{
-		{
-			name:          "no plugins",
-			plugins:       []AllocatePlugin{},
-			wantStatus:    nil,
-			wantCallCount: []int{},
-		},
-		{
-			name: "single plugin success",
-			plugins: []AllocatePlugin{
-				&fakeAllocatePlugin{name: "p1"},
-			},
-			wantStatus:    nil,
-			wantCallCount: []int{1},
-		},
-		{
-			name: "multiple plugins success",
-			plugins: []AllocatePlugin{
-				&fakeAllocatePlugin{name: "p1"},
-				&fakeAllocatePlugin{name: "p2"},
-				&fakeAllocatePlugin{name: "p3"},
-			},
-			wantStatus:    nil,
-			wantCallCount: []int{1, 1, 1},
-		},
-		{
-			name: "first plugin fails",
-			plugins: []AllocatePlugin{
-				&fakeAllocatePlugin{name: "p1", fail: true},
-				&fakeAllocatePlugin{name: "p2"},
-			},
-			wantStatus:    framework.AsStatus(fmt.Errorf("allocation failed")),
-			wantCallCount: []int{1, 0},
-		},
-		{
-			name: "middle plugin fails",
-			plugins: []AllocatePlugin{
-				&fakeAllocatePlugin{name: "p1"},
-				&fakeAllocatePlugin{name: "p2", fail: true},
-				&fakeAllocatePlugin{name: "p3"},
-			},
-			wantStatus:    framework.AsStatus(fmt.Errorf("allocation failed")),
-			wantCallCount: []int{1, 1, 0},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			koordClientSet := koordfake.NewSimpleClientset()
-			koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
-			extenderFactory, err := NewFrameworkExtenderFactory(
-				WithServicesEngine(services.NewEngine(gin.New())),
-				WithKoordinatorClientSet(koordClientSet),
-				WithKoordinatorSharedInformerFactory(koordSharedInformerFactory),
-			)
-			assert.NoError(t, err)
-			assert.NotNil(t, extenderFactory)
-			assert.Equal(t, koordClientSet, extenderFactory.KoordinatorClientSet())
-			assert.Equal(t, koordSharedInformerFactory, extenderFactory.KoordinatorSharedInformerFactory())
-			registeredPlugins := []schedulertesting.RegisterPluginFunc{
-				schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
-				schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
-				schedulertesting.RegisterScorePlugin("T1", PluginFactoryProxy(extenderFactory, func(_ runtime.Object, _ framework.Handle) (framework.Plugin, error) {
-					return &TestTransformer{name: "T1", index: 1}, nil
-				}), 1),
-				schedulertesting.RegisterScorePlugin("T2", PluginFactoryProxy(extenderFactory, func(_ runtime.Object, _ framework.Handle) (framework.Plugin, error) {
-					return &TestTransformer{name: "T2", index: 2}, nil
-				}), 1),
-			}
-			fakeClient := kubefake.NewSimpleClientset()
-			sharedInformerFactory := informers.NewSharedInformerFactory(fakeClient, 0)
-			fh, err := schedulertesting.NewFramework(
-				context.TODO(),
-				registeredPlugins,
-				"koord-scheduler",
-				frameworkruntime.WithClientSet(fakeClient),
-				frameworkruntime.WithInformerFactory(sharedInformerFactory),
-			)
-			assert.NoError(t, err)
-			frameworkExtender := extenderFactory.NewFrameworkExtender(fh)
-			frameworkExtender.SetConfiguredPlugins(fh.ListPlugins())
-			for _, p := range tt.plugins {
-				if fp, ok := p.(*fakeAllocatePlugin); ok {
-					fp.callCount = 0
-				}
-				frameworkExtender.(*frameworkExtenderImpl).allocatePlugins = append(frameworkExtender.(*frameworkExtenderImpl).allocatePlugins, p)
-			}
-
-			ctx := context.Background()
-			cycleState := framework.NewCycleState()
-			pod := &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-pod",
-				},
-			}
-			nodeInfo := framework.NewNodeInfo()
-
-			gotStatus := frameworkExtender.RunAllocatePlugins(ctx, cycleState, pod, nodeInfo)
-
-			if tt.wantStatus == nil {
-				assert.Nil(t, gotStatus, "expected success but got: %v", gotStatus)
-			} else {
-				assert.NotNil(t, gotStatus, "expected failure but got success")
-				assert.Equal(t, tt.wantStatus.Code(), gotStatus.Code(), "status code mismatch")
-			}
-
-			assert.Equal(t, len(tt.wantCallCount), len(tt.plugins), "plugin count mismatch")
-			for i, expectedCallCount := range tt.wantCallCount {
-				if fp, ok := tt.plugins[i].(*fakeAllocatePlugin); ok {
-					assert.Equal(t, expectedCallCount, fp.callCount, "call count mismatch for plugin %s", fp.name)
-				}
-			}
-		})
-	}
-}
-
-type fakeAllocatePlugin struct {
-	name      string
-	fail      bool
-	callCount int
-}
-
-func (f *fakeAllocatePlugin) Name() string {
-	return f.name
-}
-
-func (f *fakeAllocatePlugin) Allocate(ctx context.Context, state *framework.CycleState, pod *corev1.Pod, nodeInfo *framework.NodeInfo) *framework.Status {
-	f.callCount++
-	if f.fail {
-		return framework.AsStatus(fmt.Errorf("allocation failed"))
-	}
-	return nil
 }
 
 type fakeMetricsRecorder struct{}

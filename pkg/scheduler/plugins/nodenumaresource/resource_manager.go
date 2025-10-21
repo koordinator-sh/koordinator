@@ -588,7 +588,7 @@ func (c *resourceManager) generateResourceHints(node *corev1.Node, pod *corev1.P
 			return
 		}
 		if podAllocation == nil {
-			_, status = tryAllocateFromNode(c, restoreState, options, pod, node)
+			_, status = tryAllocateFromNode(c, nil, restoreState, options, pod, node)
 			if !status.IsSuccess() {
 				return
 			}
