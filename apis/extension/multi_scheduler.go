@@ -35,7 +35,7 @@ func GetSchedulerName(pod *corev1.Pod) string {
 }
 
 type SchedulingHint struct {
-	NodeNames  []string               `json:"nodeName,omitempty"`
+	NodeNames  []string               `json:"nodeNames,omitempty"`
 	Extensions map[string]interface{} `json:"extensions,omitempty"`
 }
 
