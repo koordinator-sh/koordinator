@@ -164,3 +164,10 @@ func SortPodsByIndex(pods []*corev1.Pod) {
 		return podA.Name < podB.Name
 	})
 }
+
+const (
+	// LabelBindGangGroupId is the label of the pod's gang group id to bind.
+	LabelBindGangGroupId = SchedulingDomainPrefix + "/bind-gang-group-id"
+	// LabelBindGangMemberCount is the count of the pod's gang group member pods to bind.
+	LabelBindGangMemberCount = SchedulingDomainPrefix + "/bind-gang-member-count"
+)

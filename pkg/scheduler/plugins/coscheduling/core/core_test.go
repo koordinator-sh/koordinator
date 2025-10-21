@@ -572,3 +572,88 @@ func TestPodGroupManager_PostFilter(t *testing.T) {
 		})
 	}
 }
+
+func TestGetGangBindingInfo(t *testing.T) {
+	gangCreatedTime := time.Now()
+	pg1 := makePg("gangA", "gangA_ns", 2, &gangCreatedTime, nil)
+	pg2 := makePg("gangB", "gangB_ns", 3, &gangCreatedTime, nil)
+	pg2.Annotations = map[string]string{extension.AnnotationGangGroups: "[\"gangB_ns/gangB\",\"gangC_ns/gangC\"]"}
+
+	tests := []struct {
+		name            string
+		pod             *corev1.Pod
+		pods            []*corev1.Pod
+		wantGangGroupId string
+		wantMemberCount int
+		wantNil         bool
+	}{
+		{
+			name:    "pod does not belong to any gang, should return nil",
+			pod:     st.MakePod().Name("pod1").UID("pod1").Namespace("ns1").Obj(),
+			wantNil: true,
+		},
+		{
+			name: "pod belongs to gangA with 2 waiting pods",
+			pod:  st.MakePod().Name("pod3").UID("pod3").Namespace("gangA_ns").Label(v1alpha1.PodGroupLabel, "gangA").Obj(),
+			pods: []*corev1.Pod{
+				st.MakePod().Name("pod3-1").UID("pod3-1").Namespace("gangA_ns").Label(v1alpha1.PodGroupLabel, "gangA").Obj(),
+			},
+			wantGangGroupId: "gangA_ns/gangA",
+			wantMemberCount: 2,
+			wantNil:         false,
+		},
+		{
+			name: "pod belongs to gangB in gangGroup with 3 total waiting pods",
+			pod:  st.MakePod().Name("pod4").UID("pod4").Namespace("gangB_ns").Label(v1alpha1.PodGroupLabel, "gangB").Obj(),
+			pods: []*corev1.Pod{
+				st.MakePod().Name("pod4-1").UID("pod4-1").Namespace("gangB_ns").Label(v1alpha1.PodGroupLabel, "gangB").Obj(),
+				st.MakePod().Name("pod4-2").UID("pod4-2").Namespace("gangB_ns").Label(v1alpha1.PodGroupLabel, "gangB").Obj(),
+			},
+			wantGangGroupId: "gangB_ns/gangB,gangC_ns/gangC",
+			wantMemberCount: 3,
+			wantNil:         false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Setup test manager
+			mgr := NewManagerForTest()
+
+			// Create podgroups
+			mgr.pgInformer.Informer().GetStore().Add(pg1)
+			mgr.pgInformer.Informer().GetStore().Add(pg2)
+			mgr.pgMgr.cache.onPodGroupAdd(pg1)
+			mgr.pgMgr.cache.onPodGroupAdd(pg2)
+
+			// Create and add pods to gang
+			for _, pod := range tt.pods {
+				gangId := util.GetId(pod.Namespace, util.GetGangNameByPod(pod))
+				gang := mgr.pgMgr.cache.getGangFromCacheByGangId(gangId, false)
+				if gang != nil {
+					gang.addAssumedPod(pod)
+				}
+			}
+			// Add test pod to gang
+			if !tt.wantNil {
+				gangId := util.GetId(tt.pod.Namespace, util.GetGangNameByPod(tt.pod))
+				gang := mgr.pgMgr.cache.getGangFromCacheByGangId(gangId, false)
+				if gang != nil {
+					gang.addAssumedPod(tt.pod)
+				}
+			}
+
+			// Act: get gang binding info
+			gangInfo := mgr.pgMgr.GetGangBindingInfo(tt.pod)
+
+			// Assert
+			if tt.wantNil {
+				assert.Nil(t, gangInfo)
+			} else {
+				assert.NotNil(t, gangInfo)
+				assert.Equal(t, tt.wantGangGroupId, gangInfo.GangGroupId)
+				assert.Equal(t, tt.wantMemberCount, gangInfo.MemberCount)
+			}
+		})
+	}
+}

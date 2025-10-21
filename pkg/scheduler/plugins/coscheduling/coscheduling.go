@@ -20,6 +20,7 @@ package coscheduling
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"time"
 
 	v1 "k8s.io/api/core/v1"
@@ -27,6 +28,8 @@ import (
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
+	"github.com/koordinator-sh/koordinator/apis/extension"
+	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	pgclientset "github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/generated/clientset/versioned"
 	pgformers "github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/generated/informers/externalversions"
 	schedinformers "github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/generated/informers/externalversions/scheduling/v1alpha1"
@@ -35,6 +38,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/coscheduling/core"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/coscheduling/util"
+	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
 
 // Coscheduling is a plugin that schedules pods in a group.
@@ -56,6 +60,8 @@ var _ frameworkext.PostFilterTransformer = &Coscheduling{}
 var _ framework.PostFilterPlugin = &Coscheduling{}
 var _ framework.PermitPlugin = &Coscheduling{}
 var _ framework.ReservePlugin = &Coscheduling{}
+var _ framework.PreBindPlugin = &Coscheduling{}
+var _ frameworkext.ReservationPreBindPlugin = &Coscheduling{}
 var _ framework.PostBindPlugin = &Coscheduling{}
 var _ framework.EnqueueExtensions = &Coscheduling{}
 
@@ -203,6 +209,33 @@ func (cs *Coscheduling) Reserve(ctx context.Context, state *framework.CycleState
 // ii. do nothing when bound failed
 func (cs *Coscheduling) Unreserve(ctx context.Context, state *framework.CycleState, pod *v1.Pod, nodeName string) {
 	cs.pgMgr.Unreserve(ctx, state, pod, nodeName, cs.frameworkHandler, Name)
+}
+
+func (cs *Coscheduling) PreBind(ctx context.Context, cycleState *framework.CycleState, pod *v1.Pod, nodeName string) *framework.Status {
+	gangInfo := cs.pgMgr.GetGangBindingInfo(pod)
+	if gangInfo == nil {
+		return nil
+	}
+	if pod.Labels == nil {
+		pod.Labels = make(map[string]string)
+	}
+	pod.Labels[extension.LabelBindGangGroupId] = gangInfo.GangGroupId
+	pod.Labels[extension.LabelBindGangMemberCount] = strconv.FormatInt(int64(gangInfo.MemberCount), 10)
+	return nil
+}
+
+func (cs *Coscheduling) PreBindReservation(ctx context.Context, cycleState *framework.CycleState, r *schedulingv1alpha1.Reservation, nodeName string) *framework.Status {
+	pod := reservationutil.NewReservePod(r)
+	gangInfo := cs.pgMgr.GetGangBindingInfo(pod)
+	if gangInfo == nil {
+		return nil
+	}
+	if r.Labels == nil {
+		r.Labels = make(map[string]string)
+	}
+	r.Labels[extension.LabelBindGangGroupId] = gangInfo.GangGroupId
+	r.Labels[extension.LabelBindGangMemberCount] = strconv.FormatInt(int64(gangInfo.MemberCount), 10)
+	return nil
 }
 
 // PostBind is called after a pod is successfully bound. These plugins are used update PodGroup when pod is bound.

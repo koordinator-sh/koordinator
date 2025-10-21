@@ -78,6 +78,8 @@ type Manager interface {
 	GetGangSummaries() map[string]*GangSummary
 
 	GetBoundPodNumber(gangId string) int32
+
+	GetGangBindingInfo(pod *corev1.Pod) *GangBindingInfo
 }
 
 // PodGroupManager defines the scheduling operation called
@@ -557,4 +559,21 @@ func (pgMgr *PodGroupManager) GetBoundPodNumber(gangId string) int32 {
 		return 0
 	}
 	return gang.getBoundPodNum()
+}
+
+type GangBindingInfo struct {
+	GangGroupId string
+	MemberCount int
+}
+
+func (pgMgr *PodGroupManager) GetGangBindingInfo(pod *corev1.Pod) *GangBindingInfo {
+	gang := pgMgr.GetGangByPod(pod)
+	if gang == nil {
+		return nil
+	}
+	memberCount := pgMgr.cache.getWaitingPodsNum(gang.GangGroup)
+	return &GangBindingInfo{
+		GangGroupId: gang.GangGroupId,
+		MemberCount: memberCount,
+	}
 }
