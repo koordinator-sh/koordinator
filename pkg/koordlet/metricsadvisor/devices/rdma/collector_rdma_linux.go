@@ -77,11 +77,6 @@ func GetNetDevice() (metriccache.Devices, error) {
 			return nil, err
 		}
 
-		deviceHealth := true
-		// check rdma device health
-		if !isRDMADeviceHealthy(rdmaResource) {
-			deviceHealth = false
-		}
 		netDevice := util.RDMADeviceInfo{
 			ID:            device.Address,
 			RDMAResources: rdmamap.GetRdmaDevicesForPcidev(device.Address),
@@ -92,7 +87,7 @@ func GetNetDevice() (metriccache.Devices, error) {
 			VendorCode:    device.Vendor.ID,
 			DeviceCode:    device.Product.ID,
 			BusID:         device.Address,
-			Health:        deviceHealth,
+			Health:        isRDMADeviceHealthy(rdmaResource),
 		}
 
 		nodeID, pcie, _, err := helper.ParsePCIInfo(device.Address)
