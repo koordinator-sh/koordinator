@@ -35,6 +35,7 @@ import (
 	ma "github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor/framework"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/qosmanager/framework"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/qosmanager/plugins"
+	qosmanagerUtil "github.com/koordinator-sh/koordinator/pkg/koordlet/qosmanager/plugins/util"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 )
@@ -54,7 +55,7 @@ func NewQOSManager(cfg *framework.Config, schema *apiruntime.Scheme, kubeClient 
 	eventBroadcaster.StartRecordingToSink(&clientcorev1.EventSinkImpl{Interface: kubeClient.CoreV1().Events("")})
 	recorder := eventBroadcaster.NewRecorder(schema, corev1.EventSource{Component: "koordlet-qosManager", Host: nodeName})
 	cgroupReader := resourceexecutor.NewCgroupReader()
-	evictor := framework.NewEvictor(kubeClient, recorder, evictVersion)
+	evictor := qosmanagerUtil.NewEvictor(kubeClient, recorder, evictVersion)
 
 	opt := &framework.Options{
 		CgroupReader:        cgroupReader,
@@ -68,8 +69,9 @@ func NewQOSManager(cfg *framework.Config, schema *apiruntime.Scheme, kubeClient 
 	}
 
 	ctx := &framework.Context{
-		Evictor:    evictor,
-		Strategies: make(map[string]framework.QOSStrategy, len(plugins.StrategyPlugins)),
+		Evictor:        evictor,
+		OnlyEvictByAPI: cfg.OnlyEvictByAPI,
+		Strategies:     make(map[string]framework.QOSStrategy, len(plugins.StrategyPlugins)),
 	}
 
 	for name, strategyFn := range plugins.StrategyPlugins {

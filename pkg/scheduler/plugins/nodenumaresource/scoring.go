@@ -109,7 +109,7 @@ func (p *Plugin) Score(ctx context.Context, cycleState *framework.CycleState, po
 		return 0, status
 	}
 	if podAllocation == nil {
-		podAllocation, status = tryAllocateFromNode(p.resourceManager, restoreState, resourceOptions, pod, node)
+		podAllocation, status = tryAllocateFromNode(p.resourceManager, nil, restoreState, resourceOptions, pod, node)
 		if !status.IsSuccess() {
 			return 0, status
 		}

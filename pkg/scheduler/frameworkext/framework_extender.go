@@ -82,7 +82,6 @@ type frameworkExtenderImpl struct {
 	reservationRestorePlugins              []ReservationRestorePlugin
 	reservationPreAllocationRestorePlugins []ReservationPreAllocationRestorePlugin
 
-	allocatePlugins          []AllocatePlugin
 	resizePodPlugins         []ResizePodPlugin
 	preBindExtensionsPlugins map[string]PreBindExtensions
 
@@ -166,9 +165,6 @@ func (ext *frameworkExtenderImpl) updatePlugins(pl framework.Plugin) {
 	}
 	if r, ok := pl.(ReservationPreAllocationRestorePlugin); ok {
 		ext.reservationPreAllocationRestorePlugins = append(ext.reservationPreAllocationRestorePlugins, r)
-	}
-	if r, ok := pl.(AllocatePlugin); ok {
-		ext.allocatePlugins = append(ext.allocatePlugins, r)
 	}
 	if r, ok := pl.(ResizePodPlugin); ok {
 		ext.resizePodPlugins = append(ext.resizePodPlugins, r)
@@ -693,18 +689,6 @@ func (ext *frameworkExtenderImpl) RunReservePluginsReserve(ctx context.Context, 
 		reservationNominator.DeleteNominatedReservePodOrReservation(pod)
 	}
 	return status
-}
-
-func (ext *frameworkExtenderImpl) RunAllocatePlugins(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeInfo *framework.NodeInfo) *framework.Status {
-	for _, pl := range ext.allocatePlugins {
-		startTime := time.Now()
-		status := pl.Allocate(ctx, cycleState, pod, nodeInfo)
-		ext.metricsRecorder.ObservePluginDurationAsync("Allocate", pl.Name(), status.Code().String(), metrics.SinceInSeconds(startTime))
-		if !status.IsSuccess() {
-			return status
-		}
-	}
-	return nil
 }
 
 func (ext *frameworkExtenderImpl) RunResizePod(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) *framework.Status {

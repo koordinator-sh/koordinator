@@ -37,6 +37,7 @@ import (
 	schedulerconfig "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/validation"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/hinter"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/schedulingphase"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/topologymanager"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
@@ -93,6 +94,9 @@ type preFilterState struct {
 	preemptibleInRRs                  map[string]map[types.UID]map[schedulingv1alpha1.DeviceType]deviceResources
 
 	hasReservationAffinity bool
+
+	// designatedAllocation is parsed from the Pod Annotation during the PreFilter phase. In this case, we should assume that the Node has already been selected. That is, all Score-related plug-ins will not be executed. Instead, we only need to call Filter to confirm whether the designatedAllocation is still valid and use it as the allocation result during actual allocation.
+	designatedAllocation map[schedulingv1alpha1.DeviceType]deviceResources
 }
 
 type GPURequirements struct {
@@ -179,6 +183,15 @@ func (p *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleState
 	state, status := preparePod(pod, p.gpuSharedResourceTemplatesCache, p.gpuSharedResourceTemplatesMatchedResources)
 	if !status.IsSuccess() {
 		return nil, status
+	}
+	hintForDevice := false
+	if schedulingHint := hinter.GetSchedulingHintState(cycleState); schedulingHint != nil {
+		if _, ok := schedulingHint.Extensions[Name]; ok {
+			hintForDevice = true
+		}
+	}
+	if !hintForDevice {
+		state.designatedAllocation = nil
 	}
 	cycleState.Write(stateKey, state)
 	if state.skip {
@@ -315,6 +328,15 @@ func (p *Plugin) Filter(ctx context.Context, cycleState *framework.CycleState, p
 	if state.skip {
 		return nil
 	}
+	if state.designatedAllocation != nil {
+		if state.allocationResult == nil {
+			status = p.allocate(ctx, cycleState, pod, nodeInfo.Node())
+			if !status.IsSuccess() {
+				return status
+			}
+		}
+		return nil
+	}
 
 	node := nodeInfo.Node()
 	if node == nil {
@@ -445,7 +467,11 @@ func (p *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState, 
 	}
 
 	if state.allocationResult == nil {
-		status = p.allocate(ctx, cycleState, pod, nodeName)
+		nodeInfo, err := p.handle.SnapshotSharedLister().NodeInfos().Get(nodeName)
+		if err != nil {
+			return framework.AsStatus(err)
+		}
+		status = p.allocate(ctx, cycleState, pod, nodeInfo.Node())
 		if !status.IsSuccess() {
 			return status
 		}
@@ -465,13 +491,7 @@ func (p *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState, 
 	return nil
 }
 
-func (p *Plugin) allocate(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) *framework.Status {
-	defer func() {
-		// ReservationRestoreState is O(n) complexity of node number of the cluster.
-		// cleanReservationRestoreState clears ReservationRestoreState in the stateData to reduce memory cost before entering
-		// the binding cycle.
-		cleanReservationRestoreState(cycleState)
-	}()
+func (p *Plugin) allocate(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, node *corev1.Node) *framework.Status {
 	state, status := getPreFilterState(cycleState)
 	if !status.IsSuccess() {
 		return status
@@ -480,12 +500,7 @@ func (p *Plugin) allocate(ctx context.Context, cycleState *framework.CycleState,
 		return nil
 	}
 
-	nodeInfo, err := p.handle.SnapshotSharedLister().NodeInfos().Get(nodeName)
-	if err != nil {
-		return framework.AsStatus(err)
-	}
-
-	nodeDeviceInfo := p.nodeDeviceCache.getNodeDevice(nodeName, false)
+	nodeDeviceInfo := p.nodeDeviceCache.getNodeDevice(node.Name, false)
 	if nodeDeviceInfo == nil {
 		return nil
 	}
@@ -493,14 +508,14 @@ func (p *Plugin) allocate(ctx context.Context, cycleState *framework.CycleState,
 	var affinity topologymanager.NUMATopologyHint
 	if !p.disableDeviceNUMATopologyAlignment {
 		store := topologymanager.GetStore(cycleState)
-		affinity, _ = store.GetAffinity(nodeInfo.Node().Name)
+		affinity, _ = store.GetAffinity(node.Name)
 	}
 
 	allocator := &AutopilotAllocator{
 		state:              state,
 		nodeDevice:         nodeDeviceInfo,
 		phaseBeingExecuted: schedulingphase.GetExtensionPointBeingExecuted(cycleState),
-		node:               nodeInfo.Node(),
+		node:               node,
 		pod:                pod,
 		scorer:             p.scorer,
 		numaNodes:          affinity.NUMANodeAffinity,
@@ -508,27 +523,27 @@ func (p *Plugin) allocate(ctx context.Context, cycleState *framework.CycleState,
 
 	// TODO: de-duplicate logic done by the Filter phase and move head the pre-process of the resource options
 	reservationRestoreState := getReservationRestoreState(cycleState)
-	restoreState := reservationRestoreState.getNodeState(nodeName)
-	preemptible := appendAllocated(nil, restoreState.mergedUnmatchedUsed, state.preemptibleDevices[nodeName])
+	restoreState := reservationRestoreState.getNodeState(node.Name)
+	preemptible := appendAllocated(nil, restoreState.mergedUnmatchedUsed, state.preemptibleDevices[node.Name])
 
 	nodeDeviceInfo.lock.RLock()
 	defer nodeDeviceInfo.lock.RUnlock()
 
 	result, status := p.allocateWithNominatedReservation(
-		allocator, cycleState, state, restoreState, nodeInfo.Node(), pod, preemptible)
+		allocator, cycleState, state, restoreState, node, pod, preemptible)
 	if !status.IsSuccess() {
 		return status
 	}
 	if len(result) == 0 {
 		preemptible = appendAllocated(preemptible, restoreState.mergedMatchedAllocatable)
-		result, status = allocator.Allocate(nil, nil, nil, preemptible)
+		result, status = allocator.Allocate(nil, nil, state.designatedAllocation, preemptible)
 		if !status.IsSuccess() {
 			return status
 		}
 	}
-	err = fillGPUTotalMem(result, nodeDeviceInfo)
+	err := fillGPUTotalMem(result, nodeDeviceInfo)
 	if err != nil {
-		return framework.NewStatus(framework.Error, fmt.Sprintf("fillGPUTotalMem failed: %v, node: %v", err, nodeName))
+		return framework.NewStatus(framework.Error, fmt.Sprintf("fillGPUTotalMem failed: %v, node: %v", err, node.Name))
 	}
 	state.allocationResult = result
 	return nil
@@ -568,7 +583,11 @@ func (p *Plugin) ResizePod(ctx context.Context, cycleState *framework.CycleState
 	}
 
 	if state.allocationResult == nil {
-		status = p.allocate(ctx, cycleState, pod, nodeName)
+		nodeInfo, err := p.handle.SnapshotSharedLister().NodeInfos().Get(nodeName)
+		if err != nil {
+			return framework.AsStatus(err)
+		}
+		status = p.allocate(ctx, cycleState, pod, nodeInfo.Node())
 		if !status.IsSuccess() {
 			return status
 		}

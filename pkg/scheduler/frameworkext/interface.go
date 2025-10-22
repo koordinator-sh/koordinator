@@ -77,7 +77,6 @@ type FrameworkExtender interface {
 
 	RunNUMATopologyManagerAdmit(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string, numaNodes []int, policyType apiext.NUMATopologyPolicy, exclusivePolicy apiext.NumaTopologyExclusive, allNUMANodeStatus []apiext.NumaNodeStatus) *framework.Status
 
-	RunAllocatePlugins(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeInfo *framework.NodeInfo) *framework.Status
 	RunResizePod(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) *framework.Status
 }
 
@@ -122,12 +121,6 @@ type ScoreTransformer interface {
 type PostFilterTransformer interface {
 	SchedulingTransformer
 	AfterPostFilter(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, filteredNodeStatusMap framework.NodeToStatusMap)
-}
-
-// AllocatePlugin is used to support the allocation of fine-grained resources without reserving the cache.
-type AllocatePlugin interface {
-	framework.Plugin
-	Allocate(ctx context.Context, state *framework.CycleState, pod *corev1.Pod, info *framework.NodeInfo) *framework.Status
 }
 
 // PluginToReservationRestoreStates declares a map from plugin name to its ReservationRestoreState.
