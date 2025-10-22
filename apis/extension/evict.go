@@ -14,14 +14,19 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package framework
+package extension
 
-import (
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/qosmanager/plugins/util"
-)
+import corev1 "k8s.io/api/core/v1"
 
-type Context struct {
-	Evictor        *util.Evictor
-	OnlyEvictByAPI bool
-	Strategies     map[string]QOSStrategy
+func PodEvictEnabled(pod *corev1.Pod) bool {
+	if pod == nil {
+		return false
+	}
+	if pod.Labels == nil {
+		return false
+	}
+	if enable, ok := pod.Labels[LabelPodEvictEnabled]; !ok || enable != "true" {
+		return false
+	}
+	return true
 }

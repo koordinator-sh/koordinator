@@ -44,6 +44,10 @@ const (
 	// AnnotationNetworkQOS are used to set bandwidth for Pod. The unit is bps.
 	// For example, 10M means 10 megabits per second.
 	AnnotationNetworkQOS = DomainPrefix + "networkQOS"
+
+	// LabelPodEvictEnabled is a label key that pods with `koordinator.sh/eviction-disabled` will
+	// be able to evict.
+	LabelPodEvictEnabled = DomainPrefix + "eviction-enabled"
 )
 
 type AggregationType string
