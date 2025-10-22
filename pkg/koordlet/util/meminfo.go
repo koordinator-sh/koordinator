@@ -298,7 +298,7 @@ func GetNodeNUMAInfo() (*NodeNUMAInfo, error) {
 		}
 	}
 
-	if len(nodeDirs) != len(result.NUMAInfos) {
+	if len(nodeDirs) != len(result.NUMAInfos)+giNUMANodes.Len() {
 		return nil, fmt.Errorf("invalid number of NUMA meminfo, dir %v, parsed %v",
 			len(nodeDirs), len(result.NUMAInfos))
 	}
