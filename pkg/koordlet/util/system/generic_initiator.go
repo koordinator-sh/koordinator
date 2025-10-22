@@ -24,6 +24,7 @@ import (
 	"strings"
 
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/klog/v2"
 )
 
 /*
@@ -38,11 +39,11 @@ This file provides some GI acquisition and parsing logic.
 */
 
 const (
-	HasGenericInitiatorPath = "has_generic_initiator"
+	SysHasGenericInitiator = "devices/system/node/has_generic_initiator"
 )
 
 func GetHasGenericInitiatorPath() string {
-	return filepath.Join(Conf.SysRootDir, SysNUMASubDir, HasGenericInitiatorPath)
+	return filepath.Join(Conf.SysRootDir, SysHasGenericInitiator)
 }
 
 func GetNUMANodesHasGI() sets.Set[int32] {
@@ -51,8 +52,9 @@ func GetNUMANodesHasGI() sets.Set[int32] {
 	if err != nil {
 		return nil
 	}
-	ids, err := parseIDs(string(rawNUMANodes))
+	ids, err := parseIDs(strings.TrimSpace(string(rawNUMANodes)))
 	if err != nil {
+		klog.V(4).InfoS("parseIDs error: %v", err)
 		return nil
 	}
 	return ids
