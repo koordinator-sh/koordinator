@@ -18,6 +18,7 @@ package rdma
 
 import (
 	"fmt"
+	"sort"
 	"strconv"
 
 	"github.com/Mellanox/rdmamap"
@@ -45,21 +46,37 @@ func GetNetDevice() (metriccache.Devices, error) {
 		if !isNetDevice(device.Class.ID) || system.IsSriovVF(device.Address) {
 			continue
 		}
+
+		rdmaResources := rdmamap.GetRdmaDevicesForPcidev(device.Address)
+		if len(rdmaResources) == 0 {
+			klog.Warningf("getNetDevice(): no rdma device for pci device %s", device.Address)
+			continue
+		}
+
+		sort.Slice(rdmaResources, func(i, j int) bool {
+			return rdmaResources[i] < rdmaResources[j]
+		})
+		// pf is loaded first, so the ibdev name is smaller
+		rdmaResource := rdmaResources[0]
+		minor, err := system.GetRDMAMinor(rdmaResource)
+		if err != nil {
+			klog.Errorf("getNetDevice(): get rdma minorID for rdma device %s error, %v", rdmaResource, err)
+			return nil, err
+		}
+
 		netDevice := util.RDMADeviceInfo{
 			ID:            device.Address,
 			RDMAResources: rdmamap.GetRdmaDevicesForPcidev(device.Address),
 			VFEnabled:     system.SriovConfigured(device.Address),
 			VFMap:         nil,
-			Minor:         0,
+			Minor:         minor,
 			Labels:        nil,
 			VendorCode:    device.Vendor.ID,
 			DeviceCode:    device.Product.ID,
 			BusID:         device.Address,
+			Health:        system.IsRDMADeviceHealthy(rdmaResource),
 		}
-		if len(netDevice.RDMAResources) == 0 {
-			klog.Warningf("getNetDevice(): no rdma device for pci device %s", device.Address)
-			continue
-		}
+
 		nodeID, pcie, _, err := helper.ParsePCIInfo(device.Address)
 		if err != nil {
 			klog.Errorf("getNetDevice(): parse pci device %s error, %v", device.Address, err)

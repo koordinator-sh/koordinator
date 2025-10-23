@@ -65,6 +65,7 @@ type RDMADeviceInfo struct {
 	NodeID        int32                       `json:"nodeID,omitempty"`
 	PCIE          string                      `json:"pcie,omitempty"`
 	BusID         string                      `json:"busID,omitempty"`
+	Health        bool                        `json:"health,omitempty"`
 }
 
 type VirtualFunction struct {

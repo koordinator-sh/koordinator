@@ -274,9 +274,9 @@ func (s *statesInformer) buildRDMADevice() []schedulingv1alpha1.DeviceInfo {
 		rdma := rdmaDevices[idx]
 		deviceInfo := schedulingv1alpha1.DeviceInfo{
 			UUID:   rdma.ID,
-			Minor:  pointer.Int32(0),
+			Minor:  pointer.Int32(rdma.Minor),
 			Type:   schedulingv1alpha1.RDMA,
-			Health: true,
+			Health: rdma.Health,
 			Resources: map[corev1.ResourceName]resource.Quantity{
 				extension.ResourceRDMA: *resource.NewQuantity(100, resource.DecimalSI),
 			},
@@ -307,11 +307,9 @@ func (s *statesInformer) buildRDMADevice() []schedulingv1alpha1.DeviceInfo {
 	}
 
 	sort.Slice(deviceInfos, func(i, j int) bool {
-		return deviceInfos[i].UUID < deviceInfos[j].UUID
+		return *deviceInfos[i].Minor < *deviceInfos[j].Minor
 	})
-	for i := range deviceInfos {
-		deviceInfos[i].Minor = pointer.Int32(int32(i))
-	}
+
 	return deviceInfos
 }
 
