@@ -37,7 +37,7 @@ type JobTopologyRequirements struct {
 
 func GetMustGatherLayer(spec *extension.NetworkTopologySpec, isLayerAncestorFunc networktopology.IsLayerAncestorFunc) schedulingv1alpha1.TopologyLayer {
 	sort.Slice(spec.GatherStrategy, func(i, j int) bool {
-		return isLayerAncestorFunc(spec.GatherStrategy[i].Layer, spec.GatherStrategy[j].Layer)
+		return !isLayerAncestorFunc(spec.GatherStrategy[i].Layer, spec.GatherStrategy[j].Layer)
 	})
 	for _, rule := range spec.GatherStrategy {
 		if rule.Strategy == extension.NetworkTopologyGatherStrategyMustGather {

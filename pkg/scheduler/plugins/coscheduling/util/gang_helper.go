@@ -62,17 +62,9 @@ func GetGangMinNumFromPod(pod *corev1.Pod) (minNum int, err error) {
 		return int(val), err
 	}
 	if _, ok := pod.Annotations[extension.AnnotationGangMinNum]; ok {
-		return extension.GetMinNum(pod)
+		return extension.GetGangMinNum(pod)
 	}
 	return 0, errors.New("missing min available")
-}
-
-func GetGangMatchPolicyByPod(pod *corev1.Pod) string {
-	if pod == nil {
-		return ""
-	}
-
-	return extension.GetGangMatchPolicy(pod)
 }
 
 func IsPodNeedGang(pod *corev1.Pod) bool {
@@ -84,7 +76,7 @@ func IsPodNeedGang(pod *corev1.Pod) bool {
 // 2. fall back to defaultTimeout
 func GetWaitTimeDuration(pg *v1alpha1.PodGroup, defaultTimeout time.Duration) time.Duration {
 	if pg != nil && pg.Spec.ScheduleTimeoutSeconds != nil {
-		if *pg.Spec.ScheduleTimeoutSeconds >= 0 {
+		if *pg.Spec.ScheduleTimeoutSeconds > 0 {
 			return time.Duration(*pg.Spec.ScheduleTimeoutSeconds) * time.Second
 		} else {
 			klog.Errorf("podGroup's ScheduleTimeoutSeconds illegal, podGroupName: %s", klog.KObj(pg))
@@ -97,6 +89,9 @@ func GetWaitTimeDuration(pg *v1alpha1.PodGroup, defaultTimeout time.Duration) ti
 // StringToGangGroupSlice
 // Parse gang group's annotation like :"["nsA/gangA","nsB/gangB"]"  => goLang slice : []string{"nsA/gangA"."nsB/gangB"}
 func StringToGangGroupSlice(s string) ([]string, error) {
+	if s == "" {
+		return nil, nil
+	}
 	gangGroup := make([]string, 0)
 	err := json.Unmarshal([]byte(s), &gangGroup)
 	if err != nil {

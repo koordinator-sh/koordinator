@@ -107,7 +107,7 @@ type TreeNodeMeta struct {
 func (t *tree) AddNode(node *corev1.Node) {
 	treeNodesMeta, err := t.getTreeNodesMeta(node)
 	if err != nil {
-		klog.Error(err)
+		klog.V(5).ErrorS(err, "Failed to get tree nodes meta")
 		return
 	}
 

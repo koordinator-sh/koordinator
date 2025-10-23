@@ -98,7 +98,7 @@ func (solver *networkTopologySolverImpl) calculateNodeOfferSlot(
 ) map[string]int {
 	topologyState := TopologyStateFromContext(ctx)
 	topologyState.NodeOfferSlot = make(map[string]int, len(nodeInfos))
-	topologyState.NodeToStatusMap = make(framework.NodeToStatusMap, len(nodeInfos))
+	topologyState.NodeToStatusMap = make(framework.NodeToStatusMap)
 	var statusLock sync.RWMutex
 	calculateForNode := func(nodeI int) {
 		nodeInfo := nodeInfos[nodeI]
@@ -127,7 +127,9 @@ func (solver *networkTopologySolverImpl) calculateNodeOfferSlot(
 		}
 		statusLock.Lock()
 		topologyState.NodeOfferSlot[nodeInfo.Node().Name] = offerSlot
-		topologyState.NodeToStatusMap[nodeInfo.Node().Name] = status
+		if !status.IsSuccess() {
+			topologyState.NodeToStatusMap[nodeInfo.Node().Name] = status
+		}
 		statusLock.Unlock()
 	}
 	solver.handle.Parallelizer().Until(ctx, len(nodeInfos), calculateForNode, OperationCalculateNodeOfferSlot)
@@ -292,14 +294,14 @@ func distributePods(
 	for _, pod := range toSchedulePods {
 		currentNode := topologyOrderedNodes[currentNodeIndex]
 		offerSlot := nodeToOfferSlot[currentNode]
-		if offerSlot > 0 {
-			podToNode[framework.GetNamespacedName(pod.Namespace, pod.Name)] = currentNode
-			offerSlot--
-			nodeToOfferSlot[currentNode] = offerSlot
+		for offerSlot <= 0 {
+			currentNodeIndex++
+			currentNode = topologyOrderedNodes[currentNodeIndex]
+			offerSlot = nodeToOfferSlot[currentNode]
 		}
-		if offerSlot <= 0 {
-			currentNodeIndex += 1
-		}
+		podToNode[framework.GetNamespacedName(pod.Namespace, pod.Name)] = currentNode
+		offerSlot--
+		nodeToOfferSlot[currentNode] = offerSlot
 	}
 	return podToNode
 }
