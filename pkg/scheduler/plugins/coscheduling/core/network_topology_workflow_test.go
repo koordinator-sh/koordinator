@@ -132,6 +132,7 @@ func TestPodGroupManager_NetworkTopology(t *testing.T) {
 		existingNominatedPods  []*corev1.Pod
 		filterPlugin           schedulertesting.RegisterPluginFunc
 		wantScheduleStatus     *framework.Status
+		wantPlannedPodToNode   map[string]string
 		wantDiagnosis          *frameworkext.Diagnosis
 		wantPreemptionState    *JobPreemptionState
 		wantPreemptMessage     string
@@ -251,8 +252,8 @@ func TestPodGroupManager_NetworkTopology(t *testing.T) {
 				},
 			},
 			gangSchedulingContext: &GangSchedulingContext{
-				gangGroup:   sets.New[string]("default/gangA", "default/gangB"),
-				gangGroupID: "default/gangA,default/gangB",
+				gangGroup:   sets.New[string]("default/gangA"),
+				gangGroupID: "default/gangA",
 				networkTopologySpec: &extension.NetworkTopologySpec{
 					GatherStrategy: []extension.NetworkTopologyGatherRule{
 						{
@@ -262,6 +263,23 @@ func TestPodGroupManager_NetworkTopology(t *testing.T) {
 					},
 				},
 			},
+			/*
+				Cluster Topology
+				├── SpineLayer: s1
+				│   ├── BlockLayer: b1
+				│   │   ├── node-8
+				│   │   └── node-1
+				│   └── BlockLayer: b2
+				│       ├── node-7
+				│       └── node-2
+				└── SpineLayer: s2
+				    ├── BlockLayer: b3
+				    │   ├── node-6
+				    │   └── node-3
+				    └── BlockLayer: b4
+				        ├── node-5
+				        └── node-4
+			*/
 			clusterNetworkTopology: networktopology.FakeClusterNetworkTopology,
 			nodes: []*corev1.Node{
 				{
@@ -386,6 +404,12 @@ func TestPodGroupManager_NetworkTopology(t *testing.T) {
 				},
 			},
 			wantScheduleStatus: nil,
+			wantPlannedPodToNode: map[string]string{
+				"default/pending-pod-1": "node-1",
+				"default/pending-pod-2": "node-8",
+				"default/pending-pod-3": "node-2",
+				"default/pending-pod-4": "node-7",
+			},
 			wantDiagnosis: &frameworkext.Diagnosis{
 				TopologyKeyToExplain: "SpineLayer",
 				ScheduleDiagnosis: &frameworkext.ScheduleDiagnosis{
@@ -413,83 +437,9 @@ func TestPodGroupManager_NetworkTopology(t *testing.T) {
 					},
 				},
 			},
-			wantPreemptionState: &JobPreemptionState{
-				TriggerPodKey:                 "default/pending-pod-1",
-				PreemptorKey:                  "default/gangA,default/gangB",
-				Reason:                        ReasonTriggerPodPreemptSuccess,
-				Message:                       "preempt success, alreadyWaitingForBound: 1/2",
-				ClearNominatedNodeFailedMsg:   map[string]string{},
-				TerminatingPodOnNominatedNode: map[string]string{},
-				statusMap:                     map[string]*framework.Status{},
-				PodToNominatedNode: map[string]string{
-					"default/pending-pod-1": "node-1",
-				},
-				SchedulingMode: frameworkext.PodSchedulingMode,
-			},
-			wantPreemptMessage: "preemption already attempted by default/pending-pod-1 with message preempt success, alreadyWaitingForBound: 1/2",
-			wantPreempt:        framework.NewPostFilterResultWithNominatedNode("node-1"),
-			wantPreemptStatus:  framework.NewStatus(framework.Success),
-			wantPossibleVictims: []schedulingv1alpha1.PossibleVictim{
-				{NamespacedName: schedulingv1alpha1.NamespacedName{Name: "existing-pod-1", Namespace: "default"}},
-				{NamespacedName: schedulingv1alpha1.NamespacedName{Name: "existing-pod-2", Namespace: "default"}},
-				{NamespacedName: schedulingv1alpha1.NamespacedName{Name: "existing-pod-4", Namespace: "default"}},
-			},
-			wantVictims: []schedulingv1alpha1.PossibleVictim{
-				{NamespacedName: schedulingv1alpha1.NamespacedName{Name: "existing-pod-2", Namespace: "default"}},
-			},
-			wantJobPods: []corev1.Pod{
-				{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      "pending-pod-1",
-						Namespace: "default",
-						Labels: map[string]string{
-							v1alpha1.PodGroupLabel: gangName,
-						},
-					},
-					Spec: corev1.PodSpec{
-						Priority: pointer.Int32(highPriority),
-						Containers: []corev1.Container{
-							{
-								Resources: corev1.ResourceRequirements{
-									Requests: corev1.ResourceList{
-										corev1.ResourceCPU: resource.MustParse("16"),
-									},
-								},
-							},
-						},
-					},
-					Status: corev1.PodStatus{
-						NominatedNodeName: "node-1",
-					},
-				},
-				{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      "pending-pod-2",
-						Namespace: "default",
-						Labels: map[string]string{
-							v1alpha1.PodGroupLabel: gangName,
-						},
-					},
-					Spec: corev1.PodSpec{
-						Priority: pointer.Int32(highPriority),
-						Containers: []corev1.Container{
-							{
-								Resources: corev1.ResourceRequirements{
-									Requests: corev1.ResourceList{
-										corev1.ResourceCPU: resource.MustParse("16"),
-									},
-								},
-							},
-						},
-					},
-					Status: corev1.PodStatus{
-						NominatedNodeName: "node-2",
-					},
-				},
-			},
 		},
 		{
-			name: "schedule failure, preempt failure",
+			name: "schedule failure, preempt success",
 			triggerPod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "pending-pod-1",
@@ -598,8 +548,8 @@ func TestPodGroupManager_NetworkTopology(t *testing.T) {
 				},
 			},
 			gangSchedulingContext: &GangSchedulingContext{
-				gangGroup:   sets.New[string]("default/gangA", "default/gangB"),
-				gangGroupID: "default/gangA,default/gangB",
+				gangGroup:   sets.New[string]("default/gangA"),
+				gangGroupID: "default/gangA",
 				networkTopologySpec: &extension.NetworkTopologySpec{
 					GatherStrategy: []extension.NetworkTopologyGatherRule{
 						{
@@ -609,6 +559,23 @@ func TestPodGroupManager_NetworkTopology(t *testing.T) {
 					},
 				},
 			},
+			/*
+				Cluster Topology
+				├── SpineLayer: s1
+				│   ├── BlockLayer: b1
+				│   │   ├── node-8
+				│   │   └── node-1 existing-pod-1 low priority
+				│   └── BlockLayer: b2
+				│       ├── node-7
+				│       └── node-2
+				└── SpineLayer: s2
+				    ├── BlockLayer: b3
+				    │   ├── node-6
+				    │   └── node-3
+				    └── BlockLayer: b4
+				        ├── node-5
+				        └── node-4 existing-pod-2 low priority
+			*/
 			clusterNetworkTopology: networktopology.FakeClusterNetworkTopology,
 			existingPods: []*corev1.Pod{
 				{
@@ -804,7 +771,7 @@ func TestPodGroupManager_NetworkTopology(t *testing.T) {
 			},
 			wantPreemptionState: &JobPreemptionState{
 				TriggerPodKey:                 "default/pending-pod-1",
-				PreemptorKey:                  "default/gangA,default/gangB",
+				PreemptorKey:                  "default/gangA",
 				Reason:                        ReasonTriggerPodPreemptSuccess,
 				Message:                       "preempt success, alreadyWaitingForBound: 0/4",
 				ClearNominatedNodeFailedMsg:   map[string]string{},
@@ -926,6 +893,483 @@ func TestPodGroupManager_NetworkTopology(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "schedule failure, preempt failure",
+			triggerPod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "pending-pod-1",
+					Namespace: "default",
+					Labels: map[string]string{
+						v1alpha1.PodGroupLabel: gangName,
+					},
+				},
+				Spec: corev1.PodSpec{
+					Priority: pointer.Int32(highPriority),
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU: resource.MustParse("16"),
+								},
+							},
+						},
+					},
+				},
+			},
+			allPendingPods: []*corev1.Pod{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "pending-pod-1",
+						Namespace: "default",
+						Labels: map[string]string{
+							v1alpha1.PodGroupLabel: gangName,
+						},
+					},
+					Spec: corev1.PodSpec{
+						Priority: pointer.Int32(highPriority),
+						Containers: []corev1.Container{
+							{
+								Resources: corev1.ResourceRequirements{
+									Requests: corev1.ResourceList{
+										corev1.ResourceCPU: resource.MustParse("16"),
+									},
+								},
+							},
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "pending-pod-2",
+						Namespace: "default",
+						Labels: map[string]string{
+							v1alpha1.PodGroupLabel: gangName,
+						},
+					},
+					Spec: corev1.PodSpec{
+						Priority: pointer.Int32(highPriority),
+						Containers: []corev1.Container{
+							{
+								Resources: corev1.ResourceRequirements{
+									Requests: corev1.ResourceList{
+										corev1.ResourceCPU: resource.MustParse("16"),
+									},
+								},
+							},
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "pending-pod-3",
+						Namespace: "default",
+						Labels: map[string]string{
+							v1alpha1.PodGroupLabel: gangName,
+						},
+					},
+					Spec: corev1.PodSpec{
+						Priority: pointer.Int32(highPriority),
+						Containers: []corev1.Container{
+							{
+								Resources: corev1.ResourceRequirements{
+									Requests: corev1.ResourceList{
+										corev1.ResourceCPU: resource.MustParse("16"),
+									},
+								},
+							},
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "pending-pod-4",
+						Namespace: "default",
+						Labels: map[string]string{
+							v1alpha1.PodGroupLabel: gangName,
+						},
+					},
+					Spec: corev1.PodSpec{
+						Priority: pointer.Int32(highPriority),
+						Containers: []corev1.Container{
+							{
+								Resources: corev1.ResourceRequirements{
+									Requests: corev1.ResourceList{
+										corev1.ResourceCPU: resource.MustParse("16"),
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			gangSchedulingContext: &GangSchedulingContext{
+				gangGroup:   sets.New[string]("default/gangA"),
+				gangGroupID: "default/gangA",
+				networkTopologySpec: &extension.NetworkTopologySpec{
+					GatherStrategy: []extension.NetworkTopologyGatherRule{
+						{
+							Layer:    "SpineLayer",
+							Strategy: extension.NetworkTopologyGatherStrategyMustGather,
+						},
+					},
+				},
+			},
+			/*
+				Cluster Topology
+				├── SpineLayer: s1
+				│   ├── BlockLayer: b1
+				│   │   ├── node-8
+				│   │   └── node-1 existing-pod-1 high priority
+				│   └── BlockLayer: b2
+				│       ├── node-7
+				│       └── node-2 existing-pod-3 low priority
+				└── SpineLayer: s2
+				    ├── BlockLayer: b3
+				    │   ├── node-6
+				    │   └── node-3
+				    └── BlockLayer: b4
+				        ├── node-5
+				        └── node-4 existing-pod-2 high priority
+			*/
+			clusterNetworkTopology: networktopology.FakeClusterNetworkTopology,
+			existingPods: []*corev1.Pod{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "existing-pod-1",
+						Namespace: "default",
+						UID:       "existing-pod-1",
+					},
+					Spec: corev1.PodSpec{
+						NodeName: "node-1",
+						Priority: pointer.Int32(highPriority),
+						Containers: []corev1.Container{
+							{
+								Resources: corev1.ResourceRequirements{
+									Requests: corev1.ResourceList{
+										corev1.ResourceCPU: resource.MustParse("16"),
+									},
+								},
+							},
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "existing-pod-3",
+						Namespace: "default",
+						UID:       "existing-pod-3",
+					},
+					Spec: corev1.PodSpec{
+						NodeName: "node-2",
+						Priority: pointer.Int32(lowPriority),
+						Containers: []corev1.Container{
+							{
+								Resources: corev1.ResourceRequirements{
+									Requests: corev1.ResourceList{
+										corev1.ResourceCPU: resource.MustParse("16"),
+									},
+								},
+							},
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "existing-pod-2",
+						Namespace: "default",
+						UID:       "existing-pod-2",
+					},
+					Spec: corev1.PodSpec{
+						NodeName: "node-4",
+						Priority: pointer.Int32(highPriority),
+						Containers: []corev1.Container{
+							{
+								Resources: corev1.ResourceRequirements{
+									Requests: corev1.ResourceList{
+										corev1.ResourceCPU: resource.MustParse("16"),
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			nodes: []*corev1.Node{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "node-8",
+						Labels: map[string]string{
+							networktopology.FakeSpineLabel: "s1",
+							networktopology.FakeBlockLabel: "b1",
+						},
+					},
+					Status: corev1.NodeStatus{
+						Allocatable: corev1.ResourceList{
+							corev1.ResourceCPU:  resource.MustParse("16"),
+							corev1.ResourcePods: resource.MustParse("110"),
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "node-1",
+						Labels: map[string]string{
+							networktopology.FakeSpineLabel: "s1",
+							networktopology.FakeBlockLabel: "b1",
+						},
+					},
+					Status: corev1.NodeStatus{
+						Allocatable: corev1.ResourceList{
+							corev1.ResourceCPU:  resource.MustParse("16"),
+							corev1.ResourcePods: resource.MustParse("110"),
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "node-7",
+						Labels: map[string]string{
+							networktopology.FakeSpineLabel: "s1",
+							networktopology.FakeBlockLabel: "b2",
+						},
+					},
+					Status: corev1.NodeStatus{
+						Allocatable: corev1.ResourceList{
+							corev1.ResourceCPU:  resource.MustParse("16"),
+							corev1.ResourcePods: resource.MustParse("110"),
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "node-2",
+						Labels: map[string]string{
+							networktopology.FakeSpineLabel: "s1",
+							networktopology.FakeBlockLabel: "b2",
+						},
+					},
+					Status: corev1.NodeStatus{
+						Allocatable: corev1.ResourceList{
+							corev1.ResourceCPU:  resource.MustParse("16"),
+							corev1.ResourcePods: resource.MustParse("110"),
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "node-6",
+						Labels: map[string]string{
+							networktopology.FakeSpineLabel: "s2",
+							networktopology.FakeBlockLabel: "b3",
+						},
+					},
+					Status: corev1.NodeStatus{
+						Allocatable: corev1.ResourceList{
+							corev1.ResourceCPU:  resource.MustParse("16"),
+							corev1.ResourcePods: resource.MustParse("110"),
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "node-3",
+						Labels: map[string]string{
+							networktopology.FakeSpineLabel: "s2",
+							networktopology.FakeBlockLabel: "b3",
+						},
+					},
+					Status: corev1.NodeStatus{
+						Allocatable: corev1.ResourceList{
+							corev1.ResourceCPU:  resource.MustParse("16"),
+							corev1.ResourcePods: resource.MustParse("110"),
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "node-5",
+						Labels: map[string]string{
+							networktopology.FakeSpineLabel: "s2",
+							networktopology.FakeBlockLabel: "b4",
+						},
+					},
+					Status: corev1.NodeStatus{
+						Allocatable: corev1.ResourceList{
+							corev1.ResourceCPU:  resource.MustParse("16"),
+							corev1.ResourcePods: resource.MustParse("110"),
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "node-4",
+						Labels: map[string]string{
+							networktopology.FakeSpineLabel: "s2",
+							networktopology.FakeBlockLabel: "b4",
+						},
+					},
+					Status: corev1.NodeStatus{
+						Allocatable: corev1.ResourceList{
+							corev1.ResourceCPU:  resource.MustParse("16"),
+							corev1.ResourcePods: resource.MustParse("110"),
+						},
+					},
+				},
+			},
+			wantScheduleStatus: framework.NewStatus(framework.Unschedulable, "no candidate topology nodes can accommodate job, desiredOfferSlot: 4, topology topologyNode SpineLayer/s1: 2;topology topologyNode SpineLayer/s2: 3, 0/8 nodes are available: 8 Insufficient cpu."),
+			wantDiagnosis: &frameworkext.Diagnosis{
+				TopologyKeyToExplain: "SpineLayer",
+				ScheduleDiagnosis: &frameworkext.ScheduleDiagnosis{
+					SchedulingMode:      frameworkext.JobSchedulingMode,
+					AlreadyWaitForBound: 0,
+					NodeOfferSlot: map[string]int{
+						"node-1": 0,
+						"node-2": 0,
+						"node-3": 1,
+						"node-4": 0,
+						"node-5": 1,
+						"node-6": 1,
+						"node-7": 1,
+						"node-8": 1,
+					},
+					NodeToStatusMap: map[string]*framework.Status{
+						"node-1": framework.NewStatus(framework.Unschedulable, "Insufficient cpu").WithFailedPlugin("FakeFitPlugin"),
+						"node-2": framework.NewStatus(framework.Unschedulable, "Insufficient cpu").WithFailedPlugin("FakeFitPlugin"),
+						"node-3": framework.NewStatus(framework.Unschedulable, "Insufficient cpu").WithFailedPlugin("FakeFitPlugin"),
+						"node-4": framework.NewStatus(framework.Unschedulable, "Insufficient cpu").WithFailedPlugin("FakeFitPlugin"),
+						"node-5": framework.NewStatus(framework.Unschedulable, "Insufficient cpu").WithFailedPlugin("FakeFitPlugin"),
+						"node-6": framework.NewStatus(framework.Unschedulable, "Insufficient cpu").WithFailedPlugin("FakeFitPlugin"),
+						"node-7": framework.NewStatus(framework.Unschedulable, "Insufficient cpu").WithFailedPlugin("FakeFitPlugin"),
+						"node-8": framework.NewStatus(framework.Unschedulable, "Insufficient cpu").WithFailedPlugin("FakeFitPlugin"),
+					},
+				},
+			},
+			wantPreemptionState: &JobPreemptionState{
+				TriggerPodKey:                 "default/pending-pod-1",
+				PreemptorKey:                  "default/gangA",
+				Reason:                        ReasonPreemptionNotHelpful,
+				Message:                       "no candidate topology nodes can accommodate job, desiredOfferSlot: 4, topology topologyNode SpineLayer/s1: 3;topology topologyNode SpineLayer/s2: 3, 0/8 nodes are available: 8 Insufficient cpu.",
+				ClearNominatedNodeFailedMsg:   map[string]string{},
+				TerminatingPodOnNominatedNode: map[string]string{},
+				statusMap: map[string]*framework.Status{
+					"node-1": framework.NewStatus(framework.Unschedulable, "Insufficient cpu").WithFailedPlugin("FakeFitPlugin"),
+					"node-2": framework.NewStatus(framework.Unschedulable, "Insufficient cpu").WithFailedPlugin("FakeFitPlugin"),
+					"node-3": framework.NewStatus(framework.Unschedulable, "Insufficient cpu").WithFailedPlugin("FakeFitPlugin"),
+					"node-4": framework.NewStatus(framework.Unschedulable, "Insufficient cpu").WithFailedPlugin("FakeFitPlugin"),
+					"node-5": framework.NewStatus(framework.Unschedulable, "Insufficient cpu").WithFailedPlugin("FakeFitPlugin"),
+					"node-6": framework.NewStatus(framework.Unschedulable, "Insufficient cpu").WithFailedPlugin("FakeFitPlugin"),
+					"node-7": framework.NewStatus(framework.Unschedulable, "Insufficient cpu").WithFailedPlugin("FakeFitPlugin"),
+					"node-8": framework.NewStatus(framework.Unschedulable, "Insufficient cpu").WithFailedPlugin("FakeFitPlugin"),
+				},
+				NodeToOfferSlot: map[string]int{
+					"node-1": 0,
+					"node-2": 1,
+					"node-3": 1,
+					"node-4": 0,
+					"node-5": 1,
+					"node-6": 1,
+					"node-7": 1,
+					"node-8": 1,
+				},
+				SchedulingMode: frameworkext.JobSchedulingMode,
+			},
+			wantPreemptMessage: "preemption already attempted by default/pending-pod-1 with message no candidate topology nodes can accommodate job, desiredOfferSlot: 4, topology topologyNode SpineLayer/s1: 3;topology topologyNode SpineLayer/s2: 3, 0/8 nodes are available: 8 Insufficient cpu.",
+			wantPreempt:        framework.NewPostFilterResultWithNominatedNode(""),
+			wantPreemptStatus:  framework.NewStatus(framework.Unschedulable, `no candidate topology nodes can accommodate job, desiredOfferSlot: 4, topology topologyNode SpineLayer/s1: 3;topology topologyNode SpineLayer/s2: 3, 0/8 nodes are available: 8 Insufficient cpu.`),
+			wantPossibleVictims: []schedulingv1alpha1.PossibleVictim{
+				{NamespacedName: schedulingv1alpha1.NamespacedName{Name: "existing-pod-3", Namespace: "default"}},
+			},
+			wantJobPods: []corev1.Pod{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "pending-pod-1",
+						Namespace: "default",
+						Labels: map[string]string{
+							v1alpha1.PodGroupLabel: gangName,
+						},
+					},
+					Spec: corev1.PodSpec{
+						Priority: pointer.Int32(highPriority),
+						Containers: []corev1.Container{
+							{
+								Resources: corev1.ResourceRequirements{
+									Requests: corev1.ResourceList{
+										corev1.ResourceCPU: resource.MustParse("16"),
+									},
+								},
+							},
+						},
+					},
+					Status: corev1.PodStatus{},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "pending-pod-2",
+						Namespace: "default",
+						Labels: map[string]string{
+							v1alpha1.PodGroupLabel: gangName,
+						},
+					},
+					Spec: corev1.PodSpec{
+						Priority: pointer.Int32(highPriority),
+						Containers: []corev1.Container{
+							{
+								Resources: corev1.ResourceRequirements{
+									Requests: corev1.ResourceList{
+										corev1.ResourceCPU: resource.MustParse("16"),
+									},
+								},
+							},
+						},
+					},
+					Status: corev1.PodStatus{},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "pending-pod-3",
+						Namespace: "default",
+						Labels: map[string]string{
+							v1alpha1.PodGroupLabel: gangName,
+						},
+					},
+					Spec: corev1.PodSpec{
+						Priority: pointer.Int32(highPriority),
+						Containers: []corev1.Container{
+							{
+								Resources: corev1.ResourceRequirements{
+									Requests: corev1.ResourceList{
+										corev1.ResourceCPU: resource.MustParse("16"),
+									},
+								},
+							},
+						},
+					},
+					Status: corev1.PodStatus{},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "pending-pod-4",
+						Namespace: "default",
+						Labels: map[string]string{
+							v1alpha1.PodGroupLabel: gangName,
+						},
+					},
+					Spec: corev1.PodSpec{
+						Priority: pointer.Int32(highPriority),
+						Containers: []corev1.Container{
+							{
+								Resources: corev1.ResourceRequirements{
+									Requests: corev1.ResourceList{
+										corev1.ResourceCPU: resource.MustParse("16"),
+									},
+								},
+							},
+						},
+					},
+					Status: corev1.PodStatus{},
+				},
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -967,6 +1411,7 @@ func TestPodGroupManager_NetworkTopology(t *testing.T) {
 			diagnosis.TargetPod = nil
 			diagnosis.Timestamp = metav1.Time{}
 			assert.Equal(t, tt.wantDiagnosis, diagnosis)
+			assert.Equal(t, tt.wantPlannedPodToNode, tt.gangSchedulingContext.networkTopologyPlannedNodes)
 			if status.IsSuccess() {
 				return
 			}
