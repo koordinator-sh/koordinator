@@ -45,8 +45,6 @@ spec:
               cpu: 100m
               memory: 128Mi
           volumeMounts:
-            - mountPath: /etc/kubernetes/node-feature-discovery/features.d
-              name: output-dir
             - mountPath: /hostfs
               name: host-root
             - mountPath: /host-sys/
