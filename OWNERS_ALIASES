@@ -34,3 +34,13 @@ aliases:
     - zwzhang0107
     - saintube
 
+  device-approvers:
+    - ZiMengSheng
+    - zqzten
+
+
+  job-approvers:
+    - ZiMengSheng
+    - zqzten
+    - saintube
+
