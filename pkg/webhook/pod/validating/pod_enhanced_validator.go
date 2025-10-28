@@ -36,6 +36,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
+	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 	utilfeature "github.com/koordinator-sh/koordinator/pkg/util/feature"
@@ -47,6 +48,10 @@ const (
 
 	// DefaultConfReconcileInterval is the default reconcile interval for config
 	DefaultConfReconcileInterval = 5 * time.Minute
+
+	// LabelKeySkipEnhancedValidation is the pod label key used to opt out a pod from enhanced validation.
+	// Set to "true" to skip all pod-enhanced-validator rules for that pod.
+	LabelKeySkipEnhancedValidation = extension.PodDomainPrefix + "/skip-enhanced-validation"
 )
 
 var (
@@ -273,6 +278,11 @@ func (m *PodEnhancedValidator) ValidatePod(pod *corev1.Pod) (string, error) {
 	if !config.Enable {
 		return "", nil
 	}
+	// skip validation for pods with the skip-enhanced-validation label
+	if pod.Labels[LabelKeySkipEnhancedValidation] == "true" {
+		return "", nil
+	}
+	// validate pod against all rules
 	for _, rule := range config.Rules {
 		// check if namespace is whitelisted for this rule
 		if rule.isNamespaceWhitelisted(pod.Namespace) {

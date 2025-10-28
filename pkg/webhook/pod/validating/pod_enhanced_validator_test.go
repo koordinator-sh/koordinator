@@ -177,6 +177,16 @@ func TestPodEnhancedValidate(t *testing.T) {
 			wantErr:     false,
 		},
 		{
+			name:      "quota-label-required: pod with skip-enhanced-validation label",
+			operation: admissionv1.Create,
+			newPod: elasticquota.MakePod("ns1", "pod1").Label(
+				LabelKeySkipEnhancedValidation, "true").Obj(),
+			configMap:   quotaLabelRequiredCM,
+			wantAllowed: true,
+			wantReason:  "",
+			wantErr:     false,
+		},
+		{
 			name:        "quota-label-required: pod in another whitelisted namespace",
 			operation:   admissionv1.Create,
 			newPod:      elasticquota.MakePod("koordinator-system", "pod1").Obj(),
