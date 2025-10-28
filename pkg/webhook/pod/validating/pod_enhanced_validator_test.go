@@ -30,6 +30,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
+	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 	utilfeature "github.com/koordinator-sh/koordinator/pkg/util/feature"
@@ -180,7 +181,7 @@ func TestPodEnhancedValidate(t *testing.T) {
 			name:      "quota-label-required: pod with skip-enhanced-validation label",
 			operation: admissionv1.Create,
 			newPod: elasticquota.MakePod("ns1", "pod1").Label(
-				LabelKeySkipEnhancedValidation, "true").Obj(),
+				extension.LabelPodSkipEnhancedValidation, "true").Obj(),
 			configMap:   quotaLabelRequiredCM,
 			wantAllowed: true,
 			wantReason:  "",

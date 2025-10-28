@@ -48,10 +48,6 @@ const (
 
 	// DefaultConfReconcileInterval is the default reconcile interval for config
 	DefaultConfReconcileInterval = 5 * time.Minute
-
-	// LabelKeySkipEnhancedValidation is the pod label key used to opt out a pod from enhanced validation.
-	// Set to "true" to skip all pod-enhanced-validator rules for that pod.
-	LabelKeySkipEnhancedValidation = extension.PodDomainPrefix + "/skip-enhanced-validation"
 )
 
 var (
@@ -279,7 +275,7 @@ func (m *PodEnhancedValidator) ValidatePod(pod *corev1.Pod) (string, error) {
 		return "", nil
 	}
 	// skip validation for pods with the skip-enhanced-validation label
-	if pod.Labels[LabelKeySkipEnhancedValidation] == "true" {
+	if pod.Labels[extension.LabelPodSkipEnhancedValidation] == "true" {
 		return "", nil
 	}
 	// validate pod against all rules
