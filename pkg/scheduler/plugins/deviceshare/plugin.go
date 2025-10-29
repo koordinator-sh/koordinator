@@ -18,6 +18,7 @@ package deviceshare
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
@@ -484,11 +485,20 @@ func (p *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState, 
 	if nodeDeviceInfo == nil {
 		return nil
 	}
-
+	logAllocationContext(nodeDeviceInfo, state.allocationResult)
 	nodeDeviceInfo.lock.Lock()
 	defer nodeDeviceInfo.lock.Unlock()
 	nodeDeviceInfo.updateCacheUsed(state.allocationResult, pod, true)
 	return nil
+}
+
+func logAllocationContext(nodeDeviceInfo *nodeDevice, allocationResult apiext.DeviceAllocations) {
+	nodeDeviceSummary := nodeDeviceInfo.getNodeDeviceSummary()
+	rawAllocationResult, err := json.Marshal(allocationResult)
+	if err != nil {
+		klog.Errorf("[DeviceShare] marshal allocationResult failed: %v", err)
+	}
+	klog.V(4).Infof("[DeviceShare] nodeDeviceSummary: %v, allocationResult: %s", nodeDeviceSummary, string(rawAllocationResult))
 }
 
 func (p *Plugin) allocate(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, node *corev1.Node) *framework.Status {
