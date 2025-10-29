@@ -126,6 +126,9 @@ func (c *cpuEvictor) cpuEvict() {
 	//   from both phases are accounted for in scheduling and capacity planning.
 	triggerFeatures := []featuregate.Feature{features.BECPUEvict, features.CPUEvict}
 	for _, feature := range triggerFeatures {
+		if !features.DefaultKoordletFeatureGate.Enabled(feature) {
+			continue
+		}
 		if disabled, err := features.IsFeatureDisabled(nodeSLO, feature); err != nil {
 			klog.Warningf("feature %s failed, cannot check the feature gate, err: %v", feature, err)
 			continue
