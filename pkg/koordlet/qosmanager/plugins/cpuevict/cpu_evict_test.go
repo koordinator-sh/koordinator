@@ -30,6 +30,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	clientsetfake "k8s.io/client-go/kubernetes/fake"
+	"k8s.io/component-base/featuregate"
 	runtimeapi "k8s.io/cri-api/pkg/apis/runtime/v1"
 	critesting "k8s.io/cri-api/pkg/apis/testing"
 	"k8s.io/utils/pointer"
@@ -48,6 +49,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/testutil"
 	"github.com/koordinator-sh/koordinator/pkg/runtimeproxy/utils"
 	"github.com/koordinator-sh/koordinator/pkg/util"
+	utilfeature "github.com/koordinator-sh/koordinator/pkg/util/feature"
 	"github.com/koordinator-sh/koordinator/pkg/util/sloconfig"
 )
 
@@ -103,9 +105,8 @@ func Test_cpuEvict_Enabled(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c.evictInterval = tt.args.evictInterval
-			assert.NoError(t, features.DefaultMutableKoordletFeatureGate.SetFromMap(map[string]bool{
-				string(features.BECPUEvict): tt.args.BECPUEvictEnabled,
-				string(features.CPUEvict):   tt.args.CPUEvictEnabled}))
+			defer utilfeature.SetFeatureGateDuringTest(t, features.DefaultMutableKoordletFeatureGate, features.BECPUEvict, tt.args.BECPUEvictEnabled)()
+			defer utilfeature.SetFeatureGateDuringTest(t, features.DefaultMutableKoordletFeatureGate, features.CPUEvict, tt.args.CPUEvictEnabled)()
 			assert.Equal(t, tt.expect, c.Enabled())
 		})
 	}
@@ -896,6 +897,7 @@ func Test_cpuEvict(t *testing.T) {
 
 	tests := []struct {
 		name              string
+		triggerFeatures   []featuregate.Feature
 		node              *corev1.Node
 		pods              []*corev1.Pod
 		podMetrics        []podCPUSample
@@ -919,10 +921,11 @@ func Test_cpuEvict(t *testing.T) {
 			thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{Enable: pointer.Bool(false)},
 		},
 		{
-			name:        "only feature: CPUEvict",
-			node:        testutil.MockTestNode("100", "120G"),
-			nodeCPUUsed: resource.MustParse("81"),
-			pods:        []*corev1.Pod{pod0, pod1, pod2, pod3, pod4, pod5, pod6, pod7},
+			name:            "only feature: CPUEvict",
+			triggerFeatures: []featuregate.Feature{features.CPUEvict},
+			node:            testutil.MockTestNode("100", "120G"),
+			nodeCPUUsed:     resource.MustParse("81"),
+			pods:            []*corev1.Pod{pod0, pod1, pod2, pod3, pod4, pod5, pod6, pod7},
 			podMetrics: []podCPUSample{
 				{UID: "test_evictDisabled_pod", CpuUsed: resource.MustParse("4")},
 				{UID: "test_higher_priority", CpuUsed: resource.MustParse("3")},
@@ -940,10 +943,35 @@ func Test_cpuEvict(t *testing.T) {
 			expectEvictedPods: []*corev1.Pod{pod3, pod4, pod6, pod7},
 			customEvictor:     true,
 		},
-		// TODO: add CPUEvict merged coExisted
+		{
+			name:            "feature CPUEvict ok, BECPUEvict invalid configuration",
+			triggerFeatures: []featuregate.Feature{features.CPUEvict, features.BECPUEvict},
+			node:            testutil.MockTestNode("100", "120G"),
+			nodeCPUUsed:     resource.MustParse("81"),
+			pods:            []*corev1.Pod{pod0, pod1, pod2, pod3, pod4, pod5, pod6, pod7},
+			podMetrics: []podCPUSample{
+				{UID: "test_evictDisabled_pod", CpuUsed: resource.MustParse("4")},
+				{UID: "test_higher_priority", CpuUsed: resource.MustParse("3")},
+				{UID: "test_podPriority_120_2000", CpuUsed: resource.MustParse("1")},
+				{UID: "test_podPriority_120_3000", CpuUsed: resource.MustParse("5")},
+				{UID: "test_podPriority_120_4000", CpuUsed: resource.MustParse("2")},
+				{UID: "test_podPriority_100_9999", CpuUsed: resource.MustParse("1")},
+				{UID: "test_podPriority_100_9999_1", CpuUsed: resource.MustParse("2")},
+			},
+			thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{
+				Enable:                        pointer.Bool(true),
+				CPUEvictThresholdPercent:      pointer.Int64(78),
+				EvictEnabledPriorityThreshold: pointer.Int32(3000),
+			},
+			expectEvictedPods: []*corev1.Pod{pod3, pod4, pod6, pod7},
+			customEvictor:     true,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			for _, f := range tt.triggerFeatures {
+				defer utilfeature.SetFeatureGateDuringTest(t, features.DefaultMutableKoordletFeatureGate, f, true)()
+			}
 			evictedPod := make(map[string]bool)
 			ctl := gomock.NewController(t)
 			defer ctl.Finish()

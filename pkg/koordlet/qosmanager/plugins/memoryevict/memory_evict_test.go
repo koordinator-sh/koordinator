@@ -30,12 +30,14 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	clientsetfake "k8s.io/client-go/kubernetes/fake"
+	"k8s.io/component-base/featuregate"
 	runtimeapi "k8s.io/cri-api/pkg/apis/runtime/v1"
 	critesting "k8s.io/cri-api/pkg/apis/testing"
 	"k8s.io/utils/pointer"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	mock_metriccache "github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache/mockmetriccache"
 	maframework "github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor/framework"
@@ -47,6 +49,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/testutil"
 	"github.com/koordinator-sh/koordinator/pkg/runtimeproxy/utils"
 	"github.com/koordinator-sh/koordinator/pkg/util"
+	utilfeature "github.com/koordinator-sh/koordinator/pkg/util/feature"
 )
 
 type podMemSample struct {
@@ -57,6 +60,7 @@ type podMemSample struct {
 func Test_memoryEvict(t *testing.T) {
 	type args struct {
 		name               string
+		triggerFeatures    []featuregate.Feature
 		node               *corev1.Node
 		nodeMemUsed        resource.Quantity
 		podMetrics         []podMemSample
@@ -125,8 +129,9 @@ func Test_memoryEvict(t *testing.T) {
 			},
 		},
 		{
-			name: "test_memoryevict_MemoryEvictThresholdPercent_sort_by_priority_and_usage_82",
-			node: testutil.MockTestNode("80", "120G"),
+			name:            "test_memoryevict_MemoryEvictThresholdPercent_sort_by_priority_and_usage_82",
+			triggerFeatures: []featuregate.Feature{features.BEMemoryEvict},
+			node:            testutil.MockTestNode("80", "120G"),
 			pods: []*corev1.Pod{
 				createMemoryEvictTestPod("test_lsr_pod", apiext.QoSLSR, 1000),
 				createMemoryEvictTestPod("test_ls_pod", apiext.QoSLS, 500),
@@ -160,8 +165,9 @@ func Test_memoryEvict(t *testing.T) {
 			},
 		},
 		{
-			name: "test_memoryevict_MemoryEvictThresholdPercent_80",
-			node: testutil.MockTestNode("80", "120G"),
+			name:            "test_memoryevict_MemoryEvictThresholdPercent_80",
+			triggerFeatures: []featuregate.Feature{features.BEMemoryEvict},
+			node:            testutil.MockTestNode("80", "120G"),
 			pods: []*corev1.Pod{
 				createMemoryEvictTestPod("test_lsr_pod", apiext.QoSLSR, 1000),
 				createMemoryEvictTestPod("test_ls_pod", apiext.QoSLS, 500),
@@ -195,8 +201,9 @@ func Test_memoryEvict(t *testing.T) {
 			},
 		},
 		{
-			name: "test_memoryevict_MemoryEvictThresholdPercent_50",
-			node: testutil.MockTestNode("80", "120G"),
+			name:            "test_memoryevict_MemoryEvictThresholdPercent_50",
+			triggerFeatures: []featuregate.Feature{features.BEMemoryEvict},
+			node:            testutil.MockTestNode("80", "120G"),
 			pods: []*corev1.Pod{
 				createMemoryEvictTestPod("test_lsr_pod", apiext.QoSLSR, 1000),
 				createMemoryEvictTestPod("test_ls_pod", apiext.QoSLS, 500),
@@ -230,8 +237,9 @@ func Test_memoryEvict(t *testing.T) {
 			},
 		},
 		{
-			name: "test_memoryevict_MemoryEvictLowerPercent_80",
-			node: testutil.MockTestNode("80", "120G"),
+			name:            "test_memoryevict_MemoryEvictLowerPercent_80",
+			triggerFeatures: []featuregate.Feature{features.BEMemoryEvict},
+			node:            testutil.MockTestNode("80", "120G"),
 			pods: []*corev1.Pod{
 				createMemoryEvictTestPod("test_lsr_pod", apiext.QoSLSR, 1000),
 				createMemoryEvictTestPod("test_ls_pod", apiext.QoSLS, 500),
@@ -266,8 +274,9 @@ func Test_memoryEvict(t *testing.T) {
 			},
 		},
 		{
-			name: "test_memoryevict_MemoryEvictLowerPercent_78",
-			node: testutil.MockTestNode("80", "120G"),
+			name:            "test_memoryevict_MemoryEvictLowerPercent_78",
+			triggerFeatures: []featuregate.Feature{features.BEMemoryEvict},
+			node:            testutil.MockTestNode("80", "120G"),
 			pods: []*corev1.Pod{
 				createMemoryEvictTestPod("test_lsr_pod", apiext.QoSLSR, 1000),
 				createMemoryEvictTestPod("test_ls_pod", apiext.QoSLS, 500),
@@ -302,8 +311,46 @@ func Test_memoryEvict(t *testing.T) {
 			},
 		},
 		{
-			name: "test_memoryevict_MemoryEvictLowerPercent_74",
-			node: testutil.MockTestNode("80", "120G"),
+			name:            "test_memoryevict_MemoryEvictLowerPercent_74 BEMemoryEvict ok, MemoryEvict invalid configuration",
+			triggerFeatures: []featuregate.Feature{features.BEMemoryEvict, features.MemoryEvict},
+			node:            testutil.MockTestNode("80", "120G"),
+			pods: []*corev1.Pod{
+				createMemoryEvictTestPod("test_lsr_pod", apiext.QoSLSR, 1000),
+				createMemoryEvictTestPod("test_ls_pod", apiext.QoSLS, 500),
+				createMemoryEvictTestPod("test_noqos_pod", apiext.QoSNone, 100),
+				createMemoryEvictTestPod("test_be_pod_priority100_1", apiext.QoSBE, 100),
+				createMemoryEvictTestPod("test_be_pod_priority100_2", apiext.QoSBE, 100),
+				createMemoryEvictTestPod("test_be_pod_priority120", apiext.QoSBE, 120),
+			},
+			nodeMemUsed: resource.MustParse("115G"),
+			podMetrics: []podMemSample{
+				{UID: "test_lsr_pod", MemUsed: resource.MustParse("40G")},
+				{UID: "test_ls_pod", MemUsed: resource.MustParse("30G")},
+				{UID: "test_noqos_pod", MemUsed: resource.MustParse("10G")},
+				{UID: "test_be_pod_priority100_1", MemUsed: resource.MustParse("5G")},
+				{UID: "test_be_pod_priority100_2", MemUsed: resource.MustParse("20G")},
+				{UID: "test_be_pod_priority120", MemUsed: resource.MustParse("10G")},
+			},
+			thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{
+				Enable:                      pointer.Bool(true),
+				MemoryEvictThresholdPercent: pointer.Int64(82),
+				MemoryEvictLowerPercent:     pointer.Int64(74),
+			}, // >88.8G
+			expectEvictPods: []*corev1.Pod{
+				createMemoryEvictTestPod("test_be_pod_priority100_2", apiext.QoSBE, 100),
+				createMemoryEvictTestPod("test_be_pod_priority100_1", apiext.QoSBE, 100),
+				createMemoryEvictTestPod("test_be_pod_priority120", apiext.QoSBE, 120),
+			},
+			expectNotEvictPods: []*corev1.Pod{
+				createMemoryEvictTestPod("test_lsr_pod", apiext.QoSLSR, 1000),
+				createMemoryEvictTestPod("test_ls_pod", apiext.QoSLS, 500),
+				createMemoryEvictTestPod("test_noqos_pod", apiext.QoSNone, 100),
+			},
+		},
+		{
+			name:            "test_memoryevict_MemoryEvictLowerPercent_74",
+			triggerFeatures: []featuregate.Feature{features.BEMemoryEvict},
+			node:            testutil.MockTestNode("80", "120G"),
 			pods: []*corev1.Pod{
 				createMemoryEvictTestPod("test_lsr_pod", apiext.QoSLSR, 1000),
 				createMemoryEvictTestPod("test_ls_pod", apiext.QoSLS, 500),
@@ -345,6 +392,9 @@ func Test_memoryEvict(t *testing.T) {
 			defer ctl.Finish()
 			if tt.name == "test_memoryevict_MemoryEvictThresholdPercent_sort_by_priority_and_usage_82" {
 				t.Log("00000")
+			}
+			for _, f := range tt.triggerFeatures {
+				defer utilfeature.SetFeatureGateDuringTest(t, features.DefaultMutableKoordletFeatureGate, f, true)()
 			}
 			mockStatesInformer := mock_statesinformer.NewMockStatesInformer(ctl)
 			mockStatesInformer.EXPECT().GetAllPods().Return(testutil.GetPodMetas(tt.pods)).AnyTimes()

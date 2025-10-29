@@ -114,6 +114,9 @@ func (m *memoryEvictor) memoryEvict() {
 	//   as this may lead to redundant eviction logic and increased system complexity without clear benefit.
 	triggerFeatures := []featuregate.Feature{features.BEMemoryEvict, features.MemoryEvict}
 	for _, feature := range triggerFeatures {
+		if !features.DefaultKoordletFeatureGate.Enabled(feature) {
+			continue
+		}
 		if disabled, err := features.IsFeatureDisabled(nodeSLO, feature); err != nil {
 			klog.Warningf("feature %s failed, cannot check the feature gate, err: %v", feature, err)
 			continue
