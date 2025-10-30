@@ -28,6 +28,7 @@ import (
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/features"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/protocol"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	koordletutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util"
@@ -115,7 +116,6 @@ func (r *cpusetRule) getContainerCPUSet(containerReq *protocol.ContainerRequest)
 	for _, nodeSharePool := range r.sharePools {
 		allSharePoolCPUs = append(allSharePoolCPUs, nodeSharePool.CPUSet)
 	}
-
 	if podQOSClass == extension.QoSLS {
 		// LS pods use all share pool
 		klog.V(6).Infof("get cpuset from all share pool for container %v/%v",
@@ -191,6 +191,28 @@ func (p *cpusetPlugin) parseRule(nodeTopoIf interface{}) (bool, error) {
 			systemQOSCPUSet = systemQOSRes.CPUSet
 		}
 	}
+
+	var shareCPUSetCount, beShareCPUSetCount int
+	for _, nodeSharePool := range cpuSharePools {
+		nodeSharePoolCPUSet, err := cpuset.Parse(nodeSharePool.CPUSet)
+		if err != nil {
+			klog.Errorf("failed to parse cpuset info of share pool, err: %v", err)
+			continue
+		}
+		shareCPUSetCount += nodeSharePoolCPUSet.Size()
+	}
+
+	for _, nodeBESharePool := range beCPUSharePools {
+		nodeBESharePoolCPUSet, err := cpuset.Parse(nodeBESharePool.CPUSet)
+		if err != nil {
+			klog.Errorf("failed to parse cpuset info of be share pool, err: %v", err)
+			continue
+		}
+		beShareCPUSetCount += nodeBESharePoolCPUSet.Size()
+	}
+
+	metrics.RecordCPUSetSharePoolCores(float64(shareCPUSetCount))
+	metrics.RecordCPUSetBESharePoolCores(float64(beShareCPUSetCount))
 
 	newRule := &cpusetRule{
 		kubeletPolicy:   *cpuManagerPolicy,
