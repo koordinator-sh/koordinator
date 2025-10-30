@@ -273,7 +273,7 @@ func (pgMgr *PodGroupManager) basicGangRequirementsCheck(gang *Gang, pod *corev1
 	return nil
 }
 
-func (pgMgr *PodGroupManager) BeforePreFilter(ctx context.Context, _ *framework.CycleState, pod *corev1.Pod) (err error) {
+func (pgMgr *PodGroupManager) BeforePreFilter(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod) (err error) {
 	if !util.IsPodNeedGang(pod) {
 		return nil
 	}
@@ -296,6 +296,8 @@ func (pgMgr *PodGroupManager) BeforePreFilter(ctx context.Context, _ *framework.
 	if err != nil {
 		return err
 	}
+	diagnosis := frameworkext.GetDiagnosis(cycleState)
+	diagnosis.QuestionedKey = gang.GangGroupId
 	gangSchedulingContext := pgMgr.holder.getCurrentGangSchedulingContext()
 	if gangSchedulingContext == nil {
 		gangSchedulingContext = &GangSchedulingContext{
@@ -316,6 +318,7 @@ func (pgMgr *PodGroupManager) BeforePreFilter(ctx context.Context, _ *framework.
 		return nil
 	}
 	if gangSchedulingContext.failedMessage != "" {
+		diagnosis.IsRootCausePod = false
 		return fmt.Errorf(gangSchedulingContext.failedMessage)
 	}
 	return nil

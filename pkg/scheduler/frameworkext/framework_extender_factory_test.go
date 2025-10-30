@@ -298,7 +298,7 @@ func Test_recordScheduleDiagnosis(t *testing.T) {
 		wantDiagnosis Diagnosis
 	}{
 		{
-			name: "normal flow",
+			name: "prefilterFailed",
 			pod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-pod",
@@ -339,8 +339,57 @@ func Test_recordScheduleDiagnosis(t *testing.T) {
 				NominatedNode:        "nominatedNode",
 				PreFilterMessage:     "preFilterMessage",
 				TopologyKeyToExplain: "",
+				IsRootCausePod:       true,
 				ScheduleDiagnosis: &ScheduleDiagnosis{
 					SchedulingMode: PodSchedulingMode,
+				},
+				PreemptionDiagnosis: nil,
+			},
+		},
+		{
+			name: "normal flow",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pod",
+					Namespace: "default",
+					Labels: map[string]string{
+						extension.LabelQuestionedObjectKey: "default/test-pod",
+					},
+				},
+				Status: corev1.PodStatus{
+					NominatedNodeName: "nominatedNode",
+				},
+			},
+			err: &framework.FitError{
+				Pod:         nil,
+				NumAllNodes: 0,
+				Diagnosis: framework.Diagnosis{
+					NodeToStatusMap: map[string]*framework.Status{
+						"node1": framework.NewStatus(framework.UnschedulableAndUnresolvable, "node1Message"),
+					},
+				},
+			},
+			wantDiagnosis: Diagnosis{
+				Timestamp:     metav1.Time{},
+				QuestionedKey: "default/test-pod",
+				TargetPod: &corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-pod",
+						Namespace: "default",
+						Labels: map[string]string{
+							extension.LabelQuestionedObjectKey: "default/test-pod",
+						},
+					},
+					Status: corev1.PodStatus{
+						NominatedNodeName: "nominatedNode",
+					},
+				},
+				NominatedNode:        "nominatedNode",
+				TopologyKeyToExplain: "",
+				IsRootCausePod:       true,
+				ScheduleDiagnosis: &ScheduleDiagnosis{
+					SchedulingMode: PodSchedulingMode,
+
 					NodeToStatusMap: map[string]*framework.Status{
 						"node1": framework.NewStatus(framework.UnschedulableAndUnresolvable, "node1Message"),
 					},

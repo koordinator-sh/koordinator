@@ -415,6 +415,8 @@ func TestPodGroupManager_NetworkTopology(t *testing.T) {
 				"default/pending-pod-4": "node-7",
 			},
 			wantDiagnosis: &frameworkext.Diagnosis{
+				QuestionedKey:  "default/pending-pod-1",
+				IsRootCausePod: true,
 				ScheduleDiagnosis: &frameworkext.ScheduleDiagnosis{
 					SchedulingMode:      frameworkext.JobSchedulingMode,
 					AlreadyWaitForBound: 0,
@@ -670,6 +672,8 @@ func TestPodGroupManager_NetworkTopology(t *testing.T) {
 				"default/pending-pod-2": "node-8",
 			},
 			wantDiagnosis: &frameworkext.Diagnosis{
+				QuestionedKey:        "default/pending-pod-1",
+				IsRootCausePod:       true,
 				TopologyKeyToExplain: "BlockLayer",
 				ScheduleDiagnosis: &frameworkext.ScheduleDiagnosis{
 					SchedulingMode:      frameworkext.JobSchedulingMode,
@@ -926,6 +930,8 @@ func TestPodGroupManager_NetworkTopology(t *testing.T) {
 				"default/pending-pod-2": "node-1",
 			},
 			wantDiagnosis: &frameworkext.Diagnosis{
+				QuestionedKey:  "default/pending-pod-1",
+				IsRootCausePod: true,
 				ScheduleDiagnosis: &frameworkext.ScheduleDiagnosis{
 					SchedulingMode:      frameworkext.JobSchedulingMode,
 					AlreadyWaitForBound: 0,
@@ -1249,6 +1255,8 @@ func TestPodGroupManager_NetworkTopology(t *testing.T) {
 			wantScheduleStatus: framework.NewStatus(framework.Unschedulable, "no candidate topology nodes can accommodate job, desiredOfferSlot: 4, topology topologyNode SpineLayer/s1: 3;topology topologyNode SpineLayer/s2: 3, 0/8 nodes are available: 8 Insufficient cpu."),
 			wantDiagnosis: &frameworkext.Diagnosis{
 				TopologyKeyToExplain: "SpineLayer",
+				QuestionedKey:        "default/pending-pod-1",
+				IsRootCausePod:       true,
 				ScheduleDiagnosis: &frameworkext.ScheduleDiagnosis{
 					SchedulingMode:      frameworkext.JobSchedulingMode,
 					AlreadyWaitForBound: 0,
@@ -1723,6 +1731,8 @@ func TestPodGroupManager_NetworkTopology(t *testing.T) {
 			},
 			wantScheduleStatus: framework.NewStatus(framework.Unschedulable, "no candidate topology nodes can accommodate job, desiredOfferSlot: 4, topology topologyNode SpineLayer/s1: 2;topology topologyNode SpineLayer/s2: 3, 0/8 nodes are available: 8 Insufficient cpu."),
 			wantDiagnosis: &frameworkext.Diagnosis{
+				QuestionedKey:        "default/pending-pod-1",
+				IsRootCausePod:       true,
 				TopologyKeyToExplain: "SpineLayer",
 				ScheduleDiagnosis: &frameworkext.ScheduleDiagnosis{
 					SchedulingMode:      frameworkext.JobSchedulingMode,

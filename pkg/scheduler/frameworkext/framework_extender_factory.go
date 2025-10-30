@@ -325,7 +325,7 @@ func recordScheduleDiagnosis(cycleState *framework.CycleState, err error) {
 				SchedulingMode: PodSchedulingMode,
 			}
 		}
-		if diagnosis.ScheduleDiagnosis.NodeToStatusMap == nil {
+		if diagnosis.PreFilterMessage == "" && diagnosis.ScheduleDiagnosis.NodeToStatusMap == nil {
 			diagnosis.ScheduleDiagnosis.NodeToStatusMap = fitError.Diagnosis.NodeToStatusMap
 		}
 	}
