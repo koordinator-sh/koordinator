@@ -48,6 +48,9 @@ const (
 	// LabelPodEvictEnabled is a label key that pods with `koordinator.sh/eviction-disabled` will
 	// be able to evict.
 	LabelPodEvictEnabled = DomainPrefix + "eviction-enabled"
+
+	// LabelPodSkipEnhancedValidation is the pod label key used to opt out a pod from enhanced validation.
+	LabelPodSkipEnhancedValidation = PodDomainPrefix + "/skip-enhanced-validation"
 )
 
 type AggregationType string
