@@ -30,6 +30,7 @@ import (
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/util"
+	"github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
 
 var (
@@ -88,7 +89,7 @@ func DumpDiagnosis(state *framework.CycleState) string {
 			diagnosis.ScheduleDiagnosis.NodeFailedDetails = scheduleFailedDetails
 		}
 		dumpMessage = util.DumpJSON(diagnosis)
-		klog.Infof("dump diagnosis for %s/%s/%s: %s", diagnosis.TargetPod.Namespace, diagnosis.TargetPod.Name, diagnosis.TargetPod.UID, dumpMessage)
+		klog.Infof("dump diagnosis for %s, targetPod: %s/%s/%s: $%s", diagnosis.QuestionedKey, diagnosis.TargetPod.Namespace, diagnosis.TargetPod.Name, diagnosis.TargetPod.UID, dumpMessage)
 		// TODO export it to APIServer asynchronously
 		if blocking {
 			wg.Done()
@@ -116,11 +117,16 @@ const (
 )
 
 func InitDiagnosis(state *framework.CycleState, pod *corev1.Pod) {
+	questionKey := framework.GetNamespacedName(pod.Namespace, pod.Name)
+	if reservation.IsReservePod(pod) {
+		questionKey = reservation.GetReservationNameFromReservePod(pod)
+	}
 	state.Write(diagnosisStateKey, &Diagnosis{
-		Timestamp:     nowFunc(),
-		QuestionedKey: extension.GetExplanationKey(pod.Labels),
-		TargetPod:     pod,
-		NominatedNode: pod.Status.NominatedNodeName,
+		Timestamp:      nowFunc(),
+		QuestionedKey:  questionKey,
+		TargetPod:      pod,
+		NominatedNode:  pod.Status.NominatedNodeName,
+		IsRootCausePod: true,
 	})
 }
 
@@ -140,15 +146,16 @@ type Diagnosis struct {
 	NominatedNode        string      `json:"nominatedNode,omitempty"`
 	PreFilterMessage     string      `json:"preFilterMessage,omitempty"`
 	TopologyKeyToExplain string      `json:"topologyKeyToExplain,omitempty"`
+	IsRootCausePod       bool        `json:"isRootCausePod"`
 	// maybe modify framework.Status to cover addedNominatedPods, corresponding resourceView(such as requested and total) when failed
 	ScheduleDiagnosis   *ScheduleDiagnosis `json:"scheduleDiagnosis"`
 	PreemptionDiagnosis interface{}        `json:"preemptionDiagnosis"`
 }
 
 type ScheduleDiagnosis struct {
-	SchedulingMode SchedulingMode `json:"schedulingMode,omitempty"`
+	SchedulingMode SchedulingMode `json:"-"`
 	// use this when PodSchedulingMode
-	AlreadyWaitForBound int `json:"alreadyWaitForBound,omitempty"`
+	AlreadyWaitForBound int `json:"alreadyWaitForBound"`
 	// use this when JobSchedulingMode
 	NodeOfferSlot   map[string]int            `json:"nodeOfferSlot,omitempty"`
 	NodeToStatusMap framework.NodeToStatusMap `json:"-"`
