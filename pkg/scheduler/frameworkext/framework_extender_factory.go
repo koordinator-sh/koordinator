@@ -200,7 +200,8 @@ func (f *FrameworkExtenderFactory) InitScheduler(sched Scheduler) {
 				RecordPodQueueInfoToPod(podInfo)
 			}
 			f.monitor.RecordNextPod(podInfo)
-			if k8sfeature.DefaultFeatureGate.Enabled(features.ResizePod) {
+			if podInfo != nil && k8sfeature.DefaultFeatureGate.Enabled(features.ResizePod) {
+				// The podInfo can be nil when the queue is closing.
 				// Deep copy podInfo to allow pod modification during scheduling
 				podInfo = podInfo.DeepCopy()
 			}
@@ -250,6 +251,9 @@ func CopyQueueInfoToPod(podHasQueueInfo, podNeedQueueInfo *corev1.Pod) *corev1.P
 }
 
 func RecordPodQueueInfoToPod(podInfo *framework.QueuedPodInfo) {
+	if podInfo == nil || podInfo.Pod == nil { // the podInfo can be nil when the queue is closing
+		return
+	}
 	var initialTimestamp *metav1.Time
 	if podInfo.InitialAttemptTimestamp != nil {
 		initialTimestamp = &metav1.Time{Time: *podInfo.InitialAttemptTimestamp}

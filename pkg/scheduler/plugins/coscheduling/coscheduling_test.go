@@ -136,6 +136,7 @@ func makePg(name, namespace string, min int32, creationTime *time.Time, minResou
 	}
 	return pg
 }
+
 func (f *testSharedLister) NodeInfos() framework.NodeInfoLister {
 	return f
 }

@@ -56,6 +56,7 @@ func (f *FakeFitPlugin) Filter(ctx context.Context, state *framework.CycleState,
 	}
 	return nil
 }
+
 func (f *FakeFitPlugin) Name() string {
 	return "FakeFitPlugin"
 }

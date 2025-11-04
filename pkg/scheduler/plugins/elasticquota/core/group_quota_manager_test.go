@@ -292,6 +292,7 @@ func TestGroupQuotaManager_UpdateResourceKeyNoLock(t *testing.T) {
 		map[v1.ResourceName]struct{}{v1.ResourceMemory: {}},
 	)
 }
+
 func TestGroupQuotaManager_DeleteOneGroup(t *testing.T) {
 	gqm := NewGroupQuotaManagerForTest()
 	gqm.UpdateClusterTotalResource(createResourceList(1000, 1000*GigaByte))

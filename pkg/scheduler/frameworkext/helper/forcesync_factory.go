@@ -60,6 +60,7 @@ func (f *forceSyncSharedInformerFactory) InformerFor(obj runtime.Object, newFunc
 func (f *forceSyncSharedInformerFactory) Core() core.Interface {
 	return core.New(f, f.namespace, f.tweakListOptions)
 }
+
 func (f *forceSyncSharedInformerFactory) Storage() storage.Interface {
 	return storage.New(f, f.namespace, f.tweakListOptions)
 }
