@@ -3855,10 +3855,12 @@ func TestUnreserve(t *testing.T) {
 	}
 
 	tests := []struct {
-		name        string
-		pod         *corev1.Pod
-		reservation *schedulingv1alpha1.Reservation
-		wantStatus  *framework.Status
+		name                         string
+		pod                          *corev1.Pod
+		reservation                  *schedulingv1alpha1.Reservation
+		podAssignedToNode            bool
+		wantStatus                   *framework.Status
+		wantReservationAllocatedKept bool
 	}{
 		{
 			name:        "unreserve reserve pod",
@@ -3877,6 +3879,14 @@ func TestUnreserve(t *testing.T) {
 			reservation: reservation2C4G,
 			wantStatus:  nil,
 		},
+		{
+			name:                         "skip unreserve when pod is assigned to node eventually",
+			pod:                          testPod,
+			reservation:                  reservation2C4G,
+			podAssignedToNode:            true,
+			wantStatus:                   nil,
+			wantReservationAllocatedKept: true,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -3894,12 +3904,28 @@ func TestUnreserve(t *testing.T) {
 			cycleState := framework.NewCycleState()
 			cycleState.Write(stateKey, state)
 
+			// Create the pod in the fake client if it's a real pod (not reserve pod)
+			if !reservationutil.IsReservePod(tt.pod) && tt.pod.Namespace != "" && tt.pod.Name != "" {
+				podToCreate := tt.pod.DeepCopy()
+				if tt.podAssignedToNode {
+					podToCreate.Spec.NodeName = "test-node"
+				}
+				_, err := suit.fw.ClientSet().CoreV1().Pods(podToCreate.Namespace).Create(context.TODO(), podToCreate, metav1.CreateOptions{})
+				assert.NoError(t, err)
+			}
+
 			var rInfo *frameworkext.ReservationInfo
 			if tt.reservation != nil {
 				rInfo = frameworkext.NewReservationInfo(tt.reservation)
 			}
 			pl.handle.GetReservationNominator().AddNominatedReservation(tt.pod, "test-node", rInfo)
 			status := pl.Reserve(context.TODO(), cycleState, tt.pod, "test-node")
+
+			// Simulate PreBind to set hasReservationAllocated for the new test case
+			if tt.wantReservationAllocatedKept {
+				state.hasReservationAllocated = true
+			}
+
 			pl.Unreserve(context.TODO(), cycleState, tt.pod, "test-node")
 			assert.Equal(t, tt.wantStatus, status)
 			if tt.reservation != nil {
@@ -3909,6 +3935,14 @@ func TestUnreserve(t *testing.T) {
 				} else {
 					assert.Equal(t, map[types.UID]*frameworkext.PodRequirement{}, rInfo.AssignedPods)
 				}
+			}
+
+			// Check if reservation-allocated annotation is kept when pod is assigned to node
+			if tt.wantReservationAllocatedKept && !reservationutil.IsReservePod(tt.pod) && tt.pod.Namespace != "" && tt.pod.Name != "" {
+				pod, err := suit.fw.ClientSet().CoreV1().Pods(tt.pod.Namespace).Get(context.TODO(), tt.pod.Name, metav1.GetOptions{})
+				assert.NoError(t, err)
+				// The annotation should still be empty since Unreserve should skip removing it
+				assert.Equal(t, pod.Spec.NodeName, "test-node", "pod should still be assigned to node")
 			}
 		})
 	}

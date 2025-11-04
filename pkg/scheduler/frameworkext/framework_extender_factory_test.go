@@ -153,6 +153,13 @@ func TestRecordPodQueueInfoToPod(t *testing.T) {
 		wantOriginalPod *corev1.Pod
 	}{
 		{
+			name:            "podInfo is nil",
+			originalPod:     nil,
+			podInfo:         nil,
+			wantPod:         nil,
+			wantOriginalPod: nil,
+		},
+		{
 			name:        "normal flow",
 			originalPod: &corev1.Pod{},
 			podInfo: &framework.QueuedPodInfo{
@@ -173,10 +180,16 @@ func TestRecordPodQueueInfoToPod(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tt.podInfo.Pod = tt.originalPod
+			if tt.originalPod != nil {
+				tt.podInfo.Pod = tt.originalPod
+			}
 			RecordPodQueueInfoToPod(tt.podInfo)
 			assert.Equal(t, tt.wantOriginalPod, tt.originalPod)
-			assert.Equal(t, tt.wantPod, tt.podInfo.PodInfo.Pod)
+			if tt.wantPod != nil {
+				assert.Equal(t, tt.wantPod, tt.podInfo.PodInfo.Pod)
+			} else {
+				assert.Nil(t, tt.podInfo)
+			}
 		})
 	}
 }

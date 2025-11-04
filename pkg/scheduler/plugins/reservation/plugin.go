@@ -994,14 +994,23 @@ func (pl *Plugin) Unreserve(ctx context.Context, cycleState *framework.CycleStat
 	rInfo = state.assumed
 	curPod, err := pl.podLister.Pods(allocatedPod.Namespace).Get(allocatedPod.Name)
 	if err != nil {
-		klog.V(4).InfoS("Aborted to unreserve pod PreAllocation since get pod failed", "err", err, "reservation", rInfo.GetName(), "pod", klog.KObj(allocatedPod), "node", nodeName)
+		klog.V(4).InfoS("Aborted to unreserve pod with reservations since get pod failed", "err", err, "reservation", rInfo.GetName(), "pod", klog.KObj(allocatedPod), "node", nodeName)
 		return
 	}
 	if curPod.UID != allocatedPod.UID { // avoid modifying a homonymous pod
-		klog.V(4).InfoS("Aborted to PreBindReservation for PreAllocation since pre-allocated pod is invalid",
-			"reservation", rInfo.GetName(), "pod", klog.KObj(pod), "node", nodeName, "current uid", curPod.UID, "preAllocated uid", pod.UID)
+		klog.V(4).InfoS("Aborted to unreserve pod with reservation since allocated pod is invalid",
+			"reservation", rInfo.GetName(), "pod", klog.KObj(pod), "node", nodeName, "current uid", curPod.UID, "allocated uid", pod.UID)
 		return
 	}
+	// In some corner cases, the pod could fail the Bind request but finally assigned to the node.
+	// To protect the ownership between the assigned pod and the reservation and avoid cache leak,
+	// we keep the reservation-allocated annotation.
+	if curPod.Spec.NodeName == nodeName {
+		klog.V(4).InfoS("Aborted to unreserve pod with reservation since pod is assigned eventually",
+			"reservation", rInfo.GetName(), "pod", klog.KObj(pod), "node", curPod.Spec.NodeName)
+		return
+	}
+
 	originalPod := curPod
 	modifiedPod := originalPod.DeepCopy()
 	removed, err := apiext.RemoveReservationAllocated(modifiedPod, &schedulingv1alpha1.Reservation{
@@ -1028,14 +1037,12 @@ func (pl *Plugin) Unreserve(ctx context.Context, cycleState *framework.CycleStat
 		return err
 	})
 	if err != nil {
-		klog.ErrorS(err, "Failed to apply patch to Pod for PreAllocation Unreserve", "pod", klog.KObj(originalPod),
+		klog.ErrorS(err, "Failed to apply patch to Pod for reservation Unreserve", "pod", klog.KObj(originalPod),
 			"node", nodeName, "reservation", rInfo.GetName())
 		return
 	}
 	klog.V(4).InfoS("Successfully unreserve pod for reservation allocated",
 		"reservation", rInfo.GetName(), "uid", rInfo.UID(), "pod", klog.KObj(curPod))
-
-	return
 }
 
 func (pl *Plugin) PreBind(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) *framework.Status {
