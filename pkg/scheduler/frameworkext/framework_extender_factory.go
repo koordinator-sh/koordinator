@@ -54,6 +54,8 @@ func AddFlags(fs *pflag.FlagSet) {
 	fs.BoolVarP(&debugFilterFailure, "debug-filters", "f", debugFilterFailure, "logging filter failures")
 	fs.BoolVarP(&dumpDiagnosis, "debug-diagnosis", "d", dumpDiagnosis, "logging scheduling diagnosis info for debugging")
 	fs.BoolVarP(&dumpDiagnosisBlocking, "debug-diagnosis-blocking", "", dumpDiagnosisBlocking, "logging diagnosis info for debugging, including blocking next scheduling cycle")
+	fs.IntVarP(&diagnosisQueueSize, "debug-diagnosis-queue-size", "", diagnosisQueueSize, "queue size for diagnosis info")
+	fs.IntVarP(&diagnosisWorkerCount, "debug-diagnosis-worker-count", "", diagnosisWorkerCount, "worker count for diagnosis info")
 	fs.StringSliceVar(&ControllerPlugins, "controller-plugins", ControllerPlugins, "A list of Controller plugins to enable. "+
 		"'-controller-plugins=*' enables all controller plugins. "+
 		"'-controller-plugins=Reservation' means only the controller plugin 'Reservation' is enabled. "+

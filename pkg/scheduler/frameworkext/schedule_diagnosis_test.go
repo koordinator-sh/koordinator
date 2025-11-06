@@ -26,6 +26,7 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 )
 
 func TestDumpDiagnosis(t *testing.T) {
@@ -89,4 +90,225 @@ func TestDumpDiagnosis(t *testing.T) {
 			assert.Equal(t, tt.wantDumpMessage, gotDumpMessage)
 		})
 	}
+}
+
+// BenchmarkDumpDiagnosis benchmarks the DumpDiagnosis function with large datasets
+func BenchmarkDumpDiagnosis(b *testing.B) {
+	// Create a test pod
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-pod",
+			Namespace: "default",
+			Labels: map[string]string{
+				extension.LabelQuestionedObjectKey: "default/test-pod",
+			},
+		},
+		Status: corev1.PodStatus{
+			NominatedNodeName: "nominatedNode",
+		},
+	}
+
+	// Create large datasets
+	nodeCount := 5000
+	nodeToStatusMap := make(framework.NodeToStatusMap, nodeCount)
+	nodeOfferSlot := make(map[string]int, nodeCount)
+
+	for i := 0; i < nodeCount; i++ {
+		nodeName := "node" + string(rune(i))
+		nodeToStatusMap[nodeName] = framework.NewStatus(framework.Unschedulable, "insufficient resources")
+		nodeOfferSlot[nodeName] = i
+	}
+
+	// Benchmark case 1: dumpDiagnosisBlocking = true
+	b.Run("Blocking", func(b *testing.B) {
+		/*
+			goos: darwin
+			goarch: arm64
+			cpu: Apple M1 Pro
+			BenchmarkDumpDiagnosis/Blocking-10         	      21	  66367454 ns/op
+		*/
+		dumpDiagnosis = true
+		dumpDiagnosisBlocking = true
+
+		b.ResetTimer()
+
+		for i := 0; i < b.N; i++ {
+			// Create a fresh cycle state for each iteration
+			cycleState := framework.NewCycleState()
+			InitDiagnosis(cycleState, pod)
+
+			// Set up diagnosis data
+			diagnosis := GetDiagnosis(cycleState)
+			diagnosis.PreFilterMessage = "preFilterMessage"
+			diagnosis.TopologyKeyToExplain = "topologyKeyToExplain"
+			diagnosis.ScheduleDiagnosis = &ScheduleDiagnosis{
+				NodeToStatusMap:   nodeToStatusMap,
+				NodeOfferSlot:     nodeOfferSlot,
+				NodeFailedDetails: make([]v1alpha1.NodeFailedDetail, 0), // Will be populated in DumpDiagnosis
+				SchedulingMode:    JobSchedulingMode,
+			}
+
+			// Set PreemptionDiagnosis to the same content as ScheduleDiagnosis
+			diagnosis.PreemptionDiagnosis = diagnosis.ScheduleDiagnosis
+
+			// Run the function being benchmarked
+			DumpDiagnosis(cycleState)
+		}
+	})
+
+	// Benchmark case 2: dumpDiagnosisBlocking = false
+	b.Run("NonBlocking", func(b *testing.B) {
+		dumpDiagnosis = true
+		dumpDiagnosisBlocking = false
+
+		b.ResetTimer()
+
+		for i := 0; i < b.N; i++ {
+			// Create a fresh cycle state for each iteration
+			cycleState := framework.NewCycleState()
+			InitDiagnosis(cycleState, pod)
+
+			// Set up diagnosis data
+			diagnosis := GetDiagnosis(cycleState)
+			diagnosis.PreFilterMessage = "preFilterMessage"
+			diagnosis.TopologyKeyToExplain = "topologyKeyToExplain"
+			diagnosis.ScheduleDiagnosis = &ScheduleDiagnosis{
+				NodeToStatusMap:   nodeToStatusMap,
+				NodeOfferSlot:     nodeOfferSlot,
+				NodeFailedDetails: make([]v1alpha1.NodeFailedDetail, 0), // Will be populated in DumpDiagnosis
+				SchedulingMode:    JobSchedulingMode,
+			}
+
+			// Set PreemptionDiagnosis to the same content as ScheduleDiagnosis
+			diagnosis.PreemptionDiagnosis = diagnosis.ScheduleDiagnosis
+
+			// Run the function being benchmarked
+			DumpDiagnosis(cycleState)
+		}
+	})
+}
+
+// BenchmarkDumpDiagnosisWorkerCount measures the efficiency of processing 1000 diagnoses
+// with different worker counts in non-blocking mode
+func BenchmarkDumpDiagnosisWorkerCount(b *testing.B) {
+	// Enable diagnosis in non-blocking mode
+	dumpDiagnosis = true
+	dumpDiagnosisBlocking = false
+
+	// Create a test pod
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-pod",
+			Namespace: "default",
+			Labels: map[string]string{
+				extension.LabelQuestionedObjectKey: "default/test-pod",
+			},
+		},
+		Status: corev1.PodStatus{
+			NominatedNodeName: "nominatedNode",
+		},
+	}
+
+	// Create datasets
+	nodeCount := 5000
+	nodeToStatusMap := make(framework.NodeToStatusMap, nodeCount)
+	nodeOfferSlot := make(map[string]int, nodeCount)
+
+	for i := 0; i < nodeCount; i++ {
+		nodeName := "node" + string(rune(i))
+		nodeToStatusMap[nodeName] = framework.NewStatus(framework.Unschedulable, "insufficient resources")
+		nodeOfferSlot[nodeName] = i
+	}
+
+	// Helper function to create diagnosis data
+	createDiagnosis := func() *Diagnosis {
+		return &Diagnosis{
+			QuestionedKey:        "default/test-pod",
+			TargetPod:            pod,
+			PreFilterMessage:     "preFilterMessage",
+			TopologyKeyToExplain: "topologyKeyToExplain",
+			IsRootCausePod:       true,
+			ScheduleDiagnosis: &ScheduleDiagnosis{
+				NodeToStatusMap:   nodeToStatusMap,
+				NodeOfferSlot:     nodeOfferSlot,
+				NodeFailedDetails: make([]v1alpha1.NodeFailedDetail, 0),
+				SchedulingMode:    JobSchedulingMode,
+			},
+		}
+	}
+
+	// Benchmark with 1 worker
+	b.Run("1Worker", func(b *testing.B) {
+		// Set worker count to 1
+		originalWorkerCount := diagnosisWorkerCount
+		diagnosisWorkerCount = 1
+
+		// Restart the diagnosis queue with new worker count
+		diagnosisQueue = &DiagnosisQueue{}
+		diagnosisQueue.StartWorker()
+
+		b.ResetTimer()
+
+		/*
+			goos: darwin
+			goarch: arm64
+			pkg: github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext
+			cpu: Apple M1 Pro
+			BenchmarkDumpDiagnosisWorkerCount/1Worker-10                  18	  65639410 ns/op	51359136 B/op	  200340 allocs/op
+		*/
+		for i := 0; i < b.N; i++ {
+			// Process 1000 diagnoses
+			for j := 0; j < 10; j++ {
+				diagnosis := createDiagnosis()
+				diagnosis.PreemptionDiagnosis = diagnosis.ScheduleDiagnosis
+				diagnosisQueue.Enqueue(diagnosis)
+			}
+
+			// Wait until the queue is empty
+			for len(diagnosisQueue.queue) > 0 {
+				time.Sleep(1 * time.Millisecond)
+			}
+		}
+
+		// Restore original worker count
+		diagnosisWorkerCount = originalWorkerCount
+	})
+
+	// Benchmark with 10 workers
+	b.Run("10Workers", func(b *testing.B) {
+		// Set worker count to 10
+		originalWorkerCount := diagnosisWorkerCount
+		diagnosisWorkerCount = 10
+
+		// Restart the diagnosis queue with new worker count
+		diagnosisQueue = &DiagnosisQueue{}
+		diagnosisQueue.StartWorker()
+
+		b.ResetTimer()
+
+		/*
+			goos: darwin
+			goarch: arm64
+			pkg: github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext
+			cpu: Apple M1 Pro
+			BenchmarkDumpDiagnosisWorkerCount/1Worker-10 100	  17919978 ns/op	57504188 B/op	  200147 allocs/op
+		*/
+
+		for i := 0; i < b.N; i++ {
+			// Process 1000 diagnoses
+			for j := 0; j < 10; j++ {
+				diagnosis := createDiagnosis()
+				diagnosis.PreemptionDiagnosis = diagnosis.ScheduleDiagnosis
+				diagnosisQueue.Enqueue(diagnosis)
+			}
+
+			// Wait until the queue is empty
+			for len(diagnosisQueue.queue) > 0 {
+				time.Sleep(1 * time.Millisecond)
+			}
+		}
+
+		// Restore original worker count
+		diagnosisWorkerCount = originalWorkerCount
+	})
 }
