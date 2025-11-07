@@ -36,6 +36,8 @@ import (
 var (
 	dumpDiagnosis         = false
 	dumpDiagnosisBlocking = false
+	diagnosisQueueSize    = 1000
+	diagnosisWorkerCount  = 10 // Default number of workers
 )
 
 // DumpDiagnosisSetter set dumpDiagnosis
@@ -66,39 +68,18 @@ func DumpDiagnosis(state *framework.CycleState) string {
 	if diagnosis == nil {
 		return ""
 	}
-	blocking := dumpDiagnosisBlocking
-	var wg sync.WaitGroup
-	if blocking {
-		wg.Add(1)
+
+	// Handle blocking mode
+	if dumpDiagnosisBlocking {
+		// For blocking mode, we still process synchronously
+		dumpMessage := diagnosisQueue.processDiagnosis(diagnosis)
+		return dumpMessage
 	}
-	var dumpMessage string
-	go func() {
-		// TODO make this logic to be executed asynchronously and orderly
-		if len(diagnosis.ScheduleDiagnosis.NodeFailedDetails) == 0 {
-			var scheduleFailedDetails []v1alpha1.NodeFailedDetail
-			for s, status := range diagnosis.ScheduleDiagnosis.NodeToStatusMap {
-				scheduleFailedDetails = append(scheduleFailedDetails, v1alpha1.NodeFailedDetail{
-					NodeName:         s,
-					FailedPlugin:     status.FailedPlugin(),
-					Reason:           status.Message(),
-					NominatedPods:    nil,
-					PreemptMightHelp: status.Code() != framework.UnschedulableAndUnresolvable,
-				})
-			}
-			sort.Slice(scheduleFailedDetails, func(i, j int) bool { return scheduleFailedDetails[i].NodeName < scheduleFailedDetails[j].NodeName })
-			diagnosis.ScheduleDiagnosis.NodeFailedDetails = scheduleFailedDetails
-		}
-		dumpMessage = util.DumpJSON(diagnosis)
-		klog.Infof("dump diagnosis for %s, targetPod: %s/%s/%s: $%s", diagnosis.QuestionedKey, diagnosis.TargetPod.Namespace, diagnosis.TargetPod.Name, diagnosis.TargetPod.UID, dumpMessage)
-		// TODO export it to APIServer asynchronously
-		if blocking {
-			wg.Done()
-		}
-	}()
-	if blocking {
-		wg.Wait()
-	}
-	return dumpMessage
+
+	diagnosisQueue.StartWorker()
+	// For non-blocking mode, enqueue for asynchronous processing
+	diagnosisQueue.Enqueue(diagnosis)
+	return ""
 }
 
 func GetDiagnosis(state *framework.CycleState) *Diagnosis {
@@ -169,3 +150,62 @@ const (
 	PodSchedulingMode SchedulingMode = "Pod"
 	JobSchedulingMode SchedulingMode = "Job"
 )
+
+// DiagnosisQueue is a queue for handling diagnosis logs asynchronously
+type DiagnosisQueue struct {
+	queue chan *Diagnosis
+	once  sync.Once
+}
+
+// Global diagnosis queue instance
+var diagnosisQueue = &DiagnosisQueue{}
+
+// StartWorker starts the worker goroutines for processing diagnosis logs
+func (dq *DiagnosisQueue) StartWorker() {
+	dq.once.Do(func() {
+		diagnosisQueue.queue = make(chan *Diagnosis, diagnosisQueueSize)
+		for i := 0; i < diagnosisWorkerCount; i++ {
+			go dq.worker()
+		}
+	})
+}
+
+// worker processes diagnosis logs from the queue
+func (dq *DiagnosisQueue) worker() {
+	for diagnosis := range dq.queue {
+		dq.processDiagnosis(diagnosis)
+	}
+}
+
+// processDiagnosis handles the actual logging of diagnosis information
+func (dq *DiagnosisQueue) processDiagnosis(diagnosis *Diagnosis) string {
+	// Process NodeFailedDetails if empty
+	if len(diagnosis.ScheduleDiagnosis.NodeFailedDetails) == 0 {
+		scheduleFailedDetails := make([]v1alpha1.NodeFailedDetail, 0, len(diagnosis.ScheduleDiagnosis.NodeToStatusMap))
+		for s, status := range diagnosis.ScheduleDiagnosis.NodeToStatusMap {
+			scheduleFailedDetails = append(scheduleFailedDetails, v1alpha1.NodeFailedDetail{
+				NodeName:         s,
+				FailedPlugin:     status.FailedPlugin(),
+				Reason:           status.Message(),
+				NominatedPods:    nil,
+				PreemptMightHelp: status.Code() != framework.UnschedulableAndUnresolvable,
+			})
+		}
+		sort.Slice(scheduleFailedDetails, func(i, j int) bool { return scheduleFailedDetails[i].NodeName < scheduleFailedDetails[j].NodeName })
+		diagnosis.ScheduleDiagnosis.NodeFailedDetails = scheduleFailedDetails
+	}
+
+	dumpMessage := util.DumpJSON(diagnosis)
+	klog.Infof("dump diagnosis for %s, targetPod: %s/%s/%s: $%s", diagnosis.QuestionedKey, diagnosis.TargetPod.Namespace, diagnosis.TargetPod.Name, diagnosis.TargetPod.UID, dumpMessage)
+	return dumpMessage
+}
+
+// Enqueue adds a diagnosis to the queue for asynchronous processing
+func (dq *DiagnosisQueue) Enqueue(diagnosis *Diagnosis) {
+	select {
+	case dq.queue <- diagnosis:
+	default:
+		// If the queue is full, drop the diagnosis to prevent blocking
+		klog.Warningf("Diagnosis queue is full, dropping diagnosis for %s", diagnosis.QuestionedKey)
+	}
+}
