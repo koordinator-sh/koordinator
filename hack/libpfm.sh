@@ -33,11 +33,9 @@ else
 fi
 
 export LIBPFM4VERSION="4.13.0"
-
-wget https://sourceforge.net/projects/perfmon2/files/libpfm4/libpfm-$LIBPFM4VERSION.tar.gz && \
-        echo "bcb52090f02bc7bcb5ac066494cd55bbd5084e65  libpfm-$LIBPFM4VERSION.tar.gz" | sha1sum -c && \
-        tar -xzf libpfm-$LIBPFM4VERSION.tar.gz && \
-        rm libpfm-$LIBPFM4VERSION.tar.gz
+TAR_FILE="hack/libpfm-$LIBPFM4VERSION.tar.gz"
+echo "bcb52090f02bc7bcb5ac066494cd55bbd5084e65  $TAR_FILE" | sha1sum -c && \
+tar -xzf "$TAR_FILE"
 
 export DBG="-g -Wall" && \
   make -e -C libpfm-$LIBPFM4VERSION && \
