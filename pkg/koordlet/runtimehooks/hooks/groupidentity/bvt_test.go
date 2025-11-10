@@ -23,7 +23,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/hooks"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util"
@@ -194,8 +194,8 @@ func Test_bvtPlugin_initSysctl(t *testing.T) {
 				prepareFn: func(helper *system.FileTestUtil) {
 					helper.WriteFileContents(system.GetProcSysFilePath(system.KernelSchedGroupIdentityEnable), "0")
 				},
-				hasKernelEnabled:         pointer.Bool(true),
-				coreSchedSysctlSupported: pointer.Bool(true),
+				hasKernelEnabled:         ptr.To[bool](true),
+				coreSchedSysctlSupported: ptr.To[bool](true),
 			},
 			wantErr: true,
 			wantFn: func(t *testing.T, helper *system.FileTestUtil) {
@@ -209,7 +209,7 @@ func Test_bvtPlugin_initSysctl(t *testing.T) {
 				prepareFn: func(helper *system.FileTestUtil) {
 					helper.WriteFileContents(system.GetProcSysFilePath(system.KernelSchedCore), "1")
 				},
-				hasKernelEnabled: pointer.Bool(true),
+				hasKernelEnabled: ptr.To[bool](true),
 			},
 			wantErr: true,
 			wantFn: func(t *testing.T, helper *system.FileTestUtil) {
@@ -267,7 +267,7 @@ func Test_bvtPlugin_prepare(t *testing.T) {
 				rule: &bvtRule{
 					enable: false,
 				},
-				hasKernelEnable: pointer.Bool(false),
+				hasKernelEnable: ptr.To[bool](false),
 			},
 			want: &bvtRule{
 				enable: false,
@@ -276,8 +276,8 @@ func Test_bvtPlugin_prepare(t *testing.T) {
 		{
 			name: "failed to prepare since rule is empty",
 			fields: fields{
-				sysSupported:    pointer.Bool(true),
-				hasKernelEnable: pointer.Bool(true),
+				sysSupported:    ptr.To[bool](true),
+				hasKernelEnable: ptr.To[bool](true),
 			},
 			want: nil,
 		},
@@ -289,8 +289,8 @@ func Test_bvtPlugin_prepare(t *testing.T) {
 				rule: &bvtRule{
 					enable: false,
 				},
-				sysSupported:    pointer.Bool(true),
-				hasKernelEnable: pointer.Bool(true),
+				sysSupported:    ptr.To[bool](true),
+				hasKernelEnable: ptr.To[bool](true),
 			},
 			want: nil,
 		},
@@ -302,8 +302,8 @@ func Test_bvtPlugin_prepare(t *testing.T) {
 				rule: &bvtRule{
 					enable: false,
 				},
-				sysSupported:    pointer.Bool(true),
-				hasKernelEnable: pointer.Bool(true),
+				sysSupported:    ptr.To[bool](true),
+				hasKernelEnable: ptr.To[bool](true),
 			},
 			want: &bvtRule{
 				enable: false,
@@ -317,8 +317,8 @@ func Test_bvtPlugin_prepare(t *testing.T) {
 				rule: &bvtRule{
 					enable: true,
 				},
-				sysSupported:    pointer.Bool(true),
-				hasKernelEnable: pointer.Bool(true),
+				sysSupported:    ptr.To[bool](true),
+				hasKernelEnable: ptr.To[bool](true),
 			},
 			want: &bvtRule{
 				enable: true,

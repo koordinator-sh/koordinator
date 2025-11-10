@@ -33,7 +33,7 @@ import (
 	"k8s.io/component-base/featuregate"
 	runtimeapi "k8s.io/cri-api/pkg/apis/runtime/v1"
 	critesting "k8s.io/cri-api/pkg/apis/testing"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
@@ -140,11 +140,11 @@ func Test_CPUEvict_calculateMilliReleaseBySatisfaction(t *testing.T) {
 	testNode2.Status.Capacity[apiext.BatchCPU] = resource.MustParse("0")
 	testNode2.Status.Allocatable[apiext.BatchCPU] = resource.MustParse("0")
 	thresholdConfig := sloconfig.DefaultResourceThresholdStrategy()
-	thresholdConfig.CPUEvictBESatisfactionUpperPercent = pointer.Int64(40)
-	thresholdConfig.CPUEvictBESatisfactionLowerPercent = pointer.Int64(30)
+	thresholdConfig.CPUEvictBESatisfactionUpperPercent = ptr.To[int64](40)
+	thresholdConfig.CPUEvictBESatisfactionLowerPercent = ptr.To[int64](30)
 	collectResUsedIntervalSeconds := int64(1)
 	thresholdConfig1 := thresholdConfig.DeepCopy()
-	thresholdConfig1.CPUEvictBEUsageThresholdPercent = pointer.Int64(50)
+	thresholdConfig1.CPUEvictBEUsageThresholdPercent = ptr.To[int64](50)
 	thresholdConfig2 := thresholdConfig1.DeepCopy()
 	thresholdConfig2.CPUEvictPolicy = slov1alpha1.EvictByAllocatablePolicy
 	type queryResult struct {
@@ -600,22 +600,22 @@ func Test_isSatisfactionConfigValid(t *testing.T) {
 		},
 		{
 			name:            "test_lowPercent_invalid",
-			thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{CPUEvictBESatisfactionLowerPercent: pointer.Int64(0), CPUEvictBESatisfactionUpperPercent: pointer.Int64(50)},
+			thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{CPUEvictBESatisfactionLowerPercent: ptr.To[int64](0), CPUEvictBESatisfactionUpperPercent: ptr.To[int64](50)},
 			expectErr:       fmt.Errorf("CPUEvictBESatisfactionLowerPercent(0) is not valid! must (0,60]"),
 		},
 		{
 			name:            "test_upperPercent_invalid",
-			thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{CPUEvictBESatisfactionLowerPercent: pointer.Int64(30), CPUEvictBESatisfactionUpperPercent: pointer.Int64(100)},
+			thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{CPUEvictBESatisfactionLowerPercent: ptr.To[int64](30), CPUEvictBESatisfactionUpperPercent: ptr.To[int64](100)},
 			expectErr:       fmt.Errorf("CPUEvictBESatisfactionUpperPercent(100) is not valid,must (0,100)"),
 		},
 		{
 			name:            "test_lowPercent>upperPercent",
-			thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{CPUEvictBESatisfactionLowerPercent: pointer.Int64(40), CPUEvictBESatisfactionUpperPercent: pointer.Int64(30)},
+			thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{CPUEvictBESatisfactionLowerPercent: ptr.To[int64](40), CPUEvictBESatisfactionUpperPercent: ptr.To[int64](30)},
 			expectErr:       fmt.Errorf("CPUEvictBESatisfactionUpperPercent(30) < CPUEvictBESatisfactionLowerPercent(40)"),
 		},
 		{
 			name:            "test_valid",
-			thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{CPUEvictBESatisfactionLowerPercent: pointer.Int64(30), CPUEvictBESatisfactionUpperPercent: pointer.Int64(40)},
+			thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{CPUEvictBESatisfactionLowerPercent: ptr.To[int64](30), CPUEvictBESatisfactionUpperPercent: ptr.To[int64](40)},
 			expectErr:       nil,
 		},
 	}
@@ -649,23 +649,23 @@ func Test_isUsedThresholdConfigValid(t *testing.T) {
 		{
 			name: "CPUEvictThresholdPercent < 0",
 			thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{
-				CPUEvictThresholdPercent: pointer.Int64(-1),
+				CPUEvictThresholdPercent: ptr.To[int64](-1),
 			},
 			expectErr: fmt.Errorf("threshold percent(-1) should greater than 0"),
 		},
 		{
 			name: "CPUEvictLowerPercent == nil",
 			thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{
-				CPUEvictThresholdPercent:      pointer.Int64(20),
-				EvictEnabledPriorityThreshold: pointer.Int32(0),
+				CPUEvictThresholdPercent:      ptr.To[int64](20),
+				EvictEnabledPriorityThreshold: ptr.To[int32](0),
 			},
 			expectErr: nil,
 		},
 		{
 			name: "CPUEvictLowerPercent > CPUEvictThresholdPercent",
 			thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{
-				CPUEvictThresholdPercent:      pointer.Int64(20),
-				CPUEvictLowerPercent:          pointer.Int64(30),
+				CPUEvictThresholdPercent:      ptr.To[int64](20),
+				CPUEvictLowerPercent:          ptr.To[int64](30),
 				EvictEnabledPriorityThreshold: nil,
 			},
 			expectErr: fmt.Errorf("lower percent(30) should less than threshold percent(20)"),
@@ -673,8 +673,8 @@ func Test_isUsedThresholdConfigValid(t *testing.T) {
 		{
 			name: "EvictEnabledPriorityThreshold nil",
 			thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{
-				CPUEvictThresholdPercent:      pointer.Int64(20),
-				CPUEvictLowerPercent:          pointer.Int64(10),
+				CPUEvictThresholdPercent:      ptr.To[int64](20),
+				CPUEvictLowerPercent:          ptr.To[int64](10),
 				EvictEnabledPriorityThreshold: nil,
 			},
 			expectErr: fmt.Errorf("EvictEnabledPriorityThreshold not config"),
@@ -682,9 +682,9 @@ func Test_isUsedThresholdConfigValid(t *testing.T) {
 		{
 			name: "nil error",
 			thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{
-				CPUEvictThresholdPercent:      pointer.Int64(20),
-				CPUEvictLowerPercent:          pointer.Int64(10),
-				EvictEnabledPriorityThreshold: pointer.Int32(0),
+				CPUEvictThresholdPercent:      ptr.To[int64](20),
+				CPUEvictLowerPercent:          ptr.To[int64](10),
+				EvictEnabledPriorityThreshold: ptr.To[int32](0),
 			},
 			expectErr: nil,
 		},
@@ -799,9 +799,9 @@ func Test_calculateReleaseByUsedThresholdPercent(t *testing.T) {
 			node:        testutil.MockTestNode("100", "120G"),
 			nodeCPUUsed: resource.MustParse("81"),
 			thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{
-				Enable:                        pointer.Bool(true),
-				CPUEvictThresholdPercent:      pointer.Int64(80),
-				EvictEnabledPriorityThreshold: pointer.Int32(3000),
+				Enable:                        ptr.To[bool](true),
+				CPUEvictThresholdPercent:      ptr.To[int64](80),
+				EvictEnabledPriorityThreshold: ptr.To[int32](3000),
 			},
 			expectRelease: 3000,
 		},
@@ -810,10 +810,10 @@ func Test_calculateReleaseByUsedThresholdPercent(t *testing.T) {
 			node:        testutil.MockTestNode("100", "120G"),
 			nodeCPUUsed: resource.MustParse("81"),
 			thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{
-				Enable:                        pointer.Bool(true),
-				CPUEvictThresholdPercent:      pointer.Int64(80),
-				CPUEvictLowerPercent:          pointer.Int64(80),
-				EvictEnabledPriorityThreshold: pointer.Int32(3000),
+				Enable:                        ptr.To[bool](true),
+				CPUEvictThresholdPercent:      ptr.To[int64](80),
+				CPUEvictLowerPercent:          ptr.To[int64](80),
+				EvictEnabledPriorityThreshold: ptr.To[int32](3000),
 			},
 			expectRelease: 1000,
 		},
@@ -822,10 +822,10 @@ func Test_calculateReleaseByUsedThresholdPercent(t *testing.T) {
 			node:        testutil.MockTestNode("100", "120G"),
 			nodeCPUUsed: resource.MustParse("11"),
 			thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{
-				Enable:                        pointer.Bool(true),
-				CPUEvictThresholdPercent:      pointer.Int64(80),
-				CPUEvictLowerPercent:          pointer.Int64(80),
-				EvictEnabledPriorityThreshold: pointer.Int32(3000),
+				Enable:                        ptr.To[bool](true),
+				CPUEvictThresholdPercent:      ptr.To[int64](80),
+				CPUEvictLowerPercent:          ptr.To[int64](80),
+				EvictEnabledPriorityThreshold: ptr.To[int32](3000),
 			},
 			expectRelease: 0,
 		},
@@ -918,7 +918,7 @@ func Test_cpuEvict(t *testing.T) {
 		{
 			name:            "disable",
 			node:            testutil.MockTestNode("100", "120G"),
-			thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{Enable: pointer.Bool(false)},
+			thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{Enable: ptr.To[bool](false)},
 		},
 		{
 			name:            "only feature: CPUEvict",
@@ -936,9 +936,9 @@ func Test_cpuEvict(t *testing.T) {
 				{UID: "test_podPriority_100_9999_1", CpuUsed: resource.MustParse("2")},
 			},
 			thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{
-				Enable:                        pointer.Bool(true),
-				CPUEvictThresholdPercent:      pointer.Int64(78),
-				EvictEnabledPriorityThreshold: pointer.Int32(3000),
+				Enable:                        ptr.To[bool](true),
+				CPUEvictThresholdPercent:      ptr.To[int64](78),
+				EvictEnabledPriorityThreshold: ptr.To[int32](3000),
 			},
 			expectEvictedPods: []*corev1.Pod{pod3, pod4, pod6, pod7},
 			customEvictor:     true,
@@ -959,9 +959,9 @@ func Test_cpuEvict(t *testing.T) {
 				{UID: "test_podPriority_100_9999_1", CpuUsed: resource.MustParse("2")},
 			},
 			thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{
-				Enable:                        pointer.Bool(true),
-				CPUEvictThresholdPercent:      pointer.Int64(78),
-				EvictEnabledPriorityThreshold: pointer.Int32(3000),
+				Enable:                        ptr.To[bool](true),
+				CPUEvictThresholdPercent:      ptr.To[int64](78),
+				EvictEnabledPriorityThreshold: ptr.To[int32](3000),
 			},
 			expectEvictedPods: []*corev1.Pod{pod3, pod4, pod6, pod7},
 			customEvictor:     true,

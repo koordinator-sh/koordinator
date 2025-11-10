@@ -24,7 +24,7 @@ import (
 	"github.com/containerd/nri/pkg/api"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
@@ -133,10 +133,10 @@ func TestContainerContext_NriDone(t *testing.T) {
 			fields: fields{
 				Response: ContainerResponse{
 					Resources: Resources{
-						CPUShares:   pointer.Int64(1024 * 500 / 1000),
-						CFSQuota:    pointer.Int64(1024 * 500 / 1000),
-						CPUSet:      pointer.String("0,1,2"),
-						MemoryLimit: pointer.Int64(2 * 1024 * 1024 * 1024),
+						CPUShares:   ptr.To[int64](1024 * 500 / 1000),
+						CFSQuota:    ptr.To[int64](1024 * 500 / 1000),
+						CPUSet:      ptr.To[string]("0,1,2"),
+						MemoryLimit: ptr.To[int64](2 * 1024 * 1024 * 1024),
 					},
 					AddContainerEnvs: map[string]string{"test": "test"},
 				},

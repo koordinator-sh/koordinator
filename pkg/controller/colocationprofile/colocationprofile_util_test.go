@@ -27,7 +27,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
@@ -69,7 +69,7 @@ func Test_listPodsForProfile(t *testing.T) {
 				"testAnnotationA": "valueA",
 			},
 			QoSClass:            string(extension.QoSBE),
-			KoordinatorPriority: pointer.Int32(1111),
+			KoordinatorPriority: ptr.To[int32](1111),
 			Patch: runtime.RawExtension{
 				Raw: []byte(`{"metadata":{"labels":{"test-patch-label":"patch-a"},"annotations":{"test-patch-annotation":"patch-b"}}}`),
 			},
@@ -95,7 +95,7 @@ func Test_listPodsForProfile(t *testing.T) {
 				"testAnnotationA": "valueA",
 			},
 			QoSClass:            string(extension.QoSBE),
-			KoordinatorPriority: pointer.Int32(1111),
+			KoordinatorPriority: ptr.To[int32](1111),
 			Patch: runtime.RawExtension{
 				Raw: []byte(`{"metadata":{"labels":{"test-patch-label":"patch-a"},"annotations":{"test-patch-annotation":"patch-b"}}}`),
 			},
@@ -130,7 +130,7 @@ func Test_listPodsForProfile(t *testing.T) {
 			},
 		},
 		Spec: corev1.PodSpec{
-			Priority: pointer.Int32(0),
+			Priority: ptr.To[int32](0),
 		},
 	}
 	testPod1 := &corev1.Pod{
@@ -140,7 +140,7 @@ func Test_listPodsForProfile(t *testing.T) {
 			Labels:    map[string]string{},
 		},
 		Spec: corev1.PodSpec{
-			Priority: pointer.Int32(9000),
+			Priority: ptr.To[int32](9000),
 		},
 	}
 	testPodInDev := &corev1.Pod{
@@ -153,7 +153,7 @@ func Test_listPodsForProfile(t *testing.T) {
 		},
 		Spec: corev1.PodSpec{
 			NodeName: "",
-			Priority: pointer.Int32(0),
+			Priority: ptr.To[int32](0),
 		},
 	}
 	type fields struct {
@@ -312,7 +312,7 @@ func Test_updatePodByClusterColocationProfile(t *testing.T) {
 						"testAnnotationA": "valueA",
 					},
 					QoSClass:            string(extension.QoSBE),
-					KoordinatorPriority: pointer.Int32(1111),
+					KoordinatorPriority: ptr.To[int32](1111),
 					Patch: runtime.RawExtension{
 						Raw: []byte(`{"metadata":{"labels":{"test-patch-label":"patch-a"},"annotations":{"test-patch-annotation":"patch-b"}}}`),
 					},
@@ -434,7 +434,7 @@ func Test_updatePodByClusterColocationProfile(t *testing.T) {
 						"annotation-key-to-load": "annotation-key-to-store",
 					},
 					QoSClass:            string(extension.QoSBE),
-					KoordinatorPriority: pointer.Int32(1111),
+					KoordinatorPriority: ptr.To[int32](1111),
 					Patch: runtime.RawExtension{
 						Raw: []byte(`{"metadata":{"labels":{"test-patch-label":"patch-a"},"annotations":{"test-patch-annotation":"patch-b"}}}`),
 					},
@@ -547,7 +547,7 @@ func Test_updatePodByClusterColocationProfile(t *testing.T) {
 						"annotation-key-to-load": "annotation-key-to-store",
 					},
 					QoSClass:            string(extension.QoSBE),
-					KoordinatorPriority: pointer.Int32(1111),
+					KoordinatorPriority: ptr.To[int32](1111),
 					Patch: runtime.RawExtension{
 						Raw: []byte(`{"metadata":{"labels":{"test-patch-label":"patch-a"},"annotations":{"test-patch-annotation":"patch-b"}}}`),
 					},
@@ -666,7 +666,7 @@ func Test_updatePodByClusterColocationProfile(t *testing.T) {
 						"annotation-key-to-load": "annotation-key-to-store",
 					},
 					QoSClass:            string(extension.QoSBE),
-					KoordinatorPriority: pointer.Int32(1111),
+					KoordinatorPriority: ptr.To[int32](1111),
 					Patch: runtime.RawExtension{
 						Raw: []byte(`{"metadata":{"labels":{"test-patch-label":"patch-a"},"annotations":{"test-patch-annotation":"patch-b"}}}`),
 					},
@@ -786,7 +786,7 @@ func Test_updatePodByClusterColocationProfile(t *testing.T) {
 						"testAnnotationA": "valueA",
 					},
 					QoSClass:            string(extension.QoSBE),
-					KoordinatorPriority: pointer.Int32(1111),
+					KoordinatorPriority: ptr.To[int32](1111),
 					Patch: runtime.RawExtension{
 						Raw: []byte(`{"metadata":{"labels":{"test-patch-label":"patch-a"},"annotations":{"test-patch-annotation":"patch-b"}}}`),
 					},

@@ -29,7 +29,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
@@ -119,9 +119,9 @@ func Test_cpuSuppress_suppressBECPU(t *testing.T) {
 				preBECPUSet:   "0-9",
 				preBECFSQuota: 16 * system.DefaultCPUCFSPeriod,
 				thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{
-					Enable:                      pointer.Bool(true),
+					Enable:                      ptr.To[bool](true),
 					CPUSuppressPolicy:           slov1alpha1.CPUCfsQuotaPolicy,
-					CPUSuppressThresholdPercent: pointer.Int64(70),
+					CPUSuppressThresholdPercent: ptr.To[int64](70),
 				},
 			},
 			wantBECFSQuota:           16 * system.DefaultCPUCFSPeriod,
@@ -270,9 +270,9 @@ func Test_cpuSuppress_suppressBECPU(t *testing.T) {
 				preBECPUSet:   "1-9",
 				preBECFSQuota: 10 * system.DefaultCPUCFSPeriod,
 				thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{
-					Enable:                      pointer.Bool(true),
+					Enable:                      ptr.To[bool](true),
 					CPUSuppressPolicy:           slov1alpha1.CPUCfsQuotaPolicy,
-					CPUSuppressThresholdPercent: pointer.Int64(70),
+					CPUSuppressThresholdPercent: ptr.To[int64](70),
 				},
 				beCPUManagerEnabled: true,
 			},
@@ -347,9 +347,9 @@ func Test_cpuSuppress_suppressBECPU(t *testing.T) {
 				preBECPUSet:   "0-9",
 				preBECFSQuota: 10 * system.DefaultCPUCFSPeriod,
 				thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{
-					Enable:                      pointer.Bool(true),
+					Enable:                      ptr.To[bool](true),
 					CPUSuppressPolicy:           slov1alpha1.CPUCfsQuotaPolicy,
-					CPUSuppressThresholdPercent: pointer.Int64(70),
+					CPUSuppressThresholdPercent: ptr.To[int64](70),
 				},
 			},
 			wantBECFSQuota:           int64(3.2 * float64(system.DefaultCPUCFSPeriod)),
@@ -448,9 +448,9 @@ func Test_cpuSuppress_suppressBECPU(t *testing.T) {
 				preBECPUSet:   "0-9",
 				preBECFSQuota: 15 * system.DefaultCPUCFSPeriod,
 				thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{
-					Enable:                      pointer.Bool(true),
+					Enable:                      ptr.To[bool](true),
 					CPUSuppressPolicy:           slov1alpha1.CPUCfsQuotaPolicy,
-					CPUSuppressThresholdPercent: pointer.Int64(70),
+					CPUSuppressThresholdPercent: ptr.To[int64](70),
 				},
 			},
 			wantBECFSQuota:           int64(1.2 * float64(system.DefaultCPUCFSPeriod)),
@@ -549,9 +549,9 @@ func Test_cpuSuppress_suppressBECPU(t *testing.T) {
 				preBECPUSet:   "0-9",
 				preBECFSQuota: 8 * system.DefaultCPUCFSPeriod,
 				thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{
-					Enable:                      pointer.Bool(true),
+					Enable:                      ptr.To[bool](true),
 					CPUSuppressPolicy:           slov1alpha1.CPUSetPolicy,
-					CPUSuppressThresholdPercent: pointer.Int64(70),
+					CPUSuppressThresholdPercent: ptr.To[int64](70),
 				},
 			},
 			wantBECFSQuota:           -1,
@@ -650,9 +650,9 @@ func Test_cpuSuppress_suppressBECPU(t *testing.T) {
 				preBECPUSet:   "0-9",
 				preBECFSQuota: 8 * system.DefaultCPUCFSPeriod,
 				thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{
-					Enable:                      pointer.Bool(false),
+					Enable:                      ptr.To[bool](false),
 					CPUSuppressPolicy:           slov1alpha1.CPUSetPolicy,
-					CPUSuppressThresholdPercent: pointer.Int64(70),
+					CPUSuppressThresholdPercent: ptr.To[int64](70),
 				},
 			},
 			wantBECFSQuota:           -1,
@@ -1243,7 +1243,7 @@ func Test_cpuSuppress_calculateBESuppressCPU(t *testing.T) {
 					},
 				},
 				beCPUUsedThreshold: 70,
-				beCPUMinThreshold:  pointer.Int64(60),
+				beCPUMinThreshold:  ptr.To[int64](60),
 			},
 			// 20*0.6
 			want: resource.NewQuantity(12, resource.DecimalSI),

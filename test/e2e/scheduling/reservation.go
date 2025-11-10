@@ -34,7 +34,7 @@ import (
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	k8spodutil "k8s.io/kubernetes/pkg/api/v1/pod"
 	resourceapi "k8s.io/kubernetes/pkg/api/v1/resource"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
@@ -127,7 +127,7 @@ var _ = SIGDescribe("Reservation", func() {
 			framework.ExpectNoError(err, "unable to load reservation")
 
 			// disable allocateOnce
-			reservation.Spec.AllocateOnce = pointer.Bool(false)
+			reservation.Spec.AllocateOnce = ptr.To[bool](false)
 			// reserve resources for two Pods
 			for k, v := range reservation.Spec.Template.Spec.Containers[0].Resources.Requests {
 				vv := v.DeepCopy()
@@ -300,7 +300,7 @@ var _ = SIGDescribe("Reservation", func() {
 				reservation, err := manifest.ReservationFromManifest("scheduling/simple-reservation.yaml")
 				framework.ExpectNoError(err, "unable to load reservation")
 
-				reservation.Spec.AllocateOnce = pointer.Bool(false)
+				reservation.Spec.AllocateOnce = ptr.To[bool](false)
 				reservation.Spec.Template.Spec.NodeName = testNodeName
 				reservation.Spec.Template.Spec.Containers = append(reservation.Spec.Template.Spec.Containers, corev1.Container{
 					Name: "fake-resource-container",
@@ -466,7 +466,7 @@ var _ = SIGDescribe("Reservation", func() {
 				framework.ExpectNoError(err, "unable to load reservation")
 
 				targetPodLabel := "test-reserve-policy"
-				reservation.Spec.AllocateOnce = pointer.Bool(false)
+				reservation.Spec.AllocateOnce = ptr.To[bool](false)
 				reservation.Spec.AllocatePolicy = schedulingv1alpha1.ReservationAllocatePolicyRestricted
 				reservation.Spec.Owners = []schedulingv1alpha1.ReservationOwner{
 					{
@@ -637,7 +637,7 @@ var _ = SIGDescribe("Reservation", func() {
 				framework.ExpectNoError(err, "unable to load reservation")
 
 				targetPodLabel := "test-reserve-policy"
-				reservation.Spec.AllocateOnce = pointer.Bool(false)
+				reservation.Spec.AllocateOnce = ptr.To[bool](false)
 				reservation.Spec.AllocatePolicy = schedulingv1alpha1.ReservationAllocatePolicyAligned
 				reservation.Spec.Owners = []schedulingv1alpha1.ReservationOwner{
 					{
@@ -841,7 +841,7 @@ var _ = SIGDescribe("Reservation", func() {
 					framework.ExpectNoError(err, "unable to load reservation")
 
 					targetPodLabel := "test-reserve-policy"
-					reservation.Spec.AllocateOnce = pointer.Bool(false)
+					reservation.Spec.AllocateOnce = ptr.To[bool](false)
 					reservation.Spec.AllocatePolicy = schedulingv1alpha1.ReservationAllocatePolicyAligned
 					reservation.Spec.Owners = []schedulingv1alpha1.ReservationOwner{
 						{
@@ -1021,7 +1021,7 @@ var _ = SIGDescribe("Reservation", func() {
 				reservation, err := manifest.ReservationFromManifest("scheduling/simple-reservation.yaml")
 				framework.ExpectNoError(err, "unable load reservation from manifest")
 
-				reservation.Spec.AllocateOnce = pointer.Bool(false)
+				reservation.Spec.AllocateOnce = ptr.To[bool](false)
 				reservation.Spec.Template.Namespace = f.Namespace.Name
 				if reservation.Spec.Template.Labels == nil {
 					reservation.Spec.Template.Labels = map[string]string{}

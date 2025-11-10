@@ -25,7 +25,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	"github.com/koordinator-sh/koordinator/apis/configuration"
 	"github.com/koordinator-sh/koordinator/apis/extension"
@@ -38,14 +38,14 @@ func Test_getResourceThresholdSpec(t *testing.T) {
 	defaultSLOCfg := DefaultSLOCfg()
 	testingResourceThresholdCfg := &configuration.ResourceThresholdCfg{
 		ClusterStrategy: &slov1alpha1.ResourceThresholdStrategy{
-			Enable:                      pointer.Bool(true),
-			CPUSuppressThresholdPercent: pointer.Int64(60),
+			Enable:                      ptr.To[bool](true),
+			CPUSuppressThresholdPercent: ptr.To[int64](60),
 		},
 	}
 	testingResourceThresholdCfg1 := &configuration.ResourceThresholdCfg{
 		ClusterStrategy: &slov1alpha1.ResourceThresholdStrategy{
-			Enable:                      pointer.Bool(true),
-			CPUSuppressThresholdPercent: pointer.Int64(60),
+			Enable:                      ptr.To[bool](true),
+			CPUSuppressThresholdPercent: ptr.To[int64](60),
 		},
 		NodeStrategies: []configuration.NodeResourceThresholdStrategy{
 			{
@@ -57,7 +57,7 @@ func Test_getResourceThresholdSpec(t *testing.T) {
 					},
 				},
 				ResourceThresholdStrategy: &slov1alpha1.ResourceThresholdStrategy{
-					CPUSuppressThresholdPercent: pointer.Int64(50),
+					CPUSuppressThresholdPercent: ptr.To[int64](50),
 				},
 			},
 		},
@@ -107,7 +107,7 @@ func Test_getResourceThresholdSpec(t *testing.T) {
 				cfg: testingResourceThresholdCfg1,
 			},
 			want: &slov1alpha1.ResourceThresholdStrategy{
-				CPUSuppressThresholdPercent: pointer.Int64(50),
+				CPUSuppressThresholdPercent: ptr.To[int64](50),
 			},
 		},
 	}
@@ -124,12 +124,12 @@ func Test_calculateResourceThresholdCfgMerged(t *testing.T) {
 	defaultSLOCfg := DefaultSLOCfg()
 
 	oldSLOCfg := DefaultSLOCfg()
-	oldSLOCfg.ThresholdCfgMerged.ClusterStrategy.CPUSuppressThresholdPercent = pointer.Int64(30)
+	oldSLOCfg.ThresholdCfgMerged.ClusterStrategy.CPUSuppressThresholdPercent = ptr.To[int64](30)
 
 	testingResourceThresholdCfg := &configuration.ResourceThresholdCfg{
 		ClusterStrategy: &slov1alpha1.ResourceThresholdStrategy{
-			Enable:                      pointer.Bool(true),
-			CPUSuppressThresholdPercent: pointer.Int64(60),
+			Enable:                      ptr.To[bool](true),
+			CPUSuppressThresholdPercent: ptr.To[int64](60),
 		},
 	}
 	testingResourceThresholdCfgStr, _ := json.Marshal(testingResourceThresholdCfg)
@@ -140,8 +140,8 @@ func Test_calculateResourceThresholdCfgMerged(t *testing.T) {
 
 	testingResourceThresholdCfg1 := &configuration.ResourceThresholdCfg{
 		ClusterStrategy: &slov1alpha1.ResourceThresholdStrategy{
-			Enable:                      pointer.Bool(true),
-			CPUSuppressThresholdPercent: pointer.Int64(60),
+			Enable:                      ptr.To[bool](true),
+			CPUSuppressThresholdPercent: ptr.To[int64](60),
 		},
 		NodeStrategies: []configuration.NodeResourceThresholdStrategy{
 			{
@@ -153,7 +153,7 @@ func Test_calculateResourceThresholdCfgMerged(t *testing.T) {
 					},
 				},
 				ResourceThresholdStrategy: &slov1alpha1.ResourceThresholdStrategy{
-					CPUSuppressThresholdPercent: pointer.Int64(40),
+					CPUSuppressThresholdPercent: ptr.To[int64](40),
 				},
 			},
 			{
@@ -165,7 +165,7 @@ func Test_calculateResourceThresholdCfgMerged(t *testing.T) {
 					},
 				},
 				ResourceThresholdStrategy: &slov1alpha1.ResourceThresholdStrategy{
-					CPUSuppressThresholdPercent: pointer.Int64(50),
+					CPUSuppressThresholdPercent: ptr.To[int64](50),
 				},
 			},
 		},
@@ -197,8 +197,8 @@ func Test_calculateResourceThresholdCfgMerged(t *testing.T) {
 			ResourceThresholdStrategy: expectTestingResourceThresholdCfg1.ClusterStrategy.DeepCopy(),
 		},
 	}
-	expectTestingResourceThresholdCfg1.NodeStrategies[0].CPUSuppressThresholdPercent = pointer.Int64(40)
-	expectTestingResourceThresholdCfg1.NodeStrategies[1].CPUSuppressThresholdPercent = pointer.Int64(50)
+	expectTestingResourceThresholdCfg1.NodeStrategies[0].CPUSuppressThresholdPercent = ptr.To[int64](40)
+	expectTestingResourceThresholdCfg1.NodeStrategies[1].CPUSuppressThresholdPercent = ptr.To[int64](50)
 
 	type args struct {
 		configMap *corev1.ConfigMap
@@ -274,7 +274,7 @@ func Test_getResourceQOSSpec(t *testing.T) {
 			BEClass: &slov1alpha1.ResourceQOS{
 				CPUQOS: &slov1alpha1.CPUQOSCfg{
 					CPUQOS: slov1alpha1.CPUQOS{
-						GroupIdentity: pointer.Int64(0),
+						GroupIdentity: ptr.To[int64](0),
 					},
 				},
 			},
@@ -285,7 +285,7 @@ func Test_getResourceQOSSpec(t *testing.T) {
 			BEClass: &slov1alpha1.ResourceQOS{
 				CPUQOS: &slov1alpha1.CPUQOSCfg{
 					CPUQOS: slov1alpha1.CPUQOS{
-						GroupIdentity: pointer.Int64(0),
+						GroupIdentity: ptr.To[int64](0),
 					},
 				},
 			},
@@ -303,7 +303,7 @@ func Test_getResourceQOSSpec(t *testing.T) {
 					BEClass: &slov1alpha1.ResourceQOS{
 						CPUQOS: &slov1alpha1.CPUQOSCfg{
 							CPUQOS: slov1alpha1.CPUQOS{
-								GroupIdentity: pointer.Int64(1),
+								GroupIdentity: ptr.To[int64](1),
 							},
 						},
 					},
@@ -321,7 +321,7 @@ func Test_getResourceQOSSpec(t *testing.T) {
 					BEClass: &slov1alpha1.ResourceQOS{
 						CPUQOS: &slov1alpha1.CPUQOSCfg{
 							CPUQOS: slov1alpha1.CPUQOS{
-								GroupIdentity: pointer.Int64(2),
+								GroupIdentity: ptr.To[int64](2),
 							},
 						},
 					},
@@ -407,12 +407,12 @@ func Test_calculateResourceQOSCfgMerged(t *testing.T) {
 			BEClass: &slov1alpha1.ResourceQOS{
 				CPUQOS: &slov1alpha1.CPUQOSCfg{
 					CPUQOS: slov1alpha1.CPUQOS{
-						GroupIdentity: pointer.Int64(2),
+						GroupIdentity: ptr.To[int64](2),
 					},
 				},
 				MemoryQOS: &slov1alpha1.MemoryQOSCfg{
 					MemoryQOS: slov1alpha1.MemoryQOS{
-						MinLimitPercent: pointer.Int64(40),
+						MinLimitPercent: ptr.To[int64](40),
 					},
 				},
 			},
@@ -424,7 +424,7 @@ func Test_calculateResourceQOSCfgMerged(t *testing.T) {
 			BEClass: &slov1alpha1.ResourceQOS{
 				CPUQOS: &slov1alpha1.CPUQOSCfg{
 					CPUQOS: slov1alpha1.CPUQOS{
-						GroupIdentity: pointer.Int64(0),
+						GroupIdentity: ptr.To[int64](0),
 					},
 				},
 			},
@@ -438,7 +438,7 @@ func Test_calculateResourceQOSCfgMerged(t *testing.T) {
 			BEClass: &slov1alpha1.ResourceQOS{
 				CPUQOS: &slov1alpha1.CPUQOSCfg{
 					CPUQOS: slov1alpha1.CPUQOS{
-						GroupIdentity: pointer.Int64(0),
+						GroupIdentity: ptr.To[int64](0),
 					},
 				},
 			},
@@ -456,7 +456,7 @@ func Test_calculateResourceQOSCfgMerged(t *testing.T) {
 					BEClass: &slov1alpha1.ResourceQOS{
 						CPUQOS: &slov1alpha1.CPUQOSCfg{
 							CPUQOS: slov1alpha1.CPUQOS{
-								GroupIdentity: pointer.Int64(0),
+								GroupIdentity: ptr.To[int64](0),
 							},
 						},
 					},
@@ -474,7 +474,7 @@ func Test_calculateResourceQOSCfgMerged(t *testing.T) {
 					BEClass: &slov1alpha1.ResourceQOS{
 						CPUQOS: &slov1alpha1.CPUQOSCfg{
 							CPUQOS: slov1alpha1.CPUQOS{
-								GroupIdentity: pointer.Int64(-1),
+								GroupIdentity: ptr.To[int64](-1),
 							},
 						},
 					},
@@ -484,8 +484,8 @@ func Test_calculateResourceQOSCfgMerged(t *testing.T) {
 	}
 	testingResourceQOSCfgStr1, _ := json.Marshal(testingResourceQOSCfg1)
 	expectTestingResourceQOSCfg1 := testingResourceQOSCfg1.DeepCopy()
-	expectTestingResourceQOSCfg1.NodeStrategies[0].BEClass.CPUQOS.GroupIdentity = pointer.Int64(0)
-	expectTestingResourceQOSCfg1.NodeStrategies[1].BEClass.CPUQOS.GroupIdentity = pointer.Int64(-1)
+	expectTestingResourceQOSCfg1.NodeStrategies[0].BEClass.CPUQOS.GroupIdentity = ptr.To[int64](0)
+	expectTestingResourceQOSCfg1.NodeStrategies[1].BEClass.CPUQOS.GroupIdentity = ptr.To[int64](-1)
 
 	type args struct {
 		configMap *corev1.ConfigMap
@@ -561,14 +561,14 @@ func Test_getCPBurstConfigSpec(t *testing.T) {
 	testingCPUBurstCfg := &configuration.CPUBurstCfg{
 		ClusterStrategy: &slov1alpha1.CPUBurstStrategy{
 			CPUBurstConfig: slov1alpha1.CPUBurstConfig{
-				CFSQuotaBurstPeriodSeconds: pointer.Int64(120),
+				CFSQuotaBurstPeriodSeconds: ptr.To[int64](120),
 			},
 		},
 	}
 	testingCPUBurstCfg1 := &configuration.CPUBurstCfg{
 		ClusterStrategy: &slov1alpha1.CPUBurstStrategy{
 			CPUBurstConfig: slov1alpha1.CPUBurstConfig{
-				CPUBurstPercent: pointer.Int64(200),
+				CPUBurstPercent: ptr.To[int64](200),
 			},
 		},
 		NodeStrategies: []configuration.NodeCPUBurstCfg{
@@ -582,7 +582,7 @@ func Test_getCPBurstConfigSpec(t *testing.T) {
 				},
 				CPUBurstStrategy: &slov1alpha1.CPUBurstStrategy{
 					CPUBurstConfig: slov1alpha1.CPUBurstConfig{
-						CPUBurstPercent: pointer.Int64(200),
+						CPUBurstPercent: ptr.To[int64](200),
 					},
 				},
 			},
@@ -596,7 +596,7 @@ func Test_getCPBurstConfigSpec(t *testing.T) {
 				},
 				CPUBurstStrategy: &slov1alpha1.CPUBurstStrategy{
 					CPUBurstConfig: slov1alpha1.CPUBurstConfig{
-						CPUBurstPercent: pointer.Int64(100),
+						CPUBurstPercent: ptr.To[int64](100),
 					},
 				},
 			},
@@ -663,12 +663,12 @@ func Test_calculateCPUBurstCfgMerged(t *testing.T) {
 	defaultSLOCfg := DefaultSLOCfg()
 
 	oldSLOConfig := DefaultSLOCfg()
-	oldSLOConfig.CPUBurstCfgMerged.ClusterStrategy.CFSQuotaBurstPercent = pointer.Int64(30)
+	oldSLOConfig.CPUBurstCfgMerged.ClusterStrategy.CFSQuotaBurstPercent = ptr.To[int64](30)
 
 	testingCfgClusterOnly := &configuration.CPUBurstCfg{
 		ClusterStrategy: &slov1alpha1.CPUBurstStrategy{
 			CPUBurstConfig: slov1alpha1.CPUBurstConfig{
-				CFSQuotaBurstPeriodSeconds: pointer.Int64(120),
+				CFSQuotaBurstPeriodSeconds: ptr.To[int64](120),
 			},
 		},
 	}
@@ -690,7 +690,7 @@ func Test_calculateCPUBurstCfgMerged(t *testing.T) {
 				},
 				CPUBurstStrategy: &slov1alpha1.CPUBurstStrategy{
 					CPUBurstConfig: slov1alpha1.CPUBurstConfig{
-						CPUBurstPercent: pointer.Int64(100),
+						CPUBurstPercent: ptr.To[int64](100),
 					},
 				},
 			},
@@ -704,7 +704,7 @@ func Test_calculateCPUBurstCfgMerged(t *testing.T) {
 				},
 				CPUBurstStrategy: &slov1alpha1.CPUBurstStrategy{
 					CPUBurstConfig: slov1alpha1.CPUBurstConfig{
-						CPUBurstPercent: pointer.Int64(200),
+						CPUBurstPercent: ptr.To[int64](200),
 					},
 				},
 			},
@@ -813,13 +813,13 @@ func Test_getSystemConfigSpec(t *testing.T) {
 	defaultConfig := DefaultSLOCfg()
 	testingSystemConfig := &configuration.SystemCfg{
 		ClusterStrategy: &slov1alpha1.SystemStrategy{
-			MinFreeKbytesFactor:   pointer.Int64(150),
+			MinFreeKbytesFactor:   ptr.To[int64](150),
 			TotalNetworkBandwidth: resource.MustParse("10G"),
 		},
 	}
 	testingSystemConfig1 := &configuration.SystemCfg{
 		ClusterStrategy: &slov1alpha1.SystemStrategy{
-			MinFreeKbytesFactor:   pointer.Int64(150),
+			MinFreeKbytesFactor:   ptr.To[int64](150),
 			TotalNetworkBandwidth: resource.MustParse("100M"),
 		},
 		NodeStrategies: []configuration.NodeSystemStrategy{
@@ -832,7 +832,7 @@ func Test_getSystemConfigSpec(t *testing.T) {
 					},
 				},
 				SystemStrategy: &slov1alpha1.SystemStrategy{
-					MinFreeKbytesFactor:   pointer.Int64(120),
+					MinFreeKbytesFactor:   ptr.To[int64](120),
 					TotalNetworkBandwidth: resource.MustParse("10M"),
 				},
 			},
@@ -845,7 +845,7 @@ func Test_getSystemConfigSpec(t *testing.T) {
 					},
 				},
 				SystemStrategy: &slov1alpha1.SystemStrategy{
-					MinFreeKbytesFactor:   pointer.Int64(130),
+					MinFreeKbytesFactor:   ptr.To[int64](130),
 					TotalNetworkBandwidth: resource.MustParse("1000M"),
 				},
 			},
@@ -964,12 +964,12 @@ func Test_calculateSystemConfigMerged(t *testing.T) {
 	defaultSLOCfg := DefaultSLOCfg()
 
 	oldSLOCfg := DefaultSLOCfg()
-	oldSLOCfg.SystemCfgMerged.ClusterStrategy.WatermarkScaleFactor = pointer.Int64(99)
+	oldSLOCfg.SystemCfgMerged.ClusterStrategy.WatermarkScaleFactor = ptr.To[int64](99)
 
 	testingCfgOnliCluster := &configuration.SystemCfg{
 		ClusterStrategy: &slov1alpha1.SystemStrategy{
-			WatermarkScaleFactor: pointer.Int64(151),
-			MemcgReapBackGround:  pointer.Int64(1),
+			WatermarkScaleFactor: ptr.To[int64](151),
+			MemcgReapBackGround:  ptr.To[int64](1),
 		},
 	}
 	testingCfgOnliClusterStr, _ := json.Marshal(testingCfgOnliCluster)
@@ -979,7 +979,7 @@ func Test_calculateSystemConfigMerged(t *testing.T) {
 
 	testingSystemConfig1 := &configuration.SystemCfg{
 		ClusterStrategy: &slov1alpha1.SystemStrategy{
-			WatermarkScaleFactor: pointer.Int64(151),
+			WatermarkScaleFactor: ptr.To[int64](151),
 		},
 		NodeStrategies: []configuration.NodeSystemStrategy{
 			{
@@ -991,8 +991,8 @@ func Test_calculateSystemConfigMerged(t *testing.T) {
 					},
 				},
 				SystemStrategy: &slov1alpha1.SystemStrategy{
-					MinFreeKbytesFactor: pointer.Int64(130),
-					MemcgReapBackGround: pointer.Int64(1),
+					MinFreeKbytesFactor: ptr.To[int64](130),
+					MemcgReapBackGround: ptr.To[int64](1),
 				},
 			},
 			{
@@ -1004,8 +1004,8 @@ func Test_calculateSystemConfigMerged(t *testing.T) {
 					},
 				},
 				SystemStrategy: &slov1alpha1.SystemStrategy{
-					MinFreeKbytesFactor: pointer.Int64(140),
-					MemcgReapBackGround: pointer.Int64(0),
+					MinFreeKbytesFactor: ptr.To[int64](140),
+					MemcgReapBackGround: ptr.To[int64](0),
 				},
 			},
 		},
@@ -1014,7 +1014,7 @@ func Test_calculateSystemConfigMerged(t *testing.T) {
 	expectTestingSystemConfig1 := &configuration.SystemCfg{
 		ClusterStrategy: &slov1alpha1.SystemStrategy{
 			MinFreeKbytesFactor:   oldSLOCfg.SystemCfgMerged.ClusterStrategy.MinFreeKbytesFactor,
-			WatermarkScaleFactor:  pointer.Int64(151),
+			WatermarkScaleFactor:  ptr.To[int64](151),
 			MemcgReapBackGround:   oldSLOCfg.SystemCfgMerged.ClusterStrategy.MemcgReapBackGround,
 			TotalNetworkBandwidth: resource.MustParse("0"),
 		},
@@ -1028,9 +1028,9 @@ func Test_calculateSystemConfigMerged(t *testing.T) {
 					},
 				},
 				SystemStrategy: &slov1alpha1.SystemStrategy{
-					MinFreeKbytesFactor:   pointer.Int64(130),
-					WatermarkScaleFactor:  pointer.Int64(151),
-					MemcgReapBackGround:   pointer.Int64(1),
+					MinFreeKbytesFactor:   ptr.To[int64](130),
+					WatermarkScaleFactor:  ptr.To[int64](151),
+					MemcgReapBackGround:   ptr.To[int64](1),
 					TotalNetworkBandwidth: resource.MustParse("0"),
 				},
 			},
@@ -1042,9 +1042,9 @@ func Test_calculateSystemConfigMerged(t *testing.T) {
 				},
 			},
 				SystemStrategy: &slov1alpha1.SystemStrategy{
-					MinFreeKbytesFactor:   pointer.Int64(140),
-					WatermarkScaleFactor:  pointer.Int64(151),
-					MemcgReapBackGround:   pointer.Int64(0),
+					MinFreeKbytesFactor:   ptr.To[int64](140),
+					WatermarkScaleFactor:  ptr.To[int64](151),
+					MemcgReapBackGround:   ptr.To[int64](0),
 					TotalNetworkBandwidth: resource.MustParse("0"),
 				},
 			},

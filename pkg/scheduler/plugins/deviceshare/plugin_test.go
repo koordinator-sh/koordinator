@@ -44,7 +44,7 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework/runtime"
 	schedulertesting "k8s.io/kubernetes/pkg/scheduler/testing"
 	fakeclock "k8s.io/utils/clock/testing"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/yaml"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
@@ -275,7 +275,7 @@ func Test_Plugin_PreFilterExtensions(t *testing.T) {
 			Devices: []schedulingv1alpha1.DeviceInfo{
 				{
 					Type:   schedulingv1alpha1.GPU,
-					Minor:  pointer.Int32(1),
+					Minor:  ptr.To[int32](1),
 					Health: true,
 					Resources: corev1.ResourceList{
 						apiext.ResourceGPUCore:        resource.MustParse("100"),
@@ -285,7 +285,7 @@ func Test_Plugin_PreFilterExtensions(t *testing.T) {
 				},
 				{
 					Type:   schedulingv1alpha1.GPU,
-					Minor:  pointer.Int32(2),
+					Minor:  ptr.To[int32](2),
 					Health: true,
 					Resources: corev1.ResourceList{
 						apiext.ResourceGPUCore:        resource.MustParse("100"),
@@ -400,7 +400,7 @@ func Test_Plugin_PreFilterExtensionsWithReservation(t *testing.T) {
 			Devices: []schedulingv1alpha1.DeviceInfo{
 				{
 					Type:   schedulingv1alpha1.GPU,
-					Minor:  pointer.Int32(1),
+					Minor:  ptr.To[int32](1),
 					Health: true,
 					Resources: corev1.ResourceList{
 						apiext.ResourceGPUCore:        resource.MustParse("100"),
@@ -410,7 +410,7 @@ func Test_Plugin_PreFilterExtensionsWithReservation(t *testing.T) {
 				},
 				{
 					Type:   schedulingv1alpha1.GPU,
-					Minor:  pointer.Int32(2),
+					Minor:  ptr.To[int32](2),
 					Health: true,
 					Resources: corev1.ResourceList{
 						apiext.ResourceGPUCore:        resource.MustParse("100"),
@@ -1243,7 +1243,7 @@ func Test_Plugin_Filter(t *testing.T) {
 									Type:   schedulingv1alpha1.GPU,
 									Health: true,
 									UUID:   "123456-1",
-									Minor:  pointer.Int32(0),
+									Minor:  ptr.To[int32](0),
 									Resources: corev1.ResourceList{
 										apiext.ResourceGPUCore:        resource.MustParse("100"),
 										apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
@@ -1320,7 +1320,7 @@ func Test_Plugin_Filter(t *testing.T) {
 									Type:   schedulingv1alpha1.GPU,
 									Health: true,
 									UUID:   "123456-1",
-									Minor:  pointer.Int32(0),
+									Minor:  ptr.To[int32](0),
 									Resources: corev1.ResourceList{
 										apiext.ResourceGPUCore:        resource.MustParse("100"),
 										apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
@@ -1333,7 +1333,7 @@ func Test_Plugin_Filter(t *testing.T) {
 									Type:   schedulingv1alpha1.FPGA,
 									Health: true,
 									UUID:   "123456-fpga-1",
-									Minor:  pointer.Int32(0),
+									Minor:  ptr.To[int32](0),
 									Resources: corev1.ResourceList{
 										apiext.ResourceFPGA: resource.MustParse("100"),
 									},
@@ -1413,7 +1413,7 @@ func Test_Plugin_Filter(t *testing.T) {
 									Type:   schedulingv1alpha1.GPU,
 									Health: true,
 									UUID:   "123456-1",
-									Minor:  pointer.Int32(0),
+									Minor:  ptr.To[int32](0),
 									Resources: corev1.ResourceList{
 										apiext.ResourceGPUCore:        resource.MustParse("100"),
 										apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
@@ -1426,7 +1426,7 @@ func Test_Plugin_Filter(t *testing.T) {
 									Type:   schedulingv1alpha1.FPGA,
 									Health: true,
 									UUID:   "123456-fpga-1",
-									Minor:  pointer.Int32(0),
+									Minor:  ptr.To[int32](0),
 									Resources: corev1.ResourceList{
 										apiext.ResourceFPGA: resource.MustParse("100"),
 									},
@@ -1494,7 +1494,7 @@ func Test_Plugin_Filter(t *testing.T) {
 									Type:   schedulingv1alpha1.GPU,
 									Health: true,
 									UUID:   "123456-1",
-									Minor:  pointer.Int32(0),
+									Minor:  ptr.To[int32](0),
 									Resources: corev1.ResourceList{
 										apiext.ResourceHuaweiNPUCore:  resource.MustParse("8"),
 										apiext.ResourceHuaweiNPUCPU:   resource.MustParse("7"),
@@ -1569,7 +1569,7 @@ func Test_Plugin_Filter(t *testing.T) {
 									Type:   schedulingv1alpha1.GPU,
 									Health: true,
 									UUID:   "123456-1",
-									Minor:  pointer.Int32(0),
+									Minor:  ptr.To[int32](0),
 									Resources: corev1.ResourceList{
 										apiext.ResourceHuaweiNPUCore:  resource.MustParse("8"),
 										apiext.ResourceHuaweiNPUCPU:   resource.MustParse("7"),
@@ -1622,7 +1622,7 @@ func Test_Plugin_Filter(t *testing.T) {
 									Type:   schedulingv1alpha1.FPGA,
 									Health: true,
 									UUID:   "123456-fpga-1",
-									Minor:  pointer.Int32(0),
+									Minor:  ptr.To[int32](0),
 									Resources: corev1.ResourceList{
 										apiext.ResourceFPGA: resource.MustParse("100"),
 									},
@@ -1683,7 +1683,7 @@ func Test_Plugin_Filter(t *testing.T) {
 									Type:   schedulingv1alpha1.FPGA,
 									Health: true,
 									UUID:   "123456-fpga-0",
-									Minor:  pointer.Int32(0),
+									Minor:  ptr.To[int32](0),
 									Resources: corev1.ResourceList{
 										apiext.ResourceFPGA: resource.MustParse("100"),
 									},
@@ -1692,7 +1692,7 @@ func Test_Plugin_Filter(t *testing.T) {
 									Type:   schedulingv1alpha1.FPGA,
 									Health: true,
 									UUID:   "123456-fgpa-1",
-									Minor:  pointer.Int32(1),
+									Minor:  ptr.To[int32](1),
 									Resources: corev1.ResourceList{
 										apiext.ResourceFPGA: resource.MustParse("100"),
 									},
@@ -1756,7 +1756,7 @@ func Test_Plugin_Filter(t *testing.T) {
 									Type:   schedulingv1alpha1.GPU,
 									Health: true,
 									UUID:   "123456-1",
-									Minor:  pointer.Int32(0),
+									Minor:  ptr.To[int32](0),
 									Resources: corev1.ResourceList{
 										apiext.ResourceGPUCore:        resource.MustParse("100"),
 										apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
@@ -1769,7 +1769,7 @@ func Test_Plugin_Filter(t *testing.T) {
 									Type:   schedulingv1alpha1.FPGA,
 									Health: true,
 									UUID:   "123456-fpga-1",
-									Minor:  pointer.Int32(0),
+									Minor:  ptr.To[int32](0),
 									Resources: corev1.ResourceList{
 										apiext.ResourceFPGA: resource.MustParse("100"),
 									},
@@ -1841,7 +1841,7 @@ func Test_Plugin_Filter(t *testing.T) {
 									Type:   schedulingv1alpha1.GPU,
 									Health: true,
 									UUID:   "123456-0",
-									Minor:  pointer.Int32(0),
+									Minor:  ptr.To[int32](0),
 									Resources: corev1.ResourceList{
 										apiext.ResourceGPUCore:        resource.MustParse("100"),
 										apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
@@ -1852,7 +1852,7 @@ func Test_Plugin_Filter(t *testing.T) {
 									Type:   schedulingv1alpha1.GPU,
 									Health: true,
 									UUID:   "123456-1",
-									Minor:  pointer.Int32(1),
+									Minor:  ptr.To[int32](1),
 									Resources: corev1.ResourceList{
 										apiext.ResourceGPUCore:        resource.MustParse("100"),
 										apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
@@ -1925,7 +1925,7 @@ func Test_Plugin_Filter(t *testing.T) {
 									Type:   schedulingv1alpha1.GPU,
 									Health: true,
 									UUID:   "123456-0",
-									Minor:  pointer.Int32(0),
+									Minor:  ptr.To[int32](0),
 									Resources: corev1.ResourceList{
 										apiext.ResourceGPUCore:        resource.MustParse("100"),
 										apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
@@ -1936,7 +1936,7 @@ func Test_Plugin_Filter(t *testing.T) {
 									Type:   schedulingv1alpha1.GPU,
 									Health: true,
 									UUID:   "123456-1",
-									Minor:  pointer.Int32(1),
+									Minor:  ptr.To[int32](1),
 									Resources: corev1.ResourceList{
 										apiext.ResourceGPUCore:        resource.MustParse("100"),
 										apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
@@ -2005,8 +2005,8 @@ func Test_Plugin_Filter(t *testing.T) {
 						numaTopology:  &NUMATopology{},
 						deviceInfos: map[schedulingv1alpha1.DeviceType][]*schedulingv1alpha1.DeviceInfo{
 							schedulingv1alpha1.GPU: {
-								{Type: schedulingv1alpha1.GPU, Health: true, Minor: pointer.Int32(0)},
-								{Type: schedulingv1alpha1.GPU, Health: true, Minor: pointer.Int32(1)},
+								{Type: schedulingv1alpha1.GPU, Health: true, Minor: ptr.To[int32](0)},
+								{Type: schedulingv1alpha1.GPU, Health: true, Minor: ptr.To[int32](1)},
 							},
 						},
 					},
@@ -2080,8 +2080,8 @@ func Test_Plugin_Filter(t *testing.T) {
 						numaTopology:  &NUMATopology{},
 						deviceInfos: map[schedulingv1alpha1.DeviceType][]*schedulingv1alpha1.DeviceInfo{
 							schedulingv1alpha1.GPU: {
-								{Type: schedulingv1alpha1.GPU, Health: true, Minor: pointer.Int32(0)},
-								{Type: schedulingv1alpha1.GPU, Health: true, Minor: pointer.Int32(1)},
+								{Type: schedulingv1alpha1.GPU, Health: true, Minor: ptr.To[int32](0)},
+								{Type: schedulingv1alpha1.GPU, Health: true, Minor: ptr.To[int32](1)},
 							},
 						},
 					},
@@ -2158,8 +2158,8 @@ func Test_Plugin_Filter(t *testing.T) {
 						numaTopology:  &NUMATopology{},
 						deviceInfos: map[schedulingv1alpha1.DeviceType][]*schedulingv1alpha1.DeviceInfo{
 							schedulingv1alpha1.GPU: {
-								{Type: schedulingv1alpha1.GPU, Health: true, Minor: pointer.Int32(0)},
-								{Type: schedulingv1alpha1.GPU, Health: true, Minor: pointer.Int32(1)},
+								{Type: schedulingv1alpha1.GPU, Health: true, Minor: ptr.To[int32](0)},
+								{Type: schedulingv1alpha1.GPU, Health: true, Minor: ptr.To[int32](1)},
 							},
 						},
 					},
@@ -2228,7 +2228,7 @@ func Test_Plugin_Filter(t *testing.T) {
 									Type:   schedulingv1alpha1.GPU,
 									Health: true,
 									UUID:   "123456-0",
-									Minor:  pointer.Int32(0),
+									Minor:  ptr.To[int32](0),
 									Resources: corev1.ResourceList{
 										apiext.ResourceGPUCore:        resource.MustParse("100"),
 										apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
@@ -2297,7 +2297,7 @@ func Test_Plugin_Filter(t *testing.T) {
 									Type:   schedulingv1alpha1.GPU,
 									Health: true,
 									UUID:   "123456-0",
-									Minor:  pointer.Int32(0),
+									Minor:  ptr.To[int32](0),
 									Resources: corev1.ResourceList{
 										apiext.ResourceGPUCore:        resource.MustParse("100"),
 										apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
@@ -2384,7 +2384,7 @@ func Test_Plugin_Filter(t *testing.T) {
 									Type:   schedulingv1alpha1.GPU,
 									Health: true,
 									UUID:   "123456-0",
-									Minor:  pointer.Int32(0),
+									Minor:  ptr.To[int32](0),
 									Resources: corev1.ResourceList{
 										apiext.ResourceGPUCore:        resource.MustParse("100"),
 										apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
@@ -2395,7 +2395,7 @@ func Test_Plugin_Filter(t *testing.T) {
 									Type:   schedulingv1alpha1.GPU,
 									Health: true,
 									UUID:   "123456-1",
-									Minor:  pointer.Int32(1),
+									Minor:  ptr.To[int32](1),
 									Resources: corev1.ResourceList{
 										apiext.ResourceGPUCore:        resource.MustParse("100"),
 										apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
@@ -2533,7 +2533,7 @@ func Test_Plugin_Filter(t *testing.T) {
 									Type:   schedulingv1alpha1.GPU,
 									Health: true,
 									UUID:   "123456-0",
-									Minor:  pointer.Int32(0),
+									Minor:  ptr.To[int32](0),
 									Resources: corev1.ResourceList{
 										apiext.ResourceGPUCore:        resource.MustParse("100"),
 										apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
@@ -2544,7 +2544,7 @@ func Test_Plugin_Filter(t *testing.T) {
 									Type:   schedulingv1alpha1.GPU,
 									Health: true,
 									UUID:   "123456-1",
-									Minor:  pointer.Int32(1),
+									Minor:  ptr.To[int32](1),
 									Resources: corev1.ResourceList{
 										apiext.ResourceGPUCore:        resource.MustParse("100"),
 										apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
@@ -2555,7 +2555,7 @@ func Test_Plugin_Filter(t *testing.T) {
 									Type:   schedulingv1alpha1.GPU,
 									Health: true,
 									UUID:   "123456-2",
-									Minor:  pointer.Int32(2),
+									Minor:  ptr.To[int32](2),
 									Resources: corev1.ResourceList{
 										apiext.ResourceGPUCore:        resource.MustParse("100"),
 										apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
@@ -2566,7 +2566,7 @@ func Test_Plugin_Filter(t *testing.T) {
 									Type:   schedulingv1alpha1.GPU,
 									Health: true,
 									UUID:   "123456-3",
-									Minor:  pointer.Int32(3),
+									Minor:  ptr.To[int32](3),
 									Resources: corev1.ResourceList{
 										apiext.ResourceGPUCore:        resource.MustParse("100"),
 										apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
@@ -2577,7 +2577,7 @@ func Test_Plugin_Filter(t *testing.T) {
 									Type:   schedulingv1alpha1.GPU,
 									Health: true,
 									UUID:   "123456-4",
-									Minor:  pointer.Int32(4),
+									Minor:  ptr.To[int32](4),
 									Resources: corev1.ResourceList{
 										apiext.ResourceGPUCore:        resource.MustParse("100"),
 										apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
@@ -2588,7 +2588,7 @@ func Test_Plugin_Filter(t *testing.T) {
 									Type:   schedulingv1alpha1.GPU,
 									Health: true,
 									UUID:   "123456-5",
-									Minor:  pointer.Int32(5),
+									Minor:  ptr.To[int32](5),
 									Resources: corev1.ResourceList{
 										apiext.ResourceGPUCore:        resource.MustParse("100"),
 										apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
@@ -2599,7 +2599,7 @@ func Test_Plugin_Filter(t *testing.T) {
 									Type:   schedulingv1alpha1.GPU,
 									Health: true,
 									UUID:   "123456-6",
-									Minor:  pointer.Int32(6),
+									Minor:  ptr.To[int32](6),
 									Resources: corev1.ResourceList{
 										apiext.ResourceGPUCore:        resource.MustParse("100"),
 										apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
@@ -2610,7 +2610,7 @@ func Test_Plugin_Filter(t *testing.T) {
 									Type:   schedulingv1alpha1.GPU,
 									Health: true,
 									UUID:   "123456-7",
-									Minor:  pointer.Int32(7),
+									Minor:  ptr.To[int32](7),
 									Resources: corev1.ResourceList{
 										apiext.ResourceGPUCore:        resource.MustParse("100"),
 										apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
@@ -2719,7 +2719,7 @@ func Test_Plugin_Filter(t *testing.T) {
 									Type:   schedulingv1alpha1.GPU,
 									Health: true,
 									UUID:   "123456-0",
-									Minor:  pointer.Int32(0),
+									Minor:  ptr.To[int32](0),
 									Resources: corev1.ResourceList{
 										apiext.ResourceGPUCore:        resource.MustParse("100"),
 										apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
@@ -2730,7 +2730,7 @@ func Test_Plugin_Filter(t *testing.T) {
 									Type:   schedulingv1alpha1.GPU,
 									Health: true,
 									UUID:   "123456-1",
-									Minor:  pointer.Int32(1),
+									Minor:  ptr.To[int32](1),
 									Resources: corev1.ResourceList{
 										apiext.ResourceGPUCore:        resource.MustParse("100"),
 										apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
@@ -2815,7 +2815,7 @@ func Test_Plugin_Filter(t *testing.T) {
 									Type:   schedulingv1alpha1.GPU,
 									Health: true,
 									UUID:   "123456-0",
-									Minor:  pointer.Int32(0),
+									Minor:  ptr.To[int32](0),
 									Resources: corev1.ResourceList{
 										apiext.ResourceGPUCore:        resource.MustParse("100"),
 										apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
@@ -2826,7 +2826,7 @@ func Test_Plugin_Filter(t *testing.T) {
 									Type:   schedulingv1alpha1.GPU,
 									Health: true,
 									UUID:   "123456-1",
-									Minor:  pointer.Int32(1),
+									Minor:  ptr.To[int32](1),
 									Resources: corev1.ResourceList{
 										apiext.ResourceGPUCore:        resource.MustParse("100"),
 										apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
@@ -2967,7 +2967,7 @@ func Test_Plugin_FilterNominateReservation(t *testing.T) {
 			Devices: []schedulingv1alpha1.DeviceInfo{
 				{
 					Type:   schedulingv1alpha1.GPU,
-					Minor:  pointer.Int32(1),
+					Minor:  ptr.To[int32](1),
 					Health: true,
 					Resources: corev1.ResourceList{
 						apiext.ResourceGPUCore:        resource.MustParse("100"),
@@ -2977,7 +2977,7 @@ func Test_Plugin_FilterNominateReservation(t *testing.T) {
 				},
 				{
 					Type:   schedulingv1alpha1.GPU,
-					Minor:  pointer.Int32(2),
+					Minor:  ptr.To[int32](2),
 					Health: true,
 					Resources: corev1.ResourceList{
 						apiext.ResourceGPUCore:        resource.MustParse("100"),
@@ -3180,7 +3180,7 @@ func Test_Plugin_Reserve(t *testing.T) {
 										Type:   schedulingv1alpha1.GPU,
 										Health: true,
 										UUID:   "123456-1",
-										Minor:  pointer.Int32(0),
+										Minor:  ptr.To[int32](0),
 									},
 								},
 							},
@@ -3244,7 +3244,7 @@ func Test_Plugin_Reserve(t *testing.T) {
 										Type:   schedulingv1alpha1.GPU,
 										Health: true,
 										UUID:   "123456-1",
-										Minor:  pointer.Int32(0),
+										Minor:  ptr.To[int32](0),
 									},
 								},
 							},
@@ -3300,7 +3300,7 @@ func Test_Plugin_Reserve(t *testing.T) {
 										Type:   schedulingv1alpha1.GPU,
 										Health: true,
 										UUID:   "123456-1",
-										Minor:  pointer.Int32(0),
+										Minor:  ptr.To[int32](0),
 									},
 								},
 							},
@@ -3358,7 +3358,7 @@ func Test_Plugin_Reserve(t *testing.T) {
 										Type:   schedulingv1alpha1.RDMA,
 										Health: true,
 										UUID:   "123456-1",
-										Minor:  pointer.Int32(0),
+										Minor:  ptr.To[int32](0),
 									},
 								},
 							},
@@ -3419,7 +3419,7 @@ func Test_Plugin_Reserve(t *testing.T) {
 										Type:   schedulingv1alpha1.RDMA,
 										Health: true,
 										UUID:   "123456-1",
-										Minor:  pointer.Int32(0),
+										Minor:  ptr.To[int32](0),
 									},
 								},
 								schedulingv1alpha1.FPGA: {
@@ -3427,7 +3427,7 @@ func Test_Plugin_Reserve(t *testing.T) {
 										Type:   schedulingv1alpha1.FPGA,
 										Health: true,
 										UUID:   "123456-1",
-										Minor:  pointer.Int32(0),
+										Minor:  ptr.To[int32](0),
 									},
 								},
 							},
@@ -3499,7 +3499,7 @@ func Test_Plugin_Reserve(t *testing.T) {
 										Type:   schedulingv1alpha1.GPU,
 										Health: true,
 										UUID:   "123456-1",
-										Minor:  pointer.Int32(0),
+										Minor:  ptr.To[int32](0),
 									},
 								},
 							},
@@ -3569,7 +3569,7 @@ func Test_Plugin_Reserve(t *testing.T) {
 										Type:   schedulingv1alpha1.GPU,
 										Health: true,
 										UUID:   "123456-1",
-										Minor:  pointer.Int32(0),
+										Minor:  ptr.To[int32](0),
 									},
 								},
 							},
@@ -3649,7 +3649,7 @@ func Test_Plugin_Reserve(t *testing.T) {
 										Type:   schedulingv1alpha1.GPU,
 										Health: true,
 										UUID:   "123456-1",
-										Minor:  pointer.Int32(0),
+										Minor:  ptr.To[int32](0),
 									},
 								},
 								schedulingv1alpha1.RDMA: {
@@ -3657,7 +3657,7 @@ func Test_Plugin_Reserve(t *testing.T) {
 										Type:   schedulingv1alpha1.RDMA,
 										Health: true,
 										UUID:   "123456-1",
-										Minor:  pointer.Int32(0),
+										Minor:  ptr.To[int32](0),
 									},
 								},
 								schedulingv1alpha1.FPGA: {
@@ -3665,7 +3665,7 @@ func Test_Plugin_Reserve(t *testing.T) {
 										Type:   schedulingv1alpha1.FPGA,
 										Health: true,
 										UUID:   "123456-1",
-										Minor:  pointer.Int32(0),
+										Minor:  ptr.To[int32](0),
 									},
 								},
 							},
@@ -3797,13 +3797,13 @@ func Test_Plugin_Reserve(t *testing.T) {
 										Type:   schedulingv1alpha1.GPU,
 										Health: true,
 										UUID:   "123456-1",
-										Minor:  pointer.Int32(0),
+										Minor:  ptr.To[int32](0),
 									},
 									{
 										Type:   schedulingv1alpha1.GPU,
 										Health: true,
 										UUID:   "123456-2",
-										Minor:  pointer.Int32(1),
+										Minor:  ptr.To[int32](1),
 									},
 								},
 								schedulingv1alpha1.RDMA: {
@@ -3811,13 +3811,13 @@ func Test_Plugin_Reserve(t *testing.T) {
 										Type:   schedulingv1alpha1.RDMA,
 										Health: true,
 										UUID:   "123456-1",
-										Minor:  pointer.Int32(0),
+										Minor:  ptr.To[int32](0),
 									},
 									{
 										Type:   schedulingv1alpha1.RDMA,
 										Health: true,
 										UUID:   "123456-2",
-										Minor:  pointer.Int32(1),
+										Minor:  ptr.To[int32](1),
 									},
 								},
 								schedulingv1alpha1.FPGA: {
@@ -3825,13 +3825,13 @@ func Test_Plugin_Reserve(t *testing.T) {
 										Type:   schedulingv1alpha1.FPGA,
 										Health: true,
 										UUID:   "123456-1",
-										Minor:  pointer.Int32(0),
+										Minor:  ptr.To[int32](0),
 									},
 									{
 										Type:   schedulingv1alpha1.FPGA,
 										Health: true,
 										UUID:   "123456-2",
-										Minor:  pointer.Int32(1),
+										Minor:  ptr.To[int32](1),
 									},
 								},
 							},
@@ -3941,7 +3941,7 @@ func Test_Plugin_Reserve(t *testing.T) {
 										Type:   schedulingv1alpha1.GPU,
 										Health: true,
 										UUID:   "123456-1",
-										Minor:  pointer.Int32(0),
+										Minor:  ptr.To[int32](0),
 									},
 								},
 							},
@@ -4007,7 +4007,7 @@ func Test_Plugin_Reserve(t *testing.T) {
 										Type:   schedulingv1alpha1.GPU,
 										Health: true,
 										UUID:   "123456-1",
-										Minor:  pointer.Int32(0),
+										Minor:  ptr.To[int32](0),
 									},
 								},
 							},
@@ -4077,7 +4077,7 @@ func Test_Plugin_Reserve(t *testing.T) {
 										Type:   schedulingv1alpha1.GPU,
 										Health: true,
 										UUID:   "123456-1",
-										Minor:  pointer.Int32(0),
+										Minor:  ptr.To[int32](0),
 									},
 								},
 							},
@@ -4159,7 +4159,7 @@ func Test_Plugin_Reserve(t *testing.T) {
 										Type:   schedulingv1alpha1.GPU,
 										Health: true,
 										UUID:   "123456-1",
-										Minor:  pointer.Int32(0),
+										Minor:  ptr.To[int32](0),
 									},
 								},
 							},
@@ -4238,7 +4238,7 @@ func Test_Plugin_Reserve(t *testing.T) {
 							allocateSet:  map[schedulingv1alpha1.DeviceType]map[types.NamespacedName]deviceResources{},
 							deviceInfos: map[schedulingv1alpha1.DeviceType][]*schedulingv1alpha1.DeviceInfo{
 								schedulingv1alpha1.GPU: {
-									{Type: schedulingv1alpha1.GPU, Health: true, Minor: pointer.Int32(0)},
+									{Type: schedulingv1alpha1.GPU, Health: true, Minor: ptr.To[int32](0)},
 								},
 							},
 						},
@@ -4312,7 +4312,7 @@ func Test_Plugin_Reserve(t *testing.T) {
 							allocateSet:  map[schedulingv1alpha1.DeviceType]map[types.NamespacedName]deviceResources{},
 							deviceInfos: map[schedulingv1alpha1.DeviceType][]*schedulingv1alpha1.DeviceInfo{
 								schedulingv1alpha1.GPU: {
-									{Type: schedulingv1alpha1.GPU, Health: true, Minor: pointer.Int32(0)},
+									{Type: schedulingv1alpha1.GPU, Health: true, Minor: ptr.To[int32](0)},
 								},
 							},
 						},

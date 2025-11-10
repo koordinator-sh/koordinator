@@ -38,7 +38,7 @@ import (
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/kubelet/util/format"
 	"k8s.io/utils/exec"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/hooks"
@@ -195,7 +195,7 @@ func (p *tcPlugin) SetPodNetCls(proto protocol.HooksProtocol) error {
 		handle = netqosToHandle(netQos)
 	}
 
-	podCtx.Response.Resources.NetClsClassId = pointer.Uint32(handle)
+	podCtx.Response.Resources.NetClsClassId = ptr.To[uint32](handle)
 
 	return nil
 }

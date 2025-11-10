@@ -49,7 +49,7 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework/runtime"
 	schedulertesting "k8s.io/kubernetes/pkg/scheduler/testing"
 	imageutils "k8s.io/kubernetes/test/utils/image"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
@@ -1332,7 +1332,7 @@ func defaultCreatePod(name string, priority int32, cpu, mem int64) *corev1.Pod {
 					},
 				},
 			},
-			Priority: pointer.Int32(priority),
+			Priority: ptr.To[int32](priority),
 		},
 	}
 	pod.Status.Phase = corev1.PodRunning

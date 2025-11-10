@@ -38,7 +38,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/retry"
 	"k8s.io/klog/v2"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
@@ -75,8 +75,8 @@ var (
 	defaultMemoryCollectPolicy slov1alpha1.NodeMemoryCollectPolicy = slov1alpha1.UsageWithoutPageCache
 	defaultNodeMetricSpec                                          = slov1alpha1.NodeMetricSpec{
 		CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
-			AggregateDurationSeconds: pointer.Int64(defaultAggregateDurationSeconds),
-			ReportIntervalSeconds:    pointer.Int64(defaultReportIntervalSeconds),
+			AggregateDurationSeconds: ptr.To[int64](defaultAggregateDurationSeconds),
+			ReportIntervalSeconds:    ptr.To[int64](defaultReportIntervalSeconds),
 			NodeAggregatePolicy: &slov1alpha1.AggregatePolicy{
 				Durations: []metav1.Duration{
 					{Duration: 5 * time.Minute},
@@ -570,7 +570,7 @@ func (r *nodeMetricInformer) collectNodeGPUMetric(queryparam metriccache.QueryPa
 		minor := gpu.Minor
 		result = append(result, schedulingv1alpha1.DeviceInfo{
 			UUID:  gpu.UUID,
-			Minor: pointer.Int32(minor),
+			Minor: ptr.To[int32](minor),
 			Type:  schedulingv1alpha1.GPU,
 			// TODO: how to check the health status of GPU
 			Resources: map[corev1.ResourceName]resource.Quantity{
@@ -838,7 +838,7 @@ func (r *nodeMetricInformer) collectPodGPUMetric(queryparam metriccache.QueryPar
 		minor := gpu.Minor
 		result = append(result, schedulingv1alpha1.DeviceInfo{
 			UUID:  gpu.UUID,
-			Minor: pointer.Int32(minor),
+			Minor: ptr.To[int32](minor),
 			Type:  schedulingv1alpha1.GPU,
 			// TODO: how to check the health status of GPU
 			Resources: map[corev1.ResourceName]resource.Quantity{

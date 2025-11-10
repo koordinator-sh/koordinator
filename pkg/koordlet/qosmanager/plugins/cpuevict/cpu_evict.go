@@ -27,7 +27,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/component-base/featuregate"
 	"k8s.io/klog/v2"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
@@ -331,7 +331,7 @@ func isBECPUUsageHighEnough(beCPUMilliUsage, beCPUMilliRealLimit float64, thresh
 	}
 	cpuUsage := beCPUMilliUsage / beCPUMilliRealLimit
 	if thresholdPercent == nil {
-		thresholdPercent = pointer.Int64(beCPUUsageThresholdPercent)
+		thresholdPercent = ptr.To[int64](beCPUUsageThresholdPercent)
 	}
 	if cpuUsage < float64(*thresholdPercent)/100 {
 		klog.V(5).Infof("cpuEvict by ResourceSatisfaction skipped! cpuUsage(%.2f) and thresholdPercent %d!", cpuUsage, *thresholdPercent)

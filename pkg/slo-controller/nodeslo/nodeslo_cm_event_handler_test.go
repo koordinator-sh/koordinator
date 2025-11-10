@@ -24,7 +24,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/record"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	"github.com/koordinator-sh/koordinator/apis/configuration"
@@ -62,20 +62,20 @@ func Test_syncNodeSLOSpecIfChanged(t *testing.T) {
 	}
 
 	expectTestingCfg1 := oldSLOCfg.DeepCopy()
-	expectTestingCfg1.ThresholdCfgMerged.ClusterStrategy.Enable = pointer.Bool(true)
-	expectTestingCfg1.ThresholdCfgMerged.ClusterStrategy.CPUSuppressThresholdPercent = pointer.Int64(60)
+	expectTestingCfg1.ThresholdCfgMerged.ClusterStrategy.Enable = ptr.To[bool](true)
+	expectTestingCfg1.ThresholdCfgMerged.ClusterStrategy.CPUSuppressThresholdPercent = ptr.To[int64](60)
 
 	expectTestingCfg1.ResourceQOSCfgMerged.ClusterStrategy = &slov1alpha1.ResourceQOSStrategy{
 		BEClass: &slov1alpha1.ResourceQOS{
 			CPUQOS: &slov1alpha1.CPUQOSCfg{
 				CPUQOS: slov1alpha1.CPUQOS{
-					GroupIdentity: pointer.Int64(0),
+					GroupIdentity: ptr.To[int64](0),
 				},
 			},
 		},
 	}
 
-	expectTestingCfg1.CPUBurstCfgMerged.ClusterStrategy.CFSQuotaBurstPeriodSeconds = pointer.Int64(60)
+	expectTestingCfg1.CPUBurstCfgMerged.ClusterStrategy.CFSQuotaBurstPeriodSeconds = ptr.To[int64](60)
 
 	type fields struct {
 		oldCfg *sLOCfgCache

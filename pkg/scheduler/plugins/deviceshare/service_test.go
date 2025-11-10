@@ -30,7 +30,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
@@ -61,7 +61,7 @@ func TestEndpointsQueryNodeDeviceSummary(t *testing.T) {
 		},
 	}
 	deviceInfo0 := schedulingv1alpha1.DeviceInfo{}
-	deviceInfo0.Minor = pointer.Int32Ptr(0)
+	deviceInfo0.Minor = ptr.To[int32](0)
 	deviceInfo0.Health = true
 	deviceInfo0.Type = schedulingv1alpha1.GPU
 	deviceInfo0.Resources = corev1.ResourceList{
@@ -69,7 +69,7 @@ func TestEndpointsQueryNodeDeviceSummary(t *testing.T) {
 		apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(100, resource.DecimalSI),
 	}
 	deviceInfo1 := schedulingv1alpha1.DeviceInfo{}
-	deviceInfo1.Minor = pointer.Int32Ptr(1)
+	deviceInfo1.Minor = ptr.To[int32](1)
 	deviceInfo1.Health = true
 	deviceInfo1.Type = schedulingv1alpha1.GPU
 	deviceInfo1.Resources = corev1.ResourceList{
@@ -77,7 +77,7 @@ func TestEndpointsQueryNodeDeviceSummary(t *testing.T) {
 		apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(100, resource.DecimalSI),
 	}
 	deviceInfo2 := schedulingv1alpha1.DeviceInfo{}
-	deviceInfo2.Minor = pointer.Int32Ptr(2)
+	deviceInfo2.Minor = ptr.To[int32](2)
 	deviceInfo2.Health = true
 	deviceInfo2.Type = schedulingv1alpha1.FPGA
 	deviceInfo2.Resources = corev1.ResourceList{
