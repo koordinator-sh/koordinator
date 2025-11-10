@@ -155,18 +155,6 @@ func (s *JobPreemptionState) addMoreDetailForStateToMarshal() {
 		s.Victims = append(s.Victims, nodePossibleVictims)
 	}
 	sort.Slice(s.Victims, func(i, j int) bool { return s.Victims[i].NodeName < s.Victims[j].NodeName })
-	if klog.V(5).Enabled() {
-		for node, status := range s.statusMap {
-			nodeFailedDetail := v1alpha1.NodeFailedDetail{
-				NodeName:         node,
-				FailedPlugin:     status.FailedPlugin(),
-				Reason:           status.Message(),
-				PreemptMightHelp: false,
-			}
-			s.NodeFailedDetail = append(s.NodeFailedDetail, nodeFailedDetail)
-		}
-		sort.Slice(s.NodeFailedDetail, func(i, j int) bool { return s.NodeFailedDetail[i].NodeName < s.NodeFailedDetail[j].NodeName })
-	}
 	if klog.V(6).Enabled() {
 		for node, victimsOnNode := range s.possibleVictims {
 			nodePossibleVictims := v1alpha1.NodePossibleVictim{NodeName: node}
@@ -227,7 +215,15 @@ func (ev *preemptionEvaluatorImpl) Preempt(ctx context.Context, state *framework
 	defer func() {
 		preemptionState.addMoreDetailForStateToMarshal()
 		scheduleDiagnosis := frameworkext.GetDiagnosis(state)
-		scheduleDiagnosis.PreemptionDiagnosis = preemptionState
+		scheduleDiagnosis.PreemptionDiagnosis = &frameworkext.PreemptionDiagnosis{
+			DryRunFilterDiagnosis: &frameworkext.ScheduleDiagnosis{
+				SchedulingMode:      preemptionState.SchedulingMode,
+				AlreadyWaitForBound: len(preemptionState.allPods) - preemptionState.UnschedulablePodsNumber,
+				NodeOfferSlot:       preemptionState.NodeToOfferSlot,
+				NodeToStatusMap:     preemptionState.statusMap,
+			},
+			OtherDiagnosis: preemptionState,
+		}
 	}()
 	return ev.preempt(contextWithJobPreemptionState(ctx, preemptionState), state, pod, m)
 }
