@@ -22,7 +22,7 @@ import (
 	"path/filepath"
 	"sync"
 
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 )
 
 func init() {
@@ -413,7 +413,7 @@ func (c *CgroupResource) WithValidator(validator ResourceValidator) Resource {
 }
 
 func (c *CgroupResource) WithSupported(isSupported bool, msg string) Resource {
-	c.Supported = pointer.Bool(isSupported)
+	c.Supported = ptr.To[bool](isSupported)
 	c.SupportMsg = msg
 	return c
 }
@@ -438,7 +438,7 @@ func (c *CgroupResource) GetCgroupVersion() CgroupVersion {
 }
 
 func NewCommonCgroupResource(resourceType ResourceType, filename string, subfs string) Resource {
-	return &CgroupResource{Type: resourceType, FileName: filename, Subfs: subfs, Supported: pointer.Bool(true)}
+	return &CgroupResource{Type: resourceType, FileName: filename, Subfs: subfs, Supported: ptr.To[bool](true)}
 }
 
 type CgroupResourceFactory interface {

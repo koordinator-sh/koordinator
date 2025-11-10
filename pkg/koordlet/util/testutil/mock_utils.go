@@ -26,7 +26,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -203,49 +203,49 @@ func DefaultQOSStrategy() *slov1alpha1.ResourceQOSStrategy {
 	return &slov1alpha1.ResourceQOSStrategy{
 		LSRClass: &slov1alpha1.ResourceQOS{
 			MemoryQOS: &slov1alpha1.MemoryQOSCfg{
-				Enable: pointer.Bool(true),
+				Enable: ptr.To[bool](true),
 				MemoryQOS: slov1alpha1.MemoryQOS{
-					MinLimitPercent:   pointer.Int64(0),
-					LowLimitPercent:   pointer.Int64(0),
-					ThrottlingPercent: pointer.Int64(0),
-					WmarkRatio:        pointer.Int64(95),
-					WmarkScalePermill: pointer.Int64(20),
-					WmarkMinAdj:       pointer.Int64(0),
-					OomKillGroup:      pointer.Int64(0),
-					Priority:          pointer.Int64(0),
-					PriorityEnable:    pointer.Int64(0),
+					MinLimitPercent:   ptr.To[int64](0),
+					LowLimitPercent:   ptr.To[int64](0),
+					ThrottlingPercent: ptr.To[int64](0),
+					WmarkRatio:        ptr.To[int64](95),
+					WmarkScalePermill: ptr.To[int64](20),
+					WmarkMinAdj:       ptr.To[int64](0),
+					OomKillGroup:      ptr.To[int64](0),
+					Priority:          ptr.To[int64](0),
+					PriorityEnable:    ptr.To[int64](0),
 				},
 			},
 		},
 		LSClass: &slov1alpha1.ResourceQOS{
 			MemoryQOS: &slov1alpha1.MemoryQOSCfg{
-				Enable: pointer.Bool(true),
+				Enable: ptr.To[bool](true),
 				MemoryQOS: slov1alpha1.MemoryQOS{
-					MinLimitPercent:   pointer.Int64(0),
-					LowLimitPercent:   pointer.Int64(0),
-					ThrottlingPercent: pointer.Int64(0),
-					WmarkRatio:        pointer.Int64(95),
-					WmarkScalePermill: pointer.Int64(20),
-					WmarkMinAdj:       pointer.Int64(0),
-					OomKillGroup:      pointer.Int64(0),
-					Priority:          pointer.Int64(0),
-					PriorityEnable:    pointer.Int64(0),
+					MinLimitPercent:   ptr.To[int64](0),
+					LowLimitPercent:   ptr.To[int64](0),
+					ThrottlingPercent: ptr.To[int64](0),
+					WmarkRatio:        ptr.To[int64](95),
+					WmarkScalePermill: ptr.To[int64](20),
+					WmarkMinAdj:       ptr.To[int64](0),
+					OomKillGroup:      ptr.To[int64](0),
+					Priority:          ptr.To[int64](0),
+					PriorityEnable:    ptr.To[int64](0),
 				},
 			},
 		},
 		BEClass: &slov1alpha1.ResourceQOS{
 			MemoryQOS: &slov1alpha1.MemoryQOSCfg{
-				Enable: pointer.Bool(true),
+				Enable: ptr.To[bool](true),
 				MemoryQOS: slov1alpha1.MemoryQOS{
-					MinLimitPercent:   pointer.Int64(0),
-					LowLimitPercent:   pointer.Int64(0),
-					ThrottlingPercent: pointer.Int64(0),
-					WmarkRatio:        pointer.Int64(80),
-					WmarkScalePermill: pointer.Int64(20),
-					WmarkMinAdj:       pointer.Int64(0),
-					OomKillGroup:      pointer.Int64(0),
-					Priority:          pointer.Int64(0),
-					PriorityEnable:    pointer.Int64(0),
+					MinLimitPercent:   ptr.To[int64](0),
+					LowLimitPercent:   ptr.To[int64](0),
+					ThrottlingPercent: ptr.To[int64](0),
+					WmarkRatio:        ptr.To[int64](80),
+					WmarkScalePermill: ptr.To[int64](20),
+					WmarkMinAdj:       ptr.To[int64](0),
+					OomKillGroup:      ptr.To[int64](0),
+					Priority:          ptr.To[int64](0),
+					PriorityEnable:    ptr.To[int64](0),
 				},
 			},
 		},

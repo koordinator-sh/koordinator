@@ -31,7 +31,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/strategicpatch"
 	"k8s.io/klog/v2"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	configv1alpha1 "github.com/koordinator-sh/koordinator/apis/config/v1alpha1"
@@ -195,7 +195,7 @@ func (h *ReservationMutatingHandler) doMutateByColocationProfile(ctx context.Con
 			return err
 		}
 		reservation.Spec.Template.Spec.PriorityClassName = profile.Spec.PriorityClassName
-		reservation.Spec.Template.Spec.Priority = pointer.Int32(priorityClass.Value)
+		reservation.Spec.Template.Spec.Priority = ptr.To[int32](priorityClass.Value)
 		reservation.Spec.Template.Spec.PreemptionPolicy = priorityClass.PreemptionPolicy
 	}
 

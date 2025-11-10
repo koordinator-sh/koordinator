@@ -21,7 +21,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"k8s.io/component-base/featuregate"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 )
@@ -57,7 +57,7 @@ func Test_isFeatureDisabled(t *testing.T) {
 				nodeSLO: &slov1alpha1.NodeSLO{
 					Spec: slov1alpha1.NodeSLOSpec{
 						ResourceUsedThresholdWithBE: &slov1alpha1.ResourceThresholdStrategy{
-							Enable: pointer.Bool(false),
+							Enable: ptr.To[bool](false),
 						},
 					},
 				},
@@ -85,7 +85,7 @@ func Test_isFeatureDisabled(t *testing.T) {
 				nodeSLO: &slov1alpha1.NodeSLO{
 					Spec: slov1alpha1.NodeSLOSpec{
 						ResourceUsedThresholdWithBE: &slov1alpha1.ResourceThresholdStrategy{
-							Enable: pointer.Bool(false),
+							Enable: ptr.To[bool](false),
 						},
 					},
 				},

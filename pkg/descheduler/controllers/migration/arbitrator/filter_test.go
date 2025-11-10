@@ -30,7 +30,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
@@ -142,7 +142,7 @@ func TestFilterMaxMigratingGlobally(t *testing.T) {
 				}).
 				Build()
 			a := filter{client: fakeClient, args: &config.MigrationControllerArgs{}, arbitratedPodMigrationJobs: map[types.UID]bool{}}
-			a.args.MaxMigratingGlobally = pointer.Int32(tt.maxMigratingGlobally)
+			a.args.MaxMigratingGlobally = ptr.To[int32](tt.maxMigratingGlobally)
 
 			var migratingPods []*corev1.Pod
 			for i := 0; i < tt.numMigratingPodsGlobally; i++ {
@@ -294,7 +294,7 @@ func TestFilterMaxMigratingPerNode(t *testing.T) {
 				}).
 				Build()
 			a := filter{client: fakeClient, args: &config.MigrationControllerArgs{}, arbitratedPodMigrationJobs: map[types.UID]bool{}}
-			a.args.MaxMigratingPerNode = pointer.Int32(tt.maxMigrating)
+			a.args.MaxMigratingPerNode = ptr.To[int32](tt.maxMigrating)
 
 			var migratingPods []*corev1.Pod
 			for i := 0; i < tt.numMigratingPods; i++ {
@@ -446,7 +446,7 @@ func TestFilterMaxMigratingPerNamespace(t *testing.T) {
 				}).
 				Build()
 			a := filter{client: fakeClient, args: &config.MigrationControllerArgs{}, arbitratedPodMigrationJobs: map[types.UID]bool{}}
-			a.args.MaxMigratingPerNamespace = pointer.Int32(tt.maxMigrating)
+			a.args.MaxMigratingPerNamespace = ptr.To[int32](tt.maxMigrating)
 
 			var migratingPods []*corev1.Pod
 			for i := 0; i < tt.numMigratingPods; i++ {
@@ -518,7 +518,7 @@ func TestFilterMaxMigratingPerWorkload(t *testing.T) {
 	ownerReferences1 := []metav1.OwnerReference{
 		{
 			APIVersion: "apps/v1",
-			Controller: pointer.Bool(true),
+			Controller: ptr.To[bool](true),
 			Kind:       "StatefulSet",
 			Name:       "test-1",
 			UID:        uuid.NewUUID(),
@@ -528,7 +528,7 @@ func TestFilterMaxMigratingPerWorkload(t *testing.T) {
 	ownerReferences2 := []metav1.OwnerReference{
 		{
 			APIVersion: "apps/v1",
-			Controller: pointer.Bool(true),
+			Controller: ptr.To[bool](true),
 			Kind:       "StatefulSet",
 			Name:       "test-2",
 			UID:        uuid.NewUUID(),
@@ -712,7 +712,7 @@ func TestFilterMaxUnavailablePerWorkload(t *testing.T) {
 	ownerReferences1 := []metav1.OwnerReference{
 		{
 			APIVersion: "apps/v1",
-			Controller: pointer.Bool(true),
+			Controller: ptr.To[bool](true),
 			Kind:       "StatefulSet",
 			Name:       "test-1",
 			UID:        uuid.NewUUID(),
@@ -722,7 +722,7 @@ func TestFilterMaxUnavailablePerWorkload(t *testing.T) {
 	ownerReferences2 := []metav1.OwnerReference{
 		{
 			APIVersion: "apps/v1",
-			Controller: pointer.Bool(true),
+			Controller: ptr.To[bool](true),
 			Kind:       "StatefulSet",
 			Name:       "test-2",
 			UID:        uuid.NewUUID(),
@@ -962,7 +962,7 @@ func TestFilterExpectedReplicas(t *testing.T) {
 	ownerReferences1 := []metav1.OwnerReference{
 		{
 			APIVersion: "apps/v1",
-			Controller: pointer.Bool(true),
+			Controller: ptr.To[bool](true),
 			Kind:       "StatefulSet",
 			Name:       "test-1",
 			UID:        uuid.NewUUID(),
@@ -972,7 +972,7 @@ func TestFilterExpectedReplicas(t *testing.T) {
 	ownerReferences2 := []metav1.OwnerReference{
 		{
 			APIVersion: "apps/v1",
-			Controller: pointer.Bool(true),
+			Controller: ptr.To[bool](true),
 			Kind:       "StatefulSet",
 			Name:       "test-2",
 			UID:        uuid.NewUUID(),

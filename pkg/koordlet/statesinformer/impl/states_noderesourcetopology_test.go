@@ -37,7 +37,7 @@ import (
 	fakeclientset "k8s.io/client-go/kubernetes/fake"
 	kubeletconfiginternal "k8s.io/kubernetes/pkg/kubelet/apis/config"
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpumanager/topology"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	fakekoordclientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/fake"
@@ -2742,7 +2742,7 @@ func Test_removeSystemQOSCPUs(t *testing.T) {
 				cpuSharePools: originCPUSharePool,
 				sysQOSRes: &extension.SystemQOSResource{
 					CPUSet:          "0-3",
-					CPUSetExclusive: pointer.Bool(false),
+					CPUSetExclusive: ptr.To[bool](false),
 				},
 			},
 			want: originCPUSharePool,

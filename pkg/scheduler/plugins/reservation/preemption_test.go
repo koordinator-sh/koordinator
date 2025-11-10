@@ -28,7 +28,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
@@ -94,7 +94,7 @@ func TestPostFilterWithPreemption(t *testing.T) {
 					},
 				},
 			},
-			Priority:         pointer.Int32(extension.PriorityProdValueMax),
+			Priority:         ptr.To[int32](extension.PriorityProdValueMax),
 			PreemptionPolicy: &preemptionPolicyNever,
 		},
 	}
@@ -116,7 +116,7 @@ func TestPostFilterWithPreemption(t *testing.T) {
 							},
 						},
 					},
-					Priority:         pointer.Int32(extension.PriorityProdValueMin),
+					Priority:         ptr.To[int32](extension.PriorityProdValueMin),
 					PreemptionPolicy: &preemptionPolicyNever,
 				},
 			},
@@ -310,7 +310,7 @@ func TestPreemptionMgrSelectVictimsOnNode(t *testing.T) {
 					},
 				},
 			},
-			Priority:         pointer.Int32(extension.PriorityProdValueMax),
+			Priority:         ptr.To[int32](extension.PriorityProdValueMax),
 			PreemptionPolicy: &preemptionPolicyNever,
 			NodeName:         testNode.Name,
 		},
@@ -333,7 +333,7 @@ func TestPreemptionMgrSelectVictimsOnNode(t *testing.T) {
 					},
 				},
 			},
-			Priority:         pointer.Int32(extension.PriorityProdValueMin),
+			Priority:         ptr.To[int32](extension.PriorityProdValueMin),
 			PreemptionPolicy: &preemptionPolicyLowerPriority,
 			NodeName:         testNode.Name,
 		},
@@ -356,7 +356,7 @@ func TestPreemptionMgrSelectVictimsOnNode(t *testing.T) {
 							},
 						},
 					},
-					Priority:         pointer.Int32(extension.PriorityProdValueMax),
+					Priority:         ptr.To[int32](extension.PriorityProdValueMax),
 					PreemptionPolicy: &preemptionPolicyLowerPriority,
 				},
 			},

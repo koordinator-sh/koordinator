@@ -25,7 +25,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/record"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
@@ -37,7 +37,7 @@ func TestDefaultResourceAmplificationCfg(t *testing.T) {
 	t.Run("test", func(t *testing.T) {
 		expected := &configuration.ResourceAmplificationCfg{
 			ResourceAmplificationStrategy: configuration.ResourceAmplificationStrategy{
-				Enable: pointer.Bool(false),
+				Enable: ptr.To[bool](false),
 			},
 		}
 		got := DefaultResourceAmplificationCfg()
@@ -186,7 +186,7 @@ func Test_configHandler_syncCacheIfCfgChanged(t *testing.T) {
 			want: true,
 			wantField: &configuration.ResourceAmplificationCfg{
 				ResourceAmplificationStrategy: configuration.ResourceAmplificationStrategy{
-					Enable: pointer.Bool(true),
+					Enable: ptr.To[bool](true),
 					ResourceAmplificationRatio: map[corev1.ResourceName]float64{
 						corev1.ResourceCPU:    1.1,
 						corev1.ResourceMemory: 1.2,
@@ -210,7 +210,7 @@ func Test_configHandler_syncCacheIfCfgChanged(t *testing.T) {
 				c: fake.NewClientBuilder().WithScheme(scheme.Scheme).WithObjects(testConfigMap).Build(),
 				initCfg: &configuration.ResourceAmplificationCfg{
 					ResourceAmplificationStrategy: configuration.ResourceAmplificationStrategy{
-						Enable: pointer.Bool(true),
+						Enable: ptr.To[bool](true),
 						ResourceAmplificationRatio: map[corev1.ResourceName]float64{
 							corev1.ResourceCPU:    1.1,
 							corev1.ResourceMemory: 1.2,
@@ -222,7 +222,7 @@ func Test_configHandler_syncCacheIfCfgChanged(t *testing.T) {
 			want: true,
 			wantField: &configuration.ResourceAmplificationCfg{
 				ResourceAmplificationStrategy: configuration.ResourceAmplificationStrategy{
-					Enable: pointer.Bool(true),
+					Enable: ptr.To[bool](true),
 					ResourceAmplificationRatio: map[corev1.ResourceName]float64{
 						corev1.ResourceCPU:    2.5,
 						corev1.ResourceMemory: 3.5,
@@ -239,7 +239,7 @@ func Test_configHandler_syncCacheIfCfgChanged(t *testing.T) {
 							},
 						},
 						ResourceAmplificationStrategy: configuration.ResourceAmplificationStrategy{
-							Enable: pointer.Bool(true),
+							Enable: ptr.To[bool](true),
 							ResourceAmplificationRatio: map[corev1.ResourceName]float64{
 								corev1.ResourceCPU:    1.5,
 								corev1.ResourceMemory: 1.6,

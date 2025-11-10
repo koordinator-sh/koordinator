@@ -40,7 +40,7 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/queuesort"
 	"k8s.io/kubernetes/pkg/scheduler/framework/runtime"
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
@@ -257,7 +257,7 @@ func TestPlugin_PreFilter(t *testing.T) {
 					},
 				},
 				Spec: corev1.PodSpec{
-					Priority: pointer.Int32(extension.PriorityProdValueMax),
+					Priority: ptr.To[int32](extension.PriorityProdValueMax),
 					Containers: []corev1.Container{
 						{
 							Name: "container-1",
@@ -299,7 +299,7 @@ func TestPlugin_PreFilter(t *testing.T) {
 					},
 				},
 				Spec: corev1.PodSpec{
-					Priority: pointer.Int32(extension.PriorityProdValueMax),
+					Priority: ptr.To[int32](extension.PriorityProdValueMax),
 					Containers: []corev1.Container{
 						{
 							Name: "container-1",
@@ -333,7 +333,7 @@ func TestPlugin_PreFilter(t *testing.T) {
 					},
 				},
 				Spec: corev1.PodSpec{
-					Priority: pointer.Int32(extension.PriorityProdValueMax),
+					Priority: ptr.To[int32](extension.PriorityProdValueMax),
 					Containers: []corev1.Container{
 						{
 							Name: "container-1",
@@ -367,7 +367,7 @@ func TestPlugin_PreFilter(t *testing.T) {
 					},
 				},
 				Spec: corev1.PodSpec{
-					Priority: pointer.Int32(extension.PriorityProdValueMax),
+					Priority: ptr.To[int32](extension.PriorityProdValueMax),
 					Containers: []corev1.Container{
 						{
 							Name: "container-1",
@@ -402,7 +402,7 @@ func TestPlugin_PreFilter(t *testing.T) {
 					},
 				},
 				Spec: corev1.PodSpec{
-					Priority: pointer.Int32(extension.PriorityProdValueMax),
+					Priority: ptr.To[int32](extension.PriorityProdValueMax),
 					Containers: []corev1.Container{
 						{
 							Name: "container-1",
@@ -435,7 +435,7 @@ func TestPlugin_PreFilter(t *testing.T) {
 					},
 				},
 				Spec: corev1.PodSpec{
-					Priority: pointer.Int32(extension.PriorityProdValueMax),
+					Priority: ptr.To[int32](extension.PriorityProdValueMax),
 					Containers: []corev1.Container{
 						{
 							Name: "container-1",
@@ -477,7 +477,7 @@ func TestPlugin_PreFilter(t *testing.T) {
 					},
 				},
 				Spec: corev1.PodSpec{
-					Priority: pointer.Int32(extension.PriorityBatchValueMin),
+					Priority: ptr.To[int32](extension.PriorityBatchValueMin),
 					Containers: []corev1.Container{
 						{
 							Name: "container-1",
@@ -510,7 +510,7 @@ func TestPlugin_PreFilter(t *testing.T) {
 					},
 				},
 				Spec: corev1.PodSpec{
-					Priority: pointer.Int32(extension.PriorityProdValueMax),
+					Priority: ptr.To[int32](extension.PriorityProdValueMax),
 				},
 			},
 			wantState: &preFilterState{
@@ -530,7 +530,7 @@ func TestPlugin_PreFilter(t *testing.T) {
 					},
 				},
 				Spec: corev1.PodSpec{
-					Priority: pointer.Int32(extension.PriorityProdValueMax),
+					Priority: ptr.To[int32](extension.PriorityProdValueMax),
 					Containers: []corev1.Container{
 						{
 							Name: "container-1",
@@ -557,7 +557,7 @@ func TestPlugin_PreFilter(t *testing.T) {
 					},
 				},
 				Spec: corev1.PodSpec{
-					Priority: pointer.Int32(extension.PriorityProdValueMax),
+					Priority: ptr.To[int32](extension.PriorityProdValueMax),
 					Containers: []corev1.Container{
 						{
 							Name: "container-1",
@@ -1932,7 +1932,7 @@ func TestRestoreReservation(t *testing.T) {
 			},
 		},
 		Spec: corev1.PodSpec{
-			Priority: pointer.Int32(extension.PriorityProdValueMax),
+			Priority: ptr.To[int32](extension.PriorityProdValueMax),
 			Containers: []corev1.Container{
 				{
 					Resources: corev1.ResourceRequirements{

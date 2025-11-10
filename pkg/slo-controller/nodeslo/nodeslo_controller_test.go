@@ -29,7 +29,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/record"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -68,12 +68,12 @@ func TestNodeSLOReconciler_initNodeSLO(t *testing.T) {
 	clientgoscheme.AddToScheme(scheme)
 	slov1alpha1.AddToScheme(scheme)
 	testingResourceThresholdStrategy := sloconfig.DefaultResourceThresholdStrategy()
-	testingResourceThresholdStrategy.CPUSuppressThresholdPercent = pointer.Int64(60)
+	testingResourceThresholdStrategy.CPUSuppressThresholdPercent = ptr.To[int64](60)
 	testingResourceQOSStrategyOld := &slov1alpha1.ResourceQOSStrategy{
 		BEClass: &slov1alpha1.ResourceQOS{
 			CPUQOS: &slov1alpha1.CPUQOSCfg{
 				CPUQOS: slov1alpha1.CPUQOS{
-					GroupIdentity: pointer.Int64(0),
+					GroupIdentity: ptr.To[int64](0),
 				},
 			},
 		},
@@ -82,7 +82,7 @@ func TestNodeSLOReconciler_initNodeSLO(t *testing.T) {
 		BEClass: &slov1alpha1.ResourceQOS{
 			CPUQOS: &slov1alpha1.CPUQOSCfg{
 				CPUQOS: slov1alpha1.CPUQOS{
-					GroupIdentity: pointer.Int64(0),
+					GroupIdentity: ptr.To[int64](0),
 				},
 			},
 		},
@@ -325,24 +325,24 @@ func TestNodeSLOReconciler_Reconcile(t *testing.T) {
 		},
 	}
 	testingResourceThresholdStrategy := sloconfig.DefaultResourceThresholdStrategy()
-	testingResourceThresholdStrategy.Enable = pointer.Bool(true)
-	testingResourceThresholdStrategy.CPUSuppressThresholdPercent = pointer.Int64(60)
+	testingResourceThresholdStrategy.Enable = ptr.To[bool](true)
+	testingResourceThresholdStrategy.CPUSuppressThresholdPercent = ptr.To[int64](60)
 	testingResourceQOSStrategy := &slov1alpha1.ResourceQOSStrategy{
 		BEClass: &slov1alpha1.ResourceQOS{
 			CPUQOS: &slov1alpha1.CPUQOSCfg{
 				CPUQOS: slov1alpha1.CPUQOS{
-					GroupIdentity: pointer.Int64(0),
+					GroupIdentity: ptr.To[int64](0),
 				},
 			},
 		},
 	}
 
 	testingCPUBurstStrategy := sloconfig.DefaultCPUBurstStrategy()
-	testingCPUBurstStrategy.CFSQuotaBurstPeriodSeconds = pointer.Int64(60)
+	testingCPUBurstStrategy.CFSQuotaBurstPeriodSeconds = ptr.To[int64](60)
 
 	testingSystemStrategy := sloconfig.DefaultSystemStrategy()
-	testingSystemStrategy.WatermarkScaleFactor = pointer.Int64(150)
-	testingSystemStrategy.MinFreeKbytesFactor = pointer.Int64(150)
+	testingSystemStrategy.WatermarkScaleFactor = ptr.To[int64](150)
+	testingSystemStrategy.MinFreeKbytesFactor = ptr.To[int64](150)
 	testingSystemStrategy.SchedFeatures = map[string]bool{
 		"ID_ABSOLUTE_EXPEL":      true,
 		"ID_EXPELLER_SHARE_CORE": false,

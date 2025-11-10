@@ -23,7 +23,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
@@ -112,19 +112,19 @@ func Test_parseRuleForNodeSLO(t *testing.T) {
 					Policies: sloconfig.NoneResourceQOSPolicies(),
 					LSRClass: &slov1alpha1.ResourceQOS{
 						CPUQOS: &slov1alpha1.CPUQOSCfg{
-							Enable: pointer.Bool(false),
+							Enable: ptr.To[bool](false),
 							CPUQOS: *sloconfig.NoneCPUQOS(),
 						},
 					},
 					LSClass: &slov1alpha1.ResourceQOS{
 						CPUQOS: &slov1alpha1.CPUQOSCfg{
-							Enable: pointer.Bool(false),
+							Enable: ptr.To[bool](false),
 							CPUQOS: *sloconfig.NoneCPUQOS(),
 						},
 					},
 					BEClass: &slov1alpha1.ResourceQOS{
 						CPUQOS: &slov1alpha1.CPUQOSCfg{
-							Enable: pointer.Bool(false),
+							Enable: ptr.To[bool](false),
 							CPUQOS: *sloconfig.NoneCPUQOS(),
 						},
 					},
@@ -144,19 +144,19 @@ func Test_parseRuleForNodeSLO(t *testing.T) {
 					Policies: testGetEnabledResourceQOSPolicies(),
 					LSRClass: &slov1alpha1.ResourceQOS{
 						CPUQOS: &slov1alpha1.CPUQOSCfg{
-							Enable: pointer.Bool(true),
+							Enable: ptr.To[bool](true),
 							CPUQOS: *sloconfig.DefaultCPUQOS(extension.QoSLSR),
 						},
 					},
 					LSClass: &slov1alpha1.ResourceQOS{
 						CPUQOS: &slov1alpha1.CPUQOSCfg{
-							Enable: pointer.Bool(true),
+							Enable: ptr.To[bool](true),
 							CPUQOS: *sloconfig.DefaultCPUQOS(extension.QoSLS),
 						},
 					},
 					BEClass: &slov1alpha1.ResourceQOS{
 						CPUQOS: &slov1alpha1.CPUQOSCfg{
-							Enable: pointer.Bool(true),
+							Enable: ptr.To[bool](true),
 							CPUQOS: *sloconfig.DefaultCPUQOS(extension.QoSBE),
 						},
 					},
@@ -176,19 +176,19 @@ func Test_parseRuleForNodeSLO(t *testing.T) {
 					Policies: sloconfig.NoneResourceQOSPolicies(),
 					LSRClass: &slov1alpha1.ResourceQOS{
 						CPUQOS: &slov1alpha1.CPUQOSCfg{
-							Enable: pointer.Bool(false),
+							Enable: ptr.To[bool](false),
 							CPUQOS: *sloconfig.NoneCPUQOS(),
 						},
 					},
 					LSClass: &slov1alpha1.ResourceQOS{
 						CPUQOS: &slov1alpha1.CPUQOSCfg{
-							Enable: pointer.Bool(false),
+							Enable: ptr.To[bool](false),
 							CPUQOS: *sloconfig.NoneCPUQOS(),
 						},
 					},
 					BEClass: &slov1alpha1.ResourceQOS{
 						CPUQOS: &slov1alpha1.CPUQOSCfg{
-							Enable: pointer.Bool(false),
+							Enable: ptr.To[bool](false),
 							CPUQOS: *sloconfig.NoneCPUQOS(),
 						},
 					},
@@ -208,19 +208,19 @@ func Test_parseRuleForNodeSLO(t *testing.T) {
 					Policies: testGetEnabledResourceQOSPolicies(),
 					LSRClass: &slov1alpha1.ResourceQOS{
 						CPUQOS: &slov1alpha1.CPUQOSCfg{
-							Enable: pointer.Bool(true),
+							Enable: ptr.To[bool](true),
 							CPUQOS: *sloconfig.DefaultCPUQOS(extension.QoSLSR),
 						},
 					},
 					LSClass: &slov1alpha1.ResourceQOS{
 						CPUQOS: &slov1alpha1.CPUQOSCfg{
-							Enable: pointer.Bool(true),
+							Enable: ptr.To[bool](true),
 							CPUQOS: *sloconfig.DefaultCPUQOS(extension.QoSLS),
 						},
 					},
 					BEClass: &slov1alpha1.ResourceQOS{
 						CPUQOS: &slov1alpha1.CPUQOSCfg{
-							Enable: pointer.Bool(true),
+							Enable: ptr.To[bool](true),
 							CPUQOS: *sloconfig.DefaultCPUQOS(extension.QoSBE),
 						},
 					},
@@ -240,27 +240,27 @@ func Test_parseRuleForNodeSLO(t *testing.T) {
 					Policies: testGetEnabledResourceQOSPolicies(),
 					LSRClass: &slov1alpha1.ResourceQOS{
 						CPUQOS: &slov1alpha1.CPUQOSCfg{
-							Enable: pointer.Bool(false),
+							Enable: ptr.To[bool](false),
 							CPUQOS: *sloconfig.NoneCPUQOS(),
 						},
 					},
 					LSClass: &slov1alpha1.ResourceQOS{
 						CPUQOS: &slov1alpha1.CPUQOSCfg{
-							Enable: pointer.Bool(true),
+							Enable: ptr.To[bool](true),
 							CPUQOS: slov1alpha1.CPUQOS{
-								GroupIdentity: pointer.Int64(2),
-								SchedIdle:     pointer.Int64(0),
-								CoreExpeller:  pointer.Bool(true),
+								GroupIdentity: ptr.To[int64](2),
+								SchedIdle:     ptr.To[int64](0),
+								CoreExpeller:  ptr.To[bool](true),
 							},
 						},
 					},
 					BEClass: &slov1alpha1.ResourceQOS{
 						CPUQOS: &slov1alpha1.CPUQOSCfg{
-							Enable: pointer.Bool(true),
+							Enable: ptr.To[bool](true),
 							CPUQOS: slov1alpha1.CPUQOS{
-								GroupIdentity: pointer.Int64(-1),
-								SchedIdle:     pointer.Int64(1),
-								CoreExpeller:  pointer.Bool(false),
+								GroupIdentity: ptr.To[int64](-1),
+								SchedIdle:     ptr.To[int64](1),
+								CoreExpeller:  ptr.To[bool](false),
 							},
 						},
 					},
@@ -362,23 +362,23 @@ func Test_parseRuleForNodeSLO(t *testing.T) {
 					Policies: testGetEnabledResourceQOSPolicies(),
 					LSRClass: &slov1alpha1.ResourceQOS{
 						CPUQOS: &slov1alpha1.CPUQOSCfg{
-							Enable: pointer.Bool(true),
+							Enable: ptr.To[bool](true),
 							CPUQOS: *sloconfig.DefaultCPUQOS(extension.QoSLSR),
 						},
 					},
 					LSClass: &slov1alpha1.ResourceQOS{
 						CPUQOS: &slov1alpha1.CPUQOSCfg{
-							Enable: pointer.Bool(true),
+							Enable: ptr.To[bool](true),
 							CPUQOS: *sloconfig.DefaultCPUQOS(extension.QoSLS),
 						},
 					},
 					BEClass: &slov1alpha1.ResourceQOS{
 						CPUQOS: &slov1alpha1.CPUQOSCfg{
-							Enable: pointer.Bool(true),
+							Enable: ptr.To[bool](true),
 							CPUQOS: slov1alpha1.CPUQOS{
-								GroupIdentity: pointer.Int64(-1),
-								SchedIdle:     pointer.Int64(1),
-								CoreExpeller:  pointer.Bool(false),
+								GroupIdentity: ptr.To[int64](-1),
+								SchedIdle:     ptr.To[int64](1),
+								CoreExpeller:  ptr.To[bool](false),
 							},
 						},
 					},
@@ -560,7 +560,7 @@ func Test_ruleUpdateCb(t *testing.T) {
 			wantErr: false,
 			wantFields: wantFields{
 				rule:         testGetEnabledRule(),
-				sysSupported: pointer.Bool(false),
+				sysSupported: ptr.To[bool](false),
 				initialized:  false,
 			},
 		},
@@ -572,7 +572,7 @@ func Test_ruleUpdateCb(t *testing.T) {
 				plugin: newPlugin(),
 				preparePluginFn: func(p *Plugin) {
 					p.rule = testGetEnabledRule()
-					p.sysSupported = pointer.Bool(true)
+					p.sysSupported = ptr.To[bool](true)
 				},
 			},
 			arg: &statesinformer.CallbackTarget{
@@ -626,7 +626,7 @@ func Test_ruleUpdateCb(t *testing.T) {
 			wantErr: false,
 			wantFields: wantFields{
 				rule:         testGetEnabledRule(),
-				sysSupported: pointer.Bool(true),
+				sysSupported: ptr.To[bool](true),
 				initialized:  false,
 			},
 		},
@@ -657,7 +657,7 @@ func Test_ruleUpdateCb(t *testing.T) {
 			wantErr: false,
 			wantFields: wantFields{
 				rule:         testGetEnabledRule(),
-				sysSupported: pointer.Bool(true),
+				sysSupported: ptr.To[bool](true),
 				initialized:  false,
 				parentDirToCPUIdle: map[string]int64{
 					util.GetPodQoSRelativePath(corev1.PodQOSGuaranteed): 0,
@@ -812,7 +812,7 @@ func Test_ruleUpdateCb(t *testing.T) {
 			wantErr: false,
 			wantFields: wantFields{
 				rule:         testGetEnabledRule(),
-				sysSupported: pointer.Bool(true),
+				sysSupported: ptr.To[bool](true),
 				initialized:  true,
 				cookieToPIDs: map[uint64][]uint32{
 					1000000: {
@@ -979,7 +979,7 @@ func Test_ruleUpdateCb(t *testing.T) {
 			wantErr: false,
 			wantFields: wantFields{
 				rule:         testGetAllEnabledRule(),
-				sysSupported: pointer.Bool(true),
+				sysSupported: ptr.To[bool](true),
 				initialized:  true,
 				cookieToPIDs: map[uint64][]uint32{
 					1000000: {
@@ -1194,7 +1194,7 @@ func Test_ruleUpdateCb(t *testing.T) {
 			wantErr: false,
 			wantFields: wantFields{
 				rule:         testGetEnabledRule(),
-				sysSupported: pointer.Bool(true),
+				sysSupported: ptr.To[bool](true),
 				initialized:  true,
 				cookieToPIDs: map[uint64][]uint32{
 					1000000: {
@@ -1412,7 +1412,7 @@ func Test_ruleUpdateCb(t *testing.T) {
 			wantErr: false,
 			wantFields: wantFields{
 				rule:         testGetEnabledRule(),
-				sysSupported: pointer.Bool(true),
+				sysSupported: ptr.To[bool](true),
 				initialized:  true,
 				cookieToPIDs: map[uint64][]uint32{
 					2000: {
@@ -1622,7 +1622,7 @@ func Test_ruleUpdateCb(t *testing.T) {
 			wantErr: false,
 			wantFields: wantFields{
 				rule:         testGetEnabledRule(),
-				sysSupported: pointer.Bool(true),
+				sysSupported: ptr.To[bool](true),
 				initialized:  true,
 				cookieToPIDs: map[uint64][]uint32{
 					1000000: {

@@ -9,7 +9,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes/fake"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	deschedulerconfig "github.com/koordinator-sh/koordinator/pkg/descheduler/apis/config"
 )
@@ -25,7 +25,7 @@ func TestGetPriorityValueFromPriorityThreshold(t *testing.T) {
 		{
 			name: "custom threshold",
 			priorityThreshold: &deschedulerconfig.PriorityThreshold{
-				Value: pointer.Int32(1024),
+				Value: ptr.To[int32](1024),
 			},
 			wantPriority: 1024,
 			wantErr:      false,
@@ -33,7 +33,7 @@ func TestGetPriorityValueFromPriorityThreshold(t *testing.T) {
 		{
 			name: "custom threshold bigger than SystemCriticalPriority",
 			priorityThreshold: &deschedulerconfig.PriorityThreshold{
-				Value: pointer.Int32(SystemCriticalPriority + 100),
+				Value: ptr.To[int32](SystemCriticalPriority + 100),
 			},
 			wantErr: true,
 		},

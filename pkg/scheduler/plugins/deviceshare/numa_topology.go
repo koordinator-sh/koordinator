@@ -18,7 +18,7 @@ package deviceshare
 
 import (
 	"k8s.io/apimachinery/pkg/util/sets"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 )
@@ -62,7 +62,7 @@ func newNUMATopology(deviceObj *schedulingv1alpha1.Device) *NUMATopology {
 			devices = make(map[schedulingv1alpha1.DeviceType][]int)
 			devicesInPCIe[index] = devices
 		}
-		minor := pointer.Int32Deref(deviceInfo.Minor, 0)
+		minor := ptr.Deref[int32](deviceInfo.Minor, 0)
 		devices[deviceInfo.Type] = append(devices[deviceInfo.Type], int(minor))
 		if deviceToNodeID[deviceInfo.Type] == nil {
 			deviceToNodeID[deviceInfo.Type] = map[int32]int{}
