@@ -76,6 +76,9 @@ const (
 	// when add resource type: from parent to child
 	ElasticQuotaEnableUpdateResourceKey featuregate.Feature = "ElasticQuotaEnableUpdateResourceKey"
 
+	// ElasticQuotaEvaluationTransformPod enables transforming pod before evaluating quota
+	ElasticQuotaEvaluationTransformPod featuregate.Feature = "ElasticQuotaEvaluationTransformPod"
+
 	// DisableDefaultQuota disable default quota.
 	DisableDefaultQuota featuregate.Feature = "DisableDefaultQuota"
 
@@ -113,6 +116,7 @@ var defaultFeatureGates = map[featuregate.Feature]featuregate.FeatureSpec{
 	ElasticQuotaIgnorePodOverhead:          {Default: false, PreRelease: featuregate.Alpha},
 	ElasticQuotaGuaranteeUsage:             {Default: false, PreRelease: featuregate.Alpha},
 	ElasticQuotaEnableUpdateResourceKey:    {Default: false, PreRelease: featuregate.Alpha},
+	ElasticQuotaEvaluationTransformPod:     {Default: false, PreRelease: featuregate.Alpha},
 	DisableDefaultQuota:                    {Default: false, PreRelease: featuregate.Alpha},
 	SupportParentQuotaSubmitPod:            {Default: false, PreRelease: featuregate.Alpha},
 	EnableQuotaAdmission:                   {Default: false, PreRelease: featuregate.Alpha},
@@ -137,11 +141,15 @@ const (
 	// PreemptionPolicyTransformer is used to take over the pod preemption policy with the specified label.
 	// If a pod does not set a preemptionPolicy, it will be mapped to the DefaultPreemptionPolicy.
 	PreemptionPolicyTransformer featuregate.Feature = "PreemptionPolicyTransformer"
+	// ReplaceResourcesTransformer is used to replace resource or erase specified resource names.
+	// It's important to note that the usage scenarios must ensure that the resources on the node are not oversold by itself.
+	ReplaceResourcesTransformer featuregate.Feature = "ReplaceResourcesTransformer"
 )
 
 var transformerFeatureGates = map[featuregate.Feature]featuregate.FeatureSpec{
 	PriorityTransformer:         {Default: false, PreRelease: featuregate.Alpha},
 	PreemptionPolicyTransformer: {Default: false, PreRelease: featuregate.Alpha},
+	ReplaceResourcesTransformer: {Default: false, PreRelease: featuregate.Alpha},
 }
 
 func init() {

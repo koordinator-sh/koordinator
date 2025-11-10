@@ -40,13 +40,14 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/webhook/quotaevaluate"
 )
 
-func TestEvalucateQuota(t *testing.T) {
+func TestEvaluateQuota(t *testing.T) {
 	testCases := []struct {
 		name        string
 		operation   admissionv1.Operation
 		oldPod      *corev1.Pod
 		newPod      *corev1.Pod
 		quota       *v1alpha1.ElasticQuota
+		prepareFn   func() func()
 		wantAllowed bool
 		wantReason  string
 		wantErr     bool
@@ -326,11 +327,53 @@ func TestEvalucateQuota(t *testing.T) {
 				corev1.ResourceMemory: resource.MustParse("4Gi"),
 			},
 		},
+		{
+			name:      "pod with replace-resources annotation, should replace or erase specified resources",
+			operation: admissionv1.Create,
+			newPod: func() *corev1.Pod {
+				pod := elasticquota.MakePod("ns1", "pod1").
+					Label("quota.scheduling.koordinator.sh/name", "quota1").
+					Container(corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("2"),
+						corev1.ResourceMemory: resource.MustParse("4Gi"),
+						"example.io/gpu":      resource.MustParse("1"),
+					}).Obj()
+				pod.SetAnnotations(map[string]string{
+					extension.AnnotationPodReplaceResources: "cpu:example.io/cpu,memory:",
+				})
+				return pod
+			}(),
+			quota: elasticquota.MakeQuota("quota1").Namespace("kube-system").Max(corev1.ResourceList{
+				corev1.ResourceMemory: resource.MustParse("0Gi"),
+				"example.io/cpu":      resource.MustParse("4k"),
+				"example.io/gpu":      resource.MustParse("3"),
+			}).Obj(),
+			prepareFn: func() func() {
+				cleanupFn1 := utilfeature.SetFeatureGateDuringTest(t, utilfeature.DefaultMutableFeatureGate,
+					features.ElasticQuotaEvaluationTransformPod, true)
+				cleanupFn2 := utilfeature.SetFeatureGateDuringTest(t, utilfeature.DefaultMutableFeatureGate,
+					features.ReplaceResourcesTransformer, true)
+				return func() {
+					cleanupFn1()
+					cleanupFn2()
+				}
+			},
+			wantAllowed: true,
+			wantReason:  "",
+			wantErr:     false,
+			wantUsed: corev1.ResourceList{
+				"example.io/cpu": resource.MustParse("2k"),
+				"example.io/gpu": resource.MustParse("1"),
+			},
+		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			defer utilfeature.SetFeatureGateDuringTest(t, utilfeature.DefaultMutableFeatureGate, features.EnableQuotaAdmission, true)()
+			if tc.prepareFn != nil {
+				defer tc.prepareFn()()
+			}
 			scheme := runtime.NewScheme()
 			_ = v1alpha1.AddToScheme(scheme)
 			_ = clientgoscheme.AddToScheme(scheme)
