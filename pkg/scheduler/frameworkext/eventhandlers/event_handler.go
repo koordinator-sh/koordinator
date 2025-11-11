@@ -25,6 +25,7 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler"
 	"k8s.io/kubernetes/pkg/scheduler/profile"
 
+	koordinatorclientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
 	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
 	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
@@ -34,7 +35,7 @@ import (
 // - Reservation event handlers for the scheduler just like pods'. One special case is that reservations have expiration, which the scheduler should clean up expired ones from the
 // cache and queue.
 // - Pod and reservation event handlers for multi-scheduler clean up.
-func AddScheduleEventHandler(sched *scheduler.Scheduler, schedAdapter frameworkext.Scheduler, informerFactory informers.SharedInformerFactory, koordSharedInformerFactory koordinatorinformers.SharedInformerFactory) {
+func AddScheduleEventHandler(client koordinatorclientset.Interface, sched *scheduler.Scheduler, schedAdapter frameworkext.Scheduler, informerFactory informers.SharedInformerFactory, koordSharedInformerFactory koordinatorinformers.SharedInformerFactory) {
 	podInformer := informerFactory.Core().V1().Pods().Informer()
 	if k8sfeature.DefaultFeatureGate.Enabled(features.DynamicSchedulerCheck) {
 		// Clean up irresponsible pods for scheduling queue
@@ -46,7 +47,7 @@ func AddScheduleEventHandler(sched *scheduler.Scheduler, schedAdapter frameworke
 
 	reservationInformer := koordSharedInformerFactory.Scheduling().V1alpha1().Reservations().Informer()
 	// scheduled reservations for pod cache
-	_, err := reservationInformer.AddEventHandler(scheduledReservationEventHandler(sched, schedAdapter))
+	_, err := reservationInformer.AddEventHandler(scheduledReservationEventHandler(client, sched, schedAdapter))
 	if err != nil {
 		klog.Fatalf("failed to add scheduled reservation handler for SchedulerCache, err: %s", err)
 	}

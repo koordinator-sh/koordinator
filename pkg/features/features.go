@@ -96,6 +96,9 @@ const (
 
 	// ValidatePodDeviceResource enables validate pod device resource
 	ValidatePodDeviceResource featuregate.Feature = "ValidatePodDeviceResource"
+
+	// ReservationEnableUpdateSpec enables update reservation status by reservation spec changed
+	ReservationEnableUpdateSpec featuregate.Feature = "ReservationEnableUpdateSpec"
 )
 
 var defaultFeatureGates = map[featuregate.Feature]featuregate.FeatureSpec{
@@ -120,6 +123,7 @@ var defaultFeatureGates = map[featuregate.Feature]featuregate.FeatureSpec{
 	ColocationProfileController:            {Default: false, PreRelease: featuregate.Alpha},
 	ValidatePodDeviceResource:              {Default: false, PreRelease: featuregate.Alpha},
 	EnablePodEnhancedValidator:             {Default: false, PreRelease: featuregate.Alpha},
+	ReservationEnableUpdateSpec:            {Default: false, PreRelease: featuregate.Alpha},
 }
 
 const (

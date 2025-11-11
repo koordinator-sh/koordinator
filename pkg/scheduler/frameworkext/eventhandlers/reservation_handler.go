@@ -40,11 +40,13 @@ import (
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	koordclientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
+	koordinatorclientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
 	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
 	schedulingv1alpha1lister "github.com/koordinator-sh/koordinator/pkg/client/listers/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	"github.com/koordinator-sh/koordinator/pkg/util"
+	utilfeature "github.com/koordinator-sh/koordinator/pkg/util/feature"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
 
@@ -307,11 +309,11 @@ func handleReservationSchedulingFailure(sched *scheduler.Scheduler,
 		msg := truncateMessage(errMsg)
 		fwk.EventRecorder().Eventf(cachedR, nil, corev1.EventTypeWarning, "FailedScheduling", "Scheduling", msg)
 
-		updateReservationStatus(koordClientSet, reservationLister, rName, err)
+		updateReservationStatusUnschedulable(koordClientSet, reservationLister, rName, err)
 	}
 }
 
-func updateReservationStatus(client koordclientset.Interface, reservationLister schedulingv1alpha1lister.ReservationLister, rName string, schedulingErr error) {
+func updateReservationStatusUnschedulable(client koordclientset.Interface, reservationLister schedulingv1alpha1lister.ReservationLister, rName string, schedulingErr error) {
 	err := util.RetryOnConflictOrTooManyRequests(func() error {
 		r, err := reservationLister.Get(rName)
 		if errors.IsNotFound(err) {
@@ -344,13 +346,13 @@ func truncateMessage(message string) string {
 	return message[:max-len(suffix)] + suffix
 }
 
-func scheduledReservationEventHandler(sched *scheduler.Scheduler, schedAdapter frameworkext.Scheduler) cache.ResourceEventHandler {
+func scheduledReservationEventHandler(client koordinatorclientset.Interface, sched *scheduler.Scheduler, schedAdapter frameworkext.Scheduler) cache.ResourceEventHandler {
 	return cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
 			addReservationToSchedulerCache(schedAdapter, obj)
 		},
 		UpdateFunc: func(oldObj, newObj interface{}) {
-			updateReservationInSchedulerCache(schedAdapter, oldObj, newObj)
+			updateReservationInSchedulerCache(client, schedAdapter, oldObj, newObj)
 		},
 		DeleteFunc: func(obj interface{}) {
 			deleteReservationFromSchedulerCache(schedAdapter, obj)
@@ -445,7 +447,7 @@ func addReservationToSchedulerCache(sched frameworkext.Scheduler, obj interface{
 	sched.GetSchedulingQueue().AssignedPodAdded(klog.Background(), reservePod)
 }
 
-func updateReservationInSchedulerCache(sched frameworkext.Scheduler, oldObj, newObj interface{}) {
+func updateReservationInSchedulerCache(client koordinatorclientset.Interface, sched frameworkext.Scheduler, oldObj, newObj interface{}) {
 	oldR := toReservation(oldObj)
 	newR := toReservation(newObj)
 	if oldR == nil || newR == nil {
@@ -499,12 +501,33 @@ func updateReservationInSchedulerCache(sched frameworkext.Scheduler, oldObj, new
 	}
 	oldReservePod := reservationutil.NewReservePod(oldR)
 	newReservePod := reservationutil.NewReservePod(newR)
+	if utilfeature.DefaultFeatureGate.Enabled(features.ReservationEnableUpdateSpec) {
+		err = updateReservationStatusAvailable(client, newR, newReservePod)
+		if err != nil {
+			klog.ErrorS(err, "Failed to update reservation status available", "reservation", klog.KObj(newR))
+			return
+		}
+	}
 	if err := sched.GetCache().UpdatePod(klog.Background(), oldReservePod, newReservePod); err != nil {
 		klog.ErrorS(err, "Failed to update reservation into SchedulerCache", "reservation", klog.KObj(newR))
 	} else {
 		klog.V(4).InfoS("Successfully update reservation into SchedulerCache", "reservation", klog.KObj(newR))
 	}
 	sched.GetSchedulingQueue().AssignedPodUpdated(klog.Background(), oldReservePod, newReservePod)
+}
+
+func updateReservationStatusAvailable(client koordclientset.Interface, reservation *schedulingv1alpha1.Reservation, newReservePod *corev1.Pod) error {
+	newRCopy := reservation.DeepCopy()
+	if err := reservationutil.SetReservationResizeAllocatable(newRCopy, &reservationutil.ReservationResizeAllocatable{Resources: util.GetPodRequest(newReservePod)}); err != nil {
+		return fmt.Errorf("failed to set resize allocateble available, err: %v", err)
+	}
+	if err := reservationutil.SetReservationAvailable(newRCopy, reservationutil.GetReservationNodeName(newRCopy)); err != nil {
+		return fmt.Errorf("failed to set reservation status available, err: %v", err)
+	}
+	return util.RetryOnConflictOrTooManyRequests(func() error {
+		_, err := client.SchedulingV1alpha1().Reservations().UpdateStatus(context.TODO(), newRCopy, metav1.UpdateOptions{})
+		return err
+	})
 }
 
 func deleteReservationFromSchedulerCache(sched frameworkext.Scheduler, obj interface{}) {

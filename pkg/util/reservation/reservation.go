@@ -38,7 +38,9 @@ import (
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/util"
+	utilfeature "github.com/koordinator-sh/koordinator/pkg/util/feature"
 )
 
 const (
@@ -129,7 +131,8 @@ func NewReservePod(r *schedulingv1alpha1.Reservation) *corev1.Pod {
 	} else if IsReservationExpired(r) || IsReservationFailed(r) {
 		reservePod.Status.Phase = corev1.PodFailed
 	}
-	if IsReservationAvailable(r) {
+	if !utilfeature.DefaultFeatureGate.Enabled(features.ReservationEnableUpdateSpec) &&
+		IsReservationAvailable(r) {
 		podRequests := resource.PodRequests(reservePod, resource.PodResourcesOptions{})
 		if !quotav1.Equals(podRequests, r.Status.Allocatable) {
 			//
