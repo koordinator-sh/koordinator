@@ -129,8 +129,8 @@ type Diagnosis struct {
 	TopologyKeyToExplain string      `json:"topologyKeyToExplain,omitempty"`
 	IsRootCausePod       bool        `json:"isRootCausePod"`
 	// maybe modify framework.Status to cover addedNominatedPods, corresponding resourceView(such as requested and total) when failed
-	ScheduleDiagnosis   *ScheduleDiagnosis `json:"scheduleDiagnosis"`
-	PreemptionDiagnosis interface{}        `json:"preemptionDiagnosis"`
+	ScheduleDiagnosis   *ScheduleDiagnosis   `json:"scheduleDiagnosis"`
+	PreemptionDiagnosis *PreemptionDiagnosis `json:"preemptionDiagnosis"`
 }
 
 type ScheduleDiagnosis struct {
@@ -150,6 +150,11 @@ const (
 	PodSchedulingMode SchedulingMode = "Pod"
 	JobSchedulingMode SchedulingMode = "Job"
 )
+
+type PreemptionDiagnosis struct {
+	DryRunFilterDiagnosis *ScheduleDiagnosis `json:"dryRunFilterDiagnosis"`
+	OtherDiagnosis        interface{}        `json:"otherDiagnosis"`
+}
 
 // DiagnosisQueue is a queue for handling diagnosis logs asynchronously
 type DiagnosisQueue struct {
@@ -193,6 +198,24 @@ func (dq *DiagnosisQueue) processDiagnosis(diagnosis *Diagnosis) string {
 		}
 		sort.Slice(scheduleFailedDetails, func(i, j int) bool { return scheduleFailedDetails[i].NodeName < scheduleFailedDetails[j].NodeName })
 		diagnosis.ScheduleDiagnosis.NodeFailedDetails = scheduleFailedDetails
+	}
+
+	if diagnosis.PreemptionDiagnosis != nil &&
+		diagnosis.PreemptionDiagnosis.DryRunFilterDiagnosis != nil &&
+		len(diagnosis.PreemptionDiagnosis.DryRunFilterDiagnosis.NodeFailedDetails) == 0 {
+		dryRunFilterFailedDetails := make([]v1alpha1.NodeFailedDetail, 0, len(diagnosis.PreemptionDiagnosis.DryRunFilterDiagnosis.NodeToStatusMap))
+		for node, status := range diagnosis.PreemptionDiagnosis.DryRunFilterDiagnosis.NodeToStatusMap {
+			nodeFailedDetail := v1alpha1.NodeFailedDetail{
+				NodeName:     node,
+				FailedPlugin: status.FailedPlugin(),
+				Reason:       status.Message(),
+			}
+			dryRunFilterFailedDetails = append(dryRunFilterFailedDetails, nodeFailedDetail)
+		}
+		sort.Slice(dryRunFilterFailedDetails, func(i, j int) bool {
+			return dryRunFilterFailedDetails[i].NodeName < dryRunFilterFailedDetails[j].NodeName
+		})
+		diagnosis.PreemptionDiagnosis.DryRunFilterDiagnosis.NodeFailedDetails = dryRunFilterFailedDetails
 	}
 
 	dumpMessage := util.DumpJSON(diagnosis)
