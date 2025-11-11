@@ -663,13 +663,18 @@ func (ext *frameworkExtenderImpl) RegisterForgetPodHandler(handler ForgetPodHand
 }
 
 func (ext *frameworkExtenderImpl) ForgetPod(logger klog.Logger, pod *corev1.Pod) error {
-	if err := ext.Scheduler().GetCache().ForgetPod(logger, pod); err != nil {
-		return err
-	}
+	err := ext.Scheduler().GetCache().ForgetPod(logger, pod)
+
+	// Always call plugin handlers even if ForgetPod fails.
+	// It is tolerated for multi-scheduler scenarios where the pod is not in assumed
+	// cache (because it was assumed bound but then failed), but we still need to clean
+	// up plugin-specific accounting.
 	for _, handler := range ext.forgetPodHandlers {
 		handler(pod)
 	}
-	return nil
+
+	// Return the original error after calling handlers
+	return err
 }
 
 func (ext *frameworkExtenderImpl) RunNUMATopologyManagerAdmit(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string, numaNodes []int, policyType apiext.NUMATopologyPolicy, exclusivePolicy apiext.NumaTopologyExclusive, allNUMANodeStatus []apiext.NumaNodeStatus) *framework.Status {
