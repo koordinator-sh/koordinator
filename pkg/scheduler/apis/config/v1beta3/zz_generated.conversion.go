@@ -519,6 +519,8 @@ func autoConvert_v1beta3_ReservationArgs_To_config_ReservationArgs(in *Reservati
 		return err
 	}
 	out.GCDurationSeconds = in.GCDurationSeconds
+	out.GCIntervalSeconds = in.GCIntervalSeconds
+	out.DisableGarbageCollection = in.DisableGarbageCollection
 	return nil
 }
 
@@ -541,6 +543,8 @@ func autoConvert_config_ReservationArgs_To_v1beta3_ReservationArgs(in *config.Re
 		return err
 	}
 	out.GCDurationSeconds = in.GCDurationSeconds
+	out.GCIntervalSeconds = in.GCIntervalSeconds
+	out.DisableGarbageCollection = in.DisableGarbageCollection
 	return nil
 }
 

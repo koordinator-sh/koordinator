@@ -55,6 +55,7 @@ var (
 	defaultMinCandidateNodesAbsolute    = pointer.Int32(100)
 	defaultReservationControllerWorkers = pointer.Int32(1)
 	defaultGCDurationSeconds            = pointer.Int64(86400)
+	defaultGCIntervalSeconds            = pointer.Int64(60)
 
 	defaultDelayEvictTime       = 120 * time.Second
 	defaultRevokePodInterval    = 1 * time.Second
@@ -169,6 +170,9 @@ func SetDefaults_ReservationArgs(obj *ReservationArgs) {
 	}
 	if obj.GCDurationSeconds == 0 {
 		obj.GCDurationSeconds = *defaultGCDurationSeconds
+	}
+	if obj.GCIntervalSeconds == 0 {
+		obj.GCIntervalSeconds = *defaultGCIntervalSeconds
 	}
 }
 

@@ -73,7 +73,9 @@ type Controller struct {
 	koordClientSet             koordclientset.Interface
 	queue                      workqueue.RateLimitingInterface
 	numWorker                  int
+	isGCDisabled               bool
 	gcDuration                 time.Duration
+	gcInterval                 time.Duration
 
 	lock   sync.RWMutex
 	pods   map[string]map[types.UID]*corev1.Pod    // nodeName -> podUID -> pod
@@ -100,9 +102,17 @@ func New(
 		numWorker = int(args.ControllerWorkers)
 	}
 
+	isGCDisabled := false
+	if args != nil && args.DisableGarbageCollection {
+		isGCDisabled = true
+	}
 	gcDuration := defaultGCDuration
 	if args != nil && args.GCDurationSeconds > 0 {
 		gcDuration = time.Duration(args.GCDurationSeconds) * time.Second
+	}
+	gcInterval := defaultGCCheckInterval
+	if args != nil && args.GCIntervalSeconds > 0 {
+		gcInterval = time.Duration(args.GCIntervalSeconds) * time.Second
 	}
 	return &Controller{
 		sharedInformerFactory:      sharedInformerFactory,
@@ -114,7 +124,9 @@ func New(
 		koordClientSet:             koordClientSet,
 		queue:                      queue,
 		numWorker:                  numWorker,
+		isGCDisabled:               isGCDisabled,
 		gcDuration:                 gcDuration,
+		gcInterval:                 gcInterval,
 		pods:                       map[string]map[types.UID]*corev1.Pod{},
 		podToR:                     map[types.UID]types.UID{},
 		rToPod:                     map[types.UID]map[types.UID]*corev1.Pod{},
@@ -152,7 +164,11 @@ func (c *Controller) Start() {
 	for i := 0; i < c.numWorker; i++ {
 		go c.worker()
 	}
-	go wait.Until(c.gcReservations, defaultGCCheckInterval, nil)
+	if !c.isGCDisabled {
+		go wait.Until(c.gcReservations, c.gcInterval, nil)
+	} else {
+		klog.V(4).InfoS("garbage collection for reservations is disabled")
+	}
 }
 
 func (c *Controller) worker() {
@@ -351,10 +367,12 @@ func (c *Controller) syncStatus(reservation *schedulingv1alpha1.Reservation, pod
 func (c *Controller) updateReservationStatus(reservation *schedulingv1alpha1.Reservation) error {
 	RecordReservationPhases(reservation)
 	_, err := c.koordClientSet.SchedulingV1alpha1().Reservations().UpdateStatus(context.TODO(), reservation, metav1.UpdateOptions{})
-	if err == nil {
-		klog.V(4).InfoS("Successfully sync reservation status", "reservation", klog.KObj(reservation))
+	if err != nil {
+		klog.ErrorS(err, "Failed to update reservation status", "reservation", klog.KObj(reservation), "uid", reservation.UID, "phase", reservation.Status.Phase)
+		return err
 	}
-	return err
+	klog.V(4).InfoS("Successfully sync reservation status", "reservation", klog.KObj(reservation), "uid", reservation.UID, "phase", reservation.Status.Phase)
+	return nil
 }
 
 func isReservationNeedExpiration(r *schedulingv1alpha1.Reservation) bool {

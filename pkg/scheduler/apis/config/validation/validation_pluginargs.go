@@ -245,6 +245,14 @@ func ValidateReservationArgs(path *field.Path, args *config.ReservationArgs) err
 		))
 	}
 
+	if args.GCIntervalSeconds < 0 {
+		allErrs = append(allErrs, field.Invalid(
+			path.Child("GcInterval"),
+			args.GCIntervalSeconds,
+			"must be non-negative",
+		))
+	}
+
 	if len(allErrs) == 0 {
 		return nil
 	}

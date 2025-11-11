@@ -300,7 +300,7 @@ func TestSyncStatus(t *testing.T) {
 		assert.NoError(t, err)
 	}
 
-	controller := New(sharedInformerFactory, koordSharedInformerFactory, fakeClientSet, fakeKoordClientSet, &config.ReservationArgs{ControllerWorkers: 2, GCDurationSeconds: 3600})
+	controller := New(sharedInformerFactory, koordSharedInformerFactory, fakeClientSet, fakeKoordClientSet, &config.ReservationArgs{ControllerWorkers: 2, GCDurationSeconds: 3600, GCIntervalSeconds: 60})
 	controller.Start()
 
 	time.Sleep(100 * time.Millisecond)
@@ -713,4 +713,79 @@ func Test_podEventHandlers(t *testing.T) {
 		},
 	})
 	assert.Equal(t, 0, len(controller.getPodsOnReservation("aaaaaa")))
+}
+
+func TestNew(t *testing.T) {
+	tests := []struct {
+		name                 string
+		args                 *config.ReservationArgs
+		expectedNumWorker    int
+		expectedIsGCDisabled bool
+		expectedGCDuration   time.Duration
+		expectedGCInterval   time.Duration
+	}{
+		{
+			name:                 "default values",
+			args:                 nil,
+			expectedNumWorker:    1,
+			expectedIsGCDisabled: false,
+			expectedGCDuration:   defaultGCDuration,
+			expectedGCInterval:   defaultGCCheckInterval,
+		},
+		{
+			name: "custom values",
+			args: &config.ReservationArgs{
+				ControllerWorkers:        3,
+				GCDurationSeconds:        7200,
+				GCIntervalSeconds:        120,
+				DisableGarbageCollection: false,
+			},
+			expectedNumWorker:    3,
+			expectedIsGCDisabled: false,
+			expectedGCDuration:   2 * time.Hour,
+			expectedGCInterval:   120 * time.Second,
+		},
+		{
+			name: "disable garbage collection",
+			args: &config.ReservationArgs{
+				ControllerWorkers:        2,
+				GCDurationSeconds:        3600,
+				GCIntervalSeconds:        90,
+				DisableGarbageCollection: true,
+			},
+			expectedNumWorker:    2,
+			expectedIsGCDisabled: true,
+			expectedGCDuration:   1 * time.Hour,
+			expectedGCInterval:   90 * time.Second,
+		},
+		{
+			name: "zero gc interval uses default",
+			args: &config.ReservationArgs{
+				ControllerWorkers:        1,
+				GCDurationSeconds:        0,
+				GCIntervalSeconds:        0,
+				DisableGarbageCollection: false,
+			},
+			expectedNumWorker:    1,
+			expectedIsGCDisabled: false,
+			expectedGCDuration:   defaultGCDuration,
+			expectedGCInterval:   defaultGCCheckInterval,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fakeClientSet := kubefake.NewSimpleClientset()
+			fakeKoordClientSet := koordfake.NewSimpleClientset()
+			sharedInformerFactory := informers.NewSharedInformerFactory(fakeClientSet, 0)
+			koordSharedInformerFactory := koordinformers.NewSharedInformerFactory(fakeKoordClientSet, 0)
+
+			controller := New(sharedInformerFactory, koordSharedInformerFactory, fakeClientSet, fakeKoordClientSet, tt.args)
+
+			assert.Equal(t, tt.expectedNumWorker, controller.numWorker)
+			assert.Equal(t, tt.expectedIsGCDisabled, controller.isGCDisabled)
+			assert.Equal(t, tt.expectedGCDuration, controller.gcDuration)
+			assert.Equal(t, tt.expectedGCInterval, controller.gcInterval)
+		})
+	}
 }

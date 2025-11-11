@@ -203,6 +203,13 @@ type ReservationArgs struct {
 	// will be garbage collected. Defaults to 24 hours (86400 seconds) if unspecified.
 	// This value should be provided in seconds.
 	GCDurationSeconds int64
+	// GCIntervalSeconds is the duration in seconds between each turns of garbage collection.
+	// Defaults to 60 seconds if unspecified.
+	// This value should be provided in seconds.
+	GCIntervalSeconds int64
+	// DisableGarbageCollection indicates whether to disable garbage collection.
+	// Default to false if unspecified.
+	DisableGarbageCollection bool
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
