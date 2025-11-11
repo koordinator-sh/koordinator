@@ -68,15 +68,27 @@ func TestDumpDiagnosis(t *testing.T) {
 				}
 				diagnosis.ScheduleDiagnosis.AlreadyWaitForBound = 1
 				diagnosis.ScheduleDiagnosis.SchedulingMode = PodSchedulingMode
-				diagnosis.PreemptionDiagnosis = struct {
-					TriggerPodKey string `json:"TriggerPodKey,omitempty"`
-					PreemptorKey  string `json:"preemptorKey,omitempty"`
-				}{
-					TriggerPodKey: "default/test-pod",
-					PreemptorKey:  "default/test-pod",
+				diagnosis.PreemptionDiagnosis = &PreemptionDiagnosis{
+					DryRunFilterDiagnosis: &ScheduleDiagnosis{
+						NodeOfferSlot: map[string]int{
+							"node1": 1,
+							"node2": 2,
+						},
+						NodeToStatusMap: map[string]*framework.Status{
+							"node1": framework.NewStatus(framework.Success),
+							"node2": framework.NewStatus(framework.Unschedulable, "node2-reason"),
+						},
+					},
+					OtherDiagnosis: struct {
+						TriggerPodKey string `json:"TriggerPodKey,omitempty"`
+						PreemptorKey  string `json:"preemptorKey,omitempty"`
+					}{
+						TriggerPodKey: "default/test-pod",
+						PreemptorKey:  "default/test-pod",
+					},
 				}
 			},
-			wantDumpMessage: `{"timestamp":null,"questionedKey":"default/test-pod","nominatedNode":"nominatedNode","preFilterMessage":"preFilterMessage","topologyKeyToExplain":"topologyKeyToExplain","isRootCausePod":true,"scheduleDiagnosis":{"alreadyWaitForBound":1,"nodeOfferSlot":{"node1":1,"node2":2},"nodeFailedDetails":[{"nodeName":"node1","preemptMightHelp":true},{"nodeName":"node2","reason":"node2-reason","preemptMightHelp":true}]},"preemptionDiagnosis":{"TriggerPodKey":"default/test-pod","preemptorKey":"default/test-pod"}}`,
+			wantDumpMessage: `{"timestamp":null,"questionedKey":"default/test-pod","nominatedNode":"nominatedNode","preFilterMessage":"preFilterMessage","topologyKeyToExplain":"topologyKeyToExplain","isRootCausePod":true,"scheduleDiagnosis":{"alreadyWaitForBound":1,"nodeOfferSlot":{"node1":1,"node2":2},"nodeFailedDetails":[{"nodeName":"node1","preemptMightHelp":true},{"nodeName":"node2","reason":"node2-reason","preemptMightHelp":true}]},"preemptionDiagnosis":{"dryRunFilterDiagnosis":{"alreadyWaitForBound":0,"nodeOfferSlot":{"node1":1,"node2":2},"nodeFailedDetails":[{"nodeName":"node1"},{"nodeName":"node2","reason":"node2-reason"}]},"otherDiagnosis":{"TriggerPodKey":"default/test-pod","preemptorKey":"default/test-pod"}}}`,
 		},
 	}
 	for _, tt := range tests {
@@ -125,7 +137,7 @@ func BenchmarkDumpDiagnosis(b *testing.B) {
 			goos: darwin
 			goarch: arm64
 			cpu: Apple M1 Pro
-			BenchmarkDumpDiagnosis/Blocking-10         	      21	  66367454 ns/op
+			BenchmarkDumpDiagnosis/Blocking-10         	      37	  30166972 ns/op
 		*/
 		dumpDiagnosis = true
 		dumpDiagnosisBlocking = true
@@ -149,7 +161,9 @@ func BenchmarkDumpDiagnosis(b *testing.B) {
 			}
 
 			// Set PreemptionDiagnosis to the same content as ScheduleDiagnosis
-			diagnosis.PreemptionDiagnosis = diagnosis.ScheduleDiagnosis
+			diagnosis.PreemptionDiagnosis = &PreemptionDiagnosis{
+				DryRunFilterDiagnosis: diagnosis.ScheduleDiagnosis,
+			}
 
 			// Run the function being benchmarked
 			DumpDiagnosis(cycleState)
@@ -180,7 +194,9 @@ func BenchmarkDumpDiagnosis(b *testing.B) {
 			}
 
 			// Set PreemptionDiagnosis to the same content as ScheduleDiagnosis
-			diagnosis.PreemptionDiagnosis = diagnosis.ScheduleDiagnosis
+			diagnosis.PreemptionDiagnosis = &PreemptionDiagnosis{
+				DryRunFilterDiagnosis: diagnosis.ScheduleDiagnosis,
+			}
 
 			// Run the function being benchmarked
 			DumpDiagnosis(cycleState)
@@ -254,13 +270,15 @@ func BenchmarkDumpDiagnosisWorkerCount(b *testing.B) {
 			goarch: arm64
 			pkg: github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext
 			cpu: Apple M1 Pro
-			BenchmarkDumpDiagnosisWorkerCount/1Worker-10                  18	  65639410 ns/op	51359136 B/op	  200340 allocs/op
+			BenchmarkDumpDiagnosisWorkerCount/1Worker-10	21	  55328246 ns/op	51861147 B/op	  200365 allocs/op
 		*/
 		for i := 0; i < b.N; i++ {
 			// Process 1000 diagnoses
 			for j := 0; j < 10; j++ {
 				diagnosis := createDiagnosis()
-				diagnosis.PreemptionDiagnosis = diagnosis.ScheduleDiagnosis
+				diagnosis.PreemptionDiagnosis = &PreemptionDiagnosis{
+					DryRunFilterDiagnosis: diagnosis.ScheduleDiagnosis,
+				}
 				diagnosisQueue.Enqueue(diagnosis)
 			}
 
@@ -291,14 +309,16 @@ func BenchmarkDumpDiagnosisWorkerCount(b *testing.B) {
 			goarch: arm64
 			pkg: github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext
 			cpu: Apple M1 Pro
-			BenchmarkDumpDiagnosisWorkerCount/1Worker-10 100	  17919978 ns/op	57504188 B/op	  200147 allocs/op
+			BenchmarkDumpDiagnosisWorkerCount/1Worker-10	100	  11389174 ns/op	58240364 B/op	  200894 allocs/op
 		*/
 
 		for i := 0; i < b.N; i++ {
 			// Process 1000 diagnoses
 			for j := 0; j < 10; j++ {
 				diagnosis := createDiagnosis()
-				diagnosis.PreemptionDiagnosis = diagnosis.ScheduleDiagnosis
+				diagnosis.PreemptionDiagnosis = &PreemptionDiagnosis{
+					DryRunFilterDiagnosis: diagnosis.ScheduleDiagnosis,
+				}
 				diagnosisQueue.Enqueue(diagnosis)
 			}
 
