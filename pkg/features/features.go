@@ -96,6 +96,9 @@ const (
 
 	// ValidatePodDeviceResource enables validate pod device resource
 	ValidatePodDeviceResource featuregate.Feature = "ValidatePodDeviceResource"
+
+	// ReservationEnableUpdateSpec enables update reservation status by reservation spec changed
+	ReservationEnableUpdateSpec featuregate.Feature = "ReservationEnableUpdateSpec"
 )
 
 var defaultFeatureGates = map[featuregate.Feature]featuregate.FeatureSpec{
