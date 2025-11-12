@@ -18,6 +18,7 @@ package gpudeviceresource
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	topov1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
@@ -35,9 +36,7 @@ import (
 	"github.com/koordinator-sh/koordinator/apis/configuration"
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
-	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/slo-controller/noderesource/framework"
-	utilfeature "github.com/koordinator-sh/koordinator/pkg/util/feature"
 	"github.com/koordinator-sh/koordinator/pkg/util/testutil"
 )
 
@@ -592,7 +591,8 @@ func TestPluginCalculate(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "test-node",
 			Labels: map[string]string{
-				"test-label": "test-value",
+				"test-label":                        "test-value",
+				extension.LabelGPUIsolationProvider: string(extension.GPUIsolationProviderHAMICore),
 			},
 		},
 		Status: corev1.NodeStatus{
@@ -827,6 +827,11 @@ func TestPluginCalculate(t *testing.T) {
 					Message:  UpdateResourcesMsg,
 				},
 				{
+					Name:    extension.ResourceNvidiaGPU,
+					Reset:   true,
+					Message: ResetResourcesMsg,
+				},
+				{
 					Name: PluginName,
 					Labels: map[string]string{
 						extension.LabelGPUVendor:        extension.GPUVendorNVIDIA,
@@ -879,6 +884,11 @@ func TestPluginCalculate(t *testing.T) {
 					Message:  UpdateResourcesMsg,
 				},
 				{
+					Name:    extension.ResourceNvidiaGPU,
+					Reset:   true,
+					Message: ResetResourcesMsg,
+				},
+				{
 					Name: PluginName,
 					Labels: map[string]string{
 						extension.LabelGPUVendor: extension.GPUVendorHuawei,
@@ -924,6 +934,11 @@ func TestPluginCalculate(t *testing.T) {
 					Quantity: resource.NewQuantity(200, resource.DecimalSI),
 					Message:  UpdateResourcesMsg,
 				},
+				{
+					Name:    extension.ResourceNvidiaGPU,
+					Reset:   true,
+					Message: ResetResourcesMsg,
+				},
 			},
 			wantErr: false,
 		},
@@ -961,6 +976,11 @@ func TestPluginCalculate(t *testing.T) {
 					Name:     extension.ResourceGPUShared,
 					Quantity: resource.NewQuantity(200, resource.DecimalSI),
 					Message:  UpdateResourcesMsg,
+				},
+				{
+					Name:    extension.ResourceNvidiaGPU,
+					Reset:   true,
+					Message: ResetResourcesMsg,
 				},
 			},
 			wantErr: false,
@@ -995,6 +1015,16 @@ func TestPluginCalculate(t *testing.T) {
 					Message:  UpdateResourcesMsg,
 				},
 				{
+					Name:     extension.ResourceGPUShared,
+					Quantity: resource.NewQuantity(200, resource.DecimalSI),
+					Message:  UpdateResourcesMsg,
+				},
+				{
+					Name:    extension.ResourceNvidiaGPU,
+					Reset:   true,
+					Message: ResetResourcesMsg,
+				},
+				{
 					Name: PluginName,
 					Labels: map[string]string{
 						extension.LabelGPUVendor:        extension.GPUVendorNVIDIA,
@@ -1041,6 +1071,16 @@ func TestPluginCalculate(t *testing.T) {
 					Message:  UpdateResourcesMsg,
 				},
 				{
+					Name:     extension.ResourceGPUShared,
+					Quantity: resource.NewQuantity(200, resource.DecimalSI),
+					Message:  UpdateResourcesMsg,
+				},
+				{
+					Name:    extension.ResourceNvidiaGPU,
+					Reset:   true,
+					Message: ResetResourcesMsg,
+				},
+				{
 					Name: PluginName,
 					Labels: map[string]string{
 						extension.LabelGPUVendor: extension.GPUVendorHuawei,
@@ -1080,6 +1120,16 @@ func TestPluginCalculate(t *testing.T) {
 					Quantity: resource.NewQuantity(200, resource.DecimalSI),
 					Message:  UpdateResourcesMsg,
 				},
+				{
+					Name:     extension.ResourceGPUShared,
+					Quantity: resource.NewQuantity(200, resource.DecimalSI),
+					Message:  UpdateResourcesMsg,
+				},
+				{
+					Name:    extension.ResourceNvidiaGPU,
+					Reset:   true,
+					Message: ResetResourcesMsg,
+				},
 			},
 			wantErr: false,
 		},
@@ -1111,6 +1161,16 @@ func TestPluginCalculate(t *testing.T) {
 					Name:     extension.ResourceGPUMemoryRatio,
 					Quantity: resource.NewQuantity(200, resource.DecimalSI),
 					Message:  UpdateResourcesMsg,
+				},
+				{
+					Name:     extension.ResourceGPUShared,
+					Quantity: resource.NewQuantity(200, resource.DecimalSI),
+					Message:  UpdateResourcesMsg,
+				},
+				{
+					Name:    extension.ResourceNvidiaGPU,
+					Reset:   true,
+					Message: ResetResourcesMsg,
 				},
 			},
 			wantErr: false,
@@ -1161,6 +1221,11 @@ func TestPluginCalculate(t *testing.T) {
 				},
 				{
 					Name:    extension.ResourceGPUShared,
+					Reset:   true,
+					Message: ResetResourcesMsg,
+				},
+				{
+					Name:    extension.ResourceNvidiaGPU,
 					Reset:   true,
 					Message: ResetResourcesMsg,
 				},
@@ -1216,16 +1281,80 @@ func TestPluginCalculate(t *testing.T) {
 					Reset:   true,
 					Message: ResetResourcesMsg,
 				},
+				{
+					Name:    extension.ResourceNvidiaGPU,
+					Reset:   true,
+					Message: ResetResourcesMsg,
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "There is no LabelGPUIsolationProvider label on the node",
+			fields: fields{
+				client: fake.NewClientBuilder().WithScheme(testScheme).WithObjects(testNode, deviceMissingLabels).Build(),
+			},
+			args: args{
+				node: testNode,
+			},
+			want: []framework.ResourceItem{
+				{
+					Name:    extension.ResourceHuaweiNPUCore,
+					Reset:   true,
+					Message: ResetResourcesMsg,
+				},
+				{
+					Name:    extension.ResourceHuaweiNPUCPU,
+					Reset:   true,
+					Message: ResetResourcesMsg,
+				},
+				{
+					Name:    extension.ResourceHuaweiNPUDVPP,
+					Reset:   true,
+					Message: ResetResourcesMsg,
+				},
+				{
+					Name:    extension.ResourceGPU,
+					Reset:   true,
+					Message: ResetResourcesMsg,
+				},
+				{
+					Name:    extension.ResourceGPUCore,
+					Reset:   true,
+					Message: ResetResourcesMsg,
+				},
+				{
+					Name:    extension.ResourceGPUMemory,
+					Reset:   true,
+					Message: ResetResourcesMsg,
+				},
+				{
+					Name:    extension.ResourceGPUMemoryRatio,
+					Reset:   true,
+					Message: ResetResourcesMsg,
+				},
+				{
+					Name:    extension.ResourceGPUShared,
+					Reset:   true,
+					Message: ResetResourcesMsg,
+				},
+				{
+					Name:     extension.ResourceNvidiaGPU,
+					Quantity: resource.NewQuantity(2, resource.DecimalSI),
+					Message:  UpdateResourcesMsg,
+				},
 			},
 			wantErr: false,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			defer utilfeature.SetFeatureGateDuringTest(t, utilfeature.DefaultFeatureGate, features.EnableSyncGPUSharedResource, tt.syncSharedResource)()
 			p := &Plugin{}
 			client = tt.fields.client
 			defer testPluginCleanup()
+			if strings.Contains(tt.name, "LabelGPUIsolationProvider") {
+				tt.args.node.SetLabels(map[string]string{"test-label": "test-value"})
+			}
 			got, gotErr := p.Calculate(nil, tt.args.node, nil, nil)
 			assert.Equal(t, tt.wantErr, gotErr != nil, gotErr)
 			assert.Equal(t, tt.want, got)
@@ -1268,6 +1397,30 @@ func Test_cleanupGPUNodeResource(t *testing.T) {
 				extension.LabelGPUVendor:        extension.GPUVendorNVIDIA,
 				extension.LabelGPUModel:         "A100",
 				extension.LabelGPUDriverVersion: "480",
+			},
+		},
+		Status: corev1.NodeStatus{
+			Allocatable: map[corev1.ResourceName]resource.Quantity{
+				corev1.ResourceCPU:          resource.MustParse("100"),
+				corev1.ResourceMemory:       resource.MustParse("400Gi"),
+				extension.ResourceNvidiaGPU: *resource.NewQuantity(2, resource.DecimalSI),
+			},
+			Capacity: map[corev1.ResourceName]resource.Quantity{
+				corev1.ResourceCPU:          resource.MustParse("100"),
+				corev1.ResourceMemory:       resource.MustParse("400Gi"),
+				extension.ResourceNvidiaGPU: *resource.NewQuantity(2, resource.DecimalSI),
+			},
+		},
+	}
+	testNodeGPUShared := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-node",
+			Labels: map[string]string{
+				"test-label":                        "test-value",
+				extension.LabelGPUVendor:            extension.GPUVendorNVIDIA,
+				extension.LabelGPUModel:             "A100",
+				extension.LabelGPUDriverVersion:     "480",
+				extension.LabelGPUIsolationProvider: string(extension.GPUIsolationProviderHAMICore),
 			},
 		},
 		Status: corev1.NodeStatus{
@@ -1356,7 +1509,6 @@ func Test_cleanupGPUNodeResource(t *testing.T) {
 		},
 	}
 	t.Run("updateGPUDriverAndModel success", func(t *testing.T) {
-		defer utilfeature.SetFeatureGateDuringTest(t, utilfeature.DefaultFeatureGate, features.EnableSyncGPUSharedResource, true)()
 		p := &Plugin{}
 		client = fake.NewClientBuilder().WithScheme(testScheme).WithRuntimeObjects(testDevice).Build()
 		defer testPluginCleanup()
@@ -1368,6 +1520,24 @@ func Test_cleanupGPUNodeResource(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, testNodeWithDevice, node)
 	})
+
+	t.Run("testNodeGPUShared success", func(t *testing.T) {
+		p := &Plugin{}
+		client = fake.NewClientBuilder().WithScheme(testScheme).WithRuntimeObjects(testDevice).Build()
+		defer testPluginCleanup()
+		node := testNode.DeepCopy()
+		node.SetLabels(map[string]string{
+			"test-label":                        "test-value",
+			extension.LabelGPUIsolationProvider: string(extension.GPUIsolationProviderHAMICore),
+		})
+		resourceItems, err := p.Calculate(nil, node, nil, nil)
+		assert.NoError(t, err, "expect calculate success")
+		nr := framework.NewNodeResource(resourceItems...)
+		err = p.Prepare(nil, node, nr)
+		assert.NoError(t, err)
+		assert.Equal(t, testNodeGPUShared, node)
+	})
+
 	t.Run("cleanup success", func(t *testing.T) {
 		p := &Plugin{}
 		client = fake.NewClientBuilder().WithScheme(testScheme).Build()
