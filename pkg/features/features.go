@@ -142,7 +142,7 @@ const (
 	// If a pod does not set a preemptionPolicy, it will be mapped to the DefaultPreemptionPolicy.
 	PreemptionPolicyTransformer featuregate.Feature = "PreemptionPolicyTransformer"
 	// ReplaceResourcesTransformer is used to replace resource or erase specified resource names.
-	// It's important to note that the usage scenarios must ensure that the resources on the node are not oversold by itself.
+	// Note: The usage scenarios must ensure that the resources on the node are not oversold by itself.
 	ReplaceResourcesTransformer featuregate.Feature = "ReplaceResourcesTransformer"
 )
 

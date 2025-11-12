@@ -37,9 +37,8 @@ const (
 	AnnotationExtendedResourceSpec = NodeDomainPrefix + "/extended-resource-spec"
 
 	// AnnotationPodReplaceResources is used to replace or erase the resource name in pod spec.
-	// This annotation allows the scheduler and webhook processing flow to update specified resources
-	// before evaluation. It's important to note that the usage scenarios must ensure that the resources
-	// on the node are not oversold by itself.
+	// This annotation allows the scheduler and webhook processing flow to update specified resources before evaluation.
+	// NOTE: The usage scenarios must ensure that the resources on the node are not oversold by itself.
 	AnnotationPodReplaceResources = PodDomainPrefix + "/replace-resources"
 )
 
