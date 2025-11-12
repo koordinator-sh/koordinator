@@ -2841,6 +2841,104 @@ func Test_Plugin_Filter(t *testing.T) {
 			nodeInfo: testNodeInfo,
 			want:     nil,
 		},
+		{
+			name: "allocate by designated, no gpu-memory designated, succeed",
+			state: &preFilterState{
+				skip: false,
+				podRequests: map[schedulingv1alpha1.DeviceType]corev1.ResourceList{
+					schedulingv1alpha1.GPU: {
+						apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+					},
+				},
+			},
+			designatedAllocation: apiext.DeviceAllocations{
+				schedulingv1alpha1.GPU: []*apiext.DeviceAllocation{
+					{
+						Minor: 1,
+						Resources: corev1.ResourceList{
+							apiext.ResourceGPUCore:        resource.MustParse("100"),
+							apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+						},
+					},
+				},
+			},
+			nodeDeviceCache: &nodeDeviceCache{
+
+				nodeDeviceInfos: map[string]*nodeDevice{
+					"test-node": {
+						deviceFree: map[schedulingv1alpha1.DeviceType]deviceResources{
+							schedulingv1alpha1.GPU: {
+								0: corev1.ResourceList{
+									apiext.ResourceGPUCore:        resource.MustParse("25"),
+									apiext.ResourceGPUMemoryRatio: resource.MustParse("25"),
+									apiext.ResourceGPUMemory:      resource.MustParse("4Gi"),
+								},
+								1: corev1.ResourceList{
+									apiext.ResourceGPUCore:        resource.MustParse("100"),
+									apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+									apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
+								},
+							},
+						},
+						deviceTotal: map[schedulingv1alpha1.DeviceType]deviceResources{
+							schedulingv1alpha1.GPU: {
+								0: corev1.ResourceList{
+									apiext.ResourceGPUCore:        resource.MustParse("100"),
+									apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+									apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
+								},
+								1: corev1.ResourceList{
+									apiext.ResourceGPUCore:        resource.MustParse("100"),
+									apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+									apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
+								},
+							},
+						},
+						deviceUsed: map[schedulingv1alpha1.DeviceType]deviceResources{
+							schedulingv1alpha1.GPU: {
+								0: corev1.ResourceList{
+									apiext.ResourceGPUCore:        resource.MustParse("75"),
+									apiext.ResourceGPUMemoryRatio: resource.MustParse("75"),
+									apiext.ResourceGPUMemory:      resource.MustParse("12Gi"),
+								},
+							},
+						},
+						vfAllocations: map[schedulingv1alpha1.DeviceType]*VFAllocation{},
+						numaTopology:  &NUMATopology{},
+						deviceInfos: map[schedulingv1alpha1.DeviceType][]*schedulingv1alpha1.DeviceInfo{
+							schedulingv1alpha1.GPU: {
+								{
+									Type:   schedulingv1alpha1.GPU,
+									Health: true,
+									UUID:   "123456-0",
+									Minor:  pointer.Int32(0),
+									Resources: corev1.ResourceList{
+										apiext.ResourceGPUCore:        resource.MustParse("100"),
+										apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+										apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
+									},
+								},
+								{
+									Type:   schedulingv1alpha1.GPU,
+									Health: true,
+									UUID:   "123456-1",
+									Minor:  pointer.Int32(1),
+									Resources: corev1.ResourceList{
+										apiext.ResourceGPUCore:        resource.MustParse("100"),
+										apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+										apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
+									},
+								},
+							},
+						},
+						nodeHonorGPUPartition: true,
+						gpuPartitionIndexer:   GPUPartitionIndexOfNVIDIAHopper,
+					},
+				},
+			},
+			nodeInfo: testNodeInfo,
+			want:     nil,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
