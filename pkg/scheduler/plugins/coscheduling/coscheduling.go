@@ -216,11 +216,11 @@ func (cs *Coscheduling) PreBind(ctx context.Context, cycleState *framework.Cycle
 	if gangInfo == nil {
 		return nil
 	}
-	if pod.Labels == nil {
-		pod.Labels = make(map[string]string)
+	if pod.Annotations == nil {
+		pod.Annotations = make(map[string]string)
 	}
-	pod.Labels[extension.LabelBindGangGroupId] = gangInfo.GangGroupId
-	pod.Labels[extension.LabelBindGangMemberCount] = strconv.FormatInt(int64(gangInfo.MemberCount), 10)
+	pod.Annotations[extension.AnnotationBindGangGroupId] = gangInfo.GangGroupId
+	pod.Annotations[extension.AnnotationBindGangMemberCount] = strconv.FormatInt(int64(gangInfo.MemberCount), 10)
 	return nil
 }
 
@@ -230,11 +230,11 @@ func (cs *Coscheduling) PreBindReservation(ctx context.Context, cycleState *fram
 	if gangInfo == nil {
 		return nil
 	}
-	if r.Labels == nil {
-		r.Labels = make(map[string]string)
+	if r.Annotations == nil {
+		r.Annotations = make(map[string]string)
 	}
-	r.Labels[extension.LabelBindGangGroupId] = gangInfo.GangGroupId
-	r.Labels[extension.LabelBindGangMemberCount] = strconv.FormatInt(int64(gangInfo.MemberCount), 10)
+	r.Annotations[extension.AnnotationBindGangGroupId] = gangInfo.GangGroupId
+	r.Annotations[extension.AnnotationBindGangMemberCount] = strconv.FormatInt(int64(gangInfo.MemberCount), 10)
 	return nil
 }
 

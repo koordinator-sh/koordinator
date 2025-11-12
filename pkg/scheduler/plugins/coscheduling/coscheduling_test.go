@@ -716,20 +716,20 @@ func TestPreBind(t *testing.T) {
 				}
 			}
 
-			// Act: PreBind should set gang binding labels
+			// Act: PreBind should set gang binding annotations
 			preBindStatus := gp.PreBind(ctx, cycleState, tt.pod, "node-1")
 			assert.True(t, preBindStatus.IsSuccess())
 
-			// Assert: check gang labels
+			// Assert: check gang annotations
 			if tt.expectLabelsSet {
-				assert.Equal(t, tt.expectGangGroupID, tt.pod.Labels[extension.LabelBindGangGroupId])
-				assert.Equal(t, tt.expectMemberCount, tt.pod.Labels[extension.LabelBindGangMemberCount])
+				assert.Equal(t, tt.expectGangGroupID, tt.pod.Annotations[extension.AnnotationBindGangGroupId])
+				assert.Equal(t, tt.expectMemberCount, tt.pod.Annotations[extension.AnnotationBindGangMemberCount])
 				if tt.podHasExistingLabel {
 					assert.Equal(t, "custom-value", tt.pod.Labels["custom-label"])
 				}
 			} else {
-				assert.NotContains(t, tt.pod.Labels, extension.LabelBindGangGroupId)
-				assert.NotContains(t, tt.pod.Labels, extension.LabelBindGangMemberCount)
+				assert.NotContains(t, tt.pod.Annotations, extension.AnnotationBindGangGroupId)
+				assert.NotContains(t, tt.pod.Annotations, extension.AnnotationBindGangMemberCount)
 			}
 		})
 	}
@@ -865,22 +865,22 @@ func TestPreBindReservation(t *testing.T) {
 				}
 			}
 
-			// Act: PreBindReservation should set gang binding labels
+			// Act: PreBindReservation should set gang binding annotations
 			preBindRStatus := gp.PreBindReservation(ctx, cycleState, tt.reservation, "node-1")
 			assert.True(t, preBindRStatus.IsSuccess())
 
-			// Assert: check gang labels on the Reservation
+			// Assert: check gang annotations on the Reservation
 			if tt.expectLabelsSet {
-				assert.NotNil(t, tt.reservation.Labels)
-				assert.Equal(t, tt.expectGangGroupID, tt.reservation.Labels[extension.LabelBindGangGroupId])
-				assert.Equal(t, tt.expectMemberCount, tt.reservation.Labels[extension.LabelBindGangMemberCount])
+				assert.NotNil(t, tt.reservation.Annotations)
+				assert.Equal(t, tt.expectGangGroupID, tt.reservation.Annotations[extension.AnnotationBindGangGroupId])
+				assert.Equal(t, tt.expectMemberCount, tt.reservation.Annotations[extension.AnnotationBindGangMemberCount])
 				if tt.reservationHasLabel {
 					assert.Equal(t, "custom-value", tt.reservation.Labels["custom-label"])
 				}
 			} else {
-				if tt.reservation.Labels != nil {
-					assert.NotContains(t, tt.reservation.Labels, extension.LabelBindGangGroupId)
-					assert.NotContains(t, tt.reservation.Labels, extension.LabelBindGangMemberCount)
+				if tt.reservation.Annotations != nil {
+					assert.NotContains(t, tt.reservation.Annotations, extension.AnnotationBindGangGroupId)
+					assert.NotContains(t, tt.reservation.Annotations, extension.AnnotationBindGangMemberCount)
 				}
 			}
 		})

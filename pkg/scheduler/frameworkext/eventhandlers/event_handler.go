@@ -46,22 +46,10 @@ func AddScheduleEventHandler(client koordinatorclientset.Interface, sched *sched
 	}
 
 	reservationInformer := koordSharedInformerFactory.Scheduling().V1alpha1().Reservations().Informer()
-	// scheduled reservations for pod cache
-	_, err := reservationInformer.AddEventHandler(scheduledReservationEventHandler(client, sched, schedAdapter))
+	// unified reservation event handler for both cache and queue
+	_, err := reservationInformer.AddEventHandler(reservationEventHandlers(client, sched, schedAdapter))
 	if err != nil {
-		klog.Fatalf("failed to add scheduled reservation handler for SchedulerCache, err: %s", err)
-	}
-	// unscheduled & non-failed reservations for scheduling queue
-	_, err = reservationInformer.AddEventHandler(unscheduledReservationEventHandler(sched, schedAdapter))
-	if err != nil {
-		klog.Fatalf("failed to add unscheduled reservation handler for SchedulingQueue, err: %s", err)
-	}
-	if k8sfeature.DefaultFeatureGate.Enabled(features.DynamicSchedulerCheck) {
-		// Clean up irresponsible reservations for scheduling queue
-		_, err = reservationInformer.AddEventHandler(irresponsibleUnscheduledReservationEventHandler(sched, schedAdapter))
-		if err != nil {
-			klog.Fatalf("failed to add irresponsible reservation handler for SchedulingQueue, err: %s", err)
-		}
+		klog.Fatalf("failed to add reservation handler, err: %s", err)
 	}
 }
 
