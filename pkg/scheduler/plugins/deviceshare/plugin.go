@@ -97,7 +97,7 @@ type preFilterState struct {
 	hasReservationAffinity bool
 
 	// designatedAllocation is parsed from the Pod Annotation during the PreFilter phase. In this case, we should assume that the Node has already been selected. That is, all Score-related plug-ins will not be executed. Instead, we only need to call Filter to confirm whether the designatedAllocation is still valid and use it as the allocation result during actual allocation.
-	designatedAllocation map[schedulingv1alpha1.DeviceType]deviceResources
+	designatedAllocation apiext.DeviceAllocations
 }
 
 type GPURequirements struct {
@@ -335,6 +335,7 @@ func (p *Plugin) Filter(ctx context.Context, cycleState *framework.CycleState, p
 			if !status.IsSuccess() {
 				return status
 			}
+			state.allocationResult = nil
 		}
 		return nil
 	}
@@ -546,7 +547,21 @@ func (p *Plugin) allocate(ctx context.Context, cycleState *framework.CycleState,
 	}
 	if len(result) == 0 {
 		preemptible = appendAllocated(preemptible, restoreState.mergedMatchedAllocatable)
-		result, status = allocator.Allocate(nil, nil, state.designatedAllocation, preemptible)
+		var requiredDeviceResource map[schedulingv1alpha1.DeviceType]deviceResources
+		if len(state.designatedAllocation) > 0 {
+			err := fillGPUTotalMem(state.designatedAllocation, nodeDeviceInfo)
+			if err != nil {
+				return framework.NewStatus(framework.Error, fmt.Sprintf("fillGPUTotalMem failed: %v, node: %v", err, node.Name))
+			}
+			requiredDeviceResource = make(map[schedulingv1alpha1.DeviceType]deviceResources, len(state.designatedAllocation))
+			for deviceType, minorResources := range state.designatedAllocation {
+				requiredDeviceResource[deviceType] = make(deviceResources, len(minorResources))
+				for _, minorResource := range minorResources {
+					requiredDeviceResource[deviceType][int(minorResource.Minor)] = minorResource.Resources
+				}
+			}
+		}
+		result, status = allocator.Allocate(nil, nil, requiredDeviceResource, preemptible)
 		if !status.IsSuccess() {
 			return status
 		}
