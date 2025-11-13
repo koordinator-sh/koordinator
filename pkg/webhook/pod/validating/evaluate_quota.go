@@ -29,9 +29,15 @@ import (
 	"github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/features"
 	utilfeature "github.com/koordinator-sh/koordinator/pkg/util/feature"
+	"github.com/koordinator-sh/koordinator/pkg/util/transformer"
 	"github.com/koordinator-sh/koordinator/pkg/webhook/elasticquota"
 	"github.com/koordinator-sh/koordinator/pkg/webhook/quotaevaluate"
 )
+
+// podTransformersForQuotaEvaluation defines the necessary pod transformers used before quota evaluation.
+var podTransformersForQuotaEvaluation = []func(pod *corev1.Pod){
+	transformer.TransformReplaceResources,
+}
 
 func (h *PodValidatingHandler) evaluateQuota(ctx context.Context, req admission.Request) (bool, string, error) {
 	if !utilfeature.DefaultFeatureGate.Enabled(features.EnableQuotaAdmission) {
@@ -69,6 +75,11 @@ func (h *PodValidatingHandler) evaluateQuota(ctx context.Context, req admission.
 		return false, err.Error(), err
 	}
 
+	// transform pod before evaluating if the feature is enabled
+	if utilfeature.DefaultFeatureGate.Enabled(features.ElasticQuotaEvaluationTransformPod) {
+		transformPodForQuotaEvaluation(newPod)
+	}
+
 	attribute := &quotaevaluate.Attributes{
 		QuotaNamespace: quotaList.Items[0].Namespace,
 		QuotaName:      quotaList.Items[0].Name,
@@ -81,4 +92,10 @@ func (h *PodValidatingHandler) evaluateQuota(ctx context.Context, req admission.
 		return false, err.Error(), err
 	}
 	return true, "", nil
+}
+
+func transformPodForQuotaEvaluation(pod *corev1.Pod) {
+	for _, fn := range podTransformersForQuotaEvaluation {
+		fn(pod)
+	}
 }

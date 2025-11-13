@@ -18,6 +18,7 @@ package extension
 
 import (
 	"encoding/json"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 )
@@ -34,6 +35,11 @@ const (
 	// It annotates the requests/limits of extended resources and can be used by runtime proxy and koordlet that
 	// cannot get the original pod spec in CRI requests.
 	AnnotationExtendedResourceSpec = NodeDomainPrefix + "/extended-resource-spec"
+
+	// AnnotationPodReplaceResources is used to replace or erase the resource name in pod spec.
+	// This annotation allows the scheduler and webhook processing flow to update specified resources before evaluation.
+	// NOTE: The usage scenarios must ensure that the resources on the node are not oversold by itself.
+	AnnotationPodReplaceResources = PodDomainPrefix + "/replace-resources"
 )
 
 var (
@@ -96,4 +102,28 @@ func SetExtendedResourceSpec(pod *corev1.Pod, spec *ExtendedResourceSpec) error 
 	}
 	pod.Annotations[AnnotationExtendedResourceSpec] = string(data)
 	return nil
+}
+
+// GetPodReplaceResourcesConfig parses replace and erase resource names from pod annotations.
+// Annotation format: "resourceA:resourceB,resourceC:resourceD,resourceE:"
+// means replace resourceA with resourceB, replace resourceC with resourceD, erase resourceE
+func GetPodReplaceResourcesConfig(pod *corev1.Pod) (eraseNames []corev1.ResourceName,
+	replaceMappings map[corev1.ResourceName]corev1.ResourceName) {
+	if v, ok := pod.Annotations[AnnotationPodReplaceResources]; ok && v != "" {
+		mappings := strings.Split(v, ",")
+		replaceMappings = make(map[corev1.ResourceName]corev1.ResourceName)
+		for _, mapping := range mappings {
+			parts := strings.Split(mapping, ":")
+			if len(parts) != 2 {
+				continue
+			}
+			from, to := strings.TrimSpace(parts[0]), strings.TrimSpace(parts[1])
+			if to == "" {
+				eraseNames = append(eraseNames, corev1.ResourceName(from))
+			} else {
+				replaceMappings[corev1.ResourceName(from)] = corev1.ResourceName(to)
+			}
+		}
+	}
+	return
 }

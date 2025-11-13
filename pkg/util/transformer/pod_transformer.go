@@ -35,6 +35,7 @@ import (
 var podTransformers = []func(pod *corev1.Pod){
 	TransformDeprecatedBatchResources,
 	TransformDeprecatedDeviceResources,
+	TransformReplaceResources,
 }
 
 var podTransformerFactories = []func() func(pod *corev1.Pod){
@@ -219,5 +220,37 @@ func TransformScheduleExplanationObjectKey() func(pod *corev1.Pod) {
 			pod.Labels = make(map[string]string)
 		}
 		pod.Labels[apiext.LabelQuestionedObjectKey] = objectKey
+	}
+}
+
+// TransformReplaceResources transforms pod resources according to the replace-resources annotation.
+func TransformReplaceResources(pod *corev1.Pod) {
+	if !utilfeature.DefaultFeatureGate.Enabled(koordfeatures.ReplaceResourcesTransformer) {
+		return
+	}
+	eraseResNames, replaceMappings := apiext.GetPodReplaceResourcesConfig(pod)
+	if len(eraseResNames) == 0 && len(replaceMappings) == 0 {
+		return
+	}
+	for _, containers := range [][]corev1.Container{pod.Spec.InitContainers, pod.Spec.Containers} {
+		for i := range containers {
+			container := &containers[i]
+			for _, resName := range eraseResNames {
+				delete(container.Resources.Requests, resName)
+				delete(container.Resources.Limits, resName)
+			}
+			for k, v := range replaceMappings {
+				replaceAndEraseResource(container.Resources.Requests, k, v)
+				replaceAndEraseResource(container.Resources.Limits, k, v)
+			}
+		}
+	}
+	if pod.Spec.Overhead != nil {
+		for _, resName := range eraseResNames {
+			delete(pod.Spec.Overhead, resName)
+		}
+		for k, v := range replaceMappings {
+			replaceAndEraseResource(pod.Spec.Overhead, k, v)
+		}
 	}
 }
