@@ -26,8 +26,10 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	k8sfeature "k8s.io/apiserver/pkg/util/feature"
 	"k8s.io/client-go/informers"
 	kubefake "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/tools/record"
@@ -45,7 +47,9 @@ import (
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	koordfake "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/fake"
 	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
+	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
+	utilfeature "github.com/koordinator-sh/koordinator/pkg/util/feature"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
 
@@ -921,7 +925,7 @@ func Test_updateReservation(t *testing.T) {
 			}
 
 			// Execute update
-			updateReservation(sched, schedAdapter, tt.oldObj, tt.newObj)
+			updateReservation(nil, sched, schedAdapter, tt.oldObj, tt.newObj)
 
 			// Verify cache state
 			pod, err := schedAdapter.GetPod(&corev1.Pod{
@@ -1032,11 +1036,13 @@ func Test_isReservationActive(t *testing.T) {
 func Test_updateReservationInCache(t *testing.T) {
 	now := time.Now()
 	tests := []struct {
-		name           string
-		oldObj         *schedulingv1alpha1.Reservation
-		newObj         *schedulingv1alpha1.Reservation
-		wantPodFromObj bool
-		wantPod        *corev1.Pod
+		name                             string
+		oldObj                           *schedulingv1alpha1.Reservation
+		newObj                           *schedulingv1alpha1.Reservation
+		reservationEnableUpdateSpec      bool
+		wantPodFromObj                   bool
+		wantPod                          *corev1.Pod
+		wantReservationStatusAllocatable corev1.ResourceList
 	}{
 		{
 			name: "update reservation from pending to available",
@@ -1152,14 +1158,290 @@ func Test_updateReservationInCache(t *testing.T) {
 					Phase:    schedulingv1alpha1.ReservationAvailable,
 				},
 			},
-			wantPodFromObj: true,
+			wantPodFromObj:                   true,
+			wantReservationStatusAllocatable: corev1.ResourceList{},
+		},
+		{
+			name: "update available reservation: update spec request, scale down",
+			oldObj: &schedulingv1alpha1.Reservation{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "r-0",
+					UID:  "456",
+				},
+				Spec: schedulingv1alpha1.ReservationSpec{
+					Template: &corev1.PodTemplateSpec{
+						Spec: corev1.PodSpec{
+							Containers: []corev1.Container{
+								{
+									Name: "test",
+									Resources: corev1.ResourceRequirements{
+										Requests: corev1.ResourceList{
+											corev1.ResourceCPU:    *resource.NewMilliQuantity(2, resource.DecimalSI),
+											corev1.ResourceMemory: *resource.NewQuantity(2, resource.BinarySI),
+										},
+									},
+								},
+							},
+						},
+					},
+					Owners: []schedulingv1alpha1.ReservationOwner{
+						{
+							Object: &corev1.ObjectReference{
+								Kind: "Pod",
+								Name: "pod-0",
+							},
+						},
+					},
+					Expires: &metav1.Time{Time: now.Add(30 * time.Minute)},
+				},
+				Status: schedulingv1alpha1.ReservationStatus{
+					NodeName: "test-node",
+					Phase:    schedulingv1alpha1.ReservationAvailable,
+					Allocatable: corev1.ResourceList{
+						corev1.ResourceCPU:    *resource.NewMilliQuantity(2, resource.DecimalSI),
+						corev1.ResourceMemory: *resource.NewQuantity(2, resource.BinarySI),
+					},
+				},
+			},
+			newObj: &schedulingv1alpha1.Reservation{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "r-0",
+					UID:  "456",
+				},
+				Spec: schedulingv1alpha1.ReservationSpec{
+					Template: &corev1.PodTemplateSpec{
+						Spec: corev1.PodSpec{
+							Containers: []corev1.Container{
+								{
+									Name: "test",
+									Resources: corev1.ResourceRequirements{
+										Requests: corev1.ResourceList{
+											corev1.ResourceCPU:    *resource.NewMilliQuantity(1, resource.DecimalSI),
+											corev1.ResourceMemory: *resource.NewQuantity(1, resource.BinarySI),
+										},
+									},
+								},
+							},
+						},
+					},
+					Owners: []schedulingv1alpha1.ReservationOwner{
+						{
+							Object: &corev1.ObjectReference{
+								Kind: "Pod",
+								Name: "pod-0",
+							},
+						},
+					},
+					Expires: &metav1.Time{Time: now.Add(30 * time.Minute)},
+				},
+				Status: schedulingv1alpha1.ReservationStatus{
+					NodeName: "test-node",
+					Phase:    schedulingv1alpha1.ReservationAvailable,
+					Allocatable: corev1.ResourceList{
+						corev1.ResourceCPU:    *resource.NewMilliQuantity(2, resource.DecimalSI),
+						corev1.ResourceMemory: *resource.NewQuantity(2, resource.BinarySI),
+					},
+				},
+			},
+			reservationEnableUpdateSpec: true,
+			wantPodFromObj:              true,
+			wantReservationStatusAllocatable: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewMilliQuantity(1, resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(1, resource.BinarySI),
+			},
+		},
+		{
+			name: "update available reservation: update spec request, scale up",
+			oldObj: &schedulingv1alpha1.Reservation{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "r-0",
+					UID:  "456",
+				},
+				Spec: schedulingv1alpha1.ReservationSpec{
+					Template: &corev1.PodTemplateSpec{
+						Spec: corev1.PodSpec{
+							Containers: []corev1.Container{
+								{
+									Name: "test",
+									Resources: corev1.ResourceRequirements{
+										Requests: corev1.ResourceList{
+											corev1.ResourceCPU:    *resource.NewMilliQuantity(2, resource.DecimalSI),
+											corev1.ResourceMemory: *resource.NewQuantity(2, resource.BinarySI),
+										},
+									},
+								},
+							},
+						},
+					},
+					Owners: []schedulingv1alpha1.ReservationOwner{
+						{
+							Object: &corev1.ObjectReference{
+								Kind: "Pod",
+								Name: "pod-0",
+							},
+						},
+					},
+					Expires: &metav1.Time{Time: now.Add(30 * time.Minute)},
+				},
+				Status: schedulingv1alpha1.ReservationStatus{
+					NodeName: "test-node",
+					Phase:    schedulingv1alpha1.ReservationAvailable,
+					Allocatable: corev1.ResourceList{
+						corev1.ResourceCPU:    *resource.NewMilliQuantity(2, resource.DecimalSI),
+						corev1.ResourceMemory: *resource.NewQuantity(2, resource.BinarySI),
+					},
+				},
+			},
+			newObj: &schedulingv1alpha1.Reservation{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "r-0",
+					UID:  "456",
+				},
+				Spec: schedulingv1alpha1.ReservationSpec{
+					Template: &corev1.PodTemplateSpec{
+						Spec: corev1.PodSpec{
+							Containers: []corev1.Container{
+								{
+									Name: "test",
+									Resources: corev1.ResourceRequirements{
+										Requests: corev1.ResourceList{
+											corev1.ResourceCPU:    *resource.NewMilliQuantity(4, resource.DecimalSI),
+											corev1.ResourceMemory: *resource.NewQuantity(4, resource.BinarySI),
+										},
+									},
+								},
+							},
+						},
+					},
+					Owners: []schedulingv1alpha1.ReservationOwner{
+						{
+							Object: &corev1.ObjectReference{
+								Kind: "Pod",
+								Name: "pod-0",
+							},
+						},
+					},
+					Expires: &metav1.Time{Time: now.Add(30 * time.Minute)},
+				},
+				Status: schedulingv1alpha1.ReservationStatus{
+					NodeName: "test-node",
+					Phase:    schedulingv1alpha1.ReservationAvailable,
+					Allocatable: corev1.ResourceList{
+						corev1.ResourceCPU:    *resource.NewMilliQuantity(2, resource.DecimalSI),
+						corev1.ResourceMemory: *resource.NewQuantity(2, resource.BinarySI),
+					},
+				},
+			},
+			reservationEnableUpdateSpec: true,
+			wantPodFromObj:              true,
+			wantReservationStatusAllocatable: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewMilliQuantity(4, resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(4, resource.BinarySI),
+			},
+		},
+		{
+			name: "update available reservation: update spec request/status allocatable, scale down",
+			oldObj: &schedulingv1alpha1.Reservation{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "r-0",
+					UID:  "456",
+				},
+				Spec: schedulingv1alpha1.ReservationSpec{
+					Template: &corev1.PodTemplateSpec{
+						Spec: corev1.PodSpec{
+							Containers: []corev1.Container{
+								{
+									Name: "test",
+									Resources: corev1.ResourceRequirements{
+										Requests: corev1.ResourceList{
+											corev1.ResourceCPU:    *resource.NewMilliQuantity(2, resource.DecimalSI),
+											corev1.ResourceMemory: *resource.NewQuantity(2, resource.BinarySI),
+										},
+									},
+								},
+							},
+						},
+					},
+					Owners: []schedulingv1alpha1.ReservationOwner{
+						{
+							Object: &corev1.ObjectReference{
+								Kind: "Pod",
+								Name: "pod-0",
+							},
+						},
+					},
+					Expires: &metav1.Time{Time: now.Add(30 * time.Minute)},
+				},
+				Status: schedulingv1alpha1.ReservationStatus{
+					NodeName: "test-node",
+					Phase:    schedulingv1alpha1.ReservationAvailable,
+					Allocatable: corev1.ResourceList{
+						corev1.ResourceCPU:    *resource.NewMilliQuantity(2, resource.DecimalSI),
+						corev1.ResourceMemory: *resource.NewQuantity(2, resource.BinarySI),
+					},
+				},
+			},
+			newObj: &schedulingv1alpha1.Reservation{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "r-0",
+					UID:  "456",
+				},
+				Spec: schedulingv1alpha1.ReservationSpec{
+					Template: &corev1.PodTemplateSpec{
+						Spec: corev1.PodSpec{
+							Containers: []corev1.Container{
+								{
+									Name: "test",
+									Resources: corev1.ResourceRequirements{
+										Requests: corev1.ResourceList{
+											corev1.ResourceCPU:    *resource.NewMilliQuantity(1, resource.DecimalSI),
+											corev1.ResourceMemory: *resource.NewQuantity(1, resource.BinarySI),
+										},
+									},
+								},
+							},
+						},
+					},
+					Owners: []schedulingv1alpha1.ReservationOwner{
+						{
+							Object: &corev1.ObjectReference{
+								Kind: "Pod",
+								Name: "pod-0",
+							},
+						},
+					},
+					Expires: &metav1.Time{Time: now.Add(30 * time.Minute)},
+				},
+				Status: schedulingv1alpha1.ReservationStatus{
+					NodeName: "test-node",
+					Phase:    schedulingv1alpha1.ReservationAvailable,
+					Allocatable: corev1.ResourceList{
+						corev1.ResourceCPU:    *resource.NewMilliQuantity(3, resource.DecimalSI),
+						corev1.ResourceMemory: *resource.NewQuantity(3, resource.BinarySI),
+					},
+				},
+			},
+			reservationEnableUpdateSpec: true,
+			wantPodFromObj:              true,
+			wantReservationStatusAllocatable: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewMilliQuantity(1, resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(1, resource.BinarySI),
+			},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			koordClientSet := koordfake.NewSimpleClientset()
+			_, err := koordClientSet.SchedulingV1alpha1().Reservations().Create(context.TODO(), tt.newObj, metav1.CreateOptions{})
+			assert.NoError(t, err)
+			defer func() {
+				err = koordClientSet.SchedulingV1alpha1().Reservations().Delete(context.TODO(), tt.newObj.Name, metav1.DeleteOptions{})
+				assert.NoError(t, err)
+			}()
+			defer utilfeature.SetFeatureGateDuringTest(t, k8sfeature.DefaultFeatureGate, features.ReservationEnableUpdateSpec, tt.reservationEnableUpdateSpec)()
 			frameworkext.SetReservationCache(&frameworkext.FakeReservationCache{})
 			sched := frameworkext.NewFakeScheduler()
-			updateReservationInSchedulerCache(sched, tt.oldObj, tt.newObj)
+			updateReservationInSchedulerCache(koordClientSet, sched, tt.oldObj, tt.newObj)
 			pod, err := sched.GetPod(&corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					UID: tt.newObj.GetUID(),
@@ -1174,6 +1456,15 @@ func Test_updateReservationInCache(t *testing.T) {
 				}
 			}
 			assert.Equal(t, wantPod, pod)
+			curR, err := koordClientSet.SchedulingV1alpha1().Reservations().Get(context.TODO(), tt.newObj.Name, metav1.GetOptions{})
+			assert.NoError(t, err)
+			assert.Equal(t, len(curR.Status.Allocatable), len(tt.wantReservationStatusAllocatable))
+			for r, q := range curR.Status.Allocatable {
+				if !q.Equal(tt.wantReservationStatusAllocatable[r]) {
+					t.Errorf("should get request %v, want %v, got %v", r,
+						tt.wantReservationStatusAllocatable[r], q)
+				}
+			}
 		})
 	}
 }
