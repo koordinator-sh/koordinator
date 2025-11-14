@@ -486,20 +486,31 @@ func (p *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState, 
 	if nodeDeviceInfo == nil {
 		return nil
 	}
-	logAllocationContext(nodeDeviceInfo, state.allocationResult)
+	logAllocationContext(pod, nodeName, nodeDeviceInfo, state.designatedAllocation, state.allocationResult)
 	nodeDeviceInfo.lock.Lock()
 	defer nodeDeviceInfo.lock.Unlock()
 	nodeDeviceInfo.updateCacheUsed(state.allocationResult, pod, true)
 	return nil
 }
 
-func logAllocationContext(nodeDeviceInfo *nodeDevice, allocationResult apiext.DeviceAllocations) {
+func logAllocationContext(pod *corev1.Pod, nodeName string, nodeDeviceInfo *nodeDevice, designatedAllocation, allocationResult apiext.DeviceAllocations) string {
+	podKey := framework.GetNamespacedName(pod.Namespace, pod.Name)
 	nodeDeviceSummary := nodeDeviceInfo.getNodeDeviceSummary()
+	rawNodeDeviceSummary, err := json.Marshal(nodeDeviceSummary)
+	if err != nil {
+		klog.Errorf("pod %s on node %s, failed to marshal nodeDeviceSummary, err: %s", podKey, nodeName, err)
+	}
+	rawDesignatedAllocation, err := json.Marshal(designatedAllocation)
+	if err != nil {
+		klog.Errorf("pod %s on node %s, failed to marshal designatedAllocation, err: %s", podKey, nodeName, err)
+	}
 	rawAllocationResult, err := json.Marshal(allocationResult)
 	if err != nil {
-		klog.Errorf("[DeviceShare] marshal allocationResult failed: %v", err)
+		klog.Errorf("pod %s on node %s, failed to marshal allocationResult, err: %s", podKey, nodeName, err)
 	}
-	klog.V(4).Infof("[DeviceShare] nodeDeviceSummary: %v, allocationResult: %s", nodeDeviceSummary, string(rawAllocationResult))
+	msg := fmt.Sprintf("[DeviceShare] pod %s on node %s, nodeDeviceSummary: %s, designatedAllocationResult: %s, allocationResult: %s", podKey, nodeName, string(rawNodeDeviceSummary), string(rawDesignatedAllocation), string(rawAllocationResult))
+	klog.V(4).Infoln(msg)
+	return msg
 }
 
 func (p *Plugin) allocate(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, node *corev1.Node) *framework.Status {
