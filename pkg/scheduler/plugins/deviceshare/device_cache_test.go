@@ -30,7 +30,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/informers"
 	kubefake "k8s.io/client-go/kubernetes/fake"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
@@ -112,7 +112,7 @@ func Test_gcNodeDevices(t *testing.T) {
 				Devices: []schedulingv1alpha1.DeviceInfo{
 					{
 						Type:   schedulingv1alpha1.GPU,
-						Minor:  pointer.Int32(1),
+						Minor:  ptr.To[int32](1),
 						Health: true,
 						Resources: corev1.ResourceList{
 							apiext.ResourceGPUMemory: resource.MustParse("8Gi"),

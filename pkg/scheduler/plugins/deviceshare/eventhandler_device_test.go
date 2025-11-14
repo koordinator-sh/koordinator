@@ -25,7 +25,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/cache"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
@@ -76,7 +76,7 @@ func Test_nodeDeviceCache_onDeviceAdd(t *testing.T) {
 									Type:   schedulingv1alpha1.GPU,
 									Health: true,
 									UUID:   "123456-0",
-									Minor:  pointer.Int32(0),
+									Minor:  ptr.To[int32](0),
 									Resources: corev1.ResourceList{
 										apiext.ResourceGPUCore:        resource.MustParse("100"),
 										apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
@@ -124,7 +124,7 @@ func Test_nodeDeviceCache_onDeviceAdd(t *testing.T) {
 									Type:   schedulingv1alpha1.GPU,
 									Health: true,
 									UUID:   "123456-1",
-									Minor:  pointer.Int32(1),
+									Minor:  ptr.To[int32](1),
 									Resources: corev1.ResourceList{
 										apiext.ResourceGPUCore:        resource.MustParse("100"),
 										apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
@@ -176,7 +176,7 @@ func Test_nodeDeviceCache_onDeviceAdd(t *testing.T) {
 								Type:   schedulingv1alpha1.GPU,
 								Health: true,
 								UUID:   "123456-0",
-								Minor:  pointer.Int32(0),
+								Minor:  ptr.To[int32](0),
 								Resources: corev1.ResourceList{
 									apiext.ResourceGPUCore:        resource.MustParse("100"),
 									apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
@@ -187,7 +187,7 @@ func Test_nodeDeviceCache_onDeviceAdd(t *testing.T) {
 								Type:   schedulingv1alpha1.GPU,
 								Health: true,
 								UUID:   "123456-1",
-								Minor:  pointer.Int32(1),
+								Minor:  ptr.To[int32](1),
 								Resources: corev1.ResourceList{
 									apiext.ResourceGPUCore:        resource.MustParse("100"),
 									apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
@@ -232,7 +232,7 @@ func Test_nodeDeviceCache_onDeviceUpdate(t *testing.T) {
 					Devices: []schedulingv1alpha1.DeviceInfo{
 						{
 							UUID:   "123456789-1",
-							Minor:  pointer.Int32(1),
+							Minor:  ptr.To[int32](1),
 							Health: true,
 							Type:   schedulingv1alpha1.GPU,
 							Resources: corev1.ResourceList{
@@ -276,7 +276,7 @@ func Test_nodeDeviceCache_onDeviceUpdate(t *testing.T) {
 								Type:   schedulingv1alpha1.GPU,
 								Health: true,
 								UUID:   "123456789-1",
-								Minor:  pointer.Int32(1),
+								Minor:  ptr.To[int32](1),
 								Resources: corev1.ResourceList{
 									apiext.ResourceGPUCore:        resource.MustParse("100"),
 									apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
@@ -329,7 +329,7 @@ func Test_nodeDeviceCache_onDeviceUpdate(t *testing.T) {
 					Devices: []schedulingv1alpha1.DeviceInfo{
 						{
 							UUID:  "123456-gpu-1",
-							Minor: pointer.Int32(1),
+							Minor: ptr.To[int32](1),
 							Type:  schedulingv1alpha1.GPU,
 							Resources: corev1.ResourceList{
 								apiext.ResourceGPUCore:        resource.MustParse("100"),
@@ -339,7 +339,7 @@ func Test_nodeDeviceCache_onDeviceUpdate(t *testing.T) {
 						},
 						{
 							UUID:  "123456-fpga-1",
-							Minor: pointer.Int32(1),
+							Minor: ptr.To[int32](1),
 							Type:  schedulingv1alpha1.FPGA,
 							Resources: corev1.ResourceList{
 								apiext.ResourceFPGA: resource.MustParse("100"),
@@ -389,7 +389,7 @@ func Test_nodeDeviceCache_onDeviceUpdate(t *testing.T) {
 									Type:   schedulingv1alpha1.GPU,
 									Health: true,
 									UUID:   "123456-gpu-1",
-									Minor:  pointer.Int32(1),
+									Minor:  ptr.To[int32](1),
 									Resources: corev1.ResourceList{
 										apiext.ResourceGPUCore:        resource.MustParse("100"),
 										apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
@@ -402,7 +402,7 @@ func Test_nodeDeviceCache_onDeviceUpdate(t *testing.T) {
 									Type:   schedulingv1alpha1.FPGA,
 									Health: true,
 									UUID:   "123456-fpga-1",
-									Minor:  pointer.Int32(1),
+									Minor:  ptr.To[int32](1),
 									Resources: corev1.ResourceList{
 										apiext.ResourceFPGA: resource.MustParse("100"),
 									},
@@ -444,7 +444,7 @@ func Test_nodeDeviceCache_onDeviceUpdate(t *testing.T) {
 								Type:   schedulingv1alpha1.GPU,
 								Health: true,
 								UUID:   "123456-1",
-								Minor:  pointer.Int32(1),
+								Minor:  ptr.To[int32](1),
 								Resources: corev1.ResourceList{
 									apiext.ResourceGPUCore:        resource.MustParse("100"),
 									apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
@@ -524,7 +524,7 @@ func Test_nodeDeviceCache_onDeviceDelete(t *testing.T) {
 								Type:   schedulingv1alpha1.GPU,
 								Health: true,
 								UUID:   "123456-1",
-								Minor:  pointer.Int32(1),
+								Minor:  ptr.To[int32](1),
 								Resources: corev1.ResourceList{
 									apiext.ResourceGPUCore:        resource.MustParse("100"),
 									apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
@@ -559,7 +559,7 @@ func generateFakeDevice() *schedulingv1alpha1.Device {
 			Devices: []schedulingv1alpha1.DeviceInfo{
 				{
 					UUID:   "123456-1",
-					Minor:  pointer.Int32(1),
+					Minor:  ptr.To[int32](1),
 					Health: true,
 					Type:   schedulingv1alpha1.GPU,
 					Resources: corev1.ResourceList{
@@ -582,7 +582,7 @@ func generateMultipleFakeDevice() *schedulingv1alpha1.Device {
 			Devices: []schedulingv1alpha1.DeviceInfo{
 				{
 					UUID:   "123456-0",
-					Minor:  pointer.Int32(0),
+					Minor:  ptr.To[int32](0),
 					Health: true,
 					Type:   schedulingv1alpha1.GPU,
 					Resources: corev1.ResourceList{
@@ -593,7 +593,7 @@ func generateMultipleFakeDevice() *schedulingv1alpha1.Device {
 				},
 				{
 					UUID:   "123456-1",
-					Minor:  pointer.Int32(1),
+					Minor:  ptr.To[int32](1),
 					Health: true,
 					Type:   schedulingv1alpha1.GPU,
 					Resources: corev1.ResourceList{
@@ -637,7 +637,7 @@ func generateFakeNodeDeviceInfos() map[string]*nodeDevice {
 						Type:   schedulingv1alpha1.GPU,
 						Health: true,
 						UUID:   "123456-1",
-						Minor:  pointer.Int32(1),
+						Minor:  ptr.To[int32](1),
 						Resources: corev1.ResourceList{
 							apiext.ResourceGPUCore:        resource.MustParse("100"),
 							apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),

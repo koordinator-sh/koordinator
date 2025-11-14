@@ -27,7 +27,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/scheme"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
@@ -70,7 +70,7 @@ func TestDeviceResourceSpecMutatingPod(t *testing.T) {
 				},
 			},
 			SchedulerName:     "koordinator-scheduler",
-			Priority:          pointer.Int32(extension.PriorityBatchValueMax),
+			Priority:          ptr.To[int32](extension.PriorityBatchValueMax),
 			PriorityClassName: "koordinator-batch",
 		},
 	}

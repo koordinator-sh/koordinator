@@ -15,7 +15,7 @@ import (
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	schedulertesting "k8s.io/kubernetes/pkg/scheduler/testing"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
@@ -153,7 +153,7 @@ func TestPodGroupManager_NetworkTopology(t *testing.T) {
 					},
 				},
 				Spec: corev1.PodSpec{
-					Priority: pointer.Int32(highPriority),
+					Priority: ptr.To[int32](highPriority),
 					Containers: []corev1.Container{
 						{
 							Resources: corev1.ResourceRequirements{
@@ -175,7 +175,7 @@ func TestPodGroupManager_NetworkTopology(t *testing.T) {
 						},
 					},
 					Spec: corev1.PodSpec{
-						Priority: pointer.Int32(highPriority),
+						Priority: ptr.To[int32](highPriority),
 						Containers: []corev1.Container{
 							{
 								Resources: corev1.ResourceRequirements{
@@ -196,7 +196,7 @@ func TestPodGroupManager_NetworkTopology(t *testing.T) {
 						},
 					},
 					Spec: corev1.PodSpec{
-						Priority: pointer.Int32(highPriority),
+						Priority: ptr.To[int32](highPriority),
 						Containers: []corev1.Container{
 							{
 								Resources: corev1.ResourceRequirements{
@@ -217,7 +217,7 @@ func TestPodGroupManager_NetworkTopology(t *testing.T) {
 						},
 					},
 					Spec: corev1.PodSpec{
-						Priority: pointer.Int32(highPriority),
+						Priority: ptr.To[int32](highPriority),
 						Containers: []corev1.Container{
 							{
 								Resources: corev1.ResourceRequirements{
@@ -238,7 +238,7 @@ func TestPodGroupManager_NetworkTopology(t *testing.T) {
 						},
 					},
 					Spec: corev1.PodSpec{
-						Priority: pointer.Int32(highPriority),
+						Priority: ptr.To[int32](highPriority),
 						Containers: []corev1.Container{
 							{
 								Resources: corev1.ResourceRequirements{
@@ -454,7 +454,7 @@ func TestPodGroupManager_NetworkTopology(t *testing.T) {
 					},
 				},
 				Spec: corev1.PodSpec{
-					Priority: pointer.Int32(highPriority),
+					Priority: ptr.To[int32](highPriority),
 					Containers: []corev1.Container{
 						{
 							Resources: corev1.ResourceRequirements{
@@ -476,7 +476,7 @@ func TestPodGroupManager_NetworkTopology(t *testing.T) {
 						},
 					},
 					Spec: corev1.PodSpec{
-						Priority: pointer.Int32(highPriority),
+						Priority: ptr.To[int32](highPriority),
 						Containers: []corev1.Container{
 							{
 								Resources: corev1.ResourceRequirements{
@@ -497,7 +497,7 @@ func TestPodGroupManager_NetworkTopology(t *testing.T) {
 						},
 					},
 					Spec: corev1.PodSpec{
-						Priority: pointer.Int32(highPriority),
+						Priority: ptr.To[int32](highPriority),
 						Containers: []corev1.Container{
 							{
 								Resources: corev1.ResourceRequirements{
@@ -712,7 +712,7 @@ func TestPodGroupManager_NetworkTopology(t *testing.T) {
 					},
 				},
 				Spec: corev1.PodSpec{
-					Priority: pointer.Int32(highPriority),
+					Priority: ptr.To[int32](highPriority),
 					Containers: []corev1.Container{
 						{
 							Resources: corev1.ResourceRequirements{
@@ -734,7 +734,7 @@ func TestPodGroupManager_NetworkTopology(t *testing.T) {
 						},
 					},
 					Spec: corev1.PodSpec{
-						Priority: pointer.Int32(highPriority),
+						Priority: ptr.To[int32](highPriority),
 						Containers: []corev1.Container{
 							{
 								Resources: corev1.ResourceRequirements{
@@ -755,7 +755,7 @@ func TestPodGroupManager_NetworkTopology(t *testing.T) {
 						},
 					},
 					Spec: corev1.PodSpec{
-						Priority: pointer.Int32(highPriority),
+						Priority: ptr.To[int32](highPriority),
 						Containers: []corev1.Container{
 							{
 								Resources: corev1.ResourceRequirements{
@@ -960,7 +960,7 @@ func TestPodGroupManager_NetworkTopology(t *testing.T) {
 					},
 				},
 				Spec: corev1.PodSpec{
-					Priority: pointer.Int32(highPriority),
+					Priority: ptr.To[int32](highPriority),
 					Containers: []corev1.Container{
 						{
 							Resources: corev1.ResourceRequirements{
@@ -982,7 +982,7 @@ func TestPodGroupManager_NetworkTopology(t *testing.T) {
 						},
 					},
 					Spec: corev1.PodSpec{
-						Priority: pointer.Int32(highPriority),
+						Priority: ptr.To[int32](highPriority),
 						Containers: []corev1.Container{
 							{
 								Resources: corev1.ResourceRequirements{
@@ -1003,7 +1003,7 @@ func TestPodGroupManager_NetworkTopology(t *testing.T) {
 						},
 					},
 					Spec: corev1.PodSpec{
-						Priority: pointer.Int32(highPriority),
+						Priority: ptr.To[int32](highPriority),
 						Containers: []corev1.Container{
 							{
 								Resources: corev1.ResourceRequirements{
@@ -1024,7 +1024,7 @@ func TestPodGroupManager_NetworkTopology(t *testing.T) {
 						},
 					},
 					Spec: corev1.PodSpec{
-						Priority: pointer.Int32(highPriority),
+						Priority: ptr.To[int32](highPriority),
 						Containers: []corev1.Container{
 							{
 								Resources: corev1.ResourceRequirements{
@@ -1045,7 +1045,7 @@ func TestPodGroupManager_NetworkTopology(t *testing.T) {
 						},
 					},
 					Spec: corev1.PodSpec{
-						Priority: pointer.Int32(highPriority),
+						Priority: ptr.To[int32](highPriority),
 						Containers: []corev1.Container{
 							{
 								Resources: corev1.ResourceRequirements{
@@ -1097,7 +1097,7 @@ func TestPodGroupManager_NetworkTopology(t *testing.T) {
 					},
 					Spec: corev1.PodSpec{
 						NodeName: "node-1",
-						Priority: pointer.Int32(lowPriority),
+						Priority: ptr.To[int32](lowPriority),
 						Containers: []corev1.Container{
 							{
 								Resources: corev1.ResourceRequirements{
@@ -1117,7 +1117,7 @@ func TestPodGroupManager_NetworkTopology(t *testing.T) {
 					},
 					Spec: corev1.PodSpec{
 						NodeName: "node-4",
-						Priority: pointer.Int32(lowPriority),
+						Priority: ptr.To[int32](lowPriority),
 						Containers: []corev1.Container{
 							{
 								Resources: corev1.ResourceRequirements{
@@ -1317,7 +1317,7 @@ func TestPodGroupManager_NetworkTopology(t *testing.T) {
 						},
 					},
 					Spec: corev1.PodSpec{
-						Priority: pointer.Int32(highPriority),
+						Priority: ptr.To[int32](highPriority),
 						Containers: []corev1.Container{
 							{
 								Resources: corev1.ResourceRequirements{
@@ -1341,7 +1341,7 @@ func TestPodGroupManager_NetworkTopology(t *testing.T) {
 						},
 					},
 					Spec: corev1.PodSpec{
-						Priority: pointer.Int32(highPriority),
+						Priority: ptr.To[int32](highPriority),
 						Containers: []corev1.Container{
 							{
 								Resources: corev1.ResourceRequirements{
@@ -1365,7 +1365,7 @@ func TestPodGroupManager_NetworkTopology(t *testing.T) {
 						},
 					},
 					Spec: corev1.PodSpec{
-						Priority: pointer.Int32(highPriority),
+						Priority: ptr.To[int32](highPriority),
 						Containers: []corev1.Container{
 							{
 								Resources: corev1.ResourceRequirements{
@@ -1389,7 +1389,7 @@ func TestPodGroupManager_NetworkTopology(t *testing.T) {
 						},
 					},
 					Spec: corev1.PodSpec{
-						Priority: pointer.Int32(highPriority),
+						Priority: ptr.To[int32](highPriority),
 						Containers: []corev1.Container{
 							{
 								Resources: corev1.ResourceRequirements{
@@ -1417,7 +1417,7 @@ func TestPodGroupManager_NetworkTopology(t *testing.T) {
 					},
 				},
 				Spec: corev1.PodSpec{
-					Priority: pointer.Int32(highPriority),
+					Priority: ptr.To[int32](highPriority),
 					Containers: []corev1.Container{
 						{
 							Resources: corev1.ResourceRequirements{
@@ -1439,7 +1439,7 @@ func TestPodGroupManager_NetworkTopology(t *testing.T) {
 						},
 					},
 					Spec: corev1.PodSpec{
-						Priority: pointer.Int32(highPriority),
+						Priority: ptr.To[int32](highPriority),
 						Containers: []corev1.Container{
 							{
 								Resources: corev1.ResourceRequirements{
@@ -1460,7 +1460,7 @@ func TestPodGroupManager_NetworkTopology(t *testing.T) {
 						},
 					},
 					Spec: corev1.PodSpec{
-						Priority: pointer.Int32(highPriority),
+						Priority: ptr.To[int32](highPriority),
 						Containers: []corev1.Container{
 							{
 								Resources: corev1.ResourceRequirements{
@@ -1481,7 +1481,7 @@ func TestPodGroupManager_NetworkTopology(t *testing.T) {
 						},
 					},
 					Spec: corev1.PodSpec{
-						Priority: pointer.Int32(highPriority),
+						Priority: ptr.To[int32](highPriority),
 						Containers: []corev1.Container{
 							{
 								Resources: corev1.ResourceRequirements{
@@ -1502,7 +1502,7 @@ func TestPodGroupManager_NetworkTopology(t *testing.T) {
 						},
 					},
 					Spec: corev1.PodSpec{
-						Priority: pointer.Int32(highPriority),
+						Priority: ptr.To[int32](highPriority),
 						Containers: []corev1.Container{
 							{
 								Resources: corev1.ResourceRequirements{
@@ -1554,7 +1554,7 @@ func TestPodGroupManager_NetworkTopology(t *testing.T) {
 					},
 					Spec: corev1.PodSpec{
 						NodeName: "node-1",
-						Priority: pointer.Int32(highPriority),
+						Priority: ptr.To[int32](highPriority),
 						Containers: []corev1.Container{
 							{
 								Resources: corev1.ResourceRequirements{
@@ -1574,7 +1574,7 @@ func TestPodGroupManager_NetworkTopology(t *testing.T) {
 					},
 					Spec: corev1.PodSpec{
 						NodeName: "node-2",
-						Priority: pointer.Int32(lowPriority),
+						Priority: ptr.To[int32](lowPriority),
 						Containers: []corev1.Container{
 							{
 								Resources: corev1.ResourceRequirements{
@@ -1594,7 +1594,7 @@ func TestPodGroupManager_NetworkTopology(t *testing.T) {
 					},
 					Spec: corev1.PodSpec{
 						NodeName: "node-4",
-						Priority: pointer.Int32(highPriority),
+						Priority: ptr.To[int32](highPriority),
 						Containers: []corev1.Container{
 							{
 								Resources: corev1.ResourceRequirements{
@@ -1804,7 +1804,7 @@ func TestPodGroupManager_NetworkTopology(t *testing.T) {
 						},
 					},
 					Spec: corev1.PodSpec{
-						Priority: pointer.Int32(highPriority),
+						Priority: ptr.To[int32](highPriority),
 						Containers: []corev1.Container{
 							{
 								Resources: corev1.ResourceRequirements{
@@ -1826,7 +1826,7 @@ func TestPodGroupManager_NetworkTopology(t *testing.T) {
 						},
 					},
 					Spec: corev1.PodSpec{
-						Priority: pointer.Int32(highPriority),
+						Priority: ptr.To[int32](highPriority),
 						Containers: []corev1.Container{
 							{
 								Resources: corev1.ResourceRequirements{
@@ -1848,7 +1848,7 @@ func TestPodGroupManager_NetworkTopology(t *testing.T) {
 						},
 					},
 					Spec: corev1.PodSpec{
-						Priority: pointer.Int32(highPriority),
+						Priority: ptr.To[int32](highPriority),
 						Containers: []corev1.Container{
 							{
 								Resources: corev1.ResourceRequirements{
@@ -1870,7 +1870,7 @@ func TestPodGroupManager_NetworkTopology(t *testing.T) {
 						},
 					},
 					Spec: corev1.PodSpec{
-						Priority: pointer.Int32(highPriority),
+						Priority: ptr.To[int32](highPriority),
 						Containers: []corev1.Container{
 							{
 								Resources: corev1.ResourceRequirements{

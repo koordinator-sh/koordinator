@@ -28,7 +28,7 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/queuesort"
 	frameworkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
 	schedulertesting "k8s.io/kubernetes/pkg/scheduler/testing"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
@@ -367,7 +367,7 @@ func Test_preemptionEvaluatorImpl_preempt(t *testing.T) {
 					},
 				},
 				Spec: corev1.PodSpec{
-					PreemptionPolicy: (*corev1.PreemptionPolicy)(pointer.String(string(corev1.PreemptNever))),
+					PreemptionPolicy: (*corev1.PreemptionPolicy)(ptr.To[string](string(corev1.PreemptNever))),
 					Containers: []corev1.Container{
 						{
 							Resources: corev1.ResourceRequirements{
@@ -547,7 +547,7 @@ func Test_preemptionEvaluatorImpl_preempt(t *testing.T) {
 					},
 				},
 				Spec: corev1.PodSpec{
-					Priority: pointer.Int32(highPriority),
+					Priority: ptr.To[int32](highPriority),
 					Containers: []corev1.Container{
 						{
 							Resources: corev1.ResourceRequirements{
@@ -572,7 +572,7 @@ func Test_preemptionEvaluatorImpl_preempt(t *testing.T) {
 						},
 					},
 					Spec: corev1.PodSpec{
-						Priority: pointer.Int32(highPriority),
+						Priority: ptr.To[int32](highPriority),
 						Containers: []corev1.Container{
 							{
 								Resources: corev1.ResourceRequirements{
@@ -596,7 +596,7 @@ func Test_preemptionEvaluatorImpl_preempt(t *testing.T) {
 						},
 					},
 					Spec: corev1.PodSpec{
-						Priority: pointer.Int32(highPriority),
+						Priority: ptr.To[int32](highPriority),
 						Containers: []corev1.Container{
 							{
 								Resources: corev1.ResourceRequirements{
@@ -649,7 +649,7 @@ func Test_preemptionEvaluatorImpl_preempt(t *testing.T) {
 						DeletionTimestamp: &metav1.Time{},
 					},
 					Spec: corev1.PodSpec{
-						Priority: pointer.Int32(lowPriority),
+						Priority: ptr.To[int32](lowPriority),
 						Containers: []corev1.Container{
 							{
 								Resources: corev1.ResourceRequirements{
@@ -677,7 +677,7 @@ func Test_preemptionEvaluatorImpl_preempt(t *testing.T) {
 						Namespace: "default",
 					},
 					Spec: corev1.PodSpec{
-						Priority: pointer.Int32(lowPriority),
+						Priority: ptr.To[int32](lowPriority),
 						Containers: []corev1.Container{
 							{
 								Resources: corev1.ResourceRequirements{
@@ -696,7 +696,7 @@ func Test_preemptionEvaluatorImpl_preempt(t *testing.T) {
 						Namespace: "default",
 					},
 					Spec: corev1.PodSpec{
-						Priority: pointer.Int32(lowPriority),
+						Priority: ptr.To[int32](lowPriority),
 						Containers: []corev1.Container{
 							{
 								Resources: corev1.ResourceRequirements{
@@ -715,7 +715,7 @@ func Test_preemptionEvaluatorImpl_preempt(t *testing.T) {
 						Namespace: "default",
 					},
 					Spec: corev1.PodSpec{
-						Priority: pointer.Int32(lowPriority),
+						Priority: ptr.To[int32](lowPriority),
 						Containers: []corev1.Container{
 							{
 								Resources: corev1.ResourceRequirements{
@@ -754,7 +754,7 @@ func Test_preemptionEvaluatorImpl_preempt(t *testing.T) {
 					},
 				},
 				Spec: corev1.PodSpec{
-					Priority: pointer.Int32(highPriority),
+					Priority: ptr.To[int32](highPriority),
 					Containers: []corev1.Container{
 						{
 							Resources: corev1.ResourceRequirements{
@@ -779,7 +779,7 @@ func Test_preemptionEvaluatorImpl_preempt(t *testing.T) {
 						},
 					},
 					Spec: corev1.PodSpec{
-						Priority: pointer.Int32(highPriority),
+						Priority: ptr.To[int32](highPriority),
 						Containers: []corev1.Container{
 							{
 								Resources: corev1.ResourceRequirements{
@@ -803,7 +803,7 @@ func Test_preemptionEvaluatorImpl_preempt(t *testing.T) {
 						},
 					},
 					Spec: corev1.PodSpec{
-						Priority: pointer.Int32(highPriority),
+						Priority: ptr.To[int32](highPriority),
 						Containers: []corev1.Container{
 							{
 								Resources: corev1.ResourceRequirements{
@@ -855,7 +855,7 @@ func Test_preemptionEvaluatorImpl_preempt(t *testing.T) {
 						Namespace: "default",
 					},
 					Spec: corev1.PodSpec{
-						Priority: pointer.Int32(highPriority),
+						Priority: ptr.To[int32](highPriority),
 						Containers: []corev1.Container{
 							{
 								Resources: corev1.ResourceRequirements{
@@ -874,7 +874,7 @@ func Test_preemptionEvaluatorImpl_preempt(t *testing.T) {
 						Namespace: "default",
 					},
 					Spec: corev1.PodSpec{
-						Priority: pointer.Int32(highPriority),
+						Priority: ptr.To[int32](highPriority),
 						Containers: []corev1.Container{
 							{
 								Resources: corev1.ResourceRequirements{
@@ -893,7 +893,7 @@ func Test_preemptionEvaluatorImpl_preempt(t *testing.T) {
 						Namespace: "default",
 					},
 					Spec: corev1.PodSpec{
-						Priority: pointer.Int32(highPriority),
+						Priority: ptr.To[int32](highPriority),
 						Containers: []corev1.Container{
 							{
 								Resources: corev1.ResourceRequirements{
@@ -912,7 +912,7 @@ func Test_preemptionEvaluatorImpl_preempt(t *testing.T) {
 						Namespace: "default",
 					},
 					Spec: corev1.PodSpec{
-						Priority: pointer.Int32(highPriority),
+						Priority: ptr.To[int32](highPriority),
 						Containers: []corev1.Container{
 							{
 								Resources: corev1.ResourceRequirements{
@@ -955,7 +955,7 @@ func Test_preemptionEvaluatorImpl_preempt(t *testing.T) {
 					},
 				},
 				Spec: corev1.PodSpec{
-					Priority: pointer.Int32(highPriority),
+					Priority: ptr.To[int32](highPriority),
 					Containers: []corev1.Container{
 						{
 							Resources: corev1.ResourceRequirements{
@@ -980,7 +980,7 @@ func Test_preemptionEvaluatorImpl_preempt(t *testing.T) {
 						},
 					},
 					Spec: corev1.PodSpec{
-						Priority: pointer.Int32(highPriority),
+						Priority: ptr.To[int32](highPriority),
 						Containers: []corev1.Container{
 							{
 								Resources: corev1.ResourceRequirements{
@@ -1004,7 +1004,7 @@ func Test_preemptionEvaluatorImpl_preempt(t *testing.T) {
 						},
 					},
 					Spec: corev1.PodSpec{
-						Priority: pointer.Int32(highPriority),
+						Priority: ptr.To[int32](highPriority),
 						Containers: []corev1.Container{
 							{
 								Resources: corev1.ResourceRequirements{
@@ -1056,7 +1056,7 @@ func Test_preemptionEvaluatorImpl_preempt(t *testing.T) {
 						Namespace: "default",
 					},
 					Spec: corev1.PodSpec{
-						Priority: pointer.Int32(highPriority),
+						Priority: ptr.To[int32](highPriority),
 						Containers: []corev1.Container{
 							{
 								Resources: corev1.ResourceRequirements{
@@ -1075,7 +1075,7 @@ func Test_preemptionEvaluatorImpl_preempt(t *testing.T) {
 						Namespace: "default",
 					},
 					Spec: corev1.PodSpec{
-						Priority: pointer.Int32(highPriority),
+						Priority: ptr.To[int32](highPriority),
 						Containers: []corev1.Container{
 							{
 								Resources: corev1.ResourceRequirements{
@@ -1094,7 +1094,7 @@ func Test_preemptionEvaluatorImpl_preempt(t *testing.T) {
 						Namespace: "default",
 					},
 					Spec: corev1.PodSpec{
-						Priority: pointer.Int32(highPriority),
+						Priority: ptr.To[int32](highPriority),
 						Containers: []corev1.Container{
 							{
 								Resources: corev1.ResourceRequirements{
@@ -1113,7 +1113,7 @@ func Test_preemptionEvaluatorImpl_preempt(t *testing.T) {
 						Namespace: "default",
 					},
 					Spec: corev1.PodSpec{
-						Priority: pointer.Int32(highPriority),
+						Priority: ptr.To[int32](highPriority),
 						Containers: []corev1.Container{
 							{
 								Resources: corev1.ResourceRequirements{
@@ -1150,7 +1150,7 @@ func Test_preemptionEvaluatorImpl_preempt(t *testing.T) {
 					},
 				},
 				Spec: corev1.PodSpec{
-					Priority: pointer.Int32(highPriority),
+					Priority: ptr.To[int32](highPriority),
 					Containers: []corev1.Container{
 						{
 							Resources: corev1.ResourceRequirements{
@@ -1175,7 +1175,7 @@ func Test_preemptionEvaluatorImpl_preempt(t *testing.T) {
 						},
 					},
 					Spec: corev1.PodSpec{
-						Priority: pointer.Int32(highPriority),
+						Priority: ptr.To[int32](highPriority),
 						Containers: []corev1.Container{
 							{
 								Resources: corev1.ResourceRequirements{
@@ -1199,7 +1199,7 @@ func Test_preemptionEvaluatorImpl_preempt(t *testing.T) {
 						},
 					},
 					Spec: corev1.PodSpec{
-						Priority: pointer.Int32(highPriority),
+						Priority: ptr.To[int32](highPriority),
 						Containers: []corev1.Container{
 							{
 								Resources: corev1.ResourceRequirements{
@@ -1252,7 +1252,7 @@ func Test_preemptionEvaluatorImpl_preempt(t *testing.T) {
 						UID:       "existing-pod-1",
 					},
 					Spec: corev1.PodSpec{
-						Priority: pointer.Int32(lowPriority),
+						Priority: ptr.To[int32](lowPriority),
 						Containers: []corev1.Container{
 							{
 								Resources: corev1.ResourceRequirements{
@@ -1272,7 +1272,7 @@ func Test_preemptionEvaluatorImpl_preempt(t *testing.T) {
 						UID:       "existing-pod-2",
 					},
 					Spec: corev1.PodSpec{
-						Priority: pointer.Int32(lowPriority),
+						Priority: ptr.To[int32](lowPriority),
 						Containers: []corev1.Container{
 							{
 								Resources: corev1.ResourceRequirements{
@@ -1292,7 +1292,7 @@ func Test_preemptionEvaluatorImpl_preempt(t *testing.T) {
 						UID:       "existing-pod-3",
 					},
 					Spec: corev1.PodSpec{
-						Priority: pointer.Int32(lowPriority),
+						Priority: ptr.To[int32](lowPriority),
 						Containers: []corev1.Container{
 							{
 								Resources: corev1.ResourceRequirements{
@@ -1312,7 +1312,7 @@ func Test_preemptionEvaluatorImpl_preempt(t *testing.T) {
 						UID:       "existing-pod-4",
 					},
 					Spec: corev1.PodSpec{
-						Priority: pointer.Int32(lowPriority),
+						Priority: ptr.To[int32](lowPriority),
 						Containers: []corev1.Container{
 							{
 								Resources: corev1.ResourceRequirements{
@@ -1363,7 +1363,7 @@ func Test_preemptionEvaluatorImpl_preempt(t *testing.T) {
 						},
 					},
 					Spec: corev1.PodSpec{
-						Priority: pointer.Int32(highPriority),
+						Priority: ptr.To[int32](highPriority),
 						Containers: []corev1.Container{
 							{
 								Resources: corev1.ResourceRequirements{
@@ -1387,7 +1387,7 @@ func Test_preemptionEvaluatorImpl_preempt(t *testing.T) {
 						},
 					},
 					Spec: corev1.PodSpec{
-						Priority: pointer.Int32(highPriority),
+						Priority: ptr.To[int32](highPriority),
 						Containers: []corev1.Container{
 							{
 								Resources: corev1.ResourceRequirements{
@@ -1415,7 +1415,7 @@ func Test_preemptionEvaluatorImpl_preempt(t *testing.T) {
 					},
 				},
 				Spec: corev1.PodSpec{
-					Priority: pointer.Int32(highPriority),
+					Priority: ptr.To[int32](highPriority),
 					Containers: []corev1.Container{
 						{
 							Resources: corev1.ResourceRequirements{
@@ -1440,7 +1440,7 @@ func Test_preemptionEvaluatorImpl_preempt(t *testing.T) {
 						},
 					},
 					Spec: corev1.PodSpec{
-						Priority: pointer.Int32(highPriority),
+						Priority: ptr.To[int32](highPriority),
 						Containers: []corev1.Container{
 							{
 								Resources: corev1.ResourceRequirements{
@@ -1467,7 +1467,7 @@ func Test_preemptionEvaluatorImpl_preempt(t *testing.T) {
 					},
 					Spec: corev1.PodSpec{
 						NodeName: "node-2",
-						Priority: pointer.Int32(highPriority),
+						Priority: ptr.To[int32](highPriority),
 						Containers: []corev1.Container{
 							{
 								Resources: corev1.ResourceRequirements{
@@ -1517,7 +1517,7 @@ func Test_preemptionEvaluatorImpl_preempt(t *testing.T) {
 						UID:       "existing-pod-1",
 					},
 					Spec: corev1.PodSpec{
-						Priority: pointer.Int32(lowPriority),
+						Priority: ptr.To[int32](lowPriority),
 						Containers: []corev1.Container{
 							{
 								Resources: corev1.ResourceRequirements{
@@ -1537,7 +1537,7 @@ func Test_preemptionEvaluatorImpl_preempt(t *testing.T) {
 						UID:       "existing-pod-2",
 					},
 					Spec: corev1.PodSpec{
-						Priority: pointer.Int32(lowPriority),
+						Priority: ptr.To[int32](lowPriority),
 						Containers: []corev1.Container{
 							{
 								Resources: corev1.ResourceRequirements{
@@ -1557,7 +1557,7 @@ func Test_preemptionEvaluatorImpl_preempt(t *testing.T) {
 						UID:       "existing-pod-4",
 					},
 					Spec: corev1.PodSpec{
-						Priority: pointer.Int32(lowPriority),
+						Priority: ptr.To[int32](lowPriority),
 						Containers: []corev1.Container{
 							{
 								Resources: corev1.ResourceRequirements{
@@ -1605,7 +1605,7 @@ func Test_preemptionEvaluatorImpl_preempt(t *testing.T) {
 						},
 					},
 					Spec: corev1.PodSpec{
-						Priority: pointer.Int32(highPriority),
+						Priority: ptr.To[int32](highPriority),
 						Containers: []corev1.Container{
 							{
 								Resources: corev1.ResourceRequirements{
@@ -1629,7 +1629,7 @@ func Test_preemptionEvaluatorImpl_preempt(t *testing.T) {
 						},
 					},
 					Spec: corev1.PodSpec{
-						Priority: pointer.Int32(highPriority),
+						Priority: ptr.To[int32](highPriority),
 						Containers: []corev1.Container{
 							{
 								Resources: corev1.ResourceRequirements{

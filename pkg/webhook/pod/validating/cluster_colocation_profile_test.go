@@ -27,7 +27,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/scheme"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
@@ -131,7 +131,7 @@ func TestClusterColocationProfileValidatingPod(t *testing.T) {
 							},
 						},
 					},
-					Priority: pointer.Int32(extension.PriorityBatchValueMin),
+					Priority: ptr.To[int32](extension.PriorityBatchValueMin),
 				},
 			},
 			wantAllowed: true,
@@ -156,7 +156,7 @@ func TestClusterColocationProfileValidatingPod(t *testing.T) {
 							},
 						},
 					},
-					Priority: pointer.Int32(6666),
+					Priority: ptr.To[int32](6666),
 				},
 			},
 			wantAllowed: false,
@@ -168,12 +168,12 @@ func TestClusterColocationProfileValidatingPod(t *testing.T) {
 			operation: admissionv1.Update,
 			newPod: &corev1.Pod{
 				Spec: corev1.PodSpec{
-					Priority: pointer.Int32(extension.PriorityProdValueMax),
+					Priority: ptr.To[int32](extension.PriorityProdValueMax),
 				},
 			},
 			oldPod: &corev1.Pod{
 				Spec: corev1.PodSpec{
-					Priority: pointer.Int32(extension.PriorityBatchValueMin),
+					Priority: ptr.To[int32](extension.PriorityBatchValueMin),
 				},
 			},
 			wantAllowed: false,
@@ -186,7 +186,7 @@ func TestClusterColocationProfileValidatingPod(t *testing.T) {
 			newPod:    &corev1.Pod{},
 			oldPod: &corev1.Pod{
 				Spec: corev1.PodSpec{
-					Priority: pointer.Int32(extension.PriorityBatchValueMin),
+					Priority: ptr.To[int32](extension.PriorityBatchValueMin),
 				},
 			},
 			wantAllowed: false,
@@ -241,7 +241,7 @@ func TestClusterColocationProfileValidatingPod(t *testing.T) {
 					},
 				},
 				Spec: corev1.PodSpec{
-					Priority: pointer.Int32(extension.PriorityBatchValueMin),
+					Priority: ptr.To[int32](extension.PriorityBatchValueMin),
 				},
 			},
 			wantAllowed: true,
@@ -256,7 +256,7 @@ func TestClusterColocationProfileValidatingPod(t *testing.T) {
 					},
 				},
 				Spec: corev1.PodSpec{
-					Priority: pointer.Int32(extension.PriorityProdValueMax),
+					Priority: ptr.To[int32](extension.PriorityProdValueMax),
 					Containers: []corev1.Container{
 						{
 							Resources: corev1.ResourceRequirements{
@@ -280,7 +280,7 @@ func TestClusterColocationProfileValidatingPod(t *testing.T) {
 					},
 				},
 				Spec: corev1.PodSpec{
-					Priority: pointer.Int32(extension.PriorityProdValueMax),
+					Priority: ptr.To[int32](extension.PriorityProdValueMax),
 				},
 			},
 			wantAllowed: false,
@@ -297,7 +297,7 @@ func TestClusterColocationProfileValidatingPod(t *testing.T) {
 					},
 				},
 				Spec: corev1.PodSpec{
-					Priority: pointer.Int32(extension.PriorityBatchValueMax),
+					Priority: ptr.To[int32](extension.PriorityBatchValueMax),
 					Containers: []corev1.Container{
 						{
 							Resources: corev1.ResourceRequirements{
@@ -323,7 +323,7 @@ func TestClusterColocationProfileValidatingPod(t *testing.T) {
 					},
 				},
 				Spec: corev1.PodSpec{
-					Priority: pointer.Int32(extension.PriorityMidValueMax),
+					Priority: ptr.To[int32](extension.PriorityMidValueMax),
 					Containers: []corev1.Container{
 						{
 							Resources: corev1.ResourceRequirements{
@@ -349,7 +349,7 @@ func TestClusterColocationProfileValidatingPod(t *testing.T) {
 					},
 				},
 				Spec: corev1.PodSpec{
-					Priority: pointer.Int32(extension.PriorityFreeValueMax),
+					Priority: ptr.To[int32](extension.PriorityFreeValueMax),
 					Containers: []corev1.Container{
 						{
 							Resources: corev1.ResourceRequirements{
@@ -375,7 +375,7 @@ func TestClusterColocationProfileValidatingPod(t *testing.T) {
 					},
 				},
 				Spec: corev1.PodSpec{
-					Priority: pointer.Int32(extension.PriorityProdValueMax),
+					Priority: ptr.To[int32](extension.PriorityProdValueMax),
 					Containers: []corev1.Container{
 						{
 							Resources: corev1.ResourceRequirements{
@@ -404,7 +404,7 @@ func TestClusterColocationProfileValidatingPod(t *testing.T) {
 					},
 				},
 				Spec: corev1.PodSpec{
-					Priority: pointer.Int32(extension.PriorityProdValueMax),
+					Priority: ptr.To[int32](extension.PriorityProdValueMax),
 					Containers: []corev1.Container{
 						{
 							Name: "test-container-skip",
@@ -434,7 +434,7 @@ func TestClusterColocationProfileValidatingPod(t *testing.T) {
 					},
 				},
 				Spec: corev1.PodSpec{
-					Priority: pointer.Int32(extension.PriorityProdValueMax),
+					Priority: ptr.To[int32](extension.PriorityProdValueMax),
 					Containers: []corev1.Container{
 						{
 							Name: "test-container-skip",

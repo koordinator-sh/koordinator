@@ -27,7 +27,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	kubefake "k8s.io/client-go/kubernetes/fake"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
@@ -53,7 +53,7 @@ func Test_MergeCfg(t *testing.T) {
 			name: "throw an error if the inputs' types are not the same",
 			args: args{
 				old: &TestingStruct{},
-				new: pointer.Int64(1),
+				new: ptr.To[int64](1),
 			},
 			want:    nil,
 			wantErr: true,
@@ -85,14 +85,14 @@ func Test_MergeCfg(t *testing.T) {
 			name: "new is empty",
 			args: args{
 				old: &TestingStruct{
-					A: pointer.Int64(0),
-					B: pointer.Int64(1),
+					A: ptr.To[int64](0),
+					B: ptr.To[int64](1),
 				},
 				new: &TestingStruct{},
 			},
 			want: &TestingStruct{
-				A: pointer.Int64(0),
-				B: pointer.Int64(1),
+				A: ptr.To[int64](0),
+				B: ptr.To[int64](1),
 			},
 		},
 		{
@@ -100,11 +100,11 @@ func Test_MergeCfg(t *testing.T) {
 			args: args{
 				old: &TestingStruct{},
 				new: &TestingStruct{
-					B: pointer.Int64(1),
+					B: ptr.To[int64](1),
 				},
 			},
 			want: &TestingStruct{
-				B: pointer.Int64(1),
+				B: ptr.To[int64](1),
 			},
 		},
 		{
@@ -119,16 +119,16 @@ func Test_MergeCfg(t *testing.T) {
 			name: "new one overwrites the old one",
 			args: args{
 				old: &TestingStruct{
-					A: pointer.Int64(0),
-					B: pointer.Int64(1),
+					A: ptr.To[int64](0),
+					B: ptr.To[int64](1),
 				},
 				new: &TestingStruct{
-					B: pointer.Int64(2),
+					B: ptr.To[int64](2),
 				},
 			},
 			want: &TestingStruct{
-				A: pointer.Int64(0),
-				B: pointer.Int64(2),
+				A: ptr.To[int64](0),
+				B: ptr.To[int64](2),
 			},
 		},
 	}

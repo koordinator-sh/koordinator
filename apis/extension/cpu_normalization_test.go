@@ -23,7 +23,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 )
 
 func TestGetCPUNormalizationRatio(t *testing.T) {
@@ -233,7 +233,7 @@ func TestGetCPUNormalizationEnabled(t *testing.T) {
 					},
 				},
 			},
-			want:    pointer.Bool(false),
+			want:    ptr.To[bool](false),
 			wantErr: false,
 		},
 		{
@@ -245,7 +245,7 @@ func TestGetCPUNormalizationEnabled(t *testing.T) {
 					},
 				},
 			},
-			want:    pointer.Bool(true),
+			want:    ptr.To[bool](true),
 			wantErr: false,
 		},
 	}

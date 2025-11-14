@@ -23,7 +23,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/scheme"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	"github.com/koordinator-sh/koordinator/apis/configuration"
@@ -336,7 +336,7 @@ func TestPluginCalculate(t *testing.T) {
 						available: true,
 						config: &configuration.ResourceAmplificationCfg{
 							ResourceAmplificationStrategy: configuration.ResourceAmplificationStrategy{
-								Enable: pointer.Bool(true),
+								Enable: ptr.To[bool](true),
 								ResourceAmplificationRatio: map[corev1.ResourceName]float64{
 									corev1.ResourceCPU:    1.1,
 									corev1.ResourceMemory: 2.1,
@@ -374,7 +374,7 @@ func TestPluginCalculate(t *testing.T) {
 						available: true,
 						config: &configuration.ResourceAmplificationCfg{
 							ResourceAmplificationStrategy: configuration.ResourceAmplificationStrategy{
-								Enable: pointer.Bool(true),
+								Enable: ptr.To[bool](true),
 								ResourceAmplificationRatio: map[corev1.ResourceName]float64{
 									corev1.ResourceCPU:    1.5,
 									corev1.ResourceMemory: 2.5,
@@ -412,7 +412,7 @@ func TestPluginCalculate(t *testing.T) {
 						available: true,
 						config: &configuration.ResourceAmplificationCfg{
 							ResourceAmplificationStrategy: configuration.ResourceAmplificationStrategy{
-								Enable: pointer.Bool(true),
+								Enable: ptr.To[bool](true),
 								ResourceAmplificationRatio: map[corev1.ResourceName]float64{
 									corev1.ResourceMemory: 3.5,
 								},
@@ -449,7 +449,7 @@ func TestPluginCalculate(t *testing.T) {
 						available: true,
 						config: &configuration.ResourceAmplificationCfg{
 							ResourceAmplificationStrategy: configuration.ResourceAmplificationStrategy{
-								Enable: pointer.Bool(true),
+								Enable: ptr.To[bool](true),
 								ResourceAmplificationRatio: map[corev1.ResourceName]float64{
 									corev1.ResourceMemory:  3.5,
 									corev1.ResourceStorage: 1.8,
@@ -487,7 +487,7 @@ func TestPluginCalculate(t *testing.T) {
 						available: true,
 						config: &configuration.ResourceAmplificationCfg{
 							ResourceAmplificationStrategy: configuration.ResourceAmplificationStrategy{
-								Enable: pointer.Bool(true),
+								Enable: ptr.To[bool](true),
 								ResourceAmplificationRatio: map[corev1.ResourceName]float64{
 									corev1.ResourceCPU:     0.8,
 									corev1.ResourceMemory:  3.5,
@@ -526,7 +526,7 @@ func TestPluginCalculate(t *testing.T) {
 						available: true,
 						config: &configuration.ResourceAmplificationCfg{
 							ResourceAmplificationStrategy: configuration.ResourceAmplificationStrategy{
-								Enable: pointer.Bool(true),
+								Enable: ptr.To[bool](true),
 								ResourceAmplificationRatio: map[corev1.ResourceName]float64{
 									corev1.ResourceCPU:     0.5,
 									corev1.ResourceMemory:  3.5,
@@ -557,7 +557,7 @@ func TestPluginCalculate(t *testing.T) {
 						available: true,
 						config: &configuration.ResourceAmplificationCfg{
 							ResourceAmplificationStrategy: configuration.ResourceAmplificationStrategy{
-								Enable: pointer.Bool(true),
+								Enable: ptr.To[bool](true),
 								ResourceAmplificationRatio: map[corev1.ResourceName]float64{
 									corev1.ResourceMemory:  3.5,
 									corev1.ResourceStorage: 0.5,

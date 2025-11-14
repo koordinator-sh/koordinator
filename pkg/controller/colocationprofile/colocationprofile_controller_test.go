@@ -32,7 +32,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/record"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -69,7 +69,7 @@ func TestReconciler_Reconcile(t *testing.T) {
 				"testAnnotationA": "valueA",
 			},
 			QoSClass:            string(extension.QoSBE),
-			KoordinatorPriority: pointer.Int32(1111),
+			KoordinatorPriority: ptr.To[int32](1111),
 			Patch: runtime.RawExtension{
 				Raw: []byte(`{"metadata":{"labels":{"test-patch-label":"patch-a"},"annotations":{"test-patch-annotation":"patch-b"}}}`),
 			},

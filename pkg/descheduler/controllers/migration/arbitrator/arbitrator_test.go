@@ -33,7 +33,7 @@ import (
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/events"
 	"k8s.io/client-go/util/workqueue"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 
@@ -260,7 +260,7 @@ func TestRequeueJobIfRetryablePodFilterFailed(t *testing.T) {
 			OwnerReferences: []metav1.OwnerReference{
 				{
 					APIVersion: "apps/v1",
-					Controller: pointer.Bool(true),
+					Controller: ptr.To[bool](true),
 					Kind:       "StatefulSet",
 					Name:       "test",
 					UID:        "2f96233d-a6b9-4981-b594-7c90c987aed9",
@@ -333,7 +333,7 @@ func TestAbortJobIfNonRetryablePodFilterFailed(t *testing.T) {
 			OwnerReferences: []metav1.OwnerReference{
 				{
 					APIVersion: "apps/v1",
-					Controller: pointer.Bool(true),
+					Controller: ptr.To[bool](true),
 					Kind:       "StatefulSet",
 					Name:       "test",
 					UID:        "2f96233d-a6b9-4981-b594-7c90c987aed9",
