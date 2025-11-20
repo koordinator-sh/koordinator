@@ -427,7 +427,7 @@ func (c *cpuEvictor) getPodEvictInfoAndSortByPriority(thresholdConfig *slov1alph
 			continue
 		}
 		// 3. sort :  koordinator.sh/priority
-		podPriority := qosmanagerUtil.GetPodPriorityLabel(pod)
+		podPriority := qosmanagerUtil.GetPodPriorityLabel(pod, int64(podInfo.Priority))
 		podInfo.LabelPriority = podPriority
 		// 4. filter no metrics
 		queryMeta, err := metriccache.PodCPUUsageMetric.BuildQueryMeta(metriccache.MetricPropertiesFunc.Pod(string(pod.UID)))
