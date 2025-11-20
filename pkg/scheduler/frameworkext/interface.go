@@ -181,6 +181,8 @@ type ReservationNominator interface {
 	// DeleteNominatedReservePod is used to delete the nominated reserve pod.
 	// DEPRECATED: use DeleteNominatedReservePodOrReservation instead.
 	DeleteNominatedReservePod(reservePod *corev1.Pod)
+	// NominatedReservePodForNode returns nominated reserve pods on the given node.
+	NominatedReservePodForNode(nodeName string) []*framework.PodInfo
 	// DeleteNominatedReservePodOrReservation is used to delete the nominated reserve pod or
 	// the nominated reservation for the pod.
 	DeleteNominatedReservePodOrReservation(pod *corev1.Pod)
