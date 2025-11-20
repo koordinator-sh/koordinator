@@ -36,9 +36,7 @@ type ReleaseList map[ReleaseTargetType]corev1.ResourceList
 const (
 	ReleaseTargetTypeBatchResourceRequest ReleaseTargetType = "podBatchResourceRequest"
 	ReleaseTargetTypeResourceUsed         ReleaseTargetType = "podUsed"
-
-	DefaultEvictPriority = 9999
-	EvictedStr           = "evicted"
+	EvictedStr                                              = "evicted"
 )
 
 type PodEvictInfo struct {
@@ -259,16 +257,16 @@ func addReleased(a, b ReleaseList) {
 	}
 }
 
-func GetPodPriorityLabel(pod *corev1.Pod) int64 {
+func GetPodPriorityLabel(pod *corev1.Pod, defaultPriority int64) int64 {
 	if pod == nil || pod.Labels == nil {
-		return DefaultEvictPriority
+		return defaultPriority
 	}
 	if fractionStr, ok := pod.Labels[apiext.LabelPodPriority]; !ok {
-		return DefaultEvictPriority
+		return defaultPriority
 	} else {
 		num, err := strconv.Atoi(fractionStr)
 		if err != nil {
-			return DefaultEvictPriority
+			return defaultPriority
 		}
 		return int64(num)
 	}
