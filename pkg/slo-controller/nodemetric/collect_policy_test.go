@@ -20,7 +20,7 @@ import (
 	"reflect"
 	"testing"
 
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	"github.com/koordinator-sh/koordinator/apis/configuration"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
@@ -42,7 +42,7 @@ func Test_getNodeMetricCollectPolicy(t *testing.T) {
 		{
 			name: "config disabled",
 			config: &configuration.ColocationStrategy{
-				Enable: pointer.Bool(false),
+				Enable: ptr.To[bool](false),
 			},
 			want:    nil,
 			wantErr: true,
@@ -50,14 +50,14 @@ func Test_getNodeMetricCollectPolicy(t *testing.T) {
 		{
 			name: "config enabled",
 			config: &configuration.ColocationStrategy{
-				Enable:                         pointer.Bool(true),
-				MetricAggregateDurationSeconds: pointer.Int64(60),
-				MetricReportIntervalSeconds:    pointer.Int64(180),
+				Enable:                         ptr.To[bool](true),
+				MetricAggregateDurationSeconds: ptr.To[int64](60),
+				MetricReportIntervalSeconds:    ptr.To[int64](180),
 				MetricMemoryCollectPolicy:      &defaultNodeMemoryCollectPolicy,
 			},
 			want: &slov1alpha1.NodeMetricCollectPolicy{
-				AggregateDurationSeconds: pointer.Int64(60),
-				ReportIntervalSeconds:    pointer.Int64(180),
+				AggregateDurationSeconds: ptr.To[int64](60),
+				ReportIntervalSeconds:    ptr.To[int64](180),
 				NodeMemoryCollectPolicy:  &defaultNodeMemoryCollectPolicy,
 			},
 		},

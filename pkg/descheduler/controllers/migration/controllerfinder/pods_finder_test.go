@@ -15,7 +15,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
@@ -83,7 +83,7 @@ func TestControllerFinder_GetPodsForRef(t *testing.T) {
 					Namespace: "default",
 				},
 				Spec: appsv1.DeploymentSpec{
-					Replicas: pointer.Int32(3),
+					Replicas: ptr.To[int32](3),
 					Selector: nil,
 				},
 			}
@@ -100,7 +100,7 @@ func TestControllerFinder_GetPodsForRef(t *testing.T) {
 						APIVersion: ControllerKindDep.Group + "/" + ControllerKindDep.Version,
 						Kind:       ControllerKindDep.Kind,
 						Name:       "test",
-						Controller: pointer.Bool(true),
+						Controller: ptr.To[bool](true),
 					}},
 				},
 			}
@@ -115,7 +115,7 @@ func TestControllerFinder_GetPodsForRef(t *testing.T) {
 					Namespace: "default",
 				},
 				Spec: appsv1alpha1.CloneSetSpec{
-					Replicas: pointer.Int32(3),
+					Replicas: ptr.To[int32](3),
 					Selector: nil,
 				},
 			}

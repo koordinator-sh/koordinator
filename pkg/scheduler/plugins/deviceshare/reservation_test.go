@@ -25,7 +25,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	"github.com/stretchr/testify/assert"
 
@@ -68,7 +68,7 @@ func Test_Plugin_ReservationRestore(t *testing.T) {
 			Devices: []schedulingv1alpha1.DeviceInfo{
 				{
 					Type:   schedulingv1alpha1.GPU,
-					Minor:  pointer.Int32(1),
+					Minor:  ptr.To[int32](1),
 					Health: true,
 					Resources: corev1.ResourceList{
 						apiext.ResourceGPUCore:        resource.MustParse("100"),
@@ -78,7 +78,7 @@ func Test_Plugin_ReservationRestore(t *testing.T) {
 				},
 				{
 					Type:   schedulingv1alpha1.GPU,
-					Minor:  pointer.Int32(2),
+					Minor:  ptr.To[int32](2),
 					Health: true,
 					Resources: corev1.ResourceList{
 						apiext.ResourceGPUCore:        resource.MustParse("100"),
@@ -231,7 +231,7 @@ func Test_tryAllocateFromReservation(t *testing.T) {
 	device := &schedulingv1alpha1.Device{}
 	for i := 0; i < 2; i++ {
 		device.Spec.Devices = append(device.Spec.Devices, schedulingv1alpha1.DeviceInfo{
-			Minor:     pointer.Int32(int32(i)),
+			Minor:     ptr.To[int32](int32(i)),
 			Health:    true,
 			Type:      schedulingv1alpha1.GPU,
 			Resources: resources,

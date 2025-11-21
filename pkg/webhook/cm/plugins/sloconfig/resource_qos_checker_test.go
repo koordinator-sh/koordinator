@@ -27,7 +27,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	"github.com/koordinator-sh/koordinator/apis/configuration"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
@@ -40,7 +40,7 @@ func Test_ResourceQOS_NewChecker_InitStatus(t *testing.T) {
 			BEClass: &slov1alpha1.ResourceQOS{
 				CPUQOS: &slov1alpha1.CPUQOSCfg{
 					CPUQOS: slov1alpha1.CPUQOS{
-						GroupIdentity: pointer.Int64(-1),
+						GroupIdentity: ptr.To[int64](-1),
 					},
 				},
 			},
@@ -53,7 +53,7 @@ func Test_ResourceQOS_NewChecker_InitStatus(t *testing.T) {
 			BEClass: &slov1alpha1.ResourceQOS{
 				CPUQOS: &slov1alpha1.CPUQOSCfg{
 					CPUQOS: slov1alpha1.CPUQOS{
-						GroupIdentity: pointer.Int64(-1),
+						GroupIdentity: ptr.To[int64](-1),
 					},
 				},
 			},
@@ -67,7 +67,7 @@ func Test_ResourceQOS_NewChecker_InitStatus(t *testing.T) {
 					BEClass: &slov1alpha1.ResourceQOS{
 						CPUQOS: &slov1alpha1.CPUQOSCfg{
 							CPUQOS: slov1alpha1.CPUQOS{
-								GroupIdentity: pointer.Int64(-1),
+								GroupIdentity: ptr.To[int64](-1),
 							},
 						},
 					},
@@ -83,7 +83,7 @@ func Test_ResourceQOS_NewChecker_InitStatus(t *testing.T) {
 			BEClass: &slov1alpha1.ResourceQOS{
 				CPUQOS: &slov1alpha1.CPUQOSCfg{
 					CPUQOS: slov1alpha1.CPUQOS{
-						GroupIdentity: pointer.Int64(-1),
+						GroupIdentity: ptr.To[int64](-1),
 					},
 				},
 			},
@@ -102,7 +102,7 @@ func Test_ResourceQOS_NewChecker_InitStatus(t *testing.T) {
 					BEClass: &slov1alpha1.ResourceQOS{
 						CPUQOS: &slov1alpha1.CPUQOSCfg{
 							CPUQOS: slov1alpha1.CPUQOS{
-								GroupIdentity: pointer.Int64(-1),
+								GroupIdentity: ptr.To[int64](-1),
 							},
 						},
 					},
@@ -280,7 +280,7 @@ func Test_ResourceQOS_ConfigContentsValid(t *testing.T) {
 						BEClass: &slov1alpha1.ResourceQOS{
 							CPUQOS: &slov1alpha1.CPUQOSCfg{
 								CPUQOS: slov1alpha1.CPUQOS{
-									GroupIdentity: pointer.Int64(3),
+									GroupIdentity: ptr.To[int64](3),
 								},
 							},
 						},
@@ -297,7 +297,7 @@ func Test_ResourceQOS_ConfigContentsValid(t *testing.T) {
 						BEClass: &slov1alpha1.ResourceQOS{
 							MemoryQOS: &slov1alpha1.MemoryQOSCfg{
 								MemoryQOS: slov1alpha1.MemoryQOS{
-									OomKillGroup: pointer.Int64(3),
+									OomKillGroup: ptr.To[int64](3),
 								},
 							},
 						},
@@ -314,7 +314,7 @@ func Test_ResourceQOS_ConfigContentsValid(t *testing.T) {
 						BEClass: &slov1alpha1.ResourceQOS{
 							ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
 								ResctrlQOS: slov1alpha1.ResctrlQOS{
-									CATRangeStartPercent: pointer.Int64(-1),
+									CATRangeStartPercent: ptr.To[int64](-1),
 								},
 							},
 						},
@@ -334,7 +334,7 @@ func Test_ResourceQOS_ConfigContentsValid(t *testing.T) {
 								BEClass: &slov1alpha1.ResourceQOS{
 									ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
 										ResctrlQOS: slov1alpha1.ResctrlQOS{
-											CATRangeStartPercent: pointer.Int64(101),
+											CATRangeStartPercent: ptr.To[int64](101),
 										},
 									},
 								},
@@ -371,7 +371,7 @@ func Test_ResourceQOS_ConfigContentsValid(t *testing.T) {
 						BEClass: &slov1alpha1.ResourceQOS{
 							CPUQOS: &slov1alpha1.CPUQOSCfg{
 								CPUQOS: slov1alpha1.CPUQOS{
-									GroupIdentity: pointer.Int64(-1),
+									GroupIdentity: ptr.To[int64](-1),
 								},
 							},
 						},
@@ -390,7 +390,7 @@ func Test_ResourceQOS_ConfigContentsValid(t *testing.T) {
 								BEClass: &slov1alpha1.ResourceQOS{
 									CPUQOS: &slov1alpha1.CPUQOSCfg{
 										CPUQOS: slov1alpha1.CPUQOS{
-											GroupIdentity: pointer.Int64(-1),
+											GroupIdentity: ptr.To[int64](-1),
 										},
 									},
 								},

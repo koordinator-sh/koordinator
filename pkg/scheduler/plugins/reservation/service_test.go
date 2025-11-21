@@ -30,7 +30,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
@@ -49,7 +49,7 @@ func TestQueryNodeReservations(t *testing.T) {
 		},
 		Spec: schedulingv1alpha1.ReservationSpec{
 			AllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyAligned,
-			AllocateOnce:   pointer.Bool(false),
+			AllocateOnce:   ptr.To[bool](false),
 			Owners: []schedulingv1alpha1.ReservationOwner{
 				{
 					LabelSelector: &metav1.LabelSelector{

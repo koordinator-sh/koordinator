@@ -22,7 +22,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/atomic"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor/framework"
@@ -169,8 +169,8 @@ func Test_systemResourceCollector_collectSysResUsed(t *testing.T) {
 				},
 			},
 			want: want{
-				systemCPU:    pointer.Float64(0.5),
-				systemMemory: pointer.Float64(512),
+				systemCPU:    ptr.To[float64](0.5),
+				systemMemory: ptr.To[float64](512),
 			},
 		},
 		{
@@ -200,8 +200,8 @@ func Test_systemResourceCollector_collectSysResUsed(t *testing.T) {
 				},
 			},
 			want: want{
-				systemCPU:    pointer.Float64(0.5),
-				systemMemory: pointer.Float64(1024),
+				systemCPU:    ptr.To[float64](0.5),
+				systemMemory: ptr.To[float64](1024),
 			},
 		},
 		{
@@ -226,8 +226,8 @@ func Test_systemResourceCollector_collectSysResUsed(t *testing.T) {
 				},
 			},
 			want: want{
-				systemCPU:    pointer.Float64(0.4),
-				systemMemory: pointer.Float64(384),
+				systemCPU:    ptr.To[float64](0.4),
+				systemMemory: ptr.To[float64](384),
 			},
 		},
 	}

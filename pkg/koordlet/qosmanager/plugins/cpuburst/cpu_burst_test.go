@@ -31,7 +31,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	clientset "k8s.io/client-go/kubernetes"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
@@ -97,14 +97,14 @@ var (
 
 	defaultAutoBurstCfg = slov1alpha1.CPUBurstConfig{
 		Policy:                     slov1alpha1.CPUBurstAuto,
-		CPUBurstPercent:            pointer.Int64(1000),
-		CFSQuotaBurstPercent:       pointer.Int64(300),
-		CFSQuotaBurstPeriodSeconds: pointer.Int64(-1),
+		CPUBurstPercent:            ptr.To[int64](1000),
+		CFSQuotaBurstPercent:       ptr.To[int64](300),
+		CFSQuotaBurstPeriodSeconds: ptr.To[int64](-1),
 	}
 
 	defaultAutoBurstStrategy = &slov1alpha1.CPUBurstStrategy{
 		CPUBurstConfig:            defaultAutoBurstCfg,
-		SharePoolThresholdPercent: pointer.Int64(50),
+		SharePoolThresholdPercent: ptr.To[int64](50),
 	}
 )
 
@@ -434,16 +434,16 @@ func Test_genPodBurstConfig(t *testing.T) {
 				podCfg: nil,
 				nodeCfg: &slov1alpha1.CPUBurstConfig{
 					Policy:                     slov1alpha1.CPUBurstAuto,
-					CPUBurstPercent:            pointer.Int64(1000),
-					CFSQuotaBurstPercent:       pointer.Int64(300),
-					CFSQuotaBurstPeriodSeconds: pointer.Int64(600),
+					CPUBurstPercent:            ptr.To[int64](1000),
+					CFSQuotaBurstPercent:       ptr.To[int64](300),
+					CFSQuotaBurstPeriodSeconds: ptr.To[int64](600),
 				},
 			},
 			want: &slov1alpha1.CPUBurstConfig{
 				Policy:                     slov1alpha1.CPUBurstAuto,
-				CPUBurstPercent:            pointer.Int64(1000),
-				CFSQuotaBurstPercent:       pointer.Int64(300),
-				CFSQuotaBurstPeriodSeconds: pointer.Int64(600),
+				CPUBurstPercent:            ptr.To[int64](1000),
+				CFSQuotaBurstPercent:       ptr.To[int64](300),
+				CFSQuotaBurstPeriodSeconds: ptr.To[int64](600),
 			},
 		},
 		{
@@ -451,17 +451,17 @@ func Test_genPodBurstConfig(t *testing.T) {
 			args: args{
 				podCfg: &slov1alpha1.CPUBurstConfig{
 					Policy:                     slov1alpha1.CPUBurstAuto,
-					CPUBurstPercent:            pointer.Int64(1000),
-					CFSQuotaBurstPercent:       pointer.Int64(300),
-					CFSQuotaBurstPeriodSeconds: pointer.Int64(600),
+					CPUBurstPercent:            ptr.To[int64](1000),
+					CFSQuotaBurstPercent:       ptr.To[int64](300),
+					CFSQuotaBurstPeriodSeconds: ptr.To[int64](600),
 				},
 				nodeCfg: nil,
 			},
 			want: &slov1alpha1.CPUBurstConfig{
 				Policy:                     slov1alpha1.CPUBurstAuto,
-				CPUBurstPercent:            pointer.Int64(1000),
-				CFSQuotaBurstPercent:       pointer.Int64(300),
-				CFSQuotaBurstPeriodSeconds: pointer.Int64(600),
+				CPUBurstPercent:            ptr.To[int64](1000),
+				CFSQuotaBurstPercent:       ptr.To[int64](300),
+				CFSQuotaBurstPeriodSeconds: ptr.To[int64](600),
 			},
 		},
 		{
@@ -469,20 +469,20 @@ func Test_genPodBurstConfig(t *testing.T) {
 			args: args{
 				podCfg: &slov1alpha1.CPUBurstConfig{
 					Policy:          slov1alpha1.CPUBurstOnly,
-					CPUBurstPercent: pointer.Int64(500),
+					CPUBurstPercent: ptr.To[int64](500),
 				},
 				nodeCfg: &slov1alpha1.CPUBurstConfig{
 					Policy:                     slov1alpha1.CPUBurstAuto,
-					CPUBurstPercent:            pointer.Int64(1000),
-					CFSQuotaBurstPercent:       pointer.Int64(300),
-					CFSQuotaBurstPeriodSeconds: pointer.Int64(600),
+					CPUBurstPercent:            ptr.To[int64](1000),
+					CFSQuotaBurstPercent:       ptr.To[int64](300),
+					CFSQuotaBurstPeriodSeconds: ptr.To[int64](600),
 				},
 			},
 			want: &slov1alpha1.CPUBurstConfig{
 				Policy:                     slov1alpha1.CPUBurstOnly,
-				CPUBurstPercent:            pointer.Int64(500),
-				CFSQuotaBurstPercent:       pointer.Int64(300),
-				CFSQuotaBurstPeriodSeconds: pointer.Int64(600),
+				CPUBurstPercent:            ptr.To[int64](500),
+				CFSQuotaBurstPercent:       ptr.To[int64](300),
+				CFSQuotaBurstPeriodSeconds: ptr.To[int64](600),
 			},
 		},
 	}
@@ -587,7 +587,7 @@ func TestCPUBurst_applyCPUBurst(t *testing.T) {
 			args: args{
 				burstCfg: slov1alpha1.CPUBurstConfig{
 					Policy:          slov1alpha1.CPUBurstAuto,
-					CPUBurstPercent: pointer.Int64(500),
+					CPUBurstPercent: ptr.To[int64](500),
 				},
 			},
 			want: want{
@@ -624,7 +624,7 @@ func TestCPUBurst_applyCPUBurst(t *testing.T) {
 			args: args{
 				burstCfg: slov1alpha1.CPUBurstConfig{
 					Policy:          slov1alpha1.CFSQuotaBurstOnly,
-					CPUBurstPercent: pointer.Int64(500),
+					CPUBurstPercent: ptr.To[int64](500),
 				},
 			},
 			want: want{
@@ -767,9 +767,9 @@ func TestCPUBurst_applyCFSQuotaBurst(t *testing.T) {
 			args: args{
 				burstCfg: slov1alpha1.CPUBurstConfig{
 					Policy:                     slov1alpha1.CPUBurstOnly,
-					CPUBurstPercent:            pointer.Int64(1000),
-					CFSQuotaBurstPercent:       pointer.Int64(300),
-					CFSQuotaBurstPeriodSeconds: pointer.Int64(-1),
+					CPUBurstPercent:            ptr.To[int64](1000),
+					CFSQuotaBurstPercent:       ptr.To[int64](300),
+					CFSQuotaBurstPeriodSeconds: ptr.To[int64](-1),
 				},
 				nodeState: nodeBurstIdle,
 			},
@@ -937,9 +937,9 @@ func TestCPUBurst_applyCFSQuotaBurst(t *testing.T) {
 			args: args{
 				burstCfg: slov1alpha1.CPUBurstConfig{
 					Policy:                     slov1alpha1.CPUBurstAuto,
-					CPUBurstPercent:            pointer.Int64(1000),
-					CFSQuotaBurstPercent:       pointer.Int64(300),
-					CFSQuotaBurstPeriodSeconds: pointer.Int64(0),
+					CPUBurstPercent:            ptr.To[int64](1000),
+					CFSQuotaBurstPercent:       ptr.To[int64](300),
+					CFSQuotaBurstPeriodSeconds: ptr.To[int64](0),
 				},
 				nodeState: nodeBurstIdle,
 			},
@@ -983,9 +983,9 @@ func TestCPUBurst_applyCFSQuotaBurst(t *testing.T) {
 			args: args{
 				burstCfg: slov1alpha1.CPUBurstConfig{
 					Policy:                     slov1alpha1.CPUBurstAuto,
-					CPUBurstPercent:            pointer.Int64(1000),
-					CFSQuotaBurstPercent:       pointer.Int64(90),
-					CFSQuotaBurstPeriodSeconds: pointer.Int64(-1),
+					CPUBurstPercent:            ptr.To[int64](1000),
+					CFSQuotaBurstPercent:       ptr.To[int64](90),
+					CFSQuotaBurstPeriodSeconds: ptr.To[int64](-1),
 				},
 				nodeState: nodeBurstIdle,
 			},
@@ -1771,9 +1771,9 @@ func Test_genPodBurstConfigWithPlugin(t *testing.T) {
 			},
 			want: &slov1alpha1.CPUBurstConfig{
 				Policy:                     slov1alpha1.CPUBurstAuto,
-				CPUBurstPercent:            pointer.Int64(1000),
-				CFSQuotaBurstPercent:       pointer.Int64(300),
-				CFSQuotaBurstPeriodSeconds: pointer.Int64(-1),
+				CPUBurstPercent:            ptr.To[int64](1000),
+				CFSQuotaBurstPercent:       ptr.To[int64](300),
+				CFSQuotaBurstPeriodSeconds: ptr.To[int64](-1),
 			},
 		},
 	}

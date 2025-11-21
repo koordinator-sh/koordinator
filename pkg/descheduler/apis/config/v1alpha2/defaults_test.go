@@ -23,7 +23,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 )
 
 func TestSetDefaults_LowNodeLoadArgs(t *testing.T) {
@@ -35,11 +35,11 @@ func TestSetDefaults_LowNodeLoadArgs(t *testing.T) {
 		{
 			name: "set nodeFit",
 			args: &LowNodeLoadArgs{
-				NodeFit: pointer.Bool(false),
+				NodeFit: ptr.To[bool](false),
 			},
 			expected: &LowNodeLoadArgs{
-				NodeFit:                     pointer.Bool(false),
-				NodeMetricExpirationSeconds: pointer.Int64(defaultNodeMetricExpirationSeconds),
+				NodeFit:                     ptr.To[bool](false),
+				NodeMetricExpirationSeconds: ptr.To[int64](defaultNodeMetricExpirationSeconds),
 				AnomalyCondition:            defaultLoadAnomalyCondition,
 				DetectorCacheTimeout:        &metav1.Duration{Duration: 5 * time.Minute},
 				ResourceWeights: map[corev1.ResourceName]int64{
@@ -54,8 +54,8 @@ func TestSetDefaults_LowNodeLoadArgs(t *testing.T) {
 				DetectorCacheTimeout: &metav1.Duration{Duration: 10 * time.Minute},
 			},
 			expected: &LowNodeLoadArgs{
-				NodeFit:                     pointer.Bool(true),
-				NodeMetricExpirationSeconds: pointer.Int64(defaultNodeMetricExpirationSeconds),
+				NodeFit:                     ptr.To[bool](true),
+				NodeMetricExpirationSeconds: ptr.To[int64](defaultNodeMetricExpirationSeconds),
 				AnomalyCondition:            defaultLoadAnomalyCondition,
 				DetectorCacheTimeout:        &metav1.Duration{Duration: 10 * time.Minute},
 				ResourceWeights: map[corev1.ResourceName]int64{
@@ -74,8 +74,8 @@ func TestSetDefaults_LowNodeLoadArgs(t *testing.T) {
 				},
 			},
 			expected: &LowNodeLoadArgs{
-				NodeFit:                     pointer.Bool(true),
-				NodeMetricExpirationSeconds: pointer.Int64(defaultNodeMetricExpirationSeconds),
+				NodeFit:                     ptr.To[bool](true),
+				NodeMetricExpirationSeconds: ptr.To[int64](defaultNodeMetricExpirationSeconds),
 				AnomalyCondition: &LoadAnomalyCondition{
 					Timeout:                  &metav1.Duration{Duration: 10 * time.Second},
 					ConsecutiveAbnormalities: defaultLoadAnomalyCondition.ConsecutiveAbnormalities,
@@ -102,8 +102,8 @@ func TestSetDefaults_LowNodeLoadArgs(t *testing.T) {
 				},
 			},
 			expected: &LowNodeLoadArgs{
-				NodeFit:                     pointer.Bool(true),
-				NodeMetricExpirationSeconds: pointer.Int64(defaultNodeMetricExpirationSeconds),
+				NodeFit:                     ptr.To[bool](true),
+				NodeMetricExpirationSeconds: ptr.To[int64](defaultNodeMetricExpirationSeconds),
 				AnomalyCondition:            defaultLoadAnomalyCondition,
 				DetectorCacheTimeout:        &metav1.Duration{Duration: 5 * time.Minute},
 				LowThresholds: ResourceThresholds{

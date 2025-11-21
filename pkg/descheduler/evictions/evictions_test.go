@@ -30,7 +30,7 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	core "k8s.io/client-go/testing"
 	"k8s.io/client-go/tools/record"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/framework"
 	podutil "github.com/koordinator-sh/koordinator/pkg/descheduler/pod"
@@ -813,7 +813,7 @@ func TestPodEvictor(t *testing.T) {
 	fakeRecorder := record.NewFakeRecorder(1024)
 	eventRecorder := record.NewEventRecorderAdapter(fakeRecorder)
 	fakeClient := fake.NewSimpleClientset()
-	podEvictor := NewPodEvictor(fakeClient, eventRecorder, "", false, pointer.Uint(1), pointer.Uint(1))
+	podEvictor := NewPodEvictor(fakeClient, eventRecorder, "", false, ptr.To[uint](1), ptr.To[uint](1))
 
 	ctx := context.WithValue(context.TODO(), framework.EvictionPluginNameContextKey, "test")
 	ctx = context.WithValue(ctx, framework.EvictionReasonContextKey, "just for test")
@@ -871,7 +871,7 @@ func TestPodEvictor(t *testing.T) {
 	})
 
 	t.Run("test Namespace evict limit", func(t *testing.T) {
-		podEvictor.maxPodsToEvictPerNode = pointer.Uint(2)
+		podEvictor.maxPodsToEvictPerNode = ptr.To[uint](2)
 		pod = &corev1.Pod{
 			ObjectMeta: metav1.ObjectMeta{
 				Namespace: "default",

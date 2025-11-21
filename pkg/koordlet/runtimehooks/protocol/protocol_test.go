@@ -24,7 +24,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	runtimeapi "github.com/koordinator-sh/koordinator/apis/runtime/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
@@ -45,14 +45,14 @@ func TestResources_IsOriginResSet(t *testing.T) {
 		{
 			name: "some origin resource field is not nil",
 			fields: fields{
-				CPUSet: pointer.String("0-2"),
+				CPUSet: ptr.To[string]("0-2"),
 			},
 			want: true,
 		},
 		{
 			name: "all origin resource filed is nil",
 			fields: fields{
-				CPUBvt: pointer.Int64(-1),
+				CPUBvt: ptr.To[int64](-1),
 			},
 			want: false,
 		},
@@ -105,9 +105,9 @@ func TestResourcesFromPod(t *testing.T) {
 				},
 			},
 			wantField: &Resources{
-				CPUShares:   pointer.Int64(2),
-				CFSQuota:    pointer.Int64(-1),
-				MemoryLimit: pointer.Int64(-1),
+				CPUShares:   ptr.To[int64](2),
+				CFSQuota:    ptr.To[int64](-1),
+				MemoryLimit: ptr.To[int64](-1),
 			},
 		},
 		{
@@ -138,9 +138,9 @@ func TestResourcesFromPod(t *testing.T) {
 				},
 			},
 			wantField: &Resources{
-				CPUShares:   pointer.Int64(2048),
-				CFSQuota:    pointer.Int64(200000),
-				MemoryLimit: pointer.Int64(4294967296),
+				CPUShares:   ptr.To[int64](2048),
+				CFSQuota:    ptr.To[int64](200000),
+				MemoryLimit: ptr.To[int64](4294967296),
 			},
 		},
 		{
@@ -171,9 +171,9 @@ func TestResourcesFromPod(t *testing.T) {
 				},
 			},
 			wantField: &Resources{
-				CPUShares:   pointer.Int64(1024),
-				CFSQuota:    pointer.Int64(200000),
-				MemoryLimit: pointer.Int64(4294967296),
+				CPUShares:   ptr.To[int64](1024),
+				CFSQuota:    ptr.To[int64](200000),
+				MemoryLimit: ptr.To[int64](4294967296),
 			},
 		},
 	}
@@ -201,9 +201,9 @@ func TestResourcesFromContainer(t *testing.T) {
 				Name: "test-container-name",
 			},
 			wantField: &Resources{
-				CPUShares:   pointer.Int64(2),
-				CFSQuota:    pointer.Int64(-1),
-				MemoryLimit: pointer.Int64(-1),
+				CPUShares:   ptr.To[int64](2),
+				CFSQuota:    ptr.To[int64](-1),
+				MemoryLimit: ptr.To[int64](-1),
 			},
 		},
 		{
@@ -224,9 +224,9 @@ func TestResourcesFromContainer(t *testing.T) {
 				},
 			},
 			wantField: &Resources{
-				CPUShares:   pointer.Int64(2048),
-				CFSQuota:    pointer.Int64(200000),
-				MemoryLimit: pointer.Int64(4294967296),
+				CPUShares:   ptr.To[int64](2048),
+				CFSQuota:    ptr.To[int64](200000),
+				MemoryLimit: ptr.To[int64](4294967296),
 			},
 		},
 		{
@@ -246,9 +246,9 @@ func TestResourcesFromContainer(t *testing.T) {
 				},
 			},
 			wantField: &Resources{
-				CPUShares:   pointer.Int64(1024),
-				CFSQuota:    pointer.Int64(200000),
-				MemoryLimit: pointer.Int64(4294967296),
+				CPUShares:   ptr.To[int64](1024),
+				CFSQuota:    ptr.To[int64](200000),
+				MemoryLimit: ptr.To[int64](4294967296),
 			},
 		},
 	}
@@ -287,11 +287,11 @@ func TestContainerResponse_ProxyDone(t *testing.T) {
 			name: "origin resource is not nil",
 			fields: fields{
 				Resources: Resources{
-					CPUShares:   pointer.Int64(15),
-					CFSQuota:    pointer.Int64(1000),
-					CPUSet:      pointer.String("0,1,2"),
-					MemoryLimit: pointer.Int64(1048576),
-					CPUBvt:      pointer.Int64(10),
+					CPUShares:   ptr.To[int64](15),
+					CFSQuota:    ptr.To[int64](1000),
+					CPUSet:      ptr.To[string]("0,1,2"),
+					MemoryLimit: ptr.To[int64](1048576),
+					CPUBvt:      ptr.To[int64](10),
 				},
 				ContainerEnvs: make(map[string]string, 0),
 			},
@@ -301,11 +301,11 @@ func TestContainerResponse_ProxyDone(t *testing.T) {
 				},
 			},
 			wants: wants{
-				CPUSet:      pointer.String("0,1,2"),
-				CPUShares:   pointer.Int64(15),
-				CFSQuota:    pointer.Int64(1000),
-				MemoryLimit: pointer.Int64(1048576),
-				CPUBvt:      pointer.Int64(10),
+				CPUSet:      ptr.To[string]("0,1,2"),
+				CPUShares:   ptr.To[int64](15),
+				CFSQuota:    ptr.To[int64](1000),
+				MemoryLimit: ptr.To[int64](1048576),
+				CPUBvt:      ptr.To[int64](10),
 			},
 		},
 	}
@@ -345,7 +345,7 @@ func TestPodResponse_ProxyDone(t *testing.T) {
 			name: "origin response resource is nil",
 			fields: fields{
 				Resources: Resources{
-					CPUSet: pointer.String("0,1,2"),
+					CPUSet: ptr.To[string]("0,1,2"),
 				},
 			},
 			args: args{
@@ -354,7 +354,7 @@ func TestPodResponse_ProxyDone(t *testing.T) {
 				},
 			},
 			wants: wants{
-				CPUSet: pointer.String("0,1,2"),
+				CPUSet: ptr.To[string]("0,1,2"),
 			},
 		},
 	}
@@ -421,20 +421,20 @@ func TestPodResponse_ReconcilerDone(t *testing.T) {
 			},
 			res: ContainerResponse{
 				Resources: Resources{
-					CPUSet:      pointer.String(""),
-					CPUShares:   pointer.Int64(15),
-					CFSQuota:    pointer.Int64(1000),
-					MemoryLimit: pointer.Int64(1048576),
-					CPUBvt:      pointer.Int64(10),
+					CPUSet:      ptr.To[string](""),
+					CPUShares:   ptr.To[int64](15),
+					CFSQuota:    ptr.To[int64](1000),
+					MemoryLimit: ptr.To[int64](1048576),
+					CPUBvt:      ptr.To[int64](10),
 				},
 				AddContainerEnvs: nil,
 			},
 			wants: wants{
-				CPUSet:      pointer.String(""),
-				CPUShares:   pointer.Int64(15),
-				CFSQuota:    pointer.Int64(1000),
-				MemoryLimit: pointer.Int64(1048576),
-				CPUBvt:      pointer.Int64(10),
+				CPUSet:      ptr.To[string](""),
+				CPUShares:   ptr.To[int64](15),
+				CFSQuota:    ptr.To[int64](1000),
+				MemoryLimit: ptr.To[int64](1048576),
+				CPUBvt:      ptr.To[int64](10),
 			},
 		},
 	}

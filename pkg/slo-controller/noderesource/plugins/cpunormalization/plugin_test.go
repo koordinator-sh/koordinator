@@ -26,7 +26,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/record"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
@@ -363,7 +363,7 @@ func TestPluginCalculate(t *testing.T) {
 						available: true,
 						config: &configuration.CPUNormalizationCfg{
 							CPUNormalizationStrategy: configuration.CPUNormalizationStrategy{
-								Enable:     pointer.Bool(false),
+								Enable:     ptr.To[bool](false),
 								RatioModel: map[string]configuration.ModelRatioCfg{},
 							},
 						},
@@ -392,7 +392,7 @@ func TestPluginCalculate(t *testing.T) {
 						available: true,
 						config: &configuration.CPUNormalizationCfg{
 							CPUNormalizationStrategy: configuration.CPUNormalizationStrategy{
-								Enable:     pointer.Bool(true),
+								Enable:     ptr.To[bool](true),
 								RatioModel: map[string]configuration.ModelRatioCfg{},
 							},
 						},
@@ -417,7 +417,7 @@ func TestPluginCalculate(t *testing.T) {
 						available: true,
 						config: &configuration.CPUNormalizationCfg{
 							CPUNormalizationStrategy: configuration.CPUNormalizationStrategy{
-								Enable:     pointer.Bool(true),
+								Enable:     ptr.To[bool](true),
 								RatioModel: map[string]configuration.ModelRatioCfg{},
 							},
 						},
@@ -445,7 +445,7 @@ func TestPluginCalculate(t *testing.T) {
 						available: true,
 						config: &configuration.CPUNormalizationCfg{
 							CPUNormalizationStrategy: configuration.CPUNormalizationStrategy{
-								Enable:     pointer.Bool(true),
+								Enable:     ptr.To[bool](true),
 								RatioModel: map[string]configuration.ModelRatioCfg{},
 							},
 						},
@@ -466,10 +466,10 @@ func TestPluginCalculate(t *testing.T) {
 						available: true,
 						config: &configuration.CPUNormalizationCfg{
 							CPUNormalizationStrategy: configuration.CPUNormalizationStrategy{
-								Enable: pointer.Bool(true),
+								Enable: ptr.To[bool](true),
 								RatioModel: map[string]configuration.ModelRatioCfg{
 									"XXX": {
-										BaseRatio: pointer.Float64(1.0),
+										BaseRatio: ptr.To[float64](1.0),
 									},
 								},
 							},
@@ -491,10 +491,10 @@ func TestPluginCalculate(t *testing.T) {
 						available: true,
 						config: &configuration.CPUNormalizationCfg{
 							CPUNormalizationStrategy: configuration.CPUNormalizationStrategy{
-								Enable: pointer.Bool(true),
+								Enable: ptr.To[bool](true),
 								RatioModel: map[string]configuration.ModelRatioCfg{
 									"XXX": {
-										HyperThreadTurboEnabledRatio: pointer.Float64(10),
+										HyperThreadTurboEnabledRatio: ptr.To[float64](10),
 									},
 								},
 							},
@@ -516,13 +516,13 @@ func TestPluginCalculate(t *testing.T) {
 						available: true,
 						config: &configuration.CPUNormalizationCfg{
 							CPUNormalizationStrategy: configuration.CPUNormalizationStrategy{
-								Enable: pointer.Bool(true),
+								Enable: ptr.To[bool](true),
 								RatioModel: map[string]configuration.ModelRatioCfg{
 									"XXX": {
-										BaseRatio:                    pointer.Float64(1.5),
-										TurboEnabledRatio:            pointer.Float64(1.65),
-										HyperThreadEnabledRatio:      pointer.Float64(1.0),
-										HyperThreadTurboEnabledRatio: pointer.Float64(1.1),
+										BaseRatio:                    ptr.To[float64](1.5),
+										TurboEnabledRatio:            ptr.To[float64](1.65),
+										HyperThreadEnabledRatio:      ptr.To[float64](1.0),
+										HyperThreadTurboEnabledRatio: ptr.To[float64](1.1),
 									},
 								},
 							},
@@ -559,13 +559,13 @@ func TestPluginCalculate(t *testing.T) {
 						available: true,
 						config: &configuration.CPUNormalizationCfg{
 							CPUNormalizationStrategy: configuration.CPUNormalizationStrategy{
-								Enable: pointer.Bool(false),
+								Enable: ptr.To[bool](false),
 								RatioModel: map[string]configuration.ModelRatioCfg{
 									"XXX": {
-										BaseRatio:                    pointer.Float64(1.0),
-										TurboEnabledRatio:            pointer.Float64(1.0),
-										HyperThreadEnabledRatio:      pointer.Float64(1.0),
-										HyperThreadTurboEnabledRatio: pointer.Float64(1.0),
+										BaseRatio:                    ptr.To[float64](1.0),
+										TurboEnabledRatio:            ptr.To[float64](1.0),
+										HyperThreadEnabledRatio:      ptr.To[float64](1.0),
+										HyperThreadTurboEnabledRatio: ptr.To[float64](1.0),
 									},
 								},
 							},
@@ -579,13 +579,13 @@ func TestPluginCalculate(t *testing.T) {
 										},
 									},
 									CPUNormalizationStrategy: configuration.CPUNormalizationStrategy{
-										Enable: pointer.Bool(true),
+										Enable: ptr.To[bool](true),
 										RatioModel: map[string]configuration.ModelRatioCfg{
 											"XXX": {
-												BaseRatio:                    pointer.Float64(1.5),
-												TurboEnabledRatio:            pointer.Float64(1.65),
-												HyperThreadEnabledRatio:      pointer.Float64(1.0),
-												HyperThreadTurboEnabledRatio: pointer.Float64(1.1),
+												BaseRatio:                    ptr.To[float64](1.5),
+												TurboEnabledRatio:            ptr.To[float64](1.65),
+												HyperThreadEnabledRatio:      ptr.To[float64](1.0),
+												HyperThreadTurboEnabledRatio: ptr.To[float64](1.1),
 											},
 										},
 									},
@@ -624,13 +624,13 @@ func TestPluginCalculate(t *testing.T) {
 						available: true,
 						config: &configuration.CPUNormalizationCfg{
 							CPUNormalizationStrategy: configuration.CPUNormalizationStrategy{
-								Enable: pointer.Bool(false),
+								Enable: ptr.To[bool](false),
 								RatioModel: map[string]configuration.ModelRatioCfg{
 									"XXX": {
-										BaseRatio:                    pointer.Float64(1.5),
-										TurboEnabledRatio:            pointer.Float64(1.65),
-										HyperThreadEnabledRatio:      pointer.Float64(1.0),
-										HyperThreadTurboEnabledRatio: pointer.Float64(1.1),
+										BaseRatio:                    ptr.To[float64](1.5),
+										TurboEnabledRatio:            ptr.To[float64](1.65),
+										HyperThreadEnabledRatio:      ptr.To[float64](1.0),
+										HyperThreadTurboEnabledRatio: ptr.To[float64](1.1),
 									},
 								},
 							},
@@ -667,13 +667,13 @@ func TestPluginCalculate(t *testing.T) {
 						available: true,
 						config: &configuration.CPUNormalizationCfg{
 							CPUNormalizationStrategy: configuration.CPUNormalizationStrategy{
-								Enable: pointer.Bool(true),
+								Enable: ptr.To[bool](true),
 								RatioModel: map[string]configuration.ModelRatioCfg{
 									"XXX": {
-										BaseRatio:                    pointer.Float64(1.5),
-										TurboEnabledRatio:            pointer.Float64(1.65),
-										HyperThreadEnabledRatio:      pointer.Float64(1.0),
-										HyperThreadTurboEnabledRatio: pointer.Float64(1.1),
+										BaseRatio:                    ptr.To[float64](1.5),
+										TurboEnabledRatio:            ptr.To[float64](1.65),
+										HyperThreadEnabledRatio:      ptr.To[float64](1.0),
+										HyperThreadTurboEnabledRatio: ptr.To[float64](1.1),
 									},
 								},
 							},
@@ -735,7 +735,7 @@ func Test_getCPUNormalizationRatioFromModel(t *testing.T) {
 			name: "nil model",
 			args: args{
 				strategy: &configuration.CPUNormalizationStrategy{
-					Enable:     pointer.Bool(true),
+					Enable:     ptr.To[bool](true),
 					RatioModel: nil,
 				},
 			},
@@ -749,10 +749,10 @@ func Test_getCPUNormalizationRatioFromModel(t *testing.T) {
 					CPUModel: "CPU XXX",
 				},
 				strategy: &configuration.CPUNormalizationStrategy{
-					Enable: pointer.Bool(true),
+					Enable: ptr.To[bool](true),
 					RatioModel: map[string]configuration.ModelRatioCfg{
 						"CPU YYY": {
-							BaseRatio: pointer.Float64(1.0),
+							BaseRatio: ptr.To[float64](1.0),
 						},
 					},
 				},
@@ -769,10 +769,10 @@ func Test_getCPUNormalizationRatioFromModel(t *testing.T) {
 					HyperThreadEnabled: true,
 				},
 				strategy: &configuration.CPUNormalizationStrategy{
-					Enable: pointer.Bool(true),
+					Enable: ptr.To[bool](true),
 					RatioModel: map[string]configuration.ModelRatioCfg{
 						"CPU XXX": {
-							BaseRatio: pointer.Float64(1.5),
+							BaseRatio: ptr.To[float64](1.5),
 						},
 					},
 				},
@@ -789,13 +789,13 @@ func Test_getCPUNormalizationRatioFromModel(t *testing.T) {
 					HyperThreadEnabled: true,
 				},
 				strategy: &configuration.CPUNormalizationStrategy{
-					Enable: pointer.Bool(true),
+					Enable: ptr.To[bool](true),
 					RatioModel: map[string]configuration.ModelRatioCfg{
 						"CPU XXX": {
-							BaseRatio:                    pointer.Float64(1.5),
-							TurboEnabledRatio:            pointer.Float64(1.65),
-							HyperThreadEnabledRatio:      pointer.Float64(1.0),
-							HyperThreadTurboEnabledRatio: pointer.Float64(1.1),
+							BaseRatio:                    ptr.To[float64](1.5),
+							TurboEnabledRatio:            ptr.To[float64](1.65),
+							HyperThreadEnabledRatio:      ptr.To[float64](1.0),
+							HyperThreadTurboEnabledRatio: ptr.To[float64](1.1),
 						},
 					},
 				},
@@ -811,13 +811,13 @@ func Test_getCPUNormalizationRatioFromModel(t *testing.T) {
 					HyperThreadEnabled: true,
 				},
 				strategy: &configuration.CPUNormalizationStrategy{
-					Enable: pointer.Bool(true),
+					Enable: ptr.To[bool](true),
 					RatioModel: map[string]configuration.ModelRatioCfg{
 						"CPU XXX": {
-							BaseRatio:                    pointer.Float64(1.5),
-							TurboEnabledRatio:            pointer.Float64(1.65),
-							HyperThreadEnabledRatio:      pointer.Float64(1.0),
-							HyperThreadTurboEnabledRatio: pointer.Float64(1.1),
+							BaseRatio:                    ptr.To[float64](1.5),
+							TurboEnabledRatio:            ptr.To[float64](1.65),
+							HyperThreadEnabledRatio:      ptr.To[float64](1.0),
+							HyperThreadTurboEnabledRatio: ptr.To[float64](1.1),
 						},
 					},
 				},
@@ -833,13 +833,13 @@ func Test_getCPUNormalizationRatioFromModel(t *testing.T) {
 					TurboEnabled: true,
 				},
 				strategy: &configuration.CPUNormalizationStrategy{
-					Enable: pointer.Bool(true),
+					Enable: ptr.To[bool](true),
 					RatioModel: map[string]configuration.ModelRatioCfg{
 						"CPU XXX": {
-							BaseRatio:                    pointer.Float64(1.5),
-							TurboEnabledRatio:            pointer.Float64(1.65),
-							HyperThreadEnabledRatio:      pointer.Float64(1.0),
-							HyperThreadTurboEnabledRatio: pointer.Float64(1.1),
+							BaseRatio:                    ptr.To[float64](1.5),
+							TurboEnabledRatio:            ptr.To[float64](1.65),
+							HyperThreadEnabledRatio:      ptr.To[float64](1.0),
+							HyperThreadTurboEnabledRatio: ptr.To[float64](1.1),
 						},
 					},
 				},
@@ -854,13 +854,13 @@ func Test_getCPUNormalizationRatioFromModel(t *testing.T) {
 					CPUModel: "CPU XXX",
 				},
 				strategy: &configuration.CPUNormalizationStrategy{
-					Enable: pointer.Bool(true),
+					Enable: ptr.To[bool](true),
 					RatioModel: map[string]configuration.ModelRatioCfg{
 						"CPU XXX": {
-							BaseRatio:                    pointer.Float64(1.5),
-							TurboEnabledRatio:            pointer.Float64(1.65),
-							HyperThreadEnabledRatio:      pointer.Float64(1.0),
-							HyperThreadTurboEnabledRatio: pointer.Float64(1.1),
+							BaseRatio:                    ptr.To[float64](1.5),
+							TurboEnabledRatio:            ptr.To[float64](1.65),
+							HyperThreadEnabledRatio:      ptr.To[float64](1.0),
+							HyperThreadTurboEnabledRatio: ptr.To[float64](1.1),
 						},
 					},
 				},
@@ -875,7 +875,7 @@ func Test_getCPUNormalizationRatioFromModel(t *testing.T) {
 					CPUModel: "CPU XXX",
 				},
 				strategy: &configuration.CPUNormalizationStrategy{
-					Enable: pointer.Bool(true),
+					Enable: ptr.To[bool](true),
 					RatioModel: map[string]configuration.ModelRatioCfg{
 						"CPU XXX": {},
 					},
@@ -909,7 +909,7 @@ func Test_getCPUNormalizationRatio(t *testing.T) {
 			name: "nil model and nil default ratio",
 			args: args{
 				strategy: &configuration.CPUNormalizationStrategy{
-					Enable:       pointer.Bool(true),
+					Enable:       ptr.To[bool](true),
 					DefaultRatio: nil,
 					RatioModel:   nil,
 				},
@@ -921,8 +921,8 @@ func Test_getCPUNormalizationRatio(t *testing.T) {
 			name: "nil model and valid default ratio",
 			args: args{
 				strategy: &configuration.CPUNormalizationStrategy{
-					Enable:       pointer.Bool(true),
-					DefaultRatio: pointer.Float64(2.5),
+					Enable:       ptr.To[bool](true),
+					DefaultRatio: ptr.To[float64](2.5),
 					RatioModel:   nil,
 				},
 			},
@@ -936,14 +936,14 @@ func Test_getCPUNormalizationRatio(t *testing.T) {
 					CPUModel: "CPU XXX",
 				},
 				strategy: &configuration.CPUNormalizationStrategy{
-					Enable:       pointer.Bool(true),
-					DefaultRatio: pointer.Float64(3.5),
+					Enable:       ptr.To[bool](true),
+					DefaultRatio: ptr.To[float64](3.5),
 					RatioModel: map[string]configuration.ModelRatioCfg{
 						"CPU XXX": {
-							BaseRatio:                    pointer.Float64(1.9),
-							TurboEnabledRatio:            pointer.Float64(1.65),
-							HyperThreadEnabledRatio:      pointer.Float64(1.0),
-							HyperThreadTurboEnabledRatio: pointer.Float64(1.1),
+							BaseRatio:                    ptr.To[float64](1.9),
+							TurboEnabledRatio:            ptr.To[float64](1.65),
+							HyperThreadEnabledRatio:      ptr.To[float64](1.0),
+							HyperThreadTurboEnabledRatio: ptr.To[float64](1.1),
 						},
 					},
 				},
@@ -958,8 +958,8 @@ func Test_getCPUNormalizationRatio(t *testing.T) {
 					CPUModel: "CPU XXX",
 				},
 				strategy: &configuration.CPUNormalizationStrategy{
-					Enable:       pointer.Bool(true),
-					DefaultRatio: pointer.Float64(2.2),
+					Enable:       ptr.To[bool](true),
+					DefaultRatio: ptr.To[float64](2.2),
 					RatioModel: map[string]configuration.ModelRatioCfg{
 						"CPU XXX": {},
 					},

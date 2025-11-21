@@ -33,7 +33,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	fakeclientset "k8s.io/client-go/kubernetes/fake"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
@@ -109,7 +109,7 @@ func Test_nodeMetricInformer_getNodeMetricReportInterval(t *testing.T) {
 				nodeMetric: &slov1alpha1.NodeMetric{
 					Spec: slov1alpha1.NodeMetricSpec{
 						CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
-							ReportIntervalSeconds: pointer.Int64(666),
+							ReportIntervalSeconds: ptr.To[int64](666),
 						},
 					},
 				},
@@ -361,12 +361,12 @@ func Test_reporter_sync_with_single_node_metric(t *testing.T) {
 					v1.ResourceMemory: *resource.NewQuantity(3*1024*1024*1024, resource.BinarySI),
 				},
 				Devices: []schedulingv1alpha1.DeviceInfo{
-					{UUID: "1", Minor: pointer.Int32(0), Type: schedulingv1alpha1.GPU, Resources: map[v1.ResourceName]resource.Quantity{
+					{UUID: "1", Minor: ptr.To[int32](0), Type: schedulingv1alpha1.GPU, Resources: map[v1.ResourceName]resource.Quantity{
 						apiext.ResourceGPUCore:        *resource.NewQuantity(80, resource.DecimalSI),
 						apiext.ResourceGPUMemory:      *resource.NewQuantity(30, resource.BinarySI),
 						apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(30, resource.DecimalSI),
 					}},
-					{UUID: "2", Minor: pointer.Int32(1), Type: schedulingv1alpha1.GPU, Resources: map[v1.ResourceName]resource.Quantity{
+					{UUID: "2", Minor: ptr.To[int32](1), Type: schedulingv1alpha1.GPU, Resources: map[v1.ResourceName]resource.Quantity{
 						apiext.ResourceGPUCore:        *resource.NewQuantity(40, resource.DecimalSI),
 						apiext.ResourceGPUMemory:      *resource.NewQuantity(50, resource.BinarySI),
 						apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(25, resource.DecimalSI),
@@ -391,12 +391,12 @@ func Test_reporter_sync_with_single_node_metric(t *testing.T) {
 							v1.ResourceMemory: *resource.NewQuantity(1*1024*1024*1024, resource.BinarySI),
 						},
 						Devices: []schedulingv1alpha1.DeviceInfo{
-							{UUID: "1", Minor: pointer.Int32(0), Type: schedulingv1alpha1.GPU, Resources: map[v1.ResourceName]resource.Quantity{
+							{UUID: "1", Minor: ptr.To[int32](0), Type: schedulingv1alpha1.GPU, Resources: map[v1.ResourceName]resource.Quantity{
 								apiext.ResourceGPUCore:        *resource.NewQuantity(80, resource.DecimalSI),
 								apiext.ResourceGPUMemory:      *resource.NewQuantity(30, resource.BinarySI),
 								apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(30, resource.DecimalSI),
 							}},
-							{UUID: "2", Minor: pointer.Int32(1), Type: schedulingv1alpha1.GPU, Resources: map[v1.ResourceName]resource.Quantity{
+							{UUID: "2", Minor: ptr.To[int32](1), Type: schedulingv1alpha1.GPU, Resources: map[v1.ResourceName]resource.Quantity{
 								apiext.ResourceGPUCore:        *resource.NewQuantity(40, resource.DecimalSI),
 								apiext.ResourceGPUMemory:      *resource.NewQuantity(50, resource.BinarySI),
 								apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(25, resource.DecimalSI),
@@ -673,7 +673,7 @@ func Test_nodeMetricInformer_updateMetricSpec(t *testing.T) {
 				newNodeMetric: &slov1alpha1.NodeMetric{
 					Spec: slov1alpha1.NodeMetricSpec{
 						CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
-							ReportIntervalSeconds: pointer.Int64(180),
+							ReportIntervalSeconds: ptr.To[int64](180),
 						},
 					},
 				},
@@ -681,7 +681,7 @@ func Test_nodeMetricInformer_updateMetricSpec(t *testing.T) {
 			want: &slov1alpha1.NodeMetricSpec{
 				CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
 					AggregateDurationSeconds: defaultNodeMetricSpec.CollectPolicy.AggregateDurationSeconds,
-					ReportIntervalSeconds:    pointer.Int64(180),
+					ReportIntervalSeconds:    ptr.To[int64](180),
 					NodeAggregatePolicy:      defaultNodeMetricSpec.CollectPolicy.NodeAggregatePolicy,
 					NodeMemoryCollectPolicy:  defaultNodeMetricSpec.CollectPolicy.NodeMemoryCollectPolicy,
 				},
@@ -817,7 +817,7 @@ func Test_nodeMetricInformer_collectNodeGPUMetric(t *testing.T) {
 			want: []schedulingv1alpha1.DeviceInfo{
 				{
 					UUID:  "1",
-					Minor: pointer.Int32(0),
+					Minor: ptr.To[int32](0),
 					Type:  schedulingv1alpha1.GPU,
 					Resources: map[v1.ResourceName]resource.Quantity{
 						apiext.ResourceGPUCore:        *resource.NewQuantity(int64(80), resource.DecimalSI),
@@ -827,7 +827,7 @@ func Test_nodeMetricInformer_collectNodeGPUMetric(t *testing.T) {
 				},
 				{
 					UUID:  "2",
-					Minor: pointer.Int32(1),
+					Minor: ptr.To[int32](1),
 					Type:  schedulingv1alpha1.GPU,
 					Resources: map[v1.ResourceName]resource.Quantity{
 						apiext.ResourceGPUCore:        *resource.NewQuantity(int64(10), resource.DecimalSI),
@@ -1010,7 +1010,7 @@ func Test_nodeMetricInformer_collectPodMetric(t *testing.T) {
 							},
 						},
 						Spec: v1.PodSpec{
-							Priority: pointer.Int32(apiext.PriorityProdValueMax),
+							Priority: ptr.To[int32](apiext.PriorityProdValueMax),
 						},
 					},
 				},
@@ -1048,7 +1048,7 @@ func Test_nodeMetricInformer_collectPodMetric(t *testing.T) {
 							},
 						},
 						Spec: v1.PodSpec{
-							Priority: pointer.Int32(apiext.PriorityBatchValueMin),
+							Priority: ptr.To[int32](apiext.PriorityBatchValueMin),
 						},
 					},
 				},
@@ -1536,7 +1536,7 @@ func Test_nodeMetricInformer_generateQueryDuration(t *testing.T) {
 				nodeMetric: &slov1alpha1.NodeMetric{
 					Spec: slov1alpha1.NodeMetricSpec{
 						CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
-							AggregateDurationSeconds: pointer.Int64(1200),
+							AggregateDurationSeconds: ptr.To[int64](1200),
 						},
 					},
 				},

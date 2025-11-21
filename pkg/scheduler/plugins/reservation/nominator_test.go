@@ -30,7 +30,7 @@ import (
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	apiresource "k8s.io/kubernetes/pkg/api/v1/resource"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
@@ -344,7 +344,7 @@ func TestNominatePreAllocation(t *testing.T) {
 					},
 				},
 			},
-			AllocateOnce:   pointer.Bool(false),
+			AllocateOnce:   ptr.To[bool](false),
 			AllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyRestricted,
 			PreAllocation:  true,
 		},
@@ -618,7 +618,7 @@ func newTestReservation(t *testing.T, name string, labels, ownerLabels map[strin
 					},
 				},
 			},
-			AllocateOnce:   pointer.Bool(false),
+			AllocateOnce:   ptr.To[bool](false),
 			AllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyRestricted,
 		},
 	}

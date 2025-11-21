@@ -22,7 +22,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 )
@@ -91,7 +91,7 @@ func Test_loadConfigFromNodeSlo(t *testing.T) {
 					ResourceQOSStrategy: &slov1alpha1.ResourceQOSStrategy{
 						LSClass: &slov1alpha1.ResourceQOS{
 							NetworkQOS: &slov1alpha1.NetworkQOSCfg{
-								Enable: pointer.Bool(true),
+								Enable: ptr.To[bool](true),
 							},
 						},
 					},
@@ -106,7 +106,7 @@ func Test_loadConfigFromNodeSlo(t *testing.T) {
 					ResourceQOSStrategy: &slov1alpha1.ResourceQOSStrategy{
 						LSClass: &slov1alpha1.ResourceQOS{
 							NetworkQOS: &slov1alpha1.NetworkQOSCfg{
-								Enable: pointer.Bool(false),
+								Enable: ptr.To[bool](false),
 								NetworkQOS: slov1alpha1.NetworkQOS{
 									IngressRequest: genVal(intstr.FromInt(10)),
 								},
@@ -130,7 +130,7 @@ func Test_loadConfigFromNodeSlo(t *testing.T) {
 					ResourceQOSStrategy: &slov1alpha1.ResourceQOSStrategy{
 						LSClass: &slov1alpha1.ResourceQOS{
 							NetworkQOS: &slov1alpha1.NetworkQOSCfg{
-								Enable: pointer.Bool(true),
+								Enable: ptr.To[bool](true),
 								NetworkQOS: slov1alpha1.NetworkQOS{
 									IngressRequest: genVal(intstr.FromInt(10)),
 								},
@@ -148,7 +148,7 @@ func Test_loadConfigFromNodeSlo(t *testing.T) {
 					ResourceQOSStrategy: &slov1alpha1.ResourceQOSStrategy{
 						LSClass: &slov1alpha1.ResourceQOS{
 							NetworkQOS: &slov1alpha1.NetworkQOSCfg{
-								Enable: pointer.Bool(true),
+								Enable: ptr.To[bool](true),
 								NetworkQOS: slov1alpha1.NetworkQOS{
 									IngressRequest: genVal(intstr.FromInt(10)),
 								},
@@ -173,7 +173,7 @@ func Test_loadConfigFromNodeSlo(t *testing.T) {
 					ResourceQOSStrategy: &slov1alpha1.ResourceQOSStrategy{
 						LSClass: &slov1alpha1.ResourceQOS{
 							NetworkQOS: &slov1alpha1.NetworkQOSCfg{
-								Enable: pointer.Bool(true),
+								Enable: ptr.To[bool](true),
 								NetworkQOS: slov1alpha1.NetworkQOS{
 									IngressRequest: genVal(intstr.FromString("10M")),
 								},

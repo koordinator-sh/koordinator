@@ -20,7 +20,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/hooks"
@@ -76,8 +76,8 @@ func TestPluginAdjustPodCFSQuota(t *testing.T) {
 						extension.LabelPodQoS: string(extension.QoSBE),
 					},
 					Resources: &protocol.Resources{
-						CPUShares: pointer.Int64(1024),
-						CFSQuota:  pointer.Int64(100000),
+						CPUShares: ptr.To[int64](1024),
+						CFSQuota:  ptr.To[int64](100000),
 					},
 				},
 			},
@@ -88,8 +88,8 @@ func TestPluginAdjustPodCFSQuota(t *testing.T) {
 						extension.LabelPodQoS: string(extension.QoSBE),
 					},
 					Resources: &protocol.Resources{
-						CPUShares: pointer.Int64(1024),
-						CFSQuota:  pointer.Int64(100000),
+						CPUShares: ptr.To[int64](1024),
+						CFSQuota:  ptr.To[int64](100000),
 					},
 				},
 			},
@@ -108,8 +108,8 @@ func TestPluginAdjustPodCFSQuota(t *testing.T) {
 						extension.LabelPodQoS: string(extension.QoSLS),
 					},
 					Resources: &protocol.Resources{
-						CPUShares: pointer.Int64(1024),
-						CFSQuota:  pointer.Int64(100000),
+						CPUShares: ptr.To[int64](1024),
+						CFSQuota:  ptr.To[int64](100000),
 					},
 				},
 			},
@@ -120,8 +120,8 @@ func TestPluginAdjustPodCFSQuota(t *testing.T) {
 						extension.LabelPodQoS: string(extension.QoSLS),
 					},
 					Resources: &protocol.Resources{
-						CPUShares: pointer.Int64(1024),
-						CFSQuota:  pointer.Int64(100000),
+						CPUShares: ptr.To[int64](1024),
+						CFSQuota:  ptr.To[int64](100000),
 					},
 				},
 			},
@@ -140,9 +140,9 @@ func TestPluginAdjustPodCFSQuota(t *testing.T) {
 						extension.LabelPodQoS: string(extension.QoSLS),
 					},
 					Resources: &protocol.Resources{
-						CPUShares:   pointer.Int64(1024),
-						CFSQuota:    pointer.Int64(100000),
-						MemoryLimit: pointer.Int64(2147483648),
+						CPUShares:   ptr.To[int64](1024),
+						CFSQuota:    ptr.To[int64](100000),
+						MemoryLimit: ptr.To[int64](2147483648),
 					},
 				},
 				Response: protocol.PodResponse{
@@ -156,14 +156,14 @@ func TestPluginAdjustPodCFSQuota(t *testing.T) {
 						extension.LabelPodQoS: string(extension.QoSLS),
 					},
 					Resources: &protocol.Resources{
-						CPUShares:   pointer.Int64(1024),
-						CFSQuota:    pointer.Int64(100000),
-						MemoryLimit: pointer.Int64(2147483648),
+						CPUShares:   ptr.To[int64](1024),
+						CFSQuota:    ptr.To[int64](100000),
+						MemoryLimit: ptr.To[int64](2147483648),
 					},
 				},
 				Response: protocol.PodResponse{
 					Resources: protocol.Resources{
-						CFSQuota: pointer.Int64(83334),
+						CFSQuota: ptr.To[int64](83334),
 					},
 				},
 			},
@@ -182,9 +182,9 @@ func TestPluginAdjustPodCFSQuota(t *testing.T) {
 						extension.LabelPodQoS: string(extension.QoSLS),
 					},
 					Resources: &protocol.Resources{
-						CPUShares:   pointer.Int64(1024),
-						CFSQuota:    pointer.Int64(100000),
-						MemoryLimit: pointer.Int64(2147483648),
+						CPUShares:   ptr.To[int64](1024),
+						CFSQuota:    ptr.To[int64](100000),
+						MemoryLimit: ptr.To[int64](2147483648),
 					},
 				},
 				Response: protocol.PodResponse{
@@ -198,14 +198,14 @@ func TestPluginAdjustPodCFSQuota(t *testing.T) {
 						extension.LabelPodQoS: string(extension.QoSLS),
 					},
 					Resources: &protocol.Resources{
-						CPUShares:   pointer.Int64(1024),
-						CFSQuota:    pointer.Int64(100000),
-						MemoryLimit: pointer.Int64(2147483648),
+						CPUShares:   ptr.To[int64](1024),
+						CFSQuota:    ptr.To[int64](100000),
+						MemoryLimit: ptr.To[int64](2147483648),
 					},
 				},
 				Response: protocol.PodResponse{
 					Resources: protocol.Resources{
-						CFSQuota: pointer.Int64(100000),
+						CFSQuota: ptr.To[int64](100000),
 					},
 				},
 			},
@@ -224,9 +224,9 @@ func TestPluginAdjustPodCFSQuota(t *testing.T) {
 						extension.LabelPodQoS: string(extension.QoSLS),
 					},
 					Resources: &protocol.Resources{
-						CPUShares:   pointer.Int64(1024),
-						CFSQuota:    pointer.Int64(100000),
-						MemoryLimit: pointer.Int64(2147483648),
+						CPUShares:   ptr.To[int64](1024),
+						CFSQuota:    ptr.To[int64](100000),
+						MemoryLimit: ptr.To[int64](2147483648),
 					},
 				},
 				Response: protocol.PodResponse{
@@ -240,14 +240,14 @@ func TestPluginAdjustPodCFSQuota(t *testing.T) {
 						extension.LabelPodQoS: string(extension.QoSLS),
 					},
 					Resources: &protocol.Resources{
-						CPUShares:   pointer.Int64(1024),
-						CFSQuota:    pointer.Int64(100000),
-						MemoryLimit: pointer.Int64(2147483648),
+						CPUShares:   ptr.To[int64](1024),
+						CFSQuota:    ptr.To[int64](100000),
+						MemoryLimit: ptr.To[int64](2147483648),
 					},
 				},
 				Response: protocol.PodResponse{
 					Resources: protocol.Resources{
-						CFSQuota: pointer.Int64(100000),
+						CFSQuota: ptr.To[int64](100000),
 					},
 				},
 			},
@@ -299,8 +299,8 @@ func TestPluginAdjustContainerCFSQuota(t *testing.T) {
 						extension.LabelPodQoS: string(extension.QoSBE),
 					},
 					Resources: &protocol.Resources{
-						CPUShares: pointer.Int64(1024),
-						CFSQuota:  pointer.Int64(100000),
+						CPUShares: ptr.To[int64](1024),
+						CFSQuota:  ptr.To[int64](100000),
 					},
 				},
 			},
@@ -311,8 +311,8 @@ func TestPluginAdjustContainerCFSQuota(t *testing.T) {
 						extension.LabelPodQoS: string(extension.QoSBE),
 					},
 					Resources: &protocol.Resources{
-						CPUShares: pointer.Int64(1024),
-						CFSQuota:  pointer.Int64(100000),
+						CPUShares: ptr.To[int64](1024),
+						CFSQuota:  ptr.To[int64](100000),
 					},
 				},
 			},
@@ -331,8 +331,8 @@ func TestPluginAdjustContainerCFSQuota(t *testing.T) {
 						extension.LabelPodQoS: string(extension.QoSLS),
 					},
 					Resources: &protocol.Resources{
-						CPUShares: pointer.Int64(1024),
-						CFSQuota:  pointer.Int64(100000),
+						CPUShares: ptr.To[int64](1024),
+						CFSQuota:  ptr.To[int64](100000),
 					},
 				},
 			},
@@ -343,8 +343,8 @@ func TestPluginAdjustContainerCFSQuota(t *testing.T) {
 						extension.LabelPodQoS: string(extension.QoSLS),
 					},
 					Resources: &protocol.Resources{
-						CPUShares: pointer.Int64(1024),
-						CFSQuota:  pointer.Int64(100000),
+						CPUShares: ptr.To[int64](1024),
+						CFSQuota:  ptr.To[int64](100000),
 					},
 				},
 			},
@@ -363,9 +363,9 @@ func TestPluginAdjustContainerCFSQuota(t *testing.T) {
 						extension.LabelPodQoS: string(extension.QoSLS),
 					},
 					Resources: &protocol.Resources{
-						CPUShares:   pointer.Int64(1024),
-						CFSQuota:    pointer.Int64(100000),
-						MemoryLimit: pointer.Int64(2147483648),
+						CPUShares:   ptr.To[int64](1024),
+						CFSQuota:    ptr.To[int64](100000),
+						MemoryLimit: ptr.To[int64](2147483648),
 					},
 				},
 				Response: protocol.ContainerResponse{
@@ -379,14 +379,14 @@ func TestPluginAdjustContainerCFSQuota(t *testing.T) {
 						extension.LabelPodQoS: string(extension.QoSLS),
 					},
 					Resources: &protocol.Resources{
-						CPUShares:   pointer.Int64(1024),
-						CFSQuota:    pointer.Int64(100000),
-						MemoryLimit: pointer.Int64(2147483648),
+						CPUShares:   ptr.To[int64](1024),
+						CFSQuota:    ptr.To[int64](100000),
+						MemoryLimit: ptr.To[int64](2147483648),
 					},
 				},
 				Response: protocol.ContainerResponse{
 					Resources: protocol.Resources{
-						CFSQuota: pointer.Int64(83334),
+						CFSQuota: ptr.To[int64](83334),
 					},
 				},
 			},
@@ -405,9 +405,9 @@ func TestPluginAdjustContainerCFSQuota(t *testing.T) {
 						extension.LabelPodQoS: string(extension.QoSLS),
 					},
 					Resources: &protocol.Resources{
-						CPUShares:   pointer.Int64(1024),
-						CFSQuota:    pointer.Int64(100000),
-						MemoryLimit: pointer.Int64(2147483648),
+						CPUShares:   ptr.To[int64](1024),
+						CFSQuota:    ptr.To[int64](100000),
+						MemoryLimit: ptr.To[int64](2147483648),
 					},
 				},
 				Response: protocol.ContainerResponse{
@@ -421,14 +421,14 @@ func TestPluginAdjustContainerCFSQuota(t *testing.T) {
 						extension.LabelPodQoS: string(extension.QoSLS),
 					},
 					Resources: &protocol.Resources{
-						CPUShares:   pointer.Int64(1024),
-						CFSQuota:    pointer.Int64(100000),
-						MemoryLimit: pointer.Int64(2147483648),
+						CPUShares:   ptr.To[int64](1024),
+						CFSQuota:    ptr.To[int64](100000),
+						MemoryLimit: ptr.To[int64](2147483648),
 					},
 				},
 				Response: protocol.ContainerResponse{
 					Resources: protocol.Resources{
-						CFSQuota: pointer.Int64(100000),
+						CFSQuota: ptr.To[int64](100000),
 					},
 				},
 			},
@@ -447,9 +447,9 @@ func TestPluginAdjustContainerCFSQuota(t *testing.T) {
 						extension.LabelPodQoS: string(extension.QoSLS),
 					},
 					Resources: &protocol.Resources{
-						CPUShares:   pointer.Int64(1024),
-						CFSQuota:    pointer.Int64(100000),
-						MemoryLimit: pointer.Int64(2147483648),
+						CPUShares:   ptr.To[int64](1024),
+						CFSQuota:    ptr.To[int64](100000),
+						MemoryLimit: ptr.To[int64](2147483648),
 					},
 				},
 				Response: protocol.ContainerResponse{
@@ -463,14 +463,14 @@ func TestPluginAdjustContainerCFSQuota(t *testing.T) {
 						extension.LabelPodQoS: string(extension.QoSLS),
 					},
 					Resources: &protocol.Resources{
-						CPUShares:   pointer.Int64(1024),
-						CFSQuota:    pointer.Int64(100000),
-						MemoryLimit: pointer.Int64(2147483648),
+						CPUShares:   ptr.To[int64](1024),
+						CFSQuota:    ptr.To[int64](100000),
+						MemoryLimit: ptr.To[int64](2147483648),
 					},
 				},
 				Response: protocol.ContainerResponse{
 					Resources: protocol.Resources{
-						CFSQuota: pointer.Int64(100000),
+						CFSQuota: ptr.To[int64](100000),
 					},
 				},
 			},

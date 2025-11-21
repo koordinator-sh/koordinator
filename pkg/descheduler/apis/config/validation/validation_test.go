@@ -22,7 +22,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	deschedulerconfig "github.com/koordinator-sh/koordinator/pkg/descheduler/apis/config"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/apis/config/v1alpha2"
@@ -56,14 +56,14 @@ func TestValidateDeschedulerConfiguration(t *testing.T) {
 		{
 			name: "invalid healthzBindAddress",
 			args: &v1alpha2.DeschedulerConfiguration{
-				HealthzBindAddress: pointer.String("0.0.0.0:111:222"),
+				HealthzBindAddress: ptr.To[string]("0.0.0.0:111:222"),
 			},
 			wantErr: true,
 		},
 		{
 			name: "invalid metricsBindAddress",
 			args: &v1alpha2.DeschedulerConfiguration{
-				MetricsBindAddress: pointer.String("0.0.0.0:111:222"),
+				MetricsBindAddress: ptr.To[string]("0.0.0.0:111:222"),
 			},
 			wantErr: true,
 		},

@@ -26,7 +26,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8spodutil "k8s.io/kubernetes/pkg/api/v1/pod"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/test/e2e/framework"
@@ -62,7 +62,7 @@ var _ = SIGDescribe("HostPort", func() {
 			framework.ExpectNoError(err, "unable to load reservation")
 
 			targetPodLabel := "test-reserve-ports"
-			reservation.Spec.AllocateOnce = pointer.Bool(false)
+			reservation.Spec.AllocateOnce = ptr.To[bool](false)
 			reservation.Spec.Owners = []schedulingv1alpha1.ReservationOwner{
 				{
 					LabelSelector: &metav1.LabelSelector{
@@ -170,7 +170,7 @@ var _ = SIGDescribe("HostPort", func() {
 			framework.ExpectNoError(err, "unable to load reservation")
 
 			targetPodLabel := "test-reserve-ports"
-			reservation.Spec.AllocateOnce = pointer.Bool(true)
+			reservation.Spec.AllocateOnce = ptr.To[bool](true)
 			reservation.Spec.Owners = []schedulingv1alpha1.ReservationOwner{
 				{
 					LabelSelector: &metav1.LabelSelector{
@@ -278,7 +278,7 @@ var _ = SIGDescribe("HostPort", func() {
 			framework.ExpectNoError(err, "unable to load reservation")
 
 			targetPodLabel := "test-reserve-ports"
-			reservation.Spec.AllocateOnce = pointer.Bool(false)
+			reservation.Spec.AllocateOnce = ptr.To[bool](false)
 			reservation.Spec.Owners = []schedulingv1alpha1.ReservationOwner{
 				{
 					LabelSelector: &metav1.LabelSelector{
