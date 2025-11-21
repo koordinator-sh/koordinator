@@ -61,7 +61,7 @@ type ContainerRequest struct {
 	PodAnnotations    map[string]string
 	CgroupParent      string
 	ContainerEnvs     map[string]string
-	Resources         *Resources // TODO: support proxy & nri mode
+	Resources         *Resources // supports proxy, reconciler & nri mode
 	ExtendedResources *apiext.ExtendedResourceContainerSpec
 }
 
@@ -92,6 +92,14 @@ func (c *ContainerRequest) FromNri(pod *api.PodSandbox, container *api.Container
 	}
 	c.ContainerEnvs = envs
 
+	// extract Resources from NRI container
+	if linux := container.GetLinux(); linux != nil {
+		if containerResources := linux.GetResources(); containerResources != nil {
+			c.Resources = &Resources{}
+			c.Resources.FromNriLinuxResources(containerResources)
+		}
+	}
+
 	spec, err := apiext.GetExtendedResourceSpec(pod.GetAnnotations())
 	if err != nil {
 		klog.V(4).Infof("failed to get ExtendedResourceSpec from nri via annotation, container %s/%s, name: %s, err: %s",
@@ -111,6 +119,11 @@ func (c *ContainerRequest) FromProxy(req *runtimeapi.ContainerResourceHookReques
 	c.PodAnnotations = req.GetPodAnnotations()
 	c.CgroupParent, _ = koordletutil.GetContainerCgroupParentDirByID(req.GetPodCgroupParent(), c.ContainerMeta.ID)
 	c.ContainerEnvs = req.GetContainerEnvs()
+	// extract Resources from proxy request
+	if req.GetContainerResources() != nil {
+		c.Resources = &Resources{}
+		c.Resources.FromLinuxContainerResources(req.GetContainerResources())
+	}
 	// retrieve ExtendedResources from pod annotations
 	spec, err := apiext.GetExtendedResourceSpec(req.GetPodAnnotations())
 	if err != nil {
