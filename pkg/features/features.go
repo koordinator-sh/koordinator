@@ -51,6 +51,9 @@ const (
 	// ColocationProfileSkipMutatingResources config whether to update resourceName according to priority by default
 	ColocationProfileSkipMutatingResources featuregate.Feature = "ColocationProfileSkipMutatingResources"
 
+	// ColocationProfileSkipValidatingPriority config whether to validate label priority
+	ColocationProfileSkipValidatingPriority featuregate.Feature = "ColocationProfileSkipValidatingPriority"
+
 	// WebhookFramework enables webhook framework, global feature-gate for webhook
 	WebhookFramework featuregate.Feature = "WebhookFramework"
 
@@ -102,28 +105,29 @@ const (
 )
 
 var defaultFeatureGates = map[featuregate.Feature]featuregate.FeatureSpec{
-	PodMutatingWebhook:                     {Default: true, PreRelease: featuregate.Beta},
-	PodValidatingWebhook:                   {Default: true, PreRelease: featuregate.Beta},
-	ElasticQuotaMutatingWebhook:            {Default: true, PreRelease: featuregate.Beta},
-	ElasticQuotaValidatingWebhook:          {Default: true, PreRelease: featuregate.Beta},
-	NodeMutatingWebhook:                    {Default: false, PreRelease: featuregate.Alpha},
-	NodeValidatingWebhook:                  {Default: false, PreRelease: featuregate.Alpha},
-	ConfigMapValidatingWebhook:             {Default: false, PreRelease: featuregate.Alpha},
-	ReservationMutatingWebhook:             {Default: false, PreRelease: featuregate.Alpha},
-	WebhookFramework:                       {Default: true, PreRelease: featuregate.Beta},
-	ColocationProfileSkipMutatingResources: {Default: false, PreRelease: featuregate.Alpha},
-	MultiQuotaTree:                         {Default: false, PreRelease: featuregate.Alpha},
-	ElasticQuotaIgnorePodOverhead:          {Default: false, PreRelease: featuregate.Alpha},
-	ElasticQuotaGuaranteeUsage:             {Default: false, PreRelease: featuregate.Alpha},
-	ElasticQuotaEnableUpdateResourceKey:    {Default: false, PreRelease: featuregate.Alpha},
-	ElasticQuotaEvaluationTransformPod:     {Default: false, PreRelease: featuregate.Alpha},
-	DisableDefaultQuota:                    {Default: false, PreRelease: featuregate.Alpha},
-	SupportParentQuotaSubmitPod:            {Default: false, PreRelease: featuregate.Alpha},
-	EnableQuotaAdmission:                   {Default: false, PreRelease: featuregate.Alpha},
-	EnableSyncGPUSharedResource:            {Default: false, PreRelease: featuregate.Alpha},
-	ColocationProfileController:            {Default: false, PreRelease: featuregate.Alpha},
-	ValidatePodDeviceResource:              {Default: false, PreRelease: featuregate.Alpha},
-	EnablePodEnhancedValidator:             {Default: false, PreRelease: featuregate.Alpha},
+	PodMutatingWebhook:                      {Default: true, PreRelease: featuregate.Beta},
+	PodValidatingWebhook:                    {Default: true, PreRelease: featuregate.Beta},
+	ElasticQuotaMutatingWebhook:             {Default: true, PreRelease: featuregate.Beta},
+	ElasticQuotaValidatingWebhook:           {Default: true, PreRelease: featuregate.Beta},
+	NodeMutatingWebhook:                     {Default: false, PreRelease: featuregate.Alpha},
+	NodeValidatingWebhook:                   {Default: false, PreRelease: featuregate.Alpha},
+	ConfigMapValidatingWebhook:              {Default: false, PreRelease: featuregate.Alpha},
+	ReservationMutatingWebhook:              {Default: false, PreRelease: featuregate.Alpha},
+	WebhookFramework:                        {Default: true, PreRelease: featuregate.Beta},
+	ColocationProfileSkipMutatingResources:  {Default: false, PreRelease: featuregate.Alpha},
+	ColocationProfileSkipValidatingPriority: {Default: false, PreRelease: featuregate.Alpha},
+	MultiQuotaTree:                          {Default: false, PreRelease: featuregate.Alpha},
+	ElasticQuotaIgnorePodOverhead:           {Default: false, PreRelease: featuregate.Alpha},
+	ElasticQuotaGuaranteeUsage:              {Default: false, PreRelease: featuregate.Alpha},
+	ElasticQuotaEnableUpdateResourceKey:     {Default: false, PreRelease: featuregate.Alpha},
+	ElasticQuotaEvaluationTransformPod:      {Default: false, PreRelease: featuregate.Alpha},
+	DisableDefaultQuota:                     {Default: false, PreRelease: featuregate.Alpha},
+	SupportParentQuotaSubmitPod:             {Default: false, PreRelease: featuregate.Alpha},
+	EnableQuotaAdmission:                    {Default: false, PreRelease: featuregate.Alpha},
+	EnableSyncGPUSharedResource:             {Default: false, PreRelease: featuregate.Alpha},
+	ColocationProfileController:             {Default: false, PreRelease: featuregate.Alpha},
+	ValidatePodDeviceResource:               {Default: false, PreRelease: featuregate.Alpha},
+	EnablePodEnhancedValidator:              {Default: false, PreRelease: featuregate.Alpha},
 }
 
 const (
