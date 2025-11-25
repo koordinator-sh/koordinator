@@ -100,7 +100,7 @@ func (g *gpuDeviceManager) initGPUData() error {
 	for _, busID := range pciBusIDs {
 		gpudevice, ret := nvml.DeviceGetHandleByPciBusId(busID)
 		if ret != nvml.SUCCESS {
-			return fmt.Errorf("unable to get device at pciBusID %d: %v", busID, nvml.ErrorString(ret))
+			return fmt.Errorf("unable to get device at pciBusID %s: %v", busID, nvml.ErrorString(ret))
 		}
 
 		uuid, ret := gpudevice.GetUUID()
