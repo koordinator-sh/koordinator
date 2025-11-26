@@ -24,12 +24,9 @@ import (
 	"k8s.io/klog/v2"
 )
 
-const (
-	NVIDADriverDir = "/sys/bus/pci/drivers/nvidia"
-)
-
 var (
-	adressRegex = regexp.MustCompile(`^((1?[0-9a-f]{0,4}):)?([0-9a-f]{2}):([0-9a-f]{2})\.([0-9a-f]{1})$`)
+	NVIDADriverDir = "/sys/bus/pci/drivers/nvidia"
+	adressRegex    = regexp.MustCompile(`^((1?[0-9a-f]{0,4}):)?([0-9a-f]{2}):([0-9a-f]{2})\.([0-9a-f]{1})$`)
 )
 
 func GetGPUDevicePciBusIDs() []string {
