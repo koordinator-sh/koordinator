@@ -64,12 +64,17 @@ type PluginState struct {
 
 type GetGPUDriverAndModelFunc func() (string, string)
 
+type unhealthyGPUInfo struct {
+	errCode    string
+	errMessage string
+}
+
 type statesInformer struct {
 	// TODO refactor device as plugin
 	config       *Config
 	metricsCache metriccache.MetricCache
 	deviceClient schedv1alpha1.DeviceInterface
-	unhealthyGPU map[string]struct{}
+	unhealthyGPU map[string]*unhealthyGPUInfo
 	gpuMutex     sync.RWMutex
 
 	option  *PluginOption
@@ -107,7 +112,7 @@ func NewStatesInformer(config *Config, kubeClient clientset.Interface, crdClient
 		config:       config,
 		metricsCache: metricsCache,
 		deviceClient: schedulingClient.Devices(),
-		unhealthyGPU: make(map[string]struct{}),
+		unhealthyGPU: make(map[string]*unhealthyGPUInfo),
 
 		option:  opt,
 		states:  stat,

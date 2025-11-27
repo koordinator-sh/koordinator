@@ -43,6 +43,7 @@ type GPUDeviceInfo struct {
 	NodeID      int32  `json:"nodeID"`
 	PCIE        string `json:"pcie,omitempty"`
 	BusID       string `json:"busID,omitempty"`
+	Status      *DeviceStatus `json:"status,omitempty"`
 }
 
 type RDMADevices []RDMADeviceInfo
