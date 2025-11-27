@@ -256,7 +256,8 @@ func (s *statesInformer) buildGPUDevice() []schedulingv1alpha1.DeviceInfo {
 				extension.ResourceGPUMemory:      *resource.NewQuantity(int64(gpu.MemoryTotal), resource.BinarySI),
 				extension.ResourceGPUMemoryRatio: *resource.NewQuantity(100, resource.DecimalSI),
 			},
-			Topology: topology,
+			Topology:   topology,
+			Conditions: getGPUDeviceConditions(&gpu, health),
 		})
 	}
 	return deviceInfos
@@ -661,6 +662,26 @@ func getXPUDeviceTopology(xpu *koordletuti.XPUDeviceInfo) *schedulingv1alpha1.De
 		PCIEID:   xpu.Topology.PCIEID,
 		BusID:    xpu.Topology.BusID,
 	}
+}
+
+func getGPUDeviceConditions(gpu *koordletuti.GPUDeviceInfo, isHealthy bool) []metav1.Condition {
+	conditions := []metav1.Condition{
+		{
+			Type:               string(schedulingv1alpha1.DeviceConditionHealthy),
+			Status:             metav1.ConditionTrue,
+			LastTransitionTime: metav1.Now(),
+			Reason:             "DeviceHealthy",
+			Message:            "device is healthy",
+		},
+	}
+
+	if !isHealthy {
+		conditions[0].Status = metav1.ConditionFalse
+		conditions[0].Reason = "XidCriticalError"
+		conditions[0].Message = "device is unhealthy due to Xid critical error"
+	}
+
+	return conditions
 }
 
 func getXPUDeviceConditions(xpu *koordletuti.XPUDeviceInfo) []metav1.Condition {

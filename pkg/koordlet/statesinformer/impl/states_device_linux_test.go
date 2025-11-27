@@ -35,6 +35,57 @@ import (
 	mock_metriccache "github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache/mockmetriccache"
 )
 
+func Test_getGPUDeviceConditions(t *testing.T) {
+	gpu := koordletutil.GPUDeviceInfo{
+		UUID:        "test-gpu-uuid",
+		Minor:       0,
+		MemoryTotal: 8000,
+	}
+
+	tests := []struct {
+		name      string
+		isHealthy bool
+		want      []metav1.Condition
+	}{
+		{
+			name:      "healthy GPU device",
+			isHealthy: true,
+			want: []metav1.Condition{
+				{
+					Type:    string(schedulingv1alpha1.DeviceConditionHealthy),
+					Status:  metav1.ConditionTrue,
+					Reason:  "DeviceHealthy",
+					Message: "device is healthy",
+				},
+			},
+		},
+		{
+			name:      "unhealthy GPU device",
+			isHealthy: false,
+			want: []metav1.Condition{
+				{
+					Type:    string(schedulingv1alpha1.DeviceConditionHealthy),
+					Status:  metav1.ConditionFalse,
+					Reason:  "XidCriticalError",
+					Message: "device is unhealthy due to Xid critical error",
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := getGPUDeviceConditions(&gpu, tt.isHealthy)
+			assert.Equal(t, len(tt.want), len(got))
+			assert.Equal(t, tt.want[0].Type, got[0].Type)
+			assert.Equal(t, tt.want[0].Status, got[0].Status)
+			assert.Equal(t, tt.want[0].Reason, got[0].Reason)
+			assert.Equal(t, tt.want[0].Message, got[0].Message)
+			assert.NotEmpty(t, got[0].LastTransitionTime)
+		})
+	}
+}
+
 func Test_reportGPUDevice(t *testing.T) {
 	testNode := &corev1.Node{
 		ObjectMeta: metav1.ObjectMeta{
@@ -72,6 +123,7 @@ func Test_reportGPUDevice(t *testing.T) {
 	}
 	r.reportDevice()
 	expectedDevices := []schedulingv1alpha1.DeviceInfo{
+
 		{
 			UUID:   "1",
 			Minor:  pointer.Int32(1),
@@ -434,4 +486,73 @@ func Test_reportXPUDevice(t *testing.T) {
 	assert.Equal(t, device.Labels[extension.LabelGPUVendor], "huawei")
 	assert.Equal(t, device.Labels[extension.LabelGPUPartitionPolicy], "Honor")
 	assert.Equal(t, device.Annotations[extension.AnnotationGPUPartitions], "{\"4\":[{\"minors\":[0,1,2,3],\"gpuLinkType\":\"HCCS\",\"allocationScore\":1},{\"minors\":[4,5,6,7],\"gpuLinkType\":\"HCCS\",\"allocationScore\":1}]}")
+}
+
+func Test_reportGPUDeviceUnhealthy(t *testing.T) {
+	testNode := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test",
+		},
+	}
+	fakeClient := schedulingfake.NewSimpleClientset().SchedulingV1alpha1().Devices()
+	ctl := gomock.NewController(t)
+	mockMetricCache := mock_metriccache.NewMockMetricCache(ctl)
+	var gpuDeviceInfo koordletutil.GPUDevices
+	gpuDeviceInfo = []koordletutil.GPUDeviceInfo{
+		{UUID: "healthy-gpu-1", Minor: 0, MemoryTotal: 8000},
+		{UUID: "healthy-gpu-2", Minor: 1, MemoryTotal: 8000},
+		{UUID: "unhealthy-gpu", Minor: 2, MemoryTotal: 8000},
+	}
+	mockMetricCache.EXPECT().Get(koordletutil.GPUDeviceType).Return(gpuDeviceInfo, true)
+	mockMetricCache.EXPECT().Get(koordletutil.RDMADeviceType).Return(nil, false)
+	mockMetricCache.EXPECT().Get(koordletutil.XPUDeviceType).Return(nil, false)
+	r := &statesInformer{
+		config: &Config{
+			XPUEnforceCollectFromDeviceInfos: false,
+		},
+		deviceClient: fakeClient,
+		metricsCache: mockMetricCache,
+		states: &PluginState{
+			informerPlugins: map[PluginName]informerPlugin{
+				nodeInformerName: &nodeInformer{
+					node: testNode,
+				},
+			},
+		},
+		getGPUDriverAndModelFunc: func() (string, string) {
+			return "A100", "470"
+		},
+	}
+
+	// 标记一个GPU为不健康状态
+	r.unhealthyGPU = map[string]struct{}{
+		"unhealthy-gpu": {},
+	}
+
+	r.reportDevice()
+	device, err := fakeClient.Get(context.TODO(), "test", metav1.GetOptions{})
+	assert.Equal(t, nil, err)
+
+	// 验证 Devices 数量
+	assert.Equal(t, 3, len(device.Spec.Devices))
+
+	for _, dev := range device.Spec.Devices {
+		assert.NotNil(t, dev.Conditions)
+		assert.Equal(t, 1, len(dev.Conditions))
+		condition := dev.Conditions[0]
+		assert.Equal(t, string(schedulingv1alpha1.DeviceConditionHealthy), condition.Type)
+
+		if dev.UUID == "unhealthy-gpu" {
+			// 不健康的GPU
+			assert.Equal(t, metav1.ConditionFalse, condition.Status)
+			assert.Equal(t, "XidCriticalError", condition.Reason)
+			assert.Equal(t, "device is unhealthy due to Xid critical error", condition.Message)
+		} else {
+			// 健康的GPU
+			assert.Equal(t, metav1.ConditionTrue, condition.Status)
+			assert.Equal(t, "DeviceHealthy", condition.Reason)
+			assert.Equal(t, "device is healthy", condition.Message)
+		}
+		assert.NotEmpty(t, condition.LastTransitionTime)
+	}
 }
