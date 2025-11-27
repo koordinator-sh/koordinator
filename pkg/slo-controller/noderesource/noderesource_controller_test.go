@@ -29,7 +29,7 @@ import (
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/utils/clock"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -105,12 +105,12 @@ func Test_NodeResourceController_NodeMetricNotExist(t *testing.T) {
 			available: true,
 			cfg: configuration.ColocationCfg{
 				ColocationStrategy: configuration.ColocationStrategy{
-					Enable:                        pointer.Bool(true),
-					CPUReclaimThresholdPercent:    pointer.Int64(65),
-					MemoryReclaimThresholdPercent: pointer.Int64(65),
-					DegradeTimeMinutes:            pointer.Int64(15),
-					UpdateTimeThresholdSeconds:    pointer.Int64(300),
-					ResourceDiffThreshold:         pointer.Float64(0.1),
+					Enable:                        ptr.To[bool](true),
+					CPUReclaimThresholdPercent:    ptr.To[int64](65),
+					MemoryReclaimThresholdPercent: ptr.To[int64](65),
+					DegradeTimeMinutes:            ptr.To[int64](15),
+					UpdateTimeThresholdSeconds:    ptr.To[int64](300),
+					ResourceDiffThreshold:         ptr.To[float64](0.1),
 				},
 			},
 		},
@@ -155,12 +155,12 @@ func Test_NodeResourceController_ColocationEnabled(t *testing.T) {
 			available: true,
 			cfg: configuration.ColocationCfg{
 				ColocationStrategy: configuration.ColocationStrategy{
-					Enable:                        pointer.Bool(true),
-					CPUReclaimThresholdPercent:    pointer.Int64(65),
-					MemoryReclaimThresholdPercent: pointer.Int64(65),
-					DegradeTimeMinutes:            pointer.Int64(15),
-					UpdateTimeThresholdSeconds:    pointer.Int64(300),
-					ResourceDiffThreshold:         pointer.Float64(0.1),
+					Enable:                        ptr.To[bool](true),
+					CPUReclaimThresholdPercent:    ptr.To[int64](65),
+					MemoryReclaimThresholdPercent: ptr.To[int64](65),
+					DegradeTimeMinutes:            ptr.To[int64](15),
+					UpdateTimeThresholdSeconds:    ptr.To[int64](300),
+					ResourceDiffThreshold:         ptr.To[float64](0.1),
 				},
 			},
 		},
@@ -213,7 +213,7 @@ func Test_NodeResourceController_ColocationEnabled(t *testing.T) {
 	assert.Equal(t, int64(65000), batchCPU)
 
 	// reset node resources
-	r.cfgCache.GetCfgCopy().Enable = pointer.Bool(false)
+	r.cfgCache.GetCfgCopy().Enable = ptr.To[bool](false)
 	result, err = r.Reconcile(ctx, nodeReq)
 	assert.NoError(t, err)
 	assert.Equal(t, false, result.Requeue)

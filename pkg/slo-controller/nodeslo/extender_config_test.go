@@ -21,7 +21,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	"github.com/koordinator-sh/koordinator/apis/configuration"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
@@ -48,7 +48,7 @@ func Test_registerDefaultExtension(t *testing.T) {
 	testExtensionKey := "test-ext-key"
 
 	testExtensionVal := &testExtensionsStrategyStruct{
-		TestBoolVal: pointer.Bool(true),
+		TestBoolVal: ptr.To[bool](true),
 	}
 	t.Run("test register default colocation extension", func(t *testing.T) {
 		err := RegisterDefaultExtension(testExtensionKey, testExtensionVal)
@@ -87,7 +87,7 @@ func Test_registerAlreadyExistDefaultExtension(t *testing.T) {
 	testExtensionKey := "test-ext-key"
 
 	testExtensionVal := &testExtensionsStrategyStruct{
-		TestBoolVal: pointer.Bool(true),
+		TestBoolVal: ptr.To[bool](true),
 	}
 	t.Run("test register default extension", func(t *testing.T) {
 		err := RegisterDefaultExtension(testExtensionKey, testExtensionVal)
@@ -103,7 +103,7 @@ func TestExtensionsCfgMap_DeepCopy(t *testing.T) {
 		TestBoolVal *bool
 	}
 	testExtensionCfg := configuration.ExtensionCfg{ClusterStrategy: testExtStruct{
-		TestBoolVal: pointer.Bool(true),
+		TestBoolVal: ptr.To[bool](true),
 	}}
 	testingExtensionCfgMap := configuration.ExtensionCfgMap{}
 	testingExtensionCfgMap.Object = map[string]configuration.ExtensionCfg{

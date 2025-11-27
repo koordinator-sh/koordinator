@@ -29,7 +29,7 @@ import (
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	schedutil "k8s.io/kubernetes/pkg/scheduler/util"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
@@ -69,7 +69,7 @@ func TestReservationInfo(t *testing.T) {
 				},
 			},
 			AllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyRestricted,
-			AllocateOnce:   pointer.Bool(false),
+			AllocateOnce:   ptr.To[bool](false),
 		},
 	}
 	testOwnerMatcher, err := reservationutil.ParseReservationOwnerMatchers(testRestrictedReservation.Spec.Owners)
@@ -109,7 +109,7 @@ func TestReservationInfo(t *testing.T) {
 				},
 			},
 			AllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyRestricted,
-			AllocateOnce:   pointer.Bool(false),
+			AllocateOnce:   ptr.To[bool](false),
 		},
 	}
 	_, testParseInvalidOwnerErr := reservationutil.ParseReservationOwnerMatchers(testInvalidReservation.Spec.Owners)
@@ -144,7 +144,7 @@ func TestReservationInfo(t *testing.T) {
 				},
 			},
 			AllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyRestricted,
-			AllocateOnce:   pointer.Bool(false),
+			AllocateOnce:   ptr.To[bool](false),
 			PreAllocation:  true,
 		},
 	}

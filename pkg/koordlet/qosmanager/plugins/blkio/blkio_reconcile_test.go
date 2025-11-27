@@ -25,7 +25,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/uuid"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
@@ -194,14 +194,14 @@ func newNodeSLO() *slov1alpha1.NodeSLO {
 				// Log will prompt that lsr is not supported
 				LSRClass: &slov1alpha1.ResourceQOS{
 					BlkIOQOS: &slov1alpha1.BlkIOQOSCfg{
-						Enable: pointer.Bool(true),
+						Enable: ptr.To[bool](true),
 						BlkIOQOS: slov1alpha1.BlkIOQOS{
 							Blocks: []*slov1alpha1.BlockCfg{
 								{
 									Name:      "/dev/vdc",
 									BlockType: slov1alpha1.BlockTypeDevice,
 									IOCfg: slov1alpha1.IOCfg{
-										IOWeightPercent: pointer.Int64(100),
+										IOWeightPercent: ptr.To[int64](100),
 									},
 								},
 							},
@@ -211,14 +211,14 @@ func newNodeSLO() *slov1alpha1.NodeSLO {
 				// Log will prompt that ls is not supported
 				LSClass: &slov1alpha1.ResourceQOS{
 					BlkIOQOS: &slov1alpha1.BlkIOQOSCfg{
-						Enable: pointer.Bool(true),
+						Enable: ptr.To[bool](true),
 						BlkIOQOS: slov1alpha1.BlkIOQOS{
 							Blocks: []*slov1alpha1.BlockCfg{
 								{
 									Name:      "/dev/vdd",
 									BlockType: slov1alpha1.BlockTypeDevice,
 									IOCfg: slov1alpha1.IOCfg{
-										IOWeightPercent: pointer.Int64(100),
+										IOWeightPercent: ptr.To[int64](100),
 									},
 								},
 							},
@@ -227,18 +227,18 @@ func newNodeSLO() *slov1alpha1.NodeSLO {
 				},
 				BEClass: &slov1alpha1.ResourceQOS{
 					BlkIOQOS: &slov1alpha1.BlkIOQOSCfg{
-						Enable: pointer.Bool(true),
+						Enable: ptr.To[bool](true),
 						BlkIOQOS: slov1alpha1.BlkIOQOS{
 							Blocks: []*slov1alpha1.BlockCfg{
 								{
 									Name:      "yoda-pool0",
 									BlockType: slov1alpha1.BlockTypeVolumeGroup,
 									IOCfg: slov1alpha1.IOCfg{
-										IOWeightPercent: pointer.Int64(40),
-										ReadIOPS:        pointer.Int64(1024),
-										WriteIOPS:       pointer.Int64(1024),
-										ReadBPS:         pointer.Int64(1048576),
-										WriteBPS:        pointer.Int64(1048576),
+										IOWeightPercent: ptr.To[int64](40),
+										ReadIOPS:        ptr.To[int64](1024),
+										WriteIOPS:       ptr.To[int64](1024),
+										ReadBPS:         ptr.To[int64](1048576),
+										WriteBPS:        ptr.To[int64](1048576),
 									},
 								},
 							},
@@ -247,24 +247,24 @@ func newNodeSLO() *slov1alpha1.NodeSLO {
 				},
 				CgroupRoot: &slov1alpha1.ResourceQOS{
 					BlkIOQOS: &slov1alpha1.BlkIOQOSCfg{
-						Enable: pointer.Bool(true),
+						Enable: ptr.To[bool](true),
 						BlkIOQOS: slov1alpha1.BlkIOQOS{
 							Blocks: []*slov1alpha1.BlockCfg{
 								{
 									Name:      "/dev/vdb",
 									BlockType: slov1alpha1.BlockTypeDevice,
 									IOCfg: slov1alpha1.IOCfg{
-										ReadLatency:         pointer.Int64(1000),
-										WriteLatency:        pointer.Int64(1000),
-										ReadLatencyPercent:  pointer.Int64(90),
-										WriteLatencyPercent: pointer.Int64(90),
-										EnableUserModel:     pointer.Bool(true),
-										ModelReadBPS:        pointer.Int64(3324911720),
-										ModelWriteBPS:       pointer.Int64(2765819289),
-										ModelReadSeqIOPS:    pointer.Int64(168274),
-										ModelWriteSeqIOPS:   pointer.Int64(367565),
-										ModelReadRandIOPS:   pointer.Int64(352545),
-										ModelWriteRandIOPS:  pointer.Int64(339390),
+										ReadLatency:         ptr.To[int64](1000),
+										WriteLatency:        ptr.To[int64](1000),
+										ReadLatencyPercent:  ptr.To[int64](90),
+										WriteLatencyPercent: ptr.To[int64](90),
+										EnableUserModel:     ptr.To[bool](true),
+										ModelReadBPS:        ptr.To[int64](3324911720),
+										ModelWriteBPS:       ptr.To[int64](2765819289),
+										ModelReadSeqIOPS:    ptr.To[int64](168274),
+										ModelWriteSeqIOPS:   ptr.To[int64](367565),
+										ModelReadRandIOPS:   ptr.To[int64](352545),
+										ModelWriteRandIOPS:  ptr.To[int64](339390),
 									},
 								},
 							},

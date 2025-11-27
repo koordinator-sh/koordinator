@@ -34,7 +34,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	k8spodutil "k8s.io/kubernetes/pkg/api/v1/pod"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
@@ -117,7 +117,7 @@ var _ = SIGDescribe("NodeNUMAResource", func() {
 			}
 			reservation.Spec.Template.Labels[extension.LabelPodQoS] = string(extension.QoSLSR)
 			reservation.Spec.Template.Spec.PriorityClassName = string(extension.PriorityProd)
-			reservation.Spec.Template.Spec.Priority = pointer.Int32(extension.PriorityProdValueMax)
+			reservation.Spec.Template.Spec.Priority = ptr.To[int32](extension.PriorityProdValueMax)
 			reservation.Spec.Template.Spec.Containers = []corev1.Container{
 				{
 					Name: "main",
@@ -200,7 +200,7 @@ var _ = SIGDescribe("NodeNUMAResource", func() {
 			}
 			reservation.Spec.Template.Labels[extension.LabelPodQoS] = string(extension.QoSLSR)
 			reservation.Spec.Template.Spec.PriorityClassName = string(extension.PriorityProd)
-			reservation.Spec.Template.Spec.Priority = pointer.Int32(extension.PriorityProdValueMax)
+			reservation.Spec.Template.Spec.Priority = ptr.To[int32](extension.PriorityProdValueMax)
 			reservation.Spec.Template.Spec.Containers = []corev1.Container{
 				{
 					Name: "main",
@@ -289,7 +289,7 @@ var _ = SIGDescribe("NodeNUMAResource", func() {
 			}
 			reservation.Spec.Template.Labels[extension.LabelPodQoS] = string(extension.QoSLSR)
 			reservation.Spec.Template.Spec.PriorityClassName = string(extension.PriorityProd)
-			reservation.Spec.Template.Spec.Priority = pointer.Int32(extension.PriorityProdValueMax)
+			reservation.Spec.Template.Spec.Priority = ptr.To[int32](extension.PriorityProdValueMax)
 			reservation.Spec.Template.Spec.Containers = []corev1.Container{
 				{
 					Name: "main",
@@ -312,7 +312,7 @@ var _ = SIGDescribe("NodeNUMAResource", func() {
 					},
 				},
 			}
-			reservation.Spec.AllocateOnce = pointer.Bool(false)
+			reservation.Spec.AllocateOnce = ptr.To[bool](false)
 			reservation, err = f.KoordinatorClientSet.SchedulingV1alpha1().Reservations().Create(context.TODO(), reservation, metav1.CreateOptions{})
 			framework.ExpectNoError(err, "unable to create reservation")
 			reservation = waitingForReservationScheduled(f.KoordinatorClientSet, reservation)

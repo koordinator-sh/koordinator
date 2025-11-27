@@ -26,7 +26,7 @@ import (
 	clientset "k8s.io/client-go/kubernetes"
 	restclient "k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/events"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 )
 
 type Handle interface {
@@ -104,8 +104,8 @@ type FilterPlugin interface {
 }
 
 var (
-	EvictionPluginNameContextKey = pointer.String("pluginName")
-	EvictionReasonContextKey     = pointer.String("evictionReason")
+	EvictionPluginNameContextKey = ptr.To[string]("pluginName")
+	EvictionReasonContextKey     = ptr.To[string]("evictionReason")
 )
 
 // EvictOptions provides a handle for passing additional info to EvictPod

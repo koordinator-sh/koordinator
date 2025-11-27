@@ -24,7 +24,7 @@ import (
 	gocache "github.com/patrickmn/go-cache"
 	"go.uber.org/atomic"
 	"k8s.io/klog/v2"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
@@ -131,7 +131,7 @@ func (p *Plugin) Setup(op hooks.Options) {
 func (p *Plugin) SystemSupported() bool {
 	if p.sysSupported == nil {
 		sysSupported, msg := sysutil.IsCoreSchedSupported()
-		p.sysSupported = pointer.Bool(sysSupported)
+		p.sysSupported = ptr.To[bool](sysSupported)
 		p.supportedMsg = msg
 		klog.Infof("update system supported info to %v for plugin %v, supported msg %s",
 			sysSupported, name, msg)
@@ -158,9 +158,9 @@ func (p *Plugin) SetKubeQOSCPUIdle(proto protocol.HooksProtocol) error {
 
 	isCPUIdle := p.rule.IsKubeQOSCPUIdle(kubeQOS)
 	if isCPUIdle {
-		kubeQOSCtx.Response.Resources.CPUIdle = pointer.Int64(1)
+		kubeQOSCtx.Response.Resources.CPUIdle = ptr.To[int64](1)
 	} else {
-		kubeQOSCtx.Response.Resources.CPUIdle = pointer.Int64(0)
+		kubeQOSCtx.Response.Resources.CPUIdle = ptr.To[int64](0)
 	}
 
 	return nil
@@ -343,7 +343,7 @@ func (p *Plugin) initSystem(isEnabled bool) error {
 // tryDisableGroupIdentity tries disabling the group identity via sysctl to safely enable the core sched.
 func (p *Plugin) tryDisableGroupIdentity() error {
 	if p.giSysctlSupported == nil {
-		p.giSysctlSupported = pointer.Bool(sysutil.IsGroupIdentitySysctlSupported())
+		p.giSysctlSupported = ptr.To[bool](sysutil.IsGroupIdentitySysctlSupported())
 	}
 	if !*p.giSysctlSupported { // not support either the group identity or the core sched
 		return nil

@@ -24,7 +24,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
@@ -82,7 +82,7 @@ func Test_systemConfig_reconcile(t *testing.T) {
 			name:         "testInvalid",
 			initStrategy: defaultStrategy,
 			node:         testutil.MockTestNode("80", strconv.FormatInt(nodeValidMemory, 10)),
-			newStrategy:  &slov1alpha1.SystemStrategy{MinFreeKbytesFactor: pointer.Int64(-1), WatermarkScaleFactor: pointer.Int64(-1), MemcgReapBackGround: pointer.Int64(-1)},
+			newStrategy:  &slov1alpha1.SystemStrategy{MinFreeKbytesFactor: ptr.To[int64](-1), WatermarkScaleFactor: ptr.To[int64](-1), MemcgReapBackGround: ptr.To[int64](-1)},
 			expect: map[sysutil.Resource]string{
 				sysutil.MinFreeKbytes:        strconv.FormatInt(nodeValidMemory/1024**defaultStrategy.MinFreeKbytesFactor/10000, 10),
 				sysutil.WatermarkScaleFactor: strconv.FormatInt(*defaultStrategy.WatermarkScaleFactor, 10),
@@ -93,7 +93,7 @@ func Test_systemConfig_reconcile(t *testing.T) {
 			name:         "testTooSmall",
 			initStrategy: defaultStrategy,
 			node:         testutil.MockTestNode("80", strconv.FormatInt(nodeValidMemory, 10)),
-			newStrategy:  &slov1alpha1.SystemStrategy{MinFreeKbytesFactor: pointer.Int64(0), WatermarkScaleFactor: pointer.Int64(5), MemcgReapBackGround: pointer.Int64(-1)},
+			newStrategy:  &slov1alpha1.SystemStrategy{MinFreeKbytesFactor: ptr.To[int64](0), WatermarkScaleFactor: ptr.To[int64](5), MemcgReapBackGround: ptr.To[int64](-1)},
 			expect: map[sysutil.Resource]string{
 				sysutil.MinFreeKbytes:        strconv.FormatInt(nodeValidMemory/1024**defaultStrategy.MinFreeKbytesFactor/10000, 10),
 				sysutil.WatermarkScaleFactor: "150",
@@ -104,7 +104,7 @@ func Test_systemConfig_reconcile(t *testing.T) {
 			name:         "testValid",
 			initStrategy: defaultStrategy,
 			node:         testutil.MockTestNode("80", strconv.FormatInt(nodeValidMemory, 10)),
-			newStrategy:  &slov1alpha1.SystemStrategy{MinFreeKbytesFactor: pointer.Int64(88), WatermarkScaleFactor: pointer.Int64(99), MemcgReapBackGround: pointer.Int64(1)},
+			newStrategy:  &slov1alpha1.SystemStrategy{MinFreeKbytesFactor: ptr.To[int64](88), WatermarkScaleFactor: ptr.To[int64](99), MemcgReapBackGround: ptr.To[int64](1)},
 			expect: map[sysutil.Resource]string{
 				sysutil.MinFreeKbytes:        strconv.FormatInt(nodeValidMemory/1024*88/10000, 10),
 				sysutil.WatermarkScaleFactor: "99",
@@ -115,7 +115,7 @@ func Test_systemConfig_reconcile(t *testing.T) {
 			name:         "testToolarge",
 			initStrategy: defaultStrategy,
 			node:         testutil.MockTestNode("80", strconv.FormatInt(nodeValidMemory, 10)),
-			newStrategy:  &slov1alpha1.SystemStrategy{MinFreeKbytesFactor: pointer.Int64(400), WatermarkScaleFactor: pointer.Int64(500), MemcgReapBackGround: pointer.Int64(2)},
+			newStrategy:  &slov1alpha1.SystemStrategy{MinFreeKbytesFactor: ptr.To[int64](400), WatermarkScaleFactor: ptr.To[int64](500), MemcgReapBackGround: ptr.To[int64](2)},
 			expect: map[sysutil.Resource]string{
 				sysutil.MinFreeKbytes:        strconv.FormatInt(nodeValidMemory/1024**defaultStrategy.MinFreeKbytesFactor/10000, 10),
 				sysutil.WatermarkScaleFactor: "150",
@@ -134,8 +134,8 @@ func Test_systemConfig_reconcile(t *testing.T) {
 			initStrategy: sloconfig.DefaultSystemStrategy(),
 			node:         testutil.MockTestNode("80", strconv.FormatInt(nodeValidMemory, 10)),
 			newStrategy: &slov1alpha1.SystemStrategy{
-				MinFreeKbytesFactor: pointer.Int64(88),
-				SchedIdleSaverWmark: pointer.Int64(5000000),
+				MinFreeKbytesFactor: ptr.To[int64](88),
+				SchedIdleSaverWmark: ptr.To[int64](5000000),
 				SchedFeatures: map[string]bool{
 					"ID_ABSOLUTE_EXPEL": true,
 				},
@@ -151,8 +151,8 @@ func Test_systemConfig_reconcile(t *testing.T) {
 			initStrategy: sloconfig.DefaultSystemStrategy(),
 			node:         testutil.MockTestNode("80", strconv.FormatInt(nodeValidMemory, 10)),
 			newStrategy: &slov1alpha1.SystemStrategy{
-				SchedGroupIdentityEnabled: pointer.Int64(0),
-				SchedIdleSaverWmark:       pointer.Int64(5000000),
+				SchedGroupIdentityEnabled: ptr.To[int64](0),
+				SchedIdleSaverWmark:       ptr.To[int64](5000000),
 				SchedFeatures: map[string]bool{
 					"ID_EXPELLER_SHARE_CORE": false,
 				},
@@ -234,9 +234,9 @@ func getNodeSLOBySystemStrategy(strategy *slov1alpha1.SystemStrategy) *slov1alph
 
 func getTestDefaultStrategy() *slov1alpha1.SystemStrategy {
 	return &slov1alpha1.SystemStrategy{
-		MinFreeKbytesFactor:   pointer.Int64(100),
-		WatermarkScaleFactor:  pointer.Int64(150),
-		MemcgReapBackGround:   pointer.Int64(0),
+		MinFreeKbytesFactor:   ptr.To[int64](100),
+		WatermarkScaleFactor:  ptr.To[int64](150),
+		MemcgReapBackGround:   ptr.To[int64](0),
 		TotalNetworkBandwidth: resource.MustParse("0"),
 	}
 }

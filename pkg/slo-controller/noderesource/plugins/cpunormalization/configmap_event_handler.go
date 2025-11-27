@@ -29,7 +29,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/klog/v2"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
@@ -53,7 +53,7 @@ type cfgCache struct {
 func DefaultCPUNormalizationCfg() *configuration.CPUNormalizationCfg {
 	return &configuration.CPUNormalizationCfg{
 		CPUNormalizationStrategy: configuration.CPUNormalizationStrategy{
-			Enable: pointer.Bool(false),
+			Enable: ptr.To[bool](false),
 			// Currently we do not preset any cpu model ratio.
 			RatioModel: map[string]configuration.ModelRatioCfg{},
 		},

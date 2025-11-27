@@ -21,17 +21,17 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 )
 
 func Test_GetInstance(t *testing.T) {
 	strategy := &slov1alpha1.ResourceThresholdStrategy{
-		Enable:                             pointer.Bool(true),
-		CPUSuppressThresholdPercent:        pointer.Int64(-1),
-		CPUEvictBESatisfactionUpperPercent: pointer.Int64(70),
-		CPUEvictBESatisfactionLowerPercent: pointer.Int64(70),
+		Enable:                             ptr.To[bool](true),
+		CPUSuppressThresholdPercent:        ptr.To[int64](-1),
+		CPUEvictBESatisfactionUpperPercent: ptr.To[int64](70),
+		CPUEvictBESatisfactionLowerPercent: ptr.To[int64](70),
 	}
 	info, err := GetValidatorInstance().StructWithTrans(strategy)
 	fmt.Println(info)
