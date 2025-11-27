@@ -71,7 +71,7 @@ func Test_getGPUDeviceConditions(t *testing.T) {
 				Minor:       2,
 				MemoryTotal: 8000,
 				Status: &koordletutil.DeviceStatus{
-					Healthy: false,
+					Healthy:    false,
 					ErrCode:    "-8001",
 					ErrMessage: "custom error message",
 				},
