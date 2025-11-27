@@ -134,6 +134,14 @@ func Test_reportGPUDevice(t *testing.T) {
 				extension.ResourceGPUMemory:      *resource.NewQuantity(8000, resource.BinarySI),
 				extension.ResourceGPUMemoryRatio: *resource.NewQuantity(100, resource.DecimalSI),
 			},
+			Conditions: []metav1.Condition{
+				{
+					Type:    string(schedulingv1alpha1.DeviceConditionHealthy),
+					Status:  metav1.ConditionTrue,
+					Reason:  "DeviceHealthy",
+					Message: "device is healthy",
+				},
+			},
 		},
 		{
 			UUID:   "2",
@@ -144,6 +152,14 @@ func Test_reportGPUDevice(t *testing.T) {
 				extension.ResourceGPUCore:        *resource.NewQuantity(100, resource.DecimalSI),
 				extension.ResourceGPUMemory:      *resource.NewQuantity(10000, resource.BinarySI),
 				extension.ResourceGPUMemoryRatio: *resource.NewQuantity(100, resource.DecimalSI),
+			},
+			Conditions: []metav1.Condition{
+				{
+					Type:    string(schedulingv1alpha1.DeviceConditionHealthy),
+					Status:  metav1.ConditionTrue,
+					Reason:  "DeviceHealthy",
+					Message: "device is healthy",
+				},
 			},
 		},
 		{
@@ -162,10 +178,32 @@ func Test_reportGPUDevice(t *testing.T) {
 				PCIEID:   "pci0000:00",
 				BusID:    "0000:00:08.0",
 			},
+			Conditions: []metav1.Condition{
+				{
+					Type:    string(schedulingv1alpha1.DeviceConditionHealthy),
+					Status:  metav1.ConditionTrue,
+					Reason:  "DeviceHealthy",
+					Message: "device is healthy",
+				},
+			},
 		},
 	}
 	device, err := fakeClient.Get(context.TODO(), "test", metav1.GetOptions{})
 	assert.Equal(t, nil, err)
+
+	// Set fixed time for conditions to avoid time comparison issues
+	fixedTime := metav1.Now()
+	for i := range device.Spec.Devices {
+		for j := range device.Spec.Devices[i].Conditions {
+			device.Spec.Devices[i].Conditions[j].LastTransitionTime = fixedTime
+		}
+	}
+	for i := range expectedDevices {
+		for j := range expectedDevices[i].Conditions {
+			expectedDevices[i].Conditions[j].LastTransitionTime = fixedTime
+		}
+	}
+
 	assert.Equal(t, device.Spec.Devices, expectedDevices)
 
 	gpuDeviceInfo = append(gpuDeviceInfo, koordletutil.GPUDeviceInfo{
@@ -200,6 +238,14 @@ func Test_reportGPUDevice(t *testing.T) {
 			extension.ResourceGPUMemory:      *resource.NewQuantity(10000, resource.BinarySI),
 			extension.ResourceGPUMemoryRatio: *resource.NewQuantity(100, resource.DecimalSI),
 		},
+		Conditions: []metav1.Condition{
+			{
+				Type:    string(schedulingv1alpha1.DeviceConditionHealthy),
+				Status:  metav1.ConditionTrue,
+				Reason:  "DeviceHealthy",
+				Message: "device is healthy",
+			},
+		},
 	})
 	expectedDevices = append(expectedDevices, schedulingv1alpha1.DeviceInfo{
 		UUID:   "0000:00:09.0",
@@ -218,6 +264,20 @@ func Test_reportGPUDevice(t *testing.T) {
 	})
 	device, err = fakeClient.Get(context.TODO(), "test", metav1.GetOptions{})
 	assert.Equal(t, nil, err)
+
+	// Set fixed time for conditions to avoid time comparison issues
+	fixedTime = metav1.Now()
+	for i := range device.Spec.Devices {
+		for j := range device.Spec.Devices[i].Conditions {
+			device.Spec.Devices[i].Conditions[j].LastTransitionTime = fixedTime
+		}
+	}
+	for i := range expectedDevices {
+		for j := range expectedDevices[i].Conditions {
+			expectedDevices[i].Conditions[j].LastTransitionTime = fixedTime
+		}
+	}
+
 	assert.Equal(t, device.Spec.Devices, expectedDevices)
 	assert.Equal(t, device.Labels[extension.LabelGPUVendor], extension.GPUVendorNVIDIA)
 	assert.Equal(t, device.Labels[extension.LabelGPUModel], "A100")
