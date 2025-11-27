@@ -225,7 +225,8 @@ func TransformScheduleExplanationObjectKey() func(pod *corev1.Pod) {
 
 // TransformReplaceResources transforms pod resources according to the replace-resources annotation.
 func TransformReplaceResources(pod *corev1.Pod) {
-	if !utilfeature.DefaultFeatureGate.Enabled(koordfeatures.ReplaceResourcesTransformer) {
+	if !k8sfeature.DefaultFeatureGate.Enabled(koordfeatures.ReplaceResourcesTransformer) &&
+		!utilfeature.DefaultFeatureGate.Enabled(koordfeatures.ReplaceResourcesTransformer) {
 		return
 	}
 	eraseResNames, replaceMappings := apiext.GetPodReplaceResourcesConfig(pod)
