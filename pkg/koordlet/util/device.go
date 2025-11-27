@@ -38,11 +38,12 @@ type GPUDeviceInfo struct {
 	// UUID represents the UUID of device
 	UUID string `json:"id,omitempty"`
 	// Minor represents the Minor number of Devices, starting from 0
-	Minor       int32  `json:"minor,omitempty"`
-	MemoryTotal uint64 `json:"memory-total,omitempty"`
-	NodeID      int32  `json:"nodeID"`
-	PCIE        string `json:"pcie,omitempty"`
-	BusID       string `json:"busID,omitempty"`
+	Minor       int32         `json:"minor,omitempty"`
+	MemoryTotal uint64        `json:"memory-total,omitempty"`
+	NodeID      int32         `json:"nodeID"`
+	PCIE        string        `json:"pcie,omitempty"`
+	BusID       string        `json:"busID,omitempty"`
+	Status      *DeviceStatus `json:"status,omitempty"`
 }
 
 type RDMADevices []RDMADeviceInfo
