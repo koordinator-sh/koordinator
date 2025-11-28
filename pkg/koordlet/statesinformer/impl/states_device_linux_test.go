@@ -65,15 +65,27 @@ func Test_getGPUDeviceConditions(t *testing.T) {
 			},
 		},
 		{
-			name: "GPU device with custom error code",
+			name: "GPU device with device health check not supported",
 			gpu: &koordletutil.GPUDeviceInfo{
 				UUID:        "test-gpu-uuid-3",
 				Minor:       2,
 				MemoryTotal: 8000,
 				Status: &koordletutil.DeviceStatus{
 					Healthy:    false,
-					ErrCode:    "-8001",
-					ErrMessage: "custom error message",
+					ErrCode:    "DeviceHealthCheckNotSupported",
+					ErrMessage: "device does not support health checking",
+				},
+			},
+		},
+		{
+			name: "GPU device with Xid error code only",
+			gpu: &koordletutil.GPUDeviceInfo{
+				UUID:        "test-gpu-uuid-4",
+				Minor:       3,
+				MemoryTotal: 8000,
+				Status: &koordletutil.DeviceStatus{
+					Healthy: false,
+					ErrCode: "Xid44",
 				},
 			},
 		},
@@ -83,27 +95,29 @@ func Test_getGPUDeviceConditions(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			got := getGPUDeviceConditions(tt.gpu)
 
+			assert.NotNil(t, got, "GPU should return Conditions")
+			assert.Equal(t, 1, len(got), "Should have exactly one Condition")
+			assert.Equal(t, string(schedulingv1alpha1.DeviceConditionHealthy), got[0].Type)
+			assert.NotEmpty(t, got[0].LastTransitionTime, "LastTransitionTime should not be empty")
+
 			if tt.gpu.Status.Healthy {
-				assert.Nil(t, got, "Healthy GPU should return nil Conditions")
+				assert.Equal(t, metav1.ConditionTrue, got[0].Status)
+				assert.Equal(t, "DeviceHealthy", got[0].Reason)
+				assert.Equal(t, "device is healthy", got[0].Message)
 			} else {
-				assert.NotNil(t, got, "Unhealthy GPU should return non-nil Conditions")
-				assert.Equal(t, 1, len(got), "Should have exactly one Condition")
-				assert.Equal(t, string(schedulingv1alpha1.DeviceConditionHealthy), got[0].Type)
 				assert.Equal(t, metav1.ConditionFalse, got[0].Status)
 
-				if tt.gpu.Status.ErrCode != "" {
-					assert.Equal(t, tt.gpu.Status.ErrCode, got[0].Reason)
-				} else {
-					assert.Equal(t, "Unknown", got[0].Reason)
-				}
-
-				if tt.gpu.Status.ErrMessage != "" {
+				if tt.gpu.Status.ErrCode == "DeviceHealthCheckNotSupported" {
+					assert.Equal(t, "DeviceHealthCheckNotSupported", got[0].Reason)
 					assert.Equal(t, tt.gpu.Status.ErrMessage, got[0].Message)
-				} else {
-					assert.Equal(t, "device is unhealthy", got[0].Message)
+				} else if tt.gpu.Status.ErrCode != "" {
+					assert.Equal(t, tt.gpu.Status.ErrCode, got[0].Reason)
+					if tt.gpu.Status.ErrMessage != "" {
+						assert.Equal(t, tt.gpu.Status.ErrMessage, got[0].Message)
+					} else {
+						assert.Equal(t, "device is unhealthy", got[0].Message)
+					}
 				}
-
-				assert.NotEmpty(t, got[0].LastTransitionTime, "LastTransitionTime should not be empty")
 			}
 		})
 	}
@@ -575,7 +589,7 @@ func Test_reportGPUDeviceUnhealthy(t *testing.T) {
 		},
 	}
 
-	// 标记一个GPU为不健康状态
+	// Mark a GPU as unhealthy
 	r.unhealthyGPU = map[string]*unhealthyGPUInfo{
 		"unhealthy-gpu": {
 			errCode:    "XidCriticalError",
@@ -587,12 +601,12 @@ func Test_reportGPUDeviceUnhealthy(t *testing.T) {
 	device, err := fakeClient.Get(context.TODO(), "test", metav1.GetOptions{})
 	assert.Equal(t, nil, err)
 
-	// 验证 Devices 数量
+	// Verify the number of Devices
 	assert.Equal(t, 3, len(device.Spec.Devices))
 
 	for _, dev := range device.Spec.Devices {
 		if dev.UUID == "unhealthy-gpu" {
-			// 不健康的GPU应该有condition
+			// Unhealthy GPUs should have conditions
 			assert.NotNil(t, dev.Conditions)
 			assert.Equal(t, 1, len(dev.Conditions))
 			condition := dev.Conditions[0]
@@ -602,7 +616,7 @@ func Test_reportGPUDeviceUnhealthy(t *testing.T) {
 			assert.Equal(t, "device is unhealthy due to Xid critical error", condition.Message)
 			assert.NotEmpty(t, condition.LastTransitionTime)
 		} else {
-			// 健康的GPU应该有nil Conditions
+			// Healthy GPUs should have nil Conditions
 			assert.Nil(t, dev.Conditions)
 		}
 	}

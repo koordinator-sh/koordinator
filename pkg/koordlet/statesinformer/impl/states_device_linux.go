@@ -231,8 +231,13 @@ func (s *statesInformer) buildGPUDevice() []schedulingv1alpha1.DeviceInfo {
 		gpu := gpus[idx]
 		health := true
 		s.gpuMutex.RLock()
-		if _, ok := s.unhealthyGPU[gpu.UUID]; ok {
+		if unhealthyInfo, ok := s.unhealthyGPU[gpu.UUID]; ok {
 			health = false
+			gpu.Status = &koordletuti.DeviceStatus{
+				Healthy:    false,
+				ErrCode:    unhealthyInfo.errCode,
+				ErrMessage: unhealthyInfo.errMessage,
+			}
 		}
 		s.gpuMutex.RUnlock()
 
@@ -244,25 +249,6 @@ func (s *statesInformer) buildGPUDevice() []schedulingv1alpha1.DeviceInfo {
 				PCIEID:   gpu.PCIE,
 				BusID:    gpu.BusID,
 			}
-		}
-
-		// Set GPU Status based on health information
-		if !health {
-			s.gpuMutex.RLock()
-			if unhealthyInfo, ok := s.unhealthyGPU[gpu.UUID]; ok {
-				gpu.Status = &koordletuti.DeviceStatus{
-					Healthy:    false,
-					ErrCode:    unhealthyInfo.errCode,
-					ErrMessage: unhealthyInfo.errMessage,
-				}
-			} else {
-				gpu.Status = &koordletuti.DeviceStatus{
-					Healthy:    false,
-					ErrCode:    "Unknown",
-					ErrMessage: "Unknown GPU error",
-				}
-			}
-			s.gpuMutex.RUnlock()
 		}
 
 		deviceInfos = append(deviceInfos, schedulingv1alpha1.DeviceInfo{
@@ -485,9 +471,16 @@ func (s *statesInformer) gpuHealCheck(stopCh <-chan struct{}) {
 	for event := range unhealthyChan {
 		// FIXME: there is no way to recover from the Unhealthy state.
 		s.gpuMutex.Lock()
-		s.unhealthyGPU[event.uuid] = &unhealthyGPUInfo{
-			errCode:    fmt.Sprintf("Xid%d", event.xidError),
-			errMessage: event.errMessage,
+		if event.xidError == 0 {
+			s.unhealthyGPU[event.uuid] = &unhealthyGPUInfo{
+				errCode:    "DeviceHealthCheckNotSupported",
+				errMessage: event.errMessage,
+			}
+		} else {
+			s.unhealthyGPU[event.uuid] = &unhealthyGPUInfo{
+				errCode:    fmt.Sprintf("Xid%d", event.xidError),
+				errMessage: event.errMessage,
+			}
 		}
 		s.gpuMutex.Unlock()
 		klog.Infof("get a unhealthy gpu %s, error: %s", event.uuid, event.errMessage)
@@ -520,8 +513,7 @@ func checkHealth(stopCh <-chan struct{}, devs []string, xids chan<- gpuHealthEve
 			klog.Infof("Warning: %s is too old to support healthchecking: %v. Marking it unhealthy.", d, nvml.ErrorString(ret))
 			xids <- gpuHealthEvent{
 				uuid:       d,
-				xidError:   0,
-				errMessage: "Device does not support health checking",
+				errMessage: "device does not support health checking",
 			}
 			continue
 		}
@@ -705,25 +697,30 @@ func getXPUDeviceTopology(xpu *koordletuti.XPUDeviceInfo) *schedulingv1alpha1.De
 }
 
 func getGPUDeviceConditions(gpu *koordletuti.GPUDeviceInfo) []metav1.Condition {
-	if gpu == nil || gpu.Status == nil || gpu.Status.Healthy {
+	if gpu == nil || gpu.Status == nil {
 		return nil
 	}
 
 	conditions := []metav1.Condition{
 		{
 			Type:               string(schedulingv1alpha1.DeviceConditionHealthy),
-			Status:             metav1.ConditionFalse,
+			Status:             metav1.ConditionTrue,
 			LastTransitionTime: metav1.Now(),
-			Reason:             "Unknown",
-			Message:            "device is unhealthy",
+			Reason:             "DeviceHealthy",
+			Message:            "device is healthy",
 		},
 	}
 
-	if gpu.Status.ErrCode != "" {
-		conditions[0].Reason = gpu.Status.ErrCode
-	}
-	if gpu.Status.ErrMessage != "" {
-		conditions[0].Message = gpu.Status.ErrMessage
+	if !gpu.Status.Healthy {
+		conditions[0].Status = metav1.ConditionFalse
+		conditions[0].Reason = "Unknown"
+		if gpu.Status.ErrCode != "" {
+			conditions[0].Reason = gpu.Status.ErrCode
+		}
+		conditions[0].Message = "device is unhealthy"
+		if gpu.Status.ErrMessage != "" {
+			conditions[0].Message = gpu.Status.ErrMessage
+		}
 	}
 
 	return conditions
