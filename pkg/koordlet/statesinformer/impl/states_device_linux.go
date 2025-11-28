@@ -444,7 +444,7 @@ func (s *statesInformer) getGPUDriverAndModel() (string, string) {
 }
 
 func (s *statesInformer) gpuHealCheck(stopCh <-chan struct{}) {
-	pciBusIDs := system.GetGPUDevicePciBusIDs()
+	pciBusIDs := system.GetGPUDevicePCIBusIDs()
 	if len(pciBusIDs) == 0 {
 		klog.Errorf("no gpu device found")
 		return

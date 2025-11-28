@@ -91,12 +91,12 @@ func (g *gpuDeviceManager) shutdown() error {
 }
 
 func (g *gpuDeviceManager) initGPUData() error {
-	pciBusIDs := system.GetGPUDevicePciBusIDs()
+	pciBusIDs := system.GetGPUDevicePCIBusIDs()
 	count := len(pciBusIDs)
-	if len(pciBusIDs) == 0 {
+	if count == 0 {
 		return errors.New("no gpu device found")
 	}
-	devices := make([]*device, len(pciBusIDs))
+	devices := make([]*device, count)
 	for _, busID := range pciBusIDs {
 		gpudevice, ret := nvml.DeviceGetHandleByPciBusId(busID)
 		if ret != nvml.SUCCESS {

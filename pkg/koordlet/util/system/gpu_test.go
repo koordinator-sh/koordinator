@@ -62,15 +62,15 @@ func TestGetGPUDevicePciBusIDs(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			NVIDADriverDir = tt.args.dir
+			NVIDIADriverDir = tt.args.dir
 			for _, driverFile := range tt.args.files {
-				file, err := os.Create(filepath.Join(NVIDADriverDir, driverFile))
+				file, err := os.Create(filepath.Join(NVIDIADriverDir, driverFile))
 				if err != nil {
 					t.Fatalf("failed to create test file %s: %v", driverFile, err)
 				}
 				file.Close()
 			}
-			got := GetGPUDevicePciBusIDs()
+			got := GetGPUDevicePCIBusIDs()
 			assert.Equal(t, tt.want, got)
 		})
 	}

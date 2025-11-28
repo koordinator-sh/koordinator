@@ -25,25 +25,25 @@ import (
 )
 
 var (
-	NVIDADriverDir = "/sys/bus/pci/drivers/nvidia"
-	adressRegex    = regexp.MustCompile(`^((1?[0-9a-f]{0,4}):)?([0-9a-f]{2}):([0-9a-f]{2})\.([0-9a-f]{1})$`)
+	NVIDIADriverDir = "/sys/bus/pci/drivers/nvidia"
+	pciAddressRegex = regexp.MustCompile(`^((1?[0-9a-f]{0,4}):)?([0-9a-f]{2}):([0-9a-f]{2})\.([0-9a-f]{1})$`)
 )
 
-func GetGPUDevicePciBusIDs() []string {
-	var pciBusIds []string
-	entries, err := os.ReadDir(NVIDADriverDir)
+func GetGPUDevicePCIBusIDs() []string {
+	var pciBusIDs []string
+	entries, err := os.ReadDir(NVIDIADriverDir)
 	if err != nil {
-		klog.Errorf("GetGPUDevicePciBusIDs: read nvidia driver dir %s error, %v", NVIDADriverDir, err)
-		return pciBusIds
+		klog.Errorf("GetGPUDevicePCIBusIDs: read nvidia driver dir %s error, %v", NVIDIADriverDir, err)
+		return pciBusIDs
 	}
 
 	for _, entry := range entries {
 		fileName := strings.ToLower(entry.Name())
-		matches := adressRegex.FindStringSubmatch(fileName)
+		matches := pciAddressRegex.FindStringSubmatch(fileName)
 		if len(matches) == 6 {
-			pciBusIds = append(pciBusIds, matches[0])
+			pciBusIDs = append(pciBusIDs, matches[0])
 		}
 	}
 
-	return pciBusIds
+	return pciBusIDs
 }
