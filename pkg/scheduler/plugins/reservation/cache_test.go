@@ -264,7 +264,7 @@ func TestCacheAddOrUpdateOrDeletePod(t *testing.T) {
 	expectReservationInfo.RefreshPreCalculated()
 	assert.Equal(t, expectReservationInfo, rInfo)
 
-	cache.updatePod(reservation.UID, pod, pod)
+	cache.updatePod(reservation.UID, reservation.UID, pod, pod)
 	rInfo = cache.getReservationInfoByUID(reservation.UID)
 	sort.Slice(rInfo.ResourceNames, func(i, j int) bool {
 		return rInfo.ResourceNames[i] < rInfo.ResourceNames[j]
@@ -287,4 +287,108 @@ func TestCacheAddOrUpdateOrDeletePod(t *testing.T) {
 	expectReservationInfo.AssignedPods = map[types.UID]*frameworkext.PodRequirement{}
 	expectReservationInfo.RefreshPreCalculated()
 	assert.Equal(t, expectReservationInfo, rInfo)
+}
+
+func TestCacheUpdatePodAcrossReservations(t *testing.T) {
+	cache := newReservationCache(nil)
+	reservation1 := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{
+			UID:  uuid.NewUUID(),
+			Name: "test-reservation-1",
+		},
+		Spec: schedulingv1alpha1.ReservationSpec{
+			Template: &corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("4000m"),
+									corev1.ResourceMemory: resource.MustParse("4Gi"),
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		Status: schedulingv1alpha1.ReservationStatus{
+			NodeName: "test-node-1",
+			Allocatable: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("4000m"),
+				corev1.ResourceMemory: resource.MustParse("4Gi"),
+			},
+		},
+	}
+	reservation2 := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{
+			UID:  uuid.NewUUID(),
+			Name: "test-reservation-2",
+		},
+		Spec: schedulingv1alpha1.ReservationSpec{
+			Template: &corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("2000m"),
+									corev1.ResourceMemory: resource.MustParse("2Gi"),
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		Status: schedulingv1alpha1.ReservationStatus{
+			NodeName: "test-node-1",
+			Allocatable: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("2000m"),
+				corev1.ResourceMemory: resource.MustParse("2Gi"),
+			},
+		},
+	}
+	cache.updateReservation(reservation1)
+	cache.updateReservation(reservation2)
+
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			UID:       uuid.NewUUID(),
+			Namespace: "default",
+			Name:      "test-pod-1",
+		},
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{
+				{
+					Resources: corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("2000m"),
+							corev1.ResourceMemory: resource.MustParse("2Gi"),
+						},
+					},
+				},
+			},
+		},
+	}
+
+	// add pod to reservation1
+	cache.addPod(reservation1.UID, pod)
+	rInfo1 := cache.getReservationInfoByUID(reservation1.UID)
+	assert.Len(t, rInfo1.AssignedPods, 1)
+	assert.Contains(t, rInfo1.AssignedPods, pod.UID)
+
+	// move pod from reservation1 to reservation2
+	cache.updatePod(reservation1.UID, reservation2.UID, pod, pod)
+	rInfo1 = cache.getReservationInfoByUID(reservation1.UID)
+	assert.Len(t, rInfo1.AssignedPods, 0)
+	rInfo2 := cache.getReservationInfoByUID(reservation2.UID)
+	assert.Len(t, rInfo2.AssignedPods, 1)
+	assert.Contains(t, rInfo2.AssignedPods, pod.UID)
+
+	// update pod within same reservation
+	cache.updatePod(reservation2.UID, reservation2.UID, pod, pod)
+	rInfo2 = cache.getReservationInfoByUID(reservation2.UID)
+	assert.Len(t, rInfo2.AssignedPods, 1)
+	assert.Contains(t, rInfo2.AssignedPods, pod.UID)
 }

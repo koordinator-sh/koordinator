@@ -60,6 +60,20 @@ type ReservationAllocated struct {
 	UID  types.UID `json:"uid,omitempty"`
 }
 
+func (r *ReservationAllocated) GetName() string {
+	if r == nil {
+		return ""
+	}
+	return r.Name
+}
+
+func (r *ReservationAllocated) GetUID() types.UID {
+	if r == nil {
+		return ""
+	}
+	return r.UID
+}
+
 // ReservationAffinity represents the constraints of Pod selection Reservation
 type ReservationAffinity struct {
 	// Specifies the reservation name directly, other reservation affinity fields will be ignored.

@@ -168,18 +168,17 @@ func (cache *reservationCache) addPod(reservationUID types.UID, pod *corev1.Pod)
 	return nil
 }
 
-func (cache *reservationCache) updatePod(reservationUID types.UID, oldPod, newPod *corev1.Pod) {
+func (cache *reservationCache) updatePod(oldReservationUID, newReservationUID types.UID, oldPod, newPod *corev1.Pod) {
 	cache.lock.Lock()
 	defer cache.lock.Unlock()
 
-	rInfo := cache.reservationInfos[reservationUID]
-	if rInfo != nil {
-		if oldPod != nil {
-			rInfo.RemoveAssignedPod(oldPod)
-		}
-		if newPod != nil {
-			rInfo.AddAssignedPod(newPod)
-		}
+	oldRInfo := cache.reservationInfos[oldReservationUID]
+	if oldRInfo != nil && oldPod != nil {
+		oldRInfo.RemoveAssignedPod(oldPod)
+	}
+	newRInfo := cache.reservationInfos[newReservationUID]
+	if newRInfo != nil && newPod != nil {
+		newRInfo.AddAssignedPod(newPod)
 	}
 }
 
