@@ -53,7 +53,7 @@ func (manager *mluManager) GetDevices() ([]Device, error) {
 	if err != nil {
 		return nil, fmt.Errorf("getMLUDevice(): new PCI instance error, %v", err)
 	}
-	devices := pci.ListDevices()
+	devices := pci.Devices
 	if len(devices) == 0 {
 		klog.Info("getMLUDevice(): no pci devices")
 		return nil, nil
