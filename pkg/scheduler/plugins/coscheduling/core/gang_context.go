@@ -25,6 +25,8 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/klog/v2"
 
+	"github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/networktopology"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/coscheduling/util"
 )
 
@@ -80,12 +82,20 @@ func (h *GangSchedulingContextHolder) setGangSchedulingContext(gangSchedulingCon
 }
 
 type GangSchedulingContext struct {
-	startTime     string
-	gangGroup     sets.Set[string]
-	firstPod      *corev1.Pod
-	failedMessage string
+	startTime   string
+	gangGroup   sets.Set[string]
+	gangGroupID string
+	firstPod    *corev1.Pod
 
 	// secure alreadyAttemptedPods to avoid concurrent map read and write
 	sync.RWMutex
 	alreadyAttemptedPods sets.Set[string]
+
+	triggerPod        *corev1.Pod
+	failedMessage     string
+	preemptionMessage string
+
+	networkTopologySpec         *extension.NetworkTopologySpec
+	networkTopologySnapshot     *networktopology.TreeSnapshot
+	networkTopologyPlannedNodes map[string]string // podKey -> nodeName
 }

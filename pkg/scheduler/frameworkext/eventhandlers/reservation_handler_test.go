@@ -46,7 +46,6 @@ import (
 	koordfake "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/fake"
 	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
-	frameworkexttesting "github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/testing"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
 
@@ -166,7 +165,7 @@ func TestAddReservationErrorHandler(t *testing.T) {
 			assert.Nil(t, err)
 			koordClientSet := koordfake.NewSimpleClientset(tt.r)
 			koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
-			rNominator := frameworkexttesting.NewFakeReservationNominator()
+			rNominator := frameworkext.NewFakeReservationNominator()
 			frameworkExtenderFactory, _ := frameworkext.NewFrameworkExtenderFactory(
 				frameworkext.WithKoordinatorClientSet(koordClientSet),
 				frameworkext.WithKoordinatorSharedInformerFactory(koordSharedInformerFactory),
@@ -195,7 +194,12 @@ func TestAddReservationErrorHandler(t *testing.T) {
 				PodInfo: podInfo,
 			}
 
-			handler(context.TODO(), extendedHandle, queuedPodInfo, framework.AsStatus(errors.New(tt.want)), nil, time.Now())
+			nominatingInfo := &framework.NominatingInfo{
+				NominatingMode:    framework.ModeNoop,
+				NominatedNodeName: "",
+			}
+
+			handler(context.TODO(), extendedHandle, queuedPodInfo, framework.AsStatus(errors.New(tt.want)), nominatingInfo, time.Now())
 
 			r, err := koordClientSet.SchedulingV1alpha1().Reservations().Get(context.TODO(), tt.r.Name, metav1.GetOptions{})
 			assert.Equal(t, tt.wantErr, err != nil, err)
@@ -213,6 +217,194 @@ func TestAddReservationErrorHandler(t *testing.T) {
 	}
 }
 
+func TestMakeReservationErrorHandler_NominationHandling(t *testing.T) {
+	testR := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "reserve-pod-1",
+			UID:  "xxx",
+		},
+		Spec: schedulingv1alpha1.ReservationSpec{
+			Template: &corev1.PodTemplateSpec{},
+			Owners: []schedulingv1alpha1.ReservationOwner{
+				{
+					Object: &corev1.ObjectReference{
+						Name: "test-pod-1",
+					},
+				},
+			},
+			TTL: &metav1.Duration{Duration: 30 * time.Minute},
+		},
+		Status: schedulingv1alpha1.ReservationStatus{
+			Phase: schedulingv1alpha1.ReservationPending,
+		},
+	}
+
+	tests := []struct {
+		name                             string
+		isReservePod                     bool
+		hasReservationAffinity           bool
+		nilNominatingInfo                bool
+		nominatingMode                   framework.NominatingMode
+		nominatedNodeName                string
+		podNominatedNodeName             string
+		expectDeleteNominatedReservation bool
+		expectKeepNomination             bool
+		expectReAddNomination            bool
+	}{
+		{
+			name:                  "reserve pod should re-add nomination by failureHandler",
+			isReservePod:          true,
+			nominatingMode:        framework.ModeOverride,
+			nominatedNodeName:     "test-node",
+			expectReAddNomination: true,
+		},
+		{
+			name:                 "normal pod with ModeOverride and nominated node should keep nomination",
+			isReservePod:         false,
+			nominatingMode:       framework.ModeOverride,
+			nominatedNodeName:    "test-node",
+			expectKeepNomination: true,
+		},
+		{
+			name:                             "normal pod with ModeNoop and empty pod.Status.NominatedNodeName should delete nomination",
+			isReservePod:                     false,
+			nominatingMode:                   framework.ModeNoop,
+			nominatedNodeName:                "",
+			podNominatedNodeName:             "",
+			expectDeleteNominatedReservation: true,
+		},
+		{
+			name:                 "normal pod with ModeNoop and non-empty pod.Status.NominatedNodeName should keep nomination",
+			isReservePod:         false,
+			nominatingMode:       framework.ModeNoop,
+			nominatedNodeName:    "",
+			podNominatedNodeName: "test-node",
+			expectKeepNomination: true,
+		},
+		{
+			name:                             "normal pod with ModeOverride but no nominated node should delete nomination",
+			isReservePod:                     false,
+			nominatingMode:                   framework.ModeOverride,
+			nominatedNodeName:                "",
+			expectDeleteNominatedReservation: true,
+		},
+		{
+			name:                   "pod with reservation affinity should not handle nomination",
+			isReservePod:           false,
+			hasReservationAffinity: true,
+			nominatingMode:         framework.ModeNoop,
+			nominatedNodeName:      "",
+		},
+		{
+			name:                             "normal pod with nil nominatingInfo should delete nomination",
+			isReservePod:                     false,
+			nilNominatingInfo:                true,
+			expectDeleteNominatedReservation: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			registeredPlugins := []schedulertesting.RegisterPluginFunc{
+				schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
+				schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
+			}
+
+			fakeRecorder := record.NewFakeRecorder(1024)
+			eventRecorder := record.NewEventRecorderAdapter(fakeRecorder)
+
+			clientSet := kubefake.NewSimpleClientset()
+			fh, err := schedulertesting.NewFramework(context.TODO(), registeredPlugins, "default-scheduler",
+				frameworkruntime.WithEventRecorder(eventRecorder),
+				frameworkruntime.WithClientSet(clientSet),
+				frameworkruntime.WithInformerFactory(informers.NewSharedInformerFactory(clientSet, 0)),
+			)
+			assert.Nil(t, err)
+
+			koordClientSet := koordfake.NewSimpleClientset(testR)
+			koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
+			rNominator := frameworkext.NewFakeReservationNominator()
+			frameworkExtenderFactory, _ := frameworkext.NewFrameworkExtenderFactory(
+				frameworkext.WithKoordinatorClientSet(koordClientSet),
+				frameworkext.WithKoordinatorSharedInformerFactory(koordSharedInformerFactory),
+				frameworkext.WithReservationNominator(rNominator),
+			)
+			extendedHandle := frameworkext.NewFrameworkExtender(frameworkExtenderFactory, fh)
+			sched := &scheduler.Scheduler{
+				Profiles: profile.Map{
+					"default-scheduler": extendedHandle,
+				},
+			}
+
+			internalHandler := frameworkext.NewFakeScheduler()
+			handler := MakeReservationErrorHandler(sched, internalHandler, koordClientSet, koordSharedInformerFactory)
+
+			koordSharedInformerFactory.Start(nil)
+			koordSharedInformerFactory.WaitForCacheSync(nil)
+
+			var pod *corev1.Pod
+			if tt.isReservePod {
+				pod = reservationutil.NewReservePod(testR)
+			} else {
+				pod = &corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-pod",
+						Namespace: "default",
+						UID:       "test-pod-uid",
+					},
+					Spec: corev1.PodSpec{
+						SchedulerName: "default-scheduler",
+					},
+				}
+				if tt.hasReservationAffinity {
+					pod.Annotations = map[string]string{
+						"scheduling.koordinator.sh/reservation-affinity": `{"reservationSelector":{"reservation-0":"reservation-0"}}`,
+					}
+				}
+				if tt.podNominatedNodeName != "" {
+					pod.Status.NominatedNodeName = tt.podNominatedNodeName
+				}
+			}
+
+			// Add nomination before calling handler
+			if !tt.hasReservationAffinity {
+				rNominator.AddNominatedReservePod(pod, "test-node")
+			}
+
+			podInfo, _ := framework.NewPodInfo(pod)
+			queuedPodInfo := &framework.QueuedPodInfo{
+				PodInfo: podInfo,
+			}
+
+			var nominatingInfo *framework.NominatingInfo
+			if !tt.nilNominatingInfo {
+				nominatingInfo = &framework.NominatingInfo{
+					NominatingMode:    tt.nominatingMode,
+					NominatedNodeName: tt.nominatedNodeName,
+				}
+			}
+
+			handler(context.TODO(), extendedHandle, queuedPodInfo, framework.NewStatus(framework.Unschedulable, "test error"), nominatingInfo, time.Now())
+
+			// Check if nomination was deleted or kept
+			if tt.expectDeleteNominatedReservation {
+				// Verify nomination was deleted
+				nominatedNode := rNominator.GetNominatedNodeForReservePod(pod)
+				assert.Equal(t, "", nominatedNode, "Expected nomination to be deleted")
+			} else if tt.expectKeepNomination {
+				// Verify nomination was kept
+				nominatedNode := rNominator.GetNominatedNodeForReservePod(pod)
+				assert.Equal(t, "test-node", nominatedNode, "Expected nomination to be kept")
+			} else if tt.expectReAddNomination {
+				// For reserve pod, the nomination is re-added by failureHandler
+				// Since failureHandler calls addNominatedReservation at the end
+				nominatedNode := rNominator.GetNominatedNodeForReservePod(pod)
+				assert.Equal(t, "test-node", nominatedNode, "Expected nomination to be re-added by failureHandler")
+			}
+		})
+	}
+}
+
 func Test_addReservationToCache(t *testing.T) {
 	now := time.Now()
 	tests := []struct {
@@ -221,41 +413,6 @@ func Test_addReservationToCache(t *testing.T) {
 		wantPodFromObj bool
 		wantPod        *corev1.Pod
 	}{
-		{
-			name: "failed to validate reservation",
-			obj: &schedulingv1alpha1.Reservation{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "r-0",
-					UID:  "123456",
-				},
-				Spec: schedulingv1alpha1.ReservationSpec{
-					Template: nil,
-				},
-			},
-			wantPod: nil,
-		},
-		{
-			name: "add pending reservation",
-			obj: &schedulingv1alpha1.Reservation{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "r-0",
-					UID:  "123456",
-				},
-				Spec: schedulingv1alpha1.ReservationSpec{
-					Template: &corev1.PodTemplateSpec{},
-					Owners: []schedulingv1alpha1.ReservationOwner{
-						{
-							Object: &corev1.ObjectReference{
-								Kind: "Pod",
-								Name: "pod-0",
-							},
-						},
-					},
-					Expires: &metav1.Time{Time: now.Add(30 * time.Minute)},
-				},
-			},
-			wantPod: nil,
-		},
 		{
 			name: "add available reservation",
 			obj: &schedulingv1alpha1.Reservation{
@@ -282,32 +439,6 @@ func Test_addReservationToCache(t *testing.T) {
 			},
 			wantPodFromObj: true,
 		},
-		{
-			name: "add failed reservation",
-			obj: &schedulingv1alpha1.Reservation{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "r-0",
-					UID:  "123456",
-				},
-				Spec: schedulingv1alpha1.ReservationSpec{
-					Template: &corev1.PodTemplateSpec{},
-					Owners: []schedulingv1alpha1.ReservationOwner{
-						{
-							Object: &corev1.ObjectReference{
-								Kind: "Pod",
-								Name: "pod-0",
-							},
-						},
-					},
-					Expires: &metav1.Time{Time: now.Add(30 * time.Minute)},
-				},
-				Status: schedulingv1alpha1.ReservationStatus{
-					Phase:    schedulingv1alpha1.ReservationFailed,
-					NodeName: "test-node",
-				},
-			},
-			wantPod: nil,
-		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -331,6 +462,573 @@ func Test_addReservationToCache(t *testing.T) {
 	}
 }
 
+func Test_updateReservation(t *testing.T) {
+	now := time.Now()
+	tests := []struct {
+		name        string
+		oldObj      *schedulingv1alpha1.Reservation
+		newObj      *schedulingv1alpha1.Reservation
+		wantInCache bool
+		wantInQueue bool
+		description string
+	}{
+		{
+			name: "update available reservation with same nodeName",
+			oldObj: &schedulingv1alpha1.Reservation{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:            "r-0",
+					UID:             "456",
+					ResourceVersion: "1",
+				},
+				Spec: schedulingv1alpha1.ReservationSpec{
+					Template: &corev1.PodTemplateSpec{},
+					Owners: []schedulingv1alpha1.ReservationOwner{
+						{
+							Object: &corev1.ObjectReference{
+								Kind: "Pod",
+								Name: "pod-0",
+							},
+						},
+					},
+					Expires: &metav1.Time{Time: now.Add(30 * time.Minute)},
+				},
+				Status: schedulingv1alpha1.ReservationStatus{
+					NodeName: "test-node",
+					Phase:    schedulingv1alpha1.ReservationAvailable,
+				},
+			},
+			newObj: &schedulingv1alpha1.Reservation{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:            "r-0",
+					UID:             "456",
+					ResourceVersion: "2",
+				},
+				Spec: schedulingv1alpha1.ReservationSpec{
+					Template: &corev1.PodTemplateSpec{},
+					Owners: []schedulingv1alpha1.ReservationOwner{
+						{
+							Object: &corev1.ObjectReference{
+								Kind: "Pod",
+								Name: "pod-0",
+							},
+						},
+					},
+					Expires: &metav1.Time{Time: now.Add(30 * time.Minute)},
+				},
+				Status: schedulingv1alpha1.ReservationStatus{
+					NodeName: "test-node",
+					Phase:    schedulingv1alpha1.ReservationAvailable,
+				},
+			},
+			wantInCache: true,
+			wantInQueue: false,
+			description: "should update in cache",
+		},
+		{
+			name: "update available reservation with different nodeName (node migration)",
+			oldObj: &schedulingv1alpha1.Reservation{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:            "r-0",
+					UID:             "456",
+					ResourceVersion: "1",
+				},
+				Spec: schedulingv1alpha1.ReservationSpec{
+					Template: &corev1.PodTemplateSpec{},
+					Owners: []schedulingv1alpha1.ReservationOwner{
+						{
+							Object: &corev1.ObjectReference{
+								Kind: "Pod",
+								Name: "pod-0",
+							},
+						},
+					},
+					Expires: &metav1.Time{Time: now.Add(30 * time.Minute)},
+				},
+				Status: schedulingv1alpha1.ReservationStatus{
+					NodeName: "test-node-1",
+					Phase:    schedulingv1alpha1.ReservationAvailable,
+				},
+			},
+			newObj: &schedulingv1alpha1.Reservation{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:            "r-0",
+					UID:             "456",
+					ResourceVersion: "2",
+				},
+				Spec: schedulingv1alpha1.ReservationSpec{
+					Template: &corev1.PodTemplateSpec{},
+					Owners: []schedulingv1alpha1.ReservationOwner{
+						{
+							Object: &corev1.ObjectReference{
+								Kind: "Pod",
+								Name: "pod-0",
+							},
+						},
+					},
+					Expires: &metav1.Time{Time: now.Add(30 * time.Minute)},
+				},
+				Status: schedulingv1alpha1.ReservationStatus{
+					NodeName: "test-node-2",
+					Phase:    schedulingv1alpha1.ReservationAvailable,
+				},
+			},
+			wantInCache: true,
+			wantInQueue: false,
+			description: "should handle as delete-then-add in cache",
+		},
+		{
+			name: "update from unassigned to available",
+			oldObj: &schedulingv1alpha1.Reservation{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:            "r-0",
+					UID:             "456",
+					ResourceVersion: "1",
+				},
+				Spec: schedulingv1alpha1.ReservationSpec{
+					Template: &corev1.PodTemplateSpec{},
+					Owners: []schedulingv1alpha1.ReservationOwner{
+						{
+							Object: &corev1.ObjectReference{
+								Kind: "Pod",
+								Name: "pod-0",
+							},
+						},
+					},
+					Expires: &metav1.Time{Time: now.Add(30 * time.Minute)},
+				},
+				Status: schedulingv1alpha1.ReservationStatus{
+					Phase: schedulingv1alpha1.ReservationPending,
+				},
+			},
+			newObj: &schedulingv1alpha1.Reservation{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:            "r-0",
+					UID:             "456",
+					ResourceVersion: "2",
+				},
+				Spec: schedulingv1alpha1.ReservationSpec{
+					Template: &corev1.PodTemplateSpec{},
+					Owners: []schedulingv1alpha1.ReservationOwner{
+						{
+							Object: &corev1.ObjectReference{
+								Kind: "Pod",
+								Name: "pod-0",
+							},
+						},
+					},
+					Expires: &metav1.Time{Time: now.Add(30 * time.Minute)},
+				},
+				Status: schedulingv1alpha1.ReservationStatus{
+					NodeName: "test-node",
+					Phase:    schedulingv1alpha1.ReservationAvailable,
+				},
+			},
+			wantInCache: true,
+			wantInQueue: false,
+			description: "should add to cache and remove from queue",
+		},
+		{
+			name: "update from available to terminal (succeeded)",
+			oldObj: &schedulingv1alpha1.Reservation{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:            "r-0",
+					UID:             "456",
+					ResourceVersion: "1",
+				},
+				Spec: schedulingv1alpha1.ReservationSpec{
+					Template: &corev1.PodTemplateSpec{},
+					Owners: []schedulingv1alpha1.ReservationOwner{
+						{
+							Object: &corev1.ObjectReference{
+								Kind: "Pod",
+								Name: "pod-0",
+							},
+						},
+					},
+					Expires: &metav1.Time{Time: now.Add(30 * time.Minute)},
+				},
+				Status: schedulingv1alpha1.ReservationStatus{
+					NodeName: "test-node",
+					Phase:    schedulingv1alpha1.ReservationAvailable,
+				},
+			},
+			newObj: &schedulingv1alpha1.Reservation{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:            "r-0",
+					UID:             "456",
+					ResourceVersion: "2",
+				},
+				Spec: schedulingv1alpha1.ReservationSpec{
+					Template: &corev1.PodTemplateSpec{},
+					Owners: []schedulingv1alpha1.ReservationOwner{
+						{
+							Object: &corev1.ObjectReference{
+								Kind: "Pod",
+								Name: "pod-0",
+							},
+						},
+					},
+					Expires: &metav1.Time{Time: now.Add(30 * time.Minute)},
+				},
+				Status: schedulingv1alpha1.ReservationStatus{
+					NodeName: "test-node",
+					Phase:    schedulingv1alpha1.ReservationSucceeded,
+				},
+			},
+			wantInCache: false,
+			wantInQueue: false,
+			description: "should remove from cache, no requeue for terminal state",
+		},
+		{
+			name: "update from available to terminal (failed)",
+			oldObj: &schedulingv1alpha1.Reservation{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:            "r-0",
+					UID:             "456",
+					ResourceVersion: "1",
+				},
+				Spec: schedulingv1alpha1.ReservationSpec{
+					Template: &corev1.PodTemplateSpec{},
+					Owners: []schedulingv1alpha1.ReservationOwner{
+						{
+							Object: &corev1.ObjectReference{
+								Kind: "Pod",
+								Name: "pod-0",
+							},
+						},
+					},
+					Expires: &metav1.Time{Time: now.Add(30 * time.Minute)},
+				},
+				Status: schedulingv1alpha1.ReservationStatus{
+					NodeName: "test-node",
+					Phase:    schedulingv1alpha1.ReservationAvailable,
+				},
+			},
+			newObj: &schedulingv1alpha1.Reservation{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:            "r-0",
+					UID:             "456",
+					ResourceVersion: "2",
+				},
+				Spec: schedulingv1alpha1.ReservationSpec{
+					Template: &corev1.PodTemplateSpec{},
+					Owners: []schedulingv1alpha1.ReservationOwner{
+						{
+							Object: &corev1.ObjectReference{
+								Kind: "Pod",
+								Name: "pod-0",
+							},
+						},
+					},
+					Expires: &metav1.Time{Time: now.Add(30 * time.Minute)},
+				},
+				Status: schedulingv1alpha1.ReservationStatus{
+					NodeName: "test-node",
+					Phase:    schedulingv1alpha1.ReservationFailed,
+				},
+			},
+			wantInCache: false,
+			wantInQueue: false,
+			description: "should remove from cache, no requeue for terminal state",
+		},
+		{
+			name: "update from available to unassigned (assumed binding and rollback)",
+			oldObj: &schedulingv1alpha1.Reservation{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:            "r-0",
+					UID:             "456",
+					ResourceVersion: "1",
+				},
+				Spec: schedulingv1alpha1.ReservationSpec{
+					Template: &corev1.PodTemplateSpec{},
+					Owners: []schedulingv1alpha1.ReservationOwner{
+						{
+							Object: &corev1.ObjectReference{
+								Kind: "Pod",
+								Name: "pod-0",
+							},
+						},
+					},
+					Expires: &metav1.Time{Time: now.Add(30 * time.Minute)},
+				},
+				Status: schedulingv1alpha1.ReservationStatus{
+					NodeName: "test-node",
+					Phase:    schedulingv1alpha1.ReservationAvailable,
+				},
+			},
+			newObj: &schedulingv1alpha1.Reservation{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:            "r-0",
+					UID:             "456",
+					ResourceVersion: "2",
+				},
+				Spec: schedulingv1alpha1.ReservationSpec{
+					Template: &corev1.PodTemplateSpec{},
+					Owners: []schedulingv1alpha1.ReservationOwner{
+						{
+							Object: &corev1.ObjectReference{
+								Kind: "Pod",
+								Name: "pod-0",
+							},
+						},
+					},
+					Expires: &metav1.Time{Time: now.Add(30 * time.Minute)},
+				},
+				Status: schedulingv1alpha1.ReservationStatus{
+					Phase: schedulingv1alpha1.ReservationPending,
+				},
+			},
+			wantInCache: false,
+			wantInQueue: true,
+			description: "should remove from cache and requeue for retry",
+		},
+		{
+			name: "update unassigned reservation",
+			oldObj: &schedulingv1alpha1.Reservation{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:            "r-0",
+					UID:             "456",
+					ResourceVersion: "1",
+				},
+				Spec: schedulingv1alpha1.ReservationSpec{
+					Template: &corev1.PodTemplateSpec{},
+					Owners: []schedulingv1alpha1.ReservationOwner{
+						{
+							Object: &corev1.ObjectReference{
+								Kind: "Pod",
+								Name: "pod-0",
+							},
+						},
+					},
+					Expires: &metav1.Time{Time: now.Add(30 * time.Minute)},
+				},
+				Status: schedulingv1alpha1.ReservationStatus{
+					Phase: schedulingv1alpha1.ReservationPending,
+				},
+			},
+			newObj: &schedulingv1alpha1.Reservation{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:            "r-0",
+					UID:             "456",
+					ResourceVersion: "2",
+				},
+				Spec: schedulingv1alpha1.ReservationSpec{
+					Template: &corev1.PodTemplateSpec{
+						Spec: corev1.PodSpec{
+							Containers: []corev1.Container{
+								{
+									Name: "test",
+								},
+							},
+						},
+					},
+					Owners: []schedulingv1alpha1.ReservationOwner{
+						{
+							Object: &corev1.ObjectReference{
+								Kind: "Pod",
+								Name: "pod-0",
+							},
+						},
+					},
+					Expires: &metav1.Time{Time: now.Add(30 * time.Minute)},
+				},
+				Status: schedulingv1alpha1.ReservationStatus{
+					Phase: schedulingv1alpha1.ReservationPending,
+				},
+			},
+			wantInCache: false,
+			wantInQueue: true,
+			description: "should update in queue",
+		},
+		{
+			name: "update from unassigned to terminal (failed)",
+			oldObj: &schedulingv1alpha1.Reservation{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:            "r-0",
+					UID:             "456",
+					ResourceVersion: "1",
+				},
+				Spec: schedulingv1alpha1.ReservationSpec{
+					Template: &corev1.PodTemplateSpec{},
+					Owners: []schedulingv1alpha1.ReservationOwner{
+						{
+							Object: &corev1.ObjectReference{
+								Kind: "Pod",
+								Name: "pod-0",
+							},
+						},
+					},
+					Expires: &metav1.Time{Time: now.Add(30 * time.Minute)},
+				},
+				Status: schedulingv1alpha1.ReservationStatus{
+					Phase: schedulingv1alpha1.ReservationPending,
+				},
+			},
+			newObj: &schedulingv1alpha1.Reservation{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:            "r-0",
+					UID:             "456",
+					ResourceVersion: "2",
+				},
+				Spec: schedulingv1alpha1.ReservationSpec{
+					Template: &corev1.PodTemplateSpec{},
+					Owners: []schedulingv1alpha1.ReservationOwner{
+						{
+							Object: &corev1.ObjectReference{
+								Kind: "Pod",
+								Name: "pod-0",
+							},
+						},
+					},
+					Expires: &metav1.Time{Time: now.Add(30 * time.Minute)},
+				},
+				Status: schedulingv1alpha1.ReservationStatus{
+					Phase: schedulingv1alpha1.ReservationFailed,
+				},
+			},
+			wantInCache: false,
+			wantInQueue: false,
+			description: "should remove from queue for terminal state",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			frameworkext.SetReservationCache(&frameworkext.FakeReservationCache{})
+			registeredPlugins := []schedulertesting.RegisterPluginFunc{
+				schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
+				schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
+			}
+			fh, err := schedulertesting.NewFramework(context.TODO(), registeredPlugins, corev1.DefaultSchedulerName)
+			assert.NoError(t, err)
+
+			sched := &scheduler.Scheduler{
+				Profiles: profile.Map{
+					corev1.DefaultSchedulerName: fh,
+				},
+			}
+
+			schedAdapter := frameworkext.NewFakeScheduler()
+
+			// Setup initial state
+			if reservationutil.IsReservationAvailable(tt.oldObj) {
+				// Add old reservation to cache if it was available
+				schedAdapter.AddPod(klog.Background(), reservationutil.NewReservePod(tt.oldObj))
+			} else if isReservationActive(tt.oldObj) {
+				// Add old reservation to queue if it was active
+				oldPod := reservationutil.NewReservePod(tt.oldObj)
+				schedAdapter.Queue.Pods[string(tt.oldObj.UID)] = oldPod
+			}
+
+			// Execute update
+			updateReservation(sched, schedAdapter, tt.oldObj, tt.newObj)
+
+			// Verify cache state
+			pod, err := schedAdapter.GetPod(&corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					UID: tt.newObj.GetUID(),
+				},
+			})
+			assert.NoError(t, err)
+			if tt.wantInCache {
+				assert.NotNil(t, pod, tt.description)
+			} else {
+				assert.Nil(t, pod, tt.description)
+			}
+
+			// Verify queue state
+			queuePod := schedAdapter.Queue.Pods[string(tt.newObj.UID)]
+			if tt.wantInQueue {
+				assert.NotNil(t, queuePod, tt.description)
+			} else {
+				assert.Nil(t, queuePod, tt.description)
+			}
+		})
+	}
+}
+
+func Test_isReservationActive(t *testing.T) {
+	now := time.Now()
+	tests := []struct {
+		name string
+		r    *schedulingv1alpha1.Reservation
+		want bool
+	}{
+		{
+			name: "pending reservation without nodeName is active",
+			r: &schedulingv1alpha1.Reservation{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "r-0",
+				},
+				Spec: schedulingv1alpha1.ReservationSpec{
+					Template: &corev1.PodTemplateSpec{},
+					Expires:  &metav1.Time{Time: now.Add(30 * time.Minute)},
+				},
+				Status: schedulingv1alpha1.ReservationStatus{
+					Phase: schedulingv1alpha1.ReservationPending,
+				},
+			},
+			want: true,
+		},
+		{
+			name: "available reservation with nodeName is not active",
+			r: &schedulingv1alpha1.Reservation{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "r-0",
+				},
+				Spec: schedulingv1alpha1.ReservationSpec{
+					Template: &corev1.PodTemplateSpec{},
+					Expires:  &metav1.Time{Time: now.Add(30 * time.Minute)},
+				},
+				Status: schedulingv1alpha1.ReservationStatus{
+					NodeName: "test-node",
+					Phase:    schedulingv1alpha1.ReservationAvailable,
+				},
+			},
+			want: false,
+		},
+		{
+			name: "failed reservation is not active",
+			r: &schedulingv1alpha1.Reservation{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "r-0",
+				},
+				Spec: schedulingv1alpha1.ReservationSpec{
+					Template: &corev1.PodTemplateSpec{},
+					Expires:  &metav1.Time{Time: now.Add(30 * time.Minute)},
+				},
+				Status: schedulingv1alpha1.ReservationStatus{
+					Phase: schedulingv1alpha1.ReservationFailed,
+				},
+			},
+			want: false,
+		},
+		{
+			name: "succeeded reservation is not active",
+			r: &schedulingv1alpha1.Reservation{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "r-0",
+				},
+				Spec: schedulingv1alpha1.ReservationSpec{
+					Template: &corev1.PodTemplateSpec{},
+					Expires:  &metav1.Time{Time: now.Add(30 * time.Minute)},
+				},
+				Status: schedulingv1alpha1.ReservationStatus{
+					Phase: schedulingv1alpha1.ReservationSucceeded,
+				},
+			},
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := isReservationActive(tt.r)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
 func Test_updateReservationInCache(t *testing.T) {
 	now := time.Now()
 	tests := []struct {
@@ -340,28 +1038,6 @@ func Test_updateReservationInCache(t *testing.T) {
 		wantPodFromObj bool
 		wantPod        *corev1.Pod
 	}{
-		{
-			name: "failed to validate reservation",
-			oldObj: &schedulingv1alpha1.Reservation{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "r-0",
-					UID:  "123",
-				},
-				Spec: schedulingv1alpha1.ReservationSpec{
-					Template: nil,
-				},
-			},
-			newObj: &schedulingv1alpha1.Reservation{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "r-0",
-					UID:  "123",
-				},
-				Spec: schedulingv1alpha1.ReservationSpec{
-					Template: nil,
-				},
-			},
-			wantPod: nil,
-		},
 		{
 			name: "update reservation from pending to available",
 			oldObj: &schedulingv1alpha1.Reservation{
@@ -477,134 +1153,6 @@ func Test_updateReservationInCache(t *testing.T) {
 				},
 			},
 			wantPodFromObj: true,
-		},
-		{
-			name: "update reservation from available to succeeded",
-			oldObj: &schedulingv1alpha1.Reservation{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "r-0",
-					UID:  "456",
-				},
-				Spec: schedulingv1alpha1.ReservationSpec{
-					Template: &corev1.PodTemplateSpec{
-						Spec: corev1.PodSpec{
-							Containers: []corev1.Container{
-								{
-									Name: "test",
-								},
-							},
-						},
-					},
-					Owners: []schedulingv1alpha1.ReservationOwner{
-						{
-							Object: &corev1.ObjectReference{
-								Kind: "Pod",
-								Name: "pod-0",
-							},
-						},
-					},
-					Expires: &metav1.Time{Time: now.Add(30 * time.Minute)},
-				},
-				Status: schedulingv1alpha1.ReservationStatus{
-					NodeName: "test-node",
-					Phase:    schedulingv1alpha1.ReservationAvailable,
-				},
-			},
-			newObj: &schedulingv1alpha1.Reservation{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "r-0",
-					UID:  "456",
-				},
-				Spec: schedulingv1alpha1.ReservationSpec{
-					Template: &corev1.PodTemplateSpec{
-						Spec: corev1.PodSpec{
-							Containers: []corev1.Container{
-								{
-									Name: "test",
-								},
-							},
-						},
-					},
-					Owners: []schedulingv1alpha1.ReservationOwner{
-						{
-							Object: &corev1.ObjectReference{
-								Kind: "Pod",
-								Name: "pod-0",
-							},
-						},
-					},
-					Expires: &metav1.Time{Time: now.Add(30 * time.Minute)},
-				},
-				Status: schedulingv1alpha1.ReservationStatus{
-					NodeName: "test-node",
-					Phase:    schedulingv1alpha1.ReservationSucceeded,
-				},
-			},
-			wantPod: nil,
-		},
-		{
-			name: "update reservation from available to failed",
-			oldObj: &schedulingv1alpha1.Reservation{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "r-0",
-					UID:  "456",
-				},
-				Spec: schedulingv1alpha1.ReservationSpec{
-					Template: &corev1.PodTemplateSpec{
-						Spec: corev1.PodSpec{
-							Containers: []corev1.Container{
-								{
-									Name: "test",
-								},
-							},
-						},
-					},
-					Owners: []schedulingv1alpha1.ReservationOwner{
-						{
-							Object: &corev1.ObjectReference{
-								Kind: "Pod",
-								Name: "pod-0",
-							},
-						},
-					},
-					Expires: &metav1.Time{Time: now.Add(30 * time.Minute)},
-				},
-				Status: schedulingv1alpha1.ReservationStatus{
-					NodeName: "test-node",
-					Phase:    schedulingv1alpha1.ReservationAvailable,
-				},
-			},
-			newObj: &schedulingv1alpha1.Reservation{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "r-0",
-					UID:  "456",
-				},
-				Spec: schedulingv1alpha1.ReservationSpec{
-					Template: &corev1.PodTemplateSpec{
-						Spec: corev1.PodSpec{
-							Containers: []corev1.Container{
-								{
-									Name: "test",
-								},
-							},
-						},
-					},
-					Owners: []schedulingv1alpha1.ReservationOwner{
-						{
-							Object: &corev1.ObjectReference{
-								Kind: "Pod",
-								Name: "pod-0",
-							},
-						},
-					},
-					Expires: &metav1.Time{Time: now.Add(30 * time.Minute)},
-				},
-				Status: schedulingv1alpha1.ReservationStatus{
-					NodeName: "test-node",
-					Phase:    schedulingv1alpha1.ReservationFailed,
-				},
-			},
-			wantPod: nil,
 		},
 	}
 	for _, tt := range tests {
@@ -1053,105 +1601,6 @@ func Test_deleteReservationFromSchedulingQueue(t *testing.T) {
 			}
 		})
 	}
-}
-
-func Test_unscheduledReservationEventHandler(t *testing.T) {
-	sched := &scheduler.Scheduler{
-		Profiles: map[string]framework.Framework{
-			corev1.DefaultSchedulerName: nil,
-		},
-	}
-	adapt := frameworkext.NewFakeScheduler()
-	handler := unscheduledReservationEventHandler(sched, adapt)
-	reservation := &schedulingv1alpha1.Reservation{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:            "r-0",
-			UID:             "456",
-			ResourceVersion: "1",
-		},
-		Spec: schedulingv1alpha1.ReservationSpec{
-			Template: &corev1.PodTemplateSpec{},
-			Owners: []schedulingv1alpha1.ReservationOwner{
-				{
-					Object: &corev1.ObjectReference{
-						Kind: "Pod",
-						Name: "pod-0",
-					},
-				},
-			},
-		},
-	}
-	handler.OnAdd(reservation, true)
-	assert.NotNil(t, adapt.Queue.Pods[string(reservation.UID)])
-	reservationCopy := reservation.DeepCopy()
-	reservationCopy.ResourceVersion = "2"
-	reservationCopy.Status.Phase = schedulingv1alpha1.ReservationFailed
-	handler.OnUpdate(reservation, reservationCopy)
-	assert.Nil(t, adapt.Queue.Pods[string(reservation.UID)])
-}
-
-func Test_irresponsibleUnscheduledReservationEventHandler(t *testing.T) {
-	sched := &scheduler.Scheduler{
-		Profiles: map[string]framework.Framework{
-			corev1.DefaultSchedulerName: nil,
-		},
-	}
-	adapt := frameworkext.NewFakeScheduler()
-	handler := irresponsibleUnscheduledReservationEventHandler(sched, adapt)
-	defaultHandler := unscheduledReservationEventHandler(sched, adapt)
-	r := &schedulingv1alpha1.Reservation{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:            "r-0",
-			UID:             "456",
-			ResourceVersion: "1",
-		},
-		Spec: schedulingv1alpha1.ReservationSpec{
-			Template: &corev1.PodTemplateSpec{},
-			Owners: []schedulingv1alpha1.ReservationOwner{
-				{
-					Object: &corev1.ObjectReference{
-						Kind: "Pod",
-						Name: "pod-0",
-					},
-				},
-			},
-		},
-	}
-	// obj is responsible, ignore it
-	handler.OnAdd(r, true)
-	assert.Nil(t, adapt.Queue.Pods[string(r.UID)])
-	defaultHandler.OnAdd(r, true)
-	assert.NotNil(t, adapt.Queue.Pods[string(r.UID)])
-	rCopy := r.DeepCopy()
-	rCopy.ResourceVersion = "2"
-	handler.OnUpdate(r, rCopy)
-	defaultHandler.OnUpdate(r, rCopy)
-	assert.NotNil(t, adapt.Queue.Pods[string(r.UID)])
-	// obj become irresponsible and deleted, dequeue it
-	rCopy = r.DeepCopy()
-	rCopy.Spec.Template.Spec.SchedulerName = "other-scheduler"
-	handler.OnDelete(rCopy)
-	defaultHandler.OnDelete(rCopy)
-	assert.Nil(t, adapt.Queue.Pods[string(r.UID)])
-	// re-create an irresponsible obj
-	rCopy = r.DeepCopy()
-	rCopy.ResourceVersion = "3"
-	rCopy.Spec.Template.Spec.SchedulerName = "other-scheduler"
-	handler.OnAdd(rCopy, true)
-	assert.Nil(t, adapt.Queue.Pods[string(r.UID)])
-	defaultHandler.OnAdd(rCopy, true)
-	assert.Nil(t, adapt.Queue.Pods[string(r.UID)])
-	// obj from irresponsible to responsible, keep it
-	rCopy1 := rCopy.DeepCopy()
-	rCopy1.ResourceVersion = "4"
-	rCopy1.Spec.Template.Spec.SchedulerName = ""
-	defaultHandler.OnUpdate(rCopy, rCopy1)
-	handler.OnUpdate(rCopy, rCopy1)
-	assert.NotNil(t, adapt.Queue.Pods[string(r.UID)])
-	// obj deleted, dequeue it
-	defaultHandler.OnDelete(rCopy1)
-	handler.OnDelete(rCopy1)
-	assert.Nil(t, adapt.Queue.Pods[string(r.UID)])
 }
 
 var _ framework.Framework = &fakeFramework{}

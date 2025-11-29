@@ -30,6 +30,7 @@ import (
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	koordinatorclientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
 	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/networktopology"
 )
 
 // ExtendedHandle extends the k8s scheduling framework Handle interface
@@ -51,6 +52,7 @@ type ExtendedHandle interface {
 	// GetReservationNominator returns the ReservationNominator object to support nominating reservation.
 	// It returns nil when the framework does not support the resource reservation.
 	GetReservationNominator() ReservationNominator
+	GetNetworkTopologyTreeManager() networktopology.TreeManager
 }
 
 // FrameworkExtender extends the K8s Scheduling Framework interface to provide more extension methods to support Koordinator.
@@ -89,8 +91,18 @@ type PreFilterTransformer interface {
 	// BeforePreFilter If there is a change to the incoming Pod, it needs to be modified after DeepCopy and returned.
 	BeforePreFilter(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod) (*corev1.Pod, bool, *framework.Status)
 	// AfterPreFilter is executed after PreFilter.
-	// There is a chance to trigger the correction of the State data of each plugin after the PreFilter.
+	// There is a chance to trigger the correction of the State data of each plugin or do additional Node filtering after the PreFilter.
 	AfterPreFilter(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, preFilterResult *framework.PreFilterResult) *framework.Status
+}
+
+type FindOneNodePluginProvider interface {
+	FindOneNodePlugin() FindOneNodePlugin
+}
+
+type FindOneNodePlugin interface {
+	framework.Plugin
+	// FindOneNode  This extension point is used to help the scheduler customize the Pod Filter and Score process
+	FindOneNode(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, result *framework.PreFilterResult) (string, *framework.Status)
 }
 
 // FilterTransformer is executed before Filter.
@@ -169,6 +181,8 @@ type ReservationNominator interface {
 	// DeleteNominatedReservePod is used to delete the nominated reserve pod.
 	// DEPRECATED: use DeleteNominatedReservePodOrReservation instead.
 	DeleteNominatedReservePod(reservePod *corev1.Pod)
+	// NominatedReservePodForNode returns nominated reserve pods on the given node.
+	NominatedReservePodForNode(nodeName string) []*framework.PodInfo
 	// DeleteNominatedReservePodOrReservation is used to delete the nominated reserve pod or
 	// the nominated reservation for the pod.
 	DeleteNominatedReservePodOrReservation(pod *corev1.Pod)

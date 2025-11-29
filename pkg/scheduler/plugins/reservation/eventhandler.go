@@ -51,7 +51,7 @@ func (h *reservationEventHandler) OnAdd(obj interface{}, isInInitialList bool) {
 	if reservationutil.IsReservationActive(r) {
 		h.cache.updateReservation(r)
 		klog.V(4).InfoS("add reservation into reservationCache",
-			"reservation", klog.KObj(r), "node", reservationutil.GetReservationNodeName(r))
+			"reservation", klog.KObj(r), "uid", r.UID, "node", reservationutil.GetReservationNodeName(r))
 	}
 }
 
@@ -69,7 +69,7 @@ func (h *reservationEventHandler) OnUpdate(oldObj, newObj interface{}) {
 		h.cache.updateReservation(newR)
 		h.rrNominator.DeleteReservePod(reservationutil.NewReservePod(newR))
 		klog.V(4).InfoS("update reservation into reservationCache",
-			"reservation", klog.KObj(newR), "node", reservationutil.GetReservationNodeName(newR))
+			"reservation", klog.KObj(newR), "uid", newR.UID, "node", reservationutil.GetReservationNodeName(newR))
 	} else if reservationutil.IsReservationFailed(newR) || reservationutil.IsReservationSucceeded(newR) {
 		// Here it is only marked that ReservationInfo is unavailable,
 		// and the real deletion operation is executed in deleteReservationFromCache(pkg/scheduler/frameworkext/eventhandlers/reservation_handler.go).
@@ -110,5 +110,5 @@ func (h *reservationEventHandler) OnDelete(obj interface{}) {
 	}
 	h.cache.updateReservationIfExists(r)
 	klog.V(4).InfoS("got delete reservation event but just update it if exists",
-		"reservation", klog.KObj(r), "node", reservationutil.GetReservationNodeName(r))
+		"reservation", klog.KObj(r), "uid", r.UID, "node", reservationutil.GetReservationNodeName(r))
 }

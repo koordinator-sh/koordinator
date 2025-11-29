@@ -18,6 +18,7 @@ package frameworkext
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"time"
@@ -39,17 +40,27 @@ import (
 	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
 	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/indexer"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/networktopology"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/services"
 	koordschedulermetrics "github.com/koordinator-sh/koordinator/pkg/scheduler/metrics"
+)
+
+var (
+	EnableNetworkTopologyManager = false
 )
 
 func AddFlags(fs *pflag.FlagSet) {
 	fs.IntVarP(&debugTopNScores, "debug-scores", "s", debugTopNScores, "logging topN nodes score and scores for each plugin after running the score extension, disable if set to 0")
 	fs.BoolVarP(&debugFilterFailure, "debug-filters", "f", debugFilterFailure, "logging filter failures")
+	fs.BoolVarP(&dumpDiagnosis, "debug-diagnosis", "d", dumpDiagnosis, "logging scheduling diagnosis info for debugging")
+	fs.BoolVarP(&dumpDiagnosisBlocking, "debug-diagnosis-blocking", "", dumpDiagnosisBlocking, "logging diagnosis info for debugging, including blocking next scheduling cycle")
+	fs.IntVarP(&diagnosisQueueSize, "debug-diagnosis-queue-size", "", diagnosisQueueSize, "queue size for diagnosis info")
+	fs.IntVarP(&diagnosisWorkerCount, "debug-diagnosis-worker-count", "", diagnosisWorkerCount, "worker count for diagnosis info")
 	fs.StringSliceVar(&ControllerPlugins, "controller-plugins", ControllerPlugins, "A list of Controller plugins to enable. "+
 		"'-controller-plugins=*' enables all controller plugins. "+
 		"'-controller-plugins=Reservation' means only the controller plugin 'Reservation' is enabled. "+
 		"'-controller-plugins=*,-Reservation' means all controller plugins except the 'Reservation' plugin are enabled.")
+	fs.BoolVarP(&EnableNetworkTopologyManager, "enable-network-topology-manager", "", EnableNetworkTopologyManager, "enable network topology manager")
 }
 
 type extendedHandleOptions struct {
@@ -57,6 +68,7 @@ type extendedHandleOptions struct {
 	koordinatorClientSet             koordinatorclientset.Interface
 	koordinatorSharedInformerFactory koordinatorinformers.SharedInformerFactory
 	reservationNominator             ReservationNominator
+	networkTopologyManager           networktopology.TreeManager
 }
 
 type Option func(*extendedHandleOptions)
@@ -85,6 +97,12 @@ func WithReservationNominator(nominator ReservationNominator) Option {
 	}
 }
 
+func WithNetworkTopologyManager(manager networktopology.TreeManager) Option {
+	return func(options *extendedHandleOptions) {
+		options.networkTopologyManager = manager
+	}
+}
+
 type FrameworkExtenderFactory struct {
 	controllerMaps                   *ControllersMap
 	servicesEngine                   *services.Engine
@@ -97,6 +115,8 @@ type FrameworkExtenderFactory struct {
 	scheduler                        Scheduler
 	schedulePod                      func(ctx context.Context, fwk framework.Framework, state *framework.CycleState, pod *corev1.Pod) (scheduler.ScheduleResult, error)
 	*errorHandlerDispatcher
+
+	networkTopologyTreeManager networktopology.TreeManager
 
 	metricsRecorder *metrics.MetricAsyncRecorder
 }
@@ -120,6 +140,7 @@ func NewFrameworkExtenderFactory(options ...Option) (*FrameworkExtenderFactory, 
 		profiles:                         map[string]FrameworkExtender{},
 		monitor:                          NewSchedulerMonitor(schedulerMonitorPeriod, schedulingTimeout),
 		errorHandlerDispatcher:           newErrorHandlerDispatcher(),
+		networkTopologyTreeManager:       handleOptions.networkTopologyManager,
 		metricsRecorder:                  metrics.NewMetricsAsyncRecorder(1000, time.Second, wait.NeverStop),
 	}, nil
 }
@@ -160,11 +181,9 @@ func (f *FrameworkExtenderFactory) InitScheduler(sched Scheduler) {
 	f.scheduler = sched
 	adaptor, ok := sched.(*SchedulerAdapter)
 	if ok {
-		if k8sfeature.DefaultFeatureGate.Enabled(features.ResizePod) {
-			schedulePod := adaptor.Scheduler.SchedulePod
-			f.schedulePod = schedulePod
-			adaptor.Scheduler.SchedulePod = f.scheduleOne
-		}
+		schedulePod := adaptor.Scheduler.SchedulePod
+		f.schedulePod = schedulePod
+		adaptor.Scheduler.SchedulePod = f.scheduleOne
 		f.CollectSchedulePodResult(adaptor.Scheduler)
 		nextPod := adaptor.Scheduler.NextPod
 		adaptor.Scheduler.NextPod = func() (*framework.QueuedPodInfo, error) {
@@ -183,7 +202,8 @@ func (f *FrameworkExtenderFactory) InitScheduler(sched Scheduler) {
 				RecordPodQueueInfoToPod(podInfo)
 			}
 			f.monitor.RecordNextPod(podInfo)
-			if k8sfeature.DefaultFeatureGate.Enabled(features.ResizePod) {
+			if podInfo != nil && k8sfeature.DefaultFeatureGate.Enabled(features.ResizePod) {
+				// The podInfo can be nil when the queue is closing.
 				// Deep copy podInfo to allow pod modification during scheduling
 				podInfo = podInfo.DeepCopy()
 			}
@@ -233,6 +253,9 @@ func CopyQueueInfoToPod(podHasQueueInfo, podNeedQueueInfo *corev1.Pod) *corev1.P
 }
 
 func RecordPodQueueInfoToPod(podInfo *framework.QueuedPodInfo) {
+	if podInfo == nil || podInfo.Pod == nil { // the podInfo can be nil when the queue is closing
+		return
+	}
 	var initialTimestamp *metav1.Time
 	if podInfo.InitialAttemptTimestamp != nil {
 		initialTimestamp = &metav1.Time{Time: *podInfo.InitialAttemptTimestamp}
@@ -271,11 +294,12 @@ func makePodInfoFromPod(pod *corev1.Pod) (*framework.QueuedPodInfo, error) {
 }
 
 func (f *FrameworkExtenderFactory) scheduleOne(ctx context.Context, fwk framework.Framework, cycleState *framework.CycleState, pod *corev1.Pod) (scheduler.ScheduleResult, error) {
-	initDiagnosis(cycleState, pod)
+	InitDiagnosis(cycleState, pod)
 	f.monitor.StartMonitoring(pod)
 
 	scheduleResult, err := f.schedulePod(ctx, fwk, cycleState, pod)
 	if err != nil {
+		recordScheduleDiagnosis(cycleState, err)
 		return scheduleResult, err
 	}
 
@@ -295,6 +319,22 @@ func (f *FrameworkExtenderFactory) scheduleOne(ctx context.Context, fwk framewor
 	}
 
 	return scheduleResult, nil
+}
+
+func recordScheduleDiagnosis(cycleState *framework.CycleState, err error) {
+	var fitError *framework.FitError
+	if errors.As(err, &fitError) {
+		diagnosis := GetDiagnosis(cycleState)
+		diagnosis.PreFilterMessage = fitError.Diagnosis.PreFilterMsg
+		if diagnosis.ScheduleDiagnosis == nil {
+			diagnosis.ScheduleDiagnosis = &ScheduleDiagnosis{
+				SchedulingMode: PodSchedulingMode,
+			}
+		}
+		if diagnosis.PreFilterMessage == "" && diagnosis.ScheduleDiagnosis.NodeToStatusMap == nil {
+			diagnosis.ScheduleDiagnosis.NodeToStatusMap = fitError.Diagnosis.NodeToStatusMap
+		}
+	}
 }
 
 func (f *FrameworkExtenderFactory) CollectSchedulePodResult(sched *scheduler.Scheduler) {
@@ -318,8 +358,11 @@ func (f *FrameworkExtenderFactory) InterceptSchedulerError(sched *scheduler.Sche
 	}
 }
 
-func (f *FrameworkExtenderFactory) Run() {
+func (f *FrameworkExtenderFactory) Run(ctx context.Context) {
 	f.controllerMaps.Start()
+	if EnableNetworkTopologyManager {
+		f.networkTopologyTreeManager.Run(ctx)
+	}
 }
 
 func (f *FrameworkExtenderFactory) updatePlugins(pl framework.Plugin) {

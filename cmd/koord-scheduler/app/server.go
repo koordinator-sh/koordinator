@@ -69,6 +69,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/defaultprofile"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/eventhandlers"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/informer"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/networktopology"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/services"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/metrics"
 	"github.com/koordinator-sh/koordinator/pkg/util/asynclog"
@@ -155,17 +156,17 @@ func runCommand(cmd *cobra.Command, opts *options.Options, registryOptions ...Op
 		cancel()
 	}()
 
-	cc, sched, extendedHandle, err := Setup(ctx, opts, registryOptions...)
+	cc, sched, extendedHandle, customWorkflow, err := Setup(ctx, opts, registryOptions...)
 	if err != nil {
 		return err
 	}
 	// add feature enablement metrics
 	utilfeature.DefaultMutableFeatureGate.AddMetrics()
-	return Run(ctx, cc, sched, extendedHandle)
+	return Run(ctx, cc, sched, extendedHandle, customWorkflow)
 }
 
 // Run executes the scheduler based on the given configuration. It only returns on error or when context is done.
-func Run(ctx context.Context, cc *schedulerserverconfig.CompletedConfig, sched *scheduler.Scheduler, extenderFactory *frameworkext.FrameworkExtenderFactory) error {
+func Run(ctx context.Context, cc *schedulerserverconfig.CompletedConfig, sched *scheduler.Scheduler, extenderFactory *frameworkext.FrameworkExtenderFactory, customWorkflow CustomWorkflow) error {
 	logger := klog.FromContext(ctx)
 	// To help debugging, immediately log version
 	logger.Info("Starting Koordinator Scheduler version", "version", version.Get())
@@ -265,8 +266,8 @@ func Run(ctx context.Context, cc *schedulerserverconfig.CompletedConfig, sched *
 					startInformersAndWaitForSync(ctx)
 					logger.Info("Sync completed")
 				}
-				go extenderFactory.Run()
-				RunWorkflow(ctx, sched, cc.InformerFactory, cc.Client, cc.KoordinatorSharedInformerFactory, cc.KoordinatorClient, getRecorderFactory(cc))
+				extenderFactory.Run(ctx)
+				RunWorkflow(ctx, sched, customWorkflow)
 			},
 			OnStoppedLeading: func() {
 				gracefulShutdownSecureServer()
@@ -295,8 +296,8 @@ func Run(ctx context.Context, cc *schedulerserverconfig.CompletedConfig, sched *
 
 	// Leader election is disabled, so runCommand inline until done.
 	close(waitingForLeader)
-	go extenderFactory.Run()
-	RunWorkflow(ctx, sched, cc.InformerFactory, cc.Client, cc.KoordinatorSharedInformerFactory, cc.KoordinatorClient, getRecorderFactory(cc))
+	extenderFactory.Run(ctx)
+	RunWorkflow(ctx, sched, customWorkflow)
 	gracefulShutdownSecureServer()
 	return fmt.Errorf("finished without leader elect")
 }
@@ -369,20 +370,20 @@ func WithPlugin(name string, factory runtime.PluginFactory) Option {
 }
 
 // Setup creates a completed config and a scheduler based on the command args and options
-func Setup(ctx context.Context, opts *options.Options, outOfTreeRegistryOptions ...Option) (*schedulerserverconfig.CompletedConfig, *scheduler.Scheduler, *frameworkext.FrameworkExtenderFactory, error) {
+func Setup(ctx context.Context, opts *options.Options, outOfTreeRegistryOptions ...Option) (*schedulerserverconfig.CompletedConfig, *scheduler.Scheduler, *frameworkext.FrameworkExtenderFactory, CustomWorkflow, error) {
 	if cfg, err := latest.Default(); err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	} else {
 		opts.ComponentConfig = cfg
 	}
 
 	if errs := opts.Validate(); len(errs) > 0 {
-		return nil, nil, nil, utilerrors.NewAggregate(errs)
+		return nil, nil, nil, nil, utilerrors.NewAggregate(errs)
 	}
 
 	c, err := opts.Config(ctx)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 
 	// Get the completed config
@@ -395,21 +396,24 @@ func Setup(ctx context.Context, opts *options.Options, outOfTreeRegistryOptions 
 
 	metrics.Register()
 
+	networkTopologyManager := networktopology.NewTreeManager(cc.KoordinatorSharedInformerFactory, cc.InformerFactory, cc.KoordinatorClient)
+
 	// NOTE(joseph): K8s scheduling framework does not provide extension point for initialization.
 	// Currently, only by copying the initialization code and implementing custom initialization.
 	frameworkExtenderFactory, err := frameworkext.NewFrameworkExtenderFactory(
 		frameworkext.WithServicesEngine(cc.ServicesEngine),
 		frameworkext.WithKoordinatorClientSet(cc.KoordinatorClient),
 		frameworkext.WithKoordinatorSharedInformerFactory(cc.KoordinatorSharedInformerFactory),
+		frameworkext.WithNetworkTopologyManager(networkTopologyManager),
 	)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 
 	outOfTreeRegistry := make(runtime.Registry)
 	for _, option := range outOfTreeRegistryOptions {
 		if err := option(frameworkExtenderFactory, outOfTreeRegistry); err != nil {
-			return nil, nil, nil, err
+			return nil, nil, nil, nil, err
 		}
 	}
 
@@ -437,10 +441,10 @@ func Setup(ctx context.Context, opts *options.Options, outOfTreeRegistryOptions 
 		}),
 	)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 	if err := scheduleroptions.LogOrWriteConfig(klog.FromContext(ctx), opts.WriteConfigTo, &cc.ComponentConfig, completedProfiles); err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 
 	// extend framework to hook run plugin functions
@@ -465,5 +469,22 @@ func Setup(ctx context.Context, opts *options.Options, outOfTreeRegistryOptions 
 	)
 	frameworkExtenderFactory.RegisterErrorHandlerFilters(reservationErrorHandler, nil)
 
-	return &cc, sched, frameworkExtenderFactory, nil
+	for _, wf := range KnownWorkflowList {
+		if wf.IsEnabled() {
+			err = wf.Setup(ctx, &CustomWorkflowOptions{
+				Sched:                      sched,
+				SharedInformerFactory:      cc.InformerFactory,
+				KubeClient:                 cc.Client,
+				KoordSharedInformerFactory: cc.KoordinatorSharedInformerFactory,
+				KoordClient:                cc.KoordinatorClient,
+				RecorderFactory:            recorderFactory,
+			})
+			if err != nil {
+				return nil, nil, nil, nil, err
+			}
+			return &cc, sched, frameworkExtenderFactory, wf, nil
+		}
+	}
+
+	return &cc, sched, frameworkExtenderFactory, nil, nil
 }

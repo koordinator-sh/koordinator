@@ -25,9 +25,12 @@ import (
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/informers"
 	clientsetfake "k8s.io/client-go/kubernetes/fake"
+	"k8s.io/kubernetes/pkg/scheduler/framework"
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
+	"k8s.io/utils/pointer"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
@@ -37,6 +40,7 @@ import (
 	koordfake "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/fake"
 	koordinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/coscheduling/util"
 )
 
@@ -464,6 +468,192 @@ func TestPermit(t *testing.T) {
 			timeout, status := mgr.Permit(ctx, tt.pod)
 			assert.Equal(t, tt.wantWaittime, timeout)
 			assert.Equal(t, tt.wantStatus, status)
+		})
+	}
+}
+
+type fakeEvaluator struct {
+	result *framework.PostFilterResult
+	status *framework.Status
+}
+
+func (f *fakeEvaluator) Preempt(ctx context.Context, state *framework.CycleState, pod *corev1.Pod, m framework.NodeToStatusMap) (*framework.PostFilterResult, *framework.Status) {
+	return f.result, f.status
+}
+
+func TestPodGroupManager_PostFilter(t *testing.T) {
+	type args struct {
+		ctx   context.Context
+		state *framework.CycleState
+		pod   *corev1.Pod
+		m     framework.NodeToStatusMap
+	}
+	tests := []struct {
+		name                  string
+		args                  args
+		enablePreemption      bool
+		preemptionEvaluator   PreemptionEvaluator
+		gangSchedulingContext *GangSchedulingContext
+		wantPostFilterResult  *framework.PostFilterResult
+		wantStatus            *framework.Status
+		wantFailedMessage     string
+	}{
+		{
+			name: "preemption not enabled",
+			args: args{
+				state: framework.NewCycleState(),
+				pod:   st.MakePod().Name("pod").UID("pod").Obj(),
+			},
+			wantPostFilterResult: &framework.PostFilterResult{},
+			wantStatus:           framework.NewStatus(framework.Unschedulable),
+		},
+		{
+			name: "bare pod",
+			args: args{
+				state: framework.NewCycleState(),
+				pod:   st.MakePod().Name("pod").UID("pod").Obj(),
+			},
+			enablePreemption: true,
+			preemptionEvaluator: &fakeEvaluator{
+				result: &framework.PostFilterResult{},
+				status: framework.NewStatus(framework.Unschedulable),
+			},
+			wantPostFilterResult: &framework.PostFilterResult{},
+			wantStatus:           framework.NewStatus(framework.Unschedulable),
+		},
+		{
+			name: "gang pod",
+			args: args{
+				state: framework.NewCycleState(),
+				pod: &corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: "default",
+						Name:      "pod1",
+						Labels: map[string]string{
+							v1alpha1.PodGroupLabel: "gangA",
+						},
+					},
+				},
+			},
+			enablePreemption: true,
+			gangSchedulingContext: &GangSchedulingContext{
+				gangGroupID: "default/gangA",
+				gangGroup:   sets.New[string]("default/gangA"),
+			},
+			preemptionEvaluator: &fakeEvaluator{
+				result: &framework.PostFilterResult{},
+				status: framework.NewStatus(framework.Unschedulable, "some message"),
+			},
+			wantPostFilterResult: &framework.PostFilterResult{},
+			wantStatus:           framework.NewStatus(framework.Unschedulable, "preemption: some message"),
+			wantFailedMessage:    `GangGroup "default/gangA" gets rejected due to member Pod "default/pod1" is unschedulable with reason "0/0 nodes are available:", alreadyWaitForBound: 0`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pgMgr := &PodGroupManager{
+				handle: NewFakeExtendedFramework(t, []*corev1.Node{}, nil, nil, nil, nil),
+				holder: GangSchedulingContextHolder{
+					gangSchedulingContext: tt.gangSchedulingContext,
+				},
+				args: &config.CoschedulingArgs{
+					EnablePreemption: pointer.Bool(tt.enablePreemption),
+				},
+				cache:               NewGangCache(nil, nil, nil, nil, nil),
+				preemptionEvaluator: tt.preemptionEvaluator,
+			}
+			frameworkext.InitDiagnosis(tt.args.state, tt.args.pod)
+			got, got1 := pgMgr.PostFilter(tt.args.ctx, tt.args.state, tt.args.pod, tt.args.m)
+			assert.Equalf(t, tt.wantPostFilterResult, got, "PostFilter(%v, %v, %v, %v)", tt.args.ctx, tt.args.state, tt.args.pod, tt.args.m)
+			assert.Equalf(t, tt.wantStatus, got1, "PostFilter(%v, %v, %v, %v)", tt.args.ctx, tt.args.state, tt.args.pod, tt.args.m)
+			if tt.gangSchedulingContext != nil {
+				assert.Equalf(t, tt.wantFailedMessage, tt.gangSchedulingContext.failedMessage, "PostFilter(%v, %v, %v, %v)", tt.args.ctx, tt.args.state, tt.args.pod, tt.args.m)
+			}
+		})
+	}
+}
+
+func TestGetGangBindingInfo(t *testing.T) {
+	gangCreatedTime := time.Now()
+	pg1 := makePg("gangA", "gangA_ns", 2, &gangCreatedTime, nil)
+	pg2 := makePg("gangB", "gangB_ns", 3, &gangCreatedTime, nil)
+	pg2.Annotations = map[string]string{extension.AnnotationGangGroups: "[\"gangB_ns/gangB\",\"gangC_ns/gangC\"]"}
+
+	tests := []struct {
+		name            string
+		pod             *corev1.Pod
+		pods            []*corev1.Pod
+		wantGangGroupId string
+		wantMemberCount int
+		wantNil         bool
+	}{
+		{
+			name:    "pod does not belong to any gang, should return nil",
+			pod:     st.MakePod().Name("pod1").UID("pod1").Namespace("ns1").Obj(),
+			wantNil: true,
+		},
+		{
+			name: "pod belongs to gangA with 2 waiting pods",
+			pod:  st.MakePod().Name("pod3").UID("pod3").Namespace("gangA_ns").Label(v1alpha1.PodGroupLabel, "gangA").Obj(),
+			pods: []*corev1.Pod{
+				st.MakePod().Name("pod3-1").UID("pod3-1").Namespace("gangA_ns").Label(v1alpha1.PodGroupLabel, "gangA").Obj(),
+			},
+			wantGangGroupId: "gangA_ns/gangA",
+			wantMemberCount: 2,
+			wantNil:         false,
+		},
+		{
+			name: "pod belongs to gangB in gangGroup with 3 total waiting pods",
+			pod:  st.MakePod().Name("pod4").UID("pod4").Namespace("gangB_ns").Label(v1alpha1.PodGroupLabel, "gangB").Obj(),
+			pods: []*corev1.Pod{
+				st.MakePod().Name("pod4-1").UID("pod4-1").Namespace("gangB_ns").Label(v1alpha1.PodGroupLabel, "gangB").Obj(),
+				st.MakePod().Name("pod4-2").UID("pod4-2").Namespace("gangB_ns").Label(v1alpha1.PodGroupLabel, "gangB").Obj(),
+			},
+			wantGangGroupId: "gangB_ns/gangB,gangC_ns/gangC",
+			wantMemberCount: 3,
+			wantNil:         false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Setup test manager
+			mgr := NewManagerForTest()
+
+			// Create podgroups
+			mgr.pgInformer.Informer().GetStore().Add(pg1)
+			mgr.pgInformer.Informer().GetStore().Add(pg2)
+			mgr.pgMgr.cache.onPodGroupAdd(pg1)
+			mgr.pgMgr.cache.onPodGroupAdd(pg2)
+
+			// Create and add pods to gang
+			for _, pod := range tt.pods {
+				gangId := util.GetId(pod.Namespace, util.GetGangNameByPod(pod))
+				gang := mgr.pgMgr.cache.getGangFromCacheByGangId(gangId, false)
+				if gang != nil {
+					gang.addAssumedPod(pod)
+				}
+			}
+			// Add test pod to gang
+			if !tt.wantNil {
+				gangId := util.GetId(tt.pod.Namespace, util.GetGangNameByPod(tt.pod))
+				gang := mgr.pgMgr.cache.getGangFromCacheByGangId(gangId, false)
+				if gang != nil {
+					gang.addAssumedPod(tt.pod)
+				}
+			}
+
+			// Act: get gang binding info
+			gangInfo := mgr.pgMgr.GetGangBindingInfo(tt.pod)
+
+			// Assert
+			if tt.wantNil {
+				assert.Nil(t, gangInfo)
+			} else {
+				assert.NotNil(t, gangInfo)
+				assert.Equal(t, tt.wantGangGroupId, gangInfo.GangGroupId)
+				assert.Equal(t, tt.wantMemberCount, gangInfo.MemberCount)
+			}
 		})
 	}
 }

@@ -38,10 +38,9 @@ func TestTakeoverNominatingInfo(t *testing.T) {
 		name               string
 		args               args
 		wantNominatingInfo *framework.NominatingInfo
-		want               bool
 	}{
 		{
-			name: "job preemption reject waitingPod",
+			name: "job preemption success reject waitingPod",
 			args: args{
 				nominatingInfo: &framework.NominatingInfo{NominatingMode: framework.ModeOverride, NominatedNodeName: ""},
 				podInfo: &framework.QueuedPodInfo{
@@ -56,10 +55,9 @@ func TestTakeoverNominatingInfo(t *testing.T) {
 						},
 					},
 				},
-				status: (framework.NewStatus(framework.Unschedulable)).WithFailedPlugin(JobPreemptionRejectPlugin),
+				status: (framework.NewStatus(framework.Unschedulable)).WithFailedPlugin(JobPreemptionSuccessPlugin),
 			},
 			wantNominatingInfo: &framework.NominatingInfo{NominatingMode: framework.ModeOverride, NominatedNodeName: "test-node"},
-			want:               false,
 		},
 		{
 			name: "job reject waitingPod",
@@ -80,10 +78,29 @@ func TestTakeoverNominatingInfo(t *testing.T) {
 				status: (framework.NewStatus(framework.Unschedulable)).WithFailedPlugin(JobRejectPlugin),
 			},
 			wantNominatingInfo: &framework.NominatingInfo{NominatingMode: framework.ModeNoop},
-			want:               false,
 		},
 		{
-			name: "other plugin",
+			name: "job preemption failure reject waitingPod",
+			args: args{
+				nominatingInfo: &framework.NominatingInfo{NominatingMode: framework.ModeOverride, NominatedNodeName: ""},
+				podInfo: &framework.QueuedPodInfo{
+					PodInfo: &framework.PodInfo{
+						Pod: &corev1.Pod{
+							ObjectMeta: metav1.ObjectMeta{
+								Name: "test-pod",
+							},
+							Spec: corev1.PodSpec{
+								NodeName: "test-node",
+							},
+						},
+					},
+				},
+				status: (framework.NewStatus(framework.Unschedulable)).WithFailedPlugin(JobPreemptionFailurePlugin),
+			},
+			wantNominatingInfo: &framework.NominatingInfo{NominatingMode: framework.ModeOverride, NominatedNodeName: ""},
+		},
+		{
+			name: "other plugin failure",
 			args: args{
 				nominatingInfo: &framework.NominatingInfo{NominatingMode: framework.ModeOverride, NominatedNodeName: ""},
 				podInfo: &framework.QueuedPodInfo{
@@ -101,10 +118,9 @@ func TestTakeoverNominatingInfo(t *testing.T) {
 				status: (framework.NewStatus(framework.Unschedulable)).WithFailedPlugin("other-plugin"),
 			},
 			wantNominatingInfo: &framework.NominatingInfo{NominatingMode: framework.ModeOverride, NominatedNodeName: ""},
-			want:               false,
 		},
 		{
-			name: "other plugin",
+			name: "success",
 			args: args{
 				nominatingInfo: &framework.NominatingInfo{NominatingMode: framework.ModeOverride, NominatedNodeName: ""},
 				podInfo: &framework.QueuedPodInfo{
@@ -122,13 +138,12 @@ func TestTakeoverNominatingInfo(t *testing.T) {
 				status: &framework.Status{},
 			},
 			wantNominatingInfo: &framework.NominatingInfo{NominatingMode: framework.ModeOverride, NominatedNodeName: ""},
-			want:               false,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.want, TakeoverNominatingInfo(context.TODO(), nil, tt.args.podInfo, tt.args.status, tt.args.nominatingInfo, time.Now()))
-			assert.Equal(t, tt.wantNominatingInfo, tt.args.nominatingInfo)
+			nominatingInfo := TakeoverNominatingInfo(context.TODO(), nil, tt.args.podInfo, tt.args.status, tt.args.nominatingInfo, time.Now())
+			assert.Equal(t, tt.wantNominatingInfo, nominatingInfo)
 		})
 	}
 }

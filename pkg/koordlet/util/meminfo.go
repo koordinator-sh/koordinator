@@ -255,6 +255,8 @@ func GetNodeNUMAInfo() (*NodeNUMAInfo, error) {
 		return nil, fmt.Errorf("failed to read NUMA dir, err: %w", err)
 	}
 
+	giNUMANodes := system.GetNUMANodesHasGI()
+
 	result := &NodeNUMAInfo{
 		MemInfoMap: map[int32]*MemInfo{},
 	}
@@ -272,6 +274,11 @@ func GetNodeNUMAInfo() (*NodeNUMAInfo, error) {
 			continue
 		}
 		nodeID := int32(nodeIDRaw)
+
+		if giNUMANodes.Has(nodeID) {
+			klog.V(5).Infof("node %d has GI, skip", nodeID)
+			continue
+		}
 
 		numaMemInfoPath := system.GetNUMAMemInfoPath(dirName)
 		memInfo, err := readMemInfo(numaMemInfoPath, true)
@@ -291,7 +298,7 @@ func GetNodeNUMAInfo() (*NodeNUMAInfo, error) {
 		}
 	}
 
-	if len(nodeDirs) != len(result.NUMAInfos) {
+	if len(nodeDirs) != len(result.NUMAInfos)+giNUMANodes.Len() {
 		return nil, fmt.Errorf("invalid number of NUMA meminfo, dir %v, parsed %v",
 			len(nodeDirs), len(result.NUMAInfos))
 	}

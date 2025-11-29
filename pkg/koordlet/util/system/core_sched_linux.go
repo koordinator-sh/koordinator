@@ -25,6 +25,7 @@ import (
 
 	"golang.org/x/sys/unix"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
+	"k8s.io/klog/v2"
 )
 
 type CoreSched struct{}
@@ -173,4 +174,17 @@ func (s *CoreSched) Assign(pidTypeFrom CoreSchedScopeType, pidFrom uint32, pidTy
 		return ret.FailedPIDs, fmt.Errorf("CoreSched Clear failed, err: %w", ret.Error)
 	}
 	return nil, nil
+}
+
+// ProbeCoreSchedIfEnabled checks if the MAINLINE kernel support the core scheduling.
+// Since there's no direct API, we probe by calling prctl and checking its return value.
+func ProbeCoreSchedIfEnabled() bool {
+	cookie := uint64(0)
+	cookiePtr := &cookie
+	ret, err := unix.PrctlRetInt(unix.PR_SCHED_CORE, unix.PR_SCHED_CORE_GET, uintptr(0), uintptr(CoreSchedScopeThread), uintptr(unsafe.Pointer(cookiePtr)))
+	if err != nil {
+		klog.V(4).Infof("failed to probe core sched status via prctl, err: %s", err)
+		return false
+	}
+	return ret == 0
 }

@@ -23,16 +23,21 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/sets"
+	k8sfeature "k8s.io/apiserver/pkg/util/feature"
 	listerscorev1 "k8s.io/client-go/listers/core/v1"
 	"k8s.io/klog/v2"
 	schedconfig "k8s.io/kubernetes/pkg/scheduler/apis/config"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/metrics"
+	utiltrace "k8s.io/utils/trace"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	koordinatorclientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
 	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
 	listerschedulingv1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/listers/scheduling/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/features"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/networktopology"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/schedulingphase"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/topologymanager"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
@@ -57,6 +62,8 @@ type frameworkExtenderImpl struct {
 	podLister                        listerscorev1.PodLister
 	reservationLister                listerschedulingv1alpha1.ReservationLister
 
+	networkTopologyTreeManager networktopology.TreeManager
+
 	preFilterTransformers         map[string]PreFilterTransformer
 	filterTransformers            map[string]FilterTransformer
 	scoreTransformers             map[string]ScoreTransformer
@@ -65,6 +72,8 @@ type frameworkExtenderImpl struct {
 	filterTransformersEnabled     []FilterTransformer
 	scoreTransformersEnabled      []ScoreTransformer
 	postFilterTransformersEnabled []PostFilterTransformer
+
+	findOneNodePlugin FindOneNodePlugin
 
 	reservationNominator                   ReservationNominator
 	reservationFilterPlugins               []ReservationFilterPlugin
@@ -103,6 +112,7 @@ func NewFrameworkExtender(f *FrameworkExtenderFactory, fw framework.Framework) F
 		metricsRecorder:                  f.metricsRecorder,
 		podLister:                        fw.SharedInformerFactory().Core().V1().Pods().Lister(),
 		reservationLister:                f.koordinatorSharedInformerFactory.Scheduling().V1alpha1().Reservations().Lister(),
+		networkTopologyTreeManager:       f.networkTopologyTreeManager,
 	}
 	frameworkExtender.topologyManager = topologymanager.New(frameworkExtender)
 	return frameworkExtender
@@ -165,6 +175,13 @@ func (ext *frameworkExtenderImpl) updatePlugins(pl framework.Plugin) {
 	if p, ok := pl.(topologymanager.NUMATopologyHintProvider); ok {
 		ext.numaTopologyHintProviders = append(ext.numaTopologyHintProviders, p)
 	}
+	if p, ok := pl.(FindOneNodePluginProvider); ok && p.FindOneNodePlugin() != nil {
+		if ext.findOneNodePlugin == nil {
+			ext.findOneNodePlugin = p.FindOneNodePlugin()
+		} else {
+			klog.Warningf("framework extender got multiple FindOneNodePlugin registered, using the first one with name: %s", ext.findOneNodePlugin.Name())
+		}
+	}
 }
 
 func (ext *frameworkExtenderImpl) SetConfiguredPlugins(plugins *schedconfig.Plugins) {
@@ -220,11 +237,19 @@ func (ext *frameworkExtenderImpl) GetReservationNominator() ReservationNominator
 	return ext.reservationNominator
 }
 
+func (ext *frameworkExtenderImpl) GetNetworkTopologyTreeManager() networktopology.TreeManager {
+	return ext.networkTopologyTreeManager
+}
+
 // RunPreFilterPlugins transforms the PreFilter phase of framework with pre-filter transformers.
 func (ext *frameworkExtenderImpl) RunPreFilterPlugins(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod) (*framework.PreFilterResult, *framework.Status) {
+	trace := utiltrace.New("RunPreFilterPluginTransformers", utiltrace.Field{Key: "namespace", Value: pod.Namespace}, utiltrace.Field{Key: "name", Value: pod.Name})
+	defer trace.LogIfLong(5 * time.Millisecond)
 	for _, transformer := range ext.preFilterTransformersEnabled {
 		startTime := time.Now()
+		trace.Step(fmt.Sprintf("BeforePrefilter %s begin", transformer.Name()))
 		newPod, transformed, status := transformer.BeforePreFilter(ctx, cycleState, pod)
+		trace.Step(fmt.Sprintf("BeforePrefilter %s done", transformer.Name()))
 		ext.metricsRecorder.ObservePluginDurationAsync("BeforePreFilter", transformer.Name(), status.Code().String(), metrics.SinceInSeconds(startTime))
 		if !status.IsSuccess() {
 			status.SetFailedPlugin(transformer.Name())
@@ -244,7 +269,9 @@ func (ext *frameworkExtenderImpl) RunPreFilterPlugins(ctx context.Context, cycle
 
 	for _, transformer := range ext.preFilterTransformersEnabled {
 		startTime := time.Now()
+		trace.Step(fmt.Sprintf("AfterPrefilter %s begin", transformer.Name()))
 		status = transformer.AfterPreFilter(ctx, cycleState, pod, result)
+		trace.Step(fmt.Sprintf("AfterPrefilter %s done", transformer.Name()))
 		ext.metricsRecorder.ObservePluginDurationAsync("AfterPreFilter", transformer.Name(), status.Code().String(), metrics.SinceInSeconds(startTime))
 		if !status.IsSuccess() {
 			status.SetFailedPlugin(transformer.Name())
@@ -252,6 +279,21 @@ func (ext *frameworkExtenderImpl) RunPreFilterPlugins(ctx context.Context, cycle
 			return nil, status
 		}
 	}
+	if ext.findOneNodePlugin != nil {
+		startTime := time.Now()
+		nodeName, status := ext.findOneNodePlugin.FindOneNode(ctx, cycleState, pod, result)
+		ext.metricsRecorder.ObservePluginDurationAsync("FindOneNodePlugin", ext.findOneNodePlugin.Name(), status.Code().String(), metrics.SinceInSeconds(startTime))
+		if status.IsSkip() {
+			return result, nil
+		}
+		if !status.IsSuccess() {
+			status.SetFailedPlugin(ext.findOneNodePlugin.Name())
+			klog.ErrorS(status.AsError(), "Failed to run FindOneNodePlugin", "pod", klog.KObj(pod), "plugin", ext.findOneNodePlugin.Name())
+			return nil, status
+		}
+		return &framework.PreFilterResult{NodeNames: sets.New[string](nodeName)}, nil
+	}
+
 	return result, nil
 }
 
@@ -273,7 +315,14 @@ func (ext *frameworkExtenderImpl) RunFilterPluginsWithNominatedPods(ctx context.
 			nodeInfo = newNodeInfo
 		}
 	}
-	status := ext.Framework.RunFilterPluginsWithNominatedPods(ctx, cycleState, pod, nodeInfo)
+
+	nominatedPodsOfSameJob := getNominatedPodsOfTheSameJob(cycleState)
+	var status *framework.Status
+	if len(nominatedPodsOfSameJob) != 0 {
+		status = ext.runFilterPluginsWithNominatedPodsIgnoreSameJob(ctx, cycleState, pod, nodeInfo, nominatedPodsOfSameJob)
+	} else {
+		status = ext.Framework.RunFilterPluginsWithNominatedPods(ctx, cycleState, pod, nodeInfo)
+	}
 	if !status.IsSuccess() && debugFilterFailure {
 		klog.Infof("Failed to filter for Pod %q on Node %q, failedPlugin: %s, schedulingPhaseBeingInvoked: %s, reason: %s", klog.KObj(pod), klog.KObj(nodeInfo.Node()), status.FailedPlugin(), schedulingphase.GetExtensionPointBeingExecuted(cycleState), status.Message())
 	}
@@ -320,14 +369,16 @@ func (ext *frameworkExtenderImpl) RunPostFilterPlugins(ctx context.Context, stat
 // RunPreBindPlugins supports PreBindReservation for Reservation
 func (ext *frameworkExtenderImpl) RunPreBindPlugins(ctx context.Context, state *framework.CycleState, pod *corev1.Pod, nodeName string) *framework.Status {
 	if !reservationutil.IsReservePod(pod) {
-		curPod, err := ext.podLister.Pods(pod.Namespace).Get(pod.Name)
-		if err != nil {
-			return framework.AsStatus(err)
-		}
-		if curPod.Spec.SchedulerName != ext.ProfileName() {
-			klog.V(4).ErrorS(ErrSchedulerNameUnmatched, "failed to PreBind Pod",
-				"pod", klog.KObj(pod), "schedulerName", curPod.Spec.SchedulerName, "profile", ext.ProfileName())
-			return framework.AsStatus(ErrSchedulerNameUnmatched)
+		if k8sfeature.DefaultFeatureGate.Enabled(features.DynamicSchedulerCheck) {
+			curPod, err := ext.podLister.Pods(pod.Namespace).Get(pod.Name)
+			if err != nil {
+				return framework.AsStatus(err)
+			}
+			if curPod.Spec.SchedulerName != ext.ProfileName() {
+				klog.V(4).ErrorS(ErrSchedulerNameUnmatched, "failed to PreBind Pod",
+					"pod", klog.KObj(pod), "schedulerName", curPod.Spec.SchedulerName, "profile", ext.ProfileName())
+				return framework.AsStatus(ErrSchedulerNameUnmatched)
+			}
 		}
 
 		original := pod
@@ -344,11 +395,13 @@ func (ext *frameworkExtenderImpl) RunPreBindPlugins(ctx context.Context, state *
 	if err != nil {
 		return framework.AsStatus(err)
 	}
-	// check if schedulerName matched
-	if reservationutil.GetReservationSchedulerName(reservation) != ext.ProfileName() {
-		klog.V(4).ErrorS(ErrSchedulerNameUnmatched, "failed to PreBind Reservation",
-			"reservation", klog.KObj(reservation), "schedulerName", reservationutil.GetReservationSchedulerName(reservation), "profile", ext.ProfileName())
-		return framework.AsStatus(ErrSchedulerNameUnmatched)
+	if k8sfeature.DefaultFeatureGate.Enabled(features.DynamicSchedulerCheck) {
+		// check if schedulerName matched
+		if reservationutil.GetReservationSchedulerName(reservation) != ext.ProfileName() {
+			klog.V(4).ErrorS(ErrSchedulerNameUnmatched, "failed to PreBind Reservation",
+				"reservation", klog.KObj(reservation), "schedulerName", reservationutil.GetReservationSchedulerName(reservation), "profile", ext.ProfileName())
+			return framework.AsStatus(ErrSchedulerNameUnmatched)
+		}
 	}
 
 	original := reservation
@@ -610,13 +663,18 @@ func (ext *frameworkExtenderImpl) RegisterForgetPodHandler(handler ForgetPodHand
 }
 
 func (ext *frameworkExtenderImpl) ForgetPod(logger klog.Logger, pod *corev1.Pod) error {
-	if err := ext.Scheduler().GetCache().ForgetPod(logger, pod); err != nil {
-		return err
-	}
+	err := ext.Scheduler().GetCache().ForgetPod(logger, pod)
+
+	// Always call plugin handlers even if ForgetPod fails.
+	// It is tolerated for multi-scheduler scenarios where the pod is not in assumed
+	// cache (because it was assumed bound but then failed), but we still need to clean
+	// up plugin-specific accounting.
 	for _, handler := range ext.forgetPodHandlers {
 		handler(pod)
 	}
-	return nil
+
+	// Return the original error after calling handlers
+	return err
 }
 
 func (ext *frameworkExtenderImpl) RunNUMATopologyManagerAdmit(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string, numaNodes []int, policyType apiext.NUMATopologyPolicy, exclusivePolicy apiext.NumaTopologyExclusive, allNUMANodeStatus []apiext.NumaNodeStatus) *framework.Status {

@@ -130,6 +130,7 @@ func Test_reportGPUDevice(t *testing.T) {
 			Minor:      0,
 			NetDev:     "ib0",
 			NodeID:     0,
+			Health:     true,
 		},
 	}
 	mockMetricCache.EXPECT().Get(koordletutil.GPUDeviceType).Return(gpuDeviceInfo, true)

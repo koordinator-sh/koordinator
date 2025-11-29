@@ -66,12 +66,14 @@ const (
 	LabelSecondaryDeviceWellPlanned string = NodeDomainPrefix + "/secondary-device-well-planned"
 
 	LabelGPUIsolationProvider = DomainPrefix + "gpu-isolation-provider"
+	LabelHAMIVGPUNodeName     = "hami.io/vgpu-node"
 )
 
 const (
 	GPUVendorNVIDIA    = "nvidia"
 	GPUVendorHuawei    = "huawei"
 	GPUVendorCambricon = "cambricon"
+	GPUVendorBaidu     = "baidu"
 )
 
 // DeviceAllocations would be injected into Pod as form of annotation during Pre-bind stage.

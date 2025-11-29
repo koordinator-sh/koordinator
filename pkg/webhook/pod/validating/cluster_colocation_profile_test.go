@@ -33,7 +33,9 @@ import (
 
 	configv1alpha1 "github.com/koordinator-sh/koordinator/apis/config/v1alpha1"
 	"github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/util"
+	"github.com/koordinator-sh/koordinator/pkg/util/feature"
 )
 
 func init() {
@@ -52,13 +54,14 @@ func newAdmissionRequest(op admissionv1.Operation, object, oldObject runtime.Raw
 
 func TestClusterColocationProfileValidatingPod(t *testing.T) {
 	tests := []struct {
-		name        string
-		operation   admissionv1.Operation
-		oldPod      *corev1.Pod
-		newPod      *corev1.Pod
-		wantAllowed bool
-		wantReason  string
-		wantErr     bool
+		name                          string
+		operation                     admissionv1.Operation
+		oldPod                        *corev1.Pod
+		newPod                        *corev1.Pod
+		wantAllowed                   bool
+		wantReason                    string
+		wantErr                       bool
+		defaultSkipValidatingPriority bool
 	}{
 		{
 			name:        "non-colocation empty pod",
@@ -87,6 +90,7 @@ func TestClusterColocationProfileValidatingPod(t *testing.T) {
 			},
 			wantAllowed: false,
 			wantReason:  `labels.koordinator.sh/qosClass: Invalid value: "LS": field is immutable`,
+			wantErr:     true,
 		},
 		{
 			name:      "validate remove QoS",
@@ -103,6 +107,7 @@ func TestClusterColocationProfileValidatingPod(t *testing.T) {
 			},
 			wantAllowed: false,
 			wantReason:  `labels.koordinator.sh/qosClass: Invalid value: "": field is immutable`,
+			wantErr:     true,
 		},
 		{
 			name:      "validate defined QoS",
@@ -159,6 +164,7 @@ func TestClusterColocationProfileValidatingPod(t *testing.T) {
 			},
 			wantAllowed: false,
 			wantReason:  `labels.koordinator.sh/qosClass: Required value: must specify koordinator QoS BE with koordinator colocation resources`,
+			wantErr:     true,
 		},
 		{
 			name:      "validate immutable priorityClass",
@@ -175,6 +181,7 @@ func TestClusterColocationProfileValidatingPod(t *testing.T) {
 			},
 			wantAllowed: false,
 			wantReason:  `spec.priority: Invalid value: "koord-prod": field is immutable`,
+			wantErr:     true,
 		},
 		{
 			name:      "validate remove priorityClass",
@@ -187,9 +194,10 @@ func TestClusterColocationProfileValidatingPod(t *testing.T) {
 			},
 			wantAllowed: false,
 			wantReason:  fmt.Sprintf(`spec.priority: Invalid value: %q: field is immutable`, extension.GetPodPriorityClassRaw(&corev1.Pod{})),
+			wantErr:     true,
 		},
 		{
-			name:      "validate koordinator priority",
+			name:      "validate koordinator priority with defaultSkipValidatingPriority=false",
 			operation: admissionv1.Update,
 			newPod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
@@ -207,6 +215,29 @@ func TestClusterColocationProfileValidatingPod(t *testing.T) {
 			},
 			wantAllowed: false,
 			wantReason:  `labels.koordinator.sh/priority: Invalid value: "8888": field is immutable`,
+			wantErr:     true,
+		},
+		{
+			name:      "validate koordinator priority with defaultSkipValidatingPriority=true",
+			operation: admissionv1.Update,
+			newPod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						extension.LabelPodPriority: "8888",
+					},
+				},
+			},
+			oldPod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						extension.LabelPodPriority: "9999",
+					},
+				},
+			},
+			defaultSkipValidatingPriority: true,
+			wantAllowed:                   true,
+			wantReason:                    "",
+			wantErr:                       false,
 		},
 		{
 			name:      "validate remove koordinator priority",
@@ -223,6 +254,7 @@ func TestClusterColocationProfileValidatingPod(t *testing.T) {
 			},
 			wantAllowed: false,
 			wantReason:  `labels.koordinator.sh/priority: Invalid value: "": field is immutable`,
+			wantErr:     true,
 		},
 		{
 			name:      "allowed QoS and priorityClass combination: BE And NonProd",
@@ -278,6 +310,7 @@ func TestClusterColocationProfileValidatingPod(t *testing.T) {
 			},
 			wantAllowed: false,
 			wantReason:  `Pod: Forbidden: koordinator.sh/qosClass=BE and priorityClass=koord-prod cannot be used in combination`,
+			wantErr:     true,
 		},
 		{
 			name:      "forbidden QoS and priorityClass combination: LSR And Batch",
@@ -303,6 +336,7 @@ func TestClusterColocationProfileValidatingPod(t *testing.T) {
 			},
 			wantAllowed: false,
 			wantReason:  `Pod: Forbidden: koordinator.sh/qosClass=LSR and priorityClass=koord-batch cannot be used in combination`,
+			wantErr:     true,
 		},
 		{
 			name:      "forbidden QoS and priorityClass combination: LSR And Mid",
@@ -328,6 +362,7 @@ func TestClusterColocationProfileValidatingPod(t *testing.T) {
 			},
 			wantAllowed: false,
 			wantReason:  `Pod: Forbidden: koordinator.sh/qosClass=LSR and priorityClass=koord-mid cannot be used in combination`,
+			wantErr:     true,
 		},
 		{
 			name:      "forbidden QoS and priorityClass combination: LSR And Free",
@@ -353,6 +388,7 @@ func TestClusterColocationProfileValidatingPod(t *testing.T) {
 			},
 			wantAllowed: false,
 			wantReason:  `Pod: Forbidden: koordinator.sh/qosClass=LSR and priorityClass=koord-free cannot be used in combination`,
+			wantErr:     true,
 		},
 		{
 			name:      "validate resources - LSR And Prod",
@@ -411,6 +447,7 @@ func TestClusterColocationProfileValidatingPod(t *testing.T) {
 			},
 			wantAllowed: false,
 			wantReason:  `pod.spec.containers[*].resources.requests: Required value: LSR Pod must declare the requested CPUs`,
+			wantErr:     true,
 		},
 		{
 			name:      "forbidden resources - LSR And Prod: non-integer CPUs",
@@ -442,11 +479,13 @@ func TestClusterColocationProfileValidatingPod(t *testing.T) {
 			},
 			wantAllowed: false,
 			wantReason:  `pod.spec.containers[*].resources.requests: Invalid value: "100m": the requested CPUs of LSR Pod must be integer`,
+			wantErr:     true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			defer feature.SetFeatureGateDuringTest(t, feature.DefaultMutableFeatureGate, features.ColocationProfileSkipValidatingPriority, tt.defaultSkipValidatingPriority)()
 			client := fake.NewClientBuilder().Build()
 			decoder := admission.NewDecoder(scheme.Scheme)
 			h := &PodValidatingHandler{

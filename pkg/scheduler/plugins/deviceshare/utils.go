@@ -364,6 +364,12 @@ func preparePod(pod *corev1.Pod, gpuSharedResourceTemplatesCache *gpuSharedResou
 		return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, err.Error())
 	}
 
+	recordedDeviceAllocations, err := apiext.GetDeviceAllocations(pod.Annotations)
+	if err != nil {
+		return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, err.Error())
+	}
+	state.designatedAllocation = recordedDeviceAllocations
+
 	state.podRequests = requests
 	state.skip = len(requests) == 0
 	if !state.skip {

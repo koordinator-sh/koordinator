@@ -110,6 +110,44 @@ func Test_fillGPUTotalMem(t *testing.T) {
 			},
 		},
 		{
+			name: "both exists",
+			allocations: map[schedulingv1alpha1.DeviceType][]*apiext.DeviceAllocation{
+				schedulingv1alpha1.GPU: {
+					{
+						Minor: 0,
+						Resources: corev1.ResourceList{
+							apiext.ResourceGPUCore:        resource.MustParse("50"),
+							apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
+							apiext.ResourceGPUMemoryRatio: resource.MustParse("60"),
+						},
+					},
+				},
+			},
+			nodeDeviceInfo: &nodeDevice{
+				deviceTotal: map[schedulingv1alpha1.DeviceType]deviceResources{
+					schedulingv1alpha1.GPU: {
+						0: corev1.ResourceList{
+							apiext.ResourceGPUCore:        resource.MustParse("100"),
+							apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+							apiext.ResourceGPUMemory:      resource.MustParse("32Gi"),
+						},
+					},
+				},
+			},
+			wantAllocations: map[schedulingv1alpha1.DeviceType][]*apiext.DeviceAllocation{
+				schedulingv1alpha1.GPU: {
+					{
+						Minor: 0,
+						Resources: corev1.ResourceList{
+							apiext.ResourceGPUCore:        resource.MustParse("50"),
+							apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
+							apiext.ResourceGPUMemoryRatio: resource.MustParse("60"),
+						},
+					},
+				},
+			},
+		},
+		{
 			name: "missing total",
 			allocations: map[schedulingv1alpha1.DeviceType][]*apiext.DeviceAllocation{
 				schedulingv1alpha1.GPU: {

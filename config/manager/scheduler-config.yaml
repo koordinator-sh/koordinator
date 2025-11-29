@@ -60,6 +60,7 @@ data:
               - name: PrioritySort
           preFilter:
             enabled:
+              - name: SchedulingHint
               - name: Reservation
               - name: NodeNUMAResource
               - name: DeviceShare
@@ -107,6 +108,7 @@ data:
               - name: NodeNUMAResource
               - name: DeviceShare
               - name: Reservation
+              - name: Coscheduling
               - name: DefaultPreBind
           bind:
             disabled:

@@ -356,9 +356,23 @@ type ResourceThresholdStrategy struct {
 	// when avg(cpuusage) > CPUEvictThresholdPercent, will start to evict pod by cpu,
 	// and avg(cpuusage) is calculated based on the most recent CPUEvictTimeWindowSeconds data
 	CPUEvictTimeWindowSeconds *int64 `json:"cpuEvictTimeWindowSeconds,omitempty" validate:"omitempty,gt=0"`
+
+	// Note: used for feature: CPUEvict
+	// upper: CPU evict threshold percentage (0,100)
+	// +kubebuilder:validation:Maximum=100
+	// +kubebuilder:validation:Minimum=0
+	CPUEvictThresholdPercent *int64 `json:"cpuEvictThresholdPercent,omitempty" validate:"omitempty,min=0,max=100,gtfield=MemoryEvictLowerPercent"`
+	// lower: CPU release util usage under CPUEvictLowerPercent, default = CPUEvictLowerPercent - 2
+	// +kubebuilder:validation:Maximum=100
+	// +kubebuilder:validation:Minimum=0
+	CPUEvictLowerPercent *int64 `json:"cpuEvictLowerPercent,omitempty" validate:"omitempty,min=0,max=100,ltfield=MemoryEvictThresholdPercent"`
+
 	// CPUEvictPolicy defines the policy for the BECPUEvict feature.
 	// Default: `evictByRealLimit`.
 	CPUEvictPolicy CPUEvictPolicy `json:"cpuEvictPolicy,omitempty"`
+
+	// EvictEnabledPriorityThreshold defines the highest priority for the xxxEvict feature.
+	EvictEnabledPriorityThreshold *int32 `json:"evictEnabledPriorityThreshold,omitempty"`
 }
 
 // ResctrlQOSCfg stores node-level config of resctrl qos
@@ -444,6 +458,7 @@ type SystemStrategy struct {
 // NodeSLOSpec defines the desired state of NodeSLO
 type NodeSLOSpec struct {
 	// BE pods will be limited if node resource usage overload
+	// TODO: ResourceUsedThresholdWithBE need to rename
 	ResourceUsedThresholdWithBE *ResourceThresholdStrategy `json:"resourceUsedThresholdWithBE,omitempty"`
 	// QoS config strategy for pods of different qos-class
 	ResourceQOSStrategy *ResourceQOSStrategy `json:"resourceQOSStrategy,omitempty"`

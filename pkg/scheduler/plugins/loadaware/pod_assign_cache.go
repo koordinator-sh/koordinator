@@ -198,6 +198,7 @@ func (p *podAssignCache) GetNodeMetricAndEstimatedOfExisting(name string, prodPo
 	}
 	return
 }
+
 func (n *nodeInfo) getTargetAggregatedUsage(aggregatedDuration metav1.Duration, aggregationType extension.AggregationType) ResourceVector {
 	// If no specific period is set, the non-empty maximum period recorded by NodeMetrics will be used by default.
 	// This is a default policy.
@@ -209,6 +210,7 @@ func (n *nodeInfo) getTargetAggregatedUsage(aggregatedDuration metav1.Duration, 
 	}
 	return vec
 }
+
 func (p *podAssignCache) getPodAssignInfo(nodeName string, pod *corev1.Pod) *podAssignInfo {
 	if nodeName == "" {
 		return nil

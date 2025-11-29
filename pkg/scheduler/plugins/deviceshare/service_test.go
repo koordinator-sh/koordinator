@@ -29,6 +29,7 @@ import (
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/utils/pointer"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
@@ -41,12 +42,17 @@ func TestEndpointsQueryNodeDeviceSummary(t *testing.T) {
 	p, err := suit.proxyNew(getDefaultArgs(), suit.Framework)
 	assert.NotNil(t, p)
 	assert.Nil(t, err)
-	_, err = suit.ClientSet().CoreV1().Nodes().Create(context.TODO(), &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node1"}}, metav1.CreateOptions{})
+	node := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node1"}}
+	_, err = suit.ClientSet().CoreV1().Nodes().Create(context.TODO(), node, metav1.CreateOptions{})
 	assert.NoError(t, err)
-	nodeList, err := suit.ClientSet().CoreV1().Nodes().List(context.TODO(), metav1.ListOptions{})
+	store := suit.SharedInformerFactory().Core().V1().Nodes().Informer().GetStore()
+	err = store.Add(node)
+	assert.NoError(t, err)
+	nodeList, err := suit.SharedInformerFactory().Core().V1().Nodes().Lister().List(labels.Everything())
 	assert.NoError(t, err)
 	assert.NotNil(t, nodeList)
-	assert.Len(t, nodeList.Items, 1)
+	assert.Len(t, nodeList, 1)
+
 	ds := p.(*Plugin)
 
 	device := &schedulingv1alpha1.Device{

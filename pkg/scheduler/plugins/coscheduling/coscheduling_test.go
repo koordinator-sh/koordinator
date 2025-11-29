@@ -41,6 +41,7 @@ import (
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
+	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 	pgclientset "github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/generated/clientset/versioned"
 	fakepgclientset "github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/generated/clientset/versioned/fake"
@@ -50,6 +51,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/v1beta3"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/coscheduling/util"
+	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
 
 // gang test used
@@ -134,6 +136,7 @@ func makePg(name, namespace string, min int32, creationTime *time.Time, minResou
 	}
 	return pg
 }
+
 func (f *testSharedLister) NodeInfos() framework.NodeInfoLister {
 	return f
 }
@@ -352,7 +355,7 @@ func TestPostFilter(t *testing.T) {
 				}
 			}
 			// reject waitingPods
-			_, code := gp.pgMgr.PostFilter(context.Background(), cycleState, tt.pod, suit.Handle, Name, nil)
+			_, code := gp.pgMgr.AfterPostFilter(context.Background(), cycleState, tt.pod, suit.Handle, Name, nil)
 			if code.Message() == "" != tt.expectedEmptyMsg {
 				t.Errorf("expectedEmptyMsg %v, got %v", tt.expectedEmptyMsg, code.Message() == "")
 			}
@@ -624,6 +627,262 @@ func TestUnreserve(t *testing.T) {
 			gp.Unreserve(ctx, cycleState, tt.pod, "")
 			wg.Wait()
 
+		})
+	}
+}
+
+func TestPreBind(t *testing.T) {
+	gangCreatedTime := time.Now()
+
+	tests := []struct {
+		name                string
+		pg                  *v1alpha1.PodGroup
+		pod                 *corev1.Pod
+		pods                []*corev1.Pod
+		expectLabelsSet     bool
+		expectGangGroupID   string
+		expectMemberCount   string
+		podHasExistingLabel bool
+	}{
+		{
+			name: "gang satisfied, should set labels on pod",
+			pg:   makePg("gangA", "gangA_ns", 2, &gangCreatedTime, nil),
+			pod:  st.MakePod().Name("pod-1").UID("pod-1").Namespace("gangA_ns").Label(v1alpha1.PodGroupLabel, "gangA").Obj(),
+			pods: []*corev1.Pod{
+				st.MakePod().Name("pod-2").UID("pod-2").Namespace("gangA_ns").Label(v1alpha1.PodGroupLabel, "gangA").Obj(),
+			},
+			expectLabelsSet:   true,
+			expectGangGroupID: "gangA_ns/gangA",
+			expectMemberCount: "2",
+		},
+		{
+			name:            "pod not in gang, should not set labels",
+			pg:              makePg("gangB", "gangB_ns", 2, &gangCreatedTime, nil),
+			pod:             st.MakePod().Name("pod-3").UID("pod-3").Namespace("ns1").Obj(),
+			pods:            []*corev1.Pod{},
+			expectLabelsSet: false,
+		},
+		{
+			name: "pod has existing labels, should overwrite gang labels",
+			pg:   makePg("gangC", "gangC_ns", 2, &gangCreatedTime, nil),
+			pod: st.MakePod().Name("pod-4").UID("pod-4").Namespace("gangC_ns").
+				Label(v1alpha1.PodGroupLabel, "gangC").
+				Label("custom-label", "custom-value").
+				Obj(),
+			pods: []*corev1.Pod{
+				st.MakePod().Name("pod-5").UID("pod-5").Namespace("gangC_ns").Label(v1alpha1.PodGroupLabel, "gangC").Obj(),
+			},
+			expectLabelsSet:     true,
+			expectGangGroupID:   "gangC_ns/gangC",
+			expectMemberCount:   "2",
+			podHasExistingLabel: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pgClientSet := fakepgclientset.NewSimpleClientset()
+			cs := kubefake.NewSimpleClientset()
+
+			if tt.pg != nil {
+				_, err := pgClientSet.SchedulingV1alpha1().PodGroups(tt.pg.Namespace).Create(context.TODO(), tt.pg, metav1.CreateOptions{})
+				assert.NoError(t, err)
+			}
+
+			_, err := cs.CoreV1().Pods(tt.pod.Namespace).Create(context.TODO(), tt.pod, metav1.CreateOptions{})
+			assert.NoError(t, err)
+			for _, pod := range tt.pods {
+				_, err = cs.CoreV1().Pods(pod.Namespace).Create(context.TODO(), pod, metav1.CreateOptions{})
+				assert.NoError(t, err)
+			}
+
+			suit := newPluginTestSuit(t, nil, pgClientSet, cs)
+			suit.start()
+			gp := suit.plugin.(*Coscheduling)
+
+			ctx := context.TODO()
+			cycleState := framework.NewCycleState()
+
+			// Make gang satisfied if needed
+			if len(tt.pods) > 0 {
+				// Let first pod enter Permit and be assumed
+				status1, _ := gp.Permit(ctx, cycleState, tt.pod, "")
+				assert.Equal(t, framework.Wait, status1.Code())
+
+				// Let second pod enter Permit and satisfy the gang requirements
+				for _, pod := range tt.pods {
+					status2, _ := gp.Permit(ctx, cycleState, pod, "")
+					assert.Equal(t, framework.Success, status2.Code())
+				}
+			}
+
+			// Act: PreBind should set gang binding annotations
+			preBindStatus := gp.PreBind(ctx, cycleState, tt.pod, "node-1")
+			assert.True(t, preBindStatus.IsSuccess())
+
+			// Assert: check gang annotations
+			if tt.expectLabelsSet {
+				assert.Equal(t, tt.expectGangGroupID, tt.pod.Annotations[extension.AnnotationBindGangGroupId])
+				assert.Equal(t, tt.expectMemberCount, tt.pod.Annotations[extension.AnnotationBindGangMemberCount])
+				if tt.podHasExistingLabel {
+					assert.Equal(t, "custom-value", tt.pod.Labels["custom-label"])
+				}
+			} else {
+				assert.NotContains(t, tt.pod.Annotations, extension.AnnotationBindGangGroupId)
+				assert.NotContains(t, tt.pod.Annotations, extension.AnnotationBindGangMemberCount)
+			}
+		})
+	}
+}
+
+func TestPreBindReservation(t *testing.T) {
+	gangCreatedTime := time.Now()
+
+	tests := []struct {
+		name                string
+		pg                  *v1alpha1.PodGroup
+		reservation         *schedulingv1alpha1.Reservation
+		pods                []*corev1.Pod
+		expectLabelsSet     bool
+		expectGangGroupID   string
+		expectMemberCount   string
+		reservationHasLabel bool
+	}{
+		{
+			name: "reservation in gang satisfied, should set labels",
+			pg:   makePg("gangA", "gangA_ns", 2, &gangCreatedTime, nil),
+			reservation: &schedulingv1alpha1.Reservation{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "r-1",
+					Namespace: "gangA_ns",
+					UID:       "r-1-uid",
+					Labels: map[string]string{
+						v1alpha1.PodGroupLabel: "gangA",
+					},
+				},
+				Spec: schedulingv1alpha1.ReservationSpec{
+					Template: &corev1.PodTemplateSpec{
+						ObjectMeta: metav1.ObjectMeta{
+							Namespace: "gangA_ns",
+						},
+					},
+				},
+			},
+			pods: []*corev1.Pod{
+				st.MakePod().Name("pod-1").UID("pod-1").Namespace("gangA_ns").Label(v1alpha1.PodGroupLabel, "gangA").Obj(),
+			},
+			expectLabelsSet:   true,
+			expectGangGroupID: "gangA_ns/gangA",
+			expectMemberCount: "2",
+		},
+		{
+			name: "reservation not in gang, should not set labels",
+			pg:   makePg("gangB", "gangB_ns", 2, &gangCreatedTime, nil),
+			reservation: &schedulingv1alpha1.Reservation{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "r-2",
+					Namespace: "ns1",
+					UID:       "r-2-uid",
+				},
+				Spec: schedulingv1alpha1.ReservationSpec{
+					Template: &corev1.PodTemplateSpec{
+						ObjectMeta: metav1.ObjectMeta{
+							Namespace: "ns1",
+						},
+					},
+				},
+			},
+			pods:            []*corev1.Pod{},
+			expectLabelsSet: false,
+		},
+		{
+			name: "reservation has existing labels, should add gang labels",
+			pg:   makePg("gangC", "gangC_ns", 2, &gangCreatedTime, nil),
+			reservation: &schedulingv1alpha1.Reservation{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "r-3",
+					Namespace: "gangC_ns",
+					UID:       "r-3-uid",
+					Labels: map[string]string{
+						v1alpha1.PodGroupLabel: "gangC",
+						"custom-label":         "custom-value",
+					},
+				},
+				Spec: schedulingv1alpha1.ReservationSpec{
+					Template: &corev1.PodTemplateSpec{
+						ObjectMeta: metav1.ObjectMeta{
+							Namespace: "gangC_ns",
+						},
+					},
+				},
+			},
+			pods: []*corev1.Pod{
+				st.MakePod().Name("pod-2").UID("pod-2").Namespace("gangC_ns").Label(v1alpha1.PodGroupLabel, "gangC").Obj(),
+			},
+			expectLabelsSet:     true,
+			expectGangGroupID:   "gangC_ns/gangC",
+			expectMemberCount:   "2",
+			reservationHasLabel: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pgClientSet := fakepgclientset.NewSimpleClientset()
+			cs := kubefake.NewSimpleClientset()
+
+			if tt.pg != nil {
+				_, err := pgClientSet.SchedulingV1alpha1().PodGroups(tt.pg.Namespace).Create(context.TODO(), tt.pg, metav1.CreateOptions{})
+				assert.NoError(t, err)
+			}
+
+			for _, pod := range tt.pods {
+				_, err := cs.CoreV1().Pods(pod.Namespace).Create(context.TODO(), pod, metav1.CreateOptions{})
+				assert.NoError(t, err)
+			}
+
+			suit := newPluginTestSuit(t, nil, pgClientSet, cs)
+			suit.start()
+			gp := suit.plugin.(*Coscheduling)
+
+			ctx := context.TODO()
+			cycleState := framework.NewCycleState()
+
+			// Make gang satisfied if needed
+			if len(tt.pods) > 0 {
+				// Create a mock pod from reservation to trigger gang logic
+				reservePod := reservationutil.NewReservePod(tt.reservation)
+				cs.CoreV1().Pods(reservePod.Namespace).Create(context.TODO(), reservePod, metav1.CreateOptions{})
+
+				// Let reserve pod enter Permit and be assumed
+				status1, _ := gp.Permit(ctx, cycleState, reservePod, "")
+				assert.Equal(t, framework.Wait, status1.Code())
+
+				// Let other pods enter Permit to satisfy the gang
+				for _, pod := range tt.pods {
+					status2, _ := gp.Permit(ctx, cycleState, pod, "")
+					assert.Equal(t, framework.Success, status2.Code())
+				}
+			}
+
+			// Act: PreBindReservation should set gang binding annotations
+			preBindRStatus := gp.PreBindReservation(ctx, cycleState, tt.reservation, "node-1")
+			assert.True(t, preBindRStatus.IsSuccess())
+
+			// Assert: check gang annotations on the Reservation
+			if tt.expectLabelsSet {
+				assert.NotNil(t, tt.reservation.Annotations)
+				assert.Equal(t, tt.expectGangGroupID, tt.reservation.Annotations[extension.AnnotationBindGangGroupId])
+				assert.Equal(t, tt.expectMemberCount, tt.reservation.Annotations[extension.AnnotationBindGangMemberCount])
+				if tt.reservationHasLabel {
+					assert.Equal(t, "custom-value", tt.reservation.Labels["custom-label"])
+				}
+			} else {
+				if tt.reservation.Annotations != nil {
+					assert.NotContains(t, tt.reservation.Annotations, extension.AnnotationBindGangGroupId)
+					assert.NotContains(t, tt.reservation.Annotations, extension.AnnotationBindGangMemberCount)
+				}
+			}
 		})
 	}
 }

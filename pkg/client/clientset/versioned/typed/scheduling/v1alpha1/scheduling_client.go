@@ -28,6 +28,7 @@ import (
 
 type SchedulingV1alpha1Interface interface {
 	RESTClient() rest.Interface
+	ClusterNetworkTopologiesGetter
 	DevicesGetter
 	PodMigrationJobsGetter
 	ReservationsGetter
@@ -37,6 +38,10 @@ type SchedulingV1alpha1Interface interface {
 // SchedulingV1alpha1Client is used to interact with features provided by the scheduling group.
 type SchedulingV1alpha1Client struct {
 	restClient rest.Interface
+}
+
+func (c *SchedulingV1alpha1Client) ClusterNetworkTopologies() ClusterNetworkTopologyInterface {
+	return newClusterNetworkTopologies(c)
 }
 
 func (c *SchedulingV1alpha1Client) Devices() DeviceInterface {

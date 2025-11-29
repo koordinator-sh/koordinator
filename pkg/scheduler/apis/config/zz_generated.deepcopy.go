@@ -32,6 +32,16 @@ func (in *CoschedulingArgs) DeepCopyInto(out *CoschedulingArgs) {
 	*out = *in
 	out.TypeMeta = in.TypeMeta
 	out.DefaultTimeout = in.DefaultTimeout
+	if in.EnablePreemption != nil {
+		in, out := &in.EnablePreemption, &out.EnablePreemption
+		*out = new(bool)
+		**out = **in
+	}
+	if in.AwareNetworkTopology != nil {
+		in, out := &in.AwareNetworkTopology, &out.AwareNetworkTopology
+		*out = new(bool)
+		**out = **in
+	}
 	return
 }
 

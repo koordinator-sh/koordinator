@@ -27,6 +27,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	k8sfeature "k8s.io/apiserver/pkg/util/feature"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
@@ -41,6 +42,7 @@ import (
 	koordclientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
 	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
 	schedulingv1alpha1lister "github.com/koordinator-sh/koordinator/pkg/client/listers/scheduling/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
@@ -48,6 +50,21 @@ import (
 
 // Register schedulingv1alpha1 scheme to report event
 var _ = schedulingv1alpha1.AddToScheme(scheme.Scheme)
+
+var (
+	// for fit reservation error item
+	fitErrPrefix = regexp.MustCompile("^0/[0-9]+ nodes are available: ")
+	// for reservation total item
+	reserveTotalRe = regexp.MustCompile("^([0-9]+) Reservation\\(s\\) matched owner total$")
+	// for reservation name matched item
+	reserveNameTotalRe = regexp.MustCompile("^([0-9]+) Reservation\\(s\\) exactly matches the requested reservation name$")
+	// for node related item
+	reserveNodeDetailRe = regexp.MustCompile("^([0-9]+ Reservation\\(s\\)) (for node reason that .*)$")
+	// for reservation detail item
+	reserveDetailRe = regexp.MustCompile("^([0-9]+) Reservation\\(s\\) .*$")
+	// for reservation level failure message format
+	reserveLevelMsgFmt = "0/%d reservations are available: %s."
+)
 
 func MakeReservationErrorHandler(
 	sched *scheduler.Scheduler,
@@ -69,7 +86,13 @@ func MakeReservationErrorHandler(
 		// If the Pod failed to schedule or no post-filter plugins, should remove exist NominatedReservation of the Pod.
 		if extendedHandle, ok := fwk.(frameworkext.ExtendedHandle); ok {
 			if reservationNominator := extendedHandle.GetReservationNominator(); reservationNominator != nil {
-				reservationNominator.DeleteNominatedReservePodOrReservation(pod)
+				// If the pod preempting successfully, we should keep the nomination of the pod to reservation, and other pods can not allocate
+				// the preempted reserved resources in the next cycle.
+				if nominatingInfo == nil || nominatingInfo.NominatingMode == framework.ModeOverride && nominatingInfo.NominatedNodeName == "" || nominatingInfo.NominatingMode == framework.ModeNoop && pod.Status.NominatedNodeName == "" {
+					reservationNominator.DeleteNominatedReservePodOrReservation(pod)
+				} else {
+					klog.V(5).Infof("Keep the NominatedReservation of the Pod %s, nominatingInfo %+v, nominatedNodeName %s", klog.KObj(pod), nominatingInfo, pod.Status.NominatedNodeName)
+				}
 			}
 		}
 
@@ -126,7 +149,6 @@ func addNominatedReservation(f framework.Framework, podInfo *framework.QueuedPod
 // 2 Reservation(s) Insufficient cpu, 1 Reservation(s) Insufficient memory."
 func generatePodEventOnReservationLevel(errorMsg string) (string, bool) {
 	trimErrorMsg := strings.TrimSpace(errorMsg)
-	fitErrPrefix := regexp.MustCompile("^0/[0-9]+ nodes are available: ")
 
 	// expect: ["", "3 Reservation(s) ..."]
 	prefixSplit := fitErrPrefix.Split(trimErrorMsg, -1)
@@ -147,18 +169,6 @@ func generatePodEventOnReservationLevel(errorMsg string) (string, bool) {
 	resultDetails := make([]string, 0, len(detailSplit))
 	nodeRelatedDetails := make([]string, 0, len(detailSplit))
 	var reservationNameDetail []string
-
-	// for reservation total item
-	reserveTotalRe := regexp.MustCompile("^([0-9]+) Reservation\\(s\\) matched owner total$")
-
-	// for reservation name matched item
-	reserveNameTotalRe := regexp.MustCompile("^([0-9]+) Reservation\\(s\\) exactly matches the requested reservation name$")
-
-	// for node related item
-	reserveNodeDetailRe := regexp.MustCompile("^([0-9]+ Reservation\\(s\\)) (for node reason that .*)$")
-
-	// for reservation detail item
-	reserveDetailRe := regexp.MustCompile("^([0-9]+) Reservation\\(s\\) .*$")
 
 	for _, item := range detailSplit {
 		trimItem := strings.Trim(item, ". ")
@@ -200,8 +210,6 @@ func generatePodEventOnReservationLevel(errorMsg string) (string, bool) {
 		copy(resultDetails[:d], reservationNameDetail)
 	}
 	resultDetails = append(resultDetails, nodeRelatedDetails...)
-
-	reserveLevelMsgFmt := "0/%d reservations are available: %s."
 
 	return fmt.Sprintf(reserveLevelMsgFmt, total, strings.Join(resultDetails, ", ")), total >= 0
 }
@@ -263,13 +271,16 @@ func handleReservationSchedulingFailure(sched *scheduler.Scheduler,
 			return
 		}
 
-		// The scheduler name of a reservation can change in-flight, so we need to double-check if the scheduler
-		// is not matched anymore. If unmatched, we should abort the failure handling to avoid applying a
-		// failure state with another scheduler concurrently.
-		if !isResponsibleForReservation(sched.Profiles, cachedR) {
-			klog.InfoS("Reservation doesn't belong to this scheduler, abort the failure handling",
-				"pod", klog.KObj(pod), "reservation", rName, "schedulerName", reservationutil.GetReservationSchedulerName(cachedR))
-			return
+		if k8sfeature.DefaultFeatureGate.Enabled(features.DynamicSchedulerCheck) {
+			// The scheduler name of a reservation can change in-flight, so we need to double-check if the scheduler
+			// is not matched anymore. If unmatched, we should abort the failure handling to avoid applying a
+			// failure state with another scheduler concurrently.
+			// TODO: Add same check for pods
+			if !isResponsibleForReservation(sched.Profiles, cachedR) {
+				klog.InfoS("Reservation doesn't belong to this scheduler, abort the failure handling",
+					"pod", klog.KObj(pod), "reservation", rName, "schedulerName", reservationutil.GetReservationSchedulerName(cachedR))
+				return
+			}
 		}
 
 		// In the case of extender, the pod may have been bound successfully, but timed out returning its response to the scheduler.
@@ -333,63 +344,171 @@ func truncateMessage(message string) string {
 	return message[:max-len(suffix)] + suffix
 }
 
-func scheduledReservationEventHandler(sched *scheduler.Scheduler, schedAdapter frameworkext.Scheduler) cache.ResourceEventHandler {
+func reservationEventHandlers(sched *scheduler.Scheduler, schedAdapter frameworkext.Scheduler) cache.ResourceEventHandler {
+	// TODO: add metrics for handler latency
 	return cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
-			addReservationToSchedulerCache(schedAdapter, obj)
-		},
-		UpdateFunc: func(oldObj, newObj interface{}) {
-			updateReservationInSchedulerCache(schedAdapter, oldObj, newObj)
-		},
-		DeleteFunc: func(obj interface{}) {
-			deleteReservationFromSchedulerCache(schedAdapter, obj)
-		},
-	}
-}
-
-func unscheduledReservationEventHandler(sched *scheduler.Scheduler, schedAdapter frameworkext.Scheduler) cache.ResourceEventHandler {
-	return cache.FilteringResourceEventHandler{
-		FilterFunc: func(obj interface{}) bool {
-			switch t := obj.(type) {
-			case *schedulingv1alpha1.Reservation:
-				return isResponsibleForReservation(sched.Profiles, t) && !reservationutil.IsReservationAvailable(t) &&
-					!reservationutil.IsReservationFailed(t) && !reservationutil.IsReservationSucceeded(t)
-			case cache.DeletedFinalStateUnknown:
-				if r, ok := t.Obj.(*schedulingv1alpha1.Reservation); ok {
-					// DeletedFinalStateUnknown object can be stale, so just try to cleanup without check.
-					return isResponsibleForReservation(sched.Profiles, r)
-				}
-				klog.Errorf("unable to convert object %T to *schedulingv1alpha1.Reservation in %T", t.Obj, sched)
-				return false
-			default:
-				klog.Errorf("unable to handle object in %T: %T", obj, sched)
-				return false
-			}
-		},
-		Handler: cache.ResourceEventHandlerFuncs{
-			AddFunc: func(obj interface{}) {
-				addReservationToSchedulingQueue(schedAdapter, obj)
-			},
-			UpdateFunc: func(oldObj, newObj interface{}) {
-				updateReservationInSchedulingQueue(schedAdapter, oldObj, newObj)
-			},
-			DeleteFunc: func(obj interface{}) {
-				deleteReservationFromSchedulingQueue(sched, schedAdapter, obj)
-			},
-		},
-	}
-}
-
-func irresponsibleUnscheduledReservationEventHandler(sched *scheduler.Scheduler, schedAdapter frameworkext.Scheduler) cache.ResourceEventHandler {
-	return cache.ResourceEventHandlerFuncs{
-		DeleteFunc: func(obj interface{}) {
 			r := toReservation(obj)
-			if r == nil ||
-				isResponsibleForReservation(sched.Profiles, r) {
+			if r == nil {
+				klog.Errorf("cannot convert add object to *schedulingv1alpha1.Reservation, obj %T", obj)
 				return
 			}
-			deleteReservationFromSchedulingQueue(sched, schedAdapter, obj)
+			addReservation(sched, schedAdapter, r)
 		},
+		UpdateFunc: func(oldObj, newObj interface{}) {
+			oldR := toReservation(oldObj)
+			newR := toReservation(newObj)
+			if oldR == nil || newR == nil {
+				klog.Errorf("cannot convert update objects to *schedulingv1alpha1.Reservation, old %T, new %T", oldObj, newObj)
+				return
+			}
+			updateReservation(sched, schedAdapter, oldR, newR)
+		},
+		DeleteFunc: func(obj interface{}) {
+			r := toReservation(obj)
+			if r == nil {
+				klog.Errorf("cannot convert delete object to *schedulingv1alpha1.Reservation, obj %T", obj)
+				return
+			}
+			deleteReservation(sched, schedAdapter, r)
+		},
+	}
+}
+
+// addReservation handles an Add event for a Reservation object.
+// 1. If adding an unassigned and responsible Reservation, add it to the scheduling queue.
+// 2. If adding an available (assigned and not terminated) Reservation, add it to the scheduler cache.
+func addReservation(sched *scheduler.Scheduler, schedAdapter frameworkext.Scheduler, r *schedulingv1alpha1.Reservation) {
+	// To avoid scheduler cache corrupted, only add valid reservation into cache.
+	err := reservationutil.ValidateReservation(r)
+	if err != nil {
+		klog.ErrorS(err, "Failed to add reservation, invalid reservation", "reservation", klog.KObj(r))
+		return
+	}
+	klog.V(6).InfoS("Handle to add reservation", "reservation", klog.KObj(r), "uid", r.UID, "version", r.ResourceVersion)
+	if isReservationActive(r) && isResponsibleForReservation(sched.Profiles, r) {
+		addReservationToSchedulingQueue(schedAdapter, r)
+	} else if reservationutil.IsReservationAvailable(r) {
+		addReservationToSchedulerCache(schedAdapter, r)
+	}
+}
+
+// updateReservation handles an Update event for a Reservation object.
+// Base states: unassigned (active, nodeName is empty), available (assigned, nodeName not empty), terminated (Failed/Succeeded).
+// Supported transition states:
+// 0. terminated -> terminated: keep terminal state
+// 1. unassigned -> available: reservation gets scheduled
+// 2. available -> terminated: reservation expires or completes
+// 3. unassigned -> terminated: reservation scheduling fails permanently
+// 4. available -> unassigned (extended): assumed binding failure, rollback for retry
+// 5. available -> available with different nodeName (extended): node migration in multi-scheduler scenarios
+func updateReservation(sched *scheduler.Scheduler, schedAdapter frameworkext.Scheduler, oldR, newR *schedulingv1alpha1.Reservation) {
+	// To avoid scheduler cache corrupted, only update valid reservation into cache.
+	err := reservationutil.ValidateReservation(newR)
+	if err != nil {
+		klog.ErrorS(err, "Failed to update reservation, invalid reservation", "reservation", klog.KObj(newR))
+		return
+	}
+
+	oldTerminated := reservationutil.IsReservationFailed(oldR) || reservationutil.IsReservationSucceeded(oldR)
+	newTerminated := reservationutil.IsReservationFailed(newR) || reservationutil.IsReservationSucceeded(newR)
+
+	// Case 0: Keep terminated.
+	if oldTerminated && newTerminated {
+		return
+	}
+
+	oldNodeName := reservationutil.GetReservationNodeName(oldR)
+	newNodeName := reservationutil.GetReservationNodeName(newR)
+	oldAvailable := reservationutil.IsReservationAvailable(oldR)
+	newAvailable := reservationutil.IsReservationAvailable(newR)
+	oldActive := isReservationActive(oldR)
+	newActive := isReservationActive(newR)
+	oldResponsible := isResponsibleForReservation(sched.Profiles, oldR)
+	newResponsible := isResponsibleForReservation(sched.Profiles, newR)
+
+	klog.V(6).InfoS("Handle to update reservation", "reservation", klog.KObj(newR), "uid", newR.UID,
+		"oldNodeName", oldNodeName, "newNodeName", newNodeName,
+		"oldAvailable", oldAvailable, "newAvailable", newAvailable,
+		"oldActive", oldActive, "newActive", newActive,
+		"oldTerminated", oldTerminated, "newTerminated", newTerminated)
+
+	// Case 1: Keep available
+	if oldAvailable && newAvailable {
+		// Update available reservation in cache (handles nodeName change internally)
+		updateReservationInSchedulerCache(schedAdapter, oldR, newR)
+		return
+	}
+
+	// Case 2: From unassigned to available (scheduling succeeded)
+	if oldActive && newAvailable {
+		addReservationToSchedulerCache(schedAdapter, newR)
+		if oldResponsible {
+			// Remove from scheduling queue since it's now scheduled
+			deleteReservationFromSchedulingQueue(sched, schedAdapter, oldR)
+		}
+		return
+	}
+
+	// Case 3: From available to terminated
+	if oldAvailable && newTerminated {
+		// Remove from cache, no need to requeue for terminal states
+		deleteReservationFromSchedulerCache(schedAdapter, oldR)
+		if oldResponsible {
+			// Ensure it's removed from scheduling queue
+			deleteReservationFromSchedulingQueue(sched, schedAdapter, oldR)
+		}
+		return
+	}
+
+	// Case 4: From available to unassigned (assumed binding failure, rollback)
+	// This is an extended case for multi-scheduler scenarios. We cleanup
+	// cache before requeue the request to avoid cache leak.
+	if oldAvailable && newActive {
+		// Remove from cache since it's no longer scheduled
+		deleteReservationFromSchedulerCache(schedAdapter, oldR)
+		if newResponsible {
+			// Requeue for retry
+			addReservationToSchedulingQueue(schedAdapter, newR)
+		}
+		return
+	}
+
+	// Case 5: Keep unassigned (active)
+	if oldActive && newActive {
+		// Handle scheduler name changes
+		if oldResponsible && newResponsible {
+			updateReservationInSchedulingQueue(schedAdapter, oldR, newR)
+		} else if !oldResponsible && newResponsible {
+			addReservationToSchedulingQueue(schedAdapter, newR)
+		} else if oldResponsible && !newResponsible {
+			deleteReservationFromSchedulingQueue(sched, schedAdapter, oldR)
+		}
+		return
+	}
+
+	// Case 6: From unassigned to terminated
+	if oldActive && newTerminated {
+		if oldResponsible {
+			deleteReservationFromSchedulingQueue(sched, schedAdapter, oldR)
+		}
+		return
+	}
+
+	// Unexpected state transitions
+	klog.ErrorS(nil, "Unexpected reservation state transition", "reservation", klog.KObj(newR), "uid", newR.UID,
+		"oldPhase", oldR.Status.Phase, "newPhase", newR.Status.Phase,
+		"oldNodeName", oldNodeName, "newNodeName", newNodeName)
+}
+
+// deleteReservation handles a Delete event for a Reservation object.
+// 1. Delete the Reservation from the scheduler cache if it exists.
+// 2. If deleting an unassigned and responsible Reservation, delete it from the scheduling queue.
+func deleteReservation(sched *scheduler.Scheduler, schedAdapter frameworkext.Scheduler, r *schedulingv1alpha1.Reservation) {
+	klog.V(6).InfoS("Handle to delete reservation", "reservation", klog.KObj(r), "uid", r.UID, "version", r.ResourceVersion)
+	deleteReservationFromSchedulerCache(schedAdapter, r)
+	if isResponsibleForReservation(sched.Profiles, r) {
+		deleteReservationFromSchedulingQueue(sched, schedAdapter, r)
 	}
 }
 
@@ -404,29 +523,11 @@ func toReservation(obj interface{}) *schedulingv1alpha1.Reservation {
 	return r
 }
 
-func addReservationToSchedulerCache(sched frameworkext.Scheduler, obj interface{}) {
-	r := toReservation(obj)
-	if r == nil {
-		klog.Errorf("addReservationToSchedulerCache failed, cannot convert to *schedulingv1alpha1.Reservation, obj %T", obj)
-		return
-	}
-	if !reservationutil.IsReservationAvailable(r) {
-		return
-	}
-
-	klog.V(3).InfoS("Try to add reservation into SchedulerCache",
-		"reservation", klog.KObj(r), "reservationUID", r.UID, "node", reservationutil.GetReservationNodeName(r))
-
-	// only add valid reservation into cache
-	err := reservationutil.ValidateReservation(r)
-	if err != nil {
-		klog.ErrorS(err, "Failed to add reservation into SchedulerCache, invalid reservation", "reservation", klog.KObj(r))
-		return
-	}
-
+func addReservationToSchedulerCache(sched frameworkext.Scheduler, r *schedulingv1alpha1.Reservation) {
+	klog.V(3).InfoS("Try to add reservation into SchedulerCache", "reservation", klog.KObj(r), "reservationUID", r.UID, "node", reservationutil.GetReservationNodeName(r))
 	// update pod cache and trigger pod assigned event for scheduling queue
 	reservePod := reservationutil.NewReservePod(r)
-	if err = sched.GetCache().AddPod(klog.Background(), reservePod); err != nil {
+	if err := sched.GetCache().AddPod(klog.Background(), reservePod); err != nil {
 		klog.ErrorS(err, "Failed to add reservation into SchedulerCache", "reservation", klog.KObj(reservePod))
 	} else {
 		klog.V(4).InfoS("Successfully add reservation into SchedulerCache", "reservation", klog.KObj(r))
@@ -434,53 +535,26 @@ func addReservationToSchedulerCache(sched frameworkext.Scheduler, obj interface{
 	sched.GetSchedulingQueue().AssignedPodAdded(klog.Background(), reservePod)
 }
 
-func updateReservationInSchedulerCache(sched frameworkext.Scheduler, oldObj, newObj interface{}) {
-	oldR := toReservation(oldObj)
-	newR := toReservation(newObj)
-	if oldR == nil || newR == nil {
-		klog.Errorf("updateReservationInSchedulerCache failed, cannot convert object to *schedulingv1alpha1.Reservation, old %T, new %T", oldObj, newObj)
-		return
-	}
-
-	if newR.Status.NodeName == "" {
+func updateReservationInSchedulerCache(sched frameworkext.Scheduler, oldR, newR *schedulingv1alpha1.Reservation) {
+	// A fast lookup for unscheduled reservation.
+	oldNodeName := reservationutil.GetReservationNodeName(oldR)
+	newNodeName := reservationutil.GetReservationNodeName(newR)
+	if oldNodeName == "" && newNodeName == "" {
 		return
 	}
 
 	// A delete event followed by an immediate add event may be merged into a update event.
-	// In this case, we should invalidate the old object, and then add the new object.
-	if oldR.UID != newR.UID {
-		deleteReservationFromSchedulerCache(sched, oldObj)
-		addReservationToSchedulerCache(sched, newObj)
-		return
-	}
-
-	// Pending to Available
-	if !reservationutil.IsReservationAvailable(oldR) && reservationutil.IsReservationAvailable(newR) {
+	// In extended multi-scheduler scenarios the nodeName may change as a merged event.
+	// In this case, we should invalidate the old object, and then add the new object,
+	// while it does not guarantee the resources between the delete and add process.
+	if oldR.UID != newR.UID || oldNodeName != newNodeName {
+		klog.V(3).InfoS("Reservation assigned status changed, handling as delete-then-add", "reservation", klog.KObj(newR), "oldUID", oldR.UID, "newUID", newR.UID, "oldNode", oldNodeName, "newNode", newNodeName)
+		deleteReservationFromSchedulerCache(sched, oldR)
 		addReservationToSchedulerCache(sched, newR)
 		return
 	}
 
-	// Available to Succeeded or Failed
-	if reservationutil.IsReservationAvailable(oldR) && !reservationutil.IsReservationAvailable(newR) {
-		deleteReservationFromSchedulerCache(sched, newR)
-		return
-	}
-
-	// Just update Pending/Succeeded/Failed Reservation
-	if !reservationutil.IsReservationAvailable(newR) {
-		return
-	}
-
-	klog.V(4).InfoS("Try to update reservation into SchedulerCache",
-		"reservation", klog.KObj(newR), "reservationUID", newR.UID, "node", reservationutil.GetReservationNodeName(newR))
-
-	// nodeName update of the same reservations is not allowed and may corrupt the cache
-	if reservationutil.GetReservationNodeName(oldR) != reservationutil.GetReservationNodeName(newR) {
-		klog.Errorf("It is not allowed to update the Reservation.Status.NodeName of an already allocated reservation, reservation: %s", newR.Name)
-		return
-	}
-
-	// update pod cache and trigger pod assigned event for scheduling queue
+	klog.V(4).InfoS("Try to update reservation into SchedulerCache", "reservation", klog.KObj(newR), "reservationUID", newR.UID, "node", newNodeName)
 	err := reservationutil.ValidateReservation(newR)
 	if err != nil {
 		klog.ErrorS(err, "Failed to update reservation into SchedulerCache, invalid reservation", "reservation", klog.KObj(newR))
@@ -496,113 +570,94 @@ func updateReservationInSchedulerCache(sched frameworkext.Scheduler, oldObj, new
 	sched.GetSchedulingQueue().AssignedPodUpdated(klog.Background(), oldReservePod, newReservePod)
 }
 
-func deleteReservationFromSchedulerCache(sched frameworkext.Scheduler, obj interface{}) {
-	r := toReservation(obj)
-	if r == nil {
-		klog.Errorf("deleteReservationFromSchedulerCache failed, cannot convert to *schedulingv1alpha1.Reservation, obj %T", obj)
-		return
-	}
-
+func deleteReservationFromSchedulerCache(sched frameworkext.Scheduler, r *schedulingv1alpha1.Reservation) {
 	if r.Status.NodeName == "" {
 		return
 	}
 
-	klog.V(4).InfoS("Try to delete reservation from SchedulerCache",
-		"reservation", klog.KObj(r), "reservationUID", r.UID, "node", reservationutil.GetReservationNodeName(r))
-
-	// delete pod cache and trigger pod deleted event for scheduling queue
-	err := reservationutil.ValidateReservation(r)
-	if err != nil {
-		klog.ErrorS(err, "Failed to delete reservation from SchedulerCache, invalid reservation", "reservation", klog.KObj(r))
-		return
-	}
+	klog.V(4).InfoS("Try to delete reservation from SchedulerCache", "reservation", klog.KObj(r), "reservationUID", r.UID, "node", reservationutil.GetReservationNodeName(r))
 
 	reservationCache := frameworkext.GetReservationCache()
 	rInfo := reservationCache.DeleteReservation(r)
 	if rInfo == nil {
-		klog.Warningf("The impossible happened. Missing ReservationInfo in ReservationCache, reservation: %v", klog.KObj(r))
+		klog.Warningf("The impossible happened. Missing ReservationInfo in ReservationCache, reservation: %v", klog.KObj(r), "reservationUID", r.UID)
 		return
 	} else {
-		klog.V(4).InfoS("Successfully delete reservation from ReservationCache", "reservation", klog.KObj(r))
+		klog.V(4).InfoS("Successfully delete reservation from ReservationCache", "reservation", klog.KObj(r), "reservationUID", r.UID)
 	}
 
 	reservePod := reservationutil.NewReservePod(r)
-	if _, err = sched.GetCache().GetPod(reservePod); err == nil {
-		if len(rInfo.AllocatedPorts) > 0 {
-			allocatablePorts := util.RequestedHostPorts(reservePod)
-			util.RemoveHostPorts(allocatablePorts, rInfo.AllocatedPorts)
-			util.ResetHostPorts(reservePod, allocatablePorts)
-
-			// The Pod status in the Cache must be refreshed once to ensure that subsequent deletions are valid.
-			if err := sched.GetCache().UpdatePod(klog.Background(), reservePod, reservePod); err != nil {
-				klog.ErrorS(err, "Failed update reservation into SchedulerCache in delete stage", "reservation", klog.KObj(r))
-			}
-		}
-
-		if err := sched.GetCache().RemovePod(klog.Background(), reservePod); err != nil {
-			klog.ErrorS(err, "Failed to remove reservation from SchedulerCache", "reservation", klog.KObj(r))
-		} else {
-			klog.V(4).InfoS("Successfully delete reservation from SchedulerCache", "reservation", klog.KObj(r))
-		}
-
-		sched.GetSchedulingQueue().MoveAllToActiveOrBackoffQueue(klog.Background(), frameworkext.AssignedPodDelete, nil, nil, nil)
-	}
-}
-
-func addReservationToSchedulingQueue(sched frameworkext.Scheduler, obj interface{}) {
-	r := toReservation(obj)
-	if r == nil {
-		klog.Errorf("addReservationToSchedulingQueue failed, cannot convert to *schedulingv1alpha1.Reservation, obj %T", obj)
+	if _, err := sched.GetCache().GetPod(reservePod); err != nil {
+		klog.V(4).InfoS("Reservation not found in SchedulerCache, skipping deletion", "reservation", klog.KObj(r), "reservationUID", r.UID)
 		return
 	}
-	klog.V(3).InfoS("Add event for unscheduled reservation", "reservation", klog.KObj(r))
+	if len(rInfo.AllocatedPorts) > 0 {
+		allocatablePorts := util.RequestedHostPorts(reservePod)
+		util.RemoveHostPorts(allocatablePorts, rInfo.AllocatedPorts)
+		util.ResetHostPorts(reservePod, allocatablePorts)
 
+		// The Pod status in the Cache must be refreshed once to ensure that subsequent deletions are valid.
+		if err := sched.GetCache().UpdatePod(klog.Background(), reservePod, reservePod); err != nil {
+			klog.ErrorS(err, "Failed update reservation into SchedulerCache in delete stage", "reservation", klog.KObj(r))
+		}
+	}
+
+	if err := sched.GetCache().RemovePod(klog.Background(), reservePod); err != nil {
+		klog.ErrorS(err, "Failed to remove reservation from SchedulerCache", "reservation", klog.KObj(r), "reservationUID", r.UID)
+	} else {
+		klog.V(4).InfoS("Successfully delete reservation from SchedulerCache", "reservation", klog.KObj(r), "reservationUID", r.UID)
+	}
+
+	sched.GetSchedulingQueue().MoveAllToActiveOrBackoffQueue(klog.Background(), frameworkext.AssignedPodDelete, nil, nil, nil)
+}
+
+func addReservationToSchedulingQueue(sched frameworkext.Scheduler, r *schedulingv1alpha1.Reservation) {
 	reservePod := reservationutil.NewReservePod(r)
+	klog.V(3).InfoS("Add event for unscheduled reservation", "reservation", klog.KObj(r), "reservationUID", r.UID)
 	if err := sched.GetSchedulingQueue().Add(klog.Background(), reservePod); err != nil {
-		klog.Errorf("failed to add reserve pod into scheduling queue, reservation %v, err: %v", klog.KObj(reservePod), err)
+		klog.ErrorS(err, "Failed to add reserve pod into scheduling queue, reservation", "reservation", klog.KObj(r), "pod", klog.KObj(reservePod))
 	}
 }
 
-func updateReservationInSchedulingQueue(sched frameworkext.Scheduler, oldObj, newObj interface{}) {
-	oldR := toReservation(oldObj)
-	newR := toReservation(newObj)
-	if oldR == nil || newR == nil {
-		klog.Errorf("updateReservationInSchedulingQueue failed, cannot convert object to *schedulingv1alpha1.Reservation, old %T, new %T", oldObj, newObj)
-		return
-	}
+func updateReservationInSchedulingQueue(sched frameworkext.Scheduler, oldR, newR *schedulingv1alpha1.Reservation) {
 	// Bypass update event that carries identical objects to avoid duplicate scheduling.
 	// https://github.com/kubernetes/kubernetes/pull/96071
 	if oldR.ResourceVersion == newR.ResourceVersion {
 		return
 	}
 
+	oldReservePod := reservationutil.NewReservePod(oldR)
 	newReservePod := reservationutil.NewReservePod(newR)
+	// Normal update flow: check if assumed
 	isAssumed, err := sched.GetCache().IsAssumedPod(newReservePod)
 	if err != nil {
-		klog.Errorf("failed to check whether reserve pod %s is assumed, err: %v", klog.KObj(newReservePod), err)
+		klog.ErrorS(err, "Failed to check whether reserve pod is assumed", "reservation", klog.KObj(newR), "pod", klog.KObj(newReservePod))
 	}
 	if isAssumed {
+		// SAFETY: Don't update assumed pods in the queue
+		// They are in the binding process and should not be disturbed
+		klog.V(6).InfoS("Skipping queue update for assumed reserve pod, likely binding in progress", "reservation", klog.KObj(newR), "reservationUID", newR.UID)
 		return
 	}
 
-	oldReservePod := reservationutil.NewReservePod(oldR)
+	// Update in scheduling queue for other cases (e.g., spec changes)
 	if err = sched.GetSchedulingQueue().Update(klog.Background(), oldReservePod, newReservePod); err != nil {
-		klog.Errorf("failed to update reserve pod in scheduling queue, old %s, new %s, err: %v", klog.KObj(oldReservePod), klog.KObj(newReservePod), err)
+		klog.ErrorS(err, "Failed to update reserve pod in scheduling queue", "reservation", klog.KObj(newR), "reservationUID", newR.UID, "pod", klog.KObj(newReservePod), "new version", newR.ResourceVersion, "old version", oldR.ResourceVersion)
 	}
 }
 
-func deleteReservationFromSchedulingQueue(sched *scheduler.Scheduler, schedAdapter frameworkext.Scheduler, obj interface{}) {
-	r := toReservation(obj)
-	if r == nil {
-		klog.Errorf("deleteReservationFromSchedulingQueue failed, cannot convert to *schedulingv1alpha1.Reservation, obj %T", obj)
-		return
-	}
-	klog.V(3).InfoS("Delete event for unscheduled reservation", "reservation", klog.KObj(r))
+func deleteReservationFromSchedulingQueue(sched *scheduler.Scheduler, schedAdapter frameworkext.Scheduler, r *schedulingv1alpha1.Reservation) {
+	klog.V(3).InfoS("Delete event for unscheduled reservation", "reservation", klog.KObj(r), "reservationUID", r.UID, "phase", r.Status.Phase, "nodeName", reservationutil.GetReservationNodeName(r))
 
 	reservePod := reservationutil.NewReservePod(r)
+	// Try to delete from scheduling queue
+	// For scenario 2 (scheduling success), the pod may not be in the queue anymore (already assumed)
 	if err := schedAdapter.GetSchedulingQueue().Delete(reservePod); err != nil {
-		klog.Errorf("failed to delete reserve pod in scheduling queue, reservation %s, err: %v", klog.KObj(r), err)
+		// It's normal for assumed pods to not be in the queue
+		klog.V(4).InfoS("Failed to delete reserve pod from scheduling queue (may be already assumed)",
+			"reservation", klog.KObj(r), "error", err)
 	}
+
 	fwk := sched.Profiles[reservePod.Spec.SchedulerName]
 	if fwk != nil {
 		fwk.RejectWaitingPod(reservePod.UID)
@@ -611,4 +666,12 @@ func deleteReservationFromSchedulingQueue(sched *scheduler.Scheduler, schedAdapt
 
 func isResponsibleForReservation(profiles profile.Map, r *schedulingv1alpha1.Reservation) bool {
 	return profiles.HandlesSchedulerName(reservationutil.GetReservationSchedulerName(r))
+}
+
+// isReservationActive checks if the reservation is unassigned (not scheduled to a node yet) and not terminated.
+// A reservation is considered active if:
+// 1. It has no nodeName assigned (unscheduled)
+// 2. It is not in a terminal state (Failed or Succeeded)
+func isReservationActive(r *schedulingv1alpha1.Reservation) bool {
+	return reservationutil.GetReservationNodeName(r) == "" && !reservationutil.IsReservationFailed(r) && !reservationutil.IsReservationSucceeded(r)
 }

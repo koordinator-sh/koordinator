@@ -373,9 +373,12 @@ func defaultAllocateDevices(
 
 	var allocations []*apiext.DeviceAllocation
 	resourceMinorPairs := scoreDevices(podRequestPerInstance, nodeDeviceTotal, freeDevices, requestCtx.allocationScorer)
-	resourceMinorPairs = sortDeviceResourcesByPreferredPCIe(resourceMinorPairs, preferredPCIEs, deviceInfos)
 	// TODO Device allocation logic hotspots discovered through flame graphs
-	resourceMinorPairs = sortDeviceResourcesByMinor(resourceMinorPairs, requestCtx.preferred[deviceType])
+	if preferred := requestCtx.preferred[deviceType]; preferred.Len() > 0 {
+		resourceMinorPairs = sortDeviceResourcesByMinor(resourceMinorPairs, requestCtx.preferred[deviceType])
+	} else {
+		resourceMinorPairs = sortDeviceResourcesByPreferredPCIe(resourceMinorPairs, preferredPCIEs, deviceInfos)
+	}
 	for _, resourceMinorPair := range resourceMinorPairs {
 		if required.Len() > 0 && !required.Has(resourceMinorPair.minor) {
 			continue

@@ -37,6 +37,7 @@ import (
 	schedulingconfig "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/validation"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/hinter"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/topologymanager"
 	"github.com/koordinator-sh/koordinator/pkg/util/cpuset"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
@@ -195,6 +196,14 @@ type preFilterState struct {
 	numCPUsNeeded               int                                 // the number of requested CPUs
 	allocation                  *PodAllocation                      // the CPU allocation reserved for the pod
 	hasReservationAffinity      bool                                // whether the pod has a required reservation affinity
+
+	// designatedAllocation is parsed from the Pod Annotation during the PreFilter phase. In this case, we should assume that the Node has already been selected. That is, all Score-related plug-ins will not be executed. Instead, we only need to call Filter to confirm whether the designatedAllocation is still valid and use it as the allocation result during actual allocation.
+	designatedAllocation *allocation
+}
+
+type allocation struct {
+	numaNodeResource map[int]corev1.ResourceList
+	cpuset           cpuset.CPUSet
 }
 
 func (s *preFilterState) Clone() framework.StateData {
@@ -278,6 +287,26 @@ func (p *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleState
 		podNUMAExclusive:       numaSpec.SingleNUMANodeExclusive,
 		hasReservationAffinity: reservationAffinity != nil,
 	}
+
+	if schedulingHint := hinter.GetSchedulingHintState(cycleState); schedulingHint != nil {
+		if _, ok := schedulingHint.Extensions[Name]; ok {
+			resourceStatus, err := extension.GetResourceStatus(pod.Annotations)
+			if err != nil {
+				return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, err.Error())
+			}
+			if resourceStatus.NUMANodeResources != nil || resourceStatus.CPUSet != "" {
+				alloc := &allocation{
+					numaNodeResource: map[int]corev1.ResourceList{},
+				}
+				for _, resource := range resourceStatus.NUMANodeResources {
+					alloc.numaNodeResource[int(resource.Node)] = resource.Resources
+				}
+				alloc.cpuset = cpuset.MustParse(resourceStatus.CPUSet)
+				state.designatedAllocation = alloc
+			}
+		}
+	}
+
 	if AllowUseCPUSet(pod) {
 		cpuBindPolicy := schedulingconfig.CPUBindPolicy(resourceSpec.PreferredCPUBindPolicy)
 		if cpuBindPolicy == "" || cpuBindPolicy == schedulingconfig.CPUBindPolicyDefault {
@@ -321,6 +350,13 @@ func (p *Plugin) Filter(ctx context.Context, cycleState *framework.CycleState, p
 		return status
 	}
 	if state.skip {
+		return nil
+	}
+	if state.designatedAllocation != nil {
+		status = p.allocate(ctx, cycleState, pod, nodeInfo.Node())
+		if !status.IsSuccess() {
+			return status
+		}
 		return nil
 	}
 
@@ -389,7 +425,7 @@ func (p *Plugin) Filter(ctx context.Context, cycleState *framework.CycleState, p
 				return nil
 			}
 
-			_, status = tryAllocateFromNode(p.resourceManager, restoreState, resourceOptions, pod, node)
+			_, status = tryAllocateFromNode(p.resourceManager, nil, restoreState, resourceOptions, pod, node)
 			if !status.IsSuccess() {
 				return status
 			}
@@ -516,12 +552,36 @@ func (p *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState, 
 	if state.skip {
 		return nil
 	}
-
-	nodeInfo, err := p.handle.SnapshotSharedLister().NodeInfos().Get(nodeName)
-	if err != nil {
-		return framework.NewStatus(framework.Error, fmt.Sprintf("getting node %q from Snapshot: %v", nodeName, err))
+	if state.allocation == nil {
+		nodeInfo, err := p.handle.SnapshotSharedLister().NodeInfos().Get(nodeName)
+		if err != nil {
+			return framework.NewStatus(framework.Error, fmt.Sprintf("getting node %q from Snapshot: %v", nodeName, err))
+		}
+		status := p.allocate(ctx, cycleState, pod, nodeInfo.Node())
+		if !status.IsSuccess() {
+			return status
+		}
 	}
-	node := nodeInfo.Node()
+
+	if state.allocation != nil {
+		p.resourceManager.Update(nodeName, state.allocation)
+	}
+
+	return nil
+}
+
+func (p *Plugin) allocate(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, node *corev1.Node) *framework.Status {
+	reservationRestoreState := getReservationRestoreState(cycleState)
+	// ReservationRestoreState is O(n) complexity of node number of the cluster.
+	// clearData clears all nodes' data in the cycleState to reduce memory cost before entering the binding cycle.
+	state, status := getPreFilterState(cycleState)
+	if !status.IsSuccess() {
+		return status
+	}
+	if state.skip {
+		return nil
+	}
+
 	topologyOptions := p.topologyOptionsManager.GetTopologyOptions(node.Name)
 	nodeCPUBindPolicy := extension.GetNodeCPUBindPolicy(node.Labels, topologyOptions.Policy)
 	podNUMATopologyPolicy := state.podNUMATopologyPolicy
@@ -544,24 +604,23 @@ func (p *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState, 
 
 	// TODO: de-duplicate logic done by the Filter phase and move head the pre-process of the resource options
 	store := topologymanager.GetStore(cycleState)
-	affinity, _ := store.GetAffinity(nodeName)
+	affinity, _ := store.GetAffinity(node.Name)
 	resourceOptions, err := p.getResourceOptions(state, node, pod, requestCPUBind, affinity, topologyOptions)
 	if err != nil {
 		return framework.AsStatus(err)
 	}
 
-	restoreState := reservationRestoreState.getNodeState(nodeName)
+	restoreState := reservationRestoreState.getNodeState(node.Name)
 	result, status := p.allocateWithNominatedReservation(restoreState, resourceOptions, pod, node)
 	if !status.IsSuccess() {
 		return status
 	}
 	if result == nil {
-		result, status = tryAllocateFromNode(p.resourceManager, restoreState, resourceOptions, pod, node)
+		result, status = tryAllocateFromNode(p.resourceManager, state, restoreState, resourceOptions, pod, node)
 		if !status.IsSuccess() {
 			return status
 		}
 	}
-	p.resourceManager.Update(nodeName, result)
 	state.allocation = result
 	return nil
 }
@@ -669,15 +728,28 @@ func (p *Plugin) getResourceOptions(state *preFilterState, node *corev1.Node, po
 
 func tryAllocateFromNode(
 	manager ResourceManager,
+	preFilterState *preFilterState,
 	restoreState *nodeReservationRestoreStateData,
 	resourceOptions *ResourceOptions,
 	pod *corev1.Pod,
 	node *corev1.Node,
-) (*PodAllocation, *framework.Status) {
-	resourceOptions.requiredResources = nil
-	resourceOptions.reusableResources = appendAllocated(nil, restoreState.mergedUnmatchedUsed)
-	resourceOptions.preferredCPUs = cpuset.NewCPUSet()
-	resourceOptions.preemptibleCPUs = cpuset.NewCPUSet()
+) (allocation *PodAllocation, status *framework.Status) {
+	if preFilterState != nil && preFilterState.designatedAllocation != nil {
+		resourceOptions.requiredResources = preFilterState.designatedAllocation.numaNodeResource
+		resourceOptions.preferredCPUs = preFilterState.designatedAllocation.cpuset
+		resourceOptions.preemptibleCPUs = cpuset.NewCPUSet()
+		defer func() {
+			if allocation != nil && !allocation.CPUSet.Equals(preFilterState.designatedAllocation.cpuset) {
+				allocation = nil
+				status = framework.NewStatus(framework.Unschedulable, "not enough cpus available to satisfy request")
+			}
+		}()
+	} else {
+		resourceOptions.requiredResources = nil
+		resourceOptions.reusableResources = appendAllocated(nil, restoreState.mergedUnmatchedUsed)
+		resourceOptions.preferredCPUs = cpuset.NewCPUSet()
+		resourceOptions.preemptibleCPUs = cpuset.NewCPUSet()
+	}
 
 	// update with node preemption state
 	if resourceOptions.nodePreemptionState != nil && resourceOptions.nodePreemptionState.nodeAlloc != nil {

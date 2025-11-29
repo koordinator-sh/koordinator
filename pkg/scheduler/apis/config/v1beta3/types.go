@@ -199,6 +199,13 @@ type ReservationArgs struct {
 	// will be garbage collected. Defaults to 24 hours (86400 seconds) if unspecified.
 	// This value should be provided in seconds.
 	GCDurationSeconds int64 `json:"gcDurationSeconds,omitempty"`
+	// GCIntervalSeconds is the duration in seconds between each turns of garbage collection.
+	// Defaults to 60 seconds if unspecified.
+	// This value should be provided in seconds.
+	GCIntervalSeconds int64 `json:"gcIntervalSeconds,omitempty"`
+	// DisableGarbageCollection indicates whether to disable garbage collection.
+	// Default to false if unspecified.
+	DisableGarbageCollection bool `json:"disableGarbageCollection,omitempty"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -268,6 +275,12 @@ type CoschedulingArgs struct {
 	// Skip check schedule cycle
 	// default is false
 	SkipCheckScheduleCycle *bool `json:"skipCheckScheduleCycle,omitempty"`
+	// EnablePreemption indicates whether to enable preemption for coscheduling.
+	// default is false
+	EnablePreemption *bool `json:"enablePreemption,omitempty"`
+	// AwareNetworkTopology indicates whether to make coscheduling network topology aware.
+	// default is false
+	AwareNetworkTopology *bool `json:"awareNetworkTopology,omitempty"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object

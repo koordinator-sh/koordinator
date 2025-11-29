@@ -18,6 +18,7 @@ package deviceshare
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 	"testing"
 	"time"
@@ -219,6 +220,8 @@ func TestCambriconGPUDevicePluginAdapter_Adapt(t *testing.T) {
 			args: args{
 				object: &corev1.Pod{
 					ObjectMeta: metav1.ObjectMeta{
+						Name:        "test-pod",
+						Namespace:   "default",
 						Annotations: map[string]string{},
 					},
 				},
@@ -240,6 +243,8 @@ func TestCambriconGPUDevicePluginAdapter_Adapt(t *testing.T) {
 			wantErr: false,
 			wantObject: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pod",
+					Namespace: "default",
 					Annotations: map[string]string{
 						AnnotationCambriconDsmluAssigned: "false",
 						AnnotationCambriconDsmluProfile:  "0_5_4",
@@ -250,7 +255,7 @@ func TestCambriconGPUDevicePluginAdapter_Adapt(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-node",
 					Annotations: map[string]string{
-						AnnotationCambriconDsmluLockTime: now.Format(time.RFC3339),
+						AnnotationCambriconDsmluLock: fmt.Sprintf("%s,default,test-pod", now.Format(time.RFC3339)),
 					},
 				},
 			},
@@ -260,6 +265,8 @@ func TestCambriconGPUDevicePluginAdapter_Adapt(t *testing.T) {
 			args: args{
 				object: &corev1.Pod{
 					ObjectMeta: metav1.ObjectMeta{
+						Name:        "test-pod",
+						Namespace:   "default",
 						Annotations: map[string]string{},
 					},
 				},
@@ -288,6 +295,8 @@ func TestCambriconGPUDevicePluginAdapter_Adapt(t *testing.T) {
 			wantErr: true,
 			wantObject: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
+					Name:        "test-pod",
+					Namespace:   "default",
 					Annotations: map[string]string{},
 				},
 			},
@@ -302,6 +311,8 @@ func TestCambriconGPUDevicePluginAdapter_Adapt(t *testing.T) {
 			args: args{
 				object: &corev1.Pod{
 					ObjectMeta: metav1.ObjectMeta{
+						Name:        "test-pod",
+						Namespace:   "default",
 						Annotations: map[string]string{},
 					},
 				},
@@ -322,6 +333,8 @@ func TestCambriconGPUDevicePluginAdapter_Adapt(t *testing.T) {
 			wantErr: true,
 			wantObject: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
+					Name:        "test-pod",
+					Namespace:   "default",
 					Annotations: map[string]string{},
 				},
 			},
@@ -336,6 +349,8 @@ func TestCambriconGPUDevicePluginAdapter_Adapt(t *testing.T) {
 			args: args{
 				object: &corev1.Pod{
 					ObjectMeta: metav1.ObjectMeta{
+						Name:        "test-pod",
+						Namespace:   "default",
 						Annotations: map[string]string{},
 					},
 				},
@@ -357,6 +372,8 @@ func TestCambriconGPUDevicePluginAdapter_Adapt(t *testing.T) {
 			wantErr: true,
 			wantObject: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
+					Name:        "test-pod",
+					Namespace:   "default",
 					Annotations: map[string]string{},
 				},
 			},
@@ -371,6 +388,8 @@ func TestCambriconGPUDevicePluginAdapter_Adapt(t *testing.T) {
 			args: args{
 				object: &corev1.Pod{
 					ObjectMeta: metav1.ObjectMeta{
+						Name:        "test-pod",
+						Namespace:   "default",
 						Annotations: map[string]string{},
 					},
 				},
@@ -388,13 +407,15 @@ func TestCambriconGPUDevicePluginAdapter_Adapt(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-node",
 					Annotations: map[string]string{
-						AnnotationCambriconDsmluLockTime: now.Add(-time.Minute).Format(time.RFC3339),
+						AnnotationCambriconDsmluLock: fmt.Sprintf("%s,default,test-pod", now.Add(-time.Minute).Format(time.RFC3339)),
 					},
 				},
 			},
 			wantErr: true,
 			wantObject: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
+					Name:        "test-pod",
+					Namespace:   "default",
 					Annotations: map[string]string{},
 				},
 			},
@@ -402,7 +423,7 @@ func TestCambriconGPUDevicePluginAdapter_Adapt(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-node",
 					Annotations: map[string]string{
-						AnnotationCambriconDsmluLockTime: now.Add(-time.Minute).Format(time.RFC3339),
+						AnnotationCambriconDsmluLock: fmt.Sprintf("%s,default,test-pod", now.Add(-time.Minute).Format(time.RFC3339)),
 					},
 				},
 			},
@@ -412,6 +433,8 @@ func TestCambriconGPUDevicePluginAdapter_Adapt(t *testing.T) {
 			args: args{
 				object: &corev1.Pod{
 					ObjectMeta: metav1.ObjectMeta{
+						Name:        "test-pod",
+						Namespace:   "default",
 						Annotations: map[string]string{},
 					},
 				},
@@ -429,13 +452,15 @@ func TestCambriconGPUDevicePluginAdapter_Adapt(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-node",
 					Annotations: map[string]string{
-						AnnotationCambriconDsmluLockTime: now.Add(-3 * time.Minute).Format(time.RFC3339),
+						AnnotationCambriconDsmluLock: fmt.Sprintf("%s,default,test-pod", now.Add(-nodeLockTimeout-time.Second).Format(time.RFC3339)),
 					},
 				},
 			},
 			wantErr: false,
 			wantObject: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pod",
+					Namespace: "default",
 					Annotations: map[string]string{
 						AnnotationCambriconDsmluAssigned: "false",
 						AnnotationCambriconDsmluProfile:  "0_5_4",
@@ -446,7 +471,7 @@ func TestCambriconGPUDevicePluginAdapter_Adapt(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-node",
 					Annotations: map[string]string{
-						AnnotationCambriconDsmluLockTime: now.Format(time.RFC3339),
+						AnnotationCambriconDsmluLock: fmt.Sprintf("%s,default,test-pod", now.Format(time.RFC3339)),
 					},
 				},
 			},
@@ -505,6 +530,8 @@ func TestPlugin_adaptForDevicePlugin(t *testing.T) {
 			args: args{
 				object: &corev1.Pod{
 					ObjectMeta: metav1.ObjectMeta{
+						Name:        "test-pod",
+						Namespace:   "default",
 						Annotations: map[string]string{},
 					},
 				},
@@ -531,6 +558,8 @@ func TestPlugin_adaptForDevicePlugin(t *testing.T) {
 			wantErr: false,
 			wantObject: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pod",
+					Namespace: "default",
 					Annotations: map[string]string{
 						AnnotationBindTimestamp: strconv.FormatInt(now.UnixNano(), 10),
 						AnnotationGPUMinors:     "0",
@@ -548,6 +577,8 @@ func TestPlugin_adaptForDevicePlugin(t *testing.T) {
 			args: args{
 				object: &corev1.Pod{
 					ObjectMeta: metav1.ObjectMeta{
+						Name:        "test-pod",
+						Namespace:   "default",
 						Annotations: map[string]string{},
 					},
 				},
@@ -574,6 +605,8 @@ func TestPlugin_adaptForDevicePlugin(t *testing.T) {
 			wantErr: false,
 			wantObject: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pod",
+					Namespace: "default",
 					Annotations: map[string]string{
 						AnnotationBindTimestamp: strconv.FormatInt(now.UnixNano(), 10),
 						AnnotationGPUMinors:     "0",
@@ -593,6 +626,8 @@ func TestPlugin_adaptForDevicePlugin(t *testing.T) {
 			args: args{
 				object: &corev1.Pod{
 					ObjectMeta: metav1.ObjectMeta{
+						Name:        "test-pod",
+						Namespace:   "default",
 						Annotations: map[string]string{},
 					},
 				},
@@ -625,6 +660,8 @@ func TestPlugin_adaptForDevicePlugin(t *testing.T) {
 			wantErr: false,
 			wantObject: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pod",
+					Namespace: "default",
 					Annotations: map[string]string{
 						AnnotationBindTimestamp:          strconv.FormatInt(now.UnixNano(), 10),
 						AnnotationGPUMinors:              "0",
@@ -637,7 +674,7 @@ func TestPlugin_adaptForDevicePlugin(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "cambricon",
 					Annotations: map[string]string{
-						AnnotationCambriconDsmluLockTime: now.Format(time.RFC3339),
+						AnnotationCambriconDsmluLock: fmt.Sprintf("%s,default,test-pod", now.Format(time.RFC3339)),
 					},
 				},
 			},
@@ -647,6 +684,8 @@ func TestPlugin_adaptForDevicePlugin(t *testing.T) {
 			args: args{
 				object: &corev1.Pod{
 					ObjectMeta: metav1.ObjectMeta{
+						Name:        "test-pod",
+						Namespace:   "default",
 						Annotations: map[string]string{},
 					},
 				},
@@ -673,6 +712,8 @@ func TestPlugin_adaptForDevicePlugin(t *testing.T) {
 			wantErr: false,
 			wantObject: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pod",
+					Namespace: "default",
 					Annotations: map[string]string{
 						AnnotationBindTimestamp: strconv.FormatInt(now.UnixNano(), 10),
 						AnnotationGPUMinors:     "0",
@@ -690,6 +731,8 @@ func TestPlugin_adaptForDevicePlugin(t *testing.T) {
 			args: args{
 				object: &corev1.Pod{
 					ObjectMeta: metav1.ObjectMeta{
+						Name:        "test-pod",
+						Namespace:   "default",
 						Annotations: map[string]string{},
 					},
 				},
@@ -716,6 +759,8 @@ func TestPlugin_adaptForDevicePlugin(t *testing.T) {
 			wantErr: false,
 			wantObject: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pod",
+					Namespace: "default",
 					Annotations: map[string]string{
 						AnnotationBindTimestamp: strconv.FormatInt(now.UnixNano(), 10),
 					},
@@ -732,6 +777,8 @@ func TestPlugin_adaptForDevicePlugin(t *testing.T) {
 			args: args{
 				object: &corev1.Pod{
 					ObjectMeta: metav1.ObjectMeta{
+						Name:        "test-pod",
+						Namespace:   "default",
 						Annotations: map[string]string{},
 					},
 				},
@@ -758,6 +805,8 @@ func TestPlugin_adaptForDevicePlugin(t *testing.T) {
 			wantErr: true,
 			wantObject: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pod",
+					Namespace: "default",
 					Annotations: map[string]string{
 						AnnotationBindTimestamp: strconv.FormatInt(now.UnixNano(), 10),
 						AnnotationGPUMinors:     "0",
@@ -775,6 +824,8 @@ func TestPlugin_adaptForDevicePlugin(t *testing.T) {
 			args: args{
 				object: &corev1.Pod{
 					ObjectMeta: metav1.ObjectMeta{
+						Name:        "test-pod",
+						Namespace:   "default",
 						Annotations: map[string]string{},
 					},
 				},
@@ -801,6 +852,61 @@ func TestPlugin_adaptForDevicePlugin(t *testing.T) {
 			wantErr: true,
 			wantObject: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pod",
+					Namespace: "default",
+					Annotations: map[string]string{
+						AnnotationBindTimestamp: strconv.FormatInt(now.UnixNano(), 10),
+					},
+				},
+			},
+			wantNode: &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test",
+				},
+			},
+		},
+		{
+			name: "hami-core",
+			args: args{
+				object: &corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-pod",
+						Namespace: "default",
+						Labels: map[string]string{
+							apiext.LabelGPUIsolationProvider: string(apiext.GPUIsolationProviderHAMICore),
+						},
+						Annotations: map[string]string{},
+					},
+				},
+				allocationResult: apiext.DeviceAllocations{
+					schedulingv1alpha1.GPU: []*apiext.DeviceAllocation{
+						{Minor: 0},
+					},
+				},
+				nodeName: "hami-core",
+			},
+			device: &schedulingv1alpha1.Device{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "hami-core",
+					Labels: map[string]string{
+						apiext.LabelGPUVendor: apiext.GPUVendorNVIDIA,
+					},
+				},
+			},
+			node: &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "hami-core",
+				},
+			},
+			wantErr: false,
+			wantObject: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pod",
+					Namespace: "default",
+					Labels: map[string]string{
+						apiext.LabelGPUIsolationProvider: string(apiext.GPUIsolationProviderHAMICore),
+						apiext.LabelHAMIVGPUNodeName:     "hami-core",
+					},
 					Annotations: map[string]string{
 						AnnotationBindTimestamp: strconv.FormatInt(now.UnixNano(), 10),
 						AnnotationGPUMinors:     "0",
@@ -809,7 +915,7 @@ func TestPlugin_adaptForDevicePlugin(t *testing.T) {
 			},
 			wantNode: &corev1.Node{
 				ObjectMeta: metav1.ObjectMeta{
-					Name: "test",
+					Name: "hami-core",
 				},
 			},
 		},

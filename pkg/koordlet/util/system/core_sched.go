@@ -273,11 +273,23 @@ func IsCoreSchedSysctlSupported() bool {
 }
 
 // IsCoreSchedSupported checks if the kernel supports the core scheduling.
-// Currently, it relies on the interfaces provided by the Anolis OS.
+// Currently, it supports both Anolis OS and mainline kernel.
 func IsCoreSchedSupported() (bool, string) {
-	// kernel supports if:
+	// Anolis OS supports if:
 	// a) sysctl has sched_core,
 	// b) sched_features has SCHED_CORE/NO_SCHED_CORE
+	// Mainline kernel supports if(only 5.14 and later):
+	// a) CONFIG_SCHED_CORE config option enabled
+
+	if !HostSystemInfo.IsAnolisOS {
+		// For mainline kernel
+		if ProbeCoreSchedIfEnabled() {
+			return true, "prctl supported"
+		} else {
+			return false, "not unsupported by prctl"
+		}
+	}
+
 	if IsCoreSchedSysctlSupported() {
 		return true, "sysctl supported"
 	}
@@ -296,12 +308,22 @@ func IsCoreSchedSupported() (bool, string) {
 
 // EnableCoreSchedIfSupported checks if the core scheduling feature is enabled in the kernel sched_features.
 // If kernel supported (available in the latest Anolis OS), it tries to enable the core scheduling feature.
+// For Anolis OS
 // The core sched's kernel feature is known set in two places, if both of them are not found, the system is considered
 // unsupported for the core scheduling:
 //  1. In `/proc/sys/kernel/sched_core`, the value `1` means the feature is enabled while `0` means disabled.
 //  2. (Older kernel) In `/sys/kernel/debug/sched_features`, the field `CORE_SCHED` means the feature is enabled while `NO_CORE_SCHED`
 //     means it is disabled.
+//
+// For mainline kernel
+// Core scheduling support is enabled via the CONFIG_SCHED_CORE config option. And can not be turn on/off dynamically.
 func EnableCoreSchedIfSupported() (bool, string) {
+	if !HostSystemInfo.IsAnolisOS {
+		// For mainline kernel
+		if ProbeCoreSchedIfEnabled() {
+			return true, ""
+		}
+	}
 	// 1. try sysctl
 	isSysctlSupported, err := GetSchedCore()
 	if err == nil && isSysctlSupported {

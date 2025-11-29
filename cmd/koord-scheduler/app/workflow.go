@@ -22,37 +22,41 @@ import (
 	"k8s.io/client-go/informers"
 	kubeclientset "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/events"
+	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler"
 
 	koordclientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
 	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
 )
 
-var EnableCustomizedWorkflow = func() bool {
-	return false
+var KnownWorkflowList []CustomWorkflow
+
+// CustomWorkflow defines a custom workflow for the scheduler.
+// If the workflow is enabled, the default workflow of the scheduler will not run.
+type CustomWorkflow interface {
+	Name() string
+	IsEnabled() bool
+	Setup(ctx context.Context, opts *CustomWorkflowOptions) error
+	Run(ctx context.Context)
 }
 
-var RunCustomizedWorkflow = func(ctx context.Context,
-	sched *scheduler.Scheduler,
-	sharedInformerFactory informers.SharedInformerFactory,
-	kubeClient kubeclientset.Interface,
-	koordSharedInformerFactory koordinatorinformers.SharedInformerFactory,
-	koordClient koordclientset.Interface,
-	recorderFactory func(name string) events.EventRecorder,
-) {
+type CustomWorkflowOptions struct {
+	Sched                      *scheduler.Scheduler
+	SharedInformerFactory      informers.SharedInformerFactory
+	KubeClient                 kubeclientset.Interface
+	KoordSharedInformerFactory koordinatorinformers.SharedInformerFactory
+	KoordClient                koordclientset.Interface
+	RecorderFactory            func(name string) events.EventRecorder
 }
 
 func RunWorkflow(
 	ctx context.Context,
 	sched *scheduler.Scheduler,
-	sharedInformerFactory informers.SharedInformerFactory,
-	kubeClient kubeclientset.Interface,
-	koordSharedInformerFactory koordinatorinformers.SharedInformerFactory,
-	koordClient koordclientset.Interface,
-	recorderFactory func(name string) events.EventRecorder,
+	wf CustomWorkflow,
 ) {
-	if EnableCustomizedWorkflow() {
-		RunCustomizedWorkflow(ctx, sched, sharedInformerFactory, kubeClient, koordSharedInformerFactory, koordClient, recorderFactory)
+	if wf != nil {
+		klog.InfoS("Run the custom workflow, the default scheduler workflow is disabled", "name", wf.Name())
+		wf.Run(ctx)
 		return
 	}
 	sched.Run(ctx)

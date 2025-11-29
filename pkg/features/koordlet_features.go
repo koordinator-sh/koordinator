@@ -64,6 +64,18 @@ const (
 	// BEMemoryEvict evict best-effort pod based on node memory usage.
 	BEMemoryEvict featuregate.Feature = "BEMemoryEvict"
 
+	// owner: @lijunxin559
+	// alpha: v1.7
+	//
+	// CPUEvict evicts those configured priority pods when node lack of resource.
+	CPUEvict featuregate.Feature = "CPUEvict"
+
+	// owner: @lijunxin559
+	// alpha: v1.7
+	//
+	// MemoryEvict evicts those configured priority pods when node lack of resource.
+	MemoryEvict featuregate.Feature = "MemoryEvict"
+
 	// owner: @saintube @zwzhang0107
 	// alpha: v0.2
 	// beta: v1.1
@@ -160,6 +172,12 @@ const (
 	// PodResourcesProxy enabled hooked podResources of kubelet provided by koordlet.
 	// It provides a grpc service to enable discovery of pod resources allocated by koordinator system.
 	PodResourcesProxy featuregate.Feature = "PodResourcesProxy"
+
+	// owner: @qinfustu
+	// alpha v1.7
+	//
+	// HamiCoreVGPUMonitor enables the vGPU monitoring for HAMi-core.
+	HamiCoreVGPUMonitor featuregate.Feature = "HamiCoreVGPUMonitor"
 )
 
 func init() {
@@ -176,7 +194,9 @@ var (
 		BECPUSuppress:          {Default: true, PreRelease: featuregate.Beta},
 		BECPUManager:           {Default: false, PreRelease: featuregate.Alpha},
 		BECPUEvict:             {Default: false, PreRelease: featuregate.Alpha},
+		CPUEvict:               {Default: false, PreRelease: featuregate.Alpha},
 		BEMemoryEvict:          {Default: false, PreRelease: featuregate.Alpha},
+		MemoryEvict:            {Default: false, PreRelease: featuregate.Alpha},
 		CPUBurst:               {Default: true, PreRelease: featuregate.Beta},
 		SystemConfig:           {Default: false, PreRelease: featuregate.Alpha},
 		RdtResctrl:             {Default: true, PreRelease: featuregate.Beta},
@@ -192,6 +212,7 @@ var (
 		ColdPageCollector:      {Default: false, PreRelease: featuregate.Alpha},
 		HugePageReport:         {Default: false, PreRelease: featuregate.Alpha},
 		PodResourcesProxy:      {Default: false, PreRelease: featuregate.Alpha},
+		HamiCoreVGPUMonitor:    {Default: false, PreRelease: featuregate.Alpha},
 	}
 )
 
@@ -203,7 +224,7 @@ func IsFeatureDisabled(nodeSLO *slov1alpha1.NodeSLO, feature featuregate.Feature
 
 	spec := nodeSLO.Spec
 	switch feature {
-	case BECPUSuppress, BEMemoryEvict, BECPUEvict:
+	case BECPUSuppress, BEMemoryEvict, BECPUEvict, CPUEvict, MemoryEvict:
 		if spec.ResourceUsedThresholdWithBE == nil || spec.ResourceUsedThresholdWithBE.Enable == nil {
 			return true, fmt.Errorf("cannot parse feature config for invalid nodeSLO %v", nodeSLO)
 		}

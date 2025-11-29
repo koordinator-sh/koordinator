@@ -112,10 +112,12 @@ func (c *cacheAdapter) AddPod(logger klog.Logger, pod *corev1.Pod) error {
 func (c *cacheAdapter) UpdatePod(logger klog.Logger, oldPod, newPod *corev1.Pod) error {
 	return c.scheduler.Cache.UpdatePod(logger, oldPod, newPod)
 }
+
 func (c *cacheAdapter) RemovePod(logger klog.Logger, pod *corev1.Pod) error {
 	return c.scheduler.Cache.RemovePod(logger, pod)
 
 }
+
 func (c *cacheAdapter) AssumePod(logger klog.Logger, pod *corev1.Pod) error {
 	return c.scheduler.Cache.AssumePod(logger, pod)
 }

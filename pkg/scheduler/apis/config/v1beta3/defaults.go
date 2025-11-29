@@ -50,10 +50,12 @@ var (
 	defaultPreferredCPUBindPolicy = CPUBindPolicyFullPCPUs
 
 	defaultEnablePreemption             = pointer.Bool(false)
+	defaultAwareNetworkTopology         = pointer.Bool(false)
 	defaultMinCandidateNodesPercentage  = pointer.Int32(10)
 	defaultMinCandidateNodesAbsolute    = pointer.Int32(100)
 	defaultReservationControllerWorkers = pointer.Int32(1)
 	defaultGCDurationSeconds            = pointer.Int64(86400)
+	defaultGCIntervalSeconds            = pointer.Int64(60)
 
 	defaultDelayEvictTime       = 120 * time.Second
 	defaultRevokePodInterval    = 1 * time.Second
@@ -169,6 +171,9 @@ func SetDefaults_ReservationArgs(obj *ReservationArgs) {
 	if obj.GCDurationSeconds == 0 {
 		obj.GCDurationSeconds = *defaultGCDurationSeconds
 	}
+	if obj.GCIntervalSeconds == 0 {
+		obj.GCIntervalSeconds = *defaultGCIntervalSeconds
+	}
 }
 
 func SetDefaults_ElasticQuotaArgs(obj *ElasticQuotaArgs) {
@@ -216,6 +221,12 @@ func SetDefaults_CoschedulingArgs(obj *CoschedulingArgs) {
 	}
 	if obj.ControllerWorkers == nil {
 		obj.ControllerWorkers = pointer.Int64(int64(defaultControllerWorkers))
+	}
+	if obj.EnablePreemption == nil {
+		obj.EnablePreemption = defaultEnablePreemption
+	}
+	if obj.AwareNetworkTopology == nil {
+		obj.AwareNetworkTopology = defaultAwareNetworkTopology
 	}
 }
 

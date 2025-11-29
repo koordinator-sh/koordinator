@@ -30,11 +30,14 @@ import (
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/util"
+	"github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
 
 var (
 	dumpDiagnosis         = false
 	dumpDiagnosisBlocking = false
+	diagnosisQueueSize    = 1000
+	diagnosisWorkerCount  = 10 // Default number of workers
 )
 
 // DumpDiagnosisSetter set dumpDiagnosis
@@ -65,57 +68,26 @@ func DumpDiagnosis(state *framework.CycleState) string {
 	if diagnosis == nil {
 		return ""
 	}
-	blocking := dumpDiagnosisBlocking
-	var wg sync.WaitGroup
-	if blocking {
-		wg.Add(1)
+
+	// Handle blocking mode
+	if dumpDiagnosisBlocking {
+		// For blocking mode, we still process synchronously
+		dumpMessage := diagnosisQueue.processDiagnosis(diagnosis)
+		return dumpMessage
 	}
-	var dumpMessage string
-	go func() {
-		// TODO make this logic to be executed asynchronously and orderly
-		if len(diagnosis.ScheduleDiagnosis.NodeFailedDetails) == 0 {
-			var scheduleFailedDetails []v1alpha1.NodeFailedDetail
-			for s, status := range diagnosis.ScheduleDiagnosis.NodeToStatusMap {
-				scheduleFailedDetails = append(scheduleFailedDetails, v1alpha1.NodeFailedDetail{
-					NodeName:         s,
-					FailedPlugin:     status.FailedPlugin(),
-					Reason:           status.Message(),
-					NominatedPods:    nil,
-					PreemptMightHelp: status.Code() != framework.UnschedulableAndUnresolvable,
-				})
-			}
-			sort.Slice(scheduleFailedDetails, func(i, j int) bool { return scheduleFailedDetails[i].NodeName < scheduleFailedDetails[j].NodeName })
-			diagnosis.ScheduleDiagnosis.NodeFailedDetails = scheduleFailedDetails
-		}
-		if len(diagnosis.PreemptionDiagnosis.NodeFailedDetails) == 0 {
-			var preemptFailedDetails []v1alpha1.NodeFailedDetail
-			for s, status := range diagnosis.PreemptionDiagnosis.NodeToStatusMap {
-				preemptFailedDetails = append(preemptFailedDetails, v1alpha1.NodeFailedDetail{
-					NodeName:         s,
-					FailedPlugin:     status.FailedPlugin(),
-					Reason:           status.Message(),
-					NominatedPods:    nil,
-					PreemptMightHelp: status.Code() != framework.UnschedulableAndUnresolvable,
-				})
-			}
-			sort.Slice(preemptFailedDetails, func(i, j int) bool { return preemptFailedDetails[i].NodeName < preemptFailedDetails[j].NodeName })
-			diagnosis.PreemptionDiagnosis.NodeFailedDetails = preemptFailedDetails
-		}
-		dumpMessage = util.DumpJSON(diagnosis)
-		klog.Infof("dump diagnosis for %s/%s/%s: %s", diagnosis.TargetPod.Namespace, diagnosis.TargetPod.Name, diagnosis.TargetPod.UID, dumpMessage)
-		// TODO export it to APIServer asynchronously
-		if blocking {
-			wg.Done()
-		}
-	}()
-	if blocking {
-		wg.Wait()
-	}
-	return dumpMessage
+
+	diagnosisQueue.StartWorker()
+	// For non-blocking mode, enqueue for asynchronous processing
+	diagnosisQueue.Enqueue(diagnosis)
+	return ""
 }
 
 func GetDiagnosis(state *framework.CycleState) *Diagnosis {
 	diagnosis, _ := state.Read(diagnosisStateKey)
+	if diagnosis == nil {
+		// just for test
+		return &Diagnosis{}
+	}
 	return diagnosis.(*Diagnosis)
 }
 
@@ -125,12 +97,17 @@ const (
 	diagnosisStateKey = extension.SchedulingDomainPrefix + "/diagnosis"
 )
 
-func initDiagnosis(state *framework.CycleState, pod *corev1.Pod) {
+func InitDiagnosis(state *framework.CycleState, pod *corev1.Pod) {
+	questionKey := framework.GetNamespacedName(pod.Namespace, pod.Name)
+	if reservation.IsReservePod(pod) {
+		questionKey = reservation.GetReservationNameFromReservePod(pod)
+	}
 	state.Write(diagnosisStateKey, &Diagnosis{
-		Timestamp:     nowFunc(),
-		QuestionedKey: extension.GetExplanationKey(pod.Labels),
-		TargetPod:     pod,
-		NominatedNode: pod.Status.NominatedNodeName,
+		Timestamp:      nowFunc(),
+		QuestionedKey:  questionKey,
+		TargetPod:      pod,
+		NominatedNode:  pod.Status.NominatedNodeName,
+		IsRootCausePod: true,
 	})
 }
 
@@ -150,19 +127,16 @@ type Diagnosis struct {
 	NominatedNode        string      `json:"nominatedNode,omitempty"`
 	PreFilterMessage     string      `json:"preFilterMessage,omitempty"`
 	TopologyKeyToExplain string      `json:"topologyKeyToExplain,omitempty"`
+	IsRootCausePod       bool        `json:"isRootCausePod"`
 	// maybe modify framework.Status to cover addedNominatedPods, corresponding resourceView(such as requested and total) when failed
-	ScheduleDiagnosis ScheduleDiagnosis `json:"scheduleDiagnosis"`
-	// NodePossibleVictims indicates the possible victims for members that can't be scheduled.
-	NodePossibleVictims []v1alpha1.NodePossibleVictim `json:"nodePossibleVictims,omitempty"`
-	PreemptionDiagnosis ScheduleDiagnosis             `json:"preemptionDiagnosis"`
-	NominatedPodToNodes map[string]string             `json:"nominatedPodToNodes,omitempty"`
-	ToRemoveVictims     []v1alpha1.PossibleVictim     `json:"toRemoveVictims,omitempty"`
+	ScheduleDiagnosis   *ScheduleDiagnosis   `json:"scheduleDiagnosis"`
+	PreemptionDiagnosis *PreemptionDiagnosis `json:"preemptionDiagnosis"`
 }
 
 type ScheduleDiagnosis struct {
-	SchedulingMode SchedulingMode `json:"schedulingMode,omitempty"`
+	SchedulingMode SchedulingMode `json:"-"`
 	// use this when PodSchedulingMode
-	AlreadyWaitForBound int `json:"alreadyWaitForBound,omitempty"`
+	AlreadyWaitForBound int `json:"alreadyWaitForBound"`
 	// use this when JobSchedulingMode
 	NodeOfferSlot   map[string]int            `json:"nodeOfferSlot,omitempty"`
 	NodeToStatusMap framework.NodeToStatusMap `json:"-"`
@@ -176,3 +150,85 @@ const (
 	PodSchedulingMode SchedulingMode = "Pod"
 	JobSchedulingMode SchedulingMode = "Job"
 )
+
+type PreemptionDiagnosis struct {
+	DryRunFilterDiagnosis *ScheduleDiagnosis `json:"dryRunFilterDiagnosis"`
+	OtherDiagnosis        interface{}        `json:"otherDiagnosis"`
+}
+
+// DiagnosisQueue is a queue for handling diagnosis logs asynchronously
+type DiagnosisQueue struct {
+	queue chan *Diagnosis
+	once  sync.Once
+}
+
+// Global diagnosis queue instance
+var diagnosisQueue = &DiagnosisQueue{}
+
+// StartWorker starts the worker goroutines for processing diagnosis logs
+func (dq *DiagnosisQueue) StartWorker() {
+	dq.once.Do(func() {
+		diagnosisQueue.queue = make(chan *Diagnosis, diagnosisQueueSize)
+		for i := 0; i < diagnosisWorkerCount; i++ {
+			go dq.worker()
+		}
+	})
+}
+
+// worker processes diagnosis logs from the queue
+func (dq *DiagnosisQueue) worker() {
+	for diagnosis := range dq.queue {
+		dq.processDiagnosis(diagnosis)
+	}
+}
+
+// processDiagnosis handles the actual logging of diagnosis information
+func (dq *DiagnosisQueue) processDiagnosis(diagnosis *Diagnosis) string {
+	// Process NodeFailedDetails if empty
+	if len(diagnosis.ScheduleDiagnosis.NodeFailedDetails) == 0 {
+		scheduleFailedDetails := make([]v1alpha1.NodeFailedDetail, 0, len(diagnosis.ScheduleDiagnosis.NodeToStatusMap))
+		for s, status := range diagnosis.ScheduleDiagnosis.NodeToStatusMap {
+			scheduleFailedDetails = append(scheduleFailedDetails, v1alpha1.NodeFailedDetail{
+				NodeName:         s,
+				FailedPlugin:     status.FailedPlugin(),
+				Reason:           status.Message(),
+				NominatedPods:    nil,
+				PreemptMightHelp: status.Code() != framework.UnschedulableAndUnresolvable,
+			})
+		}
+		sort.Slice(scheduleFailedDetails, func(i, j int) bool { return scheduleFailedDetails[i].NodeName < scheduleFailedDetails[j].NodeName })
+		diagnosis.ScheduleDiagnosis.NodeFailedDetails = scheduleFailedDetails
+	}
+
+	if diagnosis.PreemptionDiagnosis != nil &&
+		diagnosis.PreemptionDiagnosis.DryRunFilterDiagnosis != nil &&
+		len(diagnosis.PreemptionDiagnosis.DryRunFilterDiagnosis.NodeFailedDetails) == 0 {
+		dryRunFilterFailedDetails := make([]v1alpha1.NodeFailedDetail, 0, len(diagnosis.PreemptionDiagnosis.DryRunFilterDiagnosis.NodeToStatusMap))
+		for node, status := range diagnosis.PreemptionDiagnosis.DryRunFilterDiagnosis.NodeToStatusMap {
+			nodeFailedDetail := v1alpha1.NodeFailedDetail{
+				NodeName:     node,
+				FailedPlugin: status.FailedPlugin(),
+				Reason:       status.Message(),
+			}
+			dryRunFilterFailedDetails = append(dryRunFilterFailedDetails, nodeFailedDetail)
+		}
+		sort.Slice(dryRunFilterFailedDetails, func(i, j int) bool {
+			return dryRunFilterFailedDetails[i].NodeName < dryRunFilterFailedDetails[j].NodeName
+		})
+		diagnosis.PreemptionDiagnosis.DryRunFilterDiagnosis.NodeFailedDetails = dryRunFilterFailedDetails
+	}
+
+	dumpMessage := util.DumpJSON(diagnosis)
+	klog.Infof("dump diagnosis for %s, targetPod: %s/%s/%s: $%s", diagnosis.QuestionedKey, diagnosis.TargetPod.Namespace, diagnosis.TargetPod.Name, diagnosis.TargetPod.UID, dumpMessage)
+	return dumpMessage
+}
+
+// Enqueue adds a diagnosis to the queue for asynchronous processing
+func (dq *DiagnosisQueue) Enqueue(diagnosis *Diagnosis) {
+	select {
+	case dq.queue <- diagnosis:
+	default:
+		// If the queue is full, drop the diagnosis to prevent blocking
+		klog.Warningf("Diagnosis queue is full, dropping diagnosis for %s", diagnosis.QuestionedKey)
+	}
+}

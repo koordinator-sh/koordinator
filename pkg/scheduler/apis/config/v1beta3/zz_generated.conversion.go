@@ -184,6 +184,8 @@ func autoConvert_v1beta3_CoschedulingArgs_To_config_CoschedulingArgs(in *Cosched
 	if err := v1.Convert_Pointer_bool_To_bool(&in.SkipCheckScheduleCycle, &out.SkipCheckScheduleCycle, s); err != nil {
 		return err
 	}
+	out.EnablePreemption = (*bool)(unsafe.Pointer(in.EnablePreemption))
+	out.AwareNetworkTopology = (*bool)(unsafe.Pointer(in.AwareNetworkTopology))
 	return nil
 }
 
@@ -202,6 +204,8 @@ func autoConvert_config_CoschedulingArgs_To_v1beta3_CoschedulingArgs(in *config.
 	if err := v1.Convert_bool_To_Pointer_bool(&in.SkipCheckScheduleCycle, &out.SkipCheckScheduleCycle, s); err != nil {
 		return err
 	}
+	out.EnablePreemption = (*bool)(unsafe.Pointer(in.EnablePreemption))
+	out.AwareNetworkTopology = (*bool)(unsafe.Pointer(in.AwareNetworkTopology))
 	return nil
 }
 
@@ -515,6 +519,8 @@ func autoConvert_v1beta3_ReservationArgs_To_config_ReservationArgs(in *Reservati
 		return err
 	}
 	out.GCDurationSeconds = in.GCDurationSeconds
+	out.GCIntervalSeconds = in.GCIntervalSeconds
+	out.DisableGarbageCollection = in.DisableGarbageCollection
 	return nil
 }
 
@@ -537,6 +543,8 @@ func autoConvert_config_ReservationArgs_To_v1beta3_ReservationArgs(in *config.Re
 		return err
 	}
 	out.GCDurationSeconds = in.GCDurationSeconds
+	out.GCIntervalSeconds = in.GCIntervalSeconds
+	out.DisableGarbageCollection = in.DisableGarbageCollection
 	return nil
 }
 

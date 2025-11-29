@@ -36,6 +36,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
+	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 	utilfeature "github.com/koordinator-sh/koordinator/pkg/util/feature"
@@ -273,6 +274,11 @@ func (m *PodEnhancedValidator) ValidatePod(pod *corev1.Pod) (string, error) {
 	if !config.Enable {
 		return "", nil
 	}
+	// skip validation for pods with the skip-enhanced-validation label
+	if pod.Labels[extension.LabelPodSkipEnhancedValidation] == "true" {
+		return "", nil
+	}
+	// validate pod against all rules
 	for _, rule := range config.Rules {
 		// check if namespace is whitelisted for this rule
 		if rule.isNamespaceWhitelisted(pod.Namespace) {
