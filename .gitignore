@@ -32,3 +32,5 @@ vendor
 dist/
 
 README-contributing.md
+
+libpfm-*/
