@@ -53,6 +53,11 @@ type GangGroupInfo struct {
 		- is replaced when some memberPod of gangGroup is firstly failed during some gangGroup schedulingContext
 	*/
 	RepresentativePodKey string
+
+	// BindingMemberPods is the waiting pods when gang enters binding phase.
+	// This value is locked when AllowGangGroup is called and used by all pods during PreBind.
+	// It will be cleared when all gangs in the group complete binding.
+	BindingMemberPods sets.Set[string]
 }
 
 func NewGangGroupInfo(gangGroupId string, gangGroup []string) *GangGroupInfo {
@@ -111,8 +116,11 @@ func (gg *GangGroupInfo) RemoveWaitingGang(gangID string) {
 	defer gg.lock.Unlock()
 	isWaitingBefore := len(gg.WaitingGangIDs) > 0
 	gg.WaitingGangIDs.Delete(gangID)
-	if isWaitingBefore && len(gg.WaitingGangIDs) == 0 {
-		metrics.WaitingGangGroupNumber.WithLabelValues().Dec()
+	if len(gg.WaitingGangIDs) == 0 {
+		if isWaitingBefore {
+			metrics.WaitingGangGroupNumber.WithLabelValues().Dec()
+		}
+		gg.BindingMemberPods = nil
 	}
 }
 
@@ -156,4 +164,24 @@ func (gg *GangGroupInfo) ClearCurrentRepresentative(reason string) {
 	gg.lock.Lock()
 	defer gg.lock.Unlock()
 	gg.RepresentativePodKey = ""
+}
+
+func (gg *GangGroupInfo) SetBindingMembers(pods sets.Set[string]) {
+	gg.lock.Lock()
+	defer gg.lock.Unlock()
+	gg.BindingMemberPods = pods
+	klog.V(4).InfoS("GangGroupInfo: set binding member count", "gangGroupId", gg.GangGroupId, "count", pods.Len())
+}
+
+func (gg *GangGroupInfo) GetBindingMembers() sets.Set[string] {
+	gg.lock.RLock()
+	defer gg.lock.RUnlock()
+	return gg.BindingMemberPods
+}
+
+func (gg *GangGroupInfo) ClearBindingMembers() {
+	gg.lock.Lock()
+	defer gg.lock.Unlock()
+	gg.BindingMemberPods = nil
+	klog.V(4).InfoS("GangGroupInfo: clear binding member count", "gangGroupId", gg.GangGroupId)
 }
