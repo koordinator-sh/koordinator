@@ -572,7 +572,7 @@ func checkHealth(stopCh <-chan struct{}, devs []string, xids chan<- gpuHealthEve
 				xids <- gpuHealthEvent{
 					pciBusID:   d,
 					xidError:   e.EventData,
-					errMessage: fmt.Sprintf("failed to get device, error: %d", nvml.ErrorString(ret)),
+					errMessage: fmt.Sprintf("failed to get device, error: %s", nvml.ErrorString(ret)),
 				}
 			}
 		}
