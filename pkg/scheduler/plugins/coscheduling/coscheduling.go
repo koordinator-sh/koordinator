@@ -214,6 +214,8 @@ func (cs *Coscheduling) Unreserve(ctx context.Context, state *framework.CycleSta
 func (cs *Coscheduling) PreBind(ctx context.Context, cycleState *framework.CycleState, pod *v1.Pod, nodeName string) *framework.Status {
 	gangInfo := cs.pgMgr.GetGangBindingInfo(pod)
 	if gangInfo == nil {
+		delete(pod.Annotations, extension.AnnotationBindGangGroupId)
+		delete(pod.Annotations, extension.AnnotationBindGangMemberCount)
 		return nil
 	}
 	if pod.Annotations == nil {
@@ -228,6 +230,8 @@ func (cs *Coscheduling) PreBindReservation(ctx context.Context, cycleState *fram
 	pod := reservationutil.NewReservePod(r)
 	gangInfo := cs.pgMgr.GetGangBindingInfo(pod)
 	if gangInfo == nil {
+		delete(pod.Annotations, extension.AnnotationBindGangGroupId)
+		delete(pod.Annotations, extension.AnnotationBindGangMemberCount)
 		return nil
 	}
 	if r.Annotations == nil {

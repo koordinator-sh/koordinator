@@ -22,6 +22,7 @@ import (
 	"time"
 
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/klog/v2"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
@@ -521,6 +522,18 @@ func (gang *Gang) removeWaitingGang() {
 	gang.lock.Lock()
 	defer gang.lock.Unlock()
 	gang.GangGroupInfo.RemoveWaitingGang(gang.Name)
+}
+
+func (gang *Gang) setBindingMembers(pods sets.Set[string]) {
+	gang.lock.Lock()
+	defer gang.lock.Unlock()
+	gang.GangGroupInfo.SetBindingMembers(pods)
+}
+
+func (gang *Gang) getBindingMembers() sets.Set[string] {
+	gang.lock.RLock()
+	defer gang.lock.RUnlock()
+	return gang.GangGroupInfo.GetBindingMembers()
 }
 
 func (gang *Gang) isGangWorthRequeue() bool {
