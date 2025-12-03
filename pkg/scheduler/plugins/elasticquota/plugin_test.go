@@ -38,6 +38,7 @@ import (
 	apiruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
+	k8sfeature "k8s.io/apiserver/pkg/util/feature"
 	"k8s.io/client-go/informers"
 	kubefake "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/rest"
@@ -52,15 +53,18 @@ import (
 	"k8s.io/utils/ptr"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/apis/scheduling"
 	"github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 	pgclientset "github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/generated/clientset/versioned"
 	pgfake "github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/generated/clientset/versioned/fake"
 	"github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/fake"
 	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
+	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/v1beta3"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/elasticquota/core"
+	utilfeature "github.com/koordinator-sh/koordinator/pkg/util/feature"
 )
 
 type ElasticQuotaSetAndHandle struct {
@@ -1368,4 +1372,906 @@ func TestPostFilterState(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, got, got1)
 	})
+}
+
+func TestPlugin_QueueingHint_IsSchedulableAfterQuotaChanged(t *testing.T) {
+	test := []struct {
+		name                 string
+		pod                  *corev1.Pod
+		originalQuota        *v1alpha1.ElasticQuota
+		modifiedQuota        *v1alpha1.ElasticQuota
+		quotaInfos           []*v1alpha1.ElasticQuota
+		enableCheckParent    bool
+		expectedQueueingHint framework.QueueingHint
+	}{
+		{
+			name: "quota changed (max increased) - should queue after backoff",
+			pod: MakePod("t1-ns1", "pod1").Label(extension.LabelQuotaName, "test1").
+				Label(extension.LabelQuotaTreeID, "tree1").Obj(),
+			originalQuota: &v1alpha1.ElasticQuota{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test1",
+					Labels: map[string]string{
+						extension.LabelQuotaTreeID: "tree1",
+					},
+					Annotations: map[string]string{
+						extension.AnnotationSharedWeight: `{"cpu":"10","memory":"30"}`,
+					},
+				},
+				Spec: v1alpha1.ElasticQuotaSpec{
+					Max: MakeResourceList().CPU(10).Mem(30).Obj(),
+					Min: MakeResourceList().CPU(0).Mem(0).Obj(),
+				},
+			},
+			modifiedQuota: &v1alpha1.ElasticQuota{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test1",
+					Labels: map[string]string{
+						extension.LabelQuotaTreeID: "tree1",
+					},
+					Annotations: map[string]string{
+						extension.AnnotationSharedWeight: `{"cpu":"10","memory":"30"}`,
+					},
+				},
+				Spec: v1alpha1.ElasticQuotaSpec{
+					Max: MakeResourceList().CPU(20).Mem(30).Obj(),
+					Min: MakeResourceList().CPU(0).Mem(0).Obj(),
+				},
+			},
+			quotaInfos: []*v1alpha1.ElasticQuota{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test1",
+						Labels: map[string]string{
+							extension.LabelQuotaTreeID: "tree1",
+						},
+						Annotations: map[string]string{
+							extension.AnnotationSharedWeight: `{"cpu":"10","memory":"30"}`,
+						},
+					},
+					Spec: v1alpha1.ElasticQuotaSpec{
+						Max: MakeResourceList().CPU(20).Mem(30).Obj(),
+						Min: MakeResourceList().CPU(0).Mem(0).Obj(),
+					},
+				},
+			},
+			expectedQueueingHint: framework.QueueAfterBackoff,
+		},
+		{
+			name: "quota changed (min increased) - should queue after backoff",
+			pod: MakePod("t1-ns1", "pod1").Label(extension.LabelQuotaName, "test1").
+				Label(extension.LabelQuotaTreeID, "tree1").Obj(),
+			originalQuota: &v1alpha1.ElasticQuota{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test1",
+					Labels: map[string]string{
+						extension.LabelQuotaTreeID: "tree1",
+					},
+					Annotations: map[string]string{
+						extension.AnnotationSharedWeight: `{"cpu":"10","memory":"30"}`,
+					},
+				},
+				Spec: v1alpha1.ElasticQuotaSpec{
+					Max: MakeResourceList().CPU(10).Mem(30).Obj(),
+					Min: MakeResourceList().CPU(0).Mem(0).Obj(),
+				},
+			},
+			modifiedQuota: &v1alpha1.ElasticQuota{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test1",
+					Labels: map[string]string{
+						extension.LabelQuotaTreeID: "tree1",
+					},
+					Annotations: map[string]string{
+						extension.AnnotationSharedWeight: `{"cpu":"10","memory":"30"}`,
+					},
+				},
+				Spec: v1alpha1.ElasticQuotaSpec{
+					Max: MakeResourceList().CPU(10).Mem(30).Obj(),
+					Min: MakeResourceList().CPU(5).Mem(0).Obj(),
+				},
+			},
+			quotaInfos: []*v1alpha1.ElasticQuota{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test1",
+						Labels: map[string]string{
+							extension.LabelQuotaTreeID: "tree1",
+						},
+						Annotations: map[string]string{
+							extension.AnnotationSharedWeight: `{"cpu":"10","memory":"30"}`,
+						},
+					},
+					Spec: v1alpha1.ElasticQuotaSpec{
+						Max: MakeResourceList().CPU(10).Mem(30).Obj(),
+						Min: MakeResourceList().CPU(5).Mem(0).Obj(),
+					},
+				},
+			},
+			expectedQueueingHint: framework.QueueAfterBackoff,
+		},
+		{
+			name: "quota changed (shared weight changed) - should queue after backoff",
+			pod: MakePod("t1-ns1", "pod1").Label(extension.LabelQuotaName, "test1").
+				Label(extension.LabelQuotaTreeID, "tree1").Obj(),
+			originalQuota: &v1alpha1.ElasticQuota{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test1",
+					Labels: map[string]string{
+						extension.LabelQuotaTreeID: "tree1",
+					},
+					Annotations: map[string]string{
+						extension.AnnotationSharedWeight: `{"cpu":"10","memory":"30"}`,
+					},
+				},
+				Spec: v1alpha1.ElasticQuotaSpec{
+					Max: MakeResourceList().CPU(10).Mem(30).Obj(),
+					Min: MakeResourceList().CPU(0).Mem(0).Obj(),
+				},
+			},
+			modifiedQuota: &v1alpha1.ElasticQuota{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test1",
+					Labels: map[string]string{
+						extension.LabelQuotaTreeID: "tree1",
+					},
+					Annotations: map[string]string{
+						extension.AnnotationSharedWeight: `{"cpu":"20","memory":"30"}`,
+					},
+				},
+				Spec: v1alpha1.ElasticQuotaSpec{
+					Max: MakeResourceList().CPU(10).Mem(30).Obj(),
+					Min: MakeResourceList().CPU(0).Mem(0).Obj(),
+				},
+			},
+			quotaInfos: []*v1alpha1.ElasticQuota{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test1",
+						Labels: map[string]string{
+							extension.LabelQuotaTreeID: "tree1",
+						},
+						Annotations: map[string]string{
+							extension.AnnotationSharedWeight: `{"cpu":"20","memory":"30"}`,
+						},
+					},
+					Spec: v1alpha1.ElasticQuotaSpec{
+						Max: MakeResourceList().CPU(10).Mem(30).Obj(),
+						Min: MakeResourceList().CPU(0).Mem(0).Obj(),
+					},
+				},
+			},
+			expectedQueueingHint: framework.QueueAfterBackoff,
+		},
+		{
+			name: "pod has no quota - should skip",
+			pod:  MakePod("t1-ns1", "pod1").Obj(),
+			originalQuota: &v1alpha1.ElasticQuota{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test1",
+					Labels: map[string]string{
+						extension.LabelQuotaTreeID: "tree1",
+					},
+				},
+				Spec: v1alpha1.ElasticQuotaSpec{
+					Max: MakeResourceList().CPU(10).Mem(30).Obj(),
+					Min: MakeResourceList().CPU(0).Mem(0).Obj(),
+				},
+			},
+			modifiedQuota: &v1alpha1.ElasticQuota{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test1",
+					Labels: map[string]string{
+						extension.LabelQuotaTreeID: "tree1",
+					},
+				},
+				Spec: v1alpha1.ElasticQuotaSpec{
+					Max: MakeResourceList().CPU(20).Mem(30).Obj(),
+					Min: MakeResourceList().CPU(0).Mem(0).Obj(),
+				},
+			},
+			quotaInfos:           []*v1alpha1.ElasticQuota{},
+			expectedQueueingHint: framework.QueueSkip,
+		},
+		{
+			name: "different tree - should skip",
+			pod: MakePod("t1-ns1", "pod1").Label(extension.LabelQuotaName, "test1").
+				Label(extension.LabelQuotaTreeID, "tree1").Obj(),
+			originalQuota: &v1alpha1.ElasticQuota{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test2",
+					Labels: map[string]string{
+						extension.LabelQuotaTreeID: "tree2",
+					},
+				},
+				Spec: v1alpha1.ElasticQuotaSpec{
+					Max: MakeResourceList().CPU(10).Mem(30).Obj(),
+					Min: MakeResourceList().CPU(0).Mem(0).Obj(),
+				},
+			},
+			modifiedQuota: &v1alpha1.ElasticQuota{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test2",
+					Labels: map[string]string{
+						extension.LabelQuotaTreeID: "tree2",
+					},
+				},
+				Spec: v1alpha1.ElasticQuotaSpec{
+					Max: MakeResourceList().CPU(20).Mem(30).Obj(),
+					Min: MakeResourceList().CPU(0).Mem(0).Obj(),
+				},
+			},
+			quotaInfos: []*v1alpha1.ElasticQuota{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test1",
+						Labels: map[string]string{
+							extension.LabelQuotaTreeID: "tree1",
+						},
+					},
+					Spec: v1alpha1.ElasticQuotaSpec{
+						Max: MakeResourceList().CPU(10).Mem(30).Obj(),
+						Min: MakeResourceList().CPU(0).Mem(0).Obj(),
+					},
+				},
+			},
+			expectedQueueingHint: framework.QueueSkip,
+		},
+		{
+			name: "ancestor quota changed with parent check enabled - should queue after backoff",
+			pod: MakePod("t1-ns1", "pod1").Label(extension.LabelQuotaName, "test-child").
+				Label(extension.LabelQuotaTreeID, "tree1").Obj(),
+			originalQuota: &v1alpha1.ElasticQuota{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-parent",
+					Labels: map[string]string{
+						extension.LabelQuotaTreeID: "tree1",
+					},
+					Annotations: map[string]string{
+						extension.AnnotationSharedWeight: `{"cpu":"10","memory":"30"}`,
+					},
+				},
+				Spec: v1alpha1.ElasticQuotaSpec{
+					Max: MakeResourceList().CPU(10).Mem(30).Obj(),
+					Min: MakeResourceList().CPU(0).Mem(0).Obj(),
+				},
+			},
+			modifiedQuota: &v1alpha1.ElasticQuota{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-parent",
+					Labels: map[string]string{
+						extension.LabelQuotaTreeID: "tree1",
+					},
+					Annotations: map[string]string{
+						extension.AnnotationSharedWeight: `{"cpu":"20","memory":"30"}`,
+					},
+				},
+				Spec: v1alpha1.ElasticQuotaSpec{
+					Max: MakeResourceList().CPU(20).Mem(30).Obj(),
+					Min: MakeResourceList().CPU(0).Mem(0).Obj(),
+				},
+			},
+			quotaInfos: []*v1alpha1.ElasticQuota{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-parent",
+						Labels: map[string]string{
+							extension.LabelQuotaTreeID: "tree1",
+						},
+						Annotations: map[string]string{
+							extension.AnnotationSharedWeight: `{"cpu":"20","memory":"30"}`,
+						},
+					},
+					Spec: v1alpha1.ElasticQuotaSpec{
+						Max: MakeResourceList().CPU(20).Mem(30).Obj(),
+						Min: MakeResourceList().CPU(0).Mem(0).Obj(),
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-child",
+						Labels: map[string]string{
+							extension.LabelQuotaTreeID: "tree1",
+							extension.LabelQuotaParent: "test-parent",
+						},
+						Annotations: map[string]string{
+							extension.AnnotationSharedWeight: `{"cpu":"10","memory":"30"}`,
+						},
+					},
+					Spec: v1alpha1.ElasticQuotaSpec{
+						Max: MakeResourceList().CPU(10).Mem(30).Obj(),
+						Min: MakeResourceList().CPU(0).Mem(0).Obj(),
+					},
+				},
+			},
+			enableCheckParent:    true,
+			expectedQueueingHint: framework.QueueAfterBackoff,
+		},
+		{
+			name: "ancestor quota changed with parent check disabled - should skip",
+			pod: MakePod("t1-ns1", "pod1").Label(extension.LabelQuotaName, "test-child").
+				Label(extension.LabelQuotaTreeID, "tree1").Obj(),
+			originalQuota: &v1alpha1.ElasticQuota{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-parent",
+					Labels: map[string]string{
+						extension.LabelQuotaTreeID: "tree1",
+					},
+				},
+				Spec: v1alpha1.ElasticQuotaSpec{
+					Max: MakeResourceList().CPU(10).Mem(30).Obj(),
+					Min: MakeResourceList().CPU(0).Mem(0).Obj(),
+				},
+			},
+			modifiedQuota: &v1alpha1.ElasticQuota{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-parent",
+					Labels: map[string]string{
+						extension.LabelQuotaTreeID: "tree1",
+					},
+				},
+				Spec: v1alpha1.ElasticQuotaSpec{
+					Max: MakeResourceList().CPU(20).Mem(30).Obj(),
+					Min: MakeResourceList().CPU(0).Mem(0).Obj(),
+				},
+			},
+			quotaInfos: []*v1alpha1.ElasticQuota{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-parent",
+						Labels: map[string]string{
+							extension.LabelQuotaTreeID: "tree1",
+						},
+					},
+					Spec: v1alpha1.ElasticQuotaSpec{
+						Max: MakeResourceList().CPU(20).Mem(30).Obj(),
+						Min: MakeResourceList().CPU(0).Mem(0).Obj(),
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-child",
+						Labels: map[string]string{
+							extension.LabelQuotaTreeID: "tree1",
+							extension.LabelQuotaParent: "test-parent",
+						},
+					},
+					Spec: v1alpha1.ElasticQuotaSpec{
+						Max: MakeResourceList().CPU(10).Mem(30).Obj(),
+						Min: MakeResourceList().CPU(0).Mem(0).Obj(),
+					},
+				},
+			},
+			enableCheckParent:    false,
+			expectedQueueingHint: framework.QueueSkip,
+		},
+		{
+			name: "quota not in pod path - should skip",
+			pod: MakePod("t1-ns1", "pod1").Label(extension.LabelQuotaName, "test-child").
+				Label(extension.LabelQuotaTreeID, "tree1").Obj(),
+			originalQuota: &v1alpha1.ElasticQuota{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-sibling",
+					Labels: map[string]string{
+						extension.LabelQuotaTreeID: "tree1",
+					},
+				},
+				Spec: v1alpha1.ElasticQuotaSpec{
+					Max: MakeResourceList().CPU(10).Mem(30).Obj(),
+					Min: MakeResourceList().CPU(0).Mem(0).Obj(),
+				},
+			},
+			modifiedQuota: &v1alpha1.ElasticQuota{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-sibling",
+					Labels: map[string]string{
+						extension.LabelQuotaTreeID: "tree1",
+					},
+				},
+				Spec: v1alpha1.ElasticQuotaSpec{
+					Max: MakeResourceList().CPU(20).Mem(30).Obj(),
+					Min: MakeResourceList().CPU(0).Mem(0).Obj(),
+				},
+			},
+			quotaInfos: []*v1alpha1.ElasticQuota{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-parent",
+						Labels: map[string]string{
+							extension.LabelQuotaTreeID: "tree1",
+						},
+					},
+					Spec: v1alpha1.ElasticQuotaSpec{
+						Max: MakeResourceList().CPU(10).Mem(30).Obj(),
+						Min: MakeResourceList().CPU(0).Mem(0).Obj(),
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-child",
+						Labels: map[string]string{
+							extension.LabelQuotaTreeID: "tree1",
+							extension.LabelQuotaParent: "test-parent",
+						},
+					},
+					Spec: v1alpha1.ElasticQuotaSpec{
+						Max: MakeResourceList().CPU(10).Mem(30).Obj(),
+						Min: MakeResourceList().CPU(0).Mem(0).Obj(),
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-sibling",
+						Labels: map[string]string{
+							extension.LabelQuotaTreeID: "tree1",
+							extension.LabelQuotaParent: "test-parent",
+						},
+					},
+					Spec: v1alpha1.ElasticQuotaSpec{
+						Max: MakeResourceList().CPU(20).Mem(30).Obj(),
+						Min: MakeResourceList().CPU(0).Mem(0).Obj(),
+					},
+				},
+			},
+			enableCheckParent:    true,
+			expectedQueueingHint: framework.QueueSkip,
+		},
+		{
+			name: "quota not changed (IsQuotaChange and IsQuotaUpdated both false) - should skip",
+			pod: MakePod("t1-ns1", "pod1").Label(extension.LabelQuotaName, "test1").
+				Label(extension.LabelQuotaTreeID, "tree1").Obj(),
+			originalQuota: &v1alpha1.ElasticQuota{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test1",
+					Labels: map[string]string{
+						extension.LabelQuotaTreeID: "tree1",
+					},
+					Annotations: map[string]string{
+						extension.AnnotationSharedWeight: `{"cpu":"10","memory":"30"}`,
+					},
+				},
+				Spec: v1alpha1.ElasticQuotaSpec{
+					Max: MakeResourceList().CPU(10).Mem(30).Obj(),
+					Min: MakeResourceList().CPU(0).Mem(0).Obj(),
+				},
+			},
+			modifiedQuota: &v1alpha1.ElasticQuota{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test1",
+					Labels: map[string]string{
+						extension.LabelQuotaTreeID: "tree1",
+					},
+					Annotations: map[string]string{
+						extension.AnnotationSharedWeight: `{"cpu":"10","memory":"30"}`,
+					},
+				},
+				Spec: v1alpha1.ElasticQuotaSpec{
+					Max: MakeResourceList().CPU(10).Mem(30).Obj(),
+					Min: MakeResourceList().CPU(0).Mem(0).Obj(),
+				},
+			},
+			quotaInfos: []*v1alpha1.ElasticQuota{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test1",
+						Labels: map[string]string{
+							extension.LabelQuotaTreeID: "tree1",
+						},
+						Annotations: map[string]string{
+							extension.AnnotationSharedWeight: `{"cpu":"10","memory":"30"}`,
+						},
+					},
+					Spec: v1alpha1.ElasticQuotaSpec{
+						Max: MakeResourceList().CPU(10).Mem(30).Obj(),
+						Min: MakeResourceList().CPU(0).Mem(0).Obj(),
+					},
+				},
+			},
+			expectedQueueingHint: framework.QueueSkip,
+		},
+		{
+			name: "invalid oldObj or newObj - should queue after backoff",
+			pod: MakePod("t1-ns1", "pod1").Label(extension.LabelQuotaName, "test1").
+				Label(extension.LabelQuotaTreeID, "tree1").Obj(),
+			originalQuota: nil,
+			modifiedQuota: &v1alpha1.ElasticQuota{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test1",
+					Labels: map[string]string{
+						extension.LabelQuotaTreeID: "tree1",
+					},
+				},
+				Spec: v1alpha1.ElasticQuotaSpec{
+					Max: MakeResourceList().CPU(10).Mem(30).Obj(),
+					Min: MakeResourceList().CPU(0).Mem(0).Obj(),
+				},
+			},
+			quotaInfos: []*v1alpha1.ElasticQuota{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test1",
+						Labels: map[string]string{
+							extension.LabelQuotaTreeID: "tree1",
+						},
+					},
+					Spec: v1alpha1.ElasticQuotaSpec{
+						Max: MakeResourceList().CPU(10).Mem(30).Obj(),
+						Min: MakeResourceList().CPU(0).Mem(0).Obj(),
+					},
+				},
+			},
+			expectedQueueingHint: framework.QueueAfterBackoff,
+		},
+	}
+	for _, tt := range test {
+		t.Run(tt.name, func(t *testing.T) {
+			defer utilfeature.SetFeatureGateDuringTest(t, k8sfeature.DefaultMutableFeatureGate, features.MultiQuotaTree, true)()
+
+			suit := newPluginTestSuit(t, nil)
+			p, err := suit.proxyNew(suit.elasticQuotaArgs, suit.Handle)
+			assert.Nil(t, err)
+			gp := p.(*Plugin)
+			gp.pluginArgs.EnableCheckParentQuota = tt.enableCheckParent
+
+			// Add quota infos - add parent quota first if it exists
+			for _, quotaInfo := range tt.quotaInfos {
+				// Check if this is a parent quota
+				if parentName, exists := quotaInfo.Labels[extension.LabelQuotaParent]; exists && parentName != "" {
+					// Find and add parent first
+					for _, q := range tt.quotaInfos {
+						if q.Name == parentName {
+							gp.OnQuotaAdd(q)
+							break
+						}
+					}
+				}
+				gp.OnQuotaAdd(quotaInfo)
+			}
+
+			// Call the queueing hint function
+			var oldObj, newObj interface{} = tt.originalQuota, tt.modifiedQuota
+			if tt.originalQuota == nil {
+				oldObj = "invalid"
+			}
+			result := gp.isSchedulableAfterQuotaChanged(klog.Background(), tt.pod, oldObj, newObj)
+			assert.Equal(t, tt.expectedQueueingHint, result)
+		})
+	}
+}
+
+func TestPlugin_EventsToRegister(t *testing.T) {
+	tests := []struct {
+		name               string
+		enableQueueHint    bool
+		expectedEventCount int
+		checkQueueingHint  bool
+	}{
+		{
+			name:               "EnableQueueHint disabled - should return events without QueueingHintFn",
+			enableQueueHint:    false,
+			expectedEventCount: 2,
+			checkQueueingHint:  false,
+		},
+		{
+			name:               "EnableQueueHint enabled - should return events with QueueingHintFn",
+			enableQueueHint:    true,
+			expectedEventCount: 2,
+			checkQueueingHint:  true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			suit := newPluginTestSuit(t, nil, func(args *config.ElasticQuotaArgs) {
+				args.EnableQueueHint = tt.enableQueueHint
+			})
+			p, err := suit.proxyNew(suit.elasticQuotaArgs, suit.Handle)
+			assert.Nil(t, err)
+			gp := p.(*Plugin)
+
+			events := gp.EventsToRegister()
+			assert.Equal(t, tt.expectedEventCount, len(events))
+
+			expectedGVK := fmt.Sprintf("elasticquotas.v1alpha1.%v", scheduling.GroupName)
+
+			// Find Pod Delete event and ElasticQuota event
+			var podDeleteEvent *framework.ClusterEventWithHint
+			var quotaEvent *framework.ClusterEventWithHint
+			for i := range events {
+				if events[i].Event.Resource == framework.Pod && events[i].Event.ActionType == framework.Delete {
+					podDeleteEvent = &events[i]
+				}
+				if events[i].Event.Resource == framework.GVK(expectedGVK) {
+					quotaEvent = &events[i]
+				}
+			}
+
+			assert.NotNil(t, podDeleteEvent, "Pod Delete event should be registered")
+			assert.NotNil(t, quotaEvent, "ElasticQuota event should be registered")
+
+			if tt.checkQueueingHint {
+				// When EnableQueueHint is true, quota event should be Update
+				assert.Equal(t, framework.Update, quotaEvent.Event.ActionType, "ElasticQuota event should be Update when EnableQueueHint is true")
+				assert.NotNil(t, podDeleteEvent.QueueingHintFn, "Pod Delete event should have QueueingHintFn when EnableQueueHint is true")
+				assert.NotNil(t, quotaEvent.QueueingHintFn, "ElasticQuota event should have QueueingHintFn when EnableQueueHint is true")
+			} else {
+				// When EnableQueueHint is false, quota event should be All
+				assert.Equal(t, framework.All, quotaEvent.Event.ActionType, "ElasticQuota event should be All when EnableQueueHint is false")
+				assert.Nil(t, podDeleteEvent.QueueingHintFn, "Pod Delete event should not have QueueingHintFn when EnableQueueHint is false")
+				assert.Nil(t, quotaEvent.QueueingHintFn, "ElasticQuota event should not have QueueingHintFn when EnableQueueHint is false")
+			}
+		})
+	}
+}
+
+func TestPlugin_QueueingHint_IsSchedulableAfterPodDeletion(t *testing.T) {
+	tests := []struct {
+		name                 string
+		pod                  *corev1.Pod
+		deletedPod           *corev1.Pod
+		quotaInfos           []*v1alpha1.ElasticQuota
+		enableCheckParent    bool
+		expectedQueueingHint framework.QueueingHint
+	}{
+		{
+			name: "deleted pod in same quota - should queue after backoff",
+			pod: MakePod("t1-ns1", "pod1").Label(extension.LabelQuotaName, "test1").
+				Label(extension.LabelQuotaTreeID, "tree1").Obj(),
+			deletedPod: MakePod("t1-ns1", "deleted-pod1").Label(extension.LabelQuotaName, "test1").
+				Label(extension.LabelQuotaTreeID, "tree1").Obj(),
+			quotaInfos: []*v1alpha1.ElasticQuota{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test1",
+						Labels: map[string]string{
+							extension.LabelQuotaTreeID: "tree1",
+						},
+					},
+					Spec: v1alpha1.ElasticQuotaSpec{
+						Max: MakeResourceList().CPU(10).Mem(30).Obj(),
+						Min: MakeResourceList().CPU(0).Mem(0).Obj(),
+					},
+				},
+			},
+			expectedQueueingHint: framework.QueueAfterBackoff,
+		},
+		{
+			name: "deleted pod in parent quota with EnableCheckParentQuota - should queue after backoff",
+			pod: MakePod("t1-ns1", "pod1").Label(extension.LabelQuotaName, "test-child").
+				Label(extension.LabelQuotaTreeID, "tree1").Obj(),
+			deletedPod: MakePod("t1-ns1", "deleted-pod1").Label(extension.LabelQuotaName, "test-parent").
+				Label(extension.LabelQuotaTreeID, "tree1").Obj(),
+			quotaInfos: []*v1alpha1.ElasticQuota{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-parent",
+						Labels: map[string]string{
+							extension.LabelQuotaTreeID: "tree1",
+						},
+					},
+					Spec: v1alpha1.ElasticQuotaSpec{
+						Max: MakeResourceList().CPU(20).Mem(30).Obj(),
+						Min: MakeResourceList().CPU(0).Mem(0).Obj(),
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-child",
+						Labels: map[string]string{
+							extension.LabelQuotaTreeID: "tree1",
+							extension.LabelQuotaParent: "test-parent",
+						},
+					},
+					Spec: v1alpha1.ElasticQuotaSpec{
+						Max: MakeResourceList().CPU(10).Mem(30).Obj(),
+						Min: MakeResourceList().CPU(0).Mem(0).Obj(),
+					},
+				},
+			},
+			enableCheckParent:    true,
+			expectedQueueingHint: framework.QueueAfterBackoff,
+		},
+		{
+			name: "deleted pod in parent quota without EnableCheckParentQuota - should skip",
+			pod: MakePod("t1-ns1", "pod1").Label(extension.LabelQuotaName, "test-child").
+				Label(extension.LabelQuotaTreeID, "tree1").Obj(),
+			deletedPod: MakePod("t1-ns1", "deleted-pod1").Label(extension.LabelQuotaName, "test-parent").
+				Label(extension.LabelQuotaTreeID, "tree1").Obj(),
+			quotaInfos: []*v1alpha1.ElasticQuota{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-parent",
+						Labels: map[string]string{
+							extension.LabelQuotaTreeID: "tree1",
+						},
+					},
+					Spec: v1alpha1.ElasticQuotaSpec{
+						Max: MakeResourceList().CPU(20).Mem(30).Obj(),
+						Min: MakeResourceList().CPU(0).Mem(0).Obj(),
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-child",
+						Labels: map[string]string{
+							extension.LabelQuotaTreeID: "tree1",
+							extension.LabelQuotaParent: "test-parent",
+						},
+					},
+					Spec: v1alpha1.ElasticQuotaSpec{
+						Max: MakeResourceList().CPU(10).Mem(30).Obj(),
+						Min: MakeResourceList().CPU(0).Mem(0).Obj(),
+					},
+				},
+			},
+			enableCheckParent:    false,
+			expectedQueueingHint: framework.QueueSkip,
+		},
+		{
+			name: "deleted pod in different tree - should skip",
+			pod: MakePod("t1-ns1", "pod1").Label(extension.LabelQuotaName, "test1").
+				Label(extension.LabelQuotaTreeID, "tree1").Obj(),
+			deletedPod: MakePod("t1-ns1", "deleted-pod1").Label(extension.LabelQuotaName, "test2").
+				Label(extension.LabelQuotaTreeID, "tree2").Obj(),
+			quotaInfos: []*v1alpha1.ElasticQuota{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test1",
+						Labels: map[string]string{
+							extension.LabelQuotaTreeID: "tree1",
+						},
+					},
+					Spec: v1alpha1.ElasticQuotaSpec{
+						Max: MakeResourceList().CPU(10).Mem(30).Obj(),
+						Min: MakeResourceList().CPU(0).Mem(0).Obj(),
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test2",
+						Labels: map[string]string{
+							extension.LabelQuotaTreeID: "tree2",
+						},
+					},
+					Spec: v1alpha1.ElasticQuotaSpec{
+						Max: MakeResourceList().CPU(10).Mem(30).Obj(),
+						Min: MakeResourceList().CPU(0).Mem(0).Obj(),
+					},
+				},
+			},
+			expectedQueueingHint: framework.QueueSkip,
+		},
+		{
+			name: "deleted pod has no quota - should skip",
+			pod: MakePod("t1-ns1", "pod1").Label(extension.LabelQuotaName, "test1").
+				Label(extension.LabelQuotaTreeID, "tree1").Obj(),
+			deletedPod: MakePod("t1-ns1", "deleted-pod1").Obj(),
+			quotaInfos: []*v1alpha1.ElasticQuota{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test1",
+						Labels: map[string]string{
+							extension.LabelQuotaTreeID: "tree1",
+						},
+					},
+					Spec: v1alpha1.ElasticQuotaSpec{
+						Max: MakeResourceList().CPU(10).Mem(30).Obj(),
+						Min: MakeResourceList().CPU(0).Mem(0).Obj(),
+					},
+				},
+			},
+			expectedQueueingHint: framework.QueueSkip,
+		},
+		{
+			name: "unschedulable pod has no quota - should skip",
+			pod:  MakePod("t1-ns1", "pod1").Obj(),
+			deletedPod: MakePod("t1-ns1", "deleted-pod1").Label(extension.LabelQuotaName, "test1").
+				Label(extension.LabelQuotaTreeID, "tree1").Obj(),
+			quotaInfos: []*v1alpha1.ElasticQuota{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test1",
+						Labels: map[string]string{
+							extension.LabelQuotaTreeID: "tree1",
+						},
+					},
+					Spec: v1alpha1.ElasticQuotaSpec{
+						Max: MakeResourceList().CPU(10).Mem(30).Obj(),
+						Min: MakeResourceList().CPU(0).Mem(0).Obj(),
+					},
+				},
+			},
+			expectedQueueingHint: framework.QueueSkip,
+		},
+		{
+			name: "deleted pod in sibling quota - should skip",
+			pod: MakePod("t1-ns1", "pod1").Label(extension.LabelQuotaName, "test1").
+				Label(extension.LabelQuotaTreeID, "tree1").Obj(),
+			deletedPod: MakePod("t1-ns1", "deleted-pod1").Label(extension.LabelQuotaName, "test2").
+				Label(extension.LabelQuotaTreeID, "tree1").Obj(),
+			quotaInfos: []*v1alpha1.ElasticQuota{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test1",
+						Labels: map[string]string{
+							extension.LabelQuotaTreeID: "tree1",
+						},
+					},
+					Spec: v1alpha1.ElasticQuotaSpec{
+						Max: MakeResourceList().CPU(10).Mem(30).Obj(),
+						Min: MakeResourceList().CPU(0).Mem(0).Obj(),
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test2",
+						Labels: map[string]string{
+							extension.LabelQuotaTreeID: "tree1",
+						},
+					},
+					Spec: v1alpha1.ElasticQuotaSpec{
+						Max: MakeResourceList().CPU(10).Mem(30).Obj(),
+						Min: MakeResourceList().CPU(0).Mem(0).Obj(),
+					},
+				},
+			},
+			expectedQueueingHint: framework.QueueSkip,
+		},
+		{
+			name: "invalid oldObj - should queue after backoff",
+			pod: MakePod("t1-ns1", "pod1").Label(extension.LabelQuotaName, "test1").
+				Label(extension.LabelQuotaTreeID, "tree1").Obj(),
+			deletedPod: nil,
+			quotaInfos: []*v1alpha1.ElasticQuota{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test1",
+						Labels: map[string]string{
+							extension.LabelQuotaTreeID: "tree1",
+						},
+					},
+					Spec: v1alpha1.ElasticQuotaSpec{
+						Max: MakeResourceList().CPU(10).Mem(30).Obj(),
+						Min: MakeResourceList().CPU(0).Mem(0).Obj(),
+					},
+				},
+			},
+			expectedQueueingHint: framework.QueueAfterBackoff,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			defer utilfeature.SetFeatureGateDuringTest(t, k8sfeature.DefaultMutableFeatureGate, features.MultiQuotaTree, true)()
+
+			suit := newPluginTestSuit(t, nil)
+			p, err := suit.proxyNew(suit.elasticQuotaArgs, suit.Handle)
+			assert.Nil(t, err)
+			gp := p.(*Plugin)
+			gp.pluginArgs.EnableCheckParentQuota = tt.enableCheckParent
+
+			// Add quota infos - add parent quota first if it exists
+			for _, quotaInfo := range tt.quotaInfos {
+				// Check if this is a parent quota
+				if parentName, exists := quotaInfo.Labels[extension.LabelQuotaParent]; exists && parentName != "" {
+					// Find and add parent first
+					for _, q := range tt.quotaInfos {
+						if q.Name == parentName {
+							gp.OnQuotaAdd(q)
+							break
+						}
+					}
+				}
+				gp.OnQuotaAdd(quotaInfo)
+			}
+
+			// Call the queueing hint function
+			var oldObj interface{} = tt.deletedPod
+			if tt.deletedPod == nil {
+				oldObj = "invalid"
+			}
+			result := gp.isSchedulableAfterPodDeletion(klog.Background(), tt.pod, oldObj, nil)
+			assert.Equal(t, tt.expectedQueueingHint, result)
+		})
+	}
 }
