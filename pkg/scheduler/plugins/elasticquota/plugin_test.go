@@ -2036,6 +2036,28 @@ func TestPlugin_QueueingHint_IsSchedulableAfterPodDeletion(t *testing.T) {
 			expectedQueueingHint: framework.QueueAfterBackoff,
 		},
 		{
+			name: "deleted pod not assigned - should skip",
+			pod: MakePod("t1-ns1", "pod1").Label(extension.LabelQuotaName, "test1").
+				Label(extension.LabelQuotaTreeID, "tree1").Obj(),
+			deletedPod: MakePod("t1-ns1", "deleted-pod1").Label(extension.LabelQuotaName, "test1").
+				Label(extension.LabelQuotaTreeID, "tree1").Obj(),
+			quotaInfos: []*v1alpha1.ElasticQuota{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test1",
+						Labels: map[string]string{
+							extension.LabelQuotaTreeID: "tree1",
+						},
+					},
+					Spec: v1alpha1.ElasticQuotaSpec{
+						Max: MakeResourceList().CPU(10).Mem(30).Obj(),
+						Min: MakeResourceList().CPU(0).Mem(0).Obj(),
+					},
+				},
+			},
+			expectedQueueingHint: framework.QueueSkip,
+		},
+		{
 			name: "deleted pod in parent quota with EnableCheckParentQuota - should queue after backoff",
 			pod: MakePod("t1-ns1", "pod1").Label(extension.LabelQuotaName, "test-child").
 				Label(extension.LabelQuotaTreeID, "tree1").Obj(),
@@ -2263,6 +2285,25 @@ func TestPlugin_QueueingHint_IsSchedulableAfterPodDeletion(t *testing.T) {
 					}
 				}
 				gp.OnQuotaAdd(quotaInfo)
+			}
+
+			// For test cases expecting QueueAfterBackoff, ensure the deleted pod is assigned
+			// For test cases expecting QueueSkip when pod is not assigned, don't assign the pod
+			if tt.deletedPod != nil && tt.expectedQueueingHint == framework.QueueAfterBackoff {
+				// Set NodeName to make the pod assignable
+				if tt.deletedPod.Spec.NodeName == "" {
+					tt.deletedPod.Spec.NodeName = "test-node"
+				}
+				// Add the pod to quota and assign it
+				deletedPodQuotaName, deletedPodTreeID := gp.getPodAssociateQuotaNameAndTreeID(tt.deletedPod)
+				if deletedPodQuotaName != "" {
+					gp.OnPodAdd(tt.deletedPod)
+					// ReservePod will mark the pod as assigned
+					mgr := gp.GetGroupQuotaManagerForTree(deletedPodTreeID)
+					if mgr != nil {
+						mgr.ReservePod(deletedPodQuotaName, tt.deletedPod)
+					}
+				}
 			}
 
 			// Call the queueing hint function
