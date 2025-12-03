@@ -17,14 +17,16 @@ limitations under the License.
 package system
 
 import (
-	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 )
 
-func TestGetGPUDevicePciBusIDs(t *testing.T) {
+func TestGetGPUDevicePCIBusIDs(t *testing.T) {
+	helper := NewFileTestUtil(t)
+	defer helper.Cleanup()
+
 	type args struct {
 		dir   string
 		files []string
@@ -38,7 +40,7 @@ func TestGetGPUDevicePciBusIDs(t *testing.T) {
 		{
 			name: "case1: dir exist",
 			args: args{
-				dir: t.TempDir(),
+				dir: filepath.Join(helper.TempDir, "/sys/bus/pci/drivers/nvidia/"),
 				files: []string{
 					"0000:3b:00.1",
 					"0000:01:00.0",
@@ -54,7 +56,7 @@ func TestGetGPUDevicePciBusIDs(t *testing.T) {
 		{
 			name: "case2: dir not exist",
 			args: args{
-				dir:   "/path/not/exist",
+				dir:   filepath.Join(helper.TempDir, "/path/not/exist"),
 				files: []string{},
 			},
 			want: nil,
@@ -64,11 +66,7 @@ func TestGetGPUDevicePciBusIDs(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			NVIDIADriverDir = tt.args.dir
 			for _, driverFile := range tt.args.files {
-				file, err := os.Create(filepath.Join(NVIDIADriverDir, driverFile))
-				if err != nil {
-					t.Fatalf("failed to create test file %s: %v", driverFile, err)
-				}
-				file.Close()
+				helper.CreateFile(filepath.Join(NVIDIADriverDir, driverFile))
 			}
 			got := GetGPUDevicePCIBusIDs()
 			assert.Equal(t, tt.want, got)
