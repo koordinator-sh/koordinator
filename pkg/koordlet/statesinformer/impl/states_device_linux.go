@@ -232,7 +232,7 @@ func (s *statesInformer) buildGPUDevice() []schedulingv1alpha1.DeviceInfo {
 		gpu := gpus[idx]
 		health := true
 		s.gpuMutex.RLock()
-		if _, ok := s.unhealthyGPU[gpu.BusID]; ok {
+		if unhealthyInfo, ok := s.unhealthyGPU[gpu.BusID]; ok {
 			health = false
 			gpu.Status = &koordletuti.DeviceStatus{
 				Healthy:    false,
@@ -455,7 +455,6 @@ func (s *statesInformer) gpuHealCheck(stopCh <-chan struct{}) {
 	for event := range unhealthyChan {
 		// FIXME: there is no way to recover from the Unhealthy state.
 		s.gpuMutex.Lock()
-		// fixme: distinguish different unhealthy gpus jess
 		if event.xidError == 0 {
 			s.unhealthyGPU[event.pciBusID] = &unhealthyGPUInfo{
 				errCode:    "DeviceHealthCheckNotSupported",
@@ -468,13 +467,13 @@ func (s *statesInformer) gpuHealCheck(stopCh <-chan struct{}) {
 			}
 		}
 		s.gpuMutex.Unlock()
-		klog.Infof("get a unhealthy gpu %s, error: %s", event.uuid, event.errMessage)
+		klog.Infof("get a unhealthy gpu %s, error: %s", event.pciBusID, event.errMessage)
 	}
 }
 
 // check status of gpus, and send unhealthy devices to the unhealthyDeviceChan channel
 type gpuHealthEvent struct {
-	pciBusID       string
+	pciBusID   string
 	xidError   uint64
 	errMessage string
 }
@@ -497,7 +496,7 @@ func checkHealth(stopCh <-chan struct{}, devs []string, xids chan<- gpuHealthEve
 		if ret == nvml.ERROR_NOT_SUPPORTED {
 			klog.Infof("Warning: %s is too old to support healthchecking: %v. Marking it unhealthy.", d, nvml.ErrorString(ret))
 			xids <- gpuHealthEvent{
-				uuid:       d,
+				pciBusID:   d,
 				errMessage: "device does not support health checking",
 			}
 			continue
@@ -550,7 +549,7 @@ func checkHealth(stopCh <-chan struct{}, devs []string, xids chan<- gpuHealthEve
 			// All devices are unhealthy
 			for _, d := range devs {
 				xids <- gpuHealthEvent{
-					pciBusID:       d,
+					pciBusID:   d,
 					xidError:   e.EventData,
 					errMessage: fmt.Sprintf("Xid error detected on device, error code: %d", e.EventData),
 				}
@@ -561,7 +560,7 @@ func checkHealth(stopCh <-chan struct{}, devs []string, xids chan<- gpuHealthEve
 		for _, d := range devs {
 			if d == busID {
 				xids <- gpuHealthEvent{
-					pciBusID:       d,
+					pciBusID:   d,
 					xidError:   e.EventData,
 					errMessage: fmt.Sprintf("Xid error detected on device, error code: %d", e.EventData),
 				}
@@ -571,9 +570,9 @@ func checkHealth(stopCh <-chan struct{}, devs []string, xids chan<- gpuHealthEve
 			if ret != nvml.SUCCESS {
 				klog.Errorf("failed to get device %s in gpu check, err: %v", d, nvml.ErrorString(ret))
 				xids <- gpuHealthEvent{
-					pciBusID:       d,
+					pciBusID:   d,
 					xidError:   e.EventData,
-					errMessage: fmt.Sprintf("failed to get device, error: %d",nvml.ErrorString(ret)),
+					errMessage: fmt.Sprintf("failed to get device, error: %d", nvml.ErrorString(ret)),
 				}
 			}
 		}
