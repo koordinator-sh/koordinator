@@ -41,7 +41,7 @@ func TestAddScheduleEventHandler(t *testing.T) {
 		informerFactory := informers.NewSharedInformerFactory(clientSet, 0)
 		koordClientSet := koordfake.NewSimpleClientset()
 		koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
-		AddScheduleEventHandler(sched, internalHandler, informerFactory, koordSharedInformerFactory)
+		AddScheduleEventHandler(nil, sched, internalHandler, informerFactory, koordSharedInformerFactory)
 	})
 }
 

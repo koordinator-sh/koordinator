@@ -29,6 +29,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
+	k8sfeature "k8s.io/apiserver/pkg/util/feature"
 	corev1helper "k8s.io/component-helpers/scheduling/corev1"
 	"k8s.io/component-helpers/scheduling/corev1/nodeaffinity"
 	"k8s.io/klog/v2"
@@ -38,6 +39,7 @@ import (
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
@@ -129,7 +131,8 @@ func NewReservePod(r *schedulingv1alpha1.Reservation) *corev1.Pod {
 	} else if IsReservationExpired(r) || IsReservationFailed(r) {
 		reservePod.Status.Phase = corev1.PodFailed
 	}
-	if IsReservationAvailable(r) {
+	if !k8sfeature.DefaultMutableFeatureGate.Enabled(features.ReservationEnableUpdateSpec) &&
+		IsReservationAvailable(r) {
 		podRequests := resource.PodRequests(reservePod, resource.PodResourcesOptions{})
 		if !quotav1.Equals(podRequests, r.Status.Allocatable) {
 			//
