@@ -564,9 +564,9 @@ func Test_reportGPUDeviceUnhealthy(t *testing.T) {
 	mockMetricCache := mock_metriccache.NewMockMetricCache(ctl)
 	var gpuDeviceInfo koordletutil.GPUDevices
 	gpuDeviceInfo = []koordletutil.GPUDeviceInfo{
-		{UUID: "healthy-gpu-1", Minor: 0, MemoryTotal: 8000},
-		{UUID: "healthy-gpu-2", Minor: 1, MemoryTotal: 8000},
-		{UUID: "unhealthy-gpu", Minor: 2, MemoryTotal: 8000},
+		{UUID: "healthy-gpu-1", BusID: "0000:44:00.0", NodeID: 0, PCIE: "pci0000:3a", Minor: 0, MemoryTotal: 8000},
+		{UUID: "healthy-gpu-2", BusID: "0000:4d:00.0", NodeID: 0, PCIE: "pci0000:4a", Minor: 1, MemoryTotal: 8000},
+		{UUID: "unhealthy-gpu", BusID: "0000:58:00.0", NodeID: 0, PCIE: "pci0000:54", Minor: 2, MemoryTotal: 8000},
 	}
 	mockMetricCache.EXPECT().Get(koordletutil.GPUDeviceType).Return(gpuDeviceInfo, true)
 	mockMetricCache.EXPECT().Get(koordletutil.RDMADeviceType).Return(nil, false)
@@ -591,7 +591,7 @@ func Test_reportGPUDeviceUnhealthy(t *testing.T) {
 
 	// Mark a GPU as unhealthy
 	r.unhealthyGPU = map[string]*unhealthyGPUInfo{
-		"unhealthy-gpu": {
+		"0000:58:00.0": {
 			errCode:    "Xid44",
 			errMessage: "Xid error detected on device, error code: 44",
 		},
@@ -605,7 +605,7 @@ func Test_reportGPUDeviceUnhealthy(t *testing.T) {
 	assert.Equal(t, 3, len(device.Spec.Devices))
 
 	for _, dev := range device.Spec.Devices {
-		if dev.UUID == "unhealthy-gpu" {
+		if dev.Topology.BusID == "0000:58:00.0" {
 			// Unhealthy GPUs should have conditions
 			assert.NotNil(t, dev.Conditions)
 			assert.Equal(t, 1, len(dev.Conditions))
