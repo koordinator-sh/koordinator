@@ -166,6 +166,11 @@ func (in *ElasticQuotaArgs) DeepCopyInto(out *ElasticQuotaArgs) {
 		*out = new(bool)
 		**out = **in
 	}
+	if in.EnableQueueHint != nil {
+		in, out := &in.EnableQueueHint, &out.EnableQueueHint
+		*out = new(bool)
+		**out = **in
+	}
 	if in.HookPlugins != nil {
 		in, out := &in.HookPlugins, &out.HookPlugins
 		*out = make([]HookPluginConf, len(*in))

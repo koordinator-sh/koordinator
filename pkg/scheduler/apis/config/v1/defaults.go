@@ -76,6 +76,7 @@ var (
 	defaultEnableRuntimeQuota            = pointer.Bool(true)
 	defaultEnableMinQuotaScale           = pointer.Bool(true)
 	defaultDisableDefaultQuotaPreemption = pointer.Bool(true)
+	defaultEnableQueueHint               = pointer.Bool(false)
 
 	defaultTimeout           = 600 * time.Second
 	defaultControllerWorkers = 1
@@ -210,6 +211,9 @@ func SetDefaults_ElasticQuotaArgs(obj *ElasticQuotaArgs) {
 	}
 	if obj.DisableDefaultQuotaPreemption == nil {
 		obj.DisableDefaultQuotaPreemption = defaultDisableDefaultQuotaPreemption
+	}
+	if obj.EnableQueueHint == nil {
+		obj.EnableQueueHint = defaultEnableQueueHint
 	}
 }
 
