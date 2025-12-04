@@ -2008,6 +2008,12 @@ func Test_cpuSuppress_adjustByCfsQuota(t *testing.T) {
 			preBECfsQuota:  int64(0.8 * float64(system.DefaultCPUCFSPeriod)),
 			wantBECfsQuota: 2000,
 		},
+		{
+			name:           "increase CFSQuota: first time set quota with beUnsetQuota, scale without step limit",
+			cpuQuantity:    resource.NewMilliQuantity(20*1000, resource.BinarySI),
+			preBECfsQuota:  -1,
+			wantBECfsQuota: 20 * system.DefaultCPUCFSPeriod,
+		},
 	}
 
 	for _, tt := range testCases {
