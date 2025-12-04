@@ -335,7 +335,7 @@ func (g *Plugin) isSchedulableAfterQuotaChanged(logger klog.Logger, pod *corev1.
 	// Modified quota is not the pod's quota, check if it's in the path to root
 	if g.pluginArgs.EnableCheckParentQuota {
 		// Get the path from pod's quota to root using the existing method
-		curToAllParInfos := mgr.GetCurToAllParentGroupQuotaInfo(podQuotaName)
+		curToAllParInfos := mgr.GetCurToAllParentGroupQuotaInfoNoLock(podQuotaName)
 		for _, quotaInfo := range curToAllParInfos {
 			if quotaInfo.Name == modifiedQuota.Name {
 				return framework.QueueAfterBackoff
@@ -394,7 +394,7 @@ func (g *Plugin) isSchedulableAfterPodDeletion(logger klog.Logger, pod *corev1.P
 	// Check if deleted pod's quota is in the unschedulable pod's path to root
 	if g.pluginArgs.EnableCheckParentQuota {
 		// Get the path from unschedulable pod's quota to root
-		curToAllParInfos := mgr.GetCurToAllParentGroupQuotaInfo(podQuotaName)
+		curToAllParInfos := mgr.GetCurToAllParentGroupQuotaInfoNoLock(podQuotaName)
 		for _, quotaInfo := range curToAllParInfos {
 			if quotaInfo.Name == deletedPodQuotaName {
 				// Deleted pod's quota is in the path to root, allow queueing
