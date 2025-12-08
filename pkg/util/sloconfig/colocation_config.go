@@ -60,19 +60,21 @@ func DefaultColocationStrategy() configuration.ColocationStrategy {
 				{Duration: 30 * time.Minute},
 			},
 		},
-		MetricMemoryCollectPolicy:     &defaultMemoryCollectPolicy,
-		CPUReclaimThresholdPercent:    pointer.Int64(60),
-		CPUCalculatePolicy:            &cpuCalculatePolicy,
-		MemoryReclaimThresholdPercent: pointer.Int64(65),
-		MemoryCalculatePolicy:         &memoryCalculatePolicy,
-		DegradeTimeMinutes:            pointer.Int64(15),
-		UpdateTimeThresholdSeconds:    pointer.Int64(300),
-		ResourceDiffThreshold:         pointer.Float64(0.1),
-		MidCPUThresholdPercent:        pointer.Int64(100),
-		MidMemoryThresholdPercent:     pointer.Int64(100),
-		MidUnallocatedPercent:         pointer.Int64(0),
-		BatchCPUThresholdPercent:      nil,
-		BatchMemoryThresholdPercent:   nil,
+		MetricMemoryCollectPolicy:        &defaultMemoryCollectPolicy,
+		CPUReclaimThresholdPercent:       pointer.Int64(60),
+		CPUReclaimableReservedPercent:    pointer.Int64(0),
+		CPUCalculatePolicy:               &cpuCalculatePolicy,
+		MemoryReclaimThresholdPercent:    pointer.Int64(65),
+		MemoryCalculatePolicy:            &memoryCalculatePolicy,
+		DegradeTimeMinutes:               pointer.Int64(15),
+		UpdateTimeThresholdSeconds:       pointer.Int64(300),
+		ResourceDiffThreshold:            pointer.Float64(0.1),
+		MidCPUThresholdPercent:           pointer.Int64(100),
+		MidMemoryThresholdPercent:        pointer.Int64(100),
+		MemoryReclaimableReservedPercent: pointer.Int64(0),
+		MidUnallocatedPercent:            pointer.Int64(0),
+		BatchCPUThresholdPercent:         nil,
+		BatchMemoryThresholdPercent:      nil,
 	}
 	cfg.ColocationStrategyExtender = defaultColocationStrategyExtender
 	return cfg
@@ -83,7 +85,9 @@ func IsColocationStrategyValid(strategy *configuration.ColocationStrategy) bool 
 		(strategy.MetricAggregateDurationSeconds == nil || *strategy.MetricAggregateDurationSeconds > 0) &&
 		(strategy.MetricReportIntervalSeconds == nil || *strategy.MetricReportIntervalSeconds > 0) &&
 		(strategy.CPUReclaimThresholdPercent == nil || *strategy.CPUReclaimThresholdPercent >= 0) &&
+		(strategy.CPUReclaimableReservedPercent == nil || *strategy.CPUReclaimableReservedPercent >= 0) &&
 		(strategy.MemoryReclaimThresholdPercent == nil || *strategy.MemoryReclaimThresholdPercent >= 0) &&
+		(strategy.MemoryReclaimableReservedPercent == nil || *strategy.MemoryReclaimableReservedPercent >= 0) &&
 		(strategy.DegradeTimeMinutes == nil || *strategy.DegradeTimeMinutes > 0) &&
 		(strategy.UpdateTimeThresholdSeconds == nil || *strategy.UpdateTimeThresholdSeconds > 0) &&
 		(strategy.ResourceDiffThreshold == nil || *strategy.ResourceDiffThreshold > 0) &&
@@ -161,6 +165,20 @@ func UpdateColocationStrategyForNode(strategy *configuration.ColocationStrategy,
 		klog.V(6).Infof("node %s use memory reclaim percent from node metadata, original: %+v, new: %v",
 			node.Name, strategy.MemoryReclaimThresholdPercent, *memReclaimPercent)
 		strategy.MemoryReclaimThresholdPercent = memReclaimPercent
+	}
+
+	cpuReclaimableReservedPercent := getNodeReclaimPercent(node, extension.LabelCPUReclaimableReservedRatio)
+	if cpuReclaimableReservedPercent != nil {
+		klog.V(6).Infof("node %s use cpu reserved percent from node metadata, original: %+v, new: %v",
+			node.Name, strategy.CPUReclaimableReservedPercent, *cpuReclaimableReservedPercent)
+		strategy.CPUReclaimableReservedPercent = cpuReclaimableReservedPercent
+	}
+
+	memReservedPercent := getNodeReclaimPercent(node, extension.LabelMemoryReclaimableReservedRatio)
+	if memReservedPercent != nil {
+		klog.V(6).Infof("node %s use memory reserved percent from node metadata, original: %+v, new: %v",
+			node.Name, strategy.MemoryReclaimableReservedPercent, *memReservedPercent)
+		strategy.MemoryReclaimableReservedPercent = memReservedPercent
 	}
 }
 

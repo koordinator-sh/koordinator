@@ -291,8 +291,10 @@ func TestPluginCalculate(t *testing.T) {
 			name: "degrade when node metric is expired",
 			args: args{
 				strategy: &configuration.ColocationStrategy{
-					Enable:             pointer.Bool(true),
-					DegradeTimeMinutes: pointer.Int64(5),
+					Enable:                           pointer.Bool(true),
+					DegradeTimeMinutes:               pointer.Int64(5),
+					CPUReclaimableReservedPercent:    pointer.Int64(10),
+					MemoryReclaimableReservedPercent: pointer.Int64(10),
 				},
 				node: testNode,
 				podList: &corev1.PodList{
@@ -360,8 +362,10 @@ func TestPluginCalculate(t *testing.T) {
 			name: "calculate correctly when node metric is valid",
 			args: args{
 				strategy: &configuration.ColocationStrategy{
-					Enable:             pointer.Bool(true),
-					DegradeTimeMinutes: pointer.Int64(10),
+					Enable:                           pointer.Bool(true),
+					DegradeTimeMinutes:               pointer.Int64(10),
+					CPUReclaimableReservedPercent:    pointer.Int64(10),
+					MemoryReclaimableReservedPercent: pointer.Int64(10),
 				},
 				node: testNode,
 				podList: &corev1.PodList{
@@ -437,11 +441,13 @@ func TestPluginCalculate(t *testing.T) {
 			name: "calculate correctly where the prod reclaimable exceeds the mid threshold",
 			args: args{
 				strategy: &configuration.ColocationStrategy{
-					Enable:                    pointer.Bool(true),
-					DegradeTimeMinutes:        pointer.Int64(10),
-					MidCPUThresholdPercent:    pointer.Int64(10),
-					MidMemoryThresholdPercent: pointer.Int64(20),
-					MidUnallocatedPercent:     pointer.Int64(10),
+					Enable:                           pointer.Bool(true),
+					DegradeTimeMinutes:               pointer.Int64(10),
+					CPUReclaimableReservedPercent:    pointer.Int64(10),
+					MemoryReclaimableReservedPercent: pointer.Int64(10),
+					MidCPUThresholdPercent:           pointer.Int64(10),
+					MidMemoryThresholdPercent:        pointer.Int64(20),
+					MidUnallocatedPercent:            pointer.Int64(10),
 				},
 				node: testNode,
 				podList: &corev1.PodList{
@@ -516,8 +522,10 @@ func TestPluginCalculate(t *testing.T) {
 			name: "calculate correctly when prod reclaimable is nil",
 			args: args{
 				strategy: &configuration.ColocationStrategy{
-					Enable:             pointer.Bool(true),
-					DegradeTimeMinutes: pointer.Int64(10),
+					Enable:                           pointer.Bool(true),
+					DegradeTimeMinutes:               pointer.Int64(10),
+					CPUReclaimableReservedPercent:    pointer.Int64(10),
+					MemoryReclaimableReservedPercent: pointer.Int64(10),
 				},
 				node: testNode,
 				podList: &corev1.PodList{
@@ -583,11 +591,175 @@ func TestPluginCalculate(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name: "calculate correctly when set reserved resource: not exceed",
+			args: args{
+				strategy: &configuration.ColocationStrategy{
+					Enable:                           pointer.Bool(true),
+					DegradeTimeMinutes:               pointer.Int64(10),
+					CPUReclaimableReservedPercent:    pointer.Int64(10),
+					MemoryReclaimableReservedPercent: pointer.Int64(10),
+					MidCPUThresholdPercent:           pointer.Int64(10),
+					MidMemoryThresholdPercent:        pointer.Int64(20),
+					MidUnallocatedPercent:            pointer.Int64(10),
+				},
+				node: testNode,
+				podList: &corev1.PodList{
+					Items: []corev1.Pod{
+						*testProdLSPod,
+						*testBatchBEPod,
+					},
+				},
+				metrics: &framework.ResourceMetrics{
+					NodeMetric: &slov1alpha1.NodeMetric{
+						ObjectMeta: metav1.ObjectMeta{
+							Name: "test-node",
+						},
+						Status: slov1alpha1.NodeMetricStatus{
+							UpdateTime: &metav1.Time{Time: time.Now().Add(-20 * time.Second)},
+							NodeMetric: &slov1alpha1.NodeMetricInfo{
+								NodeUsage: slov1alpha1.ResourceMap{
+									ResourceList: corev1.ResourceList{
+										corev1.ResourceCPU:    resource.MustParse("30"),
+										corev1.ResourceMemory: resource.MustParse("50G"),
+									},
+								},
+							},
+							PodsMetric: []*slov1alpha1.PodMetricInfo{
+								{
+									Name:      testProdLSPod.Name,
+									Namespace: testProdLSPod.Namespace,
+									PodUsage: slov1alpha1.ResourceMap{
+										ResourceList: corev1.ResourceList{
+											corev1.ResourceCPU:    resource.MustParse("5"),
+											corev1.ResourceMemory: resource.MustParse("10G"),
+										},
+									},
+								},
+								{
+									Name:      testBatchBEPod.Name,
+									Namespace: testBatchBEPod.Namespace,
+									PodUsage: slov1alpha1.ResourceMap{
+										ResourceList: corev1.ResourceList{
+											corev1.ResourceCPU:    resource.MustParse("15"),
+											corev1.ResourceMemory: resource.MustParse("30G"),
+										},
+									},
+								},
+							},
+							ProdReclaimableMetric: &slov1alpha1.ReclaimableMetric{
+								Resource: slov1alpha1.ResourceMap{
+									ResourceList: corev1.ResourceList{
+										corev1.ResourceCPU:    resource.MustParse("15"),
+										corev1.ResourceMemory: resource.MustParse("30G"),
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			want: []framework.ResourceItem{
+				{
+					Name:     extension.MidCPU,
+					Message:  "midAllocatable[CPU(milli-core)]:18000 = min(nodeCapacity:100000 * thresholdRatio:0.1, ProdReclaimable:15000, NodeUnused:70000) + Unallocated:80000 * midUnallocatedRatio:0.1",
+					Quantity: resource.NewQuantity(18000, resource.DecimalSI)},
+				{
+					Name:     extension.MidMemory,
+					Message:  "midAllocatable[Memory(GB)]:46 = min(nodeCapacity:210 * thresholdRatio:0.2, ProdReclaimable:30, NodeUnused:160) + Unallocated:160 * midUnallocatedRatio:0.1",
+					Quantity: resource.NewScaledQuantity(46, 9),
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "calculate correctly when set reserved resource: exceed",
+			args: args{
+				strategy: &configuration.ColocationStrategy{
+					Enable:                           pointer.Bool(true),
+					DegradeTimeMinutes:               pointer.Int64(10),
+					CPUReclaimableReservedPercent:    pointer.Int64(100),
+					MemoryReclaimableReservedPercent: pointer.Int64(100),
+					MidCPUThresholdPercent:           pointer.Int64(10),
+					MidMemoryThresholdPercent:        pointer.Int64(20),
+					MidUnallocatedPercent:            pointer.Int64(10),
+				},
+				node: testNode,
+				podList: &corev1.PodList{
+					Items: []corev1.Pod{
+						*testProdLSPod,
+						*testBatchBEPod,
+					},
+				},
+				metrics: &framework.ResourceMetrics{
+					NodeMetric: &slov1alpha1.NodeMetric{
+						ObjectMeta: metav1.ObjectMeta{
+							Name: "test-node",
+						},
+						Status: slov1alpha1.NodeMetricStatus{
+							UpdateTime: &metav1.Time{Time: time.Now().Add(-20 * time.Second)},
+							NodeMetric: &slov1alpha1.NodeMetricInfo{
+								NodeUsage: slov1alpha1.ResourceMap{
+									ResourceList: corev1.ResourceList{
+										corev1.ResourceCPU:    resource.MustParse("30"),
+										corev1.ResourceMemory: resource.MustParse("50G"),
+									},
+								},
+							},
+							PodsMetric: []*slov1alpha1.PodMetricInfo{
+								{
+									Name:      testProdLSPod.Name,
+									Namespace: testProdLSPod.Namespace,
+									PodUsage: slov1alpha1.ResourceMap{
+										ResourceList: corev1.ResourceList{
+											corev1.ResourceCPU:    resource.MustParse("5"),
+											corev1.ResourceMemory: resource.MustParse("10G"),
+										},
+									},
+								},
+								{
+									Name:      testBatchBEPod.Name,
+									Namespace: testBatchBEPod.Namespace,
+									PodUsage: slov1alpha1.ResourceMap{
+										ResourceList: corev1.ResourceList{
+											corev1.ResourceCPU:    resource.MustParse("15"),
+											corev1.ResourceMemory: resource.MustParse("30G"),
+										},
+									},
+								},
+							},
+							ProdReclaimableMetric: &slov1alpha1.ReclaimableMetric{
+								Resource: slov1alpha1.ResourceMap{
+									ResourceList: corev1.ResourceList{
+										corev1.ResourceCPU:    resource.MustParse("15"),
+										corev1.ResourceMemory: resource.MustParse("30G"),
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			want: []framework.ResourceItem{
+				{
+					Name:     extension.MidCPU,
+					Message:  "midAllocatable[CPU(milli-core)]:20000 = min(nodeCapacity:100000 * thresholdRatio:0.1, ProdReclaimable:15000, NodeUnused:70000) + Unallocated:100000 * midUnallocatedRatio:0.1",
+					Quantity: resource.NewQuantity(20000, resource.DecimalSI)},
+				{
+					Name:     extension.MidMemory,
+					Message:  "midAllocatable[Memory(GB)]:51 = min(nodeCapacity:210 * thresholdRatio:0.2, ProdReclaimable:30, NodeUnused:160) + Unallocated:210 * midUnallocatedRatio:0.1",
+					Quantity: resource.NewScaledQuantity(51, 9),
+				},
+			},
+			wantErr: false,
+		},
+		{
 			name: "calculate correctly where node metrics is invalid",
 			args: args{
 				strategy: &configuration.ColocationStrategy{
-					Enable:             pointer.Bool(true),
-					DegradeTimeMinutes: pointer.Int64(10),
+					Enable:                           pointer.Bool(true),
+					DegradeTimeMinutes:               pointer.Int64(10),
+					CPUReclaimableReservedPercent:    pointer.Int64(10),
+					MemoryReclaimableReservedPercent: pointer.Int64(10),
 				},
 				node: testNode,
 				podList: &corev1.PodList{
@@ -635,8 +807,10 @@ func TestPluginCalculate(t *testing.T) {
 			name: "calculate correctly where the prod reclaimable exceeds the node free resource",
 			args: args{
 				strategy: &configuration.ColocationStrategy{
-					Enable:             pointer.Bool(true),
-					DegradeTimeMinutes: pointer.Int64(10),
+					Enable:                           pointer.Bool(true),
+					DegradeTimeMinutes:               pointer.Int64(10),
+					CPUReclaimableReservedPercent:    pointer.Int64(10),
+					MemoryReclaimableReservedPercent: pointer.Int64(10),
 				},
 				node: testNode,
 				podList: &corev1.PodList{
@@ -712,8 +886,10 @@ func TestPluginCalculate(t *testing.T) {
 			name: "including product host application usage",
 			args: args{
 				strategy: &configuration.ColocationStrategy{
-					Enable:             pointer.Bool(true),
-					DegradeTimeMinutes: pointer.Int64(10),
+					Enable:                           pointer.Bool(true),
+					DegradeTimeMinutes:               pointer.Int64(10),
+					CPUReclaimableReservedPercent:    pointer.Int64(10),
+					MemoryReclaimableReservedPercent: pointer.Int64(10),
 				},
 				node: testNode,
 				podList: &corev1.PodList{
@@ -794,8 +970,10 @@ func TestPluginCalculate(t *testing.T) {
 			name: "including mid host application usage",
 			args: args{
 				strategy: &configuration.ColocationStrategy{
-					Enable:             pointer.Bool(true),
-					DegradeTimeMinutes: pointer.Int64(10),
+					Enable:                           pointer.Bool(true),
+					DegradeTimeMinutes:               pointer.Int64(10),
+					CPUReclaimableReservedPercent:    pointer.Int64(10),
+					MemoryReclaimableReservedPercent: pointer.Int64(10),
 				},
 				node: testNode,
 				podList: &corev1.PodList{
@@ -876,8 +1054,10 @@ func TestPluginCalculate(t *testing.T) {
 			name: "including batch host application usage",
 			args: args{
 				strategy: &configuration.ColocationStrategy{
-					Enable:             pointer.Bool(true),
-					DegradeTimeMinutes: pointer.Int64(10),
+					Enable:                           pointer.Bool(true),
+					DegradeTimeMinutes:               pointer.Int64(10),
+					CPUReclaimableReservedPercent:    pointer.Int64(10),
+					MemoryReclaimableReservedPercent: pointer.Int64(10),
 				},
 				node: testNode,
 				podList: &corev1.PodList{

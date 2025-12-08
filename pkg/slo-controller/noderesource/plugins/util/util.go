@@ -186,8 +186,15 @@ func CalculateMidResourceByPolicy(strategy *configuration.ColocationStrategy, no
 	}
 	memory := resource.NewQuantity(allocatableMemory, resource.BinarySI)
 
+	reservedResource := GetNodeReclaimableReservedResources(strategy, nodeCapacity)
 	// CPU need turn into milli value
 	unallocatedMilliCPU, unallocatedMemory := resource.NewQuantity(unallocated.Cpu().MilliValue(), resource.DecimalSI), unallocated.Memory()
+	if cpu := reservedResource.Cpu().MilliValue(); cpu > unallocatedMilliCPU.Value() {
+		unallocatedMilliCPU = resource.NewQuantity(reservedResource.Cpu().MilliValue(), resource.DecimalSI)
+	}
+	if mem := reservedResource.Memory().Value(); mem > unallocatedMemory.Value() {
+		unallocatedMemory = reservedResource.Memory()
+	}
 	midUnallocatedRatio := getPercentFromStrategy(strategy, &defaultStrategy, MidUnallocatedPercent)
 	adjustedUnallocatedMilliCPU := resource.NewQuantity(int64(float64(unallocatedMilliCPU.Value())*midUnallocatedRatio), resource.DecimalSI)
 	adjustedUnallocatedMemory := resource.NewQuantity(int64(float64(unallocatedMemory.Value())*midUnallocatedRatio), resource.BinarySI)
@@ -340,6 +347,17 @@ func GetNodeSafetyMargin(strategy *configuration.ColocationStrategy, nodeCapacit
 	return corev1.ResourceList{
 		corev1.ResourceCPU:    cpuReserveQuant,
 		corev1.ResourceMemory: memReserveQuant,
+	}
+}
+
+// GetNodeReclaimableReservedResources gets node-level long-time reserved resource
+func GetNodeReclaimableReservedResources(strategy *configuration.ColocationStrategy, nodeCapacity corev1.ResourceList) corev1.ResourceList {
+	cpuReservedQuant := util.MultiplyMilliQuant(nodeCapacity[corev1.ResourceCPU], float64(*strategy.CPUReclaimableReservedPercent)/100)
+	memReservedQuant := util.MultiplyQuant(nodeCapacity[corev1.ResourceMemory], float64(*strategy.MemoryReclaimableReservedPercent)/100)
+
+	return corev1.ResourceList{
+		corev1.ResourceCPU:    cpuReservedQuant,
+		corev1.ResourceMemory: memReservedQuant,
 	}
 }
 
