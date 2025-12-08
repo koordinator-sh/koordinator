@@ -1,7 +1,7 @@
 ---
 title: Inference Orchestration Enhancement with Grove Integration
 authors:
-  - "@kangz"
+  - ""
 reviewers:
   - TBD
 creation-date: 2025-12-01
@@ -76,7 +76,7 @@ Modern AI inference workloads, especially large language models (LLMs) and multi
 
 5. **Topology-Aware Placement**: Inference components communicate heavily. Placement within NVLink domains or network-optimized locations is crucial for minimizing latency and maximizing throughput.
 
-Grove (https://github.com/ai-dynamo/grove) provides a proven solution to these challenges with a clean Kubernetes-native API. Integrating Grove with Koordinator will combine Grove's inference-specific orchestration patterns with Koordinator's advanced scheduling capabilities and resource management.
+Grove (https://github.com/ai-dynamo/grove) provides a proven solution to these challenges with a clean Kubernetes-native API. Integrating Grove with Koordinator will combine Grove's inference-specific orchestration patterns with Koordinator's advanced scheduling capabilities and resource management, enabling native support for Dynamo (https://github.com/ai-dynamo/dynamo).
 
 ### Goals
 
@@ -90,13 +90,13 @@ Grove (https://github.com/ai-dynamo/grove) provides a proven solution to these c
 ### Non-Goals
 
 - Re-implementing Grove's core controllers from scratch (we will integrate with Grove's existing implementation)
-- Supporting non-inference workloads with Grove APIs (Grove is specifically designed for inference; other workloads should use existing Koordinator features)
 - Modifications to Grove's upstream API definitions (we will adopt Grove's APIs as-is and extend through Koordinator-specific annotations if needed)
 - Automatic model sharding or inference optimization (this proposal focuses on orchestration, not model serving logic)
 
 
 ### Future Work
 - Modify grove to leverage community k8s gang schedule capability(Workload)
+- Supporting non-inference workloads with Grove APIs (Grove is specifically designed for inference; other workloads should use existing Koordinator features)
 
 ## Proposal
 
@@ -515,6 +515,10 @@ Wait for Kubernetes to add native support for advanced scheduling features.
 
 **Decision**: Rejected. Current production needs require immediate solution. We can migrate to native Kubernetes features if/when they become available.
 
+
+### Alternative 5: RGB solution
+TODO:
+
 ## Upgrade Strategy
 
 ### Upgrade from Previous Koordinator Versions
@@ -548,25 +552,6 @@ Users already running Grove without Koordinator can migrate gradually:
 6. Gradually migrate all workloads
 7. Deprecate standalone scheduler if desired
 
-### Configuration Changes
-
-**Scheduler Configuration (new)**:
-```yaml
-apiVersion: kubescheduler.config.k8s.io/v1
-kind: KubeSchedulerConfiguration
-profiles:
-- schedulerName: koordinator-scheduler
-  plugins:
-    preFilter:
-      enabled:
-      - name: PodGangScheduling  # New Grove-aware plugin
-    filter:
-      enabled:
-      - name: NetworkTopologyAwareScheduling
-    score:
-      enabled:
-      - name: NetworkAffinityForPodClique  # New scoring plugin
-```
 
 **Feature Gate (temporary, during alpha/beta)**:
 ```bash
@@ -670,17 +655,3 @@ If issues arise during upgrade:
   - Grove CRD integration
   - Basic gang scheduling for PodGang
   - Feature gate implementation
-- [ ] 03/XX/2026: Alpha release (v1.x.0-alpha)
-  - Core gang scheduling working
-  - Basic topology awareness
-  - Limited autoscaling support
-- [ ] 04/XX/2026: Beta release (v1.x.0-beta)
-  - Hierarchical gang scheduling
-  - Startup ordering support
-  - Full autoscaling integration
-  - Performance optimizations
-- [ ] 06/XX/2026: GA release (v1.x.0)
-  - Production-ready
-  - Full feature set
-  - Comprehensive documentation
-  - Security hardening complete
