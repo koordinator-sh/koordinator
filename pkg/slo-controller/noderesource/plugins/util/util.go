@@ -186,24 +186,32 @@ func CalculateMidResourceByPolicy(strategy *configuration.ColocationStrategy, no
 	}
 	memory := resource.NewQuantity(allocatableMemory, resource.BinarySI)
 
+	reservedResource := GetNodeReclaimableReservedResources(strategy, nodeCapacity)
 	// CPU need turn into milli value
 	unallocatedMilliCPU, unallocatedMemory := resource.NewQuantity(unallocated.Cpu().MilliValue(), resource.DecimalSI), unallocated.Memory()
 	midUnallocatedRatio := getPercentFromStrategy(strategy, &defaultStrategy, MidUnallocatedPercent)
 	adjustedUnallocatedMilliCPU := resource.NewQuantity(int64(float64(unallocatedMilliCPU.Value())*midUnallocatedRatio), resource.DecimalSI)
 	adjustedUnallocatedMemory := resource.NewQuantity(int64(float64(unallocatedMemory.Value())*midUnallocatedRatio), resource.BinarySI)
 
+	if cpu := reservedResource.Cpu().MilliValue(); cpu > adjustedUnallocatedMilliCPU.Value() {
+		adjustedUnallocatedMilliCPU = resource.NewQuantity(reservedResource.Cpu().MilliValue(), resource.DecimalSI)
+	}
+	if mem := reservedResource.Memory().Value(); mem > adjustedUnallocatedMemory.Value() {
+		adjustedUnallocatedMemory = reservedResource.Memory()
+	}
+
 	cpuInMilliCores.Add(*adjustedUnallocatedMilliCPU)
 	memory.Add(*adjustedUnallocatedMemory)
 
-	cpuMsg := fmt.Sprintf("midAllocatable[CPU(milli-core)]:%v = min(nodeCapacity:%v * thresholdRatio:%v, ProdReclaimable:%v, NodeUnused:%v) + Unallocated:%v * midUnallocatedRatio:%v",
+	cpuMsg := fmt.Sprintf("midAllocatable[CPU(milli-core)]:%v = min(nodeCapacity:%v * thresholdRatio:%v, ProdReclaimable:%v, NodeUnused:%v) + max(Unallocated:%v * midUnallocatedRatio:%v, nodeCapacity:%v * reclaimableReservedRatio:%v)",
 		cpuInMilliCores.Value(), nodeCapacity.Cpu().MilliValue(),
 		cpuThresholdRatio, prodReclaimableCPU.MilliValue(), nodeUnused.Cpu().MilliValue(),
-		unallocatedMilliCPU.Value(), midUnallocatedRatio)
+		unallocatedMilliCPU.Value(), midUnallocatedRatio, nodeCapacity.Cpu().MilliValue(), float64(*strategy.CPUReclaimableReservedPercent)/100)
 
-	memMsg := fmt.Sprintf("midAllocatable[Memory(GB)]:%v = min(nodeCapacity:%v * thresholdRatio:%v, ProdReclaimable:%v, NodeUnused:%v) + Unallocated:%v * midUnallocatedRatio:%v",
+	memMsg := fmt.Sprintf("midAllocatable[Memory(GB)]:%v = min(nodeCapacity:%v * thresholdRatio:%v, ProdReclaimable:%v, NodeUnused:%v) + max(Unallocated:%v * midUnallocatedRatio:%v, nodeCapacity:%v * reclaimableReservedRatio:%v)",
 		memory.ScaledValue(resource.Giga), nodeCapacity.Memory().ScaledValue(resource.Giga),
 		memThresholdRatio, prodReclaimableMemory.ScaledValue(resource.Giga), nodeUnused.Memory().ScaledValue(resource.Giga),
-		unallocatedMemory.ScaledValue(resource.Giga), midUnallocatedRatio)
+		unallocatedMemory.ScaledValue(resource.Giga), midUnallocatedRatio, nodeCapacity.Memory().ScaledValue(resource.Giga), float64(*strategy.MemoryReclaimableReservedPercent)/100)
 
 	return cpuInMilliCores, memory, cpuMsg, memMsg
 }
@@ -340,6 +348,17 @@ func GetNodeSafetyMargin(strategy *configuration.ColocationStrategy, nodeCapacit
 	return corev1.ResourceList{
 		corev1.ResourceCPU:    cpuReserveQuant,
 		corev1.ResourceMemory: memReserveQuant,
+	}
+}
+
+// GetNodeReclaimableReservedResources gets node-level long-time reserved resource
+func GetNodeReclaimableReservedResources(strategy *configuration.ColocationStrategy, nodeCapacity corev1.ResourceList) corev1.ResourceList {
+	cpuReservedQuant := util.MultiplyMilliQuant(nodeCapacity[corev1.ResourceCPU], float64(*strategy.CPUReclaimableReservedPercent)/100)
+	memReservedQuant := util.MultiplyQuant(nodeCapacity[corev1.ResourceMemory], float64(*strategy.MemoryReclaimableReservedPercent)/100)
+
+	return corev1.ResourceList{
+		corev1.ResourceCPU:    cpuReservedQuant,
+		corev1.ResourceMemory: memReservedQuant,
 	}
 }
 

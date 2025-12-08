@@ -155,12 +155,14 @@ func Test_NodeResourceController_ColocationEnabled(t *testing.T) {
 			available: true,
 			cfg: configuration.ColocationCfg{
 				ColocationStrategy: configuration.ColocationStrategy{
-					Enable:                        pointer.Bool(true),
-					CPUReclaimThresholdPercent:    pointer.Int64(65),
-					MemoryReclaimThresholdPercent: pointer.Int64(65),
-					DegradeTimeMinutes:            pointer.Int64(15),
-					UpdateTimeThresholdSeconds:    pointer.Int64(300),
-					ResourceDiffThreshold:         pointer.Float64(0.1),
+					Enable:                           pointer.Bool(true),
+					CPUReclaimThresholdPercent:       pointer.Int64(65),
+					MemoryReclaimThresholdPercent:    pointer.Int64(65),
+					CPUReclaimableReservedPercent:    pointer.Int64(0),
+					MemoryReclaimableReservedPercent: pointer.Int64(0),
+					DegradeTimeMinutes:               pointer.Int64(15),
+					UpdateTimeThresholdSeconds:       pointer.Int64(300),
+					ResourceDiffThreshold:            pointer.Float64(0.1),
 				},
 			},
 		},
@@ -199,6 +201,9 @@ func Test_NodeResourceController_ColocationEnabled(t *testing.T) {
 	key := types.NamespacedName{Name: nodeName}
 	nodeReq := ctrl.Request{NamespacedName: key}
 
+	fakeBuilder := builder.ControllerManagedBy(&testutil.FakeManager{})
+	opt := framework.NewOption().WithClient(client).WithScheme(scheme).WithControllerBuilder(fakeBuilder)
+	framework.RunSetupExtenders(opt)
 	result, err := r.Reconcile(ctx, nodeReq)
 	assert.NoError(t, err)
 	assert.False(t, result.Requeue)

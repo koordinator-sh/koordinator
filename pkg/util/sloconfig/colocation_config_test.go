@@ -186,21 +186,23 @@ func Test_GetNodeColocationStrategy(t *testing.T) {
 				},
 			},
 			want: &configuration.ColocationStrategy{
-				Enable:                         pointer.Bool(true),
-				MetricAggregateDurationSeconds: pointer.Int64(300),
-				MetricReportIntervalSeconds:    pointer.Int64(60),
-				MetricAggregatePolicy:          DefaultColocationStrategy().MetricAggregatePolicy,
-				CPUReclaimThresholdPercent:     pointer.Int64(60),
-				CPUCalculatePolicy:             &cpuCalcPolicyByUsage,
-				MemoryReclaimThresholdPercent:  pointer.Int64(65),
-				MemoryCalculatePolicy:          &memoryCalcPolicyByUsage,
-				DegradeTimeMinutes:             pointer.Int64(15),
-				UpdateTimeThresholdSeconds:     pointer.Int64(300),
-				ResourceDiffThreshold:          pointer.Float64(0.1),
-				MetricMemoryCollectPolicy:      &defaultMemoryCollectPolicy,
-				MidCPUThresholdPercent:         pointer.Int64(100),
-				MidMemoryThresholdPercent:      pointer.Int64(100),
-				MidUnallocatedPercent:          pointer.Int64(0),
+				Enable:                           pointer.Bool(true),
+				MetricAggregateDurationSeconds:   pointer.Int64(300),
+				MetricReportIntervalSeconds:      pointer.Int64(60),
+				MetricAggregatePolicy:            DefaultColocationStrategy().MetricAggregatePolicy,
+				CPUReclaimThresholdPercent:       pointer.Int64(60),
+				CPUReclaimableReservedPercent:    pointer.Int64(0),
+				CPUCalculatePolicy:               &cpuCalcPolicyByUsage,
+				MemoryReclaimThresholdPercent:    pointer.Int64(65),
+				MemoryReclaimableReservedPercent: pointer.Int64(0),
+				MemoryCalculatePolicy:            &memoryCalcPolicyByUsage,
+				DegradeTimeMinutes:               pointer.Int64(15),
+				UpdateTimeThresholdSeconds:       pointer.Int64(300),
+				ResourceDiffThreshold:            pointer.Float64(0.1),
+				MetricMemoryCollectPolicy:        &defaultMemoryCollectPolicy,
+				MidCPUThresholdPercent:           pointer.Int64(100),
+				MidMemoryThresholdPercent:        pointer.Int64(100),
+				MidUnallocatedPercent:            pointer.Int64(0),
 			},
 		},
 		{
@@ -267,35 +269,41 @@ func Test_GetNodeColocationStrategy(t *testing.T) {
 			},
 		},
 		{
-			name: "get strategy merged with node reclaim ratios",
+			name: "get strategy merged with node ratios",
 			args: args{
 				cfg: &configuration.ColocationCfg{
 					ColocationStrategy: configuration.ColocationStrategy{
-						Enable:                        pointer.Bool(false),
-						CPUReclaimThresholdPercent:    pointer.Int64(65),
-						MemoryReclaimThresholdPercent: pointer.Int64(65),
-						DegradeTimeMinutes:            pointer.Int64(15),
-						UpdateTimeThresholdSeconds:    pointer.Int64(300),
-						ResourceDiffThreshold:         pointer.Float64(0.1),
+						Enable:                           pointer.Bool(false),
+						CPUReclaimThresholdPercent:       pointer.Int64(65),
+						MemoryReclaimThresholdPercent:    pointer.Int64(65),
+						CPUReclaimableReservedPercent:    pointer.Int64(0),
+						MemoryReclaimableReservedPercent: pointer.Int64(0),
+						DegradeTimeMinutes:               pointer.Int64(15),
+						UpdateTimeThresholdSeconds:       pointer.Int64(300),
+						ResourceDiffThreshold:            pointer.Float64(0.1),
 					},
 				},
 				node: &corev1.Node{
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "test-node",
 						Labels: map[string]string{
-							extension.LabelCPUReclaimRatio:    "0.7",
-							extension.LabelMemoryReclaimRatio: "0.75",
+							extension.LabelCPUReclaimRatio:                "0.7",
+							extension.LabelMemoryReclaimRatio:             "0.75",
+							extension.LabelCPUReclaimableReservedRatio:    "0.1",
+							extension.LabelMemoryReclaimableReservedRatio: "0.12",
 						},
 					},
 				},
 			},
 			want: &configuration.ColocationStrategy{
-				Enable:                        pointer.Bool(false),
-				CPUReclaimThresholdPercent:    pointer.Int64(70),
-				MemoryReclaimThresholdPercent: pointer.Int64(75),
-				DegradeTimeMinutes:            pointer.Int64(15),
-				UpdateTimeThresholdSeconds:    pointer.Int64(300),
-				ResourceDiffThreshold:         pointer.Float64(0.1),
+				Enable:                           pointer.Bool(false),
+				CPUReclaimThresholdPercent:       pointer.Int64(70),
+				MemoryReclaimThresholdPercent:    pointer.Int64(75),
+				CPUReclaimableReservedPercent:    pointer.Int64(10),
+				MemoryReclaimableReservedPercent: pointer.Int64(12),
+				DegradeTimeMinutes:               pointer.Int64(15),
+				UpdateTimeThresholdSeconds:       pointer.Int64(300),
+				ResourceDiffThreshold:            pointer.Float64(0.1),
 			},
 		},
 		{
@@ -350,7 +358,9 @@ func Test_GetNodeColocationStrategy(t *testing.T) {
 							extension.AnnotationNodeColocationStrategy: `
 {
   "cpuReclaimThresholdPercent": 70,
-  "memoryReclaimThresholdPercent": 75
+  "memoryReclaimThresholdPercent": 75,
+  "cpuReclaimableReservedPercent": 10,
+  "memoryReclaimableReservedPercent": 15
 }
 `,
 						},
@@ -358,12 +368,14 @@ func Test_GetNodeColocationStrategy(t *testing.T) {
 				},
 			},
 			want: &configuration.ColocationStrategy{
-				Enable:                        pointer.Bool(false),
-				CPUReclaimThresholdPercent:    pointer.Int64(70),
-				MemoryReclaimThresholdPercent: pointer.Int64(75),
-				DegradeTimeMinutes:            pointer.Int64(15),
-				UpdateTimeThresholdSeconds:    pointer.Int64(300),
-				ResourceDiffThreshold:         pointer.Float64(0.1),
+				Enable:                           pointer.Bool(false),
+				CPUReclaimThresholdPercent:       pointer.Int64(70),
+				MemoryReclaimThresholdPercent:    pointer.Int64(75),
+				CPUReclaimableReservedPercent:    pointer.Int64(10),
+				MemoryReclaimableReservedPercent: pointer.Int64(15),
+				DegradeTimeMinutes:               pointer.Int64(15),
+				UpdateTimeThresholdSeconds:       pointer.Int64(300),
+				ResourceDiffThreshold:            pointer.Float64(0.1),
 			},
 		},
 		{
@@ -415,6 +427,8 @@ func TestUpdateColocationStrategyForNode(t *testing.T) {
 	cfg1.CPUReclaimThresholdPercent = pointer.Int64(100)
 	cfg2 := defaultCfg.DeepCopy()
 	cfg2.CPUReclaimThresholdPercent = pointer.Int64(80)
+	cfg2.CPUReclaimableReservedPercent = pointer.Int64(10)
+	cfg2.MemoryReclaimableReservedPercent = pointer.Int64(12)
 	type args struct {
 		strategy *configuration.ColocationStrategy
 		node     *corev1.Node
@@ -471,7 +485,9 @@ func TestUpdateColocationStrategyForNode(t *testing.T) {
 							extension.AnnotationNodeColocationStrategy: `{"cpuReclaimThresholdPercent": 100}`,
 						},
 						Labels: map[string]string{
-							extension.LabelCPUReclaimRatio: `0.8`,
+							extension.LabelCPUReclaimRatio:                `0.8`,
+							extension.LabelCPUReclaimableReservedRatio:    `0.1`,
+							extension.LabelMemoryReclaimableReservedRatio: `0.12`,
 						},
 					},
 				},

@@ -127,7 +127,7 @@ func (p *Plugin) degradeCalculate(node *corev1.Node, message string) []framework
 	return p.Reset(node, message)
 }
 
-// Unallocated[Mid] = max(NodeCapacity - NodeReserved - Allocated[Prod], 0)
+// Unallocated[Mid] = max(NodeCapacity - NodeReserved - Allocated[Prod], NodeCapacity * reclaimableReservedRatio)
 func (p *Plugin) getUnallocated(nodeName string, podList *corev1.PodList, nodeCapacity, nodeReserved corev1.ResourceList) corev1.ResourceList {
 	prodPodAllocated := corev1.ResourceList{}
 	for i := range podList.Items {
@@ -160,7 +160,7 @@ func (p *Plugin) getUnallocated(nodeName string, podList *corev1.PodList, nodeCa
 func (p *Plugin) calculate(strategy *configuration.ColocationStrategy, node *corev1.Node, podList *corev1.PodList,
 	resourceMetrics *framework.ResourceMetrics) []framework.ResourceItem {
 	// Allocatable[Mid]' := min(Reclaimable[Mid], NodeAllocatable * thresholdRatio, NodeUnused) + Unallocated[Mid] * midUnallocatedRatio
-	// Unallocated[Mid] = max(NodeCapacity - NodeReserved - Allocated[Prod], 0)
+	// Unallocated[Mid] = max((NodeCapacity - NodeReserved - Allocated[Prod]) * midUnallocatedRatio, NodeCapacity * reclaimableReservedRatio)
 
 	var allocatableMilliCPU, allocatableMemory int64
 	prodReclaimableCPU, prodReclaimableMemory := resource.NewQuantity(0, resource.DecimalSI), resource.NewQuantity(0, resource.BinarySI)

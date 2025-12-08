@@ -164,6 +164,11 @@ func (in *ColocationStrategy) DeepCopyInto(out *ColocationStrategy) {
 		*out = new(int64)
 		**out = **in
 	}
+	if in.CPUReclaimableReservedPercent != nil {
+		in, out := &in.CPUReclaimableReservedPercent, &out.CPUReclaimableReservedPercent
+		*out = new(int64)
+		**out = **in
+	}
 	if in.CPUCalculatePolicy != nil {
 		in, out := &in.CPUCalculatePolicy, &out.CPUCalculatePolicy
 		*out = new(CalculatePolicy)
@@ -171,6 +176,11 @@ func (in *ColocationStrategy) DeepCopyInto(out *ColocationStrategy) {
 	}
 	if in.MemoryReclaimThresholdPercent != nil {
 		in, out := &in.MemoryReclaimThresholdPercent, &out.MemoryReclaimThresholdPercent
+		*out = new(int64)
+		**out = **in
+	}
+	if in.MemoryReclaimableReservedPercent != nil {
+		in, out := &in.MemoryReclaimableReservedPercent, &out.MemoryReclaimableReservedPercent
 		*out = new(int64)
 		**out = **in
 	}
