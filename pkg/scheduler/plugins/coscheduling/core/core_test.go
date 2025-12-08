@@ -634,12 +634,19 @@ func TestGetGangBindingInfo(t *testing.T) {
 					gang.addAssumedPod(pod)
 				}
 			}
-			// Add test pod to gang
+			// Add test pod to gang and simulate AllowGangGroup
 			if !tt.wantNil {
 				gangId := util.GetId(tt.pod.Namespace, util.GetGangNameByPod(tt.pod))
 				gang := mgr.pgMgr.cache.getGangFromCacheByGangId(gangId, false)
 				if gang != nil {
 					gang.addAssumedPod(tt.pod)
+					// Simulate AllowGangGroup by setting BindingMembers
+					memberPods := sets.New[string]()
+					memberPods.Insert(string(tt.pod.UID))
+					for _, pod := range tt.pods {
+						memberPods.Insert(string(pod.UID))
+					}
+					gang.GangGroupInfo.SetBindingMembers(memberPods)
 				}
 			}
 

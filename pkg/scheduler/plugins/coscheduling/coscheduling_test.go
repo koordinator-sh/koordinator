@@ -643,6 +643,7 @@ func TestPreBind(t *testing.T) {
 		expectGangGroupID   string
 		expectMemberCount   string
 		podHasExistingLabel bool
+		onceSatisfied       bool
 	}{
 		{
 			name: "gang satisfied, should set labels on pod",
@@ -677,6 +678,30 @@ func TestPreBind(t *testing.T) {
 			expectMemberCount:   "2",
 			podHasExistingLabel: true,
 		},
+		{
+			name: "gang OnceSatisfied with retry pod, should not set gang annotations",
+			pg:   makePg("gangRetry", "gangRetry_ns", 2, &gangCreatedTime, nil),
+			pod:  st.MakePod().Name("pod-retry").UID("pod-retry").Namespace("gangRetry_ns").Label(v1alpha1.PodGroupLabel, "gangRetry").Obj(),
+			pods: []*corev1.Pod{
+				st.MakePod().Name("pod-bound-1").UID("pod-bound-1").Namespace("gangRetry_ns").Label(v1alpha1.PodGroupLabel, "gangRetry").Obj(),
+			},
+			expectLabelsSet:   true,
+			expectGangGroupID: "gangRetry_ns/gangRetry",
+			expectMemberCount: "2",
+			onceSatisfied:     true,
+		},
+		{
+			name: "gang oversub: min=2, total=3, all pods should get consistent memberCount=2",
+			pg:   makePg("gangOversub", "gangOversub_ns", 2, &gangCreatedTime, nil),
+			pod:  st.MakePod().Name("pod-oversub-3").UID("pod-oversub-3").Namespace("gangOversub_ns").Label(v1alpha1.PodGroupLabel, "gangOversub").Obj(),
+			pods: []*corev1.Pod{
+				st.MakePod().Name("pod-oversub-1").UID("pod-oversub-1").Namespace("gangOversub_ns").Label(v1alpha1.PodGroupLabel, "gangOversub").Obj(),
+				st.MakePod().Name("pod-oversub-2").UID("pod-oversub-2").UID("pod-oversub-2").Namespace("gangOversub_ns").Label(v1alpha1.PodGroupLabel, "gangOversub").Obj(),
+			},
+			expectLabelsSet:   true,
+			expectGangGroupID: "gangOversub_ns/gangOversub",
+			expectMemberCount: "2",
+		},
 	}
 
 	for _, tt := range tests {
@@ -705,14 +730,34 @@ func TestPreBind(t *testing.T) {
 
 			// Make gang satisfied if needed
 			if len(tt.pods) > 0 {
-				// Let first pod enter Permit and be assumed
-				status1, _ := gp.Permit(ctx, cycleState, tt.pod, "")
-				assert.Equal(t, framework.Wait, status1.Code())
+				if tt.onceSatisfied {
+					// For OnceSatisfied case: simulate first round gang scheduling completed
+					// First pod enters Permit and waits
+					status1, _ := gp.Permit(ctx, cycleState, tt.pod, "")
+					assert.Equal(t, framework.Wait, status1.Code())
 
-				// Let second pod enter Permit and satisfy the gang requirements
-				for _, pod := range tt.pods {
-					status2, _ := gp.Permit(ctx, cycleState, pod, "")
-					assert.Equal(t, framework.Success, status2.Code())
+					// Other pods enter Permit and gang becomes satisfied
+					for _, pod := range tt.pods {
+						status2, _ := gp.Permit(ctx, cycleState, pod, "")
+						assert.Equal(t, framework.Success, status2.Code())
+					}
+
+					// Simulate first pod bound, triggering OnceSatisfied
+					gp.PostBind(ctx, cycleState, tt.pods[0], "node-1")
+
+					// Now the retry pod (tt.pod) enters Permit directly (OnceSatisfied path)
+					retryStatus, _ := gp.Permit(ctx, cycleState, tt.pod, "")
+					assert.Equal(t, framework.Success, retryStatus.Code())
+				} else {
+					// Normal gang scheduling: Let first pod enter Permit and be assumed
+					status1, _ := gp.Permit(ctx, cycleState, tt.pod, "")
+					assert.Equal(t, framework.Wait, status1.Code())
+
+					// Let second pod enter Permit and satisfy the gang requirements
+					for _, pod := range tt.pods {
+						status2, _ := gp.Permit(ctx, cycleState, pod, "")
+						assert.Equal(t, framework.Success, status2.Code())
+					}
 				}
 			}
 

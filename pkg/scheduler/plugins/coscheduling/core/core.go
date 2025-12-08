@@ -503,6 +503,20 @@ func (pgMgr *PodGroupManager) AllowGangGroup(pod *corev1.Pod, handle framework.H
 
 	gangSlices := gang.getGangGroup()
 
+	if currentBindingMembers := gang.getBindingMembers(); len(currentBindingMembers) <= 0 { // record binding members if it is unset
+		waitingPods := pgMgr.cache.getWaitingPods(gangSlices)
+		memberPods := sets.New[string]()
+		for _, pod := range waitingPods {
+			memberPods.Insert(string(pod.UID))
+		}
+		gang.setBindingMembers(memberPods)
+		klog.V(4).InfoS("AllowGangGroup: record binding members for gang",
+			"pod", klog.KObj(pod), "gang", gang.Name, "gangGroup", gang.GangGroupId, "memberPods", memberPods.Len())
+	} else {
+		klog.V(4).InfoS("AllowGangGroup: binding members already set, skip recording",
+			"pod", klog.KObj(pod), "gang", gang.Name, "gangGroup", gang.GangGroupId, "memberPods", currentBindingMembers.Len())
+	}
+
 	handle.IterateOverWaitingPods(func(waitingPod framework.WaitingPod) {
 		podGangId := util.GetId(waitingPod.GetPod().Namespace, util.GetGangNameByPod(waitingPod.GetPod()))
 		for _, gangIdTmp := range gangSlices {
@@ -513,9 +527,6 @@ func (pgMgr *PodGroupManager) AllowGangGroup(pod *corev1.Pod, handle framework.H
 			}
 		}
 	})
-
-	gang.clearWaitingGang()
-
 }
 
 func (pgMgr *PodGroupManager) GetGangByPod(pod *corev1.Pod) *Gang {
@@ -574,9 +585,23 @@ func (pgMgr *PodGroupManager) GetGangBindingInfo(pod *corev1.Pod) *GangBindingIn
 	if gang == nil {
 		return nil
 	}
-	memberCount := pgMgr.cache.getWaitingPodsNum(gang.GangGroup)
+
+	// Get the snapshot members from GangGroupInfo.
+	// This value was set in AllowGangGroup and persists through binding cycle.
+	memberPods := gang.getBindingMembers()
+	if memberPods.Len() <= 1 { // skip gang binding info when no member pods or single pod
+		klog.V(4).InfoS("Skip gang binding info due to the size of memberPods no larger than 1 (OnceSatisfied or failover)",
+			"pod", klog.KObj(pod), "gangGroup", gang.GangGroupId, "memberPods", memberPods.Len())
+		return nil
+	}
+	if !memberPods.Has(string(pod.UID)) { // only record binding info for member pods
+		klog.V(4).InfoS("Skip gang binding info due to pod not in memberPods",
+			"pod", klog.KObj(pod), "gangGroup", gang.GangGroupId, "memberPods", memberPods.Len())
+		return nil
+	}
+
 	return &GangBindingInfo{
 		GangGroupId: gang.GangGroupId,
-		MemberCount: memberCount,
+		MemberCount: memberPods.Len(),
 	}
 }
