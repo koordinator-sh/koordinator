@@ -34,7 +34,7 @@ var (
 		Subsystem: KoordletSubsystem,
 		Name:      "container_core_sched_cookie",
 		Help:      "the core scheduling cookie of the container",
-	}, []string{NodeKey, PodName, PodNamespace, PodUID, ContainerName, ContainerID, CoreSchedGroupKey, CoreSchedCookieKey}))
+	}, []string{NodeKey, PodName, KoordPodName, PodNamespace, PodUID, ContainerName, ContainerID, CoreSchedGroupKey, CoreSchedCookieKey}))
 
 	CoreSchedCookieManageStatus = metrics.NewGCCounterVec("core_sched_cookie_manage_status", prometheus.NewCounterVec(prometheus.CounterOpts{
 		Subsystem: KoordletSubsystem,
@@ -55,6 +55,7 @@ func RecordContainerCoreSchedCookie(namespace, podName, podUID, containerName, c
 	}
 	labels[PodNamespace] = namespace
 	labels[PodName] = podName
+	labels[KoordPodName] = podName
 	labels[PodUID] = podUID
 	labels[ContainerName] = containerName
 	labels[ContainerID] = containerID
@@ -70,6 +71,7 @@ func ResetContainerCoreSchedCookie(namespace, podName, podUID, containerName, co
 	}
 	labels[PodNamespace] = namespace
 	labels[PodName] = podName
+	labels[KoordPodName] = podName
 	labels[PodUID] = podUID
 	labels[ContainerName] = containerName
 	labels[ContainerID] = containerID
