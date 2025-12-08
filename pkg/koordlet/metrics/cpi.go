@@ -33,7 +33,7 @@ var (
 		Subsystem: KoordletSubsystem,
 		Name:      "container_cpi",
 		Help:      "Container cpi collected by koordlet",
-	}, []string{NodeKey, ContainerID, ContainerName, PodUID, PodName, PodNamespace, CPIField})
+	}, []string{NodeKey, ContainerID, ContainerName, PodUID, PodName, KoordPodName, PodNamespace, CPIField})
 
 	CPICollectors = []prometheus.Collector{
 		ContainerCPI,
@@ -53,6 +53,7 @@ func RecordContainerCPI(status *corev1.ContainerStatus, pod *corev1.Pod, cycles,
 	labels[ContainerName] = status.Name
 	labels[PodUID] = string(pod.UID)
 	labels[PodName] = pod.Name
+	labels[KoordPodName] = pod.Name
 	labels[PodNamespace] = pod.Namespace
 	labels[CPIField] = Cycles
 	ContainerCPI.With(labels).Set(cycles)

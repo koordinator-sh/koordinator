@@ -45,13 +45,13 @@ var (
 		Subsystem: KoordletSubsystem,
 		Name:      "container_resource_requests",
 		Help:      "the container requests of resources updated by koordinator",
-	}, []string{NodeKey, ResourceKey, UnitKey, PodUID, PodName, PodNamespace, ContainerID, ContainerName})
+	}, []string{NodeKey, ResourceKey, UnitKey, PodUID, PodName, KoordPodName, PodNamespace, ContainerID, ContainerName})
 
 	ContainerResourceLimits = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Subsystem: KoordletSubsystem,
 		Name:      "container_resource_limits",
 		Help:      "the container limits of resources updated by koordinator",
-	}, []string{NodeKey, ResourceKey, UnitKey, PodUID, PodName, PodNamespace, ContainerID, ContainerName})
+	}, []string{NodeKey, ResourceKey, UnitKey, PodUID, PodName, KoordPodName, PodNamespace, ContainerID, ContainerName})
 
 	ResourceSummaryCollectors = []prometheus.Collector{
 		NodeResourceAllocatable,
@@ -101,6 +101,7 @@ func RecordContainerResourceRequests(resourceName string, unit string, status *c
 	labels[UnitKey] = unit
 	labels[PodUID] = string(pod.UID)
 	labels[PodName] = pod.Name
+	labels[KoordPodName] = pod.Name
 	labels[PodNamespace] = pod.Namespace
 	labels[ContainerID] = status.ContainerID
 	labels[ContainerName] = status.Name
@@ -120,6 +121,7 @@ func RecordContainerResourceLimits(resourceName string, unit string, status *cor
 	labels[UnitKey] = unit
 	labels[PodUID] = string(pod.UID)
 	labels[PodName] = pod.Name
+	labels[KoordPodName] = pod.Name
 	labels[PodNamespace] = pod.Namespace
 	labels[ContainerID] = status.ContainerID
 	labels[ContainerName] = status.Name

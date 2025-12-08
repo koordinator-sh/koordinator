@@ -23,13 +23,13 @@ var (
 		Subsystem: KoordletSubsystem,
 		Name:      "container_scaled_cfs_burst_us",
 		Help:      "The maximum accumulated run-time(in microseconds) in container-level set by koordlet",
-	}, []string{NodeKey, PodNamespace, PodName, ContainerID, ContainerName})
+	}, []string{NodeKey, PodNamespace, PodName, KoordPodName, ContainerID, ContainerName})
 
 	ContainerScaledCFSQuotaUS = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Subsystem: KoordletSubsystem,
 		Name:      "container_scaled_cfs_quota_us",
 		Help:      "Run-time replenished within a period (in microseconds) in container-level set by koordlet",
-	}, []string{NodeKey, PodNamespace, PodName, ContainerID, ContainerName})
+	}, []string{NodeKey, PodNamespace, PodName, KoordPodName, ContainerID, ContainerName})
 
 	CPUBurstCollector = []prometheus.Collector{
 		ContainerScaledCFSBurstUS,
@@ -44,6 +44,7 @@ func RecordContainerScaledCFSBurstUS(podNS, podName, containerID, containerName 
 	}
 	labels[PodNamespace] = podNS
 	labels[PodName] = podName
+	labels[KoordPodName] = podName
 	labels[ContainerID] = containerID
 	labels[ContainerName] = containerName
 	ContainerScaledCFSBurstUS.With(labels).Set(value)
@@ -56,6 +57,7 @@ func RecordContainerScaledCFSQuotaUS(podNS, podName, containerID, containerName 
 	}
 	labels[PodNamespace] = podNS
 	labels[PodName] = podName
+	labels[KoordPodName] = podName
 	labels[ContainerID] = containerID
 	labels[ContainerName] = containerName
 	ContainerScaledCFSQuotaUS.With(labels).Set(value)

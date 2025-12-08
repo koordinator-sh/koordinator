@@ -45,6 +45,7 @@ const (
 	PodUID       = "pod_uid"
 	PodName      = "pod_name"
 	PodNamespace = "pod_namespace"
+	KoordPodName = "koord_pod_name" // an alias of PodName to avoid label overwritten
 
 	ResourceKey = "resource"
 

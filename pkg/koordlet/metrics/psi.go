@@ -51,13 +51,13 @@ var (
 		Subsystem: KoordletSubsystem,
 		Name:      "container_psi",
 		Help:      "Container psi collected by koordlet",
-	}, []string{NodeKey, ContainerID, ContainerName, PodUID, PodName, PodNamespace, PSIResourceType, PSIPrecision, PSIDegree, CPUFullSupported})
+	}, []string{NodeKey, ContainerID, ContainerName, PodUID, PodName, KoordPodName, PodNamespace, PSIResourceType, PSIPrecision, PSIDegree, CPUFullSupported})
 
 	PodPSI = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Subsystem: KoordletSubsystem,
 		Name:      "pod_psi",
 		Help:      "Pod psi collected by koordlet",
-	}, []string{NodeKey, PodUID, PodName, PodNamespace, PSIResourceType, PSIPrecision, PSIDegree, CPUFullSupported})
+	}, []string{NodeKey, PodUID, PodName, KoordPodName, PodNamespace, PSIResourceType, PSIPrecision, PSIDegree, CPUFullSupported})
 
 	PSICollectors = []prometheus.Collector{
 		ContainerPSI,
@@ -145,6 +145,7 @@ func RecordContainerPSI(status *corev1.ContainerStatus, pod *corev1.Pod, psi *sy
 		labels[ContainerName] = status.Name
 		labels[PodUID] = string(pod.UID)
 		labels[PodName] = pod.Name
+		labels[KoordPodName] = pod.Name
 		labels[PodNamespace] = pod.Namespace
 
 		labels[PSIResourceType] = record.ResourceType
@@ -164,6 +165,7 @@ func RecordPodPSI(pod *corev1.Pod, psi *system.PSIByResource) {
 		}
 		labels[PodUID] = string(pod.UID)
 		labels[PodName] = pod.Name
+		labels[KoordPodName] = pod.Name
 		labels[PodNamespace] = pod.Namespace
 
 		labels[PSIResourceType] = record.ResourceType
