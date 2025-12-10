@@ -382,11 +382,6 @@ func (gqm *GroupQuotaManager) GetQuotaInfoByName(quotaName string) *QuotaInfo {
 	return gqm.getQuotaInfoByNameNoLock(quotaName)
 }
 
-// GetCurToAllParentGroupQuotaInfo returns the path from the given quota to root, including all parent quotas
-func (gqm *GroupQuotaManager) GetCurToAllParentGroupQuotaInfoNoLock(quotaName string) []*QuotaInfo {
-	return gqm.getCurToAllParentGroupQuotaInfoNoLock(quotaName)
-}
-
 func (gqm *GroupQuotaManager) getQuotaInfoByNameNoLock(quotaName string) *QuotaInfo {
 	return gqm.quotaInfoMap[quotaName]
 }
