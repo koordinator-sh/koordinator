@@ -41,12 +41,14 @@ import (
 	"github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/generated/clientset/versioned"
 	"github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/generated/informers/externalversions"
 	"github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/generated/listers/scheduling/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/validation"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	frameworkexthelper "github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/helper"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/elasticquota/core"
 	"github.com/koordinator-sh/koordinator/pkg/util/transformer"
+	k8sfeature "k8s.io/apiserver/pkg/util/feature"
 )
 
 const (
@@ -92,6 +94,17 @@ type Plugin struct {
 	// quotaToTreeMap store the relationship of quota and quota tree
 	// the key is the quota name, the value is the tree id
 	quotaToTreeMap map[string]string
+
+	// quotaSnapshot stores the quota snapshot for each quota tree
+	// The key is tree ID, the value is the snapshot
+	// This snapshot is updated periodically in background and doesn't need to stay in sync with quotaInfoMap
+	quotaSnapshotLock sync.RWMutex
+	quotaSnapshot     map[string]*core.QuotaSnapshot
+
+	// quotaToTreeMapSnapshot stores a snapshot of quotaToTreeMap
+	// This snapshot is updated periodically in background and doesn't need to stay in sync with quotaToTreeMap
+	quotaToTreeMapSnapshotLock sync.RWMutex
+	quotaToTreeMapSnapshot     map[string]string
 }
 
 var (
@@ -148,6 +161,8 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 		nodeLister:                     handle.SharedInformerFactory().Core().V1().Nodes().Lister(),
 		groupQuotaManagersForQuotaTree: make(map[string]*core.GroupQuotaManager),
 		quotaToTreeMap:                 make(map[string]string),
+		quotaSnapshot:                  make(map[string]*core.QuotaSnapshot),
+		quotaToTreeMapSnapshot:         make(map[string]string),
 	}
 	elasticQuota.groupQuotaManager = core.NewGroupQuotaManager("", pluginArgs.EnableMinQuotaScale, pluginArgs.SystemQuotaGroupMax,
 		pluginArgs.DefaultQuotaGroupMax)
@@ -199,6 +214,13 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 func (g *Plugin) Start() {
 	go wait.Until(g.migrateDefaultQuotaGroupsPod, MigrateDefaultQuotaGroupsPodCycle, nil)
 	klog.Infof("start migrate pod from defaultQuotaGroup")
+
+	// Start background goroutine to periodically update quota parent snapshot
+	if g.pluginArgs.EnableQueueHint {
+		updateInterval := g.pluginArgs.QueueHintSnapshotUpdateInterval.Duration
+		go wait.Until(g.updateQuotaSnapshot, updateInterval, nil)
+		klog.Infof("start background quota snapshot updater with interval %v", updateInterval)
+	}
 }
 
 func (g *Plugin) NewControllers() ([]frameworkext.Controller, error) {
@@ -289,6 +311,29 @@ func (g *Plugin) PreFilterExtensions() framework.PreFilterExtensions {
 	return g
 }
 
+// getPodAssociateQuotaNameAndTreeIDFromSnapshot gets quota name and tree ID using snapshot
+// This avoids locking quotaToTreeMap
+func (g *Plugin) getPodAssociateQuotaNameAndTreeIDFromSnapshot(pod *corev1.Pod) (string, string) {
+	quotaName := g.GetQuotaName(pod)
+	if quotaName == "" {
+		return "", ""
+	}
+
+	g.quotaToTreeMapSnapshotLock.RLock()
+	treeID, ok := g.quotaToTreeMapSnapshot[quotaName]
+	g.quotaToTreeMapSnapshotLock.RUnlock()
+
+	if ok {
+		return quotaName, treeID
+	}
+
+	// If not found in snapshot, fallback to default quota
+	if k8sfeature.DefaultFeatureGate.Enabled(features.DisableDefaultQuota) {
+		return "", ""
+	}
+	return extension.DefaultQuotaName, ""
+}
+
 // isSchedulableAfterQuotaChanged determines if a pod becomes schedulable after quota is updated.
 // QueueAfterBackoff is default queueingHintFn behavior.
 func (g *Plugin) isSchedulableAfterQuotaChanged(logger klog.Logger, pod *corev1.Pod, oldObj, newObj interface{}) framework.QueueingHint {
@@ -302,7 +347,8 @@ func (g *Plugin) isSchedulableAfterQuotaChanged(logger klog.Logger, pod *corev1.
 		return framework.QueueAfterBackoff
 	}
 
-	podQuotaName, podTreeID := g.getPodAssociateQuotaNameAndTreeID(pod)
+	// Use snapshot to get pod quota name and tree ID without locking
+	podQuotaName, podTreeID := g.getPodAssociateQuotaNameAndTreeIDFromSnapshot(pod)
 	if podQuotaName == "" {
 		return framework.QueueSkip
 	}
@@ -318,6 +364,7 @@ func (g *Plugin) isSchedulableAfterQuotaChanged(logger klog.Logger, pod *corev1.
 		return framework.QueueSkip
 	}
 
+	// Create quota info from original and modified quota
 	oldQuotaInfo := core.NewQuotaInfoFromQuota(originalQuota)
 	newQuotaInfo := core.NewQuotaInfoFromQuota(modifiedQuota)
 
@@ -334,11 +381,17 @@ func (g *Plugin) isSchedulableAfterQuotaChanged(logger klog.Logger, pod *corev1.
 
 	// Modified quota is not the pod's quota, check if it's in the path to root
 	if g.pluginArgs.EnableCheckParentQuota {
-		// Get the path from pod's quota to root using the existing method
-		curToAllParInfos := mgr.GetCurToAllParentGroupQuotaInfoNoLock(podQuotaName)
-		for _, quotaInfo := range curToAllParInfos {
-			if quotaInfo.Name == modifiedQuota.Name {
-				return framework.QueueAfterBackoff
+		g.quotaSnapshotLock.RLock()
+		snapshot, exists := g.quotaSnapshot[podTreeID]
+		g.quotaSnapshotLock.RUnlock()
+
+		if exists && snapshot != nil {
+			// Get the path from pod's quota to root using the snapshot
+			parentPath := snapshot.GetParentQuotaPath(podQuotaName)
+			for _, quotaNameInPath := range parentPath {
+				if quotaNameInPath == modifiedQuota.Name {
+					return framework.QueueAfterBackoff
+				}
 			}
 		}
 	}
@@ -360,12 +413,13 @@ func (g *Plugin) isSchedulableAfterPodDeletion(logger klog.Logger, pod *corev1.P
 		return framework.QueueAfterBackoff
 	}
 
-	deletedPodQuotaName, deletedPodTreeID := g.getPodAssociateQuotaNameAndTreeID(deletedPod)
+	// Use snapshot to get quota names and tree IDs without locking
+	deletedPodQuotaName, deletedPodTreeID := g.getPodAssociateQuotaNameAndTreeIDFromSnapshot(deletedPod)
 	if deletedPodQuotaName == "" {
 		return framework.QueueSkip
 	}
 
-	podQuotaName, podTreeID := g.getPodAssociateQuotaNameAndTreeID(pod)
+	podQuotaName, podTreeID := g.getPodAssociateQuotaNameAndTreeIDFromSnapshot(pod)
 	if podQuotaName == "" {
 		return framework.QueueSkip
 	}
@@ -375,15 +429,16 @@ func (g *Plugin) isSchedulableAfterPodDeletion(logger klog.Logger, pod *corev1.P
 		return framework.QueueSkip
 	}
 
-	mgr := g.GetGroupQuotaManagerForTree(podTreeID)
-	if mgr == nil {
-		return framework.QueueSkip
-	}
+	g.quotaSnapshotLock.RLock()
+	snapshot, exists := g.quotaSnapshot[podTreeID]
+	g.quotaSnapshotLock.RUnlock()
 
-	// If the deleted pod hasn't been assigned resources, skip
-	quotaInfo := mgr.GetQuotaInfoByName(deletedPodQuotaName)
-	if quotaInfo != nil && !quotaInfo.CheckPodIsAssigned(deletedPod) {
-		return framework.QueueSkip
+	if exists && snapshot != nil {
+		// Get quota info from snapshot and check if pod is assigned
+		quotaInfo := snapshot.GetQuotaInfoByName(deletedPodQuotaName)
+		if quotaInfo != nil && !quotaInfo.CheckPodIsAssigned(deletedPod) {
+			return framework.QueueSkip
+		}
 	}
 
 	if deletedPodQuotaName == podQuotaName {
@@ -393,12 +448,14 @@ func (g *Plugin) isSchedulableAfterPodDeletion(logger klog.Logger, pod *corev1.P
 
 	// Check if deleted pod's quota is in the unschedulable pod's path to root
 	if g.pluginArgs.EnableCheckParentQuota {
-		// Get the path from unschedulable pod's quota to root
-		curToAllParInfos := mgr.GetCurToAllParentGroupQuotaInfoNoLock(podQuotaName)
-		for _, quotaInfo := range curToAllParInfos {
-			if quotaInfo.Name == deletedPodQuotaName {
-				// Deleted pod's quota is in the path to root, allow queueing
-				return framework.QueueAfterBackoff
+		if exists && snapshot != nil {
+			// Get the path from unschedulable pod's quota to root using the snapshot
+			parentPath := snapshot.GetParentQuotaPath(podQuotaName)
+			for _, quotaNameInPath := range parentPath {
+				if quotaNameInPath == deletedPodQuotaName {
+					// Deleted pod's quota is in the path to root, allow queueing
+					return framework.QueueAfterBackoff
+				}
 			}
 		}
 	}
@@ -503,4 +560,42 @@ func (g *Plugin) Unreserve(ctx context.Context, state *framework.CycleState, p *
 
 func (g *Plugin) GetQuotaInformer() cache.SharedIndexInformer { // expose for extensions
 	return g.quotaInformer
+}
+
+// updateQuotaSnapshot periodically updates quota snapshot for all quota trees
+// This runs in background and doesn't block the main scheduling path
+func (g *Plugin) updateQuotaSnapshot() {
+	// Copy quotaToTreeMap
+	g.quotaToTreeMapLock.RLock()
+	quotaToTreeMapCopy := make(map[string]string, len(g.quotaToTreeMap))
+	for k, v := range g.quotaToTreeMap {
+		quotaToTreeMapCopy[k] = v
+	}
+	g.quotaToTreeMapLock.RUnlock()
+
+	// Get managers and generate snapshots
+	newSnapshots := make(map[string]*core.QuotaSnapshot)
+	g.quotaManagerLock.RLock()
+	for treeID, mgr := range g.groupQuotaManagersForQuotaTree {
+		if mgr != nil {
+			if snapshot := mgr.GetQuotaSnapshot(); snapshot != nil {
+				newSnapshots[treeID] = snapshot
+			}
+		}
+	}
+	if g.groupQuotaManager != nil {
+		if snapshot := g.groupQuotaManager.GetQuotaSnapshot(); snapshot != nil {
+			newSnapshots[""] = snapshot
+		}
+	}
+	g.quotaManagerLock.RUnlock()
+
+	// Update snapshots atomically
+	g.quotaToTreeMapSnapshotLock.Lock()
+	g.quotaToTreeMapSnapshot = quotaToTreeMapCopy
+	g.quotaToTreeMapSnapshotLock.Unlock()
+
+	g.quotaSnapshotLock.Lock()
+	g.quotaSnapshot = newSnapshots
+	g.quotaSnapshotLock.Unlock()
 }
