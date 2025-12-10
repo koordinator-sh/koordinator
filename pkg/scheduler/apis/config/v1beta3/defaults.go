@@ -78,8 +78,8 @@ var (
 	defaultDisableDefaultQuotaPreemption = pointer.Bool(true)
 	defaultEnableQueueHint               = pointer.Bool(false)
 
-	defaultTimeout                         = 600 * time.Second
-	defaultControllerWorkers               = 1
+	defaultTimeout                     = 600 * time.Second
+	defaultControllerWorkers           = 1
 	defaultQuotaSnapshotUpdateInterval = 5 * time.Second
 
 	defaultGPUSharedResourceTemplatesConfig = &GPUSharedResourceTemplatesConfig{
