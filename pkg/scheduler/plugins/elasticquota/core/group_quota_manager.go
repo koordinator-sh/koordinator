@@ -696,9 +696,9 @@ func (s *QuotaSnapshot) GetQuotaInfoByName(quotaName string) *QuotaInfo {
 	return s.quotaInfoMap[quotaName]
 }
 
-// GetParentQuotaPath returns the path from the given quota to root using the snapshot
+// GetQuotaPathToRoot returns the path from the given quota to root using the snapshot
 // This is thread-safe as it only uses the snapshot data without accessing quotaInfoMap
-func (s *QuotaSnapshot) GetParentQuotaPath(quotaName string) []string {
+func (s *QuotaSnapshot) GetQuotaPathToRoot(quotaName string) []string {
 	s.lock.RLock()
 	defer s.lock.RUnlock()
 
