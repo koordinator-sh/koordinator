@@ -251,9 +251,9 @@ type ElasticQuotaArgs struct {
 	// EnableQueueHint if true, enables QueueHint optimization to filter unnecessary pod re-queuing events.
 	EnableQueueHint bool
 
-	// QueueHintSnapshotUpdateInterval is the interval to update quota snapshot for QueueHint optimization.
+	// QuotaSnapshotUpdateInterval is the interval to update quota snapshot for QueueHint optimization.
 	// Defaults to 5 seconds if unspecified.
-	QueueHintSnapshotUpdateInterval metav1.Duration
+	QuotaSnapshotUpdateInterval metav1.Duration
 
 	// HookPlugins is expected to be configured with enabled hook plugins
 	HookPlugins []HookPluginConf

@@ -80,7 +80,7 @@ var (
 
 	defaultTimeout                         = 600 * time.Second
 	defaultControllerWorkers               = 1
-	defaultQueueHintSnapshotUpdateInterval = 5 * time.Second
+	defaultQuotaSnapshotUpdateInterval = 5 * time.Second
 
 	defaultGPUSharedResourceTemplatesConfig = &GPUSharedResourceTemplatesConfig{
 		ConfigMapNamespace: "koordinator-system",
@@ -216,9 +216,9 @@ func SetDefaults_ElasticQuotaArgs(obj *ElasticQuotaArgs) {
 	if obj.EnableQueueHint == nil {
 		obj.EnableQueueHint = defaultEnableQueueHint
 	}
-	if obj.QueueHintSnapshotUpdateInterval == nil {
-		obj.QueueHintSnapshotUpdateInterval = &metav1.Duration{
-			Duration: defaultQueueHintSnapshotUpdateInterval,
+	if obj.QuotaSnapshotUpdateInterval == nil {
+		obj.QuotaSnapshotUpdateInterval = &metav1.Duration{
+			Duration: defaultQuotaSnapshotUpdateInterval,
 		}
 	}
 }

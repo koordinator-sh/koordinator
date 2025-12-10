@@ -171,8 +171,8 @@ func (in *ElasticQuotaArgs) DeepCopyInto(out *ElasticQuotaArgs) {
 		*out = new(bool)
 		**out = **in
 	}
-	if in.QueueHintSnapshotUpdateInterval != nil {
-		in, out := &in.QueueHintSnapshotUpdateInterval, &out.QueueHintSnapshotUpdateInterval
+	if in.QuotaSnapshotUpdateInterval != nil {
+		in, out := &in.QuotaSnapshotUpdateInterval, &out.QuotaSnapshotUpdateInterval
 		*out = new(metav1.Duration)
 		**out = **in
 	}

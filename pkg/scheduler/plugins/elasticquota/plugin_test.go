@@ -1928,6 +1928,9 @@ func TestPlugin_QueueingHint_IsSchedulableAfterQuotaChanged(t *testing.T) {
 				gp.OnQuotaAdd(quotaInfo)
 			}
 
+			// Update snapshot to ensure it's up-to-date for the test
+			gp.updateQuotaSnapshot()
+
 			// Call the queueing hint function
 			var oldObj, newObj interface{} = tt.originalQuota, tt.modifiedQuota
 			if tt.originalQuota == nil {
@@ -2287,6 +2290,9 @@ func TestPlugin_QueueingHint_IsSchedulableAfterPodDeletion(t *testing.T) {
 				gp.OnQuotaAdd(quotaInfo)
 			}
 
+			// Update snapshot to ensure it's up-to-date for the test
+			gp.updateQuotaSnapshot()
+
 			// For test cases expecting QueueAfterBackoff, ensure the deleted pod is assigned
 			// For test cases expecting QueueSkip when pod is not assigned, don't assign the pod
 			if tt.deletedPod != nil && tt.expectedQueueingHint == framework.QueueAfterBackoff {
@@ -2304,6 +2310,8 @@ func TestPlugin_QueueingHint_IsSchedulableAfterPodDeletion(t *testing.T) {
 						mgr.ReservePod(deletedPodQuotaName, tt.deletedPod)
 					}
 				}
+				// Update snapshot again after pod assignment to ensure snapshot reflects the assigned pod
+				gp.updateQuotaSnapshot()
 			}
 
 			// Call the queueing hint function
