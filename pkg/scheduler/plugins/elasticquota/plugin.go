@@ -386,13 +386,15 @@ func (g *Plugin) isSchedulableAfterQuotaChanged(logger klog.Logger, pod *corev1.
 		snapshot, exists := g.quotaSnapshot[podTreeID]
 		g.quotaSnapshotLock.RUnlock()
 
-		if exists && snapshot != nil {
-			// Get the path from pod's quota to root using the snapshot
-			parentPath := snapshot.GetParentQuotaPath(podQuotaName)
-			for _, quotaNameInPath := range parentPath {
-				if quotaNameInPath == modifiedQuota.Name {
-					return framework.QueueAfterBackoff
-				}
+		if !exists || snapshot == nil {
+			return framework.QueueAfterBackoff
+		}
+
+		// Get the path from pod's quota to root using the snapshot
+		parentPath := snapshot.GetParentQuotaPath(podQuotaName)
+		for _, quotaNameInPath := range parentPath {
+			if quotaNameInPath == modifiedQuota.Name {
+				return framework.QueueAfterBackoff
 			}
 		}
 	}
@@ -434,12 +436,14 @@ func (g *Plugin) isSchedulableAfterPodDeletion(logger klog.Logger, pod *corev1.P
 	snapshot, exists := g.quotaSnapshot[podTreeID]
 	g.quotaSnapshotLock.RUnlock()
 
-	if exists && snapshot != nil {
-		// Get quota info from snapshot and check if pod is assigned
-		quotaInfo := snapshot.GetQuotaInfoByName(deletedPodQuotaName)
-		if quotaInfo != nil && !quotaInfo.CheckPodIsAssigned(deletedPod) {
-			return framework.QueueSkip
-		}
+	if !exists || snapshot == nil {
+		return framework.QueueAfterBackoff
+	}
+
+	// Get quota info from snapshot and check if pod is assigned
+	quotaInfo := snapshot.GetQuotaInfoByName(deletedPodQuotaName)
+	if quotaInfo != nil && !quotaInfo.CheckPodIsAssigned(deletedPod) {
+		return framework.QueueSkip
 	}
 
 	if deletedPodQuotaName == podQuotaName {
