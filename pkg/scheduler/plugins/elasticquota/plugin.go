@@ -590,7 +590,7 @@ func (g *Plugin) updateQuotaSnapshot() {
 	}
 	g.quotaManagerLock.RUnlock()
 
-	// Update snapshots atomically
+	// Update snapshots
 	g.quotaToTreeMapSnapshotLock.Lock()
 	g.quotaToTreeMapSnapshot = quotaToTreeMapCopy
 	g.quotaToTreeMapSnapshotLock.Unlock()
