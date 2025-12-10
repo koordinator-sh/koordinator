@@ -26,6 +26,7 @@ import (
 type NUMATopology struct {
 	numNodePerSocket int
 	nodes            map[int][]PCIe
+	deviceToNodeID   map[schedulingv1alpha1.DeviceType]map[int32]int
 }
 
 type PCIe struct {
@@ -41,6 +42,7 @@ type PCIeIndex struct {
 
 func newNUMATopology(deviceObj *schedulingv1alpha1.Device) *NUMATopology {
 	devicesInPCIe := map[PCIeIndex]map[schedulingv1alpha1.DeviceType][]int{}
+	deviceToNodeID := map[schedulingv1alpha1.DeviceType]map[int32]int{}
 	for i := range deviceObj.Spec.Devices {
 		deviceInfo := &deviceObj.Spec.Devices[i]
 		if deviceInfo.Topology == nil || deviceInfo.Topology.NodeID == -1 {
@@ -62,9 +64,16 @@ func newNUMATopology(deviceObj *schedulingv1alpha1.Device) *NUMATopology {
 		}
 		minor := pointer.Int32Deref(deviceInfo.Minor, 0)
 		devices[deviceInfo.Type] = append(devices[deviceInfo.Type], int(minor))
+		if deviceToNodeID[deviceInfo.Type] == nil {
+			deviceToNodeID[deviceInfo.Type] = map[int32]int{}
+		}
+		deviceToNodeID[deviceInfo.Type][minor] = int(deviceInfo.Topology.NodeID)
 	}
 
 	topology := &NUMATopology{}
+	if len(deviceToNodeID) > 0 {
+		topology.deviceToNodeID = deviceToNodeID
+	}
 	nodeCounter := map[int]sets.Int{}
 	for pcieIndex, devices := range devicesInPCIe {
 		pcies := topology.nodes[pcieIndex.node]
