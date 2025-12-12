@@ -73,6 +73,7 @@ const (
 	GPUVendorNVIDIA    = "nvidia"
 	GPUVendorHuawei    = "huawei"
 	GPUVendorCambricon = "cambricon"
+	GPUVendorMetaX     = "metax"
 	GPUVendorBaidu     = "baidu"
 )
 
