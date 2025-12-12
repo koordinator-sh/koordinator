@@ -312,6 +312,29 @@ func (g *Plugin) PreFilterExtensions() framework.PreFilterExtensions {
 	return g
 }
 
+// getQuotaSnapshot gets quota snapshot for the given tree ID
+// Returns the snapshot and whether it exists
+func (g *Plugin) getQuotaSnapshot(treeID string) (*core.QuotaSnapshot, bool) {
+	g.quotaSnapshotLock.RLock()
+	defer g.quotaSnapshotLock.RUnlock()
+
+	snapshot, exists := g.quotaSnapshot[treeID]
+	return snapshot, exists
+}
+
+// getQuotaToTreeMapCopy creates a copy of quotaToTreeMap
+// This is thread-safe and returns a new map that can be safely used without locking
+func (g *Plugin) getQuotaToTreeMapCopy() map[string]string {
+	g.quotaToTreeMapLock.RLock()
+	defer g.quotaToTreeMapLock.RUnlock()
+
+	quotaToTreeMapCopy := make(map[string]string, len(g.quotaToTreeMap))
+	for k, v := range g.quotaToTreeMap {
+		quotaToTreeMapCopy[k] = v
+	}
+	return quotaToTreeMapCopy
+}
+
 // getPodAssociateQuotaNameAndTreeIDFromSnapshot gets quota name and tree ID using snapshot
 // This avoids locking quotaToTreeMap
 func (g *Plugin) getPodAssociateQuotaNameAndTreeIDFromSnapshot(pod *corev1.Pod) (string, string) {
@@ -382,9 +405,7 @@ func (g *Plugin) isSchedulableAfterQuotaChanged(logger klog.Logger, pod *corev1.
 
 	// Modified quota is not the pod's quota, check if it's in the path to root
 	if g.pluginArgs.EnableCheckParentQuota {
-		g.quotaSnapshotLock.RLock()
-		snapshot, exists := g.quotaSnapshot[podTreeID]
-		g.quotaSnapshotLock.RUnlock()
+		snapshot, exists := g.getQuotaSnapshot(podTreeID)
 
 		if !exists || snapshot == nil {
 			return framework.QueueAfterBackoff
@@ -432,9 +453,7 @@ func (g *Plugin) isSchedulableAfterPodDeletion(logger klog.Logger, pod *corev1.P
 		return framework.QueueSkip
 	}
 
-	g.quotaSnapshotLock.RLock()
-	snapshot, exists := g.quotaSnapshot[podTreeID]
-	g.quotaSnapshotLock.RUnlock()
+	snapshot, exists := g.getQuotaSnapshot(podTreeID)
 
 	if !exists || snapshot == nil {
 		return framework.QueueAfterBackoff
@@ -569,12 +588,7 @@ func (g *Plugin) GetQuotaInformer() cache.SharedIndexInformer { // expose for ex
 // This runs in background and doesn't block the main scheduling path
 func (g *Plugin) updateQuotaSnapshot() {
 	// Copy quotaToTreeMap
-	g.quotaToTreeMapLock.RLock()
-	quotaToTreeMapCopy := make(map[string]string, len(g.quotaToTreeMap))
-	for k, v := range g.quotaToTreeMap {
-		quotaToTreeMapCopy[k] = v
-	}
-	g.quotaToTreeMapLock.RUnlock()
+	quotaToTreeMapCopy := g.getQuotaToTreeMapCopy()
 
 	// Get managers and generate snapshots
 	newSnapshots := make(map[string]*core.QuotaSnapshot)
