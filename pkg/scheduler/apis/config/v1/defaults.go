@@ -80,7 +80,7 @@ var (
 
 	defaultTimeout                     = 600 * time.Second
 	defaultControllerWorkers           = 1
-	defaultQuotaSnapshotUpdateInterval = 5 * time.Second
+	defaultQuotaSnapshotUpdateInterval = 120 * time.Second
 
 	defaultGPUSharedResourceTemplatesConfig = &GPUSharedResourceTemplatesConfig{
 		ConfigMapNamespace: "koordinator-system",
