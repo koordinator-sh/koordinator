@@ -18,6 +18,7 @@ package deviceshare
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -49,6 +50,13 @@ const (
 	// need to explicitly declare the envs in pod template to override the ones of pod image.
 	AnnotationGPUMinors = apiext.SchedulingDomainPrefix + "/gpu-minors"
 
+	// AnnotationHAMiLock is annotated to node by scheduler to prevent scheduling multiple pods
+	// with devices of the same vendor to the same node which would make the vendor's device plugin unable to determine pod.
+	// The vendor's device plugin will automatically remove it after allocation of a pod.
+	// This annotation key was originally defined in HAMi and then be adopted by some vendors.
+	// Vendors that currently need this lock: metax
+	AnnotationHAMiLock = "hami.io/mutex.lock"
+
 	// AnnotationPredicateTime represents the bind time (unix nano) of the pod which is used by
 	// Huawei NPU device plugins to determine pod.
 	AnnotationPredicateTime = "predicate-time"
@@ -68,6 +76,12 @@ const (
 	// cambriconVMemoryUnit is the minial virtual memory unit of Cambricon dynamic sMLU currently supported.
 	// This should always match the min-dsmlu-unit arg of device plugin.
 	cambriconVMemoryUnit = 256 * 1024 * 1024
+
+	// AnnotationMetaXGPUDevicesAllocated represents the GPU/sGPU allocation result for the pod which is used by
+	// MetaX GPU device plugins to allocate GPU(s)/sGPU(s) for pod.
+	AnnotationMetaXGPUDevicesAllocated = "metax-tech.com/gpu-devices-allocated"
+	// metaxVRamUnit is the minial virtual memory unit of MetaX sGPU currently supported.
+	metaxVRamUnit = 1 * 1024 * 1024
 )
 
 const (
@@ -98,6 +112,9 @@ var (
 			clock: clock.RealClock{},
 		},
 		apiext.GPUVendorCambricon: &cambriconGPUDevicePluginAdapter{
+			clock: clock.RealClock{},
+		},
+		apiext.GPUVendorMetaX: &metaxDevicePluginAdapter{
 			clock: clock.RealClock{},
 		},
 	}
@@ -220,6 +237,50 @@ func (a *cambriconGPUDevicePluginAdapter) Adapt(ctx *DevicePluginAdaptContext, o
 
 	object.GetAnnotations()[AnnotationCambriconDsmluAssigned] = "false"
 	object.GetAnnotations()[AnnotationCambriconDsmluProfile] = fmt.Sprintf("%d_%d_%d", allocation[0].Minor, vcore, vmemory)
+	return nil
+}
+
+type metaxDevicePluginAdapter struct {
+	clock clock.Clock
+}
+
+type metaxContainerDeviceRequest struct {
+	UUID    string `json:"uuid"`
+	Compute int32  `json:"compute"`
+	VRam    int32  `json:"vRam"`
+}
+
+func (a *metaxDevicePluginAdapter) Adapt(ctx *DevicePluginAdaptContext, object metav1.Object, allocation []*apiext.DeviceAllocation) error {
+	deviceRequests := make([]metaxContainerDeviceRequest, 0, len(allocation))
+	for _, alloc := range allocation {
+		core, ok := alloc.Resources[apiext.ResourceGPUCore]
+		if !ok {
+			return fmt.Errorf("gpu core resource is required")
+		}
+		compute := core.Value()
+
+		memory := alloc.Resources[apiext.ResourceGPUMemory]
+		if memory.Value() < metaxVRamUnit {
+			return fmt.Errorf("gpu memory must not be less than %d bytes", metaxVRamUnit)
+		}
+		vram := memory.Value() / metaxVRamUnit
+
+		deviceRequests = append(deviceRequests, metaxContainerDeviceRequest{
+			UUID:    alloc.ID,
+			Compute: int32(compute),
+			VRam:    int32(vram),
+		})
+	}
+	allocatedData, err := json.Marshal([][]metaxContainerDeviceRequest{deviceRequests})
+	if err != nil {
+		return err
+	}
+
+	if err := lockNode(ctx.node, object, AnnotationHAMiLock, a.clock.Now()); err != nil {
+		return fmt.Errorf("failed to lock node: %v", err)
+	}
+
+	object.GetAnnotations()[AnnotationMetaXGPUDevicesAllocated] = string(allocatedData)
 	return nil
 }
 

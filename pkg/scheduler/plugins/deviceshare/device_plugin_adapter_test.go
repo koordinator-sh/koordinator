@@ -494,6 +494,260 @@ func TestCambriconGPUDevicePluginAdapter_Adapt(t *testing.T) {
 	}
 }
 
+func TestMetaXGPUDevicePluginAdapter_Adapt(t *testing.T) {
+	now := time.Now()
+
+	type args struct {
+		object     metav1.Object
+		allocation []*apiext.DeviceAllocation
+	}
+	tests := []struct {
+		name       string
+		args       args
+		node       *corev1.Node
+		wantErr    bool
+		wantObject metav1.Object
+		wantNode   *corev1.Node
+	}{
+		{
+			name: "normal case",
+			args: args{
+				object: &corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:        "test-pod",
+						Namespace:   "default",
+						Annotations: map[string]string{},
+					},
+				},
+				allocation: []*apiext.DeviceAllocation{
+					{
+						ID: "GPU-0",
+						Resources: corev1.ResourceList{
+							apiext.ResourceGPUCore:   resource.MustParse("5"),
+							apiext.ResourceGPUMemory: resource.MustParse("1Gi"),
+						},
+					},
+					{
+						ID: "GPU-1",
+						Resources: corev1.ResourceList{
+							apiext.ResourceGPUCore:   resource.MustParse("5"),
+							apiext.ResourceGPUMemory: resource.MustParse("1Gi"),
+						},
+					},
+				},
+			},
+			node: &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node",
+				},
+			},
+			wantErr: false,
+			wantObject: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pod",
+					Namespace: "default",
+					Annotations: map[string]string{
+						AnnotationMetaXGPUDevicesAllocated: `[[{"uuid":"GPU-0","compute":5,"vRam":1024},{"uuid":"GPU-1","compute":5,"vRam":1024}]]`,
+					},
+				},
+			},
+			wantNode: &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node",
+					Annotations: map[string]string{
+						AnnotationHAMiLock: fmt.Sprintf("%s,default,test-pod", now.Format(time.RFC3339)),
+					},
+				},
+			},
+		},
+		{
+			name: "missing gpu core",
+			args: args{
+				object: &corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:        "test-pod",
+						Namespace:   "default",
+						Annotations: map[string]string{},
+					},
+				},
+				allocation: []*apiext.DeviceAllocation{
+					{
+						ID: "GPU-0",
+						Resources: corev1.ResourceList{
+							apiext.ResourceGPUMemory: resource.MustParse("1Gi"),
+						},
+					},
+				},
+			},
+			node: &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node",
+				},
+			},
+			wantErr: true,
+			wantObject: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:        "test-pod",
+					Namespace:   "default",
+					Annotations: map[string]string{},
+				},
+			},
+			wantNode: &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node",
+				},
+			},
+		},
+		{
+			name: "too small gpu memory",
+			args: args{
+				object: &corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:        "test-pod",
+						Namespace:   "default",
+						Annotations: map[string]string{},
+					},
+				},
+				allocation: []*apiext.DeviceAllocation{
+					{
+						ID: "GPU-0",
+						Resources: corev1.ResourceList{
+							apiext.ResourceGPUCore:   resource.MustParse("5"),
+							apiext.ResourceGPUMemory: resource.MustParse("512Ki"),
+						},
+					},
+				},
+			},
+			node: &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node",
+				},
+			},
+			wantErr: true,
+			wantObject: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:        "test-pod",
+					Namespace:   "default",
+					Annotations: map[string]string{},
+				},
+			},
+			wantNode: &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node",
+				},
+			},
+		},
+		{
+			name: "node locked",
+			args: args{
+				object: &corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:        "test-pod",
+						Namespace:   "default",
+						Annotations: map[string]string{},
+					},
+				},
+				allocation: []*apiext.DeviceAllocation{
+					{
+						ID: "GPU-0",
+						Resources: corev1.ResourceList{
+							apiext.ResourceGPUCore:   resource.MustParse("5"),
+							apiext.ResourceGPUMemory: resource.MustParse("1Gi"),
+						},
+					},
+				},
+			},
+			node: &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node",
+					Annotations: map[string]string{
+						AnnotationHAMiLock: fmt.Sprintf("%s,default,test-pod", now.Add(-time.Minute).Format(time.RFC3339)),
+					},
+				},
+			},
+			wantErr: true,
+			wantObject: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:        "test-pod",
+					Namespace:   "default",
+					Annotations: map[string]string{},
+				},
+			},
+			wantNode: &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node",
+					Annotations: map[string]string{
+						AnnotationHAMiLock: fmt.Sprintf("%s,default,test-pod", now.Add(-time.Minute).Format(time.RFC3339)),
+					},
+				},
+			},
+		},
+		{
+			name: "node lock expired",
+			args: args{
+				object: &corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:        "test-pod",
+						Namespace:   "default",
+						Annotations: map[string]string{},
+					},
+				},
+				allocation: []*apiext.DeviceAllocation{
+					{
+						ID: "GPU-0",
+						Resources: corev1.ResourceList{
+							apiext.ResourceGPUCore:   resource.MustParse("5"),
+							apiext.ResourceGPUMemory: resource.MustParse("1Gi"),
+						},
+					},
+				},
+			},
+			node: &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node",
+					Annotations: map[string]string{
+						AnnotationHAMiLock: fmt.Sprintf("%s,default,test-pod", now.Add(-nodeLockTimeout-time.Second).Format(time.RFC3339)),
+					},
+				},
+			},
+			wantErr: false,
+			wantObject: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pod",
+					Namespace: "default",
+					Annotations: map[string]string{
+						AnnotationMetaXGPUDevicesAllocated: `[[{"uuid":"GPU-0","compute":5,"vRam":1024}]]`,
+					},
+				},
+			},
+			wantNode: &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node",
+					Annotations: map[string]string{
+						AnnotationHAMiLock: fmt.Sprintf("%s,default,test-pod", now.Format(time.RFC3339)),
+					},
+				},
+			},
+		},
+	}
+
+	adapter := &metaxDevicePluginAdapter{
+		clock: fakeclock.NewFakeClock(now),
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := &DevicePluginAdaptContext{
+				Context: context.TODO(),
+				node:    tt.node.DeepCopy(),
+			}
+			err := adapter.Adapt(ctx, tt.args.object, tt.args.allocation)
+			assert.Equal(t, tt.wantErr, err != nil, err)
+			assert.Equal(t, tt.wantObject, tt.args.object)
+			assert.Equal(t, tt.wantNode, ctx.node)
+		})
+	}
+}
+
 func TestPlugin_adaptForDevicePlugin(t *testing.T) {
 	now := time.Now()
 	defaultDevicePluginAdapter = &generalDevicePluginAdapter{
@@ -504,6 +758,9 @@ func TestPlugin_adaptForDevicePlugin(t *testing.T) {
 			clock: fakeclock.NewFakeClock(now),
 		},
 		apiext.GPUVendorCambricon: &cambriconGPUDevicePluginAdapter{
+			clock: fakeclock.NewFakeClock(now),
+		},
+		apiext.GPUVendorMetaX: &metaxDevicePluginAdapter{
 			clock: fakeclock.NewFakeClock(now),
 		},
 	}
@@ -672,6 +929,64 @@ func TestPlugin_adaptForDevicePlugin(t *testing.T) {
 					Name: "cambricon",
 					Annotations: map[string]string{
 						AnnotationCambriconDsmluLock: fmt.Sprintf("%s,default,test-pod", now.Format(time.RFC3339)),
+					},
+				},
+			},
+		},
+		{
+			name: "metax",
+			args: args{
+				object: &corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:        "test-pod",
+						Namespace:   "default",
+						Annotations: map[string]string{},
+					},
+				},
+				allocationResult: apiext.DeviceAllocations{
+					schedulingv1alpha1.GPU: []*apiext.DeviceAllocation{
+						{
+							Minor: 0,
+							ID:    "GPU-0",
+							Resources: corev1.ResourceList{
+								apiext.ResourceGPUCore:   resource.MustParse("5"),
+								apiext.ResourceGPUMemory: resource.MustParse("1Gi"),
+							},
+						},
+					},
+				},
+				nodeName: "metax",
+			},
+			device: &schedulingv1alpha1.Device{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "metax",
+					Labels: map[string]string{
+						apiext.LabelGPUVendor: apiext.GPUVendorMetaX,
+					},
+				},
+			},
+			node: &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "metax",
+				},
+			},
+			wantErr: false,
+			wantObject: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pod",
+					Namespace: "default",
+					Annotations: map[string]string{
+						AnnotationBindTimestamp:            strconv.FormatInt(now.UnixNano(), 10),
+						AnnotationGPUMinors:                "0",
+						AnnotationMetaXGPUDevicesAllocated: `[[{"uuid":"GPU-0","compute":5,"vRam":1024}]]`,
+					},
+				},
+			},
+			wantNode: &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "metax",
+					Annotations: map[string]string{
+						AnnotationHAMiLock: fmt.Sprintf("%s,default,test-pod", now.Format(time.RFC3339)),
 					},
 				},
 			},
