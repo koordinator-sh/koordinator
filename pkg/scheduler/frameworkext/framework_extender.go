@@ -78,7 +78,7 @@ type frameworkExtenderImpl struct {
 	reservationNominator                   ReservationNominator
 	reservationFilterPlugins               []ReservationFilterPlugin
 	reservationScorePlugins                []ReservationScorePlugin
-	reservationPreBindPlugins              []ReservationPreBindPlugin
+	reservationPreBindPlugins              map[string]ReservationPreBindPlugin
 	reservationRestorePlugins              []ReservationRestorePlugin
 	reservationPreAllocationRestorePlugins []ReservationPreAllocationRestorePlugin
 
@@ -108,6 +108,7 @@ func NewFrameworkExtender(f *FrameworkExtenderFactory, fw framework.Framework) F
 		filterTransformers:               map[string]FilterTransformer{},
 		scoreTransformers:                map[string]ScoreTransformer{},
 		postFilterTransformers:           map[string]PostFilterTransformer{},
+		reservationPreBindPlugins:        map[string]ReservationPreBindPlugin{},
 		preBindExtensionsPlugins:         map[string]PreBindExtensions{},
 		metricsRecorder:                  f.metricsRecorder,
 		podLister:                        fw.SharedInformerFactory().Core().V1().Pods().Lister(),
@@ -158,7 +159,7 @@ func (ext *frameworkExtenderImpl) updatePlugins(pl framework.Plugin) {
 		ext.reservationScorePlugins = append(ext.reservationScorePlugins, r)
 	}
 	if r, ok := pl.(ReservationPreBindPlugin); ok {
-		ext.reservationPreBindPlugins = append(ext.reservationPreBindPlugins, r)
+		ext.reservationPreBindPlugins[r.Name()] = r
 	}
 	if r, ok := pl.(ReservationRestorePlugin); ok {
 		ext.reservationRestorePlugins = append(ext.reservationRestorePlugins, r)
@@ -407,7 +408,11 @@ func (ext *frameworkExtenderImpl) RunPreBindPlugins(ctx context.Context, state *
 	original := reservation
 	reservation = reservation.DeepCopy()
 	reservation.Status.NodeName = nodeName
-	for _, pl := range ext.reservationPreBindPlugins {
+	for _, plugin := range ext.configuredPlugins.PreBind.Enabled {
+		pl := ext.reservationPreBindPlugins[plugin.Name]
+		if pl == nil {
+			continue
+		}
 		startTime := time.Now()
 		status := pl.PreBindReservation(ctx, state, reservation, nodeName)
 		ext.metricsRecorder.ObservePluginDurationAsync("PreBindReservation", pl.Name(), status.Code().String(), metrics.SinceInSeconds(startTime))

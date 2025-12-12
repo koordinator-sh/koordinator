@@ -140,6 +140,11 @@ func (h *TestTransformer) AfterPostFilter(ctx context.Context, cycleState *frame
 	pod.Annotations[fmt.Sprintf("AfterPostFilter-%d", h.index)] = fmt.Sprintf("%d", h.index)
 }
 
+// PreBind implements the standard PreBind plugin interface
+func (h *TestTransformer) PreBind(ctx context.Context, state *framework.CycleState, p *corev1.Pod, nodeName string) *framework.Status {
+	return nil
+}
+
 type testPreBindReservationState struct {
 	reservation *schedulingv1alpha1.Reservation
 }
@@ -465,12 +470,25 @@ func TestPreBind(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			koordClientSet := koordfake.NewSimpleClientset()
+			koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
+			extenderFactory, _ := NewFrameworkExtenderFactory(
+				WithKoordinatorClientSet(koordClientSet),
+				WithKoordinatorSharedInformerFactory(koordSharedInformerFactory),
+			)
+
 			registeredPlugins := []schedulertesting.RegisterPluginFunc{
 				schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
 				schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
 				schedulertesting.RegisterPreBindPlugin("fakePreBindPlugin", func(_ runtime.Object, _ framework.Handle) (framework.Plugin, error) {
 					return &fakePreBindPlugin{err: errors.New("failed")}, nil
 				}),
+				schedulertesting.RegisterPreBindPlugin("TestTransformer-1", PluginFactoryProxy(extenderFactory, func(_ runtime.Object, _ framework.Handle) (framework.Plugin, error) {
+					return &TestTransformer{name: "TestTransformer-1", index: 1}, nil
+				})),
+				schedulertesting.RegisterPreBindPlugin("TestTransformer-2", PluginFactoryProxy(extenderFactory, func(_ runtime.Object, _ framework.Handle) (framework.Plugin, error) {
+					return &TestTransformer{name: "TestTransformer-2", index: 2}, nil
+				})),
 			}
 			fakeClient := kubefake.NewSimpleClientset()
 			sharedInformerFactory := informers.NewSharedInformerFactory(fakeClient, 0)
@@ -483,23 +501,15 @@ func TestPreBind(t *testing.T) {
 			)
 			assert.NoError(t, err)
 
-			koordClientSet := koordfake.NewSimpleClientset()
-			koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
-			extenderFactory, _ := NewFrameworkExtenderFactory(
-				WithKoordinatorClientSet(koordClientSet),
-				WithKoordinatorSharedInformerFactory(koordSharedInformerFactory),
-			)
 			_, err = koordClientSet.SchedulingV1alpha1().Reservations().Create(context.TODO(), reservation.DeepCopy(), metav1.CreateOptions{})
 			assert.NoError(t, err)
 			_ = koordSharedInformerFactory.Scheduling().V1alpha1().Reservations().Lister()
 			koordSharedInformerFactory.Start(nil)
 			koordSharedInformerFactory.WaitForCacheSync(nil)
 
-			extender := NewFrameworkExtender(extenderFactory, fh)
+			extender := extenderFactory.NewFrameworkExtender(fh)
 			extender.SetConfiguredPlugins(fh.ListPlugins())
 			impl := extender.(*frameworkExtenderImpl)
-			impl.updatePlugins(&TestTransformer{index: 1})
-			impl.updatePlugins(&TestTransformer{index: 2})
 
 			impl.SharedInformerFactory().Start(nil)
 			impl.KoordinatorSharedInformerFactory().Start(nil)
@@ -1384,6 +1394,131 @@ func TestRunReservationPreAllocationScorePlugins(t *testing.T) {
 			pluginToReservationScores, status := extender.RunReservationPreAllocationScorePlugins(context.TODO(), cycleState, testRInfo, tt.pods, "test-node-1")
 			assert.Equal(t, tt.wantStatus, status.IsSuccess())
 			assert.Equal(t, tt.wantScores, pluginToReservationScores)
+		})
+	}
+}
+
+func TestReservationPreBindPluginOrder(t *testing.T) {
+	reservation := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{
+			UID:  "123456789",
+			Name: "test-reservation",
+		},
+		Spec: schedulingv1alpha1.ReservationSpec{
+			Template: &corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					SchedulerName: "koord-scheduler",
+				},
+			},
+		},
+	}
+
+	tests := []struct {
+		name                       string
+		pluginRegistrationOrder    []string // PreBind plugin registration order
+		wantExecutionOrder         []int    // Expected execution order by index
+		wantReservationAnnotations map[string]string
+	}{
+		{
+			name:                    "plugins execute in PreBind registration order",
+			pluginRegistrationOrder: []string{"PluginB", "PluginA", "PluginC"},
+			wantExecutionOrder:      []int{2, 1, 3}, // B(index=2), A(index=1), C(index=3)
+			wantReservationAnnotations: map[string]string{
+				"PreBindReservation-1": "1",
+				"PreBindReservation-2": "2",
+				"PreBindReservation-3": "3",
+			},
+		},
+		{
+			name:                    "different order should execute differently",
+			pluginRegistrationOrder: []string{"PluginA", "PluginC", "PluginB"},
+			wantExecutionOrder:      []int{1, 3, 2}, // A(index=1), C(index=3), B(index=2)
+			wantReservationAnnotations: map[string]string{
+				"PreBindReservation-1": "1",
+				"PreBindReservation-2": "2",
+				"PreBindReservation-3": "3",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create plugins with specific names and indices
+			plugins := map[string]*TestTransformer{
+				"PluginA": {name: "PluginA", index: 1},
+				"PluginB": {name: "PluginB", index: 2},
+				"PluginC": {name: "PluginC", index: 3},
+			}
+
+			// Register PreBind plugins in the specified order
+			registeredPlugins := []schedulertesting.RegisterPluginFunc{
+				schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
+				schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
+			}
+			for _, pluginName := range tt.pluginRegistrationOrder {
+				pl := plugins[pluginName]
+				registeredPlugins = append(registeredPlugins,
+					schedulertesting.RegisterPreBindPlugin(pl.Name(), func(p *TestTransformer) func(_ runtime.Object, _ framework.Handle) (framework.Plugin, error) {
+						return func(_ runtime.Object, _ framework.Handle) (framework.Plugin, error) {
+							return p, nil
+						}
+					}(pl)),
+				)
+			}
+
+			fakeClient := kubefake.NewSimpleClientset()
+			sharedInformerFactory := informers.NewSharedInformerFactory(fakeClient, 0)
+			fh, err := schedulertesting.NewFramework(
+				context.TODO(),
+				registeredPlugins,
+				"koord-scheduler",
+				frameworkruntime.WithClientSet(fakeClient),
+				frameworkruntime.WithInformerFactory(sharedInformerFactory),
+			)
+			assert.NoError(t, err)
+
+			koordClientSet := koordfake.NewSimpleClientset()
+			koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
+			extenderFactory, _ := NewFrameworkExtenderFactory(
+				WithKoordinatorClientSet(koordClientSet),
+				WithKoordinatorSharedInformerFactory(koordSharedInformerFactory),
+			)
+
+			_, err = koordClientSet.SchedulingV1alpha1().Reservations().Create(context.TODO(), reservation.DeepCopy(), metav1.CreateOptions{})
+			assert.NoError(t, err)
+			koordSharedInformerFactory.Start(nil)
+			koordSharedInformerFactory.WaitForCacheSync(nil)
+
+			extender := NewFrameworkExtender(extenderFactory, fh)
+			extender.SetConfiguredPlugins(fh.ListPlugins())
+			impl := extender.(*frameworkExtenderImpl)
+
+			// Register ReservationPreBindPlugins
+			for _, pl := range plugins {
+				impl.updatePlugins(pl)
+			}
+
+			// Verify plugins are stored in map
+			assert.Equal(t, len(plugins), len(impl.reservationPreBindPlugins))
+			for name, pl := range plugins {
+				assert.Equal(t, pl, impl.reservationPreBindPlugins[name])
+			}
+
+			// Execute PreBind for reservation
+			impl.SharedInformerFactory().Start(nil)
+			impl.KoordinatorSharedInformerFactory().Start(nil)
+			impl.SharedInformerFactory().WaitForCacheSync(nil)
+			impl.KoordinatorSharedInformerFactory().WaitForCacheSync(nil)
+
+			cycleState := framework.NewCycleState()
+			reservePod := reservationutil.NewReservePod(reservation)
+			status := extender.RunPreBindPlugins(context.TODO(), cycleState, reservePod, "test-node-1")
+			assert.True(t, status.IsSuccess(), status.Message())
+
+			// Verify annotations were set in correct order
+			s, err := cycleState.Read("test-preBind-reservation")
+			assert.NoError(t, err)
+			assert.Equal(t, tt.wantReservationAnnotations, s.(*testPreBindReservationState).reservation.Annotations)
 		})
 	}
 }
