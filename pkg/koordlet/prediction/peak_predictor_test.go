@@ -25,7 +25,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
@@ -499,7 +499,7 @@ func Test_priorityReclaimablePredictor(t *testing.T) {
 					},
 				},
 			},
-			Priority: pointer.Int32(extension.PriorityProdValueMin),
+			Priority: ptr.To[int32](extension.PriorityProdValueMin),
 		},
 	}
 	podBatch := &v1.Pod{
@@ -519,7 +519,7 @@ func Test_priorityReclaimablePredictor(t *testing.T) {
 					},
 				},
 			},
-			Priority: pointer.Int32(extension.PriorityBatchValueMax),
+			Priority: ptr.To[int32](extension.PriorityBatchValueMax),
 		},
 	}
 

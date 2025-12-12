@@ -22,7 +22,7 @@ import (
 	"strconv"
 
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 )
 
 const (
@@ -90,7 +90,7 @@ func GetCPUNormalizationEnabled(node *corev1.Node) (*bool, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parse cpu normalization enabled failed, err: %w", err)
 	}
-	return pointer.Bool(v), nil
+	return ptr.To[bool](v), nil
 }
 
 func IsCPUNormalizationRatioDifferent(old, new float64) bool {

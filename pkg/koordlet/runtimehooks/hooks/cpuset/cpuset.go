@@ -21,7 +21,7 @@ import (
 	"sync"
 
 	"k8s.io/klog/v2"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
@@ -114,7 +114,7 @@ func (p *cpusetPlugin) SetContainerCPUSet(proto protocol.HooksProtocol) error {
 	if cpusetVal, err := util.GetCPUSetFromPod(containerReq.PodAnnotations); err != nil {
 		return err
 	} else if cpusetVal != "" {
-		containerCtx.Response.Resources.CPUSet = pointer.String(cpusetVal)
+		containerCtx.Response.Resources.CPUSet = ptr.To[string](cpusetVal)
 		klog.V(5).Infof("get cpuset %v for container %v/%v from pod annotation", cpusetVal,
 			containerCtx.Request.PodMeta.String(), containerCtx.Request.ContainerMeta.Name)
 		return nil
@@ -181,7 +181,7 @@ func UnsetPodCPUQuota(proto protocol.HooksProtocol) error {
 	if needUnset, err := util.IsPodCfsQuotaNeedUnset(req.Annotations); err != nil {
 		return err
 	} else if needUnset {
-		podCtx.Response.Resources.CFSQuota = pointer.Int64(-1)
+		podCtx.Response.Resources.CFSQuota = ptr.To[int64](-1)
 		return nil
 	}
 
@@ -202,7 +202,7 @@ func UnsetContainerCPUQuota(proto protocol.HooksProtocol) error {
 	if needUnset, err := util.IsPodCfsQuotaNeedUnset(containerReq.PodAnnotations); err != nil {
 		return err
 	} else if needUnset {
-		containerCtx.Response.Resources.CFSQuota = pointer.Int64(-1)
+		containerCtx.Response.Resources.CFSQuota = ptr.To[int64](-1)
 		return nil
 	}
 

@@ -36,7 +36,7 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/queuesort"
 	frameworkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
 	schedulertesting "k8s.io/kubernetes/pkg/scheduler/testing"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
@@ -159,7 +159,7 @@ func TestFilterExpiredNodeMetric(t *testing.T) {
 				},
 				Spec: slov1alpha1.NodeMetricSpec{
 					CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
-						ReportIntervalSeconds: pointer.Int64(60),
+						ReportIntervalSeconds: ptr.To[int64](60),
 					},
 				},
 				Status: slov1alpha1.NodeMetricStatus{
@@ -178,7 +178,7 @@ func TestFilterExpiredNodeMetric(t *testing.T) {
 				},
 				Spec: slov1alpha1.NodeMetricSpec{
 					CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
-						ReportIntervalSeconds: pointer.Int64(60),
+						ReportIntervalSeconds: ptr.To[int64](60),
 					},
 				},
 			},
@@ -192,7 +192,7 @@ func TestFilterExpiredNodeMetric(t *testing.T) {
 				},
 				Spec: slov1alpha1.NodeMetricSpec{
 					CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
-						ReportIntervalSeconds: pointer.Int64(60),
+						ReportIntervalSeconds: ptr.To[int64](60),
 					},
 				},
 				Status: slov1alpha1.NodeMetricStatus{
@@ -280,7 +280,7 @@ func TestEnableScheduleWhenNodeMetricsExpired(t *testing.T) {
 				},
 				Spec: slov1alpha1.NodeMetricSpec{
 					CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
-						ReportIntervalSeconds: pointer.Int64(60),
+						ReportIntervalSeconds: ptr.To[int64](60),
 					},
 				},
 				Status: slov1alpha1.NodeMetricStatus{
@@ -299,11 +299,11 @@ func TestEnableScheduleWhenNodeMetricsExpired(t *testing.T) {
 				},
 				Spec: slov1alpha1.NodeMetricSpec{
 					CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
-						ReportIntervalSeconds: pointer.Int64(60),
+						ReportIntervalSeconds: ptr.To[int64](60),
 					},
 				},
 			},
-			enableScheduleWhenNodeMetricsExpired: pointer.Bool(true),
+			enableScheduleWhenNodeMetricsExpired: ptr.To[bool](true),
 			wantStatus:                           nil,
 		},
 		{
@@ -314,7 +314,7 @@ func TestEnableScheduleWhenNodeMetricsExpired(t *testing.T) {
 				},
 				Spec: slov1alpha1.NodeMetricSpec{
 					CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
-						ReportIntervalSeconds: pointer.Int64(60),
+						ReportIntervalSeconds: ptr.To[int64](60),
 					},
 				},
 				Status: slov1alpha1.NodeMetricStatus{
@@ -323,7 +323,7 @@ func TestEnableScheduleWhenNodeMetricsExpired(t *testing.T) {
 					},
 				},
 			},
-			enableScheduleWhenNodeMetricsExpired: pointer.Bool(true),
+			enableScheduleWhenNodeMetricsExpired: ptr.To[bool](true),
 			wantStatus:                           nil,
 		},
 		{
@@ -334,11 +334,11 @@ func TestEnableScheduleWhenNodeMetricsExpired(t *testing.T) {
 				},
 				Spec: slov1alpha1.NodeMetricSpec{
 					CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
-						ReportIntervalSeconds: pointer.Int64(60),
+						ReportIntervalSeconds: ptr.To[int64](60),
 					},
 				},
 			},
-			enableScheduleWhenNodeMetricsExpired: pointer.Bool(false),
+			enableScheduleWhenNodeMetricsExpired: ptr.To[bool](false),
 			wantStatus:                           framework.NewStatus(framework.Unschedulable, ErrReasonNodeMetricExpired),
 		},
 		{
@@ -349,7 +349,7 @@ func TestEnableScheduleWhenNodeMetricsExpired(t *testing.T) {
 				},
 				Spec: slov1alpha1.NodeMetricSpec{
 					CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
-						ReportIntervalSeconds: pointer.Int64(60),
+						ReportIntervalSeconds: ptr.To[int64](60),
 					},
 				},
 				Status: slov1alpha1.NodeMetricStatus{
@@ -358,7 +358,7 @@ func TestEnableScheduleWhenNodeMetricsExpired(t *testing.T) {
 					},
 				},
 			},
-			enableScheduleWhenNodeMetricsExpired: pointer.Bool(false),
+			enableScheduleWhenNodeMetricsExpired: ptr.To[bool](false),
 			wantStatus:                           framework.NewStatus(framework.Unschedulable, ErrReasonNodeMetricExpired),
 		},
 	}
@@ -449,7 +449,7 @@ func TestFilterUsage(t *testing.T) {
 				},
 				Spec: slov1alpha1.NodeMetricSpec{
 					CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
-						ReportIntervalSeconds: pointer.Int64(60),
+						ReportIntervalSeconds: ptr.To[int64](60),
 					},
 				},
 				Status: slov1alpha1.NodeMetricStatus{
@@ -482,7 +482,7 @@ func TestFilterUsage(t *testing.T) {
 				},
 				Spec: slov1alpha1.NodeMetricSpec{
 					CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
-						ReportIntervalSeconds: pointer.Int64(60),
+						ReportIntervalSeconds: ptr.To[int64](60),
 					},
 				},
 				Status: slov1alpha1.NodeMetricStatus{
@@ -517,7 +517,7 @@ func TestFilterUsage(t *testing.T) {
 				},
 				Spec: slov1alpha1.NodeMetricSpec{
 					CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
-						ReportIntervalSeconds: pointer.Int64(60),
+						ReportIntervalSeconds: ptr.To[int64](60),
 					},
 				},
 				Status: slov1alpha1.NodeMetricStatus{
@@ -558,7 +558,7 @@ func TestFilterUsage(t *testing.T) {
 				},
 				Spec: slov1alpha1.NodeMetricSpec{
 					CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
-						ReportIntervalSeconds: pointer.Int64(60),
+						ReportIntervalSeconds: ptr.To[int64](60),
 					},
 				},
 				Status: slov1alpha1.NodeMetricStatus{
@@ -589,7 +589,7 @@ func TestFilterUsage(t *testing.T) {
 				},
 				Spec: slov1alpha1.NodeMetricSpec{
 					CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
-						ReportIntervalSeconds: pointer.Int64(60),
+						ReportIntervalSeconds: ptr.To[int64](60),
 					},
 				},
 				Status: slov1alpha1.NodeMetricStatus{
@@ -624,7 +624,7 @@ func TestFilterUsage(t *testing.T) {
 				},
 				Spec: slov1alpha1.NodeMetricSpec{
 					CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
-						ReportIntervalSeconds: pointer.Int64(60),
+						ReportIntervalSeconds: ptr.To[int64](60),
 					},
 				},
 				Status: slov1alpha1.NodeMetricStatus{
@@ -668,7 +668,7 @@ func TestFilterUsage(t *testing.T) {
 				},
 				Spec: slov1alpha1.NodeMetricSpec{
 					CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
-						ReportIntervalSeconds: pointer.Int64(60),
+						ReportIntervalSeconds: ptr.To[int64](60),
 					},
 				},
 				Status: slov1alpha1.NodeMetricStatus{
@@ -700,7 +700,7 @@ func TestFilterUsage(t *testing.T) {
 				},
 				Spec: slov1alpha1.NodeMetricSpec{
 					CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
-						ReportIntervalSeconds: pointer.Int64(60),
+						ReportIntervalSeconds: ptr.To[int64](60),
 					},
 				},
 				Status: slov1alpha1.NodeMetricStatus{
@@ -764,7 +764,7 @@ func TestFilterUsage(t *testing.T) {
 				},
 				Spec: slov1alpha1.NodeMetricSpec{
 					CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
-						ReportIntervalSeconds: pointer.Int64(60),
+						ReportIntervalSeconds: ptr.To[int64](60),
 					},
 				},
 				Status: slov1alpha1.NodeMetricStatus{
@@ -829,7 +829,7 @@ func TestFilterUsage(t *testing.T) {
 				},
 				Spec: slov1alpha1.NodeMetricSpec{
 					CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
-						ReportIntervalSeconds: pointer.Int64(60),
+						ReportIntervalSeconds: ptr.To[int64](60),
 					},
 				},
 				Status: slov1alpha1.NodeMetricStatus{
@@ -898,7 +898,7 @@ func TestFilterUsage(t *testing.T) {
 				},
 				Spec: slov1alpha1.NodeMetricSpec{
 					CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
-						ReportIntervalSeconds: pointer.Int64(60),
+						ReportIntervalSeconds: ptr.To[int64](60),
 					},
 				},
 				Status: slov1alpha1.NodeMetricStatus{
@@ -955,7 +955,7 @@ func TestFilterUsage(t *testing.T) {
 				},
 				Spec: slov1alpha1.NodeMetricSpec{
 					CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
-						ReportIntervalSeconds: pointer.Int64(60),
+						ReportIntervalSeconds: ptr.To[int64](60),
 					},
 				},
 				Status: slov1alpha1.NodeMetricStatus{
@@ -992,7 +992,7 @@ func TestFilterUsage(t *testing.T) {
 				},
 				Spec: slov1alpha1.NodeMetricSpec{
 					CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
-						ReportIntervalSeconds: pointer.Int64(60),
+						ReportIntervalSeconds: ptr.To[int64](60),
 					},
 				},
 				Status: slov1alpha1.NodeMetricStatus{
@@ -1057,7 +1057,7 @@ func TestFilterUsage(t *testing.T) {
 				},
 				Spec: slov1alpha1.NodeMetricSpec{
 					CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
-						ReportIntervalSeconds: pointer.Int64(60),
+						ReportIntervalSeconds: ptr.To[int64](60),
 					},
 				},
 				Status: slov1alpha1.NodeMetricStatus{
@@ -1121,7 +1121,7 @@ func TestFilterUsage(t *testing.T) {
 				},
 				Spec: slov1alpha1.NodeMetricSpec{
 					CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
-						ReportIntervalSeconds: pointer.Int64(60),
+						ReportIntervalSeconds: ptr.To[int64](60),
 					},
 				},
 				Status: slov1alpha1.NodeMetricStatus{
@@ -1186,7 +1186,7 @@ func TestFilterUsage(t *testing.T) {
 				},
 				Spec: slov1alpha1.NodeMetricSpec{
 					CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
-						ReportIntervalSeconds: pointer.Int64(60),
+						ReportIntervalSeconds: ptr.To[int64](60),
 					},
 				},
 				Status: slov1alpha1.NodeMetricStatus{
@@ -1250,7 +1250,7 @@ func TestFilterUsage(t *testing.T) {
 				},
 				Spec: slov1alpha1.NodeMetricSpec{
 					CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
-						ReportIntervalSeconds: pointer.Int64(60),
+						ReportIntervalSeconds: ptr.To[int64](60),
 					},
 				},
 				Status: slov1alpha1.NodeMetricStatus{
@@ -1304,7 +1304,7 @@ func TestFilterUsage(t *testing.T) {
 				},
 				Spec: slov1alpha1.NodeMetricSpec{
 					CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
-						ReportIntervalSeconds: pointer.Int64(60),
+						ReportIntervalSeconds: ptr.To[int64](60),
 					},
 				},
 				Status: slov1alpha1.NodeMetricStatus{
@@ -1345,7 +1345,7 @@ func TestFilterUsage(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var v1beta3args v1beta3.LoadAwareSchedulingArgs
-			v1beta3args.FilterExpiredNodeMetrics = pointer.Bool(false)
+			v1beta3args.FilterExpiredNodeMetrics = ptr.To[bool](false)
 			if len(tt.usageThresholds) > 0 {
 				v1beta3args.UsageThresholds = tt.usageThresholds
 			}
@@ -1477,7 +1477,7 @@ func TestScore(t *testing.T) {
 				},
 				Spec: slov1alpha1.NodeMetricSpec{
 					CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
-						ReportIntervalSeconds: pointer.Int64(60),
+						ReportIntervalSeconds: ptr.To[int64](60),
 					},
 				},
 				Status: slov1alpha1.NodeMetricStatus{
@@ -1526,7 +1526,7 @@ func TestScore(t *testing.T) {
 				},
 				Spec: slov1alpha1.NodeMetricSpec{
 					CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
-						ReportIntervalSeconds: pointer.Int64(60),
+						ReportIntervalSeconds: ptr.To[int64](60),
 					},
 				},
 				Status: slov1alpha1.NodeMetricStatus{
@@ -1604,7 +1604,7 @@ func TestScore(t *testing.T) {
 				},
 				Spec: slov1alpha1.NodeMetricSpec{
 					CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
-						ReportIntervalSeconds: pointer.Int64(60),
+						ReportIntervalSeconds: ptr.To[int64](60),
 					},
 				},
 				Status: slov1alpha1.NodeMetricStatus{
@@ -1660,7 +1660,7 @@ func TestScore(t *testing.T) {
 				},
 				Spec: slov1alpha1.NodeMetricSpec{
 					CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
-						ReportIntervalSeconds: pointer.Int64(60),
+						ReportIntervalSeconds: ptr.To[int64](60),
 					},
 				},
 				Status: slov1alpha1.NodeMetricStatus{
@@ -1735,7 +1735,7 @@ func TestScore(t *testing.T) {
 				},
 				Spec: slov1alpha1.NodeMetricSpec{
 					CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
-						ReportIntervalSeconds: pointer.Int64(60),
+						ReportIntervalSeconds: ptr.To[int64](60),
 					},
 				},
 				Status: slov1alpha1.NodeMetricStatus{
@@ -1820,7 +1820,7 @@ func TestScore(t *testing.T) {
 				},
 				Spec: slov1alpha1.NodeMetricSpec{
 					CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
-						ReportIntervalSeconds: pointer.Int64(60),
+						ReportIntervalSeconds: ptr.To[int64](60),
 					},
 				},
 				Status: slov1alpha1.NodeMetricStatus{
@@ -1913,7 +1913,7 @@ func TestScore(t *testing.T) {
 				},
 				Spec: slov1alpha1.NodeMetricSpec{
 					CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
-						ReportIntervalSeconds: pointer.Int64(60),
+						ReportIntervalSeconds: ptr.To[int64](60),
 					},
 				},
 				Status: slov1alpha1.NodeMetricStatus{
@@ -1994,7 +1994,7 @@ func TestScore(t *testing.T) {
 				},
 				Spec: slov1alpha1.NodeMetricSpec{
 					CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
-						ReportIntervalSeconds: pointer.Int64(60),
+						ReportIntervalSeconds: ptr.To[int64](60),
 					},
 				},
 				Status: slov1alpha1.NodeMetricStatus{
@@ -2075,7 +2075,7 @@ func TestScore(t *testing.T) {
 				},
 				Spec: slov1alpha1.NodeMetricSpec{
 					CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
-						ReportIntervalSeconds: pointer.Int64(60),
+						ReportIntervalSeconds: ptr.To[int64](60),
 					},
 				},
 				Status: slov1alpha1.NodeMetricStatus{
@@ -2103,7 +2103,7 @@ func TestScore(t *testing.T) {
 					Name:      "test-pod-1",
 				},
 				Spec: corev1.PodSpec{
-					Priority: pointer.Int32(extension.PriorityBatchValueMin),
+					Priority: ptr.To[int32](extension.PriorityBatchValueMin),
 					Containers: []corev1.Container{
 						{
 							Name: "test-container",
@@ -2128,7 +2128,7 @@ func TestScore(t *testing.T) {
 				},
 				Spec: slov1alpha1.NodeMetricSpec{
 					CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
-						ReportIntervalSeconds: pointer.Int64(60),
+						ReportIntervalSeconds: ptr.To[int64](60),
 					},
 				},
 				Status: slov1alpha1.NodeMetricStatus{
@@ -2154,7 +2154,7 @@ func TestScore(t *testing.T) {
 					Name:      "prod-pod-1",
 				},
 				Spec: corev1.PodSpec{
-					Priority: pointer.Int32(extension.PriorityProdValueMax),
+					Priority: ptr.To[int32](extension.PriorityProdValueMax),
 					Containers: []corev1.Container{
 						{
 							Name: "test-container",
@@ -2182,7 +2182,7 @@ func TestScore(t *testing.T) {
 						},
 						Spec: corev1.PodSpec{
 							NodeName: "test-node-1",
-							Priority: pointer.Int32(extension.PriorityProdValueMax),
+							Priority: ptr.To[int32](extension.PriorityProdValueMax),
 							Containers: []corev1.Container{
 								{
 									Name: "test-container",
@@ -2209,7 +2209,7 @@ func TestScore(t *testing.T) {
 				},
 				Spec: slov1alpha1.NodeMetricSpec{
 					CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
-						ReportIntervalSeconds: pointer.Int64(60),
+						ReportIntervalSeconds: ptr.To[int64](60),
 					},
 				},
 				Status: slov1alpha1.NodeMetricStatus{
@@ -2271,7 +2271,7 @@ func TestScore(t *testing.T) {
 				},
 				Spec: slov1alpha1.NodeMetricSpec{
 					CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
-						ReportIntervalSeconds: pointer.Int64(60),
+						ReportIntervalSeconds: ptr.To[int64](60),
 					},
 				},
 				Status: slov1alpha1.NodeMetricStatus{
@@ -2320,7 +2320,7 @@ func TestScore(t *testing.T) {
 				},
 				Spec: slov1alpha1.NodeMetricSpec{
 					CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
-						ReportIntervalSeconds: pointer.Int64(60),
+						ReportIntervalSeconds: ptr.To[int64](60),
 					},
 				},
 				Status: slov1alpha1.NodeMetricStatus{
@@ -2360,7 +2360,7 @@ func TestScore(t *testing.T) {
 				},
 				Spec: slov1alpha1.NodeMetricSpec{
 					CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
-						ReportIntervalSeconds: pointer.Int64(60),
+						ReportIntervalSeconds: ptr.To[int64](60),
 					},
 				},
 				Status: slov1alpha1.NodeMetricStatus{

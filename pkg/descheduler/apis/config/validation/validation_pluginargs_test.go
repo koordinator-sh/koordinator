@@ -23,7 +23,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	deschedulerconfig "github.com/koordinator-sh/koordinator/pkg/descheduler/apis/config"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/apis/config/v1alpha2"
@@ -57,7 +57,7 @@ func TestValidateMigrationControllerArgs(t *testing.T) {
 					Type:     deschedulerconfig.Float,
 					FloatVal: 11,
 				},
-				EvictBurst: pointer.Int32(0),
+				EvictBurst: ptr.To[int32](0),
 			},
 			wantErr: true,
 		},
@@ -75,7 +75,7 @@ func TestValidateMigrationControllerArgs(t *testing.T) {
 		{
 			name: "invalid maxConcurrentReconciles",
 			args: &v1alpha2.MigrationControllerArgs{
-				MaxConcurrentReconciles: pointer.Int32(-1),
+				MaxConcurrentReconciles: ptr.To[int32](-1),
 			},
 			wantErr: true,
 		},

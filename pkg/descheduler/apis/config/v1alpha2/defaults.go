@@ -26,7 +26,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/sets"
 	componentbaseconfigv1alpha1 "k8s.io/component-base/config/v1alpha1"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	sev1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/apis/config"
@@ -215,10 +215,10 @@ func SetDefaults_DeschedulerConfiguration(obj *DeschedulerConfiguration) {
 
 func SetDefaults_MigrationControllerArgs(obj *MigrationControllerArgs) {
 	if obj.MaxConcurrentReconciles == nil {
-		obj.MaxConcurrentReconciles = pointer.Int32(defaultMigrationControllerMaxConcurrentReconciles)
+		obj.MaxConcurrentReconciles = ptr.To[int32](defaultMigrationControllerMaxConcurrentReconciles)
 	}
 	if obj.MaxMigratingPerNode == nil {
-		obj.MaxMigratingPerNode = pointer.Int32(defaultMaxMigratingPerNode)
+		obj.MaxMigratingPerNode = ptr.To[int32](defaultMaxMigratingPerNode)
 	}
 	if obj.DefaultJobMode == "" {
 		obj.DefaultJobMode = string(defaultMigrationJobMode)
@@ -240,7 +240,7 @@ func SetDefaults_MigrationControllerArgs(obj *MigrationControllerArgs) {
 		}
 	}
 	if obj.EvictBurst == nil {
-		obj.EvictBurst = pointer.Int32(defaultMigrationEvictBurst)
+		obj.EvictBurst = ptr.To[int32](defaultMigrationEvictBurst)
 	}
 	if len(obj.ObjectLimiters) == 0 {
 		obj.ObjectLimiters = defaultObjectLimiters
@@ -258,7 +258,7 @@ func SetDefaults_MigrationControllerArgs(obj *MigrationControllerArgs) {
 
 func SetDefaults_LowNodeLoadArgs(obj *LowNodeLoadArgs) {
 	if obj.NodeFit == nil {
-		obj.NodeFit = pointer.Bool(true)
+		obj.NodeFit = ptr.To[bool](true)
 	}
 	if obj.AnomalyCondition == nil {
 		obj.AnomalyCondition = defaultLoadAnomalyCondition
@@ -270,7 +270,7 @@ func SetDefaults_LowNodeLoadArgs(obj *LowNodeLoadArgs) {
 	}
 
 	if obj.NodeMetricExpirationSeconds == nil {
-		obj.NodeMetricExpirationSeconds = pointer.Int64(defaultNodeMetricExpirationSeconds)
+		obj.NodeMetricExpirationSeconds = ptr.To[int64](defaultNodeMetricExpirationSeconds)
 	}
 
 	defaultResourceWeights := map[corev1.ResourceName]int64{

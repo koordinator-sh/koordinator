@@ -34,7 +34,7 @@ import (
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/api/v1/resource"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
@@ -112,14 +112,14 @@ func NewReservePod(r *schedulingv1alpha1.Reservation) *corev1.Pod {
 		if priorityVal, ok := r.Labels[extension.LabelPodPriority]; ok && priorityVal != "" {
 			priority, err := strconv.ParseInt(priorityVal, 10, 32)
 			if err == nil {
-				reservePod.Spec.Priority = pointer.Int32(int32(priority))
+				reservePod.Spec.Priority = ptr.To[int32](int32(priority))
 			}
 		}
 	}
 
 	if reservePod.Spec.Priority == nil {
 		// Forces priority to be set to maximum to prevent preemption.
-		reservePod.Spec.Priority = pointer.Int32(math.MaxInt32)
+		reservePod.Spec.Priority = ptr.To[int32](math.MaxInt32)
 	}
 
 	reservePod.Spec.SchedulerName = GetReservationSchedulerName(r)

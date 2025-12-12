@@ -33,7 +33,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/klog/v2"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
@@ -281,7 +281,7 @@ func (s *statesInformer) buildRDMADevice() []schedulingv1alpha1.DeviceInfo {
 		rdma := rdmaDevices[idx]
 		deviceInfo := schedulingv1alpha1.DeviceInfo{
 			UUID:   rdma.ID,
-			Minor:  pointer.Int32(rdma.Minor),
+			Minor:  ptr.To[int32](rdma.Minor),
 			Type:   schedulingv1alpha1.RDMA,
 			Health: rdma.Health,
 			Resources: map[corev1.ResourceName]resource.Quantity{
@@ -356,7 +356,7 @@ func (s *statesInformer) buildXPUDevice(xpuDevices koordletuti.XPUDevices) []sch
 
 		deviceInfo := schedulingv1alpha1.DeviceInfo{
 			UUID:       xpu.UUID,
-			Minor:      pointer.Int32(int32(minor)),
+			Minor:      ptr.To[int32](int32(minor)),
 			Type:       schedulingv1alpha1.GPU,
 			Health:     deviceHealthy,
 			Resources:  resources,

@@ -25,7 +25,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	"github.com/koordinator-sh/koordinator/apis/configuration"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
@@ -36,9 +36,9 @@ func Test_CPUBurst_NewChecker_InitStatus(t *testing.T) {
 	cfgClusterOnly := &configuration.CPUBurstCfg{
 		ClusterStrategy: &slov1alpha1.CPUBurstStrategy{
 			CPUBurstConfig: slov1alpha1.CPUBurstConfig{
-				CPUBurstPercent:            pointer.Int64(100),
-				CFSQuotaBurstPercent:       pointer.Int64(200),
-				CFSQuotaBurstPeriodSeconds: pointer.Int64(10000),
+				CPUBurstPercent:            ptr.To[int64](100),
+				CFSQuotaBurstPercent:       ptr.To[int64](200),
+				CFSQuotaBurstPeriodSeconds: ptr.To[int64](10000),
 			},
 		},
 	}
@@ -47,9 +47,9 @@ func Test_CPUBurst_NewChecker_InitStatus(t *testing.T) {
 	cfgHaveNodeInvalid := &configuration.CPUBurstCfg{
 		ClusterStrategy: &slov1alpha1.CPUBurstStrategy{
 			CPUBurstConfig: slov1alpha1.CPUBurstConfig{
-				CPUBurstPercent:            pointer.Int64(100),
-				CFSQuotaBurstPercent:       pointer.Int64(200),
-				CFSQuotaBurstPeriodSeconds: pointer.Int64(10000),
+				CPUBurstPercent:            ptr.To[int64](100),
+				CFSQuotaBurstPercent:       ptr.To[int64](200),
+				CFSQuotaBurstPeriodSeconds: ptr.To[int64](10000),
 			},
 		},
 		NodeStrategies: []configuration.NodeCPUBurstCfg{
@@ -59,9 +59,9 @@ func Test_CPUBurst_NewChecker_InitStatus(t *testing.T) {
 				},
 				CPUBurstStrategy: &slov1alpha1.CPUBurstStrategy{
 					CPUBurstConfig: slov1alpha1.CPUBurstConfig{
-						CPUBurstPercent:            pointer.Int64(100),
-						CFSQuotaBurstPercent:       pointer.Int64(200),
-						CFSQuotaBurstPeriodSeconds: pointer.Int64(10000),
+						CPUBurstPercent:            ptr.To[int64](100),
+						CFSQuotaBurstPercent:       ptr.To[int64](200),
+						CFSQuotaBurstPeriodSeconds: ptr.To[int64](10000),
 					},
 				},
 			},
@@ -73,9 +73,9 @@ func Test_CPUBurst_NewChecker_InitStatus(t *testing.T) {
 	cfgHaveNodeValid := &configuration.CPUBurstCfg{
 		ClusterStrategy: &slov1alpha1.CPUBurstStrategy{
 			CPUBurstConfig: slov1alpha1.CPUBurstConfig{
-				CPUBurstPercent:            pointer.Int64(100),
-				CFSQuotaBurstPercent:       pointer.Int64(200),
-				CFSQuotaBurstPeriodSeconds: pointer.Int64(10000),
+				CPUBurstPercent:            ptr.To[int64](100),
+				CFSQuotaBurstPercent:       ptr.To[int64](200),
+				CFSQuotaBurstPeriodSeconds: ptr.To[int64](10000),
 			},
 		},
 		NodeStrategies: []configuration.NodeCPUBurstCfg{
@@ -90,9 +90,9 @@ func Test_CPUBurst_NewChecker_InitStatus(t *testing.T) {
 				},
 				CPUBurstStrategy: &slov1alpha1.CPUBurstStrategy{
 					CPUBurstConfig: slov1alpha1.CPUBurstConfig{
-						CPUBurstPercent:            pointer.Int64(100),
-						CFSQuotaBurstPercent:       pointer.Int64(200),
-						CFSQuotaBurstPeriodSeconds: pointer.Int64(10000),
+						CPUBurstPercent:            ptr.To[int64](100),
+						CFSQuotaBurstPercent:       ptr.To[int64](200),
+						CFSQuotaBurstPeriodSeconds: ptr.To[int64](10000),
 					},
 				},
 			},
@@ -245,7 +245,7 @@ func Test_CPUBurst_ConfigContentsValid(t *testing.T) {
 				cfg: configuration.CPUBurstCfg{
 					ClusterStrategy: &slov1alpha1.CPUBurstStrategy{
 						CPUBurstConfig: slov1alpha1.CPUBurstConfig{
-							CPUBurstPercent: pointer.Int64(0),
+							CPUBurstPercent: ptr.To[int64](0),
 						},
 					},
 				},
@@ -258,7 +258,7 @@ func Test_CPUBurst_ConfigContentsValid(t *testing.T) {
 				cfg: configuration.CPUBurstCfg{
 					ClusterStrategy: &slov1alpha1.CPUBurstStrategy{
 						CPUBurstConfig: slov1alpha1.CPUBurstConfig{
-							CFSQuotaBurstPercent: pointer.Int64(-1),
+							CFSQuotaBurstPercent: ptr.To[int64](-1),
 						},
 					},
 				},
@@ -271,7 +271,7 @@ func Test_CPUBurst_ConfigContentsValid(t *testing.T) {
 				cfg: configuration.CPUBurstCfg{
 					ClusterStrategy: &slov1alpha1.CPUBurstStrategy{
 						CPUBurstConfig: slov1alpha1.CPUBurstConfig{
-							CFSQuotaBurstPeriodSeconds: pointer.Int64(-2),
+							CFSQuotaBurstPeriodSeconds: ptr.To[int64](-2),
 						},
 					},
 				},
@@ -289,7 +289,7 @@ func Test_CPUBurst_ConfigContentsValid(t *testing.T) {
 						{
 							CPUBurstStrategy: &slov1alpha1.CPUBurstStrategy{
 								CPUBurstConfig: slov1alpha1.CPUBurstConfig{
-									CFSQuotaBurstPeriodSeconds: pointer.Int64(-2),
+									CFSQuotaBurstPeriodSeconds: ptr.To[int64](-2),
 								},
 							},
 						},
@@ -325,9 +325,9 @@ func Test_CPUBurst_ConfigContentsValid(t *testing.T) {
 				cfg: configuration.CPUBurstCfg{
 					ClusterStrategy: &slov1alpha1.CPUBurstStrategy{
 						CPUBurstConfig: slov1alpha1.CPUBurstConfig{
-							CPUBurstPercent:            pointer.Int64(100),
-							CFSQuotaBurstPercent:       pointer.Int64(200),
-							CFSQuotaBurstPeriodSeconds: pointer.Int64(10000),
+							CPUBurstPercent:            ptr.To[int64](100),
+							CFSQuotaBurstPercent:       ptr.To[int64](200),
+							CFSQuotaBurstPeriodSeconds: ptr.To[int64](10000),
 						},
 					},
 					NodeStrategies: []configuration.NodeCPUBurstCfg{
@@ -342,9 +342,9 @@ func Test_CPUBurst_ConfigContentsValid(t *testing.T) {
 							},
 							CPUBurstStrategy: &slov1alpha1.CPUBurstStrategy{
 								CPUBurstConfig: slov1alpha1.CPUBurstConfig{
-									CPUBurstPercent:            pointer.Int64(100),
-									CFSQuotaBurstPercent:       pointer.Int64(200),
-									CFSQuotaBurstPeriodSeconds: pointer.Int64(10000),
+									CPUBurstPercent:            ptr.To[int64](100),
+									CFSQuotaBurstPercent:       ptr.To[int64](200),
+									CFSQuotaBurstPeriodSeconds: ptr.To[int64](10000),
 								},
 							},
 						},

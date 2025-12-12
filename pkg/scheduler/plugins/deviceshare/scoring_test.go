@@ -28,7 +28,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
@@ -55,7 +55,7 @@ func TestScore(t *testing.T) {
 			Type:      deviceType,
 			Health:    true,
 			UUID:      fmt.Sprintf("%s-123456-%d", deviceType, minor),
-			Minor:     pointer.Int32(int32(minor)),
+			Minor:     ptr.To[int32](int32(minor)),
 			Resources: resources,
 		}
 	}
@@ -706,7 +706,7 @@ func TestScoreReservation(t *testing.T) {
 				Type:      schedulingv1alpha1.GPU,
 				Health:    true,
 				UUID:      "gpu-123456-0",
-				Minor:     pointer.Int32(0),
+				Minor:     ptr.To[int32](0),
 				Resources: gpuResources,
 			},
 		},
@@ -715,7 +715,7 @@ func TestScoreReservation(t *testing.T) {
 				Type:      schedulingv1alpha1.RDMA,
 				Health:    true,
 				UUID:      "rdma-123456-0",
-				Minor:     pointer.Int32(0),
+				Minor:     ptr.To[int32](0),
 				Resources: rdmaResources,
 			},
 		},
@@ -1156,7 +1156,7 @@ func TestScoreReservation(t *testing.T) {
 				},
 			},
 			wantScore:     95,
-			wantNormalize: pointer.Int64(100),
+			wantNormalize: ptr.To[int64](100),
 			wantStatus:    nil,
 		},
 	}

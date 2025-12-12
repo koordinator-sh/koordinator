@@ -29,7 +29,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/kubernetes/scheme"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
@@ -124,7 +124,7 @@ func TestClusterColocationProfileMutatingPod(t *testing.T) {
 						corev1.ResourceMemory: resource.MustParse("2Gi"),
 					},
 					SchedulerName: "nonExistSchedulerName",
-					Priority:      pointer.Int32(extension.PriorityBatchValueMax),
+					Priority:      ptr.To[int32](extension.PriorityBatchValueMax),
 				},
 			},
 			profile: &configv1alpha1.ClusterColocationProfile{
@@ -151,7 +151,7 @@ func TestClusterColocationProfileMutatingPod(t *testing.T) {
 					SchedulerName:       "koordinator-scheduler",
 					QoSClass:            string(extension.QoSBE),
 					PriorityClassName:   "koordinator-batch",
-					KoordinatorPriority: pointer.Int32(1111),
+					KoordinatorPriority: ptr.To[int32](1111),
 					Patch: runtime.RawExtension{
 						Raw: []byte(`{"metadata":{"labels":{"test-patch-label":"patch-a"},"annotations":{"test-patch-annotation":"patch-b"}}}`),
 					},
@@ -209,7 +209,7 @@ func TestClusterColocationProfileMutatingPod(t *testing.T) {
 						extension.BatchMemory: resource.MustParse("2Gi"),
 					},
 					SchedulerName:     "koordinator-scheduler",
-					Priority:          pointer.Int32(extension.PriorityBatchValueMax),
+					Priority:          ptr.To[int32](extension.PriorityBatchValueMax),
 					PriorityClassName: "koordinator-batch",
 					PreemptionPolicy:  &preemptionPolicy,
 				},
@@ -238,7 +238,7 @@ func TestClusterColocationProfileMutatingPod(t *testing.T) {
 						},
 					},
 					SchedulerName: "nonExistSchedulerName",
-					Priority:      pointer.Int32(extension.PriorityBatchValueMax),
+					Priority:      ptr.To[int32](extension.PriorityBatchValueMax),
 				},
 			},
 			profile: &configv1alpha1.ClusterColocationProfile{
@@ -265,7 +265,7 @@ func TestClusterColocationProfileMutatingPod(t *testing.T) {
 					SchedulerName:       "koordinator-scheduler",
 					QoSClass:            string(extension.QoSBE),
 					PriorityClassName:   "koordinator-batch",
-					KoordinatorPriority: pointer.Int32(1111),
+					KoordinatorPriority: ptr.To[int32](1111),
 					Patch: runtime.RawExtension{
 						Raw: []byte(`{"metadata":{"labels":{"test-patch-label":"patch-a"},"annotations":{"test-patch-annotation":"patch-b"}}}`),
 					},
@@ -304,7 +304,7 @@ func TestClusterColocationProfileMutatingPod(t *testing.T) {
 						},
 					},
 					SchedulerName:     "koordinator-scheduler",
-					Priority:          pointer.Int32(extension.PriorityBatchValueMax),
+					Priority:          ptr.To[int32](extension.PriorityBatchValueMax),
 					PriorityClassName: "koordinator-batch",
 					PreemptionPolicy:  &preemptionPolicy,
 				},
@@ -333,7 +333,7 @@ func TestClusterColocationProfileMutatingPod(t *testing.T) {
 						},
 					},
 					SchedulerName: "nonExistSchedulerName",
-					Priority:      pointer.Int32(extension.PriorityBatchValueMax),
+					Priority:      ptr.To[int32](extension.PriorityBatchValueMax),
 				},
 			},
 			profile: &configv1alpha1.ClusterColocationProfile{
@@ -360,7 +360,7 @@ func TestClusterColocationProfileMutatingPod(t *testing.T) {
 					SchedulerName:       "koordinator-scheduler",
 					QoSClass:            string(extension.QoSBE),
 					PriorityClassName:   "koordinator-batch",
-					KoordinatorPriority: pointer.Int32(1111),
+					KoordinatorPriority: ptr.To[int32](1111),
 					Patch: runtime.RawExtension{
 						Raw: []byte(`{"metadata":{"labels":{"test-patch-label":"patch-a"},"annotations":{"test-patch-annotation":"patch-b"}}}`),
 					},
@@ -395,7 +395,7 @@ func TestClusterColocationProfileMutatingPod(t *testing.T) {
 						},
 					},
 					SchedulerName:     "koordinator-scheduler",
-					Priority:          pointer.Int32(extension.PriorityBatchValueMax),
+					Priority:          ptr.To[int32](extension.PriorityBatchValueMax),
 					PriorityClassName: "koordinator-batch",
 					PreemptionPolicy:  &preemptionPolicy,
 				},
@@ -447,7 +447,7 @@ func TestClusterColocationProfileMutatingPod(t *testing.T) {
 						corev1.ResourceMemory: resource.MustParse("2Gi"),
 					},
 					SchedulerName: "nonExistSchedulerName",
-					Priority:      pointer.Int32(extension.PriorityBatchValueMax),
+					Priority:      ptr.To[int32](extension.PriorityBatchValueMax),
 				},
 			},
 			profile: &configv1alpha1.ClusterColocationProfile{
@@ -474,13 +474,13 @@ func TestClusterColocationProfileMutatingPod(t *testing.T) {
 					SchedulerName:       "koordinator-scheduler",
 					QoSClass:            string(extension.QoSBE),
 					PriorityClassName:   "koordinator-batch",
-					KoordinatorPriority: pointer.Int32(1111),
+					KoordinatorPriority: ptr.To[int32](1111),
 					Patch: runtime.RawExtension{
 						Raw: []byte(`{"metadata":{"labels":{"test-patch-label":"patch-a"},"annotations":{"test-patch-annotation":"patch-b"}}}`),
 					},
 				},
 			},
-			percent: pointer.Int(100),
+			percent: ptr.To[int](100),
 			expected: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: "default",
@@ -533,7 +533,7 @@ func TestClusterColocationProfileMutatingPod(t *testing.T) {
 						extension.BatchMemory: resource.MustParse("2Gi"),
 					},
 					SchedulerName:     "koordinator-scheduler",
-					Priority:          pointer.Int32(extension.PriorityBatchValueMax),
+					Priority:          ptr.To[int32](extension.PriorityBatchValueMax),
 					PriorityClassName: "koordinator-batch",
 					PreemptionPolicy:  &preemptionPolicy,
 				},
@@ -585,7 +585,7 @@ func TestClusterColocationProfileMutatingPod(t *testing.T) {
 						corev1.ResourceMemory: resource.MustParse("2Gi"),
 					},
 					SchedulerName: "nonExistSchedulerName",
-					Priority:      pointer.Int32(extension.PriorityBatchValueMax),
+					Priority:      ptr.To[int32](extension.PriorityBatchValueMax),
 				},
 			},
 			profile: &configv1alpha1.ClusterColocationProfile{
@@ -612,13 +612,13 @@ func TestClusterColocationProfileMutatingPod(t *testing.T) {
 					SchedulerName:       "koordinator-scheduler",
 					QoSClass:            string(extension.QoSBE),
 					PriorityClassName:   "koordinator-batch",
-					KoordinatorPriority: pointer.Int32(1111),
+					KoordinatorPriority: ptr.To[int32](1111),
 					Patch: runtime.RawExtension{
 						Raw: []byte(`{"metadata":{"labels":{"test-patch-label":"patch-a"},"annotations":{"test-patch-annotation":"patch-b"}}}`),
 					},
 				},
 			},
-			percent: pointer.Int(0),
+			percent: ptr.To[int](0),
 			expected: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: "default",
@@ -663,7 +663,7 @@ func TestClusterColocationProfileMutatingPod(t *testing.T) {
 						extension.BatchMemory: resource.MustParse("2Gi"),
 					},
 					SchedulerName: "nonExistSchedulerName",
-					Priority:      pointer.Int32(extension.PriorityBatchValueMax),
+					Priority:      ptr.To[int32](extension.PriorityBatchValueMax),
 				},
 			},
 		},
@@ -713,7 +713,7 @@ func TestClusterColocationProfileMutatingPod(t *testing.T) {
 						corev1.ResourceMemory: resource.MustParse("2Gi"),
 					},
 					SchedulerName: "nonExistSchedulerName",
-					Priority:      pointer.Int32(extension.PriorityBatchValueMax),
+					Priority:      ptr.To[int32](extension.PriorityBatchValueMax),
 				},
 			},
 			profile: &configv1alpha1.ClusterColocationProfile{
@@ -740,13 +740,13 @@ func TestClusterColocationProfileMutatingPod(t *testing.T) {
 					SchedulerName:       "koordinator-scheduler",
 					QoSClass:            string(extension.QoSBE),
 					PriorityClassName:   "koordinator-batch",
-					KoordinatorPriority: pointer.Int32(1111),
+					KoordinatorPriority: ptr.To[int32](1111),
 					Patch: runtime.RawExtension{
 						Raw: []byte(`{"metadata":{"labels":{"test-patch-label":"patch-a"},"annotations":{"test-patch-annotation":"patch-b"}}}`),
 					},
 				},
 			},
-			percent: pointer.Int(50),
+			percent: ptr.To[int](50),
 			randIntnFn: func(i int) int {
 				return 70
 			},
@@ -794,7 +794,7 @@ func TestClusterColocationProfileMutatingPod(t *testing.T) {
 						extension.BatchMemory: resource.MustParse("2Gi"),
 					},
 					SchedulerName: "nonExistSchedulerName",
-					Priority:      pointer.Int32(extension.PriorityBatchValueMax),
+					Priority:      ptr.To[int32](extension.PriorityBatchValueMax),
 				},
 			},
 		},
@@ -844,7 +844,7 @@ func TestClusterColocationProfileMutatingPod(t *testing.T) {
 						corev1.ResourceMemory: resource.MustParse("2Gi"),
 					},
 					SchedulerName: "nonExistSchedulerName",
-					Priority:      pointer.Int32(extension.PriorityBatchValueMax),
+					Priority:      ptr.To[int32](extension.PriorityBatchValueMax),
 				},
 			},
 			profile: &configv1alpha1.ClusterColocationProfile{
@@ -871,13 +871,13 @@ func TestClusterColocationProfileMutatingPod(t *testing.T) {
 					SchedulerName:       "koordinator-scheduler",
 					QoSClass:            string(extension.QoSBE),
 					PriorityClassName:   "koordinator-batch",
-					KoordinatorPriority: pointer.Int32(1111),
+					KoordinatorPriority: ptr.To[int32](1111),
 					Patch: runtime.RawExtension{
 						Raw: []byte(`{"metadata":{"labels":{"test-patch-label":"patch-a"},"annotations":{"test-patch-annotation":"patch-b"}}}`),
 					},
 				},
 			},
-			percent: pointer.Int(50),
+			percent: ptr.To[int](50),
 			randIntnFn: func(i int) int {
 				return 30
 			},
@@ -933,7 +933,7 @@ func TestClusterColocationProfileMutatingPod(t *testing.T) {
 						extension.BatchMemory: resource.MustParse("2Gi"),
 					},
 					SchedulerName:     "koordinator-scheduler",
-					Priority:          pointer.Int32(extension.PriorityBatchValueMax),
+					Priority:          ptr.To[int32](extension.PriorityBatchValueMax),
 					PriorityClassName: "koordinator-batch",
 					PreemptionPolicy:  &preemptionPolicy,
 				},
@@ -985,7 +985,7 @@ func TestClusterColocationProfileMutatingPod(t *testing.T) {
 						corev1.ResourceMemory: resource.MustParse("2Gi"),
 					},
 					SchedulerName: "nonExistSchedulerName",
-					Priority:      pointer.Int32(extension.PriorityBatchValueMax),
+					Priority:      ptr.To[int32](extension.PriorityBatchValueMax),
 				},
 			},
 			profile: &configv1alpha1.ClusterColocationProfile{
@@ -1015,7 +1015,7 @@ func TestClusterColocationProfileMutatingPod(t *testing.T) {
 					SchedulerName:       "koordinator-scheduler",
 					QoSClass:            string(extension.QoSBE),
 					PriorityClassName:   "koordinator-batch",
-					KoordinatorPriority: pointer.Int32(1111),
+					KoordinatorPriority: ptr.To[int32](1111),
 					Patch: runtime.RawExtension{
 						Raw: []byte(`{"metadata":{"labels":{"test-patch-label":"patch-a"},"annotations":{"test-patch-annotation":"patch-b"}}}`),
 					},
@@ -1073,7 +1073,7 @@ func TestClusterColocationProfileMutatingPod(t *testing.T) {
 						corev1.ResourceMemory: resource.MustParse("2Gi"),
 					},
 					SchedulerName:     "koordinator-scheduler",
-					Priority:          pointer.Int32(extension.PriorityBatchValueMax),
+					Priority:          ptr.To[int32](extension.PriorityBatchValueMax),
 					PriorityClassName: "koordinator-batch",
 					PreemptionPolicy:  &preemptionPolicy,
 				},
@@ -1125,7 +1125,7 @@ func TestClusterColocationProfileMutatingPod(t *testing.T) {
 						corev1.ResourceMemory: resource.MustParse("2Gi"),
 					},
 					SchedulerName: "nonExistSchedulerName",
-					Priority:      pointer.Int32(extension.PriorityBatchValueMax),
+					Priority:      ptr.To[int32](extension.PriorityBatchValueMax),
 				},
 			},
 			profile: &configv1alpha1.ClusterColocationProfile{
@@ -1153,7 +1153,7 @@ func TestClusterColocationProfileMutatingPod(t *testing.T) {
 					SchedulerName:       "koordinator-scheduler",
 					QoSClass:            string(extension.QoSBE),
 					PriorityClassName:   "koordinator-batch",
-					KoordinatorPriority: pointer.Int32(1111),
+					KoordinatorPriority: ptr.To[int32](1111),
 					Patch: runtime.RawExtension{
 						Raw: []byte(`{"metadata":{"labels":{"test-patch-label":"patch-a"},"annotations":{"test-patch-annotation":"patch-b"}}}`),
 					},
@@ -1213,7 +1213,7 @@ func TestClusterColocationProfileMutatingPod(t *testing.T) {
 						corev1.ResourceMemory: resource.MustParse("2Gi"),
 					},
 					SchedulerName:     "koordinator-scheduler",
-					Priority:          pointer.Int32(extension.PriorityBatchValueMax),
+					Priority:          ptr.To[int32](extension.PriorityBatchValueMax),
 					PriorityClassName: "koordinator-batch",
 					PreemptionPolicy:  &preemptionPolicy,
 				},
@@ -1266,7 +1266,7 @@ func TestClusterColocationProfileMutatingPod(t *testing.T) {
 						corev1.ResourceMemory: resource.MustParse("2Gi"),
 					},
 					SchedulerName: "nonExistSchedulerName",
-					Priority:      pointer.Int32(extension.PriorityBatchValueMax),
+					Priority:      ptr.To[int32](extension.PriorityBatchValueMax),
 				},
 			},
 			profile: &configv1alpha1.ClusterColocationProfile{
@@ -1296,7 +1296,7 @@ func TestClusterColocationProfileMutatingPod(t *testing.T) {
 					SchedulerName:       "koordinator-scheduler",
 					QoSClass:            string(extension.QoSBE),
 					PriorityClassName:   "koordinator-batch",
-					KoordinatorPriority: pointer.Int32(1111),
+					KoordinatorPriority: ptr.To[int32](1111),
 					Patch: runtime.RawExtension{
 						Raw: []byte(`{"metadata":{"labels":{"test-patch-label":"patch-a"},"annotations":{"test-patch-annotation":"patch-b"}}}`),
 					},
@@ -1356,7 +1356,7 @@ func TestClusterColocationProfileMutatingPod(t *testing.T) {
 						extension.BatchMemory: resource.MustParse("2Gi"),
 					},
 					SchedulerName:     "koordinator-scheduler",
-					Priority:          pointer.Int32(extension.PriorityBatchValueMax),
+					Priority:          ptr.To[int32](extension.PriorityBatchValueMax),
 					PriorityClassName: "koordinator-batch",
 					PreemptionPolicy:  &preemptionPolicy,
 				},
@@ -1409,7 +1409,7 @@ func TestClusterColocationProfileMutatingPod(t *testing.T) {
 						corev1.ResourceMemory: resource.MustParse("2Gi"),
 					},
 					SchedulerName: "nonExistSchedulerName",
-					Priority:      pointer.Int32(extension.PriorityBatchValueMax),
+					Priority:      ptr.To[int32](extension.PriorityBatchValueMax),
 				},
 			},
 			profile: &configv1alpha1.ClusterColocationProfile{
@@ -1440,7 +1440,7 @@ func TestClusterColocationProfileMutatingPod(t *testing.T) {
 					},
 					QoSClass:            string(extension.QoSBE),
 					PriorityClassName:   "koordinator-batch",
-					KoordinatorPriority: pointer.Int32(1111),
+					KoordinatorPriority: ptr.To[int32](1111),
 					Patch: runtime.RawExtension{
 						Raw: []byte(`{"metadata":{"labels":{"test-patch-label":"patch-a"},"annotations":{"test-patch-annotation":"patch-b"}}}`),
 					},
@@ -1502,7 +1502,7 @@ func TestClusterColocationProfileMutatingPod(t *testing.T) {
 						extension.BatchMemory: resource.MustParse("2Gi"),
 					},
 					SchedulerName:     "nonExistSchedulerName",
-					Priority:          pointer.Int32(extension.PriorityBatchValueMax),
+					Priority:          ptr.To[int32](extension.PriorityBatchValueMax),
 					PriorityClassName: "koordinator-batch",
 					PreemptionPolicy:  &preemptionPolicy,
 				},
@@ -1557,7 +1557,7 @@ func TestClusterColocationProfileMutatingPod(t *testing.T) {
 						corev1.ResourceMemory: resource.MustParse("2Gi"),
 					},
 					SchedulerName: "nonExistSchedulerName",
-					Priority:      pointer.Int32(extension.PriorityBatchValueMax),
+					Priority:      ptr.To[int32](extension.PriorityBatchValueMax),
 				},
 			},
 			profile: &configv1alpha1.ClusterColocationProfile{
@@ -1587,7 +1587,7 @@ func TestClusterColocationProfileMutatingPod(t *testing.T) {
 					SchedulerName:       "koordinator-scheduler",
 					QoSClass:            string(extension.QoSBE),
 					PriorityClassName:   "koordinator-batch",
-					KoordinatorPriority: pointer.Int32(1111),
+					KoordinatorPriority: ptr.To[int32](1111),
 					Patch: runtime.RawExtension{
 						Raw: []byte(`{"metadata":{"labels":{"test-patch-label":"patch-a"},"annotations":{"test-patch-annotation":"patch-b"}}}`),
 					},
@@ -1647,7 +1647,7 @@ func TestClusterColocationProfileMutatingPod(t *testing.T) {
 						extension.BatchMemory: resource.MustParse("2Gi"),
 					},
 					SchedulerName:     "koordinator-scheduler",
-					Priority:          pointer.Int32(extension.PriorityBatchValueMax),
+					Priority:          ptr.To[int32](extension.PriorityBatchValueMax),
 					PriorityClassName: "koordinator-batch",
 					PreemptionPolicy:  &preemptionPolicy,
 				},
@@ -1701,7 +1701,7 @@ func TestClusterColocationProfileMutatingPod(t *testing.T) {
 						corev1.ResourceMemory: resource.MustParse("2Gi"),
 					},
 					SchedulerName: "nonExistSchedulerName",
-					Priority:      pointer.Int32(extension.PriorityBatchValueMax),
+					Priority:      ptr.To[int32](extension.PriorityBatchValueMax),
 				},
 			},
 			profile: &configv1alpha1.ClusterColocationProfile{
@@ -1737,7 +1737,7 @@ func TestClusterColocationProfileMutatingPod(t *testing.T) {
 					},
 					QoSClass:            string(extension.QoSBE),
 					PriorityClassName:   "koordinator-batch",
-					KoordinatorPriority: pointer.Int32(1111),
+					KoordinatorPriority: ptr.To[int32](1111),
 					Patch: runtime.RawExtension{
 						Raw: []byte(`{"metadata":{"labels":{"test-patch-label":"patch-a"},"annotations":{"test-patch-annotation":"patch-b"}}}`),
 					},
@@ -1800,7 +1800,7 @@ func TestClusterColocationProfileMutatingPod(t *testing.T) {
 						extension.BatchMemory: resource.MustParse("2Gi"),
 					},
 					SchedulerName:     "nonExistSchedulerName",
-					Priority:          pointer.Int32(extension.PriorityBatchValueMax),
+					Priority:          ptr.To[int32](extension.PriorityBatchValueMax),
 					PriorityClassName: "koordinator-batch",
 					PreemptionPolicy:  &preemptionPolicy,
 				},

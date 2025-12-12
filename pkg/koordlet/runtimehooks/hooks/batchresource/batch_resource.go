@@ -22,7 +22,7 @@ import (
 
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/klog/v2"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
@@ -149,7 +149,7 @@ func (p *plugin) SetPodCPUShares(proto protocol.HooksProtocol) error {
 	}
 
 	cpuShares := sysutil.MilliCPUToShares(milliCPURequest)
-	podCtx.Response.Resources.CPUShares = pointer.Int64(cpuShares)
+	podCtx.Response.Resources.CPUShares = ptr.To[int64](cpuShares)
 	return nil
 }
 
@@ -173,7 +173,7 @@ func (p *plugin) SetPodCFSQuota(proto protocol.HooksProtocol) error {
 
 	// if cfs quota is disabled, set as -1
 	if !isCFSQuotaEnabled {
-		podCtx.Response.Resources.CFSQuota = pointer.Int64(-1)
+		podCtx.Response.Resources.CFSQuota = ptr.To[int64](-1)
 		klog.V(5).Infof("try to unset pod-level cfs quota since it is disabled in plugin %v rule, pod %s/%s",
 			name, podCtx.Request.PodMeta.Namespace, podCtx.Request.PodMeta.Name)
 		return nil
@@ -202,7 +202,7 @@ func (p *plugin) SetPodCFSQuota(proto protocol.HooksProtocol) error {
 			name, podCtx.Request.PodMeta.Namespace, podCtx.Request.PodMeta.Name, originalCFSQuota, cfsQuota)
 	}
 
-	podCtx.Response.Resources.CFSQuota = pointer.Int64(cfsQuota)
+	podCtx.Response.Resources.CFSQuota = ptr.To[int64](cfsQuota)
 	return nil
 }
 
@@ -237,7 +237,7 @@ func (p *plugin) SetPodMemoryLimit(proto protocol.HooksProtocol) error {
 		memoryLimit += containerLimit
 	}
 
-	podCtx.Response.Resources.MemoryLimit = pointer.Int64(memoryLimit)
+	podCtx.Response.Resources.MemoryLimit = ptr.To[int64](memoryLimit)
 	return nil
 }
 
@@ -296,7 +296,7 @@ func (p *plugin) SetContainerCPUShares(proto protocol.HooksProtocol) error {
 	}
 
 	cpuShares := sysutil.MilliCPUToShares(milliCPURequest)
-	containerCtx.Response.Resources.CPUShares = pointer.Int64(cpuShares)
+	containerCtx.Response.Resources.CPUShares = ptr.To[int64](cpuShares)
 	return nil
 }
 
@@ -320,7 +320,7 @@ func (p *plugin) SetContainerCFSQuota(proto protocol.HooksProtocol) error {
 
 	// if cfs quota is disabled, set as -1
 	if !isCFSQuotaEnabled {
-		containerCtx.Response.Resources.CFSQuota = pointer.Int64(-1)
+		containerCtx.Response.Resources.CFSQuota = ptr.To[int64](-1)
 		klog.V(5).Infof("try to unset container-level cfs quota since it is disabled in plugin %v rule, container %s/%s/%s",
 			name, containerCtx.Request.PodMeta.Namespace, containerCtx.Request.PodMeta.Name,
 			containerCtx.Request.ContainerMeta.Name)
@@ -344,7 +344,7 @@ func (p *plugin) SetContainerCFSQuota(proto protocol.HooksProtocol) error {
 			containerCtx.Request.ContainerMeta.Name, originalCFSQuota, cfsQuota)
 	}
 
-	containerCtx.Response.Resources.CFSQuota = pointer.Int64(cfsQuota)
+	containerCtx.Response.Resources.CFSQuota = ptr.To[int64](cfsQuota)
 	return nil
 }
 
@@ -375,7 +375,7 @@ func (p *plugin) SetContainerMemoryLimit(proto protocol.HooksProtocol) error {
 		memoryLimit = -1
 	}
 
-	containerCtx.Response.Resources.MemoryLimit = pointer.Int64(memoryLimit)
+	containerCtx.Response.Resources.MemoryLimit = ptr.To[int64](memoryLimit)
 	return nil
 }
 

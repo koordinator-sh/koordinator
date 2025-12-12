@@ -27,7 +27,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
@@ -163,7 +163,7 @@ func Test_reportGPUDevice(t *testing.T) {
 
 		{
 			UUID:   "1",
-			Minor:  pointer.Int32(1),
+			Minor:  ptr.To[int32](1),
 			Type:   schedulingv1alpha1.GPU,
 			Health: true,
 			Resources: map[corev1.ResourceName]resource.Quantity{
@@ -174,7 +174,7 @@ func Test_reportGPUDevice(t *testing.T) {
 		},
 		{
 			UUID:   "2",
-			Minor:  pointer.Int32(2),
+			Minor:  ptr.To[int32](2),
 			Type:   schedulingv1alpha1.GPU,
 			Health: true,
 			Resources: map[corev1.ResourceName]resource.Quantity{
@@ -185,7 +185,7 @@ func Test_reportGPUDevice(t *testing.T) {
 		},
 		{
 			UUID:   "3",
-			Minor:  pointer.Int32(3),
+			Minor:  ptr.To[int32](3),
 			Type:   schedulingv1alpha1.GPU,
 			Health: true,
 			Resources: map[corev1.ResourceName]resource.Quantity{
@@ -243,7 +243,7 @@ func Test_reportGPUDevice(t *testing.T) {
 
 	expectedDevices = append(expectedDevices, schedulingv1alpha1.DeviceInfo{
 		UUID:   "4",
-		Minor:  pointer.Int32(4),
+		Minor:  ptr.To[int32](4),
 		Type:   schedulingv1alpha1.GPU,
 		Health: true,
 		Resources: map[corev1.ResourceName]resource.Quantity{
@@ -254,7 +254,7 @@ func Test_reportGPUDevice(t *testing.T) {
 	})
 	expectedDevices = append(expectedDevices, schedulingv1alpha1.DeviceInfo{
 		UUID:   "0000:00:09.0",
-		Minor:  pointer.Int32(0),
+		Minor:  ptr.To[int32](0),
 		Type:   schedulingv1alpha1.RDMA,
 		Health: true,
 		Resources: map[corev1.ResourceName]resource.Quantity{
@@ -436,7 +436,7 @@ func Test_reportXPUDevice(t *testing.T) {
 	expectedDevices := []schedulingv1alpha1.DeviceInfo{
 		{
 			UUID:   "185011D4-21104518-A0C4ED94-14CC040A-56102003",
-			Minor:  pointer.Int32(0),
+			Minor:  ptr.To[int32](0),
 			Type:   schedulingv1alpha1.GPU,
 			Health: true,
 			Resources: map[corev1.ResourceName]resource.Quantity{
@@ -464,7 +464,7 @@ func Test_reportXPUDevice(t *testing.T) {
 		},
 		{
 			UUID:   "185011D4-21104518-A0C4ED94-14CC040A-56102001",
-			Minor:  pointer.Int32(1),
+			Minor:  ptr.To[int32](1),
 			Type:   schedulingv1alpha1.GPU,
 			Health: true,
 			Resources: map[corev1.ResourceName]resource.Quantity{
@@ -492,7 +492,7 @@ func Test_reportXPUDevice(t *testing.T) {
 		},
 		{
 			UUID:   "185011D4-21104518-A0C4ED94-14CC040A-56102002",
-			Minor:  pointer.Int32(2),
+			Minor:  ptr.To[int32](2),
 			Type:   schedulingv1alpha1.GPU,
 			Health: true,
 			Resources: map[corev1.ResourceName]resource.Quantity{
@@ -511,7 +511,7 @@ func Test_reportXPUDevice(t *testing.T) {
 		},
 		{
 			UUID:   "185011D4-21104518-A0C4ED94-14CC040A-56102004",
-			Minor:  pointer.Int32(4),
+			Minor:  ptr.To[int32](4),
 			Type:   schedulingv1alpha1.GPU,
 			Health: false,
 
