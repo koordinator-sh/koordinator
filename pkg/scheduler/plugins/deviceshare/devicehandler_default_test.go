@@ -51,6 +51,26 @@ func TestDefaultDeviceHandler_CalcDesiredRequestsAndCount(t *testing.T) {
 
 	cache := newNodeDeviceCache()
 	cache.updateNodeDevice(fakeDeviceCRCopy.Name, fakeDeviceCRCopy)
+	nodeDeviceInfo := cache.getNodeDevice(fakeDeviceCRCopy.Name, false)
+	assert.Equal(t, map[schedulingv1alpha1.DeviceType]map[int32]int{
+		schedulingv1alpha1.GPU: {
+			0: 0,
+			1: 0,
+			2: 0,
+			3: 0,
+			4: 1,
+			5: 1,
+			6: 1,
+			7: 1,
+		},
+		schedulingv1alpha1.RDMA: {
+			1: 0,
+			2: 0,
+			3: 1,
+			4: 1,
+			5: 1,
+		},
+	}, nodeDeviceInfo.numaTopology.deviceToNodeID)
 
 	resources := corev1.ResourceList{
 		apiext.ResourceRDMA: resource.MustParse("100"),

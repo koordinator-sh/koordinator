@@ -329,16 +329,6 @@ func (p *Plugin) Filter(ctx context.Context, cycleState *framework.CycleState, p
 	if state.skip {
 		return nil
 	}
-	if state.designatedAllocation != nil {
-		if state.allocationResult == nil {
-			status = p.allocate(ctx, cycleState, pod, nodeInfo.Node())
-			if !status.IsSuccess() {
-				return status
-			}
-			state.allocationResult = nil
-		}
-		return nil
-	}
 
 	node := nodeInfo.Node()
 	if node == nil {
@@ -354,6 +344,17 @@ func (p *Plugin) Filter(ctx context.Context, cycleState *framework.CycleState, p
 	_, ok := store.GetAffinity(node.Name)
 	if ok {
 		// 当 Pod 在该节点上的 NUMA Affinity 已经算好，表明：Pod 在该节点上开启了 NUMA，且以算好的 NUMA Affinity 资源可分配，所以后续 Filter 逻辑可以忽略
+		return nil
+	}
+
+	if state.designatedAllocation != nil {
+		if state.allocationResult == nil {
+			status = p.allocate(ctx, cycleState, pod, nodeInfo.Node())
+			if !status.IsSuccess() {
+				return status
+			}
+			state.allocationResult = nil
+		}
 		return nil
 	}
 
