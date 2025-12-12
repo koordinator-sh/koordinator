@@ -1058,12 +1058,14 @@ func Test_calculateNodeResource(t *testing.T) {
 			r := NodeResourceReconciler{cfgCache: &FakeCfgCache{
 				cfg: configuration.ColocationCfg{
 					ColocationStrategy: configuration.ColocationStrategy{
-						Enable:                        pointer.Bool(true),
-						CPUReclaimThresholdPercent:    pointer.Int64(65),
-						MemoryReclaimThresholdPercent: pointer.Int64(65),
-						DegradeTimeMinutes:            pointer.Int64(15),
-						UpdateTimeThresholdSeconds:    pointer.Int64(300),
-						ResourceDiffThreshold:         pointer.Float64(0.1),
+						Enable:                           pointer.Bool(true),
+						CPUReclaimThresholdPercent:       pointer.Int64(65),
+						MemoryReclaimThresholdPercent:    pointer.Int64(65),
+						CPUReclaimableReservedPercent:    pointer.Int64(0),
+						MemoryReclaimableReservedPercent: pointer.Int64(0),
+						DegradeTimeMinutes:               pointer.Int64(15),
+						UpdateTimeThresholdSeconds:       pointer.Int64(300),
+						ResourceDiffThreshold:            pointer.Float64(0.1),
 					},
 					NodeConfigs: []configuration.NodeColocationCfg{
 						{
