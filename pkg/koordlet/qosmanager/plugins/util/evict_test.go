@@ -30,6 +30,8 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/testutil"
 )
 
+const defaultEvictPriority = 5999
+
 func Test_DefaultEvictionExecutor(t *testing.T) {
 	// test IsPodEvicted
 	evictor := NewEvictor(nil, nil, "")
@@ -406,9 +408,10 @@ func Test_AddReleased(t *testing.T) {
 
 func Test_GetPodPriorityLabel(t *testing.T) {
 	tests := []struct {
-		name     string
-		pod      *corev1.Pod
-		expected int64
+		name            string
+		pod             *corev1.Pod
+		defaultPriority int64
+		expected        int64
 	}{
 		{
 			name: "nil label",
@@ -417,7 +420,8 @@ func Test_GetPodPriorityLabel(t *testing.T) {
 					Labels: nil,
 				},
 			},
-			expected: DefaultEvictPriority,
+			defaultPriority: defaultEvictPriority,
+			expected:        defaultEvictPriority,
 		},
 		{
 			name: "no that label",
@@ -428,7 +432,8 @@ func Test_GetPodPriorityLabel(t *testing.T) {
 					},
 				},
 			},
-			expected: DefaultEvictPriority,
+			defaultPriority: defaultEvictPriority,
+			expected:        defaultEvictPriority,
 		},
 		{
 			name: "invalid value",
@@ -439,7 +444,8 @@ func Test_GetPodPriorityLabel(t *testing.T) {
 					},
 				},
 			},
-			expected: DefaultEvictPriority,
+			defaultPriority: defaultEvictPriority,
+			expected:        defaultEvictPriority,
 		},
 		{
 			name: "invalid value",
@@ -450,12 +456,13 @@ func Test_GetPodPriorityLabel(t *testing.T) {
 					},
 				},
 			},
-			expected: 1200,
+			defaultPriority: defaultEvictPriority,
+			expected:        1200,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			res := GetPodPriorityLabel(tt.pod)
+			res := GetPodPriorityLabel(tt.pod, defaultEvictPriority)
 			assert.Equal(t, res, tt.expected)
 		})
 	}

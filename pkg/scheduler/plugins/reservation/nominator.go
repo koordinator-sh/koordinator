@@ -373,6 +373,10 @@ func (pl *Plugin) DeleteNominatedReservePod(pod *corev1.Pod) {
 	pl.nominator.DeleteReservePod(pod)
 }
 
+func (pl *Plugin) NominatedReservePodForNode(nodeName string) []*framework.PodInfo {
+	return pl.nominator.NominatedReservePodForNode(nodeName)
+}
+
 func (pl *Plugin) GetNominatedReservation(pod *corev1.Pod, nodeName string) *frameworkext.ReservationInfo {
 	reservationID := pl.nominator.GetNominatedReservation(pod, nodeName)
 	if reservationID == "" {

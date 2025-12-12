@@ -68,16 +68,14 @@ func (pl *Plugin) AfterPreFilter(ctx context.Context, cycleState *framework.Cycl
 
 	var allNodes []string
 	var skipRestoreNodeInfo bool
-	if preRes.AllNodes() {
-		hintState, hasHint := getSchedulingHint(cycleState)
-		if !hasHint {
-			allNodes = pl.reservationCache.listAllNodes()
-		} else { // use the hint nodes if exists
-			allNodes = hintState.PreFilterNodeInfos
-			skipRestoreNodeInfo = hintState.SkipRestoreNodeInfo
-		}
-	} else { // use the PreFilter result if exists
+	hintState, hasHint := getSchedulingHint(cycleState)
+	if hasHint { // use the hint nodes if exists
+		allNodes = hintState.PreFilterNodeInfos
+		skipRestoreNodeInfo = hintState.SkipRestoreNodeInfo
+	} else if !preRes.AllNodes() { // use the PreFilter result if exists
 		allNodes = preRes.NodeNames.UnsortedList()
+	} else {
+		allNodes = pl.reservationCache.listAllNodes()
 	}
 
 	state := getStateData(cycleState)
@@ -717,6 +715,7 @@ func preRestoreReservationResourcesForNode(logger klog.Logger, extender framewor
 		nodeRState.rAllocated = framework.NewResource(rAllocated)
 		nodeRState.podRequested = podRequested
 		nodeRState.preRestored = true // no more pre-restore in the same cycle
+		klog.V(5).InfoS("Skipping restore node info", "pod", klog.KObj(pod), "node", node.Name)
 		return nil
 	}
 

@@ -111,10 +111,14 @@ func fillGPUTotalMem(allocations apiext.DeviceAllocations, nodeDeviceInfo *nodeD
 			return fmt.Errorf("no healthy gpu device with minor %d of allocation", allocation.Minor)
 		}
 		gpuAllocations[i].Resources = gpuAllocations[i].Resources.DeepCopy()
-		if gpuMem, ok := allocation.Resources[apiext.ResourceGPUMemory]; ok {
+		gpuMem, gpuMemExists := allocation.Resources[apiext.ResourceGPUMemory]
+		gpuMemRatio, gpuMemRatioExists := allocation.Resources[apiext.ResourceGPUMemoryRatio]
+		if gpuMemExists && gpuMemRatioExists {
+			continue
+		}
+		if gpuMemExists {
 			gpuAllocations[i].Resources[apiext.ResourceGPUMemoryRatio] = memoryBytesToRatio(gpuMem, gpuDevice[apiext.ResourceGPUMemory])
 		} else {
-			gpuMemRatio := allocation.Resources[apiext.ResourceGPUMemoryRatio]
 			gpuAllocations[i].Resources[apiext.ResourceGPUMemory] = memoryRatioToBytes(gpuMemRatio, gpuDevice[apiext.ResourceGPUMemory])
 		}
 	}

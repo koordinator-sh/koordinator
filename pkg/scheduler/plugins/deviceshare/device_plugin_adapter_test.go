@@ -27,7 +27,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	kubefake "k8s.io/client-go/kubernetes/fake"
 	fakeclock "k8s.io/utils/clock/testing"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
@@ -483,16 +482,14 @@ func TestCambriconGPUDevicePluginAdapter_Adapt(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			client := kubefake.NewSimpleClientset(tt.node)
-			err := adapter.Adapt(&DevicePluginAdaptContext{
+			ctx := &DevicePluginAdaptContext{
 				Context: context.TODO(),
-				client:  client,
-				node:    tt.node,
-			}, tt.args.object, tt.args.allocation)
+				node:    tt.node.DeepCopy(),
+			}
+			err := adapter.Adapt(ctx, tt.args.object, tt.args.allocation)
 			assert.Equal(t, tt.wantErr, err != nil, err)
 			assert.Equal(t, tt.wantObject, tt.args.object)
-			node, _ := client.CoreV1().Nodes().Get(context.TODO(), tt.node.Name, metav1.GetOptions{})
-			assert.Equal(t, tt.wantNode, node)
+			assert.Equal(t, tt.wantNode, ctx.node)
 		})
 	}
 }
@@ -852,11 +849,9 @@ func TestPlugin_adaptForDevicePlugin(t *testing.T) {
 			wantErr: true,
 			wantObject: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-pod",
-					Namespace: "default",
-					Annotations: map[string]string{
-						AnnotationBindTimestamp: strconv.FormatInt(now.UnixNano(), 10),
-					},
+					Name:        "test-pod",
+					Namespace:   "default",
+					Annotations: map[string]string{},
 				},
 			},
 			wantNode: &corev1.Node{

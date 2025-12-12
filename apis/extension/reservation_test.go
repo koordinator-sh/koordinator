@@ -23,6 +23,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/uuid"
 
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
@@ -132,6 +133,48 @@ func TestRemoveReservationAllocated(t *testing.T) {
 	changed, err = RemoveReservationAllocated(pod, reservation)
 	assert.Error(t, err)
 	assert.False(t, changed)
+}
+
+func TestReservationAllocatedGetters(t *testing.T) {
+	tests := []struct {
+		name       string
+		allocated  *ReservationAllocated
+		expectName string
+		expectUID  types.UID
+	}{
+		{
+			name:       "nil reservation allocated",
+			allocated:  nil,
+			expectName: "",
+			expectUID:  "",
+		},
+		{
+			name: "valid reservation allocated",
+			allocated: &ReservationAllocated{
+				Name: "test-reservation",
+				UID:  "test-uid-123",
+			},
+			expectName: "test-reservation",
+			expectUID:  "test-uid-123",
+		},
+		{
+			name: "empty name and uid",
+			allocated: &ReservationAllocated{
+				Name: "",
+				UID:  "",
+			},
+			expectName: "",
+			expectUID:  "",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotName := tt.allocated.GetName()
+			gotUID := tt.allocated.GetUID()
+			assert.Equal(t, tt.expectName, gotName)
+			assert.Equal(t, tt.expectUID, gotUID)
+		})
+	}
 }
 
 func TestExactMatchReservation(t *testing.T) {

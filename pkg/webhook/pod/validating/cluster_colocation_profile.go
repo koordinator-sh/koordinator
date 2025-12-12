@@ -27,7 +27,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/util"
+	utilfeature "github.com/koordinator-sh/koordinator/pkg/util/feature"
 )
 
 // +kubebuilder:rbac:groups=scheduling.k8s.io,resources=priorityclasses,verbs=get;list;watch
@@ -51,7 +53,9 @@ func (h *PodValidatingHandler) clusterColocationProfileValidatingPod(ctx context
 
 		allErrs = append(allErrs, validateImmutableQoSClass(oldPod, newPod)...)
 		allErrs = append(allErrs, validateImmutablePriorityClass(oldPod, newPod)...)
-		allErrs = append(allErrs, validateImmutablePriority(oldPod, newPod)...)
+		if !utilfeature.DefaultFeatureGate.Enabled(features.ColocationProfileSkipValidatingPriority) {
+			allErrs = append(allErrs, validateImmutablePriority(oldPod, newPod)...)
+		}
 	}
 
 	allErrs = append(allErrs, validateRequiredQoSClass(newPod)...)

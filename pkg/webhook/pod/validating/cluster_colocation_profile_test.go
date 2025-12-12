@@ -33,7 +33,9 @@ import (
 
 	configv1alpha1 "github.com/koordinator-sh/koordinator/apis/config/v1alpha1"
 	"github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/util"
+	"github.com/koordinator-sh/koordinator/pkg/util/feature"
 )
 
 func init() {
@@ -52,13 +54,14 @@ func newAdmissionRequest(op admissionv1.Operation, object, oldObject runtime.Raw
 
 func TestClusterColocationProfileValidatingPod(t *testing.T) {
 	tests := []struct {
-		name        string
-		operation   admissionv1.Operation
-		oldPod      *corev1.Pod
-		newPod      *corev1.Pod
-		wantAllowed bool
-		wantReason  string
-		wantErr     bool
+		name                          string
+		operation                     admissionv1.Operation
+		oldPod                        *corev1.Pod
+		newPod                        *corev1.Pod
+		wantAllowed                   bool
+		wantReason                    string
+		wantErr                       bool
+		defaultSkipValidatingPriority bool
 	}{
 		{
 			name:        "non-colocation empty pod",
@@ -194,7 +197,7 @@ func TestClusterColocationProfileValidatingPod(t *testing.T) {
 			wantErr:     true,
 		},
 		{
-			name:      "validate koordinator priority",
+			name:      "validate koordinator priority with defaultSkipValidatingPriority=false",
 			operation: admissionv1.Update,
 			newPod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
@@ -213,6 +216,28 @@ func TestClusterColocationProfileValidatingPod(t *testing.T) {
 			wantAllowed: false,
 			wantReason:  `labels.koordinator.sh/priority: Invalid value: "8888": field is immutable`,
 			wantErr:     true,
+		},
+		{
+			name:      "validate koordinator priority with defaultSkipValidatingPriority=true",
+			operation: admissionv1.Update,
+			newPod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						extension.LabelPodPriority: "8888",
+					},
+				},
+			},
+			oldPod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						extension.LabelPodPriority: "9999",
+					},
+				},
+			},
+			defaultSkipValidatingPriority: true,
+			wantAllowed:                   true,
+			wantReason:                    "",
+			wantErr:                       false,
 		},
 		{
 			name:      "validate remove koordinator priority",
@@ -460,6 +485,7 @@ func TestClusterColocationProfileValidatingPod(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			defer feature.SetFeatureGateDuringTest(t, feature.DefaultMutableFeatureGate, features.ColocationProfileSkipValidatingPriority, tt.defaultSkipValidatingPriority)()
 			client := fake.NewClientBuilder().Build()
 			decoder := admission.NewDecoder(scheme.Scheme)
 			h := &PodValidatingHandler{

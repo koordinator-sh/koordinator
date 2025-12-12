@@ -404,6 +404,204 @@ func TestTransformPod(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "enable replace-resources transformer to erase and replace resources",
+			prepareFn: func() func() {
+				return utilfeature.SetFeatureGateDuringTest(t, utilfeature.DefaultFeatureGate,
+					features.ReplaceResourcesTransformer, true)
+			},
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						apiext.AnnotationPodReplaceResources: "cpu:,memory:example.io/memory",
+					},
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name: "container1",
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("2"),
+									corev1.ResourceMemory: resource.MustParse("4Gi"),
+									"example.io/gpu":      resource.MustParse("1"),
+								},
+								Limits: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("3"),
+									corev1.ResourceMemory: resource.MustParse("6Gi"),
+									"example.io/gpu":      resource.MustParse("1"),
+								},
+							},
+						},
+					},
+					InitContainers: []corev1.Container{
+						{
+							Name: "init-container1",
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("1"),
+									corev1.ResourceMemory: resource.MustParse("2Gi"),
+									"example.io/gpu":      resource.MustParse("1"),
+								},
+								Limits: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("1.5"),
+									corev1.ResourceMemory: resource.MustParse("3Gi"),
+									"example.io/gpu":      resource.MustParse("1"),
+								},
+							},
+						},
+					},
+					Overhead: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("1"),
+						corev1.ResourceMemory: resource.MustParse("1Gi"),
+					},
+				},
+			},
+			wantPod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						apiext.AnnotationPodReplaceResources: "cpu:,memory:example.io/memory",
+					},
+					Labels: map[string]string{
+						apiext.LabelQuestionedObjectKey: "/",
+					},
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name: "container1",
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									"example.io/memory": resource.MustParse("4Gi"),
+									"example.io/gpu":    resource.MustParse("1"),
+								},
+								Limits: corev1.ResourceList{
+									"example.io/memory": resource.MustParse("6Gi"),
+									"example.io/gpu":    resource.MustParse("1"),
+								},
+							},
+						},
+					},
+					InitContainers: []corev1.Container{
+						{
+							Name: "init-container1",
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									"example.io/memory": resource.MustParse("2Gi"),
+									"example.io/gpu":    resource.MustParse("1"),
+								},
+								Limits: corev1.ResourceList{
+									"example.io/memory": resource.MustParse("3Gi"),
+									"example.io/gpu":    resource.MustParse("1"),
+								},
+							},
+						},
+					},
+					Overhead: corev1.ResourceList{
+						"example.io/memory": resource.MustParse("1Gi"),
+					},
+				},
+			},
+		},
+		{
+			name: "enable replace-resources transformer for scheduler",
+			prepareFn: func() func() {
+				return utilfeature.SetFeatureGateDuringTest(t, k8sfeature.DefaultFeatureGate,
+					features.ReplaceResourcesTransformer, true)
+			},
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						apiext.AnnotationPodReplaceResources: "cpu:,memory:example.io/memory",
+					},
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name: "container1",
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("2"),
+									corev1.ResourceMemory: resource.MustParse("4Gi"),
+									"example.io/gpu":      resource.MustParse("1"),
+								},
+								Limits: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("3"),
+									corev1.ResourceMemory: resource.MustParse("6Gi"),
+									"example.io/gpu":      resource.MustParse("1"),
+								},
+							},
+						},
+					},
+					InitContainers: []corev1.Container{
+						{
+							Name: "init-container1",
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("1"),
+									corev1.ResourceMemory: resource.MustParse("2Gi"),
+									"example.io/gpu":      resource.MustParse("1"),
+								},
+								Limits: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("1.5"),
+									corev1.ResourceMemory: resource.MustParse("3Gi"),
+									"example.io/gpu":      resource.MustParse("1"),
+								},
+							},
+						},
+					},
+					Overhead: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("1"),
+						corev1.ResourceMemory: resource.MustParse("1Gi"),
+					},
+				},
+			},
+			wantPod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						apiext.AnnotationPodReplaceResources: "cpu:,memory:example.io/memory",
+					},
+					Labels: map[string]string{
+						apiext.LabelQuestionedObjectKey: "/",
+					},
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name: "container1",
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									"example.io/memory": resource.MustParse("4Gi"),
+									"example.io/gpu":    resource.MustParse("1"),
+								},
+								Limits: corev1.ResourceList{
+									"example.io/memory": resource.MustParse("6Gi"),
+									"example.io/gpu":    resource.MustParse("1"),
+								},
+							},
+						},
+					},
+					InitContainers: []corev1.Container{
+						{
+							Name: "init-container1",
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									"example.io/memory": resource.MustParse("2Gi"),
+									"example.io/gpu":    resource.MustParse("1"),
+								},
+								Limits: corev1.ResourceList{
+									"example.io/memory": resource.MustParse("3Gi"),
+									"example.io/gpu":    resource.MustParse("1"),
+								},
+							},
+						},
+					},
+					Overhead: corev1.ResourceList{
+						"example.io/memory": resource.MustParse("1Gi"),
+					},
+				},
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

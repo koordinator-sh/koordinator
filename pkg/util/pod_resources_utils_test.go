@@ -28,7 +28,8 @@ import (
 
 func Test_GetPodRequest(t *testing.T) {
 	type args struct {
-		pod *corev1.Pod
+		pod           *corev1.Pod
+		resourceNames []corev1.ResourceName
 	}
 	tests := []struct {
 		name string
@@ -73,6 +74,46 @@ func Test_GetPodRequest(t *testing.T) {
 						},
 					},
 				},
+			},
+			want: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("8"),
+				corev1.ResourceMemory: resource.MustParse("18Gi"),
+			},
+		},
+		{
+			name: "get correct pod request",
+			args: args{
+				pod: &corev1.Pod{
+					Spec: corev1.PodSpec{
+						Containers: []corev1.Container{
+							{
+								Resources: corev1.ResourceRequirements{
+									Requests: corev1.ResourceList{
+										corev1.ResourceCPU:    resource.MustParse("4"),
+										corev1.ResourceMemory: resource.MustParse("10Gi"),
+									},
+									Limits: corev1.ResourceList{
+										corev1.ResourceCPU:    resource.MustParse("4"),
+										corev1.ResourceMemory: resource.MustParse("10Gi"),
+									},
+								},
+							},
+							{
+								Resources: corev1.ResourceRequirements{
+									Requests: corev1.ResourceList{
+										corev1.ResourceCPU:    resource.MustParse("4"),
+										corev1.ResourceMemory: resource.MustParse("8Gi"),
+									},
+									Limits: corev1.ResourceList{
+										corev1.ResourceCPU:    resource.MustParse("6"),
+										corev1.ResourceMemory: resource.MustParse("12Gi"),
+									},
+								},
+							},
+						},
+					},
+				},
+				resourceNames: []corev1.ResourceName{corev1.ResourceCPU},
 			},
 			want: corev1.ResourceList{
 				corev1.ResourceCPU:    resource.MustParse("8"),

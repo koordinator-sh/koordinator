@@ -38,8 +38,17 @@ func (c *Controller) onPodUpdate(oldObj, newObj interface{}) {
 	if newPod == nil {
 		return
 	}
-	rAllocated := c.enqueueIfPodBoundReservation(newPod)
-	c.updatePod(newPod, rAllocated)
+	oldPod, _ := oldObj.(*corev1.Pod)
+	if oldPod == nil {
+		return
+	}
+	if newPod.Spec.NodeName != "" {
+		rAllocated := c.enqueueIfPodBoundReservation(newPod)
+		c.updatePod(newPod, rAllocated)
+	} else if oldPod.Spec.NodeName != "" { // become unassigned, a special case for multi-scheduler
+		_ = c.enqueueIfPodBoundReservation(oldPod)
+		c.deletePod(oldPod)
+	}
 }
 
 func (c *Controller) onPodDelete(obj interface{}) {

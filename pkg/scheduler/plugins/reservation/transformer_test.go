@@ -35,6 +35,7 @@ import (
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/hinter"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
 
@@ -1922,6 +1923,145 @@ func Test_parseSpecificNodesFromAffinity(t *testing.T) {
 			})
 			assert.Equal(t, tt.wantError, err != nil)
 			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestAfterPreFilter_WithSchedulingHint(t *testing.T) {
+	node1 := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-node-1",
+		},
+		Status: corev1.NodeStatus{
+			Allocatable: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("32"),
+				corev1.ResourceMemory: resource.MustParse("64Gi"),
+			},
+		},
+	}
+	node2 := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-node-2",
+		},
+		Status: corev1.NodeStatus{
+			Allocatable: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("32"),
+				corev1.ResourceMemory: resource.MustParse("64Gi"),
+			},
+		},
+	}
+
+	reservation := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{
+			UID:  uuid.NewUUID(),
+			Name: "test-reservation",
+		},
+		Spec: schedulingv1alpha1.ReservationSpec{
+			Owners: []schedulingv1alpha1.ReservationOwner{
+				{
+					LabelSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							"test-reservation": "true",
+						},
+					},
+				},
+			},
+			Template: &corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("4"),
+									corev1.ResourceMemory: resource.MustParse("8Gi"),
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		Status: schedulingv1alpha1.ReservationStatus{
+			Phase:    schedulingv1alpha1.ReservationAvailable,
+			NodeName: node1.Name,
+			Allocatable: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("4"),
+				corev1.ResourceMemory: resource.MustParse("8Gi"),
+			},
+		},
+	}
+
+	tests := []struct {
+		name                string
+		hintNodes           []string
+		skipRestoreNodeInfo bool
+		preFilterResult     *framework.PreFilterResult
+		expectedNodes       []string
+	}{
+		{
+			name:                "hint takes priority over AllNodes PreFilterResult",
+			hintNodes:           []string{node1.Name},
+			skipRestoreNodeInfo: false,
+			preFilterResult:     nil, // nil means AllNodes
+			expectedNodes:       []string{node1.Name},
+		},
+		{
+			name:                "hint takes priority over specific PreFilterResult",
+			hintNodes:           []string{node1.Name},
+			skipRestoreNodeInfo: false,
+			preFilterResult:     &framework.PreFilterResult{NodeNames: sets.New(node2.Name)},
+			expectedNodes:       []string{node1.Name}, // hint wins over PreFilterResult
+		},
+		{
+			name:                "hint with SkipRestoreNodeInfo true",
+			hintNodes:           []string{node1.Name},
+			skipRestoreNodeInfo: true,
+			preFilterResult:     nil,
+			expectedNodes:       []string{node1.Name},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pods := []*corev1.Pod{reservationutil.NewReservePod(reservation)}
+			suit := newPluginTestSuitWith(t, pods, []*corev1.Node{node1, node2})
+			p, err := suit.pluginFactory()
+			assert.NoError(t, err)
+			pl := p.(*Plugin)
+			pl.reservationCache.updateReservation(reservation)
+
+			cycleState := framework.NewCycleState()
+
+			// Setup hint state
+			hintState := &hinter.SchedulingHintStateData{
+				PreFilterNodes: tt.hintNodes,
+				Extensions: map[string]interface{}{
+					Name: HintExtensions{SkipRestoreNodeInfo: tt.skipRestoreNodeInfo},
+				},
+			}
+			cycleState.Write(hinter.SchedulingHintStateKey, hintState)
+
+			pod := &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						"test-reservation": "true",
+					},
+				},
+			}
+			_, _, status := pl.BeforePreFilter(context.TODO(), cycleState, pod)
+			assert.True(t, status.IsSuccess())
+
+			status = pl.AfterPreFilter(context.TODO(), cycleState, pod, tt.preFilterResult)
+			assert.True(t, status.IsSuccess())
+
+			// Verify state - expected nodes should be processed
+			state := getStateData(cycleState)
+			assert.Equal(t, len(tt.expectedNodes), len(state.nodeReservationStates),
+				"expected %d nodes but got %d", len(tt.expectedNodes), len(state.nodeReservationStates))
+			for _, nodeName := range tt.expectedNodes {
+				_, exists := state.nodeReservationStates[nodeName]
+				assert.True(t, exists, "node %s should be processed", nodeName)
+			}
 		})
 	}
 }

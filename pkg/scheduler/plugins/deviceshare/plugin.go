@@ -97,7 +97,7 @@ type preFilterState struct {
 	hasReservationAffinity bool
 
 	// designatedAllocation is parsed from the Pod Annotation during the PreFilter phase. In this case, we should assume that the Node has already been selected. That is, all Score-related plug-ins will not be executed. Instead, we only need to call Filter to confirm whether the designatedAllocation is still valid and use it as the allocation result during actual allocation.
-	designatedAllocation map[schedulingv1alpha1.DeviceType]deviceResources
+	designatedAllocation apiext.DeviceAllocations
 }
 
 type GPURequirements struct {
@@ -335,6 +335,7 @@ func (p *Plugin) Filter(ctx context.Context, cycleState *framework.CycleState, p
 			if !status.IsSuccess() {
 				return status
 			}
+			state.allocationResult = nil
 		}
 		return nil
 	}
@@ -485,20 +486,31 @@ func (p *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState, 
 	if nodeDeviceInfo == nil {
 		return nil
 	}
-	logAllocationContext(nodeDeviceInfo, state.allocationResult)
+	logAllocationContext(pod, nodeName, nodeDeviceInfo, state.designatedAllocation, state.allocationResult)
 	nodeDeviceInfo.lock.Lock()
 	defer nodeDeviceInfo.lock.Unlock()
 	nodeDeviceInfo.updateCacheUsed(state.allocationResult, pod, true)
 	return nil
 }
 
-func logAllocationContext(nodeDeviceInfo *nodeDevice, allocationResult apiext.DeviceAllocations) {
+func logAllocationContext(pod *corev1.Pod, nodeName string, nodeDeviceInfo *nodeDevice, designatedAllocation, allocationResult apiext.DeviceAllocations) string {
+	podKey := framework.GetNamespacedName(pod.Namespace, pod.Name)
 	nodeDeviceSummary := nodeDeviceInfo.getNodeDeviceSummary()
+	rawNodeDeviceSummary, err := json.Marshal(nodeDeviceSummary)
+	if err != nil {
+		klog.Errorf("pod %s on node %s, failed to marshal nodeDeviceSummary, err: %s", podKey, nodeName, err)
+	}
+	rawDesignatedAllocation, err := json.Marshal(designatedAllocation)
+	if err != nil {
+		klog.Errorf("pod %s on node %s, failed to marshal designatedAllocation, err: %s", podKey, nodeName, err)
+	}
 	rawAllocationResult, err := json.Marshal(allocationResult)
 	if err != nil {
-		klog.Errorf("[DeviceShare] marshal allocationResult failed: %v", err)
+		klog.Errorf("pod %s on node %s, failed to marshal allocationResult, err: %s", podKey, nodeName, err)
 	}
-	klog.V(4).Infof("[DeviceShare] nodeDeviceSummary: %v, allocationResult: %s", nodeDeviceSummary, string(rawAllocationResult))
+	msg := fmt.Sprintf("[DeviceShare] pod %s on node %s, nodeDeviceSummary: %s, designatedAllocationResult: %s, allocationResult: %s", podKey, nodeName, string(rawNodeDeviceSummary), string(rawDesignatedAllocation), string(rawAllocationResult))
+	klog.V(4).Infoln(msg)
+	return msg
 }
 
 func (p *Plugin) allocate(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, node *corev1.Node) *framework.Status {
@@ -546,7 +558,21 @@ func (p *Plugin) allocate(ctx context.Context, cycleState *framework.CycleState,
 	}
 	if len(result) == 0 {
 		preemptible = appendAllocated(preemptible, restoreState.mergedMatchedAllocatable)
-		result, status = allocator.Allocate(nil, nil, state.designatedAllocation, preemptible)
+		var requiredDeviceResource map[schedulingv1alpha1.DeviceType]deviceResources
+		if len(state.designatedAllocation) > 0 {
+			err := fillGPUTotalMem(state.designatedAllocation, nodeDeviceInfo)
+			if err != nil {
+				return framework.NewStatus(framework.Error, fmt.Sprintf("fillGPUTotalMem failed: %v, node: %v", err, node.Name))
+			}
+			requiredDeviceResource = make(map[schedulingv1alpha1.DeviceType]deviceResources, len(state.designatedAllocation))
+			for deviceType, minorResources := range state.designatedAllocation {
+				requiredDeviceResource[deviceType] = make(deviceResources, len(minorResources))
+				for _, minorResource := range minorResources {
+					requiredDeviceResource[deviceType][int(minorResource.Minor)] = minorResource.Resources
+				}
+			}
+		}
+		result, status = allocator.Allocate(nil, nil, requiredDeviceResource, preemptible)
 		if !status.IsSuccess() {
 			return status
 		}

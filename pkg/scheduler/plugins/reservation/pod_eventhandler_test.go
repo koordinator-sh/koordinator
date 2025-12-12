@@ -218,3 +218,99 @@ func TestPodEventHandlerWithOperatingPod(t *testing.T) {
 	rInfo = handler.cache.getReservationInfoByUID(reservationUID)
 	assert.Nil(t, rInfo)
 }
+
+func TestPodEventHandlerUpdatePodAcrossReservations(t *testing.T) {
+	handler := &podEventHandler{
+		cache:     newReservationCache(nil),
+		nominator: newNominator(nil, nil),
+	}
+	reservation1UID := uuid.NewUUID()
+	reservation1Name := "test-reservation-1"
+	reservation1 := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: reservation1Name,
+			UID:  reservation1UID,
+		},
+		Spec: schedulingv1alpha1.ReservationSpec{
+			Template: &corev1.PodTemplateSpec{},
+		},
+		Status: schedulingv1alpha1.ReservationStatus{
+			Phase:    schedulingv1alpha1.ReservationAvailable,
+			NodeName: "test-node-1",
+			Allocatable: corev1.ResourceList{
+				corev1.ResourceCPU: resource.MustParse("4"),
+			},
+		},
+	}
+	reservation2UID := uuid.NewUUID()
+	reservation2Name := "test-reservation-2"
+	reservation2 := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: reservation2Name,
+			UID:  reservation2UID,
+		},
+		Spec: schedulingv1alpha1.ReservationSpec{
+			Template: &corev1.PodTemplateSpec{},
+		},
+		Status: schedulingv1alpha1.ReservationStatus{
+			Phase:    schedulingv1alpha1.ReservationAvailable,
+			NodeName: "test-node-1",
+			Allocatable: corev1.ResourceList{
+				corev1.ResourceCPU: resource.MustParse("4"),
+			},
+		},
+	}
+	handler.cache.updateReservation(reservation1)
+	handler.cache.updateReservation(reservation2)
+
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-pod",
+			Namespace: "default",
+			UID:       uuid.NewUUID(),
+		},
+		Spec: corev1.PodSpec{
+			NodeName: "test-node-1",
+			Containers: []corev1.Container{
+				{
+					Name: "main",
+					Resources: corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceCPU: resource.MustParse("2"),
+						},
+					},
+				},
+			},
+		},
+	}
+
+	// assign pod to reservation1
+	oldPod := pod.DeepCopy()
+	apiext.SetReservationAllocated(oldPod, reservation1)
+	handler.updatePod(nil, oldPod)
+	rInfo1 := handler.cache.getReservationInfoByUID(reservation1UID)
+	assert.Len(t, rInfo1.AssignedPods, 1)
+	assert.Contains(t, rInfo1.AssignedPods, oldPod.UID)
+	rInfo2 := handler.cache.getReservationInfoByUID(reservation2UID)
+	assert.Len(t, rInfo2.AssignedPods, 0)
+
+	// move pod from reservation1 to reservation2
+	newPod := pod.DeepCopy()
+	apiext.SetReservationAllocated(newPod, reservation2)
+	handler.updatePod(oldPod, newPod)
+	rInfo1 = handler.cache.getReservationInfoByUID(reservation1UID)
+	assert.Len(t, rInfo1.AssignedPods, 0)
+	rInfo2 = handler.cache.getReservationInfoByUID(reservation2UID)
+	assert.Len(t, rInfo2.AssignedPods, 1)
+	assert.Contains(t, rInfo2.AssignedPods, newPod.UID)
+
+	// remove reservation allocated
+	oldPod = newPod.DeepCopy()
+	newPod = newPod.DeepCopy()
+	delete(newPod.Annotations, apiext.AnnotationReservationAllocated)
+	handler.updatePod(oldPod, newPod)
+	rInfo1 = handler.cache.getReservationInfoByUID(reservation1UID)
+	assert.Len(t, rInfo1.AssignedPods, 0)
+	rInfo2 = handler.cache.getReservationInfoByUID(reservation2UID)
+	assert.Len(t, rInfo2.AssignedPods, 0)
+}

@@ -25,7 +25,6 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/kubernetes"
 	"k8s.io/klog/v2"
 	"k8s.io/utils/clock"
 
@@ -84,16 +83,17 @@ type DevicePluginAdapter interface {
 
 type DevicePluginAdaptContext struct {
 	context.Context
-	client kubernetes.Interface
-	node   *corev1.Node
+	node *corev1.Node
 }
 
 var (
 	defaultDevicePluginAdapter DevicePluginAdapter = &generalDevicePluginAdapter{
 		clock: clock.RealClock{},
 	}
-	defaultGPUDevicePluginAdapter DevicePluginAdapter = &generalGPUDevicePluginAdapter{}
-	gpuDevicePluginAdapterMap                         = map[string]DevicePluginAdapter{
+	defaultDevicePluginAdapterMap = map[schedulingv1alpha1.DeviceType]DevicePluginAdapter{
+		schedulingv1alpha1.GPU: &generalGPUDevicePluginAdapter{},
+	}
+	gpuDevicePluginAdapterMap = map[string]DevicePluginAdapter{
 		apiext.GPUVendorHuawei: &huaweiGPUDevicePluginAdapter{
 			clock: clock.RealClock{},
 		},
@@ -104,44 +104,50 @@ var (
 )
 
 func (p *Plugin) adaptForDevicePlugin(ctx context.Context, object metav1.Object, allocationResult apiext.DeviceAllocations, nodeName string) error {
-	if err := defaultDevicePluginAdapter.Adapt(nil, object, nil); err != nil {
+	nodeInfo, err := p.handle.SnapshotSharedLister().NodeInfos().Get(nodeName)
+	if err != nil {
+		klog.ErrorS(err, "Failed to get NodeInfo", "node", nodeName)
+		return err
+	}
+	adaptCtx := &DevicePluginAdaptContext{
+		Context: ctx,
+		node:    nodeInfo.Node().DeepCopy(),
+	}
+
+	if err := defaultDevicePluginAdapter.Adapt(adaptCtx, object, nil); err != nil {
 		return err
 	}
 
-	if gpuAllocation, ok := allocationResult[schedulingv1alpha1.GPU]; ok {
-		nodeInfo, err := p.handle.SnapshotSharedLister().NodeInfos().Get(nodeName)
-		if err != nil {
-			klog.ErrorS(err, "Failed to get NodeInfo", "node", nodeName)
-			return err
-		}
-
-		adaptCtx := &DevicePluginAdaptContext{
-			Context: ctx,
-			client:  p.handle.ClientSet(),
-			node:    nodeInfo.Node(),
-		}
-
-		if err := defaultGPUDevicePluginAdapter.Adapt(adaptCtx, object, gpuAllocation); err != nil {
-			return err
-		}
-
-		extendedHandle, ok := p.handle.(frameworkext.ExtendedHandle)
-		if !ok {
-			return fmt.Errorf("expect handle to be type frameworkext.ExtendedHandle, got %T", p.handle)
-		}
-		deviceLister := extendedHandle.KoordinatorSharedInformerFactory().Scheduling().V1alpha1().Devices().Lister()
-		device, err := deviceLister.Get(nodeName)
-		if err != nil {
-			klog.ErrorS(err, "Failed to get Device", "node", nodeName)
-			return err
-		}
-
-		vendor := device.Labels[apiext.LabelGPUVendor]
-		if adapter, ok := gpuDevicePluginAdapterMap[vendor]; ok {
-			if err := adapter.Adapt(adaptCtx, object, gpuAllocation); err != nil {
-				return fmt.Errorf("failed to adapt for GPU device plugin of vendor %q: %w", vendor, err)
+	for deviceType, allocation := range allocationResult {
+		if adapter, ok := defaultDevicePluginAdapterMap[deviceType]; ok {
+			if err := adapter.Adapt(adaptCtx, object, allocation); err != nil {
+				return err
 			}
 		}
+
+		if deviceType == schedulingv1alpha1.GPU {
+			extendedHandle, ok := p.handle.(frameworkext.ExtendedHandle)
+			if !ok {
+				return fmt.Errorf("expect handle to be type frameworkext.ExtendedHandle, got %T", p.handle)
+			}
+			deviceLister := extendedHandle.KoordinatorSharedInformerFactory().Scheduling().V1alpha1().Devices().Lister()
+			device, err := deviceLister.Get(nodeName)
+			if err != nil {
+				klog.ErrorS(err, "Failed to get Device", "node", nodeName)
+				return err
+			}
+
+			vendor := device.Labels[apiext.LabelGPUVendor]
+			if adapter, ok := gpuDevicePluginAdapterMap[vendor]; ok {
+				if err := adapter.Adapt(adaptCtx, object, allocation); err != nil {
+					return fmt.Errorf("failed to adapt for GPU device plugin of vendor %q: %w", vendor, err)
+				}
+			}
+		}
+	}
+
+	if _, err := util.PatchNode(ctx, p.handle.ClientSet(), nodeInfo.Node(), adaptCtx.node); err != nil {
+		return fmt.Errorf("failed to patch node %q: %v", adaptCtx.node.Name, err)
 	}
 
 	return nil
@@ -208,7 +214,7 @@ func (a *cambriconGPUDevicePluginAdapter) Adapt(ctx *DevicePluginAdaptContext, o
 	}
 	vmemory := memory.Value() / cambriconVMemoryUnit
 
-	if err := lockNode(ctx, ctx.client, ctx.node, object, AnnotationCambriconDsmluLock, a.clock.Now()); err != nil {
+	if err := lockNode(ctx.node, object, AnnotationCambriconDsmluLock, a.clock.Now()); err != nil {
 		return fmt.Errorf("failed to lock node: %v", err)
 	}
 
@@ -217,7 +223,7 @@ func (a *cambriconGPUDevicePluginAdapter) Adapt(ctx *DevicePluginAdaptContext, o
 	return nil
 }
 
-func lockNode(ctx context.Context, client kubernetes.Interface, node *corev1.Node, object metav1.Object, lockKey string, lockTime time.Time) error {
+func lockNode(node *corev1.Node, object metav1.Object, lockKey string, lockTime time.Time) error {
 	if val, ok := node.Annotations[lockKey]; ok {
 		lockTime, err := time.Parse(time.RFC3339, strings.Split(val, ",")[0])
 		if err != nil {
@@ -225,34 +231,23 @@ func lockNode(ctx context.Context, client kubernetes.Interface, node *corev1.Nod
 		}
 		if time.Since(lockTime) > nodeLockTimeout {
 			// this should never happen in normal cases, and we don't want to lock the node forever
-			if err := unlockNode(ctx, client, node, lockKey); err != nil {
-				return err
-			}
+			unlockNode(node, lockKey)
 		} else {
 			return fmt.Errorf("node %q has been locked", node.Name)
 		}
 	}
-	newNode := node.DeepCopy()
-	if newNode.Annotations == nil {
-		newNode.Annotations = map[string]string{}
+	if node.Annotations == nil {
+		node.Annotations = map[string]string{}
 	}
-	newNode.Annotations[lockKey] = fmt.Sprintf("%s,%s,%s", lockTime.Format(time.RFC3339), object.GetNamespace(), object.GetName())
-	if _, err := util.PatchNode(ctx, client, node, newNode); err != nil {
-		return fmt.Errorf("failed to patch node %q: %v", node.Name, err)
-	}
+	node.Annotations[lockKey] = fmt.Sprintf("%s,%s,%s", lockTime.Format(time.RFC3339), object.GetNamespace(), object.GetName())
 	return nil
 }
 
-func unlockNode(ctx context.Context, client kubernetes.Interface, node *corev1.Node, lockKey string) error {
+func unlockNode(node *corev1.Node, lockKey string) {
 	if _, ok := node.Annotations[lockKey]; !ok {
-		return nil
+		return
 	}
-	newNode := node.DeepCopy()
-	delete(newNode.Annotations, lockKey)
-	if _, err := util.PatchNode(ctx, client, node, newNode); err != nil {
-		return fmt.Errorf("failed to patch node %q: %v", node.Name, err)
-	}
-	return nil
+	delete(node.Annotations, lockKey)
 }
 
 func buildGPUMinorsStr(allocation []*apiext.DeviceAllocation) string {

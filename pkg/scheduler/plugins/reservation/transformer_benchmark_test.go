@@ -372,7 +372,7 @@ func BenchmarkBeforePrefilterWithUnmatchedPod(b *testing.B) {
 					},
 				},
 			}
-			pl.reservationCache.updatePod(reservation.UID, nil, pod)
+			pl.reservationCache.updatePod(reservation.UID, reservation.UID, nil, pod)
 			nodeInfo.AddPod(pod)
 			assert.NoError(b, pl.handle.Scheduler().GetCache().AddPod(klog.Background(), pod))
 		}
@@ -783,7 +783,7 @@ func BenchmarkBeforePrefilterWithUnmatchedPodEnableLazyReservationRestore(b *tes
 					},
 				},
 			}
-			pl.reservationCache.updatePod(reservation.UID, nil, pod)
+			pl.reservationCache.updatePod(reservation.UID, reservation.UID, nil, pod)
 			nodeInfo.AddPod(pod)
 			assert.NoError(b, pl.handle.Scheduler().GetCache().AddPod(klog.Background(), pod))
 		}

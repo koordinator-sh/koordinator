@@ -715,6 +715,73 @@ func Test_podEventHandlers(t *testing.T) {
 	assert.Equal(t, 0, len(controller.getPodsOnReservation("aaaaaa")))
 }
 
+func TestPodEventHandlerUnassignedPod(t *testing.T) {
+	fakeClientSet := kubefake.NewSimpleClientset()
+	fakeKoordClientSet := koordfake.NewSimpleClientset()
+	sharedInformerFactory := informers.NewSharedInformerFactory(fakeClientSet, 0)
+	koordSharedInformerFactory := koordinformers.NewSharedInformerFactory(fakeKoordClientSet, 0)
+
+	reservation := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{
+			UID:  "test-reservation-uid",
+			Name: "test-reservation",
+		},
+		Spec: schedulingv1alpha1.ReservationSpec{
+			Template: &corev1.PodTemplateSpec{},
+		},
+		Status: schedulingv1alpha1.ReservationStatus{
+			Phase:    schedulingv1alpha1.ReservationAvailable,
+			NodeName: "test-node-1",
+		},
+	}
+	_, err := fakeKoordClientSet.SchedulingV1alpha1().Reservations().Create(context.TODO(), reservation, metav1.CreateOptions{})
+	assert.NoError(t, err)
+
+	controller := New(sharedInformerFactory, koordSharedInformerFactory, fakeClientSet, fakeKoordClientSet, &config.ReservationArgs{})
+
+	sharedInformerFactory.Start(nil)
+	koordSharedInformerFactory.Start(nil)
+	sharedInformerFactory.WaitForCacheSync(nil)
+	koordSharedInformerFactory.WaitForCacheSync(nil)
+
+	// test pod becoming unassigned (multi-scheduler scenario)
+	oldPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			UID:       "test-pod-uid",
+			Name:      "test-pod",
+			Namespace: "test-ns",
+			Annotations: map[string]string{
+				apiext.AnnotationReservationAllocated: `{"name": "test-reservation", "uid": "test-reservation-uid"}`,
+			},
+		},
+		Spec: corev1.PodSpec{
+			NodeName: "test-node-1",
+		},
+	}
+	newPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			UID:       "test-pod-uid",
+			Name:      "test-pod",
+			Namespace: "test-ns",
+			Annotations: map[string]string{
+				apiext.AnnotationReservationAllocated: `{"name": "test-reservation", "uid": "test-reservation-uid"}`,
+			},
+		},
+		Spec: corev1.PodSpec{
+			NodeName: "", // became unassigned
+		},
+	}
+
+	// add pod to controller cache
+	controller.onPodAdd(oldPod)
+	assert.Equal(t, 1, len(controller.getPodsOnReservation("test-reservation-uid")))
+
+	// update pod to unassigned state
+	controller.onPodUpdate(oldPod, newPod)
+	assert.Equal(t, 0, len(controller.getPodsOnReservation("test-reservation-uid")))
+	assert.Equal(t, 0, len(controller.getPodsOnNode("test-node-1")))
+}
+
 func TestNew(t *testing.T) {
 	tests := []struct {
 		name                 string

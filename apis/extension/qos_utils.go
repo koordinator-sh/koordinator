@@ -18,7 +18,7 @@ package extension
 
 import (
 	corev1 "k8s.io/api/core/v1"
-	v1qos "k8s.io/kubernetes/pkg/apis/core/v1/helper/qos"
+	"k8s.io/kubectl/pkg/util/qos"
 )
 
 // NOTE: functions in this file can be overwritten for extension
@@ -74,5 +74,5 @@ func GetKubeQosClass(pod *corev1.Pod) corev1.PodQOSClass {
 	if len(qosClass) > 0 {
 		return qosClass
 	}
-	return v1qos.GetPodQOS(pod)
+	return qos.GetPodQOS(pod)
 }

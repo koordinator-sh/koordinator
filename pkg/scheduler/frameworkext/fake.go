@@ -194,6 +194,16 @@ func (nm *FakeNominator) RemoveNominatedReservations(pod *corev1.Pod) {
 	}
 }
 
+func (nm *FakeNominator) NominatedReservePodForNode(nodeName string) []*framework.PodInfo {
+	nm.lock.RLock()
+	defer nm.lock.RUnlock()
+	pods := make([]*framework.PodInfo, len(nm.nominatedReservePod[nodeName]))
+	for i := 0; i < len(pods); i++ {
+		pods[i] = nm.nominatedReservePod[nodeName][i].DeepCopy()
+	}
+	return pods
+}
+
 func (nm *FakeNominator) GetNominatedReservation(pod *corev1.Pod, nodeName string) *ReservationInfo {
 	nm.lock.RLock()
 	defer nm.lock.RUnlock()

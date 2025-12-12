@@ -119,7 +119,7 @@ func (n *nodeDeviceCache) updatePod(oldPod *corev1.Pod, pod *corev1.Pod) {
 	info := n.getNodeDevice(pod.Spec.NodeName, true)
 	info.lock.Lock()
 	defer info.lock.Unlock()
-	if oldPod != nil && len(oldAllocations) > 0 {
+	if oldPod != nil && oldPod.Spec.NodeName != "" && len(oldAllocations) > 0 { // avoid leaking for an unassigned pod
 		info.updateCacheUsed(oldAllocations, oldPod, false)
 		klog.V(5).InfoS("remove old pod from nodeDevice cache on node", "pod", klog.KObj(pod), "node", oldPod.Spec.NodeName)
 	}
