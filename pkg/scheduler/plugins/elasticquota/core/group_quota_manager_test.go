@@ -2722,3 +2722,103 @@ func TestGroupQuotaManager_UpdateQuotaNoLockWhenParentChange(t *testing.T) {
 	assert.Equal(t, 0, len(gqm.quotaTopoNodeMap["11"].childGroupQuotaInfos))
 	assert.Equal(t, 2, len(gqm.quotaTopoNodeMap["21"].childGroupQuotaInfos))
 }
+
+func TestGroupQuotaManager_GetQuotaSnapshot(t *testing.T) {
+	gqm := NewGroupQuotaManagerForTest()
+	gqm.UpdateClusterTotalResource(createResourceList(10000000, 3000*GigaByte))
+
+	// Add some quotas with parent-child relationships
+	AddQuotaToManager(t, gqm, "parent1", extension.RootQuotaName, 96000, 160*GigaByte, 50000, 50*GigaByte, true, true)
+	AddQuotaToManager(t, gqm, "child1", "parent1", 48000, 80*GigaByte, 25000, 25*GigaByte, true, false)
+	AddQuotaToManager(t, gqm, "child2", "parent1", 48000, 80*GigaByte, 25000, 25*GigaByte, true, false)
+	AddQuotaToManager(t, gqm, "standalone", extension.RootQuotaName, 96000, 160*GigaByte, 50000, 50*GigaByte, true, false)
+
+	// Get snapshot
+	snapshot := gqm.GetQuotaSnapshot()
+	assert.NotNil(t, snapshot)
+
+	// Verify snapshot contains all quotas
+	quotaInfo := snapshot.GetQuotaInfoByName("parent1")
+	assert.NotNil(t, quotaInfo)
+	assert.Equal(t, "parent1", quotaInfo.Name)
+
+	quotaInfo = snapshot.GetQuotaInfoByName("child1")
+	assert.NotNil(t, quotaInfo)
+	assert.Equal(t, "child1", quotaInfo.Name)
+
+	quotaInfo = snapshot.GetQuotaInfoByName("child2")
+	assert.NotNil(t, quotaInfo)
+	assert.Equal(t, "child2", quotaInfo.Name)
+
+	quotaInfo = snapshot.GetQuotaInfoByName("standalone")
+	assert.NotNil(t, quotaInfo)
+	assert.Equal(t, "standalone", quotaInfo.Name)
+
+	// Verify snapshot contains default quotas
+	quotaInfo = snapshot.GetQuotaInfoByName(extension.RootQuotaName)
+	assert.NotNil(t, quotaInfo)
+	assert.Equal(t, extension.RootQuotaName, quotaInfo.Name)
+
+	quotaInfo = snapshot.GetQuotaInfoByName(extension.SystemQuotaName)
+	assert.NotNil(t, quotaInfo)
+
+	quotaInfo = snapshot.GetQuotaInfoByName(extension.DefaultQuotaName)
+	assert.NotNil(t, quotaInfo)
+
+	// Verify non-existent quota returns nil
+	quotaInfo = snapshot.GetQuotaInfoByName("non-existent")
+	assert.Nil(t, quotaInfo)
+}
+
+func TestQuotaSnapshot_GetQuotaPathToRoot(t *testing.T) {
+	gqm := NewGroupQuotaManagerForTest()
+	gqm.UpdateClusterTotalResource(createResourceList(10000000, 3000*GigaByte))
+
+	// Create a quota hierarchy: root -> parent -> child -> grandchild
+	AddQuotaToManager(t, gqm, "parent", extension.RootQuotaName, 96000, 160*GigaByte, 50000, 50*GigaByte, true, true)
+	AddQuotaToManager(t, gqm, "child", "parent", 48000, 80*GigaByte, 25000, 25*GigaByte, true, false)
+	AddQuotaToManager(t, gqm, "grandchild", "child", 24000, 40*GigaByte, 12500, 12*GigaByte, true, false)
+
+	// Get snapshot
+	snapshot := gqm.GetQuotaSnapshot()
+	assert.NotNil(t, snapshot)
+
+	tests := []struct {
+		name         string
+		quotaName    string
+		expectedPath []string
+	}{
+		{
+			name:         "root quota path",
+			quotaName:    extension.RootQuotaName,
+			expectedPath: []string{extension.RootQuotaName},
+		},
+		{
+			name:         "parent quota path",
+			quotaName:    "parent",
+			expectedPath: []string{"parent", extension.RootQuotaName},
+		},
+		{
+			name:         "child quota path",
+			quotaName:    "child",
+			expectedPath: []string{"child", "parent", extension.RootQuotaName},
+		},
+		{
+			name:         "grandchild quota path",
+			quotaName:    "grandchild",
+			expectedPath: []string{"grandchild", "child", "parent", extension.RootQuotaName},
+		},
+		{
+			name:         "non-existent quota",
+			quotaName:    "non-existent",
+			expectedPath: []string{"non-existent"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := snapshot.GetQuotaPathToRoot(tt.quotaName)
+			assert.Equal(t, tt.expectedPath, path, "path should match for quota %s", tt.quotaName)
+		})
+	}
+}

@@ -244,6 +244,13 @@ type ElasticQuotaArgs struct {
 	// DisableDefaultQuotaPreemption if true, will not preempt pods in default quota.
 	DisableDefaultQuotaPreemption *bool `json:"disableDefaultQuotaPreemption,omitempty"`
 
+	// EnableQueueHint if true, enables QueueHint optimization to filter unnecessary pod re-queuing events.
+	EnableQueueHint *bool `json:"enableQueueHint,omitempty"`
+
+	// QuotaSnapshotUpdateInterval is the interval to update quota snapshot for QueueHint optimization.
+	// Defaults to 120 seconds if unspecified.
+	QuotaSnapshotUpdateInterval *metav1.Duration `json:"quotaSnapshotUpdateInterval,omitempty"`
+
 	// HookPlugins is expected to be configured with enabled hook plugins
 	HookPlugins []HookPluginConf `json:"hookPlugins,omitempty"`
 }

@@ -76,9 +76,11 @@ var (
 	defaultEnableRuntimeQuota            = pointer.Bool(true)
 	defaultEnableMinQuotaScale           = pointer.Bool(true)
 	defaultDisableDefaultQuotaPreemption = pointer.Bool(true)
+	defaultEnableQueueHint               = pointer.Bool(false)
 
-	defaultTimeout           = 600 * time.Second
-	defaultControllerWorkers = 1
+	defaultTimeout                     = 600 * time.Second
+	defaultControllerWorkers           = 1
+	defaultQuotaSnapshotUpdateInterval = 120 * time.Second
 
 	defaultGPUSharedResourceTemplatesConfig = &GPUSharedResourceTemplatesConfig{
 		ConfigMapNamespace: "koordinator-system",
@@ -210,6 +212,14 @@ func SetDefaults_ElasticQuotaArgs(obj *ElasticQuotaArgs) {
 	}
 	if obj.DisableDefaultQuotaPreemption == nil {
 		obj.DisableDefaultQuotaPreemption = defaultDisableDefaultQuotaPreemption
+	}
+	if obj.EnableQueueHint == nil {
+		obj.EnableQueueHint = defaultEnableQueueHint
+	}
+	if obj.QuotaSnapshotUpdateInterval == nil {
+		obj.QuotaSnapshotUpdateInterval = &metav1.Duration{
+			Duration: defaultQuotaSnapshotUpdateInterval,
+		}
 	}
 }
 
