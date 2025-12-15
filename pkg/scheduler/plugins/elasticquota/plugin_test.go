@@ -2316,3 +2316,109 @@ func TestPlugin_QueueingHint_IsSchedulableAfterPodDeletion(t *testing.T) {
 		})
 	}
 }
+
+func TestPlugin_updateQuotaSnapshot(t *testing.T) {
+	defer utilfeature.SetFeatureGateDuringTest(t, k8sfeature.DefaultMutableFeatureGate, features.MultiQuotaTree, true)()
+
+	tests := []struct {
+		name              string
+		setupQuotas       func(*Plugin) []*v1alpha1.ElasticQuota
+		expectedSnapshots int
+	}{
+		{
+			name: "update snapshot with single quota tree",
+			setupQuotas: func(gp *Plugin) []*v1alpha1.ElasticQuota {
+				quota1 := CreateQuota2("quota1", extension.RootQuotaName, 100, 1000, 50, 500, 10, 100, false, "tree1")
+				gp.OnQuotaAdd(quota1)
+				return []*v1alpha1.ElasticQuota{quota1}
+			},
+			expectedSnapshots: 2, // tree1 + default manager ("")
+		},
+		{
+			name: "update snapshot with multiple quota trees",
+			setupQuotas: func(gp *Plugin) []*v1alpha1.ElasticQuota {
+				quota1 := CreateQuota2("quota1", extension.RootQuotaName, 100, 1000, 50, 500, 10, 100, false, "tree1")
+				quota2 := CreateQuota2("quota2", extension.RootQuotaName, 200, 2000, 100, 1000, 20, 200, false, "tree2")
+				gp.OnQuotaAdd(quota1)
+				gp.OnQuotaAdd(quota2)
+				return []*v1alpha1.ElasticQuota{quota1, quota2}
+			},
+			expectedSnapshots: 3, // tree1 + tree2 + default manager ("")
+		},
+		{
+			name: "update snapshot with default quota manager",
+			setupQuotas: func(gp *Plugin) []*v1alpha1.ElasticQuota {
+				// Default quota manager should be included
+				return nil
+			},
+			expectedSnapshots: 1, // Default manager with treeID ""
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			suit := newPluginTestSuit(t, nil, func(args *config.ElasticQuotaArgs) {
+				args.EnableQueueHint = true
+			})
+			p, err := suit.proxyNew(suit.elasticQuotaArgs, suit.Handle)
+			assert.Nil(t, err)
+			gp := p.(*Plugin)
+
+			// Setup quotas
+			quotas := tt.setupQuotas(gp)
+
+			// Add some entries to quotaToTreeMap
+			if len(quotas) > 0 {
+				for _, quota := range quotas {
+					treeID := extension.GetQuotaTreeID(quota)
+					gp.quotaToTreeMapLock.Lock()
+					gp.quotaToTreeMap[quota.Name] = treeID
+					gp.quotaToTreeMapLock.Unlock()
+				}
+			}
+
+			// Call updateQuotaSnapshot
+			gp.updateQuotaSnapshot()
+
+			// Verify quotaToTreeMapSnapshot is updated
+			if len(quotas) > 0 {
+				for _, quota := range quotas {
+					expectedTreeID := extension.GetQuotaTreeID(quota)
+					actualTreeID, exists := gp.quotaToTreeMapSnapshot[quota.Name]
+					assert.True(t, exists, "quota %s should exist in quotaToTreeMapSnapshot", quota.Name)
+					assert.Equal(t, expectedTreeID, actualTreeID, "treeID should match for quota %s", quota.Name)
+				}
+			}
+
+			// Verify quotaSnapshot is updated
+			snapshotCount := len(gp.quotaSnapshot)
+			snapshotsCopy := make(map[string]*core.QuotaSnapshot)
+			for k, v := range gp.quotaSnapshot {
+				snapshotsCopy[k] = v
+			}
+
+			assert.Equal(t, tt.expectedSnapshots, snapshotCount, "snapshot count should match")
+
+			// Verify snapshot content if needed
+			if len(quotas) > 0 {
+				for _, quota := range quotas {
+					treeID := extension.GetQuotaTreeID(quota)
+					snapshot, exists := snapshotsCopy[treeID]
+					assert.True(t, exists, "snapshot should exist for treeID %s", treeID)
+					assert.NotNil(t, snapshot, "snapshot should not be nil for treeID %s", treeID)
+
+					// Verify quota info exists in snapshot
+					quotaInfo := snapshot.GetQuotaInfoByName(quota.Name)
+					assert.NotNil(t, quotaInfo, "quotaInfo should exist in snapshot for quota %s", quota.Name)
+					assert.Equal(t, quota.Name, quotaInfo.Name, "quota name should match")
+				}
+			}
+
+			// Verify default quota manager snapshot exists
+			_, exists := snapshotsCopy[""]
+			if gp.groupQuotaManager != nil {
+				assert.True(t, exists, "default quota manager snapshot should exist")
+			}
+		})
+	}
+}
