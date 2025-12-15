@@ -538,3 +538,29 @@ func (ri *ReservationInfo) GetAllocatedResource() (*framework.Resource, int64, i
 	}
 	return ri.AllocatedResource, ri.Non0AllocatedMilliCPU, ri.Non0AllocatedMem
 }
+
+// IsMatchable checks if the reservation is available to match any pods.
+func (ri *ReservationInfo) IsMatchable() bool {
+	// if phase is available
+	if ri.Reservation != nil { // reservation/reserve pod
+		if !reservationutil.IsReservationAvailable(ri.Reservation) {
+			return false
+		}
+	} else if ri.Pod != nil { // operating pod
+		if ri.Pod.Status.Phase != corev1.PodRunning || !k8spodutil.IsPodReady(ri.Pod) {
+			return false
+		}
+	}
+
+	if ri.ParseError != nil {
+		return false
+	}
+
+	// In this case, the Controller has not yet updated the status of the Reservation to Succeeded,
+	// but in fact it can no longer be used for allocation. So it's better to skip first.
+	if ri.IsAllocateOnce() && ri.GetAllocatedPods() > 0 {
+		return false
+	}
+
+	return true
+}

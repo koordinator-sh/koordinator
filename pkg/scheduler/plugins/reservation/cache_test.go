@@ -27,6 +27,8 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
+	"k8s.io/kubernetes/pkg/scheduler/framework"
+	"k8s.io/utils/ptr"
 
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
@@ -70,7 +72,7 @@ func TestCacheUpdateReservation(t *testing.T) {
 		},
 	}
 	cache.updateReservation(reservation)
-	reservationInfos := cache.listAvailableReservationInfosOnNode(reservation.Status.NodeName)
+	reservationInfos := cache.ListAvailableReservationInfosOnNode(reservation.Status.NodeName, true)
 	assert.Len(t, reservationInfos, 1)
 	rInfo := reservationInfos[0]
 	rInfo.RefreshPreCalculated()
@@ -95,7 +97,7 @@ func TestCacheUpdateReservation(t *testing.T) {
 	assert.Equal(t, expectReservationInfo, rInfo)
 
 	cache.updateReservation(reservation)
-	reservationInfos = cache.listAvailableReservationInfosOnNode(reservation.Status.NodeName)
+	reservationInfos = cache.ListAvailableReservationInfosOnNode(reservation.Status.NodeName, true)
 	assert.Len(t, reservationInfos, 1)
 	rInfo = reservationInfos[0]
 	sort.Slice(rInfo.ResourceNames, func(i, j int) bool {
@@ -391,4 +393,280 @@ func TestCacheUpdatePodAcrossReservations(t *testing.T) {
 	rInfo2 = cache.getReservationInfoByUID(reservation2.UID)
 	assert.Len(t, rInfo2.AssignedPods, 1)
 	assert.Contains(t, rInfo2.AssignedPods, pod.UID)
+}
+
+func TestCacheListAllNodes(t *testing.T) {
+	cache := newReservationCache(nil)
+	reservation1 := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{
+			UID:  uuid.NewUUID(),
+			Name: "test-reservation-1",
+		},
+		Spec: schedulingv1alpha1.ReservationSpec{
+			AllocateOnce: ptr.To[bool](false),
+			Template: &corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("4"),
+									corev1.ResourceMemory: resource.MustParse("4Gi"),
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		Status: schedulingv1alpha1.ReservationStatus{
+			NodeName: "test-node-1",
+			Phase:    schedulingv1alpha1.ReservationAvailable,
+			Allocatable: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("4"),
+				corev1.ResourceMemory: resource.MustParse("4Gi"),
+			},
+		},
+	}
+
+	reservation2 := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{
+			UID:  uuid.NewUUID(),
+			Name: "test-reservation-2",
+		},
+		Spec: schedulingv1alpha1.ReservationSpec{
+			AllocateOnce: ptr.To[bool](false),
+			Template: &corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("2"),
+									corev1.ResourceMemory: resource.MustParse("2Gi"),
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		Status: schedulingv1alpha1.ReservationStatus{
+			NodeName: "test-node-2",
+			Phase:    schedulingv1alpha1.ReservationAvailable,
+			Allocatable: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("2"),
+				corev1.ResourceMemory: resource.MustParse("2Gi"),
+			},
+		},
+	}
+
+	// add both reservations
+	cache.updateReservation(reservation1)
+	cache.updateReservation(reservation2)
+
+	// test matchable = true
+	nodes := cache.ListAllNodes(true)
+	assert.Len(t, nodes, 2)
+	assert.Contains(t, nodes, "test-node-1")
+	assert.Contains(t, nodes, "test-node-2")
+
+	// test matchable = false (only allocated reservations)
+	nodes = cache.ListAllNodes(false)
+	assert.Len(t, nodes, 0) // no allocated pods yet
+
+	// add a pod to reservation1
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			UID:       uuid.NewUUID(),
+			Namespace: "default",
+			Name:      "test-pod",
+		},
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{
+				{
+					Resources: corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("1"),
+							corev1.ResourceMemory: resource.MustParse("1Gi"),
+						},
+					},
+				},
+			},
+		},
+	}
+	cache.addPod(reservation1.UID, pod)
+
+	// now test-node-1 should be in allocated nodes
+	nodes = cache.ListAllNodes(false)
+	assert.Len(t, nodes, 1)
+	assert.Contains(t, nodes, "test-node-1")
+
+	// matchable should still return both
+	nodes = cache.ListAllNodes(true)
+	assert.Len(t, nodes, 2)
+}
+
+func TestCacheForEachMatchableReservationOnNode(t *testing.T) {
+	cache := newReservationCache(nil)
+	reservation1 := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{
+			UID:  uuid.NewUUID(),
+			Name: "test-reservation-1",
+		},
+		Spec: schedulingv1alpha1.ReservationSpec{
+			Template: &corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("4"),
+									corev1.ResourceMemory: resource.MustParse("4Gi"),
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		Status: schedulingv1alpha1.ReservationStatus{
+			NodeName: "test-node-1",
+			Phase:    schedulingv1alpha1.ReservationAvailable,
+			Allocatable: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("4"),
+				corev1.ResourceMemory: resource.MustParse("4Gi"),
+			},
+		},
+	}
+
+	reservation2 := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{
+			UID:  uuid.NewUUID(),
+			Name: "test-reservation-2",
+		},
+		Spec: schedulingv1alpha1.ReservationSpec{
+			Template: &corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("2"),
+									corev1.ResourceMemory: resource.MustParse("2Gi"),
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		Status: schedulingv1alpha1.ReservationStatus{
+			NodeName: "test-node-1",
+			Phase:    schedulingv1alpha1.ReservationFailed, // not matchable
+			Allocatable: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("2"),
+				corev1.ResourceMemory: resource.MustParse("2Gi"),
+			},
+		},
+	}
+
+	cache.updateReservation(reservation1)
+	cache.updateReservation(reservation2)
+
+	// iterate over matchable reservations on test-node-1
+	count := 0
+	status := cache.ForEachMatchableReservationOnNode("test-node-1", func(rInfo *frameworkext.ReservationInfo) (bool, *framework.Status) {
+		count++
+		assert.Equal(t, reservation1.UID, rInfo.UID())
+		return true, nil
+	})
+	assert.Nil(t, status)
+	assert.Equal(t, 1, count) // only reservation1 should be visited
+
+	// test early termination
+	count = 0
+	status = cache.ForEachMatchableReservationOnNode("test-node-1", func(rInfo *frameworkext.ReservationInfo) (bool, *framework.Status) {
+		count++
+		return false, nil // stop iteration
+	})
+	assert.Nil(t, status)
+	assert.Equal(t, 1, count)
+}
+
+func TestCacheListAvailableReservationInfosOnNode(t *testing.T) {
+	cache := newReservationCache(nil)
+	reservation := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{
+			UID:  uuid.NewUUID(),
+			Name: "test-reservation",
+		},
+		Spec: schedulingv1alpha1.ReservationSpec{
+			Template: &corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("4"),
+									corev1.ResourceMemory: resource.MustParse("4Gi"),
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		Status: schedulingv1alpha1.ReservationStatus{
+			NodeName: "test-node-1",
+			Phase:    schedulingv1alpha1.ReservationAvailable,
+			Allocatable: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("4"),
+				corev1.ResourceMemory: resource.MustParse("4Gi"),
+			},
+		},
+	}
+
+	failedReservation := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{
+			UID:  uuid.NewUUID(),
+			Name: "test-reservation-failed",
+		},
+		Spec: schedulingv1alpha1.ReservationSpec{
+			Template: &corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("2"),
+									corev1.ResourceMemory: resource.MustParse("2Gi"),
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		Status: schedulingv1alpha1.ReservationStatus{
+			NodeName: "test-node-1",
+			Phase:    schedulingv1alpha1.ReservationFailed,
+			Allocatable: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("2"),
+				corev1.ResourceMemory: resource.MustParse("2Gi"),
+			},
+		},
+	}
+
+	cache.updateReservation(reservation)
+	cache.updateReservation(failedReservation)
+
+	// test listAll = false (only matchable)
+	rInfos := cache.ListAvailableReservationInfosOnNode("test-node-1", false)
+	assert.Len(t, rInfos, 1)
+	assert.Equal(t, reservation.UID, rInfos[0].UID())
+
+	// test listAll = true (all reservations)
+	rInfos = cache.ListAvailableReservationInfosOnNode("test-node-1", true)
+	assert.Len(t, rInfos, 2)
 }
