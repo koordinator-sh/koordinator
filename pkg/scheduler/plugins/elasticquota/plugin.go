@@ -217,7 +217,7 @@ func (g *Plugin) Start() {
 
 	// Start background goroutine to periodically update quota parent snapshot
 	if g.pluginArgs.EnableQueueHint {
-		updateInterval := g.pluginArgs.QueueHintSnapshotUpdateInterval.Duration
+		updateInterval := g.pluginArgs.QuotaSnapshotUpdateInterval.Duration
 		go wait.Until(g.updateQuotaSnapshot, updateInterval, nil)
 		klog.Infof("start background quota snapshot updater with interval %v", updateInterval)
 	}
