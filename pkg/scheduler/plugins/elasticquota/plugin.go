@@ -454,7 +454,6 @@ func (g *Plugin) isSchedulableAfterPodDeletion(logger klog.Logger, pod *corev1.P
 	}
 
 	snapshot, exists := g.getQuotaSnapshot(podTreeID)
-
 	if !exists || snapshot == nil {
 		return framework.QueueAfterBackoff
 	}
