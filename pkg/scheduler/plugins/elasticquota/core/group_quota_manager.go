@@ -667,6 +667,73 @@ func (gqm *GroupQuotaManager) GetAllQuotaNames() map[string]struct{} {
 	return quotaInfoMap
 }
 
+// QuotaSnapshot is a snapshot of quotaInfoMap
+// It contains a copy of all QuotaInfo objects and doesn't need to be kept in sync with quotaInfoMap
+type QuotaSnapshot struct {
+	lock         sync.RWMutex
+	quotaInfoMap map[string]*QuotaInfo
+}
+
+// GetQuotaSnapshot returns a snapshot of quotaInfoMap
+// This snapshot is taken at a point in time and doesn't need to stay in sync with quotaInfoMap
+// It's safe to use this snapshot without holding locks after it's created
+func (gqm *GroupQuotaManager) GetQuotaSnapshot() *QuotaSnapshot {
+	gqm.hierarchyUpdateLock.RLock()
+	defer gqm.hierarchyUpdateLock.RUnlock()
+
+	snapshot := &QuotaSnapshot{
+		quotaInfoMap: make(map[string]*QuotaInfo, len(gqm.quotaInfoMap)),
+	}
+
+	for name, quotaInfo := range gqm.quotaInfoMap {
+		// Deep copy QuotaInfo for snapshot
+		quotaInfo.lock.RLock()
+		snapshot.quotaInfoMap[name] = quotaInfo.DeepCopy()
+		quotaInfo.lock.RUnlock()
+	}
+	return snapshot
+}
+
+// GetQuotaInfoByName returns a QuotaInfo from the snapshot by name
+func (s *QuotaSnapshot) GetQuotaInfoByName(quotaName string) *QuotaInfo {
+	s.lock.RLock()
+	defer s.lock.RUnlock()
+	return s.quotaInfoMap[quotaName]
+}
+
+// GetParentQuotaPath returns the path from the given quota to root using the snapshot
+// This is thread-safe as it only uses the snapshot data without accessing quotaInfoMap
+func (s *QuotaSnapshot) GetParentQuotaPath(quotaName string) []string {
+	s.lock.RLock()
+	defer s.lock.RUnlock()
+
+	path := make([]string, 0)
+	current := quotaName
+
+	for {
+		// Add current quota to path
+		path = append(path, current)
+
+		// Check if we've reached root
+		if current == extension.RootQuotaName {
+			break
+		}
+
+		// Get parent from snapshot
+		quotaInfo := s.quotaInfoMap[current]
+		if quotaInfo == nil {
+			break
+		}
+		parentName := quotaInfo.ParentName
+		if parentName == "" {
+			break
+		}
+		current = parentName
+	}
+
+	return path
+}
+
 func (gqm *GroupQuotaManager) updatePodRequestNoLock(quotaName string, oldPod, newPod *v1.Pod) {
 	quotaInfo := gqm.getQuotaInfoByNameNoLock(quotaName)
 	if quotaInfo == nil {
