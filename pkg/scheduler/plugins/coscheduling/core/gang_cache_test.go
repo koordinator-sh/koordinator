@@ -26,7 +26,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/util/retry"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
@@ -895,7 +895,7 @@ func TestGangCache_OnPodDelete(t *testing.T) {
 					},
 					Spec: v1alpha1.PodGroupSpec{
 						MinMember:              4,
-						ScheduleTimeoutSeconds: pointer.Int32(10),
+						ScheduleTimeoutSeconds: ptr.To[int32](10),
 					},
 				},
 			},
@@ -927,7 +927,7 @@ func TestGangCache_OnPodDelete(t *testing.T) {
 					},
 					Spec: v1alpha1.PodGroupSpec{
 						MinMember:              4,
-						ScheduleTimeoutSeconds: pointer.Int32(10),
+						ScheduleTimeoutSeconds: ptr.To[int32](10),
 					},
 				},
 			},

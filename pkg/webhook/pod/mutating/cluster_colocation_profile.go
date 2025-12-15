@@ -33,7 +33,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/strategicpatch"
 	"k8s.io/klog/v2"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	configv1alpha1 "github.com/koordinator-sh/koordinator/apis/config/v1alpha1"
@@ -226,7 +226,7 @@ func (h *PodMutatingHandler) doMutateByColocationProfile(ctx context.Context, po
 			return err
 		}
 		pod.Spec.PriorityClassName = profile.Spec.PriorityClassName
-		pod.Spec.Priority = pointer.Int32(priorityClass.Value)
+		pod.Spec.Priority = ptr.To[int32](priorityClass.Value)
 		pod.Spec.PreemptionPolicy = priorityClass.PreemptionPolicy
 	}
 

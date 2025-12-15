@@ -26,7 +26,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8spodutil "k8s.io/kubernetes/pkg/api/v1/pod"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
@@ -129,7 +129,7 @@ var _ = SIGDescribe("Preemption", func() {
 			ginkgo.By("Create Reservation")
 			reservation, err := manifest.ReservationFromManifest("scheduling/simple-reservation.yaml")
 			framework.ExpectNoError(err, "unable to load reservation")
-			reservation.Spec.AllocateOnce = pointer.Bool(false)
+			reservation.Spec.AllocateOnce = ptr.To[bool](false)
 			reservation.Spec.Template.Spec.NodeName = nodeName
 			reservation.Spec.Owners = []schedulingv1alpha1.ReservationOwner{
 				{
@@ -220,7 +220,7 @@ var _ = SIGDescribe("Preemption", func() {
 			ginkgo.By("Create Reservation")
 			reservation, err := manifest.ReservationFromManifest("scheduling/simple-reservation.yaml")
 			framework.ExpectNoError(err, "unable to load reservation")
-			reservation.Spec.AllocateOnce = pointer.Bool(false)
+			reservation.Spec.AllocateOnce = ptr.To[bool](false)
 			reservation.Spec.Template.Spec.NodeName = nodeName
 			reservation.Spec.Owners = []schedulingv1alpha1.ReservationOwner{
 				{
@@ -383,7 +383,7 @@ var _ = SIGDescribe("Preemption", func() {
 			ginkgo.By("Create Reservation")
 			reservation, err := manifest.ReservationFromManifest("scheduling/simple-reservation.yaml")
 			framework.ExpectNoError(err, "unable to load reservation")
-			reservation.Spec.AllocateOnce = pointer.Bool(false)
+			reservation.Spec.AllocateOnce = ptr.To[bool](false)
 			reservation.Spec.Template.Spec.NodeName = testNodeName
 			reservation.Spec.Owners = []schedulingv1alpha1.ReservationOwner{
 				{
@@ -456,7 +456,7 @@ var _ = SIGDescribe("Preemption", func() {
 			ginkgo.By("Create Reservation")
 			reservation, err := manifest.ReservationFromManifest("scheduling/simple-reservation.yaml")
 			framework.ExpectNoError(err, "unable to load reservation")
-			reservation.Spec.AllocateOnce = pointer.Bool(false)
+			reservation.Spec.AllocateOnce = ptr.To[bool](false)
 			reservation.Spec.Template.Spec.NodeName = testNodeName
 			reservation.Spec.Owners = []schedulingv1alpha1.ReservationOwner{
 				{
@@ -526,7 +526,7 @@ var _ = SIGDescribe("Preemption", func() {
 			ginkgo.By("Create Reservation")
 			reservation, err := manifest.ReservationFromManifest("scheduling/simple-reservation.yaml")
 			framework.ExpectNoError(err, "unable to load reservation")
-			reservation.Spec.AllocateOnce = pointer.Bool(false)
+			reservation.Spec.AllocateOnce = ptr.To[bool](false)
 			reservation.Spec.Template.Spec.NodeName = testNodeName
 			reservation.Spec.AllocatePolicy = schedulingv1alpha1.ReservationAllocatePolicyRestricted
 			reservation.Spec.Owners = []schedulingv1alpha1.ReservationOwner{

@@ -23,7 +23,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
@@ -37,7 +37,7 @@ func TestDefaultDeviceHandler_CalcDesiredRequestsAndCount(t *testing.T) {
 			"type": "fakeS",
 		},
 		UUID:   "123456789",
-		Minor:  pointer.Int32(5),
+		Minor:  ptr.To[int32](5),
 		Health: true,
 		Resources: corev1.ResourceList{
 			apiext.ResourceRDMA: resource.MustParse("100"),

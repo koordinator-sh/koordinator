@@ -30,7 +30,7 @@ import (
 	clientsetfake "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
@@ -557,7 +557,7 @@ func TestPodGroupManager_PostFilter(t *testing.T) {
 					gangSchedulingContext: tt.gangSchedulingContext,
 				},
 				args: &config.CoschedulingArgs{
-					EnablePreemption: pointer.Bool(tt.enablePreemption),
+					EnablePreemption: ptr.To[bool](tt.enablePreemption),
 				},
 				cache:               NewGangCache(nil, nil, nil, nil, nil),
 				preemptionEvaluator: tt.preemptionEvaluator,

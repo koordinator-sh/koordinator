@@ -22,7 +22,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/klog/v2"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/hooks"
@@ -74,7 +74,7 @@ func (b *bvtPlugin) SystemSupported() bool {
 			isBVTSupported, msg = bvtResource.IsSupported(util.GetPodQoSRelativePath(corev1.PodQOSGuaranteed))
 		}
 		sysSupported := isBVTSupported || sysutil.IsGroupIdentitySysctlSupported()
-		b.sysSupported = pointer.Bool(sysSupported)
+		b.sysSupported = ptr.To[bool](sysSupported)
 		klog.Infof("update system supported info to %v for plugin %v, supported msg %s",
 			*b.sysSupported, name, msg)
 	}
@@ -83,7 +83,7 @@ func (b *bvtPlugin) SystemSupported() bool {
 
 func (b *bvtPlugin) hasKernelEnable() bool {
 	if b.hasKernelEnabled == nil {
-		b.hasKernelEnabled = pointer.Bool(sysutil.IsGroupIdentitySysctlSupported())
+		b.hasKernelEnabled = ptr.To[bool](sysutil.IsGroupIdentitySysctlSupported())
 	}
 	return *b.hasKernelEnabled
 }
@@ -91,7 +91,7 @@ func (b *bvtPlugin) hasKernelEnable() bool {
 // tryDisableCoreSched tries disabling the core scheduling via sysctl to safely enable the group identity.
 func (b *bvtPlugin) tryDisableCoreSched() error {
 	if b.coreSchedSysctlSupported == nil {
-		b.coreSchedSysctlSupported = pointer.Bool(sysutil.IsCoreSchedSysctlSupported())
+		b.coreSchedSysctlSupported = ptr.To[bool](sysutil.IsCoreSchedSysctlSupported())
 	}
 	if !*b.coreSchedSysctlSupported {
 		return nil

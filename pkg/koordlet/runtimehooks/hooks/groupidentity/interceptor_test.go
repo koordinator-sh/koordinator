@@ -21,7 +21,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	ext "github.com/koordinator-sh/koordinator/apis/extension"
 	runtimeapi "github.com/koordinator-sh/koordinator/apis/runtime/v1alpha1"
@@ -111,7 +111,7 @@ func Test_bvtPlugin_SetPodBvtValue_Proxy(t *testing.T) {
 			name: "set ls pod bvt",
 			fields: fields{
 				rule:            defaultRule,
-				systemSupported: pointer.Bool(true),
+				systemSupported: ptr.To[bool](true),
 			},
 			args: args{
 				request: &runtimeapi.PodSandboxHookRequest{
@@ -123,14 +123,14 @@ func Test_bvtPlugin_SetPodBvtValue_Proxy(t *testing.T) {
 				response: &runtimeapi.PodSandboxHookResponse{},
 			},
 			want: want{
-				bvtValue: pointer.Int64(2),
+				bvtValue: ptr.To[int64](2),
 			},
 		},
 		{
 			name: "set ls pod bvt with annoation override succeed",
 			fields: fields{
 				rule:            defaultRule,
-				systemSupported: pointer.Bool(true),
+				systemSupported: ptr.To[bool](true),
 			},
 			args: args{
 				request: &runtimeapi.PodSandboxHookRequest{
@@ -145,14 +145,14 @@ func Test_bvtPlugin_SetPodBvtValue_Proxy(t *testing.T) {
 				response: &runtimeapi.PodSandboxHookResponse{},
 			},
 			want: want{
-				bvtValue: pointer.Int64(-1),
+				bvtValue: ptr.To[int64](-1),
 			},
 		},
 		{
 			name: "set ls pod bvt with annoation override failed",
 			fields: fields{
 				rule:            defaultRule,
-				systemSupported: pointer.Bool(true),
+				systemSupported: ptr.To[bool](true),
 			},
 			args: args{
 				request: &runtimeapi.PodSandboxHookRequest{
@@ -168,14 +168,14 @@ func Test_bvtPlugin_SetPodBvtValue_Proxy(t *testing.T) {
 			},
 			want: want{
 				// default value
-				bvtValue: pointer.Int64(0),
+				bvtValue: ptr.To[int64](0),
 			},
 		},
 		{
 			name: "set be pod bvt",
 			fields: fields{
 				rule:            defaultRule,
-				systemSupported: pointer.Bool(true),
+				systemSupported: ptr.To[bool](true),
 			},
 			args: args{
 				request: &runtimeapi.PodSandboxHookRequest{
@@ -187,14 +187,14 @@ func Test_bvtPlugin_SetPodBvtValue_Proxy(t *testing.T) {
 				response: &runtimeapi.PodSandboxHookResponse{},
 			},
 			want: want{
-				bvtValue: pointer.Int64(-1),
+				bvtValue: ptr.To[int64](-1),
 			},
 		},
 		{
 			name: "set be pod bvt but system not support",
 			fields: fields{
 				rule:            defaultRule,
-				systemSupported: pointer.Bool(false),
+				systemSupported: ptr.To[bool](false),
 			},
 			args: args{
 				request: &runtimeapi.PodSandboxHookRequest{
@@ -213,7 +213,7 @@ func Test_bvtPlugin_SetPodBvtValue_Proxy(t *testing.T) {
 			name: "set be pod bvt but rule is nil",
 			fields: fields{
 				rule:            nil,
-				systemSupported: pointer.Bool(true),
+				systemSupported: ptr.To[bool](true),
 			},
 			args: args{
 				request: &runtimeapi.PodSandboxHookRequest{
@@ -232,7 +232,7 @@ func Test_bvtPlugin_SetPodBvtValue_Proxy(t *testing.T) {
 			name: "set guaranteed dir bvt and initialize kernel sysctl",
 			fields: fields{
 				rule:                         defaultRule,
-				systemSupported:              pointer.Bool(true),
+				systemSupported:              ptr.To[bool](true),
 				initKernelGroupIdentity:      true,
 				initKernelGroupIdentityValue: 0,
 			},
@@ -246,14 +246,14 @@ func Test_bvtPlugin_SetPodBvtValue_Proxy(t *testing.T) {
 				response: &runtimeapi.PodSandboxHookResponse{},
 			},
 			want: want{
-				bvtValue: pointer.Int64(2),
+				bvtValue: ptr.To[int64](2),
 			},
 		},
 		{
 			name: "no need to set guaranteed bvt none while kernel sysctl disabled",
 			fields: fields{
 				rule:                         noneRule,
-				systemSupported:              pointer.Bool(true),
+				systemSupported:              ptr.To[bool](true),
 				initKernelGroupIdentity:      true,
 				initKernelGroupIdentityValue: 0,
 			},
@@ -272,7 +272,7 @@ func Test_bvtPlugin_SetPodBvtValue_Proxy(t *testing.T) {
 			name: "set guaranteed bvt none while kernel sysctl changed",
 			fields: fields{
 				rule:                         testRule1,
-				systemSupported:              pointer.Bool(true),
+				systemSupported:              ptr.To[bool](true),
 				initKernelGroupIdentity:      true,
 				initKernelGroupIdentityValue: 1,
 			},
@@ -286,14 +286,14 @@ func Test_bvtPlugin_SetPodBvtValue_Proxy(t *testing.T) {
 				response: &runtimeapi.PodSandboxHookResponse{},
 			},
 			want: want{
-				bvtValue: pointer.Int64(0),
+				bvtValue: ptr.To[int64](0),
 			},
 		},
 		{
 			name: "set besteffort bvt while kernel sysctl not changed",
 			fields: fields{
 				rule:                         defaultRule,
-				systemSupported:              pointer.Bool(true),
+				systemSupported:              ptr.To[bool](true),
 				initKernelGroupIdentity:      true,
 				initKernelGroupIdentityValue: 1,
 			},
@@ -307,15 +307,15 @@ func Test_bvtPlugin_SetPodBvtValue_Proxy(t *testing.T) {
 				response: &runtimeapi.PodSandboxHookResponse{},
 			},
 			want: want{
-				bvtValue: pointer.Int64(-1),
+				bvtValue: ptr.To[int64](-1),
 			},
 		},
 		{
 			name: "abort to set guaranteed dir bvt since init failed",
 			fields: fields{
 				rule:            noneRule,
-				systemSupported: pointer.Bool(true),
-				hasKernelEnable: pointer.Bool(true),
+				systemSupported: ptr.To[bool](true),
+				hasKernelEnable: ptr.To[bool](true),
 			},
 			args: args{
 				request: &runtimeapi.PodSandboxHookRequest{
@@ -444,46 +444,46 @@ func Test_bvtPlugin_SetKubeQOSBvtValue_Reconciler(t *testing.T) {
 			name: "set guaranteed dir bvt",
 			fields: fields{
 				rule:         defaultRule,
-				sysSupported: pointer.Bool(true),
+				sysSupported: ptr.To[bool](true),
 			},
 			args: args{
 				kubeQOS: corev1.PodQOSGuaranteed,
 			},
 			want: want{
-				bvtValue: pointer.Int64(0),
+				bvtValue: ptr.To[int64](0),
 			},
 		},
 		{
 			name: "set burstable dir bvt",
 			fields: fields{
 				rule:         defaultRule,
-				sysSupported: pointer.Bool(true),
+				sysSupported: ptr.To[bool](true),
 			},
 			args: args{
 				kubeQOS: corev1.PodQOSBurstable,
 			},
 			want: want{
-				bvtValue: pointer.Int64(2),
+				bvtValue: ptr.To[int64](2),
 			},
 		},
 		{
 			name: "set be dir bvt",
 			fields: fields{
 				rule:         defaultRule,
-				sysSupported: pointer.Bool(true),
+				sysSupported: ptr.To[bool](true),
 			},
 			args: args{
 				kubeQOS: corev1.PodQOSBestEffort,
 			},
 			want: want{
-				bvtValue: pointer.Int64(-1),
+				bvtValue: ptr.To[int64](-1),
 			},
 		},
 		{
 			name: "set be dir bvt but system not support",
 			fields: fields{
 				rule:         defaultRule,
-				sysSupported: pointer.Bool(false),
+				sysSupported: ptr.To[bool](false),
 			},
 			args: args{
 				kubeQOS: corev1.PodQOSBestEffort,
@@ -496,7 +496,7 @@ func Test_bvtPlugin_SetKubeQOSBvtValue_Reconciler(t *testing.T) {
 			name: "set be dir bvt but rule is nil",
 			fields: fields{
 				rule:         nil,
-				sysSupported: pointer.Bool(true),
+				sysSupported: ptr.To[bool](true),
 			},
 			args: args{
 				kubeQOS: corev1.PodQOSBestEffort,
@@ -509,7 +509,7 @@ func Test_bvtPlugin_SetKubeQOSBvtValue_Reconciler(t *testing.T) {
 			name: "set guaranteed dir bvt and initialize kernel sysctl",
 			fields: fields{
 				rule:                         defaultRule,
-				sysSupported:                 pointer.Bool(true),
+				sysSupported:                 ptr.To[bool](true),
 				initKernelGroupIdentity:      true,
 				initKernelGroupIdentityValue: 0,
 			},
@@ -517,14 +517,14 @@ func Test_bvtPlugin_SetKubeQOSBvtValue_Reconciler(t *testing.T) {
 				kubeQOS: corev1.PodQOSGuaranteed,
 			},
 			want: want{
-				bvtValue: pointer.Int64(0),
+				bvtValue: ptr.To[int64](0),
 			},
 		},
 		{
 			name: "no need to set guaranteed bvt none while kernel sysctl disabled",
 			fields: fields{
 				rule:                         noneRule,
-				sysSupported:                 pointer.Bool(true),
+				sysSupported:                 ptr.To[bool](true),
 				initKernelGroupIdentity:      true,
 				initKernelGroupIdentityValue: 0,
 			},
@@ -537,7 +537,7 @@ func Test_bvtPlugin_SetKubeQOSBvtValue_Reconciler(t *testing.T) {
 			name: "set guaranteed bvt none while kernel sysctl changed",
 			fields: fields{
 				rule:                         testRule,
-				sysSupported:                 pointer.Bool(true),
+				sysSupported:                 ptr.To[bool](true),
 				initKernelGroupIdentity:      true,
 				initKernelGroupIdentityValue: 1,
 			},
@@ -545,15 +545,15 @@ func Test_bvtPlugin_SetKubeQOSBvtValue_Reconciler(t *testing.T) {
 				kubeQOS: corev1.PodQOSGuaranteed,
 			},
 			want: want{
-				bvtValue: pointer.Int64(0),
+				bvtValue: ptr.To[int64](0),
 			},
 		},
 		{
 			name: "abort to set guaranteed dir bvt since init failed",
 			fields: fields{
 				rule:            noneRule,
-				sysSupported:    pointer.Bool(true),
-				hasKernelEnable: pointer.Bool(true),
+				sysSupported:    ptr.To[bool](true),
+				hasKernelEnable: ptr.To[bool](true),
 			},
 			args: args{
 				kubeQOS: corev1.PodQOSGuaranteed,
@@ -637,24 +637,24 @@ func Test_bvtPlugin_SetHostAppBvtValue(t *testing.T) {
 			name: "set bvt value for ls host application",
 			fields: fields{
 				rule:         defaultRule,
-				sysSupported: pointer.Bool(true),
+				sysSupported: ptr.To[bool](true),
 			},
 			args: args{
 				qos: ext.QoSLS,
 			},
-			wantBvt: pointer.Int64(2),
+			wantBvt: ptr.To[int64](2),
 			wantErr: false,
 		},
 		{
 			name: "set bvt value for none host application",
 			fields: fields{
 				rule:         defaultRule,
-				sysSupported: pointer.Bool(true),
+				sysSupported: ptr.To[bool](true),
 			},
 			args: args{
 				qos: ext.QoSNone,
 			},
-			wantBvt: pointer.Int64(0),
+			wantBvt: ptr.To[int64](0),
 			wantErr: false,
 		},
 	}

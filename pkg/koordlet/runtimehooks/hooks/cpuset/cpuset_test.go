@@ -23,7 +23,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	ext "github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
@@ -178,7 +178,7 @@ func Test_cpusetPlugin_SetContainerCPUSet(t *testing.T) {
 				},
 			},
 			wantErr:    false,
-			wantCPUSet: pointer.StringPtr("2-4"),
+			wantCPUSet: ptr.To[string]("2-4"),
 		},
 		{
 			name: "set cpu by pod allocated share pool with nil rule",
@@ -232,7 +232,7 @@ func Test_cpusetPlugin_SetContainerCPUSet(t *testing.T) {
 				},
 			},
 			wantErr:    false,
-			wantCPUSet: pointer.String("0-3"),
+			wantCPUSet: ptr.To[string]("0-3"),
 		},
 		{
 			name: "set cpu for system pod by share pool without rule specified",
@@ -264,7 +264,7 @@ func Test_cpusetPlugin_SetContainerCPUSet(t *testing.T) {
 				},
 			},
 			wantErr:    false,
-			wantCPUSet: pointer.String("0-7,8-15"),
+			wantCPUSet: ptr.To[string]("0-7,8-15"),
 		},
 		{
 			name: "set cpu by pod allocated share pool",
@@ -302,7 +302,7 @@ func Test_cpusetPlugin_SetContainerCPUSet(t *testing.T) {
 				},
 			},
 			wantErr:    false,
-			wantCPUSet: pointer.String("0-7"),
+			wantCPUSet: ptr.To[string]("0-7"),
 		},
 		{
 			name: "set cpu for origin besteffort pod",
@@ -330,7 +330,7 @@ func Test_cpusetPlugin_SetContainerCPUSet(t *testing.T) {
 				},
 			},
 			wantErr:    false,
-			wantCPUSet: pointer.String(""),
+			wantCPUSet: ptr.To[string](""),
 		},
 	}
 	for _, tt := range tests {
@@ -433,7 +433,7 @@ func TestUnsetPodCPUQuota(t *testing.T) {
 				},
 			},
 			wantErr:      false,
-			wantCPUQuota: pointer.Int64(-1),
+			wantCPUQuota: ptr.To[int64](-1),
 		},
 		{
 			name: "not change cfs quota by pod allocated share pool",
@@ -562,7 +562,7 @@ func TestUnsetContainerCPUQuota(t *testing.T) {
 				},
 			},
 			wantErr:      false,
-			wantCPUQuota: pointer.Int64(-1),
+			wantCPUQuota: ptr.To[int64](-1),
 		},
 		{
 			name: "not change cfs quota by pod allocated share pool",
@@ -740,7 +740,7 @@ func Test_cpusetPlugin_SetHostAppCPUSet(t *testing.T) {
 					},
 				},
 			},
-			wantCPUSet: pointer.String("0-7,8-15"),
+			wantCPUSet: ptr.To[string]("0-7,8-15"),
 			wantErr:    false,
 		},
 	}

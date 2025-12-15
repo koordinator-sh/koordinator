@@ -35,7 +35,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
@@ -472,7 +472,7 @@ func TestGetMigratingJobNum(t *testing.T) {
 					Kind:               job.Kind,
 					Name:               job.Name,
 					UID:                job.UID,
-					Controller:         pointer.Bool(true),
+					Controller:         ptr.To[bool](true),
 					BlockOwnerDeletion: nil,
 				},
 			}

@@ -33,7 +33,7 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/kubernetes/pkg/controller"
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	"github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 	pgfake "github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/generated/clientset/versioned/fake"
@@ -332,7 +332,7 @@ func makePG(pgName string, minMember int32, previousPhase v1alpha1.PodGroupPhase
 		},
 		Spec: v1alpha1.PodGroupSpec{
 			MinMember:              minMember,
-			ScheduleTimeoutSeconds: pointer.Int32(10),
+			ScheduleTimeoutSeconds: ptr.To[int32](10),
 		},
 		Status: v1alpha1.PodGroupStatus{
 			OccupiedBy:        "test",

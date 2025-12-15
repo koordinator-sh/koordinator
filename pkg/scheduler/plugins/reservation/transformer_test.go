@@ -30,7 +30,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	schedulertesting "k8s.io/kubernetes/pkg/scheduler/testing"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
@@ -144,7 +144,7 @@ func TestRestoreReservation(t *testing.T) {
 			Name: "reservation12C24G",
 		},
 		Spec: schedulingv1alpha1.ReservationSpec{
-			AllocateOnce: pointer.Bool(false),
+			AllocateOnce: ptr.To[bool](false),
 			Template: &corev1.PodTemplateSpec{
 				Spec: corev1.PodSpec{
 					Affinity: &corev1.Affinity{
@@ -475,7 +475,7 @@ func TestRestoreReservationWithLazyReservationRestore(t *testing.T) {
 			Name: "reservation12C24G",
 		},
 		Spec: schedulingv1alpha1.ReservationSpec{
-			AllocateOnce: pointer.Bool(false),
+			AllocateOnce: ptr.To[bool](false),
 			Template: &corev1.PodTemplateSpec{
 				Spec: corev1.PodSpec{
 					Affinity: &corev1.Affinity{
@@ -1185,7 +1185,7 @@ func TestBeforePreFilterForReservePod(t *testing.T) {
 					},
 				},
 			},
-			AllocateOnce: pointer.Bool(false),
+			AllocateOnce: ptr.To[bool](false),
 		},
 		Status: schedulingv1alpha1.ReservationStatus{
 			Phase:    schedulingv1alpha1.ReservationAvailable,
@@ -1545,7 +1545,7 @@ func TestBeforePreFilterForReservationPreAllocation(t *testing.T) {
 				},
 			},
 			AllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyRestricted,
-			AllocateOnce:   pointer.Bool(false),
+			AllocateOnce:   ptr.To[bool](false),
 		},
 		Status: schedulingv1alpha1.ReservationStatus{
 			Phase:    schedulingv1alpha1.ReservationAvailable,

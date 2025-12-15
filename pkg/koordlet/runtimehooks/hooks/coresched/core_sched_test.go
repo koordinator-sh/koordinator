@@ -26,7 +26,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
@@ -161,11 +161,11 @@ func TestPlugin_initSystem(t *testing.T) {
 		{
 			name: "skip to init if rule disabled",
 			fields: fields{
-				giSupported: pointer.Bool(true),
+				giSupported: ptr.To[bool](true),
 			},
 			arg:       false,
 			wantErr:   false,
-			wantField: pointer.Bool(true),
+			wantField: ptr.To[bool](true),
 		},
 		{
 			name: "system does not support sysctl for group identity",
@@ -177,7 +177,7 @@ func TestPlugin_initSystem(t *testing.T) {
 			},
 			arg:       true,
 			wantErr:   false,
-			wantField: pointer.Bool(false),
+			wantField: ptr.To[bool](false),
 		},
 		{
 			name: "already know system does not support sysctl for group identity",
@@ -185,11 +185,11 @@ func TestPlugin_initSystem(t *testing.T) {
 				prepareFn: func(helper *sysutil.FileTestUtil) {
 					helper.WriteFileContents(sysutil.GetProcSysFilePath(sysutil.KernelSchedCore), "1")
 				},
-				giSupported: pointer.Bool(false),
+				giSupported: ptr.To[bool](false),
 			},
 			arg:       true,
 			wantErr:   false,
-			wantField: pointer.Bool(false),
+			wantField: ptr.To[bool](false),
 		},
 		{
 			name: "successfully enable core sched and disable group identity",
@@ -202,7 +202,7 @@ func TestPlugin_initSystem(t *testing.T) {
 			},
 			arg:       true,
 			wantErr:   false,
-			wantField: pointer.Bool(true),
+			wantField: ptr.To[bool](true),
 			wantExtra: func(t *testing.T, helper *sysutil.FileTestUtil) {
 				bvtConfigPath := sysutil.GetProcSysFilePath(sysutil.KernelSchedGroupIdentityEnable)
 				got := helper.ReadFileContents(bvtConfigPath)
@@ -222,7 +222,7 @@ func TestPlugin_initSystem(t *testing.T) {
 			},
 			arg:       true,
 			wantErr:   false,
-			wantField: pointer.Bool(true),
+			wantField: ptr.To[bool](true),
 			wantExtra: func(t *testing.T, helper *sysutil.FileTestUtil) {
 				bvtConfigPath := sysutil.GetProcSysFilePath(sysutil.KernelSchedGroupIdentityEnable)
 				got := helper.ReadFileContents(bvtConfigPath)
@@ -239,11 +239,11 @@ func TestPlugin_initSystem(t *testing.T) {
 					bvtConfigPath := sysutil.GetProcSysFilePath(sysutil.KernelSchedGroupIdentityEnable)
 					helper.WriteFileContents(bvtConfigPath, "1")
 				},
-				giSupported: pointer.Bool(true),
+				giSupported: ptr.To[bool](true),
 			},
 			arg:       true,
 			wantErr:   false,
-			wantField: pointer.Bool(true),
+			wantField: ptr.To[bool](true),
 			wantExtra: func(t *testing.T, helper *sysutil.FileTestUtil) {
 				bvtConfigPath := sysutil.GetProcSysFilePath(sysutil.KernelSchedGroupIdentityEnable)
 				got := helper.ReadFileContents(bvtConfigPath)
@@ -258,11 +258,11 @@ func TestPlugin_initSystem(t *testing.T) {
 				prepareFn: func(helper *sysutil.FileTestUtil) {
 					helper.WriteFileContents(sysutil.GetProcSysFilePath(sysutil.KernelSchedCore), "0")
 				},
-				giSupported: pointer.Bool(true),
+				giSupported: ptr.To[bool](true),
 			},
 			arg:       true,
 			wantErr:   true,
-			wantField: pointer.Bool(true),
+			wantField: ptr.To[bool](true),
 			wantExtra: func(t *testing.T, helper *sysutil.FileTestUtil) {
 				got := helper.ReadFileContents(sysutil.GetProcSysFilePath(sysutil.KernelSchedCore))
 				assert.Equal(t, "0", got)
@@ -271,11 +271,11 @@ func TestPlugin_initSystem(t *testing.T) {
 		{
 			name: "failed to enable core sched",
 			fields: fields{
-				giSupported: pointer.Bool(false),
+				giSupported: ptr.To[bool](false),
 			},
 			arg:       true,
 			wantErr:   true,
-			wantField: pointer.Bool(false),
+			wantField: ptr.To[bool](false),
 		},
 	}
 	for _, tt := range tests {
@@ -381,7 +381,7 @@ func TestPlugin_SetContainerCookie(t *testing.T) {
 			fields: fields{
 				plugin: testGetEnabledPlugin(),
 				preparePluginFn: func(p *Plugin) {
-					p.sysSupported = pointer.Bool(false)
+					p.sysSupported = ptr.To[bool](false)
 				},
 			},
 			arg: &protocol.ContainerContext{
@@ -2169,7 +2169,7 @@ func TestPlugin_SetKubeQOSCPUIdle(t *testing.T) {
 				},
 				Response: protocol.KubeQOSResponse{
 					Resources: protocol.Resources{
-						CPUIdle: pointer.Int64(0),
+						CPUIdle: ptr.To[int64](0),
 					},
 				},
 			},
@@ -2193,7 +2193,7 @@ func TestPlugin_SetKubeQOSCPUIdle(t *testing.T) {
 				},
 				Response: protocol.KubeQOSResponse{
 					Resources: protocol.Resources{
-						CPUIdle: pointer.Int64(1),
+						CPUIdle: ptr.To[int64](1),
 					},
 				},
 			},
@@ -2219,7 +2219,7 @@ func testGetEnabledPlugin() *Plugin {
 		groupCache:      gocache.New(defaultCacheExpiration, defaultCacheDeleteInterval),
 		reader:          resourceexecutor.NewCgroupReader(),
 		executor:        resourceexecutor.NewTestResourceExecutor(),
-		sysSupported:    pointer.Bool(true),
+		sysSupported:    ptr.To[bool](true),
 		allPodsSyncOnce: sync.Once{},
 		initialized:     atomic.NewBool(true),
 	}

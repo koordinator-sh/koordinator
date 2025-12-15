@@ -23,7 +23,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
@@ -103,7 +103,7 @@ func TestPlugin_parseRule(t *testing.T) {
 		},
 		{
 			name:  "ratio not changed",
-			field: pointer.Float64(1.1),
+			field: ptr.To[float64](1.1),
 			arg: &corev1.Node{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-node",

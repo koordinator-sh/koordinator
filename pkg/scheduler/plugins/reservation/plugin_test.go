@@ -46,7 +46,7 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/queuesort"
 	frameworkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
 	schedulertesting "k8s.io/kubernetes/pkg/scheduler/testing"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
@@ -3190,7 +3190,7 @@ func TestFilterNominateReservation(t *testing.T) {
 	allocateOnceAndAllocatedReservation := reservation2C4G.DeepCopy()
 	allocateOnceAndAllocatedReservation.Name = "allocateOnceAndAllocatedReservation"
 	allocateOnceAndAllocatedReservation.UID = uuid.NewUUID()
-	allocateOnceAndAllocatedReservation.Spec.AllocateOnce = pointer.Bool(true)
+	allocateOnceAndAllocatedReservation.Spec.AllocateOnce = ptr.To[bool](true)
 	reservationutil.SetReservationAvailable(allocateOnceAndAllocatedReservation, "test-node")
 	for i := range allocateOnceAndAllocatedReservation.Status.Conditions {
 		allocateOnceAndAllocatedReservation.Status.Conditions[i].LastProbeTime = metav1.Time{}

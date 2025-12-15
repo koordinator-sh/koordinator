@@ -21,7 +21,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
@@ -77,7 +77,7 @@ func TestRegisterCallbacksAndRun(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			testVar := pointer.Bool(false)
+			testVar := ptr.To[bool](false)
 			callbackFn := func(t statesinformer.RegisterType, obj interface{}, target *statesinformer.CallbackTarget) {
 				*testVar = true
 			}
