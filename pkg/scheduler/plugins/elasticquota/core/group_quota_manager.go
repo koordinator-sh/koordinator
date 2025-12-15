@@ -383,10 +383,7 @@ func (gqm *GroupQuotaManager) GetQuotaInfoByName(quotaName string) *QuotaInfo {
 }
 
 // GetCurToAllParentGroupQuotaInfo returns the path from the given quota to root, including all parent quotas
-func (gqm *GroupQuotaManager) GetCurToAllParentGroupQuotaInfo(quotaName string) []*QuotaInfo {
-	gqm.hierarchyUpdateLock.RLock()
-	defer gqm.hierarchyUpdateLock.RUnlock()
-
+func (gqm *GroupQuotaManager) GetCurToAllParentGroupQuotaInfoNoLock(quotaName string) []*QuotaInfo {
 	return gqm.getCurToAllParentGroupQuotaInfoNoLock(quotaName)
 }
 
