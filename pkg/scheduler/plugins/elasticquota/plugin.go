@@ -33,6 +33,7 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework/preemption"
 	"k8s.io/kubernetes/pkg/scheduler/metrics"
+	schedutil "k8s.io/kubernetes/pkg/scheduler/util"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/apis/scheduling"
@@ -214,10 +215,20 @@ func (g *Plugin) EventsToRegister() []framework.ClusterEventWithHint {
 	// To register a custom event, follow the naming convention at:
 	// https://git.k8s.io/kubernetes/pkg/scheduler/eventhandlers.go#L403-L410
 	eqGVK := fmt.Sprintf("elasticquotas.v1alpha1.%v", scheduling.GroupName)
-	return []framework.ClusterEventWithHint{
+	events := []framework.ClusterEventWithHint{
 		{Event: framework.ClusterEvent{Resource: framework.Pod, ActionType: framework.Delete}},
 		{Event: framework.ClusterEvent{Resource: framework.GVK(eqGVK), ActionType: framework.All}},
 	}
+
+	// Only set QueueingHintFn if EnableQueueHint is enabled
+	if g.pluginArgs.EnableQueueHint {
+		events = []framework.ClusterEventWithHint{
+			{Event: framework.ClusterEvent{Resource: framework.Pod, ActionType: framework.Delete}, QueueingHintFn: g.isSchedulableAfterPodDeletion},
+			{Event: framework.ClusterEvent{Resource: framework.GVK(eqGVK), ActionType: framework.Update}, QueueingHintFn: g.isSchedulableAfterQuotaChanged},
+		}
+	}
+
+	return events
 }
 
 func (g *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod) (*framework.PreFilterResult, *framework.Status) {
@@ -276,6 +287,118 @@ func (g *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleState
 
 func (g *Plugin) PreFilterExtensions() framework.PreFilterExtensions {
 	return g
+}
+
+// isSchedulableAfterQuotaChanged determines if a pod becomes schedulable after quota is updated.
+// QueueAfterBackoff is default queueingHintFn behavior.
+func (g *Plugin) isSchedulableAfterQuotaChanged(logger klog.Logger, pod *corev1.Pod, oldObj, newObj interface{}) framework.QueueingHint {
+	originalQuota, modifiedQuota, err := schedutil.As[*apiv1alpha1.ElasticQuota](oldObj, newObj)
+	if err != nil {
+		logger.Error(err, "Failed to convert oldObj or newObj to ElasticQuota", "oldObj", oldObj, "newObj", newObj)
+		return framework.QueueAfterBackoff
+	}
+
+	if originalQuota == nil || modifiedQuota == nil {
+		return framework.QueueAfterBackoff
+	}
+
+	podQuotaName, podTreeID := g.getPodAssociateQuotaNameAndTreeID(pod)
+	if podQuotaName == "" {
+		return framework.QueueSkip
+	}
+
+	// Check if modified quota is in the same tree as the pod
+	modifiedQuotaTreeID := extension.GetQuotaTreeID(modifiedQuota)
+	if modifiedQuotaTreeID != podTreeID {
+		return framework.QueueSkip
+	}
+
+	mgr := g.GetGroupQuotaManagerForTree(podTreeID)
+	if mgr == nil {
+		return framework.QueueSkip
+	}
+
+	oldQuotaInfo := core.NewQuotaInfoFromQuota(originalQuota)
+	newQuotaInfo := core.NewQuotaInfoFromQuota(modifiedQuota)
+
+	hasChanged := oldQuotaInfo.IsQuotaChange(newQuotaInfo) || mgr.IsQuotaUpdated(oldQuotaInfo, newQuotaInfo, modifiedQuota)
+	if !hasChanged {
+		return framework.QueueSkip
+	}
+
+	// Quota has changed, check if modified quota is in the pod's path to root
+	if modifiedQuota.Name == podQuotaName {
+		// Modified quota is the pod's quota, allow queueing
+		return framework.QueueAfterBackoff
+	}
+
+	// Modified quota is not the pod's quota, check if it's in the path to root
+	if g.pluginArgs.EnableCheckParentQuota {
+		// Get the path from pod's quota to root using the existing method
+		curToAllParInfos := mgr.GetCurToAllParentGroupQuotaInfo(podQuotaName)
+		for _, quotaInfo := range curToAllParInfos {
+			if quotaInfo.Name == modifiedQuota.Name {
+				return framework.QueueAfterBackoff
+			}
+		}
+	}
+
+	// Modified quota is not in the pod's path to root, skip
+	return framework.QueueSkip
+}
+
+// isSchedulableAfterPodDeletion determines if a pod becomes schedulable after another pod is deleted.
+// QueueAfterBackoff is default queueingHintFn behavior.
+func (g *Plugin) isSchedulableAfterPodDeletion(logger klog.Logger, pod *corev1.Pod, oldObj, newObj interface{}) framework.QueueingHint {
+	deletedPod, _, err := schedutil.As[*corev1.Pod](oldObj, newObj)
+	if err != nil {
+		logger.Error(err, "Failed to convert oldObj to Pod in isSchedulableAfterPodDeletion", "oldObj", oldObj, "newObj", newObj)
+		return framework.QueueAfterBackoff
+	}
+
+	if deletedPod == nil {
+		return framework.QueueAfterBackoff
+	}
+
+	deletedPodQuotaName, deletedPodTreeID := g.getPodAssociateQuotaNameAndTreeID(deletedPod)
+	if deletedPodQuotaName == "" {
+		return framework.QueueSkip
+	}
+
+	podQuotaName, podTreeID := g.getPodAssociateQuotaNameAndTreeID(pod)
+	if podQuotaName == "" {
+		return framework.QueueSkip
+	}
+
+	// Check if deleted pod and unschedulable pod are in the same tree
+	if deletedPodTreeID != podTreeID {
+		return framework.QueueSkip
+	}
+
+	mgr := g.GetGroupQuotaManagerForTree(podTreeID)
+	if mgr == nil {
+		return framework.QueueSkip
+	}
+
+	if deletedPodQuotaName == podQuotaName {
+		// Deleted pod is in the same quota as the unschedulable pod, allow queueing
+		return framework.QueueAfterBackoff
+	}
+
+	// Check if deleted pod's quota is in the unschedulable pod's path to root
+	if g.pluginArgs.EnableCheckParentQuota {
+		// Get the path from unschedulable pod's quota to root
+		curToAllParInfos := mgr.GetCurToAllParentGroupQuotaInfo(podQuotaName)
+		for _, quotaInfo := range curToAllParInfos {
+			if quotaInfo.Name == deletedPodQuotaName {
+				// Deleted pod's quota is in the path to root, allow queueing
+				return framework.QueueAfterBackoff
+			}
+		}
+	}
+
+	// Deleted pod's quota is not in the unschedulable pod's path to root, skip
+	return framework.QueueSkip
 }
 
 // AddPod is called by the framework while trying to evaluate the impact

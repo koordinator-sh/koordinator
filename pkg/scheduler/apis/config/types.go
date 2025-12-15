@@ -248,6 +248,9 @@ type ElasticQuotaArgs struct {
 	// DisableDefaultQuotaPreemption if true, will not preempt pods in default quota.
 	DisableDefaultQuotaPreemption bool
 
+	// EnableQueueHint if true, enables QueueHint optimization to filter unnecessary pod re-queuing events.
+	EnableQueueHint bool
+
 	// HookPlugins is expected to be configured with enabled hook plugins
 	HookPlugins []HookPluginConf
 }
