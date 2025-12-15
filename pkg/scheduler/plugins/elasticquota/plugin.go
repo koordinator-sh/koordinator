@@ -365,6 +365,15 @@ func (g *Plugin) isSchedulableAfterPodDeletion(logger klog.Logger, pod *corev1.P
 		return framework.QueueSkip
 	}
 
+	// If the deleted pod hasn't been assigned resources, skip
+	mgr := g.GetGroupQuotaManagerForTree(deletedPodTreeID)
+	if mgr != nil {
+		quotaInfo := mgr.GetQuotaInfoByName(deletedPodQuotaName)
+		if quotaInfo != nil && !quotaInfo.CheckPodIsAssigned(deletedPod) {
+			return framework.QueueSkip
+		}
+	}
+
 	podQuotaName, podTreeID := g.getPodAssociateQuotaNameAndTreeID(pod)
 	if podQuotaName == "" {
 		return framework.QueueSkip
@@ -375,7 +384,7 @@ func (g *Plugin) isSchedulableAfterPodDeletion(logger klog.Logger, pod *corev1.P
 		return framework.QueueSkip
 	}
 
-	mgr := g.GetGroupQuotaManagerForTree(podTreeID)
+	mgr = g.GetGroupQuotaManagerForTree(podTreeID)
 	if mgr == nil {
 		return framework.QueueSkip
 	}
