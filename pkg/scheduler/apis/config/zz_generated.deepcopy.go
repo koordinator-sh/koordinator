@@ -118,7 +118,6 @@ func (in *ElasticQuotaArgs) DeepCopyInto(out *ElasticQuotaArgs) {
 			(*out)[key] = val.DeepCopy()
 		}
 	}
-	out.QuotaSnapshotUpdateInterval = in.QuotaSnapshotUpdateInterval
 	if in.HookPlugins != nil {
 		in, out := &in.HookPlugins, &out.HookPlugins
 		*out = make([]HookPluginConf, len(*in))
