@@ -247,7 +247,7 @@ type ElasticQuotaArgs struct {
 	EnableQueueHint *bool `json:"enableQueueHint,omitempty"`
 
 	// QuotaSnapshotUpdateInterval is the interval to update quota snapshot for QueueHint optimization.
-	// Defaults to 5 seconds if unspecified.
+	// Defaults to 120 seconds if unspecified.
 	QuotaSnapshotUpdateInterval *metav1.Duration `json:"quotaSnapshotUpdateInterval,omitempty"`
 
 	// HookPlugins is expected to be configured with enabled hook plugins
