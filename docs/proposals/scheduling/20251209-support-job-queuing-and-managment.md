@@ -24,8 +24,10 @@ In multi-tenant or batch-heavy Kubernetes environments, efficient job qu
 
 ## Goals
 
-*   Implement a declarative API (`Queue` CRD) for defining job queues with priority, capacity, and scheduling constraints.
+*   Implement a declarative API (`Queue` CRD) for defining job queues with priority.
     
+*	Implement a queue controller to manage the jobs based on queue settings. 
+
 *   Integrate with Koordinator's scheduler to enforce queue-based ordering and resource allocation.
     
 
@@ -184,9 +186,9 @@ const (
 
 Key components include:
 
-1.  **Queue Controller**: Manages lifecycle of queues and jobs.
+1.  **Queue Scheduler**: Create queues and schedule the queueUnits.
     
-2.  **Job Extensions**: Extract scheduling requirements from job to QueueUnits.
+2.  **Job Extensions**: Controllers that create, update the queueUnits and jobs.
     
 
 The architecture of Koord Queue is shown in the following figure (The light blue-filled rounded rectangle represents the part that will not be open-sourced and will be removed in community proposal):
@@ -196,6 +198,7 @@ The architecture of Koord Queue is shown in the following figure (The
 QueueUnit Controller is responsible for creating QueueUnits when the jobs are created. And resume the jobs when Queue Controller admits the QueueUnits.
 
 Resource Report Controller watch the running pods, count the real-time usage for each job and update the real-time usage to the QueueUnit status.  
+These two components can also be deployed in one controller or pod.
 
 ### Details
 
