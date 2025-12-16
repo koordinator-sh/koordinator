@@ -23,7 +23,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 )
 
 func TestGetPriorityClass(t *testing.T) {
@@ -34,7 +34,7 @@ func TestGetPriorityClass(t *testing.T) {
 		{
 			pod: &v1.Pod{
 				Spec: v1.PodSpec{
-					Priority: pointer.Int32((PriorityProdValueMin + PriorityProdValueMax) / 2),
+					Priority: ptr.To[int32]((PriorityProdValueMin + PriorityProdValueMax) / 2),
 				},
 			},
 			expected: PriorityProd,
@@ -42,7 +42,7 @@ func TestGetPriorityClass(t *testing.T) {
 		{
 			pod: &v1.Pod{
 				Spec: v1.PodSpec{
-					Priority: pointer.Int32((PriorityBatchValueMin + PriorityBatchValueMax) / 2),
+					Priority: ptr.To[int32]((PriorityBatchValueMin + PriorityBatchValueMax) / 2),
 				},
 			},
 			expected: PriorityBatch,
@@ -55,7 +55,7 @@ func TestGetPriorityClass(t *testing.T) {
 					},
 				},
 				Spec: v1.PodSpec{
-					Priority: pointer.Int32((PriorityBatchValueMin + PriorityBatchValueMax) / 2),
+					Priority: ptr.To[int32]((PriorityBatchValueMin + PriorityBatchValueMax) / 2),
 				},
 			},
 			expected: PriorityProd,
@@ -68,7 +68,7 @@ func TestGetPriorityClass(t *testing.T) {
 					},
 				},
 				Spec: v1.PodSpec{
-					Priority: pointer.Int32((PriorityBatchValueMin + PriorityBatchValueMax) / 2),
+					Priority: ptr.To[int32]((PriorityBatchValueMin + PriorityBatchValueMax) / 2),
 				},
 			},
 			expected: PriorityNone,
@@ -91,7 +91,7 @@ func TestGetPodPriorityClassWithDefault(t *testing.T) {
 		{
 			pod: &v1.Pod{
 				Spec: v1.PodSpec{
-					Priority: pointer.Int32((PriorityProdValueMin + PriorityProdValueMax) / 2),
+					Priority: ptr.To[int32]((PriorityProdValueMin + PriorityProdValueMax) / 2),
 				},
 			},
 			expected: PriorityProd,
@@ -104,7 +104,7 @@ func TestGetPodPriorityClassWithDefault(t *testing.T) {
 					},
 				},
 				Spec: v1.PodSpec{
-					Priority: pointer.Int32((PriorityBatchValueMin + PriorityBatchValueMax) / 2),
+					Priority: ptr.To[int32]((PriorityBatchValueMin + PriorityBatchValueMax) / 2),
 				},
 			},
 			expected: PriorityProd,
@@ -117,7 +117,7 @@ func TestGetPodPriorityClassWithDefault(t *testing.T) {
 					},
 				},
 				Spec: v1.PodSpec{
-					Priority: pointer.Int32((PriorityBatchValueMin + PriorityBatchValueMax) / 2),
+					Priority: ptr.To[int32]((PriorityBatchValueMin + PriorityBatchValueMax) / 2),
 				},
 			},
 			expected: PriorityBatch,
@@ -218,19 +218,19 @@ func TestGetPodPriorityValueWithDefault(t *testing.T) {
 			name: "pod has non-default priority",
 			arg: &v1.Pod{
 				Spec: v1.PodSpec{
-					Priority: pointer.Int32(PriorityBatchValueMax),
+					Priority: ptr.To[int32](PriorityBatchValueMax),
 				},
 			},
-			want: pointer.Int32(PriorityBatchValueMax),
+			want: ptr.To[int32](PriorityBatchValueMax),
 		},
 		{
 			name: "pod has non-default priority",
 			arg: &v1.Pod{
 				Spec: v1.PodSpec{
-					Priority: pointer.Int32(PriorityBatchValueMax),
+					Priority: ptr.To[int32](PriorityBatchValueMax),
 				},
 			},
-			want: pointer.Int32(PriorityBatchValueMax),
+			want: ptr.To[int32](PriorityBatchValueMax),
 		},
 		{
 			name: "get default priority pod by its class",
@@ -241,7 +241,7 @@ func TestGetPodPriorityValueWithDefault(t *testing.T) {
 					},
 				},
 			},
-			want: pointer.Int32(PriorityProdValueDefault),
+			want: ptr.To[int32](PriorityProdValueDefault),
 		},
 	}
 	for _, tt := range tests {

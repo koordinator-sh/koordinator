@@ -24,7 +24,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8sfeature "k8s.io/apiserver/pkg/util/feature"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
@@ -302,7 +302,7 @@ func TestTransformPod(t *testing.T) {
 						apiext.BatchCPU:    resource.MustParse("500"),
 						apiext.BatchMemory: resource.MustParse("2Gi"),
 					},
-					Priority:         pointer.Int32(apiext.PriorityProdValueDefault),
+					Priority:         ptr.To[int32](apiext.PriorityProdValueDefault),
 					PreemptionPolicy: apiext.GetPreemptionPolicyPtr(corev1.PreemptNever),
 				},
 			},

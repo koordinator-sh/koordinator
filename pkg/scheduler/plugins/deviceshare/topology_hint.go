@@ -21,6 +21,7 @@ import (
 	"sort"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/gengo/examples/set-gen/sets"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
@@ -31,6 +32,7 @@ import (
 
 const (
 	ErrInsufficientNUMAScopedDevices = "Insufficient NUMA Scoped Devices"
+	ErrDesignatedAllocationLackNUMA  = "Designated Allocation Lack NUMA Node ID"
 
 	defaultNUMAScore = 500
 )
@@ -59,7 +61,47 @@ func (p *Plugin) GetPodTopologyHints(ctx context.Context, cycleState *framework.
 		return nil, nil
 	}
 
+	nodeDeviceInfo.lock.RLock()
+	numaTopology := nodeDeviceInfo.numaTopology
+	nodeDeviceInfo.lock.RUnlock()
+	if state.designatedAllocation != nil {
+		return generateDesignatedHints(state.designatedAllocation, numaTopology)
+	}
+
 	return p.generateTopologyHints(cycleState, state, nodeDeviceInfo, node, pod)
+}
+
+func generateDesignatedHints(allocations apiext.DeviceAllocations, topology *NUMATopology) (map[string][]topologymanager.NUMATopologyHint, *framework.Status) {
+	hints := map[string][]topologymanager.NUMATopologyHint{}
+	numaNodes := sets.NewInt()
+	for deviceType, deviceAllocations := range allocations {
+		for _, allocation := range deviceAllocations {
+			if deviceToNodeID, ok := topology.deviceToNodeID[deviceType]; !ok {
+				return nil, framework.NewStatus(framework.Unschedulable, ErrDesignatedAllocationLackNUMA)
+
+			} else if nodeID, ok := deviceToNodeID[allocation.Minor]; !ok {
+				return nil, framework.NewStatus(framework.Unschedulable, ErrDesignatedAllocationLackNUMA)
+			} else {
+				numaNodes.Insert(nodeID)
+			}
+		}
+		hints[string(deviceType)] = nil
+	}
+	affinity, err := bitmask.NewBitMask(numaNodes.UnsortedList()...)
+	if err != nil {
+		return nil, framework.NewStatus(framework.Unschedulable, err.Error())
+	}
+	for deviceType := range allocations {
+		hints[string(deviceType)] = []topologymanager.NUMATopologyHint{
+			{
+				NUMANodeAffinity: affinity,
+				Preferred:        true,
+				Score:            defaultNUMAScore,
+				Unsatisfied:      false,
+			},
+		}
+	}
+	return hints, nil
 }
 
 func (p *Plugin) Allocate(ctx context.Context, cycleState *framework.CycleState, affinity topologymanager.NUMATopologyHint, pod *corev1.Pod, nodeName string) *framework.Status {
@@ -80,6 +122,17 @@ func (p *Plugin) Allocate(ctx context.Context, cycleState *framework.CycleState,
 		return framework.AsStatus(err)
 	}
 	node := nodeInfo.Node()
+
+	if state.designatedAllocation != nil {
+		if state.allocationResult == nil {
+			status = p.allocate(ctx, cycleState, pod, nodeInfo.Node())
+			if !status.IsSuccess() {
+				return status
+			}
+			state.allocationResult = nil
+		}
+		return nil
+	}
 
 	nodeDeviceInfo := p.nodeDeviceCache.getNodeDevice(node.Name, false)
 	if nodeDeviceInfo == nil {

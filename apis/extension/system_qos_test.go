@@ -20,7 +20,7 @@ import (
 	"reflect"
 	"testing"
 
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 )
 
 func TestGetSystemQOSResource(t *testing.T) {
@@ -70,7 +70,7 @@ func TestGetSystemQOSResource(t *testing.T) {
 			},
 			want: &SystemQOSResource{
 				CPUSet:          "0-1",
-				CPUSetExclusive: pointer.Bool(true),
+				CPUSetExclusive: ptr.To[bool](true),
 			},
 			wantErr: false,
 		},
@@ -111,7 +111,7 @@ func TestSystemQOSResource_IsCPUSetExclusive(t *testing.T) {
 			name: "exclusive is true",
 			fields: fields{
 				CPUSet:          "0-1",
-				CPUSetExclusive: pointer.Bool(true),
+				CPUSetExclusive: ptr.To[bool](true),
 			},
 			want: true,
 		},
@@ -119,7 +119,7 @@ func TestSystemQOSResource_IsCPUSetExclusive(t *testing.T) {
 			name: "exclusive is false",
 			fields: fields{
 				CPUSet:          "0-1",
-				CPUSetExclusive: pointer.Bool(false),
+				CPUSetExclusive: ptr.To[bool](false),
 			},
 			want: false,
 		},

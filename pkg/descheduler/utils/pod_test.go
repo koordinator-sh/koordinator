@@ -7,7 +7,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 )
 
 func TestGetResourceRequest(t *testing.T) {
@@ -220,7 +220,7 @@ func TestIsCriticalPriorityPod(t *testing.T) {
 			name: "critical priority pod",
 			pod: &corev1.Pod{
 				Spec: corev1.PodSpec{
-					Priority: pointer.Int32(SystemCriticalPriority),
+					Priority: ptr.To[int32](SystemCriticalPriority),
 				},
 			},
 			want: true,

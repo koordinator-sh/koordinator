@@ -505,6 +505,11 @@ func (p *Plugin) allocateWithNominatedReservation(
 		return tryAllocateIgnoreReservation(p.resourceManager, restoreState, resourceOptions, restoreState.matched, pod, node)
 	}
 
+	if len(restoreState.matched) == 0 {
+		klog.V(5).Infof("no reservation reserve numa resource or cpuset")
+		return nil, nil
+	}
+
 	rInfo := p.handle.GetReservationNominator().GetNominatedReservation(pod, node.Name)
 	if rInfo == nil {
 		if resourceOptions.requiredFromReservation {

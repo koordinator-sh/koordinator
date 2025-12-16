@@ -24,7 +24,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	podutil "k8s.io/kubernetes/pkg/api/v1/pod"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	sev1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
@@ -76,7 +76,7 @@ func CreateOrUpdateReservationOptions(job *sev1alpha1.PodMigrationJob, pod *core
 	}
 
 	// Reservation used for migration is no longer reused after consumed
-	reservationOptions.Template.Spec.AllocateOnce = pointer.Bool(true)
+	reservationOptions.Template.Spec.AllocateOnce = ptr.To[bool](true)
 	// force removed the assigned nodeName of target Pod to request new Node
 	reservationOptions.Template.Spec.Template.Spec.NodeName = ""
 

@@ -365,6 +365,135 @@ func Test_nodeDeviceCache_onPodUpdate(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "old pod without NodeName should not leak",
+			oldPod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					UID:       "123456789",
+					Namespace: "default",
+					Name:      "test",
+					Annotations: map[string]string{
+						apiext.AnnotationDeviceAllocated: `{"gpu":[{"minor":1,"resources":{"koordinator.sh/gpu-core":"60","koordinator.sh/gpu-memory":"8Gi","koordinator.sh/gpu-memory-ratio":"50"}}]}`,
+					},
+				},
+				Spec: corev1.PodSpec{
+					// NodeName is empty, pod is not assigned to a node yet
+					Containers: []corev1.Container{
+						{
+							Name: "test-container-a",
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									apiext.ResourceGPUCore:        resource.MustParse("60"),
+									apiext.ResourceGPUMemoryRatio: resource.MustParse("50"),
+									apiext.ResourceGPUMemory:      resource.MustParse("8Gi"),
+								},
+							},
+						},
+					},
+				},
+				Status: corev1.PodStatus{
+					Phase: corev1.PodPending,
+				},
+			},
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					UID:       "123456789",
+					Namespace: "default",
+					Name:      "test",
+					Annotations: map[string]string{
+						apiext.AnnotationDeviceAllocated: `{"gpu":[{"minor":1,"resources":{"koordinator.sh/gpu-core":"60","koordinator.sh/gpu-memory":"8Gi","koordinator.sh/gpu-memory-ratio":"50"}}]}`,
+					},
+				},
+				Spec: corev1.PodSpec{
+					NodeName: "test-node",
+					Containers: []corev1.Container{
+						{
+							Name: "test-container-a",
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									apiext.ResourceGPUCore:        resource.MustParse("60"),
+									apiext.ResourceGPUMemoryRatio: resource.MustParse("50"),
+									apiext.ResourceGPUMemory:      resource.MustParse("8Gi"),
+								},
+							},
+						},
+					},
+				},
+				Status: corev1.PodStatus{
+					Phase: corev1.PodRunning,
+				},
+			},
+			deviceCache: &nodeDeviceCache{
+				nodeDeviceInfos: map[string]*nodeDevice{
+					"test-node": {
+						deviceFree: map[schedulingv1alpha1.DeviceType]deviceResources{
+							schedulingv1alpha1.GPU: {
+								1: corev1.ResourceList{
+									apiext.ResourceGPUCore:        resource.MustParse("100"),
+									apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+									apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
+								},
+							},
+						},
+						deviceTotal: map[schedulingv1alpha1.DeviceType]deviceResources{
+							schedulingv1alpha1.GPU: {
+								1: corev1.ResourceList{
+									apiext.ResourceGPUCore:        resource.MustParse("100"),
+									apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+									apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
+								},
+							},
+						},
+						deviceUsed: map[schedulingv1alpha1.DeviceType]deviceResources{
+							schedulingv1alpha1.GPU: {},
+						},
+						allocateSet: make(map[schedulingv1alpha1.DeviceType]map[types.NamespacedName]deviceResources),
+					},
+				},
+			},
+			wantCache: map[string]*nodeDevice{
+				"test-node": {
+					deviceFree: map[schedulingv1alpha1.DeviceType]deviceResources{
+						schedulingv1alpha1.GPU: {
+							1: corev1.ResourceList{
+								apiext.ResourceGPUCore:        *resource.NewQuantity(40, resource.DecimalSI),
+								apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(50, resource.DecimalSI),
+								apiext.ResourceGPUMemory:      resource.MustParse("8Gi"),
+							},
+						},
+					},
+					deviceTotal: map[schedulingv1alpha1.DeviceType]deviceResources{
+						schedulingv1alpha1.GPU: {
+							1: corev1.ResourceList{
+								apiext.ResourceGPUCore:        resource.MustParse("100"),
+								apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+								apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
+							},
+						},
+					},
+					deviceUsed: map[schedulingv1alpha1.DeviceType]deviceResources{
+						schedulingv1alpha1.GPU: {
+							1: corev1.ResourceList{
+								apiext.ResourceGPUCore:        resource.MustParse("60"),
+								apiext.ResourceGPUMemoryRatio: resource.MustParse("50"),
+								apiext.ResourceGPUMemory:      resource.MustParse("8Gi"),
+							},
+						},
+					},
+					allocateSet: map[schedulingv1alpha1.DeviceType]map[types.NamespacedName]deviceResources{
+						schedulingv1alpha1.GPU: {
+							podNamespacedName: {
+								1: corev1.ResourceList{
+									apiext.ResourceGPUCore:        resource.MustParse("60"),
+									apiext.ResourceGPUMemoryRatio: resource.MustParse("50"),
+									apiext.ResourceGPUMemory:      resource.MustParse("8Gi"),
+								},
+							},
+						},
+					},
+				},
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

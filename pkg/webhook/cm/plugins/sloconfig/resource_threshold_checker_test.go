@@ -25,7 +25,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	"github.com/koordinator-sh/koordinator/apis/configuration"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
@@ -35,16 +35,16 @@ func Test_ResourceThreshold_NewChecker_InitStatus(t *testing.T) {
 	//clusterOnly
 	cfgClusterOnly := &configuration.ResourceThresholdCfg{
 		ClusterStrategy: &slov1alpha1.ResourceThresholdStrategy{
-			Enable:                      pointer.Bool(true),
-			CPUSuppressThresholdPercent: pointer.Int64(60),
+			Enable:                      ptr.To[bool](true),
+			CPUSuppressThresholdPercent: ptr.To[int64](60),
 		},
 	}
 	cfgClusterOnlyBytes, _ := json.Marshal(cfgClusterOnly)
 	//nodeSelector is empty
 	cfgHaveNodeInvalid := &configuration.ResourceThresholdCfg{
 		ClusterStrategy: &slov1alpha1.ResourceThresholdStrategy{
-			Enable:                      pointer.Bool(true),
-			CPUSuppressThresholdPercent: pointer.Int64(60),
+			Enable:                      ptr.To[bool](true),
+			CPUSuppressThresholdPercent: ptr.To[int64](60),
 		},
 		NodeStrategies: []configuration.NodeResourceThresholdStrategy{
 			{
@@ -52,8 +52,8 @@ func Test_ResourceThreshold_NewChecker_InitStatus(t *testing.T) {
 					Name: "xxx-yyy",
 				},
 				ResourceThresholdStrategy: &slov1alpha1.ResourceThresholdStrategy{
-					Enable:                      pointer.Bool(true),
-					CPUSuppressThresholdPercent: pointer.Int64(60),
+					Enable:                      ptr.To[bool](true),
+					CPUSuppressThresholdPercent: ptr.To[int64](60),
 				},
 			},
 		},
@@ -63,8 +63,8 @@ func Test_ResourceThreshold_NewChecker_InitStatus(t *testing.T) {
 	//valid node config
 	cfgHaveNodeValid := &configuration.ResourceThresholdCfg{
 		ClusterStrategy: &slov1alpha1.ResourceThresholdStrategy{
-			Enable:                      pointer.Bool(true),
-			CPUSuppressThresholdPercent: pointer.Int64(60),
+			Enable:                      ptr.To[bool](true),
+			CPUSuppressThresholdPercent: ptr.To[int64](60),
 		},
 		NodeStrategies: []configuration.NodeResourceThresholdStrategy{
 			{
@@ -77,8 +77,8 @@ func Test_ResourceThreshold_NewChecker_InitStatus(t *testing.T) {
 					},
 				},
 				ResourceThresholdStrategy: &slov1alpha1.ResourceThresholdStrategy{
-					Enable:                      pointer.Bool(true),
-					CPUSuppressThresholdPercent: pointer.Int64(60),
+					Enable:                      ptr.To[bool](true),
+					CPUSuppressThresholdPercent: ptr.To[int64](60),
 				},
 			},
 		},
@@ -229,8 +229,8 @@ func Test_ResourceThreshold_ConfigContentsValid(t *testing.T) {
 			args: args{
 				cfg: configuration.ResourceThresholdCfg{
 					ClusterStrategy: &slov1alpha1.ResourceThresholdStrategy{
-						Enable:                      pointer.Bool(true),
-						CPUSuppressThresholdPercent: pointer.Int64(-1),
+						Enable:                      ptr.To[bool](true),
+						CPUSuppressThresholdPercent: ptr.To[int64](-1),
 					},
 				},
 			},
@@ -241,7 +241,7 @@ func Test_ResourceThreshold_ConfigContentsValid(t *testing.T) {
 			args: args{
 				cfg: configuration.ResourceThresholdCfg{
 					ClusterStrategy: &slov1alpha1.ResourceThresholdStrategy{
-						CPUEvictBESatisfactionUpperPercent: pointer.Int64(102),
+						CPUEvictBESatisfactionUpperPercent: ptr.To[int64](102),
 					},
 				},
 			},
@@ -252,7 +252,7 @@ func Test_ResourceThreshold_ConfigContentsValid(t *testing.T) {
 			args: args{
 				cfg: configuration.ResourceThresholdCfg{
 					ClusterStrategy: &slov1alpha1.ResourceThresholdStrategy{
-						CPUEvictBESatisfactionLowerPercent: pointer.Int64(35),
+						CPUEvictBESatisfactionLowerPercent: ptr.To[int64](35),
 					},
 				},
 			},
@@ -263,8 +263,8 @@ func Test_ResourceThreshold_ConfigContentsValid(t *testing.T) {
 			args: args{
 				cfg: configuration.ResourceThresholdCfg{
 					ClusterStrategy: &slov1alpha1.ResourceThresholdStrategy{
-						CPUEvictBESatisfactionUpperPercent: pointer.Int64(22),
-						CPUEvictBESatisfactionLowerPercent: pointer.Int64(35),
+						CPUEvictBESatisfactionUpperPercent: ptr.To[int64](22),
+						CPUEvictBESatisfactionLowerPercent: ptr.To[int64](35),
 					},
 				},
 			},
@@ -292,8 +292,8 @@ func Test_ResourceThreshold_ConfigContentsValid(t *testing.T) {
 			args: args{
 				cfg: configuration.ResourceThresholdCfg{
 					ClusterStrategy: &slov1alpha1.ResourceThresholdStrategy{
-						Enable:                      pointer.Bool(true),
-						CPUSuppressThresholdPercent: pointer.Int64(60),
+						Enable:                      ptr.To[bool](true),
+						CPUSuppressThresholdPercent: ptr.To[int64](60),
 					},
 					NodeStrategies: []configuration.NodeResourceThresholdStrategy{
 						{
@@ -306,8 +306,8 @@ func Test_ResourceThreshold_ConfigContentsValid(t *testing.T) {
 								},
 							},
 							ResourceThresholdStrategy: &slov1alpha1.ResourceThresholdStrategy{
-								Enable:                      pointer.Bool(true),
-								CPUSuppressThresholdPercent: pointer.Int64(60),
+								Enable:                      ptr.To[bool](true),
+								CPUSuppressThresholdPercent: ptr.To[int64](60),
 							},
 						},
 					},

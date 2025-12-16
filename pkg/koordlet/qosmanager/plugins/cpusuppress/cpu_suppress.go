@@ -54,6 +54,7 @@ const (
 	beMinCPUSetCores        = 2
 	beMinQuota              = 2000
 	beMaxIncreaseCPUPercent = 0.1 // scale up slow
+	beUnsetQuota            = -1
 )
 
 type suppressPolicyStatus string
@@ -417,7 +418,7 @@ func (r *CPUSuppress) adjustByCPUSet(cpusetQuantity *resource.Quantity, nodeCPUI
 	// - for a enlargement of BE cpuset, it is welcome and costless for BE processes.
 	err = r.applyBESuppressCPUSet(beCPUSet, oldCPUSet)
 	if err != nil {
-		klog.Warningf("suppressBECPU failed to apply be cpu suppress policy, err: %s", err)
+		klog.Warningf("suppressBECPU failed to apply be cpu suppress policy, target cpuset %v, err: %s", beCPUSet, err)
 		return
 	}
 	klog.Infof("suppressBECPU finished, suppress be cpu successfully: current cpuset %v", beCPUSet)
@@ -614,19 +615,19 @@ func (r *CPUSuppress) adjustByCfsQuota(cpuQuantity *resource.Quantity, node *cor
 	}
 
 	beMaxIncreaseCPUQuota := float64(node.Status.Capacity.Cpu().Value()) * float64(system.DefaultCPUCFSPeriod) * beMaxIncreaseCPUPercent
-	if float64(newBeQuota)-float64(currentBeQuota) > beMaxIncreaseCPUQuota {
+	if float64(newBeQuota)-float64(currentBeQuota) > beMaxIncreaseCPUQuota && currentBeQuota != beUnsetQuota { // scale with steps after quota has set
 		newBeQuota = currentBeQuota + int64(beMaxIncreaseCPUQuota)
 	}
 
 	eventHelper := audit.V(3).Node().Reason(resourceexecutor.AdjustBEByNodeCPUUsage).Message("update BE group to cfs_quota: %v", newBeQuota)
 	updater, err := resourceexecutor.DefaultCgroupUpdaterFactory.New(system.CPUCFSQuotaName, beCgroupPath, strconv.FormatInt(newBeQuota, 10), eventHelper)
 	if err != nil {
-		klog.V(4).Infof("failed to get be cfs quota updater, err: %v", err)
+		klog.V(4).Infof("failed to get be cfs quota updater, target quota: %d, err: %v", newBeQuota, err)
 		return
 	}
 	isUpdated, err := r.executor.Update(false, updater)
 	if err != nil {
-		klog.Errorf("suppressBECPU: failed to write cfs_quota_us for be pods, error: %v", err)
+		klog.Errorf("suppressBECPU: failed to write cfs_quota_us for be pods, target quota: %d, error: %v", newBeQuota, err)
 		return
 	}
 	metrics.RecordBESuppressCores(string(slov1alpha1.CPUCfsQuotaPolicy), float64(newBeQuota)/float64(system.DefaultCPUCFSPeriod))

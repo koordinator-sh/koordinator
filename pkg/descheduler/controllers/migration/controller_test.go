@@ -36,7 +36,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/utils/clock"
 	fakceclock "k8s.io/utils/clock/testing"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -768,7 +768,7 @@ func TestMigrate(t *testing.T) {
 			OwnerReferences: []metav1.OwnerReference{
 				{
 					APIVersion: "apps/v1",
-					Controller: pointer.Bool(true),
+					Controller: ptr.To[bool](true),
 					Kind:       "StatefulSet",
 					Name:       "test",
 					UID:        "2f96233d-a6b9-4981-b594-7c90c987aed9",
@@ -795,7 +795,7 @@ func TestMigrate(t *testing.T) {
 						Namespace: "default",
 						OwnerReference: metav1.OwnerReference{
 							APIVersion: "apps/v1",
-							Controller: pointer.Bool(true),
+							Controller: ptr.To[bool](true),
 							Kind:       "StatefulSet",
 							Name:       "test",
 							UID:        "2f96233d-a6b9-4981-b594-7c90c987aed9",
@@ -878,7 +878,7 @@ func TestMigrateWithSamePodName(t *testing.T) {
 			OwnerReferences: []metav1.OwnerReference{
 				{
 					APIVersion: "apps/v1",
-					Controller: pointer.Bool(true),
+					Controller: ptr.To[bool](true),
 					Kind:       "StatefulSet",
 					Name:       "test",
 					UID:        "2f96233d-a6b9-4981-b594-7c90c987aed9",
@@ -906,7 +906,7 @@ func TestMigrateWithSamePodName(t *testing.T) {
 						Namespace: "default",
 						OwnerReference: metav1.OwnerReference{
 							APIVersion: "apps/v1",
-							Controller: pointer.Bool(true),
+							Controller: ptr.To[bool](true),
 							Kind:       "StatefulSet",
 							Name:       "test",
 							UID:        "2f96233d-a6b9-4981-b594-7c90c987aed9",
@@ -990,7 +990,7 @@ func TestMigrateWhenEvictingWithSucceededReservation(t *testing.T) {
 			OwnerReferences: []metav1.OwnerReference{
 				{
 					APIVersion: "apps/v1",
-					Controller: pointer.Bool(true),
+					Controller: ptr.To[bool](true),
 					Kind:       "StatefulSet",
 					Name:       "test",
 					UID:        "2f96233d-a6b9-4981-b594-7c90c987aed9",
@@ -1017,7 +1017,7 @@ func TestMigrateWhenEvictingWithSucceededReservation(t *testing.T) {
 						Namespace: "default",
 						OwnerReference: metav1.OwnerReference{
 							APIVersion: "apps/v1",
-							Controller: pointer.Bool(true),
+							Controller: ptr.To[bool](true),
 							Kind:       "StatefulSet",
 							Name:       "test",
 							UID:        "2f96233d-a6b9-4981-b594-7c90c987aed9",
@@ -1096,7 +1096,7 @@ func TestMigrateWithReservationScheduleFailed(t *testing.T) {
 			OwnerReferences: []metav1.OwnerReference{
 				{
 					APIVersion: "apps/v1",
-					Controller: pointer.Bool(true),
+					Controller: ptr.To[bool](true),
 					Kind:       "StatefulSet",
 					Name:       "test",
 					UID:        "2f96233d-a6b9-4981-b594-7c90c987aed9",
@@ -1123,7 +1123,7 @@ func TestMigrateWithReservationScheduleFailed(t *testing.T) {
 						Namespace: "default",
 						OwnerReference: metav1.OwnerReference{
 							APIVersion: "apps/v1",
-							Controller: pointer.Bool(true),
+							Controller: ptr.To[bool](true),
 							Kind:       "StatefulSet",
 							Name:       "test",
 							UID:        "2f96233d-a6b9-4981-b594-7c90c987aed9",
@@ -1187,7 +1187,7 @@ func TestMigrateWithReservationSucceeded(t *testing.T) {
 			OwnerReferences: []metav1.OwnerReference{
 				{
 					APIVersion: "apps/v1",
-					Controller: pointer.Bool(true),
+					Controller: ptr.To[bool](true),
 					Kind:       "StatefulSet",
 					Name:       "test",
 					UID:        "2f96233d-a6b9-4981-b594-7c90c987aed9",
@@ -1214,7 +1214,7 @@ func TestMigrateWithReservationSucceeded(t *testing.T) {
 						Namespace: "default",
 						OwnerReference: metav1.OwnerReference{
 							APIVersion: "apps/v1",
-							Controller: pointer.Bool(true),
+							Controller: ptr.To[bool](true),
 							Kind:       "StatefulSet",
 							Name:       "test",
 							UID:        "2f96233d-a6b9-4981-b594-7c90c987aed9",
@@ -1286,7 +1286,7 @@ func TestMigrateWithReservationExpired(t *testing.T) {
 			OwnerReferences: []metav1.OwnerReference{
 				{
 					APIVersion: "apps/v1",
-					Controller: pointer.Bool(true),
+					Controller: ptr.To[bool](true),
 					Kind:       "StatefulSet",
 					Name:       "test",
 					UID:        "2f96233d-a6b9-4981-b594-7c90c987aed9",
@@ -1313,7 +1313,7 @@ func TestMigrateWithReservationExpired(t *testing.T) {
 						Namespace: "default",
 						OwnerReference: metav1.OwnerReference{
 							APIVersion: "apps/v1",
-							Controller: pointer.Bool(true),
+							Controller: ptr.To[bool](true),
 							Kind:       "StatefulSet",
 							Name:       "test",
 							UID:        "2f96233d-a6b9-4981-b594-7c90c987aed9",
@@ -1407,7 +1407,7 @@ func TestEvict(t *testing.T) {
 			Name:      "test-pod",
 			OwnerReferences: []metav1.OwnerReference{
 				{
-					Controller: pointer.Bool(true),
+					Controller: ptr.To[bool](true),
 					Kind:       "Deployment",
 					Name:       "test",
 				},
@@ -1512,7 +1512,7 @@ func TestAllowAnnotatedPodMigrationJobPassFilter(t *testing.T) {
 			OwnerReferences: []metav1.OwnerReference{
 				{
 					APIVersion: "apps/v1",
-					Controller: pointer.Bool(true),
+					Controller: ptr.To[bool](true),
 					Kind:       "StatefulSet",
 					Name:       "test",
 					UID:        "2f96233d-a6b9-4981-b594-7c90c987aed9",
@@ -1620,7 +1620,7 @@ func TestRequeueJobIfObjectLimiterFailed(t *testing.T) {
 	ownerReferences1 := []metav1.OwnerReference{
 		{
 			APIVersion: "apps/v1",
-			Controller: pointer.Bool(true),
+			Controller: ptr.To[bool](true),
 			Kind:       "StatefulSet",
 			Name:       "test-1",
 			UID:        uuid.NewUUID(),
@@ -1628,7 +1628,7 @@ func TestRequeueJobIfObjectLimiterFailed(t *testing.T) {
 	}
 	otherOwnerReferences := metav1.OwnerReference{
 		APIVersion: "apps/v1",
-		Controller: pointer.Bool(true),
+		Controller: ptr.To[bool](true),
 		Kind:       "StatefulSet",
 		Name:       "test-2",
 		UID:        uuid.NewUUID(),
@@ -1875,7 +1875,7 @@ func TestRequeueJobIfObjectLimiterFailedWithNamespace(t *testing.T) {
 	ownerReferences1 := []metav1.OwnerReference{
 		{
 			APIVersion: "apps/v1",
-			Controller: pointer.Bool(true),
+			Controller: ptr.To[bool](true),
 			Kind:       "StatefulSet",
 			Name:       "test-1",
 			UID:        uuid.NewUUID(),

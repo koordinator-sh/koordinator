@@ -29,7 +29,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/kubernetes/scheme"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
@@ -124,7 +124,7 @@ func TestClusterColocationProfileMutatingReservation(t *testing.T) {
 						"testAnnotationA": "valueA",
 					},
 					SchedulerName:       "koordinator-scheduler",
-					KoordinatorPriority: pointer.Int32(1111),
+					KoordinatorPriority: ptr.To[int32](1111),
 					PriorityClassName:   "koordinator-prod",
 					QoSClass:            string(extension.QoSLS),
 					Patch: runtime.RawExtension{
@@ -172,7 +172,7 @@ func TestClusterColocationProfileMutatingReservation(t *testing.T) {
 							},
 							SchedulerName:     "koordinator-scheduler",
 							PriorityClassName: "koordinator-prod",
-							Priority:          pointer.Int32(extension.PriorityProdValueDefault),
+							Priority:          ptr.To[int32](extension.PriorityProdValueDefault),
 							PreemptionPolicy:  &preemptionPolicy,
 						},
 					},
@@ -226,7 +226,7 @@ func TestClusterColocationProfileMutatingReservation(t *testing.T) {
 						"testAnnotationA": "valueA",
 					},
 					SchedulerName:       "koordinator-scheduler",
-					KoordinatorPriority: pointer.Int32(1111),
+					KoordinatorPriority: ptr.To[int32](1111),
 					PriorityClassName:   "koordinator-prod",
 					QoSClass:            string(extension.QoSLS),
 					Patch: runtime.RawExtension{
@@ -273,7 +273,7 @@ func TestClusterColocationProfileMutatingReservation(t *testing.T) {
 							},
 							SchedulerName:     "koordinator-scheduler",
 							PriorityClassName: "koordinator-prod",
-							Priority:          pointer.Int32(extension.PriorityProdValueDefault),
+							Priority:          ptr.To[int32](extension.PriorityProdValueDefault),
 							PreemptionPolicy:  &preemptionPolicy,
 						},
 					},
@@ -335,13 +335,13 @@ func TestClusterColocationProfileMutatingReservation(t *testing.T) {
 					},
 					SchedulerName:       "koordinator-scheduler",
 					QoSClass:            string(extension.QoSBE),
-					KoordinatorPriority: pointer.Int32(1111),
+					KoordinatorPriority: ptr.To[int32](1111),
 					Patch: runtime.RawExtension{
 						Raw: []byte(`{"metadata":{"labels":{"test-patch-label":"patch-a"},"annotations":{"test-patch-annotation":"patch-b"}}}`),
 					},
 				},
 			},
-			percent: pointer.Int32(100),
+			percent: ptr.To[int32](100),
 			expected: &schedulingv1alpha1.Reservation{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: "default",
@@ -441,13 +441,13 @@ func TestClusterColocationProfileMutatingReservation(t *testing.T) {
 					},
 					SchedulerName:       "koordinator-scheduler",
 					QoSClass:            string(extension.QoSBE),
-					KoordinatorPriority: pointer.Int32(1111),
+					KoordinatorPriority: ptr.To[int32](1111),
 					Patch: runtime.RawExtension{
 						Raw: []byte(`{"metadata":{"labels":{"test-patch-label":"patch-a"},"annotations":{"test-patch-annotation":"patch-b"}}}`),
 					},
 				},
 			},
-			percent: pointer.Int32(0),
+			percent: ptr.To[int32](0),
 			expected: &schedulingv1alpha1.Reservation{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: "default",
@@ -539,13 +539,13 @@ func TestClusterColocationProfileMutatingReservation(t *testing.T) {
 					},
 					SchedulerName:       "koordinator-scheduler",
 					QoSClass:            string(extension.QoSBE),
-					KoordinatorPriority: pointer.Int32(1111),
+					KoordinatorPriority: ptr.To[int32](1111),
 					Patch: runtime.RawExtension{
 						Raw: []byte(`{"metadata":{"labels":{"test-patch-label":"patch-a"},"annotations":{"test-patch-annotation":"patch-b"}}}`),
 					},
 				},
 			},
-			percent: pointer.Int32(50),
+			percent: ptr.To[int32](50),
 			randIntnFn: func(i int) int {
 				return 30
 			},
@@ -659,7 +659,7 @@ func TestClusterColocationProfileMutatingReservation(t *testing.T) {
 						"annotation-key-to-load": "annotation-key-to-store",
 					},
 					QoSClass:            string(extension.QoSBE),
-					KoordinatorPriority: pointer.Int32(1111),
+					KoordinatorPriority: ptr.To[int32](1111),
 					Patch: runtime.RawExtension{
 						Raw: []byte(`{"metadata":{"labels":{"test-patch-label":"patch-a"},"annotations":{"test-patch-annotation":"patch-b"}}}`),
 					},
@@ -785,7 +785,7 @@ func TestClusterColocationProfileMutatingReservation(t *testing.T) {
 						"suffix-label-key-1": "suffix-1",
 					},
 					QoSClass:            string(extension.QoSBE),
-					KoordinatorPriority: pointer.Int32(1111),
+					KoordinatorPriority: ptr.To[int32](1111),
 					Patch: runtime.RawExtension{
 						Raw: []byte(`{"metadata":{"labels":{"test-patch-label":"patch-a"},"annotations":{"test-patch-annotation":"patch-b"}}}`),
 					},

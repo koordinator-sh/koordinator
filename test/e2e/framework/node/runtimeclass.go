@@ -21,7 +21,7 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	utilpointer "k8s.io/utils/pointer"
+	utilptr "k8s.io/utils/ptr"
 
 	imageutils "github.com/koordinator-sh/koordinator/test/utils/image"
 )
@@ -51,7 +51,7 @@ func NewRuntimeClassPod(runtimeClassName string) *v1.Pod {
 				Command: []string{"true"},
 			}},
 			RestartPolicy:                v1.RestartPolicyNever,
-			AutomountServiceAccountToken: utilpointer.Bool(false),
+			AutomountServiceAccountToken: utilptr.To[bool](false),
 		},
 	}
 }

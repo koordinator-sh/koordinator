@@ -36,7 +36,7 @@ func GetNetDevice() (metriccache.Devices, error) {
 	if err != nil {
 		return nil, fmt.Errorf("getNetDevice(): new PCI instance error, %v", err)
 	}
-	devices := pci.ListDevices()
+	devices := pci.Devices
 	if len(devices) == 0 {
 		klog.Warningf("getNetDevice(): no pci devices")
 		return nil, nil

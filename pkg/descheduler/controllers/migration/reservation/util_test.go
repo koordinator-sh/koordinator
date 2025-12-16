@@ -22,7 +22,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	sev1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
@@ -33,7 +33,7 @@ import (
 func TestCreateOrUpdateReservationOptions(t *testing.T) {
 	ownerReferences := []metav1.OwnerReference{
 		{
-			Controller: pointer.Bool(true),
+			Controller: ptr.To[bool](true),
 			Name:       "test",
 		},
 	}
@@ -63,7 +63,7 @@ func TestCreateOrUpdateReservationOptions(t *testing.T) {
 						},
 					},
 					Spec: sev1alpha1.ReservationSpec{
-						AllocateOnce: pointer.Bool(true),
+						AllocateOnce: ptr.To[bool](true),
 						Owners: []sev1alpha1.ReservationOwner{
 							{
 								Controller: &sev1alpha1.ReservationControllerReference{
@@ -137,7 +137,7 @@ func TestCreateOrUpdateReservationOptions(t *testing.T) {
 						},
 					},
 					Spec: sev1alpha1.ReservationSpec{
-						AllocateOnce: pointer.Bool(true),
+						AllocateOnce: ptr.To[bool](true),
 						Owners: []sev1alpha1.ReservationOwner{
 							{
 								Controller: &sev1alpha1.ReservationControllerReference{
@@ -224,7 +224,7 @@ func TestCreateOrUpdateReservationOptions(t *testing.T) {
 						},
 					},
 					Spec: sev1alpha1.ReservationSpec{
-						AllocateOnce: pointer.Bool(true),
+						AllocateOnce: ptr.To[bool](true),
 						Owners: []sev1alpha1.ReservationOwner{
 							{
 								Controller: &sev1alpha1.ReservationControllerReference{
@@ -318,7 +318,7 @@ func TestCreateOrUpdateReservationOptions(t *testing.T) {
 						},
 					},
 					Spec: sev1alpha1.ReservationSpec{
-						AllocateOnce: pointer.Bool(true),
+						AllocateOnce: ptr.To[bool](true),
 						Owners: []sev1alpha1.ReservationOwner{
 							{
 								Controller: &sev1alpha1.ReservationControllerReference{

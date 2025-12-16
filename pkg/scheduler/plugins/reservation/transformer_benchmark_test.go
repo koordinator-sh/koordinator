@@ -31,7 +31,7 @@ import (
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	schedulertesting "k8s.io/kubernetes/pkg/scheduler/testing"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
@@ -107,7 +107,7 @@ func BenchmarkBeforePrefilterWithMatchedPod(b *testing.B) {
 				},
 			},
 			Spec: schedulingv1alpha1.ReservationSpec{
-				AllocateOnce: pointer.Bool(false),
+				AllocateOnce: ptr.To[bool](false),
 				Owners: []schedulingv1alpha1.ReservationOwner{
 					{
 						LabelSelector: &metav1.LabelSelector{
@@ -310,7 +310,7 @@ func BenchmarkBeforePrefilterWithUnmatchedPod(b *testing.B) {
 				},
 			},
 			Spec: schedulingv1alpha1.ReservationSpec{
-				AllocateOnce: pointer.Bool(false),
+				AllocateOnce: ptr.To[bool](false),
 				Owners: []schedulingv1alpha1.ReservationOwner{
 					{
 						LabelSelector: &metav1.LabelSelector{
@@ -517,7 +517,7 @@ func BenchmarkBeforePrefilterWithMatchedPodEnableLazyReservationRestore(b *testi
 				},
 			},
 			Spec: schedulingv1alpha1.ReservationSpec{
-				AllocateOnce: pointer.Bool(false),
+				AllocateOnce: ptr.To[bool](false),
 				Owners: []schedulingv1alpha1.ReservationOwner{
 					{
 						LabelSelector: &metav1.LabelSelector{
@@ -721,7 +721,7 @@ func BenchmarkBeforePrefilterWithUnmatchedPodEnableLazyReservationRestore(b *tes
 				},
 			},
 			Spec: schedulingv1alpha1.ReservationSpec{
-				AllocateOnce: pointer.Bool(false),
+				AllocateOnce: ptr.To[bool](false),
 				Owners: []schedulingv1alpha1.ReservationOwner{
 					{
 						LabelSelector: &metav1.LabelSelector{

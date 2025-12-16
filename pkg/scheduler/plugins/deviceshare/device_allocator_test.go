@@ -30,7 +30,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/client-go/informers"
 	kubefake "k8s.io/client-go/kubernetes/fake"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
@@ -2103,8 +2103,8 @@ func Test_allocateGPU(t *testing.T) {
 	})
 	nd.deviceInfos = map[schedulingv1alpha1.DeviceType][]*schedulingv1alpha1.DeviceInfo{
 		schedulingv1alpha1.GPU: {
-			{Type: schedulingv1alpha1.GPU, Health: true, Minor: pointer.Int32(1)},
-			{Type: schedulingv1alpha1.GPU, Health: true, Minor: pointer.Int32(2)},
+			{Type: schedulingv1alpha1.GPU, Health: true, Minor: ptr.To[int32](1)},
+			{Type: schedulingv1alpha1.GPU, Health: true, Minor: ptr.To[int32](2)},
 		},
 	}
 
@@ -2212,10 +2212,10 @@ func Test_allocateGPUWithLeastAllocatedScorer(t *testing.T) {
 	})
 	nd.deviceInfos = map[schedulingv1alpha1.DeviceType][]*schedulingv1alpha1.DeviceInfo{
 		schedulingv1alpha1.GPU: {
-			{Type: schedulingv1alpha1.GPU, Health: true, Minor: pointer.Int32(1)},
-			{Type: schedulingv1alpha1.GPU, Health: true, Minor: pointer.Int32(2)},
-			{Type: schedulingv1alpha1.GPU, Health: true, Minor: pointer.Int32(3)},
-			{Type: schedulingv1alpha1.GPU, Health: true, Minor: pointer.Int32(4)},
+			{Type: schedulingv1alpha1.GPU, Health: true, Minor: ptr.To[int32](1)},
+			{Type: schedulingv1alpha1.GPU, Health: true, Minor: ptr.To[int32](2)},
+			{Type: schedulingv1alpha1.GPU, Health: true, Minor: ptr.To[int32](3)},
+			{Type: schedulingv1alpha1.GPU, Health: true, Minor: ptr.To[int32](4)},
 		},
 	}
 
@@ -2313,10 +2313,10 @@ func Test_nodeDevice_allocateGPUWithMostAllocatedScorer(t *testing.T) {
 	})
 	nd.deviceInfos = map[schedulingv1alpha1.DeviceType][]*schedulingv1alpha1.DeviceInfo{
 		schedulingv1alpha1.GPU: {
-			{Type: schedulingv1alpha1.GPU, Health: true, Minor: pointer.Int32(1)},
-			{Type: schedulingv1alpha1.GPU, Health: true, Minor: pointer.Int32(2)},
-			{Type: schedulingv1alpha1.GPU, Health: true, Minor: pointer.Int32(3)},
-			{Type: schedulingv1alpha1.GPU, Health: true, Minor: pointer.Int32(4)},
+			{Type: schedulingv1alpha1.GPU, Health: true, Minor: ptr.To[int32](1)},
+			{Type: schedulingv1alpha1.GPU, Health: true, Minor: ptr.To[int32](2)},
+			{Type: schedulingv1alpha1.GPU, Health: true, Minor: ptr.To[int32](3)},
+			{Type: schedulingv1alpha1.GPU, Health: true, Minor: ptr.To[int32](4)},
 		},
 	}
 
@@ -2488,8 +2488,8 @@ func Test_allocateGPUWithUnhealthyInstance(t *testing.T) {
 	})
 	nd.deviceInfos = map[schedulingv1alpha1.DeviceType][]*schedulingv1alpha1.DeviceInfo{
 		schedulingv1alpha1.GPU: {
-			{Type: schedulingv1alpha1.GPU, Health: true, Minor: pointer.Int32(1)},
-			{Type: schedulingv1alpha1.GPU, Health: true, Minor: pointer.Int32(2)},
+			{Type: schedulingv1alpha1.GPU, Health: true, Minor: ptr.To[int32](1)},
+			{Type: schedulingv1alpha1.GPU, Health: true, Minor: ptr.To[int32](2)},
 		},
 	}
 
@@ -2541,8 +2541,8 @@ func Test_allocateRDMA(t *testing.T) {
 	})
 	nd.deviceInfos = map[schedulingv1alpha1.DeviceType][]*schedulingv1alpha1.DeviceInfo{
 		schedulingv1alpha1.RDMA: {
-			{Type: schedulingv1alpha1.RDMA, Health: true, Minor: pointer.Int32(1)},
-			{Type: schedulingv1alpha1.RDMA, Health: true, Minor: pointer.Int32(2)},
+			{Type: schedulingv1alpha1.RDMA, Health: true, Minor: ptr.To[int32](1)},
+			{Type: schedulingv1alpha1.RDMA, Health: true, Minor: ptr.To[int32](2)},
 		},
 	}
 

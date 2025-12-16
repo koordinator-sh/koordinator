@@ -33,7 +33,7 @@ import (
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	k8spodutil "k8s.io/kubernetes/pkg/api/v1/pod"
 	resourceapi "k8s.io/kubernetes/pkg/api/v1/resource"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
@@ -71,7 +71,7 @@ var _ = SIGDescribe("DeviceShare", func() {
 			framework.ExpectNoError(err, "unable to load reservation")
 
 			targetPodLabel := "test-reserve-gpu"
-			reservation.Spec.AllocateOnce = pointer.Bool(false)
+			reservation.Spec.AllocateOnce = ptr.To[bool](false)
 			reservation.Spec.Owners = []schedulingv1alpha1.ReservationOwner{
 				{
 					LabelSelector: &metav1.LabelSelector{
@@ -176,7 +176,7 @@ var _ = SIGDescribe("DeviceShare", func() {
 			framework.ExpectNoError(err, "unable to load reservation")
 
 			targetPodLabel := "test-reserve-gpu"
-			reservation.Spec.AllocateOnce = pointer.Bool(false)
+			reservation.Spec.AllocateOnce = ptr.To[bool](false)
 			reservation.Spec.Owners = []schedulingv1alpha1.ReservationOwner{
 				{
 					LabelSelector: &metav1.LabelSelector{
@@ -303,7 +303,7 @@ var _ = SIGDescribe("DeviceShare", func() {
 				framework.ExpectNoError(err, "unable to load reservation")
 
 				targetPodLabel := "test-reserve-gpu"
-				reservation.Spec.AllocateOnce = pointer.Bool(false)
+				reservation.Spec.AllocateOnce = ptr.To[bool](false)
 				reservation.Spec.AllocatePolicy = schedulingv1alpha1.ReservationAllocatePolicyRestricted
 				reservation.Spec.Owners = []schedulingv1alpha1.ReservationOwner{
 					{
@@ -426,7 +426,7 @@ var _ = SIGDescribe("DeviceShare", func() {
 				framework.ExpectNoError(err, "unable to load reservation")
 
 				targetPodLabel := "test-reserve-gpu"
-				reservation.Spec.AllocateOnce = pointer.Bool(false)
+				reservation.Spec.AllocateOnce = ptr.To[bool](false)
 				reservation.Spec.AllocatePolicy = schedulingv1alpha1.ReservationAllocatePolicyRestricted
 				reservation.Spec.Owners = []schedulingv1alpha1.ReservationOwner{
 					{
@@ -572,7 +572,7 @@ var _ = SIGDescribe("DeviceShare", func() {
 				framework.ExpectNoError(err, "unable to load reservation")
 
 				targetPodLabel := "test-reserve-gpu"
-				reservation.Spec.AllocateOnce = pointer.Bool(false)
+				reservation.Spec.AllocateOnce = ptr.To[bool](false)
 				reservation.Spec.AllocatePolicy = schedulingv1alpha1.ReservationAllocatePolicyAligned
 				reservation.Spec.Owners = []schedulingv1alpha1.ReservationOwner{
 					{
@@ -698,7 +698,7 @@ var _ = SIGDescribe("DeviceShare", func() {
 				framework.ExpectNoError(err, "unable to load reservation")
 
 				targetPodLabel := "test-reserve-gpu"
-				reservation.Spec.AllocateOnce = pointer.Bool(false)
+				reservation.Spec.AllocateOnce = ptr.To[bool](false)
 				reservation.Spec.AllocatePolicy = schedulingv1alpha1.ReservationAllocatePolicyAligned
 				reservation.Spec.Owners = []schedulingv1alpha1.ReservationOwner{
 					{
@@ -865,7 +865,7 @@ var _ = SIGDescribe("DeviceShare", func() {
 				targetPodLabel := "test-reserve-gpu"
 				for i := 0; i < 4; i++ {
 					reservation.Name = fmt.Sprintf("algned-reservation-%d", i)
-					reservation.Spec.AllocateOnce = pointer.Bool(false)
+					reservation.Spec.AllocateOnce = ptr.To[bool](false)
 					reservation.Spec.AllocatePolicy = schedulingv1alpha1.ReservationAllocatePolicyAligned
 					reservation.Spec.Owners = []schedulingv1alpha1.ReservationOwner{
 						{

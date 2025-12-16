@@ -27,7 +27,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/uuid"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
@@ -311,7 +311,7 @@ func TestMatchReservationOwners(t *testing.T) {
 						OwnerReferences: []metav1.OwnerReference{
 							{
 								Name:       "test-sts-0",
-								Controller: pointer.Bool(true),
+								Controller: ptr.To[bool](true),
 								Kind:       "StatefulSet",
 								APIVersion: "apps/v1",
 							},
@@ -325,7 +325,7 @@ func TestMatchReservationOwners(t *testing.T) {
 								Controller: &schedulingv1alpha1.ReservationControllerReference{
 									OwnerReference: metav1.OwnerReference{
 										Name:       "test-sts-0",
-										Controller: pointer.Bool(true),
+										Controller: ptr.To[bool](true),
 									},
 									Namespace: "test",
 								},
@@ -855,7 +855,7 @@ func TestReservePod(t *testing.T) {
 					},
 				},
 			},
-			Priority: pointer.Int32(math.MaxInt32),
+			Priority: ptr.To[int32](math.MaxInt32),
 			InitContainers: []corev1.Container{
 				{
 					Name:      "test-init-container",
@@ -886,7 +886,7 @@ func TestReservePod(t *testing.T) {
 			wantReservePod: func() *corev1.Pod {
 				p := expectReservePod.DeepCopy()
 				p.Labels[apiext.LabelPodPriority] = "1000"
-				p.Spec.Priority = pointer.Int32(1000)
+				p.Spec.Priority = ptr.To[int32](1000)
 				return p
 			}(),
 		},

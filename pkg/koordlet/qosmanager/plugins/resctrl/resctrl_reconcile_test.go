@@ -27,7 +27,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
@@ -556,8 +556,8 @@ func TestResctrlReconcile_calculateAndApplyRDTL3PolicyForGroup(t *testing.T) {
 					LSClass: &slov1alpha1.ResourceQOS{
 						ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
 							ResctrlQOS: slov1alpha1.ResctrlQOS{
-								CATRangeStartPercent: pointer.Int64(0),
-								CATRangeEndPercent:   pointer.Int64(100),
+								CATRangeStartPercent: ptr.To[int64](0),
+								CATRangeEndPercent:   ptr.To[int64](100),
 							},
 						},
 					},
@@ -577,8 +577,8 @@ func TestResctrlReconcile_calculateAndApplyRDTL3PolicyForGroup(t *testing.T) {
 					BEClass: &slov1alpha1.ResourceQOS{
 						ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
 							ResctrlQOS: slov1alpha1.ResctrlQOS{
-								CATRangeStartPercent: pointer.Int64(0),
-								CATRangeEndPercent:   pointer.Int64(100),
+								CATRangeStartPercent: ptr.To[int64](0),
+								CATRangeEndPercent:   ptr.To[int64](100),
 							},
 						},
 					},
@@ -597,8 +597,8 @@ func TestResctrlReconcile_calculateAndApplyRDTL3PolicyForGroup(t *testing.T) {
 					LSClass: &slov1alpha1.ResourceQOS{
 						ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
 							ResctrlQOS: slov1alpha1.ResctrlQOS{
-								CATRangeStartPercent: pointer.Int64(0),
-								CATRangeEndPercent:   pointer.Int64(100),
+								CATRangeStartPercent: ptr.To[int64](0),
+								CATRangeEndPercent:   ptr.To[int64](100),
 							},
 						},
 					},
@@ -617,8 +617,8 @@ func TestResctrlReconcile_calculateAndApplyRDTL3PolicyForGroup(t *testing.T) {
 					LSClass: &slov1alpha1.ResourceQOS{
 						ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
 							ResctrlQOS: slov1alpha1.ResctrlQOS{
-								CATRangeStartPercent: pointer.Int64(0),
-								CATRangeEndPercent:   pointer.Int64(100),
+								CATRangeStartPercent: ptr.To[int64](0),
+								CATRangeEndPercent:   ptr.To[int64](100),
 							},
 						},
 					},
@@ -640,16 +640,16 @@ func TestResctrlReconcile_calculateAndApplyRDTL3PolicyForGroup(t *testing.T) {
 					LSClass: &slov1alpha1.ResourceQOS{
 						ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
 							ResctrlQOS: slov1alpha1.ResctrlQOS{
-								CATRangeStartPercent: pointer.Int64(10),
-								CATRangeEndPercent:   pointer.Int64(50),
+								CATRangeStartPercent: ptr.To[int64](10),
+								CATRangeEndPercent:   ptr.To[int64](50),
 							},
 						},
 					},
 					BEClass: &slov1alpha1.ResourceQOS{
 						ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
 							ResctrlQOS: slov1alpha1.ResctrlQOS{
-								CATRangeStartPercent: pointer.Int64(0),
-								CATRangeEndPercent:   pointer.Int64(100),
+								CATRangeStartPercent: ptr.To[int64](0),
+								CATRangeEndPercent:   ptr.To[int64](100),
 							},
 						},
 					},
@@ -671,16 +671,16 @@ func TestResctrlReconcile_calculateAndApplyRDTL3PolicyForGroup(t *testing.T) {
 					LSRClass: &slov1alpha1.ResourceQOS{
 						ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
 							ResctrlQOS: slov1alpha1.ResctrlQOS{
-								CATRangeStartPercent: pointer.Int64(0),
-								CATRangeEndPercent:   pointer.Int64(50),
+								CATRangeStartPercent: ptr.To[int64](0),
+								CATRangeEndPercent:   ptr.To[int64](50),
 							},
 						},
 					},
 					BEClass: &slov1alpha1.ResourceQOS{
 						ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
 							ResctrlQOS: slov1alpha1.ResctrlQOS{
-								CATRangeStartPercent: pointer.Int64(0),
-								CATRangeEndPercent:   pointer.Int64(100),
+								CATRangeStartPercent: ptr.To[int64](0),
+								CATRangeEndPercent:   ptr.To[int64](100),
 							},
 						},
 					},
@@ -702,16 +702,16 @@ func TestResctrlReconcile_calculateAndApplyRDTL3PolicyForGroup(t *testing.T) {
 					LSClass: &slov1alpha1.ResourceQOS{
 						ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
 							ResctrlQOS: slov1alpha1.ResctrlQOS{
-								CATRangeStartPercent: pointer.Int64(0),
-								CATRangeEndPercent:   pointer.Int64(100),
+								CATRangeStartPercent: ptr.To[int64](0),
+								CATRangeEndPercent:   ptr.To[int64](100),
 							},
 						},
 					},
 					BEClass: &slov1alpha1.ResourceQOS{
 						ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
 							ResctrlQOS: slov1alpha1.ResctrlQOS{
-								CATRangeStartPercent: pointer.Int64(10),
-								CATRangeEndPercent:   pointer.Int64(50),
+								CATRangeStartPercent: ptr.To[int64](10),
+								CATRangeEndPercent:   ptr.To[int64](50),
 							},
 						},
 					},
@@ -810,7 +810,7 @@ func TestResctrlReconcile_calculateAndApplyRDTMbPolicyForGroup(t *testing.T) {
 					LSClass: &slov1alpha1.ResourceQOS{
 						ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
 							ResctrlQOS: slov1alpha1.ResctrlQOS{
-								MBAPercent: pointer.Int64(90),
+								MBAPercent: ptr.To[int64](90),
 							},
 						},
 					},
@@ -830,7 +830,7 @@ func TestResctrlReconcile_calculateAndApplyRDTMbPolicyForGroup(t *testing.T) {
 					BEClass: &slov1alpha1.ResourceQOS{
 						ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
 							ResctrlQOS: slov1alpha1.ResctrlQOS{
-								MBAPercent: pointer.Int64(90),
+								MBAPercent: ptr.To[int64](90),
 							},
 						},
 					},
@@ -849,7 +849,7 @@ func TestResctrlReconcile_calculateAndApplyRDTMbPolicyForGroup(t *testing.T) {
 					LSClass: &slov1alpha1.ResourceQOS{
 						ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
 							ResctrlQOS: slov1alpha1.ResctrlQOS{
-								MBAPercent: pointer.Int64(90),
+								MBAPercent: ptr.To[int64](90),
 							},
 						},
 					},
@@ -875,7 +875,7 @@ func TestResctrlReconcile_calculateAndApplyRDTMbPolicyForGroup(t *testing.T) {
 					BEClass: &slov1alpha1.ResourceQOS{
 						ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
 							ResctrlQOS: slov1alpha1.ResctrlQOS{
-								MBAPercent: pointer.Int64(30),
+								MBAPercent: ptr.To[int64](30),
 							},
 						},
 					},
@@ -899,7 +899,7 @@ func TestResctrlReconcile_calculateAndApplyRDTMbPolicyForGroup(t *testing.T) {
 					BEClass: &slov1alpha1.ResourceQOS{
 						ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
 							ResctrlQOS: slov1alpha1.ResctrlQOS{
-								MBAPercent: pointer.Int64(100),
+								MBAPercent: ptr.To[int64](100),
 							},
 						},
 					},
@@ -918,14 +918,14 @@ func TestResctrlReconcile_calculateAndApplyRDTMbPolicyForGroup(t *testing.T) {
 					LSClass: &slov1alpha1.ResourceQOS{
 						ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
 							ResctrlQOS: slov1alpha1.ResctrlQOS{
-								MBAPercent: pointer.Int64(100),
+								MBAPercent: ptr.To[int64](100),
 							},
 						},
 					},
 					BEClass: &slov1alpha1.ResourceQOS{
 						ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
 							ResctrlQOS: slov1alpha1.ResctrlQOS{
-								MBAPercent: pointer.Int64(90),
+								MBAPercent: ptr.To[int64](90),
 							},
 						},
 					},
@@ -949,14 +949,14 @@ func TestResctrlReconcile_calculateAndApplyRDTMbPolicyForGroup(t *testing.T) {
 					LSClass: &slov1alpha1.ResourceQOS{
 						ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
 							ResctrlQOS: slov1alpha1.ResctrlQOS{
-								MBAPercent: pointer.Int64(90),
+								MBAPercent: ptr.To[int64](90),
 							},
 						},
 					},
 					BEClass: &slov1alpha1.ResourceQOS{
 						ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
 							ResctrlQOS: slov1alpha1.ResctrlQOS{
-								MBAPercent: pointer.Int64(80),
+								MBAPercent: ptr.To[int64](80),
 							},
 						},
 					},
@@ -1126,25 +1126,25 @@ func TestResctrlReconcile_reconcileRDTResctrlPolicy(t *testing.T) {
 					LSRClass: &slov1alpha1.ResourceQOS{
 						ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
 							ResctrlQOS: slov1alpha1.ResctrlQOS{
-								CATRangeStartPercent: pointer.Int64(0),
-								CATRangeEndPercent:   pointer.Int64(100),
+								CATRangeStartPercent: ptr.To[int64](0),
+								CATRangeEndPercent:   ptr.To[int64](100),
 							},
 						},
 					},
 					LSClass: &slov1alpha1.ResourceQOS{
 						ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
 							ResctrlQOS: slov1alpha1.ResctrlQOS{
-								CATRangeStartPercent: pointer.Int64(0),
-								CATRangeEndPercent:   pointer.Int64(100),
-								MBAPercent:           pointer.Int64(90),
+								CATRangeStartPercent: ptr.To[int64](0),
+								CATRangeEndPercent:   ptr.To[int64](100),
+								MBAPercent:           ptr.To[int64](90),
 							},
 						},
 					},
 					BEClass: &slov1alpha1.ResourceQOS{
 						ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
 							ResctrlQOS: slov1alpha1.ResctrlQOS{
-								CATRangeStartPercent: pointer.Int64(0),
-								CATRangeEndPercent:   pointer.Int64(50),
+								CATRangeStartPercent: ptr.To[int64](0),
+								CATRangeEndPercent:   ptr.To[int64](50),
 							},
 						},
 					},
@@ -1287,8 +1287,8 @@ func TestResctrlReconcile_reconcileResctrlGroups(t *testing.T) {
 		CgroupDir: "kubepods.slice/p1",
 	}
 	testQOSStrategy := sloconfig.DefaultResourceQOSStrategy()
-	testQOSStrategy.BEClass.ResctrlQOS.Enable = pointer.Bool(true)
-	testQOSStrategy.LSRClass.ResctrlQOS.Enable = pointer.Bool(true)
+	testQOSStrategy.BEClass.ResctrlQOS.Enable = ptr.To[bool](true)
+	testQOSStrategy.LSRClass.ResctrlQOS.Enable = ptr.To[bool](true)
 
 	t.Run("test", func(t *testing.T) {
 		// initialization
@@ -1353,24 +1353,24 @@ func TestResctrlReconcile_reconcile(t *testing.T) {
 				LSRClass: &slov1alpha1.ResourceQOS{
 					ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
 						ResctrlQOS: slov1alpha1.ResctrlQOS{
-							CATRangeStartPercent: pointer.Int64(0),
-							CATRangeEndPercent:   pointer.Int64(100),
+							CATRangeStartPercent: ptr.To[int64](0),
+							CATRangeEndPercent:   ptr.To[int64](100),
 						},
 					},
 				},
 				LSClass: &slov1alpha1.ResourceQOS{
 					ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
 						ResctrlQOS: slov1alpha1.ResctrlQOS{
-							CATRangeStartPercent: pointer.Int64(0),
-							CATRangeEndPercent:   pointer.Int64(100),
+							CATRangeStartPercent: ptr.To[int64](0),
+							CATRangeEndPercent:   ptr.To[int64](100),
 						},
 					},
 				},
 				BEClass: &slov1alpha1.ResourceQOS{
 					ResctrlQOS: &slov1alpha1.ResctrlQOSCfg{
 						ResctrlQOS: slov1alpha1.ResctrlQOS{
-							CATRangeStartPercent: pointer.Int64(0),
-							CATRangeEndPercent:   pointer.Int64(30),
+							CATRangeStartPercent: ptr.To[int64](0),
+							CATRangeEndPercent:   ptr.To[int64](30),
 						},
 					},
 				},
@@ -1486,7 +1486,7 @@ func Test_calculateMbaPercentForGroup(t *testing.T) {
 			args: args{
 				group:        "BE",
 				basicCPUInfo: extension.CPUBasicInfo{VendorID: "GenuineIntel"},
-				mbPercent:    pointer.Int64(0),
+				mbPercent:    ptr.To[int64](0),
 			},
 			want: "",
 		},
@@ -1495,7 +1495,7 @@ func Test_calculateMbaPercentForGroup(t *testing.T) {
 			args: args{
 				group:        "BE",
 				basicCPUInfo: extension.CPUBasicInfo{VendorID: "GenuineIntel"},
-				mbPercent:    pointer.Int64(101),
+				mbPercent:    ptr.To[int64](101),
 			},
 			want: "",
 		},
@@ -1504,7 +1504,7 @@ func Test_calculateMbaPercentForGroup(t *testing.T) {
 			args: args{
 				group:        "BE",
 				basicCPUInfo: extension.CPUBasicInfo{VendorID: "GenuineIntel"},
-				mbPercent:    pointer.Int64(85),
+				mbPercent:    ptr.To[int64](85),
 			},
 			want: "90",
 		},
@@ -1513,7 +1513,7 @@ func Test_calculateMbaPercentForGroup(t *testing.T) {
 			args: args{
 				group:        "BE",
 				basicCPUInfo: extension.CPUBasicInfo{VendorID: "GenuineIntel"},
-				mbPercent:    pointer.Int64(80),
+				mbPercent:    ptr.To[int64](80),
 			},
 			want: "80",
 		},
@@ -1522,7 +1522,7 @@ func Test_calculateMbaPercentForGroup(t *testing.T) {
 			args: args{
 				group:        "BE",
 				basicCPUInfo: extension.CPUBasicInfo{VendorID: system.AMD_VENDOR_ID},
-				mbPercent:    pointer.Int64(80),
+				mbPercent:    ptr.To[int64](80),
 			},
 			want: strconv.FormatInt(int64(0.8*AMDCCDMaxMBGbps), 10),
 		},
@@ -1531,7 +1531,7 @@ func Test_calculateMbaPercentForGroup(t *testing.T) {
 			args: args{
 				group:        "BE",
 				basicCPUInfo: extension.CPUBasicInfo{VendorID: system.AMD_VENDOR_ID},
-				mbPercent:    pointer.Int64(100),
+				mbPercent:    ptr.To[int64](100),
 			},
 			want: AMDCCDUnlimitedMB,
 		},

@@ -20,7 +20,6 @@ import (
 	"errors"
 	"fmt"
 	"sort"
-	"strings"
 	"sync"
 	"time"
 
@@ -33,6 +32,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor/devices/helper"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 )
 
 type gpuDeviceManager struct {
@@ -91,18 +91,16 @@ func (g *gpuDeviceManager) shutdown() error {
 }
 
 func (g *gpuDeviceManager) initGPUData() error {
-	count, ret := nvml.DeviceGetCount()
-	if ret != nvml.SUCCESS {
-		return fmt.Errorf("unable to get device count: %v", nvml.ErrorString(ret))
-	}
+	pciBusIDs := system.GetGPUDevicePCIBusIDs()
+	count := len(pciBusIDs)
 	if count == 0 {
 		return errors.New("no gpu device found")
 	}
 	devices := make([]*device, count)
-	for deviceIndex := 0; deviceIndex < count; deviceIndex++ {
-		gpudevice, ret := nvml.DeviceGetHandleByIndex(deviceIndex)
+	for _, busID := range pciBusIDs {
+		gpudevice, ret := nvml.DeviceGetHandleByPciBusId(busID)
 		if ret != nvml.SUCCESS {
-			return fmt.Errorf("unable to get device at index %d: %v", deviceIndex, nvml.ErrorString(ret))
+			return fmt.Errorf("unable to get device at pciBusID %s: %v", busID, nvml.ErrorString(ret))
 		}
 
 		uuid, ret := gpudevice.GetUUID()
@@ -119,17 +117,12 @@ func (g *gpuDeviceManager) initGPUData() error {
 		if ret != nvml.SUCCESS {
 			return fmt.Errorf("unable to get device memory info: %v", nvml.ErrorString(ret))
 		}
-		pciInfo, ret := gpudevice.GetPciInfo()
+
+		deviceIndex, ret := gpudevice.GetIndex()
 		if ret != nvml.SUCCESS {
-			return fmt.Errorf("unable to get pci info: %v", nvml.ErrorString(ret))
+			return fmt.Errorf("unable to get device index: %v", nvml.ErrorString(ret))
 		}
-		busIDBuilder := &strings.Builder{}
-		for _, v := range pciInfo.BusIdLegacy {
-			if v != 0 {
-				busIDBuilder.WriteByte(byte(v))
-			}
-		}
-		busID := strings.ToLower(busIDBuilder.String())
+
 		nodeID, pcie, busID, err := helper.ParsePCIInfo(busID)
 		if err != nil {
 			return err

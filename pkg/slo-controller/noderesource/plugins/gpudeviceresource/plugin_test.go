@@ -28,7 +28,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -61,12 +61,12 @@ func TestPlugin(t *testing.T) {
 
 func TestPluginNeedSync(t *testing.T) {
 	testStrategy := &configuration.ColocationStrategy{
-		Enable:                        pointer.Bool(true),
-		CPUReclaimThresholdPercent:    pointer.Int64(65),
-		MemoryReclaimThresholdPercent: pointer.Int64(65),
-		DegradeTimeMinutes:            pointer.Int64(15),
-		UpdateTimeThresholdSeconds:    pointer.Int64(300),
-		ResourceDiffThreshold:         pointer.Float64(0.1),
+		Enable:                        ptr.To[bool](true),
+		CPUReclaimThresholdPercent:    ptr.To[int64](65),
+		MemoryReclaimThresholdPercent: ptr.To[int64](65),
+		DegradeTimeMinutes:            ptr.To[int64](15),
+		UpdateTimeThresholdSeconds:    ptr.To[int64](300),
+		ResourceDiffThreshold:         ptr.To[float64](0.1),
 	}
 	testNodeWithoutDevice := &corev1.Node{
 		ObjectMeta: metav1.ObjectMeta{
@@ -619,7 +619,7 @@ func TestPluginCalculate(t *testing.T) {
 			Devices: []schedulingv1alpha1.DeviceInfo{
 				{
 					UUID:   "1",
-					Minor:  pointer.Int32(0),
+					Minor:  ptr.To[int32](0),
 					Health: true,
 					Type:   schedulingv1alpha1.GPU,
 					Resources: map[corev1.ResourceName]resource.Quantity{
@@ -630,7 +630,7 @@ func TestPluginCalculate(t *testing.T) {
 				},
 				{
 					UUID:   "2",
-					Minor:  pointer.Int32(1),
+					Minor:  ptr.To[int32](1),
 					Health: true,
 					Type:   schedulingv1alpha1.GPU,
 					Resources: map[corev1.ResourceName]resource.Quantity{
@@ -654,7 +654,7 @@ func TestPluginCalculate(t *testing.T) {
 			Devices: []schedulingv1alpha1.DeviceInfo{
 				{
 					UUID:   "1",
-					Minor:  pointer.Int32(0),
+					Minor:  ptr.To[int32](0),
 					Health: true,
 					Type:   schedulingv1alpha1.GPU,
 					Resources: map[corev1.ResourceName]resource.Quantity{
@@ -667,7 +667,7 @@ func TestPluginCalculate(t *testing.T) {
 				},
 				{
 					UUID:   "2",
-					Minor:  pointer.Int32(1),
+					Minor:  ptr.To[int32](1),
 					Health: true,
 					Type:   schedulingv1alpha1.GPU,
 					Resources: map[corev1.ResourceName]resource.Quantity{
@@ -690,7 +690,7 @@ func TestPluginCalculate(t *testing.T) {
 			Devices: []schedulingv1alpha1.DeviceInfo{
 				{
 					UUID:   "1",
-					Minor:  pointer.Int32(0),
+					Minor:  ptr.To[int32](0),
 					Health: true,
 					Type:   schedulingv1alpha1.GPU,
 					Resources: map[corev1.ResourceName]resource.Quantity{
@@ -701,7 +701,7 @@ func TestPluginCalculate(t *testing.T) {
 				},
 				{
 					UUID:   "2",
-					Minor:  pointer.Int32(1),
+					Minor:  ptr.To[int32](1),
 					Health: true,
 					Type:   schedulingv1alpha1.GPU,
 					Resources: map[corev1.ResourceName]resource.Quantity{
@@ -724,7 +724,7 @@ func TestPluginCalculate(t *testing.T) {
 			Devices: []schedulingv1alpha1.DeviceInfo{
 				{
 					UUID:   "1",
-					Minor:  pointer.Int32(0),
+					Minor:  ptr.To[int32](0),
 					Health: true,
 					Type:   schedulingv1alpha1.GPU,
 					Resources: map[corev1.ResourceName]resource.Quantity{
@@ -735,7 +735,7 @@ func TestPluginCalculate(t *testing.T) {
 				},
 				{
 					UUID:   "2",
-					Minor:  pointer.Int32(1),
+					Minor:  ptr.To[int32](1),
 					Health: true,
 					Type:   schedulingv1alpha1.GPU,
 					Resources: map[corev1.ResourceName]resource.Quantity{
@@ -1485,7 +1485,7 @@ func Test_cleanupGPUNodeResource(t *testing.T) {
 			Devices: []schedulingv1alpha1.DeviceInfo{
 				{
 					UUID:   "1",
-					Minor:  pointer.Int32(0),
+					Minor:  ptr.To[int32](0),
 					Health: true,
 					Type:   schedulingv1alpha1.GPU,
 					Resources: map[corev1.ResourceName]resource.Quantity{
@@ -1496,7 +1496,7 @@ func Test_cleanupGPUNodeResource(t *testing.T) {
 				},
 				{
 					UUID:   "2",
-					Minor:  pointer.Int32(1),
+					Minor:  ptr.To[int32](1),
 					Health: true,
 					Type:   schedulingv1alpha1.GPU,
 					Resources: map[corev1.ResourceName]resource.Quantity{

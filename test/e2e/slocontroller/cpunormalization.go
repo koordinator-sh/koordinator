@@ -30,7 +30,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clientset "k8s.io/client-go/kubernetes"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	"github.com/koordinator-sh/koordinator/apis/configuration"
 	"github.com/koordinator-sh/koordinator/apis/extension"
@@ -42,10 +42,10 @@ import (
 
 var (
 	defaultCPUModelRatioCfg = configuration.ModelRatioCfg{
-		BaseRatio:                    pointer.Float64(1.5),
-		TurboEnabledRatio:            pointer.Float64(1.65),
-		HyperThreadEnabledRatio:      pointer.Float64(1.0),
-		HyperThreadTurboEnabledRatio: pointer.Float64(1.1),
+		BaseRatio:                    ptr.To[float64](1.5),
+		TurboEnabledRatio:            ptr.To[float64](1.65),
+		HyperThreadEnabledRatio:      ptr.To[float64](1.0),
+		HyperThreadTurboEnabledRatio: ptr.To[float64](1.1),
 	}
 
 	ratioDiffEpsilon                     = 0.01
@@ -327,7 +327,7 @@ func makeCPUNormalizationStrategyForModels(cpuModels []*extension.CPUBasicInfo) 
 	}
 
 	return &configuration.CPUNormalizationStrategy{
-		Enable:     pointer.Bool(true),
+		Enable:     ptr.To[bool](true),
 		RatioModel: ratioModel,
 	}
 }

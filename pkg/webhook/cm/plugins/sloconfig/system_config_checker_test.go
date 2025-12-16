@@ -26,7 +26,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	"github.com/koordinator-sh/koordinator/apis/configuration"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
@@ -36,9 +36,9 @@ func Test_SystemConfig_InitConfig(t *testing.T) {
 	//clusterOnly
 	cfgClusterOnly := &configuration.SystemCfg{
 		ClusterStrategy: &slov1alpha1.SystemStrategy{
-			MinFreeKbytesFactor:   pointer.Int64(100),
-			WatermarkScaleFactor:  pointer.Int64(150),
-			MemcgReapBackGround:   pointer.Int64(0),
+			MinFreeKbytesFactor:   ptr.To[int64](100),
+			WatermarkScaleFactor:  ptr.To[int64](150),
+			MemcgReapBackGround:   ptr.To[int64](0),
 			TotalNetworkBandwidth: resource.MustParse("0"),
 		},
 	}
@@ -46,9 +46,9 @@ func Test_SystemConfig_InitConfig(t *testing.T) {
 	//nodeSelector is empty
 	cfgHaveNodeInvalid := &configuration.SystemCfg{
 		ClusterStrategy: &slov1alpha1.SystemStrategy{
-			MinFreeKbytesFactor:   pointer.Int64(100),
-			WatermarkScaleFactor:  pointer.Int64(150),
-			MemcgReapBackGround:   pointer.Int64(0),
+			MinFreeKbytesFactor:   ptr.To[int64](100),
+			WatermarkScaleFactor:  ptr.To[int64](150),
+			MemcgReapBackGround:   ptr.To[int64](0),
 			TotalNetworkBandwidth: resource.MustParse("0"),
 		},
 		NodeStrategies: []configuration.NodeSystemStrategy{
@@ -57,9 +57,9 @@ func Test_SystemConfig_InitConfig(t *testing.T) {
 					Name: "xxx-yyy",
 				},
 				SystemStrategy: &slov1alpha1.SystemStrategy{
-					MinFreeKbytesFactor:   pointer.Int64(100),
-					WatermarkScaleFactor:  pointer.Int64(150),
-					MemcgReapBackGround:   pointer.Int64(0),
+					MinFreeKbytesFactor:   ptr.To[int64](100),
+					WatermarkScaleFactor:  ptr.To[int64](150),
+					MemcgReapBackGround:   ptr.To[int64](0),
 					TotalNetworkBandwidth: resource.MustParse("0"),
 				},
 			},
@@ -70,9 +70,9 @@ func Test_SystemConfig_InitConfig(t *testing.T) {
 	//valid node config
 	cfgHaveNodeValid := &configuration.SystemCfg{
 		ClusterStrategy: &slov1alpha1.SystemStrategy{
-			MinFreeKbytesFactor:   pointer.Int64(100),
-			WatermarkScaleFactor:  pointer.Int64(150),
-			MemcgReapBackGround:   pointer.Int64(0),
+			MinFreeKbytesFactor:   ptr.To[int64](100),
+			WatermarkScaleFactor:  ptr.To[int64](150),
+			MemcgReapBackGround:   ptr.To[int64](0),
 			TotalNetworkBandwidth: resource.MustParse("0"),
 		},
 		NodeStrategies: []configuration.NodeSystemStrategy{
@@ -86,9 +86,9 @@ func Test_SystemConfig_InitConfig(t *testing.T) {
 					},
 				},
 				SystemStrategy: &slov1alpha1.SystemStrategy{
-					MinFreeKbytesFactor:   pointer.Int64(100),
-					WatermarkScaleFactor:  pointer.Int64(150),
-					MemcgReapBackGround:   pointer.Int64(1),
+					MinFreeKbytesFactor:   ptr.To[int64](100),
+					WatermarkScaleFactor:  ptr.To[int64](150),
+					MemcgReapBackGround:   ptr.To[int64](1),
 					TotalNetworkBandwidth: resource.MustParse("0"),
 				},
 			},
@@ -240,7 +240,7 @@ func Test_SystemConfig_ConfigContentsValid(t *testing.T) {
 			args: args{
 				cfg: configuration.SystemCfg{
 					ClusterStrategy: &slov1alpha1.SystemStrategy{
-						MinFreeKbytesFactor: pointer.Int64(-1),
+						MinFreeKbytesFactor: ptr.To[int64](-1),
 					},
 				},
 			},
@@ -251,7 +251,7 @@ func Test_SystemConfig_ConfigContentsValid(t *testing.T) {
 			args: args{
 				cfg: configuration.SystemCfg{
 					ClusterStrategy: &slov1alpha1.SystemStrategy{
-						WatermarkScaleFactor: pointer.Int64(0),
+						WatermarkScaleFactor: ptr.To[int64](0),
 					},
 				},
 			},
@@ -262,7 +262,7 @@ func Test_SystemConfig_ConfigContentsValid(t *testing.T) {
 			args: args{
 				cfg: configuration.SystemCfg{
 					ClusterStrategy: &slov1alpha1.SystemStrategy{
-						MemcgReapBackGround: pointer.Int64(-1),
+						MemcgReapBackGround: ptr.To[int64](-1),
 					},
 				},
 			},
@@ -290,8 +290,8 @@ func Test_SystemConfig_ConfigContentsValid(t *testing.T) {
 			args: args{
 				cfg: configuration.SystemCfg{
 					ClusterStrategy: &slov1alpha1.SystemStrategy{
-						MinFreeKbytesFactor:  pointer.Int64(100),
-						WatermarkScaleFactor: pointer.Int64(150),
+						MinFreeKbytesFactor:  ptr.To[int64](100),
+						WatermarkScaleFactor: ptr.To[int64](150),
 					},
 					NodeStrategies: []configuration.NodeSystemStrategy{
 						{
@@ -304,9 +304,9 @@ func Test_SystemConfig_ConfigContentsValid(t *testing.T) {
 								},
 							},
 							SystemStrategy: &slov1alpha1.SystemStrategy{
-								MinFreeKbytesFactor:  pointer.Int64(100),
-								WatermarkScaleFactor: pointer.Int64(150),
-								MemcgReapBackGround:  pointer.Int64(1),
+								MinFreeKbytesFactor:  ptr.To[int64](100),
+								WatermarkScaleFactor: ptr.To[int64](150),
+								MemcgReapBackGround:  ptr.To[int64](1),
 							},
 						},
 					},
