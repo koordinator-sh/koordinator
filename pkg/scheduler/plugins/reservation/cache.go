@@ -34,7 +34,9 @@ type reservationCache struct {
 	reservationLister  schedulinglister.ReservationLister
 	lock               sync.RWMutex
 	reservationInfos   map[types.UID]*frameworkext.ReservationInfo
-	reservationsOnNode map[string]map[types.UID]struct{}
+	reservationsOnNode map[string]map[types.UID]struct{} // all reservations on node
+	matchableOnNode    map[string]map[types.UID]struct{} // look up available reservations on node
+	allocatedOnNode    map[string]map[types.UID]struct{} // look up allocated available reservations on node
 }
 
 func newReservationCache(reservationLister schedulinglister.ReservationLister) *reservationCache {
@@ -42,6 +44,8 @@ func newReservationCache(reservationLister schedulinglister.ReservationLister) *
 		reservationLister:  reservationLister,
 		reservationInfos:   map[types.UID]*frameworkext.ReservationInfo{},
 		reservationsOnNode: map[string]map[types.UID]struct{}{},
+		matchableOnNode:    map[string]map[types.UID]struct{}{},
+		allocatedOnNode:    map[string]map[types.UID]struct{}{},
 	}
 	return cache
 }
@@ -88,8 +92,37 @@ func (cache *reservationCache) updateReservation(newR *schedulingv1alpha1.Reserv
 	} else {
 		rInfo.UpdateReservation(newR)
 	}
-	if newR.Status.NodeName != "" {
-		cache.updateReservationsOnNode(newR.Status.NodeName, newR.UID)
+	uid := newR.UID
+	if nodeName := newR.Status.NodeName; nodeName != "" {
+		cache.updateReservationsOnNode(nodeName, uid)
+		// refresh matchable and allocated
+		if rInfo.IsMatchable() { // matchable
+			if cache.matchableOnNode[nodeName] == nil {
+				cache.matchableOnNode[nodeName] = map[types.UID]struct{}{}
+			}
+			cache.matchableOnNode[nodeName][uid] = struct{}{}
+			if rInfo.GetAllocatedPods() > 0 { // allocated
+				if cache.allocatedOnNode[nodeName] == nil {
+					cache.allocatedOnNode[nodeName] = map[types.UID]struct{}{}
+				}
+				cache.allocatedOnNode[nodeName][uid] = struct{}{}
+			} else if cache.allocatedOnNode[nodeName] != nil {
+				delete(cache.allocatedOnNode[nodeName], uid)
+			}
+		} else { // not matchable, neither allocated
+			if cache.matchableOnNode[nodeName] != nil {
+				delete(cache.matchableOnNode[nodeName], uid)
+				if len(cache.matchableOnNode[nodeName]) == 0 {
+					delete(cache.matchableOnNode, nodeName)
+				}
+			}
+			if cache.allocatedOnNode[nodeName] != nil {
+				delete(cache.allocatedOnNode[nodeName], uid)
+				if len(cache.allocatedOnNode[nodeName]) == 0 {
+					delete(cache.allocatedOnNode, nodeName)
+				}
+			}
+		}
 	}
 }
 
@@ -108,9 +141,24 @@ func (cache *reservationCache) updateReservationIfExists(newR *schedulingv1alpha
 func (cache *reservationCache) DeleteReservation(r *schedulingv1alpha1.Reservation) *frameworkext.ReservationInfo {
 	cache.lock.Lock()
 	defer cache.lock.Unlock()
-	rInfo := cache.reservationInfos[r.UID]
-	delete(cache.reservationInfos, r.UID)
-	cache.deleteReservationOnNode(r.Status.NodeName, r.UID)
+	uid := r.UID
+	rInfo := cache.reservationInfos[uid]
+	delete(cache.reservationInfos, uid)
+	nodeName := r.Status.NodeName
+	cache.deleteReservationOnNode(nodeName, uid)
+	// refresh matchable and allocated
+	if cache.matchableOnNode[nodeName] != nil {
+		delete(cache.matchableOnNode[nodeName], uid)
+		if len(cache.matchableOnNode[nodeName]) == 0 {
+			delete(cache.matchableOnNode, nodeName)
+		}
+	}
+	if cache.allocatedOnNode[nodeName] != nil {
+		delete(cache.allocatedOnNode[nodeName], uid)
+		if len(cache.allocatedOnNode[nodeName]) == 0 {
+			delete(cache.allocatedOnNode, nodeName)
+		}
+	}
 	return rInfo
 }
 
@@ -124,9 +172,6 @@ func (cache *reservationCache) updateReservationOperatingPod(newPod *corev1.Pod,
 	} else {
 		rInfo.UpdatePod(newPod)
 	}
-	if newPod.Spec.NodeName != "" {
-		cache.updateReservationsOnNode(newPod.Spec.NodeName, newPod.UID)
-	}
 	if currentOwner != nil {
 		rInfo.AddAssignedPod(&corev1.Pod{
 			ObjectMeta: metav1.ObjectMeta{
@@ -136,13 +181,60 @@ func (cache *reservationCache) updateReservationOperatingPod(newPod *corev1.Pod,
 			},
 		})
 	}
+	uid := newPod.UID
+	if nodeName := newPod.Spec.NodeName; nodeName != "" {
+		cache.updateReservationsOnNode(nodeName, uid)
+		// refresh matchable and allocated
+		if rInfo.IsMatchable() { // matchable
+			if cache.matchableOnNode[nodeName] == nil {
+				cache.matchableOnNode[nodeName] = map[types.UID]struct{}{}
+			}
+			cache.matchableOnNode[nodeName][uid] = struct{}{}
+			if rInfo.GetAllocatedPods() > 0 { // allocated
+				if cache.allocatedOnNode[nodeName] == nil {
+					cache.allocatedOnNode[nodeName] = map[types.UID]struct{}{}
+				}
+				cache.allocatedOnNode[nodeName][uid] = struct{}{}
+			} else if cache.allocatedOnNode[nodeName] != nil {
+				delete(cache.allocatedOnNode[nodeName], uid)
+			}
+		} else { // not matchable, neither allocated
+			if cache.matchableOnNode[nodeName] != nil {
+				delete(cache.matchableOnNode[nodeName], uid)
+				if len(cache.matchableOnNode[nodeName]) == 0 {
+					delete(cache.matchableOnNode, nodeName)
+				}
+			}
+			if cache.allocatedOnNode[nodeName] != nil {
+				delete(cache.allocatedOnNode[nodeName], uid)
+				if len(cache.allocatedOnNode[nodeName]) == 0 {
+					delete(cache.allocatedOnNode, nodeName)
+				}
+			}
+		}
+	}
 }
 
 func (cache *reservationCache) deleteReservationOperatingPod(pod *corev1.Pod) {
 	cache.lock.Lock()
 	defer cache.lock.Unlock()
-	delete(cache.reservationInfos, pod.UID)
-	cache.deleteReservationOnNode(pod.Spec.NodeName, pod.UID)
+	uid := pod.UID
+	delete(cache.reservationInfos, uid)
+	nodeName := pod.Spec.NodeName
+	cache.deleteReservationOnNode(nodeName, uid)
+	// refresh matchable and allocated
+	if cache.matchableOnNode[nodeName] != nil {
+		delete(cache.matchableOnNode[nodeName], uid)
+		if len(cache.matchableOnNode[nodeName]) == 0 {
+			delete(cache.matchableOnNode, nodeName)
+		}
+	}
+	if cache.allocatedOnNode[nodeName] != nil {
+		delete(cache.allocatedOnNode[nodeName], uid)
+		if len(cache.allocatedOnNode[nodeName]) == 0 {
+			delete(cache.allocatedOnNode, nodeName)
+		}
+	}
 }
 
 func (cache *reservationCache) assumePod(reservationUID types.UID, pod *corev1.Pod) error {
@@ -165,6 +257,16 @@ func (cache *reservationCache) addPod(reservationUID types.UID, pod *corev1.Pod)
 		return fmt.Errorf("target reservation is terminating")
 	}
 	rInfo.AddAssignedPod(pod)
+	// update allocated cache
+	if rInfo.IsMatchable() && rInfo.GetAllocatedPods() > 0 {
+		nodeName := rInfo.GetNodeName()
+		if nodeName != "" {
+			if cache.allocatedOnNode[nodeName] == nil {
+				cache.allocatedOnNode[nodeName] = map[types.UID]struct{}{}
+			}
+			cache.allocatedOnNode[nodeName][reservationUID] = struct{}{}
+		}
+	}
 	return nil
 }
 
@@ -175,10 +277,30 @@ func (cache *reservationCache) updatePod(oldReservationUID, newReservationUID ty
 	oldRInfo := cache.reservationInfos[oldReservationUID]
 	if oldRInfo != nil && oldPod != nil {
 		oldRInfo.RemoveAssignedPod(oldPod)
+		// update allocated cache for old reservation
+		if oldRInfo.GetAllocatedPods() == 0 {
+			nodeName := oldRInfo.GetNodeName()
+			if nodeName != "" && cache.allocatedOnNode[nodeName] != nil {
+				delete(cache.allocatedOnNode[nodeName], oldReservationUID)
+				if len(cache.allocatedOnNode[nodeName]) == 0 {
+					delete(cache.allocatedOnNode, nodeName)
+				}
+			}
+		}
 	}
 	newRInfo := cache.reservationInfos[newReservationUID]
 	if newRInfo != nil && newPod != nil {
 		newRInfo.AddAssignedPod(newPod)
+		// update allocated cache for new reservation
+		if newRInfo.IsMatchable() && newRInfo.GetAllocatedPods() > 0 {
+			nodeName := newRInfo.GetNodeName()
+			if nodeName != "" {
+				if cache.allocatedOnNode[nodeName] == nil {
+					cache.allocatedOnNode[nodeName] = map[types.UID]struct{}{}
+				}
+				cache.allocatedOnNode[nodeName][newReservationUID] = struct{}{}
+			}
+		}
 	}
 }
 
@@ -189,6 +311,16 @@ func (cache *reservationCache) deletePod(reservationUID types.UID, pod *corev1.P
 	rInfo := cache.reservationInfos[reservationUID]
 	if rInfo != nil {
 		rInfo.RemoveAssignedPod(pod)
+		// update allocated cache
+		if rInfo.GetAllocatedPods() == 0 {
+			nodeName := rInfo.GetNodeName()
+			if nodeName != "" && cache.allocatedOnNode[nodeName] != nil {
+				delete(cache.allocatedOnNode[nodeName], reservationUID)
+				if len(cache.allocatedOnNode[nodeName]) == 0 {
+					delete(cache.allocatedOnNode, nodeName)
+				}
+			}
+		}
 	}
 }
 
@@ -212,7 +344,8 @@ func (cache *reservationCache) getReservationInfoByUID(uid types.UID) *framework
 
 func (cache *reservationCache) GetReservationInfoByPod(pod *corev1.Pod, nodeName string) *frameworkext.ReservationInfo {
 	var target *frameworkext.ReservationInfo
-	cache.forEachAvailableReservationOnNode(nodeName, func(rInfo *frameworkext.ReservationInfo) (bool, *framework.Status) {
+	// TODO: fast lookup pods assigned to reservations
+	cache.ForEachMatchableReservationOnNode(nodeName, func(rInfo *frameworkext.ReservationInfo) (bool, *framework.Status) {
 		if _, ok := rInfo.AssignedPods[pod.UID]; ok {
 			target = rInfo
 			return false, nil
@@ -222,7 +355,60 @@ func (cache *reservationCache) GetReservationInfoByPod(pod *corev1.Pod, nodeName
 	return target
 }
 
-func (cache *reservationCache) forEachAvailableReservationOnNode(nodeName string, fn func(rInfo *frameworkext.ReservationInfo) (bool, *framework.Status)) *framework.Status {
+func (cache *reservationCache) ListAllNodes(matchable bool) []string {
+	// list a subset of nodes which has any available reservations.
+	// If matchable = false, we suppose the caller wants only the available reservations with allocated pods.
+	// If matchable = true, where the caller can match any available reservations, we return nodes having available reservations.
+	// To efficiently implement this, we may need to maintain two maps: one for allocated reservations and one for available reservations.
+	cache.lock.RLock()
+	defer cache.lock.RUnlock()
+	if len(cache.matchableOnNode) == 0 {
+		return nil
+	}
+	if matchable {
+		nodes := make([]string, 0, len(cache.matchableOnNode))
+		for k := range cache.matchableOnNode {
+			nodes = append(nodes, k)
+		}
+		return nodes
+	}
+	nodes := make([]string, 0, len(cache.allocatedOnNode))
+	for k := range cache.allocatedOnNode {
+		nodes = append(nodes, k)
+	}
+	return nodes
+}
+
+func (cache *reservationCache) ForEachMatchableReservationOnNode(nodeName string, fn func(rInfo *frameworkext.ReservationInfo) (bool, *framework.Status)) *framework.Status {
+	cache.lock.RLock()
+	defer cache.lock.RUnlock()
+	rOnNode := cache.matchableOnNode[nodeName]
+	if len(rOnNode) == 0 {
+		return nil
+	}
+	for uid := range rOnNode {
+		rInfo := cache.reservationInfos[uid]
+		beContinue, status := fn(rInfo)
+		if !status.IsSuccess() {
+			return status
+		}
+		if !beContinue {
+			return nil
+		}
+	}
+	return nil
+}
+
+func (cache *reservationCache) ListAvailableReservationInfosOnNode(nodeName string, listAll bool) []*frameworkext.ReservationInfo {
+	var result []*frameworkext.ReservationInfo
+	if !listAll {
+		cache.ForEachMatchableReservationOnNode(nodeName, func(rInfo *frameworkext.ReservationInfo) (bool, *framework.Status) {
+			result = append(result, rInfo.Clone())
+			return true, nil
+		})
+		return result
+	}
+
 	cache.lock.RLock()
 	defer cache.lock.RUnlock()
 	rOnNode := cache.reservationsOnNode[nodeName]
@@ -231,37 +417,9 @@ func (cache *reservationCache) forEachAvailableReservationOnNode(nodeName string
 	}
 	for uid := range rOnNode {
 		rInfo := cache.reservationInfos[uid]
-		if rInfo != nil && rInfo.IsAvailable() {
-			beContinue, status := fn(rInfo)
-			if !status.IsSuccess() {
-				return status
-			}
-			if !beContinue {
-				return nil
-			}
+		if rInfo != nil {
+			result = append(result, rInfo.Clone())
 		}
 	}
-	return nil
-}
-
-func (cache *reservationCache) listAvailableReservationInfosOnNode(nodeName string) []*frameworkext.ReservationInfo {
-	var result []*frameworkext.ReservationInfo
-	cache.forEachAvailableReservationOnNode(nodeName, func(rInfo *frameworkext.ReservationInfo) (bool, *framework.Status) {
-		result = append(result, rInfo.Clone())
-		return true, nil
-	})
 	return result
-}
-
-func (cache *reservationCache) listAllNodes() []string {
-	cache.lock.RLock()
-	defer cache.lock.RUnlock()
-	if len(cache.reservationsOnNode) == 0 {
-		return nil
-	}
-	nodes := make([]string, 0, len(cache.reservationsOnNode))
-	for k := range cache.reservationsOnNode {
-		nodes = append(nodes, k)
-	}
-	return nodes
 }
