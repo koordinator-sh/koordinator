@@ -23,6 +23,7 @@ import (
 	"sync/atomic"
 
 	"github.com/gin-gonic/gin"
+	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler"
 
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/framework"
@@ -71,19 +72,32 @@ func handle(isLeader func() bool) http.HandlerFunc {
 
 type Engine struct {
 	*gin.Engine
+
+	registeredProviders map[string]struct{}
+	mu                  sync.Mutex
 }
 
 func NewEngine(e *gin.Engine) *Engine {
 	return &Engine{
-		Engine: e,
+		Engine:              e,
+		registeredProviders: make(map[string]struct{}),
 	}
 }
 
-func (e *Engine) RegisterPluginService(plugin framework.Plugin) {
+func (e *Engine) RegisterPluginService(plugin framework.Plugin, profileName string) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
 	if serviceProvider, ok := plugin.(APIServiceProvider); ok {
+		providerName := plugin.Name()
 		baseGroup := e.Engine.Group(pluginServicesBaseRelativePath)
-		pluginServiceGroup := baseGroup.Group(plugin.Name())
+		pluginServiceGroup := baseGroup.Group(providerName)
+		if _, exists := e.registeredProviders[providerName]; exists {
+			klog.InfoS("service provider already registered, skipping duplicate registration", "provider", providerName, "profile", profileName)
+			return
+		}
 		serviceProvider.RegisterEndpoints(pluginServiceGroup)
+		e.registeredProviders[providerName] = struct{}{}
+		klog.V(4).InfoS("service provider successfully registered", "provider", providerName, "profile", profileName)
 	}
 }
 
