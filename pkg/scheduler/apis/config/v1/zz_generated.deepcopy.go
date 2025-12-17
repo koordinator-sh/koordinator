@@ -166,6 +166,16 @@ func (in *ElasticQuotaArgs) DeepCopyInto(out *ElasticQuotaArgs) {
 		*out = new(bool)
 		**out = **in
 	}
+	if in.EnableQueueHint != nil {
+		in, out := &in.EnableQueueHint, &out.EnableQueueHint
+		*out = new(bool)
+		**out = **in
+	}
+	if in.QuotaSnapshotUpdateInterval != nil {
+		in, out := &in.QuotaSnapshotUpdateInterval, &out.QuotaSnapshotUpdateInterval
+		*out = new(metav1.Duration)
+		**out = **in
+	}
 	if in.HookPlugins != nil {
 		in, out := &in.HookPlugins, &out.HookPlugins
 		*out = make([]HookPluginConf, len(*in))
