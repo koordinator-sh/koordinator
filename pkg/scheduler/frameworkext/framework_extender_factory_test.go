@@ -424,3 +424,70 @@ func Test_recordScheduleDiagnosis(t *testing.T) {
 		})
 	}
 }
+
+// fakeNextPodPlugin implements NextPodPlugin for testing
+type fakeNextPodPlugin struct {
+	name string
+}
+
+func (f *fakeNextPodPlugin) Name() string {
+	return f.name
+}
+
+func (f *fakeNextPodPlugin) NextPod() *corev1.Pod {
+	return nil
+}
+
+func TestFrameworkExtenderFactory_updatePlugins_NextPodPlugin(t *testing.T) {
+	tests := []struct {
+		name               string
+		initialPlugin      *fakeNextPodPlugin
+		secondPlugin       *fakeNextPodPlugin
+		profileNames       []string
+		expectedFinalName  string
+		shouldReplaceFirst bool
+	}{
+		{
+			name:              "register first NextPodPlugin",
+			initialPlugin:     nil,
+			secondPlugin:      &fakeNextPodPlugin{name: "plugin1"},
+			profileNames:      []string{"", "profile1"},
+			expectedFinalName: "plugin1",
+		},
+		{
+			name:               "register same NextPodPlugin twice should succeed",
+			initialPlugin:      &fakeNextPodPlugin{name: "plugin1"},
+			secondPlugin:       &fakeNextPodPlugin{name: "plugin1"},
+			profileNames:       []string{"profile1", "profile2"},
+			expectedFinalName:  "plugin1",
+			shouldReplaceFirst: false,
+		},
+		{
+			name:               "register different NextPodPlugin should skip second",
+			initialPlugin:      &fakeNextPodPlugin{name: "plugin1"},
+			secondPlugin:       &fakeNextPodPlugin{name: "plugin2"},
+			profileNames:       []string{"profile1", "profile2"},
+			expectedFinalName:  "plugin1", // should keep first plugin
+			shouldReplaceFirst: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			factory := &FrameworkExtenderFactory{}
+
+			if tt.initialPlugin != nil {
+				factory.nextPodPlugin = tt.initialPlugin
+				factory.updatePlugins(tt.initialPlugin, tt.profileNames[0])
+			}
+
+			if tt.secondPlugin != nil {
+				factory.updatePlugins(tt.secondPlugin, tt.profileNames[1])
+			}
+
+			assert.NotNil(t, factory.nextPodPlugin, "nextPodPlugin should be set")
+			assert.Equal(t, tt.expectedFinalName, factory.nextPodPlugin.Name(),
+				"nextPodPlugin name should be %s", tt.expectedFinalName)
+		})
+	}
+}

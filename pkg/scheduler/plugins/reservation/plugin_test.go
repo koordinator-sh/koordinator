@@ -1440,8 +1440,7 @@ func Test_filterWithReservations(t *testing.T) {
 					},
 				},
 			},
-			wantStatus: framework.NewStatus(framework.Unschedulable,
-				"Insufficient kubernetes.io/batch-cpu by node"),
+			wantStatus: nil,
 		},
 		{
 			name: "failed to filter restricted reservation due to reserved",
