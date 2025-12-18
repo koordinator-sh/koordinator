@@ -380,6 +380,10 @@ func (pl *Plugin) Filter(ctx context.Context, cycleState *framework.CycleState, 
 }
 
 func (pl *Plugin) filterWithReservations(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeInfo *framework.NodeInfo, matchedReservations []*frameworkext.ReservationInfo, requiredFromReservation bool) *framework.Status {
+	if !requiredFromReservation { // no need to filter out resources
+		return nil
+	}
+
 	extender, ok := pl.handle.(frameworkext.FrameworkExtender)
 	if !ok {
 		return framework.AsStatus(fmt.Errorf("not implemented frameworkext.FrameworkExtender"))
@@ -435,42 +439,19 @@ func (pl *Plugin) filterWithReservations(ctx context.Context, cycleState *framew
 		}
 	}
 
-	buildNodeFailureReasons := func(resources []string) []string {
-		reasons := make([]string, 0, len(resources))
-		for _, r := range resources {
-			reasons = append(reasons, fmt.Sprintf("Insufficient %s by node", r))
-		}
-		return reasons
+	// The Pod requirement must be allocated from Reservation, but currently no Reservation meets the requirement.
+	// We will keep all failure reasons.
+	failureReasons := make([]string, 0, len(allInsufficientResourcesByNode)+len(allInsufficientResourceReasonsByReservation)+1)
+	for insufficientResourceByNode := range allInsufficientResourcesByNode {
+		failureReasons = append(failureReasons, fmt.Sprintf("Insufficient %s by node", insufficientResourceByNode))
+	}
+	failureReasons = append(failureReasons, allInsufficientResourceReasonsByReservation...)
+
+	if len(failureReasons) == 0 {
+		failureReasons = append(failureReasons, ErrReasonNoReservationsMeetRequirements)
 	}
 
-	if requiredFromReservation {
-		// The Pod requirement must be allocated from Reservation, but currently no Reservation meets the requirement.
-		// We will keep all failure reasons.
-		failureReasons := make([]string, 0, len(allInsufficientResourcesByNode)+len(allInsufficientResourceReasonsByReservation)+1)
-		failureReasons = append(failureReasons, buildNodeFailureReasons(allInsufficientResourcesByNode.List())...)
-		failureReasons = append(failureReasons, allInsufficientResourceReasonsByReservation...)
-
-		if len(failureReasons) == 0 {
-			failureReasons = append(failureReasons, ErrReasonNoReservationsMeetRequirements)
-		}
-		return framework.NewStatus(framework.Unschedulable, failureReasons...)
-
-	} else {
-		var failureReasons []string
-		if len(allInsufficientResourcesByNode) > 0 {
-			// If the combination of reservation and node cannot satisfy the pod, then the node alone cannot satisfy it either.
-			failureReasons = buildNodeFailureReasons(allInsufficientResourcesByNode.List())
-		} else {
-			// try to allocate from node alone
-			preemptibleResource := framework.NewResource(state.preemptible[node.Name])
-			insufficientResourcesByNode := fitsNode(state.podRequestsResources, nodeInfo.Allocatable, nodeRState.podRequested, nodeRState.rAllocated, nil, len(nodeRState.matchedOrIgnored), len(nodeInfo.Pods), preemptibleResource)
-			failureReasons = buildNodeFailureReasons(insufficientResourcesByNode)
-		}
-		if len(failureReasons) > 0 {
-			return framework.NewStatus(framework.Unschedulable, failureReasons...)
-		}
-	}
-	return nil
+	return framework.NewStatus(framework.Unschedulable, failureReasons...)
 }
 
 func (pl *Plugin) filterWithPreAllocatablePods(ctx context.Context, cycleState *framework.CycleState, rInfo *frameworkext.ReservationInfo, nodeInfo *framework.NodeInfo, preAllocatablePods []*corev1.Pod, isPreAllocationRequired bool) *framework.Status {
