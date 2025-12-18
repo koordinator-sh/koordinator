@@ -265,12 +265,6 @@ func autoConvert_v1_ElasticQuotaArgs_To_config_ElasticQuotaArgs(in *ElasticQuota
 	if err := metav1.Convert_Pointer_bool_To_bool(&in.DisableDefaultQuotaPreemption, &out.DisableDefaultQuotaPreemption, s); err != nil {
 		return err
 	}
-	if err := metav1.Convert_Pointer_bool_To_bool(&in.EnableQueueHint, &out.EnableQueueHint, s); err != nil {
-		return err
-	}
-	if err := metav1.Convert_Pointer_v1_Duration_To_v1_Duration(&in.QuotaSnapshotUpdateInterval, &out.QuotaSnapshotUpdateInterval, s); err != nil {
-		return err
-	}
 	out.HookPlugins = *(*[]config.HookPluginConf)(unsafe.Pointer(&in.HookPlugins))
 	return nil
 }
@@ -303,12 +297,6 @@ func autoConvert_config_ElasticQuotaArgs_To_v1_ElasticQuotaArgs(in *config.Elast
 		return err
 	}
 	if err := metav1.Convert_bool_To_Pointer_bool(&in.DisableDefaultQuotaPreemption, &out.DisableDefaultQuotaPreemption, s); err != nil {
-		return err
-	}
-	if err := metav1.Convert_bool_To_Pointer_bool(&in.EnableQueueHint, &out.EnableQueueHint, s); err != nil {
-		return err
-	}
-	if err := metav1.Convert_v1_Duration_To_Pointer_v1_Duration(&in.QuotaSnapshotUpdateInterval, &out.QuotaSnapshotUpdateInterval, s); err != nil {
 		return err
 	}
 	out.HookPlugins = *(*[]HookPluginConf)(unsafe.Pointer(&in.HookPlugins))

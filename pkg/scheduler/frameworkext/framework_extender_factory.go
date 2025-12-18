@@ -103,8 +103,6 @@ func WithNetworkTopologyManager(manager networktopology.TreeManager) Option {
 	}
 }
 
-// FrameworkExtenderFactory is a factory for creating a FrameworkExtender.
-// NOTE: DO NOT put framework-level data here.
 type FrameworkExtenderFactory struct {
 	controllerMaps                   *ControllersMap
 	servicesEngine                   *services.Engine
@@ -367,21 +365,12 @@ func (f *FrameworkExtenderFactory) Run(ctx context.Context) {
 	}
 }
 
-func (f *FrameworkExtenderFactory) updatePlugins(pl framework.Plugin, profileName string) {
-	if nextPodPlugin, ok := pl.(NextPodPlugin); ok {
-		pluginName := pl.Name()
-		if f.nextPodPlugin != nil && f.nextPodPlugin.Name() != pluginName {
-			klog.InfoS("NextPodPlugin already registered, skipped", "plugin", pluginName, "profile", profileName, "existing", f.nextPodPlugin.Name())
-		} else {
-			f.nextPodPlugin = nextPodPlugin
-			klog.V(4).InfoS("NextPodPlugin successfully registered", "plugin", pluginName, "profile", profileName)
-		}
-	}
+func (f *FrameworkExtenderFactory) updatePlugins(pl framework.Plugin) {
 	if f.servicesEngine != nil {
-		f.servicesEngine.RegisterPluginService(pl, profileName)
+		f.servicesEngine.RegisterPluginService(pl)
 	}
 	if f.controllerMaps != nil {
-		f.controllerMaps.RegisterControllers(pl, profileName)
+		f.controllerMaps.RegisterControllers(pl)
 	}
 }
 
@@ -394,7 +383,13 @@ func PluginFactoryProxy(extenderFactory *FrameworkExtenderFactory, factoryFn fra
 		if err != nil {
 			return nil, err
 		}
-		extenderFactory.updatePlugins(plugin, fw.ProfileName())
+		if nextPodPlugin, ok := plugin.(NextPodPlugin); ok {
+			if extenderFactory.nextPodPlugin != nil && extenderFactory.nextPodPlugin.Name() != nextPodPlugin.Name() {
+				return nil, fmt.Errorf("duplicate NextPodPlugin: %s, %s", nextPodPlugin.Name(), extenderFactory.nextPodPlugin.Name())
+			}
+			extenderFactory.nextPodPlugin = nextPodPlugin
+		}
+		extenderFactory.updatePlugins(plugin)
 		frameworkExtender.(*frameworkExtenderImpl).updatePlugins(plugin)
 		return plugin, nil
 	}
