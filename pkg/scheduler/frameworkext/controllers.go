@@ -68,14 +68,14 @@ func NewControllersMap() *ControllersMap {
 	}
 }
 
-func (cm *ControllersMap) RegisterControllers(plugin framework.Plugin) {
+func (cm *ControllersMap) RegisterControllers(plugin framework.Plugin, profileName string) {
 	controllerProvider, ok := plugin.(ControllerProvider)
 	if !ok {
 		return
 	}
 	pluginControllers := cm.controllers[plugin.Name()]
 	if len(pluginControllers) > 0 {
-		klog.Warningf("Plugin %s already build controllers, skip it", plugin.Name())
+		klog.InfoS("Plugin already build controllers, skip it", "plugin", plugin.Name(), "profile", profileName, "controllers", len(pluginControllers))
 		return
 	}
 
@@ -91,6 +91,7 @@ func (cm *ControllersMap) RegisterControllers(plugin framework.Plugin) {
 		}
 		cm.controllers[plugin.Name()] = pluginControllers
 	}
+	klog.V(4).InfoS("Plugin successfully build controllers", "plugin", plugin.Name(), "profile", profileName, "controllers", len(pluginControllers))
 }
 
 func (cm *ControllersMap) Start() {
