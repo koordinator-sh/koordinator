@@ -22,10 +22,13 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	corelister "k8s.io/client-go/listers/core/v1"
 	"k8s.io/klog/v2"
 	"k8s.io/utils/clock"
 
@@ -95,49 +98,67 @@ type DevicePluginAdapter interface {
 	Adapt(ctx *DevicePluginAdaptContext, object metav1.Object, allocation []*apiext.DeviceAllocation) error
 }
 
+// DevicePluginAdapterWithNodeLock is DevicePluginAdapter which utilize node lock to prevent device plugin
+// from unable to determine pod.
+type DevicePluginAdapterWithNodeLock interface {
+	DevicePluginAdapter
+	NodeLockKey() string
+}
+
 type DevicePluginAdaptContext struct {
 	context.Context
-	node *corev1.Node
+	nodeLister   corelister.NodeLister
+	podLister    corelister.PodLister
+	node         *corev1.Node
+	modifiedNode *corev1.Node
+	nodeLock     *sync.Mutex
 }
 
 var (
-	defaultDevicePluginAdapter DevicePluginAdapter = &generalDevicePluginAdapter{
-		clock: clock.RealClock{},
-	}
-	defaultDevicePluginAdapterMap = map[schedulingv1alpha1.DeviceType]DevicePluginAdapter{
+	defaultDevicePluginAdapter    DevicePluginAdapter = &generalDevicePluginAdapter{}
+	defaultDevicePluginAdapterMap                     = map[schedulingv1alpha1.DeviceType]DevicePluginAdapter{
 		schedulingv1alpha1.GPU: &generalGPUDevicePluginAdapter{},
 	}
 	gpuDevicePluginAdapterMap = map[string]DevicePluginAdapter{
-		apiext.GPUVendorHuawei: &huaweiGPUDevicePluginAdapter{
-			clock: clock.RealClock{},
-		},
-		apiext.GPUVendorCambricon: &cambriconGPUDevicePluginAdapter{
-			clock: clock.RealClock{},
-		},
-		apiext.GPUVendorMetaX: &metaxDevicePluginAdapter{
-			clock: clock.RealClock{},
-		},
+		apiext.GPUVendorHuawei:    &huaweiGPUDevicePluginAdapter{},
+		apiext.GPUVendorCambricon: &cambriconGPUDevicePluginAdapter{},
+		apiext.GPUVendorMetaX:     &metaxDevicePluginAdapter{},
 	}
 )
 
+var (
+	dpAdapterClock clock.Clock = clock.RealClock{} // for testing
+
+	nodeLockMap     = make(map[string]*sync.Mutex)
+	nodeLockMapLock sync.Mutex
+)
+
 func (p *Plugin) adaptForDevicePlugin(ctx context.Context, object metav1.Object, allocationResult apiext.DeviceAllocations, nodeName string) error {
-	nodeInfo, err := p.handle.SnapshotSharedLister().NodeInfos().Get(nodeName)
+	adaptCtx := &DevicePluginAdaptContext{
+		Context:    ctx,
+		nodeLister: p.handle.SharedInformerFactory().Core().V1().Nodes().Lister(),
+		podLister:  p.handle.SharedInformerFactory().Core().V1().Pods().Lister(),
+	}
+	var err error
+	adaptCtx.node, err = adaptCtx.nodeLister.Get(nodeName)
 	if err != nil {
-		klog.ErrorS(err, "Failed to get NodeInfo", "node", nodeName)
+		klog.ErrorS(err, "Failed to get Node", "node", nodeName)
 		return err
 	}
-	adaptCtx := &DevicePluginAdaptContext{
-		Context: ctx,
-		node:    nodeInfo.Node().DeepCopy(),
-	}
 
-	if err := defaultDevicePluginAdapter.Adapt(adaptCtx, object, nil); err != nil {
+	defer func() {
+		if adaptCtx.nodeLock != nil {
+			adaptCtx.nodeLock.Unlock()
+		}
+	}()
+
+	if err := adapt(adaptCtx, defaultDevicePluginAdapter, object, nil, nodeName); err != nil {
 		return err
 	}
 
 	for deviceType, allocation := range allocationResult {
 		if adapter, ok := defaultDevicePluginAdapterMap[deviceType]; ok {
-			if err := adapter.Adapt(adaptCtx, object, allocation); err != nil {
+			if err := adapt(adaptCtx, adapter, object, allocation, nodeName); err != nil {
 				return err
 			}
 		}
@@ -156,28 +177,102 @@ func (p *Plugin) adaptForDevicePlugin(ctx context.Context, object metav1.Object,
 
 			vendor := device.Labels[apiext.LabelGPUVendor]
 			if adapter, ok := gpuDevicePluginAdapterMap[vendor]; ok {
-				if err := adapter.Adapt(adaptCtx, object, allocation); err != nil {
+				if err := adapt(adaptCtx, adapter, object, allocation, nodeName); err != nil {
 					return fmt.Errorf("failed to adapt for GPU device plugin of vendor %q: %w", vendor, err)
 				}
 			}
 		}
 	}
 
-	if _, err := util.PatchNode(ctx, p.handle.ClientSet(), nodeInfo.Node(), adaptCtx.node); err != nil {
-		return fmt.Errorf("failed to patch node %q: %v", adaptCtx.node.Name, err)
+	if adaptCtx.modifiedNode != nil {
+		if _, err := util.PatchNode(ctx, p.handle.ClientSet(), adaptCtx.node, adaptCtx.modifiedNode); err != nil {
+			return fmt.Errorf("failed to patch node %q: %v", nodeName, err)
+		}
 	}
 
 	return nil
 }
 
-// generalDevicePluginAdapter annotates the bind timestamp to pod which enables users to write their own device plugins
-// that can be used with koord-scheduler.
-type generalDevicePluginAdapter struct {
-	clock clock.Clock
+func adapt(ctx *DevicePluginAdaptContext, adapter DevicePluginAdapter, object metav1.Object, allocation []*apiext.DeviceAllocation, nodeName string) error {
+	if err := adapter.Adapt(ctx, object, allocation); err != nil {
+		return err
+	}
+	if adapterWithNodeLock, ok := adapter.(DevicePluginAdapterWithNodeLock); ok {
+		if ctx.nodeLock == nil {
+			ctx.nodeLock = getNodeLock(nodeName)
+			ctx.nodeLock.Lock()
+			var err error
+			// always get latest node here to avoid lock conflict
+			ctx.node, err = ctx.nodeLister.Get(nodeName)
+			if err != nil {
+				return fmt.Errorf("failed to get node %q: %v", nodeName, err)
+			}
+			ctx.modifiedNode = ctx.node.DeepCopy()
+		}
+		if err := lockNode(ctx, object, adapterWithNodeLock.NodeLockKey(), dpAdapterClock.Now()); err != nil {
+			return fmt.Errorf("failed to lock node: %v", err)
+		}
+	}
+	return nil
 }
 
+func getNodeLock(nodeName string) *sync.Mutex {
+	nodeLockMapLock.Lock()
+	defer nodeLockMapLock.Unlock()
+	if _, ok := nodeLockMap[nodeName]; !ok {
+		nodeLockMap[nodeName] = &sync.Mutex{}
+	}
+	return nodeLockMap[nodeName]
+}
+
+func deleteNodeLock(nodeName string) {
+	nodeLockMapLock.Lock()
+	defer nodeLockMapLock.Unlock()
+	delete(nodeLockMap, nodeName)
+}
+
+func lockNode(ctx *DevicePluginAdaptContext, object metav1.Object, lockKey string, lockTime time.Time) error {
+	node := ctx.modifiedNode
+	if val, ok := node.Annotations[lockKey]; ok {
+		parts := strings.Split(val, ",")
+		if len(parts) != 3 {
+			return fmt.Errorf("invalid node lock value %q", val)
+		}
+		lockTimeStr, lockPodNs, lockPodName := parts[0], parts[1], parts[2]
+		lockTime, err := time.Parse(time.RFC3339, lockTimeStr)
+		if err != nil {
+			return err
+		}
+		if time.Since(lockTime) > nodeLockTimeout {
+			// this should never happen in normal cases, and we don't want to lock the node forever
+			unlockNode(node, lockKey)
+		} else if _, err := ctx.podLister.Pods(lockPodNs).Get(lockPodName); err != nil && apierrors.IsNotFound(err) {
+			// original locker pod has been deleted, safe to unlock
+			unlockNode(node, lockKey)
+		} else {
+			return fmt.Errorf("node %q has been locked", node.Name)
+		}
+	}
+	if node.Annotations == nil {
+		node.Annotations = map[string]string{}
+	}
+	node.Annotations[lockKey] = fmt.Sprintf("%s,%s,%s", lockTime.Format(time.RFC3339), object.GetNamespace(), object.GetName())
+	return nil
+}
+
+func unlockNode(node *corev1.Node, lockKey string) {
+	if _, ok := node.Annotations[lockKey]; !ok {
+		return
+	}
+	delete(node.Annotations, lockKey)
+}
+
+// generalDevicePluginAdapter annotates the bind timestamp to pod which enables users to write their own device plugins
+// that can be used with koord-scheduler.
+type generalDevicePluginAdapter struct{}
+
 func (a *generalDevicePluginAdapter) Adapt(_ *DevicePluginAdaptContext, object metav1.Object, _ []*apiext.DeviceAllocation) error {
-	object.GetAnnotations()[AnnotationBindTimestamp] = strconv.FormatInt(a.clock.Now().UnixNano(), 10)
+	object.GetAnnotations()[AnnotationBindTimestamp] = strconv.FormatInt(dpAdapterClock.Now().UnixNano(), 10)
 	return nil
 }
 
@@ -194,12 +289,10 @@ func (a *generalGPUDevicePluginAdapter) Adapt(ctx *DevicePluginAdaptContext, obj
 	return nil
 }
 
-type huaweiGPUDevicePluginAdapter struct {
-	clock clock.Clock
-}
+type huaweiGPUDevicePluginAdapter struct{}
 
 func (a *huaweiGPUDevicePluginAdapter) Adapt(_ *DevicePluginAdaptContext, object metav1.Object, allocation []*apiext.DeviceAllocation) error {
-	object.GetAnnotations()[AnnotationPredicateTime] = strconv.FormatInt(a.clock.Now().UnixNano(), 10)
+	object.GetAnnotations()[AnnotationPredicateTime] = strconv.FormatInt(dpAdapterClock.Now().UnixNano(), 10)
 	if allocation[0].Extension != nil && allocation[0].Extension.GPUSharedResourceTemplate != "" {
 		// vNPU
 		object.GetAnnotations()[AnnotationHuaweiNPUCore] = fmt.Sprintf("%d-%s", allocation[0].Minor, allocation[0].Extension.GPUSharedResourceTemplate)
@@ -210,11 +303,9 @@ func (a *huaweiGPUDevicePluginAdapter) Adapt(_ *DevicePluginAdaptContext, object
 	return nil
 }
 
-type cambriconGPUDevicePluginAdapter struct {
-	clock clock.Clock
-}
+type cambriconGPUDevicePluginAdapter struct{}
 
-func (a *cambriconGPUDevicePluginAdapter) Adapt(ctx *DevicePluginAdaptContext, object metav1.Object, allocation []*apiext.DeviceAllocation) error {
+func (a *cambriconGPUDevicePluginAdapter) Adapt(_ *DevicePluginAdaptContext, object metav1.Object, allocation []*apiext.DeviceAllocation) error {
 	if len(allocation) > 1 {
 		return fmt.Errorf("multiple gpu share is not supported on device side")
 	}
@@ -231,18 +322,16 @@ func (a *cambriconGPUDevicePluginAdapter) Adapt(ctx *DevicePluginAdaptContext, o
 	}
 	vmemory := memory.Value() / cambriconVMemoryUnit
 
-	if err := lockNode(ctx.node, object, AnnotationCambriconDsmluLock, a.clock.Now()); err != nil {
-		return fmt.Errorf("failed to lock node: %v", err)
-	}
-
 	object.GetAnnotations()[AnnotationCambriconDsmluAssigned] = "false"
 	object.GetAnnotations()[AnnotationCambriconDsmluProfile] = fmt.Sprintf("%d_%d_%d", allocation[0].Minor, vcore, vmemory)
 	return nil
 }
 
-type metaxDevicePluginAdapter struct {
-	clock clock.Clock
+func (a *cambriconGPUDevicePluginAdapter) NodeLockKey() string {
+	return AnnotationCambriconDsmluLock
 }
+
+type metaxDevicePluginAdapter struct{}
 
 type metaxContainerDeviceRequest struct {
 	UUID    string `json:"uuid"`
@@ -250,7 +339,7 @@ type metaxContainerDeviceRequest struct {
 	VRam    int32  `json:"vRam"`
 }
 
-func (a *metaxDevicePluginAdapter) Adapt(ctx *DevicePluginAdaptContext, object metav1.Object, allocation []*apiext.DeviceAllocation) error {
+func (a *metaxDevicePluginAdapter) Adapt(_ *DevicePluginAdaptContext, object metav1.Object, allocation []*apiext.DeviceAllocation) error {
 	deviceRequests := make([]metaxContainerDeviceRequest, 0, len(allocation))
 	for _, alloc := range allocation {
 		core, ok := alloc.Resources[apiext.ResourceGPUCore]
@@ -276,39 +365,12 @@ func (a *metaxDevicePluginAdapter) Adapt(ctx *DevicePluginAdaptContext, object m
 		return err
 	}
 
-	if err := lockNode(ctx.node, object, AnnotationHAMiLock, a.clock.Now()); err != nil {
-		return fmt.Errorf("failed to lock node: %v", err)
-	}
-
 	object.GetAnnotations()[AnnotationMetaXGPUDevicesAllocated] = string(allocatedData)
 	return nil
 }
 
-func lockNode(node *corev1.Node, object metav1.Object, lockKey string, lockTime time.Time) error {
-	if val, ok := node.Annotations[lockKey]; ok {
-		lockTime, err := time.Parse(time.RFC3339, strings.Split(val, ",")[0])
-		if err != nil {
-			return err
-		}
-		if time.Since(lockTime) > nodeLockTimeout {
-			// this should never happen in normal cases, and we don't want to lock the node forever
-			unlockNode(node, lockKey)
-		} else {
-			return fmt.Errorf("node %q has been locked", node.Name)
-		}
-	}
-	if node.Annotations == nil {
-		node.Annotations = map[string]string{}
-	}
-	node.Annotations[lockKey] = fmt.Sprintf("%s,%s,%s", lockTime.Format(time.RFC3339), object.GetNamespace(), object.GetName())
-	return nil
-}
-
-func unlockNode(node *corev1.Node, lockKey string) {
-	if _, ok := node.Annotations[lockKey]; !ok {
-		return
-	}
-	delete(node.Annotations, lockKey)
+func (a *metaxDevicePluginAdapter) NodeLockKey() string {
+	return AnnotationHAMiLock
 }
 
 func buildGPUMinorsStr(allocation []*apiext.DeviceAllocation) string {
