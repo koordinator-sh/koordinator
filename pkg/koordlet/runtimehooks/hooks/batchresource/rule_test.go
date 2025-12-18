@@ -24,7 +24,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
@@ -95,7 +95,7 @@ func Test_plugin_parseRuleForNodeSLO(t *testing.T) {
 			want:    true,
 			wantErr: false,
 			wantRule: &Rule{
-				enableCFSQuota:        pointer.Bool(true),
+				enableCFSQuota:        ptr.To[bool](true),
 				cpuNormalizationRatio: nil,
 			},
 		},
@@ -107,7 +107,7 @@ func Test_plugin_parseRuleForNodeSLO(t *testing.T) {
 			args: args{
 				mergedNodeSLO: &slov1alpha1.NodeSLOSpec{
 					ResourceUsedThresholdWithBE: &slov1alpha1.ResourceThresholdStrategy{
-						Enable:            pointer.Bool(true),
+						Enable:            ptr.To[bool](true),
 						CPUSuppressPolicy: slov1alpha1.CPUCfsQuotaPolicy,
 					},
 				},
@@ -115,7 +115,7 @@ func Test_plugin_parseRuleForNodeSLO(t *testing.T) {
 			want:    true,
 			wantErr: false,
 			wantRule: &Rule{
-				enableCFSQuota:        pointer.Bool(false),
+				enableCFSQuota:        ptr.To[bool](false),
 				cpuNormalizationRatio: nil,
 			},
 		},
@@ -123,14 +123,14 @@ func Test_plugin_parseRuleForNodeSLO(t *testing.T) {
 			name: "rule change to false",
 			fields: fields{
 				rule: &Rule{
-					enableCFSQuota:        pointer.Bool(true),
-					cpuNormalizationRatio: pointer.Float64(-1),
+					enableCFSQuota:        ptr.To[bool](true),
+					cpuNormalizationRatio: ptr.To[float64](-1),
 				},
 			},
 			args: args{
 				mergedNodeSLO: &slov1alpha1.NodeSLOSpec{
 					ResourceUsedThresholdWithBE: &slov1alpha1.ResourceThresholdStrategy{
-						Enable:            pointer.Bool(true),
+						Enable:            ptr.To[bool](true),
 						CPUSuppressPolicy: slov1alpha1.CPUCfsQuotaPolicy,
 					},
 				},
@@ -138,16 +138,16 @@ func Test_plugin_parseRuleForNodeSLO(t *testing.T) {
 			want:    true,
 			wantErr: false,
 			wantRule: &Rule{
-				enableCFSQuota:        pointer.Bool(false),
-				cpuNormalizationRatio: pointer.Float64(-1),
+				enableCFSQuota:        ptr.To[bool](false),
+				cpuNormalizationRatio: ptr.To[float64](-1),
 			},
 		},
 		{
 			name: "rule change to true",
 			fields: fields{
 				rule: &Rule{
-					enableCFSQuota:        pointer.Bool(false),
-					cpuNormalizationRatio: pointer.Float64(-1),
+					enableCFSQuota:        ptr.To[bool](false),
+					cpuNormalizationRatio: ptr.To[float64](-1),
 				},
 			},
 			args: args{
@@ -156,16 +156,16 @@ func Test_plugin_parseRuleForNodeSLO(t *testing.T) {
 			want:    true,
 			wantErr: false,
 			wantRule: &Rule{
-				enableCFSQuota:        pointer.Bool(true),
-				cpuNormalizationRatio: pointer.Float64(-1),
+				enableCFSQuota:        ptr.To[bool](true),
+				cpuNormalizationRatio: ptr.To[float64](-1),
 			},
 		},
 		{
 			name: "rule not change as true",
 			fields: fields{
 				rule: &Rule{
-					enableCFSQuota:        pointer.Bool(true),
-					cpuNormalizationRatio: pointer.Float64(-1),
+					enableCFSQuota:        ptr.To[bool](true),
+					cpuNormalizationRatio: ptr.To[float64](-1),
 				},
 			},
 			args: args{
@@ -174,22 +174,22 @@ func Test_plugin_parseRuleForNodeSLO(t *testing.T) {
 			want:    false,
 			wantErr: false,
 			wantRule: &Rule{
-				enableCFSQuota:        pointer.Bool(true),
-				cpuNormalizationRatio: pointer.Float64(-1),
+				enableCFSQuota:        ptr.To[bool](true),
+				cpuNormalizationRatio: ptr.To[float64](-1),
 			},
 		},
 		{
 			name: "rule not change as false",
 			fields: fields{
 				rule: &Rule{
-					enableCFSQuota:        pointer.Bool(false),
-					cpuNormalizationRatio: pointer.Float64(-1),
+					enableCFSQuota:        ptr.To[bool](false),
+					cpuNormalizationRatio: ptr.To[float64](-1),
 				},
 			},
 			args: args{
 				mergedNodeSLO: &slov1alpha1.NodeSLOSpec{
 					ResourceUsedThresholdWithBE: &slov1alpha1.ResourceThresholdStrategy{
-						Enable:            pointer.Bool(true),
+						Enable:            ptr.To[bool](true),
 						CPUSuppressPolicy: slov1alpha1.CPUCfsQuotaPolicy,
 					},
 				},
@@ -197,8 +197,8 @@ func Test_plugin_parseRuleForNodeSLO(t *testing.T) {
 			want:    false,
 			wantErr: false,
 			wantRule: &Rule{
-				enableCFSQuota:        pointer.Bool(false),
-				cpuNormalizationRatio: pointer.Float64(-1),
+				enableCFSQuota:        ptr.To[bool](false),
+				cpuNormalizationRatio: ptr.To[float64](-1),
 			},
 		},
 	}
@@ -261,7 +261,7 @@ func Test_plugin_ruleUpdateCbForNodeSLO(t *testing.T) {
 			name: "update no Batch pods",
 			fields: fields{
 				rule: &Rule{
-					enableCFSQuota:        pointer.Bool(true),
+					enableCFSQuota:        ptr.To[bool](true),
 					cpuNormalizationRatio: nil,
 				},
 			},
@@ -295,7 +295,7 @@ func Test_plugin_ruleUpdateCbForNodeSLO(t *testing.T) {
 			name: "update a Batch pods",
 			fields: fields{
 				rule: &Rule{
-					enableCFSQuota:        pointer.Bool(true),
+					enableCFSQuota:        ptr.To[bool](true),
 					cpuNormalizationRatio: nil,
 				},
 			},
@@ -353,7 +353,7 @@ func Test_plugin_ruleUpdateCbForNodeSLO(t *testing.T) {
 			name: "update a Batch pods for unset cfs quota",
 			fields: fields{
 				rule: &Rule{
-					enableCFSQuota:        pointer.Bool(false),
+					enableCFSQuota:        ptr.To[bool](false),
 					cpuNormalizationRatio: nil,
 				},
 			},
@@ -506,7 +506,7 @@ func Test_plugin_parseRuleForNodeMeta(t *testing.T) {
 		{
 			name: "ratio not changed",
 			field: &Rule{
-				cpuNormalizationRatio: pointer.Float64(1.1),
+				cpuNormalizationRatio: ptr.To[float64](1.1),
 			},
 			arg: &corev1.Node{
 				ObjectMeta: metav1.ObjectMeta{
@@ -524,8 +524,8 @@ func Test_plugin_parseRuleForNodeMeta(t *testing.T) {
 		{
 			name: "cfs quota disabled",
 			field: &Rule{
-				enableCFSQuota:        pointer.Bool(false),
-				cpuNormalizationRatio: pointer.Float64(1.1),
+				enableCFSQuota:        ptr.To[bool](false),
+				cpuNormalizationRatio: ptr.To[float64](1.1),
 			},
 			arg: &corev1.Node{
 				ObjectMeta: metav1.ObjectMeta{
@@ -580,8 +580,8 @@ func Test_plugin_ruleUpdateCbForNodeMeta(t *testing.T) {
 			name: "no matched pod to reconcile",
 			fields: fields{
 				rule: &Rule{
-					enableCFSQuota:        pointer.Bool(true),
-					cpuNormalizationRatio: pointer.Float64(1.1),
+					enableCFSQuota:        ptr.To[bool](true),
+					cpuNormalizationRatio: ptr.To[float64](1.1),
 				},
 			},
 			arg: []*statesinformer.PodMeta{
@@ -602,8 +602,8 @@ func Test_plugin_ruleUpdateCbForNodeMeta(t *testing.T) {
 			name: "reconcile a pod with larger ratio",
 			fields: fields{
 				rule: &Rule{
-					enableCFSQuota:        pointer.Bool(true),
-					cpuNormalizationRatio: pointer.Float64(1.2),
+					enableCFSQuota:        ptr.To[bool](true),
+					cpuNormalizationRatio: ptr.To[float64](1.2),
 				},
 				prepare: func(t *testing.T, helper *sysutil.FileTestUtil) {
 					sysutil.SetupCgroupPathFormatter(sysutil.Systemd)
@@ -682,8 +682,8 @@ func Test_plugin_ruleUpdateCbForNodeMeta(t *testing.T) {
 			name: "reconcile a pod with small ratio",
 			fields: fields{
 				rule: &Rule{
-					enableCFSQuota:        pointer.Bool(true),
-					cpuNormalizationRatio: pointer.Float64(1.0), // previous 1.2
+					enableCFSQuota:        ptr.To[bool](true),
+					cpuNormalizationRatio: ptr.To[float64](1.0), // previous 1.2
 				},
 				prepare: func(t *testing.T, helper *sysutil.FileTestUtil) {
 					sysutil.SetupCgroupPathFormatter(sysutil.Systemd)
@@ -768,8 +768,8 @@ func Test_plugin_ruleUpdateCbForNodeMeta(t *testing.T) {
 			name: "reconcile multi pods",
 			fields: fields{
 				rule: &Rule{
-					enableCFSQuota:        pointer.Bool(true),
-					cpuNormalizationRatio: pointer.Float64(1.2),
+					enableCFSQuota:        ptr.To[bool](true),
+					cpuNormalizationRatio: ptr.To[float64](1.2),
 				},
 				prepare: func(t *testing.T, helper *sysutil.FileTestUtil) {
 					sysutil.SetupCgroupPathFormatter(sysutil.Systemd)

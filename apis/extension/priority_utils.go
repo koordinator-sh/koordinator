@@ -18,7 +18,7 @@ package extension
 
 import (
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 )
 
 // NOTE: functions in this file can be overwritten for extension
@@ -63,7 +63,7 @@ func GetPodPriorityClassWithQoS(qos QoSClass) PriorityClass {
 // value nor has a valid koordinator priority class, it uses the default value of the DefaultPriorityClass.
 func GetPodPriorityValueWithDefault(pod *corev1.Pod) *int32 {
 	if pod == nil {
-		return pointer.Int32(PriorityNoneValueDefault)
+		return ptr.To[int32](PriorityNoneValueDefault)
 	}
 
 	// if there is a non-default priority value, use it
@@ -72,7 +72,7 @@ func GetPodPriorityValueWithDefault(pod *corev1.Pod) *int32 {
 	}
 
 	priorityClass := GetPodPriorityClassWithDefault(pod)
-	return pointer.Int32(GetDefaultPriorityByPriorityClass(priorityClass))
+	return ptr.To[int32](GetDefaultPriorityByPriorityClass(priorityClass))
 }
 
 func GetDefaultPriorityByPriorityClass(priorityClass PriorityClass) int32 {

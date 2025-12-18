@@ -60,6 +60,7 @@ require (
 	k8s.io/component-base v0.28.7
 	k8s.io/component-helpers v0.28.7
 	k8s.io/cri-api v0.28.7
+	k8s.io/gengo v0.0.0-20220902162205-c0856e24416d
 	k8s.io/klog/v2 v2.100.1
 	k8s.io/kube-scheduler v0.28.7
 	k8s.io/kubectl v0.28.7
@@ -245,7 +246,6 @@ require (
 	k8s.io/controller-manager v0.28.7 // indirect
 	k8s.io/csi-translation-lib v0.28.7 // indirect
 	k8s.io/dynamic-resource-allocation v0.28.7 // indirect
-	k8s.io/gengo v0.0.0-20220902162205-c0856e24416d // indirect
 	k8s.io/kms v0.28.7 // indirect
 	k8s.io/kube-openapi v0.0.0-20230717233707-2695361300d9 // indirect
 	k8s.io/legacy-cloud-providers v0.0.0 // indirect

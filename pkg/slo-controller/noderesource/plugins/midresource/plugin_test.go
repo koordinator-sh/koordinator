@@ -26,6 +26,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clock "k8s.io/utils/clock/testing"
 	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	"github.com/koordinator-sh/koordinator/apis/configuration"
 	"github.com/koordinator-sh/koordinator/apis/extension"
@@ -69,8 +70,8 @@ func TestPluginNeedSync(t *testing.T) {
 			name: "no need to sync for no mid resource changed",
 			args: args{
 				strategy: &configuration.ColocationStrategy{
-					Enable:                pointer.Bool(true),
-					ResourceDiffThreshold: pointer.Float64(0.05),
+					Enable:                ptr.To[bool](true),
+					ResourceDiffThreshold: ptr.To[float64](0.05),
 				},
 				oldNode: testNode,
 				newNode: testNodeMidNotChange,
@@ -82,8 +83,8 @@ func TestPluginNeedSync(t *testing.T) {
 			name: "need to sync for mid resource changed",
 			args: args{
 				strategy: &configuration.ColocationStrategy{
-					Enable:                pointer.Bool(true),
-					ResourceDiffThreshold: pointer.Float64(0.05),
+					Enable:                ptr.To[bool](true),
+					ResourceDiffThreshold: ptr.To[float64](0.05),
 				},
 				oldNode: testNode,
 				newNode: testNodeMidChanged,
@@ -216,7 +217,7 @@ func TestPluginCalculate(t *testing.T) {
 		},
 		Spec: corev1.PodSpec{
 			PriorityClassName: string(extension.PriorityProd),
-			Priority:          pointer.Int32(extension.PriorityProdValueMin),
+			Priority:          ptr.To[int32](extension.PriorityProdValueMin),
 			NodeName:          "test-node",
 			Containers: []corev1.Container{
 				{
@@ -247,7 +248,7 @@ func TestPluginCalculate(t *testing.T) {
 		},
 		Spec: corev1.PodSpec{
 			PriorityClassName: string(extension.PriorityBatch),
-			Priority:          pointer.Int32(extension.PriorityBatchValueMax),
+			Priority:          ptr.To[int32](extension.PriorityBatchValueMax),
 			NodeName:          "test-node",
 			Containers: []corev1.Container{
 				{
@@ -291,10 +292,10 @@ func TestPluginCalculate(t *testing.T) {
 			name: "degrade when node metric is expired",
 			args: args{
 				strategy: &configuration.ColocationStrategy{
-					Enable:                           pointer.Bool(true),
-					DegradeTimeMinutes:               pointer.Int64(5),
-					CPUReclaimableReservedPercent:    pointer.Int64(10),
-					MemoryReclaimableReservedPercent: pointer.Int64(10),
+					Enable:                           ptr.To[bool](true),
+					DegradeTimeMinutes:               ptr.To[int64](5),
+					CPUReclaimableReservedPercent:    ptr.To[int64](10),
+					MemoryReclaimableReservedPercent: ptr.To[int64](10),
 				},
 				node: testNode,
 				podList: &corev1.PodList{
@@ -362,10 +363,10 @@ func TestPluginCalculate(t *testing.T) {
 			name: "calculate correctly when node metric is valid",
 			args: args{
 				strategy: &configuration.ColocationStrategy{
-					Enable:                           pointer.Bool(true),
-					DegradeTimeMinutes:               pointer.Int64(10),
-					CPUReclaimableReservedPercent:    pointer.Int64(10),
-					MemoryReclaimableReservedPercent: pointer.Int64(10),
+					Enable:                           ptr.To[bool](true),
+					DegradeTimeMinutes:               ptr.To[int64](10),
+					CPUReclaimableReservedPercent:    ptr.To[int64](10),
+					MemoryReclaimableReservedPercent: ptr.To[int64](10),
 				},
 				node: testNode,
 				podList: &corev1.PodList{
@@ -441,13 +442,13 @@ func TestPluginCalculate(t *testing.T) {
 			name: "calculate correctly where the prod reclaimable exceeds the mid threshold",
 			args: args{
 				strategy: &configuration.ColocationStrategy{
-					Enable:                           pointer.Bool(true),
-					DegradeTimeMinutes:               pointer.Int64(10),
-					CPUReclaimableReservedPercent:    pointer.Int64(10),
-					MemoryReclaimableReservedPercent: pointer.Int64(10),
-					MidCPUThresholdPercent:           pointer.Int64(10),
-					MidMemoryThresholdPercent:        pointer.Int64(20),
-					MidUnallocatedPercent:            pointer.Int64(10),
+					Enable:                           ptr.To[bool](true),
+					DegradeTimeMinutes:               ptr.To[int64](10),
+					MidCPUThresholdPercent:           ptr.To[int64](10),
+					CPUReclaimableReservedPercent:    ptr.To[int64](10),
+					MemoryReclaimableReservedPercent: ptr.To[int64](10),
+					MidMemoryThresholdPercent:        ptr.To[int64](20),
+					MidUnallocatedPercent:            ptr.To[int64](10),
 				},
 				node: testNode,
 				podList: &corev1.PodList{
@@ -522,10 +523,10 @@ func TestPluginCalculate(t *testing.T) {
 			name: "calculate correctly when prod reclaimable is nil",
 			args: args{
 				strategy: &configuration.ColocationStrategy{
-					Enable:                           pointer.Bool(true),
-					DegradeTimeMinutes:               pointer.Int64(10),
-					CPUReclaimableReservedPercent:    pointer.Int64(10),
-					MemoryReclaimableReservedPercent: pointer.Int64(10),
+					Enable:                           ptr.To[bool](true),
+					DegradeTimeMinutes:               ptr.To[int64](10),
+					CPUReclaimableReservedPercent:    ptr.To[int64](10),
+					MemoryReclaimableReservedPercent: ptr.To[int64](10),
 				},
 				node: testNode,
 				podList: &corev1.PodList{
@@ -756,10 +757,10 @@ func TestPluginCalculate(t *testing.T) {
 			name: "calculate correctly where node metrics is invalid",
 			args: args{
 				strategy: &configuration.ColocationStrategy{
-					Enable:                           pointer.Bool(true),
-					DegradeTimeMinutes:               pointer.Int64(10),
-					CPUReclaimableReservedPercent:    pointer.Int64(10),
-					MemoryReclaimableReservedPercent: pointer.Int64(10),
+					Enable:                           ptr.To[bool](true),
+					DegradeTimeMinutes:               ptr.To[int64](10),
+					CPUReclaimableReservedPercent:    ptr.To[int64](10),
+					MemoryReclaimableReservedPercent: ptr.To[int64](10),
 				},
 				node: testNode,
 				podList: &corev1.PodList{
@@ -807,10 +808,10 @@ func TestPluginCalculate(t *testing.T) {
 			name: "calculate correctly where the prod reclaimable exceeds the node free resource",
 			args: args{
 				strategy: &configuration.ColocationStrategy{
-					Enable:                           pointer.Bool(true),
-					DegradeTimeMinutes:               pointer.Int64(10),
-					CPUReclaimableReservedPercent:    pointer.Int64(10),
-					MemoryReclaimableReservedPercent: pointer.Int64(10),
+					Enable:                           ptr.To[bool](true),
+					DegradeTimeMinutes:               ptr.To[int64](10),
+					CPUReclaimableReservedPercent:    ptr.To[int64](10),
+					MemoryReclaimableReservedPercent: ptr.To[int64](10),
 				},
 				node: testNode,
 				podList: &corev1.PodList{
@@ -886,10 +887,10 @@ func TestPluginCalculate(t *testing.T) {
 			name: "including product host application usage",
 			args: args{
 				strategy: &configuration.ColocationStrategy{
-					Enable:                           pointer.Bool(true),
-					DegradeTimeMinutes:               pointer.Int64(10),
-					CPUReclaimableReservedPercent:    pointer.Int64(10),
-					MemoryReclaimableReservedPercent: pointer.Int64(10),
+					Enable:                           ptr.To[bool](true),
+					DegradeTimeMinutes:               ptr.To[int64](10),
+					CPUReclaimableReservedPercent:    ptr.To[int64](10),
+					MemoryReclaimableReservedPercent: ptr.To[int64](10),
 				},
 				node: testNode,
 				podList: &corev1.PodList{
@@ -970,10 +971,10 @@ func TestPluginCalculate(t *testing.T) {
 			name: "including mid host application usage",
 			args: args{
 				strategy: &configuration.ColocationStrategy{
-					Enable:                           pointer.Bool(true),
-					DegradeTimeMinutes:               pointer.Int64(10),
-					CPUReclaimableReservedPercent:    pointer.Int64(10),
-					MemoryReclaimableReservedPercent: pointer.Int64(10),
+					Enable:                           ptr.To[bool](true),
+					DegradeTimeMinutes:               ptr.To[int64](10),
+					CPUReclaimableReservedPercent:    ptr.To[int64](10),
+					MemoryReclaimableReservedPercent: ptr.To[int64](10),
 				},
 				node: testNode,
 				podList: &corev1.PodList{
@@ -1054,10 +1055,10 @@ func TestPluginCalculate(t *testing.T) {
 			name: "including batch host application usage",
 			args: args{
 				strategy: &configuration.ColocationStrategy{
-					Enable:                           pointer.Bool(true),
-					DegradeTimeMinutes:               pointer.Int64(10),
-					CPUReclaimableReservedPercent:    pointer.Int64(10),
-					MemoryReclaimableReservedPercent: pointer.Int64(10),
+					Enable:                           ptr.To[bool](true),
+					DegradeTimeMinutes:               ptr.To[int64](10),
+					CPUReclaimableReservedPercent:    ptr.To[int64](10),
+					MemoryReclaimableReservedPercent: ptr.To[int64](10),
 				},
 				node: testNode,
 				podList: &corev1.PodList{
@@ -1179,8 +1180,8 @@ func TestPlugin_isDegradeNeeded(t *testing.T) {
 			name: "outdated NodeMetric status should degrade",
 			args: args{
 				strategy: &configuration.ColocationStrategy{
-					Enable:             pointer.Bool(true),
-					DegradeTimeMinutes: pointer.Int64(degradeTimeoutMinutes),
+					Enable:             ptr.To[bool](true),
+					DegradeTimeMinutes: ptr.To[int64](degradeTimeoutMinutes),
 				},
 				nodeMetric: &slov1alpha1.NodeMetric{
 					ObjectMeta: metav1.ObjectMeta{
@@ -1208,8 +1209,8 @@ func TestPlugin_isDegradeNeeded(t *testing.T) {
 			},
 			args: args{
 				strategy: &configuration.ColocationStrategy{
-					Enable:             pointer.Bool(true),
-					DegradeTimeMinutes: pointer.Int64(degradeTimeoutMinutes),
+					Enable:             ptr.To[bool](true),
+					DegradeTimeMinutes: ptr.To[int64](degradeTimeoutMinutes),
 				},
 				nodeMetric: &slov1alpha1.NodeMetric{
 					ObjectMeta: metav1.ObjectMeta{
@@ -1240,8 +1241,8 @@ func TestPlugin_isDegradeNeeded(t *testing.T) {
 			name: "NodeMetric without prod reclaimable should degrade",
 			args: args{
 				strategy: &configuration.ColocationStrategy{
-					Enable:             pointer.Bool(true),
-					DegradeTimeMinutes: pointer.Int64(degradeTimeoutMinutes),
+					Enable:             ptr.To[bool](true),
+					DegradeTimeMinutes: ptr.To[int64](degradeTimeoutMinutes),
 				},
 				nodeMetric: &slov1alpha1.NodeMetric{
 					ObjectMeta: metav1.ObjectMeta{
@@ -1274,8 +1275,8 @@ func TestPlugin_isDegradeNeeded(t *testing.T) {
 			name: "valid NodeMetric status should not degrade",
 			args: args{
 				strategy: &configuration.ColocationStrategy{
-					Enable:             pointer.Bool(true),
-					DegradeTimeMinutes: pointer.Int64(degradeTimeoutMinutes),
+					Enable:             ptr.To[bool](true),
+					DegradeTimeMinutes: ptr.To[int64](degradeTimeoutMinutes),
 				},
 				nodeMetric: &slov1alpha1.NodeMetric{
 					ObjectMeta: metav1.ObjectMeta{

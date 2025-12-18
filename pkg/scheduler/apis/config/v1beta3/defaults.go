@@ -24,7 +24,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	schedconfigv1beta3 "k8s.io/kube-scheduler/config/v1beta3"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 )
@@ -49,13 +49,13 @@ var (
 
 	defaultPreferredCPUBindPolicy = CPUBindPolicyFullPCPUs
 
-	defaultEnablePreemption             = pointer.Bool(false)
-	defaultAwareNetworkTopology         = pointer.Bool(false)
-	defaultMinCandidateNodesPercentage  = pointer.Int32(10)
-	defaultMinCandidateNodesAbsolute    = pointer.Int32(100)
-	defaultReservationControllerWorkers = pointer.Int32(1)
-	defaultGCDurationSeconds            = pointer.Int64(86400)
-	defaultGCIntervalSeconds            = pointer.Int64(60)
+	defaultEnablePreemption             = ptr.To[bool](false)
+	defaultAwareNetworkTopology         = ptr.To[bool](false)
+	defaultMinCandidateNodesPercentage  = ptr.To[int32](10)
+	defaultMinCandidateNodesAbsolute    = ptr.To[int32](100)
+	defaultReservationControllerWorkers = ptr.To[int32](1)
+	defaultGCDurationSeconds            = ptr.To[int64](86400)
+	defaultGCIntervalSeconds            = ptr.To[int64](60)
 
 	defaultDelayEvictTime       = 120 * time.Second
 	defaultRevokePodInterval    = 1 * time.Second
@@ -71,14 +71,16 @@ var (
 
 	defaultQuotaGroupNamespace = "koordinator-system"
 
-	defaultMonitorAllQuotas              = pointer.Bool(false)
-	defaultEnableCheckParentQuota        = pointer.Bool(false)
-	defaultEnableRuntimeQuota            = pointer.Bool(true)
-	defaultEnableMinQuotaScale           = pointer.Bool(true)
-	defaultDisableDefaultQuotaPreemption = pointer.Bool(true)
+	defaultMonitorAllQuotas              = ptr.To[bool](false)
+	defaultEnableCheckParentQuota        = ptr.To[bool](false)
+	defaultEnableRuntimeQuota            = ptr.To[bool](true)
+	defaultEnableMinQuotaScale           = ptr.To[bool](true)
+	defaultDisableDefaultQuotaPreemption = ptr.To[bool](true)
+	defaultEnableQueueHint               = ptr.To[bool](false)
 
-	defaultTimeout           = 600 * time.Second
-	defaultControllerWorkers = 1
+	defaultTimeout                     = 600 * time.Second
+	defaultControllerWorkers           = 1
+	defaultQuotaSnapshotUpdateInterval = 120 * time.Second
 
 	defaultGPUSharedResourceTemplatesConfig = &GPUSharedResourceTemplatesConfig{
 		ConfigMapNamespace: "koordinator-system",
@@ -92,13 +94,13 @@ var (
 // SetDefaults_LoadAwareSchedulingArgs sets the default parameters for LoadAwareScheduling plugin.
 func SetDefaults_LoadAwareSchedulingArgs(obj *LoadAwareSchedulingArgs) {
 	if obj.FilterExpiredNodeMetrics == nil {
-		obj.FilterExpiredNodeMetrics = pointer.Bool(true)
+		obj.FilterExpiredNodeMetrics = ptr.To[bool](true)
 	}
 	if obj.EnableScheduleWhenNodeMetricsExpired == nil {
-		obj.EnableScheduleWhenNodeMetricsExpired = pointer.Bool(false)
+		obj.EnableScheduleWhenNodeMetricsExpired = ptr.To[bool](false)
 	}
 	if obj.NodeMetricExpirationSeconds == nil {
-		obj.NodeMetricExpirationSeconds = pointer.Int64(defaultNodeMetricExpirationSeconds)
+		obj.NodeMetricExpirationSeconds = ptr.To[int64](defaultNodeMetricExpirationSeconds)
 	}
 	if len(obj.ResourceWeights) == 0 && obj.DominantResourceWeight == 0 {
 		obj.ResourceWeights = defaultResourceWeights
@@ -211,6 +213,14 @@ func SetDefaults_ElasticQuotaArgs(obj *ElasticQuotaArgs) {
 	if obj.DisableDefaultQuotaPreemption == nil {
 		obj.DisableDefaultQuotaPreemption = defaultDisableDefaultQuotaPreemption
 	}
+	if obj.EnableQueueHint == nil {
+		obj.EnableQueueHint = defaultEnableQueueHint
+	}
+	if obj.QuotaSnapshotUpdateInterval == nil {
+		obj.QuotaSnapshotUpdateInterval = &metav1.Duration{
+			Duration: defaultQuotaSnapshotUpdateInterval,
+		}
+	}
 }
 
 func SetDefaults_CoschedulingArgs(obj *CoschedulingArgs) {
@@ -220,7 +230,7 @@ func SetDefaults_CoschedulingArgs(obj *CoschedulingArgs) {
 		}
 	}
 	if obj.ControllerWorkers == nil {
-		obj.ControllerWorkers = pointer.Int64(int64(defaultControllerWorkers))
+		obj.ControllerWorkers = ptr.To[int64](int64(defaultControllerWorkers))
 	}
 	if obj.EnablePreemption == nil {
 		obj.EnablePreemption = defaultEnablePreemption

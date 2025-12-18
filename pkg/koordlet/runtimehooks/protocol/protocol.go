@@ -19,10 +19,12 @@ package protocol
 import (
 	"strconv"
 
+	"github.com/containerd/nri/pkg/api"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/kubernetes/pkg/api/v1/resource"
 
+	runtimeapi "github.com/koordinator-sh/koordinator/apis/runtime/v1alpha1"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/audit"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
@@ -132,6 +134,64 @@ func (r *Resources) FromContainer(container *corev1.Container) {
 		r.CFSQuota = &cfsQuota
 		memoryLimit := int64(-1)
 		r.MemoryLimit = &memoryLimit
+	}
+}
+
+// FromLinuxContainerResources extracts resource information from LinuxContainerResources
+func (r *Resources) FromLinuxContainerResources(resources *runtimeapi.LinuxContainerResources) {
+	if resources == nil {
+		return
+	}
+	if resources.CpuShares != 0 {
+		cpuShares := resources.CpuShares
+		r.CPUShares = &cpuShares
+	}
+	if resources.CpuQuota != 0 {
+		cfsQuota := resources.CpuQuota
+		r.CFSQuota = &cfsQuota
+	}
+	// MemoryLimitInBytes: 0 means not specified, negative values mean unlimited (-1)
+	if resources.MemoryLimitInBytes != 0 {
+		memoryLimit := resources.MemoryLimitInBytes
+		if memoryLimit < 0 {
+			memoryLimit = -1
+		}
+		r.MemoryLimit = &memoryLimit
+	}
+	if resources.CpusetCpus != "" {
+		cpusetCpus := resources.CpusetCpus
+		r.CPUSet = &cpusetCpus
+	}
+}
+
+// FromNriLinuxResources extracts resource information from NRI's LinuxResources
+func (r *Resources) FromNriLinuxResources(resources *api.LinuxResources) {
+	if resources == nil {
+		return
+	}
+	// Extract CPU resources
+	if cpu := resources.GetCpu(); cpu != nil {
+		if shares := cpu.GetShares(); shares != nil && shares.Value != 0 {
+			cpuShares := int64(shares.Value)
+			r.CPUShares = &cpuShares
+		}
+		if quota := cpu.GetQuota(); quota != nil && quota.Value != 0 {
+			cfsQuota := quota.Value
+			r.CFSQuota = &cfsQuota
+		}
+		if cpus := cpu.GetCpus(); cpus != "" {
+			r.CPUSet = &cpus
+		}
+	}
+	// Extract Memory resources
+	if memory := resources.GetMemory(); memory != nil {
+		if limit := memory.GetLimit(); limit != nil && limit.Value != 0 {
+			memoryLimit := limit.Value
+			if memoryLimit < 0 {
+				memoryLimit = -1
+			}
+			r.MemoryLimit = &memoryLimit
+		}
 	}
 }
 

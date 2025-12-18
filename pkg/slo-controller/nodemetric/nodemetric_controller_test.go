@@ -31,7 +31,7 @@ import (
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/event"
@@ -47,8 +47,8 @@ func TestNodeMetricReconciler_getNodeMetricSpec(t *testing.T) {
 
 	oldSpec := &slov1alpha1.NodeMetricSpec{
 		CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
-			AggregateDurationSeconds: pointer.Int64(10),
-			ReportIntervalSeconds:    pointer.Int64(20),
+			AggregateDurationSeconds: ptr.To[int64](10),
+			ReportIntervalSeconds:    ptr.To[int64](20),
 		},
 	}
 
@@ -159,8 +159,8 @@ func TestNodeMetricReconciler_getNodeMetricSpec(t *testing.T) {
 			}},
 			want: &slov1alpha1.NodeMetricSpec{
 				CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
-					AggregateDurationSeconds: pointer.Int64(10),
-					ReportIntervalSeconds:    pointer.Int64(30),
+					AggregateDurationSeconds: ptr.To[int64](10),
+					ReportIntervalSeconds:    ptr.To[int64](30),
 					NodeAggregatePolicy:      getDefaultSpec().CollectPolicy.NodeAggregatePolicy,
 					NodeMemoryCollectPolicy:  getDefaultSpec().CollectPolicy.NodeMemoryCollectPolicy,
 				},
@@ -213,7 +213,7 @@ func TestNodeMetricReconciler_getNodeMetricSpec(t *testing.T) {
 			}},
 			want: &slov1alpha1.NodeMetricSpec{
 				CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
-					AggregateDurationSeconds: pointer.Int64(20),
+					AggregateDurationSeconds: ptr.To[int64](20),
 					ReportIntervalSeconds:    getDefaultSpec().CollectPolicy.ReportIntervalSeconds,
 					NodeAggregatePolicy:      getDefaultSpec().CollectPolicy.NodeAggregatePolicy,
 					NodeMemoryCollectPolicy:  getDefaultSpec().CollectPolicy.NodeMemoryCollectPolicy,
@@ -248,7 +248,7 @@ func TestNodeMetricReconciler_getNodeMetricSpec(t *testing.T) {
 			}},
 			want: &slov1alpha1.NodeMetricSpec{
 				CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
-					AggregateDurationSeconds: pointer.Int64(30),
+					AggregateDurationSeconds: ptr.To[int64](30),
 					ReportIntervalSeconds:    getDefaultSpec().CollectPolicy.ReportIntervalSeconds,
 					NodeAggregatePolicy:      getDefaultSpec().CollectPolicy.NodeAggregatePolicy,
 					NodeMemoryCollectPolicy:  getDefaultSpec().CollectPolicy.NodeMemoryCollectPolicy,
@@ -284,8 +284,8 @@ func TestNodeMetricReconciler_getNodeMetricSpec(t *testing.T) {
 			}},
 			want: &slov1alpha1.NodeMetricSpec{
 				CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
-					AggregateDurationSeconds: pointer.Int64(10),
-					ReportIntervalSeconds:    pointer.Int64(50),
+					AggregateDurationSeconds: ptr.To[int64](10),
+					ReportIntervalSeconds:    ptr.To[int64](50),
 					NodeAggregatePolicy:      getDefaultSpec().CollectPolicy.NodeAggregatePolicy,
 					NodeMemoryCollectPolicy:  getDefaultSpec().CollectPolicy.NodeMemoryCollectPolicy,
 				},
@@ -361,8 +361,8 @@ func TestNodeMetricReconciler_initNodeMetric(t *testing.T) {
 			}},
 			want: &slov1alpha1.NodeMetricSpec{
 				CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
-					AggregateDurationSeconds: pointer.Int64(10),
-					ReportIntervalSeconds:    pointer.Int64(20),
+					AggregateDurationSeconds: ptr.To[int64](10),
+					ReportIntervalSeconds:    ptr.To[int64](20),
 					NodeAggregatePolicy:      getDefaultSpec().CollectPolicy.NodeAggregatePolicy,
 					NodeMemoryCollectPolicy:  getDefaultSpec().CollectPolicy.NodeMemoryCollectPolicy,
 				},
@@ -403,8 +403,8 @@ func TestNodeMetricReconciler_initNodeMetric(t *testing.T) {
 			}},
 			want: &slov1alpha1.NodeMetricSpec{
 				CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
-					AggregateDurationSeconds: pointer.Int64(10),
-					ReportIntervalSeconds:    pointer.Int64(20),
+					AggregateDurationSeconds: ptr.To[int64](10),
+					ReportIntervalSeconds:    ptr.To[int64](20),
 					NodeAggregatePolicy: &slov1alpha1.AggregatePolicy{
 						Durations: []metav1.Duration{
 							{Duration: 10 * time.Second},
@@ -609,9 +609,9 @@ func createTestReconciler() (*NodeMetricReconciler, *config.ColocationHandlerFor
 func createValidColocationConfigMap(t *testing.T) (*configuration.ColocationCfg, *corev1.ConfigMap) {
 	policyConfig := &configuration.ColocationCfg{
 		ColocationStrategy: configuration.ColocationStrategy{
-			Enable:                         pointer.Bool(true),
-			MetricAggregateDurationSeconds: pointer.Int64(60),
-			MetricReportIntervalSeconds:    pointer.Int64(180),
+			Enable:                         ptr.To[bool](true),
+			MetricAggregateDurationSeconds: ptr.To[int64](60),
+			MetricReportIntervalSeconds:    ptr.To[int64](180),
 		},
 	}
 	data, err := json.Marshal(policyConfig)

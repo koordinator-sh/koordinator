@@ -25,7 +25,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/record"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
@@ -37,7 +37,7 @@ func TestDefaultCPUNormalizationCfg(t *testing.T) {
 	t.Run("test", func(t *testing.T) {
 		expected := &configuration.CPUNormalizationCfg{
 			CPUNormalizationStrategy: configuration.CPUNormalizationStrategy{
-				Enable:     pointer.Bool(false),
+				Enable:     ptr.To[bool](false),
 				RatioModel: map[string]configuration.ModelRatioCfg{},
 			},
 		}
@@ -212,19 +212,19 @@ func Test_configHandler_syncCacheIfCfgChanged(t *testing.T) {
 			want: true,
 			wantField: &configuration.CPUNormalizationCfg{
 				CPUNormalizationStrategy: configuration.CPUNormalizationStrategy{
-					Enable: pointer.Bool(true),
+					Enable: ptr.To[bool](true),
 					RatioModel: map[string]configuration.ModelRatioCfg{
 						"Intel(R) Xeon(R) Platinum XXX CPU @ 2.50GHz": {
-							BaseRatio:                    pointer.Float64(1.5),
-							HyperThreadEnabledRatio:      pointer.Float64(1.0),
-							TurboEnabledRatio:            pointer.Float64(1.8),
-							HyperThreadTurboEnabledRatio: pointer.Float64(1.2),
+							BaseRatio:                    ptr.To[float64](1.5),
+							HyperThreadEnabledRatio:      ptr.To[float64](1.0),
+							TurboEnabledRatio:            ptr.To[float64](1.8),
+							HyperThreadTurboEnabledRatio: ptr.To[float64](1.2),
 						},
 						"Intel(R) Xeon(R) Platinum YYY CPU @ 2.50GHz": {
-							BaseRatio:                    pointer.Float64(1.8),
-							HyperThreadEnabledRatio:      pointer.Float64(1.2),
-							TurboEnabledRatio:            pointer.Float64(2.16),
-							HyperThreadTurboEnabledRatio: pointer.Float64(1.44),
+							BaseRatio:                    ptr.To[float64](1.8),
+							HyperThreadEnabledRatio:      ptr.To[float64](1.2),
+							TurboEnabledRatio:            ptr.To[float64](2.16),
+							HyperThreadTurboEnabledRatio: ptr.To[float64](1.44),
 						},
 					},
 				},
@@ -246,19 +246,19 @@ func Test_configHandler_syncCacheIfCfgChanged(t *testing.T) {
 				c: fake.NewClientBuilder().WithScheme(scheme.Scheme).WithObjects(testConfigMap).Build(),
 				initCfg: &configuration.CPUNormalizationCfg{
 					CPUNormalizationStrategy: configuration.CPUNormalizationStrategy{
-						Enable: pointer.Bool(false),
+						Enable: ptr.To[bool](false),
 						RatioModel: map[string]configuration.ModelRatioCfg{
 							"Intel(R) Xeon(R) Platinum XXX CPU @ 2.50GHz": {
-								BaseRatio:                    pointer.Float64(1.5),
-								HyperThreadEnabledRatio:      pointer.Float64(1.0),
-								TurboEnabledRatio:            pointer.Float64(1.8),
-								HyperThreadTurboEnabledRatio: pointer.Float64(1.2),
+								BaseRatio:                    ptr.To[float64](1.5),
+								HyperThreadEnabledRatio:      ptr.To[float64](1.0),
+								TurboEnabledRatio:            ptr.To[float64](1.8),
+								HyperThreadTurboEnabledRatio: ptr.To[float64](1.2),
 							},
 							"Intel(R) Xeon(R) Platinum YYY CPU @ 2.50GHz": {
-								BaseRatio:                    pointer.Float64(1.8),
-								HyperThreadEnabledRatio:      pointer.Float64(1.2),
-								TurboEnabledRatio:            pointer.Float64(2.16),
-								HyperThreadTurboEnabledRatio: pointer.Float64(1.44),
+								BaseRatio:                    ptr.To[float64](1.8),
+								HyperThreadEnabledRatio:      ptr.To[float64](1.2),
+								TurboEnabledRatio:            ptr.To[float64](2.16),
+								HyperThreadTurboEnabledRatio: ptr.To[float64](1.44),
 							},
 						},
 					},
@@ -268,19 +268,19 @@ func Test_configHandler_syncCacheIfCfgChanged(t *testing.T) {
 			want: true,
 			wantField: &configuration.CPUNormalizationCfg{
 				CPUNormalizationStrategy: configuration.CPUNormalizationStrategy{
-					Enable: pointer.Bool(false),
+					Enable: ptr.To[bool](false),
 					RatioModel: map[string]configuration.ModelRatioCfg{
 						"Intel(R) Xeon(R) Platinum XXX CPU @ 2.50GHz": {
-							BaseRatio:                    pointer.Float64(1.5),
-							HyperThreadEnabledRatio:      pointer.Float64(1.0),
-							TurboEnabledRatio:            pointer.Float64(1.8),
-							HyperThreadTurboEnabledRatio: pointer.Float64(1.2),
+							BaseRatio:                    ptr.To[float64](1.5),
+							HyperThreadEnabledRatio:      ptr.To[float64](1.0),
+							TurboEnabledRatio:            ptr.To[float64](1.8),
+							HyperThreadTurboEnabledRatio: ptr.To[float64](1.2),
 						},
 						"Intel(R) Xeon(R) Platinum YYY CPU @ 2.50GHz": {
-							BaseRatio:                    pointer.Float64(1.8),
-							HyperThreadEnabledRatio:      pointer.Float64(1.2),
-							TurboEnabledRatio:            pointer.Float64(2.16),
-							HyperThreadTurboEnabledRatio: pointer.Float64(1.44),
+							BaseRatio:                    ptr.To[float64](1.8),
+							HyperThreadEnabledRatio:      ptr.To[float64](1.2),
+							TurboEnabledRatio:            ptr.To[float64](2.16),
+							HyperThreadTurboEnabledRatio: ptr.To[float64](1.44),
 						},
 					},
 				},
@@ -294,19 +294,19 @@ func Test_configHandler_syncCacheIfCfgChanged(t *testing.T) {
 							},
 						},
 						CPUNormalizationStrategy: configuration.CPUNormalizationStrategy{
-							Enable: pointer.Bool(true),
+							Enable: ptr.To[bool](true),
 							RatioModel: map[string]configuration.ModelRatioCfg{
 								"Intel(R) Xeon(R) Platinum XXX CPU @ 2.50GHz": {
-									BaseRatio:                    pointer.Float64(1.5),
-									HyperThreadEnabledRatio:      pointer.Float64(1.0),
-									TurboEnabledRatio:            pointer.Float64(1.8),
-									HyperThreadTurboEnabledRatio: pointer.Float64(1.2),
+									BaseRatio:                    ptr.To[float64](1.5),
+									HyperThreadEnabledRatio:      ptr.To[float64](1.0),
+									TurboEnabledRatio:            ptr.To[float64](1.8),
+									HyperThreadTurboEnabledRatio: ptr.To[float64](1.2),
 								},
 								"Intel(R) Xeon(R) Platinum YYY CPU @ 2.50GHz": {
-									BaseRatio:                    pointer.Float64(1.8),
-									HyperThreadEnabledRatio:      pointer.Float64(1.2),
-									TurboEnabledRatio:            pointer.Float64(2.16),
-									HyperThreadTurboEnabledRatio: pointer.Float64(1.44),
+									BaseRatio:                    ptr.To[float64](1.8),
+									HyperThreadEnabledRatio:      ptr.To[float64](1.2),
+									TurboEnabledRatio:            ptr.To[float64](2.16),
+									HyperThreadTurboEnabledRatio: ptr.To[float64](1.44),
 								},
 							},
 						},

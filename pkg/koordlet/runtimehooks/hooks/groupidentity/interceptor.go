@@ -18,7 +18,7 @@ package groupidentity
 
 import (
 	"k8s.io/klog/v2"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	ext "github.com/koordinator-sh/koordinator/apis/extension"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
@@ -58,7 +58,7 @@ func (b *bvtPlugin) SetPodBvtValue(p protocol.HooksProtocol) error {
 			podBvt = 0
 		}
 	}
-	podCtx.Response.Resources.CPUBvt = pointer.Int64(podBvt)
+	podCtx.Response.Resources.CPUBvt = ptr.To[int64](podBvt)
 	return nil
 }
 
@@ -70,7 +70,7 @@ func (b *bvtPlugin) SetKubeQOSBvtValue(p protocol.HooksProtocol) error {
 	kubeQOSCtx := p.(*protocol.KubeQOSContext)
 	req := kubeQOSCtx.Request
 	bvtValue := r.getKubeQOSDirBvtValue(req.KubeQOSClass)
-	kubeQOSCtx.Response.Resources.CPUBvt = pointer.Int64(bvtValue)
+	kubeQOSCtx.Response.Resources.CPUBvt = ptr.To[int64](bvtValue)
 	return nil
 }
 
@@ -82,7 +82,7 @@ func (b *bvtPlugin) SetHostAppBvtValue(p protocol.HooksProtocol) error {
 	hostQOSCtx := p.(*protocol.HostAppContext)
 	req := hostQOSCtx.Request
 	bvtValue := r.getHostQOSBvtValue(req.QOSClass)
-	hostQOSCtx.Response.Resources.CPUBvt = pointer.Int64(bvtValue)
+	hostQOSCtx.Response.Resources.CPUBvt = ptr.To[int64](bvtValue)
 	return nil
 }
 

@@ -21,7 +21,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	"github.com/koordinator-sh/koordinator/apis/configuration"
 )
@@ -34,7 +34,7 @@ func Test_registerDefaultColocationExtension(t *testing.T) {
 	testExtensionKey := "test-ext-key"
 
 	testExtensionVal := &testExtensionsStruct{
-		TestBoolVal: pointer.Bool(true),
+		TestBoolVal: ptr.To[bool](true),
 	}
 	t.Run("test register default colocation extension", func(t *testing.T) {
 		err := RegisterDefaultColocationExtension(testExtensionKey, testExtensionVal)
@@ -60,7 +60,7 @@ func Test_registerAlreadyExistDefaultColocationExtension(t *testing.T) {
 	testExtensionKey := "test-ext-key"
 
 	testExtensionVal := &testExtensionsStruct{
-		TestBoolVal: pointer.Bool(true),
+		TestBoolVal: ptr.To[bool](true),
 	}
 	t.Run("test register default colocation extension", func(t *testing.T) {
 		err := RegisterDefaultColocationExtension(testExtensionKey, testExtensionVal)
@@ -84,12 +84,12 @@ func TestExtraFields_DeepCopy(t *testing.T) {
 			name: "deep copy struct",
 			in: configuration.ExtraFields{
 				"test-ext-key": &testExtStruct{
-					TestBoolVal: pointer.Bool(true),
+					TestBoolVal: ptr.To[bool](true),
 				},
 			},
 			want: &configuration.ExtraFields{
 				"test-ext-key": &testExtStruct{
-					TestBoolVal: pointer.Bool(true),
+					TestBoolVal: ptr.To[bool](true),
 				},
 			},
 		},

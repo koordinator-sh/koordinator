@@ -26,7 +26,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingconfig "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
@@ -66,7 +66,7 @@ func TestPlugin_AddPod(t *testing.T) {
 			UID: uuid.NewUUID(),
 		},
 		Spec: corev1.PodSpec{
-			Priority: pointer.Int32(extension.PriorityProdValueMax),
+			Priority: ptr.To[int32](extension.PriorityProdValueMax),
 			Containers: []corev1.Container{
 				{
 					Resources: corev1.ResourceRequirements{
@@ -232,7 +232,7 @@ func TestPlugin_RemovePod(t *testing.T) {
 			UID: uuid.NewUUID(),
 		},
 		Spec: corev1.PodSpec{
-			Priority: pointer.Int32(extension.PriorityProdValueMax),
+			Priority: ptr.To[int32](extension.PriorityProdValueMax),
 			Containers: []corev1.Container{
 				{
 					Resources: corev1.ResourceRequirements{

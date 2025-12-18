@@ -29,7 +29,7 @@ import (
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	schedutil "k8s.io/kubernetes/pkg/scheduler/util"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
@@ -69,7 +69,7 @@ func TestReservationInfo(t *testing.T) {
 				},
 			},
 			AllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyRestricted,
-			AllocateOnce:   pointer.Bool(false),
+			AllocateOnce:   ptr.To[bool](false),
 		},
 	}
 	testOwnerMatcher, err := reservationutil.ParseReservationOwnerMatchers(testRestrictedReservation.Spec.Owners)
@@ -109,7 +109,7 @@ func TestReservationInfo(t *testing.T) {
 				},
 			},
 			AllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyRestricted,
-			AllocateOnce:   pointer.Bool(false),
+			AllocateOnce:   ptr.To[bool](false),
 		},
 	}
 	_, testParseInvalidOwnerErr := reservationutil.ParseReservationOwnerMatchers(testInvalidReservation.Spec.Owners)
@@ -144,7 +144,7 @@ func TestReservationInfo(t *testing.T) {
 				},
 			},
 			AllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyRestricted,
-			AllocateOnce:   pointer.Bool(false),
+			AllocateOnce:   ptr.To[bool](false),
 			PreAllocation:  true,
 		},
 	}
@@ -410,6 +410,166 @@ func TestIsSchedulable(t *testing.T) {
 			rInfo := NewReservationInfo(tt.obj)
 			assert.NotNil(t, rInfo)
 			assert.Equal(t, tt.want, rInfo.IsUnschedulable())
+		})
+	}
+}
+
+func TestIsMatchable(t *testing.T) {
+	tests := []struct {
+		name string
+		obj  metav1.Object
+		want bool
+	}{
+		{
+			name: "available reservation is matchable",
+			obj: &schedulingv1alpha1.Reservation{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-r",
+					UID:  "123456",
+				},
+				Spec: schedulingv1alpha1.ReservationSpec{
+					Template: &corev1.PodTemplateSpec{},
+				},
+				Status: schedulingv1alpha1.ReservationStatus{
+					Phase:    schedulingv1alpha1.ReservationAvailable,
+					NodeName: "test-node",
+				},
+			},
+			want: true,
+		},
+		{
+			name: "failed reservation is not matchable",
+			obj: &schedulingv1alpha1.Reservation{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-r",
+					UID:  "123456",
+				},
+				Spec: schedulingv1alpha1.ReservationSpec{
+					Template: &corev1.PodTemplateSpec{},
+				},
+				Status: schedulingv1alpha1.ReservationStatus{
+					Phase:    schedulingv1alpha1.ReservationFailed,
+					NodeName: "test-node",
+				},
+			},
+			want: false,
+		},
+		{
+			name: "ready and running pod is matchable",
+			obj: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-p",
+					Namespace: "default",
+					UID:       "123456",
+				},
+				Spec: corev1.PodSpec{
+					NodeName: "test-node",
+				},
+				Status: corev1.PodStatus{
+					Phase: corev1.PodRunning,
+					Conditions: []corev1.PodCondition{
+						{
+							Type:   corev1.PodReady,
+							Status: corev1.ConditionTrue,
+						},
+					},
+				},
+			},
+			want: true,
+		},
+		{
+			name: "not ready pod is not matchable",
+			obj: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-p",
+					Namespace: "default",
+					UID:       "123456",
+				},
+				Spec: corev1.PodSpec{
+					NodeName: "test-node",
+				},
+				Status: corev1.PodStatus{
+					Phase: corev1.PodRunning,
+					Conditions: []corev1.PodCondition{
+						{
+							Type:   corev1.PodReady,
+							Status: corev1.ConditionFalse,
+						},
+					},
+				},
+			},
+			want: false,
+		},
+		{
+			name: "reservation with parse error is not matchable",
+			obj: &schedulingv1alpha1.Reservation{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-r",
+					UID:  "123456",
+				},
+				Spec: schedulingv1alpha1.ReservationSpec{
+					Template: &corev1.PodTemplateSpec{},
+					Owners: []schedulingv1alpha1.ReservationOwner{
+						{
+							LabelSelector: &metav1.LabelSelector{
+								MatchExpressions: []metav1.LabelSelectorRequirement{
+									{
+										Key:      "foo",
+										Operator: metav1.LabelSelectorOpIn,
+										Values:   nil,
+									},
+								},
+							},
+						},
+					},
+				},
+				Status: schedulingv1alpha1.ReservationStatus{
+					Phase:    schedulingv1alpha1.ReservationAvailable,
+					NodeName: "test-node",
+				},
+			},
+			want: false,
+		},
+		{
+			name: "allocate once reservation with allocated pods is not matchable",
+			obj: &schedulingv1alpha1.Reservation{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-r",
+					UID:  "123456",
+				},
+				Spec: schedulingv1alpha1.ReservationSpec{
+					Template:     &corev1.PodTemplateSpec{},
+					AllocateOnce: ptr.To[bool](true),
+				},
+				Status: schedulingv1alpha1.ReservationStatus{
+					Phase:    schedulingv1alpha1.ReservationAvailable,
+					NodeName: "test-node",
+				},
+			},
+			want: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var rInfo *ReservationInfo
+			switch obj := tt.obj.(type) {
+			case *schedulingv1alpha1.Reservation:
+				rInfo = NewReservationInfo(obj)
+				if tt.name == "allocate once reservation with allocated pods is not matchable" {
+					// add a pod to make it allocated
+					rInfo.AddAssignedPod(&corev1.Pod{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "test-pod",
+							Namespace: "default",
+							UID:       "pod-123",
+						},
+					})
+				}
+			case *corev1.Pod:
+				rInfo = NewReservationInfoFromPod(obj)
+			}
+			assert.NotNil(t, rInfo)
+			assert.Equal(t, tt.want, rInfo.IsMatchable())
 		})
 	}
 }

@@ -20,7 +20,7 @@ import (
 	"math"
 	"path/filepath"
 
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 )
 
 const (
@@ -117,7 +117,7 @@ func (c *SystemResource) WithValidator(validator ResourceValidator) Resource {
 }
 
 func (c *SystemResource) WithSupported(isSupported bool, msg string) Resource {
-	c.Supported = pointer.Bool(isSupported)
+	c.Supported = ptr.To[bool](isSupported)
 	c.SupportMsg = msg
 	return c
 }
@@ -134,5 +134,5 @@ func (c *SystemResource) WithCheckOnce(isCheckOnce bool) Resource {
 }
 
 func NewCommonSystemResource(relativePath, fileName string, Rootdir func() string) Resource {
-	return &SystemResource{Type: ResourceType(fileName), FileName: fileName, RelativePath: relativePath, RootDir: Rootdir, Supported: pointer.Bool(true)}
+	return &SystemResource{Type: ResourceType(fileName), FileName: fileName, RelativePath: relativePath, RootDir: Rootdir, Supported: ptr.To[bool](true)}
 }

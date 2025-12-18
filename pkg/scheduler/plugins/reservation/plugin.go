@@ -320,7 +320,7 @@ func (pl *Plugin) Filter(ctx context.Context, cycleState *framework.CycleState, 
 			allocatePolicy = schedulingv1alpha1.ReservationAllocatePolicyAligned
 		}
 
-		status := pl.reservationCache.forEachAvailableReservationOnNode(node.Name, func(rInfo *frameworkext.ReservationInfo) (bool, *framework.Status) {
+		status := pl.reservationCache.ForEachMatchableReservationOnNode(node.Name, func(rInfo *frameworkext.ReservationInfo) (bool, *framework.Status) {
 			// ReservationAllocatePolicyDefault cannot coexist with other allocate policies
 			if (allocatePolicy == schedulingv1alpha1.ReservationAllocatePolicyDefault ||
 				rInfo.GetAllocatePolicy() == schedulingv1alpha1.ReservationAllocatePolicyDefault) &&

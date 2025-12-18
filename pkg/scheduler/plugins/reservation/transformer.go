@@ -68,16 +68,16 @@ func (pl *Plugin) AfterPreFilter(ctx context.Context, cycleState *framework.Cycl
 
 	var allNodes []string
 	var skipRestoreNodeInfo bool
-	if preRes.AllNodes() {
-		hintState, hasHint := getSchedulingHint(cycleState)
-		if !hasHint {
-			allNodes = pl.reservationCache.listAllNodes()
-		} else { // use the hint nodes if exists
-			allNodes = hintState.PreFilterNodeInfos
-			skipRestoreNodeInfo = hintState.SkipRestoreNodeInfo
-		}
-	} else { // use the PreFilter result if exists
+	hintState, hasHint := getSchedulingHint(cycleState)
+	if hasHint { // use the hint nodes if exists
+		allNodes = hintState.PreFilterNodeInfos
+		skipRestoreNodeInfo = hintState.SkipRestoreNodeInfo
+	} else if !preRes.AllNodes() { // use the PreFilter result if exists
 		allNodes = preRes.NodeNames.UnsortedList()
+	} else if reservationutil.IsReservePod(pod) {
+		allNodes = pl.reservationCache.ListAllNodes(false) // only care about allocated reservations to restore
+	} else {
+		allNodes = pl.reservationCache.ListAllNodes(true)
 	}
 
 	state := getStateData(cycleState)
@@ -159,7 +159,7 @@ func (pl *Plugin) prepareMatchReservationStateForNormalPod(ctx context.Context, 
 	var skipRestoreNodeInfo bool
 	hintState, hasHint := getSchedulingHint(cycleState)
 	if !hasHint {
-		allNodes = pl.reservationCache.listAllNodes()
+		allNodes = pl.reservationCache.ListAllNodes(true)
 	} else { // use the hint nodes if exists
 		allNodes = hintState.PreFilterNodeInfos
 		skipRestoreNodeInfo = hintState.SkipRestoreNodeInfo
@@ -204,17 +204,7 @@ func (pl *Plugin) prepareMatchReservationStateForNormalPod(ctx context.Context, 
 			taintsUnmatchedReasons:   map[string]int{},
 		}
 
-		status := pl.reservationCache.forEachAvailableReservationOnNode(nodeName, func(rInfo *frameworkext.ReservationInfo) (bool, *framework.Status) {
-			if !rInfo.IsAvailable() || rInfo.ParseError != nil {
-				return true, nil
-			}
-
-			// In this case, the Controller has not yet updated the status of the Reservation to Succeeded,
-			// but in fact it can no longer be used for allocation. So it's better to skip first.
-			if rInfo.IsAllocateOnce() && rInfo.GetAllocatedPods() > 0 {
-				return true, nil
-			}
-
+		status := pl.reservationCache.ForEachMatchableReservationOnNode(nodeName, func(rInfo *frameworkext.ReservationInfo) (bool, *framework.Status) {
 			// check if the reservation matches or can be ignored by the pod
 			isMatchedOrIgnored := checkReservationMatchedOrIgnored(pod, rInfo, diagnosisState, node, podRequests, reservationAffinity, exactMatchReservationSpec, affinityReservationName, isReservationIgnored)
 
@@ -344,7 +334,7 @@ func (pl *Plugin) prepareMatchReservationStateForReservePod(ctx context.Context,
 	var skipRestoreNodeInfo bool
 	hintState, hasHint := getSchedulingHint(cycleState)
 	if !hasHint {
-		allNodes = pl.reservationCache.listAllNodes()
+		allNodes = pl.reservationCache.ListAllNodes(false) // only care about allocated reservations to restore
 	} else {
 		allNodes = hintState.PreFilterNodeInfos
 		skipRestoreNodeInfo = hintState.SkipRestoreNodeInfo
@@ -434,20 +424,8 @@ func (pl *Plugin) prepareMatchReservationStateForReservePod(ctx context.Context,
 			taintsUnmatchedReasons:   map[string]int{},
 		}
 
-		status := pl.reservationCache.forEachAvailableReservationOnNode(nodeName, func(availableRInfo *frameworkext.ReservationInfo) (bool, *framework.Status) {
-			if !availableRInfo.IsAvailable() || availableRInfo.ParseError != nil {
-				return true, nil
-			}
-
-			// In this case, the Controller has not yet updated the status of the Reservation to Succeeded,
-			// but in fact it can no longer be used for allocation. So it's better to skip first.
-			if availableRInfo.IsAllocateOnce() && availableRInfo.GetAllocatedPods() > 0 {
-				return true, nil
-			}
-
-			if availableRInfo.GetAllocatedPods() > 0 { // reservation is unmatched and not ignored
-				unmatched = append(unmatched, availableRInfo.Clone())
-			}
+		status := pl.reservationCache.ForEachMatchableReservationOnNode(nodeName, func(availableRInfo *frameworkext.ReservationInfo) (bool, *framework.Status) {
+			unmatched = append(unmatched, availableRInfo.Clone())
 
 			return true, nil
 		})
@@ -717,6 +695,7 @@ func preRestoreReservationResourcesForNode(logger klog.Logger, extender framewor
 		nodeRState.rAllocated = framework.NewResource(rAllocated)
 		nodeRState.podRequested = podRequested
 		nodeRState.preRestored = true // no more pre-restore in the same cycle
+		klog.V(5).InfoS("Skipping restore node info", "pod", klog.KObj(pod), "node", node.Name)
 		return nil
 	}
 

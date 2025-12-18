@@ -26,7 +26,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	ext "github.com/koordinator-sh/koordinator/apis/extension"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
@@ -133,7 +133,7 @@ func Test_cpusetRule_getContainerCPUSet(t *testing.T) {
 				},
 				beCPUManagerEnabled: true,
 			},
-			want:    pointer.String("0-7"),
+			want:    ptr.To[string]("0-7"),
 			wantErr: false,
 		},
 		{
@@ -171,7 +171,7 @@ func Test_cpusetRule_getContainerCPUSet(t *testing.T) {
 					},
 				},
 			},
-			want:    pointer.String("0-7"),
+			want:    ptr.To[string]("0-7"),
 			wantErr: false,
 		},
 		{
@@ -201,7 +201,7 @@ func Test_cpusetRule_getContainerCPUSet(t *testing.T) {
 					CgroupParent:   "burstable/test-pod/test-container",
 				},
 			},
-			want:    pointer.String("0-7,8-15"),
+			want:    ptr.To[string]("0-7,8-15"),
 			wantErr: false,
 		},
 		{
@@ -241,7 +241,7 @@ func Test_cpusetRule_getContainerCPUSet(t *testing.T) {
 					},
 				},
 			},
-			want:    pointer.String("0-7,8-15"),
+			want:    ptr.To[string]("0-7,8-15"),
 			wantErr: false,
 		},
 		{
@@ -270,7 +270,7 @@ func Test_cpusetRule_getContainerCPUSet(t *testing.T) {
 					CgroupParent:   "burstable/test-pod/test-container",
 				},
 			},
-			want:    pointer.String("0-7,8-15"),
+			want:    ptr.To[string]("0-7,8-15"),
 			wantErr: false,
 		},
 		{
@@ -327,7 +327,7 @@ func Test_cpusetRule_getContainerCPUSet(t *testing.T) {
 					CgroupParent:   "besteffort/test-pod/test-container",
 				},
 			},
-			want:    pointer.String(""),
+			want:    ptr.To[string](""),
 			wantErr: false,
 		},
 		{
@@ -379,7 +379,7 @@ func Test_cpusetRule_getContainerCPUSet(t *testing.T) {
 					},
 				},
 			},
-			want:    pointer.String("9-15"),
+			want:    ptr.To[string]("9-15"),
 			wantErr: false,
 		},
 		{
@@ -432,7 +432,7 @@ func Test_cpusetRule_getContainerCPUSet(t *testing.T) {
 					},
 				},
 			},
-			want:    pointer.String("8-15"),
+			want:    ptr.To[string]("8-15"),
 			wantErr: false,
 		},
 		{
@@ -485,7 +485,7 @@ func Test_cpusetRule_getContainerCPUSet(t *testing.T) {
 					},
 				},
 			},
-			want:    pointer.String("0-3"),
+			want:    ptr.To[string]("0-3"),
 			wantErr: false,
 		},
 	}
@@ -1095,7 +1095,7 @@ func Test_cpusetRule_getHostAppCpuset(t *testing.T) {
 					CgroupParent: "",
 				},
 			},
-			want:    pointer.String("0-7,8-15"),
+			want:    ptr.To[string]("0-7,8-15"),
 			wantErr: false,
 		},
 	}

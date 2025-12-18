@@ -27,7 +27,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/klog/v2"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	"github.com/koordinator-sh/koordinator/apis/configuration"
 	"github.com/koordinator-sh/koordinator/apis/extension"
@@ -50,9 +50,9 @@ func DefaultColocationStrategy() configuration.ColocationStrategy {
 	var cpuCalculatePolicy, memoryCalculatePolicy = configuration.CalculateByPodUsage, configuration.CalculateByPodUsage
 	var defaultMemoryCollectPolicy = slov1alpha1.UsageWithoutPageCache
 	cfg := configuration.ColocationStrategy{
-		Enable:                         pointer.Bool(false),
-		MetricAggregateDurationSeconds: pointer.Int64(300),
-		MetricReportIntervalSeconds:    pointer.Int64(60),
+		Enable:                         ptr.To[bool](false),
+		MetricAggregateDurationSeconds: ptr.To[int64](300),
+		MetricReportIntervalSeconds:    ptr.To[int64](60),
 		MetricAggregatePolicy: &slov1alpha1.AggregatePolicy{
 			Durations: []metav1.Duration{
 				{Duration: 5 * time.Minute},
@@ -61,18 +61,18 @@ func DefaultColocationStrategy() configuration.ColocationStrategy {
 			},
 		},
 		MetricMemoryCollectPolicy:        &defaultMemoryCollectPolicy,
-		CPUReclaimThresholdPercent:       pointer.Int64(60),
-		CPUReclaimableReservedPercent:    pointer.Int64(0),
+		CPUReclaimThresholdPercent:       ptr.To[int64](60),
 		CPUCalculatePolicy:               &cpuCalculatePolicy,
-		MemoryReclaimThresholdPercent:    pointer.Int64(65),
+		CPUReclaimableReservedPercent:    ptr.To[int64](0),
+		MemoryReclaimableReservedPercent: ptr.To[int64](0),
+		MemoryReclaimThresholdPercent:    ptr.To[int64](65),
 		MemoryCalculatePolicy:            &memoryCalculatePolicy,
-		DegradeTimeMinutes:               pointer.Int64(15),
-		UpdateTimeThresholdSeconds:       pointer.Int64(300),
-		ResourceDiffThreshold:            pointer.Float64(0.1),
-		MidCPUThresholdPercent:           pointer.Int64(100),
-		MidMemoryThresholdPercent:        pointer.Int64(100),
-		MemoryReclaimableReservedPercent: pointer.Int64(0),
-		MidUnallocatedPercent:            pointer.Int64(0),
+		DegradeTimeMinutes:               ptr.To[int64](15),
+		UpdateTimeThresholdSeconds:       ptr.To[int64](300),
+		ResourceDiffThreshold:            ptr.To[float64](0.1),
+		MidCPUThresholdPercent:           ptr.To[int64](100),
+		MidMemoryThresholdPercent:        ptr.To[int64](100),
+		MidUnallocatedPercent:            ptr.To[int64](0),
 		BatchCPUThresholdPercent:         nil,
 		BatchMemoryThresholdPercent:      nil,
 	}
@@ -223,5 +223,5 @@ func getNodeReclaimPercent(node *corev1.Node, key string) *int64 {
 		return nil
 	}
 
-	return pointer.Int64(int64(v * 100))
+	return ptr.To[int64](int64(v * 100))
 }

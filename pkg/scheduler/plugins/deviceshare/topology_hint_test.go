@@ -416,3 +416,41 @@ func TestPlugin_Allocate(t *testing.T) {
 		})
 	}
 }
+
+func Test_generateDesignatedHints(t *testing.T) {
+	type args struct {
+		allocations apiext.DeviceAllocations
+		topology    *NUMATopology
+	}
+	affinityNode1, _ := bitmask.NewBitMask(1)
+	tests := []struct {
+		name  string
+		args  args
+		want  map[string][]topologymanager.NUMATopologyHint
+		want1 *framework.Status
+	}{
+		{
+			name: "generate hints",
+			args: args{
+				allocations: apiext.DeviceAllocations{
+					schedulingv1alpha1.GPU: {
+						{
+							Minor: 5,
+						},
+					},
+				},
+				topology: newNUMATopology(fakeDeviceCR),
+			},
+			want: map[string][]topologymanager.NUMATopologyHint{
+				string(schedulingv1alpha1.GPU): {topologymanager.NUMATopologyHint{NUMANodeAffinity: affinityNode1, Unsatisfied: false, Preferred: true, Score: 500}},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, got1 := generateDesignatedHints(tt.args.allocations, tt.args.topology)
+			assert.Equalf(t, tt.want, got, "generateDesignatedHints(%v, %v)", tt.args.allocations, tt.args.topology)
+			assert.Equalf(t, tt.want1, got1, "generateDesignatedHints(%v, %v)", tt.args.allocations, tt.args.topology)
+		})
+	}
+}

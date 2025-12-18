@@ -26,7 +26,7 @@ import (
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
@@ -156,7 +156,7 @@ func (a *AutopilotAllocator) filterNodeDevice(
 				}
 			}
 			if selector == nil || selector.Matches(labels.Set(deviceInfo.Labels)) {
-				minors.Insert(int(pointer.Int32Deref(deviceInfo.Minor, 0)))
+				minors.Insert(int(ptr.Deref[int32](deviceInfo.Minor, 0)))
 			}
 		}
 		if minors.Len() > 0 {
@@ -230,7 +230,7 @@ func (a *AutopilotAllocator) validateJointAllocation(jointAllocate *apiext.Devic
 		deviceInfos := nodeDevice.deviceInfos[deviceType]
 		for _, allocation := range deviceAllocations[deviceType] {
 			for _, v := range deviceInfos {
-				if pointer.Int32Deref(v.Minor, 0) == allocation.Minor && v.Topology != nil {
+				if ptr.Deref[int32](v.Minor, 0) == allocation.Minor && v.Topology != nil {
 					pcies.Insert(v.Topology.PCIEID)
 					break
 				}
@@ -367,7 +367,7 @@ func defaultAllocateDevices(
 
 	deviceInfos := map[int]*schedulingv1alpha1.DeviceInfo{}
 	for _, v := range nodeDevice.deviceInfos[deviceType] {
-		minor := pointer.Int32Deref(v.Minor, 0)
+		minor := ptr.Deref[int32](v.Minor, 0)
 		deviceInfos[int(minor)] = v
 	}
 
@@ -460,7 +460,7 @@ func newPreferredPCIes(nodeDevice *nodeDevice, deviceType schedulingv1alpha1.Dev
 	pcies := sets.NewString()
 	for _, v := range allocations {
 		for _, deviceInfo := range nodeDevice.deviceInfos[deviceType] {
-			if pointer.Int32Deref(deviceInfo.Minor, 0) == v.Minor && deviceInfo.Topology != nil {
+			if ptr.Deref[int32](deviceInfo.Minor, 0) == v.Minor && deviceInfo.Topology != nil {
 				pcies.Insert(deviceInfo.Topology.PCIEID)
 				break
 			}

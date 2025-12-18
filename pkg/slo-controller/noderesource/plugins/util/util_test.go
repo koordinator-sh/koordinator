@@ -23,7 +23,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	"github.com/koordinator-sh/koordinator/apis/configuration"
 	"github.com/koordinator-sh/koordinator/apis/extension"
@@ -121,12 +121,12 @@ func Test_getNodeReservation(t *testing.T) {
 			name: "get correct reserved node resource quantity",
 			args: args{
 				strategy: &configuration.ColocationStrategy{
-					Enable:                        pointer.Bool(true),
-					CPUReclaimThresholdPercent:    pointer.Int64(65),
-					MemoryReclaimThresholdPercent: pointer.Int64(65),
-					DegradeTimeMinutes:            pointer.Int64(15),
-					UpdateTimeThresholdSeconds:    pointer.Int64(300),
-					ResourceDiffThreshold:         pointer.Float64(0.1),
+					Enable:                        ptr.To[bool](true),
+					CPUReclaimThresholdPercent:    ptr.To[int64](65),
+					MemoryReclaimThresholdPercent: ptr.To[int64](65),
+					DegradeTimeMinutes:            ptr.To[int64](15),
+					UpdateTimeThresholdSeconds:    ptr.To[int64](300),
+					ResourceDiffThreshold:         ptr.To[float64](0.1),
 				},
 				nodeAllocatable: makeResourceList("100", "100Gi"),
 			},
@@ -155,9 +155,9 @@ func Test_getNodeReserved(t *testing.T) {
 			name: "get correct node reserved resource quantity: 0",
 			args: args{
 				strategy: &configuration.ColocationStrategy{
-					Enable:                           pointer.Bool(true),
-					CPUReclaimableReservedPercent:    pointer.Int64(0),
-					MemoryReclaimableReservedPercent: pointer.Int64(0),
+					Enable:                           ptr.To[bool](true),
+					CPUReclaimableReservedPercent:    ptr.To[int64](0),
+					MemoryReclaimableReservedPercent: ptr.To[int64](0),
 				},
 				nodeAllocatable: makeResourceList("100", "100Gi"),
 			},
@@ -167,9 +167,9 @@ func Test_getNodeReserved(t *testing.T) {
 			name: "get correct node reserved resource quantity > 0",
 			args: args{
 				strategy: &configuration.ColocationStrategy{
-					Enable:                           pointer.Bool(true),
-					CPUReclaimableReservedPercent:    pointer.Int64(10),
-					MemoryReclaimableReservedPercent: pointer.Int64(10),
+					Enable:                           ptr.To[bool](true),
+					CPUReclaimableReservedPercent:    ptr.To[int64](10),
+					MemoryReclaimableReservedPercent: ptr.To[int64](10),
 				},
 				nodeAllocatable: makeResourceList("100", "100Gi"),
 			},

@@ -22,7 +22,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
@@ -40,7 +40,7 @@ func TestTransformDevice(t *testing.T) {
 				Spec: schedulingv1alpha1.DeviceSpec{
 					Devices: []schedulingv1alpha1.DeviceInfo{
 						{
-							Minor:  pointer.Int32(1),
+							Minor:  ptr.To[int32](1),
 							Type:   schedulingv1alpha1.GPU,
 							Health: true,
 							Resources: corev1.ResourceList{
@@ -54,7 +54,7 @@ func TestTransformDevice(t *testing.T) {
 				Spec: schedulingv1alpha1.DeviceSpec{
 					Devices: []schedulingv1alpha1.DeviceInfo{
 						{
-							Minor:  pointer.Int32(1),
+							Minor:  ptr.To[int32](1),
 							Type:   schedulingv1alpha1.GPU,
 							Health: true,
 							Resources: corev1.ResourceList{
@@ -71,7 +71,7 @@ func TestTransformDevice(t *testing.T) {
 				Spec: schedulingv1alpha1.DeviceSpec{
 					Devices: []schedulingv1alpha1.DeviceInfo{
 						{
-							Minor:  pointer.Int32(1),
+							Minor:  ptr.To[int32](1),
 							Type:   schedulingv1alpha1.GPU,
 							Health: true,
 							Resources: corev1.ResourceList{
@@ -87,7 +87,7 @@ func TestTransformDevice(t *testing.T) {
 				Spec: schedulingv1alpha1.DeviceSpec{
 					Devices: []schedulingv1alpha1.DeviceInfo{
 						{
-							Minor:  pointer.Int32(1),
+							Minor:  ptr.To[int32](1),
 							Type:   schedulingv1alpha1.GPU,
 							Health: true,
 							Resources: corev1.ResourceList{
