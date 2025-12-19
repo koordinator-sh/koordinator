@@ -617,14 +617,15 @@ func TestPlugin_PreFilter(t *testing.T) {
 
 func TestPlugin_Filter(t *testing.T) {
 	tests := []struct {
-		name            string
-		nodeLabels      map[string]string
-		nodeAnnotations map[string]string
-		kubeletPolicy   *extension.KubeletCPUManagerPolicy
-		cpuTopology     *CPUTopology
-		state           *preFilterState
-		allocationState *NodeAllocation
-		want            *framework.Status
+		name                 string
+		nodeLabels           map[string]string
+		nodeAnnotations      map[string]string
+		kubeletPolicy        *extension.KubeletCPUManagerPolicy
+		cpuTopology          *CPUTopology
+		state                *preFilterState
+		allocationState      *NodeAllocation
+		want                 *framework.Status
+		wantAllocationResult *PodAllocation
 	}{
 		{
 			name: "error with missing preFilterState",
@@ -913,6 +914,72 @@ func TestPlugin_Filter(t *testing.T) {
 			},
 			cpuTopology:     buildCPUTopologyForTest(2, 1, 4, 2),
 			allocationState: NewNodeAllocation("test-node-1"),
+			wantAllocationResult: &PodAllocation{
+				CPUSet: cpuset.MustParse("0-3"),
+				NUMANodeResources: []NUMANodeResource{
+					{
+						Node: 0,
+						Resources: corev1.ResourceList{
+							corev1.ResourceCPU: resource.MustParse("4"),
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "designatedAllocation, without numa, success",
+			nodeLabels: map[string]string{
+				extension.LabelNUMATopologyPolicy: string(extension.NUMATopologyPolicySingleNUMANode),
+			},
+			nodeAnnotations: map[string]string{
+				extension.AnnotationNodeResourceAmplificationRatio: `{"cpu": 1.5}`,
+			},
+			state: &preFilterState{
+				requestCPUBind:         true,
+				requiredCPUBindPolicy:  schedulingconfig.CPUBindPolicyFullPCPUs,
+				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs,
+				numCPUsNeeded:          4,
+				designatedAllocation: &allocation{
+					cpuset: cpuset.MustParse("0-3"),
+				},
+			},
+			cpuTopology:     buildCPUTopologyForTest(2, 1, 4, 2),
+			allocationState: NewNodeAllocation("test-node-1"),
+			wantAllocationResult: &PodAllocation{
+				CPUSet: cpuset.MustParse("0-3"),
+			},
+		},
+		{
+			name: "designatedAllocation, without cpuset, success",
+			nodeLabels: map[string]string{
+				extension.LabelNUMATopologyPolicy: string(extension.NUMATopologyPolicySingleNUMANode),
+			},
+			nodeAnnotations: map[string]string{
+				extension.AnnotationNodeResourceAmplificationRatio: `{"cpu": 1.5}`,
+			},
+			state: &preFilterState{
+				requestCPUBind: false,
+				numCPUsNeeded:  4,
+				designatedAllocation: &allocation{
+					numaNodeResource: map[int]corev1.ResourceList{
+						0: {
+							corev1.ResourceCPU: resource.MustParse("4"),
+						},
+					},
+				},
+			},
+			cpuTopology:     buildCPUTopologyForTest(2, 1, 4, 2),
+			allocationState: NewNodeAllocation("test-node-1"),
+			wantAllocationResult: &PodAllocation{
+				NUMANodeResources: []NUMANodeResource{
+					{
+						Node: 0,
+						Resources: corev1.ResourceList{
+							corev1.ResourceCPU: resource.MustParse("4"),
+						},
+					},
+				},
+			},
 		},
 		{
 			name: "designatedAllocation, failure",
@@ -1010,6 +1077,9 @@ func TestPlugin_Filter(t *testing.T) {
 			pod := &corev1.Pod{}
 			if got := plg.Filter(context.TODO(), cycleState, pod, nodeInfo); !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("Filter() = %v, want %v", got, tt.want)
+			}
+			if tt.state != nil {
+				assert.Equal(t, tt.wantAllocationResult, tt.state.allocation)
 			}
 		})
 	}
