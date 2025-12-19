@@ -66,6 +66,8 @@ func (pl *Plugin) AfterPreFilter(ctx context.Context, cycleState *framework.Cycl
 		return nil
 	}
 
+	state := getStateData(cycleState)
+
 	var allNodes []string
 	var skipRestoreNodeInfo bool
 	hintState, hasHint := getSchedulingHint(cycleState)
@@ -74,13 +76,13 @@ func (pl *Plugin) AfterPreFilter(ctx context.Context, cycleState *framework.Cycl
 		skipRestoreNodeInfo = hintState.SkipRestoreNodeInfo
 	} else if !preRes.AllNodes() { // use the PreFilter result if exists
 		allNodes = preRes.NodeNames.UnsortedList()
-	} else if reservationutil.IsReservePod(pod) {
-		allNodes = pl.reservationCache.ListAllNodes(false) // only care about allocated reservations to restore
-	} else {
-		allNodes = pl.reservationCache.ListAllNodes(true)
+	} else { // If the PreFilterResult does not restrict the scope, we try all the valid nodeReservationStates to restore.
+		allNodes = make([]string, 0, len(state.nodeReservationStates))
+		for node := range state.nodeReservationStates {
+			allNodes = append(allNodes, node)
+		}
 	}
 
-	state := getStateData(cycleState)
 	parallelCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	errCh := parallelize.NewErrorChannel()
@@ -101,7 +103,7 @@ func (pl *Plugin) AfterPreFilter(ctx context.Context, cycleState *framework.Cycl
 		if nodeRState == nil {
 			nodeRState = &nodeReservationState{}
 		}
-		if !nodeRState.finalRestored && (len(nodeRState.matchedOrIgnored) > 0 || len(nodeRState.unmatched) > 0) {
+		if !nodeRState.finalRestored && (len(nodeRState.matchedOrIgnored) > 0 || len(nodeRState.unmatched) > 0 || len(nodeRState.preAllocatablePods) > 0) {
 			extender := pl.handle.(frameworkext.FrameworkExtender)
 			_, status := restoreReservationResourcesForNode(ctx, cycleState, extender, pod, state.rInfo, nodeInfo, nodeRState, skipRestoreNodeInfo)
 			if !status.IsSuccess() {
@@ -680,6 +682,9 @@ func preRestoreReservationResourcesForNode(logger klog.Logger, extender framewor
 	unmatched := nodeRState.unmatched
 	preAllocatable := nodeRState.preAllocatablePods
 	node := nodeInfo.Node()
+	if klog.V(5).Enabled() {
+		defer klog.InfoS("preRestoreReservationResourcesForNode succeeded", "pod", klog.KObj(pod), "node", node.Name, "matched", len(matchedOrIgnored), "unmatched", len(unmatched), "preAllocatable", len(preAllocatable))
+	}
 
 	// When the nodeInfo restore is skipped, we only record for the reservation restore state.
 	if skipRestoreNodeInfo {
@@ -751,6 +756,9 @@ func restoreReservationResourcesForNode(ctx context.Context, cycleState *framewo
 	preAllocatable := nodeRState.preAllocatablePods
 	node := nodeInfo.Node()
 	logger := klog.FromContext(ctx)
+	if klog.V(5).Enabled() {
+		defer klog.InfoS("restoreReservationResourcesForNode succeeded", "pod", klog.KObj(pod), "node", node.Name, "matched", len(matchedOrIgnored), "unmatched", len(unmatched), "preAllocatable", len(preAllocatable))
+	}
 
 	// Some attributes like podAffinity and topologySpreadConstraints is pre-processed in the PreFilter phase,
 	// so we cannot delay the restoration to the Filter.
