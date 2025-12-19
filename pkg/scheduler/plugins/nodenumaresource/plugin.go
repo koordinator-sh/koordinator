@@ -39,6 +39,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/hinter"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/topologymanager"
+	"github.com/koordinator-sh/koordinator/pkg/util/bitmask"
 	"github.com/koordinator-sh/koordinator/pkg/util/cpuset"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
@@ -625,6 +626,15 @@ func (p *Plugin) allocate(ctx context.Context, cycleState *framework.CycleState,
 	return nil
 }
 
+func getDesignatedNUMAHints(alloc *allocation) bitmask.BitMask {
+	var numaNodes []int
+	for numaNode := range alloc.numaNodeResource {
+		numaNodes = append(numaNodes, numaNode)
+	}
+	bitMask, _ := bitmask.NewBitMask(numaNodes...)
+	return bitMask
+}
+
 func (p *Plugin) Unreserve(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) {
 	state, status := getPreFilterState(cycleState)
 	if !status.IsSuccess() {
@@ -737,6 +747,11 @@ func tryAllocateFromNode(
 	if preFilterState != nil && preFilterState.designatedAllocation != nil {
 		resourceOptions.requiredResources = preFilterState.designatedAllocation.numaNodeResource
 		resourceOptions.preferredCPUs = preFilterState.designatedAllocation.cpuset
+		if len(preFilterState.designatedAllocation.numaNodeResource) > 0 {
+			resourceOptions.hint = topologymanager.NUMATopologyHint{
+				NUMANodeAffinity: getDesignatedNUMAHints(preFilterState.designatedAllocation),
+			}
+		}
 		resourceOptions.preemptibleCPUs = cpuset.NewCPUSet()
 		defer func() {
 			if allocation != nil && !allocation.CPUSet.Equals(preFilterState.designatedAllocation.cpuset) {
