@@ -21,6 +21,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -33,13 +34,15 @@ import (
 )
 
 var (
-	devRegexp = regexp.MustCompile(`^/dev/davinci(\d+)$`)
+	devRegexp                   = regexp.MustCompile(`^/dev/davinci(\d+)$`)
+	HUAWEIProductExcludeNPUList = []string{"1710", "1711"}
 )
 
 // IsNPUDevice only consider 910B/910B3/310P3
 func IsNPUDevice(device *pci.Device) bool {
 	klog.V(3).Info("[IsNPUDevice] device.Vendor.ID: ", device.Vendor.ID)
-	return device.Vendor.ID == HUAWEIVendorID || device.Vendor.ID == HUAWEIRealVendorID
+	// The HUAWEI bridge device will also be detected as HUAWEI vendor
+	return (device.Vendor.ID == HUAWEIVendorID || device.Vendor.ID == HUAWEIRealVendorID) && !slices.Contains(HUAWEIProductExcludeNPUList, device.Product.ID)
 }
 
 func IsXPUDevice(device *pci.Device) bool {
