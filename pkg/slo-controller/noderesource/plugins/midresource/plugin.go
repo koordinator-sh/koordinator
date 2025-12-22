@@ -82,7 +82,8 @@ func (p *Plugin) Reset(node *corev1.Node, message string) []framework.ResourceIt
 }
 
 // Calculate calculates Mid resources using the formula below:
-// min(ProdReclaimable, NodeAllocable * MidThresholdRatio).
+// Allocatable[Mid]' := min(Reclaimable[Mid], NodeAllocatable * thresholdRatio, NodeUnused) + Unallocated[Mid]
+// Unallocated[Mid] = max((NodeCapacity - NodeReserved - Allocated[Prod]) * midUnallocatedRatio, NodeCapacity * reclaimableReservedRatio)
 func (p *Plugin) Calculate(strategy *configuration.ColocationStrategy, node *corev1.Node, podList *corev1.PodList,
 	metrics *framework.ResourceMetrics) ([]framework.ResourceItem, error) {
 	if strategy == nil || node == nil || node.Status.Allocatable == nil || podList == nil ||
@@ -159,7 +160,7 @@ func (p *Plugin) getUnallocated(nodeName string, podList *corev1.PodList, nodeCa
 
 func (p *Plugin) calculate(strategy *configuration.ColocationStrategy, node *corev1.Node, podList *corev1.PodList,
 	resourceMetrics *framework.ResourceMetrics) []framework.ResourceItem {
-	// Allocatable[Mid]' := min(Reclaimable[Mid], NodeAllocatable * thresholdRatio, NodeUnused) + Unallocated[Mid] * midUnallocatedRatio
+	// Allocatable[Mid]' := min(Reclaimable[Mid], NodeAllocatable * thresholdRatio, NodeUnused) + Unallocated[Mid]
 	// Unallocated[Mid] = max((NodeCapacity - NodeReserved - Allocated[Prod]) * midUnallocatedRatio, NodeCapacity * reclaimableReservedRatio)
 
 	var allocatableMilliCPU, allocatableMemory int64
