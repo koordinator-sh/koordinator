@@ -28,4 +28,5 @@ func init() {
 	ManagerMap[extension.GPUVendorHuawei] = resource.NewNPUManager()
 	ManagerMap[extension.GPUVendorCambricon] = resource.NewMLUManager()
 	ManagerMap[extension.GPUVendorBaidu] = resource.NewXPUManager()
+	ManagerMap[extension.GPUVendorMetaX] = resource.NewMXManager()
 }

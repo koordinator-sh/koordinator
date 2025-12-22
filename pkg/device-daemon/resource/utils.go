@@ -21,6 +21,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -33,13 +34,15 @@ import (
 )
 
 var (
-	devRegexp = regexp.MustCompile(`^/dev/davinci(\d+)$`)
+	devRegexp                   = regexp.MustCompile(`^/dev/davinci(\d+)$`)
+	HUAWEIProductExcludeNPUList = []string{"1710", "1711"}
 )
 
 // IsNPUDevice only consider 910B/910B3/310P3
 func IsNPUDevice(device *pci.Device) bool {
 	klog.V(3).Info("[IsNPUDevice] device.Vendor.ID: ", device.Vendor.ID)
-	return device.Vendor.ID == HUAWEIVendorID || device.Vendor.ID == HUAWEIRealVendorID
+	// The HUAWEI bridge device will also be detected as HUAWEI vendor
+	return (device.Vendor.ID == HUAWEIVendorID || device.Vendor.ID == HUAWEIRealVendorID) && !slices.Contains(HUAWEIProductExcludeNPUList, device.Product.ID)
 }
 
 func IsXPUDevice(device *pci.Device) bool {
@@ -50,6 +53,11 @@ func IsXPUDevice(device *pci.Device) bool {
 func IsMLUDevice(device *pci.Device) bool {
 	klog.V(4).Info("[IsMLUDevice] device.Vendor.ID: ", device.Vendor.ID)
 	return device.Vendor.ID == MLUVendorID || device.Vendor.ID == MLURealVendorID
+}
+
+func IsMXDevice(device *pci.Device) bool {
+	klog.V(3).Info("[IsMXDevice] device.Vendor.ID: ", device.Vendor.ID)
+	return device.Vendor.ID == MXVendorID || device.Vendor.ID == MXRealVendorID
 }
 
 // GetXPUName exec cmd in chroot to get xpu name
@@ -129,6 +137,16 @@ func GetXPUName(deviceType string) (string, error) {
 			}
 		}
 		return "", fmt.Errorf("get MLU name err, no MLU name found in output: %s", string(output))
+	case MX:
+		klog.Info("GetMXName, start to get MX name")
+		// mx-smi --show-hwinfo | grep -i "Model Name" | awk '{print $4}' | head -1
+		cmd := exec.Command("sh", "-c", fmt.Sprintf("%s %s %s --show-hwinfo | grep -i \"Model Name\" | awk '{print $4}' | head -1", ChangeRootCmd, HostRootDir, MXSmiCmd))
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			return "", fmt.Errorf("get mx name err: %w, output %v", err, string(output))
+		}
+		results := strings.TrimSpace(string(output))
+		return results, nil
 	default:
 		return "", fmt.Errorf("get xpu name err, unsupported device type: %s", deviceType)
 	}
@@ -237,7 +255,22 @@ func GetXPUCount(deviceType string) (int, error) {
 
 		klog.Infof("GetMLUCount, end to get mlu count: %d", count)
 		return count, nil
+	case MX:
+		klog.Info("GetMXCount, start to get MX count")
+		// mx-smi --show-hwinfo | grep -i "Model Name" | wc -l
+		cmd := exec.Command("sh", "-c", fmt.Sprintf("%s %s %s --show-hwinfo | grep -i \"Model Name\" | wc -l", ChangeRootCmd, HostRootDir, MXSmiCmd))
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			return 0, fmt.Errorf("get mx count err: %w, output %v", err, string(output))
+		}
+		countStr := strings.TrimSpace(string(output))
+		count, err := strconv.Atoi(countStr)
+		if err != nil {
+			return 0, fmt.Errorf("failed to parse mx count: %v", err)
+		}
 
+		klog.Infof("GetMXCount, end to get MX count: %d", count)
+		return count, nil
 	default:
 		return 0, fmt.Errorf("get xpu count err, unsupported device type: %s", deviceType)
 	}
@@ -349,6 +382,18 @@ func GetXPUMemory(deviceType string) (string, error) {
 		realResults = fmt.Sprintf("%sMi", realResults)
 
 		return fmt.Sprintf("%s", realResults), nil
+	case MX:
+		klog.Info("GetMXMemory, start to get mx memory")
+		// mx-smi --show-hwinfo | grep -i "Memory Capacity" | awk '{print $4}' | head -1
+		cmd := exec.Command("sh", "-c", fmt.Sprintf("%s %s %s --show-hwinfo | grep -i \"Memory Capacity\" | awk '{print $4}' | head -1", ChangeRootCmd, HostRootDir, "mx-smi"))
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			return "0Mi", fmt.Errorf("get mx memory err: %w, output %v", err, string(output))
+		}
+
+		results := strings.TrimSpace(string(output))
+		results = strings.ReplaceAll(results, "GB", "Gi")
+		return results, nil
 	default:
 		return "0Mi", fmt.Errorf("get xpu memory err, unsupported device type: %s", deviceType)
 	}
@@ -646,6 +691,79 @@ func GetDeviceInfo(deviceType, index string) (koordletuti.DeviceTopology, koordl
 		}
 		deviceStatus := koordletuti.DeviceStatus{
 			Healthy: true,
+		}
+		return topo, deviceStatus, uuid, nil
+	case MX:
+		klog.Info("GetDeviceInfo, start to get mx device info")
+		var uuid string
+		gpuIndex := fmt.Sprintf("GPU#%s", index)
+		// mx-smi --list | awk '{print $6}'
+		cmd := exec.Command("sh", "-c", fmt.Sprintf("%s %s %s --list | grep -v SGPU | grep %s | awk '{print $6}'", ChangeRootCmd, HostRootDir, MXSmiCmd, gpuIndex))
+		klog.V(4).Infof("GetDeviceInfo, start to exec cmd: %s", cmd.String())
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			klog.Errorf("GetDeviceInfo, get xpu device info error, failed to get uuid, %v", err)
+			return koordletuti.DeviceTopology{}, koordletuti.DeviceStatus{}, " ", fmt.Errorf("get mx device info err: %w, output %v", err, string(output))
+		}
+		uuidRaw := strings.TrimSpace(string(output))
+		uuid = strings.Trim(uuidRaw, "()")
+		klog.V(4).Infof("GetDeviceInfo, end to get mx uuid: %s", uuid)
+		// mx-smi --show-hwinfo -i 0 | grep -i "GPU#0" | awk '{print $3}'
+		busID := ""
+		cmd = exec.Command("sh", "-c", fmt.Sprintf("%s %s %s --show-hwinfo -i %s | grep -v SGPU | grep -i \"GPU#\" | awk '{print $3}'", ChangeRootCmd, HostRootDir, MXSmiCmd, index))
+		klog.V(4).Infof("GetDeviceInfo, start to exec cmd: %s", cmd.String())
+		output, err = cmd.CombinedOutput()
+		if err != nil {
+			klog.Errorf("GetDeviceInfo, get xpu device info error, failed to get busID, %v", err)
+			return koordletuti.DeviceTopology{}, koordletuti.DeviceStatus{}, " ", fmt.Errorf("get mx device info err: %w, output %v", err, string(output))
+		}
+		busID = strings.TrimSpace(string(output))
+		klog.V(4).Infof("GetDeviceInfo, end to get mx busID: %s", busID)
+		nodeID, pcie, busID, err := helper.ParsePCIInfo(busID)
+		if err != nil {
+			klog.Errorf("GetDeviceInfo, parse mx device info error, %v", err)
+		}
+		topo := koordletuti.DeviceTopology{
+			SocketID: "-1",
+			BusID:    busID,
+			PCIEID:   pcie,
+			NodeID:   fmt.Sprintf("%d", nodeID),
+		}
+		deviceStatus := koordletuti.DeviceStatus{
+			Healthy: true,
+		}
+
+		// mx-smi  --count-ecc -i 0
+		cmd = exec.Command("sh", "-c", fmt.Sprintf("%s %s %s --count-ecc -i %s", ChangeRootCmd, HostRootDir, MXSmiCmd, index))
+		output, err = cmd.CombinedOutput()
+		if err != nil {
+			klog.Errorf("GetDeviceInfo, get mx device info error, failed to get ecc status, %v", err)
+			return topo, deviceStatus, uuid, nil
+		}
+		klog.V(4).Infof("GetDeviceInfo, end to get mx ecc status: %s", string(output))
+		strLines := strings.Split(string(output), "\n")
+		var errCount int
+		for line := range strLines {
+			if strings.Contains(strLines[line], "SRAM Uncorrectable") {
+				fields := strings.Fields(strLines[line])
+				errCountStr := fields[len(fields)-1]
+				errCount, _ = strconv.Atoi(errCountStr)
+			}
+			if strings.Contains(strLines[line], "DRAM Uncorrectable") {
+				fields := strings.Fields(strLines[line])
+				errCountStr := fields[len(fields)-1]
+				errCount, _ = strconv.Atoi(errCountStr)
+			}
+			if strings.Contains(strLines[line], "Double Bit ECC") {
+				fields := strings.Fields(strLines[line])
+				errCountStr := fields[len(fields)-1]
+				errCount, _ = strconv.Atoi(errCountStr)
+			}
+		}
+		if errCount > 0 {
+			deviceStatus.Healthy = false
+			deviceStatus.ErrMessage = fmt.Sprintf("MX index %s has %d SRAM/DRAM Uncorrectable or Double Bit  ECC errors", index, errCount)
+			deviceStatus.ErrCode = fmt.Sprintf("ECC error")
 		}
 		return topo, deviceStatus, uuid, nil
 	default:

@@ -44,21 +44,21 @@ func newPrinter(manager resource.Manager) (Printer, error) {
 		return nil, fmt.Errorf("error getting %s devices: %v", vendor, err)
 	}
 
-	mluCount := len(devices)
-	if mluCount == 0 {
+	deviceCount := len(devices)
+	if deviceCount == 0 {
 		return devicePrinters{}, nil
 	}
 
-	mluPrinters := devicePrinters{}
-	for _, mlu := range devices {
-		deviceInfo, err := mlu.GetDeviceInfo()
+	printers := devicePrinters{}
+	for _, device := range devices {
+		deviceInfo, err := device.GetDeviceInfo()
 		if err != nil {
 			return nil, fmt.Errorf("error getting %s device info: %v", vendor, err)
 		}
-		mluPrinters = append(mluPrinters, deviceInfo)
+		printers = append(printers, deviceInfo)
 	}
 
-	return mluPrinters, nil
+	return printers, nil
 }
 
 type printerList []Printer
