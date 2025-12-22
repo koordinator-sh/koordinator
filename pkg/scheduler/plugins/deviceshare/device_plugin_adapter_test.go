@@ -35,6 +35,7 @@ import (
 
 func TestGeneralDevicePluginAdapter_Adapt(t *testing.T) {
 	now := time.Now()
+	dpAdapterClock = fakeclock.NewFakeClock(now)
 
 	type args struct {
 		object metav1.Object
@@ -65,9 +66,7 @@ func TestGeneralDevicePluginAdapter_Adapt(t *testing.T) {
 		},
 	}
 
-	adapter := &generalDevicePluginAdapter{
-		clock: fakeclock.NewFakeClock(now),
-	}
+	adapter := &generalDevicePluginAdapter{}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := adapter.Adapt(nil, tt.args.object, nil)
@@ -78,6 +77,12 @@ func TestGeneralDevicePluginAdapter_Adapt(t *testing.T) {
 }
 
 func TestGeneralGPUDevicePluginAdapter_Adapt(t *testing.T) {
+	testNode := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-node",
+		},
+	}
+
 	type args struct {
 		object     metav1.Object
 		allocation []*apiext.DeviceAllocation
@@ -110,12 +115,44 @@ func TestGeneralGPUDevicePluginAdapter_Adapt(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "hami gpu isolation provider",
+			args: args{
+				object: &corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Labels: map[string]string{
+							apiext.LabelGPUIsolationProvider: string(apiext.GPUIsolationProviderHAMICore),
+						},
+						Annotations: map[string]string{},
+					},
+				},
+				allocation: []*apiext.DeviceAllocation{
+					{Minor: 0},
+				},
+			},
+			wantErr: false,
+			wantObject: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						apiext.LabelGPUIsolationProvider: string(apiext.GPUIsolationProviderHAMICore),
+						apiext.LabelHAMIVGPUNodeName:     testNode.Name,
+					},
+					Annotations: map[string]string{
+						AnnotationGPUMinors: "0",
+					},
+				},
+			},
+		},
 	}
 
 	adapter := &generalGPUDevicePluginAdapter{}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := adapter.Adapt(nil, tt.args.object, tt.args.allocation)
+			ctx := &DevicePluginAdaptContext{
+				Context: context.TODO(),
+				node:    testNode,
+			}
+			err := adapter.Adapt(ctx, tt.args.object, tt.args.allocation)
 			assert.Equal(t, tt.wantErr, err != nil, err)
 			assert.Equal(t, tt.wantObject, tt.args.object)
 		})
@@ -124,6 +161,7 @@ func TestGeneralGPUDevicePluginAdapter_Adapt(t *testing.T) {
 
 func TestHuaweiGPUDevicePluginAdapter_Adapt(t *testing.T) {
 	now := time.Now()
+	dpAdapterClock = fakeclock.NewFakeClock(now)
 
 	type args struct {
 		object     metav1.Object
@@ -187,9 +225,7 @@ func TestHuaweiGPUDevicePluginAdapter_Adapt(t *testing.T) {
 		},
 	}
 
-	adapter := &huaweiGPUDevicePluginAdapter{
-		clock: fakeclock.NewFakeClock(now),
-	}
+	adapter := &huaweiGPUDevicePluginAdapter{}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := adapter.Adapt(nil, tt.args.object, tt.args.allocation)
@@ -201,6 +237,7 @@ func TestHuaweiGPUDevicePluginAdapter_Adapt(t *testing.T) {
 
 func TestCambriconGPUDevicePluginAdapter_Adapt(t *testing.T) {
 	now := time.Now()
+	dpAdapterClock = fakeclock.NewFakeClock(now)
 
 	type args struct {
 		object     metav1.Object
@@ -209,10 +246,8 @@ func TestCambriconGPUDevicePluginAdapter_Adapt(t *testing.T) {
 	tests := []struct {
 		name       string
 		args       args
-		node       *corev1.Node
 		wantErr    bool
 		wantObject metav1.Object
-		wantNode   *corev1.Node
 	}{
 		{
 			name: "normal case",
@@ -234,11 +269,6 @@ func TestCambriconGPUDevicePluginAdapter_Adapt(t *testing.T) {
 					},
 				},
 			},
-			node: &corev1.Node{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-node",
-				},
-			},
 			wantErr: false,
 			wantObject: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
@@ -247,14 +277,6 @@ func TestCambriconGPUDevicePluginAdapter_Adapt(t *testing.T) {
 					Annotations: map[string]string{
 						AnnotationCambriconDsmluAssigned: "false",
 						AnnotationCambriconDsmluProfile:  "0_5_4",
-					},
-				},
-			},
-			wantNode: &corev1.Node{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-node",
-					Annotations: map[string]string{
-						AnnotationCambriconDsmluLock: fmt.Sprintf("%s,default,test-pod", now.Format(time.RFC3339)),
 					},
 				},
 			},
@@ -286,22 +308,12 @@ func TestCambriconGPUDevicePluginAdapter_Adapt(t *testing.T) {
 					},
 				},
 			},
-			node: &corev1.Node{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-node",
-				},
-			},
 			wantErr: true,
 			wantObject: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:        "test-pod",
 					Namespace:   "default",
 					Annotations: map[string]string{},
-				},
-			},
-			wantNode: &corev1.Node{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-node",
 				},
 			},
 		},
@@ -324,22 +336,12 @@ func TestCambriconGPUDevicePluginAdapter_Adapt(t *testing.T) {
 					},
 				},
 			},
-			node: &corev1.Node{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-node",
-				},
-			},
 			wantErr: true,
 			wantObject: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:        "test-pod",
 					Namespace:   "default",
 					Annotations: map[string]string{},
-				},
-			},
-			wantNode: &corev1.Node{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-node",
 				},
 			},
 		},
@@ -363,139 +365,30 @@ func TestCambriconGPUDevicePluginAdapter_Adapt(t *testing.T) {
 					},
 				},
 			},
-			node: &corev1.Node{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-node",
-				},
-			},
 			wantErr: true,
 			wantObject: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:        "test-pod",
 					Namespace:   "default",
 					Annotations: map[string]string{},
-				},
-			},
-			wantNode: &corev1.Node{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-node",
-				},
-			},
-		},
-		{
-			name: "node locked",
-			args: args{
-				object: &corev1.Pod{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:        "test-pod",
-						Namespace:   "default",
-						Annotations: map[string]string{},
-					},
-				},
-				allocation: []*apiext.DeviceAllocation{
-					{
-						Minor: 0,
-						Resources: corev1.ResourceList{
-							apiext.ResourceGPUCore:   resource.MustParse("5"),
-							apiext.ResourceGPUMemory: resource.MustParse("1Gi"),
-						},
-					},
-				},
-			},
-			node: &corev1.Node{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-node",
-					Annotations: map[string]string{
-						AnnotationCambriconDsmluLock: fmt.Sprintf("%s,default,test-pod", now.Add(-time.Minute).Format(time.RFC3339)),
-					},
-				},
-			},
-			wantErr: true,
-			wantObject: &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:        "test-pod",
-					Namespace:   "default",
-					Annotations: map[string]string{},
-				},
-			},
-			wantNode: &corev1.Node{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-node",
-					Annotations: map[string]string{
-						AnnotationCambriconDsmluLock: fmt.Sprintf("%s,default,test-pod", now.Add(-time.Minute).Format(time.RFC3339)),
-					},
-				},
-			},
-		},
-		{
-			name: "node lock expired",
-			args: args{
-				object: &corev1.Pod{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:        "test-pod",
-						Namespace:   "default",
-						Annotations: map[string]string{},
-					},
-				},
-				allocation: []*apiext.DeviceAllocation{
-					{
-						Minor: 0,
-						Resources: corev1.ResourceList{
-							apiext.ResourceGPUCore:   resource.MustParse("5"),
-							apiext.ResourceGPUMemory: resource.MustParse("1Gi"),
-						},
-					},
-				},
-			},
-			node: &corev1.Node{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-node",
-					Annotations: map[string]string{
-						AnnotationCambriconDsmluLock: fmt.Sprintf("%s,default,test-pod", now.Add(-nodeLockTimeout-time.Second).Format(time.RFC3339)),
-					},
-				},
-			},
-			wantErr: false,
-			wantObject: &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-pod",
-					Namespace: "default",
-					Annotations: map[string]string{
-						AnnotationCambriconDsmluAssigned: "false",
-						AnnotationCambriconDsmluProfile:  "0_5_4",
-					},
-				},
-			},
-			wantNode: &corev1.Node{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-node",
-					Annotations: map[string]string{
-						AnnotationCambriconDsmluLock: fmt.Sprintf("%s,default,test-pod", now.Format(time.RFC3339)),
-					},
 				},
 			},
 		},
 	}
 
-	adapter := &cambriconGPUDevicePluginAdapter{
-		clock: fakeclock.NewFakeClock(now),
-	}
+	adapter := &cambriconGPUDevicePluginAdapter{}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ctx := &DevicePluginAdaptContext{
-				Context: context.TODO(),
-				node:    tt.node.DeepCopy(),
-			}
-			err := adapter.Adapt(ctx, tt.args.object, tt.args.allocation)
+			err := adapter.Adapt(nil, tt.args.object, tt.args.allocation)
 			assert.Equal(t, tt.wantErr, err != nil, err)
 			assert.Equal(t, tt.wantObject, tt.args.object)
-			assert.Equal(t, tt.wantNode, ctx.node)
 		})
 	}
 }
 
 func TestMetaXGPUDevicePluginAdapter_Adapt(t *testing.T) {
 	now := time.Now()
+	dpAdapterClock = fakeclock.NewFakeClock(now)
 
 	type args struct {
 		object     metav1.Object
@@ -504,10 +397,8 @@ func TestMetaXGPUDevicePluginAdapter_Adapt(t *testing.T) {
 	tests := []struct {
 		name       string
 		args       args
-		node       *corev1.Node
 		wantErr    bool
 		wantObject metav1.Object
-		wantNode   *corev1.Node
 	}{
 		{
 			name: "normal case",
@@ -536,11 +427,6 @@ func TestMetaXGPUDevicePluginAdapter_Adapt(t *testing.T) {
 					},
 				},
 			},
-			node: &corev1.Node{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-node",
-				},
-			},
 			wantErr: false,
 			wantObject: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
@@ -548,14 +434,6 @@ func TestMetaXGPUDevicePluginAdapter_Adapt(t *testing.T) {
 					Namespace: "default",
 					Annotations: map[string]string{
 						AnnotationMetaXGPUDevicesAllocated: `[[{"uuid":"GPU-0","compute":5,"vRam":1024},{"uuid":"GPU-1","compute":5,"vRam":1024}]]`,
-					},
-				},
-			},
-			wantNode: &corev1.Node{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-node",
-					Annotations: map[string]string{
-						AnnotationHAMiLock: fmt.Sprintf("%s,default,test-pod", now.Format(time.RFC3339)),
 					},
 				},
 			},
@@ -579,22 +457,12 @@ func TestMetaXGPUDevicePluginAdapter_Adapt(t *testing.T) {
 					},
 				},
 			},
-			node: &corev1.Node{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-node",
-				},
-			},
 			wantErr: true,
 			wantObject: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:        "test-pod",
 					Namespace:   "default",
 					Annotations: map[string]string{},
-				},
-			},
-			wantNode: &corev1.Node{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-node",
 				},
 			},
 		},
@@ -618,152 +486,30 @@ func TestMetaXGPUDevicePluginAdapter_Adapt(t *testing.T) {
 					},
 				},
 			},
-			node: &corev1.Node{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-node",
-				},
-			},
 			wantErr: true,
 			wantObject: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:        "test-pod",
 					Namespace:   "default",
 					Annotations: map[string]string{},
-				},
-			},
-			wantNode: &corev1.Node{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-node",
-				},
-			},
-		},
-		{
-			name: "node locked",
-			args: args{
-				object: &corev1.Pod{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:        "test-pod",
-						Namespace:   "default",
-						Annotations: map[string]string{},
-					},
-				},
-				allocation: []*apiext.DeviceAllocation{
-					{
-						ID: "GPU-0",
-						Resources: corev1.ResourceList{
-							apiext.ResourceGPUCore:   resource.MustParse("5"),
-							apiext.ResourceGPUMemory: resource.MustParse("1Gi"),
-						},
-					},
-				},
-			},
-			node: &corev1.Node{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-node",
-					Annotations: map[string]string{
-						AnnotationHAMiLock: fmt.Sprintf("%s,default,test-pod", now.Add(-time.Minute).Format(time.RFC3339)),
-					},
-				},
-			},
-			wantErr: true,
-			wantObject: &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:        "test-pod",
-					Namespace:   "default",
-					Annotations: map[string]string{},
-				},
-			},
-			wantNode: &corev1.Node{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-node",
-					Annotations: map[string]string{
-						AnnotationHAMiLock: fmt.Sprintf("%s,default,test-pod", now.Add(-time.Minute).Format(time.RFC3339)),
-					},
-				},
-			},
-		},
-		{
-			name: "node lock expired",
-			args: args{
-				object: &corev1.Pod{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:        "test-pod",
-						Namespace:   "default",
-						Annotations: map[string]string{},
-					},
-				},
-				allocation: []*apiext.DeviceAllocation{
-					{
-						ID: "GPU-0",
-						Resources: corev1.ResourceList{
-							apiext.ResourceGPUCore:   resource.MustParse("5"),
-							apiext.ResourceGPUMemory: resource.MustParse("1Gi"),
-						},
-					},
-				},
-			},
-			node: &corev1.Node{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-node",
-					Annotations: map[string]string{
-						AnnotationHAMiLock: fmt.Sprintf("%s,default,test-pod", now.Add(-nodeLockTimeout-time.Second).Format(time.RFC3339)),
-					},
-				},
-			},
-			wantErr: false,
-			wantObject: &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-pod",
-					Namespace: "default",
-					Annotations: map[string]string{
-						AnnotationMetaXGPUDevicesAllocated: `[[{"uuid":"GPU-0","compute":5,"vRam":1024}]]`,
-					},
-				},
-			},
-			wantNode: &corev1.Node{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-node",
-					Annotations: map[string]string{
-						AnnotationHAMiLock: fmt.Sprintf("%s,default,test-pod", now.Format(time.RFC3339)),
-					},
 				},
 			},
 		},
 	}
 
-	adapter := &metaxDevicePluginAdapter{
-		clock: fakeclock.NewFakeClock(now),
-	}
+	adapter := &metaxDevicePluginAdapter{}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ctx := &DevicePluginAdaptContext{
-				Context: context.TODO(),
-				node:    tt.node.DeepCopy(),
-			}
-			err := adapter.Adapt(ctx, tt.args.object, tt.args.allocation)
+			err := adapter.Adapt(nil, tt.args.object, tt.args.allocation)
 			assert.Equal(t, tt.wantErr, err != nil, err)
 			assert.Equal(t, tt.wantObject, tt.args.object)
-			assert.Equal(t, tt.wantNode, ctx.node)
 		})
 	}
 }
 
 func TestPlugin_adaptForDevicePlugin(t *testing.T) {
 	now := time.Now()
-	defaultDevicePluginAdapter = &generalDevicePluginAdapter{
-		clock: fakeclock.NewFakeClock(now),
-	}
-	gpuDevicePluginAdapterMap = map[string]DevicePluginAdapter{
-		apiext.GPUVendorHuawei: &huaweiGPUDevicePluginAdapter{
-			clock: fakeclock.NewFakeClock(now),
-		},
-		apiext.GPUVendorCambricon: &cambriconGPUDevicePluginAdapter{
-			clock: fakeclock.NewFakeClock(now),
-		},
-		apiext.GPUVendorMetaX: &metaxDevicePluginAdapter{
-			clock: fakeclock.NewFakeClock(now),
-		},
-	}
+	dpAdapterClock = fakeclock.NewFakeClock(now)
 
 	type args struct {
 		object           metav1.Object
@@ -771,13 +517,14 @@ func TestPlugin_adaptForDevicePlugin(t *testing.T) {
 		nodeName         string
 	}
 	tests := []struct {
-		name       string
-		args       args
-		device     *schedulingv1alpha1.Device
-		node       *corev1.Node
-		wantErr    bool
-		wantObject metav1.Object
-		wantNode   *corev1.Node
+		name        string
+		args        args
+		device      *schedulingv1alpha1.Device
+		node        *corev1.Node
+		existingPod *corev1.Pod
+		wantErr     bool
+		wantObject  metav1.Object
+		wantNode    *corev1.Node
 	}{
 		{
 			name: "nvidia",
@@ -992,6 +739,201 @@ func TestPlugin_adaptForDevicePlugin(t *testing.T) {
 			},
 		},
 		{
+			name: "node locked",
+			args: args{
+				object: &corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:        "test-pod",
+						Namespace:   "default",
+						Annotations: map[string]string{},
+					},
+				},
+				allocationResult: apiext.DeviceAllocations{
+					schedulingv1alpha1.GPU: []*apiext.DeviceAllocation{
+						{
+							Minor: 0,
+							Resources: corev1.ResourceList{
+								apiext.ResourceGPUCore:   resource.MustParse("5"),
+								apiext.ResourceGPUMemory: resource.MustParse("1Gi"),
+							},
+						},
+					},
+				},
+				nodeName: "cambricon",
+			},
+			device: &schedulingv1alpha1.Device{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "cambricon",
+					Labels: map[string]string{
+						apiext.LabelGPUVendor: apiext.GPUVendorCambricon,
+					},
+				},
+			},
+			node: &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "cambricon",
+					Annotations: map[string]string{
+						AnnotationCambriconDsmluLock: fmt.Sprintf("%s,default,existing-pod", now.Add(-time.Minute).Format(time.RFC3339)),
+					},
+				},
+			},
+			existingPod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "existing-pod",
+					Namespace: "default",
+				},
+			},
+			wantErr: true,
+			wantObject: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pod",
+					Namespace: "default",
+					Annotations: map[string]string{
+						AnnotationBindTimestamp:          strconv.FormatInt(now.UnixNano(), 10),
+						AnnotationGPUMinors:              "0",
+						AnnotationCambriconDsmluAssigned: "false",
+						AnnotationCambriconDsmluProfile:  "0_5_4",
+					},
+				},
+			},
+			wantNode: &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "cambricon",
+					Annotations: map[string]string{
+						AnnotationCambriconDsmluLock: fmt.Sprintf("%s,default,existing-pod", now.Add(-time.Minute).Format(time.RFC3339)),
+					},
+				},
+			},
+		},
+		{
+			name: "node lock expired",
+			args: args{
+				object: &corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:        "test-pod",
+						Namespace:   "default",
+						Annotations: map[string]string{},
+					},
+				},
+				allocationResult: apiext.DeviceAllocations{
+					schedulingv1alpha1.GPU: []*apiext.DeviceAllocation{
+						{
+							Minor: 0,
+							Resources: corev1.ResourceList{
+								apiext.ResourceGPUCore:   resource.MustParse("5"),
+								apiext.ResourceGPUMemory: resource.MustParse("1Gi"),
+							},
+						},
+					},
+				},
+				nodeName: "cambricon",
+			},
+			device: &schedulingv1alpha1.Device{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "cambricon",
+					Labels: map[string]string{
+						apiext.LabelGPUVendor: apiext.GPUVendorCambricon,
+					},
+				},
+			},
+			node: &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "cambricon",
+					Annotations: map[string]string{
+						AnnotationCambriconDsmluLock: fmt.Sprintf("%s,default,existing-pod", now.Add(-nodeLockTimeout-time.Second).Format(time.RFC3339)),
+					},
+				},
+			},
+			existingPod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "existing-pod",
+					Namespace: "default",
+				},
+			},
+			wantErr: false,
+			wantObject: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pod",
+					Namespace: "default",
+					Annotations: map[string]string{
+						AnnotationBindTimestamp:          strconv.FormatInt(now.UnixNano(), 10),
+						AnnotationGPUMinors:              "0",
+						AnnotationCambriconDsmluAssigned: "false",
+						AnnotationCambriconDsmluProfile:  "0_5_4",
+					},
+				},
+			},
+			wantNode: &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "cambricon",
+					Annotations: map[string]string{
+						AnnotationCambriconDsmluLock: fmt.Sprintf("%s,default,test-pod", now.Format(time.RFC3339)),
+					},
+				},
+			},
+		},
+		{
+			name: "original node locker pod deleted",
+			args: args{
+				object: &corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:        "test-pod",
+						Namespace:   "default",
+						Annotations: map[string]string{},
+					},
+				},
+				allocationResult: apiext.DeviceAllocations{
+					schedulingv1alpha1.GPU: []*apiext.DeviceAllocation{
+						{
+							Minor: 0,
+							Resources: corev1.ResourceList{
+								apiext.ResourceGPUCore:   resource.MustParse("5"),
+								apiext.ResourceGPUMemory: resource.MustParse("1Gi"),
+							},
+						},
+					},
+				},
+				nodeName: "cambricon",
+			},
+			device: &schedulingv1alpha1.Device{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "cambricon",
+					Labels: map[string]string{
+						apiext.LabelGPUVendor: apiext.GPUVendorCambricon,
+					},
+				},
+			},
+			node: &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "cambricon",
+					Annotations: map[string]string{
+						AnnotationCambriconDsmluLock: fmt.Sprintf("%s,default,existing-pod", now.Add(-time.Minute).Format(time.RFC3339)),
+					},
+				},
+			},
+			wantErr: false,
+			wantObject: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pod",
+					Namespace: "default",
+					Annotations: map[string]string{
+						AnnotationBindTimestamp:          strconv.FormatInt(now.UnixNano(), 10),
+						AnnotationGPUMinors:              "0",
+						AnnotationCambriconDsmluAssigned: "false",
+						AnnotationCambriconDsmluProfile:  "0_5_4",
+					},
+				},
+			},
+			wantNode: &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "cambricon",
+					Annotations: map[string]string{
+						AnnotationCambriconDsmluLock: fmt.Sprintf("%s,default,test-pod", now.Format(time.RFC3339)),
+					},
+				},
+			},
+		},
+		{
 			name: "unknown vendor",
 			args: args{
 				object: &corev1.Pod{
@@ -1035,6 +977,60 @@ func TestPlugin_adaptForDevicePlugin(t *testing.T) {
 			wantNode: &corev1.Node{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test",
+				},
+			},
+		},
+		{
+			name: "hami gpu isolation provider",
+			args: args{
+				object: &corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-pod",
+						Namespace: "default",
+						Labels: map[string]string{
+							apiext.LabelGPUIsolationProvider: string(apiext.GPUIsolationProviderHAMICore),
+						},
+						Annotations: map[string]string{},
+					},
+				},
+				allocationResult: apiext.DeviceAllocations{
+					schedulingv1alpha1.GPU: []*apiext.DeviceAllocation{
+						{Minor: 0},
+					},
+				},
+				nodeName: "nvidia",
+			},
+			device: &schedulingv1alpha1.Device{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "nvidia",
+					Labels: map[string]string{
+						apiext.LabelGPUVendor: apiext.GPUVendorNVIDIA,
+					},
+				},
+			},
+			node: &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "nvidia",
+				},
+			},
+			wantErr: false,
+			wantObject: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pod",
+					Namespace: "default",
+					Labels: map[string]string{
+						apiext.LabelGPUIsolationProvider: string(apiext.GPUIsolationProviderHAMICore),
+						apiext.LabelHAMIVGPUNodeName:     "nvidia",
+					},
+					Annotations: map[string]string{
+						AnnotationBindTimestamp: strconv.FormatInt(now.UnixNano(), 10),
+						AnnotationGPUMinors:     "0",
+					},
+				},
+			},
+			wantNode: &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "nvidia",
 				},
 			},
 		},
@@ -1175,60 +1171,6 @@ func TestPlugin_adaptForDevicePlugin(t *testing.T) {
 				},
 			},
 		},
-		{
-			name: "hami-core",
-			args: args{
-				object: &corev1.Pod{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      "test-pod",
-						Namespace: "default",
-						Labels: map[string]string{
-							apiext.LabelGPUIsolationProvider: string(apiext.GPUIsolationProviderHAMICore),
-						},
-						Annotations: map[string]string{},
-					},
-				},
-				allocationResult: apiext.DeviceAllocations{
-					schedulingv1alpha1.GPU: []*apiext.DeviceAllocation{
-						{Minor: 0},
-					},
-				},
-				nodeName: "hami-core",
-			},
-			device: &schedulingv1alpha1.Device{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "hami-core",
-					Labels: map[string]string{
-						apiext.LabelGPUVendor: apiext.GPUVendorNVIDIA,
-					},
-				},
-			},
-			node: &corev1.Node{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "hami-core",
-				},
-			},
-			wantErr: false,
-			wantObject: &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-pod",
-					Namespace: "default",
-					Labels: map[string]string{
-						apiext.LabelGPUIsolationProvider: string(apiext.GPUIsolationProviderHAMICore),
-						apiext.LabelHAMIVGPUNodeName:     "hami-core",
-					},
-					Annotations: map[string]string{
-						AnnotationBindTimestamp: strconv.FormatInt(now.UnixNano(), 10),
-						AnnotationGPUMinors:     "0",
-					},
-				},
-			},
-			wantNode: &corev1.Node{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "hami-core",
-				},
-			},
-		},
 	}
 
 	for _, tt := range tests {
@@ -1236,6 +1178,10 @@ func TestPlugin_adaptForDevicePlugin(t *testing.T) {
 			suit := newPluginTestSuit(t, []*corev1.Node{tt.node})
 			if tt.device != nil {
 				_, err := suit.koordClientSet.SchedulingV1alpha1().Devices().Create(context.TODO(), tt.device, metav1.CreateOptions{})
+				assert.NoError(t, err)
+			}
+			if tt.existingPod != nil {
+				_, err := suit.ClientSet().CoreV1().Pods(tt.existingPod.Namespace).Create(context.TODO(), tt.existingPod, metav1.CreateOptions{})
 				assert.NoError(t, err)
 			}
 

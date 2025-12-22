@@ -772,6 +772,8 @@ func New(obj runtime.Object, handle framework.Handle) (framework.Plugin, error) 
 		args.GPUSharedResourceTemplatesConfig.ConfigMapNamespace, args.GPUSharedResourceTemplatesConfig.ConfigMapName,
 		handle.SharedInformerFactory())
 
+	registerNodeEventHandler(handle.SharedInformerFactory())
+
 	return &Plugin{
 		handle:                          extendedHandle,
 		nodeDeviceCache:                 deviceCache,

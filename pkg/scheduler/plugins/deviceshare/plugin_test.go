@@ -4869,9 +4869,7 @@ func Test_Plugin_Unreserve(t *testing.T) {
 
 func Test_Plugin_PreBind(t *testing.T) {
 	now := time.Now()
-	defaultDevicePluginAdapter = &generalDevicePluginAdapter{
-		clock: fakeclock.NewFakeClock(now),
-	}
+	dpAdapterClock = fakeclock.NewFakeClock(now)
 
 	testPod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
