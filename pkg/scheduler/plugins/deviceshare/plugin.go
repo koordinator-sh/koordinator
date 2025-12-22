@@ -229,7 +229,7 @@ func (p *Plugin) AddPod(ctx context.Context, cycleState *framework.CycleState, p
 	}
 
 	var rInfo *frameworkext.ReservationInfo
-	if rCache := frameworkext.GetReservationCache(); rCache != nil {
+	if rCache := p.handle.GetReservationCache(); rCache != nil {
 		rInfo = rCache.GetReservationInfoByPod(podInfoToAdd.Pod, node.Name)
 	}
 	if rInfo == nil {
@@ -288,7 +288,7 @@ func (p *Plugin) RemovePod(ctx context.Context, cycleState *framework.CycleState
 	}
 
 	var rInfo *frameworkext.ReservationInfo
-	if rCache := frameworkext.GetReservationCache(); rCache != nil {
+	if rCache := p.handle.GetReservationCache(); rCache != nil {
 		rInfo = rCache.GetReservationInfoByPod(podInfoToRemove.Pod, node.Name)
 	}
 	if rInfo == nil {

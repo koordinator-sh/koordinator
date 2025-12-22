@@ -610,7 +610,7 @@ func (p *Plugin) allocateWithNominated(
 }
 
 func (p *Plugin) getPodNominatedReservationInfo(pod *corev1.Pod, nodeName string) *frameworkext.ReservationInfo {
-	rCache := frameworkext.GetReservationCache()
+	rCache := p.handle.GetReservationCache()
 	if rCache == nil {
 		return nil
 	}
