@@ -1265,7 +1265,7 @@ func TestPlugin_Reserve(t *testing.T) {
 		name                      string
 		nodeLabels                map[string]string
 		state                     *preFilterState
-		matched                   map[types.UID]reservationAlloc
+		matched                   map[types.UID]reusableAlloc
 		reservationAllocatePolicy schedulingv1alpha1.ReservationAllocatePolicy
 		pod                       *corev1.Pod
 		numaAffinity              bitmask.BitMask
@@ -1391,7 +1391,7 @@ func TestPlugin_Reserve(t *testing.T) {
 				numCPUsNeeded:          4,
 				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs,
 			},
-			matched: map[types.UID]reservationAlloc{
+			matched: map[types.UID]reusableAlloc{
 				uuid.NewUUID(): {
 					remainedCPUs: cpuset.NewCPUSet(4, 5, 6, 7, 8, 9, 10),
 				},
@@ -1409,7 +1409,7 @@ func TestPlugin_Reserve(t *testing.T) {
 				numCPUsNeeded:          4,
 				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs,
 			},
-			matched: map[types.UID]reservationAlloc{
+			matched: map[types.UID]reusableAlloc{
 				uuid.NewUUID(): {
 					remainedCPUs: cpuset.NewCPUSet(4, 5, 6, 7, 8, 9, 10),
 				},
@@ -1428,7 +1428,7 @@ func TestPlugin_Reserve(t *testing.T) {
 				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs,
 				hasReservationAffinity: true,
 			},
-			matched: map[types.UID]reservationAlloc{
+			matched: map[types.UID]reusableAlloc{
 				uuid.NewUUID(): {
 					remainedCPUs: cpuset.NewCPUSet(4, 5),
 				},
@@ -1449,7 +1449,7 @@ func TestPlugin_Reserve(t *testing.T) {
 				podNUMATopologyPolicy:  extension.NUMATopologyPolicyRestricted,
 				hasReservationAffinity: true,
 			},
-			matched: map[types.UID]reservationAlloc{
+			matched: map[types.UID]reusableAlloc{
 				uuid.NewUUID(): {
 					remainedCPUs: cpuset.NewCPUSet(4, 5, 6, 7, 8, 9, 10),
 					allocatable: map[int]corev1.ResourceList{
@@ -1482,7 +1482,7 @@ func TestPlugin_Reserve(t *testing.T) {
 				podNUMATopologyPolicy:  extension.NUMATopologyPolicyRestricted,
 				hasReservationAffinity: true,
 			},
-			matched: map[types.UID]reservationAlloc{
+			matched: map[types.UID]reusableAlloc{
 				uuid.NewUUID(): {
 					remainedCPUs: cpuset.NewCPUSet(4, 5),
 					allocatable: map[int]corev1.ResourceList{
@@ -1513,7 +1513,7 @@ func TestPlugin_Reserve(t *testing.T) {
 				podNUMATopologyPolicy:  extension.NUMATopologyPolicyRestricted,
 				hasReservationAffinity: true,
 			},
-			matched: map[types.UID]reservationAlloc{
+			matched: map[types.UID]reusableAlloc{
 				uuid.NewUUID(): {
 					allocatable: map[int]corev1.ResourceList{
 						1: {
@@ -1549,7 +1549,7 @@ func TestPlugin_Reserve(t *testing.T) {
 				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs,
 				hasReservationAffinity: true,
 			},
-			matched: map[types.UID]reservationAlloc{
+			matched: map[types.UID]reusableAlloc{
 				uuid.NewUUID(): {
 					allocatable: map[int]corev1.ResourceList{
 						0: {
@@ -1577,7 +1577,7 @@ func TestPlugin_Reserve(t *testing.T) {
 				numCPUsNeeded:          4,
 				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs,
 			},
-			matched: map[types.UID]reservationAlloc{
+			matched: map[types.UID]reusableAlloc{
 				uuid.NewUUID(): {
 					remainedCPUs: cpuset.NewCPUSet(4, 5, 6, 7, 8, 9, 10),
 				},

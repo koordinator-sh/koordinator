@@ -99,7 +99,7 @@ func takeCPUs(
 		return acc.result, nil
 	}
 	if acc.isFailed() {
-		return cpuset.NewCPUSet(), fmt.Errorf("not enough cpus available to satisfy request")
+		return cpuset.NewCPUSet(), fmt.Errorf(ErrNotEnoughCPUs)
 	}
 
 	fullPCPUs := cpuBindPolicy == schedulingconfig.CPUBindPolicyFullPCPUs

@@ -62,7 +62,7 @@ func (p *Plugin) GetPodTopologyHints(ctx context.Context, cycleState *framework.
 	}
 	reservationRestoreState := getReservationRestoreState(cycleState)
 	restoreState := reservationRestoreState.getNodeState(nodeName)
-	resourceOptions, err := p.getResourceOptions(state, node, pod, requestCPUBind, topologymanager.NUMATopologyHint{}, topologyOptions)
+	resourceOptions, err := p.getResourceOptions(state, node, requestCPUBind, topologymanager.NUMATopologyHint{}, topologyOptions)
 	if err != nil {
 		return nil, framework.AsStatus(err)
 	}
@@ -96,12 +96,12 @@ func (p *Plugin) Allocate(ctx context.Context, cycleState *framework.CycleState,
 	reservationRestoreState := getReservationRestoreState(cycleState)
 	restoreState := reservationRestoreState.getNodeState(nodeName)
 
-	resourceOptions, err := p.getResourceOptions(state, node, pod, requestCPUBind, affinity, topologyOptions)
+	resourceOptions, err := p.getResourceOptions(state, node, requestCPUBind, affinity, topologyOptions)
 	if err != nil {
 		return framework.NewStatus(framework.UnschedulableAndUnresolvable, err.Error())
 	}
 
-	podAllocation, status := tryAllocateFromReservation(p.resourceManager, restoreState, resourceOptions, restoreState.matched, pod, node)
+	podAllocation, status := tryAllocateFromReusable(p.resourceManager, restoreState, resourceOptions, restoreState.matched, pod, node)
 	if !status.IsSuccess() {
 		return status
 	}
