@@ -150,7 +150,7 @@ type FakeNominator struct {
 	// nominatedPodToNode is map keyed by a Pod UID to the node name where it is nominated.
 	nominatedPodToNode map[types.UID]map[string]types.UID
 	reservations       map[types.UID]*ReservationInfo
-	preAllocatable     map[types.UID]map[string]*corev1.Pod
+	preAllocatable     map[types.UID]map[string][]*corev1.Pod
 	// nominatedReservePod is map keyed by nodeName, value is the nominated reservations
 	nominatedReservePod       map[string][]*framework.PodInfo
 	nominatedReservePodToNode map[types.UID]string
@@ -162,7 +162,7 @@ func NewFakeReservationNominator() *FakeNominator {
 		nominatedReservePod:       map[string][]*framework.PodInfo{},
 		nominatedReservePodToNode: map[types.UID]string{},
 		reservations:              map[types.UID]*ReservationInfo{},
-		preAllocatable:            map[types.UID]map[string]*corev1.Pod{},
+		preAllocatable:            map[types.UID]map[string][]*corev1.Pod{},
 	}
 }
 
@@ -279,10 +279,10 @@ func (nm *FakeNominator) AddNominatedPreAllocation(rInfo *ReservationInfo, nodeN
 	defer nm.lock.Unlock()
 	nodeToPreAllocatable := nm.preAllocatable[rInfo.UID()]
 	if nodeToPreAllocatable == nil {
-		nodeToPreAllocatable = map[string]*corev1.Pod{}
+		nodeToPreAllocatable = map[string][]*corev1.Pod{}
 		nm.preAllocatable[rInfo.UID()] = nodeToPreAllocatable
 	}
-	nodeToPreAllocatable[nodeName] = pod
+	nodeToPreAllocatable[nodeName] = []*corev1.Pod{pod}
 }
 
 func (nm *FakeNominator) GetNominatedPreAllocation(rInfo *ReservationInfo, nodeName string) *corev1.Pod {
@@ -292,11 +292,45 @@ func (nm *FakeNominator) GetNominatedPreAllocation(rInfo *ReservationInfo, nodeN
 	if nodeToPreAllocatable == nil {
 		return nil
 	}
-	return nodeToPreAllocatable[nodeName]
+	pods := nodeToPreAllocatable[nodeName]
+	if len(pods) > 0 {
+		return pods[0]
+	}
+	return nil
 }
 
 func (nm *FakeNominator) deletePreAllocation(pod *corev1.Pod) {
 	delete(nm.preAllocatable, pod.UID)
+}
+
+func (nm *FakeNominator) RemoveNominatedPreAllocation(pod *corev1.Pod) {
+	nm.lock.Lock()
+	defer nm.lock.Unlock()
+	nm.deletePreAllocation(pod)
+}
+
+func (nm *FakeNominator) AddNominatedPreAllocations(rInfo *ReservationInfo, nodeName string, pods []*corev1.Pod) {
+	if !rInfo.IsPreAllocation() || len(pods) == 0 {
+		return
+	}
+	nm.lock.Lock()
+	defer nm.lock.Unlock()
+	nodeToPreAllocatable := nm.preAllocatable[rInfo.UID()]
+	if nodeToPreAllocatable == nil {
+		nodeToPreAllocatable = map[string][]*corev1.Pod{}
+		nm.preAllocatable[rInfo.UID()] = nodeToPreAllocatable
+	}
+	nodeToPreAllocatable[nodeName] = pods
+}
+
+func (nm *FakeNominator) GetNominatedPreAllocations(rInfo *ReservationInfo, nodeName string) []*corev1.Pod {
+	nm.lock.RLock()
+	defer nm.lock.RUnlock()
+	nodeToPreAllocatable := nm.preAllocatable[rInfo.UID()]
+	if nodeToPreAllocatable == nil {
+		return nil
+	}
+	return nodeToPreAllocatable[nodeName]
 }
 
 // GetNominatedNodeForReservePod returns the node name that the reserve pod is nominated to.

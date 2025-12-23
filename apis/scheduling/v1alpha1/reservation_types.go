@@ -73,6 +73,9 @@ type ReservationSpec struct {
 	// Eviction is not supported for NoExecute taints
 	// +optional
 	Taints []corev1.Taint `json:"taints,omitempty" protobuf:"bytes,9,rep,name=taints"`
+	// PreAllocationPolicy defines the policy for pre-allocation.
+	// +optional
+	PreAllocationPolicy *PreAllocationPolicy `json:"preAllocationPolicy,omitempty" protobuf:"bytes,10,opt,name=preAllocationPolicy"`
 }
 
 type ReservationAllocatePolicy string
@@ -94,6 +97,33 @@ const (
 	// but resources declared in Pods but not reserved in Reservations can be allocated from Nodes.
 	// ReservationAllocatePolicyRestricted includes the semantics of ReservationAllocatePolicyAligned.
 	ReservationAllocatePolicyRestricted ReservationAllocatePolicy = "Restricted"
+)
+
+// PreAllocationPolicy defines the policy for pre-allocation.
+type PreAllocationPolicy struct {
+	// Mode defines the mode for selecting pre-allocatable pods.
+	// Default mode uses OwnerMatchers from the Reservation Spec.
+	// Cluster mode uses cluster-wide label/annotation selectors.
+	// +kubebuilder:validation:Enum=Default;Cluster
+	// +kubebuilder:default="Default"
+	// +optional
+	Mode PreAllocationMode `json:"mode,omitempty" protobuf:"bytes,1,opt,name=mode,casttype=PreAllocationMode"`
+	// EnableMultiple indicates whether to allow pre-allocating multiple pods.
+	// When false, only one pod can be pre-allocated (compatible with existing logic).
+	// When true, multiple pods can be pre-allocated to meet the reservation requirements.
+	// +kubebuilder:default=false
+	// +optional
+	EnableMultiple bool `json:"enableMultiple,omitempty" protobuf:"varint,2,opt,name=enableMultiple"`
+}
+
+// PreAllocationMode defines the mode for selecting pre-allocatable pods.
+type PreAllocationMode string
+
+const (
+	// PreAllocationModeDefault uses OwnerMatchers from the Reservation Spec to select pre-allocatable pods.
+	PreAllocationModeDefault PreAllocationMode = "Default"
+	// PreAllocationModeCluster uses cluster-wide label/annotation selectors to select pre-allocatable pods.
+	PreAllocationModeCluster PreAllocationMode = "Cluster"
 )
 
 // ReservationTemplateSpec describes the data a Reservation should have when created from a template

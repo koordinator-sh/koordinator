@@ -39,8 +39,8 @@ type stateData struct {
 	assumed *frameworkext.ReservationInfo
 	// reservation of the reserve pod
 	rInfo *frameworkext.ReservationInfo // ready-only
-	// pre-allocated pod
-	preAllocated *corev1.Pod
+	// pre-allocated pods
+	preAllocated []*corev1.Pod
 	// whether bind a pod to a reservation
 	hasReservationAllocated bool
 }
@@ -79,6 +79,9 @@ type nodeReservationState struct {
 	unmatched []*frameworkext.ReservationInfo
 
 	preAllocatablePods []*corev1.Pod
+
+	// selectedPreAllocatablePods represents the selected pre-allocated pods for the reservation.
+	selectedPreAllocatablePods []*corev1.Pod
 
 	preRestored   bool // restore in PreFilter or Filter
 	finalRestored bool // restore in Filter

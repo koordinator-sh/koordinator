@@ -51,6 +51,14 @@ const (
 
 	// LabelPodSkipEnhancedValidation is the pod label key used to opt out a pod from enhanced validation.
 	LabelPodSkipEnhancedValidation = PodDomainPrefix + "/skip-enhanced-validation"
+
+	// LabelPodPreAllocatable is the label key used to identify pre-allocatable pods in cluster mode.
+	// When set to "true", the pod can be selected as a pre-allocatable candidate.
+	LabelPodPreAllocatable = PodDomainPrefix + "/is-pre-allocatable"
+
+	// AnnotationPodPreAllocatableScore is the annotation key used to score pre-allocatable pods in cluster mode.
+	// The value should be a numeric string. Higher scores indicate higher priority for pre-allocation.
+	AnnotationPodPreAllocatableScore = PodDomainPrefix + "/pre-allocatable-score"
 )
 
 type AggregationType string
