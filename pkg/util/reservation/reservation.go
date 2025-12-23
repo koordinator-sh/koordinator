@@ -671,3 +671,24 @@ func DoNotScheduleTaintsFilter(t *corev1.Taint) bool {
 	// PodToleratesNodeTaints is only interested in NoSchedule and NoExecute taints.
 	return t.Effect == corev1.TaintEffectNoSchedule || t.Effect == corev1.TaintEffectNoExecute
 }
+
+// GetPreAllocationMode returns the pre-allocation mode of the reservation.
+func GetPreAllocationMode(reservation *schedulingv1alpha1.Reservation) schedulingv1alpha1.PreAllocationMode {
+	var mode schedulingv1alpha1.PreAllocationMode
+	if reservation != nil && reservation.Spec.PreAllocationPolicy != nil {
+		mode = reservation.Spec.PreAllocationPolicy.Mode
+	}
+	if mode == "" {
+		mode = schedulingv1alpha1.PreAllocationModeDefault
+	}
+	return mode
+}
+
+// EnableMultiplePAPods returns whether multiple pre-allocatable pods are enabled for the reservation.
+func EnableMultiplePAPods(reservation *schedulingv1alpha1.Reservation) bool {
+	var enableMultiple bool
+	if reservation != nil && reservation.Spec.PreAllocationPolicy != nil {
+		enableMultiple = reservation.Spec.PreAllocationPolicy.EnableMultiple
+	}
+	return enableMultiple
+}

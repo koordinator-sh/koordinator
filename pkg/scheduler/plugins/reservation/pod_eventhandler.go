@@ -18,6 +18,7 @@ package reservation
 
 import (
 	"context"
+	"strconv"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/informers"
@@ -133,6 +134,9 @@ func (h *podEventHandler) updatePod(oldPod, newPod *corev1.Pod) {
 		}
 		h.cache.updateReservationOperatingPod(newPod, currentOwner)
 	}
+
+	// Update pre-allocatable candidates cache if pod's pre-allocatable status changed
+	h.updatePreAllocatableCandidatesCache(oldPod, newPod)
 }
 
 func (h *podEventHandler) deletePod(pod *corev1.Pod) {
@@ -146,5 +150,78 @@ func (h *podEventHandler) deletePod(pod *corev1.Pod) {
 
 	if apiext.IsReservationOperatingMode(pod) {
 		h.cache.deleteReservationOperatingPod(pod)
+	}
+
+	// Remove pod from pre-allocatable candidates cache if it was a candidate
+	if isPreAllocatablePod(pod) && pod.Spec.NodeName != "" {
+		h.cache.deletePreAllocatableCandidateOnNode(pod.Spec.NodeName, pod.UID)
+	}
+}
+
+// isPreAllocatablePod checks if a pod is a pre-allocatable candidate
+func isPreAllocatablePod(pod *corev1.Pod) bool {
+	if pod == nil || pod.Labels == nil {
+		return false
+	}
+	return pod.Labels[apiext.LabelPodPreAllocatable] == "true"
+}
+
+// getPreAllocatableScore retrieves the pre-allocatable score from pod annotation
+func getPreAllocatableScore(pod *corev1.Pod) int64 {
+	if pod == nil || pod.Annotations == nil {
+		return 0
+	}
+	scoreStr, ok := pod.Annotations[apiext.AnnotationPodPreAllocatableScore]
+	if !ok {
+		return 0
+	}
+	score, err := strconv.ParseInt(scoreStr, 10, 64)
+	if err != nil {
+		return 0
+	}
+	return score
+}
+
+// updatePreAllocatableCandidatesCache updates the cached pre-allocatable candidates when pod changes
+// Uses incremental updates with btree for efficiency
+func (h *podEventHandler) updatePreAllocatableCandidatesCache(oldPod, newPod *corev1.Pod) {
+	if newPod == nil || newPod.Spec.NodeName == "" {
+		return
+	}
+
+	oldIsCandidate := oldPod != nil && isPreAllocatablePod(oldPod)
+	newIsCandidate := isPreAllocatablePod(newPod)
+
+	// Case 1: Non-candidate -> Candidate (Add to cache)
+	if !oldIsCandidate && newIsCandidate {
+		h.cache.addPreAllocatableCandidateOnNode(newPod)
+		return
+	}
+
+	// Case 2: Candidate -> Non-candidate (Remove from cache)
+	if oldIsCandidate && !newIsCandidate {
+		h.cache.deletePreAllocatableCandidateOnNode(newPod.Spec.NodeName, newPod.UID)
+		return
+	}
+
+	// Case 3: Candidate -> Candidate, check if score or node changed
+	if newIsCandidate && oldPod != nil {
+		// Check if node changed
+		if oldPod.Spec.NodeName != newPod.Spec.NodeName {
+			// Node changed: remove from old node, add to new node
+			if oldPod.Spec.NodeName != "" {
+				h.cache.deletePreAllocatableCandidateOnNode(oldPod.Spec.NodeName, oldPod.UID)
+			}
+			h.cache.addPreAllocatableCandidateOnNode(newPod)
+			return
+		}
+
+		// Check if score changed
+		oldScore := getPreAllocatableScore(oldPod)
+		newScore := getPreAllocatableScore(newPod)
+		if oldScore != newScore {
+			// Score changed: update in btree (delete old + insert new)
+			h.cache.updatePreAllocatableCandidateScore(newPod)
+		}
 	}
 }

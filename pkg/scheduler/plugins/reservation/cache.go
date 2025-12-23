@@ -18,17 +18,52 @@ package reservation
 
 import (
 	"fmt"
+	"strconv"
 	"sync"
 
+	"github.com/google/btree"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
+	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	schedulinglister "github.com/koordinator-sh/koordinator/pkg/client/listers/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 )
+
+// preAllocatablePodItem implements btree.Item for storing pods with scores
+type preAllocatablePodItem struct {
+	pod   *corev1.Pod
+	score int64
+}
+
+// Less implements btree.Item interface
+// Returns true if this item should be ordered before the other item
+func (p *preAllocatablePodItem) Less(than btree.Item) bool {
+	other := than.(*preAllocatablePodItem)
+	// Higher score comes first (descending order)
+	if p.score != other.score {
+		return p.score > other.score
+	}
+	// If scores are equal, order by UID for stability
+	return p.pod.UID < other.pod.UID
+}
+
+// preAllocatablePodCache manages sorted pre-allocatable pods for a node using btree
+type preAllocatablePodCache struct {
+	tree  *btree.BTree                         // Sorted storage by score
+	index map[types.UID]*preAllocatablePodItem // UID -> item for fast lookup
+}
+
+// newPreAllocatablePodCache creates a new cache instance
+func newPreAllocatablePodCache() *preAllocatablePodCache {
+	return &preAllocatablePodCache{
+		tree:  btree.New(32),
+		index: make(map[types.UID]*preAllocatablePodItem),
+	}
+}
 
 type reservationCache struct {
 	reservationLister  schedulinglister.ReservationLister
@@ -37,15 +72,19 @@ type reservationCache struct {
 	reservationsOnNode map[string]map[types.UID]struct{} // all reservations on node
 	matchableOnNode    map[string]map[types.UID]struct{} // look up available reservations on node
 	allocatedOnNode    map[string]map[types.UID]struct{} // look up allocated available reservations on node
+	// preAllocatablePodsOnNode caches sorted pre-allocatable candidate pods per node
+	// Uses btree for automatic ordering by score
+	preAllocatablePodsOnNode map[string]*preAllocatablePodCache
 }
 
 func newReservationCache(reservationLister schedulinglister.ReservationLister) *reservationCache {
 	cache := &reservationCache{
-		reservationLister:  reservationLister,
-		reservationInfos:   map[types.UID]*frameworkext.ReservationInfo{},
-		reservationsOnNode: map[string]map[types.UID]struct{}{},
-		matchableOnNode:    map[string]map[types.UID]struct{}{},
-		allocatedOnNode:    map[string]map[types.UID]struct{}{},
+		reservationLister:        reservationLister,
+		reservationInfos:         map[types.UID]*frameworkext.ReservationInfo{},
+		reservationsOnNode:       map[string]map[types.UID]struct{}{},
+		matchableOnNode:          map[string]map[types.UID]struct{}{},
+		allocatedOnNode:          map[string]map[types.UID]struct{}{},
+		preAllocatablePodsOnNode: map[string]*preAllocatablePodCache{},
 	}
 	return cache
 }
@@ -270,6 +309,23 @@ func (cache *reservationCache) assumePod(reservationUID types.UID, pod *corev1.P
 	return cache.addPod(reservationUID, pod)
 }
 
+func (cache *reservationCache) assumePods(reservationUID types.UID, pods []*corev1.Pod) error {
+	cache.lock.Lock()
+	defer cache.lock.Unlock()
+
+	rInfo := cache.reservationInfos[reservationUID]
+	if rInfo == nil {
+		return fmt.Errorf("cannot find target reservation")
+	}
+	if rInfo.IsTerminating() {
+		return fmt.Errorf("target reservation is terminating")
+	}
+	for _, pod := range pods {
+		rInfo.AddAssignedPod(pod)
+	}
+	return nil
+}
+
 func (cache *reservationCache) forgetPod(reservationUID types.UID, pod *corev1.Pod) {
 	cache.deletePod(reservationUID, pod)
 }
@@ -451,4 +507,126 @@ func (cache *reservationCache) ListAvailableReservationInfosOnNode(nodeName stri
 		}
 	}
 	return result
+}
+
+func (cache *reservationCache) listAllNodes() []string {
+	cache.lock.RLock()
+	defer cache.lock.RUnlock()
+	if len(cache.reservationsOnNode) == 0 {
+		return nil
+	}
+	nodes := make([]string, 0, len(cache.reservationsOnNode))
+	for k := range cache.reservationsOnNode {
+		nodes = append(nodes, k)
+	}
+	return nodes
+}
+
+// getAllPreAllocatableCandidates retrieves all cached pre-allocatable candidates for all nodes
+// Returns a map of nodeName -> sorted list of pods (by score descending)
+func (cache *reservationCache) getAllPreAllocatableCandidates() map[string][]*corev1.Pod {
+	cache.lock.RLock()
+	defer cache.lock.RUnlock()
+	result := make(map[string][]*corev1.Pod, len(cache.preAllocatablePodsOnNode))
+	for nodeName, podCache := range cache.preAllocatablePodsOnNode {
+		if podCache == nil || podCache.tree.Len() == 0 {
+			continue
+		}
+		// Collect pods in sorted order for this node
+		pods := make([]*corev1.Pod, 0, podCache.tree.Len())
+		podCache.tree.Ascend(func(item btree.Item) bool {
+			pods = append(pods, item.(*preAllocatablePodItem).pod)
+			return true
+		})
+		result[nodeName] = pods
+	}
+	return result
+}
+
+// deletePreAllocatableCandidateOnNode removes a specific pod from the cached candidates for a node
+func (cache *reservationCache) deletePreAllocatableCandidateOnNode(nodeName string, podUID types.UID) {
+	cache.lock.Lock()
+	defer cache.lock.Unlock()
+	if nodeName == "" {
+		return
+	}
+	podCache := cache.preAllocatablePodsOnNode[nodeName]
+	if podCache == nil {
+		return
+	}
+	// Find and delete the item
+	if item, exists := podCache.index[podUID]; exists {
+		podCache.tree.Delete(item)
+		delete(podCache.index, podUID)
+	}
+	// Clean up empty cache
+	if podCache.tree.Len() == 0 {
+		delete(cache.preAllocatablePodsOnNode, nodeName)
+	}
+}
+
+// addPreAllocatableCandidateOnNode adds a pod to the cached pre-allocatable candidates for a node
+func (cache *reservationCache) addPreAllocatableCandidateOnNode(pod *corev1.Pod) {
+	cache.lock.Lock()
+	defer cache.lock.Unlock()
+	if pod == nil || pod.Spec.NodeName == "" {
+		return
+	}
+	nodeName := pod.Spec.NodeName
+	// Get or create cache for this node
+	podCache := cache.preAllocatablePodsOnNode[nodeName]
+	if podCache == nil {
+		podCache = newPreAllocatablePodCache()
+		cache.preAllocatablePodsOnNode[nodeName] = podCache
+	}
+	// Add or update the pod
+	score := getPreAllocatableScoreFromPod(pod)
+	item := &preAllocatablePodItem{
+		pod:   pod,
+		score: score,
+	}
+	podCache.tree.ReplaceOrInsert(item)
+	podCache.index[pod.UID] = item
+}
+
+// updatePreAllocatableCandidateScore updates the score of a pod in the cache
+func (cache *reservationCache) updatePreAllocatableCandidateScore(pod *corev1.Pod) {
+	cache.lock.Lock()
+	defer cache.lock.Unlock()
+	if pod == nil || pod.Spec.NodeName == "" {
+		return
+	}
+	nodeName := pod.Spec.NodeName
+	podCache := cache.preAllocatablePodsOnNode[nodeName]
+	if podCache == nil {
+		return
+	}
+	// Delete old item
+	if oldItem, exists := podCache.index[pod.UID]; exists {
+		podCache.tree.Delete(oldItem)
+	}
+	// Insert new item with updated score
+	score := getPreAllocatableScoreFromPod(pod)
+	newItem := &preAllocatablePodItem{
+		pod:   pod,
+		score: score,
+	}
+	podCache.tree.ReplaceOrInsert(newItem)
+	podCache.index[pod.UID] = newItem
+}
+
+// getPreAllocatableScoreFromPod retrieves the pre-allocatable score from pod annotation
+func getPreAllocatableScoreFromPod(pod *corev1.Pod) int64 {
+	if pod == nil || pod.Annotations == nil {
+		return 0
+	}
+	scoreStr, ok := pod.Annotations[apiext.AnnotationPodPreAllocatableScore]
+	if !ok {
+		return 0
+	}
+	score, err := strconv.ParseInt(scoreStr, 10, 64)
+	if err != nil {
+		return 0
+	}
+	return score
 }

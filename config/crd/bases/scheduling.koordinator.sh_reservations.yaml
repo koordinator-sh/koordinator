@@ -232,6 +232,27 @@ spec:
                   When `preAllocation` is set, the scheduler will skip this validation and allow overcommitment. The scheduled
                   reservation would be waiting to be available until free resources are sufficient.
                 type: boolean
+              preAllocationPolicy:
+                description: PreAllocationPolicy defines the policy for pre-allocation.
+                properties:
+                  enableMultiple:
+                    default: false
+                    description: |-
+                      EnableMultiple indicates whether to allow pre-allocating multiple pods.
+                      When false, only one pod can be pre-allocated (compatible with existing logic).
+                      When true, multiple pods can be pre-allocated to meet the reservation requirements.
+                    type: boolean
+                  mode:
+                    default: Default
+                    description: |-
+                      Mode defines the mode for selecting pre-allocatable pods.
+                      Default mode uses OwnerMatchers from the Reservation Spec.
+                      Cluster mode uses cluster-wide label/annotation selectors.
+                    enum:
+                    - Default
+                    - Cluster
+                    type: string
+                type: object
               taints:
                 description: |-
                   Specifies the reservation's taints. This can be toleranted by the reservation tolerance.
