@@ -67,6 +67,7 @@ type extendedHandleOptions struct {
 	servicesEngine                   *services.Engine
 	koordinatorClientSet             koordinatorclientset.Interface
 	koordinatorSharedInformerFactory koordinatorinformers.SharedInformerFactory
+	reservationCache                 ReservationCache
 	reservationNominator             ReservationNominator
 	networkTopologyManager           networktopology.TreeManager
 }
@@ -91,6 +92,12 @@ func WithKoordinatorSharedInformerFactory(informerFactory koordinatorinformers.S
 	}
 }
 
+func WithReservationCache(cache ReservationCache) Option {
+	return func(options *extendedHandleOptions) {
+		options.reservationCache = cache
+	}
+}
+
 func WithReservationNominator(nominator ReservationNominator) Option {
 	return func(options *extendedHandleOptions) {
 		options.reservationNominator = nominator
@@ -110,7 +117,8 @@ type FrameworkExtenderFactory struct {
 	servicesEngine                   *services.Engine
 	koordinatorClientSet             koordinatorclientset.Interface
 	koordinatorSharedInformerFactory koordinatorinformers.SharedInformerFactory
-	reservationNominator             ReservationNominator
+	reservationCache                 ReservationCache     // for testing
+	reservationNominator             ReservationNominator // for testing
 	nextPodPlugin                    NextPodPlugin
 	profiles                         map[string]FrameworkExtender
 	monitor                          *SchedulerMonitor
@@ -138,6 +146,7 @@ func NewFrameworkExtenderFactory(options ...Option) (*FrameworkExtenderFactory, 
 		servicesEngine:                   handleOptions.servicesEngine,
 		koordinatorClientSet:             handleOptions.koordinatorClientSet,
 		koordinatorSharedInformerFactory: handleOptions.koordinatorSharedInformerFactory,
+		reservationCache:                 handleOptions.reservationCache,
 		reservationNominator:             handleOptions.reservationNominator,
 		profiles:                         map[string]FrameworkExtender{},
 		monitor:                          NewSchedulerMonitor(schedulerMonitorPeriod, schedulingTimeout),

@@ -86,6 +86,7 @@ var (
 
 	_ frameworkext.ControllerProvider      = &Plugin{}
 	_ frameworkext.PreFilterTransformer    = &Plugin{}
+	_ frameworkext.ReservationCache        = &Plugin{}
 	_ frameworkext.ReservationNominator    = &Plugin{}
 	_ frameworkext.ReservationFilterPlugin = &Plugin{}
 	_ frameworkext.ReservationScorePlugin  = &Plugin{}
@@ -125,11 +126,6 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 	nm := newNominator(podLister, reservationLister)
 	registerReservationEventHandler(cache, koordSharedInformerFactory, nm)
 	registerPodEventHandler(extendedHandle, cache, nm, sharedInformerFactory)
-
-	// TODO(joseph): Considering the amount of changed code,
-	// temporarily use global variable to store ReservationCache instance,
-	// and then refactor to separate ReservationCache later.
-	frameworkext.SetReservationCache(cache)
 
 	p := &Plugin{
 		handle:                        extendedHandle,
@@ -1183,4 +1179,12 @@ func (pl *Plugin) Bind(ctx context.Context, cycleState *framework.CycleState, po
 
 	pl.handle.EventRecorder().Eventf(reservation, nil, corev1.EventTypeNormal, "Scheduled", "Binding", "Successfully assigned %v to %v", rName, nodeName)
 	return nil
+}
+
+func (pl *Plugin) DeleteReservation(r *schedulingv1alpha1.Reservation) *frameworkext.ReservationInfo {
+	return pl.reservationCache.DeleteReservation(r)
+}
+
+func (pl *Plugin) GetReservationInfoByPod(pod *corev1.Pod, nodeName string) *frameworkext.ReservationInfo {
+	return pl.reservationCache.GetReservationInfoByPod(pod, nodeName)
 }

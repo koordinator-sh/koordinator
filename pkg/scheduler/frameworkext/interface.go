@@ -49,6 +49,8 @@ type ExtendedHandle interface {
 	RegisterErrorHandlerFilters(preFilter PreErrorHandlerFilter, afterFilter PostErrorHandlerFilter)
 	RegisterForgetPodHandler(handler ForgetPodHandler)
 	ForgetPod(logger klog.Logger, pod *corev1.Pod) error
+	// GetReservationCache returns the ReservationCache object to support cache operations for reservation infos.
+	GetReservationCache() ReservationCache
 	// GetReservationNominator returns the ReservationNominator object to support nominating reservation.
 	// It returns nil when the framework does not support the resource reservation.
 	GetReservationNominator() ReservationNominator

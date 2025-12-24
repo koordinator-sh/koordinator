@@ -894,7 +894,7 @@ func Test_updateReservation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			frameworkext.SetReservationCache(&frameworkext.FakeReservationCache{})
+			frameworkext.SetReservationCache(&frameworkext.FakeReservationCache{}, corev1.DefaultSchedulerName)
 			registeredPlugins := []schedulertesting.RegisterPluginFunc{
 				schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
 				schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
@@ -1157,7 +1157,7 @@ func Test_updateReservationInCache(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			frameworkext.SetReservationCache(&frameworkext.FakeReservationCache{})
+			frameworkext.SetReservationCache(&frameworkext.FakeReservationCache{}, corev1.DefaultSchedulerName)
 			sched := frameworkext.NewFakeScheduler()
 			updateReservationInSchedulerCache(sched, tt.oldObj, tt.newObj)
 			pod, err := sched.GetPod(&corev1.Pod{
@@ -1277,7 +1277,7 @@ func Test_deleteReservationFromCache(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			frameworkext.SetReservationCache(&frameworkext.FakeReservationCache{})
+			frameworkext.SetReservationCache(&frameworkext.FakeReservationCache{}, corev1.DefaultSchedulerName)
 			sched := frameworkext.NewFakeScheduler()
 			if reservationutil.ValidateReservation(tt.obj) == nil {
 				sched.AddPod(klog.Background(), reservationutil.NewReservePod(tt.obj))

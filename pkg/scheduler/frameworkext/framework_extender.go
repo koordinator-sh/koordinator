@@ -75,6 +75,7 @@ type frameworkExtenderImpl struct {
 
 	findOneNodePlugin FindOneNodePlugin
 
+	reservationCache                       ReservationCache
 	reservationNominator                   ReservationNominator
 	reservationFilterPlugins               []ReservationFilterPlugin
 	reservationScorePlugins                []ReservationScorePlugin
@@ -103,6 +104,7 @@ func NewFrameworkExtender(f *FrameworkExtenderFactory, fw framework.Framework) F
 		monitor:                          f.monitor,
 		koordinatorClientSet:             f.KoordinatorClientSet(),
 		koordinatorSharedInformerFactory: f.koordinatorSharedInformerFactory,
+		reservationCache:                 f.reservationCache,
 		reservationNominator:             f.reservationNominator,
 		preFilterTransformers:            map[string]PreFilterTransformer{},
 		filterTransformers:               map[string]FilterTransformer{},
@@ -151,6 +153,10 @@ func (ext *frameworkExtenderImpl) updatePlugins(pl framework.Plugin) {
 	// TODO(joseph): In the future, use only the default ReservationNominator
 	if r, ok := pl.(ReservationNominator); ok {
 		ext.reservationNominator = r
+	}
+	if r, ok := pl.(ReservationCache); ok {
+		ext.reservationCache = r
+		SetReservationCache(r, ext.Framework.ProfileName())
 	}
 	if r, ok := pl.(ReservationFilterPlugin); ok {
 		ext.reservationFilterPlugins = append(ext.reservationFilterPlugins, r)
@@ -232,6 +238,10 @@ func (ext *frameworkExtenderImpl) KoordinatorSharedInformerFactory() koordinator
 // nor are they allowed to hold the object within the plugin object.
 func (ext *frameworkExtenderImpl) Scheduler() Scheduler {
 	return ext.schedulerFn()
+}
+
+func (ext *frameworkExtenderImpl) GetReservationCache() ReservationCache {
+	return ext.reservationCache
 }
 
 func (ext *frameworkExtenderImpl) GetReservationNominator() ReservationNominator {
