@@ -236,10 +236,14 @@ type ColocationStrategy struct {
 	MetricMemoryCollectPolicy      *slov1alpha1.NodeMemoryCollectPolicy `json:"metricMemoryCollectPolicy,omitempty"`
 
 	CPUReclaimThresholdPercent *int64 `json:"cpuReclaimThresholdPercent,omitempty" validate:"omitempty,min=0"`
+	// CPUReclaimableReservedPercent defines the percentage of long-time reclaimable cpu on node.
+	CPUReclaimableReservedPercent *int64 `json:"cpuReclaimableReservedPercent,omitempty" validate:"omitempty,min=0"`
 	// CPUCalculatePolicy determines the calculation policy of the CPU resources for the Batch pods.
 	// Supported: "usage" (default), "maxUsageRequest".
 	CPUCalculatePolicy            *CalculatePolicy `json:"cpuCalculatePolicy,omitempty"`
 	MemoryReclaimThresholdPercent *int64           `json:"memoryReclaimThresholdPercent,omitempty" validate:"omitempty,min=0"`
+	// MemoryReclaimableReservedPercent defines the percentage of long-time reclaimable memory on node.
+	MemoryReclaimableReservedPercent *int64 `json:"memoryReclaimableReservedPercent,omitempty" validate:"omitempty,min=0"`
 	// MemoryCalculatePolicy determines the calculation policy of the memory resources for the Batch pods.
 	// Supported: "usage" (default), "request", "maxUsageRequest".
 	MemoryCalculatePolicy      *CalculatePolicy `json:"memoryCalculatePolicy,omitempty"`
