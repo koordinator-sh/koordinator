@@ -170,6 +170,107 @@ func TestCacheDeleteReservation(t *testing.T) {
 	assert.Nil(t, rInfo)
 }
 
+func TestCacheUpdateReservationIfExists(t *testing.T) {
+	cache := newReservationCache(nil)
+	reservation := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{
+			UID:  uuid.NewUUID(),
+			Name: "test-reservation",
+		},
+		Spec: schedulingv1alpha1.ReservationSpec{
+			Template: &corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("4"),
+									corev1.ResourceMemory: resource.MustParse("4Gi"),
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		Status: schedulingv1alpha1.ReservationStatus{
+			NodeName: "test-node-1",
+			Phase:    schedulingv1alpha1.ReservationAvailable,
+			Allocatable: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("4"),
+				corev1.ResourceMemory: resource.MustParse("4Gi"),
+			},
+		},
+	}
+
+	// Update non-existent reservation should not create it
+	cache.updateReservationIfExists(reservation)
+	rInfo := cache.getReservationInfoByUID(reservation.UID)
+	assert.Nil(t, rInfo, "should not create reservation if it doesn't exist")
+
+	// First add the reservation
+	cache.updateReservation(reservation)
+	rInfo = cache.getReservationInfoByUID(reservation.UID)
+	assert.NotNil(t, rInfo)
+	assert.Equal(t, schedulingv1alpha1.ReservationAvailable, rInfo.Reservation.Status.Phase)
+
+	// Update existing reservation with new phase
+	updatedReservation := reservation.DeepCopy()
+	updatedReservation.Status.Phase = schedulingv1alpha1.ReservationSucceeded
+	updatedReservation.Status.Allocated = corev1.ResourceList{
+		corev1.ResourceCPU:    resource.MustParse("2"),
+		corev1.ResourceMemory: resource.MustParse("2Gi"),
+	}
+
+	cache.updateReservationIfExists(updatedReservation)
+	rInfo = cache.getReservationInfoByUID(reservation.UID)
+	assert.NotNil(t, rInfo)
+	assert.Equal(t, schedulingv1alpha1.ReservationSucceeded, rInfo.Reservation.Status.Phase)
+
+	// Verify matchable and allocated caches are updated correctly
+	// When phase becomes Succeeded, it should be removed from matchable
+	assert.NotContains(t, cache.matchableOnNode["test-node-1"], reservation.UID)
+
+	// Test transition from matchable to non-matchable
+	cache2 := newReservationCache(nil)
+	reservation2 := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{
+			UID:  uuid.NewUUID(),
+			Name: "test-reservation-2",
+		},
+		Spec: schedulingv1alpha1.ReservationSpec{
+			Template: &corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU: resource.MustParse("2"),
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		Status: schedulingv1alpha1.ReservationStatus{
+			NodeName: "test-node-2",
+			Phase:    schedulingv1alpha1.ReservationAvailable,
+			Allocatable: corev1.ResourceList{
+				corev1.ResourceCPU: resource.MustParse("2"),
+			},
+		},
+	}
+
+	cache2.updateReservation(reservation2)
+	assert.Contains(t, cache2.matchableOnNode["test-node-2"], reservation2.UID)
+
+	// Update to non-matchable state
+	reservation2.Status.Phase = schedulingv1alpha1.ReservationFailed
+	cache2.updateReservationIfExists(reservation2)
+	assert.NotContains(t, cache2.matchableOnNode["test-node-2"], reservation2.UID)
+}
+
 func TestCacheAddOrUpdateOrDeletePod(t *testing.T) {
 	cache := newReservationCache(nil)
 	reservation := &schedulingv1alpha1.Reservation{

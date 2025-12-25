@@ -577,7 +577,7 @@ func TestScore(t *testing.T) {
 					nodeToState: frameworkext.NodeReservationRestoreStates{
 						"test-node": &nodeReservationRestoreStateData{
 							mergedMatchedAllocatable: allocatable,
-							matched: []reservationAlloc{
+							matched: []reusableAlloc{
 								{
 									rInfo:       frameworkext.NewReservationInfo(reservation),
 									allocatable: allocatable,

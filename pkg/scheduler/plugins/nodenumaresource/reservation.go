@@ -271,11 +271,11 @@ func (p *Plugin) PreRestoreReservationPreAllocation(ctx context.Context, cycleSt
 
 // RestoreReservationPreAllocation restores the fine-grained resources (CPUSet, NUMA) held by pre-allocatable pods.
 func (p *Plugin) RestoreReservationPreAllocation(ctx context.Context, cycleState *framework.CycleState, r *frameworkext.ReservationInfo, preAllocatable []*corev1.Pod, nodeInfo *framework.NodeInfo) (interface{}, *framework.Status) {
-	nodeName := nodeInfo.Node().Name
 	if len(preAllocatable) == 0 {
 		return nil, nil
 	}
 
+	nodeName := nodeInfo.Node().Name
 	preAllocatableAllocs := make(map[types.UID]reusableAlloc, len(preAllocatable))
 	for _, pod := range preAllocatable {
 		var allocatedNUMAResource map[int]corev1.ResourceList
@@ -327,8 +327,7 @@ func (p *Plugin) RestoreReservationPreAllocation(ctx context.Context, cycleState
 	state.setNodeState(nodeName, nodeState)
 	cycleState.Write(reservationRestoreStateKey, state)
 
-	// TODO: use V5
-	klog.V(4).InfoS("Completed RestoreReservationPreAllocation",
+	klog.V(5).InfoS("Completed RestoreReservationPreAllocation",
 		"reservation", r.GetName(), "node", nodeName,
 		"preAllocatablePods", len(preAllocatable),
 		"restoredPods", len(preAllocatableAllocs),
@@ -460,6 +459,10 @@ func tryAllocateFromReusable(
 				resourceOptions.preferredCPUs = resourceOptions.preferredCPUs.Union(reservationPreemptibleCPUs)
 				reservedCPUs = reservedCPUs.Union(reservationPreemptibleCPUs)
 			}
+			if isPreAllocation {
+				// pre-allocating reserve pod can allocate more cpus than the pre-allocatable pod remained
+				resourceOptions.requiredResources = nil
+			}
 
 			if resourceOptions.requestCPUBind && resourceOptions.numCPUsNeeded > reservedCPUs.Size() {
 				reservationReasons = append(reservationReasons, framework.NewStatus(framework.Unschedulable, ErrNotEnoughCPUs))
@@ -493,7 +496,7 @@ func tryAllocateFromReusable(
 					"policy", allocatePolicy, "allocateCPUs", result.CPUSet.String(),
 					"reservedCPUs", reservedCPUs.String(), "remainedCPUs", alloc.remainedCPUs.String())
 				continue
-			} else if isPreAllocation && result.CPUSet.Size() < reservedCPUs.Size() { // reserve pod should pre-allocate no less cpus than the pod requested
+			} else if isPreAllocation && !reservedCPUs.IsSubsetOf(result.CPUSet) { // reserve pod should pre-allocate a superset of the pod requested cpus
 				reservationReasons = append(reservationReasons, framework.NewStatus(framework.Unschedulable, ErrNotEnoughCPUs))
 				klog.V(5).InfoS("failed to pre-allocated from pod, not enough cpus available to satisfy request",
 					"reservation", rInfo.Reservation.Name, "pod", pod.Name, "pre-allocatable", klog.KObj(alloc.preAllocatable), "node", node.Name,
@@ -506,7 +509,7 @@ func tryAllocateFromReusable(
 			break
 		}
 	}
-	if !hasSatisfiedReservation && resourceOptions.requiredFromReservation {
+	if !hasSatisfiedReservation && (resourceOptions.requiredFromReservation || resourceOptions.requiredPreAllocation) {
 		return nil, framework.NewStatus(framework.Unschedulable, makeReasonsByReservation(reservationReasons)...)
 	}
 	return result, nil
@@ -646,6 +649,13 @@ func (p *Plugin) getNominatedReusableAlloc(restoreState *nodeReservationRestoreS
 		return nil, nil
 	}
 
+	if restoreState.preAllocationRInfo == nil {
+		if resourceOptions.requiredPreAllocation {
+			return nil, framework.NewStatus(framework.Unschedulable, "no nominated pre-allocatable pod")
+		}
+		klog.V(5).Infof("node has no pre-allocatable any numa resource, pod %s, node %v", klog.KObj(pod), node.Name)
+		return nil, nil
+	}
 	preAllocatable := p.handle.GetReservationNominator().GetNominatedPreAllocation(restoreState.preAllocationRInfo, node.Name)
 	if preAllocatable == nil {
 		if resourceOptions.requiredPreAllocation {
@@ -655,7 +665,7 @@ func (p *Plugin) getNominatedReusableAlloc(restoreState *nodeReservationRestoreS
 	}
 	nominatedReusableAlloc, ok := restoreState.matched[preAllocatable.GetUID()]
 	if !ok {
-		klog.V(5).Infof("nominated pre-allocatable %v doesn't reserve numa resource or cpuset, pod %s", klog.KObj(preAllocatable), klog.KObj(pod))
+		klog.V(5).Infof("nominated pre-allocatable %v doesn't reserve numa resource or cpuset, pod %s, node %v", klog.KObj(preAllocatable), klog.KObj(pod), node.Name)
 		return nil, nil
 	}
 	return map[types.UID]reusableAlloc{preAllocatable.GetUID(): nominatedReusableAlloc}, nil

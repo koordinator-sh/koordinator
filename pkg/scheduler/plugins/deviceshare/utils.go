@@ -389,7 +389,7 @@ func preparePod(pod *corev1.Pod, gpuSharedResourceTemplatesCache *gpuSharedResou
 		if err != nil {
 			return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, err.Error())
 		}
-		state.hasReservationAffinity = reservationAffinity != nil
+		state.isReservationRequired = reservationAffinity != nil || apiext.IsPreAllocationRequired(pod.Labels)
 	}
 
 	return

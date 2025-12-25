@@ -153,10 +153,12 @@ func (ext *frameworkExtenderImpl) updatePlugins(pl framework.Plugin) {
 	// TODO(joseph): In the future, use only the default ReservationNominator
 	if r, ok := pl.(ReservationNominator); ok {
 		ext.reservationNominator = r
+		klog.V(4).InfoS("framework extender got ReservationNominator registered", "profile", ext.ProfileName(), "plugin", pl.Name())
 	}
 	if r, ok := pl.(ReservationCache); ok {
 		ext.reservationCache = r
 		SetReservationCache(r, ext.Framework.ProfileName())
+		klog.V(4).InfoS("framework extender got ReservationCache registered", "profile", ext.ProfileName(), "plugin", pl.Name())
 	}
 	if r, ok := pl.(ReservationFilterPlugin); ok {
 		ext.reservationFilterPlugins = append(ext.reservationFilterPlugins, r)
