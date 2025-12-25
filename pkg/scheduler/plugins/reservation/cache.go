@@ -130,10 +130,39 @@ func (cache *reservationCache) updateReservationIfExists(newR *schedulingv1alpha
 	cache.lock.Lock()
 	defer cache.lock.Unlock()
 	rInfo := cache.reservationInfos[newR.UID]
-	if rInfo != nil {
-		rInfo.UpdateReservation(newR)
-		if newR.Status.NodeName != "" {
-			cache.updateReservationsOnNode(newR.Status.NodeName, newR.UID)
+	if rInfo == nil {
+		return
+	}
+	rInfo.UpdateReservation(newR)
+	uid := newR.UID
+	if nodeName := newR.Status.NodeName; nodeName != "" {
+		// refresh matchable and allocated
+		if rInfo.IsMatchable() { // matchable
+			if cache.matchableOnNode[nodeName] == nil {
+				cache.matchableOnNode[nodeName] = map[types.UID]struct{}{}
+			}
+			cache.matchableOnNode[nodeName][uid] = struct{}{}
+			if rInfo.GetAllocatedPods() > 0 { // allocated
+				if cache.allocatedOnNode[nodeName] == nil {
+					cache.allocatedOnNode[nodeName] = map[types.UID]struct{}{}
+				}
+				cache.allocatedOnNode[nodeName][uid] = struct{}{}
+			} else if cache.allocatedOnNode[nodeName] != nil {
+				delete(cache.allocatedOnNode[nodeName], uid)
+			}
+		} else { // not matchable, neither allocated
+			if cache.matchableOnNode[nodeName] != nil {
+				delete(cache.matchableOnNode[nodeName], uid)
+				if len(cache.matchableOnNode[nodeName]) == 0 {
+					delete(cache.matchableOnNode, nodeName)
+				}
+			}
+			if cache.allocatedOnNode[nodeName] != nil {
+				delete(cache.allocatedOnNode[nodeName], uid)
+				if len(cache.allocatedOnNode[nodeName]) == 0 {
+					delete(cache.allocatedOnNode, nodeName)
+				}
+			}
 		}
 	}
 }

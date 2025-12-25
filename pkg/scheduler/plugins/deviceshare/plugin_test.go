@@ -3002,7 +3002,7 @@ func Test_Plugin_Filter(t *testing.T) {
 					nodeToState: frameworkext.NodeReservationRestoreStates{
 						"test-node": &nodeReservationRestoreStateData{
 							mergedMatchedAllocatable: allocatable,
-							matched: []reservationAlloc{
+							matched: []reusableAlloc{
 								{
 									rInfo:       frameworkext.NewReservationInfo(reservation),
 									allocatable: allocatable,
@@ -4494,7 +4494,7 @@ func Test_Plugin_Reserve(t *testing.T) {
 					nodeToState: frameworkext.NodeReservationRestoreStates{
 						tt.args.node.Name: &nodeReservationRestoreStateData{
 							mergedMatchedAllocatable: allocatable,
-							matched: []reservationAlloc{
+							matched: []reusableAlloc{
 								{
 									rInfo:       frameworkext.NewReservationInfo(reservation),
 									allocatable: allocatable,
