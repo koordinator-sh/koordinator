@@ -204,11 +204,11 @@ func (c *resourceManager) Allocate(node *corev1.Node, pod *corev1.Pod, options *
 	if options.hint.NUMANodeAffinity != nil {
 		resources, err := c.allocateResourcesByHint(node, pod, options)
 		if err != nil {
-			klog.Errorf("allocateResourcesByHint for pod %s on node %s, failed: %v", klog.KObj(pod), node.Name, err)
+			klog.V(4).Infof("allocateResourcesByHint for pod %s on node %s, hint %s, failed: %v", klog.KObj(pod), node.Name, options.hint.NUMANodeAffinity, err)
 			return nil, err
 		}
 		if len(resources) == 0 {
-			klog.Warningf("succeed allocateResourcesByHint but allocatedNUMAResources nil, options: %+v", options)
+			klog.Warningf("succeed allocateResourcesByHint for pod %s on node %s, hint %s, but allocatedNUMAResources nil, options: %+v", klog.KObj(pod), node.Name, options.hint.NUMANodeAffinity, options)
 		}
 		allocation.NUMANodeResources = resources
 
@@ -216,6 +216,7 @@ func (c *resourceManager) Allocate(node *corev1.Node, pod *corev1.Pod, options *
 	if options.requestCPUBind {
 		cpus, err := c.allocateCPUSet(node, pod, allocation.NUMANodeResources, options)
 		if err != nil {
+			klog.V(4).Infof("allocateCPUSet for pod %s on node %s, allocation.NUMANodeResources %+v, failed: %v", klog.KObj(pod), node.Name, allocation.NUMANodeResources, err)
 			return nil, framework.NewStatus(framework.Unschedulable, err.Error())
 		}
 		if cpus.IsEmpty() {
