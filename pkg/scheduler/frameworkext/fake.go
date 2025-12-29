@@ -25,6 +25,7 @@ import (
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
+	"github.com/koordinator-sh/koordinator/apis/extension"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
 
@@ -263,19 +264,6 @@ func (nm *FakeNominator) deleteReservePod(pod *corev1.Pod) {
 	delete(nm.nominatedReservePodToNode, pod.UID)
 }
 
-func (nm *FakeNominator) DeleteNominatedReservePodOrReservation(pod *corev1.Pod) {
-	nm.lock.Lock()
-	defer nm.lock.Unlock()
-
-	nodeToReservation := nm.nominatedPodToNode[pod.UID]
-	delete(nm.nominatedPodToNode, pod.UID)
-	for _, reservationUID := range nodeToReservation {
-		delete(nm.reservations, reservationUID)
-	}
-
-	nm.deleteReservePod(pod)
-}
-
 func (nm *FakeNominator) NominatePreAllocation(ctx context.Context, cycleState *framework.CycleState, rInfo *ReservationInfo, nodeName string) (*corev1.Pod, *framework.Status) {
 	if !rInfo.IsPreAllocation() {
 		return nil, nil
@@ -317,4 +305,43 @@ func (nm *FakeNominator) GetNominatedNodeForReservePod(pod *corev1.Pod) string {
 	nm.lock.RLock()
 	defer nm.lock.RUnlock()
 	return nm.nominatedReservePodToNode[pod.UID]
+}
+
+func (nm *FakeNominator) ReservationNominate(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) *framework.Status {
+	if reservationutil.IsReservePod(pod) {
+		return nil
+	} else {
+		if extension.IsReservationIgnored(pod) {
+			return nil
+		}
+
+		nominatedReservationInfo := nm.GetNominatedReservation(pod, nodeName)
+		if nominatedReservationInfo == nil {
+			var status *framework.Status
+			nominatedReservationInfo, status = nm.NominateReservation(ctx, cycleState, pod, nodeName)
+			if !status.IsSuccess() {
+				return status
+			}
+			if nominatedReservationInfo == nil {
+				return nil
+			}
+			nm.AddNominatedReservation(pod, nodeName, nominatedReservationInfo)
+		}
+	}
+
+	return nil
+}
+
+func (nm *FakeNominator) DeleteNominatedReservePodOrReservation(pod *corev1.Pod) {
+	nm.lock.Lock()
+	defer nm.lock.Unlock()
+
+	nodeToReservation := nm.nominatedPodToNode[pod.UID]
+	delete(nm.nominatedPodToNode, pod.UID)
+	for _, reservationUID := range nodeToReservation {
+		delete(nm.reservations, reservationUID)
+	}
+
+	nm.deleteReservePod(pod)
+	nm.deletePreAllocation(pod)
 }
