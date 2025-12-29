@@ -879,6 +879,66 @@ func (pl *Plugin) FilterNominateReservation(ctx context.Context, cycleState *fra
 	return pl.filterWithReservations(ctx, cycleState, pod, nodeInfo, []*frameworkext.ReservationInfo{rInfo}, true)
 }
 
+func (pl *Plugin) ReservationNominate(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) *framework.Status {
+	state := getStateData(cycleState)
+	var (
+		nominatedPod             *corev1.Pod
+		nominatedReservationInfo *frameworkext.ReservationInfo
+	)
+	if reservationutil.IsReservePod(pod) { // reservation
+		// If the pod represents to a pre-allocation reservation, we need to nominate a pre-allocatable pod for it.
+		// Otherwise, assuming the reservation is enough for a non-pre-allocation reservation.
+		if !reservationutil.IsReservePodPreAllocation(pod) {
+			return nil
+		}
+
+		var status *framework.Status
+		nominatedPod = pl.GetNominatedPreAllocation(state.rInfo, nodeName)
+		if nominatedPod == nil {
+			nominatedPod, status = pl.NominatePreAllocation(ctx, cycleState, state.rInfo, nodeName)
+			if !status.IsSuccess() {
+				return status
+			}
+			if nominatedPod == nil {
+				if state.isPreAllocationRequired {
+					return framework.NewStatus(framework.Unschedulable, ErrReasonNoPodsMeetPreAllocationRequirements)
+				}
+				klog.V(5).Infof("Skip nominate with pre-allocation since there are no matched pod, pod %v, reservation %s, node: %v", klog.KObj(pod), state.rInfo.GetName(), nodeName)
+				return status
+			}
+			pl.AddNominatedPreAllocation(state.rInfo, nodeName, nominatedPod)
+		}
+
+		nominatedReservationInfo = state.rInfo
+	} else { // normal pod
+		if apiext.IsReservationIgnored(pod) {
+			return nil
+		}
+
+		nominatedReservationInfo = pl.handle.GetReservationNominator().GetNominatedReservation(pod, nodeName)
+		if nominatedReservationInfo == nil {
+			// The scheduleOne skip scores and reservation nomination if there is only one node available.
+			var status *framework.Status
+			nominatedReservationInfo, status = pl.handle.GetReservationNominator().NominateReservation(ctx, cycleState, pod, nodeName)
+			if !status.IsSuccess() {
+				return status
+			}
+			if nominatedReservationInfo == nil {
+				if state.hasAffinity {
+					return framework.NewStatus(framework.Unschedulable, ErrReasonReservationAffinity)
+				}
+				klog.V(5).Infof("Skip nominate with reservation since there are no matched reservations, pod %v, node: %v", klog.KObj(pod), nodeName)
+				return nil
+			}
+			pl.handle.GetReservationNominator().AddNominatedReservation(pod, nodeName, nominatedReservationInfo)
+		}
+		nominatedPod = pod
+	}
+
+	klog.V(4).InfoS("Nominate pod to node with reservation", "pod", klog.KObj(nominatedPod), "node", nodeName, "reservation", nominatedReservationInfo.GetName())
+	return nil
+}
+
 func (pl *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) *framework.Status {
 	state := getStateData(cycleState)
 	// clean scheduling cycle to avoid unnecessary memory cost before entering the binding

@@ -314,13 +314,23 @@ func (f *FrameworkExtenderFactory) scheduleOne(ctx context.Context, fwk framewor
 		return scheduleResult, err
 	}
 
-	if k8sfeature.DefaultFeatureGate.Enabled(features.ResizePod) {
-		// NOTE(joseph): We can modify the Pod because we have cloned the Pod in the NextPod function.
-		// Make sure to modify the Pod only related to AssumePod, and do not modify the plugins' cache, since
-		// when the assume failure would not do Unreserve the plugins' cache.
-		// Other resizing logic about the plugins' cache can be convergent to its Reserve phase.
-		extender, ok := fwk.(*frameworkExtenderImpl)
-		if ok {
+	extender, ok := fwk.(*frameworkExtenderImpl)
+	if ok {
+		// Due to some ResizePod plugins need the reservation nomination before the real Reserve phase,
+		// and the PreScore phase might be skipped, we force to nominate reservation here.
+		// https://github.com/koordinator-sh/koordinator/issues/2753
+		if reservationNominator := extender.GetReservationNominator(); reservationNominator != nil {
+			status := reservationNominator.ReservationNominate(ctx, cycleState, pod, scheduleResult.SuggestedHost)
+			if !status.IsSuccess() {
+				return scheduleResult, status.AsError()
+			}
+		}
+
+		if k8sfeature.DefaultFeatureGate.Enabled(features.ResizePod) {
+			// NOTE(joseph): We can modify the Pod because we have cloned the Pod in the NextPod function.
+			// Make sure to modify the Pod only related to AssumePod, and do not modify the plugins' cache, since
+			// when the assume failure would not do Unreserve the plugins' cache.
+			// Other resizing logic about the plugins' cache can be convergent to its Reserve phase.
 			status := extender.RunResizePod(ctx, cycleState, pod, scheduleResult.SuggestedHost)
 			if !status.IsSuccess() {
 				fwk.RunReservePluginsUnreserve(ctx, cycleState, pod, scheduleResult.SuggestedHost)

@@ -17,12 +17,16 @@ limitations under the License.
 package frameworkext
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/kubernetes/pkg/scheduler/framework"
+
+	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 )
 
 func TestFakeNominator_NominatedReservePodForNode(t *testing.T) {
@@ -276,4 +280,206 @@ func TestFakeNominator_NominatedReservePodForNode_EmptyNodeName(t *testing.T) {
 	result := nominator.NominatedReservePodForNode("")
 	assert.NotNil(t, result, "should return non-nil slice")
 	assert.Equal(t, 0, len(result), "should return empty slice for empty node name")
+}
+
+func TestFakeNominator_ReservationNominate(t *testing.T) {
+	reservation := &ReservationInfo{
+		Reservation: &schedulingv1alpha1.Reservation{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-reservation",
+				Namespace: "default",
+				UID:       types.UID("test-reservation-uid"),
+			},
+		},
+	}
+
+	tests := []struct {
+		name       string
+		pod        *corev1.Pod
+		nodeName   string
+		prepareFn  func(*FakeNominator)
+		wantStatus *framework.Status
+	}{
+		{
+			name: "reserve pod should be skipped",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "reserve-pod",
+					Namespace: "default",
+					UID:       types.UID("reserve-pod-uid"),
+					Annotations: map[string]string{
+						"scheduling.koordinator.sh/reservation-pod": "true",
+					},
+				},
+			},
+			nodeName:   "test-node",
+			wantStatus: nil,
+		},
+		{
+			name: "reservation ignored pod should be skipped",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "ignored-pod",
+					Namespace: "default",
+					UID:       types.UID("ignored-pod-uid"),
+					Labels: map[string]string{
+						"scheduling.koordinator.sh/reservation-ignored": "true",
+					},
+				},
+			},
+			nodeName:   "test-node",
+			wantStatus: nil,
+		},
+		{
+			name: "normal pod with existing nomination",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pod-2",
+					Namespace: "default",
+					UID:       types.UID("test-pod-2-uid"),
+				},
+			},
+			nodeName: "test-node",
+			prepareFn: func(nm *FakeNominator) {
+				// Pre-add a nomination
+				nm.AddNominatedReservation(&corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-pod-2",
+						Namespace: "default",
+						UID:       types.UID("test-pod-2-uid"),
+					},
+				}, "test-node", reservation)
+			},
+			wantStatus: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			nominator := NewFakeReservationNominator()
+			if tt.prepareFn != nil {
+				tt.prepareFn(nominator)
+			}
+
+			cycleState := framework.NewCycleState()
+			status := nominator.ReservationNominate(context.Background(), cycleState, tt.pod, tt.nodeName)
+
+			assert.Equal(t, tt.wantStatus, status, "status should match")
+		})
+	}
+}
+
+func TestFakeNominator_DeleteNominatedReservePodOrReservation(t *testing.T) {
+	reservation := &ReservationInfo{
+		Reservation: &schedulingv1alpha1.Reservation{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-reservation",
+				Namespace: "default",
+				UID:       types.UID("test-reservation-uid"),
+			},
+		},
+	}
+
+	reservePod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "reserve-pod",
+			Namespace: "default",
+			UID:       types.UID("reserve-pod-uid"),
+			Annotations: map[string]string{
+				"scheduling.koordinator.sh/reservation-pod": "true",
+			},
+		},
+	}
+
+	normalPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "normal-pod",
+			Namespace: "default",
+			UID:       types.UID("normal-pod-uid"),
+		},
+	}
+
+	preAllocatablePod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "pre-allocatable-pod",
+			Namespace: "default",
+			UID:       types.UID("pre-allocatable-pod-uid"),
+		},
+	}
+
+	tests := []struct {
+		name                       string
+		pod                        *corev1.Pod
+		setupFn                    func(*FakeNominator)
+		wantReservePodNominated    bool
+		wantReservationNominated   bool
+		wantPreAllocationNominated bool
+	}{
+		{
+			name: "delete nominated reserve pod",
+			pod:  reservePod,
+			setupFn: func(nm *FakeNominator) {
+				nm.AddNominatedReservePod(reservePod, "test-node")
+			},
+			wantReservePodNominated:    false,
+			wantReservationNominated:   false,
+			wantPreAllocationNominated: false,
+		},
+		{
+			name: "delete nominated reservation for normal pod",
+			pod:  normalPod,
+			setupFn: func(nm *FakeNominator) {
+				nm.AddNominatedReservation(normalPod, "test-node", reservation)
+			},
+			wantReservePodNominated:    false,
+			wantReservationNominated:   false,
+			wantPreAllocationNominated: false,
+		},
+		{
+			name: "delete pre-allocation nomination",
+			pod:  preAllocatablePod,
+			setupFn: func(nm *FakeNominator) {
+				nm.AddNominatedPreAllocation(reservation, "test-node", preAllocatablePod)
+			},
+			wantReservePodNominated:    false,
+			wantReservationNominated:   false,
+			wantPreAllocationNominated: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			nominator := NewFakeReservationNominator()
+			if tt.setupFn != nil {
+				tt.setupFn(nominator)
+			}
+
+			// Delete the nomination
+			nominator.DeleteNominatedReservePodOrReservation(tt.pod)
+
+			// Verify reserve pod nomination
+			reservePodNode := nominator.GetNominatedNodeForReservePod(tt.pod)
+			if tt.wantReservePodNominated {
+				assert.NotEmpty(t, reservePodNode, "reserve pod should be nominated")
+			} else {
+				assert.Empty(t, reservePodNode, "reserve pod should not be nominated")
+			}
+
+			// Verify reservation nomination
+			reservationNominated := nominator.GetNominatedReservation(tt.pod, "test-node")
+			if tt.wantReservationNominated {
+				assert.NotNil(t, reservationNominated, "reservation should be nominated")
+			} else {
+				assert.Nil(t, reservationNominated, "reservation should not be nominated")
+			}
+
+			// Verify pre-allocation nomination
+			preAllocated := nominator.GetNominatedPreAllocation(reservation, "test-node")
+			if tt.wantPreAllocationNominated {
+				assert.NotNil(t, preAllocated, "pre-allocation should be nominated")
+			} else {
+				assert.Nil(t, preAllocated, "pre-allocation should not be nominated")
+			}
+		})
+	}
 }
