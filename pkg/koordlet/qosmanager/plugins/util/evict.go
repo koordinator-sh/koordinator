@@ -36,7 +36,9 @@ type ReleaseList map[ReleaseTargetType]corev1.ResourceList
 const (
 	ReleaseTargetTypeBatchResourceRequest ReleaseTargetType = "podBatchResourceRequest"
 	ReleaseTargetTypeResourceUsed         ReleaseTargetType = "podUsed"
+	ReleaseTargetTypeResourceRequest      ReleaseTargetType = "podResourceRequest"
 	EvictedStr                                              = "evicted"
+	EvictReasonPrefix                                       = "trigger by koordlet feature "
 )
 
 type PodEvictInfo struct {

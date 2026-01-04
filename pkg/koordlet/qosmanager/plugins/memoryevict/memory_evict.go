@@ -160,10 +160,10 @@ func (m *memoryEvictor) buildEvictTask(feature featuregate.Feature, nodeSLO *slo
 	// check config
 	switch feature {
 	case features.BEMemoryEvict:
-		evictReason = "trigger by koordlet feature " + resourceexecutor.EvictBEPodByNodeMemoryUsage
+		evictReason = qosmanagerUtil.EvictReasonPrefix + resourceexecutor.EvictBEPodByNodeMemoryUsage
 		getPodEvictInfoAndSortFunc = m.getSortedBEPodInfos
 	case features.MemoryEvict:
-		evictReason = "trigger by koordlet feature " + resourceexecutor.EvictPodByMemoryUsedThresholdPercent
+		evictReason = qosmanagerUtil.EvictReasonPrefix + resourceexecutor.EvictPodByMemoryUsedThresholdPercent
 		getPodEvictInfoAndSortFunc = m.getPodEvictInfoAndSortByPriority
 	default:
 		return nil, fmt.Errorf("unknown feature: %v", feature)

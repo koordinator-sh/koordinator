@@ -24,11 +24,13 @@ const (
 	ReasonUpdateResctrl      = "UpdateResctrl" // update resctrl tasks, schemata
 	CreateCATGroup           = "CreateCATGroup"
 
-	EvictBEPodByNodeMemoryUsage          = "EvictBEPodByNodeMemoryUsage"
-	EvictPodByMemoryUsedThresholdPercent = "EvictPodByMemoryUsedThresholdPercent"
-	EvictBEPodByBECPUSatisfaction        = "EvictBEPodByBECPUSatisfaction"
-	EvictPodByCPUUsedThresholdPercent    = "EvictPodByCPUUsedThresholdPercent"
-	AdjustBEByNodeCPUUsage               = "AdjustBEByNodeCPUUsage"
+	EvictBEPodByNodeMemoryUsage                 = "EvictBEPodByNodeMemoryUsage"
+	EvictPodByMemoryUsedThresholdPercent        = "EvictPodByMemoryUsedThresholdPercent"
+	EvictPodByMemoryAllocatableThresholdPercent = "EvictPodByMemoryAllocatableThresholdPercent"
+	EvictBEPodByBECPUSatisfaction               = "EvictBEPodByBECPUSatisfaction"
+	EvictPodByCPUUsedThresholdPercent           = "EvictPodByCPUUsedThresholdPercent"
+	EvictPodByCPUAllocatableThresholdPercent    = "EvictPodByCPUAllocatableThresholdPercent"
+	AdjustBEByNodeCPUUsage                      = "AdjustBEByNodeCPUUsage"
 )
 
 var Conf = NewDefaultConfig()

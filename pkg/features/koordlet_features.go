@@ -76,6 +76,18 @@ const (
 	// MemoryEvict evicts those configured priority pods when node lack of resource.
 	MemoryEvict featuregate.Feature = "MemoryEvict"
 
+	// owner: @lijunxin559
+	// alpha: v1.8
+	//
+	// CPUAllocatableEvict evicts those configured priority pods when node lack of allocatable cpu.
+	CPUAllocatableEvict featuregate.Feature = "CPUAllocatableEvict"
+
+	// owner: @lijunxin559
+	// alpha: v1.8
+	//
+	// MemoryAllocatableEvict evicts those configured priority pods when node lack of allocatable memory.
+	MemoryAllocatableEvict featuregate.Feature = "MemoryAllocatableEvict"
+
 	// owner: @saintube @zwzhang0107
 	// alpha: v0.2
 	// beta: v1.1
@@ -195,8 +207,10 @@ var (
 		BECPUManager:           {Default: false, PreRelease: featuregate.Alpha},
 		BECPUEvict:             {Default: false, PreRelease: featuregate.Alpha},
 		CPUEvict:               {Default: false, PreRelease: featuregate.Alpha},
+		CPULedgerEvict:         {Default: false, PreRelease: featuregate.Alpha},
 		BEMemoryEvict:          {Default: false, PreRelease: featuregate.Alpha},
 		MemoryEvict:            {Default: false, PreRelease: featuregate.Alpha},
+		MemoryLedgerEvict:      {Default: false, PreRelease: featuregate.Alpha},
 		CPUBurst:               {Default: true, PreRelease: featuregate.Beta},
 		SystemConfig:           {Default: false, PreRelease: featuregate.Alpha},
 		RdtResctrl:             {Default: true, PreRelease: featuregate.Beta},
@@ -224,7 +238,7 @@ func IsFeatureDisabled(nodeSLO *slov1alpha1.NodeSLO, feature featuregate.Feature
 
 	spec := nodeSLO.Spec
 	switch feature {
-	case BECPUSuppress, BEMemoryEvict, BECPUEvict, CPUEvict, MemoryEvict:
+	case BECPUSuppress, BEMemoryEvict, BECPUEvict, CPUEvict, MemoryEvict, CPULedgerEvict, MemoryLedgerEvict:
 		if spec.ResourceUsedThresholdWithBE == nil || spec.ResourceUsedThresholdWithBE.Enable == nil {
 			return true, fmt.Errorf("cannot parse feature config for invalid nodeSLO %v", nodeSLO)
 		}
