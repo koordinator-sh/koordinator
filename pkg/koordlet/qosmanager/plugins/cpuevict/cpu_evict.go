@@ -76,7 +76,7 @@ func New(opt *framework.Options) framework.QOSStrategy {
 }
 
 func (c *cpuEvictor) Enabled() bool {
-	return (features.DefaultKoordletFeatureGate.Enabled(features.BECPUEvict) || features.DefaultKoordletFeatureGate.Enabled(features.CPUEvict)) &&
+	return (features.DefaultKoordletFeatureGate.Enabled(features.BECPUEvict) || features.DefaultKoordletFeatureGate.Enabled(features.CPUEvict) || features.DefaultKoordletFeatureGate.Enabled(features.CPUAllocatableEvict)) &&
 		c.evictInterval > 0
 }
 
@@ -124,7 +124,7 @@ func (c *cpuEvictor) cpuEvict() {
 	// - BECPUEvict runs first, followed by CPUEvict.
 	// - Resource release effects are cumulatively considered; the total reclaimed resources
 	//   from both phases are accounted for in scheduling and capacity planning.
-	triggerFeatures := []featuregate.Feature{features.BECPUEvict, features.CPUEvict}
+	triggerFeatures := []featuregate.Feature{features.BECPUEvict, features.CPUEvict, features.CPUAllocatableEvict}
 	for _, feature := range triggerFeatures {
 		if !features.DefaultKoordletFeatureGate.Enabled(feature) {
 			continue
@@ -136,7 +136,7 @@ func (c *cpuEvictor) cpuEvict() {
 			klog.V(4).Infof("feature %s skipped, nodeSLO disable the feature gate", feature)
 			continue
 		}
-		task, err := c.buildEvictTask(feature, nodeSLO, nodeMilliCPUCapacity)
+		task, err := c.buildEvictTask(feature, nodeSLO, nodeMilliCPUCapacity, node)
 		if err != nil {
 			klog.Warningf("failed to build cpuEvict task trigger by feature %v, err: %v", feature, err)
 			continue
@@ -165,7 +165,8 @@ func (c *cpuEvictor) cpuEvict() {
 	}
 }
 
-func (c *cpuEvictor) calculateMilliReleaseBySatisfaction(thresholdConfig *slov1alpha1.ResourceThresholdStrategy, nodeMilliCPUCapacity int64) int64 {
+func (c *cpuEvictor) calculateMilliReleaseBySatisfaction(thresholdConfig *slov1alpha1.ResourceThresholdStrategy, nodeMilliCPUCapacity int64, node *corev1.Node) (res map[corev1.ResourceName]int64) {
+	res := make(map[corev1.ResourceName]int64)
 	windowSeconds := int64(c.metricCollectInterval.Seconds())
 	if thresholdConfig.CPUEvictTimeWindowSeconds != nil && *thresholdConfig.CPUEvictTimeWindowSeconds > windowSeconds {
 		windowSeconds = *thresholdConfig.CPUEvictTimeWindowSeconds
@@ -175,7 +176,7 @@ func (c *cpuEvictor) calculateMilliReleaseBySatisfaction(thresholdConfig *slov1a
 	querier, err := c.metricCache.Querier(*queryParam.Start, *queryParam.End)
 	if err != nil {
 		klog.Warningf("get query failed, error %v", err)
-		return 0
+		return
 	}
 	defer querier.Close()
 	// BECPUUsage
@@ -196,20 +197,20 @@ func (c *cpuEvictor) calculateMilliReleaseBySatisfaction(thresholdConfig *slov1a
 	count := minInt64(count01, count02, count03)
 
 	if !isAvgQueryResultValid(windowSeconds, int64(c.metricCollectInterval.Seconds()), count) {
-		return 0
+		return
 	}
 
 	if !isBECPUUsageHighEnough(avgBECPUMilliUsage, avgBECPUMilliLimit, thresholdConfig.CPUEvictBEUsageThresholdPercent) {
 		klog.V(5).Infof("cpuEvict by ResourceSatisfaction skipped, avg usage not enough, "+
 			"BEUsage:%v, BERequest:%v, BELimit:%v, BERealLimit:%v, BEAllocatable:%v",
 			avgBECPUMilliUsage, avgBECPUMilliRequest, avgBECPUMilliLimit, avgBECPUMilliRealLimit, beCPUMilliAllocatable)
-		return 0
+		return
 	}
 
 	milliRelease := calculateResourceMilliToReleaseBySatisfaction(avgBECPUMilliRequest, avgBECPUMilliLimit, thresholdConfig)
 	if milliRelease <= 0 {
 		klog.V(5).Infof("cpuEvict by ResourceSatisfaction skipped, releaseByAvg: %v", milliRelease)
-		return 0
+		return
 	}
 
 	// Step2: Calculate release resource current
@@ -217,7 +218,7 @@ func (c *cpuEvictor) calculateMilliReleaseBySatisfaction(thresholdConfig *slov1a
 	querier, err = c.metricCache.Querier(*queryParam.Start, *queryParam.End)
 	if err != nil {
 		klog.Warningf("get query failed, error %v", err)
-		return 0
+		return
 	}
 	defer querier.Close()
 	// BECPUUsage
@@ -238,7 +239,7 @@ func (c *cpuEvictor) calculateMilliReleaseBySatisfaction(thresholdConfig *slov1a
 			"BEUsage:%v, BERequest:%v, BELimit:%v, BERealLimit:%v, BEAllocatable:%v",
 			currentBECPUMilliUsage, currentBECPUMilliRequest, currentBECPUMilliLimit, currentBECPUMilliRealLimit,
 			beCPUMilliAllocatable)
-		return 0
+		return
 	}
 
 	// Requests and limits do not change frequently.
@@ -266,7 +267,7 @@ func (c *cpuEvictor) calculateMilliReleaseBySatisfaction(thresholdConfig *slov1a
 	return milliRelease
 }
 
-func (c *cpuEvictor) calculateMilliReleaseByUsedThresholdPercent(thresholdConfig *slov1alpha1.ResourceThresholdStrategy, nodeMilliCPUCapacity int64) int64 {
+func (c *cpuEvictor) calculateMilliReleaseByUsedThresholdPercent(thresholdConfig *slov1alpha1.ResourceThresholdStrategy, nodeMilliCPUCapacity int64, node *corev1.Node) int64 {
 	windowSeconds := int64(c.metricCollectInterval.Seconds())
 	if thresholdConfig.CPUEvictTimeWindowSeconds != nil && *thresholdConfig.CPUEvictTimeWindowSeconds > windowSeconds {
 		windowSeconds = *thresholdConfig.CPUEvictTimeWindowSeconds
@@ -311,6 +312,12 @@ func (c *cpuEvictor) calculateMilliReleaseByUsedThresholdPercent(thresholdConfig
 	return milliCPUNeedRelease
 }
 
+func (c *cpuEvictor) calculateMilliReleaseByAllocatableThresholdPercent(thresholdConfig *slov1alpha1.ResourceThresholdStrategy, nodeMilliCPUCapacity int64, node *corev1.Node) (res map[corev1.ResourceName]int64) {
+	res := make(map[corev1.ResourceName]int64)
+	// 1. 统计pod，过滤出满足priority条件的pod，分类得到 priorityClassNames
+	// 2. 从节点上获取 priorityClassNames 的账本大小
+	// 3. 计算阈值和释放的资源量大小，放进 res，返回
+}
 func isAvgQueryResultValid(windowSeconds, collectIntervalSeconds, count int64) bool {
 	if count*collectIntervalSeconds < windowSeconds/3 {
 		klog.Warningf("cpuEvict by ResourceSatisfaction skipped, metricsCount(%d) not enough!windowSize: %v, collectInterval: %v", count, windowSeconds, collectIntervalSeconds)
@@ -364,34 +371,41 @@ func calculateResourceMilliToReleaseBySatisfaction(beCPUMilliRequest, beCPUMilli
 	return int64(milliRelease)
 }
 
-func (c *cpuEvictor) buildEvictTask(feature featuregate.Feature, nodeSLO *slov1alpha1.NodeSLO, nodeMilliCPUCapacity int64) (*qosmanagerUtil.EvictTaskInfo, error) {
+func (c *cpuEvictor) buildEvictTask(feature featuregate.Feature, nodeSLO *slov1alpha1.NodeSLO, nodeMilliCPUCapacity int64, node *corev1.Node) (*qosmanagerUtil.EvictTaskInfo, error) {
 	thresholdConfig := nodeSLO.Spec.ResourceUsedThresholdWithBE
 	var evictReason string
 	var releaseTarget qosmanagerUtil.ReleaseTargetType
 	var configCheckFunc func(*slov1alpha1.ResourceThresholdStrategy) error
 	var getPodEvictInfoAndSortFunc func(*slov1alpha1.ResourceThresholdStrategy) []*qosmanagerUtil.PodEvictInfo
-	var calculateReleaseResource func(*slov1alpha1.ResourceThresholdStrategy, int64) int64
+	var calculateReleaseResource func(*slov1alpha1.ResourceThresholdStrategy, int64, *corev1.Node) map[corev1.ResourceName]int64
 	// check config
 	switch feature {
 	case features.BECPUEvict:
-		evictReason = "trigger by koordlet feature " + resourceexecutor.EvictBEPodByBECPUSatisfaction
+		evictReason = qosmanagerUtil.EvictReasonPrefix + resourceexecutor.EvictBEPodByBECPUSatisfaction
 		configCheckFunc = isSatisfactionConfigValid
 		calculateReleaseResource = c.calculateMilliReleaseBySatisfaction
 		getPodEvictInfoAndSortFunc = c.getBEPodEvictInfoAndSort
 		releaseTarget = qosmanagerUtil.ReleaseTargetTypeBatchResourceRequest
 	case features.CPUEvict:
-		evictReason = "trigger by koordlet feature " + resourceexecutor.EvictPodByCPUUsedThresholdPercent
+		evictReason = qosmanagerUtil.EvictReasonPrefix + resourceexecutor.EvictPodByCPUUsedThresholdPercent
 		configCheckFunc = isUsedThresholdConfigValid
 		calculateReleaseResource = c.calculateMilliReleaseByUsedThresholdPercent
 		getPodEvictInfoAndSortFunc = c.getPodEvictInfoAndSortByPriority
 		releaseTarget = qosmanagerUtil.ReleaseTargetTypeResourceUsed
+	case features.CPUAllocatableEvict:
+		evictReason = qosmanagerUtil.EvictReasonPrefix + resourceexecutor.EvictPodByCPUAllocatableThresholdPercent
+		configCheckFunc = isAllocatableThresholdConfigValid
+		// TODO
+		calculateReleaseResource = c.calculateMilliReleaseByAllocatableThresholdPercent
+		getPodEvictInfoAndSortFunc = c.getPodEvictInfoAndSortByPriority
+		releaseTarget = qosmanagerUtil.ReleaseTargetTypeResourceRequest
 	default:
 		return nil, fmt.Errorf("unknown feature %v", feature)
 	}
 	if err := configCheckFunc(thresholdConfig); err != nil {
 		return nil, fmt.Errorf("skip cpu evict feature %v, invalid config, err=%v", feature, err)
 	}
-	milliRelease := calculateReleaseResource(thresholdConfig, nodeMilliCPUCapacity)
+	milliRelease := calculateReleaseResource(thresholdConfig, nodeMilliCPUCapacity, node)
 	if milliRelease <= 0 {
 		return nil, nil
 	}
@@ -565,6 +579,37 @@ func isUsedThresholdConfigValid(thresholdConfig *slov1alpha1.ResourceThresholdSt
 	}
 	if thresholdConfig.EvictEnabledPriorityThreshold == nil {
 		return fmt.Errorf("EvictEnabledPriorityThreshold not config")
+	}
+	return nil
+}
+
+func isAllocatableThresholdConfigValid(thresholdConfig *slov1alpha1.ResourceThresholdStrategy) error {
+	if thresholdConfig == nil {
+		return fmt.Errorf("ResourceThresholdStrategy not config")
+	}
+	thresholdPercent := thresholdConfig.CPUAllocatableEvictThresholdPercent
+	if thresholdPercent == nil {
+		return fmt.Errorf("CPUAllocatableEvictThresholdPercent not config")
+	} else if *thresholdPercent < 0 {
+		return fmt.Errorf("threshold percent(%v) should greater than 0", *thresholdPercent)
+	}
+	lowerPercent := int64(0)
+	if thresholdConfig.CPUAllocatableEvictLowerPercent != nil {
+		lowerPercent = *thresholdConfig.CPUAllocatableEvictLowerPercent
+	}
+	if lowerPercent >= *thresholdPercent {
+		return fmt.Errorf("lower percent(%v) should less than threshold percent(%v)", lowerPercent, *thresholdPercent)
+	}
+	priorityThresholdPercent := thresholdConfig.AllocatableEvictPriorityThreshold
+	if priorityThresholdPercent == nil {
+		return fmt.Errorf("AllocatableEvictPriorityThreshold not config")
+	}
+	lowerPriorityThresholdPercent := int32(0)
+	if thresholdConfig.AllocatableEvictPriorityLowerThreshold != nil {
+		lowerPriorityThresholdPercent = *thresholdConfig.AllocatableEvictPriorityLowerThreshold
+	}
+	if lowerPriorityThresholdPercent >= *priorityThresholdPercent {
+		return fmt.Errorf("lower priority threshold percent(%v) should less than priority threshold percent(%v)", lowerPriorityThresholdPercent, *priorityThresholdPercent)
 	}
 	return nil
 }
