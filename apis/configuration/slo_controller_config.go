@@ -200,6 +200,14 @@ const (
 	CalculateByPodMaxUsageRequest CalculatePolicy = "maxUsageRequest"
 )
 
+type MidReclaimMode string
+
+const (
+	// MidReclaimModeStatic is the midReclaim mode according to the pod resource usage.
+	// When the mode="static", the mid-resources are calculated according to static ratio--reclaimableReservedRatio of node
+	MidReclaimModeStatic MidReclaimMode = "static"
+)
+
 // +k8s:deepcopy-gen=true
 type ColocationStrategyExtender struct {
 	Extensions ExtraFields `json:"extensions,omitempty"`
@@ -251,6 +259,7 @@ type ColocationStrategy struct {
 	UpdateTimeThresholdSeconds *int64           `json:"updateTimeThresholdSeconds,omitempty" validate:"omitempty,min=1"`
 	ResourceDiffThreshold      *float64         `json:"resourceDiffThreshold,omitempty" validate:"omitempty,gt=0,max=1"`
 
+	MidReclaimMode *MidReclaimMode `json:"midReclaimMode,omitempty" validate:"omitempty"`
 	// AllocatableCPU[Mid]' := min(Reclaimable[Mid], NodeAllocatable * MidCPUThresholdPercent) + Unallocated[Mid] * midUnallocatedRatio.
 	MidCPUThresholdPercent *int64 `json:"midCPUThresholdPercent,omitempty" validate:"omitempty,min=0,max=100"`
 	// AllocatableMemory[Mid]' := min(Reclaimable[Mid], NodeAllocatable * MidMemoryThresholdPercent) + Unallocated[Mid] * midUnallocatedRatio.

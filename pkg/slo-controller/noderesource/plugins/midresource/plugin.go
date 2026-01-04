@@ -160,54 +160,63 @@ func (p *Plugin) getUnallocated(nodeName string, podList *corev1.PodList, nodeCa
 
 func (p *Plugin) calculate(strategy *configuration.ColocationStrategy, node *corev1.Node, podList *corev1.PodList,
 	resourceMetrics *framework.ResourceMetrics) []framework.ResourceItem {
-	// Allocatable[Mid]' := min(Reclaimable[Mid], NodeAllocatable * thresholdRatio, NodeUnused) + Unallocated[Mid]
-	// Unallocated[Mid] = max((NodeCapacity - NodeReserved - Allocated[Prod]) * midUnallocatedRatio, NodeCapacity * reclaimableReservedRatio)
-
-	var allocatableMilliCPU, allocatableMemory int64
-	prodReclaimableCPU, prodReclaimableMemory := resource.NewQuantity(0, resource.DecimalSI), resource.NewQuantity(0, resource.BinarySI)
-	prodReclaimableMetric := resourceMetrics.NodeMetric.Status.ProdReclaimableMetric
-
-	if prodReclaimableMetric == nil || prodReclaimableMetric.Resource.ResourceList == nil {
-		klog.V(4).Infof("no valid prod reclaimable, so use default zero value")
-		allocatableMilliCPU = 0
-		allocatableMemory = 0
-	} else {
-		prodReclaimable := resourceMetrics.NodeMetric.Status.ProdReclaimableMetric.Resource
-		prodReclaimableCPU = prodReclaimable.Cpu()
-		prodReclaimableMemory = prodReclaimable.Memory()
-		allocatableMilliCPU = prodReclaimableCPU.MilliValue()
-		allocatableMemory = prodReclaimableMemory.Value()
-	}
-
-	nodeMetric := resourceMetrics.NodeMetric
-
-	hostAppHPUsed := resutil.GetHostAppHPUsed(resourceMetrics, extension.PriorityMid)
-
+	/*
+		if midReclaimMode = "static":
+		NodeReclaimable[Mid] = NodeCapacity * reclaimableReservedRatio
+		else:
+		NodeReclaimable[Mid] = min(NodeMetricReclaimable[Mid], NodeUnused) + Unallocated[Mid] * midUnallocatedRatio
+		Allocatable[Mid] = min(NodeReclaimable[Mid], NodeAllocatable * midThresholdRatio)
+	*/
 	nodeCapacity := resutil.GetNodeCapacity(node)
+	midReclaimMode := strategy.MidReclaimMode
+	var cpuInMilliCores, memory *resource.Quantity
+	var cpuMsg, memMsg string
+	if midReclaimMode != nil && *midReclaimMode == configuration.MidReclaimModeStatic {
+		cpuInMilliCores, memory, cpuMsg, memMsg = resutil.CalculateMidResourceByStaticMode(strategy, nodeCapacity, node.Name)
+	} else {
+		var allocatableMilliCPU, allocatableMemory int64
+		prodReclaimableCPU, prodReclaimableMemory := resource.NewQuantity(0, resource.DecimalSI), resource.NewQuantity(0, resource.BinarySI)
+		prodReclaimableMetric := resourceMetrics.NodeMetric.Status.ProdReclaimableMetric
 
-	systemUsed := resutil.GetResourceListForCPUAndMemory(nodeMetric.Status.NodeMetric.SystemUsage.ResourceList)
-	// resource usage of host applications with prod priority will be count as host system usage since they consume the
-	// node reserved resource.
-	systemUsed = quotav1.Add(systemUsed, hostAppHPUsed)
+		if prodReclaimableMetric == nil || prodReclaimableMetric.Resource.ResourceList == nil {
+			klog.V(4).Infof("no valid prod reclaimable, so use default zero value")
+			allocatableMilliCPU = 0
+			allocatableMemory = 0
+		} else {
+			prodReclaimable := resourceMetrics.NodeMetric.Status.ProdReclaimableMetric.Resource
+			prodReclaimableCPU = prodReclaimable.Cpu()
+			prodReclaimableMemory = prodReclaimable.Memory()
+			allocatableMilliCPU = prodReclaimableCPU.MilliValue()
+			allocatableMemory = prodReclaimableMemory.Value()
+		}
 
-	// System.Reserved = Node.Anno.Reserved, Node.Kubelet.Reserved)
-	nodeAnnoReserved := util.GetNodeReservationFromAnnotation(node.Annotations)
-	nodeKubeletReserved := util.GetNodeReservationFromKubelet(node)
-	// FIXME: resource reservation taking max is rather confusing.
-	nodeReserved := quotav1.Max(nodeKubeletReserved, nodeAnnoReserved)
-	nodeReserved = quotav1.Max(systemUsed, nodeReserved)
+		nodeMetric := resourceMetrics.NodeMetric
 
-	unallocated := p.getUnallocated(node.Name, podList, nodeCapacity, nodeReserved)
+		hostAppHPUsed := resutil.GetHostAppHPUsed(resourceMetrics, extension.PriorityMid)
 
-	nodeUnused, err := getNodeUnused(node, nodeMetric)
-	if err != nil {
-		// failed to get nodeUsage, so radically belief that there is no resource left
-		// to keep mid-resource calculations relatively strict
-		nodeUnused = corev1.ResourceList{}
+		systemUsed := resutil.GetResourceListForCPUAndMemory(nodeMetric.Status.NodeMetric.SystemUsage.ResourceList)
+		// resource usage of host applications with prod priority will be count as host system usage since they consume the
+		// node reserved resource.
+		systemUsed = quotav1.Add(systemUsed, hostAppHPUsed)
+
+		// System.Reserved = Node.Anno.Reserved, Node.Kubelet.Reserved)
+		nodeAnnoReserved := util.GetNodeReservationFromAnnotation(node.Annotations)
+		nodeKubeletReserved := util.GetNodeReservationFromKubelet(node)
+		// FIXME: resource reservation taking max is rather confusing.
+		nodeReserved := quotav1.Max(nodeKubeletReserved, nodeAnnoReserved)
+		nodeReserved = quotav1.Max(systemUsed, nodeReserved)
+
+		unallocated := p.getUnallocated(node.Name, podList, nodeCapacity, nodeReserved)
+
+		nodeUnused, err := getNodeUnused(node, nodeMetric)
+		if err != nil {
+			// failed to get nodeUsage, so radically belief that there is no resource left
+			// to keep mid-resource calculations relatively strict
+			nodeUnused = corev1.ResourceList{}
+		}
+		cpuInMilliCores, memory, cpuMsg, memMsg = resutil.CalculateMidResourceByPolicy(strategy, nodeCapacity,
+			unallocated, nodeUnused, allocatableMilliCPU, allocatableMemory, prodReclaimableCPU, prodReclaimableMemory, node.Name)
 	}
-	cpuInMilliCores, memory, cpuMsg, memMsg := resutil.CalculateMidResourceByPolicy(strategy, nodeCapacity,
-		unallocated, nodeUnused, allocatableMilliCPU, allocatableMemory, prodReclaimableCPU, prodReclaimableMemory, node.Name)
-
 	metrics.RecordNodeExtendedResourceAllocatableInternal(node, string(extension.MidCPU), metrics.UnitInteger, float64(cpuInMilliCores.MilliValue())/1000)
 	metrics.RecordNodeExtendedResourceAllocatableInternal(node, string(extension.MidMemory), metrics.UnitByte, float64(memory.Value()))
 	klog.V(6).Infof("calculated mid allocatable for node %s, cpu(milli-core) %v, memory(byte) %v",

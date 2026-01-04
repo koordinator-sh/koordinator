@@ -43,11 +43,13 @@ var (
 )
 
 const (
-	MidCPUThreshold       = "midCPUThreshold"
-	MidMemoryThreshold    = "midMemoryThreshold"
-	MidUnallocatedPercent = "midUnallocatedPercent"
-	BatchCPUThreshold     = "batchCPUThreshold"
-	BatchMemoryThreshold  = "batchMemoryThreshold"
+	MidCPUThreshold                  = "midCPUThreshold"
+	MidMemoryThreshold               = "midMemoryThreshold"
+	MidUnallocatedPercent            = "midUnallocatedPercent"
+	CPUReclaimableReservedPercent    = "cpuReclaimableReservedPercent"
+	MemoryReclaimableReservedPercent = "memoryReclaimableReservedPercent"
+	BatchCPUThreshold                = "batchCPUThreshold"
+	BatchMemoryThreshold             = "batchMemoryThreshold"
 )
 
 func CalculateBatchResourceByPolicy(strategy *configuration.ColocationStrategy, nodeCapacity, nodeSafetyMargin, nodeReserved,
@@ -155,13 +157,39 @@ func CalculateBatchResourceByPolicy(strategy *configuration.ColocationStrategy, 
 	return batchAllocatable, cpuMsg, memMsg
 }
 
+func CalculateMidResourceByStaticMode(strategy *configuration.ColocationStrategy, nodeCapacity corev1.ResourceList, nodeName string) (*resource.Quantity, *resource.Quantity, string, string) {
+	defaultStrategy := sloconfig.DefaultColocationStrategy()
+
+	cpuReclaimableReservedPercent := getPercentFromStrategy(strategy, &defaultStrategy, CPUReclaimableReservedPercent)
+	cpuReservedQuant := util.MultiplyMilliQuant(nodeCapacity[corev1.ResourceCPU], cpuReclaimableReservedPercent)
+	cpuInMilliCores := resource.NewQuantity(cpuReservedQuant.MilliValue(), resource.DecimalSI)
+
+	memoryReclaimableReservedPercent := getPercentFromStrategy(strategy, &defaultStrategy, MemoryReclaimableReservedPercent)
+	mem := util.MultiplyQuant(nodeCapacity[corev1.ResourceMemory], memoryReclaimableReservedPercent)
+	memory := resource.NewQuantity(mem.Value(), resource.BinarySI)
+
+	cpuThresholdRatio := getPercentFromStrategy(strategy, &defaultStrategy, MidCPUThreshold)
+	if maxMilliCPU := float64(nodeCapacity.Cpu().MilliValue()) * cpuThresholdRatio; cpuInMilliCores.Value() > int64(maxMilliCPU) {
+		cpuInMilliCores = resource.NewQuantity(int64(maxMilliCPU), resource.DecimalSI)
+	}
+	memThresholdRatio := getPercentFromStrategy(strategy, &defaultStrategy, MidMemoryThreshold)
+
+	if maxMemory := float64(nodeCapacity.Memory().Value()) * memThresholdRatio; mem.Value() > int64(maxMemory) {
+		memory = resource.NewQuantity(int64(maxMemory), resource.BinarySI)
+	}
+
+	cpuMsg := fmt.Sprintf("midAllocatable[CPU(milli-core)]:%v = min(nodeCapacity:%v * reclaimableReservedPercent:%v, nodeCapacity:%v * thresholdRatio:%v)",
+		cpuInMilliCores.Value(), nodeCapacity.Cpu().MilliValue(), cpuReclaimableReservedPercent,
+		nodeCapacity.Cpu().MilliValue(), cpuThresholdRatio)
+	memMsg := fmt.Sprintf("midAllocatable[Memory(GB)]:%v = min(nodeCapacity:%v * reclaimableReservedPercent:%v, nodeCapacity:%v * thresholdRatio:%v)",
+		memory.ScaledValue(resource.Giga), nodeCapacity.Memory().ScaledValue(resource.Giga), memoryReclaimableReservedPercent,
+		nodeCapacity.Memory().ScaledValue(resource.Giga), memThresholdRatio)
+	return cpuInMilliCores, memory, cpuMsg, memMsg
+}
+
 func CalculateMidResourceByPolicy(strategy *configuration.ColocationStrategy, nodeCapacity, unallocated, nodeUnused corev1.ResourceList, allocatableMilliCPU, allocatableMemory int64,
 	prodReclaimableCPU, prodReclaimableMemory *resource.Quantity, nodeName string) (*resource.Quantity, *resource.Quantity, string, string) {
 	defaultStrategy := sloconfig.DefaultColocationStrategy()
-	cpuThresholdRatio := getPercentFromStrategy(strategy, &defaultStrategy, MidCPUThreshold)
-	if maxMilliCPU := float64(nodeCapacity.Cpu().MilliValue()) * cpuThresholdRatio; allocatableMilliCPU > int64(maxMilliCPU) {
-		allocatableMilliCPU = int64(maxMilliCPU)
-	}
 	if allocatableMilliCPU > nodeUnused.Cpu().MilliValue() {
 		allocatableMilliCPU = nodeUnused.Cpu().MilliValue()
 	}
@@ -170,12 +198,9 @@ func CalculateMidResourceByPolicy(strategy *configuration.ColocationStrategy, no
 			nodeName, allocatableMilliCPU)
 		allocatableMilliCPU = 0
 	}
+
 	cpuInMilliCores := resource.NewQuantity(allocatableMilliCPU, resource.DecimalSI)
 
-	memThresholdRatio := getPercentFromStrategy(strategy, &defaultStrategy, MidMemoryThreshold)
-	if maxMemory := float64(nodeCapacity.Memory().Value()) * memThresholdRatio; allocatableMemory > int64(maxMemory) {
-		allocatableMemory = int64(maxMemory)
-	}
 	if allocatableMemory > nodeUnused.Memory().Value() {
 		allocatableMemory = nodeUnused.Memory().Value()
 	}
@@ -186,32 +211,31 @@ func CalculateMidResourceByPolicy(strategy *configuration.ColocationStrategy, no
 	}
 	memory := resource.NewQuantity(allocatableMemory, resource.BinarySI)
 
-	reservedResource := GetNodeReclaimableReservedResources(strategy, nodeCapacity)
 	// CPU need turn into milli value
 	unallocatedMilliCPU, unallocatedMemory := resource.NewQuantity(unallocated.Cpu().MilliValue(), resource.DecimalSI), unallocated.Memory()
 	midUnallocatedRatio := getPercentFromStrategy(strategy, &defaultStrategy, MidUnallocatedPercent)
 	adjustedUnallocatedMilliCPU := resource.NewQuantity(int64(float64(unallocatedMilliCPU.Value())*midUnallocatedRatio), resource.DecimalSI)
 	adjustedUnallocatedMemory := resource.NewQuantity(int64(float64(unallocatedMemory.Value())*midUnallocatedRatio), resource.BinarySI)
 
-	if cpu := reservedResource.Cpu().MilliValue(); cpu > adjustedUnallocatedMilliCPU.Value() {
-		adjustedUnallocatedMilliCPU = resource.NewQuantity(reservedResource.Cpu().MilliValue(), resource.DecimalSI)
-	}
-	if mem := reservedResource.Memory().Value(); mem > adjustedUnallocatedMemory.Value() {
-		adjustedUnallocatedMemory = reservedResource.Memory()
-	}
-
 	cpuInMilliCores.Add(*adjustedUnallocatedMilliCPU)
 	memory.Add(*adjustedUnallocatedMemory)
 
-	cpuMsg := fmt.Sprintf("midAllocatable[CPU(milli-core)]:%v = min(nodeCapacity:%v * thresholdRatio:%v, ProdReclaimable:%v, NodeUnused:%v) + max(Unallocated:%v * midUnallocatedRatio:%v, nodeCapacity:%v * reclaimableReservedRatio:%v)",
-		cpuInMilliCores.Value(), nodeCapacity.Cpu().MilliValue(),
-		cpuThresholdRatio, prodReclaimableCPU.MilliValue(), nodeUnused.Cpu().MilliValue(),
-		unallocatedMilliCPU.Value(), midUnallocatedRatio, nodeCapacity.Cpu().MilliValue(), float64(*strategy.CPUReclaimableReservedPercent)/100)
+	cpuThresholdRatio := getPercentFromStrategy(strategy, &defaultStrategy, MidCPUThreshold)
+	if maxMilliCPU := float64(nodeCapacity.Cpu().MilliValue()) * cpuThresholdRatio; cpuInMilliCores.Value() > int64(maxMilliCPU) {
+		cpuInMilliCores = resource.NewQuantity(int64(maxMilliCPU), resource.DecimalSI)
+	}
+	memThresholdRatio := getPercentFromStrategy(strategy, &defaultStrategy, MidMemoryThreshold)
+	if maxMemory := float64(nodeCapacity.Memory().Value()) * memThresholdRatio; memory.Value() > int64(maxMemory) {
+		memory = resource.NewQuantity(int64(maxMemory), resource.BinarySI)
+	}
 
-	memMsg := fmt.Sprintf("midAllocatable[Memory(GB)]:%v = min(nodeCapacity:%v * thresholdRatio:%v, ProdReclaimable:%v, NodeUnused:%v) + max(Unallocated:%v * midUnallocatedRatio:%v, nodeCapacity:%v * reclaimableReservedRatio:%v)",
-		memory.ScaledValue(resource.Giga), nodeCapacity.Memory().ScaledValue(resource.Giga),
-		memThresholdRatio, prodReclaimableMemory.ScaledValue(resource.Giga), nodeUnused.Memory().ScaledValue(resource.Giga),
-		unallocatedMemory.ScaledValue(resource.Giga), midUnallocatedRatio, nodeCapacity.Memory().ScaledValue(resource.Giga), float64(*strategy.MemoryReclaimableReservedPercent)/100)
+	cpuMsg := fmt.Sprintf("midAllocatable[CPU(milli-core)]:%v = min(min(ProdReclaimable:%v, NodeUnused:%v) + Unallocated:%v * midUnallocatedRatio:%v, NodeCapacity:%v * thresholdRatio:%v)",
+		cpuInMilliCores.Value(), prodReclaimableCPU.MilliValue(), nodeUnused.Cpu().MilliValue(),
+		unallocatedMilliCPU.Value(), midUnallocatedRatio, nodeCapacity.Cpu().MilliValue(), cpuThresholdRatio)
+
+	memMsg := fmt.Sprintf("midAllocatable[Memory(GB)]:%v = min(min(ProdReclaimable:%v, NodeUnused:%v) + Unallocated:%v * midUnallocatedRatio:%v, NodeCapacity:%v * thresholdRatio:%v)",
+		memory.ScaledValue(resource.Giga), prodReclaimableMemory.ScaledValue(resource.Giga), nodeUnused.Memory().ScaledValue(resource.Giga),
+		unallocatedMemory.ScaledValue(resource.Giga), midUnallocatedRatio, nodeCapacity.Memory().ScaledValue(resource.Giga), memThresholdRatio)
 
 	return cpuInMilliCores, memory, cpuMsg, memMsg
 }
@@ -527,6 +551,16 @@ func getPercentFromStrategy(strategy, defaultStrategy *configuration.ColocationS
 			return float64(*defaultStrategy.MidUnallocatedPercent) / 100
 		}
 		return float64(*strategy.MidUnallocatedPercent) / 100
+	case CPUReclaimableReservedPercent:
+		if strategy == nil || strategy.CPUReclaimableReservedPercent == nil {
+			return float64(*defaultStrategy.CPUReclaimableReservedPercent) / 100
+		}
+		return float64(*strategy.CPUReclaimableReservedPercent) / 100
+	case MemoryReclaimableReservedPercent:
+		if strategy == nil || strategy.MemoryReclaimableReservedPercent == nil {
+			return float64(*defaultStrategy.MemoryReclaimableReservedPercent) / 100
+		}
+		return float64(*strategy.MemoryReclaimableReservedPercent) / 100
 	default:
 		return 0
 	}

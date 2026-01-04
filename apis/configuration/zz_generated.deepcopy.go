@@ -204,6 +204,11 @@ func (in *ColocationStrategy) DeepCopyInto(out *ColocationStrategy) {
 		*out = new(float64)
 		**out = **in
 	}
+	if in.MidReclaimMode != nil {
+		in, out := &in.MidReclaimMode, &out.MidReclaimMode
+		*out = new(MidReclaimMode)
+		**out = **in
+	}
 	if in.MidCPUThresholdPercent != nil {
 		in, out := &in.MidCPUThresholdPercent, &out.MidCPUThresholdPercent
 		*out = new(int64)
