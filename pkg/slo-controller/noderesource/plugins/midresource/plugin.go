@@ -82,8 +82,11 @@ func (p *Plugin) Reset(node *corev1.Node, message string) []framework.ResourceIt
 }
 
 // Calculate calculates Mid resources using the formula below:
-// Allocatable[Mid]' := min(Reclaimable[Mid], NodeAllocatable * thresholdRatio, NodeUnused) + Unallocated[Mid]
-// Unallocated[Mid] = max((NodeCapacity - NodeReserved - Allocated[Prod]) * midUnallocatedRatio, NodeCapacity * reclaimableReservedRatio)
+// if midReclaimMode = "static":
+// NodeReclaimable[Mid] = NodeCapacity * staticReservedRatio
+// else:
+// NodeReclaimable[Mid] = min(NodeMetricReclaimable[Mid], NodeUnused) + Unallocated[Mid] * midUnallocatedRatio
+// Allocatable[Mid] = min(NodeReclaimable[Mid], NodeAllocatable * midThresholdRatio)
 func (p *Plugin) Calculate(strategy *configuration.ColocationStrategy, node *corev1.Node, podList *corev1.PodList,
 	metrics *framework.ResourceMetrics) ([]framework.ResourceItem, error) {
 	if strategy == nil || node == nil || node.Status.Allocatable == nil || podList == nil ||
@@ -128,7 +131,7 @@ func (p *Plugin) degradeCalculate(node *corev1.Node, message string) []framework
 	return p.Reset(node, message)
 }
 
-// Unallocated[Mid] = max(NodeCapacity - NodeReserved - Allocated[Prod], NodeCapacity * reclaimableReservedRatio)
+// Unallocated[Mid] = max(NodeCapacity - NodeReserved - Allocated[Prod], 0)
 func (p *Plugin) getUnallocated(nodeName string, podList *corev1.PodList, nodeCapacity, nodeReserved corev1.ResourceList) corev1.ResourceList {
 	prodPodAllocated := corev1.ResourceList{}
 	for i := range podList.Items {
@@ -162,7 +165,7 @@ func (p *Plugin) calculate(strategy *configuration.ColocationStrategy, node *cor
 	resourceMetrics *framework.ResourceMetrics) []framework.ResourceItem {
 	/*
 		if midReclaimMode = "static":
-		NodeReclaimable[Mid] = NodeCapacity * reclaimableReservedRatio
+		NodeReclaimable[Mid] = NodeCapacity * staticReservedRatio
 		else:
 		NodeReclaimable[Mid] = min(NodeMetricReclaimable[Mid], NodeUnused) + Unallocated[Mid] * midUnallocatedRatio
 		Allocatable[Mid] = min(NodeReclaimable[Mid], NodeAllocatable * midThresholdRatio)

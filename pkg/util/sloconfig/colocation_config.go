@@ -60,21 +60,21 @@ func DefaultColocationStrategy() configuration.ColocationStrategy {
 				{Duration: 30 * time.Minute},
 			},
 		},
-		MetricMemoryCollectPolicy:        &defaultMemoryCollectPolicy,
-		CPUReclaimThresholdPercent:       ptr.To[int64](60),
-		CPUCalculatePolicy:               &cpuCalculatePolicy,
-		CPUReclaimableReservedPercent:    ptr.To[int64](0),
-		MemoryReclaimableReservedPercent: ptr.To[int64](0),
-		MemoryReclaimThresholdPercent:    ptr.To[int64](65),
-		MemoryCalculatePolicy:            &memoryCalculatePolicy,
-		DegradeTimeMinutes:               ptr.To[int64](15),
-		UpdateTimeThresholdSeconds:       ptr.To[int64](300),
-		ResourceDiffThreshold:            ptr.To[float64](0.1),
-		MidCPUThresholdPercent:           ptr.To[int64](100),
-		MidMemoryThresholdPercent:        ptr.To[int64](100),
-		MidUnallocatedPercent:            ptr.To[int64](0),
-		BatchCPUThresholdPercent:         nil,
-		BatchMemoryThresholdPercent:      nil,
+		MetricMemoryCollectPolicy:      &defaultMemoryCollectPolicy,
+		CPUReclaimThresholdPercent:     ptr.To[int64](60),
+		CPUCalculatePolicy:             &cpuCalculatePolicy,
+		MidStaticCPUReservedPercent:    ptr.To[int64](0),
+		MidStaticMemoryReservedPercent: ptr.To[int64](0),
+		MemoryReclaimThresholdPercent:  ptr.To[int64](65),
+		MemoryCalculatePolicy:          &memoryCalculatePolicy,
+		DegradeTimeMinutes:             ptr.To[int64](15),
+		UpdateTimeThresholdSeconds:     ptr.To[int64](300),
+		ResourceDiffThreshold:          ptr.To[float64](0.1),
+		MidCPUThresholdPercent:         ptr.To[int64](100),
+		MidMemoryThresholdPercent:      ptr.To[int64](100),
+		MidUnallocatedPercent:          ptr.To[int64](0),
+		BatchCPUThresholdPercent:       nil,
+		BatchMemoryThresholdPercent:    nil,
 	}
 	cfg.ColocationStrategyExtender = defaultColocationStrategyExtender
 	return cfg
@@ -85,9 +85,9 @@ func IsColocationStrategyValid(strategy *configuration.ColocationStrategy) bool 
 		(strategy.MetricAggregateDurationSeconds == nil || *strategy.MetricAggregateDurationSeconds > 0) &&
 		(strategy.MetricReportIntervalSeconds == nil || *strategy.MetricReportIntervalSeconds > 0) &&
 		(strategy.CPUReclaimThresholdPercent == nil || *strategy.CPUReclaimThresholdPercent >= 0) &&
-		(strategy.CPUReclaimableReservedPercent == nil || *strategy.CPUReclaimableReservedPercent >= 0) &&
+		(strategy.MidStaticCPUReservedPercent == nil || *strategy.MidStaticCPUReservedPercent >= 0) &&
 		(strategy.MemoryReclaimThresholdPercent == nil || *strategy.MemoryReclaimThresholdPercent >= 0) &&
-		(strategy.MemoryReclaimableReservedPercent == nil || *strategy.MemoryReclaimableReservedPercent >= 0) &&
+		(strategy.MidStaticMemoryReservedPercent == nil || *strategy.MidStaticMemoryReservedPercent >= 0) &&
 		(strategy.DegradeTimeMinutes == nil || *strategy.DegradeTimeMinutes > 0) &&
 		(strategy.UpdateTimeThresholdSeconds == nil || *strategy.UpdateTimeThresholdSeconds > 0) &&
 		(strategy.ResourceDiffThreshold == nil || *strategy.ResourceDiffThreshold > 0) &&
@@ -167,18 +167,18 @@ func UpdateColocationStrategyForNode(strategy *configuration.ColocationStrategy,
 		strategy.MemoryReclaimThresholdPercent = memReclaimPercent
 	}
 
-	cpuReclaimableReservedPercent := getNodeReclaimPercent(node, extension.LabelCPUReclaimableReservedRatio)
-	if cpuReclaimableReservedPercent != nil {
+	midStaticCPUReservedPercent := getNodeReclaimPercent(node, extension.LabelMidStaticCPUReservedRatio)
+	if midStaticCPUReservedPercent != nil {
 		klog.V(6).Infof("node %s use cpu reserved percent from node metadata, original: %+v, new: %v",
-			node.Name, strategy.CPUReclaimableReservedPercent, *cpuReclaimableReservedPercent)
-		strategy.CPUReclaimableReservedPercent = cpuReclaimableReservedPercent
+			node.Name, strategy.MidStaticCPUReservedPercent, *midStaticCPUReservedPercent)
+		strategy.MidStaticCPUReservedPercent = midStaticCPUReservedPercent
 	}
 
-	memReservedPercent := getNodeReclaimPercent(node, extension.LabelMemoryReclaimableReservedRatio)
-	if memReservedPercent != nil {
+	midStaticMemoryReservedPercent := getNodeReclaimPercent(node, extension.LabelMidStaticMemoryReservedRatio)
+	if midStaticMemoryReservedPercent != nil {
 		klog.V(6).Infof("node %s use memory reserved percent from node metadata, original: %+v, new: %v",
-			node.Name, strategy.MemoryReclaimableReservedPercent, *memReservedPercent)
-		strategy.MemoryReclaimableReservedPercent = memReservedPercent
+			node.Name, strategy.MidStaticMemoryReservedPercent, *midStaticMemoryReservedPercent)
+		strategy.MidStaticMemoryReservedPercent = midStaticMemoryReservedPercent
 	}
 }
 

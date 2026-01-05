@@ -292,10 +292,10 @@ func TestPluginCalculate(t *testing.T) {
 			name: "degrade when node metric is expired",
 			args: args{
 				strategy: &configuration.ColocationStrategy{
-					Enable:                           ptr.To[bool](true),
-					DegradeTimeMinutes:               ptr.To[int64](5),
-					CPUReclaimableReservedPercent:    ptr.To[int64](10),
-					MemoryReclaimableReservedPercent: ptr.To[int64](10),
+					Enable:                         ptr.To[bool](true),
+					DegradeTimeMinutes:             ptr.To[int64](5),
+					MidStaticCPUReservedPercent:    ptr.To[int64](10),
+					MidStaticMemoryReservedPercent: ptr.To[int64](10),
 				},
 				node: testNode,
 				podList: &corev1.PodList{
@@ -363,10 +363,10 @@ func TestPluginCalculate(t *testing.T) {
 			name: "calculate correctly when node metric is valid",
 			args: args{
 				strategy: &configuration.ColocationStrategy{
-					Enable:                           ptr.To[bool](true),
-					DegradeTimeMinutes:               ptr.To[int64](10),
-					CPUReclaimableReservedPercent:    ptr.To[int64](10),
-					MemoryReclaimableReservedPercent: ptr.To[int64](10),
+					Enable:                         ptr.To[bool](true),
+					DegradeTimeMinutes:             ptr.To[int64](10),
+					MidStaticCPUReservedPercent:    ptr.To[int64](10),
+					MidStaticMemoryReservedPercent: ptr.To[int64](10),
 				},
 				node: testNode,
 				podList: &corev1.PodList{
@@ -442,13 +442,13 @@ func TestPluginCalculate(t *testing.T) {
 			name: "calculate correctly where the prod reclaimable exceeds the mid threshold",
 			args: args{
 				strategy: &configuration.ColocationStrategy{
-					Enable:                           ptr.To[bool](true),
-					DegradeTimeMinutes:               ptr.To[int64](10),
-					MidCPUThresholdPercent:           ptr.To[int64](10),
-					CPUReclaimableReservedPercent:    ptr.To[int64](10),
-					MemoryReclaimableReservedPercent: ptr.To[int64](10),
-					MidMemoryThresholdPercent:        ptr.To[int64](20),
-					MidUnallocatedPercent:            ptr.To[int64](10),
+					Enable:                         ptr.To[bool](true),
+					DegradeTimeMinutes:             ptr.To[int64](10),
+					MidCPUThresholdPercent:         ptr.To[int64](10),
+					MidStaticCPUReservedPercent:    ptr.To[int64](10),
+					MidStaticMemoryReservedPercent: ptr.To[int64](10),
+					MidMemoryThresholdPercent:      ptr.To[int64](20),
+					MidUnallocatedPercent:          ptr.To[int64](10),
 				},
 				node: testNode,
 				podList: &corev1.PodList{
@@ -523,10 +523,10 @@ func TestPluginCalculate(t *testing.T) {
 			name: "calculate correctly when prod reclaimable is nil",
 			args: args{
 				strategy: &configuration.ColocationStrategy{
-					Enable:                           ptr.To[bool](true),
-					DegradeTimeMinutes:               ptr.To[int64](10),
-					CPUReclaimableReservedPercent:    ptr.To[int64](10),
-					MemoryReclaimableReservedPercent: ptr.To[int64](10),
+					Enable:                         ptr.To[bool](true),
+					DegradeTimeMinutes:             ptr.To[int64](10),
+					MidStaticCPUReservedPercent:    ptr.To[int64](10),
+					MidStaticMemoryReservedPercent: ptr.To[int64](10),
 				},
 				node: testNode,
 				podList: &corev1.PodList{
@@ -595,14 +595,14 @@ func TestPluginCalculate(t *testing.T) {
 			name: "calculate correctly when set reserved resource in static mode: not exceed",
 			args: args{
 				strategy: &configuration.ColocationStrategy{
-					Enable:                           ptr.To[bool](true),
-					DegradeTimeMinutes:               ptr.To[int64](10),
-					CPUReclaimableReservedPercent:    ptr.To[int64](10),
-					MemoryReclaimableReservedPercent: ptr.To[int64](10),
-					MidReclaimMode:                   ptr.To[configuration.MidReclaimMode](configuration.MidReclaimModeStatic),
-					MidCPUThresholdPercent:           ptr.To[int64](10),
-					MidMemoryThresholdPercent:        ptr.To[int64](20),
-					MidUnallocatedPercent:            ptr.To[int64](10),
+					Enable:                         ptr.To[bool](true),
+					DegradeTimeMinutes:             ptr.To[int64](10),
+					MidStaticCPUReservedPercent:    ptr.To[int64](10),
+					MidStaticMemoryReservedPercent: ptr.To[int64](10),
+					MidReclaimMode:                 ptr.To[configuration.MidReclaimMode](configuration.MidReclaimModeStatic),
+					MidCPUThresholdPercent:         ptr.To[int64](10),
+					MidMemoryThresholdPercent:      ptr.To[int64](20),
+					MidUnallocatedPercent:          ptr.To[int64](10),
 				},
 				node: testNode,
 				podList: &corev1.PodList{
@@ -663,11 +663,11 @@ func TestPluginCalculate(t *testing.T) {
 			want: []framework.ResourceItem{
 				{
 					Name:     extension.MidCPU,
-					Message:  "midAllocatable[CPU(milli-core)]:10000 = min(nodeCapacity:100000 * reclaimableReservedPercent:0.1, nodeCapacity:100000 * thresholdRatio:0.1)",
+					Message:  "midAllocatable[CPU(milli-core)]:10000 = min(nodeCapacity:100000 * staticReservedPercent:0.1, nodeCapacity:100000 * thresholdRatio:0.1)",
 					Quantity: resource.NewQuantity(10000, resource.DecimalSI)},
 				{
 					Name:     extension.MidMemory,
-					Message:  "midAllocatable[Memory(GB)]:21 = min(nodeCapacity:210 * reclaimableReservedPercent:0.1, nodeCapacity:210 * thresholdRatio:0.2)",
+					Message:  "midAllocatable[Memory(GB)]:21 = min(nodeCapacity:210 * staticReservedPercent:0.1, nodeCapacity:210 * thresholdRatio:0.2)",
 					Quantity: resource.NewScaledQuantity(21, 9),
 				},
 			},
@@ -677,14 +677,14 @@ func TestPluginCalculate(t *testing.T) {
 			name: "calculate correctly when set reserved resource in static mode: exceed",
 			args: args{
 				strategy: &configuration.ColocationStrategy{
-					Enable:                           pointer.Bool(true),
-					DegradeTimeMinutes:               pointer.Int64(10),
-					CPUReclaimableReservedPercent:    pointer.Int64(100),
-					MemoryReclaimableReservedPercent: pointer.Int64(100),
-					MidReclaimMode:                   ptr.To[configuration.MidReclaimMode](configuration.MidReclaimModeStatic),
-					MidCPUThresholdPercent:           pointer.Int64(10),
-					MidMemoryThresholdPercent:        pointer.Int64(20),
-					MidUnallocatedPercent:            pointer.Int64(10),
+					Enable:                         pointer.Bool(true),
+					DegradeTimeMinutes:             pointer.Int64(10),
+					MidStaticCPUReservedPercent:    pointer.Int64(100),
+					MidStaticMemoryReservedPercent: pointer.Int64(100),
+					MidReclaimMode:                 ptr.To[configuration.MidReclaimMode](configuration.MidReclaimModeStatic),
+					MidCPUThresholdPercent:         pointer.Int64(10),
+					MidMemoryThresholdPercent:      pointer.Int64(20),
+					MidUnallocatedPercent:          pointer.Int64(10),
 				},
 				node: testNode,
 				podList: &corev1.PodList{
@@ -745,11 +745,11 @@ func TestPluginCalculate(t *testing.T) {
 			want: []framework.ResourceItem{
 				{
 					Name:     extension.MidCPU,
-					Message:  "midAllocatable[CPU(milli-core)]:10000 = min(nodeCapacity:100000 * reclaimableReservedPercent:1, nodeCapacity:100000 * thresholdRatio:0.1)",
+					Message:  "midAllocatable[CPU(milli-core)]:10000 = min(nodeCapacity:100000 * staticReservedPercent:1, nodeCapacity:100000 * thresholdRatio:0.1)",
 					Quantity: resource.NewQuantity(10000, resource.DecimalSI)},
 				{
 					Name:     extension.MidMemory,
-					Message:  "midAllocatable[Memory(GB)]:42 = min(nodeCapacity:210 * reclaimableReservedPercent:1, nodeCapacity:210 * thresholdRatio:0.2)",
+					Message:  "midAllocatable[Memory(GB)]:42 = min(nodeCapacity:210 * staticReservedPercent:1, nodeCapacity:210 * thresholdRatio:0.2)",
 					Quantity: resource.NewScaledQuantity(42, 9),
 				},
 			},
@@ -759,10 +759,10 @@ func TestPluginCalculate(t *testing.T) {
 			name: "calculate correctly where node metrics is invalid",
 			args: args{
 				strategy: &configuration.ColocationStrategy{
-					Enable:                           ptr.To[bool](true),
-					DegradeTimeMinutes:               ptr.To[int64](10),
-					CPUReclaimableReservedPercent:    ptr.To[int64](10),
-					MemoryReclaimableReservedPercent: ptr.To[int64](10),
+					Enable:                         ptr.To[bool](true),
+					DegradeTimeMinutes:             ptr.To[int64](10),
+					MidStaticCPUReservedPercent:    ptr.To[int64](10),
+					MidStaticMemoryReservedPercent: ptr.To[int64](10),
 				},
 				node: testNode,
 				podList: &corev1.PodList{
@@ -810,10 +810,10 @@ func TestPluginCalculate(t *testing.T) {
 			name: "calculate correctly where the prod reclaimable exceeds the node free resource",
 			args: args{
 				strategy: &configuration.ColocationStrategy{
-					Enable:                           ptr.To[bool](true),
-					DegradeTimeMinutes:               ptr.To[int64](10),
-					CPUReclaimableReservedPercent:    ptr.To[int64](10),
-					MemoryReclaimableReservedPercent: ptr.To[int64](10),
+					Enable:                         ptr.To[bool](true),
+					DegradeTimeMinutes:             ptr.To[int64](10),
+					MidStaticCPUReservedPercent:    ptr.To[int64](10),
+					MidStaticMemoryReservedPercent: ptr.To[int64](10),
 				},
 				node: testNode,
 				podList: &corev1.PodList{
@@ -889,10 +889,10 @@ func TestPluginCalculate(t *testing.T) {
 			name: "including product host application usage",
 			args: args{
 				strategy: &configuration.ColocationStrategy{
-					Enable:                           ptr.To[bool](true),
-					DegradeTimeMinutes:               ptr.To[int64](10),
-					CPUReclaimableReservedPercent:    ptr.To[int64](10),
-					MemoryReclaimableReservedPercent: ptr.To[int64](10),
+					Enable:                         ptr.To[bool](true),
+					DegradeTimeMinutes:             ptr.To[int64](10),
+					MidStaticCPUReservedPercent:    ptr.To[int64](10),
+					MidStaticMemoryReservedPercent: ptr.To[int64](10),
 				},
 				node: testNode,
 				podList: &corev1.PodList{
@@ -973,10 +973,10 @@ func TestPluginCalculate(t *testing.T) {
 			name: "including mid host application usage",
 			args: args{
 				strategy: &configuration.ColocationStrategy{
-					Enable:                           ptr.To[bool](true),
-					DegradeTimeMinutes:               ptr.To[int64](10),
-					CPUReclaimableReservedPercent:    ptr.To[int64](10),
-					MemoryReclaimableReservedPercent: ptr.To[int64](10),
+					Enable:                         ptr.To[bool](true),
+					DegradeTimeMinutes:             ptr.To[int64](10),
+					MidStaticCPUReservedPercent:    ptr.To[int64](10),
+					MidStaticMemoryReservedPercent: ptr.To[int64](10),
 				},
 				node: testNode,
 				podList: &corev1.PodList{
@@ -1057,10 +1057,10 @@ func TestPluginCalculate(t *testing.T) {
 			name: "including batch host application usage",
 			args: args{
 				strategy: &configuration.ColocationStrategy{
-					Enable:                           ptr.To[bool](true),
-					DegradeTimeMinutes:               ptr.To[int64](10),
-					CPUReclaimableReservedPercent:    ptr.To[int64](10),
-					MemoryReclaimableReservedPercent: ptr.To[int64](10),
+					Enable:                         ptr.To[bool](true),
+					DegradeTimeMinutes:             ptr.To[int64](10),
+					MidStaticCPUReservedPercent:    ptr.To[int64](10),
+					MidStaticMemoryReservedPercent: ptr.To[int64](10),
 				},
 				node: testNode,
 				podList: &corev1.PodList{

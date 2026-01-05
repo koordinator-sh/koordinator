@@ -141,49 +141,6 @@ func Test_getNodeReservation(t *testing.T) {
 	}
 }
 
-func Test_getNodeReserved(t *testing.T) {
-	type args struct {
-		strategy        *configuration.ColocationStrategy
-		nodeAllocatable corev1.ResourceList
-	}
-	tests := []struct {
-		name string
-		args args
-		want corev1.ResourceList
-	}{
-		{
-			name: "get correct node reserved resource quantity: 0",
-			args: args{
-				strategy: &configuration.ColocationStrategy{
-					Enable:                           ptr.To[bool](true),
-					CPUReclaimableReservedPercent:    ptr.To[int64](0),
-					MemoryReclaimableReservedPercent: ptr.To[int64](0),
-				},
-				nodeAllocatable: makeResourceList("100", "100Gi"),
-			},
-			want: makeResourceList("0", "0Gi"),
-		},
-		{
-			name: "get correct node reserved resource quantity > 0",
-			args: args{
-				strategy: &configuration.ColocationStrategy{
-					Enable:                           ptr.To[bool](true),
-					CPUReclaimableReservedPercent:    ptr.To[int64](10),
-					MemoryReclaimableReservedPercent: ptr.To[int64](10),
-				},
-				nodeAllocatable: makeResourceList("100", "100Gi"),
-			},
-			want: makeResourceList("10", "10Gi"),
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := GetNodeReclaimableReservedResources(tt.args.strategy, tt.args.nodeAllocatable)
-			testingCorrectResourceList(t, &tt.want, &got)
-		})
-	}
-}
-
 func Test_getPodNUMARequestAndUsage(t *testing.T) {
 	type args struct {
 		pod        *corev1.Pod

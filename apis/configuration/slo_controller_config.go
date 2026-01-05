@@ -204,7 +204,7 @@ type MidReclaimMode string
 
 const (
 	// MidReclaimModeStatic is the midReclaim mode according to the pod resource usage.
-	// When the mode="static", the mid-resources are calculated according to static ratio--reclaimableReservedRatio of node
+	// When the mode="static", the mid-resources are calculated according to static ratio--staticReservedRatio of node
 	MidReclaimModeStatic MidReclaimMode = "static"
 )
 
@@ -244,14 +244,10 @@ type ColocationStrategy struct {
 	MetricMemoryCollectPolicy      *slov1alpha1.NodeMemoryCollectPolicy `json:"metricMemoryCollectPolicy,omitempty"`
 
 	CPUReclaimThresholdPercent *int64 `json:"cpuReclaimThresholdPercent,omitempty" validate:"omitempty,min=0"`
-	// CPUReclaimableReservedPercent defines the percentage of long-time reclaimable cpu on node.
-	CPUReclaimableReservedPercent *int64 `json:"cpuReclaimableReservedPercent,omitempty" validate:"omitempty,min=0"`
 	// CPUCalculatePolicy determines the calculation policy of the CPU resources for the Batch pods.
 	// Supported: "usage" (default), "maxUsageRequest".
 	CPUCalculatePolicy            *CalculatePolicy `json:"cpuCalculatePolicy,omitempty"`
 	MemoryReclaimThresholdPercent *int64           `json:"memoryReclaimThresholdPercent,omitempty" validate:"omitempty,min=0"`
-	// MemoryReclaimableReservedPercent defines the percentage of long-time reclaimable memory on node.
-	MemoryReclaimableReservedPercent *int64 `json:"memoryReclaimableReservedPercent,omitempty" validate:"omitempty,min=0"`
 	// MemoryCalculatePolicy determines the calculation policy of the memory resources for the Batch pods.
 	// Supported: "usage" (default), "request", "maxUsageRequest".
 	MemoryCalculatePolicy      *CalculatePolicy `json:"memoryCalculatePolicy,omitempty"`
@@ -259,14 +255,20 @@ type ColocationStrategy struct {
 	UpdateTimeThresholdSeconds *int64           `json:"updateTimeThresholdSeconds,omitempty" validate:"omitempty,min=1"`
 	ResourceDiffThreshold      *float64         `json:"resourceDiffThreshold,omitempty" validate:"omitempty,gt=0,max=1"`
 
+	// MidReclaimMode defines the mode when calculate mid-resource of node
 	MidReclaimMode *MidReclaimMode `json:"midReclaimMode,omitempty" validate:"omitempty"`
-	// AllocatableCPU[Mid]' := min(Reclaimable[Mid], NodeAllocatable * MidCPUThresholdPercent) + Unallocated[Mid] * midUnallocatedRatio.
+	// when MidReclaimMode != static, AllocatableCPU[Mid]' := min(min(Reclaimable[Mid], NodeUnused) + Unallocated[Mid] * MidUnallocatedPercent, NodeAllocatable * MidCPUThresholdPercent).
+	// MidCPUThresholdPercent defines the percentage of mid-resources cpu limit of node.
 	MidCPUThresholdPercent *int64 `json:"midCPUThresholdPercent,omitempty" validate:"omitempty,min=0,max=100"`
-	// AllocatableMemory[Mid]' := min(Reclaimable[Mid], NodeAllocatable * MidMemoryThresholdPercent) + Unallocated[Mid] * midUnallocatedRatio.
+	// MidMemoryThresholdPercent defines the percentage of mid-resources memory limit of node.
 	MidMemoryThresholdPercent *int64 `json:"midMemoryThresholdPercent,omitempty" validate:"omitempty,min=0,max=100"`
-	// MidUnallocatedPercent defines the percentage of unallocated resources in the Mid-tier allocable resources.
-	// Allocatable[Mid]' := min(Reclaimable[Mid], NodeAllocatable * thresholdRatio) + Unallocated[Mid] * midUnallocatedRatio.
+	// MidUnallocatedPercent defines the percentage of unallocated resources in the Mid-tier allocatable resources.
 	MidUnallocatedPercent *int64 `json:"midUnallocatedPercent,omitempty" validate:"omitempty,min=0,max=100"`
+	// when MidReclaimMode == static, AllocatableCPU[Mid]' := min(NodeCapacity * MidStaticCPUReservedPercent, NodeAllocatable * MidCPUThresholdPercent).
+	// MidStaticCPUReservedPercent defines the percentage of static reserved cpu on node.
+	MidStaticCPUReservedPercent *int64 `json:"midStaticCPUReservedPercent,omitempty" validate:"omitempty,min=0,max=100"`
+	// MidStaticMemoryReservedPercent defines the percentage of static reserved memory on node.
+	MidStaticMemoryReservedPercent *int64 `json:"midStaticMemoryReservedPercent,omitempty" validate:"omitempty,min=0,max=100"`
 
 	// when batchCPUThresholdPercent != nil, AllocatableCPU[Batch]' :=  min(Node.Total*BatchCPUThresholdPercent, Node.Total - Node.SafetyMargin - System.Reserved - sum(Pod(Prod/Mid).Request))
 	// when batchCPUThresholdPercent == nil, AllocatableCPU[Batch]' :=  Node.Total - Node.SafetyMargin - System.Reserved - sum(Pod(Prod/Mid).Request)
