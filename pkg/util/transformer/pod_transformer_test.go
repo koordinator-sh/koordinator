@@ -629,6 +629,7 @@ func TestTransformScheduleExplanationObjectKey(t *testing.T) {
 					Labels: map[string]string{
 						v1alpha1.PodGroupLabel: "gang-master",
 					},
+					Namespace: "default",
 				},
 			},
 			wantPod: &corev1.Pod{
@@ -636,8 +637,9 @@ func TestTransformScheduleExplanationObjectKey(t *testing.T) {
 					Name: "prefix-master-0",
 					Labels: map[string]string{
 						v1alpha1.PodGroupLabel:          "gang-master",
-						apiext.LabelQuestionedObjectKey: "gang",
+						apiext.LabelQuestionedObjectKey: "default/gang",
 					},
+					Namespace: "default",
 				},
 			},
 		},
@@ -649,6 +651,7 @@ func TestTransformScheduleExplanationObjectKey(t *testing.T) {
 					Labels: map[string]string{
 						v1alpha1.PodGroupLabel: "gang-worker",
 					},
+					Namespace: "default",
 				},
 			},
 			wantPod: &corev1.Pod{
@@ -656,8 +659,9 @@ func TestTransformScheduleExplanationObjectKey(t *testing.T) {
 					Name: "prefix-worker-0",
 					Labels: map[string]string{
 						v1alpha1.PodGroupLabel:          "gang-worker",
-						apiext.LabelQuestionedObjectKey: "gang",
+						apiext.LabelQuestionedObjectKey: "default/gang",
 					},
+					Namespace: "default",
 				},
 			},
 		},
@@ -669,6 +673,7 @@ func TestTransformScheduleExplanationObjectKey(t *testing.T) {
 					Annotations: map[string]string{
 						apiext.AnnotationGangName: "annotation-gang",
 					},
+					Namespace: "default",
 				},
 			},
 			wantPod: &corev1.Pod{
@@ -678,8 +683,9 @@ func TestTransformScheduleExplanationObjectKey(t *testing.T) {
 						apiext.AnnotationGangName: "annotation-gang",
 					},
 					Labels: map[string]string{
-						apiext.LabelQuestionedObjectKey: "annotation-gang",
+						apiext.LabelQuestionedObjectKey: "default/annotation-gang",
 					},
+					Namespace: "default",
 				},
 			},
 		},

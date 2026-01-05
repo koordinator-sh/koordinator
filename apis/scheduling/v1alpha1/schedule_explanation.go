@@ -23,6 +23,11 @@ import (
 
 type ScheduleExplanationSpec struct {
 	/*
+		QuestionObjectKey is the key of the QuestionObject. For pod, it is namespace/name; for job, it is namespace/jobName.
+	*/
+	QuestionObjectKey string `json:"questionObjectKey,omitempty"`
+
+	/*
 		QuestionObjectReference is the object that needs to be questioned. Currently, Reservation and Pod is supported.
 		To query the PodGroup or GangGroup, you can simply pass any of its member Pod here
 	*/
