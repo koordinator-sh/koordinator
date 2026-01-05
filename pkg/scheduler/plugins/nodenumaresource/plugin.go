@@ -441,7 +441,7 @@ func (p *Plugin) Filter(ctx context.Context, cycleState *framework.CycleState, p
 
 	// FIXME: move it ahead the resourceManager.Allocate so that we can check with NUMA hints almost in the Filter
 	if numaTopologyPolicy != extension.NUMATopologyPolicyNone {
-		return p.FilterByNUMANode(ctx, cycleState, pod, node.Name, numaTopologyPolicy, podNUMAExclusive, topologyOptions)
+		return p.FilterByNUMANode(ctx, cycleState, pod, node, numaTopologyPolicy, podNUMAExclusive, topologyOptions)
 	}
 
 	return nil
