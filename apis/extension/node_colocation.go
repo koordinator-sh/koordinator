@@ -30,4 +30,12 @@ const (
 	// It takes precedence to the MemoryReclaimThresholdPercent in the slo-controller-config and the node annotations.
 	// The illegal value will be ignored.
 	LabelMemoryReclaimRatio = NodeDomainPrefix + "/memory-reclaim-ratio"
+	// LabelMidStaticCPUReservedRatio denotes the CPU reserved ratio of a node. The value is a float number.
+	// It takes precedence to the LabelMidStaticCPUReservedRatio in the slo-controller-config and the node annotations.
+	// The illegal value will be ignored.
+	LabelMidStaticCPUReservedRatio = NodeDomainPrefix + "/mid-static-cpu-reserved-ratio"
+	// LabelMidStaticMemoryReservedRatio denotes the memory reserved ratio of a node. The value is a float number.
+	// It takes precedence to the LabelMidStaticMemoryReservedRatio in the slo-controller-config and the node annotations.
+	// The illegal value will be ignored.
+	LabelMidStaticMemoryReservedRatio = NodeDomainPrefix + "/mid-static-memory-reserved-ratio"
 )
