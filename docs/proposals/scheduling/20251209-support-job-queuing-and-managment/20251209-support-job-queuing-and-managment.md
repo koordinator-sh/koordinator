@@ -56,7 +56,26 @@ Koord-Queue complements the Kubernetes Scheduler in the scheduling system by per
 
 Kueue is a popular open-source job queuing system in the community. It provides its own independent quota and queueing system, but currently cannot integrate with ElasticQuota out of the box. Koord-Queue has a similar positioning to Kueue and aims to improve Kueue’s flexibility in multi-queue policies and quota adaptation. Koord-Queue offers a more flexible quota adaptation framework and extensible queue-policy interfaces, natively supports integration with ElasticQuota, and makes it easier to integrate with the Koordinator ecosystem.
 
+|                  | Koord Queue                                         | Kueue                                               |
+|------------------|-----------------------------------------------------|-----------------------------------------------------|
+| APIs             | Queue, QueueUnit, AdmissionCheck                    | ClusterQueue, LocalQueue, Workload, ResourceFlavor, Cohort, AdmissionCheck |
+| Quota Management | ElasticQuota                                        | ClusterQueues and Cohort                            |
+| Quota Framework  | Support                                             | Not support                                         |
+| Queue Management | 1. Default Queue is created when ElasticQuota is created <br>2. Create other Queues manually | Create LocalQueues manually  |
+| Submit Jobs to Queues | Add labels in jobs to submit jobs in a certain queue | Add labels in jobs to submit jobs in a certain queue |
+| Queue Policies   | Priority Blocking / Priority Non-Blocking + Framework  | Priority Blocking                                |
+| Multi Queue      | Create different goroutine for scheduling           | One goroutine to traverse all queues |
+
+
 ## Design Overview
+
+### Quotas and Queues
+
+In a scheduling system, a quota is used to limit the resources that a user or a group of users can consume, while a queue serves as the entity for job  management and determines the order in which jobs are scheduled. In Koord-Queue, quotas and queues are not strongly bound. In most cases, each quota corresponds to a dedicated queue, meaning that jobs submitted by users under different quotas are enqueued separately and therefore do not affect each other’s scheduling.
+
+In some special cases, as shown above in user story 2, multiple quotas can share the same queue. This means jobs in the queue may have different resource limits while sharing the same priority context. For example, when full-time employees and interns submit jobs to the same queue, administrators may want interns to have a lower resource limit than full-time employees, so interns and employees are assigned different quotas. Since they use the same pool of machines for the same type of work, they submit to the same queue. In this case, the relationship between quotas and queues becomes many-to-one.
+
+In Koord-Queue, each job can specify the quota it uses and the queue it is submitted to via labels and annotations, depending on business needs. If not specified, the quota defaults to the one associated with the namespace, and the queue defaults to the quota’s associated default queue.
 
 ### API
 
