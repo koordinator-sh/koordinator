@@ -516,6 +516,154 @@ func Test_memoryBytesToRatio(t *testing.T) {
 	assert.Equal(t, expectRatio, newRatio)
 }
 
+func Test_preparePod_isReservationRequired(t *testing.T) {
+	tests := []struct {
+		name                      string
+		pod                       *corev1.Pod
+		wantIsReservationRequired bool
+		wantErr                   bool
+	}{
+		{
+			name: "pod without reservation affinity and pre-allocation label",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pod",
+					Namespace: "default",
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									apiext.ResourceGPU: resource.MustParse("100"),
+								},
+							},
+						},
+					},
+				},
+			},
+			wantIsReservationRequired: false,
+			wantErr:                   false,
+		},
+		{
+			name: "pod with reservation affinity",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pod",
+					Namespace: "default",
+					Annotations: map[string]string{
+						apiext.AnnotationReservationAffinity: `{"reservationSelector":{"reservation-key":"reservation-value"}}`,
+					},
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									apiext.ResourceGPU: resource.MustParse("100"),
+								},
+							},
+						},
+					},
+				},
+			},
+			wantIsReservationRequired: true,
+			wantErr:                   false,
+		},
+		{
+			name: "pod with pre-allocation label",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pod",
+					Namespace: "default",
+					Labels: map[string]string{
+						apiext.LabelPreAllocationRequired: "true",
+					},
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									apiext.ResourceGPU: resource.MustParse("100"),
+								},
+							},
+						},
+					},
+				},
+			},
+			wantIsReservationRequired: true,
+			wantErr:                   false,
+		},
+		{
+			name: "pod with both reservation affinity and pre-allocation label",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pod",
+					Namespace: "default",
+					Annotations: map[string]string{
+						apiext.AnnotationReservationAffinity: `{"reservationSelector":{"reservation-key":"reservation-value"}}`,
+					},
+					Labels: map[string]string{
+						apiext.LabelPreAllocationRequired: "true",
+					},
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									apiext.ResourceGPU: resource.MustParse("100"),
+								},
+							},
+						},
+					},
+				},
+			},
+			wantIsReservationRequired: true,
+			wantErr:                   false,
+		},
+		{
+			name: "pod with invalid reservation affinity",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pod",
+					Namespace: "default",
+					Annotations: map[string]string{
+						apiext.AnnotationReservationAffinity: `invalid-json`,
+					},
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									apiext.ResourceGPU: resource.MustParse("100"),
+								},
+							},
+						},
+					},
+				},
+			},
+			wantIsReservationRequired: false,
+			wantErr:                   true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			state, status := preparePod(tt.pod, nil, nil)
+			if tt.wantErr {
+				assert.False(t, status.IsSuccess())
+				return
+			}
+			assert.True(t, status.IsSuccess())
+			assert.NotNil(t, state)
+			assert.Equal(t, tt.wantIsReservationRequired, state.isReservationRequired)
+		})
+	}
+}
+
 func Test_parseGPURequirements(t *testing.T) {
 	bandWidthOf200Gi := resource.MustParse("200Gi")
 

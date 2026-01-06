@@ -140,7 +140,7 @@ func (p *Plugin) Allocate(ctx context.Context, cycleState *framework.CycleState,
 
 	nodeDeviceInfo.lock.RLock()
 	defer nodeDeviceInfo.lock.RUnlock()
-	allocateResult, status := p.tryAllocateFromReservation(allocator, state, restoreState, restoreState.matched, pod, node, preemptible, state.hasReservationAffinity)
+	allocateResult, status := p.tryAllocateFromReusable(allocator, state, restoreState, restoreState.matched, pod, node, preemptible, state.isReservationRequired)
 	if !status.IsSuccess() {
 		return status
 	}
@@ -215,7 +215,7 @@ func (p *Plugin) generateTopologyHints(cycleState *framework.CycleState, state *
 			}
 		}
 
-		allocateResult, status = p.tryAllocateFromReservation(allocator, state, restoreState, restoreState.matched, pod, node, preemptible, state.hasReservationAffinity)
+		allocateResult, status = p.tryAllocateFromReusable(allocator, state, restoreState, restoreState.matched, pod, node, preemptible, state.isReservationRequired)
 		if !status.IsSuccess() {
 			return
 		}
