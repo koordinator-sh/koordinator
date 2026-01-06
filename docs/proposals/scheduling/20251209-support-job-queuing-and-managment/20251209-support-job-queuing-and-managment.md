@@ -2,7 +2,8 @@
 
 ## Motivation
 
-In multi-tenant or batch-heavy Kubernetes environments, efficient job queueing and prioritization is critical for resource fairness and system stability. While Koordinator already provides advanced scheduling policies and resource management capabilities, it lacks native support for **structured job queueing** and **fine-grained priority management**. This proposal aims to integrate a robust queueing system inspired by [kube-queue](https://github.com/kubernetes-sigs/kube-queue) to address the following needs:
+In multi-tenant or batch-heavy Kubernetes environments, efficient job queueing and prioritization is critical for resource fairness and system stability.
+While Koordinator already provides advanced scheduling policies and resource management capabilities, it lacks native support for **structured job queueing** and **fine-grained priority management**. This proposal aims to integrate a robust queueing system inspired by [kube-queue](https://github.com/kubernetes-sigs/kube-queue) to address the following needs:
 
 *   **Orderly job execution**: Ensure jobs are processed in a predictable sequence based on user-defined rules.
     
@@ -11,16 +12,24 @@ In multi-tenant or batch-heavy Kubernetes environments, efficient job qu
 *   **Job lifecycle management:** Manage job's lifecycle.
     
 *   **Job-level resource checking:** Support check resource in queue to avoid too many pods in scheduler.
-    
 
-## User Story
+## Problem Description
 
 *   My company provide AI model training platform for users. Users submit training jobs to the platform and pay for the resources. There will be a lot of pods in the cluster and cause some problems like system components OOM. Too many unschedulable pods will also cost many schedule cycles which leads to the high schedule latency. So I need to use a queue component to reduce the number of pods in the cluster. 
     
 *   As a cluster maintainer, I already use Koord-Scheduler as the default scheduler and ElasticQuota as the quota system in the cluster, so it is better not to import another quota system. I hope there is a queue component which support to use ElasticQuota as the queue compoenent.
     
 *   As a cluster maintainer, I found that if I increase PodMaxBackofSeconds, scheduler can handle more pods in queue but the priority is more probable to be broken. I hope all the jobs in the cluster can be scheduled by the FIFO or priority policy. 
+
+## User Story
     
+1. Create different quotas for each department in the company, all developers in the department share the quota. Jobs submited by the developers in same department should be queued in one queue, and vice versa.
+
+![1 to 1](./one-to-one.jpg)
+
+2. Create different quotas for each department in the company, all developers in the department share the quota. Jobs submited by all developers should be queued in one queue. This is useful when each user has its quota limits and all users need to be queued in one queue.
+
+![N to 1](./one-queue-to-multi-quota.jpg)
 
 ## Goals
 
@@ -37,6 +46,15 @@ In multi-tenant or batch-heavy Kubernetes environments, efficient job qu
     
 *   Replace existing Koordinator scheduling policies (e.g., `Descheduling`, `Eviction`) with queue-centric logic.
     
+## Relationship with Scheduler and Other Queue Componenets
+
+- Koord-Scheduler
+
+Koord-Queue complements the Kubernetes Scheduler in the scheduling system by performing an initial scheduling pass on Jobs before the Kubernetes Scheduler schedules Pods, thereby reducing the scheduler’s workload and pressure.
+
+- Kueue
+
+Kueue is a popular open-source job queuing system in the community. It provides its own independent quota and queueing system, but currently cannot integrate with ElasticQuota out of the box. Koord-Queue has a similar positioning to Kueue and aims to improve Kueue’s flexibility in multi-queue policies and quota adaptation. Koord-Queue offers a more flexible quota adaptation framework and extensible queue-policy interfaces, natively supports integration with ElasticQuota, and makes it easier to integrate with the Koordinator ecosystem.
 
 ## Design Overview
 
