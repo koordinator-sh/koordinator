@@ -206,15 +206,16 @@ func TransformScheduleExplanationObjectKey() func(pod *corev1.Pod) {
 		if pod.Labels[apiext.LabelQuestionedObjectKey] != "" {
 			return
 		}
-		objectKey := util.GetNamespacedName(pod.Namespace, pod.Name)
+		objectName := pod.Name
 		if podGroupName := pod.Labels[v1alpha1.PodGroupLabel]; podGroupName != "" {
 			// TODO adapt to other gangGroupScheduling approaches and onceResourceSatisfied
-			objectKey = strings.TrimSuffix(strings.TrimSuffix(podGroupName, "-master"), "-worker")
+			objectName = strings.TrimSuffix(strings.TrimSuffix(podGroupName, "-master"), "-worker")
 		} else if gangName := apiext.GetGangName(pod); gangName != "" {
-			objectKey = gangName
-			if pod.Annotations[apiext.AnnotationGangGroups] != "" {
-				objectKey = pod.Annotations[apiext.AnnotationGangGroups]
-			}
+			objectName = gangName
+		}
+		objectKey := util.GetNamespacedName(pod.Namespace, objectName)
+		if pod.Annotations[apiext.AnnotationGangGroups] != "" {
+			objectKey = pod.Annotations[apiext.AnnotationGangGroups]
 		}
 		if pod.Labels == nil {
 			pod.Labels = make(map[string]string)
