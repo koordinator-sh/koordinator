@@ -58,6 +58,14 @@ Kueue is a popular open-source job queuing system in the community. It provides 
 
 ## Design Overview
 
+### Quotas and Queues
+
+In a scheduling system, a quota is used to limit the resources that a user or a group of users can consume, while a queue serves as the entity for job  management and determines the order in which jobs are scheduled. In Koord-Queue, quotas and queues are not strongly bound. In most cases, each quota corresponds to a dedicated queue, meaning that jobs submitted by users under different quotas are enqueued separately and therefore do not affect each other’s scheduling.
+
+In some special cases, as shown above in user story 2, multiple quotas can share the same queue. This means jobs in the queue may have different resource limits while sharing the same priority context. For example, when full-time employees and interns submit jobs to the same queue, administrators may want interns to have a lower resource limit than full-time employees, so interns and employees are assigned different quotas. Since they use the same pool of machines for the same type of work, they submit to the same queue. In this case, the relationship between quotas and queues becomes many-to-one.
+
+In Koord-Queue, each job can specify the quota it uses and the queue it is submitted to via labels and annotations, depending on business needs. If not specified, the quota defaults to the one associated with the namespace, and the queue defaults to the quota’s associated default queue.
+
 ### API
 
 The design introduces `**Queue**` **and** `**QueueUnit**` as the central abstractions for job queueing. And koord-queue support ElasticQuota and ElasticQuotaTree as its quota system.
