@@ -805,8 +805,7 @@ func TestFilter(t *testing.T) {
 				rInfo: frameworkext.NewReservationInfo(preAllocationReservation),
 			},
 			nodeInfo: testNodeInfo,
-			want: framework.NewStatus(framework.Unschedulable,
-				"node(s) no pod(s) to meet the pre-allocation requirements", "Insufficient cpu by node"),
+			want:     framework.NewStatus(framework.Unschedulable, "Insufficient cpu by node"),
 		},
 	}
 	for _, tt := range tests {
@@ -2572,8 +2571,7 @@ func Test_filterWithPreAllocatablePods(t *testing.T) {
 					},
 				}),
 			},
-			wantStatus: framework.NewStatus(framework.Unschedulable,
-				ErrReasonNoPodsMeetPreAllocationRequirements, "Insufficient cpu by node"),
+			wantStatus: framework.NewStatus(framework.Unschedulable, "Insufficient cpu by node"),
 		},
 		{
 			name: "filter with pre allocation pods",

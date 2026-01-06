@@ -551,15 +551,27 @@ func (pl *Plugin) filterWithPreAllocatablePods(ctx context.Context, cycleState *
 		return
 	}
 	var failureReasons []string
-	failureReasons = append(failureReasons, buildNodeFailureReasons(allInsufficientResourcesByNode.List())...)
-	failureReasons = append(failureReasons, allInsufficientResourceReasonsByReservation...)
-	if len(failureReasons) == 0 {
-		// Add no-pod reason and node-unallocated failure reasons if no pre-allocatable pod
-		failureReasons = append(failureReasons, ErrReasonNoPodsMeetPreAllocationRequirements)
-		failureReasons = append(failureReasons, buildNodeFailureReasons(insufficientResourcesByNodeUnallocated)...)
+	if isPreAllocationRequired {
+		failureReasons = append(failureReasons, buildNodeFailureReasons(allInsufficientResourcesByNode.List())...)
+		failureReasons = append(failureReasons, allInsufficientResourceReasonsByReservation...)
+		if len(failureReasons) == 0 {
+			failureReasons = append(failureReasons, ErrReasonNoPodsMeetPreAllocationRequirements)
+		}
+		return framework.NewStatus(framework.Unschedulable, failureReasons...)
+	} else {
+		if len(allInsufficientResourcesByNode) > 0 {
+			// If the combination of reservation and node cannot satisfy the pod, then the node alone cannot satisfy it either.
+			failureReasons = buildNodeFailureReasons(allInsufficientResourcesByNode.List())
+		} else {
+			// If no insufficient resources by node with pre-allocatable pods, use the node-unallocated reasons.
+			failureReasons = buildNodeFailureReasons(insufficientResourcesByNodeUnallocated)
+		}
+		if len(failureReasons) > 0 {
+			return framework.NewStatus(framework.Unschedulable, failureReasons...)
+		}
 	}
 
-	return framework.NewStatus(framework.Unschedulable, failureReasons...)
+	return nil
 }
 
 var dummyResource = framework.NewResource(nil)
