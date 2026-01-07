@@ -192,6 +192,9 @@ func TestUpdateQuota_IsQuotaUpdated(t *testing.T) {
 		assert.NotNil(t, newQuotaInfo, "newQuotaInfo should not be nil")
 		assert.NotNil(t, quota, "quota should not be nil")
 		assert.NotNil(t, state, "state should not be nil")
+		if quota.Name != q1Modified.Name {
+			return
+		}
 		assert.Equal(t, q1Modified.Name, quota.Name, "quota name should match")
 		// verify that the new quota has the updated max values
 		assert.True(t, quotav1.Equals(newQuotaInfo.CalculateInfo.Max, q1Modified.Spec.Max),

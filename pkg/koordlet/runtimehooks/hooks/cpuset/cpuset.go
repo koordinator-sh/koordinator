@@ -41,9 +41,10 @@ const (
 )
 
 type cpusetPlugin struct {
-	rule        *cpusetRule
-	ruleRWMutex sync.RWMutex
-	executor    resourceexecutor.ResourceUpdateExecutor
+	rule                 *cpusetRule
+	ruleRWMutex          sync.RWMutex
+	executor             resourceexecutor.ResourceUpdateExecutor
+	disableUnsetCPUQuota bool
 }
 
 var (
@@ -53,9 +54,10 @@ var (
 
 func (p *cpusetPlugin) Register(op hooks.Options) {
 	klog.V(5).Infof("register hook %v", name)
+	p.disableUnsetCPUQuota = op.DisableUnsetCPUQuotaForCPUSetPod
 	hooks.Register(rmconfig.PreCreateContainer, name, description, p.SetContainerCPUSetAndUnsetCFS)
 	hooks.Register(rmconfig.PreUpdateContainerResources, name, description, p.SetContainerCPUSetAndUnsetCFS)
-	hooks.Register(rmconfig.PreRunPodSandbox, name, "unset pod cpu quota if needed", UnsetPodCPUQuota)
+	hooks.Register(rmconfig.PreRunPodSandbox, name, "unset pod cpu quota if needed", p.UnsetPodCPUQuota)
 	rule.Register(name, description,
 		rule.WithParseFunc(statesinformer.RegisterTypeNodeTopology, p.parseRule),
 		rule.WithUpdateCallback(p.ruleUpdateCb))
@@ -67,7 +69,7 @@ func (p *cpusetPlugin) Register(op hooks.Options) {
 		"set sandbox container cpuset and unset container cpu quota if needed for cpuset pod",
 		p.SetContainerCPUSetAndUnsetCFS, reconciler.PodQOSFilter(), cpusetPodQOSConditions...)
 	reconciler.RegisterCgroupReconciler(reconciler.PodLevel, sysutil.CPUCFSQuota,
-		"unset pod cpu quota if needed for cpuset pod", UnsetPodCPUQuota,
+		"unset pod cpu quota if needed for cpuset pod", p.UnsetPodCPUQuota,
 		reconciler.PodQOSFilter(), cpusetPodQOSConditions...)
 
 	reconciler.RegisterCgroupReconciler(reconciler.ContainerLevel, sysutil.CPUSet,
@@ -99,7 +101,7 @@ func (p *cpusetPlugin) SetContainerCPUSetAndUnsetCFS(proto protocol.HooksProtoco
 	}
 
 	// unset container-level cpu.cfs_quota_us if needed
-	return UnsetContainerCPUQuota(proto)
+	return p.UnsetContainerCPUQuota(proto)
 }
 
 func (p *cpusetPlugin) SetContainerCPUSet(proto protocol.HooksProtocol) error {
@@ -168,7 +170,12 @@ func (p *cpusetPlugin) SetHostAppCPUSet(proto protocol.HooksProtocol) error {
 	return nil
 }
 
-func UnsetPodCPUQuota(proto protocol.HooksProtocol) error {
+func (p *cpusetPlugin) UnsetPodCPUQuota(proto protocol.HooksProtocol) error {
+	if p.disableUnsetCPUQuota {
+		klog.V(5).Infof("skip unset pod cpu quota due to configuration")
+		return nil
+	}
+
 	podCtx := proto.(*protocol.PodContext)
 	if podCtx == nil {
 		return fmt.Errorf("pod protocol is nil for plugin %v", name)
@@ -189,7 +196,11 @@ func UnsetPodCPUQuota(proto protocol.HooksProtocol) error {
 	return nil
 }
 
-func UnsetContainerCPUQuota(proto protocol.HooksProtocol) error {
+func (p *cpusetPlugin) UnsetContainerCPUQuota(proto protocol.HooksProtocol) error {
+	if p.disableUnsetCPUQuota {
+		klog.V(5).Infof("skip unset container cpu quota due to configuration")
+		return nil
+	}
 	containerCtx := proto.(*protocol.ContainerContext)
 	if containerCtx == nil {
 		return fmt.Errorf("container protocol is nil for plugin %v", name)
