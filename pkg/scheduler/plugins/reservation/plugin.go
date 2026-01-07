@@ -479,7 +479,9 @@ func (pl *Plugin) filterWithPreAllocatablePods(ctx context.Context, cycleState *
 	state := getStateData(cycleState)
 	nodeRState := state.nodeReservationStates[node.Name]
 	if nodeRState == nil {
-		nodeRState = &nodeReservationState{}
+		nodeRState = &nodeReservationState{
+			podRequested: nodeInfo.Requested.Clone(),
+		}
 	}
 
 	state.preemptLock.RLock()

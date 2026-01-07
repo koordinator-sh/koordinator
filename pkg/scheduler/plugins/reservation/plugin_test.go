@@ -2408,9 +2408,10 @@ func Test_filterWithPreAllocatablePods(t *testing.T) {
 		},
 	}
 	tests := []struct {
-		name       string
-		stateData  *stateData
-		wantStatus *framework.Status
+		name          string
+		setupNodeInfo func(nodeInfo *framework.NodeInfo)
+		stateData     *stateData
+		wantStatus    *framework.Status
 	}{
 		{
 			name: "filter with pre allocation not required",
@@ -2540,6 +2541,58 @@ func Test_filterWithPreAllocatablePods(t *testing.T) {
 							}),
 						},
 					},
+				},
+				rInfo: frameworkext.NewReservationInfo(&schedulingv1alpha1.Reservation{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-pre-allocation-reservation",
+						UID:  uuid.NewUUID(),
+					},
+					Spec: schedulingv1alpha1.ReservationSpec{
+						PreAllocation:  true,
+						AllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyRestricted,
+						Owners: []schedulingv1alpha1.ReservationOwner{
+							{
+								LabelSelector: &metav1.LabelSelector{
+									MatchLabels: map[string]string{
+										"test-reservation": "true",
+									},
+								},
+							},
+						},
+						Template: &corev1.PodTemplateSpec{
+							Spec: corev1.PodSpec{
+								Containers: []corev1.Container{
+									schedulertesting.MakeContainer().Resources(map[corev1.ResourceName]string{
+										corev1.ResourceCPU:    "4",
+										corev1.ResourceMemory: "16Gi",
+									}).Obj(),
+								},
+							},
+						},
+					},
+				}),
+			},
+			wantStatus: framework.NewStatus(framework.Unschedulable, "Insufficient cpu by node"),
+		},
+		{
+			name: "failed to filter with pre allocation not required, no pre-allocatable pods",
+			setupNodeInfo: func(nodeInfo *framework.NodeInfo) {
+				nodeInfo.Requested = framework.NewResource(corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("30"),
+					corev1.ResourceMemory: resource.MustParse("16Gi"),
+				})
+			},
+			stateData: &stateData{
+				schedulingStateData: schedulingStateData{
+					isPreAllocationRequired: false,
+					podRequests: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("4"),
+						corev1.ResourceMemory: resource.MustParse("16Gi"),
+					},
+					podRequestsResources: framework.NewResource(corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("4"),
+						corev1.ResourceMemory: resource.MustParse("16Gi"),
+					}),
 				},
 				rInfo: frameworkext.NewReservationInfo(&schedulingv1alpha1.Reservation{
 					ObjectMeta: metav1.ObjectMeta{
@@ -2873,7 +2926,15 @@ func Test_filterWithPreAllocatablePods(t *testing.T) {
 			cycleState.Write(stateKey, tt.stateData)
 			nodeInfo := framework.NewNodeInfo()
 			nodeInfo.SetNode(node.DeepCopy())
-			got := pl.filterWithPreAllocatablePods(context.TODO(), cycleState, tt.stateData.rInfo, nodeInfo, tt.stateData.nodeReservationStates[node.Name].preAllocatablePods, tt.stateData.isPreAllocationRequired)
+			if tt.setupNodeInfo != nil {
+				tt.setupNodeInfo(nodeInfo)
+			}
+			var preAllocatablePods []*corev1.Pod
+			if nodeState := tt.stateData.nodeReservationStates[node.Name]; nodeState != nil {
+				preAllocatablePods = nodeState.preAllocatablePods
+			}
+			got := pl.filterWithPreAllocatablePods(context.TODO(), cycleState, tt.stateData.rInfo, nodeInfo,
+				preAllocatablePods, tt.stateData.isPreAllocationRequired)
 			assert.Equal(t, tt.wantStatus, got)
 		})
 	}
