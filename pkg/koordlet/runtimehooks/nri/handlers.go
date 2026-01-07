@@ -46,7 +46,7 @@ func (p *NriServer) Configure(_ context.Context, config, runtime, version string
 		return 0, fmt.Errorf("failed to parse events in configuration: %w", err)
 	}
 
-	klog.V(6).Infof("handle NRI Configure successfully, config %s, runtime %s, version %s",
+	klog.V(4).Infof("handle NRI Configure successfully, config %s, runtime %s, version %s",
 		config, runtime, version)
 	return p.mask, nil
 }
@@ -69,7 +69,7 @@ func (p *NriServer) RunPodSandbox(_ context.Context, pod *api.PodSandbox) error 
 	}
 	podCtx.NriDone(p.options.Executor)
 
-	klog.V(6).Infof("handle NRI RunPodSandbox successfully, pod %s/%s", pod.GetNamespace(), pod.GetName())
+	klog.V(4).Infof("handle NRI RunPodSandbox successfully, pod %s/%s", pod.GetNamespace(), pod.GetName())
 	return nil
 }
 
@@ -91,7 +91,7 @@ func (p *NriServer) CreateContainer(_ context.Context, pod *api.PodSandbox, cont
 		return nil, nil, nil
 	}
 
-	klog.V(6).Infof("handle NRI CreateContainer successfully, container %s/%s/%s",
+	klog.V(4).Infof("handle NRI CreateContainer successfully, container %s/%s/%s",
 		pod.GetNamespace(), pod.GetName(), container.GetName())
 	return adjust, nil, nil
 }
@@ -114,7 +114,7 @@ func (p *NriServer) UpdateContainer(_ context.Context, pod *api.PodSandbox, cont
 		return nil, nil
 	}
 
-	klog.V(6).Infof("handle NRI UpdateContainer successfully, container %s/%s/%s",
+	klog.V(4).Infof("handle NRI UpdateContainer successfully, container %s/%s/%s",
 		pod.GetNamespace(), pod.GetName(), container.GetName())
 	return []*api.ContainerUpdate{update}, nil
 }
@@ -132,6 +132,26 @@ func (p *NriServer) RemovePodSandbox(_ context.Context, pod *api.PodSandbox) err
 	}
 	podCtx.NriRemoveDone(p.options.Executor)
 
-	klog.V(6).Infof("handle NRI RemovePodSandbox successfully, pod %s/%s", pod.GetNamespace(), pod.GetName())
+	klog.V(4).Infof("handle NRI RemovePodSandbox successfully, pod %s/%s", pod.GetNamespace(), pod.GetName())
+	return nil
+}
+
+func (p *NriServer) RemoveContainer(context.Context, *api.PodSandbox, *api.Container) error {
+	// TODO
+	return nil
+}
+
+func (p *NriServer) StopContainer(context.Context, *api.PodSandbox, *api.Container) ([]*api.ContainerUpdate, error) {
+	// TODO
+	return nil, nil
+}
+
+func (p *NriServer) StartContainer(context.Context, *api.PodSandbox, *api.Container) error {
+	// TODO
+	return nil
+}
+
+func (p *NriServer) StopPodSandbox(context.Context, *api.PodSandbox) error {
+	// TODO
 	return nil
 }

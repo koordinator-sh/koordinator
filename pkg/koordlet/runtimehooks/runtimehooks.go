@@ -49,7 +49,7 @@ type RuntimeHook interface {
 type runtimeHook struct {
 	statesInformer    statesinformer.StatesInformer
 	server            proxyserver.Server
-	nriServer         *nri.NriServer
+	nriServer         nri.Server
 	reconciler        reconciler.Reconciler
 	hostAppReconciler reconciler.Reconciler
 	reader            resourceexecutor.CgroupReader
@@ -120,7 +120,7 @@ func NewRuntimeHook(si statesinformer.StatesInformer, cfg *Config, schema *apiru
 		Steps:    cfg.RuntimeHooksNRIBackOffSteps,
 		Cap:      cfg.RuntimeHooksNRIBackOffCap,
 	}
-	var nriServer *nri.NriServer
+	var nriServer nri.Server
 	if cfg.RuntimeHooksNRI {
 		nriServerOptions := nri.Options{
 			NriPluginName:       cfg.RuntimeHooksNRIPluginName,

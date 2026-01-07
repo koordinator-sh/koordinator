@@ -23,9 +23,9 @@ LICENSE_HEADER_PATH="./hack/boilerplate/boilerplate.go.txt"
 cd $GOPATH/src/github.com/koordinator-sh/koordinator
 
 # generates gomock files
-mockgen -source pkg/koordlet/statesinformer/impl/states_informer.go \
+mockgen -source pkg/koordlet/statesinformer/api.go \
   -destination pkg/koordlet/statesinformer/mockstatesinformer/mock.go \
-  -aux_files github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer/impl=pkg/koordlet/statesinformer/impl/states_informer.go \
+  -aux_files github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer=pkg/koordlet/statesinformer/api.go \
   -copyright_file ${LICENSE_HEADER_PATH}
 mockgen -source pkg/koordlet/metriccache/tsdb_storage.go \
   -destination pkg/koordlet/metriccache/mockmetriccache/mock_tsdb_storage.go \
@@ -46,8 +46,7 @@ mockgen -source vendor/k8s.io/cri-api/pkg/apis/runtime/v1/api.pb.go \
   -imports github.com/koordinator-sh/koordinator/vendor/k8s.io/cri-api/pkg/apis/runtime/v1=k8s.io/cri-api/pkg/apis/runtime/v1 \
   -copyright_file ${LICENSE_HEADER_PATH} \
   -package mock_client RuntimeServiceClient
-mockgen -source vendor/k8s.io/cri-api/pkg/apis/runtime/v1alpha2/api.pb.go \
-  -destination pkg/koordlet/util/runtime/handler/mockv1alpha2client/mock.go \
-  -imports github.com/koordinator-sh/koordinator/vendor/k8s.io/cri-api/pkg/apis/runtime/v1alpha2=k8s.io/cri-api/pkg/apis/runtime/v1alpha2 \
+mockgen -source pkg/koordlet/runtimehooks/nri/types.go \
+  -destination pkg/koordlet/runtimehooks/nri/mock_nri.go \
   -copyright_file ${LICENSE_HEADER_PATH} \
-  -package mockv1alpha2_client RuntimeServiceClient
+  -package nri

@@ -18,6 +18,7 @@ package hooks
 
 import (
 	"fmt"
+	"sort"
 	"time"
 
 	"k8s.io/client-go/tools/record"
@@ -72,6 +73,10 @@ func generateNewHook(stage rmconfig.RuntimeHookType, name string) (*Hook, error)
 	}
 	newHook := &Hook{name: name, stage: stage}
 	globalStageHooks[stage] = append(globalStageHooks[stage], newHook)
+	// sort hooks by name for a stable order
+	sort.Slice(globalStageHooks[stage], func(i, j int) bool {
+		return globalStageHooks[stage][i].name < globalStageHooks[stage][j].name
+	})
 	return newHook, nil
 }
 
