@@ -486,18 +486,6 @@ func (pl *Plugin) filterWithPreAllocatablePods(ctx context.Context, cycleState *
 	preemptible := framework.NewResource(state.preemptible[node.Name])
 	state.preemptLock.RUnlock()
 
-	var insufficientResourcesByNodeUnallocated []string
-	if !isPreAllocationRequired {
-		// Check if the reserve pod can be placed with node-unallocated resource when pre-allocation is not required.
-		// For reserve pod, matchedOrIgnored should be 0, both rAllocated and rRemained should be nil.
-		insufficientResourcesByNodeUnallocated = fitsNode(state.podRequestsResources, nodeInfo.Allocatable,
-			nodeRState.podRequested, nil, nil, 0, len(nodeInfo.Pods), preemptible)
-		if len(insufficientResourcesByNodeUnallocated) == 0 {
-			// Directly return if the reservation can be placed with node-unallocated resource.
-			return nil
-		}
-	}
-
 	allInsufficientResourcesByNode := sets.NewString()
 	var allInsufficientResourceReasonsByReservation []string
 	for _, pod := range preAllocatablePods {
@@ -563,6 +551,10 @@ func (pl *Plugin) filterWithPreAllocatablePods(ctx context.Context, cycleState *
 			// If the combination of reservation and node cannot satisfy the pod, then the node alone cannot satisfy it either.
 			failureReasons = buildNodeFailureReasons(allInsufficientResourcesByNode.List())
 		} else {
+			// Check if the reserve pod can be placed with node-unallocated resource when pre-allocation is not required.
+			// For reserve pod, matchedOrIgnored should be 0, both rAllocated and rRemained should be nil.
+			insufficientResourcesByNodeUnallocated := fitsNode(state.podRequestsResources, nodeInfo.Allocatable,
+				nodeRState.podRequested, nil, nil, 0, len(nodeInfo.Pods), preemptible)
 			// If no insufficient resources by node with pre-allocatable pods, use the node-unallocated reasons.
 			failureReasons = buildNodeFailureReasons(insufficientResourcesByNodeUnallocated)
 		}
