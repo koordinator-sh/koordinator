@@ -790,7 +790,7 @@ func TestFilter(t *testing.T) {
 			want:     nil,
 		},
 		{
-			name: "ignored to filter pre-allocation reservation when insufficient resource",
+			name: "failed to filter pre-allocation reservation when insufficient resource",
 			pod:  reservationutil.NewReservePod(preAllocationReservation2),
 			reservations: []*schedulingv1alpha1.Reservation{
 				restrictedReservation,
@@ -805,7 +805,7 @@ func TestFilter(t *testing.T) {
 				rInfo: frameworkext.NewReservationInfo(preAllocationReservation),
 			},
 			nodeInfo: testNodeInfo,
-			want:     nil,
+			want:     framework.NewStatus(framework.Unschedulable, "Insufficient cpu by node"),
 		},
 	}
 	for _, tt := range tests {
@@ -2518,6 +2518,60 @@ func Test_filterWithPreAllocatablePods(t *testing.T) {
 				}),
 			},
 			wantStatus: framework.NewStatus(framework.Unschedulable, ErrReasonNoPodsMeetPreAllocationRequirements),
+		},
+		{
+			name: "failed to filter with pre allocation not required",
+			stateData: &stateData{
+				schedulingStateData: schedulingStateData{
+					isPreAllocationRequired: false,
+					podRequests: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("4"),
+						corev1.ResourceMemory: resource.MustParse("16Gi"),
+					},
+					podRequestsResources: framework.NewResource(corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("4"),
+						corev1.ResourceMemory: resource.MustParse("16Gi"),
+					}),
+					nodeReservationStates: map[string]*nodeReservationState{
+						node.Name: {
+							podRequested: framework.NewResource(corev1.ResourceList{
+								corev1.ResourceCPU:    resource.MustParse("30"),
+								corev1.ResourceMemory: resource.MustParse("16Gi"),
+							}),
+						},
+					},
+				},
+				rInfo: frameworkext.NewReservationInfo(&schedulingv1alpha1.Reservation{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-pre-allocation-reservation",
+						UID:  uuid.NewUUID(),
+					},
+					Spec: schedulingv1alpha1.ReservationSpec{
+						PreAllocation:  true,
+						AllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyRestricted,
+						Owners: []schedulingv1alpha1.ReservationOwner{
+							{
+								LabelSelector: &metav1.LabelSelector{
+									MatchLabels: map[string]string{
+										"test-reservation": "true",
+									},
+								},
+							},
+						},
+						Template: &corev1.PodTemplateSpec{
+							Spec: corev1.PodSpec{
+								Containers: []corev1.Container{
+									schedulertesting.MakeContainer().Resources(map[corev1.ResourceName]string{
+										corev1.ResourceCPU:    "4",
+										corev1.ResourceMemory: "16Gi",
+									}).Obj(),
+								},
+							},
+						},
+					},
+				}),
+			},
+			wantStatus: framework.NewStatus(framework.Unschedulable, "Insufficient cpu by node"),
 		},
 		{
 			name: "filter with pre allocation pods",
@@ -4506,6 +4560,7 @@ func TestPreAllocation(t *testing.T) {
 			Allocatable: corev1.ResourceList{
 				corev1.ResourceCPU:    resource.MustParse("32"),
 				corev1.ResourceMemory: resource.MustParse("64Gi"),
+				corev1.ResourcePods:   resource.MustParse("100"),
 			},
 		},
 	}
@@ -4546,7 +4601,7 @@ func TestPreAllocation(t *testing.T) {
 			},
 			Spec: schedulingv1alpha1.ReservationSpec{
 				PreAllocation:  true,
-				AllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyAligned,
+				AllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyRestricted,
 				TTL:            &metav1.Duration{Duration: 30 * time.Minute},
 				Owners: []schedulingv1alpha1.ReservationOwner{
 					{
@@ -4589,8 +4644,12 @@ func TestPreAllocation(t *testing.T) {
 		reservePod := reservationutil.NewReservePod(reservation)
 		cycleState := framework.NewCycleState()
 
+		// Run BeforePreFilter to make sure nodeRState is initialized
+		_, _, status := pl.BeforePreFilter(context.TODO(), cycleState, reservePod)
+		assert.True(t, status.IsSuccess())
+
 		// Run PreFilter
-		_, status := pl.PreFilter(context.TODO(), cycleState, reservePod)
+		_, status = pl.PreFilter(context.TODO(), cycleState, reservePod)
 		assert.True(t, status.IsSuccess() || status.Code() == framework.Skip)
 
 		// Run Filter
