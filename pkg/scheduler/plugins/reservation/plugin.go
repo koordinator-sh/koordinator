@@ -548,7 +548,7 @@ func (pl *Plugin) filterWithPreAllocatablePods(ctx context.Context, cycleState *
 		return framework.NewStatus(framework.Unschedulable, failureReasons...)
 	} else {
 		if len(allInsufficientResourcesByNode) > 0 {
-			// If the combination of reservation and node cannot satisfy the pod, then the node alone cannot satisfy it either.
+			// If the combination of pre-allocatable and node cannot satisfy the reservation, then the node alone cannot satisfy it either.
 			failureReasons = buildNodeFailureReasons(allInsufficientResourcesByNode.List())
 		} else {
 			// Check if the reserve pod can be placed with node-unallocated resource when pre-allocation is not required.
