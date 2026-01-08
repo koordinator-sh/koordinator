@@ -16,7 +16,14 @@ limitations under the License.
 
 package sloconfig
 
-import "flag"
+import (
+	"flag"
+	"fmt"
+
+	"k8s.io/apimachinery/pkg/labels"
+
+	"github.com/koordinator-sh/koordinator/apis/extension"
+)
 
 const (
 	En = "en"
@@ -29,14 +36,21 @@ var (
 	SLOCtrlConfigMap = "slo-controller-config"
 	// NodeStrategyNameNeedCheck true:enable to check name required and not conflict, false: not check
 	NodeStrategyNameNeedCheck = "false"
+	// GPUSharedNodeSelector define a selector to identify nodes with GPU sharing enabled, default: koordinator.sh/gpu-isolation-provider=HAMi-core
+	GPUSharedNodeSelector = fmt.Sprintf("%s=%s", extension.LabelGPUIsolationProvider, string(extension.GPUIsolationProviderHAMICore))
 )
 
 func InitFlags(fs *flag.FlagSet) {
 	fs.StringVar(&SLOCtrlConfigMap, "slo-config-name", SLOCtrlConfigMap, "determines the name the slo-controller configmap uses.")
 	fs.StringVar(&ConfigNameSpace, "config-namespace", ConfigNameSpace, "determines the namespace of configmap uses.")
 	fs.StringVar(&NodeStrategyNameNeedCheck, "node-strategy-name-need-check", NodeStrategyNameNeedCheck, "determines the sloConfig validator nodeConfig name check enable, 'true':enable, 'false':unable, default:false.")
+	fs.StringVar(&GPUSharedNodeSelector, "gpu-shared-node-selector", GPUSharedNodeSelector, fmt.Sprintf("define a selector to identify nodes with GPU sharing enabled, default: %s=%s.", extension.LabelGPUIsolationProvider, string(extension.GPUIsolationProviderHAMICore)))
 }
 
 func IsNodeStrategyNameNeedCheck() bool {
 	return NodeStrategyNameNeedCheck == "true"
+}
+
+func GetGPUSharedNodeSelector() (labels.Selector, error) {
+	return labels.Parse(GPUSharedNodeSelector)
 }
