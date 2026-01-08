@@ -18,6 +18,7 @@ package transformer
 
 import (
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/tools/cache"
@@ -30,6 +31,7 @@ import (
 var transformers = map[schema.GroupVersionResource]cache.TransformFunc{
 	corev1.SchemeGroupVersion.WithResource("nodes"):               TransformNode,
 	schedulingv1alpha1.SchemeGroupVersion.WithResource("devices"): TransformDevice,
+	metav1.SchemeGroupVersion.WithResource("metas"):               TransformMeta,
 }
 
 type TransformFactory func() cache.TransformFunc
