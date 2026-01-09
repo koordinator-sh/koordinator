@@ -174,9 +174,12 @@ func TestNewNriServer(t *testing.T) {
 				helper.WriteFileContents("nri/nri.sock", "")
 			}
 
-			s, err := NewNriServer(tt.args.opt)
-			if s != nil && s.stub != nil {
-				defer s.Stop()
+			ns, err := NewNriServer(tt.args.opt)
+			if ns != nil {
+				s := ns.(*NriServer)
+				if s.stub != nil {
+					defer s.Stop()
+				}
 			}
 			if (err != nil) != tt.wantErr {
 				t.Errorf("NewNriServer() error = %v, wantErr %v", err, tt.wantErr)
@@ -640,10 +643,10 @@ func TestNriServer_RemovePodSandbox(t *testing.T) {
 type stubConstructor func(p interface{}, opts []stub.Option, onClose func()) (StubInterface, error)
 
 func mockNewStub(fn stubConstructor) func() {
-	old := mockableNewNriStub
-	mockableNewNriStub = fn
+	old := newNriStub
+	newNriStub = fn
 	return func() {
-		mockableNewNriStub = old
+		newNriStub = old
 	}
 }
 
@@ -702,7 +705,7 @@ func TestReconnectToNriServer(t *testing.T) {
 
 	helper := system.NewFileTestUtil(t)
 	defer helper.Cleanup()
-	srv, err := NewNriServer(Options{
+	ns, err := NewNriServer(Options{
 		NriSocketPath:       "",
 		NriConnectTimeout:   time.Second,
 		PluginFailurePolicy: "Ignore",
@@ -716,6 +719,7 @@ func TestReconnectToNriServer(t *testing.T) {
 			Cap:      time.Second * 3,
 		},
 	})
+	srv := ns.(*NriServer)
 	a.Nil(err)
 	a.NotNil(srv)
 	err = srv.Start()

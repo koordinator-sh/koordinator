@@ -19,7 +19,6 @@ package nri
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -29,20 +28,15 @@ import (
 	"go.uber.org/atomic"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/klog/v2"
-
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 )
 
-type nriConfig struct {
-	Events []string `json:"events"`
-}
+const (
+	events = "RunPodSandbox,RemovePodSandbox,CreateContainer,UpdateContainer"
+)
 
-// Stub is the interface of nri stub
-//
-//go:generate mockgen -source=server.go -destination=mock_nri.go -package=nri
-type StubInterface interface {
-	stub.Stub
-}
+var (
+	_ Server = &NriServer{}
+)
 
 type NriServer struct {
 	cfg      nriConfig
@@ -57,25 +51,7 @@ type NriServer struct {
 	connClosedSignal chan struct{}
 }
 
-// make it testable
-var mockableNewNriStub = func(p interface{}, opts []stub.Option, onClose func()) (StubInterface, error) {
-	return stub.New(p, append(opts, stub.WithOnClose(onClose))...)
-}
-
-const (
-	events = "RunPodSandbox,RemovePodSandbox,CreateContainer,UpdateContainer"
-)
-
-var (
-	_ = stub.ConfigureInterface(&NriServer{})
-	_ = stub.SynchronizeInterface(&NriServer{})
-	_ = stub.RunPodInterface(&NriServer{})
-	_ = stub.RemovePodInterface(&NriServer{})
-	_ = stub.CreateContainerInterface(&NriServer{})
-	_ = stub.UpdateContainerInterface(&NriServer{})
-)
-
-func NewNriServer(opt Options) (*NriServer, error) {
+func NewNriServer(opt Options) (Server, error) {
 	err := opt.Validate()
 	if err != nil {
 		return nil, fmt.Errorf("failed to validate nri server, err: %w", err)
@@ -83,7 +59,7 @@ func NewNriServer(opt Options) (*NriServer, error) {
 	stubOpts := []stub.Option{
 		stub.WithPluginName(opt.NriPluginName),
 		stub.WithPluginIdx(opt.NriPluginIdx),
-		stub.WithSocketPath(filepath.Join(system.Conf.VarRunRootDir, opt.NriSocketPath)),
+		stub.WithSocketPath(opt.GetNRISocketPath()),
 	}
 	p := &NriServer{
 		options:          opt,
@@ -177,7 +153,7 @@ func (p *NriServer) connect() (bool, error) {
 	}
 	connID := time.Now().UnixNano()
 	klog.Infof("connect to nri server, conn_id: %d", connID)
-	stubIns, err := mockableNewNriStub(p, p.stubOpts, p.reconnect(connID))
+	stubIns, err := newNriStub(p, p.stubOpts, p.reconnect(connID))
 	if err != nil {
 		return false, err
 	}

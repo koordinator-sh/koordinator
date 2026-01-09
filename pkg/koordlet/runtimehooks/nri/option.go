@@ -45,9 +45,13 @@ type Options struct {
 
 func (o Options) Validate() error {
 	// a fast check for the NRI support status
-	completeNriSocketPath := filepath.Join(system.Conf.VarRunRootDir, o.NriSocketPath)
+	completeNriSocketPath := o.GetNRISocketPath()
 	if !system.FileExists(completeNriSocketPath) {
 		return fmt.Errorf("nri socket path %q does not exist", completeNriSocketPath)
 	}
 	return nil
+}
+
+func (o Options) GetNRISocketPath() string {
+	return filepath.Join(system.Conf.VarRunRootDir, o.NriSocketPath)
 }
