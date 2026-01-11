@@ -34,6 +34,15 @@ data:
           apiVersion: descheduler/v1alpha2
           kind: MigrationControllerArgs
           evictionPolicy: Eviction
+          # skipEvictionGates provides a unified bypass mechanism for gates/filters/throttlers
+          # evaluated before eviction/migration.
+          # skipEvictionGates:
+          #   - MaxMigratingGlobally
+          #   - MaxMigratingPerNode
+          #   - MaxMigratingPerNamespace
+          #   - MaxMigratingPerWorkload
+          #   - MaxUnavailablePerWorkload
+          #   - ExpectedReplicas
           namespaces:
             exclude:
               - kube-system
