@@ -81,15 +81,25 @@ func (pl *Plugin) ApplyPatch(ctx context.Context, cycleState *framework.CycleSta
 }
 
 func (pl *Plugin) applyPodPatch(ctx context.Context, originalPod, modifiedPod *corev1.Pod) *framework.Status {
+	var patchedPod *corev1.Pod
 	err := util.RetryOnConflictOrTooManyRequests(func() error {
-		_, err := util.PatchPodSafe(ctx, pl.clientSet, originalPod, modifiedPod)
+		got, err := util.PatchPodSafe(ctx, pl.clientSet, originalPod, modifiedPod)
 		if err != nil {
-			klog.ErrorS(err, "Failed to patch Pod", "pod", klog.KObj(originalPod))
+			klog.ErrorS(err, "Failed to patch Pod", "pod", klog.KObj(originalPod), "uid", originalPod.UID)
+			return err
 		}
-		return err
+		patchedPod = got
+		return nil
 	})
 	if err != nil {
-		klog.ErrorS(err, "Failed to apply patch for Pod", "pod", klog.KObj(originalPod))
+		klog.ErrorS(err, "Failed to apply patch for Pod", "pod", klog.KObj(originalPod), "uid", originalPod.UID)
+		return framework.AsStatus(err)
+	}
+	// NOTE: Patch might succeed for a deleting object without updating the data when the apiserver receive a Delete earlier.
+	// In this case, we should clean up the reserved resources to avoid cache leak.
+	if patchedPod.DeletionTimestamp != nil {
+		err = fmt.Errorf("pod is being deleted")
+		klog.ErrorS(err, "Failed to apply patch for Pod", "pod", klog.KObj(originalPod), "uid", originalPod.UID, "deletionTimestamp", patchedPod.DeletionTimestamp)
 		return framework.AsStatus(err)
 	}
 
@@ -98,18 +108,28 @@ func (pl *Plugin) applyPodPatch(ctx context.Context, originalPod, modifiedPod *c
 }
 
 func (pl *Plugin) applyReservationPatch(ctx context.Context, originalReservation, modifiedReservation *schedulingv1alpha1.Reservation) *framework.Status {
+	var patchedReservation *schedulingv1alpha1.Reservation
 	err := util.RetryOnConflictOrTooManyRequests(func() error {
-		_, err := util.PatchReservationSafe(ctx, pl.koordClientSet, originalReservation, modifiedReservation)
+		got, err := util.PatchReservationSafe(ctx, pl.koordClientSet, originalReservation, modifiedReservation)
 		if err != nil {
-			klog.ErrorS(err, "Failed to patch Reservation", "reservation", klog.KObj(originalReservation))
+			klog.ErrorS(err, "Failed to patch Reservation", "reservation", klog.KObj(originalReservation), "uid", originalReservation.UID)
+			return err
 		}
-		return err
+		patchedReservation = got
+		return nil
 	})
 	if err != nil {
-		klog.ErrorS(err, "Failed to apply patch for Reservation", "reservation", klog.KObj(originalReservation))
+		klog.ErrorS(err, "Failed to apply patch for Reservation", "reservation", klog.KObj(originalReservation), "uid", originalReservation.UID)
+		return framework.AsStatus(err)
+	}
+	// NOTE: Patch might succeed for a deleting object without updating the data when the apiserver receive a Delete earlier.
+	// In this case, we should clean up the reserved resources to avoid cache leak.
+	if patchedReservation.DeletionTimestamp != nil {
+		err = fmt.Errorf("pod is being deleted")
+		klog.ErrorS(err, "Failed to apply patch for Reservation", "reservation", klog.KObj(originalReservation), "uid", originalReservation.UID, "deletionTimestamp", patchedReservation.DeletionTimestamp)
 		return framework.AsStatus(err)
 	}
 
-	klog.V(4).InfoS("Successfully apply patch for Reservation", "reservation", klog.KObj(originalReservation))
+	klog.V(4).InfoS("Successfully apply patch for Reservation", "reservation", klog.KObj(originalReservation), "uid", originalReservation.UID)
 	return nil
 }

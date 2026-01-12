@@ -27,6 +27,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	k8sfeature "k8s.io/apiserver/pkg/util/feature"
 	"k8s.io/client-go/informers"
 	kubefake "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
@@ -39,7 +40,9 @@ import (
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	koordfake "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/fake"
 	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
+	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/services"
+	utilfeature "github.com/koordinator-sh/koordinator/pkg/util/feature"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
 
@@ -449,12 +452,14 @@ func TestPreBind(t *testing.T) {
 	tests := []struct {
 		name            string
 		pod             *corev1.Pod
+		reservation     *schedulingv1alpha1.Reservation
 		wantAnnotations map[string]string
 		wantStatus      bool
 	}{
 		{
-			name: "preBind reservation",
-			pod:  reservationutil.NewReservePod(reservation),
+			name:        "preBind reservation",
+			pod:         reservationutil.NewReservePod(reservation),
+			reservation: reservation,
 			wantAnnotations: map[string]string{
 				"PreBindReservation-1": "1",
 				"PreBindReservation-2": "2",
@@ -501,8 +506,10 @@ func TestPreBind(t *testing.T) {
 			)
 			assert.NoError(t, err)
 
-			_, err = koordClientSet.SchedulingV1alpha1().Reservations().Create(context.TODO(), reservation.DeepCopy(), metav1.CreateOptions{})
-			assert.NoError(t, err)
+			if tt.reservation != nil {
+				_, err = koordClientSet.SchedulingV1alpha1().Reservations().Create(context.TODO(), tt.reservation.DeepCopy(), metav1.CreateOptions{})
+				assert.NoError(t, err)
+			}
 			_ = koordSharedInformerFactory.Scheduling().V1alpha1().Reservations().Lister()
 			koordSharedInformerFactory.Start(nil)
 			koordSharedInformerFactory.WaitForCacheSync(nil)
@@ -523,6 +530,181 @@ func TestPreBind(t *testing.T) {
 				s, err := cycleState.Read("test-preBind-reservation")
 				assert.NoError(t, err)
 				assert.Equal(t, tt.wantAnnotations, s.(*testPreBindReservationState).reservation.Annotations)
+			}
+		})
+	}
+}
+
+// TestPreBindWithDynamicSchedulerCheck tests PreBind with DynamicSchedulerCheck feature enabled
+func TestPreBindWithDynamicSchedulerCheck(t *testing.T) {
+	// Enable DynamicSchedulerCheck feature gate
+	defer utilfeature.SetFeatureGateDuringTest(t, k8sfeature.DefaultMutableFeatureGate, features.DynamicSchedulerCheck, true)()
+
+	now := metav1.Now()
+	tests := []struct {
+		name           string
+		pod            *corev1.Pod
+		reservation    *schedulingv1alpha1.Reservation
+		isReservePod   bool
+		expectSuccess  bool
+		expectErrorMsg string
+	}{
+		{
+			name: "pod with mismatched scheduler name should fail",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pod",
+					Namespace: "default",
+				},
+				Spec: corev1.PodSpec{
+					SchedulerName: "other-scheduler", // Mismatched scheduler
+				},
+			},
+			expectSuccess:  false,
+			expectErrorMsg: "schedulerName unmatched",
+		},
+		{
+			name: "pod with DeletionTimestamp should fail",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:              "test-pod-deleting",
+					Namespace:         "default",
+					DeletionTimestamp: &now,
+				},
+				Spec: corev1.PodSpec{
+					SchedulerName: "koord-scheduler",
+				},
+			},
+			expectSuccess:  false,
+			expectErrorMsg: "pod is being deleted",
+		},
+		{
+			name: "normal pod with correct scheduler should succeed",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pod-normal",
+					Namespace: "default",
+				},
+				Spec: corev1.PodSpec{
+					SchedulerName: "koord-scheduler",
+				},
+			},
+			expectSuccess: true,
+		},
+		{
+			name: "reservation with mismatched scheduler name should fail",
+			reservation: &schedulingv1alpha1.Reservation{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-reservation-mismatch",
+				},
+				Spec: schedulingv1alpha1.ReservationSpec{
+					Template: &corev1.PodTemplateSpec{
+						Spec: corev1.PodSpec{
+							SchedulerName: "other-scheduler", // Mismatched scheduler
+						},
+					},
+				},
+			},
+			isReservePod:   true,
+			expectSuccess:  false,
+			expectErrorMsg: "schedulerName unmatched",
+		},
+		{
+			name: "reservation with DeletionTimestamp should fail",
+			reservation: &schedulingv1alpha1.Reservation{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:              "test-reservation-deleting",
+					DeletionTimestamp: &now,
+				},
+				Spec: schedulingv1alpha1.ReservationSpec{
+					Template: &corev1.PodTemplateSpec{
+						Spec: corev1.PodSpec{
+							SchedulerName: "koord-scheduler",
+						},
+					},
+				},
+			},
+			isReservePod:   true,
+			expectSuccess:  false,
+			expectErrorMsg: "pod is being deleted",
+		},
+		{
+			name: "normal reservation with correct scheduler should succeed",
+			reservation: &schedulingv1alpha1.Reservation{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-reservation-normal",
+				},
+				Spec: schedulingv1alpha1.ReservationSpec{
+					Template: &corev1.PodTemplateSpec{
+						Spec: corev1.PodSpec{
+							SchedulerName: "koord-scheduler",
+						},
+					},
+				},
+			},
+			isReservePod:  true,
+			expectSuccess: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			koordClientSet := koordfake.NewSimpleClientset()
+			koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
+			extenderFactory, _ := NewFrameworkExtenderFactory(
+				WithKoordinatorClientSet(koordClientSet),
+				WithKoordinatorSharedInformerFactory(koordSharedInformerFactory),
+			)
+
+			registeredPlugins := []schedulertesting.RegisterPluginFunc{
+				schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
+				schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
+			}
+
+			var pod *corev1.Pod
+			if tt.isReservePod && tt.reservation != nil {
+				// Create reservation and reserve pod
+				_, err := koordClientSet.SchedulingV1alpha1().Reservations().Create(context.TODO(), tt.reservation.DeepCopy(), metav1.CreateOptions{})
+				assert.NoError(t, err)
+				pod = reservationutil.NewReservePod(tt.reservation)
+			} else if tt.pod != nil {
+				pod = tt.pod
+			}
+
+			fakeClient := kubefake.NewSimpleClientset(pod)
+			sharedInformerFactory := informers.NewSharedInformerFactory(fakeClient, 0)
+			fh, err := schedulertesting.NewFramework(
+				context.TODO(),
+				registeredPlugins,
+				"koord-scheduler",
+				frameworkruntime.WithClientSet(fakeClient),
+				frameworkruntime.WithInformerFactory(sharedInformerFactory),
+			)
+			assert.NoError(t, err)
+
+			_ = koordSharedInformerFactory.Scheduling().V1alpha1().Reservations().Lister()
+			koordSharedInformerFactory.Start(nil)
+			koordSharedInformerFactory.WaitForCacheSync(nil)
+
+			extender := extenderFactory.NewFrameworkExtender(fh)
+			extender.SetConfiguredPlugins(fh.ListPlugins())
+			impl := extender.(*frameworkExtenderImpl)
+
+			impl.SharedInformerFactory().Start(nil)
+			impl.KoordinatorSharedInformerFactory().Start(nil)
+			impl.SharedInformerFactory().WaitForCacheSync(nil)
+			impl.KoordinatorSharedInformerFactory().WaitForCacheSync(nil)
+
+			cycleState := framework.NewCycleState()
+			status := extender.RunPreBindPlugins(context.TODO(), cycleState, pod, "test-node-1")
+
+			if tt.expectSuccess {
+				assert.True(t, status.IsSuccess(), "expected success but got: %v", status.Message())
+			} else {
+				assert.False(t, status.IsSuccess(), "expected failure but got success")
+				if tt.expectErrorMsg != "" {
+					assert.Contains(t, status.Message(), tt.expectErrorMsg)
+				}
 			}
 		})
 	}
