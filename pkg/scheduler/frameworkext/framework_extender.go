@@ -43,10 +43,13 @@ import (
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
 
-var _ FrameworkExtender = &frameworkExtenderImpl{}
-var _ topologymanager.NUMATopologyHintProviderFactory = &frameworkExtenderImpl{}
+var (
+	_ FrameworkExtender                               = &frameworkExtenderImpl{}
+	_ topologymanager.NUMATopologyHintProviderFactory = &frameworkExtenderImpl{}
 
-var ErrSchedulerNameUnmatched = fmt.Errorf("schedulerName unmatched")
+	ErrSchedulerNameUnmatched = fmt.Errorf("schedulerName unmatched")
+	ErrPodIsBeingDeleted      = fmt.Errorf("pod is being deleted")
+)
 
 type frameworkExtenderImpl struct {
 	framework.Framework
@@ -392,6 +395,11 @@ func (ext *frameworkExtenderImpl) RunPreBindPlugins(ctx context.Context, state *
 					"pod", klog.KObj(pod), "schedulerName", curPod.Spec.SchedulerName, "profile", ext.ProfileName())
 				return framework.AsStatus(ErrSchedulerNameUnmatched)
 			}
+			if curPod.DeletionTimestamp != nil {
+				klog.V(4).ErrorS(ErrPodIsBeingDeleted, "failed to PreBind Pod",
+					"pod", klog.KObj(pod), "deletionTimestamp", curPod.DeletionTimestamp)
+				return framework.AsStatus(ErrPodIsBeingDeleted)
+			}
 		}
 
 		original := pod
@@ -414,6 +422,11 @@ func (ext *frameworkExtenderImpl) RunPreBindPlugins(ctx context.Context, state *
 			klog.V(4).ErrorS(ErrSchedulerNameUnmatched, "failed to PreBind Reservation",
 				"reservation", klog.KObj(reservation), "schedulerName", reservationutil.GetReservationSchedulerName(reservation), "profile", ext.ProfileName())
 			return framework.AsStatus(ErrSchedulerNameUnmatched)
+		}
+		if reservation.DeletionTimestamp != nil {
+			klog.V(4).ErrorS(ErrPodIsBeingDeleted, "failed to PreBind Reservation",
+				"reservation", klog.KObj(reservation), "deletionTimestamp", reservation.DeletionTimestamp)
+			return framework.AsStatus(ErrPodIsBeingDeleted)
 		}
 	}
 
