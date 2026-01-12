@@ -212,6 +212,12 @@ func (pgMgr *PodGroupManager) PreEnqueue(ctx context.Context, pod *corev1.Pod) (
 	}
 	err = pgMgr.basicGangRequirementsCheck(gang, pod)
 	if err != nil {
+		// use IsPodRepresentative to avoid write lock collisions.
+		if gang.IsPodRepresentative(pod) {
+			// It's possible that another Pod arrives and satisfies the Gang Basic Check.
+			// Here, we determine this by checking whether RepresentativePod is itself within a write lock.
+			gang.DeleteIfRepresentative(pod, ReasonGangBasicCheckUnsatisfied)
+		}
 		return err
 	}
 
@@ -294,6 +300,12 @@ func (pgMgr *PodGroupManager) BeforePreFilter(ctx context.Context, cycleState *f
 	}
 	err = pgMgr.basicGangRequirementsCheck(gang, pod)
 	if err != nil {
+		// use IsPodRepresentative to avoid write lock collisions.
+		if gang.IsPodRepresentative(pod) {
+			// It's possible that another Pod arrives and satisfies the Gang Basic Check.
+			// Here, we determine this by checking whether RepresentativePod is itself within a write lock.
+			gang.DeleteIfRepresentative(pod, ReasonGangBasicCheckUnsatisfied)
+		}
 		return err
 	}
 	diagnosis := frameworkext.GetDiagnosis(cycleState)
