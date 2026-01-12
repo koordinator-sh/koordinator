@@ -585,6 +585,18 @@ func (gang *Gang) RecordIfNoRepresentatives(pod *v1.Pod) error {
 	return nil
 }
 
+func (gang *Gang) IsPodRepresentative(pod *v1.Pod) bool {
+	gang.lock.RLock()
+	defer gang.lock.RUnlock()
+	return gang.GangGroupInfo.IsRepresentative(pod)
+}
+
+func (gang *Gang) DeleteIfRepresentative(pod *v1.Pod, reason string) {
+	gang.lock.Lock()
+	defer gang.lock.Unlock()
+	gang.GangGroupInfo.DeleteIfRepresentative(pod, reason)
+}
+
 func (gang *Gang) ClearCurrentRepresentative(reason string) {
 	gang.lock.Lock()
 	defer gang.lock.Unlock()

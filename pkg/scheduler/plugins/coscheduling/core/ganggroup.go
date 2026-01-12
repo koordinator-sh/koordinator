@@ -16,6 +16,7 @@ const (
 	ReasonPodBound   = "PodBound"
 
 	ReasonGangGroupEnterIntoScheduling = "GangGroupEnterIntoScheduling"
+	ReasonGangBasicCheckUnsatisfied    = "GangBasicCheckUnsatisfied"
 )
 
 type GangGroupInfo struct {
@@ -163,6 +164,13 @@ func (gg *GangGroupInfo) DeleteIfRepresentative(pod *corev1.Pod, reason string) 
 		gg.RepresentativePodKey = ""
 		klog.Infof("gangGroupInfo: DeleteIfRepresentative, pod: %v, gangGroup: %v, reason: %s", podKey, gg.GangGroupId, reason)
 	}
+}
+
+func (gg *GangGroupInfo) IsRepresentative(pod *corev1.Pod) bool {
+	gg.lock.RLock()
+	defer gg.lock.RUnlock()
+	podKey := util.GetId(pod.Namespace, pod.Name)
+	return gg.RepresentativePodKey == podKey
 }
 
 func (gg *GangGroupInfo) ClearCurrentRepresentative(reason string) {
