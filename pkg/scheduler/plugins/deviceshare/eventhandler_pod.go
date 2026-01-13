@@ -87,8 +87,12 @@ func (n *nodeDeviceCache) onPodDelete(obj interface{}) {
 }
 
 func (n *nodeDeviceCache) updatePod(oldPod *corev1.Pod, pod *corev1.Pod) {
+	// For multi-scheduler scenarios: clean up old pod when new pod becomes unassigned
 	if pod.Spec.NodeName == "" {
-		klog.V(5).InfoS("Pod missed nodeName", "pod", klog.KObj(pod))
+		if oldPod != nil && oldPod.Spec.NodeName != "" {
+			n.deletePod(oldPod)
+			klog.V(4).InfoS("remove old pod from nodeDevice cache on node", "pod", klog.KObj(pod), "node", oldPod.Spec.NodeName)
+		}
 		return
 	}
 
@@ -121,11 +125,11 @@ func (n *nodeDeviceCache) updatePod(oldPod *corev1.Pod, pod *corev1.Pod) {
 	defer info.lock.Unlock()
 	if oldPod != nil && oldPod.Spec.NodeName != "" && len(oldAllocations) > 0 { // avoid leaking for an unassigned pod
 		info.updateCacheUsed(oldAllocations, oldPod, false)
-		klog.V(5).InfoS("remove old pod from nodeDevice cache on node", "pod", klog.KObj(pod), "node", oldPod.Spec.NodeName)
+		klog.V(4).InfoS("remove old pod from nodeDevice cache on node", "pod", klog.KObj(pod), "node", oldPod.Spec.NodeName)
 	}
 	if len(allocations) > 0 {
 		info.updateCacheUsed(allocations, pod, true)
-		klog.V(5).InfoS("update pod in nodeDevice cache on node", "pod", klog.KObj(pod), "node", pod.Spec.NodeName)
+		klog.V(4).InfoS("update pod in nodeDevice cache on node", "pod", klog.KObj(pod), "node", pod.Spec.NodeName)
 	}
 }
 

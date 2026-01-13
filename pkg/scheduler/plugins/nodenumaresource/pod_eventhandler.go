@@ -93,7 +93,11 @@ func (c *podEventHandler) OnDelete(obj interface{}) {
 }
 
 func (c *podEventHandler) updatePod(oldPod, pod *corev1.Pod) {
+	// For multi-scheduler scenarios: clean up old pod when new pod becomes unassigned
 	if pod.Spec.NodeName == "" {
+		if oldPod != nil && oldPod.Spec.NodeName != "" {
+			c.resourceManager.Release(oldPod.Spec.NodeName, oldPod.UID)
+		}
 		return
 	}
 	if util.IsPodTerminated(pod) {
