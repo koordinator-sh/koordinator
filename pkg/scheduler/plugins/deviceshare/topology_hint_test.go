@@ -258,7 +258,7 @@ func TestPlugin_GetPodTopologyHints(t *testing.T) {
 			cycleState := framework.NewCycleState()
 			cycleState.Write(stateKey, state)
 
-			got, status := pl.GetPodTopologyHints(context.TODO(), cycleState, pod, node.Name)
+			got, status := pl.GetPodTopologyHints(context.TODO(), cycleState, pod, node)
 			assert.Equal(t, tt.want, got)
 			if !tt.wantErr != status.IsSuccess() {
 				t.Errorf("expect tt.wantErr=%v, but got %v", tt.wantErr, status)
@@ -408,7 +408,7 @@ func TestPlugin_Allocate(t *testing.T) {
 			cycleState := framework.NewCycleState()
 			cycleState.Write(stateKey, state)
 			pl := p.(*Plugin)
-			status := pl.Allocate(context.TODO(), cycleState, tt.affinity, pod, node.Name)
+			status := pl.Allocate(context.TODO(), cycleState, tt.affinity, pod, node)
 			if !tt.wantErr != status.IsSuccess() {
 				t.Errorf("expect tt.wantErr=%v, but got %v", tt.wantErr, status)
 				return

@@ -39,19 +39,22 @@ type reservationRestoreStateData struct {
 }
 
 type nodeReservationRestoreStateData struct {
-	matched   []reservationAlloc
-	unmatched []reservationAlloc
+	matched            []reusableAlloc               // matched reservations or pre-allocatable podds
+	unmatched          []reusableAlloc               // unmatched reservations
+	preAllocationRInfo *frameworkext.ReservationInfo // pre-allocating reservation info
 
 	mergedMatchedAllocatable map[schedulingv1alpha1.DeviceType]deviceResources
 	mergedMatchedAllocated   map[schedulingv1alpha1.DeviceType]deviceResources
 	mergedUnmatchedUsed      map[schedulingv1alpha1.DeviceType]deviceResources
 }
 
-type reservationAlloc struct {
-	rInfo       *frameworkext.ReservationInfo
-	allocatable map[schedulingv1alpha1.DeviceType]deviceResources
-	allocated   map[schedulingv1alpha1.DeviceType]deviceResources
-	remained    map[schedulingv1alpha1.DeviceType]deviceResources
+// reusableAlloc represents the allocatable/total reserved devices and allocated devices of a reservation or pre-allocatable pod.
+type reusableAlloc struct {
+	rInfo          *frameworkext.ReservationInfo // comparing reservation, i.e. the available reservation to allocate or the pre-allocating reservation
+	preAllocatable *corev1.Pod
+	allocatable    map[schedulingv1alpha1.DeviceType]deviceResources
+	allocated      map[schedulingv1alpha1.DeviceType]deviceResources
+	remained       map[schedulingv1alpha1.DeviceType]deviceResources
 }
 
 func getReservationRestoreState(cycleState *framework.CycleState) *reservationRestoreStateData {
@@ -145,7 +148,7 @@ func (p *Plugin) RestoreReservation(ctx context.Context, cycleState *framework.C
 		return nil, nil
 	}
 
-	filterFn := func(reservations []*frameworkext.ReservationInfo) []reservationAlloc {
+	filterFn := func(reservations []*frameworkext.ReservationInfo) []reusableAlloc {
 		if len(reservations) == 0 {
 			return nil
 		}
@@ -153,7 +156,7 @@ func (p *Plugin) RestoreReservation(ctx context.Context, cycleState *framework.C
 		nd.lock.RLock()
 		defer nd.lock.RUnlock()
 
-		result := make([]reservationAlloc, 0, len(reservations))
+		result := make([]reusableAlloc, 0, len(reservations))
 		for _, rInfo := range reservations {
 			reservePod := rInfo.GetReservePod()
 			allocatable := nd.getUsed(reservePod.Namespace, reservePod.Name)
@@ -170,7 +173,7 @@ func (p *Plugin) RestoreReservation(ctx context.Context, cycleState *framework.C
 			}
 			remained := subtractAllocated(copyDeviceResources(allocatable), allocated, false)
 
-			result = append(result, reservationAlloc{
+			result = append(result, reusableAlloc{
 				rInfo:       rInfo,
 				allocatable: allocatable,
 				allocated:   allocated,
@@ -194,6 +197,74 @@ func (p *Plugin) RestoreReservation(ctx context.Context, cycleState *framework.C
 	return s, nil
 }
 
+func (p *Plugin) PreRestoreReservationPreAllocation(ctx context.Context, cycleState *framework.CycleState, r *frameworkext.ReservationInfo) *framework.Status {
+	requests, err := GetPodDeviceRequests(r.GetReservePod())
+	if err != nil {
+		return framework.NewStatus(framework.UnschedulableAndUnresolvable, err.Error())
+	}
+	state := getReservationRestoreState(cycleState)
+	state.skip = len(requests) == 0
+	cycleState.Write(reservationRestoreStateKey, state)
+	return nil
+}
+
+func (p *Plugin) RestoreReservationPreAllocation(ctx context.Context, cycleState *framework.CycleState, r *frameworkext.ReservationInfo, preAllocatable []*corev1.Pod, nodeInfo *framework.NodeInfo) (interface{}, *framework.Status) {
+	// retrieve reusable for pre-allocatable pods
+	state := getReservationRestoreState(cycleState)
+	if state.skip {
+		return nil, nil
+	}
+	if len(preAllocatable) <= 0 {
+		return nil, nil
+	}
+
+	nodeName := nodeInfo.Node().Name
+	nd := p.nodeDeviceCache.getNodeDevice(nodeName, false)
+	if nd == nil {
+		return nil, nil
+	}
+
+	preAllocatableAllocs := make([]reusableAlloc, 0, len(preAllocatable))
+	nd.lock.RLock()
+	for _, pod := range preAllocatable {
+		allocatable := nd.getUsed(pod.Namespace, pod.Name)
+		if len(allocatable) <= 0 {
+			continue
+		}
+		preAllocatableAllocs = append(preAllocatableAllocs, reusableAlloc{
+			preAllocatable: pod,
+			allocatable:    allocatable,
+		})
+	}
+	nd.lock.RUnlock()
+
+	for i := range preAllocatableAllocs {
+		preAllocatableAllocs[i].rInfo = r
+		preAllocatableAllocs[i].remained = copyDeviceResources(preAllocatableAllocs[i].allocatable)
+	}
+
+	// merge with nodeState
+	nodeState := state.getNodeState(nodeName)
+	if nodeState.matched == nil {
+		nodeState.matched = preAllocatableAllocs
+	} else {
+		nodeState.matched = append(nodeState.matched, preAllocatableAllocs...)
+	}
+	nodeState.preAllocationRInfo = r
+	nodeState.mergeReservationAllocations()
+	state.setNodeState(nodeName, nodeState)
+	cycleState.Write(reservationRestoreStateKey, state)
+
+	klog.V(5).InfoS("Completed RestoreReservationPreAllocation",
+		"reservation", r.GetName(), "node", nodeName,
+		"preAllocatablePods", len(preAllocatable),
+		"restoredPods", len(preAllocatableAllocs),
+		"preAllocationRInfo", nodeState.preAllocationRInfo.GetName(),
+	)
+
+	return nodeState, nil
+}
+
 // DEPRECATED
 func (p *Plugin) FinalRestoreReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeToStates frameworkext.NodeReservationRestoreStates) *framework.Status {
 	state := getReservationRestoreState(cycleState)
@@ -204,22 +275,22 @@ func (p *Plugin) FinalRestoreReservation(ctx context.Context, cycleState *framew
 	return nil
 }
 
-func (p *Plugin) tryAllocateFromReservation(
+func (p *Plugin) tryAllocateFromReusable(
 	allocator *AutopilotAllocator,
 	state *preFilterState,
 	restoreState *nodeReservationRestoreStateData,
-	matchedReservations []reservationAlloc,
+	matchedReusableAllocs []reusableAlloc,
 	pod *corev1.Pod,
 	node *corev1.Node,
 	basicPreemptible map[schedulingv1alpha1.DeviceType]deviceResources,
 	requiredFromReservation bool,
 ) (apiext.DeviceAllocations, *framework.Status) {
-	if len(matchedReservations) == 0 {
+	if len(matchedReusableAllocs) == 0 {
 		return nil, nil
 	}
 
 	if apiext.IsReservationIgnored(pod) {
-		return p.tryAllocateIgnoreReservation(allocator, state, restoreState, restoreState.matched, node, basicPreemptible, false)
+		return p.tryAllocateIgnoreReservation(allocator, state, restoreState, restoreState.matched, node, basicPreemptible)
 	}
 
 	var hasSatisfiedReservation bool
@@ -228,8 +299,10 @@ func (p *Plugin) tryAllocateFromReservation(
 
 	basicPreemptible = appendAllocated(nil, basicPreemptible, restoreState.mergedMatchedAllocated)
 
+	isPreAllocation := restoreState.preAllocationRInfo != nil // use the cycle state to avoid misunderstanding
+
 	var reservationReasons []*framework.Status
-	for _, alloc := range matchedReservations {
+	for _, alloc := range matchedReusableAllocs {
 		rInfo := alloc.rInfo
 		preemptibleInRR := state.preemptibleInRRs[node.Name][rInfo.UID()]
 		preferred := newDeviceMinorMap(alloc.allocatable)
@@ -270,10 +343,27 @@ func (p *Plugin) tryAllocateFromReservation(
 			// The free device resources for the scheduling pod P0 is:
 			// min(NodeTotal - P1 - P2 - ... - Pk - U1 - U2 - ... - Uj, R1)
 			requiredDeviceResources := calcRequiredDeviceResources(&alloc, preemptibleInRR)
+			if isPreAllocation {
+				// pre-allocating reservation can allocate more than the pre-allocatable pod remained
+				requiredDeviceResources = nil
+			}
 			result, status = allocator.Allocate(preferred, preferred, requiredDeviceResources, preemptible)
 			if !status.IsSuccess() {
 				reservationReasons = append(reservationReasons, status)
 				continue
+			}
+
+			// For pre-allocation, validate that the allocated devices include all devices from the pre-allocatable pod
+			if isPreAllocation {
+				if !isDeviceAllocationsInclude(result, alloc.allocatable) {
+					reservationReasons = append(reservationReasons, framework.NewStatus(framework.Unschedulable, ErrInsufficientGPUDevices))
+					if klog.V(5).Enabled() {
+						klog.InfoS("failed to pre-allocate from pod, allocated devices are not a superset of pre-allocatable pod's devices",
+							"reservation", rInfo.GetName(), "pod", klog.KObj(pod), "pre-allocatable", klog.KObj(alloc.preAllocatable),
+							"allocated", result, "required", alloc.allocatable)
+					}
+					continue
+				}
 			}
 
 			hasSatisfiedReservation = true
@@ -291,10 +381,9 @@ func (p *Plugin) tryAllocateIgnoreReservation(
 	allocator *AutopilotAllocator,
 	state *preFilterState,
 	restoreState *nodeReservationRestoreStateData,
-	ignoredReservations []reservationAlloc,
+	ignoredReservations []reusableAlloc,
 	node *corev1.Node,
 	basicPreemptible map[schedulingv1alpha1.DeviceType]deviceResources,
-	requiredFromReservation bool,
 ) (apiext.DeviceAllocations, *framework.Status) {
 	preemptibleFromIgnored := map[schedulingv1alpha1.DeviceType]deviceResources{}
 
@@ -324,7 +413,7 @@ func (p *Plugin) scoreWithReservation(
 	allocator *AutopilotAllocator,
 	state *preFilterState,
 	restoreState *nodeReservationRestoreStateData,
-	alloc *reservationAlloc,
+	alloc *reusableAlloc,
 	nodeName string,
 	basicPreemptible map[schedulingv1alpha1.DeviceType]deviceResources,
 ) (int64, *framework.Status) {
@@ -344,7 +433,7 @@ func (p *Plugin) scoreWithReservation(
 	return allocator.score(requiredDeviceResources, preemptible)
 }
 
-func calcRequiredDeviceResources(alloc *reservationAlloc, preemptibleInRR map[schedulingv1alpha1.DeviceType]deviceResources) map[schedulingv1alpha1.DeviceType]deviceResources {
+func calcRequiredDeviceResources(alloc *reusableAlloc, preemptibleInRR map[schedulingv1alpha1.DeviceType]deviceResources) map[schedulingv1alpha1.DeviceType]deviceResources {
 	var required map[schedulingv1alpha1.DeviceType]deviceResources
 	minorHints := newDeviceMinorMap(alloc.allocatable)
 	required = appendAllocatedByHints(minorHints, required, alloc.remained, preemptibleInRR)
@@ -365,47 +454,34 @@ func calcRequiredDeviceResources(alloc *reservationAlloc, preemptibleInRR map[sc
 	return required
 }
 
-func (p *Plugin) allocateWithNominatedReservation(
+func (p *Plugin) allocateWithNominated(
 	allocator *AutopilotAllocator,
-	cycleState *framework.CycleState,
 	state *preFilterState,
 	restoreState *nodeReservationRestoreStateData,
 	node *corev1.Node,
 	pod *corev1.Pod,
 	basicPreemptible map[schedulingv1alpha1.DeviceType]deviceResources,
 ) (apiext.DeviceAllocations, *framework.Status) {
-	if reservationutil.IsReservePod(pod) {
+	if reservationutil.IsReservePod(pod) && !reservationutil.IsReservePodPreAllocation(pod) {
 		return nil, nil
 	}
 
 	// if the pod is reservation-ignored, it should allocate the node unallocated resources and all the reserved
 	// unallocated resources.
 	if apiext.IsReservationIgnored(pod) {
-		return p.tryAllocateIgnoreReservation(allocator, state, restoreState, restoreState.matched, node, basicPreemptible, false)
+		return p.tryAllocateIgnoreReservation(allocator, state, restoreState, restoreState.matched, node, basicPreemptible)
 	}
 
-	reservation := p.handle.GetReservationNominator().GetNominatedReservation(pod, node.Name)
-	if reservation == nil {
-		return nil, nil
+	nominatedReusableAlloc, status := p.getNominatedReusableAlloc(restoreState, pod, node)
+	if !status.IsSuccess() {
+		return nil, status
 	}
 
-	allocIndex := -1
-	for i, v := range restoreState.matched {
-		if v.rInfo.UID() == reservation.UID() {
-			allocIndex = i
-			break
-		}
-	}
-	if allocIndex == -1 {
-		klog.V(5).Infof("nominated reservation %v doesn't reserve any device resource", klog.KObj(reservation))
-		return nil, nil
-	}
-
-	result, status := p.tryAllocateFromReservation(
+	result, status := p.tryAllocateFromReusable(
 		allocator,
 		state,
 		restoreState,
-		restoreState.matched[allocIndex:allocIndex+1],
+		nominatedReusableAlloc,
 		pod,
 		node,
 		basicPreemptible,
@@ -447,4 +523,64 @@ func (p *Plugin) scoreWithNominatedReservation(
 		basicPreemptible,
 	)
 	return score, status
+}
+
+func (p *Plugin) getNominatedReusableAlloc(restoreState *nodeReservationRestoreStateData, pod *corev1.Pod, node *corev1.Node) ([]reusableAlloc, *framework.Status) {
+	if !reservationutil.IsReservePod(pod) {
+		reservation := p.handle.GetReservationNominator().GetNominatedReservation(pod, node.Name)
+		if reservation == nil {
+			return nil, nil
+		}
+
+		for i, v := range restoreState.matched {
+			if v.rInfo.UID() == reservation.UID() {
+				return restoreState.matched[i : i+1], nil
+			}
+		}
+		klog.V(5).Infof("nominated reservation %v doesn't reserve any device resource, pod %s, node %s", klog.KObj(reservation), klog.KObj(pod), node.Name)
+		return nil, nil
+	}
+
+	if !reservationutil.IsReservePodPreAllocation(pod) {
+		return nil, nil
+	}
+
+	if restoreState.preAllocationRInfo == nil {
+		klog.V(5).Infof("node has no pre-allocatable device resource, pod %s, node %s", klog.KObj(pod), node.Name)
+		return nil, nil
+	}
+
+	preAllocatable := p.handle.GetReservationNominator().GetNominatedPreAllocation(restoreState.preAllocationRInfo, node.Name)
+	if preAllocatable == nil {
+		return nil, nil
+	}
+	for i, v := range restoreState.matched {
+		if v.preAllocatable.GetUID() == preAllocatable.GetUID() {
+			return restoreState.matched[i : i+1], nil
+		}
+	}
+	klog.V(5).Infof("nominated pre-allocatable %v doesn't reserve any device resource, pod %s, node %s", klog.KObj(preAllocatable), klog.KObj(pod), node.Name)
+	return nil, nil
+}
+
+// isDeviceAllocationsInclude checks if allocations include all devices from required
+func isDeviceAllocationsInclude(allocations apiext.DeviceAllocations, required map[schedulingv1alpha1.DeviceType]deviceResources) bool {
+	for deviceType, requiredDevices := range required {
+		allocated := allocations[deviceType]
+		if len(allocated) == 0 {
+			return false
+		}
+		// Create a map of allocated device minors
+		allocatedMinors := make(map[int32]bool)
+		for _, alloc := range allocated {
+			allocatedMinors[alloc.Minor] = true
+		}
+		// Check if all required device minors are in allocated
+		for minor := range requiredDevices {
+			if !allocatedMinors[int32(minor)] {
+				return false
+			}
+		}
+	}
+	return true
 }

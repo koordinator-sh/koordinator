@@ -21,6 +21,8 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/util/cpuset"
 )
 
+// TODO: migrate to latest cpu-manager code
+
 // CPUTopology contains details of node cpu
 type CPUTopology struct {
 	NumCPUs    int        `json:"numCPUs"`

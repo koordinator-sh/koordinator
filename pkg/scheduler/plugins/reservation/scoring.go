@@ -41,9 +41,17 @@ const (
 
 func (pl *Plugin) PreScore(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodes []*corev1.Node) *framework.Status {
 	if reservationutil.IsReservePod(pod) {
+		if reservationutil.IsReservePodPreAllocation(pod) {
+			return pl.preScoreForPreAllocation(ctx, cycleState, pod, nodes)
+		}
+
 		return framework.NewStatus(framework.Skip)
 	}
 
+	return pl.preScoreForNormalPod(ctx, cycleState, pod, nodes)
+}
+
+func (pl *Plugin) preScoreForNormalPod(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodes []*corev1.Node) *framework.Status {
 	// if the pod is reservation-ignored, it does not want a nominated reservation
 	if apiext.IsReservationIgnored(pod) {
 		return framework.NewStatus(framework.Skip)
@@ -107,11 +115,67 @@ func (pl *Plugin) PreScore(ctx context.Context, cycleState *framework.CycleState
 	return nil
 }
 
+func (pl *Plugin) preScoreForPreAllocation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodes []*corev1.Node) *framework.Status {
+	state := getStateData(cycleState)
+	if len(state.nodeReservationStates) == 0 {
+		return framework.NewStatus(framework.Skip)
+	}
+	if state.rInfo == nil {
+		return framework.AsStatus(fmt.Errorf("missing PreAllocation Reservation"))
+	}
+
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	nominatedPreAllocatable := make([]*corev1.Pod, len(state.nodeReservationStates))
+	var nominatedNodeIndex int32
+
+	errCh := parallelize.NewErrorChannel()
+	pl.handle.Parallelizer().Until(ctx, len(nodes), func(piece int) {
+		node := nodes[piece]
+		var preAllocatable []*corev1.Pod
+		if nodeRState := state.nodeReservationStates[node.Name]; nodeRState != nil {
+			preAllocatable = nodeRState.preAllocatablePods
+		}
+		if len(preAllocatable) == 0 {
+			return
+		}
+
+		nominatedPod, status := pl.handle.GetReservationNominator().NominatePreAllocation(ctx, cycleState, state.rInfo, node.Name)
+		if !status.IsSuccess() {
+			errCh.SendErrorWithCancel(status.AsError(), cancel)
+			return
+		}
+		if nominatedPod != nil {
+			index := atomic.AddInt32(&nominatedNodeIndex, 1)
+			nominatedPreAllocatable[index-1] = nominatedPod
+		}
+	}, "ReservationPreScore")
+	if err := errCh.ReceiveError(); err != nil {
+		return framework.AsStatus(err)
+	}
+
+	nominatedPreAllocatable = nominatedPreAllocatable[:nominatedNodeIndex]
+	for _, v := range nominatedPreAllocatable {
+		pl.handle.GetReservationNominator().AddNominatedPreAllocation(state.rInfo, v.Spec.NodeName, v)
+	}
+
+	return nil
+}
+
 func (pl *Plugin) Score(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) (int64, *framework.Status) {
 	if reservationutil.IsReservePod(pod) {
+		if reservationutil.IsReservePodPreAllocation(pod) {
+			return pl.scoreForPreAllocation(ctx, cycleState, pod, nodeName)
+		}
+
 		return framework.MinNodeScore, nil
 	}
 
+	return pl.scoreForNormalPod(ctx, cycleState, pod, nodeName)
+}
+
+func (pl *Plugin) scoreForNormalPod(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) (int64, *framework.Status) {
 	state := getStateData(cycleState)
 
 	if state.preferredNode == nodeName {
@@ -133,6 +197,30 @@ func (pl *Plugin) Score(ctx context.Context, cycleState *framework.CycleState, p
 	}
 
 	return pl.ScoreReservation(ctx, cycleState, pod, reservationInfo, nodeName)
+}
+
+func (pl *Plugin) scoreForPreAllocation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) (int64, *framework.Status) {
+	state := getStateData(cycleState)
+
+	if state.preferredNode == nodeName {
+		return mostPreferredScore, nil
+	}
+
+	preAllocatable := pl.handle.GetReservationNominator().GetNominatedPreAllocation(state.rInfo, nodeName)
+	if preAllocatable == nil {
+		return framework.MinNodeScore, nil
+	}
+	for _, v := range state.nodeReservationStates[nodeName].preAllocatablePods {
+		if v.GetUID() == preAllocatable.GetUID() {
+			preAllocatable = v
+			break
+		}
+	}
+	if preAllocatable == nil {
+		return 0, framework.AsStatus(fmt.Errorf("impossible, there is no relevant pre-allocatable"))
+	}
+
+	return pl.ScoreReservation(ctx, cycleState, preAllocatable, state.rInfo, nodeName)
 }
 
 func (pl *Plugin) ScoreExtensions() framework.ScoreExtensions {

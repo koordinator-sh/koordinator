@@ -37,7 +37,7 @@ const (
 	defaultNUMAScore = 500
 )
 
-func (p *Plugin) GetPodTopologyHints(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) (map[string][]topologymanager.NUMATopologyHint, *framework.Status) {
+func (p *Plugin) GetPodTopologyHints(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, node *corev1.Node) (map[string][]topologymanager.NUMATopologyHint, *framework.Status) {
 	if p.disableDeviceNUMATopologyAlignment {
 		return nil, nil
 	}
@@ -49,13 +49,6 @@ func (p *Plugin) GetPodTopologyHints(ctx context.Context, cycleState *framework.
 	if state.skip {
 		return nil, nil
 	}
-
-	nodeInfo, err := p.handle.SnapshotSharedLister().NodeInfos().Get(nodeName)
-	if err != nil {
-		return nil, framework.AsStatus(err)
-	}
-	node := nodeInfo.Node()
-
 	nodeDeviceInfo := p.nodeDeviceCache.getNodeDevice(node.Name, false)
 	if nodeDeviceInfo == nil {
 		return nil, nil
@@ -104,7 +97,7 @@ func generateDesignatedHints(allocations apiext.DeviceAllocations, topology *NUM
 	return hints, nil
 }
 
-func (p *Plugin) Allocate(ctx context.Context, cycleState *framework.CycleState, affinity topologymanager.NUMATopologyHint, pod *corev1.Pod, nodeName string) *framework.Status {
+func (p *Plugin) Allocate(ctx context.Context, cycleState *framework.CycleState, affinity topologymanager.NUMATopologyHint, pod *corev1.Pod, node *corev1.Node) *framework.Status {
 	if p.disableDeviceNUMATopologyAlignment {
 		return nil
 	}
@@ -117,15 +110,9 @@ func (p *Plugin) Allocate(ctx context.Context, cycleState *framework.CycleState,
 		return nil
 	}
 
-	nodeInfo, err := p.handle.SnapshotSharedLister().NodeInfos().Get(nodeName)
-	if err != nil {
-		return framework.AsStatus(err)
-	}
-	node := nodeInfo.Node()
-
 	if state.designatedAllocation != nil {
 		if state.allocationResult == nil {
-			status = p.allocate(ctx, cycleState, pod, nodeInfo.Node())
+			status = p.allocate(ctx, cycleState, pod, node)
 			if !status.IsSuccess() {
 				return status
 			}
@@ -153,7 +140,7 @@ func (p *Plugin) Allocate(ctx context.Context, cycleState *framework.CycleState,
 
 	nodeDeviceInfo.lock.RLock()
 	defer nodeDeviceInfo.lock.RUnlock()
-	allocateResult, status := p.tryAllocateFromReservation(allocator, state, restoreState, restoreState.matched, pod, node, preemptible, state.hasReservationAffinity)
+	allocateResult, status := p.tryAllocateFromReusable(allocator, state, restoreState, restoreState.matched, pod, node, preemptible, state.isReservationRequired)
 	if !status.IsSuccess() {
 		return status
 	}
@@ -228,7 +215,7 @@ func (p *Plugin) generateTopologyHints(cycleState *framework.CycleState, state *
 			}
 		}
 
-		allocateResult, status = p.tryAllocateFromReservation(allocator, state, restoreState, restoreState.matched, pod, node, preemptible, state.hasReservationAffinity)
+		allocateResult, status = p.tryAllocateFromReusable(allocator, state, restoreState, restoreState.matched, pod, node, preemptible, state.isReservationRequired)
 		if !status.IsSuccess() {
 			return
 		}

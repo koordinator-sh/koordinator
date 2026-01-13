@@ -190,12 +190,12 @@ func Test_calculateNodeResource(t *testing.T) {
 				{
 					Name:     extension.MidCPU,
 					Quantity: resource.NewQuantity(0, resource.DecimalSI),
-					Message:  "midAllocatable[CPU(milli-core)]:0 = min(nodeCapacity:20000 * thresholdRatio:1, ProdReclaimable:0, NodeUnused:0) + Unallocated:0 * midUnallocatedRatio:0",
+					Message:  "midAllocatable[CPU(milli-core)]:0 = min(min(ProdReclaimable:0, NodeUnused:0) + Unallocated:0 * midUnallocatedRatio:0, NodeCapacity:20000 * thresholdRatio:1)",
 				},
 				{
 					Name:     extension.MidMemory,
 					Quantity: resource.NewQuantity(0, resource.BinarySI),
-					Message:  "midAllocatable[Memory(GB)]:0 = min(nodeCapacity:40 * thresholdRatio:1, ProdReclaimable:0, NodeUnused:0) + Unallocated:20 * midUnallocatedRatio:0",
+					Message:  "midAllocatable[Memory(GB)]:0 = min(min(ProdReclaimable:0, NodeUnused:0) + Unallocated:20 * midUnallocatedRatio:0, NodeCapacity:40 * thresholdRatio:1)",
 				},
 			}...),
 		},
@@ -397,12 +397,12 @@ func Test_calculateNodeResource(t *testing.T) {
 				{
 					Name:     extension.MidCPU,
 					Quantity: resource.NewQuantity(0, resource.DecimalSI),
-					Message:  "midAllocatable[CPU(milli-core)]:0 = min(nodeCapacity:100000 * thresholdRatio:1, ProdReclaimable:0, NodeUnused:50000) + Unallocated:53000 * midUnallocatedRatio:0",
+					Message:  "midAllocatable[CPU(milli-core)]:0 = min(min(ProdReclaimable:0, NodeUnused:50000) + Unallocated:53000 * midUnallocatedRatio:0, NodeCapacity:100000 * thresholdRatio:1)",
 				},
 				{
 					Name:     extension.MidMemory,
 					Quantity: resource.NewQuantity(0, resource.BinarySI),
-					Message:  "midAllocatable[Memory(GB)]:0 = min(nodeCapacity:120 * thresholdRatio:1, ProdReclaimable:0, NodeUnused:65) + Unallocated:48 * midUnallocatedRatio:0",
+					Message:  "midAllocatable[Memory(GB)]:0 = min(min(ProdReclaimable:0, NodeUnused:65) + Unallocated:48 * midUnallocatedRatio:0, NodeCapacity:120 * thresholdRatio:1)",
 				},
 			}...),
 		},
@@ -607,12 +607,12 @@ func Test_calculateNodeResource(t *testing.T) {
 				{
 					Name:     extension.MidCPU,
 					Quantity: resource.NewQuantity(0, resource.DecimalSI),
-					Message:  "midAllocatable[CPU(milli-core)]:0 = min(nodeCapacity:100000 * thresholdRatio:1, ProdReclaimable:0, NodeUnused:50000) + Unallocated:53000 * midUnallocatedRatio:0",
+					Message:  "midAllocatable[CPU(milli-core)]:0 = min(min(ProdReclaimable:0, NodeUnused:50000) + Unallocated:53000 * midUnallocatedRatio:0, NodeCapacity:100000 * thresholdRatio:1)",
 				},
 				{
 					Name:     extension.MidMemory,
 					Quantity: resource.NewQuantity(0, resource.BinarySI),
-					Message:  "midAllocatable[Memory(GB)]:0 = min(nodeCapacity:120 * thresholdRatio:1, ProdReclaimable:0, NodeUnused:65) + Unallocated:48 * midUnallocatedRatio:0",
+					Message:  "midAllocatable[Memory(GB)]:0 = min(min(ProdReclaimable:0, NodeUnused:65) + Unallocated:48 * midUnallocatedRatio:0, NodeCapacity:120 * thresholdRatio:1)",
 				},
 			}...),
 		},
@@ -817,12 +817,12 @@ func Test_calculateNodeResource(t *testing.T) {
 				{
 					Name:     extension.MidCPU,
 					Quantity: resource.NewQuantity(0, resource.DecimalSI),
-					Message:  "midAllocatable[CPU(milli-core)]:0 = min(nodeCapacity:100000 * thresholdRatio:1, ProdReclaimable:0, NodeUnused:50000) + Unallocated:53000 * midUnallocatedRatio:0",
+					Message:  "midAllocatable[CPU(milli-core)]:0 = min(min(ProdReclaimable:0, NodeUnused:50000) + Unallocated:53000 * midUnallocatedRatio:0, NodeCapacity:100000 * thresholdRatio:1)",
 				},
 				{
 					Name:     extension.MidMemory,
 					Quantity: resource.NewQuantity(0, resource.BinarySI),
-					Message:  "midAllocatable[Memory(GB)]:0 = min(nodeCapacity:120 * thresholdRatio:1, ProdReclaimable:0, NodeUnused:65) + Unallocated:48 * midUnallocatedRatio:0",
+					Message:  "midAllocatable[Memory(GB)]:0 = min(min(ProdReclaimable:0, NodeUnused:65) + Unallocated:48 * midUnallocatedRatio:0, NodeCapacity:120 * thresholdRatio:1)",
 				},
 			}...),
 		},
@@ -1032,12 +1032,12 @@ func Test_calculateNodeResource(t *testing.T) {
 				{
 					Name:     extension.MidCPU,
 					Quantity: resource.NewQuantity(10000, resource.DecimalSI),
-					Message:  "midAllocatable[CPU(milli-core)]:10000 = min(nodeCapacity:100000 * thresholdRatio:1, ProdReclaimable:10000, NodeUnused:50000) + Unallocated:53000 * midUnallocatedRatio:0",
+					Message:  "midAllocatable[CPU(milli-core)]:10000 = min(min(ProdReclaimable:10000, NodeUnused:50000) + Unallocated:53000 * midUnallocatedRatio:0, NodeCapacity:100000 * thresholdRatio:1)",
 				},
 				{
 					Name:     extension.MidMemory,
 					Quantity: resource.NewQuantity(20000000000, resource.BinarySI),
-					Message:  "midAllocatable[Memory(GB)]:20 = min(nodeCapacity:120 * thresholdRatio:1, ProdReclaimable:20, NodeUnused:65) + Unallocated:48 * midUnallocatedRatio:0",
+					Message:  "midAllocatable[Memory(GB)]:20 = min(min(ProdReclaimable:20, NodeUnused:65) + Unallocated:48 * midUnallocatedRatio:0, NodeCapacity:120 * thresholdRatio:1)",
 				},
 			}...),
 		},
@@ -1058,12 +1058,14 @@ func Test_calculateNodeResource(t *testing.T) {
 			r := NodeResourceReconciler{cfgCache: &FakeCfgCache{
 				cfg: configuration.ColocationCfg{
 					ColocationStrategy: configuration.ColocationStrategy{
-						Enable:                        ptr.To[bool](true),
-						CPUReclaimThresholdPercent:    ptr.To[int64](65),
-						MemoryReclaimThresholdPercent: ptr.To[int64](65),
-						DegradeTimeMinutes:            ptr.To[int64](15),
-						UpdateTimeThresholdSeconds:    ptr.To[int64](300),
-						ResourceDiffThreshold:         ptr.To[float64](0.1),
+						Enable:                         ptr.To[bool](true),
+						CPUReclaimThresholdPercent:     ptr.To[int64](65),
+						MemoryReclaimThresholdPercent:  ptr.To[int64](65),
+						MidStaticCPUReservedPercent:    ptr.To[int64](0),
+						MidStaticMemoryReservedPercent: ptr.To[int64](0),
+						DegradeTimeMinutes:             ptr.To[int64](15),
+						UpdateTimeThresholdSeconds:     ptr.To[int64](300),
+						ResourceDiffThreshold:          ptr.To[float64](0.1),
 					},
 					NodeConfigs: []configuration.NodeColocationCfg{
 						{

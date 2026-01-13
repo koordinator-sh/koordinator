@@ -40,11 +40,11 @@ type mockNUMATopologyHintProvider struct {
 	//allocateError error
 }
 
-func (m *mockNUMATopologyHintProvider) GetPodTopologyHints(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) (map[string][]NUMATopologyHint, *framework.Status) {
+func (m *mockNUMATopologyHintProvider) GetPodTopologyHints(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, node *corev1.Node) (map[string][]NUMATopologyHint, *framework.Status) {
 	return m.th, nil
 }
 
-func (m *mockNUMATopologyHintProvider) Allocate(ctx context.Context, cycleState *framework.CycleState, affinity NUMATopologyHint, pod *corev1.Pod, nodeName string) *framework.Status {
+func (m *mockNUMATopologyHintProvider) Allocate(ctx context.Context, cycleState *framework.CycleState, affinity NUMATopologyHint, pod *corev1.Pod, node *corev1.Node) *framework.Status {
 	return nil
 }
 
@@ -1258,7 +1258,7 @@ func testPolicyMerge(policy Policy, tcases []policyMergeTestCase, t *testing.T) 
 	for _, tc := range tcases {
 		var providersHints []map[string][]NUMATopologyHint
 		for _, provider := range tc.hp {
-			hints, status := provider.GetPodTopologyHints(context.TODO(), nil, &corev1.Pod{}, "")
+			hints, status := provider.GetPodTopologyHints(context.TODO(), nil, &corev1.Pod{}, &corev1.Node{})
 			assert.True(t, status.IsSuccess())
 			providersHints = append(providersHints, hints)
 		}

@@ -370,11 +370,11 @@ type ResourceThresholdStrategy struct {
 	// upper: CPU evict threshold percentage (0,100)
 	// +kubebuilder:validation:Maximum=100
 	// +kubebuilder:validation:Minimum=0
-	CPUEvictThresholdPercent *int64 `json:"cpuEvictThresholdPercent,omitempty" validate:"omitempty,min=0,max=100,gtfield=CPUEvictLowerPercent"`
+	CPUEvictThresholdPercent *int64 `json:"cpuEvictThresholdPercent,omitempty" validate:"omitempty,min=0,max=100"`
 	// lower: CPU release util usage under CPUEvictLowerPercent, default = CPUEvictThresholdPercent - 2
 	// +kubebuilder:validation:Maximum=100
 	// +kubebuilder:validation:Minimum=0
-	CPUEvictLowerPercent *int64 `json:"cpuEvictLowerPercent,omitempty" validate:"omitempty,min=0,max=100,ltfield=CPUEvictThresholdPercent"`
+	CPUEvictLowerPercent *int64 `json:"cpuEvictLowerPercent,omitempty" validate:"omitempty,min=0,max=100"`
 
 	// upper: cpu ledger evict threshold percentage (0,), default = 110
 	// +kubebuilder:validation:Minimum=0

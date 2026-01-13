@@ -67,6 +67,7 @@ type extendedHandleOptions struct {
 	servicesEngine                   *services.Engine
 	koordinatorClientSet             koordinatorclientset.Interface
 	koordinatorSharedInformerFactory koordinatorinformers.SharedInformerFactory
+	reservationCache                 ReservationCache
 	reservationNominator             ReservationNominator
 	networkTopologyManager           networktopology.TreeManager
 }
@@ -91,6 +92,12 @@ func WithKoordinatorSharedInformerFactory(informerFactory koordinatorinformers.S
 	}
 }
 
+func WithReservationCache(cache ReservationCache) Option {
+	return func(options *extendedHandleOptions) {
+		options.reservationCache = cache
+	}
+}
+
 func WithReservationNominator(nominator ReservationNominator) Option {
 	return func(options *extendedHandleOptions) {
 		options.reservationNominator = nominator
@@ -110,7 +117,8 @@ type FrameworkExtenderFactory struct {
 	servicesEngine                   *services.Engine
 	koordinatorClientSet             koordinatorclientset.Interface
 	koordinatorSharedInformerFactory koordinatorinformers.SharedInformerFactory
-	reservationNominator             ReservationNominator
+	reservationCache                 ReservationCache     // for testing
+	reservationNominator             ReservationNominator // for testing
 	nextPodPlugin                    NextPodPlugin
 	profiles                         map[string]FrameworkExtender
 	monitor                          *SchedulerMonitor
@@ -138,6 +146,7 @@ func NewFrameworkExtenderFactory(options ...Option) (*FrameworkExtenderFactory, 
 		servicesEngine:                   handleOptions.servicesEngine,
 		koordinatorClientSet:             handleOptions.koordinatorClientSet,
 		koordinatorSharedInformerFactory: handleOptions.koordinatorSharedInformerFactory,
+		reservationCache:                 handleOptions.reservationCache,
 		reservationNominator:             handleOptions.reservationNominator,
 		profiles:                         map[string]FrameworkExtender{},
 		monitor:                          NewSchedulerMonitor(schedulerMonitorPeriod, schedulingTimeout),
@@ -305,13 +314,23 @@ func (f *FrameworkExtenderFactory) scheduleOne(ctx context.Context, fwk framewor
 		return scheduleResult, err
 	}
 
-	if k8sfeature.DefaultFeatureGate.Enabled(features.ResizePod) {
-		// NOTE(joseph): We can modify the Pod because we have cloned the Pod in the NextPod function.
-		// Make sure to modify the Pod only related to AssumePod, and do not modify the plugins' cache, since
-		// when the assume failure would not do Unreserve the plugins' cache.
-		// Other resizing logic about the plugins' cache can be convergent to its Reserve phase.
-		extender, ok := fwk.(*frameworkExtenderImpl)
-		if ok {
+	extender, ok := fwk.(*frameworkExtenderImpl)
+	if ok {
+		// Due to some ResizePod plugins need the reservation nomination before the real Reserve phase,
+		// and the PreScore phase might be skipped, we force to nominate reservation here.
+		// https://github.com/koordinator-sh/koordinator/issues/2753
+		if reservationNominator := extender.GetReservationNominator(); reservationNominator != nil {
+			status := reservationNominator.ReservationNominate(ctx, cycleState, pod, scheduleResult.SuggestedHost)
+			if !status.IsSuccess() {
+				return scheduleResult, status.AsError()
+			}
+		}
+
+		if k8sfeature.DefaultFeatureGate.Enabled(features.ResizePod) {
+			// NOTE(joseph): We can modify the Pod because we have cloned the Pod in the NextPod function.
+			// Make sure to modify the Pod only related to AssumePod, and do not modify the plugins' cache, since
+			// when the assume failure would not do Unreserve the plugins' cache.
+			// Other resizing logic about the plugins' cache can be convergent to its Reserve phase.
 			status := extender.RunResizePod(ctx, cycleState, pod, scheduleResult.SuggestedHost)
 			if !status.IsSuccess() {
 				fwk.RunReservePluginsUnreserve(ctx, cycleState, pod, scheduleResult.SuggestedHost)

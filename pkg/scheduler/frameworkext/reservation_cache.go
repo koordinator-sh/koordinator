@@ -17,10 +17,11 @@ limitations under the License.
 package frameworkext
 
 import (
-	"sync/atomic"
+	"sync"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/klog/v2"
 
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 )
@@ -33,24 +34,38 @@ type ReservationCache interface {
 // TODO(joseph): Considering the amount of changed code,
 // temporarily use global variable to store ReservationCache instance,
 // and then refactor to separate ReservationCache later.
-var theReservationCache atomic.Value
+var reservationCacheMap = &sync.Map{}
 
-func GetReservationCache() ReservationCache {
-	cache, _ := theReservationCache.Load().(ReservationCache)
-	if cache == nil {
+func GetAllReservationCaches() map[string]ReservationCache {
+	m := map[string]ReservationCache{}
+	reservationCacheMap.Range(func(key, value interface{}) bool {
+		m[key.(string)] = value.(ReservationCache)
+		return true
+	})
+	if len(m) <= 0 {
 		return nil
 	}
-	return cache
+	return m
 }
 
-func SetReservationCache(cache ReservationCache) {
-	theReservationCache.Store(cache)
+func SetReservationCache(cache ReservationCache, profileName string) {
+	reservationCacheMap.Store(profileName, cache)
+	klog.V(5).Infof("SetReservationCache, profileName: %s", profileName)
+}
+
+func ClearReservationCache() {
+	reservationCacheMap = &sync.Map{}
+	klog.V(5).Infof("ClearReservationCache")
 }
 
 var _ ReservationCache = &FakeReservationCache{}
 
 type FakeReservationCache struct {
 	RInfo *ReservationInfo
+}
+
+func NewFakeReservationCache() *FakeReservationCache {
+	return &FakeReservationCache{}
 }
 
 func (f *FakeReservationCache) DeleteReservation(r *schedulingv1alpha1.Reservation) *ReservationInfo {

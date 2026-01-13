@@ -39,6 +39,10 @@ spec:
             type: object
           spec:
             properties:
+              questionObjectKey:
+                description: QuestionObjectKey is the key of the QuestionObject. For
+                  pod, it is namespace/name; for job, it is namespace/jobName.
+                type: string
               questionObjectReference:
                 description: |-
                   QuestionObjectReference is the object that needs to be questioned. Currently, Reservation and Pod is supported.

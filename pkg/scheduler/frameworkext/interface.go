@@ -49,6 +49,8 @@ type ExtendedHandle interface {
 	RegisterErrorHandlerFilters(preFilter PreErrorHandlerFilter, afterFilter PostErrorHandlerFilter)
 	RegisterForgetPodHandler(handler ForgetPodHandler)
 	ForgetPod(logger klog.Logger, pod *corev1.Pod) error
+	// GetReservationCache returns the ReservationCache object to support cache operations for reservation infos.
+	GetReservationCache() ReservationCache
 	// GetReservationNominator returns the ReservationNominator object to support nominating reservation.
 	// It returns nil when the framework does not support the resource reservation.
 	GetReservationNominator() ReservationNominator
@@ -75,7 +77,7 @@ type FrameworkExtender interface {
 	RunReservationScorePlugins(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, reservationInfos []*ReservationInfo, nodeName string) (PluginToReservationScores, *framework.Status)
 	RunReservationPreAllocationScorePlugins(ctx context.Context, cycleState *framework.CycleState, rInfo *ReservationInfo, pods []*corev1.Pod, nodeName string) (PluginToReservationScores, *framework.Status)
 
-	RunNUMATopologyManagerAdmit(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string, numaNodes []int, policyType apiext.NUMATopologyPolicy, exclusivePolicy apiext.NumaTopologyExclusive, allNUMANodeStatus []apiext.NumaNodeStatus) *framework.Status
+	RunNUMATopologyManagerAdmit(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, node *corev1.Node, numaNodes []int, policyType apiext.NUMATopologyPolicy, exclusivePolicy apiext.NumaTopologyExclusive, allNUMANodeStatus []apiext.NumaNodeStatus) *framework.Status
 
 	RunResizePod(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) *framework.Status
 }
@@ -183,12 +185,14 @@ type ReservationNominator interface {
 	DeleteNominatedReservePod(reservePod *corev1.Pod)
 	// NominatedReservePodForNode returns nominated reserve pods on the given node.
 	NominatedReservePodForNode(nodeName string) []*framework.PodInfo
-	// DeleteNominatedReservePodOrReservation is used to delete the nominated reserve pod or
-	// the nominated reservation for the pod.
-	DeleteNominatedReservePodOrReservation(pod *corev1.Pod)
 	NominatePreAllocation(ctx context.Context, cycleState *framework.CycleState, rInfo *ReservationInfo, nodeName string) (*corev1.Pod, *framework.Status)
 	AddNominatedPreAllocation(rInfo *ReservationInfo, nodeName string, pod *corev1.Pod)
 	GetNominatedPreAllocation(rInfo *ReservationInfo, nodeName string) *corev1.Pod
+	// ReservationNominate is used to nominate a pod for an available reservation or nominate a reservation for a pre-allocatable pod.
+	ReservationNominate(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) *framework.Status
+	// DeleteNominatedReservePodOrReservation is used to delete the nominated reserve pod or
+	// the nominated reservation for the pod.
+	DeleteNominatedReservePodOrReservation(pod *corev1.Pod)
 }
 
 const (

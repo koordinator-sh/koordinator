@@ -28,10 +28,10 @@ import (
 
 func TestReservationCache(t *testing.T) {
 	t.Run("test", func(t *testing.T) {
-		oldRCache := GetReservationCache()
+		oldRCaches := GetAllReservationCaches()
 		defer func() {
-			if oldRCache != nil {
-				SetReservationCache(oldRCache)
+			if len(oldRCaches) > 0 {
+				ClearReservationCache()
 			}
 		}()
 		testR := &schedulingv1alpha1.Reservation{
@@ -43,9 +43,9 @@ func TestReservationCache(t *testing.T) {
 		rc := &FakeReservationCache{
 			RInfo: NewReservationInfo(testR),
 		}
-		SetReservationCache(rc)
-		got := GetReservationCache()
-		assert.Equal(t, rc, got)
+		SetReservationCache(rc, corev1.DefaultSchedulerName)
+		got := GetAllReservationCaches()
+		assert.Equal(t, map[string]ReservationCache{corev1.DefaultSchedulerName: rc}, got)
 		got1 := rc.GetReservationInfo(testR.UID)
 		assert.Equal(t, NewReservationInfo(testR), got1)
 		got2 := rc.GetReservationInfoByPod(&corev1.Pod{}, "test-node")

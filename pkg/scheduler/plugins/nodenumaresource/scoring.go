@@ -93,7 +93,7 @@ func (p *Plugin) Score(ctx context.Context, cycleState *framework.CycleState, po
 
 	store := topologymanager.GetStore(cycleState)
 	affinity, _ := store.GetAffinity(nodeName)
-	resourceOptions, err := p.getResourceOptions(state, node, pod, requestCPUBind, affinity, topologyOptions)
+	resourceOptions, err := p.getResourceOptions(state, node, requestCPUBind, affinity, topologyOptions)
 	if err != nil {
 		return 0, nil
 	}
@@ -104,7 +104,7 @@ func (p *Plugin) Score(ctx context.Context, cycleState *framework.CycleState, po
 
 	reservationRestoreState := getReservationRestoreState(cycleState)
 	restoreState := reservationRestoreState.getNodeState(nodeName)
-	podAllocation, status := p.allocateWithNominatedReservation(restoreState, resourceOptions, pod, node)
+	podAllocation, status := p.allocateWithNominated(restoreState, resourceOptions, pod, node)
 	if !status.IsSuccess() {
 		return 0, status
 	}

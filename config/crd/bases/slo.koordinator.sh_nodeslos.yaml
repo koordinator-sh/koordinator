@@ -1685,7 +1685,7 @@ spec:
                     type: integer
                   cpuEvictLowerPercent:
                     description: 'lower: CPU release util usage under CPUEvictLowerPercent,
-                      default = CPUEvictLowerPercent - 2'
+                      default = CPUEvictThresholdPercent - 2'
                     format: int64
                     maximum: 100
                     minimum: 0

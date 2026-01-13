@@ -149,6 +149,7 @@ func newPluginTestSuit(t *testing.T, nodes []*corev1.Node) *pluginTestSuit {
 		frameworkext.WithKoordinatorClientSet(koordClientSet),
 		frameworkext.WithKoordinatorSharedInformerFactory(koordSharedInformerFactory),
 		frameworkext.WithReservationNominator(frameworkext.NewFakeReservationNominator()),
+		frameworkext.WithReservationCache(frameworkext.NewFakeReservationCache()),
 	)
 	proxyNew := frameworkext.PluginFactoryProxy(extenderFactory, New)
 
@@ -240,8 +241,6 @@ func Test_Plugin_PreFilterExtensions(t *testing.T) {
 	}
 	nodeInfo := framework.NewNodeInfo()
 	nodeInfo.SetNode(node)
-
-	frameworkext.SetReservationCache(&frameworkext.FakeReservationCache{})
 
 	suit := newPluginTestSuit(t, nil)
 	p, err := suit.proxyNew(getDefaultArgs(), suit.Framework)
@@ -363,15 +362,14 @@ func Test_Plugin_PreFilterExtensionsWithReservation(t *testing.T) {
 		},
 	}
 	assert.NoError(t, reservationutil.SetReservationAvailable(testReservation, node.Name))
-	reservationCache := &frameworkext.FakeReservationCache{
-		RInfo: frameworkext.NewReservationInfo(testReservation),
-	}
-	frameworkext.SetReservationCache(reservationCache)
 
 	suit := newPluginTestSuit(t, nil)
 	p, err := suit.proxyNew(getDefaultArgs(), suit.Framework)
 	assert.NoError(t, err)
 	pl := p.(*Plugin)
+
+	reservationCache := pl.handle.GetReservationCache().(*frameworkext.FakeReservationCache)
+	reservationCache.RInfo = frameworkext.NewReservationInfo(testReservation)
 
 	cycleState := framework.NewCycleState()
 	pod := &corev1.Pod{
@@ -3004,7 +3002,7 @@ func Test_Plugin_Filter(t *testing.T) {
 					nodeToState: frameworkext.NodeReservationRestoreStates{
 						"test-node": &nodeReservationRestoreStateData{
 							mergedMatchedAllocatable: allocatable,
-							matched: []reservationAlloc{
+							matched: []reusableAlloc{
 								{
 									rInfo:       frameworkext.NewReservationInfo(reservation),
 									allocatable: allocatable,
@@ -4496,7 +4494,7 @@ func Test_Plugin_Reserve(t *testing.T) {
 					nodeToState: frameworkext.NodeReservationRestoreStates{
 						tt.args.node.Name: &nodeReservationRestoreStateData{
 							mergedMatchedAllocatable: allocatable,
-							matched: []reservationAlloc{
+							matched: []reusableAlloc{
 								{
 									rInfo:       frameworkext.NewReservationInfo(reservation),
 									allocatable: allocatable,

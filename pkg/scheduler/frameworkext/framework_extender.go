@@ -75,6 +75,7 @@ type frameworkExtenderImpl struct {
 
 	findOneNodePlugin FindOneNodePlugin
 
+	reservationCache                       ReservationCache
 	reservationNominator                   ReservationNominator
 	reservationFilterPlugins               []ReservationFilterPlugin
 	reservationScorePlugins                []ReservationScorePlugin
@@ -103,6 +104,7 @@ func NewFrameworkExtender(f *FrameworkExtenderFactory, fw framework.Framework) F
 		monitor:                          f.monitor,
 		koordinatorClientSet:             f.KoordinatorClientSet(),
 		koordinatorSharedInformerFactory: f.koordinatorSharedInformerFactory,
+		reservationCache:                 f.reservationCache,
 		reservationNominator:             f.reservationNominator,
 		preFilterTransformers:            map[string]PreFilterTransformer{},
 		filterTransformers:               map[string]FilterTransformer{},
@@ -151,6 +153,12 @@ func (ext *frameworkExtenderImpl) updatePlugins(pl framework.Plugin) {
 	// TODO(joseph): In the future, use only the default ReservationNominator
 	if r, ok := pl.(ReservationNominator); ok {
 		ext.reservationNominator = r
+		klog.V(4).InfoS("framework extender got ReservationNominator registered", "profile", ext.ProfileName(), "plugin", pl.Name())
+	}
+	if r, ok := pl.(ReservationCache); ok {
+		ext.reservationCache = r
+		SetReservationCache(r, ext.Framework.ProfileName())
+		klog.V(4).InfoS("framework extender got ReservationCache registered", "profile", ext.ProfileName(), "plugin", pl.Name())
 	}
 	if r, ok := pl.(ReservationFilterPlugin); ok {
 		ext.reservationFilterPlugins = append(ext.reservationFilterPlugins, r)
@@ -232,6 +240,10 @@ func (ext *frameworkExtenderImpl) KoordinatorSharedInformerFactory() koordinator
 // nor are they allowed to hold the object within the plugin object.
 func (ext *frameworkExtenderImpl) Scheduler() Scheduler {
 	return ext.schedulerFn()
+}
+
+func (ext *frameworkExtenderImpl) GetReservationCache() ReservationCache {
+	return ext.reservationCache
 }
 
 func (ext *frameworkExtenderImpl) GetReservationNominator() ReservationNominator {
@@ -682,8 +694,8 @@ func (ext *frameworkExtenderImpl) ForgetPod(logger klog.Logger, pod *corev1.Pod)
 	return err
 }
 
-func (ext *frameworkExtenderImpl) RunNUMATopologyManagerAdmit(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string, numaNodes []int, policyType apiext.NUMATopologyPolicy, exclusivePolicy apiext.NumaTopologyExclusive, allNUMANodeStatus []apiext.NumaNodeStatus) *framework.Status {
-	return ext.topologyManager.Admit(ctx, cycleState, pod, nodeName, numaNodes, policyType, exclusivePolicy, allNUMANodeStatus)
+func (ext *frameworkExtenderImpl) RunNUMATopologyManagerAdmit(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, node *corev1.Node, numaNodes []int, policyType apiext.NUMATopologyPolicy, exclusivePolicy apiext.NumaTopologyExclusive, allNUMANodeStatus []apiext.NumaNodeStatus) *framework.Status {
+	return ext.topologyManager.Admit(ctx, cycleState, pod, node, numaNodes, policyType, exclusivePolicy, allNUMANodeStatus)
 }
 
 func (ext *frameworkExtenderImpl) GetNUMATopologyHintProvider() []topologymanager.NUMATopologyHintProvider {

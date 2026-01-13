@@ -577,13 +577,23 @@ func deleteReservationFromSchedulerCache(sched frameworkext.Scheduler, r *schedu
 
 	klog.V(4).InfoS("Try to delete reservation from SchedulerCache", "reservation", klog.KObj(r), "reservationUID", r.UID, "node", reservationutil.GetReservationNodeName(r))
 
-	reservationCache := frameworkext.GetReservationCache()
-	rInfo := reservationCache.DeleteReservation(r)
+	// FIXME: Due to the nodeInfo ports cleanup, here we need the ReservationInfo to get deleted by the global event handler.
+	//   Without this dependency, the plugin holds the reservation cache can safely delete the ReservationInfo, and no need to do it here.
+	// https://github.com/koordinator-sh/koordinator/issues/1247
+	reservationCaches := frameworkext.GetAllReservationCaches()
+	var rInfo *frameworkext.ReservationInfo
+	for profileName, reservationCache := range reservationCaches {
+		reservationInfo := reservationCache.DeleteReservation(r)
+		if rInfo == nil {
+			rInfo = reservationInfo
+			klog.V(5).InfoS("ReservationInfo deleted from ReservationCache", "reservation", klog.KObj(r), "reservationUID", r.UID, "profile", profileName)
+		}
+	}
 	if rInfo == nil {
-		klog.Warningf("The impossible happened. Missing ReservationInfo in ReservationCache, reservation: %v", klog.KObj(r), "reservationUID", r.UID)
+		klog.Warningf("The impossible happened. Missing ReservationInfo in ReservationCache, reservation: %v", klog.KObj(r), "reservationUID", r.UID, "caches", len(reservationCaches))
 		return
 	} else {
-		klog.V(4).InfoS("Successfully delete reservation from ReservationCache", "reservation", klog.KObj(r), "reservationUID", r.UID)
+		klog.V(4).InfoS("Successfully delete reservation from ReservationCache", "reservation", klog.KObj(r), "reservationUID", r.UID, "caches", len(reservationCaches))
 	}
 
 	reservePod := reservationutil.NewReservePod(r)
@@ -591,6 +601,8 @@ func deleteReservationFromSchedulerCache(sched frameworkext.Scheduler, r *schedu
 		klog.V(4).InfoS("Reservation not found in SchedulerCache, skipping deletion", "reservation", klog.KObj(r), "reservationUID", r.UID)
 		return
 	}
+	// The ports allocated from the reservation by some owner pods should not be removed from the NodeInfo.
+	// https://github.com/koordinator-sh/koordinator/issues/1247
 	if len(rInfo.AllocatedPorts) > 0 {
 		allocatablePorts := util.RequestedHostPorts(reservePod)
 		util.RemoveHostPorts(allocatablePorts, rInfo.AllocatedPorts)

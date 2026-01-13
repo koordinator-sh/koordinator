@@ -200,6 +200,14 @@ const (
 	CalculateByPodMaxUsageRequest CalculatePolicy = "maxUsageRequest"
 )
 
+type MidReclaimMode string
+
+const (
+	// MidReclaimModeStatic is the midReclaim mode according to the pod resource usage.
+	// When the mode="static", the mid-resources are calculated according to static ratio--staticReservedRatio of node
+	MidReclaimModeStatic MidReclaimMode = "static"
+)
+
 // +k8s:deepcopy-gen=true
 type ColocationStrategyExtender struct {
 	Extensions ExtraFields `json:"extensions,omitempty"`
@@ -247,13 +255,20 @@ type ColocationStrategy struct {
 	UpdateTimeThresholdSeconds *int64           `json:"updateTimeThresholdSeconds,omitempty" validate:"omitempty,min=1"`
 	ResourceDiffThreshold      *float64         `json:"resourceDiffThreshold,omitempty" validate:"omitempty,gt=0,max=1"`
 
-	// AllocatableCPU[Mid]' := min(Reclaimable[Mid], NodeAllocatable * MidCPUThresholdPercent) + Unallocated[Mid] * midUnallocatedRatio.
+	// MidReclaimMode defines the mode when calculate mid-resource of node
+	MidReclaimMode *MidReclaimMode `json:"midReclaimMode,omitempty" validate:"omitempty"`
+	// when MidReclaimMode != static, AllocatableCPU[Mid]' := min(min(Reclaimable[Mid], NodeUnused) + Unallocated[Mid] * MidUnallocatedPercent, NodeAllocatable * MidCPUThresholdPercent).
+	// MidCPUThresholdPercent defines the percentage of mid-resources cpu limit of node.
 	MidCPUThresholdPercent *int64 `json:"midCPUThresholdPercent,omitempty" validate:"omitempty,min=0,max=100"`
-	// AllocatableMemory[Mid]' := min(Reclaimable[Mid], NodeAllocatable * MidMemoryThresholdPercent) + Unallocated[Mid] * midUnallocatedRatio.
+	// MidMemoryThresholdPercent defines the percentage of mid-resources memory limit of node.
 	MidMemoryThresholdPercent *int64 `json:"midMemoryThresholdPercent,omitempty" validate:"omitempty,min=0,max=100"`
-	// MidUnallocatedPercent defines the percentage of unallocated resources in the Mid-tier allocable resources.
-	// Allocatable[Mid]' := min(Reclaimable[Mid], NodeAllocatable * thresholdRatio) + Unallocated[Mid] * midUnallocatedRatio.
+	// MidUnallocatedPercent defines the percentage of unallocated resources in the Mid-tier allocatable resources.
 	MidUnallocatedPercent *int64 `json:"midUnallocatedPercent,omitempty" validate:"omitempty,min=0,max=100"`
+	// when MidReclaimMode == static, AllocatableCPU[Mid]' := min(NodeCapacity * MidStaticCPUReservedPercent, NodeAllocatable * MidCPUThresholdPercent).
+	// MidStaticCPUReservedPercent defines the percentage of static reserved cpu on node.
+	MidStaticCPUReservedPercent *int64 `json:"midStaticCPUReservedPercent,omitempty" validate:"omitempty,min=0,max=100"`
+	// MidStaticMemoryReservedPercent defines the percentage of static reserved memory on node.
+	MidStaticMemoryReservedPercent *int64 `json:"midStaticMemoryReservedPercent,omitempty" validate:"omitempty,min=0,max=100"`
 
 	// when batchCPUThresholdPercent != nil, AllocatableCPU[Batch]' :=  min(Node.Total*BatchCPUThresholdPercent, Node.Total - Node.SafetyMargin - System.Reserved - sum(Pod(Prod/Mid).Request))
 	// when batchCPUThresholdPercent == nil, AllocatableCPU[Batch]' :=  Node.Total - Node.SafetyMargin - System.Reserved - sum(Pod(Prod/Mid).Request)
