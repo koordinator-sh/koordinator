@@ -728,3 +728,186 @@ func Test_nodeDeviceCache_onPodDelete(t *testing.T) {
 		})
 	}
 }
+
+func Test_nodeDeviceCache_updatePod_unassigned(t *testing.T) {
+	tests := []struct {
+		name                       string
+		oldPod                     *corev1.Pod
+		newPod                     *corev1.Pod
+		deviceCache                *nodeDeviceCache
+		wantOldPodCleanedFromCache bool
+	}{
+		{
+			name: "newPod nodeName becomes empty, should clean up oldPod",
+			oldPod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					UID:       "123456789",
+					Namespace: "default",
+					Name:      "test",
+					Annotations: map[string]string{
+						apiext.AnnotationDeviceAllocated: `{"gpu":[{"minor":1,"resources":{"koordinator.sh/gpu-core":"60","koordinator.sh/gpu-memory":"8Gi","koordinator.sh/gpu-memory-ratio":"50"}}]}`,
+					},
+				},
+				Spec: corev1.PodSpec{
+					NodeName: "test-node",
+				},
+				Status: corev1.PodStatus{
+					Phase: corev1.PodRunning,
+				},
+			},
+			newPod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					UID:       "123456789",
+					Namespace: "default",
+					Name:      "test",
+					Annotations: map[string]string{
+						apiext.AnnotationDeviceAllocated: `{"gpu":[{"minor":1,"resources":{"koordinator.sh/gpu-core":"60","koordinator.sh/gpu-memory":"8Gi","koordinator.sh/gpu-memory-ratio":"50"}}]}`,
+					},
+				},
+				Spec: corev1.PodSpec{
+					NodeName: "", // nodeName becomes empty
+				},
+				Status: corev1.PodStatus{
+					Phase: corev1.PodRunning,
+				},
+			},
+			deviceCache: &nodeDeviceCache{
+				nodeDeviceInfos: map[string]*nodeDevice{
+					"test-node": {
+						deviceFree: map[schedulingv1alpha1.DeviceType]deviceResources{
+							schedulingv1alpha1.GPU: {
+								1: corev1.ResourceList{
+									apiext.ResourceGPUCore:        *resource.NewQuantity(40, resource.DecimalSI),
+									apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(50, resource.DecimalSI),
+									apiext.ResourceGPUMemory:      resource.MustParse("8Gi"),
+								},
+							},
+						},
+						deviceTotal: map[schedulingv1alpha1.DeviceType]deviceResources{
+							schedulingv1alpha1.GPU: {
+								1: corev1.ResourceList{
+									apiext.ResourceGPUCore:        resource.MustParse("100"),
+									apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+									apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
+								},
+							},
+						},
+						deviceUsed: map[schedulingv1alpha1.DeviceType]deviceResources{
+							schedulingv1alpha1.GPU: {
+								1: corev1.ResourceList{
+									apiext.ResourceGPUCore:        resource.MustParse("60"),
+									apiext.ResourceGPUMemoryRatio: resource.MustParse("50"),
+									apiext.ResourceGPUMemory:      resource.MustParse("8Gi"),
+								},
+							},
+						},
+						allocateSet: map[schedulingv1alpha1.DeviceType]map[types.NamespacedName]deviceResources{
+							schedulingv1alpha1.GPU: {
+								types.NamespacedName{Namespace: "default", Name: "test"}: {
+									1: corev1.ResourceList{
+										apiext.ResourceGPUCore:        resource.MustParse("60"),
+										apiext.ResourceGPUMemoryRatio: resource.MustParse("50"),
+										apiext.ResourceGPUMemory:      resource.MustParse("8Gi"),
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			wantOldPodCleanedFromCache: true,
+		},
+		{
+			name: "oldPod without nodeName, should not clean up",
+			oldPod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					UID:       "123456789",
+					Namespace: "default",
+					Name:      "test",
+				},
+				Spec: corev1.PodSpec{
+					NodeName: "", // oldPod also has no nodeName
+				},
+			},
+			newPod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					UID:       "123456789",
+					Namespace: "default",
+					Name:      "test",
+				},
+				Spec: corev1.PodSpec{
+					NodeName: "",
+				},
+			},
+			deviceCache: &nodeDeviceCache{
+				nodeDeviceInfos: map[string]*nodeDevice{},
+			},
+			wantOldPodCleanedFromCache: false,
+		},
+		{
+			name: "normal update: newPod has nodeName, should process normally",
+			oldPod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					UID:       "123456789",
+					Namespace: "default",
+					Name:      "test",
+				},
+				Spec: corev1.PodSpec{
+					NodeName: "",
+				},
+			},
+			newPod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					UID:       "123456789",
+					Namespace: "default",
+					Name:      "test",
+					Annotations: map[string]string{
+						apiext.AnnotationDeviceAllocated: `{"gpu":[{"minor":1,"resources":{"koordinator.sh/gpu-core":"60","koordinator.sh/gpu-memory":"8Gi","koordinator.sh/gpu-memory-ratio":"50"}}]}`,
+					},
+				},
+				Spec: corev1.PodSpec{
+					NodeName: "test-node",
+				},
+				Status: corev1.PodStatus{
+					Phase: corev1.PodRunning,
+				},
+			},
+			deviceCache: &nodeDeviceCache{
+				nodeDeviceInfos: map[string]*nodeDevice{
+					"test-node": newNodeDevice(),
+				},
+			},
+			wantOldPodCleanedFromCache: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Pre-populate cache if oldPod has nodeName
+			if tt.oldPod != nil && tt.oldPod.Spec.NodeName != "" {
+				if _, ok := tt.oldPod.Annotations[apiext.AnnotationDeviceAllocated]; ok {
+					tt.deviceCache.updatePod(nil, tt.oldPod)
+				}
+			}
+
+			// Call updatePod
+			tt.deviceCache.updatePod(tt.oldPod, tt.newPod)
+
+			// Verify cache state
+			if tt.wantOldPodCleanedFromCache && tt.oldPod != nil && tt.oldPod.Spec.NodeName != "" {
+				nodeDevice := tt.deviceCache.getNodeDevice(tt.oldPod.Spec.NodeName, false)
+				assert.NotNil(t, nodeDevice, "node device should exist")
+				if nodeDevice != nil {
+					// Verify pod allocation is cleaned
+					podKey := types.NamespacedName{Namespace: tt.oldPod.Namespace, Name: tt.oldPod.Name}
+					for _, deviceType := range []schedulingv1alpha1.DeviceType{schedulingv1alpha1.GPU} {
+						if allocSet, ok := nodeDevice.allocateSet[deviceType]; ok {
+							_, exists := allocSet[podKey]
+							assert.False(t, exists, "oldPod allocation should be cleaned from cache")
+						}
+					}
+				}
+			}
+		})
+	}
+}
