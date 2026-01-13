@@ -994,7 +994,7 @@ func Test_ruleUpdateCb(t *testing.T) {
 				parentDirToCPUIdle: map[string]int64{
 					util.GetPodQoSRelativePath(corev1.PodQOSGuaranteed): 0,
 					util.GetPodQoSRelativePath(corev1.PodQOSBurstable):  0,
-					util.GetPodQoSRelativePath(corev1.PodQOSBestEffort): 1,
+					util.GetPodQoSRelativePath(corev1.PodQOSBestEffort): 0,
 					"kubepods.slice/kubepods-podxxxxxx.slice":           0,
 				},
 			},
