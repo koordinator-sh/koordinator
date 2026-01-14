@@ -309,6 +309,8 @@ type DeviceShareArgs struct {
 	DisableDeviceNUMATopologyAlignment bool
 	// GPUSharedResourceTemplatesConfig holds configurations for GPU shared resource templates.
 	GPUSharedResourceTemplatesConfig *GPUSharedResourceTemplatesConfig
+	// AllocationStrategy defines GPU allocation strategy for fragmentation management
+	AllocationStrategy *GPUAllocationStrategy
 }
 
 type GPUSharedResourceTemplatesConfig struct {
@@ -320,6 +322,34 @@ type GPUSharedResourceTemplatesConfig struct {
 	// If a GPU shared pod requests any of the matched resources,
 	// all of its requested GPU resources would be matched for GPU shared resource templates.
 	MatchedResources []corev1.ResourceName
+}
+
+// GPUAllocationStrategy defines GPU allocation strategy for fragmentation management
+type GPUAllocationStrategy struct {
+	// PreferFragmentedNodes indicates whether to prefer nodes with fragmented GPUs
+	PreferFragmentedNodes bool
+	// FragmentationWeight is the weight for fragmentation score (0-100)
+	// Higher value means more preference for fragmented nodes
+	FragmentationWeight int32
+	// EnableGreedyMatching enables greedy algorithm for GPU allocation
+	EnableGreedyMatching bool
+	// ReserveCompleteResources reserves complete GPU resources for high-priority tasks
+	ReserveCompleteResources *ReserveCompleteResourcesConfig
+}
+
+// ReserveCompleteResourcesConfig defines configuration for reserving complete GPU resources
+type ReserveCompleteResourcesConfig struct {
+	// Enabled indicates whether to enable resource reservation
+	Enabled bool
+	// PriorityThreshold is the priority threshold for high-priority pods
+	// Pods with priority >= threshold will get complete GPUs
+	PriorityThreshold int32
+	// ReservedNodeSelector selects nodes to reserve for high-priority tasks
+	ReservedNodeSelector map[string]string
+	// MinReservedNodes is the minimum number of nodes to reserve
+	MinReservedNodes int32
+	// ReservedNodePercentage is the percentage of nodes to reserve (0-100)
+	ReservedNodePercentage int32
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
