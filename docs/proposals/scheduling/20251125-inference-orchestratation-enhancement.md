@@ -1,7 +1,7 @@
 ---
 title: Inference Orchestration Enhancement with Grove Integration
 authors:
-  - ""
+  - "kangclzjc"
 reviewers:
   - TBD
 creation-date: 2025-12-01
@@ -177,21 +177,9 @@ Using Grove's PodClique with startup ordering and Koordinator's topology awarene
 
 #### Non-Functional Requirements
 
-##### NFR1: Scheduling Latency
-
-**SHOULD**: Gang scheduling decisions for Grove workloads should complete within 10 seconds for workloads with up to 100 pods per gang under normal cluster load.
-
-##### NFR2: Scalability
-
-**MUST**: Support clusters with up to 10,000 nodes and 1,000 concurrent PodCliqueSet instances without significant performance degradation.
-
-##### NFR3: Backward Compatibility  
+##### NFR1: Backward Compatibility  
 
 **MUST**: Existing Koordinator features (QoS, ElasticQuota, Device Scheduling) must continue to work for non-Grove workloads. Grove integration should be opt-in.
-
-##### NFR4: Observability
-
-**SHOULD**: Provide clear metrics and events for gang scheduling decisions, topology placement, and autoscaling actions to facilitate debugging and monitoring.
 
 ### Implementation Details/Notes/Constraints
 
@@ -262,30 +250,15 @@ The integration follows a layered approach:
 
 **Topology-Aware Placement**:
 - Integrate with existing NetworkTopology plugin
-- Prefer placing pods from the same PodClique in the same topology zone
-- Score nodes based on:
-  - Network distance between components (prefill ↔ decode)
-  - Available GPU resources
-  - NVLink/interconnect availability
-- Add new scoring algorithm: `NetworkAffinityForPodClique`
 
 **Startup Ordering**:
 - Extend scheduler to support pod dependencies within PodCliqueScalingGroup
-- Introduce new condition: `PodStartupBlocked` with reason field
-- Scheduler marks dependent pods as `PodStartupBlocked` until prerequisites are Ready
-- Use Kubernetes Pod readiness gates for coordination
 
 ##### 3. Controller Coordination
 
 **Grove Operator**:
-- Deploy Grove operator as-is (upstream compatibility)
 - Grove creates PodGang CRs consumed by Koordinator scheduler
 - Grove manages autoscaling based on metrics (CPU, GPU, custom metrics)
-
-**Koordinator Controllers**(Need to check):
-- Ensure Reservation controller recognizes Grove-managed pods
-- Device scheduling continues to work for GPU allocation within gang
-- QoS manager applies policies to all pods in a gang uniformly
 
 ##### 4. Autoscaling Integration
 
@@ -380,20 +353,14 @@ spec:
 
 2. **Startup Ordering Delays**: Strict startup ordering may increase total deployment time. Users should set appropriate timeouts.
 
-3. **Cross-Namespace Limitations**: PodCliques within a PodCliqueSet must be in the same namespace. Cross-namespace gang scheduling is not supported in the initial implementation.
-
-4. **Grove Version Compatibility**: This integration targets Grove v0.1.0-alpha.3+. Future Grove API changes may require updates to Koordinator.
-
 ### Risks and Mitigations
 
 #### Risk 1: Upstream Grove API Changes
 
-**Risk**: Grove is in alpha stage (v0.1.0-alpha.3). API breaking changes could require significant rework in Koordinator integration.
+**Risk**: Grove is in alpha stage. API breaking changes could require significant rework in Koordinator integration.
 
 **Mitigation**: 
 - Engage with Grove maintainers early and participate in API design discussions
-- Use adapter pattern to isolate Grove API dependencies
-- Pin to specific Grove versions with documented upgrade paths
 - Contribute to Grove's API stabilization efforts
 
 #### Risk 2: Scheduling Performance Degradation
@@ -401,8 +368,6 @@ spec:
 **Risk**: Complex gang scheduling with topology awareness could significantly increase scheduling latency, especially in large clusters.
 
 **Mitigation**:
-- Implement incremental scheduling for large gangs (schedule subgroups progressively)
-- Add caching layer for topology scoring calculations
 - Provide configuration options to tune gang scheduling timeout and batch sizes
 - Conduct performance benchmarks with 1000+ node clusters before GA release
 - Implement scheduler metrics to detect performance regressions
@@ -414,9 +379,7 @@ spec:
 **Mitigation**:
 - Provide comprehensive documentation with real-world examples
 - Create migration guides from existing Koordinator workloads to Grove-based workloads
-- Offer kubectl plugin for simplified Grove resource management
 - Keep Grove integration optional - users not running inference workloads don't need to learn it
-- Provide Helm chart templates for common inference patterns
 
 #### Risk 4: Incompatibility with Existing Features
 
@@ -428,24 +391,6 @@ spec:
 - Implement feature gates to allow gradual rollout and easy rollback
 - Add validation webhooks to reject invalid configurations early
 
-#### Risk 5: Security Concerns
-
-**Risk**: Grove operator has elevated permissions to create/manage pods, which could be exploited if compromised.
-
-**Mitigation**:
-- Follow least-privilege principle for Grove operator RBAC
-- Implement admission webhooks to validate PodCliqueSet specifications
-- Conduct security review with Koordinator security team
-- Enable audit logging for all Grove-related operations
-- Support Pod Security Standards enforcement for Grove-created pods
-
-#### Security Review
-
-- Security review will be conducted by Koordinator security team
-- Threat modeling for Grove operator and scheduler integration
-- RBAC and admission control validation
-- Penetration testing for privilege escalation scenarios
-- Review by Kubernetes SIG-Auth if needed
 
 ## Alternatives
 
@@ -464,43 +409,8 @@ Instead of integrating Grove, Koordinator could implement all inference orchestr
 - Need to maintain inference-specific logic long-term
 - Reinventing the wheel when proven solution exists
 
-**Decision**: Rejected. Grove provides battle-tested implementation with growing community adoption. Integration leverages existing work and allows Koordinator to focus on core scheduling capabilities.
 
-### Alternative 2: Use Kubernetes Batch/Job APIs with Custom Controllers
-
-Use native Kubernetes Job/CronJob with custom controllers for gang scheduling and topology awareness.
-
-**Pros**:
-- Leverages standard Kubernetes APIs
-- Familiar to Kubernetes users
-- No new CRDs to learn
-
-**Cons**:
-- Jobs are designed for batch workloads, not long-running inference services
-- No built-in support for hierarchical gang scheduling
-- Difficult to express startup ordering constraints
-- Would require extensive custom controller development anyway
-
-**Decision**: Rejected. Jobs API is insufficient for complex inference orchestration patterns.
-
-### Alternative 3: Integrate with Volcano for Gang Scheduling
-
-Use Volcano's gang scheduling capabilities instead of Grove.
-
-**Pros**:
-- Volcano is mature and widely used for batch/HPC workloads
-- Already has gang scheduling implementation
-- Active community
-
-**Cons**:
-- Volcano is primarily designed for batch jobs, not inference serving
-- Lacks inference-specific abstractions (PodClique, disaggregated components)
-- No built-in autoscaling for inference workloads
-- Would still need custom controllers for startup ordering and multi-level scaling
-
-**Decision**: Rejected. While Volcano provides gang scheduling, Grove offers higher-level abstractions specifically designed for inference workloads. Koordinator could potentially use Volcano internally for gang scheduling implementation, but Grove's API layer is more appropriate for inference use cases.
-
-### Alternative 4: Wait for Kubernetes Native Support
+### Alternative 2: Wait for Kubernetes Native Support
 
 Wait for Kubernetes to add native support for advanced scheduling features.
 
@@ -513,11 +423,21 @@ Wait for Kubernetes to add native support for advanced scheduling features.
 - May not address inference-specific requirements
 - Users need solutions now for production workloads
 
-**Decision**: Rejected. Current production needs require immediate solution. We can migrate to native Kubernetes features if/when they become available.
 
+### Alternative 3: RBG (RoleBasedGroup) Solution
 
-### Alternative 5: RGB solution
-TODO:
+Adopt RBG (https://github.com/sgl-project/rbg), a Kubernetes API specifically designed for orchestrating distributed, stateful AI inference workloads with multi-role collaboration and built-in service discovery. RBG treats an inference service as a "role-based group" rather than a collection of isolated workloads, modeling the service as a topological, stateful, coordinated multi-role organism.
+
+**Pros**:
+- Built from the ground up for LLM inference patterns, especially disaggregated architectures (prefill/decode separation)
+- Treats "Role" as the atomic unit for scheduling orchestration while establishing configurable relationships between roles, providing a more natural model for multi-component inference systems
+- Native support for coordinated operations across different roles (gateway/router/prefill/decode) as a single logical unit
+
+**Cons**:
+- RBG is specifically designed for inference workloads; not suitable as a general-purpose orchestration solution for other workload types (training, batch jobs, etc.)
+- Requires LeaderWorkerSet (>=v0.7.0) as an additional dependency, adding complexity to the deployment stack
+- Lack hierarchical gang scheduling for a complicated workload with several components
+
 
 ## Upgrade Strategy
 
@@ -555,14 +475,14 @@ Users already running Grove without Koordinator can migrate gradually:
 
 **Feature Gate (temporary, during alpha/beta)**:
 ```bash
---feature-gates=GroveIntegration=true
+--feature-gates=GroveEnable=true
 ```
 
 ### Rollback Strategy
 
 If issues arise during upgrade:
 
-1. Disable Grove feature gate: `--feature-gates=GroveIntegration=false`
+1. Disable Grove feature gate: `--feature-gates=GroveEnable=false`
 2. Scheduler will ignore PodGang resources and fall back to standard scheduling
 3. Existing Grove-managed pods continue running (no disruption)
 4. New PodCliqueSet creation will fail until issue is resolved
@@ -577,15 +497,10 @@ If issues arise during upgrade:
 - **Scheduler Plugin Tests**
   - Gang scheduling logic for PodGang resources
   - Hierarchical gang validation (gang of gangs)
-  - Topology-aware scoring for PodCliques
   - Startup ordering constraint validation
-  - Edge cases: partial gang satisfaction, timeout handling
 
 - **Controller Tests**  
-  - Grove CRD reconciliation with Koordinator features
   - Reservation integration with PodCliques
-  - Device scheduling for gang-scheduled pods
-  - QoS policy application to gangs
 
 #### Integration Tests
 
@@ -594,7 +509,7 @@ If issues arise during upgrade:
   - Verify all pods in gang are scheduled together or none are scheduled
   - Validate startup ordering (workers before leader)
   - Test autoscaling of PodCliqueSet (scale up/down)
-  - Verify topology-aware placement (pods in same NVLink domain)
+  - Verify topology-aware placement
 
 - **Feature Interaction Tests**
   - Grove + Reservation: Pre-allocate resources for PodCliqueSets
@@ -607,19 +522,6 @@ If issues arise during upgrade:
   - Node failure during gang deployment
   - Insufficient resources for minimum gang size
   - Network partition affecting topology placement
-
-#### Performance Tests
-
-- **Scalability Tests**
-  - 1000-node cluster with 100 concurrent PodCliqueSet instances
-  - Measure scheduling latency for gangs of varying sizes (10, 50, 100 pods)
-  - Resource utilization of scheduler with Grove integration enabled
-  - Comparison with baseline Koordinator (without Grove)
-
-- **Stress Tests**  
-  - Rapid create/delete of PodCliqueSet resources
-  - Autoscaling storm (many PodCliqueSets scaling simultaneously)
-  - Large gang sizes (500+ pods in single gang)
 
 #### Manual Tests
 
@@ -638,20 +540,15 @@ If issues arise during upgrade:
 
 - All unit tests pass with >80% code coverage for new components
 - Integration tests cover all user stories in this proposal
-- Performance tests show <10% overhead vs. baseline Koordinator for non-Grove workloads
-- Gang scheduling latency <10s for gangs with <100 pods in 1000-node cluster
-- Zero data loss or workload disruption during upgrade/downgrade
-- Security review completed with no critical findings
 - Documentation includes at least 3 complete end-to-end examples
 
 ## Implementation History
 
-- [x] 12/01/2025: Proposed idea and initial draft proposal
-- [ ] 12/XX/2025: First round of feedback from Koordinator community
-- [ ] 12/XX/2025: Present proposal at Koordinator community meeting
-- [ ] 01/XX/2026: Open proposal PR for formal review
-- [ ] 01/XX/2026: Address review comments and finalize proposal
-- [ ] 02/XX/2026: Begin implementation (alpha phase)
+- [x] 14/01/2026: Proposed idea and initial draft proposal
+- [ ] XX/XX/2026: First round of feedback from Koordinator community
+- [ ] XX/XX/2026: Open proposal PR for formal review
+- [ ] XX/XX/2026: Address review comments and finalize proposal
+- [ ] XX/XX/2026: Begin implementation (alpha phase)
   - Grove CRD integration
   - Basic gang scheduling for PodGang
   - Feature gate implementation
