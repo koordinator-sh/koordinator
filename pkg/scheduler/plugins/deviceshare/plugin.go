@@ -73,12 +73,14 @@ var (
 )
 
 type Plugin struct {
+	args                                       *schedulerconfig.DeviceShareArgs
 	disableDeviceNUMATopologyAlignment         bool
 	handle                                     frameworkext.ExtendedHandle
 	nodeDeviceCache                            *nodeDeviceCache
 	gpuSharedResourceTemplatesCache            *gpuSharedResourceTemplatesCache
 	gpuSharedResourceTemplatesMatchedResources []corev1.ResourceName
 	scorer                                     *resourceAllocationScorer
+	nodeReservationManager                     *NodeReservationManager
 }
 
 type preFilterState struct {
@@ -373,6 +375,7 @@ func (p *Plugin) Filter(ctx context.Context, cycleState *framework.CycleState, p
 		nodeDevice: nodeDeviceInfo,
 		node:       node,
 		pod:        pod,
+		args:       p.args,
 	}
 
 	nodeDeviceInfo.lock.RLock()
@@ -432,6 +435,7 @@ func (p *Plugin) FilterNominateReservation(ctx context.Context, cycleState *fram
 		node:       nodeInfo.Node(),
 		pod:        pod,
 		numaNodes:  affinity.NUMANodeAffinity,
+		args:       p.args,
 	}
 
 	preemptible := appendAllocated(nil, restoreState.mergedUnmatchedUsed, state.preemptibleDevices[nodeName])
@@ -562,6 +566,7 @@ func (p *Plugin) allocate(ctx context.Context, cycleState *framework.CycleState,
 		pod:                pod,
 		scorer:             p.scorer,
 		numaNodes:          affinity.NUMANodeAffinity,
+		args:               p.args,
 	}
 
 	// TODO: de-duplicate logic done by the Filter phase and move head the pre-process of the resource options
@@ -793,12 +798,20 @@ func New(obj runtime.Object, handle framework.Handle) (framework.Plugin, error) 
 
 	registerNodeEventHandler(handle.SharedInformerFactory())
 
+	// Initialize node reservation manager if allocation strategy is configured
+	var nodeReservationMgr *NodeReservationManager
+	if args.AllocationStrategy != nil && args.AllocationStrategy.ReserveCompleteResources != nil {
+		nodeReservationMgr = NewNodeReservationManager(args.AllocationStrategy.ReserveCompleteResources, deviceCache)
+	}
+
 	return &Plugin{
+		args:                            args,
 		handle:                          extendedHandle,
 		nodeDeviceCache:                 deviceCache,
 		gpuSharedResourceTemplatesCache: gpuSharedResourceTemplatesCache,
 		gpuSharedResourceTemplatesMatchedResources: args.GPUSharedResourceTemplatesConfig.MatchedResources,
 		scorer:                             scorePlugin(args),
 		disableDeviceNUMATopologyAlignment: args.DisableDeviceNUMATopologyAlignment,
+		nodeReservationManager:             nodeReservationMgr,
 	}, nil
 }

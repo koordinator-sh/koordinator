@@ -99,6 +99,24 @@ func (p *Plugin) Score(ctx context.Context, cycleState *framework.CycleState, po
 		klog.ErrorS(status.AsError(), "Failed to score of DeviceShare", "pod", klog.KObj(pod), "node", nodeName)
 		return 0, status
 	}
+
+	// Add fragmentation score if enabled
+	if p.args.AllocationStrategy != nil && p.args.AllocationStrategy.FragmentationWeight > 0 {
+		fragmentationScore, fragStatus := p.scoreNodeByFragmentation(ctx, cycleState, pod, nodeName)
+		if fragStatus != nil && fragStatus.IsSuccess() {
+			// Combine scores: base score + fragmentation score
+			// Both scores are in range [0, 100]
+			score = score + fragmentationScore
+			klog.V(6).InfoS("Combined score with fragmentation",
+				"pod", klog.KObj(pod),
+				"node", nodeName,
+				"baseScore", score-fragmentationScore,
+				"fragmentationScore", fragmentationScore,
+				"totalScore", score,
+			)
+		}
+	}
+
 	return score, nil
 }
 

@@ -21,6 +21,7 @@ import (
 	"sort"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/sets"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
@@ -30,6 +31,7 @@ import (
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
+	schedulerconfig "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/schedulingphase"
 	"github.com/koordinator-sh/koordinator/pkg/util/bitmask"
 )
@@ -69,6 +71,7 @@ type AutopilotAllocator struct {
 	numaNodes                 bitmask.BitMask
 	requestsPerInstance       map[schedulingv1alpha1.DeviceType]corev1.ResourceList
 	desiredCountPerDeviceType map[schedulingv1alpha1.DeviceType]int
+	args                      *schedulerconfig.DeviceShareArgs
 }
 
 func (a *AutopilotAllocator) Prepare() *framework.Status {
@@ -306,6 +309,32 @@ func (a *AutopilotAllocator) allocateDevices(requestCtx *requestContext, nodeDev
 		if deviceAllocations[deviceType] != nil {
 			continue
 		}
+
+		// Try greedy allocation for GPU if enabled
+		if deviceType == schedulingv1alpha1.GPU && a.args != nil &&
+			a.args.AllocationStrategy != nil &&
+			a.args.AllocationStrategy.EnableGreedyMatching {
+
+			requestPerInstance := requestCtx.requestsPerInstance[deviceType]
+			requiredMemory := requestPerInstance[apiext.ResourceGPUMemory]
+			requiredCore := requestPerInstance[apiext.ResourceGPUCore]
+
+			if greedyAllocations, ok := a.tryGreedyAllocation(nodeDevice, requiredMemory.Value(), requiredCore.Value()); ok {
+				klog.V(5).InfoS("Using greedy allocation for GPU",
+					"pod", klog.KObj(a.pod),
+					"node", a.node.Name,
+					"allocations", len(greedyAllocations[schedulingv1alpha1.GPU]),
+				)
+				deviceAllocations[deviceType] = greedyAllocations[schedulingv1alpha1.GPU]
+				continue
+			}
+			klog.V(6).InfoS("Greedy allocation failed, falling back to default allocator",
+				"pod", klog.KObj(a.pod),
+				"node", a.node.Name,
+			)
+		}
+
+		// Use default allocation
 		allocations, status := allocateDevices(requestCtx, nodeDevice, deviceType, requestCtx.requestsPerInstance[deviceType], requestCtx.desiredCountPerDeviceType[deviceType], nil)
 		if !status.IsSuccess() {
 			return nil, status
@@ -492,4 +521,384 @@ func (a *AutopilotAllocator) score(
 	}
 
 	return finalScore, nil
+}
+
+// tryGreedyAllocation attempts to allocate GPUs using greedy algorithm
+// This is a simplified implementation that focuses on minimizing fragmentation
+func (a *AutopilotAllocator) tryGreedyAllocation(
+	nodeDevice *nodeDevice,
+	requiredMemory, requiredCore int64,
+) (apiext.DeviceAllocations, bool) {
+
+	gpuDevices, ok := nodeDevice.deviceFree[schedulingv1alpha1.GPU]
+	if !ok || len(gpuDevices) == 0 {
+		return nil, false
+	}
+
+	// Try different allocation strategies and pick the best one
+	strategies := []greedyAllocationStrategy{
+		&singleDeviceStrategy{},
+		&minimalDevicesStrategy{},
+		&balancedStrategy{nodeDevice: nodeDevice},
+	}
+
+	var bestAllocation apiext.DeviceAllocations
+	var bestScore float64
+
+	for _, strategy := range strategies {
+		if allocation, ok := strategy.tryAllocate(gpuDevices, requiredMemory, requiredCore); ok {
+			score := a.evaluateAllocationQuality(allocation, nodeDevice)
+			if score > bestScore {
+				bestScore = score
+				bestAllocation = allocation
+			}
+		}
+	}
+
+	if bestAllocation != nil {
+		return bestAllocation, true
+	}
+
+	return nil, false
+}
+
+// greedyAllocationStrategy defines interface for different allocation strategies
+type greedyAllocationStrategy interface {
+	tryAllocate(devices deviceResources, requiredMemory, requiredCore int64) (apiext.DeviceAllocations, bool)
+}
+
+// singleDeviceStrategy tries to allocate on a single GPU
+type singleDeviceStrategy struct{}
+
+func (s *singleDeviceStrategy) tryAllocate(
+	devices deviceResources,
+	requiredMemory, requiredCore int64,
+) (apiext.DeviceAllocations, bool) {
+
+	// Find the best fit device
+	var bestMinor int
+	var bestWaste int64 = -1
+	found := false
+
+	for minor, res := range devices {
+		memQty := res[apiext.ResourceGPUMemory]
+		coreQty := res[apiext.ResourceGPUCore]
+
+		availMem := memQty.Value()
+		availCore := coreQty.Value()
+
+		if availMem >= requiredMemory && availCore >= requiredCore {
+			waste := availMem - requiredMemory
+			if !found || waste < bestWaste {
+				bestMinor = minor
+				bestWaste = waste
+				found = true
+			}
+		}
+	}
+
+	if !found {
+		return nil, false
+	}
+
+	return apiext.DeviceAllocations{
+		schedulingv1alpha1.GPU: []*apiext.DeviceAllocation{
+			{
+				Minor: int32(bestMinor),
+				Resources: corev1.ResourceList{
+					apiext.ResourceGPUMemory: *resource.NewQuantity(requiredMemory, resource.BinarySI),
+					apiext.ResourceGPUCore:   *resource.NewQuantity(requiredCore, resource.DecimalSI),
+				},
+			},
+		},
+	}, true
+}
+
+// minimalDevicesStrategy uses minimum number of GPUs
+type minimalDevicesStrategy struct{}
+
+func (s *minimalDevicesStrategy) tryAllocate(
+	devices deviceResources,
+	requiredMemory, requiredCore int64,
+) (apiext.DeviceAllocations, bool) {
+
+	// Sort devices by available memory (descending)
+	type deviceInfo struct {
+		minor int
+		mem   int64
+		core  int64
+	}
+
+	var deviceList []deviceInfo
+	for minor, res := range devices {
+		memQty := res[apiext.ResourceGPUMemory]
+		coreQty := res[apiext.ResourceGPUCore]
+		deviceList = append(deviceList, deviceInfo{
+			minor: minor,
+			mem:   memQty.Value(),
+			core:  coreQty.Value(),
+		})
+	}
+
+	sort.Slice(deviceList, func(i, j int) bool {
+		return deviceList[i].mem > deviceList[j].mem
+	})
+
+	var allocations []*apiext.DeviceAllocation
+	remainingMemory := requiredMemory
+	remainingCore := requiredCore
+
+	for _, dev := range deviceList {
+		if remainingMemory <= 0 && remainingCore <= 0 {
+			break
+		}
+
+		if dev.mem <= 0 || dev.core <= 0 {
+			continue
+		}
+
+		allocMem := min64(remainingMemory, dev.mem)
+		allocCore := min64(remainingCore, dev.core)
+
+		allocations = append(allocations, &apiext.DeviceAllocation{
+			Minor: int32(dev.minor),
+			Resources: corev1.ResourceList{
+				apiext.ResourceGPUMemory: *resource.NewQuantity(allocMem, resource.BinarySI),
+				apiext.ResourceGPUCore:   *resource.NewQuantity(allocCore, resource.DecimalSI),
+			},
+		})
+
+		remainingMemory -= allocMem
+		remainingCore -= allocCore
+	}
+
+	if remainingMemory > 0 || remainingCore > 0 {
+		return nil, false
+	}
+
+	return apiext.DeviceAllocations{schedulingv1alpha1.GPU: allocations}, true
+}
+
+// balancedStrategy distributes load evenly across GPUs
+type balancedStrategy struct {
+	nodeDevice *nodeDevice
+}
+
+func (s *balancedStrategy) tryAllocate(
+	devices deviceResources,
+	requiredMemory, requiredCore int64,
+) (apiext.DeviceAllocations, bool) {
+
+	// Calculate current utilization for each device
+	type deviceInfo struct {
+		minor       int
+		availMem    int64
+		availCore   int64
+		utilization float64
+	}
+
+	var deviceList []deviceInfo
+	for minor, res := range devices {
+		memQty := res[apiext.ResourceGPUMemory]
+		coreQty := res[apiext.ResourceGPUCore]
+
+		availMem := memQty.Value()
+		availCore := coreQty.Value()
+
+		if availMem <= 0 || availCore <= 0 {
+			continue
+		}
+
+		// Calculate current utilization
+		var utilization float64
+		if s.nodeDevice != nil {
+			if totalRes, ok := s.nodeDevice.deviceTotal[schedulingv1alpha1.GPU][minor]; ok {
+				if usedRes, ok := s.nodeDevice.deviceUsed[schedulingv1alpha1.GPU][minor]; ok {
+					totalMemQty := totalRes[apiext.ResourceGPUMemory]
+					usedMemQty := usedRes[apiext.ResourceGPUMemory]
+					totalMem := totalMemQty.Value()
+					usedMem := usedMemQty.Value()
+					if totalMem > 0 {
+						utilization = float64(usedMem) / float64(totalMem)
+					}
+				}
+			}
+		}
+
+		deviceList = append(deviceList, deviceInfo{
+			minor:       minor,
+			availMem:    availMem,
+			availCore:   availCore,
+			utilization: utilization,
+		})
+	}
+
+	if len(deviceList) == 0 {
+		return nil, false
+	}
+
+	// Sort by utilization (ascending) - prefer less utilized devices
+	sort.Slice(deviceList, func(i, j int) bool {
+		return deviceList[i].utilization < deviceList[j].utilization
+	})
+
+	// Try to distribute evenly
+	avgMemoryPerDevice := requiredMemory / int64(len(deviceList))
+	if avgMemoryPerDevice == 0 {
+		avgMemoryPerDevice = requiredMemory
+	}
+
+	var allocations []*apiext.DeviceAllocation
+	remainingMemory := requiredMemory
+	remainingCore := requiredCore
+
+	for _, dev := range deviceList {
+		if remainingMemory <= 0 && remainingCore <= 0 {
+			break
+		}
+
+		targetMem := min64(avgMemoryPerDevice, min64(dev.availMem, remainingMemory))
+		targetCore := min64(remainingCore, dev.availCore)
+
+		if targetMem > 0 && targetCore > 0 {
+			allocations = append(allocations, &apiext.DeviceAllocation{
+				Minor: int32(dev.minor),
+				Resources: corev1.ResourceList{
+					apiext.ResourceGPUMemory: *resource.NewQuantity(targetMem, resource.BinarySI),
+					apiext.ResourceGPUCore:   *resource.NewQuantity(targetCore, resource.DecimalSI),
+				},
+			})
+
+			remainingMemory -= targetMem
+			remainingCore -= targetCore
+		}
+	}
+
+	if remainingMemory > 0 || remainingCore > 0 {
+		return nil, false
+	}
+
+	return apiext.DeviceAllocations{schedulingv1alpha1.GPU: allocations}, true
+}
+
+// evaluateAllocationQuality evaluates the quality of an allocation
+func (a *AutopilotAllocator) evaluateAllocationQuality(
+	allocation apiext.DeviceAllocations,
+	nodeDevice *nodeDevice,
+) float64 {
+
+	gpuAllocs, ok := allocation[schedulingv1alpha1.GPU]
+	if !ok || len(gpuAllocs) == 0 {
+		return 0
+	}
+
+	// Evaluation criteria:
+	// 1. Fewer devices is better (weight 40%)
+	// 2. Less fragmentation is better (weight 60%)
+
+	// Device count score (fewer is better)
+	deviceScore := 100.0 / float64(len(gpuAllocs))
+
+	// Fragmentation score
+	fragmentationScore := a.evaluateFragmentationImpact(allocation, nodeDevice)
+
+	return deviceScore*0.4 + fragmentationScore*0.6
+}
+
+// evaluateFragmentationImpact evaluates fragmentation impact
+func (a *AutopilotAllocator) evaluateFragmentationImpact(
+	allocation apiext.DeviceAllocations,
+	nodeDevice *nodeDevice,
+) float64 {
+
+	// Calculate utilization variance after allocation
+	gpuTotal, ok := nodeDevice.deviceTotal[schedulingv1alpha1.GPU]
+	if !ok {
+		return 100.0
+	}
+
+	gpuUsed, ok := nodeDevice.deviceUsed[schedulingv1alpha1.GPU]
+	if !ok {
+		gpuUsed = make(deviceResources)
+	}
+
+	// Simulate state after allocation
+	deviceUtilization := make(map[int]float64)
+
+	for minor, totalRes := range gpuTotal {
+		usedRes, ok := gpuUsed[minor]
+		if !ok {
+			usedRes = corev1.ResourceList{}
+		}
+
+		totalMemQty := totalRes[apiext.ResourceGPUMemory]
+		usedMemQty := usedRes[apiext.ResourceGPUMemory]
+		totalMem := totalMemQty.Value()
+		usedMem := usedMemQty.Value()
+
+		if totalMem > 0 {
+			deviceUtilization[minor] = float64(usedMem) / float64(totalMem)
+		}
+	}
+
+	// Apply new allocation
+	if gpuAllocs, ok := allocation[schedulingv1alpha1.GPU]; ok {
+		for _, alloc := range gpuAllocs {
+			minor := int(alloc.Minor)
+			if totalRes, ok := gpuTotal[minor]; ok {
+				usedRes, ok := gpuUsed[minor]
+				if !ok {
+					usedRes = corev1.ResourceList{}
+				}
+
+				usedMemQty := usedRes[apiext.ResourceGPUMemory]
+				allocMemQty := alloc.Resources[apiext.ResourceGPUMemory]
+				totalMemQty := totalRes[apiext.ResourceGPUMemory]
+
+				newUsed := usedMemQty.Value() + allocMemQty.Value()
+				totalMem := totalMemQty.Value()
+
+				if totalMem > 0 {
+					deviceUtilization[minor] = float64(newUsed) / float64(totalMem)
+				}
+			}
+		}
+	}
+
+	// Calculate standard deviation (lower is better)
+	if len(deviceUtilization) == 0 {
+		return 100.0
+	}
+
+	var sum, sumSq float64
+	for _, util := range deviceUtilization {
+		sum += util
+		sumSq += util * util
+	}
+
+	mean := sum / float64(len(deviceUtilization))
+	variance := (sumSq / float64(len(deviceUtilization))) - (mean * mean)
+	stdDev := 0.0
+	if variance > 0 {
+		// Simple square root approximation
+		stdDev = 1.0
+		for i := 0; i < 10; i++ {
+			stdDev = (stdDev + variance/stdDev) / 2
+		}
+	}
+
+	// Lower standard deviation = higher score
+	score := (1.0 - stdDev) * 100.0
+	if score < 0 {
+		score = 0
+	}
+
+	return score
+}
+
+func min64(a, b int64) int64 {
+	if a < b {
+		return a
+	}
+	return b
 }
