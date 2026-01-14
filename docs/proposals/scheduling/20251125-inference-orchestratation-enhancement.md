@@ -2,6 +2,7 @@
 title: Inference Orchestration Enhancement with Grove Integration
 authors:
   - "kangclzjc"
+  - "daisy-ycguo"
 reviewers:
   - TBD
 creation-date: 2025-12-01
