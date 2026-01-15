@@ -166,20 +166,20 @@ func isPreAllocatablePod(pod *corev1.Pod) bool {
 	return pod.Labels[apiext.LabelPodPreAllocatable] == "true"
 }
 
-// getPreAllocatableScore retrieves the pre-allocatable score from pod annotation
-func getPreAllocatableScore(pod *corev1.Pod) int64 {
+// getPreAllocatablePriority retrieves the pre-allocatable priority from pod annotation
+func getPreAllocatablePriority(pod *corev1.Pod) int64 {
 	if pod == nil || pod.Annotations == nil {
 		return 0
 	}
-	scoreStr, ok := pod.Annotations[apiext.AnnotationPodPreAllocatableScore]
+	priorityStr, ok := pod.Annotations[apiext.AnnotationPodPreAllocatablePriority]
 	if !ok {
 		return 0
 	}
-	score, err := strconv.ParseInt(scoreStr, 10, 64)
+	priority, err := strconv.ParseInt(priorityStr, 10, 64)
 	if err != nil {
 		return 0
 	}
-	return score
+	return priority
 }
 
 // updatePreAllocatableCandidatesCache updates the cached pre-allocatable candidates when pod changes
@@ -204,7 +204,7 @@ func (h *podEventHandler) updatePreAllocatableCandidatesCache(oldPod, newPod *co
 		return
 	}
 
-	// Case 3: Candidate -> Candidate, check if score or node changed
+	// Case 3: Candidate -> Candidate, check if priority or node changed
 	if newIsCandidate && oldPod != nil {
 		// Check if node changed
 		if oldPod.Spec.NodeName != newPod.Spec.NodeName {
@@ -216,12 +216,12 @@ func (h *podEventHandler) updatePreAllocatableCandidatesCache(oldPod, newPod *co
 			return
 		}
 
-		// Check if score changed
-		oldScore := getPreAllocatableScore(oldPod)
-		newScore := getPreAllocatableScore(newPod)
-		if oldScore != newScore {
-			// Score changed: update in btree (delete old + insert new)
-			h.cache.updatePreAllocatableCandidateScore(newPod)
+		// Check if priority changed
+		oldPriority := getPreAllocatablePriority(oldPod)
+		newPriority := getPreAllocatablePriority(newPod)
+		if oldPriority != newPriority {
+			// Priority changed: update in btree (delete old + insert new)
+			h.cache.updatePreAllocatableCandidatePriority(newPod)
 		}
 	}
 }

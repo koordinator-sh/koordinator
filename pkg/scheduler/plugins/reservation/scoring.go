@@ -198,13 +198,13 @@ func (pl *Plugin) scoreForPreAllocation(ctx context.Context, cycleState *framewo
 		return mostPreferredScore, nil
 	}
 
-	if enableMultiplePAPods(state.rInfo) {
-		// If there is no pre-allocatable pod nominated on this node, give it the highest score.
+	if isMultiplePAPodsEnabled(state.rInfo) {
+		// If there is no pre-allocatable pod nominated on this node, give it the highest priority.
 		nodeRState := state.nodeReservationStates[nodeName]
 		if nodeRState == nil || len(nodeRState.selectedPreAllocatablePods) == 0 {
 			return framework.MaxNodeScore, nil
 		}
-		// The more pre-allocatable pods are selected on this node, the lower score it will get.
+		// The more pre-allocatable pods are selected on this node, the lower priority it will get.
 		return framework.MaxNodeScore / int64(1+len(nodeRState.selectedPreAllocatablePods)), nil
 	}
 

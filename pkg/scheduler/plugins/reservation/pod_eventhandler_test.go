@@ -371,7 +371,7 @@ func TestPodEventHandler_PreAllocatableCacheSync(t *testing.T) {
 			},
 		},
 		{
-			name:   "score change triggers re-sort",
+			name:   "priority change triggers re-sort",
 			oldPod: createCandidatePod("pod4", "node1", "40"),
 			newPod: createCandidatePod("pod4", "node1", "400"),
 			verifyFunc: func(t *testing.T, cache *reservationCache) {
@@ -379,7 +379,7 @@ func TestPodEventHandler_PreAllocatableCacheSync(t *testing.T) {
 				assert.NotNil(t, podCache)
 				item := podCache.index[types.UID("pod4")]
 				assert.NotNil(t, item, "pod4 should be in cache")
-				assert.Equal(t, int64(400), item.score, "score should be updated to 400")
+				assert.Equal(t, int64(400), item.priority, "priority should be updated to 400")
 			},
 		},
 		{
@@ -396,7 +396,7 @@ func TestPodEventHandler_PreAllocatableCacheSync(t *testing.T) {
 			},
 		},
 		{
-			name:   "score unchanged no update",
+			name:   "priority unchanged no update",
 			oldPod: createCandidatePod("pod6", "node1", "60"),
 			newPod: createCandidatePod("pod6", "node1", "60"),
 			verifyFunc: func(t *testing.T, cache *reservationCache) {
@@ -404,7 +404,7 @@ func TestPodEventHandler_PreAllocatableCacheSync(t *testing.T) {
 				assert.NotNil(t, podCache)
 				item := podCache.index[types.UID("pod6")]
 				assert.NotNil(t, item)
-				assert.Equal(t, int64(60), item.score)
+				assert.Equal(t, int64(60), item.priority)
 			},
 		},
 	}
@@ -439,7 +439,7 @@ func createPodWithLabels(uid, nodeName string, labels map[string]string) *corev1
 	}
 }
 
-func createCandidatePod(uid, nodeName, score string) *corev1.Pod {
+func createCandidatePod(uid, nodeName, priority string) *corev1.Pod {
 	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			UID: types.UID(uid),
@@ -447,7 +447,7 @@ func createCandidatePod(uid, nodeName, score string) *corev1.Pod {
 				apiext.LabelPodPreAllocatable: "true",
 			},
 			Annotations: map[string]string{
-				apiext.AnnotationPodPreAllocatableScore: score,
+				apiext.AnnotationPodPreAllocatablePriority: priority,
 			},
 		},
 		Spec: corev1.PodSpec{

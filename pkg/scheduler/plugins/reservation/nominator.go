@@ -542,7 +542,7 @@ func (pl *Plugin) GetNominatedPreAllocations(rInfo *frameworkext.ReservationInfo
 
 // NominatePreAllocations nominates multiple pre-allocatable pods for a reservation.
 // It accumulates resources from pods until all dimensions are satisfied.
-func (pl *Plugin) NominatePreAllocations(ctx context.Context, cycleState *framework.CycleState, rInfo *frameworkext.ReservationInfo, nodeName string) ([]*corev1.Pod, *framework.Status) {
+func (pl *Plugin) NominatePreAllocations(cycleState *framework.CycleState, rInfo *frameworkext.ReservationInfo, nodeName string) ([]*corev1.Pod, *framework.Status) {
 	if !rInfo.IsPreAllocation() {
 		return nil, nil
 	}

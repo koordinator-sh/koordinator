@@ -4511,8 +4511,8 @@ func testGetReservePod(pod *corev1.Pod) *corev1.Pod {
 	return pod
 }
 
-// TestPreAllocationClusterModeMultipleEnabled tests the PreAllocation logic in Cluster Mode with
-// multiple pre-allocated pods enabled.
+// TestPreAllocationClusterModeMultipleEnabled tests the PreAllocation logic
+// in Cluster Mode with multiple pre-allocated pods enabled.
 func TestPreAllocationClusterModeMultipleEnabled(t *testing.T) {
 	nodeName := "test-node"
 	node := &corev1.Node{
@@ -4522,12 +4522,6 @@ func TestPreAllocationClusterModeMultipleEnabled(t *testing.T) {
 		Status: corev1.NodeStatus{
 			Allocatable: makeResourceList("16", "32Gi", string(corev1.ResourcePods), "100"),
 		},
-	}
-	getNodeRStateFn := func(state *stateData) *nodeReservationState {
-		if state.nodeReservationStates != nil && state.nodeReservationStates[node.Name] != nil {
-			return state.nodeReservationStates[node.Name]
-		}
-		return &nodeReservationState{}
 	}
 	preAllocationConfs := []*config.PreAllocationConfig{
 		{
@@ -4539,17 +4533,7 @@ func TestPreAllocationClusterModeMultipleEnabled(t *testing.T) {
 		},
 	}
 
-	tests := []struct {
-		name              string
-		reserveResource   corev1.ResourceList
-		preAllocationConf *config.PreAllocationConfig
-		setupNode         func() *corev1.Node
-		setupPods         func() []*corev1.Pod
-		checkPreFilterFn  func(result *framework.PreFilterResult, status *framework.Status, state *stateData, conf *config.PreAllocationConfig)
-		checkFilterFn     func(status *framework.Status, state *stateData, conf *config.PreAllocationConfig)
-		checkScoreFn      func(score int64, status *framework.Status, state *stateData, conf *config.PreAllocationConfig)
-		checkReserveFn    func(status *framework.Status, state *stateData, conf *config.PreAllocationConfig)
-	}{
+	tests := []preAllocationTestCase{
 		{
 			name:            "sufficient node-unallocated, without pre-allocatable pods, expect success",
 			reserveResource: makeResourceList("8", "16Gi"),
@@ -4563,11 +4547,11 @@ func TestPreAllocationClusterModeMultipleEnabled(t *testing.T) {
 			checkPreFilterFn: func(result *framework.PreFilterResult, status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
 				assert.Nil(t, result)
 				assert.Nil(t, status)
-				assert.Len(t, getNodeRStateFn(state).preAllocatablePods, 0, "Pre-allocatable pods count mismatch")
+				assert.Len(t, getNodeRState(state, nodeName).preAllocatablePods, 0, "Pre-allocatable pods count mismatch")
 			},
 			checkFilterFn: func(status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
 				assert.True(t, status.IsSuccess())
-				assert.Len(t, getNodeRStateFn(state).selectedPreAllocatablePods, 0, "selected pre-allocatable pods count mismatch")
+				assert.Len(t, getNodeRState(state, nodeName).selectedPreAllocatablePods, 0, "selected pre-allocatable pods count mismatch")
 			},
 			checkScoreFn: func(score int64, status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
 				assert.Equal(t, framework.MaxNodeScore, score)
@@ -4585,8 +4569,8 @@ func TestPreAllocationClusterModeMultipleEnabled(t *testing.T) {
 			setupPods: func() []*corev1.Pod {
 				// allocated: <5, 10Gi>, unallocated: <11, 22Gi>, pre-allocatable: <4, 8Gi>
 				// pre-allocatable pods:
-				//   pod1: <2, 4Gi>, score=10
-				//   pod2: <2, 4Gi>, score=20, should be chosen since pre-allocated pods are preferred by default
+				//   pod1: <2, 4Gi>, priority=10
+				//   pod2: <2, 4Gi>, priority=20, should be chosen since pre-allocated pods are preferred by default
 				return []*corev1.Pod{
 					createTestPreAllocatablePod("pod1", nodeName, "2", "4Gi", "10"),
 					createTestPreAllocatablePod("pod2", nodeName, "2", "4Gi", "20"),
@@ -4596,23 +4580,22 @@ func TestPreAllocationClusterModeMultipleEnabled(t *testing.T) {
 			checkPreFilterFn: func(result *framework.PreFilterResult, status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
 				assert.Nil(t, result)
 				assert.Nil(t, status)
-				assert.Len(t, getNodeRStateFn(state).preAllocatablePods, 2, "pre-allocatable pods count mismatch")
+				assert.Len(t, getNodeRState(state, nodeName).preAllocatablePods, 2, "pre-allocatable pods count mismatch")
 				assert.Equal(t, makeResourceList("8", "16Gi"), state.podRequests, "reserve pod requests mismatch")
 				assert.Equal(t, framework.NewResource(makeResourceList("5", "10Gi")),
 					state.nodeReservationStates[nodeName].podRequested, "all pod requested mismatch")
 			},
 			checkFilterFn: func(status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
 				assert.True(t, status.IsSuccess(), "got status: %v", status)
-				// After Filter, no pre-allocatable pods are selected since node unallocated resource is sufficient
-				assert.Len(t, getNodeRStateFn(state).preAllocatablePods, 2, "pre-allocatable pods count mismatch")
+				assert.Len(t, getNodeRState(state, nodeName).preAllocatablePods, 2, "pre-allocatable pods count mismatch")
 				if conf.PreferNoPreAllocatedPods {
-					assert.Len(t, getNodeRStateFn(state).selectedPreAllocatablePods, 0,
+					assert.Len(t, getNodeRState(state, nodeName).selectedPreAllocatablePods, 0,
 						"selected pre-allocatable pods count mismatch")
 				} else {
 					// even when node-unallocated is sufficient, prefer to choose a pre-allocated pod by default.
-					assert.Len(t, getNodeRStateFn(state).selectedPreAllocatablePods, 1,
+					assert.Len(t, getNodeRState(state, nodeName).selectedPreAllocatablePods, 1,
 						"selected pre-allocatable pods count mismatch")
-					assert.Equal(t, "pod2", getNodeRStateFn(state).selectedPreAllocatablePods[0].Name,
+					assert.Equal(t, "pod2", getNodeRState(state, nodeName).selectedPreAllocatablePods[0].Name,
 						"selected pre-allocatable pod mismatch")
 				}
 			},
@@ -4649,7 +4632,7 @@ func TestPreAllocationClusterModeMultipleEnabled(t *testing.T) {
 			checkPreFilterFn: func(result *framework.PreFilterResult, status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
 				assert.Nil(t, result)
 				assert.Nil(t, status)
-				assert.Len(t, getNodeRStateFn(state).preAllocatablePods, 0, "pre-allocatable pods count mismatch")
+				assert.Len(t, getNodeRState(state, nodeName).preAllocatablePods, 0, "pre-allocatable pods count mismatch")
 				assert.Equal(t, makeResourceList("8", "16Gi"), state.podRequests, "reserve pod requests mismatch")
 				// no node reservation state since no pre-allocatable pods
 				assert.Nil(t, state.nodeReservationStates[nodeName], "node reservation state should be nil")
@@ -4661,7 +4644,7 @@ func TestPreAllocationClusterModeMultipleEnabled(t *testing.T) {
 						status, "got unexpected status: %v", status)
 				} else {
 					assert.True(t, status.IsSuccess())
-					assert.Len(t, getNodeRStateFn(state).selectedPreAllocatablePods, 0, "selected pre-allocatable pods count mismatch")
+					assert.Len(t, getNodeRState(state, nodeName).selectedPreAllocatablePods, 0, "selected pre-allocatable pods count mismatch")
 				}
 			},
 			checkScoreFn: func(score int64, status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
@@ -4689,7 +4672,7 @@ func TestPreAllocationClusterModeMultipleEnabled(t *testing.T) {
 			checkPreFilterFn: func(result *framework.PreFilterResult, status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
 				assert.Nil(t, result)
 				assert.Nil(t, status)
-				assert.Len(t, getNodeRStateFn(state).preAllocatablePods, 2, "pre-allocatable pods count mismatch")
+				assert.Len(t, getNodeRState(state, nodeName).preAllocatablePods, 2, "pre-allocatable pods count mismatch")
 				assert.Equal(t, makeResourceList("8", "16Gi"), state.podRequests, "reserve pod requests mismatch")
 				// nodeRState.podRequested is original allocated (all pods requested)
 				assert.Equal(t, framework.NewResource(makeResourceList("12", "18Gi")),
@@ -4709,9 +4692,9 @@ func TestPreAllocationClusterModeMultipleEnabled(t *testing.T) {
 			setupPods: func() []*corev1.Pod {
 				// allocated: <14, 28Gi>, unallocated: <2, 4Gi>, pre-allocatable: <7, 14Gi>
 				// pre-allocatable pods:
-				//   pod2: <1, 2Gi>, score=70
-				//   pod3: <2, 10Gi>, score=90, should be skipped since memory resource not fit in the reservation
-				//   pod4: <4, 2Gi>, score=50, should be skipped since cpu resource not fit in the reservation
+				//   pod2: <1, 2Gi>, priority=70
+				//   pod3: <2, 10Gi>, priority=90, should be skipped since memory resource not fit in the reservation
+				//   pod4: <4, 2Gi>, priority=50, should be skipped since cpu resource not fit in the reservation
 				return []*corev1.Pod{
 					createTestPod("pod1", nodeName, "7", "14Gi"),
 					createTestPreAllocatablePod("pod2", nodeName, "1", "2Gi", "70"),
@@ -4722,7 +4705,7 @@ func TestPreAllocationClusterModeMultipleEnabled(t *testing.T) {
 			checkPreFilterFn: func(result *framework.PreFilterResult, status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
 				assert.Nil(t, result)
 				assert.Nil(t, status)
-				assert.Len(t, getNodeRStateFn(state).preAllocatablePods, 3, "pre-allocatable pods count mismatch")
+				assert.Len(t, getNodeRState(state, nodeName).preAllocatablePods, 3, "pre-allocatable pods count mismatch")
 				assert.Equal(t, makeResourceList("4", "8Gi"), state.podRequests, "reserve pod requests mismatch")
 				// nodeRState.podRequested is original allocated (all pods requested)
 				assert.Equal(t, framework.NewResource(makeResourceList("14", "28Gi")),
@@ -4732,8 +4715,8 @@ func TestPreAllocationClusterModeMultipleEnabled(t *testing.T) {
 				assert.Equal(t, framework.NewStatus(framework.Unschedulable, "Insufficient cpu by node",
 					"Insufficient memory by node"),
 					status, "got unexpected status: %v", status)
-				assert.Len(t, getNodeRStateFn(state).preAllocatablePods, 3, "pre-allocatable pods count mismatch")
-				assert.Len(t, getNodeRStateFn(state).selectedPreAllocatablePods, 0, "selected pre-allocatable pods count mismatch")
+				assert.Len(t, getNodeRState(state, nodeName).preAllocatablePods, 3, "pre-allocatable pods count mismatch")
+				assert.Len(t, getNodeRState(state, nodeName).selectedPreAllocatablePods, 0, "selected pre-allocatable pods count mismatch")
 			},
 		},
 		{
@@ -4745,9 +4728,9 @@ func TestPreAllocationClusterModeMultipleEnabled(t *testing.T) {
 			setupPods: func() []*corev1.Pod {
 				// allocated: <10, 18Gi>, unallocated: <6, 14Gi>, pre-allocatable: <4, 4Gi>
 				// pre-allocatable pods:
-				//   pod3: <1, 1Gi>, score=70
-				//   pod4: <2, 2Gi>, score=90, should be selected
-				//   pod5: <1, 1Gi>, score=50
+				//   pod3: <1, 1Gi>, priority=70
+				//   pod4: <2, 2Gi>, priority=90, should be selected
+				//   pod5: <1, 1Gi>, priority=50
 				return []*corev1.Pod{
 					createTestPod("pod1", nodeName, "4", "10Gi"),
 					createTestPod("pod2", nodeName, "2", "4Gi"),
@@ -4759,7 +4742,7 @@ func TestPreAllocationClusterModeMultipleEnabled(t *testing.T) {
 			checkPreFilterFn: func(result *framework.PreFilterResult, status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
 				assert.Nil(t, result)
 				assert.Nil(t, status)
-				assert.Len(t, getNodeRStateFn(state).preAllocatablePods, 3, "pre-allocatable pods count mismatch")
+				assert.Len(t, getNodeRState(state, nodeName).preAllocatablePods, 3, "pre-allocatable pods count mismatch")
 				assert.Equal(t, makeResourceList("8", "16Gi"), state.podRequests, "reserve pod requests mismatch")
 				// nodeRState.podRequested is original allocated (all pods requested)
 				assert.Equal(t, framework.NewResource(makeResourceList("10", "18Gi")),
@@ -4767,10 +4750,10 @@ func TestPreAllocationClusterModeMultipleEnabled(t *testing.T) {
 			},
 			checkFilterFn: func(status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
 				assert.True(t, status.IsSuccess(), "got unexpected status: %v", status)
-				assert.Len(t, getNodeRStateFn(state).preAllocatablePods, 3, "pre-allocatable pods count mismatch")
-				assert.Len(t, getNodeRStateFn(state).selectedPreAllocatablePods, 1,
+				assert.Len(t, getNodeRState(state, nodeName).preAllocatablePods, 3, "pre-allocatable pods count mismatch")
+				assert.Len(t, getNodeRState(state, nodeName).selectedPreAllocatablePods, 1,
 					"selected pre-allocatable pods count mismatch")
-				assert.Equal(t, "pod4", getNodeRStateFn(state).selectedPreAllocatablePods[0].Name,
+				assert.Equal(t, "pod4", getNodeRState(state, nodeName).selectedPreAllocatablePods[0].Name,
 					"selected pre-allocatable pod mismatch")
 			},
 			checkScoreFn: func(score int64, status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
@@ -4790,9 +4773,9 @@ func TestPreAllocationClusterModeMultipleEnabled(t *testing.T) {
 			setupPods: func() []*corev1.Pod {
 				// allocated: <14, 28Gi>, unallocated: <2, 4Gi>, pre-allocatable: <7, 14Gi>
 				// pre-allocatable pods:
-				//   pod2: <1, 2Gi>, score=70
-				//   pod3: <5, 10Gi>, score=90, should be skipped since not fit in the reservation
-				//   pod4: <1, 2Gi>, score=50
+				//   pod2: <1, 2Gi>, priority=70
+				//   pod3: <5, 10Gi>, priority=90, should be skipped since not fit in the reservation
+				//   pod4: <1, 2Gi>, priority=50
 				return []*corev1.Pod{
 					createTestPod("pod1", nodeName, "7", "14Gi"),
 					createTestPreAllocatablePod("pod2", nodeName, "1", "2Gi", "70"),
@@ -4803,7 +4786,7 @@ func TestPreAllocationClusterModeMultipleEnabled(t *testing.T) {
 			checkPreFilterFn: func(result *framework.PreFilterResult, status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
 				assert.Nil(t, result)
 				assert.Nil(t, status)
-				assert.Len(t, getNodeRStateFn(state).preAllocatablePods, 3, "pre-allocatable pods count mismatch")
+				assert.Len(t, getNodeRState(state, nodeName).preAllocatablePods, 3, "pre-allocatable pods count mismatch")
 				assert.Equal(t, makeResourceList("4", "8Gi"), state.podRequests, "reserve pod requests mismatch")
 				// nodeRState.podRequested is original allocated (all pods requested)
 				assert.Equal(t, framework.NewResource(makeResourceList("14", "28Gi")),
@@ -4811,10 +4794,10 @@ func TestPreAllocationClusterModeMultipleEnabled(t *testing.T) {
 			},
 			checkFilterFn: func(status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
 				assert.True(t, status.IsSuccess(), "got unexpected status: %v", status)
-				assert.Len(t, getNodeRStateFn(state).preAllocatablePods, 3, "pre-allocatable pods count mismatch")
-				assert.Len(t, getNodeRStateFn(state).selectedPreAllocatablePods, 2, "selected pre-allocatable pods count mismatch")
-				assert.Equal(t, "pod2", getNodeRStateFn(state).selectedPreAllocatablePods[0].Name, "selected pre-allocatable pod mismatch")
-				assert.Equal(t, "pod4", getNodeRStateFn(state).selectedPreAllocatablePods[1].Name, "selected pre-allocatable pod mismatch")
+				assert.Len(t, getNodeRState(state, nodeName).preAllocatablePods, 3, "pre-allocatable pods count mismatch")
+				assert.Len(t, getNodeRState(state, nodeName).selectedPreAllocatablePods, 2, "selected pre-allocatable pods count mismatch")
+				assert.Equal(t, "pod2", getNodeRState(state, nodeName).selectedPreAllocatablePods[0].Name, "selected pre-allocatable pod mismatch")
+				assert.Equal(t, "pod4", getNodeRState(state, nodeName).selectedPreAllocatablePods[1].Name, "selected pre-allocatable pod mismatch")
 			},
 			checkScoreFn: func(score int64, status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
 				assert.Equal(t, framework.MaxNodeScore/3, score)
@@ -4831,111 +4814,15 @@ func TestPreAllocationClusterModeMultipleEnabled(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			for _, conf := range preAllocationConfs {
 				t.Logf("Testing with PreAllocationConfig: PreferNoPreAllocatedPods=%v", conf.PreferNoPreAllocatedPods)
-				// Enable Cluster Mode in plugin args
-				suit := newPluginTestSuitWith(t, tt.setupPods(), []*corev1.Node{tt.setupNode()}, func(args *config.ReservationArgs) {
-					args.PreAllocationConfig = conf
-				})
-				p, err := suit.pluginFactory()
-				assert.NoError(t, err)
-				pl := p.(*Plugin)
-
-				// Create a Cluster Mode reservation
-				testReservation := &schedulingv1alpha1.Reservation{
-					ObjectMeta: metav1.ObjectMeta{
-						UID:  uuid.NewUUID(),
-						Name: "cluster-mode-reservation",
-					},
-					Spec: schedulingv1alpha1.ReservationSpec{
-						TTL: &metav1.Duration{
-							Duration: 0,
-						},
-						AllocateOnce:  ptr.To(false),
-						PreAllocation: true,
-						PreAllocationPolicy: &schedulingv1alpha1.PreAllocationPolicy{
-							Mode:           schedulingv1alpha1.PreAllocationModeCluster,
-							EnableMultiple: true,
-						},
-						AllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyRestricted,
-						Owners: []schedulingv1alpha1.ReservationOwner{
-							{
-								LabelSelector: &metav1.LabelSelector{
-									MatchLabels: map[string]string{
-										"product": "xxx",
-									},
-								},
-							},
-						},
-						Template: &corev1.PodTemplateSpec{
-							Spec: corev1.PodSpec{
-								Containers: []corev1.Container{
-									{
-										Resources: corev1.ResourceRequirements{
-											Requests: tt.reserveResource,
-										},
-									},
-								},
-							},
-						},
-					},
-				}
-
-				_, err = pl.client.Reservations().Create(context.TODO(), testReservation, metav1.CreateOptions{})
-				assert.NoError(t, err)
-
-				// Setup pods
-				expectedPAPodsNum := 0
-				for _, pod := range tt.setupPods() {
-					if pod.Labels[apiext.LabelPodPreAllocatable] == "true" {
-						expectedPAPodsNum++
-					}
-					_, err = suit.fw.ClientSet().CoreV1().Pods(pod.Namespace).Create(context.TODO(), pod, metav1.CreateOptions{})
-					assert.NoError(t, err)
-				}
-
-				suit.start()
-
-				// Wait for pre-allocatable pods to be cached
-				ctx := context.TODO()
-				err = waitForPAPodsCached(ctx, t, pl, nodeName, expectedPAPodsNum)
-				assert.NoError(t, err)
-
-				// Test reserve pod for scheduling
-				testReservePod := reservationutil.NewReservePod(testReservation)
-
-				cycleState := framework.NewCycleState()
-
-				// Run BeforePreFilter and PreFilter
-				pl.BeforePreFilter(ctx, cycleState, testReservePod)
-				result, status := pl.PreFilter(ctx, cycleState, testReservePod)
-				if tt.checkPreFilterFn != nil {
-					tt.checkPreFilterFn(result, status, getStateData(cycleState), conf)
-				}
-
-				// Run Filter
-				nodeInfo, err := suit.fw.SnapshotSharedLister().NodeInfos().Get(node.Name)
-				assert.NoError(t, err)
-				status = pl.Filter(context.TODO(), cycleState, testReservePod, nodeInfo)
-				if tt.checkFilterFn != nil {
-					tt.checkFilterFn(status, getStateData(cycleState), conf)
-				}
-
-				// Run Score
-				if tt.checkScoreFn != nil {
-					score, scoreStatus := pl.Score(ctx, cycleState, testReservePod, node.Name)
-					tt.checkScoreFn(score, scoreStatus, getStateData(cycleState), conf)
-				}
-
-				// Run Reserve
-				if tt.checkReserveFn != nil {
-					status = pl.Reserve(ctx, cycleState, testReservePod, node.Name)
-					tt.checkReserveFn(status, getStateData(cycleState), conf)
-				}
+				testPreAllocationMode(t, tt, node, conf, schedulingv1alpha1.PreAllocationModeCluster,
+					true, map[string]string{"product": "xxx"})
 			}
 		})
 	}
 }
 
-// TestPreAllocationClusterModeMultipleDisabled tests the PreAllocation logic in Cluster Mode and multiple pre-allocated pods disabled.
+// TestPreAllocationClusterModeMultipleDisabled tests the PreAllocation logic
+// in Cluster Mode with multiple pre-allocated pods disabled.
 func TestPreAllocationClusterModeMultipleDisabled(t *testing.T) {
 	nodeName := "test-node"
 	node := &corev1.Node{
@@ -4945,12 +4832,6 @@ func TestPreAllocationClusterModeMultipleDisabled(t *testing.T) {
 		Status: corev1.NodeStatus{
 			Allocatable: makeResourceList("16", "32Gi", string(corev1.ResourcePods), "100"),
 		},
-	}
-	getNodeRStateFn := func(state *stateData) *nodeReservationState {
-		if state.nodeReservationStates != nil && state.nodeReservationStates[node.Name] != nil {
-			return state.nodeReservationStates[node.Name]
-		}
-		return &nodeReservationState{}
 	}
 	preAllocationConfs := []*config.PreAllocationConfig{
 		{
@@ -4962,17 +4843,7 @@ func TestPreAllocationClusterModeMultipleDisabled(t *testing.T) {
 		},
 	}
 
-	tests := []struct {
-		name                  string
-		preAllocationRequired bool
-		reserveResource       corev1.ResourceList
-		setupNode             func() *corev1.Node
-		setupPods             func() []*corev1.Pod
-		checkPreFilterFn      func(result *framework.PreFilterResult, status *framework.Status, state *stateData, conf *config.PreAllocationConfig)
-		checkFilterFn         func(status *framework.Status, state *stateData, conf *config.PreAllocationConfig)
-		checkScoreFn          func(score int64, status *framework.Status, state *stateData, conf *config.PreAllocationConfig)
-		checkReserveFn        func(status *framework.Status, state *stateData, conf *config.PreAllocationConfig)
-	}{
+	tests := []preAllocationTestCase{
 		{
 			name:            "sufficient node-unallocated, no pre-allocatable pods, expect success",
 			reserveResource: makeResourceList("8", "16Gi"),
@@ -4986,11 +4857,11 @@ func TestPreAllocationClusterModeMultipleDisabled(t *testing.T) {
 			checkPreFilterFn: func(result *framework.PreFilterResult, status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
 				assert.Nil(t, result)
 				assert.Nil(t, status)
-				assert.Len(t, getNodeRStateFn(state).preAllocatablePods, 0, "Pre-allocatable pods count mismatch")
+				assert.Len(t, getNodeRState(state, nodeName).preAllocatablePods, 0, "Pre-allocatable pods count mismatch")
 			},
 			checkFilterFn: func(status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
 				assert.True(t, status.IsSuccess())
-				assert.Len(t, getNodeRStateFn(state).selectedPreAllocatablePods, 0, "selected pre-allocatable pods count mismatch")
+				assert.Len(t, getNodeRState(state, nodeName).selectedPreAllocatablePods, 0, "selected pre-allocatable pods count mismatch")
 			},
 			checkScoreFn: func(score int64, status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
 				assert.Equal(t, framework.MinNodeScore, score)
@@ -5009,8 +4880,8 @@ func TestPreAllocationClusterModeMultipleDisabled(t *testing.T) {
 			setupPods: func() []*corev1.Pod {
 				// allocated: <0, 0Gi>, unallocated: <16, 32Gi>, pre-allocatable: <4, 8Gi>
 				// pre-allocatable pods:
-				//   pod1: <2, 4Gi>, score=10
-				//   pod2: <2, 4Gi>, score=20
+				//   pod1: <2, 4Gi>, priority=10
+				//   pod2: <2, 4Gi>, priority=20
 				return []*corev1.Pod{
 					createTestPreAllocatablePod("pod1", nodeName, "2", "4Gi", "10"),
 					createTestPreAllocatablePod("pod2", nodeName, "2", "4Gi", "20"),
@@ -5020,20 +4891,19 @@ func TestPreAllocationClusterModeMultipleDisabled(t *testing.T) {
 			checkPreFilterFn: func(result *framework.PreFilterResult, status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
 				assert.Nil(t, result)
 				assert.Nil(t, status)
-				assert.Len(t, getNodeRStateFn(state).preAllocatablePods, 2, "pre-allocatable pods count mismatch")
+				assert.Len(t, getNodeRState(state, nodeName).preAllocatablePods, 2, "pre-allocatable pods count mismatch")
 				assert.Equal(t, makeResourceList("8", "16Gi"), state.podRequests, "reserve pod requests mismatch")
 				assert.Equal(t, framework.NewResource(makeResourceList("5", "10Gi")),
 					state.nodeReservationStates[nodeName].podRequested, "all pod requested mismatch")
 			},
 			checkFilterFn: func(status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
 				assert.True(t, status.IsSuccess(), "got status: %v", status)
-				// After Filter, no pre-allocatable pods are selected since node unallocated resource is sufficient
-				assert.Len(t, getNodeRStateFn(state).preAllocatablePods, 2, "pre-allocatable pods count mismatch")
+				assert.Len(t, getNodeRState(state, nodeName).preAllocatablePods, 2, "pre-allocatable pods count mismatch")
 				if conf.PreferNoPreAllocatedPods {
-					assert.Len(t, getNodeRStateFn(state).selectedPreAllocatablePods, 0,
+					assert.Len(t, getNodeRState(state, nodeName).selectedPreAllocatablePods, 0,
 						"selected pre-allocatable pods count mismatch")
 				} else {
-					assert.Len(t, getNodeRStateFn(state).selectedPreAllocatablePods, 2,
+					assert.Len(t, getNodeRState(state, nodeName).selectedPreAllocatablePods, 2,
 						"selected pre-allocatable pods count mismatch")
 				}
 			},
@@ -5066,7 +4936,7 @@ func TestPreAllocationClusterModeMultipleDisabled(t *testing.T) {
 			checkPreFilterFn: func(result *framework.PreFilterResult, status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
 				assert.Nil(t, result)
 				assert.Nil(t, status)
-				assert.Len(t, getNodeRStateFn(state).preAllocatablePods, 0, "pre-allocatable pods count mismatch")
+				assert.Len(t, getNodeRState(state, nodeName).preAllocatablePods, 0, "pre-allocatable pods count mismatch")
 				assert.Equal(t, makeResourceList("8", "16Gi"), state.podRequests, "reserve pod requests mismatch")
 				// no node reservation state since no pre-allocatable pods
 				assert.Nil(t, state.nodeReservationStates[nodeName], "node reservation state should be nil")
@@ -5077,8 +4947,9 @@ func TestPreAllocationClusterModeMultipleDisabled(t *testing.T) {
 					assert.Equal(t, framework.NewStatus(framework.Unschedulable, "Insufficient cpu by node"),
 						status, "got unexpected status: %v", status)
 				} else {
+					// When no pre-allocatable pods exist, this plugin won't check node node-unallocated resources.
 					assert.True(t, status.IsSuccess())
-					assert.Len(t, getNodeRStateFn(state).selectedPreAllocatablePods, 0, "selected pre-allocatable pods count mismatch")
+					assert.Len(t, getNodeRState(state, nodeName).selectedPreAllocatablePods, 0, "selected pre-allocatable pods count mismatch")
 				}
 			},
 			checkScoreFn: func(score int64, status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
@@ -5106,7 +4977,7 @@ func TestPreAllocationClusterModeMultipleDisabled(t *testing.T) {
 			checkPreFilterFn: func(result *framework.PreFilterResult, status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
 				assert.Nil(t, result)
 				assert.Nil(t, status)
-				assert.Len(t, getNodeRStateFn(state).preAllocatablePods, 2, "pre-allocatable pods count mismatch")
+				assert.Len(t, getNodeRState(state, nodeName).preAllocatablePods, 2, "pre-allocatable pods count mismatch")
 				assert.Equal(t, makeResourceList("8", "16Gi"), state.podRequests, "reserve pod requests mismatch")
 				// nodeRState.podRequested is original allocated (all pods requested)
 				assert.Equal(t, framework.NewResource(makeResourceList("12", "18Gi")),
@@ -5115,8 +4986,8 @@ func TestPreAllocationClusterModeMultipleDisabled(t *testing.T) {
 			checkFilterFn: func(status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
 				assert.Equal(t, framework.NewStatus(framework.Unschedulable, "Insufficient cpu by node"),
 					status, "got unexpected status: %v", status)
-				assert.Len(t, getNodeRStateFn(state).preAllocatablePods, 2, "pre-allocatable pods count mismatch")
-				assert.Len(t, getNodeRStateFn(state).selectedPreAllocatablePods, 0,
+				assert.Len(t, getNodeRState(state, nodeName).preAllocatablePods, 2, "pre-allocatable pods count mismatch")
+				assert.Len(t, getNodeRState(state, nodeName).selectedPreAllocatablePods, 0,
 					"selected pre-allocatable pods count mismatch")
 			},
 		},
@@ -5129,9 +5000,9 @@ func TestPreAllocationClusterModeMultipleDisabled(t *testing.T) {
 			setupPods: func() []*corev1.Pod {
 				// allocated: <14, 28Gi>, unallocated: <2, 4Gi>,
 				// pre-allocatable pods:
-				//   pod2: <1, 2Gi>, score=70
-				//   pod3: <2, 10Gi>, score=90, should be skipped since memory resource not fit in the reservation
-				//   pod4: <5, 2Gi>, score=50, should be skipped since cpu resource not fit in the reservation
+				//   pod2: <1, 2Gi>, priority=70
+				//   pod3: <2, 10Gi>, priority=90, should be skipped since memory resource not fit in the reservation
+				//   pod4: <5, 2Gi>, priority=50, should be skipped since cpu resource not fit in the reservation
 				return []*corev1.Pod{
 					createTestPod("pod1", nodeName, "7", "14Gi"),
 					createTestPreAllocatablePod("pod2", nodeName, "1", "2Gi", "70"),
@@ -5142,7 +5013,7 @@ func TestPreAllocationClusterModeMultipleDisabled(t *testing.T) {
 			checkPreFilterFn: func(result *framework.PreFilterResult, status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
 				assert.Nil(t, result)
 				assert.Nil(t, status)
-				assert.Len(t, getNodeRStateFn(state).preAllocatablePods, 3, "pre-allocatable pods count mismatch")
+				assert.Len(t, getNodeRState(state, nodeName).preAllocatablePods, 3, "pre-allocatable pods count mismatch")
 				assert.Equal(t, makeResourceList("4", "8Gi"), state.podRequests, "reserve pod requests mismatch")
 				// nodeRState.podRequested is original allocated (all pods requested)
 				assert.Equal(t, framework.NewResource(makeResourceList("15", "28Gi")),
@@ -5153,8 +5024,8 @@ func TestPreAllocationClusterModeMultipleDisabled(t *testing.T) {
 				assert.Equal(t, framework.NewStatus(framework.Unschedulable,
 					"Insufficient cpu by node", "Insufficient memory by node"),
 					status, "got unexpected status: %v", status)
-				assert.Len(t, getNodeRStateFn(state).preAllocatablePods, 3, "pre-allocatable pods count mismatch")
-				assert.Len(t, getNodeRStateFn(state).selectedPreAllocatablePods, 0, "selected pre-allocatable pods count mismatch")
+				assert.Len(t, getNodeRState(state, nodeName).preAllocatablePods, 3, "pre-allocatable pods count mismatch")
+				assert.Len(t, getNodeRState(state, nodeName).selectedPreAllocatablePods, 0, "selected pre-allocatable pods count mismatch")
 			},
 		},
 		{
@@ -5176,7 +5047,7 @@ func TestPreAllocationClusterModeMultipleDisabled(t *testing.T) {
 			checkPreFilterFn: func(result *framework.PreFilterResult, status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
 				assert.Nil(t, result)
 				assert.Nil(t, status)
-				assert.Len(t, getNodeRStateFn(state).preAllocatablePods, 3, "pre-allocatable pods count mismatch")
+				assert.Len(t, getNodeRState(state, nodeName).preAllocatablePods, 3, "pre-allocatable pods count mismatch")
 				assert.Equal(t, makeResourceList("8", "16Gi"), state.podRequests, "reserve pod requests mismatch")
 				// nodeRState.podRequested is original allocated (all pods requested)
 				assert.Equal(t, framework.NewResource(makeResourceList("10", "18Gi")),
@@ -5184,8 +5055,8 @@ func TestPreAllocationClusterModeMultipleDisabled(t *testing.T) {
 			},
 			checkFilterFn: func(status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
 				assert.True(t, status.IsSuccess(), "got unexpected status: %v", status)
-				assert.Len(t, getNodeRStateFn(state).preAllocatablePods, 3, "pre-allocatable pods count mismatch")
-				assert.Len(t, getNodeRStateFn(state).selectedPreAllocatablePods, 3, "selected pre-allocatable pods count mismatch")
+				assert.Len(t, getNodeRState(state, nodeName).preAllocatablePods, 3, "pre-allocatable pods count mismatch")
+				assert.Len(t, getNodeRState(state, nodeName).selectedPreAllocatablePods, 3, "selected pre-allocatable pods count mismatch")
 			},
 			checkScoreFn: func(score int64, status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
 				assert.Equal(t, framework.MinNodeScore, score)
@@ -5207,9 +5078,9 @@ func TestPreAllocationClusterModeMultipleDisabled(t *testing.T) {
 			setupPods: func() []*corev1.Pod {
 				// allocated: <14, 28Gi>, unallocated: <2, 4Gi>,
 				// pre-allocatable pods:
-				//   pod2: <1, 2Gi>, score=70
-				//   pod3: <2, 10Gi>, score=90, should be skipped since memory resource not fit in the reservation
-				//   pod4: <5, 2Gi>, score=50, should be skipped since cpu resource not fit in the reservation
+				//   pod2: <1, 2Gi>, priority=70
+				//   pod3: <2, 10Gi>, priority=90, should be skipped since memory resource not fit in the reservation
+				//   pod4: <5, 2Gi>, priority=50, should be skipped since cpu resource not fit in the reservation
 				return []*corev1.Pod{
 					createTestPod("pod1", nodeName, "7", "14Gi"),
 					createTestPreAllocatablePod("pod2", nodeName, "1", "2Gi", "70"),
@@ -5220,7 +5091,7 @@ func TestPreAllocationClusterModeMultipleDisabled(t *testing.T) {
 			checkPreFilterFn: func(result *framework.PreFilterResult, status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
 				//assert.Nil(t, result)
 				//assert.Nil(t, status)
-				assert.Len(t, getNodeRStateFn(state).preAllocatablePods, 3, "pre-allocatable pods count mismatch")
+				assert.Len(t, getNodeRState(state, nodeName).preAllocatablePods, 3, "pre-allocatable pods count mismatch")
 				assert.Equal(t, makeResourceList("4", "8Gi"), state.podRequests, "reserve pod requests mismatch")
 				// nodeRState.podRequested is original allocated (all pods requested)
 				assert.Equal(t, framework.NewResource(makeResourceList("15", "28Gi")),
@@ -5231,8 +5102,8 @@ func TestPreAllocationClusterModeMultipleDisabled(t *testing.T) {
 				assert.Equal(t, framework.NewStatus(framework.Unschedulable, "Insufficient cpu by node",
 					"Insufficient memory by node", "Reservation(s) Insufficient memory", "Reservation(s) Insufficient cpu"),
 					status, "got unexpected status: %v", status)
-				assert.Len(t, getNodeRStateFn(state).preAllocatablePods, 3, "pre-allocatable pods count mismatch")
-				assert.Len(t, getNodeRStateFn(state).selectedPreAllocatablePods, 0, "selected pre-allocatable pods count mismatch")
+				assert.Len(t, getNodeRState(state, nodeName).preAllocatablePods, 3, "pre-allocatable pods count mismatch")
+				assert.Len(t, getNodeRState(state, nodeName).selectedPreAllocatablePods, 0, "selected pre-allocatable pods count mismatch")
 			},
 		},
 	}
@@ -5240,119 +5111,487 @@ func TestPreAllocationClusterModeMultipleDisabled(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			for _, conf := range preAllocationConfs {
-				// Enable Cluster Mode in plugin args
-				suit := newPluginTestSuitWith(t, tt.setupPods(), []*corev1.Node{tt.setupNode()}, func(args *config.ReservationArgs) {
-					args.PreAllocationConfig = conf
-				})
-				p, err := suit.pluginFactory()
-				assert.NoError(t, err)
-				pl := p.(*Plugin)
+				t.Logf("Testing with PreAllocationConfig: PreferNoPreAllocatedPods=%v", conf.PreferNoPreAllocatedPods)
+				testPreAllocationMode(t, tt, node, conf, schedulingv1alpha1.PreAllocationModeCluster,
+					false, map[string]string{"product": "xxx"})
+			}
+		})
+	}
+}
 
-				// Create a Cluster Mode reservation
-				testReservation := &schedulingv1alpha1.Reservation{
-					ObjectMeta: metav1.ObjectMeta{
-						UID:  uuid.NewUUID(),
-						Name: "cluster-mode-reservation",
-					},
-					Spec: schedulingv1alpha1.ReservationSpec{
-						TTL: &metav1.Duration{
-							Duration: 0,
-						},
-						AllocateOnce:  ptr.To(false),
-						PreAllocation: true,
-						PreAllocationPolicy: &schedulingv1alpha1.PreAllocationPolicy{
-							Mode:           schedulingv1alpha1.PreAllocationModeCluster,
-							EnableMultiple: false,
-						},
-						AllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyRestricted,
-						Owners: []schedulingv1alpha1.ReservationOwner{
-							{
-								LabelSelector: &metav1.LabelSelector{
-									MatchLabels: map[string]string{
-										"product": "xxx",
-									},
-								},
-							},
-						},
-						Template: &corev1.PodTemplateSpec{
-							Spec: corev1.PodSpec{
-								Containers: []corev1.Container{
-									{
-										Resources: corev1.ResourceRequirements{
-											Requests: tt.reserveResource,
-										},
-									},
-								},
-							},
-						},
-					},
+// TestPreAllocationDefaultModeMultipleEnabled tests the PreAllocation logic
+// in Default Mode with multiple pre-allocated pods enabled.
+func TestPreAllocationDefaultModeMultipleEnabled(t *testing.T) {
+	nodeName := "test-node"
+	node := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: nodeName,
+		},
+		Status: corev1.NodeStatus{
+			Allocatable: makeResourceList("16", "32Gi", string(corev1.ResourcePods), "100"),
+		},
+	}
+	ownerLabels := map[string]string{
+		"app": "test-app",
+	}
+	// tests with different PreferNoPreAllocatedPods config settings
+	preAllocationConfs := []*config.PreAllocationConfig{
+		{},
+		{
+			PreferNoPreAllocatedPods: true,
+		},
+	}
+
+	tests := []preAllocationTestCase{
+		{
+			name:            "sufficient node-unallocated, without pre-allocatable pods, expect success",
+			reserveResource: makeResourceList("8", "16Gi"),
+			setupNode: func() *corev1.Node {
+				return node
+			},
+			setupPods: func() []*corev1.Pod {
+				// allocated: <0, 0Gi>, unallocated: <16, 32Gi>
+				return []*corev1.Pod{}
+			},
+			checkPreFilterFn: func(result *framework.PreFilterResult, status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+				assert.Nil(t, result)
+				assert.Nil(t, status)
+				assert.Len(t, getNodeRState(state, nodeName).preAllocatablePods, 0, "Pre-allocatable pods count mismatch")
+			},
+			checkFilterFn: func(status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+				assert.True(t, status.IsSuccess())
+				assert.Len(t, getNodeRState(state, nodeName).selectedPreAllocatablePods, 0, "selected pre-allocatable pods count mismatch")
+			},
+			checkScoreFn: func(score int64, status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+				assert.Equal(t, framework.MaxNodeScore, score)
+			},
+			checkReserveFn: func(status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+				assert.Len(t, state.preAllocated, 0, "pre-allocated pods count mismatch")
+			},
+		},
+		{
+			name:            "sufficient node-unallocated, with 2 owner-matched pre-allocatable pods, expect success",
+			reserveResource: makeResourceList("8", "16Gi"),
+			setupNode: func() *corev1.Node {
+				return node
+			},
+			setupPods: func() []*corev1.Pod {
+				// allocated: <5, 10Gi>, unallocated: <11, 22Gi>, pre-allocatable: <4, 8Gi>
+				// pre-allocatable pods (matched by owner labels):
+				//   pod1: <2, 4Gi>
+				//   pod2: <2, 4Gi>
+				return []*corev1.Pod{
+					createTestPreAllocatablePodWithOwnerLabel("pod1", nodeName, "2", "4Gi", ownerLabels),
+					createTestPreAllocatablePodWithOwnerLabel("pod2", nodeName, "2", "4Gi", ownerLabels),
+					createTestPod("pod3", nodeName, "1", "2Gi"),
 				}
-				if tt.preAllocationRequired {
-					if testReservation.Labels == nil {
-						testReservation.Labels = make(map[string]string)
-					}
-					testReservation.Labels[apiext.LabelPreAllocationRequired] = "true"
+			},
+			checkPreFilterFn: func(result *framework.PreFilterResult, status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+				assert.Nil(t, result)
+				assert.Nil(t, status)
+				assert.Len(t, getNodeRState(state, nodeName).preAllocatablePods, 2, "pre-allocatable pods count mismatch")
+				assert.Equal(t, makeResourceList("8", "16Gi"), state.podRequests, "reserve pod requests mismatch")
+				assert.Len(t, getNodeRState(state, nodeName).preAllocatablePods, 2, "pre-allocatable pods count mismatch")
+			},
+			checkFilterFn: func(status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+				assert.True(t, status.IsSuccess(), "got status: %v", status)
+				assert.Len(t, getNodeRState(state, nodeName).preAllocatablePods, 2, "pre-allocatable pods count mismatch")
+				if conf.PreferNoPreAllocatedPods {
+					assert.Len(t, getNodeRState(state, nodeName).selectedPreAllocatablePods, 0,
+						"selected pre-allocatable pods count mismatch")
+				} else {
+					// even when node-unallocated is sufficient, prefer to choose a pre-allocated pod by default.
+					assert.Len(t, getNodeRState(state, nodeName).selectedPreAllocatablePods, 1,
+						"selected pre-allocatable pods count mismatch")
 				}
-
-				_, err = pl.client.Reservations().Create(context.TODO(), testReservation, metav1.CreateOptions{})
-				assert.NoError(t, err)
-
-				// Setup pods
-				expectedPAPodsNum := 0
-				for _, pod := range tt.setupPods() {
-					if pod.Labels[apiext.LabelPodPreAllocatable] == "true" {
-						expectedPAPodsNum++
-					}
-					_, err = suit.fw.ClientSet().CoreV1().Pods(pod.Namespace).Create(context.TODO(), pod, metav1.CreateOptions{})
-					assert.NoError(t, err)
+			},
+			checkScoreFn: func(score int64, status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+				if conf.PreferNoPreAllocatedPods {
+					assert.Equal(t, framework.MaxNodeScore, score)
+				} else {
+					assert.Equal(t, framework.MaxNodeScore/2, score)
 				}
-
-				suit.start()
-
-				// Wait for pre-allocatable pods to be cached
-				ctx := context.TODO()
-				err = waitForPAPodsCached(ctx, t, pl, nodeName, expectedPAPodsNum)
-				assert.NoError(t, err)
-
-				// Test reserve pod for scheduling
-				testReservePod := reservationutil.NewReservePod(testReservation)
-
-				cycleState := framework.NewCycleState()
-
-				// Run BeforePreFilter and PreFilter
-				pl.BeforePreFilter(ctx, cycleState, testReservePod)
-				result, status := pl.PreFilter(ctx, cycleState, testReservePod)
-				if tt.checkPreFilterFn != nil {
-					tt.checkPreFilterFn(result, status, getStateData(cycleState), conf)
+			},
+			checkReserveFn: func(status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+				if conf.PreferNoPreAllocatedPods {
+					assert.Len(t, state.preAllocated, 0, "pre-allocated pods count mismatch")
+				} else {
+					assert.Len(t, state.preAllocated, 1, "pre-allocated pods count mismatch")
 				}
-
-				// Run Filter
-				nodeInfo, err := suit.fw.SnapshotSharedLister().NodeInfos().Get(node.Name)
-				assert.NoError(t, err)
-				status = pl.Filter(context.TODO(), cycleState, testReservePod, nodeInfo)
-				if tt.checkFilterFn != nil {
-					tt.checkFilterFn(status, getStateData(cycleState), conf)
+			},
+		},
+		{
+			name:            "insufficient node-unallocated, no owner-matched pre-allocatable pods, expect success or unschedulable",
+			reserveResource: makeResourceList("8", "16Gi"),
+			setupNode: func() *corev1.Node {
+				return node
+			},
+			setupPods: func() []*corev1.Pod {
+				// allocated: <11, 16Gi>, unallocated: <5, 16Gi>
+				return []*corev1.Pod{
+					createTestPod("pod1", nodeName, "8", "10Gi"),
+					createTestPod("pod2", nodeName, "2", "4Gi"),
+					createTestPod("pod3", nodeName, "1", "2Gi"),
 				}
-
-				// Run Score
-				if tt.checkScoreFn != nil {
-					score, scoreStatus := pl.Score(ctx, cycleState, testReservePod, node.Name)
-					tt.checkScoreFn(score, scoreStatus, getStateData(cycleState), conf)
+			},
+			checkPreFilterFn: func(result *framework.PreFilterResult, status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+				assert.Nil(t, result)
+				assert.Nil(t, status)
+				assert.Len(t, getNodeRState(state, nodeName).preAllocatablePods, 0, "pre-allocatable pods count mismatch")
+				assert.Equal(t, makeResourceList("8", "16Gi"), state.podRequests, "reserve pod requests mismatch")
+			},
+			checkFilterFn: func(status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+				if conf.PreferNoPreAllocatedPods {
+					// When PreferNoPreAllocatedPods is true, check node unallocated first and fail
+					assert.Equal(t, framework.NewStatus(framework.Unschedulable, "Insufficient cpu by node"),
+						status, "got unexpected status: %v", status)
+				} else {
+					// When PreferNoPreAllocatedPods is false, no pre-allocatable pods, but code returns success
+					// because this plugin doesn't enforce node unallocated check, NodeResourcesFit plugin will do that.
+					assert.True(t, status.IsSuccess(), "got unexpected status: %v", status)
 				}
-
-				// Run Reserve
-				if tt.checkReserveFn != nil {
-					status = pl.Reserve(ctx, cycleState, testReservePod, node.Name)
-					tt.checkReserveFn(status, getStateData(cycleState), conf)
+			},
+		},
+		{
+			name:            "insufficient node-unallocated, insufficient owner-matched pre-allocatable pods, expect unschedulable",
+			reserveResource: makeResourceList("8", "16Gi"),
+			setupNode: func() *corev1.Node {
+				return node
+			},
+			setupPods: func() []*corev1.Pod {
+				// allocated: <12, 18Gi>, unallocated: <4, 14Gi>, pre-allocatable: <2, 4Gi>
+				return []*corev1.Pod{
+					createTestPod("pod1", nodeName, "8", "10Gi"),
+					createTestPod("pod2", nodeName, "2", "4Gi"),
+					createTestPreAllocatablePodWithOwnerLabel("pod3", nodeName, "1", "2Gi", ownerLabels),
+					createTestPreAllocatablePodWithOwnerLabel("pod4", nodeName, "1", "2Gi", ownerLabels),
 				}
+			},
+			checkPreFilterFn: func(result *framework.PreFilterResult, status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+				assert.Nil(t, result)
+				assert.Nil(t, status)
+				assert.Len(t, getNodeRState(state, nodeName).preAllocatablePods, 2, "pre-allocatable pods count mismatch")
+				assert.Equal(t, makeResourceList("8", "16Gi"), state.podRequests, "reserve pod requests mismatch")
+			},
+			checkFilterFn: func(status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+				assert.Equal(t, framework.NewStatus(framework.Unschedulable, "Insufficient cpu by node"),
+					status, "got unexpected status: %v", status)
+			},
+		},
+		{
+			name:            "insufficient node-unallocated, sufficient owner-matched pre-allocatable pods (2 in 3), expect success",
+			reserveResource: makeResourceList("4", "8Gi"),
+			setupNode: func() *corev1.Node {
+				return node
+			},
+			setupPods: func() []*corev1.Pod {
+				// allocated: <14, 28Gi>, unallocated: <2, 4Gi>, pre-allocatable: <2, 4Gi>
+				// pre-allocatable pods (matched by owner labels):
+				//   pod2: <1, 2Gi>
+				//   pod3: <5, 10Gi>, should be skipped since not fit in the reservation
+				//   pod4: <1, 2Gi>
+				return []*corev1.Pod{
+					createTestPod("pod1", nodeName, "7", "14Gi"),
+					createTestPreAllocatablePodWithOwnerLabel("pod2", nodeName, "1", "2Gi", ownerLabels),
+					createTestPreAllocatablePodWithOwnerLabel("pod3", nodeName, "5", "10Gi", ownerLabels),
+					createTestPreAllocatablePodWithOwnerLabel("pod4", nodeName, "1", "2Gi", ownerLabels),
+				}
+			},
+			checkPreFilterFn: func(result *framework.PreFilterResult, status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+				assert.Nil(t, result)
+				assert.Nil(t, status)
+				assert.Len(t, getNodeRState(state, nodeName).preAllocatablePods, 3, "pre-allocatable pods count mismatch")
+				assert.Equal(t, makeResourceList("4", "8Gi"), state.podRequests, "reserve pod requests mismatch")
+			},
+			checkFilterFn: func(status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+				assert.True(t, status.IsSuccess(), "got unexpected status: %v", status)
+				assert.Len(t, getNodeRState(state, nodeName).preAllocatablePods, 3, "pre-allocatable pods count mismatch")
+				assert.Len(t, getNodeRState(state, nodeName).selectedPreAllocatablePods, 2, "selected pre-allocatable pods count mismatch")
+			},
+			checkScoreFn: func(score int64, status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+				assert.Equal(t, framework.MaxNodeScore/3, score)
+			},
+			checkReserveFn: func(status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+				assert.Len(t, state.preAllocated, 2, "pre-allocated pods count mismatch")
+			},
+		},
+		{
+			name:            "insufficient node-unallocated, sufficient owner-matched pre-allocatable pods (1 in 3), expect success",
+			reserveResource: makeResourceList("8", "16Gi"),
+			setupNode: func() *corev1.Node {
+				return node
+			},
+			setupPods: func() []*corev1.Pod {
+				// allocated: <10, 18Gi>, unallocated: <6, 14Gi>, pre-allocatable: <4, 4Gi>
+				// pre-allocatable pods (matched by owner labels):
+				//   pod3: <1, 1Gi>
+				//   pod4: <2, 2Gi>
+				//   pod5: <1, 1Gi>
+				return []*corev1.Pod{
+					createTestPod("pod1", nodeName, "4", "10Gi"),
+					createTestPod("pod2", nodeName, "2", "4Gi"),
+					createTestPreAllocatablePodWithOwnerLabel("pod3", nodeName, "1", "1Gi", ownerLabels),
+					createTestPreAllocatablePodWithOwnerLabel("pod4", nodeName, "2", "2Gi", ownerLabels),
+					createTestPreAllocatablePodWithOwnerLabel("pod5", nodeName, "1", "1Gi", ownerLabels),
+				}
+			},
+			checkPreFilterFn: func(result *framework.PreFilterResult, status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+				assert.Nil(t, result)
+				assert.Nil(t, status)
+				assert.Len(t, getNodeRState(state, nodeName).preAllocatablePods, 3, "pre-allocatable pods count mismatch")
+				assert.Equal(t, makeResourceList("8", "16Gi"), state.podRequests, "reserve pod requests mismatch")
+			},
+			checkFilterFn: func(status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+				assert.True(t, status.IsSuccess(), "got unexpected status: %v", status)
+				assert.Len(t, getNodeRState(state, nodeName).preAllocatablePods, 3, "pre-allocatable pods count mismatch")
+				assert.Len(t, getNodeRState(state, nodeName).selectedPreAllocatablePods, 1,
+					"selected pre-allocatable pods count mismatch")
+			},
+			checkScoreFn: func(score int64, status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+				assert.Equal(t, framework.MaxNodeScore/2, score)
+			},
+			checkReserveFn: func(status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+				assert.Len(t, state.preAllocated, 1, "pre-allocated pods count mismatch")
+			},
+		},
+	}
 
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			for _, conf := range preAllocationConfs {
+				t.Logf("Testing with PreAllocationConfig: PreferNoPreAllocatedPods=%v", conf.PreferNoPreAllocatedPods)
+				testPreAllocationMode(t, tt, node, conf, schedulingv1alpha1.PreAllocationModeDefault,
+					true, ownerLabels)
+			}
+		})
+	}
+}
+
+// TestPreAllocationDefaultModeMultipleDisabled tests the PreAllocation logic
+// in Default Mode with multiple pre-allocated pods disabled.
+func TestPreAllocationDefaultModeMultipleDisabled(t *testing.T) {
+	nodeName := "test-node"
+	node := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: nodeName,
+		},
+		Status: corev1.NodeStatus{
+			Allocatable: makeResourceList("16", "32Gi", string(corev1.ResourcePods), "100"),
+		},
+	}
+	ownerLabels := map[string]string{
+		"app": "test-app",
+	}
+	// tests with different PreferNoPreAllocatedPods config settings
+	preAllocationConfs := []*config.PreAllocationConfig{
+		{},
+		{
+			PreferNoPreAllocatedPods: true,
+		},
+	}
+
+	tests := []preAllocationTestCase{
+		{
+			name:            "sufficient node-unallocated, without pre-allocatable pods, expect success",
+			reserveResource: makeResourceList("8", "16Gi"),
+			setupNode: func() *corev1.Node {
+				return node
+			},
+			setupPods: func() []*corev1.Pod {
+				// allocated: <0, 0Gi>, unallocated: <16, 32Gi>
+				return []*corev1.Pod{}
+			},
+			checkPreFilterFn: func(result *framework.PreFilterResult, status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+				assert.Nil(t, result)
+				assert.Nil(t, status)
+				assert.Len(t, getNodeRState(state, nodeName).preAllocatablePods, 0, "Pre-allocatable pods count mismatch")
+			},
+			checkFilterFn: func(status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+				assert.True(t, status.IsSuccess())
+				assert.Len(t, getNodeRState(state, nodeName).selectedPreAllocatablePods, 0, "selected pre-allocatable pods count mismatch")
+			},
+			checkScoreFn: func(score int64, status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+				assert.Equal(t, framework.MinNodeScore, score)
+			},
+			checkReserveFn: func(status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+				assert.Len(t, state.preAllocated, 0, "pre-allocated pods count mismatch")
+			},
+		},
+		{
+			// even when node-unallocated is sufficient, prefer to choose a pre-allocated pod by default.
+			name:            "sufficient node-unallocated, with 2 owner-matched pre-allocatable pods, expect success",
+			reserveResource: makeResourceList("8", "16Gi"),
+			setupNode: func() *corev1.Node {
+				return node
+			},
+			setupPods: func() []*corev1.Pod {
+				// allocated: <5, 10Gi>, unallocated: <11, 22Gi>, pre-allocatable: <4, 8Gi>
+				// pre-allocatable pods (matched by owner labels):
+				//   pod1: <2, 4Gi>
+				//   pod2: <2, 4Gi>
+				return []*corev1.Pod{
+					createTestPreAllocatablePodWithOwnerLabel("pod1", nodeName, "2", "4Gi", ownerLabels),
+					createTestPreAllocatablePodWithOwnerLabel("pod2", nodeName, "2", "4Gi", ownerLabels),
+					createTestPod("pod3", nodeName, "1", "2Gi"),
+				}
+			},
+			checkPreFilterFn: func(result *framework.PreFilterResult, status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+				assert.Nil(t, result)
+				assert.Nil(t, status)
+				assert.Len(t, getNodeRState(state, nodeName).preAllocatablePods, 2, "pre-allocatable pods count mismatch")
+				assert.Equal(t, makeResourceList("8", "16Gi"), state.podRequests, "reserve pod requests mismatch")
+			},
+			checkFilterFn: func(status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+				assert.True(t, status.IsSuccess(), "got status: %v", status)
+				assert.Len(t, getNodeRState(state, nodeName).preAllocatablePods, 2, "pre-allocatable pods count mismatch")
+				if conf.PreferNoPreAllocatedPods {
+					assert.Len(t, getNodeRState(state, nodeName).selectedPreAllocatablePods, 0,
+						"selected pre-allocatable pods count mismatch")
+				} else {
+					// When EnableMultiple=false, all pre-allocatable pods are selected at Filter stage,
+					// but only one is actually used at Reserve stage
+					assert.Len(t, getNodeRState(state, nodeName).selectedPreAllocatablePods, 2,
+						"selected pre-allocatable pods count mismatch")
+				}
+			},
+			checkScoreFn: func(score int64, status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+				assert.Equal(t, framework.MinNodeScore, score)
+			},
+			checkReserveFn: func(status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+				if conf.PreferNoPreAllocatedPods {
+					assert.Len(t, state.preAllocated, 0, "pre-allocated pods count mismatch")
+				} else {
+					// Only one pod is actually reserved when EnableMultiple=false
+					assert.Len(t, state.preAllocated, 1, "pre-allocated pods count mismatch")
+				}
+			},
+		},
+		{
+			name:            "insufficient node-unallocated, no owner-matched pre-allocatable pods, expect success or unschedulable",
+			reserveResource: makeResourceList("8", "16Gi"),
+			setupNode: func() *corev1.Node {
+				return node
+			},
+			setupPods: func() []*corev1.Pod {
+				// allocated: <11, 16Gi>, unallocated: <5, 16Gi>
+				return []*corev1.Pod{
+					createTestPod("pod1", nodeName, "8", "10Gi"),
+					createTestPod("pod2", nodeName, "2", "4Gi"),
+					createTestPod("pod3", nodeName, "1", "2Gi"),
+				}
+			},
+			checkPreFilterFn: func(result *framework.PreFilterResult, status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+				assert.Nil(t, result)
+				assert.Nil(t, status)
+				assert.Len(t, getNodeRState(state, nodeName).preAllocatablePods, 0, "pre-allocatable pods count mismatch")
+				assert.Equal(t, makeResourceList("8", "16Gi"), state.podRequests, "reserve pod requests mismatch")
+			},
+			checkFilterFn: func(status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+				if conf.PreferNoPreAllocatedPods {
+					// When PreferNoPreAllocatedPods is true, check node unallocated first and fail
+					assert.Equal(t, framework.NewStatus(framework.Unschedulable, "Insufficient cpu by node"),
+						status, "got unexpected status: %v", status)
+				} else {
+					// When PreferNoPreAllocatedPods is false, no pre-allocatable pods, but code returns success
+					assert.True(t, status.IsSuccess(), "got unexpected status: %v", status)
+				}
+			},
+			checkScoreFn: func(score int64, status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+				if !conf.PreferNoPreAllocatedPods {
+					assert.Equal(t, framework.MinNodeScore, score)
+				}
+			},
+			checkReserveFn: func(status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+				if !conf.PreferNoPreAllocatedPods {
+					assert.Len(t, state.preAllocated, 0, "pre-allocated pods count mismatch")
+				}
+			},
+		},
+		{
+			name:            "insufficient node-unallocated, insufficient owner-matched pre-allocatable pods, expect unschedulable",
+			reserveResource: makeResourceList("8", "16Gi"),
+			setupNode: func() *corev1.Node {
+				return node
+			},
+			setupPods: func() []*corev1.Pod {
+				// allocated: <12, 18Gi>, unallocated: <4, 14Gi>, pre-allocatable: <2, 4Gi>
+				return []*corev1.Pod{
+					createTestPod("pod1", nodeName, "8", "10Gi"),
+					createTestPod("pod2", nodeName, "2", "4Gi"),
+					createTestPreAllocatablePodWithOwnerLabel("pod3", nodeName, "1", "2Gi", ownerLabels),
+					createTestPreAllocatablePodWithOwnerLabel("pod4", nodeName, "1", "2Gi", ownerLabels),
+				}
+			},
+			checkPreFilterFn: func(result *framework.PreFilterResult, status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+				assert.Nil(t, result)
+				assert.Nil(t, status)
+				assert.Len(t, getNodeRState(state, nodeName).preAllocatablePods, 2, "pre-allocatable pods count mismatch")
+				assert.Equal(t, makeResourceList("8", "16Gi"), state.podRequests, "reserve pod requests mismatch")
+			},
+			checkFilterFn: func(status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+				assert.Equal(t, framework.NewStatus(framework.Unschedulable, "Insufficient cpu by node"),
+					status, "got unexpected status: %v", status)
+				assert.Len(t, getNodeRState(state, nodeName).preAllocatablePods, 2, "pre-allocatable pods count mismatch")
+				assert.Len(t, getNodeRState(state, nodeName).selectedPreAllocatablePods, 0,
+					"selected pre-allocatable pods count mismatch")
+			},
+		},
+		{
+			name:            "insufficient node-unallocated resource, sufficient owner-matched pre-allocatable pods(1 in 3), expect success",
+			reserveResource: makeResourceList("8", "16Gi"),
+			setupNode: func() *corev1.Node {
+				return node
+			},
+			setupPods: func() []*corev1.Pod {
+				// allocated: <10, 18Gi>, unallocated: <6, 14Gi>, pre-allocatable: <4, 4Gi>
+				// pre-allocatable pods (matched by owner labels):
+				//   pod3: <1, 1Gi>
+				//   pod4: <2, 2Gi>, should be selected (largest resources)
+				//   pod5: <1, 1Gi>
+				return []*corev1.Pod{
+					createTestPod("pod1", nodeName, "4", "10Gi"),
+					createTestPod("pod2", nodeName, "2", "4Gi"),
+					createTestPreAllocatablePodWithOwnerLabel("pod3", nodeName, "1", "1Gi", ownerLabels),
+					createTestPreAllocatablePodWithOwnerLabel("pod4", nodeName, "2", "2Gi", ownerLabels),
+					createTestPreAllocatablePodWithOwnerLabel("pod5", nodeName, "1", "1Gi", ownerLabels),
+				}
+			},
+			checkPreFilterFn: func(result *framework.PreFilterResult, status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+				assert.Nil(t, result)
+				assert.Nil(t, status)
+				assert.Len(t, getNodeRState(state, nodeName).preAllocatablePods, 3, "pre-allocatable pods count mismatch")
+				assert.Equal(t, makeResourceList("8", "16Gi"), state.podRequests, "reserve pod requests mismatch")
+			},
+			checkFilterFn: func(status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+				assert.True(t, status.IsSuccess(), "got unexpected status: %v", status)
+				assert.Len(t, getNodeRState(state, nodeName).preAllocatablePods, 3, "pre-allocatable pods count mismatch")
+				// When EnableMultiple=false, all matching pods are selected at Filter
+				assert.Len(t, getNodeRState(state, nodeName).selectedPreAllocatablePods, 3,
+					"selected pre-allocatable pods count mismatch")
+			},
+			checkScoreFn: func(score int64, status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+				assert.Equal(t, framework.MinNodeScore, score)
+			},
+			checkReserveFn: func(status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+				// Only one pod is reserved when EnableMultiple=false
+				assert.Len(t, state.preAllocated, 1, "pre-allocated pods count mismatch")
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			for _, conf := range preAllocationConfs {
+				t.Logf("Testing with PreAllocationConfig: PreferNoPreAllocatedPods=%v", conf.PreferNoPreAllocatedPods)
+				testPreAllocationMode(t, tt, node, conf, schedulingv1alpha1.PreAllocationModeDefault,
+					false, ownerLabels)
 			}
 		})
 	}
 }
 
 // Helper function to create pre-allocatable pod with resources
-func createTestPreAllocatablePod(name, nodeName, cpu, memory, score string) *corev1.Pod {
+func createTestPreAllocatablePod(name, nodeName, cpu, memory, priority string) *corev1.Pod {
 	pod := createTestPod(name, nodeName, cpu, memory)
 	if pod.Labels == nil {
 		pod.Labels = make(map[string]string)
@@ -5361,7 +5600,19 @@ func createTestPreAllocatablePod(name, nodeName, cpu, memory, score string) *cor
 		pod.Annotations = make(map[string]string)
 	}
 	pod.Labels[apiext.LabelPodPreAllocatable] = "true"
-	pod.Annotations[apiext.AnnotationPodPreAllocatableScore] = score
+	pod.Annotations[apiext.AnnotationPodPreAllocatablePriority] = priority
+	return pod
+}
+
+// createTestPreAllocatablePodWithOwnerLabel creates a pre-allocatable pod with owner labels for Default Mode
+func createTestPreAllocatablePodWithOwnerLabel(name, nodeName, cpu, memory string, ownerLabels map[string]string) *corev1.Pod {
+	pod := createTestPod(name, nodeName, cpu, memory)
+	if pod.Labels == nil {
+		pod.Labels = make(map[string]string)
+	}
+	for k, v := range ownerLabels {
+		pod.Labels[k] = v
+	}
 	return pod
 }
 
@@ -5785,4 +6036,300 @@ func TestPreAllocation(t *testing.T) {
 		// Should succeed - reservation has 6C12Gi free
 		assert.True(t, status.IsSuccess(), "pod should allocate from reservation free resources")
 	})
+}
+
+func Test_sortPreAllocatablePodsForDefaultMode(t *testing.T) {
+	node := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-node",
+		},
+		Status: corev1.NodeStatus{
+			Allocatable: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("32"),
+				corev1.ResourceMemory: resource.MustParse("64Gi"),
+				corev1.ResourcePods:   resource.MustParse("100"),
+			},
+		},
+	}
+
+	testReservation := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-reservation",
+			UID:  uuid.NewUUID(),
+		},
+		Spec: schedulingv1alpha1.ReservationSpec{
+			Template: &corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("4"),
+									corev1.ResourceMemory: resource.MustParse("8Gi"),
+								},
+							},
+						},
+					},
+				},
+			},
+			PreAllocation: true,
+		},
+	}
+
+	tests := []struct {
+		name               string
+		preAllocatablePods []*corev1.Pod
+		wantOrder          []string // expected pod names in order
+	}{
+		{
+			name:               "empty pods list",
+			preAllocatablePods: []*corev1.Pod{},
+			wantOrder:          nil,
+		},
+		{
+			name: "single pod",
+			preAllocatablePods: []*corev1.Pod{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "pod-1",
+						UID:  "pod-1",
+					},
+					Spec: corev1.PodSpec{
+						Containers: []corev1.Container{
+							{
+								Resources: corev1.ResourceRequirements{
+									Requests: corev1.ResourceList{
+										corev1.ResourceCPU:    resource.MustParse("2"),
+										corev1.ResourceMemory: resource.MustParse("4Gi"),
+									},
+								},
+							},
+						},
+						NodeName: node.Name,
+					},
+				},
+			},
+			wantOrder: []string{"pod-1"},
+		},
+		{
+			name: "multiple pods sorted by score - larger resources get higher priority",
+			preAllocatablePods: []*corev1.Pod{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "pod-small",
+						UID:  "pod-small",
+					},
+					Spec: corev1.PodSpec{
+						Containers: []corev1.Container{
+							{
+								Resources: corev1.ResourceRequirements{
+									Requests: corev1.ResourceList{
+										corev1.ResourceCPU:    resource.MustParse("1"),
+										corev1.ResourceMemory: resource.MustParse("2Gi"),
+									},
+								},
+							},
+						},
+						NodeName: node.Name,
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "pod-large",
+						UID:  "pod-large",
+					},
+					Spec: corev1.PodSpec{
+						Containers: []corev1.Container{
+							{
+								Resources: corev1.ResourceRequirements{
+									Requests: corev1.ResourceList{
+										corev1.ResourceCPU:    resource.MustParse("4"),
+										corev1.ResourceMemory: resource.MustParse("8Gi"),
+									},
+								},
+							},
+						},
+						NodeName: node.Name,
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "pod-medium",
+						UID:  "pod-medium",
+					},
+					Spec: corev1.PodSpec{
+						Containers: []corev1.Container{
+							{
+								Resources: corev1.ResourceRequirements{
+									Requests: corev1.ResourceList{
+										corev1.ResourceCPU:    resource.MustParse("2"),
+										corev1.ResourceMemory: resource.MustParse("4Gi"),
+									},
+								},
+							},
+						},
+						NodeName: node.Name,
+					},
+				},
+			},
+			// Pods are sorted by score descending - larger resources get higher priority
+			wantOrder: []string{"pod-large", "pod-medium", "pod-small"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			suit := newPluginTestSuitWith(t, nil, []*corev1.Node{node})
+			p, err := suit.pluginFactory()
+			assert.NoError(t, err)
+			pl := p.(*Plugin)
+
+			rInfo := frameworkext.NewReservationInfo(testReservation)
+			cycleState := framework.NewCycleState()
+
+			extender := pl.handle.(frameworkext.FrameworkExtender)
+			sortedPods, err := sortPreAllocatablePodsForDefaultMode(
+				context.TODO(),
+				extender,
+				cycleState,
+				rInfo,
+				tt.preAllocatablePods,
+				node.Name,
+			)
+			assert.NoError(t, err)
+
+			var gotOrder []string
+			for _, pod := range sortedPods {
+				gotOrder = append(gotOrder, pod.Name)
+			}
+			assert.Equal(t, tt.wantOrder, gotOrder)
+		})
+	}
+}
+
+// Helper struct for pre-allocation test cases
+type preAllocationTestCase struct {
+	name                  string
+	preAllocationRequired bool
+	reserveResource       corev1.ResourceList
+	setupNode             func() *corev1.Node
+	setupPods             func() []*corev1.Pod
+	checkPreFilterFn      func(result *framework.PreFilterResult, status *framework.Status, state *stateData, conf *config.PreAllocationConfig)
+	checkFilterFn         func(status *framework.Status, state *stateData, conf *config.PreAllocationConfig)
+	checkScoreFn          func(score int64, status *framework.Status, state *stateData, conf *config.PreAllocationConfig)
+	checkReserveFn        func(status *framework.Status, state *stateData, conf *config.PreAllocationConfig)
+}
+
+func testPreAllocationMode(t *testing.T, tt preAllocationTestCase, node *corev1.Node,
+	preAllocationConf *config.PreAllocationConfig, mode schedulingv1alpha1.PreAllocationMode, enableMultiple bool,
+	ownerMatchLabels map[string]string) {
+	suit := newPluginTestSuitWith(t, tt.setupPods(), []*corev1.Node{tt.setupNode()}, func(args *config.ReservationArgs) {
+		args.PreAllocationConfig = preAllocationConf
+	})
+	p, err := suit.pluginFactory()
+	assert.NoError(t, err)
+	pl := p.(*Plugin)
+
+	// Create a Cluster Mode reservation
+	testReservation := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{
+			UID:  uuid.NewUUID(),
+			Name: "cluster-mode-reservation",
+		},
+		Spec: schedulingv1alpha1.ReservationSpec{
+			TTL: &metav1.Duration{
+				Duration: 0,
+			},
+			AllocateOnce:  ptr.To(false),
+			PreAllocation: true,
+			PreAllocationPolicy: &schedulingv1alpha1.PreAllocationPolicy{
+				Mode:           mode,
+				EnableMultiple: enableMultiple,
+			},
+			AllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyRestricted,
+			Owners: []schedulingv1alpha1.ReservationOwner{
+				{
+					LabelSelector: &metav1.LabelSelector{
+						MatchLabels: ownerMatchLabels,
+					},
+				},
+			},
+			Template: &corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: tt.reserveResource,
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	if tt.preAllocationRequired {
+		if testReservation.Labels == nil {
+			testReservation.Labels = make(map[string]string)
+		}
+		testReservation.Labels[apiext.LabelPreAllocationRequired] = "true"
+	}
+
+	_, err = pl.client.Reservations().Create(context.TODO(), testReservation, metav1.CreateOptions{})
+	assert.NoError(t, err)
+
+	// Setup pods
+	expectedPAPodsNum := 0
+	for _, pod := range tt.setupPods() {
+		if pod.Labels[apiext.LabelPodPreAllocatable] == "true" {
+			expectedPAPodsNum++
+		}
+		_, err = suit.fw.ClientSet().CoreV1().Pods(pod.Namespace).Create(context.TODO(), pod, metav1.CreateOptions{})
+		assert.NoError(t, err)
+	}
+
+	suit.start()
+
+	// Wait for pre-allocatable pods to be cached
+	ctx := context.TODO()
+	err = waitForPAPodsCached(ctx, t, pl, node.Name, expectedPAPodsNum)
+	assert.NoError(t, err)
+
+	// Test reserve pod for scheduling
+	testReservePod := reservationutil.NewReservePod(testReservation)
+
+	cycleState := framework.NewCycleState()
+
+	// Run BeforePreFilter and PreFilter
+	pl.BeforePreFilter(ctx, cycleState, testReservePod)
+	result, status := pl.PreFilter(ctx, cycleState, testReservePod)
+	if tt.checkPreFilterFn != nil {
+		tt.checkPreFilterFn(result, status, getStateData(cycleState), preAllocationConf)
+	}
+
+	// Run Filter
+	nodeInfo, err := suit.fw.SnapshotSharedLister().NodeInfos().Get(node.Name)
+	assert.NoError(t, err)
+	status = pl.Filter(context.TODO(), cycleState, testReservePod, nodeInfo)
+	if tt.checkFilterFn != nil {
+		tt.checkFilterFn(status, getStateData(cycleState), preAllocationConf)
+	}
+
+	// Run Score
+	if tt.checkScoreFn != nil {
+		score, scoreStatus := pl.Score(ctx, cycleState, testReservePod, node.Name)
+		tt.checkScoreFn(score, scoreStatus, getStateData(cycleState), preAllocationConf)
+	}
+
+	// Run Reserve
+	if tt.checkReserveFn != nil {
+		status = pl.Reserve(ctx, cycleState, testReservePod, node.Name)
+		tt.checkReserveFn(status, getStateData(cycleState), preAllocationConf)
+	}
+}
+
+func getNodeRState(state *stateData, nodeName string) *nodeReservationState {
+	if state.nodeReservationStates != nil && state.nodeReservationStates[nodeName] != nil {
+		return state.nodeReservationStates[nodeName]
+	}
+	return &nodeReservationState{}
 }
