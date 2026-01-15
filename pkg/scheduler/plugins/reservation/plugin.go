@@ -72,6 +72,8 @@ const (
 	ErrReasonNoPodsMeetPreAllocationRequirements = "node(s) no pod(s) to meet the pre-allocation requirements"
 	// ErrReasonPreemptionFailed is the reason for preemption failed
 	ErrReasonPreemptionFailed = "node(s) preemption failed due to insufficient resources"
+	// ErrReasonReservationClusterModeDisabled is the reason for cluster mode pre-allocation is disabled
+	ErrReasonReservationClusterModeDisabled = "reservation requires cluster mode pre-allocation which is disabled"
 )
 
 var (
@@ -94,16 +96,17 @@ var (
 )
 
 type Plugin struct {
-	handle                        frameworkext.ExtendedHandle
-	args                          *config.ReservationArgs
-	rLister                       listerschedulingv1alpha1.ReservationLister
-	podLister                     listercorev1.PodLister
-	client                        clientschedulingv1alpha1.SchedulingV1alpha1Interface
-	reservationCache              *reservationCache
-	nominator                     *nominator
-	preemptionMgr                 *PreemptionMgr
-	enableLazyReservationRestore  bool
-	enableSkipReservationFitsNode bool
+	handle                         frameworkext.ExtendedHandle
+	args                           *config.ReservationArgs
+	rLister                        listerschedulingv1alpha1.ReservationLister
+	podLister                      listercorev1.PodLister
+	client                         clientschedulingv1alpha1.SchedulingV1alpha1Interface
+	reservationCache               *reservationCache
+	nominator                      *nominator
+	preemptionMgr                  *PreemptionMgr
+	enableLazyReservationRestore   bool
+	enableSkipReservationFitsNode  bool
+	enablePreAllocationClusterMode bool
 }
 
 func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error) {
@@ -147,21 +150,14 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 		}
 		p.preemptionMgr = preemptionMgr
 	}
+	if pluginArgs.PreAllocationConfig != nil && pluginArgs.PreAllocationConfig.EnableClusterMode {
+		p.enablePreAllocationClusterMode = true
+	}
 
 	return p, nil
 }
 
 func (pl *Plugin) Name() string { return Name }
-
-// IsPreferNoPreAllocatedPods returns whether to prefer placing reservation
-// without using pre-allocatable pods when PreAllocationRequired is false.
-// Defaults to false.
-func (pl *Plugin) IsPreferNoPreAllocatedPods() bool {
-	if pl.args != nil && pl.args.PreAllocationConfig != nil {
-		return pl.args.PreAllocationConfig.PreferNoPreAllocatedPods
-	}
-	return false
-}
 
 func (pl *Plugin) NewControllers() ([]frameworkext.Controller, error) {
 	reservationController := controller.New(
@@ -481,7 +477,7 @@ func (pl *Plugin) filterWithReservations(ctx context.Context, cycleState *framew
 }
 
 func (pl *Plugin) filterWithPreAllocatablePods(ctx context.Context, cycleState *framework.CycleState, rInfo *frameworkext.ReservationInfo, nodeInfo *framework.NodeInfo, preAllocatablePods []*corev1.Pod, isPreAllocationRequired bool) *framework.Status {
-	if enableMultiplePAPods(rInfo) {
+	if isMultiplePAPodsEnabled(rInfo) {
 		return pl.filterWithMultiplePreAllocatablePods(ctx, cycleState, rInfo, nodeInfo, preAllocatablePods, isPreAllocationRequired)
 	}
 	return pl.filterWithPreAllocatablePod(ctx, cycleState, rInfo, nodeInfo, preAllocatablePods, isPreAllocationRequired)
@@ -763,7 +759,7 @@ func (pl *Plugin) filterWithMultiplePreAllocatablePods(ctx context.Context, cycl
 	return nil
 }
 
-// sortPreAllocatablePodsForDefaultMode sorts pre-allocatable pods by score if needed.
+// sortPreAllocatablePodsForDefaultMode sorts pre-allocatable pods by priority if needed.
 func sortPreAllocatablePodsForDefaultMode(ctx context.Context, extender frameworkext.FrameworkExtender,
 	cycleState *framework.CycleState, rInfo *frameworkext.ReservationInfo,
 	preAllocatablePods []*corev1.Pod, nodeName string) ([]*corev1.Pod, error) {
@@ -776,7 +772,7 @@ func sortPreAllocatablePodsForDefaultMode(ctx context.Context, extender framewor
 	for _, rs := range preAllocatableScoreList {
 		preAllocatableScoreMap[rs.UID] = rs.Score
 	}
-	// Sort by score descending
+	// Sort by priority descending
 	sort.Slice(preAllocatablePods, func(i, j int) bool {
 		var scoreI, scoreJ int64
 		if score, ok := preAllocatableScoreMap[preAllocatablePods[i].UID]; ok {
@@ -1205,10 +1201,10 @@ func (pl *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState,
 
 		// Check if multiple pre-allocation is enabled
 		var status *framework.Status
-		if enableMultiplePAPods(state.rInfo) {
+		if isMultiplePAPodsEnabled(state.rInfo) {
 			nominatedPods = pl.GetNominatedPreAllocations(state.rInfo, nodeName)
 			if nominatedPods == nil {
-				nominatedPods, status = pl.NominatePreAllocations(ctx, cycleState, state.rInfo, nodeName)
+				nominatedPods, status = pl.NominatePreAllocations(cycleState, state.rInfo, nodeName)
 				if !status.IsSuccess() {
 					return status
 				}
@@ -1533,9 +1529,20 @@ func (pl *Plugin) GetReservationInfoByPod(pod *corev1.Pod, nodeName string) *fra
 	return pl.reservationCache.GetReservationInfoByPod(pod, nodeName)
 }
 
-func enableMultiplePAPods(rInfo *frameworkext.ReservationInfo) bool {
+// IsPreferNoPreAllocatedPods returns whether to prefer placing reservation
+// without pre-allocated pods when pre-allocation is not required and node unallocated resources are sufficient.
+// Defaults to false.
+func (pl *Plugin) IsPreferNoPreAllocatedPods() bool {
+	if pl.args != nil && pl.args.PreAllocationConfig != nil {
+		return pl.args.PreAllocationConfig.PreferNoPreAllocatedPods
+	}
+	return false
+}
+
+// isMultiplePAPodsEnabled checks if multiple pre-allocated pods are enabled for the reservation.
+func isMultiplePAPodsEnabled(rInfo *frameworkext.ReservationInfo) bool {
 	if rInfo == nil {
 		return false
 	}
-	return reservationutil.EnableMultiplePAPods(rInfo.Reservation)
+	return reservationutil.IsMultiplePAPodsEnabled(rInfo.Reservation)
 }

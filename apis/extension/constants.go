@@ -56,9 +56,9 @@ const (
 	// When set to "true", the pod can be selected as a pre-allocatable candidate.
 	LabelPodPreAllocatable = PodDomainPrefix + "/is-pre-allocatable"
 
-	// AnnotationPodPreAllocatableScore is the annotation key used to score pre-allocatable pods in cluster mode.
-	// The value should be a numeric string. Higher scores indicate higher priority for pre-allocation.
-	AnnotationPodPreAllocatableScore = PodDomainPrefix + "/pre-allocatable-score"
+	// AnnotationPodPreAllocatablePriority is the annotation key used to prioritize pre-allocatable pods in cluster mode.
+	// The value should be a numeric string. Higher values indicate higher priority for pre-allocation.
+	AnnotationPodPreAllocatablePriority = PodDomainPrefix + "/pre-allocatable-priority"
 )
 
 type AggregationType string

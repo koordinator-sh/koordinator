@@ -535,7 +535,7 @@ func Convert_config_NodeResourcesFitPlusArgs_To_v1_NodeResourcesFitPlusArgs(in *
 func autoConvert_v1_PreAllocationConfig_To_config_PreAllocationConfig(in *PreAllocationConfig, out *config.PreAllocationConfig, s conversion.Scope) error {
 	out.EnableClusterMode = in.EnableClusterMode
 	out.ClusterLabelKey = in.ClusterLabelKey
-	out.ClusterScoreAnnotationKey = in.ClusterScoreAnnotationKey
+	out.ClusterPriorityAnnotationKey = in.ClusterPriorityAnnotationKey
 	out.PreferNoPreAllocatedPods = in.PreferNoPreAllocatedPods
 	return nil
 }
@@ -548,7 +548,7 @@ func Convert_v1_PreAllocationConfig_To_config_PreAllocationConfig(in *PreAllocat
 func autoConvert_config_PreAllocationConfig_To_v1_PreAllocationConfig(in *config.PreAllocationConfig, out *PreAllocationConfig, s conversion.Scope) error {
 	out.EnableClusterMode = in.EnableClusterMode
 	out.ClusterLabelKey = in.ClusterLabelKey
-	out.ClusterScoreAnnotationKey = in.ClusterScoreAnnotationKey
+	out.ClusterPriorityAnnotationKey = in.ClusterPriorityAnnotationKey
 	out.PreferNoPreAllocatedPods = in.PreferNoPreAllocatedPods
 	return nil
 }

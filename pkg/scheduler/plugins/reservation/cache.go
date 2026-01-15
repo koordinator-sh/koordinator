@@ -33,27 +33,27 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 )
 
-// preAllocatablePodItem implements btree.Item for storing pods with scores
+// preAllocatablePodItem implements btree.Item for storing pods with priorities
 type preAllocatablePodItem struct {
-	pod   *corev1.Pod
-	score int64
+	pod      *corev1.Pod
+	priority int64
 }
 
 // Less implements btree.Item interface
 // Returns true if this item should be ordered before the other item
 func (p *preAllocatablePodItem) Less(than btree.Item) bool {
 	other := than.(*preAllocatablePodItem)
-	// Higher score comes first (descending order)
-	if p.score != other.score {
-		return p.score > other.score
+	// Higher priority comes first (descending order)
+	if p.priority != other.priority {
+		return p.priority > other.priority
 	}
-	// If scores are equal, order by UID for stability
+	// If priorities are equal, order by UID for stability
 	return p.pod.UID < other.pod.UID
 }
 
 // preAllocatablePodCache manages sorted pre-allocatable pods for a node using btree
 type preAllocatablePodCache struct {
-	tree  *btree.BTree                         // Sorted storage by score
+	tree  *btree.BTree                         // Sorted storage by priority
 	index map[types.UID]*preAllocatablePodItem // UID -> item for fast lookup
 }
 
@@ -73,7 +73,7 @@ type reservationCache struct {
 	matchableOnNode    map[string]map[types.UID]struct{} // look up available reservations on node
 	allocatedOnNode    map[string]map[types.UID]struct{} // look up allocated available reservations on node
 	// preAllocatablePodsOnNode caches sorted pre-allocatable candidate pods per node
-	// Uses btree for automatic ordering by score
+	// Uses btree for automatic ordering by priority
 	preAllocatablePodsOnNode map[string]*preAllocatablePodCache
 }
 
@@ -523,7 +523,7 @@ func (cache *reservationCache) listAllNodes() []string {
 }
 
 // getAllPreAllocatableCandidates retrieves all cached pre-allocatable candidates for all nodes
-// Returns a map of nodeName -> sorted list of pods (by score descending)
+// Returns a map of nodeName -> sorted list of pods (by priority descending)
 func (cache *reservationCache) getAllPreAllocatableCandidates() map[string][]*corev1.Pod {
 	cache.lock.RLock()
 	defer cache.lock.RUnlock()
@@ -580,17 +580,17 @@ func (cache *reservationCache) addPreAllocatableCandidateOnNode(pod *corev1.Pod)
 		cache.preAllocatablePodsOnNode[nodeName] = podCache
 	}
 	// Add or update the pod
-	score := getPreAllocatableScoreFromPod(pod)
+	priority := getPreAllocatablePriorityFromPod(pod)
 	item := &preAllocatablePodItem{
-		pod:   pod,
-		score: score,
+		pod:      pod,
+		priority: priority,
 	}
 	podCache.tree.ReplaceOrInsert(item)
 	podCache.index[pod.UID] = item
 }
 
-// updatePreAllocatableCandidateScore updates the score of a pod in the cache
-func (cache *reservationCache) updatePreAllocatableCandidateScore(pod *corev1.Pod) {
+// updatePreAllocatableCandidatePriority updates the priority of a pod in the cache
+func (cache *reservationCache) updatePreAllocatableCandidatePriority(pod *corev1.Pod) {
 	cache.lock.Lock()
 	defer cache.lock.Unlock()
 	if pod == nil || pod.Spec.NodeName == "" {
@@ -605,28 +605,28 @@ func (cache *reservationCache) updatePreAllocatableCandidateScore(pod *corev1.Po
 	if oldItem, exists := podCache.index[pod.UID]; exists {
 		podCache.tree.Delete(oldItem)
 	}
-	// Insert new item with updated score
-	score := getPreAllocatableScoreFromPod(pod)
+	// Insert new item with updated priority
+	priority := getPreAllocatablePriorityFromPod(pod)
 	newItem := &preAllocatablePodItem{
-		pod:   pod,
-		score: score,
+		pod:      pod,
+		priority: priority,
 	}
 	podCache.tree.ReplaceOrInsert(newItem)
 	podCache.index[pod.UID] = newItem
 }
 
-// getPreAllocatableScoreFromPod retrieves the pre-allocatable score from pod annotation
-func getPreAllocatableScoreFromPod(pod *corev1.Pod) int64 {
+// getPreAllocatablePriorityFromPod retrieves the pre-allocatable priority from pod annotation
+func getPreAllocatablePriorityFromPod(pod *corev1.Pod) int64 {
 	if pod == nil || pod.Annotations == nil {
 		return 0
 	}
-	scoreStr, ok := pod.Annotations[apiext.AnnotationPodPreAllocatableScore]
+	priorityStr, ok := pod.Annotations[apiext.AnnotationPodPreAllocatablePriority]
 	if !ok {
 		return 0
 	}
-	score, err := strconv.ParseInt(scoreStr, 10, 64)
+	priority, err := strconv.ParseInt(priorityStr, 10, 64)
 	if err != nil {
 		return 0
 	}
-	return score
+	return priority
 }

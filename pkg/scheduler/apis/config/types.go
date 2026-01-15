@@ -224,9 +224,9 @@ type PreAllocationConfig struct {
 	// ClusterLabelKey is the label key used to identify pre-allocatable pods in cluster mode.
 	// Defaults to "scheduling.koordinator.sh/is-pre-allocatable".
 	ClusterLabelKey string
-	// ClusterScoreAnnotationKey is the annotation key used to score pre-allocatable pods in cluster mode.
-	// Defaults to "scheduling.koordinator.sh/pre-allocatable-score".
-	ClusterScoreAnnotationKey string
+	// ClusterPriorityAnnotationKey is the annotation key used to prioritize pre-allocatable pods in cluster mode.
+	// Defaults to "scheduling.koordinator.sh/pre-allocatable-priority".
+	ClusterPriorityAnnotationKey string
 	// PreferNoPreAllocatedPods controls whether to prefer placing reservation
 	// without using pre-allocatable pods when PreAllocation is not required and multiple pre-allocated pods is enabled.
 	// Defaults to false.
