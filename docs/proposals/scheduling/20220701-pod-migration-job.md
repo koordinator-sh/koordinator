@@ -410,6 +410,10 @@ type MigrationControllerArgs struct {
 	// Value can be an absolute number (ex: 5) or a percentage of desired pods (ex: 10%).
 	MaxMigratingPerWorkload *intstr.IntOrString `json:"maxMigratingPerWorkload,omitempty"`
 
+    // SkipEvictionGates allows bypassing specific gates/filters/throttlers during the eviction phase.
+    // Default is an empty list (no gates are bypassed).
+    SkipEvictionGates []string `json:"skipEvictionGates,omitempty"`
+
 	// MaxUnavailablePerWorkload represents he maximum number of pods that can be unavailable during migrate per workload.
 	// The unavailable state includes NotRunning/NotReady/Migrating/Evicting
 	// Value can be an absolute number (ex: 5) or a percentage of desired pods (ex: 10%).
