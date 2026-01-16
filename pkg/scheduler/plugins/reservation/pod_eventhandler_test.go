@@ -23,6 +23,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
@@ -313,4 +314,144 @@ func TestPodEventHandlerUpdatePodAcrossReservations(t *testing.T) {
 	assert.Len(t, rInfo1.AssignedPods, 0)
 	rInfo2 = handler.cache.getReservationInfoByUID(reservation2UID)
 	assert.Len(t, rInfo2.AssignedPods, 0)
+}
+
+// TestPodEventHandler_PreAllocatableCacheSync tests event handler cache synchronization
+func TestPodEventHandler_PreAllocatableCacheSync(t *testing.T) {
+	handler := &podEventHandler{
+		cache: newReservationCache(nil),
+	}
+
+	tests := []struct {
+		name       string
+		oldPod     *corev1.Pod
+		newPod     *corev1.Pod
+		verifyFunc func(t *testing.T, cache *reservationCache)
+	}{
+		{
+			name:   "add label makes pod candidate",
+			oldPod: createPodWithLabels("pod1", "node1", nil),
+			newPod: createPodWithLabels("pod1", "node1", map[string]string{
+				apiext.LabelPodPreAllocatable: "true",
+			}),
+			verifyFunc: func(t *testing.T, cache *reservationCache) {
+				podCache := cache.preAllocatablePodsOnNode["node1"]
+				assert.NotNil(t, podCache, "node1 cache should exist")
+				assert.Contains(t, podCache.index, types.UID("pod1"), "pod1 should be in cache")
+			},
+		},
+		{
+			name: "remove label removes from cache",
+			oldPod: createPodWithLabels("pod2", "node1", map[string]string{
+				apiext.LabelPodPreAllocatable: "true",
+			}),
+			newPod: createPodWithLabels("pod2", "node1", nil),
+			verifyFunc: func(t *testing.T, cache *reservationCache) {
+				podCache := cache.preAllocatablePodsOnNode["node1"]
+				if podCache != nil {
+					assert.NotContains(t, podCache.index, types.UID("pod2"), "pod2 should be removed from cache")
+				}
+			},
+		},
+		{
+			name:   "node change moves pod between caches",
+			oldPod: createCandidatePod("pod3", "node1", "50"),
+			newPod: createCandidatePod("pod3", "node2", "50"),
+			verifyFunc: func(t *testing.T, cache *reservationCache) {
+				// Should be in node2
+				node2Cache := cache.preAllocatablePodsOnNode["node2"]
+				assert.NotNil(t, node2Cache, "node2 cache should exist")
+				assert.Contains(t, node2Cache.index, types.UID("pod3"), "pod3 should be in node2")
+
+				// Should NOT be in node1
+				node1Cache := cache.preAllocatablePodsOnNode["node1"]
+				if node1Cache != nil {
+					assert.NotContains(t, node1Cache.index, types.UID("pod3"), "pod3 should not be in node1")
+				}
+			},
+		},
+		{
+			name:   "priority change triggers re-sort",
+			oldPod: createCandidatePod("pod4", "node1", "40"),
+			newPod: createCandidatePod("pod4", "node1", "400"),
+			verifyFunc: func(t *testing.T, cache *reservationCache) {
+				podCache := cache.preAllocatablePodsOnNode["node1"]
+				assert.NotNil(t, podCache)
+				item := podCache.index[types.UID("pod4")]
+				assert.NotNil(t, item, "pod4 should be in cache")
+				assert.Equal(t, int64(400), item.priority, "priority should be updated to 400")
+			},
+		},
+		{
+			name:   "non-candidate pod ignored",
+			oldPod: nil,
+			newPod: createPodWithLabels("pod5", "node1", map[string]string{
+				"other-label": "value",
+			}),
+			verifyFunc: func(t *testing.T, cache *reservationCache) {
+				podCache := cache.preAllocatablePodsOnNode["node1"]
+				if podCache != nil {
+					assert.NotContains(t, podCache.index, types.UID("pod5"), "non-candidate pod should not be in cache")
+				}
+			},
+		},
+		{
+			name:   "priority unchanged no update",
+			oldPod: createCandidatePod("pod6", "node1", "60"),
+			newPod: createCandidatePod("pod6", "node1", "60"),
+			verifyFunc: func(t *testing.T, cache *reservationCache) {
+				podCache := cache.preAllocatablePodsOnNode["node1"]
+				assert.NotNil(t, podCache)
+				item := podCache.index[types.UID("pod6")]
+				assert.NotNil(t, item)
+				assert.Equal(t, int64(60), item.priority)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Setup: add oldPod to cache if it's a candidate
+			if tt.oldPod != nil && isPreAllocatablePod(tt.oldPod) && tt.oldPod.Spec.NodeName != "" {
+				handler.cache.addPreAllocatableCandidateOnNode(tt.oldPod)
+			}
+
+			// Execute: update cache
+			handler.updatePreAllocatableCandidatesCache(tt.oldPod, tt.newPod)
+
+			// Verify
+			tt.verifyFunc(t, handler.cache)
+		})
+	}
+}
+
+// Helper functions for test pod creation
+
+func createPodWithLabels(uid, nodeName string, labels map[string]string) *corev1.Pod {
+	return &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			UID:    types.UID(uid),
+			Labels: labels,
+		},
+		Spec: corev1.PodSpec{
+			NodeName: nodeName,
+		},
+	}
+}
+
+func createCandidatePod(uid, nodeName, priority string) *corev1.Pod {
+	return &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			UID: types.UID(uid),
+			Labels: map[string]string{
+				apiext.LabelPodPreAllocatable: "true",
+			},
+			Annotations: map[string]string{
+				apiext.AnnotationPodPreAllocatablePriority: priority,
+			},
+		},
+		Spec: corev1.PodSpec{
+			NodeName: nodeName,
+		},
+	}
 }

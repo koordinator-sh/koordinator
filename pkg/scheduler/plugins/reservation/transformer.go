@@ -26,7 +26,6 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
-	listercorev1 "k8s.io/client-go/listers/core/v1"
 	schedulingcorev1 "k8s.io/component-helpers/scheduling/corev1"
 	"k8s.io/component-helpers/scheduling/corev1/nodeaffinity"
 	"k8s.io/klog/v2"
@@ -358,13 +357,17 @@ func (pl *Plugin) prepareMatchReservationStateForReservePod(ctx context.Context,
 				klog.ErrorS(rInfo.ParseError, "Failed to PreFilter the reserve pod due to invalid owner", "pod", klog.KObj(pod), "reservation", rName)
 				return nil, false, framework.NewStatus(framework.UnschedulableAndUnresolvable, rInfo.ParseError.Error())
 			}
+			preAllocationMode := reservationutil.GetPreAllocationMode(rInfo.Reservation)
+			if preAllocationMode == schedulingv1alpha1.PreAllocationModeCluster && !pl.enablePreAllocationClusterMode {
+				return nil, false, framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrReasonReservationClusterModeDisabled)
+			}
 
 			status = extender.RunReservationExtensionPreRestoreReservationPreAllocation(ctx, cycleState, rInfo)
 			if !status.IsSuccess() {
 				return nil, false, status
 			}
 
-			preAllocatableCandidatesOnNode, err = listPreAllocatableCandidates(pl.podLister, rInfo)
+			preAllocatableCandidatesOnNode, err = pl.listPreAllocatableCandidates(preAllocationMode, rInfo)
 			if err != nil {
 				return nil, false, framework.AsStatus(err)
 			}
@@ -540,7 +543,18 @@ func (pl *Plugin) prepareMatchReservationStateForReservePod(ctx context.Context,
 	return state, len(allNodeReservationStates) > 0, nil
 }
 
-func listPreAllocatableCandidates(podLister listercorev1.PodLister, rInfo *frameworkext.ReservationInfo) (map[string][]*corev1.Pod, error) {
+func (pl *Plugin) listPreAllocatableCandidates(preAllocationMode schedulingv1alpha1.PreAllocationMode,
+	rInfo *frameworkext.ReservationInfo) (map[string][]*corev1.Pod, error) {
+	// Cluster mode: retrieve from cache which already has sorted candidates
+	if preAllocationMode == schedulingv1alpha1.PreAllocationModeCluster {
+		// In cluster mode, candidates are cached and sorted in reservationCache
+		// We retrieve them directly from cache instead of listing from podLister
+		// The cache is maintained by pod event handlers and updated incrementally
+		// Returns early with cached data (already grouped by node and sorted)
+		return pl.reservationCache.getAllPreAllocatableCandidates(), nil
+	}
+
+	// Default mode: use OwnerMatchers
 	preAllocatableCandidatesOnNode := map[string][]*corev1.Pod{}
 	podMap := map[types.UID]struct{}{}
 	// TODO: Reduce the overhead of the finding pre-allocatable pods.
@@ -549,7 +563,7 @@ func listPreAllocatableCandidates(podLister listercorev1.PodLister, rInfo *frame
 			continue
 		}
 		// FIXME: This step also list the unassigned pods.
-		podList, err := podLister.Pods(metav1.NamespaceAll).List(ownerMatcher.Selector)
+		podList, err := pl.podLister.Pods(metav1.NamespaceAll).List(ownerMatcher.Selector)
 		if err != nil {
 			return nil, fmt.Errorf("list pods failed, ownerMatcher %+v, err: %w", ownerMatcher, err)
 		}
@@ -625,10 +639,8 @@ func checkReservationMatchedOrIgnored(pod *corev1.Pod, rInfo *frameworkext.Reser
 }
 
 func checkPreAllocatableMatched(rInfo *frameworkext.ReservationInfo, candidatePod *corev1.Pod, diagnosisState *nodeDiagnosisState, node *corev1.Node) (bool, error) {
-	// check if candidate pod matches the reservation
-	if !rInfo.MatchOwners(candidatePod) {
-		return false, nil
-	}
+	// NOTE: No need to check OwnerMatchers here because pods are already filtered by
+	// listPreAllocatableCandidates based on the PreAllocation mode (Default or Cluster)
 
 	diagnosisState.ownerMatched++
 	reservationAffinity, err := reservationutil.GetRequiredReservationAffinity(candidatePod)
