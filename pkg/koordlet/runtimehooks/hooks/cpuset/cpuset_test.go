@@ -380,8 +380,9 @@ func Test_cpusetPlugin_SetContainerCPUSet(t *testing.T) {
 
 func TestUnsetPodCPUQuota(t *testing.T) {
 	type args struct {
-		podAlloc *ext.ResourceStatus
-		proto    protocol.HooksProtocol
+		podAlloc             *ext.ResourceStatus
+		proto                protocol.HooksProtocol
+		disableUnsetCPUQuota bool
 	}
 	tests := []struct {
 		name         string
@@ -392,7 +393,8 @@ func TestUnsetPodCPUQuota(t *testing.T) {
 		{
 			name: "not change cfs quota with nil protocol",
 			args: args{
-				proto: nil,
+				proto:                nil,
+				disableUnsetCPUQuota: false,
 			},
 			wantErr:      true,
 			wantCPUQuota: nil,
@@ -412,6 +414,7 @@ func TestUnsetPodCPUQuota(t *testing.T) {
 					},
 					Response: protocol.PodResponse{},
 				},
+				disableUnsetCPUQuota: false,
 			},
 			wantErr:      true,
 			wantCPUQuota: nil,
@@ -431,6 +434,7 @@ func TestUnsetPodCPUQuota(t *testing.T) {
 					},
 					Response: protocol.PodResponse{},
 				},
+				disableUnsetCPUQuota: false,
 			},
 			wantErr:      false,
 			wantCPUQuota: ptr.To[int64](-1),
@@ -454,6 +458,7 @@ func TestUnsetPodCPUQuota(t *testing.T) {
 					},
 					Response: protocol.PodResponse{},
 				},
+				disableUnsetCPUQuota: false,
 			},
 			wantErr:      false,
 			wantCPUQuota: nil,
@@ -467,6 +472,47 @@ func TestUnsetPodCPUQuota(t *testing.T) {
 					},
 					Response: protocol.PodResponse{},
 				},
+				disableUnsetCPUQuota: false,
+			},
+			wantErr:      false,
+			wantCPUQuota: nil,
+		},
+		{
+			name: "should NOT unset cfs quota when config is true for LSR pod",
+			args: args{
+				podAlloc: &ext.ResourceStatus{
+					CPUSet: "2-4",
+				},
+				proto: &protocol.PodContext{
+					Request: protocol.PodRequest{
+						Labels: map[string]string{
+							ext.LabelPodQoS: string(ext.QoSLSR),
+						},
+						CgroupParent: "kubepods/pod-guaranteed-test-uid/",
+					},
+					Response: protocol.PodResponse{},
+				},
+				disableUnsetCPUQuota: true,
+			},
+			wantErr:      false,
+			wantCPUQuota: nil,
+		},
+		{
+			name: "should NOT unset cfs quota when config is true for LSE pod",
+			args: args{
+				podAlloc: &ext.ResourceStatus{
+					CPUSet: "0-3",
+				},
+				proto: &protocol.PodContext{
+					Request: protocol.PodRequest{
+						Labels: map[string]string{
+							ext.LabelPodQoS: string(ext.QoSLSE),
+						},
+						CgroupParent: "kubepods/pod-guaranteed-test-uid/",
+					},
+					Response: protocol.PodResponse{},
+				},
+				disableUnsetCPUQuota: true,
 			},
 			wantErr:      false,
 			wantCPUQuota: nil,
@@ -476,6 +522,10 @@ func TestUnsetPodCPUQuota(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			testHelper := system.NewFileTestUtil(t)
 			var podCtx *protocol.PodContext
+
+			p := &cpusetPlugin{
+				disableUnsetCPUQuota: tt.args.disableUnsetCPUQuota,
+			}
 
 			if tt.args.proto != nil {
 				podCtx = tt.args.proto.(*protocol.PodContext)
@@ -488,7 +538,7 @@ func TestUnsetPodCPUQuota(t *testing.T) {
 				}
 			}
 
-			err := UnsetPodCPUQuota(podCtx)
+			err := p.UnsetPodCPUQuota(podCtx)
 			assert.Equal(t, err != nil, tt.wantErr)
 
 			if podCtx == nil {
@@ -517,8 +567,9 @@ func TestUnsetPodCPUQuota(t *testing.T) {
 
 func TestUnsetContainerCPUQuota(t *testing.T) {
 	type args struct {
-		podAlloc *ext.ResourceStatus
-		proto    protocol.HooksProtocol
+		podAlloc             *ext.ResourceStatus
+		proto                protocol.HooksProtocol
+		disableUnsetCPUQuota bool
 	}
 	tests := []struct {
 		name         string
@@ -529,7 +580,8 @@ func TestUnsetContainerCPUQuota(t *testing.T) {
 		{
 			name: "not change cfs quota with nil protocol",
 			args: args{
-				proto: nil,
+				proto:                nil,
+				disableUnsetCPUQuota: false,
 			},
 			wantErr:      true,
 			wantCPUQuota: nil,
@@ -545,6 +597,7 @@ func TestUnsetContainerCPUQuota(t *testing.T) {
 						},
 					},
 				},
+				disableUnsetCPUQuota: false,
 			},
 			wantErr:      true,
 			wantCPUQuota: nil,
@@ -560,6 +613,7 @@ func TestUnsetContainerCPUQuota(t *testing.T) {
 						CgroupParent: "kubepods/test-pod/test-container/",
 					},
 				},
+				disableUnsetCPUQuota: false,
 			},
 			wantErr:      false,
 			wantCPUQuota: ptr.To[int64](-1),
@@ -579,6 +633,7 @@ func TestUnsetContainerCPUQuota(t *testing.T) {
 						CgroupParent: "kubepods/test-pod/test-container/",
 					},
 				},
+				disableUnsetCPUQuota: false,
 			},
 			wantErr:      false,
 			wantCPUQuota: nil,
@@ -591,6 +646,84 @@ func TestUnsetContainerCPUQuota(t *testing.T) {
 						CgroupParent: "kubepods/besteffort/test-pod/test-container/",
 					},
 				},
+				disableUnsetCPUQuota: false,
+			},
+			wantErr:      false,
+			wantCPUQuota: nil,
+		},
+		// New test cases for DisableUnsetCPUQuota feature
+		{
+			name: "should NOT unset cfs quota when config is true for LSR container",
+			args: args{
+				podAlloc: &ext.ResourceStatus{
+					CPUSet: "2-4",
+				},
+				proto: &protocol.ContainerContext{
+					Request: protocol.ContainerRequest{
+						PodLabels: map[string]string{
+							ext.LabelPodQoS: string(ext.QoSLSR),
+						},
+						CgroupParent: "kubepods/test-pod/test-container/",
+					},
+				},
+				disableUnsetCPUQuota: true,
+			},
+			wantErr:      false,
+			wantCPUQuota: nil,
+		},
+		{
+			name: "should NOT unset cfs quota when config is true for LSE container",
+			args: args{
+				podAlloc: &ext.ResourceStatus{
+					CPUSet: "0-3",
+				},
+				proto: &protocol.ContainerContext{
+					Request: protocol.ContainerRequest{
+						PodLabels: map[string]string{
+							ext.LabelPodQoS: string(ext.QoSLSE),
+						},
+						CgroupParent: "kubepods/test-pod/test-container/",
+					},
+				},
+				disableUnsetCPUQuota: true,
+			},
+			wantErr:      false,
+			wantCPUQuota: nil,
+		},
+		{
+			name: "default behavior: unset cfs_quota to avoid throttling",
+			args: args{
+				podAlloc: &ext.ResourceStatus{
+					CPUSet: "0-3",
+				},
+				proto: &protocol.ContainerContext{
+					Request: protocol.ContainerRequest{
+						PodLabels: map[string]string{
+							ext.LabelPodQoS: string(ext.QoSLSR),
+						},
+						CgroupParent: "kubepods/test-pod/container-a/",
+					},
+				},
+				disableUnsetCPUQuota: false,
+			},
+			wantErr:      false,
+			wantCPUQuota: ptr.To[int64](-1),
+		},
+		{
+			name: "alternative approach: keep cfs_quota to prevent CPU starvation",
+			args: args{
+				podAlloc: &ext.ResourceStatus{
+					CPUSet: "0-3",
+				},
+				proto: &protocol.ContainerContext{
+					Request: protocol.ContainerRequest{
+						PodLabels: map[string]string{
+							ext.LabelPodQoS: string(ext.QoSLSR),
+						},
+						CgroupParent: "kubepods/test-pod/container-a/",
+					},
+				},
+				disableUnsetCPUQuota: true,
 			},
 			wantErr:      false,
 			wantCPUQuota: nil,
@@ -600,6 +733,10 @@ func TestUnsetContainerCPUQuota(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			testHelper := system.NewFileTestUtil(t)
 			var containerCtx *protocol.ContainerContext
+
+			p := &cpusetPlugin{
+				disableUnsetCPUQuota: tt.args.disableUnsetCPUQuota,
+			}
 
 			if tt.args.proto != nil {
 				containerCtx = tt.args.proto.(*protocol.ContainerContext)
@@ -612,7 +749,7 @@ func TestUnsetContainerCPUQuota(t *testing.T) {
 				}
 			}
 
-			err := UnsetContainerCPUQuota(containerCtx)
+			err := p.UnsetContainerCPUQuota(containerCtx)
 			assert.Equal(t, err != nil, tt.wantErr)
 
 			if containerCtx == nil {

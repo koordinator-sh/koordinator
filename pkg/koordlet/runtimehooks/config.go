@@ -149,6 +149,7 @@ type Config struct {
 	RuntimeHooksNRIPluginName       string
 	RuntimeHooksNRIPluginIndex      string
 	RuntimeHookReconcileInterval    time.Duration
+	RuntimeHookDisableUnsetCPUQuota bool
 }
 
 func NewDefaultConfig() *Config {
@@ -170,6 +171,7 @@ func NewDefaultConfig() *Config {
 		RuntimeHooksNRIPluginName:       "koordlet_nri",
 		RuntimeHooksNRIPluginIndex:      "00",
 		RuntimeHookReconcileInterval:    10 * time.Second,
+		RuntimeHookDisableUnsetCPUQuota: false,
 	}
 }
 
@@ -191,6 +193,7 @@ func (c *Config) InitFlags(fs *flag.FlagSet) {
 	fs.Var(cliflag.NewStringSlice(&c.RuntimeHookDisableStages), "runtime-hooks-disable-stages", "disable stages for runtime hooks")
 	fs.BoolVar(&c.RuntimeHooksNRI, "enable-nri-runtime-hook", c.RuntimeHooksNRI, "enable/disable runtime hooks nri mode")
 	fs.DurationVar(&c.RuntimeHookReconcileInterval, "runtime-hooks-reconcile-interval", c.RuntimeHookReconcileInterval, "reconcile interval for each plugins")
+	fs.BoolVar(&c.RuntimeHookDisableUnsetCPUQuota, "disable-unset-cpu-quota", c.RuntimeHookDisableUnsetCPUQuota, "disable unset cpu quota for runtime hooks")
 }
 
 func init() {
