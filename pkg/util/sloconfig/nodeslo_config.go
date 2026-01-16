@@ -52,15 +52,11 @@ func DefaultNodeSLOSpecConfig() slov1alpha1.NodeSLOSpec {
 
 func DefaultResourceThresholdStrategy() *slov1alpha1.ResourceThresholdStrategy {
 	return &slov1alpha1.ResourceThresholdStrategy{
-		Enable:                            ptr.To[bool](false),
-		CPUSuppressThresholdPercent:       ptr.To[int64](65),
-		CPUSuppressPolicy:                 slov1alpha1.CPUSetPolicy,
-		MemoryEvictThresholdPercent:       ptr.To[int64](70),
-		CPULedgerEvictThresholdPercent:    ptr.To[int64](110),
-		CPULedgerEvictLowerPercent:        ptr.To[int64](100),
-		MemoryLedgerEvictThresholdPercent: ptr.To[int64](110),
-		MemoryLedgerEvictLowerPercent:     ptr.To[int64](100),
-		CPUEvictPolicy:                    slov1alpha1.EvictByRealLimitPolicy,
+		Enable:                      ptr.To[bool](false),
+		CPUSuppressThresholdPercent: ptr.To[int64](65),
+		CPUSuppressPolicy:           slov1alpha1.CPUSetPolicy,
+		MemoryEvictThresholdPercent: ptr.To[int64](70),
+		CPUEvictPolicy:              slov1alpha1.EvictByRealLimitPolicy,
 	}
 }
 
