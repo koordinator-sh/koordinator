@@ -69,7 +69,9 @@ func New(opt *framework.Options) framework.QOSStrategy {
 }
 
 func (m *memoryEvictor) Enabled() bool {
-	return (features.DefaultKoordletFeatureGate.Enabled(features.BEMemoryEvict) || features.DefaultKoordletFeatureGate.Enabled(features.MemoryEvict)) && m.evictInterval > 0
+	return (features.DefaultKoordletFeatureGate.Enabled(features.BEMemoryEvict) ||
+		features.DefaultKoordletFeatureGate.Enabled(features.MemoryEvict) ||
+		features.DefaultKoordletFeatureGate.Enabled(features.MemoryAllocatableEvict)) && m.evictInterval > 0
 }
 
 func (m *memoryEvictor) Setup(ctx *framework.Context) {
@@ -112,7 +114,7 @@ func (m *memoryEvictor) memoryEvict() {
 	//     release effect is cumulative and considered together during scheduling and capacity planning.
 	// - Although safe to enable concurrently, it is generally NOT RECOMMENDED to run both simultaneously,
 	//   as this may lead to redundant eviction logic and increased system complexity without clear benefit.
-	triggerFeatures := []featuregate.Feature{features.BEMemoryEvict, features.MemoryEvict}
+	triggerFeatures := []featuregate.Feature{features.BEMemoryEvict, features.MemoryEvict, features.MemoryAllocatableEvict}
 	for _, feature := range triggerFeatures {
 		if !features.DefaultKoordletFeatureGate.Enabled(feature) {
 			continue
@@ -124,7 +126,7 @@ func (m *memoryEvictor) memoryEvict() {
 			klog.V(4).Infof("feature %s skipped, nodeSLO disable the feature gate", feature)
 			continue
 		}
-		task, err := m.buildEvictTask(feature, nodeSLO, memoryCapacity)
+		task, err := m.buildEvictTask(feature, nodeSLO, memoryCapacity, node)
 		if err != nil {
 			klog.Warningf("failed to build memoryEvict task trigger by feature %v, err: %v", feature, err)
 			continue
@@ -146,92 +148,147 @@ func (m *memoryEvictor) memoryEvict() {
 	for _, task := range evictTasks {
 		succeed, failedToRelease := qosmanagerUtil.EvictTaskCheck(task, released)
 		if succeed {
-			klog.V(4).Infof("evict task %v succeed, should release %v[%v], completed", task.Reason, task.ReleaseTarget, task.ToReleaseResource)
+			klog.V(4).Infof("evict task %v succeed, released resourceTarget[%v]: %v", task.Reason, task.ReleaseTarget, task.ToReleaseResource)
 		} else {
-			klog.Warningf("evict task %v failed, should release %v[%v], failed to release %v[%v]", task.Reason, task.ReleaseTarget, task.ToReleaseResource, task.ReleaseTarget, failedToRelease)
+			klog.Warningf("evict task %v failed, failed to release resourceTarget[%v]: to release %v,  failed to release %v ", task.Reason, task.ReleaseTarget, task.ToReleaseResource, failedToRelease)
 		}
 	}
 }
 
-func (m *memoryEvictor) buildEvictTask(feature featuregate.Feature, nodeSLO *slov1alpha1.NodeSLO, memoryCapacity int64) (*qosmanagerUtil.EvictTaskInfo, error) {
+func (m *memoryEvictor) buildEvictTask(feature featuregate.Feature, nodeSLO *slov1alpha1.NodeSLO, memoryCapacity int64, node *corev1.Node) (*qosmanagerUtil.EvictTaskInfo, error) {
 	thresholdConfig := nodeSLO.Spec.ResourceUsedThresholdWithBE
 	var evictReason string
-	var getPodEvictInfoAndSortFunc func(*slov1alpha1.ResourceThresholdStrategy) []*qosmanagerUtil.PodEvictInfo
-	// check config
+	var releaseTarget qosmanagerUtil.ReleaseTargetType
+	var getPodEvictInfoAndSortFunc func(string, *slov1alpha1.ResourceThresholdStrategy) []*qosmanagerUtil.PodEvictInfo
+	var genReleaseResource func(*slov1alpha1.ResourceThresholdStrategy, int64, *corev1.Node) (corev1.ResourceList, func(podInfo *qosmanagerUtil.PodEvictInfo) corev1.ResourceList)
 	switch feature {
 	case features.BEMemoryEvict:
 		evictReason = qosmanagerUtil.EvictReasonPrefix + resourceexecutor.EvictBEPodByNodeMemoryUsage
 		getPodEvictInfoAndSortFunc = m.getSortedBEPodInfos
+		genReleaseResource = m.calculateReleaseByUsedThresholdPercent
+		releaseTarget = qosmanagerUtil.ReleaseTargetTypeResourceUsed
 	case features.MemoryEvict:
 		evictReason = qosmanagerUtil.EvictReasonPrefix + resourceexecutor.EvictPodByMemoryUsedThresholdPercent
 		getPodEvictInfoAndSortFunc = m.getPodEvictInfoAndSortByPriority
+		genReleaseResource = m.calculateReleaseByUsedThresholdPercent
+		releaseTarget = qosmanagerUtil.ReleaseTargetTypeResourceUsed
+	case features.MemoryAllocatableEvict:
+		evictReason = qosmanagerUtil.EvictReasonPrefix + resourceexecutor.EvictPodByMemoryAllocatableThresholdPercent
+		getPodEvictInfoAndSortFunc = m.getPodEvictInfoAndSortByPriority
+		genReleaseResource = m.calculateReleaseByAllocatableThresholdPercent
+		releaseTarget = qosmanagerUtil.ReleaseTargetTypeResourceRequest
 	default:
 		return nil, fmt.Errorf("unknown feature: %v", feature)
 	}
-	if err := isConfigValid(thresholdConfig, feature); err != nil {
+	if err := generateConfigCheck(feature)(thresholdConfig); err != nil {
 		return nil, fmt.Errorf("skip memory evict feature %v, invalid config, err=%v", feature, err)
 	}
-	release := m.calculateReleaseByUsedThresholdPercent(thresholdConfig, memoryCapacity)
-	if release <= 0 {
+	release, getPodResourceFunc := genReleaseResource(thresholdConfig, memoryCapacity, node)
+	if len(release) == 0 {
 		return nil, nil
 	}
-	sortedPodInfos := getPodEvictInfoAndSortFunc(thresholdConfig)
+	sortedPodInfos := getPodEvictInfoAndSortFunc(string(feature), thresholdConfig)
 	return &qosmanagerUtil.EvictTaskInfo{
-		Reason:          evictReason,
-		SortedEvictPods: sortedPodInfos,
-		ToReleaseResource: corev1.ResourceList{
-			corev1.ResourceMemory: *resource.NewQuantity(release, resource.BinarySI),
-		},
-		ReleaseTarget: qosmanagerUtil.ReleaseTargetTypeResourceUsed,
+		Reason:             evictReason,
+		SortedEvictPods:    sortedPodInfos,
+		ToReleaseResource:  release,
+		ReleaseTarget:      releaseTarget,
+		GetPodResourceFunc: getPodResourceFunc,
 	}, nil
 }
 
-func isConfigValid(thresholdConfig *slov1alpha1.ResourceThresholdStrategy, feature featuregate.Feature) error {
-	if thresholdConfig == nil {
-		return fmt.Errorf("resourceThresholdStrategy not config")
+func generateConfigCheck(feature featuregate.Feature) func(*slov1alpha1.ResourceThresholdStrategy) error {
+	common := func(thresholdConfig *slov1alpha1.ResourceThresholdStrategy) error {
+		if thresholdConfig == nil {
+			return fmt.Errorf("resourceThresholdStrategy not config")
+		}
+		thresholdPercent := thresholdConfig.MemoryEvictThresholdPercent
+		if thresholdPercent == nil {
+			return fmt.Errorf("threshold percent is nil")
+		} else if *thresholdPercent < 0 {
+			return fmt.Errorf("threshold percent(%v) should equal or greater than 0", *thresholdPercent)
+		}
+
+		lowerPercent := int64(0)
+		if thresholdConfig.MemoryEvictLowerPercent != nil {
+			lowerPercent = *thresholdConfig.MemoryEvictLowerPercent
+		} else {
+			lowerPercent = *thresholdPercent - memoryReleaseBufferPercent
+		}
+		if lowerPercent >= *thresholdPercent {
+			return fmt.Errorf("lower percent(%v) should less than threshold percent(%v)", lowerPercent, *thresholdPercent)
+		}
+		return nil
 	}
-	thresholdPercent := thresholdConfig.MemoryEvictThresholdPercent
+	switch feature {
+	case features.BEMemoryEvict:
+		return common
+	case features.MemoryEvict:
+		return func(thresholdConfig *slov1alpha1.ResourceThresholdStrategy) error {
+			if err := common(thresholdConfig); err != nil {
+				return err
+			}
+			if thresholdConfig.EvictEnabledPriorityThreshold == nil {
+				return fmt.Errorf("EvictEnabledPriorityThreshold not config")
+			}
+			return nil
+		}
+	case features.MemoryAllocatableEvict:
+		return isAllocatableThresholdConfigValid
+	}
+	return nil
+}
+func isAllocatableThresholdConfigValid(thresholdConfig *slov1alpha1.ResourceThresholdStrategy) error {
+	if thresholdConfig == nil {
+		return fmt.Errorf("ResourceThresholdStrategy not config")
+	}
+	thresholdPercent := thresholdConfig.MemoryAllocatableEvictThresholdPercent
 	if thresholdPercent == nil {
-		return fmt.Errorf("threshold percent is nil")
+		return fmt.Errorf("MemoryAllocatableEvictThresholdPercent not config")
 	} else if *thresholdPercent < 0 {
 		return fmt.Errorf("threshold percent(%v) should greater than 0", *thresholdPercent)
 	}
-
 	lowerPercent := int64(0)
-	if thresholdConfig.MemoryEvictLowerPercent != nil {
-		lowerPercent = *thresholdConfig.MemoryEvictLowerPercent
-	} else {
-		lowerPercent = *thresholdPercent - memoryReleaseBufferPercent
+	if thresholdConfig.MemoryAllocatableEvictLowerPercent != nil {
+		lowerPercent = *thresholdConfig.MemoryAllocatableEvictLowerPercent
 	}
-
 	if lowerPercent >= *thresholdPercent {
 		return fmt.Errorf("lower percent(%v) should less than threshold percent(%v)", lowerPercent, *thresholdPercent)
 	}
-	if feature == features.MemoryEvict {
-		if thresholdConfig.EvictEnabledPriorityThreshold == nil {
-			return fmt.Errorf("EvictEnabledPriorityThreshold not config")
-		}
+	priorityThresholdPercent := thresholdConfig.AllocatableEvictPriorityThreshold
+	if priorityThresholdPercent == nil {
+		return fmt.Errorf("AllocatableEvictPriorityThreshold not config")
+	}
+	if *priorityThresholdPercent > apiext.PriorityMidValueDefault {
+		return fmt.Errorf("priorityThresholdPercent(%v) should less than %v, koor-prod pods should not be killed", *priorityThresholdPercent, apiext.PriorityMidValueMax)
 	}
 	return nil
 }
 
-func (m *memoryEvictor) calculateReleaseByUsedThresholdPercent(thresholdConfig *slov1alpha1.ResourceThresholdStrategy, memoryCapacity int64) int64 {
+func (m *memoryEvictor) calculateReleaseByUsedThresholdPercent(thresholdConfig *slov1alpha1.ResourceThresholdStrategy, memoryCapacity int64, node *corev1.Node) (overall corev1.ResourceList,
+	calculateFunc func(podInfo *qosmanagerUtil.PodEvictInfo) corev1.ResourceList) {
+	overall = make(corev1.ResourceList)
+	resourceType := corev1.ResourceMemory
+	calculateFunc = func(podInfo *qosmanagerUtil.PodEvictInfo) corev1.ResourceList {
+		return corev1.ResourceList{
+			corev1.ResourceMemory: *resource.NewQuantity(podInfo.MemoryUsed, resource.BinarySI),
+		}
+	}
 	queryMeta, err := metriccache.NodeMemoryUsageMetric.BuildQueryMeta(nil)
 	if err != nil {
 		klog.Warningf("get query failed, error %v", err)
-		return 0
+		return
 	}
-
 	nodeMemoryUsed, err := helpers.CollectorNodeMetricLast(m.metricCache, queryMeta, m.metricCollectInterval)
 	if err != nil {
 		klog.Warningf("memoryEvict by usedTresholdPercent skippped, get node metrics error: %v", err)
-		return 0
+		return
 	}
 	nodeMemoryUsage := int64(nodeMemoryUsed) * 100 / memoryCapacity
 	thresholdPercent := thresholdConfig.MemoryEvictThresholdPercent
 	if nodeMemoryUsage < *thresholdPercent {
 		klog.V(5).Infof("memoryEvict by usedTresholdPercent skippped, node memory usage(%v) is below threshold(%v)", nodeMemoryUsage, *thresholdPercent)
-		return 0
+		return
 	}
 	lowerPercent := int64(0)
 	if thresholdConfig.MemoryEvictLowerPercent != nil {
@@ -247,21 +304,74 @@ func (m *memoryEvictor) calculateReleaseByUsedThresholdPercent(thresholdConfig *
 		float64(*thresholdPercent)/100,
 		float64(lowerPercent)/100,
 	)
-	return memoryNeedRelease
+	overall[resourceType] = *resource.NewMilliQuantity(memoryNeedRelease, resource.BinarySI)
+	return
 }
 
-func (m *memoryEvictor) getSortedBEPodInfos(thresholdConfig *slov1alpha1.ResourceThresholdStrategy) []*qosmanagerUtil.PodEvictInfo {
+func (m *memoryEvictor) calculateReleaseByAllocatableThresholdPercent(thresholdConfig *slov1alpha1.ResourceThresholdStrategy, memoryCapacity int64, node *corev1.Node) (overall corev1.ResourceList,
+	calculateFunc func(podInfo *qosmanagerUtil.PodEvictInfo) corev1.ResourceList) {
+	overall = make(corev1.ResourceList)
+	requestedOnNode := make(corev1.ResourceList)
+	priorityThreshold := *thresholdConfig.AllocatableEvictPriorityThreshold
+	allocatableEvictThreshold := *thresholdConfig.MemoryAllocatableEvictThresholdPercent
+	allocatableEvictLowerThreshold := *thresholdConfig.MemoryAllocatableEvictLowerPercent
+	if allocatableEvictThreshold < 0 {
+		// no need to release
+		return
+	}
+	prioritiesMp := make(map[apiext.PriorityClass]bool)
+	for _, podMeta := range m.statesInformer.GetAllPods() {
+		pod := podMeta.Pod
+		if priority := apiext.GetPodPriorityValueWithDefault(pod); priority == nil || *priority > priorityThreshold {
+			continue
+		}
+		request := qosmanagerUtil.GetRequestFromPod(pod, corev1.ResourceMemory)
+		util.AddResourceList(requestedOnNode, request)
+	}
+	resourceOnNode := node.Status.Allocatable
+	for rt, rq := range requestedOnNode {
+		nq, ok := resourceOnNode[rt]
+		if !ok {
+			overall[rt] = rq
+			continue
+		}
+		rqValue := float32(qosmanagerUtil.ConvertQuantityToInt64(rt, rq))
+		sumValue := float32(qosmanagerUtil.ConvertQuantityToInt64(rt, nq))
+		if rqValue/sumValue > float32(allocatableEvictThreshold)/100 {
+			overall[rt] = *resource.NewQuantity(int64((rqValue/sumValue-float32(allocatableEvictLowerThreshold)/100)*sumValue), resource.BinarySI)
+		}
+	}
+	for r := range overall {
+		// currently only support koord-batch/koord-mid
+		if class, ok := apiext.ReverseResourceNameMap[r]; ok {
+			prioritiesMp[class] = true
+		}
+	}
+	calculateFunc = func(podInfo *qosmanagerUtil.PodEvictInfo) corev1.ResourceList {
+		if _, ok := prioritiesMp[apiext.GetPodPriorityClassRaw(podInfo.Pod)]; !ok {
+			return nil
+		}
+		return qosmanagerUtil.GetRequestFromPod(podInfo.Pod, corev1.ResourceMemory)
+	}
+	return
+}
+
+func (m *memoryEvictor) getSortedBEPodInfos(evictionPolicy string, thresholdConfig *slov1alpha1.ResourceThresholdStrategy) []*qosmanagerUtil.PodEvictInfo {
 	podMetricMap := helpers.CollectAllPodMetricsLast(m.statesInformer, m.metricCache, metriccache.PodMemUsageMetric, m.metricCollectInterval)
 	var bePodInfos []*qosmanagerUtil.PodEvictInfo
 	for _, podMeta := range m.statesInformer.GetAllPods() {
 		pod := podMeta.Pod
-		if extension.GetPodQoSClassRaw(pod) == extension.QoSBE {
-			info := &qosmanagerUtil.PodEvictInfo{
-				Pod:        pod,
-				MemoryUsed: int64(podMetricMap[string(pod.UID)]),
-			}
-			bePodInfos = append(bePodInfos, info)
+		if extension.GetPodQoSClassRaw(pod) != extension.QoSBE {
+			continue
 		}
+		if !qosmanagerUtil.IsEvictionPolicyAllowed(evictionPolicy, pod) {
+			continue
+		}
+		info := &qosmanagerUtil.PodEvictInfo{
+			Pod:        pod,
+			MemoryUsed: int64(podMetricMap[string(pod.UID)]),
+		}
+		bePodInfos = append(bePodInfos, info)
 	}
 
 	sort.Slice(bePodInfos, func(i, j int) bool {
@@ -283,17 +393,20 @@ func (m *memoryEvictor) getSortedBEPodInfos(thresholdConfig *slov1alpha1.Resourc
 	return bePodInfos
 }
 
-func (m *memoryEvictor) getPodEvictInfoAndSortByPriority(thresholdConfig *slov1alpha1.ResourceThresholdStrategy) []*qosmanagerUtil.PodEvictInfo {
+func (m *memoryEvictor) getPodEvictInfoAndSortByPriority(evictionPolicy string, thresholdConfig *slov1alpha1.ResourceThresholdStrategy) []*qosmanagerUtil.PodEvictInfo {
 	var podsInfos []*qosmanagerUtil.PodEvictInfo
 	priorityThreshold := *thresholdConfig.EvictEnabledPriorityThreshold
 	for _, podMeta := range m.statesInformer.GetAllPods() {
 		pod := podMeta.Pod
 		// higher priority pods are not allowed to evict
-		// 1. filter inactive / priority
-		podInfo := &qosmanagerUtil.PodEvictInfo{Pod: podMeta.Pod}
+		// 1. filter inactive / priority / eviction policy
 		if util.IsPodInactive(pod) {
 			continue
 		}
+		if !qosmanagerUtil.IsEvictionPolicyAllowed(evictionPolicy, pod) {
+			continue
+		}
+		podInfo := &qosmanagerUtil.PodEvictInfo{Pod: podMeta.Pod}
 		if priority := apiext.GetPodPriorityValueWithDefault(pod); priority == nil || *priority > priorityThreshold {
 			continue
 		} else {

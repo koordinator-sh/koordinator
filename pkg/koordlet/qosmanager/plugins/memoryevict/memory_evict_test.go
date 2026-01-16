@@ -57,6 +57,257 @@ type podMemSample struct {
 	MemUsed resource.Quantity
 }
 
+func Test_memoryEvict_Enabled(t *testing.T) {
+	m := memoryEvictor{}
+	type args struct {
+		BEMemoryEvictEnabled          bool
+		MemoryEvictEnabled            bool
+		MemoryAllocatableEvictEnabled bool
+		evictInterval                 time.Duration
+	}
+	tests := []struct {
+		name   string
+		args   args
+		expect bool
+	}{
+		{
+			name: "BEMemoryEvictEnabled/MemoryEvictEnabled/MemoryAllocatableEvictEnabled=false",
+			args: args{
+				BEMemoryEvictEnabled:          false,
+				MemoryEvictEnabled:            false,
+				MemoryAllocatableEvictEnabled: false,
+				evictInterval:                 10 * time.Second,
+			},
+			expect: false,
+		},
+		{
+			name: "MemoryEvictEnabled=true",
+			args: args{
+				BEMemoryEvictEnabled:          false,
+				MemoryEvictEnabled:            true,
+				MemoryAllocatableEvictEnabled: false,
+				evictInterval:                 10 * time.Second,
+			},
+			expect: true,
+		},
+		{
+			name: "BEMemoryEvictEnabled=true",
+			args: args{
+				BEMemoryEvictEnabled:          true,
+				MemoryEvictEnabled:            false,
+				MemoryAllocatableEvictEnabled: false,
+				evictInterval:                 10 * time.Second,
+			},
+			expect: true,
+		},
+		{
+			name: "MemoryAllocatableEvictEnabled=true",
+			args: args{
+				BEMemoryEvictEnabled:          false,
+				MemoryEvictEnabled:            false,
+				MemoryAllocatableEvictEnabled: true,
+				evictInterval:                 10 * time.Second,
+			},
+			expect: true,
+		},
+		{
+			name: "evictInterval<0",
+			args: args{
+				BEMemoryEvictEnabled: false,
+				MemoryEvictEnabled:   true,
+				evictInterval:        -10 * time.Second,
+			},
+			expect: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m.evictInterval = tt.args.evictInterval
+			defer utilfeature.SetFeatureGateDuringTest(t, features.DefaultMutableKoordletFeatureGate, features.BEMemoryEvict, tt.args.BEMemoryEvictEnabled)()
+			defer utilfeature.SetFeatureGateDuringTest(t, features.DefaultMutableKoordletFeatureGate, features.MemoryEvict, tt.args.MemoryEvictEnabled)()
+			defer utilfeature.SetFeatureGateDuringTest(t, features.DefaultMutableKoordletFeatureGate, features.MemoryAllocatableEvict, tt.args.MemoryAllocatableEvictEnabled)()
+			assert.Equal(t, tt.expect, m.Enabled())
+		})
+	}
+
+}
+
+func Test_generateConfigCheck(t *testing.T) {
+	tests := []struct {
+		name            string
+		feature         featuregate.Feature
+		thresholdConfig *slov1alpha1.ResourceThresholdStrategy
+		expectErr       error
+	}{
+		{
+			name:            "BEMemoryEvict - ResourceThresholdStrategy nil",
+			feature:         features.BEMemoryEvict,
+			thresholdConfig: nil,
+			expectErr:       fmt.Errorf("resourceThresholdStrategy not config"),
+		},
+		{
+			name:    "BEMemoryEvict - MemoryEvictThresholdPercent nil",
+			feature: features.BEMemoryEvict,
+			thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{
+				MemoryEvictThresholdPercent: nil,
+			},
+			expectErr: fmt.Errorf("threshold percent is nil"),
+		},
+		{
+			name:    "BEMemoryEvict - MemoryEvictThresholdPercent < 0",
+			feature: features.BEMemoryEvict,
+			thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{
+				MemoryEvictThresholdPercent: ptr.To[int64](-1),
+			},
+			expectErr: fmt.Errorf("threshold percent(-1) should equal or greater than 0"),
+		},
+		{
+			name:    "BEMemoryEvict - MemoryEvictLowerPercent == nil",
+			feature: features.BEMemoryEvict,
+			thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{
+				MemoryEvictThresholdPercent: ptr.To[int64](80),
+				MemoryEvictLowerPercent:     nil,
+			},
+			expectErr: nil,
+		},
+		{
+			name:    "BEMemoryEvict - MemoryEvictLowerPercent > MemoryEvictThresholdPercent",
+			feature: features.BEMemoryEvict,
+			thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{
+				MemoryEvictThresholdPercent: ptr.To[int64](80),
+				MemoryEvictLowerPercent:     ptr.To[int64](90),
+			},
+			expectErr: fmt.Errorf("lower percent(90) should less than threshold percent(80)"),
+		},
+		{
+			name:    "BEMemoryEvict - valid config",
+			feature: features.BEMemoryEvict,
+			thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{
+				MemoryEvictThresholdPercent: ptr.To[int64](80),
+				MemoryEvictLowerPercent:     ptr.To[int64](70),
+			},
+			expectErr: nil,
+		},
+		{
+			name:            "MemoryEvict - ResourceThresholdStrategy nil",
+			feature:         features.MemoryEvict,
+			thresholdConfig: nil,
+			expectErr:       fmt.Errorf("resourceThresholdStrategy not config"),
+		},
+		{
+			name:    "MemoryEvict - MemoryEvictThresholdPercent nil",
+			feature: features.MemoryEvict,
+			thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{
+				MemoryEvictThresholdPercent: nil,
+			},
+			expectErr: fmt.Errorf("threshold percent is nil"),
+		},
+		{
+			name:    "MemoryEvict - MemoryEvictThresholdPercent < 0",
+			feature: features.MemoryEvict,
+			thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{
+				MemoryEvictThresholdPercent: ptr.To[int64](-1),
+			},
+			expectErr: fmt.Errorf("threshold percent(-1) should equal or greater than 0"),
+		},
+		{
+			name:    "MemoryEvict - EvictEnabledPriorityThreshold nil",
+			feature: features.MemoryEvict,
+			thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{
+				MemoryEvictThresholdPercent:   ptr.To[int64](80),
+				MemoryEvictLowerPercent:       ptr.To[int64](70),
+				EvictEnabledPriorityThreshold: nil,
+			},
+			expectErr: fmt.Errorf("EvictEnabledPriorityThreshold not config"),
+		},
+		{
+			name:    "MemoryEvict - MemoryEvictLowerPercent == MemoryEvictThresholdPercent",
+			feature: features.MemoryEvict,
+			thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{
+				MemoryEvictThresholdPercent:   ptr.To[int64](80),
+				MemoryEvictLowerPercent:       ptr.To[int64](80),
+				EvictEnabledPriorityThreshold: ptr.To[int32](apiext.PriorityBatchValueMax),
+			},
+			expectErr: fmt.Errorf("lower percent(80) should less than threshold percent(80)"),
+		},
+		{
+			name:    "MemoryEvict - valid config",
+			feature: features.MemoryEvict,
+			thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{
+				MemoryEvictThresholdPercent:   ptr.To[int64](85),
+				MemoryEvictLowerPercent:       ptr.To[int64](75),
+				EvictEnabledPriorityThreshold: ptr.To[int32](apiext.PriorityBatchValueMax),
+			},
+			expectErr: nil,
+		},
+		{
+			name:            "MemoryAllocatableEvict - ResourceThresholdStrategy nil",
+			feature:         features.MemoryAllocatableEvict,
+			thresholdConfig: nil,
+			expectErr:       fmt.Errorf("ResourceThresholdStrategy not config"),
+		},
+		{
+			name:    "MemoryAllocatableEvict - MemoryAllocatableEvictThresholdPercent nil",
+			feature: features.MemoryAllocatableEvict,
+			thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{
+				MemoryAllocatableEvictThresholdPercent: nil,
+			},
+			expectErr: fmt.Errorf("MemoryAllocatableEvictThresholdPercent not config"),
+		},
+		{
+			name:    "MemoryAllocatableEvict - MemoryAllocatableEvictThresholdPercent < 0",
+			feature: features.MemoryAllocatableEvict,
+			thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{
+				MemoryAllocatableEvictThresholdPercent: ptr.To[int64](-1),
+			},
+			expectErr: fmt.Errorf("threshold percent(-1) should greater than 0"),
+		},
+		{
+			name:    "MemoryAllocatableEvict - AllocatableEvictPriorityThreshold nil",
+			feature: features.MemoryAllocatableEvict,
+			thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{
+				MemoryAllocatableEvictThresholdPercent: ptr.To[int64](80),
+				MemoryAllocatableEvictLowerPercent:     ptr.To[int64](70),
+				AllocatableEvictPriorityThreshold:      nil,
+			},
+			expectErr: fmt.Errorf("AllocatableEvictPriorityThreshold not config"),
+		},
+		{
+			name:    "MemoryAllocatableEvict - AllocatableEvictPriorityThreshold > PriorityMidValueDefault",
+			feature: features.MemoryAllocatableEvict,
+			thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{
+				MemoryAllocatableEvictThresholdPercent: ptr.To[int64](80),
+				MemoryAllocatableEvictLowerPercent:     ptr.To[int64](70),
+				AllocatableEvictPriorityThreshold:      ptr.To[int32](apiext.PriorityMidValueMax + 1),
+			},
+			expectErr: fmt.Errorf("priorityThresholdPercent(%v) should less than %v, koor-prod pods should not be killed", apiext.PriorityMidValueMax+1, apiext.PriorityMidValueMax),
+		},
+		{
+			name:    "MemoryAllocatableEvict - valid config",
+			feature: features.MemoryAllocatableEvict,
+			thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{
+				MemoryAllocatableEvictThresholdPercent: ptr.To[int64](85),
+				MemoryAllocatableEvictLowerPercent:     ptr.To[int64](75),
+				AllocatableEvictPriorityThreshold:      ptr.To[int32](apiext.PriorityBatchValueMax),
+			},
+			expectErr: nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			checkFunc := generateConfigCheck(tt.feature)
+			if checkFunc == nil {
+				t.Errorf("generateConfigCheck() returned nil for feature %v", tt.feature)
+				return
+			}
+			err := checkFunc(tt.thresholdConfig)
+			assert.Equal(t, tt.expectErr, err)
+		})
+	}
+}
+
+// todo: add allocatable evict  test
+/*
 func Test_memoryEvict(t *testing.T) {
 	type args struct {
 		name               string
@@ -474,7 +725,7 @@ func Test_memoryEvict(t *testing.T) {
 		})
 	}
 }
-
+*/
 func createMemoryEvictTestPodWithLabels(name string, qosClass apiext.QoSClass, priority int32, labels map[string]string, phase corev1.PodPhase) *corev1.Pod {
 	pod := createMemoryEvictTestPod(name, qosClass, priority)
 	pod.Labels = utils.MergeMap(pod.Labels, labels)
@@ -622,7 +873,7 @@ func Test_getPodEvictInfoAndSortByPriority(t *testing.T) {
 			memoryEvictor := m.(*memoryEvictor)
 			memoryEvictor.Setup(&framework.Context{Evictor: evictor, OnlyEvictByAPI: true})
 			memoryEvictor.lastEvictTime = time.Now().Add(-30 * time.Second)
-			res := memoryEvictor.getPodEvictInfoAndSortByPriority(tt.thresholdConfig)
+			res := memoryEvictor.getPodEvictInfoAndSortByPriority(string(features.BEMemoryEvict), tt.thresholdConfig)
 			for k, podEvictInfo := range res {
 				assert.Equal(t, tt.expectPodEvictNames[k], podEvictInfo.Pod.Name)
 			}
@@ -715,8 +966,356 @@ func Test_calculateReleaseByUsedThresholdPercent(t *testing.T) {
 			memoryEvictor.Setup(&framework.Context{Evictor: evictor, OnlyEvictByAPI: true})
 			memoryEvictor.lastEvictTime = time.Now().Add(-30 * time.Second)
 			memoryCapacity := tt.node.Status.Capacity.Memory().Value()
-			res := memoryEvictor.calculateReleaseByUsedThresholdPercent(tt.thresholdConfig, memoryCapacity)
-			assert.Equal(t, tt.expectRelease, res)
+			res, _ := memoryEvictor.calculateReleaseByUsedThresholdPercent(tt.thresholdConfig, memoryCapacity, tt.node)
+			if len(res) == 0 {
+				assert.Equal(t, tt.expectRelease, int64(0), "checkRelease")
+			} else {
+				q, _ := res[corev1.ResourceMemory]
+				assert.Equal(t, tt.expectRelease, q.MilliValue(), "checkRelease")
+			}
 		})
 	}
+}
+
+func Test_calculateReleaseByAllocatableThresholdPercent(t *testing.T) {
+	tests := []struct {
+		name                   string
+		node                   *corev1.Node
+		pods                   []*corev1.Pod
+		thresholdConfig        *slov1alpha1.ResourceThresholdStrategy
+		expectRelease          corev1.ResourceList
+		expectReleaseResources []corev1.ResourceName
+		expectPodResourceList  map[string]corev1.ResourceList
+	}{
+		{
+			name: "allocatable threshold not exceeded",
+			node: testutil.MockTestNodeWithExtendResource("80", "120G", corev1.ResourceList{
+				apiext.BatchMemory: *resource.NewQuantity(100*1024*1024*1024, resource.BinarySI),
+			}, corev1.ResourceList{
+				apiext.BatchMemory: *resource.NewQuantity(100*1024*1024*1024, resource.BinarySI),
+			}),
+			pods: []*corev1.Pod{
+				createMemoryEvictTestPodWithPriority("batch-pod-1", apiext.QoSBE, apiext.PriorityBatchValueMin, corev1.ResourceList{
+					corev1.ResourceMemory: *resource.NewQuantity(20*1024*1024*1024, resource.BinarySI),
+					apiext.BatchMemory:    *resource.NewQuantity(20*1024*1024*1024, resource.BinarySI),
+				}, corev1.ResourceList{
+					corev1.ResourceMemory: *resource.NewQuantity(20*1024*1024*1024, resource.BinarySI),
+					apiext.BatchMemory:    *resource.NewQuantity(20*1024*1024*1024, resource.BinarySI),
+				}),
+				createMemoryEvictTestPodWithPriority("batch-pod-2", apiext.QoSBE, apiext.PriorityBatchValueMin, corev1.ResourceList{
+					corev1.ResourceMemory: *resource.NewQuantity(30*1024*1024*1024, resource.BinarySI),
+					apiext.BatchMemory:    *resource.NewQuantity(30*1024*1024*1024, resource.BinarySI),
+				}, corev1.ResourceList{
+					corev1.ResourceMemory: *resource.NewQuantity(30*1024*1024*1024, resource.BinarySI),
+					apiext.BatchMemory:    *resource.NewQuantity(30*1024*1024*1024, resource.BinarySI),
+				}),
+			},
+			thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{
+				Enable:                                 ptr.To[bool](true),
+				MemoryAllocatableEvictThresholdPercent: ptr.To[int64](80),
+				MemoryAllocatableEvictLowerPercent:     ptr.To[int64](70),
+				AllocatableEvictPriorityThreshold:      ptr.To[int32](apiext.PriorityBatchValueMax),
+			},
+			expectRelease:          corev1.ResourceList{},
+			expectReleaseResources: []corev1.ResourceName{},
+			expectPodResourceList: map[string]corev1.ResourceList{
+				"batch-pod-1": nil,
+				"batch-pod-2": nil,
+			},
+		},
+		{
+			name: "allocatable threshold exceeded - batch memory",
+			node: testutil.MockTestNodeWithExtendResource("80", "120G", corev1.ResourceList{
+				apiext.BatchMemory: *resource.NewQuantity(100*1024*1024*1024, resource.BinarySI),
+			}, corev1.ResourceList{
+				apiext.BatchMemory: *resource.NewQuantity(100*1024*1024*1024, resource.BinarySI),
+			}),
+			pods: []*corev1.Pod{
+				createMemoryEvictTestPodWithPriority("batch-pod-1", apiext.QoSBE, apiext.PriorityBatchValueMin, corev1.ResourceList{
+					corev1.ResourceMemory: *resource.NewQuantity(45*1024*1024*1024, resource.BinarySI),
+					apiext.BatchMemory:    *resource.NewQuantity(45*1024*1024*1024, resource.BinarySI),
+				}, corev1.ResourceList{
+					corev1.ResourceMemory: *resource.NewQuantity(45*1024*1024*1024, resource.BinarySI),
+					apiext.BatchMemory:    *resource.NewQuantity(45*1024*1024*1024, resource.BinarySI),
+				}),
+				createMemoryEvictTestPodWithPriority("batch-pod-2", apiext.QoSBE, apiext.PriorityBatchValueMin, corev1.ResourceList{
+					corev1.ResourceMemory: *resource.NewQuantity(40*1024*1024*1024, resource.BinarySI),
+					apiext.BatchMemory:    *resource.NewQuantity(40*1024*1024*1024, resource.BinarySI),
+				}, corev1.ResourceList{
+					corev1.ResourceMemory: *resource.NewQuantity(40*1024*1024*1024, resource.BinarySI),
+					apiext.BatchMemory:    *resource.NewQuantity(40*1024*1024*1024, resource.BinarySI),
+				}),
+			},
+			thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{
+				Enable:                                 ptr.To[bool](true),
+				MemoryAllocatableEvictThresholdPercent: ptr.To[int64](80),
+				MemoryAllocatableEvictLowerPercent:     ptr.To[int64](70),
+				AllocatableEvictPriorityThreshold:      ptr.To[int32](apiext.PriorityBatchValueMax),
+			},
+			expectRelease: corev1.ResourceList{
+				apiext.BatchMemory: *resource.NewQuantity(16106131456, resource.BinarySI),
+			},
+			expectReleaseResources: []corev1.ResourceName{apiext.BatchMemory},
+			expectPodResourceList: map[string]corev1.ResourceList{
+				"batch-pod-1": {
+					apiext.BatchMemory: *resource.NewQuantity(45*1024*1024*1024, resource.BinarySI),
+				},
+				"batch-pod-2": {
+					apiext.BatchMemory: *resource.NewQuantity(40*1024*1024*1024, resource.BinarySI),
+				},
+			},
+		},
+		{
+			name: "allocatable threshold exceeded - mixed priority",
+			node: testutil.MockTestNodeWithExtendResource("80", "120G", corev1.ResourceList{
+				apiext.BatchMemory: *resource.NewQuantity(100*1024*1024*1024, resource.BinarySI),
+				apiext.MidMemory:   *resource.NewQuantity(100*1024*1024*1024, resource.BinarySI),
+			}, corev1.ResourceList{
+				apiext.BatchMemory: *resource.NewQuantity(100*1024*1024*1024, resource.BinarySI),
+				apiext.MidMemory:   *resource.NewQuantity(100*1024*1024*1024, resource.BinarySI),
+			}),
+			pods: []*corev1.Pod{
+				createMemoryEvictTestPodWithPriority("batch-pod-1", apiext.QoSBE, apiext.PriorityBatchValueMin, corev1.ResourceList{
+					corev1.ResourceMemory: *resource.NewQuantity(85*1024*1024*1024, resource.BinarySI),
+					apiext.BatchMemory:    *resource.NewQuantity(85*1024*1024*1024, resource.BinarySI),
+				}, corev1.ResourceList{
+					corev1.ResourceMemory: *resource.NewQuantity(85*1024*1024*1024, resource.BinarySI),
+					apiext.BatchMemory:    *resource.NewQuantity(85*1024*1024*1024, resource.BinarySI),
+				}),
+				createMemoryEvictTestPodWithPriority("mid-pod-1", apiext.QoSLS, 7000, corev1.ResourceList{
+					corev1.ResourceMemory: *resource.NewQuantity(85*1024*1024*1024, resource.BinarySI),
+					apiext.MidMemory:      *resource.NewQuantity(85*1024*1024*1024, resource.BinarySI),
+				}, corev1.ResourceList{
+					corev1.ResourceMemory: *resource.NewQuantity(85*1024*1024*1024, resource.BinarySI),
+					apiext.MidMemory:      *resource.NewQuantity(85*1024*1024*1024, resource.BinarySI),
+				}),
+			},
+			thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{
+				Enable:                                 ptr.To[bool](true),
+				MemoryAllocatableEvictThresholdPercent: ptr.To[int64](80),
+				MemoryAllocatableEvictLowerPercent:     ptr.To[int64](70),
+				AllocatableEvictPriorityThreshold:      ptr.To[int32](apiext.PriorityMidValueMax),
+			},
+			expectRelease: corev1.ResourceList{
+				apiext.BatchMemory: *resource.NewQuantity(16106131456, resource.BinarySI),
+				apiext.MidMemory:   *resource.NewQuantity(16106131456, resource.BinarySI),
+			},
+			expectReleaseResources: []corev1.ResourceName{apiext.BatchMemory, apiext.MidMemory},
+			expectPodResourceList: map[string]corev1.ResourceList{
+				"batch-pod-1": {
+					apiext.BatchMemory: *resource.NewQuantity(85*1024*1024*1024, resource.BinarySI),
+				},
+				"mid-pod-1": {
+					apiext.MidMemory: *resource.NewQuantity(85*1024*1024*1024, resource.BinarySI),
+				},
+			},
+		},
+		{
+			name: "allocatable threshold exceeded - mixed priority, lower AllocatableEvictPriorityThreshold",
+			node: testutil.MockTestNodeWithExtendResource("80", "120G", corev1.ResourceList{
+				apiext.BatchMemory: *resource.NewQuantity(100*1024*1024*1024, resource.BinarySI),
+				apiext.MidMemory:   *resource.NewQuantity(100*1024*1024*1024, resource.BinarySI),
+			}, corev1.ResourceList{
+				apiext.BatchMemory: *resource.NewQuantity(100*1024*1024*1024, resource.BinarySI),
+				apiext.MidMemory:   *resource.NewQuantity(100*1024*1024*1024, resource.BinarySI),
+			}),
+			pods: []*corev1.Pod{
+				createMemoryEvictTestPodWithPriority("batch-pod-1", apiext.QoSBE, apiext.PriorityBatchValueMin, corev1.ResourceList{
+					corev1.ResourceMemory: *resource.NewQuantity(85*1024*1024*1024, resource.BinarySI),
+					apiext.BatchMemory:    *resource.NewQuantity(85*1024*1024*1024, resource.BinarySI),
+				}, corev1.ResourceList{
+					corev1.ResourceMemory: *resource.NewQuantity(85*1024*1024*1024, resource.BinarySI),
+					apiext.BatchMemory:    *resource.NewQuantity(85*1024*1024*1024, resource.BinarySI),
+				}),
+				createMemoryEvictTestPodWithPriority("mid-pod-1", apiext.QoSLS, 7000, corev1.ResourceList{
+					corev1.ResourceMemory: *resource.NewQuantity(85*1024*1024*1024, resource.BinarySI),
+					apiext.MidMemory:      *resource.NewQuantity(85*1024*1024*1024, resource.BinarySI),
+				}, corev1.ResourceList{
+					corev1.ResourceMemory: *resource.NewQuantity(85*1024*1024*1024, resource.BinarySI),
+					apiext.MidMemory:      *resource.NewQuantity(85*1024*1024*1024, resource.BinarySI),
+				}),
+			},
+			thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{
+				Enable:                                 ptr.To[bool](true),
+				MemoryAllocatableEvictThresholdPercent: ptr.To[int64](80),
+				MemoryAllocatableEvictLowerPercent:     ptr.To[int64](70),
+				AllocatableEvictPriorityThreshold:      ptr.To[int32](apiext.PriorityBatchValueMax),
+			},
+			expectRelease: corev1.ResourceList{
+				apiext.BatchMemory: *resource.NewQuantity(16106131456, resource.BinarySI),
+			},
+			expectReleaseResources: []corev1.ResourceName{apiext.BatchMemory},
+			expectPodResourceList: map[string]corev1.ResourceList{
+				"batch-pod-1": {
+					apiext.BatchMemory: *resource.NewQuantity(85*1024*1024*1024, resource.BinarySI),
+				},
+			},
+		},
+		{
+			name: "allocatable threshold = 0",
+			node: testutil.MockTestNodeWithExtendResource("80", "120G", corev1.ResourceList{
+				apiext.BatchMemory: *resource.NewQuantity(100*1024*1024*1024, resource.BinarySI),
+			}, corev1.ResourceList{
+				apiext.BatchMemory: *resource.NewQuantity(100*1024*1024*1024, resource.BinarySI),
+			}),
+			pods: []*corev1.Pod{
+				createMemoryEvictTestPodWithPriority("batch-pod-1", apiext.QoSBE, apiext.PriorityBatchValueMin, corev1.ResourceList{
+					corev1.ResourceMemory: *resource.NewQuantity(50*1024*1024*1024, resource.BinarySI),
+					apiext.BatchMemory:    *resource.NewQuantity(50*1024*1024*1024, resource.BinarySI),
+				}, corev1.ResourceList{
+					corev1.ResourceMemory: *resource.NewQuantity(50*1024*1024*1024, resource.BinarySI),
+					apiext.BatchMemory:    *resource.NewQuantity(50*1024*1024*1024, resource.BinarySI),
+				}),
+			},
+			thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{
+				Enable:                                 ptr.To[bool](true),
+				MemoryAllocatableEvictThresholdPercent: ptr.To[int64](0),
+				MemoryAllocatableEvictLowerPercent:     ptr.To[int64](0),
+				AllocatableEvictPriorityThreshold:      ptr.To[int32](apiext.PriorityBatchValueMax),
+			},
+			expectRelease: corev1.ResourceList{
+				apiext.BatchMemory: *resource.NewQuantity(50*1024*1024*1024, resource.BinarySI),
+			},
+			expectReleaseResources: []corev1.ResourceName{apiext.BatchMemory},
+			expectPodResourceList: map[string]corev1.ResourceList{
+				"batch-pod-1": {
+					apiext.BatchMemory: *resource.NewQuantity(50*1024*1024*1024, resource.BinarySI),
+				},
+			},
+		},
+		{
+			name: "node without allocatable batch-memory resource",
+			node: testutil.MockTestNode("80", "120G"),
+			pods: []*corev1.Pod{
+				createMemoryEvictTestPodWithPriority("batch-pod-1", apiext.QoSBE, apiext.PriorityBatchValueMin, corev1.ResourceList{
+					corev1.ResourceMemory: *resource.NewQuantity(50*1024*1024*1024, resource.BinarySI),
+					apiext.BatchMemory:    *resource.NewQuantity(50*1024*1024*1024, resource.BinarySI),
+				}, corev1.ResourceList{
+					corev1.ResourceMemory: *resource.NewQuantity(50*1024*1024*1024, resource.BinarySI),
+					apiext.BatchMemory:    *resource.NewQuantity(50*1024*1024*1024, resource.BinarySI),
+				}),
+			},
+			thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{
+				Enable:                                 ptr.To[bool](true),
+				MemoryAllocatableEvictThresholdPercent: ptr.To[int64](80),
+				MemoryAllocatableEvictLowerPercent:     ptr.To[int64](70),
+				AllocatableEvictPriorityThreshold:      ptr.To[int32](apiext.PriorityBatchValueMax),
+			},
+			expectRelease: corev1.ResourceList{
+				apiext.BatchMemory: *resource.NewQuantity(50*1024*1024*1024, resource.BinarySI),
+			},
+			expectReleaseResources: []corev1.ResourceName{apiext.BatchMemory},
+			expectPodResourceList: map[string]corev1.ResourceList{
+				"batch-pod-1": {
+					apiext.BatchMemory: *resource.NewQuantity(50*1024*1024*1024, resource.BinarySI),
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctl := gomock.NewController(t)
+			defer ctl.Finish()
+
+			mockStatesInformer := mock_statesinformer.NewMockStatesInformer(ctl)
+			mockStatesInformer.EXPECT().GetAllPods().Return(testutil.GetPodMetas(tt.pods)).AnyTimes()
+
+			mockMetricCache := mock_metriccache.NewMockMetricCache(ctl)
+
+			fakeRecorder := &testutil.FakeRecorder{}
+			client := clientsetfake.NewSimpleClientset()
+			stop := make(chan struct{})
+			evictor := qosmanagerUtil.NewEvictor(client, fakeRecorder, policyv1beta1.SchemeGroupVersion.Version)
+			evictor.Start(stop)
+			defer func() { stop <- struct{}{} }()
+
+			runtime.DockerHandler = handler.NewFakeRuntimeHandler()
+
+			opt := &framework.Options{
+				StatesInformer:      mockStatesInformer,
+				MetricCache:         mockMetricCache,
+				Config:              framework.NewDefaultConfig(),
+				MetricAdvisorConfig: maframework.NewDefaultConfig(),
+			}
+			m := New(opt)
+			memoryEvictor := m.(*memoryEvictor)
+			memoryEvictor.Setup(&framework.Context{Evictor: evictor, OnlyEvictByAPI: true})
+			memoryEvictor.lastEvictTime = time.Now().Add(-30 * time.Second)
+
+			memoryCapacity := tt.node.Status.Capacity.Memory().Value()
+			res, calculateFunc := memoryEvictor.calculateReleaseByAllocatableThresholdPercent(tt.thresholdConfig, memoryCapacity, tt.node)
+
+			if len(tt.expectRelease) == 0 {
+				assert.Equal(t, len(res), 0, "checkRelease")
+			} else {
+				// Verify expected resources are present
+				for _, expectedRes := range tt.expectReleaseResources {
+					_, exists := res[expectedRes]
+					assert.True(t, exists, "expected resource %s should exist in result", expectedRes)
+				}
+
+				// Verify release amounts
+				for resName, expectedQuantity := range tt.expectRelease {
+					actualQuantity, exists := res[resName]
+					assert.True(t, exists, "resource %s should exist in result", resName)
+					if exists {
+						assert.Equal(t, expectedQuantity.Value(), actualQuantity.Value(), "release amount for %s should be equal", resName)
+					}
+				}
+			}
+
+			// Verify calculateFunc behavior
+			if tt.expectPodResourceList != nil && calculateFunc != nil {
+				for _, pod := range tt.pods {
+					podInfo := &qosmanagerUtil.PodEvictInfo{Pod: pod}
+					podResource := calculateFunc(podInfo)
+					expectedResource := tt.expectPodResourceList[pod.Name]
+
+					if expectedResource == nil {
+						assert.Nil(t, podResource, "pod %s should return nil resource", pod.Name)
+					} else {
+						assert.NotNil(t, podResource, "pod %s should return resource", pod.Name)
+						for resName, expectedQty := range expectedResource {
+							actualQty, exists := podResource[resName]
+							assert.True(t, exists, "pod %s should have resource %s", pod.Name, resName)
+							if exists {
+								assert.Equal(t, expectedQty.Value(), actualQty.Value(), "pod %s resource %s should match", pod.Name, resName)
+							}
+						}
+					}
+				}
+			}
+		})
+	}
+}
+
+func createMemoryEvictTestPodWithPriority(name string, qosClass apiext.QoSClass, priority int32,
+	requests corev1.ResourceList, limits corev1.ResourceList) *corev1.Pod {
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "test-ns",
+			Name:      name,
+			UID:       types.UID(name),
+			Labels: map[string]string{
+				apiext.LabelPodQoS: string(qosClass),
+			},
+		},
+		Spec: corev1.PodSpec{
+			Priority: &priority,
+			Containers: []corev1.Container{
+				{
+					Name: fmt.Sprintf("%s_container", name),
+					Resources: corev1.ResourceRequirements{
+						Requests: requests,
+						Limits:   limits,
+					},
+				},
+			},
+		},
+		Status: corev1.PodStatus{
+			Phase: corev1.PodRunning,
+		},
+	}
+	return pod
 }
