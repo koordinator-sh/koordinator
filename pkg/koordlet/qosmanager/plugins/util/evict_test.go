@@ -25,6 +25,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/testutil"
@@ -125,106 +126,6 @@ func Test_InitializeEvictionExecutor(t *testing.T) {
 		OnlyEvictByAPI: true,
 		Evictor:        nil,
 	})
-}
-
-func Test_UpdateReleasedByPod(t *testing.T) {
-	tests := []struct {
-		name                 string
-		podInfo              *PodEvictInfo
-		releaseTargetTypes   []ReleaseTargetType
-		releaseResourceTypes map[corev1.ResourceName]bool
-		initialReleased      ReleaseList
-		expected             ReleaseList
-	}{
-		{
-			name: "nil initialReleased",
-			podInfo: &PodEvictInfo{
-				MilliCPURequest: 500,
-				MemoryRequest:   1024 * 1024 * 1024, // 1Gi
-				MilliCPUUsed:    300,
-				MemoryUsed:      512 * 1024 * 1024, // 512Mi
-			},
-			releaseTargetTypes: []ReleaseTargetType{ReleaseTargetTypeBatchResourceRequest},
-			releaseResourceTypes: map[corev1.ResourceName]bool{
-				corev1.ResourceCPU:    true,
-				corev1.ResourceMemory: true,
-			},
-			initialReleased: nil,
-			expected:        nil,
-		},
-		{
-			name: "normal ReleaseTargetTypeBatchResourceRequest",
-			podInfo: &PodEvictInfo{
-				MilliCPURequest: 500,
-				MemoryRequest:   1024 * 1024 * 1024, // 1Gi
-				MilliCPUUsed:    300,
-				MemoryUsed:      512 * 1024 * 1024, // 512Mi
-			},
-			releaseTargetTypes: []ReleaseTargetType{ReleaseTargetTypeBatchResourceRequest},
-			releaseResourceTypes: map[corev1.ResourceName]bool{
-				corev1.ResourceCPU:    true,
-				corev1.ResourceMemory: true,
-			},
-			initialReleased: ReleaseList{},
-			expected: ReleaseList{
-				ReleaseTargetTypeBatchResourceRequest: {
-					corev1.ResourceCPU:    *resource.NewMilliQuantity(500, resource.DecimalSI),
-					corev1.ResourceMemory: *resource.NewQuantity(1024*1024*1024, resource.BinarySI),
-				},
-			},
-		},
-		{
-			name: "ReleaseTargetTypeResourceUsed + cpu only",
-			podInfo: &PodEvictInfo{
-				MilliCPURequest: 500,
-				MemoryRequest:   1073741824,
-				MilliCPUUsed:    300,
-				MemoryUsed:      536870912,
-			},
-			releaseTargetTypes: []ReleaseTargetType{ReleaseTargetTypeResourceUsed},
-			releaseResourceTypes: map[corev1.ResourceName]bool{
-				corev1.ResourceCPU: true,
-			},
-			initialReleased: ReleaseList{},
-			expected: ReleaseList{
-				ReleaseTargetTypeResourceUsed: {
-					corev1.ResourceCPU: *resource.NewMilliQuantity(300, resource.DecimalSI),
-				},
-			},
-		},
-		{
-			name: "initialReleased not nil",
-			podInfo: &PodEvictInfo{
-				MilliCPURequest: 500,
-				MemoryRequest:   1073741824,
-				MilliCPUUsed:    300,
-				MemoryUsed:      536870912,
-			},
-			releaseTargetTypes: []ReleaseTargetType{ReleaseTargetTypeResourceUsed},
-			releaseResourceTypes: map[corev1.ResourceName]bool{
-				corev1.ResourceCPU: true,
-			},
-			initialReleased: ReleaseList{
-				ReleaseTargetTypeResourceUsed: {
-					corev1.ResourceCPU: *resource.NewMilliQuantity(200, resource.DecimalSI),
-				},
-			},
-			expected: ReleaseList{
-				ReleaseTargetTypeResourceUsed: {
-					corev1.ResourceCPU: *resource.NewMilliQuantity(500, resource.DecimalSI),
-				},
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			updateReleasedByPod(tt.podInfo, tt.releaseTargetTypes, tt.releaseResourceTypes, tt.initialReleased)
-			if !reflect.DeepEqual(tt.initialReleased, tt.expected) {
-				t.Errorf("got %v, want %v", tt.initialReleased, tt.expected)
-			}
-		})
-	}
 }
 
 func Test_SubReleaseListNoNegative(t *testing.T) {
@@ -331,76 +232,240 @@ func Test_SubReleaseListNoNegative(t *testing.T) {
 	}
 }
 
-func Test_AddReleased(t *testing.T) {
+func Test_isZeroResourceList(t *testing.T) {
 	tests := []struct {
 		name     string
-		a        ReleaseList
-		b        ReleaseList
-		expected ReleaseList
+		a        corev1.ResourceList
+		expected bool
 	}{
 		{
-			name: "nil a",
-			a:    nil,
-			b: ReleaseList{
-				ReleaseTargetTypeResourceUsed: corev1.ResourceList{
-					corev1.ResourceCPU:    *resource.NewMilliQuantity(400, resource.DecimalSI),
-					corev1.ResourceMemory: *resource.NewQuantity(512*1024*1024, resource.BinarySI),
-				},
-			},
-			expected: nil,
+			name:     "nil resource list",
+			a:        nil,
+			expected: true,
 		},
 		{
-			name: "ReleaseTargetTypeResourceUsed: cpu + memory/cpu + memory",
-			a: ReleaseList{
-				ReleaseTargetTypeResourceUsed: corev1.ResourceList{
-					corev1.ResourceCPU:    *resource.NewMilliQuantity(500, resource.DecimalSI),
-					corev1.ResourceMemory: *resource.NewQuantity(1024*1024*1024, resource.BinarySI),
-				},
-			},
-			b: ReleaseList{
-				ReleaseTargetTypeResourceUsed: corev1.ResourceList{
-					corev1.ResourceCPU:    *resource.NewMilliQuantity(400, resource.DecimalSI),
-					corev1.ResourceMemory: *resource.NewQuantity(512*1024*1024, resource.BinarySI),
-				},
-			},
-			expected: ReleaseList{
-				ReleaseTargetTypeResourceUsed: corev1.ResourceList{
-					corev1.ResourceCPU:    *resource.NewMilliQuantity(900, resource.DecimalSI),
-					corev1.ResourceMemory: *resource.NewQuantity(1536*1024*1024, resource.BinarySI),
-				},
-			},
+			name:     "empty resource list",
+			a:        corev1.ResourceList{},
+			expected: true,
 		},
 		{
-			name: "ReleaseTargetTypeBatchResourceRequest/ReleaseTargetTypeResourceUsed: cpu + memory/cpu + memory",
-			a: ReleaseList{
-				ReleaseTargetTypeBatchResourceRequest: {
-					corev1.ResourceCPU:    *resource.NewMilliQuantity(500, resource.DecimalSI),
-					corev1.ResourceMemory: *resource.NewQuantity(1024*1024*1024, resource.BinarySI),
-				},
+			name: "all zero resources",
+			a: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewMilliQuantity(0, resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(0, resource.BinarySI),
 			},
-			b: ReleaseList{
-				ReleaseTargetTypeResourceUsed: {
-					corev1.ResourceCPU:    *resource.NewMilliQuantity(400, resource.DecimalSI),
-					corev1.ResourceMemory: *resource.NewQuantity(512*1024*1024, resource.BinarySI),
-				},
+			expected: true,
+		},
+		{
+			name: "cpu zero, memory non-zero",
+			a: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewMilliQuantity(0, resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(1024*1024*1024, resource.BinarySI),
 			},
-			expected: ReleaseList{
-				ReleaseTargetTypeBatchResourceRequest: {
-					corev1.ResourceCPU:    *resource.NewMilliQuantity(500, resource.DecimalSI),
-					corev1.ResourceMemory: *resource.NewQuantity(1024*1024*1024, resource.BinarySI),
-				},
-				ReleaseTargetTypeResourceUsed: {
-					corev1.ResourceCPU:    *resource.NewMilliQuantity(400, resource.DecimalSI),
-					corev1.ResourceMemory: *resource.NewQuantity(512*1024*1024, resource.BinarySI),
-				},
+			expected: false,
+		},
+		{
+			name: "cpu non-zero, memory zero",
+			a: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewMilliQuantity(500, resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(0, resource.BinarySI),
 			},
+			expected: false,
+		},
+		{
+			name: "all non-zero resources",
+			a: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewMilliQuantity(500, resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(1024*1024*1024, resource.BinarySI),
+			},
+			expected: false,
+		},
+		{
+			name: "negative cpu",
+			a: corev1.ResourceList{
+				corev1.ResourceCPU: *resource.NewMilliQuantity(-100, resource.DecimalSI),
+			},
+			expected: false,
+		},
+		{
+			name: "single resource zero",
+			a: corev1.ResourceList{
+				corev1.ResourceCPU: *resource.NewMilliQuantity(0, resource.DecimalSI),
+			},
+			expected: true,
+		},
+		{
+			name: "extended resource zero",
+			a: corev1.ResourceList{
+				apiext.BatchCPU:    *resource.NewQuantity(0, resource.DecimalSI),
+				apiext.BatchMemory: *resource.NewQuantity(0, resource.BinarySI),
+			},
+			expected: true,
+		},
+		{
+			name: "extended resource non-zero",
+			a: corev1.ResourceList{
+				apiext.BatchCPU:    *resource.NewQuantity(1000, resource.DecimalSI),
+				apiext.BatchMemory: *resource.NewQuantity(2*1024*1024*1024, resource.BinarySI),
+			},
+			expected: false,
 		},
 	}
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			addReleased(tt.a, tt.b)
-			if !reflect.DeepEqual(tt.a, tt.expected) {
-				t.Errorf("got %v, want %v", tt.a, tt.expected)
+			res := isZeroResourceList(tt.a)
+			if res != tt.expected {
+				t.Errorf("got %v, want %v", res, tt.expected)
+			}
+		})
+	}
+}
+
+func Test_IsEvictionPolicyAllowed(t *testing.T) {
+	tests := []struct {
+		name     string
+		policy   string
+		pod      *corev1.Pod
+		expected bool
+	}{
+		{
+			name:   "pod with nil annotations",
+			policy: "evictByMemoryUsage",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: nil,
+				},
+			},
+			expected: true,
+		},
+		{
+			name:   "pod without eviction policy annotation",
+			policy: "evictByMemoryUsage",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						"fake-annotation": "value",
+					},
+				},
+			},
+			expected: true,
+		},
+		{
+			name:   "pod with empty eviction policy annotation",
+			policy: "evictByMemoryUsage",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						apiext.AnnotationPodEvictPolicy: "",
+					},
+				},
+			},
+			expected: false,
+		},
+		{
+			name:   "policy allowed - single policy",
+			policy: "evictByMemoryUsage",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						apiext.AnnotationPodEvictPolicy: `["evictByMemoryUsage"]`,
+					},
+				},
+			},
+			expected: true,
+		},
+		{
+			name:   "policy allowed - multiple policies",
+			policy: "evictByCPUUsage",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						apiext.AnnotationPodEvictPolicy: `["evictByMemoryUsage","evictByCPUUsage","evictByNodeMemoryUsage"]`,
+					},
+				},
+			},
+			expected: true,
+		},
+		{
+			name:   "policy not allowed - single policy",
+			policy: "evictByCPUUsage",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						apiext.AnnotationPodEvictPolicy: `["evictByMemoryUsage"]`,
+					},
+				},
+			},
+			expected: false,
+		},
+		{
+			name:   "policy not allowed - multiple policies",
+			policy: "evictByDiskUsage",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						apiext.AnnotationPodEvictPolicy: `["evictByMemoryUsage","evictByCPUUsage"]`,
+					},
+				},
+			},
+			expected: false,
+		},
+		{
+			name:   "invalid json format",
+			policy: "evictByMemoryUsage",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						apiext.AnnotationPodEvictPolicy: `invalid-json`,
+					},
+				},
+			},
+			expected: false,
+		},
+		{
+			name:   "invalid json format - not an array",
+			policy: "evictByMemoryUsage",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						apiext.AnnotationPodEvictPolicy: `"evictByMemoryUsage"`,
+					},
+				},
+			},
+			expected: false,
+		},
+		{
+			name:   "empty policy list",
+			policy: "evictByMemoryUsage",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						apiext.AnnotationPodEvictPolicy: `[]`,
+					},
+				},
+			},
+			expected: false,
+		},
+		{
+			name:   "policy check with exact match",
+			policy: "evictByMemoryUsage",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						apiext.AnnotationPodEvictPolicy: `["evictByMemory","evictByMemoryUsageHigh"]`,
+					},
+				},
+			},
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			res := IsEvictionPolicyAllowed(tt.policy, tt.pod)
+			if res != tt.expected {
+				t.Errorf("IsEvictionPolicyAllowed() = %v, want %v", res, tt.expected)
 			}
 		})
 	}
@@ -464,6 +529,306 @@ func Test_GetPodPriorityLabel(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			res := GetPodPriorityLabel(tt.pod, defaultEvictPriority)
 			assert.Equal(t, res, tt.expected)
+		})
+	}
+}
+
+func Test_GetRequestFromPod(t *testing.T) {
+	tests := []struct {
+		name         string
+		pod          *corev1.Pod
+		resourceName corev1.ResourceName
+		expected     corev1.ResourceList
+	}{
+		{
+			name: "batch pod - cpu request",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						apiext.LabelPodQoS: string(apiext.QoSBE),
+					},
+				},
+				Spec: corev1.PodSpec{
+					PriorityClassName: string(apiext.PriorityBatch),
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									apiext.BatchCPU: *resource.NewQuantity(2000, resource.DecimalSI),
+								},
+							},
+						},
+					},
+				},
+			},
+			resourceName: corev1.ResourceCPU,
+			expected: corev1.ResourceList{
+				apiext.BatchCPU: *resource.NewQuantity(2000, resource.DecimalSI),
+			},
+		},
+		{
+			name: "batch pod - memory request",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						apiext.LabelPodQoS: string(apiext.QoSBE),
+					},
+				},
+				Spec: corev1.PodSpec{
+					PriorityClassName: string(apiext.PriorityBatch),
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									apiext.BatchMemory: *resource.NewQuantity(1024*1024*1024, resource.BinarySI),
+								},
+							},
+						},
+					},
+				},
+			},
+			resourceName: corev1.ResourceMemory,
+			expected: corev1.ResourceList{
+				apiext.BatchMemory: *resource.NewQuantity(1024*1024*1024, resource.BinarySI),
+			},
+		},
+		{
+			name: "batch pod - multiple containers cpu",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						apiext.LabelPodQoS: string(apiext.QoSBE),
+					},
+				},
+				Spec: corev1.PodSpec{
+					PriorityClassName: string(apiext.PriorityBatch),
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									apiext.BatchCPU: *resource.NewQuantity(1000, resource.DecimalSI),
+								},
+							},
+						},
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									apiext.BatchCPU: *resource.NewQuantity(500, resource.DecimalSI),
+								},
+							},
+						},
+					},
+				},
+			},
+			resourceName: corev1.ResourceCPU,
+			expected: corev1.ResourceList{
+				apiext.BatchCPU: *resource.NewQuantity(1500, resource.DecimalSI),
+			},
+		},
+		{
+			name: "mid pod - cpu request",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						apiext.LabelPodQoS: string(apiext.QoSLS),
+					},
+				},
+				Spec: corev1.PodSpec{
+					Priority:          ptr.To[int32](7500),
+					PriorityClassName: string(apiext.PriorityMid),
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									apiext.MidCPU: *resource.NewQuantity(3000, resource.DecimalSI),
+								},
+							},
+						},
+					},
+				},
+			},
+			resourceName: corev1.ResourceCPU,
+			expected: corev1.ResourceList{
+				apiext.MidCPU: *resource.NewQuantity(3000, resource.DecimalSI),
+			},
+		},
+		{
+			name: "mid pod - memory request",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						apiext.LabelPodQoS: string(apiext.QoSLS),
+					},
+				},
+				Spec: corev1.PodSpec{
+					Priority:          ptr.To[int32](7500),
+					PriorityClassName: string(apiext.PriorityMid),
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									apiext.MidMemory: *resource.NewQuantity(2*1024*1024*1024, resource.BinarySI),
+								},
+							},
+						},
+					},
+				},
+			},
+			resourceName: corev1.ResourceMemory,
+			expected: corev1.ResourceList{
+				apiext.MidMemory: *resource.NewQuantity(2*1024*1024*1024, resource.BinarySI),
+			},
+		},
+		{
+			name: "prod pod - cpu request",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						apiext.LabelPodQoS: string(apiext.QoSLSR),
+					},
+				},
+				Spec: corev1.PodSpec{
+					PriorityClassName: string(apiext.PriorityProd),
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU: *resource.NewQuantity(4, resource.DecimalSI),
+								},
+							},
+						},
+					},
+				},
+			},
+			resourceName: corev1.ResourceCPU,
+			expected: corev1.ResourceList{
+				corev1.ResourceCPU: *resource.NewMilliQuantity(4000, resource.DecimalSI),
+			},
+		},
+		{
+			name: "prod pod - memory request",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						apiext.LabelPodQoS: string(apiext.QoSLSR),
+					},
+				},
+				Spec: corev1.PodSpec{
+					PriorityClassName: string(apiext.PriorityProd),
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceMemory: *resource.NewQuantity(8*1024*1024*1024, resource.BinarySI),
+								},
+							},
+						},
+					},
+				},
+			},
+			resourceName: corev1.ResourceMemory,
+			expected: corev1.ResourceList{
+				corev1.ResourceMemory: *resource.NewQuantity(8*1024*1024*1024, resource.BinarySI),
+			},
+		},
+		{
+			name: "batch pod - zero cpu request",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						apiext.LabelPodQoS: string(apiext.QoSBE),
+					},
+				},
+				Spec: corev1.PodSpec{
+					PriorityClassName: string(apiext.PriorityBatch),
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{},
+							},
+						},
+					},
+				},
+			},
+			resourceName: corev1.ResourceCPU,
+			expected: corev1.ResourceList{
+				apiext.BatchCPU: *resource.NewQuantity(0, resource.DecimalSI),
+			},
+		},
+		{
+			name: "batch pod - negative cpu treated as zero",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						apiext.LabelPodQoS: string(apiext.QoSBE),
+					},
+				},
+				Spec: corev1.PodSpec{
+					PriorityClassName: string(apiext.PriorityBatch),
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									apiext.BatchCPU: *resource.NewQuantity(-100, resource.DecimalSI),
+								},
+							},
+						},
+					},
+				},
+			},
+			resourceName: corev1.ResourceCPU,
+			expected: corev1.ResourceList{
+				apiext.BatchCPU: *resource.NewQuantity(0, resource.DecimalSI),
+			},
+		},
+		{
+			name: "pod without priority class - cpu",
+			pod: &corev1.Pod{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU: *resource.NewQuantity(2, resource.DecimalSI),
+								},
+							},
+						},
+					},
+				},
+			},
+			resourceName: corev1.ResourceCPU,
+			expected: corev1.ResourceList{
+				corev1.ResourceCPU: *resource.NewMilliQuantity(2000, resource.DecimalSI),
+			},
+		},
+		{
+			name: "pod without priority class - memory",
+			pod: &corev1.Pod{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceMemory: *resource.NewQuantity(4*1024*1024*1024, resource.BinarySI),
+								},
+							},
+						},
+					},
+				},
+			},
+			resourceName: corev1.ResourceMemory,
+			expected: corev1.ResourceList{
+				corev1.ResourceMemory: *resource.NewQuantity(4*1024*1024*1024, resource.BinarySI),
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := GetRequestFromPod(tt.pod, tt.resourceName)
+			if !reflect.DeepEqual(result, tt.expected) {
+				t.Errorf("GetRequestFromPod() = %v, want %v", result, tt.expected)
+			}
 		})
 	}
 }
@@ -604,77 +969,394 @@ func Test_KillAndEvictPods(t *testing.T) {
 	executor := NewMockEvictionExecutor(ctl)
 	executor.EXPECT().Evict(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(true)
 	executor.EXPECT().IsPodEvicted(gomock.Any()).AnyTimes().Return(false)
+
 	node := &corev1.Node{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "test-node",
+			Name: "test-node-2",
 		},
 	}
-	podInfo1 := &PodEvictInfo{
+
+	batchPod1 := &PodEvictInfo{
 		Pod: &corev1.Pod{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      "pod1",
+				Name:      "batch-pod-1",
 				Namespace: "default",
-				UID:       "pod1",
+				UID:       "batch-pod-1-uid",
+				Labels: map[string]string{
+					apiext.LabelPodQoS: string(apiext.QoSBE),
+				},
+			},
+			Spec: corev1.PodSpec{
+				PriorityClassName: string(apiext.PriorityBatch),
+				Containers: []corev1.Container{
+					{
+						Resources: corev1.ResourceRequirements{
+							Requests: corev1.ResourceList{
+								apiext.BatchCPU:    *resource.NewQuantity(1000, resource.DecimalSI),
+								apiext.BatchMemory: *resource.NewQuantity(2*1024*1024*1024, resource.BinarySI),
+							},
+						},
+					},
+				},
 			},
 		},
-		MilliCPUUsed:    100,
-		MemoryUsed:      1024 * 1024 * 1,
+		MilliCPUUsed:    800,
+		MemoryUsed:      1536 * 1024 * 1024,
+		MilliCPURequest: 1000,
+		MemoryRequest:   2 * 1024 * 1024 * 1024,
+	}
+
+	batchPod2 := &PodEvictInfo{
+		Pod: &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "batch-pod-2",
+				Namespace: "default",
+				UID:       "batch-pod-2-uid",
+				Labels: map[string]string{
+					apiext.LabelPodQoS: string(apiext.QoSBE),
+				},
+			},
+			Spec: corev1.PodSpec{
+				PriorityClassName: string(apiext.PriorityBatch),
+				Containers: []corev1.Container{
+					{
+						Resources: corev1.ResourceRequirements{
+							Requests: corev1.ResourceList{
+								apiext.BatchCPU:    *resource.NewQuantity(500, resource.DecimalSI),
+								apiext.BatchMemory: *resource.NewQuantity(1*1024*1024*1024, resource.BinarySI),
+							},
+						},
+					},
+				},
+			},
+		},
+		MilliCPUUsed:    400,
+		MemoryUsed:      768 * 1024 * 1024,
 		MilliCPURequest: 500,
-		MemoryRequest:   1024 * 1024 * 3,
+		MemoryRequest:   1 * 1024 * 1024 * 1024,
 	}
-	podInfo2 := &PodEvictInfo{
+
+	midPod := &PodEvictInfo{
 		Pod: &corev1.Pod{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      "pod2",
+				Name:      "mid-pod-1",
 				Namespace: "default",
-				UID:       "pod2",
+				UID:       "mid-pod-1-uid",
+				Labels: map[string]string{
+					apiext.LabelPodQoS: string(apiext.QoSLS),
+				},
+			},
+			Spec: corev1.PodSpec{
+				Priority:          ptr.To[int32](7500),
+				PriorityClassName: string(apiext.PriorityMid),
+				Containers: []corev1.Container{
+					{
+						Resources: corev1.ResourceRequirements{
+							Requests: corev1.ResourceList{
+								apiext.MidCPU:    *resource.NewQuantity(2000, resource.DecimalSI),
+								apiext.MidMemory: *resource.NewQuantity(4*1024*1024*1024, resource.BinarySI),
+							},
+						},
+					},
+				},
 			},
 		},
-		MilliCPUUsed:    200,
-		MemoryUsed:      1024 * 1024 * 2,
-		MilliCPURequest: 600,
-		MemoryRequest:   1024 * 1024 * 4,
+		MilliCPUUsed:    1800,
+		MemoryUsed:      3 * 1024 * 1024 * 1024,
+		MilliCPURequest: 2000,
+		MemoryRequest:   4 * 1024 * 1024 * 1024,
+	}
+	prioritiesMp := map[apiext.PriorityClass]bool{
+		apiext.PriorityMid:   true,
+		apiext.PriorityBatch: true,
 	}
 	tasks := []*EvictTaskInfo{
 		{
-			Reason:            "test-reason0",
-			ReleaseTarget:     ReleaseTargetTypeResourceUsed,
-			ToReleaseResource: nil,
-			SortedEvictPods:   nil,
-		},
-		{
-			Reason:        "test-reason1",
+			Reason:        "evict-by-memory-usage",
 			ReleaseTarget: ReleaseTargetTypeResourceUsed,
 			ToReleaseResource: corev1.ResourceList{
-				corev1.ResourceCPU: *resource.NewMilliQuantity(100, resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(2*1024*1024*1024, resource.BinarySI),
 			},
 			SortedEvictPods: []*PodEvictInfo{
-				podInfo1,
-				podInfo2,
+				batchPod1,
+				batchPod2,
+			},
+			GetPodResourceFunc: func(podInfo *PodEvictInfo) corev1.ResourceList {
+				return corev1.ResourceList{
+					corev1.ResourceMemory: *resource.NewQuantity(podInfo.MemoryUsed, resource.BinarySI),
+				}
 			},
 		},
 		{
-			Reason:        "test-reason2",
-			ReleaseTarget: ReleaseTargetTypeBatchResourceRequest,
+			Reason:        "evict-by-mid/batch-request cpu",
+			ReleaseTarget: ReleaseTargetTypeResourceRequest,
 			ToReleaseResource: corev1.ResourceList{
-				corev1.ResourceMemory: *resource.NewQuantity(1024*1024*8, resource.BinarySI),
+				apiext.BatchCPU: *resource.NewMilliQuantity(1200, resource.DecimalSI),
+				apiext.MidCPU:   *resource.NewMilliQuantity(1500, resource.DecimalSI),
 			},
 			SortedEvictPods: []*PodEvictInfo{
-				podInfo1,
-				podInfo2,
+				batchPod1,
+				batchPod2,
+				midPod,
+			},
+			GetPodResourceFunc: func(podInfo *PodEvictInfo) corev1.ResourceList {
+				if _, ok := prioritiesMp[apiext.GetPodPriorityClassWithDefault(podInfo.Pod)]; !ok {
+					return nil
+				}
+				return GetRequestFromPod(podInfo.Pod, corev1.ResourceCPU)
 			},
 		},
 	}
+
 	res, success := KillAndEvictPods(executor, node, tasks)
 	assert.Equal(t, true, success)
-	assert.Equal(t, ReleaseList{
-		ReleaseTargetTypeResourceUsed: corev1.ResourceList{
-			corev1.ResourceCPU:    *resource.NewMilliQuantity(300, resource.DecimalSI),
-			corev1.ResourceMemory: *resource.NewQuantity(1024*1024*3, resource.BinarySI),
+
+	assert.NotNil(t, res[ReleaseTargetTypeResourceUsed])
+	if res[ReleaseTargetTypeResourceUsed] != nil {
+		// evicted batch-pod-1 and batch-pod-2, added midPod(2000), release 1536MB + 768MB = 2304MB
+		memoryReleased := res[ReleaseTargetTypeResourceUsed][corev1.ResourceMemory]
+		assert.True(t, memoryReleased.Value() >= 2*1024*1024*1024, "Memory should be released at least 2Gi")
+		assert.True(t, memoryReleased.Value() == 2304*1024*1024+3*1024*1024*1024)
+	}
+
+	assert.NotNil(t, res[ReleaseTargetTypeResourceRequest])
+	assert.NotNil(t, res[ReleaseTargetTypeResourceRequest])
+	if res[ReleaseTargetTypeResourceRequest] != nil {
+		// evicted midPod(2000), added batch-pod-1 (1000), batch-pod-2 (500), sum
+		cpuReleased := res[ReleaseTargetTypeResourceRequest][apiext.BatchCPU]
+		assert.True(t, cpuReleased.Value() >= 1200, "BatchCPU should be released at least 1200m")
+		assert.True(t, cpuReleased.Value() == 1500)
+		cpuReleased = res[ReleaseTargetTypeResourceRequest][apiext.MidCPU]
+		assert.True(t, cpuReleased.Value() >= 1500, "BatchCPU should be released at least 1200m")
+		assert.True(t, cpuReleased.Value() == 2000)
+	}
+}
+
+func Test_mergeResourceListByMax(t *testing.T) {
+	tests := []struct {
+		name     string
+		a        corev1.ResourceList
+		b        corev1.ResourceList
+		expected corev1.ResourceList
+	}{
+		{
+			name: "nil a",
+			a:    nil,
+			b: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewMilliQuantity(500, resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(1024*1024*1024, resource.BinarySI),
+			},
+			expected: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewMilliQuantity(500, resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(1024*1024*1024, resource.BinarySI),
+			},
 		},
-		ReleaseTargetTypeBatchResourceRequest: corev1.ResourceList{
-			corev1.ResourceCPU:    *resource.NewMilliQuantity(1100, resource.DecimalSI),
-			corev1.ResourceMemory: *resource.NewQuantity(1024*1024*7, resource.BinarySI),
+		{
+			name: "nil b",
+			a: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewMilliQuantity(500, resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(1024*1024*1024, resource.BinarySI),
+			},
+			b: nil,
+			expected: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewMilliQuantity(500, resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(1024*1024*1024, resource.BinarySI),
+			},
 		},
-	}, res)
+		{
+			name: "empty a",
+			a:    corev1.ResourceList{},
+			b: corev1.ResourceList{
+				corev1.ResourceCPU: *resource.NewMilliQuantity(300, resource.DecimalSI),
+			},
+			expected: corev1.ResourceList{
+				corev1.ResourceCPU: *resource.NewMilliQuantity(300, resource.DecimalSI),
+			},
+		},
+		{
+			name: "empty b",
+			a: corev1.ResourceList{
+				corev1.ResourceCPU: *resource.NewMilliQuantity(300, resource.DecimalSI),
+			},
+			b: corev1.ResourceList{},
+			expected: corev1.ResourceList{
+				corev1.ResourceCPU: *resource.NewMilliQuantity(300, resource.DecimalSI),
+			},
+		},
+		{
+			name: "a > b for all resources",
+			a: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewMilliQuantity(1000, resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(2*1024*1024*1024, resource.BinarySI),
+			},
+			b: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewMilliQuantity(500, resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(1024*1024*1024, resource.BinarySI),
+			},
+			expected: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewMilliQuantity(1000, resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(2*1024*1024*1024, resource.BinarySI),
+			},
+		},
+		{
+			name: "b > a for all resources",
+			a: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewMilliQuantity(500, resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(1024*1024*1024, resource.BinarySI),
+			},
+			b: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewMilliQuantity(1000, resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(2*1024*1024*1024, resource.BinarySI),
+			},
+			expected: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewMilliQuantity(1000, resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(2*1024*1024*1024, resource.BinarySI),
+			},
+		},
+		{
+			name: "mixed: a_cpu > b_cpu, b_memory > a_memory",
+			a: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewMilliQuantity(1500, resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(1024*1024*1024, resource.BinarySI),
+			},
+			b: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewMilliQuantity(800, resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(3*1024*1024*1024, resource.BinarySI),
+			},
+			expected: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewMilliQuantity(1500, resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(3*1024*1024*1024, resource.BinarySI),
+			},
+		},
+		{
+			name: "b has resource not in a",
+			a: corev1.ResourceList{
+				corev1.ResourceCPU: *resource.NewMilliQuantity(1000, resource.DecimalSI),
+			},
+			b: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewMilliQuantity(500, resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(2*1024*1024*1024, resource.BinarySI),
+			},
+			expected: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewMilliQuantity(1000, resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(2*1024*1024*1024, resource.BinarySI),
+			},
+		},
+		{
+			name: "a has resource not in b",
+			a: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewMilliQuantity(1000, resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(2*1024*1024*1024, resource.BinarySI),
+			},
+			b: corev1.ResourceList{
+				corev1.ResourceCPU: *resource.NewMilliQuantity(1500, resource.DecimalSI),
+			},
+			expected: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewMilliQuantity(1500, resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(2*1024*1024*1024, resource.BinarySI),
+			},
+		},
+		{
+			name: "equal resources",
+			a: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewMilliQuantity(1000, resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(2*1024*1024*1024, resource.BinarySI),
+			},
+			b: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewMilliQuantity(1000, resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(2*1024*1024*1024, resource.BinarySI),
+			},
+			expected: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewMilliQuantity(1000, resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(2*1024*1024*1024, resource.BinarySI),
+			},
+		},
+		{
+			name: "extended resources - batch cpu and memory",
+			a: corev1.ResourceList{
+				apiext.BatchCPU:    *resource.NewQuantity(2000, resource.DecimalSI),
+				apiext.BatchMemory: *resource.NewQuantity(4*1024*1024*1024, resource.BinarySI),
+			},
+			b: corev1.ResourceList{
+				apiext.BatchCPU:    *resource.NewQuantity(3000, resource.DecimalSI),
+				apiext.BatchMemory: *resource.NewQuantity(2*1024*1024*1024, resource.BinarySI),
+			},
+			expected: corev1.ResourceList{
+				apiext.BatchCPU:    *resource.NewQuantity(3000, resource.DecimalSI),
+				apiext.BatchMemory: *resource.NewQuantity(4*1024*1024*1024, resource.BinarySI),
+			},
+		},
+		{
+			name: "mixed standard and extended resources",
+			a: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewMilliQuantity(1000, resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(2*1024*1024*1024, resource.BinarySI),
+				apiext.BatchCPU:       *resource.NewQuantity(1500, resource.DecimalSI),
+			},
+			b: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewMilliQuantity(1500, resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(1024*1024*1024, resource.BinarySI),
+				apiext.MidMemory:      *resource.NewQuantity(3*1024*1024*1024, resource.BinarySI),
+			},
+			expected: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewMilliQuantity(1500, resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(2*1024*1024*1024, resource.BinarySI),
+				apiext.BatchCPU:       *resource.NewQuantity(1500, resource.DecimalSI),
+				apiext.MidMemory:      *resource.NewQuantity(3*1024*1024*1024, resource.BinarySI),
+			},
+		},
+		{
+			name: "zero value in a, non-zero in b",
+			a: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewMilliQuantity(0, resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(1024*1024*1024, resource.BinarySI),
+			},
+			b: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewMilliQuantity(500, resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(512*1024*1024, resource.BinarySI),
+			},
+			expected: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewMilliQuantity(500, resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(1024*1024*1024, resource.BinarySI),
+			},
+		},
+		{
+			name: "negative value in a, positive in b",
+			a: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewMilliQuantity(-100, resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(2*1024*1024*1024, resource.BinarySI),
+			},
+			b: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewMilliQuantity(500, resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(1024*1024*1024, resource.BinarySI),
+			},
+			expected: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewMilliQuantity(500, resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(2*1024*1024*1024, resource.BinarySI),
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Make a copy of 'a' to verify the function modifies it in-place
+			original := tt.a
+			if original == nil {
+				original = make(corev1.ResourceList)
+			}
+			res := mergeResourceListByMax(original, tt.b)
+
+			// Verify all expected resources are present with correct values
+			for resName, expectedQty := range tt.expected {
+				actualQty, exists := res[resName]
+				assert.True(t, exists, "resource %s should exist in result", resName)
+				if exists {
+					assert.Equal(t, expectedQty.Value(), actualQty.Value(), "resource %s value mismatch", resName)
+				}
+			}
+
+			// Verify no unexpected resources are present
+			assert.Equal(t, len(tt.expected), len(res), "result should have same number of resources as expected")
+		})
+	}
 }

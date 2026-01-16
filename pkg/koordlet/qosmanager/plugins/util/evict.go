@@ -17,12 +17,12 @@ limitations under the License.
 package util
 
 import (
+	"encoding/json"
 	"fmt"
 	"strconv"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
-	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	"k8s.io/klog/v2"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
@@ -46,12 +46,12 @@ type PodEvictInfo struct {
 
 	// cpu details
 	CpuUsage        float64
-	MilliCPURequest int64 // for batch-resource
+	MilliCPURequest int64 // cpu/mid-cpu/batch-cpu
 	MilliCPUUsed    int64
 
 	// mem details
 	MemoryUsage   float64
-	MemoryRequest int64 // for batch-resource
+	MemoryRequest int64 // memory/mid-memory/batch-memory
 	MemoryUsed    int64
 
 	// sort helper
@@ -64,6 +64,8 @@ type EvictTaskInfo struct {
 	SortedEvictPods   []*PodEvictInfo
 	ReleaseTarget     ReleaseTargetType
 	ToReleaseResource corev1.ResourceList
+	// get relative resource list from pod for task
+	GetPodResourceFunc func(*PodEvictInfo) corev1.ResourceList
 }
 
 type EvictionExecutor interface {
@@ -111,33 +113,56 @@ func InitializeEvictionExecutor(evictor *Evictor, onlyEvictByAPI bool) EvictionE
 		Evictor:        evictor,
 	}
 }
-
-func KillAndEvictPods(evictionExecutor EvictionExecutor, node *corev1.Node, tasks []*EvictTaskInfo) (ReleaseList, bool) {
-	releasedAll := make(ReleaseList)
+func KillAndEvictPods(evictionExecutor EvictionExecutor, node *corev1.Node, tasks []*EvictTaskInfo) (map[ReleaseTargetType]corev1.ResourceList, bool) {
+	releasedAll := make(map[ReleaseTargetType]corev1.ResourceList)
 	evictedPodsMp := make(map[string]bool)
-	releaseResourceTypeMp := make(map[corev1.ResourceName]bool)
-	var releaseTargetTypes []ReleaseTargetType
+	releaseTypes := make(map[ReleaseTargetType][]corev1.ResourceName)
+	var getPodResourceFuncs []func(*PodEvictInfo) map[ReleaseTargetType]corev1.ResourceList
 	for _, task := range tasks {
 		if task.ToReleaseResource == nil || len(task.ToReleaseResource) == 0 {
 			continue
 		}
-		if _, ok := releasedAll[task.ReleaseTarget]; !ok {
-			releasedAll[task.ReleaseTarget] = make(corev1.ResourceList)
-			releaseTargetTypes = append(releaseTargetTypes, task.ReleaseTarget)
-		}
-		for rType, releaseValue := range task.ToReleaseResource {
-			if releaseValue.Cmp(resource.MustParse("0")) <= 0 {
+		target := task.ReleaseTarget
+		for rType, rq := range task.ToReleaseResource {
+			if rq.Cmp(resource.MustParse("0")) <= 0 {
 				continue
 			}
-			releaseResourceTypeMp[rType] = true
+			releaseTypes[target] = append(releaseTypes[target], rType)
+			if releasedAll[target] == nil {
+				releasedAll[target] = make(corev1.ResourceList)
+			}
 		}
+		getPodResourceFunc := task.GetPodResourceFunc
+		if _, ok := releaseTypes[target]; ok {
+			getPodResourceFuncs = append(getPodResourceFuncs, func(info *PodEvictInfo) map[ReleaseTargetType]corev1.ResourceList {
+				return map[ReleaseTargetType]corev1.ResourceList{
+					target: getPodResourceFunc(info),
+				}
+			})
+		}
+	}
+	aggregateReleaseFunc := func(info *PodEvictInfo) map[ReleaseTargetType]corev1.ResourceList {
+		sum := make(map[ReleaseTargetType]corev1.ResourceList)
+		for _, f := range getPodResourceFuncs {
+			resource := f(info)
+			// note: same content only fetched from pod once only, used max instead of added
+			for t, rl := range resource {
+				if _, ok := sum[t]; !ok {
+					sum[t] = make(corev1.ResourceList)
+				}
+				sum[t] = mergeResourceListByMax(sum[t], rl)
+			}
+		}
+		return sum
 	}
 	for _, task := range tasks {
 		releaseTarget := task.ReleaseTarget
 		podInfos := task.SortedEvictPods
 		releaseReason := task.Reason
 		needToRelease := subReleaseListNoNegative(task.ToReleaseResource, releasedAll[releaseTarget])
-		released := make(ReleaseList)
+		if len(needToRelease) == 0 || isZeroResourceList(needToRelease) {
+			continue
+		}
 		for _, info := range podInfos {
 			if evictionExecutor.IsPodEvicted(info.Pod) {
 				continue
@@ -150,17 +175,39 @@ func KillAndEvictPods(evictionExecutor EvictionExecutor, node *corev1.Node, task
 			if successEvict {
 				klog.V(4).Infof("successfully picked pod %s to evict, release reason: %v", podKey, releaseReason)
 				evictedPodsMp[podKey] = true
-				updateReleasedByPod(info, releaseTargetTypes, releaseResourceTypeMp, released)
-				if len(subReleaseListNoNegative(needToRelease, released[releaseTarget])) == 0 {
+				resource := aggregateReleaseFunc(info)
+				addResource(releasedAll, resource)
+				if len(subReleaseListNoNegative(needToRelease, releasedAll[releaseTarget])) == 0 {
 					break
 				}
 			} else {
 				klog.V(4).Infof("failed to pick pod %s to evict, release reason: %v", podKey, releaseReason)
 			}
 		}
-		addReleased(releasedAll, released)
 	}
 	return releasedAll, len(evictedPodsMp) > 0
+}
+
+func IsEvictionPolicyAllowed(policy string, pod *corev1.Pod) bool {
+	if pod == nil || pod.Annotations == nil {
+		return true
+	}
+	content, ok := pod.Annotations[apiext.AnnotationPodEvictPolicy]
+	if !ok {
+		return true
+	}
+	var evictPolicies []string
+	err := json.Unmarshal([]byte(content), &evictPolicies)
+	if err != nil {
+		klog.ErrorS(fmt.Errorf("invalid evict policy"), "failed to parse pod eviction policy", "pod", klog.KObj(pod), "evictPolicy", content)
+		return false
+	}
+	for _, p := range evictPolicies {
+		if p == policy {
+			return true
+		}
+	}
+	return false
 }
 
 // EvictTaskCheck check if evict tasks finished,return not finished
@@ -171,59 +218,79 @@ func EvictTaskCheck(task *EvictTaskInfo, released ReleaseList) (bool, corev1.Res
 	if task.ToReleaseResource == nil || len(task.ToReleaseResource) == 0 {
 		return true, nil
 	}
-	failedToRelease := make(corev1.ResourceList)
 	if released == nil {
-		failedToRelease = task.ToReleaseResource
-		return false, failedToRelease
+		return false, task.ToReleaseResource
 	}
-	rl, ok := released[task.ReleaseTarget]
-	if !ok {
-		rl = make(corev1.ResourceList)
-	}
-	for rType, rValue := range task.ToReleaseResource {
-		if rValue.Cmp(rl[rType]) == 1 {
-			rValue.Sub(rl[rType])
-			failedToRelease[rType] = rValue
-		}
-	}
+	failedToRelease := subReleaseListNoNegative(task.ToReleaseResource, released[task.ReleaseTarget])
 	if len(failedToRelease) > 0 {
 		return false, failedToRelease
 	}
 	return true, nil
 }
 
-func updateReleasedByPod(podInfo *PodEvictInfo, releaseTargetTypes []ReleaseTargetType, releaseResourceTypes map[corev1.ResourceName]bool, released ReleaseList) {
-	// Note: released can not be nil
-	if released == nil {
-		klog.Warningf("release can not be nil")
-		return
+// GetRequestTypeAndValueFromPod cpu return millvalue, memory return value
+func GetRequestTypeAndValueFromPod(pod *corev1.Pod, name corev1.ResourceName) (corev1.ResourceName, int64) {
+	getPodResourceFunc := func(getCRequest func(*corev1.Container) int64) int64 {
+		var resContainerReq int64
+		for _, container := range pod.Spec.Containers {
+			containerReq := getCRequest(&container)
+			if containerReq <= 0 {
+				containerReq = 0
+			}
+			resContainerReq += containerReq
+		}
+		return resContainerReq
 	}
-	for _, releaseType := range releaseTargetTypes {
-		if _, ok := released[releaseType]; !ok {
-			released[releaseType] = make(corev1.ResourceList)
+	var getCRequest func(*corev1.Container) int64
+	priority := apiext.GetPodPriorityClassWithDefault(pod)
+	var resV int64
+	var resT corev1.ResourceName
+	switch priority {
+	case apiext.PriorityMid:
+		if name == corev1.ResourceCPU {
+			getCRequest = util.GetContainerMidMilliCPURequest
+			resT = apiext.MidCPU
+		} else if name == corev1.ResourceMemory {
+			getCRequest = util.GetContainerMidMemoryByteRequest
+			resT = apiext.MidMemory
 		}
-		var memory, milliCPU int64
-		switch releaseType {
-		case ReleaseTargetTypeBatchResourceRequest:
-			milliCPU = podInfo.MilliCPURequest
-			memory = podInfo.MemoryRequest
-		case ReleaseTargetTypeResourceUsed:
-			milliCPU = podInfo.MilliCPUUsed
-			memory = podInfo.MemoryUsed
+	case apiext.PriorityBatch:
+		if name == corev1.ResourceCPU {
+			getCRequest = util.GetContainerBatchMilliCPURequest
+			resT = apiext.BatchCPU
+		} else if name == corev1.ResourceMemory {
+			getCRequest = util.GetContainerBatchMemoryByteRequest
+			resT = apiext.BatchMemory
 		}
-		if val, ok := releaseResourceTypes[corev1.ResourceCPU]; ok && val {
-			value := released[releaseType][corev1.ResourceCPU]
-			value.Add(*resource.NewMilliQuantity(milliCPU, resource.DecimalSI))
-			released[releaseType][corev1.ResourceCPU] = value
+	default:
+		if name == corev1.ResourceCPU {
+			rq := util.GetPodRequest(pod, corev1.ResourceCPU)
+			resV = rq.Cpu().MilliValue()
+			resT = corev1.ResourceCPU
+		} else if name == corev1.ResourceMemory {
+			rq := util.GetPodRequest(pod, corev1.ResourceMemory)
+			resV = rq.Memory().Value()
+			resT = corev1.ResourceMemory
 		}
-		if val, ok := releaseResourceTypes[corev1.ResourceMemory]; ok && val {
-			value := released[releaseType][corev1.ResourceMemory]
-			value.Add(*resource.NewQuantity(memory, resource.BinarySI))
-			released[releaseType][corev1.ResourceMemory] = value
-		}
+		return resT, resV
+	}
+	resV = getPodResourceFunc(getCRequest)
+	return resT, resV
+}
+func GetRequestFromPod(pod *corev1.Pod, name corev1.ResourceName) corev1.ResourceList {
+	resT, resV := GetRequestTypeAndValueFromPod(pod, name)
+	return corev1.ResourceList{
+		resT: ConvertInt64ToQuantity(resT, resV),
 	}
 }
-
+func isZeroResourceList(a corev1.ResourceList) bool {
+	for _, q := range a {
+		if q.Cmp(resource.MustParse("0")) != 0 {
+			return false
+		}
+	}
+	return true
+}
 func subReleaseListNoNegative(a, b corev1.ResourceList) corev1.ResourceList {
 	if a == nil {
 		return make(corev1.ResourceList)
@@ -245,20 +312,6 @@ func subReleaseListNoNegative(a, b corev1.ResourceList) corev1.ResourceList {
 	return res
 }
 
-// addReleased: add b to a
-func addReleased(a, b ReleaseList) {
-	if a == nil {
-		klog.Warningf("releaseList a can not be nil")
-		return
-	}
-	for releaseType, bValue := range b {
-		if _, ok := a[releaseType]; !ok {
-			a[releaseType] = make(corev1.ResourceList)
-		}
-		a[releaseType] = quotav1.Add(a[releaseType], bValue)
-	}
-}
-
 func GetPodPriorityLabel(pod *corev1.Pod, defaultPriority int64) int64 {
 	if pod == nil || pod.Labels == nil {
 		return defaultPriority
@@ -271,5 +324,53 @@ func GetPodPriorityLabel(pod *corev1.Pod, defaultPriority int64) int64 {
 			return defaultPriority
 		}
 		return int64(num)
+	}
+}
+
+// merge b to a
+func mergeResourceListByMax(a, b corev1.ResourceList) corev1.ResourceList {
+	res := a.DeepCopy()
+	if res == nil {
+		res = make(corev1.ResourceList)
+	}
+	for rt, rqb := range b {
+		if rq, _ := res[rt]; rq.Cmp(rqb) < 0 {
+			res[rt] = rqb
+		}
+	}
+	return res
+}
+
+func addResource(a, b map[ReleaseTargetType]corev1.ResourceList) {
+	if a == nil {
+		a = make(map[ReleaseTargetType]corev1.ResourceList)
+	}
+	for t, bRL := range b {
+		if _, ok := a[t]; !ok {
+			a[t] = make(corev1.ResourceList)
+		}
+		util.AddResourceList(a[t], bRL)
+	}
+}
+
+func ConvertQuantityToInt64(resourceName corev1.ResourceName, quantity resource.Quantity) int64 {
+	switch resourceName {
+	case corev1.ResourceCPU:
+		return quantity.MilliValue()
+	default:
+		// include corev1.ResourceMemory, apiext.BatchCPU, apiext.BatchMemory, apiext.MidCPU, apiext.BatchMemory
+		return quantity.Value()
+	}
+}
+
+func ConvertInt64ToQuantity(resourceName corev1.ResourceName, value int64) resource.Quantity {
+	switch resourceName {
+	case corev1.ResourceCPU:
+		return *resource.NewMilliQuantity(value, resource.DecimalSI)
+	case apiext.BatchCPU, apiext.MidCPU:
+		return *resource.NewQuantity(value, resource.DecimalSI)
+	default:
+		// include corev1.ResourceMemory, apiext.BatchMemory, apiext.BatchMemory
+		return *resource.NewQuantity(value, resource.BinarySI)
 	}
 }

@@ -391,10 +391,8 @@ type ResourceThresholdStrategy struct {
 
 	// EvictEnabledPriorityThreshold defines the highest priority for the xxxEvict feature.
 	EvictEnabledPriorityThreshold *int32 `json:"evictEnabledPriorityThreshold,omitempty"`
-	// AllocatableEvictPriorityThreshold defines the highest priority for the xxxLedgerEvict feature.
-	AllocatableEvictPriorityThreshold *int32 `json:"allocatableEvictPriorityThreshold,omitempty"`
-	// AllocatableEvictPriorityThreshold defines the lowest priority for the xxxLedgerEvict feature.
-	AllocatableEvictPriorityLowerThreshold *int32 `json:"allocatableEvictPriorityLowerThreshold,omitempty"`
+	// AllocatableEvictPriorityThreshold defines the highest priority for the xxxAllocatableEvict feature. must less than koord-prod
+	AllocatableEvictPriorityThreshold *int32 `json:"allocatableEvictPriorityThreshold,omitempty" validate:"omitempty,min=0,max=7999"`
 }
 
 // ResctrlQOSCfg stores node-level config of resctrl qos
