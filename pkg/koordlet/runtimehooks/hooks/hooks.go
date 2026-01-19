@@ -39,10 +39,11 @@ type Hook struct {
 }
 
 type Options struct {
-	Reader         resourceexecutor.CgroupReader
-	Executor       resourceexecutor.ResourceUpdateExecutor
-	StatesInformer statesinformer.StatesInformer
-	EventRecorder  record.EventRecorder
+	Reader                           resourceexecutor.CgroupReader
+	Executor                         resourceexecutor.ResourceUpdateExecutor
+	StatesInformer                   statesinformer.StatesInformer
+	EventRecorder                    record.EventRecorder
+	DisableUnsetCPUQuotaForCPUSetPod bool
 }
 
 type HookFn func(protocol.HooksProtocol) error

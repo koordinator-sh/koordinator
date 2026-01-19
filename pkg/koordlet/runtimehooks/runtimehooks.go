@@ -150,10 +150,11 @@ func NewRuntimeHook(si statesinformer.StatesInformer, cfg *Config, schema *apiru
 	}
 
 	newPluginOptions := hooks.Options{
-		Reader:         cr,
-		Executor:       e,
-		StatesInformer: si,
-		EventRecorder:  recorder,
+		Reader:                           cr,
+		Executor:                         e,
+		StatesInformer:                   si,
+		EventRecorder:                    recorder,
+		DisableUnsetCPUQuotaForCPUSetPod: cfg.RuntimeHookDisableUnsetCPUQuota,
 	}
 
 	if err != nil {
