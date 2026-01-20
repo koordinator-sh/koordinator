@@ -25,9 +25,117 @@ While Koordinator already provides advanced scheduling policies and reso
     
 1. Create different quotas for each department in the company, all developers in the department share the quota. Jobs submited by the developers in same department should be queued in one queue, and vice versa.
 
+```
+---
+apiVersion: scheduling.x-k8s.io/v1alpha1
+kind: ElasticQuota
+metadata:
+  name: elasticquota1
+  namespace: user1
+spec:
+  max:
+    cpu: 20
+    memory: 40Gi
+    nvidia.com/gpu: 2
+  min:
+    cpu: 10
+    memory: 20Gi
+    nvidia.com/gpu: 1
+---
+apiVersion: scheduling.x-k8s.io/v1alpha1
+kind: ElasticQuota
+metadata:
+  name: elasticquota1
+  namespace: user2
+spec:
+  max:
+    cpu: 20
+    memory: 40Gi
+    nvidia.com/gpu: 2
+  min:
+    cpu: 10
+    memory: 20Gi
+    nvidia.com/gpu: 1
+---
+apiVersion: scheduling.x-k8s.io/v1alpha1
+kind: ElasticQuota
+metadata:
+  name: elasticquota2
+  namespace: user3
+spec:
+  max:
+    cpu: 20
+    memory: 40Gi
+    nvidia.com/gpu: 2
+  min:
+    cpu: 10
+    memory: 20Gi
+    nvidia.com/gpu: 1
+```
+
 ![1 to 1](./one-to-one.jpg)
 
 2. Create different quotas for each department in the company, all developers in the department share the quota. Jobs submited by all developers should be queued in one queue. This is useful when each user has its quota limits and all users need to be queued in one queue.
+
+```
+---
+apiVersion: scheduling.x-k8s.io/v1alpha1
+kind: Queue
+metadata:
+  annotations:
+  name: global-queue
+  annotations:
+    kube-queue/available-quota: "elasticquota1,elasticquota2"
+  labels:
+    create-by-kubequeue: "false"
+  namespace: kube-queue
+spec:
+  queuePolicy: Priority
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  annotations:
+    kube-queue/available-quota: "elasticquota1"
+    kube-queue/available-queue: {"global-queue":["elasticquota1"]}
+  name: user1
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  annotations:
+    kube-queue/available-quota: "elasticquota1"
+    kube-queue/available-queue: {"global-queue":["elasticquota1"]}
+  name: user2
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  annotations:
+    kube-queue/available-quota: "elasticquota2"
+    kube-queue/available-queue: {"global-queue":["elasticquota2"]}
+  name: user2
+```
+
+```
+# pi will use elasticquota1 by default
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: pi
+  namespace: user1
+  annotations:
+    kube-queue/queue-name: global-queue
+spec:
+  template:
+    spec:
+      containers:
+      - name: pi
+        image: perl:5.34.0
+        command: ["perl",  "-Mbignum=bpi", "-wle", "print bpi(2000)"]
+      restartPolicy: Never
+  backoffLimit: 4
+```
 
 ![N to 1](./one-queue-to-multi-quota.jpg)
 
