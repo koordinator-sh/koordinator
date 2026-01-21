@@ -509,19 +509,6 @@ func (cache *reservationCache) ListAvailableReservationInfosOnNode(nodeName stri
 	return result
 }
 
-func (cache *reservationCache) listAllNodes() []string {
-	cache.lock.RLock()
-	defer cache.lock.RUnlock()
-	if len(cache.reservationsOnNode) == 0 {
-		return nil
-	}
-	nodes := make([]string, 0, len(cache.reservationsOnNode))
-	for k := range cache.reservationsOnNode {
-		nodes = append(nodes, k)
-	}
-	return nodes
-}
-
 // getAllPreAllocatableCandidates retrieves all cached pre-allocatable candidates for all nodes
 // Returns a map of nodeName -> sorted list of pods (by priority descending)
 func (cache *reservationCache) getAllPreAllocatableCandidates() map[string][]*corev1.Pod {

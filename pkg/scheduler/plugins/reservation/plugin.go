@@ -477,7 +477,7 @@ func (pl *Plugin) filterWithReservations(ctx context.Context, cycleState *framew
 }
 
 func (pl *Plugin) filterWithPreAllocatablePods(ctx context.Context, cycleState *framework.CycleState, rInfo *frameworkext.ReservationInfo, nodeInfo *framework.NodeInfo, preAllocatablePods []*corev1.Pod, isPreAllocationRequired bool) *framework.Status {
-	if isMultiplePAPodsEnabled(rInfo) {
+	if rInfo.IsMultiplePAPodsEnabled() {
 		return pl.filterWithMultiplePreAllocatablePods(ctx, cycleState, rInfo, nodeInfo, preAllocatablePods, isPreAllocationRequired)
 	}
 	return pl.filterWithPreAllocatablePod(ctx, cycleState, rInfo, nodeInfo, preAllocatablePods, isPreAllocationRequired)
@@ -1201,7 +1201,7 @@ func (pl *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState,
 
 		// Check if multiple pre-allocation is enabled
 		var status *framework.Status
-		if isMultiplePAPodsEnabled(state.rInfo) {
+		if state.rInfo.IsMultiplePAPodsEnabled() {
 			nominatedPods = pl.GetNominatedPreAllocations(state.rInfo, nodeName)
 			if nominatedPods == nil {
 				nominatedPods, status = pl.NominatePreAllocations(cycleState, state.rInfo, nodeName)
@@ -1537,12 +1537,4 @@ func (pl *Plugin) IsPreferNoPreAllocatedPods() bool {
 		return pl.args.PreAllocationConfig.PreferNoPreAllocatedPods
 	}
 	return false
-}
-
-// isMultiplePAPodsEnabled checks if multiple pre-allocated pods are enabled for the reservation.
-func isMultiplePAPodsEnabled(rInfo *frameworkext.ReservationInfo) bool {
-	if rInfo == nil {
-		return false
-	}
-	return reservationutil.IsMultiplePAPodsEnabled(rInfo.Reservation)
 }

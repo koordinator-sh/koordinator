@@ -578,6 +578,9 @@ func (pl *Plugin) listPreAllocatableCandidates(preAllocationMode schedulingv1alp
 			if reservationutil.IsReservePod(candidatePod) {
 				continue
 			}
+			if !ownerMatcher.Match(candidatePod) {
+				continue
+			}
 			if _, ok := podMap[candidatePod.UID]; ok {
 				continue
 			}
