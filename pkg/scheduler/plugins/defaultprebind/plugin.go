@@ -82,7 +82,7 @@ func (pl *Plugin) ApplyPatch(ctx context.Context, cycleState *framework.CycleSta
 
 func (pl *Plugin) applyPodPatch(ctx context.Context, originalPod, modifiedPod *corev1.Pod) *framework.Status {
 	var patchedPod *corev1.Pod
-	err := util.RetryOnConflictOrTooManyRequests(func() error {
+	err := util.RetryOnConflictOrTooManyRequestsOrConnectionClose(func() error {
 		got, err := util.PatchPodSafe(ctx, pl.clientSet, originalPod, modifiedPod)
 		if err != nil {
 			klog.ErrorS(err, "Failed to patch Pod", "pod", klog.KObj(originalPod), "uid", originalPod.UID)
@@ -91,6 +91,7 @@ func (pl *Plugin) applyPodPatch(ctx context.Context, originalPod, modifiedPod *c
 		patchedPod = got
 		return nil
 	})
+
 	if err != nil {
 		klog.ErrorS(err, "Failed to apply patch for Pod", "pod", klog.KObj(originalPod), "uid", originalPod.UID)
 		return framework.AsStatus(err)
@@ -109,7 +110,7 @@ func (pl *Plugin) applyPodPatch(ctx context.Context, originalPod, modifiedPod *c
 
 func (pl *Plugin) applyReservationPatch(ctx context.Context, originalReservation, modifiedReservation *schedulingv1alpha1.Reservation) *framework.Status {
 	var patchedReservation *schedulingv1alpha1.Reservation
-	err := util.RetryOnConflictOrTooManyRequests(func() error {
+	err := util.RetryOnConflictOrTooManyRequestsOrConnectionClose(func() error {
 		got, err := util.PatchReservationSafe(ctx, pl.koordClientSet, originalReservation, modifiedReservation)
 		if err != nil {
 			klog.ErrorS(err, "Failed to patch Reservation", "reservation", klog.KObj(originalReservation), "uid", originalReservation.UID)

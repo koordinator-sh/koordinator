@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"strings"
 	"sync"
 
 	jsonpatch "github.com/evanphx/json-patch"
@@ -28,6 +29,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	apimachinerytypes "k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/net"
 	"k8s.io/apimachinery/pkg/util/strategicpatch"
 	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/util/retry"
@@ -95,6 +97,17 @@ func RetryOnConflictOrTooManyRequests(fn func() error) error {
 	return retry.OnError(retry.DefaultBackoff, func(err error) bool {
 		return errors.IsConflict(err) || errors.IsTooManyRequests(err)
 	}, fn)
+}
+
+func RetryOnConflictOrTooManyRequestsOrConnectionClose(fn func() error) error {
+	return retry.OnError(retry.DefaultBackoff, func(err error) bool {
+		return errors.IsConflict(err) || errors.IsTooManyRequests(err) || isErrorConnectionClosed(err)
+	}, fn)
+}
+
+func isErrorConnectionClosed(err error) bool {
+	errMsg := err.Error()
+	return strings.Contains(errMsg, "http2: client connection force closed via ClientConn.Close") || net.IsProbableEOF(err) || net.IsConnectionReset(err)
 }
 
 func GeneratePodPatch(oldPod, newPod *corev1.Pod) ([]byte, error) {
