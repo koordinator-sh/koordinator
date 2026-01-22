@@ -42,6 +42,7 @@ func addKnownTypes(scheme *runtime.Scheme) error {
 		&DeviceShareArgs{},
 		&NodeResourcesFitPlusArgs{},
 		&ScarceResourceAvoidanceArgs{},
+		&SchedulingHintArgs{},
 	)
 	return nil
 }

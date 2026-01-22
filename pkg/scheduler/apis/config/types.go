@@ -345,3 +345,14 @@ type ResourcesType struct {
 	Type   config.ScoringStrategyType
 	Weight int64
 }
+
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+// SchedulingHintArgs holds arguments used to configure the SchedulingHint plugin.
+type SchedulingHintArgs struct {
+	metav1.TypeMeta
+
+	// MaxHintNodes is the maximum number of hinted preferred nodes.
+	// Defaults to 100 if unspecified.
+	MaxHintNodes int32
+}
