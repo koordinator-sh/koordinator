@@ -24,12 +24,14 @@ var _ framework.StateData = &SchedulingHintStateData{}
 
 type SchedulingHintStateData struct {
 	PreFilterNodes []string // hint to preFilter node
+	PreferredNodes []string // hint to preferred node
 	Extensions     map[string]interface{}
 }
 
 func (a *SchedulingHintStateData) Clone() framework.StateData {
 	return &SchedulingHintStateData{
 		PreFilterNodes: a.PreFilterNodes,
+		PreferredNodes: a.PreferredNodes,
 		Extensions:     a.Extensions,
 	}
 }

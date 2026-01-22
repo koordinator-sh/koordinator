@@ -52,6 +52,7 @@ var (
 	_ framework.ScorePlugin     = &TestTransformer{}
 
 	_ FindOneNodePluginProvider = &TestTransformer{}
+	_ PreferNodesPluginProvider = &TestTransformer{}
 
 	_ PreFilterTransformer  = &TestTransformer{}
 	_ FilterTransformer     = &TestTransformer{}
@@ -118,6 +119,18 @@ func (h *TestTransformer) FindOneNode(ctx context.Context, cycleState *framework
 	pod.Annotations["FindOneNode"] = "FindOneNode"
 	return "", framework.NewStatus(framework.Skip)
 
+}
+
+func (h *TestTransformer) PreferNodesPlugin() PreferNodesPlugin {
+	return h
+}
+
+func (h *TestTransformer) PreferNodes(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, result *framework.PreFilterResult) ([]string, *framework.Status) {
+	if pod.Annotations == nil {
+		pod.Annotations = map[string]string{}
+	}
+	pod.Annotations["PreferNodes"] = "PreferNodes"
+	return nil, framework.NewStatus(framework.Skip)
 }
 
 func (h *TestTransformer) BeforeScore(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodes []*corev1.Node) (*corev1.Pod, []*corev1.Node, bool, *framework.Status) {
@@ -281,6 +294,7 @@ func Test_frameworkExtenderImpl_RunPreFilterPlugins(t *testing.T) {
 				"BeforePreFilter-2": "2",
 				"AfterPreFilter-2":  "2",
 				"FindOneNode":       "FindOneNode",
+				"PreferNodes":       "PreferNodes",
 			}
 			assert.Equal(t, expectedAnnotations, tt.pod.Annotations)
 		})
@@ -1701,6 +1715,216 @@ func TestReservationPreBindPluginOrder(t *testing.T) {
 			s, err := cycleState.Read("test-preBind-reservation")
 			assert.NoError(t, err)
 			assert.Equal(t, tt.wantReservationAnnotations, s.(*testPreBindReservationState).reservation.Annotations)
+		})
+	}
+}
+
+// TestPreferNodesPlugin is a mock plugin for testing PreferNodesPlugin registration and invocation
+type TestPreferNodesPlugin struct {
+	name           string
+	preferredNodes []string
+	returnStatus   *framework.Status
+}
+
+func (p *TestPreferNodesPlugin) Name() string {
+	return p.name
+}
+
+func (p *TestPreferNodesPlugin) PreferNodesPlugin() PreferNodesPlugin {
+	return p
+}
+
+func (p *TestPreferNodesPlugin) PreferNodes(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, result *framework.PreFilterResult) ([]string, *framework.Status) {
+	if pod.Annotations == nil {
+		pod.Annotations = map[string]string{}
+	}
+	pod.Annotations["PreferNodesPlugin-called"] = p.name
+	return p.preferredNodes, p.returnStatus
+}
+
+func Test_frameworkExtenderImpl_PreferNodesPlugin_Registration(t *testing.T) {
+	tests := []struct {
+		name           string
+		plugins        []framework.Plugin
+		wantPluginName string
+	}{
+		{
+			name: "register single PreferNodesPlugin",
+			plugins: []framework.Plugin{
+				&TestPreferNodesPlugin{
+					name:           "test-prefer-nodes-1",
+					preferredNodes: []string{"node-1", "node-2"},
+					returnStatus:   framework.NewStatus(framework.Success),
+				},
+			},
+			wantPluginName: "test-prefer-nodes-1",
+		},
+		{
+			name: "register multiple PreferNodesPlugin - only first one is used",
+			plugins: []framework.Plugin{
+				&TestPreferNodesPlugin{
+					name:           "test-prefer-nodes-1",
+					preferredNodes: []string{"node-1"},
+					returnStatus:   framework.NewStatus(framework.Success),
+				},
+				&TestPreferNodesPlugin{
+					name:           "test-prefer-nodes-2",
+					preferredNodes: []string{"node-2"},
+					returnStatus:   framework.NewStatus(framework.Success),
+				},
+			},
+			wantPluginName: "test-prefer-nodes-1",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			koordClientSet := koordfake.NewSimpleClientset()
+			koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
+			extenderFactory, err := NewFrameworkExtenderFactory(
+				WithKoordinatorClientSet(koordClientSet),
+				WithKoordinatorSharedInformerFactory(koordSharedInformerFactory),
+			)
+			assert.NoError(t, err)
+
+			fakeClient := kubefake.NewSimpleClientset()
+			sharedInformerFactory := informers.NewSharedInformerFactory(fakeClient, 0)
+			fh, err := schedulertesting.NewFramework(
+				context.TODO(),
+				[]schedulertesting.RegisterPluginFunc{
+					schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
+					schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
+				},
+				"koord-scheduler",
+				frameworkruntime.WithClientSet(fakeClient),
+				frameworkruntime.WithInformerFactory(sharedInformerFactory),
+			)
+			assert.NoError(t, err)
+
+			extender := extenderFactory.NewFrameworkExtender(fh)
+			impl := extender.(*frameworkExtenderImpl)
+
+			// Register PreferNodesPlugins
+			for _, pl := range tt.plugins {
+				impl.updatePlugins(pl)
+			}
+
+			// Verify only the first plugin is registered
+			assert.NotNil(t, impl.preferNodesPlugin)
+			assert.Equal(t, tt.wantPluginName, impl.preferNodesPlugin.Name())
+		})
+	}
+}
+
+func Test_frameworkExtenderImpl_RunPreFilterPlugins_WithPreferNodes(t *testing.T) {
+	tests := []struct {
+		name                 string
+		preferredNodes       []string
+		preferNodesStatus    *framework.Status
+		nodes                []*corev1.Node
+		expectCallPreferNode bool
+		expectResult         *framework.PreFilterResult
+		expectStatus         *framework.Status
+	}{
+		{
+			name:                 "PreferNodes returns Skip - use original prefilter result",
+			preferredNodes:       nil,
+			preferNodesStatus:    framework.NewStatus(framework.Skip),
+			nodes:                []*corev1.Node{{ObjectMeta: metav1.ObjectMeta{Name: "node-1"}}},
+			expectCallPreferNode: true,
+			expectResult:         nil,
+			expectStatus:         nil,
+		},
+		{
+			name:                 "PreferNodes returns Error - abort scheduling",
+			preferredNodes:       nil,
+			preferNodesStatus:    framework.NewStatus(framework.Error, "test error"),
+			nodes:                []*corev1.Node{{ObjectMeta: metav1.ObjectMeta{Name: "node-1"}}},
+			expectCallPreferNode: true,
+			expectResult:         nil,
+			expectStatus:         framework.NewStatus(framework.Error, "test error"),
+		},
+		{
+			name:                 "PreferNodes returns Success with preferred nodes - but nodes not exist",
+			preferredNodes:       []string{"non-existent-node"},
+			preferNodesStatus:    framework.NewStatus(framework.Success),
+			nodes:                []*corev1.Node{{ObjectMeta: metav1.ObjectMeta{Name: "node-1"}}},
+			expectCallPreferNode: true,
+			expectResult:         nil,
+			expectStatus:         nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			koordClientSet := koordfake.NewSimpleClientset()
+			koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
+			extenderFactory, err := NewFrameworkExtenderFactory(
+				WithKoordinatorClientSet(koordClientSet),
+				WithKoordinatorSharedInformerFactory(koordSharedInformerFactory),
+			)
+			assert.NoError(t, err)
+
+			fakeClient := kubefake.NewSimpleClientset()
+			for _, node := range tt.nodes {
+				_, _ = fakeClient.CoreV1().Nodes().Create(context.TODO(), node, metav1.CreateOptions{})
+			}
+
+			sharedInformerFactory := informers.NewSharedInformerFactory(fakeClient, 0)
+			registeredPlugins := []schedulertesting.RegisterPluginFunc{
+				schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
+				schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
+			}
+
+			fh, err := schedulertesting.NewFramework(
+				context.TODO(),
+				registeredPlugins,
+				"koord-scheduler",
+				frameworkruntime.WithClientSet(fakeClient),
+				frameworkruntime.WithInformerFactory(sharedInformerFactory),
+				frameworkruntime.WithSnapshotSharedLister(fakeNodeInfoLister{NodeInfoLister: frameworkfake.NodeInfoLister{}}),
+			)
+			assert.NoError(t, err)
+
+			extender := extenderFactory.NewFrameworkExtender(fh)
+			impl := extender.(*frameworkExtenderImpl)
+
+			// Register PreferNodesPlugin
+			preferNodesPlugin := &TestPreferNodesPlugin{
+				name:           "test-prefer-nodes",
+				preferredNodes: tt.preferredNodes,
+				returnStatus:   tt.preferNodesStatus,
+			}
+			impl.updatePlugins(preferNodesPlugin)
+
+			pod := &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pod",
+					Namespace: "default",
+				},
+			}
+
+			result, status := impl.RunPreFilterPlugins(context.TODO(), framework.NewCycleState(), pod)
+
+			if tt.expectCallPreferNode {
+				assert.Contains(t, pod.Annotations, "PreferNodesPlugin-called")
+			}
+
+			if tt.expectStatus != nil {
+				assert.Equal(t, tt.expectStatus.Code(), status.Code())
+				if tt.expectStatus.Message() != "" {
+					assert.Contains(t, status.Message(), tt.expectStatus.Message())
+				}
+			} else {
+				if status != nil {
+					assert.True(t, status.IsSuccess(), "expected success status but got: %v", status)
+				}
+			}
+
+			if tt.expectResult != nil {
+				assert.NotNil(t, result)
+				assert.Equal(t, tt.expectResult.NodeNames, result.NodeNames)
+			}
 		})
 	}
 }
