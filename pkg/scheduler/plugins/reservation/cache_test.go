@@ -17,6 +17,7 @@ limitations under the License.
 package reservation
 
 import (
+	"fmt"
 	"sort"
 	"testing"
 
@@ -904,5 +905,123 @@ func TestReservationCache_PreAllocatableOperations(t *testing.T) {
 		nonExistPod := createTestPreAllocatablePod("non-exist", "node1", "1", "1Gi", "100")
 		cache.updatePreAllocatableCandidatePriority(nonExistPod)
 		// Should not panic or add the pod
+	})
+}
+
+// BenchmarkPreAllocatablePodCache benchmarks the preAllocatablePodCache btree operations
+// with multi-node scenarios to simulate real cluster environments.
+func BenchmarkPreAllocatablePodCache(b *testing.B) {
+	// Scale configurations: nodes x podsPerNode
+	scales := []struct {
+		nodes       int
+		podsPerNode int
+	}{
+		{10, 100},   // 1000 total pods
+		{100, 100},  // 10000 total pods
+		{1000, 100}, // 100000 total pods
+	}
+
+	// Helper: create pods for multiple nodes
+	// Returns pods[nodeIndex][podIndex]
+	createPods := func(numNodes, podsPerNode int) [][]*corev1.Pod {
+		pods := make([][]*corev1.Pod, numNodes)
+		for n := 0; n < numNodes; n++ {
+			nodeName := fmt.Sprintf("node-%d", n)
+			pods[n] = make([]*corev1.Pod, podsPerNode)
+			for i := 0; i < podsPerNode; i++ {
+				pods[n][i] = createTestPreAllocatablePod(
+					fmt.Sprintf("pod-%d-%d", n, i),
+					nodeName,
+					"1", "1Gi",
+					fmt.Sprintf("%d", i%1000), // varying priorities
+				)
+			}
+		}
+		return pods
+	}
+
+	// Helper: add all pods to cache
+	addAllPods := func(cache *reservationCache, pods [][]*corev1.Pod) {
+		for _, nodePods := range pods {
+			for _, pod := range nodePods {
+				cache.addPreAllocatableCandidateOnNode(pod)
+			}
+		}
+	}
+
+	// Benchmark: Add operation
+	b.Run("Add", func(b *testing.B) {
+		for _, s := range scales {
+			b.Run(fmt.Sprintf("nodes_%d_podsPerNode_%d", s.nodes, s.podsPerNode), func(b *testing.B) {
+				pods := createPods(s.nodes, s.podsPerNode)
+				b.ResetTimer()
+				for i := 0; i < b.N; i++ {
+					cache := newReservationCache(nil)
+					addAllPods(cache, pods)
+				}
+			})
+		}
+	})
+
+	// Benchmark: Delete operation
+	b.Run("Delete", func(b *testing.B) {
+		for _, s := range scales {
+			b.Run(fmt.Sprintf("nodes_%d_podsPerNode_%d", s.nodes, s.podsPerNode), func(b *testing.B) {
+				pods := createPods(s.nodes, s.podsPerNode)
+				b.ResetTimer()
+				for i := 0; i < b.N; i++ {
+					b.StopTimer()
+					cache := newReservationCache(nil)
+					addAllPods(cache, pods)
+					b.StartTimer()
+
+					for n, nodePods := range pods {
+						nodeName := fmt.Sprintf("node-%d", n)
+						for _, pod := range nodePods {
+							cache.deletePreAllocatableCandidateOnNode(nodeName, pod.UID)
+						}
+					}
+				}
+			})
+		}
+	})
+
+	// Benchmark: UpdatePriority operation
+	b.Run("UpdatePriority", func(b *testing.B) {
+		for _, s := range scales {
+			b.Run(fmt.Sprintf("nodes_%d_podsPerNode_%d", s.nodes, s.podsPerNode), func(b *testing.B) {
+				pods := createPods(s.nodes, s.podsPerNode)
+				b.ResetTimer()
+				for i := 0; i < b.N; i++ {
+					b.StopTimer()
+					cache := newReservationCache(nil)
+					addAllPods(cache, pods)
+					b.StartTimer()
+
+					for _, nodePods := range pods {
+						for j, pod := range nodePods {
+							pod.Annotations[apiext.AnnotationPodPreAllocatablePriority] = fmt.Sprintf("%d", (j+500)%1000)
+							cache.updatePreAllocatableCandidatePriority(pod)
+						}
+					}
+				}
+			})
+		}
+	})
+
+	// Benchmark: GetAll operation
+	b.Run("GetAll", func(b *testing.B) {
+		for _, s := range scales {
+			b.Run(fmt.Sprintf("nodes_%d_podsPerNode_%d", s.nodes, s.podsPerNode), func(b *testing.B) {
+				pods := createPods(s.nodes, s.podsPerNode)
+				cache := newReservationCache(nil)
+				addAllPods(cache, pods)
+
+				b.ResetTimer()
+				for i := 0; i < b.N; i++ {
+					_ = cache.getAllPreAllocatableCandidates()
+				}
+			})
+		}
 	})
 }

@@ -65,6 +65,11 @@ type schedulingStateData struct {
 	preferredNode            string
 }
 
+// nodeReservationState stores the reservation state for a specific node during the scheduling cycle.
+// NOTE: This struct is NOT thread-safe. It is designed to be accessed sequentially within a single
+// scheduling cycle. In the Filter phase, each node's state is processed exactly once, so concurrent
+// access to the same nodeReservationState instance should not occur. Do not access or modify the same
+// nodeReservationState from multiple goroutines.
 type nodeReservationState struct {
 	nodeName string
 	// matchedOrIgnored represents all matched or ignored reservations for the scheduling pod.

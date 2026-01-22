@@ -641,10 +641,13 @@ func checkReservationMatchedOrIgnored(pod *corev1.Pod, rInfo *frameworkext.Reser
 	return false
 }
 
+// NOTE: This function is coupled with listPreAllocatableCandidates for pre-allocatable pod selection:
+//   - Default mode: OwnerMatchers (ObjectRef, Controller, Labels) are validated in listPreAllocatableCandidates
+//     via ownerMatcher.Match(), so no need to re-check here.
+//   - Cluster mode: Pods are retrieved from a global cache without reservation-specific OwnerMatchers validation.
+//     The cache contains all pods matching the pre-allocatable label, and the reservation's owners field
+//     is not used for filtering in cluster mode by design.
 func checkPreAllocatableMatched(rInfo *frameworkext.ReservationInfo, candidatePod *corev1.Pod, diagnosisState *nodeDiagnosisState, node *corev1.Node) (bool, error) {
-	// NOTE: No need to check OwnerMatchers here because pods are already filtered by
-	// listPreAllocatableCandidates based on the PreAllocation mode (Default or Cluster)
-
 	diagnosisState.ownerMatched++
 	reservationAffinity, err := reservationutil.GetRequiredReservationAffinity(candidatePod)
 	if err != nil {
