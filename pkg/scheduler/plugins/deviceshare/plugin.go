@@ -80,6 +80,7 @@ type Plugin struct {
 	nodeDeviceCache                            *nodeDeviceCache
 	gpuSharedResourceTemplatesCache            *gpuSharedResourceTemplatesCache
 	gpuSharedResourceTemplatesMatchedResources []corev1.ResourceName
+	gpuShareUnsupportedModels                  map[string]sets.Set[string]
 	scorer                                     *resourceAllocationScorer
 }
 
@@ -343,6 +344,12 @@ func (p *Plugin) Filter(ctx context.Context, cycleState fwktype.CycleState, pod 
 		pod.Labels != nil && pod.Labels[apiext.LabelGPUIsolationProvider] != "" &&
 		pod.Labels[apiext.LabelGPUIsolationProvider] != node.Labels[apiext.LabelGPUIsolationProvider] {
 		return fwktype.NewStatus(fwktype.Error, "GPUIsolationProviderHAMICore not found on the node")
+	}
+	if state.gpuRequirements != nil && state.gpuRequirements.gpuShared {
+		vendor, model := node.Labels[apiext.LabelGPUVendor], node.Labels[apiext.LabelGPUModel]
+		if p.gpuShareUnsupportedModels[vendor].Has(model) {
+			return fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, fmt.Sprintf("model %q of vendor %q does not support GPU Share", model, vendor))
+		}
 	}
 	store := topologymanager.GetStore(cycleState)
 	_, ok := store.GetAffinity(node.Name)
@@ -800,12 +807,21 @@ func New(_ context.Context, obj runtime.Object, handle fwktype.Handle) (fwktype.
 
 	registerNodeEventHandler(handle.SharedInformerFactory())
 
+	gpuShareUnsupportedModels := make(map[string]sets.Set[string])
+	for _, m := range args.GPUShareUnsupportedModels {
+		if _, ok := gpuShareUnsupportedModels[m.Vendor]; !ok {
+			gpuShareUnsupportedModels[m.Vendor] = sets.New[string]()
+		}
+		gpuShareUnsupportedModels[m.Vendor].Insert(m.Model)
+	}
+
 	return &Plugin{
 		handle:                          extendedHandle,
 		nodeDeviceCache:                 deviceCache,
 		gpuSharedResourceTemplatesCache: gpuSharedResourceTemplatesCache,
 		gpuSharedResourceTemplatesMatchedResources: args.GPUSharedResourceTemplatesConfig.MatchedResources,
-		scorer:                             scorePlugin(args),
-		disableDeviceNUMATopologyAlignment: args.DisableDeviceNUMATopologyAlignment,
+		gpuShareUnsupportedModels:                  gpuShareUnsupportedModels,
+		scorer:                                     scorePlugin(args),
+		disableDeviceNUMATopologyAlignment:         args.DisableDeviceNUMATopologyAlignment,
 	}, nil
 }
