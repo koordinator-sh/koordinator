@@ -169,6 +169,7 @@ func TestHuaweiGPUDevicePluginAdapter_Adapt(t *testing.T) {
 	}
 	tests := []struct {
 		name       string
+		gpuModel   string
 		args       args
 		wantErr    bool
 		wantObject metav1.Object
@@ -192,6 +193,30 @@ func TestHuaweiGPUDevicePluginAdapter_Adapt(t *testing.T) {
 					Annotations: map[string]string{
 						AnnotationPredicateTime: strconv.FormatInt(now.UnixNano(), 10),
 						AnnotationHuaweiNPUCore: "0,1",
+					},
+				},
+			},
+		},
+		{
+			name:     "full NPU - Ascend-310P3-300I-DUO",
+			gpuModel: "Ascend-310P3-300I-DUO",
+			args: args{
+				object: &corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Annotations: map[string]string{},
+					},
+				},
+				allocation: []*apiext.DeviceAllocation{
+					{Minor: 0},
+					{Minor: 1},
+				},
+			},
+			wantErr: false,
+			wantObject: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						AnnotationPredicateTime:    strconv.FormatInt(now.UnixNano(), 10),
+						AnnotationHuaweiAscend310P: "Ascend310P-0,Ascend310P-1",
 					},
 				},
 			},
@@ -223,12 +248,39 @@ func TestHuaweiGPUDevicePluginAdapter_Adapt(t *testing.T) {
 				},
 			},
 		},
+		{
+			name:     "vNPU - Ascend-310P3-300I-DUO",
+			gpuModel: "Ascend-310P3-300I-DUO",
+			args: args{
+				object: &corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Annotations: map[string]string{},
+					},
+				},
+				allocation: []*apiext.DeviceAllocation{
+					{
+						Minor: 0,
+						Extension: &apiext.DeviceAllocationExtension{
+							GPUSharedResourceTemplate: "vir02",
+						},
+					},
+				},
+			},
+			wantErr: true,
+			wantObject: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						AnnotationPredicateTime: strconv.FormatInt(now.UnixNano(), 10),
+					},
+				},
+			},
+		},
 	}
 
 	adapter := &huaweiGPUDevicePluginAdapter{}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := adapter.Adapt(nil, tt.args.object, tt.args.allocation)
+			err := adapter.Adapt(&DevicePluginAdaptContext{gpuModel: tt.gpuModel}, tt.args.object, tt.args.allocation)
 			assert.Equal(t, tt.wantErr, err != nil, err)
 			assert.Equal(t, tt.wantObject, tt.args.object)
 		})
@@ -1205,6 +1257,7 @@ func TestPlugin_adaptForDevicePlugin(t *testing.T) {
 func Test_buildGPUMinorsStr(t *testing.T) {
 	type args struct {
 		allocation []*apiext.DeviceAllocation
+		prefix     string
 	}
 	tests := []struct {
 		name string
@@ -1230,11 +1283,22 @@ func Test_buildGPUMinorsStr(t *testing.T) {
 			},
 			want: "0,1",
 		},
+		{
+			name: "multiple minors with prefix",
+			args: args{
+				allocation: []*apiext.DeviceAllocation{
+					{Minor: 0},
+					{Minor: 1},
+				},
+				prefix: "test-",
+			},
+			want: "test-0,test-1",
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.want, buildGPUMinorsStr(tt.args.allocation))
+			assert.Equal(t, tt.want, buildGPUMinorsStr(tt.args.allocation, tt.args.prefix))
 		})
 	}
 }
