@@ -130,6 +130,34 @@ func TestPlugin_BeforePreFilter(t *testing.T) {
 			wantStatusCode: framework.Success,
 		},
 		{
+			name: "valid scheduling hint with preferred nodes",
+			pod: func() *corev1.Pod {
+				h := &extension.SchedulingHint{
+					NodeNames:          []string{"node-1", "node-2", "node-3"},
+					PreferredNodeNames: []string{"node-1", "node-2"},
+					Extensions: map[string]interface{}{
+						"key": "value",
+					},
+				}
+				b, _ := json.Marshal(h)
+				return &corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Annotations: map[string]string{
+							extension.AnnotationSchedulingHint: string(b),
+						},
+					},
+				}
+			}(),
+			wantModified:  false,
+			wantStatusNil: true,
+			wantHintState: &hinter.SchedulingHintStateData{
+				PreFilterNodes: []string{"node-1", "node-2", "node-3"},
+				PreferredNodes: []string{"node-1", "node-2"},
+				Extensions:     map[string]interface{}{"key": "value"},
+			},
+			wantStatusCode: framework.Success,
+		},
+		{
 			name: "invalid scheduling hint json",
 			pod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
@@ -168,6 +196,7 @@ func TestPlugin_BeforePreFilter(t *testing.T) {
 			} else {
 				assert.NotNil(t, hintState)
 				assert.Equal(t, tt.wantHintState.PreFilterNodes, hintState.PreFilterNodes)
+				assert.Equal(t, tt.wantHintState.PreferredNodes, hintState.PreferredNodes)
 				assert.Equal(t, tt.wantHintState.Extensions, hintState.Extensions)
 			}
 		})
@@ -179,4 +208,160 @@ func TestNew_HandleIsNotExtendedHandle(t *testing.T) {
 	p, err := New(nil, handle)
 	assert.Nil(t, p)
 	assert.Error(t, err)
+}
+
+func TestPlugin_PreferNodesPlugin(t *testing.T) {
+	p := &Plugin{}
+	assert.Equal(t, p, p.PreferNodesPlugin())
+}
+
+func TestPlugin_PreferNodes(t *testing.T) {
+	tests := []struct {
+		name              string
+		setupState        func() *framework.CycleState
+		pod               *corev1.Pod
+		preFilterResult   *framework.PreFilterResult
+		wantNodeNames     []string
+		wantStatusCode    framework.Code
+		wantStatusMessage string
+	}{
+		{
+			name: "no scheduling hint state",
+			setupState: func() *framework.CycleState {
+				return framework.NewCycleState()
+			},
+			pod:            &corev1.Pod{},
+			wantNodeNames:  nil,
+			wantStatusCode: framework.Skip,
+		},
+		{
+			name: "empty preferred nodes",
+			setupState: func() *framework.CycleState {
+				state := framework.NewCycleState()
+				hinter.SetSchedulingHintState(state, &hinter.SchedulingHintStateData{
+					PreferredNodes: []string{},
+				})
+				return state
+			},
+			pod:            &corev1.Pod{},
+			wantNodeNames:  nil,
+			wantStatusCode: framework.Skip,
+		},
+		{
+			name: "preferred nodes with nil prefilter result",
+			setupState: func() *framework.CycleState {
+				state := framework.NewCycleState()
+				hinter.SetSchedulingHintState(state, &hinter.SchedulingHintStateData{
+					PreferredNodes: []string{"node-1", "node-2"},
+				})
+				return state
+			},
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pod",
+					Namespace: "default",
+				},
+			},
+			preFilterResult: nil,
+			wantNodeNames:   []string{"node-1", "node-2"},
+			wantStatusCode:  framework.Success,
+		},
+		{
+			name: "preferred nodes with AllNodes prefilter result",
+			setupState: func() *framework.CycleState {
+				state := framework.NewCycleState()
+				hinter.SetSchedulingHintState(state, &hinter.SchedulingHintStateData{
+					PreferredNodes: []string{"node-1", "node-2"},
+				})
+				return state
+			},
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pod",
+					Namespace: "default",
+				},
+			},
+			preFilterResult: &framework.PreFilterResult{},
+			wantNodeNames:   []string{"node-1", "node-2"},
+			wantStatusCode:  framework.Success,
+		},
+		{
+			name: "some preferred nodes in prefilter result node names - return filtered",
+			setupState: func() *framework.CycleState {
+				state := framework.NewCycleState()
+				hinter.SetSchedulingHintState(state, &hinter.SchedulingHintStateData{
+					PreferredNodes: []string{"node-1", "node-2", "node-3"},
+				})
+				return state
+			},
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pod",
+					Namespace: "default",
+				},
+			},
+			preFilterResult: &framework.PreFilterResult{
+				NodeNames: sets.New("node-1", "node-4"),
+			},
+			wantNodeNames:  []string{"node-1"},
+			wantStatusCode: framework.Success,
+		},
+		{
+			name: "multiple preferred nodes match prefilter result - maintain order",
+			setupState: func() *framework.CycleState {
+				state := framework.NewCycleState()
+				hinter.SetSchedulingHintState(state, &hinter.SchedulingHintStateData{
+					PreferredNodes: []string{"node-1", "node-2", "node-3", "node-4"},
+				})
+				return state
+			},
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pod",
+					Namespace: "default",
+				},
+			},
+			preFilterResult: &framework.PreFilterResult{
+				NodeNames: sets.New("node-2", "node-4", "node-5"),
+			},
+			wantNodeNames:  []string{"node-2", "node-4"},
+			wantStatusCode: framework.Success,
+		},
+		{
+			name: "no preferred nodes in prefilter result node names - skip",
+			setupState: func() *framework.CycleState {
+				state := framework.NewCycleState()
+				hinter.SetSchedulingHintState(state, &hinter.SchedulingHintStateData{
+					PreferredNodes: []string{"node-3", "node-4"},
+				})
+				return state
+			},
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pod",
+					Namespace: "default",
+				},
+			},
+			preFilterResult: &framework.PreFilterResult{
+				NodeNames: sets.New("node-1", "node-2"),
+			},
+			wantNodeNames:  nil,
+			wantStatusCode: framework.Skip,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := &Plugin{}
+			state := tt.setupState()
+
+			nodeNames, status := p.PreferNodes(context.TODO(), state, tt.pod, tt.preFilterResult)
+
+			assert.Equal(t, tt.wantNodeNames, nodeNames)
+			assert.Equal(t, tt.wantStatusCode, status.Code())
+			if tt.wantStatusMessage != "" {
+				assert.Contains(t, status.Message(), tt.wantStatusMessage)
+			}
+		})
+	}
 }

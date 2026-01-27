@@ -35,7 +35,12 @@ func GetSchedulerName(pod *corev1.Pod) string {
 }
 
 type SchedulingHint struct {
-	NodeNames  []string               `json:"nodeNames,omitempty"`
+	// NodeNames is a list of node names that the pod is required to be scheduled on.
+	NodeNames []string `json:"nodeNames,omitempty"`
+	// PreferredNodeNames is an ordered list of preferred node names that the pod should try to schedule first.
+	// It is recommended to use as few nodes as possible to reduce the overhead.
+	PreferredNodeNames []string `json:"preferredNodeNames,omitempty"`
+	// Extensions is a map of hint extensions for plugins.
 	Extensions map[string]interface{} `json:"extensions,omitempty"`
 }
 
