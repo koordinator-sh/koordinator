@@ -17,6 +17,7 @@ limitations under the License.
 package reservation
 
 import (
+	"fmt"
 	"sort"
 	"testing"
 
@@ -30,6 +31,7 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/utils/ptr"
 
+	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
@@ -770,4 +772,256 @@ func TestCacheListAvailableReservationInfosOnNode(t *testing.T) {
 	// test listAll = true (all reservations)
 	rInfos = cache.ListAvailableReservationInfosOnNode("test-node-1", true)
 	assert.Len(t, rInfos, 2)
+}
+
+// TestReservationCache_PreAllocatableOperations tests all pre-allocatable pod cache operations
+func TestReservationCache_PreAllocatableOperations(t *testing.T) {
+
+	t.Run("btree item ordering", func(t *testing.T) {
+		// Test priority-based ordering (higher priority first)
+		pod1 := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{UID: "aaa"}}
+		pod2 := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{UID: "bbb"}}
+		pod3 := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{UID: "ccc"}}
+
+		item1 := &preAllocatablePodItem{priority: 100, pod: pod1}
+		item2 := &preAllocatablePodItem{priority: 50, pod: pod2}
+		item3 := &preAllocatablePodItem{priority: 100, pod: pod3} // Same priority as item1
+
+		// Higher priority should come first
+		assert.True(t, item1.Less(item2), "priority 100 should be less than priority 50 (higher priority)")
+		assert.False(t, item2.Less(item1), "priority 50 should not be less than priority 100")
+
+		// Same priority, order by UID
+		assert.True(t, item1.Less(item3), "with same priority, 'aaa' < 'ccc'")
+		assert.False(t, item3.Less(item1), "with same priority, 'ccc' not < 'aaa'")
+	})
+
+	t.Run("add and retrieve candidates", func(t *testing.T) {
+		// Add pods to multiple nodes with different priorities
+		node1Pod1 := createTestPreAllocatablePod("node1-pod1", "node1", "1", "1Gi", "100")
+		node1Pod2 := createTestPreAllocatablePod("node1-pod2", "node1", "1", "1Gi", "50")
+		node1Pod3 := createTestPreAllocatablePod("node1-pod3", "node1", "1", "1Gi", "200")
+		node2Pod1 := createTestPreAllocatablePod("node2-pod1", "node2", "1", "1Gi", "150")
+
+		cache := newReservationCache(nil)
+		cache.addPreAllocatableCandidateOnNode(node1Pod1)
+		cache.addPreAllocatableCandidateOnNode(node1Pod2)
+		cache.addPreAllocatableCandidateOnNode(node1Pod3)
+		cache.addPreAllocatableCandidateOnNode(node2Pod1)
+
+		// Verify getAllPreAllocatableCandidates
+		result := cache.getAllPreAllocatableCandidates()
+
+		// Verify node1 pods are sorted by priority (descending: 200, 100, 50)
+		assert.Len(t, result["node1"], 3)
+		assert.Equal(t, "node1-pod3", string(result["node1"][0].UID), "pod with priority 200 should be first")
+		assert.Equal(t, "node1-pod1", string(result["node1"][1].UID), "pod with priority 100 should be second")
+		assert.Equal(t, "node1-pod2", string(result["node1"][2].UID), "pod with priority 50 should be third")
+
+		// Verify node2
+		assert.Len(t, result["node2"], 1)
+		assert.Equal(t, "node2-pod1", string(result["node2"][0].UID))
+
+		// Verify node isolation
+		assert.Len(t, result, 2, "should have exactly 2 nodes")
+	})
+
+	t.Run("update priority and re-sort", func(t *testing.T) {
+		cache := newReservationCache(nil)
+		// Add a pod with low priority
+		updatePod := createTestPreAllocatablePod("update-pod", "node1", "1", "1Gi", "30")
+		cache.addPreAllocatableCandidateOnNode(updatePod)
+
+		// Verify it's the only pod
+		result := cache.getAllPreAllocatableCandidates()
+		assert.Len(t, result["node1"], 1, "should have 1 pod initially")
+		assert.Equal(t, "update-pod", string(result["node1"][0].UID), "pod with priority 30 should be first")
+
+		// Update priority to highest
+		updatePod.Annotations[apiext.AnnotationPodPreAllocatablePriority] = "300"
+		cache.updatePreAllocatableCandidatePriority(updatePod)
+
+		// Verify it's still the only pod but with updated priority
+		result = cache.getAllPreAllocatableCandidates()
+		assert.Equal(t, "update-pod", string(result["node1"][0].UID), "pod with priority 300 should be first")
+		assert.Len(t, result["node1"], 1, "should still have 1 pod")
+
+		// Verify btree and index are in sync
+		podCache := cache.preAllocatablePodsOnNode["node1"]
+		assert.Equal(t, podCache.tree.Len(), len(podCache.index), "btree and index must be in sync")
+	})
+
+	t.Run("delete and cleanup", func(t *testing.T) {
+		cache := newReservationCache(nil)
+		// Add pods to node1 first
+		node1Pod1 := createTestPreAllocatablePod("node1-pod1", "node1", "1", "1Gi", "100")
+		node1Pod2 := createTestPreAllocatablePod("node1-pod2", "node1", "1", "1Gi", "50")
+		node2Pod1 := createTestPreAllocatablePod("node2-pod1", "node2", "1", "1Gi", "150")
+		cache.addPreAllocatableCandidateOnNode(node1Pod1)
+		cache.addPreAllocatableCandidateOnNode(node1Pod2)
+		cache.addPreAllocatableCandidateOnNode(node2Pod1)
+
+		// Delete a pod from node1
+		cache.deletePreAllocatableCandidateOnNode("node1", "node1-pod2")
+
+		podCache := cache.preAllocatablePodsOnNode["node1"]
+		assert.NotContains(t, podCache.index, types.UID("node1-pod2"), "deleted pod should not be in index")
+		assert.Equal(t, 1, podCache.tree.Len(), "should have 1 pod after deletion")
+
+		// Delete all pods from node2
+		cache.deletePreAllocatableCandidateOnNode("node2", "node2-pod1")
+
+		// Verify node2 cache is completely removed (auto cleanup)
+		assert.NotContains(t, cache.preAllocatablePodsOnNode, "node2", "empty node cache should be cleaned up")
+
+		// Verify getAllPreAllocatableCandidates doesn't include empty nodes
+		result := cache.getAllPreAllocatableCandidates()
+		assert.NotContains(t, result, "node2", "result should not contain empty nodes")
+	})
+
+	t.Run("edge cases", func(t *testing.T) {
+		cache := newReservationCache(nil)
+		// nil pod
+		cache.addPreAllocatableCandidateOnNode(nil)
+		// Should not panic
+
+		// Pod without NodeName
+		emptyNodePod := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{UID: "empty"},
+			Spec:       corev1.PodSpec{NodeName: ""},
+		}
+		cache.addPreAllocatableCandidateOnNode(emptyNodePod)
+		// Should not add to cache
+
+		// Delete from non-existent node
+		cache.deletePreAllocatableCandidateOnNode("non-exist-node", "fake-uid")
+		// Should not panic
+
+		// Delete with empty nodeName
+		cache.deletePreAllocatableCandidateOnNode("", "fake-uid")
+		// Should not panic
+
+		// Update priority for non-existent pod
+		nonExistPod := createTestPreAllocatablePod("non-exist", "node1", "1", "1Gi", "100")
+		cache.updatePreAllocatableCandidatePriority(nonExistPod)
+		// Should not panic or add the pod
+	})
+}
+
+// BenchmarkPreAllocatablePodCache benchmarks the preAllocatablePodCache btree operations
+// with multi-node scenarios to simulate real cluster environments.
+func BenchmarkPreAllocatablePodCache(b *testing.B) {
+	// Scale configurations: nodes x podsPerNode
+	scales := []struct {
+		nodes       int
+		podsPerNode int
+	}{
+		{10, 100},   // 1000 total pods
+		{100, 100},  // 10000 total pods
+		{1000, 100}, // 100000 total pods
+	}
+
+	// Helper: create pods for multiple nodes
+	// Returns pods[nodeIndex][podIndex]
+	createPods := func(numNodes, podsPerNode int) [][]*corev1.Pod {
+		pods := make([][]*corev1.Pod, numNodes)
+		for n := 0; n < numNodes; n++ {
+			nodeName := fmt.Sprintf("node-%d", n)
+			pods[n] = make([]*corev1.Pod, podsPerNode)
+			for i := 0; i < podsPerNode; i++ {
+				pods[n][i] = createTestPreAllocatablePod(
+					fmt.Sprintf("pod-%d-%d", n, i),
+					nodeName,
+					"1", "1Gi",
+					fmt.Sprintf("%d", i%1000), // varying priorities
+				)
+			}
+		}
+		return pods
+	}
+
+	// Helper: add all pods to cache
+	addAllPods := func(cache *reservationCache, pods [][]*corev1.Pod) {
+		for _, nodePods := range pods {
+			for _, pod := range nodePods {
+				cache.addPreAllocatableCandidateOnNode(pod)
+			}
+		}
+	}
+
+	// Benchmark: Add operation
+	b.Run("Add", func(b *testing.B) {
+		for _, s := range scales {
+			b.Run(fmt.Sprintf("nodes_%d_podsPerNode_%d", s.nodes, s.podsPerNode), func(b *testing.B) {
+				pods := createPods(s.nodes, s.podsPerNode)
+				b.ResetTimer()
+				for i := 0; i < b.N; i++ {
+					cache := newReservationCache(nil)
+					addAllPods(cache, pods)
+				}
+			})
+		}
+	})
+
+	// Benchmark: Delete operation
+	b.Run("Delete", func(b *testing.B) {
+		for _, s := range scales {
+			b.Run(fmt.Sprintf("nodes_%d_podsPerNode_%d", s.nodes, s.podsPerNode), func(b *testing.B) {
+				pods := createPods(s.nodes, s.podsPerNode)
+				b.ResetTimer()
+				for i := 0; i < b.N; i++ {
+					b.StopTimer()
+					cache := newReservationCache(nil)
+					addAllPods(cache, pods)
+					b.StartTimer()
+
+					for n, nodePods := range pods {
+						nodeName := fmt.Sprintf("node-%d", n)
+						for _, pod := range nodePods {
+							cache.deletePreAllocatableCandidateOnNode(nodeName, pod.UID)
+						}
+					}
+				}
+			})
+		}
+	})
+
+	// Benchmark: UpdatePriority operation
+	b.Run("UpdatePriority", func(b *testing.B) {
+		for _, s := range scales {
+			b.Run(fmt.Sprintf("nodes_%d_podsPerNode_%d", s.nodes, s.podsPerNode), func(b *testing.B) {
+				pods := createPods(s.nodes, s.podsPerNode)
+				b.ResetTimer()
+				for i := 0; i < b.N; i++ {
+					b.StopTimer()
+					cache := newReservationCache(nil)
+					addAllPods(cache, pods)
+					b.StartTimer()
+
+					for _, nodePods := range pods {
+						for j, pod := range nodePods {
+							pod.Annotations[apiext.AnnotationPodPreAllocatablePriority] = fmt.Sprintf("%d", (j+500)%1000)
+							cache.updatePreAllocatableCandidatePriority(pod)
+						}
+					}
+				}
+			})
+		}
+	})
+
+	// Benchmark: GetAll operation
+	b.Run("GetAll", func(b *testing.B) {
+		for _, s := range scales {
+			b.Run(fmt.Sprintf("nodes_%d_podsPerNode_%d", s.nodes, s.podsPerNode), func(b *testing.B) {
+				pods := createPods(s.nodes, s.podsPerNode)
+				cache := newReservationCache(nil)
+				addAllPods(cache, pods)
+
+				b.ResetTimer()
+				for i := 0; i < b.N; i++ {
+					_ = cache.getAllPreAllocatableCandidates()
+				}
+			})
+		}
+	})
 }
