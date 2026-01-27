@@ -30,6 +30,28 @@ import (
 func ValidateMigrationControllerArgs(path *field.Path, args *deschedulerconfig.MigrationControllerArgs) error {
 	var allErrs field.ErrorList
 
+	validSkipEvictionGates := map[deschedulerconfig.EvictionGate]struct{}{
+		deschedulerconfig.EvictionGateMaxUnavailablePerWorkload: {},
+		deschedulerconfig.EvictionGateMaxMigratingPerWorkload:   {},
+		deschedulerconfig.EvictionGateMaxMigratingPerNode:       {},
+		deschedulerconfig.EvictionGateMaxMigratingPerNamespace:  {},
+		deschedulerconfig.EvictionGateMaxMigratingGlobally:      {},
+		deschedulerconfig.EvictionGateExpectedReplicas:          {},
+		deschedulerconfig.EvictionGatePVC:                       {},
+		deschedulerconfig.EvictionGateBarePods:                  {},
+		deschedulerconfig.EvictionGateLocalStorage:              {},
+		deschedulerconfig.EvictionGateSystemCritical:            {},
+		deschedulerconfig.EvictionGatePriorityThreshold:         {},
+		deschedulerconfig.EvictionGateLabelSelector:             {},
+		deschedulerconfig.EvictionGateNamespaces:                {},
+		deschedulerconfig.EvictionGateNodeFit:                   {},
+	}
+	for i, g := range args.SkipEvictionGates {
+		if _, ok := validSkipEvictionGates[g]; !ok {
+			allErrs = append(allErrs, field.Invalid(path.Child("skipEvictionGates").Index(i), g, "unknown eviction gate"))
+		}
+	}
+
 	if args.MaxMigratingGlobally != nil && *args.MaxMigratingGlobally < 0 {
 		allErrs = append(allErrs, field.Invalid(path.Child("maxMigratingGlobally"), *args.MaxMigratingGlobally, "maxMigratingGlobally should be greater or equal 0"))
 	}

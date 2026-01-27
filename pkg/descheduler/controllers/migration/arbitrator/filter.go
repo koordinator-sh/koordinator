@@ -56,11 +56,31 @@ type filter struct {
 	retryablePodFilter    framework.FilterFunc
 	defaultFilterPlugin   framework.FilterPlugin
 
-	args             *deschedulerconfig.MigrationControllerArgs
-	controllerFinder controllerfinder.Interface
+	args              *deschedulerconfig.MigrationControllerArgs
+	controllerFinder  controllerfinder.Interface
+	skipEvictionGates map[deschedulerconfig.EvictionGate]struct{}
 
 	arbitratedPodMigrationJobs map[types.UID]bool
 	arbitratedMapLock          sync.Mutex
+}
+
+func newEvictionGateSet(gates []deschedulerconfig.EvictionGate) map[deschedulerconfig.EvictionGate]struct{} {
+	if len(gates) == 0 {
+		return nil
+	}
+	m := make(map[deschedulerconfig.EvictionGate]struct{}, len(gates))
+	for _, g := range gates {
+		m[g] = struct{}{}
+	}
+	return m
+}
+
+func (f *filter) isEvictionGateSkipped(gate deschedulerconfig.EvictionGate) bool {
+	if f == nil || f.skipEvictionGates == nil {
+		return false
+	}
+	_, ok := f.skipEvictionGates[gate]
+	return ok
 }
 
 func newFilter(args *deschedulerconfig.MigrationControllerArgs, handle framework.Handle) (*filter, error) {
@@ -74,6 +94,7 @@ func newFilter(args *deschedulerconfig.MigrationControllerArgs, handle framework
 		controllerFinder:           controllerFinder,
 		clock:                      clock.RealClock{},
 		arbitratedPodMigrationJobs: map[types.UID]bool{},
+		skipEvictionGates:          newEvictionGateSet(args.SkipEvictionGates),
 	}
 	if err := f.initFilters(args, handle); err != nil {
 		return nil, err
@@ -82,22 +103,60 @@ func newFilter(args *deschedulerconfig.MigrationControllerArgs, handle framework
 }
 
 func (f *filter) initFilters(args *deschedulerconfig.MigrationControllerArgs, handle framework.Handle) error {
-	defaultEvictorArgs := &defaultevictor.DefaultEvictorArgs{
-		NodeFit:                 args.NodeFit,
-		NodeSelector:            args.NodeSelector,
-		EvictLocalStoragePods:   args.EvictLocalStoragePods,
-		EvictSystemCriticalPods: args.EvictSystemCriticalPods,
-		IgnorePvcPods:           args.IgnorePvcPods,
-		EvictFailedBarePods:     args.EvictFailedBarePods,
-		LabelSelector:           args.LabelSelector,
+	// Derive effective configuration based on SkipEvictionGates (Skip has the highest priority).
+	nodeFit := args.NodeFit
+	if f.isEvictionGateSkipped(deschedulerconfig.EvictionGateNodeFit) {
+		nodeFit = false
 	}
+
+	labelSelector := args.LabelSelector
+	if f.isEvictionGateSkipped(deschedulerconfig.EvictionGateLabelSelector) {
+		labelSelector = nil
+	}
+
 	var priority *int32
-	if args.PriorityThreshold != nil {
-		defaultEvictorArgs.PriorityThreshold = &k8sdeschedulerapi.PriorityThreshold{
+	var priorityThreshold *k8sdeschedulerapi.PriorityThreshold
+	if !f.isEvictionGateSkipped(deschedulerconfig.EvictionGatePriorityThreshold) && args.PriorityThreshold != nil {
+		priorityThreshold = &k8sdeschedulerapi.PriorityThreshold{
 			Name:  args.PriorityThreshold.Name,
 			Value: args.PriorityThreshold.Value,
 		}
 		priority = args.PriorityThreshold.Value
+	}
+
+	evictLocalStoragePods := args.EvictLocalStoragePods
+	if f.isEvictionGateSkipped(deschedulerconfig.EvictionGateLocalStorage) {
+		evictLocalStoragePods = true
+	}
+
+	evictSystemCriticalPods := args.EvictSystemCriticalPods
+	if f.isEvictionGateSkipped(deschedulerconfig.EvictionGateSystemCritical) {
+		evictSystemCriticalPods = true
+	}
+
+	ignorePvcPods := args.IgnorePvcPods
+	if f.isEvictionGateSkipped(deschedulerconfig.EvictionGatePVC) {
+		ignorePvcPods = false
+	}
+
+	evictFailedBarePods := args.EvictFailedBarePods
+	evictAllBarePods := args.EvictAllBarePods
+	if f.isEvictionGateSkipped(deschedulerconfig.EvictionGateBarePods) {
+		// NOTE: DefaultEvictorArgs (used by PreEvictionFilter) only supports EvictFailedBarePods.
+		// We still bypass bare-pod ownerRef constraints in our main filter via evictAllBarePods=true.
+		evictFailedBarePods = true
+		evictAllBarePods = true
+	}
+
+	defaultEvictorArgs := &defaultevictor.DefaultEvictorArgs{
+		NodeFit:                 nodeFit,
+		NodeSelector:            args.NodeSelector,
+		EvictLocalStoragePods:   evictLocalStoragePods,
+		EvictSystemCriticalPods: evictSystemCriticalPods,
+		IgnorePvcPods:           ignorePvcPods,
+		EvictFailedBarePods:     evictFailedBarePods,
+		LabelSelector:           labelSelector,
+		PriorityThreshold:       priorityThreshold,
 	}
 	defaultEvictor, err := defaultevictor.New(defaultEvictorArgs, handle)
 	if err != nil {
@@ -105,7 +164,7 @@ func (f *filter) initFilters(args *deschedulerconfig.MigrationControllerArgs, ha
 	}
 
 	var includedNamespaces, excludedNamespaces sets.String
-	if args.Namespaces != nil {
+	if args.Namespaces != nil && !f.isEvictionGateSkipped(deschedulerconfig.EvictionGateNamespaces) {
 		includedNamespaces = sets.NewString(args.Namespaces.Include...)
 		excludedNamespaces = sets.NewString(args.Namespaces.Exclude...)
 	}
@@ -116,17 +175,16 @@ func (f *filter) initFilters(args *deschedulerconfig.MigrationControllerArgs, ha
 		}
 		return nodes, nil
 	}
-	filterPlugin, err := evictionsutil.NewEvictorFilter(nodeGetter, handle.GetPodsAssignedToNodeFunc(), args.EvictLocalStoragePods,
-		args.EvictSystemCriticalPods, args.IgnorePvcPods, args.EvictFailedBarePods, args.EvictAllBarePods,
-		evictionsutil.WithLabelSelector(args.LabelSelector), evictionsutil.WithPriorityThreshold(priority))
+	filterPlugin, err := evictionsutil.NewEvictorFilter(nodeGetter, handle.GetPodsAssignedToNodeFunc(), evictLocalStoragePods,
+		evictSystemCriticalPods, ignorePvcPods, evictFailedBarePods, evictAllBarePods,
+		evictionsutil.WithLabelSelector(labelSelector), evictionsutil.WithPriorityThreshold(priority))
 	if err != nil {
 		return err
 	}
-	wrapFilterFuncs := podutil.WrapFilterFuncs(
-		util.FilterPodWithMaxEvictionCost,
-		filterPlugin.Filter,
-		f.filterExpectedReplicas,
-	)
+	wrapFilterFuncs := podutil.WrapFilterFuncs(util.FilterPodWithMaxEvictionCost, filterPlugin.Filter)
+	if !f.isEvictionGateSkipped(deschedulerconfig.EvictionGateExpectedReplicas) {
+		wrapFilterFuncs = podutil.WrapFilterFuncs(wrapFilterFuncs, f.filterExpectedReplicas)
+	}
 	podFilter, err := podutil.NewOptions().
 		WithFilter(wrapFilterFuncs).
 		WithNamespaces(includedNamespaces).
@@ -135,12 +193,22 @@ func (f *filter) initFilters(args *deschedulerconfig.MigrationControllerArgs, ha
 	if err != nil {
 		return err
 	}
-	retryablePodFilters := podutil.WrapFilterFuncs(
-		f.filterMaxMigratingGlobally,
-		f.filterMaxMigratingPerNode,
-		f.filterMaxMigratingPerNamespace,
-		f.filterMaxMigratingOrUnavailablePerWorkload,
-	)
+	var retryableFilterFuncs []framework.FilterFunc
+	if !f.isEvictionGateSkipped(deschedulerconfig.EvictionGateMaxMigratingGlobally) {
+		retryableFilterFuncs = append(retryableFilterFuncs, f.filterMaxMigratingGlobally)
+	}
+	if !f.isEvictionGateSkipped(deschedulerconfig.EvictionGateMaxMigratingPerNode) {
+		retryableFilterFuncs = append(retryableFilterFuncs, f.filterMaxMigratingPerNode)
+	}
+	if !f.isEvictionGateSkipped(deschedulerconfig.EvictionGateMaxMigratingPerNamespace) {
+		retryableFilterFuncs = append(retryableFilterFuncs, f.filterMaxMigratingPerNamespace)
+	}
+	if !f.isEvictionGateSkipped(deschedulerconfig.EvictionGateMaxMigratingPerWorkload) ||
+		!f.isEvictionGateSkipped(deschedulerconfig.EvictionGateMaxUnavailablePerWorkload) {
+		retryableFilterFuncs = append(retryableFilterFuncs, f.filterMaxMigratingOrUnavailablePerWorkload)
+	}
+
+	retryablePodFilters := podutil.WrapFilterFuncs(retryableFilterFuncs...)
 	f.retryablePodFilter = func(pod *corev1.Pod) bool {
 		return evictionsutil.HaveEvictAnnotation(pod) || retryablePodFilters(pod)
 	}
@@ -226,6 +294,9 @@ func (f *filter) existingPodMigrationJob(pod *corev1.Pod, expectedPhaseContexts 
 }
 
 func (f *filter) filterMaxMigratingGlobally(pod *corev1.Pod) bool {
+	if f.isEvictionGateSkipped(deschedulerconfig.EvictionGateMaxMigratingGlobally) {
+		return true
+	}
 	if f.args.MaxMigratingGlobally == nil || *f.args.MaxMigratingGlobally <= 0 {
 		return true
 	}
@@ -257,6 +328,9 @@ func (f *filter) filterMaxMigratingGlobally(pod *corev1.Pod) bool {
 }
 
 func (f *filter) filterMaxMigratingPerNode(pod *corev1.Pod) bool {
+	if f.isEvictionGateSkipped(deschedulerconfig.EvictionGateMaxMigratingPerNode) {
+		return true
+	}
 	if pod.Spec.NodeName == "" || f.args.MaxMigratingPerNode == nil || *f.args.MaxMigratingPerNode <= 0 {
 		return true
 	}
@@ -299,6 +373,9 @@ func (f *filter) filterMaxMigratingPerNode(pod *corev1.Pod) bool {
 }
 
 func (f *filter) filterMaxMigratingPerNamespace(pod *corev1.Pod) bool {
+	if f.isEvictionGateSkipped(deschedulerconfig.EvictionGateMaxMigratingPerNamespace) {
+		return true
+	}
 	if f.args.MaxMigratingPerNamespace == nil || *f.args.MaxMigratingPerNamespace <= 0 {
 		return true
 	}
@@ -330,6 +407,12 @@ func (f *filter) filterMaxMigratingPerNamespace(pod *corev1.Pod) bool {
 }
 
 func (f *filter) filterMaxMigratingOrUnavailablePerWorkload(pod *corev1.Pod) bool {
+	skipMaxMigratingPerWorkload := f.isEvictionGateSkipped(deschedulerconfig.EvictionGateMaxMigratingPerWorkload)
+	skipMaxUnavailablePerWorkload := f.isEvictionGateSkipped(deschedulerconfig.EvictionGateMaxUnavailablePerWorkload)
+	if skipMaxMigratingPerWorkload && skipMaxUnavailablePerWorkload {
+		return true
+	}
+
 	ownerRef := metav1.GetControllerOf(pod)
 	if ownerRef == nil {
 		return true
@@ -339,13 +422,19 @@ func (f *filter) filterMaxMigratingOrUnavailablePerWorkload(pod *corev1.Pod) boo
 		return false
 	}
 
-	maxMigrating, err := util.GetMaxMigrating(int(expectedReplicas), f.args.MaxMigratingPerWorkload)
-	if err != nil {
-		return false
+	maxMigrating := 0
+	if !skipMaxMigratingPerWorkload {
+		maxMigrating, err = util.GetMaxMigrating(int(expectedReplicas), f.args.MaxMigratingPerWorkload)
+		if err != nil {
+			return false
+		}
 	}
-	maxUnavailable, err := util.GetMaxUnavailable(int(expectedReplicas), f.args.MaxUnavailablePerWorkload)
-	if err != nil {
-		return false
+	maxUnavailable := 0
+	if !skipMaxUnavailablePerWorkload {
+		maxUnavailable, err = util.GetMaxUnavailable(int(expectedReplicas), f.args.MaxUnavailablePerWorkload)
+		if err != nil {
+			return false
+		}
 	}
 
 	var expectedPhaseContext []phaseContext
@@ -380,7 +469,7 @@ func (f *filter) filterMaxMigratingOrUnavailablePerWorkload(pod *corev1.Pod) boo
 		return true
 	}, expectedPhaseContext...)
 
-	if len(migratingPods) > 0 {
+	if !skipMaxMigratingPerWorkload && len(migratingPods) > 0 {
 		exceeded := len(migratingPods) >= maxMigrating
 		if exceeded {
 			klog.V(4).InfoS("Pod fails the following checks", "pod", klog.KObj(pod),
@@ -390,6 +479,9 @@ func (f *filter) filterMaxMigratingOrUnavailablePerWorkload(pod *corev1.Pod) boo
 		}
 	}
 
+	if skipMaxUnavailablePerWorkload {
+		return true
+	}
 	unavailablePods := f.getUnavailablePods(pods)
 	mergeUnavailableAndMigratingPods(unavailablePods, migratingPods)
 	exceeded := len(unavailablePods) >= maxUnavailable
@@ -402,6 +494,9 @@ func (f *filter) filterMaxMigratingOrUnavailablePerWorkload(pod *corev1.Pod) boo
 }
 
 func (f *filter) filterExpectedReplicas(pod *corev1.Pod) bool {
+	if f.isEvictionGateSkipped(deschedulerconfig.EvictionGateExpectedReplicas) {
+		return true
+	}
 	ownerRef := metav1.GetControllerOf(pod)
 	if ownerRef == nil {
 		return true
