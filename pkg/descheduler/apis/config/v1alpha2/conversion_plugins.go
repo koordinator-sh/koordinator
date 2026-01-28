@@ -47,3 +47,10 @@ func Convert_v1alpha2_LowNodeLoadArgs_To_config_LowNodeLoadArgs(in *LowNodeLoadA
 	out.AnomalyCondition = nil
 	return nil
 }
+
+func Convert_v1alpha2_CustomPriorityArgs_To_config_CustomPriorityArgs(in *CustomPriorityArgs, out *config.CustomPriorityArgs, s conversion.Scope) error {
+	if err := autoConvert_v1alpha2_CustomPriorityArgs_To_config_CustomPriorityArgs(in, out, s); err != nil {
+		return err
+	}
+	return nil
+}
