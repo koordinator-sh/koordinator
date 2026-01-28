@@ -18,7 +18,6 @@ package frameworkext
 
 import (
 	"fmt"
-	"sort"
 	"strconv"
 	"sync"
 
@@ -135,13 +134,13 @@ type Diagnosis struct {
 
 type ScheduleDiagnosis struct {
 	SchedulingMode SchedulingMode `json:"-"`
-	// use this when PodSchedulingMode
-	AlreadyWaitForBound int `json:"alreadyWaitForBound"`
-	// use this when JobSchedulingMode
-	NodeOfferSlot   map[string]int            `json:"nodeOfferSlot,omitempty"`
-	NodeToStatusMap framework.NodeToStatusMap `json:"-"`
+	// AlreadyWaitForBoundPods and AlreadyWaitForBound only meaningful when PodSchedulingMode
+	AlreadyWaitForBoundPods []*corev1.Pod             `json:"-"`
+	AlreadyWaitForBound     int                       `json:"alreadyWaitForBound"`
+	NodeOfferSlot           map[string]int            `json:"nodeOfferSlot,omitempty"`
+	NodeToStatusMap         framework.NodeToStatusMap `json:"-"`
 	// NodeFailedDetails
-	NodeFailedDetails []v1alpha1.NodeFailedDetail `json:"nodeFailedDetails,omitempty"`
+	NodeFailedDetails v1alpha1.NodeFailedDetails `json:"nodeFailedDetails,omitempty"`
 }
 
 type SchedulingMode string
@@ -186,41 +185,59 @@ func (dq *DiagnosisQueue) worker() {
 func (dq *DiagnosisQueue) processDiagnosis(diagnosis *Diagnosis) string {
 	// Process NodeFailedDetails if empty
 	if len(diagnosis.ScheduleDiagnosis.NodeFailedDetails) == 0 {
-		scheduleFailedDetails := make([]v1alpha1.NodeFailedDetail, 0, len(diagnosis.ScheduleDiagnosis.NodeToStatusMap))
-		for s, status := range diagnosis.ScheduleDiagnosis.NodeToStatusMap {
-			scheduleFailedDetails = append(scheduleFailedDetails, v1alpha1.NodeFailedDetail{
-				NodeName:         s,
-				FailedPlugin:     status.FailedPlugin(),
-				Reason:           status.Message(),
-				NominatedPods:    nil,
-				PreemptMightHelp: status.Code() != framework.UnschedulableAndUnresolvable,
-			})
+		diagnosis.ScheduleDiagnosis.NodeFailedDetails = convertStatusMapToFailedDetail(diagnosis.ScheduleDiagnosis.NodeToStatusMap)
+	}
+
+	if diagnosis.ScheduleDiagnosis.SchedulingMode == PodSchedulingMode {
+		if len(diagnosis.ScheduleDiagnosis.AlreadyWaitForBoundPods) > 0 {
+			diagnosis.ScheduleDiagnosis.NodeOfferSlot = make(map[string]int, len(diagnosis.ScheduleDiagnosis.AlreadyWaitForBoundPods))
+			for _, pod := range diagnosis.ScheduleDiagnosis.AlreadyWaitForBoundPods {
+				diagnosis.ScheduleDiagnosis.NodeOfferSlot[pod.Spec.NodeName] = diagnosis.ScheduleDiagnosis.NodeOfferSlot[pod.Spec.NodeName] + 1
+			}
 		}
-		sort.Slice(scheduleFailedDetails, func(i, j int) bool { return scheduleFailedDetails[i].NodeName < scheduleFailedDetails[j].NodeName })
-		diagnosis.ScheduleDiagnosis.NodeFailedDetails = scheduleFailedDetails
 	}
 
 	if diagnosis.PreemptionDiagnosis != nil &&
 		diagnosis.PreemptionDiagnosis.DryRunFilterDiagnosis != nil &&
 		len(diagnosis.PreemptionDiagnosis.DryRunFilterDiagnosis.NodeFailedDetails) == 0 {
-		dryRunFilterFailedDetails := make([]v1alpha1.NodeFailedDetail, 0, len(diagnosis.PreemptionDiagnosis.DryRunFilterDiagnosis.NodeToStatusMap))
-		for node, status := range diagnosis.PreemptionDiagnosis.DryRunFilterDiagnosis.NodeToStatusMap {
-			nodeFailedDetail := v1alpha1.NodeFailedDetail{
-				NodeName:     node,
-				FailedPlugin: status.FailedPlugin(),
-				Reason:       status.Message(),
+		diagnosis.PreemptionDiagnosis.DryRunFilterDiagnosis.NodeFailedDetails = convertStatusMapToFailedDetail(diagnosis.PreemptionDiagnosis.DryRunFilterDiagnosis.NodeToStatusMap)
+	}
+
+	if diagnosis.PreemptionDiagnosis.DryRunFilterDiagnosis.SchedulingMode == PodSchedulingMode {
+		if len(diagnosis.PreemptionDiagnosis.DryRunFilterDiagnosis.AlreadyWaitForBoundPods) > 0 {
+			diagnosis.PreemptionDiagnosis.DryRunFilterDiagnosis.NodeOfferSlot = make(map[string]int, len(diagnosis.PreemptionDiagnosis.DryRunFilterDiagnosis.AlreadyWaitForBoundPods))
+			for _, pod := range diagnosis.PreemptionDiagnosis.DryRunFilterDiagnosis.AlreadyWaitForBoundPods {
+				diagnosis.PreemptionDiagnosis.DryRunFilterDiagnosis.NodeOfferSlot[pod.Spec.NodeName] = diagnosis.PreemptionDiagnosis.DryRunFilterDiagnosis.NodeOfferSlot[pod.Spec.NodeName] + 1
 			}
-			dryRunFilterFailedDetails = append(dryRunFilterFailedDetails, nodeFailedDetail)
 		}
-		sort.Slice(dryRunFilterFailedDetails, func(i, j int) bool {
-			return dryRunFilterFailedDetails[i].NodeName < dryRunFilterFailedDetails[j].NodeName
-		})
-		diagnosis.PreemptionDiagnosis.DryRunFilterDiagnosis.NodeFailedDetails = dryRunFilterFailedDetails
 	}
 
 	dumpMessage := util.DumpJSON(diagnosis)
 	klog.Infof("dump diagnosis for %s, targetPod: %s/%s/%s: $%s", diagnosis.QuestionedKey, diagnosis.TargetPod.Namespace, diagnosis.TargetPod.Name, diagnosis.TargetPod.UID, dumpMessage)
 	return dumpMessage
+}
+
+func convertStatusMapToFailedDetail(statusMap framework.NodeToStatusMap) v1alpha1.NodeFailedDetails {
+	statusToNodeFailedDetails := map[v1alpha1.NodeFailedStatus]*v1alpha1.NodeFailedDetail{}
+	for s, status := range statusMap {
+		failedStatus := v1alpha1.NodeFailedStatus{
+			Reason:           status.Message(),
+			FailedPlugin:     status.FailedPlugin(),
+			PreemptMightHelp: status.Code() != framework.UnschedulableAndUnresolvable,
+		}
+		failedDetail, ok := statusToNodeFailedDetails[failedStatus]
+		if !ok {
+			failedDetail = &v1alpha1.NodeFailedDetail{NodeFailedStatus: failedStatus}
+			statusToNodeFailedDetails[failedStatus] = failedDetail
+		}
+		failedDetail.FailedNodes = append(failedDetail.FailedNodes, s)
+	}
+	var failedDetails v1alpha1.NodeFailedDetails
+	for _, detail := range statusToNodeFailedDetails {
+		failedDetails = append(failedDetails, detail)
+	}
+	extension.SortNodeFailedDetails(failedDetails)
+	return failedDetails
 }
 
 // Enqueue adds a diagnosis to the queue for asynchronous processing
