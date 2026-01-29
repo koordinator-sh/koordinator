@@ -23,20 +23,21 @@ import (
 
 type ScheduleExplanationSpec struct {
 	/*
-		QuestionObjectKey is the key of the QuestionObject. For pod, it is namespace/name; for job, it is namespace/jobName.
+		QuestionObjectKey is the key of the QuestionObject.
+		For pod, it is namespace/name; for job, it is namespace/jobName; for pod with gangGroupAnnotation, it is gangGroupIDs.
 	*/
 	QuestionObjectKey string `json:"questionObjectKey,omitempty"`
 
-	/*
-		QuestionObjectReference is the object that needs to be questioned. Currently, Reservation and Pod is supported.
-		To query the PodGroup or GangGroup, you can simply pass any of its member Pod here
-	*/
-	QuestionObjectReference *corev1.ObjectReference `json:"questionObjectReference,omitempty"`
-
-	// QuestionObjectTemplate defines the questioned pod template.
+	// QuestionObjectTemplate defines the questioned pod template. Now it is unsupported
 	// +kubebuilder:pruning:PreserveUnknownFields
 	// +kubebuilder:validation:Schemaless
 	QuestionObjectTemplate *corev1.PodTemplateSpec `json:"questionObjectTemplate,omitempty"`
+
+	// Time-to-Live period for the explanation CR.
+	// Defaults to 24h. Set 0 to disable expiration.
+	// +kubebuilder:default="24h"
+	// +optional
+	TTL *metav1.Duration `json:"ttl,omitempty" protobuf:"bytes,3,opt,name=ttl"`
 }
 
 type ScheduleExplanationStatus struct {
@@ -82,7 +83,7 @@ type NodeLevelExplanations struct {
 	FeasibleSchedulingResult []SchedulingResult `json:"feasibleSchedulingResult,omitempty"`
 
 	// NodeFailedDetails If the QuestionObject cannot be scheduled, provide the reason for each node.
-	NodeFailedDetails []NodeFailedDetail `json:"nodeFailedDetails,omitempty"`
+	NodeFailedDetails NodeFailedDetails `json:"nodeFailedDetails,omitempty"`
 }
 
 type NamespacedName struct {
@@ -96,12 +97,17 @@ type SchedulingResult struct {
 	NodeName       string `json:"nodeName,omitempty"`
 }
 
+type NodeFailedDetails []*NodeFailedDetail
+
 type NodeFailedDetail struct {
-	NodeName         string           `json:"nodeName,omitempty"`
-	FailedPlugin     string           `json:"failedPlugin,omitempty"`
-	Reason           string           `json:"reason,omitempty"`
-	NominatedPods    []NamespacedName `json:"nominatedPods,omitempty"`
-	PreemptMightHelp bool             `json:"preemptMightHelp,omitempty"`
+	NodeFailedStatus `json:",inline"`
+	FailedNodes      []string `json:"failedNodes,omitempty"`
+}
+
+type NodeFailedStatus struct {
+	FailedPlugin     string `json:"failedPlugin,omitempty"`
+	Reason           string `json:"reason,omitempty"`
+	PreemptMightHelp bool   `json:"preemptMightHelp,omitempty"`
 }
 
 type NodePossibleVictim struct {

@@ -17,7 +17,11 @@ limitations under the License.
 package extension
 
 import (
+	"sort"
+
 	corev1 "k8s.io/api/core/v1"
+
+	"github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 )
 
 const (
@@ -34,4 +38,22 @@ const (
 
 func GetTopologyKeyToExplain(pod *corev1.Pod) string {
 	return pod.Labels[LabelTopologyKeyToExplain]
+}
+
+func SortNodeFailedDetails(nodeFailedDetails v1alpha1.NodeFailedDetails) {
+	sort.Slice(nodeFailedDetails, func(i, j int) bool {
+		if nodeFailedDetails[i].FailedPlugin != nodeFailedDetails[j].FailedPlugin {
+			return nodeFailedDetails[i].FailedPlugin < nodeFailedDetails[j].FailedPlugin
+		}
+		if nodeFailedDetails[i].Reason != nodeFailedDetails[j].Reason {
+			return nodeFailedDetails[i].Reason < nodeFailedDetails[j].Reason
+		}
+		return nodeFailedDetails[i].PreemptMightHelp
+	})
+	for i := range nodeFailedDetails {
+		failedDetail := nodeFailedDetails[i]
+		sort.Slice(failedDetail.FailedNodes, func(i, j int) bool {
+			return failedDetail.FailedNodes[i] < failedDetail.FailedNodes[j]
+		})
+	}
 }
