@@ -184,40 +184,43 @@ func (dq *DiagnosisQueue) worker() {
 // processDiagnosis handles the actual logging of diagnosis information
 func (dq *DiagnosisQueue) processDiagnosis(diagnosis *Diagnosis) string {
 	// Process NodeFailedDetails if empty
-	if len(diagnosis.ScheduleDiagnosis.NodeFailedDetails) == 0 {
-		diagnosis.ScheduleDiagnosis.NodeFailedDetails = convertStatusMapToFailedDetail(diagnosis.ScheduleDiagnosis.NodeToStatusMap)
-	}
+	if diagnosis.ScheduleDiagnosis != nil {
+		if len(diagnosis.ScheduleDiagnosis.NodeFailedDetails) == 0 {
+			diagnosis.ScheduleDiagnosis.NodeFailedDetails = convertStatusMapToFailedDetail(diagnosis.ScheduleDiagnosis.NodeToStatusMap)
+		}
 
-	if diagnosis.ScheduleDiagnosis.SchedulingMode == PodSchedulingMode {
-		if len(diagnosis.ScheduleDiagnosis.AlreadyWaitForBoundPods) > 0 {
-			diagnosis.ScheduleDiagnosis.NodeOfferSlot = make(map[string]int, len(diagnosis.ScheduleDiagnosis.AlreadyWaitForBoundPods))
-			for _, pod := range diagnosis.ScheduleDiagnosis.AlreadyWaitForBoundPods {
-				diagnosis.ScheduleDiagnosis.NodeOfferSlot[pod.Spec.NodeName] = diagnosis.ScheduleDiagnosis.NodeOfferSlot[pod.Spec.NodeName] + 1
+		if diagnosis.ScheduleDiagnosis.SchedulingMode == PodSchedulingMode {
+			if len(diagnosis.ScheduleDiagnosis.AlreadyWaitForBoundPods) > 0 {
+				diagnosis.ScheduleDiagnosis.NodeOfferSlot = make(map[string]int, len(diagnosis.ScheduleDiagnosis.AlreadyWaitForBoundPods))
+				for _, pod := range diagnosis.ScheduleDiagnosis.AlreadyWaitForBoundPods {
+					diagnosis.ScheduleDiagnosis.NodeOfferSlot[pod.Spec.NodeName] = diagnosis.ScheduleDiagnosis.NodeOfferSlot[pod.Spec.NodeName] + 1
+				}
 			}
 		}
 	}
 
-	if diagnosis.PreemptionDiagnosis != nil &&
-		diagnosis.PreemptionDiagnosis.DryRunFilterDiagnosis != nil &&
-		len(diagnosis.PreemptionDiagnosis.DryRunFilterDiagnosis.NodeFailedDetails) == 0 {
-		diagnosis.PreemptionDiagnosis.DryRunFilterDiagnosis.NodeFailedDetails = convertStatusMapToFailedDetail(diagnosis.PreemptionDiagnosis.DryRunFilterDiagnosis.NodeToStatusMap)
-	}
-
-	if diagnosis.PreemptionDiagnosis.DryRunFilterDiagnosis.SchedulingMode == PodSchedulingMode {
-		if len(diagnosis.PreemptionDiagnosis.DryRunFilterDiagnosis.AlreadyWaitForBoundPods) > 0 {
-			diagnosis.PreemptionDiagnosis.DryRunFilterDiagnosis.NodeOfferSlot = make(map[string]int, len(diagnosis.PreemptionDiagnosis.DryRunFilterDiagnosis.AlreadyWaitForBoundPods))
-			for _, pod := range diagnosis.PreemptionDiagnosis.DryRunFilterDiagnosis.AlreadyWaitForBoundPods {
-				diagnosis.PreemptionDiagnosis.DryRunFilterDiagnosis.NodeOfferSlot[pod.Spec.NodeName] = diagnosis.PreemptionDiagnosis.DryRunFilterDiagnosis.NodeOfferSlot[pod.Spec.NodeName] + 1
+	if diagnosis.PreemptionDiagnosis != nil && diagnosis.PreemptionDiagnosis.DryRunFilterDiagnosis != nil {
+		if len(diagnosis.PreemptionDiagnosis.DryRunFilterDiagnosis.NodeFailedDetails) == 0 {
+			diagnosis.PreemptionDiagnosis.DryRunFilterDiagnosis.NodeFailedDetails = convertStatusMapToFailedDetail(diagnosis.PreemptionDiagnosis.DryRunFilterDiagnosis.NodeToStatusMap)
+		}
+		if diagnosis.PreemptionDiagnosis.DryRunFilterDiagnosis.SchedulingMode == PodSchedulingMode {
+			if len(diagnosis.PreemptionDiagnosis.DryRunFilterDiagnosis.AlreadyWaitForBoundPods) > 0 {
+				diagnosis.PreemptionDiagnosis.DryRunFilterDiagnosis.NodeOfferSlot = make(map[string]int, len(diagnosis.PreemptionDiagnosis.DryRunFilterDiagnosis.AlreadyWaitForBoundPods))
+				for _, pod := range diagnosis.PreemptionDiagnosis.DryRunFilterDiagnosis.AlreadyWaitForBoundPods {
+					diagnosis.PreemptionDiagnosis.DryRunFilterDiagnosis.NodeOfferSlot[pod.Spec.NodeName] = diagnosis.PreemptionDiagnosis.DryRunFilterDiagnosis.NodeOfferSlot[pod.Spec.NodeName] + 1
+				}
 			}
 		}
 	}
-
 	dumpMessage := util.DumpJSON(diagnosis)
 	klog.Infof("dump diagnosis for %s, targetPod: %s/%s/%s: $%s", diagnosis.QuestionedKey, diagnosis.TargetPod.Namespace, diagnosis.TargetPod.Name, diagnosis.TargetPod.UID, dumpMessage)
 	return dumpMessage
 }
 
 func convertStatusMapToFailedDetail(statusMap framework.NodeToStatusMap) v1alpha1.NodeFailedDetails {
+	if len(statusMap) == 0 {
+		return nil
+	}
 	statusToNodeFailedDetails := map[v1alpha1.NodeFailedStatus]*v1alpha1.NodeFailedDetail{}
 	for s, status := range statusMap {
 		failedStatus := v1alpha1.NodeFailedStatus{
