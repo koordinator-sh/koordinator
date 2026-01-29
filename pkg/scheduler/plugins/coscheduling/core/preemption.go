@@ -128,7 +128,6 @@ type JobPreemptionState struct {
 
 	PossibleVictims         []v1alpha1.NodePossibleVictim `json:"possibleVictims,omitempty"`
 	UnschedulablePodsNumber int                           `json:"unschedulablePodsNumber,omitempty"`
-	NodeFailedDetail        []v1alpha1.NodeFailedDetail   `json:"nodeFailedDetail,omitempty"`
 	SelectVictimError       string                        `json:"selectVictimError,omitempty"`
 	Victims                 []v1alpha1.NodePossibleVictim `json:"victims,omitempty"`
 }

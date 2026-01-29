@@ -58,15 +58,31 @@ func TestDumpDiagnosis(t *testing.T) {
 				diagnosis.PreFilterMessage = "preFilterMessage"
 				diagnosis.TopologyKeyToExplain = "topologyKeyToExplain"
 				diagnosis.ScheduleDiagnosis = &ScheduleDiagnosis{}
-				diagnosis.ScheduleDiagnosis.NodeOfferSlot = map[string]int{
-					"node1": 1,
-					"node2": 2,
-				}
 				diagnosis.ScheduleDiagnosis.NodeToStatusMap = framework.NodeToStatusMap{
 					"node1": framework.NewStatus(framework.Success),
 					"node2": framework.NewStatus(framework.Unschedulable, "node2-reason"),
 				}
-				diagnosis.ScheduleDiagnosis.AlreadyWaitForBound = 1
+				diagnosis.ScheduleDiagnosis.AlreadyWaitForBound = 2
+				diagnosis.ScheduleDiagnosis.AlreadyWaitForBoundPods = []*corev1.Pod{
+					{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "test-pod-1",
+							Namespace: "default",
+						},
+						Spec: corev1.PodSpec{
+							NodeName: "node1",
+						},
+					},
+					{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "test-pod-2",
+							Namespace: "default",
+						},
+						Spec: corev1.PodSpec{
+							NodeName: "node2",
+						},
+					},
+				}
 				diagnosis.ScheduleDiagnosis.SchedulingMode = PodSchedulingMode
 				diagnosis.PreemptionDiagnosis = &PreemptionDiagnosis{
 					DryRunFilterDiagnosis: &ScheduleDiagnosis{
@@ -88,7 +104,7 @@ func TestDumpDiagnosis(t *testing.T) {
 					},
 				}
 			},
-			wantDumpMessage: `{"timestamp":null,"questionedKey":"default/test-pod","nominatedNode":"nominatedNode","preFilterMessage":"preFilterMessage","topologyKeyToExplain":"topologyKeyToExplain","isRootCausePod":true,"scheduleDiagnosis":{"alreadyWaitForBound":1,"nodeOfferSlot":{"node1":1,"node2":2},"nodeFailedDetails":[{"nodeName":"node1","preemptMightHelp":true},{"nodeName":"node2","reason":"node2-reason","preemptMightHelp":true}]},"preemptionDiagnosis":{"dryRunFilterDiagnosis":{"alreadyWaitForBound":0,"nodeOfferSlot":{"node1":1,"node2":2},"nodeFailedDetails":[{"nodeName":"node1"},{"nodeName":"node2","reason":"node2-reason"}]},"otherDiagnosis":{"TriggerPodKey":"default/test-pod","preemptorKey":"default/test-pod"}}}`,
+			wantDumpMessage: `{"timestamp":null,"questionedKey":"default/test-pod","nominatedNode":"nominatedNode","preFilterMessage":"preFilterMessage","topologyKeyToExplain":"topologyKeyToExplain","isRootCausePod":true,"scheduleDiagnosis":{"alreadyWaitForBound":2,"nodeOfferSlot":{"node1":1,"node2":1},"nodeFailedDetails":[{"preemptMightHelp":true,"failedNodes":["node1"]},{"reason":"node2-reason","preemptMightHelp":true,"failedNodes":["node2"]}]},"preemptionDiagnosis":{"dryRunFilterDiagnosis":{"alreadyWaitForBound":0,"nodeOfferSlot":{"node1":1,"node2":2},"nodeFailedDetails":[{"preemptMightHelp":true,"failedNodes":["node1"]},{"reason":"node2-reason","preemptMightHelp":true,"failedNodes":["node2"]}]},"otherDiagnosis":{"TriggerPodKey":"default/test-pod","preemptorKey":"default/test-pod"}}}`,
 		},
 	}
 	for _, tt := range tests {
@@ -156,7 +172,7 @@ func BenchmarkDumpDiagnosis(b *testing.B) {
 			diagnosis.ScheduleDiagnosis = &ScheduleDiagnosis{
 				NodeToStatusMap:   nodeToStatusMap,
 				NodeOfferSlot:     nodeOfferSlot,
-				NodeFailedDetails: make([]v1alpha1.NodeFailedDetail, 0), // Will be populated in DumpDiagnosis
+				NodeFailedDetails: v1alpha1.NodeFailedDetails{}, // Will be populated in DumpDiagnosis
 				SchedulingMode:    JobSchedulingMode,
 			}
 
@@ -189,7 +205,7 @@ func BenchmarkDumpDiagnosis(b *testing.B) {
 			diagnosis.ScheduleDiagnosis = &ScheduleDiagnosis{
 				NodeToStatusMap:   nodeToStatusMap,
 				NodeOfferSlot:     nodeOfferSlot,
-				NodeFailedDetails: make([]v1alpha1.NodeFailedDetail, 0), // Will be populated in DumpDiagnosis
+				NodeFailedDetails: v1alpha1.NodeFailedDetails{}, // Will be populated in DumpDiagnosis
 				SchedulingMode:    JobSchedulingMode,
 			}
 
@@ -247,7 +263,7 @@ func BenchmarkDumpDiagnosisWorkerCount(b *testing.B) {
 			ScheduleDiagnosis: &ScheduleDiagnosis{
 				NodeToStatusMap:   nodeToStatusMap,
 				NodeOfferSlot:     nodeOfferSlot,
-				NodeFailedDetails: make([]v1alpha1.NodeFailedDetail, 0),
+				NodeFailedDetails: v1alpha1.NodeFailedDetails{},
 				SchedulingMode:    JobSchedulingMode,
 			},
 		}

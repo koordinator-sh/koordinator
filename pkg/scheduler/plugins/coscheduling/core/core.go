@@ -400,6 +400,7 @@ func (pgMgr *PodGroupManager) summaryAndRecordFailedMessage(state *framework.Cyc
 	diagnosis := frameworkext.GetDiagnosis(state)
 	if diagnosis != nil && diagnosis.ScheduleDiagnosis != nil && diagnosis.ScheduleDiagnosis.SchedulingMode == frameworkext.PodSchedulingMode {
 		diagnosis.ScheduleDiagnosis.AlreadyWaitForBound = waitingPodsNum
+		diagnosis.ScheduleDiagnosis.AlreadyWaitForBoundPods = pgMgr.cache.getWaitingPods(gangSchedulingContext.gangGroup.UnsortedList())
 	}
 	message := fmt.Sprintf("GangGroup %q gets rejected due to member Pod %q is unschedulable with reason %q, alreadyWaitForBound: %d", gangSchedulingContext.gangGroupID, framework.GetNamespacedName(triggerPod.Namespace, triggerPod.Name), fitErr, waitingPodsNum)
 	gangSchedulingContext.failedMessage = message
