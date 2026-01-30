@@ -1447,6 +1447,22 @@ func TestBeforePreFilterForReservationPreAllocation(t *testing.T) {
 			NodeName: node.Name,
 		},
 	}
+	// Pod with matching labels but mismatched controller reference
+	// This tests the ownerMatcher.Match(candidatePod) condition in listPreAllocatableCandidates
+	testControllerUnmatchedPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			UID:       uuid.NewUUID(),
+			Name:      "test-controller-unmatched-pod",
+			Namespace: "test-ns",
+			Labels: map[string]string{
+				"test-reservation": "true",
+			},
+			// Pod has no OwnerReferences, so it won't match a Controller reference
+		},
+		Spec: corev1.PodSpec{
+			NodeName: node.Name,
+		},
+	}
 	testUnmatchedPod3 := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			UID:       uuid.NewUUID(),
@@ -1570,6 +1586,53 @@ func TestBeforePreFilterForReservationPreAllocation(t *testing.T) {
 		},
 	}
 	apiext.SetReservationAllocated(testAssignedPod, availableReservation)
+
+	// Reservation with Controller reference to test ownerMatcher.Match condition
+	testReservationWithController := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{
+			UID:  uuid.NewUUID(),
+			Name: "test-reservation-with-controller",
+			Labels: map[string]string{
+				"test-reservation": "true",
+			},
+		},
+		Spec: schedulingv1alpha1.ReservationSpec{
+			Owners: []schedulingv1alpha1.ReservationOwner{
+				{
+					LabelSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							"test-reservation": "true",
+						},
+					},
+					// Controller reference requires the pod to have matching OwnerReferences
+					Controller: &schedulingv1alpha1.ReservationControllerReference{
+						OwnerReference: metav1.OwnerReference{
+							Kind: "Deployment",
+							Name: "test-deployment",
+						},
+					},
+				},
+			},
+			Template: &corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					NodeName: node.Name,
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("8"),
+									corev1.ResourceMemory: resource.MustParse("16Gi"),
+								},
+							},
+						},
+					},
+				},
+			},
+			PreAllocation:  true,
+			AllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyRestricted,
+		},
+	}
+	testPodWithController := reservationutil.NewReservePod(testReservationWithController)
 
 	tests := []struct {
 		name               string
@@ -1758,6 +1821,37 @@ func TestBeforePreFilterForReservationPreAllocation(t *testing.T) {
 				},
 			},
 			wantPreAllocatable: 0,
+			wantRestored:       true,
+		},
+		{
+			// This test case tests the ownerMatcher.Match(candidatePod) condition in listPreAllocatableCandidates.
+			// testControllerUnmatchedPod has matching labels but no OwnerReferences,
+			// so it will be listed by podLister (matching LabelSelector) but filtered out by ownerMatcher.Match
+			// because it doesn't have the required Controller reference.
+			name:        "pod filtered by ownerMatcher.Match due to controller mismatch",
+			pod:         testPodWithController.DeepCopy(),
+			reservation: testReservationWithController.DeepCopy(),
+			assignPods: []*corev1.Pod{
+				testAssignedPod,
+				testControllerUnmatchedPod, // Has matching labels but no OwnerReferences
+				reservationutil.NewReservePod(testReservationWithController),
+			},
+			nodeAffinity: &corev1.NodeAffinity{
+				RequiredDuringSchedulingIgnoredDuringExecution: &corev1.NodeSelector{
+					NodeSelectorTerms: []corev1.NodeSelectorTerm{
+						{
+							MatchExpressions: []corev1.NodeSelectorRequirement{
+								{
+									Key:      "test",
+									Operator: corev1.NodeSelectorOpIn,
+									Values:   []string{"true"},
+								},
+							},
+						},
+					},
+				},
+			},
+			wantPreAllocatable: 0, // testControllerUnmatchedPod is filtered out by ownerMatcher.Match
 			wantRestored:       true,
 		},
 	}
