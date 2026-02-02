@@ -3,7 +3,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.14.0
+    controller-gen.kubebuilder.io/version: v0.20.0
   name: clustercolocationprofiles.config.koordinator.sh
 spec:
   group: config.koordinator.sh
@@ -60,7 +60,6 @@ spec:
                   Various Koordinator components determine the priority of the Pod
                   in the Koordinator through KoordinatorPriority and the priority value in PriorityClassName.
                   The higher the value, the higher the priority.
-                  TODO: remove this field, use Labels instead.
                 format: int32
                 type: integer
               labelKeysMapping:
