@@ -790,11 +790,58 @@ func TestBeforePreFilterWithReservationAffinity(t *testing.T) {
 	var pods []*corev1.Pod
 	pods = append(pods, reservationutil.NewReservePod(matchedReservation))
 
+	unschedulableReservation := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{
+			UID:  uuid.NewUUID(),
+			Name: "unschedulable-reservation",
+			Labels: map[string]string{
+				"reservation-b": "true",
+			},
+		},
+		Spec: schedulingv1alpha1.ReservationSpec{
+			Unschedulable: true,
+			Owners: []schedulingv1alpha1.ReservationOwner{
+				{
+					LabelSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							"test-reservation": "true",
+						},
+					},
+				},
+			},
+			Template: &corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("8"),
+									corev1.ResourceMemory: resource.MustParse("16Gi"),
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		Status: schedulingv1alpha1.ReservationStatus{
+			Phase:    schedulingv1alpha1.ReservationAvailable,
+			NodeName: node.Name,
+			Allocatable: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("8"),
+				corev1.ResourceMemory: resource.MustParse("16Gi"),
+			},
+		},
+	}
+	pods = append(pods, reservationutil.NewReservePod(unschedulableReservation))
+
 	tests := []struct {
-		name           string
-		rAffinity      *apiext.ReservationAffinity
-		exactMatchSpec *apiext.ExactMatchReservationSpec
-		wantRestored   bool
+		name                  string
+		rAffinity             *apiext.ReservationAffinity
+		exactMatchSpec        *apiext.ExactMatchReservationSpec
+		wantRestored          bool
+		useUnschedulable      bool
+		tolerateUnschedulable bool
 	}{
 		{
 			name:         "pod has no reservation affinity",
@@ -888,6 +935,48 @@ func TestBeforePreFilterWithReservationAffinity(t *testing.T) {
 			},
 			wantRestored: false,
 		},
+		{
+			name:                  "pod matches unschedulable reservation without toleration",
+			useUnschedulable:      true,
+			tolerateUnschedulable: false,
+			rAffinity: &apiext.ReservationAffinity{
+				RequiredDuringSchedulingIgnoredDuringExecution: &apiext.ReservationAffinitySelector{
+					ReservationSelectorTerms: []corev1.NodeSelectorTerm{
+						{
+							MatchExpressions: []corev1.NodeSelectorRequirement{
+								{
+									Key:      "reservation-b",
+									Operator: corev1.NodeSelectorOpIn,
+									Values:   []string{"true"},
+								},
+							},
+						},
+					},
+				},
+			},
+			wantRestored: false,
+		},
+		{
+			name:                  "pod matches unschedulable reservation with toleration",
+			useUnschedulable:      true,
+			tolerateUnschedulable: true,
+			rAffinity: &apiext.ReservationAffinity{
+				RequiredDuringSchedulingIgnoredDuringExecution: &apiext.ReservationAffinitySelector{
+					ReservationSelectorTerms: []corev1.NodeSelectorTerm{
+						{
+							MatchExpressions: []corev1.NodeSelectorRequirement{
+								{
+									Key:      "reservation-b",
+									Operator: corev1.NodeSelectorOpIn,
+									Values:   []string{"true"},
+								},
+							},
+						},
+					},
+				},
+			},
+			wantRestored: true,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -897,6 +986,9 @@ func TestBeforePreFilterWithReservationAffinity(t *testing.T) {
 			pl := p.(*Plugin)
 
 			pl.reservationCache.updateReservation(matchedReservation)
+			if tt.useUnschedulable {
+				pl.reservationCache.updateReservation(unschedulableReservation)
+			}
 
 			testPod := &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
@@ -914,6 +1006,16 @@ func TestBeforePreFilterWithReservationAffinity(t *testing.T) {
 				},
 			}
 			if tt.rAffinity != nil {
+				if tt.tolerateUnschedulable {
+					// Add toleration for unschedulable reservation
+					tt.rAffinity.Tolerations = []corev1.Toleration{
+						{
+							Key:      corev1.TaintNodeUnschedulable,
+							Operator: corev1.TolerationOpExists,
+							Effect:   corev1.TaintEffectNoSchedule,
+						},
+					}
+				}
 				assert.NoError(t, apiext.SetReservationAffinity(testPod, tt.rAffinity))
 			}
 			if tt.exactMatchSpec != nil {
