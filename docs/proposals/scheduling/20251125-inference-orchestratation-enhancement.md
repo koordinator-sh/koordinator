@@ -106,8 +106,7 @@ This proposal introduces Grove integration into Koordinator to enable advanced o
 1. **Adopt Grove CRDs**: Deploy Grove's Custom Resource Definitions (PodClique, PodCliqueScalingGroup, PodCliqueSet, PodGang) alongside Koordinator
 2. **Extend Koordinator Scheduler**: Enhance Koordinator's scheduler to recognize and process PodGang scheduling requirements
 3. **Leverage Network Topology Plugin**: Integrate Grove's topology-aware placement needs with Koordinator's existing NetworkTopology plugin
-4. **Coordinate Controllers**: Ensure Grove's operator and Koordinator's controllers work harmoniously for reservation, preemption, and resource management
-5. **Provide Migration Path**: Enable gradual adoption for users with existing inference workloads
+4. **Provide Migration Path**: Enable gradual adoption for users with existing inference workloads
 
 ### User Stories
 
@@ -553,7 +552,6 @@ metadata:
     scheduling.koordinator.sh/network-topology-zone: nvlink-domain-1
 spec:
   replicas: 2  # Two complete prefill+decode systems
-  schedulerName: koord-scheduler
   template:
     cliqueStartupType: CliqueStartupTypeExplicit
     cliques:
