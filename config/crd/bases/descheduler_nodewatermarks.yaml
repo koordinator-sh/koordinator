@@ -4,9 +4,9 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.20.0
-  name: nodewatermarks.scheduling.koordinator.sh
+  name: nodewatermarks.descheduler
 spec:
-  group: scheduling.koordinator.sh
+  group: descheduler
   names:
     kind: NodeWatermark
     listKind: NodeWatermarkList
@@ -14,7 +14,7 @@ spec:
     singular: nodewatermark
   scope: Cluster
   versions:
-  - name: v1alpha1
+  - name: v1alpha2
     schema:
       openAPIV3Schema:
         description: NodeWatermark is the Schema for the nodewatermarks API

@@ -30,6 +30,7 @@ type SchedulingV1alpha1Interface interface {
 	RESTClient() rest.Interface
 	ClusterNetworkTopologiesGetter
 	DevicesGetter
+	NodeWatermarksGetter
 	PodMigrationJobsGetter
 	ReservationsGetter
 	ScheduleExplanationsGetter
@@ -46,6 +47,10 @@ func (c *SchedulingV1alpha1Client) ClusterNetworkTopologies() ClusterNetworkTopo
 
 func (c *SchedulingV1alpha1Client) Devices() DeviceInterface {
 	return newDevices(c)
+}
+
+func (c *SchedulingV1alpha1Client) NodeWatermarks(namespace string) NodeWatermarkInterface {
+	return newNodeWatermarks(c, namespace)
 }
 
 func (c *SchedulingV1alpha1Client) PodMigrationJobs() PodMigrationJobInterface {

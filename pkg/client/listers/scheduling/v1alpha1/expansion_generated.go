@@ -26,6 +26,14 @@ type ClusterNetworkTopologyListerExpansion interface{}
 // DeviceLister.
 type DeviceListerExpansion interface{}
 
+// NodeWatermarkListerExpansion allows custom methods to be added to
+// NodeWatermarkLister.
+type NodeWatermarkListerExpansion interface{}
+
+// NodeWatermarkNamespaceListerExpansion allows custom methods to be added to
+// NodeWatermarkNamespaceLister.
+type NodeWatermarkNamespaceListerExpansion interface{}
+
 // PodMigrationJobListerExpansion allows custom methods to be added to
 // PodMigrationJobLister.
 type PodMigrationJobListerExpansion interface{}

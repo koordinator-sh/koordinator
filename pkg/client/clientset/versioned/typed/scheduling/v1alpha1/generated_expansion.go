@@ -22,6 +22,8 @@ type ClusterNetworkTopologyExpansion interface{}
 
 type DeviceExpansion interface{}
 
+type NodeWatermarkExpansion interface{}
+
 type PodMigrationJobExpansion interface{}
 
 type ReservationExpansion interface{}

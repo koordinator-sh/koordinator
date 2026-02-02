@@ -28,6 +28,8 @@ type Interface interface {
 	ClusterNetworkTopologies() ClusterNetworkTopologyInformer
 	// Devices returns a DeviceInformer.
 	Devices() DeviceInformer
+	// NodeWatermarks returns a NodeWatermarkInformer.
+	NodeWatermarks() NodeWatermarkInformer
 	// PodMigrationJobs returns a PodMigrationJobInformer.
 	PodMigrationJobs() PodMigrationJobInformer
 	// Reservations returns a ReservationInformer.
@@ -55,6 +57,11 @@ func (v *version) ClusterNetworkTopologies() ClusterNetworkTopologyInformer {
 // Devices returns a DeviceInformer.
 func (v *version) Devices() DeviceInformer {
 	return &deviceInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
+}
+
+// NodeWatermarks returns a NodeWatermarkInformer.
+func (v *version) NodeWatermarks() NodeWatermarkInformer {
+	return &nodeWatermarkInformer{factory: v.factory, namespace: v.namespace, tweakListOptions: v.tweakListOptions}
 }
 
 // PodMigrationJobs returns a PodMigrationJobInformer.

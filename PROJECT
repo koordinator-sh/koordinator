@@ -63,6 +63,6 @@ resources:
   domain: koordinator.sh
   group: scheduling
   kind: NodeWatermark
-  path: github.com/koordinator-sh/koordinator/pkg/descheduer/apis/config/v1alpha2
-  version: v1alpha2
+  path: github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1
+  version: v1alpha1
 version: "3"
