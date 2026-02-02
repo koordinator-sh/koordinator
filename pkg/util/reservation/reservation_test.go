@@ -1047,3 +1047,127 @@ func TestNewReservationReason(t *testing.T) {
 		assert.True(t, IsReservationReason(got))
 	})
 }
+
+func TestGetRequiredReservationAffinity(t *testing.T) {
+	tests := []struct {
+		name                      string
+		pod                       *corev1.Pod
+		wantNil                   bool
+		wantErr                   bool
+		wantTolerateUnschedulable bool
+	}{
+		{
+			name: "pod without reservation affinity",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-pod",
+				},
+			},
+			wantNil: true,
+		},
+		{
+			name: "pod with reservation affinity but no toleration",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-pod",
+					Annotations: map[string]string{
+						apiext.AnnotationReservationAffinity: `{"reservationSelector":{"test":"true"}}`,
+					},
+				},
+			},
+			wantNil:                   false,
+			wantTolerateUnschedulable: false,
+		},
+		{
+			name: "pod with reservation affinity and unschedulable toleration",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-pod",
+					Annotations: map[string]string{
+						apiext.AnnotationReservationAffinity: `{"reservationSelector":{"test":"true"},"tolerations":[{"key":"node.kubernetes.io/unschedulable","operator":"Exists","effect":"NoSchedule"}]}`,
+					},
+				},
+			},
+			wantNil:                   false,
+			wantTolerateUnschedulable: true,
+		},
+		{
+			name: "pod with reservation affinity and other toleration",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-pod",
+					Annotations: map[string]string{
+						apiext.AnnotationReservationAffinity: `{"reservationSelector":{"test":"true"},"tolerations":[{"key":"other-key","operator":"Exists","effect":"NoSchedule"}]}`,
+					},
+				},
+			},
+			wantNil:                   false,
+			wantTolerateUnschedulable: false,
+		},
+		{
+			name: "pod with reservation affinity and multiple tolerations including unschedulable",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-pod",
+					Annotations: map[string]string{
+						apiext.AnnotationReservationAffinity: `{"reservationSelector":{"test":"true"},"tolerations":[{"key":"other-key","operator":"Exists","effect":"NoSchedule"},{"key":"node.kubernetes.io/unschedulable","operator":"Exists","effect":"NoSchedule"}]}`,
+					},
+				},
+			},
+			wantNil:                   false,
+			wantTolerateUnschedulable: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := GetRequiredReservationAffinity(tt.pod)
+			if tt.wantErr {
+				assert.Error(t, err)
+				return
+			}
+			assert.NoError(t, err)
+			if tt.wantNil {
+				assert.Nil(t, got)
+			} else {
+				assert.NotNil(t, got)
+				assert.Equal(t, tt.wantTolerateUnschedulable, got.TolerateUnschedulable())
+			}
+		})
+	}
+}
+
+func TestTolerateUnschedulable(t *testing.T) {
+	tests := []struct {
+		name     string
+		affinity *RequiredReservationAffinity
+		want     bool
+	}{
+		{
+			name:     "nil affinity",
+			affinity: nil,
+			want:     false,
+		},
+		{
+			name: "affinity without toleration",
+			affinity: &RequiredReservationAffinity{
+				tolerateUnschedulable: false,
+			},
+			want: false,
+		},
+		{
+			name: "affinity with unschedulable toleration",
+			affinity: &RequiredReservationAffinity{
+				tolerateUnschedulable: true,
+			},
+			want: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.affinity.TolerateUnschedulable()
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}

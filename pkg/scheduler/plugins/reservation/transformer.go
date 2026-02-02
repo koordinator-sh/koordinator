@@ -605,7 +605,7 @@ func checkReservationMatchedOrIgnored(pod *corev1.Pod, rInfo *frameworkext.Reser
 				diagnosisState.nameMatched++
 				return true
 			}
-		} else if rInfo.IsUnschedulable() { // isUnschedulable
+		} else if rInfo.IsUnschedulable() && !reservationAffinity.TolerateUnschedulable() { // isUnschedulable
 			diagnosisState.isUnschedulableUnmatched++
 		} else if firstUnmatchedTaint, isTaintsUntolerated := reservationAffinity.FindMatchingUntoleratedTaint(rInfo.GetTaints(),
 			reservationutil.DoNotScheduleTaintsFilter); isTaintsUntolerated { // taints not tolerated
