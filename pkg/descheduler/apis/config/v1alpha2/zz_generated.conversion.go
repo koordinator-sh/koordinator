@@ -372,6 +372,7 @@ func autoConvert_v1alpha2_LowNodeLoadArgs_To_config_LowNodeLoadArgs(in *LowNodeL
 		return err
 	}
 	out.NodeMetricExpirationSeconds = (*int64)(unsafe.Pointer(in.NodeMetricExpirationSeconds))
+	// WARNING: in.AutoEvicted requires manual conversion: does not exist in peer-type
 	out.EvictableNamespaces = (*config.Namespaces)(unsafe.Pointer(in.EvictableNamespaces))
 	out.NodeSelector = (*v1.LabelSelector)(unsafe.Pointer(in.NodeSelector))
 	out.PodSelectors = *(*[]config.LowNodeLoadPodSelector)(unsafe.Pointer(&in.PodSelectors))

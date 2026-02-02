@@ -456,6 +456,7 @@ func balancePods(ctx context.Context,
 			continue
 		}
 		sortPodsOnOneOverloadedNode(srcNode, removablePods, resourceWeights, prod)
+		//TODO: create or update nodewatermark resource
 
 		evictPods(ctx, nodePoolName, dryRun, prod, removablePods, srcNode, totalAvailableUsages, podEvictor, podFilter, continueEviction, evictionReasonGenerator)
 	}

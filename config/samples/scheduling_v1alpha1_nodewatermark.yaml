@@ -1,0 +1,9 @@
+apiVersion: scheduling.koordinator.sh/v1alpha1
+kind: NodeWatermark
+metadata:
+  labels:
+    app.kubernetes.io/name: koordinator
+    app.kubernetes.io/managed-by: kustomize
+  name: nodewatermark-sample
+spec:
+  # TODO(user): Add fields here

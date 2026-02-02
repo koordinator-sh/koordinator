@@ -1,0 +1,27 @@
+# permissions for end users to edit nodewatermarks.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/name: koordinator
+    app.kubernetes.io/managed-by: kustomize
+  name: scheduling-nodewatermark-editor-role
+rules:
+- apiGroups:
+  - scheduling.koordinator.sh
+  resources:
+  - nodewatermarks
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - scheduling.koordinator.sh
+  resources:
+  - nodewatermarks/status
+  verbs:
+  - get

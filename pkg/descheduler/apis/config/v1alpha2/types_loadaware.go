@@ -45,6 +45,10 @@ type LowNodeLoadArgs struct {
 	// Default is 180 seconds.
 	NodeMetricExpirationSeconds *int64 `json:"nodeMetricExpirationSeconds,omitempty"`
 
+	// AutoEvicted means auto  evict the pods on hot node
+	// Default is false
+	AutoEvicted *bool
+
 	// Naming this one differently since namespaces are still
 	// considered while considering resoures used by pods
 	// but then filtered out before eviction

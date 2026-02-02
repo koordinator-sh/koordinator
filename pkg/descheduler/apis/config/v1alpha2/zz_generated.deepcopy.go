@@ -194,6 +194,11 @@ func (in *LowNodeLoadArgs) DeepCopyInto(out *LowNodeLoadArgs) {
 		*out = new(int64)
 		**out = **in
 	}
+	if in.AutoEvicted != nil {
+		in, out := &in.AutoEvicted, &out.AutoEvicted
+		*out = new(bool)
+		**out = **in
+	}
 	if in.EvictableNamespaces != nil {
 		in, out := &in.EvictableNamespaces, &out.EvictableNamespaces
 		*out = new(Namespaces)

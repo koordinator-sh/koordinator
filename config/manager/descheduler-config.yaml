@@ -16,7 +16,7 @@ data:
       resourceName: koord-descheduler
       resourceNamespace: koordinator-system
     deschedulingInterval: 10s
-    dryRun: false
+    dryRun: true
     profiles:
     - name: koord-descheduler
       plugins:
@@ -44,6 +44,7 @@ data:
         args:
           apiVersion: descheduler/v1alpha2
           kind: LowNodeLoadArgs
+          autoEvict: false
           evictableNamespaces:
             exclude:
               - kube-system
