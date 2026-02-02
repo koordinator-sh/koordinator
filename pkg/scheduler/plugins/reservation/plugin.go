@@ -1327,7 +1327,7 @@ func (pl *Plugin) Unreserve(ctx context.Context, cycleState *framework.CycleStat
 
 	klog.V(4).InfoS("Attempting to unreserve pod to node with reservations", "pod", klog.KObj(pod), "node", nodeName, "assumed", klog.KObj(state.assumed))
 	// clean the assumed in cache
-	pl.reservationCache.forgetPod(state.assumed.UID(), pod)
+	pl.reservationCache.forgetPods(state.assumed.UID(), allocatedPods)
 
 	// clean the reservation-allocated annotation of the allocated pod
 	if !state.hasReservationAllocated { // no reservation-allocated has set

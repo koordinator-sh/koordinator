@@ -306,10 +306,22 @@ func (cache *reservationCache) deleteReservationOperatingPod(pod *corev1.Pod) {
 }
 
 func (cache *reservationCache) assumePod(reservationUID types.UID, pod *corev1.Pod) error {
-	return cache.addPod(reservationUID, pod)
+	return cache.assumePods(reservationUID, []*corev1.Pod{pod})
 }
 
 func (cache *reservationCache) assumePods(reservationUID types.UID, pods []*corev1.Pod) error {
+	return cache.addPods(reservationUID, pods)
+}
+
+func (cache *reservationCache) forgetPods(reservationUID types.UID, pods []*corev1.Pod) {
+	cache.deletePods(reservationUID, pods)
+}
+
+func (cache *reservationCache) addPod(reservationUID types.UID, pod *corev1.Pod) error {
+	return cache.addPods(reservationUID, []*corev1.Pod{pod})
+}
+
+func (cache *reservationCache) addPods(reservationUID types.UID, pods []*corev1.Pod) error {
 	cache.lock.Lock()
 	defer cache.lock.Unlock()
 
@@ -323,25 +335,6 @@ func (cache *reservationCache) assumePods(reservationUID types.UID, pods []*core
 	for _, pod := range pods {
 		rInfo.AddAssignedPod(pod)
 	}
-	return nil
-}
-
-func (cache *reservationCache) forgetPod(reservationUID types.UID, pod *corev1.Pod) {
-	cache.deletePod(reservationUID, pod)
-}
-
-func (cache *reservationCache) addPod(reservationUID types.UID, pod *corev1.Pod) error {
-	cache.lock.Lock()
-	defer cache.lock.Unlock()
-
-	rInfo := cache.reservationInfos[reservationUID]
-	if rInfo == nil {
-		return fmt.Errorf("cannot find target reservation")
-	}
-	if rInfo.IsTerminating() {
-		return fmt.Errorf("target reservation is terminating")
-	}
-	rInfo.AddAssignedPod(pod)
 	// update allocated cache
 	if rInfo.IsMatchable() && rInfo.GetAllocatedPods() > 0 {
 		nodeName := rInfo.GetNodeName()
@@ -390,12 +383,18 @@ func (cache *reservationCache) updatePod(oldReservationUID, newReservationUID ty
 }
 
 func (cache *reservationCache) deletePod(reservationUID types.UID, pod *corev1.Pod) {
+	cache.deletePods(reservationUID, []*corev1.Pod{pod})
+}
+
+func (cache *reservationCache) deletePods(reservationUID types.UID, pods []*corev1.Pod) {
 	cache.lock.Lock()
 	defer cache.lock.Unlock()
 
 	rInfo := cache.reservationInfos[reservationUID]
 	if rInfo != nil {
-		rInfo.RemoveAssignedPod(pod)
+		for _, pod := range pods {
+			rInfo.RemoveAssignedPod(pod)
+		}
 		// update allocated cache
 		if rInfo.GetAllocatedPods() == 0 {
 			nodeName := rInfo.GetNodeName()
