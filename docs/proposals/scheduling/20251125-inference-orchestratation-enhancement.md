@@ -61,7 +61,7 @@ This proposal aims to enhance Koordinator's inference orchestration capabilities
 
 Grove addresses critical gaps in orchestrating modern AI inference systems, including multi-node model deployments (e.g., DeepSeek-R1, Llama-4-Maverick), disaggregated inference architectures (separate prefill/decode stages), and agentic AI pipelines. By integrating Grove's capabilities with Koordinator's existing scheduling features, we can provide a comprehensive solution for managing complex inference workloads at scale, from single GPUs to data centers with tens of thousands of GPUs.
 
-The integration will leverage Koordinator's network topology awareness and resource scheduling capabilities while adopting Grove's orchestration abstractions (PodClique, PodCliqueScalingGroup, PodCliqueSet) to enable hierarchical gang scheduling, startup ordering, and multi-level autoscaling for inference workloads.
+The integration will leverage Koordinator's network topology awareness and resource scheduling capabilities while adopting Grove's orchestration abstractions (PodClique, PodCliqueScalingGroup, PodCliqueSet) to enable hierarchical gang scheduling, startup ordering (via `startsAfter` dependencies), and multi-level autoscaling for inference workloads.
 
 ## Motivation
 
@@ -73,7 +73,7 @@ Modern AI inference workloads, especially large language models (LLMs) and multi
 
 3. **Hierarchical Gang Scheduling**: Multi-node deployments require gang scheduling at multiple levels - pods within a model instance must be scheduled together, and in disaggregated architectures, at least one prefill instance and one decode instance must be scheduled to form a working system.
 
-4. **Startup Ordering**: Even when components are gang-scheduled, they often need to start in specific order (e.g., MPI workloads require workers to be ready before the leader starts).
+4. **Startup Ordering**: Even when components are gang-scheduled, they often need to start in specific order (e.g., MPI workloads require workers to be ready before the leader starts). Grove addresses this through `startsAfter` dependencies and init container injection.
 
 5. **Topology-Aware Placement**: Inference components communicate heavily. Placement within NVLink domains or network-optimized locations is crucial for minimizing latency and maximizing throughput.
 
@@ -83,7 +83,7 @@ Grove (https://github.com/ai-dynamo/grove) provides a proven solution to these c
 
 - Enable orchestration of multi-node, disaggregated inference workloads in Koordinator through Grove integration
 - Support hierarchical gang scheduling for inference workloads with multiple component types (prefill, decode, leader, worker, etc.)
-- Implement startup ordering to ensure correct initialization sequences for distributed inference systems
+- Implement startup ordering to ensure correct initialization sequences for distributed inference systems (Grove's `startsAfter` mechanism with init container injection)
 - Leverage Koordinator's existing network topology awareness to optimize placement of Grove-managed workloads
 - Provide multi-level autoscaling capabilities for inference workloads (scaling both individual components and entire inference systems)
 - Maintain compatibility with Koordinator's existing scheduling features (reservation, preemption, QoS, etc.)
@@ -124,6 +124,177 @@ As an ML platform engineer, I want to deploy a large language model (e.g., DeepS
 
 With Grove integration in Koordinator, I can define a single `PodCliqueSet` CR that describes the entire system. Koordinator will ensure proper gang scheduling, topology-aware placement using NetworkTopology awareness, and coordinated autoscaling.
 
+**Complete YAML Example**:
+
+```yaml
+apiVersion: grove.io/v1alpha1
+kind: PodCliqueSet
+metadata:
+  name: deepseek-r1-disaggregated
+  namespace: inference
+  annotations:
+    # Koordinator-specific annotations for the entire PodCliqueSet
+    scheduling.koordinator.sh/network-topology-zone: "nvlink-domain-1"
+    scheduling.koordinator.sh/gang-timeout: "600s"
+spec:
+  replicas: 2  # Two complete prefill+decode replica sets
+  template:
+    terminationDelay: 1m
+    cliqueStartupType: CliqueStartupTypeExplicit  # Ensure startup order is honored
+    cliques:
+      # Prefill stage - processes prompts with high memory bandwidth
+      - name: prefill
+        spec:
+          roleName: prefill-role
+          replicas: 2  # 2 pods, each with 4 GPUs (8 GPUs total)
+          # No startsAfter - prefill starts first (no dependencies)
+          podSpec:
+            metadata:
+              labels:
+                app: deepseek-r1
+                component: prefill
+              annotations:
+                # Koordinator network topology annotation for fine-grained placement
+                gang.scheduling.koordinator.sh/network-topology-index: "0"
+                # Request specific QoS level
+                scheduling.koordinator.sh/qos-class: "LS"  # Latency-Sensitive
+            spec:
+              schedulerName: koord-scheduler
+              containers:
+              - name: prefill-server
+                image: deepseek/r1-prefill:v1.0
+                resources:
+                  requests:
+                    cpu: "32"
+                    memory: "256Gi"
+                    nvidia.com/gpu: "4"
+                  limits:
+                    cpu: "32"
+                    memory: "256Gi"
+                    nvidia.com/gpu: "4"
+                env:
+                - name: MODEL_STAGE
+                  value: "prefill"
+                - name: DECODE_ENDPOINT
+                  value: "deepseek-r1-decode-service:8000"
+                ports:
+                - containerPort: 8000
+                  name: grpc
+                volumeMounts:
+                - name: model-cache
+                  mountPath: /models
+              volumes:
+              - name: model-cache
+                emptyDir:
+                  sizeLimit: 100Gi
+
+      # Decode stage - generates tokens optimized for throughput
+      - name: decode
+        spec:
+          roleName: decode-role
+          replicas: 4  # 4 pods, each with 4 GPUs (16 GPUs total)
+          startsAfter:  # Start decode pods only after prefill is ready
+            - prefill
+          podSpec:
+            metadata:
+              labels:
+                app: deepseek-r1
+                component: decode
+              annotations:
+                # Schedule decode pods after prefill in topology placement
+                gang.scheduling.koordinator.sh/network-topology-index: "1"
+                scheduling.koordinator.sh/qos-class: "LS"
+            spec:
+              schedulerName: koord-scheduler
+              # Grove will inject init container to enforce startsAfter dependency:
+              # initContainers:
+              # - name: wait-for-prefill
+              #   image: grove/startup-coordinator:v1.0
+              #   command: ["/wait-for-podclique"]
+              #   args: ["--podclique=prefill"]
+              containers:
+              - name: decode-server
+                image: deepseek/r1-decode:v1.0
+                resources:
+                  requests:
+                    cpu: "24"
+                    memory: "192Gi"
+                    nvidia.com/gpu: "4"
+                  limits:
+                    cpu: "24"
+                    memory: "192Gi"
+                    nvidia.com/gpu: "4"
+                env:
+                - name: MODEL_STAGE
+                  value: "decode"
+                - name: PREFILL_ENDPOINT
+                  value: "deepseek-r1-prefill-service:8000"
+                ports:
+                - containerPort: 8000
+                  name: grpc
+                volumeMounts:
+                - name: model-cache
+                  mountPath: /models
+              volumes:
+              - name: model-cache
+                emptyDir:
+                  sizeLimit: 50Gi
+    
+    podCliqueScalingGroups:
+    - name: disaggregated-inference
+      minAvailable: 1  # At least one complete prefill+decode pair must be scheduled
+      cliqueNames:
+        - prefill
+        - decode
+---
+# Example: How Grove Implements Startup Ordering with startsAfter
+# 
+# For the decode PodClique with `startsAfter: [prefill]`, Grove will inject
+# an init container into each decode pod:
+#
+# apiVersion: v1
+# kind: Pod
+# metadata:
+#   name: deepseek-r1-disaggregated-0-decode-0
+#   annotations:
+#     grove.io/starts-after: "prefill"
+# spec:
+#   initContainers:
+#   - name: wait-for-prefill
+#     image: grove/startup-coordinator:v1.0
+#     command: ["/wait-for-podclique"]
+#     args:
+#     - "--namespace=inference"
+#     - "--podclique=prefill"
+#     - "--podcliqueset=deepseek-r1-disaggregated"
+#     - "--replica-index=0"
+#     # This init container queries the API server and waits until all pods
+#     # in the "prefill" PodClique reach Ready state before exiting
+#   containers:
+#   - name: decode-server
+#     # ... main container starts only after init container completes
+---
+# Grove operator will create PodGang CR for Koordinator scheduler
+apiVersion: scheduling.grove.io/v1alpha1
+kind: PodGang
+metadata:
+  name: deepseek-r1-disaggregated-0
+  namespace: inference
+  ownerReferences:
+  - apiVersion: grove.io/v1alpha1
+    kind: PodCliqueSet
+    name: deepseek-r1-disaggregated
+    uid: <generated-uid>
+spec:
+  schedulerName: koord-scheduler
+  minAvailable: 1  # At least 1 complete set of prefill+decode
+  subGroups:
+  - minMember: 2
+    name: prefill
+  - minMember: 4
+    name: decode
+```
+
 #### Story 2: Agentic AI Pipeline with Multiple Models
 
 As an AI application developer, I want to run an agentic pipeline where:
@@ -135,7 +306,97 @@ As an AI application developer, I want to run an agentic pipeline where:
 - Vision and reasoning models should start before the router (startup ordering)
 - The entire pipeline should scale as a unit based on end-to-end latency
 
-With Grove + Koordinator, I can define PodCliques for each model, group them in a PodCliqueScalingGroup for gang scheduling, and specify startup ordering. Koordinator's scheduler ensures all components are placed together, and autoscaling adjusts the entire pipeline as one unit.
+With Grove + Koordinator, I can define PodCliques for each model, group them in a PodCliqueScalingGroup for gang scheduling, and use `startsAfter` to specify startup dependencies. Koordinator's scheduler ensures all components are placed together, and autoscaling adjusts the entire pipeline as one unit.
+
+**Example with Multiple Startup Dependencies**:
+
+```yaml
+apiVersion: grove.io/v1alpha1
+kind: PodCliqueSet
+metadata:
+  name: agentic-pipeline
+spec:
+  replicas: 1
+  schedulerName: koord-scheduler
+  template:
+    cliqueStartupType: CliqueStartupTypeExplicit
+    cliques:
+    # Vision, reasoning, and code-gen models have no dependencies - start first
+    - name: vision
+      spec:
+        roleName: vision-role
+        replicas: 1
+        # No startsAfter - starts immediately after scheduling
+        podSpec:
+          spec:
+            schedulerName: koord-scheduler
+            containers:
+            - name: vision-model
+              image: vision-model:latest
+              resources:
+                requests:
+                  nvidia.com/gpu: 2
+    
+    - name: reasoning
+      spec:
+        roleName: reasoning-role
+        replicas: 1
+        # No startsAfter - starts immediately after scheduling
+        podSpec:
+          spec:
+            schedulerName: koord-scheduler
+            containers:
+            - name: reasoning-model
+              image: reasoning-model:latest
+              resources:
+                requests:
+                  nvidia.com/gpu: 4
+    
+    - name: code-gen
+      spec:
+        roleName: code-gen-role
+        replicas: 1
+        # No startsAfter - starts immediately after scheduling
+        podSpec:
+          spec:
+            schedulerName: koord-scheduler
+            containers:
+            - name: code-gen-model
+              image: code-gen:latest
+              resources:
+                requests:
+                  nvidia.com/gpu: 2
+    
+    # Router waits for all specialized models to be ready
+    - name: router
+      spec:
+        roleName: router-role
+        replicas: 1
+        startsAfter:  # Router starts only after these are all Ready
+          - vision
+          - reasoning
+          - code-gen
+        podSpec:
+          spec:
+            schedulerName: koord-scheduler
+            containers:
+            - name: router-model
+              image: router:latest
+              resources:
+                requests:
+                  nvidia.com/gpu: 1
+    
+    podCliqueScalingGroups:
+    - name: ai-pipeline
+      minAvailable: 1
+      cliqueNames:
+        - vision
+        - reasoning
+        - code-gen
+        - router
+```
+
+In this example, Grove will ensure that the router pod doesn't start until all three specialized model pods (vision, reasoning, code-gen) are in Ready state. This prevents the router from receiving requests before the backend models are available to serve them.
 
 #### Story 3: MPI-Based Multi-Node Training/Inference
 
@@ -146,7 +407,7 @@ As an ML researcher, I want to run a multi-node MPI workload for inference where
 - Worker pods must be fully ready before the leader pod starts the MPI application
 - Pods should be placed on nodes with high-speed interconnects (e.g., InfiniBand, NVLink)
 
-Using Grove's PodClique with startup ordering and Koordinator's topology awareness, I can ensure workers start first, leader waits for workers to be ready, and all pods are placed optimally for MPI communication patterns.
+Using Grove's PodClique with `startsAfter` dependencies and Koordinator's topology awareness, I can ensure workers start first, leader waits for workers to be ready, and all pods are placed optimally for MPI communication patterns.
 
 ### Requirements (Optional)
 
@@ -158,7 +419,7 @@ Using Grove's PodClique with startup ordering and Koordinator's topology awarene
 
 ##### FR2: Startup Ordering
 
-**MUST**: Support explicit startup ordering within PodCliqueScalingGroups. Dependent pods must not start until prerequisite pods reach Ready state.
+**MUST**: Support explicit startup ordering within PodCliqueScalingGroups using Grove's `startsAfter` field. Dependent pods must not start until prerequisite pods reach Ready state. This is enforced by Grove operator through init containers, not by the scheduler.
 
 ##### FR3: Topology-Aware Placement for Grove Workloads  
 
@@ -253,7 +514,12 @@ The integration follows a layered approach:
 - Integrate with existing NetworkTopology plugin
 
 **Startup Ordering**:
-- Extend scheduler to support pod dependencies within PodCliqueScalingGroup
+- Grove uses the `startsAfter` field in PodClique spec to define startup dependencies
+- Example: `startsAfter: [prefill]` means this PodClique waits for all pods in "prefill" PodClique to be Ready
+- Grove operator injects init containers into dependent pods to enforce the startup order
+- Init containers wait for prerequisite pods to reach Ready state before allowing the main container to start
+- Koordinator scheduler is not involved in startup ordering enforcement - it only ensures all pods are scheduled
+- Startup ordering happens at pod lifecycle level, not at scheduling level
 
 ##### 3. Controller Coordination
 
@@ -279,7 +545,7 @@ The integration follows a layered approach:
 **Example 1: Disaggregated Inference**
 
 ```yaml
-apiVersion: grove.ai/v1alpha1
+apiVersion: grove.io/v1alpha1
 kind: PodCliqueSet
 metadata:
   name: llama-inference
@@ -287,65 +553,89 @@ metadata:
     scheduling.koordinator.sh/network-topology-zone: nvlink-domain-1
 spec:
   replicas: 2  # Two complete prefill+decode systems
+  schedulerName: koord-scheduler
   template:
-    podCliqueScalingGroups:
-    - name: inference-pipeline
-      minAvailable: 1  # At least one complete pipeline
-      podCliques:
-      - name: prefill
+    cliqueStartupType: CliqueStartupTypeExplicit
+    cliques:
+    - name: prefill
+      spec:
+        roleName: prefill-role
         replicas: 4
-        startOrder: 0  # Start prefill first
-        template:
+        # No startsAfter - prefill starts first
+        podSpec:
           spec:
+            schedulerName: koord-scheduler
             containers:
             - name: prefill
               image: llama-prefill:latest
               resources:
                 requests:
                   nvidia.com/gpu: 2
-      - name: decode  
+    - name: decode
+      spec:
+        roleName: decode-role
         replicas: 8
-        startOrder: 1  # Start decode after prefill
-        template:
+        startsAfter:  # Start decode after prefill is ready
+          - prefill
+        podSpec:
           spec:
+            schedulerName: koord-scheduler
             containers:
             - name: decode
               image: llama-decode:latest
               resources:
                 requests:
                   nvidia.com/gpu: 2
+    podCliqueScalingGroups:
+    - name: inference-pipeline
+      minAvailable: 1  # At least one complete pipeline
+      cliqueNames:
+        - prefill
+        - decode
 ```
 
 **Example 2: MPI Workload with Leader-Worker**
 
 ```yaml
-apiVersion: grove.ai/v1alpha1
+apiVersion: grove.io/v1alpha1
 kind: PodCliqueSet
 metadata:
   name: mpi-inference
 spec:
   replicas: 1
+  schedulerName: koord-scheduler
   template:
-    podCliqueScalingGroups:
-    - name: mpi-job
-      minAvailable: 1
-      podCliques:
-      - name: worker
+    cliqueStartupType: CliqueStartupTypeExplicit
+    cliques:
+    - name: worker
+      spec:
+        roleName: worker-role
         replicas: 8
-        startOrder: 0  # Workers start first
-        template:
+        # No startsAfter - workers start first
+        podSpec:
           spec:
+            schedulerName: koord-scheduler
             containers:
             - name: mpi-worker
               image: mpi-worker:latest
-      - name: leader
-        replicas: 1  
-        startOrder: 1  # Leader waits for workers
-        template:
+    - name: leader
+      spec:
+        roleName: leader-role
+        replicas: 1
+        startsAfter:  # Leader waits for all workers to be ready
+          - worker
+        podSpec:
           spec:
+            schedulerName: koord-scheduler
             containers:
             - name: mpi-leader
               image: mpi-leader:latest
+    podCliqueScalingGroups:
+    - name: mpi-job
+      minAvailable: 1
+      cliqueNames:
+        - worker
+        - leader
 ```
 
 #### Constraints and Limitations
@@ -467,7 +757,7 @@ Users already running Grove without Koordinator can migrate gradually:
    ```yaml
    metadata:
      annotations:
-       schedulerName: koordinator-scheduler
+       schedulerName: koord-scheduler
    ```
 5. Monitor and validate functionality
 6. Gradually migrate all workloads
@@ -498,17 +788,18 @@ If issues arise during upgrade:
 - **Scheduler Plugin Tests**
   - Gang scheduling logic for PodGang resources
   - Hierarchical gang validation (gang of gangs)
-  - Startup ordering constraint validation
+  - Note: Startup ordering (`startsAfter`) is enforced by Grove operator via init containers, not by scheduler
 
 - **Controller Tests**  
   - Reservation integration with PodCliques
+  - Grove operator's init container injection for `startsAfter` dependencies
 
 #### Integration Tests
 
 - **End-to-End Scenarios**
   - Deploy multi-node disaggregated inference system
   - Verify all pods in gang are scheduled together or none are scheduled
-  - Validate startup ordering (workers before leader)
+  - Validate startup ordering via `startsAfter` (workers ready before leader starts)
   - Test autoscaling of PodCliqueSet (scale up/down)
   - Verify topology-aware placement
 
