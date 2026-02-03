@@ -144,7 +144,7 @@ type Namespaces struct {
 }
 
 type (
-	Percentage         string
+	Percentage         float64
 	ResourceThresholds map[corev1.ResourceName]Percentage
 )
 

@@ -18,6 +18,7 @@ package loadaware
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -54,6 +55,7 @@ type LowNodeLoad struct {
 	handle               framework.Handle
 	podFilter            framework.FilterFunc
 	nodeMetricLister     koordslolisters.NodeMetricLister
+	nodeWaterMarkClient  koordclientset.Interface
 	args                 *deschedulerconfig.LowNodeLoadArgs
 	nodeAnomalyDetectors *gocache.Cache
 	prodAnomalyDetectors *gocache.Cache
@@ -113,6 +115,7 @@ func NewLowNodeLoad(args runtime.Object, handle framework.Handle) (framework.Plu
 	return &LowNodeLoad{
 		handle:               handle,
 		nodeMetricLister:     nodeMetricInformer.Lister(),
+		nodeWaterMarkClient:  koordClientSet,
 		args:                 loadLoadUtilizationArgs,
 		podFilter:            podFilter,
 		nodeAnomalyDetectors: nodeAnomalyDetectors,
@@ -163,6 +166,8 @@ func (pl *LowNodeLoad) processOneNodePool(ctx context.Context, nodePool *desched
 		klog.InfoS("No nodes to process LowNodeLoad", "nodePool", nodePool.Name)
 		return nil
 	}
+	nodePoolByte, _ := json.Marshal(nodePool)
+	klog.Info(string(nodePoolByte))
 
 	lowThresholds, highThresholds, prodLowThresholds, prodHighThresholds := newThresholds(nodePool.UseDeviationThresholds, nodePool.LowThresholds, nodePool.HighThresholds, nodePool.ProdLowThresholds, nodePool.ProdHighThresholds)
 	resourceNames := getResourceNames(lowThresholds)
@@ -253,6 +258,7 @@ func (pl *LowNodeLoad) processOneNodePool(ctx context.Context, nodePool *desched
 		pl.handle.Evictor(),
 		pl.podFilter,
 		pl.handle.GetPodsAssignedToNodeFunc(),
+		pl.nodeWaterMarkClient,
 		resourceNames,
 		continueEvictionCond,
 		overUtilizedEvictionReason(highThresholds, prodHighThresholds),

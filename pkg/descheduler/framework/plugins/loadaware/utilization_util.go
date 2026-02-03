@@ -22,15 +22,19 @@ import (
 	"sort"
 	"time"
 
+	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/klog/v2"
+	"k8s.io/utils/ptr"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
+	koordclientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
 	slolisters "github.com/koordinator-sh/koordinator/pkg/client/listers/slo/v1alpha1"
 	deschedulerconfig "github.com/koordinator-sh/koordinator/pkg/descheduler/apis/config"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/framework"
@@ -318,6 +322,7 @@ func evictPodsFromSourceNodes(
 	podEvictor framework.Evictor,
 	podFilter framework.FilterFunc,
 	nodeIndexer podutil.GetPodsAssignedToNodeFunc,
+	nodeWaterMarkClient koordclientset.Interface,
 	resourceNames []corev1.ResourceName,
 	continueEviction continueEvictionCond,
 	evictionReasonGenerator evictionReasonGeneratorFn,
@@ -351,7 +356,7 @@ func evictPodsFromSourceNodes(
 	targetNodes = append(targetNodes, bothTotalNodes...)
 	balancePods(ctx, nodePoolName, sourceNodes, targetNodes, nodeUsages, nodeThresholds,
 		nodeTotalAvailableUsages, dryRun, nodeFit, false, resourceWeights, podEvictor,
-		podFilter, nodeIndexer, continueEviction, evictionReasonGenerator)
+		podFilter, nodeIndexer, continueEviction, nodeWaterMarkClient, evictionReasonGenerator)
 
 	// bothLowNode will be used by nodeHigh and prodHigh nodes, needs sub resources used by pods on nodeHigh.
 	for _, resourceName := range resourceNames {
@@ -390,7 +395,7 @@ func evictPodsFromSourceNodes(
 	klog.V(4).InfoS("Total prod usage capacity to be moved", prodKeysAndValues...)
 	balancePods(ctx, nodePoolName, prodSourceNodes, prodTargetNodes, nodeUsages, nodeThresholds,
 		prodTotalAvailableUsages, dryRun, nodeFit, true, resourceWeights, podEvictor,
-		podFilter, nodeIndexer, continueEviction, evictionReasonGenerator)
+		podFilter, nodeIndexer, continueEviction, nodeWaterMarkClient, evictionReasonGenerator)
 }
 
 func newAvailableUsage(resourceNames []corev1.ResourceName) map[corev1.ResourceName]*resource.Quantity {
@@ -424,6 +429,7 @@ func balancePods(ctx context.Context,
 	podFilter framework.FilterFunc,
 	nodeIndexer podutil.GetPodsAssignedToNodeFunc,
 	continueEviction continueEvictionCond,
+	nodeWaterMarkClient koordclientset.Interface,
 	evictionReasonGenerator evictionReasonGeneratorFn) {
 	for _, srcNode := range sourceNodes {
 		var allPods []*corev1.Pod
@@ -451,15 +457,67 @@ func balancePods(ctx context.Context,
 			"nodePool", nodePoolName, "node", klog.KObj(srcNode.node), "prod", prod, "usage", srcNode.usage,
 			"allPods", len(allPods), "nonRemovablePods", len(nonRemovablePods), "removablePods", len(removablePods))
 
+		basewm := buildBasicNodeWaterMark(srcNode.node)
+		for _, pod := range removablePods {
+			basewm.Spec.WillEvictedPods = append(basewm.Spec.WillEvictedPods, schedulingv1alpha1.WillEvictedPod{
+				Name: pod.Name, Namespace: pod.Namespace})
+		}
+		klog.Info("createOrUpdateNodeWaterMark  before")
+		if err := createOrUpdateNodeWaterMark(ctx, nodeWaterMarkClient, basewm); err != nil {
+			klog.Error(err)
+		}
+		klog.Info("createOrUpdateNodeWaterMark  after")
+
 		if len(removablePods) == 0 {
 			klog.V(4).InfoS("No removable pods on node, try next node", "node", klog.KObj(srcNode.node), "nodePool", nodePoolName)
 			continue
 		}
 		sortPodsOnOneOverloadedNode(srcNode, removablePods, resourceWeights, prod)
-		//TODO: create or update nodewatermark resource
 
+		createOrUpdateNodeWaterMark(ctx, nodeWaterMarkClient, basewm)
+		//TODO: create or update nodewatermark resource
 		evictPods(ctx, nodePoolName, dryRun, prod, removablePods, srcNode, totalAvailableUsages, podEvictor, podFilter, continueEviction, evictionReasonGenerator)
 	}
+}
+
+func createOrUpdateNodeWaterMark(ctx context.Context, cli koordclientset.Interface, wm *schedulingv1alpha1.NodeWatermark) error {
+	tmp, err := cli.SchedulingV1alpha1().NodeWatermarks().Get(ctx, wm.Name, metav1.GetOptions{})
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			_, err := cli.SchedulingV1alpha1().NodeWatermarks().Create(ctx, wm, metav1.CreateOptions{})
+			if err != nil {
+				klog.Error(err)
+				return err
+			}
+			return nil
+		}
+		return err
+	}
+	tmp.Spec.WillEvictedPods = wm.Spec.WillEvictedPods
+	if _, err := cli.SchedulingV1alpha1().NodeWatermarks().Update(ctx, wm, metav1.UpdateOptions{}); err != nil {
+		return err
+	}
+	return nil
+}
+
+func buildBasicNodeWaterMark(node *corev1.Node) *schedulingv1alpha1.NodeWatermark {
+	mark := &schedulingv1alpha1.NodeWatermark{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: node.Name,
+			OwnerReferences: []metav1.OwnerReference{
+				{
+
+					APIVersion:         "v1",
+					Kind:               "Node",
+					Name:               node.Name,
+					UID:                node.UID,
+					Controller:         ptr.To(true),
+					BlockOwnerDeletion: ptr.To(true),
+				},
+			},
+		},
+	}
+	return mark
 }
 
 func targetAvailableUsage(destinationNodes []NodeInfo, resourceNames []corev1.ResourceName, prod bool) (map[corev1.ResourceName]*resource.Quantity, []*corev1.Node) {
