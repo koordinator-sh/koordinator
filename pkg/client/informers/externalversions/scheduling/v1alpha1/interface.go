@@ -61,7 +61,7 @@ func (v *version) Devices() DeviceInformer {
 
 // NodeWatermarks returns a NodeWatermarkInformer.
 func (v *version) NodeWatermarks() NodeWatermarkInformer {
-	return &nodeWatermarkInformer{factory: v.factory, namespace: v.namespace, tweakListOptions: v.tweakListOptions}
+	return &nodeWatermarkInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
 }
 
 // PodMigrationJobs returns a PodMigrationJobInformer.

@@ -31,8 +31,9 @@ type NodeWatermarkLister interface {
 	// List lists all NodeWatermarks in the indexer.
 	// Objects returned here must be treated as read-only.
 	List(selector labels.Selector) (ret []*v1alpha1.NodeWatermark, err error)
-	// NodeWatermarks returns an object that can list and get NodeWatermarks.
-	NodeWatermarks(namespace string) NodeWatermarkNamespaceLister
+	// Get retrieves the NodeWatermark from the index for a given name.
+	// Objects returned here must be treated as read-only.
+	Get(name string) (*v1alpha1.NodeWatermark, error)
 	NodeWatermarkListerExpansion
 }
 
@@ -54,41 +55,9 @@ func (s *nodeWatermarkLister) List(selector labels.Selector) (ret []*v1alpha1.No
 	return ret, err
 }
 
-// NodeWatermarks returns an object that can list and get NodeWatermarks.
-func (s *nodeWatermarkLister) NodeWatermarks(namespace string) NodeWatermarkNamespaceLister {
-	return nodeWatermarkNamespaceLister{indexer: s.indexer, namespace: namespace}
-}
-
-// NodeWatermarkNamespaceLister helps list and get NodeWatermarks.
-// All objects returned here must be treated as read-only.
-type NodeWatermarkNamespaceLister interface {
-	// List lists all NodeWatermarks in the indexer for a given namespace.
-	// Objects returned here must be treated as read-only.
-	List(selector labels.Selector) (ret []*v1alpha1.NodeWatermark, err error)
-	// Get retrieves the NodeWatermark from the indexer for a given namespace and name.
-	// Objects returned here must be treated as read-only.
-	Get(name string) (*v1alpha1.NodeWatermark, error)
-	NodeWatermarkNamespaceListerExpansion
-}
-
-// nodeWatermarkNamespaceLister implements the NodeWatermarkNamespaceLister
-// interface.
-type nodeWatermarkNamespaceLister struct {
-	indexer   cache.Indexer
-	namespace string
-}
-
-// List lists all NodeWatermarks in the indexer for a given namespace.
-func (s nodeWatermarkNamespaceLister) List(selector labels.Selector) (ret []*v1alpha1.NodeWatermark, err error) {
-	err = cache.ListAllByNamespace(s.indexer, s.namespace, selector, func(m interface{}) {
-		ret = append(ret, m.(*v1alpha1.NodeWatermark))
-	})
-	return ret, err
-}
-
-// Get retrieves the NodeWatermark from the indexer for a given namespace and name.
-func (s nodeWatermarkNamespaceLister) Get(name string) (*v1alpha1.NodeWatermark, error) {
-	obj, exists, err := s.indexer.GetByKey(s.namespace + "/" + name)
+// Get retrieves the NodeWatermark from the index for a given name.
+func (s *nodeWatermarkLister) Get(name string) (*v1alpha1.NodeWatermark, error) {
+	obj, exists, err := s.indexer.GetByKey(name)
 	if err != nil {
 		return nil, err
 	}

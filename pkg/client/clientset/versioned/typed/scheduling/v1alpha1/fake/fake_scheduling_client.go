@@ -36,8 +36,8 @@ func (c *FakeSchedulingV1alpha1) Devices() v1alpha1.DeviceInterface {
 	return &FakeDevices{c}
 }
 
-func (c *FakeSchedulingV1alpha1) NodeWatermarks(namespace string) v1alpha1.NodeWatermarkInterface {
-	return &FakeNodeWatermarks{c, namespace}
+func (c *FakeSchedulingV1alpha1) NodeWatermarks() v1alpha1.NodeWatermarkInterface {
+	return &FakeNodeWatermarks{c}
 }
 
 func (c *FakeSchedulingV1alpha1) PodMigrationJobs() v1alpha1.PodMigrationJobInterface {

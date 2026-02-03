@@ -32,7 +32,6 @@ import (
 // FakeNodeWatermarks implements NodeWatermarkInterface
 type FakeNodeWatermarks struct {
 	Fake *FakeSchedulingV1alpha1
-	ns   string
 }
 
 var nodewatermarksResource = v1alpha1.SchemeGroupVersion.WithResource("nodewatermarks")
@@ -42,8 +41,7 @@ var nodewatermarksKind = v1alpha1.SchemeGroupVersion.WithKind("NodeWatermark")
 // Get takes name of the nodeWatermark, and returns the corresponding nodeWatermark object, and an error if there is any.
 func (c *FakeNodeWatermarks) Get(ctx context.Context, name string, options v1.GetOptions) (result *v1alpha1.NodeWatermark, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewGetAction(nodewatermarksResource, c.ns, name), &v1alpha1.NodeWatermark{})
-
+		Invokes(testing.NewRootGetAction(nodewatermarksResource, name), &v1alpha1.NodeWatermark{})
 	if obj == nil {
 		return nil, err
 	}
@@ -53,8 +51,7 @@ func (c *FakeNodeWatermarks) Get(ctx context.Context, name string, options v1.Ge
 // List takes label and field selectors, and returns the list of NodeWatermarks that match those selectors.
 func (c *FakeNodeWatermarks) List(ctx context.Context, opts v1.ListOptions) (result *v1alpha1.NodeWatermarkList, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewListAction(nodewatermarksResource, nodewatermarksKind, c.ns, opts), &v1alpha1.NodeWatermarkList{})
-
+		Invokes(testing.NewRootListAction(nodewatermarksResource, nodewatermarksKind, opts), &v1alpha1.NodeWatermarkList{})
 	if obj == nil {
 		return nil, err
 	}
@@ -75,15 +72,13 @@ func (c *FakeNodeWatermarks) List(ctx context.Context, opts v1.ListOptions) (res
 // Watch returns a watch.Interface that watches the requested nodeWatermarks.
 func (c *FakeNodeWatermarks) Watch(ctx context.Context, opts v1.ListOptions) (watch.Interface, error) {
 	return c.Fake.
-		InvokesWatch(testing.NewWatchAction(nodewatermarksResource, c.ns, opts))
-
+		InvokesWatch(testing.NewRootWatchAction(nodewatermarksResource, opts))
 }
 
 // Create takes the representation of a nodeWatermark and creates it.  Returns the server's representation of the nodeWatermark, and an error, if there is any.
 func (c *FakeNodeWatermarks) Create(ctx context.Context, nodeWatermark *v1alpha1.NodeWatermark, opts v1.CreateOptions) (result *v1alpha1.NodeWatermark, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewCreateAction(nodewatermarksResource, c.ns, nodeWatermark), &v1alpha1.NodeWatermark{})
-
+		Invokes(testing.NewRootCreateAction(nodewatermarksResource, nodeWatermark), &v1alpha1.NodeWatermark{})
 	if obj == nil {
 		return nil, err
 	}
@@ -93,8 +88,7 @@ func (c *FakeNodeWatermarks) Create(ctx context.Context, nodeWatermark *v1alpha1
 // Update takes the representation of a nodeWatermark and updates it. Returns the server's representation of the nodeWatermark, and an error, if there is any.
 func (c *FakeNodeWatermarks) Update(ctx context.Context, nodeWatermark *v1alpha1.NodeWatermark, opts v1.UpdateOptions) (result *v1alpha1.NodeWatermark, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewUpdateAction(nodewatermarksResource, c.ns, nodeWatermark), &v1alpha1.NodeWatermark{})
-
+		Invokes(testing.NewRootUpdateAction(nodewatermarksResource, nodeWatermark), &v1alpha1.NodeWatermark{})
 	if obj == nil {
 		return nil, err
 	}
@@ -105,8 +99,7 @@ func (c *FakeNodeWatermarks) Update(ctx context.Context, nodeWatermark *v1alpha1
 // Add a +genclient:noStatus comment above the type to avoid generating UpdateStatus().
 func (c *FakeNodeWatermarks) UpdateStatus(ctx context.Context, nodeWatermark *v1alpha1.NodeWatermark, opts v1.UpdateOptions) (*v1alpha1.NodeWatermark, error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewUpdateSubresourceAction(nodewatermarksResource, "status", c.ns, nodeWatermark), &v1alpha1.NodeWatermark{})
-
+		Invokes(testing.NewRootUpdateSubresourceAction(nodewatermarksResource, "status", nodeWatermark), &v1alpha1.NodeWatermark{})
 	if obj == nil {
 		return nil, err
 	}
@@ -116,14 +109,13 @@ func (c *FakeNodeWatermarks) UpdateStatus(ctx context.Context, nodeWatermark *v1
 // Delete takes name of the nodeWatermark and deletes it. Returns an error if one occurs.
 func (c *FakeNodeWatermarks) Delete(ctx context.Context, name string, opts v1.DeleteOptions) error {
 	_, err := c.Fake.
-		Invokes(testing.NewDeleteActionWithOptions(nodewatermarksResource, c.ns, name, opts), &v1alpha1.NodeWatermark{})
-
+		Invokes(testing.NewRootDeleteActionWithOptions(nodewatermarksResource, name, opts), &v1alpha1.NodeWatermark{})
 	return err
 }
 
 // DeleteCollection deletes a collection of objects.
 func (c *FakeNodeWatermarks) DeleteCollection(ctx context.Context, opts v1.DeleteOptions, listOpts v1.ListOptions) error {
-	action := testing.NewDeleteCollectionAction(nodewatermarksResource, c.ns, listOpts)
+	action := testing.NewRootDeleteCollectionAction(nodewatermarksResource, listOpts)
 
 	_, err := c.Fake.Invokes(action, &v1alpha1.NodeWatermarkList{})
 	return err
@@ -132,8 +124,7 @@ func (c *FakeNodeWatermarks) DeleteCollection(ctx context.Context, opts v1.Delet
 // Patch applies the patch and returns the patched nodeWatermark.
 func (c *FakeNodeWatermarks) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *v1alpha1.NodeWatermark, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewPatchSubresourceAction(nodewatermarksResource, c.ns, name, pt, data, subresources...), &v1alpha1.NodeWatermark{})
-
+		Invokes(testing.NewRootPatchSubresourceAction(nodewatermarksResource, name, pt, data, subresources...), &v1alpha1.NodeWatermark{})
 	if obj == nil {
 		return nil, err
 	}

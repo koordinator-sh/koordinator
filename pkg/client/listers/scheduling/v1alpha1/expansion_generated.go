@@ -30,10 +30,6 @@ type DeviceListerExpansion interface{}
 // NodeWatermarkLister.
 type NodeWatermarkListerExpansion interface{}
 
-// NodeWatermarkNamespaceListerExpansion allows custom methods to be added to
-// NodeWatermarkNamespaceLister.
-type NodeWatermarkNamespaceListerExpansion interface{}
-
 // PodMigrationJobListerExpansion allows custom methods to be added to
 // PodMigrationJobLister.
 type PodMigrationJobListerExpansion interface{}

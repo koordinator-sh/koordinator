@@ -49,8 +49,8 @@ func (c *SchedulingV1alpha1Client) Devices() DeviceInterface {
 	return newDevices(c)
 }
 
-func (c *SchedulingV1alpha1Client) NodeWatermarks(namespace string) NodeWatermarkInterface {
-	return newNodeWatermarks(c, namespace)
+func (c *SchedulingV1alpha1Client) NodeWatermarks() NodeWatermarkInterface {
+	return newNodeWatermarks(c)
 }
 
 func (c *SchedulingV1alpha1Client) PodMigrationJobs() PodMigrationJobInterface {
