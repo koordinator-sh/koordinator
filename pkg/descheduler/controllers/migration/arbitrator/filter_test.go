@@ -204,6 +204,76 @@ func TestFilterMaxMigratingGlobally(t *testing.T) {
 			assert.Equal(t, tt.want, got)
 		})
 	}
+
+	t.Run("skip gate MaxMigratingGlobally", func(t *testing.T) {
+		scheme := runtime.NewScheme()
+		_ = v1alpha1.AddToScheme(scheme)
+		_ = clientgoscheme.AddToScheme(scheme)
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme).
+			WithIndex(&corev1.Pod{}, "pod.spec.nodeName", func(object client.Object) []string {
+				pod := object.(*corev1.Pod)
+				return []string{pod.Spec.NodeName}
+			}).
+			WithIndex(&v1alpha1.PodMigrationJob{}, "job.pod.uid", func(obj client.Object) []string {
+				pmj := obj.(*v1alpha1.PodMigrationJob)
+				return []string{string(pmj.Spec.PodRef.UID)}
+			}).
+			WithIndex(&v1alpha1.PodMigrationJob{}, "job.pod.namespacedName", func(obj client.Object) []string {
+				pmj := obj.(*v1alpha1.PodMigrationJob)
+				return []string{pmj.Spec.PodRef.Namespace + "/" + pmj.Spec.PodRef.Name}
+			}).
+			Build()
+		a := filter{
+			client:                     fakeClient,
+			args:                       &config.MigrationControllerArgs{},
+			arbitratedPodMigrationJobs: map[types.UID]bool{},
+			skipEvictionGates:          map[config.EvictionGate]struct{}{config.EvictionGateMaxMigratingGlobally: {}},
+		}
+		a.args.MaxMigratingGlobally = ptr.To[int32](1)
+
+		// create a migrating job for a different pod so it would normally exceed.
+		migratingPod := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: "default",
+				Name:      "migrating-pod",
+				UID:       uuid.NewUUID(),
+			},
+			Spec: corev1.PodSpec{NodeName: "test-node"},
+			Status: corev1.PodStatus{
+				Phase: corev1.PodRunning,
+			},
+		}
+		assert.Nil(t, a.client.Create(context.TODO(), migratingPod))
+		job := &v1alpha1.PodMigrationJob{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:              "job-1",
+				CreationTimestamp: metav1.Time{Time: time.Now()},
+				Annotations:       map[string]string{AnnotationPassedArbitration: "true"},
+			},
+			Spec: v1alpha1.PodMigrationJobSpec{
+				PodRef: &corev1.ObjectReference{
+					Namespace: migratingPod.Namespace,
+					Name:      migratingPod.Name,
+					UID:       migratingPod.UID,
+				},
+			},
+		}
+		a.markJobPassedArbitration(job.UID)
+		assert.Nil(t, a.client.Create(context.TODO(), job))
+
+		filterPod := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: "default",
+				Name:      fmt.Sprintf("test-pod-%s", uuid.NewUUID()),
+				UID:       uuid.NewUUID(),
+			},
+			Spec: corev1.PodSpec{NodeName: "test-node"},
+			Status: corev1.PodStatus{
+				Phase: corev1.PodRunning,
+			},
+		}
+		assert.True(t, a.filterMaxMigratingGlobally(filterPod))
+	})
 }
 
 func TestFilterMaxMigratingPerNode(t *testing.T) {
@@ -360,6 +430,76 @@ func TestFilterMaxMigratingPerNode(t *testing.T) {
 			assert.Equal(t, tt.want, got)
 		})
 	}
+
+	t.Run("skip gate MaxMigratingPerNode", func(t *testing.T) {
+		scheme := runtime.NewScheme()
+		_ = v1alpha1.AddToScheme(scheme)
+		_ = clientgoscheme.AddToScheme(scheme)
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme).
+			WithIndex(&corev1.Pod{}, "pod.spec.nodeName", func(object client.Object) []string {
+				pod := object.(*corev1.Pod)
+				return []string{pod.Spec.NodeName}
+			}).
+			WithIndex(&v1alpha1.PodMigrationJob{}, "job.pod.uid", func(obj client.Object) []string {
+				pmj := obj.(*v1alpha1.PodMigrationJob)
+				return []string{string(pmj.Spec.PodRef.UID)}
+			}).
+			WithIndex(&v1alpha1.PodMigrationJob{}, "job.pod.namespacedName", func(obj client.Object) []string {
+				pmj := obj.(*v1alpha1.PodMigrationJob)
+				return []string{pmj.Spec.PodRef.Namespace + "/" + pmj.Spec.PodRef.Name}
+			}).
+			Build()
+		a := filter{
+			client:                     fakeClient,
+			args:                       &config.MigrationControllerArgs{},
+			arbitratedPodMigrationJobs: map[types.UID]bool{},
+			skipEvictionGates:          map[config.EvictionGate]struct{}{config.EvictionGateMaxMigratingPerNode: {}},
+		}
+		a.args.MaxMigratingPerNode = ptr.To[int32](1)
+
+		// create a migrating job on same node for a different pod so it would normally exceed.
+		migratingPod := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: "default",
+				Name:      "migrating-pod",
+				UID:       uuid.NewUUID(),
+			},
+			Spec: corev1.PodSpec{NodeName: "test-node"},
+			Status: corev1.PodStatus{
+				Phase: corev1.PodRunning,
+			},
+		}
+		assert.Nil(t, a.client.Create(context.TODO(), migratingPod))
+		job := &v1alpha1.PodMigrationJob{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:              "job-1",
+				CreationTimestamp: metav1.Time{Time: time.Now()},
+				Annotations:       map[string]string{AnnotationPassedArbitration: "true"},
+			},
+			Spec: v1alpha1.PodMigrationJobSpec{
+				PodRef: &corev1.ObjectReference{
+					Namespace: migratingPod.Namespace,
+					Name:      migratingPod.Name,
+					UID:       migratingPod.UID,
+				},
+			},
+		}
+		a.markJobPassedArbitration(job.UID)
+		assert.Nil(t, a.client.Create(context.TODO(), job))
+
+		filterPod := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: "default",
+				Name:      fmt.Sprintf("test-pod-%s", uuid.NewUUID()),
+				UID:       uuid.NewUUID(),
+			},
+			Spec: corev1.PodSpec{NodeName: "test-node"},
+			Status: corev1.PodStatus{
+				Phase: corev1.PodRunning,
+			},
+		}
+		assert.True(t, a.filterMaxMigratingPerNode(filterPod))
+	})
 }
 
 func TestFilterMaxMigratingPerNamespace(t *testing.T) {
@@ -512,6 +652,65 @@ func TestFilterMaxMigratingPerNamespace(t *testing.T) {
 			assert.Equal(t, tt.want, got)
 		})
 	}
+
+	t.Run("skip gate MaxMigratingPerNamespace", func(t *testing.T) {
+		scheme := runtime.NewScheme()
+		_ = v1alpha1.AddToScheme(scheme)
+		_ = clientgoscheme.AddToScheme(scheme)
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme).
+			WithIndex(&v1alpha1.PodMigrationJob{}, "job.pod.uid", func(obj client.Object) []string {
+				pmj := obj.(*v1alpha1.PodMigrationJob)
+				return []string{string(pmj.Spec.PodRef.UID)}
+			}).
+			WithIndex(&v1alpha1.PodMigrationJob{}, "job.pod.namespace", func(obj client.Object) []string {
+				pmj := obj.(*v1alpha1.PodMigrationJob)
+				return []string{pmj.Spec.PodRef.Namespace}
+			}).
+			Build()
+		a := filter{
+			client:                     fakeClient,
+			args:                       &config.MigrationControllerArgs{},
+			arbitratedPodMigrationJobs: map[types.UID]bool{},
+			skipEvictionGates:          map[config.EvictionGate]struct{}{config.EvictionGateMaxMigratingPerNamespace: {}},
+		}
+		a.args.MaxMigratingPerNamespace = ptr.To[int32](1)
+
+		migratingPod := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: "default",
+				Name:      "migrating-pod",
+				UID:       uuid.NewUUID(),
+			},
+			Status: corev1.PodStatus{Phase: corev1.PodRunning},
+		}
+		assert.Nil(t, a.client.Create(context.TODO(), migratingPod))
+		job := &v1alpha1.PodMigrationJob{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:              "job-1",
+				CreationTimestamp: metav1.Time{Time: time.Now()},
+				Annotations:       map[string]string{AnnotationPassedArbitration: "true"},
+			},
+			Spec: v1alpha1.PodMigrationJobSpec{
+				PodRef: &corev1.ObjectReference{
+					Namespace: migratingPod.Namespace,
+					Name:      migratingPod.Name,
+					UID:       migratingPod.UID,
+				},
+			},
+		}
+		a.markJobPassedArbitration(job.UID)
+		assert.Nil(t, a.client.Create(context.TODO(), job))
+
+		filterPod := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: "default",
+				Name:      fmt.Sprintf("test-pod-%s", uuid.NewUUID()),
+				UID:       uuid.NewUUID(),
+			},
+			Status: corev1.PodStatus{Phase: corev1.PodRunning},
+		}
+		assert.True(t, a.filterMaxMigratingPerNamespace(filterPod))
+	})
 }
 
 func TestFilterMaxMigratingPerWorkload(t *testing.T) {
@@ -706,6 +905,80 @@ func TestFilterMaxMigratingPerWorkload(t *testing.T) {
 			assert.Equal(t, tt.want, got)
 		})
 	}
+
+	t.Run("skip gate MaxMigratingPerWorkload", func(t *testing.T) {
+		scheme := runtime.NewScheme()
+		_ = v1alpha1.AddToScheme(scheme)
+		_ = clientgoscheme.AddToScheme(scheme)
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme).
+			WithIndex(&v1alpha1.PodMigrationJob{}, "job.pod.uid", func(obj client.Object) []string {
+				pmj := obj.(*v1alpha1.PodMigrationJob)
+				return []string{string(pmj.Spec.PodRef.UID)}
+			}).
+			WithIndex(&v1alpha1.PodMigrationJob{}, "job.pod.namespace", func(obj client.Object) []string {
+				pmj := obj.(*v1alpha1.PodMigrationJob)
+				return []string{pmj.Spec.PodRef.Namespace}
+			}).
+			Build()
+
+		intOrString := intstr.FromInt(1)
+		maxUnavailable := intstr.FromInt(9)
+		a := filter{
+			client:                     fakeClient,
+			args:                       &config.MigrationControllerArgs{},
+			arbitratedPodMigrationJobs: map[types.UID]bool{},
+			skipEvictionGates:          map[config.EvictionGate]struct{}{config.EvictionGateMaxMigratingPerWorkload: {}},
+		}
+		a.args.MaxMigratingPerWorkload = &intOrString
+		a.args.MaxUnavailablePerWorkload = &maxUnavailable
+
+		// one migrating pod in same workload would normally exceed maxMigrating=1 for a different pod.
+		migratingPod := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace:       "default",
+				Name:            "migrating-pod",
+				UID:             uuid.NewUUID(),
+				OwnerReferences: ownerReferences1,
+			},
+			Spec: corev1.PodSpec{NodeName: "test-node"},
+			Status: corev1.PodStatus{
+				Phase: corev1.PodRunning,
+				Conditions: []corev1.PodCondition{
+					{Type: corev1.PodReady, Status: corev1.ConditionTrue},
+				},
+			},
+		}
+		assert.Nil(t, a.client.Create(context.TODO(), migratingPod))
+		job := &v1alpha1.PodMigrationJob{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:              "job-1",
+				CreationTimestamp: metav1.Time{Time: time.Now()},
+				Annotations:       map[string]string{AnnotationPassedArbitration: "true"},
+			},
+			Spec: v1alpha1.PodMigrationJobSpec{
+				PodRef: &corev1.ObjectReference{
+					Namespace: migratingPod.Namespace,
+					Name:      migratingPod.Name,
+					UID:       migratingPod.UID,
+				},
+			},
+		}
+		a.markJobPassedArbitration(job.UID)
+		assert.Nil(t, a.client.Create(context.TODO(), job))
+
+		filterPod := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace:       "default",
+				Name:            fmt.Sprintf("test-pod-%s", uuid.NewUUID()),
+				UID:             uuid.NewUUID(),
+				OwnerReferences: ownerReferences1,
+			},
+			Spec:   corev1.PodSpec{NodeName: "test-node"},
+			Status: corev1.PodStatus{Phase: corev1.PodRunning},
+		}
+		a.controllerFinder = &fakeControllerFinder{replicas: 10}
+		assert.True(t, a.filterMaxMigratingOrUnavailablePerWorkload(filterPod))
+	})
 }
 
 func TestFilterMaxUnavailablePerWorkload(t *testing.T) {
@@ -956,6 +1229,62 @@ func TestFilterMaxUnavailablePerWorkload(t *testing.T) {
 			assert.Equal(t, tt.want, got)
 		})
 	}
+
+	t.Run("skip gate MaxUnavailablePerWorkload", func(t *testing.T) {
+		scheme := runtime.NewScheme()
+		_ = v1alpha1.AddToScheme(scheme)
+		_ = clientgoscheme.AddToScheme(scheme)
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme).
+			WithIndex(&v1alpha1.PodMigrationJob{}, "job.pod.uid", func(obj client.Object) []string {
+				pmj := obj.(*v1alpha1.PodMigrationJob)
+				return []string{string(pmj.Spec.PodRef.UID)}
+			}).
+			WithIndex(&v1alpha1.PodMigrationJob{}, "job.pod.namespace", func(obj client.Object) []string {
+				pmj := obj.(*v1alpha1.PodMigrationJob)
+				return []string{pmj.Spec.PodRef.Namespace}
+			}).
+			Build()
+
+		intOrString := intstr.FromInt(1)
+		maxUnavailable := intstr.FromInt(1)
+		a := filter{
+			client:                     fakeClient,
+			args:                       &config.MigrationControllerArgs{},
+			arbitratedPodMigrationJobs: map[types.UID]bool{},
+			skipEvictionGates:          map[config.EvictionGate]struct{}{config.EvictionGateMaxUnavailablePerWorkload: {}},
+		}
+		a.args.MaxMigratingPerWorkload = &intOrString
+		a.args.MaxUnavailablePerWorkload = &maxUnavailable
+
+		// create one unavailable pod in same workload which would normally exceed maxUnavailable=1
+		unavailablePod := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace:       "default",
+				Name:            "unavailable-pod",
+				UID:             uuid.NewUUID(),
+				OwnerReferences: ownerReferences1,
+			},
+			Status: corev1.PodStatus{
+				Phase: corev1.PodPending,
+			},
+		}
+		assert.Nil(t, a.client.Create(context.TODO(), unavailablePod))
+
+		filterPod := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace:       "default",
+				Name:            fmt.Sprintf("test-pod-%s", uuid.NewUUID()),
+				UID:             uuid.NewUUID(),
+				OwnerReferences: ownerReferences1,
+			},
+			Status: corev1.PodStatus{Phase: corev1.PodRunning},
+		}
+		a.controllerFinder = &fakeControllerFinder{
+			replicas: 10,
+			pods:     []*corev1.Pod{unavailablePod},
+		}
+		assert.True(t, a.filterMaxMigratingOrUnavailablePerWorkload(filterPod))
+	})
 }
 
 func TestFilterExpectedReplicas(t *testing.T) {

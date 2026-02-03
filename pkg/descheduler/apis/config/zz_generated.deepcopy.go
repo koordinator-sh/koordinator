@@ -371,6 +371,11 @@ func (in *MigrationControllerArgs) DeepCopyInto(out *MigrationControllerArgs) {
 		*out = new(Namespaces)
 		(*in).DeepCopyInto(*out)
 	}
+	if in.SkipEvictionGates != nil {
+		in, out := &in.SkipEvictionGates, &out.SkipEvictionGates
+		*out = make([]EvictionGate, len(*in))
+		copy(*out, *in)
+	}
 	if in.MaxMigratingGlobally != nil {
 		in, out := &in.MaxMigratingGlobally, &out.MaxMigratingGlobally
 		*out = new(int32)

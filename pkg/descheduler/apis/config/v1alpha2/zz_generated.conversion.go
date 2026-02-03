@@ -553,6 +553,7 @@ func autoConvert_v1alpha2_MigrationControllerArgs_To_config_MigrationControllerA
 	out.Namespaces = (*config.Namespaces)(unsafe.Pointer(in.Namespaces))
 	out.NodeFit = in.NodeFit
 	out.NodeSelector = in.NodeSelector
+	out.SkipEvictionGates = *(*[]config.EvictionGate)(unsafe.Pointer(&in.SkipEvictionGates))
 	out.MaxMigratingGlobally = (*int32)(unsafe.Pointer(in.MaxMigratingGlobally))
 	out.MaxMigratingPerNode = (*int32)(unsafe.Pointer(in.MaxMigratingPerNode))
 	out.MaxMigratingPerNamespace = (*int32)(unsafe.Pointer(in.MaxMigratingPerNamespace))
@@ -595,6 +596,7 @@ func autoConvert_config_MigrationControllerArgs_To_v1alpha2_MigrationControllerA
 	out.Namespaces = (*Namespaces)(unsafe.Pointer(in.Namespaces))
 	out.NodeFit = in.NodeFit
 	out.NodeSelector = in.NodeSelector
+	out.SkipEvictionGates = *(*[]config.EvictionGate)(unsafe.Pointer(&in.SkipEvictionGates))
 	out.MaxMigratingGlobally = (*int32)(unsafe.Pointer(in.MaxMigratingGlobally))
 	out.MaxMigratingPerNode = (*int32)(unsafe.Pointer(in.MaxMigratingPerNode))
 	out.MaxMigratingPerNamespace = (*int32)(unsafe.Pointer(in.MaxMigratingPerNamespace))

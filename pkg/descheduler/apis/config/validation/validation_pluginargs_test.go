@@ -93,6 +93,13 @@ func TestValidateMigrationControllerArgs(t *testing.T) {
 			},
 			wantErr: true,
 		},
+		{
+			name: "invalid skipEvictionGates",
+			args: &v1alpha2.MigrationControllerArgs{
+				SkipEvictionGates: []deschedulerconfig.EvictionGate{"NoSuchGate"},
+			},
+			wantErr: true,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
