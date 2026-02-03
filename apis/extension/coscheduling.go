@@ -132,6 +132,14 @@ type NetworkTopologySpec struct {
 type NetworkTopologyGatherRule struct {
 	Layer    schedulingv1alpha1.TopologyLayer `json:"layer"`
 	Strategy NetworkTopologyGatherStrategy    `json:"strategy"`
+	// SlotMultiple specifies that the number of Pods placed in this topology layer
+	// must be a multiple of this value. This is useful when the communication pattern
+	// within a topology layer requires a specific batch size.
+	// For example, if SlotMultiple is 8, the number of Pods in each spine/leaf/node
+	// will be 0, 8, 16, 24, etc.
+	// If not specified or set to 0/1, no multiple constraint is applied.
+	// +optional
+	SlotMultiple int `json:"slotMultiple,omitempty"`
 }
 
 type NetworkTopologyGatherStrategy string

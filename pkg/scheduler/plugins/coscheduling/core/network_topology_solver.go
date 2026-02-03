@@ -16,7 +16,8 @@ import (
 )
 
 const (
-	MessageNoCandidateTopologyNodes = "no candidate topology nodes can accommodate job, desiredOfferSlot: %d, %s, %s"
+	MessageNoCandidateTopologyNodes     = "no candidate topology nodes can accommodate job, desiredOfferSlot: %d, %s, %s"
+	MessageSlotMultipleConstraintNotMet = "slot multiple constraint cannot be satisfied, desiredOfferSlot: %d, actualOfferSlot: %d, slotMultiple constraints: %s"
 )
 
 const (
@@ -83,7 +84,21 @@ func (solver *networkTopologySolverImpl) PlacePods(
 	})
 
 	distribution := map[string]int{}
-	orderedNodes, _ := distributeOfferSlot(jobNetworkRequirements.DesiredOfferSlot, candidateTopologyNodes[0], distribution)
+	orderedNodes, actualOfferSlot := distributeOfferSlot(jobNetworkRequirements.DesiredOfferSlot, candidateTopologyNodes[0], distribution, jobNetworkRequirements.LayerSlotMultiple)
+
+	// Check if slot multiple constraint caused insufficient slots
+	if actualOfferSlot < jobNetworkRequirements.DesiredOfferSlot {
+		var slotMultipleInfo []string
+		for layer, multiple := range jobNetworkRequirements.LayerSlotMultiple {
+			slotMultipleInfo = append(slotMultipleInfo, fmt.Sprintf("%s=%d", layer, multiple))
+		}
+		sort.Strings(slotMultipleInfo)
+		return nil, framework.NewStatus(framework.Unschedulable,
+			fmt.Sprintf(MessageSlotMultipleConstraintNotMet,
+				jobNetworkRequirements.DesiredOfferSlot,
+				actualOfferSlot,
+				strings.Join(slotMultipleInfo, ", ")))
+	}
 
 	podToNode := distributePods(toSchedulePods, orderedNodes, distribution)
 	return podToNode, nil
@@ -255,15 +270,23 @@ func distributeOfferSlot(
 	desiredOfferSlot int,
 	topologyNode *networktopology.TreeNode,
 	distribution map[string]int,
+	layerSlotMultiple map[schedulingv1alpha1.TopologyLayer]int,
 ) (topologyOrderedNodes []string, offerSlot int) {
-	if topologyNode.Layer == schedulingv1alpha1.NodeTopologyLayer {
-		offerSlot = topologyNode.OfferSlot
-		if offerSlot > desiredOfferSlot {
-			offerSlot = desiredOfferSlot
-		}
-		distribution[topologyNode.Name] = offerSlot
-		return []string{topologyNode.Name}, offerSlot
+	// Calculate the maximum slot this topology node can provide
+	maxOfferSlot := topologyNode.OfferSlot
+	if maxOfferSlot > desiredOfferSlot {
+		maxOfferSlot = desiredOfferSlot
 	}
+
+	if multiple := layerSlotMultiple[topologyNode.Layer]; multiple > 1 {
+		maxOfferSlot = (maxOfferSlot / multiple) * multiple
+	}
+
+	if topologyNode.Layer == schedulingv1alpha1.NodeTopologyLayer {
+		distribution[topologyNode.Name] = maxOfferSlot
+		return []string{topologyNode.Name}, maxOfferSlot
+	}
+
 	var children []*networktopology.TreeNode
 	for _, child := range topologyNode.Children {
 		if child != nil {
@@ -273,10 +296,12 @@ func distributeOfferSlot(
 	sort.Slice(children, func(i, j int) bool {
 		return topologyNodeLessFunc(children[i], children[j], false)
 	})
+
+	remainingSlot := maxOfferSlot
 	for _, child := range children {
-		orderedNodesOfChild, offerSlotOfChild := distributeOfferSlot(desiredOfferSlot, child, distribution)
+		orderedNodesOfChild, offerSlotOfChild := distributeOfferSlot(remainingSlot, child, distribution, layerSlotMultiple)
 		topologyOrderedNodes = append(topologyOrderedNodes, orderedNodesOfChild...)
-		desiredOfferSlot -= offerSlotOfChild
+		remainingSlot -= offerSlotOfChild
 		offerSlot += offerSlotOfChild
 	}
 	return topologyOrderedNodes, offerSlot
