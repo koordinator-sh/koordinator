@@ -237,13 +237,14 @@ func searchOfferSlotSatisfiedNodes(
 }
 
 var topologyNodeLessFunc = func(a, b *networktopology.TreeNode, lowerOfferSlot bool) bool {
-	if a.OfferSlot != b.OfferSlot {
-		if lowerOfferSlot {
-			return a.OfferSlot < b.OfferSlot
-		} else {
-			return a.OfferSlot > b.OfferSlot
+	// Compare OfferSlot layer by layer from the current node
+
+	for nodeA, nodeB := a, b; nodeA != nil && nodeB != nil; nodeA, nodeB = nodeA.Parent, nodeB.Parent {
+		if nodeA.OfferSlot != nodeB.OfferSlot {
+			return (nodeA.OfferSlot < nodeB.OfferSlot) == lowerOfferSlot
 		}
 	}
+
 	if a.Score != b.Score {
 		return a.Score > b.Score
 	}
