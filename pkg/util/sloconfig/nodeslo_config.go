@@ -416,8 +416,12 @@ func DefaultCPUBurstStrategy() *slov1alpha1.CPUBurstStrategy {
 
 func DefaultCPUBurstConfig() slov1alpha1.CPUBurstConfig {
 	return slov1alpha1.CPUBurstConfig{
-		Policy:                     slov1alpha1.CPUBurstNone,
-		CPUBurstPercent:            ptr.To[int64](1000),
+		Policy: slov1alpha1.CPUBurstNone,
+		// CPUBurstPercent is set to 100% (burst = quota) for compatibility with cgroup v2 kernels
+		// that enforce the constraint: cpu.max.burst <= cpu.max (cfs_burst_us <= cfs_quota_us).
+		// This prevents "invalid argument" errors on standard Linux kernels (GKE, Ubuntu, etc.).
+		// Users on permissive kernels (e.g., Anolis OS) can configure higher values via NodeSLO.
+		CPUBurstPercent:            ptr.To[int64](100),
 		CFSQuotaBurstPercent:       ptr.To[int64](300),
 		CFSQuotaBurstPeriodSeconds: ptr.To[int64](-1),
 	}
