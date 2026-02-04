@@ -97,7 +97,7 @@ func NewDeschedulerCommand(registryOptions ...Option) *cobra.Command {
 
 	nfs := opts.Flags
 	verflag.AddFlags(nfs.FlagSet("global"))
-	globalflag.AddGlobalFlags(nfs.FlagSet("global"), cmd.Name())
+	globalflag.AddGlobalFlags(nfs.FlagSet("global"), cmd.Name(), logs.SkipLoggingConfigurationFlags())
 	fs := cmd.Flags()
 	for _, f := range nfs.FlagSets {
 		fs.AddFlagSet(f)
