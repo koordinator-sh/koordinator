@@ -2012,3 +2012,363 @@ func TestPodGroupManager_NetworkTopology(t *testing.T) {
 		})
 	}
 }
+
+func TestPodGroupManager_PreScore(t *testing.T) {
+	tests := []struct {
+		name                   string
+		pod                    *corev1.Pod
+		clusterNetworkTopology *schedulingv1alpha1.ClusterNetworkTopology
+		allNodes               []*corev1.Node
+		candidateNodes         []*corev1.Node
+		existingPods           []*corev1.Pod
+		wantNodeScore          map[string]int64
+		wantStatus             *framework.Status
+	}{
+		{
+			name: "scheduled, all pods to one node",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "pending-pod-1",
+					Namespace: "default",
+					Annotations: map[string]string{
+						extension.AnnotationPodNetworkTopologySelector: "test-selector",
+					},
+				},
+			},
+			/*
+				Cluster Topology
+				├── SpineLayer: s1
+				│   ├── BlockLayer: b1
+				│   │   ├── node-8 pod-same-key
+				│   │   ├── node-1
+				| 	|   └── node-9
+				│   └── BlockLayer: b2
+				│       ├── node-7 pod-same-key
+				│       └── node-2
+				└── SpineLayer: s2
+				    ├── BlockLayer: b3
+				    │   ├── node-6 pod-same-key
+				    │   └── node-3
+				    └── BlockLayer: b4
+				        ├── node-5
+				        └── node-4
+			*/
+			clusterNetworkTopology: networktopology.FakeClusterNetworkTopology,
+			allNodes: []*corev1.Node{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "node-8",
+						Labels: map[string]string{
+							networktopology.FakeSpineLabel: "s1",
+							networktopology.FakeBlockLabel: "b1",
+						},
+					},
+					Status: corev1.NodeStatus{
+						Allocatable: corev1.ResourceList{
+							corev1.ResourceCPU:  resource.MustParse("16"),
+							corev1.ResourcePods: resource.MustParse("110"),
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "node-1",
+						Labels: map[string]string{
+							networktopology.FakeSpineLabel: "s1",
+							networktopology.FakeBlockLabel: "b1",
+						},
+					},
+					Status: corev1.NodeStatus{
+						Allocatable: corev1.ResourceList{
+							corev1.ResourceCPU:  resource.MustParse("16"),
+							corev1.ResourcePods: resource.MustParse("110"),
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "node-9",
+						Labels: map[string]string{
+							networktopology.FakeSpineLabel: "s1",
+							networktopology.FakeBlockLabel: "b1",
+						},
+					},
+					Status: corev1.NodeStatus{
+						Allocatable: corev1.ResourceList{
+							corev1.ResourceCPU:  resource.MustParse("16"),
+							corev1.ResourcePods: resource.MustParse("110"),
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "node-7",
+						Labels: map[string]string{
+							networktopology.FakeSpineLabel: "s1",
+							networktopology.FakeBlockLabel: "b2",
+						},
+					},
+					Status: corev1.NodeStatus{
+						Allocatable: corev1.ResourceList{
+							corev1.ResourceCPU:  resource.MustParse("16"),
+							corev1.ResourcePods: resource.MustParse("110"),
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "node-2",
+						Labels: map[string]string{
+							networktopology.FakeSpineLabel: "s1",
+							networktopology.FakeBlockLabel: "b2",
+						},
+					},
+					Status: corev1.NodeStatus{
+						Allocatable: corev1.ResourceList{
+							corev1.ResourceCPU:  resource.MustParse("16"),
+							corev1.ResourcePods: resource.MustParse("110"),
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "node-6",
+						Labels: map[string]string{
+							networktopology.FakeSpineLabel: "s2",
+							networktopology.FakeBlockLabel: "b3",
+						},
+					},
+					Status: corev1.NodeStatus{
+						Allocatable: corev1.ResourceList{
+							corev1.ResourceCPU:  resource.MustParse("16"),
+							corev1.ResourcePods: resource.MustParse("110"),
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "node-3",
+						Labels: map[string]string{
+							networktopology.FakeSpineLabel: "s2",
+							networktopology.FakeBlockLabel: "b3",
+						},
+					},
+					Status: corev1.NodeStatus{
+						Allocatable: corev1.ResourceList{
+							corev1.ResourceCPU:  resource.MustParse("16"),
+							corev1.ResourcePods: resource.MustParse("110"),
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "node-5",
+						Labels: map[string]string{
+							networktopology.FakeSpineLabel: "s2",
+							networktopology.FakeBlockLabel: "b4",
+						},
+					},
+					Status: corev1.NodeStatus{
+						Allocatable: corev1.ResourceList{
+							corev1.ResourceCPU:  resource.MustParse("16"),
+							corev1.ResourcePods: resource.MustParse("110"),
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "node-4",
+						Labels: map[string]string{
+							networktopology.FakeSpineLabel: "s2",
+							networktopology.FakeBlockLabel: "b4",
+						},
+					},
+					Status: corev1.NodeStatus{
+						Allocatable: corev1.ResourceList{
+							corev1.ResourceCPU:  resource.MustParse("16"),
+							corev1.ResourcePods: resource.MustParse("110"),
+						},
+					},
+				},
+			},
+			candidateNodes: []*corev1.Node{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "node-1",
+						Labels: map[string]string{
+							networktopology.FakeSpineLabel: "s1",
+							networktopology.FakeBlockLabel: "b1",
+						},
+					},
+					Status: corev1.NodeStatus{
+						Allocatable: corev1.ResourceList{
+							corev1.ResourceCPU:  resource.MustParse("16"),
+							corev1.ResourcePods: resource.MustParse("110"),
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "node-9",
+						Labels: map[string]string{
+							networktopology.FakeSpineLabel: "s1",
+							networktopology.FakeBlockLabel: "b1",
+						},
+					},
+					Status: corev1.NodeStatus{
+						Allocatable: corev1.ResourceList{
+							corev1.ResourceCPU:  resource.MustParse("16"),
+							corev1.ResourcePods: resource.MustParse("110"),
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "node-2",
+						Labels: map[string]string{
+							networktopology.FakeSpineLabel: "s1",
+							networktopology.FakeBlockLabel: "b2",
+						},
+					},
+					Status: corev1.NodeStatus{
+						Allocatable: corev1.ResourceList{
+							corev1.ResourceCPU:  resource.MustParse("16"),
+							corev1.ResourcePods: resource.MustParse("110"),
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "node-3",
+						Labels: map[string]string{
+							networktopology.FakeSpineLabel: "s2",
+							networktopology.FakeBlockLabel: "b3",
+						},
+					},
+					Status: corev1.NodeStatus{
+						Allocatable: corev1.ResourceList{
+							corev1.ResourceCPU:  resource.MustParse("16"),
+							corev1.ResourcePods: resource.MustParse("110"),
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "node-5",
+						Labels: map[string]string{
+							networktopology.FakeSpineLabel: "s2",
+							networktopology.FakeBlockLabel: "b4",
+						},
+					},
+					Status: corev1.NodeStatus{
+						Allocatable: corev1.ResourceList{
+							corev1.ResourceCPU:  resource.MustParse("16"),
+							corev1.ResourcePods: resource.MustParse("110"),
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "node-4",
+						Labels: map[string]string{
+							networktopology.FakeSpineLabel: "s2",
+							networktopology.FakeBlockLabel: "b4",
+						},
+					},
+					Status: corev1.NodeStatus{
+						Allocatable: corev1.ResourceList{
+							corev1.ResourceCPU:  resource.MustParse("16"),
+							corev1.ResourcePods: resource.MustParse("110"),
+						},
+					},
+				},
+			},
+			existingPods: []*corev1.Pod{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "existing-pod-1",
+						Namespace: "default",
+						UID:       "existing-pod-1",
+						Annotations: map[string]string{
+							extension.AnnotationPodNetworkTopologySelector: "test-selector",
+						},
+					},
+					Spec: corev1.PodSpec{
+						NodeName: "node-8",
+						Containers: []corev1.Container{
+							{
+								Resources: corev1.ResourceRequirements{
+									Requests: corev1.ResourceList{
+										corev1.ResourceCPU: resource.MustParse("16"),
+									},
+								},
+							},
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "existing-pod-3",
+						Namespace: "default",
+						UID:       "existing-pod-3",
+						Annotations: map[string]string{
+							extension.AnnotationPodNetworkTopologySelector: "test-selector",
+						},
+					},
+					Spec: corev1.PodSpec{
+						NodeName: "node-7",
+						Containers: []corev1.Container{
+							{
+								Resources: corev1.ResourceRequirements{
+									Requests: corev1.ResourceList{
+										corev1.ResourceCPU: resource.MustParse("16"),
+									},
+								},
+							},
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "existing-pod-2",
+						Namespace: "default",
+						UID:       "existing-pod-2",
+						Annotations: map[string]string{
+							extension.AnnotationPodNetworkTopologySelector: "test-selector",
+						},
+					},
+					Spec: corev1.PodSpec{
+						NodeName: "node-6",
+						Containers: []corev1.Container{
+							{
+								Resources: corev1.ResourceRequirements{
+									Requests: corev1.ResourceList{
+										corev1.ResourceCPU: resource.MustParse("16"),
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			wantNodeScore: map[string]int64{
+				"node-1": 1, "node-2": 0, "node-3": 3, "node-4": 4, "node-5": 5, "node-9": 2,
+			},
+			wantStatus: nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			extendedFramework := NewFakeExtendedFramework(t, tt.allNodes, tt.existingPods, nil, nil, tt.clusterNetworkTopology)
+			pgMgr := &PodGroupManager{handle: extendedFramework, networkTopologySolver: NewNetworkTopologySolver(extendedFramework)}
+			ctx := context.Background()
+			cycleState := framework.NewCycleState()
+			assert.Equal(t, tt.wantStatus, pgMgr.PreScore(ctx, cycleState, tt.pod, tt.candidateNodes))
+			nodeScore := map[string]int64{}
+			for i := range tt.candidateNodes {
+				nodeScore[tt.candidateNodes[i].Name], _ = pgMgr.Score(ctx, cycleState, tt.pod, tt.candidateNodes[i].Name)
+			}
+			assert.Equal(t, tt.wantNodeScore, nodeScore)
+		})
+	}
+}

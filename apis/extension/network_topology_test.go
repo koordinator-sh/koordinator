@@ -169,11 +169,11 @@ func TestGetPodIndex(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := GetPodIndex(tt.args.pod)
-			if !tt.wantErr(t, err, fmt.Sprintf("GetPodIndex(%v)", tt.args.pod)) {
+			got, err := GetPodNetworkTopologyIndex(tt.args.pod)
+			if !tt.wantErr(t, err, fmt.Sprintf("GetPodNetworkTopologyIndex(%v)", tt.args.pod)) {
 				return
 			}
-			assert.Equalf(t, tt.want, got, "GetPodIndex(%v)", tt.args.pod)
+			assert.Equalf(t, tt.want, got, "GetPodNetworkTopologyIndex(%v)", tt.args.pod)
 		})
 	}
 }
