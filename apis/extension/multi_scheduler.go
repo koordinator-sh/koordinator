@@ -45,9 +45,14 @@ type SchedulingHint struct {
 }
 
 const (
+	// DEPRECATED: This api is marked as internal and will be removed next version.
+	// Please use the domain `internal.scheduling.koordinator.sh/` instead.
+	// DeprecatedAnnotationSchedulingHint is used to specify a scheduling hint for the pod.
+	// Each plugin can decide whether to use this hint or not.
+	DeprecatedAnnotationSchedulingHint = SchedulingDomainPrefix + "/scheduling-hint"
 	// AnnotationSchedulingHint is used to specify a scheduling hint for the pod.
 	// Each plugin can decide whether to use this hint or not.
-	AnnotationSchedulingHint = SchedulingDomainPrefix + "/scheduling-hint"
+	AnnotationSchedulingHint = InternalSchedulingDomainPrefix + "/scheduling-hint"
 )
 
 func GetSchedulingHint(pod *corev1.Pod) (*SchedulingHint, error) {
@@ -55,6 +60,14 @@ func GetSchedulingHint(pod *corev1.Pod) (*SchedulingHint, error) {
 		return nil, nil
 	}
 	hintStr, ok := pod.Annotations[AnnotationSchedulingHint]
+	if ok {
+		hint := &SchedulingHint{}
+		if err := json.Unmarshal([]byte(hintStr), hint); err != nil {
+			return nil, err
+		}
+		return hint, nil
+	}
+	hintStr, ok = pod.Annotations[DeprecatedAnnotationSchedulingHint]
 	if !ok {
 		return nil, nil
 	}

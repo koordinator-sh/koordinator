@@ -216,6 +216,9 @@ func (cs *Coscheduling) PreBind(ctx context.Context, cycleState *framework.Cycle
 	if gangInfo == nil {
 		delete(pod.Annotations, extension.AnnotationBindGangGroupId)
 		delete(pod.Annotations, extension.AnnotationBindGangMemberCount)
+		// DEPRECATED: This api is marked as internal and will be removed next version.
+		delete(pod.Annotations, extension.DeprecatedAnnotationBindGangGroupId)
+		delete(pod.Annotations, extension.DeprecatedAnnotationBindGangMemberCount)
 		return nil
 	}
 	if pod.Annotations == nil {
@@ -223,6 +226,9 @@ func (cs *Coscheduling) PreBind(ctx context.Context, cycleState *framework.Cycle
 	}
 	pod.Annotations[extension.AnnotationBindGangGroupId] = gangInfo.GangGroupId
 	pod.Annotations[extension.AnnotationBindGangMemberCount] = strconv.FormatInt(int64(gangInfo.MemberCount), 10)
+	// DEPRECATED: This api is marked as internal and will be removed next version.
+	pod.Annotations[extension.DeprecatedAnnotationBindGangGroupId] = gangInfo.GangGroupId
+	pod.Annotations[extension.DeprecatedAnnotationBindGangMemberCount] = strconv.FormatInt(int64(gangInfo.MemberCount), 10)
 	return nil
 }
 
@@ -230,8 +236,11 @@ func (cs *Coscheduling) PreBindReservation(ctx context.Context, cycleState *fram
 	pod := reservationutil.NewReservePod(r)
 	gangInfo := cs.pgMgr.GetGangBindingInfo(pod)
 	if gangInfo == nil {
-		delete(pod.Annotations, extension.AnnotationBindGangGroupId)
-		delete(pod.Annotations, extension.AnnotationBindGangMemberCount)
+		delete(r.Annotations, extension.AnnotationBindGangGroupId)
+		delete(r.Annotations, extension.AnnotationBindGangMemberCount)
+		// DEPRECATED: This api is marked as internal and will be removed next version.
+		delete(r.Annotations, extension.DeprecatedAnnotationBindGangGroupId)
+		delete(r.Annotations, extension.DeprecatedAnnotationBindGangMemberCount)
 		return nil
 	}
 	if r.Annotations == nil {
@@ -239,6 +248,9 @@ func (cs *Coscheduling) PreBindReservation(ctx context.Context, cycleState *fram
 	}
 	r.Annotations[extension.AnnotationBindGangGroupId] = gangInfo.GangGroupId
 	r.Annotations[extension.AnnotationBindGangMemberCount] = strconv.FormatInt(int64(gangInfo.MemberCount), 10)
+	// DEPRECATED: This api is marked as internal and will be removed next version.
+	r.Annotations[extension.DeprecatedAnnotationBindGangGroupId] = gangInfo.GangGroupId
+	r.Annotations[extension.DeprecatedAnnotationBindGangMemberCount] = strconv.FormatInt(int64(gangInfo.MemberCount), 10)
 	return nil
 }
 
