@@ -555,10 +555,10 @@ func TestCPUBurst_applyCPUBurst(t *testing.T) {
 			},
 			want: want{
 				containerBurstVal: map[string]int64{
-					"test-container-1": 5 * 10 * system.CFSBasePeriodValue,
-					"test-container-2": 3 * 10 * system.CFSBasePeriodValue,
+					"test-container-1": 5 * system.CFSBasePeriodValue,
+					"test-container-2": 3 * system.CFSBasePeriodValue,
 				},
-				podBurstVal: (5 + 3) * 10 * system.CFSBasePeriodValue,
+				podBurstVal: (5 + 3) * system.CFSBasePeriodValue,
 			},
 		},
 		{
@@ -587,15 +587,15 @@ func TestCPUBurst_applyCPUBurst(t *testing.T) {
 			args: args{
 				burstCfg: slov1alpha1.CPUBurstConfig{
 					Policy:          slov1alpha1.CPUBurstAuto,
-					CPUBurstPercent: ptr.To[int64](500),
+					CPUBurstPercent: ptr.To[int64](50),
 				},
 			},
 			want: want{
 				containerBurstVal: map[string]int64{
-					"test-container-1": 5 * 5 * system.CFSBasePeriodValue,
-					"test-container-2": 3 * 5 * system.CFSBasePeriodValue,
+					"test-container-1": 5 * 50 * system.CFSBasePeriodValue / 100,
+					"test-container-2": 3 * 50 * system.CFSBasePeriodValue / 100,
 				},
-				podBurstVal: (5 + 3) * 5 * system.CFSBasePeriodValue,
+				podBurstVal: (5 + 3) * 50 * system.CFSBasePeriodValue / 100,
 			},
 		},
 		{
@@ -671,7 +671,8 @@ func TestCPUBurst_applyCPUBurst(t *testing.T) {
 			testHelper := system.NewFileTestUtil(t)
 
 			b := &cpuBurst{
-				executor: newTestExecutor(),
+				executor:     newTestExecutor(),
+				cgroupReader: resourceexecutor.NewCgroupReader(),
 			}
 
 			stop := make(chan struct{})
@@ -679,6 +680,13 @@ func TestCPUBurst_applyCPUBurst(t *testing.T) {
 			defer func() { stop <- struct{}{} }()
 
 			podMeta := createPodMetaByResource(tt.fields.podName, tt.fields.containerRes)
+
+			containerCurCFS := map[string]int64{}
+			for i := range podMeta.Pod.Spec.Containers {
+				containerCurCFS[podMeta.Pod.Spec.Containers[i].Name] = util.GetContainerBaseCFSQuota(&podMeta.Pod.Spec.Containers[i])
+			}
+
+			initContainerCFSQuota(podMeta, containerCurCFS, testHelper)
 
 			initPodCPUBurst(podMeta, 0, testHelper)
 			initContainerCPUBurst(podMeta, 0, testHelper)
@@ -702,7 +710,7 @@ func TestCPUBurst_applyCPUBurst(t *testing.T) {
 	}
 }
 
-func TestCPUBurst_applyCFSQuotaBurst(t *testing.T) {
+func TestCPUBurst_applyCFSQuotaWithBurst(t *testing.T) {
 	testPodName1 := "test-pod-1"
 	testContainerName1 := "test-container-1"
 	testContainerName2 := "test-container-2"
@@ -719,6 +727,8 @@ func TestCPUBurst_applyCFSQuotaBurst(t *testing.T) {
 		containerCurCFSQuota map[string]int64
 		containerMetric      map[string]containerMetricSample
 		containersThrottled  map[string]testThrottledMetrics
+		podCurCPUBurst       int64
+		containerCurCPUBurst map[string]int64
 	}
 	type args struct {
 		burstCfg  slov1alpha1.CPUBurstConfig
@@ -727,6 +737,8 @@ func TestCPUBurst_applyCFSQuotaBurst(t *testing.T) {
 	type want struct {
 		podCFSQuotaVal       int64
 		containerCFSQuotaVal map[string]int64
+		podCPUBurstVal       int64
+		containerCPUBurstVal map[string]int64
 	}
 	tests := []struct {
 		name   string
@@ -763,6 +775,10 @@ func TestCPUBurst_applyCFSQuotaBurst(t *testing.T) {
 						},
 					},
 				},
+				podCurCPUBurst: 2 * 2 * system.CFSBasePeriodValue,
+				containerCurCPUBurst: map[string]int64{
+					testContainerName1: 2 * 2 * system.CFSBasePeriodValue,
+				},
 			},
 			args: args{
 				burstCfg: slov1alpha1.CPUBurstConfig{
@@ -776,6 +792,10 @@ func TestCPUBurst_applyCFSQuotaBurst(t *testing.T) {
 			want: want{
 				podCFSQuotaVal: int64(2 * float64(system.CFSBasePeriodValue)),
 				containerCFSQuotaVal: map[string]int64{
+					testContainerName1: int64(2 * float64(system.CFSBasePeriodValue)),
+				},
+				podCPUBurstVal: int64(2 * float64(system.CFSBasePeriodValue)),
+				containerCPUBurstVal: map[string]int64{
 					testContainerName1: int64(2 * float64(system.CFSBasePeriodValue)),
 				},
 			},
@@ -809,6 +829,10 @@ func TestCPUBurst_applyCFSQuotaBurst(t *testing.T) {
 						},
 					},
 				},
+				podCurCPUBurst: int64(2 * 2 * float64(system.CFSBasePeriodValue)),
+				containerCurCPUBurst: map[string]int64{
+					testContainerName1: int64(2 * 2 * float64(system.CFSBasePeriodValue)),
+				},
 			},
 			args: args{
 				burstCfg:  defaultAutoBurstCfg,
@@ -819,9 +843,12 @@ func TestCPUBurst_applyCFSQuotaBurst(t *testing.T) {
 				containerCFSQuotaVal: map[string]int64{
 					testContainerName1: int64(2 * 2 * float64(system.CFSBasePeriodValue)),
 				},
+				podCPUBurstVal: int64(2 * 2 * float64(system.CFSBasePeriodValue)),
+				containerCPUBurstVal: map[string]int64{
+					testContainerName1: int64(2 * 2 * float64(system.CFSBasePeriodValue)),
+				},
 			},
 		},
-
 		{
 			name: "scale-down-to-base-for-throttled-pod-on-overload-state",
 			fields: fields{
@@ -851,6 +878,10 @@ func TestCPUBurst_applyCFSQuotaBurst(t *testing.T) {
 						},
 					},
 				},
+				podCurCPUBurst: int64(2 * 1.01 * float64(system.CFSBasePeriodValue)),
+				containerCurCPUBurst: map[string]int64{
+					testContainerName1: int64(2 * 1.01 * float64(system.CFSBasePeriodValue)),
+				},
 			},
 			args: args{
 				burstCfg:  defaultAutoBurstCfg,
@@ -859,6 +890,10 @@ func TestCPUBurst_applyCFSQuotaBurst(t *testing.T) {
 			want: want{
 				podCFSQuotaVal: int64(2 * float64(system.CFSBasePeriodValue)),
 				containerCFSQuotaVal: map[string]int64{
+					testContainerName1: int64(2 * float64(system.CFSBasePeriodValue)),
+				},
+				podCPUBurstVal: int64(2 * float64(system.CFSBasePeriodValue)),
+				containerCPUBurstVal: map[string]int64{
 					testContainerName1: int64(2 * float64(system.CFSBasePeriodValue)),
 				},
 			},
@@ -892,6 +927,10 @@ func TestCPUBurst_applyCFSQuotaBurst(t *testing.T) {
 						},
 					},
 				},
+				podCurCPUBurst: int64(2 * 2 * float64(system.CFSBasePeriodValue)),
+				containerCurCPUBurst: map[string]int64{
+					testContainerName1: int64(2 * 2 * float64(system.CFSBasePeriodValue)),
+				},
 			},
 			args: args{
 				burstCfg:  defaultAutoBurstCfg,
@@ -900,6 +939,10 @@ func TestCPUBurst_applyCFSQuotaBurst(t *testing.T) {
 			want: want{
 				podCFSQuotaVal: int64(2 * 2 * cfsDecreaseStep * float64(system.CFSBasePeriodValue)),
 				containerCFSQuotaVal: map[string]int64{
+					testContainerName1: int64(2 * 2 * cfsDecreaseStep * float64(system.CFSBasePeriodValue)),
+				},
+				podCPUBurstVal: int64(2 * 2 * cfsDecreaseStep * float64(system.CFSBasePeriodValue)),
+				containerCPUBurstVal: map[string]int64{
 					testContainerName1: int64(2 * 2 * cfsDecreaseStep * float64(system.CFSBasePeriodValue)),
 				},
 			},
@@ -933,6 +976,10 @@ func TestCPUBurst_applyCFSQuotaBurst(t *testing.T) {
 						},
 					},
 				},
+				podCurCPUBurst: int64(2 * 2 * float64(system.CFSBasePeriodValue)),
+				containerCurCPUBurst: map[string]int64{
+					testContainerName1: int64(2 * 2 * float64(system.CFSBasePeriodValue)),
+				},
 			},
 			args: args{
 				burstCfg: slov1alpha1.CPUBurstConfig{
@@ -946,6 +993,10 @@ func TestCPUBurst_applyCFSQuotaBurst(t *testing.T) {
 			want: want{
 				podCFSQuotaVal: int64(2 * 2 * cfsDecreaseStep * float64(system.CFSBasePeriodValue)),
 				containerCFSQuotaVal: map[string]int64{
+					testContainerName1: int64(2 * 2 * cfsDecreaseStep * float64(system.CFSBasePeriodValue)),
+				},
+				podCPUBurstVal: int64(2 * 2 * cfsDecreaseStep * float64(system.CFSBasePeriodValue)),
+				containerCPUBurstVal: map[string]int64{
 					testContainerName1: int64(2 * 2 * cfsDecreaseStep * float64(system.CFSBasePeriodValue)),
 				},
 			},
@@ -979,6 +1030,10 @@ func TestCPUBurst_applyCFSQuotaBurst(t *testing.T) {
 						},
 					},
 				},
+				podCurCPUBurst: int64(2 * 2 * float64(system.CFSBasePeriodValue)),
+				containerCurCPUBurst: map[string]int64{
+					testContainerName1: int64(2 * 2 * float64(system.CFSBasePeriodValue)),
+				},
 			},
 			args: args{
 				burstCfg: slov1alpha1.CPUBurstConfig{
@@ -992,6 +1047,10 @@ func TestCPUBurst_applyCFSQuotaBurst(t *testing.T) {
 			want: want{
 				podCFSQuotaVal: int64(2 * float64(system.CFSBasePeriodValue)),
 				containerCFSQuotaVal: map[string]int64{
+					testContainerName1: int64(2 * float64(system.CFSBasePeriodValue)),
+				},
+				podCPUBurstVal: int64(2 * float64(system.CFSBasePeriodValue)),
+				containerCPUBurstVal: map[string]int64{
 					testContainerName1: int64(2 * float64(system.CFSBasePeriodValue)),
 				},
 			},
@@ -1025,6 +1084,10 @@ func TestCPUBurst_applyCFSQuotaBurst(t *testing.T) {
 						},
 					},
 				},
+				podCurCPUBurst: int64(2 * 2.9 * float64(system.CFSBasePeriodValue)),
+				containerCurCPUBurst: map[string]int64{
+					testContainerName1: int64(2 * 2.9 * float64(system.CFSBasePeriodValue)),
+				},
 			},
 			args: args{
 				burstCfg:  defaultAutoBurstCfg,
@@ -1033,6 +1096,10 @@ func TestCPUBurst_applyCFSQuotaBurst(t *testing.T) {
 			want: want{
 				podCFSQuotaVal: int64(2 * 2.9 * float64(system.CFSBasePeriodValue)),
 				containerCFSQuotaVal: map[string]int64{
+					testContainerName1: int64(2 * 2.9 * float64(system.CFSBasePeriodValue)),
+				},
+				podCPUBurstVal: int64(2 * 2.9 * float64(system.CFSBasePeriodValue)),
+				containerCPUBurstVal: map[string]int64{
 					testContainerName1: int64(2 * 2.9 * float64(system.CFSBasePeriodValue)),
 				},
 			},
@@ -1066,6 +1133,10 @@ func TestCPUBurst_applyCFSQuotaBurst(t *testing.T) {
 						},
 					},
 				},
+				podCurCPUBurst: int64(2 * 2.9 * float64(system.CFSBasePeriodValue)),
+				containerCurCPUBurst: map[string]int64{
+					testContainerName1: int64(2 * 2.9 * float64(system.CFSBasePeriodValue)),
+				},
 			},
 			args: args{
 				burstCfg:  defaultAutoBurstCfg,
@@ -1074,6 +1145,10 @@ func TestCPUBurst_applyCFSQuotaBurst(t *testing.T) {
 			want: want{
 				podCFSQuotaVal: int64(2 * 3 * float64(system.CFSBasePeriodValue)),
 				containerCFSQuotaVal: map[string]int64{
+					testContainerName1: int64(2 * 3 * float64(system.CFSBasePeriodValue)),
+				},
+				podCPUBurstVal: int64(2 * 3 * float64(system.CFSBasePeriodValue)),
+				containerCPUBurstVal: map[string]int64{
 					testContainerName1: int64(2 * 3 * float64(system.CFSBasePeriodValue)),
 				},
 			},
@@ -1107,6 +1182,10 @@ func TestCPUBurst_applyCFSQuotaBurst(t *testing.T) {
 						},
 					},
 				},
+				podCurCPUBurst: 2 * system.CFSBasePeriodValue,
+				containerCurCPUBurst: map[string]int64{
+					testContainerName1: 2 * system.CFSBasePeriodValue,
+				},
 			},
 			args: args{
 				burstCfg:  defaultAutoBurstCfg,
@@ -1115,6 +1194,10 @@ func TestCPUBurst_applyCFSQuotaBurst(t *testing.T) {
 			want: want{
 				podCFSQuotaVal: int64(2 * cfsIncreaseStep * float64(system.CFSBasePeriodValue)),
 				containerCFSQuotaVal: map[string]int64{
+					testContainerName1: int64(2 * cfsIncreaseStep * float64(system.CFSBasePeriodValue)),
+				},
+				podCPUBurstVal: int64(2 * cfsIncreaseStep * float64(system.CFSBasePeriodValue)),
+				containerCPUBurstVal: map[string]int64{
 					testContainerName1: int64(2 * cfsIncreaseStep * float64(system.CFSBasePeriodValue)),
 				},
 			},
@@ -1163,6 +1246,11 @@ func TestCPUBurst_applyCFSQuotaBurst(t *testing.T) {
 						},
 					},
 				},
+				podCurCPUBurst: (2 + 3) * system.CFSBasePeriodValue,
+				containerCurCPUBurst: map[string]int64{
+					testContainerName1: 2 * system.CFSBasePeriodValue,
+					testContainerName2: 3 * system.CFSBasePeriodValue,
+				},
 			},
 			args: args{
 				burstCfg:  defaultAutoBurstCfg,
@@ -1171,6 +1259,11 @@ func TestCPUBurst_applyCFSQuotaBurst(t *testing.T) {
 			want: want{
 				podCFSQuotaVal: int64((2 + 3) * cfsIncreaseStep * float64(system.CFSBasePeriodValue)),
 				containerCFSQuotaVal: map[string]int64{
+					testContainerName1: int64(2 * cfsIncreaseStep * float64(system.CFSBasePeriodValue)),
+					testContainerName2: int64(3 * cfsIncreaseStep * float64(system.CFSBasePeriodValue)),
+				},
+				podCPUBurstVal: int64((2 + 3) * cfsIncreaseStep * float64(system.CFSBasePeriodValue)),
+				containerCPUBurstVal: map[string]int64{
 					testContainerName1: int64(2 * cfsIncreaseStep * float64(system.CFSBasePeriodValue)),
 					testContainerName2: int64(3 * cfsIncreaseStep * float64(system.CFSBasePeriodValue)),
 				},
@@ -1218,6 +1311,11 @@ func TestCPUBurst_applyCFSQuotaBurst(t *testing.T) {
 						},
 					},
 				},
+				podCurCPUBurst: 2 * system.CFSBasePeriodValue,
+				containerCurCPUBurst: map[string]int64{
+					testContainerName1: 2 * system.CFSBasePeriodValue,
+					testContainerName2: 0,
+				},
 			},
 			args: args{
 				burstCfg:  defaultAutoBurstCfg,
@@ -1228,6 +1326,11 @@ func TestCPUBurst_applyCFSQuotaBurst(t *testing.T) {
 				containerCFSQuotaVal: map[string]int64{
 					testContainerName1: int64(2 * cfsIncreaseStep * float64(system.CFSBasePeriodValue)),
 					testContainerName2: -1,
+				},
+				podCPUBurstVal: int64(2 * cfsIncreaseStep * float64(system.CFSBasePeriodValue)),
+				containerCPUBurstVal: map[string]int64{
+					testContainerName1: int64(2 * cfsIncreaseStep * float64(system.CFSBasePeriodValue)),
+					testContainerName2: 0,
 				},
 			},
 		},
@@ -1274,6 +1377,9 @@ func TestCPUBurst_applyCFSQuotaBurst(t *testing.T) {
 			initPodCFSQuota(podMeta, tt.fields.podCurCFSQuota, testHelper)
 			initContainerCFSQuota(podMeta, tt.fields.containerCurCFSQuota, testHelper)
 
+			initPodCPUBurst(podMeta, tt.fields.podCurCPUBurst, testHelper)
+			initContainerCPUBurst(podMeta, tt.fields.podCurCPUBurst, testHelper)
+
 			b := &cpuBurst{
 				statesInformer:   mockStatesInformer,
 				metricCache:      mockMetricCache,
@@ -1282,7 +1388,7 @@ func TestCPUBurst_applyCFSQuotaBurst(t *testing.T) {
 				containerLimiter: make(map[string]*burstLimiter),
 			}
 			b.init(stop)
-			b.applyCFSQuotaBurst(&tt.args.burstCfg, podMeta, tt.args.nodeState)
+			b.applyCFSQuotaWithBurst(&tt.args.burstCfg, podMeta, tt.args.nodeState)
 
 			gotPod := getPodCFSQuota(podMeta, testHelper)
 			if !reflect.DeepEqual(gotPod, tt.want.podCFSQuotaVal) {
@@ -1535,7 +1641,7 @@ func TestCPUBurst_start(t *testing.T) {
 			want: want{
 				podBurstVal: map[string]int64{
 					lsrPodName: 0,
-					lsPodName:  1 * 10 * system.CFSBasePeriodValue,
+					lsPodName:  int64(2 * cfsIncreaseStep * float64(system.CFSBasePeriodValue)),
 				},
 				podCFSQuotaVal: map[string]int64{
 					lsrPodName: -1,
@@ -1543,7 +1649,7 @@ func TestCPUBurst_start(t *testing.T) {
 				},
 				containerBurstVal: map[string]int64{
 					lsrContainerName: 0,
-					lsContainerName:  1 * 10 * system.CFSBasePeriodValue,
+					lsContainerName:  int64(2 * cfsIncreaseStep * float64(system.CFSBasePeriodValue)),
 				},
 				containerCFSQuotaVal: map[string]int64{
 					lsrContainerName: -1,
