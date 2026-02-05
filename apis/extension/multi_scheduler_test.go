@@ -114,4 +114,57 @@ func TestGetSchedulingHint(t *testing.T) {
 	result, err = GetSchedulingHint(podWithInvalidHint)
 	assert.Error(t, err)
 	assert.Nil(t, result, "Should return error for invalid JSON")
+
+	// Test case 5: Pod with deprecated annotation only
+	podWithDeprecatedAnnotation := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Annotations: map[string]string{
+				DeprecatedAnnotationSchedulingHint: string(hintBytes),
+			},
+		},
+	}
+
+	result, err = GetSchedulingHint(podWithDeprecatedAnnotation)
+	assert.NoError(t, err)
+	assert.NotNil(t, result)
+	assert.Equal(t, []string{"test-node"}, result.NodeNames)
+	assert.Equal(t, schedulingHint.Extensions, result.Extensions)
+
+	// Test case 6: Pod with both new and deprecated annotations, new annotation takes precedence
+	differentHint := &SchedulingHint{
+		NodeNames: []string{"new-node"},
+		Extensions: map[string]interface{}{
+			"newKey": "newValue",
+		},
+	}
+	newHintBytes, err := json.Marshal(differentHint)
+	assert.NoError(t, err)
+
+	podWithBothAnnotations := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Annotations: map[string]string{
+				AnnotationSchedulingHint:           string(newHintBytes),
+				DeprecatedAnnotationSchedulingHint: string(hintBytes),
+			},
+		},
+	}
+
+	result, err = GetSchedulingHint(podWithBothAnnotations)
+	assert.NoError(t, err)
+	assert.NotNil(t, result)
+	assert.Equal(t, []string{"new-node"}, result.NodeNames, "New annotation should take precedence")
+	assert.Equal(t, differentHint.Extensions, result.Extensions)
+
+	// Test case 7: Pod with invalid deprecated annotation
+	podWithInvalidDeprecated := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Annotations: map[string]string{
+				DeprecatedAnnotationSchedulingHint: "invalid-json",
+			},
+		},
+	}
+
+	result, err = GetSchedulingHint(podWithInvalidDeprecated)
+	assert.Error(t, err)
+	assert.Nil(t, result, "Should return error for invalid deprecated JSON")
 }

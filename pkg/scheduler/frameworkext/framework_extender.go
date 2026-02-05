@@ -77,6 +77,7 @@ type frameworkExtenderImpl struct {
 	postFilterTransformersEnabled []PostFilterTransformer
 
 	findOneNodePlugin FindOneNodePlugin
+	preferNodesPlugin PreferNodesPlugin
 
 	reservationCache                       ReservationCache
 	reservationNominator                   ReservationNominator
@@ -194,6 +195,14 @@ func (ext *frameworkExtenderImpl) updatePlugins(pl framework.Plugin) {
 			klog.Warningf("framework extender got multiple FindOneNodePlugin registered, using the first one with name: %s", ext.findOneNodePlugin.Name())
 		}
 	}
+	if p, ok := pl.(PreferNodesPluginProvider); ok && p.PreferNodesPlugin() != nil {
+		if ext.preferNodesPlugin == nil {
+			ext.preferNodesPlugin = p.PreferNodesPlugin()
+			klog.V(4).InfoS("framework extender got PreferNodesPlugin registered", "profile", ext.ProfileName(), "plugin", pl.Name())
+		} else {
+			klog.Warningf("framework extender got multiple PreferNodesPlugin registered, using the first one with name: %s", ext.preferNodesPlugin.Name())
+		}
+	}
 }
 
 func (ext *frameworkExtenderImpl) SetConfiguredPlugins(plugins *schedconfig.Plugins) {
@@ -295,19 +304,57 @@ func (ext *frameworkExtenderImpl) RunPreFilterPlugins(ctx context.Context, cycle
 			return nil, status
 		}
 	}
+
 	if ext.findOneNodePlugin != nil {
 		startTime := time.Now()
+		trace.Step(fmt.Sprintf("FindOneNode %s begin", ext.findOneNodePlugin.Name()))
 		nodeName, status := ext.findOneNodePlugin.FindOneNode(ctx, cycleState, pod, result)
+		trace.Step(fmt.Sprintf("FindOneNode %s done", ext.findOneNodePlugin.Name()))
 		ext.metricsRecorder.ObservePluginDurationAsync("FindOneNodePlugin", ext.findOneNodePlugin.Name(), status.Code().String(), metrics.SinceInSeconds(startTime))
-		if status.IsSkip() {
-			return result, nil
-		}
-		if !status.IsSuccess() {
+		if status.IsSkip() { // skip
+			klog.V(6).InfoS("FindOneNodePlugin is skipped", "pod", klog.KObj(pod), "plugin", ext.findOneNodePlugin.Name())
+		} else if !status.IsSuccess() {
 			status.SetFailedPlugin(ext.findOneNodePlugin.Name())
 			klog.ErrorS(status.AsError(), "Failed to run FindOneNodePlugin", "pod", klog.KObj(pod), "plugin", ext.findOneNodePlugin.Name())
 			return nil, status
+		} else { // success
+			return &framework.PreFilterResult{NodeNames: sets.New[string](nodeName)}, nil
 		}
-		return &framework.PreFilterResult{NodeNames: sets.New[string](nodeName)}, nil
+	}
+
+	if ext.preferNodesPlugin != nil {
+		startTime := time.Now()
+		trace.Step(fmt.Sprintf("PreferNodes %s begin", ext.preferNodesPlugin.Name()))
+		nodeNames, status := ext.preferNodesPlugin.PreferNodes(ctx, cycleState, pod, result)
+		trace.Step(fmt.Sprintf("PreferNodes %s done", ext.preferNodesPlugin.Name()))
+		ext.metricsRecorder.ObservePluginDurationAsync("PreferNodesPlugin", ext.preferNodesPlugin.Name(), status.Code().String(), metrics.SinceInSeconds(startTime))
+		if status.IsSkip() { // skip
+			klog.V(6).InfoS("PreferNodesPlugin is skipped", "pod", klog.KObj(pod), "plugin", ext.preferNodesPlugin.Name())
+		} else if !status.IsSuccess() { // error
+			status.SetFailedPlugin(ext.preferNodesPlugin.Name())
+			klog.ErrorS(status.AsError(), "Failed to run PreferNodesPlugin", "pod", klog.KObj(pod), "plugin", ext.preferNodesPlugin.Name())
+			return nil, status
+		} else { // success
+			// If the PreferNodes plugin returns Success, try to filter the preferred nodes.
+			// Then if any preferred node passes the predicate, return the node as the PreFilterResult.
+			// Otherwise, fallback to the original PreFilterResult.
+			for _, nodeName := range nodeNames {
+				nodeInfo, err := ext.SnapshotSharedLister().NodeInfos().Get(nodeName)
+				if err != nil {
+					klog.ErrorS(err, "Failed to get preferred nodeInfo, aborted", "pod", klog.KObj(pod), "plugin", ext.preferNodesPlugin.Name(), "node", nodeName)
+					continue
+				}
+				status = ext.RunFilterPluginsWithNominatedPods(ctx, cycleState, pod, nodeInfo)
+				if status.IsSuccess() { // pick first suitable node
+					return &framework.PreFilterResult{NodeNames: sets.New[string](nodeName)}, nil
+				} else {
+					klog.V(4).InfoS("Failed to filter for Pod on preferred Node",
+						"pod", klog.KObj(pod), "node", nodeName, "preferNodesPlugin", ext.preferNodesPlugin.Name(), "failedPlugin", status.FailedPlugin(), "reason", status.Message())
+				}
+			}
+			klog.V(5).InfoS("Failed to filter for Pod on all preferred Nodes, fallback to original prefilter result",
+				"pod", klog.KObj(pod), "preferNodesPlugin", ext.preferNodesPlugin.Name(), "failedNodes", nodeNames)
+		}
 	}
 
 	return result, nil

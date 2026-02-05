@@ -35,14 +35,24 @@ func GetSchedulerName(pod *corev1.Pod) string {
 }
 
 type SchedulingHint struct {
-	NodeNames  []string               `json:"nodeNames,omitempty"`
+	// NodeNames is a list of node names that the pod is required to be scheduled on.
+	NodeNames []string `json:"nodeNames,omitempty"`
+	// PreferredNodeNames is an ordered list of preferred node names that the pod should try to schedule first.
+	// It is recommended to use as few nodes as possible to reduce the overhead.
+	PreferredNodeNames []string `json:"preferredNodeNames,omitempty"`
+	// Extensions is a map of hint extensions for plugins.
 	Extensions map[string]interface{} `json:"extensions,omitempty"`
 }
 
 const (
+	// DEPRECATED: This api is marked as internal and will be removed next version.
+	// Please use the domain `internal.scheduling.koordinator.sh/` instead.
+	// DeprecatedAnnotationSchedulingHint is used to specify a scheduling hint for the pod.
+	// Each plugin can decide whether to use this hint or not.
+	DeprecatedAnnotationSchedulingHint = SchedulingDomainPrefix + "/scheduling-hint"
 	// AnnotationSchedulingHint is used to specify a scheduling hint for the pod.
 	// Each plugin can decide whether to use this hint or not.
-	AnnotationSchedulingHint = SchedulingDomainPrefix + "/scheduling-hint"
+	AnnotationSchedulingHint = InternalSchedulingDomainPrefix + "/scheduling-hint"
 )
 
 func GetSchedulingHint(pod *corev1.Pod) (*SchedulingHint, error) {
@@ -50,6 +60,14 @@ func GetSchedulingHint(pod *corev1.Pod) (*SchedulingHint, error) {
 		return nil, nil
 	}
 	hintStr, ok := pod.Annotations[AnnotationSchedulingHint]
+	if ok {
+		hint := &SchedulingHint{}
+		if err := json.Unmarshal([]byte(hintStr), hint); err != nil {
+			return nil, err
+		}
+		return hint, nil
+	}
+	hintStr, ok = pod.Annotations[DeprecatedAnnotationSchedulingHint]
 	if !ok {
 		return nil, nil
 	}
