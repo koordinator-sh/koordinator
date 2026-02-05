@@ -49,8 +49,10 @@ var (
 
 	defaultPreferredCPUBindPolicy = CPUBindPolicyFullPCPUs
 
-	defaultEnablePreemption             = ptr.To[bool](false)
-	defaultAwareNetworkTopology         = ptr.To[bool](false)
+	defaultEnablePreemption     = ptr.To[bool](false)
+	defaultAwareNetworkTopology = ptr.To[bool](false)
+	defaultGangMatchPolicy      = ptr.To[string](extension.GangMatchPolicyOnceSatisfied)
+
 	defaultMinCandidateNodesPercentage  = ptr.To[int32](10)
 	defaultMinCandidateNodesAbsolute    = ptr.To[int32](100)
 	defaultReservationControllerWorkers = ptr.To[int32](1)
@@ -237,6 +239,9 @@ func SetDefaults_CoschedulingArgs(obj *CoschedulingArgs) {
 	}
 	if obj.AwareNetworkTopology == nil {
 		obj.AwareNetworkTopology = defaultAwareNetworkTopology
+	}
+	if obj.DefaultMatchPolicy == nil {
+		obj.DefaultMatchPolicy = defaultGangMatchPolicy
 	}
 }
 

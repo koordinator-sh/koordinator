@@ -140,13 +140,13 @@ func (gang *Gang) tryInitByPodConfig(pod *v1.Pod, args *config.CoschedulingArgs)
 
 	matchPolicy := extension.GetGangMatchPolicy(pod)
 	if matchPolicy == "" {
-		matchPolicy = extension.GangMatchPolicyOnceSatisfied
+		matchPolicy = args.DefaultMatchPolicy
 	}
 	if matchPolicy != extension.GangMatchPolicyOnlyWaiting && matchPolicy != extension.GangMatchPolicyWaitingAndRunning &&
 		matchPolicy != extension.GangMatchPolicyOnceSatisfied {
 		klog.Errorf("pod's annotation AnnotationGangMatchPolicy illegal, gangName: %v, value: %v",
 			gang.Name, matchPolicy)
-		matchPolicy = extension.GangMatchPolicyOnceSatisfied
+		matchPolicy = args.DefaultMatchPolicy
 	}
 	gang.GangMatchPolicy = matchPolicy
 
@@ -223,13 +223,13 @@ func (gang *Gang) tryInitByPodGroup(pg *v1alpha1.PodGroup, args *config.Coschedu
 
 	matchPolicy := extension.GetGangMatchPolicy(pg)
 	if matchPolicy == "" {
-		matchPolicy = extension.GangMatchPolicyOnceSatisfied
+		matchPolicy = args.DefaultMatchPolicy
 	}
 	if matchPolicy != extension.GangMatchPolicyOnlyWaiting && matchPolicy != extension.GangMatchPolicyWaitingAndRunning &&
 		matchPolicy != extension.GangMatchPolicyOnceSatisfied {
 		klog.Errorf("podGroup's annotation AnnotationGangMatchPolicy illegal, gangName: %v, value: %v",
 			gang.Name, matchPolicy)
-		matchPolicy = extension.GangMatchPolicyOnceSatisfied
+		matchPolicy = args.DefaultMatchPolicy
 	}
 	gang.GangMatchPolicy = matchPolicy
 

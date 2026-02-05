@@ -939,7 +939,7 @@ func TestGangCache_OnPodDelete(t *testing.T) {
 			pgInformerFactory := pgformers.NewSharedInformerFactory(pgClient, 0)
 			pgInformer := pgInformerFactory.Scheduling().V1alpha1().PodGroups()
 			pglister := pgInformer.Lister()
-			gangCache := NewGangCache(&config.CoschedulingArgs{DefaultTimeout: metav1.Duration{Duration: time.Second}}, nil, pglister, pgClient, nil)
+			gangCache := NewGangCache(&config.CoschedulingArgs{DefaultTimeout: metav1.Duration{Duration: time.Second}, DefaultMatchPolicy: extension.GangMatchPolicyOnceSatisfied}, nil, pglister, pgClient, nil)
 			for _, pg := range tt.podGroups {
 				err := retry.OnError(
 					retry.DefaultRetry,
@@ -1106,7 +1106,7 @@ func TestGangCache_OnPodGroupAdd(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			pgClient := fakepgclientset.NewSimpleClientset()
-			gangCache := NewGangCache(&config.CoschedulingArgs{DefaultTimeout: metav1.Duration{Duration: time.Second}}, nil, nil, pgClient, nil)
+			gangCache := NewGangCache(&config.CoschedulingArgs{DefaultTimeout: metav1.Duration{Duration: time.Second}, DefaultMatchPolicy: extension.GangMatchPolicyOnceSatisfied}, nil, nil, pgClient, nil)
 			for _, pg := range tt.pgs {
 				gangCache.onPodGroupAdd(pg)
 			}
@@ -1140,7 +1140,7 @@ func TestGangCache_OnGangDelete(t *testing.T) {
 	pgInformerFactory := pgformers.NewSharedInformerFactory(pgClient, 0)
 	pgInformer := pgInformerFactory.Scheduling().V1alpha1().PodGroups()
 	pglister := pgInformer.Lister()
-	cache := NewGangCache(&config.CoschedulingArgs{}, nil, pglister, pgClient, nil)
+	cache := NewGangCache(&config.CoschedulingArgs{DefaultMatchPolicy: extension.GangMatchPolicyOnceSatisfied}, nil, pglister, pgClient, nil)
 
 	// case1: pg that created by crd,delete pg then will delete the gang
 	podGroup := &v1alpha1.PodGroup{
