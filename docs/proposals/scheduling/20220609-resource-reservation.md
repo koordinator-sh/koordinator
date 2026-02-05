@@ -30,9 +30,12 @@ last-updated: 2023-05-18
             - [Story 3](#story-3)
             - [Story 4](#story-4)
             - [Story 5](#story-5)
+            - [Story 6](#story-6)
+            - [Story 7](#story-7)
         - [API](#api)
             - [Reservation Affinity](#reservation-affinity)
             - [Reservation Allocate Policy](#reservation-allocate-policy)
+            - [Pre-Allocation Policy](#pre-allocation-policy)
         - [Implementation Details](#implementation-details)
             - [Schedule Reservations](#schedule-reservations)
             - [Allocate Reserved Resources](#allocate-reserved-resources)
@@ -42,6 +45,8 @@ last-updated: 2023-05-18
                 - [Usage in Preemption](#usage-in-preemption)
                 - [Usage in Descheduling](#usage-in-descheduling)
                 - [Usage in Pre-allocation](#usage-in-pre-allocation)
+                - [Usage in Pre-allocation with Cluster Mode](#usage-in-pre-allocation-with-cluster-mode)
+                - [Usage in Pre-allocation with Multiple Pods](#usage-in-pre-allocation-with-multiple-pods)
         - [Risks and Mitigations](#risks-and-mitigations)
     - [Tests](#tests)
         - [E2E Tests](#e2e-tests)
@@ -106,6 +111,14 @@ As a cluster administrator, I want to **pre-allocate** node resources for future
 
 The user plans and reserves a batch of resources in advance, and the lifetime of reservation is relatively long. For example, there are 100 nodes in a cluster, and 32 Cores and 64GiB Memory are reserved on each node. When users need to use these resources, they want to use only a part of the instances, so they need to select these instances according to the label, and the subsequent resource allocation can only be continued after the selection is successful.
 
+#### Story 6
+
+As a cluster administrator, I want to use **Cluster Mode** to select pre-allocatable pods for reservation. In a multi-tenant cluster, pre-allocatable pods may belong to different owners. Using Reservation's Owner matchers is not flexible enough because pre-allocatable pods are often managed centrally and should be decoupled from reservation ownership. Additionally, clusters typically run various workload types, where batch jobs with predictable running time are ideal candidates for pre-allocation since they can complete earlier and release their reserved resources. With Cluster Mode, the scheduler identifies pre-allocatable pods using cluster-wide label selectors (e.g., `scheduling.koordinator.sh/is-pre-allocatable=true`) and prioritizes them via priority annotations, enabling centralized management of pre-allocatable pods across the entire cluster.
+
+#### Story 7
+
+As an application administrator, I want to pre-allocate resources from **multiple running pods** to satisfy a reservation. This is useful when no single pod can provide all the required resources due to resource fragmentation. With Multiple Pre-Allocated Pods enabled, the scheduler can accumulate resources from several pre-allocatable pods until the reservation requirements are met.
+
 ### API
 
 In this section, a Custom Resource Definition (CRD) named `Reservation` is proposed to allow the scheduler to reserve node resources for specific pods.
@@ -162,6 +175,9 @@ type ReservationSpec struct {
     // +kubebuilder:validation:Enum=Aligned;Restricted
     // +optional
     AllocatePolicy ReservationAllocatePolicy `json:"allocatePolicy,omitempty"`
+    // PreAllocationPolicy defines the policy for pre-allocation.
+    // +optional
+    PreAllocationPolicy *PreAllocationPolicy `json:"preAllocationPolicy,omitempty"`
 }
 
 type ReservationAllocatePolicy string
@@ -283,6 +299,33 @@ type ReservationCondition struct {
     LastProbeTime      metav1.Time              `json:"lastProbeTime,omitempty"`
     LastTransitionTime metav1.Time              `json:"lastTransitionTime,omitempty"`
 }
+
+// PreAllocationPolicy defines the policy for pre-allocation.
+type PreAllocationPolicy struct {
+    // Mode defines the mode for selecting pre-allocatable pods.
+    // Default mode uses OwnerMatchers from the Reservation Spec.
+    // Cluster mode uses cluster-wide label/annotation selectors.
+    // +kubebuilder:validation:Enum=Default;Cluster
+    // +kubebuilder:default="Default"
+    // +optional
+    Mode PreAllocationMode `json:"mode,omitempty"`
+    // EnableMultiple indicates whether to allow pre-allocating multiple pods.
+    // When false, only one pod can be pre-allocated (compatible with existing logic).
+    // When true, multiple pods can be pre-allocated to meet the reservation requirements.
+    // +kubebuilder:default=false
+    // +optional
+    EnableMultiple bool `json:"enableMultiple,omitempty"`
+}
+
+type PreAllocationMode string
+
+const (
+    // PreAllocationModeDefault uses OwnerMatchers from the Reservation Spec to select pre-allocatable pods.
+    PreAllocationModeDefault PreAllocationMode = "Default"
+    // PreAllocationModeCluster uses cluster-wide label/annotation selectors to select pre-allocatable pods.
+    PreAllocationModeCluster PreAllocationMode = "Cluster"
+)
+
 ```
 
 #### Reservation Affinity
@@ -327,6 +370,63 @@ But at the same time, taking into account the resource boundaries between Reserv
 If a node has multiple Reservations with Aligned or Restricted policies, and these Reservations cannot satisfy the pod’s request at all during filtering, the node will be filtered out.
 
 The default policy (currently is none) cannot coexist with the policies Aligned and Restricted.
+
+#### Pre-Allocation Policy
+
+The `preAllocationPolicy` field in `ReservationSpec` provides advanced control over how pre-allocatable pods are selected and aggregated when `preAllocation` is enabled.
+
+##### Pre-Allocation Mode
+
+The reservation supports two modes for selecting pre-allocatable pods:
+
+1. **Default Mode** (`PreAllocationModeDefault`): Uses the `owners` field from the Reservation Spec to match pre-allocatable pods. The scheduler filters pods based on owner matchers and runs scoring plugins to prioritize them.
+
+2. **Cluster Mode** (`PreAllocationModeCluster`): Uses cluster-wide label and annotation selectors to identify and prioritize pre-allocatable pods. Pods are identified by the label `scheduling.koordinator.sh/is-pre-allocatable=true` and sorted by the annotation `scheduling.koordinator.sh/pre-allocatable-priority`. This mode is particularly useful when pre-allocatable pods span multiple owners, requiring `EnableClusterMode` in the scheduler's `PreAllocationConfig`.
+
+Cluster Mode provides a different way to select pre-allocatable pods compared to Default Mode. The key difference is **how candidates are identified**:
+
+| Aspect               | Default Mode                      | Cluster Mode                                                                                             |
+|----------------------|-----------------------------------|----------------------------------------------------------------------------------------------------------|
+| Pod Selection        | Uses Reservation's `owners` field | Uses cluster-wide label selector (defaults to `scheduling.koordinator.sh/is-pre-allocatable=true`)       |
+| Priority Control     | Uses ReservationScore plugins     | Uses cluster-wide annotation selector (defaults to `scheduling.koordinator.sh/pre-allocatable-priority`) |
+| Cross-owners         | No, Limited by owner matching     | Yes                                                                                                      |
+| Plugin Configuration | None                              | Requires `EnableClusterMode` in scheduler plugin configuration                                           |
+
+##### Multiple Pre-Allocated Pods
+
+When `preAllocationPolicy.enableMultiple` is set to `true`, the scheduler can accumulate resources from multiple pre-allocatable pods to satisfy the reservation's resource requirements.
+
+**Behavior:**
+- The scheduler iterates through sorted pre-allocatable pods and accumulates their resources
+- Pods that either exceed the reservation’s requested resources in any dimension or fail validation by reservation filter plugins are skipped.
+- The process continues until all requested resource dimensions are satisfied
+
+When `enableMultiple` is `false` (default), only a single pre-allocated pod can be nominated, maintaining backward compatibility with the original pre-allocation logic.
+
+##### Scheduler Configuration for Pre-Allocation Policy
+
+To customize pre-allocation behavior, configure the scheduler with `PreAllocationConfig`:
+
+```yaml
+apiVersion: kubescheduler.config.k8s.io/v1beta3
+kind: KubeSchedulerConfiguration
+profiles:
+  - schedulerName: koord-scheduler
+    pluginConfig:
+      - name: Reservation
+        args:
+          preAllocationConfig:
+            enableClusterMode: true
+            clusterLabelKey: "scheduling.koordinator.sh/is-pre-allocatable"
+            clusterPriorityAnnotationKey: "scheduling.koordinator.sh/pre-allocatable-priority"
+            preferNoPreAllocatedPods: false
+```
+
+Configuration options:
+- `enableClusterMode`: Enables cluster-wide pod selection for pre-allocation
+- `clusterLabelKey`: Label key to identify pre-allocatable pods (defaults to `scheduling.koordinator.sh/is-pre-allocatable`)
+- `clusterPriorityAnnotationKey`: Annotation key for pod priority (defaults to `scheduling.koordinator.sh/pre-allocatable-priority`)
+- `preferNoPreAllocatedPods`: When true, prefers placing reservations without pre-allocated pods when pre-allocation is not required and node unallocated resources are sufficient
 
 ### Implementation Details
 
@@ -404,6 +504,52 @@ Before a pod is rescheduled, the descheduler can create a reservation that sets 
 ##### Usage in Pre-allocation
 
 Reservations with `preAllocation` specified allow users to pre-allocate the node resources from running pods. The `status.phase` of the reservation is set as `Waiting` until the resources are released, indicating that its availability is conditional. Once the referenced pods have terminated, the `phase` is `Available` for owners, and the pre-allocation succeeds.
+
+###### Enable Cluster Mode
+
+**Workflow for Cluster Mode:**
+
+1. **Pod Labeling**: Mark pods as pre-allocatable candidates:
+   ```yaml
+   metadata:
+     labels:
+       scheduling.koordinator.sh/is-pre-allocatable: "true"
+     annotations:
+       scheduling.koordinator.sh/pre-allocatable-priority: "100"
+   ```
+
+2. **Reservation Creation**: Create a Reservation with Cluster Mode:
+   ```yaml
+   spec:
+     preAllocation: true
+     preAllocationPolicy:
+       mode: Cluster
+   ```
+
+3. **Scheduling Process**:
+   - The scheduler identifies all pods with the pre-allocatable label on each candidate node
+   - Pods are sorted by their priority annotation (pods with higher priorities are selected first)
+   - The best-fit pod is selected for pre-allocation
+
+##### Usage in Pre-allocation with Multiple Pods
+
+Multiple Pre-Allocated Pods feature allows the scheduler to **accumulate resources from several pods** to satisfy a reservation. This is independent of the Mode selection (can be used with both Default and Cluster Mode). It is useful when no single pod can provide all the required resources due to resource fragmentation.
+
+**Workflow for Multiple Pods:**
+
+1. **Reservation Creation**: Create a Reservation with `enableMultiple: true`:
+   ```yaml
+   spec:
+     preAllocation: true
+     preAllocationPolicy:
+       mode: Cluster       # Can also be Default
+       enableMultiple: true
+   ```
+
+2. **Scheduling Process**:
+   - Pods are processed in priority order
+   - Each pod is checked: if adding it would exceed any resource dimension, it's skipped
+   - Process continues until all requested dimensions are satisfied
 
 ### Risks and Mitigations
 

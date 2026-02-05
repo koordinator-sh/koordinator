@@ -19,6 +19,7 @@ package reservation
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -71,6 +72,8 @@ const (
 	ErrReasonNoPodsMeetPreAllocationRequirements = "node(s) no pod(s) to meet the pre-allocation requirements"
 	// ErrReasonPreemptionFailed is the reason for preemption failed
 	ErrReasonPreemptionFailed = "node(s) preemption failed due to insufficient resources"
+	// ErrReasonReservationClusterModeDisabled is the reason for cluster mode pre-allocation is disabled
+	ErrReasonReservationClusterModeDisabled = "reservation requires cluster mode pre-allocation which is disabled"
 )
 
 var (
@@ -93,16 +96,17 @@ var (
 )
 
 type Plugin struct {
-	handle                        frameworkext.ExtendedHandle
-	args                          *config.ReservationArgs
-	rLister                       listerschedulingv1alpha1.ReservationLister
-	podLister                     listercorev1.PodLister
-	client                        clientschedulingv1alpha1.SchedulingV1alpha1Interface
-	reservationCache              *reservationCache
-	nominator                     *nominator
-	preemptionMgr                 *PreemptionMgr
-	enableLazyReservationRestore  bool
-	enableSkipReservationFitsNode bool
+	handle                         frameworkext.ExtendedHandle
+	args                           *config.ReservationArgs
+	rLister                        listerschedulingv1alpha1.ReservationLister
+	podLister                      listercorev1.PodLister
+	client                         clientschedulingv1alpha1.SchedulingV1alpha1Interface
+	reservationCache               *reservationCache
+	nominator                      *nominator
+	preemptionMgr                  *PreemptionMgr
+	enableLazyReservationRestore   bool
+	enableSkipReservationFitsNode  bool
+	enablePreAllocationClusterMode bool
 }
 
 func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error) {
@@ -145,6 +149,9 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 			return nil, fmt.Errorf("failed to new preemption, err: %w", err)
 		}
 		p.preemptionMgr = preemptionMgr
+	}
+	if pluginArgs.PreAllocationConfig != nil && pluginArgs.PreAllocationConfig.EnableClusterMode {
+		p.enablePreAllocationClusterMode = true
 	}
 
 	return p, nil
@@ -470,6 +477,14 @@ func (pl *Plugin) filterWithReservations(ctx context.Context, cycleState *framew
 }
 
 func (pl *Plugin) filterWithPreAllocatablePods(ctx context.Context, cycleState *framework.CycleState, rInfo *frameworkext.ReservationInfo, nodeInfo *framework.NodeInfo, preAllocatablePods []*corev1.Pod, isPreAllocationRequired bool) *framework.Status {
+	if rInfo.IsMultiplePAPodsEnabled() {
+		return pl.filterWithMultiplePreAllocatablePods(ctx, cycleState, rInfo, nodeInfo, preAllocatablePods, isPreAllocationRequired)
+	}
+	return pl.filterWithPreAllocatablePod(ctx, cycleState, rInfo, nodeInfo, preAllocatablePods, isPreAllocationRequired)
+}
+
+// filterWithPreAllocatablePod checks if the reservation can fit the node with or without at most one pre-allocated pod.
+func (pl *Plugin) filterWithPreAllocatablePod(ctx context.Context, cycleState *framework.CycleState, rInfo *frameworkext.ReservationInfo, nodeInfo *framework.NodeInfo, preAllocatablePods []*corev1.Pod, isPreAllocationRequired bool) *framework.Status {
 	extender, ok := pl.handle.(frameworkext.FrameworkExtender)
 	if !ok {
 		return framework.AsStatus(fmt.Errorf("not implemented frameworkext.FrameworkExtender"))
@@ -485,6 +500,33 @@ func (pl *Plugin) filterWithPreAllocatablePods(ctx context.Context, cycleState *
 	state.preemptLock.RLock()
 	preemptible := framework.NewResource(state.preemptible[node.Name])
 	state.preemptLock.RUnlock()
+
+	// Check node-unallocated resources only once
+	var checkNodeUnallocatedDone bool
+	var insufficientResourcesByNodeUnallocated []string
+	checkNodeUnallocatedOnceFn := func() []string {
+		if !checkNodeUnallocatedDone {
+			// use nodeInfo.Requested if nodeRState.podRequested is nil (when there is no pre-allocatable pods).
+			podRequested := nodeRState.podRequested
+			if podRequested == nil {
+				podRequested = nodeInfo.Requested.Clone()
+			}
+			// Check if the reserve pod can be placed with node-unallocated resource when pre-allocation is not required.
+			// For reserve pod, matchedOrIgnored should be 0, both rAllocated and rRemained should be nil.
+			insufficientResourcesByNodeUnallocated = fitsNode(state.podRequestsResources, nodeInfo.Allocatable,
+				podRequested, nil, nil, 0, len(nodeInfo.Pods), preemptible)
+			checkNodeUnallocatedDone = true
+		}
+		return insufficientResourcesByNodeUnallocated
+	}
+
+	// Fast-path: check node-unallocated resources first when pre-allocation is not required
+	if !isPreAllocationRequired && pl.IsPreferNoPreAllocatedPods() {
+		if len(checkNodeUnallocatedOnceFn()) == 0 {
+			// Directly return if the reservation can place without any pre-allocatable pod
+			return nil
+		}
+	}
 
 	allInsufficientResourcesByNode := sets.NewString()
 	var allInsufficientResourceReasonsByReservation []string
@@ -527,6 +569,7 @@ func (pl *Plugin) filterWithPreAllocatablePods(ctx context.Context, cycleState *
 		}
 
 		if len(insufficientResourcesByNode) <= 0 && len(insufficientResourceReasonsByReservation) <= 0 {
+			nodeRState.selectedPreAllocatablePods = preAllocatablePods
 			return nil
 		}
 	}
@@ -550,13 +593,14 @@ func (pl *Plugin) filterWithPreAllocatablePods(ctx context.Context, cycleState *
 		if len(allInsufficientResourcesByNode) > 0 {
 			// If the combination of pre-allocatable and node cannot satisfy the reservation, then the node alone cannot satisfy it either.
 			failureReasons = buildNodeFailureReasons(allInsufficientResourcesByNode.List())
-		} else {
-			// Check if the reserve pod can be placed with node-unallocated resource when pre-allocation is not required.
-			// For reserve pod, matchedOrIgnored should be 0, both rAllocated and rRemained should be nil.
-			insufficientResourcesByNodeUnallocated := fitsNode(state.podRequestsResources, nodeInfo.Allocatable,
-				nodeRState.podRequested, nil, nil, 0, len(nodeInfo.Pods), preemptible)
-			// If no insufficient resources by node with pre-allocatable pods, use the node-unallocated reasons.
+		} else if checkNodeUnallocatedDone {
+			// If node-unallocated resources have already been checked, reuse the reasons directly.
 			failureReasons = buildNodeFailureReasons(insufficientResourcesByNodeUnallocated)
+		} else if len(preAllocatablePods) > 0 {
+			// If no insufficient resources by node with pre-allocatable pods, use the node-unallocated reasons,
+			// avoid passing in Filter phase but later fail in Reserve phase.
+			// When no pre-allocatable pods exist, NodeResourcesFit performs the node-unallocated check.
+			failureReasons = buildNodeFailureReasons(checkNodeUnallocatedOnceFn())
 		}
 		if len(failureReasons) > 0 {
 			return framework.NewStatus(framework.Unschedulable, failureReasons...)
@@ -564,6 +608,182 @@ func (pl *Plugin) filterWithPreAllocatablePods(ctx context.Context, cycleState *
 	}
 
 	return nil
+}
+
+// filterWithMultiplePreAllocatablePods checks if the reservation can fit the node with or without multiple pre-allocated pods.
+func (pl *Plugin) filterWithMultiplePreAllocatablePods(ctx context.Context, cycleState *framework.CycleState,
+	rInfo *frameworkext.ReservationInfo, nodeInfo *framework.NodeInfo, preAllocatablePods []*corev1.Pod,
+	isPreAllocationRequired bool) *framework.Status {
+	extender, ok := pl.handle.(frameworkext.FrameworkExtender)
+	if !ok {
+		return framework.AsStatus(fmt.Errorf("not implemented frameworkext.FrameworkExtender"))
+	}
+
+	// For default mode, pre-allocatable pods should be sorted before selecting.
+	// Not for cluster mode since pre-allocatable pods has already been sorted in cache.
+	mode := reservationutil.GetPreAllocationMode(rInfo.Reservation)
+	if mode == schedulingv1alpha1.PreAllocationModeDefault && len(preAllocatablePods) > 1 {
+		var err error
+		preAllocatablePods, err = sortPreAllocatablePodsForDefaultMode(
+			ctx, extender, cycleState, rInfo, preAllocatablePods, nodeInfo.Node().Name)
+		if err != nil {
+			return framework.AsStatus(err)
+		}
+	}
+
+	node := nodeInfo.Node()
+	state := getStateData(cycleState)
+	nodeRState := state.nodeReservationStates[node.Name]
+	if nodeRState == nil {
+		nodeRState = &nodeReservationState{}
+	}
+
+	state.preemptLock.RLock()
+	preemptible := framework.NewResource(state.preemptible[node.Name])
+	state.preemptLock.RUnlock()
+
+	// Check node-unallocated resources only once
+	var checkNodeUnallocatedDone bool
+	var insufficientResourcesByNodeUnallocated []string
+	checkNodeUnallocatedOnceFn := func() []string {
+		if !checkNodeUnallocatedDone {
+			// use nodeInfo.Requested if nodeRState.podRequested is nil (when there is no pre-allocatable pods).
+			podRequested := nodeRState.podRequested
+			if podRequested == nil {
+				podRequested = nodeInfo.Requested.Clone()
+			}
+			// Check if the reserve pod can be placed with node-unallocated resource when pre-allocation is not required.
+			// For reserve pod, matchedOrIgnored should be 0, both rAllocated and rRemained should be nil.
+			insufficientResourcesByNodeUnallocated = fitsNode(state.podRequestsResources, nodeInfo.Allocatable,
+				podRequested, nil, nil, 0, len(nodeInfo.Pods), preemptible)
+			checkNodeUnallocatedDone = true
+		}
+		return insufficientResourcesByNodeUnallocated
+	}
+
+	// Fast-path: check node-unallocated resources first when pre-allocation is not required
+	if !isPreAllocationRequired && pl.IsPreferNoPreAllocatedPods() {
+		if len(checkNodeUnallocatedOnceFn()) == 0 {
+			// Directly return if the reservation can place without any pre-allocatable pod
+			return nil
+		}
+	}
+
+	// Accumulate resources from pods until all dimensions are satisfied:
+	// 	 skip any pod that causes any dimension to exceed, only count pods where all dimensions fit.
+	accumulatedRequests := corev1.ResourceList{}
+	var selectedPAPods []*corev1.Pod
+	var insufficientResourcesByNode, insufficientResourceReasonsByReservation, allInsufficientResourceReasonsByReservation []string
+
+	for _, pod := range preAllocatablePods {
+		podRequests := resourceapi.PodRequests(pod, resourceapi.PodResourcesOptions{})
+		podRequestsResourceNames := quotav1.ResourceNames(podRequests)
+		resourceNames := quotav1.Intersection(rInfo.ResourceNames, podRequestsResourceNames)
+		if len(resourceNames) == 0 {
+			continue
+		}
+
+		// Try accumulating this pod's resources
+		trialAccumulatedRequests := quotav1.Add(accumulatedRequests, podRequests)
+
+		// Calculate pod requested without the trial accumulated requests
+		var podRequestedWithoutPreAllocatable *framework.Resource
+		if nodeRState.podRequested != nil {
+			podRequestedWithoutPreAllocatable = nodeRState.podRequested.Clone()
+			podRequestedWithoutPreAllocatable.Add(quotav1.Subtract(corev1.ResourceList{}, trialAccumulatedRequests))
+		}
+
+		// Check if adding this pod still fits
+		insufficientResourcesByNode, insufficientResourceReasonsByReservation = fitsNodeAndReservation(state.podRequestsResources, podRequestedWithoutPreAllocatable,
+			nodeRState.rAllocated, preemptible, nil, trialAccumulatedRequests, nil, pod, rInfo, nodeInfo, len(selectedPAPods)+1, false, false)
+		// If any dimension exceeds, skip this pod
+		if len(insufficientResourceReasonsByReservation) > 0 {
+			// Record reasons for later diagnosis
+			allInsufficientResourceReasonsByReservation = append(allInsufficientResourceReasonsByReservation, insufficientResourceReasonsByReservation...)
+			// Skip this pod, do not add to accumulated resources
+			continue
+		}
+
+		// Run reservation filter plugins for this pod
+		status := extender.RunReservationFilterPlugins(ctx, cycleState, pod, rInfo, nodeInfo)
+		if !status.IsSuccess() {
+			allInsufficientResourceReasonsByReservation = append(allInsufficientResourceReasonsByReservation, status.Reasons()...)
+			// Skip this pod if it doesn't pass filter plugins
+			continue
+		}
+
+		// This pod fits, add it to selected pods and accumulate resources
+		accumulatedRequests = trialAccumulatedRequests
+		selectedPAPods = append(selectedPAPods, pod)
+
+		// No dimension exceeds, update insufficient resources by node
+		// All dimensions are satisfied, update selected pre-allocatable pods
+		if len(insufficientResourcesByNode) == 0 {
+			nodeRState.selectedPreAllocatablePods = selectedPAPods
+			return nil
+		}
+	}
+
+	// Build failure reasons
+	buildNodeFailureReasons := func(resources []string) (reasons []string) {
+		for _, r := range resources {
+			reasons = append(reasons, fmt.Sprintf("Insufficient %s by node", r))
+		}
+		return
+	}
+	var failureReasons []string
+	if isPreAllocationRequired {
+		failureReasons = append(failureReasons, buildNodeFailureReasons(insufficientResourcesByNode)...)
+		failureReasons = append(failureReasons, allInsufficientResourceReasonsByReservation...)
+		if len(failureReasons) == 0 {
+			failureReasons = append(failureReasons, ErrReasonNoPodsMeetPreAllocationRequirements)
+		}
+		return framework.NewStatus(framework.Unschedulable, failureReasons...)
+	} else {
+		if len(insufficientResourcesByNode) > 0 {
+			// If the combination of pre-allocatable and node cannot satisfy the reservation, then the node alone cannot satisfy it either.
+			failureReasons = buildNodeFailureReasons(insufficientResourcesByNode)
+		} else if checkNodeUnallocatedDone {
+			// If node-unallocated resources have already been checked, reuse the reasons directly.
+			failureReasons = buildNodeFailureReasons(insufficientResourcesByNodeUnallocated)
+		} else if len(preAllocatablePods) > 0 {
+			// If no insufficient resources by node with pre-allocatable pods, use the node-unallocated reasons,
+			// avoid passing in Filter phase but later fail in Reserve phase.
+			// When no pre-allocatable pods exist, NodeResourcesFit performs the node-unallocated check.
+			failureReasons = buildNodeFailureReasons(checkNodeUnallocatedOnceFn())
+		}
+		if len(failureReasons) > 0 {
+			return framework.NewStatus(framework.Unschedulable, failureReasons...)
+		}
+	}
+	return nil
+}
+
+// sortPreAllocatablePodsForDefaultMode sorts pre-allocatable pods by priority if needed.
+func sortPreAllocatablePodsForDefaultMode(ctx context.Context, extender frameworkext.FrameworkExtender,
+	cycleState *framework.CycleState, rInfo *frameworkext.ReservationInfo,
+	preAllocatablePods []*corev1.Pod, nodeName string) ([]*corev1.Pod, error) {
+	preAllocatableScoreList, err := prioritizePreAllocatablePods(ctx, extender, cycleState, rInfo,
+		preAllocatablePods, nodeName)
+	if err != nil {
+		return nil, err
+	}
+	preAllocatableScoreMap := make(map[types.UID]int64, len(preAllocatableScoreList))
+	for _, rs := range preAllocatableScoreList {
+		preAllocatableScoreMap[rs.UID] = rs.Score
+	}
+	// Sort by priority descending
+	sort.Slice(preAllocatablePods, func(i, j int) bool {
+		var scoreI, scoreJ int64
+		if score, ok := preAllocatableScoreMap[preAllocatablePods[i].UID]; ok {
+			scoreI = score
+		}
+		if score, ok := preAllocatableScoreMap[preAllocatablePods[j].UID]; ok {
+			scoreJ = score
+		}
+		return scoreI > scoreJ
+	})
+	return preAllocatablePods, nil
 }
 
 var dummyResource = framework.NewResource(nil)
@@ -959,7 +1179,8 @@ func (pl *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState,
 	defer state.CleanSchedulingData()
 
 	var (
-		nominatedPod             *corev1.Pod
+		nominatedPods            []*corev1.Pod
+		nominatedPodKeys         []string
 		nominatedReservationInfo *frameworkext.ReservationInfo
 	)
 	if reservationutil.IsReservePod(pod) { // reservation
@@ -978,25 +1199,54 @@ func (pl *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState,
 			return nil
 		}
 
+		// Check if multiple pre-allocation is enabled
 		var status *framework.Status
-		nominatedPod = pl.GetNominatedPreAllocation(state.rInfo, nodeName)
-		if nominatedPod == nil {
-			nominatedPod, status = pl.NominatePreAllocation(ctx, cycleState, state.rInfo, nodeName)
-			if !status.IsSuccess() {
-				return status
-			}
-			if nominatedPod == nil {
-				if state.isPreAllocationRequired {
-					return framework.NewStatus(framework.Unschedulable, ErrReasonNoPodsMeetPreAllocationRequirements)
+		if state.rInfo.IsMultiplePAPodsEnabled() {
+			nominatedPods = pl.GetNominatedPreAllocations(state.rInfo, nodeName)
+			if nominatedPods == nil {
+				nominatedPods, status = pl.NominatePreAllocations(cycleState, state.rInfo, nodeName)
+				if !status.IsSuccess() {
+					return status
 				}
-				klog.V(5).Infof("Skip reserve with pre-allocation since there are no matched pod, pod %v, reservation %s, node: %v", klog.KObj(pod), rName, nodeName)
-				return status
+				if len(nominatedPods) == 0 {
+					if state.isPreAllocationRequired {
+						return framework.NewStatus(framework.Unschedulable, ErrReasonNoPodsMeetPreAllocationRequirements)
+					}
+					klog.V(5).Infof("Skip reserve with pre-allocation since there are no matched pods, pod %v, reservation %s, node: %v", klog.KObj(pod), rName, nodeName)
+					return status
+				}
+				pl.AddNominatedPreAllocations(state.rInfo, nodeName, nominatedPods)
 			}
-			pl.AddNominatedPreAllocation(state.rInfo, nodeName, nominatedPod)
+			for _, np := range nominatedPods {
+				nominatedPodKeys = append(nominatedPodKeys, util.GetPodKey(np))
+			}
+		} else {
+			// Single pre-allocation mode (original logic)
+			nominatedPod := pl.GetNominatedPreAllocation(state.rInfo, nodeName)
+			if nominatedPod == nil {
+				nominatedPod, status = pl.NominatePreAllocation(ctx, cycleState, state.rInfo, nodeName)
+				if !status.IsSuccess() {
+					return status
+				}
+				if nominatedPod == nil {
+					if state.isPreAllocationRequired {
+						return framework.NewStatus(framework.Unschedulable, ErrReasonNoPodsMeetPreAllocationRequirements)
+					}
+					klog.V(5).Infof("Skip reserve with pre-allocation since there are no matched pod, pod %v, reservation %s, node: %v", klog.KObj(pod), rName, nodeName)
+					return status
+				}
+				pl.AddNominatedPreAllocation(state.rInfo, nodeName, nominatedPod)
+			}
+			nominatedPods = []*corev1.Pod{nominatedPod}
+			nominatedPodKeys = []string{util.GetPodKey(nominatedPod)}
 		}
 
 		nominatedReservationInfo = state.rInfo
-		state.preAllocated = nominatedPod.DeepCopy()
+		// Store all nominated pods in state for PreBind phase
+		state.preAllocated = make([]*corev1.Pod, len(nominatedPods))
+		for i, p := range nominatedPods {
+			state.preAllocated[i] = p.DeepCopy()
+		}
 	} else { // normal pod
 		if apiext.IsReservationIgnored(pod) {
 			klog.V(4).InfoS("Reserve pod to node and reservations are ignored",
@@ -1021,23 +1271,26 @@ func (pl *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState,
 			}
 			pl.handle.GetReservationNominator().AddNominatedReservation(pod, nodeName, nominatedReservationInfo)
 		}
-		nominatedPod = pod
+		nominatedPods = []*corev1.Pod{pod}
+		nominatedPodKeys = []string{util.GetPodKey(pod)}
 	}
 
-	err := pl.reservationCache.assumePod(nominatedReservationInfo.UID(), nominatedPod)
+	err := pl.reservationCache.assumePods(nominatedReservationInfo.UID(), nominatedPods)
 	if err != nil {
-		klog.ErrorS(err, "Failed to assume pod in reservationCache", "pod", klog.KObj(nominatedPod), "reservation", nominatedReservationInfo.GetName())
+		klog.ErrorS(err, "Failed to assume pod in reservationCache", "pods", nominatedPodKeys,
+			"reservation", nominatedReservationInfo.GetName())
 		return framework.AsStatus(err)
 	}
 	state.assumed = nominatedReservationInfo.Clone()
-	klog.V(4).InfoS("Reserve pod to node with reservations", "pod", klog.KObj(nominatedPod), "node", nodeName, "reservation", nominatedReservationInfo.GetName())
+	klog.V(4).InfoS("Reserve pod to node with reservations", "pods", nominatedPodKeys,
+		"node", nodeName, "reservation", nominatedReservationInfo.GetName())
 	return nil
 }
 
 func (pl *Plugin) Unreserve(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) {
 	var (
-		allocatedPod *corev1.Pod
-		rInfo        *frameworkext.ReservationInfo
+		allocatedPods []*corev1.Pod
+		rInfo         *frameworkext.ReservationInfo
 	)
 	state := getStateData(cycleState)
 	if reservationutil.IsReservePod(pod) {
@@ -1050,15 +1303,15 @@ func (pl *Plugin) Unreserve(ctx context.Context, cycleState *framework.CycleStat
 		assumedReservation = assumedReservation.DeepCopy()
 		assumedReservation.Status.NodeName = nodeName
 		pl.reservationCache.forgetReservation(assumedReservation)
-		if state.preAllocated == nil { // reserve pod without pre-allocation
+		if len(state.preAllocated) == 0 { // reserve pod without pre-allocation
 			return
 		}
 
 		// If the reserve pod is in pre-allocation, need to clean the nominator and the pod annotation.
 		pl.nominator.RemoveNominatedPreAllocation(pod)
-		allocatedPod = state.preAllocated
+		allocatedPods = state.preAllocated
 	} else {
-		allocatedPod = pod
+		allocatedPods = []*corev1.Pod{pod}
 	}
 
 	if apiext.IsReservationIgnored(pod) {
@@ -1074,13 +1327,20 @@ func (pl *Plugin) Unreserve(ctx context.Context, cycleState *framework.CycleStat
 
 	klog.V(4).InfoS("Attempting to unreserve pod to node with reservations", "pod", klog.KObj(pod), "node", nodeName, "assumed", klog.KObj(state.assumed))
 	// clean the assumed in cache
-	pl.reservationCache.forgetPod(state.assumed.UID(), pod)
+	pl.reservationCache.forgetPods(state.assumed.UID(), allocatedPods)
 
 	// clean the reservation-allocated annotation of the allocated pod
 	if !state.hasReservationAllocated { // no reservation-allocated has set
 		return
 	}
 	rInfo = state.assumed
+	for _, allocatedPod := range allocatedPods {
+		pl.unreservePod(ctx, pod, allocatedPod, rInfo, nodeName)
+	}
+}
+
+func (pl *Plugin) unreservePod(ctx context.Context, pod, allocatedPod *corev1.Pod,
+	rInfo *frameworkext.ReservationInfo, nodeName string) {
 	curPod, err := pl.podLister.Pods(allocatedPod.Namespace).Get(allocatedPod.Name)
 	if err != nil {
 		klog.V(4).InfoS("Aborted to unreserve pod with reservations since get pod failed", "err", err, "reservation", rInfo.GetName(), "pod", klog.KObj(allocatedPod), "node", nodeName)
@@ -1088,7 +1348,7 @@ func (pl *Plugin) Unreserve(ctx context.Context, cycleState *framework.CycleStat
 	}
 	if curPod.UID != allocatedPod.UID { // avoid modifying a homonymous pod
 		klog.V(4).InfoS("Aborted to unreserve pod with reservation since allocated pod is invalid",
-			"reservation", rInfo.GetName(), "pod", klog.KObj(pod), "node", nodeName, "current uid", curPod.UID, "allocated uid", pod.UID)
+			"reservation", rInfo.GetName(), "pod", klog.KObj(pod), "node", nodeName, "current uid", curPod.UID, "allocated uid", allocatedPod.UID)
 		return
 	}
 	// In some corner cases, the pod could fail the Bind request but finally assigned to the node.
@@ -1159,8 +1419,8 @@ func (pl *Plugin) PreBind(ctx context.Context, cycleState *framework.CycleState,
 
 func (pl *Plugin) PreBindReservation(ctx context.Context, cycleState *framework.CycleState, reservation *schedulingv1alpha1.Reservation, nodeName string) *framework.Status {
 	state := getStateData(cycleState)
-	if state.preAllocated == nil {
-		klog.V(6).InfoS("Skip the Reservation PreBind since no pre-allocatable pod on nod",
+	if len(state.preAllocated) == 0 {
+		klog.V(6).InfoS("Skip the Reservation PreBind since no pre-allocatable pod on node",
 			"reservation", klog.KObj(reservation), "node", nodeName)
 		return nil
 	}
@@ -1176,39 +1436,45 @@ func (pl *Plugin) PreBindReservation(ctx context.Context, cycleState *framework.
 		return framework.NewStatus(framework.Error, ErrReasonReservationPreAllocationUnsupported)
 	}
 
-	// Apply PreAllocation result to the pod.
-	klog.V(4).Infof("Attempting to PreBindReservation pre-allocatable pod %v to node %v with reservation %v", klog.KObj(state.preAllocated), nodeName, klog.KObj(reservation))
-	pod := state.preAllocated
-	curPod, err := pl.podLister.Pods(pod.Namespace).Get(pod.Name)
-	if err != nil {
-		klog.V(4).ErrorS(err, "failed to PreBindReservation for PreAllocation since get pod failed",
-			"reservation", klog.KObj(reservation), "node", nodeName, "pod", klog.KObj(pod))
-		return framework.AsStatus(err)
-	}
-	if curPod.UID != pod.UID { // avoid modify a homonymous pod
-		klog.V(4).InfoS("failed to PreBindReservation for PreAllocation since pre-allocated pod is invalid",
-			"reservation", klog.KObj(reservation), "node", nodeName, "pod", klog.KObj(pod), "current uid", curPod.UID, "preAllocated uid", pod.UID)
-		return framework.NewStatus(framework.Error, ErrReasonReservationPreAllocationUnsupported)
-	}
-	originalPod := curPod
-	modifiedPod := originalPod.DeepCopy()
-	apiext.SetReservationAllocated(modifiedPod, state.rInfo.GetObject())
-	err = util.RetryOnConflictOrTooManyRequests(func() error {
-		_, err := util.PatchPodSafe(ctx, pl.handle.ClientSet(), originalPod, modifiedPod)
+	// Apply PreAllocation result to the pod(s)
+	podsToUpdate := state.preAllocated
+	klog.V(4).Infof("Attempting to PreBindReservation %d pre-allocatable pod(s) to node %v with reservation %v",
+		len(podsToUpdate), nodeName, klog.KObj(reservation))
+
+	// Apply PreAllocation annotation to all nominated pods
+	for _, pod := range podsToUpdate {
+		curPod, err := pl.podLister.Pods(pod.Namespace).Get(pod.Name)
 		if err != nil {
-			klog.V(5).ErrorS(err, "Failed to patch Pod", "pod", klog.KObj(originalPod),
-				"node", nodeName, "reservation", klog.KObj(reservation))
+			klog.V(4).ErrorS(err, "failed to PreBindReservation for PreAllocation since get pod failed",
+				"reservation", klog.KObj(reservation), "node", nodeName, "pod", klog.KObj(pod))
+			return framework.AsStatus(err)
 		}
-		return err
-	})
-	if err != nil {
-		klog.ErrorS(err, "Failed to apply patch to Pod for PreAllocation", "pod", klog.KObj(originalPod),
-			"node", nodeName, "reservation", klog.KObj(reservation))
-		return framework.AsStatus(err)
+		if curPod.UID != pod.UID { // avoid modify a homonymous pod
+			klog.V(4).InfoS("failed to PreBindReservation for PreAllocation since pre-allocated pod is invalid",
+				"reservation", klog.KObj(reservation), "node", nodeName, "pod", klog.KObj(pod), "current uid", curPod.UID, "preAllocated uid", pod.UID)
+			return framework.NewStatus(framework.Error, ErrReasonReservationPreAllocationUnsupported)
+		}
+		originalPod := curPod
+		modifiedPod := originalPod.DeepCopy()
+		apiext.SetReservationAllocated(modifiedPod, state.rInfo.GetObject())
+		err = util.RetryOnConflictOrTooManyRequests(func() error {
+			_, err := util.PatchPodSafe(ctx, pl.handle.ClientSet(), originalPod, modifiedPod)
+			if err != nil {
+				klog.V(5).ErrorS(err, "Failed to patch Pod", "pod", klog.KObj(originalPod),
+					"node", nodeName, "reservation", klog.KObj(reservation))
+			}
+			return err
+		})
+		if err != nil {
+			klog.ErrorS(err, "Failed to apply patch to Pod for PreAllocation", "pod", klog.KObj(originalPod),
+				"node", nodeName, "reservation", klog.KObj(reservation))
+			return framework.AsStatus(err)
+		}
+		klog.V(4).InfoS("Successfully patch to Pod for PreAllocation",
+			"node", nodeName, "reservation", klog.KObj(reservation), "pod", klog.KObj(modifiedPod))
 	}
+
 	state.hasReservationAllocated = true
-	klog.V(4).InfoS("Successfully patch to Pod for PreAllocation",
-		"node", nodeName, "reservation", klog.KObj(reservation), "pod", klog.KObj(modifiedPod))
 	return nil
 }
 
@@ -1261,4 +1527,14 @@ func (pl *Plugin) DeleteReservation(r *schedulingv1alpha1.Reservation) *framewor
 
 func (pl *Plugin) GetReservationInfoByPod(pod *corev1.Pod, nodeName string) *frameworkext.ReservationInfo {
 	return pl.reservationCache.GetReservationInfoByPod(pod, nodeName)
+}
+
+// IsPreferNoPreAllocatedPods returns whether to prefer placing reservation
+// without pre-allocated pods when pre-allocation is not required and node unallocated resources are sufficient.
+// Defaults to false.
+func (pl *Plugin) IsPreferNoPreAllocatedPods() bool {
+	if pl.args != nil && pl.args.PreAllocationConfig != nil {
+		return pl.args.PreAllocationConfig.PreferNoPreAllocatedPods
+	}
+	return false
 }
