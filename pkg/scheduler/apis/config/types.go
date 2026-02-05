@@ -292,6 +292,9 @@ type CoschedulingArgs struct {
 	// AwareNetworkTopology indicates whether to make coscheduling network topology aware.
 	// default is false
 	AwareNetworkTopology *bool `json:"awareNetworkTopology,omitempty"`
+	// DefaultMatchPolicy indicates the default match policy for gang scheduling.
+	// default is "once-satisfied"
+	DefaultMatchPolicy string `json:"defaultMatchPolicy,omitempty"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object

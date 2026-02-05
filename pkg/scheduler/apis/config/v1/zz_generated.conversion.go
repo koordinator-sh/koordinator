@@ -186,6 +186,9 @@ func autoConvert_v1_CoschedulingArgs_To_config_CoschedulingArgs(in *Coscheduling
 	}
 	out.EnablePreemption = (*bool)(unsafe.Pointer(in.EnablePreemption))
 	out.AwareNetworkTopology = (*bool)(unsafe.Pointer(in.AwareNetworkTopology))
+	if err := metav1.Convert_Pointer_string_To_string(&in.DefaultMatchPolicy, &out.DefaultMatchPolicy, s); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -206,6 +209,9 @@ func autoConvert_config_CoschedulingArgs_To_v1_CoschedulingArgs(in *config.Cosch
 	}
 	out.EnablePreemption = (*bool)(unsafe.Pointer(in.EnablePreemption))
 	out.AwareNetworkTopology = (*bool)(unsafe.Pointer(in.AwareNetworkTopology))
+	if err := metav1.Convert_string_To_Pointer_string(&in.DefaultMatchPolicy, &out.DefaultMatchPolicy, s); err != nil {
+		return err
+	}
 	return nil
 }
 
