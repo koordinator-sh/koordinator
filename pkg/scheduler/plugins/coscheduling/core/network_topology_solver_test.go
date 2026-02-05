@@ -17,10 +17,16 @@ limitations under the License.
 package core
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/kubernetes/pkg/scheduler/framework"
+	"k8s.io/kubernetes/pkg/scheduler/framework/parallelize"
 
+	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/networktopology"
 )
 
@@ -207,4 +213,97 @@ func TestTopologyNodeLessFunc_NilParent(t *testing.T) {
 
 	got := topologyNodeLessFunc(a, b, true)
 	assert.True(t, got)
+}
+
+func Test_calculateNodeExistingPodsNum(t *testing.T) {
+	type args struct {
+		selectorKey string
+		nodes       []*corev1.Node
+		pods        []*corev1.Pod
+	}
+	tests := []struct {
+		name string
+		args args
+		want map[string]int
+	}{
+		{
+			name: "normal flow",
+			args: args{
+				selectorKey: "test-key",
+				nodes: []*corev1.Node{
+					{
+						ObjectMeta: metav1.ObjectMeta{
+							Name: "node-1",
+						},
+					},
+					{
+						ObjectMeta: metav1.ObjectMeta{
+							Name: "node-2",
+						},
+					},
+					{
+						ObjectMeta: metav1.ObjectMeta{
+							Name: "node-3",
+						},
+					},
+				},
+				pods: []*corev1.Pod{
+					{
+						ObjectMeta: metav1.ObjectMeta{
+							Name: "pod-1",
+							Annotations: map[string]string{
+								extension.AnnotationPodNetworkTopologySelector: "test-key",
+							},
+						},
+						Spec: corev1.PodSpec{
+							NodeName: "node-1",
+						},
+					},
+					{
+						ObjectMeta: metav1.ObjectMeta{
+							Name: "pod-2",
+							Annotations: map[string]string{
+								extension.AnnotationPodNetworkTopologySelector: "test-key",
+							},
+						},
+						Spec: corev1.PodSpec{
+							NodeName: "node-2",
+						},
+					},
+					{
+						ObjectMeta: metav1.ObjectMeta{
+							Name: "pod-3",
+							Annotations: map[string]string{
+								extension.AnnotationPodNetworkTopologySelector: "test-key",
+							},
+						},
+						Spec: corev1.PodSpec{
+							NodeName: "node-2",
+						},
+					},
+				},
+			},
+			want: map[string]int{
+				"node-1": 1,
+				"node-2": 2,
+				"node-3": 0,
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var nodeInfos []*framework.NodeInfo
+			for _, node := range tt.args.nodes {
+				nodeInfo := framework.NewNodeInfo()
+				nodeInfo.SetNode(node)
+				for _, pod := range tt.args.pods {
+					if pod.Spec.NodeName == node.Name {
+						nodeInfo.AddPod(pod)
+					}
+				}
+				nodeInfos = append(nodeInfos, nodeInfo)
+			}
+			assert.Equal(t, tt.want, calculateNodeExistingPodsNum(context.TODO(), parallelize.NewParallelizer(16), tt.args.selectorKey, nodeInfos))
+		})
+	}
 }

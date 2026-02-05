@@ -9,7 +9,9 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
+	"k8s.io/kubernetes/pkg/scheduler/framework/parallelize"
 
+	"github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/networktopology"
@@ -20,7 +22,8 @@ const (
 )
 
 const (
-	OperationCalculateNodeOfferSlot = "CalculateNodeOfferSlot"
+	OperationCalculateNodeOfferSlot      = "CalculateNodeOfferSlot"
+	OperationCalculateNodeExistingPodNum = "CalculateNodeExistingPodsNum"
 )
 
 type NetworkTopologySolver interface {
@@ -58,8 +61,9 @@ func (solver *networkTopologySolverImpl) PlacePods(
 ) (map[string]string, *framework.Status) {
 	topologyState := TopologyStateFromContext(ctx)
 	nodeOfferSlot := solver.calculateNodeOfferSlot(ctx, cycleStates, toSchedulePods, nodes, addPod)
+	nodeToExistingNums := calculateNodeExistingPodsNum(ctx, solver.handle.Parallelizer(), extension.GetPodNetworkTopologySelector(toSchedulePods[0]), nodes)
 	nodeLayeredTopologyNodes := enumerateNodeTopologyNode(clusterNetworkTopology, len(nodes))
-	evaluateTopologyNode(nodeLayeredTopologyNodes, nodeOfferSlot, nodeToScore)
+	evaluateTopologyNode(nodeLayeredTopologyNodes, nodeOfferSlot, nodeToScore, nodeToExistingNums)
 
 	topologyState.MustGatheredTopologyNode = searchMustGatherSatisfiedNodes(jobNetworkRequirements, clusterNetworkTopology)
 	candidateTopologyNodes := searchOfferSlotSatisfiedNodes(jobNetworkRequirements, topologyState.MustGatheredTopologyNode)
@@ -136,6 +140,32 @@ func (solver *networkTopologySolverImpl) calculateNodeOfferSlot(
 	return topologyState.NodeOfferSlot
 }
 
+func calculateNodeExistingPodsNum(
+	ctx context.Context,
+	parallelizer parallelize.Parallelizer,
+	selectorKey string,
+	nodeInfos []*framework.NodeInfo) map[string]int {
+	if selectorKey == "" {
+		return nil
+	}
+	nodeToExistingPodsNum := make(map[string]int, len(nodeInfos))
+	var mapLock sync.RWMutex
+	calculateForNode := func(nodeI int) {
+		nodeInfo := nodeInfos[nodeI]
+		podNum := 0
+		for _, pod := range nodeInfo.Pods {
+			if extension.GetPodNetworkTopologySelector(pod.Pod) == selectorKey {
+				podNum += 1
+			}
+		}
+		mapLock.Lock()
+		nodeToExistingPodsNum[nodeInfo.Node().Name] = podNum
+		mapLock.Unlock()
+	}
+	parallelizer.Until(ctx, len(nodeInfos), calculateForNode, OperationCalculateNodeExistingPodNum)
+	return nodeToExistingPodsNum
+}
+
 func enumerateNodeTopologyNode(
 	clusterNetworkTopology *networktopology.TreeNode,
 	nodesNum int,
@@ -165,12 +195,20 @@ func evaluateTopologyNode(
 	nodeToTopologyNodes map[string]*networktopology.TreeNode,
 	nodeOfferSlot map[string]int,
 	nodeToScore map[string]int,
+	nodeExitingPodsNum map[string]int,
 ) {
 	for nodeName, offerSlot := range nodeOfferSlot {
 		topologyNode := nodeToTopologyNodes[nodeName]
 		for topologyNode != nil {
 			topologyNode.OfferSlot += offerSlot
 			topologyNode.Score += nodeToScore[nodeName]
+			topologyNode = topologyNode.Parent
+		}
+	}
+	for nodeName, existingPodNum := range nodeExitingPodsNum {
+		topologyNode := nodeToTopologyNodes[nodeName]
+		for topologyNode != nil {
+			topologyNode.ExistingPodNum += existingPodNum
 			topologyNode = topologyNode.Parent
 		}
 	}
@@ -237,14 +275,18 @@ func searchOfferSlotSatisfiedNodes(
 }
 
 var topologyNodeLessFunc = func(a, b *networktopology.TreeNode, lowerOfferSlot bool) bool {
+	// Compare ExistingPodNum layer by layer from the current node
+	for nodeA, nodeB := a, b; nodeA != nil && nodeB != nil; nodeA, nodeB = nodeA.Parent, nodeB.Parent {
+		if nodeA.ExistingPodNum != nodeB.ExistingPodNum {
+			return nodeA.ExistingPodNum > nodeB.ExistingPodNum
+		}
+	}
 	// Compare OfferSlot layer by layer from the current node
-
 	for nodeA, nodeB := a, b; nodeA != nil && nodeB != nil; nodeA, nodeB = nodeA.Parent, nodeB.Parent {
 		if nodeA.OfferSlot != nodeB.OfferSlot {
 			return (nodeA.OfferSlot < nodeB.OfferSlot) == lowerOfferSlot
 		}
 	}
-
 	if a.Score != b.Score {
 		return a.Score > b.Score
 	}

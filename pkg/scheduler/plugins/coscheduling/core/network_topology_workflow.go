@@ -19,6 +19,7 @@ package core
 import (
 	"context"
 	"fmt"
+	"sort"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -234,4 +235,85 @@ func (ev *preemptionEvaluatorImpl) PlanNodes(
 		successPodsOnNode.pods = append(successPodsOnNode.pods, pod)
 	}
 	return plannedNodes, successPods, nil, nil
+}
+
+const (
+	preScoreStateKey = Name + "/pre-score-state"
+)
+
+type PreScoreState struct {
+	nodesIndex map[string]int
+}
+
+func (p *PreScoreState) Clone() framework.StateData {
+	return p
+}
+
+func (pgMgr *PodGroupManager) PreScore(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodes []*corev1.Node) *framework.Status {
+	podSelector := extension.GetPodNetworkTopologySelector(pod)
+	if podSelector == "" {
+		return framework.NewStatus(framework.Skip)
+	}
+	nodeInfos, err := pgMgr.handle.SnapshotSharedLister().NodeInfos().List()
+	if err != nil {
+		return framework.NewStatus(framework.Error, fmt.Sprintf("failed to get all allNodes: %v", err))
+	}
+	extendedHandle := pgMgr.handle.(frameworkext.ExtendedHandle)
+	clusterNetworkTopology := extendedHandle.GetNetworkTopologyTreeManager().GetSnapshot()
+	nodes = pgMgr.sortNodesByTopology(ctx, clusterNetworkTopology, podSelector, nodes, nodeInfos)
+	nodeIndex := make(map[string]int, len(nodes))
+	for i, node := range nodes {
+		nodeIndex[node.Name] = i
+	}
+	cycleState.Write(preScoreStateKey, &PreScoreState{
+		nodesIndex: nodeIndex,
+	})
+	return nil
+}
+
+func (pgMgr *PodGroupManager) sortNodesByTopology(
+	ctx context.Context,
+	clusterNetworkTopology *networktopology.TreeSnapshot,
+	podSelector string,
+	candidateNodes []*corev1.Node,
+	nodeInfos []*framework.NodeInfo,
+) []*corev1.Node {
+	// FIXME here we assert that every node only accommodates one pod
+	nodeOfferSlot := make(map[string]int, len(candidateNodes))
+	for _, node := range candidateNodes {
+		nodeOfferSlot[node.Name] = 1
+	}
+	nodeExistingPodNum := calculateNodeExistingPodsNum(ctx, pgMgr.handle.Parallelizer(), podSelector, nodeInfos)
+	nodeLayeredTopologyNodes := enumerateNodeTopologyNode(clusterNetworkTopology.TreeNode, len(nodeInfos))
+	evaluateTopologyNode(nodeLayeredTopologyNodes, nodeOfferSlot, nil, nodeExistingPodNum)
+	sort.Slice(candidateNodes, func(i, j int) bool {
+		treeNodeA := nodeLayeredTopologyNodes[candidateNodes[i].Name]
+		treeNodeB := nodeLayeredTopologyNodes[candidateNodes[j].Name]
+		// Compare ExistingPodNum layer by layer from the current node
+		for nodeA, nodeB := treeNodeA, treeNodeB; nodeA != nil && nodeB != nil; nodeA, nodeB = nodeA.Parent, nodeB.Parent {
+			if nodeA.ExistingPodNum != nodeB.ExistingPodNum {
+				return nodeA.ExistingPodNum > nodeB.ExistingPodNum
+			}
+		}
+		// Compare OfferSlot layer by layer from the current node
+		for nodeA, nodeB := treeNodeA, treeNodeB; nodeA != nil && nodeB != nil; nodeA, nodeB = nodeA.Parent, nodeB.Parent {
+			if nodeA.OfferSlot != nodeB.OfferSlot {
+				return nodeA.OfferSlot < nodeB.OfferSlot
+			}
+		}
+		return treeNodeA.Name < treeNodeB.Name
+	})
+	return candidateNodes
+}
+
+func (pgMgr *PodGroupManager) Score(ctx context.Context, state *framework.CycleState, pod *corev1.Pod, nodeName string) (int64, *framework.Status) {
+	networkTopologySelectorKey := extension.GetPodNetworkTopologySelector(pod)
+	if networkTopologySelectorKey == "" {
+		return 0, nil
+	}
+	preScoreState, err := state.Read(preScoreStateKey)
+	if err != nil {
+		return 0, framework.NewStatus(framework.Error, fmt.Sprintf("failed to read pre score state: %v", err))
+	}
+	return int64(preScoreState.(*PreScoreState).nodesIndex[nodeName]), nil
 }
