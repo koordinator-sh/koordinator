@@ -42,6 +42,7 @@ type CgroupReader interface {
 	ReadPSI(parentDir string) (*sysutil.PSIByResource, error)
 	ReadMemoryColdPageUsage(parentDir string) (uint64, error)
 	ReadNetClsId(parentDir string) (uint32, error)
+	ReadCPUBurst(parentDir string) (int64, error)
 }
 
 var _ CgroupReader = &CgroupV1Reader{}
@@ -246,6 +247,14 @@ func (r *CgroupV1Reader) ReadNetClsId(parentDir string) (uint32, error) {
 		return 0, ErrResourceNotRegistered
 	}
 	return readCgroupAndParseUint32(parentDir, resource)
+}
+
+func (r *CgroupV1Reader) ReadCPUBurst(parentDir string) (int64, error) {
+	resource, ok := sysutil.DefaultRegistry.Get(sysutil.CgroupVersionV1, sysutil.CPUBurstName)
+	if !ok {
+		return -1, ErrResourceNotRegistered
+	}
+	return readCgroupAndParseInt64(parentDir, resource)
 }
 
 var _ CgroupReader = &CgroupV2Reader{}
@@ -468,6 +477,16 @@ func (r *CgroupV2Reader) ReadNetClsId(parentDir string) (uint32, error) {
 		return 0, ErrResourceNotRegistered
 	}
 	return readCgroupAndParseUint32(parentDir, resource)
+}
+
+func (r *CgroupV2Reader) ReadCPUBurst(parentDir string) (int64, error) {
+	resource, ok := sysutil.DefaultRegistry.Get(sysutil.CgroupVersionV2, sysutil.CPUBurstName)
+	if !ok {
+		return -1, ErrResourceNotRegistered
+	}
+
+	// since cpu.max.burst is a simgle value in cgroupV2 file, just convert the value to int64 and return
+	return readCgroupAndParseInt64(parentDir, resource)
 }
 
 func NewCgroupReader() CgroupReader {

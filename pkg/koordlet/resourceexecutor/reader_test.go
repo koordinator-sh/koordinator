@@ -183,6 +183,109 @@ func TestCgroupReader_ReadCPUQuota(t *testing.T) {
 	}
 }
 
+// TestCgroupReader_ReadCPUBurst tests the ReadCPUBurst function for both cgroups v1 and v2.
+// cpu.cfs_burst_us should be larger than zero and smaller than cpu.cfs_quota_us when set.
+func TestCgroupReader_ReadCPUBurst(t *testing.T) {
+	type fields struct {
+		UseCgroupsV2     bool
+		CPUCFSBurstValue string
+		CPUMaxBurstVale  string
+	}
+	type args struct {
+		parentDir string
+	}
+	tests := []struct {
+		name    string
+		fields  fields
+		args    args
+		want    int64
+		wantErr bool
+	}{
+		{
+			name:    "v1 path not exist",
+			fields:  fields{},
+			want:    -1,
+			wantErr: true,
+		},
+		{
+			name: "parse v1 value successfully",
+			fields: fields{
+				CPUCFSBurstValue: "200000",
+			},
+			args: args{
+				parentDir: "/kubepods.slice",
+			},
+			want:    200000,
+			wantErr: false,
+		},
+		{
+			name: "parse v1 value successfully 1",
+			fields: fields{
+				CPUCFSBurstValue: "0",
+			},
+			args: args{
+				parentDir: "/kubepods.slice",
+			},
+			want:    0,
+			wantErr: false,
+		},
+		{
+			name: "v2 path not exist",
+			fields: fields{
+				UseCgroupsV2: true,
+			},
+			args: args{
+				parentDir: "/kubepods.slice",
+			},
+			want:    -1,
+			wantErr: true,
+		},
+		{
+			name: "parse v2 value successfully",
+			fields: fields{
+				UseCgroupsV2:    true,
+				CPUMaxBurstVale: "200000",
+			},
+			args: args{
+				parentDir: "/kubepods.slice",
+			},
+			want:    200000,
+			wantErr: false,
+		},
+		{
+			name: "parse v2 value successfully 1",
+			fields: fields{
+				UseCgroupsV2:    true,
+				CPUMaxBurstVale: "0",
+			},
+			args: args{
+				parentDir: "/kubepods.slice",
+			},
+			want:    0,
+			wantErr: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			helper := sysutil.NewFileTestUtil(t)
+			defer helper.Cleanup()
+			helper.SetCgroupsV2(tt.fields.UseCgroupsV2)
+			if tt.fields.CPUCFSBurstValue != "" {
+				helper.WriteCgroupFileContents(tt.args.parentDir, sysutil.CPUBurst, tt.fields.CPUCFSBurstValue)
+			}
+			if tt.fields.CPUMaxBurstVale != "" {
+				// Manually set CPUBurstV2Support=True to pass validation in WriteCgroupFileContents
+				sysutil.CPUBurstV2.WithSupported(true, "")
+				helper.WriteCgroupFileContents(tt.args.parentDir, sysutil.CPUBurstV2, tt.fields.CPUMaxBurstVale)
+			}
+
+			got, gotErr := NewCgroupReader().ReadCPUBurst(tt.args.parentDir)
+			assert.Equal(t, tt.wantErr, gotErr != nil)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
 func TestCgroupReader_ReadCPUPeriod(t *testing.T) {
 	type fields struct {
 		UseCgroupsV2      bool
