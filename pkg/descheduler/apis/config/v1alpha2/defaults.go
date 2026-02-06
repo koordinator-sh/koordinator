@@ -17,6 +17,7 @@ limitations under the License.
 package v1alpha2
 
 import (
+	"k8s.io/utils/pointer"
 	"net"
 	"strconv"
 	"time"
@@ -291,5 +292,14 @@ func SetDefaults_LowNodeLoadArgs(obj *LowNodeLoadArgs) {
 				obj.ResourceWeights[resourceName] = weight
 			}
 		}
+	}
+}
+
+func SetDefaults_CustomPriorityArgs(obj *CustomPriorityArgs) {
+	if obj.NodeFit == nil {
+		obj.NodeFit = pointer.Bool(true)
+	}
+	if obj.Mode == "" {
+		obj.Mode = CustomPriorityEvictModeBestEffort
 	}
 }
