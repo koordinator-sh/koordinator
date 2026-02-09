@@ -57,6 +57,8 @@ type requestContext struct {
 	preferred                 map[schedulingv1alpha1.DeviceType]sets.Int
 	allocationScorer          *resourceAllocationScorer
 	nodeDevice                *nodeDevice
+
+	designatedVF map[schedulingv1alpha1.DeviceType]map[int32]sets.Set[string]
 }
 
 type AutopilotAllocator struct {
@@ -114,6 +116,7 @@ func (a *AutopilotAllocator) Allocate(
 		required:                  required,
 		preferred:                 preferred,
 		nodeDevice:                a.nodeDevice,
+		designatedVF:              a.state.designatedVF,
 	}
 	var deviceAllocations apiext.DeviceAllocations
 	var status *framework.Status
@@ -370,6 +373,7 @@ func defaultAllocateDevices(
 		minor := ptr.Deref[int32](v.Minor, 0)
 		deviceInfos[int(minor)] = v
 	}
+	designatedVFOfType := requestCtx.designatedVF[deviceType]
 
 	var allocations []*apiext.DeviceAllocation
 	resourceMinorPairs := scoreDevices(podRequestPerInstance, nodeDeviceTotal, freeDevices, requestCtx.allocationScorer)
@@ -396,9 +400,15 @@ func defaultAllocateDevices(
 			Minor:     int32(resourceMinorPair.minor),
 			Resources: podRequestPerInstance,
 		}
+
+		var designatedVFOfMinor sets.Set[string]
+		if designatedVFOfType != nil {
+			designatedVFOfMinor = designatedVFOfType[r.Minor]
+		}
+
 		if mustAllocateVF(hint) {
 			// TODO Device allocation logic hotspots discovered through flame graphs
-			vf := allocateVF(vfAllocation, deviceInfos, resourceMinorPair.minor, vfSelector)
+			vf := allocateVF(vfAllocation, deviceInfos, resourceMinorPair.minor, vfSelector, designatedVFOfMinor)
 			if vf == nil {
 				continue
 			}
@@ -426,7 +436,7 @@ func defaultAllocateDevices(
 	return allocations, nil
 }
 
-func allocateVF(vfAllocation *VFAllocation, deviceInfos map[int]*schedulingv1alpha1.DeviceInfo, minor int, vfSelector labels.Selector) *schedulingv1alpha1.VirtualFunction {
+func allocateVF(vfAllocation *VFAllocation, deviceInfos map[int]*schedulingv1alpha1.DeviceInfo, minor int, vfSelector labels.Selector, designatedVFOfMinor sets.Set[string]) *schedulingv1alpha1.VirtualFunction {
 	deviceInfo := deviceInfos[minor]
 	if deviceInfo == nil {
 		return nil
@@ -440,9 +450,13 @@ func allocateVF(vfAllocation *VFAllocation, deviceInfos map[int]*schedulingv1alp
 	for _, vfGroup := range deviceInfo.VFGroups {
 		if vfSelector == nil || vfSelector.Matches(labels.Set(vfGroup.Labels)) {
 			for _, vf := range vfGroup.VFs {
-				if !allocated.Has(vf.BusID) {
-					remainingVFs = append(remainingVFs, vf)
+				if allocated.Has(vf.BusID) {
+					continue
 				}
+				if designatedVFOfMinor != nil && !designatedVFOfMinor.Has(vf.BusID) {
+					continue
+				}
+				remainingVFs = append(remainingVFs, vf)
 			}
 		}
 	}
