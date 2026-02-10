@@ -16,9 +16,10 @@ import (
 
 	config "hybrid/config/collector"
 	"hybrid/pkg/collector/prometheus"
+	"hybrid/pkg/constants"
 )
 
-// exportToLocal export metrics data to local file(excel)
+// exportToExcel export metrics data to local file(excel)
 func (e *Exporter) exportToExcel(allResults map[string][]prometheus.QueryResult) error {
 	// generate filename
 	filename := generateExcelFilename(e.config.Export.LocalConfig.Format)
@@ -166,10 +167,10 @@ func generateExcelFilename(format string) string {
 	now := time.Now()
 	switch format {
 	case "daily":
-		return fmt.Sprintf("prometheus_export_%s.xlsx", now.Format("2006-01-02"))
+		return fmt.Sprintf("%s_%s.xlsx", constants.ExportFilePrefix, now.Format("2006-01-02"))
 	case "timestamp":
-		return fmt.Sprintf("prometheus_export_%s.xlsx", now.Format("20060102_150405"))
+		return fmt.Sprintf("%s_%s.xlsx", constants.ExportFilePrefix, now.Format("20060102_150405"))
 	default:
-		return fmt.Sprintf("prometheus_export_%s.xlsx", now.Format("20060102_150405"))
+		return fmt.Sprintf("%s_%s.xlsx", constants.ExportFilePrefix, now.Format("20060102_150405"))
 	}
 }

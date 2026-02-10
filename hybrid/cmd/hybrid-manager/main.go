@@ -23,12 +23,14 @@ import (
 	"k8s.io/klog/v2"
 
 	"hybrid/pkg/controller"
+	"hybrid/pkg/predictor"
 )
 
 var (
-	kubeconfig     string
-	predictionFile string
-	syncInterval   time.Duration
+	kubeconfig string
+	file       string
+	interval   time.Duration
+	server     string
 )
 
 func init() {
@@ -37,8 +39,10 @@ func init() {
 	} else {
 		flag.StringVar(&kubeconfig, "kubeconfig", "", "absolute path to the kubeconfig file")
 	}
-	flag.StringVar(&predictionFile, "prediction-file", "/data/prediction-result.csv", "path to the prediction result CSV file")
-	flag.DurationVar(&syncInterval, "sync-interval", 5*time.Minute, "interval for syncing predictions to workload annotations")
+	flag.StringVar(&file, "file", "prediction-result.csv", "name of the prediction result csv file")
+	flag.StringVar(&server, "server", "", "address of ai model service")
+	flag.DurationVar(&interval, "interval", 5*time.Minute, "interval for syncing predictions to workload annotations")
+
 	klog.InitFlags(nil)
 }
 
@@ -57,18 +61,29 @@ func main() {
 		klog.Fatalf("Failed to create kubernetes clientset: %v", err)
 	}
 
-	classifyCtrl := controller.NewClassifyController(clientset, predictionFile, syncInterval)
-
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 
+	var downloadService *predictor.DownloadService
+	if server != "" {
+		// start download service
+		downloadService = predictor.NewDownloadService(server, file, interval)
+		go func() {
+			if err := downloadService.Start(ctx); err != nil {
+				klog.Errorf("Start download service error: %v", err)
+				cancel()
+			}
+		}()
+	}
+
 	// start controller
+	classifyCtr := controller.NewClassifyController(clientset, file, interval)
 	go func() {
-		if err := classifyCtrl.Start(ctx); err != nil {
-			klog.Errorf("Controller error: %v", err)
+		if err := classifyCtr.Start(ctx); err != nil {
+			klog.Errorf("Start controller error: %v", err)
 			cancel()
 		}
 	}()
@@ -78,7 +93,14 @@ func main() {
 	sig := <-sigCh
 	klog.Infof("Received signal: %v, shutting down...", sig)
 
-	classifyCtrl.Stop()
+	// stop controller
+	if clientset != nil {
+		classifyCtr.Stop()
+	}
+	// stop download service
+	if downloadService != nil {
+		downloadService.Stop()
+	}
 	cancel()
 
 	time.Sleep(2 * time.Second)

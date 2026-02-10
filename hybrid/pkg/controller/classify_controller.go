@@ -9,6 +9,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"path"
 	"time"
 
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -16,13 +17,9 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/klog/v2"
 
+	"hybrid/pkg/constants"
 	"hybrid/pkg/predictor"
 	"hybrid/pkg/utils"
-)
-
-const (
-	DefaultSyncInterval   = 5 * time.Minute
-	DefaultPredictionFile = "/data/prediction-result.csv"
 )
 
 type ClassifyController struct {
@@ -34,10 +31,12 @@ type ClassifyController struct {
 
 func NewClassifyController(clientset *kubernetes.Clientset, predictionFile string, syncInterval time.Duration) *ClassifyController {
 	if predictionFile == "" {
-		predictionFile = DefaultPredictionFile
+		predictionFile = path.Join(constants.DefaultOutputDir, constants.DefaultPredictionFile)
+	} else {
+		predictionFile = path.Join(constants.DefaultOutputDir, predictionFile)
 	}
 	if syncInterval <= 0 {
-		syncInterval = DefaultSyncInterval
+		syncInterval = constants.DefaultSyncInterval
 	}
 
 	return &ClassifyController{
@@ -132,15 +131,23 @@ func (c *ClassifyController) syncWorkloadAnnotation(ctx context.Context, record 
 			klog.V(4).Infof("Error updating DaemonSet %s/%s: %v", record.Namespace, controllerInfo.Name, err)
 		}
 	case "CronJob":
-		// todo:
+		if err := c.updateCronJobAnnotations(ctx, record.Namespace, controllerInfo.Name, annotations); err == nil {
+			return nil
+		} else if !errors.IsNotFound(err) {
+			klog.V(4).Infof("Error updating CronJob %s/%s: %v", record.Namespace, controllerInfo.Name, err)
+		}
 	case "Job":
+		if err := c.updateJobAnnotations(ctx, record.Namespace, controllerInfo.Name, annotations); err == nil {
+			return nil
+		} else if !errors.IsNotFound(err) {
+			klog.V(4).Infof("Error updating Job %s/%s: %v", record.Namespace, controllerInfo.Name, err)
+		}
+	case "ReplicaSet":
 		if err := c.updateReplicaSetAnnotations(ctx, record.Namespace, controllerInfo.Name, annotations); err == nil {
 			return nil
 		} else if !errors.IsNotFound(err) {
 			klog.V(4).Infof("Error updating ReplicaSet %s/%s: %v", record.Namespace, controllerInfo.Name, err)
 		}
-	case "ReplicaSet":
-		// todo:
 	default:
 		return fmt.Errorf("workload not found: %s/%s ", record.Namespace, record.Name)
 	}
@@ -219,6 +226,56 @@ func (c *ClassifyController) updateDaemonSetAnnotations(ctx context.Context, nam
 	_, err = c.clientset.AppsV1().DaemonSets(namespace).Update(ctx, daemonSet, metav1.UpdateOptions{})
 	if err != nil {
 		return fmt.Errorf("failed to update DaemonSet: %w", err)
+	}
+
+	return nil
+}
+
+func (c *ClassifyController) updateCronJobAnnotations(ctx context.Context, namespace, name string, annotations map[string]string) error {
+	cronJob, err := c.clientset.BatchV1().CronJobs(namespace).Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		return err
+	}
+	if !c.needsUpdate(cronJob.Annotations, annotations) {
+		return nil
+	}
+
+	if cronJob.Annotations == nil {
+		cronJob.Annotations = make(map[string]string)
+	}
+
+	for key, value := range annotations {
+		cronJob.Annotations[key] = value
+	}
+
+	_, err = c.clientset.BatchV1().CronJobs(namespace).Update(ctx, cronJob, metav1.UpdateOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to update CronJob: %w", err)
+	}
+
+	return nil
+}
+
+func (c *ClassifyController) updateJobAnnotations(ctx context.Context, namespace, name string, annotations map[string]string) error {
+	job, err := c.clientset.BatchV1().Jobs(namespace).Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		return err
+	}
+	if !c.needsUpdate(job.Annotations, annotations) {
+		return nil
+	}
+
+	if job.Annotations == nil {
+		job.Annotations = make(map[string]string)
+	}
+
+	for key, value := range annotations {
+		job.Annotations[key] = value
+	}
+
+	_, err = c.clientset.BatchV1().Jobs(namespace).Update(ctx, job, metav1.UpdateOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to update Job: %w", err)
 	}
 
 	return nil
