@@ -65,6 +65,7 @@ func (e *Exporter) Export() error {
 }
 
 func (e *Exporter) exportToFile(allResults map[string][]prometheus.QueryResult) error {
+	// TODO: support config if needed
 	fileType := "json"
 	switch fileType {
 	case "json":
@@ -72,6 +73,6 @@ func (e *Exporter) exportToFile(allResults map[string][]prometheus.QueryResult) 
 	case "excel":
 		return e.exportToExcel(allResults)
 	default:
-		return e.exportToExcel(allResults)
+		return e.exportToJson(allResults)
 	}
 }

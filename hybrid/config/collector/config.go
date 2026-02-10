@@ -141,11 +141,12 @@ func setDefaultConfig(cfg *Config) {
 		cfg.Export.LocalConfig.OutputDir = "/data/hybrid-output"
 	}
 
+	// if export to excel
 	if cfg.Export.LocalConfig.Format == "" {
 		cfg.Export.LocalConfig.Format = "timestamp"
 	}
 
-	// set default values for each query
+	// set default values for each query, if export to excel
 	for i := range cfg.Queries {
 		if cfg.Queries[i].Range == "" {
 			cfg.Queries[i].Range = "1h"

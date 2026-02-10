@@ -18,11 +18,13 @@ import (
 	"k8s.io/klog/v2"
 
 	"hybrid/pkg/collector/prometheus"
+	"hybrid/pkg/constants"
 )
 
 type PrometheusJSONResult struct {
-	Metric map[string]string `json:"metric"`
-	Values [][]interface{}   `json:"values"` // [timestamp, value_string]
+	Metric     map[string]string `json:"metric"`
+	Timestamps []interface{}     `json:"timestamps"`
+	Values     []interface{}     `json:"values"`
 }
 
 // exportToJson exports metrics data to a compressed json file (.gz).
@@ -50,16 +52,17 @@ func (e *Exporter) exportToJson(allResults map[string][]prometheus.QueryResult) 
 		// Process each time series returned by the query
 		for _, seriesResult := range results {
 			jsonResult := PrometheusJSONResult{
-				Metric: seriesResult.Metric, // Directly assign the metric labels map
-				Values: make([][]interface{}, len(seriesResult.Values)),
+				Metric:     seriesResult.Metric, // Directly assign the metric labels map
+				Timestamps: make([]interface{}, len(seriesResult.Values)),
+				Values:     make([]interface{}, len(seriesResult.Values)),
 			}
 
-			// Convert TimeValue slice to the required [[timestamp, value_string]] format
+			// Convert TimeValue
 			for i, tv := range seriesResult.Values {
-				jsonResult.Values[i] = []interface{}{
-					tv.Timestamp.Unix(),         // Unix timestamp (int64)
-					fmt.Sprintf("%g", tv.Value), // Value as a string, preserving precision
-				}
+				// Unix timestamp (int64)
+				jsonResult.Timestamps[i] = tv.Timestamp.Unix()
+				// Value as a string, preserving precision
+				jsonResult.Values[i] = tv.Value
 			}
 			finalData = append(finalData, jsonResult)
 		}
@@ -90,16 +93,15 @@ func compressToGz(path string, data []PrometheusJSONResult) error {
 	gzWriter := gzip.NewWriter(bufWriter)
 	defer gzWriter.Close()
 
-	// Serialize the final data structure to json
-	jsonBytes, err := json.MarshalIndent(data, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to marshal json data: %w", err)
+	encoder := json.NewEncoder(gzWriter)
+
+	// 逐行写入,每个对象一行(.jsonl 格式)
+	for _, item := range data {
+		if err := encoder.Encode(item); err != nil {
+			return fmt.Errorf("failed to encode json line: %w", err)
+		}
 	}
 
-	// Write the json bytes to the gzip writer
-	if _, err := gzWriter.Write(jsonBytes); err != nil {
-		return fmt.Errorf("failed to write compressed data to file %s: %w", data, err)
-	}
 	return nil
 }
 
@@ -113,11 +115,11 @@ func generateCompressFileName(format string) string {
 	var filename string
 	switch format {
 	case "daily":
-		filename = fmt.Sprintf("prometheus_export_%s.gz", now.Format("2006-01-02"))
+		filename = fmt.Sprintf("%s_%s.gz", constants.ExportFilePrefix, now.Format("2006-01-02"))
 	case "timestamp":
 		fallthrough
 	default:
-		filename = fmt.Sprintf("prometheus_export_%s.gz", now.Format("20060102_150405"))
+		filename = fmt.Sprintf("%s_%s.gz", constants.ExportFilePrefix, now.Format("20060102_150405"))
 	}
 	return filename
 }

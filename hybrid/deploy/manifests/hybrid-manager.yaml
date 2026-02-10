@@ -100,9 +100,9 @@ spec:
       serviceAccountName: hybrid-manager
       containers:
         - name: manager
-          image: koordinator/hybrid-manager:v0.1.0
+          image: koordinator/hybrid-manager:v1.0
           imagePullPolicy: IfNotPresent
-          command: ["/app/hybrid-manager"]
+          command: ["hybrid-manager"]
           args:
             - --prediction-file=/data/prediction-result.csv
           resources:
