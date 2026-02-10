@@ -767,14 +767,21 @@ func TestPreBind(t *testing.T) {
 
 			// Assert: check gang annotations
 			if tt.expectLabelsSet {
+				// Check new annotations
 				assert.Equal(t, tt.expectGangGroupID, tt.pod.Annotations[extension.AnnotationBindGangGroupId])
 				assert.Equal(t, tt.expectMemberCount, tt.pod.Annotations[extension.AnnotationBindGangMemberCount])
+				// Check deprecated annotations are also set
+				assert.Equal(t, tt.expectGangGroupID, tt.pod.Annotations[extension.DeprecatedAnnotationBindGangGroupId])
+				assert.Equal(t, tt.expectMemberCount, tt.pod.Annotations[extension.DeprecatedAnnotationBindGangMemberCount])
 				if tt.podHasExistingLabel {
 					assert.Equal(t, "custom-value", tt.pod.Labels["custom-label"])
 				}
 			} else {
+				// Check both new and deprecated annotations are not set
 				assert.NotContains(t, tt.pod.Annotations, extension.AnnotationBindGangGroupId)
 				assert.NotContains(t, tt.pod.Annotations, extension.AnnotationBindGangMemberCount)
+				assert.NotContains(t, tt.pod.Annotations, extension.DeprecatedAnnotationBindGangGroupId)
+				assert.NotContains(t, tt.pod.Annotations, extension.DeprecatedAnnotationBindGangMemberCount)
 			}
 		})
 	}
@@ -917,15 +924,22 @@ func TestPreBindReservation(t *testing.T) {
 			// Assert: check gang annotations on the Reservation
 			if tt.expectLabelsSet {
 				assert.NotNil(t, tt.reservation.Annotations)
+				// Check new annotations
 				assert.Equal(t, tt.expectGangGroupID, tt.reservation.Annotations[extension.AnnotationBindGangGroupId])
 				assert.Equal(t, tt.expectMemberCount, tt.reservation.Annotations[extension.AnnotationBindGangMemberCount])
+				// Check deprecated annotations are also set
+				assert.Equal(t, tt.expectGangGroupID, tt.reservation.Annotations[extension.DeprecatedAnnotationBindGangGroupId])
+				assert.Equal(t, tt.expectMemberCount, tt.reservation.Annotations[extension.DeprecatedAnnotationBindGangMemberCount])
 				if tt.reservationHasLabel {
 					assert.Equal(t, "custom-value", tt.reservation.Labels["custom-label"])
 				}
 			} else {
 				if tt.reservation.Annotations != nil {
+					// Check both new and deprecated annotations are not set
 					assert.NotContains(t, tt.reservation.Annotations, extension.AnnotationBindGangGroupId)
 					assert.NotContains(t, tt.reservation.Annotations, extension.AnnotationBindGangMemberCount)
+					assert.NotContains(t, tt.reservation.Annotations, extension.DeprecatedAnnotationBindGangGroupId)
+					assert.NotContains(t, tt.reservation.Annotations, extension.DeprecatedAnnotationBindGangMemberCount)
 				}
 			}
 		})

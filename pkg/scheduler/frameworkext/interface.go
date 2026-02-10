@@ -101,10 +101,22 @@ type FindOneNodePluginProvider interface {
 	FindOneNodePlugin() FindOneNodePlugin
 }
 
+// FindOneNodePlugin is responsible for finding a node for the pod according to calculated placement plans.
 type FindOneNodePlugin interface {
 	framework.Plugin
 	// FindOneNode  This extension point is used to help the scheduler customize the Pod Filter and Score process
 	FindOneNode(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, result *framework.PreFilterResult) (string, *framework.Status)
+}
+
+type PreferNodesPluginProvider interface {
+	PreferNodesPlugin() PreferNodesPlugin
+}
+
+// PreferNodesPlugin is responsible to provide preferred nodes for the pod according to scheduling hints.
+type PreferNodesPlugin interface {
+	framework.Plugin
+	// PreferNodes is used to provide preferred nodes for the scheduler to try scheduling first.
+	PreferNodes(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, result *framework.PreFilterResult) ([]string, *framework.Status)
 }
 
 // FilterTransformer is executed before Filter.
