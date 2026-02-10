@@ -38,13 +38,14 @@ type TopologyOptionsManager interface {
 }
 
 type TopologyOptions struct {
-	CPUTopology         *CPUTopology                            `json:"cpuTopology"`
-	ReservedCPUs        cpuset.CPUSet                           `json:"reservedCPUs"`
-	MaxRefCount         int                                     `json:"maxRefCount"`
-	Policy              *extension.KubeletCPUManagerPolicy      `json:"policy,omitempty"`
-	NUMATopologyPolicy  extension.NUMATopologyPolicy            `json:"numaTopologyPolicy"`
-	NUMANodeResources   []NUMANodeResource                      `json:"numaNodeResources"`
-	AmplificationRatios map[corev1.ResourceName]extension.Ratio `json:"amplificationRatios,omitempty"`
+	NodeResourceTopology *nrtv1alpha1.NodeResourceTopology
+	CPUTopology          *CPUTopology                            `json:"cpuTopology"`
+	ReservedCPUs         cpuset.CPUSet                           `json:"reservedCPUs"`
+	MaxRefCount          int                                     `json:"maxRefCount"`
+	Policy               *extension.KubeletCPUManagerPolicy      `json:"policy,omitempty"`
+	NUMATopologyPolicy   extension.NUMATopologyPolicy            `json:"numaTopologyPolicy"`
+	NUMANodeResources    []NUMANodeResource                      `json:"numaNodeResources"`
+	AmplificationRatios  map[corev1.ResourceName]extension.Ratio `json:"amplificationRatios,omitempty"`
 }
 
 type NUMANodeResource struct {
@@ -153,13 +154,14 @@ func NewTopologyOptions(nrt *nrtv1alpha1.NodeResourceTopology) TopologyOptions {
 	}
 
 	return TopologyOptions{
-		CPUTopology:         cpuTopology,
-		ReservedCPUs:        reservedCPUs,
-		Policy:              kubeletPolicy,
-		MaxRefCount:         1,
-		NUMATopologyPolicy:  policy,
-		NUMANodeResources:   numaNodeResources,
-		AmplificationRatios: amplificationRatios,
+		NodeResourceTopology: nrt,
+		CPUTopology:          cpuTopology,
+		ReservedCPUs:         reservedCPUs,
+		Policy:               kubeletPolicy,
+		MaxRefCount:          1,
+		NUMATopologyPolicy:   policy,
+		NUMANodeResources:    numaNodeResources,
+		AmplificationRatios:  amplificationRatios,
 	}
 }
 
