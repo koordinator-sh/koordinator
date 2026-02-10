@@ -66,6 +66,9 @@ const (
 	// AnnotationHuaweiNPUCore represents the NPU/vNPU allocation result for the pod which is used by
 	// Huawei NPU device plugins to allocate NPU(s)/vNPU for pod.
 	AnnotationHuaweiNPUCore = "huawei.com/npu-core"
+	// AnnotationHuaweiAscend310P represents the NPU allocation result for the pod which is used by
+	// Huawei Ascend 310P device plugins to allocate NPU(s) for pod.
+	AnnotationHuaweiAscend310P = "huawei.com/Ascend310P"
 
 	// AnnotationCambriconDsmluAssigned is used by Cambricon dynamic sMLU device plugins to determine pod.
 	AnnotationCambriconDsmluAssigned = "CAMBRICON_DSMLU_ASSIGHED"
@@ -112,6 +115,7 @@ type DevicePluginAdaptContext struct {
 	node         *corev1.Node
 	modifiedNode *corev1.Node
 	nodeLock     *sync.Mutex
+	gpuModel     string
 }
 
 var (
@@ -175,7 +179,8 @@ func (p *Plugin) adaptForDevicePlugin(ctx context.Context, object metav1.Object,
 				return err
 			}
 
-			vendor := device.Labels[apiext.LabelGPUVendor]
+			vendor, model := device.Labels[apiext.LabelGPUVendor], device.Labels[apiext.LabelGPUModel]
+			adaptCtx.gpuModel = model
 			if adapter, ok := gpuDevicePluginAdapterMap[vendor]; ok {
 				if err := adapt(adaptCtx, adapter, object, allocation, nodeName); err != nil {
 					return fmt.Errorf("failed to adapt for GPU device plugin of vendor %q: %w", vendor, err)
@@ -282,7 +287,7 @@ type generalGPUDevicePluginAdapter struct {
 }
 
 func (a *generalGPUDevicePluginAdapter) Adapt(ctx *DevicePluginAdaptContext, object metav1.Object, allocation []*apiext.DeviceAllocation) error {
-	object.GetAnnotations()[AnnotationGPUMinors] = buildGPUMinorsStr(allocation)
+	object.GetAnnotations()[AnnotationGPUMinors] = buildGPUMinorsStr(allocation, "")
 	if object.GetLabels()[apiext.LabelGPUIsolationProvider] == string(apiext.GPUIsolationProviderHAMICore) {
 		object.GetLabels()[apiext.LabelHAMIVGPUNodeName] = ctx.node.Name
 	}
@@ -291,14 +296,23 @@ func (a *generalGPUDevicePluginAdapter) Adapt(ctx *DevicePluginAdaptContext, obj
 
 type huaweiGPUDevicePluginAdapter struct{}
 
-func (a *huaweiGPUDevicePluginAdapter) Adapt(_ *DevicePluginAdaptContext, object metav1.Object, allocation []*apiext.DeviceAllocation) error {
+func (a *huaweiGPUDevicePluginAdapter) Adapt(ctx *DevicePluginAdaptContext, object metav1.Object, allocation []*apiext.DeviceAllocation) error {
 	object.GetAnnotations()[AnnotationPredicateTime] = strconv.FormatInt(dpAdapterClock.Now().UnixNano(), 10)
-	if allocation[0].Extension != nil && allocation[0].Extension.GPUSharedResourceTemplate != "" {
-		// vNPU
-		object.GetAnnotations()[AnnotationHuaweiNPUCore] = fmt.Sprintf("%d-%s", allocation[0].Minor, allocation[0].Extension.GPUSharedResourceTemplate)
-	} else {
-		// full NPU
-		object.GetAnnotations()[AnnotationHuaweiNPUCore] = buildGPUMinorsStr(allocation)
+	switch ctx.gpuModel {
+	case "Ascend-310P3-300I-DUO":
+		if allocation[0].Extension != nil && allocation[0].Extension.GPUSharedResourceTemplate != "" {
+			return fmt.Errorf("model %q does not support vNPU", ctx.gpuModel)
+		} else {
+			object.GetAnnotations()[AnnotationHuaweiAscend310P] = buildGPUMinorsStr(allocation, "Ascend310P-")
+		}
+	default:
+		if allocation[0].Extension != nil && allocation[0].Extension.GPUSharedResourceTemplate != "" {
+			// vNPU
+			object.GetAnnotations()[AnnotationHuaweiNPUCore] = fmt.Sprintf("%d-%s", allocation[0].Minor, allocation[0].Extension.GPUSharedResourceTemplate)
+		} else {
+			// full NPU
+			object.GetAnnotations()[AnnotationHuaweiNPUCore] = buildGPUMinorsStr(allocation, "")
+		}
 	}
 	return nil
 }
@@ -373,10 +387,10 @@ func (a *metaxDevicePluginAdapter) NodeLockKey() string {
 	return AnnotationHAMiLock
 }
 
-func buildGPUMinorsStr(allocation []*apiext.DeviceAllocation) string {
+func buildGPUMinorsStr(allocation []*apiext.DeviceAllocation, prefix string) string {
 	minors := make([]string, 0, len(allocation))
 	for _, alloc := range allocation {
-		minors = append(minors, strconv.Itoa(int(alloc.Minor)))
+		minors = append(minors, prefix+strconv.Itoa(int(alloc.Minor)))
 	}
 	return strings.Join(minors, ",")
 }
