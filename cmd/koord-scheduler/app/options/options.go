@@ -20,6 +20,8 @@ import (
 	"context"
 
 	"github.com/gin-gonic/gin"
+	nrtclientset "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/clientset/versioned"
+	nrtinformers "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/informers/externalversions"
 	"k8s.io/apimachinery/pkg/runtime"
 	apiserveroptions "k8s.io/apiserver/pkg/server/options"
 	scheduleroptions "k8s.io/kubernetes/cmd/kube-scheduler/app/options"
@@ -82,11 +84,18 @@ func (o *Options) Config(ctx context.Context) (*schedulerappconfig.Config, error
 	}
 	koordinatorSharedInformerFactory := koordinatorinformers.NewSharedInformerFactoryWithOptions(koordinatorClient, 0)
 
+	nrtClient, err := nrtclientset.NewForConfig(&kubeConfig)
+	if err != nil {
+		return nil, err
+	}
+	nodeResTopologyInformerFactory := nrtinformers.NewSharedInformerFactoryWithOptions(nrtClient, 0)
+
 	appConfig := &schedulerappconfig.Config{
-		Config:                           config,
-		ServicesEngine:                   services.NewEngine(gin.New()),
-		KoordinatorClient:                koordinatorClient,
-		KoordinatorSharedInformerFactory: koordinatorSharedInformerFactory,
+		Config:                              config,
+		ServicesEngine:                      services.NewEngine(gin.New()),
+		KoordinatorClient:                   koordinatorClient,
+		KoordinatorSharedInformerFactory:    koordinatorSharedInformerFactory,
+		NodeResourceTopologyInformerFactory: nodeResTopologyInformerFactory,
 	}
 
 	if err := o.CombinedInsecureServing.ApplyTo(appConfig); err != nil {

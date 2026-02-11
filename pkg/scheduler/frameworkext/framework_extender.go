@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"time"
 
+	nrtinformers "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/informers/externalversions"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -60,10 +61,11 @@ type frameworkExtenderImpl struct {
 	configuredPlugins *schedconfig.Plugins
 	monitor           *SchedulerMonitor
 
-	koordinatorClientSet             koordinatorclientset.Interface
-	koordinatorSharedInformerFactory koordinatorinformers.SharedInformerFactory
-	podLister                        listerscorev1.PodLister
-	reservationLister                listerschedulingv1alpha1.ReservationLister
+	koordinatorClientSet                koordinatorclientset.Interface
+	koordinatorSharedInformerFactory    koordinatorinformers.SharedInformerFactory
+	nodeResourceTopologyInformerFactory nrtinformers.SharedInformerFactory
+	podLister                           listerscorev1.PodLister
+	reservationLister                   listerschedulingv1alpha1.ReservationLister
 
 	networkTopologyTreeManager networktopology.TreeManager
 
@@ -101,24 +103,25 @@ func NewFrameworkExtender(f *FrameworkExtenderFactory, fw framework.Framework) F
 	}
 
 	frameworkExtender := &frameworkExtenderImpl{
-		Framework:                        fw,
-		errorHandlerDispatcher:           f.errorHandlerDispatcher,
-		schedulerFn:                      schedulerFn,
-		monitor:                          f.monitor,
-		koordinatorClientSet:             f.KoordinatorClientSet(),
-		koordinatorSharedInformerFactory: f.koordinatorSharedInformerFactory,
-		reservationCache:                 f.reservationCache,
-		reservationNominator:             f.reservationNominator,
-		preFilterTransformers:            map[string]PreFilterTransformer{},
-		filterTransformers:               map[string]FilterTransformer{},
-		scoreTransformers:                map[string]ScoreTransformer{},
-		postFilterTransformers:           map[string]PostFilterTransformer{},
-		reservationPreBindPlugins:        map[string]ReservationPreBindPlugin{},
-		preBindExtensionsPlugins:         map[string]PreBindExtensions{},
-		metricsRecorder:                  f.metricsRecorder,
-		podLister:                        fw.SharedInformerFactory().Core().V1().Pods().Lister(),
-		reservationLister:                f.koordinatorSharedInformerFactory.Scheduling().V1alpha1().Reservations().Lister(),
-		networkTopologyTreeManager:       f.networkTopologyTreeManager,
+		Framework:                           fw,
+		errorHandlerDispatcher:              f.errorHandlerDispatcher,
+		schedulerFn:                         schedulerFn,
+		monitor:                             f.monitor,
+		koordinatorClientSet:                f.KoordinatorClientSet(),
+		koordinatorSharedInformerFactory:    f.koordinatorSharedInformerFactory,
+		nodeResourceTopologyInformerFactory: f.nodeResourceTopologyInformerFactory,
+		reservationCache:                    f.reservationCache,
+		reservationNominator:                f.reservationNominator,
+		preFilterTransformers:               map[string]PreFilterTransformer{},
+		filterTransformers:                  map[string]FilterTransformer{},
+		scoreTransformers:                   map[string]ScoreTransformer{},
+		postFilterTransformers:              map[string]PostFilterTransformer{},
+		reservationPreBindPlugins:           map[string]ReservationPreBindPlugin{},
+		preBindExtensionsPlugins:            map[string]PreBindExtensions{},
+		metricsRecorder:                     f.metricsRecorder,
+		podLister:                           fw.SharedInformerFactory().Core().V1().Pods().Lister(),
+		reservationLister:                   f.koordinatorSharedInformerFactory.Scheduling().V1alpha1().Reservations().Lister(),
+		networkTopologyTreeManager:          f.networkTopologyTreeManager,
 	}
 	frameworkExtender.topologyManager = topologymanager.New(frameworkExtender)
 	return frameworkExtender
@@ -236,6 +239,10 @@ func (ext *frameworkExtenderImpl) KoordinatorClientSet() koordinatorclientset.In
 
 func (ext *frameworkExtenderImpl) KoordinatorSharedInformerFactory() koordinatorinformers.SharedInformerFactory {
 	return ext.koordinatorSharedInformerFactory
+}
+
+func (ext *frameworkExtenderImpl) NodeResourceTopologyInformerFactory() nrtinformers.SharedInformerFactory {
+	return ext.nodeResourceTopologyInformerFactory
 }
 
 // Scheduler return the scheduler adapter to support operating with cache and schedulingQueue.
