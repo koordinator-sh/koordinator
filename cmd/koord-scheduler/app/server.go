@@ -237,6 +237,7 @@ func Run(ctx context.Context, cc *schedulerserverconfig.CompletedConfig, sched *
 			cc.DynInformerFactory.Start(ctx.Done())
 		}
 		cc.KoordinatorSharedInformerFactory.Start(ctx.Done())
+		cc.NodeResourceTopologyInformerFactory.Start(ctx.Done())
 
 		// Wait for all caches to sync before scheduling.
 		cc.InformerFactory.WaitForCacheSync(ctx.Done())
@@ -245,6 +246,7 @@ func Run(ctx context.Context, cc *schedulerserverconfig.CompletedConfig, sched *
 			cc.DynInformerFactory.WaitForCacheSync(ctx.Done())
 		}
 		cc.KoordinatorSharedInformerFactory.WaitForCacheSync(ctx.Done())
+		cc.NodeResourceTopologyInformerFactory.WaitForCacheSync(ctx.Done())
 
 		// Wait for all handlers to sync (all items in the initial list delivered) before scheduling.
 		if err := sched.WaitForHandlersSync(ctx); err != nil {
@@ -392,7 +394,7 @@ func Setup(ctx context.Context, opts *options.Options, outOfTreeRegistryOptions 
 	defaultprofile.AppendDefaultPlugins(cc.ComponentConfig.Profiles)
 
 	informer.SetupCustomInformers(cc.InformerFactory)
-	transformer.SetupTransformers(cc.InformerFactory, cc.KoordinatorSharedInformerFactory)
+	transformer.SetupTransformers(cc.InformerFactory, cc.KoordinatorSharedInformerFactory, cc.NodeResourceTopologyInformerFactory)
 
 	metrics.Register()
 
@@ -404,6 +406,7 @@ func Setup(ctx context.Context, opts *options.Options, outOfTreeRegistryOptions 
 		frameworkext.WithServicesEngine(cc.ServicesEngine),
 		frameworkext.WithKoordinatorClientSet(cc.KoordinatorClient),
 		frameworkext.WithKoordinatorSharedInformerFactory(cc.KoordinatorSharedInformerFactory),
+		frameworkext.WithNodeResourceTopologySharedInformerFactory(cc.NodeResourceTopologyInformerFactory),
 		frameworkext.WithNetworkTopologyManager(networkTopologyManager),
 	)
 	if err != nil {

@@ -17,6 +17,7 @@ limitations under the License.
 package transformer
 
 import (
+	nrtinformers "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/informers/externalversions"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/informers"
@@ -38,18 +39,22 @@ var transformerFactories = map[schema.GroupVersionResource]TransformFactory{
 	corev1.SchemeGroupVersion.WithResource("pods"): TransformPodFactory,
 }
 
-func SetupTransformers(informerFactory informers.SharedInformerFactory, koordInformerFactory koordinformers.SharedInformerFactory) {
+func SetupTransformers(informerFactory informers.SharedInformerFactory, koordInformerFactory koordinformers.SharedInformerFactory, nodeResourceTopologyInformerFactory nrtinformers.SharedInformerFactory) {
 	for resource, transformFn := range transformers {
 		informer, err := informerFactory.ForResource(resource)
 		if err != nil {
 			informer, err = koordInformerFactory.ForResource(resource)
 			if err != nil {
-				klog.Fatalf("Failed to create informer for resource %v, err: %v", resource.String(), err)
+				informer, err = nodeResourceTopologyInformerFactory.ForResource(resource)
+				if err != nil {
+					klog.Fatalf("Failed to create informer for resource %v, err: %v", resource.String(), err)
+				}
 			}
 		}
 		if err := informer.Informer().SetTransform(transformFn); err != nil {
 			klog.Fatalf("Failed to SetTransform in informer, resource: %v, err: %v", resource, err)
 		}
+
 	}
 	for resource, transformFactory := range transformerFactories {
 		informer, err := informerFactory.ForResource(resource)
@@ -65,4 +70,5 @@ func SetupTransformers(informerFactory informers.SharedInformerFactory, koordInf
 			klog.Fatalf("Failed to SetTransform in informer, resource: %v, err: %v", resource, err)
 		}
 	}
+
 }
