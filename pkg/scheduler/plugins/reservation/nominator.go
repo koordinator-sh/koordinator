@@ -39,9 +39,9 @@ type nominator struct {
 	rLister   listerschedulingv1alpha1.ReservationLister
 	// nominatedPodToNode is map keyed by a Pod UID to the node name where it is nominated to reserve.
 	nominatedPodToNode map[types.UID]map[string]types.UID
-	// nominatedPreAllocatable is map keyed by a Reservation UID to the node name where there is a pre-allocatable
-	// pod being nominated.
-	nominatedPreAllocatable map[types.UID]map[string]*corev1.Pod
+	// nominatedPreAllocatable is map keyed by a Reservation UID to the node name where there are
+	// pre-allocatable pods being nominated. Supports both single and multiple pods.
+	nominatedPreAllocatable map[types.UID]map[string][]*corev1.Pod
 	// nominatedReservePod is map keyed by nodeName to the nominated reservation's PodInfo for preemption.
 	nominatedReservePod       map[string][]*framework.PodInfo
 	nominatedReservePodToNode map[types.UID]string
@@ -53,7 +53,7 @@ func newNominator(podLister corelisters.PodLister, rLister listerschedulingv1alp
 		podLister:                 podLister,
 		rLister:                   rLister,
 		nominatedPodToNode:        map[types.UID]map[string]types.UID{},
-		nominatedPreAllocatable:   map[types.UID]map[string]*corev1.Pod{},
+		nominatedPreAllocatable:   map[types.UID]map[string][]*corev1.Pod{},
 		nominatedReservePod:       map[string][]*framework.PodInfo{},
 		nominatedReservePodToNode: map[types.UID]string{},
 	}
@@ -191,10 +191,10 @@ func (nm *nominator) AddNominatedPreAllocation(rInfo *frameworkext.ReservationIn
 
 	nodeToPreAllocatable := nm.nominatedPreAllocatable[rInfo.UID()]
 	if nodeToPreAllocatable == nil {
-		nodeToPreAllocatable = map[string]*corev1.Pod{}
+		nodeToPreAllocatable = map[string][]*corev1.Pod{}
 		nm.nominatedPreAllocatable[rInfo.UID()] = nodeToPreAllocatable
 	}
-	nodeToPreAllocatable[nodeName] = pod
+	nodeToPreAllocatable[nodeName] = []*corev1.Pod{pod}
 }
 
 func (nm *nominator) NominatedReservePodForNode(nodeName string) []*framework.PodInfo {
@@ -266,6 +266,77 @@ func (nm *nominator) GetNominatedReservation(pod *corev1.Pod, nodeName string) t
 }
 
 func (nm *nominator) GetNominatedPreAllocation(rInfo *frameworkext.ReservationInfo, nodeName string) *corev1.Pod {
+	nm.lock.RLock()
+	defer nm.lock.RUnlock()
+	pods := nm.nominatedPreAllocatable[rInfo.UID()][nodeName]
+	if len(pods) > 0 {
+		return pods[0]
+	}
+	return nil
+}
+
+func (nm *nominator) AddNominatedPreAllocations(rInfo *frameworkext.ReservationInfo, nodeName string, pods []*corev1.Pod) {
+	if rInfo == nil || len(pods) == 0 {
+		return
+	}
+	nm.lock.Lock()
+	defer nm.lock.Unlock()
+
+	rName := rInfo.GetName()
+	if nm.rLister != nil {
+		r, err := nm.rLister.Get(rName)
+		if err != nil {
+			klog.V(4).InfoS("reservation doesn't exist in rLister, aborted nominating for reservation pre-allocations",
+				"node", nodeName, "podsCount", len(pods), "reservation", rName)
+			return
+		}
+		if phase := r.Status.Phase; len(phase) > 0 && phase != schedulingv1alpha1.ReservationPending {
+			klog.V(4).InfoS("reservation is scheduled or terminated, aborted nominating for reservation pre-allocations",
+				"phase", r.Status.Phase, "node", nodeName, "podsCount", len(pods), "reservation", rName)
+			return
+		}
+		if r.Status.NodeName != "" {
+			klog.V(4).InfoS("reservation is assigned, aborted nominating for reservation pre-allocations",
+				"current node", r.Status.NodeName, "node", nodeName, "podsCount", len(pods), "reservation", rName)
+			return
+		}
+	}
+
+	// Validate all pods are assigned to the node
+	if nm.podLister != nil {
+		for _, pod := range pods {
+			p, err := nm.podLister.Pods(pod.Namespace).Get(pod.Name)
+			if err != nil {
+				klog.V(4).InfoS("Pod doesn't exist in podLister, aborted nominating it for reservation pre-allocations",
+					"node", nodeName, "pod", klog.KObj(pod), "reservation", rName)
+				return
+			}
+			if p.Spec.NodeName != nodeName {
+				klog.V(4).InfoS("Pod is not scheduled to the node, aborted nominating for reservation pre-allocations",
+					"current node", p.Spec.NodeName, "node", nodeName, "pod", klog.KObj(pod), "reservation", rName)
+				return
+			}
+		}
+	}
+
+	nodeToPreAllocatable := nm.nominatedPreAllocatable[rInfo.UID()]
+	if nodeToPreAllocatable == nil {
+		nodeToPreAllocatable = map[string][]*corev1.Pod{}
+		nm.nominatedPreAllocatable[rInfo.UID()] = nodeToPreAllocatable
+	}
+	nodeToPreAllocatable[nodeName] = pods
+
+	if klog.V(5).Enabled() {
+		podNames := make([]string, len(pods))
+		for i, pod := range pods {
+			podNames[i] = klog.KObj(pod).String()
+		}
+		klog.InfoS("Nominated pre-allocatable pods for reservation",
+			"reservation", rName, "node", nodeName, "pods", podNames)
+	}
+}
+
+func (nm *nominator) GetNominatedPreAllocations(rInfo *frameworkext.ReservationInfo, nodeName string) []*corev1.Pod {
 	nm.lock.RLock()
 	defer nm.lock.RUnlock()
 	return nm.nominatedPreAllocatable[rInfo.UID()][nodeName]
@@ -394,7 +465,7 @@ func (pl *Plugin) NominatePreAllocation(ctx context.Context, cycleState *framewo
 
 	var preAllocatablePods []*corev1.Pod
 	if nodeRState := state.nodeReservationStates[nodeName]; nodeRState != nil {
-		preAllocatablePods = nodeRState.preAllocatablePods
+		preAllocatablePods = nodeRState.selectedPreAllocatablePods
 	}
 
 	if len(preAllocatablePods) == 0 {
@@ -459,6 +530,29 @@ func (pl *Plugin) AddNominatedPreAllocation(rInfo *frameworkext.ReservationInfo,
 
 func (pl *Plugin) GetNominatedPreAllocation(rInfo *frameworkext.ReservationInfo, nodeName string) *corev1.Pod {
 	return pl.nominator.GetNominatedPreAllocation(rInfo, nodeName)
+}
+
+func (pl *Plugin) AddNominatedPreAllocations(rInfo *frameworkext.ReservationInfo, nodeName string, pods []*corev1.Pod) {
+	pl.nominator.AddNominatedPreAllocations(rInfo, nodeName, pods)
+}
+
+func (pl *Plugin) GetNominatedPreAllocations(rInfo *frameworkext.ReservationInfo, nodeName string) []*corev1.Pod {
+	return pl.nominator.GetNominatedPreAllocations(rInfo, nodeName)
+}
+
+// NominatePreAllocations nominates multiple pre-allocatable pods for a reservation.
+// It accumulates resources from pods until all dimensions are satisfied.
+func (pl *Plugin) NominatePreAllocations(cycleState *framework.CycleState, rInfo *frameworkext.ReservationInfo, nodeName string) ([]*corev1.Pod, *framework.Status) {
+	if !rInfo.IsPreAllocation() {
+		return nil, nil
+	}
+	state := getStateData(cycleState)
+
+	var preAllocatablePods []*corev1.Pod
+	if nodeRState := state.nodeReservationStates[nodeName]; nodeRState != nil {
+		preAllocatablePods = nodeRState.selectedPreAllocatablePods
+	}
+	return preAllocatablePods, nil
 }
 
 func prioritizeReservations(

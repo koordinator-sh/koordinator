@@ -206,6 +206,31 @@ type ReservationArgs struct {
 	// DisableGarbageCollection indicates whether to disable garbage collection.
 	// Default to false if unspecified.
 	DisableGarbageCollection bool `json:"disableGarbageCollection,omitempty"`
+	// PreAllocationConfig defines the configuration for pre-allocation feature.
+	// +optional
+	PreAllocationConfig *PreAllocationConfig `json:"preAllocationConfig,omitempty"`
+}
+
+// PreAllocationConfig defines the configuration for pre-allocation feature.
+type PreAllocationConfig struct {
+	// EnableClusterMode indicates whether to enable cluster mode for pre-allocation.
+	// When enabled, the scheduler will use cluster-wide label/annotation selectors
+	// to select and sort pre-allocatable pods.
+	// +optional
+	EnableClusterMode bool `json:"enableClusterMode,omitempty"`
+	// ClusterLabelKey is the label key used to identify pre-allocatable pods in cluster mode.
+	// Defaults to "scheduling.koordinator.sh/is-pre-allocatable".
+	// +optional
+	ClusterLabelKey string `json:"clusterLabelKey,omitempty"`
+	// ClusterPriorityAnnotationKey is the annotation key used to prioritize pre-allocatable pods in cluster mode.
+	// Defaults to "scheduling.koordinator.sh/pre-allocatable-priority".
+	// +optional
+	ClusterPriorityAnnotationKey string `json:"clusterPriorityAnnotationKey,omitempty"`
+	// PreferNoPreAllocatedPods controls whether to prefer placing reservation
+	// without using pre-allocatable pods when PreAllocation is not required and multiple pre-allocated pods is enabled.
+	// Defaults to false.
+	// +optional
+	PreferNoPreAllocatedPods bool `json:"preferNoPreAllocatedPods,omitempty"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
