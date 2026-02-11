@@ -382,42 +382,10 @@ func autoConvert_v1alpha2_LowNodeLoadArgs_To_config_LowNodeLoadArgs(in *LowNodeL
 	if err := v1.Convert_Pointer_bool_To_bool(&in.UseDeviationThresholds, &out.UseDeviationThresholds, s); err != nil {
 		return err
 	}
-	if in.HighThresholds != nil {
-		in, out := &in.HighThresholds, &out.HighThresholds
-		*out = make(config.ResourceThresholds, len(*in))
-		for key, val := range *in {
-			(*out)[key] = config.Percentage(val)
-		}
-	} else {
-		out.HighThresholds = nil
-	}
-	if in.LowThresholds != nil {
-		in, out := &in.LowThresholds, &out.LowThresholds
-		*out = make(config.ResourceThresholds, len(*in))
-		for key, val := range *in {
-			(*out)[key] = config.Percentage(val)
-		}
-	} else {
-		out.LowThresholds = nil
-	}
-	if in.ProdHighThresholds != nil {
-		in, out := &in.ProdHighThresholds, &out.ProdHighThresholds
-		*out = make(config.ResourceThresholds, len(*in))
-		for key, val := range *in {
-			(*out)[key] = config.Percentage(val)
-		}
-	} else {
-		out.ProdHighThresholds = nil
-	}
-	if in.ProdLowThresholds != nil {
-		in, out := &in.ProdLowThresholds, &out.ProdLowThresholds
-		*out = make(config.ResourceThresholds, len(*in))
-		for key, val := range *in {
-			(*out)[key] = config.Percentage(val)
-		}
-	} else {
-		out.ProdLowThresholds = nil
-	}
+	out.HighThresholds = *(*config.ResourceThresholds)(unsafe.Pointer(&in.HighThresholds))
+	out.LowThresholds = *(*config.ResourceThresholds)(unsafe.Pointer(&in.LowThresholds))
+	out.ProdHighThresholds = *(*config.ResourceThresholds)(unsafe.Pointer(&in.ProdHighThresholds))
+	out.ProdLowThresholds = *(*config.ResourceThresholds)(unsafe.Pointer(&in.ProdLowThresholds))
 	out.ResourceWeights = *(*map[corev1.ResourceName]int64)(unsafe.Pointer(&in.ResourceWeights))
 	if in.AnomalyCondition != nil {
 		in, out := &in.AnomalyCondition, &out.AnomalyCondition
@@ -463,42 +431,10 @@ func autoConvert_config_LowNodeLoadArgs_To_v1alpha2_LowNodeLoadArgs(in *config.L
 	if err := v1.Convert_bool_To_Pointer_bool(&in.UseDeviationThresholds, &out.UseDeviationThresholds, s); err != nil {
 		return err
 	}
-	if in.HighThresholds != nil {
-		in, out := &in.HighThresholds, &out.HighThresholds
-		*out = make(ResourceThresholds, len(*in))
-		for key, val := range *in {
-			(*out)[key] = Percentage(val)
-		}
-	} else {
-		out.HighThresholds = nil
-	}
-	if in.LowThresholds != nil {
-		in, out := &in.LowThresholds, &out.LowThresholds
-		*out = make(ResourceThresholds, len(*in))
-		for key, val := range *in {
-			(*out)[key] = Percentage(val)
-		}
-	} else {
-		out.LowThresholds = nil
-	}
-	if in.ProdHighThresholds != nil {
-		in, out := &in.ProdHighThresholds, &out.ProdHighThresholds
-		*out = make(ResourceThresholds, len(*in))
-		for key, val := range *in {
-			(*out)[key] = Percentage(val)
-		}
-	} else {
-		out.ProdHighThresholds = nil
-	}
-	if in.ProdLowThresholds != nil {
-		in, out := &in.ProdLowThresholds, &out.ProdLowThresholds
-		*out = make(ResourceThresholds, len(*in))
-		for key, val := range *in {
-			(*out)[key] = Percentage(val)
-		}
-	} else {
-		out.ProdLowThresholds = nil
-	}
+	out.HighThresholds = *(*ResourceThresholds)(unsafe.Pointer(&in.HighThresholds))
+	out.LowThresholds = *(*ResourceThresholds)(unsafe.Pointer(&in.LowThresholds))
+	out.ProdHighThresholds = *(*ResourceThresholds)(unsafe.Pointer(&in.ProdHighThresholds))
+	out.ProdLowThresholds = *(*ResourceThresholds)(unsafe.Pointer(&in.ProdLowThresholds))
 	out.ResourceWeights = *(*map[corev1.ResourceName]int64)(unsafe.Pointer(&in.ResourceWeights))
 	if in.AnomalyCondition != nil {
 		in, out := &in.AnomalyCondition, &out.AnomalyCondition
@@ -533,42 +469,10 @@ func autoConvert_v1alpha2_LowNodeLoadNodePool_To_config_LowNodeLoadNodePool(in *
 	out.Name = in.Name
 	out.NodeSelector = (*v1.LabelSelector)(unsafe.Pointer(in.NodeSelector))
 	out.UseDeviationThresholds = in.UseDeviationThresholds
-	if in.HighThresholds != nil {
-		in, out := &in.HighThresholds, &out.HighThresholds
-		*out = make(config.ResourceThresholds, len(*in))
-		for key, val := range *in {
-			(*out)[key] = config.Percentage(val)
-		}
-	} else {
-		out.HighThresholds = nil
-	}
-	if in.LowThresholds != nil {
-		in, out := &in.LowThresholds, &out.LowThresholds
-		*out = make(config.ResourceThresholds, len(*in))
-		for key, val := range *in {
-			(*out)[key] = config.Percentage(val)
-		}
-	} else {
-		out.LowThresholds = nil
-	}
-	if in.ProdHighThresholds != nil {
-		in, out := &in.ProdHighThresholds, &out.ProdHighThresholds
-		*out = make(config.ResourceThresholds, len(*in))
-		for key, val := range *in {
-			(*out)[key] = config.Percentage(val)
-		}
-	} else {
-		out.ProdHighThresholds = nil
-	}
-	if in.ProdLowThresholds != nil {
-		in, out := &in.ProdLowThresholds, &out.ProdLowThresholds
-		*out = make(config.ResourceThresholds, len(*in))
-		for key, val := range *in {
-			(*out)[key] = config.Percentage(val)
-		}
-	} else {
-		out.ProdLowThresholds = nil
-	}
+	out.HighThresholds = *(*config.ResourceThresholds)(unsafe.Pointer(&in.HighThresholds))
+	out.LowThresholds = *(*config.ResourceThresholds)(unsafe.Pointer(&in.LowThresholds))
+	out.ProdHighThresholds = *(*config.ResourceThresholds)(unsafe.Pointer(&in.ProdHighThresholds))
+	out.ProdLowThresholds = *(*config.ResourceThresholds)(unsafe.Pointer(&in.ProdLowThresholds))
 	out.ResourceWeights = *(*map[corev1.ResourceName]int64)(unsafe.Pointer(&in.ResourceWeights))
 	if in.AnomalyCondition != nil {
 		in, out := &in.AnomalyCondition, &out.AnomalyCondition
@@ -591,42 +495,10 @@ func autoConvert_config_LowNodeLoadNodePool_To_v1alpha2_LowNodeLoadNodePool(in *
 	out.Name = in.Name
 	out.NodeSelector = (*v1.LabelSelector)(unsafe.Pointer(in.NodeSelector))
 	out.UseDeviationThresholds = in.UseDeviationThresholds
-	if in.HighThresholds != nil {
-		in, out := &in.HighThresholds, &out.HighThresholds
-		*out = make(ResourceThresholds, len(*in))
-		for key, val := range *in {
-			(*out)[key] = Percentage(val)
-		}
-	} else {
-		out.HighThresholds = nil
-	}
-	if in.LowThresholds != nil {
-		in, out := &in.LowThresholds, &out.LowThresholds
-		*out = make(ResourceThresholds, len(*in))
-		for key, val := range *in {
-			(*out)[key] = Percentage(val)
-		}
-	} else {
-		out.LowThresholds = nil
-	}
-	if in.ProdHighThresholds != nil {
-		in, out := &in.ProdHighThresholds, &out.ProdHighThresholds
-		*out = make(ResourceThresholds, len(*in))
-		for key, val := range *in {
-			(*out)[key] = Percentage(val)
-		}
-	} else {
-		out.ProdHighThresholds = nil
-	}
-	if in.ProdLowThresholds != nil {
-		in, out := &in.ProdLowThresholds, &out.ProdLowThresholds
-		*out = make(ResourceThresholds, len(*in))
-		for key, val := range *in {
-			(*out)[key] = Percentage(val)
-		}
-	} else {
-		out.ProdLowThresholds = nil
-	}
+	out.HighThresholds = *(*ResourceThresholds)(unsafe.Pointer(&in.HighThresholds))
+	out.LowThresholds = *(*ResourceThresholds)(unsafe.Pointer(&in.LowThresholds))
+	out.ProdHighThresholds = *(*ResourceThresholds)(unsafe.Pointer(&in.ProdHighThresholds))
+	out.ProdLowThresholds = *(*ResourceThresholds)(unsafe.Pointer(&in.ProdLowThresholds))
 	out.ResourceWeights = *(*map[corev1.ResourceName]int64)(unsafe.Pointer(&in.ResourceWeights))
 	if in.AnomalyCondition != nil {
 		in, out := &in.AnomalyCondition, &out.AnomalyCondition

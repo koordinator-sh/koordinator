@@ -16,8 +16,9 @@ type (
 // NodeWatermarkSpec defines the desired state of NodeWatermark
 type NodeWatermarkSpec struct {
 	// Type value is Hot, Normal, idle type
-	Type            string           `json:"type,omitempty"`
-	WillEvictedPods []WillEvictedPod `json:"willEvictedPods"`
+	Type string `json:"type,omitempty"`
+
+	WillEvictedPods []WillEvictedPod `json:"willEvictedPods,omitempty"`
 	// HighThresholds defines the target usage threshold of node resources
 	HighThresholds ResourceThresholds `json:"highThresholds,omitempty"`
 	// LowThresholds defines the low usage threshold of node resources

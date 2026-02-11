@@ -494,7 +494,10 @@ func createOrUpdateNodeWaterMark(ctx context.Context, cli koordclientset.Interfa
 		return err
 	}
 	tmp.Spec.WillEvictedPods = wm.Spec.WillEvictedPods
-	if _, err := cli.SchedulingV1alpha1().NodeWatermarks().Update(ctx, wm, metav1.UpdateOptions{}); err != nil {
+	tmp.Spec.HighThresholds = wm.Spec.HighThresholds
+	tmp.Spec.LowThresholds = wm.Spec.LowThresholds
+	tmp.Spec.Type = wm.Spec.Type
+	if _, err := cli.SchedulingV1alpha1().NodeWatermarks().Update(ctx, tmp, metav1.UpdateOptions{}); err != nil {
 		return err
 	}
 	return nil
