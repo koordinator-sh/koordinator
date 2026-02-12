@@ -20,7 +20,7 @@ import (
 )
 
 // exportToExcel export metrics data to local file(excel)
-func (e *Exporter) exportToExcel(allResults map[string][]prometheus.QueryResult) error {
+func (e *Exporter) exportToExcel(allResults map[string][]prometheus.QueryResult) (string, error) {
 	// generate filename
 	filename := generateExcelFilename(e.config.Export.LocalConfig.Format)
 	exportPath := filepath.Join(e.config.Export.LocalConfig.OutputDir, filename)
@@ -33,7 +33,7 @@ func (e *Exporter) exportToExcel(allResults map[string][]prometheus.QueryResult)
 	err := excelFile.DeleteSheet("Sheet1")
 	if err != nil {
 		klog.Errorf("Failed to delete default sheet(Sheet1): %v", err)
-		return err
+		return "", err
 	}
 
 	// create sheet for each query
@@ -67,11 +67,11 @@ func (e *Exporter) exportToExcel(allResults map[string][]prometheus.QueryResult)
 
 	// save result file
 	if err := excelFile.SaveAs(exportPath); err != nil {
-		return fmt.Errorf("failed to save result file: %w", err)
+		return "", fmt.Errorf("failed to save result file: %w", err)
 	}
 
 	klog.Infof("Successfully exported metrics data to file: %s", exportPath)
-	return nil
+	return exportPath, nil
 }
 
 // writeSheet write query results to sheet

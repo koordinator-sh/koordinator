@@ -13,40 +13,15 @@ kind: ClusterRole
 metadata:
   name: hybrid-manager
 rules:
-  - apiGroups:
-      - apps
-    resources:
-      - deployments
-      - statefulsets
-    verbs:
-      - get
-      - list
-      - watch
-      - update
-      - patch
-  - apiGroups:
-      - apps
-    resources:
-      - deployments/status
-      - statefulsets/status
-    verbs:
-      - get
-  - apiGroups:
-      - batch
-    resources:
-      - jobs
-    verbs:
-      - get
-      - list
-      - watch
-      - update
-      - patch
-  - apiGroups:
-      - batch
-    resources:
-      - jobs/status
-    verbs:
-      - get
+  - apiGroups: [ "" ]
+    resources: [ "pods" ]
+    verbs: [ "get", "list", "watch" ]
+  - apiGroups: [ "apps" ]
+    resources: [ "deployments", "statefulsets", "daemonsets", "replicasets" ]
+    verbs: [ "get", "list", "watch", "update", "patch" ]
+  - apiGroups: [ "batch" ]
+    resources: [ "jobs", "cronjobs" ]
+    verbs: [ "get", "list", "watch", "update", "patch" ]
 
 ---
 # ClusterRoleBinding
@@ -98,13 +73,33 @@ spec:
         app: hybrid-manager
     spec:
       serviceAccountName: hybrid-manager
+      securityContext:
+        fsGroup: 65534
       containers:
         - name: manager
           image: koordinator/hybrid-manager:v1.0
           imagePullPolicy: IfNotPresent
-          command: ["hybrid-manager"]
+          command: [ "hybrid-manager" ]
           args:
-            - --prediction-file=/data/prediction-result.csv
+            - --interval=5m
+          env:
+            - name: AI_SERVER
+              valueFrom:
+                secretKeyRef:
+                  name: hybrid-ai-credentials
+                  key: AI_SERVER
+            - name: AI_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: hybrid-ai-credentials
+                  key: AI_TOKEN
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65534
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
           resources:
             limits:
               cpu: 500m
@@ -112,3 +107,9 @@ spec:
             requests:
               cpu: 100m
               memory: 128Mi
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: data
+          emptyDir: { }

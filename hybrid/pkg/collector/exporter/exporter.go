@@ -17,21 +17,28 @@ import (
 	"hybrid/pkg/collector/prometheus"
 )
 
+const (
+	JsonFormat  = "json"
+	ExcelFormat = "excel"
+)
+
 // Exporter prometheus metrics data exporter
 type Exporter struct {
-	config     *config.Config
-	promClient *prometheus.Client
+	config         *config.Config
+	promClient     *prometheus.Client
+	uploadNotifyCh chan string // notify upload ch
 }
 
 // NewExporter create a new exporter
-func NewExporter(promClient *prometheus.Client, cfg *config.Config) *Exporter {
+func NewExporter(promClient *prometheus.Client, cfg *config.Config, notify chan string) *Exporter {
 	return &Exporter{
-		promClient: promClient,
-		config:     cfg,
+		promClient:     promClient,
+		config:         cfg,
+		uploadNotifyCh: notify,
 	}
 }
 
-// Export export metrics data
+// Export metrics data and notify upload service
 func (e *Exporter) Export() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
@@ -52,21 +59,37 @@ func (e *Exporter) Export() error {
 		allResults[queryConfig.Name] = results
 	}
 
+	var exportPath string
+	var err error
 	// handle export mode
 	switch e.config.Export.Mode {
 	case config.ExportModeLocal:
-		return e.exportToFile(allResults)
+		exportPath, err = e.exportToFile(JsonFormat, allResults)
+		if err != nil {
+			return fmt.Errorf("failed to export metrics data to local file: %w", err)
+		}
 	case config.ExportModeRemote:
 		// TODO: export to remote websocket server
-		return fmt.Errorf("export mode not supported: %s", e.config.Export.Mode)
+		return fmt.Errorf("remote export mode not supported now")
 	default:
 		return fmt.Errorf("unknown export mode: %s", e.config.Export.Mode)
 	}
+
+	// notify upload after export
+	if exportPath != "" && e.uploadNotifyCh != nil {
+		select {
+		case e.uploadNotifyCh <- exportPath:
+			klog.Infof("Notified upload service: %s", exportPath)
+		default:
+			klog.Warning("Upload channel full, notification dropped")
+		}
+	}
+
+	return nil
+
 }
 
-func (e *Exporter) exportToFile(allResults map[string][]prometheus.QueryResult) error {
-	// TODO: support config if needed
-	fileType := "json"
+func (e *Exporter) exportToFile(fileType string, allResults map[string][]prometheus.QueryResult) (string, error) {
 	switch fileType {
 	case "json":
 		return e.exportToJson(allResults)

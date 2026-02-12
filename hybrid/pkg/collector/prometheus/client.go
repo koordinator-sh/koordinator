@@ -9,6 +9,7 @@ package prometheus
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/prometheus/client_golang/api"
@@ -37,19 +38,86 @@ type TimeValue struct {
 	Value     float64
 }
 
+type basicAuthRoundTripper struct {
+	username string
+	password string
+	next     http.RoundTripper
+}
+
+func (b *basicAuthRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	req.SetBasicAuth(b.username, b.password)
+	return b.next.RoundTrip(req)
+}
+
+type bearerTokenRoundTripper struct {
+	token string
+	next  http.RoundTripper
+}
+
+func (b *bearerTokenRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	req.Header.Set("Authorization", "Bearer "+b.token)
+	return b.next.RoundTrip(req)
+}
+
+func setupAuth(auth collector.AuthConfig, transport http.RoundTripper) (http.RoundTripper, error) {
+	if transport == nil {
+		transport = http.DefaultTransport
+	}
+	switch auth.Type {
+	case "basic":
+		if auth.Username == "" || auth.Password == "" {
+			klog.Errorf("Basic auth enabled but username/password is empty")
+			return nil, fmt.Errorf("basic auth enabled but username/password is empty")
+		}
+		return &basicAuthRoundTripper{
+			username: auth.Username,
+			password: auth.Password,
+			next:     transport,
+		}, nil
+	case "bearer":
+		if auth.Token == "" {
+			klog.Errorf("Bearer token auth enabled but token is empty")
+			return nil, fmt.Errorf("bearer auth enabled but token is empty")
+		}
+		return &bearerTokenRoundTripper{
+			token: auth.Token,
+			next:  transport,
+		}, nil
+	case "none", "":
+		return transport, nil
+	default:
+		klog.Infof("Unknown auth type: %s, using no authentication", auth.Type)
+		return transport, nil
+	}
+}
+
 // NewClient create prometheus client
-func NewClient(cfg collector.PrometheusConfig) *Client {
-	client, err := api.NewClient(api.Config{
-		Address: cfg.URL,
-	})
-	if err != nil {
-		panic(fmt.Sprintf("failed to create Prometheus client: %v", err))
+func NewClient(cfg collector.PrometheusConfig) (*Client, error) {
+	// create http client
+	httpClient := &http.Client{
+		Timeout: cfg.Timeout,
 	}
 
+	// TODO: skip tls
+
+	roundTripper, err := setupAuth(cfg.Auth, httpClient.Transport)
+	if err != nil {
+		return nil, err
+	}
+
+	client, err := api.NewClient(api.Config{
+		Address:      cfg.URL,
+		RoundTripper: roundTripper,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	klog.Infof("Successfully created prometheus client, url: %s, auth: %s", cfg.URL, cfg.Auth.Type)
 	return &Client{
 		api:    v1.NewAPI(client),
 		config: cfg,
-	}
+	}, nil
 }
 
 // QueryRange execute a range query
@@ -167,6 +235,5 @@ func (c *Client) parseResult(value model.Value) []QueryResult {
 			},
 		})
 	}
-
 	return results
 }

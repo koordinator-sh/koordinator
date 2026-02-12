@@ -23,53 +23,49 @@ import (
 )
 
 type ClassifyController struct {
-	clientset      *kubernetes.Clientset
-	predictionFile string
-	syncInterval   time.Duration
-	stopCh         chan struct{}
+	clientset       *kubernetes.Clientset
+	predictionFile  string
+	interval        time.Duration
+	downloadService *predictor.Service
+	stopCh          chan struct{}
 }
 
-func NewClassifyController(clientset *kubernetes.Clientset, predictionFile string, syncInterval time.Duration) *ClassifyController {
-	if predictionFile == "" {
-		predictionFile = path.Join(constants.DefaultOutputDir, constants.DefaultPredictionFile)
-	} else {
-		predictionFile = path.Join(constants.DefaultOutputDir, predictionFile)
-	}
-	if syncInterval <= 0 {
-		syncInterval = constants.DefaultSyncInterval
+func NewClassifyController(clientset *kubernetes.Clientset, interval time.Duration, downloadService *predictor.Service) *ClassifyController {
+	predictionFile := path.Join(constants.DefaultOutputDir, constants.DefaultPredictionFile)
+	if interval <= 0 {
+		interval = constants.DefaultSyncInterval
 	}
 
 	return &ClassifyController{
-		clientset:      clientset,
-		predictionFile: predictionFile,
-		syncInterval:   syncInterval,
-		stopCh:         make(chan struct{}),
+		clientset:       clientset,
+		predictionFile:  predictionFile,
+		downloadService: downloadService,
+		interval:        interval,
+		stopCh:          make(chan struct{}),
 	}
 }
 
 func (c *ClassifyController) Start(ctx context.Context) error {
-	klog.Infof("Starting ClassifyController with prediction file: %s, sync interval: %v",
-		c.predictionFile, c.syncInterval)
-
+	klog.Infof("Starting ClassifyController with prediction file: %s, sync interval: %v", c.predictionFile, c.interval)
 	if err := c.syncClassifications(ctx); err != nil {
-		klog.Errorf("Initial sync failed: %v", err)
+		klog.Errorf("Failed to initial sync classifications: %v", err)
 	}
 
-	ticker := time.NewTicker(c.syncInterval)
+	ticker := time.NewTicker(c.interval)
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-ctx.Done():
-			klog.Info("Context cancelled, stopping ClassifyController")
+			klog.Info("Context cancelled, stopping classify controller")
 			return nil
 		case <-c.stopCh:
-			klog.Info("Stop signal received, stopping ClassifyController")
+			klog.Info("Stop signal received, stopping classify controller")
 			return nil
 		case <-ticker.C:
 			klog.V(4).Info("Ticker triggered, starting sync cycle")
 			if err := c.syncClassifications(ctx); err != nil {
-				klog.Errorf("Sync failed: %v", err)
+				klog.Errorf("Failed to sync classifications: %v", err)
 			}
 		}
 	}
@@ -83,6 +79,14 @@ func (c *ClassifyController) Stop() {
 func (c *ClassifyController) syncClassifications(ctx context.Context) error {
 	klog.V(4).Infof("Starting prediction sync at %v", time.Now())
 
+	if c.downloadService != nil {
+		if err := c.downloadService.DownloadNow(ctx); err != nil {
+			return fmt.Errorf("failed to download prediction file: %w", err)
+		}
+
+		time.Sleep(2 * time.Second)
+	}
+
 	predictions, err := predictor.ParsePredictorFile(c.predictionFile)
 	if err != nil {
 		return fmt.Errorf("failed to parse prediction file: %w", err)
@@ -90,6 +94,7 @@ func (c *ClassifyController) syncClassifications(ctx context.Context) error {
 
 	for _, record := range predictions {
 		if err := c.syncWorkloadAnnotation(ctx, record); err != nil {
+			// only log error, continue sync other pods
 			klog.Errorf("Failed to sync pod %s/%s: %v", record.Namespace, record.Name, err)
 		} else {
 			klog.V(4).Infof("Successfully synced workload with type: %s", record.PredictedType)

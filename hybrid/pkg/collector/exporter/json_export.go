@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/klauspost/compress/gzip"
@@ -28,15 +29,18 @@ type PrometheusJSONResult struct {
 }
 
 // exportToJson exports metrics data to a compressed json file (.gz).
-func (e *Exporter) exportToJson(allResults map[string][]prometheus.QueryResult) error {
+func (e *Exporter) exportToJson(allResults map[string][]prometheus.QueryResult) (string, error) {
 	// Generate filename with .gz extension
 	filename := generateCompressFileName(e.config.Export.LocalConfig.Format)
 	exportPath := filepath.Join(e.config.Export.LocalConfig.OutputDir, filename)
 
 	// Create the target directory if it doesn't exist
 	if err := os.MkdirAll(filepath.Dir(exportPath), 0755); err != nil {
-		return fmt.Errorf("failed to create target directory: %w", err)
+		return "", fmt.Errorf("failed to create target directory: %w", err)
 	}
+
+	// Clean up old files before creating new
+	go e.clear(e.config.Export.LocalConfig.OutputDir)
 
 	// Prepare the final data structure to serialize
 	var finalData []PrometheusJSONResult
@@ -68,13 +72,12 @@ func (e *Exporter) exportToJson(allResults map[string][]prometheus.QueryResult) 
 		}
 	}
 
-	err := compressToGz(exportPath, finalData)
-	if err != nil {
-		return fmt.Errorf("failed to compress prometheus export: %w", err)
+	if err := compressToGz(exportPath, finalData); err != nil {
+		return "", fmt.Errorf("failed to compress prometheus export metrics data: %w", err)
 	}
 
-	klog.Infof("Successfully exported metrics data to compressed JSON file: %s", exportPath)
-	return nil
+	klog.Infof("Successfully exported metrics data to compressed json file: %s", exportPath)
+	return exportPath, nil
 }
 
 func compressToGz(path string, data []PrometheusJSONResult) error {
@@ -105,8 +108,99 @@ func compressToGz(path string, data []PrometheusJSONResult) error {
 	return nil
 }
 
+func (e *Exporter) clear(exportDir string) {
+	// Check if output directory exists
+	info, err := os.Stat(exportDir)
+	if os.IsNotExist(err) {
+		return // Directory doesn't exist, nothing to clean
+	}
+	if err != nil {
+		klog.Errorf("failed to stat output directory: %s", err)
+	}
+
+	if !info.IsDir() {
+		klog.Warningf("output path is not a directory: %s", exportDir)
+	}
+
+	// Read all files in the directory
+	entries, err := os.ReadDir(exportDir)
+	if err != nil {
+		klog.Errorf("failed to read output directory: %s", err)
+	}
+
+	var filesToDelete []string
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue // skip subdirectories
+		}
+
+		fileInfo, err := entry.Info()
+		if err != nil {
+			klog.Warningf("Failed to get file info for %s: %v", entry.Name(), err)
+			continue
+		}
+
+		// Check if file matches expected pattern
+		if e.shouldCleanFile(entry.Name()) {
+			// Check if file should be deleted based on age
+			if e.shouldDeleteFile(fileInfo) {
+				filesToDelete = append(filesToDelete, filepath.Join(exportDir, entry.Name()))
+			}
+		}
+	}
+
+	// delete old files
+	for _, filePath := range filesToDelete {
+		if err := os.Remove(filePath); err != nil {
+			klog.Warningf("Failed to delete old file %s: %v", filePath, err)
+		} else {
+			klog.Infof("Deleted old export file: %s", filePath)
+		}
+	}
+
+}
+
+func (e *Exporter) shouldCleanFile(filename string) bool {
+	expectedExtensions := []string{".json.gz", ".tar.gz", ".gz"}
+	for _, ext := range expectedExtensions {
+		if strings.HasSuffix(strings.ToLower(filename), ext) {
+			return true
+		}
+	}
+	baseName := strings.TrimSuffix(filepath.Base(filename), filepath.Ext(filename))
+	if strings.Contains(baseName, constants.ExportFilePrefix) {
+		return true
+	}
+
+	return false
+}
+
+// shouldDeleteFile determines if a file should be deleted based on age
+func (e *Exporter) shouldDeleteFile(fileInfo os.FileInfo) bool {
+	retentionHours := e.getRetentionHours()
+	if retentionHours <= 0 {
+		return false // No retention limit set
+	}
+
+	maxAge := time.Duration(retentionHours) * time.Hour
+	currentTime := time.Now()
+	fileModTime := fileInfo.ModTime()
+
+	age := currentTime.Sub(fileModTime)
+	return age > maxAge
+}
+
+func (e *Exporter) getRetentionHours() int64 {
+	if e.config.Export.LocalConfig.RetentionHours > 0 {
+		return e.config.Export.LocalConfig.RetentionHours
+	}
+	// default retain 24 hour export data
+	return 24
+}
+
 func compressTo7z(path string, data *[]PrometheusJSONResult) error {
-	// todo:
+	// TODO:
 	return nil
 }
 

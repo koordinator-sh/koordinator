@@ -94,6 +94,17 @@ spec:
           imagePullPolicy: IfNotPresent
           command: [ "hybrid-collector" ]
           args: [ "--config", "/etc/hybrid/collector.yaml" ]
+          env:
+            - name: AI_SERVER
+              valueFrom:
+                secretKeyRef:
+                  name: hybrid-ai-credentials
+                  key: AI_SERVER
+            - name: AI_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: hybrid-ai-credentials
+                  key: AI_TOKEN
           volumeMounts:
             - name: config-volume
               mountPath: /etc/hybrid
