@@ -1665,6 +1665,26 @@ spec:
                   BE pods will be limited if node resource usage overload
                   TODO: ResourceUsedThresholdWithBE need to rename
                 properties:
+                  allocatableEvictPriorityThreshold:
+                    description: AllocatableEvictPriorityThreshold defines the highest
+                      priority for the xxxAllocatableEvict feature. must less than
+                      koord-prod
+                    format: int32
+                    type: integer
+                  cpuAllocatableEvictLowerPercent:
+                    description: |-
+                      lower: cpu release util requestPercent under CPUAllocatableEvictLowerPercent, default = 100
+                      evict until cpu.requestPercent <= CPUAllocatableEvictLowerPercent, then stop .
+                    format: int64
+                    minimum: 0
+                    type: integer
+                  cpuAllocatableEvictThresholdPercent:
+                    description: |-
+                      upper: cpu ledger evict threshold percentage (0,), default = 110
+                      if cpu.requestPercent > CPUAllocatableEvictThresholdPercent, then start to evict.
+                    format: int64
+                    minimum: 0
+                    type: integer
                   cpuEvictBESatisfactionLowerPercent:
                     description: |-
                       be.satisfactionRate = be.CPURealLimit/be.CPURequest; be.cpuUsage = be.CPUUsed/be.CPURealLimit
@@ -1732,6 +1752,20 @@ spec:
                     description: EvictEnabledPriorityThreshold defines the highest
                       priority for the xxxEvict feature.
                     format: int32
+                    type: integer
+                  memoryAllocatableEvictLowerPercent:
+                    description: |-
+                      lower: memory release util requestPercent under MemoryAllocatableEvictLowerPercent, default = 100
+                      evict until memory.requestPercent <= MemoryAllocatableEvictLowerPercent, then stop .
+                    format: int64
+                    minimum: 0
+                    type: integer
+                  memoryAllocatableEvictThresholdPercent:
+                    description: |-
+                      upper: memory ledger evict threshold percentage (0,), default = 110
+                      if memory.requestPercent > MemoryAllocatableEvictThresholdPercent, then start to evict.
+                    format: int64
+                    minimum: 0
                     type: integer
                   memoryEvictLowerPercent:
                     description: 'lower: memory release util usage under MemoryEvictLowerPercent,

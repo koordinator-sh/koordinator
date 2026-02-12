@@ -344,6 +344,15 @@ type ResourceThresholdStrategy struct {
 	// +kubebuilder:validation:Minimum=0
 	MemoryEvictLowerPercent *int64 `json:"memoryEvictLowerPercent,omitempty" validate:"omitempty,min=0,max=100,ltfield=MemoryEvictThresholdPercent"`
 
+	// upper: memory ledger evict threshold percentage (0,), default = 110
+	// +kubebuilder:validation:Minimum=0
+	// if memory.requestPercent > MemoryAllocatableEvictThresholdPercent, then start to evict.
+	MemoryAllocatableEvictThresholdPercent *int64 `json:"memoryAllocatableEvictThresholdPercent,omitempty" validate:"omitempty,min=0,gtfield=MemoryAllocatableEvictLowerPercent"`
+	// lower: memory release util requestPercent under MemoryAllocatableEvictLowerPercent, default = 100
+	// +kubebuilder:validation:Minimum=0
+	// evict until memory.requestPercent <= MemoryAllocatableEvictLowerPercent, then stop .
+	MemoryAllocatableEvictLowerPercent *int64 `json:"memoryAllocatableEvictLowerPercent,omitempty" validate:"omitempty,min=0,ltfield=MemoryAllocatableEvictThresholdPercent"`
+
 	// be.satisfactionRate = be.CPURealLimit/be.CPURequest
 	// if be.satisfactionRate > CPUEvictBESatisfactionUpperPercent/100, then stop to evict.
 	CPUEvictBESatisfactionUpperPercent *int64 `json:"cpuEvictBESatisfactionUpperPercent,omitempty" validate:"omitempty,min=0,max=100,gtfield=CPUEvictBESatisfactionLowerPercent"`
@@ -361,11 +370,20 @@ type ResourceThresholdStrategy struct {
 	// upper: CPU evict threshold percentage (0,100)
 	// +kubebuilder:validation:Maximum=100
 	// +kubebuilder:validation:Minimum=0
-	CPUEvictThresholdPercent *int64 `json:"cpuEvictThresholdPercent,omitempty" validate:"omitempty,min=0,max=100"`
+	CPUEvictThresholdPercent *int64 `json:"cpuEvictThresholdPercent,omitempty" validate:"omitempty,min=0,max=100,gtfield=CPUEvictLowerPercent"`
 	// lower: CPU release util usage under CPUEvictLowerPercent, default = CPUEvictThresholdPercent - 2
 	// +kubebuilder:validation:Maximum=100
 	// +kubebuilder:validation:Minimum=0
-	CPUEvictLowerPercent *int64 `json:"cpuEvictLowerPercent,omitempty" validate:"omitempty,min=0,max=100"`
+	CPUEvictLowerPercent *int64 `json:"cpuEvictLowerPercent,omitempty" validate:"omitempty,min=0,max=100,ltfield=CPUEvictThresholdPercent"`
+
+	// upper: cpu ledger evict threshold percentage (0,), default = 110
+	// +kubebuilder:validation:Minimum=0
+	// if cpu.requestPercent > CPUAllocatableEvictThresholdPercent, then start to evict.
+	CPUAllocatableEvictThresholdPercent *int64 `json:"cpuAllocatableEvictThresholdPercent,omitempty" validate:"omitempty,min=0,gtfield=CPUAllocatableEvictLowerPercent"`
+	// lower: cpu release util requestPercent under CPUAllocatableEvictLowerPercent, default = 100
+	// +kubebuilder:validation:Minimum=0
+	// evict until cpu.requestPercent <= CPUAllocatableEvictLowerPercent, then stop .
+	CPUAllocatableEvictLowerPercent *int64 `json:"cpuAllocatableEvictLowerPercent,omitempty" validate:"omitempty,min=0,ltfield=CPUAllocatableEvictThresholdPercent"`
 
 	// CPUEvictPolicy defines the policy for the BECPUEvict feature.
 	// Default: `evictByRealLimit`.
@@ -373,6 +391,8 @@ type ResourceThresholdStrategy struct {
 
 	// EvictEnabledPriorityThreshold defines the highest priority for the xxxEvict feature.
 	EvictEnabledPriorityThreshold *int32 `json:"evictEnabledPriorityThreshold,omitempty"`
+	// AllocatableEvictPriorityThreshold defines the highest priority for the xxxAllocatableEvict feature. must less than koord-prod
+	AllocatableEvictPriorityThreshold *int32 `json:"allocatableEvictPriorityThreshold,omitempty" validate:"omitempty,min=0,max=7999"`
 }
 
 // ResctrlQOSCfg stores node-level config of resctrl qos

@@ -49,6 +49,10 @@ const (
 	// be able to evict.
 	LabelPodEvictEnabled = DomainPrefix + "eviction-enabled"
 
+	// AnnotationPodEvictPolicy are used to set restricted eviction policies for Pod.
+	// When this annotation is missing, there are no policy restrictions
+	AnnotationPodEvictPolicy = DomainPrefix + "eviction-policy"
+
 	// LabelPodSkipEnhancedValidation is the pod label key used to opt out a pod from enhanced validation.
 	LabelPodSkipEnhancedValidation = PodDomainPrefix + "/skip-enhanced-validation"
 )

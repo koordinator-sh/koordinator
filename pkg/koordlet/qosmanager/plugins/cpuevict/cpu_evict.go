@@ -36,7 +36,6 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/qosmanager/framework"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/qosmanager/helpers"
 	qosmanagerUtil "github.com/koordinator-sh/koordinator/pkg/koordlet/qosmanager/plugins/util"
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
@@ -76,7 +75,9 @@ func New(opt *framework.Options) framework.QOSStrategy {
 }
 
 func (c *cpuEvictor) Enabled() bool {
-	return (features.DefaultKoordletFeatureGate.Enabled(features.BECPUEvict) || features.DefaultKoordletFeatureGate.Enabled(features.CPUEvict)) &&
+	return (features.DefaultKoordletFeatureGate.Enabled(features.BECPUEvict) ||
+		features.DefaultKoordletFeatureGate.Enabled(features.CPUEvict) ||
+		features.DefaultKoordletFeatureGate.Enabled(features.CPUAllocatableEvict)) &&
 		c.evictInterval > 0
 }
 
@@ -111,8 +112,7 @@ func (c *cpuEvictor) cpuEvict() {
 		klog.Warningf("cpuEvict failed, got nil node")
 		return
 	}
-	nodeMilliCPUCapacity := node.Status.Capacity.Cpu().MilliValue()
-	if nodeMilliCPUCapacity <= 0 {
+	if nodeMilliCPUCapacity := node.Status.Capacity.Cpu().MilliValue(); nodeMilliCPUCapacity <= 0 {
 		klog.Warningf("skip CPU evict, node nodeMilliCPUCapacity not valid, value: %d", nodeMilliCPUCapacity)
 		return
 	}
@@ -120,11 +120,11 @@ func (c *cpuEvictor) cpuEvict() {
 	// build cpu evict tasks
 	var evictTasks []*qosmanagerUtil.EvictTaskInfo
 	// When both features.BECPUEvict and features.CPUEvict are enabled:
-	// - Both eviction mechanisms will be activated.
-	// - BECPUEvict runs first, followed by CPUEvict.
+	// - All eviction mechanisms will be activated.
+	// - BECPUEvict runs first, followed by CPUAllocatableEvict, then CPUEvict.
 	// - Resource release effects are cumulatively considered; the total reclaimed resources
 	//   from both phases are accounted for in scheduling and capacity planning.
-	triggerFeatures := []featuregate.Feature{features.BECPUEvict, features.CPUEvict}
+	triggerFeatures := []featuregate.Feature{features.BECPUEvict, features.CPUAllocatableEvict, features.CPUEvict}
 	for _, feature := range triggerFeatures {
 		if !features.DefaultKoordletFeatureGate.Enabled(feature) {
 			continue
@@ -136,7 +136,7 @@ func (c *cpuEvictor) cpuEvict() {
 			klog.V(4).Infof("feature %s skipped, nodeSLO disable the feature gate", feature)
 			continue
 		}
-		task, err := c.buildEvictTask(feature, nodeSLO, nodeMilliCPUCapacity)
+		task, err := c.buildEvictTask(feature, nodeSLO, node)
 		if err != nil {
 			klog.Warningf("failed to build cpuEvict task trigger by feature %v, err: %v", feature, err)
 			continue
@@ -147,7 +147,7 @@ func (c *cpuEvictor) cpuEvict() {
 		evictTasks = append(evictTasks, task)
 	}
 	if len(evictTasks) == 0 {
-		klog.V(4).Infof("cpuEvict skipped, no task to evict")
+		klog.V(4).Infof("skip CPU evict, no task to evict")
 		return
 	}
 	released, hasReleased := qosmanagerUtil.KillAndEvictPods(c.evictExecutor, node, evictTasks)
@@ -165,7 +165,23 @@ func (c *cpuEvictor) cpuEvict() {
 	}
 }
 
-func (c *cpuEvictor) calculateMilliReleaseBySatisfaction(thresholdConfig *slov1alpha1.ResourceThresholdStrategy, nodeMilliCPUCapacity int64) int64 {
+// calculate overall resource task need to release and functions to calculate resource from pod
+func (c *cpuEvictor) calculateMilliReleaseByBESatisfaction(thresholdConfig *slov1alpha1.ResourceThresholdStrategy, node *corev1.Node, pods []*statesinformer.PodMeta) (overall corev1.ResourceList,
+	calculateFunc func(podInfo *qosmanagerUtil.PodEvictInfo) corev1.ResourceList) {
+	overall = make(corev1.ResourceList)
+	calculateFunc = func(podInfo *qosmanagerUtil.PodEvictInfo) corev1.ResourceList {
+		milliRequestSum := int64(0)
+		for _, container := range podInfo.Pod.Spec.Containers {
+			containerCPUReq := util.GetContainerBatchMilliCPURequest(&container)
+			if containerCPUReq > 0 {
+				milliRequestSum = milliRequestSum + containerCPUReq
+			}
+		}
+		return corev1.ResourceList{
+			apiext.BatchCPU: *resource.NewMilliQuantity(milliRequestSum, resource.DecimalSI),
+		}
+	}
+	resourceType := apiext.BatchCPU
 	windowSeconds := int64(c.metricCollectInterval.Seconds())
 	if thresholdConfig.CPUEvictTimeWindowSeconds != nil && *thresholdConfig.CPUEvictTimeWindowSeconds > windowSeconds {
 		windowSeconds = *thresholdConfig.CPUEvictTimeWindowSeconds
@@ -175,7 +191,7 @@ func (c *cpuEvictor) calculateMilliReleaseBySatisfaction(thresholdConfig *slov1a
 	querier, err := c.metricCache.Querier(*queryParam.Start, *queryParam.End)
 	if err != nil {
 		klog.Warningf("get query failed, error %v", err)
-		return 0
+		return
 	}
 	defer querier.Close()
 	// BECPUUsage
@@ -196,20 +212,20 @@ func (c *cpuEvictor) calculateMilliReleaseBySatisfaction(thresholdConfig *slov1a
 	count := minInt64(count01, count02, count03)
 
 	if !isAvgQueryResultValid(windowSeconds, int64(c.metricCollectInterval.Seconds()), count) {
-		return 0
+		return
 	}
 
 	if !isBECPUUsageHighEnough(avgBECPUMilliUsage, avgBECPUMilliLimit, thresholdConfig.CPUEvictBEUsageThresholdPercent) {
 		klog.V(5).Infof("cpuEvict by ResourceSatisfaction skipped, avg usage not enough, "+
 			"BEUsage:%v, BERequest:%v, BELimit:%v, BERealLimit:%v, BEAllocatable:%v",
 			avgBECPUMilliUsage, avgBECPUMilliRequest, avgBECPUMilliLimit, avgBECPUMilliRealLimit, beCPUMilliAllocatable)
-		return 0
+		return
 	}
 
 	milliRelease := calculateResourceMilliToReleaseBySatisfaction(avgBECPUMilliRequest, avgBECPUMilliLimit, thresholdConfig)
 	if milliRelease <= 0 {
 		klog.V(5).Infof("cpuEvict by ResourceSatisfaction skipped, releaseByAvg: %v", milliRelease)
-		return 0
+		return
 	}
 
 	// Step2: Calculate release resource current
@@ -217,7 +233,7 @@ func (c *cpuEvictor) calculateMilliReleaseBySatisfaction(thresholdConfig *slov1a
 	querier, err = c.metricCache.Querier(*queryParam.Start, *queryParam.End)
 	if err != nil {
 		klog.Warningf("get query failed, error %v", err)
-		return 0
+		return
 	}
 	defer querier.Close()
 	// BECPUUsage
@@ -238,18 +254,19 @@ func (c *cpuEvictor) calculateMilliReleaseBySatisfaction(thresholdConfig *slov1a
 			"BEUsage:%v, BERequest:%v, BELimit:%v, BERealLimit:%v, BEAllocatable:%v",
 			currentBECPUMilliUsage, currentBECPUMilliRequest, currentBECPUMilliLimit, currentBECPUMilliRealLimit,
 			beCPUMilliAllocatable)
-		return 0
+		return
 	}
 
 	// Requests and limits do not change frequently.
 	// If the current request and limit are equal to the average request and limit within the window period, there is no need to recalculate.
 	if currentBECPUMilliRequest == avgBECPUMilliRequest && currentBECPUMilliLimit == avgBECPUMilliLimit {
-		return milliRelease
+		overall[resourceType] = *resource.NewMilliQuantity(milliRelease, resource.DecimalSI)
+		return
 	}
 	milliReleaseByCurrent := calculateResourceMilliToReleaseBySatisfaction(currentBECPUMilliRequest, currentBECPUMilliLimit, thresholdConfig)
 	if milliReleaseByCurrent <= 0 {
 		klog.V(5).Infof("cpuEvict by ResourceSatisfaction skipped, releaseByCurrent: %v", milliReleaseByCurrent)
-		return 0
+		return
 	}
 
 	// Step3：release = min(releaseByAvg,releaseByCurrent)
@@ -263,10 +280,19 @@ func (c *cpuEvictor) calculateMilliReleaseBySatisfaction(thresholdConfig *slov1a
 			milliRelease, currentBECPUMilliUsage, currentBECPUMilliRequest, currentBECPUMilliLimit, currentBECPUMilliRealLimit,
 			beCPUMilliAllocatable)
 	}
-	return milliRelease
+	overall[resourceType] = *resource.NewMilliQuantity(milliRelease, resource.DecimalSI)
+	return
 }
 
-func (c *cpuEvictor) calculateMilliReleaseByUsedThresholdPercent(thresholdConfig *slov1alpha1.ResourceThresholdStrategy, nodeMilliCPUCapacity int64) int64 {
+func (c *cpuEvictor) calculateMilliReleaseByUsedThresholdPercent(thresholdConfig *slov1alpha1.ResourceThresholdStrategy, node *corev1.Node, pods []*statesinformer.PodMeta) (overall corev1.ResourceList,
+	calculateFunc func(podInfo *qosmanagerUtil.PodEvictInfo) corev1.ResourceList) {
+	overall = make(corev1.ResourceList)
+	calculateFunc = func(podInfo *qosmanagerUtil.PodEvictInfo) corev1.ResourceList {
+		return corev1.ResourceList{
+			corev1.ResourceCPU: *resource.NewMilliQuantity(podInfo.MilliCPUUsed, resource.DecimalSI),
+		}
+	}
+	resourceType := corev1.ResourceCPU
 	windowSeconds := int64(c.metricCollectInterval.Seconds())
 	if thresholdConfig.CPUEvictTimeWindowSeconds != nil && *thresholdConfig.CPUEvictTimeWindowSeconds > windowSeconds {
 		windowSeconds = *thresholdConfig.CPUEvictTimeWindowSeconds
@@ -275,24 +301,25 @@ func (c *cpuEvictor) calculateMilliReleaseByUsedThresholdPercent(thresholdConfig
 	queryMeta, err := metriccache.NodeCPUUsageMetric.BuildQueryMeta(nil)
 	if err != nil {
 		klog.Warningf("get query failed, error %v", err)
-		return 0
+		return
 	}
 	// cpu peak shaving
 	queryResult, err := helpers.CollectNodeMetrics(c.metricCache, *queryParam.Start, *queryParam.End, queryMeta)
 	if err != nil {
 		klog.Warningf("cpuEvict by usedTresholdPercent skippped, get node metrics error: %v", err)
-		return 0
+		return
 	}
 	nodeCPUUsed, err := queryResult.Value(queryParam.Aggregate)
 	if err != nil {
 		klog.Warningf("get node cpu metric failed, error: %v", err)
-		return 0
+		return
 	}
+	nodeMilliCPUCapacity := node.Status.Capacity.Cpu().MilliValue()
 	nodeCPUUsage := int64(nodeCPUUsed*1000) * 100 / nodeMilliCPUCapacity
 	thresholdPercent := thresholdConfig.CPUEvictThresholdPercent
 	if nodeCPUUsage < *thresholdPercent {
 		klog.V(5).Infof("cpuEvict by usedTresholdPercent skippped, node cpu usage(%v) is below threshold(%v)", nodeCPUUsage, *thresholdPercent)
-		return 0
+		return
 	}
 	lowerPercent := int64(0)
 	if thresholdConfig.CPUEvictLowerPercent != nil {
@@ -308,9 +335,58 @@ func (c *cpuEvictor) calculateMilliReleaseByUsedThresholdPercent(thresholdConfig
 		float64(*thresholdPercent)/100,
 		float64(lowerPercent)/100,
 	)
-	return milliCPUNeedRelease
+	overall[resourceType] = *resource.NewMilliQuantity(milliCPUNeedRelease, resource.DecimalSI)
+	return
 }
 
+func (c *cpuEvictor) calculateMilliReleaseByAllocatableThresholdPercent(thresholdConfig *slov1alpha1.ResourceThresholdStrategy, node *corev1.Node, pods []*statesinformer.PodMeta) (overall corev1.ResourceList,
+	calculateFunc func(podInfo *qosmanagerUtil.PodEvictInfo) corev1.ResourceList) {
+	overall = make(corev1.ResourceList)
+	requestedOnNode := make(corev1.ResourceList)
+	priorityThreshold := *thresholdConfig.AllocatableEvictPriorityThreshold
+	allocatableEvictThreshold := *thresholdConfig.CPUAllocatableEvictThresholdPercent
+	allocatableEvictLowerThreshold := *thresholdConfig.CPUAllocatableEvictLowerPercent
+	if allocatableEvictThreshold < 0 {
+		// no need to release
+		return
+	}
+	for _, podMeta := range pods {
+		pod := podMeta.Pod
+		if priority := apiext.GetPodPriorityValueWithDefault(pod); priority == nil || *priority > priorityThreshold {
+			continue
+		}
+		request := qosmanagerUtil.GetRequestFromPod(pod, corev1.ResourceCPU)
+		util.AddResourceList(requestedOnNode, request)
+	}
+	prioritiesMp := make(map[apiext.PriorityClass]bool)
+	resourceOnNode := node.Status.Allocatable
+	for rt, rq := range requestedOnNode {
+		nq, ok := resourceOnNode[rt]
+		if !ok || nq.IsZero() {
+			overall[rt] = rq
+			continue
+		}
+		// mid/batch are milli format on node: to confirm
+		rqValue := float32(qosmanagerUtil.ConvertQuantityToInt64(rt, rq))
+		sumValue := float32(qosmanagerUtil.ConvertQuantityToInt64(rt, nq))
+		if rqValue/sumValue > float32(allocatableEvictThreshold)/100 {
+			overall[rt] = *resource.NewQuantity(int64(rqValue-float32(allocatableEvictLowerThreshold)/100*sumValue), resource.DecimalSI)
+		}
+	}
+	for r := range overall {
+		// currently only support koord-batch/koord-mid
+		if class, ok := apiext.ReverseResourceNameMap[r]; ok {
+			prioritiesMp[class] = true
+		}
+	}
+	calculateFunc = func(podInfo *qosmanagerUtil.PodEvictInfo) corev1.ResourceList {
+		if _, ok := prioritiesMp[apiext.GetPodPriorityClassWithDefault(podInfo.Pod)]; !ok {
+			return nil
+		}
+		return qosmanagerUtil.GetRequestFromPod(podInfo.Pod, corev1.ResourceCPU)
+	}
+	return
+}
 func isAvgQueryResultValid(windowSeconds, collectIntervalSeconds, count int64) bool {
 	if count*collectIntervalSeconds < windowSeconds/3 {
 		klog.Warningf("cpuEvict by ResourceSatisfaction skipped, metricsCount(%d) not enough!windowSize: %v, collectInterval: %v", count, windowSeconds, collectIntervalSeconds)
@@ -364,65 +440,83 @@ func calculateResourceMilliToReleaseBySatisfaction(beCPUMilliRequest, beCPUMilli
 	return int64(milliRelease)
 }
 
-func (c *cpuEvictor) buildEvictTask(feature featuregate.Feature, nodeSLO *slov1alpha1.NodeSLO, nodeMilliCPUCapacity int64) (*qosmanagerUtil.EvictTaskInfo, error) {
+func (c *cpuEvictor) buildEvictTask(feature featuregate.Feature, nodeSLO *slov1alpha1.NodeSLO, node *corev1.Node) (*qosmanagerUtil.EvictTaskInfo, error) {
 	thresholdConfig := nodeSLO.Spec.ResourceUsedThresholdWithBE
 	var evictReason string
 	var releaseTarget qosmanagerUtil.ReleaseTargetType
 	var configCheckFunc func(*slov1alpha1.ResourceThresholdStrategy) error
-	var getPodEvictInfoAndSortFunc func(*slov1alpha1.ResourceThresholdStrategy) []*qosmanagerUtil.PodEvictInfo
-	var calculateReleaseResource func(*slov1alpha1.ResourceThresholdStrategy, int64) int64
-	// check config
+	var getPodEvictInfoAndSortFunc func(string, *slov1alpha1.ResourceThresholdStrategy, []*statesinformer.PodMeta) []*qosmanagerUtil.PodEvictInfo
+	// calculate overall resource task need to release and functions to calculate resource from pod
+	var genReleaseResource func(*slov1alpha1.ResourceThresholdStrategy, *corev1.Node, []*statesinformer.PodMeta) (corev1.ResourceList, func(podInfo *qosmanagerUtil.PodEvictInfo) corev1.ResourceList)
+	evictReason = qosmanagerUtil.EvictReasonPrefix + string(feature)
 	switch feature {
 	case features.BECPUEvict:
-		evictReason = "trigger by koordlet feature " + resourceexecutor.EvictBEPodByBECPUSatisfaction
 		configCheckFunc = isSatisfactionConfigValid
-		calculateReleaseResource = c.calculateMilliReleaseBySatisfaction
+		genReleaseResource = c.calculateMilliReleaseByBESatisfaction
 		getPodEvictInfoAndSortFunc = c.getBEPodEvictInfoAndSort
-		releaseTarget = qosmanagerUtil.ReleaseTargetTypeBatchResourceRequest
+		releaseTarget = qosmanagerUtil.ReleaseTargetTypeResourceRequest
 	case features.CPUEvict:
-		evictReason = "trigger by koordlet feature " + resourceexecutor.EvictPodByCPUUsedThresholdPercent
 		configCheckFunc = isUsedThresholdConfigValid
-		calculateReleaseResource = c.calculateMilliReleaseByUsedThresholdPercent
-		getPodEvictInfoAndSortFunc = c.getPodEvictInfoAndSortByPriority
+		genReleaseResource = c.calculateMilliReleaseByUsedThresholdPercent
+		getPodEvictInfoAndSortFunc = c.getPodEvictInfoAndSortByUsed
 		releaseTarget = qosmanagerUtil.ReleaseTargetTypeResourceUsed
+	case features.CPUAllocatableEvict:
+		configCheckFunc = isAllocatableThresholdConfigValid
+		genReleaseResource = c.calculateMilliReleaseByAllocatableThresholdPercent
+		getPodEvictInfoAndSortFunc = c.getPodEvictInfoAndSortByAllocatable
+		releaseTarget = qosmanagerUtil.ReleaseTargetTypeResourceRequest
 	default:
 		return nil, fmt.Errorf("unknown feature %v", feature)
 	}
 	if err := configCheckFunc(thresholdConfig); err != nil {
 		return nil, fmt.Errorf("skip cpu evict feature %v, invalid config, err=%v", feature, err)
 	}
-	milliRelease := calculateReleaseResource(thresholdConfig, nodeMilliCPUCapacity)
-	if milliRelease <= 0 {
+	pods := c.statesInformer.GetAllPods()
+	milliRelease, getPodResourceFunc := genReleaseResource(thresholdConfig, node, pods)
+	if len(milliRelease) == 0 {
+		klog.V(4).Infof("skip cpu evict feature %v, no need to evict", feature)
 		return nil, nil
 	}
-	sortedPodInfos := getPodEvictInfoAndSortFunc(thresholdConfig)
+	sortedPodInfos := getPodEvictInfoAndSortFunc(string(feature), thresholdConfig, pods)
 	return &qosmanagerUtil.EvictTaskInfo{
-		Reason:          evictReason,
-		SortedEvictPods: sortedPodInfos,
-		ToReleaseResource: corev1.ResourceList{
-			corev1.ResourceCPU: *resource.NewMilliQuantity(milliRelease, resource.DecimalSI),
-		},
-		ReleaseTarget: releaseTarget,
+		Reason:             evictReason,
+		SortedEvictPods:    sortedPodInfos,
+		ToReleaseResource:  milliRelease,
+		ReleaseTarget:      releaseTarget,
+		GetPodResourceFunc: getPodResourceFunc,
 	}, nil
 }
 
-func (c *cpuEvictor) getPodEvictInfoAndSortByPriority(thresholdConfig *slov1alpha1.ResourceThresholdStrategy) []*qosmanagerUtil.PodEvictInfo {
+func (c *cpuEvictor) getPodEvictInfoAndSortByAllocatable(evictionPolicy string, thresholdConfig *slov1alpha1.ResourceThresholdStrategy, pods []*statesinformer.PodMeta) []*qosmanagerUtil.PodEvictInfo {
+	return c.getPodEvictInfoAndSortByPriority(evictionPolicy, *thresholdConfig.AllocatableEvictPriorityThreshold, pods, func(a, b *qosmanagerUtil.PodEvictInfo) bool {
+		return a.MilliCPURequest > b.MilliCPURequest
+	})
+}
+
+func (c *cpuEvictor) getPodEvictInfoAndSortByUsed(evictionPolicy string, thresholdConfig *slov1alpha1.ResourceThresholdStrategy, pods []*statesinformer.PodMeta) []*qosmanagerUtil.PodEvictInfo {
+	return c.getPodEvictInfoAndSortByPriority(evictionPolicy, *thresholdConfig.EvictEnabledPriorityThreshold, pods, func(a, b *qosmanagerUtil.PodEvictInfo) bool {
+		return a.MilliCPUUsed > b.MilliCPUUsed
+	})
+}
+func (c *cpuEvictor) getPodEvictInfoAndSortByPriority(evictionPolicy string, priorityThreshold int32, pods []*statesinformer.PodMeta, subSortFun func(a, b *qosmanagerUtil.PodEvictInfo) bool) []*qosmanagerUtil.PodEvictInfo {
 	var podsInfos []*qosmanagerUtil.PodEvictInfo
-	priorityThreshold := *thresholdConfig.EvictEnabledPriorityThreshold
-	for _, podMeta := range c.statesInformer.GetAllPods() {
+	for _, podMeta := range pods {
 		pod := podMeta.Pod
 		// higher priority pods are not allowed to evict
-		// 1. filter inactive / priority
-		podInfo := &qosmanagerUtil.PodEvictInfo{Pod: podMeta.Pod}
+		// 1. filter inactive / priority / eviction policy
 		if util.IsPodInactive(pod) {
 			continue
 		}
+		if !qosmanagerUtil.IsEvictionPolicyAllowed(evictionPolicy, pod) {
+			continue
+		}
+		podInfo := &qosmanagerUtil.PodEvictInfo{Pod: podMeta.Pod}
 		if priority := apiext.GetPodPriorityValueWithDefault(pod); priority == nil || *priority > priorityThreshold {
 			continue
 		} else {
 			podInfo.Priority = *priority
 		}
-		// 2. filter: exclude: koordinator.sh/evict-disabled
+		// 2. filter: exclude: koordinator.sh/eviction-enabled
 		if !apiext.PodEvictEnabled(pod) {
 			continue
 		}
@@ -432,7 +526,7 @@ func (c *cpuEvictor) getPodEvictInfoAndSortByPriority(thresholdConfig *slov1alph
 		// 4. filter no metrics
 		queryMeta, err := metriccache.PodCPUUsageMetric.BuildQueryMeta(metriccache.MetricPropertiesFunc.Pod(string(pod.UID)))
 		if err != nil {
-			klog.Warningf("get pod %v query failed, error %v", pod.UID, err)
+			klog.Warningf("build pod %v query failed, error %v", pod.UID, err)
 			continue
 		}
 		result, err := helpers.CollectPodMetricLast(c.metricCache, queryMeta, c.metricCollectInterval)
@@ -441,14 +535,8 @@ func (c *cpuEvictor) getPodEvictInfoAndSortByPriority(thresholdConfig *slov1alph
 			continue
 		}
 		podInfo.MilliCPUUsed = int64(result * 1000)
-		milliRequestSum := int64(0)
-		for _, container := range pod.Spec.Containers {
-			containerCPUReq := util.GetContainerBatchMilliCPURequest(&container)
-			if containerCPUReq > 0 {
-				milliRequestSum = milliRequestSum + containerCPUReq
-			}
-		}
-		podInfo.MilliCPURequest = milliRequestSum
+		_, rv := qosmanagerUtil.GetRequestTypeAndValueFromPod(pod, corev1.ResourceCPU)
+		podInfo.MilliCPURequest = rv
 		podsInfos = append(podsInfos, podInfo)
 	}
 
@@ -459,40 +547,43 @@ func (c *cpuEvictor) getPodEvictInfoAndSortByPriority(thresholdConfig *slov1alph
 		if podsInfos[i].LabelPriority != podsInfos[j].LabelPriority {
 			return podsInfos[i].LabelPriority < podsInfos[j].LabelPriority
 		}
-		return podsInfos[i].MilliCPUUsed > podsInfos[j].MilliCPUUsed
+		return subSortFun(podsInfos[i], podsInfos[j])
 	})
 	return podsInfos
 }
-func (c *cpuEvictor) getBEPodEvictInfoAndSort(thresholdConfig *slov1alpha1.ResourceThresholdStrategy) []*qosmanagerUtil.PodEvictInfo {
+func (c *cpuEvictor) getBEPodEvictInfoAndSort(evictionPolicy string, thresholdConfig *slov1alpha1.ResourceThresholdStrategy, pods []*statesinformer.PodMeta) []*qosmanagerUtil.PodEvictInfo {
 	var bePodInfos []*qosmanagerUtil.PodEvictInfo
-
-	for _, podMeta := range c.statesInformer.GetAllPods() {
+	for _, podMeta := range pods {
 		pod := podMeta.Pod
-		if apiext.GetPodQoSClassRaw(pod) == apiext.QoSBE {
-			bePodInfo := &qosmanagerUtil.PodEvictInfo{Pod: podMeta.Pod}
-			queryMeta, err := metriccache.PodCPUUsageMetric.BuildQueryMeta(metriccache.MetricPropertiesFunc.Pod(string(pod.UID)))
-			if err == nil {
-				result, err := helpers.CollectPodMetricLast(c.metricCache, queryMeta, c.metricCollectInterval)
-				if err == nil {
-					bePodInfo.MilliCPUUsed = int64(result * 1000)
-				}
-			}
-
-			milliRequestSum := int64(0)
-			for _, container := range pod.Spec.Containers {
-				containerCPUReq := util.GetContainerBatchMilliCPURequest(&container)
-				if containerCPUReq > 0 {
-					milliRequestSum = milliRequestSum + containerCPUReq
-				}
-			}
-
-			bePodInfo.MilliCPURequest = milliRequestSum
-			if bePodInfo.MilliCPURequest > 0 {
-				bePodInfo.CpuUsage = float64(bePodInfo.MilliCPUUsed) / float64(bePodInfo.MilliCPURequest)
-			}
-
-			bePodInfos = append(bePodInfos, bePodInfo)
+		if apiext.GetPodQoSClassRaw(pod) != apiext.QoSBE {
+			continue
 		}
+		if !qosmanagerUtil.IsEvictionPolicyAllowed(evictionPolicy, pod) {
+			continue
+		}
+		bePodInfo := &qosmanagerUtil.PodEvictInfo{Pod: podMeta.Pod}
+		queryMeta, err := metriccache.PodCPUUsageMetric.BuildQueryMeta(metriccache.MetricPropertiesFunc.Pod(string(pod.UID)))
+		if err == nil {
+			result, err := helpers.CollectPodMetricLast(c.metricCache, queryMeta, c.metricCollectInterval)
+			if err == nil {
+				bePodInfo.MilliCPUUsed = int64(result * 1000)
+			}
+		}
+
+		milliRequestSum := int64(0)
+		for _, container := range pod.Spec.Containers {
+			containerCPUReq := util.GetContainerBatchMilliCPURequest(&container)
+			if containerCPUReq > 0 {
+				milliRequestSum = milliRequestSum + containerCPUReq
+			}
+		}
+
+		bePodInfo.MilliCPURequest = milliRequestSum
+		if bePodInfo.MilliCPURequest > 0 {
+			bePodInfo.CpuUsage = float64(bePodInfo.MilliCPUUsed) / float64(bePodInfo.MilliCPURequest)
+		}
+
+		bePodInfos = append(bePodInfos, bePodInfo)
 	}
 
 	sort.Slice(bePodInfos, func(i, j int) bool {
@@ -568,6 +659,33 @@ func isUsedThresholdConfigValid(thresholdConfig *slov1alpha1.ResourceThresholdSt
 	}
 	return nil
 }
+
+func isAllocatableThresholdConfigValid(thresholdConfig *slov1alpha1.ResourceThresholdStrategy) error {
+	if thresholdConfig == nil {
+		return fmt.Errorf("ResourceThresholdStrategy not config")
+	}
+	thresholdPercent := thresholdConfig.CPUAllocatableEvictThresholdPercent
+	if thresholdPercent == nil {
+		return fmt.Errorf("CPUAllocatableEvictThresholdPercent not config")
+	} else if *thresholdPercent < 0 {
+		return fmt.Errorf("threshold percent(%v) should equal or greater than 0", *thresholdPercent)
+	}
+	lowerPercent := int64(0)
+	if thresholdConfig.CPUAllocatableEvictLowerPercent != nil {
+		lowerPercent = *thresholdConfig.CPUAllocatableEvictLowerPercent
+	}
+	if lowerPercent >= *thresholdPercent {
+		return fmt.Errorf("lower percent(%v) should less than threshold percent(%v)", lowerPercent, *thresholdPercent)
+	}
+	priorityThresholdPercent := thresholdConfig.AllocatableEvictPriorityThreshold
+	if priorityThresholdPercent == nil {
+		return fmt.Errorf("AllocatableEvictPriorityThreshold not config")
+	}
+	if *priorityThresholdPercent > apiext.PriorityMidValueMax {
+		return fmt.Errorf("priorityThresholdPercent(%v) should less than %v, koor-prod pods should not be killed", *priorityThresholdPercent, apiext.PriorityMidValueMax)
+	}
+	return nil
+}
 func getBECPUMetric(resouceAllocation metriccache.MetricPropertyValue, querier metriccache.Querier, aggregateType metriccache.AggregationType) (float64, int64) {
 	var properties map[metriccache.MetricProperty]string
 
@@ -600,7 +718,6 @@ func getBECPUMetric(resouceAllocation metriccache.MetricPropertyValue, querier m
 
 func minInt64(num ...int64) int64 {
 	min := int64(math.MaxInt64)
-
 	for _, n := range num {
 		if n < min {
 			min = n
