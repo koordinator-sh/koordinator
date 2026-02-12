@@ -411,7 +411,7 @@ func (b *cpuBurst) applyCFSQuotaBurst(burstCfg *slov1alpha1.CPUBurstConfig, podM
 			continue
 		}
 		deltaContainerCFS := containerTargetCFS - containerCurCFS
-		err = b.applyContainerCFSQuota(podMeta, containerStat, containerCurCFS, deltaContainerCFS)
+		err = b.applyContainerCFSQuota(podMeta, containerStat, container, burstCfg, containerCurCFS, deltaContainerCFS)
 		if err != nil {
 			klog.Infof("scale container %v/%v/%v cfs quota failed, operation %v, delta cfs quota %v, reason %v",
 				pod.Namespace, pod.Name, containerStat.Name, finalOperation, deltaContainerCFS, err)
@@ -501,7 +501,12 @@ func (b *cpuBurst) genOperationByContainer(burstCfg *slov1alpha1.CPUBurstConfig,
 	return cfsRemain
 }
 
+// applyContainerCFSQuota adjusts container and pod CFS quota values with burst synchronization.
+//
+// This function implements burst-quota synchronization to comply with cgroup v2 kernel constraints
+// where cpu.max.burst must be <= cpu.max (i.e., cfs_burst_us <= cfs_quota_us).
 func (b *cpuBurst) applyContainerCFSQuota(podMeta *statesinformer.PodMeta, containerStat *corev1.ContainerStatus,
+	container *corev1.Container, burstCfg *slov1alpha1.CPUBurstConfig,
 	curContaienrCFS, deltaContainerCFS int64) error {
 	podDir := podMeta.CgroupDir
 	curPodCFS, podPathErr := b.cgroupReader.ReadCPUQuota(podDir)
@@ -513,6 +518,68 @@ func (b *cpuBurst) applyContainerCFSQuota(podMeta *statesinformer.PodMeta, conta
 	if containerPathErr != nil {
 		return fmt.Errorf("get container %v/%v/%v cgroup path failed, error: %v",
 			podMeta.Pod.Namespace, podMeta.Pod.Name, containerStat.Name, containerPathErr)
+	}
+
+	targetContainerCFS := curContaienrCFS + deltaContainerCFS
+
+	updateContainerBurst := func(targetQuota int64) error {
+		if !cpuBurstEnabled(burstCfg.Policy) {
+			return nil
+		}
+
+		targetBurst := calcSafeCPUBurstVal(container, burstCfg, targetQuota)
+		burstValStr := strconv.FormatInt(targetBurst, 10)
+
+		eventHelper := audit.V(3).Container(containerStat.Name).Reason("CFSQuotaBurst").
+			Message("update container CPUBurst: %v", burstValStr)
+		updater, err := resourceexecutor.DefaultCgroupUpdaterFactory.New(
+			system.CPUBurstName, containerDir, burstValStr, eventHelper)
+		if err != nil {
+			klog.V(5).Infof("cpu burst not supported for container %s/%s/%s, skip burst update",
+				podMeta.Pod.Namespace, podMeta.Pod.Name, containerStat.Name)
+			return nil
+		}
+
+		if _, err := b.executor.Update(true, updater); err != nil {
+			return fmt.Errorf("update container burst %v failed, reason %v", containerDir, err)
+		}
+		return nil
+	}
+
+	// updatePodBurst updates pod burst value after container changes
+	updatePodBurst := func() error {
+		if !cpuBurstEnabled(burstCfg.Policy) || curPodCFS <= 0 {
+			return nil
+		}
+
+		containerBurst, err := b.cgroupReader.ReadCPUBurst(containerDir)
+		if err != nil {
+			klog.V(5).Infof("read container burst failed, skip pod burst update: %v", err)
+			return nil
+		}
+
+		// TODO: Sum all container bursts instead of using single container as reference
+		// This would provide more accurate pod burst values for multi-container pods
+		// Calculate target pod burst
+		targetPodBurst := containerBurst
+		if targetPodBurst <= 0 {
+			return nil
+		}
+
+		burstValStr := strconv.FormatInt(targetPodBurst, 10)
+		eventHelper := audit.V(3).Pod(podMeta.Pod.Namespace, podMeta.Pod.Name).
+			Reason("CFSQuotaBurst").Message("update pod CPUBurst: %v", burstValStr)
+		updater, err := resourceexecutor.DefaultCgroupUpdaterFactory.New(
+			system.CPUBurstName, podDir, burstValStr, eventHelper)
+		if err != nil {
+			klog.V(5).Infof("cpu burst not supported for pod, skip: %v", err)
+			return nil
+		}
+
+		if _, err := b.executor.Update(true, updater); err != nil {
+			klog.V(5).Infof("update pod burst failed: %v", err)
+		}
+		return nil
 	}
 
 	updatePodCFSQuota := func() error {
@@ -533,7 +600,6 @@ func (b *cpuBurst) applyContainerCFSQuota(podMeta *statesinformer.PodMeta, conta
 	}
 
 	updateContainerCFSQuota := func() error {
-		targetContainerCFS := curContaienrCFS + deltaContainerCFS
 		containerCFSValStr := strconv.FormatInt(targetContainerCFS, 10)
 		eventHelper := audit.V(3).Container(containerStat.Name).Reason("CFSQuotaBurst").Message("update container CFSQuota: %v", containerCFSValStr)
 		updater, _ := resourceexecutor.DefaultCgroupUpdaterFactory.New(system.CPUCFSQuotaName, containerDir, containerCFSValStr, eventHelper)
@@ -544,23 +610,43 @@ func (b *cpuBurst) applyContainerCFSQuota(podMeta *statesinformer.PodMeta, conta
 		return nil
 	}
 
-	// cfs scale down, order: container->pod
-	sortOfUpdateQuota := []func() error{updateContainerCFSQuota, updatePodCFSQuota}
-	if deltaContainerCFS > 0 {
-		// cfs scale up, order: pod->container
-		sortOfUpdateQuota = []func() error{updatePodCFSQuota, updateContainerCFSQuota}
-	}
-
-	for _, update := range sortOfUpdateQuota {
-		if err := update(); err != nil {
-			return err
+	if deltaContainerCFS < 0 {
+		// Scale-down: burst first, then quota
+		// Order: container burst -> container quota -> pod burst -> pod quota
+		sortOfUpdate := []func() error{
+			func() error { return updateContainerBurst(targetContainerCFS) },
+			updateContainerCFSQuota,
+			updatePodBurst,
+			updatePodCFSQuota,
+		}
+		for _, update := range sortOfUpdate {
+			if err := update(); err != nil {
+				return err
+			}
+		}
+	} else {
+		// Scale-up: quota first, then burst
+		// Order: pod quota -> container quota -> container burst -> pod burst
+		sortOfUpdate := []func() error{
+			updatePodCFSQuota,
+			updateContainerCFSQuota,
+			func() error { return updateContainerBurst(targetContainerCFS) },
+			updatePodBurst,
+		}
+		for _, update := range sortOfUpdate {
+			if err := update(); err != nil {
+				return err
+			}
 		}
 	}
 
 	return nil
 }
 
-// set cpu.cfs_burst_us for containers
+// applyCPUBurst sets cpu.cfs_burst_us for containers with quota-aware capping.
+//
+// This function applies initial CPU burst values to containers, ensuring burst values
+// respect the kernel constraint: burst <= quota (cfs_burst_us <= cfs_quota_us).
 func (b *cpuBurst) applyCPUBurst(burstCfg *slov1alpha1.CPUBurstConfig, podMeta *statesinformer.PodMeta) {
 	pod := podMeta.Pod
 	containerMap := make(map[string]*corev1.Container)
@@ -584,7 +670,6 @@ func (b *cpuBurst) applyCPUBurst(burstCfg *slov1alpha1.CPUBurstConfig, podMeta *
 			continue
 		}
 
-		containerCFSBurstVal := calcStaticCPUBurstVal(container, burstCfg)
 		containerDir, burstPathErr := koordletutil.GetContainerCgroupParentDir(podMeta.CgroupDir, containerStat)
 		if burstPathErr != nil {
 			klog.Warningf("get container dir %s/%s/%s failed, dir %v, error %v",
@@ -592,6 +677,14 @@ func (b *cpuBurst) applyCPUBurst(burstCfg *slov1alpha1.CPUBurstConfig, podMeta *
 			continue
 		}
 
+		containerQuota, quotaErr := b.cgroupReader.ReadCPUQuota(containerDir)
+		if quotaErr != nil {
+			klog.V(5).Infof("read container %s/%s/%s quota failed, use uncapped burst: %v",
+				pod.Namespace, pod.Name, containerStat.Name, quotaErr)
+			containerQuota = -1
+		}
+
+		containerCFSBurstVal := calcSafeCPUBurstVal(container, burstCfg, containerQuota)
 		podCFSBurstVal += containerCFSBurstVal
 		containerCFSBurstValStr := strconv.FormatInt(containerCFSBurstVal, 10)
 		eventHelper := audit.V(3).Container(containerStat.Name).Reason("CPUBurst").Message("update container CPUBurst: %v", containerCFSBurstValStr)
@@ -661,6 +754,27 @@ func calcStaticCPUBurstVal(container *corev1.Container, burstCfg *slov1alpha1.CP
 	cpuCoresBurst := (float64(containerCPUMilliLimit) / 1000) * (float64(*burstCfg.CPUBurstPercent) / 100)
 	containerCFSBurstVal := int64(cpuCoresBurst * float64(system.CFSBasePeriodValue))
 	return containerCFSBurstVal
+}
+
+// calcSafeCPUBurstVal calculates burst value ensuring it doesn't exceed quota
+// to comply with cgroup v2 kernel constraints (burst <= quota).
+// In cgroup v2, some kernel versions require cpu.max.burst <= cpu.max (i.e., cfs_burst_us <= cfs_quota_us).
+func calcSafeCPUBurstVal(container *corev1.Container, burstCfg *slov1alpha1.CPUBurstConfig, currentQuota int64) int64 {
+	if !cpuBurstEnabled(burstCfg.Policy) {
+		return 0
+	}
+
+	desiredBurst := calcStaticCPUBurstVal(container, burstCfg)
+
+	// Cap burst at current quota to satisfy kernel constraint
+	// If quota is -1 (unlimited) or 0, don't cap the burst
+	if currentQuota > 0 && desiredBurst > currentQuota {
+		klog.V(5).Infof("container %s desired burst %d exceeds quota %d, capping to quota",
+			container.Name, desiredBurst, currentQuota)
+		return currentQuota
+	}
+
+	return desiredBurst
 }
 
 // use node config by default, overlap if pod specify config
