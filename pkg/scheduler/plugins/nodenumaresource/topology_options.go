@@ -38,7 +38,7 @@ type TopologyOptionsManager interface {
 }
 
 type TopologyOptions struct {
-	NodeResourceTopology *nrtv1alpha1.NodeResourceTopology
+	NodeResourceTopology *nrtv1alpha1.NodeResourceTopology       `json:"-"`
 	CPUTopology          *CPUTopology                            `json:"cpuTopology"`
 	ReservedCPUs         cpuset.CPUSet                           `json:"reservedCPUs"`
 	MaxRefCount          int                                     `json:"maxRefCount"`
